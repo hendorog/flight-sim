@@ -7,6 +7,7 @@ import { R22_VISUAL } from '../../src/aircraft/r22/visual';
 import { MAIN_HUB, MAIN_ROTOR_RADIUS, PANEL_FACE, PANEL_CANVAS, PILOT_EYE, SKID_Z, TAIL_HUB } from '../../src/aircraft/r22/dimensions';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { AircraftVisual } from '../../src/render/aircraft/AircraftVisual';
+import { createFuselageShapes, sectionHalfWidth } from '../../src/render/aircraft/fuselage';
 import { frd } from '../../src/render/aircraft/geometry';
 import { rotorBladeGeometry } from '../../src/render/aircraft/rotorcraft/rotor';
 import { blankDocument, fakeContext } from './meshChecks';
@@ -47,6 +48,7 @@ describe('R22 procedural exterior and cockpit', () => {
 
   it('maps every control onto the shaped face with correct raycast UVs from the pilot eye', () => {
     const panel = visual.getPanelMesh();
+    expect(panel.name).toBe('instrumentPanel'); // CockpitClicks discovers the face by this name.
     expect(panel.getWorldPosition(new THREE.Vector3()).distanceTo(point(PANEL_FACE.centre))).toBeLessThan(1e-12);
     const normal = new THREE.Vector3(0, 0, 1).transformDirection(panel.matrixWorld);
     const angle = PANEL_FACE.tiltBackDeg * Math.PI / 180;
@@ -91,6 +93,18 @@ describe('R22 procedural exterior and cockpit', () => {
     }
     const horizon = visual.pilotEye.clone().add(new THREE.Vector3(0, 0, -500)).project(camera);
     expect(horizon.y).toBeLessThan(0.9); expect(horizon.y).toBeGreaterThan(0);
+  });
+
+  it('keeps the enclosure inside the cabin bubble', () => {
+    const glass = createFuselageShapes(R22_VISUAL).glass;
+    const housing = visual.root.getObjectByName('consoleHousing') as THREE.Mesh;
+    const pos = housing.geometry.getAttribute('position');
+    let clearance = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const p = visual.root.worldToLocal(housing.localToWorld(new THREE.Vector3().fromBufferAttribute(pos, i)));
+      clearance = Math.min(clearance, sectionHalfWidth(glass, -p.z, -p.y) - Math.abs(p.x));
+    }
+    expect(clearance).toBeGreaterThan(0.005);
   });
 
   it('has finite, bounded meshes and shows a stopped rotor with two drooping blades', () => {

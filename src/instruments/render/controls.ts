@@ -75,9 +75,20 @@ export class AnnunciatorPanel implements PanelComponent {
   }
 
   paintLightMask(g: Ctx2D): void {
-    // Lamps behind smoked glass: a lit lamp is bright in the image itself; unlit legends must stay dark.
-    g.fillStyle = '#ffffff';
-    this.lamps.forEach((_, i) => { const b = this.cell(i); g.fillRect(b.x, b.y, b.w, b.h); });
+    this.lamps.forEach((lamp, i) => {
+      const b = this.cell(i);
+      if (this.cells) {
+        const cx = b.x + b.w / 2, cy = b.y + b.h - 14;
+        g.save(); g.fillStyle = LIGHT_DIAL; g.font = `600 7px ${LABEL_FONT}`;
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        lamp.text.split(' ').forEach((word, j, words) => g.fillText(word, cx, cy - 20 - (words.length - 1 - j) * 9));
+        g.fillStyle = '#ffffff'; g.beginPath(); g.arc(cx, cy, 8.5, 0, Math.PI * 2); g.fill();
+        g.restore();
+      } else {
+        // Legends behind smoked glass: the lit legend is bright in the image itself.
+        g.fillStyle = '#ffffff'; g.fillRect(b.x, b.y, b.w, b.h);
+      }
+    });
   }
 
   draw(g: Ctx2D): void {
@@ -91,10 +102,10 @@ export class AnnunciatorPanel implements PanelComponent {
         g.fillStyle = '#080909'; g.beginPath(); g.arc(cx, cy, 12, 0, Math.PI * 2); g.fill();
         g.strokeStyle = '#787872'; g.lineWidth = 1.5; g.stroke();
         if (on) { g.shadowColor = lamp.color; g.shadowBlur = 12; }
-        g.fillStyle = on ? lamp.color : '#302819';
+        g.fillStyle = on ? lamp.color : '#070503';
         g.beginPath(); g.arc(cx, cy, 8.5, 0, Math.PI * 2); g.fill();
         g.shadowBlur = 0;
-        g.fillStyle = on ? '#fff1c5' : '#5a5040'; g.beginPath(); g.arc(cx - 2, cy - 3, 2.5, 0, Math.PI * 2); g.fill();
+        g.fillStyle = on ? '#fff1c5' : '#090807'; g.beginPath(); g.arc(cx - 2, cy - 3, 2.5, 0, Math.PI * 2); g.fill();
         g.restore();
         return;
       }

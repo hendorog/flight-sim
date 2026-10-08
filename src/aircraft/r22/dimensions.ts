@@ -50,7 +50,7 @@ export const PILOT_EYE = { x: 0.72, y: 0.28, z: SKID_Z - 1.5 } as const;
  * https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_ipc_95_b93d8d009d.pdf
  * The 0.34 m upper pod narrows to a 0.20 m radio pedestal; total face height 0.68 m. The outline is
  * shared by canvas and mesh, so instrument spacing, silhouette and click UVs have one definition.
- * Position, 15 degree rake and 0.20 m enclosure depth remain photographic estimates, not POH dimensions. */
+ * Position, 15 degree rake and 0.15 m enclosure depth remain photographic estimates, not POH dimensions. */
 export const PANEL_PX_PER_M = 2400;
 export const PANEL_CANVAS = { w: 816, h: 1632 } as const;
 export const PANEL_OUTLINE = [
@@ -59,7 +59,7 @@ export const PANEL_OUTLINE = [
   [166, 606], [26, 578], [0, 505], [0, 110], [36, 36],
 ] as const;
 export const PANEL_FACE = {
-  centre: { x: 1.26, y: 0, z: SKID_Z - 0.99 },
+  centre: { x: 1.20, y: 0, z: SKID_Z - 0.99 },
   width: PANEL_CANVAS.w / PANEL_PX_PER_M,
   height: PANEL_CANVAS.h / PANEL_PX_PER_M,
   /** Face normal tilted up from horizontal-aft by this much (0 = vertical face). */

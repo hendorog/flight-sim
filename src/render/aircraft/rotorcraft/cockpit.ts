@@ -1,6 +1,7 @@
 // The small console pod and helicopter controls are independent of the aeroplane panel/yoke builder.
 import * as THREE from 'three';
 import type { AirframeVisualDef } from '../airframe/types';
+import { SCENE_UNITS_PER_LUX } from '../../../core/context';
 import type { ControlInputs } from '../../../core/types';
 import { frd, MeshBatch } from '../geometry';
 import type { AircraftMaterials } from '../materials';
@@ -27,10 +28,10 @@ export class RotorcraftCockpit {
     const outline = p.outline ?? [[0, 0], [p.canvas.w, 0], [p.canvas.w, p.canvas.h], [0, p.canvas.h]];
     const points = outline.map(([x, y]) => new THREE.Vector2((x / p.canvas.w - 0.5) * p.width, (0.5 - y / p.canvas.h) * p.height));
     const shape = new THREE.Shape(points);
-    // A closed, rounded enclosure extends 0.20 m forward of the face; bevels form the padded brow.
-    const shell = new THREE.ExtrudeGeometry(shape, { depth: 0.18, steps: 1, bevelEnabled: true,
+    // A closed, rounded enclosure extends 0.15 m forward of the face; bevels form the padded brow.
+    const shell = new THREE.ExtrudeGeometry(shape, { depth: 0.13, steps: 1, bevelEnabled: true,
       bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 4, curveSegments: 12 });
-    shell.translate(0, 0, -0.196);
+    shell.translate(0, 0, -0.146);
     const housing = new THREE.Mesh(shell, mat.glareshield); housing.name = 'consoleHousing';
     housing.castShadow = housing.receiveShadow = true; pod.add(housing);
     // A narrow rubber rim stands proud of the face. Rounded joints follow the same outline as the UVs.
@@ -41,15 +42,26 @@ export class RotorcraftCockpit {
     const pos = face.getAttribute('position'), uv = face.getAttribute('uv');
     for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / p.width + 0.5, pos.getY(i) / p.height + 0.5);
     this.panel = new THREE.Mesh(face, new THREE.MeshStandardMaterial({ name: 'rotorcraftPanel', color: 0xffffff, roughness: 0.86, emissive: 0x000000 }));
-    this.panel.name = 'panelFace'; this.panel.receiveShadow = true; pod.add(this.panel);
+    // Match the aeroplane panel shader: suppress near-black paint in the dedicated emissive texture.
+    // A plain emissive map lights the whole dial face at night exposure, washing out its markings.
+    this.panel.material.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `
+#ifdef USE_EMISSIVEMAP
+  vec4 emissiveColor = texture2D( emissiveMap, vEmissiveMapUv );
+  float emissivePeak = max( emissiveColor.r, max( emissiveColor.g, emissiveColor.b ) );
+  totalEmissiveRadiance *= emissiveColor.rgb * smoothstep( 0.006, 0.03, emissivePeak );
+#endif`);
+    };
+    this.panel.material.customProgramCacheKey = () => 'rotorcraftPanelBacklight';
+    this.panel.name = 'instrumentPanel'; this.panel.receiveShadow = true; pod.add(this.panel);
     this.group.add(pod);
     // Pedestal heel connects the sloping radio/control face to the cabin floor, with a mounting foot.
     const angle = p.tiltBackDeg * Math.PI / 180;
     const bottomZ = p.centre[2] + p.height / 2 * Math.cos(angle);
     const bottomX = p.centre[0] - p.height / 2 * Math.sin(angle);
     const floorZ = def.cockpit.floor.z;
-    fixed.add(mat.glareshield, box([bottomX + 0.07, 0, (bottomZ + floorZ) / 2], [0.22, p.width * 0.59, floorZ - bottomZ + 0.02], 0.018));
-    fixed.add(mat.darkMetal, box([bottomX + 0.06, 0, floorZ - 0.01], [0.28, p.width * 0.67, 0.02]));
+    fixed.add(mat.glareshield, box([bottomX + 0.14, 0, (bottomZ + floorZ) / 2], [0.22, p.width * 0.59, floorZ - bottomZ + 0.02], 0.018));
+    fixed.add(mat.darkMetal, box([bottomX + 0.14, 0, floorZ - 0.01], [0.28, p.width * 0.67, 0.02]));
     for (const seat of def.cockpit.seats) {
       const z = seat.z!, backX = seat.x - seat.depth;
       fixed.add(mat.trimPlastic, box([seat.x - seat.depth / 2, seat.y, z + 0.11], [seat.depth, seat.width, 0.20], 0.035));
@@ -123,7 +135,9 @@ export class RotorcraftCockpit {
       this.throttles[i].rotation.z = -c.throttle * Math.PI * 0.65;
     }
     this.pedals.forEach((p, i) => { p.position.z = -this.def.cockpit.pedals.x + (i % 2 === 0 ? 1 : -1) * c.rudder * 0.045; });
-    this.panel.material.emissive.setScalar(busVoltage > 10 ? c.lights.panel * 0.3 * emissiveScale : 0);
+    // Use the same luminance scale as the aeroplane panels: markings 2–20 cd/m², displays 20–200.
+    const power = Math.min(1, Math.max(0, (busVoltage - 10) / 2));
+    this.panel.material.emissive.setScalar(power * (20 + 180 * c.lights.panel) * SCENE_UNITS_PER_LUX * emissiveScale);
   }
 
   dispose(): void { this.panel.material.dispose(); }
