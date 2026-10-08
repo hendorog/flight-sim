@@ -19,13 +19,17 @@ const ROTORCRAFT: RotorcraftVisualDef = {
   skids: { halfTrack: SKID_HALF_TRACK, z: SKID_Z, front: SKID_FRONT_X, rear: SKID_REAR_X,
     crossTubes: [SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X] },
   boom: { front: [-0.86, 0, -0.48], rear: [TX, 0, TZ], radii: [0.15, 0.052] },
-  mast: { bottom: [-0.04, 0, -0.81], top: [0, 0, MAIN_HUB.z + 0.22], bottomWidth: 0.38, topWidth: 0.23 },
+  mast: { bottom: [-0.08, 0, -0.81], top: [0, 0, MAIN_HUB.z + 0.28], bottomWidth: 0.50, topWidth: 0.30 },
   fins: [
     { name: 'upperFin', axis: 'y', thickness: 0.032, outline: [[TX + 0.13, 0.055, TZ], [TX - 0.07, 0.055, TZ - 0.47], [TAIL_END_X, 0.055, TZ - 0.47], [TAIL_END_X + 0.08, 0.055, TZ]] },
-    { name: 'lowerFin', axis: 'y', thickness: 0.025, outline: [[TX + 0.12, 0.055, TZ], [TAIL_END_X + 0.08, 0.055, TZ], [TAIL_END_X + 0.05, 0.055, TZ + 0.55], [TX - 0.03, 0.055, TZ + 0.56]] },
+    { name: 'lowerFin', axis: 'y', thickness: 0.032, outline: [[TX + 0.12, 0.055, TZ], [TAIL_END_X + 0.08, 0.055, TZ], [TAIL_END_X + 0.015, 0.055, TZ + 0.55], [TX - 0.025, 0.055, TZ + 0.55]] },
+    // Later Beta II: a separate stabiliser ahead of the fins, extending to BOTH sides of the boom.
+    // POH 1-3 top view; R22 maintenance manual Fig. 4-4 (B375-2). Outline dimensions remain estimates.
     { name: 'horizontalStabiliser', axis: 'z', thickness: 0.026, outline: [[TX + 0.83, -0.49, TZ + 0.01], [TX + 0.61, -0.49, TZ + 0.01], [TX + 0.56, 0.49, TZ + 0.01], [TX + 0.83, 0.49, TZ + 0.01]] },
   ],
-  guard: [[TX + 0.57, 0.03, TZ + 0.10], [TX + 0.45, 0.03, TZ + 0.39], [TX - 0.03, 0.03, TZ + 0.65], [TAIL_END_X - 0.02, 0.03, TZ + 0.70]],
+  // Short tail skid / stinger rooted in the lower fin; not a cable hung from the forward stabiliser.
+  guard: [[TX - 0.07, 0.055, TZ + 0.52], [TX - 0.10, 0.055, TZ + 0.61],
+    [TX - 0.24, 0.055, TZ + 0.73], [TX - 0.32, 0.055, TZ + 0.75], [TX - 0.36, 0.055, TZ + 0.73]],
   panel: { centre: point(PANEL_FACE.centre), width: PANEL_FACE.width, height: PANEL_FACE.height,
     tiltBackDeg: PANEL_FACE.tiltBackDeg, canvas: PANEL_CANVAS },
   collective: { pivots: [[0.58, -0.49, 0.25], [0.58, 0.04, 0.25]], length: 0.51 },

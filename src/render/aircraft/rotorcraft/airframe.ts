@@ -5,7 +5,7 @@ import type { AirframeVisualDef, FRD } from '../airframe/types';
 import { frd, gridGeometry, MeshBatch } from '../geometry';
 import type { FuselageShape } from '../fuselageShape';
 import type { AircraftMaterials } from '../materials';
-import { boom, box, fin, pathTube, tube } from './geometry';
+import { boom, box, fin, mastFairing, pathTube, tube } from './geometry';
 
 export interface RotorcraftAirframe { group: THREE.Group; materials: THREE.Material[]; textures: THREE.Texture[] }
 
@@ -13,6 +13,8 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
   const d = def.rotorcraftVisual!;
   const batch = new MeshBatch();
   const own: THREE.Material[] = [];
+  const castMetal = new THREE.MeshStandardMaterial({ name: 'rotorcraftCastMetal', color: 0x939b9e, metalness: 0.25, roughness: 0.48 });
+  own.push(castMetal);
   const textures: THREE.Texture[] = [];
   const add = (m: THREE.Material, g: THREE.BufferGeometry): void => batch.add(m, g);
   add(mat.plainPaint, boom(d.boom.front, d.boom.rear, d.boom.radii));
@@ -40,18 +42,20 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
       add(mat.navyPaint, fin(pts, f.thickness + 0.0015, f.axis));
     }
   }
-  add(mat.darkMetal, pathTube(d.guard, 0.014));
+  add(mat.plainPaint, pathTube(d.guard, 0.016, 20));
+  add(mat.navyPaint, pathTube(d.guard.slice(2), 0.0165, 8));
   const th = d.tail.hub;
-  add(mat.aluminium, tube([th[0], 0.06, th[2]], th, 0.053, 0.038, 20));
-  add(mat.darkMetal, box([th[0] + 0.015, 0, th[2]], [0.14, 0.11, 0.12], 0.028));
+  add(castMetal, tube([th[0], 0.06, th[2]], th, 0.059, 0.035, 20));
+  add(castMetal, box([th[0] + 0.015, 0, th[2]], [0.14, 0.12, 0.13], 0.035));
+  add(mat.aluminium, tube([th[0], -0.095, th[2]], [th[0], -0.113, th[2]], 0.056, 0.056, 20));
+  for (const x of [-0.038, 0.038]) for (const z of [-0.035, 0.035])
+    add(mat.aluminium, tube([th[0] + x, -0.063, th[2] + z], [th[0] + x, -0.075, th[2] + z], 0.009, 0.009, 6));
 
-  // Tapered mast fairing, with a narrow metal shaft projecting into the swashplate.
+  // Streamlined mast cowl; the shaft, control rods and swashplate remain exposed above its shoulder.
   const m = d.mast;
-  const outline: FRD[] = [[m.bottom[0] + m.bottomWidth / 2, 0, m.bottom[2]], [m.top[0] + m.topWidth / 2, 0, m.top[2]],
-    [m.top[0] - m.topWidth / 2, 0, m.top[2]], [m.bottom[0] - m.bottomWidth / 2, 0, m.bottom[2]]];
-  add(mat.plainPaint, fin(outline, 0.21, 'y'));
+  add(mat.plainPaint, mastFairing(m.bottom, m.top, [m.bottomWidth, m.topWidth]));
   add(mat.chrome, tube(m.top, d.main.hub, 0.034));
-  for (const side of [-1, 1]) for (let i = 0; i < 5; i++) add(mat.darkMetal, box([m.top[0] - 0.055 + i * 0.023, side * 0.053, m.top[2] + 0.055], [0.008, 0.008, 0.05], 0.002));
+  for (const side of [-1, 1]) for (let i = 0; i < 5; i++) add(mat.darkMetal, box([m.top[0] - 0.07 + i * 0.023, side * 0.088, m.top[2] + 0.043], [0.006, 0.007, 0.055], 0.002));
 
   // Arched cross tubes continue beneath the belly. Toes turn up; the tube underside meets SKID_Z.
   const s = d.skids, r = 0.027;

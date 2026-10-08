@@ -4,6 +4,29 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import type { FRD } from '../airframe/types';
 import { capGeometry, frd, gridGeometry, MeshBatch } from '../geometry';
 
+/** Rounded teardrop cowl, with its broad nose ahead of the mast and a narrow trailing edge. */
+export function mastFairing(bottom: FRD, top: FRD, chords: readonly [number, number]): THREE.BufferGeometry {
+  const rows = 17, cols = 49;
+  const g = gridGeometry({ rows, cols, wrap: true,
+    position(i, j, out) {
+      const t = i / (rows - 1), a = j / (cols - 1) * Math.PI * 2;
+      const c = THREE.MathUtils.lerp(...chords, t) * (1 + 0.06 * Math.sin(Math.PI * t));
+      frd(THREE.MathUtils.lerp(bottom[0], top[0], t) + c * Math.cos(a) / 2,
+        THREE.MathUtils.lerp(bottom[1], top[1], t) + c * 0.29 * Math.sin(a) * (1 + 0.3 * Math.cos(a)),
+        THREE.MathUtils.lerp(bottom[2], top[2], t), out);
+    },
+  });
+  const batch = new MeshBatch(), dummy = new THREE.MeshBasicMaterial();
+  const p = g.getAttribute('position');
+  for (const row of [0, rows - 1]) {
+    const loop = Array.from({ length: cols - 1 }, (_, j) => new THREE.Vector3().fromBufferAttribute(p, row * cols + j));
+    batch.add(dummy, capGeometry(loop, new THREE.Vector3(0, row === 0 ? -1 : 1, 0)));
+  }
+  batch.add(dummy, g);
+  const mesh = batch.build('mastFairing').children[0] as THREE.Mesh;
+  dummy.dispose(); return mesh.geometry;
+}
+
 export function box(p: FRD, size: FRD, radius = 0.008): THREE.BufferGeometry {
   const g = new RoundedBoxGeometry(size[1], size[2], size[0], 2, radius);
   return g.translate(...frd(...p).toArray());
