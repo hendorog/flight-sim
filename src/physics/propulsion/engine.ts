@@ -201,7 +201,7 @@ export class PistonEngine implements EngineCore {
   private rate(): void {
     const def = this.def;
     this.etaI = 1;
-    const omega = (def.ratedRpm * 2 * Math.PI) / 60;
+    const omega = ((def.calibration?.rpm ?? def.ratedRpm) * 2 * Math.PI) / 60;
     const probe: EngineInput = {
       omega,
       throttle: 1,
@@ -214,6 +214,15 @@ export class PistonEngine implements EngineCore {
       oilTemperature: OIL_REFERENCE_C,
       accessoryPower: 0,
     };
+    if (def.calibration) {
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 40; i++) {
+        probe.throttle = (lo + hi) / 2;
+        for (let j = 0; j < 8; j++) this.breathe(probe);
+        if (this.manifoldPressure > def.calibration.manifoldPressure) hi = probe.throttle;
+        else lo = probe.throttle;
+      }
+    }
     // Two passes so the lagged exhaust back pressure has settled.
     this.breathe(probe);
     this.breathe(probe);
@@ -226,7 +235,7 @@ export class PistonEngine implements EngineCore {
       this.breathe(probe);
     }
     this.burn(probe, this.fuelDemand);
-    const brakeTorque = def.ratedPower / omega;
+    const brakeTorque = (def.calibration?.power ?? def.ratedPower) / omega;
     this.etaI = (brakeTorque + this.lossTorque) / this.indicatedTorque;
     this.airFlowAtRating = this.induction.state.airFlow;
     this.induction.reset(101325, 288.15);

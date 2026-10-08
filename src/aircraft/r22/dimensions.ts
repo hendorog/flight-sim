@@ -39,6 +39,12 @@ export const TAIL_HUB = {
   y: -0.17,
   z: SKID_Z - 1.62,
 } as const;
+/** ESTIMATE traced from the POH 1-3 three-view for the merged exterior. Share its planform
+ * with physics: the older independent 0.38 m² aerodynamic estimate exceeded this outline by 58%. */
+export const HORIZONTAL_STABILIZER = {
+  span: 0.98, leftChord: 0.22, rightChord: 0.27,
+  leadingX: TAIL_HUB.x + 0.83, z: TAIL_HUB.z + 0.01,
+} as const;
 /** Nose (forward tip of the cabin bubble) and aft end of the tail assembly, from FUSELAGE_LENGTH: ESTIMATE split. */
 export const NOSE_X = 1.7;
 export const TAIL_END_X = NOSE_X - FUSELAGE_LENGTH;

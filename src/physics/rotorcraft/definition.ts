@@ -1,5 +1,5 @@
 import type { Vec3 } from '../../core/math';
-import type { SpeedPlacard } from './limits';
+import type { ManifoldPlacard, SpeedPlacard } from './limits';
 
 /** SI units; rotor rotation is +1 about its upward thrust axis (CCW viewed from above). */
 export interface RotorDefinition {
@@ -18,6 +18,7 @@ export interface RotorcraftDefinition {
   /** Tachometer 100%, distinct from the governed operating speed. */
   referenceRpm: number;
   airspeedLimits: SpeedPlacard;
+  manifoldLimits?: ManifoldPlacard;
   rotation: 1 | -1;
   engineRatio: number; tailRatio: number; transmissionEfficiency: number;
   cyclicLimit: number;

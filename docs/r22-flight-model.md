@@ -1,5 +1,34 @@
 # R22 Beta II flight model
 
+## Round 2 corrections (in progress)
+
+Airborne trim now uses continuous inflow across zero disc incidence and initialises every aerodynamic
+state independently for each residual evaluation. Continuation from hover supplies a fallback Newton seed.
+The 154 kg payload / x = 0.15 regression and a sweep through 0–102 knots at named loadings and POH 2-5 CG
+corners pass. The shared pilot eye was already correct in the merged branch; an explicit integration check
+now protects it. The audio rating mismatch is presentation-owned and is untouched.
+
+The exterior's POH three-view stabilizer trace (0.98 m span, 0.22/0.27 m chords) has been moved to
+`dimensions.ts` and shared with physics. Its area is 0.2401 m²; the independent 0.38 m² physics estimate
+was 58% too large. This affected pitch trim and exhausted forward cyclic at the light/aft CG corner.
+No existing geometry constant was changed. The small `visual.ts` edit only replaces its existing numbers
+with references to that shared outline.
+
+Robinson [MM 6.002](https://shop.robinsonheli.com/wp-content/uploads/2024/11/r22_mm_6.pdf) distinguishes
+the engine's 180 hp capability from its derated ratings. The piston model now supports calibration at a
+specified MAP/RPM, and the R22 uses POH 2-11's 124 hp, 2652 rpm, 22.45 inHg at sea-level ISA. The previous
+fuel-flow estimate accidentally calibrated full-rich lean of peak (phi ≈ 0.89); full-rich is now an explicitly
+estimated phi 1.15. Intake area scales with displacement. The rated-power metadata remains 145 hp.
+
+The induced correction now includes a .9R effective induced radius and kappa 1.15, and forward flat-plate
+area is 5.26 ft², following the engineering estimates in
+[Pokhrel et al., AHS Sustainability 2015, p. 3](https://www.researchgate.net/publication/303753069_Modeling_and_Requirements_Definition_for_a_Hybrid-Electric_Powered_Helicopter).
+These are modelling estimates, not R22 flight-test measurements. Ground-effect inflow uses the
+constant-thrust exponent 3/2 and wake inclination from
+[NASA NDARC theory, §12-4.1.2](https://ntrs.nasa.gov/api/citations/20160012474/downloads/20160012474.pdf),
+including no image correction for an upward wake. The previous square-root factor understated IGE benefit.
+Quantitative ceiling/landing/circuit validation and refreshed measurements follow below when complete.
+
 This is an experimental, reduced-order helicopter model, not a flight-test-validated R22. The rework adds tail surfaces, free-hinge flapping, rotor energy and time-dependent helicopter systems to the existing rigid-body solver. The numerical checks below establish specific behavior; they do not establish complete R22 handling fidelity. In particular, a satisfactory slow autorotative touchdown has not yet been demonstrated.
 
 Open `/?aircraft=r22&scenario=runway&resume=0` for a running helicopter, `scenario=cruise` for a trimmed airborne start, or `scenario=apron` for a cold start. Exterior and panel work are separate from this physics branch.

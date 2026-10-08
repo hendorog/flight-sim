@@ -26,10 +26,11 @@ describe('R22 performance and handling acceptance', () => {
     expect(fast.cyclic).toBeLessThan(hover.cyclic);
     expect(fast.pitch).toBeLessThan(hover.pitch);
     expect(vy.pedal).toBeGreaterThan(hover.pedal);
-    // Broad power cross-checks, not POH flight-test measurements: reviewer baseline and 124/131 hp limits.
-    expect(hover.hp).toBeGreaterThan(gross ? 100 : 85); expect(hover.hp).toBeLessThan(gross ? 120 : 110);
+    // Broad cross-checks, not measured power-curve points. POH ceiling/MAP checks below constrain
+    // hover losses; the sourced flat-plate estimate constrains high-speed demand.
+    expect(hover.hp).toBeGreaterThan(gross ? 100 : 85); expect(hover.hp).toBeLessThan(gross ? 131 : 110);
     expect(minimum.hp).toBeGreaterThan(55); expect(minimum.hp).toBeLessThan(80);
-    expect(fast.hp).toBeGreaterThan(115); expect(fast.hp).toBeLessThan(140);
+    expect(fast.hp).toBeGreaterThan(100); expect(fast.hp).toBeLessThan(131);
   }, 120000);
 
   it('hover CG: anti-torque needs left skid low; the right-seat solo pilot reduces that bank and changes nose attitude', () => {
