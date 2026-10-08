@@ -5,7 +5,7 @@ import type { AirframeVisualDef, FRD } from '../airframe/types';
 import { frd, gridGeometry, MeshBatch } from '../geometry';
 import type { FuselageShape } from '../fuselageShape';
 import type { AircraftMaterials } from '../materials';
-import { boom, box, fin, pathTube, tube } from './geometry';
+import { boom, box, fin, mastFairing, pathTube, tube } from './geometry';
 
 export interface RotorcraftAirframe { group: THREE.Group; materials: THREE.Material[]; textures: THREE.Texture[] }
 
@@ -13,6 +13,10 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
   const d = def.rotorcraftVisual!;
   const batch = new MeshBatch();
   const own: THREE.Material[] = [];
+  const castMetal = new THREE.MeshStandardMaterial({ name: 'rotorcraftCastMetal', color: 0x939b9e, metalness: 0.25, roughness: 0.48 });
+  const scrollPaint = new THREE.MeshStandardMaterial({ name: 'coolingScroll', color: 0xb5b2a4, metalness: 0.12, roughness: 0.52 });
+  const framePaint = new THREE.MeshStandardMaterial({ name: 'engineFrame', color: 0x72796b, metalness: 0.18, roughness: 0.55 });
+  own.push(castMetal, scrollPaint, framePaint);
   const textures: THREE.Texture[] = [];
   const add = (m: THREE.Material, g: THREE.BufferGeometry): void => batch.add(m, g);
   add(mat.plainPaint, boom(d.boom.front, d.boom.rear, d.boom.radii));
@@ -40,18 +44,20 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
       add(mat.navyPaint, fin(pts, f.thickness + 0.0015, f.axis));
     }
   }
-  add(mat.darkMetal, pathTube(d.guard, 0.014));
+  add(mat.plainPaint, pathTube(d.guard, 0.016, 20));
+  add(mat.navyPaint, pathTube(d.guard.slice(2), 0.0165, 8));
   const th = d.tail.hub;
-  add(mat.aluminium, tube([th[0], 0.06, th[2]], th, 0.053, 0.038, 20));
-  add(mat.darkMetal, box([th[0] + 0.015, 0, th[2]], [0.14, 0.11, 0.12], 0.028));
+  add(castMetal, tube([th[0], 0.06, th[2]], th, 0.059, 0.035, 20));
+  add(castMetal, box([th[0] + 0.015, 0, th[2]], [0.14, 0.12, 0.13], 0.035));
+  add(mat.aluminium, tube([th[0], -0.095, th[2]], [th[0], -0.113, th[2]], 0.056, 0.056, 20));
+  for (const x of [-0.038, 0.038]) for (const z of [-0.035, 0.035])
+    add(mat.aluminium, tube([th[0] + x, -0.063, th[2] + z], [th[0] + x, -0.075, th[2] + z], 0.009, 0.009, 6));
 
-  // Tapered mast fairing, with a narrow metal shaft projecting into the swashplate.
+  // Streamlined mast cowl; the shaft, control rods and swashplate remain exposed above its shoulder.
   const m = d.mast;
-  const outline: FRD[] = [[m.bottom[0] + m.bottomWidth / 2, 0, m.bottom[2]], [m.top[0] + m.topWidth / 2, 0, m.top[2]],
-    [m.top[0] - m.topWidth / 2, 0, m.top[2]], [m.bottom[0] - m.bottomWidth / 2, 0, m.bottom[2]]];
-  add(mat.plainPaint, fin(outline, 0.21, 'y'));
+  add(mat.plainPaint, mastFairing(m.bottom, m.top, [m.bottomWidth, m.topWidth]));
   add(mat.chrome, tube(m.top, d.main.hub, 0.034));
-  for (const side of [-1, 1]) for (let i = 0; i < 5; i++) add(mat.darkMetal, box([m.top[0] - 0.055 + i * 0.023, side * 0.053, m.top[2] + 0.055], [0.008, 0.008, 0.05], 0.002));
+  for (const side of [-1, 1]) for (let i = 0; i < 5; i++) add(mat.darkMetal, box([m.top[0] - 0.07 + i * 0.023, side * 0.088, m.top[2] + 0.043], [0.006, 0.007, 0.055], 0.002));
 
   // Arched cross tubes continue beneath the belly. Toes turn up; the tube underside meets SKID_Z.
   const s = d.skids, r = 0.027;
@@ -68,13 +74,18 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
 
   // Exposed O-360: four finned cylinders, central crankcase, sump, cooling fan/shroud and welded frame.
   // Detail dimensions are visual estimates; there is no simulated engine or fan animation here.
-  add(mat.aluminium, box([-0.50, 0, 0.09], [0.56, 0.29, 0.29], 0.07));
-  add(mat.darkMetal, box([-0.49, 0, 0.32], [0.32, 0.25, 0.14], 0.03));
+  add(castMetal, box([-0.50, 0, 0.09], [0.56, 0.29, 0.29], 0.07));
+  const sump = new THREE.SphereGeometry(1, 16, 10); sump.scale(0.135, 0.08, 0.22);
+  add(castMetal, sump.translate(...frd(-0.49, 0, 0.265).toArray()));
+  add(castMetal, box([-0.42, 0.03, 0.37], [0.15, 0.14, 0.10], 0.03));
+  add(mat.black, pathTube([[-0.42, 0.03, 0.39], [-0.32, 0.10, 0.42], [-0.22, 0.22, 0.34]], 0.034, 12));
   for (const side of [-1, 1]) {
     for (const x of [-0.33, -0.65]) {
       add(mat.darkMetal, tube([x, side * 0.10, 0.02], [x, side * 0.39, 0.02], 0.10, 0.085));
-      for (let i = 0; i < 9; i++) add(mat.aluminium, tube([x, side * (0.17 + i * 0.024), 0.02], [x, side * (0.18 + i * 0.024), 0.02], 0.101, 0.101));
-      add(mat.aluminium, box([x, side * 0.40, 0.02], [0.18, 0.055, 0.17], 0.035));
+      for (let i = 0; i < 8; i++) add(castMetal, tube([x, side * (0.17 + i * 0.027), 0.02], [x, side * (0.178 + i * 0.027), 0.02], 0.101, 0.101));
+      add(castMetal, box([x, side * 0.40, 0.02], [0.18, 0.055, 0.17], 0.035));
+      add(scrollPaint, box([x, side * 0.29, -0.09], [0.22, 0.24, 0.035], 0.015));
+      add(mat.darkMetal, pathTube([[x, side * 0.40, -0.04], [x + 0.04, side * 0.34, -0.16], [-0.22, side * 0.13, -0.12]], 0.005, 10));
       add(mat.exhaust, pathTube([[x, side * 0.32, 0.10], [x, side * 0.34, 0.23], [-0.67, side * 0.26, 0.34]], 0.021));
     }
     for (const [a, b] of [
@@ -82,16 +93,37 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
       [[-0.95, side * 0.28, 0.39], [-0.83, side * 0.24, -0.42]],
       [[-0.08, side * 0.44, 0.45], [-0.83, side * 0.24, -0.42]],
       [[-0.95, side * 0.28, 0.39], [-0.13, side * 0.43, -0.07]],
-    ] as [FRD, FRD][]) add(mat.darkMetal, tube(a, b, 0.013));
+    ] as [FRD, FRD][]) add(framePaint, tube(a, b, 0.016));
   }
-  add(mat.exhaust, tube([-0.36, -0.32, 0.37], [-0.87, -0.32, 0.37], 0.045));
-  add(mat.darkMetal, tube([-0.87, 0, 0.01], [-1.04, 0, 0.01], 0.23, 0.23, 32));
-  const fanRim = new THREE.TorusGeometry(0.215, 0.027, 8, 32);
-  add(mat.aluminium, fanRim.translate(...frd(-1.045, 0, 0.01).toArray()));
-  for (let i = 0; i < 18; i++) {
-    const a = i * Math.PI / 9;
-    add(mat.aluminium, tube([-1.05, 0.06 * Math.cos(a), 0.01 + 0.06 * Math.sin(a)], [-1.05, 0.20 * Math.cos(a + 0.16), 0.01 + 0.20 * Math.sin(a + 0.16)], 0.007));
+  add(mat.exhaust, tube([-0.67, -0.32, 0.33], [-0.67, 0.32, 0.33], 0.062));
+  add(mat.exhaust, pathTube([[-0.67, -0.27, 0.33], [-0.85, -0.31, 0.32], [-1.05, -0.31, 0.31]], 0.029, 16));
+  add(mat.black, tube([-1.051, -0.31, 0.31], [-1.054, -0.31, 0.31], 0.023));
+
+  // Fibreglass scroll with a rolled inlet, recessed fan face and an outlet into the cylinder baffles.
+  // MM Fig. 6-5B and engine-rear photographs: the fan is not an open bicycle-spoke wheel.
+  add(scrollPaint, gridGeometry({ rows: 17, cols: 49, wrap: true,
+    position(i, j, out) {
+      const p = i / 16 * Math.PI * 2, a = j / 48 * Math.PI * 2;
+      const r = 0.228 + 0.047 * Math.cos(p) + 0.012 * Math.sin(a);
+      frd(-1.015 - 0.085 * Math.sin(p), r * Math.cos(a), 0.01 + r * Math.sin(a), out);
+    },
+  }));
+  add(scrollPaint, box([-0.90, 0.22, -0.16], [0.23, 0.23, 0.18], 0.065));
+  add(castMetal, tube([-0.94, 0, 0.01], [-1.036, 0, 0.01], 0.18, 0.18, 32));
+  add(castMetal, tube([-1.037, 0, 0.01], [-1.067, 0, 0.01], 0.074, 0.033, 24));
+  add(mat.aluminium, tube([-1.065, 0, 0.01], [-1.083, 0, 0.01], 0.027, 0.027, 6));
+  for (let i = 0; i < 12; i++) {
+    const a = i * Math.PI / 6;
+    add(mat.aluminium, tube([-1.037, 0.153 * Math.cos(a), 0.01 + 0.153 * Math.sin(a)], [-1.046, 0.153 * Math.cos(a), 0.01 + 0.153 * Math.sin(a)], 0.007, 0.007, 6));
   }
+  // Upper driven sheave / lower drive sheave and two double V-belts, partly masked by the aft cowl.
+  for (const [z, r] of [[-0.37, 0.115], [0.01, 0.135]]) {
+    add(castMetal, tube([-0.86, 0, z], [-0.77, 0, z], r, r, 24));
+    add(mat.darkMetal, tube([-0.775, 0, z], [-0.76, 0, z], r * 0.9, r * 0.9, 24));
+  }
+  for (const x of [-0.785, -0.825]) for (const offset of [-0.006, 0.006])
+    add(mat.black, pathTube([[x + offset, -0.13, 0.01], [x + offset, -0.112, -0.37], [x + offset, 0, -0.484],
+      [x + offset, 0.112, -0.37], [x + offset, 0.13, 0.01], [x + offset, 0, 0.145], [x + offset, -0.13, 0.01]], 0.0055, 32));
   add(mat.darkMetal, tube([-0.42, 0, -0.64], [-0.92, 0, -1.14], 0.008, 0.004));
 
   // Windscreen centre post follows the loft from nose to roof; no opaque strip crosses the pilot's view.
