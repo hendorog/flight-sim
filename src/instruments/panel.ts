@@ -142,7 +142,9 @@ export class InstrumentPanel {
       mg.fillRect(0, 0, w, h);
       for (const c of this.components) c.paintLightMask?.(mg);
       const canvas = makeCanvas(w, h);
-      const g = context2d(canvas);
+      // CPU-backed composition avoids Chrome/ANGLE Vulkan turning consecutive canvas multiply draws
+      // black. Keep the main panel accelerated; only the small dirty light rectangles use this surface.
+      const g = context2d(canvas, { willReadFrequently: true });
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = this.texture.anisotropy;

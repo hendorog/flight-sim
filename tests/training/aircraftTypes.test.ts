@@ -27,11 +27,11 @@ const CHECKLIST_IDS: readonly ChecklistId[] = [
 const tel = new Telemetry();
 
 /** Each aircraft id with its definition's engine count and placeholder flag and its presentation's school data. */
-async function loadAll(): Promise<{ id: string; engines: 1 | 2; placeholder: boolean; type: AircraftTypeDef }[]> {
+async function loadAll(): Promise<{ id: string; engines: 1 | 2; rotorcraft: boolean; placeholder: boolean; type: AircraftTypeDef }[]> {
   return Promise.all(
     AIRCRAFT_IDS.map(async (id) => {
       const [def, pres] = await Promise.all([loadAircraft(id), loadPresentation(id)]);
-      return { id, engines: def.engineCount, placeholder: def.placeholder === true, type: pres.training };
+      return { id, engines: def.engineCount, rotorcraft: !!def.rotorcraft, placeholder: def.placeholder === true, type: pres.training };
     }),
   );
 }
@@ -48,11 +48,25 @@ describe('aircraft type data, every type (generic)', () => {
     expect(getAircraftType()).toBe(C172S);
   });
 
-  it('V-speeds: all 22 finite and in order; the 11 settings finite', { timeout: 30_000 }, async () => {
-    for (const { id, type } of await loadAll()) {
+  it('V-speeds: applicable values finite and in order; unavailable helicopter slots explicit; settings finite', { timeout: 30_000 }, async () => {
+    for (const { id, type, rotorcraft } of await loadAll()) {
       const v = type.vspeeds;
       expect(Object.keys(v).sort(), id).toEqual([...VSPEED_IDS].sort());
-      for (const k of VSPEED_IDS) expect(Number.isFinite(v[k]) && v[k] > 0, `${id}.${k}`).toBe(true);
+      for (const k of VSPEED_IDS) {
+        const unavailable = type.unavailableVSpeeds?.includes(k) ?? false;
+        if (unavailable) { expect(rotorcraft, `${id}.${k}`).toBe(true); expect(v[k], `${id}.${k}`).toBe(0); }
+        else expect(Number.isFinite(v[k]) && v[k] > 0, `${id}.${k}`).toBe(true);
+      }
+      expect(Object.keys(type.settings), id).toHaveLength(11);
+      for (const [k, n] of Object.entries(type.settings)) expect(Number.isFinite(n), `${id}.${k}`).toBe(true);
+      // A helicopter has no wing stall, rotation, flap or structural-cruise speeds; airplane ordering is inapplicable.
+      if (rotorcraft) {
+        for (const k of ['Vs0', 'Vs1', 'Vr', 'Vfe10', 'VfeFull', 'Vno'] as const) expect(type.unavailableVSpeeds, id).toContain(k);
+        expect(v.Vy, id).toBeGreaterThan(0);
+        expect(v.Vne, id).toBeGreaterThan(v.Vy);
+        expect(type.school?.syllabus, id).toBe(false);
+        continue;
+      }
       expect(v.Vs0, id).toBeLessThanOrEqual(v.Vs1);
       expect(v.Vs1, id).toBeLessThan(v.Vx);
       expect(v.Vx, id).toBeLessThanOrEqual(v.Vy);
@@ -74,10 +88,19 @@ describe('aircraft type data, every type (generic)', () => {
   });
 
   it('flap detents: levers monotone from 0 to 1, and flapLeverFor / flapDegForLever round-trip', { timeout: 30_000 }, async () => {
-    for (const { id, type } of await loadAll()) {
+    for (const { id, type, rotorcraft } of await loadAll()) {
       const d = type.flapDetentsDeg;
       expect(d[0], id).toBe(0);
       expect(type.flapLeverForDeg[d[0]], id).toBe(0);
+      if (rotorcraft) {
+        expect(d, id).toEqual([0]);
+        expect(type.flapLeverForDeg, id).toEqual({ 0: 0 });
+        for (const value of [0, 0.5, 1, 10, 30]) {
+          expect(flapLeverFor(type, value), id).toBe(0);
+          expect(flapDegForLever(type, value), id).toBe(0);
+        }
+        continue;
+      }
       expect(type.flapLeverForDeg[d[d.length - 1]], id).toBe(1);
       for (let i = 1; i < d.length; i++) {
         expect(d[i], id).toBeGreaterThan(d[i - 1]);
@@ -107,9 +130,10 @@ describe('aircraft type data, every type (generic)', () => {
   });
 
   it('plain JSON; MEP iff two engines; only school types say the syllabus may be flown', { timeout: 30_000 }, async () => {
-    for (const { id, engines, type } of await loadAll()) {
+    for (const { id, engines, rotorcraft, type } of await loadAll()) {
       expect(JSON.parse(JSON.stringify(type)), id).toEqual(type);
       expect(type.classRating === 'MEP', id).toBe(engines === 2);
+      expect(type.classRating === null, id).toBe(rotorcraft);
       if (type.systems) expect(type.systems.engines, id).toBe(engines);
       if (type.school?.syllabus) expect(SCHOOL_AIRCRAFT, id).toContain(type.id);
       if (!schoolSupports(type.id)) expect(type.school?.reason, `${id}: the school's reason`).toBeTruthy();

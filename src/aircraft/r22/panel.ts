@@ -33,7 +33,7 @@ export const R22_TACH_MARKS: RotorTachMarkings = {
   rotorRedLines: [90, 110],
 };
 const scale = (label: string, min: number, max: number, majors: number[], minorStep: number, read: ScaleDef['read'], more: Partial<ScaleDef> = {}): ScaleDef =>
-  ({ label, min, max, majors, minorStep, read, ...more });
+  ({ label, min, max, majors, minorStep, read, numbers: true, ...more });
 export const R22_MAP_SCALE = scale('', 10, 35, [10, 15, 20, 25, 30, 35], 1, r => r.engines[0].manifoldInHg,
   { arcs: [{ from: V.mapYellowMin, to: V.mapMax, color: 'yellow' }], redLines: [V.mapMax] });
 export const R22_CAT_SCALE = scale('', -40, 50, [-40, -20, 0, 20, 40], 5, r => r.carbAirTempC,
@@ -62,16 +62,16 @@ export const R22_PANEL: PanelDef = {
     { kind: 'blank', id: 'optional', at: [COL[0], ROW[1]] },
     { kind: 'altimeter', id: 'altimeter', at: [COL[1], ROW[1]] },
     single('map', [COL[2], ROW[1]], 'MANIFOLD', 'IN HG', 'large', R22_MAP_SCALE),
-    { kind: 'dual', id: 'fuel', at: [95, 180], seed: 323, title: ['FUEL QTY', 'US GAL'],
+    { kind: 'dual', id: 'fuel', at: [95, 180], seed: 323, title: ['FUEL', 'US GAL'],
       left: scale('MAIN', 0, V.mainUsableGal, [0, 8, 16.9], 2, r => r.fuelGal[0]),
       right: scale('AUX', 0, V.auxUsableGal, [0, 4, 9.4], 1, r => r.fuelGal[1]) },
-    { kind: 'dual', id: 'oil', at: [95, 335], seed: 324, title: ['OIL', 'TEMP / PRESS'],
+    { kind: 'dual', id: 'oil', at: [95, 335], seed: 324, title: ['OIL', '°F / PSI'],
       left: scale('°F', 50, 250, [75, 150, 245], 25, r => r.oilTempF,
         { arcs: [{ from: 75, to: 245, color: 'green' }], redLines: [245] }),
       right: scale('PSI', 0, 120, [0, 55, 95, 115], 10, r => r.oilPressurePsi,
         { arcs: [{ from: 25, to: 55, color: 'yellow' }, { from: 55, to: 95, color: 'green' },
           { from: 95, to: 115, color: 'yellow' }], redLines: [25, 115] }) },
-    { kind: 'dual', id: 'chtAmps', at: [95, 490], seed: 325, title: ['CHT / AMPS', ''],
+    { kind: 'dual', id: 'chtAmps', at: [95, 490], seed: 325, title: ['CHT', 'AMPS'],
       left: scale('°F', 0, 550, [0, 200, 500], 50, r => r.engines[0].chtF,
         { arcs: [{ from: 200, to: 500, color: 'green' }], redLines: [500] }),
       right: scale('A', -60, 60, [-60, 0, 60], 20, r => r.ammeterAmps) },

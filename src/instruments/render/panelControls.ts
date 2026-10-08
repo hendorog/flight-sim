@@ -24,6 +24,7 @@ export class ConsoleControl implements PanelComponent {
     const pulled = this.latch.get(0);
     knob(g, x, y, d.kind === 'pullKnob' ? 16 + 3 * pulled : 11, d.kind === 'pullKnob' ? d.color : '#deded5');
     if (d.kind === 'pullKnob') {
+      g.fillStyle = d.color; g.beginPath(); g.arc(x, y, 12 + 2 * pulled, 0, Math.PI * 2); g.fill();
       centredText(g, pulled > 0.95 ? 'PULL' : 'PUSH', x, y, 6, '#fff');
       if (d.guard) {
         const closed = this.latch.get(1) === 1;

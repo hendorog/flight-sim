@@ -41,12 +41,13 @@ export const R22_UI: UiProfile = {
     levers: [
       { label: 'COLL', read: c => c.collective ?? 0 }, { label: 'THR', read: c => c.throttle },
       { label: 'MIX', read: c => c.mixture, style: 'mixture' }, { label: 'CARB', read: c => c.carbHeat },
+      { label: 'GOV', read: c => c.rotorGovernor ? 1 : 0,
+        text: (c, s) => !c.rotorGovernor ? 'OFF' : s.rotorcraft?.governorActive ? 'ACTIVE' : 'ARMED' },
     ],
     readouts: [
       { label: 'NR', text: s => `${((s.rotorcraft?.rotorRpm ?? 0) / V.rotorRpm100 * 100).toFixed(1)}%${s.rotorcraft?.lowRpmHorn ? ' LOW' : ''}` },
       { label: 'ENG', text: s => `${(s.engine.rpm / V.engineRpm100 * 100).toFixed(1)}%` },
       { label: 'MP', text: s => `${s.engine.manifoldPressure.toFixed(1)} inHg` },
-      { label: 'GOV', text: s => s.rotorcraft?.governorActive ? 'ACTIVE' : 'INACTIVE' },
     ],
   },
   hints: [
