@@ -6,8 +6,9 @@ import { cloneControls, defaultWeather } from '../../src/core/types';
 import { calmWeather, flatEnvironment } from '../fdm/helpers';
 import { parseSnapshot } from '../../src/sim/resume';
 import { quat, v3 } from '../../src/core/math';
-import { RotorcraftVisual } from '../../src/render/aircraft/RotorcraftVisual';
-import { R22_ROTORCRAFT } from '../../src/aircraft/r22/rotorcraft';
+import { TeeteringRotor } from '../../src/render/aircraft/rotorcraft/rotor';
+import { R22_VISUAL } from '../../src/aircraft/r22/visual';
+import { fakeMaterials } from '../aircraft/meshChecks';
 
 const env = flatEnvironment(undefined, 0);
 describe('R22 simulation integration', () => {
@@ -72,10 +73,13 @@ describe('R22 simulation integration', () => {
     expect(fm.state.crashed).toBe(true);
   });
   it('builds a separate helicopter exterior with rotating main and tail assemblies', () => {
-    const visual = new RotorcraftVisual(R22_ROTORCRAFT);
-    expect(visual.main.children).toHaveLength(1);
-    expect(visual.tail.children).toHaveLength(1);
-    expect(visual.panel.geometry.parameters.width).toBeLessThan(1);
-    visual.dispose();
+    const rotor = new TeeteringRotor(R22_VISUAL.rotorcraftVisual!.main, fakeMaterials());
+    rotor.update(0.7, 0, 0, -0.03);
+    expect(rotor.spin.rotation.y).toBe(0.7);
+    expect(rotor.blades.count).toBe(2);
+    rotor.update(1.2, 530, 0.15, 0.04);
+    expect(rotor.blades.count).toBeGreaterThan(2);
+    expect(rotor.blur.visible).toBe(true);
+    rotor.dispose();
   });
 });

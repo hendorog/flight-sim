@@ -44,12 +44,15 @@ void main() {
   vec2 p = vBody;
   float h = max(uHeight, 0.0);
   float occ = 0.0;
-  // Tyre contact creases.
+  ${shadow.skids ? `// Continuous contact creases under the two skid tubes.
+  float along = max(max(p.x - ${glsl(shadow.skids.front)}, ${glsl(shadow.skids.rear)} - p.x), 0.0);
+  float across = abs(p.y) - ${glsl(shadow.skids.halfTrack)};
+  occ = 0.50 * blob(vec2(along, across), vec2(0.12, 0.07 + h * 0.10)) * exp(-h * 3.0);` : `// Tyre contact creases.
   for (int i = 0; i < 3; i++) {
     vec3 w = uWheels[i];
     occ = max(occ, w.z * 0.55 * blob(p - w.xy, vec2(0.23, 0.12)));
     occ = max(occ, w.z * 0.25 * blob(p - w.xy, vec2(0.5, 0.3)));
-  }
+  }`}
   // Fuselage (belly ~0.8 m up): a soft band from the cowling to the tail cone.
   float spread = 1.0 + h * 0.25;
   float fus = blob(vec2(max(abs(p.x + ${glsl(-shadow.fuselage[0])}) - ${glsl(shadow.fuselage[1])}, 0.0), p.y), vec2(0.9, ${glsl(shadow.fuselage[2])}) * spread);
