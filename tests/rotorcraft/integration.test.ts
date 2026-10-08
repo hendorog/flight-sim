@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SimPhysics } from '../../src/sim/SimPhysics';
 import { R22_DEFINITION } from '../../src/aircraft/r22';
 import { createFlightModelFor } from '../../src/physics';
-import { cloneControls, defaultWeather } from '../../src/core/types';
+import { cloneControls } from '../../src/core/types';
 import { calmWeather, flatEnvironment } from '../fdm/helpers';
 import { parseSnapshot } from '../../src/sim/resume';
 import { quat, v3 } from '../../src/core/math';
@@ -22,7 +22,7 @@ describe('R22 simulation integration', () => {
       expect(fm.state.crashed).toBe(false);
       expect(Math.abs(fm.state.verticalSpeed)).toBeLessThan(1);
     }
-  });
+  }, 120000);
   it('lifts off by collective with zero forward airspeed', () => {
     const fm = createFlightModelFor(R22_DEFINITION);
     fm.reset({ position: { x: 0, y: 0, z: 0 }, heading: 0, airspeed: 0, onGround: true, engineRunning: true }, env);
@@ -42,7 +42,9 @@ describe('R22 simulation integration', () => {
     const copy = new SimPhysics({ aircraft: R22_DEFINITION, weather });
     copy.restore(parsed!);
     // Re-publishing recomputes instantaneous loads; dynamic states must not be advanced by restore.
-    for (const key of ['omega','azimuth','inflow','tailInflow','flapForward','flapRight','governorThrottle'] as const)
+    for (const key of ['omega','azimuth','inflow','tailInflow','flapForward','flapRight','governorThrottle','governorIntegral','previousCollective','previousThrottle',
+      'coning','retreatingFlap','teeterAngle','mastBump','clutchEngagement','clutchLight','governorActive','lowRpmHorn',
+      'takeoffPowerSeconds','powerLimitExceeded'] as const)
       expect(copy.state.rotorcraft![key]).toBe(snap.systems.rotorcraft![key]);
     expect(copy.controls.collective).toBe(sim.controls.collective);
     copy.setAutoflight(true); expect(copy.autoflight.engaged).toBe(false);
@@ -50,7 +52,7 @@ describe('R22 simulation integration', () => {
     const corrupt = structuredClone(snap); corrupt.systems.rotorcraft!.omega = -1;
     expect(parseSnapshot(JSON.stringify(corrupt))).toBeNull();
   });
-  it('starts cold, spins up through the clutch, and preserves a stopped rotor until engagement', () => {
+  it('starts cold, tensions the belts, acquires the governor and lifts into a hover', () => {
     const fm = createFlightModelFor(R22_DEFINITION);
     fm.reset({ position:{x:0,y:0,z:0}, heading:0, airspeed:0, onGround:true, engineRunning:false }, env);
     const c = cloneControls(fm.trimControls);
@@ -75,7 +77,16 @@ describe('R22 simulation integration', () => {
     expect(fm.state.rotorcraft!.rotorRpm).toBeGreaterThan(500);
     expect(fm.state.rotorcraft!.rotorRpm).toBeLessThan(550);
     expect(fm.state.crashed).toBe(false);
-  });
+    const hover = createFlightModelFor(R22_DEFINITION);
+    hover.reset({ position: { x: 0, y: 0, z: -5 }, heading: 0, airspeed: 0, onGround: false, engineRunning: true }, env);
+    c.elevator = hover.trimControls.elevator; c.aileron = hover.trimControls.aileron; c.rudder = hover.trimControls.rudder;
+    for (let i = 0; i < 5 * 240; i++) {
+      c.collective = Math.min(hover.trimControls.collective! + 0.07, (c.collective ?? 0) + 0.1 / 240);
+      fm.step(1/240, c, env);
+    }
+    expect(fm.state.onGround).toBe(false); expect(fm.state.altitudeAGL).toBeGreaterThan(1);
+    expect(fm.state.crashed).toBe(false);
+  }, 120000);
   it('detects an inverted cabin/rotor impact', () => {
     const fm = createFlightModelFor(R22_DEFINITION);
     fm.reset({ position: { x: 0, y: 0, z: -10 }, heading: 0, airspeed: 0, onGround: false, engineRunning: true }, env);

@@ -1,7 +1,8 @@
 import { clamp } from '../../core/math';
 import type { RotorDefinition } from './definition';
 
-export interface RotorLoads { thrust: number; torque: number; inPlane: number; stalledFraction: number; coningMoment: number }
+export interface RotorLoads { thrust: number; torque: number; inPlane: number; stalledFraction: number;
+  coningMoment: number; stallMoment: number }
 /** Azimuth-averaged blade elements, including reverse flow and signed aerodynamic shaft torque.
  * axial is aircraft velocity along thrust axis, positive climbing; inflow is wake velocity opposite thrust.
  * A driving region in descent has negative torque: autorotation draws energy from the air, never an RPM servo.
@@ -9,7 +10,7 @@ export interface RotorLoads { thrust: number; torque: number; inPlane: number; s
  */
 export function bladeElements(d: RotorDefinition, omega: number, pitch: number, axial: number,
   inPlaneSpeed: number, inflow: number, density: number, radial = 12, azimuthal = 16, teetering = false): RotorLoads {
-  let thrust = 0, torque = 0, inPlane = 0, stalled = 0, coningMoment = 0;
+  let thrust = 0, torque = 0, inPlane = 0, stalled = 0, coningMoment = 0, stallMoment = 0;
   const tip = Math.max(omega * d.radius, 1), mu = inPlaneSpeed / tip;
   // Free first-harmonic flapping unloads the advancing side. Equivalent feathering in disc axes
   // cancels the first lift moment in linear theory; section stall then breaks that balance naturally.
@@ -36,13 +37,17 @@ export function bladeElements(d: RotorDefinition, omega: number, pitch: number, 
       const normal = lift * Math.cos(phi) - drag * Math.sin(phi);
       thrust += normal;
       coningMoment += normal * r;
+      // Loss on the lifting outer retreating blade leaves a first-harmonic moment. It drives flapping,
+      // not a rigid-hub bending torque. Reverse-flow root elements are excluded from this stall measure.
+      if (teetering && sin < 0 && r > 0.5 * d.radius && ut > 0 && linear > d.maxCl)
+        stallMoment += (lift - scale * linear) * Math.cos(phi) * r * sin;
       const tangential = lift * Math.sin(phi) + drag * Math.cos(phi);
       torque += tangential * r;
       inPlane += tangential * sin;
       if (stall) stalled++;
     }
   }
-  return { thrust, torque, inPlane, stalledFraction: stalled / (radial * azimuthal), coningMoment };
+  return { thrust, torque, inPlane, stalledFraction: stalled / (radial * azimuthal), coningMoment, stallMoment };
 }
 
 /** Uniform momentum inflow. Relaxing this target gives dynamic inflow and translational lift.

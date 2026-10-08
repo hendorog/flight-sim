@@ -379,7 +379,13 @@ export class EngineUnit {
       shaftAir.z = tilt[0].z * air.x + tilt[1].z * air.y + tilt[2].z * air.z;
     }
     const pitch = governor ? governor.pitch : this.fixedPitch;
-    const prop = this.propeller.evaluate(shaftAir, omega, atm.density, atm.speedOfSound, pitch);
+    // External shafts (helicopter transmission) carry no compatibility propeller aerodynamics.
+    const prop = this.externalDrive ? this.propeller.loads : this.propeller.evaluate(shaftAir, omega, atm.density, atm.speedOfSound, pitch);
+    if (this.externalDrive) {
+      prop.thrust = prop.torque = prop.advanceRatio = prop.axialSpeed = 0;
+      prop.inPlaneForce.x = prop.inPlaneForce.y = prop.inPlaneForce.z = 0;
+      prop.hubMoment.x = prop.hubMoment.y = prop.hubMoment.z = 0;
+    }
     this.lastAir = shaftAir;
     this.lastDensity = atm.density;
     this.lastSoundSpeed = atm.speedOfSound;

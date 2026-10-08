@@ -87,14 +87,17 @@ export class Rotorcraft {
     const skew = speed / (Math.hypot(speed, s.inflow - hubAir.z) + Math.abs(s.inflow - hubAir.z) + 1);
     const lateral = d.rotation * (4 / 3 * mu * s.coning + 0.6 * skew * s.inflow / tip) / (1 + 0.5 * mu * mu);
     const ux = speed > 0 ? hubAir.x / speed : 0, uy = speed > 0 ? hubAir.y / speed : 0;
-    const targetForward = -c.elevator * d.cyclicLimit - blowback * ux - lateral * uy;
-    const targetRight = c.aileron * d.cyclicLimit - blowback * uy + lateral * ux;
-    // Lock-number scaling: lower density / rotor speed slows the free teeter response.
-    const tau = d.flapTime * d.nominalRpm / Math.max(100, s.rotorRpm) * 1.225 / Math.max(density, 0.3);
+    const cyclicGain = (1 + 1.5 * mu * mu) / Math.max(0.5, 1 - 0.5 * mu * mu);
+    const targetForward = -c.elevator * d.cyclicLimit * cyclicGain - (blowback + s.retreatingFlap) * ux - lateral * uy;
+    const targetRight = c.aileron * d.cyclicLimit - (blowback + s.retreatingFlap) * uy + lateral * ux;
+    // Averaged first-harmonic free-hinge equation: time constant 16/(Lock number × rotor speed).
+    // Blade flapping inertia is half the polar inertia for this two-blade rotor. No fitted body damping.
+    const lock = density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 / (d.main.inertia / d.main.blades);
+    const tau = 16 / Math.max(lock * s.omega, 4);
     if (dt > 0) {
       const lag = 1 - Math.exp(-dt / tau);
-      s.flapForward += (targetForward - s.flapForward + b.angularVelocity.y * tau) * lag;
-      s.flapRight += (targetRight - s.flapRight - b.angularVelocity.x * tau) * lag;
+      s.flapForward += (targetForward - s.flapForward + (b.angularVelocity.y + b.angularVelocity.z * s.flapRight) * tau) * lag;
+      s.flapRight += (targetRight - s.flapRight - (b.angularVelocity.x + b.angularVelocity.z * s.flapForward) * tau) * lag;
       s.teeterAngle = Math.atan(Math.hypot(s.flapForward, s.flapRight));
       if (s.rotorRpm > 0.5 * d.referenceRpm && s.teeterAngle > d.teeterLimit) s.mastBump = true;
     }
@@ -123,8 +126,11 @@ export class Rotorcraft {
     if (dt > 0) {
       const coneTarget = main.coningMoment / Math.max(d.main.inertia * s.omega * s.omega, 1);
       s.coning += (clamp(coneTarget, -0.15, 0.3) - s.coning) * (1 - Math.exp(-dt / tau));
+      const stallTarget = 16 * main.stallMoment /
+        Math.max(density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 * s.omega ** 2, 1);
+      s.retreatingFlap += (clamp(stallTarget, 0, 0.2) - s.retreatingFlap) * (1 - Math.exp(-dt / tau));
       const inflowTau = clamp(d.main.radius / Math.max(2 * vh, 1), 0.06, 1.5);
-      s.inflow += (inflowTarget(main.thrust, density, d.main.radius, axial, horizontal) * ge - s.inflow) * (1 - Math.exp(-dt / inflowTau));
+      s.inflow += (inflowTarget(main.thrust, density, d.main.radius, axial, horizontal) * ge * (d.main.inducedFactor ?? 1) - s.inflow) * (1 - Math.exp(-dt / inflowTau));
       s.tailInflow += (inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation,
         tailHorizontal) - s.tailInflow) * (1 - Math.exp(-dt / 0.08));
     }
@@ -146,13 +152,14 @@ export class Rotorcraft {
     return this.loads;
   }
   /** Converge the slow aerodynamic states at a held pose/RPM for the numerical trim solver. */
-  settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs): ForceMoment {
+  settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true): ForceMoment {
     const s = this.state, d = this.def;
+    if (!powered) s.driveTorque = 0;
     s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit;
     s.inflow = 5; s.tailInflow = 5;
     for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);
     s.mastBump = false;
-    s.driveTorque = s.torque;
+    s.driveTorque = powered ? s.torque : 0;
     return this.compute(b, wind, density, height, c, 0);
   }
 }

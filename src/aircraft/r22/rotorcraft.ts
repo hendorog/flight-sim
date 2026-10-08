@@ -1,5 +1,6 @@
 import { DEG, HP } from '../../core/math';
 import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
+import { R22_VNE } from './limits';
 import { MAIN_HUB, MAIN_ROTOR_RADIUS, TAIL_HUB, TAIL_ROTOR_RADIUS,
   SKID_HALF_TRACK, SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, SKID_Z } from './dimensions';
 
@@ -8,15 +9,17 @@ import { MAIN_HUB, MAIN_ROTOR_RADIUS, TAIL_HUB, TAIL_ROTOR_RADIUS,
 export const R22_ROTORCRAFT: RotorcraftDefinition = {
   // POH 1-6: 100% = 510 / 2550 rpm; normal operation at 104% (1-5).
   nominalRpm: 510 * 1.04, referenceRpm: 510, rotation: 1, engineRatio: 5, tailRatio: 47 / 11 * 1.5,
-  transmissionEfficiency: 0.94, cyclicLimit: 8 * DEG, flapTime: 0.08,
+  airspeedLimits: R22_VNE,
+  transmissionEfficiency: 0.94, cyclicLimit: 10.75 * DEG,
   // Stop angle, actuator time, torque capacity and throttle linkage gains are engineering estimates.
   teeterLimit: 12 * DEG,
   systems: { clutchSeconds: 45, beltTorque: 520, correlator: 0.7, governorRate: 0.3,
     continuousPower: 124 * HP, takeoffPower: 131 * HP, takeoffSeconds: 300 },
   main: { radius: MAIN_ROTOR_RADIUS, rootCutout: 0.75, chord: 0.18923, blades: 2,
     // R22 MM 10.122: pitch at .75R, 2 ±.5° down / 14 ±.5° up; final low stop is flight-rigged (10.250).
-    minPitch: 2 * DEG, maxPitch: 14 * DEG, twist: -8 * DEG,
-    liftSlope: 5.7, maxCl: 1.25, profileCd: 0.011, inducedDrag: 0.012,
+    // Flight-rigged at the upper end of that tolerance against MM Fig 10-15 (see model notes).
+    minPitch: 2.5 * DEG, maxPitch: 14 * DEG, twist: -8 * DEG,
+    liftSlope: 5.7, maxCl: 1.25, profileCd: 0.009, inducedDrag: 0.009, inducedFactor: 1.08,
     // ESTIMATE: two ~12 kg blades distributed from .75 to 3.84 m give ~146 kg m², including hub.
     inertia: 146, hub: MAIN_HUB },
   tail: { radius: TAIL_ROTOR_RADIUS, rootCutout: 0.1, chord: 0.1016, blades: 2,

@@ -55,7 +55,8 @@ import {
 } from '../core/types';
 import { createAirData, slipBall, type AirData } from './airData';
 import { AeroModel } from './aero';
-import { casFromTas } from './atmosphere';
+import { casFromTas, pressureAltitude } from './atmosphere';
+import { placardVne } from './rotorcraft/limits';
 import { ControlSystem } from './controlSystem';
 import { LandingGear, RetractActuator, type RetractInput } from './gear';
 import type {
@@ -590,7 +591,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const velocityAir = { x: ic.airspeed * Math.cos(path) * Math.cos(ic.heading),
       y: ic.airspeed * Math.cos(path) * Math.sin(ic.heading), z: -ic.airspeed * Math.sin(path) };
     if (ic.onGround) {
-      position.z = -this.groundElevation - this.skids!.restingPose(this.mp.mass).height;
+      const pose = this.skids!.restingPose(this.mp.mass, this.mp.cgOffset);
+      position.z = -this.groundElevation - pose.height;
+      orientation = quat.fromEuler(pose.roll, pose.pitch, ic.heading);
       this.lastTrim = null;
     } else {
       const evaluate = (x: Float64Array, out: Float64Array): void => {
@@ -635,6 +638,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     r.state.governorThrottle = r.state.governorIntegral = ic.engineRunning ? ec.throttle : 0;
     c.throttle = r.state.governorThrottle;
     r.state.previousThrottle = c.throttle; r.state.previousCollective = c.collective ?? 0;
+    r.throttle(0, c, unit);
     this.controlsIn = cloneControls(c); this.rotorControls = this.controlsIn;
     // Numerical initialisation must not consume fuel or reset the already-settled intake wall film.
     this.propulsion.fuel.quantities.set(this.loading.tanks);
@@ -1150,7 +1154,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const a = rotorLoads ? { ...rotorLoads, lift: -rotorLoads.force.z, drag: 0, stallWarning: false,
       stallFraction: 0 } as AeroOutput : this.aero.compute(ai);
     this.gearIn.dt = h > 0 ? h : 1 / this.physicsRate;
-    const g = this.skids ? this.skids.compute(this.gearIn) : this.gear.compute(this.gearIn);
+    const g = this.skids ? this.skids.compute(this.gearIn, this.rotorcraft!.state) : this.gear.compute(this.gearIn);
     if (stage === 0) {
       this.lastAero = a;
       this.controlSystem.tailAlpha = this.aero.tailplaneAlpha();
@@ -1398,6 +1402,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       s.propeller.rotation = r.azimuth;
       s.propeller.thrust = r.thrust;
       s.engine.propRpm = r.rotorRpm;
+      r.vneKias = placardVne(this.rotorcraft.def.airspeedLimits, pressureAltitude(this.atmosphere.pressure), this.atmosphere.temperature);
+      r.airspeedLimitExceeded = r.vneKias === 0 || s.ias / KT > r.vneKias;
     }
     const el = s.electrical;
     el.busVoltage = p.electrical.busVoltage;

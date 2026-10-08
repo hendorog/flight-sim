@@ -639,7 +639,7 @@ export class InputSystem implements Subsystem {
     const onMains = s.wheels[1].onGround || s.wheels[2].onGround;
     if (pitch !== 0) {
       this.centring.elevator = false;
-      const elevator = onMains ? this.groundElevator : tuning.axes.elevator;
+      const elevator = onMains && !this.profile.rotorcraft ? this.groundElevator : tuning.axes.elevator;
       this.kbElevator = stepKeyAxis(this.kbElevator, pitch, ias, dt, elevator, this.heldFor(pitch > 0 ? 'pitchUp' : 'pitchDown'));
     } else if (this.centring.elevator) {
       this.kbElevator = stepCentre(this.kbElevator, dt);
