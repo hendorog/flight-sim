@@ -1,6 +1,7 @@
 // Pause menu: flight (aircraft, resume, scenarios, sim rate), the Flight School tab, weather, time of day,
 // display (quality, camera, HUD) and the controls reference.
 
+import { R22_DEMOS, DEMO_TITLES, type R22DemoId } from '../sim/rotorcraft/flights';
 import { AIRCRAFT_CATALOGUE, AIRCRAFT_PREF_KEY, aircraftSummary } from '../aircraft/registry';
 import type { AircraftDefinition, AircraftPresentation, AircraftSummary } from '../aircraft/types';
 import type { CameraMode, QualityLevel, ScenarioId, SimContext } from '../core/context';
@@ -50,6 +51,7 @@ export interface KeyBinding {
 /** What the menu needs from its owner. */
 export interface MenuHost {
   readonly ctx: SimContext;
+  readonly r22Demos?: { start(id: R22DemoId): void };
   close(): void;
   toast(text: string): void;
   /** ctx.weather was edited; the host emits 'weatherChanged' (coalesced to once per frame). */
@@ -249,6 +251,16 @@ export class PauseMenu {
       this.host.school?.command({ kind: 'openHome' });
     });
     this.refreshers.push(() => schoolRow.classList.toggle('hidden', !this.host.school));
+    if (flownType(this.host.ctx).def?.id === 'r22') {
+      el('h3', '', p, 'R22 demonstrations');
+      el('p', 'sub', p, 'Watch the scripted pilot. Moving a control or pressing Enter gives you control. Pause, rate and view keys remain available.');
+      const demos = el('div', 'scenarios', p);
+      for (const id of R22_DEMOS) {
+        const b = el('button', '', demos, DEMO_TITLES[id]);
+        b.dataset.demo = id;
+        b.addEventListener('click', () => { this.host.close(); this.host.r22Demos?.start(id); });
+      }
+    }
     el('h3', '', p, 'Scenario');
     // During a lesson a scenario ends it: ask first (section 5.6).
     const confirm = el('div', 'sc-confirm hidden', p);

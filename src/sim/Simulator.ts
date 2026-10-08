@@ -73,6 +73,10 @@ import {
 } from './resume';
 import type { Scenario } from './scenarios';
 import { SimPhysics } from './SimPhysics';
+import { R22Flight, isR22Demo, type R22DemoId } from './rotorcraft/flights';
+import { demoScenario, demoWeather } from './rotorcraft/starts';
+import { RotorcraftDemoUi } from '../ui/rotorcraftDemo';
+import type { StepController } from '../training/types';
 import { TrainingSystem } from '../training/TrainingSystem';
 import { validateTrainingBlock } from '../training/career/validate';
 
@@ -168,6 +172,10 @@ export class Simulator {
   private schoolHold = false;
   /** The Flight School (null until boot has created it). */
   training: TrainingSystem | null = null;
+  demo: R22Flight | null = null;
+  private demoUi: RotorcraftDemoUi | null = null;
+  private schoolCopilot: StepController | null = null;
+  private demoPaused = false;
   private curtainBusy = false;
   private pendingQuality: QualityLevel | null = null;
   /** Scenario reset requested while a curtain was up: run when it lifts (latest request wins). */
@@ -214,6 +222,7 @@ export class Simulator {
     const { def, presentation } = await this.loadAircraft();
     const id = def.id;
     this.aircraftId = id;
+    const demoId = id === 'r22' ? p.demo : null;
     let lateInput: InputSystem | null = null;
     // The UI first: its loading screen covers the page while everything else loads. It is built before the input
     // system, so the cockpit clicks reach InputSystem.hold through a late-bound closure.
@@ -248,7 +257,7 @@ export class Simulator {
     await progress(0.06, 'Building the flight model');
     const events = createEventBus();
     // Resume the last flight (a reload), or start the URL's (or the remembered) scenario.
-    const decision = decideBoot(loadSnapshot(this.store, id), { param: p.resume, explicitScenario: p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id });
+    const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId ? false : p.resume, explicitScenario: !!demoId || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id });
     const weatherBefore = { ...this.weather };
     if (decision.kind === 'resume') Object.assign(this.weather, decision.snapshot.weather);
     const physics = new SimPhysics({ weather: this.weather, events, aircraft: def });
@@ -461,6 +470,21 @@ export class Simulator {
     });
     training.init(ctx);
     this.training = training;
+    this.schoolCopilot = physics.copilot;
+    if (id === 'r22') {
+      this.demoUi = new RotorcraftDemoUi(ui.root, () => input.takeControl());
+      ui.r22Demos = { start: id => { void this.startDemo(id); } };
+      input.scriptedPilot = {
+        flying: () => !!this.demo && this.demo.outcome !== 'taken-over',
+        stop: () => {
+          if (!this.demo) return;
+          this.demo.stop();
+          this.fastForwardLeft = 0;
+          if (this.demoPaused) this.setPaused(false);
+          ui.showToast('You have control · hardware axes pick up when matched to the current controls', 6000);
+        },
+      };
+    }
     // Input <-> UI links: mode-change toasts (mouse yoke on / off) and the control-position widget for
     // every input source, including the mouse yoke. A controller's Start button keeps the input module's
     // default (a synthetic Escape press, which the UI handles exactly as the key: menu or crash dialog).
@@ -507,7 +531,8 @@ export class Simulator {
     ui.hideLoading();
     const lessonResumed = !!resumed && resumed.snapshot.training !== undefined && validateTrainingBlock(resumed.snapshot.training) !== null;
     if (resumed && !lessonResumed) ui.showToast(`Resumed flight from ${formatAge(resumed.ageMs)} ago · Shift+R / menu: Restart scenario`, 7000);
-    training.afterBoot({ resumed: resumed?.snapshot ?? null, explicitScenario: p.explicitScenario });
+    if (demoId) await this.startDemo(demoId, false);
+    else training.afterBoot({ resumed: resumed?.snapshot ?? null, explicitScenario: p.explicitScenario });
     this.fastForwardLeft = p.run;
     if (p.freeze && p.run === 0) this.setPaused(true);
     this.readyPhase = p.run > 0 ? 'fastForward' : 'streaming';
@@ -636,6 +661,7 @@ export class Simulator {
   // --------------------------------------------------------------------------------------- commands
 
   resetScenario(id: ScenarioId): void {
+    this.clearDemo();
     this.physics.reset(id, this.weather);
     this.ctx.simTime = this.physics.time;
     // A deliberate restart: a reload now starts this scenario again instead of resuming the old flight,
@@ -643,6 +669,50 @@ export class Simulator {
     this.resumeArmAt = this.physics.time + RESUME_ARM_SECONDS;
     this.persist(true);
     this.ctx.events.emit('reset', { scenario: id });
+  }
+
+  /** Start a fresh flight using the same pilot, loading, placement and weather as the integration tests. */
+  async startDemo(id: R22DemoId, curtain = true): Promise<void> {
+    if (this.aircraftId !== 'r22' || !isR22Demo(id)) return;
+    this.training?.end();
+    const work = (): void => {
+      this.clearDemo();
+      Object.assign(this.weather, demoWeather());
+      const sc = demoScenario(id, this.physics.env);
+      this.physics.resetTo(sc, this.weather);
+      this.demo = new R22Flight(id, this.physics.state, this.ctx.controls);
+      this.physics.copilot = this.demo;
+      this.physics.stepHold = () => !!this.demo && !this.demo.flying && this.demo.outcome !== 'taken-over';
+      this.demoPaused = false;
+      this.fastForwardLeft = 0;
+      this.ctx.simTime = this.physics.time;
+      this.ctx.events.emit('reset', { scenario: sc.id });
+      this.ctx.events.emit('weatherChanged', {});
+      this.demoUi?.show(this.demo, this.params.demoTrace);
+      this.setPaused(false);
+    };
+    if (curtain) await this.curtained('Loading R22 demonstration', work);
+    else work();
+  }
+
+  private clearDemo(): void {
+    if (!this.demo) return;
+    this.demo.stop();
+    this.demo = null;
+    this.demoPaused = false;
+    this.physics.copilot = this.schoolCopilot;
+    this.physics.stepHold = null;
+    this.demoUi?.hide();
+    this.systems.ui.demoFlying = false;
+  }
+
+  private finishDemo(): void {
+    const demo = this.demo;
+    if (demo && !demo.flying && demo.outcome !== 'taken-over' && !this.demoPaused) {
+      this.demoPaused = true;
+      this.fastForwardLeft = 0;
+      this.setPaused(true);
+    }
   }
 
   /** Snapshots are written (resume=0 and the menu preference turn them off; resume=1 forces them on). */
@@ -656,7 +726,7 @@ export class Simulator {
    * change) unless `force` (the restart itself, which records the new scenario with resume: false).
    */
   persist(force = false): boolean {
-    if (!this.saving || !this.physics || !this.ctx || this.contextLost) return false;
+    if (this.demo || !this.saving || !this.physics || !this.ctx || this.contextLost) return false;
     if (!force && (!this.flown || !this.systems || this.holding || this.curtainBusy)) return false;
     let ok = false;
     try {
@@ -689,6 +759,7 @@ export class Simulator {
    * scenario restart it leaves resume armed: a reload mid-lesson resumes the lesson.
    */
   async startFrom(sc: Scenario, opts: { lessonId: string; label: string }): Promise<void> {
+    this.clearDemo();
     const work = (): void => {
       this.physics.resetTo(sc, this.weather);
       this.ctx.simTime = this.physics.time;
@@ -931,7 +1002,8 @@ export class Simulator {
       return;
     }
     if (e.code === 'KeyP' && !e.shiftKey) {
-      this.setPaused(!this.ctx.paused);
+      if (this.demo && this.demoPaused && this.demo.outcome !== 'taken-over') this.systems.input.takeControl();
+      else this.setPaused(!this.ctx.paused);
     } else if (e.code === 'KeyA' && !e.shiftKey) {
       this.toggleAutoflight();
     } else if (e.code === 'KeyR' && e.shiftKey) {
@@ -1014,8 +1086,9 @@ export class Simulator {
       while (this.fastForwardLeft > 0 && performance.now() - t0 < FAST_FORWARD_BUDGET_MS) {
         const chunk = Math.min(this.fastForwardLeft, 0.25);
         physics.step(chunk);
-        this.fastForwardLeft -= chunk;
-        simulated += chunk;
+        this.finishDemo();
+        this.fastForwardLeft = Math.max(0, this.fastForwardLeft - chunk);
+        simulated += physics.lastAdvance;
       }
       subsystemDt = Math.min(simulated, 0.1);
       this.advanceClock(simulated);
@@ -1027,6 +1100,7 @@ export class Simulator {
       this.advanceClock(subsystemDt);
       this.trackTimeScale(held ? 0 : wallDt, subsystemDt, physics.budgetLimited);
     }
+    this.finishDemo();
     ctx.simTime = physics.time;
     if (physics.lastAdvance > 0) this.flown = true;
     this.saveClock += wallDt;
@@ -1049,7 +1123,9 @@ export class Simulator {
     }
     // The Flight School: telemetry, runner, coach, safety, speech, UI models (needs the fresh panel readings).
     if (this.training) this.run('training', this.training, subsystemDt);
+    s.ui.demoFlying = !!this.demo && this.demo.outcome !== 'taken-over';
     this.run('ui', s.ui, subsystemDt);
+    this.demoUi?.update(physics.state, ctx.controls, s.ui.menuOpen || !!this.schoolHold);
     this.run('audio', s.audio, subsystemDt);
     try {
       this.cloudShadows.update(ctx.scene);
@@ -1217,6 +1293,7 @@ export class Simulator {
       /** Advance the simulation `seconds` right now (exact fixed steps, the clock too); returns summary(). */
       step(seconds: number) {
         sim.physics.step(seconds);
+        sim.finishDemo();
         sim.advanceClock(sim.physics.lastAdvance);
         sim.ctx.simTime = sim.physics.time;
         return api.summary();
@@ -1226,6 +1303,14 @@ export class Simulator {
         sim.training?.end();
         sim.resetScenario(id);
         return api.summary();
+      },
+      /** Shared live R22 script, phase history and 4 Hz trace. No state/force writes. */
+      demo: {
+        start: (id: R22DemoId) => sim.startDemo(id),
+        stop: () => sim.systems.input.takeControl(),
+        state: () => sim.demo ? { id: sim.demo.id, time: sim.demo.time, phase: sim.demo.phase,
+          action: sim.demo.action, outcome: sim.demo.outcome, phases: [...sim.demo.phases] } : null,
+        trace: () => sim.demo?.samples ?? [],
       },
       /** The Flight School (section 5.10). */
       training: {
@@ -1300,6 +1385,8 @@ export class Simulator {
           groundSpeed: +s.groundSpeed.toFixed(2),
           verticalSpeedFpm: Math.round(s.verticalSpeed / 0.00508),
           rpm: Math.round(s.engine.rpm),
+          rotorRpm: s.rotorcraft?.rotorRpm,
+          demo: api.demo.state(),
           engines: s.engines.map((e) => ({ rpm: Math.round(e.rpm), propRpm: Math.round(e.propRpm), running: e.running })),
           gear: { lever: g.lever, extension: g.extension.map((x) => +x.toFixed(3)), locked: [...g.locked], inTransit: g.inTransit },
           engineSelection: sim.ctx.engineSelection ?? 'all',

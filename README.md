@@ -43,14 +43,43 @@ reloads into it; airborne or moving it asks first. Each type keeps its own resum
 type and back continues where you left it. `index.html?aircraft=<id>` flies a type for that page only (it is not
 remembered). The Flight School teaches in the C172S; the other types are flown free.
 
-**Experimental helicopters.** An initial R22 Beta II rotorcraft path is available at
-`index.html?aircraft=r22&scenario=runway&resume=0` (not yet listed in the chooser).
+**Experimental helicopters.** The R22 Beta II is available in the aircraft chooser and at
+`index.html?aircraft=r22&scenario=runway&resume=0`.
 Use the arrows for cyclic, Z/X for pedals, and hold F5/F6 to lower/raise collective.
 Insert toggles the clutch; Delete toggles the governor. Throttle remains independent.
 The HUD shows rotor NR separately from engine RPM. This adds blade-element rotor loads,
 dynamic inflow, drivetrain/freewheel/governor behavior and skid contacts, but is not yet
 flight-test validated. See [the model notes](docs/r22-flight-model.md) for controls, data
 provenance, fidelity limits and the path to R44 and Schweizer 269 support.
+
+### Watch the R22 scripted flights
+
+Open [the autorotation demonstration](index.html?aircraft=r22&demo=autorotation&resume=0), or choose
+**Escape → Flight → R22 demonstrations**. The URL `demo=` accepts:
+
+| Demo | Flight | Approximate simulated time |
+|---|---|---|
+| `startup` | Cold start, clutch, governor, warm-up, 3 m hover | 115 s |
+| `hover` | Hover, ETL, 60 KIAS climb, 85 KIAS cruise | 145 s |
+| `approach` | Cruise, approach, hover, vertical landing | 123 s |
+| `autorotation` | Engine failure, 65 KIAS descent, flare, level, cushion, touchdown | 55 s |
+| `circuit` | Full cold-start engineering flight, including a 360° cruise turn and landing | 489 s |
+
+The captions show the pilot's action, rotor RPM, IAS, vertical speed, skid height and controls. Expand **Live
+trace**, or add `trace=1`; autorotation opens the trace automatically. Use **C** to change view, **P** to pause
+and **Shift+[ / Shift+]** to change simulation rate. Every other non-view key (including **Enter**), a flight
+control input, or **Take control** releases the demo. Keyboard controls stay where the pilot left them;
+hardware axes pick up after matching those positions (within 5% travel). Deliberate axis movement beyond
+4% travel ends the demo; resting hardware does not. Flights pause at their end. Press **Enter** to continue
+flying, or choose another demo from the menu.
+
+These flights run the same shared control-only pilots as the R22 tests. They start afresh at maximum gross
+loading in calm standard weather, overriding `scenario=`, resume and weather URL settings. The demo flight
+is not saved as a resumed flight. The circuit is a handling sequence, not a navigated airport traffic pattern;
+it finishes in a field. **The autorotation landing is a known failure:** the flare balloons and touchdown
+rotor RPM is about 67% in the app. The original sea-level gross/solo landing checks remain expected failures.
+Its existing test entry begins with collective down and mixture cut; it does not demonstrate a pilot's
+reaction delay to a failure. See [implementation and verification details](docs/r22-flight-model.md#live-scripted-demonstrations).
 
 **Cessna 152.** The keys are the C172S's with these differences:
 
