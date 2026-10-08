@@ -34,6 +34,7 @@ export class AnnunciatorPanel implements PanelComponent {
   constructor(
     readonly bounds: Rect,
     private readonly lamps: readonly LampDef[] = C172S_ANNUNCIATOR_LAMPS,
+    private readonly columns?: number,
   ) {
     this.latch = new Latch(lamps.length);
   }
@@ -43,10 +44,15 @@ export class AnnunciatorPanel implements PanelComponent {
     return this.latch.take();
   }
 
-  private cellX(i: number): number {
+  private cell(i: number): Rect {
     const A = AnnunciatorPanel;
-    const total = this.lamps.length * A.CELL_W + (this.lamps.length - 1) * A.GAP;
-    return this.bounds.x + (this.bounds.w - total) / 2 + i * (A.CELL_W + A.GAP);
+    const cols = this.columns ?? this.lamps.length;
+    const rows = Math.ceil(this.lamps.length / cols);
+    const w = this.columns ? (this.bounds.w - (cols + 1) * A.GAP) / cols : A.CELL_W;
+    const h = this.columns ? (this.bounds.h - (rows + 1) * A.GAP) / rows : A.CELL_H;
+    const total = cols * w + (cols - 1) * A.GAP;
+    return { x: this.bounds.x + (this.bounds.w - total) / 2 + (i % cols) * (w + A.GAP),
+      y: this.bounds.y + (this.bounds.h - rows * h - (rows - 1) * A.GAP) / 2 + Math.floor(i / cols) * (h + A.GAP) - 1, w, h };
   }
 
   drawStatic(g: Ctx2D): void {
@@ -63,54 +69,50 @@ export class AnnunciatorPanel implements PanelComponent {
   }
 
   paintLightMask(g: Ctx2D): void {
-    const A = AnnunciatorPanel;
-    const y = this.bounds.y + (this.bounds.h - A.CELL_H) / 2 - 1;
     // Lamps behind smoked glass: a lit lamp is bright in the image itself; unlit legends must stay dark.
-    g.fillStyle = LIGHT_DIAL;
-    this.lamps.forEach((_, i) => g.fillRect(this.cellX(i), y, A.CELL_W, A.CELL_H));
+    g.fillStyle = '#ffffff';
+    this.lamps.forEach((_, i) => { const b = this.cell(i); g.fillRect(b.x, b.y, b.w, b.h); });
   }
 
   draw(g: Ctx2D): void {
-    const A = AnnunciatorPanel;
-    const y = this.bounds.y + (this.bounds.h - A.CELL_H) / 2 - 1;
     this.lamps.forEach((lamp, i) => {
-      const x = this.cellX(i);
+      const { x, y, w, h } = this.cell(i);
       const on = this.latch.get(i) === 1;
       g.fillStyle = '#060606';
-      g.fillRect(x, y, A.CELL_W, A.CELL_H);
+      g.fillRect(x, y, w, h);
       g.save();
-      g.font = `700 11px ${LABEL_FONT}`;
+      g.font = `700 ${Math.min(11, w / Math.max(5, lamp.text.length) * 1.6)}px ${LABEL_FONT}`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       if (on) {
-        const haze = g.createRadialGradient(x + A.CELL_W / 2, y + A.CELL_H / 2, 2, x + A.CELL_W / 2, y + A.CELL_H / 2, A.CELL_W / 2);
+        const haze = g.createRadialGradient(x + w / 2, y + h / 2, 2, x + w / 2, y + h / 2, w / 2);
         haze.addColorStop(0, lamp.color + '55');
         haze.addColorStop(1, lamp.color + '10');
         g.fillStyle = haze;
-        g.fillRect(x, y, A.CELL_W, A.CELL_H);
+        g.fillRect(x, y, w, h);
         g.shadowColor = lamp.color;
         g.shadowBlur = 8;
         g.fillStyle = '#fff4dc';
-        g.fillText(lamp.text, x + A.CELL_W / 2, y + A.CELL_H / 2 + 0.5);
+        g.fillText(lamp.text, x + w / 2, y + h / 2 + 0.5);
         g.shadowBlur = 0;
         g.fillStyle = lamp.color;
         g.globalAlpha = 0.55;
-        g.fillText(lamp.text, x + A.CELL_W / 2, y + A.CELL_H / 2 + 0.5);
+        g.fillText(lamp.text, x + w / 2, y + h / 2 + 0.5);
       } else {
         g.fillStyle = 'rgba(120,112,100,0.28)';
-        g.fillText(lamp.text, x + A.CELL_W / 2, y + A.CELL_H / 2 + 0.5);
+        g.fillText(lamp.text, x + w / 2, y + h / 2 + 0.5);
       }
       g.restore();
       // Smoked glass reflection
-      const glass = g.createLinearGradient(x, y, x, y + A.CELL_H);
+      const glass = g.createLinearGradient(x, y, x, y + h);
       glass.addColorStop(0, 'rgba(255,255,255,0.10)');
       glass.addColorStop(0.4, 'rgba(255,255,255,0.02)');
       glass.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = glass;
-      g.fillRect(x, y, A.CELL_W, A.CELL_H);
+      g.fillRect(x, y, w, h);
       g.strokeStyle = 'rgba(255,255,255,0.12)';
       g.lineWidth = 0.8;
-      g.strokeRect(x + 0.5, y + 0.5, A.CELL_W - 1, A.CELL_H - 1);
+      g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     });
   }
 }

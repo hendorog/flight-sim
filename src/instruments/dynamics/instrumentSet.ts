@@ -44,6 +44,11 @@ export interface GearReadings {
 
 /** Everything the panel shows, in display units. Updated in place by InstrumentSet.step(). */
 export interface InstrumentReadings {
+  rotorRpmPct: number;
+  engineRpmPct: number;
+  carbAirTempC: number;
+  /** Elapsed engine-running time, distinct from rpm-weighted tach hours. */
+  engineHours: number;
   // Flight instruments
   airspeedKt: number;
   altitudeFt: number;
@@ -210,6 +215,7 @@ export class InstrumentSet {
     const annunciators: Annunciators & Record<string, boolean> = { lowFuelLeft: false, lowFuelRight: false, oilPress: false, lowVolts: false, vacuum: false };
     this.lamps = annunciators;
     this.readings = {
+      rotorRpmPct: 0, engineRpmPct: 0, carbAirTempC: 0, engineHours: opts.tachHours ?? 0,
       airspeedKt: 0,
       altitudeFt: 0,
       kollsmanInHg: 29.92,
@@ -394,6 +400,12 @@ export class InstrumentSet {
     li.state = s;
     li.controls = c;
     li.suctionInHg = this.suction;
+    const tach = sys.rotorTach;
+    const tachPowered = tach?.powered(li) ?? false;
+    r.rotorRpmPct = lagStep(r.rotorRpmPct, tach && tachPowered ? (s.rotorcraft?.rotorRpm ?? 0) * 100 / tach.rotorRpm100 : 0, dt, 0.12);
+    r.engineRpmPct = lagStep(r.engineRpmPct, tach && tachPowered ? s.engine.rpm * 100 / tach.engineRpm100 : 0, dt, 0.12);
+    r.carbAirTempC = lagStep(r.carbAirTempC, powered ? (sys.carbAirTempC?.(s, c) ?? 0) : -40, dt, 1.5);
+    if (s.engine.running) r.engineHours += dt / 3600;
     for (let i = 0; i < sys.lamps.length; i++) this.lamps[sys.lamps[i].id] = sys.lamps[i].lit(li);
     r.oatC = s.oat - 273.15;
     r.clockSeconds = w.timeOfDay * 3600;

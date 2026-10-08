@@ -25,9 +25,14 @@ export interface AsiMarkings {
 }
 export interface TachMarkings { max: number; majorStep: number; minorStep: number; numberStep: number;
                                 arcs: readonly ArcDef[]; redLine: number; hourRpm: number }
+/** Separate scales of an electronic engine/rotor percent tachometer. */
+export interface RotorTachMarkings {
+  min: number; max: number; majorStep: number; minorStep: number;
+  engineArcs: readonly ArcDef[]; rotorArcs: readonly ArcDef[]; rotorRedLines: readonly number[];
+}
 export interface ScaleDef {
   label: string; min: number; max: number; majors: readonly number[]; minorStep: number;
-  numbers?: boolean; arcs?: readonly ArcDef[]; redLines?: readonly number[];
+  numbers?: boolean; signedNumbers?: boolean; arcs?: readonly ArcDef[]; redLines?: readonly number[];
   read(r: InstrumentReadings): number;
 }
 
@@ -47,9 +52,17 @@ type At = readonly [number, number];
  */
 export type GaugeDef =
   | { kind: 'asi'; id: string; at: At; marks: AsiMarkings }
-  | { kind: 'attitude' | 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock'; id: string; at: At }
+  | { kind: 'attitude' | 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At }
   | { kind: 'cdi'; id: string; at: At; receiver: 'nav1' | 'nav2'; fixedCourseDeg: number }
   | { kind: 'tach'; id: string; at: At; size: 'large' | 'small'; marks: TachMarkings; engine?: number }
+  | { kind: 'rotorTach'; id: string; at: At; marks: RotorTachMarkings }
+  | { kind: 'hourmeter'; id: string; bounds: Rect }
+  /** Panel-mounted pull control. The guard must be lifted before moving the knob. */
+  | { kind: 'pullKnob'; id: string; bounds: Rect; label: string; color: string;
+      read(c: ControlInputs): number; set(c: ControlInputs, value: number): void;
+      guard?: { closed(c: ControlInputs): boolean; toggle(c: ControlInputs): void } }
+  | { kind: 'pushButton'; id: string; bounds: Rect; label: string;
+      read(c: ControlInputs): boolean; press(down: boolean, c: ControlInputs): void }
   | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef }
   | { kind: 'single'; id: string; at: At; seed: number; size: 'large' | 'small'; a0: number; a1: number; title: string; units: string;
       labels: readonly number[]; scale: ScaleDef }
@@ -94,15 +107,15 @@ export type IgnitionPanelDef =
 
 export interface PanelDef {
   id: string;
-  /** Always { w: 2080, h: 800 }. Every gauge, switch, lamp and hotspot lies inside the cockpit's `panel.pxRect` (asserted by the generic per-type visual test). */
+  /** Canvas size from the type's cockpit contract. Every component lies inside its panel face. */
   size: { w: number; h: number };
   gauges: readonly GaugeDef[];
-  annunciator?: { bounds: Rect; lamps?: readonly LampDef[] };
+  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number };
   switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[];
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
   ignition: IgnitionPanelDef;
-  background: { seamsX: readonly number[];
+  background: { color?: string; seamsX: readonly number[];
                 bushings: readonly { at: At; text: string; sub: string }[];
                 placards: readonly { x: number; y: number; lines: readonly string[]; size?: number }[];
                 breakers?: { bounds: Rect; names: readonly string[]; amps: readonly number[]; perRow: number };
@@ -112,6 +125,8 @@ export interface PanelDef {
   /** Circles 3D parts pass through (yoke boots): artwork and hotspots keep out. */
   keepOut: readonly { x: number; y: number; r: number }[];
   apertures: { large: number; small: number };
+  /** Scale of complete round instruments, including needles, bezels and hotspots; absent = native artwork. */
+  instrumentScale?: { large: number; small: number };
   regions: Readonly<Record<string, Rect>>;
   /** Highlight / point targets by InstrumentId or ControlId (px on the panel). */
   spots: Readonly<Record<string, { x: number; y: number; r: number }>>;
@@ -133,7 +148,7 @@ export interface LampInputs { state: AircraftState; controls: ControlInputs; fue
 export function gaugeRecess(g: GaugeDef, apertures: { large: number; small: number }): { x: number; y: number; r: number; depth: number } | null {
   let large: boolean;
   switch (g.kind) {
-    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi':
+    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'rotorTach': case 'blank':
       large = true;
       break;
     case 'tach': case 'single': case 'twinNeedle':
@@ -159,5 +174,9 @@ export interface InstrumentSystemsDef {
   tachHourRpm: number;
   /** The shaft the tachometers read: 'propeller' on a geared engine whose cockpit rpm is the propeller's. Absent: 'crank'. */
   tachShaft?: 'crank' | 'propeller';
+  /** Electric dual tachometer: independent percent references and battery bypass supply. */
+  rotorTach?: { engineRpm100: number; rotorRpm100: number; powered(i: LampInputs): boolean };
+  /** Carburettor probe temperature, C. A type may supply an explicitly documented estimate. */
+  carbAirTempC?(s: AircraftState, c: ControlInputs): number;
   lamps: readonly { id: string; lit(i: LampInputs): boolean }[];
 }

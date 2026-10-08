@@ -191,6 +191,19 @@ function ignitionHotspots(def: PanelDef): PanelHotspot[] {
 
 /** The hotspots a gauge brings besides the bezel knobs: the gear selector, the flap switch, a guarded knob. */
 function gaugeHotspots(g: PanelDef['gauges'][number]): PanelHotspot[] {
+  if (g.kind === 'pullKnob' || g.kind === 'pushButton') {
+    const b = g.bounds, x = b.x + b.w / 2, y = b.y + b.h / 2;
+    if (g.kind === 'pushButton') return [{ id: g.id, kind: 'push', x, y, hw: 18, hh: 18,
+      name: g.label, hint: 'hold to test', press: g.press, value: c => g.read(c) ? 'TEST' : '' }];
+    const spots: PanelHotspot[] = [knob(g.id, x, y, g.label, {
+      turn(dir, c, coarse) { if (!g.guard?.closed(c)) g.set(c, clamp01(g.read(c) + dir * 0.05 * coarse)); },
+      value: c => g.guard?.closed(c) ? 'GUARD INSTALLED' : `${Math.round(g.read(c) * 100)} %`,
+    }, 20)];
+    if (g.guard) spots.push({ id: `${g.id}Guard`, kind: 'toggle', x, y: b.y + 8, hw: 26, hh: 10,
+      name: `${g.label} guard`, hint: 'click to lift or install guard', toggle: g.guard.toggle,
+      value: c => g.guard!.closed(c) ? 'INSTALLED' : 'OPEN' });
+    return spots;
+  }
   if (g.kind === 'gearLights' && g.lever) {
     return [
       {
@@ -257,6 +270,7 @@ function gaugeHotspots(g: PanelDef['gauges'][number]): PanelHotspot[] {
 export function buildHotspots(def: PanelDef): PanelHotspot[] {
   const spots: PanelHotspot[] = [];
   for (const g of def.gauges) {
+    const start = spots.length;
     if (g.kind === 'altimeter') {
       spots.push(knob('kollsman', g.at[0] - 70, g.at[1] + 72, 'Altimeter setting', KOLLSMAN));
     } else if (g.kind === 'heading') {
@@ -280,6 +294,14 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
       spots.push(knob('obs', g.at[0] - 70, g.at[1] + 72, 'NAV 1 course (OBS)', OBS));
     } else {
       spots.push(...gaugeHotspots(g));
+    }
+    // Bezel knobs move with the complete round instrument when a type specifies its physical size.
+    const k = def.instrumentScale?.large ?? 1;
+    if (k !== 1 && 'at' in g && ['altimeter', 'heading', 'cdi'].includes(g.kind)) {
+      for (const h of spots.slice(start)) {
+        h.x = g.at[0] + (h.x - g.at[0]) * k; h.y = g.at[1] + (h.y - g.at[1]) * k;
+        h.hw *= k; h.hh *= k;
+      }
     }
   }
   const row = def.switchRow;

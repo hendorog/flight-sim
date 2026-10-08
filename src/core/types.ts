@@ -38,6 +38,10 @@ export type EngineControls = { [K in EngineControlKey]?: ControlInputs[K] };
 
 /** Pilot inputs, written by the input module and read by the flight model. */
 export interface ControlInputs {
+  /** Presentation controls: cabin heating is not thermally simulated; absent = cold, guard installed, test released. */
+  cabinHeat?: number;
+  mixtureGuardOpen?: boolean;
+  annunciatorTest?: boolean;
   /** Helicopters: collective blade pitch [0,1], independent of engine throttle. */
   collective?: number;
   rotorGovernor?: boolean;
