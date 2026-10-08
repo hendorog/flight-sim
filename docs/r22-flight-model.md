@@ -253,6 +253,104 @@ Viewed diagnostic plots are `work/r22-round2-circuit-traces.png`, `work/r22-roun
 `work/r22-round2-autorotation-traces.png`. All logs, JSON traces, plots and source downloads stay in ignored
 `work/`; none are committed.
 
+## Live scripted demonstrations
+
+`index.html?aircraft=r22&demo=<id>` and Escape → Flight → R22 demonstrations start `startup`, `hover`,
+`approach`, `autorotation` or `circuit`. `trace=1` opens the compact live graph (automatic for autorotation).
+P pauses; Shift+[ / Shift+] change time scale; C changes camera. Enter, another non-view key, a flight control,
+or the Take control button ends the script. Pause/menu/view/rate keys remain observation controls. Every
+flight stops and pauses at its endpoint, with its outcome and the final readings visible.
+
+The pilot is in `src/sim/rotorcraft/scriptedPilot.ts`; the schedules are in `flights.ts` beside it. The
+observation adapter supplies only attitude, angular rates, signed visual fore/aft and lateral motion, IAS,
+ground speed, skid height, vertical speed, tachometers and ground/crash indications. The pilot never receives
+a flight-model instance, forces, inflow, blade states, a trim solver or mutable aircraft state. It writes only
+ordinary `ControlInputs`. Normal cyclic travel is limited to 1/s, pedals to 0.7/s, and powered collective to
+0.12/s; the existing autorotation flare uses up to 3/s cyclic and 2/s collective. These are engineering
+pilot hand-motion limits, not measured pilot-response data. The original gains, schedules and landing
+acceptance thresholds were retained; no physics or aircraft data changed.
+
+Flight School's `DemoScript` was considered. Its AP/autoflight/raw/pulse segments have no collective,
+clutch/governor switches or rotorcraft feedback-controller segment, so these flights use its `StepController`
+interface and `SimPhysics.copilot` integration point instead. As in `InstructorPilot`, a private copy of
+commanded controls survives idle input polling and is released in place. The input system's held keyboard
+positions follow those controls. Existing calibrated-axis motion detection triggers hardware handover;
+absolute axes then wait to match the current positions within 5%, following the school's throttle matching
+rule. There is no force/attitude intervention during handover. A terminal step hold prevents `run=`, explicit
+stepping or accelerated frames from flying past the endpoint without a pilot. R22 physics remains at 240 Hz
+at every time scale.
+
+The Flight School debrief graph has fixed airplane channels and a fixed recorded time domain. The live
+rotorcraft graph reuses its scale/tick helpers with four rolling 60-second channels: rotor %, IAS, vertical
+speed and skid height. Control positions are shown numerically alongside it; the existing 3D cyclic,
+collectives, grips and pedals receive those same controls. No saved school trace schema changes.
+
+`starts.ts` supplies the shared app/test placement and calm weather. Startup/circuit start cold on the apron,
+hover starts 3 m above the runway, and approach/autorotation start inbound on runway heading at 90/350 m
+above terrain. The loading is the type's existing maximum-gross preset, with full fuel. The app uses the
+actual world terrain and altitude-dependent atmosphere; the original engineering regressions retain their
+flat sea-level environment. Thus the **same pilot is checked in both environments**, rather than asserting
+identical trajectories in different scenery. The app integration tests use exactly the app's initial
+conditions, weather, `SimPhysics`, pilot and terminal hold. Normal airplane scenarios and input remain on
+the existing path. Demonstrations suppress resume/save until a normal scenario is selected.
+
+### Observed live outcomes
+
+All five demonstrations completed without a modelled crash. The full circuit retains the original sequence
+of phases and 360° cruise turn; it is not a rectangular airport circuit or a navigation demonstration, and
+lands in a field beyond the airport. The scripts contain neither obstacle avoidance nor a landing-site
+selection controller. They reproduce engineering flights, not complete operating/checklist procedures.
+
+| Flight | Completion | Observed result in the app |
+|---|---:|---|
+| Startup | 115.00 s | 2.90 m skid height, 0.3 KIAS, 103.4% NR |
+| Hover → cruise | 145.00 s | 60.1 KIAS / 488 ft/min during climb; 84.3 KIAS at completion |
+| Approach | 123.15 s | First contact 0.045 m/s, 0.055 kt, 103.62% NR |
+| Autorotation | 55.14 s | First contact 0.727 m/s, 4.45 kt, **67.44% NR** |
+| Circuit | 488.70 s | First landing contact 0.049 m/s, 0.054 kt, 103.62% NR |
+
+Autorotation is deliberately labelled as a known gap throughout. It starts with mixture cut and collective
+already down, exactly as the earlier acceptance fixture did; the subsequent collective and cyclic movements
+are rate-limited. In the app it enters flare at 41.98 s, level at 46.25 s and cushion at 48.31 s. At 44.5 s it
+is climbing at 551 ft/min with 107.6% NR: the balloon is visible. First contact at 50.13 s is well below the
+90% lower power-off arc; after settling, rotor speed is 53.7%. A completed demonstration means only that the
+reproduction ended. Both strict sea-level autorotation landing tests remain `it.fails`, with their desired
+RPM, speed, sink and damage criteria unchanged (68.22% gross / 59.78% solo at first contact).
+
+Headless app captures and per-phase state/3D-control poses are in ignored `work/live-sequence/`; see
+`observations.json`, `takeover.json`, and the five `*-trace.json` files. Captures include cold start, clutch,
+governor, hover, ETL, climb, cruise, approach, flare, level and parking; additional `scripts/shot.mjs` captures
+sample cushion, the keyboard take-over and a C152 regression. At startup-to-hover the visible collective
+rotation changed from 4.0° to 18.9°, grip twist from −11.7° to −34.3°, and pedal fore/aft positions split by
+34 mm; cyclic changed from centred to the hover position. Key take-over preserved cyclic/pedals/collective/
+grip exactly while paused; the subsequent held ArrowUp moved elevator from 0.11475 to 0.10740. Browser checks
+also verified pause, time scale and starting a fresh flight from the Escape menu.
+
+For inspection from the browser console:
+
+```js
+__sim.demo.state()     // id, phase, action, outcome and phase transitions
+__sim.demo.trace()     // 4 Hz pilot readings and control positions
+__sim.demo.start('approach')
+__sim.demo.stop()      // normal input handover; no state reset
+```
+
+Reproduce a paused flare capture with:
+
+```sh
+node scripts/shot.mjs 'index.html?aircraft=r22&demo=autorotation&run=44.5&freeze=1&cam=chase&resume=0' work/flare.png --wait 1000 --eval '__sim.summary()'
+npx vitest run tests/rotorcraft tests/input tests/sim
+```
+
+Final demo verification: `npx tsc --noEmit` passed. The relevant rotorcraft/input/sim run passed 273 tests
+plus two expected failures; the final added app/handover checks passed 24 tests. The complete suite,
+`npx vitest run --maxWorkers=4`, passed **2,671 tests**, with **two expected failures and 221 skipped**
+(188 files passed, four skipped; 306.99 s). No ordinary failures. The earlier unrestricted suite process
+ended with SIGTERM before reporting results. Logs: `work/demo-area.log`, `work/demo-final-tests.log`,
+`work/full-suite.log`, `work/final-typecheck.log`. A C152 app check with `demo=autorotation` retained its normal
+autopilot, showed no demo panel and reported no errors (`work/c152-regression.png` / `.log`). Resetting after
+a completed R22 demo restored ordinary pause-key operation (`work/reset-pause.log`).
+
 ## Remaining work
 
 1. Resolve the two explicit autorotative-landing expected failures, with a level-off and cushion at a few feet

@@ -17,11 +17,12 @@
 
 import { clamp } from '../core/math';
 import type { CameraMode, SimContext, Subsystem } from '../core/context';
-import { PROP_FEATHER_GATE, clearEngineControl, engineControl, setEngineControl } from '../core/types';
+import { PROP_FEATHER_GATE, clearEngineControl, cloneControls, copyControls, engineControl, setEngineControl } from '../core/types';
 import type { AircraftState, ControlInputs, EngineControlKey, FuelSelector, MagnetoPosition } from '../core/types';
 import { C172S_INPUT } from '../aircraft/c172s/input';
 import { INPUT_ACTIONS, actionForKey, keyLabelForAction, profileHasAction, type InputAction } from './bindings';
 import type { AxisControl } from './devices';
+import type { AxisReading } from './gamepads';
 import { TakeoverDetector } from './axisFilter';
 import {
   MIXTURE_GUARD,
@@ -301,6 +302,39 @@ export class InputSystem implements Subsystem {
   private lastWall = -1;
   /** Wall time (ms) of the last pilot flight-control input (keys held, hardware moved). */
   private lastPilotInput = -Infinity;
+  /** An explicitly started control-only demonstration (idle in ordinary flight and Flight School). */
+  scriptedPilot: { flying(): boolean; stop(): void } | null = null;
+  /** Hardware waits to match the released position, like the school's throttle handover. */
+  private readonly pickup = new Set<AxisControl>();
+
+  /** Release the demo, preserving the held keyboard positions; hardware picks up at those positions. */
+  takeControl(): void {
+    if (!this.scriptedPilot?.flying()) return;
+    this.followControls();
+    for (const r of this.gamepads.readings) if (r.control !== 'none') this.pickup.add(r.control);
+    this.scriptedPilot.stop();
+  }
+
+  private followControls(): void {
+    const c = this.ctx.controls;
+    this.kbAileron = c.aileron - this.neutral.aileron;
+    this.kbElevator = c.elevator - this.neutral.elevator;
+    this.kbRudder = c.rudder - this.neutral.rudder;
+    this.ailCentred = this.rudCentred = false;
+    this.centring = { aileron: false, elevator: false, rudder: false };
+    this.rollTrim.reset(); this.steering.reset();
+    for (const axis of ['aileron', 'elevator', 'rudder'] as const) this.written[axis] = c[axis];
+  }
+
+  private pickedUp(r: AxisReading): boolean {
+    if (!this.pickup.has(r.control)) return true;
+    const c = this.ctx.controls;
+    const target = r.control === 'throttleRate' ? 0 : r.control === 'throttle' && this.profile.rotorcraft ? c.collective ?? 0 :
+      r.control === 'brakes' ? c.brakeLeft : r.control === 'none' ? 0 : c[r.control] ?? 0;
+    if (Math.abs(r.value - target) > 0.05) return false;
+    this.pickup.delete(r.control);
+    return true;
+  }
   private indicator: YokeIndicator = { mouseYoke: false, aileron: 0, elevator: 0, rudder: 0, source: 'keyboard', keyboardOffCentre: false, keyboardElevator: 0 };
   private unsubscribe: (() => void) | null = null;
 
@@ -355,6 +389,7 @@ export class InputSystem implements Subsystem {
   /** A scenario reset: the flight model has written its trimmed controls into ctx.controls. */
   private onReset(ctx: SimContext): void {
     const c = ctx.controls;
+    this.pickup.clear();
     this.neutral.aileron = c.aileron;
     this.neutral.elevator = c.elevator;
     this.neutral.rudder = c.rudder;
@@ -373,6 +408,7 @@ export class InputSystem implements Subsystem {
   /** Press a key (KeyboardEvent.code) as if it came from the keyboard; returns the bound action or null. */
   keyDown(code: string, shift = false): InputAction | null {
     const action = actionForKey(code, shift);
+    if (!demoViewKey(code, shift)) this.takeControl();
     if (!action || this.absent.has(action) || this.keysDown.has(code)) return action;
     this.keysDown.set(code, action);
     this.pressedQueue.push(action);
@@ -398,6 +434,7 @@ export class InputSystem implements Subsystem {
    */
   hold(action: InputAction, down: boolean, engine?: number): void {
     if (this.absent.has(action)) return;
+    if (down) this.takeControl();
     if (!down) {
       this.clicked.delete(action);
       return;
@@ -448,6 +485,7 @@ export class InputSystem implements Subsystem {
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.altKey || e.metaKey || isTextEntry(e.target)) return;
+    if (!e.repeat && !demoViewKey(e.code, e.shiftKey)) this.takeControl();
     const action = actionForKey(e.code, e.shiftKey);
     if (!action || this.absent.has(action)) return;
     e.preventDefault();
@@ -482,6 +520,13 @@ export class InputSystem implements Subsystem {
     const wallDt = this.lastWall < 0 ? 0 : Math.min(0.1, (now - this.lastWall) / 1000);
     this.lastWall = now;
     this.gamepads.poll(now);
+    if (this.scriptedPilot?.flying()) {
+      // Use the existing calibrated-axis motion detector (4% travel); resting hardware never disconnects.
+      if (this.gamepads.readings.some(r => r.control !== 'none' && r.moved) ||
+          this.gamepads.pressed.some(a => !/^(look|view|zoom|camera|menu|pause)/.test(a))) this.takeControl();
+      else this.followControls();
+    }
+    const demoControls = this.scriptedPilot?.flying() ? cloneControls(ctx.controls) : null;
 
     this.held.clear();
     for (const a of this.keysDown.values()) this.held.add(a);
@@ -511,6 +556,10 @@ export class InputSystem implements Subsystem {
     const yokeKeys = ['pitchUp', 'pitchDown', 'rollLeft', 'rollRight', 'rudderLeft', 'rudderRight'] as const;
     if (yokeKeys.some((a) => this.held.has(a)) || this.hardwareTakeover() || this.mouseTakingOver) this.lastPilotInput = now;
 
+    if (demoControls && this.scriptedPilot?.flying()) {
+      copyControls(ctx.controls, demoControls);
+      if (this.mouseTakingOver) this.takeControl();
+    }
     this.overlay?.update(this.mouseYoke, this.mouseArmed, this.indicator.aileron, this.indicator.elevator, this.viewRect);
   }
 
@@ -551,10 +600,11 @@ export class InputSystem implements Subsystem {
     let best = 0;
     let active = false;
     for (const r of this.gamepads.readings) {
-      if (r.control !== control) continue;
+      if (r.control !== control || !this.pickedUp(r)) continue;
       active = active || r.value !== 0 || r.moved;
       if (Math.abs(r.value) > Math.abs(best)) best = r.value;
     }
+    if (this.pickup.has(control)) return null;
     const act = this.activity[control];
     act.sample(active, this.time);
     return act.isActive(this.time) ? best : null;
@@ -746,7 +796,7 @@ export class InputSystem implements Subsystem {
   private hardwareLever(control: AxisControl): { value: number; moved: boolean } | null {
     let found: { value: number; moved: boolean } | null = null;
     for (const r of this.gamepads.readings) {
-      if (r.control !== control) continue;
+      if (r.control !== control || !this.pickedUp(r)) continue;
       if (!found || r.moved) found = r;
     }
     return found;
@@ -841,7 +891,7 @@ export class InputSystem implements Subsystem {
     // is the lever of all engines: an engine whose lever has left the scalar keeps its own position).
     const kbThrottle = rate('throttleUp', THROTTLE_RATE) - rate('throttleDown', THROTTLE_RATE);
     let stick = 0;
-    for (const r of this.gamepads.readings) if (r.control === 'throttleRate') stick += r.value;
+    for (const r of this.gamepads.readings) if (r.control === 'throttleRate' && this.pickedUp(r)) stick += r.value;
     const hwThrottle = this.profile.rotorcraft ? null : this.hardwareLever('throttle');
     const nudging = kbThrottle !== 0 || stick !== 0;
     const throttleInc = (kbThrottle + stick * THROTTLE_STICK_RATE) * dt;
@@ -1181,4 +1231,12 @@ export class InputSystem implements Subsystem {
       window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Escape', key: 'Escape', bubbles: true, cancelable: true }));
     } else ctx.commands.setPaused(!ctx.paused);
   }
+}
+
+/** Pause, rate and view keys remain available while observing a demo; every other key takes control. */
+export function demoViewKey(code: string, shift: boolean): boolean {
+  const action = actionForKey(code, shift);
+  return !!action && /^(look|camera|zoom|view|mouseLook|pause)/.test(action) ||
+    code === 'Escape' || code === 'KeyP' || code === 'ShiftLeft' || code === 'ShiftRight' ||
+    code === 'F8' || code === 'F9' || shift && (code === 'BracketLeft' || code === 'BracketRight');
 }

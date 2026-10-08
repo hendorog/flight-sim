@@ -5,7 +5,8 @@ import { cloneControls } from '../../src/core/types';
 import { clamp } from '../../src/core/math';
 import { makeInputRig } from '../input/testbed';
 import { DT, rig, seaLevel } from './helpers';
-import { FlightRecorder, ScriptedPilot, writeTrace } from './scriptedPilot';
+import { ScriptedPilot, observePilot } from '../../src/sim/rotorcraft/scriptedPilot';
+import { FlightRecorder, writeTrace } from './scriptedPilot';
 
 describe('R22 keyboard hover through the real input path', () => {
   for (const gross of [true, false]) it(`${gross ? 'gross' : 'solo'}: 100 ms decisions/presses, no flight assists`, () => {
@@ -14,7 +15,7 @@ describe('R22 keyboard hover through the real input path', () => {
       onGround: true, engineRunning: true, fuelFraction: gross ? 1 : 0.5 }, seaLevel);
     const keyboard = makeInputRig(R22_INPUT, r.fm.trimControls);
     keyboard.ctx.state = r.fm.state; r.c = keyboard.c;
-    const desired = cloneControls(r.c), pilot = new ScriptedPilot({ fm: r.fm, c: desired });
+    const desired = cloneControls(r.c), pilot = new ScriptedPilot(observePilot(r.fm.state), desired);
     // A patient lift and slower attitude loop suit discrete keys. These are test-pilot choices,
     // not changes to input authority or feedback hidden in the production input/flight model.
     pilot.liftI = 0; pilot.pitchGain = 0.5; pilot.pitchDamping = 0.7; pilot.pitchLearning = 0.05;
@@ -40,7 +41,7 @@ describe('R22 keyboard hover through the real input path', () => {
           // They are deliberately rounded, not taken from the numerical hover trim solver.
           desired.elevator = gross ? 0.1 : -0.05; desired.aileron = gross ? -0.1 : -0.22;
           desired.rudder = -0.25; desired.collective = 0;
-        } else pilot.step(0.1, 0, clamp(0.5 * (3 - (r.fm.state.altitudeAGL - SKID_Z)), -0.5, 0.5), undefined, undefined, 0.3);
+        } else pilot.step(0.1, observePilot(r.fm.state), desired, 0, clamp(0.5 * (3 - (r.fm.state.altitudeAGL - SKID_Z)), -0.5, 0.5), undefined, undefined, 0.3);
         move('ArrowUp', 'ArrowDown', desired.elevator - r.c.elevator, 0.015);
         move('ArrowLeft', 'ArrowRight', desired.aileron - r.c.aileron, 0.015);
         move('KeyZ', 'KeyX', desired.rudder - r.c.rudder, 0.025);

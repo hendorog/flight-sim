@@ -23,6 +23,7 @@
 // and the first-flight hints suppressed once a training profile exists. `crashActions` lets the school
 // replace the crash dialog's buttons during a lesson.
 
+import type { R22DemoId } from '../sim/rotorcraft/flights';
 import { C172S_UI } from '../aircraft/c172s/ui';
 import type { AircraftDefinition, AircraftPresentation, AircraftSummary, UiProfile } from '../aircraft/types';
 import type { CameraMode, ScenarioId, SimContext, Subsystem } from '../core/context';
@@ -110,6 +111,8 @@ const CAMERA_NAMES: Record<CameraMode, string> = {
 };
 
 export class UISystem implements Subsystem, MenuHost {
+  r22Demos?: { start(id: R22DemoId): void };
+  demoFlying = false;
   readonly root: HTMLDivElement;
   private readonly hud: Hud;
   private readonly loading: LoadingScreen;
@@ -186,8 +189,8 @@ export class UISystem implements Subsystem, MenuHost {
     // instructor flies (a "mouse yoke" reading shows it and keeps it updating).
     this.controlsWidget.yoke = () => {
       const y = this.yokeSource?.();
-      const othersFlying = this.schoolUi?.instructorFlying === true;
-      if (!this.schoolUi?.followMeThrough) return { ...(y ?? { mouseYoke: false, source: 'keyboard' as const }), othersFlying };
+      const othersFlying = this.demoFlying || this.schoolUi?.instructorFlying === true;
+      if (!this.demoFlying && !this.schoolUi?.followMeThrough) return { ...(y ?? { mouseYoke: false, source: 'keyboard' as const }), othersFlying };
       return { ...(y ?? { source: 'keyboard' as const }), mouseYoke: true, othersFlying };
     };
     this.hints = new HintsCard(this.root, () => this.openMenu('controls'));
@@ -276,7 +279,7 @@ export class UISystem implements Subsystem, MenuHost {
     // A school screen (home, briefing, debrief...) is modal like the menu: no flight cues over it.
     const schoolModal = !!school?.screen;
     if (school) school.update(dt);
-    const showHud = this.hudOn && ctx.cameraMode !== 'cockpit' && !menuOpen && !schoolModal;
+    const showHud = !this.demoFlying && this.hudOn && ctx.cameraMode !== 'cockpit' && !menuOpen && !schoolModal;
     this.hud.visible = showHud;
     this.hud.topOffset = school?.stripVisible ? STRIP_CLEARANCE : 0;
     if (showHud) this.hud.update(dt, ctx);
@@ -284,7 +287,7 @@ export class UISystem implements Subsystem, MenuHost {
     const showAnnunc = !showHud && !menuOpen && !schoolModal;
     this.annunciators.visible = showAnnunc;
     if (showAnnunc) this.annunciators.update(ctx, this.crash.isOpen);
-    this.controlsWidget.update(ctx, !menuOpen && !this.crash.isOpen && !schoolModal);
+    this.controlsWidget.update(ctx, !this.demoFlying && !menuOpen && !this.crash.isOpen && !schoolModal);
     this.pausedBadge.classList.toggle('hidden', !this.pausedBadgeEnabled || !ctx.paused || menuOpen || this.crash.isOpen || schoolModal);
     if (menuOpen) this.menu!.update();
     if (menuOpen || this.crash.isOpen || schoolModal) this.hints.hide();
