@@ -357,10 +357,11 @@ export class Simulator {
     cameras.init(ctx);
     // The type's eye point, size and default cockpit view; the temporal pass gets the same radius (below).
     cameras.setAircraft({
-      pilotEye: def.geometry.fuselage.pilotEye,
+      pilotEye: { x: presentation.visual.cockpit.pilotEye[0], y: presentation.visual.cockpit.pilotEye[1], z: presentation.visual.cockpit.pilotEye[2] },
       radius: def.geometry.bounds.radius,
       fitSize: def.geometry.bounds.fitSize,
       defaultPitchDeg: presentation.visual.cockpit.defaultPitchDeg,
+      defaultFovDeg: presentation.visual.cockpit.defaultFovDeg,
     });
     // A camera cut (cockpit <-> exterior, a reset) must not blend the old view into the new one.
     cameras.onCut = () => this.post?.resetTemporalHistory();

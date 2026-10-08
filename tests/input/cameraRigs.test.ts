@@ -347,3 +347,21 @@ describe('another aircraft', () => {
     expect(reprojectionRadius(taa)).toBe(17);
   });
 });
+
+
+describe('aircraft cockpit field of view', () => {
+  it('recentres to the aircraft FOV and restores the airplane default on a type change', () => {
+    const rig = new CockpitRig();
+    const ctx = contextAt(0), out = makePose();
+    rig.setAircraft({ ...C172S_CAMERA, defaultFovDeg: 74, defaultPitchDeg: -31 });
+    rig.update(0, 0, ctx, poseOf(ctx.state), out);
+    expect(out.fov).toBe(74);
+    rig.zoomAt(3, 0, 0, 16 / 9);
+    rig.recentre();
+    for (let i = 0; i < 90; i++) rig.update(0, 1 / 60, ctx, poseOf(ctx.state), out);
+    expect(out.fov).toBeCloseTo(74, 6);
+    rig.setAircraft(C172S_CAMERA);
+    rig.update(0, 0, ctx, poseOf(ctx.state), out);
+    expect(out.fov).toBe(60);
+  });
+});

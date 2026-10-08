@@ -126,6 +126,7 @@ export class CameraSystem implements Subsystem, ViewControl {
       radius: aircraft.radius ?? C172S_CAMERA.radius,
       fitSize: aircraft.fitSize ?? C172S_CAMERA.fitSize,
       defaultPitchDeg: aircraft.defaultPitchDeg ?? C172S_CAMERA.defaultPitchDeg,
+      defaultFovDeg: aircraft.defaultFovDeg,
     };
     this.airframeRadius = a.radius;
     for (const rig of Object.values(this.rigs)) rig.setAircraft?.(a);

@@ -240,6 +240,8 @@ export interface VisualTrimPanelDef {
 
 export interface CockpitDef {
   pilotEye: FRD; defaultPitchDeg: number;
+  /** Vertical cockpit field of view; absent keeps the camera default (60 degrees). */
+  defaultFovDeg?: number;
   enclosure: 'cabin' | 'canopy';
   /**
    * The flat panel face. The canvas is always 2080 x 800 px. `pxRect` is the part of it shown on the face
@@ -360,6 +362,8 @@ export interface LiveryDef {
 
 export interface AirframeVisualDef {
   rotorcraft?: import('../../../physics/rotorcraft/definition').RotorcraftDefinition;
+  /** Geometry for the rotorcraft builder; separate from the aerodynamic coefficients. */
+  rotorcraftVisual?: RotorcraftVisualDef;
   id: string;
   fuselage: LoftDef & { nose: 'prop' | 'closed'; inlets: readonly InletDef[]; exhaust?: { pos: FRD; radius: number };
                         antennas: readonly { kind: 'blade' | 'stub' | 'whip'; pos: FRD;
@@ -386,5 +390,18 @@ export interface AirframeVisualDef {
    * ground when the aircraft stands on its wheels (absent: 1.25, the Cessna 172S).
    */
   shadow: { halfX: number; halfY: number; fuselage: readonly [number, number, number]; wingX: number; wingY: number; wingHeight: number;
-            restHeight?: number };
+            restHeight?: number; skids?: { halfTrack: number; front: number; rear: number } };
+}
+
+export interface RotorcraftVisualDef {
+  main: { hub: FRD; radius: number; root: number; chord: readonly [number, number]; twist: number };
+  tail: { hub: FRD; radius: number; root: number; chord: number; precone: number };
+  skids: { halfTrack: number; z: number; front: number; rear: number; crossTubes: readonly number[] };
+  boom: { front: FRD; rear: FRD; radii: readonly [number, number] };
+  mast: { bottom: FRD; top: FRD; bottomWidth: number; topWidth: number };
+  /** Thin aerofoil-like extrusions, outlined in FRD (upper fin, lower fin, stabiliser). */
+  fins: readonly { name: string; outline: readonly FRD[]; thickness: number; axis: 'y' | 'z' }[];
+  guard: readonly FRD[];
+  panel: { centre: FRD; width: number; height: number; tiltBackDeg: number; canvas: { w: number; h: number } };
+  collective: { pivots: readonly FRD[]; length: number };
 }

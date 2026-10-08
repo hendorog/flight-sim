@@ -1,64 +1,92 @@
+// Rotorcraft assembly. The cabin shares the aeroplanes' loft, texture bake, materials, lights and figures;
+// rotors and helicopter controls live in rotorcraft/. Render geometry never reads aerodynamic hub offsets.
 import * as THREE from 'three';
-import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 import type { SimContext } from '../../core/context';
+import type { AirframeVisualDef } from './airframe/types';
+import { buildFuselage, cabinFloorGeometry, createFuselageShapes } from './fuselage';
 import { frd } from './geometry';
+import { AircraftLights } from './lights';
+import { bakeFuselageTextures } from './livery';
+import { AircraftMaterials } from './materials';
+import { buildOccupants, type Occupants } from './occupants';
+import { buildShadowProxies } from './shadowProxy';
+import { buildRotorcraftAirframe, type RotorcraftAirframe } from './rotorcraft/airframe';
+import { RotorcraftCockpit } from './rotorcraft/cockpit';
+import { TeeteringRotor } from './rotorcraft/rotor';
 
-/** Procedural engineering exterior, deliberately separate from the fixed-wing mesh builder. */
 export class RotorcraftVisual {
   readonly root = new THREE.Group();
-  readonly main = new THREE.Group();
-  readonly tail = new THREE.Group();
-  readonly disc = new THREE.Group();
-  readonly panel: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
-  private readonly materials: THREE.Material[];
-  constructor(private readonly d: RotorcraftDefinition) {
-    const red = new THREE.MeshStandardMaterial({ color: 0xb52326, roughness: 0.3, metalness: 0.15 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x22272c, roughness: 0.5, metalness: 0.3 });
-    const glass = new THREE.MeshStandardMaterial({ color: 0x9ac1ce, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false });
-    const panelMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
-    this.materials = [red, dark, glass, panelMat];
-    const mesh = (geometry: THREE.BufferGeometry, material: THREE.Material, p: THREE.Vector3, group = this.root) => {
-      const m = new THREE.Mesh(geometry, material); m.position.copy(p); m.castShadow = true; m.receiveShadow = true; group.add(m); return m;
-    };
-    const tube = (a: THREE.Vector3, b: THREE.Vector3, radius: number, material = dark) => {
-      const delta = b.clone().sub(a);
-      const m = mesh(new THREE.CylinderGeometry(radius, radius, delta.length(), 12), material, a.clone().add(b).multiplyScalar(0.5));
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize()); return m;
-    };
-    const cabin = mesh(new THREE.SphereGeometry(1, 32, 20), red, frd(0.2, 0, 0.15));
-    cabin.scale.set(0.64, 0.6, 1.05);
-    const canopy = mesh(new THREE.SphereGeometry(1, 32, 20), glass, frd(0.4, 0, -0.2));
-    canopy.scale.set(0.62, 0.68, 1.0); canopy.castShadow = false;
-    // Engine bay, tail boom, mast, skids and two seats.
-    mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), red, frd(-0.7, 0, 0));
-    tube(frd(-0.7, 0, 0), frd(-4.1, 0, -0.3), 0.09, red);
-    tube(frd(0, 0, -0.3), frd(0, 0, d.main.hub.z), 0.045);
-    for (const y of [-d.skids.halfTrack, d.skids.halfTrack]) {
-      tube(frd(-1.25, y, d.skids.z), frd(1.15, y, d.skids.z), 0.032);
-      for (const x of [-0.65, 0.6]) tube(frd(x, y * 0.45, 0.4), frd(x, y, d.skids.z), 0.028);
-      mesh(new THREE.BoxGeometry(0.38, 0.5, 0.13), dark, frd(0.02, y * 0.3, 0));
-    }
-    mesh(new THREE.BoxGeometry(0.05, 0.8, 0.6), red, frd(-4, 0, -0.25));
-    mesh(new THREE.BoxGeometry(1.15, 0.04, 0.35), red, frd(-3.6, 0, -0.2));
-    this.disc.position.copy(frd(d.main.hub.x, d.main.hub.y, d.main.hub.z));
-    this.root.add(this.disc); this.disc.add(this.main);
-    mesh(new THREE.BoxGeometry(d.main.radius * 2, 0.025, d.main.chord), dark, new THREE.Vector3(), this.main);
-    this.tail.position.copy(frd(d.tail.hub.x, d.tail.hub.y, d.tail.hub.z)); this.root.add(this.tail);
-    mesh(new THREE.BoxGeometry(0.02, d.tail.radius * 2, d.tail.chord), dark, new THREE.Vector3(), this.tail);
-    this.panel = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.33), panelMat);
-    this.panel.position.copy(frd(1.02, 0, -0.04)); this.root.add(this.panel);
+  readonly main: TeeteringRotor;
+  readonly tail: TeeteringRotor;
+  readonly cockpit: RotorcraftCockpit;
+  readonly panel: RotorcraftCockpit['panel'];
+  private readonly materials: AircraftMaterials;
+  private readonly fittings: RotorcraftAirframe;
+  private readonly occupants: Occupants | null;
+  private readonly lights: AircraftLights;
+  private readonly camLocal = new THREE.Vector3();
+  private readonly tilt = new THREE.Vector3();
+  private readonly up = new THREE.Vector3(0, 1, 0);
+  private quality: string;
+
+  constructor(private readonly def: AirframeVisualDef, ctx: SimContext,
+    private readonly options: { lightScale: number; panelEmissiveScale: number; interiorLodDistance: number }) {
+    const d = def.rotorcraftVisual;
+    if (!d) throw new Error('Rotorcraft airframe has no visual geometry');
+    this.root.name = 'rotorcraft';
+    const shapes = createFuselageShapes(def);
+    const textures = bakeFuselageTextures(shapes.outer, shapes.glass, shapes.lining, def);
+    this.materials = new AircraftMaterials(textures, def);
+    const mat = this.materials;
+    const fuselage = buildFuselage(shapes, mat, def);
+    this.root.add(fuselage.skin, fuselage.glass, fuselage.fittings);
+    this.fittings = buildRotorcraftAirframe(def, mat, shapes.outer); this.root.add(this.fittings.group);
+    const floor = def.cockpit.floor;
+    this.cockpit = new RotorcraftCockpit(def, mat, cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1));
+    this.cockpit.group.add(fuselage.lining); this.root.add(this.cockpit.group);
+    this.panel = this.cockpit.panel;
+    this.occupants = buildOccupants(def.cockpit); if (this.occupants) this.cockpit.group.add(this.occupants.group);
+    this.main = new TeeteringRotor(d.main, mat); this.main.group.position.copy(frd(...d.main.hub)); this.root.add(this.main.group);
+    this.tail = new TeeteringRotor({ ...d.tail, chord: [d.tail.chord, d.tail.chord], twist: 0, tail: true }, mat);
+    this.tail.group.position.copy(frd(...d.tail.hub)); this.tail.group.rotation.z = Math.PI / 2; this.root.add(this.tail.group);
+    this.lights = new AircraftLights(ctx.quality !== 'low', options.lightScale, new THREE.Group(), def.lamps, undefined, 14);
+    this.quality = ctx.quality; this.root.add(this.lights.group);
+    buildShadowProxies(this.root, { moving: [this.cockpit.group, ...this.cockpit.moving, this.main.spin, this.tail.spin, this.main.swashplate],
+      keep: [this.main.blades, this.tail.blades], none: [this.panel] });
   }
+
+  setPanelTexture(texture: THREE.Texture): void { this.cockpit.setPanelTexture(texture); }
+  setPanelEmissiveTexture(texture: THREE.Texture): void { this.cockpit.setPanelEmissiveTexture(texture); }
+
   update(ctx: SimContext): void {
-    const r = ctx.state.rotorcraft;
-    if (!r) return;
-    this.main.rotation.y = r.azimuth;
-    this.disc.rotation.x = r.flapForward; this.disc.rotation.z = -r.flapRight;
-    this.tail.rotation.x = -r.azimuth * this.d.tailRatio;
-    this.panel.material.emissive.setScalar(ctx.controls.lights.panel * (ctx.state.electrical.busVoltage > 10 ? 0.3 : 0));
+    const r = ctx.state.rotorcraft, c = ctx.controls, d = this.def.rotorcraft!, v = this.def.rotorcraftVisual!;
+    if (r) {
+      // FRD thrust normal [sin(forward), sin(right), -cos(...)] maps to model [right, up, -forward].
+      this.tilt.set(Math.sin(r.flapRight), Math.cos(r.flapForward) * Math.cos(r.flapRight), -Math.sin(r.flapForward)).normalize();
+      this.main.group.quaternion.setFromUnitVectors(this.up, this.tilt);
+      const spin = Math.min(1, Math.max(0, r.rotorRpm / d.nominalRpm));
+      // Visual estimate: about 2.5 deg coning at gross-weight hover, drooping 2 deg when stopped.
+      const cone = THREE.MathUtils.lerp(-2 * Math.PI / 180, Math.min(5, Math.max(0, r.thrust) / 6000 * 2.5) * Math.PI / 180, spin * spin);
+      const pitch = THREE.MathUtils.lerp(d.main.minPitch, d.main.maxPitch, c.collective ?? 0);
+      this.main.update(r.azimuth, r.rotorRpm, pitch, cone);
+      this.tail.update(-r.azimuth * d.tailRatio, r.rotorRpm * d.tailRatio, THREE.MathUtils.lerp(d.tail.minPitch, d.tail.maxPitch, (c.rudder + 1) / 2), v.tail.precone);
+    }
+    if (ctx.quality !== this.quality) { this.quality = ctx.quality; this.lights.setPointLights(ctx.quality !== 'low'); }
+    this.lights.update(ctx.simTime, ctx.state, c, this.root, ctx.camera, ctx.renderer, ctx.sky);
+    this.materials.setSun(ctx.sky.sunDir, ctx.sky.sunColor);
+    this.root.updateWorldMatrix(true, false); ctx.camera.getWorldPosition(this.camLocal); this.root.worldToLocal(this.camLocal);
+    const inside = ctx.cameraMode === 'cockpit';
+    this.cockpit.group.visible = inside || this.camLocal.length() * Math.tan(ctx.camera.fov * Math.PI / 360) / Math.tan(Math.PI / 6) < this.options.interiorLodDistance;
+    if (this.occupants) this.occupants.group.visible = !inside;
+    this.cockpit.update(c, ctx.state.electrical.busVoltage, this.options.panelEmissiveScale);
   }
+
   dispose(): void {
     this.root.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
-    for (const m of this.materials) m.dispose();
-    this.root.removeFromParent();
+    this.main.dispose(); this.tail.dispose(); this.cockpit.dispose(); this.lights.dispose();
+    for (const m of this.occupants?.materials ?? []) m.dispose();
+    for (const m of this.fittings.materials) m.dispose();
+    for (const t of this.fittings.textures) t.dispose();
+    this.materials.dispose(); this.root.removeFromParent();
   }
 }

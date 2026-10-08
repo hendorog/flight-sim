@@ -240,6 +240,7 @@ export class AircraftLights {
   readonly group = new THREE.Group();
   private readonly lamps: Record<LightId, Lamp>;
   private readonly strobeLights: THREE.PointLight[] = [];
+  private readonly installed = new Set<LightId>();
   private beaconLight: THREE.PointLight | null = null;
   private readonly landing: THREE.SpotLight;
   private readonly taxi: THREE.SpotLight;
@@ -276,12 +277,15 @@ export class AircraftLights {
     rudder: THREE.Object3D,
     defs: readonly LampVisualDef[] = C172S_VISUAL.lamps,
     noseGear?: THREE.Object3D,
+    private readonly nominalVoltage = 28,
   ) {
     this.group.name = 'aircraftLights';
+    for (const lamp of defs) this.installed.add(lamp.id);
     const def = (id: LightId): LampVisualDef => {
       const d = defs.find((l) => l.id === id);
-      if (!d) throw new Error(`aircraft lights: the definition has no lamp '${id}'`);
-      return d;
+      // Keep stable shader/light slots for types with a single strobe or no taxi lamp. Absent lamps
+      // have no lens, glow or illumination; existing eight-lamp airplane definitions are unchanged.
+      return d ?? { id, pos: [0, 0, 0], radius: 0.001, glowOffset: [0, 0, 0] };
     };
     const at = (id: LightId): THREE.Vector3 => {
       const p = def(id).pos;
@@ -306,6 +310,7 @@ export class AircraftLights {
       });
       const m = new THREE.Mesh(geo, mat);
       m.position.copy(pos);
+      m.visible = this.installed.has(id);
       if (parent !== this.group) {
         // Re-express the (model-space) position in the moving part's frame.
         if (d.parent === 'noseGear') {
@@ -359,14 +364,18 @@ export class AircraftLights {
 
     // Point lights always exist (so a quality change does not alter the light count and recompile every
     // material); on low quality they simply stay dark.
+    this.landing.visible = this.installed.has('landing');
+    this.taxi.visible = this.installed.has('taxi');
     this.pointLightsOn = pointLights;
     for (const side of [-1, 1] as const) {
       const p = new THREE.PointLight(XENON, 0, 14, 2);
       p.position.copy(strobePos(side)).add(new THREE.Vector3(side * 0.08, 0, 0));
+      p.visible = this.installed.has(side < 0 ? 'strobeL' : 'strobeR');
       this.strobeLights.push(p);
       this.group.add(p);
     }
     this.beaconLight = new THREE.PointLight(RED, 0, 10, 2);
+    this.beaconLight.visible = this.installed.has('beacon');
     this.beaconLight.position.copy(beaconPos).add(new THREE.Vector3(0, 0.08, 0));
     this.group.add(this.beaconLight);
 
@@ -435,7 +444,7 @@ export class AircraftLights {
     renderer: THREE.WebGLRenderer,
     sky?: SkyState,
   ): void {
-    const v = state.electrical.busVoltage;
+    const v = state.electrical.busVoltage * 28 / this.nominalVoltage;
     const power = Math.min(1, Math.max(0, (v - 18) / 6));
     const l = controls.lights;
     const k = LIGHT_UNITS_PER_CANDELA * this.lightScale;
@@ -470,6 +479,7 @@ export class AircraftLights {
     const col = this.glowCol.array as Float32Array;
     for (let i = 0; i < LIGHT_IDS.length; i++) {
       const id = LIGHT_IDS[i];
+      if (!this.installed.has(id)) { this.glowCol.setXYZ(i, 0, 0, 0); continue; }
       const lamp = this.lamps[id];
       const level = this.onNoseGear.has(id) ? levels[id] * legDown : levels[id];
       // Lamp position in model space.

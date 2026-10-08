@@ -87,6 +87,7 @@ export class CockpitRig implements CameraRig {
   private pitch = this.defaultPitch;
   private targetYaw = 0;
   private targetPitch = this.defaultPitch;
+  private defaultFov = DEFAULT_FOV;
   private fov = DEFAULT_FOV;
   private targetFov = DEFAULT_FOV;
   private turnLook = 0;
@@ -107,6 +108,8 @@ export class CockpitRig implements CameraRig {
     this.pilotEye = a.pilotEye;
     this.head.eye = a.pilotEye;
     this.defaultPitch = a.defaultPitchDeg * DEG;
+    this.defaultFov = a.defaultFovDeg ?? DEFAULT_FOV;
+    this.fov = this.defaultFov;
     eyeInDefaultView(this.defaultPitch, this.eyeDefault);
     this.recentre();
     this.yaw = this.targetYaw;
@@ -202,7 +205,7 @@ export class CockpitRig implements CameraRig {
     this.saved = null;
     this.targetYaw = 0;
     this.targetPitch = this.defaultPitch;
-    this.targetFov = DEFAULT_FOV;
+    this.targetFov = this.defaultFov;
   }
 }
 
