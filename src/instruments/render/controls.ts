@@ -9,6 +9,7 @@ import type { GaugeDef, LampDef, PanelDef } from '../panelDef';
 import { knob, screw } from './art';
 import { context2d, LABEL_FONT, makeCanvas, rng, type Ctx2D } from './canvas';
 import { Latch, LIGHT_DIAL, type PanelComponent, type Rect } from './component';
+import { switchRowSolids } from '../panelParts';
 import { PANEL_LAYOUT, type RockerKey } from '../layout';
 
 export const PAINT_WHITE = '#ecebe4';
@@ -35,9 +36,12 @@ export class AnnunciatorPanel implements PanelComponent {
     readonly bounds: Rect,
     private readonly lamps: readonly LampDef[] = C172S_ANNUNCIATOR_LAMPS,
     private readonly columns?: number,
+    private readonly cells?: readonly Rect[],
   ) {
     this.latch = new Latch(lamps.length);
   }
+
+  get paintRects(): readonly Rect[] | undefined { return this.cells; }
 
   sample(r: InstrumentReadings): boolean {
     this.lamps.forEach((l, i) => this.latch.set(i, l.lit(r) ? 1 : 0, 1));
@@ -45,6 +49,7 @@ export class AnnunciatorPanel implements PanelComponent {
   }
 
   private cell(i: number): Rect {
+    if (this.cells) return this.cells[i];
     const A = AnnunciatorPanel;
     const cols = this.columns ?? this.lamps.length;
     const rows = Math.ceil(this.lamps.length / cols);
@@ -56,6 +61,7 @@ export class AnnunciatorPanel implements PanelComponent {
   }
 
   drawStatic(g: Ctx2D): void {
+    if (this.cells) return;
     const b = this.bounds;
     g.save();
     g.shadowColor = 'rgba(0,0,0,0.6)';
@@ -78,6 +84,20 @@ export class AnnunciatorPanel implements PanelComponent {
     this.lamps.forEach((lamp, i) => {
       const { x, y, w, h } = this.cell(i);
       const on = this.latch.get(i) === 1;
+      if (this.cells) {
+        const cx = x + w / 2, cy = y + h - 14;
+        g.save();
+        lamp.text.split(' ').forEach((word, j, words) => label(g, word, cx, cy - 20 - (words.length - 1 - j) * 9, 7));
+        g.fillStyle = '#080909'; g.beginPath(); g.arc(cx, cy, 12, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = '#787872'; g.lineWidth = 1.5; g.stroke();
+        if (on) { g.shadowColor = lamp.color; g.shadowBlur = 12; }
+        g.fillStyle = on ? lamp.color : '#302819';
+        g.beginPath(); g.arc(cx, cy, 8.5, 0, Math.PI * 2); g.fill();
+        g.shadowBlur = 0;
+        g.fillStyle = on ? '#fff1c5' : '#5a5040'; g.beginPath(); g.arc(cx - 2, cy - 3, 2.5, 0, Math.PI * 2); g.fill();
+        g.restore();
+        return;
+      }
       g.fillStyle = '#060606';
       g.fillRect(x, y, w, h);
       g.save();
@@ -144,6 +164,7 @@ const MAG_LABELS = ['OFF', 'R', 'L', 'BOTH', 'START'];
 export class SwitchPanel implements PanelComponent {
   readonly id = 'switches';
   readonly bounds: Rect;
+  readonly paintRects?: readonly Rect[];
   /** One value per rocker, then the key position and the dimmer setting. */
   private readonly latch: Latch;
 
@@ -152,6 +173,7 @@ export class SwitchPanel implements PanelComponent {
     private readonly ignition: PanelDef['ignition'],
   ) {
     this.bounds = row.bounds;
+    if (row.switches.some(s => s.top !== undefined)) this.paintRects = switchRowSolids({ switchRow: row, ignition });
     this.latch = new Latch(row.switches.length + 2);
   }
 
@@ -178,6 +200,7 @@ export class SwitchPanel implements PanelComponent {
     g.save();
     g.translate(x, y);
     for (const d of row.switches) {
+      const top = d.top ?? row.rockerTop;
       // Recess
       g.fillStyle = '#0b0b0c';
       g.beginPath();
@@ -233,7 +256,7 @@ export class SwitchPanel implements PanelComponent {
     const n = row.switches.length;
     g.save();
     g.translate(x, y);
-    row.switches.forEach((d, i) => rocker(g, d.x - row.rockerW / 2, row.rockerTop, row.rockerW, row.rockerH, this.latch.get(i) === 1, !!d.red));
+    row.switches.forEach((d, i) => rocker(g, d.x - row.rockerW / 2, d.top ?? row.rockerTop, row.rockerW, row.rockerH, this.latch.get(i) === 1, !!d.red));
     if (this.ignition.kind === 'key') {
       // Key
       const pos = this.latch.get(n);

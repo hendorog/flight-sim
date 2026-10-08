@@ -46,15 +46,22 @@ export const TAIL_END_X = NOSE_X - FUSELAGE_LENGTH;
 /** Right seat is the pilot (command) seat in the R22; solo from the right. Eye point ESTIMATE. */
 export const PILOT_EYE = { x: 0.72, y: 0.28, z: SKID_Z - 1.5 } as const;
 
-/** Instrument console face (the pod above the centre pedestal, between the seats). The panel canvas
- * (aircraft/r22/panel.ts `size`) is PANEL_CANVAS px and maps onto this face at PANEL_PX_PER_M with no
- * cropping. Face centre, size and back-tilt are ESTIMATES from cockpit photographs. */
+/** Console and pedestal: ESTIMATE scaled from the 3-1/8 inch instruments in POH 7-21 and IPC fig 95-1.
+ * https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_ipc_95_b93d8d009d.pdf
+ * The 0.34 m upper pod narrows to a 0.20 m radio pedestal; total face height 0.68 m. The outline is
+ * shared by canvas and mesh, so instrument spacing, silhouette and click UVs have one definition.
+ * Position, 15 degree rake and 0.20 m enclosure depth remain photographic estimates, not POH dimensions. */
 export const PANEL_PX_PER_M = 2400;
-export const PANEL_CANVAS = { w: 1344, h: 720 } as const;
+export const PANEL_CANVAS = { w: 816, h: 1632 } as const;
+export const PANEL_OUTLINE = [
+  [90, 0], [726, 0], [780, 36], [816, 110], [816, 505], [790, 578],
+  [650, 606], [648, 1576], [614, 1632], [202, 1632], [168, 1576],
+  [166, 606], [26, 578], [0, 505], [0, 110], [36, 36],
+] as const;
 export const PANEL_FACE = {
-  centre: { x: 1.12, y: 0, z: SKID_Z - 1.02 },
+  centre: { x: 1.26, y: 0, z: SKID_Z - 0.99 },
   width: PANEL_CANVAS.w / PANEL_PX_PER_M,
   height: PANEL_CANVAS.h / PANEL_PX_PER_M,
   /** Face normal tilted up from horizontal-aft by this much (0 = vertical face). */
-  tiltBackDeg: 25,
+  tiltBackDeg: 15,
 } as const;

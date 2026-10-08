@@ -8,6 +8,7 @@
 // changed are redrawn (background restore + face + needles + bezel) and the texture is re-uploaded only
 // if something changed.
 
+import { DualSectorGauge } from './render/dualSector';
 import * as THREE from 'three';
 import { C172S_PANEL } from '../aircraft/c172s/panel';
 import type { SimContext } from '../core/context';
@@ -190,13 +191,15 @@ export class InstrumentPanel {
     const light = this.light;
     for (const c of this.components) {
       if (!c.sample(r, ctx.controls, ctx.simTime)) continue;
-      const b = c.bounds;
-      this.g.drawImage(this.background, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
+      const rects = c.paintRects ?? [c.bounds];
+      for (const b of rects) this.g.drawImage(this.background, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
       c.draw(this.g);
-      this.upload.add(b);
-      if (light && c.paintLightMask) {
-        this.updateLight(b);
-        light.upload.add(b);
+      for (const b of rects) {
+        this.upload.add(b);
+        if (light && c.paintLightMask) {
+          this.updateLight(b);
+          light.upload.add(b);
+        }
       }
     }
     // Only the redrawn rectangles go to the GPU (a full upload until three.js has created the textures).
@@ -263,7 +266,7 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
     if (g.kind === 'gearLights' && g.lever) into.push(new GearSelector(leverId(g.id), g.lever));
     if (g.kind === 'flapLights' && g.lever) into.push(new FlapSwitch(leverId(g.id), g.lever, g));
   }
-  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns));
+  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns, def.annunciator.cells));
   dials.push(new SwitchPanel(def.switchRow, def.ignition));
   const ignition = ignitionLayout(def.ignition);
   if (ignition && def.ignition.kind !== 'key') dials.push(new IgnitionSwitches(def.ignition.kind, ignition));
@@ -304,6 +307,8 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return ammeterGauge(g.id, g.at[0], g.at[1], r, g.scale);
     case 'tach':
       return new TachometerGauge(g.id, g.at[0], g.at[1], r, g.marks, g.size, g.engine);
+    case 'dualSector':
+      return new DualSectorGauge(g.id, g.bounds, g.left, g.right);
     case 'dual':
       return new DualGauge(g.id, g.at[0], g.at[1], r, g.seed, g.title, g.left, g.right);
     case 'single':
@@ -345,6 +350,12 @@ function paintBackground(g: Ctx2D, def: PanelDef, components: PanelComponent[]):
   const H = def.size.h;
   const bg = def.background;
   const rand = rng(4242);
+  g.save();
+  if (bg.outline) {
+    g.beginPath();
+    bg.outline.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
+    g.closePath(); g.clip();
+  }
   g.fillStyle = bg.color ?? PANEL_GREY;
   g.fillRect(0, 0, W, H);
   // Crinkle-finish paint: tiled grain in overlay mode.
@@ -422,6 +433,7 @@ function paintBackground(g: Ctx2D, def: PanelDef, components: PanelComponent[]):
     g.fillStyle = grain;
     g.fillRect(0, 0, W, 28);
   }
+  g.restore();
   g.restore();
 }
 

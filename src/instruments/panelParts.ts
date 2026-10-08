@@ -134,6 +134,8 @@ export function ignitionLayout(ign: IgnitionPanelDef): IgnitionLayout | null {
 export interface PanelPart {
   id: string;
   rect: Rect;
+  /** Disjoint update rectangles when the component bounds enclose other instruments. */
+  paintRects?: readonly Rect[];
   /** The body of a round-flanged instrument (the rectangle's corners are empty). */
   round?: { x: number; y: number; r: number };
   /**
@@ -169,7 +171,7 @@ export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures'], scale?
       return [{ id: g.id, rect: guardedKnobRect(g.at) }];
     case 'flapLever':
       return [{ id: g.id, rect: g.bounds, solid: [] }];
-    case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'pullKnob': case 'pushButton':
+    case 'dualSector': case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'pullKnob': case 'pushButton':
       return [{ id: g.id, rect: g.bounds }];
     default:
       return [];
@@ -194,10 +196,10 @@ export const SWITCH_ROW_ID = 'switches';
 export const IGNITION_ID = 'ignition';
 
 /** The artwork of the switch row, panel px: each rocker with its legend, the dimmers, the key with its lettering. */
-function switchRowSolids(def: PanelDef): Rect[] {
+export function switchRowSolids(def: Pick<PanelDef, 'switchRow' | 'ignition'>): Rect[] {
   const row = def.switchRow;
   const { x, y } = row.bounds;
-  const solids: Rect[] = row.switches.map((s) => ({ x: x + s.x - row.rockerW / 2 - 3, y: y + row.rockerTop - 30, w: row.rockerW + 6, h: row.rockerH + 33 }));
+  const solids: Rect[] = row.switches.map((s) => ({ x: x + s.x - row.rockerW / 2 - 3, y: y + (s.top ?? row.rockerTop) - 30, w: row.rockerW + 6, h: row.rockerH + 33 }));
   if (row.dimmers) for (const dx of [row.dimmers.panel, row.dimmers.radio]) solids.push({ x: x + dx - 14, y: y + row.dimmers.y - 14, w: 28, h: 28 });
   if (def.ignition.kind === 'key') solids.push({ x: def.ignition.at[0] - 50, y: def.ignition.at[1] - 42, w: 100, h: 68 });
   return solids;
@@ -212,8 +214,8 @@ export function panelParts(def: PanelDef): PanelPart[] {
   const dials: PanelPart[] = [];
   const rest: PanelPart[] = [];
   for (const g of def.gauges) ('at' in g ? dials : rest).push(...gaugeParts(g, def.apertures, def.instrumentScale));
-  if (def.annunciator) dials.push({ id: ANNUNCIATOR_ID, rect: def.annunciator.bounds });
-  dials.push({ id: SWITCH_ROW_ID, rect: def.switchRow.bounds, solid: switchRowSolids(def) });
+  if (def.annunciator) dials.push({ id: ANNUNCIATOR_ID, rect: def.annunciator.bounds, paintRects: def.annunciator.cells });
+  dials.push({ id: SWITCH_ROW_ID, rect: def.switchRow.bounds, solid: switchRowSolids(def), paintRects: def.switchRow.switches.some(s => s.top !== undefined) ? switchRowSolids(def) : undefined });
   const ignition = ignitionLayout(def.ignition);
   if (ignition) dials.push({ id: IGNITION_ID, rect: ignition.rect });
   return [...dials, ...rest];

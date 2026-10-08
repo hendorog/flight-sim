@@ -5,7 +5,7 @@
 // contract retains its earlier 105 in / 344 in envelope. No shared dimensions are changed here.
 import type { AirframeVisualDef, FRD, RotorcraftVisualDef } from '../../render/aircraft/airframe/types';
 import { R22_ROTORCRAFT } from './rotorcraft';
-import { CABIN_WIDTH, MAIN_HUB, MAIN_ROTOR_RADIUS, NOSE_X, PANEL_CANVAS, PANEL_FACE, PILOT_EYE,
+import { CABIN_WIDTH, MAIN_HUB, MAIN_ROTOR_RADIUS, NOSE_X, PANEL_CANVAS, PANEL_FACE, PANEL_OUTLINE, PILOT_EYE,
   SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, SKID_FRONT_X, SKID_HALF_TRACK, SKID_REAR_X, SKID_Z,
   TAIL_END_X, TAIL_HUB, TAIL_ROTOR_RADIUS } from './dimensions';
 
@@ -27,7 +27,7 @@ const ROTORCRAFT: RotorcraftVisualDef = {
   ],
   guard: [[TX + 0.57, 0.03, TZ + 0.10], [TX + 0.45, 0.03, TZ + 0.39], [TX - 0.03, 0.03, TZ + 0.65], [TAIL_END_X - 0.02, 0.03, TZ + 0.70]],
   panel: { centre: point(PANEL_FACE.centre), width: PANEL_FACE.width, height: PANEL_FACE.height,
-    tiltBackDeg: PANEL_FACE.tiltBackDeg, canvas: PANEL_CANVAS },
+    tiltBackDeg: PANEL_FACE.tiltBackDeg, canvas: PANEL_CANVAS, outline: PANEL_OUTLINE },
   collective: { pivots: [[0.58, -0.49, 0.25], [0.58, 0.04, 0.25]], length: 0.51 },
 };
 
