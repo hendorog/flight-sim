@@ -26,9 +26,16 @@ export interface RotorcraftState {
   flapForward: number; flapRight: number; governorThrottle: number;
   thrust: number; tailThrust: number; torque: number; driveTorque: number;
   rotorRpm: number; lowRpm: boolean; vortexRing: number; stalledFraction: number;
+  /** Systems outputs read by the panel, annunciators and audio (contract between physics and presentation).
+   * clutchEngagement: belt/clutch engagement 0 (slack) .. 1 (fully tensioned).
+   * clutchLight: CLUTCH caution, lit while the clutch actuator is moving.
+   * governorActive: governor switched on AND active (engine above its engagement RPM).
+   * lowRpmHorn: LOW RPM light and horn (rotor below 97 % with collective not fully down). */
+  clutchEngagement: number; clutchLight: boolean; governorActive: boolean; lowRpmHorn: boolean;
 }
 export function emptyRotorcraftState(): RotorcraftState {
   return { omega: 0, azimuth: 0, inflow: 0, tailInflow: 0, flapForward: 0, flapRight: 0,
     governorThrottle: 0, thrust: 0, tailThrust: 0, torque: 0, driveTorque: 0,
-    rotorRpm: 0, lowRpm: false, vortexRing: 0, stalledFraction: 0 };
+    rotorRpm: 0, lowRpm: false, vortexRing: 0, stalledFraction: 0,
+    clutchEngagement: 0, clutchLight: false, governorActive: false, lowRpmHorn: false };
 }
