@@ -269,6 +269,7 @@ export interface FlightModelOptions {
 
 /** Everything SimPhysics restores besides the rigid body and the controls. */
 export interface SystemsSnapshot {
+  rotorcraft?: import('./rotorcraft/definition').RotorcraftState;
   engines: EngineSnapshot[];
   /** Usable fuel per tank, kg, definition order. */
   tanks: number[];

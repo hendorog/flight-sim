@@ -235,7 +235,7 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
   out[P.slip] = w.slip;
   out[P.flapNoise] = w.flap;
   out[P.buffet] = buffet(s.stallFraction);
-  out[P.horn] = powered || !profile.stallWarner.needsBus ? stallHorn(s.stallWarning, s.alpha, s.ias, profile.stallWarner) : 0;
+  out[P.horn] = powered || !profile.stallWarner.needsBus ? stallHorn(s.rotorcraft?.lowRpm ?? s.stallWarning, s.alpha, s.ias, profile.stallWarner) : 0;
   out[P.flapMotor] = powered && profile.flapMotor ? x.flapMotor : 0;
   let onGround = 0;
   let skid = 0;

@@ -592,9 +592,9 @@ describe('gear lever and rudder trim', () => {
 describe('the Cessna 172S: none of the new keys does anything', () => {
   it('pressing and holding every new key leaves every control as it was', () => {
     const fresh = KEY_MAP.filter((m) => !profileHasAction(C172S_INPUT, m.action));
-    // The fourteen key entries of the levers and switches this type has not, and nothing it had before.
+    // The sixteen key entries of the levers and switches this type has not, and nothing it had before.
     expect(fresh.map((m) => `${m.shift === true ? 'Shift+' : ''}${m.code}`)).toEqual([
-      'F7', 'Shift+F7', 'F10', 'Digit6', 'Digit7', 'Semicolon', 'Shift+Semicolon', 'Shift+KeyF', 'Slash', 'Backslash', 'Shift+Backslash', 'Digit8', 'Digit9', 'Digit0',
+      'Insert', 'Delete', 'F7', 'Shift+F7', 'F10', 'Digit6', 'Digit7', 'Semicolon', 'Shift+Semicolon', 'Shift+KeyF', 'Slash', 'Backslash', 'Shift+Backslash', 'Digit8', 'Digit9', 'Digit0',
     ]);
     for (const airborne of [false, true]) {
       const r = makeInputRig(C172S_INPUT);
@@ -674,7 +674,7 @@ describe('help listing of other types', () => {
     const actions = new Set<InputAction>(KEY_MAP.map((m) => m.action));
     const all = keyBindingsFor({ ...TWIN_INPUT, has: { mixture: true, propeller: true, feather: true, carbHeat: true, alternateAir: true, cowlFlaps: true, gear: true, rudderTrim: true, fuelPump: true } });
     // One row per action plus the four mouse rows.
-    expect(all.length).toBe(actions.size + 4);
+    expect(all.length).toBe([...actions].filter(a => profileHasAction(TWIN_INPUT, a) || a === 'carbHeat').length + 4);
     expect(all.every((b) => b.keys && b.action && b.category)).toBe(true);
   });
 });

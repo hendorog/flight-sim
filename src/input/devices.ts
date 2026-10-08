@@ -15,6 +15,7 @@ export type AxisControl =
   | 'aileron'
   | 'elevator'
   | 'rudder'
+  | 'collective'
   | 'throttle'
   | 'throttleRate'
   | 'mixture'
@@ -27,6 +28,7 @@ export const AXIS_CONTROLS: readonly AxisControl[] = [
   'aileron',
   'elevator',
   'rudder',
+  'collective',
   'throttle',
   'throttleRate',
   'mixture',

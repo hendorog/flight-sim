@@ -359,6 +359,7 @@ export interface LiveryDef {
 }
 
 export interface AirframeVisualDef {
+  rotorcraft?: import('../../../physics/rotorcraft/definition').RotorcraftDefinition;
   id: string;
   fuselage: LoftDef & { nose: 'prop' | 'closed'; inlets: readonly InletDef[]; exhaust?: { pos: FRD; radius: number };
                         antennas: readonly { kind: 'blade' | 'stub' | 'whip'; pos: FRD;

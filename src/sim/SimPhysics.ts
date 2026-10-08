@@ -225,7 +225,7 @@ export class SimPhysics {
     this.wasCrashed = false;
     this.gearEvents.sync(this.fm.state.gear);
     this.autoflight.disengage();
-    if (this.autoflightOnReset) this.autoflight.engage(sc.autoflight, this.fm.state, c);
+    if (this.autoflightOnReset && !this.definition.rotorcraft) this.autoflight.engage(sc.autoflight, this.fm.state, c);
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -367,6 +367,11 @@ export class SimPhysics {
       st.engines[i].rpm = e.rpm;
       st.propellers[i].rpm = e.propRpm;
     }
+    if (st.rotorcraft) {
+      st.propeller.rpm = st.rotorcraft.rotorRpm;
+      st.propeller.rotation = st.rotorcraft.azimuth;
+      st.engine.propRpm = st.rotorcraft.rotorRpm;
+    }
     st.time = snap.simTime;
     this.accumulator = 0;
     this.steps = 0;
@@ -375,7 +380,7 @@ export class SimPhysics {
     this.setRate(1 / this.stepSize);
     this.wasCrashed = false;
     this.gearEvents.sync(st.gear);
-    this.autoflight.importState(snap.autoflight);
+    if (!def.rotorcraft) this.autoflight.importState(snap.autoflight);
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -384,6 +389,7 @@ export class SimPhysics {
 
   /** Engage (true) or disengage the autoflight; engaging mid-flight holds the current heading/altitude/speed. */
   setAutoflight(on: boolean, useScenarioPlan = false): void {
+    if (this.definition.rotorcraft) { this.autoflight.disengage(); return; }
     if (!on) this.autoflight.disengage();
     else if (useScenarioPlan) this.autoflight.engage(this.scenario.autoflight, this.fm.state, this.controls);
     else this.autoflight.engageHere(this.fm.state, this.controls);
@@ -441,7 +447,7 @@ export class SimPhysics {
   private chooseRate(timeScale: number): void {
     const s = this.fm.state;
     const coarse =
-      timeScale > COARSE_TIME_SCALE && !s.onGround && !s.crashed && s.altitudeAGL > COARSE_MIN_AGL && !s.wheels.some((w) => w.onGround);
+      !this.definition.rotorcraft && timeScale > COARSE_TIME_SCALE && !s.onGround && !s.crashed && s.altitudeAGL > COARSE_MIN_AGL && !s.wheels.some((w) => w.onGround);
     const rate = coarse ? Math.min(timeScale > 8 ? COARSE_RATE / 2 : COARSE_RATE, 1 / this.stepSize) : 1 / this.stepSize;
     if (Math.abs(1 / this.h - rate) > 1e-9) {
       // Keep the interpolation fraction when switching (the accumulator is in seconds).

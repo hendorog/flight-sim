@@ -67,6 +67,8 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
     engineCount: 2,
     available: false,
   },
+  { id: 'r22', name: 'Robinson R22 Beta II (experimental)', shortName: 'R22 Beta II',
+    blurb: 'Experimental two-seat helicopter, 131 hp; validation in progress', engineCount: 1, available: false },
 ];
 
 export function aircraftSummary(id: AircraftId): AircraftSummary {
@@ -83,6 +85,7 @@ const DEFINITION_LOADERS: Readonly<Record<Exclude<AircraftId, 'c172s'>, () => Pr
   da20: () => import('./da20/index'),
   pa34: () => import('./pa34/index'),
   da42: () => import('./da42/index'),
+  r22: () => import('./r22/index'),
 };
 
 // The C172S presentation is imported statically by the application shell, so there this resolves without a
@@ -94,6 +97,7 @@ const PRESENTATION_LOADERS: Readonly<Record<AircraftId, () => Promise<{ default:
   da20: () => import('./da20/presentation'),
   pa34: () => import('./pa34/presentation'),
   da42: () => import('./da42/presentation'),
+  r22: () => import('./r22/presentation'),
 };
 
 const definitions = new Map<AircraftId, AircraftDefinition>([[C172S_DEFINITION.id, C172S_DEFINITION]]);

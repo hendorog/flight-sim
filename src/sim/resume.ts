@@ -23,6 +23,7 @@
 
 import type { CameraMode, QualityLevel, ScenarioId } from '../core/context';
 import type { Quat, Vec3 } from '../core/math';
+import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
 import { DEFAULT_AIRCRAFT_ID, isAircraftId, type AircraftId, type ControlInputs, type SurfaceState, type WeatherSettings } from '../core/types';
 import type { AutopilotSettings } from '../physics';
 import type { EngineSnapshot, SystemsSnapshot } from '../physics/interfaces';
@@ -136,6 +137,14 @@ function isEngineSnapshot(v: unknown): v is EngineSnapshot {
 function isSystems(v: unknown): v is SystemsSnapshot {
   if (!isObj(v) || !Array.isArray(v.engines) || v.engines.length === 0 || !v.engines.every(isEngineSnapshot)) return false;
   if (!Array.isArray(v.tanks) || !v.tanks.every((q) => isNum(q) && q >= 0) || !isNum(v.batteryCharge)) return false;
+  const rotor = v.rotorcraft;
+  if (rotor !== undefined) {
+    if (!isObj(rotor)) return false;
+    for (const [key, value] of Object.entries(emptyRotorcraftState())) {
+      if (typeof value === 'boolean' ? typeof rotor[key] !== 'boolean' : !isNum(rotor[key])) return false;
+    }
+    if ((rotor.omega as number) < 0 || (rotor.rotorRpm as number) < 0) return false;
+  }
   const s = v.surfaces;
   if (!isObj(s) || !SURFACE_KEYS.every((k) => isNum(s[k]))) return false;
   const g = v.gear;
@@ -190,6 +199,9 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (v.systems !== undefined && !isSystems(v.systems)) return null;
   const c = v.controls;
   if (!isObj(c) || !isObj(c.lights)) return null;
+  if (c.collective !== undefined && (!isNum(c.collective) || c.collective < 0 || c.collective > 1)) return null;
+  for (const key of ['rotorGovernor', 'rotorClutch']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+  if (v.aircraft === 'r22' && (!isObj(v.systems) || !isObj(v.systems.rotorcraft))) return null;
   for (const k of ['elevator', 'aileron', 'rudder', 'throttle', 'mixture', 'flaps', 'elevatorTrim', 'brakeLeft', 'brakeRight', 'magnetos', 'kollsmanHpa', 'headingBugDeg', 'obsDeg']) {
     if (!isNum(c[k])) return null;
   }
