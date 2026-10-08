@@ -2,6 +2,7 @@
 // https://www.robinsonheli.com/publications (accessed 8 October 2026)
 // Section 1 p1-6: https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_1_f2700c9508.pdf
 // Section 2 pp2-8..2-11: https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_2_a730a7b2f8.pdf
+// Section 3 pp3-3, 3-9: https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_3_4bcbbbfc58.pdf
 // Section 4 pp4-6..4-8: https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_4_98ca296aca.pdf
 // Section 7 pp7-18..7-24: https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_7_6581e57af0.pdf
 export const R22_INSTRUMENT_REFERENCE = {

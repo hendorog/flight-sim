@@ -534,6 +534,9 @@ export function defaultControls(def?: ControlDefaultsSource): ControlInputs {
     gearEmergency: false,
     rudderTrim: 0,
     engines: [],
+    cabinHeat: 0,
+    mixtureGuardOpen: false,
+    annunciatorTest: false,
   };
   const n = def ? def.engineCount : 1;
   for (let i = 0; i < n; i++) c.engines.push({});

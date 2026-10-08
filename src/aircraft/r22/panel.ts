@@ -150,8 +150,9 @@ export const R22_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
     { id: 'starter', lit: (i: LampInputs) => engineControl(i.controls, 0, 'starter') },
     // Pressure switch set-point is an ESTIMATE; indication reads undamped pressure, not the gauge needle.
     { id: 'oil', lit: (i: LampInputs) => i.state.engine.oilPressure < 25 },
-    // POH 3-8: about one gallon usable remaining. Sender is in the main tank (7-13).
-    { id: 'lowFuel', lit: (i: LampInputs) => i.fuelGal[0] <= 1 },
+    // POH 3-9: about 1.5 gallons usable with bladder tanks (one gallon applies to aluminum tanks).
+    // The independent sender is in the main tank (7-13).
+    { id: 'lowFuel', lit: (i: LampInputs) => i.fuelGal[0] <= 1.5 },
     // Near-open microswitch threshold is an ESTIMATE. Use actual governor throttle while active.
     { id: 'fullThrottle', lit: (i: LampInputs) => (i.state.rotorcraft?.governorActive ? i.state.rotorcraft.governorThrottle : i.controls.throttle) >= 0.98 },
     // No sensor/actuator state in the current model; present, testable, never fabricated from other warnings.

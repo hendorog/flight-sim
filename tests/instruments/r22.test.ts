@@ -6,7 +6,7 @@ import { R22_MAP_PLACARD } from '../../src/aircraft/r22/reference';
 import { R22_TRAINING } from '../../src/aircraft/r22/training';
 import { R22_UI } from '../../src/aircraft/r22/ui';
 import { makeMockState } from '../../src/core/mockState';
-import { defaultControls, defaultWeather } from '../../src/core/types';
+import { copyControls, defaultControls, defaultWeather } from '../../src/core/types';
 import { InstrumentSet } from '../../src/instruments/dynamics/instrumentSet';
 import { buildHotspots, hotspotAt } from '../../src/instruments/hotspots';
 import { InstrumentPanel } from '../../src/instruments/panel';
@@ -103,7 +103,9 @@ describe('R22 console', () => {
     for (const id of ['clutch', 'lowRpm', 'govOff', 'alt', 'starter', 'oil', 'lowFuel', 'mrTemp', 'mrChip', 'trChip', 'co', 'brake']) expect(r.lamps[id], id).toBe(false);
     s.rotorcraft!.clutchLight = true; s.rotorcraft!.lowRpmHorn = true;
     s.rotorcraft!.governorActive = false; // governor armed at idle is not GOV OFF
-    s.fuel.left = 0.9 * 2.72155; s.fuel.right = 5 * 2.72155;
+    s.fuel.left = 1.6 * 2.72155;
+    expect(step().lamps.lowFuel).toBe(false);
+    s.fuel.left = 1.4 * 2.72155; s.fuel.right = 5 * 2.72155;
     s.engine.oilPressure = 0; s.electrical.busVoltage = 12;
     c.starter = true;
     r = step();
@@ -155,6 +157,9 @@ describe('R22 console', () => {
     c.magnetos = 0;
     for (let i = 0; i < 3; i++) key.turn!(1, c, 1);
     expect(key.springHold!.when(c)).toBe(true); expect(key.springHold!.action).toBe('starter');
+    c.annunciatorTest = true;
+    copyControls(c, defaultControls());
+    expect(c).toMatchObject({ cabinHeat: 0, mixtureGuardOpen: false, annunciatorTest: false });
   });
 
   it('publishes helicopter identity, no airplane checklists, and sensible HUD units', () => {
