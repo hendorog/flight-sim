@@ -568,7 +568,7 @@ export class InputSystem implements Subsystem {
     const tuning = this.profile.assists;
     if (this.profile.rotorcraft) {
       const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
-      const hardware = this.hardwareLever('collective');
+      const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
       if (this.collectiveOwner.update(change !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
       else c.collective = clamp((c.collective ?? 0) + change * 0.15 * dt, 0, 1);
     }
@@ -639,7 +639,7 @@ export class InputSystem implements Subsystem {
     const onMains = s.wheels[1].onGround || s.wheels[2].onGround;
     if (pitch !== 0) {
       this.centring.elevator = false;
-      const elevator = onMains ? this.groundElevator : tuning.axes.elevator;
+      const elevator = onMains && !this.profile.rotorcraft ? this.groundElevator : tuning.axes.elevator;
       this.kbElevator = stepKeyAxis(this.kbElevator, pitch, ias, dt, elevator, this.heldFor(pitch > 0 ? 'pitchUp' : 'pitchDown'));
     } else if (this.centring.elevator) {
       this.kbElevator = stepCentre(this.kbElevator, dt);
@@ -842,7 +842,7 @@ export class InputSystem implements Subsystem {
     const kbThrottle = rate('throttleUp', THROTTLE_RATE) - rate('throttleDown', THROTTLE_RATE);
     let stick = 0;
     for (const r of this.gamepads.readings) if (r.control === 'throttleRate') stick += r.value;
-    const hwThrottle = this.hardwareLever('throttle');
+    const hwThrottle = this.profile.rotorcraft ? null : this.hardwareLever('throttle');
     const nudging = kbThrottle !== 0 || stick !== 0;
     const throttleInc = (kbThrottle + stick * THROTTLE_STICK_RATE) * dt;
     const throttleTarget = this.leverTarget('throttle', 'throttleUp', 'throttleDown');

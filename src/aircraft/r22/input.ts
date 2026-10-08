@@ -6,5 +6,7 @@ export const R22_INPUT: InputProfile = {
   ...C152_INPUT, rotorcraft: true, flapDetents: [0],
   assists: { ...C152_INPUT.assists, axes: { elevator: axis, aileron: axis, rudder: { ...axis, baseRate: 0.2 } } },
   labels: { pitchUp: 'Cyclic aft', pitchDown: 'Cyclic forward', rollLeft: 'Cyclic left', rollRight: 'Cyclic right',
-    rudderLeft: 'Left pedal', rudderRight: 'Right pedal', flapsUp: 'Lower collective (hold)', flapsDown: 'Raise collective (hold)' },
+    rudderLeft: 'Left pedal', rudderRight: 'Right pedal', flapsUp: 'Lower collective (hold)', flapsDown: 'Raise collective (hold)',
+    throttleDown: 'Twist throttle closed', throttleUp: 'Twist throttle open',
+    throttleIdle: 'Twist throttle fully closed (overtravel)', throttleFull: 'Twist throttle fully open' },
 };

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Rotorcraft } from '../../src/physics/rotorcraft/rotorcraft';
 import { R22_ROTORCRAFT as d } from '../../src/aircraft/r22/rotorcraft';
 import { R22_DEFINITION } from '../../src/aircraft/r22';
@@ -89,6 +89,17 @@ describe('helicopter controls', () => {
     expect(r.c.throttle).toBe(0.7); expect(r.c.flaps).toBe(0);
     r.tap('Insert'); expect(r.c.rotorClutch).toBe(true);
     r.tap('Delete'); expect(r.c.rotorGovernor).toBe(true);
+  });
+  it('uses the joystick throttle axis as collective by default, leaving twist grip on separate keys', () => {
+    const r = makeInputRig(R22_INPUT, { collective: 0.1, throttle: 0.4 });
+    const poll = vi.spyOn(r.input.gamepads, 'poll').mockImplementation(() => {
+      r.input.gamepads.readings.splice(0, Infinity, { control: 'throttle', value: 0.65, moved: true, takeover: false });
+    });
+    r.run(0.1);
+    expect(r.c.collective).toBe(0.65); expect(r.c.throttle).toBe(0.4);
+    r.tap('F2', false, 0.5);
+    expect(r.c.throttle).toBeLessThan(0.4); expect(r.c.collective).toBe(0.65);
+    poll.mockRestore();
   });
   it('does not add rotor controls to an airplane', () => {
     const r = makeInputRig(C152_INPUT);

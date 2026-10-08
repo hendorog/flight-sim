@@ -143,7 +143,9 @@ function isSystems(v: unknown): v is SystemsSnapshot {
     for (const [key, value] of Object.entries(emptyRotorcraftState())) {
       if (typeof value === 'boolean' ? typeof rotor[key] !== 'boolean' : !isNum(rotor[key])) return false;
     }
-    if ((rotor.omega as number) < 0 || (rotor.rotorRpm as number) < 0) return false;
+    if ((rotor.omega as number) < 0 || (rotor.rotorRpm as number) < 0 ||
+      (rotor.clutchEngagement as number) < 0 || (rotor.clutchEngagement as number) > 1 ||
+      (rotor.takeoffPowerSeconds as number) < 0) return false;
   }
   const s = v.surfaces;
   if (!isObj(s) || !SURFACE_KEYS.every((k) => isNum(s[k]))) return false;
