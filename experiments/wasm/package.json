@@ -1,0 +1,14 @@
+{
+  "name": "fs-wasm-evaluation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "npm run build && node build/verify.mjs",
+    "bench": "npm run test && node benchmark.mjs"
+  },
+  "devDependencies": {
+    "assemblyscript": "0.28.20",
+    "esbuild": "0.28.2"
+  }
+}
