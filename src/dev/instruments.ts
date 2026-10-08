@@ -28,6 +28,7 @@ import type { InstrumentSystemsDef, PanelDef, Rect } from '../instruments/panelD
 import { FADEC_TESTBED_PANEL, FADEC_TESTBED_SYSTEMS, TESTBED_PX_RECT, TWIN_TESTBED_PANEL, TWIN_TESTBED_SYSTEMS } from '../instruments/panels/testbed';
 import { runHarness } from './harness';
 import { MockFlight } from './instrumentsFlight';
+import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
 
 const params = new URLSearchParams(location.search);
 const preRoll = Number(params.get('t') ?? 60);
@@ -54,6 +55,8 @@ function sweepAt(s: Sweep, t: number, mirrored = false): number {
 const iasSweep = sweep('ias');
 const rpmSweep = sweep('rpm');
 const mapSweep = sweep('map');
+// Helicopter development: rotor=<percent> (independent of rpm=), lamps=1, and emissive=1.
+const rotorSweep = sweep('rotor');
 
 const flight = new MockFlight();
 // Without `type` the page is what it always was: the C172S panel, built before the harness.
@@ -76,7 +79,8 @@ async function typedPanel(id: string): Promise<{ def: PanelDef; systems: Instrum
     def: presentation.panel,
     systems: presentation.instrumentSystems,
     engines: def.engineCount,
-    pxRect: presentation.visual.cockpit.panel.pxRect,
+    // Standalone canvas checks its own full face even before a separate 3D cockpit change is merged.
+    pxRect: { x: 0, y: 0, ...presentation.panel.size },
     geared: presentation.instrumentSystems.tachShaft === 'propeller',
   };
 }
@@ -143,6 +147,24 @@ function extendFlight(s: AircraftState, c: ControlInputs): void {
     }
     if (mapSweep) e.manifoldPressure = sweepAt(mapSweep, t, i % 2 === 1);
   }
+  if (type === 'r22') {
+    const r = s.rotorcraft ??= emptyRotorcraftState();
+    // A scripted panel fixture, not a second flight model: 104% powered, rotor free at 100% after engine-out.
+    if (!rpmSweep) e0.rpm = t > 200 ? 0 : t < 6 ? 0 : t < 20 ? 1400 : t < 40 ? 1900 : 2652;
+    const pct = rotorSweep ? sweepAt(rotorSweep, t) : t > 200 ? 100 : e0.rpm / 2550 * 100;
+    r.rotorRpm = pct * 5.1;
+    r.lowRpmHorn = pct <= 97 && t >= 40;
+    r.lowRpm = pct <= 97;
+    r.clutchLight = t >= 10 && t < 20;
+    r.clutchEngagement = t < 10 ? 0 : t < 20 ? (t - 10) / 10 : 1;
+    r.governorActive = t >= 40 && t <= 200;
+    r.governorThrottle = 0.72;
+    c.rotorClutch = t >= 10; c.rotorGovernor = true; c.collective = t >= 40 ? 0.5 : 0;
+    c.annunciatorTest = params.get('lamps') === '1';
+    s.electrical.busVoltage = t < 6 ? 0 : 14.2;
+    s.fuel.left = 12 * 2.72155; s.fuel.right = 5 * 2.72155;
+    if (!mapSweep) e0.manifoldPressure = t > 200 ? 12 : t < 40 ? 15 : 22.3;
+  }
 }
 
 /** One step of the mock flight; the extras only where a typed panel or an override asks for them. */
@@ -199,7 +221,7 @@ void runHarness({
           ctx.scene.add(ctx.camera);
           return;
         }
-        const c = p.canvas;
+        const c = params.get('emissive') === '1' ? p.emissiveTexture.image as HTMLCanvasElement : p.canvas;
         c.style.cssText = 'position:fixed;left:0;top:0;z-index:2;transform-origin:0 0';
         if (zoom.length === 3 && zoom.every(Number.isFinite)) {
           const [x, y, s] = zoom;

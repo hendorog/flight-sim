@@ -15,7 +15,10 @@ import type { AircraftState } from '../core/types';
 import { InstrumentSet, type InstrumentSetOptions } from './dynamics/instrumentSet';
 import { gaugeRecess, type GaugeDef, type PanelDef } from './panelDef';
 import { panelLayoutProblems } from './panelLayout';
-import { ignitionLayout, leverId } from './panelParts';
+import { gaugeParts, ignitionLayout, isLargeGauge, leverId } from './panelParts';
+import { ScaledGauge } from './render/scaledGauge';
+import { BlankGauge, RotorTachGauge } from './render/rotorTach';
+import { ConsoleControl, Hourmeter } from './render/panelControls';
 import { screw } from './render/art';
 import { DirtyRectUploader } from './render/dirtyUpload';
 import { DEFAULT_TUNING, GpsUnit, NavComRadio, Transponder, type RadioTuning } from './render/avionics';
@@ -139,7 +142,9 @@ export class InstrumentPanel {
       mg.fillRect(0, 0, w, h);
       for (const c of this.components) c.paintLightMask?.(mg);
       const canvas = makeCanvas(w, h);
-      const g = context2d(canvas);
+      // CPU-backed composition avoids Chrome/ANGLE Vulkan turning consecutive canvas multiply draws
+      // black. Keep the main panel accelerated; only the small dirty light rectangles use this surface.
+      const g = context2d(canvas, { willReadFrequently: true });
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = this.texture.anisotropy;
@@ -248,12 +253,17 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
   const rest: PanelComponent[] = [];
   for (const g of def.gauges) {
     const into = 'at' in g ? dials : rest;
-    into.push(buildGauge(g, def.apertures, tuning, paintLevers));
+    const k = def.instrumentScale?.[isLargeGauge(g) ? 'large' : 'small'] ?? 1;
+    if (k !== 1 && gaugeRecess(g, def.apertures) && 'at' in g) {
+      const apertures = { large: def.apertures.large / k, small: def.apertures.small / k };
+      const component = buildGauge(g, apertures, tuning, paintLevers);
+      into.push(new ScaledGauge(component, gaugeParts(g, def.apertures, def.instrumentScale)[0].rect, g.at[0], g.at[1], k));
+    } else into.push(buildGauge(g, def.apertures, tuning, paintLevers));
     // The selector of a light cluster is a component of its own beside it.
     if (g.kind === 'gearLights' && g.lever) into.push(new GearSelector(leverId(g.id), g.lever));
     if (g.kind === 'flapLights' && g.lever) into.push(new FlapSwitch(leverId(g.id), g.lever, g));
   }
-  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps));
+  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns));
   dials.push(new SwitchPanel(def.switchRow, def.ignition));
   const ignition = ignitionLayout(def.ignition);
   if (ignition && def.ignition.kind !== 'key') dials.push(new IgnitionSwitches(def.ignition.kind, ignition));
@@ -264,6 +274,14 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
   // The glass aperture is the 3D recess's (gaugeRecess), so the artwork and the cockpit cannot disagree.
   const r = gaugeRecess(g, apertures)?.r ?? 0;
   switch (g.kind) {
+    case 'blank':
+      return new BlankGauge(g.id, g.at[0], g.at[1], r);
+    case 'rotorTach':
+      return new RotorTachGauge(g.id, g.at[0], g.at[1], r, g.marks);
+    case 'pullKnob': case 'pushButton':
+      return new ConsoleControl(g);
+    case 'hourmeter':
+      return new Hourmeter(g.id, g.bounds);
     case 'asi':
       return new AirspeedGauge(g.id, g.at[0], g.at[1], r, g.marks);
     case 'attitude':
@@ -327,7 +345,7 @@ function paintBackground(g: Ctx2D, def: PanelDef, components: PanelComponent[]):
   const H = def.size.h;
   const bg = def.background;
   const rand = rng(4242);
-  g.fillStyle = PANEL_GREY;
+  g.fillStyle = bg.color ?? PANEL_GREY;
   g.fillRect(0, 0, W, H);
   // Crinkle-finish paint: tiled grain in overlay mode.
   const grain = g.createPattern(noiseCanvas(256, 256, 17, 0.6), 'repeat');

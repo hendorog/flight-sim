@@ -18,8 +18,8 @@ export function makeCanvas(w: number, h: number): HTMLCanvasElement {
   return c;
 }
 
-export function context2d(c: HTMLCanvasElement): Ctx2D {
-  const g = c.getContext('2d');
+export function context2d(c: HTMLCanvasElement, options?: CanvasRenderingContext2DSettings): Ctx2D {
+  const g = c.getContext('2d', options);
   if (!g) throw new Error('2D canvas unavailable');
   return g;
 }
