@@ -24,13 +24,14 @@ export interface Occupants {
 
 /**
  * The figures of a cockpit definition, sitting on the seats its `occupants` name (a bench seats its figure in the
- * left place). Null when it has none.
+ * left place). Null when it has none. The rotorcraft's close exterior views opt into a smooth head;
+ * the default preserves the existing aeroplane figures and their baked geometry hashes.
  */
-export function buildOccupants(def: CockpitDef): Occupants | null {
+export function buildOccupants(def: CockpitDef, smoothHead = false): Occupants | null {
   const list = def.occupants ?? [];
   if (list.length === 0) return null;
   const clothes = new THREE.MeshStandardMaterial({ name: 'occupantClothes', color: new THREE.Color().setRGB(0.07, 0.09, 0.13), roughness: 0.9, flatShading: true });
-  const skin = new THREE.MeshStandardMaterial({ name: 'occupantSkin', color: new THREE.Color().setRGB(0.42, 0.29, 0.22), roughness: 0.8, flatShading: true });
+  const skin = new THREE.MeshStandardMaterial({ name: 'occupantSkin', color: new THREE.Color().setRGB(0.42, 0.29, 0.22), roughness: 0.8, flatShading: !smoothHead });
   const batch = new MeshBatch();
   for (const o of list) {
     const seat = def.seats[o.seat];
@@ -45,7 +46,8 @@ export function buildOccupants(def: CockpitDef): Occupants | null {
     const shoulder = 0.5;
     batch.add(clothes, limb(at(-0.05), at(shoulder), 0.15, 0.17, 8));
     batch.add(skin, limb(at(shoulder), at(shoulder + 0.08), 0.05, 0.05));
-    batch.add(skin, new THREE.IcosahedronGeometry(0.105, 1).translate(...at(shoulder + 0.17, 0, 0.02).toArray()));
+    const head = smoothHead ? new THREE.SphereGeometry(0.105, 20, 14) : new THREE.IcosahedronGeometry(0.105, 1);
+    batch.add(skin, head.translate(...at(shoulder + 0.17, 0, 0.02).toArray()));
     for (const s of [-1, 1]) {
       // Thigh along the cushion to the knee, shin down to the floor ahead of the seat.
       const knee = frd(seat.x + 0.06, y + s * 0.1, top - 0.14);

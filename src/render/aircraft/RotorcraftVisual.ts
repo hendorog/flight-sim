@@ -45,7 +45,7 @@ export class RotorcraftVisual {
     this.cockpit = new RotorcraftCockpit(def, mat, cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1));
     this.cockpit.group.add(fuselage.lining); this.root.add(this.cockpit.group);
     this.panel = this.cockpit.panel;
-    this.occupants = buildOccupants(def.cockpit); if (this.occupants) this.cockpit.group.add(this.occupants.group);
+    this.occupants = buildOccupants(def.cockpit, true); if (this.occupants) this.cockpit.group.add(this.occupants.group);
     this.main = new TeeteringRotor(d.main, mat); this.main.group.position.copy(frd(...d.main.hub)); this.root.add(this.main.group);
     this.tail = new TeeteringRotor({ ...d.tail, chord: [d.tail.chord, d.tail.chord], twist: 0, tail: true }, mat);
     this.tail.group.position.copy(frd(...d.tail.hub)); this.tail.group.rotation.z = Math.PI / 2; this.root.add(this.tail.group);
