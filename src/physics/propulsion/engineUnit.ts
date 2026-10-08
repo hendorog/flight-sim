@@ -71,6 +71,8 @@ export class EngineUnit {
 
   /** PROPELLER shaft speed, rad/s (the crank turns gearRatio times as fast). */
   omega = 0;
+  /** External drivetrain owns loads and coupling; engine integrates a free crank, without a propeller. */
+  externalDrive = false;
   /** See shaftInertia() and momentInertia(). */
   readonly inertia: number;
   readonly momentInertia: number;
@@ -383,7 +385,7 @@ export class EngineUnit {
     this.lastSoundSpeed = atm.speedOfSound;
 
     // Shaft dynamics.
-    const drive = (engine.indicatedTorque + starterTorque) * gear - prop.torque;
+    const drive = (engine.indicatedTorque + starterTorque) * gear - (this.externalDrive ? 0 : prop.torque);
     const resist = engine.lossTorque * gear;
     this.shaftTorque = (engine.indicatedTorque + starterTorque) * gear - resist;
     let omegaNext: number;
@@ -411,7 +413,7 @@ export class EngineUnit {
     ti.singleMagneto = ei.magnetos === 1 || ei.magnetos === 2;
     ti.indicatedPower = engine.indicatedTorque * crankOmega;
     ti.frictionPower = engine.frictionTorque * crankOmega;
-    ti.coolingSpeed = axial + Math.max(slip.inducedVelocity, 0);
+    ti.coolingSpeed = axial + (this.externalDrive ? 12 : Math.max(slip.inducedVelocity, 0));
     ti.density = atm.density;
     ti.oat = atm.temperature;
     ti.chargeTemperature = engine.chargeTemperature;
@@ -423,6 +425,11 @@ export class EngineUnit {
 
     // Forces and moments about the CG.
     this.airframeLoads(input.body.cgOffset);
+    if (this.externalDrive) {
+      this.force.x = this.force.y = this.force.z = 0;
+      this.moment.x = this.moment.y = this.moment.z = 0;
+      slip.inducedVelocity = slip.swirlRate = 0;
+    }
     if (tilt) {
       const h = this.direction * (this.momentInertia * omegaNext);
       this.angularMomentum.x = tilt[0].x * h;

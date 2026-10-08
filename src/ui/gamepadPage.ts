@@ -22,6 +22,7 @@ const AXIS_CHOICES: [AxisControl, string][] = [
   ['aileron', 'Aileron (roll)'],
   ['elevator', 'Elevator (pitch)'],
   ['rudder', 'Rudder'],
+  ['collective', 'Helicopter collective'],
   ['throttle', 'Throttle lever'],
   ['throttleRate', 'Throttle (rate, centring stick)'],
   ['mixture', 'Mixture'],

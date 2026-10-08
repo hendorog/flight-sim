@@ -25,6 +25,7 @@ import type { InputProfile } from './profile';
 
 /** Every discrete or continuous action the input system can perform, from a key or a gamepad button. */
 export type InputAction =
+  | 'rotorClutch' | 'rotorGovernor'
   | 'pitchUp' // yoke back (nose up)
   | 'pitchDown'
   | 'rollLeft'
@@ -125,6 +126,8 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'F4', action: 'throttleFull' },
   { code: 'Numpad5', action: 'centreControls' },
   { code: 'Digit5', action: 'centreControls' },
+  { code: 'Insert', action: 'rotorClutch' },
+  { code: 'Delete', action: 'rotorGovernor' },
   { code: 'F5', action: 'flapsUp' },
   { code: 'F6', action: 'flapsDown' },
   // Explicit lever positions, not a toggle: a slip from F6 on final can only select the gear DOWN.
@@ -213,6 +216,8 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   gearDown: { label: 'Landing gear lever DOWN', category: 'Flight controls' },
   gearUp: { label: 'Landing gear lever UP', category: 'Flight controls' },
   gearEmergency: { label: 'Emergency gear extension (pull the knob)', category: 'Flight controls' },
+  rotorClutch: { label: 'Rotor clutch engage / disengage', category: 'Engine' },
+  rotorGovernor: { label: 'Rotor governor on / off', category: 'Engine' },
   flapsUp: { label: 'Flaps up one notch', category: 'Flight controls' },
   flapsDown: { label: 'Flaps down one notch', category: 'Flight controls' },
   mouseYoke: { label: 'Toggle mouse yoke', category: 'Flight controls' },
@@ -325,6 +330,8 @@ const ACTION_NEEDS: Partial<Record<InputAction, keyof InputProfile['has']>> = {
  * ignores the keys of an action a type lacks, and the help listing leaves them out.
  */
 export function profileHasAction(profile: InputProfile, action: InputAction): boolean {
+  if (action === 'rotorClutch' || action === 'rotorGovernor') return !!profile.rotorcraft;
+  if (profile.rotorcraft && ['trimNoseUp', 'trimNoseDown', 'parkingBrake', 'brakes', 'brakeLeft', 'brakeRight'].includes(action)) return false;
   // ENGINE MASTER switches have no single-magneto positions.
   if (profile.ignition === 'engineMaster' && (action === 'magnetoRight' || action === 'magnetoLeft')) return false;
   // One key for the induction heat of the type: carburettor heat, or alternate air where there is no carburettor.

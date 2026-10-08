@@ -43,6 +43,15 @@ reloads into it; airborne or moving it asks first. Each type keeps its own resum
 type and back continues where you left it. `index.html?aircraft=<id>` flies a type for that page only (it is not
 remembered). The Flight School teaches in the C172S; the other types are flown free.
 
+**Experimental helicopters.** An initial R22 Beta II rotorcraft path is available at
+`index.html?aircraft=r22&scenario=runway&resume=0` (not yet listed in the chooser).
+Use the arrows for cyclic, Z/X for pedals, and hold F5/F6 to lower/raise collective.
+Insert toggles the clutch; Delete toggles the governor. Throttle remains independent.
+The HUD shows rotor NR separately from engine RPM. This adds blade-element rotor loads,
+dynamic inflow, drivetrain/freewheel/governor behavior and skid contacts, but is not yet
+flight-test validated. See [the model notes](docs/r22-flight-model.md) for controls, data
+provenance, fidelity limits and the path to R44 and Schweizer 269 support.
+
 **Cessna 152.** The keys are the C172S's with these differences:
 
 | Keys | Action |

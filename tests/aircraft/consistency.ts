@@ -80,6 +80,29 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
     }
   }
 
+  // Rotorcraft replace the wing/propeller/wheel readers with rotor and skid definitions.
+  if (def.rotorcraft) {
+    const rotor = def.rotorcraft;
+    check(visual.rotorcraft !== undefined, 'rotorcraft visual is missing');
+    same('rotor geometry and dynamics', { physics: rotor, visual: visual.rotorcraft });
+    samePoint('main rotor hub', { rotor: rotor.main.hub, geometry: g.propellers[0].hub });
+    samePoint("pilot's eye", { geometry: g.fuselage.pilotEye, visual: cockpit.pilotEye });
+    sameNumber('main rotor diameter', { rotor: rotor.main.radius * 2, geometry: g.propellers[0].diameter, audio: audio.engines[0].prop.diameterM });
+    sameNumber('main rotor blades', { rotor: rotor.main.blades, geometry: g.propellers[0].blades, audio: audio.engines[0].prop.blades });
+    sameNumber('engine count', { definition: n, powerplant: pp.engines.length, audio: audio.engines.length, input: def.input.engines });
+    sameNumber('drive ratio', { rotor: rotor.engineRatio, audio: audio.engines[0].engine.gearRatio });
+    sameNumber('rated power', { powerplant: pp.engines[0].engine.ratedPower, audio: audio.engines[0].engine.ratedPowerW });
+    sameNumber('bus-dead voltage', { powerplant: pp.electrical.busDeadVolts, instruments: pres.instrumentSystems.busDeadVolts, audio: audio.busPoweredV });
+    check(def.input.rotorcraft === true, 'rotorcraft input is missing');
+    check(controls.collective !== undefined && controls.rotorGovernor !== undefined && controls.rotorClutch !== undefined, 'rotorcraft default controls are missing');
+    same('no flap detents', { expected: [0], input: def.input.flapDetents, training: pres.training.flapDetentsDeg });
+    for (const gauge of gauges) if (gauge.kind === 'asi') sameNumber('airspeed red line', { reference: def.reference.vne, panel: gauge.marks.redLine });
+    const fuel = pp.fuel.tanks.reduce((sum, t) => sum + t.capacity, 0);
+    for (const [name, l] of Object.entries(def.mass.loadings))
+      check(def.mass.empty + l.payload + fuel * (l.fuelFraction ?? 1) <= def.mass.maxTakeoff + 1, `loading '${name}' exceeds maximum mass`);
+    return out;
+  }
+
   // ------------------------------------------------------------------------------------------ one of everything per engine
   sameNumber('engine count', {
     engineCount: n,

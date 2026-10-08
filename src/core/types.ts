@@ -11,8 +11,8 @@
 import type { Quat, Vec3 } from './math';
 
 // ---------------------------------------------------------------------------------------------- identity
-export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42';
-export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42'];
+export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'r22';
+export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'r22'];
 export const DEFAULT_AIRCRAFT_ID: AircraftId = 'c172s';
 export const isAircraftId = (v: unknown): v is AircraftId => AIRCRAFT_IDS.includes(v as AircraftId);
 
@@ -38,6 +38,10 @@ export type EngineControls = { [K in EngineControlKey]?: ControlInputs[K] };
 
 /** Pilot inputs, written by the input module and read by the flight model. */
 export interface ControlInputs {
+  /** Helicopters: collective blade pitch [0,1], independent of engine throttle. */
+  collective?: number;
+  rotorGovernor?: boolean;
+  rotorClutch?: boolean;
   /** [-1, 1]. + = yoke back = nose up. */
   elevator: number;
   /** [-1, 1]. + = yoke right = roll right. */
@@ -302,6 +306,8 @@ export function fixedGearState(): GearState {
 
 /** Complete observable state of the aircraft. Produced by FlightModel; treat as read-only elsewhere. */
 export interface AircraftState {
+  /** Present only on a rotorcraft. Persistent dynamic inflow, flapping and drivetrain state. */
+  rotorcraft?: import('../physics/rotorcraft/definition').RotorcraftState;
   /** The type this state belongs to. */
   aircraft: AircraftId;
   /** Simulation time, s. */

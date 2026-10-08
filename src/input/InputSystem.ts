@@ -294,6 +294,7 @@ export class InputSystem implements Subsystem {
     elevator: new Activity(),
     rudder: new Activity(),
   };
+  private readonly collectiveOwner = new LeverOwner();
   private readonly throttleOwner = new LeverOwner();
   private readonly mixtureOwner = new LeverOwner();
   private time = 0;
@@ -565,6 +566,12 @@ export class InputSystem implements Subsystem {
     const c = ctx.controls;
     const n = this.neutral;
     const tuning = this.profile.assists;
+    if (this.profile.rotorcraft) {
+      const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
+      const hardware = this.hardwareLever('collective');
+      if (this.collectiveOwner.update(change !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
+      else c.collective = clamp((c.collective ?? 0) + change * 0.15 * dt, 0, 1);
+    }
 
     // Mouse yoke: armed until the pointer passes through the centre, then in control.
     let mouse: { aileron: number; elevator: number } | null = null;
@@ -638,8 +645,8 @@ export class InputSystem implements Subsystem {
       this.kbElevator = stepCentre(this.kbElevator, dt);
       if (this.kbElevator === 0) this.centring.elevator = false;
     }
-    this.kbElevator = this.rotation.step(this.kbElevator, kbElevatorBefore, s.angularVelocity.y, s.pitch, onMains, dt, this.held.has('pitchUp'));
-    if (dt > 0) {
+    if (!this.profile.rotorcraft) this.kbElevator = this.rotation.step(this.kbElevator, kbElevatorBefore, s.angularVelocity.y, s.pitch, onMains, dt, this.held.has('pitchUp'));
+    if (dt > 0 && !this.profile.rotorcraft) {
       // Soft load-factor stops: ease the held keyboard elevator back while beyond them.
       const g = tuning.gStops;
       if (this.kbElevator > 0.02 && s.gLoad > g.pull) this.kbElevator = Math.max(0.02, this.kbElevator - (s.gLoad - g.pull) * G_STOP_RATE * dt);
@@ -672,7 +679,7 @@ export class InputSystem implements Subsystem {
     const onGround = s.wheels[0].onGround || s.wheels[1].onGround || s.wheels[2].onGround;
     const rudderFree = kbRud && this.rudCentred && !this.centring.rudder && yaw === 0;
     let assist = 0;
-    if (this.assists.groundSteering && rudderFree) {
+    if (!this.profile.rotorcraft && this.assists.groundSteering && rudderFree) {
       const differentialBrake = Math.abs(this.kbBrakeLeft - this.kbBrakeRight) > PILOT_DIFFERENTIAL_BRAKE;
       assist = this.steering.step(s.heading, s.angularVelocity.z, onGround, s.groundSpeed, differentialBrake, dt);
     } else this.steering.reset();
@@ -688,7 +695,7 @@ export class InputSystem implements Subsystem {
 
     // Roll trim: the pilot's hand holding off a steady roll tendency while the keyboard ailerons are centred.
     let rollBias = 0;
-    if (this.assists.rollTrim && kbAil && this.ailCentred && !this.centring.aileron) {
+    if (!this.profile.rotorcraft && this.assists.rollTrim && kbAil && this.ailCentred && !this.centring.aileron) {
       const airborne = !onGround;
       rollBias = this.rollTrim.step(s.angularVelocity.x, s.roll, airborne, false, dt);
     } else this.rollTrim.reset();
@@ -1030,6 +1037,8 @@ export class InputSystem implements Subsystem {
       case 'trimNoseDown':
         c.elevatorTrim = clamp(c.elevatorTrim - LEVER_TAP / 2, -1, 1);
         break;
+      case 'rotorClutch': c.rotorClutch = !c.rotorClutch; break;
+      case 'rotorGovernor': c.rotorGovernor = !c.rotorGovernor; break;
       case 'flapsUp':
         c.flaps = nextFlapDetent(c.flaps, -1, this.profile.flapDetents);
         break;

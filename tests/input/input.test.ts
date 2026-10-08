@@ -131,7 +131,7 @@ describe('key bindings', () => {
       'Digit0/undefined/engineSelectAll',
     ]);
     // 71 entries before these fourteen.
-    expect(KEY_MAP.length).toBe(71 + 14);
+    expect(KEY_MAP.length).toBe(71 + 14 + 2);
     // A code is bound either once for both shift states or with explicit flags, never both ways (one would shadow the other).
     for (const code of new Set(KEY_MAP.map((m) => m.code))) {
       const entries = KEY_MAP.filter((m) => m.code === code);

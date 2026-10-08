@@ -43,6 +43,7 @@ export interface AircraftSummary {
 
 /** Flight model, systems and sim profile of one type. Node-safe. */
 export interface AircraftDefinition {
+  rotorcraft?: import('../physics/rotorcraft/definition').RotorcraftDefinition;
   id: AircraftId;
   name: string;
   shortName: string;

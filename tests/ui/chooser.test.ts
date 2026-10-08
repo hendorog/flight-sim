@@ -30,7 +30,7 @@ describe('rows', () => {
 
   it('lists the available types, the flown one first', () => {
     const rows = chooserRows(all, 'pa34');
-    expect(rows.map((r) => r.id)).toEqual(['pa34', 'c172s', 'c152', 'pa38', 'da20', 'da42']);
+    expect(rows.map((r) => r.id)).toEqual(['pa34', 'c172s', 'c152', 'pa38', 'da20', 'da42', 'r22']);
     const some = all.map((r) => ({ ...r, available: r.id !== 'da42' }));
     expect(chooserRows(some, 'c172s').map((r) => r.id)).not.toContain('da42');
   });

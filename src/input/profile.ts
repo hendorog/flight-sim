@@ -27,6 +27,8 @@ export interface KeyboardAssistTuning {
 }
 
 export interface InputProfile {
+  /** Helicopter cyclic/pedals: no fixed-wing keyboard stabilisation; F5/F6 drive collective. */
+  rotorcraft?: boolean;
   engines: 1 | 2;
   /** Flap lever values of the detents, ascending from 0. */
   flapDetents: readonly number[];

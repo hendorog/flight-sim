@@ -16,6 +16,7 @@
 // worker (liveryWorker.ts) and swapped in about a second later (see `textureBake`).
 
 import * as THREE from 'three';
+import { RotorcraftVisual } from './RotorcraftVisual';
 import { C172S_PANEL } from '../../aircraft/c172s/panel';
 import { C172S_VISUAL } from '../../aircraft/c172s/visual';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
@@ -93,6 +94,7 @@ export class AircraftVisual implements Subsystem {
   private readonly opts: Required<AircraftVisualOptions>;
   /** The airframe this is the model of. */
   private readonly def: AirframeVisualDef;
+  private helicopter: RotorcraftVisual | null = null;
   private materials!: AircraftMaterials;
   private fuselage!: FuselageParts;
   private wings!: WingParts;
@@ -130,6 +132,13 @@ export class AircraftVisual implements Subsystem {
 
   init(ctx: SimContext): void {
     const def = this.def;
+    if (def.rotorcraft) {
+      this.helicopter = new RotorcraftVisual(def.rotorcraft);
+      this.root.add(this.helicopter.root); ctx.aircraftRoot.add(this.root);
+      if (this.pendingPanel) this.helicopter.panel.material.map = this.pendingPanel;
+      if (this.pendingPanelEmissive) this.helicopter.panel.material.emissiveMap = this.pendingPanelEmissive;
+      return;
+    }
     const shapes = createFuselageShapes(def);
     const t0 = performance.now();
     const async = this.opts.asyncBake && typeof Worker !== 'undefined';
@@ -287,7 +296,8 @@ export class AircraftVisual implements Subsystem {
    * May be called before init().
    */
   setPanelTexture(texture: THREE.Texture): void {
-    if (this.cockpit) this.cockpit.setPanelTexture(texture);
+    if (this.helicopter) { this.helicopter.panel.material.map = texture; this.helicopter.panel.material.needsUpdate = true; }
+    else if (this.cockpit) this.cockpit.setPanelTexture(texture);
     else this.pendingPanel = texture;
   }
 
@@ -296,16 +306,18 @@ export class AircraftVisual implements Subsystem {
    * panel texture. Without it the colour texture is masked by texel brightness. May be called before init().
    */
   setPanelEmissiveTexture(texture: THREE.Texture): void {
-    if (this.cockpit) this.cockpit.setPanelEmissiveTexture(texture);
+    if (this.helicopter) { this.helicopter.panel.material.emissiveMap = texture; this.helicopter.panel.material.needsUpdate = true; }
+    else if (this.cockpit) this.cockpit.setPanelEmissiveTexture(texture);
     else this.pendingPanelEmissive = texture;
   }
 
   /** The instrument panel face mesh (for raycasting clicks onto the panel, etc.). Valid after init(). */
   getPanelMesh(): THREE.Mesh {
-    return this.cockpit.panelMesh;
+    return this.helicopter?.panel ?? this.cockpit.panelMesh;
   }
 
   update(_dt: number, ctx: SimContext): void {
+    if (this.helicopter) { this.helicopter.update(ctx); return; }
     if (ctx.quality !== this.quality) this.applyQuality(ctx.quality);
     const st = ctx.state;
     const s = st.surfaces;
@@ -354,6 +366,7 @@ export class AircraftVisual implements Subsystem {
 
   dispose(): void {
     this.disposed = true;
+    if (this.helicopter) { this.helicopter.dispose(); this.contactShadow.dispose(); this.root.removeFromParent(); return; }
     this.root.removeFromParent();
     this.contactShadow.mesh.removeFromParent();
     this.contactShadow.dispose();
