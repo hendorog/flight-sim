@@ -5,6 +5,9 @@ import type { EngineUnit } from '../propulsion/engineUnit';
 import { emptyRotorcraftState, type RotorcraftDefinition } from './definition';
 import { bladeElements, inflowTarget } from './rotor';
 import { airframeLoads } from './airframe';
+import { placardMap } from './limits';
+import { pressureAltitude } from '../atmosphere';
+import type { AtmosphereSample } from '../../core/types';
 
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
@@ -34,9 +37,14 @@ export class Rotorcraft {
       engine.rpm > 0.8 * d.referenceRpm * d.engineRatio;
     if (c.throttle <= 0) s.governorThrottle = s.governorIntegral = 0;
     else if (s.governorActive && !override) {
-      const error = (d.nominalRpm * d.engineRatio - engine.rpm) / (d.referenceRpm * d.engineRatio);
-      s.governorIntegral = clamp(s.governorIntegral + 1.8 * error * dt, 0, 1);
-      const target = clamp(s.governorIntegral + 1.6 * error, 0, 1);
+      const coupled = s.clutchEngagement > 0.99 && engine.rpm >= s.rotorRpm * d.engineRatio - 5;
+      const reflected = (d.main.inertia + d.tail.inertia * d.tailRatio ** 2) / (d.transmissionEfficiency * d.engineRatio ** 2);
+      const acceleration = coupled ? (engine.shaftTorque - s.torque / (d.engineRatio * d.transmissionEfficiency)) /
+        (engine.inertia + reflected) * 30 / Math.PI : 0;
+      const error = (d.nominalRpm * d.engineRatio - engine.rpm - (d.systems.governorLead ?? 0) * acceleration) /
+        (d.referenceRpm * d.engineRatio);
+      s.governorIntegral = clamp(s.governorIntegral + (d.systems.governorIntegralGain ?? 1.8) * error * dt, 0, 1);
+      const target = clamp(s.governorIntegral + (d.systems.governorGain ?? 1.6) * error, 0, 1);
       s.governorThrottle += clamp(target - s.governorThrottle, -d.systems.governorRate * dt, d.systems.governorRate * dt);
     } else s.governorIntegral = s.governorThrottle;
     return s.governorThrottle;
@@ -44,7 +52,7 @@ export class Rotorcraft {
   /** One-way clutch impulse conserves angular momentum (gear ratio reflected), with transmission loss.
    * Called after the engine's free shaft step. The freewheel cannot back-drive a stopped/slow engine.
    */
-  drive(dt: number, c: ControlInputs, engine: EngineUnit): void {
+  drive(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample): void {
     const s = this.state, d = this.def;
     const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
     s.omega = Math.max(0, s.omega - s.torque * dt / inertia);
@@ -63,8 +71,13 @@ export class Rotorcraft {
     s.rotorRpm = s.omega * 30 / Math.PI;
     s.lowRpm = s.rotorRpm < d.referenceRpm * 0.97;
     s.lowRpmHorn = s.lowRpm && (c.collective ?? 0) > 0.02 && c.masterBattery;
-    s.takeoffPowerSeconds = engine.state.power > d.systems.continuousPower ? s.takeoffPowerSeconds + dt : 0;
+    const map = d.manifoldLimits && atmosphere ? placardMap(d.manifoldLimits,
+      pressureAltitude(atmosphere.pressure), atmosphere.temperature) : Infinity;
+    const atOperatingRpm = engine.rpm > 0.97 * d.referenceRpm * d.engineRatio;
+    const highMap = atOperatingRpm && engine.state.manifoldPressure > map;
+    s.takeoffPowerSeconds = engine.state.power > d.systems.continuousPower || highMap ? s.takeoffPowerSeconds + dt : 0;
     s.powerLimitExceeded = engine.state.power > d.systems.takeoffPower * 1.01 ||
+      (atOperatingRpm && engine.state.manifoldPressure > map + (d.manifoldLimits?.takeoffIncrease ?? 0) + 0.05) ||
       s.takeoffPowerSeconds > d.systems.takeoffSeconds;
     s.azimuth = (s.azimuth + d.rotation * s.omega * dt) % (2 * Math.PI);
   }
@@ -106,9 +119,12 @@ export class Rotorcraft {
     const inPlane = v3.sub(hubAir, v3.scale(axis, axial));
     const horizontal = v3.len(inPlane);
     const main = bladeElements(d.main, s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true);
-    const h = Math.max(0.3 * d.main.radius, height - d.main.hub.z);
-    // Image-rotor ground effect lowers induced velocity; washes out with translational speed.
-    const ge = Math.sqrt(Math.max(0.55, 1 - (d.main.radius / (4 * h)) ** 2 / (1 + (horizontal / 10) ** 2)));
+    const h = Math.max(0.3 * d.main.radius, height - quat.rotate(b.orientation, d.main.hub).z);
+    // NDARC TP-2015-218751 §12-4.1.2: constant-thrust induced-velocity factor (exponent 3/2).
+    // Use the wake's angle to the ground normal; an upward autorotative wake gets no image correction.
+    const wake = quat.rotate(b.orientation, v3.add(hubAir, v3.scale(axis, s.inflow)));
+    const wakeCos = clamp(-wake.z / Math.max(v3.len(wake), 1e-6), 0, 1);
+    const ge = (1 - (d.main.radius * wakeCos / (4 * h)) ** 2) ** 1.5;
     const vh = Math.sqrt(Math.abs(main.thrust) / Math.max(2 * density * Math.PI * d.main.radius ** 2, 1e-6));
     s.vortexRing = clamp(-axial / Math.max(vh, 1) - 0.4, 0, 1) * clamp(2.3 + axial / Math.max(vh, 1), 0, 1) * clamp(1 - horizontal / 12, 0, 1);
     // Empirical VRS loss: bounded, continuous, no artificial energy supplied to the shaft.
@@ -154,7 +170,7 @@ export class Rotorcraft {
   /** Converge the slow aerodynamic states at a held pose/RPM for the numerical trim solver. */
   settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true): ForceMoment {
     const s = this.state, d = this.def;
-    if (!powered) s.driveTorque = 0;
+    s.driveTorque = 0; s.coning = 0; s.retreatingFlap = 0;
     s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit;
     s.inflow = 5; s.tailInflow = 5;
     for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);

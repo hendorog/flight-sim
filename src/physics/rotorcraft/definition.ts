@@ -1,5 +1,5 @@
 import type { Vec3 } from '../../core/math';
-import type { SpeedPlacard } from './limits';
+import type { ManifoldPlacard, SpeedPlacard } from './limits';
 
 /** SI units; rotor rotation is +1 about its upward thrust axis (CCW viewed from above). */
 export interface RotorDefinition {
@@ -18,11 +18,15 @@ export interface RotorcraftDefinition {
   /** Tachometer 100%, distinct from the governed operating speed. */
   referenceRpm: number;
   airspeedLimits: SpeedPlacard;
+  manifoldLimits?: ManifoldPlacard;
   rotation: 1 | -1;
   engineRatio: number; tailRatio: number; transmissionEfficiency: number;
   cyclicLimit: number;
   teeterLimit: number;
   systems: { clutchSeconds: number; beltTorque: number; correlator: number; governorRate: number;
+    governorGain?: number; governorIntegralGain?: number;
+    /** Estimated RPM prediction horizon of the governor's rate feedback, seconds. */
+    governorLead?: number;
     continuousPower: number; takeoffPower: number; takeoffSeconds: number };
   stabilizer: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number; wash: number };
   fins: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number }[];
@@ -30,6 +34,8 @@ export interface RotorcraftDefinition {
   fuselageMoment: { pitch: number; yaw: number };
   /** Equivalent flat plate areas along FRD axes, m². */
   dragArea: Vec3;
+  /** Local fuselage downwash / disc induced velocity; actuator-disc near/far wake spans 1–2. */
+  fuselageWash?: number;
   /** Aerodynamic drag application point relative to reference point. */
   dragCentre: Vec3;
   skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number };

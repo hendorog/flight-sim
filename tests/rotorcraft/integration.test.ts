@@ -9,9 +9,14 @@ import { quat, v3 } from '../../src/core/math';
 import { TeeteringRotor } from '../../src/render/aircraft/rotorcraft/rotor';
 import { R22_VISUAL } from '../../src/aircraft/r22/visual';
 import { fakeMaterials } from '../aircraft/meshChecks';
+import { PILOT_EYE } from '../../src/aircraft/r22/dimensions';
 
 const env = flatEnvironment(undefined, 0);
 describe('R22 simulation integration', () => {
+  it('shares the pilot eye between flight-model geometry and the cockpit', () => {
+    expect(R22_DEFINITION.geometry.fuselage.pilotEye).toBe(PILOT_EYE);
+    expect(R22_VISUAL.cockpit.pilotEye).toEqual([PILOT_EYE.x, PILOT_EYE.y, PILOT_EYE.z]);
+  });
   it('initialises forward-flight scenarios with a force-balanced trim', () => {
     const fm = createFlightModelFor(R22_DEFINITION);
     for (const speed of [15, 30, 40]) {

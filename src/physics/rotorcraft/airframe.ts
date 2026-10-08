@@ -7,18 +7,24 @@ import type { RotorcraftDefinition } from './definition';
  */
 export function airframeLoads(d: RotorcraftDefinition, b: BodyState, air: Vec3, rho: number, inflow: number): ForceMoment {
   const force = v3.zero(), moment = v3.zero();
+  // The BEM inflow includes a power-loss correction for nonuniformity/tip loss. It is not the
+  // area-mean velocity washing the fuselage; recover the momentum velocity for those loads.
+  const meanInflow = inflow / (d.main.inducedFactor ?? 1);
   const add = (point: Vec3, f: Vec3): void => {
     Object.assign(force, v3.add(force, f));
     Object.assign(moment, v3.add(moment, v3.cross(v3.sub(point, b.cgOffset), f)));
   };
   const local = (point: Vec3): Vec3 => v3.add(air, v3.cross(b.angularVelocity, v3.sub(point, b.cgOffset)));
   const dragAir = local(d.dragCentre);
+  // The cabin/engine lie below the disc. Hover downwash creates a download that the rotor must
+  // also support; freestream-only drag omitted it completely. Attenuate as the wake skews aft.
+  dragAir.z -= (d.fuselageWash ?? 0) * meanInflow / (1 + (Math.hypot(air.x, air.y) / 16) ** 2);
   add(d.dragCentre, { x: -0.5 * rho * d.dragArea.x * dragAir.x * Math.abs(dragAir.x),
     y: -0.5 * rho * d.dragArea.y * dragAir.y * Math.abs(dragAir.y),
     z: -0.5 * rho * d.dragArea.z * dragAir.z * Math.abs(dragAir.z) });
   const h = d.stabilizer, flow = local(h.centre);
   // Wake at the aft stabilizer decreases continuously as the skewed wake passes below it.
-  flow.z -= h.wash * 2 * inflow / (1 + (air.x / 16) ** 2);
+  flow.z -= h.wash * 2 * meanInflow / (1 + (air.x / 16) ** 2);
   const polar = (angle: number, slope: number, maxCl: number): { cl: number; cd: number } => {
     const blend = clamp((Math.abs(angle) - 0.3) / 0.4, 0, 1);
     const cl = (1 - blend) * clamp(slope * angle, -maxCl, maxCl) + blend * Math.sin(2 * angle);

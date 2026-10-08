@@ -596,20 +596,36 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       orientation = quat.fromEuler(pose.roll, pose.pitch, ic.heading);
       this.lastTrim = null;
     } else {
+      let trimVelocity = velocityAir;
       const evaluate = (x: Float64Array, out: Float64Array): void => {
         const q = quat.fromEuler(x[0], x[1], ic.heading);
         c.collective = x[2]; c.elevator = x[3]; c.aileron = x[4]; c.rudder = x[5];
-        const b: BodyState = { time: 0, position, orientation: q, velocityBody: quat.rotateInv(q, velocityAir),
+        const b: BodyState = { time: 0, position, orientation: q, velocityBody: quat.rotateInv(q, trimVelocity),
           angularVelocity: v3.zero(), cgOffset: this.mp.cgOffset, mass: this.mp.mass };
         const f = r.settle(b, v3.zero(), this.atmosphere.density, -position.z - this.groundElevation, c);
         const g = quat.rotateInv(q, { x: 0, y: 0, z: G0 });
         out[0] = f.force.x / b.mass + g.x; out[1] = f.force.y / b.mass + g.y; out[2] = f.force.z / b.mass + g.z;
         out[3] = f.moment.x / this.mp.inertia.Ixx; out[4] = f.moment.y / this.mp.inertia.Iyy; out[5] = f.moment.z / this.mp.inertia.Izz;
       };
-      const sol = solveNewton(evaluate, [-0.04, -0.03, 0.55, 0, 0, -0.1], {
+      const options = {
         lower: [-0.4, -0.5, 0, -1, -1, -1], upper: [0.4, 0.5, 1, 1, 1, 1],
         step: [0.001, 0.001, 0.001, 0.001, 0.001, 0.001], tolerance: 1e-4, maxIterations: 30,
-      });
+      };
+      const seed = [-0.04, -0.03, 0.55, 0, 0, -0.1];
+      let sol = solveNewton(evaluate, seed, options);
+      if (!sol.converged) {
+        // Follow the attached-flow solution from hover if a distant first guess enters section stall.
+        // Each point still solves all six force/moment equations; continuation supplies only the seed.
+        const steps = Math.max(1, Math.ceil(ic.airspeed / 5));
+        let previous: Float64Array = Float64Array.from(seed);
+        for (let i = 0; i <= steps; i++) {
+          trimVelocity = v3.scale(velocityAir, i / steps);
+          const next = solveNewton(evaluate, previous, options);
+          previous = next.x;
+          if (i === steps && next.residual < sol.residual) sol = next;
+        }
+        trimVelocity = velocityAir;
+      }
       evaluate(sol.x, new Float64Array(6));
       orientation = quat.fromEuler(sol.x[0], sol.x[1], ic.heading);
       this.lastTrim = { converged: sol.converged, residual: sol.residual, iterations: sol.iterations,
@@ -1046,7 +1062,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.propIn.controls = engineControls;
     }
     this.prop = this.propulsion.step(this.propIn);
-    this.rotorcraft?.drive(h, controls, this.propulsion.units[0]);
+    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere);
     const scales = this.dragScales;
     if (scales) {
       const units = this.propulsion.units;
@@ -1153,7 +1169,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.rotorControls ?? this.trimControls, ai.dt);
     const a = rotorLoads ? { ...rotorLoads, lift: -rotorLoads.force.z, drag: 0, stallWarning: false,
       stallFraction: 0 } as AeroOutput : this.aero.compute(ai);
-    this.gearIn.dt = h > 0 ? h : 1 / this.physicsRate;
+    // Skid contact history, like rotor inflow, advances only at stage zero. Advancing it at
+    // intermediate RK poses consumed touchdown events before the stage that publishes them.
+    this.gearIn.dt = this.skids ? ai.dt : h > 0 ? h : 1 / this.physicsRate;
     const g = this.skids ? this.skids.compute(this.gearIn, this.rotorcraft!.state) : this.gear.compute(this.gearIn);
     if (stage === 0) {
       this.lastAero = a;

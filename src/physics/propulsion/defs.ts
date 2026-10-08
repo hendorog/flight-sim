@@ -183,6 +183,9 @@ export interface EngineDef {
   cylinders: 4 | 6;
   /** W at ratedRpm (crank), sea level ISA. */
   ratedPower: number; ratedRpm: number;
+  /** Optional sea-level ISA brake-power calibration at a specified MAP/RPM. For a derated engine,
+   * the placarded rating is a pilot limitation, not its wide-open-throttle output. Pa, W, crank rpm. */
+  calibration?: { manifoldPressure: number; power: number; rpm: number };
   /** Crank idle rpm with the installed propeller, throttle closed, warm. */
   idleRpm: number;
   /** m^3 */

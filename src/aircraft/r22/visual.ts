@@ -7,7 +7,7 @@ import type { AirframeVisualDef, FRD, RotorcraftVisualDef } from '../../render/a
 import { R22_ROTORCRAFT } from './rotorcraft';
 import { CABIN_WIDTH, MAIN_HUB, MAIN_ROTOR_RADIUS, NOSE_X, PANEL_CANVAS, PANEL_FACE, PANEL_OUTLINE, PILOT_EYE,
   SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, SKID_FRONT_X, SKID_HALF_TRACK, SKID_REAR_X, SKID_Z,
-  TAIL_END_X, TAIL_HUB, TAIL_ROTOR_RADIUS } from './dimensions';
+  TAIL_END_X, TAIL_HUB, TAIL_ROTOR_RADIUS, HORIZONTAL_STABILIZER as HS } from './dimensions';
 
 const point = (p: { x: number; y: number; z: number }): FRD => [p.x, p.y, p.z];
 const W = CABIN_WIDTH / 2;
@@ -25,7 +25,7 @@ const ROTORCRAFT: RotorcraftVisualDef = {
     { name: 'lowerFin', axis: 'y', thickness: 0.032, outline: [[TX + 0.12, 0.055, TZ], [TAIL_END_X + 0.08, 0.055, TZ], [TAIL_END_X + 0.015, 0.055, TZ + 0.55], [TX - 0.025, 0.055, TZ + 0.55]] },
     // Later Beta II: a separate stabiliser ahead of the fins, extending to BOTH sides of the boom.
     // POH 1-3 top view; R22 maintenance manual Fig. 4-4 (B375-2). Outline dimensions remain estimates.
-    { name: 'horizontalStabiliser', axis: 'z', thickness: 0.026, outline: [[TX + 0.83, -0.49, TZ + 0.01], [TX + 0.61, -0.49, TZ + 0.01], [TX + 0.56, 0.49, TZ + 0.01], [TX + 0.83, 0.49, TZ + 0.01]] },
+    { name: 'horizontalStabiliser', axis: 'z', thickness: 0.026, outline: [[HS.leadingX, -HS.span / 2, HS.z], [HS.leadingX - HS.leftChord, -HS.span / 2, HS.z], [HS.leadingX - HS.rightChord, HS.span / 2, HS.z], [HS.leadingX, HS.span / 2, HS.z]] },
   ],
   // Short tail skid / stinger rooted in the lower fin; not a cable hung from the forward stabiliser.
   guard: [[TX - 0.07, 0.055, TZ + 0.52], [TX - 0.10, 0.055, TZ + 0.61],
@@ -65,7 +65,7 @@ export const R22_VISUAL: AirframeVisualDef = {
   // is built in the rotorcraft branch; fin dimensions also supply the shared paint material's UV scale.
   wing: { mount: 'low', section: { m: 0, p: 0.4, t: 0.12 }, breaks: [{ y: 0, chord: 0.1, qcX: 0 }, { y: 0.1, chord: 0.1, qcX: 0 }],
     rootY: 0, qcZ: 0, dihedral: 0, rootIncidence: 0, tipIncidence: 0, bays: [], flap: { maxDeflection: 0, travelAft: 0, travelDown: 0 }, tip: { round: 0, chordRound: 0 }, fuelCaps: [] },
-  tail: { section: { m: 0, p: 0.4, t: 0.09 }, h: { span: 0.98, rootChord: 0.27, tipChord: 0.22, quarterChord: { x: TX + 0.75, z: TZ }, incidence: 0, kind: 'elevator', chordFraction: 0, innerCutY: 0 },
+  tail: { section: { m: 0, p: 0.4, t: 0.09 }, h: { span: HS.span, rootChord: HS.rightChord, tipChord: HS.leftChord, quarterChord: { x: TX + 0.75, z: TZ }, incidence: 0, kind: 'elevator', chordFraction: 0, innerCutY: 0 },
     v: { base: { x: TX, z: TZ }, tip: { x: TX - 0.1, z: TZ - 0.47 }, rootChord: 0.25, tipChord: 0.16, rudderChordFraction: 0 }, tTail: false },
   gear: [0, -1, 1].map(s => ({ contact: [s === 0 ? SKID_CONTACT_FRONT_X : SKID_CONTACT_REAR_X, s * SKID_HALF_TRACK, SKID_Z], radius: 0, width: 0, rimRadius: 0,
     leg: { kind: 'springTube', root: [0, 0, 0], axleOffset: 0, r0: 0, r1: 0 } })) as unknown as AirframeVisualDef['gear'],

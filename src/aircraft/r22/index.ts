@@ -46,10 +46,17 @@ export const R22_DEFINITION: AircraftDefinition = {
       // Propeller is a compatibility carrier for the generic engine module; externalDrive disables its loads.
       propeller: { ...C152_POWERPLANT.engines[0].propeller, inertia: 0.05 },
       engine: { ...C152_ENGINE, name: 'Lycoming O-360-J2A (derated)', ratedPower: 145 * HP,
+        // POH 2-11: MCP = 124 hp at 2652 rpm, SL/15°C MAP = 22.45 inHg. MM 6.002:
+        // the engine is capable of 180 hp; 145 hp is a derating, not a WOT calibration.
+        calibration: { power: 124 * HP, rpm: 2652, manifoldPressure: 22.45 * 3386.389 },
         ratedRpm: 2700, displacement: 5.916e-3, compressionRatio: 8.5, rotatingInertia: 0.45,
         airStartRpm: 2652, groundStartRpm: 2652, starter: { k: 0.00145, r: 0.025 },
-        induction: { ...C152_ENGINE.induction, idleArea: 0.000018, throttleBoreArea: Math.PI * 0.03 ** 2 },
-        metering: { kind: 'floatCarburettor', takeoffFuelFlow: 0.0075, leanestFraction: 0.35 } } }],
+        induction: { ...C152_ENGINE.induction, idleArea: 0.000018, throttleBoreArea: Math.PI * 0.03 ** 2,
+          // ESTIMATE: scale the C152 induction throat by displacement, rather than choking a 5.9 L engine.
+          inletArea: 1.0e-3 * 5.916 / 3.823 },
+        // Full-rich is rich of peak. The previous fuel-flow calibration made it phi = 0.89 (lean).
+        // Exact enrichment is estimated; check MAP/power against POH and fuel against Lycoming Fig. 3-40.
+        metering: { kind: 'floatCarburettor', fullRichPhi: 1.15, leanestFraction: 0.35 } } }],
     fuel: { ...C152_POWERPLANT.fuel, tanks: [
       { id: 'main', side: 'left', capacity: R22_FUEL_CAPACITY[0], position: { x: -8.6 * 0.0254, y: -11 * 0.0254, z: -0.1 } },
       { id: 'aux', side: 'right', capacity: R22_FUEL_CAPACITY[1], position: { x: -3.8 * 0.0254, y: 11.2 * 0.0254, z: -0.1 } },

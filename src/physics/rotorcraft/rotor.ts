@@ -1,4 +1,4 @@
-import { clamp } from '../../core/math';
+import { clamp, smoothstep } from '../../core/math';
 import type { RotorDefinition } from './definition';
 
 export interface RotorLoads { thrust: number; torque: number; inPlane: number; stalledFraction: number;
@@ -56,15 +56,18 @@ export function bladeElements(d: RotorDefinition, omega: number, pitch: number, 
 export function inflowTarget(thrust: number, density: number, radius: number, axial: number, horizontal: number): number {
   const vh = Math.sqrt(Math.abs(thrust) / Math.max(2 * density * Math.PI * radius * radius, 1e-6));
   if (vh < 1e-6) return 0;
-  if (axial < 0 && axial > -2 * vh && horizontal < 2 * vh) {
-    return Math.sign(thrust) * vh * (1 + 0.35 * Math.sin(-Math.PI * axial / (2 * vh)) ** 2) /
-      Math.sqrt(1 + (horizontal / vh) ** 2);
-  }
   // Damped fixed-point solve of vi = T / (2 rho A sqrt(Vh² + (Va+vi)²)).
   let vi = vh;
   for (let i = 0; i < 24; i++) {
     const speed = Math.max(Math.hypot(horizontal, axial + vi), 0.5 * vh);
     vi = 0.75 * vi + 0.25 * vh * vh / speed;
   }
-  return Math.sign(thrust) * vi;
+  // VRS develops over a finite descent/speed interval. Switching models at Va = 0 used to
+  // give two different inflows for the same level-flight trim either side of zero disc incidence.
+  const descent = -axial / vh;
+  const vortex = smoothstep(0, 0.5, descent) * (1 - smoothstep(1.5, 2, descent)) *
+    (1 - smoothstep(1, 2, horizontal / vh));
+  const recirculation = vh * (1 + 0.35 * Math.sin(Math.PI * descent / 2) ** 2) /
+    Math.sqrt(1 + (horizontal / vh) ** 2);
+  return Math.sign(thrust) * (vi + vortex * (recirculation - vi));
 }
