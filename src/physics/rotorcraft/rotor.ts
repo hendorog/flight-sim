@@ -1,15 +1,20 @@
 import { clamp } from '../../core/math';
 import type { RotorDefinition } from './definition';
 
-export interface RotorLoads { thrust: number; torque: number; inPlane: number; stalledFraction: number }
+export interface RotorLoads { thrust: number; torque: number; inPlane: number; stalledFraction: number; coningMoment: number }
 /** Azimuth-averaged blade elements, including reverse flow and signed aerodynamic shaft torque.
  * axial is aircraft velocity along thrust axis, positive climbing; inflow is wake velocity opposite thrust.
  * A driving region in descent has negative torque: autorotation draws energy from the air, never an RPM servo.
  * Section polar is analytic and unvalidated; this is not a free-wake or elastic-blade solver.
  */
 export function bladeElements(d: RotorDefinition, omega: number, pitch: number, axial: number,
-  inPlaneSpeed: number, inflow: number, density: number, radial = 12, azimuthal = 16): RotorLoads {
-  let thrust = 0, torque = 0, inPlane = 0, stalled = 0;
+  inPlaneSpeed: number, inflow: number, density: number, radial = 12, azimuthal = 16, teetering = false): RotorLoads {
+  let thrust = 0, torque = 0, inPlane = 0, stalled = 0, coningMoment = 0;
+  const tip = Math.max(omega * d.radius, 1), mu = inPlaneSpeed / tip;
+  // Free first-harmonic flapping unloads the advancing side. Equivalent feathering in disc axes
+  // cancels the first lift moment in linear theory; section stall then breaks that balance naturally.
+  const harmonic = teetering ? -mu * (8 / 3 * (pitch - 0.75 * d.twist) + 2 * d.twist -
+    2 * (axial + inflow) / tip) / (1 + 1.5 * mu * mu) : 0;
   const dr = (d.radius - d.rootCutout) / radial;
   for (let j = 0; j < azimuthal; j++) {
     const sin = Math.sin(2 * Math.PI * (j + 0.5) / azimuthal);
@@ -18,7 +23,7 @@ export function bladeElements(d: RotorDefinition, omega: number, pitch: number, 
       const ut = omega * r + inPlaneSpeed * sin;
       const up = axial + inflow;
       const phi = Math.atan2(up, ut);
-      const theta = pitch + d.twist * (r / d.radius - 0.75);
+      const theta = pitch + d.twist * (r / d.radius - 0.75) + harmonic * sin;
       const alpha = Math.atan2(Math.sin(theta - phi), Math.cos(theta - phi));
       const linear = d.liftSlope * alpha;
       const stall = Math.abs(linear) > d.maxCl;
@@ -28,14 +33,16 @@ export function bladeElements(d: RotorDefinition, omega: number, pitch: number, 
       const cd = d.profileCd + d.inducedDrag * cl * cl + blend * 1.8 * Math.sin(alpha) ** 2;
       const scale = 0.5 * density * (ut * ut + up * up) * d.chord * dr * d.blades / azimuthal;
       const lift = scale * cl, drag = scale * cd;
-      thrust += lift * Math.cos(phi) - drag * Math.sin(phi);
+      const normal = lift * Math.cos(phi) - drag * Math.sin(phi);
+      thrust += normal;
+      coningMoment += normal * r;
       const tangential = lift * Math.sin(phi) + drag * Math.cos(phi);
       torque += tangential * r;
       inPlane += tangential * sin;
       if (stall) stalled++;
     }
   }
-  return { thrust, torque, inPlane, stalledFraction: stalled / (radial * azimuthal) };
+  return { thrust, torque, inPlane, stalledFraction: stalled / (radial * azimuthal), coningMoment };
 }
 
 /** Uniform momentum inflow. Relaxing this target gives dynamic inflow and translational lift.

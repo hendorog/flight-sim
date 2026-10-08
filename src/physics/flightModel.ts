@@ -632,7 +632,10 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       for (let j = 0; j < 20; j++) this.prop = this.propulsion.step(this.propIn);
       if (unit.shaftTorque > target) hi = ec.throttle; else lo = ec.throttle;
     }
-    r.state.governorThrottle = ic.engineRunning ? ec.throttle : 0;
+    r.state.governorThrottle = r.state.governorIntegral = ic.engineRunning ? ec.throttle : 0;
+    c.throttle = r.state.governorThrottle;
+    r.state.previousThrottle = c.throttle; r.state.previousCollective = c.collective ?? 0;
+    this.controlsIn = cloneControls(c); this.rotorControls = this.controlsIn;
     // Numerical initialisation must not consume fuel or reset the already-settled intake wall film.
     this.propulsion.fuel.quantities.set(this.loading.tanks);
     for (let i = 0; i < this.loading.tanks.length; i++) this.prop.tanks[i] = this.loading.tanks[i];
@@ -1158,6 +1161,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       if (h > 0) for (const e of g.touchdowns) this.touchdowns.push(e);
     }
     if (g.crash && !this.crashReason) this.crashReason = g.crash;
+    if (this.rotorcraft?.state.mastBump && !this.crashReason) this.crashReason = 'Main rotor teeter stop contact (mast bump)';
 
     const p = this.prop;
     const fx = a.force.x + p.force.x + g.force.x;
