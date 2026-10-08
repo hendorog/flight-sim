@@ -1169,7 +1169,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.rotorControls ?? this.trimControls, ai.dt);
     const a = rotorLoads ? { ...rotorLoads, lift: -rotorLoads.force.z, drag: 0, stallWarning: false,
       stallFraction: 0 } as AeroOutput : this.aero.compute(ai);
-    this.gearIn.dt = h > 0 ? h : 1 / this.physicsRate;
+    // Skid contact history, like rotor inflow, advances only at stage zero. Advancing it at
+    // intermediate RK poses consumed touchdown events before the stage that publishes them.
+    this.gearIn.dt = this.skids ? ai.dt : h > 0 ? h : 1 / this.physicsRate;
     const g = this.skids ? this.skids.compute(this.gearIn, this.rotorcraft!.state) : this.gear.compute(this.gearIn);
     if (stage === 0) {
       this.lastAero = a;

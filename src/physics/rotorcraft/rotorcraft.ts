@@ -37,9 +37,14 @@ export class Rotorcraft {
       engine.rpm > 0.8 * d.referenceRpm * d.engineRatio;
     if (c.throttle <= 0) s.governorThrottle = s.governorIntegral = 0;
     else if (s.governorActive && !override) {
-      const error = (d.nominalRpm * d.engineRatio - engine.rpm) / (d.referenceRpm * d.engineRatio);
-      s.governorIntegral = clamp(s.governorIntegral + 1.8 * error * dt, 0, 1);
-      const target = clamp(s.governorIntegral + 1.6 * error, 0, 1);
+      const coupled = s.clutchEngagement > 0.99 && engine.rpm >= s.rotorRpm * d.engineRatio - 5;
+      const reflected = (d.main.inertia + d.tail.inertia * d.tailRatio ** 2) / (d.transmissionEfficiency * d.engineRatio ** 2);
+      const acceleration = coupled ? (engine.shaftTorque - s.torque / (d.engineRatio * d.transmissionEfficiency)) /
+        (engine.inertia + reflected) * 30 / Math.PI : 0;
+      const error = (d.nominalRpm * d.engineRatio - engine.rpm - (d.systems.governorLead ?? 0) * acceleration) /
+        (d.referenceRpm * d.engineRatio);
+      s.governorIntegral = clamp(s.governorIntegral + (d.systems.governorIntegralGain ?? 1.8) * error * dt, 0, 1);
+      const target = clamp(s.governorIntegral + (d.systems.governorGain ?? 1.6) * error, 0, 1);
       s.governorThrottle += clamp(target - s.governorThrottle, -d.systems.governorRate * dt, d.systems.governorRate * dt);
     } else s.governorIntegral = s.governorThrottle;
     return s.governorThrottle;

@@ -24,6 +24,9 @@ export interface RotorcraftDefinition {
   cyclicLimit: number;
   teeterLimit: number;
   systems: { clutchSeconds: number; beltTorque: number; correlator: number; governorRate: number;
+    governorGain?: number; governorIntegralGain?: number;
+    /** Estimated RPM prediction horizon of the governor's rate feedback, seconds. */
+    governorLead?: number;
     continuousPower: number; takeoffPower: number; takeoffSeconds: number };
   stabilizer: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number; wash: number };
   fins: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number }[];
@@ -31,6 +34,8 @@ export interface RotorcraftDefinition {
   fuselageMoment: { pitch: number; yaw: number };
   /** Equivalent flat plate areas along FRD axes, m². */
   dragArea: Vec3;
+  /** Local fuselage downwash / disc induced velocity; actuator-disc near/far wake spans 1–2. */
+  fuselageWash?: number;
   /** Aerodynamic drag application point relative to reference point. */
   dragCentre: Vec3;
   skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number };

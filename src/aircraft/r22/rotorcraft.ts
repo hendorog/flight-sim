@@ -7,13 +7,14 @@ import { MAIN_HUB, MAIN_ROTOR_RADIUS, TAIL_HUB, TAIL_ROTOR_RADIUS,
 /** R22 Beta II baseline. Published dimensions/speeds plus explicitly estimated dynamic parameters;
  * see docs/r22-flight-model.md before interpreting these as validated handling data. */
 export const R22_ROTORCRAFT: RotorcraftDefinition = {
-  // POH 1-6: 100% = 510 / 2550 rpm; normal operation at 104% (1-5).
-  nominalRpm: 510 * 1.04, referenceRpm: 510, rotation: 1, engineRatio: 5, tailRatio: 47 / 11 * 1.5,
+  // POH 1-6: 100% = 510 / 2550 rpm. Aim inside the 103–104% normal range, below the red line.
+  nominalRpm: 510 * 1.035, referenceRpm: 510, rotation: 1, engineRatio: 5, tailRatio: 47 / 11 * 1.5,
   airspeedLimits: R22_VNE, manifoldLimits: R22_MAP,
   transmissionEfficiency: 0.94, cyclicLimit: 10.75 * DEG,
   // Stop angle, actuator time, torque capacity and throttle linkage gains are engineering estimates.
   teeterLimit: 12 * DEG,
-  systems: { clutchSeconds: 45, beltTorque: 520, correlator: 0.7, governorRate: 0.3,
+  systems: { clutchSeconds: 45, beltTorque: 520, correlator: 0.3, governorRate: 0.3, governorLead: 0.5,
+    governorGain: 10, governorIntegralGain: 1,
     continuousPower: 124 * HP, takeoffPower: 131 * HP, takeoffSeconds: 300 },
   main: { radius: MAIN_ROTOR_RADIUS, rootCutout: 0.75, chord: 0.18923, blades: 2,
     // R22 MM 10.122: pitch at .75R, 2 ±.5° down / 14 ±.5° up; final low stop is flight-rigged (10.250).
@@ -40,6 +41,9 @@ export const R22_ROTORCRAFT: RotorcraftDefinition = {
   // Pokhrel et al., AHS Sustainability 2015, p. 3: 5.26 ft² (Prouty estimate, not a wind-tunnel datum).
   // https://www.researchgate.net/publication/303753069
   dragArea: { x: 5.26 * 0.3048 ** 2, y: 1.8, z: 2.2 }, dragCentre: { x: -0.35, y: 0, z: 0 },
+  // ESTIMATE: actuator-disc centreline wake, 1 + z/sqrt(R²+z²), at the drag centre below the hub.
+  // Uniform coverage and the 16 m/s wake-skew scale remain approximations.
+  fuselageWash: 1 + -MAIN_HUB.z / Math.hypot(MAIN_ROTOR_RADIUS, MAIN_HUB.z),
   skids: { halfTrack: SKID_HALF_TRACK, front: SKID_CONTACT_FRONT_X, rear: SKID_CONTACT_REAR_X, z: SKID_Z,
     stiffness: 65000, damping: 2200, friction: 0.65, maxSink: 3.5 },
 };
