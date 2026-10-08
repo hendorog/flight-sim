@@ -19,6 +19,8 @@ export interface Rect {
 export interface PanelComponent {
   readonly id: string;
   readonly bounds: Rect;
+  /** Separate update rectangles (for controls distributed around a shaped console). */
+  readonly paintRects?: readonly Rect[];
   /**
    * Latch the display values from the readings and controls, quantised to what is visible.
    * @returns true when the drawing differs from the last draw().

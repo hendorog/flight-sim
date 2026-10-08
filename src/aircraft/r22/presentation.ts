@@ -11,7 +11,8 @@ export { R22_UI } from './ui';
 export const R22_PRESENTATION: AircraftPresentation = {
   ...C152_PRESENTATION, id: 'r22', visual: R22_VISUAL, ui: R22_UI,
   instrumentSystems: R22_INSTRUMENT_SYSTEMS,
-  audio: { ...C152_PRESENTATION.audio, flapMotor: false, busPoweredV: 10,
+  audio: { ...C152_PRESENTATION.audio, flapMotor: false, busPoweredV: 10, gyros: 'none',
+    // Steady headset warning; 800 Hz is an aural approximation (POH 7-24 specifies no frequency).
     stallWarner: { kind: 'electric', baseHz: 800, sweepHz: 0, needsBus: true },
     engines: [{ engine: { ...C152_PRESENTATION.audio.engines[0].engine, ratedPowerW: 131 * HP,
       gearRatio: R22_ROTORCRAFT.engineRatio },

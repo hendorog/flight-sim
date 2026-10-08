@@ -5,7 +5,7 @@
 // contract retains its earlier 105 in / 344 in envelope. No shared dimensions are changed here.
 import type { AirframeVisualDef, FRD, RotorcraftVisualDef } from '../../render/aircraft/airframe/types';
 import { R22_ROTORCRAFT } from './rotorcraft';
-import { CABIN_WIDTH, MAIN_HUB, MAIN_ROTOR_RADIUS, NOSE_X, PANEL_CANVAS, PANEL_FACE, PILOT_EYE,
+import { CABIN_WIDTH, MAIN_HUB, MAIN_ROTOR_RADIUS, NOSE_X, PANEL_CANVAS, PANEL_FACE, PANEL_OUTLINE, PILOT_EYE,
   SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, SKID_FRONT_X, SKID_HALF_TRACK, SKID_REAR_X, SKID_Z,
   TAIL_END_X, TAIL_HUB, TAIL_ROTOR_RADIUS } from './dimensions';
 
@@ -31,7 +31,7 @@ const ROTORCRAFT: RotorcraftVisualDef = {
   guard: [[TX - 0.07, 0.055, TZ + 0.52], [TX - 0.10, 0.055, TZ + 0.61],
     [TX - 0.24, 0.055, TZ + 0.73], [TX - 0.32, 0.055, TZ + 0.75], [TX - 0.36, 0.055, TZ + 0.73]],
   panel: { centre: point(PANEL_FACE.centre), width: PANEL_FACE.width, height: PANEL_FACE.height,
-    tiltBackDeg: PANEL_FACE.tiltBackDeg, canvas: PANEL_CANVAS },
+    tiltBackDeg: PANEL_FACE.tiltBackDeg, canvas: PANEL_CANVAS, outline: PANEL_OUTLINE },
   collective: { pivots: [[0.58, -0.49, 0.25], [0.58, 0.04, 0.25]], length: 0.51 },
 };
 
@@ -80,7 +80,7 @@ export const R22_VISUAL: AirframeVisualDef = {
     { id: 'taxi', circuit: 'landing', pos: [1.64, 0.065, 0.245], radius: 0.038, glowOffset: [0.03, 0, 0], aim: { downDeg: 14, outDeg: 0, halfAngleDeg: 22 } },
   ],
   cockpit: {
-    pilotEye: point(PILOT_EYE), defaultPitchDeg: -25, defaultFovDeg: 82, enclosure: 'canopy',
+    pilotEye: point(PILOT_EYE), defaultPitchDeg: -28, defaultFovDeg: 82, enclosure: 'canopy',
     panel: { x: PANEL_FACE.centre.x, zTop: PANEL_FACE.centre.z - PANEL_FACE.height / 2, width: PANEL_FACE.width },
     floor: { z: 0.43, x0: 1.55, x1: -0.06 }, glareshield: { profile: [], halfWidth: PANEL_FACE.width / 2 },
     seats: [-0.27, 0.27].map(y => ({ x: 1.10, y, z: 0.22, kind: 'front', width: 0.43, depth: 0.47, reclineDeg: 10, back: { height: 0.56, headrest: false } })),

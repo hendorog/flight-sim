@@ -1,5 +1,10 @@
 // R22 panel contract, indication sources and cockpit controls, independent of the developing rotor solver.
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fillSynthParams, makeParamBlock } from '../../src/audio/mapping';
+import { P } from '../../src/audio/params';
+import { R22_PRESENTATION } from '../../src/aircraft/r22/presentation';
+import type { SimContext } from '../../src/core/context';
+import type { PanelComponent } from '../../src/instruments/render/component';
 import { PANEL_CANVAS, PANEL_PX_PER_M } from '../../src/aircraft/r22/dimensions';
 import { R22_ASI_MARKS, R22_CAT_SCALE, R22_INSTRUMENT_SYSTEMS, R22_MAP_SCALE, R22_PANEL, R22_TACH_MARKS } from '../../src/aircraft/r22/panel';
 import { R22_MAP_PLACARD } from '../../src/aircraft/r22/reference';
@@ -50,8 +55,8 @@ describe('R22 console', () => {
     expect(R22_PANEL.gauges.some(g => ['attitude', 'heading', 'flapLever'].includes(g.kind))).toBe(false);
     const stub = stubCanvas();
     const panel = new InstrumentPanel({ def: R22_PANEL, systems: R22_INSTRUMENT_SYSTEMS });
-    expect([panel.canvas.width, panel.canvas.height]).toEqual([1344, 720]);
-    expect(panel.emissiveTexture.image.width).toBe(1344);
+    expect([panel.canvas.width, panel.canvas.height]).toEqual([PANEL_CANVAS.w, PANEL_CANVAS.h]);
+    expect(panel.emissiveTexture.image.width).toBe(PANEL_CANVAS.w);
     // Complete scaled artwork has precisely the bounds used by layout checking and dirty uploads.
     const components = (panel as unknown as { components: { id: string; bounds: unknown }[] }).components;
     for (const g of R22_PANEL.gauges) expect(components.find(c => c.id === g.id)?.bounds).toEqual(gaugeParts(g, R22_PANEL.apertures, R22_PANEL.instrumentScale)[0].rect);
@@ -113,7 +118,7 @@ describe('R22 console', () => {
     expect(r.lamps.govOff).toBe(false);
     c.rotorGovernor = false;
     expect(step().lamps.govOff).toBe(true);
-    s.rotorcraft!.governorActive = true; s.rotorcraft!.governorThrottle = 0.99;
+    c.throttle = 1; s.rotorcraft!.governorActive = true; s.rotorcraft!.governorThrottle = 0.99;
     expect(step().lamps.fullThrottle).toBe(true);
     const button = buildHotspots(R22_PANEL).find(h => h.id === 'lampTest')!;
     button.press!(true, c);
@@ -125,6 +130,58 @@ describe('R22 console', () => {
     expect(stub.texts).toContain('CARBON MONOXIDE'); expect(stub.fills).toContain('#ffffff');
     button.press!(false, c); s.electrical.busVoltage = 0;
     for (const lamp of R22_PANEL.annunciator!.lamps!) expect(step().lamps[lamp.id], lamp.id).toBe(false);
+  });
+
+  it('reads the linkage opening at idle, under governor control and with a pilot throttle limit', () => {
+    const { s, c, step } = fixture();
+    c.throttle = 1; c.collective = 0;
+    s.rotorcraft!.governorActive = false; s.rotorcraft!.governorThrottle = 0.24;
+    expect(step().lamps.fullThrottle).toBe(false);
+    s.rotorcraft!.governorActive = true;
+    expect(step().lamps.fullThrottle).toBe(false);
+    s.rotorcraft!.governorThrottle = 1;
+    expect(step().lamps.fullThrottle).toBe(true);
+    c.throttle = 0.4;
+    expect(step().lamps.fullThrottle).toBe(false);
+    c.rotorGovernor = false; c.throttle = 1;
+    expect(step().lamps.fullThrottle).toBe(true);
+    s.electrical.busVoltage = 0;
+    expect(step().lamps.fullThrottle).toBe(false);
+  });
+
+  it('sounds the steady low-RPM horn from the same contract condition as the lamp', () => {
+    const { s, c, step } = fixture();
+    const x = { surface: 'runway' as const, speedOfSound: 340, turbulence: 0, gyroSpin: 0, flapMotor: 0 };
+    const sound = () => fillSynthParams(s, c, x, makeParamBlock(), R22_PRESENTATION.audio)[P.horn];
+    s.rotorcraft!.lowRpm = true; s.rotorcraft!.lowRpmHorn = false;
+    expect(sound()).toBe(0); expect(step().lamps.lowRpm).toBe(false);
+    s.rotorcraft!.lowRpm = false; s.rotorcraft!.lowRpmHorn = true; s.ias = 0;
+    expect(sound()).toBe(1); expect(step().lamps.lowRpm).toBe(true);
+    s.electrical.busVoltage = 0;
+    expect(sound()).toBe(0); expect(step().lamps.lowRpm).toBe(false);
+    expect(R22_PRESENTATION.audio.stallWarner).toMatchObject({ kind: 'electric', sweepHz: 0 });
+  });
+
+  it('does not erase intervening instruments when distributed lights or switches redraw', () => {
+    const stub = stubCanvas();
+    const panel = new InstrumentPanel({ def: R22_PANEL, systems: R22_INSTRUMENT_SYSTEMS });
+    const { s, c } = fixture();
+    const ctx = { state: s, controls: c, weather: defaultWeather(), simTime: 0, cameraMode: 'cockpit' } as SimContext;
+    panel.update(0, ctx);
+    const inner = panel as unknown as { g: typeof stub.g; components: PanelComponent[] };
+    // Freeze other components so the only restored rectangles belong to the changing warning/switch group.
+    for (const comp of inner.components) if (!['annunciator', 'switches'].includes(comp.id)) comp.sample = () => false;
+    const restored: number[][] = [];
+    inner.g = new Proxy(stub.g, { get: (target, key) => key === 'drawImage'
+      ? (_image: unknown, ...args: number[]) => restored.push(args) : Reflect.get(target, key) });
+    c.annunciatorTest = true; c.rotorClutch = false;
+    panel.update(0, ctx);
+    expect(restored.length).toBeGreaterThan(13);
+    for (const [x, y, w, h] of restored) {
+      // Neither the ASI nor the engine cluster is inside a control's dirty rectangle.
+      for (const [gx, gy] of [[408, 188], [480, 650], [275, 815]]) expect(gx >= x && gx <= x + w && gy >= y && gy <= y + h).toBe(false);
+    }
+    panel.dispose();
   });
 
   it('handles absent rotorcraft state and accumulates hours only with the engine running', () => {

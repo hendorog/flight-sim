@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { panelUvBasis } from '../../src/instruments/panelProjection';
+import { buildHotspots, hotspotAt } from '../../src/instruments/hotspots';
+import { R22_PANEL } from '../../src/aircraft/r22/panel';
 import { R22_VISUAL } from '../../src/aircraft/r22/visual';
 import { MAIN_HUB, MAIN_ROTOR_RADIUS, PANEL_FACE, PANEL_CANVAS, PILOT_EYE, SKID_Z, TAIL_HUB } from '../../src/aircraft/r22/dimensions';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { AircraftVisual } from '../../src/render/aircraft/AircraftVisual';
+import { createFuselageShapes, sectionHalfWidth } from '../../src/render/aircraft/fuselage';
 import { frd } from '../../src/render/aircraft/geometry';
 import { rotorBladeGeometry } from '../../src/render/aircraft/rotorcraft/rotor';
 import { blankDocument, fakeContext } from './meshChecks';
@@ -42,8 +46,9 @@ describe('R22 procedural exterior and cockpit', () => {
     main.dispose(); tail.dispose();
   });
 
-  it('maps the entire canvas onto the exact tilted face, including raycast UVs at all four corners', () => {
+  it('maps every control onto the shaped face with correct raycast UVs from the pilot eye', () => {
     const panel = visual.getPanelMesh();
+    expect(panel.name).toBe('instrumentPanel'); // CockpitClicks discovers the face by this name.
     expect(panel.getWorldPosition(new THREE.Vector3()).distanceTo(point(PANEL_FACE.centre))).toBeLessThan(1e-12);
     const normal = new THREE.Vector3(0, 0, 1).transformDirection(panel.matrixWorld);
     const angle = PANEL_FACE.tiltBackDeg * Math.PI / 180;
@@ -52,10 +57,23 @@ describe('R22 procedural exterior and cockpit', () => {
     const g = panel.geometry; g.computeBoundingBox();
     const size = g.boundingBox!.getSize(new THREE.Vector3());
     expect(size.x).toBeCloseTo(PANEL_FACE.width, 6); expect(size.y).toBeCloseTo(PANEL_FACE.height, 6);
-    for (const u of [0.001, 0.999]) for (const v of [0.001, 0.999]) {
+    const spots = buildHotspots(R22_PANEL);
+    const [origin, du, dv] = panelUvBasis(g)!;
+    for (const spot of spots) for (const dx of [-spot.hw, 0, spot.hw]) for (const dy of [-spot.hh, 0, spot.hh]) {
+      const u = (spot.x + dx) / PANEL_CANVAS.w, v = 1 - (spot.y + dy) / PANEL_CANVAS.h;
       const target = panel.localToWorld(new THREE.Vector3((u - 0.5) * PANEL_FACE.width, (v - 0.5) * PANEL_FACE.height, 0));
-      const hits = new THREE.Raycaster(target.clone().add(normal), normal.clone().negate()).intersectObject(panel);
-      expect(hits.length).toBeGreaterThan(0); expect(hits[0].uv!.x).toBeCloseTo(u, 5); expect(hits[0].uv!.y).toBeCloseTo(v, 5);
+      const mapped = panel.localToWorld(origin.clone().addScaledVector(du, u).addScaledVector(dv, v));
+      expect(mapped.distanceTo(target), spot.id).toBeLessThan(1e-6);
+      const ray = new THREE.Raycaster(visual.pilotEye, target.clone().sub(visual.pilotEye).normalize());
+      const hits = ray.intersectObject(panel);
+      expect(hits.length, spot.id).toBeGreaterThan(0);
+      expect(hits[0].uv!.x).toBeCloseTo(u, 5); expect(hits[0].uv!.y).toBeCloseTo(v, 5);
+      if (dx === 0 && dy === 0) expect(hotspotAt(hits[0].uv!.x * PANEL_CANVAS.w, (1 - hits[0].uv!.y) * PANEL_CANVAS.h, spots)?.id).toBe(spot.id);
+    }
+    // The old slab's lower outer corners are empty space beside the narrow pedestal.
+    for (const u of [0.01, 0.99]) {
+      const target = panel.localToWorld(new THREE.Vector3((u - 0.5) * PANEL_FACE.width, -0.45 * PANEL_FACE.height, 0));
+      expect(new THREE.Raycaster(target.clone().add(normal), normal.clone().negate()).intersectObject(panel)).toHaveLength(0);
     }
     const map = new THREE.Texture(), emissive = new THREE.Texture();
     visual.setPanelTexture(map); visual.setPanelEmissiveTexture(emissive);
@@ -63,8 +81,8 @@ describe('R22 procedural exterior and cockpit', () => {
     expect((panel.material as THREE.MeshStandardMaterial).emissiveMap).toBe(emissive);
   });
 
-  it('fits all panel corners and the horizon in the default right-seat view', () => {
-    const camera = new THREE.PerspectiveCamera(R22_VISUAL.cockpit.defaultFovDeg, 16 / 9, 0.05, 1000);
+  it.each([16 / 9, 4 / 3])('fits the panel and horizon in the default right-seat view at aspect %s', aspect => {
+    const camera = new THREE.PerspectiveCamera(R22_VISUAL.cockpit.defaultFovDeg, aspect, 0.05, 1000);
     camera.position.copy(visual.pilotEye);
     camera.rotation.x = R22_VISUAL.cockpit.defaultPitchDeg * Math.PI / 180;
     camera.updateMatrixWorld(true);
@@ -75,6 +93,18 @@ describe('R22 procedural exterior and cockpit', () => {
     }
     const horizon = visual.pilotEye.clone().add(new THREE.Vector3(0, 0, -500)).project(camera);
     expect(horizon.y).toBeLessThan(0.9); expect(horizon.y).toBeGreaterThan(0);
+  });
+
+  it('keeps the enclosure inside the cabin bubble', () => {
+    const glass = createFuselageShapes(R22_VISUAL).glass;
+    const housing = visual.root.getObjectByName('consoleHousing') as THREE.Mesh;
+    const pos = housing.geometry.getAttribute('position');
+    let clearance = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const p = visual.root.worldToLocal(housing.localToWorld(new THREE.Vector3().fromBufferAttribute(pos, i)));
+      clearance = Math.min(clearance, sectionHalfWidth(glass, -p.z, -p.y) - Math.abs(p.x));
+    }
+    expect(clearance).toBeGreaterThan(0.005);
   });
 
   it('has finite, bounded meshes and shows a stopped rotor with two drooping blades', () => {

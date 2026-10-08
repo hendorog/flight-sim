@@ -338,7 +338,7 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
       id: s.id,
       kind: 'toggle',
       x: x + s.x,
-      y: rockerY,
+      y: s.top === undefined ? rockerY : y + s.top + row.rockerH / 2,
       hw: 15,
       hh: 25,
       name: s.name,

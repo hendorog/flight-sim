@@ -18,6 +18,8 @@ function rectDistance(r: Rect, x: number, y: number): number {
 /** Whether the bodies of two parts share canvas: the flanges of round instruments, else their rectangles. */
 function partsCollide(a: PanelPart, b: PanelPart): boolean {
   if (!overlap(a.rect, b.rect)) return false;
+  if (a.paintRects) return a.paintRects.some(rect => partsCollide({ id: a.id, rect }, b));
+  if (b.paintRects) return b.paintRects.some(rect => partsCollide(a, { id: b.id, rect }));
   if (a.round && b.round) return Math.hypot(a.round.x - b.round.x, a.round.y - b.round.y) < a.round.r + b.round.r;
   if (a.round) return rectDistance(b.rect, a.round.x, a.round.y) < a.round.r;
   if (b.round) return rectDistance(a.rect, b.round.x, b.round.y) < b.round.r;

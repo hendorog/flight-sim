@@ -63,6 +63,7 @@ export type GaugeDef =
       guard?: { closed(c: ControlInputs): boolean; toggle(c: ControlInputs): void } }
   | { kind: 'pushButton'; id: string; bounds: Rect; label: string;
       read(c: ControlInputs): boolean; press(down: boolean, c: ControlInputs): void }
+  | { kind: 'dualSector'; id: string; bounds: Rect; left: ScaleDef; right: ScaleDef }
   | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef }
   | { kind: 'single'; id: string; at: At; seed: number; size: 'large' | 'small'; a0: number; a1: number; title: string; units: string;
       labels: readonly number[]; scale: ScaleDef }
@@ -93,6 +94,8 @@ export type GaugeDef =
 
 export interface SwitchDef {
   id: string; label: string; name: string;
+  /** Optional rocker top relative to the switch group (separate clutch switch on a console). */
+  top?: number;
   /** Centre x within the switch row. */
   x: number; red?: boolean; group?: string;
   on(c: ControlInputs): boolean;
@@ -110,12 +113,12 @@ export interface PanelDef {
   /** Canvas size from the type's cockpit contract. Every component lies inside its panel face. */
   size: { w: number; h: number };
   gauges: readonly GaugeDef[];
-  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number };
+  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[] };
   switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[];
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
   ignition: IgnitionPanelDef;
-  background: { color?: string; seamsX: readonly number[];
+  background: { color?: string; outline?: readonly At[]; seamsX: readonly number[];
                 bushings: readonly { at: At; text: string; sub: string }[];
                 placards: readonly { x: number; y: number; lines: readonly string[]; size?: number }[];
                 breakers?: { bounds: Rect; names: readonly string[]; amps: readonly number[]; perRow: number };
