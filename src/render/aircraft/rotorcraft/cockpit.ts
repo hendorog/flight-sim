@@ -106,7 +106,7 @@ export class RotorcraftCockpit {
       this.collectives[i].rotation.x = (4 + 29 * (c.collective ?? 0)) * Math.PI / 180;
       this.throttles[i].rotation.z = -c.throttle * Math.PI * 0.65;
     }
-    this.pedals.forEach((p, i) => { p.position.z = -this.def.cockpit.pedals.x + (i % 2 === 0 ? -1 : 1) * c.rudder * 0.045; });
+    this.pedals.forEach((p, i) => { p.position.z = -this.def.cockpit.pedals.x + (i % 2 === 0 ? 1 : -1) * c.rudder * 0.045; });
     this.panel.material.emissive.setScalar(busVoltage > 10 ? c.lights.panel * 0.3 * emissiveScale : 0);
   }
 

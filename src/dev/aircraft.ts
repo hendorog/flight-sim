@@ -485,6 +485,14 @@ function animate(ctx: SimContext): void {
   s.surfaces.rudder = -c.rudder * C172.vTail.rudder.maxDeflection;
   s.surfaces.flaps = c.flaps * C172.wing.flap.maxDeflection;
   s.surfaces.elevatorTrim = c.elevatorTrim * 15 * DEG;
+  if (s.rotorcraft) {
+    c.collective = 0.35 + 0.3 * Math.sin(t * 0.3);
+    s.rotorcraft.rotorRpm = 530 * (0.5 - 0.5 * Math.cos(t * 0.2));
+    s.rotorcraft.omega = s.rotorcraft.rotorRpm * Math.PI * 2 / 60;
+    s.rotorcraft.flapForward = -c.elevator * 0.07;
+    s.rotorcraft.flapRight = c.aileron * 0.07;
+    s.rotorcraft.thrust = 5500 * (s.rotorcraft.rotorRpm / 530) ** 2;
+  }
   const rpm = 600 + 2100 * c.throttle;
   s.propeller.rpm = s.engine.rpm = rpm;
   s.propeller.rotation += ((rpm / 60) * 2 * Math.PI) / 60;

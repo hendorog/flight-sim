@@ -36,6 +36,13 @@ describe('cockpit head movement', () => {
     expect(up.y).toBeGreaterThan(0);
   });
 
+  it('mirrors the torso lean for a pilot in the right seat', () => {
+    const left = headOffset(156 * DEG, 0);
+    const right = headOffset(-156 * DEG, 0, undefined, undefined, undefined, undefined, true);
+    expect(right.x).toBeCloseTo(-left.x, 12);
+    expect(right.y).toBeCloseTo(left.y, 12); expect(right.z).toBeCloseTo(left.z, 12);
+  });
+
   it('looking back over a shoulder leans forward and to that side, clear of the seat back', () => {
     for (const yaw of [156 * DEG, -156 * DEG]) {
       const o = headOffset(yaw, 5 * DEG);

@@ -241,6 +241,8 @@ export class AircraftLights {
   private readonly lamps: Record<LightId, Lamp>;
   private readonly strobeLights: THREE.PointLight[] = [];
   private readonly installed = new Set<LightId>();
+  private readonly landingCircuit: 'landing' | 'taxi';
+  private readonly taxiCircuit: 'landing' | 'taxi';
   private beaconLight: THREE.PointLight | null = null;
   private readonly landing: THREE.SpotLight;
   private readonly taxi: THREE.SpotLight;
@@ -281,6 +283,8 @@ export class AircraftLights {
   ) {
     this.group.name = 'aircraftLights';
     for (const lamp of defs) this.installed.add(lamp.id);
+    this.landingCircuit = defs.find(l => l.id === 'landing')?.circuit ?? 'landing';
+    this.taxiCircuit = defs.find(l => l.id === 'taxi')?.circuit ?? 'taxi';
     const def = (id: LightId): LampVisualDef => {
       const d = defs.find((l) => l.id === id);
       // Keep stable shader/light slots for types with a single strobe or no taxi lamp. Absent lamps
@@ -457,8 +461,8 @@ export class AircraftLights {
     const halogen = power * Math.min(1.1, Math.pow(Math.max(0, v) / 28, 3.4));
     // A lamp on the nose gear leg is switched off by the leg until it is (nearly) down.
     const legDown = state.gear.extension[0] >= 0.9 ? 1 : 0;
-    const landing = (l.landing ? halogen : 0) * (this.onNoseGear.has('landing') ? legDown : 1);
-    const taxi = (l.taxi ? halogen : 0) * (this.onNoseGear.has('taxi') ? legDown : 1);
+    const landing = (l[this.landingCircuit] ? halogen : 0) * (this.onNoseGear.has('landing') ? legDown : 1);
+    const taxi = (l[this.taxiCircuit] ? halogen : 0) * (this.onNoseGear.has('taxi') ? legDown : 1);
 
     const flash = this.pointLightsOn ? 1 : 0;
     for (const p of this.strobeLights) p.intensity = FLASH_CD.strobe * k * strobe * flash;

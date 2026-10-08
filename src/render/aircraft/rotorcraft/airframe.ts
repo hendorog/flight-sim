@@ -119,7 +119,7 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
         const x = -1.40 - i / 17 * 1.22;
         const t = (x - d.boom.front[0]) / (d.boom.rear[0] - d.boom.front[0]);
         const r = THREE.MathUtils.lerp(...d.boom.radii, t) + 0.002;
-        const a = Math.PI / 2 - 0.95 + j / 4 * 0.72;
+        const a = Math.PI / 2 + 0.95 - j / 4 * 0.72;
         frd(x, side * r * Math.sin(a), THREE.MathUtils.lerp(d.boom.front[2], d.boom.rear[2], t) + r * Math.cos(a), out);
       },
       uv(i, j, out) { out.set(side < 0 ? i / 17 : 1 - i / 17, 1 - j / 4); },

@@ -1,4 +1,4 @@
-// Cockpit camera: the pilot's eye in the left seat, with mouse-look, FOV zoom and head inertia.
+// Cockpit camera: the pilot's eye in the command seat, with mouse-look, FOV zoom and head inertia.
 
 import * as THREE from 'three';
 import { clamp, DEG, type Vec3 } from '../../core/math';
@@ -80,7 +80,7 @@ export class CockpitRig implements CameraRig {
   readonly lineOfSight = false;
   private readonly head = new HeadMotion();
   private pilotEye = C172S_CAMERA.pilotEye;
-  /** Default view slightly below the horizon so the glare shield and upper panel are in view. */
+  /** The aircraft's default view pitch, chosen to include its console and the horizon. */
   private defaultPitch = C172S_CAMERA.defaultPitchDeg * DEG;
   private readonly eyeDefault = eyeInDefaultView(this.defaultPitch);
   private yaw = 0;
@@ -143,7 +143,7 @@ export class CockpitRig implements CameraRig {
     const e = this.pilotEye;
     const o = h.offset;
     this.eye.set(e.y + o.y, -(e.z + o.z), -(e.x + o.x));
-    this.eye.add(headOffset(this.yaw + this.turnLook, this.pitch, this.neckOffset, this.qHead, this.q, this.eyeDefault));
+    this.eye.add(headOffset(this.yaw + this.turnLook, this.pitch, this.neckOffset, this.qHead, this.q, this.eyeDefault, e.y > 0));
     this.eye.applyQuaternion(a.quaternion).add(a.position);
     out.position.copy(this.eye);
 
@@ -224,13 +224,15 @@ export function headOffset(
   qHead = new THREE.Quaternion(),
   q = new THREE.Quaternion(),
   eyeDefault: THREE.Vector3 = C172S_EYE_DEFAULT,
+  rightSeat = false,
 ): THREE.Vector3 {
   const headYaw = clamp(yaw, -HEAD_YAW_MAX, HEAD_YAW_MAX);
   qHead.setFromAxisAngle(Y_AXIS, headYaw).multiply(q.setFromAxisAngle(X_AXIS, pitch));
   out.copy(EYE_FROM_NECK).applyQuaternion(qHead).sub(eyeDefault);
   const lean = smoothstep((Math.abs(yaw) - LEAN_START) / (LEAN_FULL - LEAN_START));
-  // Looking left (yaw > 0) is toward the door for the left-seat pilot: model -x.
-  out.x += lean * (yaw > 0 ? -LEAN_OUTBOARD : LEAN_INBOARD);
+  // The command seat can be on either side: lean farther inboard than toward the door.
+  const towardDoor = rightSeat ? yaw < 0 : yaw > 0;
+  out.x += lean * (yaw > 0 ? -1 : 1) * (towardDoor ? LEAN_OUTBOARD : LEAN_INBOARD);
   out.z -= lean * LEAN_FORWARD;
   return out;
 }

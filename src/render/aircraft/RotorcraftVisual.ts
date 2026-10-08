@@ -61,15 +61,15 @@ export class RotorcraftVisual {
   update(ctx: SimContext): void {
     const r = ctx.state.rotorcraft, c = ctx.controls, d = this.def.rotorcraft!, v = this.def.rotorcraftVisual!;
     if (r) {
-      // FRD thrust normal [sin(forward), sin(right), -cos(...)] maps to model [right, up, -forward].
-      this.tilt.set(Math.sin(r.flapRight), Math.cos(r.flapForward) * Math.cos(r.flapRight), -Math.sin(r.flapForward)).normalize();
+      // The flight model uses small-angle disc slopes: FRD [forward, right, -1].
+      this.tilt.set(r.flapRight, 1, -r.flapForward).normalize();
       this.main.group.quaternion.setFromUnitVectors(this.up, this.tilt);
       const spin = Math.min(1, Math.max(0, r.rotorRpm / d.nominalRpm));
       // Visual estimate: about 2.5 deg coning at gross-weight hover, drooping 2 deg when stopped.
       const cone = THREE.MathUtils.lerp(-2 * Math.PI / 180, Math.min(5, Math.max(0, r.thrust) / 6000 * 2.5) * Math.PI / 180, spin * spin);
       const pitch = THREE.MathUtils.lerp(d.main.minPitch, d.main.maxPitch, c.collective ?? 0);
       this.main.update(r.azimuth, r.rotorRpm, pitch, cone);
-      this.tail.update(-r.azimuth * d.tailRatio, r.rotorRpm * d.tailRatio, THREE.MathUtils.lerp(d.tail.minPitch, d.tail.maxPitch, (c.rudder + 1) / 2), v.tail.precone);
+      this.tail.update(-r.azimuth * d.tailRatio, r.rotorRpm * d.tailRatio, THREE.MathUtils.lerp(d.tail.minPitch, d.tail.maxPitch, (1 - c.rudder) / 2), -v.tail.precone);
     }
     if (ctx.quality !== this.quality) { this.quality = ctx.quality; this.lights.setPointLights(ctx.quality !== 'low'); }
     this.lights.update(ctx.simTime, ctx.state, c, this.root, ctx.camera, ctx.renderer, ctx.sky);

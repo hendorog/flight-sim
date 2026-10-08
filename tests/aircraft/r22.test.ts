@@ -5,6 +5,7 @@ import { MAIN_HUB, MAIN_ROTOR_RADIUS, PANEL_FACE, PANEL_CANVAS, PILOT_EYE, SKID_
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { AircraftVisual } from '../../src/render/aircraft/AircraftVisual';
 import { frd } from '../../src/render/aircraft/geometry';
+import { rotorBladeGeometry } from '../../src/render/aircraft/rotorcraft/rotor';
 import { blankDocument, fakeContext } from './meshChecks';
 
 const point = (p: { x: number; y: number; z: number }): THREE.Vector3 => frd(p.x, p.y, p.z);
@@ -30,6 +31,15 @@ describe('R22 procedural exterior and cockpit', () => {
     expect(R22_VISUAL.cockpit.occupants).toEqual([{ seat: 1 }]);
     expect(R22_VISUAL.rotorcraftVisual!.main.radius).toBe(MAIN_ROTOR_RADIUS);
     expect(R22_VISUAL.rotorcraftVisual!.panel.canvas).toEqual(PANEL_CANVAS);
+  });
+
+  it('puts each rotor leading edge into its own direction of rotation', () => {
+    const d = R22_VISUAL.rotorcraftVisual!;
+    const main = rotorBladeGeometry(d.main);
+    const tail = rotorBladeGeometry({ ...d.tail, chord: [d.tail.chord, d.tail.chord], twist: 0, tail: true });
+    expect(main.getAttribute('position').getZ(0)).toBeLessThan(0); // positive rotation about local +Y
+    expect(tail.getAttribute('position').getZ(0)).toBeGreaterThan(0); // negative rotation about local +Y
+    main.dispose(); tail.dispose();
   });
 
   it('maps the entire canvas onto the exact tilted face, including raycast UVs at all four corners', () => {
@@ -82,6 +92,22 @@ describe('R22 procedural exterior and cockpit', () => {
     expect(Math.abs(tip.length() - MAIN_ROTOR_RADIUS)).toBeLessThan(1e-6);
   });
 
+  it('powers the nose lamps and panel from the 14 V bus and keeps the absent second strobe dark', () => {
+    ctx.state.electrical.busVoltage = 14;
+    ctx.controls.lights.landing = true; ctx.controls.lights.panel = 1;
+    visual.update(0, ctx);
+    const lights = visual.root.getObjectByName('aircraftLights')!;
+    const spots: THREE.SpotLight[] = [], flashes: THREE.PointLight[] = [];
+    lights.traverse(o => { if (o instanceof THREE.SpotLight) spots.push(o); if (o instanceof THREE.PointLight) flashes.push(o); });
+    expect(spots[0].intensity).toBeGreaterThan(0);
+    expect(spots[1].intensity).toBeGreaterThan(0);
+    expect(flashes.filter(l => l.visible)).toHaveLength(2); // one strobe, one beacon
+    expect((visual.getPanelMesh().material as THREE.MeshStandardMaterial).emissive.r).toBeGreaterThan(0);
+    ctx.state.electrical.busVoltage = 0; visual.update(0, ctx);
+    expect(spots[0].intensity).toBe(0);
+    expect((visual.getPanelMesh().material as THREE.MeshStandardMaterial).emissive.r).toBe(0);
+  });
+
   it('follows disc flapping, thrust coning, control travel, RPM blur and cockpit occupant visibility', () => {
     const r = ctx.state.rotorcraft!;
     Object.assign(r, { rotorRpm: 530, thrust: 5600, azimuth: 0.8, flapForward: 0.08, flapRight: -0.04 });
@@ -89,7 +115,8 @@ describe('R22 procedural exterior and cockpit', () => {
     ctx.cameraMode = 'cockpit'; visual.update(0, ctx); visual.root.updateMatrixWorld(true);
     const rotor = visual.root.getObjectByName('mainRotor')!;
     const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(rotor.quaternion);
-    expect(axis.z).toBeLessThan(0); expect(axis.x).toBeLessThan(0);
+    expect(axis.z / axis.y).toBeCloseTo(-r.flapForward, 12);
+    expect(axis.x / axis.y).toBeCloseTo(r.flapRight, 12);
     expect(rotor.getObjectByName('rotorAzimuth')!.rotation.y).toBe(0.8);
     expect(rotor.getObjectByName('rotorBlur')!.visible).toBe(true);
     const blades = rotor.getObjectByName('rotorBlades') as THREE.InstancedMesh;
@@ -99,6 +126,8 @@ describe('R22 procedural exterior and cockpit', () => {
     expect(visual.root.getObjectByName('cyclic')!.rotation.x).not.toBe(0);
     expect(visual.root.getObjectByName('collective')!.rotation.x).toBeGreaterThan(0.3);
     expect(visual.root.getObjectByName('throttleGrip')!.rotation.z).not.toBe(0);
+    const pedals: THREE.Object3D[] = []; visual.root.traverse(o => { if (o.name === 'pedal') pedals.push(o); });
+    expect(pedals[1].position.z).toBeLessThan(pedals[0].position.z);
     expect(visual.root.getObjectByName('occupants')!.visible).toBe(false);
     ctx.cameraMode = 'chase'; ctx.quality = 'low'; visual.update(0, ctx);
     expect(visual.root.getObjectByName('occupants')!.visible).toBe(true);

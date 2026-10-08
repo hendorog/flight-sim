@@ -1,6 +1,7 @@
 // Two-blade teetering rotor. Airfoil grids have the published chord and twist; the exact R22 airfoil
-// contour is not claimed. Motion smear integrates one 30 Hz exposure; a radial solidity disc takes
-// over as the swept sectors overlap (the same approach as propeller.ts).
+// contour is not claimed. A radial solidity disc replaces overlapping smear sectors, as in propeller.ts.
+// Visual exposure is 1/15 s for the slow main rotor and 1/60 s for the tail: a persistence approximation,
+// not a high-speed camera simulation. It avoids showing a fan of disconnected blades at flight RPM.
 import * as THREE from 'three';
 import { surfacePoint } from '../airfoil';
 import { gridGeometry, MeshBatch } from '../geometry';
@@ -13,7 +14,7 @@ const smooth = THREE.MathUtils.smoothstep;
 
 export function rotorBladeGeometry(d: RotorSpec): THREE.BufferGeometry {
   const rows = d.tail ? 16 : 36, cols = 25;
-  const g = gridGeometry({ rows, cols, wrap: true,
+  const g = gridGeometry({ rows, cols, wrap: true, flip: d.tail,
     position(i, j, out) {
       const f = i / (rows - 1), r = THREE.MathUtils.lerp(d.root, d.radius, f);
       const c = THREE.MathUtils.lerp(...d.chord, f);
@@ -23,7 +24,9 @@ export function rotorBladeGeometry(d: RotorSpec): THREE.BufferGeometry {
       const [ax, ay] = surfacePoint({ m: 0, p: 0.4, t: 0.12 }, xc, face);
       const beta = d.twist * (f - 0.75), along = (0.25 - ax) * c;
       const thickness = ay * c * Math.min(1, (1 - f) * 40 + 0.06);
-      out.set(r, along * Math.sin(beta) + thickness * Math.cos(beta), -along * Math.cos(beta) + thickness * Math.sin(beta));
+      const tangent = -along * Math.cos(beta) + thickness * Math.sin(beta);
+      // The tail turns the opposite way about its local axis; its leading edge faces that motion.
+      out.set(r, along * Math.sin(beta) + thickness * Math.cos(beta), d.tail ? -tangent : tangent);
     },
   });
   const colours = new Float32Array(g.getAttribute('position').count * 3);
@@ -46,6 +49,11 @@ export class TeeteringRotor {
   private readonly coneM = new THREE.Matrix4();
   private readonly pitchM = new THREE.Matrix4();
   private readonly links: THREE.Mesh[] = [];
+  private readonly upperJoints: THREE.Mesh[] = [];
+  private readonly linkA = new THREE.Vector3();
+  private readonly linkB = new THREE.Vector3();
+  private readonly linkAxis = new THREE.Vector3(0, 1, 0);
+  private readonly linkDelta = new THREE.Vector3();
   private cone = 0;
 
   constructor(private readonly d: RotorSpec, mat: AircraftMaterials) {
@@ -63,8 +71,11 @@ export class TeeteringRotor {
     for (const side of [-1, 1]) {
       head.add(mat.aluminium, tube([-0.055 * k, side * 0.24 * k, 0], [0.055 * k, side * 0.24 * k, 0], 0.023 * k));
       head.add(mat.darkMetal, tube([0, side * 0.26 * k, 0], [0, side * d.root, 0], 0.033 * k));
+      for (const end of [-1, 1]) head.add(mat.aluminium, tube([end * 0.056 * k, side * 0.24 * k, 0], [end * 0.067 * k, side * 0.24 * k, 0], 0.028 * k, 0.028 * k, 6));
+      if (!d.tail) head.add(mat.darkMetal, tube([0, side * 0.31, 0], [0.064, side * 0.31, 0], 0.012));
     }
     head.add(mat.aluminium, tube([0, 0, -0.07 * k], [0, 0, 0.085 * k], 0.035 * k));
+    head.add(mat.aluminium, tube([0, 0, -0.07 * k], [0, 0, -0.12 * k], 0.027 * k, 0.027 * k, 6));
     this.spin.add(head.build('teeteringHub'));
     if (!d.tail) {
       this.swashplate.name = 'swashplate'; this.swashplate.position.y = -0.20;
@@ -74,8 +85,15 @@ export class TeeteringRotor {
       }
       this.group.add(this.swashplate);
       for (const side of [-1, 1]) {
-        const link = new THREE.Mesh(tube([0.064, side * 0.17, 0.20], [0.064, side * 0.31, 0.008], 0.007), mat.chrome);
+        const link = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 1, 8), mat.chrome);
         link.name = 'pitchLink'; this.spin.add(link); this.links.push(link);
+        const rod = new THREE.Mesh(tube([-0.04, side * 0.05, 0.40], [-0.04, side * 0.083, 0.23], 0.009), mat.chrome);
+        this.group.add(rod);
+        for (const [y, z] of [[side * 0.075, 0.20], [side * 0.31, 0.008]]) {
+          const ball = new THREE.Mesh(new THREE.SphereGeometry(0.013, 10, 8), mat.darkMetal);
+          ball.position.set(y, -z, -0.064); this.spin.add(ball);
+          if (z === 0.008) this.upperJoints.push(ball);
+        }
       }
     }
     const data = new Uint8Array(256 * 4);
@@ -95,19 +113,20 @@ export class TeeteringRotor {
       uv(i, _j, out) { out.set(THREE.MathUtils.lerp(d.root, d.radius, i / 8) / d.radius, 0.5); },
     });
     this.blur = new THREE.Mesh(g, this.blurMat); this.blur.name = 'rotorBlur'; this.blur.renderOrder = 1; this.group.add(this.blur);
-    this.update(0, 0, 0, d.tail ? 0.02 : -0.035);
+    this.update(0, 0, 0, d.tail ? -0.02 : -0.035);
   }
 
   /** cone is a visual elastic/precone estimate; flap and azimuth are supplied directly by the flight model. */
   update(azimuth: number, rpm: number, pitch: number, cone: number): void {
     this.spin.rotation.y = azimuth;
-    const sweep = Math.min(Math.PI, Math.abs(rpm) * Math.PI * 2 / 60 / 30);
+    const exposure = this.d.tail ? 1 / 60 : 1 / 15;
+    const sweep = Math.min(Math.PI, Math.abs(rpm) * Math.PI * 2 / 60 * exposure);
     const toDisc = smooth(sweep, Math.PI * 0.40, Math.PI * 0.85);
     const sharp = sweep < 0.015, n = sharp ? 1 : COPIES;
     this.blades.count = 2 * n;
     this.pitchM.makeRotationX(pitch); this.coneM.makeRotationZ(cone).multiply(this.pitchM);
     for (let b = 0; b < 2; b++) for (let k = 0; k < n; k++) {
-      this.m.makeRotationY(b * Math.PI - (n > 1 ? sweep * k / (n - 1) : 0)).multiply(this.coneM);
+      this.m.makeRotationY(b * Math.PI - (n > 1 ? (this.d.tail ? -1 : 1) * sweep * k / (n - 1) : 0)).multiply(this.coneM);
       this.blades.setMatrixAt(b * n + k, this.m);
     }
     this.blades.instanceMatrix.needsUpdate = true;
@@ -120,7 +139,16 @@ export class TeeteringRotor {
       for (let i = 0; i < pos.count; i++) pos.setY(i, Math.hypot(pos.getX(i), pos.getZ(i)) * Math.sin(cone));
       pos.needsUpdate = true; this.blur.geometry.computeVertexNormals(); this.blur.geometry.computeBoundingSphere(); this.cone = cone;
     }
-    for (const link of this.links) link.scale.y = 1 + Math.sin(cone) * 0.31 / 0.20;
+    this.links.forEach((link, i) => {
+      const side = i === 0 ? -1 : 1;
+      this.linkA.set(side * 0.075, -0.20, -0.064);
+      this.linkB.set(side * 0.31 * Math.cos(cone), -0.008 + 0.31 * Math.sin(cone), -0.064);
+      this.linkDelta.subVectors(this.linkB, this.linkA);
+      link.scale.y = this.linkDelta.length();
+      link.quaternion.setFromUnitVectors(this.linkAxis, this.linkDelta.normalize());
+      link.position.copy(this.linkA).add(this.linkB).multiplyScalar(0.5);
+      this.upperJoints[i].position.copy(this.linkB);
+    });
   }
 
   dispose(): void { this.bladeMat.dispose(); this.blurMat.dispose(); this.texture.dispose(); }

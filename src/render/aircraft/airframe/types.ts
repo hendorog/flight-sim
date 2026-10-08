@@ -212,6 +212,8 @@ export interface LampVisualDef {
   /** A lamp parented to a gear leg moves with it and is extinguished below extension 0.9. */
   parent?: 'rudder' | 'noseGear';
   aim?: { downDeg: number; outDeg: number; halfAngleDeg: number };
+  /** A second nose spot can share the landing-light switch. Default: the spot's id. */
+  circuit?: 'landing' | 'taxi';
 }
 
 /**
