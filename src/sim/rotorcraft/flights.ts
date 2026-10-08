@@ -1,7 +1,7 @@
 // R22 demonstration flights. The acceptance tests and the app run these same controls at 240 Hz.
 // These are reproductions of the engineering test pilot, not validated flight-training procedures.
 
-import { clamp, DEG, KT } from '../../core/math';
+import { clamp, DEG, FT, KT } from '../../core/math';
 import { cloneControls, copyControls, type AircraftState, type ControlInputs } from '../../core/types';
 import { R22_ROTORCRAFT as d } from '../../aircraft/r22/rotorcraft';
 import type { StepController } from '../../training/types';
@@ -24,8 +24,8 @@ export const PHASE_ACTIONS: Record<string, string> = {
   climb: 'Climbing at 60 KIAS', accelerate: 'Lowering the nose; accelerating to 85 KIAS',
   cruise: 'Holding cruise', descend: 'Reducing speed and collective',
   approach: 'Decelerating and descending to the hover', land: 'Lowering collective for a vertical landing',
-  autorotate: 'Power off; collective low; holding 65 KIAS', flare: 'Flare: aft cyclic to arrest speed and descent',
-  level: 'Levelling the helicopter', cushion: 'Cushion with collective', park: 'Lowering collective after touchdown',
+  autorotate: 'Power off; collective low; holding 65 KIAS', flare: '60 ft flare: progressive aft cyclic; watching sink and rotor RPM',
+  level: '8 ft: forward cyclic to level the helicopter', cushion: '2 ft: cushioning with collective', park: 'Lowering collective after touchdown',
 };
 
 /** After contact, return weight to the skids before centring cyclic and pedals. */
@@ -58,6 +58,8 @@ export class R22Flight implements StepController {
   private landedAt = Infinity;
   private lastRpm = 103.5;
   private lastVs = 0;
+  private rpmTrend = 0;
+  private verticalAcceleration = 0;
   readonly samples: DemoSample[] = [];
   readonly phases: { time: number; phase: string }[] = [];
 
@@ -90,7 +92,7 @@ export class R22Flight implements StepController {
     else if (this.id === 'autorotation') this.autorotation(dt, t, s, c);
     else this.powered(dt, this.id === 'hover' ? t + 95 : t, s, c);
     copyControls(controls, c);
-    if (!this.samples.length || t - this.samples.at(-1)!.time >= 0.25) this.samples.push({
+    if (!this.samples.length || t - this.samples.at(-1)!.time >= 0.25 || this.phases.at(-1)?.phase !== this.phase) this.samples.push({
       time: t, phase: this.phase, height: s.height, kias: s.ias / KT, vs: s.verticalSpeed,
       rpm: s.rotorPercent, collective: c.collective ?? 0, cyclicAft: c.elevator,
       cyclicRight: c.aileron, pedalRight: c.rudder, grip: c.throttle,
@@ -155,24 +157,32 @@ export class R22Flight implements StepController {
   }
 
   private autorotation(dt: number, t: number, s: PilotObservation, c: ControlInputs): void {
-    const pilot = this.pilot!, h = s.height, rpm = s.rotorPercent, speed = s.groundSpeed / KT;
-    if (this.phase === 'autorotate' && h < (this.gross ? 13 : 14)) {
-      this.phase = 'flare'; pilot.pitchRate = 30 * DEG; pilot.cyclicRate = 3;
-      pilot.pitchGain = 3; pilot.pitchDamping = 2; pilot.pitchLearning = 0.4;
+    const pilot = this.pilot!, h = s.height, rpm = s.rotorPercent;
+    // Hand-motion estimates: 0.8 cyclic units/s, 0.5 collective travel/s; attitude demand rises at
+    // 12 deg/s in the flare. Same technique at both loadings, with no mass/force/rotor-state feedback.
+    // Trends in visible sink and tachometer readings, smoothed over a pilot's response time.
+    const lag = 1 - Math.exp(-dt / 0.3);
+    this.rpmTrend += ((rpm - this.lastRpm) / dt - this.rpmTrend) * lag;
+    this.verticalAcceleration += ((s.verticalSpeed - this.lastVs) / dt - this.verticalAcceleration) * lag;
+    if (this.phase === 'autorotate' && h < 60 * FT) {
+      // Owner's 60 ft skid-height technique. POH 3-2 gives ~40 ft flare / ~8 ft level-off.
+      this.phase = 'flare'; pilot.pitchRate = 12 * DEG; pilot.cyclicRate = 0.8;
+      pilot.pitchGain = 4; pilot.pitchDamping = 1.5; pilot.pitchLearning = 0.8;
     }
-    if (this.phase === 'flare' && speed < 35) this.phase = 'level';
-    if (this.phase === 'level' && h < 4.5) this.phase = 'cushion';
+    if (this.phase === 'flare' && h < 8 * FT) { this.phase = 'level'; pilot.pitchRate = 20 * DEG; }
+    if (this.phase === 'level' && h < 2 * FT) this.phase = 'cushion';
     this.touch(t, s.onGround);
-    if (this.landed) { park(c, dt, 1); this.phase = 'park'; }
+    if (this.landed) { park(c, dt, 0.5); this.phase = 'park'; }
     else if (this.phase === 'autorotate') pilot.step(dt, s, c, 65, -1, undefined, clamp(0.04 + 0.02 * (rpm - 102), 0, 0.5), 1);
     else {
-      const acceleration = (s.verticalSpeed - this.lastVs) / dt;
-      const pitch = this.phase === 'flare' ? clamp(25 + 2 * (-0.5 - s.verticalSpeed) - 1.4 * acceleration, -5, 35) :
-        Math.min(25, speed + 6, Math.max(6, Math.atan((h - 0.2 + 0.3 * Math.min(0, s.verticalSpeed)) / 4.4) / DEG));
-      if (this.phase !== 'flare') { pilot.pitchGain = 4; pilot.pitchDamping = 1.5; }
-      const collective = this.phase !== 'cushion' ? clamp(0.1 * (rpm - 106) + 0.025 * (rpm - this.lastRpm) / dt, 0, 0.8) :
-        clamp((0.5 + 0.217) * (104 / rpm) ** 2 - 0.217 + 0.18 * (-0.5 - s.verticalSpeed), 0, 1);
-      pilot.step(dt, s, c, 0, -1, pitch * DEG, collective, 2);
+      // Progressively arrest sink with aft cyclic; ease the flare as descent comes off to avoid a balloon.
+      // Ease the flare as IAS falls; do not keep increasing pitch to chase sink near the ground.
+      // Collective checks rising RPM in the flare, then cushions at the owner's 1–2 ft target
+      // (POH 3-2 says just before touchdown). No hover-lift or rotor-energy feed-forward.
+      const pitch = this.phase === 'flare' ? clamp(18 + 2 * (-1 - s.verticalSpeed) - 1.4 * this.verticalAcceleration, 0, clamp(s.ias / KT - 10, 0, 25)) : 0;
+      const collective = this.phase !== 'cushion' ? clamp(0.08 * (rpm - 104.5) + 0.02 * this.rpmTrend, 0, 0.8) :
+        clamp(0.25 + 0.15 * (-0.5 - s.verticalSpeed), 0, 1);
+      pilot.step(dt, s, c, 0, -1, pitch * DEG, collective, 0.5);
     }
     this.lastRpm = rpm; this.lastVs = s.verticalSpeed;
   }

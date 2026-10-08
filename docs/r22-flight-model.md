@@ -213,20 +213,88 @@ near 64.5 KIAS. POH 3-2 specifies 65 KIAS and 97–110%, with a light-weight war
 MM 10.250 figure 10-15 also shows higher full-down RPM at heavier weight. POH 3-3’s approximately 4:1 glide
 is the separate **75 KIAS / 90%** configuration, still unvalidated.
 
-The complete scripted attempts start at 350 m / 65 KIAS, cut the engine, lower collective, establish the
-descent, flare, level and pull collective. Aft cyclic raises rotor RPM and arrests descent while slowing.
-The retained gross/solo traces reach **109.88% / 108.23%** in the flare. First contact is **0.70 m/s at 4.44 kt**
-gross and **0.39 m/s at 1.50 kt** solo, without a modelled crash through subsequent settling. However, rotor
-speed is only **68.2% / 59.8%** at touchdown. These are **not accepted R22 autorotation landings**.
+The shared demonstration/test pilot now starts a progressive flare at **60 ft nominal skid height** in both
+loadings, following the owner's handling judgement. Physics, aircraft data, entry height/speed, loading and
+landing acceptance are unchanged. Forward cyclic is commanded at **8 ft**, and the final collective cushion
+starts at **2 ft**. The current observation adapter reports CG AGL minus the level skid offset; actual lowest
+skid clearance varies with attitude (about 7.0 ft at the new 8 ft level command).
 
-The scripted flare balloons, then the cushion starts around 4.5 m instead of a few feet, using too much
-stored rotor energy. Trials with later pulls often hit hard or strike the tail. Rotor energy is integrated
-from signed aerodynamic torque, and no speed clamp, inertia increase, special landing lift or reduced
-impact threshold was added. Inflow lag, the uniform windmill/VRS transition and low-RPM section polars
-remain insufficiently validated to distinguish all pilot-scheduling error from model error. The existing
-skid damage threshold permitting a touchdown is therefore insufficient evidence of a realistic landing.
-`flights.test.ts` marks both strict landing cases `it.fails` and retains their desired RPM/sink/speed/damage
-criteria. They must become ordinary passing tests before the landing is claimed complete.
+[POH 3-2](https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_full_book_b79e920713.pdf)
+specifies approximately **65 KIAS**, **97–110% NR**, a flare near **40 ft**, forward cyclic near **8 ft**, and
+collective just before touchdown. This edition does **not** specify 1–2 ft for the cushion; that numeric
+height is the owner's requested target. Section 10 / SN-11 cautions against abrupt forward cyclic/low-G;
+SN-24 explains the low-RPM stall risk; SN-38's practice decision check at 100 ft calls for roughly 100% NR,
+60–70 KIAS and usually less than 1500 ft/min descent. This engine-out engineering fixture does not simulate
+a practice power recovery or claim to satisfy that decision check.
+
+The flare attitude demand increases at at most **12°/s**; the levelling demand uses the powered pilot's
+**20°/s** limit. Longitudinal cyclic is limited to **0.8 units/s** (2.5 s from full forward to full aft),
+and collective to **0.5 travel/s** (2 s end to end), replacing 3/s and 2/s. These are hand-motion estimates,
+not measured R22 pilot-response data. Sink and tachometer trends are smoothed over 0.3 s. Aft demand eases
+as descent arrests and IAS falls, with a 25° attitude-demand cap; RPM feedback checks overspeed with
+collective before the final cushion. The final pull responds to visible sink, without the old hover-lift /
+RPM-squared feed-forward. Both loadings use identical logic. The original instantaneous engine cut and
+collective-down entry configuration remain explicit fixture limitations.
+
+**Both strict landing tests remain expected failures.** The new flare preserves RPM, but it still balloons
+briefly (peak upward VS 1.58 / 2.15 m/s gross/solo), then loses vertical support as IAS decays. Forward cyclic
+starts at the prescribed height but neither aircraft attains a level attitude before impact. The 2 ft pull
+has only 0.058 / 0.067 s before impact and moves collective to 2.9 / 3.3% travel. This is not a successful
+landing or a validated human pilot technique.
+
+The following are 240 Hz sea-level reproductions on the merged base, before and after the pilot change.
+“Level” means the start of the forward-cyclic phase, not an achieved level attitude. Positive VS is upward.
+
+| Measurement | Gross before | Gross after | Solo before | Solo after |
+|---|---:|---:|---:|---:|
+| Flare start, ft nominal skids AGL | 42.65 | 59.94 | 45.86 | 59.91 |
+| Peak flare NR, % | 109.88 | 109.26 | 108.23 | 107.43 |
+| Level command height, ft | 28.95 | 8.00 | 29.77 | 7.97 |
+| VS at level command, m/s | +0.39 | −5.01 | +1.34 | −4.40 |
+| IAS at level command, kt | 34.99 | 24.67 | 35.07 | 22.81 |
+| Cushion command height, ft | 14.71 | 1.99 | 14.71 | 1.97 |
+| Touchdown / impact NR, % | 68.22 | 102.56 | 59.78 | 96.46 |
+| Touchdown / impact skid sink, m/s | 0.70 | ~5.59 | 0.39 | ~5.29 |
+| Touchdown / impact ground speed, kt | 4.44 | 20.78 | 1.50 | 19.60 |
+| Modelled damage | None | Hard skid impact | None | Hard skid impact |
+
+Before-change sink comes from the touchdown event. After-change impact is detected at an intermediate
+Runge–Kutta pose before a touchdown event is published. The after values use the first published damaged
+state; local skid sink is reconstructed from rigid-body velocity and angular rate, so is approximate.
+CG sink at that state is **5.97 / 5.49 m/s**, with **14.7° / 12.7° nose-up** attitude. No missing touchdown
+event is treated as a successful landing. The acceptance still requires landing, no damage, <5 kt,
+<1.5 m/s sink, touchdown NR ≥90%, and maximum NR ≤110%.
+
+The trace narrows the remaining questions without changing physics:
+
+- **Entry and energy:** at 100 ft the cases have 65.51 / 65.67 KIAS, 103.23 / 99.59% NR and
+  1587 / 1646 ft/min descent, already above SN-38's usual practice descent figure. The 350 m entry has
+  allowed a steady descent; simply adding entry height would not change this equilibrium. Flare energy
+  rises to 263.9 / 255.2 kJ and impact still retains 232.6 / 205.7 kJ. The old landing had only
+  102.9 / 79.0 kJ. Premature expenditure in the high cushion is removed; RPM alone does not provide
+  sufficient thrust at the remaining low collective and decayed airspeed.
+- **Low-speed thrust / inflow:** at the 8 ft command, main thrust is 4.59 / 3.89 kN against weights
+  6.09 / 5.02 kN, before accounting for tilt and other loads. Inflow is 5.39 / 4.62 m/s, versus target
+  5.74 / 4.94 m/s, with 0.29 / 0.32 s lag. The VRS continuation removes roughly 5–6% of thrust there.
+  Sink is already rebuilding before the ground is reached. These data do not isolate inflow lag from
+  the uniform inflow law, the flare control schedule, and loss of translational lift.
+- **Ground effect:** the existing wake-direction correction remains essentially 1.000 through level-off
+  and impact: the descending/upward wake gets no ground-effect relief. Whether the transition to a
+  cushioned landing is represented correctly remains unvalidated; no extra ground-effect lift was added.
+- **Polar:** the recorded stalled-element fraction is zero at level-off/impact, and rotor RPM remains
+  near its operating range. This is not the old very-low-RPM stall problem. The analytic polar still
+  lacks measured transient validation; its accuracy cannot be established from this run.
+- **Skids:** the reconstructed impact speeds exceed the existing 3.5 m/s damage threshold. The hard
+  impact follows the airborne sink problem; it is not evidence that the threshold should be relaxed.
+  A separate contact-event limitation is that an intermediate RK-stage crash can precede event emission.
+
+This does not prove that physics makes a satisfactory landing impossible: pilot response and flare shaping
+remain estimates. It supplies the owner/supervisor a reproducible failure at the requested heights without
+an RPM clamp, changed inertia, hidden force, or altered damage threshold. Full-rate traces, phase records,
+read-only force/inflow/contact diagnostics and the comparison plot are in ignored `work/flare-rework/`:
+`before-{gross,solo}.json`, `after-{gross,solo}.json`, and `before-after.png`. The test recorder also emits
+phase-boundary samples and rotor diagnostics with `R22_TRACE=1`.
+
 
 Main rotor inertia remains the 146 kg m² estimate. A newly located
 [1995 FAA/Georgia Tech R22 investigation, pp. 23–25](https://repository.gatech.edu/bitstreams/799376b6-c3c8-4071-a1b2-e7daed5188cf/download)
@@ -266,9 +334,9 @@ observation adapter supplies only attitude, angular rates, signed visual fore/af
 ground speed, skid height, vertical speed, tachometers and ground/crash indications. The pilot never receives
 a flight-model instance, forces, inflow, blade states, a trim solver or mutable aircraft state. It writes only
 ordinary `ControlInputs`. Normal cyclic travel is limited to 1/s, pedals to 0.7/s, and powered collective to
-0.12/s; the existing autorotation flare uses up to 3/s cyclic and 2/s collective. These are engineering
-pilot hand-motion limits, not measured pilot-response data. The original gains, schedules and landing
-acceptance thresholds were retained; no physics or aircraft data changed.
+0.12/s; the revised autorotation flare uses 0.8/s longitudinal cyclic and 0.5/s collective. These are
+engineering pilot hand-motion limits, not measured pilot-response data. Autorotation now uses the
+60/8/2 ft schedule described above; landing acceptance, physics and aircraft data are unchanged.
 
 Flight School's `DemoScript` was considered. Its AP/autoflight/raw/pulse segments have no collective,
 clutch/governor switches or rotorcraft feedback-controller segment, so these flights use its `StepController`
@@ -296,7 +364,8 @@ the existing path. Demonstrations suppress resume/save until a normal scenario i
 
 ### Observed live outcomes
 
-All five demonstrations completed without a modelled crash. The full circuit retains the original sequence
+The four powered demonstrations complete without a modelled crash. The revised autorotation stops at
+a hard skid impact and remains explicitly labelled as a known landing gap. The full circuit retains the original sequence
 of phases and 360° cruise turn; it is not a rectangular airport circuit or a navigation demonstration, and
 lands in a field beyond the airport. The scripts contain neither obstacle avoidance nor a landing-site
 selection controller. They reproduce engineering flights, not complete operating/checklist procedures.
@@ -306,16 +375,22 @@ selection controller. They reproduce engineering flights, not complete operating
 | Startup | 115.00 s | 2.90 m skid height, 0.3 KIAS, 103.4% NR |
 | Hover → cruise | 145.00 s | 60.1 KIAS / 488 ft/min during climb; 84.3 KIAS at completion |
 | Approach | 123.15 s | First contact 0.045 m/s, 0.055 kt, 103.62% NR |
-| Autorotation | 55.14 s | First contact 0.727 m/s, 4.45 kt, **67.44% NR** |
+| Autorotation | 49.08 s, damaged | Impact state: 6.22 m/s CG sink, 20.96 kt, **102.70% NR** |
 | Circuit | 488.70 s | First landing contact 0.049 m/s, 0.054 kt, 103.62% NR |
 
-Autorotation is deliberately labelled as a known gap throughout. It starts with mixture cut and collective
-already down, exactly as the earlier acceptance fixture did; the subsequent collective and cyclic movements
-are rate-limited. In the app it enters flare at 41.98 s, level at 46.25 s and cushion at 48.31 s. At 44.5 s it
-is climbing at 551 ft/min with 107.6% NR: the balloon is visible. First contact at 50.13 s is well below the
-90% lower power-off arc; after settling, rotor speed is 53.7%. A completed demonstration means only that the
-reproduction ended. Both strict sea-level autorotation landing tests remain `it.fails`, with their desired
-RPM, speed, sink and damage criteria unchanged (68.22% gross / 59.78% solo at first contact).
+The autorotation caption now states the 60 ft flare, 8 ft level and 2 ft cushion, and identifies excessive
+impact sink/speed rather than the former low-RPM landing. The app uses the same revised pilot as the
+sea-level tests. It starts flare at 41.325 s; at 44 s it is at 25.7 ft nominal skid height, 52.1 KIAS,
+climbing at 207 ft/min with 105.9% NR. The terminal state is damaged, not “Finished”. The app integration
+test verifies phase execution and terminal hold for that outcome; it no longer requires a below-90% landing.
+Both strict sea-level landing tests remain `it.fails`. Reproduction checks allow a recorded impact as an
+endpoint; no-damage remains a requirement of strict landing acceptance.
+
+Current rendered captures, inspected after generation: `work/flare-rework/flare.png` (44 s) and
+`work/flare-rework/impact.png` (terminal impact), with corresponding `*-shot.log` summaries. This environment
+uses Mesa llvmpipe rather than hardware GPU acceleration. The first high-quality `run=44` capture timed out;
+the successful low-quality captures pause at startup and use `__sim.step(...)` to avoid rendering every
+intermediate physics slice. The old captures and results below describe the previous demo milestone.
 
 Headless app captures and per-phase state/3D-control poses are in ignored `work/live-sequence/`; see
 `observations.json`, `takeover.json`, and the five `*-trace.json` files. Captures include cold start, clutch,
@@ -342,7 +417,7 @@ node scripts/shot.mjs 'index.html?aircraft=r22&demo=autorotation&run=44.5&freeze
 npx vitest run tests/rotorcraft tests/input tests/sim
 ```
 
-Final demo verification: `npx tsc --noEmit` passed. The relevant rotorcraft/input/sim run passed 273 tests
+Previous demo milestone verification: `npx tsc --noEmit` passed. The relevant rotorcraft/input/sim run passed 273 tests
 plus two expected failures; the final added app/handover checks passed 24 tests. The complete suite,
 `npx vitest run --maxWorkers=4`, passed **2,671 tests**, with **two expected failures and 221 skipped**
 (188 files passed, four skipped; 306.99 s). No ordinary failures. The earlier unrestricted suite process
@@ -350,6 +425,19 @@ ended with SIGTERM before reporting results. Logs: `work/demo-area.log`, `work/d
 `work/full-suite.log`, `work/final-typecheck.log`. A C152 app check with `demo=autorotation` retained its normal
 autopilot, showed no demo panel and reported no errors (`work/c152-regression.png` / `.log`). Resetting after
 a completed R22 demo restored ordinary pause-key operation (`work/reset-pause.log`).
+
+### Autorotation flare rework verification
+
+`npx tsc --noEmit` passed. `R22_TRACE=1 npx vitest run tests/rotorcraft/flights.test.ts
+tests/rotorcraft/demo.test.ts` passed **12 tests plus two expected failures** (52.31 s), including powered
+flight regressions, both 60/8/2 ft phase schedules, measured cyclic/collective rate limits, app execution
+and terminal hold. `npx vitest run --maxWorkers=4` passed **2,673 tests**, with **two expected failures and
+221 skipped** (188 files passed, four skipped; 328.03 s). There were no ordinary failures. The two expected
+failures are the unchanged strict autorotation landing acceptance; the new hard impacts remain failures.
+Logs: `work/flare-rework/tests.log`, `full-suite.log`, and `typecheck-final.log` in the same directory.
+`comparison.json` contains the before/after summary; both rendered screenshots and the plot were inspected.
+All changes are left uncommitted for the supervisor as requested. No physics, aircraft data, shared geometry,
+or system-state contracts changed; no files outside the pilot/caption/tests/documentation task scope changed.
 
 ## Remaining work
 
