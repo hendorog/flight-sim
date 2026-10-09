@@ -24,7 +24,7 @@ import { stubCanvas } from './stubCanvas';
 function fixture() {
   const s = makeMockState(), c = defaultControls();
   s.rotorcraft = emptyRotorcraftState();
-  s.engine.rpm = 2704.975; s.engine.running = true; s.engine.oilPressure = 70;
+  s.engine.rpm = 2704.975; s.engine.running = true; s.engine.oilPressure = 70; s.engine.auxFuelPressure = 25;
   s.rotorcraft.rotorRpm = 406; s.rotorcraft.governorThrottle = 0.7;
   s.electrical.busVoltage = 28.2; s.electrical.batteryCharge = 1;
   s.fuel.left = 12 * V.kgPerGal; s.fuel.right = 5 * V.kgPerGal;
@@ -105,13 +105,12 @@ describe('R44 eight-hole console', () => {
     expect(R44_ASI_MARKS.arcs).toContainEqual({ from: 0, to: 110, color: 'green' });
     expect(R44_ASI_MARKS.arcs).toContainEqual({ from: 110, to: 130, color: 'yellow' });
     expect(R44_ASI_MARKS.redLine).toBe(130);
-    expect(R44_ASI_MARKS.arcs.some(a => a.color === 'red' && a.from < 100 && a.to > 100)).toBe(true);
+    expect(R44_ASI_MARKS.crossHatchedLine).toBe(100);
     expect(R44_ASI_MARKS.arcs.some(a => a.color === 'white')).toBe(false);
     expect(R44_TACH_MARKS.rotorArcs).toEqual([{ from: 90, to: 108, color: 'green' }]);
     expect(R44_TACH_MARKS.rotorRedLines).toEqual([90, 108]);
     expect(R44_TACH_MARKS.engineArcs).toContainEqual({ from: 101, to: 102, color: 'green' });
-    expect(R44_TACH_MARKS.engineArcs.filter(a => a.color === 'red').map(a => [a.from, a.to]))
-      .toEqual([[100.2, 101], [102, 102.8]]);
+    expect(R44_TACH_MARKS.engineRedLines).toEqual([101, 102]);
     expect(R44_MAP_SCALE.arcs).toEqual([{ from: 15, to: 23.3, color: 'green' }, { from: 19.1, to: 26.1, color: 'yellow', inner: true }]);
     expect(R44_MAP_SCALE.redLines).toEqual([26.1]);
     expect(R44_ENGINE_SCALES.oilPressure.arcs).toEqual([{ from: 25, to: 55, color: 'yellow' },
@@ -162,13 +161,13 @@ describe('R44 eight-hole console', () => {
     expect(step().lamps.lowFuel).toBe(false);
   });
 
-  it('uses actuator/horn states directly and keeps governor selection distinct from acquisition', () => {
+  it('uses actuator/light states directly and keeps governor selection distinct from acquisition', () => {
     const { s, c, step } = fixture();
     s.rotorcraft!.clutchEngagement = 0.4; s.rotorcraft!.clutchLight = false;
     s.rotorcraft!.governorActive = false; s.rotorcraft!.lowRpm = true; s.rotorcraft!.lowRpmHorn = false;
     let r = step();
     for (const id of ['clutch', 'govOff', 'lowRpm']) expect(r.lamps[id], id).toBe(false);
-    s.rotorcraft!.clutchLight = true; s.rotorcraft!.lowRpmHorn = true; c.rotorGovernor = false;
+    s.rotorcraft!.clutchLight = true; s.rotorcraft!.lowRpmLight = true; c.rotorGovernor = false;
     r = step();
     for (const id of ['clutch', 'govOff', 'lowRpm']) expect(r.lamps[id], id).toBe(true);
   });
@@ -180,6 +179,8 @@ describe('R44 eight-hole console', () => {
     for (const id of ['oil', 'alt', 'starter']) expect(r.lamps[id], id).toBe(true);
     const sensors = ['mrTemp', 'mrChip', 'trChip', 'co', 'brake', 'engineFire', 'fuelFilter', 'auxPump'];
     for (const id of sensors) expect(r.lamps[id], id).toBe(false);
+    s.engine.auxFuelPressure = 0; expect(step().lamps.auxPump).toBe(true);
+    s.engine.auxFuelPressure = 25; expect(step().lamps.auxPump).toBe(false);
     expect(R44_ANNUNCIATOR_LAMPS).toHaveLength(16);
     expect(R44_ANNUNCIATOR_LAMPS.filter(l => l.color === '#ff4538').map(l => l.id)).toEqual(['engineFire', 'oil']);
     const button = buildHotspots(R44_PANEL).find(h => h.id === 'lampTest')!;
@@ -229,7 +230,7 @@ describe('R44 eight-hole console', () => {
     c.magnetos = 0; const key = spots.get('magnetos')!;
     for (let i = 0; i < 3; i++) key.turn!(1, c, 1);
     expect(c.magnetos).toBe(3); expect(key.springHold!.when(c)).toBe(true);
-    expect(key.springHold!.action).toBe('starter');
+    expect(key.springHold!.action).toBe('fuelPrime');
     c.avionics = false; spots.get('avionics')!.toggle!(c); expect(c.avionics).toBe(true);
   });
 

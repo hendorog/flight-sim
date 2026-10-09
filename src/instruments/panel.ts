@@ -90,10 +90,13 @@ export class InstrumentPanel {
   private readonly background: HTMLCanvasElement;
   private readonly components: PanelComponent[];
   private readonly regions = new Map<string, Rect>();
+  private dialLevel = 1;
+  private displayLevel = 1;
   private light: {
     canvas: HTMLCanvasElement;
     g: Ctx2D;
     mask: HTMLCanvasElement;
+    dimmer: HTMLCanvasElement | null;
     texture: THREE.CanvasTexture;
     upload: DirtyRectUploader;
   } | null = null;
@@ -131,7 +134,8 @@ export class InstrumentPanel {
    * Self-illumination map for night lighting (use as the panel material's emissiveMap, with the same UVs
    * as `texture`): the panel image multiplied by a light mask, so only what really glows does: dial
    * markings and needles behind the glass at PANEL_DIAL_LIGHT, and the radio / GPS displays and the
-   * annunciator lamps at full value. The faceplate, bezels and placards stay black. Created on first
+   * annunciator lamps at full value. For a dimmer profile, alpha distinguishes dimmed circuits (0.5)
+   * from independent warning lamps (1); the material dims after RGB filtering. Created on first
    * access; from then on it is kept up to date with `texture` (costs a second texture upload per change).
    */
   get emissiveTexture(): THREE.CanvasTexture {
@@ -141,7 +145,9 @@ export class InstrumentPanel {
       const mg = context2d(mask);
       mg.fillStyle = '#000';
       mg.fillRect(0, 0, w, h);
-      for (const c of this.components) c.paintLightMask?.(mg);
+      this.paintLightMask(mg);
+      const dimmer = this.def.lightingRequiresNav || this.def.lightingDimmerExponent !== undefined ? makeCanvas(w, h) : null;
+      if (dimmer) this.paintDimmerMask(context2d(dimmer));
       const canvas = makeCanvas(w, h);
       // CPU-backed composition avoids Chrome/ANGLE Vulkan turning consecutive canvas multiply draws
       // black. Keep the main panel accelerated; only the small dirty light rectangles use this surface.
@@ -150,10 +156,27 @@ export class InstrumentPanel {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = this.texture.anisotropy;
       texture.name = 'instrumentPanelEmissive';
-      this.light = { canvas, g, mask, texture, upload: new DirtyRectUploader(texture) };
+      this.light = { canvas, g, mask, dimmer, texture, upload: new DirtyRectUploader(texture) };
       this.updateLight({ x: 0, y: 0, w, h });
     }
     return this.light.texture;
+  }
+
+  private paintLightMask(g: Ctx2D): void {
+    g.fillStyle = '#000'; g.fillRect(0, 0, this.def.size.w, this.def.size.h);
+    for (const c of this.components) c.paintLightMask?.(g);
+  }
+
+  private paintDimmerMask(g: Ctx2D): void {
+    g.clearRect(0, 0, this.def.size.w, this.def.size.h);
+    const selfLit = new Set(this.def.gauges.filter(d => ['clock', 'gps', 'navcom', 'xpdr'].includes(d.kind)).map(d => d.id));
+    for (const c of this.components) {
+      // Alpha tags the circuit; it does not carry the dimmer's small linear value. Canvas storage is
+      // premultiplied 8-bit, so low alpha would destroy the colour precision of the dial artwork.
+      g.globalAlpha = c.id === 'annunciator' ? 1 : selfLit.has(c.id) ? this.displayLevel : this.dialLevel;
+      c.paintLightMask?.(g);
+    }
+    g.globalAlpha = 1;
   }
 
   /** Emissive = panel image x light mask, over one rectangle. */
@@ -168,6 +191,10 @@ export class InstrumentPanel {
     g.drawImage(this.canvas, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
     g.globalCompositeOperation = 'multiply';
     g.drawImage(L.mask, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
+    if (L.dimmer) {
+      g.globalCompositeOperation = 'destination-in';
+      g.drawImage(L.dimmer, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
+    }
     g.restore();
   }
 
@@ -189,6 +216,16 @@ export class InstrumentPanel {
       return;
     }
     const light = this.light;
+    const display = this.def.lightingDimmerExponent === undefined ? 1 : 0.5;
+    const dial = !this.def.lightingRequiresNav || ctx.controls.lights.nav ? display : 0;
+    if (this.dialLevel !== dial || this.displayLevel !== display) {
+      this.dialLevel = dial; this.displayLevel = display;
+      if (light?.dimmer) {
+        this.paintDimmerMask(context2d(light.dimmer));
+        const full = { x: 0, y: 0, ...this.def.size };
+        this.updateLight(full); light.upload.add(full);
+      }
+    }
     for (const c of this.components) {
       if (!c.sample(r, ctx.controls, ctx.simTime)) continue;
       const rects = c.paintRects ?? [c.bounds];

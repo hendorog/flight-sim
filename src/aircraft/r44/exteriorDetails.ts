@@ -71,8 +71,6 @@ export function buildR44ExteriorDetails(def: AirframeVisualDef, mat: R44DetailMa
     for (const dy of [-0.065, 0.065]) batch.add(mat.metal, tube([x, fy + dy, z - 0.019], [x, fy + dy, z + 0.019], 0.010, 0.010, 6));
   }
   batch.add(mat.paint, ellipsoid([tx - 0.27, fy, tz + 0.02], [0.15, 0.046, 0.045]));
-  // The frozen stabiliser is below the tailcone. Do not invent an extended bracket to conceal that
-  // contract mismatch; the proposed correction and source drawing are in docs/r44-exterior.md.
   // Four fasteners near each fin root, and the stinger's clamp to the lower fin.
   for (const fin of [UPPER_FIN_OUTLINE, LOWER_FIN_OUTLINE]) for (const fraction of [0.12, 0.27]) {
     const z = THREE.MathUtils.lerp(fin[0].z, fin[2].z, fraction);

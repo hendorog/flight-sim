@@ -84,7 +84,8 @@ export class Rotorcraft {
     engine.state.rpm = engine.rpm;
     s.rotorRpm = s.omega * 30 / Math.PI;
     s.lowRpm = s.rotorRpm < d.referenceRpm * d.systems.lowRpmWarning;
-    s.lowRpmHorn = s.lowRpm && (c.collective ?? 0) > d.systems.hornCollectiveMin && c.masterBattery;
+    s.lowRpmLight = s.lowRpm && c.masterBattery;
+    s.lowRpmHorn = s.lowRpmLight && (c.collective ?? 0) > d.systems.hornCollectiveMin;
     const map = d.manifoldLimits && atmosphere ? placardMap(d.manifoldLimits,
       pressureAltitude(atmosphere.pressure), atmosphere.temperature) : Infinity;
     const atOperatingRpm = engine.rpm > d.systems.powerCheckMinRpm * d.referenceRpm * d.engineRatio;

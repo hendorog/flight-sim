@@ -311,6 +311,7 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
     spots.push(knob('radioDimmer', x + row.dimmers.radio, y + row.dimmers.y, 'Radio lights', DIMMER));
   }
   if (def.ignition.kind === 'key') {
+    const prime = def.ignition.prime;
     spots.push({
       id: 'magnetos',
       kind: 'knob',
@@ -319,14 +320,14 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
       hw: 30,
       hh: 30,
       name: 'Magnetos',
-      hint: 'click right to turn (hold at START), left to turn back',
+      hint: `click right to turn (hold at ${prime ? 'PRIME' : 'START'}), left to turn back`,
       // The key stops at BOTH: START is only reached by holding it there.
       turn(dir, c) {
         c.magnetos = Math.min(3, Math.max(0, c.magnetos + dir)) as MagnetoPosition;
       },
-      springHold: { when: (c) => c.magnetos === 3, action: 'starter' },
+      springHold: { when: (c) => c.magnetos === 3, action: prime ? 'fuelPrime' : 'starter' },
       noRepeat: true,
-      value: (c) => (c.starter ? 'START' : ['OFF', 'R', 'L', 'BOTH'][c.magnetos]),
+      value: (c) => ((prime ? c.fuelPrime : c.starter) ? prime ? 'PRIME' : 'START' : ['OFF', 'R', 'L', 'BOTH'][c.magnetos]),
     });
   } else {
     spots.push(...ignitionHotspots(def));

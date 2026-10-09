@@ -1,5 +1,7 @@
 # R44 Raven II instrument panel
 
+This is the original panel worker report. The later [shared integration report](r44-integration.md) supersedes its renderer/LOW RPM/PRIME/pump gaps and records merged cockpit verification; remaining equipment approximations still apply.
+
 Panel branch acceptance work, 9 October 2026. The aircraft remains a **placeholder**. This change provides an R44-specific analog console, instrument bindings and simulator control guidance; it does not validate the flight model or publish a cold-start checklist.
 
 ## Installation and geometry

@@ -1,7 +1,10 @@
 // POH 2-9 placards, transcribed from the downloaded figure. See docs/r44-sources.md.
 import { FT, LB, clamp } from '../../core/math';
 import type { ManifoldPlacard, SpeedPlacard } from '../../physics/rotorcraft/limits';
-import { placardMap, placardVne } from '../../physics/rotorcraft/limits';
+import { placardMap, configuredVne } from '../../physics/rotorcraft/limits';
+export const R44_SPEED_CORRECTIONS = {
+  heavyMass: 2200 * LB, heavyReduction: 10, powerOffReduction: 30, highPowerCap: 100, doorsOffCap: 100,
+};
 export const R44_ROTOR_LIMITS = { powerOn: [101, 102], powerOff: [90, 108], lowWarning: 97 } as const;
 export const R44_MAP: ManifoldPlacard = {
   altitudeStep: 2000 * FT, temperatureMin: 243.15, temperatureStep: 10, takeoffIncrease: 2.8,
@@ -15,7 +18,7 @@ export const R44_MAP: ManifoldPlacard = {
     [null, null, null, null, null, null, null, null],
   ],
 };
-/** Base grid for TOGW ≤2200 lb. Use r44Vne for configuration corrections. Shared HUD wiring is pending. */
+/** Base grid for TOGW ≤2200 lb. Use r44Vne for configuration corrections. Shared flight/HUD reporting applies these same corrections. */
 export const R44_VNE: SpeedPlacard = {
   altitudeStep: 2000 * FT, temperatureMin: 243.15, temperatureStep: 10,
   kias: [
@@ -36,22 +39,12 @@ export const R44_VNE: SpeedPlacard = {
 export function r44Vne(altitude: number, temperature: number, configuration: {
   takeoffMass: number; powerOff?: boolean; aboveMcp?: boolean; doorsOff?: boolean;
 }): number {
-  const base = placardVne(R44_VNE, altitude, temperature);
-  if (base === 0) return 0;
-  const correction = configuration.powerOff ? 30 : configuration.takeoffMass > 2200 * LB ? 10 : 0;
-  return Math.max(0, Math.min(base - correction, configuration.aboveMcp || configuration.doorsOff ? 100 : Infinity));
+  return configuredVne(R44_VNE, R44_SPEED_CORRECTIONS, altitude, temperature, configuration);
 }
 
 /** POH 2-9 MCP, inHg. Full-throttle cells are unbounded, not a numerical MAP requirement.
  * At mixed finite/full-throttle corners use the common interpolator's finite altitude trend. */
 export function r44Map(altitude: number, temperature: number): number {
-  const rows = R44_MAP.continuous.length - 1, cols = R44_MAP.continuous[0].length - 1;
-  const row = clamp(altitude / R44_MAP.altitudeStep, 0, rows);
-  const col = clamp((temperature - R44_MAP.temperatureMin) / R44_MAP.temperatureStep, 0, cols);
-  const i = Math.min(rows - 1, Math.floor(row)), j = Math.min(cols - 1, Math.floor(col));
-  const a = row - i, b = col - j;
-  if ([[i, j, (1-a)*(1-b)], [i+1, j, a*(1-b)], [i, j+1, (1-a)*b], [i+1, j+1, a*b]]
-    .every(([r, c, w]) => w < 1e-10 || R44_MAP.continuous[r][c] === null)) return Infinity;
   return placardMap(R44_MAP, altitude, temperature);
 }
 

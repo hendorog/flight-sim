@@ -25,7 +25,8 @@ const switchDef = (id: string, label: string, x: number, on: SwitchDef['on'], to
   ({ id, label, name: label, x, on, toggle, red });
 
 export const R44_PANEL: PanelDef = {
-  id: 'r44', size: PANEL_CANVAS, instrumentScale: SCALE,
+  // Dimmer response ESTIMATE; zero extinguishes dials/displays, never warning lenses.
+  id: 'r44', lightingRequiresNav: true, lightingDimmerExponent: 2.2, size: PANEL_CANVAS, instrumentScale: SCALE,
   apertures: { large: 74 * SCALE.large, small: 51 * SCALE.small },
   gauges: [
     { kind: 'vsi', id: 'vsi', at: [COL[0], ROW[0]] },
@@ -70,7 +71,7 @@ export const R44_PANEL: PanelDef = {
     legends: [{ text: 'PANEL', x: 83, y: 441, size: 9 }, { text: 'RADIO', x: 143, y: 441, size: 9 }],
     dimmers: { panel: 83, radio: 143, y: 465 },
   },
-  ignition: { kind: 'key', at: [996, 633] },
+  ignition: { kind: 'key', prime: true, at: [996, 633] },
   background: { color: '#25272a', outline: PANEL_OUTLINE, seamsX: [], bushings: [],
     rack: { rails: { x: 406, y: 1206, w: 340, h: 166 }, blanks: [] },
     placards: [
@@ -101,8 +102,7 @@ export const R44_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
     powered: i => powered(i) || (!!i.controls.rotorClutch && i.state.electrical.batteryCharge > 0) },
   lamps: [
     { id: 'clutch', lit: (i: LampInputs) => i.state.rotorcraft?.clutchLight ?? false },
-    // Frozen shared contract is collective-dependent; see the light-versus-horn limitation in the doc.
-    { id: 'lowRpm', lit: (i: LampInputs) => i.state.rotorcraft?.lowRpmHorn ?? false },
+    { id: 'lowRpm', lit: (i: LampInputs) => i.state.rotorcraft?.lowRpmLight ?? false },
     { id: 'govOff', lit: (i: LampInputs) => !(i.controls.rotorGovernor ?? false) },
     { id: 'starter', lit: (i: LampInputs) => engineControl(i.controls, 0, 'starter') },
     // ESTIMATES: independent pressure/voltage switch hysteresis is not represented by shared state.
@@ -112,8 +112,11 @@ export const R44_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
     // Linkage-switch threshold ESTIMATE. Use actual linkage, even below governor acquisition RPM.
     { id: 'fullThrottle', lit: (i: LampInputs) => Math.min(engineControl(i.controls, 0, 'throttle'),
       i.state.rotorcraft?.governorThrottle ?? engineControl(i.controls, 0, 'throttle')) >= 0.98 },
-    // No independent sensor/actuator states. Test-only; no invented healthy pump or hydraulic indication.
-    ...['mrTemp', 'mrChip', 'trChip', 'co', 'brake', 'engineFire', 'fuelFilter', 'auxPump']
+    // POH 7-10: auxiliary-pump pressure, independent of mechanical-pump delivery.
+    // ESTIMATE warning threshold; no calibrated pressure-switch hysteresis or pump-failure injection.
+    { id: 'auxPump', lit: (i: LampInputs) => (i.state.engine.auxFuelPressure ?? 0) < 5 },
+    // No independent sensor/actuator states. Test-only.
+    ...['mrTemp', 'mrChip', 'trChip', 'co', 'brake', 'engineFire', 'fuelFilter']
       .map(id => ({ id, lit: (_i: LampInputs) => false })),
   ].map(l => ({ id: l.id, lit: (i: LampInputs) => powered(i) && ((i.controls.annunciatorTest ?? false) || l.lit(i)) })),
 };

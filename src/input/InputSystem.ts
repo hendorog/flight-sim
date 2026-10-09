@@ -546,6 +546,7 @@ export class InputSystem implements Subsystem {
     this.updateBrakes(dt, ctx.controls, ctx.state);
     this.updateStarter(ctx.controls, ctx.state);
     ctx.controls.dgAlign = this.held.has('dgAlign');
+    if (this.profile.primeKey) ctx.controls.fuelPrime = this.held.has('fuelPrime') || this.held.has('fuelPump');
     if (this.twin) ctx.engineSelection = this.selection;
 
     // Look around from the keyboard (wall-clock, so it also works while paused).
@@ -1100,7 +1101,7 @@ export class InputSystem implements Subsystem {
         break;
       case 'starter':
         // The key switch passes through BOTH on its way to START (toggle magnetos and ENGINE MASTER stay put).
-        if (this.profile.ignition === 'key') writeEngineControl(c, this.target('magnetos', engine), 'magnetos', 3);
+        if (this.profile.ignition === 'key' && !this.profile.primeKey) writeEngineControl(c, this.target('magnetos', engine), 'magnetos', 3);
         break;
       case 'magnetoOff':
         this.setIgnition(ctx, 0, engine);
@@ -1147,7 +1148,12 @@ export class InputSystem implements Subsystem {
       case 'pitotHeat':
         c.pitotHeat = !c.pitotHeat;
         break;
+      case 'fuelPrime':
+        // PRIME passes through BOTH; the separate starter does not move the ignition key.
+        c.magnetos = 3;
+        break;
       case 'fuelPump': {
+        if (this.profile.primeKey) { c.magnetos = 3; break; }
         const target = this.target('fuelPump', engine);
         writeEngineControl(c, target, 'fuelPump', !readEngineControl(c, target, 'fuelPump'));
         break;

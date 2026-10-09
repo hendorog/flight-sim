@@ -10,19 +10,14 @@ export const R44_ASI_MARKS: AsiMarkings = {
   arcs: [
     { from: V.asiGreenMin, to: V.asiGreenMax, color: 'green' },
     { from: V.asiGreenMax, to: V.vne, color: 'yellow' },
-    // Shared ASI has no cross-hatched radial. Staggered red bands identify the 100 KIAS power-off
-    // mark without borrowing the twin's Vmca radial; true diagonal hatching needs shared renderer work.
-    { from: 98.8, to: 99.6, color: 'red' }, { from: 100.4, to: 101.2, color: 'red' },
-    { from: 99.6, to: 100.4, color: 'red', inner: true },
   ],
   redLine: V.vne,
+  crossHatchedLine: 100,
 };
 export const R44_TACH_MARKS: RotorTachMarkings = {
   min: 40, max: 110, majorStep: 10, minorStep: 2,
-  // Shared dual tach has rotor radials only. Short red bands sit OUTSIDE the engine green boundaries;
-  // 0.8% is a visible stroke width, not an additional operating range (POH 2-7 offset-line convention).
-  engineArcs: [{ from: 100.2, to: 101, color: 'red' }, { from: 101, to: 102, color: 'green' },
-    { from: 102, to: 102.8, color: 'red' }],
+  engineArcs: [{ from: 101, to: 102, color: 'green' }],
+  engineRedLines: [101, 102],
   rotorArcs: [{ from: R44_ROTOR_LIMITS.powerOff[0], to: R44_ROTOR_LIMITS.powerOff[1], color: 'green' }],
   rotorRedLines: R44_ROTOR_LIMITS.powerOff,
 };
@@ -31,8 +26,6 @@ const scale = (label: string, min: number, max: number, majors: number[], minorS
   ({ label, min, max, majors, minorStep, read, numbers: true, ...more });
 
 export const R44_MAP_SCALE = scale('', 10, 35, [10, 15, 20, 25, 30, 35], 1, r => r.engines[0].manifoldInHg, {
-  // Both published ranges retained. SingleGauge currently paints these at the same radius, so yellow
-  // obscures the overlapping green; an inner band requires supervisor-owned renderer support.
   arcs: [{ from: 15, to: 23.3, color: 'green' }, { from: 19.1, to: 26.1, color: 'yellow', inner: true }],
   redLines: [26.1],
 });

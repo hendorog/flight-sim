@@ -1,6 +1,6 @@
 import type { Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
-import type { ManifoldPlacard, SpeedPlacard } from './limits';
+import type { ManifoldPlacard, SpeedPlacard, SpeedCorrections } from './limits';
 
 /** SI units; rotor rotation is +1 about its upward thrust axis (CCW viewed from above). */
 export interface RotorDefinition {
@@ -19,6 +19,7 @@ export interface RotorcraftDefinition {
   /** Tachometer 100%, distinct from the governed operating speed. */
   referenceRpm: number;
   airspeedLimits: SpeedPlacard;
+  airspeedCorrections?: SpeedCorrections;
   manifoldLimits?: ManifoldPlacard;
   rotation: 1 | -1;
   engineRatio: number; tailRatio: number; transmissionEfficiency: number;
@@ -63,12 +64,15 @@ export interface RotorcraftState {
   previousCollective: number; previousThrottle: number; governorIntegral: number;
   takeoffPowerSeconds: number; powerLimitExceeded: boolean;
   vneKias: number; airspeedLimitExceeded: boolean;
+  /** Departure mass in kg, retained through fuel burn/resume; refreshed on the ground. Zero before reset. */
+  takeoffMass: number;
   /** Systems outputs read by the panel, annunciators and audio (contract between physics and presentation).
    * clutchEngagement: belt/clutch engagement 0 (slack) .. 1 (fully tensioned).
    * clutchLight: CLUTCH caution, lit while the clutch actuator is moving.
    * governorActive: governor switched on AND active (engine above its engagement RPM).
-   * lowRpmHorn: LOW RPM light and horn (rotor below 97 % with collective not fully down). */
-  clutchEngagement: number; clutchLight: boolean; governorActive: boolean; lowRpmHorn: boolean;
+   * lowRpmLight: powered LOW RPM indication, independent of collective position.
+   * lowRpmHorn: audible warning below the type's threshold with collective not fully down. */
+  clutchEngagement: number; clutchLight: boolean; governorActive: boolean; lowRpmHorn: boolean; lowRpmLight: boolean;
 }
 export function emptyRotorcraftState(): RotorcraftState {
   return { omega: 0, azimuth: 0, inflow: 0, tailInflow: 0, flapForward: 0, flapRight: 0,
@@ -77,6 +81,6 @@ export function emptyRotorcraftState(): RotorcraftState {
     coning: 0, retreatingFlap: 0, teeterAngle: 0, mastBump: false, tailContact: 'none',
     previousCollective: 0, previousThrottle: 0, governorIntegral: 0,
     takeoffPowerSeconds: 0, powerLimitExceeded: false,
-    vneKias: 0, airspeedLimitExceeded: false,
-    clutchEngagement: 0, clutchLight: false, governorActive: false, lowRpmHorn: false };
+    vneKias: 0, airspeedLimitExceeded: false, takeoffMass: 0,
+    clutchEngagement: 0, clutchLight: false, governorActive: false, lowRpmHorn: false, lowRpmLight: false };
 }

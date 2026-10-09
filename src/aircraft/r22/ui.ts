@@ -45,7 +45,7 @@ export const R22_UI: UiProfile = {
         text: (c, s) => !c.rotorGovernor ? 'OFF' : s.rotorcraft?.governorActive ? 'ACTIVE' : 'ARMED' },
     ],
     readouts: [
-      { label: 'NR', text: s => `${((s.rotorcraft?.rotorRpm ?? 0) / V.rotorRpm100 * 100).toFixed(1)}%${s.rotorcraft?.lowRpmHorn ? ' LOW' : ''}` },
+      { label: 'NR', text: s => `${((s.rotorcraft?.rotorRpm ?? 0) / V.rotorRpm100 * 100).toFixed(1)}%${s.rotorcraft?.lowRpmLight ? ' LOW' : ''}` },
       { label: 'ENG', text: s => `${(s.engine.rpm / V.engineRpm100 * 100).toFixed(1)}%` },
       { label: 'MP', text: s => `${s.engine.manifoldPressure.toFixed(1)} inHg` },
     ],

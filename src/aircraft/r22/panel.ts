@@ -143,7 +143,7 @@ export const R22_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
   carbAirTempC: (s, c) => s.oat - 273.15 + (s.engine.running ? 45 * engineControl(c, 0, 'carbHeat') - 20 : 0),
   lamps: [
     { id: 'clutch', lit: (i: LampInputs) => i.state.rotorcraft?.clutchLight ?? false },
-    { id: 'lowRpm', lit: (i: LampInputs) => i.state.rotorcraft?.lowRpmHorn ?? false },
+    { id: 'lowRpm', lit: (i: LampInputs) => i.state.rotorcraft?.lowRpmLight ?? false },
     // GOV OFF follows switch position; governorActive is separately displayed on the HUD (idle is not OFF).
     { id: 'govOff', lit: (i: LampInputs) => !(i.controls.rotorGovernor ?? false) },
     { id: 'alt', lit: (i: LampInputs) => i.state.electrical.busVoltage < 12.5 },

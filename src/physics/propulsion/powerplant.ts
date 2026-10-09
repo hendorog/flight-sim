@@ -66,6 +66,7 @@ export class Powerplant implements PowerplantSeam {
   /** Crank speed of every engine at the start of the step, rpm and rad/s. */
   private readonly crankRpm: number[];
   private readonly crankOmega: number[];
+  private readonly pumpCommands: boolean[];
   private readonly demand: number[];
   /** Per engine: the alternators it drives (indices into the definition's list). */
   private readonly alternatorsOf: readonly (readonly number[])[];
@@ -94,6 +95,7 @@ export class Powerplant implements PowerplantSeam {
     this.crankRpm = this.units.map(() => 0);
     this.crankOmega = this.units.map(() => 0);
     this.demand = this.units.map(() => 0);
+    this.pumpCommands = this.units.map(() => false);
     this.alternatorsOf = this.units.map((_, i) => def.electrical.alternators.flatMap((alternator, a) => (alternator.engine === i ? [a] : [])));
     this.fadecUnits = this.units.filter((unit) => unit.install.engine.fadec !== undefined);
     this.saved = new Float64Array(n * SAVED_PER_UNIT);
@@ -379,7 +381,13 @@ export class Powerplant implements PowerplantSeam {
     const airAt = input.airVelocityAt;
 
     // 1. Electrical system and starters.
-    const elec = this.electrical.step(dt, controls, rpm, omega);
+    for (let i = 0; i < n; i++) {
+      const automatic = this.def.fuel.feeds[i].auxPump?.automatic;
+      this.pumpCommands[i] = automatic
+        ? !!controls.fuelPrime || (!!controls.rotorClutch && units[i].thermal.oilPressure > automatic.oilPressurePsi)
+        : engineControl(controls, i, 'fuelPump');
+    }
+    const elec = this.electrical.step(dt, controls, rpm, omega, this.pumpCommands);
 
     // 2. Induction of every unit.
     const demand = this.demand;
@@ -397,10 +405,11 @@ export class Powerplant implements PowerplantSeam {
     for (let i = 0; i < n; i++) {
       const unit = units[i];
       const air = airAt !== undefined ? airAt[i] : input.airVelocityBody;
-      const fed = fuel.stepFeed(i, dt, demand[i], engineControl(controls, i, 'fuelSelector'), rpm[i], engineControl(controls, i, 'fuelPump'), elec.busVoltage, unit.thermal.cht);
+      const fed = fuel.stepFeed(i, dt, demand[i], engineControl(controls, i, 'fuelSelector'), rpm[i], this.pumpCommands[i], elec.busVoltage, unit.thermal.cht);
       unit.finish(input, air, fed.delivered, elec.starterTorques[i]);
       unit.state.fuelFlow = fed.metered;
       unit.state.fuelPressure = fed.pressurePsi;
+      unit.state.auxFuelPressure = fed.auxPressurePsi;
     }
     for (const unit of this.fadecUnits) {
       const engine = unit.engine;

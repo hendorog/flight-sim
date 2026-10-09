@@ -92,6 +92,8 @@ export interface FuelStepResult {
   metered: number;
   /** Fuel pressure at the servo, psi. */
   pressurePsi: number;
+  /** Output of the electric pump alone; the mechanical pump cannot extinguish its caution. */
+  auxPressurePsi: number;
   /** Fuel drawn from the left-side and right-side tanks during this step, kg (a centre tank counts half to each). */
   usedLeft: number;
   usedRight: number;
@@ -107,7 +109,7 @@ class FuelFeed {
   prime = 1;
   /** Fuel film on the intake port walls, kg; NaN until the first step (then set to its equilibrium). */
   film = NaN;
-  readonly result: FuelStepResult = { delivered: 0, metered: 0, pressurePsi: 0, usedLeft: 0, usedRight: 0 };
+  readonly result: FuelStepResult = { delivered: 0, metered: 0, pressurePsi: 0, auxPressurePsi: 0, usedLeft: 0, usedRight: 0 };
 
   private readonly positions: FuelFeedDef['positions'];
   private readonly gravityHeadPsi: number;
@@ -218,6 +220,7 @@ class FuelFeed {
     const enginePump = this.enginePumpPsi * (1 - Math.exp(-rpm / ENGINE_PUMP_RPM_SCALE)) * smoothstep(PRIME_PRESSURE_START, 1, this.prime);
     const aux = auxPump && busVoltage > this.auxPumpMinVolts ? this.auxPumpPsi : 0;
     const pumpPsi = Math.max(enginePump, aux);
+    r.auxPressurePsi = aux * wet;
     r.pressurePsi = pumpPsi * wet;
     // The head of fuel standing above the engine adds to whatever the pumps make.
     if (this.gravityHeadPsi !== 0) r.pressurePsi = (this.gravityHeadPsi + pumpPsi) * wet;

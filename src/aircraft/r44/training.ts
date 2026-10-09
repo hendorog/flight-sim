@@ -29,5 +29,5 @@ export const R44_TRAINING: AircraftTypeDef = {
   envelope: { maxBankDeg: 0, maxPitchUpDeg: 0, maxPitchDownDeg: 0, maxKias: V.vne, maxG: 0, minG: 0,
     minAglFt: 0, lowAndSlow: { aglFt: 0, belowKias: 0 }, maxSinkFpmBelow200: 0, stallAllowed: false, runwayExcursionM: 0 },
   checklists: CHECKLISTS,
-  school: { syllabus: false, reason: 'Helicopter lessons and guided checklists are unavailable; fuel priming, automatic auxiliary pump and cold-start validation remain unfinished.' },
+  school: { syllabus: false, reason: 'Helicopter lessons and guided checklists are unavailable; exact closed-throttle starting and cold-start validation remain unfinished.' },
 };

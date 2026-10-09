@@ -73,6 +73,7 @@ export type InputAction =
   | 'masterSwitch'
   | 'alternator'
   | 'avionics'
+  | 'fuelPrime'
   | 'fuelPump'
   | 'fuelSelector'
   | 'pitotHeat'
@@ -225,6 +226,7 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   alternator: { label: 'Alternator (ALT half of the master) on/off', category: 'Switches' },
   avionics: { label: 'Avionics master on/off', category: 'Switches' },
   pitotHeat: { label: 'Pitot heat on/off', category: 'Switches' },
+  fuelPrime: { label: 'Ignition PRIME (hold)', category: 'Switches' },
   fuelPump: { label: 'Auxiliary fuel pump on/off', category: 'Switches' },
   fuelSelector: { label: 'Fuel selector: BOTH, LEFT, RIGHT, OFF', category: 'Switches' },
   panelLights: { label: 'Panel lights: off, dim, medium, bright', category: 'Lights' },
@@ -330,6 +332,7 @@ const ACTION_NEEDS: Partial<Record<InputAction, keyof InputProfile['has']>> = {
  * ignores the keys of an action a type lacks, and the help listing leaves them out.
  */
 export function profileHasAction(profile: InputProfile, action: InputAction): boolean {
+  if (action === 'fuelPrime') return !!profile.primeKey;
   if (action === 'rotorClutch' || action === 'rotorGovernor') return !!profile.rotorcraft;
   if (profile.rotorcraft && ['trimNoseUp', 'trimNoseDown', 'parkingBrake', 'brakes', 'brakeLeft', 'brakeRight'].includes(action)) return false;
   // ENGINE MASTER switches have no single-magneto positions.

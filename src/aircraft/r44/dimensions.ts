@@ -42,10 +42,12 @@ export const NOSE_X = MAIN_ROTOR_RADIUS - (OVERALL_LENGTH - FUSELAGE_LENGTH);
 export const TAIL_END_X = NOSE_X - FUSELAGE_LENGTH;
 
 /** Span published: 66 in, MM 16-40 Fig 16-1 (Feb 2024, F004-2 empennage).
- * Chord/position ESTIMATES from that top/side view; surface sits near the bottom of the tail fin. */
+ * Chord/position ESTIMATES: Fig 16-1 side view (353 in envelope ≈796 px in the cached 1237 px
+ * image) places the surface ≈19 px / 0.22 m below the tail hub. MM Fig 4-6, p4.22 (Feb 2024)
+ * shows its short F955 brackets beneath the cone, not at the lower-fin tip. */
 export const HORIZONTAL_STABILIZER = {
   span: 66 * IN, leftChord: 0.32, rightChord: 0.32,
-  leadingX: TAIL_HUB.x + 1.20, z: TAIL_HUB.z + 0.60,
+  leadingX: TAIL_HUB.x + 1.20, z: TAIL_HUB.z + 0.22,
 } as const;
 /** ESTIMATED polygons, POH 1-3 / MM 16-40. Fin on the right of the left-side tail rotor. */
 export const UPPER_FIN_OUTLINE = [
@@ -60,9 +62,11 @@ export const LOWER_FIN_OUTLINE = [
   { x: TAIL_HUB.x - 0.45, y: 0.075, z: TAIL_HUB.z + 0.70 },
   { x: TAIL_HUB.x - 0.18, y: 0.075, z: TAIL_HUB.z + 0.70 },
 ] as const;
-/** ESTIMATED curved tail guard/stinger centreline, POH 1-3 side view; not a structural impact limit. */
+/** ESTIMATED curved tail guard/stinger centreline, POH 1-3 / MM Fig 16-1 side view.
+ * Its forward mounting flange is on the stabiliser underside (MM Fig 4-6, p4.22), not floating
+ * beside it. The remaining trace and contact limits are unchanged, not structural test data. */
 export const TAIL_STINGER = [
-  { x: TAIL_HUB.x + 1.20, y: 0.075, z: TAIL_HUB.z + 0.20 },
+  { x: HORIZONTAL_STABILIZER.leadingX - 0.05, y: 0.075, z: HORIZONTAL_STABILIZER.z },
   { x: TAIL_HUB.x + 1.05, y: 0.075, z: TAIL_HUB.z + 0.52 },
   { x: TAIL_HUB.x + 0.60, y: 0.075, z: TAIL_HUB.z + 0.72 },
   { x: TAIL_HUB.x - 0.18, y: 0.075, z: TAIL_HUB.z + 0.72 },

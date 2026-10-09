@@ -36,6 +36,8 @@ export interface InputProfile {
   flapDetents: readonly number[];
   /** Fuel selector positions the selector key cycles through (per selected engine on twins). */
   fuelSelectorCycle: readonly FuelSelector[];
+  /** Key's clockwise hold primes; starter is a separate button. J holds PRIME on this installation. */
+  primeKey?: boolean;
   /** 'engineMaster': the magneto keys act on ENGINE MASTER (Digit1 = off, Digit4 = on); Digit2 / Digit3 do nothing. */
   ignition: 'key' | 'toggles' | 'engineMaster';
   has: { mixture: boolean; propeller: boolean; feather: boolean; carbHeat: boolean; alternateAir: boolean; cowlFlaps: boolean;

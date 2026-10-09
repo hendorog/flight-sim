@@ -87,6 +87,7 @@ export class ElectricalSystem {
   private readonly capacity: number;
   private readonly alternators: ElectricalDef['alternators'];
   private readonly regulatorVolts: number;
+  private readonly lighting: ElectricalDef['lighting'];
   private readonly loads: ElectricalDef['loads'];
   private readonly nominalVolts: number;
   private readonly overVolts: number;
@@ -107,6 +108,7 @@ export class ElectricalSystem {
     this.regulatorVolts = def.regulatorVolts;
     // Every consumer the sum names is there: one a type does not have draws nothing.
     this.loads = { master: 0, avionics: 0, nav: 0, beacon: 0, strobe: 0, landing: 0, taxi: 0, panelFull: 0, pitotHeat: 0, fuelPump: 0, ...def.loads };
+    this.lighting = def.lighting;
     this.nominalVolts = def.nominalVolts;
     this.overVolts = def.overVolts;
     this.engineCount = starters.length;
@@ -161,20 +163,20 @@ export class ElectricalSystem {
    * Bus load conductance (A/V) from the switch positions. The consumers are looked up by name and summed in
    * this order (the sum is not associative in floating point); a new consumer goes after the last one.
    */
-  private loadConductance(c: ControlInputs): number {
+  private loadConductance(c: ControlInputs, pumps?: readonly boolean[]): number {
     const load = this.loads;
     let amps = load.master;
     if (c.avionics) amps += load.avionics;
     if (c.lights.nav) amps += load.nav;
     if (c.lights.beacon) amps += load.beacon;
     if (c.lights.strobe) amps += load.strobe;
-    if (c.lights.landing) amps += load.landing;
+    if (c.lights.landing && (!this.lighting?.landingRequiresClutch || c.rotorClutch)) amps += load.landing;
     if (c.lights.taxi) amps += load.taxi;
-    amps += load.panelFull * clamp(c.lights.panel, 0, 1);
+    if (!this.lighting?.panelRequiresNav || c.lights.nav) amps += load.panelFull * clamp(c.lights.panel, 0, 1);
     if (c.pitotHeat) amps += load.pitotHeat;
-    if (engineControl(c, 0, 'fuelPump')) amps += load.fuelPump;
+    if (pumps?.[0] ?? engineControl(c, 0, 'fuelPump')) amps += load.fuelPump;
     // Consumers a Cessna 172S does not have: the pumps of further engines, the gear's power pack, glow plugs, ECUs.
-    for (let i = 1; i < this.engineCount; i++) if (engineControl(c, i, 'fuelPump')) amps += load.fuelPump;
+    for (let i = 1; i < this.engineCount; i++) if (pumps?.[i] ?? engineControl(c, i, 'fuelPump')) amps += load.fuelPump;
     if (this.gearPump) amps += load.gearPump ?? 0;
     for (let i = 0; i < this.engineCount; i++) {
       if (this.glowing[i]) amps += load.glow ?? 0;
@@ -187,7 +189,7 @@ export class ElectricalSystem {
    * Advance by dt with the CRANK speed of each engine (`rpm`, and `omega` in rad/s): one number each for a
    * single-engine aircraft, one per engine otherwise. The returned object is reused.
    */
-  step(dt: number, controls: ControlInputs, rpm: number | ArrayLike<number>, omega: number | ArrayLike<number>): ElectricalResult {
+  step(dt: number, controls: ControlInputs, rpm: number | ArrayLike<number>, omega: number | ArrayLike<number>, pumps?: readonly boolean[]): ElectricalResult {
     const r = this.state;
     if (typeof rpm === 'number') {
       this.oneRpm[0] = rpm;
@@ -221,7 +223,7 @@ export class ElectricalSystem {
       this.backEmfPerAmp[i] = this.starterK[i] * Math.max(omega[i], 0);
       this.starterOn[i] = engineControl(controls, i, 'starter');
     }
-    const g = this.loadConductance(controls);
+    const g = this.loadConductance(controls, pumps);
 
     // The bus cannot rise above the definition's over-voltage threshold: the top of the search.
     let lo = 0;

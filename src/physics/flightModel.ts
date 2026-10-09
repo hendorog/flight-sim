@@ -56,7 +56,7 @@ import {
 import { createAirData, slipBall, type AirData } from './airData';
 import { AeroModel } from './aero';
 import { casFromTas, pressureAltitude } from './atmosphere';
-import { placardVne } from './rotorcraft/limits';
+import { configuredVne } from './rotorcraft/limits';
 import { ControlSystem } from './controlSystem';
 import { LandingGear, RetractActuator, type RetractInput } from './gear';
 import type {
@@ -583,6 +583,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   private resetRotorcraft(ic: InitialConditions, env: Environment, powerplant: Parameters<Powerplant['reset']>[0]): void {
     const r = this.rotorcraft!, d = r.def, c = this.trimControls;
     r.reset(ic.engineRunning || !ic.onGround);
+    r.state.takeoffMass = this.mp.mass;
     r.state.rotorRpm = r.state.omega * 30 / Math.PI;
     this.propulsion.reset({ ...powerplant, rpm: ic.engineRunning ? d.nominalRpm * d.engineRatio : 0, warm: !ic.onGround || ic.engineRunning });
     c.throttle = ic.engineRunning ? 1 : 0;
@@ -954,6 +955,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     }
     if (this.rotorcraft) {
       if (s.rotorcraft) Object.assign(this.rotorcraft.state, s.rotorcraft);
+      // Legacy saves have no departure weight. Retain current mass as the best available estimate.
+      if (!(this.rotorcraft.state.takeoffMass > 0)) this.rotorcraft.state.takeoffMass = this.mp.mass;
       pp.restore(s.engines);
       this.rotorControls = cloneControls(controls);
     }
@@ -1422,7 +1425,13 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       s.propeller.rotation = r.azimuth;
       s.propeller.thrust = r.thrust;
       s.engine.propRpm = r.rotorRpm;
-      r.vneKias = placardVne(this.rotorcraft.def.airspeedLimits, pressureAltitude(this.atmosphere.pressure), this.atmosphere.temperature);
+      if (s.onGround) r.takeoffMass = this.mp.mass;
+      const d = this.rotorcraft.def;
+      r.vneKias = configuredVne(d.airspeedLimits, d.airspeedCorrections,
+        pressureAltitude(this.atmosphere.pressure), this.atmosphere.temperature, {
+          takeoffMass: r.takeoffMass, powerOff: !s.onGround && r.driveTorque <= 0,
+          aboveMcp: r.takeoffPowerSeconds > 0, doorsOff: this.controlsIn.rotorDoorsOff,
+        });
       r.airspeedLimitExceeded = r.vneKias === 0 || s.ias / KT > r.vneKias;
     }
     const el = s.electrical;

@@ -159,6 +159,8 @@ function extendFlight(s: AircraftState, c: ControlInputs): void {
     if (!rpmSweep) e0.rpm = t > 200 ? 0 : t < 6 ? 0 : t < 20 ? 1400 : t < 40 ? 1900 : poweredRpm;
     const pct = rotorSweep ? sweepAt(rotorSweep, t) : t > 200 ? 100 : e0.rpm / engineRpm100 * 100;
     r.rotorRpm = pct * (d.referenceRpm / 100);
+    if (type === 'r44') s.engine.auxFuelPressure = c.rotorClutch && s.engine.oilPressure > 5 ? 25 : 0;
+    r.lowRpmLight = pct < d.systems.lowRpmWarning * 100;
     r.lowRpmHorn = pct <= d.systems.lowRpmWarning * 100 && t >= 40;
     r.lowRpm = pct <= d.systems.lowRpmWarning * 100;
     r.clutchLight = t >= 10 && t < 20;
