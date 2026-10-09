@@ -206,6 +206,7 @@ export class SimPhysics {
     copyControls(c, trim);
     applyControls(c, sc.controls ?? {});
     c.starter = false;
+    if (c.fuelPrime !== undefined) c.fuelPrime = false;
     c.dgAlign = false;
     c.kollsmanHpa = weather?.qnhHpa ?? c.kollsmanHpa;
     const hdgDeg = (this.fm.state.heading * 180) / Math.PI;
@@ -351,6 +352,7 @@ export class SimPhysics {
     copyControls(c, defaultControls(def));
     applyControls(c, snap.controls);
     c.starter = false;
+    if (c.fuelPrime !== undefined) c.fuelPrime = false;
     c.dgAlign = false;
     // Powerplant (shaft speeds, tanks, battery, temperatures) and the surfaces where they were (the flaps lag
     // their lever), the rudder pedal with them.

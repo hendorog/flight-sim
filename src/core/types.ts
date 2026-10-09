@@ -50,6 +50,10 @@ export interface ControlInputs {
   collective?: number;
   rotorGovernor?: boolean;
   rotorClutch?: boolean;
+  /** Rotorcraft configuration for speed-limit reporting; absent = doors installed. */
+  rotorDoorsOff?: boolean;
+  /** Momentary ignition-key PRIME, separate from the starter and manual pump switch. */
+  fuelPrime?: boolean;
   /** [-1, 1]. + = yoke back = nose up. */
   elevator: number;
   /** [-1, 1]. + = yoke right = roll right. */
@@ -228,6 +232,8 @@ export interface EngineState {
   oilPressure: number;
   /** Fuel pressure, psi. */
   fuelPressure: number;
+  /** Electric auxiliary-pump output pressure, psi; separate from the mechanical/common feed. */
+  auxFuelPressure?: number;
   /** Propeller shaft speed, rev/min (rpm / gear ratio). */
   propRpm: number;
   /** Shaft power as a percentage of rated power (the FADEC LOAD figure; computed for every engine). */

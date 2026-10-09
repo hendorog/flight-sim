@@ -30,6 +30,13 @@ import type { AircraftState, ControlInputs } from '../../core/types';
 import type { LampVisualDef } from './airframe/types';
 import { frd } from './geometry';
 
+/** Installation wiring, independent of lamp colour and photometry. */
+export function lampSwitchedOn(lamp: LampVisualDef | undefined, c: ControlInputs): boolean {
+  if (!lamp || (lamp.requiresClutch && !c.rotorClutch)) return false;
+  const circuit = lamp.circuit ?? (lamp.id.startsWith('nav') ? 'nav' : lamp.id.startsWith('strobe') ? 'strobe' : lamp.id as 'beacon' | 'landing' | 'taxi');
+  return c.lights[circuit];
+}
+
 /** Light intensity units per candela: the project's photometric scale (core/context.ts). */
 export const LIGHT_UNITS_PER_CANDELA = SCENE_UNITS_PER_LUX;
 
@@ -241,8 +248,7 @@ export class AircraftLights {
   private readonly lamps: Record<LightId, Lamp>;
   private readonly strobeLights: THREE.PointLight[] = [];
   private readonly installed = new Set<LightId>();
-  private readonly landingCircuit: 'landing' | 'taxi';
-  private readonly taxiCircuit: 'landing' | 'taxi';
+  private readonly circuits = new Map<LightId, LampVisualDef>();
   private beaconLight: THREE.PointLight | null = null;
   private readonly landing: THREE.SpotLight;
   private readonly taxi: THREE.SpotLight;
@@ -283,8 +289,7 @@ export class AircraftLights {
   ) {
     this.group.name = 'aircraftLights';
     for (const lamp of defs) this.installed.add(lamp.id);
-    this.landingCircuit = defs.find(l => l.id === 'landing')?.circuit ?? 'landing';
-    this.taxiCircuit = defs.find(l => l.id === 'taxi')?.circuit ?? 'taxi';
+    for (const d of defs) this.circuits.set(d.id, d);
     const def = (id: LightId): LampVisualDef => {
       const d = defs.find((l) => l.id === id);
       // Keep stable shader/light slots for types with a single strobe or no taxi lamp. Absent lamps
@@ -450,22 +455,23 @@ export class AircraftLights {
   ): void {
     const v = state.electrical.busVoltage * 28 / this.nominalVoltage;
     const power = Math.min(1, Math.max(0, (v - 18) / 6));
-    const l = controls.lights;
+    const enabled = (id: LightId): boolean => lampSwitchedOn(this.circuits.get(id), controls);
     const k = LIGHT_UNITS_PER_CANDELA * this.lightScale;
-    const nav = l.nav ? power : 0;
+    const nav = enabled('navL') ? power : 0;
     const ts = time % 1.1;
-    const strobe = l.strobe ? power * Math.max(pulse(ts, 0, 0.05), pulse(ts, 0.14, 0.05)) : 0;
+    const strobe = enabled('strobeL') ? power * Math.max(pulse(ts, 0, 0.05), pulse(ts, 0.14, 0.05)) : 0;
     // Beacon offset in phase so it does not fire with the strobes.
-    const beacon = l.beacon ? power * pulse((time + 0.5) % 1.25, 0, 0.16) : 0;
+    const beacon = enabled('beacon') ? power * pulse((time + 0.5) % 1.25, 0, 0.16) : 0;
     // Halogen output rises steeply with voltage (~V^3.4); normalise to 28 V.
     const halogen = power * Math.min(1.1, Math.pow(Math.max(0, v) / 28, 3.4));
     // A lamp on the nose gear leg is switched off by the leg until it is (nearly) down.
     const legDown = state.gear.extension[0] >= 0.9 ? 1 : 0;
-    const landing = (l[this.landingCircuit] ? halogen : 0) * (this.onNoseGear.has('landing') ? legDown : 1);
-    const taxi = (l[this.taxiCircuit] ? halogen : 0) * (this.onNoseGear.has('taxi') ? legDown : 1);
+    const landing = (enabled('landing') ? halogen : 0) * (this.onNoseGear.has('landing') ? legDown : 1);
+    const taxi = (enabled('taxi') ? halogen : 0) * (this.onNoseGear.has('taxi') ? legDown : 1);
 
     const flash = this.pointLightsOn ? 1 : 0;
-    for (const p of this.strobeLights) p.intensity = FLASH_CD.strobe * k * strobe * flash;
+    for (let i = 0; i < this.strobeLights.length; i++) this.strobeLights[i].intensity = FLASH_CD.strobe * k * flash *
+      (enabled(i === 0 ? 'strobeL' : 'strobeR') ? power * Math.max(pulse(ts, 0, 0.05), pulse(ts, 0.14, 0.05)) : 0);
     if (this.beaconLight) this.beaconLight.intensity = FLASH_CD.beacon * k * beacon * flash;
     this.landing.intensity = CD.landing * k * landing;
     this.taxi.intensity = CD.taxi * k * taxi;
@@ -478,7 +484,7 @@ export class AircraftLights {
     this.glowUniforms.uViewportH.value = this.size.y;
     this.glowUniforms.uExposure.value = sky ? estimateExposure(sky) : 0;
 
-    const levels: Record<LightId, number> = { navL: nav, navR: nav, navTail: nav, strobeL: strobe, strobeR: strobe, beacon, landing, taxi };
+    const levels: Record<LightId, number> = { navL: nav, navR: enabled('navR') ? power : 0, navTail: enabled('navTail') ? power : 0, strobeL: strobe, strobeR: enabled('strobeR') ? power * Math.max(pulse(ts, 0, 0.05), pulse(ts, 0.14, 0.05)) : 0, beacon, landing, taxi };
     const pos = this.glowPos.array as Float32Array;
     const col = this.glowCol.array as Float32Array;
     for (let i = 0; i < LIGHT_IDS.length; i++) {

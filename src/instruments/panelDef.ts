@@ -22,6 +22,8 @@ export interface AsiMarkings {
   redLine: number;
   /** Twins: Vyse and Vmca. */
   blueLine?: number; redRadial?: number;
+  /** Cross-hatched red radial for a configuration-dependent limit (e.g. rotorcraft power-off Vne). */
+  crossHatchedLine?: number;
 }
 export interface TachMarkings { max: number; majorStep: number; minorStep: number; numberStep: number;
                                 arcs: readonly ArcDef[]; redLine: number; hourRpm: number }
@@ -29,6 +31,7 @@ export interface TachMarkings { max: number; majorStep: number; minorStep: numbe
 export interface RotorTachMarkings {
   min: number; max: number; majorStep: number; minorStep: number;
   engineArcs: readonly ArcDef[]; rotorArcs: readonly ArcDef[]; rotorRedLines: readonly number[];
+  engineRedLines?: readonly number[];
 }
 export interface ScaleDef {
   label: string; min: number; max: number; majors: readonly number[]; minorStep: number;
@@ -104,12 +107,17 @@ export interface SwitchDef {
 export interface LampDef { id: string; text: string; color: string; lit(r: InstrumentReadings): boolean }
 
 export type IgnitionPanelDef =
-  | { kind: 'key'; at: At }                         // OFF / R / L / BOTH / START
+  | { kind: 'key'; at: At; prime?: boolean }                         // OFF / R / L / BOTH / START
   | { kind: 'toggles'; at: At; engines: number }    // L and R magneto toggles per engine + starter rocker (PA-34)
   | { kind: 'engineMaster'; at: At; engines: number }; // ENGINE MASTER per engine + START (DA42)
 
 export interface PanelDef {
   id: string;
+  /** Dial lighting interlock; self-lit radios and warning lenses remain independent. */
+  lightingRequiresNav?: boolean;
+  /** Optional dimmer curve: emissive alpha tags dimmed circuits (0.5) versus warning lamps (1).
+   * Renderer applies the curve after RGB filtering, at constant luminance. Absent retains legacy dimming. */
+  lightingDimmerExponent?: number;
   /** Canvas size from the type's cockpit contract. Every component lies inside its panel face. */
   size: { w: number; h: number };
   gauges: readonly GaugeDef[];

@@ -48,9 +48,10 @@ it('keeps the placeholder panel layout, UV face, hubs and electrical lighting co
   expect(panelLayoutProblems(pres.panel)).toEqual([]);
   vi.stubGlobal('document', blankDocument());
   const ctx = fakeContext();
-  const visual = new AircraftVisual({ airframe: pres.visual, asyncBake: false });
+  const visual = new AircraftVisual({ airframe: pres.visual, panelDef: pres.panel, asyncBake: false });
   try {
     visual.init(ctx); visual.update(0, ctx); visual.root.updateMatrixWorld(true);
+    expect(visual.root.getObjectByName('r44ExteriorDetails')).toBeDefined();
     const face = visual.getPanelMesh();
     const [origin, du, dv] = panelUvBasis(face.geometry)!;
     const point = origin.clone().addScaledVector(du, 0.5).addScaledVector(dv, 0.5);
@@ -99,9 +100,10 @@ it('uses aircraft-specific governor and warning thresholds rather than the R22 c
   c.collective = 0.11; rotor.drive(0, c, engine); expect(rotor.state.lowRpmHorn).toBe(true);
 });
 
-it('interpolates adjacent full-throttle rows without treating an empty MAP cell as zero', () => {
-  // 10°C: last two numeric rows are 21.0 at 6000 ft and 20.6 at 8000 ft.
-  expect(placardMap(R44_MAP, 11000 * FT, 283.15)).toBeCloseTo(20.0, 10);
+it('interpolates mixed MAP cells but leaves an all-full-throttle region unbounded', () => {
+  // 10°C: 21.0 at 6000 ft and 20.6 at 8000 ft; extrapolate only toward a mixed FT corner.
+  expect(placardMap(R44_MAP, 9000 * FT, 283.15)).toBeCloseTo(20.4, 10);
+  expect(placardMap(R44_MAP, 11000 * FT, 283.15)).toBe(Infinity);
   expect(placardMap(R44_MAP, 12000 * FT, 283.15)).toBe(Infinity);
 });
 

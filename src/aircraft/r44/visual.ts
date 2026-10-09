@@ -33,7 +33,7 @@ const ROTORCRAFT: RotorcraftVisualDef = {
   guard: TAIL_STINGER.map(point), guardRadius: TAIL_STINGER_RADIUS,
   panel: { centre: point(PANEL_FACE.centre), width: PANEL_FACE.width, height: PANEL_FACE.height,
     tiltBackDeg: PANEL_FACE.tiltBackDeg, canvas: PANEL_CANVAS, outline: PANEL_OUTLINE,
-    pedestal: PANEL_PEDESTAL, enclosureDepth: PANEL_ENCLOSURE_DEPTH, poweredVolts: [18, 24] },
+    pedestal: PANEL_PEDESTAL, enclosureDepth: PANEL_ENCLOSURE_DEPTH, poweredVolts: [18, 24], emissiveLuminance: 200 },
   cyclic: { gripYs: [-0.35, 0.35], barTiltDeg: -9,
     stem: [[0, 0, 0], [0.02, 0, -0.18], [-0.08, 0, -0.45], [-0.08, 0, -0.56]] },
   pedalZ: 0.43,
@@ -94,13 +94,13 @@ export const R44_VISUAL: AirframeVisualDef = {
   props: [], nacelles: [],
   lamps: [
     // MM 26-00 / Fig. 4-7: cabin chin positions, red tailcone anti-collision light, aft white mount.
-    // The shared light switch map still calls the red circuit 'beacon'; see the integration notes.
+    // POH 7-17: STROBE powers the red lamp; both nose lamps require clutch ENGAGE.
     { id: 'navL', pos: [1.47, -0.605, 0.24], radius: 0.025, glowOffset: [0.01, -0.025, 0] },
     { id: 'navR', pos: [1.47, 0.605, 0.24], radius: 0.025, glowOffset: [0.01, 0.025, 0] },
     { id: 'navTail', pos: [TX - 0.36, 0.075, TZ + 0.02], radius: 0.022, glowOffset: [-0.025, 0, 0] },
-    { id: 'beacon', pos: [TX + 1.58, 0, boomTop(TX + 1.58) - 0.044], radius: 0.032, glowOffset: [0, 0, -0.03] },
-    { id: 'landing', pos: [2.27, -0.07, 0.32], radius: 0.043, glowOffset: [0.03, 0, 0], aim: { downDeg: 8, outDeg: 0, halfAngleDeg: 12 } },
-    { id: 'taxi', circuit: 'landing', pos: [2.27, 0.07, 0.32], radius: 0.043, glowOffset: [0.03, 0, 0], aim: { downDeg: 14, outDeg: 0, halfAngleDeg: 22 } },
+    { id: 'beacon', circuit: 'strobe', pos: [TX + 1.58, 0, boomTop(TX + 1.58) - 0.044], radius: 0.032, glowOffset: [0, 0, -0.03] },
+    { id: 'landing', requiresClutch: true, pos: [2.27, -0.07, 0.32], radius: 0.043, glowOffset: [0.03, 0, 0], aim: { downDeg: 8, outDeg: 0, halfAngleDeg: 12 } },
+    { id: 'taxi', circuit: 'landing', requiresClutch: true, pos: [2.27, 0.07, 0.32], radius: 0.043, glowOffset: [0.03, 0, 0], aim: { downDeg: 14, outDeg: 0, halfAngleDeg: 22 } },
   ],
   cockpit: { pilotEye: point(PILOT_EYE), defaultPitchDeg: -24, defaultFovDeg: 82, enclosure: 'canopy',
     panel: { x: PANEL_FACE.centre.x, zTop: PANEL_FACE.centre.z - PANEL_FACE.height / 2, width: PANEL_FACE.width },

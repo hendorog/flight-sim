@@ -57,10 +57,10 @@ describe('R44 engine, drivetrain and flight integration', () => {
   it('primes the cold injected engine, starts, tensions the clutch, acquires the governor and hovers', () => {
     const r = rig(0, false, 0, false, true), c = r.c;
     // Generic grip zero is the hard overtravel stop. A small idle opening is needed by this reduced
-    // engine model; the real POH procedure says closed. The pump key/clutch automation is not wired:
-    // use the existing manual pump input for prime and again when the clutch is engaged.
+    // engine model; the real POH procedure says closed. PRIME is momentary; after engagement
+    // the oil-pressure/clutch circuit, not the pilot, operates the electric pump.
     Object.assign(c, { rotorClutch: false, rotorGovernor: true, throttle: 0.05, mixture: 1,
-      magnetos: 3, masterBattery: true, alternator: false, fuelPump: true, collective: 0 });
+      magnetos: 3, masterBattery: true, alternator: false, fuelPrime: true, collective: 0 });
     const samples = [];
     let firedAt: number | undefined, movingAt: number | undefined, governorAt: number | undefined;
     let hoverAt: number | undefined, pilot: ScriptedPilot | undefined, magBefore = 0, magAfter = 0;
@@ -68,12 +68,12 @@ describe('R44 engine, drivetrain and flight integration', () => {
     for (let i = 0; i < 360 / DT && !r.fm.state.crashed; i++) {
       const t = i * DT, s = r.fm.state;
       if (t >= 4 && t < 12) {
-        c.fuelPump = false; c.mixture = firedAt === undefined ? 0 : 1; c.starter = firedAt === undefined;
+        c.fuelPrime = false; c.mixture = firedAt === undefined ? 0 : 1; c.starter = firedAt === undefined;
         if (s.engine.running) { firedAt ??= t; c.mixture = 1; c.starter = false; }
       }
       if (t >= 12 && t < 25) c.throttle = clamp(c.throttle + 0.0004 * (0.55 * V.engineRpm100 - s.engine.rpm) * DT, 0, 0.3);
       if (t >= 25 && t < 100) {
-        c.rotorClutch = true; c.fuelPump = true; c.alternator = true;
+        c.rotorClutch = true; c.alternator = true;
         // Isolate the manual run-up below governor acquisition; an RPM overshoot must not
         // let the governor replace a 75% magneto check with a governed 101.5% check.
         c.rotorGovernor = false;

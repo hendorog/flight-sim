@@ -3,7 +3,7 @@
 import { DEG, type Vec3 } from '../../core/math';
 import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 import { R44_REFERENCE as V } from './reference';
-import { R44_MAP, R44_VNE } from './limits';
+import { R44_MAP, R44_VNE, R44_SPEED_CORRECTIONS } from './limits';
 import { MAIN_HUB, MAIN_ROTOR_RADIUS, MAIN_ROTOR_CHORD, MAIN_ROTOR_TWIST_DEG,
   TAIL_HUB, TAIL_ROTOR_RADIUS, TAIL_ROTOR_CHORD, SKID_Z, SKID_HALF_TRACK,
   SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, HORIZONTAL_STABILIZER as HS,
@@ -28,7 +28,7 @@ export const R44_ROTORCRAFT: RotorcraftDefinition = {
   // MM 10.121 longitudinal stops, midpoint 13.875 deg. The shared solver has one symmetric
   // disc-tilt command, not individual blade-pitch stops (lateral 7.5–8.5 left / 6–7 right).
   cyclicLimit: 13.875 * DEG, teeterLimit: 12 * DEG,
-  airspeedLimits: R44_VNE, manifoldLimits: R44_MAP,
+  airspeedLimits: R44_VNE, airspeedCorrections: R44_SPEED_CORRECTIONS, manifoldLimits: R44_MAP,
   // POH 7-7: three irreversible hydraulic main-rotor servos; pedals remain mechanical (7-6).
   controlSystem: { cyclic: 'hydraulic', collective: 'hydraulic', pedals: 'mechanical' },
   systems: { continuousPower: V.continuousPower, takeoffPower: V.takeoffPower, takeoffSeconds: 300,

@@ -1,5 +1,7 @@
 # R44 Raven II flight model
 
+This is the original flight-model worker report. The later [shared integration report](r44-integration.md) supersedes its pending wiring/geometry items and records acceptance-test deltas; remaining aerodynamic and startup limitations still apply.
+
 This is an experimental Raven II configuration of the shared teetering-rotor solver. It replaces the R22-derived flight-model data but **does not qualify the R44 for release**. Hot/gross OGE hover ceilings are optimistic, the fixture-to-section pitch offset remains unverified, and autorotation landings leave the permitted rotor-RPM arc. The placeholder flag and chooser gate remain in place. No shared solver, geometry, panel, exterior or demonstration code is changed here.
 
 ## Evidence and parameter provenance

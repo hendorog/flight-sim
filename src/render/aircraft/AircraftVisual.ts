@@ -17,6 +17,9 @@
 
 import * as THREE from 'three';
 import { RotorcraftVisual } from './RotorcraftVisual';
+import { r44ExteriorVisualClass } from '../../aircraft/r44/exterior';
+import { FuselageShape } from './fuselageShape';
+import { sectionHalfWidth } from './fuselage';
 import { C172S_PANEL } from '../../aircraft/c172s/panel';
 import { C172S_VISUAL } from '../../aircraft/c172s/visual';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
@@ -85,6 +88,8 @@ export function interiorInView(distance: number, fovDeg: number, lodDistance: nu
   return (distance * Math.tan((fovDeg * Math.PI) / 360)) / Math.tan(Math.PI / 6) < lodDistance;
 }
 
+const R44ExteriorVisual = r44ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth);
+
 export class AircraftVisual implements Subsystem {
   /** Everything of the aircraft; added to ctx.aircraftRoot by init(). */
   readonly root = new THREE.Group();
@@ -134,7 +139,8 @@ export class AircraftVisual implements Subsystem {
     const def = this.def;
     if (def.rotorcraft) {
       const t0 = performance.now();
-      this.helicopter = new RotorcraftVisual(def, ctx, this.opts);
+      const Visual = def.id === 'r44' ? R44ExteriorVisual : RotorcraftVisual;
+      this.helicopter = new Visual(def, ctx, this.opts);
       this.root.add(this.helicopter.root); ctx.aircraftRoot.add(this.root);
       if (this.pendingPanel) this.helicopter.setPanelTexture(this.pendingPanel);
       if (this.pendingPanelEmissive) this.helicopter.setPanelEmissiveTexture(this.pendingPanelEmissive);

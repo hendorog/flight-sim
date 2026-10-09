@@ -238,7 +238,9 @@ export interface FuelFeedDef {
   feedCapacity: number; lineCapacity: number; lineUnusable: number;
   enginePump?: { psi: number };
   /** Electric pump; works above minVolts on the bus (volts, not a fraction). */
-  auxPump?: { psi: number; minVolts: number };
+  auxPump?: { psi: number; minVolts: number;
+    /** Absent: manual switch. PRIME bypasses the clutch/oil switch; threshold is installation data. */
+    automatic?: { oilPressurePsi: number } };
   delivery:
     | { kind: 'injector'; capacity: number; openPsi: number; fullPsi: number }
     | { kind: 'carburettorBowl'; capacity: number; minHeadPsi: number }
@@ -267,6 +269,7 @@ export interface FuelSystemDef {
 }
 
 export interface ElectricalDef {
+  lighting?: { landingRequiresClutch?: boolean; panelRequiresNav?: boolean };
   nominalVolts: 14 | 28;
   regulatorVolts: number;
   battery: { capacityAh: number; ocvEmpty: number; ocvSpan: number; rDischarge: number; rChargeBase: number; rChargeFull: number };

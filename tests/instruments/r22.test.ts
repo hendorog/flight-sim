@@ -106,7 +106,7 @@ describe('R22 console', () => {
     const { s, c, step } = fixture();
     let r = step();
     for (const id of ['clutch', 'lowRpm', 'govOff', 'alt', 'starter', 'oil', 'lowFuel', 'mrTemp', 'mrChip', 'trChip', 'co', 'brake']) expect(r.lamps[id], id).toBe(false);
-    s.rotorcraft!.clutchLight = true; s.rotorcraft!.lowRpmHorn = true;
+    s.rotorcraft!.clutchLight = true; s.rotorcraft!.lowRpmLight = true;
     s.rotorcraft!.governorActive = false; // governor armed at idle is not GOV OFF
     s.fuel.left = 1.6 * 2.72155;
     expect(step().lamps.lowFuel).toBe(false);
@@ -149,13 +149,13 @@ describe('R22 console', () => {
     expect(step().lamps.fullThrottle).toBe(false);
   });
 
-  it('sounds the steady low-RPM horn from the same contract condition as the lamp', () => {
+  it('mutes the steady low-RPM horn independently of the lamp at collective down', () => {
     const { s, c, step } = fixture();
     const x = { surface: 'runway' as const, speedOfSound: 340, turbulence: 0, gyroSpin: 0, flapMotor: 0 };
     const sound = () => fillSynthParams(s, c, x, makeParamBlock(), R22_PRESENTATION.audio)[P.horn];
-    s.rotorcraft!.lowRpm = true; s.rotorcraft!.lowRpmHorn = false;
-    expect(sound()).toBe(0); expect(step().lamps.lowRpm).toBe(false);
-    s.rotorcraft!.lowRpm = false; s.rotorcraft!.lowRpmHorn = true; s.ias = 0;
+    s.rotorcraft!.lowRpm = true; s.rotorcraft!.lowRpmLight = true; s.rotorcraft!.lowRpmHorn = false;
+    expect(sound()).toBe(0); expect(step().lamps.lowRpm).toBe(true);
+    s.rotorcraft!.lowRpm = true; s.rotorcraft!.lowRpmHorn = true; s.ias = 0;
     expect(sound()).toBe(1); expect(step().lamps.lowRpm).toBe(true);
     s.electrical.busVoltage = 0;
     expect(sound()).toBe(0); expect(step().lamps.lowRpm).toBe(false);

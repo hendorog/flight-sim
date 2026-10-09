@@ -199,7 +199,7 @@ export class SwitchPanel implements PanelComponent {
   sample(_r: InstrumentReadings, c: ControlInputs): boolean {
     const switches = this.row.switches;
     for (let i = 0; i < switches.length; i++) this.latch.set(i, switches[i].on(c) ? 1 : 0, 1);
-    this.latch.set(switches.length, c.starter ? 4 : c.magnetos, 1);
+    this.latch.set(switches.length, (this.ignition.kind === 'key' && this.ignition.prime ? c.fuelPrime : c.starter) ? 4 : c.magnetos, 1);
     this.latch.set(switches.length + 1, c.lights.panel, 0.01);
     return this.latch.take();
   }
@@ -253,7 +253,8 @@ export class SwitchPanel implements PanelComponent {
       g.beginPath();
       g.arc(kx, ky, 17, 0, Math.PI * 2);
       g.fill();
-      MAG_LABELS.forEach((t, i) => {
+      const labels = this.ignition.prime ? ['OFF', 'R', 'L', 'BOTH', 'PRIME'] : MAG_LABELS;
+      labels.forEach((t, i) => {
         const a = (MAG_ANGLES[i] * Math.PI) / 180;
         label(g, t, kx + Math.sin(a) * (i === 4 ? 44 : 38), ky - Math.cos(a) * 36, 7.5);
       });

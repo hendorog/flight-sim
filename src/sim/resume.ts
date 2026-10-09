@@ -143,6 +143,8 @@ function isSystems(v: unknown): v is SystemsSnapshot {
     if (!isObj(rotor)) return false;
     // Older schema-3 R22 saves predate the latched tail-contact report.
     if (rotor.tailContact === undefined) rotor.tailContact = 'none';
+    if (rotor.lowRpmLight === undefined) rotor.lowRpmLight = rotor.lowRpmHorn;
+    if (rotor.takeoffMass === undefined) rotor.takeoffMass = 0;
     if (!['none', 'stinger-touch', 'stinger-impact', 'fin-strike', 'rotor-strike'].includes(rotor.tailContact as string)) return false;
     for (const [key, value] of Object.entries(emptyRotorcraftState())) {
       if (key === 'tailContact') continue;
@@ -150,7 +152,7 @@ function isSystems(v: unknown): v is SystemsSnapshot {
     }
     if ((rotor.omega as number) < 0 || (rotor.rotorRpm as number) < 0 ||
       (rotor.clutchEngagement as number) < 0 || (rotor.clutchEngagement as number) > 1 ||
-      (rotor.takeoffPowerSeconds as number) < 0) return false;
+      (rotor.takeoffPowerSeconds as number) < 0 || (rotor.takeoffMass as number) < 0) return false;
   }
   const s = v.surfaces;
   if (!isObj(s) || !SURFACE_KEYS.every((k) => isNum(s[k]))) return false;
@@ -207,7 +209,9 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   const c = v.controls;
   if (!isObj(c) || !isObj(c.lights)) return null;
   if (c.collective !== undefined && (!isNum(c.collective) || c.collective < 0 || c.collective > 1)) return null;
-  for (const key of ['rotorGovernor', 'rotorClutch']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+  for (const key of ['rotorGovernor', 'rotorClutch', 'rotorDoorsOff', 'fuelPrime']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+  // A held key cannot survive a reload. It must not leave the pump priming unattended.
+  if (c.fuelPrime !== undefined) c.fuelPrime = false;
   if (isRotorcraftId(v.aircraft) && (!isObj(v.systems) || !isObj(v.systems.rotorcraft))) return null;
   for (const k of ['elevator', 'aileron', 'rudder', 'throttle', 'mixture', 'flaps', 'elevatorTrim', 'brakeLeft', 'brakeRight', 'magnetos', 'kollsmanHpa', 'headingBugDeg', 'obsDeg']) {
     if (!isNum(c[k])) return null;

@@ -269,7 +269,8 @@ function dialAngle(d: SingleDial, s: Pick<ScaleDef, 'min' | 'max'>, v: number): 
 function paintDial(g: Ctx2D, aperture: number, large: boolean, d: SingleDial, s: Omit<ScaleDef, 'read'>): void {
   const R = aperture - 3;
   const k = large ? aperture / SINGLE_ART_APERTURE : 1;
-  for (const b of s.arcs ?? []) arcBand(g, dialAngle(d, s, b.from), dialAngle(d, s, b.to), R, 5 * k, ARC_COLORS[b.color]);
+  for (const b of s.arcs ?? []) arcBand(g, dialAngle(d, s, b.from), dialAngle(d, s, b.to),
+    b.inner ? R - 6 * k : R, 5 * k, ARC_COLORS[b.color]);
   for (let v = s.min; v <= s.max + 1e-6; v += s.minorStep) tick(g, dialAngle(d, s, v), R - 5 * k, R, 1.1 * k);
   for (const v of s.majors) tick(g, dialAngle(d, s, v), R - 9 * k, R, 1.9 * k);
   for (const v of s.redLines ?? []) tick(g, dialAngle(d, s, v), R - 10 * k, R + 1, 2.6 * k, ARC_RED);

@@ -51,9 +51,9 @@ export const R44_POWERPLANT: PowerplantDef = {
     { id: 'aux', side: 'right', capacity: R44_FUEL_CAPACITY[1], position: { x: -2 * 0.0254, y: 13 * 0.0254, z: -0.1 } },
   ], feeds: [{ ...C172_POWERPLANT.fuel.feeds[0], positions: { on: [0, 1], both: [0, 1] },
     // Mechanical + electric pump, POH 7-10. Pressures/volumes are engineering estimates.
-    // Shared input still switches the electric pump manually; clutch/oil-pressure automation is absent.
+    // POH 7-10: PRIME or clutch ENGAGE with oil pressure. The 5 psi switch threshold is an ESTIMATE.
     lineCapacity: 0.225, lineUnusable: 0.0225,
-    enginePump: { psi: 25 }, auxPump: { psi: 25, minVolts: 18 },
+    enginePump: { psi: 25 }, auxPump: { psi: 25, minVolts: 18, automatic: { oilPressurePsi: 5 } },
     delivery: { kind: 'injector', capacity: 0.054, openPsi: 1, fullPsi: 4 },
     film: { fraction: 0.3, time: 0.35, cold: {
       temperatureC: [-20, 0, 15, 40, 70], fraction: [0.92, 0.86, 0.78, 0.6, 0.3],
@@ -62,5 +62,6 @@ export const R44_POWERPLANT: PowerplantDef = {
   }] },
   // POH 7-13: 28 V. Capacity, regulator, alternator and current loads remain estimates.
   electrical: { ...C172_POWERPLANT.electrical,
-    loads: { ...C172_POWERPLANT.electrical.loads, avionics: 4, fuelPump: 3 } },
+    lighting: { landingRequiresClutch: true, panelRequiresNav: true },
+    loads: { ...C172_POWERPLANT.electrical.loads, avionics: 4, fuelPump: 3, beacon: 0, taxi: 0 } },
 };

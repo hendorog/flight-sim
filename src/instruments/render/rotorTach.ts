@@ -51,7 +51,13 @@ export class RotorTachGauge extends RoundGauge {
         tick(g, a, radius - (major ? 8 : 4), radius + 1, major ? 1.4 : 0.8);
         if (major) centredText(g, String(v), Math.sin(a) * (radius - 17), -Math.cos(a) * (radius - 17), 8.5);
       }
-      if (rotor) for (const v of m.rotorRedLines) tick(g, this.angle(v, true), radius - 8, radius + 2, 2, ARC_COLORS.red);
+      for (const v of rotor ? m.rotorRedLines : m.engineRedLines ?? []) {
+        // The edge of the engine red stroke is the limit (POH 2-7 offset convention). Centre it
+        // outside the adjacent green arc so even a one-percent green range remains visible.
+        const green = !rotor && m.engineArcs.find(a => a.color === 'green' && (a.from === v || a.to === v));
+        const offset = green ? (green.from === v ? 1 : -1) / radius : 0;
+        tick(g, this.angle(v, rotor) + offset, radius - 8, radius + 2, 2, ARC_COLORS.red);
+      }
       g.restore();
     }
     centredText(g, 'E', -18, -57, 12);

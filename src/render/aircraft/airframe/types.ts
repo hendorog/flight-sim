@@ -212,8 +212,9 @@ export interface LampVisualDef {
   /** A lamp parented to a gear leg moves with it and is extinguished below extension 0.9. */
   parent?: 'rudder' | 'noseGear';
   aim?: { downDeg: number; outDeg: number; halfAngleDeg: number };
-  /** A second nose spot can share the landing-light switch. Default: the spot's id. */
-  circuit?: 'landing' | 'taxi';
+  /** Switch supplying this lamp; colour/beam/flash pattern still follows the lamp id. */
+  circuit?: 'nav' | 'beacon' | 'strobe' | 'landing' | 'taxi';
+  requiresClutch?: boolean;
 }
 
 /**
@@ -419,7 +420,9 @@ export interface RotorcraftVisualDef {
     /** Explicit support dimensions for a broad panel above a narrow pedestal; null omits the support. */
     pedestal?: { width: number; depth: number; forwardOffset: number; footWidth: number; footDepth: number } | null;
     /** Bus voltage at dark / fully powered. Defaults preserve the original 14 V installation. */
-    poweredVolts?: readonly [number, number]; enclosureDepth?: number };
+    poweredVolts?: readonly [number, number]; enclosureDepth?: number;
+    /** Constant cd/m² when the panel canvas performs per-circuit dimming; absent uses legacy dimming. */
+    emissiveLuminance?: number };
   cyclic?: { gripYs: readonly [number, number]; barTiltDeg: number; stem: readonly FRD[] };
   pedalZ?: number;
   /** Exposed piston detail is optional for a cowled installation. Cylinder positions are visual estimates. */

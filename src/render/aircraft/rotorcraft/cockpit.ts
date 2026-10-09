@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { AirframeVisualDef } from '../airframe/types';
 import { SCENE_UNITS_PER_LUX } from '../../../core/context';
 import type { ControlInputs } from '../../../core/types';
+import type { PanelDef } from '../../../instruments/panelDef';
 import { frd, MeshBatch } from '../geometry';
 import type { AircraftMaterials } from '../materials';
 import { box, pathTube, tube } from './geometry';
@@ -16,8 +17,10 @@ export class RotorcraftCockpit {
   readonly throttles: THREE.Group[] = [];
   readonly pedals: THREE.Group[] = [];
   readonly moving: THREE.Object3D[] = [];
+  private readonly dimmer = { value: 1 };
 
-  constructor(private readonly def: AirframeVisualDef, mat: AircraftMaterials, floor: THREE.BufferGeometry) {
+  constructor(private readonly def: AirframeVisualDef, mat: AircraftMaterials, floor: THREE.BufferGeometry,
+    private readonly panelDef?: PanelDef) {
     const d = def.rotorcraftVisual!;
     this.group.name = 'rotorcraftCockpit';
     const fixed = new MeshBatch();
@@ -35,9 +38,21 @@ export class RotorcraftCockpit {
     shell.translate(0, 0, -depth);
     const housing = new THREE.Mesh(shell, mat.glareshield); housing.name = 'consoleHousing';
     housing.castShadow = housing.receiveShadow = true; pod.add(housing);
-    // A narrow rubber rim stands proud of the face. Rounded joints follow the same outline as the UVs.
+    // Round each polygon corner locally. A spline through this sparse outline bows across the long
+    // pedestal edges and can cover switches even though their canvas positions are inside the face.
     const rimPoints = points.map(q => new THREE.Vector3(q.x, q.y, 0.003));
-    const rim = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPoints, true, 'centripetal'), 160, 0.007, 8, true), mat.glareshield);
+    const corners = rimPoints.map((q, i) => {
+      const prev = rimPoints[(i + rimPoints.length - 1) % rimPoints.length], next = rimPoints[(i + 1) % rimPoints.length];
+      const radius = Math.min(0.006, q.distanceTo(prev) / 4, q.distanceTo(next) / 4);
+      return { q, start: q.clone().addScaledVector(prev.clone().sub(q).normalize(), radius),
+        end: q.clone().addScaledVector(next.clone().sub(q).normalize(), radius) };
+    });
+    const rimPath = new THREE.CurvePath<THREE.Vector3>();
+    corners.forEach((c, i) => {
+      rimPath.add(new THREE.QuadraticBezierCurve3(c.start, c.q, c.end));
+      rimPath.add(new THREE.LineCurve3(c.end, corners[(i + 1) % corners.length].start));
+    });
+    const rim = new THREE.Mesh(new THREE.TubeGeometry(rimPath, 240, 0.007, 8, true), mat.glareshield);
     rim.name = 'consoleRim'; rim.castShadow = true; pod.add(rim);
     const face = new THREE.ShapeGeometry(shape);
     const pos = face.getAttribute('position'), uv = face.getAttribute('uv');
@@ -46,11 +61,13 @@ export class RotorcraftCockpit {
     // Match the aeroplane panel shader: suppress near-black paint in the dedicated emissive texture.
     // A plain emissive map lights the whole dial face at night exposure, washing out its markings.
     this.panel.material.onBeforeCompile = shader => {
-      shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `
+      shader.uniforms.cockpitPanelDimmer = this.dimmer;
+      shader.fragmentShader = 'uniform float cockpitPanelDimmer;\n' + shader.fragmentShader.replace('#include <emissivemap_fragment>', `
 #ifdef USE_EMISSIVEMAP
   vec4 emissiveColor = texture2D( emissiveMap, vEmissiveMapUv );
   float emissivePeak = max( emissiveColor.r, max( emissiveColor.g, emissiveColor.b ) );
-  totalEmissiveRadiance *= emissiveColor.rgb * smoothstep( 0.006, 0.03, emissivePeak );
+  float circuitLevel = emissiveColor.a < 0.75 ? cockpitPanelDimmer : 1.0;
+  totalEmissiveRadiance *= emissiveColor.rgb * smoothstep( 0.006, 0.03, emissivePeak ) * circuitLevel;
 #endif`);
     };
     this.panel.material.customProgramCacheKey = () => 'rotorcraftPanelBacklight';
@@ -147,7 +164,9 @@ export class RotorcraftCockpit {
     // Use the same luminance scale as the aeroplane panels: markings 2–20 cd/m², displays 20–200.
     const [dead, full] = this.def.rotorcraftVisual!.panel.poweredVolts ?? [10, 12];
     const power = Math.min(1, Math.max(0, (busVoltage - dead) / (full - dead)));
-    this.panel.material.emissive.setScalar(power * (20 + 180 * c.lights.panel) * SCENE_UNITS_PER_LUX * emissiveScale);
+    this.dimmer.value = this.panelDef?.lightingDimmerExponent === undefined ? 1
+      : Math.max(0, Math.min(1, c.lights.panel)) ** this.panelDef.lightingDimmerExponent;
+    this.panel.material.emissive.setScalar(power * (this.def.rotorcraftVisual!.panel.emissiveLuminance ?? (20 + 180 * c.lights.panel)) * SCENE_UNITS_PER_LUX * emissiveScale);
   }
 
   dispose(): void { this.panel.material.dispose(); }

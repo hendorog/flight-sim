@@ -1,5 +1,7 @@
 # R44 Raven II exterior and cockpit
 
+This is the original exterior worker report. The later [shared integration report](r44-integration.md) records the production renderer connection, sourced stabiliser/guard correction, light wiring and merged cockpit checks.
+
 This work is **not release acceptance**. The data-driven exterior is available on the ordinary R44 development/simulator pages. The detailed R44 assembly is implemented and tested in `exterior.ts`, but needs the supervisor-owned renderer connection described below. The frozen horizontal-stabiliser position also needs coordinated correction. The chooser and all aircraft/UI placeholder flags remain unchanged.
 
 ## Files and behaviour

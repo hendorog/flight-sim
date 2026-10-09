@@ -2,6 +2,7 @@
 // rotors and helicopter controls live in rotorcraft/. Render geometry never reads aerodynamic hub offsets.
 import * as THREE from 'three';
 import type { SimContext } from '../../core/context';
+import type { PanelDef } from '../../instruments/panelDef';
 import type { AirframeVisualDef } from './airframe/types';
 import { buildFuselage, cabinFloorGeometry, createFuselageShapes } from './fuselage';
 import { frd } from './geometry';
@@ -30,7 +31,7 @@ export class RotorcraftVisual {
   private quality: string;
 
   constructor(private readonly def: AirframeVisualDef, ctx: SimContext,
-    private readonly options: { lightScale: number; panelEmissiveScale: number; interiorLodDistance: number }) {
+    private readonly options: { lightScale: number; panelEmissiveScale: number; interiorLodDistance: number; panelDef?: PanelDef }) {
     const d = def.rotorcraftVisual;
     if (!d) throw new Error('Rotorcraft airframe has no visual geometry');
     this.root.name = 'rotorcraft';
@@ -42,7 +43,7 @@ export class RotorcraftVisual {
     this.root.add(fuselage.skin, fuselage.glass, fuselage.fittings);
     this.fittings = buildRotorcraftAirframe(def, mat, shapes.outer); this.root.add(this.fittings.group);
     const floor = def.cockpit.floor;
-    this.cockpit = new RotorcraftCockpit(def, mat, cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1));
+    this.cockpit = new RotorcraftCockpit(def, mat, cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1), options.panelDef);
     this.cockpit.group.add(fuselage.lining); this.root.add(this.cockpit.group);
     this.panel = this.cockpit.panel;
     this.occupants = buildOccupants(def.cockpit, true); if (this.occupants) this.cockpit.group.add(this.occupants.group);
