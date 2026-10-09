@@ -11,7 +11,7 @@ export const R22_DEMOS = ['startup', 'hover', 'approach', 'autorotation', 'circu
 export type R22DemoId = typeof R22_DEMOS[number];
 export const DEMO_TITLES: Record<R22DemoId, string> = {
   startup: 'Cold start to hover', hover: 'Hover to cruise', approach: 'Approach and landing',
-  autorotation: 'Autorotation · known landing gap', circuit: 'Full cold-start circuit',
+  autorotation: 'Autorotation · rotor RPM gap', circuit: 'Full cold-start circuit',
 };
 export function isR22Demo(value: string | null): value is R22DemoId {
   return R22_DEMOS.includes(value as R22DemoId);
@@ -25,7 +25,8 @@ export const PHASE_ACTIONS: Record<string, string> = {
   cruise: 'Holding cruise', descend: 'Reducing speed and collective',
   approach: 'Decelerating and descending to the hover', land: 'Lowering collective for a vertical landing',
   autorotate: 'Power off; collective low; holding 65 KIAS', flare: '60 ft flare: following a decreasing sink schedule with cyclic',
-  level: '8 ft: forward cyclic to level the helicopter', cushion: 'Sink rebuilding: progressively raising collective', park: 'Lowering collective after touchdown',
+  level: 'Continuing deceleration as sink returns', cushion: 'Raising collective; easing pitch as the ground closes',
+  slide: 'Controlling pitch through the skid slide', park: 'Lowering collective after stopping',
 };
 
 /** After contact, return weight to the skids before centring cyclic and pedals. */
@@ -101,7 +102,7 @@ export class R22Flight implements StepController {
     // Integer steps preserve the original tests' i * DT phase boundaries.
     this.time = ++this.steps * dt;
     if ((this.id === 'startup' && t >= 115) || (this.id === 'hover' && t >= 145) ||
-        this.landed && c.collective === 0 && t - this.landedAt > 5) this.outcome = 'complete';
+        this.landed && c.collective === 0 && s.groundSpeed < 0.1 && t - this.landedAt > 5) this.outcome = 'complete';
     const limit = this.id === 'circuit' ? 520 : this.id === 'autorotation' ? 90 : 160;
     if (this.flying && this.time >= limit) this.outcome = 'timeout';
   }
@@ -165,32 +166,38 @@ export class R22Flight implements StepController {
     // Start the hand movement with 0.6 s of visual height/sink anticipation, so the nose is already
     // rising near the owner's 60 ft cue. Waiting for 60 ft before moving hid the flare below 40 ft.
     if (this.phase === 'autorotate' && h + 0.6 * s.verticalSpeed < 60 * FT) {
-      this.phase = 'flare'; pilot.pitchRate = 6 * DEG; pilot.cyclicRate = 0.8; pilot.pitchLead = 0.5;
+      this.phase = 'flare'; pilot.pitchRate = 8 * DEG; pilot.cyclicRate = 0.8; pilot.pitchLead = 0.5;
     }
-    if (this.phase === 'flare' && h < 8 * FT) {
+    if (this.phase === 'flare' && h < 30 * FT && this.verticalAcceleration < -0.2) {
       this.phase = 'level'; pilot.pitchRate = 12 * DEG; pilot.pitchLead = 0.3; pilot.pitchDamping = 2;
     }
     // Do not wait for a fixed near-ground height: the loss of support is the cue to begin the pull.
     else if (this.phase === 'level' && this.verticalAcceleration < -0.2) this.phase = 'cushion';
     this.touch(t, s.onGround);
-    if (this.landed) { park(c, dt, 0.5); this.phase = 'park'; }
+    if (this.landed) { pilot.slide(dt, s, c); this.phase = s.groundSpeed < 0.5 ? 'park' : 'slide'; }
     else if (this.phase === 'autorotate') pilot.step(dt, s, c, 65, -1, undefined, clamp(0.04 + 0.02 * (rpm - 102), 0, 0.5), 1);
     else {
-      // Engineering schedule, not POH performance data: 1575 / 895 / 444 / 222 / 197 fpm down at
-      // 60 / 45 / 30 / 15 / 8 ft. Reduce sink early enough to allow deceleration, then keep descending
-      // instead of holding a large attitude until the helicopter balloons. Attitude follows sink error
-      // and its observed trend; 18 deg is a stop, not a target. Hand/attitude rates remain estimates.
+      // Engineering objectives, not POH performance data. Arrest the high entry sink progressively,
+      // then keep decelerating while descending. A level command at a fixed height threw away the
+      // last part of the flare. Ease the attitude with perceived speed and anticipated ground closure.
+      // This remains an unsuccessful energy-management demonstration: the slow landing spends too
+      // much rotor RPM and the late flare reaches ~30 degrees. The strict RPM acceptance stays failing.
       const portion = clamp((h - 8 * FT) / (52 * FT), 0, 1);
-      const targetVs = -1 - 7 * portion ** 2;
-      const targetAcceleration = -14 / (52 * FT) * portion * s.verticalSpeed;
+      const targetVs = this.phase === 'flare' ? -0.4 - 7.6 * portion ** 6 : -Math.min(2.5, 0.5 + h * 0.4);
+      const targetAcceleration = this.phase === 'flare' ? -45.6 / (52 * FT) * portion ** 5 * s.verticalSpeed : 0;
+      const landingPitch = Math.max(1, Math.min(30, 4 + (h + 0.6 * s.verticalSpeed) / FT * 2,
+        Math.max(2, 2 * (s.groundSpeed / KT - 4)))) * DEG;
       const pitch = this.phase === 'flare' ? clamp(pilot.pitchCommand +
-        (8 * (targetVs - s.verticalSpeed) + 3 * (targetAcceleration - this.verticalAcceleration)) * DEG * dt, -10 * DEG, 18 * DEG) : 0;
-      // Until cushioning, collective responds only to the tachometer: aim inside the 101–104% green
-      // arc (POH 2-8), allowing for proportional droop and the observed RPM trend. The light entry can
-      // remain below green with collective fully down. Cushion with sink/trend feedback, spending rotor
-      // energy before contact, with no mass, thrust, inflow or energy estimate available to the pilot.
-      const collective = this.phase !== 'cushion' ? clamp(0.08 * (rpm - 101.5) + 0.04 * this.rpmTrend, 0, 0.8) :
-        clamp((c.collective ?? 0) + (0.4 * (-0.8 - s.verticalSpeed) - 0.2 * this.verticalAcceleration) * dt, 0, 1);
+        (8 * (targetVs - s.verticalSpeed) + 3 * (targetAcceleration - this.verticalAcceleration)) * DEG * dt,
+        -10 * DEG, 24 * DEG) : landingPitch;
+      // Build some RPM reserve below 45 ft, and support an excessive entry sink while above 97%.
+      // There is no mass, thrust, inflow or rotor-energy estimate available to this pilot. Cushioning
+      // follows sink/trend cues; the resulting low RPM is recorded, never clamped or reset away.
+      const rpmTarget = 101.5 + 3.5 * clamp((45 * FT - h) / (15 * FT), 0, 1);
+      const entrySupport = h > 40 * FT && rpm > 97 && s.verticalSpeed < -4 ? 0.15 : 0;
+      const collective = this.phase !== 'cushion' ? Math.max(entrySupport,
+        clamp(0.08 * (rpm - rpmTarget) + 0.04 * this.rpmTrend, 0, 0.8)) :
+        clamp((c.collective ?? 0) + (0.4 * (targetVs - s.verticalSpeed) - 0.2 * this.verticalAcceleration) * dt, 0, 1);
       pilot.step(dt, s, c, 0, targetVs, pitch, collective, 0.5);
     }
     this.lastRpm = rpm; this.lastVs = s.verticalSpeed;

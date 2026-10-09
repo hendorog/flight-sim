@@ -39,6 +39,13 @@ export class ScriptedPilot {
     this.pitchI = c.elevator; this.rollI = c.aileron; this.yawI = c.rudder;
     this.liftI = c.collective || 0.4; this.speedI = this.pitchCommand = s.pitch; this.driftI = s.roll;
   }
+  /** Keep flying the attitude during a run-on. A small nose-up demand anticipates the nose-down
+   * ground reaction, without retaining the airborne flare attitude or driving cyclic fully aft. */
+  slide(dt: number, s: PilotObservation, c: ControlInputs): void {
+    this.pitchLead = 0; this.pitchDamping = 2; this.pitchRate = 12 * DEG; this.cyclicRate = 0.8;
+    this.step(dt, s, c, 0, 0, DEG, c.collective, 0.12);
+    if (s.groundSpeed < 0.5) c.collective = Math.max(0, c.collective! - 0.2 * dt);
+  }
   step(dt: number, s: PilotObservation, c: ControlInputs, kias: number, verticalSpeed: number, pitch?: number, collective?: number, collectiveRate = 0.12): void {
 
     // Signed fore/aft velocity is essential at hover: an unsigned airspeed loop runs away backwards.

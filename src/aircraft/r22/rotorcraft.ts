@@ -45,5 +45,18 @@ export const R22_ROTORCRAFT: RotorcraftDefinition = {
   // Uniform coverage and the 16 m/s wake-skew scale remain approximations.
   fuselageWash: 1 + -MAIN_HUB.z / Math.hypot(MAIN_ROTOR_RADIUS, MAIN_HUB.z),
   skids: { halfTrack: SKID_HALF_TRACK, front: SKID_CONTACT_FRONT_X, rear: SKID_CONTACT_REAR_X, z: SKID_Z,
-    stiffness: 65000, damping: 2200, friction: 0.65, maxSink: 3.5 },
+    stiffness: 65000, damping: 2200, friction: 0.5, maxSink: 3.5,
+    // ESTIMATES, not measured R22 coefficients: smooth steel shoes slide along firm turf more readily
+    // than rubber tyres; broadside tubes plough soil. Dry paving has higher longitudinal drag.
+    // Static grip is separate so low sliding drag does not imply creep on a modest slope.
+    // See docs/r22-flight-model.md for assumptions and run-on/slope checks; no terrain snag model.
+    surfaces: {
+      grass: { static: 0.65, sliding: 0.2, lateral: 0.65 },
+      dirt: { static: 0.65, sliding: 0.25, lateral: 0.65 },
+      runway: { static: 0.6, sliding: 0.3, lateral: 0.3 },
+      taxiway: { static: 0.6, sliding: 0.3, lateral: 0.3 },
+      rock: { static: 0.6, sliding: 0.4, lateral: 0.5 },
+      snow: { static: 0.2, sliding: 0.08, lateral: 0.2 },
+      water: { static: 0, sliding: 0, lateral: 0 },
+    } },
 };

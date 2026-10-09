@@ -1,4 +1,5 @@
 import type { Vec3 } from '../../core/math';
+import type { SurfaceType } from '../../core/types';
 import type { ManifoldPlacard, SpeedPlacard } from './limits';
 
 /** SI units; rotor rotation is +1 about its upward thrust axis (CCW viewed from above). */
@@ -38,7 +39,9 @@ export interface RotorcraftDefinition {
   fuselageWash?: number;
   /** Aerodynamic drag application point relative to reference point. */
   dragCentre: Vec3;
-  skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number };
+  skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number;
+    /** Shoe/terrain contact, distinct from tyre coefficients. Lateral includes soil ploughing by the tube. */
+    surfaces?: Partial<Record<SurfaceType, { static: number; sliding: number; lateral: number }>> };
 }
 export interface RotorcraftState {
   omega: number; azimuth: number; inflow: number; tailInflow: number;

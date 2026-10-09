@@ -37,11 +37,7 @@ describe('live R22 flights through the app physics and scenery', () => {
     }
     log.touchdowns.push(...contacts);
     log.save(`live-${id}${gross ? '' : '-solo'}`);
-    if (id === 'autorotation') {
-      // Exercise the real terminal hold even when the known landing gap ends in impact.
-      // Strict RPM/sink/speed/damage acceptance remains in flights.test.ts, not inverted here.
-      expect(['complete', 'crashed']).toContain(flight.outcome);
-    } else expect({ outcome: flight.outcome, crashed: sim.state.crashed, phase: flight.phase }).toEqual({
+    expect({ outcome: flight.outcome, crashed: sim.state.crashed, phase: flight.phase }).toEqual({
       outcome: 'complete', crashed: false,
       phase: id === 'startup' ? 'hover' : id === 'hover' ? 'cruise' : 'park',
     });
@@ -60,6 +56,10 @@ describe('live R22 flights through the app physics and scenery', () => {
       expect(Number.isFinite(maxVs) && Number.isFinite(maxAltitudeGain)).toBe(true);
       expect(maxVs).toBeLessThanOrEqual(0);
       expect(maxAltitudeGain).toBeLessThanOrEqual(0);
+      expect(contacts[0].groundKts).toBeLessThan(10);
+      expect(contacts[0].sink).toBeLessThan(1.5);
+      expect(sim.state.groundSpeed).toBeLessThan(0.1);
+      expect(sim.controls.collective).toBe(0);
     } else if (id === 'startup') {
       expect(sim.state.altitudeAGL - R22_DEFINITION.rotorcraft!.skids.z).toBeCloseTo(3, 0);
       expect(sim.state.rotorcraft!.governorActive).toBe(true);

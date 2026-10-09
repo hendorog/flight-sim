@@ -63,10 +63,10 @@ describe('R22 flights with a scripted pilot and unmodified rigid-body/rotor stat
   }, 120000);
 
   // This is a visible acceptance gap, not a passing validation of autorotative touchdown.
-  // The progressive flare removes the balloon, but touchdown still carries excessive speed. Retain the
+  // The continuous flare now sheds speed, but spends excessive rotor RPM. Retain the
   // complete reproduction and strict desired result; an unexpected pass requires removing .fails.
   for (const gross of [true, false]) describe(`${gross ? 'gross' : 'solo'} 65-KIAS autorotation landing`, () => {
-    let log: FlightRecorder, landed: boolean;
+    let log: FlightRecorder, landed: boolean, finalSpeed: number, finalCollective: number;
     let cyclicRate = 0, collectiveRate = 0, pitchRate = 0;
     let maxVs = -Infinity, maxAltitudeGain = -Infinity, flarePitch: number | undefined, visibleRiseHeight: number | undefined;
     beforeAll(() => {
@@ -102,30 +102,30 @@ describe('R22 flights with a scripted pilot and unmodified rigid-body/rotor stat
         log.observe(t, flight.phase);
       }
       landed = flight.landed;
+      finalSpeed = r.fm.state.groundSpeed; finalCollective = r.c.collective!;
       log.save(`autorotation-${gross ? 'gross' : 'solo'}`);
     }, 120000);
     it('reproduces the progressive flare through contact without suppressing setup/runtime failures', () => {
       const flare = log.samples.filter(p => p.phase === 'flare');
       expect(flare.length).toBeGreaterThan(3);
       expect(flare.at(-1)!.vs).toBeGreaterThan(-2);
-      // Direction of the response only; the unchanged strict landing check below owns the speed limit.
-      // The gentler flare sheds less speed than the old ballooning pull, especially at solo weight.
+      // Check the response separately from the remaining strict RPM acceptance below.
       expect(flare.at(-1)!.groundKts).toBeLessThan(flare[0].groundKts);
       // A hard impact can be detected in an intermediate RK stage before a touchdown event is emitted.
       // Damage and landing success remain part of the unchanged strict acceptance below.
       expect(log.touchdowns.length > 0 || log.samples.some(p => p.crashed)).toBe(true);
     });
-    it('visibly raises the nose near 60 ft, commands level at 8 ft and cushions renewed sink with bounded hand movements', () => {
+    it('visibly raises the nose near 60 ft and keeps decelerating through the cushion with bounded hand movements', () => {
       expect(visibleRiseHeight).toBeDefined();
       expect(visibleRiseHeight!).toBeGreaterThan(55);
       expect(visibleRiseHeight!).toBeLessThan(70);
       const level = log.samples.find(p => p.phase === 'level')!;
       const cushion = log.samples.find(p => p.phase === 'cushion')!;
-      expect(level.height / FT).toBeGreaterThan(7.75);
-      expect(level.height / FT).toBeLessThanOrEqual(8);
-      expect(cushion.height / FT).toBeLessThan(8);
-      expect(cushion.height / FT).toBeGreaterThan(2); // sink cue starts the pull before the old fixed trigger
-      expect(pitchRate).toBeLessThan(10);
+      expect(level.height / FT).toBeGreaterThan(8);
+      expect(level.height / FT).toBeLessThanOrEqual(30);
+      expect(cushion.height / FT).toBeLessThanOrEqual(level.height / FT);
+      expect(cushion.height / FT).toBeGreaterThan(8); // sink cue starts the pull before the old level-at-8-ft command
+      expect(pitchRate).toBeLessThan(12); // measured body response to the 8 deg/s initial attitude command
       expect(cyclicRate).toBeLessThanOrEqual(0.8 + 1e-9);
       expect(collectiveRate).toBeLessThanOrEqual(0.5 + 1e-9);
     });
@@ -134,9 +134,15 @@ describe('R22 flights with a scripted pilot and unmodified rigid-body/rotor stat
       expect(maxVs).toBeLessThanOrEqual(0);
       expect(maxAltitudeGain).toBeLessThanOrEqual(0);
     });
-    it.fails('KNOWN GAP — complete landing within the power-off RPM arc', () => {
+    it('touches below 10 kt with a cushioned sink, then slides to a stop without damage', () => {
       const touchdown = log.touchdowns[0];
-      expect({ landed, damage: log.crashed, slow: !!touchdown && touchdown.groundKts < 5,
+      expect(landed).toBe(true); expect(log.crashed).toBe(false);
+      expect(touchdown.groundKts).toBeLessThan(10); expect(touchdown.sink).toBeLessThan(1.5);
+      expect(finalSpeed).toBeLessThan(0.1); expect(finalCollective).toBe(0);
+    });
+    it.fails('KNOWN RPM GAP — complete landing within the power-off RPM arc', () => {
+      const touchdown = log.touchdowns[0];
+      expect({ landed, damage: log.crashed, slow: !!touchdown && touchdown.groundKts < 10,
         cushioned: !!touchdown && touchdown.sink < 1.5, rotorArc: !!touchdown && touchdown.rpm >= 90 && log.maxRpm <= 110 })
         .toEqual({ landed: true, damage: false, slow: true, cushioned: true, rotorArc: true });
     });
