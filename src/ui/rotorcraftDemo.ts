@@ -84,7 +84,7 @@ export class RotorcraftDemoUi {
     setText(this.controls, `COL ${((c.collective ?? 0) * 100).toFixed(0)}%  GRIP ${(c.throttle * 100).toFixed(0)}%  CYCLIC aft ${c.elevator.toFixed(2)} right ${c.aileron.toFixed(2)}  PEDAL ${c.rudder.toFixed(2)}`);
     const tail = s.rotorcraft?.tailContact;
     setText(this.note, tail && tail !== 'none' ? `Tail contact: ${tail.replaceAll('-', ' ')}. ${s.crashReason || 'Stinger touched; inspect the tail.'}` :
-      f.id === 'autorotation' ? 'Flare, forward push to level the skids, then active cyclic through the slide. Landing acceptance still fails: rotor RPM falls below 90%. Entry starts with collective down and mixture cut.' : 'Scripted engineering flight · calm air · maximum gross loading');
+      f.id === 'autorotation' ? 'Round-4 baseline: 60 ft flare, forward push, then skid slide. Touchdown RPM remains below 90%. The requested 40 ft collective-down flare is not validated; see the round-5 flight-model report.' : 'Scripted engineering flight · calm air · maximum gross loading');
     if (this.details.open && this.lastSample !== f.samples.length) {
       this.draw(f.samples); this.lastSample = f.samples.length;
     }

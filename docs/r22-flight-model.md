@@ -1,7 +1,8 @@
 # R22 Beta II flight model
 
-Round 4 audits energy before and after physical corrections, adds tail-stinger/fin contacts, and levels
-skids before touchdown. **Autorotative landing remains unvalidated:** both weights touch below 10 kt
+Round 5 did **not** produce an acceptable 40 ft, collective-down autorotation landing. The rejected
+pilots and measurements are recorded below; the application retains the round-4 pilot. Round 4 audited
+energy, added tail-stinger/fin contacts, and levelled skids before touchdown. **Autorotative landing remains unvalidated:** both weights touch below 10 kt
 without damage or tail contact, but rotor RPM is still below 90%. The two complete-landing expected
 failures remain. The recorded early flare loses energy; no excess-energy source was found.
 This is an experimental, reduced-order model, not a validated flight-training procedure.
@@ -756,9 +757,217 @@ produced); its console evaluation did confirm `demo: null` and no crash. That fa
 not counted as visual verification. The successful C152 exterior capture and full suite are the
 regression evidence. All screenshots, downloads, pilot trials, traces and plots remain ignored in `work/`.
 
+## Round 5: 40 ft flare investigation — unresolved
+
+**The requested flight has not been reproduced at both weights. No new pilot was installed and neither
+expected-failure test was promoted.** A conservative 40 ft trial preserved RPM, kept descending, avoided
+tail contact and cushioned touchdown, but touched at about **48–50 kt**. More aggressive trials reduced
+speed at the cost of a balloon, excessive attitude, tail contact or a longer flare. This is not evidence
+that a real R22 cannot perform the manoeuvre, or proof that this flight model makes it impossible.
+The remaining cause has not been isolated sufficiently to justify a physical correction.
+
+The production `src/sim/rotorcraft/` files, physics, shared geometry and all acceptance limits remain at
+round 4. The caption now explicitly identifies that retained **60 ft** baseline and its failed touchdown
+RPM criterion. The alternative pilots and review-only `rejected-40ft.patch` live in ignored `work/flare-r5/`; they are diagnostic attempts,
+not a replacement demonstration. In particular, there is no new hidden early collective support or new
+rotor inertia, drag, inflow or stability calibration in the application.
+
+### Procedure, pilot attempts and evidence limits
+
+The [complete Robinson POH](https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_full_book_b79e920713.pdf)
+was obtained again. Printed section 3-2 specifies approximately 65 KIAS, RPM management, cyclic flare near
+40 ft, forward cyclic near 8 ft, and collective just before touchdown. Sections 2-2/2-8 distinguish the
+90–110% power-off limits from the green arc; being below 110% is not proof of remaining green. The supplied
+section-1 URL contains general data, not the emergency procedure. All reported runs use calm air; the
+reference video's wind and timing were not available, so no headwind was added to reduce touchdown GS.
+
+The conservative comparison pilot (`candidate-flights.ts`) retains the old 8°/s initial pitch-command
+rate and 0.8/s cyclic travel limit. Visual height/sink anticipation begins hand movement 0.6 s before the
+40 ft cue. Forward cyclic anticipates 8 ft by 0.5 s of observed closure, with cyclic limited to 1.2/s.
+Collective follows only observed RPM and its 0.3 s filtered trend until the final cushion, which anticipates
+3 ft by 0.4 s of closure. Collective travel remains limited to 0.5/s during flare and 0.8/s thereafter.
+There is **no sink-based collective floor**. The RPM guard targets 103.5%, but overshoots to 106.55% gross /
+104.88% solo in the app: it also fails the requested all-green behaviour. Its hand limits, gains and
+anticipation times are estimates. The pilot reads only the existing observations and changes controls;
+no mass, force, rotor-energy estimate or state reset is used during flight.
+
+The trials exposed a control interaction: aft cyclic accelerates the rotor; RPM-protection collective
+then increases thrust and arrests sink, while the sink controller can command the nose back down.
+When that collective is lowered again, support falls before aft attitude has rebuilt. Attempts to
+coordinate the two hand movements, limit pitch reversals, anticipate decreasing speed and change the
+forward-push timing did not remove the speed/balloon/tail-clearance tradeoff at both weights. Some trials
+used faster cyclic and pitch rates; those are not claimed to match the owner's observed initial flare.
+
+Representative rejected runs remain available, rather than being counted as successes:
+
+- `down1-*`: original slow initial pitch response with a higher RPM guard; contact remained above 56 kt.
+- `down2-*`: faster fixed pitch demand; gross peaked at 34.55°, developed +8.67 m/s climb, exceeded 114% NR
+  and hit the stinger. Solo also ballooned and hit the stinger.
+- `openloop-*`: no collective during flare; gross reached 122.13% NR and +0.13 m/s VS before an 18.46 kt
+  contact. This isolates cyclic response but is not an acceptable landing or RPM-management policy.
+- `monotone2-*`: smoother progressive nose rise; gross touched at 24.14 kt / 2.00 m/s skid sink; solo at
+  19.18 kt and had +0.88 m/s airborne VS. Both fail the requested outcome.
+- `margin2-*`: solo approached the speed target (10.80 kt, 90.24% NR), but touched at 10.45° and had a
+  +0.33 m/s balloon; gross still touched at 51.99 kt. A favourable result at one weight is insufficient.
+
+### Controlled rotor response and force audit
+
+`response.test.ts` first establishes a 60 KIAS autorotation for 35 s at altitude, then commands a 16°
+pitch increase over 2 s through the same rate-limited cyclic. One run holds the established low collective;
+a paired run permits only the RPM guard. Both start from the same state. These are diagnostic response
+runs, not landing tests; the aircraft remains free to accelerate, descend, climb and change rotor RPM.
+
+| Held low collective | Gross: entry → 2 s | Solo: entry → 2 s |
+|---|---:|---:|
+| Body pitch, ° | −5.89 → +7.75 | −5.03 → +8.70 |
+| Main thrust, kN | 5.98 → 7.91 | 4.89 → 6.56 |
+| Rotor RPM, % | 103.16 → 108.90 | 99.43 → 104.52 |
+| Ground speed, kt | 58.66 → 53.96 | 58.75 → 54.14 |
+| Vertical speed, m/s | −7.81 → −4.44 | −7.98 → −4.31 |
+| Collective, % | 6.31, held | 0, held |
+
+Cyclic alone does increase thrust and reduce sink, but this initial attitude change removes only about
+4.7 kt in the first 2 s. At 4 s the held-collective cases are still approximately 43 kt. The gross rotor
+passes 110%. With the guard, gross thrust at 2 s is **8.79 kN**, collective **24.6%**, VS **−1.44 m/s**,
+and GS **53.08 kt**; its maximum airborne VS later becomes positive. Solo guard values at 2 s are
+**8.16 kN**, **18.4%**, **−2.86 m/s** and **53.70 kt**. Thus a pull justified by RPM protection can still
+make a substantial contribution to sink arrest; labelling it a guard does not make that lift disappear.
+
+At 2 s in the held-collective gross case, main thrust does **−77.31 kW** of work on the airframe and main
+shaft power is **+22.83 kW** into the rotor. Main H-force work is only **−0.71 kW**, fuselage work **−6.42 kW**
+and stabiliser work **−0.44 kW**. Corresponding solo values are −61.49, +19.50, −0.70, −6.50 and −0.47 kW.
+The work signs and magnitudes do not identify a missing large H-force or stabiliser energy term. The
+round-4 blade-element and whole-aircraft energy identities remain unchanged. These findings constrain
+the diagnosis; they do **not** independently validate the estimated transient rotor aerodynamics,
+body/rotor inertias or the pilot's handling. No coefficient change was supported by the evidence.
+
+### Height tables and duration comparison
+
+All tables below describe the **rejected conservative trial**, not the retained live demo. Samples are
+at 240 Hz, using the first descending crossing of the requested nominal skid-height readout. Tail clearance
+is the shared stinger geometry's clearance above local terrain; the fin/rotor contact checks remain active.
+VS is body vertical speed; touchdown sink quoted below is the contact-point sink recorded by the skids.
+IAS includes vertical motion; GS is horizontal speed. Collective is normalized control travel in percent.
+
+**Sea-level ISA, gross, 621.42 kg — rejected**
+
+| Height, ft | Pitch, ° | IAS, kt | GS, kt | VS, fpm | Rotor, % | Collective, % | Stinger, m |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 40 | -4.5 | 65.2 | 63.3 | -1580 | 104.0 | 9.5 | 13.40 |
+| 30 | -0.5 | 64.0 | 62.7 | -1297 | 105.2 | 23.8 | 10.01 |
+| 20 | +6.1 | 60.2 | 60.0 | -508 | 106.5 | 30.0 | 6.43 |
+| 10 | +8.4 | 52.7 | 52.6 | -428 | 104.3 | 6.4 | 3.20 |
+| 8 | +7.9 | 51.8 | 51.6 | -451 | 104.1 | 2.9 | 2.62 |
+| 3 | +1.1 | 49.9 | 49.7 | -417 | 103.2 | 29.7 | 1.66 |
+| Touchdown | +3.0 | 48.3 | 48.3 | -181 | 99.7 | 27.4 | 0.66 |
+
+Contact: **48.31 kt GS**, **0.844 m/s** skid sink, **99.72% NR**. Maximum flare-through-contact VS **-0.815 m/s**; tail report `none`, no modelled damage, final GS **0.0682 kt**, collective **0**. This fast run-on fails the landing-speed requirement.
+
+**Sea-level ISA, solo, 512.06 kg — rejected**
+
+| Height, ft | Pitch, ° | IAS, kt | GS, kt | VS, fpm | Rotor, % | Collective, % | Stinger, m |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 40 | -3.3 | 65.2 | 63.4 | -1569 | 100.2 | 0.0 | 13.28 |
+| 30 | -0.1 | 64.4 | 62.8 | -1435 | 101.2 | 0.0 | 9.99 |
+| 20 | +3.7 | 62.5 | 61.4 | -1137 | 103.0 | 11.0 | 6.62 |
+| 10 | +5.7 | 54.2 | 54.2 | -174 | 103.3 | 0.0 | 3.43 |
+| 8 | +5.2 | 52.9 | 52.8 | -321 | 101.9 | 0.0 | 2.85 |
+| 3 | +2.2 | 51.3 | 51.2 | -340 | 99.7 | 23.7 | 1.58 |
+| Touchdown | +2.5 | 50.0 | 49.9 | -184 | 96.2 | 20.1 | 0.71 |
+
+Contact: **49.92 kt GS**, **0.906 m/s** skid sink, **96.16% NR**. Maximum flare-through-contact VS **-0.556 m/s**; tail report `none`, no modelled damage, final GS **0.0849 kt**, collective **0**. This fast run-on fails the landing-speed requirement.
+
+**App terrain and atmosphere, gross, 621.42 kg — rejected**
+
+| Height, ft | Pitch, ° | IAS, kt | GS, kt | VS, fpm | Rotor, % | Collective, % | Stinger, m |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 40 | -4.3 | 64.7 | 63.3 | -1557 | 104.2 | 11.3 | 13.37 |
+| 30 | -0.2 | 63.5 | 62.7 | -1265 | 105.4 | 24.7 | 10.00 |
+| 20 | +6.5 | 59.6 | 59.8 | -457 | 106.5 | 29.3 | 6.40 |
+| 10 | +8.9 | 52.0 | 52.1 | -409 | 104.4 | 8.2 | 3.16 |
+| 8 | +8.0 | 51.0 | 51.1 | -430 | 104.2 | 3.5 | 2.61 |
+| 3 | +0.7 | 49.2 | 49.3 | -426 | 103.2 | 30.0 | 1.70 |
+| Touchdown | +3.3 | 47.7 | 47.9 | -179 | 99.7 | 29.1 | 0.64 |
+
+Contact: **47.92 kt GS**, **0.823 m/s** skid sink, **99.66% NR**. Maximum flare-through-contact VS **-0.794 m/s**; tail report `none`, no modelled damage, final GS **0.0595 kt**, collective **0**. This fast run-on fails the landing-speed requirement.
+
+**App terrain and atmosphere, solo, 512.06 kg — rejected**
+
+| Height, ft | Pitch, ° | IAS, kt | GS, kt | VS, fpm | Rotor, % | Collective, % | Stinger, m |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 40 | -3.3 | 64.8 | 63.4 | -1571 | 100.7 | 0.0 | 13.28 |
+| 30 | -0.1 | 64.0 | 62.8 | -1442 | 101.6 | 0.0 | 9.98 |
+| 20 | +3.8 | 62.0 | 61.4 | -1101 | 103.5 | 15.2 | 6.62 |
+| 10 | +5.2 | 53.7 | 54.0 | -222 | 103.1 | 0.0 | 3.47 |
+| 8 | +5.9 | 52.6 | 52.8 | -345 | 102.0 | 0.0 | 2.80 |
+| 3 | +2.3 | 50.9 | 51.1 | -339 | 100.0 | 23.2 | 1.57 |
+| Touchdown | +2.5 | 49.7 | 50.0 | -188 | 96.8 | 20.7 | 0.71 |
+
+Contact: **49.97 kt GS**, **0.959 m/s** skid sink, **96.75% NR**. Maximum flare-through-contact VS **-0.605 m/s**; tail report `none`, no modelled damage, final GS **0.0831 kt**, collective **0**. This fast run-on fails the landing-speed requirement.
+
+For the duration comparison, **level means the first |pitch| ≤5° after the peak and after the forward-push
+phase begins**. This is an operational measurement convention, not a claim that 5° is exactly level.
+The separate forward-push heights are provided so the phase name is not mistaken for completed levelling.
+Round-4 solo peak pitch was about 34.93°, rather than its lower 33° value sampled at 15 ft.
+
+| Environment / weight | Peak pitch, round 4 → trial | 40 ft → level, s | Level → touchdown, s |
+|---|---:|---:|---:|
+| Sea level / gross | 34.13° → 8.67° | 6.150 → 3.533 | 0.237 → 0.996 |
+| Sea level / solo | 34.93° → 10.17° | 7.121 → 2.917 | 0.458 → 1.404 |
+| App / gross | 33.96° → 9.16° | 6.050 → 3.608 | 0.237 → 1.008 |
+| App / solo | 34.91° → 9.90° | 7.079 → 3.087 | 0.462 → 1.204 |
+
+At sea level the trial's forward-push phase starts at **11.57/9.62 ft**, gross/solo; pitch reaches the
+≤5° criterion at **6.27/7.68 ft**. The corresponding round-4 phase began at 26.48/29.98 ft, even though
+the aircraft was still increasing pitch later. The shorter trial therefore does not achieve the desired
+shorter *successful* flare: it simply removes far less speed. `summary.json` contains both phase-based
+and attitude-based durations, and `height-tables.md` includes the round-4 comparison rows.
+
+### Verification, reproduction and remaining work
+
+The production controller was restored before regression testing. The full suite validates that retained
+round-4 behaviour and the airplanes; it must not be interpreted as validation of the rejected 40 ft trial.
+All no-climb, tail-contact, speed, sink, attitude and RPM assertions remain unchanged.
+
+`npx tsc --noEmit` is clean. `npx vitest run --maxWorkers=4` finished in **346.14 s** with
+**2,697 passed, two expected failures and 221 skipped**, across **190 passed / four skipped files**.
+There are no ordinary failures, including the rotorcraft energy, trim, hover, steady autorotation,
+powered flights, circuit and airplane regressions. The two expected failures remain the existing gross
+and solo touchdown-RPM gaps. Logs: `work/flare-r5/typecheck.log` and `work/flare-r5/full-suite.log`.
+The C152 app capture completed with `demo: null`, `crashed: false` and its normal cockpit displayed.
+
+The scratch response/app harness completed six diagnostic cases without setup/runtime failure. Those
+are data-generating cases, not six successful autorotations. The requested flight remains unresolved.
+The next useful evidence is the reference video's timing/wind and measured transient R22 pitch/thrust/RPM
+response, followed by a pilot/rotor-response diagnosis that satisfies both weights. This investigation
+has not justified retuning rotor inertia, polars, H-force, fuselage drag or stabiliser download.
+
+Reproduction from this worktree (scratch files intentionally remain untracked):
+
+```bash
+AUDIT_TAG=candidate npx vitest run --config work/flare-r5/vitest.config.ts work/flare-r5/audit.test.ts work/flare-r5/appAudit.test.ts work/flare-r5/response.test.ts --maxWorkers=2
+python3 work/flare-r5/summarize.py
+MPLCONFIGDIR=/tmp/r22-matplotlib python3 work/flare-r5/plot.py
+node work/flare-r5/capture.mjs
+```
+
+The captured trial is explicitly labelled **rejected** by the diagnostic harness. Production state and
+controls are advanced normally; the harness changes only the diagnostic label and which scripted pilot
+owns the controls. Force traces are `candidate-{landing,app}-{gross,solo}.json`, controlled responses are
+`response-{held,rpm-guard}-{gross,solo}.json`, and inspected plots are `comparison.png` and `response.png`.
+The 1600×900 captures include both weights at 40/20/8/3 ft, contact and stopped, in cockpit or side views;
+exact states are in `captures.json`. `retained-demo-caption.png` verifies the actual updated caption on
+the retained round-4 flight at 49.7 s, with the RPM deficit still visible. The C152 app check is
+`c152-regression.png` and `c152-capture.log`.
+All paths in this paragraph are beneath `work/flare-r5/`.
+
+Only `docs/r22-flight-model.md` and the explicitly permitted caption `src/ui/rotorcraftDemo.ts` have tracked
+changes in round 5. Both are outside the shared-pilot module but were requested by the brief. No shared
+contract, airplane, physics, test threshold or production pilot changed. All changes remain **uncommitted**.
+
 ## Remaining work
 
-1. Resolve both autorotative-landing expected failures: preserve ≥90% NR while touching below 10 kt,
+1. Resolve both autorotative-landing expected failures with the requested 40 ft, collective-down flare: preserve ≥90% NR while touching below 10 kt,
    <1.5 m/s and with a near-level attitude. The round-4 touchdown meets speed/sink/no-climb/no-tail-contact and near-level attitude checks,
    but still spends too much RPM. The energy audit found no large artificial source. Obtain measured
    rotor inertia/polars and transient handling evidence before changing those estimates; also validate
