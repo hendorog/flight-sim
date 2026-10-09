@@ -1,6 +1,7 @@
 // POH 2-9 placards, transcribed from the downloaded figure. See docs/r44-sources.md.
-import { FT } from '../../core/math';
+import { FT, LB, clamp } from '../../core/math';
 import type { ManifoldPlacard, SpeedPlacard } from '../../physics/rotorcraft/limits';
+import { placardMap, placardVne } from '../../physics/rotorcraft/limits';
 export const R44_ROTOR_LIMITS = { powerOn: [101, 102], powerOff: [90, 108], lowWarning: 97 } as const;
 export const R44_MAP: ManifoldPlacard = {
   altitudeStep: 2000 * FT, temperatureMin: 243.15, temperatureStep: 10, takeoffIncrease: 2.8,
@@ -14,7 +15,7 @@ export const R44_MAP: ManifoldPlacard = {
     [null, null, null, null, null, null, null, null],
   ],
 };
-/** Base grid for TOGW ≤2200 lb. PLACEHOLDER: weight/power-off/doors-off corrections not yet applied. */
+/** Base grid for TOGW ≤2200 lb. Use r44Vne for configuration corrections. Shared HUD wiring is pending. */
 export const R44_VNE: SpeedPlacard = {
   altitudeStep: 2000 * FT, temperatureMin: 243.15, temperatureStep: 10,
   kias: [
@@ -28,3 +29,40 @@ export const R44_VNE: SpeedPlacard = {
     [95, 89, 0, 0, 0, 0, 0, 0],
   ],
 };
+
+/** POH 2-1/2-9. TOGW is departure weight, not current fuel-burned mass. SI arguments, result KIAS.
+ * Autorotation subtracts 30 from the base grid (100 at SL), superseding the powered 10-kt correction.
+ * Doors removed and power above MCP are separate 100 KIAS caps, not altitude-grid offsets. */
+export function r44Vne(altitude: number, temperature: number, configuration: {
+  takeoffMass: number; powerOff?: boolean; aboveMcp?: boolean; doorsOff?: boolean;
+}): number {
+  const base = placardVne(R44_VNE, altitude, temperature);
+  if (base === 0) return 0;
+  const correction = configuration.powerOff ? 30 : configuration.takeoffMass > 2200 * LB ? 10 : 0;
+  return Math.max(0, Math.min(base - correction, configuration.aboveMcp || configuration.doorsOff ? 100 : Infinity));
+}
+
+/** POH 2-9 MCP, inHg. Full-throttle cells are unbounded, not a numerical MAP requirement.
+ * At mixed finite/full-throttle corners use the common interpolator's finite altitude trend. */
+export function r44Map(altitude: number, temperature: number): number {
+  const rows = R44_MAP.continuous.length - 1, cols = R44_MAP.continuous[0].length - 1;
+  const row = clamp(altitude / R44_MAP.altitudeStep, 0, rows);
+  const col = clamp((temperature - R44_MAP.temperatureMin) / R44_MAP.temperatureStep, 0, cols);
+  const i = Math.min(rows - 1, Math.floor(row)), j = Math.min(cols - 1, Math.floor(col));
+  const a = row - i, b = col - j;
+  if ([[i, j, (1-a)*(1-b)], [i+1, j, a*(1-b)], [i, j+1, (1-a)*b], [i+1, j+1, a*b]]
+    .every(([r, c, w]) => w < 1e-10 || R44_MAP.continuous[r][c] === null)) return Infinity;
+  return placardMap(R44_MAP, altitude, temperature);
+}
+
+/** POH 2-3/2-4, 21 Feb 2014. Longitudinal stations/lateral arms are inches; mass input kg. */
+export function r44CgLimits(mass: number, station: number) {
+  const lb = mass / LB;
+  return {
+    weightAllowed: lb >= 1600 && lb <= 2500,
+    forward: 92 + clamp((lb - 2300) / 200, 0, 1),
+    aft: 102.5 - 4.5 * clamp((lb - 2100) / 400, 0, 1),
+    lateral: 3 - 1.5 * clamp((station - 100) / 2.5, 0, 1),
+  };
+}
+export const R44_LOADING_LIMITS = { minimum: 1600 * LB, seatAndBaggage: 300 * LB, baggage: 50 * LB } as const;
