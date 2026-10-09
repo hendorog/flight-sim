@@ -2,7 +2,7 @@ import { clamp, smoothstep } from '../../core/math';
 import type { RotorDefinition } from './definition';
 
 export interface RotorLoads { thrust: number; torque: number; inPlane: number; stalledFraction: number;
-  coningMoment: number; stallMoment: number }
+  coningMoment: number; stallMoment: number; profilePower: number }
 /** Azimuth-averaged blade elements, including reverse flow and signed aerodynamic shaft torque.
  * axial is aircraft velocity along thrust axis, positive climbing; inflow is wake velocity opposite thrust.
  * A driving region in descent has negative torque: autorotation draws energy from the air, never an RPM servo.
@@ -10,7 +10,7 @@ export interface RotorLoads { thrust: number; torque: number; inPlane: number; s
  */
 export function bladeElements(d: RotorDefinition, omega: number, pitch: number, axial: number,
   inPlaneSpeed: number, inflow: number, density: number, radial = 12, azimuthal = 16, teetering = false): RotorLoads {
-  let thrust = 0, torque = 0, inPlane = 0, stalled = 0, coningMoment = 0, stallMoment = 0;
+  let thrust = 0, torque = 0, inPlane = 0, stalled = 0, coningMoment = 0, stallMoment = 0, profilePower = 0;
   const tip = Math.max(omega * d.radius, 1), mu = inPlaneSpeed / tip;
   // Free first-harmonic flapping unloads the advancing side. Equivalent feathering in disc axes
   // cancels the first lift moment in linear theory; section stall then breaks that balance naturally.
@@ -34,6 +34,7 @@ export function bladeElements(d: RotorDefinition, omega: number, pitch: number, 
       const cd = d.profileCd + d.inducedDrag * cl * cl + blend * 1.8 * Math.sin(alpha) ** 2;
       const scale = 0.5 * density * (ut * ut + up * up) * d.chord * dr * d.blades / azimuthal;
       const lift = scale * cl, drag = scale * cd;
+      profilePower += drag * Math.hypot(ut, up);
       const normal = lift * Math.cos(phi) - drag * Math.sin(phi);
       thrust += normal;
       coningMoment += normal * r;
@@ -47,7 +48,7 @@ export function bladeElements(d: RotorDefinition, omega: number, pitch: number, 
       if (stall) stalled++;
     }
   }
-  return { thrust, torque, inPlane, stalledFraction: stalled / (radial * azimuthal), coningMoment, stallMoment };
+  return { thrust, torque, inPlane, stalledFraction: stalled / (radial * azimuthal), coningMoment, stallMoment, profilePower };
 }
 
 /** Uniform momentum inflow. Relaxing this target gives dynamic inflow and translational lift.
@@ -70,4 +71,16 @@ export function inflowTarget(thrust: number, density: number, radius: number, ax
   const recirculation = vh * (1 + 0.35 * Math.sin(Math.PI * descent / 2) ** 2) /
     Math.sqrt(1 + (horizontal / vh) ** 2);
   return Math.sign(thrust) * (vi + vortex * (recirculation - vi));
+}
+
+/** Uniform Pitt–Peters apparent-mass response, linearized about the momentum inflow.
+ * M00 = 128/(75 pi); d(2 vi |V+vi|)/dvi = 2 Veff, hence tau = M00 R/(2 Veff).
+ * NASA TM-88327, eqs. 4–5 (https://ntrs.nasa.gov/citations/19870015049).
+ * This is only the uniform mode, not the three-state wake. Momentum theory fails in VRS;
+ * retain a bounded positive relaxation there instead of a negative/singular time constant.
+ */
+export function inflowTimeConstant(radius: number, axial: number, horizontal: number, induced: number): number {
+  const through = axial + induced, speed = Math.hypot(horizontal, through);
+  const effective = speed + induced * through / Math.max(speed, 1e-6);
+  return Math.min(1.5, 64 / (75 * Math.PI) * radius / Math.max(effective, 0.5 * Math.abs(induced), 0.1));
 }

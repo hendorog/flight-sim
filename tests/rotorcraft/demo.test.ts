@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KT } from '../../src/core/math';
+import { DEG, KT } from '../../src/core/math';
 import { R22_ROTORCRAFT as d } from '../../src/aircraft/r22/rotorcraft';
 import { createEventBus } from '../../src/core/context';
 import { R22_DEFINITION } from '../../src/aircraft/r22';
@@ -9,23 +9,34 @@ import { demoScenario, demoWeather } from '../../src/sim/rotorcraft/starts';
 import { FlightRecorder } from './scriptedPilot';
 
 describe('live R22 flights through the app physics and scenery', () => {
-  for (const id of R22_DEMOS) it(`${id}: completes in the app environment`, () => {
+  const cases = [...R22_DEMOS.map(id => ({ id, gross: true })), { id: 'autorotation' as const, gross: false }];
+  for (const { id, gross } of cases) it(`${id}${gross ? '' : ' solo'}: reaches terminal hold in the app environment`, () => {
     const weather = demoWeather(), events = createEventBus();
     const sim = new SimPhysics({ weather, events, aircraft: R22_DEFINITION });
-    sim.resetTo(demoScenario(id, sim.env), weather);
-    const flight = new R22Flight(id, sim.state, sim.controls);
+    const scenario = demoScenario(id, sim.env);
+    if (!gross) { scenario.payload = 'typical'; scenario.ic.fuelFraction = 0.5; }
+    sim.resetTo(scenario, weather);
+    const flight = new R22Flight(id, sim.state, sim.controls, gross);
     sim.copilot = flight;
-    const contacts: { time: number; sink: number; groundKts: number; rpm: number }[] = [];
+    const contacts: { time: number; sink: number; groundKts: number; rpm: number; pitch: number }[] = [];
     events.on('touchdown', e => contacts.push({ time: sim.state.time, sink: e.sinkRate,
-      groundKts: sim.state.groundSpeed / KT, rpm: sim.state.rotorcraft!.rotorRpm / d.referenceRpm * 100 }));
+      groundKts: sim.state.groundSpeed / KT, rpm: sim.state.rotorcraft!.rotorRpm / d.referenceRpm * 100, pitch: sim.state.pitch / DEG }));
     sim.stepHold = () => !flight.flying && flight.outcome !== 'taken-over';
     const log = new FlightRecorder({ fm: sim.fm, c: sim.controls });
+    let maxVs = -Infinity, maxAltitudeGain = -Infinity;
     while (flight.flying) {
-      sim.step(0.25);
+      const flaring = id === 'autorotation' && flight.phase !== 'autorotate' && !contacts.length;
+      const altitude = sim.state.altitudeMSL;
+      if (flaring && !sim.state.onGround) maxVs = Math.max(maxVs, sim.state.verticalSpeed);
+      sim.step(id === 'autorotation' ? 1 / 240 : 0.25);
+      if (flaring && !contacts.length && !sim.state.onGround) {
+        maxVs = Math.max(maxVs, sim.state.verticalSpeed);
+        maxAltitudeGain = Math.max(maxAltitudeGain, sim.state.altitudeMSL - altitude);
+      }
       log.observe(flight.time, flight.phase);
     }
     log.touchdowns.push(...contacts);
-    log.save(`live-${id}`);
+    log.save(`live-${id}${gross ? '' : '-solo'}`);
     expect({ outcome: flight.outcome, crashed: sim.state.crashed, phase: flight.phase }).toEqual({
       outcome: 'complete', crashed: false,
       phase: id === 'startup' ? 'hover' : id === 'hover' ? 'cruise' : 'park',
@@ -40,10 +51,17 @@ describe('live R22 flights through the app physics and scenery', () => {
       expect(landing[0].groundKts).toBeLessThan(.5);
       expect(landing[0].rpm).toBeGreaterThan(101);
     } else if (id === 'autorotation') {
-      expect(contacts.length).toBeGreaterThan(0);
-      expect(flight.phases.map(p => p.phase)).toEqual(['autorotate', 'flare', 'level', 'cushion', 'park']);
-      // Completion means the reproduction finished. It is NOT an accepted autorotative landing.
-      expect(contacts[0].rpm).toBeLessThan(90);
+      expect(flight.phases.slice(0, 4).map(p => p.phase)).toEqual(['autorotate', 'flare', 'level', 'cushion']);
+      expect(contacts.length > 0 || sim.state.crashed).toBe(true);
+      expect(Number.isFinite(maxVs) && Number.isFinite(maxAltitudeGain)).toBe(true);
+      expect(maxVs).toBeLessThanOrEqual(0);
+      expect(maxAltitudeGain).toBeLessThanOrEqual(0);
+      expect(contacts[0].groundKts).toBeLessThan(10);
+      expect(contacts[0].sink).toBeLessThan(1.5);
+      expect(Math.abs(contacts[0].pitch)).toBeLessThan(5);
+      expect(sim.state.rotorcraft!.tailContact).toBe('none');
+      expect(sim.state.groundSpeed).toBeLessThan(0.1);
+      expect(sim.controls.collective).toBe(0);
     } else if (id === 'startup') {
       expect(sim.state.altitudeAGL - R22_DEFINITION.rotorcraft!.skids.z).toBeCloseTo(3, 0);
       expect(sim.state.rotorcraft!.governorActive).toBe(true);

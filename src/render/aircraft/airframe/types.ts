@@ -404,6 +404,7 @@ export interface RotorcraftVisualDef {
   /** Thin aerofoil-like extrusions, outlined in FRD (upper fin, lower fin, stabiliser). */
   fins: readonly { name: string; outline: readonly FRD[]; thickness: number; axis: 'y' | 'z' }[];
   guard: readonly FRD[];
+  guardRadius: number;
   panel: { centre: FRD; width: number; height: number; tiltBackDeg: number; canvas: { w: number; h: number }; outline?: readonly (readonly [number, number])[] };
   collective: { pivots: readonly FRD[]; length: number };
 }

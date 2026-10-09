@@ -14,7 +14,7 @@ export function writeTrace(name: string, data: unknown): void {
 
 export class FlightRecorder {
   readonly samples: ReturnType<FlightRecorder['sample']>[] = [];
-  readonly touchdowns: { time: number; sink: number; groundKts: number; rpm: number }[] = [];
+  readonly touchdowns: { time: number; sink: number; groundKts: number; rpm: number; pitch: number }[] = [];
   maxRpm = 0; minFlightRpm = Infinity; maxFlightRpm = 0; maxPower = 0; maxMap = 0;
   exceeded = false; crashed = false;
   constructor(readonly rig: { fm: AircraftFlightModel; c: ControlInputs }) {}
@@ -24,7 +24,11 @@ export class FlightRecorder {
       vs: s.verticalSpeed, pitch: s.pitch / DEG, roll: s.roll / DEG, heading: s.heading / DEG,
       rpm: r.rotorRpm / d.referenceRpm * 100, hp: s.engine.power / HP, map: s.engine.manifoldPressure,
       collective: c.collective!, cyclicAft: c.elevator, cyclicRight: c.aileron, pedalRight: c.rudder,
-      grip: c.throttle, crashed: s.crashed, crash: s.crashReason, onGround: s.onGround };
+      grip: c.throttle, crashed: s.crashed, crash: s.crashReason, onGround: s.onGround, tailContact: r.tailContact,
+      // Diagnostic channels only; none are passed to the scripted pilot.
+      thrust: r.thrust, torque: r.torque, driveTorque: r.driveTorque, inflow: r.inflow,
+      vortexRing: r.vortexRing, stalledFraction: r.stalledFraction, gLoad: s.gLoad,
+      rotorEnergy: 0.5 * (d.main.inertia + d.tail.inertia * d.tailRatio ** 2) * r.omega ** 2 };
   }
   observe(time: number, phase: string): void {
     const p = this.sample(time, phase), { fm } = this.rig;
@@ -35,8 +39,9 @@ export class FlightRecorder {
     if (fm.state.engine.rpm > 0.97 * d.referenceRpm * d.engineRatio) this.maxMap = Math.max(this.maxMap, p.map);
     this.exceeded ||= fm.state.rotorcraft!.powerLimitExceeded || fm.state.rotorcraft!.airspeedLimitExceeded;
     this.crashed ||= p.crashed;
-    for (const e of fm.touchdowns) this.touchdowns.push({ time, sink: e.sinkRate, groundKts: p.groundKts, rpm: p.rpm });
-    if (!this.samples.length || time - this.samples.at(-1)!.time >= 0.25 || p.crashed) this.samples.push(p);
+    for (const e of fm.touchdowns) this.touchdowns.push({ time, sink: e.sinkRate, groundKts: p.groundKts, rpm: p.rpm, pitch: p.pitch });
+    if (!this.samples.length || time - this.samples.at(-1)!.time >= 0.25 ||
+        this.samples.at(-1)!.phase !== phase || p.crashed) this.samples.push(p);
   }
   save(name: string): void {
     writeTrace(name, { samples: this.samples, touchdowns: this.touchdowns,

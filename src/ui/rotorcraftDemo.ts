@@ -82,7 +82,9 @@ export class RotorcraftDemoUi {
     this.rpm.style.color = p.rotorPercent < 90 && !s.onGround && s.engine.rpm > 0 || f.id === 'autorotation' && p.rotorPercent < 90 ? '#ff8b79' : '#eef3f8';
     setText(this.readings, `${(s.ias / KT).toFixed(1)} KIAS  ·  ${Math.round(s.verticalSpeed / .00508)} ft/min  ·  ${(p.height / FT).toFixed(1)} ft skids AGL`);
     setText(this.controls, `COL ${((c.collective ?? 0) * 100).toFixed(0)}%  GRIP ${(c.throttle * 100).toFixed(0)}%  CYCLIC aft ${c.elevator.toFixed(2)} right ${c.aileron.toFixed(2)}  PEDAL ${c.rudder.toFixed(2)}`);
-    setText(this.note, f.id === 'autorotation' ? 'Known gap: flare balloons; touchdown RPM falls below the power-off arc. Entry starts with collective down and mixture cut.' : 'Scripted engineering flight · calm air · maximum gross loading');
+    const tail = s.rotorcraft?.tailContact;
+    setText(this.note, tail && tail !== 'none' ? `Tail contact: ${tail.replaceAll('-', ' ')}. ${s.crashReason || 'Stinger touched; inspect the tail.'}` :
+      f.id === 'autorotation' ? 'Round-4 baseline: 60 ft flare, forward push, then skid slide. Touchdown RPM remains below 90%. The requested 40 ft collective-down flare is not validated; see the round-5 flight-model report.' : 'Scripted engineering flight · calm air · maximum gross loading');
     if (this.details.open && this.lastSample !== f.samples.length) {
       this.draw(f.samples); this.lastSample = f.samples.length;
     }

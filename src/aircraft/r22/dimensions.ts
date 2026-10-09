@@ -49,6 +49,24 @@ export const HORIZONTAL_STABILIZER = {
 export const NOSE_X = 1.7;
 export const TAIL_END_X = NOSE_X - FUSELAGE_LENGTH;
 
+/** ESTIMATES already traced from POH 1-3 for the exterior, now shared with ground contact.
+ * These are unchanged mesh coordinates, not newly measured factory dimensions. */
+export const LOWER_FIN_OUTLINE = [
+  { x: TAIL_HUB.x + 0.12, y: 0.055, z: TAIL_HUB.z },
+  { x: TAIL_END_X + 0.08, y: 0.055, z: TAIL_HUB.z },
+  { x: TAIL_END_X + 0.015, y: 0.055, z: TAIL_HUB.z + 0.55 },
+  { x: TAIL_HUB.x - 0.025, y: 0.055, z: TAIL_HUB.z + 0.55 },
+] as const;
+export const TAIL_STINGER = [
+  { x: TAIL_HUB.x - 0.07, y: 0.055, z: TAIL_HUB.z + 0.52 },
+  { x: TAIL_HUB.x - 0.10, y: 0.055, z: TAIL_HUB.z + 0.61 },
+  { x: TAIL_HUB.x - 0.24, y: 0.055, z: TAIL_HUB.z + 0.73 },
+  { x: TAIL_HUB.x - 0.32, y: 0.055, z: TAIL_HUB.z + 0.75 },
+  { x: TAIL_HUB.x - 0.36, y: 0.055, z: TAIL_HUB.z + 0.73 },
+] as const;
+/** Exterior tube radius; paint layer is omitted from collision geometry. */
+export const TAIL_STINGER_RADIUS = 0.016;
+
 /** Right seat is the pilot (command) seat in the R22; solo from the right. Eye point ESTIMATE. */
 export const PILOT_EYE = { x: 0.72, y: 0.28, z: SKID_Z - 1.5 } as const;
 

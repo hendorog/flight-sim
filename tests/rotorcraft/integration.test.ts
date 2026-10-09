@@ -43,13 +43,14 @@ describe('R22 simulation integration', () => {
     const weather = calmWeather();
     const sim = new SimPhysics({ aircraft: R22_DEFINITION, weather });
     sim.reset('cruise'); sim.controls.collective! += 0.03; sim.step(0.25);
+    sim.state.rotorcraft!.tailContact = 'stinger-touch';
     const snap = sim.captureSnapshot({weather, cameraMode:'cockpit', quality:'low', renderScale:null, resume:true});
     const parsed = parseSnapshot(JSON.stringify(snap)); expect(parsed).not.toBeNull();
     const copy = new SimPhysics({ aircraft: R22_DEFINITION, weather });
     copy.restore(parsed!);
     // Re-publishing recomputes instantaneous loads; dynamic states must not be advanced by restore.
     for (const key of ['omega','azimuth','inflow','tailInflow','flapForward','flapRight','governorThrottle','governorIntegral','previousCollective','previousThrottle',
-      'coning','retreatingFlap','teeterAngle','mastBump','clutchEngagement','clutchLight','governorActive','lowRpmHorn',
+      'coning','retreatingFlap','teeterAngle','mastBump','tailContact','clutchEngagement','clutchLight','governorActive','lowRpmHorn',
       'takeoffPowerSeconds','powerLimitExceeded'] as const)
       expect(copy.state.rotorcraft![key]).toBe(snap.systems.rotorcraft![key]);
     expect(copy.controls.collective).toBe(sim.controls.collective);
@@ -57,6 +58,10 @@ describe('R22 simulation integration', () => {
     copy.step(0.1); expect(Number.isFinite(copy.state.rotorcraft!.rotorRpm)).toBe(true);
     const corrupt = structuredClone(snap); corrupt.systems.rotorcraft!.omega = -1;
     expect(parseSnapshot(JSON.stringify(corrupt))).toBeNull();
+    const legacy = structuredClone(snap);
+    delete (legacy.systems.rotorcraft as { tailContact?: string }).tailContact;
+    expect(parseSnapshot(JSON.stringify(legacy))!.systems.rotorcraft!.tailContact).toBe('none');
+    expect(parseSnapshot(JSON.stringify(snap).replace('stinger-touch', 'unrecognised-contact'))).toBeNull();
   });
   it('starts cold, tensions the belts, acquires the governor and lifts into a hover', () => {
     const fm = createFlightModelFor(R22_DEFINITION);

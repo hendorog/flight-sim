@@ -140,7 +140,11 @@ function isSystems(v: unknown): v is SystemsSnapshot {
   const rotor = v.rotorcraft;
   if (rotor !== undefined) {
     if (!isObj(rotor)) return false;
+    // Older schema-3 R22 saves predate the latched tail-contact report.
+    if (rotor.tailContact === undefined) rotor.tailContact = 'none';
+    if (!['none', 'stinger-touch', 'stinger-impact', 'fin-strike', 'rotor-strike'].includes(rotor.tailContact as string)) return false;
     for (const [key, value] of Object.entries(emptyRotorcraftState())) {
+      if (key === 'tailContact') continue;
       if (typeof value === 'boolean' ? typeof rotor[key] !== 'boolean' : !isNum(rotor[key])) return false;
     }
     if ((rotor.omega as number) < 0 || (rotor.rotorRpm as number) < 0 ||

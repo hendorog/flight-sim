@@ -2,7 +2,8 @@ import { DEG, HP } from '../../core/math';
 import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 import { R22_MAP, R22_VNE } from './limits';
 import { MAIN_HUB, MAIN_ROTOR_RADIUS, TAIL_HUB, TAIL_ROTOR_RADIUS,
-  SKID_HALF_TRACK, SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, SKID_Z, HORIZONTAL_STABILIZER as HS } from './dimensions';
+  SKID_HALF_TRACK, SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, SKID_Z, HORIZONTAL_STABILIZER as HS,
+  TAIL_STINGER, TAIL_STINGER_RADIUS, LOWER_FIN_OUTLINE } from './dimensions';
 
 /** R22 Beta II baseline. Published dimensions/speeds plus explicitly estimated dynamic parameters;
  * see docs/r22-flight-model.md before interpreting these as validated handling data. */
@@ -44,6 +45,23 @@ export const R22_ROTORCRAFT: RotorcraftDefinition = {
   // ESTIMATE: actuator-disc centreline wake, 1 + z/sqrt(R²+z²), at the drag centre below the hub.
   // Uniform coverage and the 16 m/s wake-skew scale remain approximations.
   fuselageWash: 1 + -MAIN_HUB.z / Math.hypot(MAIN_ROTOR_RADIUS, MAIN_HUB.z),
+  // ESTIMATED compliance/impact limits, not structural certification data. Light contact flexes
+  // the stinger; excessive penetration/sink or a fin/disc contact requires an inspection/stop.
+  tailProtection: { stinger: TAIL_STINGER, radius: TAIL_STINGER_RADIUS, fin: LOWER_FIN_OUTLINE,
+    stiffness: 15000, damping: 600, maxSink: 1, maxCompression: 0.08 },
   skids: { halfTrack: SKID_HALF_TRACK, front: SKID_CONTACT_FRONT_X, rear: SKID_CONTACT_REAR_X, z: SKID_Z,
-    stiffness: 65000, damping: 2200, friction: 0.65, maxSink: 3.5 },
+    stiffness: 65000, damping: 2200, friction: 0.5, maxSink: 3.5,
+    // ESTIMATES, not measured R22 coefficients: smooth steel shoes slide along firm turf more readily
+    // than rubber tyres; broadside tubes plough soil. Dry paving has higher longitudinal drag.
+    // Static grip is separate so low sliding drag does not imply creep on a modest slope.
+    // See docs/r22-flight-model.md for assumptions and run-on/slope checks; no terrain snag model.
+    surfaces: {
+      grass: { static: 0.65, sliding: 0.2, lateral: 0.65 },
+      dirt: { static: 0.65, sliding: 0.25, lateral: 0.65 },
+      runway: { static: 0.6, sliding: 0.3, lateral: 0.3 },
+      taxiway: { static: 0.6, sliding: 0.3, lateral: 0.3 },
+      rock: { static: 0.6, sliding: 0.4, lateral: 0.5 },
+      snow: { static: 0.2, sliding: 0.08, lateral: 0.2 },
+      water: { static: 0, sliding: 0, lateral: 0 },
+    } },
 };

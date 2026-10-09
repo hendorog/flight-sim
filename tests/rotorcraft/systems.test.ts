@@ -6,7 +6,7 @@ import { defaultControls } from '../../src/core/types';
 import { DEG, HP, KT, quat, v3 } from '../../src/core/math';
 import type { BodyState } from '../../src/physics/interfaces';
 import type { EngineUnit } from '../../src/physics/propulsion/engineUnit';
-import { rig, run } from './helpers';
+import { rig, run, seaLevel } from './helpers';
 
 const body = (): BodyState => ({ time: 0, position: { x: 0, y: 0, z: -1000 }, orientation: quat.identity(),
   velocityBody: v3.zero(), angularVelocity: v3.zero(), cgOffset: v3.zero(), mass: 621.42 });
@@ -117,6 +117,8 @@ describe('R22 rotor energy, controls and damage', () => {
   });
 
   it('a rolling single-skid contact can overturn under thrust; lowering collective permits recovery', () => {
+    // Turf can hold a lateral pivot; smooth paving now permits the skid to slide out of this departure.
+    const env = { ...seaLevel, surface: () => 'grass' as const };
     const trials = [0.4, 0].map(collective => {
       const r = rig(0), roll = 10 * DEG;
       r.fm.setKinematics({ position: { x: 0, y: 0,
@@ -125,7 +127,7 @@ describe('R22 rotor energy, controls and damage', () => {
       r.c.collective = collective; r.c.aileron = 0;
       let contacts = 0;
       for (let i = 0; i < 720 && !r.fm.state.crashed; i++) {
-        run(r, 1/240); if (r.fm.state.onGround) contacts++;
+        r.fm.step(1/240, r.c, env); if (r.fm.state.onGround) contacts++;
       }
       return { state: r.fm.state, contacts };
     });
