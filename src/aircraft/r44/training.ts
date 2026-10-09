@@ -1,4 +1,6 @@
-// PLACEHOLDER metadata only; no R44 lessons or approved simulator checklists.
+// Reference metadata only; no R44 lessons or validated cold-start checklist.
+// POH 3-3: 90 KIAS maximum glide; 4-13: 60 KIAS initial approach.
+// Vy 60 is retained scaffold metadata, not a validated best-climb result.
 import type { AircraftTypeDef, ChecklistDef, VSpeedId } from '../../training/types';
 import { R44_REFERENCE as V } from './reference';
 
@@ -27,5 +29,5 @@ export const R44_TRAINING: AircraftTypeDef = {
   envelope: { maxBankDeg: 0, maxPitchUpDeg: 0, maxPitchDownDeg: 0, maxKias: V.vne, maxG: 0, minG: 0,
     minAglFt: 0, lowAndSlow: { aglFt: 0, belowKias: 0 }, maxSinkFpmBelow200: 0, stallAllowed: false, runwayExcursionM: 0 },
   checklists: CHECKLISTS,
-  school: { syllabus: false, reason: 'Helicopter lessons and guided checklists are not implemented; startup systems are unfinished.' },
+  school: { syllabus: false, reason: 'Helicopter lessons and guided checklists are unavailable; fuel priming, automatic auxiliary pump and cold-start validation remain unfinished.' },
 };
