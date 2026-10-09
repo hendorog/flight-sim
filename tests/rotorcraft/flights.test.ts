@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { FT, HP, KT } from '../../src/core/math';
+import { DEG, FT, HP, KT } from '../../src/core/math';
 import { cloneControls } from '../../src/core/types';
 import { R22_ROTORCRAFT as d } from '../../src/aircraft/r22/rotorcraft';
 import { r22Map } from '../../src/aircraft/r22/limits';
@@ -63,11 +63,12 @@ describe('R22 flights with a scripted pilot and unmodified rigid-body/rotor stat
   }, 120000);
 
   // This is a visible acceptance gap, not a passing validation of autorotative touchdown.
-  // The 60 ft flare preserves RPM, but descent rebuilds before the 8 ft level / 2 ft cushion. Retain the
+  // The progressive flare removes the balloon, but touchdown still carries excessive speed. Retain the
   // complete reproduction and strict desired result; an unexpected pass requires removing .fails.
   for (const gross of [true, false]) describe(`${gross ? 'gross' : 'solo'} 65-KIAS autorotation landing`, () => {
     let log: FlightRecorder, landed: boolean;
-    let cyclicRate = 0, collectiveRate = 0;
+    let cyclicRate = 0, collectiveRate = 0, pitchRate = 0;
+    let maxVs = -Infinity, maxAltitudeGain = -Infinity, flarePitch: number | undefined, visibleRiseHeight: number | undefined;
     beforeAll(() => {
       const r = rig(65, gross);
       r.fm.reset({ position: { x: 0, y: 0, z: -350 }, heading: 0, airspeed: 65 * KT,
@@ -77,12 +78,28 @@ describe('R22 flights with a scripted pilot and unmodified rigid-body/rotor stat
       while (flight.flying) {
         const t = flight.time;
         const oldCyclic = r.c.elevator, oldCollective = r.c.collective!;
+        const altitude = r.fm.state.altitudeMSL;
         flight.update(DT, r.fm.state, r.c);
-        if (['flare', 'level', 'cushion'].includes(flight.phase)) {
+        const flaring = ['flare', 'level', 'cushion'].includes(flight.phase);
+        if (flaring) {
           cyclicRate = Math.max(cyclicRate, Math.abs(r.c.elevator - oldCyclic) / DT);
           collectiveRate = Math.max(collectiveRate, Math.abs(r.c.collective! - oldCollective) / DT);
+          if (!log.touchdowns.length && !r.fm.state.onGround) maxVs = Math.max(maxVs, r.fm.state.verticalSpeed);
         }
-        r.fm.step(DT, r.c, seaLevel); log.observe(t, flight.phase);
+        if (flight.phase === 'flare') {
+          flarePitch ??= r.fm.state.pitch;
+          if (visibleRiseHeight === undefined && r.fm.state.pitch > flarePitch + DEG)
+            visibleRiseHeight = (r.fm.state.altitudeAGL - d.skids.z) / FT;
+          pitchRate = Math.max(pitchRate, Math.abs(r.fm.state.angularVelocity.y) / DEG);
+        }
+        r.fm.step(DT, r.c, seaLevel);
+        // Check every 240 Hz step, through levelling/cushioning to first contact. A 4 Hz graph can miss
+        // a short balloon. Ground reactions after contact are a separate landing-acceptance question.
+        if (flaring && !log.touchdowns.length && !r.fm.touchdowns.length && !r.fm.state.onGround) {
+          maxVs = Math.max(maxVs, r.fm.state.verticalSpeed);
+          maxAltitudeGain = Math.max(maxAltitudeGain, r.fm.state.altitudeMSL - altitude);
+        }
+        log.observe(t, flight.phase);
       }
       landed = flight.landed;
       log.save(`autorotation-${gross ? 'gross' : 'solo'}`);
@@ -90,22 +107,32 @@ describe('R22 flights with a scripted pilot and unmodified rigid-body/rotor stat
     it('reproduces the progressive flare through contact without suppressing setup/runtime failures', () => {
       const flare = log.samples.filter(p => p.phase === 'flare');
       expect(flare.length).toBeGreaterThan(3);
-      expect(Math.max(...flare.map(p => p.rpm))).toBeGreaterThan(flare[0].rpm + 2);
-      expect(Math.max(...flare.map(p => p.vs))).toBeGreaterThan(-0.5);
-      expect(flare.at(-1)!.groundKts).toBeLessThan(flare[0].groundKts - 20);
+      expect(flare.at(-1)!.vs).toBeGreaterThan(-2);
+      // Direction of the response only; the unchanged strict landing check below owns the speed limit.
+      // The gentler flare sheds less speed than the old ballooning pull, especially at solo weight.
+      expect(flare.at(-1)!.groundKts).toBeLessThan(flare[0].groundKts);
       // A hard impact can be detected in an intermediate RK stage before a touchdown event is emitted.
       // Damage and landing success remain part of the unchanged strict acceptance below.
       expect(log.touchdowns.length > 0 || log.samples.some(p => p.crashed)).toBe(true);
     });
-    it('starts at 60 ft, levels at 8 ft and cushions at 2 ft with bounded hand movements', () => {
-      for (const [phase, feet] of [['flare', 60], ['level', 8], ['cushion', 2]] as const) {
-        const first = log.samples.find(p => p.phase === phase)!;
-        expect(first).toBeDefined();
-        expect(first.height / FT).toBeLessThanOrEqual(feet);
-        expect(first.height / FT).toBeGreaterThan(feet - 0.25);
-      }
+    it('visibly raises the nose near 60 ft, commands level at 8 ft and cushions renewed sink with bounded hand movements', () => {
+      expect(visibleRiseHeight).toBeDefined();
+      expect(visibleRiseHeight!).toBeGreaterThan(55);
+      expect(visibleRiseHeight!).toBeLessThan(70);
+      const level = log.samples.find(p => p.phase === 'level')!;
+      const cushion = log.samples.find(p => p.phase === 'cushion')!;
+      expect(level.height / FT).toBeGreaterThan(7.75);
+      expect(level.height / FT).toBeLessThanOrEqual(8);
+      expect(cushion.height / FT).toBeLessThan(8);
+      expect(cushion.height / FT).toBeGreaterThan(2); // sink cue starts the pull before the old fixed trigger
+      expect(pitchRate).toBeLessThan(10);
       expect(cyclicRate).toBeLessThanOrEqual(0.8 + 1e-9);
       expect(collectiveRate).toBeLessThanOrEqual(0.5 + 1e-9);
+    });
+    it('never gains altitude or develops positive vertical speed from flare entry to first contact', () => {
+      expect(Number.isFinite(maxVs) && Number.isFinite(maxAltitudeGain)).toBe(true);
+      expect(maxVs).toBeLessThanOrEqual(0);
+      expect(maxAltitudeGain).toBeLessThanOrEqual(0);
     });
     it.fails('KNOWN GAP — complete landing within the power-off RPM arc', () => {
       const touchdown = log.touchdowns[0];

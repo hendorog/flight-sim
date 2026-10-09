@@ -9,23 +9,34 @@ import { demoScenario, demoWeather } from '../../src/sim/rotorcraft/starts';
 import { FlightRecorder } from './scriptedPilot';
 
 describe('live R22 flights through the app physics and scenery', () => {
-  for (const id of R22_DEMOS) it(`${id}: reaches terminal hold in the app environment`, () => {
+  const cases = [...R22_DEMOS.map(id => ({ id, gross: true })), { id: 'autorotation' as const, gross: false }];
+  for (const { id, gross } of cases) it(`${id}${gross ? '' : ' solo'}: reaches terminal hold in the app environment`, () => {
     const weather = demoWeather(), events = createEventBus();
     const sim = new SimPhysics({ weather, events, aircraft: R22_DEFINITION });
-    sim.resetTo(demoScenario(id, sim.env), weather);
-    const flight = new R22Flight(id, sim.state, sim.controls);
+    const scenario = demoScenario(id, sim.env);
+    if (!gross) { scenario.payload = 'typical'; scenario.ic.fuelFraction = 0.5; }
+    sim.resetTo(scenario, weather);
+    const flight = new R22Flight(id, sim.state, sim.controls, gross);
     sim.copilot = flight;
     const contacts: { time: number; sink: number; groundKts: number; rpm: number }[] = [];
     events.on('touchdown', e => contacts.push({ time: sim.state.time, sink: e.sinkRate,
       groundKts: sim.state.groundSpeed / KT, rpm: sim.state.rotorcraft!.rotorRpm / d.referenceRpm * 100 }));
     sim.stepHold = () => !flight.flying && flight.outcome !== 'taken-over';
     const log = new FlightRecorder({ fm: sim.fm, c: sim.controls });
+    let maxVs = -Infinity, maxAltitudeGain = -Infinity;
     while (flight.flying) {
-      sim.step(0.25);
+      const flaring = id === 'autorotation' && flight.phase !== 'autorotate' && !contacts.length;
+      const altitude = sim.state.altitudeMSL;
+      if (flaring && !sim.state.onGround) maxVs = Math.max(maxVs, sim.state.verticalSpeed);
+      sim.step(id === 'autorotation' ? 1 / 240 : 0.25);
+      if (flaring && !contacts.length && !sim.state.onGround) {
+        maxVs = Math.max(maxVs, sim.state.verticalSpeed);
+        maxAltitudeGain = Math.max(maxAltitudeGain, sim.state.altitudeMSL - altitude);
+      }
       log.observe(flight.time, flight.phase);
     }
     log.touchdowns.push(...contacts);
-    log.save(`live-${id}`);
+    log.save(`live-${id}${gross ? '' : '-solo'}`);
     if (id === 'autorotation') {
       // Exercise the real terminal hold even when the known landing gap ends in impact.
       // Strict RPM/sink/speed/damage acceptance remains in flights.test.ts, not inverted here.
@@ -46,6 +57,9 @@ describe('live R22 flights through the app physics and scenery', () => {
     } else if (id === 'autorotation') {
       expect(flight.phases.slice(0, 4).map(p => p.phase)).toEqual(['autorotate', 'flare', 'level', 'cushion']);
       expect(contacts.length > 0 || sim.state.crashed).toBe(true);
+      expect(Number.isFinite(maxVs) && Number.isFinite(maxAltitudeGain)).toBe(true);
+      expect(maxVs).toBeLessThanOrEqual(0);
+      expect(maxAltitudeGain).toBeLessThanOrEqual(0);
     } else if (id === 'startup') {
       expect(sim.state.altitudeAGL - R22_DEFINITION.rotorcraft!.skids.z).toBeCloseTo(3, 0);
       expect(sim.state.rotorcraft!.governorActive).toBe(true);
