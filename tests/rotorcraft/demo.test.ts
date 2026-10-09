@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KT } from '../../src/core/math';
+import { DEG, KT } from '../../src/core/math';
 import { R22_ROTORCRAFT as d } from '../../src/aircraft/r22/rotorcraft';
 import { createEventBus } from '../../src/core/context';
 import { R22_DEFINITION } from '../../src/aircraft/r22';
@@ -18,9 +18,9 @@ describe('live R22 flights through the app physics and scenery', () => {
     sim.resetTo(scenario, weather);
     const flight = new R22Flight(id, sim.state, sim.controls, gross);
     sim.copilot = flight;
-    const contacts: { time: number; sink: number; groundKts: number; rpm: number }[] = [];
+    const contacts: { time: number; sink: number; groundKts: number; rpm: number; pitch: number }[] = [];
     events.on('touchdown', e => contacts.push({ time: sim.state.time, sink: e.sinkRate,
-      groundKts: sim.state.groundSpeed / KT, rpm: sim.state.rotorcraft!.rotorRpm / d.referenceRpm * 100 }));
+      groundKts: sim.state.groundSpeed / KT, rpm: sim.state.rotorcraft!.rotorRpm / d.referenceRpm * 100, pitch: sim.state.pitch / DEG }));
     sim.stepHold = () => !flight.flying && flight.outcome !== 'taken-over';
     const log = new FlightRecorder({ fm: sim.fm, c: sim.controls });
     let maxVs = -Infinity, maxAltitudeGain = -Infinity;
@@ -58,6 +58,8 @@ describe('live R22 flights through the app physics and scenery', () => {
       expect(maxAltitudeGain).toBeLessThanOrEqual(0);
       expect(contacts[0].groundKts).toBeLessThan(10);
       expect(contacts[0].sink).toBeLessThan(1.5);
+      expect(Math.abs(contacts[0].pitch)).toBeLessThan(5);
+      expect(sim.state.rotorcraft!.tailContact).toBe('none');
       expect(sim.state.groundSpeed).toBeLessThan(0.1);
       expect(sim.controls.collective).toBe(0);
     } else if (id === 'startup') {

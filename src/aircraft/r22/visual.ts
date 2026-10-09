@@ -7,7 +7,8 @@ import type { AirframeVisualDef, FRD, RotorcraftVisualDef } from '../../render/a
 import { R22_ROTORCRAFT } from './rotorcraft';
 import { CABIN_WIDTH, MAIN_HUB, MAIN_ROTOR_RADIUS, NOSE_X, PANEL_CANVAS, PANEL_FACE, PANEL_OUTLINE, PILOT_EYE,
   SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, SKID_FRONT_X, SKID_HALF_TRACK, SKID_REAR_X, SKID_Z,
-  TAIL_END_X, TAIL_HUB, TAIL_ROTOR_RADIUS, HORIZONTAL_STABILIZER as HS } from './dimensions';
+  TAIL_END_X, TAIL_HUB, TAIL_ROTOR_RADIUS, HORIZONTAL_STABILIZER as HS, LOWER_FIN_OUTLINE, TAIL_STINGER,
+  TAIL_STINGER_RADIUS } from './dimensions';
 
 const point = (p: { x: number; y: number; z: number }): FRD => [p.x, p.y, p.z];
 const W = CABIN_WIDTH / 2;
@@ -22,14 +23,14 @@ const ROTORCRAFT: RotorcraftVisualDef = {
   mast: { bottom: [-0.08, 0, -0.81], top: [0, 0, MAIN_HUB.z + 0.28], bottomWidth: 0.50, topWidth: 0.30 },
   fins: [
     { name: 'upperFin', axis: 'y', thickness: 0.032, outline: [[TX + 0.13, 0.055, TZ], [TX - 0.07, 0.055, TZ - 0.47], [TAIL_END_X, 0.055, TZ - 0.47], [TAIL_END_X + 0.08, 0.055, TZ]] },
-    { name: 'lowerFin', axis: 'y', thickness: 0.032, outline: [[TX + 0.12, 0.055, TZ], [TAIL_END_X + 0.08, 0.055, TZ], [TAIL_END_X + 0.015, 0.055, TZ + 0.55], [TX - 0.025, 0.055, TZ + 0.55]] },
+    { name: 'lowerFin', axis: 'y', thickness: 0.032, outline: LOWER_FIN_OUTLINE.map(point) },
     // Later Beta II: a separate stabiliser ahead of the fins, extending to BOTH sides of the boom.
     // POH 1-3 top view; R22 maintenance manual Fig. 4-4 (B375-2). Outline dimensions remain estimates.
     { name: 'horizontalStabiliser', axis: 'z', thickness: 0.026, outline: [[HS.leadingX, -HS.span / 2, HS.z], [HS.leadingX - HS.leftChord, -HS.span / 2, HS.z], [HS.leadingX - HS.rightChord, HS.span / 2, HS.z], [HS.leadingX, HS.span / 2, HS.z]] },
   ],
   // Short tail skid / stinger rooted in the lower fin; not a cable hung from the forward stabiliser.
-  guard: [[TX - 0.07, 0.055, TZ + 0.52], [TX - 0.10, 0.055, TZ + 0.61],
-    [TX - 0.24, 0.055, TZ + 0.73], [TX - 0.32, 0.055, TZ + 0.75], [TX - 0.36, 0.055, TZ + 0.73]],
+  guard: TAIL_STINGER.map(point),
+  guardRadius: TAIL_STINGER_RADIUS,
   panel: { centre: point(PANEL_FACE.centre), width: PANEL_FACE.width, height: PANEL_FACE.height,
     tiltBackDeg: PANEL_FACE.tiltBackDeg, canvas: PANEL_CANVAS, outline: PANEL_OUTLINE },
   collective: { pivots: [[0.58, -0.49, 0.25], [0.58, 0.04, 0.25]], length: 0.51 },

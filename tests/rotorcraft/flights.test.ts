@@ -126,8 +126,8 @@ describe('R22 flights with a scripted pilot and unmodified rigid-body/rotor stat
       expect(cushion.height / FT).toBeLessThanOrEqual(level.height / FT);
       expect(cushion.height / FT).toBeGreaterThan(8); // sink cue starts the pull before the old level-at-8-ft command
       expect(pitchRate).toBeLessThan(12); // measured body response to the 8 deg/s initial attitude command
-      expect(cyclicRate).toBeLessThanOrEqual(0.8 + 1e-9);
-      expect(collectiveRate).toBeLessThanOrEqual(0.5 + 1e-9);
+      expect(cyclicRate).toBeLessThanOrEqual(1.2 + 1e-9); // faster forward push in the final flare
+      expect(collectiveRate).toBeLessThanOrEqual(0.8 + 1e-9); // short collective cushion
     });
     it('never gains altitude or develops positive vertical speed from flare entry to first contact', () => {
       expect(Number.isFinite(maxVs) && Number.isFinite(maxAltitudeGain)).toBe(true);
@@ -138,13 +138,16 @@ describe('R22 flights with a scripted pilot and unmodified rigid-body/rotor stat
       const touchdown = log.touchdowns[0];
       expect(landed).toBe(true); expect(log.crashed).toBe(false);
       expect(touchdown.groundKts).toBeLessThan(10); expect(touchdown.sink).toBeLessThan(1.5);
+      expect(Math.abs(touchdown.pitch)).toBeLessThan(5);
+      expect(log.samples.every(p => p.tailContact === 'none')).toBe(true);
       expect(finalSpeed).toBeLessThan(0.1); expect(finalCollective).toBe(0);
     });
     it.fails('KNOWN RPM GAP — complete landing within the power-off RPM arc', () => {
       const touchdown = log.touchdowns[0];
       expect({ landed, damage: log.crashed, slow: !!touchdown && touchdown.groundKts < 10,
-        cushioned: !!touchdown && touchdown.sink < 1.5, rotorArc: !!touchdown && touchdown.rpm >= 90 && log.maxRpm <= 110 })
-        .toEqual({ landed: true, damage: false, slow: true, cushioned: true, rotorArc: true });
+        cushioned: !!touchdown && touchdown.sink < 1.5, level: !!touchdown && Math.abs(touchdown.pitch) < 5,
+        tailClear: log.samples.every(p => p.tailContact === 'none'), rotorArc: !!touchdown && touchdown.rpm >= 90 && log.maxRpm <= 110 })
+        .toEqual({ landed: true, damage: false, slow: true, cushioned: true, level: true, tailClear: true, rotorArc: true });
     });
   });
 });

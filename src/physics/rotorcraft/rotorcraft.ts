@@ -3,7 +3,7 @@ import type { ControlInputs } from '../../core/types';
 import type { BodyState, ForceMoment } from '../interfaces';
 import type { EngineUnit } from '../propulsion/engineUnit';
 import { emptyRotorcraftState, type RotorcraftDefinition } from './definition';
-import { bladeElements, inflowTarget } from './rotor';
+import { bladeElements, inflowTarget, inflowTimeConstant } from './rotor';
 import { airframeLoads } from './airframe';
 import { placardMap } from './limits';
 import { pressureAltitude } from '../atmosphere';
@@ -12,6 +12,12 @@ import type { AtmosphereSample } from '../../core/types';
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
   readonly angularMomentum = v3.zero();
+  /** Read-only diagnostic output; never fed back to the pilot or used to clamp energy. Power in W; flow/time diagnostics in SI. */
+  readonly power = { mainShaft: 0, mainThrust: 0, mainH: 0, mainInduced: 0, mainProfile: 0, vortexCorrection: 0,
+    tailShaft: 0, tailThrust: 0, tailH: 0, tailInduced: 0, tailProfile: 0, tailWake: 0,
+    fuselage: 0, stabilizer: 0, fins: 0, moments: 0, driveReaction: 0,
+    axial: 0, horizontal: 0, inflow: 0, groundEffect: 1, inflowTau: 0 };
+  readonly drivePower = { aerodynamic: 0, rotorChange: 0, clutch: 0, integration: 0 };
   private readonly loads: ForceMoment = { force: v3.zero(), moment: v3.zero() };
   constructor(readonly def: RotorcraftDefinition) {}
   reset(running: boolean): void {
@@ -55,7 +61,9 @@ export class Rotorcraft {
   drive(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample): void {
     const s = this.state, d = this.def;
     const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
+    const oldOmega = s.omega;
     s.omega = Math.max(0, s.omega - s.torque * dt / inertia);
+    const freeOmega = s.omega;
     const target = c.rotorClutch !== false ? 1 : 0;
     if (c.masterBattery) s.clutchEngagement += clamp(target - s.clutchEngagement,
       -dt / d.systems.clutchSeconds, dt / d.systems.clutchSeconds);
@@ -67,6 +75,12 @@ export class Rotorcraft {
     engine.omega -= impulse / engine.inertia;
     s.omega += impulse * d.engineRatio * d.transmissionEfficiency / inertia;
     s.driveTorque = dt > 0 ? impulse * d.engineRatio * d.transmissionEfficiency / dt : 0;
+    if (dt > 0) {
+      this.drivePower.aerodynamic = -s.torque * oldOmega;
+      this.drivePower.rotorChange = 0.5 * inertia * (s.omega ** 2 - oldOmega ** 2) / dt;
+      this.drivePower.clutch = 0.5 * inertia * (s.omega ** 2 - freeOmega ** 2) / dt;
+      this.drivePower.integration = 0.5 * inertia * (freeOmega ** 2 - oldOmega ** 2) / dt - this.drivePower.aerodynamic;
+    }
     engine.state.rpm = engine.rpm;
     s.rotorRpm = s.omega * 30 / Math.PI;
     s.lowRpm = s.rotorRpm < d.referenceRpm * 0.97;
@@ -127,8 +141,9 @@ export class Rotorcraft {
     const ge = (1 - (d.main.radius * wakeCos / (4 * h)) ** 2) ** 1.5;
     const vh = Math.sqrt(Math.abs(main.thrust) / Math.max(2 * density * Math.PI * d.main.radius ** 2, 1e-6));
     s.vortexRing = clamp(-axial / Math.max(vh, 1) - 0.4, 0, 1) * clamp(2.3 + axial / Math.max(vh, 1), 0, 1) * clamp(1 - horizontal / 12, 0, 1);
-    // Empirical VRS loss: bounded, continuous, no artificial energy supplied to the shaft.
-    const thrust = main.thrust * (1 - 0.3 * s.vortexRing);
+    // VRS is represented by the empirical inflow continuation below. A separate thrust-only
+    // multiplier broke the blade-element work identity while leaving shaft torque unchanged.
+    const thrust = main.thrust;
     const tailArm = v3.sub(d.tail.hub, b.cgOffset);
     const tailAir = v3.add(air, v3.cross(b.angularVelocity, tailArm));
     // Positive tail thrust acts right: tail arm aft makes nose-left anti-torque for CCW main rotor.
@@ -139,21 +154,35 @@ export class Rotorcraft {
     const tailHorizontal = Math.hypot(tailAir.x, tailAir.z - wakeAtTail);
     const tail = bladeElements(d.tail, s.omega * d.tailRatio, tailPitch,
       tailAir.y * d.rotation, tailHorizontal, s.tailInflow, density);
+    const targetInflow = inflowTarget(main.thrust, density, d.main.radius, axial, horizontal);
+    const inflowTau = inflowTimeConstant(d.main.radius, axial, horizontal, targetInflow);
+    const tailHForce = tailHorizontal > 0 ? { x: -tail.inPlane * tailAir.x / tailHorizontal, y: 0,
+      z: -tail.inPlane * (tailAir.z - wakeAtTail) / tailHorizontal } : v3.zero();
+    Object.assign(this.power, {
+      mainShaft: -main.torque * s.omega, mainThrust: thrust * axial, mainH: -main.inPlane * horizontal,
+      mainInduced: -main.thrust * s.inflow, mainProfile: -main.profilePower,
+      vortexCorrection: (thrust - main.thrust) * axial,
+      tailShaft: -tail.torque * s.omega * d.tailRatio, tailThrust: tail.thrust * tailAir.y * d.rotation,
+      tailH: v3.dot(tailHForce, tailAir), tailInduced: -tail.thrust * s.tailInflow, tailProfile: -tail.profilePower,
+      tailWake: tailHForce.z * wakeAtTail,
+      driveReaction: d.rotation * s.driveTorque * b.angularVelocity.z,
+      axial, horizontal, inflow: s.inflow, groundEffect: ge, inflowTau,
+    });
     if (dt > 0) {
       const coneTarget = main.coningMoment / Math.max(d.main.inertia * s.omega * s.omega, 1);
       s.coning += (clamp(coneTarget, -0.15, 0.3) - s.coning) * (1 - Math.exp(-dt / tau));
       const stallTarget = 16 * main.stallMoment /
         Math.max(density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 * s.omega ** 2, 1);
       s.retreatingFlap += (clamp(stallTarget, 0, 0.2) - s.retreatingFlap) * (1 - Math.exp(-dt / tau));
-      const inflowTau = clamp(d.main.radius / Math.max(2 * vh, 1), 0.06, 1.5);
-      s.inflow += (inflowTarget(main.thrust, density, d.main.radius, axial, horizontal) * ge * (d.main.inducedFactor ?? 1) - s.inflow) * (1 - Math.exp(-dt / inflowTau));
+      s.inflow += (targetInflow * ge * (d.main.inducedFactor ?? 1) - s.inflow) * (1 - Math.exp(-dt / inflowTau));
       s.tailInflow += (inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation,
         tailHorizontal) - s.tailInflow) * (1 - Math.exp(-dt / 0.08));
     }
     const mainForce = v3.scale(axis, thrust);
     if (horizontal > 0) Object.assign(mainForce, v3.sub(mainForce, v3.scale(inPlane, main.inPlane / horizontal)));
-    const tailForce = { x: 0, y: tail.thrust * d.rotation, z: 0 };
+    const tailForce = { x: tailHForce.x, y: tail.thrust * d.rotation, z: tailHForce.z };
     const frame = airframeLoads(d, b, air, density, s.inflow);
+    Object.assign(this.power, frame.power);
     const f = this.loads.force, m = this.loads.moment;
     Object.assign(f, v3.add(v3.add(mainForce, tailForce), frame.force));
     Object.assign(m, v3.add(v3.add(v3.cross(mainArm, mainForce), v3.cross(tailArm, tailForce)), frame.moment));

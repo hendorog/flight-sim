@@ -39,6 +39,8 @@ export interface RotorcraftDefinition {
   fuselageWash?: number;
   /** Aerodynamic drag application point relative to reference point. */
   dragCentre: Vec3;
+  tailProtection?: { stinger: readonly Vec3[]; radius: number; fin: readonly Vec3[];
+    stiffness: number; damping: number; maxSink: number; maxCompression: number };
   skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number;
     /** Shoe/terrain contact, distinct from tyre coefficients. Lateral includes soil ploughing by the tube. */
     surfaces?: Partial<Record<SurfaceType, { static: number; sliding: number; lateral: number }>> };
@@ -49,6 +51,8 @@ export interface RotorcraftState {
   thrust: number; tailThrust: number; torque: number; driveTorque: number;
   rotorRpm: number; lowRpm: boolean; vortexRing: number; stalledFraction: number;
   coning: number; retreatingFlap: number; teeterAngle: number; mastBump: boolean;
+  /** Latched ground-contact report. A light stinger touch is reported without stopping the simulation. */
+  tailContact: 'none' | 'stinger-touch' | 'stinger-impact' | 'fin-strike' | 'rotor-strike';
   /** Last pilot positions allow correlator/governor state to resume without a throttle step. */
   previousCollective: number; previousThrottle: number; governorIntegral: number;
   takeoffPowerSeconds: number; powerLimitExceeded: boolean;
@@ -64,7 +68,7 @@ export function emptyRotorcraftState(): RotorcraftState {
   return { omega: 0, azimuth: 0, inflow: 0, tailInflow: 0, flapForward: 0, flapRight: 0,
     governorThrottle: 0, thrust: 0, tailThrust: 0, torque: 0, driveTorque: 0,
     rotorRpm: 0, lowRpm: false, vortexRing: 0, stalledFraction: 0,
-    coning: 0, retreatingFlap: 0, teeterAngle: 0, mastBump: false,
+    coning: 0, retreatingFlap: 0, teeterAngle: 0, mastBump: false, tailContact: 'none',
     previousCollective: 0, previousThrottle: 0, governorIntegral: 0,
     takeoffPowerSeconds: 0, powerLimitExceeded: false,
     vneKias: 0, airspeedLimitExceeded: false,

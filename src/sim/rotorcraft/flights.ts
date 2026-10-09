@@ -25,7 +25,7 @@ export const PHASE_ACTIONS: Record<string, string> = {
   cruise: 'Holding cruise', descend: 'Reducing speed and collective',
   approach: 'Decelerating and descending to the hover', land: 'Lowering collective for a vertical landing',
   autorotate: 'Power off; collective low; holding 65 KIAS', flare: '60 ft flare: following a decreasing sink schedule with cyclic',
-  level: 'Continuing deceleration as sink returns', cushion: 'Raising collective; easing pitch as the ground closes',
+  level: 'Finishing the flare as sink returns', cushion: 'Pulling collective; pushing forward to level the skids',
   slide: 'Controlling pitch through the skid slide', park: 'Lowering collective after stopping',
 };
 
@@ -169,7 +169,7 @@ export class R22Flight implements StepController {
       this.phase = 'flare'; pilot.pitchRate = 8 * DEG; pilot.cyclicRate = 0.8; pilot.pitchLead = 0.5;
     }
     if (this.phase === 'flare' && h < 30 * FT && this.verticalAcceleration < -0.2) {
-      this.phase = 'level'; pilot.pitchRate = 12 * DEG; pilot.pitchLead = 0.3; pilot.pitchDamping = 2;
+      this.phase = 'level'; pilot.pitchRate = 24 * DEG; pilot.cyclicRate = 1.2; pilot.pitchLead = 0.3; pilot.pitchDamping = 2;
     }
     // Do not wait for a fixed near-ground height: the loss of support is the cue to begin the pull.
     else if (this.phase === 'level' && this.verticalAcceleration < -0.2) this.phase = 'cushion';
@@ -178,27 +178,29 @@ export class R22Flight implements StepController {
     else if (this.phase === 'autorotate') pilot.step(dt, s, c, 65, -1, undefined, clamp(0.04 + 0.02 * (rpm - 102), 0, 0.5), 1);
     else {
       // Engineering objectives, not POH performance data. Arrest the high entry sink progressively,
-      // then keep decelerating while descending. A level command at a fixed height threw away the
-      // last part of the flare. Ease the attitude with perceived speed and anticipated ground closure.
+      // then keep decelerating while descending. Anticipate ground closure to push forward before
+      // contact. The faster forward hand movement and short, descending cushion preserve tail clearance.
       // This remains an unsuccessful energy-management demonstration: the slow landing spends too
-      // much rotor RPM and the late flare reaches ~30 degrees. The strict RPM acceptance stays failing.
+      // much rotor RPM. The peak flare is about 34 degrees, but the skids level before contact;
+      // the strict RPM acceptance stays failing. No inertia or aerodynamic coefficients are pilot-tuned.
       const portion = clamp((h - 8 * FT) / (52 * FT), 0, 1);
-      const targetVs = this.phase === 'flare' ? -0.4 - 7.6 * portion ** 6 : -Math.min(2.5, 0.5 + h * 0.4);
+      const targetVs = this.phase === 'flare' ? -0.4 - 7.6 * portion ** 6 : -Math.min(3.5, 0.55 + h * 0.7);
       const targetAcceleration = this.phase === 'flare' ? -45.6 / (52 * FT) * portion ** 5 * s.verticalSpeed : 0;
-      const landingPitch = Math.max(1, Math.min(30, 4 + (h + 0.6 * s.verticalSpeed) / FT * 2,
+      const landingPitch = Math.max(1, Math.min(33, -4 + (h + 0.5 * s.verticalSpeed) / FT * 3,
         Math.max(2, 2 * (s.groundSpeed / KT - 4)))) * DEG;
       const pitch = this.phase === 'flare' ? clamp(pilot.pitchCommand +
         (8 * (targetVs - s.verticalSpeed) + 3 * (targetAcceleration - this.verticalAcceleration)) * DEG * dt,
         -10 * DEG, 24 * DEG) : landingPitch;
-      // Build some RPM reserve below 45 ft, and support an excessive entry sink while above 97%.
+      // Build RPM reserve below 45 ft. The initial collective support is an explicit pilot pull,
+      // not excess aerodynamic lift: the energy audit records its torque cost and 15% minimum demand.
       // There is no mass, thrust, inflow or rotor-energy estimate available to this pilot. Cushioning
       // follows sink/trend cues; the resulting low RPM is recorded, never clamped or reset away.
-      const rpmTarget = 101.5 + 3.5 * clamp((45 * FT - h) / (15 * FT), 0, 1);
+      const rpmTarget = 101.5 + 6 * clamp((45 * FT - h) / (15 * FT), 0, 1);
       const entrySupport = h > 40 * FT && rpm > 97 && s.verticalSpeed < -4 ? 0.15 : 0;
       const collective = this.phase !== 'cushion' ? Math.max(entrySupport,
         clamp(0.08 * (rpm - rpmTarget) + 0.04 * this.rpmTrend, 0, 0.8)) :
-        clamp((c.collective ?? 0) + (0.4 * (targetVs - s.verticalSpeed) - 0.2 * this.verticalAcceleration) * dt, 0, 1);
-      pilot.step(dt, s, c, 0, targetVs, pitch, collective, 0.5);
+        clamp((c.collective ?? 0) + (0.7 * (targetVs - s.verticalSpeed) - 0.25 * this.verticalAcceleration) * dt, 0, 1);
+      pilot.step(dt, s, c, 0, targetVs, pitch, collective, this.phase === 'flare' ? 0.5 : 0.8);
     }
     this.lastRpm = rpm; this.lastVs = s.verticalSpeed;
   }

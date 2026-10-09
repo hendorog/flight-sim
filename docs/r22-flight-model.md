@@ -1,9 +1,9 @@
 # R22 Beta II flight model
 
-Round 3 adds surface-dependent skid sliding and static grip, and keeps the demonstration pilot active
-through touchdown and the ground slide. Both weights now touch below 10 kt without modelled damage,
-but **a satisfactory autorotation remains unvalidated**: the slow touchdown spends rotor RPM below the
-90% power-off limit and uses excessive late pitch. The two complete-landing expected failures remain.
+Round 4 audits energy before and after physical corrections, adds tail-stinger/fin contacts, and levels
+skids before touchdown. **Autorotative landing remains unvalidated:** both weights touch below 10 kt
+without damage or tail contact, but rotor RPM is still below 90%. The two complete-landing expected
+failures remain. The recorded early flare loses energy; no excess-energy source was found.
 This is an experimental, reduced-order model, not a validated flight-training procedure.
 
 Open `/?aircraft=r22&scenario=runway&resume=0` for a running helicopter, `scenario=cruise` for a trimmed airborne start, or `scenario=apron` for a cold start. Exterior and panel work are separate from this physics branch.
@@ -102,12 +102,12 @@ factor understated the IGE benefit. Hub height comes from the shared geometry an
 - Longitudinal/lateral flapping follows averaged first-harmonic free-hinge equations. Response time is 16/(Lock number × rotor angular speed), with body pitch/roll/yaw rates, advance-ratio blowback and cyclic terms. Coning follows the blade aerodynamic bending moment balanced by centrifugal force. Coning and a skewed-inflow estimate add transverse-flow lateral flapping. Outer retreating-blade lift loss adds aft flapping at high advance ratio/loading.
 - Main force acts at the shared hub relative to loaded CG. The centre teeter hinge supplies no artificial pitch/roll spring torque. Cyclic moment therefore falls with thrust. Rotor angular momentum is included along the tilted disc axis; for an ideal free hinge the aerodynamic reorientation term and body-frame momentum derivative cancel the rigid-disc Euler gyroscopic term. Adding only that Euler term would invent a rigid hub. Tail-rotor/engine gyroscopic moments, undersling dynamics, elasticity and lead-lag are not resolved.
 - Teeter angle is the disc-to-mast angle. Exceeding the estimated stop while above 50% rotor RPM latches `mastBump` and a crash reason. Low-G tests show right roll from tail thrust above CG and reduced cyclic authority. The contact test imposes an already-developed body roll; it does not validate the complete real low-G accident sequence or its threshold.
-- Uniform dynamic inflow produces translational lift and power reduction. An image-rotor term reduces inflow near ground. The vortex-ring region uses a smooth empirical inflow continuation and thrust loss; it does not resolve wake recirculation, buffeting or recovery trajectories.
+- Uniform dynamic inflow produces translational lift and power reduction. An image-rotor term reduces inflow near ground. The vortex-ring region uses a smooth empirical inflow continuation; the former independent thrust multiplier was removed in round 4. It does not resolve wake recirculation, buffeting or recovery trajectories.
 - Fixed stabilizer and upper/lower fin loads use their own local airspeed, including body rotation. Estimated rotor wash affects the stabilizer at low speed. Fuselage drag and destabilizing pitch/yaw derivatives combine with the tail surfaces to provide forward-flight static stability and damping. There is no hidden attitude feedback.
 - Tail thrust acts right at the left-side shared tail hub, yawing the nose left against CCW main-rotor torque. Signed sideslip enters axial inflow; estimated main wake enters the tail disc's in-plane flow. Forward-flight fin unloading reduces pedal demand. Power loss removes drivetrain reaction torque, requiring right pedal. LTE/free-wake interference is not resolved.
 - Rotor energy integrates aerodynamic torque against main plus geared tail polar inertia. Belt engagement ramps over actuator travel; a capacity-limited impulse couples the engine through a one-way sprag, dissipating slip energy and preventing rotor back-drive of a slower engine. The governor changes throttle, never rotor RPM directly.
 - `takeoffPowerSeconds` accumulates time above 124 hp or the current MCP MAP (at operating RPM), resetting below both; `powerLimitExceeded` reports over 131 hp (1% numerical allowance), over the five-minute MAP (+0.05 inHg allowance), or more than 300 seconds above MCP. No detailed overstress damage or cumulative engine-life model exists. `vneKias` interpolates POH 2-11 pressure-altitude/temperature limits; `airspeedLimitExceeded` reports exceedance. Blank/outside-table cells conservatively return zero (outside approved envelope). Neither warning automatically reduces power or airspeed.
-- Four compliant skid contacts have normal spring/damper forces, tangential static compliance and surface-dependent sliding friction. Resting pitch/roll account for spring compression and loaded CG. There is no wheel/brake force. Cabin, main-disc rim (including flap/coning) and tail-disc rim contacts detect strikes; sink/depth limits detect hard landings. Contact history advances only at RK stage zero; intermediate-stage updates previously swallowed the touchdown event. Contact geometry is coarse and contains no structural skid flexure, terrain snag model, blade/tailcone collision test or certified rollover envelope.
+- Four compliant skid contacts have normal spring/damper forces, tangential static compliance and surface-dependent sliding friction. Resting pitch/roll account for spring compression and loaded CG. There is no wheel/brake force. Cabin, lower fin, main-disc rim (including flap/coning) and tail-disc rim contacts detect strikes; a compliant stinger distinguishes a light touch from a hard impact; sink/depth limits detect hard landings. Contact history advances only at RK stage zero; intermediate-stage updates previously swallowed the touchdown event. Contact geometry is coarse and contains no structural skid flexure, terrain snag model, blade/tailcone collision test or certified rollover envelope.
 
 Airborne initialization numerically solves roll, pitch, collective, cyclic and pedal force/moment balance, then settles the engine and throttle. Its convergence reports **aerodynamic equilibrium**, not proof of enough engine power. At an excessive speed/altitude/loading the initial pose can converge while throttle saturates; subsequent flight then loses RPM or altitude. The inflow residual is continuous at zero disc incidence; each evaluation resets all slow rotor states. A failed direct solve retries by continuation from hover. Ground initialization instead solves the static skid resting pose.
 
@@ -434,9 +434,9 @@ observation adapter supplies only attitude, angular rates, signed visual fore/af
 ground speed, skid height, vertical speed, tachometers and ground/crash indications. The pilot never receives
 a flight-model instance, forces, inflow, blade states, a trim solver or mutable aircraft state. It writes only
 ordinary `ControlInputs`. Normal cyclic travel is limited to 1/s, pedals to 0.7/s, and powered collective to
-0.12/s; the revised autorotation flare uses 0.8/s longitudinal cyclic and 0.5/s collective. These are
+0.12/s; the initial autorotation flare uses 0.8/s longitudinal cyclic and 0.5/s collective, increasing to 1.2/s and 0.8/s for the final forward push and cushion. These are
 engineering pilot hand-motion limits, not measured pilot-response data. Autorotation now uses the
-60 ft entry and continued deceleration/cushion described above, followed by active slide control. Only the rotorcraft skid contact model and its surface data change in the physics path.
+60 ft entry and continued deceleration/cushion described above, followed by active slide control. Round 3 changed skid contacts and surface data; round 4 also corrects rotor inflow/work consistency and adds tail protection, as documented below.
 
 Flight School's `DemoScript` was considered. Its AP/autoflight/raw/pulse segments have no collective,
 clutch/governor switches or rotorcraft feedback-controller segment, so these flights use its `StepController`
@@ -532,12 +532,237 @@ and skid tests, caption and this report. The only additional shared contract edi
 contract are unchanged. All work is **uncommitted** for the supervisor. Airplane gear, aircraft data,
 controls and flight-model paths are untouched.
 
+## Round 4: energy audit, tail contacts and levelling
+
+**No airborne excess-energy source was found in the recorded flare. The landing is still not validated.**
+Both weights now touch below 10 kt and 1.5 m/s, with roughly 2–3° nose-up attitude and no tail contact,
+in both the engineering and app environments. However, rotor RPM is only 84/78% at sea level and
+85/78% in the app. The two complete-landing expected failures remain. The earlier claim that there
+must be excess lift is not established by this energy audit: conservation is necessary, but does not
+validate the blade polar, inertia, inflow distribution or transient handling against a real R22.
+
+### Audit before any dynamics changes
+
+Full 240 Hz traces were recorded first with the round-3 physics and pilot, then with corrected physics
+and the original pilot, then with the final pilot. Each set contains gross and solo landing flares,
+35 seconds of autorotation entry/steady descent, and a constant-collective flare from trimmed 65 kt
+level flight. The last case cuts the engine at flare entry and commands a progressive 16° pitch change;
+it is deliberately different from the landing pilot's collective schedule. The source copies, harness,
+JSON and plots are under ignored `work/energy-r4/`. `before-*`, `physics-*` and `after-*` identify the
+three runs; `before-audit.png`, `after-audit.png` and `controlled-cases.png` were inspected.
+
+The energy calculation uses **CG height and velocity**, actual loaded mass/inertia, main plus geared
+tail rotor kinetic energy, and `0.5 ω·Iω` body rotational energy. The model reference point and CG are
+not interchangeable during pitch changes. For every RK stage, diagnostics record main and tail
+shaft power `-QΩ`, thrust work at the moving hub, H-force work, induced and profile losses, fuselage,
+stabilizer, fins, fuselage moments, drivetrain reaction, and ground force/moment work. Drive diagnostics
+separate the free aerodynamic rotor step, clutch energy, and quadratic Euler-work term. The harness
+RK-weights the loads and compares them with measured energy changes. These channels never feed the pilot.
+
+The following ranges are measured `dE/dt` in kW, excluding clutch-coupled intervals and all ground
+contact stages. **Every included step is negative**, before and after the changes.
+
+| Case | Before gross | After gross | Before solo | After solo |
+|---|---:|---:|---:|---:|
+| Landing, entry through contact | −102.05 to −35.96 | −119.91 to −35.27 | −82.94 to −34.93 | −86.71 to −34.63 |
+| Autorotation entry/steady descent | −53.43 to −35.96 | −53.77 to −35.27 | −41.88 to −34.93 | −41.96 to −34.63 |
+| Constant-collective flare | −50.47 to −33.18 | −50.60 to −33.43 | −45.01 to −25.90 | −45.13 to −26.09 |
+
+The gross baseline 60→45 ft interval lasts 1.129 s: potential energy falls **27.84 kJ**, translational
+kinetic energy falls **48.14 kJ**, rotor energy rises **2.15 kJ**, and total energy falls **73.83 kJ**.
+The sink changes from −1264 to −362 fpm, pitch from −2.5° to +5.5°, and IAS from 64.55 to 59.84 kt.
+This was **not a constant-collective flare**: collective is 21% at 60 ft, reaches approximately 28%,
+and is still 20% at 45 ft. Mean thrust over that interval is **8.55 kN**, against **6.09 kN** weight.
+The scripted pilot's early pull and rapid sink-arrest demand explain much of the apparent excess support.
+The final pilot retains that explicit early support; removing it without redesigning the whole entry
+caused excessive early descent or a later balloon in the rejected trials.
+
+At 60 ft the baseline gross power balance is approximately +4.66 kW main shaft acceleration,
+−51.69 kW main thrust work, −0.94 kW main H-force, −1.39 kW tail shaft, −10.73 kW fuselage,
+−0.26 kW stabilizer and −0.14 kW fins. Main induced/profile losses are 21.00/26.98 kW.
+The large lift is doing **negative** work: the aircraft is moving down and forward while the disc
+is increasingly tilted aft. It does not create mechanical energy. Fin/stabilizer work is small;
+ground-effect inflow reduction is below 0.001% throughout this early interval, and VRS is absent.
+
+The truly airborne rigid-body RK4 work residual is below **0.00003 W**. The initial coarse report's
+6–8 W maxima included RK stages that had already touched ground before the published ground flag changed.
+The separate rotor Euler quadratic-work term peaks at **20.7 W before / 27.3 W after**. Comparing the
+lagged rotor torque step with the current RK-weighted aerodynamic shaft work gives up to **232 W before /
+324 W after** of operator-splitting discrepancy, not a tens-of-kW source. No shared integrator change or
+energy clamp was introduced. Ground work is recorded through the slide; spring return can increase the
+listed aircraft-only energy after contact, so the airborne monotonicity claim does not omit spring storage
+and pretend to apply on the ground. Flap/coning kinetic energy and a resolved wake-energy state are not
+represented by this reduced model.
+
+### Physical corrections and what they do not establish
+
+- The blade-element identity is `T Va − H U − QΩ = −T vi − Pprofile`, including signed torque,
+  reverse-flow sections and stall. Thrust and H-force use the same instantaneous disc axis and hub
+  airflow as the torque calculation. Disc tilting therefore does not introduce an extra work source;
+  the cancelling free-hinge gyroscopic term does no work either.
+- The old **thrust-only VRS multiplier** violated that identity by up to 3.18 kW gross / 3.69 kW solo
+  in the late flare. Total work nevertheless remained negative. It is removed; the existing empirical
+  VRS inflow continuation remains and still needs validation. There is no second independent force
+  multiplier disconnected from shaft torque.
+- Tail-rotor in-plane force was calculated by the blade elements but discarded. It is now applied at
+  the tail hub, including its pitch/yaw moments; its main-wake work is separately recorded. The missing
+  term was only of order 80 W around flare entry, not the proposed large lift source.
+- The old inflow lag depended only on hover induced speed: **0.229 s** at gross 60 ft. The uniform
+  apparent-mass linearization gives `tau = 64 R/(75 pi Veff)`, with
+  `Veff = |V + vi| + vi (Va + vi)/|V + vi|`; it is **0.0322 s** at that forward-flight condition.
+  This follows the uniform-mode equation in [NASA TM-88327, equations 4–5](https://ntrs.nasa.gov/api/citations/19870015049/downloads/19870015049.pdf).
+  The positive floor in the non-momentum/VRS region and the 1.5 s stopped-rotor cap remain estimates.
+  This is not a full three-state Pitt–Peters wake. A controlled rerun with the old pilot still produces
+  8.74 kN mean thrust from 60→45 ft and 84/74% touchdown RPM: the lag correction **does not explain away
+  the early lift or solve the landing**.
+- Fixed-surface lift is now perpendicular to local flow in backward as well as forward flight. The old
+  reverse-flow x-component could add work. This is a separate sign correction, not an initial-flare cause.
+
+No rotor polar, inertia, collective stop, fuselage area or skid-friction coefficient was retuned.
+The tests now independently exercise blade-element work closure, reverse-flow surface dissipation,
+physical inflow time scales, and whole-aircraft energy/work closure in all three scenarios at both weights.
+
+### Tail protection and pilot changes
+
+The existing lower-fin outline and stinger centreline were moved verbatim from `visual.ts` into
+`dimensions.ts`; physics and render use those same coordinates. **No existing dimension changed.**
+They remain POH three-view/exterior estimates, not newly dimensioned factory data. The 16 mm tube radius
+is also shared. Every contact queries local terrain. The lowest stinger point supplies a compliant
+normal reaction and sliding friction at its real arm; it can pitch the nose down. Estimated spring/damper
+values are 15 kN/m and 600 Ns/m. A light touch latches `tailContact = 'stinger-touch'` without stopping.
+More than 1 m/s normal impact speed or 80 mm compression reports a hard stinger impact; fin and tail-disc
+strikes have distinct reasons. Those damage thresholds need structural evidence. Fin outline samples,
+the existing eight-point rotor rim and the rigid stinger approximation cannot resolve every terrain snag.
+
+The new state field is serialized, validated and shown by the demo caption. Older schema-3 saves default
+it to `none`. Existing systems fields keep their meanings. Tests cover nonfatal contact, force/moment work,
+latched reporting, hard stinger impact, local fin/rotor terrain strikes, and save/restore compatibility.
+A rejected pilot trial hit the stinger at **4.37 ft / 27.4° gross** and **5.05 ft / 30.7° solo**; it is
+retained as `pilot4-*`, rather than suppressing strikes to obtain a landing.
+
+The final pilot retains the progressive 60 ft flare, builds a modest RPM reserve, then uses forward
+cyclic based on visible height/sink to level the skids before contact. Final-phase cyclic travel is limited
+to 1.2/s and collective to 0.8/s (initial flare still 0.8/s and 0.5/s); these are estimated hand-motion
+limits, not measured pilot-response data. The descending cushion avoids a prolonged near-level hover.
+The peak flare is still approximately **34° gross / 33° solo** at 15 ft; it is not claimed to reproduce
+real R22 handling. At touchdown it is approximately 3°/2°, with >0.66 m stinger clearance. Aft-cyclic
+slide control remains active until stopped. The keyboard test pilot's visual speed/drift gains changed
+from 0.02/0.03 to 0.025/0.04 to handle the faster inflow; no production input gains or test limits changed.
+
+The height tables below use the existing nominal CG-based skid-height readout. Stinger clearance uses
+the actual reference position, attitude, shared tube geometry and local terrain. IAS includes vertical
+motion and differs from the horizontal ground speed used by touchdown acceptance.
+
+**Sea-level ISA, gross, 621.42 kg**
+
+| Skid height, ft | Pitch, ° | IAS, kt | VS, fpm | Rotor, % | Stinger clearance, m |
+|---|---:|---:|---:|---:|---:|
+| 60 | -2.8 | 64.6 | -1309 | 103.7 | 19.36 |
+| 45 | +5.6 | 60.3 | -442 | 104.5 | 14.09 |
+| 30 | +13.0 | 50.9 | -440 | 106.1 | 8.92 |
+| 15 | +34.1 | 23.1 | -702 | 106.8 | 2.76 |
+| 8 | +24.8 | 16.4 | -649 | 101.9 | 1.30 |
+| 3 | +10.8 | 10.7 | -369 | 92.0 | 0.87 |
+| Touchdown | +3.0 | 8.6 | -278 | 83.9 | 0.67 |
+
+Contact **8.19 kt GS, 1.35 m/s skid sink, 83.94% NR**; pitch **3.00°**. Maximum flare VS **-0.066 m/s**. Minimum stinger clearance to contact **0.670 m**. Tail report `none`; no crash; terminal ground speed **0.0006 kt**.
+
+**Sea-level ISA, solo, 512.06 kg**
+
+| Skid height, ft | Pitch, ° | IAS, kt | VS, fpm | Rotor, % | Stinger clearance, m |
+|---|---:|---:|---:|---:|---:|
+| 60 | -1.7 | 64.7 | -1285 | 100.0 | 19.27 |
+| 45 | +6.2 | 61.0 | -634 | 101.1 | 14.06 |
+| 30 | +15.4 | 39.4 | -231 | 101.8 | 8.75 |
+| 15 | +33.0 | 17.3 | -727 | 99.4 | 2.87 |
+| 8 | +20.7 | 11.4 | -621 | 93.4 | 1.63 |
+| 3 | +6.2 | 7.3 | -374 | 84.6 | 1.26 |
+| Touchdown | +2.0 | 6.0 | -271 | 77.5 | 0.74 |
+
+Contact **5.35 kt GS, 1.30 m/s skid sink, 77.55% NR**; pitch **2.00°**. Maximum flare VS **-0.357 m/s**. Minimum stinger clearance to contact **0.740 m**. Tail report `none`; no crash; terminal ground speed **0.0007 kt**.
+
+**App terrain and atmosphere, gross, 621.42 kg**
+
+| Skid height, ft | Pitch, ° | IAS, kt | VS, fpm | Rotor, % | Stinger clearance, m |
+|---|---:|---:|---:|---:|---:|
+| 60 | -2.6 | 64.2 | -1288 | 103.9 | 19.35 |
+| 45 | +5.8 | 59.7 | -408 | 104.6 | 14.08 |
+| 30 | +12.5 | 51.0 | -480 | 106.0 | 8.96 |
+| 15 | +33.9 | 24.0 | -682 | 107.2 | 2.77 |
+| 8 | +24.9 | 17.4 | -650 | 102.9 | 1.29 |
+| 3 | +11.0 | 11.6 | -365 | 93.4 | 0.85 |
+| Touchdown | +3.0 | 9.6 | -272 | 85.4 | 0.66 |
+
+Contact **9.28 kt GS, 1.27 m/s skid sink, 85.44% NR**; pitch **3.03°**. Maximum flare VS **-0.075 m/s**. Minimum stinger clearance to contact **0.666 m**. Tail report `none`; no crash; terminal ground speed **0.0027 kt**.
+
+**App terrain and atmosphere, solo, 512.06 kg**
+
+| Skid height, ft | Pitch, ° | IAS, kt | VS, fpm | Rotor, % | Stinger clearance, m |
+|---|---:|---:|---:|---:|---:|
+| 60 | -1.7 | 64.2 | -1290 | 100.5 | 19.27 |
+| 45 | +6.2 | 60.6 | -631 | 101.6 | 14.06 |
+| 30 | +16.0 | 39.2 | -212 | 102.3 | 8.70 |
+| 15 | +32.8 | 17.1 | -729 | 99.7 | 2.88 |
+| 8 | +20.4 | 11.3 | -620 | 93.5 | 1.65 |
+| 3 | +6.0 | 7.2 | -375 | 84.8 | 1.27 |
+| Touchdown | +2.0 | 6.0 | -275 | 77.7 | 0.74 |
+
+Contact **5.36 kt GS, 1.38 m/s skid sink, 77.71% NR**; pitch **2.00°**. Maximum flare VS **-0.574 m/s**. Minimum stinger clearance to contact **0.743 m**. Tail report `none`; no crash; terminal ground speed **0.0007 kt**.
+
+### Round-4 regression evidence and scope
+
+The final sea-level trim power curve (engine-equivalent shaft hp, including drivetrain loss) is:
+
+| KIAS | Gross, hp | Solo, hp |
+|---|---:|---:|
+| 0 | 127.07 | 101.88 |
+| 20 | 92.49 | 73.18 |
+| 40 | 69.53 | 58.08 |
+| 53 | 67.93 | 58.82 |
+| 65 | 72.19 | 64.38 |
+| 80 | 84.47 | 77.69 |
+| 100 | 113.54 | 107.59 |
+
+All 0–100 kt trims converge within the existing residual limit. Powered approach contact is
+**0.057/0.053 kt**, **0.046/0.044 m/s** sink, **103.61/103.54% NR** gross/solo. The complete cold-start
+circuit lands at **0.056 kt**, **0.047 m/s** sink and **103.61% NR**; airborne NR spans **103.13–103.75%**,
+maximum shaft output is **127.02 hp**, and no power-limit exposure or damage is reported. The existing
+hover-ceiling, maintenance autorotation, governor, low-G, teeter, trim, powered flight, run-on, cross-slope
+and rollover checks are retained. Keyboard hover peak ground speed in the final 30 seconds is **1.80 kt
+gross / 1.92 kt solo**, below the unchanged 2 kt limit.
+
+Shared files outside the specified physics/R22/demo/test ownership were touched only where necessary:
+`src/render/aircraft/airframe/types.ts` adds the stinger radius to visual data;
+`src/render/aircraft/rotorcraft/airframe.ts` reads that radius instead of duplicating it;
+`src/sim/resume.ts` validates the tail-contact enum and defaults older saves. `docs/r22-flight-model.md`
+is the requested report. The explicitly permitted caption is `src/ui/rotorcraftDemo.ts`. Airplane
+physics, aircraft coefficients, gear and controls are unchanged. All work remains **uncommitted**.
+
+Final `npx tsc --noEmit` is clean. `npx vitest run --maxWorkers=4` reports **2,697 passed,
+two expected failures and 221 skipped**, across **190 passed / four skipped files**, in **374.03 s**.
+There are no ordinary failures, including the airplane regressions. The rotorcraft files account for
+**101 passed / two expected failures**. The first area run's two contact-budget test failures and save
+validator failure were implementation issues, corrected and checked by the 28-test energy/integration/
+resume subset before the full suite. Logs are `typecheck-final.log`, `area-initial.log`,
+`energy-resume.log` and `full-suite.log` under `work/energy-r4/`.
+
+Inspected 1600×900 app captures include `gross-60-{cockpit,side}.png`, `gross-15-side.png`,
+`gross-{8,3}-cockpit.png`, `gross-contact-{cockpit,side}.png`, `solo-15-side.png`,
+`solo-3-cockpit.png`, `solo-contact-{cockpit,side}.png` and both terminal side views. The side views
+show the forward push and stinger clearance; cockpit views leave the low RPM visible. Exact capture
+states and clearances are in `captures.json`. The same-preset exterior comparison is `r22-side.png`
+and `c152-side.png`. The first C152 app screenshot attempt timed out during capture (no image was
+produced); its console evaluation did confirm `demo: null` and no crash. That failed image attempt is
+not counted as visual verification. The successful C152 exterior capture and full suite are the
+regression evidence. All screenshots, downloads, pilot trials, traces and plots remain ignored in `work/`.
+
 ## Remaining work
 
 1. Resolve both autorotative-landing expected failures: preserve ≥90% NR while touching below 10 kt,
-   <1.5 m/s and with a near-level attitude. The current slow touchdown meets speed/sink/no-climb/damage
-   checks but spends too much RPM and still uses excessive late pitch. Reconcile the shared pilot and
-   rotor/transient model against handling evidence; also validate blade/tailcone clearance.
+   <1.5 m/s and with a near-level attitude. The round-4 touchdown meets speed/sink/no-climb/no-tail-contact and near-level attitude checks,
+   but still spends too much RPM. The energy audit found no large artificial source. Obtain measured
+   rotor inertia/polars and transient handling evidence before changing those estimates; also validate
+   blade/tailcone clearance and structural stinger limits.
 2. Reduce the remaining hover-chart errors using measured induction/fuel, cooling-fan, rotor-loss and fuselage
    download data. Validate maximum glide, Vy/climb curves and asymmetric cyclic stops.
 3. Reconcile hover attitude/CG with a specific aircraft’s weight-and-balance sheet; confirm blade/body inertia,

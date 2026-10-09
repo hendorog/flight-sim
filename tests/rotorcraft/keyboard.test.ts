@@ -20,7 +20,7 @@ describe('R22 keyboard hover through the real input path', () => {
     // not changes to input authority or feedback hidden in the production input/flight model.
     pilot.liftI = 0; pilot.pitchGain = 0.5; pilot.pitchDamping = 0.7; pilot.pitchLearning = 0.05;
     pilot.rollGain = 0.5; pilot.rollDamping = 0.5; pilot.rollLearning = 0.05;
-    pilot.speedGain = 0.02; pilot.speedLearning = 0.002; pilot.driftGain = 0.03; pilot.driftLearning = 0.003;
+    pilot.speedGain = 0.025; pilot.speedLearning = 0.002; pilot.driftGain = 0.04; pilot.driftLearning = 0.003;
     const log = new FlightRecorder(r), held = new Set<string>();
     let presses = 0;
     const move = (negative: string, positive: string, gap: number, deadband: number): void => {

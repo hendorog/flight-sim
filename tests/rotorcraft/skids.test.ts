@@ -5,12 +5,50 @@ import { R22_DEFINITION } from '../../src/aircraft/r22';
 import { cloneControls, defaultControls } from '../../src/core/types';
 import type { BodyState } from '../../src/physics/interfaces';
 import { createFlightModelFor } from '../../src/physics';
-import { SkidGear } from '../../src/physics/rotorcraft/skids';
+import { SkidGear, stingerClearance } from '../../src/physics/rotorcraft/skids';
+import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { ScriptedPilot, observePilot } from '../../src/sim/rotorcraft/scriptedPilot';
 import { DT, rig, seaLevel } from './helpers';
 import { writeTrace } from './scriptedPilot';
 
 describe('R22 skid shoes and terrain', () => {
+  it('touches the stinger before skids/rotor in a low nose-high flare and applies a real reaction', () => {
+    const body: BodyState = { time: 0, position: v3.zero(), orientation: quat.fromEuler(0, 25 * DEG, 0),
+      velocityBody: quat.rotateInv(quat.fromEuler(0, 25 * DEG, 0), { x: 0, y: 0, z: 0.2 }),
+      angularVelocity: v3.zero(), cgOffset: v3.zero(), mass: 621 };
+    body.position.z = stingerClearance(d, body, seaLevel) + 0.005;
+    const rotor = emptyRotorcraftState(), gear = new SkidGear(d);
+    const g = gear.compute({ body, env: seaLevel, dt: DT, controls: defaultControls(R22_DEFINITION) }, rotor);
+    expect(g.onGround).toBe(false); expect(g.crash).toBe('');
+    expect(rotor.tailContact).toBe('stinger-touch');
+    expect(stingerClearance(d, body, seaLevel)).toBeCloseTo(-0.005, 8);
+    expect(quat.rotate(body.orientation, g.force).z).toBeLessThan(0);
+    expect(g.moment.y).toBeLessThan(0); // lifts the tail; no attitude lock
+    expect(v3.dot(g.force, body.velocityBody)).toBeLessThan(0);
+    body.position.z -= 0.2;
+    gear.compute({ body, env: seaLevel, dt: DT, controls: defaultControls(R22_DEFINITION) }, rotor);
+    expect(rotor.tailContact).toBe('stinger-touch'); // visible after separation
+  });
+
+  it('distinguishes a hard stinger impact, lower fin contact and tail rotor strike', () => {
+    const pose = quat.fromEuler(0, 25 * DEG, 0);
+    const body: BodyState = { time: 0, position: v3.zero(), orientation: pose,
+      velocityBody: quat.rotateInv(pose, { x: 0, y: 0, z: 2 }), angularVelocity: v3.zero(), cgOffset: v3.zero(), mass: 621 };
+    body.position.z = stingerClearance(d, body, seaLevel) + 0.005;
+    const gear = new SkidGear(d), rotor = emptyRotorcraftState();
+    const input = { body, env: seaLevel, dt: DT, controls: defaultControls(R22_DEFINITION) };
+    expect(gear.compute(input, rotor).crash).toBe('Tail stinger impact');
+    expect(rotor.tailContact).toBe('stinger-impact');
+    // A raised patch under the fin, then the rotor. Each point queries the actual terrain.
+    const fin = d.tailProtection!.fin[2], finWorld = v3.add(body.position, quat.rotate(pose, fin));
+    input.env = { ...seaLevel, groundElevation: (x, y) => Math.hypot(x - finWorld.x, y - finWorld.y) < 0.02 ? -finWorld.z + 0.001 : 0 };
+    expect(gear.compute(input, rotor).crash).toBe('Lower tail fin strike');
+    expect(rotor.tailContact).toBe('fin-strike');
+    const hubWorld = v3.add(body.position, quat.rotate(pose, d.tail.hub));
+    input.env = { ...seaLevel, groundElevation: (x, y) => Math.hypot(x - hubWorld.x, y - hubWorld.y) < 0.02 ? -hubWorld.z + 0.001 : 0 };
+    expect(gear.compute(input, rotor).crash).toBe('Tail rotor strike');
+    expect(rotor.tailContact).toBe('rotor-strike');
+  });
   it('opposes motion and applies the entire ground reaction at the contacts below the CG', () => {
     const body: BodyState = { time: 0, position: { x: 0, y: 0, z: -d.skids.z + 0.02 },
       orientation: quat.identity(), velocityBody: { x: 10, y: 0, z: 0 }, angularVelocity: v3.zero(),

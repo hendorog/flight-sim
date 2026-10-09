@@ -44,8 +44,9 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
       add(mat.navyPaint, fin(pts, f.thickness + 0.0015, f.axis));
     }
   }
-  add(mat.plainPaint, pathTube(d.guard, 0.016, 20));
-  add(mat.navyPaint, pathTube(d.guard.slice(2), 0.0165, 8));
+  const guardRadius = d.guardRadius;
+  add(mat.plainPaint, pathTube(d.guard, guardRadius, 20));
+  add(mat.navyPaint, pathTube(d.guard.slice(2), guardRadius + 0.0005, 8));
   const th = d.tail.hub;
   add(castMetal, tube([th[0], 0.06, th[2]], th, 0.059, 0.035, 20));
   add(castMetal, box([th[0] + 0.015, 0, th[2]], [0.14, 0.12, 0.13], 0.035));
