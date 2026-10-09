@@ -620,7 +620,7 @@ export class InputSystem implements Subsystem {
       const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
       if (this.collectiveOwner.update(change !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
-      else c.collective = clamp((c.collective ?? 0) + change * 0.15 * dt, 0, 1);
+      else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
     }
 
     // Mouse yoke: armed until the pointer passes through the centre, then in control.

@@ -9,18 +9,20 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { surfacePoint } from '../airfoil';
 import { capGeometry, gridGeometry, MeshBatch } from '../geometry';
 import type { AircraftMaterials } from '../materials';
+import type { RotorBladePaint } from '../airframe/types';
 import { box, tube } from './geometry';
 
-export interface RotorSpec { radius: number; root: number; chord: readonly [number, number]; twist: number; tail?: boolean }
+export interface RotorSpec { radius: number; root: number; chord: readonly [number, number]; twist: number; tail?: boolean; paint?: RotorBladePaint }
 const COPIES = 10;
 const smooth = THREE.MathUtils.smoothstep;
 
 export function rotorBladeGeometry(d: RotorSpec): THREE.BufferGeometry {
   // Paint boundaries have paired stations so the stripes have crisp edges without extra draw calls.
   // R22 MM Figs. 26-17 / 28-5: white/yellow upper main blade, dark underside, striped tail blades.
-  const bands = d.tail ? Array.from({ length: 7 }, (_, i) => d.radius - 0.05842 - i * 0.0508)
+  const bands = d.paint ? d.paint.bands.map(b => d.radius - b.tipDistance)
+    : d.tail ? Array.from({ length: 7 }, (_, i) => d.radius - 0.05842 - i * 0.0508)
     : [0.254, 1.2192, 1.8288, 2.9464].map(x => d.radius - x);
-  const capLength = d.tail ? 0.004 : 0.008;
+  const capLength = d.paint?.capLength ?? (d.tail ? 0.004 : 0.008);
   const radii = [...Array.from({ length: 25 }, (_, i) => THREE.MathUtils.lerp(d.root, d.radius, i / 24)),
     ...[...bands, d.radius - capLength].filter(r => r > d.root).flatMap(r => [r - 0.00001, r + 0.00001]),
     d.radius - 0.02].sort((a, b) => a - b);
@@ -50,7 +52,10 @@ export function rotorBladeGeometry(d: RotorSpec): THREE.BufferGeometry {
   for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
     const r = radii[i], tipDistance = d.radius - r, xc = (1 - Math.cos(j / (cols - 1) * Math.PI * 2)) / 2;
     let colour: THREE.Color;
-    if (d.tail) colour = tipDistance < 0.05842 || (tipDistance < 0.36322 && Math.floor((tipDistance - 0.05842) / 0.0508) % 2 === 1) ? light : dark;
+    if (d.paint) {
+      const band = d.paint.bands.find(b => tipDistance < b.tipDistance);
+      colour = new THREE.Color(j > (cols - 1) / 2 ? band?.lower ?? d.paint.rootLower : band?.upper ?? d.paint.rootUpper);
+    } else if (d.tail) colour = tipDistance < 0.05842 || (tipDistance < 0.36322 && Math.floor((tipDistance - 0.05842) / 0.0508) % 2 === 1) ? light : dark;
     else colour = tipDistance < 0.254 ? yellow : j > (cols - 1) / 2 ? dark
       : tipDistance < 1.2192 || (tipDistance > 1.8288 && tipDistance < 2.9464) ? light : yellow;
     if (xc < 0.075 || tipDistance < capLength) colour = metal;

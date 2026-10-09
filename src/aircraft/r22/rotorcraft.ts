@@ -14,7 +14,10 @@ export const R22_ROTORCRAFT: RotorcraftDefinition = {
   transmissionEfficiency: 0.94, cyclicLimit: 10.75 * DEG,
   // Stop angle, actuator time, torque capacity and throttle linkage gains are engineering estimates.
   teeterLimit: 12 * DEG,
+  controlSystem: { cyclic: 'mechanical', collective: 'mechanical', pedals: 'mechanical' },
   systems: { clutchSeconds: 45, beltTorque: 520, correlator: 0.3, governorRate: 0.3, governorLead: 0.5,
+    // POH 7: governor above 80%, warning below 97%; switch deadband/power gate remain estimates.
+    governorEngage: 0.8, lowRpmWarning: 0.97, powerCheckMinRpm: 0.97, hornCollectiveMin: 0.02,
     governorGain: 10, governorIntegralGain: 1,
     continuousPower: 124 * HP, takeoffPower: 131 * HP, takeoffSeconds: 300 },
   main: { radius: MAIN_ROTOR_RADIUS, rootCutout: 0.75, chord: 0.18923, blades: 2,

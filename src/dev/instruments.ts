@@ -29,6 +29,7 @@ import { FADEC_TESTBED_PANEL, FADEC_TESTBED_SYSTEMS, TESTBED_PX_RECT, TWIN_TESTB
 import { runHarness } from './harness';
 import { MockFlight } from './instrumentsFlight';
 import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
+import type { AircraftDefinition } from '../aircraft/types';
 
 const params = new URLSearchParams(location.search);
 const preRoll = Number(params.get('t') ?? 60);
@@ -57,6 +58,7 @@ const rpmSweep = sweep('rpm');
 const mapSweep = sweep('map');
 // Helicopter development: rotor=<percent> (independent of rpm=), lamps=1, and emissive=1.
 const rotorSweep = sweep('rotor');
+let aircraft: AircraftDefinition | undefined;
 
 const flight = new MockFlight();
 // Without `type` the page is what it always was: the C172S panel, built before the harness.
@@ -75,6 +77,7 @@ async function typedPanel(id: string): Promise<{ def: PanelDef; systems: Instrum
   if (id === 'fadec') return { def: FADEC_TESTBED_PANEL, systems: FADEC_TESTBED_SYSTEMS, engines: 2, pxRect: TESTBED_PX_RECT, geared: true };
   if (!isAircraftId(id)) throw new Error(`type=${id}: not an aircraft id, 'twin' or 'fadec'`);
   const [def, presentation] = await Promise.all([loadAircraft(id), loadPresentation(id)]);
+  aircraft = def;
   return {
     def: presentation.panel,
     systems: presentation.instrumentSystems,
@@ -147,21 +150,24 @@ function extendFlight(s: AircraftState, c: ControlInputs): void {
     }
     if (mapSweep) e.manifoldPressure = sweepAt(mapSweep, t, i % 2 === 1);
   }
-  if (type === 'r22') {
+  if (aircraft?.rotorcraft) {
+    const d = aircraft.rotorcraft;
+    const engineRpm100 = d.referenceRpm * d.engineRatio;
+    const poweredRpm = Math.ceil(d.nominalRpm / d.referenceRpm * 100) / 100 * engineRpm100;
     const r = s.rotorcraft ??= emptyRotorcraftState();
-    // A scripted panel fixture, not a second flight model: 104% powered, rotor free at 100% after engine-out.
-    if (!rpmSweep) e0.rpm = t > 200 ? 0 : t < 6 ? 0 : t < 20 ? 1400 : t < 40 ? 1900 : 2652;
-    const pct = rotorSweep ? sweepAt(rotorSweep, t) : t > 200 ? 100 : e0.rpm / 2550 * 100;
-    r.rotorRpm = pct * 5.1;
-    r.lowRpmHorn = pct <= 97 && t >= 40;
-    r.lowRpm = pct <= 97;
+    // Scripted fixture: rounded governed percent while powered, rotor free at 100% after engine-out.
+    if (!rpmSweep) e0.rpm = t > 200 ? 0 : t < 6 ? 0 : t < 20 ? 1400 : t < 40 ? 1900 : poweredRpm;
+    const pct = rotorSweep ? sweepAt(rotorSweep, t) : t > 200 ? 100 : e0.rpm / engineRpm100 * 100;
+    r.rotorRpm = pct * (d.referenceRpm / 100);
+    r.lowRpmHorn = pct <= d.systems.lowRpmWarning * 100 && t >= 40;
+    r.lowRpm = pct <= d.systems.lowRpmWarning * 100;
     r.clutchLight = t >= 10 && t < 20;
     r.clutchEngagement = t < 10 ? 0 : t < 20 ? (t - 10) / 10 : 1;
     r.governorActive = t >= 40 && t <= 200;
     r.governorThrottle = 0.72;
     c.rotorClutch = t >= 10; c.rotorGovernor = true; c.collective = t >= 40 ? 0.5 : 0;
     c.annunciatorTest = params.get('lamps') === '1';
-    s.electrical.busVoltage = t < 6 ? 0 : 14.2;
+    s.electrical.busVoltage = t < 6 ? 0 : aircraft.powerplant.electrical.nominalVolts + 0.2;
     s.fuel.left = 12 * 2.72155; s.fuel.right = 5 * 2.72155;
     if (!mapSweep) e0.manifoldPressure = t > 200 ? 12 : t < 40 ? 15 : 22.3;
   }

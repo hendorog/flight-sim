@@ -22,7 +22,12 @@ export function placardMap(d: ManifoldPlacard, altitude: number, temperature: nu
     const v = d.continuous[r][c];
     if (v !== null) return v;
     // Continue the altitude trend only for interpolation toward a full-throttle corner.
-    return 2 * d.continuous[r - 1][c]! - d.continuous[r - 2][c]!;
+    let last = r - 1;
+    while (last >= 0 && d.continuous[last][c] === null) last--;
+    if (last < 0) return Infinity;
+    const value = d.continuous[last][c]!;
+    if (last === 0) return value;
+    return value + (r - last) * (value - d.continuous[last - 1][c]!);
   };
   const a = row - i, b = col - j;
   return cell(i,j)*(1-a)*(1-b) + cell(i+1,j)*a*(1-b) + cell(i,j+1)*(1-a)*b + cell(i+1,j+1)*a*b;

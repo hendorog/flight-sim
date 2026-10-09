@@ -23,6 +23,7 @@
 
 import type { CameraMode, QualityLevel, ScenarioId } from '../core/context';
 import type { Quat, Vec3 } from '../core/math';
+import { isRotorcraftId } from '../core/types';
 import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
 import { DEFAULT_AIRCRAFT_ID, isAircraftId, type AircraftId, type ControlInputs, type SurfaceState, type WeatherSettings } from '../core/types';
 import type { AutopilotSettings } from '../physics';
@@ -207,7 +208,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (!isObj(c) || !isObj(c.lights)) return null;
   if (c.collective !== undefined && (!isNum(c.collective) || c.collective < 0 || c.collective > 1)) return null;
   for (const key of ['rotorGovernor', 'rotorClutch']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
-  if (v.aircraft === 'r22' && (!isObj(v.systems) || !isObj(v.systems.rotorcraft))) return null;
+  if (isRotorcraftId(v.aircraft) && (!isObj(v.systems) || !isObj(v.systems.rotorcraft))) return null;
   for (const k of ['elevator', 'aileron', 'rudder', 'throttle', 'mixture', 'flaps', 'elevatorTrim', 'brakeLeft', 'brakeRight', 'magnetos', 'kollsmanHpa', 'headingBugDeg', 'obsDeg']) {
     if (!isNum(c[k])) return null;
   }

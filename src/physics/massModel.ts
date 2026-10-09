@@ -10,7 +10,7 @@
 // the gear position.
 
 import { C172S_MASS } from '../aircraft/c172s/systems';
-import type { MassDef, PayloadDef } from '../aircraft/types';
+import type { MassDef, PayloadDef, PayloadDistribution } from '../aircraft/types';
 import type { Vec3 } from '../core/math';
 import { C172_POWERPLANT } from './propulsion/c172Powerplant';
 import type { TankDef } from './propulsion/defs';
@@ -34,6 +34,7 @@ export interface Loading {
 export interface MassLoading {
   payload: number;
   payloadPosition: Vec3;
+  payloadDistribution?: PayloadDistribution;
   tanks: ArrayLike<number>;
 }
 
@@ -72,10 +73,11 @@ function pointInertia(points: readonly PointMass[]): Inertia {
 export function createMassModel(mass: MassDef = C172S_MASS, tanks: readonly TankDef[] = C172_POWERPLANT.fuel.tanks): MassModel {
   const seatY = mass.seatY;
 
-  /** Two seat masses either side of the payload centroid, then one point per tank. */
+  /** Aircraft/loading-specific seats or baggage, then one point per tank. Legacy loadings retain two seats. */
   const loadPoints = (l: MassLoading): PointMass[] => {
     const p = l.payloadPosition;
-    const points: PointMass[] = [
+    const points: PointMass[] = l.payloadDistribution ? l.payloadDistribution.map(({ fraction, offset }) =>
+      ({ m: l.payload * fraction, x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z })) : [
       { m: l.payload / 2, x: p.x, y: p.y - seatY, z: p.z },
       { m: l.payload / 2, x: p.x, y: p.y + seatY, z: p.z },
     ];
@@ -89,6 +91,7 @@ export function createMassModel(mass: MassDef = C172S_MASS, tanks: readonly Tank
   const loadingOf = (d: PayloadDef): MassLoading => ({
     payload: d.payload,
     payloadPosition: d.payloadPosition,
+    payloadDistribution: d.payloadDistribution,
     tanks: tanks.map((t) => (d.fuelFraction === undefined ? t.capacity : d.fuelFraction * t.capacity)),
   });
 

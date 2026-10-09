@@ -1,7 +1,7 @@
 import { clamp, DEG, KT, quat, wrapPi } from '../../core/math';
 import type { AircraftState, ControlInputs } from '../../core/types';
-import { SKID_Z } from '../../aircraft/r22/dimensions';
-import { R22_ROTORCRAFT as d } from '../../aircraft/r22/rotorcraft';
+import { R22_ROTORCRAFT } from '../../aircraft/r22/rotorcraft';
+import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 
 /** Instrument readings and outside visual cues only. No flight model, forces, trim solver or rotor internals. */
 export interface PilotObservation {
@@ -13,11 +13,11 @@ export interface PilotObservation {
 }
 
 /** Signed movement relative to the cockpit is the visual drift cue needed to hover, including backwards. */
-export function observePilot(s: AircraftState): PilotObservation {
+export function observePilot(s: AircraftState, d: Pick<RotorcraftDefinition, 'referenceRpm' | 'skids'> = R22_ROTORCRAFT): PilotObservation {
   const motion = quat.rotateInv(s.orientation, s.velocity);
   return { pitch: s.pitch, roll: s.roll, heading: s.heading, angularVelocity: { ...s.angularVelocity },
     forwardSpeed: motion.x, sideSpeed: motion.y, groundSpeed: s.groundSpeed, verticalSpeed: s.verticalSpeed,
-    height: s.altitudeAGL - SKID_Z, ias: s.ias, rotorPercent: s.rotorcraft!.rotorRpm / d.referenceRpm * 100,
+    height: s.altitudeAGL - d.skids.z, ias: s.ias, rotorPercent: s.rotorcraft!.rotorRpm / d.referenceRpm * 100,
     engineRpm: s.engine.rpm, onGround: s.onGround, crashed: s.crashed };
 }
 

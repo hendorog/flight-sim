@@ -395,16 +395,35 @@ export interface AirframeVisualDef {
             restHeight?: number; skids?: { halfTrack: number; front: number; rear: number } };
 }
 
+export interface RotorBladePaint {
+  /** Ascending distance from tip, metres. The first containing band wins; otherwise root colours apply. */
+  bands: readonly { tipDistance: number; upper: number; lower: number }[];
+  rootUpper: number; rootLower: number; capLength: number;
+}
 export interface RotorcraftVisualDef {
-  main: { hub: FRD; radius: number; root: number; chord: readonly [number, number]; twist: number };
-  tail: { hub: FRD; radius: number; root: number; chord: number; precone: number };
-  skids: { halfTrack: number; z: number; front: number; rear: number; crossTubes: readonly number[] };
+  nominalVoltage?: number;
+  main: { hub: FRD; radius: number; root: number; chord: readonly [number, number]; twist: number;
+    paint?: RotorBladePaint;
+    /** Visual elastic-coning estimate, independent of the aerodynamic flap/coning solution. */
+    coning?: { referenceThrust: number; angleDeg: number; maxDeg: number; droopDeg: number } };
+  tail: { hub: FRD; radius: number; root: number; chord: number; precone: number; paint?: RotorBladePaint };
+  skids: { halfTrack: number; z: number; front: number; rear: number; crossTubes: readonly number[];
+    tubeRadius?: number; bellyHalfWidth?: number; bellyZ?: number; crossCentreZ?: number };
   boom: { front: FRD; rear: FRD; radii: readonly [number, number] };
   mast: { bottom: FRD; top: FRD; bottomWidth: number; topWidth: number };
   /** Thin aerofoil-like extrusions, outlined in FRD (upper fin, lower fin, stabiliser). */
   fins: readonly { name: string; outline: readonly FRD[]; thickness: number; axis: 'y' | 'z' }[];
   guard: readonly FRD[];
   guardRadius: number;
-  panel: { centre: FRD; width: number; height: number; tiltBackDeg: number; canvas: { w: number; h: number }; outline?: readonly (readonly [number, number])[] };
+  panel: { centre: FRD; width: number; height: number; tiltBackDeg: number; canvas: { w: number; h: number }; outline?: readonly (readonly [number, number])[];
+    /** Explicit support dimensions for a broad panel above a narrow pedestal; null omits the support. */
+    pedestal?: { width: number; depth: number; forwardOffset: number; footWidth: number; footDepth: number } | null;
+    /** Bus voltage at dark / fully powered. Defaults preserve the original 14 V installation. */
+    poweredVolts?: readonly [number, number]; enclosureDepth?: number };
+  cyclic?: { gripYs: readonly [number, number]; barTiltDeg: number; stem: readonly FRD[] };
+  pedalZ?: number;
+  /** Exposed piston detail is optional for a cowled installation. Cylinder positions are visual estimates. */
+  engineDetail?: { exposed: boolean; cylinderXs: readonly number[] };
+  registrationXs?: readonly [number, number];
   collective: { pivots: readonly FRD[]; length: number };
 }

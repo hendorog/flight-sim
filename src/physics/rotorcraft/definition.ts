@@ -24,7 +24,13 @@ export interface RotorcraftDefinition {
   engineRatio: number; tailRatio: number; transmissionEfficiency: number;
   cyclicLimit: number;
   teeterLimit: number;
+  /** Control actuation metadata. Inputs command position; servo failures and hand forces are not simulated. */
+  controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical' };
   systems: { clutchSeconds: number; beltTorque: number; correlator: number; governorRate: number;
+    /** Fractions of tachometer reference RPM, not governed RPM. */
+    governorEngage: number; lowRpmWarning: number; powerCheckMinRpm: number;
+    /** Collective switch deadband, normalized travel. */
+    hornCollectiveMin: number;
     governorGain?: number; governorIntegralGain?: number;
     /** Estimated RPM prediction horizon of the governor's rate feedback, seconds. */
     governorLead?: number;

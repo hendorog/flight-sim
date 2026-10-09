@@ -49,7 +49,7 @@ export class RotorcraftVisual {
     this.main = new TeeteringRotor(d.main, mat); this.main.group.position.copy(frd(...d.main.hub)); this.root.add(this.main.group);
     this.tail = new TeeteringRotor({ ...d.tail, chord: [d.tail.chord, d.tail.chord], twist: 0, tail: true }, mat);
     this.tail.group.position.copy(frd(...d.tail.hub)); this.tail.group.rotation.z = Math.PI / 2; this.root.add(this.tail.group);
-    this.lights = new AircraftLights(ctx.quality !== 'low', options.lightScale, new THREE.Group(), def.lamps, undefined, 14);
+    this.lights = new AircraftLights(ctx.quality !== 'low', options.lightScale, new THREE.Group(), def.lamps, undefined, d.nominalVoltage ?? 14);
     this.quality = ctx.quality; this.root.add(this.lights.group);
     buildShadowProxies(this.root, { moving: [this.cockpit.group, ...this.cockpit.moving, this.main.spin, this.tail.spin, this.main.swashplate],
       keep: [this.main.blades, this.tail.blades], none: [this.panel] });
@@ -66,7 +66,9 @@ export class RotorcraftVisual {
       this.main.group.quaternion.setFromUnitVectors(this.up, this.tilt);
       const spin = Math.min(1, Math.max(0, r.rotorRpm / d.nominalRpm));
       // Visual estimate: about 2.5 deg coning at gross-weight hover, drooping 2 deg when stopped.
-      const cone = THREE.MathUtils.lerp(-2 * Math.PI / 180, Math.min(5, Math.max(0, r.thrust) / 6000 * 2.5) * Math.PI / 180, spin * spin);
+      const coning = v.main.coning ?? { referenceThrust: 6000, angleDeg: 2.5, maxDeg: 5, droopDeg: -2 };
+      const cone = THREE.MathUtils.lerp(coning.droopDeg * Math.PI / 180,
+        Math.min(coning.maxDeg, Math.max(0, r.thrust) / coning.referenceThrust * coning.angleDeg) * Math.PI / 180, spin * spin);
       const pitch = THREE.MathUtils.lerp(d.main.minPitch, d.main.maxPitch, c.collective ?? 0);
       this.main.update(r.azimuth, r.rotorRpm, pitch, cone);
       this.tail.update(-r.azimuth * d.tailRatio, r.rotorRpm * d.tailRatio, THREE.MathUtils.lerp(d.tail.minPitch, d.tail.maxPitch, (1 - c.rudder) / 2), -v.tail.precone);

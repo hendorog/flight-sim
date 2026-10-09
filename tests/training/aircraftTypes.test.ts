@@ -41,8 +41,8 @@ describe('aircraft type data, every type (generic)', () => {
     for (const a of await loadAll()) {
       registerAircraftType(a.type);
       expect(getAircraftType(a.type.id), a.id).toBe(a.type);
-      // A placeholder hands in the C172S's data; a real type's def carries its own id.
-      if (a.placeholder) expect(a.type, a.id).toBe(C172S);
+      // Legacy fixed-wing placeholders hand in C172S data; helicopter scaffolds carry their own identity.
+      if (a.placeholder && !a.rotorcraft) expect(a.type, a.id).toBe(C172S);
       else expect(a.type.id, a.id).toBe(a.id);
     }
     expect(getAircraftType()).toBe(C172S);

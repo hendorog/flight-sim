@@ -58,16 +58,22 @@ if (hashMode) {
 /** type=: the airframe (and panel) to show instead of the Cessna 172S. Loaded only when asked for. */
 let airframe: AirframeVisualDef | undefined;
 let panelDef: PanelDef | undefined;
+let rotorRpm = 530, rotorThrust = 5500;
 const type = params.get('type');
 if (type) {
   const { SYNTHETIC_AIRFRAMES } = await import('../render/aircraft/airframe/testbed');
   if (Object.hasOwn(SYNTHETIC_AIRFRAMES, type)) airframe = SYNTHETIC_AIRFRAMES[type];
   else {
-    const { isAircraftId, loadPresentation } = await import('../aircraft/registry');
+    const { isAircraftId, loadAircraft, loadPresentation } = await import('../aircraft/registry');
     if (!isAircraftId(type)) throw new Error(`type=${type}: not an aircraft id (nor ${Object.keys(SYNTHETIC_AIRFRAMES).join(', ')})`);
-    const presentation = await loadPresentation(type);
+    const [presentation, definition] = await Promise.all([loadPresentation(type), loadAircraft(type)]);
     airframe = presentation.visual;
     panelDef = presentation.panel;
+    if (definition.rotorcraft && type !== 'r22') {
+      // Keep the existing R22 screenshot fixture; new types use their own normal RPM and gross weight.
+      rotorRpm = definition.rotorcraft.nominalRpm;
+      rotorThrust = definition.mass.maxTakeoff * 9.80665;
+    }
   }
 }
 // (The bake is synchronous here whatever the type: the worker would bake the registered airframe of the id.)
@@ -462,7 +468,7 @@ function applyStatic(ctx: SimContext): void {
     s.rotorcraft.azimuth = num('azimuth', 25) * DEG;
     s.rotorcraft.flapForward = num('flapforward', 0) * DEG;
     s.rotorcraft.flapRight = num('flapright', 0) * DEG;
-    s.rotorcraft.thrust = num('thrust', s.rotorcraft.rotorRpm > 300 ? 5500 : 0);
+    s.rotorcraft.thrust = num('thrust', s.rotorcraft.rotorRpm > 300 ? rotorThrust : 0);
     c.collective = num('collective', 0); c.throttle = num('throttle', 0);
   }
 }
@@ -487,11 +493,11 @@ function animate(ctx: SimContext): void {
   s.surfaces.elevatorTrim = c.elevatorTrim * 15 * DEG;
   if (s.rotorcraft) {
     c.collective = 0.35 + 0.3 * Math.sin(t * 0.3);
-    s.rotorcraft.rotorRpm = 530 * (0.5 - 0.5 * Math.cos(t * 0.2));
+    s.rotorcraft.rotorRpm = rotorRpm * (0.5 - 0.5 * Math.cos(t * 0.2));
     s.rotorcraft.omega = s.rotorcraft.rotorRpm * Math.PI * 2 / 60;
     s.rotorcraft.flapForward = -c.elevator * 0.07;
     s.rotorcraft.flapRight = c.aileron * 0.07;
-    s.rotorcraft.thrust = 5500 * (s.rotorcraft.rotorRpm / 530) ** 2;
+    s.rotorcraft.thrust = rotorThrust * (s.rotorcraft.rotorRpm / rotorRpm) ** 2;
   }
   const rpm = 600 + 2100 * c.throttle;
   s.propeller.rpm = s.engine.rpm = rpm;

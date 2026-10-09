@@ -61,9 +61,10 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
   for (const side of [-1, 1]) for (let i = 0; i < 5; i++) add(mat.darkMetal, box([m.top[0] - 0.07 + i * 0.023, side * 0.088, m.top[2] + 0.043], [0.006, 0.007, 0.055], 0.002));
 
   // Arched cross tubes continue beneath the belly. Toes turn up; the tube underside meets SKID_Z.
-  const s = d.skids, r = 0.027;
+  const s = d.skids, r = s.tubeRadius ?? 0.027;
   for (const x of s.crossTubes) add(mat.plainPaint, pathTube([[x, -s.halfTrack, s.z - r], [x, -s.halfTrack * 0.9, s.z - 0.15],
-    [x, -0.47, 0.43], [x, 0, 0.39], [x, 0.47, 0.43], [x, s.halfTrack * 0.9, s.z - 0.15], [x, s.halfTrack, s.z - r]], 0.026));
+    [x, -(s.bellyHalfWidth ?? 0.47), s.bellyZ ?? 0.43], [x, 0, s.crossCentreZ ?? 0.39],
+    [x, s.bellyHalfWidth ?? 0.47, s.bellyZ ?? 0.43], [x, s.halfTrack * 0.9, s.z - 0.15], [x, s.halfTrack, s.z - r]], 0.026));
   for (const side of [-1, 1]) {
     const y = side * s.halfTrack;
     add(mat.plainPaint, pathTube([[s.rear, y, s.z - r], [s.rear + 0.4, y, s.z - r], [s.front - 0.32, y, s.z - r], [s.front - 0.12, y, s.z - 0.060], [s.front, y, s.z - 0.13]], r));
@@ -73,15 +74,16 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
     }
   }
 
-  // Exposed O-360: four finned cylinders, central crankcase, sump, cooling fan/shroud and welded frame.
+  // Optional exposed piston installation: cylinders, crankcase, sump, cooling fan/shroud and welded frame.
   // Detail dimensions are visual estimates; there is no simulated engine or fan animation here.
+  if (d.engineDetail?.exposed !== false) {
   add(castMetal, box([-0.50, 0, 0.09], [0.56, 0.29, 0.29], 0.07));
   const sump = new THREE.SphereGeometry(1, 16, 10); sump.scale(0.135, 0.08, 0.22);
   add(castMetal, sump.translate(...frd(-0.49, 0, 0.265).toArray()));
   add(castMetal, box([-0.42, 0.03, 0.37], [0.15, 0.14, 0.10], 0.03));
   add(mat.black, pathTube([[-0.42, 0.03, 0.39], [-0.32, 0.10, 0.42], [-0.22, 0.22, 0.34]], 0.034, 12));
   for (const side of [-1, 1]) {
-    for (const x of [-0.33, -0.65]) {
+    for (const x of d.engineDetail?.cylinderXs ?? [-0.33, -0.65]) {
       add(mat.darkMetal, tube([x, side * 0.10, 0.02], [x, side * 0.39, 0.02], 0.10, 0.085));
       for (let i = 0; i < 8; i++) add(castMetal, tube([x, side * (0.17 + i * 0.027), 0.02], [x, side * (0.178 + i * 0.027), 0.02], 0.101, 0.101));
       add(castMetal, box([x, side * 0.40, 0.02], [0.18, 0.055, 0.17], 0.035));
@@ -126,11 +128,12 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
     add(mat.black, pathTube([[x + offset, -0.13, 0.01], [x + offset, -0.112, -0.37], [x + offset, 0, -0.484],
       [x + offset, 0.112, -0.37], [x + offset, 0.13, 0.01], [x + offset, 0, 0.145], [x + offset, -0.13, 0.01]], 0.0055, 32));
   add(mat.darkMetal, tube([-0.42, 0, -0.64], [-0.92, 0, -1.14], 0.008, 0.004));
+  }
 
   // Windscreen centre post follows the loft from nose to roof; no opaque strip crosses the pilot's view.
   const post: FRD[] = [];
   for (let i = 0; i <= 24; i++) {
-    const x = def.fuselage.frontX - i / 24 * (def.fuselage.frontX - 0.70);
+    const x = def.fuselage.frontX - i / 24 * (def.fuselage.frontX - (def.glazing.windscreen?.topX ?? 0.68) - 0.02);
     post.push([x, 0, skin.section(x).zTop - 0.005]);
   }
   add(mat.plainPaint, pathTube(post, 0.012, 32));
@@ -149,7 +152,8 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
   for (const side of [-1, 1]) {
     const g = gridGeometry({ rows: 18, cols: 5, flip: side > 0,
       position(i, j, out) {
-        const x = -1.40 - i / 17 * 1.22;
+        const [front, rear] = d.registrationXs ?? [-1.40, -2.62];
+        const x = front + i / 17 * (rear - front);
         const t = (x - d.boom.front[0]) / (d.boom.rear[0] - d.boom.front[0]);
         const r = THREE.MathUtils.lerp(...d.boom.radii, t) + 0.002;
         const a = Math.PI / 2 + 0.95 - j / 4 * 0.72;

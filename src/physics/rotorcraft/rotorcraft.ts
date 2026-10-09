@@ -27,7 +27,7 @@ export class Rotorcraft {
     this.state.clutchEngagement = running ? 1 : 0;
     this.state.rotorRpm = this.state.omega * 30 / Math.PI;
   }
-  /** Collective moves the throttle linkage; governor trims the grip above 80% engine RPM.
+  /** Collective moves the throttle linkage; governor trims the grip above its engagement RPM.
    * A moving grip overrides the servo. Full closed is the overtravel stop, defeating correlation.
    */
   throttle(dt: number, c: ControlInputs, engine: EngineUnit): number {
@@ -40,7 +40,7 @@ export class Rotorcraft {
     s.governorThrottle = clamp(s.governorThrottle + manual + correlation, 0, 1);
     s.previousThrottle = c.throttle; s.previousCollective = collective;
     s.governorActive = c.rotorGovernor !== false && c.masterBattery &&
-      engine.rpm > 0.8 * d.referenceRpm * d.engineRatio;
+      engine.rpm > d.systems.governorEngage * d.referenceRpm * d.engineRatio;
     if (c.throttle <= 0) s.governorThrottle = s.governorIntegral = 0;
     else if (s.governorActive && !override) {
       const coupled = s.clutchEngagement > 0.99 && engine.rpm >= s.rotorRpm * d.engineRatio - 5;
@@ -83,11 +83,11 @@ export class Rotorcraft {
     }
     engine.state.rpm = engine.rpm;
     s.rotorRpm = s.omega * 30 / Math.PI;
-    s.lowRpm = s.rotorRpm < d.referenceRpm * 0.97;
-    s.lowRpmHorn = s.lowRpm && (c.collective ?? 0) > 0.02 && c.masterBattery;
+    s.lowRpm = s.rotorRpm < d.referenceRpm * d.systems.lowRpmWarning;
+    s.lowRpmHorn = s.lowRpm && (c.collective ?? 0) > d.systems.hornCollectiveMin && c.masterBattery;
     const map = d.manifoldLimits && atmosphere ? placardMap(d.manifoldLimits,
       pressureAltitude(atmosphere.pressure), atmosphere.temperature) : Infinity;
-    const atOperatingRpm = engine.rpm > 0.97 * d.referenceRpm * d.engineRatio;
+    const atOperatingRpm = engine.rpm > d.systems.powerCheckMinRpm * d.referenceRpm * d.engineRatio;
     const highMap = atOperatingRpm && engine.state.manifoldPressure > map;
     s.takeoffPowerSeconds = engine.state.power > d.systems.continuousPower || highMap ? s.takeoffPowerSeconds + dt : 0;
     s.powerLimitExceeded = engine.state.power > d.systems.takeoffPower * 1.01 ||

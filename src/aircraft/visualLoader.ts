@@ -13,6 +13,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ default: AirframeVisualDe
   pa34: () => import('./pa34/visual'),
   da42: () => import('./da42/visual'),
   r22: () => import('./r22/visual'),
+  r44: () => import('./r44/visual'),
 };
 
 const cache = new Map<string, Promise<AirframeVisualDef>>();

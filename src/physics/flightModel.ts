@@ -243,7 +243,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   private readonly massModel: MassModel;
   private readonly airData: AirData;
   /** Payload for the next reset() and the fuel the mass properties were last built with (one entry per tank). */
-  private readonly loading: { payload: number; payloadPosition: Vec3; tanks: number[] };
+  private readonly loading: LoadingRequest & { tanks: number[] };
   private mp: MassProperties;
   private env: Environment | null = null;
   private time = 0;
@@ -395,6 +395,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.loading = {
       payload: options.payload ?? typical.payload,
       payloadPosition: options.payloadPosition ?? typical.payloadPosition,
+      payloadDistribution: options.payloadDistribution ?? typical.payloadDistribution,
       tanks: Array.from(this.propulsion.tankQuantities),
     };
     this.mp = this.massModel.properties(this.loading);
@@ -459,6 +460,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   setLoading(l: LoadingRequest): void {
     this.loading.payload = l.payload;
     this.loading.payloadPosition = { ...l.payloadPosition };
+    this.loading.payloadDistribution = l.payloadDistribution;
   }
 
   /** Set the model clock (the wind field's time), s, changing nothing else. */
