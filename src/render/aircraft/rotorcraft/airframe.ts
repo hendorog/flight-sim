@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { AirframeVisualDef, FRD } from '../airframe/types';
 import { frd, gridGeometry, MeshBatch } from '../geometry';
 import type { FuselageShape } from '../fuselageShape';
+import { sectionHalfWidth } from '../fuselage';
 import type { AircraftMaterials } from '../materials';
 import { boom, box, fin, mastFairing, pathTube, tube } from './geometry';
 
@@ -45,8 +46,14 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
     }
   }
   const guardRadius = d.guardRadius;
-  add(mat.plainPaint, pathTube(d.guard, guardRadius, 20));
-  add(mat.navyPaint, pathTube(d.guard.slice(2), guardRadius + 0.0005, 8));
+  add(mat.plainPaint, pathTube(d.guard, guardRadius, 48));
+  // Paint follows the same complete curve/rings as the tube. A spline through just the last
+  // points changes its tangents and cuts across the underlying metal on a short curved stinger.
+  const sleeve = pathTube(d.guard, guardRadius + 0.0005, 48);
+  sleeve.setIndex(Array.from(sleeve.index!.array).slice(Math.round(48 * 2 / (d.guard.length - 1)) * 8 * 6));
+  add(mat.navyPaint, sleeve);
+  const end = d.guard[d.guard.length - 1];
+  add(mat.navyPaint, new THREE.SphereGeometry(guardRadius, 12, 8).translate(...frd(...end).toArray()));
   const th = d.tail.hub;
   add(castMetal, tube([th[0], 0.06, th[2]], th, 0.059, 0.035, 20));
   add(castMetal, box([th[0] + 0.015, 0, th[2]], [0.14, 0.12, 0.13], 0.035));
@@ -136,8 +143,22 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
     const x = def.fuselage.frontX - i / 24 * (def.fuselage.frontX - (def.glazing.windscreen?.topX ?? 0.68) - 0.02);
     post.push([x, 0, skin.section(x).zTop - 0.005]);
   }
-  add(mat.plainPaint, pathTube(post, 0.012, 32));
+  add(d.interior ? mat.glareshield : mat.plainPaint, pathTube(post, 0.012, 32));
   add(mat.black, pathTube(post.map(p => [p[0] - 0.004, p[1], p[2] + 0.01]), 0.007, 32));
+  if (d.interior) {
+    // Painted inner door frames follow the bubble. Light moulded trim remains visible beside them.
+    for (const door of def.glazing.doors) for (const side of [-1, 1]) {
+      const points: FRD[] = [];
+      door.pts.forEach(([x, z], i) => {
+        const next = door.pts[(i + 1) % door.pts.length];
+        for (let j = 0; j < 8; j++) {
+          const px = THREE.MathUtils.lerp(x, next[0], j / 8), pz = THREE.MathUtils.lerp(z, next[1], j / 8);
+          points.push([px, side * Math.max(0, sectionHalfWidth(skin, px, pz) - 0.025), pz]);
+        }
+      });
+      points.push(points[0]); add(mat.glareshield, pathTube(points, 0.016, 100));
+    }
+  }
   const group = batch.build('rotorcraftAirframe');
 
   // Procedural lettering projected onto the conical surface, upright and readable from either side.

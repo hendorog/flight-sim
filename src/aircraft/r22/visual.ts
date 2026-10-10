@@ -15,6 +15,7 @@ const W = CABIN_WIDTH / 2;
 const TX = TAIL_HUB.x;
 const TZ = TAIL_HUB.z;
 const ROTORCRAFT: RotorcraftVisualDef = {
+  interior: { frameColor: 0x343b2c, seatColor: 0x969891, seatBackColor: 0x284975, perforatedPedals: true, collectiveFittings: true },
   main: { hub: point(MAIN_HUB), radius: MAIN_ROTOR_RADIUS, root: 0.42, chord: [0.18288, 0.19558], twist: -8 * Math.PI / 180 },
   tail: { hub: point(TAIL_HUB), radius: TAIL_ROTOR_RADIUS, root: 0.085, chord: 0.1016, precone: (1 + 11 / 60) * Math.PI / 180 },
   skids: { halfTrack: SKID_HALF_TRACK, z: SKID_Z, front: SKID_FRONT_X, rear: SKID_REAR_X,
@@ -86,6 +87,8 @@ export const R22_VISUAL: AirframeVisualDef = {
     floor: { z: 0.43, x0: 1.55, x1: -0.06 }, glareshield: { profile: [], halfWidth: PANEL_FACE.width / 2 },
     seats: [-0.27, 0.27].map(y => ({ x: 1.10, y, z: 0.22, kind: 'front', width: 0.43, depth: 0.47, reclineDeg: 10, back: { height: 0.56, headrest: false } })),
     occupants: [{ seat: 1 }], consoles: [], trimPanels: [],
+    // ESTIMATE from the centre-post compass in the supplied cockpit photographs.
+    compass: { pos: [1.14, 0, -0.575] },
     column: { kind: 'stick', pivot: [0.94, 0, 0.40], height: 0.48, pitchDeg: 12, rollDeg: 12, ys: [0] },
     pedals: { x: 1.36, ys: [-0.38, -0.16, 0.16, 0.38] }, engineControls: [],
     flapControl: { kind: 'panelSwitch', pos: [0, 0, 0], travel: 0 },

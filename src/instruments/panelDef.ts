@@ -60,6 +60,7 @@ export type GaugeDef =
   | { kind: 'tach'; id: string; at: At; size: 'large' | 'small'; marks: TachMarkings; engine?: number }
   | { kind: 'rotorTach'; id: string; at: At; marks: RotorTachMarkings }
   | { kind: 'hourmeter'; id: string; bounds: Rect }
+  | { kind: 'digitalTemperature'; id: string; bounds: Rect; label: string; read(r: InstrumentReadings): number }
   /** Panel-mounted pull control. The guard must be lifted before moving the knob. */
   | { kind: 'pullKnob'; id: string; bounds: Rect; label: string; color: string;
       read(c: ControlInputs): number; set(c: ControlInputs, value: number): void;
@@ -101,6 +102,8 @@ export interface SwitchDef {
   top?: number;
   /** Centre x within the switch row. */
   x: number; red?: boolean; group?: string;
+  /** Raised red safety cover, posed open for ENGAGE; click binding remains the switch's. */
+  cover?: boolean;
   on(c: ControlInputs): boolean;
   toggle(c: ControlInputs): void;
 }
@@ -120,13 +123,17 @@ export interface PanelDef {
   lightingDimmerExponent?: number;
   /** Canvas size from the type's cockpit contract. Every component lies inside its panel face. */
   size: { w: number; h: number };
+  /** Separate rotorcraft pod and pedestal shells; coordinates share the flat face's canvas UVs. */
+  console?: { podOutline: readonly At[]; pedestalOutline: readonly At[]; hoodOverhang: number;
+    color: number; pedestalColor: number };
   gauges: readonly GaugeDef[];
   annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[] };
-  switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[];
+  switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[]; ink?: string;
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
   ignition: IgnitionPanelDef;
   background: { color?: string; outline?: readonly At[]; seamsX: readonly number[];
+                plates?: readonly { bounds: Rect; color: string; radius?: number }[];
                 bushings: readonly { at: At; text: string; sub: string }[];
                 placards: readonly { x: number; y: number; lines: readonly string[]; size?: number }[];
                 breakers?: { bounds: Rect; names: readonly string[]; amps: readonly number[]; perRow: number };
@@ -138,6 +145,7 @@ export interface PanelDef {
   apertures: { large: number; small: number };
   /** Scale of complete round instruments, including needles, bezels and hotspots; absent = native artwork. */
   instrumentScale?: { large: number; small: number };
+  instrumentBezel?: 'square' | 'round';
   regions: Readonly<Record<string, Rect>>;
   /** Highlight / point targets by InstrumentId or ControlId (px on the panel). */
   spots: Readonly<Record<string, { x: number; y: number; r: number }>>;

@@ -5,6 +5,29 @@ import type { GaugeDef } from '../panelDef';
 import { centredText, knob } from './art';
 import type { Ctx2D } from './canvas';
 import { Latch, LIGHT_DIAL, type PanelComponent, type Rect } from './component';
+import { drawSegments } from './sevenSegment';
+
+/** An optional digital CAT indicator. Reads the same simulated probe as the analog CAT gauge. */
+export class DigitalTemperature implements PanelComponent {
+  readonly id: string;
+  readonly bounds: Rect;
+  private readonly latch = new Latch(2);
+  constructor(private readonly def: Extract<GaugeDef, { kind: 'digitalTemperature' }>) { this.id = def.id; this.bounds = def.bounds; }
+  sample(r: InstrumentReadings): boolean {
+    this.latch.set(0, this.def.read(r), 1); this.latch.set(1, r.busPowered ? 1 : 0, 1);
+    return this.latch.take();
+  }
+  draw(g: Ctx2D): void {
+    const b = this.bounds;
+    g.fillStyle = '#151819'; g.beginPath(); g.roundRect(b.x, b.y, b.w, b.h, 5); g.fill();
+    centredText(g, this.def.label, b.x + b.w / 2, b.y + 10, 8);
+    drawSegments(g, this.latch.get(1) ? `${Math.round(this.latch.get(0))}°C` : '', b.x + b.w - 12, b.y + 24,
+      { height: 22, on: '#ed7544', off: '#271710' });
+  }
+  paintLightMask(g: Ctx2D): void {
+    const b = this.bounds; g.fillStyle = '#fff'; g.fillRect(b.x + 8, b.y + 21, b.w - 16, b.h - 25);
+  }
+}
 
 type Control = Extract<GaugeDef, { kind: 'pullKnob' | 'pushButton' }>;
 export class ConsoleControl implements PanelComponent {

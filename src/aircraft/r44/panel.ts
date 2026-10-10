@@ -4,7 +4,7 @@
 import { DEG } from '../../core/math';
 import { engineControl } from '../../core/types';
 import type { InstrumentSystemsDef, LampDef, LampInputs, PanelDef, SwitchDef } from '../../instruments/panelDef';
-import { PANEL_CANVAS, PANEL_OUTLINE, PANEL_PX_PER_M } from './dimensions';
+import { PANEL_CANVAS, PANEL_OUTLINE, PANEL_POD_OUTLINE, PANEL_PEDESTAL_OUTLINE, PANEL_PX_PER_M } from './dimensions';
 import { R44_REFERENCE as V } from './reference';
 import { R44_ASI_MARKS, R44_ENGINE_SCALES as E, R44_MAP_SCALE, R44_TACH_MARKS } from './panelMarkings';
 import { R44_LIMIT_PLACARDS } from './panelPlacards';
@@ -26,7 +26,9 @@ const switchDef = (id: string, label: string, x: number, on: SwitchDef['on'], to
 
 export const R44_PANEL: PanelDef = {
   // Dimmer response ESTIMATE; zero extinguishes dials/displays, never warning lenses.
-  id: 'r44', lightingRequiresNav: true, lightingDimmerExponent: 2.2, size: PANEL_CANVAS, instrumentScale: SCALE,
+  console: { podOutline: PANEL_POD_OUTLINE, pedestalOutline: PANEL_PEDESTAL_OUTLINE, hoodOverhang: 0.05,
+    color: 0x252c26, pedestalColor: 0x555c50 },
+  id: 'r44', lightingRequiresNav: true, lightingDimmerExponent: 2.2, size: PANEL_CANVAS, instrumentScale: SCALE, instrumentBezel: 'round',
   apertures: { large: 74 * SCALE.large, small: 51 * SCALE.small },
   gauges: [
     { kind: 'vsi', id: 'vsi', at: [COL[0], ROW[0]] },
@@ -72,7 +74,13 @@ export const R44_PANEL: PanelDef = {
     dimmers: { panel: 83, radio: 143, y: 465 },
   },
   ignition: { kind: 'key', prime: true, at: [996, 633] },
-  background: { color: '#25272a', outline: PANEL_OUTLINE, seamsX: [], bushings: [],
+  background: { color: '#30362f', outline: PANEL_OUTLINE, seamsX: [], bushings: [],
+    plates: [
+      { bounds: { x: 316, y: 738, w: 520, h: 382 }, color: '#17273b' },
+      { bounds: { x: 316, y: 1126, w: 520, h: 82 }, color: '#b0b3ac' },
+      { bounds: { x: 316, y: 1210, w: 520, h: 540 }, color: '#292e31' },
+      { bounds: { x: 316, y: 1756, w: 520, h: 116 }, color: '#92978b' },
+    ],
     rack: { rails: { x: 406, y: 1206, w: 340, h: 166 }, blanks: [] },
     placards: [
       { x: 550, y: 556, size: 11, lines: ['ROTOR POWER ON 101–102% / OFF 90–108%', 'ENGINE 101–102% / 100% = 2665 RPM'] },

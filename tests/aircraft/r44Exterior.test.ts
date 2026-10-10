@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { R44_VISUAL as def } from '../../src/aircraft/r44/visual';
+import { R44_PANEL } from '../../src/aircraft/r44/panel';
+import { R44_ROTORCRAFT } from '../../src/aircraft/r44/rotorcraft';
+import { LOWER_FIN_OUTLINE, TAIL_STINGER } from '../../src/aircraft/r44/dimensions';
 import { r44ExteriorVisualClass } from '../../src/aircraft/r44/exterior';
 import { R44RotorHead } from '../../src/aircraft/r44/exteriorRotor';
 import { r44DetailMaterials, skinPatch } from '../../src/aircraft/r44/exteriorGeometry';
@@ -18,6 +21,17 @@ import { blankDocument, fakeContext, fakeMaterials, nonFinite } from './meshChec
 const R44ExteriorVisual = r44ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth);
 
 describe('R44 exterior and cabin', () => {
+  it('roots the short stinger in the lower fin and shares its contact line with physics', () => {
+    expect(R44_ROTORCRAFT.tailProtection!.stinger).toBe(TAIL_STINGER);
+    expect(def.rotorcraftVisual!.guard).toEqual(TAIL_STINGER.map(p => [p.x, p.y, p.z]));
+    const root = TAIL_STINGER[0], heel = LOWER_FIN_OUTLINE.slice(2);
+    expect(root.y).toBe(heel[0].y);
+    expect(root.x).toBeGreaterThan(heel[0].x); expect(root.x).toBeLessThan(heel[1].x);
+    expect(root.z).toBeLessThan(heel[0].z);
+    const length = TAIL_STINGER.slice(1).reduce((sum, p, i) => sum + frd(p.x, p.y, p.z)
+      .distanceTo(frd(TAIL_STINGER[i].x, TAIL_STINGER[i].y, TAIL_STINGER[i].z)), 0);
+    expect(length).toBeLessThan(0.5);
+  });
   it('keeps the visual description cloneable for the texture worker', () => {
     expect(structuredClone(def)).toEqual(def);
     expect(JSON.parse(JSON.stringify(def)).cockpit.seats).toHaveLength(4);
@@ -106,7 +120,7 @@ describe('R44 exterior and cabin', () => {
   it('assembles the detailed cabin without moving the frozen panel face, and disposes its resources', () => {
     vi.stubGlobal('document', blankDocument());
     const ctx = fakeContext(); ctx.state.rotorcraft = emptyRotorcraftState(); ctx.state.electrical.busVoltage = 28;
-    const visual = new R44ExteriorVisual(def, ctx, { lightScale: 1, panelEmissiveScale: 1, interiorLodDistance: 50 });
+    const visual = new R44ExteriorVisual(def, ctx, { lightScale: 1, panelEmissiveScale: 1, interiorLodDistance: 50, panelDef: R44_PANEL });
     let disposed = false;
     try {
       ctx.controls.collective = 0.8; ctx.controls.aileron = 0.7; ctx.controls.elevator = -0.5; ctx.controls.rudder = 1;

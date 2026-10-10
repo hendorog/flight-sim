@@ -78,19 +78,19 @@ export function buildR44ExteriorDetails(def: AirframeVisualDef, mat: R44DetailMa
       tube([tx + dx, fy - 0.023, z], [tx + dx, fy + 0.023, z], 0.006, 0.006, 8));
   }
   // Alternating high-visibility guard bands seen in the manufacturer photograph. Spacing is a visual
-  // estimate. The shared red sleeve uses the last four guard points and only eight tube segments;
-  // interpolate its actual rings so these thin paint overlays do not cut inside its coarse facets.
-  const guard = new THREE.CatmullRomCurve3(TAIL_STINGER.slice(2).map(p => frd(p.x, p.y, p.z)), false, 'centripetal');
-  const sleeve = new THREE.TubeGeometry(guard, 8, TAIL_STINGER_RADIUS + 0.0012, 8, false);
+  // estimate. Use the shared tube's full curve and ring spacing so paint stays on its surface.
+  const guard = new THREE.CatmullRomCurve3(TAIL_STINGER.map(p => frd(p.x, p.y, p.z)), false, 'centripetal');
+  const segments = 48;
+  const sleeve = new THREE.TubeGeometry(guard, segments, TAIL_STINGER_RADIUS + 0.0009, 8, false);
   const p = sleeve.getAttribute('position'), a = new THREE.Vector3(), b = new THREE.Vector3();
   const bandStep = 0.17 / guard.getLength();
-  for (let start = bandStep / 2; start < 1; start += bandStep) for (let segment = 0; segment < 8; segment++) {
-    const from = Math.max(start, segment / 8), to = Math.min(start + bandStep / 2, (segment + 1) / 8);
+  for (let start = 0.5; start < 0.9; start += bandStep) for (let segment = 0; segment < segments; segment++) {
+    const from = Math.max(start, segment / segments), to = Math.min(start + bandStep / 2, (segment + 1) / segments);
     if (to <= from) continue;
     batch.add(mat.paint, gridGeometry({ rows: 2, cols: 9, wrap: true,
       position(i, j, out) {
         a.fromBufferAttribute(p, segment * 9 + j); b.fromBufferAttribute(p, (segment + 1) * 9 + j);
-        out.copy(a).lerp(b, (i === 0 ? from : to) * 8 - segment);
+        out.copy(a).lerp(b, (i === 0 ? from : to) * segments - segment);
       },
     }));
   }

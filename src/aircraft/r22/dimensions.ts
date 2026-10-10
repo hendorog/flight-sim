@@ -1,3 +1,5 @@
+import { roundedPanelOutline } from '../../core/roundedOutline';
+
 // R22 Beta II reference geometry shared by the flight model (physics), the exterior (render) and the cockpit.
 // Body axes FRD, metres, origin on the main-rotor mast axis; z = +SKID_Z is the bottom of the skids, so the
 // ground is at z = SKID_Z when the aircraft rests level. Physics and render import these values; neither
@@ -70,18 +72,25 @@ export const TAIL_STINGER_RADIUS = 0.016;
 /** Right seat is the pilot (command) seat in the R22; solo from the right. Eye point ESTIMATE. */
 export const PILOT_EYE = { x: 0.72, y: 0.28, z: SKID_Z - 1.5 } as const;
 
-/** Console and pedestal: ESTIMATE scaled from the 3-1/8 inch instruments in POH 7-21 and IPC fig 95-1.
- * https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_ipc_95_b93d8d009d.pdf
- * The 0.34 m upper pod narrows to a 0.20 m radio pedestal; total face height 0.68 m. The outline is
- * shared by canvas and mesh, so instrument spacing, silhouette and click UVs have one definition.
- * Position, 15 degree rake and 0.15 m enclosure depth remain photographic estimates, not POH dimensions. */
+/** Seven-hole Beta II installation: POH 7-19 (26 Oct 2016), not the later six-hole 7-21 panel.
+ * https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_7_6581e57af0.pdf
+ * ESTIMATE: outline scaled around four 3-1/8 in cases, 0.44 m wide, with a 0.20 m pedestal.
+ * Hood depth, rake and position are photographic estimates from the supplied cockpit references.
+ * All silhouettes are sampled once and shared by canvas, face, enclosure and click UVs. */
 export const PANEL_PX_PER_M = 2400;
-export const PANEL_CANVAS = { w: 816, h: 1632 } as const;
-export const PANEL_OUTLINE = [
-  [90, 0], [726, 0], [780, 36], [816, 110], [816, 505], [790, 578],
-  [650, 606], [648, 1576], [614, 1632], [202, 1632], [168, 1576],
-  [166, 606], [26, 578], [0, 505], [0, 110], [36, 36],
+export const PANEL_CANVAS = { w: 1056, h: 1632 } as const;
+const PANEL_BROW = [
+  [0, 102], [52, 45], [252, 40], [300, 0], [756, 0], [804, 40], [1004, 45],
+  [1056, 102], [1056, 200], [1006, 343], [932, 462], [870, 526], [768, 548],
 ] as const;
+const PANEL_LEFT = [[288, 548], [186, 526], [124, 462], [50, 343], [0, 200]] as const;
+export const PANEL_POD_OUTLINE = roundedPanelOutline([...PANEL_BROW, ...PANEL_LEFT], 55);
+export const PANEL_PEDESTAL_OUTLINE = roundedPanelOutline([
+  [288, 540], [768, 540], [768, 1576], [734, 1632], [322, 1632], [288, 1576],
+], 18);
+export const PANEL_OUTLINE = roundedPanelOutline([
+  ...PANEL_BROW, [768, 1576], [734, 1632], [322, 1632], [288, 1576], ...PANEL_LEFT,
+], 35);
 export const PANEL_FACE = {
   centre: { x: 1.20, y: 0, z: SKID_Z - 0.99 },
   width: PANEL_CANVAS.w / PANEL_PX_PER_M,

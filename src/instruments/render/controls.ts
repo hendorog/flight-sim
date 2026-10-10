@@ -15,9 +15,9 @@ import { PANEL_LAYOUT, type RockerKey } from '../layout';
 export const PAINT_WHITE = '#ecebe4';
 
 /** Placard lettering painted on the panel face. */
-export function label(g: Ctx2D, text: string, x: number, y: number, size = 9, align: CanvasTextAlign = 'center'): void {
+export function label(g: Ctx2D, text: string, x: number, y: number, size = 9, align: CanvasTextAlign = 'center', ink = PAINT_WHITE): void {
   g.font = `600 ${size}px ${LABEL_FONT}`;
-  g.fillStyle = PAINT_WHITE;
+  g.fillStyle = ink;
   g.textAlign = align;
   g.textBaseline = 'middle';
   g.fillText(text, x, y);
@@ -217,7 +217,7 @@ export class SwitchPanel implements PanelComponent {
       g.beginPath();
       g.roundRect(d.x - row.rockerW / 2 - 3, top - 3, row.rockerW + 6, row.rockerH + 6, 3);
       g.fill();
-      if (d.label) label(g, d.label, d.x, top - 12, d.label.length > 6 ? 7.5 : 8.5);
+      if (d.label) label(g, d.label, d.x, top - 12, d.label.length > 6 ? 7.5 : 8.5, 'center', row.ink);
     }
     // Bracket over each group of switches that are lettered one by one (the light switches); `legends` letters its tab.
     for (const group of new Set(row.switches.map((d) => d.group))) {
@@ -236,7 +236,7 @@ export class SwitchPanel implements PanelComponent {
       g.fillStyle = '#3b3d40';
       g.fillRect((x0 + x1) / 2 - 26, top - 30, 52, 12);
     }
-    for (const l of row.legends) label(g, l.text, l.x, l.y, l.size);
+    for (const l of row.legends) label(g, l.text, l.x, l.y, l.size, 'center', row.ink);
     if (this.ignition.kind === 'key') {
       // Magneto switch escutcheon
       const kx = this.ignition.at[0] - x;
@@ -256,7 +256,7 @@ export class SwitchPanel implements PanelComponent {
       const labels = this.ignition.prime ? ['OFF', 'R', 'L', 'BOTH', 'PRIME'] : MAG_LABELS;
       labels.forEach((t, i) => {
         const a = (MAG_ANGLES[i] * Math.PI) / 180;
-        label(g, t, kx + Math.sin(a) * (i === 4 ? 44 : 38), ky - Math.cos(a) * 36, 7.5);
+        label(g, t, kx + Math.sin(a) * (i === 4 ? 44 : 38), ky - Math.cos(a) * 36, 7.5, 'center', row.ink);
       });
     }
     g.restore();
@@ -269,6 +269,14 @@ export class SwitchPanel implements PanelComponent {
     g.save();
     g.translate(x, y);
     row.switches.forEach((d, i) => rocker(g, d.x - row.rockerW / 2, d.top ?? row.rockerTop, row.rockerW, row.rockerH, this.latch.get(i) === 1, !!d.red));
+    row.switches.forEach((d, i) => {
+      if (!d.cover) return;
+      const top = d.top ?? row.rockerTop, open = this.latch.get(i) === 1;
+      g.strokeStyle = '#9d2016'; g.lineWidth = 3;
+      g.strokeRect(d.x - row.rockerW / 2 - 1, top - 2, row.rockerW + 2, row.rockerH + 3);
+      g.fillStyle = open ? '#d84432' : '#ba2b20';
+      g.fillRect(d.x - row.rockerW / 2, top - 2, row.rockerW, open ? 9 : row.rockerH - 4);
+    });
     if (this.ignition.kind === 'key') {
       // Key
       const pos = this.latch.get(n);

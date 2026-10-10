@@ -1,3 +1,5 @@
+import { roundedPanelOutline } from '../../core/roundedOutline';
+
 // R44 Raven II reference geometry: FRD metres, origin on the main-mast axis, level ground at z = SKID_Z.
 // Physics, exterior and panel import this file; do not keep independent copies. Sources and drawing
 // limitations: docs/r44-sources.md. POH = R44 II, sections 1 (26 Jan 2024) and 7 (5 Mar 2015 panel).
@@ -62,15 +64,16 @@ export const LOWER_FIN_OUTLINE = [
   { x: TAIL_HUB.x - 0.45, y: 0.075, z: TAIL_HUB.z + 0.70 },
   { x: TAIL_HUB.x - 0.18, y: 0.075, z: TAIL_HUB.z + 0.70 },
 ] as const;
-/** ESTIMATED curved tail guard/stinger centreline, POH 1-3 / MM Fig 16-1 side view.
- * Its forward mounting flange is on the stabiliser underside (MM Fig 4-6, p4.22), not floating
- * beside it. The remaining trace and contact limits are unchanged, not structural test data. */
+/** Short lower-fin stinger, ESTIMATE traced from MM Fig 16-1 (Feb 2024), POH 1-3.
+ * The drawing distinguishes this tube (at the fin heel) from the long forward tail-rotor guard.
+ * Root is inside the lower fin; the aft/down contact points retain the previous shared trace.
+ * Physics imports this centreline directly, so its contact envelope follows the rendered tube. */
 export const TAIL_STINGER = [
-  { x: HORIZONTAL_STABILIZER.leadingX - 0.05, y: 0.075, z: HORIZONTAL_STABILIZER.z },
-  { x: TAIL_HUB.x + 1.05, y: 0.075, z: TAIL_HUB.z + 0.52 },
-  { x: TAIL_HUB.x + 0.60, y: 0.075, z: TAIL_HUB.z + 0.72 },
-  { x: TAIL_HUB.x - 0.18, y: 0.075, z: TAIL_HUB.z + 0.72 },
+  { x: TAIL_HUB.x - 0.24, y: 0.075, z: TAIL_HUB.z + 0.66 },
+  { x: TAIL_HUB.x - 0.30, y: 0.075, z: TAIL_HUB.z + 0.74 },
+  { x: TAIL_HUB.x - 0.40, y: 0.075, z: TAIL_HUB.z + 0.82 },
   { x: TAIL_HUB.x - 0.48, y: 0.075, z: TAIL_HUB.z + 0.87 },
+  { x: TAIL_HUB.x - 0.56, y: 0.075, z: TAIL_HUB.z + 0.87 },
   { x: TAIL_HUB.x - 0.61, y: 0.075, z: TAIL_HUB.z + 0.85 },
 ] as const;
 /** ESTIMATE tube radius, same source. */
@@ -89,15 +92,23 @@ export const PILOT_EYE = { x: 1.22, y: SEAT_CENTRES[1].y, z: SKID_Z - 1.58 } as 
 /** ESTIMATES from POH 7-21, IPC ch 95 and Robinson's eight-hole panel photo (URLs in docs/r44-sources.md).
  * Four 3-1/8 in instruments across the broad upper face, above a central pedestal. This is not the
  * R22 three-hole T-console. The photograph shows a central pod, NOT a 1.28 m cabin-width dashboard.
- * One continuous UV face is the scaffold convention; the real engine shelf/pedestal changes rake.
- * Position/rake/depth need cockpit review. Optional pilot-side avionics console is omitted. */
+ * A continuous UV face preserves raycasting; separate shells and faceplates articulate the pod/pedestal.
+ * Position/rake/depth remain photographic estimates. Optional pilot-side avionics console is omitted. */
 export const PANEL_PX_PER_M = 2400;
 export const PANEL_CANVAS = { w: 1152, h: 1872 } as const;
-export const PANEL_OUTLINE = [
-  [110, 0], [1042, 0], [1120, 60], [1152, 150], [1152, 610], [1080, 720],
-  [840, 744], [840, 1812], [800, 1872], [352, 1872], [312, 1812],
-  [312, 744], [72, 720], [0, 610], [0, 150], [32, 60],
+// Rounded four-column shell, with a raised warning-light brow and a separate central pedestal.
+const PANEL_BROW = [
+  [0, 132], [44, 56], [90, 40], [110, 0], [1042, 0], [1062, 40], [1108, 56],
+  [1152, 132], [1152, 610], [1112, 706], [1020, 744], [840, 752],
 ] as const;
+const PANEL_LEFT = [[312, 752], [132, 744], [40, 706], [0, 610]] as const;
+export const PANEL_POD_OUTLINE = roundedPanelOutline([...PANEL_BROW, ...PANEL_LEFT], 70);
+export const PANEL_PEDESTAL_OUTLINE = roundedPanelOutline([
+  [312, 730], [840, 730], [840, 1812], [800, 1872], [352, 1872], [312, 1812],
+], 20);
+export const PANEL_OUTLINE = roundedPanelOutline([
+  ...PANEL_BROW, [840, 1812], [800, 1872], [352, 1872], [312, 1812], ...PANEL_LEFT,
+], 35);
 export const PANEL_FACE = {
   centre: { x: 1.85, y: 0, z: SKID_Z - 1.00 },
   width: PANEL_CANVAS.w / PANEL_PX_PER_M,

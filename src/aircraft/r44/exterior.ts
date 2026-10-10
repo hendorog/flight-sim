@@ -2,6 +2,7 @@
 // Kept separate from visual.ts so the worker's plain-data import never pulls in three.js or a DOM.
 // Until connected, the ordinary dev/sim pages show the data-only exterior. See docs/r44-exterior.md.
 import type { SimContext } from '../../core/context';
+import type { PanelDef } from '../../instruments/panelDef';
 import type { AirframeVisualDef } from '../../render/aircraft/airframe/types';
 import type { RotorcraftVisual } from '../../render/aircraft/RotorcraftVisual';
 import type { FuselageShape } from '../../render/aircraft/fuselageShape';
@@ -22,7 +23,7 @@ export function r44ExteriorVisualClass(Base: typeof RotorcraftVisual,
     private readonly tailHead: R44RotorHead;
 
     constructor(def: AirframeVisualDef, ctx: SimContext,
-      options: { lightScale: number; panelEmissiveScale: number; interiorLodDistance: number }) {
+      options: { lightScale: number; panelEmissiveScale: number; interiorLodDistance: number; panelDef?: PanelDef }) {
       super(def, ctx, options);
       const skin = new Shape(0, -Infinity, def.fuselage), lining = new Shape(0.026, -Infinity, def.fuselage);
       this.details = buildR44ExteriorDetails(def, this.detailMaterials, (x, z) => halfWidth(skin, x, z));

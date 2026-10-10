@@ -18,8 +18,9 @@ import { gaugeRecess, type GaugeDef, type PanelDef } from './panelDef';
 import { panelLayoutProblems } from './panelLayout';
 import { gaugeParts, ignitionLayout, isLargeGauge, leverId } from './panelParts';
 import { ScaledGauge } from './render/scaledGauge';
+import { RoundGauge } from './render/roundGauge';
 import { BlankGauge, RotorTachGauge } from './render/rotorTach';
-import { ConsoleControl, Hourmeter } from './render/panelControls';
+import { ConsoleControl, DigitalTemperature, Hourmeter } from './render/panelControls';
 import { screw } from './render/art';
 import { DirtyRectUploader } from './render/dirtyUpload';
 import { DEFAULT_TUNING, GpsUnit, NavComRadio, Transponder, type RadioTuning } from './render/avionics';
@@ -169,7 +170,7 @@ export class InstrumentPanel {
 
   private paintDimmerMask(g: Ctx2D): void {
     g.clearRect(0, 0, this.def.size.w, this.def.size.h);
-    const selfLit = new Set(this.def.gauges.filter(d => ['clock', 'gps', 'navcom', 'xpdr'].includes(d.kind)).map(d => d.id));
+    const selfLit = new Set(this.def.gauges.filter(d => ['clock', 'gps', 'navcom', 'xpdr', 'digitalTemperature'].includes(d.kind)).map(d => d.id));
     for (const c of this.components) {
       // Alpha tags the circuit; it does not carry the dimmer's small linear value. Canvas storage is
       // premultiplied 8-bit, so low alpha would destroy the colour precision of the dial artwork.
@@ -297,8 +298,13 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
     if (k !== 1 && gaugeRecess(g, def.apertures) && 'at' in g) {
       const apertures = { large: def.apertures.large / k, small: def.apertures.small / k };
       const component = buildGauge(g, apertures, tuning, paintLevers);
+      if (def.instrumentBezel && component instanceof RoundGauge) component.setBezelShape(def.instrumentBezel);
       into.push(new ScaledGauge(component, gaugeParts(g, def.apertures, def.instrumentScale)[0].rect, g.at[0], g.at[1], k));
-    } else into.push(buildGauge(g, def.apertures, tuning, paintLevers));
+    } else {
+      const component = buildGauge(g, def.apertures, tuning, paintLevers);
+      if (def.instrumentBezel && component instanceof RoundGauge) component.setBezelShape(def.instrumentBezel);
+      into.push(component);
+    }
     // The selector of a light cluster is a component of its own beside it.
     if (g.kind === 'gearLights' && g.lever) into.push(new GearSelector(leverId(g.id), g.lever));
     if (g.kind === 'flapLights' && g.lever) into.push(new FlapSwitch(leverId(g.id), g.lever, g));
@@ -322,6 +328,8 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return new ConsoleControl(g);
     case 'hourmeter':
       return new Hourmeter(g.id, g.bounds);
+    case 'digitalTemperature':
+      return new DigitalTemperature(g);
     case 'asi':
       return new AirspeedGauge(g.id, g.at[0], g.at[1], r, g.marks);
     case 'attitude':
@@ -395,6 +403,13 @@ function paintBackground(g: Ctx2D, def: PanelDef, components: PanelComponent[]):
   }
   g.fillStyle = bg.color ?? PANEL_GREY;
   g.fillRect(0, 0, W, H);
+  for (const plate of bg.plates ?? []) {
+    const b = plate.bounds;
+    g.fillStyle = plate.color;
+    g.beginPath(); g.roundRect(b.x, b.y, b.w, b.h, plate.radius ?? 6); g.fill();
+    g.strokeStyle = '#111'; g.lineWidth = 2; g.stroke();
+    for (const x of [b.x + 9, b.x + b.w - 9]) for (const y of [b.y + 9, b.y + b.h - 9]) screw(g, x, y, 3, rand);
+  }
   // Crinkle-finish paint: tiled grain in overlay mode.
   const grain = g.createPattern(noiseCanvas(256, 256, 17, 0.6), 'repeat');
   if (grain) {
