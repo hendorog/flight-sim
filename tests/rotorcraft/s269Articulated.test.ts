@@ -89,6 +89,38 @@ describe('articulated harmonic hub and isolated lag research model', () => {
     expect(0.5 * p.blade.lagInertia * step.state.rate ** 2 + step.elasticEnergy + step.centrifugalEnergy).toBeCloseTo(start, 12);
     expect(step.dissipation).toBe(0);
   });
+  it('isolated lag closes variable-speed work through spin-up and rundown with positive damping', () => {
+    // Prescribed shaft motion is an external energy port, not free rotor/body coupling.
+    // E=.5 I zetaDot²+.5 (k+eS Omega²) zeta² has the extra .5 Kdot zeta² term.
+    // Omitting that term mislabels spin-up work as energy created by the damper.
+    const inertia = p.blade.lagInertia, elastic = p.damper.stiffness * p.damper.arm ** 2;
+    const eS = p.lagOffset * p.blade.lagFirst;
+    const speed = (t: number) => t < 60 ? omega * (1 - Math.cos(Math.PI * t / 60)) / 2 :
+      t < 65 ? omega : t < 125 ? omega * (1 + Math.cos(Math.PI * (t - 65) / 60)) / 2 : 0;
+    const results = [240, 480, 960].map(hz => {
+      let state = { angle: 0.03, rate: 0 }, heat = 0, applied = 0, parametric = 0;
+      let sample = state;
+      const initial = 0.5 * elastic * state.angle ** 2;
+      for (let i = 0; i < hz * 140; i++) {
+        const before = state, a = speed(i / hz), b = speed((i + 1) / hz);
+        // Mean stiffness for the midpoint work identity; no lag frequency floor at low RPM.
+        const step = stepLag(p, state, Math.sqrt((a * a + b * b) / 2), (b - a) * hz, 0, 0, 0, 1 / hz);
+        state = step.state; heat += step.dissipation; applied += step.forcingWork;
+        parametric += eS * (b * b - a * a) * (before.angle ** 2 + state.angle ** 2) / 4;
+        if (i + 1 === hz) sample = state;
+      }
+      const final = 0.5 * inertia * state.rate ** 2 + 0.5 * elastic * state.angle ** 2;
+      expect(Math.abs(final - initial + heat - applied - parametric)).toBeLessThan(1e-8);
+      expect(heat).toBeGreaterThan(0);
+      // After 15 seconds stopped, the measured-coordinate perturbation must decay.
+      expect(Math.abs(state.angle)).toBeLessThan(0.00001);
+      return sample;
+    });
+    // Compare at the same physical time: a sampled maximum moves between time grids.
+    const error = (i: number) => Math.hypot(results[i].angle - results[2].angle, results[i].rate - results[2].rate);
+    expect(error(0)).toBeLessThan(1e-6);
+    expect(error(1)).toBeLessThan(error(0) / 2);
+  });
   it('flap transient converges to the harmonic solution at 240/480/960 Hz and remains finite at vanishing RPM', () => {
     const forcing = flapForcing(d.main, p, omega, 1.225, 8 * DEG, 2 * DEG, 3 * DEG,
       { x: 20, y: 1, z: 0 }, 5, v3.zero());

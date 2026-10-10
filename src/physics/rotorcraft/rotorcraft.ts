@@ -169,7 +169,10 @@ export class Rotorcraft {
     // Averaged first-harmonic free-hinge equation: time constant 16/(Lock number × rotor speed).
     // Blade flapping inertia is half the polar inertia for this two-blade rotor. No fitted body damping.
     const lock = density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 / (d.main.inertia / d.main.blades);
-    const tau = 16 / Math.max(lock * s.omega, 4);
+    // No rotating-rotor aerodynamic response at zero RPM. The articulated solver also
+    // preserves its stopped pose; it has separate flap pins and no centre teeter stop.
+    const tau = s.omega > 0 ? 16 / (lock * s.omega) : Infinity;
+    const lag = 1 - Math.exp(-dt / tau);
     if (articulated) {
       // Small-angle, attached-flow harmonic articulated hub. The physical 90-degree pitch-link
       // mapping is an installation estimate; centrifugal detuning produces the actual flap phase.
@@ -186,12 +189,23 @@ export class Rotorcraft {
         s.teeterAngle = 0; s.retreatingFlap = 0;
       }
     } else if (dt > 0) {
-      const lag = 1 - Math.exp(-dt / tau);
-      s.flapForward += (targetForward - s.flapForward + (b.angularVelocity.y + b.angularVelocity.z * s.flapRight) * tau) * lag;
-      s.flapRight += (targetRight - s.flapRight - (b.angularVelocity.x + b.angularVelocity.z * s.flapForward) * tau) * lag;
+      if (s.omega > 0) {
+        s.flapForward += (targetForward - s.flapForward + (b.angularVelocity.y + b.angularVelocity.z * s.flapRight) * tau) * lag;
+        s.flapRight += (targetRight - s.flapRight - (b.angularVelocity.x + b.angularVelocity.z * s.flapForward) * tau) * lag;
+      } else {
+        // Finite zero-speed limit of body-axis transport: lim(tau * (1 - exp(-dt/tau))) = dt.
+        s.flapForward += (b.angularVelocity.y + b.angularVelocity.z * s.flapRight) * dt;
+        s.flapRight -= (b.angularVelocity.x + b.angularVelocity.z * s.flapForward) * dt;
+      }
       s.teeterAngle = Math.atan(Math.hypot(s.flapForward, s.flapRight));
-      // The articulated scaffold has no centre teeter hinge. Its own stops/dynamics are future work.
-      if (d.hubModel?.kind !== 'articulated' && s.rotorRpm > 0.5 * d.referenceRpm && s.teeterAngle > d.teeterLimit) s.mastBump = true;
+      if (s.teeterAngle > d.teeterLimit) {
+        if (s.rotorRpm > 0.5 * d.referenceRpm) s.mastBump = true;
+        // Mechanical stops bound the undamaged hub at low RPM too. Preserve the existing rotating
+        // stop-impact damage above, before limiting its pose. The stop angle remains an estimate;
+        // stop friction and azimuth-resolved blade sailing are not modelled (R22 POH 7-2).
+        const scale = Math.tan(d.teeterLimit) / Math.hypot(s.flapForward, s.flapRight);
+        s.flapForward *= scale; s.flapRight *= scale; s.teeterAngle = d.teeterLimit;
+      }
     }
     const axis = v3.normalize({ x: s.flapForward, y: s.flapRight, z: -1 });
     const axial = v3.dot(hubAir, axis);
@@ -241,10 +255,10 @@ export class Rotorcraft {
     if (dt > 0) {
       if (!articulated) {
         const coneTarget = main.coningMoment / Math.max(d.main.inertia * s.omega * s.omega, 1);
-        s.coning += (clamp(coneTarget, -0.15, 0.3) - s.coning) * (1 - Math.exp(-dt / tau));
+        s.coning += (clamp(coneTarget, -0.15, 0.3) - s.coning) * lag;
         const stallTarget = 16 * main.stallMoment /
           Math.max(density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 * s.omega ** 2, 1);
-        s.retreatingFlap += (clamp(stallTarget, 0, 0.2) - s.retreatingFlap) * (1 - Math.exp(-dt / tau));
+        s.retreatingFlap += (clamp(stallTarget, 0, 0.2) - s.retreatingFlap) * lag;
       }
       s.inflow += (targetInflow * ge * (d.main.inducedFactor ?? 1) - s.inflow) * (1 - Math.exp(-dt / inflowTau));
       s.tailInflow += (inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation,
@@ -293,7 +307,7 @@ export class Rotorcraft {
     const s = this.state, d = this.def;
     s.driveTorque = 0; s.coning = 0; s.retreatingFlap = 0;
     s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit;
-    s.inflow = 5; s.tailInflow = 5;
+    s.inflow = s.tailInflow = s.omega > 0 ? 5 : 0;
     for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);
     s.mastBump = false;
     s.driveTorque = powered ? s.torque : 0;

@@ -133,7 +133,7 @@ export function buildS269Exterior(def: AirframeVisualDef, m: S269Materials, skin
   for (const side of [-1, 1]) {
     for (const door of def.glazing.doors) {
       const loop = [...door.pts, door.pts[0]];
-      add(m.paint, pathTube(skinPath(skin, side, loop, -0.008), 0.014, 120));
+      add(m.paint, pathTube(skinPath(skin, side, loop, 0.006), 0.014, 120));
       add(m.rubber, pathTube(skinPath(skin, side, loop, 0.003), 0.0045, 120));
       const p = skinPath(skin, side, [[door.handle!.x, door.handle!.z]], 0.012)[0];
       add(m.metal, tube([p[0] - 0.04, p[1], p[2]], [p[0] + 0.04, p[1], p[2] - 0.014], 0.009));

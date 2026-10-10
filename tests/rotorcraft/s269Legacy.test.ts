@@ -6,12 +6,14 @@ import { defaultControls } from '../../src/core/types';
 import { quat, v3 } from '../../src/core/math';
 import type { EngineUnit } from '../../src/physics/propulsion/engineUnit';
 // SHA-256 of every numeric/boolean output in 960 force evaluations per case, from unmodified
-// base 0d19506 solver sources. Capture and direct old/new comparison remain under work/s269-fm.
+// main 8cac779 solver sources (stopped-rotor fix 7157794). The four running-rotor
+// digests are unchanged from 0d19506; only the two cold cases change. Independent main capture
+// and direct comparison are recorded in docs/s269-round2.md and work/r2/.
 const baseline: Record<string, string> = {
-  "r22-0": "3c079a00b52788ae82748578b39b9e1e538c899eb3c475609f95cfb5b9635874",
+  "r22-0": "5dbf5f6ad3dd4c42aabb6d8abfeffab12bf718ad9a967179914b4cf9b40a2ad3",
   "r22-1": "f5275dc60289917c647a67a2c434f4d85868daf5aaaa4e3795ffcd7f6d68f2e2",
   "r22-2": "c22fc7b4ad24aa7a303231a4e7c250d71943e37c650ea827883be6cba11b22fd",
-  "r44-0": "47131aec07b3c074348e818fefaba70ea92ab2ee1d2a77ad4b38e9d7e6e8c0ce",
+  "r44-0": "8b62003fe094689b1a623e30db2c4a1b316a991701d7fdf5979446f59cdd5ac8",
   "r44-1": "2a165e2b0f9dcf49ff25f0f50b57a8dfe996c615ab4d4f3c06691731c3d010a7",
   "r44-2": "7f4eb4d496f4e2c9a55484cd6bd1ffd61c5fd95daa6f620dd228c56acd7c5331"
 };
