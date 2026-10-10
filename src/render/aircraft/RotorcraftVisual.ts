@@ -52,8 +52,11 @@ export class RotorcraftVisual {
     this.cockpit.group.add(fuselage.lining); this.root.add(this.cockpit.group);
     this.panel = this.cockpit.panel;
     this.occupants = buildOccupants(def.cockpit, true); if (this.occupants) this.cockpit.group.add(this.occupants.group);
-    this.main = new TeeteringRotor(d.main, mat); this.main.group.position.copy(frd(...d.main.hub)); this.root.add(this.main.group);
-    this.tail = new TeeteringRotor({ ...d.tail, chord: [d.tail.chord, d.tail.chord], twist: 0, tail: true }, mat);
+    this.main = new TeeteringRotor({ ...d.main, blades: def.rotorcraft!.main.blades,
+      rotation: def.rotorcraft!.rotation, hubType: def.rotorcraft!.hubModel?.kind }, mat);
+    this.main.group.position.copy(frd(...d.main.hub)); this.root.add(this.main.group);
+    this.tail = new TeeteringRotor({ ...d.tail, chord: [d.tail.chord, d.tail.chord], twist: d.tail.twist ?? 0, tail: true,
+      blades: def.rotorcraft!.tail.blades, rotation: (def.rotorcraft!.tailRotation ?? -1) * def.rotorcraft!.rotation as 1 | -1 }, mat);
     this.tail.group.position.copy(frd(...d.tail.hub)); this.tail.group.rotation.z = Math.PI / 2; this.root.add(this.tail.group);
     this.lights = new AircraftLights(ctx.quality !== 'low', options.lightScale, new THREE.Group(), def.lamps, undefined, d.nominalVoltage ?? 14);
     this.quality = ctx.quality; this.root.add(this.lights.group);
@@ -77,7 +80,8 @@ export class RotorcraftVisual {
         Math.min(coning.maxDeg, Math.max(0, r.thrust) / coning.referenceThrust * coning.angleDeg) * Math.PI / 180, spin * spin);
       const pitch = THREE.MathUtils.lerp(d.main.minPitch, d.main.maxPitch, c.collective ?? 0);
       this.main.update(r.azimuth, r.rotorRpm, pitch, cone);
-      this.tail.update(-r.azimuth * d.tailRatio, r.rotorRpm * d.tailRatio, THREE.MathUtils.lerp(d.tail.minPitch, d.tail.maxPitch, (1 - c.rudder) / 2), -v.tail.precone);
+      this.tail.update((d.tailRotation ?? -1) * r.azimuth * d.tailRatio, r.rotorRpm * d.tailRatio,
+        THREE.MathUtils.lerp(d.tail.minPitch, d.tail.maxPitch, (1 - c.rudder * d.rotation) / 2), -v.tail.precone);
     }
     if (ctx.quality !== this.quality) { this.quality = ctx.quality; this.lights.setPointLights(ctx.quality !== 'low'); }
     this.lights.update(ctx.simTime, ctx.state, c, this.root, ctx.camera, ctx.renderer, ctx.sky);

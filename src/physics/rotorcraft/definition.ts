@@ -13,6 +13,10 @@ export interface RotorDefinition {
   inducedFactor?: number;
 }
 export interface RotorcraftDefinition {
+  /** Installation metadata. Absent retains the legacy teetering hub. Articulated dynamics are
+   * not implemented yet: that installation currently uses the free-hinge placeholder solver. */
+  hubModel?: { kind: 'teetering' } | { kind: 'articulated'; flapHingeOffset: number; lagHingeOffset: number;
+    lagDamper: 'elastomeric' | 'friction' };
   main: RotorDefinition;
   tail: RotorDefinition;
   nominalRpm: number;
@@ -22,12 +26,18 @@ export interface RotorcraftDefinition {
   airspeedCorrections?: SpeedCorrections;
   manifoldLimits?: ManifoldPlacard;
   rotation: 1 | -1;
+  /** Tail rotation relative to main azimuth about the renderer's local axis; legacy is -1. */
+  tailRotation?: 1 | -1;
   engineRatio: number; tailRatio: number; transmissionEfficiency: number;
   cyclicLimit: number;
   teeterLimit: number;
   /** Control actuation metadata. Inputs command position; servo failures and hand forces are not simulated. */
-  controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical' };
+  controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical';
+    /** Installation only; no hand-force/trim-actuator simulation. */
+    trim?: 'electric-spring' | 'none' };
   systems: { clutchSeconds: number; beltTorque: number; correlator: number; governorRate: number;
+    /** False for a manual-throttle installation; absence retains the legacy governor. */
+    governorInstalled?: boolean;
     /** Fractions of tachometer reference RPM, not governed RPM. */
     governorEngage: number; lowRpmWarning: number; powerCheckMinRpm: number;
     /** Collective switch deadband, normalized travel. */
@@ -49,6 +59,8 @@ export interface RotorcraftDefinition {
   tailProtection?: { stinger: readonly Vec3[]; radius: number; fin: readonly Vec3[];
     stiffness: number; damping: number; maxSink: number; maxCompression: number };
   skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number;
+    /** Installation only. Oleo gas/poppet dynamics and ground resonance are not yet simulated. */
+    suspension?: 'cross-tube' | 'oleo';
     /** Shoe/terrain contact, distinct from tyre coefficients. Lateral includes soil ploughing by the tube. */
     surfaces?: Partial<Record<SurfaceType, { static: number; sliding: number; lateral: number }>> };
 }

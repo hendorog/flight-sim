@@ -333,7 +333,8 @@ const ACTION_NEEDS: Partial<Record<InputAction, keyof InputProfile['has']>> = {
  */
 export function profileHasAction(profile: InputProfile, action: InputAction): boolean {
   if (action === 'fuelPrime') return !!profile.primeKey;
-  if (action === 'rotorClutch' || action === 'rotorGovernor') return !!profile.rotorcraft;
+  if (action === 'rotorClutch') return !!profile.rotorcraft;
+  if (action === 'rotorGovernor') return !!profile.rotorcraft && profile.rotorGovernor !== false;
   if (profile.rotorcraft && ['trimNoseUp', 'trimNoseDown', 'parkingBrake', 'brakes', 'brakeLeft', 'brakeRight'].includes(action)) return false;
   // ENGINE MASTER switches have no single-magneto positions.
   if (profile.ignition === 'engineMaster' && (action === 'magnetoRight' || action === 'magnetoLeft')) return false;

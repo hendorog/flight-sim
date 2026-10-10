@@ -11,7 +11,7 @@
 import type { Quat, Vec3 } from './math';
 
 // ---------------------------------------------------------------------------------------------- identity
-export const ROTORCRAFT_IDS = ['r22', 'r44'] as const;
+export const ROTORCRAFT_IDS = ['r22', 'r44', 's269'] as const;
 export type RotorcraftId = typeof ROTORCRAFT_IDS[number];
 export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | RotorcraftId;
 export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', ...ROTORCRAFT_IDS];

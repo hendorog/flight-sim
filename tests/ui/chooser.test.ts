@@ -30,8 +30,9 @@ describe('rows', () => {
 
   it('lists the available types, the flown one first', () => {
     const rows = chooserRows(all, 'pa34');
-    expect(rows.map((r) => r.id)).toEqual(['pa34', 'c172s', 'c152', 'pa38', 'da20', 'da42', 'r22', 'r44']);
+    expect(rows.map((r) => r.id)).toEqual(['pa34', 'c172s', 'c152', 'pa38', 'da20', 'da42', 'r22', 'r44', 's269']);
     expect(chooserRows(AIRCRAFT_CATALOGUE, 'c172s').map(r => r.id)).not.toContain('r44');
+    expect(chooserRows(AIRCRAFT_CATALOGUE, 'c172s').map(r => r.id)).not.toContain('s269');
     const some = all.map((r) => ({ ...r, available: r.id !== 'da42' }));
     expect(chooserRows(some, 'c172s').map((r) => r.id)).not.toContain('da42');
   });

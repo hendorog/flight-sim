@@ -39,7 +39,7 @@ export class Rotorcraft {
     s.governorIntegral = clamp(s.governorIntegral + manual + correlation, 0, 1);
     s.governorThrottle = clamp(s.governorThrottle + manual + correlation, 0, 1);
     s.previousThrottle = c.throttle; s.previousCollective = collective;
-    s.governorActive = c.rotorGovernor !== false && c.masterBattery &&
+    s.governorActive = d.systems.governorInstalled !== false && c.rotorGovernor !== false && c.masterBattery &&
       engine.rpm > d.systems.governorEngage * d.referenceRpm * d.engineRatio;
     if (c.throttle <= 0) s.governorThrottle = s.governorIntegral = 0;
     else if (s.governorActive && !override) {
@@ -127,7 +127,8 @@ export class Rotorcraft {
       s.flapForward += (targetForward - s.flapForward + (b.angularVelocity.y + b.angularVelocity.z * s.flapRight) * tau) * lag;
       s.flapRight += (targetRight - s.flapRight - (b.angularVelocity.x + b.angularVelocity.z * s.flapForward) * tau) * lag;
       s.teeterAngle = Math.atan(Math.hypot(s.flapForward, s.flapRight));
-      if (s.rotorRpm > 0.5 * d.referenceRpm && s.teeterAngle > d.teeterLimit) s.mastBump = true;
+      // The articulated scaffold has no centre teeter hinge. Its own stops/dynamics are future work.
+      if (d.hubModel?.kind !== 'articulated' && s.rotorRpm > 0.5 * d.referenceRpm && s.teeterAngle > d.teeterLimit) s.mastBump = true;
     }
     const axis = v3.normalize({ x: s.flapForward, y: s.flapRight, z: -1 });
     const axial = v3.dot(hubAir, axis);
@@ -148,7 +149,7 @@ export class Rotorcraft {
     const tailArm = v3.sub(d.tail.hub, b.cgOffset);
     const tailAir = v3.add(air, v3.cross(b.angularVelocity, tailArm));
     // Positive tail thrust acts right: tail arm aft makes nose-left anti-torque for CCW main rotor.
-    const tailPitch = d.tail.minPitch + (1 - clamp(c.rudder, -1, 1)) * 0.5 * (d.tail.maxPitch - d.tail.minPitch);
+    const tailPitch = d.tail.minPitch + (1 - clamp(c.rudder, -1, 1) * d.rotation) * 0.5 * (d.tail.maxPitch - d.tail.minPitch);
     // Tail disc is on the left; the useful anti-torque force is to the right. Main wake enters its
     // in-plane flow, while signed sideslip enters its axial momentum equation (including adverse flow).
     const wakeAtTail = 0.35 * s.inflow / (1 + (air.x / 18) ** 2);

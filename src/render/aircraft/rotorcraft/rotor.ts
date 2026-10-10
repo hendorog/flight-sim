@@ -1,4 +1,6 @@
-// Two-blade teetering rotor. Airfoil grids have the published chord and twist; the exact R22 airfoil
+// Rotor mesh with data-driven blade count/direction. Legacy defaults retain the two-blade teetering head.
+// The articulated head is a visible placeholder; it does not represent resolved hinge/lag motion.
+// Airfoil grids have the published chord and twist; the exact R22 airfoil
 // contour is not claimed. A radial solidity disc replaces overlapping smear sectors, as in propeller.ts.
 // Paint and hub references: Robinson R22 Maintenance Manual, Figs. 26-17, 28-5 and chapter 26:
 // https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_mm_book_6eaf5686aa.pdf
@@ -12,7 +14,8 @@ import type { AircraftMaterials } from '../materials';
 import type { RotorBladePaint } from '../airframe/types';
 import { box, tube } from './geometry';
 
-export interface RotorSpec { radius: number; root: number; chord: readonly [number, number]; twist: number; tail?: boolean; paint?: RotorBladePaint }
+export interface RotorSpec { radius: number; root: number; chord: readonly [number, number]; twist: number; tail?: boolean; paint?: RotorBladePaint;
+  blades?: number; rotation?: 1 | -1; hubType?: 'teetering' | 'articulated' }
 const COPIES = 10;
 const smooth = THREE.MathUtils.smoothstep;
 
@@ -27,7 +30,8 @@ export function rotorBladeGeometry(d: RotorSpec): THREE.BufferGeometry {
     ...[...bands, d.radius - capLength].filter(r => r > d.root).flatMap(r => [r - 0.00001, r + 0.00001]),
     d.radius - 0.02].sort((a, b) => a - b);
   const rows = radii.length, cols = 33;
-  const g = gridGeometry({ rows, cols, wrap: true, flip: !d.tail,
+  const rotation = d.rotation ?? (d.tail ? -1 : 1);
+  const g = gridGeometry({ rows, cols, wrap: true, flip: rotation > 0,
     position(i, j, out) {
       const r = radii[i], f = (r - d.root) / (d.radius - d.root);
       // Published main chord grows outboard; only the rounded tip cover narrows. Tail chord is constant
@@ -43,7 +47,7 @@ export function rotorBladeGeometry(d: RotorSpec): THREE.BufferGeometry {
       const thickness = ay * c;
       const tangent = -along * Math.cos(beta) + thickness * Math.sin(beta);
       // The tail turns the opposite way about its local axis; its leading edge faces that motion.
-      out.set(r, along * Math.sin(beta) + thickness * Math.cos(beta), d.tail ? -tangent : tangent);
+      out.set(r, along * Math.sin(beta) + thickness * Math.cos(beta), rotation < 0 ? -tangent : tangent);
     },
   });
   const colours = new Float32Array(g.getAttribute('position').count * 3);
@@ -99,7 +103,7 @@ export class TeeteringRotor {
     this.group.add(this.spin);
     this.bladeMat = new THREE.MeshStandardMaterial({ name: 'rotorBlade', vertexColors: true, roughness: 0.44, metalness: 0.12, transparent: true });
     this.hardwareMat = new THREE.MeshStandardMaterial({ name: 'rotorHeadPaint', color: 0x929c9f, roughness: 0.38, metalness: 0.25 });
-    this.blades = new THREE.InstancedMesh(rotorBladeGeometry(d), this.bladeMat, COPIES * 2);
+    this.blades = new THREE.InstancedMesh(rotorBladeGeometry(d), this.bladeMat, COPIES * (d.blades ?? 2));
     this.blades.name = 'rotorBlades'; this.blades.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.blades.frustumCulled = false;
     this.spin.add(this.blades);
     const head = new MeshBatch();
@@ -107,75 +111,85 @@ export class TeeteringRotor {
     // Twin cheeks of the teetering yoke, coning bolts, grip barrels and elastomeric pitch-change boots.
     // Proportions estimated from R22 MM chapter 26 and preflight photographs; no fastener CAD is claimed.
     const grey = this.hardwareMat;
-    if (!d.tail) {
-      const cheek = new THREE.Shape();
-      cheek.moveTo(-0.135, -0.04); cheek.lineTo(0.135, -0.04);
-      cheek.quadraticCurveTo(0.16, -0.04, 0.16, -0.015); cheek.lineTo(0.16, 0.065);
-      cheek.quadraticCurveTo(0.16, 0.092, 0.13, 0.092); cheek.lineTo(0.085, 0.092);
-      cheek.lineTo(0.06, 0.12); cheek.lineTo(-0.06, 0.12); cheek.lineTo(-0.085, 0.092);
-      cheek.lineTo(-0.13, 0.092); cheek.quadraticCurveTo(-0.16, 0.092, -0.16, 0.065);
-      cheek.lineTo(-0.16, -0.015); cheek.quadraticCurveTo(-0.16, -0.04, -0.135, -0.04);
-      for (const x of [-0.11, 0.11]) { const hole = new THREE.Path(); hole.absarc(x, 0.063, 0.020, 0, Math.PI * 2, true); cheek.holes.push(hole); }
-      const window = new THREE.Path(); window.moveTo(-0.045, -0.018); window.lineTo(-0.045, 0.023);
-      window.lineTo(0.045, 0.023); window.lineTo(0.045, -0.018); window.closePath(); cheek.holes.push(window);
-      for (const side of [-1, 1]) {
-        const g = new THREE.ExtrudeGeometry(cheek, { depth: 0.018, bevelEnabled: true, bevelSize: 0.003, bevelThickness: 0.003, bevelSegments: 1, steps: 1, curveSegments: 10 });
-        head.add(grey, g.translate(0, 0, side * 0.046 - 0.009));
+    if (d.hubType === 'articulated') {
+      // Deliberately simple hub with one arm per blade, pending the aircraft exterior worker.
+      head.add(grey, box([0, 0, 0], [0.16, 0.16, 0.12], 0.03));
+      for (let i = 0; i < (d.blades ?? 3); i++) {
+        const a = i * 2 * Math.PI / (d.blades ?? 3);
+        head.add(grey, tube([0, 0, 0], [-d.root * Math.sin(a), d.root * Math.cos(a), 0], 0.035));
       }
-    } else head.add(grey, box([0, 0, 0], [0.075, 0.15, 0.027], 0.01));
-    head.add(grey, tube([0, 0, 0.12 * k], [0, 0, -0.073 * k], 0.037 * k));
-    for (const span of [-0.12, 0, 0.12]) {
-      const z = span === 0 && !d.tail ? -0.075 : 0;
-      head.add(mat.aluminium, tube([-0.073 * k, span * k, z], [0.073 * k, span * k, z], 0.024 * k));
-      for (const end of [-1, 1]) {
-        head.add(grey, tube([end * 0.057 * k, span * k, z], [end * 0.064 * k, span * k, z], 0.036 * k, 0.036 * k, 16));
-        head.add(mat.aluminium, tube([end * 0.064 * k, span * k, z], [end * 0.079 * k, span * k, z], 0.027 * k, 0.027 * k, 6));
-      }
-    }
-    for (const side of [-1, 1]) {
-      head.add(grey, tube([0, side * 0.17 * k, 0], [0, side * d.root, 0], 0.049 * k, 0.035 * k, 20));
-      head.add(mat.black, tube([0, side * 0.18 * k, 0], [0, side * 0.22 * k, 0], 0.05 * k, 0.05 * k, 20));
-      for (const y of [0.181, 0.215]) head.add(mat.aluminium, tube([0, side * y * k, 0], [0, side * (y + 0.006) * k, 0], 0.051 * k, 0.051 * k, 20));
+      this.spin.add(head.build('articulatedHubPlaceholder'));
+    } else {
       if (!d.tail) {
-        head.add(grey, tube([0, side * 0.28, 0], [side * 0.095, side * 0.17, 0.008], 0.018));
-        for (const y of [0.335, 0.385]) head.add(mat.aluminium, tube([0, side * y, -0.039], [0, side * y, -0.053], 0.011, 0.011, 6));
-      }
-    }
-    this.spin.add(head.build('teeteringHub'));
-    if (!d.tail) {
-      this.swashplate.name = 'swashplate'; this.swashplate.position.y = -0.20;
-      const swash = new MeshBatch();
-      for (const [radius, y, material] of [[0.105, 0, grey], [0.10, -0.027, mat.darkMetal]] as const) {
-        const g = new THREE.TorusGeometry(radius, 0.016, 8, 24); g.rotateX(Math.PI / 2); g.translate(0, y, 0);
-        swash.add(material, g);
-      }
-      swash.add(grey, tube([0, 0, -0.045], [0, 0, 0.05], 0.047, 0.052, 20));
-      for (let i = 0; i < 3; i++) {
-        const a = i * Math.PI * 2 / 3;
-        const x = 0.092 * Math.cos(a), y = 0.092 * Math.sin(a);
-        swash.add(grey, tube([0, 0, 0.014], [x, y, 0.014], 0.011));
-        swash.add(mat.chrome, tube([x, y, 0.025], [x * 0.85, y * 0.85, 0.16], 0.007));
-      }
-      this.swashplate.add(swash.build('swashplateRings')); this.group.add(this.swashplate);
-      for (const side of [-1, 1]) {
-        const link = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 1, 8), mat.chrome);
-        link.name = 'pitchLink'; this.spin.add(link); this.links.push(link);
-        for (const [span, y] of [[0.075, -0.20], [0.17, -0.008]]) {
-          const ball = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), grey);
-          ball.position.set(side * span, y, -side * 0.095); this.spin.add(ball);
-          if (y === -0.008) this.upperJoints.push(ball);
+        const cheek = new THREE.Shape();
+        cheek.moveTo(-0.135, -0.04); cheek.lineTo(0.135, -0.04);
+        cheek.quadraticCurveTo(0.16, -0.04, 0.16, -0.015); cheek.lineTo(0.16, 0.065);
+        cheek.quadraticCurveTo(0.16, 0.092, 0.13, 0.092); cheek.lineTo(0.085, 0.092);
+        cheek.lineTo(0.06, 0.12); cheek.lineTo(-0.06, 0.12); cheek.lineTo(-0.085, 0.092);
+        cheek.lineTo(-0.13, 0.092); cheek.quadraticCurveTo(-0.16, 0.092, -0.16, 0.065);
+        cheek.lineTo(-0.16, -0.015); cheek.quadraticCurveTo(-0.16, -0.04, -0.135, -0.04);
+        for (const x of [-0.11, 0.11]) { const hole = new THREE.Path(); hole.absarc(x, 0.063, 0.020, 0, Math.PI * 2, true); cheek.holes.push(hole); }
+        const window = new THREE.Path(); window.moveTo(-0.045, -0.018); window.lineTo(-0.045, 0.023);
+        window.lineTo(0.045, 0.023); window.lineTo(0.045, -0.018); window.closePath(); cheek.holes.push(window);
+        for (const side of [-1, 1]) {
+          const g = new THREE.ExtrudeGeometry(cheek, { depth: 0.018, bevelEnabled: true, bevelSize: 0.003, bevelThickness: 0.003, bevelSegments: 1, steps: 1, curveSegments: 10 });
+          head.add(grey, g.translate(0, 0, side * 0.046 - 0.009));
+        }
+      } else head.add(grey, box([0, 0, 0], [0.075, 0.15, 0.027], 0.01));
+      head.add(grey, tube([0, 0, 0.12 * k], [0, 0, -0.073 * k], 0.037 * k));
+      for (const span of [-0.12, 0, 0.12]) {
+        const z = span === 0 && !d.tail ? -0.075 : 0;
+        head.add(mat.aluminium, tube([-0.073 * k, span * k, z], [0.073 * k, span * k, z], 0.024 * k));
+        for (const end of [-1, 1]) {
+          head.add(grey, tube([end * 0.057 * k, span * k, z], [end * 0.064 * k, span * k, z], 0.036 * k, 0.036 * k, 16));
+          head.add(mat.aluminium, tube([end * 0.064 * k, span * k, z], [end * 0.079 * k, span * k, z], 0.027 * k, 0.027 * k, 6));
         }
       }
-      // Scissors carry the rotating swashplate; these short arms are visible alongside the mast.
-      const scissors = new MeshBatch();
-      scissors.add(grey, tube([-0.07, 0, 0.09], [-0.12, 0, 0.145], 0.011));
-      scissors.add(grey, tube([-0.12, 0, 0.145], [-0.07, 0, 0.20], 0.011));
-      this.spin.add(scissors.build('swashplateScissors'));
+      for (const side of [-1, 1]) {
+        head.add(grey, tube([0, side * 0.17 * k, 0], [0, side * d.root, 0], 0.049 * k, 0.035 * k, 20));
+        head.add(mat.black, tube([0, side * 0.18 * k, 0], [0, side * 0.22 * k, 0], 0.05 * k, 0.05 * k, 20));
+        for (const y of [0.181, 0.215]) head.add(mat.aluminium, tube([0, side * y * k, 0], [0, side * (y + 0.006) * k, 0], 0.051 * k, 0.051 * k, 20));
+        if (!d.tail) {
+          head.add(grey, tube([0, side * 0.28, 0], [side * 0.095, side * 0.17, 0.008], 0.018));
+          for (const y of [0.335, 0.385]) head.add(mat.aluminium, tube([0, side * y, -0.039], [0, side * y, -0.053], 0.011, 0.011, 6));
+        }
+      }
+      this.spin.add(head.build('teeteringHub'));
+      if (!d.tail) {
+        this.swashplate.name = 'swashplate'; this.swashplate.position.y = -0.20;
+        const swash = new MeshBatch();
+        for (const [radius, y, material] of [[0.105, 0, grey], [0.10, -0.027, mat.darkMetal]] as const) {
+          const g = new THREE.TorusGeometry(radius, 0.016, 8, 24); g.rotateX(Math.PI / 2); g.translate(0, y, 0);
+          swash.add(material, g);
+        }
+        swash.add(grey, tube([0, 0, -0.045], [0, 0, 0.05], 0.047, 0.052, 20));
+        for (let i = 0; i < 3; i++) {
+          const a = i * Math.PI * 2 / 3;
+          const x = 0.092 * Math.cos(a), y = 0.092 * Math.sin(a);
+          swash.add(grey, tube([0, 0, 0.014], [x, y, 0.014], 0.011));
+          swash.add(mat.chrome, tube([x, y, 0.025], [x * 0.85, y * 0.85, 0.16], 0.007));
+        }
+        this.swashplate.add(swash.build('swashplateRings')); this.group.add(this.swashplate);
+        for (const side of [-1, 1]) {
+          const link = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 1, 8), mat.chrome);
+          link.name = 'pitchLink'; this.spin.add(link); this.links.push(link);
+          for (const [span, y] of [[0.075, -0.20], [0.17, -0.008]]) {
+            const ball = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), grey);
+            ball.position.set(side * span, y, -side * 0.095); this.spin.add(ball);
+            if (y === -0.008) this.upperJoints.push(ball);
+          }
+        }
+        // Scissors carry the rotating swashplate; these short arms are visible alongside the mast.
+        const scissors = new MeshBatch();
+        scissors.add(grey, tube([-0.07, 0, 0.09], [-0.12, 0, 0.145], 0.011));
+        scissors.add(grey, tube([-0.12, 0, 0.145], [-0.07, 0, 0.20], 0.011));
+        this.spin.add(scissors.build('swashplateScissors'));
+      }
     }
     const data = new Uint8Array(256 * 4);
     for (let i = 0; i < 256; i++) {
       const r = (i + 0.5) / 256 * d.radius;
-      const sigma = 2 * THREE.MathUtils.lerp(...d.chord, r / d.radius) / (2 * Math.PI * Math.max(r, d.root));
+      const sigma = (d.blades ?? 2) * THREE.MathUtils.lerp(...d.chord, r / d.radius) / (2 * Math.PI * Math.max(r, d.root));
       const tip = smooth(r, d.radius - (d.tail ? 0.08 : 0.10), d.radius - 0.01);
       const rim = smooth(d.radius - r, 0, 0.022);
       const v = 70 + 135 * tip;
@@ -196,13 +210,16 @@ export class TeeteringRotor {
   update(azimuth: number, rpm: number, pitch: number, cone: number): void {
     this.spin.rotation.y = azimuth;
     const exposure = this.d.tail ? 1 / 60 : 1 / 15;
-    const sweep = Math.min(Math.PI, Math.abs(rpm) * Math.PI * 2 / 60 * exposure);
-    const toDisc = smooth(sweep, Math.PI * 0.40, Math.PI * 0.85);
+    const spacing = 2 * Math.PI / (this.d.blades ?? 2);
+    const sweep = Math.min(spacing, Math.abs(rpm) * Math.PI * 2 / 60 * exposure);
+    const toDisc = smooth(sweep, spacing * 0.40, spacing * 0.85);
     const sharp = sweep < 0.015, n = sharp ? 1 : COPIES;
-    this.blades.count = 2 * n;
-    this.pitchM.makeRotationX(pitch); this.coneM.makeRotationZ(cone).multiply(this.pitchM);
-    for (let b = 0; b < 2; b++) for (let k = 0; k < n; k++) {
-      this.m.makeRotationY(b * Math.PI - (n > 1 ? (this.d.tail ? -1 : 1) * sweep * k / (n - 1) : 0)).multiply(this.coneM);
+    this.blades.count = (this.d.blades ?? 2) * n;
+    // Preserve the legacy pitch sign for each local axis; mirror it when that rotor reverses.
+    const pitchSign = (this.d.rotation ?? (this.d.tail ? -1 : 1)) * (this.d.tail ? -1 : 1);
+    this.pitchM.makeRotationX(pitch * pitchSign); this.coneM.makeRotationZ(cone).multiply(this.pitchM);
+    for (let b = 0; b < (this.d.blades ?? 2); b++) for (let k = 0; k < n; k++) {
+      this.m.makeRotationY(b * spacing - (n > 1 ? (this.d.rotation ?? (this.d.tail ? -1 : 1)) * sweep * k / (n - 1) : 0)).multiply(this.coneM);
       this.blades.setMatrixAt(b * n + k, this.m);
     }
     this.blades.instanceMatrix.needsUpdate = true;
