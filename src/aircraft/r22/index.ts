@@ -10,7 +10,7 @@ import { MAIN_ROTOR_RADIUS, FUSELAGE_LENGTH, NOSE_X, TAIL_END_X, CABIN_WIDTH, PI
 /** Legacy panel/camera contracts still include wing fields. They are metadata only for rotorcraft;
  * the flight model bypasses the fixed-wing aero/control solver entirely. */
 export const R22_DEFINITION: AircraftDefinition = {
-  ...base, id: 'r22', name: 'Robinson R22 Beta II (experimental)', shortName: 'R22 Beta II',
+  ...base, id: 'r22', name: 'Robinson R22 Beta II', shortName: 'R22 Beta II',
   variant: 'R22 Beta II, O-360-J2A, standard + auxiliary fuel tanks', icaoType: 'R22',
   rotorcraft: R22_ROTORCRAFT,
   controlDefaults: { fuelSelector: 'on', collective: 0, rotorGovernor: true, rotorClutch: true },
