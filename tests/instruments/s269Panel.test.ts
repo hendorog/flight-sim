@@ -192,7 +192,7 @@ describe('300CB carburetted alternate panel', () => {
     expect(S269_UI.hud.levers.some(l => l.label === 'GOV')).toBe(false);
     expect(S269_UI.startupSteps.flat().join(' ')).toContain('No guided start');
     expect(S269_UI.starterAdvice(c, 0)).toContain('not validated');
-    expect(S269_TRAINING.school?.syllabus).toBe(false); expect(S269_TRAINING.name).toContain('placeholder');
+    expect(S269_TRAINING.school?.syllabus).toBe(false); expect(S269_TRAINING.name).toContain('in development');
     expect(S269_TRAINING.unavailableVSpeeds).toContain('Vapp');
     for (const checklist of Object.values(S269_TRAINING.checklists)) expect(checklist.items).toEqual([]);
   });
