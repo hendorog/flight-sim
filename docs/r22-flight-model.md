@@ -9,6 +9,30 @@ This is an experimental, reduced-order model, not a validated flight-training pr
 
 Open `/?aircraft=r22&scenario=runway&resume=0` for a running helicopter, `scenario=cruise` for a trimmed airborne start, or `scenario=apron` for a cold start. Exterior and panel work are separate from this physics branch.
 
+## Apron cold-start strike correction
+
+The default apron wind exposed a stopped-rotor initialization error shared with the R44. `settle()`
+seeded 5 m/s induced flow at zero RPM, and a floor on Lock number × rotor speed gave the free-flapping
+equation a finite four-second time constant even when stopped. Applying rotating-rotor blowback at
+that high advance ratio produced 56.12° teeter in the R22 and 68.35° in the R44 during reset. The
+lowest main-rotor collision samples lay 3.63 m / 10.08 m below the apron. Both aircraft were otherwise
+at their normal skid resting heights (0.892 m / 1.086 m AGL); all eight terrain samples were at
+120.05 m MSL. The nearest building was 22.2 m from the mast. Neither parking nor dimensions changed.
+
+The solver now seeds zero induced flow when stopped and uses the free-flapping time constant
+16 / (Lock number × rotor speed), infinite at zero RPM, with finite body-axis transport at that limit.
+The existing estimated 12° teeter limit bounds the hub pose at low RPM as well; rotating stop impacts
+still latch damage before the pose is limited. Ground-strike checks remain active at all RPM. With
+default weather, reset tip clearance is now 2.520 m (R22) / 3.133 m (R44).
+
+[R22 POH 7-2](https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_poh_full_book_b79e920713.pdf)
+describes the droop-stop friction restraint during starting/stopping. The correction does **not**
+validate that restraint's torque, blade sailing, elastic droop, or a stop-impact damage threshold:
+those still need measured data and an azimuth-resolved model. Rendered stopped-blade droop and
+physics coning remain separate approximations. `tests/sim/scenario-spawns.test.ts` exercises all
+registered aircraft and all five scenarios at reset and after five seconds without pilot/autoflight
+input; `tests/rotorcraft/stoppedRotor.test.ts` covers zero/low RPM and actual raised-surface strikes.
+
 ## Controls and starting
 
 | Input | Function |
