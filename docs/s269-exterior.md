@@ -1,5 +1,7 @@
 # Schweizer 269C-1 / 300CB exterior and cockpit
 
+Shared-integration follow-up: [s269-integration.md](s269-integration.md) records the production renderer/pose hook and corrected tail geometry. The assembly requests below describe the original worker handoff.
+
 This branch implements the **carburetted, two-seat 300CB, right PIC, single left main tank, no STAR**, selected in [s269-sources.md](s269-sources.md). It preserves the hidden/placeholder status. Geometry and a successful renderer fixture are not flight-model, startup or panel acceptance.
 
 ## Files and assembly

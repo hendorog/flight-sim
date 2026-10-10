@@ -141,6 +141,23 @@ function isSystems(v: unknown): v is SystemsSnapshot {
   const rotor = v.rotorcraft;
   if (rotor !== undefined) {
     if (!isObj(rotor)) return false;
+    if (rotor.articulated !== undefined) {
+      const a = rotor.articulated;
+      if (!isObj(a) ||
+        !Array.isArray(a.blades) || a.blades.length !== 3 ||
+        !a.blades.every(b => isObj(b) && ['flap', 'lag', 'pitch'].every(k => isNum(b[k])))) return false;
+    }
+    if (rotor.clutchDisengaged !== undefined && typeof rotor.clutchDisengaged !== 'boolean') return false;
+    if (rotor.transmission !== undefined) {
+      const t = rotor.transmission;
+      if (!isObj(t) || !isNum(t.oilPressurePsi) || t.oilPressurePsi < 0 ||
+        !isNum(t.oilTemperatureC) || typeof t.tailChips !== 'boolean') return false;
+    }
+    if (rotor.springTrim !== undefined) {
+      const t = rotor.springTrim;
+      if (!isObj(t) || !['pitch', 'roll', 'pitchForce', 'rollForce'].every(k => isNum(t[k])) ||
+        Math.abs(t.pitch as number) > 1 || Math.abs(t.roll as number) > 1) return false;
+    }
     // Older schema-3 R22 saves predate the latched tail-contact report.
     if (rotor.tailContact === undefined) rotor.tailContact = 'none';
     if (rotor.lowRpmLight === undefined) rotor.lowRpmLight = rotor.lowRpmHorn;
@@ -209,7 +226,13 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   const c = v.controls;
   if (!isObj(c) || !isObj(c.lights)) return null;
   if (c.collective !== undefined && (!isNum(c.collective) || c.collective < 0 || c.collective > 1)) return null;
-  for (const key of ['rotorGovernor', 'rotorClutch', 'rotorDoorsOff', 'fuelPrime']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+  for (const key of ['rotorGovernor', 'rotorClutch', 'rotorClutchGuardOpen', 'rotorDoorsOff', 'fuelPrime']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+  if (c.rotorClutchCommand !== undefined && !['engage', 'hold', 'release'].includes(c.rotorClutchCommand as string)) return null;
+  for (const key of ['cyclicTrimPitch', 'cyclicTrimRoll']) {
+    if (c[key] !== undefined && (!isNum(c[key]) || Math.abs(c[key] as number) > 1)) return null;
+    if (c[key] !== undefined) c[key] = 0;
+  }
+  if (c.lampTestId !== undefined) { if (typeof c.lampTestId !== 'string') return null; delete c.lampTestId; }
   // A held key cannot survive a reload. It must not leave the pump priming unattended.
   if (c.fuelPrime !== undefined) c.fuelPrime = false;
   if (isRotorcraftId(v.aircraft) && (!isObj(v.systems) || !isObj(v.systems.rotorcraft))) return null;

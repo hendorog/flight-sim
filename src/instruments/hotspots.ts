@@ -191,10 +191,25 @@ function ignitionHotspots(def: PanelDef): PanelHotspot[] {
 
 /** The hotspots a gauge brings besides the bezel knobs: the gear selector, the flap switch, a guarded knob. */
 function gaugeHotspots(g: PanelDef['gauges'][number]): PanelHotspot[] {
+  if (g.kind === 'positionSwitch') {
+    const b = g.bounds, x = b.x + b.w / 2;
+    const spots: PanelHotspot[] = g.positions.map((label, i) => ({
+      id: `${g.id}${i}`, kind: 'toggle', x, y: b.y + 35 + i * (b.h - 66) / (g.positions.length - 1), hw: 18, hh: 10,
+      name: `${g.label} ${label}`, hint: 'click to select',
+      toggle(c) { if (!g.guard?.closed(c)) g.set(c, i); },
+      value: c => g.guard?.closed(c) ? 'GUARD CLOSED' : g.positions[g.read(c)],
+    }));
+    if (g.guard) spots.push({ id: `${g.id}Guard`, kind: 'toggle', x, y: b.y + 8, hw: 26, hh: 9,
+      name: `${g.label} guard`, hint: 'click to open or close', toggle: g.guard.toggle,
+      value: c => g.guard!.closed(c) ? 'CLOSED' : 'OPEN' });
+    return spots;
+  }
   if (g.kind === 'pullKnob' || g.kind === 'pushButton') {
     const b = g.bounds, x = b.x + b.w / 2, y = b.y + b.h / 2;
     if (g.kind === 'pushButton') return [{ id: g.id, kind: 'push', x, y, hw: 18, hh: 18,
-      name: g.label, hint: 'hold to test', press: g.press, value: c => g.read(c) ? 'TEST' : '' }];
+      name: g.label, hint: g.holdAction ? 'hold to operate' : 'hold to test', press: g.press,
+      hold: g.holdAction ? { action: g.holdAction } : undefined,
+      value: c => g.read(c) ? (g.holdAction ? 'HELD' : 'TEST') : '' }];
     const spots: PanelHotspot[] = [knob(g.id, x, y, g.label, {
       turn(dir, c, coarse) { if (!g.guard?.closed(c)) g.set(c, clamp01(g.read(c) + dir * 0.05 * coarse)); },
       value: c => g.guard?.closed(c) ? 'GUARD INSTALLED' : `${Math.round(g.read(c) * 100)} %`,
@@ -305,6 +320,13 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
     }
   }
   const row = def.switchRow;
+  def.annunciator?.lamps?.forEach((lamp, i) => {
+    const b = def.annunciator?.cells?.[i];
+    if (lamp.press && b) spots.push({ id: `${lamp.id}Test`, kind: 'push',
+      x: b.x + b.w / 2, y: b.y + b.h / 2, hw: b.w / 2, hh: b.h / 2,
+      name: lamp.text, hint: 'hold to test this lamp', press: lamp.press,
+      value: c => c.lampTestId === lamp.id ? 'TEST' : '' });
+  });
   const { x, y } = row.bounds;
   if (row.dimmers) {
     spots.push(knob('panelDimmer', x + row.dimmers.panel, y + row.dimmers.y, 'Panel lights', DIMMER));

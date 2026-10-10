@@ -44,7 +44,7 @@ it('keeps the physical blade spacing, panel face and mesh finite in the new rend
   const ctx = fakeContext(), visual = new AircraftVisual({ airframe: pres.visual, panelDef: pres.panel, asyncBake: false });
   try {
     visual.init(ctx); visual.update(0, ctx); visual.root.updateMatrixWorld(true);
-    expect(visual.root.getObjectByName('articulatedHubPlaceholder')).toBeDefined();
+    expect(visual.root.getObjectByName('s269ArticulatedHead')).toBeDefined();
     const rotors: THREE.InstancedMesh[] = [];
     visual.root.traverse(o => { if (o instanceof THREE.InstancedMesh && o.name === 'rotorBlades') rotors.push(o); });
     expect(rotors.map(r => r.count)).toEqual([3, 2]);

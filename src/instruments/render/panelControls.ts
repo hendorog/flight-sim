@@ -29,7 +29,7 @@ export class DigitalTemperature implements PanelComponent {
   }
 }
 
-type Control = Extract<GaugeDef, { kind: 'pullKnob' | 'pushButton' }>;
+type Control = Extract<GaugeDef, { kind: 'pullKnob' | 'pushButton' | 'positionSwitch' }>;
 export class ConsoleControl implements PanelComponent {
   readonly id: string;
   readonly bounds: Rect;
@@ -37,7 +37,7 @@ export class ConsoleControl implements PanelComponent {
   constructor(private readonly def: Control) { this.id = def.id; this.bounds = def.bounds; }
   sample(_r: InstrumentReadings, c: ControlInputs): boolean {
     this.latch.set(0, Number(this.def.read(c)), 0.01);
-    this.latch.set(1, this.def.kind === 'pullKnob' && this.def.guard?.closed(c) ? 1 : 0, 1);
+    this.latch.set(1, 'guard' in this.def && this.def.guard?.closed(c) ? 1 : 0, 1);
     return this.latch.take();
   }
   draw(g: Ctx2D): void {
@@ -45,6 +45,21 @@ export class ConsoleControl implements PanelComponent {
     const x = b.x + b.w / 2, y = b.y + b.h / 2;
     centredText(g, d.label, x, b.y + b.h - 8, 9);
     const pulled = this.latch.get(0);
+    if (d.kind === 'positionSwitch') {
+      const sy = b.y + 35, travel = b.h - 66;
+      g.fillStyle = '#111'; g.fillRect(x - 4, sy, 8, travel);
+      d.positions.forEach((text, i) => centredText(g, text, x + 25, sy + i * travel / (d.positions.length - 1), 6));
+      const ly = sy + pulled * travel / (d.positions.length - 1);
+      g.strokeStyle = '#aaa'; g.lineWidth = 6; g.beginPath(); g.moveTo(x, y); g.lineTo(x, ly); g.stroke();
+      knob(g, x, ly, 9, '#d9d7c5');
+      if (d.guard) {
+        const closed = this.latch.get(1) === 1;
+        g.strokeStyle = '#d64031'; g.lineWidth = 5;
+        g.strokeRect(x - 16, closed ? sy - 7 : b.y + 2, 32, closed ? travel + 15 : 15);
+        centredText(g, closed ? 'LIFT GUARD' : 'GUARD OPEN', x, b.y + 12, 7, '#ffb29c');
+      }
+      return;
+    }
     knob(g, x, y, d.kind === 'pullKnob' ? 16 + 3 * pulled : 11, d.kind === 'pullKnob' ? d.color : '#deded5');
     if (d.kind === 'pullKnob') {
       g.fillStyle = d.color; g.beginPath(); g.arc(x, y, 12 + 2 * pulled, 0, Math.PI * 2); g.fill();

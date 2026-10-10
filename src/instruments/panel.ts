@@ -320,11 +320,13 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
   // The glass aperture is the 3D recess's (gaugeRecess), so the artwork and the cockpit cannot disagree.
   const r = gaugeRecess(g, apertures)?.r ?? 0;
   switch (g.kind) {
+    case 'customRound':
+      return g.create(g.id, g.at[0], g.at[1], r);
     case 'blank':
       return new BlankGauge(g.id, g.at[0], g.at[1], r);
     case 'rotorTach':
       return new RotorTachGauge(g.id, g.at[0], g.at[1], r, g.marks);
-    case 'pullKnob': case 'pushButton':
+    case 'pullKnob': case 'pushButton': case 'positionSwitch':
       return new ConsoleControl(g);
     case 'hourmeter':
       return new Hourmeter(g.id, g.bounds);

@@ -143,7 +143,7 @@ describe('300CB carburetted alternate panel', () => {
     s.engine.manifoldPressure = 20; expect(S269_MAP_SCALE.read(step())).toBeCloseTo(20, 3);
   });
 
-  it('operates one-detent fuel shutoff, proportional knobs, masters, test and START without a fake HOLD', () => {
+  it('operates one-detent fuel shutoff, proportional knobs, masters, test and START with guarded ENGAGE/HOLD/RELEASE', () => {
     const c = defaultControls(); c.mixture = 1; c.carbHeat = 0; c.fuelSelector = 'both';
     const h = new Map(buildHotspots(S269_PANEL).map(h => [h.id, h]));
     h.get('mixture')!.turn!(1, c, 1); expect(c.mixture).toBeCloseTo(0.95);
@@ -157,7 +157,14 @@ describe('300CB carburetted alternate panel', () => {
     h.get('lampTest')!.press!(true, c); expect(c.annunciatorTest).toBe(true);
     h.get('lampTest')!.press!(false, c); expect(c.annunciatorTest).toBe(false);
     expect(h.get('magnetos')!.springHold!.action).toBe('starter');
-    expect([...h.keys()].some(k => /governor|trim|hold/i.test(k))).toBe(false);
+    expect([...h.keys()].some(k => /governor/i.test(k))).toBe(false);
+    c.rotorClutchCommand = 'engage'; c.rotorClutchGuardOpen = false;
+    h.get('rotorClutch1')!.toggle!(c); expect(c.rotorClutchCommand).toBe('engage');
+    h.get('rotorClutchGuard')!.toggle!(c);
+    h.get('rotorClutch1')!.toggle!(c); expect(c.rotorClutchCommand).toBe('hold');
+    h.get('rotorClutch2')!.toggle!(c); expect(c.rotorClutchCommand).toBe('release');
+    h.get('rotorClutchGuard')!.toggle!(c); expect(c.rotorClutchCommand).toBe('engage');
+    expect(h.get('trimLeft')!.hold!.action).toBe('cyclicTrimLeft');
   });
 
   it('does not erase gauges or placards when distributed lamps and switches redraw', () => {
@@ -170,7 +177,7 @@ describe('300CB carburetted alternate panel', () => {
     const restored: Rect[] = [];
     inner.g = new Proxy(stub.g, { get: (target, key) => key === 'drawImage'
       ? (_image: unknown, x: number, y: number, w: number, h: number) => restored.push({ x, y, w, h }) : Reflect.get(target, key) });
-    c.annunciatorTest = true; c.rotorClutch = false; panel.update(0, ctx);
+    c.annunciatorTest = true; c.rotorClutchCommand = 'release'; c.rotorClutchGuardOpen = true; c.lights.nav = !c.lights.nav; panel.update(0, ctx);
     expect(restored.length).toBeGreaterThan(5);
     for (const box of restored) for (const [x, y] of [[180, 255], [960, 255], [858, 722], [1000, 1110], [622, 1030]])
       expect(x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h).toBe(false);

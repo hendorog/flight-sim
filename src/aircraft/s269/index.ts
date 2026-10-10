@@ -16,10 +16,10 @@ export const S269_DEFINITION: AircraftDefinition = {
   notModelled: [
     'PLACEHOLDER: reduced harmonic articulated hub; transient flap/lag and ground resonance are not implemented.',
     'Geometry/limits are sourced; estimated blade masses, hub phase and analytic polars are not validated Schweizer handling.',
-    'Oleo gas/poppet dynamics and spring trim/control forces are absent. Clutch HOLD API awaits shared control/panel wiring.',
+    'Oleo gas/poppet dynamics are absent. Powered spring trim and transmission sensors use estimated actuator/thermal parameters.',
     'No governor or optional STAR system is fitted; manual throttle uses an uncalibrated inherited correlator.',
     'Hot/high IGE hover is optimistic. CB OGE, engine cooling/fuel flow and autorotation flare need independent validation.',
-    'Exterior and instrument layout are temporary stand-ins; percent tach is not the real absolute-RPM instrument.',
+    'Detailed exterior and concentric absolute-RPM panel are integrated; hardware geometry and control artwork remain approximate.',
     'No lessons, demonstrations or validated startup checklist. See docs/s269-flight-model.md.',
   ],
   geometry: { ...base.geometry,

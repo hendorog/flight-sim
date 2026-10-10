@@ -34,11 +34,23 @@ export function airframeLoads(d: RotorcraftDefinition, b: BodyState, air: Vec3, 
     const cl = (1 - blend) * clamp(slope * angle, -maxCl, maxCl) + blend * Math.sin(2 * angle);
     return { cl, cd: 0.015 + 0.1 * cl * cl + 1.8 * blend * Math.sin(angle) ** 2 };
   };
-  const speed = Math.max(Math.hypot(flow.x, flow.z), 1e-6);
-  const alpha = Math.atan2(flow.z, Math.abs(flow.x)) + h.incidence;
-  const hp = polar(alpha, h.liftSlope, h.maxCl), qh = 0.5 * rho * speed * speed * h.area;
-  power.stabilizer = add(h.centre, { x: qh * (hp.cl * Math.sign(flow.x) * flow.z - hp.cd * flow.x) / speed, y: 0,
-    z: qh * (-hp.cl * Math.abs(flow.x) - hp.cd * flow.z) / speed });
+  if (h.dihedral !== undefined) {
+    // Resolve the local flow/force in the canted surface's chord-normal plane.
+    // Spanwise flow makes no 2D section lift; the resulting side force acts at its true arm.
+    const sn = Math.sin(h.dihedral), cs = Math.cos(h.dihedral);
+    const normal = flow.y * sn + flow.z * cs, speed = Math.max(Math.hypot(flow.x, normal), 1e-6);
+    const hp = polar(Math.atan2(normal, Math.abs(flow.x)) + h.incidence, h.liftSlope, h.maxCl);
+    const q = 0.5 * rho * speed * speed * h.area;
+    const fn = q * (-hp.cl * Math.abs(flow.x) - hp.cd * normal) / speed;
+    power.stabilizer = add(h.centre, { x: q * (hp.cl * Math.sign(flow.x) * normal - hp.cd * flow.x) / speed,
+      y: fn * sn, z: fn * cs });
+  } else {
+    const speed = Math.max(Math.hypot(flow.x, flow.z), 1e-6);
+    const alpha = Math.atan2(flow.z, Math.abs(flow.x)) + h.incidence;
+    const hp = polar(alpha, h.liftSlope, h.maxCl), qh = 0.5 * rho * speed * speed * h.area;
+    power.stabilizer = add(h.centre, { x: qh * (hp.cl * Math.sign(flow.x) * flow.z - hp.cd * flow.x) / speed, y: 0,
+      z: qh * (-hp.cl * Math.abs(flow.x) - hp.cd * flow.z) / speed });
+  }
   for (const fin of d.fins) {
     const f = local(fin.centre), v = Math.max(Math.hypot(f.x, f.y), 1e-6);
     const fp = polar(Math.atan2(f.y, Math.abs(f.x)) + fin.incidence, fin.liftSlope, fin.maxCl);

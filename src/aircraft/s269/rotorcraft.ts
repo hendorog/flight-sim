@@ -20,10 +20,15 @@ export const S269_ROTORCRAFT: RotorcraftDefinition = {
   cyclicLimit: 7 * DEG,
   airspeedLimits: S269_VNE, manifoldLimits: undefined,
   airspeedCorrections: { heavyMass: Infinity, heavyReduction: 0, powerOffReduction: 0, highPowerCap: Infinity, doorsOffCap: V.doorsOffVne },
-  controlSystem: { cyclic: 'mechanical', collective: 'mechanical', pedals: 'mechanical', trim: 'electric-spring' },
+  controlSystem: { cyclic: 'mechanical', collective: 'mechanical', pedals: 'mechanical', trim: 'electric-spring',
+    // ESTIMATE motor travel and hand force; no force-feedback hardware is driven.
+    springTrim: { rate: 0.04, force: 40 } },
   systems: { ...base.systems, governorInstalled: false,
     // Base CB without optional STAR low-RPM system; zero disables the inherited warning threshold.
     lowRpmWarning: 0, continuousPower: V.continuousPower, takeoffPower: V.takeoffPower, takeoffSeconds: Infinity },
+  // ESTIMATE healthy pump/thermal constants, not a measured HMI oil-system map.
+  // Sensor limits (2.5 psi / 235°F) live in the panel; no synthetic failure is triggered.
+  transmission: { pressurePsi: 15, pumpRpm: 300, pressureSeconds: 0.5, heatCapacity: 45000, cooling: 120 },
   main: { ...base.main, radius: D.MAIN_ROTOR_RADIUS, chord: D.MAIN_ROTOR_CHORD,
     rootCutout: S269_BLADE_ROOT, inertia: D.MAIN_ROTOR_BLADES * S269_ARTICULATED.blade.polar,
     blades: D.MAIN_ROTOR_BLADES, hub: D.MAIN_HUB, twist: D.MAIN_ROTOR_TWIST_DEG * DEG,
@@ -37,11 +42,14 @@ export const S269_ROTORCRAFT: RotorcraftDefinition = {
   // Estimated exposed-frame/cabin flat-plate areas. No Schweizer wind-tunnel dataset obtained.
   dragArea: { x: 0.8, y: 2.0, z: 2.5 },
   fuselageWash: 1 + -D.MAIN_HUB.z / Math.hypot(D.MAIN_ROTOR_RADIUS, D.MAIN_HUB.z),
-  // The legacy surface solver has no canted single-side stabilizer: projected stand-in only.
-  stabilizer: { ...base.stabilizer, centre: { x: D.HORIZONTAL_STABILIZER.leadingX - D.HORIZONTAL_STABILIZER.chord / 4,
-    y: D.HORIZONTAL_STABILIZER_OUTLINE[3].y / 2,
-    z: (D.HORIZONTAL_STABILIZER_OUTLINE[0].z + D.HORIZONTAL_STABILIZER_OUTLINE[3].z) / 2 },
-    area: D.HORIZONTAL_STABILIZER.span * D.HORIZONTAL_STABILIZER.chord, incidence: D.HORIZONTAL_STABILIZER.incidenceDeg * DEG },
+  // One canted right-hand surface, RFM 1-9. Centre at quarter chord / half span.
+  stabilizer: { ...base.stabilizer, centre: {
+    x: D.HORIZONTAL_STABILIZER_OUTLINE[0].x + (D.HORIZONTAL_STABILIZER_OUTLINE[1].x - D.HORIZONTAL_STABILIZER_OUTLINE[0].x) / 4,
+    y: D.HORIZONTAL_STABILIZER_OUTLINE[3].y / 2 + D.HORIZONTAL_STABILIZER_OUTLINE[1].y / 4,
+    z: (D.HORIZONTAL_STABILIZER_OUTLINE[0].z + D.HORIZONTAL_STABILIZER_OUTLINE[3].z) / 2 +
+      (D.HORIZONTAL_STABILIZER_OUTLINE[1].z - D.HORIZONTAL_STABILIZER_OUTLINE[0].z) / 4 },
+    area: D.HORIZONTAL_STABILIZER.span * D.HORIZONTAL_STABILIZER.chord,
+    incidence: D.HORIZONTAL_STABILIZER.incidenceDeg * DEG, dihedral: D.HORIZONTAL_STABILIZER.dihedralDeg * DEG },
   fins: [{ ...base.fins[0], centre: D.VERTICAL_FIN_CENTRE, area: D.VERTICAL_FIN_AREA }],
   tailProtection: { ...base.tailProtection!, stinger: D.TAIL_STINGER, radius: D.TAIL_STINGER_RADIUS, fin: D.VERTICAL_FIN_OUTLINE },
   skids: { ...base.skids, suspension: 'oleo', halfTrack: D.SKID_HALF_TRACK, front: D.SKID_CONTACT_FRONT_X,
