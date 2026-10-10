@@ -13,8 +13,8 @@ export interface RotorDefinition {
   inducedFactor?: number;
 }
 export interface RotorcraftDefinition {
-  /** Installation metadata. Absent retains the legacy teetering hub. Articulated dynamics are
-   * not implemented yet: that installation currently uses the free-hinge placeholder solver. */
+  /** Installation metadata. Absent retains the legacy teetering hub. Articulated selects the
+   * reduced harmonic offset-hinge solver; per-blade transients/ground resonance remain unmodelled. */
   hubModel?: { kind: 'teetering' } | { kind: 'articulated'; flapHingeOffset: number; lagHingeOffset: number;
     lagDamper: 'elastomeric' | 'friction' };
   main: RotorDefinition;
