@@ -16,7 +16,7 @@ import { InstrumentSet } from '../../src/instruments/dynamics/instrumentSet';
 import { buildHotspots, hotspotAt } from '../../src/instruments/hotspots';
 import { InstrumentPanel } from '../../src/instruments/panel';
 import { panelLayoutProblems } from '../../src/instruments/panelLayout';
-import { gaugeParts } from '../../src/instruments/panelParts';
+import { gaugeParts, panelParts } from '../../src/instruments/panelParts';
 import { AnnunciatorPanel } from '../../src/instruments/render/controls';
 import { RotorTachGauge } from '../../src/instruments/render/rotorTach';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
@@ -44,6 +44,16 @@ function fixture() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('R22 console', () => {
+  it('keeps the complete operating placards clear of controls, gauges and each other', () => {
+    const parts = panelParts(R22_PANEL).flatMap(p => p.paintRects ?? [p.rect]);
+    for (const p of R22_PANEL.background.placards) {
+      const size = p.size ?? 7.5, w = Math.max(...p.lines.map(l => l.length)) * size * 0.52 + 14;
+      const r = { x: p.x - w / 2, y: p.y, w, h: p.lines.length * (size + 3) + 10 };
+      for (const other of parts) expect(r.x < other.x + other.w && other.x < r.x + r.w
+        && r.y < other.y + other.h && other.y < r.y + r.h, p.lines[0]).toBe(false);
+      parts.push(r);
+    }
+  });
   it('fits the shared canvas at real instrument diameters with usable hotspots', () => {
     expect(R22_PANEL.size).toEqual(PANEL_CANVAS);
     expect(panelLayoutProblems(R22_PANEL)).toEqual([]);
@@ -52,7 +62,9 @@ describe('R22 console', () => {
     const spots = buildHotspots(R22_PANEL);
     for (const spot of spots) expect(hotspotAt(spot.x, spot.y, spots)?.id).toBe(spot.id);
     expect(spots.some(h => h.id === 'rotorGovernor')).toBe(false);
-    expect(R22_PANEL.gauges.some(g => ['attitude', 'heading', 'flapLever'].includes(g.kind))).toBe(false);
+    // POH 7-19 seven-hole installation, with the two optional positions populated by electric gyros.
+    expect(R22_PANEL.gauges.slice(0, 7).map(g => g.kind)).toEqual(['vsi', 'attitude', 'asi', 'rotorTach', 'altimeter', 'heading', 'single']);
+    expect(R22_PANEL.gauges.some(g => g.kind === 'flapLever')).toBe(false);
     const stub = stubCanvas();
     const panel = new InstrumentPanel({ def: R22_PANEL, systems: R22_INSTRUMENT_SYSTEMS });
     expect([panel.canvas.width, panel.canvas.height]).toEqual([PANEL_CANVAS.w, PANEL_CANVAS.h]);

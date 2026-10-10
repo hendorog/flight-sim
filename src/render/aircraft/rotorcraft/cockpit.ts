@@ -7,6 +7,8 @@ import type { PanelDef } from '../../../instruments/panelDef';
 import { frd, MeshBatch } from '../geometry';
 import type { AircraftMaterials } from '../materials';
 import { box, pathTube, tube } from './geometry';
+import { buildConsole, consoleShape } from './console';
+import { collectiveFittings, ConsolePullControl, ConsoleSwitchCover, pedalPlate, PostCompass } from './fittings';
 
 export class RotorcraftCockpit {
   readonly group = new THREE.Group();
@@ -17,6 +19,12 @@ export class RotorcraftCockpit {
   readonly throttles: THREE.Group[] = [];
   readonly pedals: THREE.Group[] = [];
   readonly moving: THREE.Object3D[] = [];
+  private readonly governorSwitches: THREE.Group[] = [];
+  private readonly pullControls: ConsolePullControl[] = [];
+  private readonly switchCovers: ConsoleSwitchCover[] = [];
+  private readonly compass?: PostCompass;
+  private readonly textures: THREE.Texture[] = [];
+  private readonly materials: THREE.Material[] = [];
   private readonly dimmer = { value: 1 };
 
   constructor(private readonly def: AirframeVisualDef, mat: AircraftMaterials, floor: THREE.BufferGeometry,
@@ -29,31 +37,8 @@ export class RotorcraftCockpit {
     const pod = new THREE.Group(); pod.name = 'consolePod';
     pod.position.copy(frd(...p.centre)); pod.rotation.x = -p.tiltBackDeg * Math.PI / 180;
     const outline = p.outline ?? [[0, 0], [p.canvas.w, 0], [p.canvas.w, p.canvas.h], [0, p.canvas.h]];
-    const points = outline.map(([x, y]) => new THREE.Vector2((x / p.canvas.w - 0.5) * p.width, (0.5 - y / p.canvas.h) * p.height));
-    const shape = new THREE.Shape(points);
-    // A closed, rounded enclosure extends 0.15 m forward of the face; bevels form the padded brow.
-    const depth = p.enclosureDepth ?? 0.146;
-    const shell = new THREE.ExtrudeGeometry(shape, { depth: depth - 0.016, steps: 1, bevelEnabled: true,
-      bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 4, curveSegments: 12 });
-    shell.translate(0, 0, -depth);
-    const housing = new THREE.Mesh(shell, mat.glareshield); housing.name = 'consoleHousing';
-    housing.castShadow = housing.receiveShadow = true; pod.add(housing);
-    // Round each polygon corner locally. A spline through this sparse outline bows across the long
-    // pedestal edges and can cover switches even though their canvas positions are inside the face.
-    const rimPoints = points.map(q => new THREE.Vector3(q.x, q.y, 0.003));
-    const corners = rimPoints.map((q, i) => {
-      const prev = rimPoints[(i + rimPoints.length - 1) % rimPoints.length], next = rimPoints[(i + 1) % rimPoints.length];
-      const radius = Math.min(0.006, q.distanceTo(prev) / 4, q.distanceTo(next) / 4);
-      return { q, start: q.clone().addScaledVector(prev.clone().sub(q).normalize(), radius),
-        end: q.clone().addScaledVector(next.clone().sub(q).normalize(), radius) };
-    });
-    const rimPath = new THREE.CurvePath<THREE.Vector3>();
-    corners.forEach((c, i) => {
-      rimPath.add(new THREE.QuadraticBezierCurve3(c.start, c.q, c.end));
-      rimPath.add(new THREE.LineCurve3(c.end, corners[(i + 1) % corners.length].start));
-    });
-    const rim = new THREE.Mesh(new THREE.TubeGeometry(rimPath, 240, 0.007, 8, true), mat.glareshield);
-    rim.name = 'consoleRim'; rim.castShadow = true; pod.add(rim);
+    const shape = consoleShape(outline, p);
+    this.materials.push(...buildConsole(pod, p, panelDef, mat.glareshield));
     const face = new THREE.ShapeGeometry(shape);
     const pos = face.getAttribute('position'), uv = face.getAttribute('uv');
     for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / p.width + 0.5, pos.getY(i) / p.height + 0.5);
@@ -73,13 +58,21 @@ export class RotorcraftCockpit {
     this.panel.material.customProgramCacheKey = () => 'rotorcraftPanelBacklight';
     this.panel.name = 'instrumentPanel'; this.panel.receiveShadow = true; pod.add(this.panel);
     this.group.add(pod);
+    for (const gauge of panelDef?.gauges ?? []) if (gauge.kind === 'pullKnob') this.pullControls.push(new ConsolePullControl(gauge, p, pod, mat));
+    if (panelDef) for (const s of panelDef.switchRow.switches) if (s.cover) this.switchCovers.push(new ConsoleSwitchCover(s, panelDef.switchRow, p, pod, mat));
+    if (def.cockpit.compass) {
+      this.compass = new PostCompass(def.cockpit.compass.pos, mat); this.group.add(this.compass.group);
+    }
+    const seatBack = mat.seatFabric.clone();
+    if (d.interior) seatBack.color.setHex(d.interior.seatBackColor);
+    this.materials.push(seatBack);
     // Pedestal heel connects the sloping radio/control face to the cabin floor, with a mounting foot.
     const angle = p.tiltBackDeg * Math.PI / 180;
     const bottomZ = p.centre[2] + p.height / 2 * Math.cos(angle);
     const bottomX = p.centre[0] - p.height / 2 * Math.sin(angle);
     const floorZ = def.cockpit.floor.z;
-    const support = p.pedestal === undefined ? { forwardOffset: 0.14, depth: 0.22, width: p.width * 0.59,
-      footDepth: 0.28, footWidth: p.width * 0.67 } : p.pedestal;
+    const support = p.pedestal === undefined ? { forwardOffset: 0.14, depth: 0.22, width: 0.19,
+      footDepth: 0.28, footWidth: 0.22 } : p.pedestal;
     if (support) {
       fixed.add(mat.glareshield, box([bottomX + support.forwardOffset, p.centre[1], (bottomZ + floorZ) / 2],
         [support.depth, support.width, floorZ - bottomZ + 0.02], 0.018));
@@ -92,7 +85,7 @@ export class RotorcraftCockpit {
       fixed.add(mat.seatFabric, box([seat.x - seat.depth / 2, seat.y, z + 0.02], [seat.depth - 0.02, seat.width - 0.02, 0.09], 0.035));
       const back = box([0, 0, 0], [0.09, seat.width - 0.02, seat.back?.height ?? 0.56], 0.035);
       back.rotateX(-(seat.reclineDeg ?? 10) * Math.PI / 180);
-      back.translate(...frd(backX - 0.01, seat.y, z - 0.24).toArray()); fixed.add(mat.seatFabric, back);
+      back.translate(...frd(backX - 0.01, seat.y, z - 0.24).toArray()); fixed.add(seatBack, back);
       // Cushion seams and a laid-down lap belt, with the shoulder harness running from the rear bulkhead.
       for (const dy of [-0.14, 0, 0.14]) fixed.add(mat.trimPlastic, tube([seat.x - 0.03, seat.y + dy, z - 0.026], [backX + 0.06, seat.y + dy, z - 0.026], 0.0018, 0.0018, 6));
       fixed.add(mat.black, box([seat.x - 0.16, seat.y, z - 0.029], [0.044, seat.width - 0.035, 0.006], 0.002));
@@ -135,6 +128,10 @@ export class RotorcraftCockpit {
       grip.add(mat.knobBlack, tube([-0.055, 0, 0], [0.075, 0, 0], 0.021, 0.021));
       grip.add(mat.trimPlastic, box([0.01, 0, -0.021], [0.085, 0.004, 0.003], 0.001));
       twist.add(grip.build('twistGrip')); lever.add(twist);
+      if (d.interior?.collectiveFittings) {
+        const governor = collectiveFittings(lever, d.collective.length, mat);
+        this.governorSwitches.push(governor.switch); this.materials.push(governor.material); this.textures.push(governor.texture);
+      }
       this.collectives.push(lever); this.throttles.push(twist); this.moving.push(lever, twist); this.group.add(lever);
     }
     for (const y of def.cockpit.pedals.ys) {
@@ -142,7 +139,8 @@ export class RotorcraftCockpit {
       const parts = new MeshBatch();
       parts.add(mat.darkMetal, tube([-0.06, 0, 0.04], [0, 0, -0.09], 0.012));
       parts.add(mat.aluminium, tube([0, -0.066, -0.09], [0, 0.066, -0.09], 0.015));
-      parts.add(mat.black, box([0, 0, -0.09], [0.032, 0.115, 0.04], 0.009));
+      parts.add(d.interior?.perforatedPedals ? mat.aluminium : mat.black, d.interior?.perforatedPedals
+        ? pedalPlate() : box([0, 0, -0.09], [0.032, 0.115, 0.04], 0.009));
       pedal.add(parts.build('pedalParts')); this.pedals.push(pedal); this.moving.push(pedal); this.group.add(pedal);
     }
     this.group.add(fixed.build('cabinFurniture'));
@@ -151,7 +149,11 @@ export class RotorcraftCockpit {
   setPanelTexture(texture: THREE.Texture): void { this.panel.material.map = texture; this.panel.material.needsUpdate = true; }
   setPanelEmissiveTexture(texture: THREE.Texture): void { this.panel.material.emissiveMap = texture; this.panel.material.needsUpdate = true; }
 
-  update(c: ControlInputs, busVoltage: number, emissiveScale: number): void {
+  update(c: ControlInputs, busVoltage: number, emissiveScale: number, heading = 0): void {
+    this.compass?.update(heading);
+    this.pullControls.forEach(control => control.update(c));
+    this.switchCovers.forEach(cover => cover.update(c));
+    this.governorSwitches.forEach(s => { s.rotation.x = (c.rotorGovernor ? -1 : 1) * 0.25; });
     this.cyclic.rotation.x = c.elevator * (this.def.cockpit.column.kind === 'stick' ? this.def.cockpit.column.pitchDeg : 12) * Math.PI / 180;
     this.cyclic.rotation.z = -c.aileron * this.def.cockpit.column.rollDeg * Math.PI / 180;
     // Free teeter pivot is posed with the right grip lower (command seat); both grips move with cyclic.
@@ -169,5 +171,5 @@ export class RotorcraftCockpit {
     this.panel.material.emissive.setScalar(power * (this.def.rotorcraftVisual!.panel.emissiveLuminance ?? (20 + 180 * c.lights.panel)) * SCENE_UNITS_PER_LUX * emissiveScale);
   }
 
-  dispose(): void { this.panel.material.dispose(); }
+  dispose(): void { this.panel.material.dispose(); this.materials.forEach(m => m.dispose()); this.textures.forEach(t => t.dispose()); this.compass?.dispose(); this.pullControls.forEach(c => c.dispose()); }
 }

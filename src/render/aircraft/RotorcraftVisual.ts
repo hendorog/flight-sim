@@ -39,6 +39,11 @@ export class RotorcraftVisual {
     const textures = bakeFuselageTextures(shapes.outer, shapes.glass, shapes.lining, def);
     this.materials = new AircraftMaterials(textures, def);
     const mat = this.materials;
+    if (d.interior) {
+      mat.glareshield.color.setHex(d.interior.frameColor);
+      mat.seatFabric.color.setHex(d.interior.seatColor); mat.seatFabric.roughness = 0.82;
+      mat.carpet.color.setHex(0x242723);
+    }
     const fuselage = buildFuselage(shapes, mat, def);
     this.root.add(fuselage.skin, fuselage.glass, fuselage.fittings);
     this.fittings = buildRotorcraftAirframe(def, mat, shapes.outer); this.root.add(this.fittings.group);
@@ -81,7 +86,7 @@ export class RotorcraftVisual {
     const inside = ctx.cameraMode === 'cockpit';
     this.cockpit.group.visible = inside || this.camLocal.length() * Math.tan(ctx.camera.fov * Math.PI / 360) / Math.tan(Math.PI / 6) < this.options.interiorLodDistance;
     if (this.occupants) this.occupants.group.visible = !inside;
-    this.cockpit.update(c, ctx.state.electrical.busVoltage, this.options.panelEmissiveScale);
+    this.cockpit.update(c, ctx.state.electrical.busVoltage, this.options.panelEmissiveScale, ctx.state.heading);
   }
 
   dispose(): void {

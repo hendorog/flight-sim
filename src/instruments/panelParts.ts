@@ -171,7 +171,7 @@ export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures'], scale?
       return [{ id: g.id, rect: guardedKnobRect(g.at) }];
     case 'flapLever':
       return [{ id: g.id, rect: g.bounds, solid: [] }];
-    case 'dualSector': case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'pullKnob': case 'pushButton':
+    case 'dualSector': case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'digitalTemperature': case 'pullKnob': case 'pushButton':
       return [{ id: g.id, rect: g.bounds }];
     default:
       return [];

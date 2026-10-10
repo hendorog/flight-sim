@@ -20,7 +20,7 @@ describe('R22 procedural exterior and cockpit', () => {
   beforeAll(() => {
     vi.stubGlobal('document', blankDocument());
     ctx.state.rotorcraft = emptyRotorcraftState();
-    visual = new AircraftVisual({ airframe: R22_VISUAL, asyncBake: false });
+    visual = new AircraftVisual({ airframe: R22_VISUAL, panelDef: R22_PANEL, asyncBake: false });
     visual.init(ctx); visual.update(0, ctx); visual.root.updateMatrixWorld(true);
   });
   afterAll(() => { visual.dispose(); vi.unstubAllGlobals(); });
@@ -105,6 +105,29 @@ describe('R22 procedural exterior and cockpit', () => {
       clearance = Math.min(clearance, sectionHalfWidth(glass, -p.z, -p.y) - Math.abs(p.x));
     }
     expect(clearance).toBeGreaterThan(0.005);
+  });
+
+  it('leaves the seven flight instruments visible behind the hood and poses the cabin controls', () => {
+    const panel = visual.getPanelMesh(), pod = panel.parent!;
+    expect(pod.getObjectByName('consoleHood')).toBeDefined();
+    expect(pod.getObjectByName('pedestalHousing')).toBeDefined();
+    visual.root.updateMatrixWorld(true);
+    for (const g of R22_PANEL.gauges.slice(0, 7)) {
+      if (!('at' in g)) throw new Error('Expected a round flight instrument');
+      const target = panel.localToWorld(new THREE.Vector3((g.at[0] / PANEL_CANVAS.w - 0.5) * PANEL_FACE.width,
+        (0.5 - g.at[1] / PANEL_CANVAS.h) * PANEL_FACE.height, 0));
+      const ray = new THREE.Raycaster(visual.pilotEye, target.clone().sub(visual.pilotEye).normalize());
+      expect(ray.intersectObject(pod, true)[0].object, g.id).toBe(panel);
+    }
+    const compass = visual.root.getObjectByName('compassCard')!;
+    const governor = visual.root.getObjectByName('governorSwitch')!;
+    const heat = visual.root.getObjectByName('carbHeatPullControl')!;
+    ctx.state.heading = 1.2; ctx.controls.rotorGovernor = true; ctx.controls.carbHeat = 0;
+    visual.update(0, ctx); const pushed = heat.position.z, on = governor.rotation.x;
+    expect(compass.rotation.y).toBeCloseTo(1.2);
+    ctx.controls.rotorGovernor = false; ctx.controls.carbHeat = 1; visual.update(0, ctx);
+    expect(governor.rotation.x).toBeGreaterThan(on);
+    expect(heat.position.z).toBeGreaterThan(pushed);
   });
 
   it('has finite, bounded meshes and shows a stopped rotor with two drooping blades', () => {

@@ -403,6 +403,8 @@ export interface RotorBladePaint {
 }
 export interface RotorcraftVisualDef {
   nominalVoltage?: number;
+  /** Optional cabin finish/fittings; all are visual estimates, independent of flight dynamics. */
+  interior?: { frameColor: number; seatColor: number; seatBackColor: number; perforatedPedals: boolean; collectiveFittings: boolean };
   main: { hub: FRD; radius: number; root: number; chord: readonly [number, number]; twist: number;
     paint?: RotorBladePaint;
     /** Visual elastic-coning estimate, independent of the aerodynamic flap/coning solution. */
