@@ -8,8 +8,8 @@ import { MAIN_HUB, MAIN_ROTOR_RADIUS, SEAT_CENTRES } from '../../src/aircraft/s2
 import { HP, LB, v3 } from '../../src/core/math';
 
 describe('269C-1 installation, source and loading contracts', () => {
-  it('retains the selected carburetted two-seat CB without STAR/governor or enabled chooser', () => {
-    expect(d.placeholder).toBe(true); expect(d.rotorcraft!.systems.governorInstalled).toBe(false);
+  it('retains the selected carburetted two-seat CB without STAR/governor', () => {
+    expect(d.rotorcraft!.systems.governorInstalled).toBe(false);
     expect(d.rotorcraft!.systems.lowRpmWarning).toBe(0);
     expect(S269_ENGINE.name).toBe('Lycoming HO-360-C1A');
     expect(S269_ENGINE.ratedPower / HP).toBe(180); expect(S269_ENGINE.ratedRpm).toBe(2700);

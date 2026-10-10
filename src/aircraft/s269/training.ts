@@ -14,7 +14,7 @@ const CHECKLISTS = Object.fromEntries([
 ].map(id => [id, { id, title: 'S269 — checklist unavailable', items: [] }])) as Record<string, ChecklistDef>;
 
 export const S269_TRAINING: AircraftTypeDef = {
-  id: 's269', icaoType: 'H269', name: 'Schweizer 269C-1 / 300CB (placeholder)', registration: 'N269FS', classRating: null,
+  id: 's269', icaoType: 'H269', name: 'Schweizer 269C-1 / 300CB (in development)', registration: 'N269FS', classRating: null,
   vspeeds: VSPEEDS,
   unavailableVSpeeds: (Object.keys(VSPEEDS) as VSpeedId[]).filter(id => VSPEEDS[id] === 0),
   // RFM 4-16/4-17: 2000 RPM, 125 RPM maximum drop; no startup checklist is published here.

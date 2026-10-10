@@ -9,8 +9,8 @@ import { S269_INPUT } from './input';
 import { S269_REFERENCE as V } from './reference';
 import * as D from './dimensions';
 export const S269_DEFINITION: AircraftDefinition = {
-  ...base, id: 's269', name: 'Schweizer 269C-1 / 300CB (placeholder)', shortName: 'Schweizer 300CB',
-  variant: '300CB, HO-360-C1A, S/N 0106–0138 configuration, right PIC, single tank', icaoType: 'H269', placeholder: true,
+  ...base, id: 's269', name: 'Schweizer 269C-1 / 300CB (in development)', shortName: 'Schweizer 300CB',
+  variant: '300CB, HO-360-C1A, S/N 0106–0138 configuration, right PIC, single tank', icaoType: 'H269',
   rotorcraft: rotor, mass: S269_MASS, powerplant: S269_POWERPLANT, input: S269_INPUT,
   controlDefaults: { fuelSelector: 'on', collective: 0, rotorGovernor: false, rotorClutch: true },
   notModelled: [

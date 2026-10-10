@@ -17,7 +17,7 @@ const CHECKLISTS = Object.fromEntries([
 ].map(id => [id, { id, title: 'R22 — checklist unavailable', items: [] }])) as Record<string, ChecklistDef>;
 
 export const R22_TRAINING: AircraftTypeDef = {
-  id: 'r22', icaoType: 'R22', name: 'Robinson R22 Beta II (experimental)', registration: 'N22FS', classRating: null,
+  id: 'r22', icaoType: 'R22', name: 'Robinson R22 Beta II', registration: 'N22FS', classRating: null,
   vspeeds: VSPEEDS,
   unavailableVSpeeds: (Object.keys(VSPEEDS) as VSpeedId[]).filter(id => VSPEEDS[id] === 0),
   // Only the POH run-up and magnetic drop figures have a meaning in these legacy settings.

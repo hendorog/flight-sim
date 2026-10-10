@@ -8,8 +8,8 @@ import { R44_POWERPLANT } from './powerplant';
 import { R44_INPUT } from './input';
 import { MAIN_ROTOR_RADIUS, FUSELAGE_LENGTH, NOSE_X, TAIL_END_X, CABIN_WIDTH, CABIN_HEIGHT, PILOT_EYE, SKID_Z } from './dimensions';
 export const R44_DEFINITION: AircraftDefinition = {
-  ...base, id: 'r44', name: 'Robinson R44 Raven II (placeholder)', shortName: 'R44 Raven II',
-  variant: 'Raven II / IO-540-AE1A5; experimental', icaoType: 'R44', placeholder: true,
+  ...base, id: 'r44', name: 'Robinson R44 Raven II', shortName: 'R44 Raven II',
+  variant: 'Raven II / IO-540-AE1A5; experimental', icaoType: 'R44',
   rotorcraft: rotor, mass: R44_MASS, powerplant: R44_POWERPLANT, input: R44_INPUT,
   controlDefaults: { fuelSelector: 'on', collective: 0, rotorGovernor: true, rotorClutch: true },
   notModelled: [

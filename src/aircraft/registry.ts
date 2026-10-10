@@ -67,12 +67,12 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
     engineCount: 2,
     available: false,
   },
-  { id: 'r22', name: 'Robinson R22 Beta II (experimental)', shortName: 'R22 Beta II',
-    blurb: 'Experimental two-seat helicopter, 131 hp; validation in progress', engineCount: 1, available: false },
-  { id: 'r44', name: 'Robinson R44 Raven II (placeholder)', shortName: 'R44 Raven II',
-    blurb: 'Four-seat helicopter scaffold; flight model and artwork unfinished', engineCount: 1, available: false },
-  { id: 's269', name: 'Schweizer 269C-1 / 300CB (placeholder)', shortName: 'Schweizer 300CB',
-    blurb: 'Two-seat articulated-rotor trainer scaffold; flight model and artwork unfinished', engineCount: 1, available: false },
+  { id: 'r22', name: 'Robinson R22 Beta II', shortName: 'R22 Beta II',
+    blurb: 'Two-seat training helicopter, O-360 derated to 131 hp; autorotation flare still being validated', engineCount: 1, available: true },
+  { id: 'r44', name: 'Robinson R44 Raven II', shortName: 'R44 Raven II',
+    blurb: 'Four-seat helicopter, IO-540 fuel injected, 245 hp takeoff', engineCount: 1, available: true },
+  { id: 's269', name: 'Schweizer 269C-1 / 300CB (in development)', shortName: 'Schweizer 300CB',
+    blurb: 'Two-seat articulated-rotor trainer, HO-360 180 hp; in development', engineCount: 1, available: true },
 ];
 
 export function aircraftSummary(id: AircraftId): AircraftSummary {

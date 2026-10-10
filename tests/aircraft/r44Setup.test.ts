@@ -23,11 +23,11 @@ import { SimPhysics } from '../../src/sim/SimPhysics';
 import { parseSnapshot } from '../../src/sim/resume';
 import { calmWeather } from '../fdm/helpers';
 
-it('registers an explicitly unfinished R44 with its own geometry and presentation, hidden from the chooser', async () => {
+it('registers the R44 with its own geometry and presentation, offered in the chooser', async () => {
   expect(await loadAircraft('r44')).toBe(def);
   expect(await loadPresentation('r44')).toBe(pres);
-  expect(def.placeholder).toBe(true);
-  expect(aircraftSummary('r44').available).toBe(false);
+  expect(def.placeholder).toBeUndefined();
+  expect(aircraftSummary('r44').available).toBe(true);
   assertDefinitionConsistent(def, pres, aircraftSummary('r44'));
   expect(def.rotorcraft!.main.hub).toBe(D.MAIN_HUB);
   expect(def.rotorcraft!.tail.hub).toBe(D.TAIL_HUB);

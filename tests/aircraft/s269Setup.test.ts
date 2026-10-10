@@ -17,11 +17,11 @@ import { SimPhysics } from '../../src/sim/SimPhysics';
 import { parseSnapshot } from '../../src/sim/resume';
 import { calmWeather } from '../fdm/helpers';
 
-it('loads the hidden carburetted CB with consistent three-blade geometry/audio and a right pilot', async () => {
+it('loads the carburetted CB with consistent three-blade geometry/audio and a right pilot', async () => {
   expect(await loadAircraft('s269')).toBe(def);
   expect(await loadPresentation('s269')).toBe(pres);
-  expect(aircraftSummary('s269').available).toBe(false);
-  expect(def.placeholder).toBe(true);
+  expect(aircraftSummary('s269').available).toBe(true);
+  expect(def.placeholder).toBeUndefined();
   assertDefinitionConsistent(def, pres, aircraftSummary('s269'));
   expect(def.rotorcraft!.main.hub).toBe(D.MAIN_HUB);
   expect(def.rotorcraft!.tail.hub).toBe(D.TAIL_HUB);
