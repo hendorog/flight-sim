@@ -4,7 +4,7 @@ import { S269_REFERENCE as V } from './reference';
 
 const VSPEEDS: Record<VSpeedId, number> = {
   Vs0: 0, Vs1: 0, Vr: 0, Vx: 0, Vy: V.vy, Vcc: 0, Vglide: V.autorotationKias, Va: 0,
-  Vfe10: 0, VfeFull: 0, Vno: 0, Vne: V.vne, Vapp: 52, VappFlapsUp: 0, Vref: 0,
+  Vfe10: 0, VfeFull: 0, Vno: 0, Vne: V.vne, Vapp: 0, VappFlapsUp: 0, Vref: 0,
   VshortField: 0, Vcruise: 0, Vslow: 0, VsteepTurn: 0, Vdescent: 0, Vdownwind: 0, Vtaxi: 0,
 };
 // Empty slots preserve the legacy registry contract without publishing airplane checklists under S269.
@@ -27,5 +27,5 @@ export const S269_TRAINING: AircraftTypeDef = {
   envelope: { maxBankDeg: 0, maxPitchUpDeg: 0, maxPitchDownDeg: 0, maxKias: V.vne, maxG: 0, minG: 0,
     minAglFt: 0, lowAndSlow: { aglFt: 0, belowKias: 0 }, maxSinkFpmBelow200: 0, stallAllowed: false, runwayExcursionM: 0 },
   checklists: CHECKLISTS,
-  school: { syllabus: false, reason: '300CB scaffold: articulated dynamics, panel and clutch/trim systems are unfinished; no lessons or guided checklists.' },
+  school: { syllabus: false, reason: '300CB scaffold: articulated dynamics and clutch/trim systems await validation; panel integration is incomplete; no lessons or guided checklists.' },
 };
