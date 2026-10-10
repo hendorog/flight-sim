@@ -18,6 +18,14 @@ export function roundGaugeRect(cx: number, cy: number, bezel: number): Rect {
   return { x: Math.round(cx - size / 2), y: Math.round(cy - size / 2), w: size, h: size };
 }
 
+/** Bounds after scaling the complete native gauge about its centre, rounded outwards for dirty uploads. */
+export function scaledGaugeRect(cx: number, cy: number, bezel: number, scale: number): Rect {
+  if (scale === 1) return roundGaugeRect(cx, cy, bezel);
+  const half = (bezel / 2 + BEZEL_MARGIN) * scale;
+  const x = Math.floor(cx - half), y = Math.floor(cy - half);
+  return { x, y, w: Math.ceil(cx + half) - x, h: Math.ceil(cy + half) - y };
+}
+
 const centred = (at: readonly [number, number], w: number, h: number): Rect => ({ x: Math.round(at[0] - w / 2), y: Math.round(at[1] - h / 2), w, h });
 
 /** The gear selector: a wheel-shaped knob in a vertical slot, UP at the top. */
@@ -126,6 +134,8 @@ export function ignitionLayout(ign: IgnitionPanelDef): IgnitionLayout | null {
 export interface PanelPart {
   id: string;
   rect: Rect;
+  /** Disjoint update rectangles when the component bounds enclose other instruments. */
+  paintRects?: readonly Rect[];
   /** The body of a round-flanged instrument (the rectangle's corners are empty). */
   round?: { x: number; y: number; r: number };
   /**
@@ -140,12 +150,13 @@ export interface PanelPart {
 export const leverId = (gaugeId: string): string => `${gaugeId}Lever`;
 
 /** The rectangles a gauge's components own, in the order the panel builds them. */
-export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures']): PanelPart[] {
+export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures'], scale?: PanelDef['instrumentScale']): PanelPart[] {
   const recess = gaugeRecess(g, apertures);
   if (recess) {
     const large = isLargeGauge(g);
-    const bezel = large ? LARGE_BEZEL : SMALL_BEZEL;
-    const rect = roundGaugeRect(recess.x, recess.y, bezel);
+    const k = scale?.[large ? 'large' : 'small'] ?? 1;
+    const bezel = (large ? LARGE_BEZEL : SMALL_BEZEL) * k;
+    const rect = scaledGaugeRect(recess.x, recess.y, large ? LARGE_BEZEL : SMALL_BEZEL, k);
     // A 3-1/8" instrument has a square bezel; a 2-1/4" one a round flange.
     return [large ? { id: g.id, rect } : { id: g.id, rect, round: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2, r: bezel / 2 } }];
   }
@@ -160,7 +171,7 @@ export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures']): Panel
       return [{ id: g.id, rect: guardedKnobRect(g.at) }];
     case 'flapLever':
       return [{ id: g.id, rect: g.bounds, solid: [] }];
-    case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr':
+    case 'dualSector': case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'digitalTemperature': case 'pullKnob': case 'pushButton':
       return [{ id: g.id, rect: g.bounds }];
     default:
       return [];
@@ -170,7 +181,7 @@ export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures']): Panel
 /** Whether a round gauge has the 3-1/8" case (the rule of gaugeRecess, by kind and size). */
 export function isLargeGauge(g: GaugeDef): boolean {
   switch (g.kind) {
-    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi':
+    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'rotorTach': case 'blank':
       return true;
     case 'tach': case 'single': case 'twinNeedle':
       return g.size === 'large';
@@ -185,10 +196,10 @@ export const SWITCH_ROW_ID = 'switches';
 export const IGNITION_ID = 'ignition';
 
 /** The artwork of the switch row, panel px: each rocker with its legend, the dimmers, the key with its lettering. */
-function switchRowSolids(def: PanelDef): Rect[] {
+export function switchRowSolids(def: Pick<PanelDef, 'switchRow' | 'ignition'>): Rect[] {
   const row = def.switchRow;
   const { x, y } = row.bounds;
-  const solids: Rect[] = row.switches.map((s) => ({ x: x + s.x - row.rockerW / 2 - 3, y: y + row.rockerTop - 30, w: row.rockerW + 6, h: row.rockerH + 33 }));
+  const solids: Rect[] = row.switches.map((s) => ({ x: x + s.x - row.rockerW / 2 - 3, y: y + (s.top ?? row.rockerTop) - 30, w: row.rockerW + 6, h: row.rockerH + 33 }));
   if (row.dimmers) for (const dx of [row.dimmers.panel, row.dimmers.radio]) solids.push({ x: x + dx - 14, y: y + row.dimmers.y - 14, w: 28, h: 28 });
   if (def.ignition.kind === 'key') solids.push({ x: def.ignition.at[0] - 50, y: def.ignition.at[1] - 42, w: 100, h: 68 });
   return solids;
@@ -202,9 +213,9 @@ function switchRowSolids(def: PanelDef): Rect[] {
 export function panelParts(def: PanelDef): PanelPart[] {
   const dials: PanelPart[] = [];
   const rest: PanelPart[] = [];
-  for (const g of def.gauges) ('at' in g ? dials : rest).push(...gaugeParts(g, def.apertures));
-  if (def.annunciator) dials.push({ id: ANNUNCIATOR_ID, rect: def.annunciator.bounds });
-  dials.push({ id: SWITCH_ROW_ID, rect: def.switchRow.bounds, solid: switchRowSolids(def) });
+  for (const g of def.gauges) ('at' in g ? dials : rest).push(...gaugeParts(g, def.apertures, def.instrumentScale));
+  if (def.annunciator) dials.push({ id: ANNUNCIATOR_ID, rect: def.annunciator.bounds, paintRects: def.annunciator.cells });
+  dials.push({ id: SWITCH_ROW_ID, rect: def.switchRow.bounds, solid: switchRowSolids(def), paintRects: def.switchRow.switches.some(s => s.top !== undefined) ? switchRowSolids(def) : undefined });
   const ignition = ignitionLayout(def.ignition);
   if (ignition) dials.push({ id: IGNITION_ID, rect: ignition.rect });
   return [...dials, ...rest];

@@ -36,6 +36,13 @@ describe('cockpit head movement', () => {
     expect(up.y).toBeGreaterThan(0);
   });
 
+  it('mirrors the torso lean for a pilot in the right seat', () => {
+    const left = headOffset(156 * DEG, 0);
+    const right = headOffset(-156 * DEG, 0, undefined, undefined, undefined, undefined, true);
+    expect(right.x).toBeCloseTo(-left.x, 12);
+    expect(right.y).toBeCloseTo(left.y, 12); expect(right.z).toBeCloseTo(left.z, 12);
+  });
+
   it('looking back over a shoulder leans forward and to that side, clear of the seat back', () => {
     for (const yaw of [156 * DEG, -156 * DEG]) {
       const o = headOffset(yaw, 5 * DEG);
@@ -345,5 +352,23 @@ describe('another aircraft', () => {
     const taa = new TemporalAA();
     taa.setAircraftRadius(OTHER.radius);
     expect(reprojectionRadius(taa)).toBe(17);
+  });
+});
+
+
+describe('aircraft cockpit field of view', () => {
+  it('recentres to the aircraft FOV and restores the airplane default on a type change', () => {
+    const rig = new CockpitRig();
+    const ctx = contextAt(0), out = makePose();
+    rig.setAircraft({ ...C172S_CAMERA, defaultFovDeg: 74, defaultPitchDeg: -31 });
+    rig.update(0, 0, ctx, poseOf(ctx.state), out);
+    expect(out.fov).toBe(74);
+    rig.zoomAt(3, 0, 0, 16 / 9);
+    rig.recentre();
+    for (let i = 0; i < 90; i++) rig.update(0, 1 / 60, ctx, poseOf(ctx.state), out);
+    expect(out.fov).toBeCloseTo(74, 6);
+    rig.setAircraft(C172S_CAMERA);
+    rig.update(0, 0, ctx, poseOf(ctx.state), out);
+    expect(out.fov).toBe(60);
   });
 });

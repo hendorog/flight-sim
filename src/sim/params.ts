@@ -19,6 +19,7 @@
 //                  nosewheel float) and no roll trim
 //   hud=0|1        external-view HUD                ui=0         hide every DOM overlay (clean screenshots)
 //   ap=1           autoflight: fly the scenario by itself (see src/sim/autoflight.ts)
+//   demo=startup|hover|approach|autorotation|circuit   R22 scripted flights; trace=1 opens the live graph
 //   run=30         after loading, advance the simulation this many seconds as fast as possible
 //   freeze=1       pause once loading (and run=) is done; the PAUSED badge is hidden
 //   mute=1         no sound
@@ -44,6 +45,7 @@
 import type { CameraMode, QualityLevel, ScenarioId } from '../core/context';
 import { isAircraftId, type AircraftId, type WeatherSettings } from '../core/types';
 import { SCENARIO_IDS } from './scenarios';
+import { isR22Demo, type R22DemoId } from './rotorcraft/flights';
 
 const CAMERA_MODES: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
 const QUALITIES: readonly QualityLevel[] = ['low', 'medium', 'high', 'ultra'];
@@ -69,6 +71,9 @@ export interface SimParams {
   hud: boolean;
   ui: boolean;
   autoflight: boolean;
+  /** Explicit R22 scripted flight (ignored for other aircraft). */
+  demo: R22DemoId | null;
+  demoTrace: boolean;
   run: number;
   freeze: boolean;
   mute: boolean;
@@ -168,6 +173,8 @@ export function parseParams(search: string): SimParams {
     hud: q.get('hud') !== '0',
     ui: q.get('ui') !== '0',
     autoflight: q.get('ap') === '1',
+    demo: isR22Demo(q.get('demo')) ? q.get('demo') as R22DemoId : null,
+    demoTrace: q.get('trace') === '1',
     run: Math.max(0, num('run') ?? 0),
     freeze: q.get('freeze') === '1',
     mute: q.get('mute') === '1',

@@ -15,6 +15,8 @@ export interface CameraAircraft {
   fitSize: number;
   /** Pitch of the default cockpit view, degrees, + up (CockpitDef.defaultPitchDeg). */
   defaultPitchDeg: number;
+  /** Optional vertical FOV for cockpits with a low central console. */
+  defaultFovDeg?: number;
 }
 
 export const C172S_CAMERA: CameraAircraft = {

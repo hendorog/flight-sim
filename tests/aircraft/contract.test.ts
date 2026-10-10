@@ -149,7 +149,7 @@ function flatEnvironment(weather: WeatherSettings) {
 
 describe('aircraft ids', () => {
   it('lists the aircraft types, the C172S first and the default', () => {
-    expect(AIRCRAFT_IDS).toEqual(['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'r22']);
+    expect(AIRCRAFT_IDS).toEqual(['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'r22', 'r44']);
     expect(DEFAULT_AIRCRAFT_ID).toBe('c172s');
     expect(isAircraftId('pa34')).toBe(true);
     expect(isAircraftId('c172')).toBe(false);
@@ -884,10 +884,10 @@ describe('placeholders', () => {
     expect(C172S_VISUAL.id).toBe('c172s');
   });
 
-  it('a type that is still a placeholder flies the C172S flight model data and shows its panel', async () => {
+  it('a fixed-wing placeholder flies the C172S flight model data and shows its panel', async () => {
     for (const id of AIRCRAFT_IDS) {
       const def = await loadAircraft(id);
-      if (def.placeholder !== true) continue;
+      if (def.placeholder !== true || def.rotorcraft) continue;
       const { id: _id, name, shortName, variant, icaoType, placeholder: _placeholder, ...rest } = def;
       const { id: _c, name: _n, shortName: _s, variant: _v, icaoType: _i, ...c172s } = C172S_DEFINITION;
       expect(rest, id).toEqual(c172s);

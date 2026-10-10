@@ -79,8 +79,10 @@ export interface AircraftTypeDef {
   name: string;                  // 'Cessna 172S Skyhawk SP'
   icaoType: string;              // 'C172'
   registration: string;          // fictitious 'N172FS' (FAA) / 'G-FSCK' (EASA); chosen by authority
-  classRating: 'SEP' | 'MEP';    // (multi-aircraft addition) widened: 'MEP' iff two engines
+  classRating: 'SEP' | 'MEP' | null; // null: helicopter type rating, neither airplane class
   vspeeds: Record<VSpeedId, number>;           // KIAS
+  /** Legacy numeric slots that do not apply / have no published value for this type. Stored as 0, not an operating speed. */
+  unavailableVSpeeds?: readonly VSpeedId[];
   settings: Record<AircraftSettingId, number>;
   flapDetentsDeg: number[];                    // [0, 10, 20, 30]
   flapLeverForDeg: Record<number, number>;     // detent deg -> ControlInputs.flaps lever value

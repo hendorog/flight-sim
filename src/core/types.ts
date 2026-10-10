@@ -11,8 +11,12 @@
 import type { Quat, Vec3 } from './math';
 
 // ---------------------------------------------------------------------------------------------- identity
-export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'r22';
-export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'r22'];
+export const ROTORCRAFT_IDS = ['r22', 'r44'] as const;
+export type RotorcraftId = typeof ROTORCRAFT_IDS[number];
+export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | RotorcraftId;
+export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', ...ROTORCRAFT_IDS];
+/** Node-safe identity check for snapshot validation before aircraft definitions are loaded. */
+export const isRotorcraftId = (v: unknown): v is RotorcraftId => ROTORCRAFT_IDS.includes(v as RotorcraftId);
 export const DEFAULT_AIRCRAFT_ID: AircraftId = 'c172s';
 export const isAircraftId = (v: unknown): v is AircraftId => AIRCRAFT_IDS.includes(v as AircraftId);
 
@@ -38,10 +42,18 @@ export type EngineControls = { [K in EngineControlKey]?: ControlInputs[K] };
 
 /** Pilot inputs, written by the input module and read by the flight model. */
 export interface ControlInputs {
+  /** Presentation controls: cabin heating is not thermally simulated; absent = cold, guard installed, test released. */
+  cabinHeat?: number;
+  mixtureGuardOpen?: boolean;
+  annunciatorTest?: boolean;
   /** Helicopters: collective blade pitch [0,1], independent of engine throttle. */
   collective?: number;
   rotorGovernor?: boolean;
   rotorClutch?: boolean;
+  /** Rotorcraft configuration for speed-limit reporting; absent = doors installed. */
+  rotorDoorsOff?: boolean;
+  /** Momentary ignition-key PRIME, separate from the starter and manual pump switch. */
+  fuelPrime?: boolean;
   /** [-1, 1]. + = yoke back = nose up. */
   elevator: number;
   /** [-1, 1]. + = yoke right = roll right. */
@@ -220,6 +232,8 @@ export interface EngineState {
   oilPressure: number;
   /** Fuel pressure, psi. */
   fuelPressure: number;
+  /** Electric auxiliary-pump output pressure, psi; separate from the mechanical/common feed. */
+  auxFuelPressure?: number;
   /** Propeller shaft speed, rev/min (rpm / gear ratio). */
   propRpm: number;
   /** Shaft power as a percentage of rated power (the FADEC LOAD figure; computed for every engine). */
@@ -530,6 +544,9 @@ export function defaultControls(def?: ControlDefaultsSource): ControlInputs {
     gearEmergency: false,
     rudderTrim: 0,
     engines: [],
+    cabinHeat: 0,
+    mixtureGuardOpen: false,
+    annunciatorTest: false,
   };
   const n = def ? def.engineCount : 1;
   for (let i = 0; i < n; i++) c.engines.push({});

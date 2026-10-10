@@ -8,6 +8,7 @@
 // changed are redrawn (background restore + face + needles + bezel) and the texture is re-uploaded only
 // if something changed.
 
+import { DualSectorGauge } from './render/dualSector';
 import * as THREE from 'three';
 import { C172S_PANEL } from '../aircraft/c172s/panel';
 import type { SimContext } from '../core/context';
@@ -15,7 +16,11 @@ import type { AircraftState } from '../core/types';
 import { InstrumentSet, type InstrumentSetOptions } from './dynamics/instrumentSet';
 import { gaugeRecess, type GaugeDef, type PanelDef } from './panelDef';
 import { panelLayoutProblems } from './panelLayout';
-import { ignitionLayout, leverId } from './panelParts';
+import { gaugeParts, ignitionLayout, isLargeGauge, leverId } from './panelParts';
+import { ScaledGauge } from './render/scaledGauge';
+import { RoundGauge } from './render/roundGauge';
+import { BlankGauge, RotorTachGauge } from './render/rotorTach';
+import { ConsoleControl, DigitalTemperature, Hourmeter } from './render/panelControls';
 import { screw } from './render/art';
 import { DirtyRectUploader } from './render/dirtyUpload';
 import { DEFAULT_TUNING, GpsUnit, NavComRadio, Transponder, type RadioTuning } from './render/avionics';
@@ -86,10 +91,13 @@ export class InstrumentPanel {
   private readonly background: HTMLCanvasElement;
   private readonly components: PanelComponent[];
   private readonly regions = new Map<string, Rect>();
+  private dialLevel = 1;
+  private displayLevel = 1;
   private light: {
     canvas: HTMLCanvasElement;
     g: Ctx2D;
     mask: HTMLCanvasElement;
+    dimmer: HTMLCanvasElement | null;
     texture: THREE.CanvasTexture;
     upload: DirtyRectUploader;
   } | null = null;
@@ -127,7 +135,8 @@ export class InstrumentPanel {
    * Self-illumination map for night lighting (use as the panel material's emissiveMap, with the same UVs
    * as `texture`): the panel image multiplied by a light mask, so only what really glows does: dial
    * markings and needles behind the glass at PANEL_DIAL_LIGHT, and the radio / GPS displays and the
-   * annunciator lamps at full value. The faceplate, bezels and placards stay black. Created on first
+   * annunciator lamps at full value. For a dimmer profile, alpha distinguishes dimmed circuits (0.5)
+   * from independent warning lamps (1); the material dims after RGB filtering. Created on first
    * access; from then on it is kept up to date with `texture` (costs a second texture upload per change).
    */
   get emissiveTexture(): THREE.CanvasTexture {
@@ -137,17 +146,38 @@ export class InstrumentPanel {
       const mg = context2d(mask);
       mg.fillStyle = '#000';
       mg.fillRect(0, 0, w, h);
-      for (const c of this.components) c.paintLightMask?.(mg);
+      this.paintLightMask(mg);
+      const dimmer = this.def.lightingRequiresNav || this.def.lightingDimmerExponent !== undefined ? makeCanvas(w, h) : null;
+      if (dimmer) this.paintDimmerMask(context2d(dimmer));
       const canvas = makeCanvas(w, h);
-      const g = context2d(canvas);
+      // CPU-backed composition avoids Chrome/ANGLE Vulkan turning consecutive canvas multiply draws
+      // black. Keep the main panel accelerated; only the small dirty light rectangles use this surface.
+      const g = context2d(canvas, { willReadFrequently: true });
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = this.texture.anisotropy;
       texture.name = 'instrumentPanelEmissive';
-      this.light = { canvas, g, mask, texture, upload: new DirtyRectUploader(texture) };
+      this.light = { canvas, g, mask, dimmer, texture, upload: new DirtyRectUploader(texture) };
       this.updateLight({ x: 0, y: 0, w, h });
     }
     return this.light.texture;
+  }
+
+  private paintLightMask(g: Ctx2D): void {
+    g.fillStyle = '#000'; g.fillRect(0, 0, this.def.size.w, this.def.size.h);
+    for (const c of this.components) c.paintLightMask?.(g);
+  }
+
+  private paintDimmerMask(g: Ctx2D): void {
+    g.clearRect(0, 0, this.def.size.w, this.def.size.h);
+    const selfLit = new Set(this.def.gauges.filter(d => ['clock', 'gps', 'navcom', 'xpdr', 'digitalTemperature'].includes(d.kind)).map(d => d.id));
+    for (const c of this.components) {
+      // Alpha tags the circuit; it does not carry the dimmer's small linear value. Canvas storage is
+      // premultiplied 8-bit, so low alpha would destroy the colour precision of the dial artwork.
+      g.globalAlpha = c.id === 'annunciator' ? 1 : selfLit.has(c.id) ? this.displayLevel : this.dialLevel;
+      c.paintLightMask?.(g);
+    }
+    g.globalAlpha = 1;
   }
 
   /** Emissive = panel image x light mask, over one rectangle. */
@@ -162,6 +192,10 @@ export class InstrumentPanel {
     g.drawImage(this.canvas, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
     g.globalCompositeOperation = 'multiply';
     g.drawImage(L.mask, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
+    if (L.dimmer) {
+      g.globalCompositeOperation = 'destination-in';
+      g.drawImage(L.dimmer, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
+    }
     g.restore();
   }
 
@@ -183,15 +217,27 @@ export class InstrumentPanel {
       return;
     }
     const light = this.light;
+    const display = this.def.lightingDimmerExponent === undefined ? 1 : 0.5;
+    const dial = !this.def.lightingRequiresNav || ctx.controls.lights.nav ? display : 0;
+    if (this.dialLevel !== dial || this.displayLevel !== display) {
+      this.dialLevel = dial; this.displayLevel = display;
+      if (light?.dimmer) {
+        this.paintDimmerMask(context2d(light.dimmer));
+        const full = { x: 0, y: 0, ...this.def.size };
+        this.updateLight(full); light.upload.add(full);
+      }
+    }
     for (const c of this.components) {
       if (!c.sample(r, ctx.controls, ctx.simTime)) continue;
-      const b = c.bounds;
-      this.g.drawImage(this.background, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
+      const rects = c.paintRects ?? [c.bounds];
+      for (const b of rects) this.g.drawImage(this.background, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
       c.draw(this.g);
-      this.upload.add(b);
-      if (light && c.paintLightMask) {
-        this.updateLight(b);
-        light.upload.add(b);
+      for (const b of rects) {
+        this.upload.add(b);
+        if (light && c.paintLightMask) {
+          this.updateLight(b);
+          light.upload.add(b);
+        }
       }
     }
     // Only the redrawn rectangles go to the GPU (a full upload until three.js has created the textures).
@@ -248,12 +294,22 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
   const rest: PanelComponent[] = [];
   for (const g of def.gauges) {
     const into = 'at' in g ? dials : rest;
-    into.push(buildGauge(g, def.apertures, tuning, paintLevers));
+    const k = def.instrumentScale?.[isLargeGauge(g) ? 'large' : 'small'] ?? 1;
+    if (k !== 1 && gaugeRecess(g, def.apertures) && 'at' in g) {
+      const apertures = { large: def.apertures.large / k, small: def.apertures.small / k };
+      const component = buildGauge(g, apertures, tuning, paintLevers);
+      if (def.instrumentBezel && component instanceof RoundGauge) component.setBezelShape(def.instrumentBezel);
+      into.push(new ScaledGauge(component, gaugeParts(g, def.apertures, def.instrumentScale)[0].rect, g.at[0], g.at[1], k));
+    } else {
+      const component = buildGauge(g, def.apertures, tuning, paintLevers);
+      if (def.instrumentBezel && component instanceof RoundGauge) component.setBezelShape(def.instrumentBezel);
+      into.push(component);
+    }
     // The selector of a light cluster is a component of its own beside it.
     if (g.kind === 'gearLights' && g.lever) into.push(new GearSelector(leverId(g.id), g.lever));
     if (g.kind === 'flapLights' && g.lever) into.push(new FlapSwitch(leverId(g.id), g.lever, g));
   }
-  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps));
+  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns, def.annunciator.cells));
   dials.push(new SwitchPanel(def.switchRow, def.ignition));
   const ignition = ignitionLayout(def.ignition);
   if (ignition && def.ignition.kind !== 'key') dials.push(new IgnitionSwitches(def.ignition.kind, ignition));
@@ -264,6 +320,16 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
   // The glass aperture is the 3D recess's (gaugeRecess), so the artwork and the cockpit cannot disagree.
   const r = gaugeRecess(g, apertures)?.r ?? 0;
   switch (g.kind) {
+    case 'blank':
+      return new BlankGauge(g.id, g.at[0], g.at[1], r);
+    case 'rotorTach':
+      return new RotorTachGauge(g.id, g.at[0], g.at[1], r, g.marks);
+    case 'pullKnob': case 'pushButton':
+      return new ConsoleControl(g);
+    case 'hourmeter':
+      return new Hourmeter(g.id, g.bounds);
+    case 'digitalTemperature':
+      return new DigitalTemperature(g);
     case 'asi':
       return new AirspeedGauge(g.id, g.at[0], g.at[1], r, g.marks);
     case 'attitude':
@@ -286,6 +352,8 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return ammeterGauge(g.id, g.at[0], g.at[1], r, g.scale);
     case 'tach':
       return new TachometerGauge(g.id, g.at[0], g.at[1], r, g.marks, g.size, g.engine);
+    case 'dualSector':
+      return new DualSectorGauge(g.id, g.bounds, g.left, g.right);
     case 'dual':
       return new DualGauge(g.id, g.at[0], g.at[1], r, g.seed, g.title, g.left, g.right);
     case 'single':
@@ -327,8 +395,21 @@ function paintBackground(g: Ctx2D, def: PanelDef, components: PanelComponent[]):
   const H = def.size.h;
   const bg = def.background;
   const rand = rng(4242);
-  g.fillStyle = PANEL_GREY;
+  g.save();
+  if (bg.outline) {
+    g.beginPath();
+    bg.outline.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
+    g.closePath(); g.clip();
+  }
+  g.fillStyle = bg.color ?? PANEL_GREY;
   g.fillRect(0, 0, W, H);
+  for (const plate of bg.plates ?? []) {
+    const b = plate.bounds;
+    g.fillStyle = plate.color;
+    g.beginPath(); g.roundRect(b.x, b.y, b.w, b.h, plate.radius ?? 6); g.fill();
+    g.strokeStyle = '#111'; g.lineWidth = 2; g.stroke();
+    for (const x of [b.x + 9, b.x + b.w - 9]) for (const y of [b.y + 9, b.y + b.h - 9]) screw(g, x, y, 3, rand);
+  }
   // Crinkle-finish paint: tiled grain in overlay mode.
   const grain = g.createPattern(noiseCanvas(256, 256, 17, 0.6), 'repeat');
   if (grain) {
@@ -404,6 +485,7 @@ function paintBackground(g: Ctx2D, def: PanelDef, components: PanelComponent[]):
     g.fillStyle = grain;
     g.fillRect(0, 0, W, 28);
   }
+  g.restore();
   g.restore();
 }
 

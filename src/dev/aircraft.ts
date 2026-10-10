@@ -16,6 +16,7 @@
 //   flaps=deg ail=deg elev=deg rud=deg trim=deg   surface deflections (ail = left aileron; right is opposite)
 //   rpm=2300 comp=0.06 steer=deg                  propeller rpm, strut compression (m), nosewheel steering
 //   lights=nav,beacon,strobe,landing,taxi | all | none      panel=0..1 panel light level
+//   rotorcraft: rpm=530 azimuth=25 flapforward=deg flapright=deg thrust=N collective=0..1 throttle=0..1 spinrotor=1
 //   paneltex=1             show a test instrument-panel texture (checks the setPanelTexture mapping)
 //   t=seconds              simulation time offset (strobe/beacon phase; use with freeze=1)
 //   exposure=1             exposure multiplier over the harness's daylight exposure (dusk defaults higher)
@@ -32,6 +33,7 @@ import type { SimContext } from '../core/context';
 import { C172 } from '../core/c172';
 import { DEG, clamp, smoothstep } from '../core/math';
 import { AIRPORT } from '../core/world';
+import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
 import { emptyEngineState, emptyPropellerState } from '../core/types';
 import type { PanelDef } from '../instruments/panelDef';
 import type { AirframeVisualDef } from '../render/aircraft/airframe/types';
@@ -56,16 +58,22 @@ if (hashMode) {
 /** type=: the airframe (and panel) to show instead of the Cessna 172S. Loaded only when asked for. */
 let airframe: AirframeVisualDef | undefined;
 let panelDef: PanelDef | undefined;
+let rotorRpm = 530, rotorThrust = 5500;
 const type = params.get('type');
 if (type) {
   const { SYNTHETIC_AIRFRAMES } = await import('../render/aircraft/airframe/testbed');
   if (Object.hasOwn(SYNTHETIC_AIRFRAMES, type)) airframe = SYNTHETIC_AIRFRAMES[type];
   else {
-    const { isAircraftId, loadPresentation } = await import('../aircraft/registry');
+    const { isAircraftId, loadAircraft, loadPresentation } = await import('../aircraft/registry');
     if (!isAircraftId(type)) throw new Error(`type=${type}: not an aircraft id (nor ${Object.keys(SYNTHETIC_AIRFRAMES).join(', ')})`);
-    const presentation = await loadPresentation(type);
+    const [presentation, definition] = await Promise.all([loadPresentation(type), loadAircraft(type)]);
     airframe = presentation.visual;
     panelDef = presentation.panel;
+    if (definition.rotorcraft && type !== 'r22') {
+      // Keep the existing R22 screenshot fixture; new types use their own normal RPM and gross weight.
+      rotorRpm = definition.rotorcraft.nominalRpm;
+      rotorThrust = definition.mass.maxTakeoff * 9.80665;
+    }
   }
 }
 // (The bake is synchronous here whatever the type: the worker would bake the registered airframe of the id.)
@@ -88,7 +96,8 @@ const PRESETS: Record<string, [THREE.Vector3, THREE.Vector3]> = {
   root: [new THREE.Vector3(-2.2, 2.2, 2.6), new THREE.Vector3(-0.5, 0.6, 0.2)],
   door: [new THREE.Vector3(-2.1, 0.05, -0.1), new THREE.Vector3(-0.4, -0.15, 0.3)],
   tail: [new THREE.Vector3(-3.0, 1.6, 8.6), new THREE.Vector3(0, 0.5, 4.8)],
-  cockpit: [eye.clone(), eye.clone().add(new THREE.Vector3(0, -0.035, -1))],
+  rotor: [new THREE.Vector3(-1.2, 2.4, -1.8), new THREE.Vector3(0, 1.45, 0)],
+  cockpit: [eye.clone(), eye.clone().add(new THREE.Vector3(0, airframe?.rotorcraft ? Math.tan(airframe.cockpit.defaultPitchDeg * DEG) : -0.035, -1))],
   cockpitleft: [eye.clone(), eye.clone().add(new THREE.Vector3(-1, 0.25, -0.35))],
   cockpitdown: [eye.clone(), eye.clone().add(new THREE.Vector3(0.25, -0.75, -0.6))],
 };
@@ -243,9 +252,10 @@ function configureLighting(ctx: SimContext): void {
 /** Test pattern for the panel texture: a frame, labelled corners and six round gauges. */
 function testPanelTexture(): THREE.Texture {
   const c = document.createElement('canvas');
-  c.width = 1040;
-  c.height = 400;
+  c.width = airframe?.rotorcraftVisual?.panel.canvas.w ?? 1040;
+  c.height = airframe?.rotorcraftVisual?.panel.canvas.h ?? 400;
   const g = c.getContext('2d')!;
+  g.scale(c.width / 1040, c.height / 400);
   g.fillStyle = '#26282c';
   g.fillRect(0, 0, 1040, 400);
   g.strokeStyle = '#e0e0e0';
@@ -376,10 +386,19 @@ void runHarness({
     ctx.controls.lights.panel = num('panel', ctx.controls.lights.panel);
     const view = params.get('view');
     if (view && PRESETS[view]) camPreset = PRESETS[view];
-    if (view?.startsWith('cockpit')) ctx.cameraMode = 'cockpit';
+    if (view?.startsWith('cockpit')) {
+      ctx.cameraMode = 'cockpit';
+      if (!params.has('fov') && airframe?.cockpit.defaultFovDeg) { ctx.camera.fov = airframe.cockpit.defaultFovDeg; ctx.camera.updateProjectionMatrix(); }
+    }
     ctx.simTime = num('t', 0);
     // One engine and propeller state per propeller of the airframe (the harness's state is the Cessna's).
     const s = ctx.state;
+    if (airframe?.rotorcraft) {
+      s.rotorcraft = emptyRotorcraftState();
+      // The generic harness starts at the C172 rest height; the rotorcraft stands on its shared skid datum.
+      const delta = s.onGround ? (airframe.shadow.restHeight ?? 0.9) - 1.25 : 0;
+      s.position.z -= delta; s.altitudeMSL += delta;
+    }
     for (let i = s.propellers.length; i < (airframe?.props.length ?? 1); i++) {
       s.engines.push({ ...emptyEngineState(), ...s.engine });
       s.propellers.push({ ...emptyPropellerState(), ...s.propeller });
@@ -389,6 +408,7 @@ void runHarness({
   },
   beforeUpdate(_dt, ctx) {
     if (anim) animate(ctx);
+    if (ctx.state.rotorcraft && (anim || params.get('spinrotor') === '1')) ctx.state.rotorcraft.azimuth += ctx.state.rotorcraft.omega * _dt;
     if (params.get('paneltex') === '1' && !panelSet) {
       visual.setPanelTexture(testPanelTexture());
       panelSet = true;
@@ -442,6 +462,15 @@ function applyStatic(ctx: SimContext): void {
   c.throttle = clamp((rpm - 700) / 2000, 0, 1);
   c.mixture = num('mixture', 1);
   c.elevatorTrim = clamp(num('trim', 0) / 20, -1, 1);
+  if (s.rotorcraft) {
+    s.rotorcraft.rotorRpm = num('rpm', 0);
+    s.rotorcraft.omega = s.rotorcraft.rotorRpm * Math.PI * 2 / 60;
+    s.rotorcraft.azimuth = num('azimuth', 25) * DEG;
+    s.rotorcraft.flapForward = num('flapforward', 0) * DEG;
+    s.rotorcraft.flapRight = num('flapright', 0) * DEG;
+    s.rotorcraft.thrust = num('thrust', s.rotorcraft.rotorRpm > 300 ? rotorThrust : 0);
+    c.collective = num('collective', 0); c.throttle = num('throttle', 0);
+  }
 }
 
 /** Automatic cycle through every animation. */
@@ -462,6 +491,14 @@ function animate(ctx: SimContext): void {
   s.surfaces.rudder = -c.rudder * C172.vTail.rudder.maxDeflection;
   s.surfaces.flaps = c.flaps * C172.wing.flap.maxDeflection;
   s.surfaces.elevatorTrim = c.elevatorTrim * 15 * DEG;
+  if (s.rotorcraft) {
+    c.collective = 0.35 + 0.3 * Math.sin(t * 0.3);
+    s.rotorcraft.rotorRpm = rotorRpm * (0.5 - 0.5 * Math.cos(t * 0.2));
+    s.rotorcraft.omega = s.rotorcraft.rotorRpm * Math.PI * 2 / 60;
+    s.rotorcraft.flapForward = -c.elevator * 0.07;
+    s.rotorcraft.flapRight = c.aileron * 0.07;
+    s.rotorcraft.thrust = rotorThrust * (s.rotorcraft.rotorRpm / rotorRpm) ** 2;
+  }
   const rpm = 600 + 2100 * c.throttle;
   s.propeller.rpm = s.engine.rpm = rpm;
   s.propeller.rotation += ((rpm / 60) * 2 * Math.PI) / 60;

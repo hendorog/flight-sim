@@ -12,6 +12,7 @@
 // engine), else by a synthetic press of the action's key (which follows the keyboard's engine selection).
 
 import * as THREE from 'three';
+import { panelUvBasis } from '../instruments/panelProjection';
 import { C172S_PANEL } from '../aircraft/c172s/panel';
 import type { SimContext } from '../core/context';
 import { keysForAction, type InputAction } from '../input/bindings';
@@ -143,26 +144,15 @@ export class CockpitClicks {
 
   /**
    * World position of a panel pixel. The panel geometry may be transformed in its local frame, so the
-   * mapping is taken from the mesh's own corner vertices (uv (0,0), (1,0), (0,1)).
+   * mapping is taken from a triangle's UV basis (shaped consoles have no rectangle corner vertices).
    */
   panelPointToWorld(px: number, py: number, out = new THREE.Vector3()): THREE.Vector3 | null {
     const mesh = this.panelMesh();
     if (!mesh) return null;
     const geo = mesh.geometry;
     if (this.cornersOf !== geo) {
-      const pos = geo.getAttribute('position');
-      const uv = geo.getAttribute('uv');
-      if (!pos || !uv) return null;
-      const find = (u: number, v: number): THREE.Vector3 | null => {
-        for (let i = 0; i < uv.count; i++)
-          if (Math.abs(uv.getX(i) - u) < 1e-4 && Math.abs(uv.getY(i) - v) < 1e-4) return new THREE.Vector3().fromBufferAttribute(pos, i);
-        return null;
-      };
-      const c00 = find(0, 0);
-      const c10 = find(1, 0);
-      const c01 = find(0, 1);
-      if (!c00 || !c10 || !c01) return null;
-      this.corners = [c00, c10.sub(c00), c01.sub(c00)];
+      this.corners = panelUvBasis(geo);
+      if (!this.corners) return null;
       this.cornersOf = geo;
     }
     const [o, du, dv] = this.corners!;

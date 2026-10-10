@@ -22,12 +22,20 @@ export interface AsiMarkings {
   redLine: number;
   /** Twins: Vyse and Vmca. */
   blueLine?: number; redRadial?: number;
+  /** Cross-hatched red radial for a configuration-dependent limit (e.g. rotorcraft power-off Vne). */
+  crossHatchedLine?: number;
 }
 export interface TachMarkings { max: number; majorStep: number; minorStep: number; numberStep: number;
                                 arcs: readonly ArcDef[]; redLine: number; hourRpm: number }
+/** Separate scales of an electronic engine/rotor percent tachometer. */
+export interface RotorTachMarkings {
+  min: number; max: number; majorStep: number; minorStep: number;
+  engineArcs: readonly ArcDef[]; rotorArcs: readonly ArcDef[]; rotorRedLines: readonly number[];
+  engineRedLines?: readonly number[];
+}
 export interface ScaleDef {
   label: string; min: number; max: number; majors: readonly number[]; minorStep: number;
-  numbers?: boolean; arcs?: readonly ArcDef[]; redLines?: readonly number[];
+  numbers?: boolean; signedNumbers?: boolean; arcs?: readonly ArcDef[]; redLines?: readonly number[];
   read(r: InstrumentReadings): number;
 }
 
@@ -47,9 +55,19 @@ type At = readonly [number, number];
  */
 export type GaugeDef =
   | { kind: 'asi'; id: string; at: At; marks: AsiMarkings }
-  | { kind: 'attitude' | 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock'; id: string; at: At }
+  | { kind: 'attitude' | 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At }
   | { kind: 'cdi'; id: string; at: At; receiver: 'nav1' | 'nav2'; fixedCourseDeg: number }
   | { kind: 'tach'; id: string; at: At; size: 'large' | 'small'; marks: TachMarkings; engine?: number }
+  | { kind: 'rotorTach'; id: string; at: At; marks: RotorTachMarkings }
+  | { kind: 'hourmeter'; id: string; bounds: Rect }
+  | { kind: 'digitalTemperature'; id: string; bounds: Rect; label: string; read(r: InstrumentReadings): number }
+  /** Panel-mounted pull control. The guard must be lifted before moving the knob. */
+  | { kind: 'pullKnob'; id: string; bounds: Rect; label: string; color: string;
+      read(c: ControlInputs): number; set(c: ControlInputs, value: number): void;
+      guard?: { closed(c: ControlInputs): boolean; toggle(c: ControlInputs): void } }
+  | { kind: 'pushButton'; id: string; bounds: Rect; label: string;
+      read(c: ControlInputs): boolean; press(down: boolean, c: ControlInputs): void }
+  | { kind: 'dualSector'; id: string; bounds: Rect; left: ScaleDef; right: ScaleDef }
   | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef }
   | { kind: 'single'; id: string; at: At; seed: number; size: 'large' | 'small'; a0: number; a1: number; title: string; units: string;
       labels: readonly number[]; scale: ScaleDef }
@@ -80,29 +98,42 @@ export type GaugeDef =
 
 export interface SwitchDef {
   id: string; label: string; name: string;
+  /** Optional rocker top relative to the switch group (separate clutch switch on a console). */
+  top?: number;
   /** Centre x within the switch row. */
   x: number; red?: boolean; group?: string;
+  /** Raised red safety cover, posed open for ENGAGE; click binding remains the switch's. */
+  cover?: boolean;
   on(c: ControlInputs): boolean;
   toggle(c: ControlInputs): void;
 }
 export interface LampDef { id: string; text: string; color: string; lit(r: InstrumentReadings): boolean }
 
 export type IgnitionPanelDef =
-  | { kind: 'key'; at: At }                         // OFF / R / L / BOTH / START
+  | { kind: 'key'; at: At; prime?: boolean }                         // OFF / R / L / BOTH / START
   | { kind: 'toggles'; at: At; engines: number }    // L and R magneto toggles per engine + starter rocker (PA-34)
   | { kind: 'engineMaster'; at: At; engines: number }; // ENGINE MASTER per engine + START (DA42)
 
 export interface PanelDef {
   id: string;
-  /** Always { w: 2080, h: 800 }. Every gauge, switch, lamp and hotspot lies inside the cockpit's `panel.pxRect` (asserted by the generic per-type visual test). */
+  /** Dial lighting interlock; self-lit radios and warning lenses remain independent. */
+  lightingRequiresNav?: boolean;
+  /** Optional dimmer curve: emissive alpha tags dimmed circuits (0.5) versus warning lamps (1).
+   * Renderer applies the curve after RGB filtering, at constant luminance. Absent retains legacy dimming. */
+  lightingDimmerExponent?: number;
+  /** Canvas size from the type's cockpit contract. Every component lies inside its panel face. */
   size: { w: number; h: number };
+  /** Separate rotorcraft pod and pedestal shells; coordinates share the flat face's canvas UVs. */
+  console?: { podOutline: readonly At[]; pedestalOutline: readonly At[]; hoodOverhang: number;
+    color: number; pedestalColor: number };
   gauges: readonly GaugeDef[];
-  annunciator?: { bounds: Rect; lamps?: readonly LampDef[] };
-  switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[];
+  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[] };
+  switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[]; ink?: string;
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
   ignition: IgnitionPanelDef;
-  background: { seamsX: readonly number[];
+  background: { color?: string; outline?: readonly At[]; seamsX: readonly number[];
+                plates?: readonly { bounds: Rect; color: string; radius?: number }[];
                 bushings: readonly { at: At; text: string; sub: string }[];
                 placards: readonly { x: number; y: number; lines: readonly string[]; size?: number }[];
                 breakers?: { bounds: Rect; names: readonly string[]; amps: readonly number[]; perRow: number };
@@ -112,6 +143,9 @@ export interface PanelDef {
   /** Circles 3D parts pass through (yoke boots): artwork and hotspots keep out. */
   keepOut: readonly { x: number; y: number; r: number }[];
   apertures: { large: number; small: number };
+  /** Scale of complete round instruments, including needles, bezels and hotspots; absent = native artwork. */
+  instrumentScale?: { large: number; small: number };
+  instrumentBezel?: 'square' | 'round';
   regions: Readonly<Record<string, Rect>>;
   /** Highlight / point targets by InstrumentId or ControlId (px on the panel). */
   spots: Readonly<Record<string, { x: number; y: number; r: number }>>;
@@ -133,7 +167,7 @@ export interface LampInputs { state: AircraftState; controls: ControlInputs; fue
 export function gaugeRecess(g: GaugeDef, apertures: { large: number; small: number }): { x: number; y: number; r: number; depth: number } | null {
   let large: boolean;
   switch (g.kind) {
-    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi':
+    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'rotorTach': case 'blank':
       large = true;
       break;
     case 'tach': case 'single': case 'twinNeedle':
@@ -159,5 +193,9 @@ export interface InstrumentSystemsDef {
   tachHourRpm: number;
   /** The shaft the tachometers read: 'propeller' on a geared engine whose cockpit rpm is the propeller's. Absent: 'crank'. */
   tachShaft?: 'crank' | 'propeller';
+  /** Electric dual tachometer: independent percent references and battery bypass supply. */
+  rotorTach?: { engineRpm100: number; rotorRpm100: number; powered(i: LampInputs): boolean };
+  /** Carburettor probe temperature, C. A type may supply an explicitly documented estimate. */
+  carbAirTempC?(s: AircraftState, c: ControlInputs): number;
   lamps: readonly { id: string; lit(i: LampInputs): boolean }[];
 }

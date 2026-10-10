@@ -255,12 +255,16 @@ export interface GearOutput extends ForceMoment {
 }
 
 // ------------------------------------------------------------------------------------------------ flight model
-export interface LoadingRequest { payload: number; payloadPosition: Vec3 }
+export interface LoadingRequest {
+  payload: number; payloadPosition: Vec3;
+  payloadDistribution?: import('../aircraft/types').PayloadDistribution;
+}
 
 export interface FlightModelOptions {
   /** Occupants and baggage, kg. Default: definition.mass.loadings.typical. */
   payload?: number;
   payloadPosition?: Vec3;
+  payloadDistribution?: import('../aircraft/types').PayloadDistribution;
   /** Physics sub-step rate, Hz. Default 240. */
   physicsRate?: number;
   /** Destroy the aircraft beyond the ultimate load factor or the dive speed. Default true. */

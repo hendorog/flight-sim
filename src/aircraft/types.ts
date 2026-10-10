@@ -177,9 +177,14 @@ export interface AircraftGeometry {
   bounds: { radius: number; fitSize: number };
 }
 
+/** Fractions of total payload at offsets from its centroid. Fractions sum to one and weighted offsets to zero. */
+export type PayloadDistribution = readonly { fraction: number; offset: Vec3 }[];
+
 export interface PayloadDef {
   /** Occupants and baggage, kg, and their centroid (reference-point body axes). */
   payload: number; payloadPosition: Vec3;
+  /** Explicit seat/baggage distribution for inertia. Absent: the legacy symmetric pair at MassDef.seatY. */
+  payloadDistribution?: PayloadDistribution;
   /** Fuel fraction this loading implies (maxGross on types that cannot carry full fuel and full seats). Default 1. */
   fuelFraction?: number;
 }

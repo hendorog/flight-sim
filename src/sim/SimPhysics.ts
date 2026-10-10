@@ -139,6 +139,8 @@ export class SimPhysics {
    * the flight model: it writes the controls while `flying` and applies instructor holds even when not.
    */
   copilot: StepController | null = null;
+  /** A scripted flight's terminal state holds at a physics-step boundary, including during run=. */
+  stepHold: (() => boolean) | null = null;
   /**
    * Carburettor icing (the realism switch, ctx.carbIcing): while false the flight model meets dry air (no
    * moisture, so no carburettor ice). Default true.
@@ -204,6 +206,7 @@ export class SimPhysics {
     copyControls(c, trim);
     applyControls(c, sc.controls ?? {});
     c.starter = false;
+    if (c.fuelPrime !== undefined) c.fuelPrime = false;
     c.dgAlign = false;
     c.kollsmanHpa = weather?.qnhHpa ?? c.kollsmanHpa;
     const hdgDeg = (this.fm.state.heading * 180) / Math.PI;
@@ -239,9 +242,9 @@ export class SimPhysics {
    * with full fuel balances at the reference point (25 % MAC): near the forward limit, where the stall is benign
    * (Flight School stalls).
    */
-  private applyLoading(kind: 'forward' | 'typical'): void {
+  private applyLoading(kind: 'forward' | 'typical' | 'maxGross'): void {
     const m = this.definition.mass;
-    this.fm.setLoading(kind === 'forward' ? m.inertiaLoading : m.loadings.typical);
+    this.fm.setLoading(kind === 'forward' ? m.inertiaLoading : kind === 'maxGross' ? m.loadings.maxGross : m.loadings.typical);
   }
 
   /**
@@ -349,6 +352,7 @@ export class SimPhysics {
     copyControls(c, defaultControls(def));
     applyControls(c, snap.controls);
     c.starter = false;
+    if (c.fuelPrime !== undefined) c.fuelPrime = false;
     c.dgAlign = false;
     // Powerplant (shaft speeds, tanks, battery, temperatures) and the surfaces where they were (the flaps lag
     // their lever), the rudder pedal with them.
@@ -412,6 +416,7 @@ export class SimPhysics {
     const start = budgetMs < Infinity ? performance.now() : 0;
     let n = 0;
     for (;;) {
+      if (this.stepHold?.()) { this.accumulator = 0; break; }
       this.chooseRate(timeScale);
       if (this.accumulator < this.h) break;
       this.accumulator -= this.h;
@@ -424,7 +429,7 @@ export class SimPhysics {
         break;
       }
     }
-    this.alpha = this.accumulator / this.h;
+    this.alpha = this.stepHold?.() ? 1 : this.accumulator / this.h;
     this.publishRenderState();
     this.lastAdvance = Math.max(0, this.time - t0);
     return n;
@@ -435,12 +440,13 @@ export class SimPhysics {
     const t0 = this.time;
     this.setRate(1 / this.stepSize);
     const n = Math.max(0, Math.round(seconds / this.stepSize));
-    for (let i = 0; i < n; i++) this.stepOnce();
+    let done = 0;
+    for (; done < n && !this.stepHold?.(); done++) this.stepOnce();
     this.accumulator = 0;
     this.alpha = 1;
     this.publishRenderState();
     this.lastAdvance = Math.max(0, this.time - t0);
-    return n;
+    return done;
   }
 
   /** Full rate, or COARSE_RATE when accelerated and well clear of the ground. Changes only between steps. */

@@ -9,14 +9,15 @@ import type { GaugeDef, LampDef, PanelDef } from '../panelDef';
 import { knob, screw } from './art';
 import { context2d, LABEL_FONT, makeCanvas, rng, type Ctx2D } from './canvas';
 import { Latch, LIGHT_DIAL, type PanelComponent, type Rect } from './component';
+import { switchRowSolids } from '../panelParts';
 import { PANEL_LAYOUT, type RockerKey } from '../layout';
 
 export const PAINT_WHITE = '#ecebe4';
 
 /** Placard lettering painted on the panel face. */
-export function label(g: Ctx2D, text: string, x: number, y: number, size = 9, align: CanvasTextAlign = 'center'): void {
+export function label(g: Ctx2D, text: string, x: number, y: number, size = 9, align: CanvasTextAlign = 'center', ink = PAINT_WHITE): void {
   g.font = `600 ${size}px ${LABEL_FONT}`;
-  g.fillStyle = PAINT_WHITE;
+  g.fillStyle = ink;
   g.textAlign = align;
   g.textBaseline = 'middle';
   g.fillText(text, x, y);
@@ -34,22 +35,33 @@ export class AnnunciatorPanel implements PanelComponent {
   constructor(
     readonly bounds: Rect,
     private readonly lamps: readonly LampDef[] = C172S_ANNUNCIATOR_LAMPS,
+    private readonly columns?: number,
+    private readonly cells?: readonly Rect[],
   ) {
     this.latch = new Latch(lamps.length);
   }
+
+  get paintRects(): readonly Rect[] | undefined { return this.cells; }
 
   sample(r: InstrumentReadings): boolean {
     this.lamps.forEach((l, i) => this.latch.set(i, l.lit(r) ? 1 : 0, 1));
     return this.latch.take();
   }
 
-  private cellX(i: number): number {
+  private cell(i: number): Rect {
+    if (this.cells) return this.cells[i];
     const A = AnnunciatorPanel;
-    const total = this.lamps.length * A.CELL_W + (this.lamps.length - 1) * A.GAP;
-    return this.bounds.x + (this.bounds.w - total) / 2 + i * (A.CELL_W + A.GAP);
+    const cols = this.columns ?? this.lamps.length;
+    const rows = Math.ceil(this.lamps.length / cols);
+    const w = this.columns ? (this.bounds.w - (cols + 1) * A.GAP) / cols : A.CELL_W;
+    const h = this.columns ? (this.bounds.h - (rows + 1) * A.GAP) / rows : A.CELL_H;
+    const total = cols * w + (cols - 1) * A.GAP;
+    return { x: this.bounds.x + (this.bounds.w - total) / 2 + (i % cols) * (w + A.GAP),
+      y: this.bounds.y + (this.bounds.h - rows * h - (rows - 1) * A.GAP) / 2 + Math.floor(i / cols) * (h + A.GAP) - 1, w, h };
   }
 
   drawStatic(g: Ctx2D): void {
+    if (this.cells) return;
     const b = this.bounds;
     g.save();
     g.shadowColor = 'rgba(0,0,0,0.6)';
@@ -63,54 +75,75 @@ export class AnnunciatorPanel implements PanelComponent {
   }
 
   paintLightMask(g: Ctx2D): void {
-    const A = AnnunciatorPanel;
-    const y = this.bounds.y + (this.bounds.h - A.CELL_H) / 2 - 1;
-    // Lamps behind smoked glass: a lit lamp is bright in the image itself; unlit legends must stay dark.
-    g.fillStyle = LIGHT_DIAL;
-    this.lamps.forEach((_, i) => g.fillRect(this.cellX(i), y, A.CELL_W, A.CELL_H));
+    this.lamps.forEach((lamp, i) => {
+      const b = this.cell(i);
+      if (this.cells) {
+        const cx = b.x + b.w / 2, cy = b.y + b.h - 14;
+        g.save(); g.fillStyle = LIGHT_DIAL; g.font = `600 7px ${LABEL_FONT}`;
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        lamp.text.split(' ').forEach((word, j, words) => g.fillText(word, cx, cy - 20 - (words.length - 1 - j) * 9));
+        g.fillStyle = '#ffffff'; g.beginPath(); g.arc(cx, cy, 8.5, 0, Math.PI * 2); g.fill();
+        g.restore();
+      } else {
+        // Legends behind smoked glass: the lit legend is bright in the image itself.
+        g.fillStyle = '#ffffff'; g.fillRect(b.x, b.y, b.w, b.h);
+      }
+    });
   }
 
   draw(g: Ctx2D): void {
-    const A = AnnunciatorPanel;
-    const y = this.bounds.y + (this.bounds.h - A.CELL_H) / 2 - 1;
     this.lamps.forEach((lamp, i) => {
-      const x = this.cellX(i);
+      const { x, y, w, h } = this.cell(i);
       const on = this.latch.get(i) === 1;
+      if (this.cells) {
+        const cx = x + w / 2, cy = y + h - 14;
+        g.save();
+        lamp.text.split(' ').forEach((word, j, words) => label(g, word, cx, cy - 20 - (words.length - 1 - j) * 9, 7));
+        g.fillStyle = '#080909'; g.beginPath(); g.arc(cx, cy, 12, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = '#787872'; g.lineWidth = 1.5; g.stroke();
+        if (on) { g.shadowColor = lamp.color; g.shadowBlur = 12; }
+        g.fillStyle = on ? lamp.color : '#070503';
+        g.beginPath(); g.arc(cx, cy, 8.5, 0, Math.PI * 2); g.fill();
+        g.shadowBlur = 0;
+        g.fillStyle = on ? '#fff1c5' : '#090807'; g.beginPath(); g.arc(cx - 2, cy - 3, 2.5, 0, Math.PI * 2); g.fill();
+        g.restore();
+        return;
+      }
       g.fillStyle = '#060606';
-      g.fillRect(x, y, A.CELL_W, A.CELL_H);
+      g.fillRect(x, y, w, h);
       g.save();
-      g.font = `700 11px ${LABEL_FONT}`;
+      g.font = `700 ${Math.min(11, w / Math.max(5, lamp.text.length) * 1.6)}px ${LABEL_FONT}`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       if (on) {
-        const haze = g.createRadialGradient(x + A.CELL_W / 2, y + A.CELL_H / 2, 2, x + A.CELL_W / 2, y + A.CELL_H / 2, A.CELL_W / 2);
+        const haze = g.createRadialGradient(x + w / 2, y + h / 2, 2, x + w / 2, y + h / 2, w / 2);
         haze.addColorStop(0, lamp.color + '55');
         haze.addColorStop(1, lamp.color + '10');
         g.fillStyle = haze;
-        g.fillRect(x, y, A.CELL_W, A.CELL_H);
+        g.fillRect(x, y, w, h);
         g.shadowColor = lamp.color;
         g.shadowBlur = 8;
         g.fillStyle = '#fff4dc';
-        g.fillText(lamp.text, x + A.CELL_W / 2, y + A.CELL_H / 2 + 0.5);
+        g.fillText(lamp.text, x + w / 2, y + h / 2 + 0.5);
         g.shadowBlur = 0;
         g.fillStyle = lamp.color;
         g.globalAlpha = 0.55;
-        g.fillText(lamp.text, x + A.CELL_W / 2, y + A.CELL_H / 2 + 0.5);
+        g.fillText(lamp.text, x + w / 2, y + h / 2 + 0.5);
       } else {
         g.fillStyle = 'rgba(120,112,100,0.28)';
-        g.fillText(lamp.text, x + A.CELL_W / 2, y + A.CELL_H / 2 + 0.5);
+        g.fillText(lamp.text, x + w / 2, y + h / 2 + 0.5);
       }
       g.restore();
       // Smoked glass reflection
-      const glass = g.createLinearGradient(x, y, x, y + A.CELL_H);
+      const glass = g.createLinearGradient(x, y, x, y + h);
       glass.addColorStop(0, 'rgba(255,255,255,0.10)');
       glass.addColorStop(0.4, 'rgba(255,255,255,0.02)');
       glass.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = glass;
-      g.fillRect(x, y, A.CELL_W, A.CELL_H);
+      g.fillRect(x, y, w, h);
       g.strokeStyle = 'rgba(255,255,255,0.12)';
       g.lineWidth = 0.8;
-      g.strokeRect(x + 0.5, y + 0.5, A.CELL_W - 1, A.CELL_H - 1);
+      g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     });
   }
 }
@@ -142,6 +175,7 @@ const MAG_LABELS = ['OFF', 'R', 'L', 'BOTH', 'START'];
 export class SwitchPanel implements PanelComponent {
   readonly id = 'switches';
   readonly bounds: Rect;
+  readonly paintRects?: readonly Rect[];
   /** One value per rocker, then the key position and the dimmer setting. */
   private readonly latch: Latch;
 
@@ -150,6 +184,7 @@ export class SwitchPanel implements PanelComponent {
     private readonly ignition: PanelDef['ignition'],
   ) {
     this.bounds = row.bounds;
+    if (row.switches.some(s => s.top !== undefined)) this.paintRects = switchRowSolids({ switchRow: row, ignition });
     this.latch = new Latch(row.switches.length + 2);
   }
 
@@ -164,7 +199,7 @@ export class SwitchPanel implements PanelComponent {
   sample(_r: InstrumentReadings, c: ControlInputs): boolean {
     const switches = this.row.switches;
     for (let i = 0; i < switches.length; i++) this.latch.set(i, switches[i].on(c) ? 1 : 0, 1);
-    this.latch.set(switches.length, c.starter ? 4 : c.magnetos, 1);
+    this.latch.set(switches.length, (this.ignition.kind === 'key' && this.ignition.prime ? c.fuelPrime : c.starter) ? 4 : c.magnetos, 1);
     this.latch.set(switches.length + 1, c.lights.panel, 0.01);
     return this.latch.take();
   }
@@ -176,12 +211,13 @@ export class SwitchPanel implements PanelComponent {
     g.save();
     g.translate(x, y);
     for (const d of row.switches) {
+      const top = d.top ?? row.rockerTop;
       // Recess
       g.fillStyle = '#0b0b0c';
       g.beginPath();
       g.roundRect(d.x - row.rockerW / 2 - 3, top - 3, row.rockerW + 6, row.rockerH + 6, 3);
       g.fill();
-      if (d.label) label(g, d.label, d.x, top - 12, d.label.length > 6 ? 7.5 : 8.5);
+      if (d.label) label(g, d.label, d.x, top - 12, d.label.length > 6 ? 7.5 : 8.5, 'center', row.ink);
     }
     // Bracket over each group of switches that are lettered one by one (the light switches); `legends` letters its tab.
     for (const group of new Set(row.switches.map((d) => d.group))) {
@@ -200,7 +236,7 @@ export class SwitchPanel implements PanelComponent {
       g.fillStyle = '#3b3d40';
       g.fillRect((x0 + x1) / 2 - 26, top - 30, 52, 12);
     }
-    for (const l of row.legends) label(g, l.text, l.x, l.y, l.size);
+    for (const l of row.legends) label(g, l.text, l.x, l.y, l.size, 'center', row.ink);
     if (this.ignition.kind === 'key') {
       // Magneto switch escutcheon
       const kx = this.ignition.at[0] - x;
@@ -217,9 +253,10 @@ export class SwitchPanel implements PanelComponent {
       g.beginPath();
       g.arc(kx, ky, 17, 0, Math.PI * 2);
       g.fill();
-      MAG_LABELS.forEach((t, i) => {
+      const labels = this.ignition.prime ? ['OFF', 'R', 'L', 'BOTH', 'PRIME'] : MAG_LABELS;
+      labels.forEach((t, i) => {
         const a = (MAG_ANGLES[i] * Math.PI) / 180;
-        label(g, t, kx + Math.sin(a) * (i === 4 ? 44 : 38), ky - Math.cos(a) * 36, 7.5);
+        label(g, t, kx + Math.sin(a) * (i === 4 ? 44 : 38), ky - Math.cos(a) * 36, 7.5, 'center', row.ink);
       });
     }
     g.restore();
@@ -231,7 +268,15 @@ export class SwitchPanel implements PanelComponent {
     const n = row.switches.length;
     g.save();
     g.translate(x, y);
-    row.switches.forEach((d, i) => rocker(g, d.x - row.rockerW / 2, row.rockerTop, row.rockerW, row.rockerH, this.latch.get(i) === 1, !!d.red));
+    row.switches.forEach((d, i) => rocker(g, d.x - row.rockerW / 2, d.top ?? row.rockerTop, row.rockerW, row.rockerH, this.latch.get(i) === 1, !!d.red));
+    row.switches.forEach((d, i) => {
+      if (!d.cover) return;
+      const top = d.top ?? row.rockerTop, open = this.latch.get(i) === 1;
+      g.strokeStyle = '#9d2016'; g.lineWidth = 3;
+      g.strokeRect(d.x - row.rockerW / 2 - 1, top - 2, row.rockerW + 2, row.rockerH + 3);
+      g.fillStyle = open ? '#d84432' : '#ba2b20';
+      g.fillRect(d.x - row.rockerW / 2, top - 2, row.rockerW, open ? 9 : row.rockerH - 4);
+    });
     if (this.ignition.kind === 'key') {
       // Key
       const pos = this.latch.get(n);

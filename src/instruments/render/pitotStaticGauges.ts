@@ -48,6 +48,20 @@ export class AirspeedGauge extends RoundGauge {
       tick(g, this.angle(kt), R - (major ? 14 : 8), R, major ? 2.2 : 1.4);
     }
     tick(g, this.angle(m.redLine), R - 16, R + 1, 3.2, ARC_COLORS.red);
+    if (m.crossHatchedLine !== undefined) {
+      // A hatched radial has a distinct texture from the solid Vne line. Clip both diagonal
+      // families to a narrow radial rectangle; the marking is a limit, not a coloured speed range.
+      g.save();
+      g.rotate(this.angle(m.crossHatchedLine));
+      g.beginPath(); g.rect(-4, -R - 1, 8, 18); g.clip();
+      g.fillStyle = '#eee9dd'; g.fillRect(-4, -R - 1, 8, 18);
+      g.strokeStyle = ARC_COLORS.red; g.lineWidth = 1.2;
+      for (let y = -R - 9; y < -R + 26; y += 5) {
+        g.beginPath(); g.moveTo(-4, y); g.lineTo(4, y + 8);
+        g.moveTo(4, y); g.lineTo(-4, y + 8); g.stroke();
+      }
+      g.restore();
+    }
     // Twins: the red radial at the minimum control speed and the blue one at the best single-engine rate of climb.
     if (m.redRadial !== undefined) tick(g, this.angle(m.redRadial), R - 20, R + 1, 2.6, ARC_COLORS.red);
     if (m.blueLine !== undefined) tick(g, this.angle(m.blueLine), R - 20, R + 1, 2.6, ARC_COLORS.blue);

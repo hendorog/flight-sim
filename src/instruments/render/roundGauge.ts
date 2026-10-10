@@ -48,6 +48,9 @@ export abstract class RoundGauge implements PanelComponent {
 
   abstract sample(r: InstrumentReadings, c: ControlInputs, time: number): boolean;
 
+  /** Installation-specific mounting flange; the instrument diameter and knob locations are unchanged. */
+  setBezelShape(shape: 'square' | 'round'): void { this.opts.shape = shape; this.front = null; }
+
   /** Paint the static dial (ticks, arcs, numbers, legends), origin at the dial centre. */
   protected abstract paintFace(g: Ctx2D): void;
   /** Draw the moving parts in panel coordinates (centre at this.cx, this.cy). */

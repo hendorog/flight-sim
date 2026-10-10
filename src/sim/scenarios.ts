@@ -83,7 +83,7 @@ export interface Scenario {
   autoflight: AutoflightPlan;
   // ---- Flight School starts (src/sim/starts.ts). Absent on the five free-flight scenarios. ----
   /** Payload loading: 'forward' (front seats only, CG near the forward limit) or 'typical' (the default). */
-  payload?: 'forward' | 'typical';
+  payload?: 'forward' | 'typical' | 'maxGross';
   /** Rotate to this attitude after the trimmed reset (unusual-attitude starts), rad; airspeed kept along the nose. */
   attitude?: { pitch: number; roll: number };
   /** The lesson start this scenario was built from (stored in the resume snapshot). */

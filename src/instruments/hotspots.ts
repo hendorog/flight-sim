@@ -191,6 +191,19 @@ function ignitionHotspots(def: PanelDef): PanelHotspot[] {
 
 /** The hotspots a gauge brings besides the bezel knobs: the gear selector, the flap switch, a guarded knob. */
 function gaugeHotspots(g: PanelDef['gauges'][number]): PanelHotspot[] {
+  if (g.kind === 'pullKnob' || g.kind === 'pushButton') {
+    const b = g.bounds, x = b.x + b.w / 2, y = b.y + b.h / 2;
+    if (g.kind === 'pushButton') return [{ id: g.id, kind: 'push', x, y, hw: 18, hh: 18,
+      name: g.label, hint: 'hold to test', press: g.press, value: c => g.read(c) ? 'TEST' : '' }];
+    const spots: PanelHotspot[] = [knob(g.id, x, y, g.label, {
+      turn(dir, c, coarse) { if (!g.guard?.closed(c)) g.set(c, clamp01(g.read(c) + dir * 0.05 * coarse)); },
+      value: c => g.guard?.closed(c) ? 'GUARD INSTALLED' : `${Math.round(g.read(c) * 100)} %`,
+    }, 20)];
+    if (g.guard) spots.push({ id: `${g.id}Guard`, kind: 'toggle', x, y: b.y + 8, hw: 26, hh: 10,
+      name: `${g.label} guard`, hint: 'click to lift or install guard', toggle: g.guard.toggle,
+      value: c => g.guard!.closed(c) ? 'INSTALLED' : 'OPEN' });
+    return spots;
+  }
   if (g.kind === 'gearLights' && g.lever) {
     return [
       {
@@ -257,6 +270,7 @@ function gaugeHotspots(g: PanelDef['gauges'][number]): PanelHotspot[] {
 export function buildHotspots(def: PanelDef): PanelHotspot[] {
   const spots: PanelHotspot[] = [];
   for (const g of def.gauges) {
+    const start = spots.length;
     if (g.kind === 'altimeter') {
       spots.push(knob('kollsman', g.at[0] - 70, g.at[1] + 72, 'Altimeter setting', KOLLSMAN));
     } else if (g.kind === 'heading') {
@@ -281,6 +295,14 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
     } else {
       spots.push(...gaugeHotspots(g));
     }
+    // Bezel knobs move with the complete round instrument when a type specifies its physical size.
+    const k = def.instrumentScale?.large ?? 1;
+    if (k !== 1 && 'at' in g && ['altimeter', 'heading', 'cdi'].includes(g.kind)) {
+      for (const h of spots.slice(start)) {
+        h.x = g.at[0] + (h.x - g.at[0]) * k; h.y = g.at[1] + (h.y - g.at[1]) * k;
+        h.hw *= k; h.hh *= k;
+      }
+    }
   }
   const row = def.switchRow;
   const { x, y } = row.bounds;
@@ -289,6 +311,7 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
     spots.push(knob('radioDimmer', x + row.dimmers.radio, y + row.dimmers.y, 'Radio lights', DIMMER));
   }
   if (def.ignition.kind === 'key') {
+    const prime = def.ignition.prime;
     spots.push({
       id: 'magnetos',
       kind: 'knob',
@@ -297,14 +320,14 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
       hw: 30,
       hh: 30,
       name: 'Magnetos',
-      hint: 'click right to turn (hold at START), left to turn back',
+      hint: `click right to turn (hold at ${prime ? 'PRIME' : 'START'}), left to turn back`,
       // The key stops at BOTH: START is only reached by holding it there.
       turn(dir, c) {
         c.magnetos = Math.min(3, Math.max(0, c.magnetos + dir)) as MagnetoPosition;
       },
-      springHold: { when: (c) => c.magnetos === 3, action: 'starter' },
+      springHold: { when: (c) => c.magnetos === 3, action: prime ? 'fuelPrime' : 'starter' },
       noRepeat: true,
-      value: (c) => (c.starter ? 'START' : ['OFF', 'R', 'L', 'BOTH'][c.magnetos]),
+      value: (c) => ((prime ? c.fuelPrime : c.starter) ? prime ? 'PRIME' : 'START' : ['OFF', 'R', 'L', 'BOTH'][c.magnetos]),
     });
   } else {
     spots.push(...ignitionHotspots(def));
@@ -316,7 +339,7 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
       id: s.id,
       kind: 'toggle',
       x: x + s.x,
-      y: rockerY,
+      y: s.top === undefined ? rockerY : y + s.top + row.rockerH / 2,
       hw: 15,
       hh: 25,
       name: s.name,

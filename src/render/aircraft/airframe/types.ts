@@ -212,6 +212,9 @@ export interface LampVisualDef {
   /** A lamp parented to a gear leg moves with it and is extinguished below extension 0.9. */
   parent?: 'rudder' | 'noseGear';
   aim?: { downDeg: number; outDeg: number; halfAngleDeg: number };
+  /** Switch supplying this lamp; colour/beam/flash pattern still follows the lamp id. */
+  circuit?: 'nav' | 'beacon' | 'strobe' | 'landing' | 'taxi';
+  requiresClutch?: boolean;
 }
 
 /**
@@ -240,6 +243,8 @@ export interface VisualTrimPanelDef {
 
 export interface CockpitDef {
   pilotEye: FRD; defaultPitchDeg: number;
+  /** Vertical cockpit field of view; absent keeps the camera default (60 degrees). */
+  defaultFovDeg?: number;
   enclosure: 'cabin' | 'canopy';
   /**
    * The flat panel face. The canvas is always 2080 x 800 px. `pxRect` is the part of it shown on the face
@@ -360,6 +365,8 @@ export interface LiveryDef {
 
 export interface AirframeVisualDef {
   rotorcraft?: import('../../../physics/rotorcraft/definition').RotorcraftDefinition;
+  /** Geometry for the rotorcraft builder; separate from the aerodynamic coefficients. */
+  rotorcraftVisual?: RotorcraftVisualDef;
   id: string;
   fuselage: LoftDef & { nose: 'prop' | 'closed'; inlets: readonly InletDef[]; exhaust?: { pos: FRD; radius: number };
                         antennas: readonly { kind: 'blade' | 'stub' | 'whip'; pos: FRD;
@@ -386,5 +393,42 @@ export interface AirframeVisualDef {
    * ground when the aircraft stands on its wheels (absent: 1.25, the Cessna 172S).
    */
   shadow: { halfX: number; halfY: number; fuselage: readonly [number, number, number]; wingX: number; wingY: number; wingHeight: number;
-            restHeight?: number };
+            restHeight?: number; skids?: { halfTrack: number; front: number; rear: number } };
+}
+
+export interface RotorBladePaint {
+  /** Ascending distance from tip, metres. The first containing band wins; otherwise root colours apply. */
+  bands: readonly { tipDistance: number; upper: number; lower: number }[];
+  rootUpper: number; rootLower: number; capLength: number;
+}
+export interface RotorcraftVisualDef {
+  nominalVoltage?: number;
+  /** Optional cabin finish/fittings; all are visual estimates, independent of flight dynamics. */
+  interior?: { frameColor: number; seatColor: number; seatBackColor: number; perforatedPedals: boolean; collectiveFittings: boolean };
+  main: { hub: FRD; radius: number; root: number; chord: readonly [number, number]; twist: number;
+    paint?: RotorBladePaint;
+    /** Visual elastic-coning estimate, independent of the aerodynamic flap/coning solution. */
+    coning?: { referenceThrust: number; angleDeg: number; maxDeg: number; droopDeg: number } };
+  tail: { hub: FRD; radius: number; root: number; chord: number; precone: number; paint?: RotorBladePaint };
+  skids: { halfTrack: number; z: number; front: number; rear: number; crossTubes: readonly number[];
+    tubeRadius?: number; bellyHalfWidth?: number; bellyZ?: number; crossCentreZ?: number };
+  boom: { front: FRD; rear: FRD; radii: readonly [number, number] };
+  mast: { bottom: FRD; top: FRD; bottomWidth: number; topWidth: number };
+  /** Thin aerofoil-like extrusions, outlined in FRD (upper fin, lower fin, stabiliser). */
+  fins: readonly { name: string; outline: readonly FRD[]; thickness: number; axis: 'y' | 'z' }[];
+  guard: readonly FRD[];
+  guardRadius: number;
+  panel: { centre: FRD; width: number; height: number; tiltBackDeg: number; canvas: { w: number; h: number }; outline?: readonly (readonly [number, number])[];
+    /** Explicit support dimensions for a broad panel above a narrow pedestal; null omits the support. */
+    pedestal?: { width: number; depth: number; forwardOffset: number; footWidth: number; footDepth: number } | null;
+    /** Bus voltage at dark / fully powered. Defaults preserve the original 14 V installation. */
+    poweredVolts?: readonly [number, number]; enclosureDepth?: number;
+    /** Constant cd/m² when the panel canvas performs per-circuit dimming; absent uses legacy dimming. */
+    emissiveLuminance?: number };
+  cyclic?: { gripYs: readonly [number, number]; barTiltDeg: number; stem: readonly FRD[] };
+  pedalZ?: number;
+  /** Exposed piston detail is optional for a cowled installation. Cylinder positions are visual estimates. */
+  engineDetail?: { exposed: boolean; cylinderXs: readonly number[] };
+  registrationXs?: readonly [number, number];
+  collective: { pivots: readonly FRD[]; length: number };
 }

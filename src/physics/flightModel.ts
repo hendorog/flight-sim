@@ -55,7 +55,8 @@ import {
 } from '../core/types';
 import { createAirData, slipBall, type AirData } from './airData';
 import { AeroModel } from './aero';
-import { casFromTas } from './atmosphere';
+import { casFromTas, pressureAltitude } from './atmosphere';
+import { configuredVne } from './rotorcraft/limits';
 import { ControlSystem } from './controlSystem';
 import { LandingGear, RetractActuator, type RetractInput } from './gear';
 import type {
@@ -242,7 +243,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   private readonly massModel: MassModel;
   private readonly airData: AirData;
   /** Payload for the next reset() and the fuel the mass properties were last built with (one entry per tank). */
-  private readonly loading: { payload: number; payloadPosition: Vec3; tanks: number[] };
+  private readonly loading: LoadingRequest & { tanks: number[] };
   private mp: MassProperties;
   private env: Environment | null = null;
   private time = 0;
@@ -394,6 +395,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.loading = {
       payload: options.payload ?? typical.payload,
       payloadPosition: options.payloadPosition ?? typical.payloadPosition,
+      payloadDistribution: options.payloadDistribution ?? typical.payloadDistribution,
       tanks: Array.from(this.propulsion.tankQuantities),
     };
     this.mp = this.massModel.properties(this.loading);
@@ -458,6 +460,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   setLoading(l: LoadingRequest): void {
     this.loading.payload = l.payload;
     this.loading.payloadPosition = { ...l.payloadPosition };
+    this.loading.payloadDistribution = l.payloadDistribution;
   }
 
   /** Set the model clock (the wind field's time), s, changing nothing else. */
@@ -580,6 +583,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   private resetRotorcraft(ic: InitialConditions, env: Environment, powerplant: Parameters<Powerplant['reset']>[0]): void {
     const r = this.rotorcraft!, d = r.def, c = this.trimControls;
     r.reset(ic.engineRunning || !ic.onGround);
+    r.state.takeoffMass = this.mp.mass;
     r.state.rotorRpm = r.state.omega * 30 / Math.PI;
     this.propulsion.reset({ ...powerplant, rpm: ic.engineRunning ? d.nominalRpm * d.engineRatio : 0, warm: !ic.onGround || ic.engineRunning });
     c.throttle = ic.engineRunning ? 1 : 0;
@@ -590,23 +594,41 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const velocityAir = { x: ic.airspeed * Math.cos(path) * Math.cos(ic.heading),
       y: ic.airspeed * Math.cos(path) * Math.sin(ic.heading), z: -ic.airspeed * Math.sin(path) };
     if (ic.onGround) {
-      position.z = -this.groundElevation - this.skids!.restingPose(this.mp.mass).height;
+      const pose = this.skids!.restingPose(this.mp.mass, this.mp.cgOffset);
+      position.z = -this.groundElevation - pose.height;
+      orientation = quat.fromEuler(pose.roll, pose.pitch, ic.heading);
       this.lastTrim = null;
     } else {
+      let trimVelocity = velocityAir;
       const evaluate = (x: Float64Array, out: Float64Array): void => {
         const q = quat.fromEuler(x[0], x[1], ic.heading);
         c.collective = x[2]; c.elevator = x[3]; c.aileron = x[4]; c.rudder = x[5];
-        const b: BodyState = { time: 0, position, orientation: q, velocityBody: quat.rotateInv(q, velocityAir),
+        const b: BodyState = { time: 0, position, orientation: q, velocityBody: quat.rotateInv(q, trimVelocity),
           angularVelocity: v3.zero(), cgOffset: this.mp.cgOffset, mass: this.mp.mass };
         const f = r.settle(b, v3.zero(), this.atmosphere.density, -position.z - this.groundElevation, c);
         const g = quat.rotateInv(q, { x: 0, y: 0, z: G0 });
         out[0] = f.force.x / b.mass + g.x; out[1] = f.force.y / b.mass + g.y; out[2] = f.force.z / b.mass + g.z;
         out[3] = f.moment.x / this.mp.inertia.Ixx; out[4] = f.moment.y / this.mp.inertia.Iyy; out[5] = f.moment.z / this.mp.inertia.Izz;
       };
-      const sol = solveNewton(evaluate, [-0.04, -0.03, 0.55, 0, 0, -0.1], {
+      const options = {
         lower: [-0.4, -0.5, 0, -1, -1, -1], upper: [0.4, 0.5, 1, 1, 1, 1],
         step: [0.001, 0.001, 0.001, 0.001, 0.001, 0.001], tolerance: 1e-4, maxIterations: 30,
-      });
+      };
+      const seed = [-0.04, -0.03, 0.55, 0, 0, -0.1];
+      let sol = solveNewton(evaluate, seed, options);
+      if (!sol.converged) {
+        // Follow the attached-flow solution from hover if a distant first guess enters section stall.
+        // Each point still solves all six force/moment equations; continuation supplies only the seed.
+        const steps = Math.max(1, Math.ceil(ic.airspeed / 5));
+        let previous: Float64Array = Float64Array.from(seed);
+        for (let i = 0; i <= steps; i++) {
+          trimVelocity = v3.scale(velocityAir, i / steps);
+          const next = solveNewton(evaluate, previous, options);
+          previous = next.x;
+          if (i === steps && next.residual < sol.residual) sol = next;
+        }
+        trimVelocity = velocityAir;
+      }
       evaluate(sol.x, new Float64Array(6));
       orientation = quat.fromEuler(sol.x[0], sol.x[1], ic.heading);
       this.lastTrim = { converged: sol.converged, residual: sol.residual, iterations: sol.iterations,
@@ -632,7 +654,11 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       for (let j = 0; j < 20; j++) this.prop = this.propulsion.step(this.propIn);
       if (unit.shaftTorque > target) hi = ec.throttle; else lo = ec.throttle;
     }
-    r.state.governorThrottle = ic.engineRunning ? ec.throttle : 0;
+    r.state.governorThrottle = r.state.governorIntegral = ic.engineRunning ? ec.throttle : 0;
+    c.throttle = r.state.governorThrottle;
+    r.state.previousThrottle = c.throttle; r.state.previousCollective = c.collective ?? 0;
+    r.throttle(0, c, unit);
+    this.controlsIn = cloneControls(c); this.rotorControls = this.controlsIn;
     // Numerical initialisation must not consume fuel or reset the already-settled intake wall film.
     this.propulsion.fuel.quantities.set(this.loading.tanks);
     for (let i = 0; i < this.loading.tanks.length; i++) this.prop.tanks[i] = this.loading.tanks[i];
@@ -929,6 +955,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     }
     if (this.rotorcraft) {
       if (s.rotorcraft) Object.assign(this.rotorcraft.state, s.rotorcraft);
+      // Legacy saves have no departure weight. Retain current mass as the best available estimate.
+      if (!(this.rotorcraft.state.takeoffMass > 0)) this.rotorcraft.state.takeoffMass = this.mp.mass;
       pp.restore(s.engines);
       this.rotorControls = cloneControls(controls);
     }
@@ -1039,7 +1067,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.propIn.controls = engineControls;
     }
     this.prop = this.propulsion.step(this.propIn);
-    this.rotorcraft?.drive(h, controls, this.propulsion.units[0]);
+    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere);
     const scales = this.dragScales;
     if (scales) {
       const units = this.propulsion.units;
@@ -1146,8 +1174,10 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.rotorControls ?? this.trimControls, ai.dt);
     const a = rotorLoads ? { ...rotorLoads, lift: -rotorLoads.force.z, drag: 0, stallWarning: false,
       stallFraction: 0 } as AeroOutput : this.aero.compute(ai);
-    this.gearIn.dt = h > 0 ? h : 1 / this.physicsRate;
-    const g = this.skids ? this.skids.compute(this.gearIn) : this.gear.compute(this.gearIn);
+    // Skid contact history, like rotor inflow, advances only at stage zero. Advancing it at
+    // intermediate RK poses consumed touchdown events before the stage that publishes them.
+    this.gearIn.dt = this.skids ? ai.dt : h > 0 ? h : 1 / this.physicsRate;
+    const g = this.skids ? this.skids.compute(this.gearIn, this.rotorcraft!.state) : this.gear.compute(this.gearIn);
     if (stage === 0) {
       this.lastAero = a;
       this.controlSystem.tailAlpha = this.aero.tailplaneAlpha();
@@ -1158,6 +1188,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       if (h > 0) for (const e of g.touchdowns) this.touchdowns.push(e);
     }
     if (g.crash && !this.crashReason) this.crashReason = g.crash;
+    if (this.rotorcraft?.state.mastBump && !this.crashReason) this.crashReason = 'Main rotor teeter stop contact (mast bump)';
 
     const p = this.prop;
     const fx = a.force.x + p.force.x + g.force.x;
@@ -1394,6 +1425,14 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       s.propeller.rotation = r.azimuth;
       s.propeller.thrust = r.thrust;
       s.engine.propRpm = r.rotorRpm;
+      if (s.onGround) r.takeoffMass = this.mp.mass;
+      const d = this.rotorcraft.def;
+      r.vneKias = configuredVne(d.airspeedLimits, d.airspeedCorrections,
+        pressureAltitude(this.atmosphere.pressure), this.atmosphere.temperature, {
+          takeoffMass: r.takeoffMass, powerOff: !s.onGround && r.driveTorque <= 0,
+          aboveMcp: r.takeoffPowerSeconds > 0, doorsOff: this.controlsIn.rotorDoorsOff,
+        });
+      r.airspeedLimitExceeded = r.vneKias === 0 || s.ias / KT > r.vneKias;
     }
     const el = s.electrical;
     el.busVoltage = p.electrical.busVoltage;

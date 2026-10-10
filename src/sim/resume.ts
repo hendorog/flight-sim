@@ -23,6 +23,7 @@
 
 import type { CameraMode, QualityLevel, ScenarioId } from '../core/context';
 import type { Quat, Vec3 } from '../core/math';
+import { isRotorcraftId } from '../core/types';
 import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
 import { DEFAULT_AIRCRAFT_ID, isAircraftId, type AircraftId, type ControlInputs, type SurfaceState, type WeatherSettings } from '../core/types';
 import type { AutopilotSettings } from '../physics';
@@ -140,10 +141,18 @@ function isSystems(v: unknown): v is SystemsSnapshot {
   const rotor = v.rotorcraft;
   if (rotor !== undefined) {
     if (!isObj(rotor)) return false;
+    // Older schema-3 R22 saves predate the latched tail-contact report.
+    if (rotor.tailContact === undefined) rotor.tailContact = 'none';
+    if (rotor.lowRpmLight === undefined) rotor.lowRpmLight = rotor.lowRpmHorn;
+    if (rotor.takeoffMass === undefined) rotor.takeoffMass = 0;
+    if (!['none', 'stinger-touch', 'stinger-impact', 'fin-strike', 'rotor-strike'].includes(rotor.tailContact as string)) return false;
     for (const [key, value] of Object.entries(emptyRotorcraftState())) {
+      if (key === 'tailContact') continue;
       if (typeof value === 'boolean' ? typeof rotor[key] !== 'boolean' : !isNum(rotor[key])) return false;
     }
-    if ((rotor.omega as number) < 0 || (rotor.rotorRpm as number) < 0) return false;
+    if ((rotor.omega as number) < 0 || (rotor.rotorRpm as number) < 0 ||
+      (rotor.clutchEngagement as number) < 0 || (rotor.clutchEngagement as number) > 1 ||
+      (rotor.takeoffPowerSeconds as number) < 0 || (rotor.takeoffMass as number) < 0) return false;
   }
   const s = v.surfaces;
   if (!isObj(s) || !SURFACE_KEYS.every((k) => isNum(s[k]))) return false;
@@ -200,8 +209,10 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   const c = v.controls;
   if (!isObj(c) || !isObj(c.lights)) return null;
   if (c.collective !== undefined && (!isNum(c.collective) || c.collective < 0 || c.collective > 1)) return null;
-  for (const key of ['rotorGovernor', 'rotorClutch']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
-  if (v.aircraft === 'r22' && (!isObj(v.systems) || !isObj(v.systems.rotorcraft))) return null;
+  for (const key of ['rotorGovernor', 'rotorClutch', 'rotorDoorsOff', 'fuelPrime']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+  // A held key cannot survive a reload. It must not leave the pump priming unattended.
+  if (c.fuelPrime !== undefined) c.fuelPrime = false;
+  if (isRotorcraftId(v.aircraft) && (!isObj(v.systems) || !isObj(v.systems.rotorcraft))) return null;
   for (const k of ['elevator', 'aileron', 'rudder', 'throttle', 'mixture', 'flaps', 'elevatorTrim', 'brakeLeft', 'brakeRight', 'magnetos', 'kollsmanHpa', 'headingBugDeg', 'obsDeg']) {
     if (!isNum(c[k])) return null;
   }
