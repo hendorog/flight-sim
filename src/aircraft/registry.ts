@@ -69,8 +69,8 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
   },
   { id: 'r22', name: 'Robinson R22 Beta II (experimental)', shortName: 'R22 Beta II',
     blurb: 'Experimental two-seat helicopter, 131 hp; validation in progress', engineCount: 1, available: false },
-  { id: 'r44', name: 'Robinson R44 Raven II (placeholder)', shortName: 'R44 Raven II',
-    blurb: 'Four-seat helicopter scaffold; flight model and artwork unfinished', engineCount: 1, available: false },
+  { id: 'r44', name: 'Robinson R44 Raven II', shortName: 'R44 Raven II',
+    blurb: 'Four-seat helicopter, IO-540 fuel injected, 245 hp takeoff', engineCount: 1, available: true },
 ];
 
 export function aircraftSummary(id: AircraftId): AircraftSummary {
