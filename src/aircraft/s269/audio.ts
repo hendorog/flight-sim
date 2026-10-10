@@ -1,4 +1,7 @@
 // PLACEHOLDER four-cylinder/three-blade synthesis. No Schweizer recording or spectral calibration.
+// Engine/exhaust/cabin filters remain the C152 synthesis estimates. At 2700 engine / 471 rotor RPM
+// the four-stroke firing rate is 90 Hz and three-blade passage 23.55 Hz; neither is a sampled sound.
+// Base CB has no STAR low-RPM horn: shared audio mapping reads the flight model's false lowRpmHorn.
 import type { AudioProfile } from '../types';
 import { C152_AUDIO as base } from '../c152/audio';
 import { S269_ROTORCRAFT as rotor } from './rotorcraft';
