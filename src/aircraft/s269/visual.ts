@@ -68,10 +68,13 @@ export const S269_VISUAL: AirframeVisualDef = {
       [-0.14, CABIN_TOP + 0.25, 0.10, -0.35, 0.50, 2.3, 2, 0],
       [-0.20, CABIN_TOP + 0.34, -0.03, -0.37, 0.42, 2, 2, 0],
     ] },
+  // Adjacent clear panels meet beneath the physical door seal. The previous straight
+  // A-post and much smaller window left a wide opaque wedge crossing the oval frame.
+  // Frame width is a visual estimate from the 300CB cabin photo, AOPA Apr 1997 p64.
   glazing: { cabinFrontX: D.NOSE_X - 0.005, cabinRearX: -0.19, firewallX: -0.19,
     tRange: [0.035, 0.965], liningRoofLimit: -1e9,
-    windscreen: { sillC: [1.60, 0.20], sillN: [0, 1], post: [[1.30, 0.21], [0.68, -1.01]], postY: 0.20, topX: 0.54 },
-    windows: [{ pts: doorOval(0.40, 0.55), r: 0.008, sides: 'both' }],
+    windscreen: { sillC: [1.60, 0.20], sillN: [0, 1], post: [[0.98, 0.21], [0.45, -1.01]], postY: 0.20, topX: 0.54 },
+    windows: [{ pts: doorOval(0.465, 0.635), r: 0.008, sides: 'both' }],
     doors: [{ pts: doorOval(0.48, 0.65), r: 0.008, sides: 'both', handle: { x: 0.36, z: 0.16 } }],
   },
   cockpit: {

@@ -28,6 +28,9 @@ export function buildS269Cockpit(def: AirframeVisualDef, cockpit: RotorcraftCock
   }
   for (const side of [-1, 1]) {
     const door = def.glazing.doors[0];
+    // AOPA Apr 1997 p64: dark cabin-facing seal, painted surround outside. Keeping
+    // the white exterior tube inside the bubble made it cross the lining in the eye view.
+    b.add(m.rubber, pathTube(skinPath(skin, side, [...door.pts, door.pts[0]], 0.006), 0.014, 120));
     b.add(m.dark, pathTube(skinPath(skin, side, [[0.24, 0.19], [0.43, 0.28], [0.84, 0.32], [1.09, 0.23]], -0.019), 0.018, 45));
     const p = skinPath(skin, side, [[door.handle!.x, door.handle!.z]], -0.025)[0];
     b.add(m.metal, tube([p[0] - 0.035, p[1], p[2]], [p[0] + 0.040, p[1], p[2] - 0.02], 0.008));

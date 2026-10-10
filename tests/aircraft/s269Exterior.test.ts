@@ -9,6 +9,7 @@ import * as D from '../../src/aircraft/s269/dimensions';
 import { FuselageShape } from '../../src/render/aircraft/fuselageShape';
 import { RotorcraftVisual } from '../../src/render/aircraft/RotorcraftVisual';
 import { sectionHalfWidth } from '../../src/render/aircraft/fuselage';
+import { makeWindowSdf } from '../../src/render/aircraft/livery';
 import { frd } from '../../src/render/aircraft/geometry';
 import { rotorBladeGeometry, TeeteringRotor } from '../../src/render/aircraft/rotorcraft/rotor';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
@@ -29,6 +30,14 @@ describe('300CB exterior', () => {
       for (const x of [seat.x - 0.05, seat.x - seat.depth + 0.05])
         expect(sectionHalfWidth(lining, x, seat.z! + 0.17)).toBeGreaterThan(Math.abs(seat.y) + seat.width / 2 - 0.035);
     }
+  });
+
+  it('keeps the clear windscreen/door junction free of a second opaque diagonal post', () => {
+    const window = makeWindowSdf(def.glazing), skin = new FuselageShape(0, -Infinity, def.fuselage);
+    // Points in the old opaque wedge, viewed through the forward part of each door.
+    // The actual round door surround is supplied by geometry, not a crossing A-post mask.
+    for (const [x, z] of [[1.10, -0.10], [1.04, -0.30], [0.98, -0.50]]) for (const side of [-1, 1])
+      expect(window(x, side * sectionHalfWidth(skin, x, z), z)).toBeLessThan(0);
   });
 
   it('changes NACA thickness without changing chord, twist or radial span', () => {

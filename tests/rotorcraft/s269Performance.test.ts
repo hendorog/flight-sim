@@ -4,6 +4,7 @@ import { S269_ENGINE } from '../../src/aircraft/s269/powerplant';
 import { S269_CG_LIMITS } from '../../src/aircraft/s269/limits';
 import { createFlightModelFor } from '../../src/physics';
 import { atmosphereAt } from '../../src/physics/atmosphere';
+import type { BladeElementFlightModel } from '../../src/physics/flightModel';
 import { PistonEngine } from '../../src/physics/propulsion/engine';
 import { DEG, FT, HP, KT, LB, v3 } from '../../src/core/math';
 import { flatEnvironment } from '../fdm/helpers';
@@ -27,21 +28,38 @@ function enginePower(ft: number, temp: number, mixture = 1, rpm = 2700, throttle
   for (let i = 0; i < 30; i++) engine.breathe(input);
   engine.burn(input, engine.fuelDemand);
   return { hp: (engine.indicatedTorque - engine.lossTorque) * input.omega / HP,
+    mixture, density: a.density, pressurePa: a.pressure,
+    chargeTemperatureK: engine.chargeTemperature, airFlowKgS: engine.induction.state.airFlow,
+    indicatedHp: engine.indicatedTorque * input.omega / HP, lossHp: engine.lossTorque * input.omega / HP,
+    frictionHp: engine.frictionTorque * input.omega / HP, accessoryHp: input.accessoryPower / HP,
     phi: engine.phi, gph: engine.fuelDemand * 3600 / (6 * LB), map: engine.manifoldPressure / 3386.389 };
 }
 function hoverDemand(lb: number, temp: number, ft: number, ige: boolean) {
   const definition = { ...def, rotorcraft: { ...d, nominalRpm: 471 } };
-  const fm = createFlightModelFor(definition), env = environment(ft, temp);
+  const fm = createFlightModelFor(definition) as BladeElementFlightModel, env = environment(ft, temp);
   const fuel = def.powerplant.fuel.tanks.reduce((sum, t) => sum + t.capacity, 0);
   fm.setLoading({ ...def.mass.loadings.maxGross, payload: lb * LB - def.mass.empty - fuel });
   fm.reset({ position: { x: 0, y: 0, z: -(ige ? d.skids.z + 2 * FT : 100) }, heading: 0,
     airspeed: 0, onGround: false, engineRunning: true }, env);
   expect(fm.lastTrim?.converged).toBe(true);
-  return fm.state.rotorcraft!.torque * fm.state.rotorcraft!.omega / d.transmissionEfficiency / HP;
+  const rotor = fm.rotorcraft!, r = rotor.state, p = rotor.power;
+  const shaft = r.torque * r.omega / HP;
+  // Steady hover work identity: shaft = main/tail induced + profile - tail-wake exchange.
+  // Download is already in the trimmed thrust; do not add it again as a separate power loss.
+  const components = { mainInducedHp: -p.mainInduced / HP, mainProfileHp: -p.mainProfile / HP,
+    tailInducedHp: -p.tailInduced / HP, tailProfileHp: -p.tailProfile / HP, tailWakeHp: p.tailWake / HP,
+    mainShaftHp: -p.mainShaft / HP, tailShaftHp: -p.tailShaft / HP,
+    transmissionLossHp: shaft * (1 / d.transmissionEfficiency - 1),
+    groundEffect: p.groundEffect, inflowMps: p.inflow, thrustN: r.thrust, tailThrustN: r.tailThrust,
+    weightN: fm.massProperties.mass * 9.80665, density: env.atmosphere().density };
+  expect(shaft - (components.mainInducedHp + components.mainProfileHp + components.tailInducedHp +
+    components.tailProfileHp - components.tailWakeHp)).toBeCloseTo(0, 7);
+  return { hp: shaft / d.transmissionEfficiency, ...components };
 }
 function bestPower(ft: number, temp: number, leaned: boolean) {
   // Chart says leaned but supplies no lever position; optimize the model's mixture at each condition.
-  return Math.max(...(leaned ? [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1] : [1]).map(m => enginePower(ft, temp, m).hp));
+  return (leaned ? [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1] : [1])
+    .map(m => enginePower(ft, temp, m)).reduce((best, p) => p.hp > best.hp ? p : best);
 }
 
 describe('269C-1 carburetted performance evidence', () => {
@@ -53,7 +71,7 @@ describe('269C-1 carburetted performance evidence', () => {
     expect(curve.at(-1)!.hp + 300 / HP).toBeCloseTo(180, 0);
     for (let i = 1; i < curve.length; i++) expect(curve[i].hp).toBeGreaterThan(curve[i-1].hp);
     expect(S269_ENGINE.metering.kind).toBe('floatCarburettor');
-    expect(bestPower(6000, 15, true)).toBeGreaterThan(bestPower(6000, 15, false));
+    expect(bestPower(6000, 15, true).hp).toBeGreaterThan(bestPower(6000, 15, false).hp);
   });
   for (const gross of [true, false]) it(`${gross ? '1750 lb' : 'solo'} power curve and trim authority`, () => {
     const curve = [0, 20, 40, 60, 90].map(kt => {
@@ -109,16 +127,18 @@ describe('269C-1 carburetted performance evidence', () => {
     ];
     const rows = points.flatMap(p => [false, true].map(leaned => {
       const temp = (p.fahrenheit - 32) * 5 / 9, chart = leaned ? p.lean : p.rich;
-      const demand = hoverDemand(p.lb, temp, chart, true), available = bestPower(chart, temp, leaned);
+      const components = hoverDemand(p.lb, temp, chart, true), engine = bestPower(chart, temp, leaned);
+      const demand = components.hp, available = engine.hp;
       const ceilings = [false, true].map(ige => {
         let low = 0, high = 12000;
         for (let i = 0; i < 8; i++) {
           const ft = (low + high) / 2;
-          if (bestPower(ft, temp, leaned) >= hoverDemand(p.lb, temp, ft, ige)) low = ft; else high = ft;
+          if (bestPower(ft, temp, leaned).hp >= hoverDemand(p.lb, temp, ft, ige).hp) low = ft; else high = ft;
         }
         return (low + high) / 2;
       });
-      return { ...p, leaned, temp, chart, demand, available, relativePowerError: demand / available - 1,
+      return { ...p, leaned, temp, chart, demand, available, components, engine,
+        ogeAtChart: hoverDemand(p.lb, temp, chart, false), relativePowerError: demand / available - 1,
         ogePrediction: ceilings[0], igePrediction: ceilings[1], errorFt: ceilings[1] - chart };
     }));
     report.hover = rows;
