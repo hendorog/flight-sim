@@ -40,6 +40,8 @@ import { CrashDialog, FpsMeter, HintsCard, LoadingScreen, Toasts, type CrashActi
 import type { SchoolUi } from './school/schoolUi';
 import { Annunciators, ControlsWidget, type WidgetAircraft, type YokeSource } from './status';
 import { UI_CSS } from './styles';
+import { ChecklistPanel } from './checklist';
+import { FlightCues } from './flightCues';
 
 export interface UIHotkeys {
   /** KeyboardEvent.code that toggles the pause menu. null disables. Default 'Escape'. */
@@ -48,6 +50,8 @@ export interface UIHotkeys {
   hud?: string | null;
   /** Toggles the FPS readout. Default 'F8'. */
   fps?: string | null;
+  /** Toggles the aircraft reference checklist. Default 'KeyF' (unshifted). */
+  checklist?: string | null;
 }
 
 export interface UISystemOptions {
@@ -90,7 +94,7 @@ function isScenario(s: string | null | undefined): s is ScenarioId {
 }
 
 /** How far the HUD's top-centre elements move down while the lesson strip is shown, px. */
-const STRIP_CLEARANCE = 62;
+const STRIP_CLEARANCE = 104;
 
 /** Seconds of cranking before the UI explains why the engine does not start. */
 const STARTER_ADVICE_DELAY_S = 1.2;
@@ -115,6 +119,8 @@ export class UISystem implements Subsystem, MenuHost {
   demoFlying = false;
   readonly root: HTMLDivElement;
   private readonly hud: Hud;
+  readonly checklist: ChecklistPanel;
+  private readonly flightCues: FlightCues;
   private readonly loading: LoadingScreen;
   private readonly toasts: Toasts;
   private readonly fps: FpsMeter;
@@ -168,7 +174,7 @@ export class UISystem implements Subsystem, MenuHost {
 
   constructor(opts: UISystemOptions) {
     this.bindings = opts.bindings;
-    this.hotkeys = { menu: 'Escape', hud: 'F9', fps: 'F8', ...opts.hotkeys };
+    this.hotkeys = { menu: 'Escape', hud: 'F9', fps: 'F8', checklist: 'KeyF', ...opts.hotkeys };
     if (!document.getElementById('fsui-style')) {
       const style = el('style', undefined, document.head, UI_CSS);
       style.id = 'fsui-style';
@@ -176,6 +182,8 @@ export class UISystem implements Subsystem, MenuHost {
     this.root = el('div', undefined, opts.parent ?? document.body);
     this.root.id = 'fsui';
     this.hud = new Hud(this.root);
+    this.checklist = new ChecklistPanel(this.root);
+    this.flightCues = new FlightCues(this.root);
     this.hud.visible = false;
     this.pausedBadge = el('div', 'chip info paused-badge hidden', this.root, 'PAUSED');
     this.apChip = el('div', 'chip ap ap-badge hidden', this.root, 'AP');
@@ -226,6 +234,7 @@ export class UISystem implements Subsystem, MenuHost {
     this.context = ctx;
     const { aircraft: def, presentation } = ctx as Partial<Pick<SimContext, 'aircraft' | 'presentation'>>;
     this.setAircraft(def, presentation);
+    if (def && presentation) this.checklist.init(ctx);
     // The clicks' tooltip keeps its place under the school layer, toasts and dialogs.
     const clicks = (this.clicks = new CockpitClicks(this.root, this.panel ?? presentation?.panel, this.hold));
     this.root.insertBefore(this.root.lastElementChild!, this.schoolLayer);
@@ -246,6 +255,8 @@ export class UISystem implements Subsystem, MenuHost {
       }),
       ev.on('reset', (e) => {
         this.lastScenario = e.scenario;
+        this.checklist.reset();
+        this.flightCues.reset();
         this.crash.close();
         this.lastParkingBrake = null;
         this.lastSwitches = null;
@@ -279,6 +290,8 @@ export class UISystem implements Subsystem, MenuHost {
     // A school screen (home, briefing, debrief...) is modal like the menu: no flight cues over it.
     const schoolModal = !!school?.screen;
     if (school) school.update(dt);
+    this.checklist.update(ctx, menuOpen || schoolModal || this.crash.isOpen);
+    this.flightCues.update(ctx.state, menuOpen || schoolModal || this.crash.isOpen);
     const showHud = !this.demoFlying && this.hudOn && ctx.cameraMode !== 'cockpit' && !menuOpen && !schoolModal;
     this.hud.visible = showHud;
     this.hud.topOffset = school?.stripVisible ? STRIP_CLEARANCE : 0;
@@ -517,6 +530,7 @@ export class UISystem implements Subsystem, MenuHost {
   }
 
   showToast(text: string, durationMs?: number): void {
+    this.flightCues.say(text);
     this.toasts.show(text, durationMs);
   }
 
@@ -578,6 +592,11 @@ export class UISystem implements Subsystem, MenuHost {
     this.fps.visible = !this.fps.visible;
   }
 
+  showChecklist(section?: string, item?: string): void {
+    this.hints.hide();
+    this.checklist.open(section, item);
+  }
+
   // --- MenuHost ------------------------------------------------------------------------------------
 
   close(): void {
@@ -600,6 +619,14 @@ export class UISystem implements Subsystem, MenuHost {
    * and Escape dismisses it.
    */
   private readonly onKeyCapture = (e: KeyboardEvent): void => {
+    const target = e.target;
+    const typing = target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement);
+    if (e.code === this.hotkeys.checklist && !typing && !e.shiftKey && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey && !this.schoolUi?.screen && !this.crash.isOpen) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (this.menuOpen) { this.closeMenu(); this.showChecklist(); }
+      else { this.hints.hide(); this.checklist.toggle(); }
+      return;
+    }
     if (!this.menuOpen && !this.crash.isOpen) return;
     if (this.crash.isOpen && !this.menuOpen && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
       if (this.crash.handleKey(e.code)) {

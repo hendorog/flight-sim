@@ -9,6 +9,8 @@
 // `state: null` and are confirmed with Enter. There is no avionics master: the avionics key stands for the radios.
 // The fuel selector has LEFT, RIGHT and OFF and no BOTH: "proper tank" is either tank.
 
+import { citeChecklists } from '../../training/checklistData';
+import { PA38_EXTRA_CHECKLISTS, PA38_CHECKLIST_SOURCE } from './checklists';
 import { all, any, eq, ge, gt, le, lt } from '../../training/engine/dsl';
 import type {
   AircraftSettingId, AircraftTypeDef, ChecklistDef, ChecklistId, ChecklistItem, ChecklistKeyPair, CueRef, PointTarget, Pred, SafetyEnvelope, VSpeedId,
@@ -425,7 +427,7 @@ export const PA38: AircraftTypeDef = {
   flapLeverForDeg: FLAP_LEVER,
   // Utility category (s.7): +4.4 g flaps up; no negative figure published, the Part 23 utility minimum -1.76.
   limits: { gPos: 4.4, gNeg: -1.76, maxDemoCrosswindKt: SETTINGS.maxDemoCrosswindKt },
-  checklists: CHECKLISTS,
+  checklists: { ...citeChecklists(CHECKLISTS, PA38_CHECKLIST_SOURCE), ...PA38_EXTRA_CHECKLISTS },
   envelope: ENVELOPE,
   demoTuning: { maxBankDeg: 30, rollRateDps: 12 },
   systems: {

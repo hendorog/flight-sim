@@ -187,7 +187,7 @@ export function parseParams(search: string): SimParams {
       lesson: q.get('lesson')?.trim() || null,
       phase: q.get('phase')?.trim() || null,
       brief: q.get('brief') !== '0',
-      voice: q.get('voice') !== '0',
+      voice: q.get('voice') !== '0' && q.get('mute') !== '1',
       standard: q.get('standard') === 'easa' || q.get('standard') === 'faa' ? (q.get('standard') as 'easa' | 'faa') : null,
       memoryStore: q.get('tstore') === 'mem',
       unlock: q.get('unlock') === '1',

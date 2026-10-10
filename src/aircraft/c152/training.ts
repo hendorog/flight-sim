@@ -8,6 +8,8 @@
 // telemetry has no signal for (carburettor heat, the circuit breakers) have `state: null` and are confirmed with
 // Enter. There is no electric fuel pump and no avionics master: the avionics key stands for the radios.
 
+import { citeChecklists } from '../../training/checklistData';
+import { C152_EXTRA_CHECKLISTS, C152_CHECKLIST_SOURCE } from './checklists';
 import { all, eq, ge, gt, le, lt } from '../../training/engine/dsl';
 import type {
   AircraftSettingId, AircraftTypeDef, ChecklistDef, ChecklistId, ChecklistItem, ChecklistKeyPair, CueRef, PointTarget, Pred, SafetyEnvelope, VSpeedId,
@@ -395,7 +397,7 @@ export const C152: AircraftTypeDef = {
   flapLeverForDeg: FLAP_LEVER,
   // Utility category at all weights (s.7): +4.4 / -1.76 g flaps up.
   limits: { gPos: 4.4, gNeg: -1.76, maxDemoCrosswindKt: SETTINGS.maxDemoCrosswindKt },
-  checklists: CHECKLISTS,
+  checklists: { ...citeChecklists(CHECKLISTS, C152_CHECKLIST_SOURCE), ...C152_EXTRA_CHECKLISTS },
   envelope: ENVELOPE,
   demoTuning: { maxBankDeg: 30, rollRateDps: 12 },
   systems: {

@@ -432,7 +432,7 @@ export const TRAINING_KEY_MAP: readonly TrainingKeyMapping[] = [
   { id: 'handback', codes: ['Enter', 'NumpadEnter'], shift: true, label: '"You have control": hand control to the instructor' },
   { id: 'sayAgain', codes: ['KeyR'], shift: false, label: 'Say again' },
   { id: 'showMe', codes: ['BracketLeft'], shift: false, label: 'Show me (a demonstration)' },
-  { id: 'cycleCard', codes: ['Tab'], shift: false, label: 'Lesson card: compact, expanded, hidden' },
+  { id: 'cycleCard', codes: ['Tab'], shift: false, label: 'Lesson card: compact, expanded, essentials' },
   { id: 'retryPhase', codes: ['KeyR'], shift: true, label: 'Try again from the start of this phase' },
 ];
 

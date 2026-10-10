@@ -1,8 +1,8 @@
 // Caption bar (section 5.4): bottom centre above the control widget in the outside views, on the glareshield
 // in the cockpit view (see update); speaker tag (INSTRUCTOR teal, EXAMINER
 // slate, YOU grey, TOWER amber) and the text; Safety lines in red. A caption stays while it is being spoken
-// (estimated from its length: the port gives no end event) and fades 3 s after that. The last 30 are kept
-// for the menu's caption log.
+// (estimated from its length: the port gives no end event). During lessons it remains visible; outside
+// lessons it fades 3 s later. The last 30 lines remain in the on-screen and menu caption histories.
 
 import type { ActorId, Caption } from '../../training/types';
 import { el } from '../dom';
@@ -33,22 +33,45 @@ export class CaptionBar {
   private readonly tag: HTMLElement;
   private readonly text: HTMLElement;
   private hideAt = 0;
+  private readonly history: HTMLElement;
+  private readonly instruction: HTMLElement;
+  private lastInstruction = '';
+  /** Lessons keep their latest instruction until the next one or the lesson ends. */
+  sticky = false;
   private shown = false;
   readonly log: { caption: Caption; safety: boolean }[] = [];
-  /** Captions switched off in the settings: the bar stays hidden (the card and the log still record them). */
+  /** Retained for old callers; captions now always display, independent of voice preferences. */
   enabled = true;
 
   constructor(parent: HTMLElement) {
-    this.root = el('div', 'sc-captions', parent);
+    this.root = el('div', 'sc-captions hidden', parent);
     this.box = el('div', 'sc-caption out', this.root);
     this.tag = el('em', '', this.box);
     this.text = el('span', '', this.box);
+    this.box.setAttribute('role', 'status');
+    this.instruction = el('div', 'sc-last-instruction hidden', this.root);
+    const details = el('details', 'sc-caption-history', this.root);
+    el('summary', '', details, 'Caption history');
+    this.history = el('div', '', details);
+    this.root.addEventListener('pointerdown', e => e.stopPropagation());
+    this.root.addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') e.stopPropagation(); });
   }
 
   show(c: Caption, safety: boolean, nowS: number): void {
+    const old = this.log.findIndex(line => line.caption.id === c.id);
+    if (old >= 0) this.log.splice(old, 1);
     this.log.push({ caption: c, safety });
     if (this.log.length > LOG) this.log.splice(0, this.log.length - LOG);
-    if (!this.enabled && !safety) return;
+    this.history.replaceChildren();
+    for (const line of this.log.slice().reverse()) {
+      const row = el('div', '', this.history);
+      el('b', '', row, `${speakerTag(line.caption.actor) || 'FLIGHT'} · ${Math.floor(line.caption.atSim / 60)}:${String(Math.floor(line.caption.atSim % 60)).padStart(2, '0')} `);
+      el('span', '', row, line.caption.text);
+    }
+    const instructor = c.actor === 'instructor' || c.actor === 'examiner';
+    if (instructor) this.lastInstruction = `${speakerTag(c.actor)}: ${c.text}`;
+    this.instruction.textContent = this.lastInstruction;
+    this.instruction.classList.toggle('hidden', instructor || !this.lastInstruction || !this.sticky);
     const tag = speakerTag(c.actor);
     this.tag.textContent = safety && !tag ? 'SAFETY' : tag;
     this.tag.className = c.actor;
@@ -61,7 +84,9 @@ export class CaptionBar {
 
   clear(): void {
     this.shown = false;
+    this.lastInstruction = '';
     this.box.classList.add('out');
+    this.instruction.classList.add('hidden');
   }
 
   /**
@@ -74,7 +99,7 @@ export class CaptionBar {
    * two-line caption still ends above the instruments.
    */
   update(nowS: number, glareY: number | null = null): void {
-    if (this.shown && nowS >= this.hideAt) this.clear();
+    if (!this.sticky && this.shown && nowS >= this.hideAt) this.clear();
     // Never up under the lesson strip and its annunciators, never down among the toasts.
     const top = glareY === null ? '' : `${Math.round(Math.max(110, Math.min(window.innerHeight - 190, glareY - GLARE_OVERLAP_PX)))}px`;
     if (this.root.style.top !== top) {

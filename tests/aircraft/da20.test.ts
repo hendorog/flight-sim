@@ -292,7 +292,10 @@ describe('Diamond DA20-C1 presentation', () => {
     expect(DA20.vspeeds.VfeFull).toBe(78);
     expect(Object.keys(DA20.vspeeds)).toHaveLength(22);
     expect(Object.keys(DA20.settings)).toHaveLength(11);
-    expect(Object.keys(DA20.checklists)).toHaveLength(14);
+    expect(Object.keys(DA20.checklists)).toEqual(expect.arrayContaining([
+      'beforeStart', 'engineStart', 'runup', 'beforeTakeoff', 'afterTakeoff', 'final', 'afterLanding', 'shutdown',
+      'preflight', 'cruise', 'descent', 'engineFailure', 'engineFire', 'electrical',
+    ]));
     expect(DA20.flapDetentsDeg).toEqual([0, 15, 45]);
     expect(DA20.flapLeverForDeg[15]).toBeCloseTo(1 / 3, 12);
     expect(DA20.systems?.steering).toBe('castering');
