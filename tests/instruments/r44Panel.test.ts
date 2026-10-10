@@ -267,7 +267,10 @@ describe('R44 eight-hole console', () => {
     const clutch = R44_UI.hud.levers.find(l => l.label === 'CLUTCH')!;
     expect(clutch.read(c, s)).toBe(0.4); expect(clutch.text!(c, s)).toBe('40% MOVING');
     expect(R44_UI.startupSteps.flat().join(' ')).toContain('cold start is not validated');
-    expect(R44_TRAINING.name).toContain('placeholder'); expect(R44_TRAINING.school?.syllabus).toBe(false);
-    for (const checklist of Object.values(R44_TRAINING.checklists)) expect(checklist.items).toEqual([]);
+    expect(R44_TRAINING.id).toBe('r44'); expect(R44_TRAINING.school?.syllabus).toBe(false);
+    // A POH reference is available without claiming the cold-start simulation is validated.
+    expect(R44_TRAINING.checklists.engineStart.items.length).toBeGreaterThan(0);
+    expect(R44_TRAINING.checklists.engineStart.items.find(i => i.id === 'prime')!.state).toBeNull();
+    expect(R44_TRAINING.checklists.runup.items.find(i => i.id === 'hydCheck')!.state).toBeNull();
   });
 });

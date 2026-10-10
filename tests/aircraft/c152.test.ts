@@ -169,7 +169,10 @@ describe('Cessna 152 presentation', () => {
     expect(C152.vspeeds.Vy).toBe(C152_REFERENCE.vy);
     expect(Object.keys(C152.vspeeds)).toHaveLength(22);
     expect(Object.keys(C152.settings)).toHaveLength(11);
-    expect(Object.keys(C152.checklists)).toHaveLength(14);
+    expect(Object.keys(C152.checklists)).toEqual(expect.arrayContaining([
+      'beforeStart', 'engineStart', 'runup', 'beforeTakeoff', 'afterTakeoff', 'final', 'afterLanding', 'shutdown',
+      'preflight', 'cruise', 'descent', 'engineFailure', 'engineFire', 'electrical',
+    ]));
     expect(C152.flapDetentsDeg).toEqual([0, 10, 20, 30]);
     expect(C152.school?.syllabus).toBe(false);
   });

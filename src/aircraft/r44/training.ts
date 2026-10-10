@@ -1,6 +1,7 @@
-// Reference metadata only; no R44 lessons or validated cold-start checklist.
+// R44 reference metadata and POH checklists; no lessons or validated cold-start simulation.
 // POH 3-3: 90 KIAS maximum glide; 4-13: 60 KIAS initial approach.
 // Vy 60 is retained scaffold metadata, not a validated best-climb result.
+import { R44_CHECKLISTS } from './checklists';
 import type { AircraftTypeDef, ChecklistDef, VSpeedId } from '../../training/types';
 import { R44_REFERENCE as V } from './reference';
 
@@ -9,11 +10,13 @@ const VSPEEDS: Record<VSpeedId, number> = {
   Vfe10: 0, VfeFull: 0, Vno: 0, Vne: V.vne, Vapp: 60, VappFlapsUp: 0, Vref: 0,
   VshortField: 0, Vcruise: 0, Vslow: 0, VsteepTurn: 0, Vdescent: 0, Vdownwind: 0, Vtaxi: 0,
 };
-// Empty slots preserve the legacy registry contract without publishing airplane checklists under R44.
-const CHECKLISTS = Object.fromEntries([
-  'beforeStart', 'engineStart', 'afterStart', 'runup', 'beforeTakeoff', 'afterTakeoff', 'hasell', 'downwind',
-  'final', 'afterLanding', 'shutdown', 'engineFailure', 'forcedLandingSecurity', 'nightLights',
-].map(id => [id, { id, title: 'R44 — checklist unavailable', items: [] }])) as Record<string, ChecklistDef>;
+// Retain inactive fixed-wing registry slots. Empty lists are omitted from the reference panel.
+const UNAVAILABLE = {
+  hasell: { id: 'hasell', title: 'Procedure not available', items: [] },
+  downwind: { id: 'downwind', title: 'Procedure not available', items: [] },
+  forcedLandingSecurity: { id: 'forcedLandingSecurity', title: 'Procedure not available', items: [] },
+  nightLights: { id: 'nightLights', title: 'Procedure not available', items: [] },
+} satisfies Record<string, ChecklistDef>;
 
 export const R44_TRAINING: AircraftTypeDef = {
   id: 'r44', icaoType: 'R44', name: 'Robinson R44 Raven II', registration: 'N44FS', classRating: null,
@@ -28,6 +31,6 @@ export const R44_TRAINING: AircraftTypeDef = {
   limits: { gPos: 0, gNeg: 0, maxDemoCrosswindKt: 0 },
   envelope: { maxBankDeg: 0, maxPitchUpDeg: 0, maxPitchDownDeg: 0, maxKias: V.vne, maxG: 0, minG: 0,
     minAglFt: 0, lowAndSlow: { aglFt: 0, belowKias: 0 }, maxSinkFpmBelow200: 0, stallAllowed: false, runwayExcursionM: 0 },
-  checklists: CHECKLISTS,
-  school: { syllabus: false, reason: 'Helicopter lessons and guided checklists are unavailable; exact closed-throttle starting and cold-start validation remain unfinished.' },
+  checklists: { ...UNAVAILABLE, ...R44_CHECKLISTS },
+  school: { syllabus: false, reason: 'Helicopter lessons are unavailable. POH checklists are on F; exact closed-throttle starting and cold-start validation remain unfinished.' },
 };

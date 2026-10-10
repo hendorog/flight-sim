@@ -9,6 +9,8 @@
 // `state: null` and are confirmed with Enter. There is no carburettor heat; the FUEL PRIME switch is not modelled
 // (the electric fuel pump primes).
 
+import { citeChecklists } from '../../training/checklistData';
+import { DA20_EXTRA_CHECKLISTS, DA20_CHECKLIST_SOURCE } from './checklists';
 import { all, eq, ge, gt, le, lt } from '../../training/engine/dsl';
 import type {
   AircraftSettingId, AircraftTypeDef, ChecklistDef, ChecklistId, ChecklistItem, ChecklistKeyPair, CueRef, PointTarget, Pred, SafetyEnvelope, VSpeedId,
@@ -405,7 +407,7 @@ export const DA20: AircraftTypeDef = {
   flapLeverForDeg: FLAP_LEVER,
   // Utility category (AFM 2.10, s.7): +4.4 / -2.2 g flaps CRUISE.
   limits: { gPos: 4.4, gNeg: -2.2, maxDemoCrosswindKt: SETTINGS.maxDemoCrosswindKt },
-  checklists: CHECKLISTS,
+  checklists: { ...citeChecklists(CHECKLISTS, DA20_CHECKLIST_SOURCE), ...DA20_EXTRA_CHECKLISTS },
   envelope: ENVELOPE,
   demoTuning: { maxBankDeg: 30, rollRateDps: 15 },
   systems: {

@@ -1,6 +1,11 @@
 // Stylesheet for the DOM UI, injected once. Everything is scoped under #fsui.
 
-export const UI_CSS = /* css */ `
+import { CHECKLIST_CSS } from './checklistStyles';
+import { FLIGHT_CUES_CSS } from './flightCues';
+
+export const UI_CSS = /* css */ `${CHECKLIST_CSS}
+${FLIGHT_CUES_CSS}
+
 #fsui {
   --fg: #eef3f8;
   --fg-dim: #9aa8b6;

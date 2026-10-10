@@ -122,6 +122,7 @@ const SHELL_BINDINGS: KeyBinding[] = [
   { keys: 'H', action: 'Cabin dome light on / off', category: 'Lights' },
   { keys: 'Escape', action: 'Menu', category: 'Simulation' },
   { keys: 'F9', action: 'HUD on / off', category: 'View' },
+  { keys: 'F', action: 'Aircraft checklist', category: 'View' },
   { keys: 'F8', action: 'Frame-time readout', category: 'View' },
 ];
 
@@ -472,7 +473,7 @@ export class Simulator {
     this.training = training;
     this.schoolCopilot = physics.copilot;
     if (id === 'r22') {
-      this.demoUi = new RotorcraftDemoUi(ui.root, () => input.takeControl());
+      this.demoUi = new RotorcraftDemoUi(ui.root, () => input.takeControl(), (section, item) => ui.showChecklist(section, item));
       ui.r22Demos = { start: id => { void this.startDemo(id); } };
       input.scriptedPilot = {
         flying: () => !!this.demo && this.demo.outcome !== 'taken-over',

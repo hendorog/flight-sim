@@ -3,8 +3,9 @@
 // built once and only touched where the model changed. While a checklist runs, the line under the task shows
 // the item being challenged and the key that answers it, in place of the lesson title (setPrompt).
 
-import type { AuthorityChip, LessonStripModel } from '../../training/types';
+import type { AuthorityChip, CardTargetModel, LessonStripModel } from '../../training/types';
 import { el, setText } from '../dom';
+import { formatValue } from './format';
 import { renderCaps } from './widgets';
 
 export const AUTHORITY_TEXT: Record<AuthorityChip, string> = {
@@ -26,6 +27,7 @@ export class LessonStrip {
   private readonly lesson: HTMLElement;
   private readonly chips: HTMLElement;
   private readonly assess: HTMLElement;
+  private readonly targets: HTMLElement;
   private chipEls: HTMLElement[] = [];
   private lastAuth: AuthorityChip | null = null;
   private lastHolds = '';
@@ -46,6 +48,7 @@ export class LessonStrip {
     const right = el('div', '', this.root);
     this.chips = el('div', 'sc-tchips', right);
     this.assess = el('div', 'sc-assess hidden', right, 'Assessment');
+    this.targets = el('div', 'sc-target-values', this.root);
   }
 
   get visible(): boolean {
@@ -86,6 +89,11 @@ export class LessonStrip {
     // Only while the student is flying it: not over "Restoring straight and level" or a handover offer.
     const studentFlying = m.authority === 'student' || m.authority === 'solo' || m.authority === 'skillTest';
     this.assess.classList.toggle('hidden', !(m.assessed && chips.length === 0 && studentFlying));
+  }
+
+  /** Targets stay visible even when assessment hides deviation feedback. */
+  setTargets(targets: readonly CardTargetModel[]): void {
+    setText(this.targets, targets.length ? targets.map(t => `${t.label} ${formatValue(t.target, t.unit, /hdg|heading/i.test(t.label))}`).join(' · ') : 'Follow the current step');
   }
 
   /** The checklist item being challenged and its keys ("Master switch: On" + W / Enter), or null for the lesson title. */
