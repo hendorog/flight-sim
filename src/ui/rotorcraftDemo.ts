@@ -2,8 +2,9 @@
 // airplane channels and a fixed time domain; share its scales/ticks, without altering saved school traces.
 import { FT, KT } from '../core/math';
 import type { AircraftState, ControlInputs } from '../core/types';
-import { DEMO_TITLES, type R22Flight, type DemoSample } from '../sim/rotorcraft/flights';
+import { DEMO_TITLES, PHASE_ACTIONS, type R22Flight, type DemoSample } from '../sim/rotorcraft/flights';
 import { observePilot } from '../sim/rotorcraft/scriptedPilot';
+import { demoChecklistLink } from './rotorcraftDemoGuide';
 import { el, setText } from './dom';
 import { linearScale, niceTicks } from './school/format';
 
@@ -13,6 +14,10 @@ export class RotorcraftDemoUi {
   private readonly phase: HTMLElement;
   private readonly action: HTMLElement;
   private readonly rpm: HTMLElement;
+  private readonly next: HTMLElement;
+  private readonly checklist: HTMLButtonElement;
+  private readonly history: HTMLElement;
+  private historyCount = -1;
   private readonly readings: HTMLElement;
   private readonly controls: HTMLElement;
   private readonly note: HTMLElement;
@@ -22,7 +27,7 @@ export class RotorcraftDemoUi {
   private flight: R22Flight | null = null;
   private handoverAt = Infinity;
 
-  constructor(parent: HTMLElement, takeControl: () => void) {
+  constructor(parent: HTMLElement, takeControl: () => void, openChecklist?: (section: string, item: string) => void) {
     this.root = el('section', 'r22-demo hidden', parent);
     this.root.style.cssText = 'position:absolute;top:74px;left:16px;width:min(480px,calc(100vw - 32px));padding:12px 16px;box-sizing:border-box;background:rgba(10,17,24,.91);border:1px solid #435969;border-radius:8px;color:#eef3f8;font:13px/1.4 system-ui;pointer-events:auto';
     this.title = el('div', '', this.root);
@@ -32,6 +37,15 @@ export class RotorcraftDemoUi {
     this.action = el('div', '', this.root);
     this.action.setAttribute('role', 'status');
     this.action.setAttribute('aria-live', 'polite');
+    this.next = el('div', 'demo-next', this.root);
+    this.next.style.cssText = 'color:#c0d8e8;margin-top:6px';
+    this.checklist = el('button', 'demo-checklist', this.root);
+    this.checklist.style.cssText = 'font:11px system-ui;margin-top:6px;color:#9edcff;background:#1b2835;border:1px solid #506272;border-radius:5px;padding:5px 8px';
+    this.checklist.addEventListener('click', () => {
+      const f = this.flight, link = f ? demoChecklistLink(f.id, f.phase, f.time) : null;
+      if (link) openChecklist?.(link.section, link.item);
+      this.checklist.blur();
+    });
     this.rpm = el('div', '', this.root);
     this.rpm.style.cssText = 'font-size:21px;font-weight:700;margin-top:8px;font-variant-numeric:tabular-nums';
     this.readings = el('div', '', this.root);
@@ -45,6 +59,12 @@ export class RotorcraftDemoUi {
     take.addEventListener('click', () => { takeControl(); take.blur(); });
     const hints = el('span', '', buttons, '  P pause · Shift+[ / ] rate · C view');
     hints.style.cssText = 'font-size:10px;color:#9aa8b6';
+    const history = el('details', 'demo-history', this.root);
+    el('summary', '', history, 'Phase caption history');
+    this.history = el('div', '', history);
+    this.history.style.cssText = 'max-height:130px;overflow:auto;font-size:12px';
+    this.root.addEventListener('pointerdown', e => e.stopPropagation());
+    this.root.addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') e.stopPropagation(); });
     this.details = el('details', '', this.root);
     el('summary', '', this.details, 'Live trace · last 60 seconds');
     this.details.style.cssText = 'margin-top:7px;font-size:11px';
@@ -58,6 +78,8 @@ export class RotorcraftDemoUi {
     this.flight = flight;
     this.handoverAt = Infinity;
     this.lastSample = -1;
+    this.historyCount = -1;
+    this.history.replaceChildren();
     this.details.open = trace || flight.id === 'autorotation';
     this.root.classList.remove('hidden');
   }
@@ -77,7 +99,15 @@ export class RotorcraftDemoUi {
     const outcome = f.outcome === 'complete' ? 'Finished · paused' : f.outcome === 'taken-over' ? 'You have control' :
       f.outcome === 'crashed' ? 'Stopped · aircraft damaged' : f.outcome === 'timeout' ? 'Stopped · time limit reached' : '';
     setText(this.phase, outcome || f.phase[0].toUpperCase() + f.phase.slice(1));
-    setText(this.action, f.outcome === 'taken-over' ? 'Demo released; controls remain at their current positions.' : f.action);
+    setText(this.action, f.outcome === 'taken-over' ? 'Demo released; controls remain at their current positions.' : `Now: ${f.action}`);
+    const link = demoChecklistLink(f.id, f.phase, f.time);
+    setText(this.next, `Next: ${f.outcome === 'flying' ? link?.next ?? 'Follow the next phase caption' : 'Take control with Enter, or choose another demo in the menu'}`);
+    setText(this.checklist, `Checklist → ${link?.label ?? 'unavailable'}`);
+    this.checklist.disabled = !link;
+    if (this.historyCount !== f.phases.length) {
+      this.historyCount = f.phases.length; this.history.replaceChildren();
+      for (const p of f.phases.slice(-8).reverse()) el('div', '', this.history, `${p.time.toFixed(1)} s · ${PHASE_ACTIONS[p.phase] ?? p.phase}`);
+    }
     setText(this.rpm, `ROTOR ${p.rotorPercent.toFixed(1)}%`);
     this.rpm.style.color = p.rotorPercent < 90 && !s.onGround && s.engine.rpm > 0 || f.id === 'autorotation' && p.rotorPercent < 90 ? '#ff8b79' : '#eef3f8';
     setText(this.readings, `${(s.ias / KT).toFixed(1)} KIAS  ·  ${Math.round(s.verticalSpeed / .00508)} ft/min  ·  ${(p.height / FT).toFixed(1)} ft skids AGL`);

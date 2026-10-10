@@ -234,7 +234,9 @@ describe('R22 console', () => {
   it('publishes helicopter identity, no airplane checklists, and sensible HUD units', () => {
     expect(R22_TRAINING.classRating).toBeNull();
     expect(R22_TRAINING.vspeeds).toMatchObject({ Vy: 53, Vglide: 75, Vne: 102, Vfe10: 0, VfeFull: 0, Vno: 0 });
-    for (const checklist of Object.values(R22_TRAINING.checklists)) expect(checklist.items).toEqual([]);
+    expect(R22_TRAINING.checklists.hasell.items).toEqual([]);
+    expect(R22_TRAINING.checklists.engineStart.items.some(i => i.id === 'engage')).toBe(true);
+    expect(R22_TRAINING.checklists.engineFailure.items.some(i => i.id === 'glide')).toBe(true);
     const { s } = fixture();
     expect(R22_UI.hud.readouts.find(r => r.label === 'NR')!.text(s)).toBe('104.0%');
     expect(R22_UI.hud.readouts.find(r => r.label === 'ENG')!.text(s)).toBe('104.0%');

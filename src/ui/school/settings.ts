@@ -114,7 +114,7 @@ export function buildSettingsForm(parent: HTMLElement, sc: ScreenCtx, compact = 
   voiceRow('Examiner voice', 'examiner', 'examiner');
   range(field('Speech rate'), 0.8, 1.3, 0.05, () => s.voice.rate, (v) => send({ voice: { ...s.voice, rate: v } }), (v) => `${v.toFixed(2)}×`);
   range(field('Volume'), 0, 1, 0.05, () => s.voice.volume, (v) => send({ voice: { ...s.voice, volume: v } }), (v) => `${Math.round(v * 100)} %`);
-  toggle('Captions', () => s.voice.captions || s.voice.captionsOnly, (v) => send({ voice: { ...s.voice, captions: v } }), !s.voice.captionsOnly);
+  el('div', 'sc-foot-note', parent, 'Captions and flight warnings are always shown. Caption history is available in flight.');
   toggle('Captions only (no speech)', () => s.voice.captionsOnly, (v) => send({ voice: { ...s.voice, captionsOnly: v, captions: v || s.voice.captions } }));
   if (voices.length === 0) {
     el('div', 'sc-foot-note', parent, 'This browser offers no speech voices, so the instructor speaks in captions. On Linux, installing speech-dispatcher with a voice adds them.');

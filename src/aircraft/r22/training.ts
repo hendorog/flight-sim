@@ -1,7 +1,8 @@
-// R22 identity/reference metadata only. No fixed-wing Flight School procedures, limits or lesson speeds
+// R22 reference metadata and POH checklists. No fixed-wing Flight School procedures, limits or lesson speeds
 // are inherited. The legacy school schema requires numeric slots; zero explicitly means unavailable.
 // Published speeds: POH 4-1 (Vy 53, approach 60), 3-3 (maximum-distance autorotation 75 at 90% NR), 2-1 (Vne).
 // A normal autorotation is 65 KIAS at 97–110% (3-2), distinct from maximum-distance configuration.
+import { R22_CHECKLISTS } from './checklists';
 import type { AircraftTypeDef, ChecklistDef, VSpeedId } from '../../training/types';
 import { R22_INSTRUMENT_REFERENCE as V } from './reference';
 
@@ -10,11 +11,13 @@ const VSPEEDS: Record<VSpeedId, number> = {
   Vfe10: 0, VfeFull: 0, Vno: 0, Vne: V.vne, Vapp: 60, VappFlapsUp: 0, Vref: 0,
   VshortField: 0, Vcruise: 0, Vslow: 0, VsteepTurn: 0, Vdescent: 0, Vdownwind: 0, Vtaxi: 0,
 };
-// Empty slots preserve the legacy registry contract without publishing airplane checklists under R22.
-const CHECKLISTS = Object.fromEntries([
-  'beforeStart', 'engineStart', 'afterStart', 'runup', 'beforeTakeoff', 'afterTakeoff', 'hasell', 'downwind',
-  'final', 'afterLanding', 'shutdown', 'engineFailure', 'forcedLandingSecurity', 'nightLights',
-].map(id => [id, { id, title: 'R22 — checklist unavailable', items: [] }])) as Record<string, ChecklistDef>;
+// Retain inactive fixed-wing registry slots. Empty lists are omitted from the reference panel.
+const UNAVAILABLE = {
+  hasell: { id: 'hasell', title: 'Procedure not available', items: [] },
+  downwind: { id: 'downwind', title: 'Procedure not available', items: [] },
+  forcedLandingSecurity: { id: 'forcedLandingSecurity', title: 'Procedure not available', items: [] },
+  nightLights: { id: 'nightLights', title: 'Procedure not available', items: [] },
+} satisfies Record<string, ChecklistDef>;
 
 export const R22_TRAINING: AircraftTypeDef = {
   id: 'r22', icaoType: 'R22', name: 'Robinson R22 Beta II (experimental)', registration: 'N22FS', classRating: null,
@@ -29,6 +32,6 @@ export const R22_TRAINING: AircraftTypeDef = {
   limits: { gPos: 0, gNeg: 0, maxDemoCrosswindKt: 0 },
   envelope: { maxBankDeg: 0, maxPitchUpDeg: 0, maxPitchDownDeg: 0, maxKias: V.vne, maxG: 0, minG: 0,
     minAglFt: 0, lowAndSlow: { aglFt: 0, belowKias: 0 }, maxSinkFpmBelow200: 0, stallAllowed: false, runwayExcursionM: 0 },
-  checklists: CHECKLISTS,
-  school: { syllabus: false, reason: 'Helicopter lessons and guided checklists are not implemented; use the R22 startup card.' },
+  checklists: { ...UNAVAILABLE, ...R22_CHECKLISTS },
+  school: { syllabus: false, reason: 'Helicopter lessons are not implemented; use the in-flight checklist (F).' },
 };

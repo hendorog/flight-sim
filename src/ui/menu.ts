@@ -62,6 +62,7 @@ export interface MenuHost {
   readonly autopilot: AutopilotLink | null;
   /** Show the first-flight hints card again. */
   showHints(): void;
+  showChecklist?(): void;
   /** Keyboard-flying assists (InputSystem.assists), if the shell provided them. */
   readonly assists?: { groundSteering: boolean; rollTrim: boolean } | null;
   /** "Resume where I left off on reload", if the shell provided it. */
@@ -244,6 +245,8 @@ export class PauseMenu {
   private buildFlight(card: HTMLElement): HTMLElement {
     const p = this.page(card, 'Flight', 'Resume, or start again from one of the scenarios below.');
     this.buildChooser(p);
+    const checklist = el('button', '', p, 'Open aircraft checklist · F');
+    checklist.addEventListener('click', () => { this.host.close(); this.host.showChecklist?.(); });
     const schoolRow = el('div', 'chips', p);
     const openSchool = el('button', '', schoolRow, 'Open Flight School');
     openSchool.addEventListener('click', () => {

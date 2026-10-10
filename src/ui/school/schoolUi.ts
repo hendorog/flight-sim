@@ -47,7 +47,7 @@ import { typing, type ScreenCtx, type ScreenView } from './widgets';
 
 export type { SchoolScreen } from './models';
 
-/** Lesson card cycle on Tab (section 5.4): strip only -> strip and card -> nothing. */
+/** Lesson card cycle on Tab (section 5.4): compact -> expanded -> essentials only. */
 export type CardMode = 'compact' | 'expanded' | 'hidden';
 
 /** The in-flight models are applied at most this often (section 8: strip DOM at 10 Hz, only on change). */
@@ -124,7 +124,7 @@ export class SchoolUi implements TrainingUiPort {
   /** New career data: the open hub screen re-renders (briefing and debrief keep their models). */
   setCareer(c: SchoolCareer): void {
     this.career = c;
-    this.captions.enabled = c.save ? c.save.settings.voice.captions || c.save.settings.voice.captionsOnly : true;
+    this.captions.enabled = true;
     const s = this.current?.screen;
     if (s && s !== 'briefing' && s !== 'debrief') this.open(s);
   }
@@ -198,6 +198,8 @@ export class SchoolUi implements TrainingUiPort {
 
   setStrip(m: LessonStripModel | null): void {
     this.stripModel = m;
+    this.captions.sticky = !!m;
+    if (!m) this.captions.clear();
     this.dirty = true;
     if (!m) this.applyModels();
   }
@@ -223,6 +225,7 @@ export class SchoolUi implements TrainingUiPort {
    */
   showCaption(c: Caption, opts: { safety?: boolean } = {}): void {
     this.captions.show(c, !!opts.safety, performance.now() / 1000);
+    this.captions.root.classList.remove('hidden');
   }
 
   setHighlight(ids: readonly InstrumentId[]): void {
@@ -274,7 +277,7 @@ export class SchoolUi implements TrainingUiPort {
     this.hood.set(mode);
   }
 
-  /** Tab during a lesson (section 5.9): strip -> strip and card -> hidden. Returns the new mode. */
+  /** Tab during a lesson (section 5.9): compact -> expanded -> essentials only. Returns the new mode. */
   cycleCard(): CardMode {
     this.cardMode = this.cardMode === 'compact' ? 'expanded' : this.cardMode === 'expanded' ? 'hidden' : 'compact';
     this.applyModels();
@@ -344,17 +347,19 @@ export class SchoolUi implements TrainingUiPort {
     this.dirty = false;
     this.lastApply = performance.now();
     const s = this.stripModel;
-    this.strip.visible = !!s && this.cardMode !== 'hidden';
+    this.strip.visible = !!s;
     if (s) this.strip.render(s);
+    this.strip.setTargets(this.cardModel?.targets ?? []);
     const c = this.cardModel;
     this.card.visible = !!c && !!s && this.cardMode === 'expanded';
+    if (this.card.visible) this.card.root.style.top = `${Math.ceil(this.strip.root.getBoundingClientRect().bottom + 8)}px`;
     if (c && this.card.visible) this.card.render(c);
     // A running checklist: the compact strip names the item being challenged and its key (the card lists
     // them all when it is open).
     const item = !this.card.visible ? c?.checklist?.items.find((i) => i.state === 'active') : undefined;
     this.strip.setPrompt(item ? { text: item.required ? `${item.label.split(':')[0]} → ${item.required}` : item.label, keys: item.key ? guidedCaps(item.key) : checklistItemKeys(item.id) } : null);
-    // The expanded card lists the latest captions itself; the bar would only cover it.
-    this.captions.root.classList.toggle('hidden', this.card.visible);
+    // The caption bar and its history remain available even when the optional detail card is closed.
+    this.captions.root.classList.toggle('hidden', !s && this.captions.visibleText === null);
   }
 
   private screenCtx(): ScreenCtx {

@@ -11,6 +11,8 @@
 // the propellers, the cowl flaps, alternate air, one engine's switches) have `state: null` and are confirmed
 // with Enter. There is no avionics master: the avionics key stands for the radios.
 
+import { citeChecklists } from '../../training/checklistData';
+import { PA34_EXTRA_CHECKLISTS, PA34_CHECKLIST_SOURCE } from './checklists';
 import { all, eq, ge, gt, le, lt } from '../../training/engine/dsl';
 import type {
   AircraftSettingId, AircraftTypeDef, ChecklistDef, ChecklistId, ChecklistItem, ChecklistKeyPair, CueRef, PointTarget, Pred, SafetyEnvelope, VSpeedId,
@@ -471,7 +473,7 @@ export const PA34: AircraftTypeDef = {
   flapLeverForDeg: FLAP_LEVER,
   // Normal category (s.7): +3.8 g flaps up; no negative figure published, the Part 23 normal minimum -1.52.
   limits: { gPos: 3.8, gNeg: -1.52, maxDemoCrosswindKt: SETTINGS.maxDemoCrosswindKt },
-  checklists: CHECKLISTS,
+  checklists: { ...citeChecklists(CHECKLISTS, PA34_CHECKLIST_SOURCE), ...PA34_EXTRA_CHECKLISTS },
   envelope: ENVELOPE,
   demoTuning: { maxBankDeg: 30, rollRateDps: 10 },
   // The multi-engine speeds (s.7): Vmc 80 mph (red radial), Vsse the 90 mph one-engine training floor, Vyse 105

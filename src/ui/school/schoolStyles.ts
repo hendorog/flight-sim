@@ -424,4 +424,14 @@ export const SCHOOL_CSS = /* css */ `
 #fsui .sc-confirm button { padding: 6px 12px; font-size: 12.5px; }
 #fsui button.danger { background: rgba(255,77,61,.85); border-color: transparent; color: #fff; font-weight: 650; }
 #fsui button.danger:hover { background: #ff6b5b; }
+
+/* Essential guidance remains visible with the detail card closed and speech disabled. */
+#fsui .sc-target-values { grid-column:1 / -1;color:#d4e7f4;font-size:12px;line-height:1.4; }
+#fsui .sc-captions { flex-direction:column;gap:4px;pointer-events:auto;width:min(650px,calc(100vw - 32px)); }
+#fsui .sc-caption { font-size:14px;line-height:1.4;padding:8px 12px;background:rgba(6,9,14,.94); }
+#fsui .sc-caption-history { align-self:flex-start;font-size:11px;background:rgba(6,9,14,.94);border:1px solid #435969;border-radius:6px;padding:4px 8px;color:#dce9f2;max-width:100%; }
+#fsui .sc-caption-history summary { color:#9edcff;cursor:pointer; }
+#fsui .sc-caption-history > div { max-height:150px;overflow:auto;overscroll-behavior:contain; }
+#fsui .sc-caption-history > div > div { padding:5px 0;border-top:1px solid #ffffff1a; }
+#fsui .sc-last-instruction { padding:5px 10px;font-size:12px;background:rgba(6,9,14,.94);border-radius:5px; }
 `;

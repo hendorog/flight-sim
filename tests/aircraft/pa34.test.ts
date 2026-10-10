@@ -291,7 +291,10 @@ describe('Piper PA-34-200 Seneca I presentation', () => {
     expect(PA34.vspeedsExt).toMatchObject({ Vmca: 69, Vyse: 91, Vsse: 78 });
     expect(Object.keys(PA34.vspeeds)).toHaveLength(22);
     expect(Object.keys(PA34.settings)).toHaveLength(11);
-    expect(Object.keys(PA34.checklists)).toHaveLength(14);
+    expect(Object.keys(PA34.checklists)).toEqual(expect.arrayContaining([
+      'beforeStart', 'engineStart', 'runup', 'beforeTakeoff', 'afterTakeoff', 'final', 'afterLanding', 'shutdown',
+      'preflight', 'cruise', 'descent', 'engineFailure', 'engineFire', 'electrical',
+    ]));
     expect(PA34.flapDetentsDeg).toEqual([0, 10, 25, 40]);
     expect(PA34.flapLeverForDeg[40]).toBe(1);
     expect(PA34.systems?.fuelSelector).toEqual(expect.arrayContaining(['on', 'off', 'crossfeed']));

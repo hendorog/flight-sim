@@ -220,7 +220,10 @@ describe('Piper PA-38 Tomahawk II presentation', () => {
     expect(PA38.vspeeds.Vref).toBe(PA38_REFERENCE.vref);
     expect(Object.keys(PA38.vspeeds)).toHaveLength(22);
     expect(Object.keys(PA38.settings)).toHaveLength(11);
-    expect(Object.keys(PA38.checklists)).toHaveLength(14);
+    expect(Object.keys(PA38.checklists)).toEqual(expect.arrayContaining([
+      'beforeStart', 'engineStart', 'runup', 'beforeTakeoff', 'afterTakeoff', 'final', 'afterLanding', 'shutdown',
+      'preflight', 'cruise', 'descent', 'engineFailure', 'engineFire', 'electrical',
+    ]));
     expect(PA38.flapDetentsDeg).toEqual([0, 21, 34]);
     expect(PA38.flapLeverForDeg[34]).toBe(1);
     expect(PA38.systems?.fuelSelector).not.toContain('both');
