@@ -63,17 +63,24 @@ export const HORIZONTAL_STABILIZER = {
   leadingX: TAIL_HUB.x + 0.28, z: TAIL_HUB.z,
 } as const;
 const HS = HORIZONTAL_STABILIZER;
+// RFM 1-9 gives 9.8° without the sign/axis convention. ESTIMATE: positive incidence
+// in the surface plane (leading edge up), normal to the 35° canted surface.
+const hd = HS.dihedralDeg * Math.PI / 180, hi = HS.incidenceDeg * Math.PI / 180;
+const hsPoint = (span: number, chord: number) => ({
+  x: HS.leadingX - chord * Math.cos(hi),
+  y: span * Math.cos(hd) + chord * Math.sin(hi) * Math.sin(hd),
+  z: HS.z - span * Math.sin(hd) + chord * Math.sin(hi) * Math.cos(hd),
+});
 export const HORIZONTAL_STABILIZER_OUTLINE = [
-  { x: HS.leadingX, y: 0, z: HS.z }, { x: HS.leadingX - HS.chord, y: 0, z: HS.z },
-  { x: HS.leadingX - HS.chord, y: HS.span * Math.cos(HS.dihedralDeg * Math.PI / 180), z: HS.z - HS.span * Math.sin(HS.dihedralDeg * Math.PI / 180) },
-  { x: HS.leadingX, y: HS.span * Math.cos(HS.dihedralDeg * Math.PI / 180), z: HS.z - HS.span * Math.sin(HS.dihedralDeg * Math.PI / 180) },
+  hsPoint(0, 0), hsPoint(0, HS.chord), hsPoint(HS.span, HS.chord), hsPoint(HS.span, 0),
 ] as const;
-/** RFM 1-9: triangular vertical fin above boom, span 1.25 ft, root chord 23.6 in, tip chord zero.
- * ESTIMATED sweep and attachment; RFM metric root chord says 60 mm, a factor-ten typo (599.44 mm). */
+/** RFM 1-9 / Fig 1-1 (p1-12): triangular fin BELOW the boom, ahead of the gearbox.
+ * Published span 1.25 ft / root chord 23.6 in; sweep/attachment ESTIMATED from the side view.
+ * RFM metric root chord says 60 mm, a factor-ten typo (599.44 mm). */
 export const VERTICAL_FIN_OUTLINE = [
-  { x: TAIL_HUB.x + 0.30, y: 0, z: TAIL_HUB.z },
-  { x: TAIL_HUB.x - 0.12, y: 0, z: TAIL_HUB.z - 1.25 * FT },
-  { x: TAIL_HUB.x + 0.30 - 23.6 * IN, y: 0, z: TAIL_HUB.z },
+  { x: TAIL_HUB.x + 0.65, y: 0, z: TAIL_HUB.z },
+  { x: TAIL_HUB.x + 0.10, y: 0, z: TAIL_HUB.z + 1.25 * FT },
+  { x: TAIL_HUB.x + 0.65 - 23.6 * IN, y: 0, z: TAIL_HUB.z },
 ] as const;
 /** Published rounded fin area, RFM 1-9. Aerodynamic centre ESTIMATED at the triangle centroid. */
 export const VERTICAL_FIN_AREA = 1 * FT ** 2;
@@ -81,12 +88,15 @@ export const VERTICAL_FIN_CENTRE = {
   x: VERTICAL_FIN_OUTLINE.reduce((sum, p) => sum + p.x, 0) / 3,
   y: 0, z: VERTICAL_FIN_OUTLINE.reduce((sum, p) => sum + p.z, 0) / 3,
 } as const;
-/** ESTIMATED tail-skid shape from Fig 1-1; aft envelope uses the published skid-to-tail-skid length. */
+/** Fig 1-1, p1-12 and https://commons.wikimedia.org/wiki/File:Schweitzer_300CB_Side_View.jpg:
+ * short swept tube beneath the tail rotor, not a near-ground hook.
+ * Shape/clearance remain photographic ESTIMATES; aft envelope retains published 22.19 ft.
+ * The tip is just below the tail disc (about 0.10 m), leaving about 0.70 m on level skids. */
 export const TAIL_END_X = SKID_FRONT_X - SKID_TO_STINGER_LENGTH;
 export const TAIL_STINGER = [
-  { x: TAIL_HUB.x + 0.52, y: 0, z: TAIL_HUB.z + 0.06 },
-  { x: TAIL_HUB.x + 0.16, y: 0, z: SKID_Z - 0.30 },
-  { x: TAIL_END_X, y: 0, z: SKID_Z - 0.11 },
+  { x: TAIL_HUB.x + 0.08, y: 0, z: TAIL_HUB.z + 0.06 },
+  { x: TAIL_HUB.x - 0.04, y: 0, z: TAIL_HUB.z + TAIL_ROTOR_RADIUS + 0.06 },
+  { x: TAIL_END_X, y: 0, z: TAIL_HUB.z + TAIL_ROTOR_RADIUS + 0.10 },
 ] as const;
 /** ESTIMATE tube radius from Fig 1-1. */
 export const TAIL_STINGER_RADIUS = 0.015;

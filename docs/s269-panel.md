@@ -1,5 +1,7 @@
 # Schweizer 269C-1 / 300CB panel handoff
 
+Shared-integration follow-up: [s269-integration.md](s269-integration.md) records the now-connected concentric tach, guarded clutch, spring trim and independent warning circuits. The unavailable-feature statements below describe the original worker handoff, not the integrated build.
+
 This is an **incomplete panel integration**, left behind the existing development/chooser restrictions. The canvas and supported controls run on the current base. A source-based concentric absolute-RPM tachometer is implemented and tested in `panelTach.ts`, but the supervisor-owned instrument factory cannot select it yet. The production panel therefore shows two separate absolute-RPM dials. Clutch HOLD, spring trim and several warning sensors remain unavailable; no guided cold-start or flight-training acceptance is claimed.
 
 ## Installation and sources

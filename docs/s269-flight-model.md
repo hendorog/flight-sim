@@ -1,5 +1,7 @@
 # Schweizer 269C-1 / 300CB flight-model work
 
+Shared-integration follow-up: [s269-integration.md](s269-integration.md) records the connected controls/sensors, corrected tail, RPM pilot fix, current ceiling residuals and rejected coupled-lag experiment. The worker-stage results below are historical where that record supersedes them.
+
 This branch implements a **reduced articulated airborne hub**, not the complete three-blade multibody model requested for final acceptance. The aircraft remains hidden and `placeholder: true`. Offset-hinge moments, first-harmonic flap phase/rate response, a coning envelope, manual engine operation and a three-position clutch API are implemented. An isolated lead-lag/damper integrator is tested, but **it is not connected to the production rotor, fuselage or drivetrain**. Ground resonance, full transient blade/body angular-momentum conservation and complete blade-energy accounting remain unresolved. Passing the tests below does not remove these limitations.
 
 The selected installation remains the carburetted HO-360-C1A, S/N 0106–0138, two seats/right PIC, one 33 US gal tank (32.5 usable), without STAR or a governor. No chooser, panel, exterior, reference or geometry contract was changed. No startup lesson or demo was enabled.

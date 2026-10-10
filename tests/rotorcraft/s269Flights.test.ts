@@ -44,12 +44,10 @@ function sample(r: ReturnType<typeof rig>, time: number) {
 }
 
 describe('S269 engine, drivetrain and flight integration', () => {
-  it('stages a cold start through ENGAGE/HOLD to manual-RPM hover (test bridge; UI not wired)', () => {
+  it('stages a cold start through the production ENGAGE/HOLD control to manual-RPM hover', () => {
     const r = rig(0, false, 0, false, true), c = r.c;
     const rotor = (r.fm as BladeElementFlightModel).rotorcraft!;
     let command: 'engage' | 'hold' | 'release' = 'release';
-    const drive = rotor.drive.bind(rotor);
-    rotor.drive = (dt, controls, engine, atmosphere) => drive(dt, controls, engine, atmosphere, command);
     Object.assign(c, { rotorClutch: false, rotorGovernor: true, throttle: 0.05, mixture: 1,
       magnetos: 3, masterBattery: true, alternator: true, collective: 0 });
     let fired: number | undefined, engaged: number | undefined, hovering: number | undefined;
@@ -76,12 +74,14 @@ describe('S269 engine, drivetrain and flight integration', () => {
           pilot.step(DT, observePilot(s, d), c, 0, clamp(0.5 * (3 - (s.altitudeAGL - d.skids.z)), -0.5, 0.5));
         }
       }
+      c.rotorClutchCommand = command;
       r.fm.step(DT, c, env);
       expect(rotor.state.governorActive).toBe(false); expect(rotor.state.lowRpmHorn).toBe(false);
       if (i % 240 === 0) samples.push({ ...sample(r, t), command });
       if (hovering !== undefined && t > hovering + 45) break;
     }
     report.start = { fired, engaged, hovering, holds, reason: r.fm.state.crashReason, rotor: { ...r.fm.state.rotorcraft }, samples };
+    expect(r.fm.state.rotorcraft!.tailContact).toBe('none');
     expect(fired).toBeDefined(); expect(engaged).toBeDefined(); expect(holds).toBeGreaterThan(0);
     expect(hovering).toBeDefined(); expect(r.fm.state.crashed).toBe(false);
     expect(Math.abs(observePilot(r.fm.state, d).height - 3)).toBeLessThan(0.25);
@@ -132,7 +132,7 @@ describe('S269 engine, drivetrain and flight integration', () => {
   for (const gross of [true, false]) it(`${gross ? 'gross' : 'solo'} powered approach, hover and landing`, () => {
     const r = rig(60, gross), pilot = new ScriptedPilot(observePilot(r.fm.state, d), r.c);
     const samples = [], touchdowns: { time: number; speed: number; sink: number; rpm: number; pitch: number }[] = [];
-    let landed = false;
+    let landed = false, peakEngineRpm = 0, peakRotorRpm = 0;
     for (let i = 0; i < 145 / DT && !r.fm.state.crashed; i++) {
       const t = i * DT, s = observePilot(r.fm.state, d);
       const speed = t < 35 ? 60 : t < 65 ? 60 - 2 * (t - 35) : 0;
@@ -147,13 +147,19 @@ describe('S269 engine, drivetrain and flight integration', () => {
         r.c.aileron += clamp(-r.c.aileron, -0.2 * DT, 0.2 * DT);
       }
       else pilot.step(DT, s, r.c, speed, clamp(0.5 * (height - s.height), -1.5, 1.5));
-      manualThrottle(r);
+      // On touchdown roll the grip toward ground idle as collective is lowered. Keeping
+      // flight RPM with the airborne tach-feedback policy lagged the rapid rotor unloading.
+      manualThrottle(r, landed ? 1500 : 2650);
       r.fm.step(DT, r.c, env);
+      peakEngineRpm = Math.max(peakEngineRpm, r.fm.state.engine.rpm);
+      peakRotorRpm = Math.max(peakRotorRpm, r.fm.state.rotorcraft!.rotorRpm);
       for (const touch of r.fm.touchdowns) touchdowns.push({ time: t, speed: s.groundSpeed / KT,
         sink: touch.sinkRate, rpm: s.rotorPercent, pitch: s.pitch / DEG });
       if (i % 240 === 0) samples.push(sample(r, t));
     }
-    report[gross ? 'grossApproach' : 'soloApproach'] = { landed, touchdowns, samples };
+    report[gross ? 'grossApproach' : 'soloApproach'] = { landed, peakEngineRpm, peakRotorRpm, touchdowns, samples };
+    expect(peakEngineRpm).toBeLessThanOrEqual(2700);
+    expect(peakRotorRpm).toBeLessThanOrEqual(471);
     expect(landed).toBe(true); expect(r.fm.state.crashed).toBe(false);
     expect(touchdowns.length).toBeGreaterThan(0);
     expect(touchdowns[0].speed).toBeLessThan(0.5);

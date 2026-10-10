@@ -31,6 +31,8 @@ export interface InputProfile {
   rotorcraft?: boolean;
   /** False hides the governor binding on manual-throttle helicopters. */
   rotorGovernor?: boolean;
+  threePositionClutch?: boolean;
+  springTrim?: boolean;
   /** Keyboard collective travel per second. Hardware axes remain absolute position inputs. */
   collectiveRate?: number;
   engines: 1 | 2;

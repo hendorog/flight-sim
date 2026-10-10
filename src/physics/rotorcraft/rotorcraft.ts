@@ -25,11 +25,22 @@ export class Rotorcraft {
   private readonly loads: ForceMoment = { force: v3.zero(), moment: v3.zero() };
   constructor(readonly def: RotorcraftDefinition) {}
   reset(running: boolean): void {
+    delete this.state.articulated;
+    delete this.state.transmission; delete this.state.springTrim; delete this.state.clutchDisengaged;
     Object.assign(this.state, emptyRotorcraftState());
     this.state.omega = running ? this.def.nominalRpm * Math.PI / 30 : 0;
     this.state.governorThrottle = this.state.governorIntegral = running ? 0.55 : 0;
     this.state.clutchEngagement = running ? 1 : 0;
     this.state.rotorRpm = this.state.omega * 30 / Math.PI;
+    if (this.def.transmission) {
+      this.state.transmission = { oilPressurePsi: running ? this.def.transmission.pressurePsi : 0,
+        oilTemperatureC: 15, tailChips: false };
+      this.state.clutchDisengaged = !running;
+    }
+    if (this.def.controlSystem.springTrim) this.state.springTrim = { pitch: 0, roll: 0, pitchForce: 0, rollForce: 0 };
+    if (this.def.hubModel?.kind === 'articulated') this.state.articulated = {
+      blades: Array.from({ length: this.def.main.blades }, () => ({ flap: 0, lag: 0, pitch: 0 })),
+    };
   }
   /** Collective moves the throttle linkage; governor trims the grip above its engagement RPM.
    * A moving grip overrides the servo. Full closed is the overtravel stop, defeating correlation.
@@ -66,8 +77,9 @@ export class Rotorcraft {
    * Called after the engine's free shaft step. The freewheel cannot back-drive a stopped/slow engine.
    */
   drive(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample,
-    clutchCommand?: 'engage' | 'hold' | 'release'): void {
+    clutchCommand?: 'engage' | 'hold' | 'release', busVoltage?: number): void {
     const s = this.state, d = this.def;
+    clutchCommand ??= c.rotorClutchCommand;
     const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
     const oldOmega = s.omega;
     s.omega = Math.max(0, s.omega - s.torque * dt / inertia);
@@ -75,11 +87,12 @@ export class Rotorcraft {
     // Optional three-position command: explicit HOLD retains the current belt tension.
     // The boolean path is unchanged for existing controls/saves. The 269 UI bridge must supply
     // this command each step; it is not private state and never repurposes clutchLight.
+    const actuatorPower = clutchCommand !== undefined && busVoltage !== undefined ? busVoltage > 18 : c.masterBattery;
     const target = clutchCommand === 'hold' ? s.clutchEngagement : clutchCommand === 'engage' ? 1 :
       clutchCommand === 'release' ? 0 : c.rotorClutch !== false ? 1 : 0;
-    if (c.masterBattery) s.clutchEngagement += clamp(target - s.clutchEngagement,
+    if (actuatorPower) s.clutchEngagement += clamp(target - s.clutchEngagement,
       -dt / d.systems.clutchSeconds, dt / d.systems.clutchSeconds);
-    s.clutchLight = c.masterBattery && Math.abs(target - s.clutchEngagement) > 1e-6;
+    s.clutchLight = actuatorPower && Math.abs(target - s.clutchEngagement) > 1e-6;
     const excess = engine.omega - s.omega * d.engineRatio;
     const impulse = excess > 0
       ? Math.min(excess / (1 / engine.inertia + d.transmissionEfficiency * d.engineRatio ** 2 / inertia),
@@ -107,6 +120,27 @@ export class Rotorcraft {
       (atOperatingRpm && engine.state.manifoldPressure > map + (d.manifoldLimits?.takeoffIncrease ?? 0) + 0.05) ||
       s.takeoffPowerSeconds > d.systems.takeoffSeconds;
     s.azimuth = (s.azimuth + d.rotation * s.omega * dt) % (2 * Math.PI);
+    if (s.transmission && d.transmission && dt > 0) {
+      const t = s.transmission, p = d.transmission;
+      // Rotor-driven pump keeps pressure in autorotation, independent of engine oil/bus.
+      t.oilPressurePsi += (p.pressurePsi * clamp(s.rotorRpm / p.pumpRpm, 0, 1) - t.oilPressurePsi) *
+        (1 - Math.exp(-dt / p.pressureSeconds));
+      const heat = Math.abs(s.torque * s.omega) * (1 / d.transmissionEfficiency - 1);
+      const target = (atmosphere?.temperature ?? 288.15) - 273.15 + heat / p.cooling;
+      t.oilTemperatureC += (target - t.oilTemperatureC) * (1 - Math.exp(-dt * p.cooling / p.heatCapacity));
+      s.clutchDisengaged = this.clutchDisengaged;
+    }
+    if (s.springTrim && d.controlSystem.springTrim && dt > 0) {
+      const t = s.springTrim, p = d.controlSystem.springTrim;
+      if (busVoltage !== undefined ? busVoltage > 18 : c.masterBattery) {
+        t.pitch = clamp(t.pitch + clamp(c.cyclicTrimPitch ?? 0, -1, 1) * p.rate * dt, -1, 1);
+        t.roll = clamp(t.roll + clamp(c.cyclicTrimRoll ?? 0, -1, 1) * p.rate * dt, -1, 1);
+      }
+      // Force on the stick, not an aerodynamic moment. Position-controlled hardware holds
+      // its commanded position; the keyboard's released centre follows these spring anchors.
+      t.pitchForce = p.force * (t.pitch - c.elevator);
+      t.rollForce = p.force * (t.roll - c.aileron);
+    }
   }
   /** The thrust axis follows cyclic with a finite teetering response and aerodynamic blowback.
    * Each RK stage sees its own air velocity. Only stage zero advances flap/inflow states.
@@ -239,7 +273,20 @@ export class Rotorcraft {
     // it is not a full transient blade/body energy or angular-momentum solution.
     if (articulated) s.torque += hubTorque;
     s.stalledFraction = main.stalledFraction;
+    this.publishBlades(c);
     return this.loads;
+  }
+  /** Publish poses from the harmonic flap state used for loads. No animation clock. */
+  publishBlades(c: ControlInputs): void {
+    const s = this.state, d = this.def, a = s.articulated;
+    if (!a) return;
+    a.blades.forEach((b, i) => {
+      const phase = i * 2 * Math.PI / d.main.blades, psi = s.azimuth + phase - Math.PI / 2;
+      b.flap = s.coning - s.flapForward * Math.cos(psi) + s.flapRight * Math.sin(psi);
+      b.lag = 0; // Coupled lag experiment rejected; see docs/s269-integration.md.
+      b.pitch = d.main.minPitch + clamp(c.collective ?? 0, 0, 1) * (d.main.maxPitch - d.main.minPitch) +
+        d.rotation * d.cyclicLimit * (c.aileron * Math.cos(psi) - c.elevator * Math.sin(psi));
+    });
   }
   /** Converge the slow aerodynamic states at a held pose/RPM for the numerical trim solver. */
   settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true): ForceMoment {

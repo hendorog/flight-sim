@@ -12,6 +12,7 @@ import { sectionHalfWidth } from '../../src/render/aircraft/fuselage';
 import { frd } from '../../src/render/aircraft/geometry';
 import { rotorBladeGeometry, TeeteringRotor } from '../../src/render/aircraft/rotorcraft/rotor';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
+import { Rotorcraft } from '../../src/physics/rotorcraft/rotorcraft';
 import { panelUvBasis } from '../../src/instruments/panelProjection';
 import { blankDocument, fakeContext, fakeMaterials, nonFinite } from './meshChecks';
 
@@ -82,6 +83,32 @@ describe('300CB exterior', () => {
       });
     }
     head.update(ctx); head.arms.forEach(a => expect(a.lag.rotation.y).toBe(0));
+    rotor.group.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    rotor.dispose(); Object.values(mat).forEach(m => m.dispose());
+  });
+
+  it('keeps the published blade flap and exposure disc aligned with the physical thrust axis', () => {
+    const d = def.rotorcraftVisual!, mat = s269Materials(), physics = new Rotorcraft(def.rotorcraft!);
+    const rotor = new TeeteringRotor({ ...d.main, blades: 3, hubType: 'articulated' }, fakeMaterials());
+    const head = new S269MainRotor(rotor, d.main, def.rotorcraft!, mat), ctx = fakeContext();
+    physics.reset(true); ctx.state.rotorcraft = physics.state;
+    Object.assign(physics.state, { coning: 0.08, flapForward: 0.03, flapRight: -0.02 });
+    ctx.controls.collective = 0.4; ctx.controls.elevator = 0.2; ctx.controls.aileron = -0.1;
+    const expected = new THREE.Vector3(-0.02, 1, -0.03).normalize(); // FRD thrust (forward, right, up).
+    for (const azimuth of [0, 0.7, 2.5, 5.8]) {
+      physics.state.azimuth = azimuth; physics.publishBlades(ctx.controls);
+      rotor.update(azimuth, physics.state.rotorRpm, 0, 0);
+      head.update(ctx, physics.state.articulated);
+      expect(new THREE.Vector3(0, 1, 0).applyQuaternion(rotor.blur.quaternion).distanceTo(expected)).toBeLessThan(1e-5);
+      // Blade zero points right at zero azimuth, then forward at π/2. A right-tilted
+      // disc lowers its right-hand tip; the fallback preview uses the same convention.
+      const angle = physics.state.articulated!.blades[0].flap;
+      expect(angle).toBeCloseTo(0.08 - 0.03 * Math.sin(azimuth) + 0.02 * Math.cos(azimuth), 12);
+      const angles = head.arms.map(a => a.flap.rotation.z);
+      head.update(ctx);
+      head.arms.forEach((a, i) => expect(a.flap.rotation.z - head.arms[0].flap.rotation.z)
+        .toBeCloseTo(angles[i] - angles[0], 12));
+    }
     rotor.group.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
     rotor.dispose(); Object.values(mat).forEach(m => m.dispose());
   });

@@ -9,6 +9,7 @@
 import type { AircraftState, ControlInputs } from '../core/types';
 import type { InputAction } from '../input/bindings';                 // type-only
 import type { InstrumentReadings } from './dynamics/instrumentSet';   // type-only
+import type { PanelComponent } from './render/component';
 
 export interface Rect { x: number; y: number; w: number; h: number }
 export type ArcColor = 'green' | 'yellow' | 'red' | 'white' | 'blue';
@@ -54,6 +55,9 @@ type At = readonly [number, number];
  * the gauge class's default, the Cessna 172S's (aircraft/c172s/panel.ts).
  */
 export type GaugeDef =
+  /** Aircraft-specific dial using the shared sizing, recess, lighting and redraw contract. */
+  | { kind: 'customRound'; id: string; at: At; size: 'large' | 'small';
+      create(id: string, x: number, y: number, aperture: number): PanelComponent }
   | { kind: 'asi'; id: string; at: At; marks: AsiMarkings }
   | { kind: 'attitude' | 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At }
   | { kind: 'cdi'; id: string; at: At; receiver: 'nav1' | 'nav2'; fixedCourseDeg: number }
@@ -66,7 +70,10 @@ export type GaugeDef =
       read(c: ControlInputs): number; set(c: ControlInputs, value: number): void;
       guard?: { closed(c: ControlInputs): boolean; toggle(c: ControlInputs): void } }
   | { kind: 'pushButton'; id: string; bounds: Rect; label: string;
-      read(c: ControlInputs): boolean; press(down: boolean, c: ControlInputs): void }
+      read(c: ControlInputs): boolean; press(down: boolean, c: ControlInputs): void; holdAction?: InputAction }
+  | { kind: 'positionSwitch'; id: string; bounds: Rect; label: string; positions: readonly string[];
+      read(c: ControlInputs): number; set(c: ControlInputs, position: number): void;
+      guard?: { closed(c: ControlInputs): boolean; toggle(c: ControlInputs): void } }
   | { kind: 'dualSector'; id: string; bounds: Rect; left: ScaleDef; right: ScaleDef }
   | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef }
   | { kind: 'single'; id: string; at: At; seed: number; size: 'large' | 'small'; a0: number; a1: number; title: string; units: string;
@@ -107,7 +114,9 @@ export interface SwitchDef {
   on(c: ControlInputs): boolean;
   toggle(c: ControlInputs): void;
 }
-export interface LampDef { id: string; text: string; color: string; lit(r: InstrumentReadings): boolean }
+export interface LampDef { id: string; text: string; color: string; lit(r: InstrumentReadings): boolean;
+  /** Individual press-to-test lens. */
+  press?(down: boolean, c: ControlInputs): void }
 
 export type IgnitionPanelDef =
   | { kind: 'key'; at: At; prime?: boolean }                         // OFF / R / L / BOTH / START
@@ -128,7 +137,7 @@ export interface PanelDef {
     color: number; pedestalColor: number };
   gauges: readonly GaugeDef[];
   annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[] };
-  switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[]; ink?: string;
+  switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[]; ink?: string; distributed?: boolean;
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
   ignition: IgnitionPanelDef;
@@ -170,7 +179,7 @@ export function gaugeRecess(g: GaugeDef, apertures: { large: number; small: numb
     case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'rotorTach': case 'blank':
       large = true;
       break;
-    case 'tach': case 'single': case 'twinNeedle':
+    case 'tach': case 'single': case 'twinNeedle': case 'customRound':
       large = g.size === 'large';
       break;
     case 'clock': case 'dual': case 'suction': case 'ammeter':
@@ -197,5 +206,6 @@ export interface InstrumentSystemsDef {
   rotorTach?: { engineRpm100: number; rotorRpm100: number; powered(i: LampInputs): boolean };
   /** Carburettor probe temperature, C. A type may supply an explicitly documented estimate. */
   carbAirTempC?(s: AircraftState, c: ControlInputs): number;
+  hourmeterRunning?(s: AircraftState, c: ControlInputs): boolean;
   lamps: readonly { id: string; lit(i: LampInputs): boolean }[];
 }

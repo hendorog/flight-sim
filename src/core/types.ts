@@ -50,6 +50,14 @@ export interface ControlInputs {
   collective?: number;
   rotorGovernor?: boolean;
   rotorClutch?: boolean;
+  /** Optional three-position actuator switch. Absent retains the boolean clutch contract. */
+  rotorClutchCommand?: 'engage' | 'hold' | 'release';
+  rotorClutchGuardOpen?: boolean;
+  /** Momentary electric spring-trim motor commands, [-1,1], pitch positive aft / roll right. */
+  cyclicTrimPitch?: number;
+  cyclicTrimRoll?: number;
+  /** One warning lens being pressed; absent releases all individual tests. */
+  lampTestId?: string;
   /** Rotorcraft configuration for speed-limit reporting; absent = doors installed. */
   rotorDoorsOff?: boolean;
   /** Momentary ignition-key PRIME, separate from the starter and manual pump switch. */

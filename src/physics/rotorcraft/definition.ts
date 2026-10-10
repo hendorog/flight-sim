@@ -31,10 +31,12 @@ export interface RotorcraftDefinition {
   engineRatio: number; tailRatio: number; transmissionEfficiency: number;
   cyclicLimit: number;
   teeterLimit: number;
-  /** Control actuation metadata. Inputs command position; servo failures and hand forces are not simulated. */
+  /** Inputs command position; optional spring trim reports forces but drives no force-feedback hardware. */
   controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical';
-    /** Installation only; no hand-force/trim-actuator simulation. */
-    trim?: 'electric-spring' | 'none' };
+    /** Installation label; the optional springTrim parameters enable its actuator/force model. */
+    trim?: 'electric-spring' | 'none';
+    /** Normalized anchor travel/s and force at unit spring deflection (N); measured data preferred. */
+    springTrim?: { rate: number; force: number } };
   systems: { clutchSeconds: number; beltTorque: number; correlator: number; governorRate: number;
     /** False for a manual-throttle installation; absence retains the legacy governor. */
     governorInstalled?: boolean;
@@ -46,7 +48,12 @@ export interface RotorcraftDefinition {
     /** Estimated RPM prediction horizon of the governor's rate feedback, seconds. */
     governorLead?: number;
     continuousPower: number; takeoffPower: number; takeoffSeconds: number };
-  stabilizer: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number; wash: number };
+  /** Main transmission rotor-driven oil pump and lumped thermal model, SI except psi/rpm. */
+  transmission?: { pressurePsi: number; pumpRpm: number; pressureSeconds: number;
+    heatCapacity: number; cooling: number };
+  stabilizer: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number; wash: number;
+    /** Single right-hand surface: positive cant raises its tip. Absent retains horizontal surface. */
+    dihedral?: number };
   fins: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number }[];
   /** Fuselage destabilising moment derivatives, Nm/(Pa rad). */
   fuselageMoment: { pitch: number; yaw: number };
@@ -65,6 +72,13 @@ export interface RotorcraftDefinition {
     surfaces?: Partial<Record<SurfaceType, { static: number; sliding: number; lateral: number }>> };
 }
 export interface RotorcraftState {
+  /** Per-blade pose from the reduced articulated solver, radians. Lag stays zero until a
+   * validated body/shaft coupling exists. Blade zero starts body right at azimuth zero. */
+  articulated?: { blades: { flap: number; lag: number; pitch: number }[] };
+  /** Optional installation systems; absent on legacy rotorcraft. Never substitutes for clutchLight. */
+  transmission?: { oilPressurePsi: number; oilTemperatureC: number; tailChips: boolean };
+  clutchDisengaged?: boolean;
+  springTrim?: { pitch: number; roll: number; pitchForce: number; rollForce: number };
   omega: number; azimuth: number; inflow: number; tailInflow: number;
   flapForward: number; flapRight: number; governorThrottle: number;
   thrust: number; tailThrust: number; torque: number; driveTorque: number;
@@ -85,6 +99,12 @@ export interface RotorcraftState {
    * lowRpmLight: powered LOW RPM indication, independent of collective position.
    * lowRpmHorn: audible warning below the type's threshold with collective not fully down. */
   clutchEngagement: number; clutchLight: boolean; governorActive: boolean; lowRpmHorn: boolean; lowRpmLight: boolean;
+}
+/** Snapshots own every nested state; legacy scalar serialization remains identical. */
+export function cloneRotorcraftState(s: RotorcraftState): RotorcraftState {
+  return { ...s, ...(s.transmission ? { transmission: { ...s.transmission } } : {}),
+    ...(s.springTrim ? { springTrim: { ...s.springTrim } } : {}),
+    ...(s.articulated ? { articulated: { blades: s.articulated.blades.map(b => ({ ...b })) } } : {}) };
 }
 export function emptyRotorcraftState(): RotorcraftState {
   return { omega: 0, azimuth: 0, inflow: 0, tailInflow: 0, flapForward: 0, flapRight: 0,

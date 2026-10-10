@@ -1,13 +1,15 @@
 // Carburetted 300CB S/N 0106–0138, right PIC, no STAR. RFM CSP-C1-1 Fig 4-2A, p4-10.1.
 // Optional VSI and COM/transponder occupy the figure's vacant area. Frozen PANEL_* face unchanged.
-// Renderer gaps: two absolute tach dials replace the coaxial instrument; clutch is a two-position
-// stand-in and spring trim an inactive location marker. See docs/s269-panel.md for integration requests.
+// Shared integration supplies the coaxial tach, guarded clutch and powered trim commands.
+// See docs/s269-integration.md for remaining sensor/trim calibration and dynamics limitations.
+import { clutchPosition, selectClutch, toggleClutchGuard } from '../../input/rotorcraftControls';
 import { DEG } from '../../core/math';
-import type { InstrumentSystemsDef, LampDef, LampInputs, PanelDef, ScaleDef, SwitchDef } from '../types';
+import type { InstrumentSystemsDef, LampDef, LampInputs, PanelDef, SwitchDef } from '../types';
 import { PANEL_CANVAS, PANEL_OUTLINE, PANEL_PX_PER_M } from './dimensions';
 import { S269_REFERENCE as V } from './reference';
-import { S269_ASI_MARKS, S269_ENGINE_RPM, S269_ROTOR_RPM, S269_ENGINE_SCALES as E, S269_MAP_SCALE } from './panelMarkings';
+import { S269_ASI_MARKS, S269_ENGINE_SCALES as E, S269_MAP_SCALE } from './panelMarkings';
 import { S269_VNE_PLACARDS } from './panelPlacards';
+import { S269AbsoluteTach } from './panelTach';
 
 const SCALE = { large: 3.125 * 0.0254 * PANEL_PX_PER_M / 172, small: 2.25 * 0.0254 * PANEL_PX_PER_M / 120 };
 const AMBER = '#ffba35', RED = '#ff4538';
@@ -15,15 +17,10 @@ export const S269_ANNUNCIATOR_LAMPS: readonly LampDef[] = [
   ['lowVolts', 'LOW VOLTAGE', AMBER], ['lowFuel', 'FUEL LOW', AMBER],
   ['mrTransmission', 'M/R XMSN TEMP/PRESS', RED], ['trChip', 'T/R XMSN CHIPS', AMBER],
   ['clutchDisengaged', 'CLUTCH DISENGAGED', RED],
-].map(([id, text, color]) => ({ id, text, color, lit: r => r.lamps[id] ?? false }));
+].map(([id, text, color]) => ({ id, text, color, lit: r => r.lamps[id] ?? false,
+  press: (down, c) => { c.lampTestId = down ? id : undefined; } }));
 const switchDef = (id: string, label: string, x: number, on: SwitchDef['on'], toggle: SwitchDef['toggle']): SwitchDef =>
   ({ id, label, name: label, x, on, toggle });
-// Fallback reads RPM ×100, never percent. panelTach.ts needs a generic factory hook to replace these dials.
-const hundreds = (s: ScaleDef): ScaleDef => ({ ...s, min: s.min / 100, max: s.max / 100,
-  majors: s.majors.map(v => v / 100), minorStep: s.minorStep / 100,
-  arcs: s.arcs?.map(a => ({ ...a, from: a.from / 100, to: a.to / 100 })),
-  redLines: s.redLines?.map(v => v / 100), read: r => s.read(r) / 100 });
-
 export const S269_PANEL: PanelDef = {
   id: 's269', size: PANEL_CANVAS, instrumentScale: SCALE, instrumentBezel: 'round', lightingDimmerExponent: 2.2,
   apertures: { large: 74 * SCALE.large, small: 51 * SCALE.small },
@@ -33,10 +30,8 @@ export const S269_PANEL: PanelDef = {
     { kind: 'asi', id: 'asi', at: [440, 255], marks: S269_ASI_MARKS },
     { kind: 'vsi', id: 'vsi', at: [700, 255] },
     { kind: 'altimeter', id: 'altimeter', at: [960, 255] },
-    { kind: 'single', id: 'tach', at: [180, 495], seed: 270, title: 'ENGINE', units: 'RPM ×100', size: 'large',
-      a0: -125 * DEG, a1: 125 * DEG, labels: hundreds(S269_ENGINE_RPM).majors, scale: hundreds(S269_ENGINE_RPM) },
-    { kind: 'single', id: 'rotorTach', at: [440, 495], seed: 271, title: 'ROTOR', units: 'RPM ×100', size: 'large',
-      a0: -125 * DEG, a1: 125 * DEG, labels: hundreds(S269_ROTOR_RPM).majors, scale: hundreds(S269_ROTOR_RPM) },
+    { kind: 'customRound', id: 'tach', at: [180, 495], size: 'large',
+      create: (id, x, y, aperture) => new S269AbsoluteTach(id, x, y, aperture) },
     { kind: 'navcom', id: 'navcom1', bounds: { x: 708, y: 444, w: 320, h: 76 } },
     { kind: 'xpdr', id: 'xpdr', bounds: { x: 708, y: 532, w: 320, h: 60 } },
     { kind: 'dualSector', id: 'fuelCht', bounds: { x: 84, y: 670, w: 370, h: 108 }, left: E.fuel, right: E.cht },
@@ -56,6 +51,14 @@ export const S269_PANEL: PanelDef = {
         const previous = c.fuelSelector === 'off' ? 1 : 0;
         if (v !== previous) c.fuelSelector = v > previous ? 'off' : 'both';
       } },
+    { kind: 'positionSwitch', id: 'rotorClutch', bounds: { x: 680, y: 1220, w: 85, h: 156 },
+      label: 'CLUTCH', positions: ['ENGAGE', 'HOLD', 'RELEASE'], read: clutchPosition, set: selectClutch,
+      guard: { closed: c => !c.rotorClutchGuardOpen, toggle: toggleClutchGuard } },
+    ...([['trimLeft', 'LEFT', 'cyclicTrimLeft', -1], ['trimRight', 'RIGHT', 'cyclicTrimRight', 1]] as const).map(([id, label, holdAction, direction], i) => ({
+      kind: 'pushButton' as const, id, label: `TRIM ${label}`, bounds: { x: 546 + i * 80, y: 985, w: 72, h: 80 },
+      holdAction, read: (c: import('../../core/types').ControlInputs) => c.cyclicTrimRoll === direction,
+      press: (down: boolean, c: import('../../core/types').ControlInputs) => { c.cyclicTrimRoll = down ? direction : 0; },
+    })),
     // Simulator all-lens test; RFM specifies individual press-to-test fuel/chip lenses.
     { kind: 'pushButton', id: 'lampTest', bounds: { x: 266, y: 985, w: 100, h: 78 }, label: 'LAMP TEST',
       read: c => c.annunciatorTest ?? false, press: (down, c) => { c.annunciatorTest = down; } },
@@ -64,7 +67,7 @@ export const S269_PANEL: PanelDef = {
     cells: [{ x: 478, y: 62, w: 80, h: 86 }, { x: 564, y: 62, w: 80, h: 86 },
       { x: 650, y: 62, w: 94, h: 86 }, { x: 750, y: 62, w: 90, h: 86 },
       { x: 768, y: 1292, w: 82, h: 70 }] },
-  switchRow: { bounds: { x: 80, y: 1100, w: 900, h: 242 }, rockerTop: 66, rockerW: 28, rockerH: 38,
+  switchRow: { distributed: true, bounds: { x: 80, y: 1100, w: 900, h: 242 }, rockerTop: 66, rockerW: 28, rockerH: 38,
     switches: [
       switchDef('panelLights', 'PANEL', 152, c => c.lights.panel > 0, c => { c.lights.panel = c.lights.panel > 0 ? 0 : 1; }),
       switchDef('nav', 'POSITION', 226, c => c.lights.nav, c => { c.lights.nav = !c.lights.nav; }),
@@ -73,16 +76,13 @@ export const S269_PANEL: PanelDef = {
       switchDef('avionics', 'RADIO', 448, c => c.avionics, c => { c.avionics = !c.avionics; }),
       switchDef('battery', 'BAT', 542, c => c.masterBattery, c => { c.masterBattery = !c.masterBattery; }),
       switchDef('alternator', 'ALT', 608, c => c.alternator, c => { c.alternator = !c.alternator; }),
-      { ...switchDef('rotorClutch', 'CLUTCH*', 660, c => !!c.rotorClutch, c => { c.rotorClutch = !c.rotorClutch; }),
-        top: 172, name: 'Clutch — two-position simulator control; HOLD unavailable' },
     ],
     legends: [{ text: 'DIMMER', x: 58, y: 32, size: 9 }, { text: 'PANEL', x: 36, y: 46, size: 8 },
       { text: 'RADIO', x: 82, y: 46, size: 8 }], dimmers: { panel: 36, radio: 82, y: 82 },
   },
   ignition: { kind: 'key', at: [916, 1295] },
   background: { color: '#414645', outline: PANEL_OUTLINE, seamsX: [],
-    // No spring-trim commands exist. Mark its position without changing airplane trim or cyclic.
-    bushings: [{ at: [622, 1030], text: 'TRIM', sub: 'LEFT / RIGHT — INOP' }],
+    bushings: [],
     plates: [{ bounds: { x: 68, y: 651, w: 566, h: 300 }, color: '#303737' },
       { bounds: { x: 648, y: 651, w: 414, h: 280 }, color: '#282e2f' },
       { bounds: { x: 680, y: 1210, w: 182, h: 170 }, color: '#303536' }],
@@ -99,11 +99,10 @@ export const S269_PANEL: PanelDef = {
       { x: 1000, y: 1110, size: 9, lines: ['KEEP CARB TEMP OUT', 'OF YELLOW ARC'] },
       { x: 622, y: 1360, size: 10, lines: ['PULL LEAN'] },
       { x: 1055, y: 1360, size: 10, lines: ['PULL OFF'] },
-      { x: 740, y: 1216, size: 9, lines: ['ENGAGE / RELEASE'] },
       { x: 320, y: 1240, size: 10, lines: ['DAY / NIGHT VFR', 'SOLO RIGHT SEAT'] },
       { x: 320, y: 1310, size: 7.5, lines: ['THIS HELICOPTER MUST BE OPERATED IN COMPLIANCE',
         'WITH THE OPERATING LIMITATIONS SPECIFIED IN THE', 'FAA APPROVED ROTORCRAFT FLIGHT MANUAL'] },
-      { x: 576, y: 1398, size: 11, lines: ['DEVELOPMENT PLACEHOLDER — *CLUTCH HOLD / SPRING TRIM UNAVAILABLE'] },
+      { x: 576, y: 1398, size: 11, lines: ['DEVELOPMENT PLACEHOLDER — DYNAMICS / SYSTEMS VALIDATION INCOMPLETE'] },
     ] },
   keepOut: [], regions: { sixpack: { x: 72, y: 144, w: 996, h: 465 },
     engine: { x: 68, y: 651, w: 566, h: 300 }, stack: { x: 698, y: 434, w: 340, h: 168 } },
@@ -120,11 +119,16 @@ export const S269_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
   rotorTach: { engineRpm100: V.engineRpm100, rotorRpm100: V.rotorRpm100, powered },
   // ESTIMATE: no carb probe thermal state. Venturi cooling and shroud heat approximate the indication.
   carbAirTempC: (s, c) => s.oat - 273.15 + (s.engine.running ? 45 * c.carbHeat - 20 : 0),
+  hourmeterRunning: s => s.electrical.busVoltage > 18 && (s.rotorcraft?.transmission?.oilPressurePsi ?? 0) > 2.5,
   lamps: [
     { id: 'lowVolts', lit: (i: LampInputs) => i.state.electrical.busVoltage < 24.5 },
     { id: 'lowFuel', lit: (i: LampInputs) => i.fuelGal[0] <= 1 }, // RFM 3-3: about one usable gallon.
-    // Independent sensors and clutch-disengaged limit switch are absent on this base.
-    // clutchLight means actuator movement, NOT CLUTCH DISENGAGED. These lenses are test-only.
-    ...['mrTransmission', 'trChip', 'clutchDisengaged'].map(id => ({ id, lit: (_i: LampInputs) => false })),
-  ].map(l => ({ id: l.id, lit: (i: LampInputs) => powered(i) && (!!i.controls.annunciatorTest || l.lit(i)) })),
+    // RFM 3-3 / 7-17: independent transmission switches; never engine oil substitutes.
+    { id: 'mrTransmission', lit: (i: LampInputs) => {
+      const t = i.state.rotorcraft?.transmission;
+      return t !== undefined && (t.oilPressurePsi < 2.5 || t.oilTemperatureC > (235 - 32) * 5 / 9);
+    } },
+    { id: 'trChip', lit: (i: LampInputs) => i.state.rotorcraft?.transmission?.tailChips ?? false },
+    { id: 'clutchDisengaged', lit: (i: LampInputs) => i.state.rotorcraft?.clutchDisengaged ?? false },
+  ].map(l => ({ id: l.id, lit: (i: LampInputs) => powered(i) && (!!i.controls.annunciatorTest || i.controls.lampTestId === l.id || l.lit(i)) })),
 };

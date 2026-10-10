@@ -14,7 +14,7 @@ import { ellipsoid, fitRod, type S269Materials } from './exteriorGeometry';
 /** Renderer adapter, not an extension/reinterpretation of RotorcraftState. All angles radians.
  * Supply total per-blade flap (including coning), lag and optional pitch at .75R, in blade order
  * b at azimuth + b*2π/3. Positive flap raises the tip; positive lag rotates about model +Y.
- * The supervisor should adapt the flight worker's final state into this shape at assembly time. */
+ * AircraftVisual reads the optional pose published by the flight model. */
 export interface S269RotorPose { blades: readonly { flap: number; lag: number; pitch?: number }[] }
 export type S269RotorPoseReader = (ctx: SimContext) => S269RotorPose | undefined;
 
@@ -139,7 +139,7 @@ export class S269MainRotor {
       const arm = this.arms[i], psi = state.azimuth + i * 2 * Math.PI / MAIN_ROTOR_BLADES;
       const actual = pose?.blades[i];
       const flap = actual && Number.isFinite(actual.flap) ? actual.flap
-        : cone + Math.atan(state.flapForward * Math.sin(psi) + state.flapRight * Math.cos(psi));
+        : cone - state.flapForward * Math.sin(psi) - state.flapRight * Math.cos(psi);
       arm.flap.rotation.z = flap;
       meanFlap += flap / MAIN_ROTOR_BLADES;
       forwardFlap += 2 * flap * Math.sin(psi) / MAIN_ROTOR_BLADES;
@@ -170,7 +170,7 @@ export class S269MainRotor {
       p.needsUpdate = true; this.rotor.blur.geometry.computeVertexNormals(); this.rotor.blur.geometry.computeBoundingSphere();
       this.blurCone = meanFlap;
     }
-    this.tilt.set(Math.tan(rightFlap), 1, -Math.tan(forwardFlap)).normalize();
+    this.tilt.set(-Math.tan(rightFlap), 1, Math.tan(forwardFlap)).normalize();
     this.rotor.blur.quaternion.setFromUnitVectors(this.up, this.tilt);
   }
 }

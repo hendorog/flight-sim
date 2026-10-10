@@ -76,6 +76,7 @@ import { createMassModel, type MassModel, type MassProperties } from './massMode
 import { Powerplant, PropulsionSystem } from './propulsion';
 import type { SimEnvironment } from './environment';
 import { Rotorcraft } from './rotorcraft/rotorcraft';
+import { cloneRotorcraftState } from './rotorcraft/definition';
 import { SkidGear } from './rotorcraft/skids';
 import { solveNewton, trimFlight, type TrimCondition, type TrimPlant, type TrimResult, type TrimSpec } from './trim';
 
@@ -584,6 +585,13 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const r = this.rotorcraft!, d = r.def, c = this.trimControls;
     r.reset(ic.engineRunning || !ic.onGround);
     r.state.takeoffMass = this.mp.mass;
+    if (this.definition.input.threePositionClutch) {
+      c.rotorClutchCommand = ic.engineRunning || !ic.onGround ? 'engage' : 'release';
+      c.rotorClutch = c.rotorClutchCommand === 'engage';
+      c.rotorClutchGuardOpen = c.rotorClutchCommand !== 'engage';
+      c.cyclicTrimPitch = c.cyclicTrimRoll = 0;
+    }
+    if (r.state.transmission) r.state.transmission.oilTemperatureC = this.atmosphere.temperature - 273.15;
     r.state.rotorRpm = r.state.omega * 30 / Math.PI;
     this.propulsion.reset({ ...powerplant, rpm: ic.engineRunning ? d.nominalRpm * d.engineRatio : 0, warm: !ic.onGround || ic.engineRunning });
     c.throttle = ic.engineRunning ? 1 : 0;
@@ -637,6 +645,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
         orientation, velocityBody: quat.rotateInv(orientation, velocityAir) };
       if (!ic.engineRunning) { c.collective = 0; r.state.driveTorque = 0; }
     }
+    if (r.state.springTrim) { r.state.springTrim.pitch = c.elevator; r.state.springTrim.roll = c.aileron; }
     this.setRigidBody(position, orientation, ic.onGround ? v3.zero() : v3.add(velocityAir, env.wind(position, 0)), v3.zero());
     this.controlsIn = cloneControls(c); this.rotorControls = this.controlsIn;
     this.gearIn.controls = this.controlsIn; this.propIn.controls = this.controlsIn;
@@ -901,7 +910,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const pp = this.propulsion;
     const ext = this.state.gear.extension;
     return {
-      ...(this.rotorcraft ? { rotorcraft: { ...this.rotorcraft.state } } : {}),
+      ...(this.rotorcraft ? { rotorcraft: cloneRotorcraftState(this.rotorcraft.state) } : {}),
       engines: pp.capture(),
       tanks: Array.from(pp.tankQuantities),
       batteryCharge: pp.batteryCharge,
@@ -954,7 +963,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.publishGear();
     }
     if (this.rotorcraft) {
-      if (s.rotorcraft) Object.assign(this.rotorcraft.state, s.rotorcraft);
+      if (s.rotorcraft) Object.assign(this.rotorcraft.state, cloneRotorcraftState(s.rotorcraft));
       // Legacy saves have no departure weight. Retain current mass as the best available estimate.
       if (!(this.rotorcraft.state.takeoffMass > 0)) this.rotorcraft.state.takeoffMass = this.mp.mass;
       pp.restore(s.engines);
@@ -1067,7 +1076,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.propIn.controls = engineControls;
     }
     this.prop = this.propulsion.step(this.propIn);
-    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere);
+    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage);
     const scales = this.dragScales;
     if (scales) {
       const units = this.propulsion.units;

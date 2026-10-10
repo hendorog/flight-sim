@@ -206,6 +206,12 @@ export class SimPhysics {
     copyControls(c, trim);
     applyControls(c, sc.controls ?? {});
     c.starter = false;
+    if (this.definition.input.threePositionClutch) {
+      if (sc.controls?.rotorClutchCommand !== undefined) c.rotorClutchCommand = sc.controls.rotorClutchCommand;
+      else if (sc.controls?.rotorClutch !== undefined) c.rotorClutchCommand = sc.controls.rotorClutch ? 'engage' : 'release';
+      c.rotorClutchGuardOpen = sc.controls?.rotorClutchGuardOpen ?? c.rotorClutchCommand !== 'engage';
+      c.cyclicTrimPitch = c.cyclicTrimRoll = 0; c.lampTestId = undefined;
+    }
     if (c.fuelPrime !== undefined) c.fuelPrime = false;
     c.dgAlign = false;
     c.kollsmanHpa = weather?.qnhHpa ?? c.kollsmanHpa;
@@ -352,6 +358,11 @@ export class SimPhysics {
     copyControls(c, defaultControls(def));
     applyControls(c, snap.controls);
     c.starter = false;
+    if (def.input.threePositionClutch) {
+      c.rotorClutchCommand = snap.controls.rotorClutchCommand ?? (snap.controls.rotorClutch ? 'engage' : 'release');
+      c.rotorClutchGuardOpen = snap.controls.rotorClutchGuardOpen ?? c.rotorClutchCommand !== 'engage';
+      c.cyclicTrimPitch = c.cyclicTrimRoll = 0; c.lampTestId = undefined;
+    }
     if (c.fuelPrime !== undefined) c.fuelPrime = false;
     c.dgAlign = false;
     // Powerplant (shaft speeds, tanks, battery, temperatures) and the surfaces where they were (the flaps lag

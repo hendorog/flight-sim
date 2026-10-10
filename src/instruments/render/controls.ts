@@ -184,7 +184,7 @@ export class SwitchPanel implements PanelComponent {
     private readonly ignition: PanelDef['ignition'],
   ) {
     this.bounds = row.bounds;
-    if (row.switches.some(s => s.top !== undefined)) this.paintRects = switchRowSolids({ switchRow: row, ignition });
+    if (row.distributed || row.switches.some(s => s.top !== undefined)) this.paintRects = switchRowSolids({ switchRow: row, ignition });
     this.latch = new Latch(row.switches.length + 2);
   }
 
