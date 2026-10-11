@@ -1,6 +1,7 @@
 import type { Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import type { ManifoldPlacard, SpeedPlacard, SpeedCorrections } from './limits';
+import type { BladeConingDefinition } from './coning';
 
 /** SI units; rotor rotation is +1 about its upward thrust axis (CCW viewed from above). */
 export interface RotorDefinition {
@@ -16,7 +17,9 @@ export interface RotorcraftDefinition {
   /** Installation metadata. Absent retains the legacy teetering hub. Articulated selects the
    * reduced harmonic offset-hinge solver; per-blade transients/ground resonance remain unmodelled. */
   hubModel?: { kind: 'teetering' } | { kind: 'articulated'; flapHingeOffset: number; lagHingeOffset: number;
-    lagDamper: 'elastomeric' | 'friction' };
+    lagDamper: 'elastomeric' | 'friction';
+    /** Physical blade pose; harmonic load coordinates remain independent of gravity/stops. */
+    coning?: BladeConingDefinition };
   main: RotorDefinition;
   tail: RotorDefinition;
   nominalRpm: number;
@@ -72,7 +75,8 @@ export interface RotorcraftDefinition {
     surfaces?: Partial<Record<SurfaceType, { static: number; sliding: number; lateral: number }>> };
 }
 export interface RotorcraftState {
-  /** Per-blade pose from the reduced articulated solver, radians. Lag stays zero until a
+  /** Physical per-blade pose, radians; optional hub coning data adds weight and droop stops
+   * around the reduced solver's harmonic flap. `coning` below remains aerodynamic. Lag stays zero until a
    * validated body/shaft coupling exists. Blade zero starts body right at azimuth zero. */
   articulated?: { blades: { flap: number; lag: number; pitch: number }[] };
   /** Optional installation systems; absent on legacy rotorcraft. Never substitutes for clutchLight. */

@@ -13,9 +13,11 @@ import type { RotorBladePaint } from '../airframe/types';
 import { box, tube } from './geometry';
 import { bladeBlur } from '../bladeBlur';
 import { BladeTrail, bladeShadowMaterial } from '../bladeTrail';
+import { bladeBendShape, bladeConing, type BladeConingDefinition } from '../../../physics/rotorcraft/coning';
 
 export interface RotorSpec { radius: number; root: number; chord: readonly [number, number]; twist: number; tail?: boolean; paint?: RotorBladePaint;
-  blades?: number; rotation?: 1 | -1; hubType?: 'teetering' | 'articulated' }
+  coning?: BladeConingDefinition; blades?: number; rotation?: 1 | -1; hubType?: 'teetering' | 'articulated' }
+
 const smooth = THREE.MathUtils.smoothstep;
 
 function rotorBladeRadii(d: RotorSpec): number[] {
@@ -106,7 +108,13 @@ export class TeeteringRotor {
   private readonly linkB = new THREE.Vector3();
   private readonly linkAxis = new THREE.Vector3(0, 1, 0);
   private readonly linkDelta = new THREE.Vector3();
-  private cone = 0;
+  private cone = NaN;
+  private bend = NaN;
+  private bendPitch = NaN;
+  private readonly bladePositions: Float32Array;
+  private readonly bendShapes: Float32Array;
+  /** Undeformed exposure-disc vertices, also used by articulated pose adapters. Do not mutate. */
+  readonly discPositions: Float32Array;
 
   constructor(private readonly d: RotorSpec, mat: AircraftMaterials) {
     this.group.name = d.tail ? 'tailRotor' : 'mainRotor'; this.spin.name = 'rotorAzimuth';
@@ -114,7 +122,14 @@ export class TeeteringRotor {
     this.bladeMat = new THREE.MeshStandardMaterial({ name: 'rotorBlade', vertexColors: true, roughness: 0.44, metalness: 0.12, transparent: true });
     this.hardwareMat = new THREE.MeshStandardMaterial({ name: 'rotorHeadPaint', color: 0x929c9f, roughness: 0.38, metalness: 0.25 });
     const bladeGeometry = rotorBladeGeometry(d);
+    this.bladePositions = new Float32Array(bladeGeometry.getAttribute('position').array);
+    this.bendShapes = new Float32Array(this.bladePositions.length / 3);
+    const bending = d.coning?.bending;
+    if (bending) for (let i = 0; i < this.bendShapes.length; i++) {
+      this.bendShapes[i] = bladeBendShape((this.bladePositions[i * 3] - bending.rootRadius) / (bending.radius - bending.rootRadius));
+    }
     this.blades = new THREE.InstancedMesh(bladeGeometry, this.bladeMat, d.blades ?? 2);
+
     this.blades.customDepthMaterial = this.bladeShadow;
     this.blades.name = 'rotorBlades'; this.blades.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.blades.frustumCulled = false;
     this.spin.add(this.blades);
@@ -222,19 +237,37 @@ export class TeeteringRotor {
       uv(i, _j, out) { out.set(THREE.MathUtils.lerp(d.root, d.radius, i / 8) / d.radius, 0.5); },
     });
     this.blur = new THREE.Mesh(g, this.blurMat); this.blur.name = 'rotorBlur'; this.blur.renderOrder = 1; this.group.add(this.blur);
-    this.update(0, 0, 0, d.tail ? -0.02 : -0.035);
+    this.discPositions = new Float32Array(g.getAttribute('position').array);
+    const resting = d.coning ? bladeConing(d.coning, 0, 0) : undefined;
+    this.update(0, 0, 0, resting?.angle ?? (d.tail ? -0.02 : 0), resting?.tipBend);
   }
 
-  /** cone is a visual elastic/precone estimate; flap and azimuth are supplied directly by the flight model. */
-  update(azimuth: number, rpm: number, pitch: number, cone: number): void {
+  /** Hinge angle and curved tip displacement come from the shared per-blade moment balance. */
+  update(azimuth: number, rpm: number, pitch: number, cone: number, tipBend = 0): void {
     this.spin.rotation.y = azimuth;
     const blades = this.d.blades ?? 2, blur = bladeBlur(rpm, blades);
     const spacing = 2 * Math.PI / blades;
     // Preserve the legacy pitch sign for each local axis; mirror it when that rotor reverses.
     const pitchSign = (this.d.rotation ?? (this.d.tail ? -1 : 1)) * (this.d.tail ? -1 : 1);
-    this.pitchM.makeRotationX(pitch * pitchSign); this.coneM.makeRotationZ(cone).multiply(this.pitchM);
+    pitch *= pitchSign;
+    const hinge = this.d.coning?.hingeRadius ?? 0, bending = this.d.coning?.bending;
+    const cs = Math.cos(cone), sn = Math.sin(cone);
+    if (tipBend !== this.bend || (tipBend !== 0 && pitch !== this.bendPitch)) {
+      const pos = this.blades.geometry.getAttribute('position') as THREE.BufferAttribute;
+      // Counter-rotate the sag through feathering: gravity bends in the flap plane, not the pitch plane.
+      for (let i = 0; i < pos.count; i++) {
+        const sag = tipBend * this.bendShapes[i];
+        pos.setY(i, this.bladePositions[3 * i + 1] + sag * Math.cos(pitch));
+        pos.setZ(i, this.bladePositions[3 * i + 2] - sag * Math.sin(pitch));
+      }
+      pos.needsUpdate = true; this.blades.geometry.computeVertexNormals();
+      this.blades.geometry.computeBoundingSphere(); this.bendPitch = pitch;
+    }
+    this.pitchM.makeRotationX(pitch); this.coneM.makeRotationZ(cone).multiply(this.pitchM);
+    this.coneM.setPosition(hinge * (1 - cs), -hinge * sn, 0);
     for (let b = 0; b < blades; b++) {
       this.m.makeRotationY(b * spacing).multiply(this.coneM);
+
       this.blades.setMatrixAt(b, this.m);
     }
     this.blades.instanceMatrix.needsUpdate = true;
@@ -242,17 +275,24 @@ export class TeeteringRotor {
     this.bladeMat.depthWrite = blur.solid === 1;
     this.blades.castShadow = blur.solid > 0; this.blades.receiveShadow = true;
     this.blades.visible = blur.solid > 0;
-    this.trail.update(blur, pitch * pitchSign, cone);
+    this.trail.update(blur, pitch, cone, hinge, tipBend, bending?.rootRadius, bending ? bending.radius - bending.rootRadius : undefined);
+
     this.blurMat.opacity = blur.disc; this.blur.visible = blur.disc > 0;
-    if (cone !== this.cone) {
+    if (cone !== this.cone || tipBend !== this.bend) {
       const pos = this.blur.geometry.getAttribute('position') as THREE.BufferAttribute;
-      for (let i = 0; i < pos.count; i++) pos.setY(i, Math.hypot(pos.getX(i), pos.getZ(i)) * Math.sin(cone));
+      for (let i = 0; i < pos.count; i++) {
+        const x = this.discPositions[i * 3], z = this.discPositions[i * 3 + 2], r = Math.hypot(x, z);
+        const sag = bending ? tipBend * bladeBendShape((r - bending.rootRadius) / (bending.radius - bending.rootRadius)) : 0;
+        const projected = hinge + (r - hinge) * cs - sag * sn;
+        pos.setXYZ(i, x * projected / r, (r - hinge) * sn + sag * cs, z * projected / r);
+      }
       pos.needsUpdate = true; this.blur.geometry.computeVertexNormals(); this.blur.geometry.computeBoundingSphere(); this.cone = cone;
     }
+    this.bend = tipBend;
     this.links.forEach((link, i) => {
       const side = i === 0 ? -1 : 1;
       this.linkA.set(side * 0.075, -0.20, -side * 0.095);
-      this.linkB.set(side * 0.17 * Math.cos(cone), -0.008 + 0.17 * Math.sin(cone), -side * 0.095);
+      this.linkB.set(side * (hinge + (0.17 - hinge) * cs), -0.008 + (0.17 - hinge) * sn, -side * 0.095);
       this.linkDelta.subVectors(this.linkB, this.linkA);
       link.scale.y = this.linkDelta.length();
       link.quaternion.setFromUnitVectors(this.linkAxis, this.linkDelta.normalize());

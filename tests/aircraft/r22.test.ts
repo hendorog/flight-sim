@@ -142,7 +142,11 @@ describe('R22 procedural exterior and cockpit', () => {
     const m = new THREE.Matrix4(); blades.getMatrixAt(0, m);
     const tip = new THREE.Vector3(MAIN_ROTOR_RADIUS, 0, 0).applyMatrix4(m);
     expect(tip.y).toBeLessThan(0);
-    expect(Math.abs(tip.length() - MAIN_ROTOR_RADIUS)).toBeLessThan(1e-6);
+    // Rigid coning preserves hinge-to-tip length. The pin is offset from the shaft, so
+    // shaft-to-tip distance changes slightly; additional elastic sag lives in the geometry.
+    const hinge = new THREE.Vector3(R22_VISUAL.rotorcraftVisual!.main.coning.hingeRadius, 0, 0);
+    expect(hinge.clone().applyMatrix4(m).distanceTo(hinge)).toBeLessThan(1e-7);
+    expect(Math.abs(tip.distanceTo(hinge) - (MAIN_ROTOR_RADIUS - hinge.x))).toBeLessThan(1e-6);
   });
 
   it('powers the nose lamps and panel from the 14 V bus and keeps the absent second strobe dark', () => {

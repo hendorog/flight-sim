@@ -8,6 +8,8 @@ import type { TeeteringRotor } from '../../render/aircraft/rotorcraft/rotor';
 import type { RotorcraftVisualDef } from '../../render/aircraft/airframe/types';
 import { MeshBatch } from '../../render/aircraft/geometry';
 import { bladeBlur } from '../../render/aircraft/bladeBlur';
+import { articulatedBladeConing } from '../../physics/rotorcraft/coning';
+import { quat } from '../../core/math';
 import { box, tube } from '../../render/aircraft/rotorcraft/geometry';
 import { FLAP_HINGE_OFFSET as F, LAG_HINGE_OFFSET as L, MAIN_ROTOR_BLADES } from './dimensions';
 import { ellipsoid, fitRod, type S269Materials } from './exteriorGeometry';
@@ -124,10 +126,9 @@ export class S269MainRotor {
     this.rotor.group.quaternion.identity();
     const r = this.definition;
     const pitch = THREE.MathUtils.lerp(r.main.minPitch, r.main.maxPitch, ctx.controls.collective ?? 0);
-    const spin = Math.min(1, Math.max(0, state.rotorRpm / r.nominalRpm));
     const coning = this.spec.coning;
-    const cone = coning ? THREE.MathUtils.lerp(coning.droopDeg * Math.PI / 180,
-      Math.min(coning.maxDeg, Math.max(0, state.thrust) / coning.referenceThrust * coning.angleDeg) * Math.PI / 180, spin * spin) : 0;
+    const omega = state.rotorRpm * Math.PI / 30;
+    const normalGravity = quat.rotateInv(ctx.state.orientation, { x: 0, y: 0, z: 9.80665 }).z;
     // Estimated swash travel/rigging follows the commanded cyclic, not the aerodynamic disc lag.
     this.tilt.set(ctx.controls.aileron * r.cyclicLimit, 1, ctx.controls.elevator * r.cyclicLimit).normalize();
     this.swashplate.quaternion.setFromUnitVectors(this.up, this.tilt);
@@ -138,8 +139,10 @@ export class S269MainRotor {
     for (let i = 0; i < MAIN_ROTOR_BLADES; i++) {
       const arm = this.arms[i], psi = state.azimuth + i * 2 * Math.PI / MAIN_ROTOR_BLADES;
       const actual = pose?.blades[i];
+      // A supplied pose already includes the physical mean: never add coning twice.
       const flap = actual && Number.isFinite(actual.flap) ? actual.flap
-        : cone - state.flapForward * Math.sin(psi) - state.flapRight * Math.cos(psi);
+        : articulatedBladeConing(coning, omega, state.thrust / MAIN_ROTOR_BLADES,
+          -state.flapForward * Math.sin(psi) - state.flapRight * Math.cos(psi), normalGravity).angle;
       arm.flap.rotation.z = flap;
       meanFlap += flap / MAIN_ROTOR_BLADES;
       forwardFlap += 2 * flap * Math.sin(psi) / MAIN_ROTOR_BLADES;
@@ -162,21 +165,24 @@ export class S269MainRotor {
     // The high-RPM exposure disc uses the same blade solution, including coning. It is still an
     // exposure approximation, not a second independent set of blade angles from the generic renderer.
     const p = this.rotor.blur.geometry.getAttribute('position');
-    const firstY = (Math.hypot(p.getX(0), p.getZ(0)) - F) * Math.sin(meanFlap);
+    const firstY = (this.spec.root - F) * Math.sin(meanFlap);
     if (meanFlap !== this.blurCone || Math.abs(p.getY(0) - firstY) > 1e-7) {
-      for (let i = 0; i < p.count; i++) p.setY(i, (Math.hypot(p.getX(i), p.getZ(i)) - F) * Math.sin(meanFlap));
+      for (let i = 0; i < p.count; i++) {
+        const x = this.rotor.discPositions[3 * i], z = this.rotor.discPositions[3 * i + 2], radius = Math.hypot(x, z);
+        const projected = F + (radius - F) * Math.cos(meanFlap);
+        p.setXYZ(i, x * projected / radius, (radius - F) * Math.sin(meanFlap), z * projected / radius);
+      }
       p.needsUpdate = true; this.rotor.blur.geometry.computeVertexNormals(); this.rotor.blur.geometry.computeBoundingSphere();
       this.blurCone = meanFlap;
     }
     this.tilt.set(-Math.tan(rightFlap), 1, Math.tan(forwardFlap)).normalize();
     this.rotor.blur.quaternion.setFromUnitVectors(this.up, this.tilt);
-    // Trail coning is measured from the mast in the shared shader; shift it down to the flap hinge.
     // Its parent spins, whereas the disc's parent does not: S * (S^-1 * tilt * S) = tilt * S.
     this.inverseSpin.copy(this.rotor.spin.quaternion).invert();
     const trail = this.rotor.trail.mesh;
     trail.quaternion.copy(this.inverseSpin).multiply(this.rotor.blur.quaternion).multiply(this.rotor.spin.quaternion);
-    trail.position.set(0, -F * Math.sin(meanFlap), 0).applyQuaternion(this.rotor.blur.quaternion).applyQuaternion(this.inverseSpin);
-    this.rotor.trail.update(bladeBlur(state.rotorRpm, MAIN_ROTOR_BLADES), meanPitch, meanFlap);
+    trail.position.set(0, 0, 0);
+    this.rotor.trail.update(bladeBlur(state.rotorRpm, MAIN_ROTOR_BLADES), meanPitch, meanFlap, F);
   }
 }
 

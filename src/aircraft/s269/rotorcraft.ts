@@ -7,11 +7,12 @@ import * as D from './dimensions';
 import { S269_REFERENCE as V } from './reference';
 import { S269_VNE } from './limits';
 import { S269_ARTICULATED, S269_BLADE_ROOT } from './articulated';
+import { S269_BLADE_CONING } from './coning';
 export const S269_ROTORCRAFT: RotorcraftDefinition = {
   ...base,
   // FAA 4H12 rev32 Note9(b), p19: CB S/N0001 onward, elastomeric lag damper269A1290-3.
   hubModel: { kind: 'articulated', flapHingeOffset: D.FLAP_HINGE_OFFSET,
-    lagHingeOffset: D.LAG_HINGE_OFFSET, lagDamper: 'elastomeric' },
+    lagHingeOffset: D.LAG_HINGE_OFFSET, lagDamper: 'elastomeric', coning: S269_BLADE_CONING },
   // ESTIMATE ratios from rounded published upper RPM limits, not measured gearbox tooth counts.
   referenceRpm: V.rotorRpm100, nominalRpm: V.rotorRpm100 * 2650 / 2700,
   engineRatio: V.engineRpm100 / V.rotorRpm100, tailRatio: 3094 / 471,

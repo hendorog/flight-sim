@@ -14,6 +14,8 @@ import { buildShadowProxies } from './shadowProxy';
 import { buildRotorcraftAirframe, type RotorcraftAirframe } from './rotorcraft/airframe';
 import { RotorcraftCockpit } from './rotorcraft/cockpit';
 import { TeeteringRotor } from './rotorcraft/rotor';
+import { bladeConing } from '../../physics/rotorcraft/coning';
+import { quat } from '../../core/math';
 
 export class RotorcraftVisual {
   readonly root = new THREE.Group();
@@ -73,13 +75,13 @@ export class RotorcraftVisual {
       // The flight model uses small-angle disc slopes: FRD [forward, right, -1].
       this.tilt.set(r.flapRight, 1, -r.flapForward).normalize();
       this.main.group.quaternion.setFromUnitVectors(this.up, this.tilt);
-      const spin = Math.min(1, Math.max(0, r.rotorRpm / d.nominalRpm));
-      // Visual estimate: about 2.5 deg coning at gross-weight hover, drooping 2 deg when stopped.
-      const coning = v.main.coning ?? { referenceThrust: 6000, angleDeg: 2.5, maxDeg: 5, droopDeg: -2 };
-      const cone = THREE.MathUtils.lerp(coning.droopDeg * Math.PI / 180,
-        Math.min(coning.maxDeg, Math.max(0, r.thrust) / coning.referenceThrust * coning.angleDeg) * Math.PI / 180, spin * spin);
+      // r.coning omits gravity/stops and feeds lateral flapping. Preserve those flight dynamics;
+      // use the same rotor inertia/live thrust for the complete presentation balance instead.
+      const gravity = quat.rotateInv(ctx.state.orientation, { x: 0, y: 0, z: 9.80665 });
+      const normalGravity = gravity.z * this.tilt.y + gravity.x * this.tilt.z - gravity.y * this.tilt.x;
+      const cone = bladeConing(v.main.coning, r.rotorRpm * Math.PI / 30, r.thrust / d.main.blades, normalGravity);
       const pitch = THREE.MathUtils.lerp(d.main.minPitch, d.main.maxPitch, c.collective ?? 0);
-      this.main.update(r.azimuth, r.rotorRpm, pitch, cone);
+      this.main.update(r.azimuth, r.rotorRpm, pitch, cone.angle, cone.tipBend);
       this.tail.update((d.tailRotation ?? -1) * r.azimuth * d.tailRatio, r.rotorRpm * d.tailRatio,
         THREE.MathUtils.lerp(d.tail.minPitch, d.tail.maxPitch, (1 - c.rudder * d.rotation) / 2), -v.tail.precone);
     }
