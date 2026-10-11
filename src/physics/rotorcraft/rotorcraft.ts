@@ -9,6 +9,7 @@ import { placardMap } from './limits';
 import { estimatedArticulatedGeometry, flapForcing, advanceFlap, hingeMoment } from './articulated';
 import { pressureAltitude } from '../atmosphere';
 import type { AtmosphereSample } from '../../core/types';
+import { articulatedBladeConing, bladeConing } from './coning';
 
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
@@ -39,7 +40,10 @@ export class Rotorcraft {
     }
     if (this.def.controlSystem.springTrim) this.state.springTrim = { pitch: 0, roll: 0, pitchForce: 0, rollForce: 0 };
     if (this.def.hubModel?.kind === 'articulated') this.state.articulated = {
-      blades: Array.from({ length: this.def.main.blades }, () => ({ flap: 0, lag: 0, pitch: 0 })),
+      blades: Array.from({ length: this.def.main.blades }, () => ({
+        flap: this.def.hubModel?.kind === 'articulated' && this.def.hubModel.coning
+          ? bladeConing(this.def.hubModel.coning, this.state.omega, 0).angle : 0,
+        lag: 0, pitch: 0 })),
     };
   }
   /** Collective moves the throttle linkage; governor trims the grip above its engagement RPM.
@@ -287,16 +291,25 @@ export class Rotorcraft {
     // it is not a full transient blade/body energy or angular-momentum solution.
     if (articulated) s.torque += hubTorque;
     s.stalledFraction = main.stalledFraction;
-    this.publishBlades(c);
+    // BEM integrates moment about the shaft. Transfer it to ONE blade's flap hinge.
+    const coning = d.hubModel?.kind === 'articulated' ? d.hubModel.coning : undefined;
+    // Like the harmonic coordinates, poses advance only on a real step. RK force queries
+    // and snapshot restoration must not replace the published pose with a different stage.
+    if (dt > 0) this.publishBlades(c, quat.rotateInv(b.orientation, { x: 0, y: 0, z: 9.80665 }).z,
+      coning ? (main.coningMoment - coning.hingeRadius * main.thrust) / d.main.blades : undefined);
     return this.loads;
   }
-  /** Publish poses from the harmonic flap state used for loads. No animation clock. */
-  publishBlades(c: ControlInputs): void {
+  /** Physical poses around the load solver's harmonic flap, without changing its load coordinates.
+   * Explicit mean moment is per blade, about the flap hinge. Fixtures without BEM use thrust at .75R. */
+  publishBlades(c: ControlInputs, normalGravity = 9.80665, meanMoment?: number): void {
     const s = this.state, d = this.def, a = s.articulated;
     if (!a) return;
+    const coning = d.hubModel?.kind === 'articulated' ? d.hubModel.coning : undefined;
     a.blades.forEach((b, i) => {
       const phase = i * 2 * Math.PI / d.main.blades, psi = s.azimuth + phase - Math.PI / 2;
-      b.flap = s.coning - s.flapForward * Math.cos(psi) + s.flapRight * Math.sin(psi);
+      const harmonic = -s.flapForward * Math.cos(psi) + s.flapRight * Math.sin(psi);
+      b.flap = coning ? articulatedBladeConing(coning, s.omega, s.thrust / d.main.blades,
+        harmonic, normalGravity, meanMoment).angle : s.coning + harmonic;
       b.lag = 0; // Coupled lag experiment rejected; see docs/s269-integration.md.
       b.pitch = d.main.minPitch + clamp(c.collective ?? 0, 0, 1) * (d.main.maxPitch - d.main.minPitch) +
         d.rotation * d.cyclicLimit * (c.aileron * Math.cos(psi) - c.elevator * Math.sin(psi));

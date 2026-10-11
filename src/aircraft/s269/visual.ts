@@ -4,6 +4,7 @@
 import type { AirframeVisualDef, FRD, RotorcraftVisualDef } from '../../render/aircraft/airframe/types';
 import { R22_VISUAL as base } from '../r22/visual';
 import { S269_ROTORCRAFT } from './rotorcraft';
+import { S269_BLADE_CONING } from './coning';
 import * as D from './dimensions';
 const point = (p: { x: number; y: number; z: number }): FRD => [p.x, p.y, p.z];
 const W = D.CABIN_WIDTH / 2;
@@ -22,8 +23,7 @@ const rotorcraftVisual: RotorcraftVisualDef = {
   engineDetail: { exposed: false, cylinderXs: [] }, // S269ExteriorVisual supplies the HO-360 installation.
   main: { hub: point(D.MAIN_HUB), radius: D.MAIN_ROTOR_RADIUS, root: 0.45,
     chord: [D.MAIN_ROTOR_CHORD, D.MAIN_ROTOR_CHORD], twist: D.MAIN_ROTOR_TWIST_DEG * Math.PI / 180,
-    // Visual fallback ONLY until the articulated state adapter is supplied.
-    coning: { referenceThrust: 7785, angleDeg: 2.5, maxDeg: 5, droopDeg: -2 },
+    coning: S269_BLADE_CONING,
     paint: { rootUpper: 0x929c9e, rootLower: 0x292d30, capLength: 0.015,
       bands: [{ tipDistance: 0.15, upper: 0xe4b842, lower: 0xe4b842 }] } },
   tail: { hub: point(D.TAIL_HUB), radius: D.TAIL_ROTOR_RADIUS, root: 0.09,

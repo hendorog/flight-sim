@@ -15,6 +15,7 @@ import { rotorBladeGeometry, TeeteringRotor } from '../../src/render/aircraft/ro
 import { bladeBlur } from '../../src/render/aircraft/bladeBlur';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { Rotorcraft } from '../../src/physics/rotorcraft/rotorcraft';
+import { bladeConing } from '../../src/physics/rotorcraft/coning';
 import { panelUvBasis } from '../../src/instruments/panelProjection';
 import { blankDocument, fakeContext, fakeMaterials, nonFinite } from './meshChecks';
 
@@ -73,18 +74,21 @@ describe('300CB exterior', () => {
       expect(rotor.blades.count).toBe(3); expect(rotor.blades.instanceMatrix.count).toBe(3);
       const meanFlap = pose.blades.reduce((sum, b) => sum + b.flap / 3, 0);
       const meanPitch = pose.blades.reduce((sum, b) => sum + b.pitch! / 3, 0);
-      expect(trailUpdate).toHaveBeenLastCalledWith(bladeBlur(rpm, 3), meanPitch, meanFlap);
+      expect(trailUpdate).toHaveBeenLastCalledWith(bladeBlur(rpm, 3), meanPitch, meanFlap, D.FLAP_HINGE_OFFSET);
       expect(rotor.trail.mesh.visible).toBe(bladeBlur(rpm, 3).trail > 0);
       const blur = rotor.blur.geometry.getAttribute('position');
-      expect(blur.getY(0)).toBeCloseTo((Math.hypot(blur.getX(0), blur.getZ(0)) - D.FLAP_HINGE_OFFSET)
-        * Math.sin(meanFlap), 7);
+      expect(blur.getY(0)).toBeCloseTo((d.main.root - D.FLAP_HINGE_OFFSET) * Math.sin(meanFlap), 7);
+      expect(Math.hypot(blur.getX(0), blur.getZ(0))).toBeCloseTo(D.FLAP_HINGE_OFFSET +
+        (d.main.root - D.FLAP_HINGE_OFFSET) * Math.cos(meanFlap), 7);
       // Include shader coning, then compare the trail with the same radius/phase on the disc.
       // A wrong parent-space tilt would precess once per revolution or shift away from the hinge.
       for (const radius of [d.main.root, d.main.radius]) for (const angle of [0, 0.8, 2.7]) {
-        actual.set(radius * Math.cos(angle), radius * Math.sin(meanFlap), -radius * Math.sin(angle))
+        const projected = D.FLAP_HINGE_OFFSET + (radius - D.FLAP_HINGE_OFFSET) * Math.cos(meanFlap);
+        const height = (radius - D.FLAP_HINGE_OFFSET) * Math.sin(meanFlap);
+        actual.set(projected * Math.cos(angle), height, -projected * Math.sin(angle))
           .applyMatrix4(rotor.trail.mesh.matrixWorld);
-        expected.set(radius * Math.cos(angle + azimuth), (radius - D.FLAP_HINGE_OFFSET) * Math.sin(meanFlap),
-          -radius * Math.sin(angle + azimuth)).applyMatrix4(rotor.blur.matrixWorld);
+        expected.set(projected * Math.cos(angle + azimuth), height,
+          -projected * Math.sin(angle + azimuth)).applyMatrix4(rotor.blur.matrixWorld);
         expect(actual.distanceTo(expected)).toBeLessThan(1e-8);
       }
       const inverse = rotor.spin.matrixWorld.clone().invert();
@@ -122,7 +126,7 @@ describe('300CB exterior', () => {
     const rotor = new TeeteringRotor({ ...d.main, blades: 3, hubType: 'articulated' }, fakeMaterials());
     const head = new S269MainRotor(rotor, d.main, def.rotorcraft!, mat), ctx = fakeContext();
     physics.reset(true); ctx.state.rotorcraft = physics.state;
-    Object.assign(physics.state, { coning: 0.08, flapForward: 0.03, flapRight: -0.02 });
+    Object.assign(physics.state, { thrust: 7000, coning: 0.08, flapForward: 0.03, flapRight: -0.02 });
     ctx.controls.collective = 0.4; ctx.controls.elevator = 0.2; ctx.controls.aileron = -0.1;
     const expected = new THREE.Vector3(-0.02, 1, -0.03).normalize(); // FRD thrust (forward, right, up).
     for (const azimuth of [0, 0.7, 2.5, 5.8]) {
@@ -135,11 +139,38 @@ describe('300CB exterior', () => {
       // Blade zero points right at zero azimuth, then forward at π/2. A right-tilted
       // disc lowers its right-hand tip; the fallback preview uses the same convention.
       const angle = physics.state.articulated!.blades[0].flap;
-      expect(angle).toBeCloseTo(0.08 - 0.03 * Math.sin(azimuth) + 0.02 * Math.cos(azimuth), 12);
+      const cone = bladeConing(d.main.coning, physics.state.omega, physics.state.thrust / 3).angle;
+      expect(angle).toBeCloseTo(cone - 0.03 * Math.sin(azimuth) + 0.02 * Math.cos(azimuth), 12);
       const angles = head.arms.map(a => a.flap.rotation.z);
       head.update(ctx);
       head.arms.forEach((a, i) => expect(a.flap.rotation.z - head.arms[0].flap.rotation.z)
         .toBeCloseTo(angles[i] - angles[0], 12));
+    }
+    rotor.group.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    rotor.dispose(); Object.values(mat).forEach(m => m.dispose());
+  });
+
+  it('puts the actual mesh below each hinge at low RPM, with the same physics and preview pose', () => {
+    const d = def.rotorcraftVisual!, mat = s269Materials(), physics = new Rotorcraft(def.rotorcraft!);
+    const rotor = new TeeteringRotor({ ...d.main, blades: 3, hubType: 'articulated' }, fakeMaterials());
+    const head = new S269MainRotor(rotor, d.main, def.rotorcraft!, mat), ctx = fakeContext();
+    physics.reset(false); ctx.state.rotorcraft = physics.state;
+    const matrix = new THREE.Matrix4(), tip = new THREE.Vector3();
+    for (const rpm of [0, 30, 60, 120, 462, 120, 0]) {
+      const r = physics.state;
+      Object.assign(r, { omega: rpm * Math.PI / 30, rotorRpm: rpm, thrust: 50 * (rpm / 120) ** 2 });
+      physics.publishBlades(ctx.controls);
+      rotor.update(1.2, rpm, 0, 0); head.update(ctx, r.articulated);
+      const angles = head.arms.map(a => a.flap.rotation.z);
+      head.arms.forEach((arm, i) => {
+        expect(arm.flap.rotation.z).toBe(r.articulated!.blades[i].flap);
+        rotor.blades.getMatrixAt(i, matrix);
+        tip.set(d.main.radius, 0, 0).applyMatrix4(matrix);
+        expect(tip.y).toBeCloseTo((d.main.radius - D.FLAP_HINGE_OFFSET) * Math.sin(angles[i]), 6);
+        if (rpm <= 120) expect(tip.y).toBeLessThan(0);
+      });
+      head.update(ctx);
+      head.arms.forEach((a, i) => expect(a.flap.rotation.z).toBeCloseTo(angles[i], 12));
     }
     rotor.group.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
     rotor.dispose(); Object.values(mat).forEach(m => m.dispose());

@@ -85,3 +85,38 @@ Shared changes are optional definition metadata for hub type/offsets, governor i
 `RotorcraftState` is unchanged. `clutchEngagement` remains belt engagement; `clutchLight` remains actuator indication; `governorActive` remains actual governor acquisition; `lowRpmHorn` remains the existing collective-dependent warning. The real CB disengaged lamp must receive a separately specified signal. Its clutch HOLD, trim force system and optional STAR warning must not be hidden behind redefined Robinson fields. R22 mast-bump detection is disabled for the articulated scaffold because it has no centre teeter hinge; correct blade/stop/airframe strike limits remain future work.
 
 Ignored handoffs: `work/s269-rotor-design.md`, `work/s269-plan.md`. Verification evidence and screenshots: `work/s269-verification.md`.
+
+## Physical coning and droop-stop pose (s269/coning)
+
+The additional primary maintenance evidence is the [Schweizer 269C-1 Appendix B, Section 2,
+100-hour inspection guide, NTSB docket copy, item 81](https://data.ntsb.gov/Docket/Document/docBLOB?FileExtension=.PDF&FileName=Schweizer+100-Hour+Airframe+Inspection+Guide+Provided+by+the+Mechanic+who+Performed+the+Last+Annual+and+100-Hour+Inspections.-Master.PDF&ID=40332040).
+It identifies the hub's droop-stop assembly, stop arms and support nut, and refers to Basic HMI
+Section 8. This establishes **the presence of stops**, not their angle, spring rate or blade stiffness.
+The copy is cached as `work/coning/hmi-stops.pdf` with extracted text alongside it. The RFM's
+separate flap and lag hinges are on printed page 1-7; blade radius/chord/section/twist are on 1-8.
+
+`src/aircraft/s269/coning.ts` shares the following data between the physical published blade pose
+and its visual fallback. These are **engineering estimates**, except for the published blade span.
+They are not maintenance limits or a measured hover-coning calibration.
+
+| Per-blade quantity | Value | Basis |
+| --- | ---: | --- |
+| Mass | 15 kg | Existing `S269_ARTICULATED` uniform-blade estimate; no weighing survey |
+| Mass-bearing span | 0.65–4.088892 m from shaft | Estimated root, RFM 26.83 ft rotor diameter |
+| CG shaft radius | 2.369446 m | Midpoint of that uniform span |
+| Shaft polar inertia | 98.996588 kg m² | Existing integral; three blades give 296.989764 kg m² total |
+| Flap-hinge offset | 0.18 m | Existing `dimensions.ts` estimate, same pin as the mesh |
+| Flap-hinge inertia | 86.687580 kg m² | Parallel-axis integral, **not** shaft inertia divided again |
+| Centrifugal inertia coefficient | 92.599084 kg m² | `Ishaft − m e rcg = Iflap + e Sflap` |
+| Fallback thrust radius | 3.066669 m (0.75R) | Approximate r² loading; actual simulation supplies BEM hinge moment |
+| Flap spring / rest angle | 0 Nm/rad / 0° | Free mechanical flap pin; no verified flap spring or fixed precone |
+| Droop stop | −2° | Estimated rigid-blade support angle; numerical setting not established by HMI excerpt |
+| Upper stop | Unspecified | Shared geometric bound only; no claimed 269 maintenance value |
+| Flapwise EI / elastic sag | Unspecified / not modelled | Rigid span on the droop stop; no Robinson EI imported |
+
+The elastomeric **lead–lag** damper is not used as a flap spring. With the estimated −2° stop,
+the rigid tip is 13.64 cm below its flap pin when stopped. The shared elastic-bending option remains
+available to aircraft with an EI estimate; this change does not claim an elastic 269 blade model.
+The small-angle balance does not simulate transient blade sailing, stop-impact loads or ground
+resonance. See [rotor-coning.md](rotor-coning.md#schweizer-269-integration) for diagnosis, implementation,
+flight-model preservation and before/after evidence.

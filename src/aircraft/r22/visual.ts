@@ -5,6 +5,7 @@
 // contract retains its earlier 105 in / 344 in envelope. No shared dimensions are changed here.
 import type { AirframeVisualDef, FRD, RotorcraftVisualDef } from '../../render/aircraft/airframe/types';
 import { R22_ROTORCRAFT } from './rotorcraft';
+import { R22_BLADE_CONING } from './coning';
 import { CABIN_WIDTH, MAIN_HUB, MAIN_ROTOR_RADIUS, NOSE_X, PANEL_CANVAS, PANEL_FACE, PANEL_OUTLINE, PILOT_EYE,
   SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X, SKID_FRONT_X, SKID_HALF_TRACK, SKID_REAR_X, SKID_Z,
   TAIL_END_X, TAIL_HUB, TAIL_ROTOR_RADIUS, HORIZONTAL_STABILIZER as HS, LOWER_FIN_OUTLINE, TAIL_STINGER,
@@ -16,7 +17,8 @@ const TX = TAIL_HUB.x;
 const TZ = TAIL_HUB.z;
 const ROTORCRAFT: RotorcraftVisualDef = {
   interior: { frameColor: 0x343b2c, seatColor: 0x969891, seatBackColor: 0x284975, perforatedPedals: true, collectiveFittings: true },
-  main: { hub: point(MAIN_HUB), radius: MAIN_ROTOR_RADIUS, root: 0.42, chord: [0.18288, 0.19558], twist: -8 * Math.PI / 180 },
+  main: { hub: point(MAIN_HUB), radius: MAIN_ROTOR_RADIUS, root: 0.42, chord: [0.18288, 0.19558], twist: -8 * Math.PI / 180,
+    coning: R22_BLADE_CONING },
   tail: { hub: point(TAIL_HUB), radius: TAIL_ROTOR_RADIUS, root: 0.085, chord: 0.1016, precone: (1 + 11 / 60) * Math.PI / 180 },
   skids: { halfTrack: SKID_HALF_TRACK, z: SKID_Z, front: SKID_FRONT_X, rear: SKID_REAR_X,
     crossTubes: [SKID_CONTACT_FRONT_X, SKID_CONTACT_REAR_X] },
