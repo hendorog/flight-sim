@@ -215,6 +215,8 @@ const BIG = APERTURES.large * 1.1;
 const SMALL = APERTURES.small * 1.15;
 
 export const PA38_PANEL: PanelDef = {
+  fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'cdi1'], ['turn', 'heading', 'vsi', 'cdi2']],
+    controls: [{ x: 190, y: 680, w: 600, h: 120 }] },
   id: 'pa38',
   size: { w: 2080, h: 800 },
   // In the order the panel draws them.

@@ -333,7 +333,16 @@ export class SchoolUi implements TrainingUiPort {
     void dt; // Wall time is read directly so a second caller cannot speed the fades up.
     const now = performance.now();
     if (this.dirty && now - this.lastApply >= MODEL_PERIOD_MS) this.applyModels();
-    this.captions.update(now / 1000, this.current ? null : glareshieldY(this.view));
+    // Flat panels have no blank glareshield strip to put captions on. Let their CSS anchor the whole
+    // caption above the panel, including its history button, rather than the 3D coaming's overlap.
+    const fixedTop = this.view?.panelTop?.() ?? null;
+    this.captions.update(now / 1000, this.current || fixedTop !== null ? null : glareshieldY(this.view));
+    if (this.card.visible) {
+      const top = Math.ceil(this.strip.root.getBoundingClientRect().bottom + 8);
+      this.card.root.style.top = `${top}px`;
+      const caption = this.captions.root.getBoundingClientRect();
+      this.card.root.style.maxHeight = fixedTop === null ? '' : `${Math.max(0, Math.min(fixedTop - 16, caption.height ? caption.top - 8 : fixedTop - 16) - top)}px`;
+    }
     if (!this.current) {
       this.highlight.update(this.view);
       this.hood.update(this.view);
@@ -352,7 +361,6 @@ export class SchoolUi implements TrainingUiPort {
     this.strip.setTargets(this.cardModel?.targets ?? []);
     const c = this.cardModel;
     this.card.visible = !!c && !!s && this.cardMode === 'expanded';
-    if (this.card.visible) this.card.root.style.top = `${Math.ceil(this.strip.root.getBoundingClientRect().bottom + 8)}px`;
     if (c && this.card.visible) this.card.render(c);
     // A running checklist: the compact strip names the item being challenged and its key (the card lists
     // them all when it is open).

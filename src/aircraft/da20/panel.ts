@@ -244,6 +244,8 @@ const SMALL = APERTURES.small * 1.15;
 
 export const DA20_PANEL: PanelDef = {
   id: 'da20',
+  fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'tach'], ['turn', 'heading', 'vsi', 'cdi1']],
+    controls: [{ x: 130, y: 448, w: 644, h: 104 }] },
   size: { w: 2080, h: 800 },
   // In the order the panel draws them.
   gauges: [

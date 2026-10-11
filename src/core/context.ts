@@ -23,6 +23,7 @@
 //     e.g. an LCD ~ 200-500 cd/m^2, an instrument backlight ~ 5-20 cd/m^2, a runway edge light ~ 1e4-1e5 cd/m^2
 //     over its lens, a landing light ~ 1e5 candela.
 
+import type { PanelView } from '../instruments/fixedPanel';
 import type * as THREE from 'three';
 import type { AircraftDefinition, AircraftPresentation } from '../aircraft/types';
 import type { AircraftId, AircraftState, ControlInputs, Environment, WeatherSettings } from './types';
@@ -69,6 +70,7 @@ export interface SimCommands {
   reset(scenario: ScenarioId): void;
   setPaused(paused: boolean): void;
   setCameraMode(mode: CameraMode): void;
+  setPanelView?(view: PanelView): void;
   setTimeScale(scale: number): void;
   setQuality(q: QualityLevel): void;
   /**
@@ -149,6 +151,10 @@ export interface SimContext {
   /** Current 3D render scale (0.5..1, times the capped pixel ratio), read-only; kept by the simulator. */
   renderScale?: number;
   cameraMode: CameraMode;
+  /** Cockpit presentation; absent on older test contexts means 3D. */
+  panelView?: PanelView;
+  /** CSS pixels reserved by the fixed canvas and its section bar. */
+  fixedPanelHeight?: number;
   quality: QualityLevel;
   commands: SimCommands;
   events: EventBus;

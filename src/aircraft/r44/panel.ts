@@ -25,6 +25,8 @@ const switchDef = (id: string, label: string, x: number, on: SwitchDef['on'], to
   ({ id, label, name: label, x, on, toggle, red });
 
 export const R44_PANEL: PanelDef = {
+  fixed: { flightRows: [['vsi', 'attitude', 'asi', 'tach'], ['optional', 'heading', 'altimeter', 'map']],
+    controls: [{ x: 316, y: 1126, w: 388, h: 82 }, { x: 820, y: 570, w: 230, h: 126 }, { x: 370, y: 992, w: 126, h: 72 }] },
   // Dimmer response ESTIMATE; zero extinguishes dials/displays, never warning lenses.
   console: { podOutline: PANEL_POD_OUTLINE, pedestalOutline: PANEL_PEDESTAL_OUTLINE, hoodOverhang: 0.05,
     color: 0x252c26, pedestalColor: 0x555c50 },
