@@ -71,6 +71,8 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
     blurb: 'Two-seat training helicopter, O-360 derated to 131 hp; autorotation flare still being validated', engineCount: 1, available: true },
   { id: 'r44', name: 'Robinson R44 Raven II', shortName: 'R44 Raven II',
     blurb: 'Four-seat helicopter, IO-540 fuel injected, 245 hp takeoff', engineCount: 1, available: true },
+  { id: 's269', name: 'Schweizer 269C-1 / 300CB (in development)', shortName: 'Schweizer 300CB',
+    blurb: 'Two-seat articulated-rotor trainer, HO-360 180 hp; in development', engineCount: 1, available: true },
 ];
 
 export function aircraftSummary(id: AircraftId): AircraftSummary {
@@ -89,6 +91,7 @@ const DEFINITION_LOADERS: Readonly<Record<Exclude<AircraftId, 'c172s'>, () => Pr
   da42: () => import('./da42/index'),
   r22: () => import('./r22/index'),
   r44: () => import('./r44/index'),
+  s269: () => import('./s269/index'),
 };
 
 // The C172S presentation is imported statically by the application shell, so there this resolves without a
@@ -102,6 +105,7 @@ const PRESENTATION_LOADERS: Readonly<Record<AircraftId, () => Promise<{ default:
   da42: () => import('./da42/presentation'),
   r22: () => import('./r22/presentation'),
   r44: () => import('./r44/presentation'),
+  s269: () => import('./s269/presentation'),
 };
 
 const definitions = new Map<AircraftId, AircraftDefinition>([[C172S_DEFINITION.id, C172S_DEFINITION]]);

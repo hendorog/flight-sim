@@ -6,8 +6,10 @@ import { emptyRotorcraftState, type RotorcraftDefinition } from './definition';
 import { bladeElements, inflowTarget, inflowTimeConstant } from './rotor';
 import { airframeLoads } from './airframe';
 import { placardMap } from './limits';
+import { estimatedArticulatedGeometry, flapForcing, advanceFlap, hingeMoment } from './articulated';
 import { pressureAltitude } from '../atmosphere';
 import type { AtmosphereSample } from '../../core/types';
+import { articulatedBladeConing, bladeConing } from './coning';
 
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
@@ -17,15 +19,32 @@ export class Rotorcraft {
     tailShaft: 0, tailThrust: 0, tailH: 0, tailInduced: 0, tailProfile: 0, tailWake: 0,
     fuselage: 0, stabilizer: 0, fins: 0, moments: 0, driveReaction: 0,
     axial: 0, horizontal: 0, inflow: 0, groundEffect: 1, inflowTau: 0 };
+  /** Articulated hub work exchanged with the shaft. Separate diagnostics keep the legacy
+   * power/state objects byte-for-byte compatible. Not an extra force or attitude damping. */
+  readonly articulatedPower = { hub: 0, shaft: 0 };
   readonly drivePower = { aerodynamic: 0, rotorChange: 0, clutch: 0, integration: 0 };
   private readonly loads: ForceMoment = { force: v3.zero(), moment: v3.zero() };
   constructor(readonly def: RotorcraftDefinition) {}
   reset(running: boolean): void {
+    delete this.state.articulated;
+    delete this.state.transmission; delete this.state.springTrim; delete this.state.clutchDisengaged;
     Object.assign(this.state, emptyRotorcraftState());
     this.state.omega = running ? this.def.nominalRpm * Math.PI / 30 : 0;
     this.state.governorThrottle = this.state.governorIntegral = running ? 0.55 : 0;
     this.state.clutchEngagement = running ? 1 : 0;
     this.state.rotorRpm = this.state.omega * 30 / Math.PI;
+    if (this.def.transmission) {
+      this.state.transmission = { oilPressurePsi: running ? this.def.transmission.pressurePsi : 0,
+        oilTemperatureC: 15, tailChips: false };
+      this.state.clutchDisengaged = !running;
+    }
+    if (this.def.controlSystem.springTrim) this.state.springTrim = { pitch: 0, roll: 0, pitchForce: 0, rollForce: 0 };
+    if (this.def.hubModel?.kind === 'articulated') this.state.articulated = {
+      blades: Array.from({ length: this.def.main.blades }, () => ({
+        flap: this.def.hubModel?.kind === 'articulated' && this.def.hubModel.coning
+          ? bladeConing(this.def.hubModel.coning, this.state.omega, 0).angle : 0,
+        lag: 0, pitch: 0 })),
+    };
   }
   /** Collective moves the throttle linkage; governor trims the grip above its engagement RPM.
    * A moving grip overrides the servo. Full closed is the overtravel stop, defeating correlation.
@@ -39,7 +58,7 @@ export class Rotorcraft {
     s.governorIntegral = clamp(s.governorIntegral + manual + correlation, 0, 1);
     s.governorThrottle = clamp(s.governorThrottle + manual + correlation, 0, 1);
     s.previousThrottle = c.throttle; s.previousCollective = collective;
-    s.governorActive = c.rotorGovernor !== false && c.masterBattery &&
+    s.governorActive = d.systems.governorInstalled !== false && c.rotorGovernor !== false && c.masterBattery &&
       engine.rpm > d.systems.governorEngage * d.referenceRpm * d.engineRatio;
     if (c.throttle <= 0) s.governorThrottle = s.governorIntegral = 0;
     else if (s.governorActive && !override) {
@@ -55,19 +74,29 @@ export class Rotorcraft {
     } else s.governorIntegral = s.governorThrottle;
     return s.governorThrottle;
   }
+  /** Mechanical switch estimate; panel must combine with bus power. Separate from actuator light.
+   * The actual 269 microswitch rigging threshold has not been measured. */
+  get clutchDisengaged(): boolean { return this.state.clutchEngagement < 0.999; }
   /** One-way clutch impulse conserves angular momentum (gear ratio reflected), with transmission loss.
    * Called after the engine's free shaft step. The freewheel cannot back-drive a stopped/slow engine.
    */
-  drive(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample): void {
+  drive(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample,
+    clutchCommand?: 'engage' | 'hold' | 'release', busVoltage?: number): void {
     const s = this.state, d = this.def;
+    clutchCommand ??= c.rotorClutchCommand;
     const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
     const oldOmega = s.omega;
     s.omega = Math.max(0, s.omega - s.torque * dt / inertia);
     const freeOmega = s.omega;
-    const target = c.rotorClutch !== false ? 1 : 0;
-    if (c.masterBattery) s.clutchEngagement += clamp(target - s.clutchEngagement,
+    // Optional three-position command: explicit HOLD retains the current belt tension.
+    // The boolean path is unchanged for existing controls/saves. The 269 UI bridge must supply
+    // this command each step; it is not private state and never repurposes clutchLight.
+    const actuatorPower = clutchCommand !== undefined && busVoltage !== undefined ? busVoltage > 18 : c.masterBattery;
+    const target = clutchCommand === 'hold' ? s.clutchEngagement : clutchCommand === 'engage' ? 1 :
+      clutchCommand === 'release' ? 0 : c.rotorClutch !== false ? 1 : 0;
+    if (actuatorPower) s.clutchEngagement += clamp(target - s.clutchEngagement,
       -dt / d.systems.clutchSeconds, dt / d.systems.clutchSeconds);
-    s.clutchLight = c.masterBattery && Math.abs(target - s.clutchEngagement) > 1e-6;
+    s.clutchLight = actuatorPower && Math.abs(target - s.clutchEngagement) > 1e-6;
     const excess = engine.omega - s.omega * d.engineRatio;
     const impulse = excess > 0
       ? Math.min(excess / (1 / engine.inertia + d.transmissionEfficiency * d.engineRatio ** 2 / inertia),
@@ -95,6 +124,27 @@ export class Rotorcraft {
       (atOperatingRpm && engine.state.manifoldPressure > map + (d.manifoldLimits?.takeoffIncrease ?? 0) + 0.05) ||
       s.takeoffPowerSeconds > d.systems.takeoffSeconds;
     s.azimuth = (s.azimuth + d.rotation * s.omega * dt) % (2 * Math.PI);
+    if (s.transmission && d.transmission && dt > 0) {
+      const t = s.transmission, p = d.transmission;
+      // Rotor-driven pump keeps pressure in autorotation, independent of engine oil/bus.
+      t.oilPressurePsi += (p.pressurePsi * clamp(s.rotorRpm / p.pumpRpm, 0, 1) - t.oilPressurePsi) *
+        (1 - Math.exp(-dt / p.pressureSeconds));
+      const heat = Math.abs(s.torque * s.omega) * (1 / d.transmissionEfficiency - 1);
+      const target = (atmosphere?.temperature ?? 288.15) - 273.15 + heat / p.cooling;
+      t.oilTemperatureC += (target - t.oilTemperatureC) * (1 - Math.exp(-dt * p.cooling / p.heatCapacity));
+      s.clutchDisengaged = this.clutchDisengaged;
+    }
+    if (s.springTrim && d.controlSystem.springTrim && dt > 0) {
+      const t = s.springTrim, p = d.controlSystem.springTrim;
+      if (busVoltage !== undefined ? busVoltage > 18 : c.masterBattery) {
+        t.pitch = clamp(t.pitch + clamp(c.cyclicTrimPitch ?? 0, -1, 1) * p.rate * dt, -1, 1);
+        t.roll = clamp(t.roll + clamp(c.cyclicTrimRoll ?? 0, -1, 1) * p.rate * dt, -1, 1);
+      }
+      // Force on the stick, not an aerodynamic moment. Position-controlled hardware holds
+      // its commanded position; the keyboard's released centre follows these spring anchors.
+      t.pitchForce = p.force * (t.pitch - c.elevator);
+      t.rollForce = p.force * (t.roll - c.aileron);
+    }
   }
   /** The thrust axis follows cyclic with a finite teetering response and aerodynamic blowback.
    * Each RK stage sees its own air velocity. Only stage zero advances flap/inflow states.
@@ -104,6 +154,8 @@ export class Rotorcraft {
     const air = v3.sub(b.velocityBody, quat.rotateInv(b.orientation, wind));
     const mainArm = v3.sub(d.main.hub, b.cgOffset);
     const hubAir = v3.add(air, v3.cross(b.angularVelocity, mainArm));
+    const articulated = d.hubModel?.kind === 'articulated'
+      ? estimatedArticulatedGeometry(d.main, d.hubModel.flapHingeOffset, d.hubModel.lagHingeOffset) : undefined;
     const mu = Math.hypot(hubAir.x, hubAir.y) / Math.max(s.omega * d.main.radius, 1);
     const collective = d.main.minPitch + clamp(c.collective ?? 0, 0, 1) * (d.main.maxPitch - d.main.minPitch);
     const tip = Math.max(s.omega * d.main.radius, 1);
@@ -121,11 +173,26 @@ export class Rotorcraft {
     // Averaged first-harmonic free-hinge equation: time constant 16/(Lock number × rotor speed).
     // Blade flapping inertia is half the polar inertia for this two-blade rotor. No fitted body damping.
     const lock = density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 / (d.main.inertia / d.main.blades);
-    // No aerodynamic free-flapping response at zero rotor speed. A floor on Lock × omega gave a
-    // stopped rotor a finite response to the rotating-rotor blowback formula (mu >> 1 in apron wind).
+    // No rotating-rotor aerodynamic response at zero RPM. The articulated solver also
+    // preserves its stopped pose; it has separate flap pins and no centre teeter stop.
     const tau = s.omega > 0 ? 16 / (lock * s.omega) : Infinity;
     const lag = 1 - Math.exp(-dt / tau);
-    if (dt > 0) {
+    if (articulated) {
+      // Small-angle, attached-flow harmonic articulated hub. The physical 90-degree pitch-link
+      // mapping is an installation estimate; centrifugal detuning produces the actual flap phase.
+      // This deliberately does not claim per-blade transient lag or blade-stop/ground resonance.
+      const forcing = flapForcing(d.main, articulated, s.omega, density, collective,
+        d.rotation * c.aileron * d.cyclicLimit, -d.rotation * c.elevator * d.cyclicLimit,
+        hubAir, s.inflow, b.angularVelocity, d.rotation);
+      const flap = advanceFlap(articulated, s.omega, forcing,
+        { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight }, d.rotation, dt, b.angularVelocity.z);
+      if (dt > 0) {
+        // Slow-amplitude reduction: all persistent coordinates already belong to RotorcraftState.
+        // Zero-dt RK queries do not advance them; no private array can escape snapshot/reset.
+        s.flapForward = -flap.cosine; s.flapRight = flap.sine; s.coning = flap.cone;
+        s.teeterAngle = 0; s.retreatingFlap = 0;
+      }
+    } else if (dt > 0) {
       if (s.omega > 0) {
         s.flapForward += (targetForward - s.flapForward + (b.angularVelocity.y + b.angularVelocity.z * s.flapRight) * tau) * lag;
         s.flapRight += (targetRight - s.flapRight - (b.angularVelocity.x + b.angularVelocity.z * s.flapForward) * tau) * lag;
@@ -148,6 +215,11 @@ export class Rotorcraft {
     const axial = v3.dot(hubAir, axis);
     const inPlane = v3.sub(hubAir, v3.scale(axis, axial));
     const horizontal = v3.len(inPlane);
+    const hubMoment = articulated ? hingeMoment(articulated, d.main.blades, s.omega,
+      { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight }) : v3.zero();
+    this.articulatedPower.hub = v3.dot(hubMoment, b.angularVelocity);
+    this.articulatedPower.shaft = -this.articulatedPower.hub;
+    const hubTorque = s.omega > 0 ? this.articulatedPower.hub / s.omega : 0;
     const main = bladeElements(d.main, s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true);
     const h = Math.max(0.3 * d.main.radius, height - quat.rotate(b.orientation, d.main.hub).z);
     // NDARC TP-2015-218751 §12-4.1.2: constant-thrust induced-velocity factor (exponent 3/2).
@@ -163,7 +235,7 @@ export class Rotorcraft {
     const tailArm = v3.sub(d.tail.hub, b.cgOffset);
     const tailAir = v3.add(air, v3.cross(b.angularVelocity, tailArm));
     // Positive tail thrust acts right: tail arm aft makes nose-left anti-torque for CCW main rotor.
-    const tailPitch = d.tail.minPitch + (1 - clamp(c.rudder, -1, 1)) * 0.5 * (d.tail.maxPitch - d.tail.minPitch);
+    const tailPitch = d.tail.minPitch + (1 - clamp(c.rudder, -1, 1) * d.rotation) * 0.5 * (d.tail.maxPitch - d.tail.minPitch);
     // Tail disc is on the left; the useful anti-torque force is to the right. Main wake enters its
     // in-plane flow, while signed sideslip enters its axial momentum equation (including adverse flow).
     const wakeAtTail = 0.35 * s.inflow / (1 + (air.x / 18) ** 2);
@@ -185,11 +257,13 @@ export class Rotorcraft {
       axial, horizontal, inflow: s.inflow, groundEffect: ge, inflowTau,
     });
     if (dt > 0) {
-      const coneTarget = main.coningMoment / Math.max(d.main.inertia * s.omega * s.omega, 1);
-      s.coning += (clamp(coneTarget, -0.15, 0.3) - s.coning) * lag;
-      const stallTarget = 16 * main.stallMoment /
-        Math.max(density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 * s.omega ** 2, 1);
-      s.retreatingFlap += (clamp(stallTarget, 0, 0.2) - s.retreatingFlap) * lag;
+      if (!articulated) {
+        const coneTarget = main.coningMoment / Math.max(d.main.inertia * s.omega * s.omega, 1);
+        s.coning += (clamp(coneTarget, -0.15, 0.3) - s.coning) * lag;
+        const stallTarget = 16 * main.stallMoment /
+          Math.max(density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 * s.omega ** 2, 1);
+        s.retreatingFlap += (clamp(stallTarget, 0, 0.2) - s.retreatingFlap) * lag;
+      }
       s.inflow += (targetInflow * ge * (d.main.inducedFactor ?? 1) - s.inflow) * (1 - Math.exp(-dt / inflowTau));
       s.tailInflow += (inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation,
         tailHorizontal) - s.tailInflow) * (1 - Math.exp(-dt / 0.08));
@@ -203,14 +277,43 @@ export class Rotorcraft {
     Object.assign(f, v3.add(v3.add(mainForce, tailForce), frame.force));
     Object.assign(m, v3.add(v3.add(v3.cross(mainArm, mainForce), v3.cross(tailArm, tailForce)), frame.moment));
     m.z += d.rotation * s.driveTorque;
+    if (articulated) {
+      Object.assign(m, v3.add(m, hubMoment));
+    }
     // The freely teetering rotor carries H, but transfers no bending moment through its centre hinge.
     // Its aerodynamic reorientation moment minus body-frame dH/dt equals w×H. Account for both here;
     // the rigid-body Euler term subtracts w×H. Keeping just the latter would invent rigid-hub control.
     Object.assign(this.angularMomentum, v3.scale(axis, d.rotation * d.main.inertia * s.omega));
     Object.assign(m, v3.add(m, v3.cross(b.angularVelocity, this.angularMomentum)));
     s.thrust = thrust; s.tailThrust = tail.thrust; s.torque = main.torque + tail.torque * d.tailRatio;
+    // The massless harmonic reduction retains no flap kinetic-energy store. Offset hinge work
+    // therefore exchanges with shaft work explicitly. This preserves the reduced work budget;
+    // it is not a full transient blade/body energy or angular-momentum solution.
+    if (articulated) s.torque += hubTorque;
     s.stalledFraction = main.stalledFraction;
+    // BEM integrates moment about the shaft. Transfer it to ONE blade's flap hinge.
+    const coning = d.hubModel?.kind === 'articulated' ? d.hubModel.coning : undefined;
+    // Like the harmonic coordinates, poses advance only on a real step. RK force queries
+    // and snapshot restoration must not replace the published pose with a different stage.
+    if (dt > 0) this.publishBlades(c, quat.rotateInv(b.orientation, { x: 0, y: 0, z: 9.80665 }).z,
+      coning ? (main.coningMoment - coning.hingeRadius * main.thrust) / d.main.blades : undefined);
     return this.loads;
+  }
+  /** Physical poses around the load solver's harmonic flap, without changing its load coordinates.
+   * Explicit mean moment is per blade, about the flap hinge. Fixtures without BEM use thrust at .75R. */
+  publishBlades(c: ControlInputs, normalGravity = 9.80665, meanMoment?: number): void {
+    const s = this.state, d = this.def, a = s.articulated;
+    if (!a) return;
+    const coning = d.hubModel?.kind === 'articulated' ? d.hubModel.coning : undefined;
+    a.blades.forEach((b, i) => {
+      const phase = i * 2 * Math.PI / d.main.blades, psi = s.azimuth + phase - Math.PI / 2;
+      const harmonic = -s.flapForward * Math.cos(psi) + s.flapRight * Math.sin(psi);
+      b.flap = coning ? articulatedBladeConing(coning, s.omega, s.thrust / d.main.blades,
+        harmonic, normalGravity, meanMoment).angle : s.coning + harmonic;
+      b.lag = 0; // Coupled lag experiment rejected; see docs/s269-integration.md.
+      b.pitch = d.main.minPitch + clamp(c.collective ?? 0, 0, 1) * (d.main.maxPitch - d.main.minPitch) +
+        d.rotation * d.cyclicLimit * (c.aileron * Math.cos(psi) - c.elevator * Math.sin(psi));
+    });
   }
   /** Converge the slow aerodynamic states at a held pose/RPM for the numerical trim solver. */
   settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true): ForceMoment {

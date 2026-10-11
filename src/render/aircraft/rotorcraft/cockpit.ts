@@ -96,8 +96,18 @@ export class RotorcraftCockpit {
     }
 
     const column = def.cockpit.column;
-    if (column.kind !== 'stick') throw new Error('Rotorcraft cockpit requires a central stick');
+    if (column.kind !== 'stick') throw new Error('Rotorcraft cockpit requires cyclic sticks');
     this.cyclic.name = 'cyclic'; this.cyclic.position.copy(frd(...column.pivot));
+    if (d.cyclic?.kind === 'individual') {
+      const parts = new MeshBatch();
+      for (const y of d.cyclic.gripYs) {
+        const path = d.cyclic.stem.map(p => [p[0], p[1] + y, p[2]] as const);
+        parts.add(mat.darkMetal, pathTube(path, 0.014));
+        const end = path[path.length - 1];
+        parts.add(mat.knobBlack, tube([end[0], end[1], end[2] + 0.06], [end[0], end[1], end[2] - 0.06], 0.020));
+      }
+      this.cyclic.add(parts.build('individualCyclicSticks')); this.group.add(this.cyclic); this.moving.push(this.cyclic);
+    } else {
     const stem = new MeshBatch();
     const stemPath = d.cyclic?.stem ?? [[0, 0, 0], [0.02, 0, -0.13], [-0.08, 0, -0.39], [-0.08, 0, -column.height]];
     stem.add(mat.darkMetal, pathTube(stemPath, 0.014));
@@ -115,6 +125,7 @@ export class RotorcraftCockpit {
     }
     this.bar.add(barParts.build('cyclicGrips')); this.cyclic.add(this.bar); this.group.add(this.cyclic);
     this.moving.push(this.cyclic, this.bar);
+    }
 
     for (const pivot of d.collective.pivots) {
       const lever = new THREE.Group(); lever.name = 'collective'; lever.position.copy(frd(...pivot));

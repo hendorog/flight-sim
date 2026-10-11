@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { R22_DEFINITION } from '../../src/aircraft/r22';
+import { S269_DEFINITION } from '../../src/aircraft/s269';
 import { R44_DEFINITION } from '../../src/aircraft/r44';
 import { quat, v3 } from '../../src/core/math';
 import { defaultControls } from '../../src/core/types';
@@ -8,7 +9,7 @@ import { Rotorcraft } from '../../src/physics/rotorcraft/rotorcraft';
 import { SkidGear } from '../../src/physics/rotorcraft/skids';
 import { DT, seaLevel } from './helpers';
 
-describe.each([R22_DEFINITION, R44_DEFINITION])('$id stopped and slow rotor', (aircraft) => {
+describe.each([R22_DEFINITION, R44_DEFINITION, S269_DEFINITION])('$id stopped and slow rotor', (aircraft) => {
   const d = aircraft.rotorcraft!;
   const body = (): BodyState => ({ time: 0, position: { x: 0, y: 0, z: -d.skids.z },
     orientation: quat.identity(), velocityBody: v3.zero(), angularVelocity: v3.zero(),
@@ -21,12 +22,13 @@ describe.each([R22_DEFINITION, R44_DEFINITION])('$id stopped and slow rotor', (a
       r.settle(b, wind, 1.225, d.skids.z, c);
       for (let i = 0; i < 5 / DT; i++) r.compute(b, wind, 1.225, d.skids.z, c, DT);
       expect(r.state.omega).toBe(0);
-      expect(r.state.flapForward).toBe(0); expect(r.state.flapRight).toBe(0);
+      // The articulated cosine-to-forward convention can publish negative zero.
+      expect(Math.abs(r.state.flapForward)).toBe(0); expect(Math.abs(r.state.flapRight)).toBe(0);
       expect(r.state.coning).toBe(0); expect(r.state.mastBump).toBe(false);
     }
   });
 
-  it('bounds low-RPM teeter at the mechanical stop, including body-axis transport at zero RPM', () => {
+  if (d.hubModel?.kind !== 'articulated') it('bounds low-RPM teeter at the mechanical stop, including body-axis transport at zero RPM', () => {
     const r = new Rotorcraft(d), c = defaultControls(aircraft), b = body();
     // A held 10 RPM in wind exercises the very large advance ratio during early spool-up.
     for (const rpm of [0, 10]) {

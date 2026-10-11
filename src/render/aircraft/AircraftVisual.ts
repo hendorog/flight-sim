@@ -17,6 +17,7 @@
 
 import * as THREE from 'three';
 import { RotorcraftVisual } from './RotorcraftVisual';
+import { s269ExteriorVisualClass } from '../../aircraft/s269/exterior';
 import { r44ExteriorVisualClass } from '../../aircraft/r44/exterior';
 import { FuselageShape } from './fuselageShape';
 import { sectionHalfWidth } from './fuselage';
@@ -90,6 +91,9 @@ export function interiorInView(distance: number, fovDeg: number, lodDistance: nu
 
 const R44ExteriorVisual = r44ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth);
 
+const S269ExteriorVisual = s269ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth,
+  ctx => ctx.state.rotorcraft?.articulated);
+
 export class AircraftVisual implements Subsystem {
   /** Everything of the aircraft; added to ctx.aircraftRoot by init(). */
   readonly root = new THREE.Group();
@@ -139,7 +143,7 @@ export class AircraftVisual implements Subsystem {
     const def = this.def;
     if (def.rotorcraft) {
       const t0 = performance.now();
-      const Visual = def.id === 'r44' ? R44ExteriorVisual : RotorcraftVisual;
+      const Visual = def.id === 's269' ? S269ExteriorVisual : def.id === 'r44' ? R44ExteriorVisual : RotorcraftVisual;
       this.helicopter = new Visual(def, ctx, this.opts);
       this.root.add(this.helicopter.root); ctx.aircraftRoot.add(this.root);
       if (this.pendingPanel) this.helicopter.setPanelTexture(this.pendingPanel);

@@ -11,7 +11,7 @@
 import type { Quat, Vec3 } from './math';
 
 // ---------------------------------------------------------------------------------------------- identity
-export const ROTORCRAFT_IDS = ['r22', 'r44'] as const;
+export const ROTORCRAFT_IDS = ['r22', 'r44', 's269'] as const;
 export type RotorcraftId = typeof ROTORCRAFT_IDS[number];
 export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | RotorcraftId;
 export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', ...ROTORCRAFT_IDS];
@@ -50,6 +50,14 @@ export interface ControlInputs {
   collective?: number;
   rotorGovernor?: boolean;
   rotorClutch?: boolean;
+  /** Optional three-position actuator switch. Absent retains the boolean clutch contract. */
+  rotorClutchCommand?: 'engage' | 'hold' | 'release';
+  rotorClutchGuardOpen?: boolean;
+  /** Momentary electric spring-trim motor commands, [-1,1], pitch positive aft / roll right. */
+  cyclicTrimPitch?: number;
+  cyclicTrimRoll?: number;
+  /** One warning lens being pressed; absent releases all individual tests. */
+  lampTestId?: string;
   /** Rotorcraft configuration for speed-limit reporting; absent = doors installed. */
   rotorDoorsOff?: boolean;
   /** Momentary ignition-key PRIME, separate from the starter and manual pump switch. */

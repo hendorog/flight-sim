@@ -80,6 +80,11 @@ export function buildRotorcraftAirframe(def: AirframeVisualDef, mat: AircraftMat
       add(mat.aluminium, tube([x, y - 0.04, s.z - 0.05], [x, y + 0.04, s.z - 0.05], 0.033));
     }
   }
+  for (const damper of s.dampers ?? []) {
+    const middle = damper.upper.map((v, i) => THREE.MathUtils.lerp(v, damper.lower[i], 0.58)) as unknown as FRD;
+    add(castMetal, tube(damper.upper, middle, damper.bodyRadius));
+    add(mat.chrome, tube(middle, damper.lower, damper.rodRadius));
+  }
 
   // Optional exposed piston installation: cylinders, crankcase, sump, cooling fan/shroud and welded frame.
   // Detail dimensions are visual estimates; there is no simulated engine or fan animation here.

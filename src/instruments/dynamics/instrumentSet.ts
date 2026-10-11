@@ -405,7 +405,7 @@ export class InstrumentSet {
     r.rotorRpmPct = lagStep(r.rotorRpmPct, tach && tachPowered ? (s.rotorcraft?.rotorRpm ?? 0) * 100 / tach.rotorRpm100 : 0, dt, 0.12);
     r.engineRpmPct = lagStep(r.engineRpmPct, tach && tachPowered ? s.engine.rpm * 100 / tach.engineRpm100 : 0, dt, 0.12);
     r.carbAirTempC = lagStep(r.carbAirTempC, powered ? (sys.carbAirTempC?.(s, c) ?? 0) : -40, dt, 1.5);
-    if (s.engine.running) r.engineHours += dt / 3600;
+    if (sys.hourmeterRunning ? sys.hourmeterRunning(s, c) : s.engine.running) r.engineHours += dt / 3600;
     for (let i = 0; i < sys.lamps.length; i++) this.lamps[sys.lamps[i].id] = sys.lamps[i].lit(li);
     r.oatC = s.oat - 273.15;
     r.clockSeconds = w.timeOfDay * 3600;

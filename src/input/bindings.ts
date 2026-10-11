@@ -25,7 +25,7 @@ import type { InputProfile } from './profile';
 
 /** Every discrete or continuous action the input system can perform, from a key or a gamepad button. */
 export type InputAction =
-  | 'rotorClutch' | 'rotorGovernor'
+  | 'rotorClutch' | 'rotorGovernor' | 'rotorClutchGuard' | 'cyclicTrimLeft' | 'cyclicTrimRight'
   | 'pitchUp' // yoke back (nose up)
   | 'pitchDown'
   | 'rollLeft'
@@ -221,6 +221,9 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   gearDown: { label: 'Landing gear lever DOWN', category: 'Flight controls' },
   gearUp: { label: 'Landing gear lever UP', category: 'Flight controls' },
   gearEmergency: { label: 'Emergency gear extension (pull the knob)', category: 'Flight controls' },
+  rotorClutchGuard: { label: 'Clutch guard open / close', category: 'Engine' },
+  cyclicTrimLeft: { label: 'Cyclic spring trim left (hold)', category: 'Flight controls' },
+  cyclicTrimRight: { label: 'Cyclic spring trim right (hold)', category: 'Flight controls' },
   rotorClutch: { label: 'Rotor clutch engage / disengage', category: 'Engine' },
   rotorGovernor: { label: 'Rotor governor on / off', category: 'Engine' },
   flapsUp: { label: 'Flaps up one notch', category: 'Flight controls' },
@@ -338,8 +341,12 @@ const ACTION_NEEDS: Partial<Record<InputAction, keyof InputProfile['has']>> = {
  * ignores the keys of an action a type lacks, and the help listing leaves them out.
  */
 export function profileHasAction(profile: InputProfile, action: InputAction): boolean {
+  if (action === 'rotorClutchGuard') return !!profile.threePositionClutch;
+  if (action === 'cyclicTrimLeft' || action === 'cyclicTrimRight') return !!profile.springTrim;
+  if (profile.springTrim && ['trimNoseUp', 'trimNoseDown', 'rudderTrimLeft', 'rudderTrimRight'].includes(action)) return true;
   if (action === 'fuelPrime') return !!profile.primeKey;
-  if (action === 'rotorClutch' || action === 'rotorGovernor') return !!profile.rotorcraft;
+  if (action === 'rotorClutch') return !!profile.rotorcraft;
+  if (action === 'rotorGovernor') return !!profile.rotorcraft && profile.rotorGovernor !== false;
   if (profile.rotorcraft && ['trimNoseUp', 'trimNoseDown', 'parkingBrake', 'brakes', 'brakeLeft', 'brakeRight'].includes(action)) return false;
   // ENGINE MASTER switches have no single-magneto positions.
   if (profile.ignition === 'engineMaster' && (action === 'magnetoRight' || action === 'magnetoLeft')) return false;

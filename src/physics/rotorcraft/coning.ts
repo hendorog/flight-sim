@@ -63,3 +63,15 @@ export function bladeBendShape(x: number): number {
   x = clamp(x, 0, 1);
   return x * x * (6 - 4 * x + x * x) / 3;
 }
+
+/** Resolve a blade's mean loading plus its dynamic harmonic flap. Represent the harmonic as
+ * an equivalent hinge moment so the shared balance applies weight and stops exactly once.
+ * Away from stops this preserves the individual flap deviations; at rest a free hinge is
+ * supported by its stop even if the airborne solver retains a stale harmonic. This pose
+ * adapter does not feed stop reactions back into the reduced airborne dynamics. */
+export function articulatedBladeConing(d: BladeConingDefinition, omega: number, thrust: number,
+  harmonic: number, normalGravity = 9.80665,
+  meanMoment = thrust * (d.thrustRadius - d.hingeRadius)): BladeConingState {
+  const stiffness = (d.inertia - d.mass * d.hingeRadius * d.cgRadius) * omega ** 2 + d.hingeStiffness;
+  return bladeConing(d, omega, thrust, normalGravity, meanMoment + stiffness * harmonic);
+}

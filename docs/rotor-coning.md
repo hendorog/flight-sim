@@ -165,6 +165,8 @@ including separate enlarged rotor sheets.
 
 Evidence is in the ignored `work/` directory:
 
+- `work/coning/s269-runway-before-after.png`: default runway and the closed-throttle rundown,
+  at 20, 120 and 180 seconds; individual simulator screenshots were also inspected.
 - `work/coning/r22-before-after.png`, `r44-before-after.png`: seven side views, before and after.
 - `work/coning/r22-rotor-detail.png`, `r44-rotor-detail.png`: the same comparison focused on the rotor.
 - `work/coning/before.json`, `report.json`, `report.txt`: measurements, including complete-model ground runs.
@@ -173,22 +175,143 @@ Evidence is in the ignored `work/` directory:
 - `work/report-coning.mjs`, `work/measure-coning.ts`, `work/report-coning.ts`, `work/contact-coning.py`:
   reproduction and contact-sheet assembly. Run from the repository root.
 
-## Schweizer 269 follow-up
+## Schweizer 269 integration
 
-Call `bladeConing` for each articulated blade with its own signed thrust or, preferably, integrated
-aerodynamic moment **about that blade's flap hinge**. Supply the 269's blade mass/CG/inertia, radial
-hinge offset, spring stiffness/rest angle if applicable, actual droop/coning stops and flexible-span
-EI. Do not copy the Robinson mass or stop estimates, and do not divide rotor inertia by two: use the
-269's actual blade count and remove hub inertia if measured per-blade inertia is available. To convert
-a measured hinge inertia to the API's shaft inertia, add `2 m e (rcg − e) + m e²`.
+### Diagnosis: two distinct issues
 
-The shared equilibrium is not a three-blade dynamics integrator. Its renderer still needs separate
-flap transforms and sag per blade, plus phase-resolved pitch/lead–lag as provided by that aircraft's
-model. Preserve dynamic flap harmonics around the equilibrium without adding mean coning twice.
-The current `TeeteringRotor` is deliberately still a two-blade renderer; its common trail/disc
-describes symmetric coning, so individual articulated-blade poses need the 269's rendering path.
+This integration starts from `fd86c5f` and preserves the coning merge from `main` at `490d15c`
+(implementation commit `962cd20`, “Rotor blades cone from a hinge moment balance…”).
 
-## Changed files
+At the exact preview load `dev/aircraft.html?type=s269&view=side&rpm=120&thrust=50&collective=0`,
+the pre-change renderer has **−1.864° flap on all three hinges**. The dev harness creates
+`emptyRotorcraftState()` with no `articulated` blades; its old visual fallback therefore supplies
+this angle. It does not run the flight model. The explicit 50 N overrides the default thrust, and
+both flap harmonics default to zero. The blade mesh has no built-in positive cone, and the flap
+pin's positive-Z rotation correctly raises the local +X span. The measured mesh-tip centroids
+are all 12.74 cm below their pins before the change (7.34 cm below with the new balance).
+
+The apparent upward blade in this screenshot is **perspective**: `view=side` is a low, oblique
+camera at model `[-13, 0.2, -0.9]`, below the main hinge plane at Y=1.697856 m. A blade extending
+away from that camera can appear to climb on screen even while its tip is below the pin. The
+new optional `view=rotorside` puts the camera at the main hinge height. The generic side preset
+is unchanged. Before/after screenshots of both views and numerical mesh-tip measurements are
+in `work/coning/{before,after}/diagnosis.json` and `s269-120rpm-50N-*.png`.
+
+There is also a real low-speed error in the **published physics pose**. The old `publishBlades`
+used the aerodynamic-only harmonic solver's `coning` as total blade flap, omitting blade weight
+and mechanical support. At a held, level, collective-down 120 RPM it published +0.462° with
+159.178 N total thrust; the weight-aware pose is −0.800°. At zero RPM the aerodynamic coordinate
+could retain its previous value. This is a pose error, not a reason to retune operating flight loads.
+
+### Integration and limits
+
+`S269_BLADE_CONING` supplies the 269's own mass integrals, pin offset, zero flap spring and
+estimated −2° stop. The full parameter/source table is in [s269-sources.md](s269-sources.md#physical-coning-and-droop-stop-pose-s269coning).
+No Robinson mass, inertia, droop-stop setting or EI is copied. The 269 span is rigid in this change;
+elastic sag awaits its own EI estimate.
+
+`articulatedBladeConing` calls the shared `bladeConing` **for each blade**. It adds the equivalent
+moment of that blade's dynamic harmonic flap to the mean aerodynamic hinge moment before solving
+weight, centrifugal and spring balance and applying stops. Away from a stop, individual harmonic
+differences are preserved. At zero speed a free hinge rests on its stop even if the airborne
+harmonic state is stale. The cone of the rendered rotor is the mean of these physical blade angles.
+
+The simulation supplies `(BEM shaft coning moment − e × total thrust) / 3`, using the existing
+resolved radial loading. The preview fallback has only total thrust, so uses the documented 0.75R
+arm. Both project gravity into the airframe's shaft-normal direction. Published physical poses
+advance on positive-dt physics steps; RK force queries and snapshot restoration preserve them.
+Reset also initializes stopped blades on their stops. The renderer consumes supplied flap directly,
+with no second coning term, and retains individual lag and pitch transforms. The mean exposure disc
+and trail use the same hinge and projected radial extent as the rigid blades.
+
+The aerodynamic `RotorcraftState.coning`, first-harmonic integration, thrust, torque, hub reaction,
+inflow and energy budget are untouched. This is a physical pose adapter around the reduced
+flight model, not a newly coupled stop-impact or elastic-flapping simulation. In particular, stop
+reactions do not feed back into the body/shaft equations. Existing dynamic lag remains zero in
+physics, as documented by the earlier rejected lag experiment; the renderer still accepts separate
+nonzero lag/pitch per blade.
+
+### Numerical and visual evidence
+
+The seven rows below use the same inputs before and after, with the camera at hinge height,
+azimuth 90° and 25° field of view. Low-speed loads come from a held level, sea-level ISA,
+collective-down rotor; hover loads/collectives come from the existing converged light/gross trims.
+They are frozen **load fixtures**, not screenshots of a dynamically flown hover. The preview
+has no per-blade physics state; hence its 0.75R estimate differs slightly from the BEM pose.
+
+| 269 fixture | RPM | Total thrust, N | Old preview mean, ° | New preview mean, ° | New physical BEM mean, ° |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Stopped | 0 | 0 | −2.000 | −2.000 | −2.000 |
+| Slow | 30 | 9.908 | −1.992 | −2.000 | −2.000 |
+| Slow | 60 | 39.790 | −1.966 | −2.000 | −2.000 |
+| Slow | 120 | 159.178 | −1.862 | −0.661 | −0.800 |
+| Collective down | 462.278 | 2362.255 | 0.759 | 0.515 | 0.377 |
+| Light hover | 462.278 | 6246.683 | 2.006 | 1.502 | 1.464 |
+| Heavy hover | 462.278 | 7958.278 | 2.556 | 1.937 | 1.917 |
+
+At nominal RPM and **zero** thrust, the new hinge angle is −0.085°: nearly horizontal. At the
+reported 120 RPM / 50 N input it is −1.073° (gravity projected through the fixture's 2° pitch).
+The stops hold the rigid blades at −2° at rest and very low speeds; leaving the stops is continuous.
+
+The full simulator was also run from `index.html?aircraft=s269&scenario=runway&resume=0`, in calm
+weather, with before/after runs at identical times. Its runway spawn uses a quarter-open throttle
+and approximately **full rotor RPM**, not a 120-RPM idle. At 20 s it has 462.098 RPM, 1767.508 N,
+collective zero and a physical mean of +0.241° (old published mean +0.327°). That small positive
+cone is supported by actual aerodynamic loading. After closing the throttle grip at 60 s, it slows
+to 218.727 RPM at 80 s, 106.658 RPM at 120 s and 73.991 RPM at 180 s; the new physical means are
+−0.056°, −1.273° and −2.000°. It remains on the skids. Screenshots and complete states/controls are
+in `work/coning/{before,after}/runway.json` and `s269-runway-*s.png`. The recorded runway
+states, controls and summaries are identical before/after when only the physical blade poses
+are excluded.
+
+Evidence, all uncommitted in `work/`:
+
+- `work/coning/s269-before-after.png` and `s269-rotor-detail.png`: all seven rows visually inspected.
+- `work/coning/r22-before-after.png` and `r22-rotor-detail.png`: merged renderer versus `main`, all
+  seven rows visually inspected and **pixel-identical**, using the R22 loads recorded above.
+- `work/coning/{before,after}-measure.json`: held-pose and hover measurements.
+- `work/coning/{before,after}-dynamics.json`: complete flight-state samples at 0, 41 and 90 kt,
+  two seconds each at 240 Hz with cyclic perturbations, omitting only the intentionally changed
+  `articulated` blade poses. Files are byte-identical, SHA-256
+  `0837674eb3ac83d8606e3e9bdce49a50be106ae2833b3091891b41246a2733d7`.
+- Reproduction scripts: `work/measure-coning.ts`, `work/report-coning.mjs`,
+  `work/capture-coning.mjs`, `work/contact-coning.py`, `work/runway-coning.mjs`,
+  `work/diagnose-coning.mjs`. `work/before` is an archive of pre-change HEAD and `work/main` an
+  archive of merged main; captures never overwrite the working source.
+
+### 269 changes and merge resolution
+
+- `src/aircraft/s269/{coning,rotorcraft,visual}.ts`: one shared 269 definition; remove lerp data.
+- `src/physics/rotorcraft/{coning,definition,rotorcraft}.ts`: per-blade pose balance, optional typed
+  hub parameters, BEM moment transfer, gravity and reset/step publication.
+- `src/aircraft/s269/exteriorRotor.ts`: shared fallback, independent poses, matching disc/trail hinge.
+- `src/dev/aircraft.ts`: optional camera for unambiguous side-on coning inspection.
+- `tests/rotorcraft/s269Coning.test.ts`, `tests/aircraft/s269Exterior.test.ts`: low-speed support,
+  continuity, signed load, mass integrals, independent flap, pose/mesh agreement and exposure geometry.
+- `docs/s269-sources.md`, this document: sources, estimates, diagnosis and evidence.
+- Merge conflicts in `RotorcraftVisual.ts`, `airframe/types.ts` and `rotorcraft/rotor.ts` were resolved
+  in their contents, retaining main's coning/bending and the branch's blade count, hub type, tail twist
+  and rotation conventions. The merge is left uncommitted and its index unmerged for the supervisor
+  to stage. The other incoming Robinson changes are retained.
+
+### 269 verification
+
+- `npm run typecheck`: passed.
+- `npx vitest run tests/aircraft/s269*.test.ts tests/rotorcraft/s269*.test.ts tests/rotorcraft/coning.test.ts tests/instruments/s269Panel.test.ts tests/render --maxWorkers=4`:
+  **16 files passed, 110 tests passed, two expected autorotation failures**.
+- `npx vitest run --maxWorkers=4`: **220 files passed, four skipped; 3043 tests passed,
+  six expected autorotation failures, 221 skipped**, in 372.00 seconds. No files timed out.
+- Full operating-flight sample files and the runway states/controls (apart from physical blade poses)
+  are identical before/after. Snapshot restoration, 269 dynamics, energy and performance tests pass.
+- All seven 269 and R22 contact-sheet rows, enlarged rotor sheets, original oblique 120-RPM view,
+  hinge-height 120-RPM view, and runway screenshots were opened and inspected. All seven R22
+  images are pixel-identical to `main`.
+- `git diff --check`: passed. No conflict markers remain in file contents. No commits or staging.
+
+Logs: `work/coning/typecheck.log`, `targeted-final.log`, `full-suite.log`, `measure.log`,
+`capture-{before,after,main}.log`, `runway-{before,after}.log`, `diagnosis.log` (same directory).
+
+## Original Robinson changes (main)
 
 | File | Change |
 | --- | --- |
@@ -204,7 +327,7 @@ describes symmetric coning, so individual articulated-blade poses need the 269's
 | `tests/aircraft/r22.test.ts` | Assert the preserved rigid span about the coning pin, rather than the shaft centre |
 | `docs/rotor-coning.md` | This report |
 
-## Verification
+## Original Robinson verification (main)
 
 - `npm run typecheck`: passed.
 - `npx vitest run tests/rotorcraft tests/aircraft/r22Exterior.test.ts tests/aircraft/r44Exterior.test.ts tests/render/bladeRendering.test.ts tests/render/bladeBlur.test.ts --maxWorkers=4`:

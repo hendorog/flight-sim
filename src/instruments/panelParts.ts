@@ -171,7 +171,7 @@ export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures'], scale?
       return [{ id: g.id, rect: guardedKnobRect(g.at) }];
     case 'flapLever':
       return [{ id: g.id, rect: g.bounds, solid: [] }];
-    case 'dualSector': case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'digitalTemperature': case 'pullKnob': case 'pushButton':
+    case 'dualSector': case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'digitalTemperature': case 'pullKnob': case 'pushButton': case 'positionSwitch':
       return [{ id: g.id, rect: g.bounds }];
     default:
       return [];
@@ -183,7 +183,7 @@ export function isLargeGauge(g: GaugeDef): boolean {
   switch (g.kind) {
     case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'rotorTach': case 'blank':
       return true;
-    case 'tach': case 'single': case 'twinNeedle':
+    case 'tach': case 'single': case 'twinNeedle': case 'customRound':
       return g.size === 'large';
     default:
       return false;
@@ -215,7 +215,7 @@ export function panelParts(def: PanelDef): PanelPart[] {
   const rest: PanelPart[] = [];
   for (const g of def.gauges) ('at' in g ? dials : rest).push(...gaugeParts(g, def.apertures, def.instrumentScale));
   if (def.annunciator) dials.push({ id: ANNUNCIATOR_ID, rect: def.annunciator.bounds, paintRects: def.annunciator.cells });
-  dials.push({ id: SWITCH_ROW_ID, rect: def.switchRow.bounds, solid: switchRowSolids(def), paintRects: def.switchRow.switches.some(s => s.top !== undefined) ? switchRowSolids(def) : undefined });
+  dials.push({ id: SWITCH_ROW_ID, rect: def.switchRow.bounds, solid: switchRowSolids(def), paintRects: (def.switchRow.distributed || def.switchRow.switches.some(s => s.top !== undefined)) ? switchRowSolids(def) : undefined });
   const ignition = ignitionLayout(def.ignition);
   if (ignition) dials.push({ id: IGNITION_ID, rect: ignition.rect });
   return [...dials, ...rest];

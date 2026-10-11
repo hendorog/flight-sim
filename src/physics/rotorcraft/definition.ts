@@ -1,6 +1,7 @@
 import type { Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import type { ManifoldPlacard, SpeedPlacard, SpeedCorrections } from './limits';
+import type { BladeConingDefinition } from './coning';
 
 /** SI units; rotor rotation is +1 about its upward thrust axis (CCW viewed from above). */
 export interface RotorDefinition {
@@ -13,6 +14,12 @@ export interface RotorDefinition {
   inducedFactor?: number;
 }
 export interface RotorcraftDefinition {
+  /** Installation metadata. Absent retains the legacy teetering hub. Articulated selects the
+   * reduced harmonic offset-hinge solver; per-blade transients/ground resonance remain unmodelled. */
+  hubModel?: { kind: 'teetering' } | { kind: 'articulated'; flapHingeOffset: number; lagHingeOffset: number;
+    lagDamper: 'elastomeric' | 'friction';
+    /** Physical blade pose; harmonic load coordinates remain independent of gravity/stops. */
+    coning?: BladeConingDefinition };
   main: RotorDefinition;
   tail: RotorDefinition;
   nominalRpm: number;
@@ -22,12 +29,20 @@ export interface RotorcraftDefinition {
   airspeedCorrections?: SpeedCorrections;
   manifoldLimits?: ManifoldPlacard;
   rotation: 1 | -1;
+  /** Tail rotation relative to main azimuth about the renderer's local axis; legacy is -1. */
+  tailRotation?: 1 | -1;
   engineRatio: number; tailRatio: number; transmissionEfficiency: number;
   cyclicLimit: number;
   teeterLimit: number;
-  /** Control actuation metadata. Inputs command position; servo failures and hand forces are not simulated. */
-  controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical' };
+  /** Inputs command position; optional spring trim reports forces but drives no force-feedback hardware. */
+  controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical';
+    /** Installation label; the optional springTrim parameters enable its actuator/force model. */
+    trim?: 'electric-spring' | 'none';
+    /** Normalized anchor travel/s and force at unit spring deflection (N); measured data preferred. */
+    springTrim?: { rate: number; force: number } };
   systems: { clutchSeconds: number; beltTorque: number; correlator: number; governorRate: number;
+    /** False for a manual-throttle installation; absence retains the legacy governor. */
+    governorInstalled?: boolean;
     /** Fractions of tachometer reference RPM, not governed RPM. */
     governorEngage: number; lowRpmWarning: number; powerCheckMinRpm: number;
     /** Collective switch deadband, normalized travel. */
@@ -36,7 +51,12 @@ export interface RotorcraftDefinition {
     /** Estimated RPM prediction horizon of the governor's rate feedback, seconds. */
     governorLead?: number;
     continuousPower: number; takeoffPower: number; takeoffSeconds: number };
-  stabilizer: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number; wash: number };
+  /** Main transmission rotor-driven oil pump and lumped thermal model, SI except psi/rpm. */
+  transmission?: { pressurePsi: number; pumpRpm: number; pressureSeconds: number;
+    heatCapacity: number; cooling: number };
+  stabilizer: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number; wash: number;
+    /** Single right-hand surface: positive cant raises its tip. Absent retains horizontal surface. */
+    dihedral?: number };
   fins: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number }[];
   /** Fuselage destabilising moment derivatives, Nm/(Pa rad). */
   fuselageMoment: { pitch: number; yaw: number };
@@ -49,10 +69,20 @@ export interface RotorcraftDefinition {
   tailProtection?: { stinger: readonly Vec3[]; radius: number; fin: readonly Vec3[];
     stiffness: number; damping: number; maxSink: number; maxCompression: number };
   skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number;
+    /** Installation only. Oleo gas/poppet dynamics and ground resonance are not yet simulated. */
+    suspension?: 'cross-tube' | 'oleo';
     /** Shoe/terrain contact, distinct from tyre coefficients. Lateral includes soil ploughing by the tube. */
     surfaces?: Partial<Record<SurfaceType, { static: number; sliding: number; lateral: number }>> };
 }
 export interface RotorcraftState {
+  /** Physical per-blade pose, radians; optional hub coning data adds weight and droop stops
+   * around the reduced solver's harmonic flap. `coning` below remains aerodynamic. Lag stays zero until a
+   * validated body/shaft coupling exists. Blade zero starts body right at azimuth zero. */
+  articulated?: { blades: { flap: number; lag: number; pitch: number }[] };
+  /** Optional installation systems; absent on legacy rotorcraft. Never substitutes for clutchLight. */
+  transmission?: { oilPressurePsi: number; oilTemperatureC: number; tailChips: boolean };
+  clutchDisengaged?: boolean;
+  springTrim?: { pitch: number; roll: number; pitchForce: number; rollForce: number };
   omega: number; azimuth: number; inflow: number; tailInflow: number;
   flapForward: number; flapRight: number; governorThrottle: number;
   thrust: number; tailThrust: number; torque: number; driveTorque: number;
@@ -73,6 +103,12 @@ export interface RotorcraftState {
    * lowRpmLight: powered LOW RPM indication, independent of collective position.
    * lowRpmHorn: audible warning below the type's threshold with collective not fully down. */
   clutchEngagement: number; clutchLight: boolean; governorActive: boolean; lowRpmHorn: boolean; lowRpmLight: boolean;
+}
+/** Snapshots own every nested state; legacy scalar serialization remains identical. */
+export function cloneRotorcraftState(s: RotorcraftState): RotorcraftState {
+  return { ...s, ...(s.transmission ? { transmission: { ...s.transmission } } : {}),
+    ...(s.springTrim ? { springTrim: { ...s.springTrim } } : {}),
+    ...(s.articulated ? { articulated: { blades: s.articulated.blades.map(b => ({ ...b })) } } : {}) };
 }
 export function emptyRotorcraftState(): RotorcraftState {
   return { omega: 0, azimuth: 0, inflow: 0, tailInflow: 0, flapForward: 0, flapRight: 0,

@@ -20,6 +20,7 @@ import type { CameraMode, SimContext, Subsystem } from '../core/context';
 import { PROP_FEATHER_GATE, clearEngineControl, cloneControls, copyControls, engineControl, setEngineControl } from '../core/types';
 import type { AircraftState, ControlInputs, EngineControlKey, FuelSelector, MagnetoPosition } from '../core/types';
 import { C172S_INPUT } from '../aircraft/c172s/input';
+import { clutchPosition, selectClutch, toggleClutchGuard } from './rotorcraftControls';
 import { INPUT_ACTIONS, actionForKey, keyLabelForAction, profileHasAction, type InputAction } from './bindings';
 import type { AxisControl } from './devices';
 import type { AxisReading } from './gamepads';
@@ -246,6 +247,8 @@ export class InputSystem implements Subsystem {
   /** Time each lever action has been held, s. */
   private readonly heldTime = new Map<InputAction, number>();
 
+  private springPitch = 0;
+  private springRoll = 0;
   /** Hold-position keyboard deflections, relative to `neutral`. */
   private kbAileron = 0;
   private kbElevator = 0;
@@ -401,6 +404,8 @@ export class InputSystem implements Subsystem {
   /** A scenario reset: the flight model has written its trimmed controls into ctx.controls. */
   private onReset(ctx: SimContext): void {
     const c = ctx.controls;
+    this.springPitch = ctx.state.rotorcraft?.springTrim?.pitch ?? 0;
+    this.springRoll = ctx.state.rotorcraft?.springTrim?.roll ?? 0;
     this.pickup.clear();
     this.neutral.aileron = c.aileron;
     this.neutral.elevator = c.elevator;
@@ -507,6 +512,8 @@ export class InputSystem implements Subsystem {
 
   private holdYoke(): void {
     if (!this.ctx) return;
+    // A physics tick may have moved the trim motor since the last input frame. Rebase before handoff.
+    this.updateSpringTrim(this.ctx.state);
     const c = this.ctx.controls;
     this.kbAileron = c.aileron - this.neutral.aileron;
     this.kbElevator = c.elevator - this.neutral.elevator;
@@ -654,12 +661,30 @@ export class InputSystem implements Subsystem {
     return act.isActive(this.time) ? best : null;
   }
 
+  private updateSpringTrim(s: AircraftState): void {
+    const n = this.neutral;
+    const spring = s.rotorcraft?.springTrim;
+    if (this.profile.springTrim && spring) {
+      const pitch = n.elevator, roll = n.aileron;
+      n.elevator = clamp(n.elevator + spring.pitch - this.springPitch, -1, 1);
+      n.aileron = clamp(n.aileron + spring.roll - this.springRoll, -1, 1);
+      // An absolute mouse holds the stick like the pilot's hand: spring trim changes force, not position.
+      // Retain the new keyboard neutral but cancel its displacement in the additive mouse/keyboard mix.
+      if (this.mouseYoke && !this.mouseArmed) {
+        this.kbElevator -= n.elevator - pitch;
+        this.kbAileron -= n.aileron - roll;
+      }
+      this.springPitch = spring.pitch; this.springRoll = spring.roll;
+    }
+  }
+
   private updateFlightControls(dt: number, ctx: SimContext): void {
     const s = ctx.state;
     const ias = s.ias;
     const c = ctx.controls;
     const n = this.neutral;
     const tuning = this.profile.assists;
+    this.updateSpringTrim(s);
     if (this.profile.rotorcraft) {
       const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
@@ -971,7 +996,10 @@ export class InputSystem implements Subsystem {
     }
 
     const trim = rate('trimNoseUp', TRIM_RATE) - rate('trimNoseDown', TRIM_RATE);
-    c.elevatorTrim = clamp(c.elevatorTrim + trim * dt, -1, 1);
+    if (this.profile.springTrim) {
+      c.cyclicTrimPitch = this.dir('trimNoseDown', 'trimNoseUp');
+      c.cyclicTrimRoll = clamp(this.dir('cyclicTrimLeft', 'cyclicTrimRight') + this.dir('rudderTrimLeft', 'rudderTrimRight'), -1, 1);
+    } else c.elevatorTrim = clamp(c.elevatorTrim + trim * dt, -1, 1);
     if (this.profile.has.rudderTrim) {
       const rudderTrim = rate('rudderTrimRight', TRIM_RATE) - rate('rudderTrimLeft', TRIM_RATE);
       c.rudderTrim = clamp(c.rudderTrim + rudderTrim * dt, -1, 1);
@@ -1128,18 +1156,26 @@ export class InputSystem implements Subsystem {
         c.gearEmergency = true; // the knob latches out
         break;
       case 'rudderTrimLeft':
+        if (this.profile.springTrim) break;
         c.rudderTrim = clamp(c.rudderTrim - LEVER_TAP / 2, -1, 1);
         break;
       case 'rudderTrimRight':
+        if (this.profile.springTrim) break;
         c.rudderTrim = clamp(c.rudderTrim + LEVER_TAP / 2, -1, 1);
         break;
       case 'trimNoseUp':
+        if (this.profile.springTrim) break;
         c.elevatorTrim = clamp(c.elevatorTrim + LEVER_TAP / 2, -1, 1);
         break;
       case 'trimNoseDown':
+        if (this.profile.springTrim) break;
         c.elevatorTrim = clamp(c.elevatorTrim - LEVER_TAP / 2, -1, 1);
         break;
-      case 'rotorClutch': c.rotorClutch = !c.rotorClutch; break;
+      case 'rotorClutchGuard': toggleClutchGuard(c); break;
+      case 'rotorClutch':
+        if (this.profile.threePositionClutch) selectClutch(c, (clutchPosition(c) + 1) % 3);
+        else c.rotorClutch = !c.rotorClutch;
+        break;
       case 'rotorGovernor': c.rotorGovernor = !c.rotorGovernor; break;
       case 'flapsUp':
         c.flaps = nextFlapDetent(c.flaps, -1, this.profile.flapDetents);

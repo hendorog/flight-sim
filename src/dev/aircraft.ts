@@ -17,6 +17,8 @@
 //   rpm=2300 comp=0.06 steer=deg                  propeller rpm, strut compression (m), nosewheel steering
 //   lights=nav,beacon,strobe,landing,taxi | all | none      panel=0..1 panel light level
 //   rotorcraft: rpm=530 azimuth=25 flapforward=deg flapright=deg thrust=N collective=0..1 throttle=0..1 spinrotor=1
+//   view=rotorside         side camera at the main hinge height, for judging coning without parallax.
+//                          The generic side preset is below the hub; a far drooping blade can look raised.
 //   paneltex=1             show a test instrument-panel texture (checks the setPanelTexture mapping)
 //   t=seconds              simulation time offset (strobe/beacon phase; use with freeze=1)
 //   exposure=1             exposure multiplier over the harness's daylight exposure (dusk defaults higher)
@@ -351,6 +353,9 @@ async function publishHash(): Promise<void> {
   (window as unknown as { __hash: unknown }).__hash = { hash, ...parts };
 }
 
+if (airframe?.rotorcraftVisual) PRESETS.rotorside = [
+  new THREE.Vector3(-18, -airframe.rotorcraftVisual.main.hub[2], 0.8), new THREE.Vector3(0, 0.5, 0.8),
+];
 let camPreset: [THREE.Vector3, THREE.Vector3] | null = null;
 let initStart = 0;
 const tmpA = new THREE.Vector3();

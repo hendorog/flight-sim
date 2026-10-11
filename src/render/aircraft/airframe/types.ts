@@ -410,9 +410,11 @@ export interface RotorcraftVisualDef {
     paint?: RotorBladePaint;
     /** Per-blade hinge/weight/bending balance; shares the flight model's inertia and live thrust. */
     coning: BladeConingDefinition };
-  tail: { hub: FRD; radius: number; root: number; chord: number; precone: number; paint?: RotorBladePaint };
+  tail: { hub: FRD; radius: number; root: number; chord: number; precone: number; twist?: number; paint?: RotorBladePaint };
   skids: { halfTrack: number; z: number; front: number; rear: number; crossTubes: readonly number[];
-    tubeRadius?: number; bellyHalfWidth?: number; bellyZ?: number; crossCentreZ?: number };
+    tubeRadius?: number; bellyHalfWidth?: number; bellyZ?: number; crossCentreZ?: number;
+    /** Optional static oleo geometry; no simulated suspension stroke yet. */
+    dampers?: readonly { upper: FRD; lower: FRD; bodyRadius: number; rodRadius: number }[] };
   boom: { front: FRD; rear: FRD; radii: readonly [number, number] };
   mast: { bottom: FRD; top: FRD; bottomWidth: number; topWidth: number };
   /** Thin aerofoil-like extrusions, outlined in FRD (upper fin, lower fin, stabiliser). */
@@ -426,7 +428,7 @@ export interface RotorcraftVisualDef {
     poweredVolts?: readonly [number, number]; enclosureDepth?: number;
     /** Constant cd/m² when the panel canvas performs per-circuit dimming; absent uses legacy dimming. */
     emissiveLuminance?: number };
-  cyclic?: { gripYs: readonly [number, number]; barTiltDeg: number; stem: readonly FRD[] };
+  cyclic?: { kind?: 'teeter-bar' | 'individual'; gripYs: readonly [number, number]; barTiltDeg: number; stem: readonly FRD[] };
   pedalZ?: number;
   /** Exposed piston detail is optional for a cowled installation. Cylinder positions are visual estimates. */
   engineDetail?: { exposed: boolean; cylinderXs: readonly number[] };
