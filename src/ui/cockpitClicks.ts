@@ -19,6 +19,7 @@ import { keysForAction, type InputAction } from '../input/bindings';
 import { buildHotspots, hotspotAt, type PanelHotspot } from '../instruments';
 import type { PanelDef } from '../instruments/panelDef';
 import { el, setText } from './dom';
+import type { FixedPanel } from './fixedPanel';
 
 const REPEAT_DELAY_MS = 380;
 const REPEAT_MS = 70;
@@ -26,6 +27,7 @@ const REPEAT_MS = 70;
 export class CockpitClicks {
   /** Set false to disable panel clicking (e.g. while a modal is open). */
   enabled = true;
+  fixed: FixedPanel | null = null;
   private ctx: SimContext | null = null;
   private dom: HTMLElement | null = null;
   private mesh: THREE.Mesh | null = null;
@@ -64,7 +66,11 @@ export class CockpitClicks {
     this.dom.addEventListener('pointermove', this.onMove);
     this.dom.addEventListener('pointerdown', this.onDown);
     this.dom.addEventListener('pointerleave', this.onLeave);
+    this.fixed?.canvas.addEventListener('pointermove', this.onMove);
+    this.fixed?.canvas.addEventListener('pointerdown', this.onDown);
+    this.fixed?.canvas.addEventListener('pointerleave', this.onLeave);
     window.addEventListener('pointerup', this.onUp);
+    window.addEventListener('pointercancel', this.onUp);
     window.addEventListener('blur', this.onUp);
     // Capture phase on window so a wheel over a knob never reaches the camera's zoom handler.
     window.addEventListener('wheel', this.onWheel, { capture: true, passive: false });
@@ -75,7 +81,11 @@ export class CockpitClicks {
     d?.removeEventListener('pointermove', this.onMove);
     d?.removeEventListener('pointerdown', this.onDown);
     d?.removeEventListener('pointerleave', this.onLeave);
+    this.fixed?.canvas.removeEventListener('pointermove', this.onMove);
+    this.fixed?.canvas.removeEventListener('pointerdown', this.onDown);
+    this.fixed?.canvas.removeEventListener('pointerleave', this.onLeave);
     window.removeEventListener('pointerup', this.onUp);
+    window.removeEventListener('pointercancel', this.onUp);
     window.removeEventListener('blur', this.onUp);
     window.removeEventListener('wheel', this.onWheel, { capture: true });
     this.release();
@@ -97,6 +107,13 @@ export class CockpitClicks {
     const ctx = this.ctx;
     if (!ctx) return;
     const active = this.enabled && ctx.cameraMode === 'cockpit';
+    // A section/view change must release momentary buttons, even without a pointer-up on the old surface.
+    const surface = `${ctx.cameraMode}/${ctx.panelView ?? '3d'}`;
+    if (surface !== this.surface) {
+      this.surface = surface;
+      this.release();
+      this.setHover(null);
+    }
     if (!active) {
       this.release();
       this.setHover(null);
@@ -118,6 +135,9 @@ export class CockpitClicks {
     }
   }
 
+  private surface = '';
+  private drag: { x: number; y: number } | null = null;
+
   // --------------------------------------------------------------------------------------------------
 
   private panelMesh(): THREE.Mesh | null {
@@ -135,6 +155,10 @@ export class CockpitClicks {
     const ctx = this.ctx;
     const dom = this.dom;
     if (!ctx || !dom || !this.enabled || ctx.cameraMode !== 'cockpit') return null;
+    if (this.fixed?.active) {
+      const p = this.fixed.point(clientX, clientY);
+      return p ? hotspotAt(p[0], p[1], this.spots) : null;
+    }
     const mesh = this.panelMesh();
     if (!mesh || !mesh.visible) return null;
     const r = dom.getBoundingClientRect();
@@ -169,6 +193,7 @@ export class CockpitClicks {
 
   /** Client (CSS pixel) position of a panel pixel in the current view, or null. */
   panelPointToClient(px: number, py: number): [number, number] | null {
+    if (this.fixed?.active) return this.fixed.client(px, py);
     const p = this.panelPointToWorld(px, py);
     if (!p || !this.ctx || !this.dom) return null;
     p.project(this.ctx.camera);
@@ -193,10 +218,11 @@ export class CockpitClicks {
     this.hover = spot;
     this.tip.classList.toggle('hidden', !spot);
     if (this.dom) this.dom.style.cursor = spot ? (spot.kind === 'knob' ? 'ew-resize' : spot.kind === 'select' ? 'ns-resize' : 'pointer') : '';
+    if (this.fixed) this.fixed.canvas.style.cursor = this.dom?.style.cursor ?? '';
   }
 
   private placeTip(x: number, y: number): void {
-    this.tip.style.transform = `translate(${Math.round(x + 16)}px, ${Math.round(y + 18)}px)`;
+    this.tip.style.transform = `translate(${Math.round(Math.max(4, Math.min(x + 16, window.innerWidth - this.tip.offsetWidth - 8)))}px, ${Math.round(Math.min(y + 18, window.innerHeight - this.tip.offsetHeight - 8))}px)`;
   }
 
   private readonly onMove = (e: PointerEvent): void => {
@@ -207,6 +233,15 @@ export class CockpitClicks {
       return;
     }
     const spot = this.held?.spot ?? this.pick(e.clientX, e.clientY);
+    if (this.drag && this.held && spot?.kind === 'knob' && !spot.noRepeat && !this.holding) {
+      const distance = e.clientX - this.drag.x + this.drag.y - e.clientY;
+      const steps = Math.trunc(distance / 6);
+      if (steps) {
+        spot.turn?.(steps > 0 ? 1 : -1, this.ctx!.controls, Math.abs(steps));
+        this.drag = { x: e.clientX, y: e.clientY };
+        this.held.next = Infinity;
+      }
+    }
     this.setHover(spot);
     if (spot) this.placeTip(e.clientX, e.clientY);
   };
@@ -220,6 +255,8 @@ export class CockpitClicks {
     if (e.button !== 0) return;
     const spot = this.pick(e.clientX, e.clientY);
     if (!spot) return;
+    if (e.target === this.fixed?.canvas) this.fixed.canvas.setPointerCapture(e.pointerId);
+    this.drag = { x: e.clientX, y: e.clientY };
     const c = this.ctx!.controls;
     e.preventDefault();
     e.stopPropagation();
@@ -253,6 +290,7 @@ export class CockpitClicks {
   };
 
   private release(): void {
+    this.drag = null;
     const h = this.held;
     if (!h) return;
     this.held = null;
@@ -278,7 +316,8 @@ export class CockpitClicks {
   private readonly onWheel = (e: WheelEvent): void => {
     if (e.ctrlKey) return;
     const target = e.target;
-    if (target !== this.dom) return;
+    if (target !== this.dom && target !== this.fixed?.canvas) return;
+    if (e.deltaY === 0) return;
     const spot = this.pick(e.clientX, e.clientY);
     if (!spot || spot.kind !== 'knob') return;
     e.preventDefault();

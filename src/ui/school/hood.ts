@@ -12,6 +12,8 @@ import type { HoodMode, SchoolViewHost } from './models';
  */
 export function glareshieldY(view: SchoolViewHost | null): number | null {
   if (!view?.cockpit()) return null;
+  const fixed = view.panelTop?.();
+  if (fixed != null) return fixed;
   const a = view.project(0, 0);
   const b = view.project(PANEL_WIDTH, 0);
   return a && b ? Math.max(a[1], b[1]) : null;

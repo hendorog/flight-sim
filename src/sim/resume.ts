@@ -21,6 +21,7 @@
 //
 // Node-safe (no DOM): tests/sim/resume.test.ts round-trips snapshots through the real flight model.
 
+import type { PanelView } from '../instruments/fixedPanel';
 import type { CameraMode, QualityLevel, ScenarioId } from '../core/context';
 import type { Quat, Vec3 } from '../core/math';
 import { isRotorcraftId } from '../core/types';
@@ -362,4 +363,16 @@ export function saveResumePreference(store: KeyValueStore | null, on: boolean): 
   } catch {
     /* ignore */
   }
+}
+
+/** Cockpit presentation is a preference even when resuming a flight is disabled. */
+export const PANEL_VIEW_PREF_KEY = 'fs.panelView';
+export function loadPanelView(store: KeyValueStore | null): PanelView {
+  try {
+    const v = store?.getItem(PANEL_VIEW_PREF_KEY);
+    return v === 'upper' || v === 'lower' || v === 'hidden' ? v : '3d';
+  } catch { return '3d'; }
+}
+export function savePanelView(store: KeyValueStore | null, view: PanelView): void {
+  try { store?.setItem(PANEL_VIEW_PREF_KEY, view); } catch { /* private browsing / quota */ }
 }

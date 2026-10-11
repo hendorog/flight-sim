@@ -116,6 +116,9 @@ export type IgnitionPanelDef =
 
 export interface PanelDef {
   id: string;
+  /** Fixed view: rows preserve the type's flight-instrument arrangement. Controls are canvas crops,
+   * including their legends; remaining gauges and annunciators are arranged automatically. */
+  fixed?: { flightRows: readonly (readonly string[])[]; controls: readonly Rect[] };
   /** Dial lighting interlock; self-lit radios and warning lenses remain independent. */
   lightingRequiresNav?: boolean;
   /** Optional dimmer curve: emissive alpha tags dimmed circuits (0.5) versus warning lamps (1).

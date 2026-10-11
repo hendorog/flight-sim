@@ -632,6 +632,16 @@ export class PauseMenu {
       });
       this.refreshers.push(() => b.classList.toggle('sel', ctx().cameraMode === cam.id));
     }
+    if (ctx().commands.setPanelView) {
+      el('h3', '', p, 'Cockpit panel');
+      const panels = el('div', 'chips', p);
+      for (const [view, label] of [['3d', '3D cockpit'], ['upper', 'Fixed: Upper'], ['lower', 'Fixed: Lower'], ['hidden', 'Fixed: panel hidden']] as const) {
+        const b = el('button', '', panels, label);
+        b.addEventListener('click', () => { ctx().commands.setPanelView?.(view); this.refresh(); });
+        this.refreshers.push(() => b.classList.toggle('sel', ctx().cameraMode === 'cockpit' && (ctx().panelView ?? '3d') === view));
+      }
+      el('p', 'sub', p, 'Shift+V: 3D / fixed. ]: Upper / Lower / hidden. Fixed view looks ahead; use 3D for mouse-look and zoom.');
+    }
     el('h3', '', p, 'Overlays');
     const toggle = (text: string, get: () => boolean, set: (v: boolean) => void): void => {
       const l = el('label', 'toggle', p);

@@ -168,7 +168,7 @@ optional heater, ice protection and autopilot; spins.
 
 The Controls tab in the menu lists the same table. Joysticks, yokes and pedals (Gamepad API) are set up in
 the menu's "Joysticks & yokes" tab. In the cockpit view the panel is clickable: switches toggle, knobs turn
-with the wheel or a click, and holding the key at START runs the starter.
+with the wheel, a click on either half, or a drag (right/up increases), and holding the key at START runs the starter.
 
 | Keys | Action |
 |---|---|
@@ -207,7 +207,9 @@ with the wheel or a click, and holding the key at START runs the starter.
 | D | Align the heading indicator with the compass (hold) |
 | **View** | |
 | C / Shift+C | Next / previous camera (cockpit, chase, orbit, flyby, tower) |
-| V, Backspace, middle click | Recentre view |
+| Shift+V | Switch between the 3D cockpit and fixed instrument panel |
+| ] | Fixed panel: Upper → Lower → panel hidden → Upper |
+| V, Backspace, middle click | Recentre 3D view |
 | = , Num + / - , Num - , mouse wheel | Zoom |
 | Shift+arrows, Num 4/6/8/2 | Look around (hold) |
 | Drag (either button) | Look around / orbit the aircraft |
@@ -221,6 +223,36 @@ with the wheel or a click, and holding the key at START runs the starter.
 | Shift+[ / Shift+] | Simulation rate slower / faster: 0.5x, 1x, 2x, 4x, 8x, 16x |
 | Escape | Menu |
 | F9 / F8 | HUD on/off / frame-time readout |
+
+**Fixed instrument panel:** press **Shift+V**, or use **Menu → Display & camera → Cockpit panel**.
+The default **Upper** section shows the flight and engine instruments and every panel warning lamp;
+**Lower** shows radios, switches and console controls. Use **]** or the buttons above the panel to select
+Upper, Lower or **Panel hidden** for landing. Switching preserves the aircraft's state. The choice is saved
+with the simulator's preferences, even with flight resume turned off. **C / Shift+C** still cycle external
+cameras and return to the chosen cockpit presentation. **P** still pauses.
+
+The outside view is forward from the aircraft's pilot eye, with the horizon centred in the area above the
+panel. Airframe geometry is hidden while landing/taxi illumination remains active. Look, captured mouse-look and zoom are disabled here;
+return to 3D with Shift+V to use them. The fixed canvas remains sharp independently of graphics render scale.
+All existing panel hotspots use the same actions and tooltips in both views. Double-clicks anywhere on the
+fixed panel cannot engage mouse flight; double-click the outside view instead. The mouse pickup ring and
+travel use that outside area; changing its size re-arms pickup to avoid a control jump.
+
+| Aircraft | Fixed sections and reason |
+|---|---|
+| C172S, C152, PA-38 | Upper retains the six-pack and CDIs, with engine/auxiliary gauges beside them. Lower separates the long switch row and radios, avoiding the blank yoke/passenger areas. |
+| DA20 | Upper retains its four-column instrument arrangement and the engine bank; Lower exposes the electrical row, flap switch/lamps, trim indicator and radios. |
+| PA-34 | Upper includes both engines' instruments and CDIs; Lower groups the two ignition sets, switches, radios and gear controls. Splitting keeps the twin's extra gauges readable. |
+| R22, R44 | Upper retains each pod's two flight-instrument rows, with engine gauges and warning cells alongside/below. Lower arranges the pedestal and chin controls as adjacent canvas crops, avoiding a very tall, shrunken console. |
+| DA42 | Uses the existing C172S placeholder presentation on this branch; it is **not** a completed DA42 cockpit. Its eventual PanelDef can supply its own arrangement. |
+
+These are crops of the same live native panel canvas, not alternate gauge implementations. Layout data lives
+in each type's `PanelDef.fixed`; new types can supply flight-instrument rows and control crop rectangles.
+At 1366×768 and 1920×1080 the primary instruments need no scrolling or zoom. Smaller windows fit the whole
+section by scaling it down. Existing limitations remain: decorative radio controls and 3D-only parts without
+panel hotspots do not acquire new mouse actions (use their existing keyboard controls).
+The flat display uses the readable native canvas artwork; cockpit lighting and dimmer shading are still
+specific to the 3D presentation. Dimmer controls retain their shared state when switching back.
 
 **Mouse flight control:** double-click the flight view in any camera, or press **Y**. Panel controls and HTML
 UI keep their normal clicks; double-click is ignored while a demo or instructor is flying. An amber centre

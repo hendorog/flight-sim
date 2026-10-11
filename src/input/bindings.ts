@@ -8,8 +8,8 @@
 //
 // Keys owned by other modules and deliberately left unbound here: Escape, F8, F9 (UI); P (pause), A
 // (autopilot), T / Shift+T (autopilot altitude), H (dome light), Shift+R (restart), Shift+[ / Shift+] (time
-// rate) (the shell, src/sim/Simulator.ts); F11 and the bare F are kept free (Shift+F feathers), and so is the
-// bare ] key (the flaps moved to F5 / F6).
+// rate) (the shell, src/sim/Simulator.ts); F11 is kept free; F is the checklist (Shift+F feathers).
+// Shift+V toggles the fixed cockpit panel; bare ] cycles its sections.
 // Owned by the Flight School during a lesson (src/training/TrainingSystem.ts, spec section 5.9; TRAINING_KEY_MAP
 // below): Enter (acknowledge / "I have control"), Shift+Enter (hand control back), bare R (say again), bare [
 // (show me), Tab (lesson card) and Shift+R (try the phase again; the scenario restart outside a lesson).
@@ -87,6 +87,8 @@ export type InputAction =
   | 'dgAlign'
   | 'mouseYoke'
   | 'centreControls'
+  | 'panelToggle'
+  | 'panelSection'
   | 'cameraNext'
   | 'cameraPrev'
   | 'viewRecentre'
@@ -177,9 +179,11 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'KeyU', shift: true, action: 'obsDown' },
   { code: 'KeyD', action: 'dgAlign' },
   { code: 'KeyY', action: 'mouseYoke' },
+  { code: 'KeyV', shift: true, action: 'panelToggle' },
+  { code: 'BracketRight', shift: false, action: 'panelSection' },
   { code: 'KeyC', shift: false, action: 'cameraNext' },
   { code: 'KeyC', shift: true, action: 'cameraPrev' },
-  { code: 'KeyV', action: 'viewRecentre' },
+  { code: 'KeyV', shift: false, action: 'viewRecentre' },
   { code: 'Backspace', action: 'viewRecentre' },
   { code: 'Equal', action: 'zoomIn' },
   { code: 'NumpadAdd', action: 'zoomIn' },
@@ -266,6 +270,8 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   navLights: { label: 'Navigation lights', category: 'Lights' },
   strobes: { label: 'Strobe lights', category: 'Lights' },
   beacon: { label: 'Beacon', category: 'Lights' },
+  panelToggle: { label: '3D cockpit / fixed panel', category: 'View' },
+  panelSection: { label: 'Fixed panel: Upper, Lower, hidden', category: 'View' },
   cameraNext: { label: 'Next camera', category: 'View' },
   cameraPrev: { label: 'Previous camera', category: 'View' },
   viewRecentre: { label: 'Recentre view', category: 'View' },
