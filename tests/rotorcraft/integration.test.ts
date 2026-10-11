@@ -110,7 +110,8 @@ describe('R22 simulation integration', () => {
     expect(rotor.spin.rotation.y).toBe(0.7);
     expect(rotor.blades.count).toBe(2);
     rotor.update(1.2, 530, 0.15, 0.04);
-    expect(rotor.blades.count).toBeGreaterThan(2);
+    expect(rotor.blades.count).toBe(2);
+    expect(rotor.blades.visible).toBe(false);
     expect(rotor.blur.visible).toBe(true);
     rotor.dispose();
   });

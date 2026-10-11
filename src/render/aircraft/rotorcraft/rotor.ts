@@ -1,9 +1,7 @@
 // Two-blade teetering rotor. Airfoil grids have the published chord and twist; the exact R22 airfoil
-// contour is not claimed. A radial solidity disc replaces overlapping smear sectors, as in propeller.ts.
+// contour is not claimed. The shared perceptual blur model preserves the real planform at low RPM.
 // Paint and hub references: Robinson R22 Maintenance Manual, Figs. 26-17, 28-5 and chapter 26:
 // https://robinsonstrapistorprod.blob.core.windows.net/uploads/assets/r22_mm_book_6eaf5686aa.pdf
-// Visual exposure is 1/15 s for the slow main rotor and 1/60 s for the tail: a persistence approximation,
-// not a high-speed camera simulation. It avoids showing a fan of disconnected blades at flight RPM.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { surfacePoint } from '../airfoil';
@@ -11,30 +9,40 @@ import { capGeometry, gridGeometry, MeshBatch } from '../geometry';
 import type { AircraftMaterials } from '../materials';
 import type { RotorBladePaint } from '../airframe/types';
 import { box, tube } from './geometry';
+import { bladeBlur } from '../bladeBlur';
+import { BladeTrail, bladeShadowMaterial } from '../bladeTrail';
 
 export interface RotorSpec { radius: number; root: number; chord: readonly [number, number]; twist: number; tail?: boolean; paint?: RotorBladePaint }
-const COPIES = 10;
 const smooth = THREE.MathUtils.smoothstep;
 
-export function rotorBladeGeometry(d: RotorSpec): THREE.BufferGeometry {
+function rotorBladeRadii(d: RotorSpec): number[] {
   // Paint boundaries have paired stations so the stripes have crisp edges without extra draw calls.
   // R22 MM Figs. 26-17 / 28-5: white/yellow upper main blade, dark underside, striped tail blades.
   const bands = d.paint ? d.paint.bands.map(b => d.radius - b.tipDistance)
     : d.tail ? Array.from({ length: 7 }, (_, i) => d.radius - 0.05842 - i * 0.0508)
     : [0.254, 1.2192, 1.8288, 2.9464].map(x => d.radius - x);
   const capLength = d.paint?.capLength ?? (d.tail ? 0.004 : 0.008);
-  const radii = [...Array.from({ length: 25 }, (_, i) => THREE.MathUtils.lerp(d.root, d.radius, i / 24)),
+  return [...Array.from({ length: 25 }, (_, i) => THREE.MathUtils.lerp(d.root, d.radius, i / 24)),
     ...[...bands, d.radius - capLength].filter(r => r > d.root).flatMap(r => [r - 0.00001, r + 0.00001]),
     d.radius - 0.02].sort((a, b) => a - b);
+}
+
+function rotorChord(d: RotorSpec, r: number): number {
+  const tip = smooth(r, d.radius - 0.02, d.radius);
+  const root = d.tail ? THREE.MathUtils.lerp(0.45, 1, smooth(r, d.root, 0.16)) : 1;
+  return THREE.MathUtils.lerp(...d.chord, (r - d.root) / (d.radius - d.root)) * root * (1 - 0.045 * tip);
+}
+
+export function rotorBladeGeometry(d: RotorSpec): THREE.BufferGeometry {
+  const radii = rotorBladeRadii(d);
+  const capLength = d.paint?.capLength ?? (d.tail ? 0.004 : 0.008);
   const rows = radii.length, cols = 33;
   const g = gridGeometry({ rows, cols, wrap: true, flip: !d.tail,
     position(i, j, out) {
       const r = radii[i], f = (r - d.root) / (d.radius - d.root);
       // Published main chord grows outboard; only the rounded tip cover narrows. Tail chord is constant
       // beyond the tapered blade root. Neither rotor is modelled as a wedge of zero thickness at its tip.
-      const tip = smooth(r, d.radius - 0.02, d.radius);
-      const root = d.tail ? THREE.MathUtils.lerp(0.45, 1, smooth(r, d.root, 0.16)) : 1;
-      const c = THREE.MathUtils.lerp(...d.chord, f) * root * (1 - 0.045 * tip);
+      const c = rotorChord(d, r);
       const angle = j / (cols - 1) * Math.PI * 2;
       const xc = (1 - Math.cos(angle)) / 2;
       const face = angle <= Math.PI ? 1 : -1;
@@ -77,12 +85,14 @@ export class TeeteringRotor {
   readonly group = new THREE.Group();
   readonly spin = new THREE.Group();
   readonly blades: THREE.InstancedMesh;
+  readonly trail: BladeTrail;
   readonly blur: THREE.Mesh;
   readonly swashplate = new THREE.Group();
   private readonly bladeMat: THREE.MeshStandardMaterial;
   private readonly blurMat: THREE.MeshStandardMaterial;
   private readonly hardwareMat: THREE.MeshStandardMaterial;
   private readonly texture: THREE.DataTexture;
+  private readonly bladeShadow = bladeShadowMaterial();
   private readonly m = new THREE.Matrix4();
   private readonly coneM = new THREE.Matrix4();
   private readonly pitchM = new THREE.Matrix4();
@@ -94,14 +104,23 @@ export class TeeteringRotor {
   private readonly linkDelta = new THREE.Vector3();
   private cone = 0;
 
-  constructor(private readonly d: RotorSpec, mat: AircraftMaterials) {
+  constructor(d: RotorSpec, mat: AircraftMaterials) {
     this.group.name = d.tail ? 'tailRotor' : 'mainRotor'; this.spin.name = 'rotorAzimuth';
     this.group.add(this.spin);
     this.bladeMat = new THREE.MeshStandardMaterial({ name: 'rotorBlade', vertexColors: true, roughness: 0.44, metalness: 0.12, transparent: true });
     this.hardwareMat = new THREE.MeshStandardMaterial({ name: 'rotorHeadPaint', color: 0x929c9f, roughness: 0.38, metalness: 0.25 });
-    this.blades = new THREE.InstancedMesh(rotorBladeGeometry(d), this.bladeMat, COPIES * 2);
+    const bladeGeometry = rotorBladeGeometry(d);
+    this.blades = new THREE.InstancedMesh(bladeGeometry, this.bladeMat, 2);
+    this.blades.customDepthMaterial = this.bladeShadow;
     this.blades.name = 'rotorBlades'; this.blades.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.blades.frustumCulled = false;
     this.spin.add(this.blades);
+    const colours = bladeGeometry.getAttribute('color');
+    this.trail = new BladeTrail(rotorBladeRadii(d).map((radius, i) => ({
+      radius, chord: rotorChord(d, radius), pitch: d.twist * ((radius - d.root) / (d.radius - d.root) - 0.75),
+      front: new THREE.Color().fromBufferAttribute(colours, i * 33 + 8),
+      back: new THREE.Color().fromBufferAttribute(colours, i * 33 + 24),
+    })), 'y', 2, d.tail ? -1 : 1);
+    this.spin.add(this.trail.mesh);
     const head = new MeshBatch();
     const k = d.tail ? 0.38 : 1;
     // Twin cheeks of the teetering yoke, coning bolts, grip barrels and elastomeric pitch-change boots.
@@ -195,21 +214,19 @@ export class TeeteringRotor {
   /** cone is a visual elastic/precone estimate; flap and azimuth are supplied directly by the flight model. */
   update(azimuth: number, rpm: number, pitch: number, cone: number): void {
     this.spin.rotation.y = azimuth;
-    const exposure = this.d.tail ? 1 / 60 : 1 / 15;
-    const sweep = Math.min(Math.PI, Math.abs(rpm) * Math.PI * 2 / 60 * exposure);
-    const toDisc = smooth(sweep, Math.PI * 0.40, Math.PI * 0.85);
-    const sharp = sweep < 0.015, n = sharp ? 1 : COPIES;
-    this.blades.count = 2 * n;
+    const blur = bladeBlur(rpm, 2);
     this.pitchM.makeRotationX(pitch); this.coneM.makeRotationZ(cone).multiply(this.pitchM);
-    for (let b = 0; b < 2; b++) for (let k = 0; k < n; k++) {
-      this.m.makeRotationY(b * Math.PI - (n > 1 ? (this.d.tail ? -1 : 1) * sweep * k / (n - 1) : 0)).multiply(this.coneM);
-      this.blades.setMatrixAt(b * n + k, this.m);
+    for (let b = 0; b < 2; b++) {
+      this.m.makeRotationY(b * Math.PI).multiply(this.coneM);
+      this.blades.setMatrixAt(b, this.m);
     }
     this.blades.instanceMatrix.needsUpdate = true;
-    this.bladeMat.opacity = (sharp ? 1 : Math.min(1, 2 / COPIES + 0.8 * Math.max(0, 1 - sweep / 0.12))) * (1 - toDisc);
-    this.bladeMat.depthWrite = sharp; this.blades.castShadow = sharp; this.blades.receiveShadow = sharp;
-    this.blades.visible = this.bladeMat.opacity > 0.005;
-    this.blurMat.opacity = toDisc; this.blur.visible = toDisc > 0.01;
+    this.bladeMat.opacity = this.bladeShadow.opacity = blur.solid;
+    this.bladeMat.depthWrite = blur.solid === 1;
+    this.blades.castShadow = blur.solid > 0; this.blades.receiveShadow = true;
+    this.blades.visible = blur.solid > 0;
+    this.trail.update(blur, pitch, cone);
+    this.blurMat.opacity = blur.disc; this.blur.visible = blur.disc > 0;
     if (cone !== this.cone) {
       const pos = this.blur.geometry.getAttribute('position') as THREE.BufferAttribute;
       for (let i = 0; i < pos.count; i++) pos.setY(i, Math.hypot(pos.getX(i), pos.getZ(i)) * Math.sin(cone));
@@ -227,5 +244,8 @@ export class TeeteringRotor {
     });
   }
 
-  dispose(): void { this.bladeMat.dispose(); this.hardwareMat.dispose(); this.blurMat.dispose(); this.texture.dispose(); }
+  dispose(): void {
+    this.bladeMat.dispose(); this.bladeShadow.dispose(); this.trail.dispose();
+    this.hardwareMat.dispose(); this.blurMat.dispose(); this.texture.dispose();
+  }
 }
