@@ -3,6 +3,7 @@
 // remains in dimensions.ts. See docs/r44-exterior.md for evidence and the outstanding renderer connection.
 import type { AirframeVisualDef, FRD, RotorcraftVisualDef } from '../../render/aircraft/airframe/types';
 import { R44_ROTORCRAFT } from './rotorcraft';
+import { R44_BLADE_CONING } from './coning';
 import { R44_MAIN_PAINT, R44_TAIL_PAINT } from './exteriorPaint';
 import { CABIN_WIDTH, CABIN_HEIGHT, MAIN_HUB, MAIN_ROTOR_RADIUS, MAIN_ROTOR_CHORD, MAIN_ROTOR_TWIST_DEG, NOSE_X,
   PANEL_CANVAS, PANEL_FACE, PANEL_OUTLINE, PANEL_PEDESTAL, PANEL_ENCLOSURE_DEPTH, PILOT_EYE, SEAT_CENTRES,
@@ -16,7 +17,7 @@ const ROTORCRAFT: RotorcraftVisualDef = {
   nominalVoltage: 28,
   main: { hub: point(MAIN_HUB), radius: MAIN_ROTOR_RADIUS, root: 0.55, chord: MAIN_ROTOR_CHORD, twist: MAIN_ROTOR_TWIST_DEG * Math.PI / 180,
     paint: R44_MAIN_PAINT,
-    coning: { referenceThrust: 11000, angleDeg: 2.5, maxDeg: 5, droopDeg: -2 } },
+    coning: R44_BLADE_CONING },
   tail: { hub: point(TAIL_HUB), radius: TAIL_ROTOR_RADIUS, root: 0.11, chord: TAIL_ROTOR_CHORD,
     precone: TAIL_ROTOR_PRECONE_DEG * Math.PI / 180, paint: R44_TAIL_PAINT },
   skids: { halfTrack: SKID_HALF_TRACK, z: SKID_Z, front: SKID_FRONT_X, rear: SKID_REAR_X,

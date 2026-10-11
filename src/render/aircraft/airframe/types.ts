@@ -7,6 +7,7 @@
 // state.gear.extension, state.engines[i].cowlFlap, state.surfaces (incl. rudderTrim), state.wheels.
 
 import type { FuelSelector } from '../../../core/types';
+import type { BladeConingDefinition } from '../../../physics/rotorcraft/coning';
 
 export type FRD = readonly [number, number, number];
 /** NACA 4-digit stand-in used for the visual contour: camber, camber position, thickness (fractions of chord). */
@@ -407,8 +408,8 @@ export interface RotorcraftVisualDef {
   interior?: { frameColor: number; seatColor: number; seatBackColor: number; perforatedPedals: boolean; collectiveFittings: boolean };
   main: { hub: FRD; radius: number; root: number; chord: readonly [number, number]; twist: number;
     paint?: RotorBladePaint;
-    /** Visual elastic-coning estimate, independent of the aerodynamic flap/coning solution. */
-    coning?: { referenceThrust: number; angleDeg: number; maxDeg: number; droopDeg: number } };
+    /** Per-blade hinge/weight/bending balance; shares the flight model's inertia and live thrust. */
+    coning: BladeConingDefinition };
   tail: { hub: FRD; radius: number; root: number; chord: number; precone: number; paint?: RotorBladePaint };
   skids: { halfTrack: number; z: number; front: number; rear: number; crossTubes: readonly number[];
     tubeRadius?: number; bellyHalfWidth?: number; bellyZ?: number; crossCentreZ?: number };
