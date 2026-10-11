@@ -2,11 +2,12 @@
 //
 // Centring controls (yoke, rudder): a hardware axis that is deflected or has just moved owns the control
 // outright; otherwise the keyboard deflection is added to the mouse-yoke position, so tapping a key while
-// flying with the mouse gives a smooth correction that decays back to the mouse position.
+// flying with the mouse gives a held correction.
 // Lever controls (throttle, mixture): whichever source moved last owns the lever ("last moved wins"), so a
 // quadrant lever resting at idle does not fight the keyboard until it is touched.
 
 import { clamp } from '../core/math';
+import type { InputProfile } from './profile';
 
 /** How long a hardware axis keeps ownership after it last moved, even if back at centre, s. */
 export const AXIS_HOLD_TIME = 0.6;
@@ -55,14 +56,20 @@ export class LeverOwner {
  * @param nx horizontal position, -1 (left edge) .. 1 (right edge)
  * @param ny vertical position, -1 (top) .. 1 (bottom); mouse toward the pilot (down) = yoke back = +elevator
  */
-export function mouseYokeDeflection(nx: number, ny: number): { aileron: number; elevator: number } {
+export function mouseYokeDeflection(nx: number, ny: number, tuning: InputProfile['mouseYoke'] = { expo: 0.3, deadzone: 0.02 }): { aileron: number; elevator: number } {
   const shape = (v: number): number => {
     const s = clamp(v / 0.8, -1, 1);
     const a = Math.abs(s);
-    const d = a < 0.02 ? 0 : (a - 0.02) / 0.98;
-    return Math.sign(s) * (0.7 * d + 0.3 * d * d * d);
+    const d = Math.max(0, (a - tuning.deadzone) / (1 - tuning.deadzone));
+    return Math.sign(s) * ((1 - tuning.expo) * d + tuning.expo * d * d * d);
   };
   return { aileron: shape(nx), elevator: shape(ny) };
+}
+
+/** Preserve the position at pickup while retaining both absolute stops. pickup is near zero. */
+export function mouseAxisFromPickup(value: number, pickup: number, control: number): number {
+  return value >= pickup ? control + (1 - control) * (value - pickup) / (1 - pickup) :
+    control + (1 + control) * (value - pickup) / (1 + pickup);
 }
 
 /** Radius of the mouse-yoke pick-up zone around the view centre, in normalised units (-1..1 per axis). */

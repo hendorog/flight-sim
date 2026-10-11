@@ -27,6 +27,8 @@ export interface KeyboardAssistTuning {
 }
 
 export interface InputProfile {
+  /** Mouse response: cubic blend (0 = linear, 1 = cubic) and dead zone as fractions of travel. */
+  mouseYoke?: { expo: number; deadzone: number };
   /** Helicopter cyclic/pedals: no fixed-wing keyboard stabilisation; F5/F6 drive collective. */
   rotorcraft?: boolean;
   /** Keyboard collective travel per second. Hardware axes remain absolute position inputs. */

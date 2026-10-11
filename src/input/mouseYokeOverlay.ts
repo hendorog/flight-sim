@@ -1,4 +1,4 @@
-// On-screen cue for the mouse yoke: a centre ring (the pick-up zone; screen centre = yoke centre), a faint
+// On-screen cue for mouse flight control: a centre ring (the pick-up zone), a faint
 // frame showing the yoke's full travel, a dot at the commanded deflection, and a short status label. Shown
 // only while the mouse yoke is on (the label also briefly confirms switching it off). Pointer-transparent.
 
@@ -66,13 +66,13 @@ export class MouseYokeOverlay {
 
   /** The mouse yoke was switched on (armed) or off. */
   announce(on: boolean): void {
-    if (on) this.setLabel('<b>MOUSE YOKE</b>Move the pointer to the centre ring to take control', Infinity);
-    else this.setLabel('<b>MOUSE YOKE</b>Off', performance.now() + LABEL_MS);
+    if (on) this.setLabel('<b>MOUSE FLIGHT</b>Move pointer to centre ring to pick up &middot; double-click or Y to release', Infinity);
+    else this.setLabel('<b>MOUSE FLIGHT</b>Off &middot; keyboard holds position', performance.now() + LABEL_MS);
   }
 
   /** The armed mouse yoke has taken control. */
   pickedUp(): void {
-    this.setLabel('<b>MOUSE YOKE</b>In control &middot; screen centre = yoke centre', performance.now() + LABEL_MS);
+    this.setLabel('<b>MOUSE FLIGHT</b>In control &middot; double-click or Y to release', performance.now() + LABEL_MS);
   }
 
   private setLabel(html: string, until: number): void {
