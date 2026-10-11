@@ -224,7 +224,7 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   rotorGovernor: { label: 'Rotor governor on / off', category: 'Engine' },
   flapsUp: { label: 'Flaps up one notch', category: 'Flight controls' },
   flapsDown: { label: 'Flaps down one notch', category: 'Flight controls' },
-  mouseYoke: { label: 'Toggle mouse yoke', category: 'Flight controls' },
+  mouseYoke: { label: 'Toggle mouse flight control (yoke / cyclic)', category: 'Flight controls' },
   masterSwitch: { label: 'Master switch (BAT + ALT) on/off', category: 'Switches' },
   alternator: { label: 'Alternator (ALT half of the master) on/off', category: 'Switches' },
   avionics: { label: 'Avionics master on/off', category: 'Switches' },
@@ -376,6 +376,7 @@ export function keyBindingsFor(profile: InputProfile): { keys: string; action: s
     category: ACTION_INFO[action].category,
   }));
   rows.push(
+    { keys: 'Double-click flight view', action: 'Toggle mouse flight control (outside panel controls / UI)', category: 'Flight controls' },
     { keys: 'Drag', action: 'Look around / rotate view', category: 'View' },
     { keys: 'Drag', action: 'Orbit the aircraft (orbit camera)', category: 'View' },
     { keys: 'Mouse wheel', action: 'Zoom / camera distance', category: 'View' },

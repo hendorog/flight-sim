@@ -271,6 +271,12 @@ export class UISystem implements Subsystem, MenuHost {
     );
   }
 
+  /** A double-click belongs to the panel/UI, or a pilot other than the user is flying. */
+  blocksMouseFlight(clientX: number, clientY: number, gesture: 'toggle' | 'move'): boolean {
+    return !!(this.menu?.isOpen || this.crash.isOpen || this.schoolUi?.screen || this.clicks?.controlAt(clientX, clientY) ||
+      gesture === 'toggle' && (this.demoFlying || this.schoolUi?.followMeThrough || this.schoolUi?.instructorFlying));
+  }
+
   update(dt: number, ctx: SimContext): void {
     this.fps.frame(performance.now());
     if (this.weatherDirty) {

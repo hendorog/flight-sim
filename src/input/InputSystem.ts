@@ -38,7 +38,8 @@ import {
   type EngineTarget,
 } from './engineControls';
 import { GamepadManager } from './gamepads';
-import { Activity, LeverOwner, mixCentring, mouseYokeDeflection, mouseYokeNearCentre } from './mixer';
+import { Activity, LeverOwner, mixCentring, mouseAxisFromPickup, mouseYokeDeflection, mouseYokeNearCentre } from './mixer';
+import { MouseFlightGesture } from './mouseFlightGesture';
 import { MouseYokeOverlay } from './mouseYokeOverlay';
 import type { InputProfile } from './profile';
 import {
@@ -89,8 +90,10 @@ export interface InputShell {
    * the page a synthetic Escape key press, which the UI handles exactly that way.
    */
   menuButton?(): void;
-  /** Show a short message to the pilot (e.g. "Mouse yoke on"). Without it only the on-screen overlay speaks. */
+  /** Show a short message to the pilot. Without it only the on-screen overlay speaks. */
   toast?(text: string): void;
+  /** Live panel hit-test and modal/demo/instructor ownership, for canvas double-clicks. */
+  blocksMouseFlight?(clientX: number, clientY: number, gesture: 'toggle' | 'move'): boolean;
 }
 
 /** Pilot-assist options for keyboard / mouse flying. */
@@ -289,6 +292,9 @@ export class InputSystem implements Subsystem {
   /** Mouse-move events seen (a pick-up needs a real pointer position after the yoke was switched on). */
   private mouseMoves = 0;
   private mouseMovesAtArm = 0;
+  private mousePickup = { aileron: 0, elevator: 0 };
+  private mouseBase = { aileron: 0, elevator: 0 };
+  private mouseGesture: MouseFlightGesture | null = null;
   private readonly mouseTakeover = { aileron: new TakeoverDetector(), elevator: new TakeoverDetector() };
   private overlay: MouseYokeOverlay | null = null;
   private shell: InputShell;
@@ -374,6 +380,10 @@ export class InputSystem implements Subsystem {
     target.addEventListener('keyup', this.onKeyUp as EventListener);
     window.addEventListener('blur', this.onBlur);
     window.addEventListener('mousemove', this.onMouseMove);
+    this.mouseGesture = new MouseFlightGesture(this.element,
+      (x, y) => !!this.scriptedPilot?.flying() || !!this.shell.blocksMouseFlight?.(x, y, 'toggle'),
+      () => this.setMouseYoke(!this.mouseYoke));
+    this.mouseGesture.attach();
     this.overlay = new MouseYokeOverlay(document.body);
     this.attach(ctx);
   }
@@ -408,6 +418,14 @@ export class InputSystem implements Subsystem {
     this.rollTrim.reset();
     this.rotation.reset();
     this.selection = 'all';
+    // A new scenario must pick up its own controls, not the previous flight's mouse position.
+    if (this.mouseYoke) {
+      this.mouseArmed = true;
+      this.mouseMovesAtArm = this.mouseMoves;
+      this.mouseTakeover.aileron.reset();
+      this.mouseTakeover.elevator.reset();
+      this.overlay?.announce(true);
+    }
   }
 
   /** Press a key (KeyboardEvent.code) as if it came from the keyboard; returns the bound action or null. */
@@ -459,6 +477,8 @@ export class InputSystem implements Subsystem {
     target.removeEventListener('keyup', this.onKeyUp as EventListener);
     window.removeEventListener('blur', this.onBlur);
     window.removeEventListener('mousemove', this.onMouseMove);
+    this.mouseGesture?.dispose();
+    this.mouseGesture = null;
     this.overlay?.dispose();
     this.overlay = null;
   }
@@ -473,17 +493,31 @@ export class InputSystem implements Subsystem {
 
   /**
    * Switch the mouse yoke on or off. Switching it on arms it: it takes control only once the pointer
-   * passes through the centre of the view (screen centre = yoke centre), as a hardware yoke is picked up.
+   * reaches the centre ring. That pointer position picks up the current yoke/cyclic without a step.
+   * Release holds the commanded position for the keyboard, including on a helicopter in the hover.
    */
   setMouseYoke(on: boolean): void {
     if (on === this.mouseYoke) return;
+    this.holdYoke();
     this.mouseYoke = on;
     this.mouseArmed = on;
     this.mouseMovesAtArm = this.mouseMoves;
     this.mouseTakeover.aileron.reset();
     this.mouseTakeover.elevator.reset();
     this.overlay?.announce(on);
-    this.shell.toast?.(on ? 'Mouse yoke on: centre the pointer to take control (screen centre = yoke centre)' : 'Mouse yoke off');
+    this.shell.toast?.(on ? 'Mouse flight control on: double-click or Y to release' : 'Mouse flight control off: keyboard holds position');
+  }
+
+  private holdYoke(): void {
+    if (!this.ctx) return;
+    const c = this.ctx.controls;
+    this.kbAileron = c.aileron - this.neutral.aileron;
+    this.kbElevator = c.elevator - this.neutral.elevator;
+    this.ailCentred = false;
+    this.centring.aileron = this.centring.elevator = false;
+    this.rollTrim.reset();
+    this.written.aileron = c.aileron;
+    this.written.elevator = c.elevator;
   }
 
   // ---------------------------------------------------------------- events
@@ -509,7 +543,8 @@ export class InputSystem implements Subsystem {
   private readonly onMouseMove = (e: MouseEvent): void => {
     const el = this.element;
     // Captured mouse-look or a right-drag look must not also move the mouse yoke.
-    if (!el || document.pointerLockElement || e.buttons & 2) return;
+    if (!this.mouseYoke || !el || e.target !== el || document.pointerLockElement || e.buttons & 2 ||
+        this.shell.blocksMouseFlight?.(e.clientX, e.clientY, 'move')) return;
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return;
     this.mouseNx = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1);
@@ -640,11 +675,19 @@ export class InputSystem implements Subsystem {
     this.mouseTakingOver = false;
     if (this.mouseYoke) {
       if (this.mouseArmed && this.mouseMoves > this.mouseMovesAtArm && mouseYokeNearCentre(this.mouseNx, this.mouseNy)) {
+        this.holdYoke();
+        this.mousePickup = mouseYokeDeflection(this.mouseNx, this.mouseNy, this.profile.mouseYoke);
+        this.mouseBase = { aileron: c.aileron, elevator: c.elevator };
         this.mouseArmed = false;
         this.overlay?.pickedUp();
       }
       if (!this.mouseArmed) {
-        mouse = mouseYokeDeflection(this.mouseNx, this.mouseNy);
+        const raw = mouseYokeDeflection(this.mouseNx, this.mouseNy, this.profile.mouseYoke);
+        // The keyboard retains its pickup position. Add only the mouse's displacement from it.
+        mouse = {
+          aileron: mouseAxisFromPickup(raw.aileron, this.mousePickup.aileron, this.mouseBase.aileron) - this.mouseBase.aileron,
+          elevator: mouseAxisFromPickup(raw.elevator, this.mousePickup.elevator, this.mouseBase.elevator) - this.mouseBase.elevator,
+        };
         const a = this.mouseTakeover.aileron.update(mouse.aileron, dt);
         const e = this.mouseTakeover.elevator.update(mouse.elevator, dt);
         this.mouseTakingOver = a || e;
