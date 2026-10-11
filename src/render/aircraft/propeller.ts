@@ -4,7 +4,7 @@
 // opacity follows the blades' chord solidity, takes over as a motion-blur stand-in. Rotation is clockwise
 // seen from the cockpit (positive about body +x).
 //
-// A variable-pitch propeller is one blade per face, instanced blades x SMEAR_COPIES times: each instance
+// A variable-pitch propeller is one blade per face, instanced once per blade: each instance
 // turns the blade about its own axis by the blade angle less the angle the geometry is built at, so the
 // blades go to coarse pitch and to feather. `rotation: -1` mirrors the blade (twist and leading edge) and the
 // direction of the smear; the spin angle itself comes signed from PropellerState.rotation.
@@ -17,6 +17,8 @@ import type { PropVisualDef } from './airframe/types';
 import { NACA2412, surfacePoint } from './airfoil';
 import { frd, gridGeometry, MeshBatch, type GridSpec } from './geometry';
 import type { AircraftMaterials } from './materials';
+import { bladeBlur } from './bladeBlur';
+import { BladeTrail, bladeShadowMaterial } from './bladeTrail';
 
 /** What the blade and disc builders need of one propeller definition. */
 interface BladeSpec {
@@ -61,8 +63,7 @@ function chordAt(pts: PropVisualDef['chord'], f: number): number {
 function bladeFace(blade: BladeSpec, radial: { y: number; z: number }, face: 1 | -1): THREE.BufferGeometry {
   const { P, R, PITCH_M, GREY, BLACK, WHITE } = blade;
   const TIP_BAND = P.paint.tipBand;
-  // A variable-pitch blade is drawn blades x SMEAR_COPIES times: a lighter grid keeps a three-blade propeller at
-  // the triangles of the two-blade fixed-pitch one.
+  // A lighter grid keeps a three-blade propeller near the triangles of the two-blade fixed-pitch one.
   const rows = P.variablePitch ? 24 : 34;
   const n = P.variablePitch ? 12 : 18;
   const hub = frd(P.hub[0], P.hub[1], P.hub[2]);
@@ -159,15 +160,6 @@ function discTexture(blade: BladeSpec, face: 1 | -1): THREE.DataTexture {
   return t;
 }
 
-/** Copies of each blade face used to draw the motion blur. */
-const SMEAR_COPIES = 16;
-/** Exposure the blur represents: one 60 Hz frame. */
-const EXPOSURE = 1 / 60;
-const smoothstep = (a: number, b: number, x: number): number => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-
 export class Propeller {
   /** Rotates about the prop axis (model -Z). */
   readonly group = new THREE.Group();
@@ -177,10 +169,11 @@ export class Propeller {
   private readonly bladeMats: THREE.MeshStandardMaterial[];
   private readonly discTex: THREE.DataTexture[];
   private readonly discs: THREE.Mesh[];
-  private readonly bladeCopies: THREE.InstancedMesh[] = [];
+  private readonly bladeMeshes: THREE.InstancedMesh[] = [];
+  private readonly trail: BladeTrail;
+  private readonly bladeShadow = bladeShadowMaterial();
   private readonly copyMatrix = new THREE.Matrix4();
   private readonly pitchMatrix = new THREE.Matrix4();
-  private lastSmear = -1;
   private lastPitch = NaN;
   /** Angle between successive blades. */
   private readonly bladeGap: number;
@@ -218,18 +211,26 @@ export class Propeller {
       front.add(propFront, bladeFace(blade, radial, 1), toHub);
       back.add(propBack, bladeFace(blade, radial, -1), toHub);
     }
-    // Each blade face is instanced SMEAR_COPIES times: the copies spread over the angle the prop sweeps
-    // during a frame's exposure (see update), all in one draw per face.
+    // Keep only the real blades. A separate analytic sheet supplies the soft trail between blade and disc.
     for (const m of [...front.build('bladeFront').children, ...back.build('bladeBack').children] as THREE.Mesh[]) {
-      const inst = new THREE.InstancedMesh(m.geometry, m.material as THREE.Material, SMEAR_COPIES * (P.variablePitch ? P.blades : 1));
+      const inst = new THREE.InstancedMesh(m.geometry, m.material as THREE.Material, P.variablePitch ? P.blades : 1);
       inst.name = m.name;
-      inst.count = 1;
+      inst.customDepthMaterial = this.bladeShadow;
       inst.frustumCulled = false;
       inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      this.bladeCopies.push(inst);
+      this.bladeMeshes.push(inst);
       this.blades.add(inst);
     }
     this.bladeMats = [propFront, propBack];
+    const tipRadius = R - P.paint.tipBand;
+    const radii = [...Array.from({ length: 34 }, (_, i) => 0.1 + (R - 0.1) * i / 33),
+      ...[tipRadius - 0.00001, tipRadius + 0.00001].filter(r => r > 0.1 && r < R)].sort((a, b) => a - b);
+    this.trail = new BladeTrail(radii.map(radius => ({
+      radius, chord: chordAt(P.chord, radius / R),
+      pitch: Math.min(52 * Math.PI / 180, Math.atan(blade.PITCH_M / (2 * Math.PI * radius))),
+      front: radius > tipRadius ? blade.WHITE : blade.GREY,
+      back: radius > tipRadius ? blade.WHITE : blade.BLACK,
+    })), 'z', P.blades, P.rotation);
 
     // Spinner: an ogive of revolution with a flat backplate, painted like the airframe.
     const spinnerPts: THREE.Vector2[] = [];
@@ -250,6 +251,7 @@ export class Propeller {
     hubParts.add(mat.plainPaint, plate);
     this.group.add(...hubParts.build('spinner').children);
     this.group.add(this.blades);
+    this.group.add(this.trail.mesh);
 
     // Blur discs: separate front (grey thrust faces) and back (black) so each side shows its paint.
     this.discTex = [discTexture(blade, 1), discTexture(blade, -1)];
@@ -292,11 +294,12 @@ export class Propeller {
       this.group.add(d);
     }
     this.group.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh && !this.discs.includes(o as THREE.Mesh)) {
+      if ((o as THREE.Mesh).isMesh && !this.discs.includes(o as THREE.Mesh) && o !== this.trail.mesh) {
         o.castShadow = true;
         o.receiveShadow = true;
       }
     });
+    this.update(0, 0);
   }
 
   /**
@@ -308,56 +311,41 @@ export class Propeller {
   update(rotation: number, rpm: number, bladePitch: number = this.def.referencePitch): void {
     // Positive rotation about body +x = about model -Z.
     this.group.rotation.z = -rotation;
-    // What a camera (or the eye) integrates over one frame: the blades sweep omega * EXPOSURE, 65 degrees at
-    // the 650 rpm idle. The blades are drawn as SMEAR_COPIES copies spread over that angle, each at an
-    // opacity of about 2 / copies: a point under the smear is covered by a fraction chord / (r * sweep) of
-    // the copies, which is the blade's real time-averaged coverage (times ~2 for the flicker the eye
-    // perceives). As the smear approaches the angle between blades the copies band, and the blur disc
-    // (the same average, pre-integrated) takes over.
-    const BLADE_GAP = this.bladeGap;
-    const sweep = Math.min(BLADE_GAP, ((Math.max(0, rpm) * 2 * Math.PI) / 60) * EXPOSURE);
-    const toDisc = smoothstep(0.55 * BLADE_GAP, 0.95 * BLADE_GAP, sweep);
-    const sharp = sweep < 0.015;
+    const blur = bladeBlur(rpm, this.def.blades);
     const dir = this.def.rotation;
     const variable = this.def.variablePitch;
     // The mirror-image blade's pitch axis is mirrored with it.
     const twist = variable ? dir * (bladePitch - this.def.referencePitch) : 0;
-    if (Math.abs(sweep - this.lastSmear) > 1e-4 || (variable && !(Math.abs(twist - this.lastPitch) <= 1e-4))) {
-      this.lastSmear = sweep;
+    if (twist !== this.lastPitch) {
       this.lastPitch = twist;
-      const n = sharp ? 1 : SMEAR_COPIES;
       const blades = variable ? this.def.blades : 1;
       // The blade's own axis is model +Y (it is built pointing up); a positive turn brings its leading edge forward.
       if (variable) this.pitchMatrix.makeRotationY(twist);
-      for (const inst of this.bladeCopies) {
-        inst.count = n * blades;
-        for (let b = 0; b < blades; b++)
-          for (let k = 0; k < n; k++) {
-            // Trailing copies: earlier positions, i.e. rotated back against the direction of rotation.
-            const smear = n > 1 ? (dir * sweep * k) / (n - 1) : 0;
-            if (variable) inst.setMatrixAt(b * n + k, this.copyMatrix.makeRotationZ(smear - b * BLADE_GAP).multiply(this.pitchMatrix));
-            else inst.setMatrixAt(k, this.copyMatrix.makeRotationZ(smear));
-          }
+      for (const inst of this.bladeMeshes) {
+        for (let b = 0; b < blades; b++) {
+          if (variable) inst.setMatrixAt(b, this.copyMatrix.makeRotationZ(-b * this.bladeGap).multiply(this.pitchMatrix));
+          else inst.setMatrixAt(b, this.copyMatrix.identity());
+        }
         inst.instanceMatrix.needsUpdate = true;
-        // A smeared blade is a transparent blur and casts only a faint flicker of shadow.
-        inst.castShadow = sweep < 0.3;
       }
     }
-    const perCopy = sharp ? 1 : Math.min(1, 2 / SMEAR_COPIES + (1 - 2 / SMEAR_COPIES) * Math.max(0, 1 - sweep / 0.12));
-    const bladeAlpha = perCopy * (1 - toDisc);
-    this.blades.visible = bladeAlpha > 0.005;
+    this.blades.visible = blur.solid > 0;
+    this.bladeShadow.opacity = blur.solid;
+    for (const inst of this.bladeMeshes) inst.castShadow = blur.solid > 0;
     for (const m of this.bladeMats) {
-      m.opacity = bladeAlpha;
-      // Overlapping copies must all show: no depth writes once smeared.
-      m.depthWrite = sharp;
+      m.opacity = blur.solid;
+      m.depthWrite = blur.solid === 1;
     }
-    for (const d of this.discs) d.visible = toDisc > 0.01;
+    this.trail.update(blur, variable ? bladePitch - this.def.referencePitch : 0);
+    for (const d of this.discs) d.visible = blur.disc > 0;
     // The cockpit side reads a little denser: the matt black backs against a bright sky.
-    this.discFront.opacity = 0.85 * toDisc;
-    this.discBack.opacity = toDisc;
+    this.discFront.opacity = 0.85 * blur.disc;
+    this.discBack.opacity = blur.disc;
   }
 
   dispose(): void {
+    this.trail.dispose();
+    this.bladeShadow.dispose();
     for (const t of this.discTex) t.dispose();
     this.discFront.dispose();
     this.discBack.dispose();

@@ -11,6 +11,8 @@ import type { EngineUnit } from '../../src/physics/propulsion/engineUnit';
 import { panelLayoutProblems } from '../../src/instruments/panelLayout';
 import { panelUvBasis } from '../../src/instruments/panelProjection';
 import { AircraftVisual } from '../../src/render/aircraft/AircraftVisual';
+import { bladeBlur } from '../../src/render/aircraft/bladeBlur';
+import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { blankDocument, fakeContext } from './meshChecks';
 import { assertDefinitionConsistent } from './consistency';
 import { SimPhysics } from '../../src/sim/SimPhysics';
@@ -54,6 +56,30 @@ it('keeps the physical blade spacing, panel face and mesh finite in the new rend
       tip.y = 0; return tip.normalize(); // Compare azimuth spacing, independent of coning/droop.
     });
     for (let i = 0; i < 3; i++) expect(tips[i].dot(tips[(i + 1) % 3])).toBeCloseTo(-0.5, 3);
+    ctx.state.rotorcraft = emptyRotorcraftState();
+    for (const rpm of [0, 20, 30, 60, 120, 180, 250, 462, 120, 30, 0]) {
+      ctx.state.rotorcraft.rotorRpm = rpm; ctx.state.rotorcraft.azimuth = 1.3;
+      visual.update(0, ctx);
+      rotors.forEach((rotor, i) => {
+        const blades = i === 0 ? 3 : 2, shaftRpm = i === 0 ? rpm : rpm * def.rotorcraft!.tailRatio;
+        const blur = bladeBlur(shaftRpm, blades), spin = rotor.parent!, group = spin.parent!;
+        expect(rotor.count).toBe(blades); expect(rotor.instanceMatrix.count).toBe(blades);
+        expect((rotor.material as THREE.Material).opacity).toBe(blur.solid);
+        expect((rotor.material as THREE.Material).depthWrite).toBe(blur.solid === 1);
+        expect(rotor.customDepthMaterial!.opacity).toBe(blur.solid);
+        expect(rotor.castShadow).toBe(blur.solid > 0);
+        expect(rotor.visible).toBe(blur.solid > 0);
+        const trail = spin.getObjectByName('bladeTrail') as THREE.Mesh;
+        expect(trail.visible).toBe(blur.trail > 0);
+        expect((trail.material as THREE.Material).opacity).toBe(blur.trail);
+        const disc = group.getObjectByName('rotorBlur') as THREE.Mesh;
+        expect(disc.visible).toBe(blur.disc > 0);
+        expect((disc.material as THREE.Material).opacity).toBe(blur.disc);
+        if (i === 1) spin.children.filter(c => c.name === 's269TailGrip').forEach((cuff, blade) => {
+          rotor.getMatrixAt(blade, m); expect(cuff.matrix.elements).toEqual(m.elements);
+        });
+      });
+    }
     const face = visual.getPanelMesh(), [origin, du, dv] = panelUvBasis(face.geometry)!;
     const middle = origin.clone().addScaledVector(du, 0.5).addScaledVector(dv, 0.5);
     expect(face.localToWorld(middle).distanceTo(new THREE.Vector3(D.PANEL_FACE.centre.y, -D.PANEL_FACE.centre.z, -D.PANEL_FACE.centre.x))).toBeLessThan(1e-6);

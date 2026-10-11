@@ -12,6 +12,7 @@ import { sectionHalfWidth } from '../../src/render/aircraft/fuselage';
 import { makeWindowSdf } from '../../src/render/aircraft/livery';
 import { frd } from '../../src/render/aircraft/geometry';
 import { rotorBladeGeometry, TeeteringRotor } from '../../src/render/aircraft/rotorcraft/rotor';
+import { bladeBlur } from '../../src/render/aircraft/bladeBlur';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { Rotorcraft } from '../../src/physics/rotorcraft/rotorcraft';
 import { panelUvBasis } from '../../src/instruments/panelProjection';
@@ -59,27 +60,47 @@ describe('300CB exterior', () => {
     const d = def.rotorcraftVisual!, mat = s269Materials();
     const rotor = new TeeteringRotor({ ...d.main, blades: 3, hubType: 'articulated' }, fakeMaterials());
     const head = new S269MainRotor(rotor, d.main, def.rotorcraft!, mat), ctx = fakeContext();
+    const trailUpdate = vi.spyOn(rotor.trail, 'update');
     ctx.state.rotorcraft = emptyRotorcraftState();
     const pose: S269RotorPose = { blades: [{ flap: 0.07, lag: 0.04, pitch: 0.15 },
       { flap: -0.03, lag: -0.06, pitch: 0.08 }, { flap: 0.09, lag: 0.01, pitch: 0.20 }] };
     const matrix = new THREE.Matrix4(), expected = new THREE.Vector3(), actual = new THREE.Vector3();
-    for (const rpm of [0, 30, 180, 462]) for (const azimuth of [0, 1.7, 5.1]) {
+    for (const rpm of [0, 60, 120, 180, 250, 462, 120, 0]) for (const azimuth of [0, 1.7, 5.1]) {
       Object.assign(ctx.state.rotorcraft, { rotorRpm: rpm, azimuth, thrust: 7000, flapForward: 0.04, flapRight: -0.02 });
       const snapshot = structuredClone(ctx.state.rotorcraft);
       rotor.update(azimuth, rpm, 0.13, 0.035 + rpm * 1e-5); head.update(ctx, pose); rotor.group.updateMatrixWorld(true);
       expect(ctx.state.rotorcraft).toEqual(snapshot); expect(nonFinite(rotor.group)).toBe(0);
+      expect(rotor.blades.count).toBe(3); expect(rotor.blades.instanceMatrix.count).toBe(3);
+      const meanFlap = pose.blades.reduce((sum, b) => sum + b.flap / 3, 0);
+      const meanPitch = pose.blades.reduce((sum, b) => sum + b.pitch! / 3, 0);
+      expect(trailUpdate).toHaveBeenLastCalledWith(bladeBlur(rpm, 3), meanPitch, meanFlap);
+      expect(rotor.trail.mesh.visible).toBe(bladeBlur(rpm, 3).trail > 0);
       const blur = rotor.blur.geometry.getAttribute('position');
       expect(blur.getY(0)).toBeCloseTo((Math.hypot(blur.getX(0), blur.getZ(0)) - D.FLAP_HINGE_OFFSET)
-        * Math.sin(pose.blades.reduce((sum, b) => sum + b.flap / 3, 0)), 7);
+        * Math.sin(meanFlap), 7);
+      // Include shader coning, then compare the trail with the same radius/phase on the disc.
+      // A wrong parent-space tilt would precess once per revolution or shift away from the hinge.
+      for (const radius of [d.main.root, d.main.radius]) for (const angle of [0, 0.8, 2.7]) {
+        actual.set(radius * Math.cos(angle), radius * Math.sin(meanFlap), -radius * Math.sin(angle))
+          .applyMatrix4(rotor.trail.mesh.matrixWorld);
+        expected.set(radius * Math.cos(angle + azimuth), (radius - D.FLAP_HINGE_OFFSET) * Math.sin(meanFlap),
+          -radius * Math.sin(angle + azimuth)).applyMatrix4(rotor.blur.matrixWorld);
+        expect(actual.distanceTo(expected)).toBeLessThan(1e-8);
+      }
       const inverse = rotor.spin.matrixWorld.clone().invert();
       head.arms.forEach((arm, i) => {
         expect(arm.flap.position.x).toBe(D.FLAP_HINGE_OFFSET);
         expect(arm.lag.position.x + arm.flap.position.x).toBeCloseTo(D.LAG_HINGE_OFFSET, 12);
         expect(arm.flap.rotation.z).toBe(pose.blades[i].flap); expect(arm.lag.rotation.y).toBe(pose.blades[i].lag);
-        rotor.blades.getMatrixAt(i * rotor.blades.count / 3, matrix);
+        expect(arm.pitch.rotation.x).toBe(pose.blades[i].pitch);
+        rotor.blades.getMatrixAt(i, matrix);
         expected.set(d.main.root - D.LAG_HINGE_OFFSET, 0, 0).applyMatrix4(arm.pitch.matrixWorld).applyMatrix4(inverse);
         actual.set(d.main.root, 0, 0).applyMatrix4(matrix);
         expect(actual.distanceTo(expected)).toBeLessThan(1e-7);
+        // An off-axis tip verifies feathering as well as the flap/lag hinge chain.
+        expected.set(d.main.radius - D.LAG_HINGE_OFFSET, 0.03, 0.08).applyMatrix4(arm.pitch.matrixWorld).applyMatrix4(inverse);
+        actual.set(d.main.radius, 0.03, 0.08).applyMatrix4(matrix);
+        expect(actual.distanceTo(expected)).toBeLessThan(3e-7);
       });
       // The two telescoping damper pieces share their joining point at every independent lag angle.
       const bodies: THREE.Mesh[] = [], rods: THREE.Mesh[] = [];
@@ -109,6 +130,8 @@ describe('300CB exterior', () => {
       rotor.update(azimuth, physics.state.rotorRpm, 0, 0);
       head.update(ctx, physics.state.articulated);
       expect(new THREE.Vector3(0, 1, 0).applyQuaternion(rotor.blur.quaternion).distanceTo(expected)).toBeLessThan(1e-5);
+      const trailTilt = rotor.spin.quaternion.clone().multiply(rotor.trail.mesh.quaternion);
+      expect(new THREE.Vector3(0, 1, 0).applyQuaternion(trailTilt).distanceTo(expected)).toBeLessThan(1e-5);
       // Blade zero points right at zero azimuth, then forward at π/2. A right-tilted
       // disc lowers its right-hand tip; the fallback preview uses the same convention.
       const angle = physics.state.articulated!.blades[0].flap;

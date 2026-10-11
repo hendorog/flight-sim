@@ -173,7 +173,7 @@ describe('R22 procedural exterior and cockpit', () => {
     expect(rotor.getObjectByName('rotorAzimuth')!.rotation.y).toBe(0.8);
     expect(rotor.getObjectByName('rotorBlur')!.visible).toBe(true);
     const blades = rotor.getObjectByName('rotorBlades') as THREE.InstancedMesh;
-    expect(blades.count).toBe(20); expect(blades.castShadow).toBe(false);
+    expect(blades.count).toBe(2); expect(blades.visible).toBe(false); expect(blades.castShadow).toBe(false);
     const m = new THREE.Matrix4(); blades.getMatrixAt(0, m);
     expect(new THREE.Vector3(MAIN_ROTOR_RADIUS, 0, 0).applyMatrix4(m).y).toBeGreaterThan(0);
     expect(visual.root.getObjectByName('cyclic')!.rotation.x).not.toBe(0);

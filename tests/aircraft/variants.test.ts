@@ -611,7 +611,8 @@ describe('propeller variants', () => {
     { ...base, hub: [0, 0, 0], rotation: -1 },
   ];
   const R = base.diameter / 2;
-  const blades = (prop: Propeller): THREE.InstancedMesh[] => meshesNamed(prop.group, /^blade/) as THREE.InstancedMesh[];
+  const blades = (prop: Propeller): THREE.InstancedMesh[] => meshesNamed(prop.group, /^blade/)
+    .filter((m): m is THREE.InstancedMesh => m instanceof THREE.InstancedMesh);
   const ROWS = 24;
   const COLS = 13;
   /** Radius fraction of grid row i (the blade builder's spacing), and the row nearest 0.75 R. */
@@ -638,8 +639,8 @@ describe('propeller variants', () => {
     for (const def of hands) {
       const prop = new Propeller(fakeMaterials(), def, true);
       expect(blades(prop).length).toBe(2);
-      // One blade per face, room for blades x 16 smear copies.
-      for (const b of blades(prop)) expect(b.instanceMatrix.count).toBe(3 * 16);
+      // One instance per real blade, with no extra exposure copies.
+      for (const b of blades(prop)) expect(b.instanceMatrix.count).toBe(3);
       prop.update(0, 0);
       expect(nonFinite(prop.group)).toBe(0);
       for (const b of blades(prop)) expect(b.count).toBe(3);
@@ -666,7 +667,7 @@ describe('propeller variants', () => {
     }
   });
 
-  it('rotation -1 is the mirror image; the spin angle is the state\'s own; the smear trails', () => {
+  it('rotation -1 is the mirror image; the spin angle is the state\'s own at every RPM', () => {
     const [cw, ccw] = hands.map((def) => new Propeller(fakeMaterials(), def, true));
     for (const face of [0, 1]) {
       const a = blades(cw)[face].geometry.getAttribute('position');
@@ -702,16 +703,19 @@ describe('propeller variants', () => {
       expect(prop.group.rotation.z).toBe(-0.7);
       prop.update(-0.7, 0);
       expect(prop.group.rotation.z).toBe(0.7);
-      // At 600 rpm one 1/60 s exposure sweeps 600 / 60 / 60 rev = 60 degrees: sixteen copies of each blade trail
-      // over that angle, behind the blade: toward +Z rotation for rotation 1, the other way for -1.
+      // The intermediate trail gives way to the disc without changing the real blade's placement/count.
+      prop.update(0, 180);
+      expect(prop.group.getObjectByName('bladeTrail')!.visible).toBe(true);
       prop.update(0, 600);
-      expect(front.count).toBe(48);
+      expect(front.count).toBe(3);
+      expect(front.parent!.visible).toBe(false);
+      expect(prop.group.getObjectByName('bladeTrail')!.visible).toBe(false);
       const m = new THREE.Matrix4();
-      front.getMatrixAt(15, m);
+      front.getMatrixAt(0, m);
       const axis = new THREE.Vector3(0, 1, 0).transformDirection(m);
-      expect(Math.atan2(-axis.x, axis.y)).toBeCloseTo((def.rotation * Math.PI) / 3, 6);
+      expect(axis.distanceTo(new THREE.Vector3(0, 1, 0))).toBeLessThan(1e-6);
     }
-    // The three-blade variable-pitch propeller sends no more triangles than the Cessna's two-blade fixed one.
+    // The three-blade variable-pitch geometry uses no more triangles than the Cessna's two-blade fixed one.
     const cessna = new Propeller(fakeMaterials());
     cessna.update(0, 600);
     cw.update(0, 600);
