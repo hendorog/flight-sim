@@ -266,15 +266,15 @@ function dragItems(): DragItem[] {
 
 /**
  * Stall-warning margin of the electric lift-detector vane: how far below the strip's stall break it sounds, rad.
- * Set so the horn sounds 5-10 kt before the stall (POH 4.35, s.9).
+ * ESTIMATE of the vane's installation angle: 9.5 degrees below the clean reference break (trip at 6.8
+ * degrees local incidence), calibrated in slow idle entries to the POH 4.35's 5-10 KIAS warning. The
+ * reference Reynolds number is 2.1e6, near the stall. POH 4.35 describes a single lift detector, with no
+ * flap-dependent changeover:
+ * https://www.aeroclubvitoria.net/utilidades/ECFRE%20POH-2012.pdf
+ * AeroModel computes the flap's leading-edge flow shift from its geometry. The former additional 4-degree
+ * flap margin, on top of the section's flap corrections, sounded the horn on the runway.
  */
-const WARNING_MARGIN = 10 * DEG;
-/**
- * With flap down the vane's margin is larger: the lowered flap's circulation moves the stagnation point down and
- * aft round the leading edge, past the vane, at a lower angle of attack (the C172S and the PA-34 have the same
- * trait; here the flapped strip's break also falls with the flap). Set for the same 5-10 kt with full flap.
- */
-const WARNING_MARGIN_FLAPS = 14 * DEG;
+const WARNING_MARGIN = 9.5 * DEG;
 
 export function createPA38AeroDefinition(): AircraftAeroDefinition {
   const wing = buildStrips(pa38WingPlanform());
@@ -292,10 +292,7 @@ export function createPA38AeroDefinition(): AircraftAeroDefinition {
     dragItems: dragItems(),
     struts: [],
     propellers: [{ hub: { ...prop.hub }, radius: prop.diameter / 2 }],
-    stallWarning: [
-      // The lift detector is electric (horn and light on the master): no warning with a dead bus.
-      { strip: sensor, margin: WARNING_MARGIN, flaps: [-1, 10 * DEG], needsBus: true },
-      { strip: sensor, margin: WARNING_MARGIN_FLAPS, flaps: [10 * DEG, 1], needsBus: true },
-    ],
+    // The lift detector is electric: no warning with a dead bus.
+    stallWarning: { strip: sensor, margin: WARNING_MARGIN, referenceReynolds: WING.reRef, needsBus: true },
   };
 }

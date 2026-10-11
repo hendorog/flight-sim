@@ -34,8 +34,15 @@ export interface PropellerStation {
 export interface StallSensor {
   /** Index into `wing` of the strip carrying the vane / port. */
   strip: number;
-  /** How far below that strip's stall break the warning sounds, rad of local angle of attack. */
+  /** How far below that strip's stall break the warning sounds, rad. With referenceReynolds: rigged CLEAN. */
   margin: number;
+  /**
+   * Reynolds number at which a mechanical vane's margin was rigged. Its trip angle must not follow the
+   * section's Reynolds-dependent stall break down into the taxi regime. Flaps change the leading-edge
+   * loading via thin-aerofoil A0, independently of their CLmax increment. Absent: use the current section
+   * condition (legacy pressure-port sensors).
+   */
+  referenceReynolds?: number;
   /** Active only while the flap deflection is inside this range, rad (PA-34: two detectors switched by flap). Absent: always. */
   flaps?: readonly [number, number];
   /**

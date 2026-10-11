@@ -416,7 +416,16 @@ export function rigPointRudder(rig: AnyRig, bracketKt: readonly [number, number]
 
 export interface StallRun {
   vs1g: number;
+  /** Same maximum-lift 1-g speed through the type's position-error calibration, KIAS. */
+  vs1gKias: number;
+  clMax: number;
+  peakKias: number;
+  peakKcas: number;
+  /** Achieved IAS deceleration over the five seconds before maximum lift, kt/s. */
+  entryDeceleration: number;
+  maxEntryBankDeg: number;
   warningCas: number;
+  warningKias: number;
   /** Largest nose-down pitch rate after the lift peak, rad/s (negative). */
   noseDropRate: number;
   pitchLoss: number;
@@ -428,6 +437,10 @@ export interface StallRun {
 
 export interface StallOptions {
   flapLever: number;
+  /** Usable fuel fraction for a light-weight measurement; default full tanks. */
+  fuelFraction?: number;
+  /** Start in an idle glide and track the 1-kt/s ramp with flight-path feed-forward, rather than speed PI alone. */
+  trackDeceleration?: boolean;
   /** TAS of the trimmed entry, kt. */
   entryKt: number;
   /** Height of the entry above the field, ft. */
@@ -443,27 +456,51 @@ export interface StallOptions {
 export function stallRun(rig: AnyRig, o: StallOptions): StallRun {
   const fm = rig.fm;
   const area = fm.definition.geometry.wing.area;
-  resetTo(rig, { airspeed: o.entryKt * KT, position: at(ELEVATION + (o.ftAboveField ?? 3000) * 0.3048), flaps: o.flapLever });
+  resetTo(rig, {
+    airspeed: o.entryKt * KT, position: at(ELEVATION + (o.ftAboveField ?? 3000) * 0.3048),
+    flaps: o.flapLever, fuelFraction: o.fuelFraction,
+    // Below the available idle glide: reset pins idle and solves its actual flight path.
+    ...(o.trackDeceleration ? { flightPathAngle: -20 * DEG } : {}),
+  });
   rig.controls.throttle = 0;
   const ap = new Autopilot(fm.definition.autopilot);
-  ap.settings = { ...ap.settings, lateral: 'wingLeveler', vertical: 'airspeed', autoTrim: false };
+  ap.settings = { ...ap.settings, lateral: 'wingLeveler', vertical: o.trackDeceleration ? 'pitch' : 'airspeed', autoTrim: false };
   const s = fm.state;
   let target = kt(s.ias);
   let warningCas = 0;
+  let warningKias = 0, peakKias = 0, peakKcas = 0;
   const W = fm.massProperties.mass * G0;
   // Record the entry: lift coefficient, pitch attitude and pitch rate.
-  const cl: number[] = [], pitch: number[] = [], q: number[] = [];
+  const cl: number[] = [], pitch: number[] = [], q: number[] = [], ias: number[] = [], bank: number[] = [];
   let peak = 0;
   // The entry is flown until the break is clearly past: 6 s after the lift peak with the wing stalled, or 38 s at most.
   rig.run(38, () => {
     target -= FRAME;
-    ap.settings.airspeed = target * KT;
+    if (o.trackDeceleration) {
+      // Pilot feed-forward from m*dV/dt = T*cos(alpha) - D - W*sin(gamma). The feedback corrects IAS/CAS
+      // position-error changes and the pitch servo's lag with a 0.5-s speed-error time constant. Only pilot
+      // commands change: the flight model's forces, velocities and aerodynamic parameters are untouched.
+      const acceleration = (-KT + 2 * (target * KT - s.ias)) * s.tas / Math.max(s.ias, 1);
+      const thrust = s.propellers.reduce((sum, prop) => sum + prop.thrust, 0);
+      const tangentForce = thrust * Math.cos(s.alpha) - fm.lastAero!.drag;
+      const sinGamma = (tangentForce - (W / G0) * acceleration) / W;
+      ap.settings.pitch = s.alpha + Math.asin(Math.max(-0.5, Math.min(0.5, sinGamma)));
+    } else ap.settings.airspeed = target * KT;
     ap.update(FRAME, s, rig.controls);
-    if (s.stallWarning && !warningCas) warningCas = kt(fm.cas);
+    if (s.stallWarning && !warningCas) {
+      warningCas = kt(fm.cas);
+      warningKias = kt(s.ias);
+    }
     cl.push(fm.lastAero!.lift / (0.5 * s.airDensity * s.tas * s.tas * area));
     pitch.push(s.pitch);
     q.push(s.angularVelocity.y);
-    if (cl[cl.length - 1] > cl[peak]) peak = cl.length - 1;
+    ias.push(kt(s.ias));
+    bank.push(Math.abs(s.roll) / DEG);
+    if (cl.length === 1 || cl[cl.length - 1] > cl[peak]) {
+      peak = cl.length - 1;
+      peakKias = kt(s.ias);
+      peakKcas = kt(fm.cas);
+    }
     return (cl.length - 1 - peak) * FRAME > 6 && fm.lastAero!.stallFraction > 0.2;
   });
   // The break: what the aircraft does in the 6 s after the lift peak.
@@ -486,9 +523,18 @@ export function stallRun(rig: AnyRig, o: StallOptions): StallRun {
     ap.settings = { ...ap.settings, vertical: 'airspeed', airspeed: o.recoverKias * KT };
     rig.run(12, track);
   }
+  const vs = Math.sqrt((2 * W) / (1.225 * area * clMax));
+  const rateStart = Math.max(0, peak - Math.round(5 / FRAME));
   return {
-    vs1g: kt(Math.sqrt((2 * W) / (1.225 * area * clMax))),
+    vs1g: kt(vs),
+    vs1gKias: kt(airDataOf(fm.definition).indicatedAirspeed(vs, o.flapLever * fm.definition.controls.flaps.maxDeflection, clMax)),
+    clMax,
+    peakKias,
+    peakKcas,
+    entryDeceleration: (ias[rateStart] - ias[peak]) / ((peak - rateStart) * FRAME),
+    maxEntryBankDeg: Math.max(...bank.slice(0, peak + 1)),
     warningCas,
+    warningKias,
     noseDropRate,
     pitchLoss,
     heightLost: recoveryStart - lowest,
