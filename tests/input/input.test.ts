@@ -59,9 +59,11 @@ describe('key bindings', () => {
     expect(actionForKey('Backspace', false)).toBe('viewRecentre');
   });
 
-  it('F and the bare [ / ] keys are no longer flap keys (F is left unbound, V recentres the view)', () => {
-    for (const code of ['KeyF', 'BracketLeft', 'BracketRight']) expect(actionForKey(code, false)).toBeNull();
+  it('F and [ stay with the UI/school, ] switches panels, and bare V recentres', () => {
+    for (const code of ['KeyF', 'BracketLeft']) expect(actionForKey(code, false)).toBeNull();
     expect(actionForKey('KeyV', false)).toBe('viewRecentre');
+    expect(actionForKey('KeyV', true)).toBe('panelToggle');
+    expect(actionForKey('BracketRight', false)).toBe('panelSection');
     // Shift+[ / Shift+] belong to the shell's time-rate keys.
     expect(actionForKey('BracketLeft', true)).toBeNull();
     expect(KEY_MAP.filter((m) => m.action === 'flapsUp' || m.action === 'flapsDown').map((m) => m.code)).toEqual(['F5', 'F6']);
@@ -107,7 +109,7 @@ describe('key bindings', () => {
     expect(actionForKey('Digit0', true)).toBe('engineSelectAll');
   });
 
-  it('no existing key changed: the starter is S in both shift states, and the map gained exactly the new entries', () => {
+  it('flight control keys stay unchanged and every modifier remains unambiguous', () => {
     expect(actionForKey('KeyS', false)).toBe('starter');
     expect(actionForKey('KeyS', true)).toBe('starter');
     expect(KEY_MAP.filter((m) => m.code === 'KeyS')).toEqual([{ code: 'KeyS', action: 'starter' }]);
@@ -130,8 +132,8 @@ describe('key bindings', () => {
       'Digit9/undefined/engineSelect2',
       'Digit0/undefined/engineSelectAll',
     ]);
-    // 71 entries before these fourteen.
-    expect(KEY_MAP.length).toBe(71 + 14 + 2);
+    // 71 originals, fourteen aircraft controls, two rotorcraft controls, two panel view keys.
+    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2);
     // A code is bound either once for both shift states or with explicit flags, never both ways (one would shadow the other).
     for (const code of new Set(KEY_MAP.map((m) => m.code))) {
       const entries = KEY_MAP.filter((m) => m.code === code);
@@ -142,7 +144,7 @@ describe('key bindings', () => {
   });
 
   it('the Cessna 172S help listing is unchanged by the keys it has nothing for', () => {
-    expect(KEY_BINDINGS.length).toBe(62);
+    expect(KEY_BINDINGS.length).toBe(64);
     for (const key of ['F7', 'F10', '/', ';', '\\', 'Shift+F', '6', '7', '8', '9', '0']) expect(KEY_BINDINGS.some((b) => b.keys.split(' / ').includes(key)), key).toBe(false);
   });
 

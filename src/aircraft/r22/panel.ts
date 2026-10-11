@@ -52,6 +52,8 @@ const switchDef = (id: string, label: string, x: number, on: SwitchDef['on'], to
   ({ id, label, name: label, x, on, toggle, red });
 
 export const R22_PANEL: PanelDef = {
+  fixed: { flightRows: [['vsi', 'attitude', 'asi', 'tach'], ['altimeter', 'heading', 'map']],
+    controls: [{ x: 298, y: 906, w: 450, h: 162 }] },
   // Estimated dimmer response, shared with the Raven analog installation; warning lights bypass it.
   id: 'r22', lightingDimmerExponent: 2.2, size: PANEL_CANVAS, instrumentScale: SCALE, instrumentBezel: 'round', apertures: APERTURES,
   console: { podOutline: PANEL_POD_OUTLINE, pedestalOutline: PANEL_PEDESTAL_OUTLINE, hoodOverhang: 0.045,

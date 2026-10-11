@@ -178,7 +178,7 @@ function fits(flyby: FlybyRig, tower: TowerRig): number[] {
 
 /** A camera system on a page that is not there: the listeners go nowhere and the wall clock is the test's. */
 function bootCameras(): { cameras: CameraSystem; ctx: SimContext; frame: (i: number, dt?: number) => void } {
-  const nowhere = { addEventListener: () => {}, removeEventListener: () => {} };
+  const nowhere = { clientWidth: 1366, clientHeight: 768, addEventListener: () => {}, removeEventListener: () => {} };
   vi.stubGlobal('window', nowhere);
   vi.stubGlobal('document', { pointerLockElement: null, exitPointerLock: () => {} });
   let wall = 1000;
@@ -370,5 +370,24 @@ describe('aircraft cockpit field of view', () => {
     rig.setAircraft(C172S_CAMERA);
     rig.update(0, 0, ctx, poseOf(ctx.state), out);
     expect(out.fov).toBe(60);
+  });
+});
+
+describe('fixed cockpit framing', () => {
+  it('centres the forward sight line above the panel, ignores look/zoom and clears the offset in 3D', () => {
+    const { cameras, ctx, frame } = bootCameras();
+    ctx.panelView = 'upper'; ctx.fixedPanelHeight = 368;
+    frame(0, 0);
+    const forward = new THREE.Vector3(0, 0, -100).applyQuaternion(ctx.camera.quaternion).add(ctx.camera.position).project(ctx.camera);
+    expect((1 - forward.y) * 768 / 2).toBeCloseTo((768 - 368) / 2, 8);
+    const q = ctx.camera.quaternion.clone(), fov = ctx.camera.fov, cuts = cameras.cuts;
+    cameras.lookBy(200, 100); cameras.zoom(5); frame(0, 0);
+    expect(ctx.camera.quaternion.toArray()).toEqual(q.toArray());
+    expect(ctx.camera.fov).toBe(fov); expect(cameras.cuts).toBe(cuts);
+    ctx.panelView = 'hidden'; ctx.fixedPanelHeight = 32; frame(0, 0);
+    expect(ctx.camera.view?.offsetY).toBe(16);
+    ctx.panelView = '3d'; ctx.fixedPanelHeight = 0; frame(0, 0);
+    expect(ctx.camera.view?.enabled).toBe(false);
+    cameras.dispose();
   });
 });

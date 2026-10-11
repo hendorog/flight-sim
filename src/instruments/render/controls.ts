@@ -368,7 +368,7 @@ export const FLAP_LEGENDS = c172sFlapLever().legends;
  * is the deflection at the bottom of the scale, `legends` letter the detents evenly down it.
  */
 export class FlapIndicator implements PanelComponent {
-  private readonly latch = new Latch(2);
+  private readonly latch = new Latch(3);
   /** Slot position in local pixels; matches the 3D lever (0 deg at panel y 560, FULL at 760, x 1540). */
   static readonly SLOT_X = 100;
   static readonly SLOT_TOP = 80;
@@ -382,12 +382,13 @@ export class FlapIndicator implements PanelComponent {
     readonly bounds: Rect,
     private readonly maxDeg: number,
     private readonly legends: readonly string[],
-    private readonly paintLever = false,
+    public paintLever = false,
   ) {}
 
   sample(r: InstrumentReadings, c: ControlInputs): boolean {
     this.latch.track(0, clamp(c.flaps, 0, 1), 0.004);
     this.latch.track(1, clamp(r.flapsDeg / this.maxDeg, 0, 1), 0.004);
+    this.latch.track(2, this.paintLever ? 1 : 0, 1);
     return this.latch.take();
   }
 

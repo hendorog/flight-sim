@@ -21,6 +21,7 @@ import { OrbitRig } from './orbitRig';
 import { copyPose, makePose, type AircraftPose, type CameraPose } from './pose';
 import type { CameraRig } from './rig';
 import { TowerRig } from './towerRig';
+import { isFixedPanel } from '../../instruments/fixedPanel';
 
 export interface CameraSystemOptions {
   /** Tower camera position, NED metres. Default: 25 m above the field near the apron. */
@@ -81,6 +82,8 @@ export class CameraSystem implements Subsystem, ViewControl {
   private readonly dirBefore = new THREE.Vector3();
   private readonly dirAfter = new THREE.Vector3();
   private readonly qLift = new THREE.Quaternion();
+  private pilotEye = C172S_CAMERA.pilotEye;
+  private fixedHeight = 0;
 
   constructor(opts: CameraSystemOptions = {}) {
     this.tower = new TowerRig(opts.towerPositionNED);
@@ -130,6 +133,7 @@ export class CameraSystem implements Subsystem, ViewControl {
       defaultFovDeg: aircraft.defaultFovDeg,
     };
     this.airframeRadius = a.radius;
+    this.pilotEye = a.pilotEye;
     for (const rig of Object.values(this.rigs)) rig.setAircraft?.(a);
   }
 
@@ -146,19 +150,23 @@ export class CameraSystem implements Subsystem, ViewControl {
   // ------------------------------------------------------------------ ViewControl
 
   recentre(): void {
+    if (this.ctx && isFixedPanel(this.ctx)) return;
     this.rigs[this.getMode()].recentre();
   }
 
   zoom(steps: number): void {
+    if (this.ctx && isFixedPanel(this.ctx)) return;
     this.rigs[this.getMode()].zoom(steps);
   }
 
   /** Keyboard look-around: the same as a mouse drag of (dx, dy) pixels in the current view. */
   lookBy(dx: number, dy: number): void {
+    if (this.ctx && isFixedPanel(this.ctx)) return;
     this.rigs[this.getMode()].look(dx, dy);
   }
 
   togglePointerLock(): void {
+    if (this.ctx && isFixedPanel(this.ctx)) return;
     if (!this.el) return;
     if (document.pointerLockElement === this.el) document.exitPointerLock();
     else void this.el.requestPointerLock();
@@ -167,6 +175,7 @@ export class CameraSystem implements Subsystem, ViewControl {
   // ------------------------------------------------------------------ mouse
 
   private readonly onPointerDown = (e: PointerEvent): void => {
+    if (this.ctx && isFixedPanel(this.ctx)) return;
     if (e.button === 1) {
       e.preventDefault();
       this.recentre();
@@ -193,6 +202,7 @@ export class CameraSystem implements Subsystem, ViewControl {
   };
 
   private readonly onMouseMove = (e: MouseEvent): void => {
+    if (this.ctx && isFixedPanel(this.ctx)) return;
     if (this.leftPending && !this.dragging) {
       if (Math.hypot(e.clientX - this.leftOrigin.x, e.clientY - this.leftOrigin.y) > MOUSE_DRAG_SLOP) this.dragging = true;
     }
@@ -201,6 +211,7 @@ export class CameraSystem implements Subsystem, ViewControl {
 
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    if (this.ctx && isFixedPanel(this.ctx)) return;
     if (e.deltaY === 0) return;
     const steps = e.deltaY < 0 ? 1 : -1;
     const rig = this.rigs[this.getMode()];
@@ -254,9 +265,31 @@ export class CameraSystem implements Subsystem, ViewControl {
       cur.fov = this.from.fov + (this.target.fov - this.from.fov) * e;
     } else copyPose(this.target, cur);
 
+    const fixed = isFixedPanel(ctx);
+    if (fixed) {
+      // Same design eye point as the cockpit, with an unobstructed, body-forward sight line. An off-axis
+      // projection below moves the horizon into the visible window without tilting the pilot's head up.
+      const e = this.pilotEye;
+      cur.position.set(e.y, -e.z, -e.x).applyQuaternion(this.aircraft.quaternion).add(this.aircraft.position);
+      cur.quaternion.copy(this.aircraft.quaternion);
+      cur.fov = 60;
+      this.blend = 1;
+      this.onPointerUp();
+      if (document.pointerLockElement === this.el) document.exitPointerLock();
+    }
+
     this.keepClear(cur, rig, ctx, dt);
 
     const cam = ctx.camera;
+    const panelHeight = fixed ? ctx.fixedPanelHeight ?? 0 : 0;
+    if (this.fixedHeight !== panelHeight || fixed && (cam.view?.fullWidth !== this.el?.clientWidth || cam.view?.fullHeight !== this.el?.clientHeight)) {
+      this.fixedHeight = panelHeight;
+      if (fixed && this.el?.clientWidth && this.el.clientHeight) {
+        const w = this.el.clientWidth, h = this.el.clientHeight;
+        cam.setViewOffset(w, h, 0, panelHeight / 2, w, h);
+      } else cam.clearViewOffset();
+      this.cut();
+    }
     cam.position.copy(cur.position);
     cam.quaternion.copy(cur.quaternion);
     if (Math.abs(cam.fov - cur.fov) > 1e-4) {

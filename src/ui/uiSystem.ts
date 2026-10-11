@@ -31,6 +31,9 @@ import { engineControl, type AircraftState } from '../core/types';
 import type { InputAction } from '../input/bindings';
 import type { PanelDef } from '../instruments/panelDef';
 import { CockpitClicks } from './cockpitClicks';
+import { FixedPanel, FIXED_PANEL_CSS } from './fixedPanel';
+import type { InstrumentPanel } from '../instruments/panel';
+import { C172S_PANEL } from '../aircraft/c172s/panel';
 import { mixtureLabel, switchMessages, switchReads } from './cues';
 import { el, setText } from './dom';
 import type { GamepadSettings } from './gamepadPage';
@@ -131,6 +134,7 @@ export class UISystem implements Subsystem, MenuHost {
   private readonly hintsMode: 'auto' | 'always' | 'never';
   /** Built in init(), from the flown type's panel. */
   private clicks: CockpitClicks | null = null;
+  private fixedPanel: FixedPanel | null = null;
   private readonly panel: PanelDef | undefined;
   private readonly hold: UISystemOptions['hold'];
   private menu: PauseMenu | null = null;
@@ -176,7 +180,7 @@ export class UISystem implements Subsystem, MenuHost {
     this.bindings = opts.bindings;
     this.hotkeys = { menu: 'Escape', hud: 'F9', fps: 'F8', checklist: 'KeyF', ...opts.hotkeys };
     if (!document.getElementById('fsui-style')) {
-      const style = el('style', undefined, document.head, UI_CSS);
+      const style = el('style', undefined, document.head, UI_CSS + FIXED_PANEL_CSS);
       style.id = 'fsui-style';
     }
     this.root = el('div', undefined, opts.parent ?? document.body);
@@ -235,8 +239,12 @@ export class UISystem implements Subsystem, MenuHost {
     const { aircraft: def, presentation } = ctx as Partial<Pick<SimContext, 'aircraft' | 'presentation'>>;
     this.setAircraft(def, presentation);
     if (def && presentation) this.checklist.init(ctx);
+    this.fixedPanel = new FixedPanel(this.root, this.panel ?? presentation?.panel ?? C172S_PANEL, ctx);
+    // Panel is behind all captions, callouts and modal screens.
+    this.root.prepend(this.fixedPanel.root);
     // The clicks' tooltip keeps its place under the school layer, toasts and dialogs.
     const clicks = (this.clicks = new CockpitClicks(this.root, this.panel ?? presentation?.panel, this.hold));
+    clicks.fixed = this.fixedPanel;
     this.root.insertBefore(this.root.lastElementChild!, this.schoolLayer);
     this.menu = new PauseMenu(this.root, this.bindings, this);
     this.menu.setGamepads(this.gamepads);
@@ -273,11 +281,12 @@ export class UISystem implements Subsystem, MenuHost {
 
   /** A double-click belongs to the panel/UI, or a pilot other than the user is flying. */
   blocksMouseFlight(clientX: number, clientY: number, gesture: 'toggle' | 'move'): boolean {
-    return !!(this.menu?.isOpen || this.crash.isOpen || this.schoolUi?.screen || this.clicks?.controlAt(clientX, clientY) ||
+    return !!(this.menu?.isOpen || this.crash.isOpen || this.schoolUi?.screen || this.fixedPanel?.contains(clientX, clientY) || this.clicks?.controlAt(clientX, clientY) ||
       gesture === 'toggle' && (this.demoFlying || this.schoolUi?.followMeThrough || this.schoolUi?.instructorFlying));
   }
 
   update(dt: number, ctx: SimContext): void {
+    this.fixedPanel?.update();
     this.fps.frame(performance.now());
     if (this.weatherDirty) {
       this.weatherDirty = false;
@@ -330,11 +339,19 @@ export class UISystem implements Subsystem, MenuHost {
     window.removeEventListener('keydown', this.onKey);
     this.controlsWidget.dispose();
     this.clicks?.dispose();
+    this.fixedPanel?.dispose();
     for (const u of this.unsubscribe) u();
     this.root.remove();
   }
 
   // --- Public API ----------------------------------------------------------------------------------
+
+  setPanelSource(panel: InstrumentPanel): void { this.fixedPanel?.setSource(panel); }
+  refreshPanel(): void { this.fixedPanel?.layout(); }
+  flightViewRect(): DOMRect | null {
+    const r = this.context?.renderer.domElement.getBoundingClientRect();
+    return r ? new DOMRect(r.x, r.y, r.width, r.height - (this.fixedPanel?.active ? this.context?.fixedPanelHeight ?? 0 : 0)) : null;
+  }
 
   setLoadingProgress(fraction: number, label?: string): void {
     this.loading.setProgress(fraction, label);
@@ -361,6 +378,7 @@ export class UISystem implements Subsystem, MenuHost {
     school.toastSink = (t) => this.showToast(t);
     school.setView({
       cockpit: () => this.context?.cameraMode === 'cockpit',
+      panelTop: () => this.fixedPanel?.top ?? null,
       project: (px, py) => this.clicks?.panelPointToClient(px, py) ?? null,
     });
     this.menu?.refresh();

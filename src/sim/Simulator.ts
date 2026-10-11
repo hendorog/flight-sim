@@ -56,6 +56,8 @@ import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreferenc
 import { SceneMaterialPatches } from './cloudShadows';
 import { advanceTimeOfDay } from './clock';
 import { showContextLost, showCurtain, type Curtain } from './overlays';
+import { isFixedPanel, type PanelView } from '../instruments/fixedPanel';
+import { AirframeVisibility } from '../render/aircraft/visibility';
 import { parseParams, type SimParams } from './params';
 import {
   browserStore,
@@ -64,6 +66,8 @@ import {
   decideBoot,
   formatAge,
   loadResumePreference,
+  loadPanelView,
+  savePanelView,
   loadSnapshot,
   RESUME_ARM_SECONDS,
   SAVE_INTERVAL_S,
@@ -157,6 +161,7 @@ export class Simulator {
   ready = false;
 
   private readonly failed = new Set<string>();
+  private readonly airframeVisibility = new AirframeVisibility();
   private lastFrame = -1;
   private fastForwardLeft = 0;
   private hiddenPaused = false;
@@ -291,6 +296,7 @@ export class Simulator {
       reset: (id) => this.resetBehindCurtain(id),
       setPaused: (paused) => this.setPaused(paused),
       setCameraMode: (mode) => this.setCameraMode(mode),
+      setPanelView: (view) => this.setPanelView(view),
       setTimeScale: (s) => {
         // A lesson caps time acceleration (1x, 4x on navigation legs; section 3.10).
         const cap = this.training?.timeScaleCap ?? Number.POSITIVE_INFINITY;
@@ -338,6 +344,7 @@ export class Simulator {
       timeScale: 1,
       achievedTimeScale: 1,
       cameraMode: resumed && !p.camPos ? resumed.snapshot.cameraMode : p.cam,
+      panelView: loadPanelView(this.store),
       quality: resumed ? resumed.snapshot.quality : p.quality,
       commands,
       events,
@@ -430,6 +437,7 @@ export class Simulator {
     ui.fpsExtra = () => audio.status();
     if (p.mute) audio.setMuted(true);
     ui.init(ctx);
+    ui.setPanelSource(panel);
     ui.scenario = physics.scenario.id;
     ui.resumeOnReload = {
       get: () => this.resumeEnabled,
@@ -489,7 +497,7 @@ export class Simulator {
     // Input <-> UI links: mode-change toasts (mouse yoke on / off) and the control-position widget for
     // every input source, including the mouse yoke. A controller's Start button keeps the input module's
     // default (a synthetic Escape press, which the UI handles exactly as the key: menu or crash dialog).
-    input.setShell({ toast: (t) => ui.showToast(t), blocksMouseFlight: (x, y, gesture) => ui.blocksMouseFlight(x, y, gesture) });
+    input.setShell({ flightViewRect: () => ui.flightViewRect(), toast: (t) => ui.showToast(t), blocksMouseFlight: (x, y, gesture) => ui.blocksMouseFlight(x, y, gesture) });
     ui.setYokeIndicator(() => input.getYokeIndicator());
     ui.assists = input.assists;
     ui.autopilot = {
@@ -893,6 +901,14 @@ export class Simulator {
     this.ctx.events.emit('paused', { paused });
   }
 
+  setPanelView(view: PanelView): void {
+    this.ctx.panelView = view;
+    savePanelView(this.store, view);
+    this.setCameraMode('cockpit');
+    this.systems?.ui.refreshPanel();
+    this.post?.resetTemporalHistory();
+  }
+
   setCameraMode(mode: CameraMode): void {
     this.fixedCamera = null;
     if (this.ctx.cameraMode === mode) return;
@@ -1113,6 +1129,8 @@ export class Simulator {
     applyPose(ctx.aircraftRoot, ctx.state.position, ctx.state.orientation);
     ctx.aircraftRoot.updateMatrixWorld(true);
     this.run('aircraft', s.aircraft, subsystemDt);
+    this.airframeVisibility.setHidden(ctx.aircraftRoot, isFixedPanel(ctx));
+    s.ui.refreshPanel();
     this.updateCamera(subsystemDt);
     this.run('sky', s.sky, subsystemDt);
     this.run('terrain', s.terrain, subsystemDt);

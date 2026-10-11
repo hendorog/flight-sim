@@ -75,6 +75,8 @@ export class InstrumentPanel {
   readonly instruments: InstrumentSet;
   /** Wall time of the last update() in ms (dynamics + drawing), for profiling. */
   lastUpdateMs = 0;
+  /** Changes when the native canvas changes; fixed views need no copy on unchanged frames. */
+  version = 0;
   /**
    * Only redraw the canvas (and re-upload the texture) while ctx.cameraMode is 'cockpit', where the panel
    * can be seen; the instrument dynamics always run. Set false for 2D uses of the canvas (drawTo, dev page).
@@ -87,6 +89,7 @@ export class InstrumentPanel {
   readonly layoutWarnings: readonly string[];
 
   private readonly def: PanelDef;
+  private readonly paintLevers: boolean;
   private readonly g: Ctx2D;
   private readonly background: HTMLCanvasElement;
   private readonly components: PanelComponent[];
@@ -110,6 +113,7 @@ export class InstrumentPanel {
     const def = opts.def ?? C172S_PANEL;
     const { w, h } = def.size;
     this.def = def;
+    this.paintLevers = opts.paintLevers ?? false;
     this.layoutWarnings = panelLayoutProblems(def, opts.pxRect);
     for (const w of this.layoutWarnings) console.warn(`[panel ${def.id}] ${w}`);
     this.instruments = new InstrumentSet(opts);
@@ -205,6 +209,7 @@ export class InstrumentPanel {
   }
 
   update(dt: number, ctx: SimContext): void {
+    for (const c of this.components) if (c instanceof FlapIndicator) c.paintLever = this.paintLevers || (ctx.cameraMode === 'cockpit' && !!ctx.panelView && ctx.panelView !== '3d');
     const t0 = performance.now();
     const s = ctx.state;
     if (this.teleported(s)) this.reset(s);
@@ -232,6 +237,7 @@ export class InstrumentPanel {
       const rects = c.paintRects ?? [c.bounds];
       for (const b of rects) this.g.drawImage(this.background, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
       c.draw(this.g);
+      this.version++;
       for (const b of rects) {
         this.upload.add(b);
         if (light && c.paintLightMask) {

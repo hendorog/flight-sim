@@ -12,6 +12,8 @@
 //   --mouse           JSON list of Playwright mouse move/click/dblclick actions, before --eval
 //   --eval-file       read the --eval expression from a file (useful for multi-step input checks)
 //   --software        use SwiftShader when the headless host has no usable Vulkan GPU
+//   --panel-views     comma-separated subset for --panel-matrix (default 3d,upper,lower,hidden)
+//   --panel-matrix    capture 3D / Upper / Lower / hidden at 1366x768 and 1920x1080; out.png is a prefix
 //   --fps             measure frame time over --frames N (120) frames: drained CPU+GPU throughput, rAF interval
 //                     (overstates speed without vsync), and GPU time of the post pipeline (timer queries)
 //   --cpu-throttle    slow the page's CPU down by this factor (DevTools CPU throttling), e.g. 4 for a slow laptop
@@ -33,7 +35,7 @@ const flags = {};
 for (let i = 0; i < argv.length; i++) {
   if (argv[i].startsWith('--')) {
     const key = argv[i].slice(2);
-    if (key === 'fps' || key === 'software') flags[key] = true;
+    if (key === 'fps' || key === 'software' || key === 'panel-matrix') flags[key] = true;
     else flags[key] = argv[++i];
   } else positional.push(argv[i]);
 }
@@ -185,8 +187,22 @@ try {
   });
   console.log(`[gl] ${gl}`);
   mkdirSync(dirname(resolve(out)), { recursive: true });
-  await p.screenshot({ path: resolve(out), timeout });
-  console.log(`[shot] wrote ${resolve(out)}`);
+  if (flags['panel-matrix']) {
+    await p.evaluate(() => window.__sim.pause(true));
+    for (const [w, h] of [[1366, 768], [1920, 1080]]) {
+      await p.setViewportSize({ width: w, height: h });
+      for (const view of (flags['panel-views'] ?? '3d,upper,lower,hidden').split(',')) {
+        await p.evaluate(v => window.__sim.ctx.commands.setPanelView(v), view);
+        await p.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const path = resolve(out.replace(/\.png$/, '') + `-${w}x${h}-${view}.png`);
+        await p.screenshot({ path, timeout });
+        console.log(`[shot] wrote ${path}`);
+      }
+    }
+  } else {
+    await p.screenshot({ path: resolve(out), timeout });
+    console.log(`[shot] wrote ${resolve(out)}`);
+  }
 } finally {
   await browser.close();
   await server.close();

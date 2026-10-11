@@ -39,6 +39,7 @@ import {
 } from './engineControls';
 import { GamepadManager } from './gamepads';
 import { Activity, LeverOwner, mixCentring, mouseAxisFromPickup, mouseYokeDeflection, mouseYokeNearCentre } from './mixer';
+import { nextPanelSection } from '../instruments/fixedPanel';
 import { MouseFlightGesture } from './mouseFlightGesture';
 import { MouseYokeOverlay } from './mouseYokeOverlay';
 import type { InputProfile } from './profile';
@@ -93,6 +94,7 @@ export interface InputShell {
   /** Show a short message to the pilot. Without it only the on-screen overlay speaks. */
   toast?(text: string): void;
   /** Live panel hit-test and modal/demo/instructor ownership, for canvas double-clicks. */
+  flightViewRect?(): DOMRect | null;
   blocksMouseFlight?(clientX: number, clientY: number, gesture: 'toggle' | 'move'): boolean;
 }
 
@@ -545,7 +547,10 @@ export class InputSystem implements Subsystem {
     // Captured mouse-look or a right-drag look must not also move the mouse yoke.
     if (!this.mouseYoke || !el || e.target !== el || document.pointerLockElement || e.buttons & 2 ||
         this.shell.blocksMouseFlight?.(e.clientX, e.clientY, 'move')) return;
-    const r = el.getBoundingClientRect();
+    const r = this.viewRect() ?? el.getBoundingClientRect();
+    const rectKey = `${r.x}/${r.y}/${r.width}/${r.height}`;
+    if (this.mouseViewKey && this.mouseViewKey !== rectKey) this.mouseArmed = true;
+    this.mouseViewKey = rectKey;
     if (r.width === 0 || r.height === 0) return;
     this.mouseNx = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1);
     this.mouseNy = clamp(((e.clientY - r.top) / r.height) * 2 - 1, -1, 1);
@@ -604,7 +609,10 @@ export class InputSystem implements Subsystem {
     this.overlay?.update(this.mouseYoke, this.mouseArmed, this.indicator.aileron, this.indicator.elevator, this.viewRect);
   }
 
-  private readonly viewRect = (): DOMRect | null => this.element?.getBoundingClientRect() ?? null;
+  private mouseViewKey = '';
+  private lastPanelSection: 'upper' | 'lower' | 'hidden' = 'upper';
+
+  private readonly viewRect = (): DOMRect | null => this.shell.flightViewRect?.() ?? this.element?.getBoundingClientRect() ?? null;
 
   /** A hardware yoke, stick or pedal axis is being deliberately worked (not merely resting off centre). */
   private hardwareTakeover(): boolean {
@@ -1257,6 +1265,15 @@ export class InputSystem implements Subsystem {
       case 'mouseYoke':
         this.setMouseYoke(!this.mouseYoke);
         break;
+      case 'panelToggle':
+        if (ctx.cameraMode === 'cockpit' && ctx.panelView && ctx.panelView !== '3d') {
+          this.lastPanelSection = ctx.panelView;
+          ctx.commands.setPanelView?.('3d');
+        } else ctx.commands.setPanelView?.(this.lastPanelSection);
+        break;
+      case 'panelSection':
+        ctx.commands.setPanelView?.(nextPanelSection(ctx.panelView ?? '3d'));
+        break;
       case 'cameraNext':
       case 'cameraPrev': {
         const i = CAMERA_CYCLE.indexOf(ctx.cameraMode);
@@ -1307,7 +1324,7 @@ export class InputSystem implements Subsystem {
 /** Pause, rate and view keys remain available while observing a demo; every other key takes control. */
 export function demoViewKey(code: string, shift: boolean): boolean {
   const action = actionForKey(code, shift);
-  return !!action && /^(look|camera|zoom|view|mouseLook|pause)/.test(action) ||
+  return !!action && /^(look|camera|zoom|view|panelToggle|panelSection|mouseLook|pause)/.test(action) ||
     code === 'Escape' || code === 'KeyP' || code === 'ShiftLeft' || code === 'ShiftRight' ||
     code === 'F8' || code === 'F9' || shift && (code === 'BracketLeft' || code === 'BracketRight');
 }

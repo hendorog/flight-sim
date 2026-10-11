@@ -84,6 +84,8 @@ export interface SchoolUiDeps extends SchoolProgressFns {
 export interface SchoolViewHost {
   /** True in the cockpit view (instrument highlights and the hood only make sense there). */
   cockpit(): boolean;
+  /** Flat panel's top edge for the instrument hood; null uses the 3D projection. */
+  panelTop?(): number | null;
   /** Client (CSS px) position of a panel pixel (src/instruments/layout.ts), or null when not projectable. */
   project(px: number, py: number): [number, number] | null;
 }

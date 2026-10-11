@@ -201,6 +201,8 @@ const SMALL = APERTURES.small * 1.15;
 
 export const C152_PANEL: PanelDef = {
   id: 'c152',
+  fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'cdi1'], ['turn', 'heading', 'vsi']],
+    controls: [{ x: 16, y: 680, w: 600, h: 120 }] },
   size: { w: 2080, h: 800 },
   // In the order the panel draws them.
   gauges: [
