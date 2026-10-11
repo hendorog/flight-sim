@@ -30,6 +30,8 @@ switch does not mute it (Safari 16.4 and later). F8 shows the state of the audio
 
 ## Aircraft
 
+See [known issues by aircraft](docs/known-issues.md) for outstanding work and validation gaps.
+
 | id | Type | Notes |
 |---|---|---|
 | `c172s` (default) | Cessna 172S Skyhawk SP: four seats, Lycoming IO-360 fuel-injected, 180 hp, fixed pitch | Everything below is written for it |
