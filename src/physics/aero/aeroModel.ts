@@ -455,6 +455,8 @@ export class AeroModel {
   private readonly rootTrailingEdgeX: number;
   /** Stall-warning sensors (AircraftAeroDefinition.stallWarning as a list). */
   private readonly stallSensors: readonly StallSensor[];
+  /** Last selected warning sensor, radians and m/s; positive reserve means below its trip angle. */
+  readonly stallWarningDiagnostics = { strip: 0, alpha: 0, threshold: 0, reserve: 0, airspeed: 0 };
   /** Wing-wake constants (AircraftAeroDefinition.wake over the module defaults). */
   private readonly wakeMaxLoss: number;
   private readonly wakeHalfWidth: number;
@@ -613,6 +615,9 @@ export class AeroModel {
       // A findIndex that found nothing (-1) would otherwise read the section of no strip.
       if (!Number.isInteger(sensor.strip) || sensor.strip < 0 || sensor.strip >= this.nWing) {
         throw new Error(`AeroModel: stall-warning sensor on wing strip ${sensor.strip}, the wing has strips 0..${this.nWing - 1}`);
+      }
+      if (sensor.referenceReynolds !== undefined && !(Number.isFinite(sensor.referenceReynolds) && sensor.referenceReynolds > 0)) {
+        throw new Error('AeroModel: stall-warning reference Reynolds number must be finite and positive');
       }
     }
     this.wakeMaxLoss = definition.wake?.maxLoss ?? MAX_WAKE_LOSS;
@@ -1451,8 +1456,40 @@ export class AeroModel {
       }
     }
     const sensorCond = conds[sw.strip];
-    const sensorAlpha = this.alphaLag[sw.strip];
-    const stallWarning = Math.cos(sensorAlpha) < 0 || sensorAlpha - sensorCond.alpha0 > sensorCond.stallPos - sw.margin;
+    // A mechanical vane sees the local flow, not the pressure lag used to evolve boundary-layer separation.
+    const sensorAlpha = sw.referenceReynolds === undefined ? this.alphaLag[sw.strip] : this.diagnostics[sw.strip].alpha;
+    const section = this.strips[sw.strip].section;
+    let threshold = sensorCond.alpha0 + sensorCond.stallPos - sw.margin;
+    if (sw.referenceReynolds !== undefined) {
+      // Safe Flight's vane senses the leading-edge stagnation point, not trailing-edge separation:
+      // https://www.safeflight.com/products/aoa-stall-warning/lift-detector/
+      // Rig the clean trip angle once at the reference Reynolds number. In particular, the low-Re stall
+      // correction must not make a vane trip at a negative incidence during taxi.
+      threshold = section.alpha0 + Math.max(
+        section.stallPos + section.stallReSlope * Math.log10(sw.referenceReynolds / section.reRef),
+        2 * section.s1,
+      ) - sw.margin;
+      for (const control of this.strips[sw.strip].controls) {
+        if (control.flap.kind === 'allMoving') continue;
+        const inc = clearFlapIncrement(this.flapInc);
+        addFlapDeflection(control.flap, control.gain * input.surfaces[control.source] * control.coverage,
+          inc, this.flapAlpha[sw.strip]);
+        // Glauert: flap contribution to A0 is eta*delta*(pi-thetaH)/pi, whereas its zero-lift shift is
+        // -eta*delta*(pi-thetaH+sin(thetaH))/pi. Use the same viscous/large-deflection effectiveness as
+        // the wing, but only its leading-edge loading; the flap's CLmax gain is not a vane displacement.
+        // A0 derivation: MIT Unified Engineering, F3 notes, pp. 1-3:
+        // https://ocw.mit.edu/courses/16-01-unified-engineering-i-ii-iii-iv-fall-2005-spring-2006/d721171c42af48a056aaccec784a6d10_f03_0304.pdf
+        const thetaH = Math.acos(2 * control.flap.chordFraction - 1);
+        threshold += inc.dAlpha0 * (Math.PI - thetaH) / (Math.PI - thetaH + Math.sin(thetaH));
+      }
+    }
+    const diagnostic = this.stallWarningDiagnostics;
+    diagnostic.strip = sw.strip;
+    diagnostic.alpha = sensorAlpha;
+    diagnostic.threshold = threshold;
+    diagnostic.reserve = threshold - sensorAlpha;
+    diagnostic.airspeed = airspeed;
+    const stallWarning = Math.cos(sensorAlpha) < 0 || sensorAlpha > threshold;
 
     return {
       force: { x: loads.fx, y: loads.fy, z: loads.fz },
@@ -1467,4 +1504,3 @@ export class AeroModel {
     };
   }
 }
-

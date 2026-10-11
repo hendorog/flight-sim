@@ -16,8 +16,10 @@ export const PA38_TARGETS: ConformanceTargets = {
   stall: {
     // POH 4.35 with fig 5-1a, both pairs of flow strips, power off: 54 KCAS clean (52 KIAS), 52 KCAS flaps 34
     // (49 KIAS). Electric horn 5-10 kt before the stall (POH 4.35, s.9).
-    clean: { flapDeg: 0, entryKt: 66, vs1gKcas: band(54, 3, 'POH 4.35, fig 5-1a (s.8), contract 5.2'), warningMarginKt: range(5, 10, 'POH 4.35: horn 5-10 kt above the stall (s.9)') },
-    landing: { flapDeg: 34, entryKt: 64, vs1gKcas: band(52, 3, 'POH 4.35, fig 5-1a (s.8), contract 5.2'), warningMarginKt: range(5, 10, 'POH 4.35: horn 5-10 kt above the stall (s.9)') },
+    // Enter above 1.3 Vs (about 75 KTAS at the test's 3000 ft), so the idle/deceleration transient settles
+    // before the horn. The previous 64 KTAS landing entry measured its warning during the throttle chop.
+    clean: { flapDeg: 0, entryKt: 75, vs1gKcas: band(54, 3, 'POH 4.35, fig 5-1a (s.8), contract 5.2'), warningMarginKt: range(5, 10, 'POH 4.35: horn 5-10 kt above the stall (s.9)') },
+    landing: { flapDeg: 34, entryKt: 75, vs1gKcas: band(52, 3, 'POH 4.35, fig 5-1a (s.8), contract 5.2'), warningMarginKt: range(5, 10, 'POH 4.35: horn 5-10 kt above the stall (s.9)') },
   },
   // 1.3 x 52 KIAS (Vs1); contract 3.1.
   stallRecovery: { entryKias: 68, recoveryS: below(4, 'contract 3.1 stall recovery') },

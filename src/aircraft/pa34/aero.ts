@@ -15,7 +15,7 @@
 // vanes' margins. The wing section (WING) and the wing blowing (0.7) are the first estimates: the clean stall is in
 // band with the record, and the blowing moved neither the pedal fractions nor the stall speeds by more than 0.1.
 
-import { DEG, type Vec3 } from '../../core/math';
+import { DEG, KT, type Vec3 } from '../../core/math';
 import { bodyAxisZ, type DragItem, type FuselageDefinition } from '../../physics/aero/bodies';
 import { viternaCd90, type AircraftAeroDefinition, type PropellerStation } from '../../physics/aero/definition';
 import { NACA_0012, NACA_65_2_415 } from '../../physics/aero/sections';
@@ -285,10 +285,20 @@ function dragItems(): DragItem[] {
 /**
  * Stall-warning margins of the two electric lift detectors on the left wing's leading edge outboard of the nacelle
  * (s.9): the outboard vane works with flaps 0 and 10, the inboard one with 25 and 40. How far below the strip's stall
- * break each sounds, rad: the horn 5-10 mph before the stall (s.11).
+ * CLEAN reference break each sounds, rad: installation-angle estimates calibrated to the horn's 5-10 mph
+ * lead (s.11). AeroModel now accounts for the flap's leading-edge loading, so the inboard detector needs
+ * a 9-degree clean margin; the former 10 degrees plus that loading warned more than 10 mph early.
  */
 const OUTBOARD_VANE_MARGIN = 8 * DEG;
-const INBOARD_VANE_MARGIN = 10 * DEG;
+const INBOARD_VANE_MARGIN = 9 * DEG;
+/**
+ * ESTIMATE of the vane rigging reference: 70 KCAS at sea-level ISA, the handbook's 76 mph CAS clean stall
+ * (66 kt) plus 4 kt, the lower end of the existing 5-10 mph warning target. The section's 6e6 tunnel
+ * reference is above this flight condition. Handbook stall speeds and two-detector arrangement:
+ * https://pa34owners.org/wp-content/uploads/2024/11/Piper-Seneca-I-Information-Manual-PA34-200.pdf
+ * The reference is fixed: taxi-speed Reynolds numbers must not change the mechanical detector's trip angle.
+ */
+const VANE_REFERENCE_REYNOLDS = (1.225 * 70 * KT * G.wing.meanChord) / 1.789e-5;
 /** The flap angle at which the detectors change over: between the 10 and 25 degree detents. */
 const VANE_CHANGEOVER = 17.5 * DEG;
 
@@ -319,8 +329,10 @@ export function createPA34AeroDefinition(gearing: number): AircraftAeroDefinitio
     jetStations: Array.from({ length: 7 }, (_, k) => first + ((last - first) * k) / 6),
     jetGrid: { rows: [-1.2, 0, 1.2], column: Array.from({ length: 9 }, (_, k) => -1.2 + 0.3 * k) },
     stallWarning: [
-      { strip: outboardVane, margin: OUTBOARD_VANE_MARGIN, flaps: [-1, VANE_CHANGEOVER], needsBus: true },
-      { strip: inboardVane, margin: INBOARD_VANE_MARGIN, flaps: [VANE_CHANGEOVER, 1], needsBus: true },
+      // Mechanical vanes are rigged in flight; the low-Re section stall shift must not move their trip angles
+      // at taxi speed. Keep the POH's actual two-detector flap changeover.
+      { strip: outboardVane, margin: OUTBOARD_VANE_MARGIN, referenceReynolds: VANE_REFERENCE_REYNOLDS, flaps: [-1, VANE_CHANGEOVER], needsBus: true },
+      { strip: inboardVane, margin: INBOARD_VANE_MARGIN, referenceReynolds: VANE_REFERENCE_REYNOLDS, flaps: [VANE_CHANGEOVER, 1], needsBus: true },
     ],
   };
 }
