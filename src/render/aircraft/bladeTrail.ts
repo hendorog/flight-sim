@@ -23,6 +23,10 @@ export class BladeTrail {
     trailSweep: { value: 0 },
     trailPitch: { value: 0 },
     trailCone: { value: 0 },
+    trailHinge: { value: 0 },
+    trailBend: { value: 0 },
+    trailBendRoot: { value: 0 },
+    trailBendSpan: { value: 1 },
     trailDirection: { value: 1 },
     trailGap: { value: Math.PI },
   };
@@ -69,6 +73,10 @@ export class BladeTrail {
         attribute vec3 trailBack;
         uniform float trailPitch;
         uniform float trailCone;
+        uniform float trailHinge;
+        uniform float trailBend;
+        uniform float trailBendRoot;
+        uniform float trailBendSpan;
         ${varyings}
       ` + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
@@ -78,7 +86,23 @@ export class BladeTrail {
         vTrailChord = trailSection.x * (abs(cos(beta)) + 0.12 * abs(sin(beta)));
         vTrailFront = trailFront;
         vTrailBack = trailBack;
-        ${axis === 'y' ? 'transformed.y = length(vTrailPlane) * sin(trailCone);' : ''}
+        ${axis === 'y' ? `
+          float r = length(vTrailPlane);
+          float s = clamp((r - trailBendRoot) / trailBendSpan, 0.0, 1.0);
+          float bend = trailBend * s*s * (6.0 - 4.0*s + s*s) / 3.0;
+          float projected = trailHinge + (r - trailHinge) * cos(trailCone) - bend * sin(trailCone);
+          transformed.xz *= projected / max(r, 0.00001);
+          transformed.y = (r - trailHinge) * sin(trailCone) + bend * cos(trailCone);
+        ` : ''}
+      `);
+      if (axis === 'y') shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>', `
+        #include <beginnormal_vertex>
+        float normalR = length(position.xz);
+        float bendS = clamp((normalR - trailBendRoot) / trailBendSpan, 0.0, 1.0);
+        float slope = trailBend / trailBendSpan * (4.0*bendS - 4.0*bendS*bendS + 4.0/3.0*bendS*bendS*bendS);
+        float radialNormal = -sin(trailCone) - slope*cos(trailCone);
+        objectNormal = normalize(vec3(position.x / normalR * radialNormal,
+          cos(trailCone) - slope*sin(trailCone), position.z / normalR * radialNormal));
       `);
       shader.fragmentShader = `
         ${varyings}
@@ -112,10 +136,14 @@ export class BladeTrail {
     this.mesh.visible = false;
   }
 
-  update(state: BladeBlurState, pitch = 0, cone = 0): void {
+  update(state: BladeBlurState, pitch = 0, cone = 0, hinge = 0, tipBend = 0, bendRoot = 0, bendSpan = 1): void {
     this.uniforms.trailSweep.value = state.sweep;
     this.uniforms.trailPitch.value = pitch;
     this.uniforms.trailCone.value = cone;
+    this.uniforms.trailHinge.value = hinge;
+    this.uniforms.trailBend.value = tipBend;
+    this.uniforms.trailBendRoot.value = bendRoot;
+    this.uniforms.trailBendSpan.value = bendSpan;
     this.material.opacity = state.trail;
     this.mesh.visible = state.trail > 0;
   }
