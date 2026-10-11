@@ -61,6 +61,46 @@ describe('269 integrated controls and independent systems', () => {
     left.press!(false, rig.c); rig.input.hold(left.hold!.action, false); rig.run(1 / 60);
     expect(rig.c.cyclicTrimRoll).toBe(0);
   });
+  it('mouse holds cyclic position as powered trim changes force, with bumpless pickup and release', () => {
+    const rig = makeInputRig(def.input), rotor = new Rotorcraft(d), engine = shaft();
+    rotor.reset(false); rig.s.rotorcraft = rotor.state;
+    const pointer = rig.input as unknown as { mouseNx: number; mouseNy: number; mouseMoves: number };
+    const cyclic = () => [rig.c.elevator, rig.c.aileron];
+    const expectCyclic = (held: number[]) => cyclic().forEach((v, i) => expect(v).toBeCloseTo(held[i], 12));
+    const move = (x: number, y: number) => {
+      pointer.mouseNx = x; pointer.mouseNy = y; pointer.mouseMoves++;
+      rig.input.update(1 / 60, rig.ctx);
+    };
+    const trim = (seconds: number) => {
+      for (let i = 0; i < seconds * 60; i++) {
+        rig.input.update(1 / 60, rig.ctx); rotor.drive(1 / 60, rig.c, engine, undefined, undefined, 28);
+      }
+    };
+    rig.input.keyDown('End'); rig.input.keyDown('Digit6'); trim(2);
+    rig.input.keyUp('End'); rig.input.keyUp('Digit6'); rig.run(1 / 60);
+    const initial = cyclic();
+    expect(initial[0]).toBeGreaterThan(0); expect(initial[1]).toBeLessThan(0);
+    rig.input.setMouseYoke(true); move(0.6, -0.6); // armed: keyboard still owns the stick
+    expect(rig.input.getYokeIndicator().mouseArmed).toBe(true); expectCyclic(initial);
+    move(0.08, -0.09); expectCyclic(initial); // off-centre pickup with trim already applied
+    expect(rig.input.getYokeIndicator().mouseArmed).toBe(false);
+    move(0.3, -0.25);
+    const held = cyclic(), spring = rotor.state.springTrim!;
+    const oldAnchor = [spring.pitch, spring.roll], oldForce = [spring.pitchForce, spring.rollForce];
+    rig.input.keyDown('Home'); rig.input.keyDown('Digit7'); trim(3);
+    expectCyclic(held); // no pointer movement throughout powered trimming
+    expect(spring.pitch).toBeLessThan(oldAnchor[0]); expect(spring.roll).toBeGreaterThan(oldAnchor[1]);
+    expect(spring.pitchForce).not.toBeCloseTo(oldForce[0]); expect(spring.rollForce).not.toBeCloseTo(oldForce[1]);
+    rig.input.keyUp('Home'); rig.input.keyUp('Digit7');
+    // Release between the physics tick and the next input update: consume even that last trim delta.
+    rig.input.setMouseYoke(false); rig.run(0.5); expectCyclic(held);
+    rig.input.setMouseYoke(true); move(-0.05, 0.06); expectCyclic(held);
+    move(0.8, -0.8); expectCyclic([-1, 1]);
+    move(-0.8, 0.8); expectCyclic([1, -1]);
+    rig.input.setMouseYoke(false);
+    rig.tap('Digit5'); rig.run(5); // keyboard recentre uses the new spring equilibrium
+    expectCyclic([spring.pitch, spring.roll]);
+  });
   it('drives transmission pressure in engine-out rotation and keeps tests, oil sensors and clutch signals independent', () => {
     const fm = createFlightModelFor(def), env = flatEnvironment(undefined, 0);
     fm.reset({ position: { x: 0, y: 0, z: -100 }, heading: 0, airspeed: 25,

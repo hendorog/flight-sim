@@ -512,6 +512,8 @@ export class InputSystem implements Subsystem {
 
   private holdYoke(): void {
     if (!this.ctx) return;
+    // A physics tick may have moved the trim motor since the last input frame. Rebase before handoff.
+    this.updateSpringTrim(this.ctx.state);
     const c = this.ctx.controls;
     this.kbAileron = c.aileron - this.neutral.aileron;
     this.kbElevator = c.elevator - this.neutral.elevator;
@@ -659,18 +661,30 @@ export class InputSystem implements Subsystem {
     return act.isActive(this.time) ? best : null;
   }
 
+  private updateSpringTrim(s: AircraftState): void {
+    const n = this.neutral;
+    const spring = s.rotorcraft?.springTrim;
+    if (this.profile.springTrim && spring) {
+      const pitch = n.elevator, roll = n.aileron;
+      n.elevator = clamp(n.elevator + spring.pitch - this.springPitch, -1, 1);
+      n.aileron = clamp(n.aileron + spring.roll - this.springRoll, -1, 1);
+      // An absolute mouse holds the stick like the pilot's hand: spring trim changes force, not position.
+      // Retain the new keyboard neutral but cancel its displacement in the additive mouse/keyboard mix.
+      if (this.mouseYoke && !this.mouseArmed) {
+        this.kbElevator -= n.elevator - pitch;
+        this.kbAileron -= n.aileron - roll;
+      }
+      this.springPitch = spring.pitch; this.springRoll = spring.roll;
+    }
+  }
+
   private updateFlightControls(dt: number, ctx: SimContext): void {
     const s = ctx.state;
     const ias = s.ias;
     const c = ctx.controls;
     const n = this.neutral;
     const tuning = this.profile.assists;
-    const spring = s.rotorcraft?.springTrim;
-    if (this.profile.springTrim && spring) {
-      n.elevator = clamp(n.elevator + spring.pitch - this.springPitch, -1, 1);
-      n.aileron = clamp(n.aileron + spring.roll - this.springRoll, -1, 1);
-      this.springPitch = spring.pitch; this.springRoll = spring.roll;
-    }
+    this.updateSpringTrim(s);
     if (this.profile.rotorcraft) {
       const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');

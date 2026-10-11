@@ -22,6 +22,11 @@ export const S269_ANNUNCIATOR_LAMPS: readonly LampDef[] = [
 const switchDef = (id: string, label: string, x: number, on: SwitchDef['on'], toggle: SwitchDef['toggle']): SwitchDef =>
   ({ id, label, name: label, x, on, toggle });
 export const S269_PANEL: PanelDef = {
+  // Include the custom concentric tach explicitly. Crop the distributed switches into compact groups;
+  // the shared layout adds every engine gauge/lamp above and every console control/radio below.
+  fixed: { flightRows: [['asi', 'tach', 'map'], ['vsi', 'altimeter', 'amps']],
+    controls: [{ x: 94, y: 1120, w: 88, h: 90 }, { x: 208, y: 1128, w: 276, h: 84 },
+      { x: 500, y: 1128, w: 218, h: 84 }, { x: 858, y: 1248, w: 116, h: 92 }] },
   id: 's269', size: PANEL_CANVAS, instrumentScale: SCALE, instrumentBezel: 'round', lightingDimmerExponent: 2.2,
   apertures: { large: 74 * SCALE.large, small: 51 * SCALE.small },
   gauges: [
