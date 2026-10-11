@@ -656,8 +656,8 @@
   "liningPanel": "320 3143d7c2f848df66 11bc5b25a8f1258b"
  },
  "propeller": {
-  "meshes": 5,
-  "vertices": 4977,
+  "meshes": 6,
+  "vertices": 8469,
   "bbox": [
    -0.964999974,
    -0.964999974,
@@ -666,12 +666,13 @@
    0.964999974,
    0.061999999
   ],
-  "nodes": 7,
-  "transforms": "111a7315087c0173",
+  "nodes": 8,
+  "transforms": "02af9255758b0963",
   "parts": [
    "propeller/spinner:plainPaint|plainPaint v1517 i7488:46950c3e3050ab9a normal:b3724063a095bef1 position:8be9c3bd97b6eb1d uv:532b55f25a840dcc vis:1 shadow:11 order:0",
-   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:11da6bc5ed4b8f13 vis:1 shadow:11 order:0",
-   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:11da6bc5ed4b8f13 vis:1 shadow:11 order:0",
+   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:11 order:0",
+   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:11 order:0",
+   "propeller/bladeTrail|bladeTrail v3492 i20160:c2864826c973618e normal:f06ebfa54dccb343 position:9d682a4cc07bb66a trailBack:ff8af7cd5274e27b trailFront:890d5d0d9afaecbb trailSection:fa348cc85928f4c4 uv:200b7b6aeb9dbb54 vis:0 shadow:00 order:0",
    "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1",
    "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1"
   ]
@@ -681,8 +682,8 @@
   "c071a9dd213333cf"
  ],
  "propeller.rpm0": {
-  "meshes": 5,
-  "vertices": 4977,
+  "meshes": 6,
+  "vertices": 8469,
   "bbox": [
    -0.964999974,
    -0.964999974,
@@ -691,19 +692,20 @@
    0.964999974,
    0.061999999
   ],
-  "nodes": 7,
-  "transforms": "09bae31d887b979b",
+  "nodes": 8,
+  "transforms": "1c56a19d8c06124b",
   "parts": [
    "propeller/spinner:plainPaint|plainPaint v1517 i7488:46950c3e3050ab9a normal:b3724063a095bef1 position:8be9c3bd97b6eb1d uv:532b55f25a840dcc vis:1 shadow:11 order:0",
-   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:1bf464452678b093 vis:1 shadow:11 order:0",
-   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:1bf464452678b093 vis:1 shadow:11 order:0",
+   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:11 order:0",
+   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:11 order:0",
+   "propeller/bladeTrail|bladeTrail v3492 i20160:c2864826c973618e normal:f06ebfa54dccb343 position:9d682a4cc07bb66a trailBack:ff8af7cd5274e27b trailFront:890d5d0d9afaecbb trailSection:fa348cc85928f4c4 uv:200b7b6aeb9dbb54 vis:0 shadow:00 order:0",
    "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1",
    "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1"
   ]
  },
  "propeller.rpm650": {
-  "meshes": 5,
-  "vertices": 4977,
+  "meshes": 6,
+  "vertices": 8469,
   "bbox": [
    -0.964999974,
    -0.964999974,
@@ -712,19 +714,20 @@
    0.964999974,
    0.061999999
   ],
-  "nodes": 7,
-  "transforms": "09bae31d887b979b",
+  "nodes": 8,
+  "transforms": "1c56a19d8c06124b",
   "parts": [
    "propeller/spinner:plainPaint|plainPaint v1517 i7488:46950c3e3050ab9a normal:b3724063a095bef1 position:8be9c3bd97b6eb1d uv:532b55f25a840dcc vis:1 shadow:11 order:0",
-   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:16:cdbd0625f18454e3 vis:1 shadow:01 order:0",
-   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:16:cdbd0625f18454e3 vis:1 shadow:01 order:0",
-   "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1",
-   "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1"
+   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:01 order:0",
+   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:01 order:0",
+   "propeller/bladeTrail|bladeTrail v3492 i20160:c2864826c973618e normal:f06ebfa54dccb343 position:9d682a4cc07bb66a trailBack:ff8af7cd5274e27b trailFront:890d5d0d9afaecbb trailSection:fa348cc85928f4c4 uv:200b7b6aeb9dbb54 vis:0 shadow:00 order:0",
+   "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:1 shadow:00 order:1",
+   "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:1 shadow:00 order:1"
   ]
  },
  "propeller.rpm1500": {
-  "meshes": 5,
-  "vertices": 4977,
+  "meshes": 6,
+  "vertices": 8469,
   "bbox": [
    -0.964999974,
    -0.964999974,
@@ -733,19 +736,20 @@
    0.964999974,
    0.061999999
   ],
-  "nodes": 7,
-  "transforms": "09bae31d887b979b",
+  "nodes": 8,
+  "transforms": "1c56a19d8c06124b",
   "parts": [
    "propeller/spinner:plainPaint|plainPaint v1517 i7488:46950c3e3050ab9a normal:b3724063a095bef1 position:8be9c3bd97b6eb1d uv:532b55f25a840dcc vis:1 shadow:11 order:0",
-   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:16:d8ba5f3dc9cb83eb vis:1 shadow:01 order:0",
-   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:16:d8ba5f3dc9cb83eb vis:1 shadow:01 order:0",
+   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:01 order:0",
+   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:01 order:0",
+   "propeller/bladeTrail|bladeTrail v3492 i20160:c2864826c973618e normal:f06ebfa54dccb343 position:9d682a4cc07bb66a trailBack:ff8af7cd5274e27b trailFront:890d5d0d9afaecbb trailSection:fa348cc85928f4c4 uv:200b7b6aeb9dbb54 vis:0 shadow:00 order:0",
    "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:1 shadow:00 order:1",
    "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:1 shadow:00 order:1"
   ]
  },
  "propeller.rpm2400": {
-  "meshes": 5,
-  "vertices": 4977,
+  "meshes": 6,
+  "vertices": 8469,
   "bbox": [
    -0.964999974,
    -0.964999974,
@@ -754,12 +758,13 @@
    0.964999974,
    0.061999999
   ],
-  "nodes": 7,
-  "transforms": "09bae31d887b979b",
+  "nodes": 8,
+  "transforms": "1c56a19d8c06124b",
   "parts": [
    "propeller/spinner:plainPaint|plainPaint v1517 i7488:46950c3e3050ab9a normal:b3724063a095bef1 position:8be9c3bd97b6eb1d uv:532b55f25a840dcc vis:1 shadow:11 order:0",
-   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:16:b5e04d21b1ed2b7b vis:1 shadow:01 order:0",
-   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:16:b5e04d21b1ed2b7b vis:1 shadow:01 order:0",
+   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:01 order:0",
+   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:01 order:0",
+   "propeller/bladeTrail|bladeTrail v3492 i20160:c2864826c973618e normal:f06ebfa54dccb343 position:9d682a4cc07bb66a trailBack:ff8af7cd5274e27b trailFront:890d5d0d9afaecbb trailSection:fa348cc85928f4c4 uv:200b7b6aeb9dbb54 vis:0 shadow:00 order:0",
    "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:1 shadow:00 order:1",
    "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:1 shadow:00 order:1"
   ]
@@ -812,8 +817,8 @@
   "vertex": "d46eaf9174740dbc"
  },
  "visual": {
-  "meshes": 108,
-  "vertices": 206642,
+  "meshes": 109,
+  "vertices": 210134,
   "bbox": [
    -5.5,
    -1.359810127,
@@ -822,8 +827,8 @@
    1.579155033,
    6.293864193
   ],
-  "nodes": 152,
-  "transforms": "a8c709b609b09eca",
+  "nodes": 153,
+  "transforms": "64c3a2f60b3ce6ba",
   "parts": [
    "C172/fuselageSkin|fuselagePaint v19888 i117600:4a15549e2172db94 normal:decc7403bd8ea477 position:a797ece06ba21d44 uv:81b74d7537356433 vis:1 shadow:11 order:0",
    "C172/glazing|glass v4680 i27264:c02568073e50a309 normal:4fa9730cc03a502a position:b40a931250894820 uv:bdda797694178722 vis:1 shadow:00 order:2",
@@ -872,8 +877,9 @@
    "/|darkMetal v24 i36:b6dbda6580baea6f normal:bef3920546019d33 position:d89c8ce5ade2e733 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "landingGear/gearFixed:darkMetal|darkMetal v248 i480:c80a072de288d29b normal:e248649d0ef43ceb position:aee1b00dc02f70d7 uv:93079905963f4aa3 vis:1 shadow:01 order:0",
    "propeller/spinner:plainPaint|plainPaint v1517 i7488:46950c3e3050ab9a normal:b3724063a095bef1 position:8be9c3bd97b6eb1d uv:532b55f25a840dcc vis:1 shadow:11 order:0",
-   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:11da6bc5ed4b8f13 vis:1 shadow:11 order:0",
-   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:11da6bc5ed4b8f13 vis:1 shadow:11 order:0",
+   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:11 order:0",
+   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:11 order:0",
+   "propeller/bladeTrail|bladeTrail v3492 i20160:c2864826c973618e normal:f06ebfa54dccb343 position:9d682a4cc07bb66a trailBack:ff8af7cd5274e27b trailFront:890d5d0d9afaecbb trailSection:fa348cc85928f4c4 uv:200b7b6aeb9dbb54 vis:0 shadow:00 order:0",
    "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1",
    "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1",
    "aircraftLights/| v117 i504:4b258749a9cad1bb normal:ca716e3c63968710 position:894e2f7428974016 uv:3d5d6b3e3180e160 vis:1 shadow:00 order:0",
@@ -962,6 +968,7 @@
    "aircraftLightHalo",
    "aluminium",
    "black",
+   "bladeTrail",
    "carpet",
    "chrome",
    "compassCard",
@@ -990,7 +997,7 @@
   ]
  },
  "visual.frame": {
-  "transforms": "b4425c25d8e30aab",
+  "transforms": "783fe5e55b33a5db",
   "parts": [
    "C172/fuselageSkin|fuselagePaint v19888 i117600:4a15549e2172db94 normal:decc7403bd8ea477 position:a797ece06ba21d44 uv:81b74d7537356433 vis:1 shadow:11 order:0",
    "C172/glazing|glass v4680 i27264:c02568073e50a309 normal:4fa9730cc03a502a position:b40a931250894820 uv:bdda797694178722 vis:1 shadow:00 order:2",
@@ -1039,10 +1046,11 @@
    "/|darkMetal v24 i36:b6dbda6580baea6f normal:bef3920546019d33 position:d89c8ce5ade2e733 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "landingGear/gearFixed:darkMetal|darkMetal v248 i480:c80a072de288d29b normal:e248649d0ef43ceb position:aee1b00dc02f70d7 uv:93079905963f4aa3 vis:1 shadow:01 order:0",
    "propeller/spinner:plainPaint|plainPaint v1517 i7488:46950c3e3050ab9a normal:b3724063a095bef1 position:8be9c3bd97b6eb1d uv:532b55f25a840dcc vis:1 shadow:11 order:0",
-   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:16:c621ea8de3ad7567 vis:1 shadow:01 order:0",
-   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:16:c621ea8de3ad7567 vis:1 shadow:01 order:0",
-   "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1",
-   "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:0 shadow:00 order:1",
+   "/bladeFront:propFront|propFront v1292 i7128:66e189f9a9cd5d45 color:2fe60735e4feba13 normal:6826be49024234cb position:350a6fb9e781436b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:01 order:0",
+   "/bladeBack:propBack|propBack v1292 i7128:66e189f9a9cd5d45 color:b1237d6da382227b normal:f754d5d517b28adf position:d559a059f037471b uv:eb8a3fa5b00093ab instances:1:8c90d7a5c69f33eb vis:1 shadow:01 order:0",
+   "propeller/bladeTrail|bladeTrail v3492 i20160:c2864826c973618e normal:f06ebfa54dccb343 position:9d682a4cc07bb66a trailBack:ff8af7cd5274e27b trailFront:890d5d0d9afaecbb trailSection:fa348cc85928f4c4 uv:200b7b6aeb9dbb54 vis:0 shadow:00 order:0",
+   "propeller/| v438 i2160:50c850fae9d41ba0 normal:931fca9565abfadb position:91444bdc36dc95f6 uv:e19daf1b1aacf129 vis:1 shadow:00 order:1",
+   "propeller/| v438 i2160:c8e26e6a0a20dac8 normal:1a5d81956e166adb position:b60243dc4e481df6 uv:e19daf1b1aacf129 vis:1 shadow:00 order:1",
    "aircraftLights/| v117 i504:4b258749a9cad1bb normal:ca716e3c63968710 position:894e2f7428974016 uv:3d5d6b3e3180e160 vis:1 shadow:00 order:0",
    "aircraftLights/| v117 i504:4b258749a9cad1bb normal:ca716e3c63968710 position:894e2f7428974016 uv:3d5d6b3e3180e160 vis:1 shadow:00 order:0",
    "aircraftLights/| v117 i504:4b258749a9cad1bb normal:ff9318ef1febfdf1 position:1c80358bb9a994ed uv:3d5d6b3e3180e160 vis:1 shadow:00 order:0",

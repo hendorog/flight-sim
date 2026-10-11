@@ -19,7 +19,7 @@ export class R44RotorHead {
 
   constructor(private readonly rotor: TeeteringRotor, mat: R44DetailMaterials, tail = false) {
     // Keep hidden originals attached so the shared disposer still releases their geometries/materials.
-    for (const child of rotor.spin.children) if (child !== rotor.blades) child.visible = false;
+    for (const child of rotor.spin.children) if (child !== rotor.blades && child !== rotor.trail.mesh) child.visible = false;
     rotor.swashplate.visible = false;
     this.group.name = tail ? 'r44TailRotorHead' : 'r44MainRotorHead';
     const fixed = new MeshBatch(), stationary = new MeshBatch();
@@ -81,8 +81,8 @@ export class R44RotorHead {
     }
     this.group.add(fixed.build(tail ? 'r44TailYoke' : 'r44MainYoke'));
     if (!tail) rotor.group.add(stationary.build('r44StationarySwashplate'));
-    // Both blade-root fittings use the identical transformation as the first sharp blade in each
-    // exposure group. They therefore remain attached under pitch, coning and opposite-side rotation.
+    // Both blade-root fittings use the real blade's transformation. They therefore remain attached
+    // under pitch, coning and opposite-side rotation at every RPM.
     for (let i = 0; i < 2; i++) {
       const cuff = new THREE.Group(); cuff.name = tail ? 'r44TailBladeRoot' : 'r44MainBladeRoot'; cuff.matrixAutoUpdate = false;
       const parts = new MeshBatch();
@@ -111,7 +111,7 @@ export class R44RotorHead {
   update(): void {
     const tail = this.group.userData.tail as boolean;
     for (let i = 0; i < 2; i++) {
-      this.rotor.blades.getMatrixAt(i * this.rotor.blades.count / 2, this.matrix);
+      this.rotor.blades.getMatrixAt(i, this.matrix);
       this.cuffs[i].matrix.copy(this.matrix);
       const side = i === 0 ? 1 : -1;
       this.a.set(side * (tail ? 0.055 : 0.09), tail ? -0.046 : -0.215, -side * (tail ? 0.025 : 0.095));

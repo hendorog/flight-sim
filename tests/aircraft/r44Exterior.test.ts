@@ -108,8 +108,10 @@ describe('R44 exterior and cabin', () => {
     for (const rpm of [0, 40, 180, 406]) for (const pitch of [0.02, 0.22]) {
       rotor.update(1.3, rpm, pitch, 0.047); head.update();
       expect(nonFinite(rotor.group)).toBe(0);
+      expect(rotor.blades.count).toBe(2);
+      expect(rotor.trail.mesh.visible).toBe(rpm === 180);
       head.cuffs.forEach((cuff, i) => {
-        rotor.blades.getMatrixAt(i * rotor.blades.count / 2, expected);
+        rotor.blades.getMatrixAt(i, expected);
         expect(cuff.matrix.elements).toEqual(expected.elements);
       });
     }
