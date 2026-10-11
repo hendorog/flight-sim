@@ -7,6 +7,7 @@ import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 import type { TeeteringRotor } from '../../render/aircraft/rotorcraft/rotor';
 import type { RotorcraftVisualDef } from '../../render/aircraft/airframe/types';
 import { MeshBatch } from '../../render/aircraft/geometry';
+import { bladeBlur } from '../../render/aircraft/bladeBlur';
 import { box, tube } from '../../render/aircraft/rotorcraft/geometry';
 import { FLAP_HINGE_OFFSET as F, LAG_HINGE_OFFSET as L, MAIN_ROTOR_BLADES } from './dimensions';
 import { ellipsoid, fitRod, type S269Materials } from './exteriorGeometry';
@@ -41,6 +42,7 @@ export class S269MainRotor {
   private readonly matrix = new THREE.Matrix4();
   private readonly transform = new THREE.Matrix4();
   private readonly inverse = new THREE.Matrix4();
+  private readonly inverseSpin = new THREE.Quaternion();
   private readonly a = new THREE.Vector3();
   private readonly b = new THREE.Vector3();
   private readonly c = new THREE.Vector3();
@@ -50,7 +52,7 @@ export class S269MainRotor {
 
   constructor(private readonly rotor: TeeteringRotor, private readonly spec: RotorcraftVisualDef['main'],
     private readonly definition: RotorcraftDefinition, m: S269Materials) {
-    for (const child of rotor.spin.children) if (child !== rotor.blades) child.visible = false;
+    for (const child of rotor.spin.children) if (child !== rotor.blades && child !== rotor.trail.mesh) child.visible = false;
     rotor.swashplate.visible = false;
     this.group.name = 's269ArticulatedHead'; rotor.spin.add(this.group);
     setS269Section(rotor.blades.geometry, spec, 0.15, 1);
@@ -126,15 +128,13 @@ export class S269MainRotor {
     const coning = this.spec.coning;
     const cone = coning ? THREE.MathUtils.lerp(coning.droopDeg * Math.PI / 180,
       Math.min(coning.maxDeg, Math.max(0, state.thrust) / coning.referenceThrust * coning.angleDeg) * Math.PI / 180, spin * spin) : 0;
-    const copies = this.rotor.blades.count / MAIN_ROTOR_BLADES;
-    const sweep = Math.min(2 * Math.PI / MAIN_ROTOR_BLADES, Math.abs(state.rotorRpm) * 2 * Math.PI / 60 / 15);
     // Estimated swash travel/rigging follows the commanded cyclic, not the aerodynamic disc lag.
     this.tilt.set(ctx.controls.aileron * r.cyclicLimit, 1, ctx.controls.elevator * r.cyclicLimit).normalize();
     this.swashplate.quaternion.setFromUnitVectors(this.up, this.tilt);
     this.swashplate.position.y = -0.27 + (ctx.controls.collective ?? 0) * 0.035;
     this.swashplate.updateWorldMatrix(true, false);
     this.group.updateWorldMatrix(true, true); this.inverse.copy(this.group.matrixWorld).invert();
-    let meanFlap = 0, forwardFlap = 0, rightFlap = 0;
+    let meanFlap = 0, forwardFlap = 0, rightFlap = 0, meanPitch = 0;
     for (let i = 0; i < MAIN_ROTOR_BLADES; i++) {
       const arm = this.arms[i], psi = state.azimuth + i * 2 * Math.PI / MAIN_ROTOR_BLADES;
       const actual = pose?.blades[i];
@@ -146,12 +146,10 @@ export class S269MainRotor {
       rightFlap += 2 * flap * Math.cos(psi) / MAIN_ROTOR_BLADES;
       arm.lag.rotation.y = actual && Number.isFinite(actual.lag) ? actual.lag : 0;
       arm.pitch.rotation.x = actual?.pitch !== undefined && Number.isFinite(actual.pitch) ? actual.pitch : pitch;
+      meanPitch += arm.pitch.rotation.x / MAIN_ROTOR_BLADES;
       arm.azimuth.updateMatrixWorld(true);
       this.transform.multiplyMatrices(this.inverse, arm.pitch.matrixWorld).multiply(this.matrix.makeTranslation(-L, 0, 0));
-      for (let k = 0; k < copies; k++) {
-        this.matrix.makeRotationY(copies > 1 ? -sweep * k / (copies - 1) : 0).multiply(this.transform);
-        this.rotor.blades.setMatrixAt(i * copies + k, this.matrix);
-      }
+      this.rotor.blades.setMatrixAt(i, this.transform);
       // Both rod ends are transformed through the same chain as their attachment fittings.
       this.a.set(0.12, 0, -0.085).applyAxisAngle(this.up, psi).applyMatrix4(this.swashplate.matrixWorld).applyMatrix4(this.inverse);
       this.b.set(0.09, -0.022, -0.105).applyMatrix4(arm.pitch.matrixWorld).applyMatrix4(this.inverse);
@@ -172,11 +170,18 @@ export class S269MainRotor {
     }
     this.tilt.set(-Math.tan(rightFlap), 1, Math.tan(forwardFlap)).normalize();
     this.rotor.blur.quaternion.setFromUnitVectors(this.up, this.tilt);
+    // Trail coning is measured from the mast in the shared shader; shift it down to the flap hinge.
+    // Its parent spins, whereas the disc's parent does not: S * (S^-1 * tilt * S) = tilt * S.
+    this.inverseSpin.copy(this.rotor.spin.quaternion).invert();
+    const trail = this.rotor.trail.mesh;
+    trail.quaternion.copy(this.inverseSpin).multiply(this.rotor.blur.quaternion).multiply(this.rotor.spin.quaternion);
+    trail.position.set(0, -F * Math.sin(meanFlap), 0).applyQuaternion(this.rotor.blur.quaternion).applyQuaternion(this.inverseSpin);
+    this.rotor.trail.update(bladeBlur(state.rotorRpm, MAIN_ROTOR_BLADES), meanPitch, meanFlap);
   }
 }
 
 export function buildS269TailHead(rotor: TeeteringRotor, spec: RotorcraftVisualDef['tail'], m: S269Materials): () => void {
-  for (const child of rotor.spin.children) if (child !== rotor.blades) child.visible = false;
+  for (const child of rotor.spin.children) if (child !== rotor.blades && child !== rotor.trail.mesh) child.visible = false;
   setS269Section(rotor.blades.geometry, { ...spec, twist: spec.twist ?? 0 }, 0.14, -1);
   const head = new MeshBatch();
   head.add(m.cast, box([0, 0, 0], [0.075, 0.18, 0.034], 0.010));
@@ -190,5 +195,5 @@ export function buildS269TailHead(rotor: TeeteringRotor, spec: RotorcraftVisualD
     c.add(b.build('s269TailGripFittings')); rotor.spin.add(c); cuffs.push(c);
   }
   const matrix = new THREE.Matrix4();
-  return () => cuffs.forEach((c, i) => { rotor.blades.getMatrixAt(i * rotor.blades.count / 2, matrix); c.matrix.copy(matrix); });
+  return () => cuffs.forEach((c, i) => { rotor.blades.getMatrixAt(i, matrix); c.matrix.copy(matrix); });
 }
