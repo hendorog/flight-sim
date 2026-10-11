@@ -7,6 +7,7 @@ import { PA34_PANEL } from '../../src/aircraft/pa34/panel';
 import DA42 from '../../src/aircraft/da42/presentation';
 import { R22_PANEL } from '../../src/aircraft/r22/panel';
 import { R44_PANEL } from '../../src/aircraft/r44/panel';
+import { S269_PANEL } from '../../src/aircraft/s269/panel';
 import { buildHotspots, hotspotAt } from '../../src/instruments/hotspots';
 import { fitPanel, fixedSections, fixedPanelClient, fixedPanelPoint, nextPanelSection, isFixedPanel } from '../../src/instruments/fixedPanel';
 import { gaugeParts } from '../../src/instruments/panelParts';
@@ -16,7 +17,7 @@ import { makeInputRig } from '../input/testbed';
 import { C172S_INPUT } from '../../src/aircraft/c172s/input';
 
 const panels = { c172s: C172S_PANEL, c152: C152_PANEL, pa38: PA38_PANEL, da20: DA20_PANEL,
-  pa34: PA34_PANEL, da42: DA42.panel, r22: R22_PANEL, r44: R44_PANEL };
+  pa34: PA34_PANEL, da42: DA42.panel, r22: R22_PANEL, r44: R44_PANEL, s269: S269_PANEL };
 for (const [id, def] of Object.entries(panels)) describe(`${id} fixed panel`, () => {
   const sections = fixedSections(def), spots = buildHotspots(def);
   it.each([[1366, 768], [1920, 1080], [800, 600], [600, 900], [2400, 700]])('every hotspot operates in both directions at %ix%i', (width, height) => {
@@ -53,6 +54,21 @@ for (const [id, def] of Object.entries(panels)) describe(`${id} fixed panel`, ()
     const fit = fitPanel(sections.upper, 1366, 768);
     expect(172 * (def.instrumentScale?.large ?? 1) * fit.scale).toBeGreaterThanOrEqual(120);
   });
+});
+
+it('269 puts the concentric tach, flight/engine instruments and warnings above, console controls below', () => {
+  const sections = fixedSections(S269_PANEL);
+  for (const gauge of S269_PANEL.gauges) {
+    const upper = ['asi', 'vsi', 'altimeter', 'tach', 'map', 'fuelCht', 'oil', 'amps', 'cat'].includes(gauge.id);
+    for (const { rect } of gaugeParts(gauge, S269_PANEL.apertures, S269_PANEL.instrumentScale)) {
+      expect(sections[upper ? 'upper' : 'lower'].panes.some(p => p.source.x <= rect.x && p.source.y <= rect.y &&
+        p.source.x + p.source.w >= rect.x + rect.w && p.source.y + p.source.h >= rect.y + rect.h), gauge.id).toBe(true);
+    }
+  }
+  for (const spot of buildHotspots(S269_PANEL)) {
+    const section = spot.id === 'kollsman' || spot.id.endsWith('Test') && spot.id !== 'lampTest' ? sections.upper : sections.lower;
+    expect(fixedPanelClient(section, fitPanel(section, 1366, 768), spot.x, spot.y), spot.id).not.toBeNull();
+  }
 });
 
 describe('sections and preference', () => {

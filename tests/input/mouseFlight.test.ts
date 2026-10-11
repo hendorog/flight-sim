@@ -10,10 +10,11 @@ import { PA34_INPUT } from '../../src/aircraft/pa34/input';
 import DA42 from '../../src/aircraft/da42';
 import { R22_INPUT } from '../../src/aircraft/r22/input';
 import { R44_INPUT } from '../../src/aircraft/r44/input';
+import { S269_INPUT } from '../../src/aircraft/s269/input';
 import { FRAME, makeInputRig } from './testbed';
 
 const profiles = { C172S: C172S_INPUT, C152: C152_INPUT, PA38: PA38_INPUT, DA20: DA20_INPUT,
-  PA34: PA34_INPUT, DA42: DA42.input, R22: R22_INPUT, R44: R44_INPUT };
+  PA34: PA34_INPUT, DA42: DA42.input, R22: R22_INPUT, R44: R44_INPUT, S269: S269_INPUT };
 
 // No DOM shim: exercise the registered listeners through EventTarget with browser event fields.
 function gestureRig() {
@@ -155,7 +156,7 @@ describe('absolute mouse yoke/cyclic handover', () => {
     }
   });
 
-  it.each([R22_INPUT, R44_INPUT])('helicopter curve gives continuous fine hover corrections alongside pedals, collective and throttle', profile => {
+  it.each([R22_INPUT, R44_INPUT, S269_INPUT])('helicopter curve gives continuous fine hover corrections alongside pedals, collective and throttle', profile => {
     const r = makeInputRig(profile, { collective: 0.5, throttle: 0.7 });
     const pointer = r.input as unknown as { mouseNx: number; mouseNy: number; mouseMoves: number };
     r.input.setMouseYoke(true); pointer.mouseMoves++; r.run(FRAME);
