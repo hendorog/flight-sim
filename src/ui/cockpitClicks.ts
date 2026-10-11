@@ -87,6 +87,11 @@ export class CockpitClicks {
     return this.hover !== null;
   }
 
+  /** Fresh hit-test for gesture routing; hover may describe an earlier pointer position. */
+  controlAt(clientX: number, clientY: number): boolean {
+    return this.pick(clientX, clientY) !== null;
+  }
+
   /** Per frame: key repeat while a knob is held, the tooltip value, and the cursor. */
   update(): void {
     const ctx = this.ctx;

@@ -179,7 +179,7 @@ with the wheel or a click, and holding the key at START runs the starter.
 | Num 5, 5 | Centre aileron, elevator and rudder |
 | F5 / F6 | Flaps up / down one notch (0°, 10°, 20°, 30°) |
 | Home, Num 7 / End, Num 1 | Elevator trim nose down / nose up |
-| Y | Toggle mouse yoke |
+| Double-click flight view / Y | Toggle mouse flight control (yoke / stick / cyclic) |
 | **Brakes** | |
 | , / . | Left / right toe brake (hold) |
 | B | Both brakes (hold) |
@@ -221,6 +221,15 @@ with the wheel or a click, and holding the key at START runs the starter.
 | Shift+[ / Shift+] | Simulation rate slower / faster: 0.5x, 1x, 2x, 4x, 8x, 16x |
 | Escape | Menu |
 | F9 / F8 | HUD on/off / frame-time readout |
+
+**Mouse flight control:** double-click the flight view in any camera, or press **Y**. Panel controls and HTML
+UI keep their normal clicks; double-click is ignored while a demo or instructor is flying. An amber centre
+ring prompts you to move the pointer into it to pick up the current control position without a jump. Pointer
+right commands right yoke/cyclic; pointer up commands forward yoke/cyclic. Full travel is reached at 80% of
+the view's half-width/height. R22/R44 use a gentler continuous curve near centre for hover corrections. The
+blue dot shows commanded control position. Double-click or Y releases to the keyboard **holding that position**;
+5 centres it. Pedals, collective and throttle keys remain available. Use right-drag to look while engaged;
+moving over panel controls or HTML UI holds the last mouse command. Both engagement and release show a toast.
 
 The keyboard yoke and rudder **hold position**, as in FSX / MSFS: a held arrow or rudder key moves the control,
 and letting go leaves it where it is (the control-position widget at the bottom of the screen shows where; it

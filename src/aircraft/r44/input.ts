@@ -6,6 +6,7 @@ const axis = { baseRate: 0.05, maxRate: 0.35, accelTime: 1.2, accelExponent: 2, 
   fullAuthoritySpeed: 1000, authorityExponent: 1, minAuthority: 1, negativeScale: 1 };
 export const R44_INPUT: InputProfile = {
   ...C152_INPUT, rotorcraft: true, primeKey: true, collectiveRate: 0.12, flapDetents: [0],
+  mouseYoke: { expo: 0.85, deadzone: 0 },
   has: { ...C152_INPUT.has, carbHeat: false, fuelPump: true },
   assists: { ...C152_INPUT.assists, axes: { elevator: axis, aileron: axis, rudder: { ...axis, baseRate: 0.06 } } },
   labels: { fuelPump: 'Ignition PRIME (hold)', pitchUp: 'Cyclic aft', pitchDown: 'Cyclic forward', rollLeft: 'Cyclic left', rollRight: 'Cyclic right',

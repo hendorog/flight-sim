@@ -115,7 +115,7 @@ describe('InputSystem: mouse yoke pick-up', () => {
     expect(r.input.getYokeIndicator().source).toBe('keyboard');
     expect(Math.abs(r.ctx.controls.aileron - ail0)).toBeLessThan(0.05);
     expect(Math.abs(r.ctx.controls.elevator - ele0)).toBeLessThan(0.05);
-    expect(toasts[0]).toMatch(/Mouse yoke on/);
+    expect(toasts[0]).toBe('Mouse flight control on: double-click or Y to release');
     // Moving through the centre picks it up without a bump.
     input.mouseNx = 0.03;
     input.mouseNy = -0.02;
@@ -131,7 +131,7 @@ describe('InputSystem: mouse yoke pick-up', () => {
     expect(r.ctx.controls.aileron).toBeGreaterThan(0.3);
     expect(r.input.pilotFlying(50)).toBe(true);
     r.input.setMouseYoke(false);
-    expect(toasts[1]).toBe('Mouse yoke off');
+    expect(toasts[1]).toBe('Mouse flight control off: keyboard holds position');
   });
 
   it('pick-up zone', () => {

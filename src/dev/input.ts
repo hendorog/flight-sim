@@ -2,7 +2,7 @@
 // controllers with their conditioned axes, and the KEY_BINDINGS help table.
 //
 //   dev/input.html            fly the keys and watch the controls respond (the keyboard yoke and rudder hold
-//                             position; 5 / Num 5 centres them); press Y for the mouse yoke
+//                             position; 5 / Num 5 centres them); double-click / Y for mouse flight control
 //   dev/input.html?ias=60     indicated airspeed for the keyboard authority limit, m/s (default 30)
 //   dev/input.html?type=pa34  the keys, levers and switches of another type from the registry (c152, pa38, da20,
 //                             pa34, da42): its help table, one line per engine, the engine selection (8 / 9 / 0)

@@ -12,6 +12,7 @@ import { CAMERA_FAR, CAMERA_NEAR, type CameraMode, type SimContext, type Subsyst
 import { nedToThree, quatToThree } from '../../core/frames';
 import type { Vec3 } from '../../core/math';
 import type { ViewControl } from '../../input/InputSystem';
+import { MOUSE_DRAG_SLOP } from '../../input/mouseFlightGesture';
 import { C172S_CAMERA, type CameraAircraft } from './aircraft';
 import { ChaseRig } from './chaseRig';
 import { CockpitRig } from './cockpitRig';
@@ -71,7 +72,7 @@ export class CameraSystem implements Subsystem, ViewControl {
   private dragging = false;
   /** A left button is down and may become a look-drag once the pointer has moved a few pixels. */
   private leftPending = false;
-  private leftMoved = 0;
+  private leftOrigin = { x: 0, y: 0 };
   private lastWall = -1;
   private readonly unsubscribe: (() => void)[] = [];
   /** Current line-of-sight lift of an external camera, m (decays smoothly). */
@@ -175,14 +176,14 @@ export class CameraSystem implements Subsystem, ViewControl {
       this.dragging = true;
       return;
     }
-    if (e.button !== 0 || this.suppressLeftDrag?.()) return;
+    if (e.button !== 0 || e.detail >= 2 || this.suppressLeftDrag?.()) return;
     // Left-drag looks too, but only once the pointer has actually moved, so a click on a panel control
     // (which handles pointerdown and calls preventDefault) or a plain click never nudges the view. The
     // panel handler may run after this one, so check defaultPrevented once every listener has run.
     queueMicrotask(() => {
       if (e.defaultPrevented) return;
       this.leftPending = true;
-      this.leftMoved = 0;
+      this.leftOrigin = { x: e.clientX, y: e.clientY };
     });
   };
 
@@ -193,8 +194,7 @@ export class CameraSystem implements Subsystem, ViewControl {
 
   private readonly onMouseMove = (e: MouseEvent): void => {
     if (this.leftPending && !this.dragging) {
-      this.leftMoved += Math.abs(e.movementX) + Math.abs(e.movementY);
-      if (this.leftMoved > 3) this.dragging = true;
+      if (Math.hypot(e.clientX - this.leftOrigin.x, e.clientY - this.leftOrigin.y) > MOUSE_DRAG_SLOP) this.dragging = true;
     }
     if (this.dragging || document.pointerLockElement === this.el) this.rigs[this.getMode()].look(e.movementX, e.movementY);
   };

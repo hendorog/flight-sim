@@ -142,7 +142,7 @@ describe('key bindings', () => {
   });
 
   it('the Cessna 172S help listing is unchanged by the keys it has nothing for', () => {
-    expect(KEY_BINDINGS.length).toBe(61);
+    expect(KEY_BINDINGS.length).toBe(62);
     for (const key of ['F7', 'F10', '/', ';', '\\', 'Shift+F', '6', '7', '8', '9', '0']) expect(KEY_BINDINGS.some((b) => b.keys.split(' / ').includes(key)), key).toBe(false);
   });
 

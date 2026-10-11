@@ -2,12 +2,16 @@
 // Render a page of this project in headless Chrome (GPU accelerated) and save a screenshot.
 //
 //   node scripts/shot.mjs <page-and-query> <out.png> [--w 1600] [--h 900] [--wait 1500] [--timeout 60000]
-//                         [--eval "js expression"] [--keys "KeyW,Space"] [--fps] [--cpu-throttle 4]
+//                         [--eval "js expression" | --eval-file file.js] [--keys "KeyW,Space"]
+//                         [--mouse '[{"type":"dblclick","x":300,"y":200}]'] [--fps] [--cpu-throttle 4]
 //
 //   <page-and-query>  e.g. "dev/terrain.html?cam=0,0,900&look=3000,0,100" or "index.html?scenario=cruise"
 //   --wait            extra milliseconds to let the scene settle after window.__ready becomes true
 //   --eval            JavaScript evaluated in the page after ready (before the extra wait); its result is printed
 //   --keys            comma-separated KeyboardEvent codes to press after ready
+//   --mouse           JSON list of Playwright mouse move/click/dblclick actions, before --eval
+//   --eval-file       read the --eval expression from a file (useful for multi-step input checks)
+//   --software        use SwiftShader when the headless host has no usable Vulkan GPU
 //   --fps             measure frame time over --frames N (120) frames: drained CPU+GPU throughput, rAF interval
 //                     (overstates speed without vsync), and GPU time of the post pipeline (timer queries)
 //   --cpu-throttle    slow the page's CPU down by this factor (DevTools CPU throttling), e.g. 4 for a slow laptop
@@ -17,7 +21,7 @@
 
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import net from 'node:net';
@@ -29,12 +33,12 @@ const flags = {};
 for (let i = 0; i < argv.length; i++) {
   if (argv[i].startsWith('--')) {
     const key = argv[i].slice(2);
-    if (key === 'fps') flags.fps = true;
+    if (key === 'fps' || key === 'software') flags[key] = true;
     else flags[key] = argv[++i];
   } else positional.push(argv[i]);
 }
 if (positional.length < 2) {
-  console.error('usage: node scripts/shot.mjs <page-and-query> <out.png> [--w N] [--h N] [--wait ms] [--eval js] [--keys codes] [--fps] [--cpu-throttle N]');
+  console.error('usage: node scripts/shot.mjs <page-and-query> <out.png> [--w N] [--h N] [--wait ms] [--eval js | --eval-file path] [--keys codes] [--mouse JSON] [--software] [--fps] [--cpu-throttle N]');
   process.exit(2);
 }
 const [page, out] = positional;
@@ -73,8 +77,7 @@ const browser = await chromium.launch({
   args: [
     '--enable-gpu',
     '--ignore-gpu-blocklist',
-    '--use-angle=vulkan',
-    '--enable-features=Vulkan',
+    ...(flags.software ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : ['--use-angle=vulkan', '--enable-features=Vulkan']),
     '--enable-webgl',
     '--autoplay-policy=no-user-gesture-required',
     '--disable-gpu-vsync',
@@ -104,7 +107,12 @@ try {
     exitCode = 1;
   }
   if (flags.keys) for (const code of flags.keys.split(',')) await p.keyboard.press(code.trim());
-  if (flags.eval) console.log('[eval]', JSON.stringify(await p.evaluate(flags.eval)));
+  if (flags.mouse) for (const action of JSON.parse(flags.mouse)) {
+    if (!['move', 'click', 'dblclick'].includes(action.type)) throw new Error(`Unknown mouse action: ${action.type}`);
+    await p.mouse[action.type](action.x, action.y);
+  }
+  const expression = flags['eval-file'] ? readFileSync(resolve(flags['eval-file']), 'utf8') : flags.eval;
+  if (expression) console.log('[eval]', JSON.stringify(await p.evaluate(expression)));
   await p.waitForTimeout(wait);
   if (flags.fps) {
     // rAF alone overstates throughput 2-5x here: with --disable-gpu-vsync --disable-frame-rate-limit the
@@ -177,7 +185,7 @@ try {
   });
   console.log(`[gl] ${gl}`);
   mkdirSync(dirname(resolve(out)), { recursive: true });
-  await p.screenshot({ path: resolve(out) });
+  await p.screenshot({ path: resolve(out), timeout });
   console.log(`[shot] wrote ${resolve(out)}`);
 } finally {
   await browser.close();

@@ -489,7 +489,7 @@ export class Simulator {
     // Input <-> UI links: mode-change toasts (mouse yoke on / off) and the control-position widget for
     // every input source, including the mouse yoke. A controller's Start button keeps the input module's
     // default (a synthetic Escape press, which the UI handles exactly as the key: menu or crash dialog).
-    input.setShell({ toast: (t) => ui.showToast(t) });
+    input.setShell({ toast: (t) => ui.showToast(t), blocksMouseFlight: (x, y, gesture) => ui.blocksMouseFlight(x, y, gesture) });
     ui.setYokeIndicator(() => input.getYokeIndicator());
     ui.assists = input.assists;
     ui.autopilot = {
