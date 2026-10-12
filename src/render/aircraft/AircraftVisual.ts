@@ -15,6 +15,8 @@
 // init() takes ~0.1 s on the main thread; the livery textures and the cabin occlusion are baked in a
 // worker (liveryWorker.ts) and swapped in about a second later (see `textureBake`).
 
+import { isAircraftId } from '../../core/types';
+import { MagneticCompass, type CompassReading } from '../../instruments/dynamics/magneticCompass';
 import * as THREE from 'three';
 import { RotorcraftVisual } from './RotorcraftVisual';
 import { s269ExteriorVisualClass } from '../../aircraft/s269/exterior';
@@ -122,6 +124,11 @@ export class AircraftVisual implements Subsystem {
   private readonly rootQuat = new THREE.Quaternion();
   private readonly lampFlux = new THREE.Color();
 
+  private compassReading?: CompassReading;
+  private readonly previewCompass = new MagneticCompass();
+  /** The live panel owns dynamics; standalone model previews use the same model locally. */
+  setCompassReading(reading: CompassReading): void { this.compassReading = reading; }
+
   constructor(options: AircraftVisualOptions = {}) {
     this.opts = {
       wheelFairings: options.wheelFairings ?? true,
@@ -174,7 +181,7 @@ export class AircraftVisual implements Subsystem {
     this.quality = ctx.quality;
     this.root.add(this.lights.group);
     const floor = def.cockpit.floor;
-    this.cockpit = new Cockpit(mat, cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1), shapes, def.cockpit, this.opts.panelDef);
+    this.cockpit = new Cockpit(mat, cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1), shapes, def.cockpit, this.opts.panelDef, isAircraftId(def.id) ? def.id : 'c172s');
     // The lining belongs to the interior so it is culled with it at a distance.
     this.cockpit.group.add(this.fuselage.lining);
     this.occupants = buildOccupants(def.cockpit);
@@ -330,7 +337,8 @@ export class AircraftVisual implements Subsystem {
   }
 
   update(_dt: number, ctx: SimContext): void {
-    if (this.helicopter) { this.helicopter.update(ctx); this.contactShadow.update(ctx); return; }
+    const compass = this.compassReading ?? this.previewCompass.step(_dt, ctx.state);
+    if (this.helicopter) { this.helicopter.setCompassReading(compass); this.helicopter.update(ctx); this.contactShadow.update(ctx); return; }
     if (ctx.quality !== this.quality) this.applyQuality(ctx.quality);
     const st = ctx.state;
     const s = st.surfaces;
@@ -371,7 +379,7 @@ export class AircraftVisual implements Subsystem {
     this.cockpit.group.visible = inside || interiorInView(this.camLocal.length(), canopy ? ctx.camera.fov : 60, this.opts.interiorLodDistance);
     if (this.occupants) this.occupants.group.visible = !inside;
     if (this.cockpit.group.visible) {
-      this.cockpit.update(st, ctx.controls, this.opts.panelEmissiveScale);
+      this.cockpit.update(st, ctx.controls, this.opts.panelEmissiveScale, compass);
       cabinLamps.cabinModelFromWorld.value.copy(this.root.matrixWorld).invert();
       updateCabinBounce(ctx.sky, this.root.getWorldQuaternion(this.rootQuat), this.cockpit.lampFlux(this.lampFlux), this.def.cockpit);
     }

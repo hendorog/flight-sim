@@ -6,7 +6,7 @@ import type { PanelDef, Rect } from './panelDef';
 export type PanelView = '3d' | 'upper' | 'lower' | 'hidden';
 export type PanelSection = 'upper' | 'lower';
 export interface PanelPane { source: Rect; target: Rect }
-export interface FixedSection { size: { w: number; h: number }; panes: PanelPane[] }
+export interface FixedSection { size: { w: number; h: number }; panes: PanelPane[]; compass?: Rect }
 export type FixedSections = Record<PanelSection, FixedSection>;
 export interface PanelFit { left: number; top: number; scale: number; width: number; height: number }
 const GAP = 8;
@@ -72,6 +72,13 @@ export function fixedSections(def: PanelDef): FixedSections {
   }
   columns(lower, [...controls, ...def.gauges.filter(g => !flight.has(g.id) && !engineIds.has(g.id) && !radioIds.has(g.id))
     .flatMap(g => gaugeParts(g, def.apertures, def.instrumentScale).map(p => p.rect)), ...stack], GAP, 420);
+  // A separate compass projection accompanies both views, outside the native panel canvas.
+  // It consumes the same instrument state as the windshield compass and has no click hotspot.
+  for (const section of [upper, lower]) {
+    section.compass = { x: section.size.w, y: GAP, w: 176, h: 164 };
+    section.size.w += 176 + GAP;
+    section.size.h = Math.max(section.size.h, 164 + GAP * 2);
+  }
   return { upper, lower };
 }
 

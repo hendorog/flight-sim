@@ -39,11 +39,15 @@ R22/R44/269 mouse hover is covered by a calm 20-second script, not human wind/gu
 Evidence: [mouse hover tests](../tests/rotorcraft/mouse.test.ts), [R22 control evidence](r22-flight-model.md) and the individual aircraft lists.
 Close with: human mouse/keyboard/hardware trials in steady wind and gusts, recording drift and workload.
 
-### Magnetic compass errors — **missing feature**
+### Magnetic compass errors — **implemented; approximate field and calibration**
 
-The rendered compass uses the heading datum without magnetic deviation or turning/dip errors.
-Evidence: [compass builder](../src/render/aircraft/rotorcraft/fittings.ts), explicitly shared with the aeroplanes.
-Close with: a sourced compass-error model and turn/acceleration checks.
+All aircraft now share a damped wet-compass model with dip/turning errors, ANDS, force-driven swing, an 18° tilt
+stop and per-aircraft residual deviation. Cockpits use a rotating/tilting spherical card with a correction
+placard; both fixed-panel sections show the same state. DG alignment copies the compass indication.
+Evidence: [model, parameters, sources and limitations](magnetic-compass.md), [dynamics tests](../tests/instruments/magneticCompass.test.ts),
+[shared 3D compass](../src/render/aircraft/compass.ts).
+Remaining: the world retains its zero-variation heading datum; inclination is a latitude/dipole approximation,
+and deviation cards/damping are simulation estimates. The DA42 still inherits its existing placeholder cockpit.
 
 ### Rotor/ground-contact limits — **missing feature**
 

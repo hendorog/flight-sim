@@ -532,8 +532,8 @@ const COCKPIT: CockpitDef = {
   fuelSelectorHandle: { pos: [QUADRANT.aftX - 0.002, 0, faceZ(680)], angles: { left: -45, right: 45, off: 180 } },
   parkingBrakeHandle: { pos: [PANEL_X - 0.06, 0, PANEL_ZB + 0.15], travel: 0.05 },
   // Magnetic compass at the top centre of the windshield, hung from the front of the metal roof strip (s.9); its
-  // bracket (0.125 m above pos) stays under the roof skin.
-  compass: { pos: [DOOR_FRONT_X - 0.065, 0, -0.615] },
+  // bracket (0.083 m above the pivot) stays under the roof skin.
+  compass: { pos: [DOOR_FRONT_X - 0.060, 0, -0.655] },
   fittings: {
     // The defrost outlet slots on the glareshield deck just aft of the windshield.
     defrosters: [

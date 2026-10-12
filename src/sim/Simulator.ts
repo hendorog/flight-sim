@@ -396,6 +396,7 @@ export class Simulator {
       gyrosSpunUp: ctx.state.engines.some((e) => e.running),
     });
     panel.reset(ctx.state);
+    aircraft.setCompassReading(panel.instruments.readings.compass);
     aircraft.setPanelTexture(panel.texture);
     // Exact night-lighting mask: only markings, pointers, displays and lamps glow.
     aircraft.setPanelEmissiveTexture(panel.emissiveTexture);
