@@ -63,7 +63,7 @@ export class Powerplant implements PowerplantSeam {
   /** Usable capacity of each tank, kg, in the definition's order. */
   readonly tankCapacities: readonly number[];
   private readonly output: PropulsionOutput;
-  /** Crank speed of every engine at the start of the step, rpm and rad/s. */
+  /** Crank (a gas turbine: gas-generator) speed of every engine at the start of the step, rpm and rad/s. */
   private readonly crankRpm: number[];
   private readonly crankOmega: number[];
   private readonly pumpCommands: boolean[];
@@ -160,7 +160,7 @@ export class Powerplant implements PowerplantSeam {
     for (const unit of this.units) {
       const running = perEngine(o.running, unit.index);
       const rpm = o.rpm === undefined ? (running ? unit.install.engine.groundStartRpm : 0) : perEngine(o.rpm, unit.index);
-      unit.reset(rpm, o.warm ?? running, oat, o.feathered !== undefined && o.feathered[unit.index] === true);
+      unit.reset(rpm, o.warm ?? running, oat, o.feathered !== undefined && o.feathered[unit.index] === true, running);
     }
     for (const unit of this.fadecUnits) this.electrical.glowing[unit.index] = this.electrical.ecuOn[unit.index] = false;
     this.publishTanks();
@@ -375,8 +375,8 @@ export class Powerplant implements PowerplantSeam {
     const rpm = this.crankRpm;
     const omega = this.crankOmega;
     for (let i = 0; i < n; i++) {
-      rpm[i] = units[i].rpm;
-      omega[i] = units[i].omega * units[i].gearRatio;
+      rpm[i] = units[i].driveRpm;
+      omega[i] = units[i].driveOmega;
     }
     const airAt = input.airVelocityAt;
 

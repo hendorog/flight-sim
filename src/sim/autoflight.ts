@@ -314,7 +314,7 @@ export class Autoflight {
       case 'roll': {
         if (plan.kind !== 'takeoff') return;
         const t = p.takeoff;
-        setAllThrottles(c, 1);
+        setAllThrottles(c, t.throttle ?? 1);
         const kias = s.ias / KT;
         // Lift the nose wheel at the rotation speed (C172S: 55 KIAS, POH) and let the aircraft fly itself off: the
         // attitude comes up from 4 deg as the speed builds, to 8 deg by 61 KIAS, so the lift-off is at ~58-60 KIAS

@@ -31,6 +31,15 @@ export interface EngineReadings {
   /** Liquid-cooled engines; 0 elsewhere. */
   coolantF: number;
   gearboxF: number;
+  /**
+   * Gas turbines (EngineState.ng / itt present), 0 elsewhere: gas-generator speed, %; inter-turbine temperature,
+   * deg C; the engine's output shaft torque as EngineState.torque gives it (the power turbine's), N m. These
+   * indicators are self-powered (tach generator, thermocouple, torque transducer of the engine) and read without
+   * bus power.
+   */
+  ngPct: number;
+  ittC: number;
+  torqueNm: number;
 }
 
 /** The landing gear position lights. */
@@ -136,6 +145,9 @@ class EngineIndicators {
   readonly load = new ElectricNeedle(0.3, 0);
   readonly coolant = new ElectricNeedle(3, 0);
   readonly gearbox = new ElectricNeedle(3, 0);
+  readonly ng = new ElectricNeedle(0.3, 0);
+  readonly itt = new ElectricNeedle(1, 0);
+  readonly torque = new ElectricNeedle(0.3, 0);
   /** Direct-reading pressure gauge: it shows the pressure in the manifold whether or not the bus is alive. */
   manifold = 29.92;
 
@@ -154,6 +166,10 @@ class EngineIndicators {
     this.load.step(dt, e.loadPercent, powered);
     this.coolant.step(dt, e.coolantTemp !== undefined ? fahrenheit(e.coolantTemp) : 0, powered);
     this.gearbox.step(dt, e.gearboxTemp !== undefined ? fahrenheit(e.gearboxTemp) : 0, powered);
+    const turbine = e.ng !== undefined;
+    this.ng.step(dt, e.ng ?? 0, true);
+    this.itt.step(dt, e.itt ?? 0, true);
+    this.torque.step(dt, turbine ? e.torque : 0, true);
     this.manifold = lagStep(this.manifold, e.manifoldPressure, dt, 0.2);
     out.rpm = this.tach.rpm;
     out.tachHours = this.tach.hours;
@@ -167,6 +183,9 @@ class EngineIndicators {
     out.loadPct = this.load.value;
     out.coolantF = this.coolant.value;
     out.gearboxF = this.gearbox.value;
+    out.ngPct = this.ng.value;
+    out.ittC = this.itt.value;
+    out.torqueNm = this.torque.value;
   }
 }
 
@@ -265,6 +284,9 @@ export class InstrumentSet {
         loadPct: 0,
         coolantF: 0,
         gearboxF: 0,
+        ngPct: 0,
+        ittC: 0,
+        torqueNm: 0,
       })),
       fuelGal: sys.fuel.tanks.map(() => 0),
       gear: null,

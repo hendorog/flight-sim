@@ -147,6 +147,7 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
       sameNumber(`gear ratio of engine ${i}`, { powerplant: unit.engine.gearRatio, audio: voice.engine.gearRatio });
       sameNumber(`cylinders of engine ${i}`, { powerplant: unit.engine.cylinders, audio: voice.engine.cylinders });
       same(`engine ${i} is a diesel`, { powerplant: unit.engine.kind === 'dieselFadec', audio: voice.engine.combustion === 'diesel' });
+      same(`engine ${i} is a gas turbine`, { powerplant: unit.engine.kind === 'freeTurbine', audio: voice.engine.combustion === 'turbine' });
     }
     same(`engine ${i}: FADEC`, { 'engine.kind': unit.engine.kind === 'dieselFadec', 'engine.fadec': unit.engine.fadec !== undefined, 'input.ignition': def.input.ignition === 'engineMaster' });
   }

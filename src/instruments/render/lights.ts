@@ -546,7 +546,9 @@ export class IgnitionSwitches implements PanelComponent {
       const on =
         t.kind === 'engineMaster'
           ? engineControl(c, t.engine, 'engineMaster')
-          : (engineControl(c, t.engine, 'magnetos') & (t.kind === 'magnetoLeft' ? 2 : 1)) !== 0;
+          : t.kind === 'ignition'
+            ? engineControl(c, t.engine, 'magnetos') !== 0
+            : (engineControl(c, t.engine, 'magnetos') & (t.kind === 'magnetoLeft' ? 2 : 1)) !== 0;
       this.latch.set(i, on ? 1 : 0, 1);
     }
     // -1 = cranking the left engine (or the only one), +1 = the right one.
@@ -574,11 +576,17 @@ export class IgnitionSwitches implements PanelComponent {
       g.fill();
       if (t.kind === 'engineMaster') {
         label(g, twin ? `ENG MASTER ${t.engine === 0 ? 'L' : 'R'}` : 'ENG MASTER', t.x, b.y + 14, 6.5);
+      } else if (t.kind === 'ignition') {
+        // A turbine's IGNITION switch: ON (continuous) up, NORM (igniters with the starter) down.
+        label(g, twin ? `IGNITION ${t.engine === 0 ? 'L' : 'R'}` : 'IGNITION', t.x, b.y + 9, 6.5);
+        label(g, 'ON', t.x, t.y - 31, 6.5);
+        label(g, 'NORM', t.x, t.y + 33, 6.5);
       } else {
         label(g, t.kind === 'magnetoLeft' ? 'L' : 'R', t.x, t.y - 31, 7.5);
       }
     }
-    if (this.kind === 'toggles') {
+    const turbine = L.toggles.some((t) => t.kind === 'ignition');
+    if (this.kind === 'toggles' && !turbine) {
       // One legend over the pair of each engine.
       for (let e = 0; e < this.engines; e++) {
         const pair = L.toggles.filter((t) => t.engine === e);
@@ -586,7 +594,7 @@ export class IgnitionSwitches implements PanelComponent {
         label(g, twin ? `${e === 0 ? 'LEFT' : 'RIGHT'} MAG` : 'MAGNETOS', x, b.y + 12, 6.5);
       }
     }
-    label(g, 'START', L.starter.x, b.y + (this.kind === 'toggles' ? 12 : 14), 7);
+    label(g, turbine ? 'STARTER' : 'START', L.starter.x, b.y + (this.kind === 'toggles' ? 12 : 14), 7);
     if (twin) {
       label(g, 'L', L.starter.x - 24, L.starter.y + 30, 7);
       label(g, 'R', L.starter.x + 24, L.starter.y + 30, 7);

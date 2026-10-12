@@ -19,6 +19,10 @@
 // and crank each at its own speed (momentInertia): with a reduction gear that is NOT the shaft equation's
 // inertia times the shaft speed. Direct drive: the two are the same number.
 //
+// A gas turbine (turbineEngine.ts) fits the same frame with its POWER TURBINE as the crank: the starter's torque
+// goes to its gas generator instead of the shaft, and the alternator, the engine-driven pumps and the oil pressure
+// follow the gas generator's speed (driveRpm).
+//
 // Rotation sense: a propeller turning counter-clockwise seen from the cockpit reverses the torque reaction and
 // the angular momentum here, and the P-factor moment and the swirl in propeller.ts; thrust and the in-plane
 // force do not change. Such a unit is the mirror image, in the aircraft's plane of symmetry, of a clockwise one.
@@ -32,6 +36,7 @@ import { DieselEngine } from './dieselEngine';
 import { PistonEngine, type EngineInput } from './engine';
 import { EngineThermal, type ThermalInput } from './engineThermal';
 import { PropGovernor } from './governor';
+import { TurbineEngine } from './turbineEngine';
 import { Propeller } from './propeller';
 import { propellerCharacteristicsFor } from './propellerMap';
 
@@ -63,7 +68,7 @@ export function momentInertia(install: EngineInstallation): number {
 }
 
 export class EngineUnit {
-  readonly engine: PistonEngine | DieselEngine;
+  readonly engine: PistonEngine | DieselEngine | TurbineEngine;
   readonly propeller: Propeller;
   readonly thermal: EngineThermal;
   /** The hub of a constant-speed propeller (absent: fixed pitch). */
@@ -119,6 +124,7 @@ export class EngineUnit {
   // What the unit has beyond a fixed-pitch, injected, air-cooled engine with no cowl flaps (each read only then).
   private readonly extras: boolean;
   private readonly diesel: DieselEngine | undefined;
+  private readonly turbine: TurbineEngine | undefined;
   private readonly hasCarbHeat: boolean;
   private readonly hasAlternateAir: boolean;
   private readonly hasCowlFlaps: boolean;
@@ -183,7 +189,8 @@ export class EngineUnit {
     const def = install.engine;
     if (propeller.rotation !== install.rotation) throw new Error(`${install.propeller.name}: the propeller supplied turns the other way`);
     this.diesel = def.kind === 'dieselFadec' ? new DieselEngine(def) : undefined;
-    this.engine = this.diesel ?? new PistonEngine(def);
+    this.turbine = def.kind === 'freeTurbine' ? new TurbineEngine(def) : undefined;
+    this.engine = this.diesel ?? this.turbine ?? new PistonEngine(def);
     this.propeller = propeller;
     this.thermal = new EngineThermal(def.thermal);
     this.inertia = shaftInertia(install);
@@ -207,7 +214,7 @@ export class EngineUnit {
       this.scheduleLever.push(lever);
       this.scheduleRpm.push(rpm);
     }
-    this.extras = this.governor !== undefined || this.diesel !== undefined || this.hasCarbHeat || this.hasAlternateAir || this.hasCowlFlaps;
+    this.extras = this.governor !== undefined || this.diesel !== undefined || this.turbine !== undefined || this.hasCarbHeat || this.hasAlternateAir || this.hasCowlFlaps;
     const tilt = install.tilt;
     if (tilt && (tilt.up !== 0 || tilt.right !== 0)) {
       // Body from shaft axes: yaw `right` about body z, then pitch `up` about the new y.
@@ -232,6 +239,18 @@ export class EngineUnit {
     return this.omega * RAD_S_TO_RPM * this.gearRatio;
   }
 
+  /**
+   * Speed of the shaft that drives the starter, the alternators and the engine-driven pumps, rev/min and rad/s:
+   * the crank, or a gas turbine's gas generator.
+   */
+  get driveRpm(): number {
+    return this.turbine ? this.turbine.ngRpm : this.omega * RAD_S_TO_RPM * this.gearRatio;
+  }
+
+  get driveOmega(): number {
+    return this.turbine ? this.turbine.gasGenerator.omega : this.omega * this.gearRatio;
+  }
+
   /** Blade angle at the propeller's reference station, rad. */
   get bladePitch(): number {
     return this.governor ? this.governor.pitch : this.fixedPitch;
@@ -244,11 +263,13 @@ export class EngineUnit {
 
   /**
    * Crank speed `rpm`; temperatures warm (as after running) or cold-soaked at `oat`, K. `feathered`: a
-   * feathering propeller starts on its feather stop, stopped, whatever `rpm` says.
+   * feathering propeller starts on its feather stop, stopped, whatever `rpm` says. `running`: a gas turbine
+   * starts alight at low idle (a piston engine's running follows from its speed).
    */
-  reset(rpm: number, warm: boolean, oat: number, feathered = false): void {
+  reset(rpm: number, warm: boolean, oat: number, feathered = false, running = false): void {
     this.thermal.reset(warm, oat);
     this.engine.reset(101325, oat);
+    if (running) this.turbine?.light();
     this.omega = (rpm * 2 * Math.PI) / 60 / this.gearRatio;
     this.rotation = 0;
     if (!this.extras) return;
@@ -266,9 +287,12 @@ export class EngineUnit {
 
   /**
    * Starting point of a trim evaluation (Powerplant.primeForTrim): turning at propeller speed `omega`, rad/s,
-   * with the blades where settle() starts from; a feathered propeller stopped on its feather stop.
+   * with the blades where settle() starts from; a feathered propeller stopped on its feather stop; a gas turbine alight.
    */
   prime(omega: number): void {
+    // A gas turbine is primed alight, as a turning spark engine fires: the controls of the evaluation put it out
+    // again (condition lever at cut-off, no fuel).
+    this.turbine?.light();
     const governor = this.governor;
     if (governor?.feathered) {
       this.omega = 0;
@@ -336,6 +360,9 @@ export class EngineUnit {
       ei.moisture = input.moisture;
       if (this.hasCarbHeat) ei.carbHeat = engineControl(controls, this.index, 'carbHeat');
       if (this.hasAlternateAir) ei.alternateAir = engineControl(controls, this.index, 'alternateAir');
+      // A gas turbine's igniters: with the IGNITION (magneto) switch at NORM (0) they spark while the starter runs;
+      // at ON (any other position) continuously.
+      if (this.turbine) ei.igniters = engineControl(controls, this.index, 'starter') || ei.magnetos !== 0;
       if (this.diesel) {
         ei.engineMaster = engineControl(controls, this.index, 'engineMaster');
         ei.busVoltage = busVoltage;
@@ -366,6 +393,12 @@ export class EngineUnit {
     const rpm = omega * RAD_S_TO_RPM * gear;
     const axial = Math.max(-air.x, 0);
     const ei = this.engineInput;
+    // A gas turbine's starter turns its gas generator, not this shaft.
+    const turbine = this.turbine;
+    if (turbine) {
+      ei.starterTorque = starterTorque;
+      starterTorque = 0;
+    }
     engine.burn(ei, fuelDelivered);
 
     // Propeller, in the air as its own shaft sees it.
@@ -415,7 +448,8 @@ export class EngineUnit {
     ti.firing = engine.firing;
     ti.phi = engine.phi;
     ti.load = engine.load;
-    ti.rpm = rpm;
+    // A gas turbine's oil pump is on its gas generator.
+    ti.rpm = turbine ? turbine.ngRpm : rpm;
     ti.singleMagneto = ei.magnetos === 1 || ei.magnetos === 2;
     ti.indicatedPower = engine.indicatedTorque * crankOmega;
     ti.frictionPower = engine.frictionTorque * crankOmega;
@@ -447,7 +481,7 @@ export class EngineUnit {
     const brakeTorque = engine.indicatedTorque - engine.lossTorque;
     const propRpm = omegaNext * RAD_S_TO_RPM;
     const e = this.state;
-    e.running = engine.firing && rpm > this.runningRpm;
+    e.running = engine.firing && (turbine ? turbine.ngRpm : rpm) > this.runningRpm;
     e.rpm = propRpm * gear;
     e.manifoldPressure = engine.manifoldPressure / INHG;
     e.torque = brakeTorque;
@@ -473,6 +507,11 @@ export class EngineUnit {
       if (diesel) {
         e.ecuPowered = diesel.ecuPowered;
         e.glow = diesel.glowing;
+      }
+      if (turbine) {
+        e.ng = 100 * turbine.ng;
+        e.itt = e.egt = turbine.ittC;
+        e.lit = turbine.firing;
       }
       if (this.thermal.liquid) {
         e.coolantTemp = this.thermal.coolantTemp;
@@ -548,6 +587,10 @@ export class EngineUnit {
       snap.ecuBackupUsed = this.diesel.backupUsed;
       snap.glowSeconds = this.diesel.glowSeconds;
     }
+    if (this.turbine) {
+      const gg = this.turbine.gasGenerator;
+      snap.gasGenerator = { ng: gg.ng, itt: gg.ittC, lit: gg.lit };
+    }
     if (governor?.def.feather?.unfeather === 'accumulator') snap.accumulatorCharged = governor.accumulatorCharged;
     return snap;
   }
@@ -570,6 +613,13 @@ export class EngineUnit {
     if (diesel) {
       diesel.backupUsed = snap.ecuBackupUsed ?? 0;
       diesel.glowSeconds = snap.glowSeconds ?? 0;
+    }
+    const turbine = this.turbine;
+    if (turbine && snap.gasGenerator) {
+      const gg = turbine.gasGenerator;
+      gg.lit = turbine.firing = snap.gasGenerator.lit;
+      gg.omega = snap.gasGenerator.ng * gg.omegaRef;
+      gg.itt = snap.gasGenerator.itt + 273.15;
     }
     const governor = this.governor;
     if (governor) {

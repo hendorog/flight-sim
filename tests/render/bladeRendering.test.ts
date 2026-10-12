@@ -16,7 +16,7 @@ const releaseGeometry = (root: THREE.Object3D): void => {
   root.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
 };
 
-it.each(['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'syn-twin'])('renders real slow blades and independent discs on %s', async id => {
+it.each(['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', 'syn-twin'])('renders real slow blades and independent discs on %s', async id => {
   // DA42 is still a C172 visual placeholder on main; the synthetic twin exercises three-blade feathering.
   const def = id === 'syn-twin' ? SYNTHETIC_TWIN : await loadAirframeVisual(id), materials = fakeMaterials();
   const props = def.props.map((p, i) => new Propeller(materials, p, i > 0));

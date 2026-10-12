@@ -369,7 +369,9 @@ export interface AirframeVisualDef {
   /** Geometry for the rotorcraft builder; separate from the aerodynamic coefficients. */
   rotorcraftVisual?: RotorcraftVisualDef;
   id: string;
-  fuselage: LoftDef & { nose: 'prop' | 'closed'; inlets: readonly InletDef[]; exhaust?: { pos: FRD; radius: number };
+  fuselage: LoftDef & { nose: 'prop' | 'closed'; inlets: readonly InletDef[];
+                        /** An exhaust stack at `pos`; `dir`: its root-to-mouth vector, m (absent: 0.14 m aft and 0.10 m down). */
+                        exhaust?: { pos: FRD; radius: number; dir?: FRD };
                         antennas: readonly { kind: 'blade' | 'stub' | 'whip'; pos: FRD;
                                              /** Length of the antenna from its base at `pos`, m. Absent: 0.2 (blade), 0.09 (stub). */
                                              height?: number }[] };

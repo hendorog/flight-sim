@@ -17,10 +17,12 @@
 //   0 engine   - exhaust pulses of a piston engine (C172S: a flat-four, even 180-degree firing, two per crank
 //                revolution) with cycle-to-cycle variation, exhaust-system resonances, intake roar, valve-train
 //                ticks, starter motor and compression chug, start stumble / shutdown misfires, idle lope;
-//                a diesel's sharper pulse and combustion knock, a turbocharger's whine
+//                a diesel's sharper pulse and combustion knock, a turbocharger's whine; or a gas turbine
+//                (TurbineVoice): the gas generator's whine, burner and exhaust roar, light-off, starter-generator
+//                and reduction gearbox, and no pulses at all
 //   1 prop     - blade-passage harmonics (phase-locked to the crank on a direct-drive engine, on the
 //                propeller's own shaft angle behind a reduction gear) plus broadband tip noise rising with
-//                tip Mach, amplitude-modulated at blade passage
+//                tip Mach, amplitude-modulated at blade passage; a turboprop's growl at the shaft rate
 //   2 airframe - wind, sideslip whistle, flap flow noise, stall buffet, tyre rolling by surface, brake
 //                squeal, tyre skid, touchdown chirps, crash, the flow over an extended landing gear and the
 //                thump of its locks
@@ -336,6 +338,160 @@ class EngineVoice {
 }
 
 /**
+ * One gas turbine (EngineSoundProfile.combustion 'turbine', described by its `turbine` member): no combustion
+ * pulses at all. Its parameters are read differently from a piston engine's: `rpm` is the GAS-GENERATOR speed,
+ * `firing` 1 while the burner is alight, `load` what it burns (0..~1.2), `starter` the starter-generator,
+ * `propRpm` the propeller (for the gearbox).
+ *   - the gas generator's whine: tones at fixed multiples of its shaft rate (the rotor, the compressor's blade
+ *     passage), each with a breathy band of noise round it, growing with the 1.5th power of its speed: it rises from
+ *     silence with the starter and winds down with the spool after shutdown (the speed comes from the model);
+ *   - the burner and exhaust roar: noise bands that brighten and grow with load, wandering slowly; nothing while
+ *     the burner is out (it fades in over about a second at light-off, out over a quarter second at shutdown);
+ *   - a soft thud at light-off on a start;
+ *   - the starter-generator's commutator whine while it motors the spool;
+ *   - a faint reduction-gearbox mesh tone at the propeller's speed.
+ * Same interface as EngineVoice (prepare / tune / sample / startAt / phase / spool / iTurbo), so the processor
+ * treats both alike. `noise`: the source it draws from; `ix`: the indices of its parameters.
+ */
+class TurbineVoice {
+  constructor(profile, noise, ix = ENGINE_P[0]) {
+    const t = profile.turbine;
+    this.noise = noise;
+    this.iRpm = ix.rpm;
+    this.iFiring = ix.firing;
+    this.iLoad = ix.load;
+    this.iStarter = ix.starter;
+    this.iPropRpm = ix.propRpm;
+    this.iTurbo = ix.turbo;
+    this.ngRpm = t.ngRpm;
+    this.tones = t.tones;
+    this.tonePh = new Float64Array(t.tones.length);
+    this.toneF = t.tones.map(() => new SVF());
+    this.roar = t.roar;
+    this.roarF = t.roar.map(() => new SVF());
+    this.starterPerRev = t.starter.perNgRev;
+    this.starterLevel = t.starter.level;
+    this.meshPerRev = t.gearMesh.perPropRev;
+    this.meshLevel = t.gearMesh.level;
+    this.lightOffLevel = t.lightOff;
+    this.level = profile.level;
+    /** Not used by a turbine: the processor's interface (a direct-drive propeller's crank angle, a turbocharger). */
+    this.phase = 0;
+    this.spool = 0;
+    this.fireEnv = 0;
+    this.lit = false;
+    this.wander = 0;
+    this.wanderTarget = 0;
+    this.wanderCount = 0;
+    this.motorPh = 0;
+    this.meshPh = 0;
+    this.thudAge = 1;
+    this.thudPh = 0;
+    this.thudF = new SVF();
+    this.thudF.set(110, 0.8);
+    this.brushF = new SVF();
+  }
+
+  startAt(phase) {
+    this.phase = phase;
+  }
+
+  /** A start with the engine already alight: no light-off, the burner at once. */
+  prime(v) {
+    this.lit = v[this.iFiring] > 0.5;
+    this.fireEnv = this.lit ? 1 : 0;
+  }
+
+  prepare() {}
+
+  /** Block-rate filter setup from the smoothed gas-generator shaft rate (rev/s) and load. */
+  tune(rps0, load0) {
+    for (let k = 0; k < this.tones.length; k++) this.toneF[k].set(Math.max(20, this.tones[k].order * rps0), 12);
+    for (let k = 0; k < this.roar.length; k++) {
+      const r = this.roar[k];
+      this.roarF[k].set(r.hz + r.perLoad * Math.min(load0, 1.2), r.q);
+    }
+    this.brushF.set(Math.max(200, this.starterPerRev * rps0 * 1.5), 1.2);
+  }
+
+  sample(v) {
+    const nz = this.noise;
+    const rps = Math.max(0, v[this.iRpm]) / 60;
+    const ng = rps / (this.ngRpm / 60);
+    const firing = v[this.iFiring];
+    // Light-off: the flame spreads round the annular burner over about a second; flame-out or cut-off is quick.
+    if (firing > 0.5 && !this.lit) {
+      this.lit = true;
+      // On a start (a slow spool), the soft thud of the first fuel lighting.
+      if (ng < 0.4 && this.lightOffLevel > 0) this.thudAge = 0;
+    } else if (firing < 0.5 && this.lit) {
+      this.lit = false;
+    }
+    this.fireEnv += (firing - this.fireEnv) * (firing > this.fireEnv ? 1 / (0.8 * SR) : 1 / (0.25 * SR));
+
+    let out = 0;
+    // The gas generator's whine: pure tones with a little noise round them, sound pressure with the 1.5th power of the speed.
+    const whine = ng * Math.sqrt(ng);
+    if (whine > 1e-6) {
+      for (let k = 0; k < this.tones.length; k++) {
+        const tone = this.tones[k];
+        let ph = this.tonePh[k] + (tone.order * rps) / SR;
+        if (ph >= 1) ph -= Math.floor(ph);
+        this.tonePh[k] = ph;
+        const f = tone.order * rps;
+        // Nothing above the band the context can carry (aliasing).
+        if (f > SR * 0.45) continue;
+        out += (Math.sin(TAU * ph) + this.toneF[k].process(nz.next()) * tone.band) * tone.gain * whine;
+      }
+    }
+
+    // Burner and exhaust roar: band-limited noise, slowly wandering (the flame is never quite steady).
+    if (this.fireEnv > 1e-4) {
+      if (++this.wanderCount > SR / 4) {
+        this.wanderCount = 0;
+        this.wanderTarget = nz.next();
+      }
+      this.wander += (this.wanderTarget - this.wander) * (1 / (0.3 * SR));
+      const load = Math.min(v[this.iLoad], 1.3);
+      const roar = this.fireEnv * (0.25 + 0.75 * load) * (1 + 0.12 * this.wander);
+      const w = nz.next();
+      let r = 0;
+      for (let k = 0; k < this.roarF.length; k++) r += this.roarF[k].process(w) * this.roar[k].gain;
+      out += r * roar;
+    }
+
+    // Light-off thud: a low, soft push of gas through the stacks, 40 ms to build, a quarter second to die away.
+    if (this.thudAge < 0.8) {
+      const t = this.thudAge;
+      this.thudAge += 1 / SR;
+      this.thudPh = (this.thudPh + 42 / SR) % 1;
+      const env = (1 - Math.exp(-t / 0.04)) * Math.exp(-t / 0.25);
+      out += this.lightOffLevel * env * (this.thudF.process(nz.next()) * 1.2 + Math.sin(TAU * this.thudPh) * 0.5);
+    }
+
+    // Starter-generator: a commutator whine rising with the spool, brush noise, while it is engaged.
+    const starter = v[this.iStarter];
+    if (starter > 0.001) {
+      this.motorPh += (Math.max(rps, 3) * this.starterPerRev) / SR;
+      if (this.motorPh >= 1) this.motorPh -= Math.floor(this.motorPh);
+      const ph = TAU * this.motorPh;
+      const spin = 0.35 + 0.65 * Math.min(1, ng / 0.15);
+      out += starter * this.starterLevel * spin * (Math.sin(ph) + 0.3 * Math.sin(2 * ph) + this.brushF.process(nz.next()) * 0.6);
+    }
+
+    // Reduction gearbox: the mesh of the second planetary stage, at the propeller's speed.
+    const propRps = Math.max(0, v[this.iPropRpm]) / 60;
+    if (this.meshLevel > 0 && propRps > 0.1) {
+      this.meshPh += (this.meshPerRev * propRps) / SR;
+      if (this.meshPh >= 1) this.meshPh -= Math.floor(this.meshPh);
+      const turn = Math.min(1, propRps / 30);
+      out += Math.sin(TAU * this.meshPh) * this.meshLevel * turn * turn;
+    }
+    return out * 0.6 * this.level;
+  }
+}
+
+/**
  * One propeller, built from a PropSoundProfile: blade-passage harmonics plus broadband tip noise rising with
  * tip Mach, amplitude-modulated at blade passage. On a direct-drive engine (`gearRatio` 1) the blade passage
  * is phase-locked to the crank of its engine; behind a reduction gear the propeller has its own shaft angle,
@@ -354,6 +510,8 @@ class PropVoice {
     this.level = profile.level;
     this.geared = gearRatio !== 1;
     this.phase = 0; // geared: propeller shaft angle in revolutions, 0..1
+    // Geared only: the shaft-rate roughness of a turboprop's unevenly loaded disc (PropSoundProfile.growl).
+    this.growl = this.geared ? profile.growl ?? 0 : 0;
     this.tipF = new SVF();
     // Block-rate path: the eight harmonic amplitudes and the broadband level, ramped across the render quantum.
     this.w = new Float64Array(9);
@@ -409,6 +567,7 @@ class PropVoice {
         s1 = s2;
       }
       const broad = this.tipF.process(this.pink.next()) * (this.broad += this.broadStep) * (1 + 0.45 * Math.sin(bp));
+      if (this.growl > 0) tone *= this.growlAt(load);
       return (tone + broad * 0.5) * 0.7 * this.level;
     }
     // Harmonic roll-off flattens as tip Mach rises (thickness noise sharpens toward a sawtooth).
@@ -420,7 +579,20 @@ class PropVoice {
     const toneLevel = (0.08 + 0.3 * load) * tipLevel;
     // Broadband tip / trailing-edge noise, strongly Mach dependent, modulated at blade passage.
     const broad = this.tipF.process(this.pink.next()) * Math.pow(tip / 0.8, 5) * (0.5 + 0.35 * load) * (1 + 0.45 * Math.sin(bp));
+    if (this.growl > 0) tone *= this.growlAt(load);
     return (tone * toneLevel + broad * 0.5) * 0.7 * this.level;
+  }
+
+  /**
+   * Growl: each blade passes through the disturbed inflow (cowl, intake, exhaust stacks) at the same place once a
+   * revolution, so its loading, and the loudness of its passage, beats at the shaft rate and its second multiple.
+   * The beat puts lines at every multiple of the shaft rate between those of the blade passage: the rough,
+   * growling drone. Deeper with thrust. A factor on the tone, about 1.
+   */
+  growlAt(load) {
+    const depth = this.growl * (0.35 + 0.65 * Math.min(1, load / 1.2));
+    const a = TAU * this.phase;
+    return 1 + depth * (0.6 * Math.sin(a + 0.4) + 0.35 * Math.sin(2 * a + 1.9));
   }
 }
 
@@ -499,11 +671,15 @@ class AircraftSynth extends AudioWorkletProcessor {
     const blockRate = engines.length > 1;
     this.blockRate = blockRate;
     this.voices = engines.map((e, i) => {
-      const engine = new EngineVoice(e.engine, i === 0 ? this.noise : new Noise(0x7f4a7c15 + i), ENGINE_P[i], blockRate);
+      const noise = i === 0 ? this.noise : new Noise(0x7f4a7c15 + i);
+      // A gas turbine (combustion 'turbine') has a voice of its own; every other engine is a piston engine.
+      const engine = e.engine.combustion === 'turbine' && e.engine.turbine ? new TurbineVoice(e.engine, noise, ENGINE_P[i]) : new EngineVoice(e.engine, noise, ENGINE_P[i], blockRate);
       const prop = new PropVoice(e.prop, i === 0 ? this.pink : new Pink(4711 + i), ENGINE_P[i], e.engine.gearRatio, blockRate);
       if (i > 0) engine.startAt((0.618 * i) % 2);
       // A turbocharger already turning (a change of type in flight) is not spooled up from rest.
       engine.spool = this.value[engine.iTurbo];
+      // A gas turbine already alight (a change of type in flight) has no light-off.
+      if (engine.prime && this.primed) engine.prime(this.value);
       return { engine, prop };
     });
     // Parameters smoothed per sample: up to the last one this profile reads (see params.ts for their order).
@@ -532,7 +708,11 @@ class AircraftSynth extends AudioWorkletProcessor {
         this.value.set(this.target);
         this.primed = true;
         // A start with the engines running: their turbochargers are at speed.
-        for (const voice of this.voices) voice.engine.spool = this.value[voice.engine.iTurbo];
+        for (const voice of this.voices) {
+          voice.engine.spool = this.value[voice.engine.iTurbo];
+          // A start with a gas turbine alight: its burner at once, no light-off.
+          if (voice.engine.prime) voice.engine.prime(this.value);
+        }
       }
     } else if (d.type === 'config') {
       this.configure(d.profile);

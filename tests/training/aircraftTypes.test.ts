@@ -73,7 +73,9 @@ describe('aircraft type data, every type (generic)', () => {
       expect(v.Vr, id).toBeGreaterThanOrEqual(v.Vs1);
       expect(v.VfeFull, id).toBeLessThanOrEqual(v.Vfe10);
       expect(v.Vfe10, id).toBeLessThanOrEqual(v.Vno);
-      expect(v.Vno, id).toBeLessThan(v.Vne);
+      // A turbine has Vmo, no Vno / Vne pair: the two slots both hold Vmo (no yellow arc).
+      if (type.systems?.induction === 'turbine') expect(v.Vno, id).toBe(v.Vne);
+      else expect(v.Vno, id).toBeLessThan(v.Vne);
       expect(v.Vref, id).toBeLessThan(v.Vapp);
       expect(v.Vapp, id).toBeLessThanOrEqual(v.VappFlapsUp);
       expect(v.Vslow, id).toBeGreaterThan(v.Vs1);
