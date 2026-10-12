@@ -88,6 +88,9 @@ export interface EngineInput {
   busVoltage?: number;
   alternatorLive?: boolean;
   coolantTemperature?: number;
+  /** Gas turbines: the igniters are sparking, and the starter's torque at the gas-generator shaft, N m (burn() reads it). */
+  igniters?: boolean;
+  starterTorque?: number;
 }
 
 /**
@@ -226,7 +229,7 @@ export class PistonEngine implements EngineCore {
     // Two passes so the lagged exhaust back pressure has settled.
     this.breathe(probe);
     this.breathe(probe);
-    if (def.metering.kind !== 'fadecDiesel' && def.metering.fullRichPhi === undefined) {
+    if (def.metering.kind !== 'fadecDiesel' && def.metering.kind !== 'turbineFcu' && def.metering.fullRichPhi === undefined) {
       // The lever is full rich and the air is at sea-level density, so the metered ratio is fullRichPhi itself
       // but for the density the metering law sees: solve with that factor in, then meter again.
       this.fullRichPhi = 1;

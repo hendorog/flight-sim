@@ -215,12 +215,12 @@ describe('calibrations solved at construction', () => {
 
   it('meters the take-off fuel flow at full rich and full throttle, and rates the engine at its power', () => {
     for (const def of [O235_ENGINE, IO360_ENGINE]) {
-      expect(def.metering.kind === 'fadecDiesel' || def.metering.fullRichPhi === undefined).toBe(true);
+      expect(def.metering.kind === 'fadecDiesel' || def.metering.kind === 'turbineFcu' || def.metering.fullRichPhi === undefined).toBe(true);
       const engine = new PistonEngine(def);
       const input = probe(def, def.ratedRpm);
       engine.breathe(input);
       engine.breathe(input);
-      const takeoff = def.metering.kind === 'fadecDiesel' ? 0 : def.metering.takeoffFuelFlow!;
+      const takeoff = def.metering.kind === 'fadecDiesel' || def.metering.kind === 'turbineFcu' ? 0 : def.metering.takeoffFuelFlow!;
       // (The calibration ran with the oil at its reference temperature and the exhaust lag of two passes: 0.1 %.)
       expect(engine.fuelDemand / takeoff).toBeCloseTo(1, 3);
       engine.burn(input, engine.fuelDemand);

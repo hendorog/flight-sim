@@ -258,6 +258,9 @@ export interface EngineState {
   glow?: boolean;
   /** Rough running beyond what the mixture and magnetos give (melt water from carburettor ice), 0 .. 1. Absent: 0. */
   roughness?: number;
+  /** Gas turbines only: gas-generator speed, % of its reference speed, and inter-turbine temperature, degrees C (egt reads the same). */
+  ng?: number;
+  itt?: number;
 }
 export function emptyEngineState(): EngineState {
   return { running: false, rpm: 0, manifoldPressure: 29.92, power: 0, torque: 0, fuelFlow: 0, egt: 15, cht: 15,
