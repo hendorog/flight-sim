@@ -504,7 +504,7 @@ const COCKPIT: CockpitDef = {
   // Trim wheel in the pedestal, protruding through its aft face.
   trimWheel: { pos: [PANEL_X - 0.05, 0, 0.36], axis: 'y' },
   // Magnetic compass hanging from the windscreen header on the centreline.
-  compass: { pos: [0.37, 0, -0.515] },
+  compass: { pos: [0.375, 0, -0.555] },
   fittings: {
     // Defroster outlets on the glareshield top just aft of the windscreen (hood top at x 0.88 is z -0.247).
     defrosters: [

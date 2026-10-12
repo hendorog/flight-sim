@@ -14,11 +14,13 @@
 // Variants: centre sticks instead of yokes, quadrant levers instead of push-pull knobs, a flap switch or a
 // floor lever, a gear selector; a canopy cockpit is seen from outside, so its small controls are never hidden.
 
+import { BallCompass } from './compass';
+import type { CompassReading } from '../../instruments/dynamics/magneticCompass';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { C172S_PANEL } from '../../aircraft/c172s/panel';
 import { C172S_VISUAL } from '../../aircraft/c172s/visual';
-import { engineControl, type AircraftState, type ControlInputs } from '../../core/types';
+import { engineControl, type AircraftId, type AircraftState, type ControlInputs } from '../../core/types';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import type { CockpitDef } from './airframe/types';
 import { cabinLamps } from './cabinLight';
@@ -209,43 +211,6 @@ export function glareshieldGeometry(skin: FuselageShape, hood: CockpitDef['glare
   }
   g.computeVertexNormals();
   return g;
-}
-
-function compassCardTexture(): THREE.CanvasTexture {
-  const W = 1024;
-  const H = 128;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#101010';
-  g.fillRect(0, 0, W, H);
-  g.fillStyle = '#f0ede0';
-  g.strokeStyle = '#f0ede0';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.font = 'bold 44px sans-serif';
-  const labels: Record<number, string> = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
-  // A heading L sits at card azimuth L + 180 so it faces the pilot when the aircraft is on heading L
-  // (the card appears reversed, as a real whiskey compass does).
-  for (let L = 0; L < 360; L += 5) {
-    const u = (((1 - L / 360) % 1) + 1) % 1;
-    const x = u * W;
-    const major = L % 30 === 0;
-    g.lineWidth = major ? 4 : 2;
-    g.beginPath();
-    g.moveTo(x, 0);
-    g.lineTo(x, major ? 34 : 20);
-    g.stroke();
-    if (major) {
-      const text = labels[L] ?? String(L / 10);
-      for (const dx of [0, W, -W]) g.fillText(text, x + dx, 82);
-    }
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
 }
 
 // ---- Control positions (exported for the Flight School's callouts and camera glance) -------------------------
@@ -494,7 +459,7 @@ export class Cockpit {
   /** Cabin-only materials created here (the cabin occlusion patch applies to them). */
   get ownMaterials(): THREE.MeshStandardMaterial[] {
     const own = [this.panelMat];
-    if (this.compassCard) own.push(this.compassCard.material as THREE.MeshStandardMaterial);
+    if (this.compass) own.push(...this.compass.materials);
     own.push(this.visorMat, this.rockerMat);
     if (this.knobBlue) own.push(this.knobBlue);
     return own;
@@ -517,8 +482,7 @@ export class Cockpit {
   private readonly trimWheel: THREE.Group | null = null;
   private readonly fuelHandle: THREE.Group | null = null;
   private readonly brakeHandle: THREE.Group | null = null;
-  private readonly compassCard: THREE.Mesh | null = null;
-  private readonly cardTexture: THREE.CanvasTexture | null = null;
+  private readonly compass?: BallCompass;
   /** Blue propeller-lever knobs (made when the definition has one). */
   private knobBlue: THREE.MeshStandardMaterial | null = null;
   private hasPanelTexture = false;
@@ -549,6 +513,7 @@ export class Cockpit {
     shapes: { outer: FuselageShape; lining: FuselageShape } = { outer: new FuselageShape(0), lining: new FuselageShape(0.015, -0.63) },
     def: CockpitDef = C172S_VISUAL.cockpit,
     panelDef: PanelDef = C172S_PANEL,
+    aircraft: AircraftId = 'c172s',
   ) {
     const skin = shapes.outer;
     this.group.name = 'cockpit';
@@ -699,23 +664,9 @@ export class Cockpit {
       fixed.add(mat.knobWhite, box(FLOOD_POS[0], 0, FLOOD_POS[2] + 0.001, 0.025, 0.04, 0.004, 0.0015));
     }
 
-    // --- Magnetic compass hanging from the windscreen header on the centreline ---
-    const compass = def.compass?.pos;
-    if (compass) {
-      const cx = compass[0];
-      const cz = compass[2];
-      fixed.add(mat.glareshield, box(cx + 0.01, 0, cz - 0.004, 0.075, 0.085, 0.012, 0.004));
-      fixed.add(mat.glareshield, box(cx + 0.035, 0, cz - 0.04, 0.02, 0.085, 0.07, 0.004));
-      fixed.add(mat.glareshield, box(cx, 0, cz - 0.078, 0.07, 0.085, 0.01, 0.004));
-      for (const s of [-1, 1]) fixed.add(mat.glareshield, box(cx, s * 0.038, cz - 0.04, 0.07, 0.01, 0.07, 0.004));
-      // Mounting bracket up to the header.
-      fixed.add(mat.darkMetal, box(cx + 0.02, 0, cz - 0.1, 0.03, 0.03, 0.05, 0.004));
-      fixed.add(mat.knobWhite, box(cx - 0.034, 0, cz - 0.04, 0.002, 0.002, 0.05, 0.001));
-      this.cardTexture = compassCardTexture();
-      const card = new THREE.CylinderGeometry(0.03, 0.03, 0.022, 48, 1, true);
-      this.compassCard = new THREE.Mesh(card, new THREE.MeshStandardMaterial({ name: 'compassCard', map: this.cardTexture, roughness: 0.5, side: THREE.DoubleSide }));
-      frd(cx + 0.005, 0, cz - 0.04, this.compassCard.position);
-      this.group.add(this.compassCard);
+    if (def.compass) {
+      this.compass = new BallCompass(def.compass.pos, aircraft, def.compass.mount);
+      this.group.add(this.compass.group);
     }
 
     // --- Yokes or sticks ---
@@ -1092,7 +1043,7 @@ export class Cockpit {
   /**
    * @param panelEmissiveScale multiplier on the backlight radiance (see AircraftVisual options)
    */
-  update(state: AircraftState, controls: ControlInputs, panelEmissiveScale: number): void {
+  update(state: AircraftState, controls: ControlInputs, panelEmissiveScale: number, compass?: CompassReading): void {
     for (const column of this.columns) column.pose(controls.elevator, controls.aileron);
     for (let i = 0; i < this.pedals.length; i++) {
       const p = this.pedals[i];
@@ -1116,7 +1067,7 @@ export class Cockpit {
     // Clockwise as the pilot sees it (looking along -z) is a negative rotation about three's z.
     if (this.fuelHandle) this.fuelHandle.rotation.z = (-(this.def.fuelSelectorHandle!.angles[controls.fuelSelector] ?? 0) * Math.PI) / 180;
     if (this.brakeHandle) this.brakeHandle.position.z = -this.def.parkingBrakeHandle!.pos[0] + (controls.parkingBrake ? this.def.parkingBrakeHandle!.travel : 0);
-    if (this.compassCard) this.compassCard.rotation.y = state.heading;
+    if (compass) this.compass?.update(compass, controls.lights.panel * (state.electrical.busVoltage > 10 ? 1 : 0) * 1.2 * panelEmissiveScale);
     this.poseRockers(controls);
     // Key: OFF, R, L, BOTH 30 degrees apart clockwise, START a further 30 (spring-loaded).
     this.magnetoKey.rotation.z = -((controls.starter ? 4 : controls.magnetos) - 2) * (Math.PI / 6);
@@ -1191,11 +1142,10 @@ export class Cockpit {
   }
 
   dispose(): void {
-    this.cardTexture?.dispose();
+    this.compass?.dispose();
     this.panelMat.dispose();
     this.visorMat.dispose();
     this.rockerMat.dispose();
     this.knobBlue?.dispose();
-    if (this.compassCard) (this.compassCard.material as THREE.Material).dispose();
   }
 }

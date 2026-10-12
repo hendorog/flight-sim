@@ -535,7 +535,7 @@ const COCKPIT: CockpitDef = {
   // The vertical elevator trim wheel on the pedestal below the throttle (s.9).
   trimWheel: { pos: [PANEL_X - 0.05, 0, PANEL_ZB + 0.11], axis: 'y' },
   // Magnetic compass on the windshield centre post at the top (s.9).
-  compass: { pos: [0.37, 0, -0.53] },
+  compass: { pos: [0.375, 0, -0.57] },
   fittings: {
     // The defrost outlet slots on the glareshield top just aft of the windshield.
     defrosters: [

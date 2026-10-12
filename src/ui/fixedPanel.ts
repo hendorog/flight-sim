@@ -1,3 +1,4 @@
+import { drawMagneticCompass } from '../instruments/render/magneticCompass';
 import type { SimContext } from '../core/context';
 import type { InstrumentPanel } from '../instruments/panel';
 import type { PanelDef } from '../instruments/panelDef';
@@ -17,6 +18,7 @@ export class FixedPanel {
   private fit: PanelFit | null = null;
   private lastLayout = '';
   private lastVersion = -1;
+  private lastCompass = '';
 
   constructor(private readonly parent: HTMLElement, def: PanelDef, private readonly ctx: SimContext) {
     this.sections = fixedSections(def);
@@ -77,7 +79,11 @@ export class FixedPanel {
 
   update(): void {
     this.layout();
-    if (!this.section || !this.fit || !this.source || this.lastVersion === this.source.version) return;
+    if (!this.section || !this.fit || !this.source) return;
+    const compass = this.source.instruments.readings.compass;
+    const compassKey = `${compass.heading.toFixed(4)}/${compass.roll.toFixed(4)}/${compass.pitch.toFixed(4)}`;
+    if (this.lastVersion === this.source.version && this.lastCompass === compassKey) return;
+    this.lastCompass = compassKey;
     this.lastVersion = this.source.version;
     const g = this.g;
     g.setTransform(this.canvas.width / this.section.size.w, 0, 0, this.canvas.height / this.section.size.h, 0, 0);
@@ -86,6 +92,7 @@ export class FixedPanel {
     for (const { source: s, target: t } of this.section.panes) {
       g.drawImage(this.source.canvas, s.x, s.y, s.w, s.h, t.x, t.y, t.w, t.h);
     }
+    if (this.section.compass) drawMagneticCompass(g, compass, this.section.compass, this.ctx.state.aircraft);
   }
 
   dispose(): void { window.removeEventListener('resize', this.layout); this.root.remove(); }

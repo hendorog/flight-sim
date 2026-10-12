@@ -105,6 +105,8 @@ export const R44_VISUAL: AirframeVisualDef = {
   ],
   cockpit: { pilotEye: point(PILOT_EYE), defaultPitchDeg: -24, defaultFovDeg: 82, enclosure: 'canopy',
     panel: { x: PANEL_FACE.centre.x, zTop: PANEL_FACE.centre.z - PANEL_FACE.height / 2, width: PANEL_FACE.width },
+    // Wet compass on the central windshield bow above the console (MM ch.13); position estimated.
+    compass: { pos: [1.65, 0, -0.50] },
     floor: { z: 0.52, x0: 2.10, x1: -0.12 }, glareshield: { profile: [], halfWidth: PANEL_FACE.width / 2 },
     seats: SEAT_CENTRES.map(p => ({ x: p.x + 0.26, y: p.y, z: 0.28, kind: 'front', width: 0.47, depth: 0.50,
       reclineDeg: 10, back: { height: 0.62, headrest: false } })),

@@ -110,9 +110,9 @@ export class HeadingIndicator {
   }
 
   /** Set the card to the given heading (the pilot turning the knob to match the compass). */
-  align(heading: number): void {
+  align(heading: number, trueHeading = heading): void {
     this.heading = wrapTwoPi(heading);
-    this.lastTrue = heading;
+    this.lastTrue = trueHeading;
   }
 
   step(dt: number, trueHeading: number, suctionInHg: number): void {

@@ -43,6 +43,13 @@ for (const [id, def] of Object.entries(panels)) describe(`${id} fixed panel`, ()
       expect(all.some(p => p.source.x <= rect.x && p.source.y <= rect.y && p.source.x + p.source.w >= rect.x + rect.w && p.source.y + p.source.h >= rect.y + rect.h)).toBe(true);
     }
     for (const section of Object.values(sections)) {
+      const compass = section.compass!;
+      expect(compass).toBeDefined();
+      expect(compass.x + compass.w).toBeLessThanOrEqual(section.size.w);
+      expect(compass.y + compass.h).toBeLessThanOrEqual(section.size.h);
+      for (const p of section.panes) expect(compass.x >= p.target.x + p.target.w ||
+        compass.x + compass.w <= p.target.x || compass.y >= p.target.y + p.target.h ||
+        compass.y + compass.h <= p.target.y, 'compass must not cover a gauge or control').toBe(true);
       const fit = fitPanel(section, 1366, 768);
       expect(fit.top - 32).toBeGreaterThanOrEqual(768 * 0.52 - 0.001);
       expect(fixedPanelPoint(section, fit, 683, 100)).toBeNull();

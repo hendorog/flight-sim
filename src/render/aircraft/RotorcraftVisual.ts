@@ -1,5 +1,6 @@
 // Rotorcraft assembly. The cabin shares the aeroplanes' loft, texture bake, materials, lights and figures;
 // rotors and helicopter controls live in rotorcraft/. Render geometry never reads aerodynamic hub offsets.
+import type { CompassReading } from '../../instruments/dynamics/magneticCompass';
 import * as THREE from 'three';
 import type { SimContext } from '../../core/context';
 import type { PanelDef } from '../../instruments/panelDef';
@@ -69,6 +70,9 @@ export class RotorcraftVisual {
   setPanelTexture(texture: THREE.Texture): void { this.cockpit.setPanelTexture(texture); }
   setPanelEmissiveTexture(texture: THREE.Texture): void { this.cockpit.setPanelEmissiveTexture(texture); }
 
+  private compassReading?: CompassReading;
+  setCompassReading(reading: CompassReading): void { this.compassReading = reading; }
+
   update(ctx: SimContext): void {
     const r = ctx.state.rotorcraft, c = ctx.controls, d = this.def.rotorcraft!, v = this.def.rotorcraftVisual!;
     if (r) {
@@ -92,7 +96,7 @@ export class RotorcraftVisual {
     const inside = ctx.cameraMode === 'cockpit';
     this.cockpit.group.visible = inside || this.camLocal.length() * Math.tan(ctx.camera.fov * Math.PI / 360) / Math.tan(Math.PI / 6) < this.options.interiorLodDistance;
     if (this.occupants) this.occupants.group.visible = !inside;
-    this.cockpit.update(c, ctx.state.electrical.busVoltage, this.options.panelEmissiveScale, ctx.state.heading);
+    this.cockpit.update(c, ctx.state.electrical.busVoltage, this.options.panelEmissiveScale, this.compassReading);
   }
 
   dispose(): void {

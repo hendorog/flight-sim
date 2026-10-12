@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import type { ControlInputs } from '../../../core/types';
 import type { GaugeDef, PanelDef, SwitchDef } from '../../../instruments/panelDef';
-import type { FRD, RotorcraftVisualDef } from '../airframe/types';
+import type { RotorcraftVisualDef } from '../airframe/types';
 import type { AircraftMaterials } from '../materials';
 import { frd, MeshBatch } from '../geometry';
 import { box, tube } from './geometry';
@@ -39,41 +39,6 @@ export function collectiveFittings(lever: THREE.Group, length: number, mat: Airc
   const label = new THREE.Mesh(new THREE.PlaneGeometry(0.042, 0.054).rotateX(-Math.PI / 2), material);
   label.position.copy(frd(length - 0.012, 0, -0.0415)); lever.add(label);
   return { switch: rocker, material, texture };
-}
-
-/** Whiskey compass card, rotating behind the fixed lubber line. Heading follows the simulator's
- * heading datum, as in the aeroplanes; magnetic deviation and turning/dip errors are not modelled. */
-export class PostCompass {
-  readonly group = new THREE.Group();
-  private readonly texture: THREE.CanvasTexture;
-  private readonly card: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshStandardMaterial>;
-  constructor(pos: FRD, mat: AircraftMaterials) {
-    this.group.name = 'postCompass'; this.group.position.copy(frd(...pos));
-    const parts = new MeshBatch();
-    parts.add(mat.glareshield, box([0.005, 0, -0.035], [0.072, 0.088, 0.014], 0.006));
-    parts.add(mat.glareshield, box([0.005, 0, 0.035], [0.072, 0.088, 0.014], 0.006));
-    parts.add(mat.glareshield, box([0.038, 0, 0], [0.016, 0.088, 0.066], 0.006));
-    for (const side of [-1, 1]) parts.add(mat.glareshield, box([0.005, side * 0.041, 0], [0.072, 0.010, 0.07], 0.005));
-    parts.add(mat.darkMetal, box([0.038, 0, -0.061], [0.02, 0.026, 0.06], 0.003));
-    parts.add(mat.knobWhite, box([-0.032, 0, 0], [0.002, 0.0015, 0.046], 0.0005));
-    this.group.add(parts.build('compassCase'));
-    const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 128;
-    const g = canvas.getContext('2d')!;
-    g.fillStyle = '#141815'; g.fillRect(0, 0, 1024, 128);
-    g.fillStyle = g.strokeStyle = '#eee9d4'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold 44px sans-serif';
-    for (let heading = 0; heading < 360; heading += 5) {
-      const x = ((1 - heading / 360) % 1) * 1024, major = heading % 30 === 0;
-      g.lineWidth = major ? 4 : 2; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, major ? 34 : 20); g.stroke();
-      const label = ({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' } as Record<number, string>)[heading] ?? String(heading / 10);
-      if (major) for (const dx of [-1024, 0, 1024]) g.fillText(label, x + dx, 82);
-    }
-    this.texture = new THREE.CanvasTexture(canvas); this.texture.colorSpace = THREE.SRGBColorSpace;
-    this.card = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.027, 48, 1, true),
-      new THREE.MeshStandardMaterial({ map: this.texture, roughness: 0.8, side: THREE.DoubleSide }));
-    this.card.name = 'compassCard'; this.group.add(this.card);
-  }
-  update(heading: number): void { this.card.rotation.y = heading; }
-  dispose(): void { this.texture.dispose(); this.card.material.dispose(); }
 }
 
 type Pull = Extract<GaugeDef, { kind: 'pullKnob' }>;

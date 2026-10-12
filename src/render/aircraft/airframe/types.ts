@@ -307,8 +307,8 @@ export interface CockpitDef {
   parkingBrakeHandle?: { pos: FRD; travel: number };
   /** Absent: no trim wheel. axis: the body axis the wheel turns about. */
   trimWheel?: { pos: FRD; axis: 'x' | 'y' };
-  /** Absent: no magnetic compass. */
-  compass?: { pos: FRD };
+  /** Float pivot in FRD. Absent: no magnetic compass; mount defaults to the header/post bracket. */
+  compass?: { pos: FRD; mount?: 'header' | 'glareshield' };
   /**
    * Cabin fittings only some types have; what is absent is not fitted.
    * defrosters: centres of the outlet slots on the glareshield top. fuelSelector: the selector dial on the floor

@@ -88,7 +88,7 @@ describe('Piper PA-38 Tomahawk II presentation', () => {
   it('the rudder hangs below the tail cone top, the compass stays under the roof, the quadrant levers stay in view', () => {
     // bottomH is measured up the fin from its base: the rudder's foot at WL 44.90 lies below the cone top (WL 57).
     expect(PA38_VISUAL.tail.v.rudderExtension!.bottomH).toBeLessThan(-0.25);
-    // The cockpit builder stacks the compass's mounting bracket 0.125 m above pos at x + 0.005 .. 0.035: under the
+    // The float pivot's mounting bracket ends 0.083 m above pos at x - 0.003 .. +0.039: under the
     // roof line (the fuselage keys' top) on the centre line.
     const keys = PA38_VISUAL.fuselage.keys;
     const top = (x: number): number => {
@@ -100,7 +100,7 @@ describe('Piper PA-38 Tomahawk II presentation', () => {
       return NaN;
     };
     const c = PA38_VISUAL.cockpit.compass!.pos;
-    for (const x of [c[0] + 0.005, c[0] + 0.035]) expect(c[2] - 0.125, `bracket at x ${x}`).toBeGreaterThan(top(x) + 0.003);
+    for (const x of [c[0] - 0.003, c[0] + 0.039]) expect(c[2] - 0.083, `bracket at x ${x}`).toBeGreaterThan(top(x) + 0.003);
     // Throttle and mixture: at full forward travel (travel / 2 from upright) the knob (radius 0.017) stays aft of
     // every black quadrant body it is level with.
     const quadrant = PA38_VISUAL.cockpit.consoles.filter((k) => k.material === 'black');

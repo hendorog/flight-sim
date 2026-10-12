@@ -122,17 +122,17 @@ describe('Piper PA-34-200 Seneca I presentation', () => {
   it("the compass hangs inside the windscreen, in the pilot's view over the glareshield", () => {
     const [cx, , cz] = PA34_VISUAL.cockpit.compass!.pos;
     // The skin's top line (the fuselage keys' zTop, linear between keys) over the compass from its bracket's rear to
-    // its housing's front; cockpit.ts draws the bracket top 0.125 m and the housing's top 0.083 m above pos.
+    // its housing's front; pos is the float pivot, the bracket top is 0.083 m above it.
     const keys = PA34_VISUAL.fuselage.keys;
     const topAt = (x: number): number => {
       const i = keys.findIndex((k) => k[0] <= x);
       const [a, b] = [keys[i - 1], keys[i]];
       return a[1] + ((x - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
     };
-    for (const x of [cx + 0.005, cx + 0.05]) expect(cz - 0.125, `bracket top under the skin at x ${x}`).toBeGreaterThan(topAt(x));
+    for (const x of [cx - 0.003, cx + 0.039]) expect(cz - 0.083, `bracket top under the skin at x ${x}`).toBeGreaterThan(topAt(x));
     // Above the glareshield, below the top of a 30 degree half-height view straight ahead.
     const eye = PA34_GEOMETRY.fuselage.pilotEye;
-    const up = Math.atan2(eye.z - (cz - 0.04), cx - eye.x) / (Math.PI / 180);
+    const up = Math.atan2(eye.z - cz, cx - eye.x) / (Math.PI / 180);
     expect(up).toBeGreaterThan(8);
     expect(up).toBeLessThan(25);
   });

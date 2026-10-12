@@ -1,14 +1,16 @@
 // Shaped helicopter panels and controls, independent of the aeroplane panel/yoke builder.
+import { BallCompass } from '../compass';
+import type { CompassReading } from '../../../instruments/dynamics/magneticCompass';
 import * as THREE from 'three';
 import type { AirframeVisualDef } from '../airframe/types';
 import { SCENE_UNITS_PER_LUX } from '../../../core/context';
-import type { ControlInputs } from '../../../core/types';
+import { isAircraftId, type ControlInputs } from '../../../core/types';
 import type { PanelDef } from '../../../instruments/panelDef';
 import { frd, MeshBatch } from '../geometry';
 import type { AircraftMaterials } from '../materials';
 import { box, pathTube, tube } from './geometry';
 import { buildConsole, consoleShape } from './console';
-import { collectiveFittings, ConsolePullControl, ConsoleSwitchCover, pedalPlate, PostCompass } from './fittings';
+import { collectiveFittings, ConsolePullControl, ConsoleSwitchCover, pedalPlate } from './fittings';
 
 export class RotorcraftCockpit {
   readonly group = new THREE.Group();
@@ -22,7 +24,7 @@ export class RotorcraftCockpit {
   private readonly governorSwitches: THREE.Group[] = [];
   private readonly pullControls: ConsolePullControl[] = [];
   private readonly switchCovers: ConsoleSwitchCover[] = [];
-  private readonly compass?: PostCompass;
+  private readonly compass?: BallCompass;
   private readonly textures: THREE.Texture[] = [];
   private readonly materials: THREE.Material[] = [];
   private readonly dimmer = { value: 1 };
@@ -61,7 +63,7 @@ export class RotorcraftCockpit {
     for (const gauge of panelDef?.gauges ?? []) if (gauge.kind === 'pullKnob') this.pullControls.push(new ConsolePullControl(gauge, p, pod, mat));
     if (panelDef) for (const s of panelDef.switchRow.switches) if (s.cover) this.switchCovers.push(new ConsoleSwitchCover(s, panelDef.switchRow, p, pod, mat));
     if (def.cockpit.compass) {
-      this.compass = new PostCompass(def.cockpit.compass.pos, mat); this.group.add(this.compass.group);
+      this.compass = new BallCompass(def.cockpit.compass.pos, isAircraftId(def.id) ? def.id : 'c172s', def.cockpit.compass.mount); this.group.add(this.compass.group);
     }
     const seatBack = mat.seatFabric.clone();
     if (d.interior) seatBack.color.setHex(d.interior.seatBackColor);
@@ -160,8 +162,8 @@ export class RotorcraftCockpit {
   setPanelTexture(texture: THREE.Texture): void { this.panel.material.map = texture; this.panel.material.needsUpdate = true; }
   setPanelEmissiveTexture(texture: THREE.Texture): void { this.panel.material.emissiveMap = texture; this.panel.material.needsUpdate = true; }
 
-  update(c: ControlInputs, busVoltage: number, emissiveScale: number, heading = 0): void {
-    this.compass?.update(heading);
+  update(c: ControlInputs, busVoltage: number, emissiveScale: number, compass?: CompassReading): void {
+    if (compass) this.compass?.update(compass, c.lights.panel * (busVoltage > 10 ? 1 : 0) * 1.2 * emissiveScale);
     this.pullControls.forEach(control => control.update(c));
     this.switchCovers.forEach(cover => cover.update(c));
     this.governorSwitches.forEach(s => { s.rotation.x = (c.rotorGovernor ? -1 : 1) * 0.25; });

@@ -10,6 +10,7 @@ import { batteryCurrentAmps, ElectricNeedle, Tachometer, type Annunciators } fro
 import { lagStep } from './filters';
 import { SUCTION_RATED_INHG } from './gyro';
 import { AttitudeIndicator, HeadingIndicator, TurnCoordinator } from './gyroInstruments';
+import { MagneticCompass, type CompassReading } from './magneticCompass';
 import { gpsToAirport, ils07, type GpsData, type IlsSignal } from './navigation';
 import { Altimeter, AirspeedIndicator, pressureAltitudeFt, VerticalSpeedIndicator } from './pitotStatic';
 
@@ -44,6 +45,8 @@ export interface GearReadings {
 
 /** Everything the panel shows, in display units. Updated in place by InstrumentSet.step(). */
 export interface InstrumentReadings {
+  /** Shared wet-compass state, radians; independent of the directional gyro. */
+  compass: CompassReading;
   rotorRpmPct: number;
   engineRpmPct: number;
   carbAirTempC: number;
@@ -168,6 +171,7 @@ class EngineIndicators {
 }
 
 export class InstrumentSet {
+  readonly compass = new MagneticCompass();
   readonly airspeed = new AirspeedIndicator();
   readonly altimeter = new Altimeter();
   readonly vsi = new VerticalSpeedIndicator();
@@ -215,6 +219,7 @@ export class InstrumentSet {
     const annunciators: Annunciators & Record<string, boolean> = { lowFuelLeft: false, lowFuelRight: false, oilPress: false, lowVolts: false, vacuum: false };
     this.lamps = annunciators;
     this.readings = {
+      compass: this.compass.reading,
       rotorRpmPct: 0, engineRpmPct: 0, carbAirTempC: 0, engineHours: opts.tachHours ?? 0,
       airspeedKt: 0,
       altitudeFt: 0,
@@ -275,6 +280,7 @@ export class InstrumentSet {
    * not show a transient. Air-driven gyros are spun up if an engine is running, electric ones if the bus is alive.
    */
   reset(state: AircraftState): void {
+    this.compass.reset(state);
     let spun = false;
     for (let i = 0; i < state.engines.length; i++) spun ||= state.engines[i].running;
     const powered = state.electrical.busVoltage > this.systems.busDeadVolts;
@@ -324,8 +330,9 @@ export class InstrumentSet {
     this.attitude.step(dt, s.roll, s.pitch, s.specificForce, sys.gyroDrive.attitude === 'electric' ? electricDrive : this.suction);
     // Pilot knobs (ControlInputs): heading bug, and the DG align knob while it is pushed in.
     this.heading.bug = c.headingBugDeg * DEG_TO_RAD;
-    if (c.dgAlign) this.heading.align(s.heading);
+    this.compass.step(dt, s);
     this.heading.step(dt, s.heading, sys.gyroDrive.heading === 'electric' ? electricDrive : this.suction);
+    if (c.dgAlign) this.heading.align(this.compass.reading.heading, s.heading);
     this.turn.step(dt, s.angularVelocity.x, s.angularVelocity.z, s.slipBall, powered);
 
     // Engines and systems. A state with fewer engines than the panel has gauges for repeats its last one.

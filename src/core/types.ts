@@ -109,7 +109,7 @@ export interface ControlInputs {
   headingBugDeg: number;
   /** NAV1 OBS course, degrees [0, 360). */
   obsDeg: number;
-  /** Momentary: while true the heading indicator card is aligned to the compass (true heading). */
+  /** Momentary: aligns the directional gyro to the wet compass, including its current errors. */
   dgAlign: boolean;
 
   // --- Per-type levers and switches. All required; every ControlInputs object originates in defaultControls() ---

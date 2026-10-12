@@ -503,7 +503,7 @@ const COCKPIT: CockpitDef = {
   // The three-position flap switch on the lower centre of the panel, beside its lights (panel.ts).
   flapControl: { kind: 'panelSwitch', pos: [PANEL_X, faceY(DA20_FLAP_SWITCH[0]), faceZ(DA20_FLAP_SWITCH[1])], travel: 40 * DEG },
   // Magnetic compass on top of the glareshield at the centre (s.12).
-  compass: { pos: [PANEL_X + 0.08, 0, PANEL_ZTOP - 0.081] },
+  compass: { pos: [PANEL_X + 0.085, 0, PANEL_ZTOP - 0.121], mount: 'glareshield' },
   // The overhead light module between the seat backs (s.12) carries the flood light, aimed at the panel.
   lamps: { flood: { pos: [CABIN_REAR_X + 0.15, 0, FZ(0.58)], aim: [PANEL_X, 0, PANEL_ZTOP + 0.12] } },
   // Simplified cabin for the occlusion bake: tub floor, the canopy as a glazed roof, flat sides at the sill width,
