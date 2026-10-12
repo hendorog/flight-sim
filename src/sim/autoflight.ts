@@ -22,6 +22,8 @@ import type { AutoflightPhaseId, AutoflightProfile, AutopilotGains, ControlSyste
 // Not from the '../physics' barrel: the barrel carries the flight model, which a node test of the scripted pilot
 // alone does not need.
 import { Autopilot } from '../physics/autopilot';
+import { HelicopterAutopilot } from './rotorcraft/autopilot';
+import type { RotorcraftDefinition } from '../physics/rotorcraft/definition';
 import type { AutoflightSnapshot } from './resume';
 import { AIM_POINT, GLIDE_PATH, flapLever, type AutoflightPlan } from './scenarios';
 
@@ -33,6 +35,7 @@ const DRIFT_TAU = 3;
 /** What the scripted pilot needs of the aircraft besides its profile: the autopilot gains and the flap detents. */
 export interface AutoflightAircraft {
   gains: AutopilotGains;
+  rotorcraft?: RotorcraftDefinition;
   flaps: Pick<ControlSystemDef['flaps'], 'maxDeflection' | 'detents'>;
 }
 const C172S_AUTOFLIGHT_AIRCRAFT: AutoflightAircraft = { gains: C172S_AUTOPILOT, flaps: C172S_CONTROLS.flaps };
@@ -111,6 +114,7 @@ function setAllThrottles(c: ControlInputs, v: number): void {
 
 export class Autoflight {
   readonly autopilot: Autopilot;
+  readonly helicopter: HelicopterAutopilot | null;
   plan: AutoflightPlan | null = null;
   phase: AutoflightPhase = 'off';
   private flareStartPitch = NaN;
@@ -143,6 +147,7 @@ export class Autoflight {
     aircraft: AutoflightAircraft = C172S_AUTOFLIGHT_AIRCRAFT,
   ) {
     this.autopilot = new Autopilot(aircraft.gains);
+    this.helicopter = aircraft.rotorcraft ? new HelicopterAutopilot(aircraft.rotorcraft) : null;
     this.takeoffFlaps = flapLever(aircraft.flaps, profile.takeoff.flapsDeg);
   }
 
@@ -152,6 +157,7 @@ export class Autoflight {
 
   /** Engage with a plan; the first update starts from the current controls (bumpless). */
   engage(plan: AutoflightPlan, s: AircraftState, c: ControlInputs): void {
+    if (this.helicopter) { this.engageHere(s, c); return; }
     this.plan = plan;
     this.autopilot.reset();
     this.flareStartPitch = this.flareHeight = NaN;
@@ -190,6 +196,16 @@ export class Autoflight {
    * yawing by the drift angle on engagement.
    */
   engageHere(s: AircraftState, c: ControlInputs): void {
+    if (this.helicopter) {
+      this.disengage();
+      if (!this.helicopter.engage(s, c)) return;
+      c.headingBugDeg = wrapDeg((s.heading + this.dgOffset) / DEG);
+      this.phase = 'hold';
+      this.plan = { kind: 'hold', heading: s.heading, altitude: s.altitudeMSL, kias: s.groundSpeed < 3 ? 0 : Math.max(0, this.helicopter.engagementSpeed)/KT, followBug: true, autothrottle: false };
+      this.autopilot.settings = { ...this.autopilot.settings, lateral: 'heading', vertical: 'altitude',
+        heading: s.heading, altitude: s.altitudeMSL, airspeed: this.plan.kias*KT, autothrottle: false, autoTrim: false };
+      return;
+    }
     if (s.onGround) {
       this.engage({ kind: 'parked' }, s, c);
       return;
@@ -210,13 +226,13 @@ export class Autoflight {
   adjustAltitude(deltaM: number): number {
     if (Number.isNaN(this.targetAltitude)) return NaN;
     const ap = this.autopilot.settings;
-    ap.altitude = Math.max(AIRPORT.elevation + 150, ap.altitude + deltaM);
+    ap.altitude = this.helicopter ? ap.altitude + deltaM : Math.max(AIRPORT.elevation + 150, ap.altitude + deltaM);
     return ap.altitude;
   }
 
   /** Everything needed to continue exactly where it was (resume on reload, see resume.ts); null when off. */
   exportState(): AutoflightSnapshot | null {
-    if (!this.engaged) return null;
+    if (!this.engaged || this.helicopter) return null;
     // The physics autopilot keeps its integrators private and has no accessor: copy its plain-data fields
     // by name (whatever is not found starts bumpless on the first update, as on any engagement).
     const integrators: Record<string, number | boolean | string> = {};
@@ -238,7 +254,7 @@ export class Autoflight {
   /** Continue from exportState() (null: disengaged). */
   importState(st: AutoflightSnapshot | null): void {
     this.disengage();
-    if (!st || st.phase === 'off' || !st.plan) return;
+    if (this.helicopter || !st || st.phase === 'off' || !st.plan) return;
     this.plan = st.plan;
     this.phase = st.phase;
     this.autopilot.settings = { ...this.autopilot.settings, ...st.settings };
@@ -256,6 +272,7 @@ export class Autoflight {
     this.phase = 'off';
     this.plan = null;
     this.autopilot.reset();
+    this.helicopter?.reset();
   }
 
   /** The controls the profile sets as a phase begins (gear, propeller levers, carburettor heat, pumps, cowl flaps). */
@@ -305,6 +322,15 @@ export class Autoflight {
 
   /** Run one control step (call before every physics step with its dt). */
   update(dt: number, s: AircraftState, c: ControlInputs): void {
+    if (this.helicopter) {
+      if (!this.engaged) return;
+      if (this.plan?.kind === 'hold' && this.plan.followBug)
+        this.autopilot.settings.heading = c.headingBugDeg*DEG - this.dgOffset;
+      if (!this.helicopter.update(dt, s, c, this.autopilot.settings)) {
+        const reason = this.helicopter.reason; this.disengage(); this.helicopter.reason = reason;
+      }
+      return;
+    }
     const plan = this.plan;
     if (!plan || this.phase === 'off' || this.phase === 'parked' || s.crashed) return;
     const ap = this.autopilot;
@@ -314,7 +340,7 @@ export class Autoflight {
       case 'roll': {
         if (plan.kind !== 'takeoff') return;
         const t = p.takeoff;
-        setAllThrottles(c, 1);
+        setAllThrottles(c, t.throttle ?? 1);
         const kias = s.ias / KT;
         // Lift the nose wheel at the rotation speed (C172S: 55 KIAS, POH) and let the aircraft fly itself off: the
         // attitude comes up from 4 deg as the speed builds, to 8 deg by 61 KIAS, so the lift-off is at ~58-60 KIAS

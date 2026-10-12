@@ -688,7 +688,7 @@ const COCKPIT: CockpitDef = {
   parkingBrakeHandle: { pos: [PANEL_X + 0.005, faceY(780), PANEL_ZB + 0.06], travel: 0.05 },
   // The magnetic compass on the windscreen's centre strip, its bracket 1 cm under the glass (the cabin keys' top
   // line: z -0.73 at x 0.55), about 16 degrees above the pilot's eye line and in view over the glareshield.
-  compass: { pos: [0.5, 0, -0.595] },
+  compass: { pos: [0.505, 0, -0.635] },
   fittings: {
     // Defroster outlets on the glareshield deck at the windscreen's base.
     defrosters: [

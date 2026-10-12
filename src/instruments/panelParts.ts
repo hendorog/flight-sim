@@ -64,8 +64,11 @@ export function flapPositionOf(levers: readonly number[], lever: number): number
 /** One switch of a toggle / engine-master ignition group, panel px. */
 export interface IgnitionToggle {
   engine: number;
-  /** A magneto of the engine (the bit it has in MagnetoPosition: 2 = left, 1 = right), or its ENGINE MASTER. */
-  kind: 'magnetoLeft' | 'magnetoRight' | 'engineMaster';
+  /**
+   * A magneto of the engine (the bit it has in MagnetoPosition: 2 = left, 1 = right), its ENGINE MASTER, or the
+   * one IGNITION switch of a turbine (both bits).
+   */
+  kind: 'magnetoLeft' | 'magnetoRight' | 'engineMaster' | 'ignition';
   x: number;
   y: number;
 }
@@ -97,7 +100,8 @@ const START_SLOT = 66;
 export function ignitionLayout(ign: IgnitionPanelDef): IgnitionLayout | null {
   if (ign.kind === 'key') return null;
   const n = ign.engines;
-  const perEngine = ign.kind === 'toggles' ? 2 * MAG_SLOT : MASTER_SLOT;
+  const single = ign.kind === 'toggles' && ign.switches === 'ignition';
+  const perEngine = ign.kind === 'toggles' && !single ? 2 * MAG_SLOT : MASTER_SLOT;
   const w = n * perEngine + START_SLOT;
   const x0 = ign.at[0] - w / 2;
   const y = ign.at[1];
@@ -111,7 +115,9 @@ export function ignitionLayout(ign: IgnitionPanelDef): IgnitionLayout | null {
       x += START_SLOT;
     }
     if (e === n) break;
-    if (ign.kind === 'toggles') {
+    if (single) {
+      toggles.push({ engine: e, kind: 'ignition', x: x + MASTER_SLOT / 2, y });
+    } else if (ign.kind === 'toggles') {
       toggles.push({ engine: e, kind: 'magnetoLeft', x: x + MAG_SLOT / 2, y });
       toggles.push({ engine: e, kind: 'magnetoRight', x: x + 1.5 * MAG_SLOT, y });
     } else {

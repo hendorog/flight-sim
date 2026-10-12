@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { R22_INPUT } from '../../src/aircraft/r22/input';
 import { cloneControls } from '../../src/core/types';
 import { makeInputRig } from '../input/testbed';
@@ -68,5 +68,24 @@ describe('R22 demonstration authority uses the normal input path', () => {
     expect(parseParams('?aircraft=r22&demo=autorotation&trace=1')).toMatchObject({ demo: 'autorotation', demoTrace: true });
     expect(parseParams('?demo=unknown').demo).toBeNull();
     expect(parseParams('?aircraft=c152').demo).toBeNull();
+  });
+});
+
+describe('helicopter autopilot input authority', () => {
+  it('keeps idle hardware from overwriting hold collective and releases on movement', () => {
+    let now = 1000; const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const r = makeInputRig(R22_INPUT); r.input.autopilotFlying = () => true;
+    r.input.gamepads.poll = () => {};
+    const axis = { control: 'collective' as const, value: .6, moved: true, takeover: true };
+    r.input.gamepads.readings.push(axis); r.run(.1);
+    axis.moved = axis.takeover = false; now += 200;
+    Object.assign(r.c, { elevator: .21, aileron: -.14, rudder: -.31, collective: .53 });
+    r.run(.2); expect(r.c.collective).toBe(.53); expect(r.input.pilotFlying()).toBe(false);
+    axis.value = .7; axis.moved = axis.takeover = true; r.run(1/60);
+    expect(r.input.pilotFlying()).toBe(true); clock.mockRestore();
+  });
+  for (const key of ['F5', 'F6', 'ArrowUp', 'KeyZ']) it(`detects manual takeover with ${key}`, () => {
+    const r = makeInputRig(R22_INPUT); r.input.autopilotFlying = () => true;
+    r.input.keyDown(key); r.run(1/60); expect(r.input.pilotFlying()).toBe(true);
   });
 });

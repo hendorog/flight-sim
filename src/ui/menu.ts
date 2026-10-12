@@ -33,6 +33,12 @@ export interface AutopilotLink {
   mode?(): string;
   /** Engage / disengage (holds the current track, altitude and speed). Optional. */
   toggle?(): void;
+  helicopter?: {
+    hoverUrl: string;
+    get(): { heading: number; altitude: number; speed: number; adaptive: boolean };
+    set(key: 'heading' | 'altitude' | 'speed' | 'adaptive', value: number | boolean): void;
+    status(): string;
+  };
 }
 
 /** A preference the shell owns and the menu shows as a toggle (resume on reload). */
@@ -316,10 +322,38 @@ export class PauseMenu {
       apButton.classList.toggle('sel', on);
       apButton.disabled = !link?.toggle;
       const mode = on ? (link?.mode?.() ?? '') : '';
-      apState.textContent = !link ? 'Not available' : on ? `Engaged${mode ? ` · ${mode}` : ''}` : 'Holds the current track, altitude and speed once airborne (key A).';
+      apState.textContent = !link ? 'Not available' : on ? `Engaged${mode ? ` · ${mode}` : ''}` : link.helicopter ? 'Helicopter position/speed, heading and altitude hold (key A).' : 'Holds the current track, altitude and speed once airborne (key A).';
     });
     this.refreshers.push(() => this.liveRefreshers.forEach((r) => r()));
 
+    if (this.host.autopilot?.helicopter) {
+      const link = this.host.autopilot.helicopter;
+      const start = el('a', 'button', p, 'Start helicopter hover test (15 m)');
+      start.href = link.hoverUrl;
+      el('p', '', p, 'Experimental hold: A engages or disconnects. At zero speed, holds position. Cyclic, pedals or collective movement gives you control. Keep rotor RPM in the normal range; throttle remains yours.');
+      for (const [key, title, min, max, step] of [
+        ['heading', 'Heading (degrees)', 0, 360, 5],
+        ['altitude', 'Altitude MSL (ft)', -1000, 20000, 10],
+        ['speed', 'Forward speed (kt; 0 = hover)', 0, 80, 5],
+      ] as const) {
+        const label = el('label', 'toggle', p, title);
+        const input = el('input', '', label); input.type = 'number';
+        input.min = String(min); input.max = String(max); input.step = String(step);
+        input.addEventListener('change', () => { if (input.value.trim()) link.set(key, Number(input.value)); });
+        this.liveRefreshers.push(() => {
+          input.disabled = !this.host.autopilot?.engaged();
+          if (document.activeElement !== input) {
+            const value = link.get()[key]; input.value = Number.isFinite(value) ? String(Math.round(value)) : '';
+          }
+        });
+      }
+      const label = el('label', 'toggle', p);
+      const adaptive = el('input', '', label); adaptive.type = 'checkbox';
+      el('span', '', label, 'Experimental adaptation (bounded ±20%; off by default)');
+      adaptive.addEventListener('change', () => link.set('adaptive', adaptive.checked));
+      const status = el('p', '', p);
+      this.liveRefreshers.push(() => { adaptive.checked = link.get().adaptive; status.textContent = link.status(); });
+    }
     el('h3', '', p, 'Cabin & assists');
     const flightToggle = (text: string, get: () => boolean, set: (v: boolean) => void, enabled: () => boolean = () => true): void => {
       const l = el('label', 'toggle', p);

@@ -167,7 +167,7 @@ export class SimPhysics {
     this.dryEnv = Object.assign(Object.create(this.env) as Environment, { moisture: undefined });
     this.fm = opts.aircraft ? createFlightModelFor(opts.aircraft) : createFlightModel();
     const def = (this.definition = this.fm.definition);
-    this.autoflight = new Autoflight(def.sim.autoflight, def.reference, def.geometry.restHeight, { gains: def.autopilot, flaps: def.controls.flaps });
+    this.autoflight = new Autoflight(def.sim.autoflight, def.reference, def.geometry.restHeight, { gains: def.autopilot, flaps: def.controls.flaps, rotorcraft: def.rotorcraft });
     this.stepSize = 1 / this.fm.physicsRate;
     this.h = this.stepSize;
     this.renderState = copyInto({} as AircraftState, this.fm.state);
@@ -234,7 +234,7 @@ export class SimPhysics {
     this.wasCrashed = false;
     this.gearEvents.sync(this.fm.state.gear);
     this.autoflight.disengage();
-    if (this.autoflightOnReset && !this.definition.rotorcraft) this.autoflight.engage(sc.autoflight, this.fm.state, c);
+    if (this.autoflightOnReset) this.autoflight.engage(sc.autoflight, this.fm.state, c);
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -404,7 +404,6 @@ export class SimPhysics {
 
   /** Engage (true) or disengage the autoflight; engaging mid-flight holds the current heading/altitude/speed. */
   setAutoflight(on: boolean, useScenarioPlan = false): void {
-    if (this.definition.rotorcraft) { this.autoflight.disengage(); return; }
     if (!on) this.autoflight.disengage();
     else if (useScenarioPlan) this.autoflight.engage(this.scenario.autoflight, this.fm.state, this.controls);
     else this.autoflight.engageHere(this.fm.state, this.controls);

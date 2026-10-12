@@ -1,8 +1,8 @@
 import { DEG } from '../../core/math';
 import type { BladeConingDefinition } from '../../physics/rotorcraft/coning';
-import { R22_ROTORCRAFT } from './rotorcraft';
+import { MAIN_ROTOR_RADIUS } from './dimensions';
 
-const rotor = R22_ROTORCRAFT.main;
+const rotor = { radius: MAIN_ROTOR_RADIUS, rootCutout: 0.75, inertia: 146, blades: 2 };
 /** Engineering estimates, not measured blade/stop data; see docs/rotor-coning.md.
  * Keep mass distribution and inertia consistent with the existing flight model estimate.
  * POH 1-4's 1°11′ is TAIL precone. No fixed MAIN precone is established for its free hinges. */

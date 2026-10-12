@@ -36,7 +36,7 @@ import { C172 } from '../core/c172';
 import { DEG, clamp, smoothstep } from '../core/math';
 import { AIRPORT } from '../core/world';
 import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
-import { emptyEngineState, emptyPropellerState } from '../core/types';
+import { emptyEngineState, emptyPropellerState, isAircraftId } from '../core/types';
 import type { PanelDef } from '../instruments/panelDef';
 import type { AirframeVisualDef } from '../render/aircraft/airframe/types';
 import { AircraftVisual } from '../render/aircraft/AircraftVisual';
@@ -398,6 +398,7 @@ void runHarness({
     ctx.simTime = num('t', 0);
     // One engine and propeller state per propeller of the airframe (the harness's state is the Cessna's).
     const s = ctx.state;
+    if (type && isAircraftId(type)) s.aircraft = type;
     if (airframe?.rotorcraft) {
       s.rotorcraft = emptyRotorcraftState();
       // The generic harness starts at the C172 rest height; the rotorcraft stands on its shared skid datum.

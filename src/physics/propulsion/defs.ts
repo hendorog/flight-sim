@@ -120,11 +120,15 @@ export type FuelMeteringDef =
   /** Float carburettor (C152, PA-38): the same law on CARBURETTOR-INLET density, so heat enriches. */
   | { kind: 'floatCarburettor'; fullRichPhi?: number; takeoffFuelFlow?: number; leanestFraction: number }
   /** FADEC diesel: fuel commanded by the ECU; no mixture. */
-  | { kind: 'fadecDiesel' };
+  | { kind: 'fadecDiesel' }
+  /** Gas turbine: fuel metered by the fuel control unit (TurbineDef.gasGenerator.fcu); the mixture lever is the condition lever. */
+  | { kind: 'turbineFcu' };
 
 export type IgnitionDef =
   | { kind: 'magnetos'; minFiringRpm: number; singleLoss: number; singleDilutionLoss: number; dilutionSensitivity: number }
-  | { kind: 'compression'; minFiringRpm: number; glow: { preheatSeconds: number; amps: number; neededBelowC: number } };
+  | { kind: 'compression'; minFiringRpm: number; glow: { preheatSeconds: number; amps: number; neededBelowC: number } }
+  /** Gas turbine: the igniters spark while the starter is engaged (TurbineDef.gasGenerator.lightOffNg says when fuel lights). */
+  | { kind: 'igniters' };
 
 export interface ThermalDef {
   cooling: 'air' | 'liquid';
@@ -177,9 +181,72 @@ export interface FadecDef {
   alternatorFed?: boolean;
 }
 
+/**
+ * Gas generator of a gas turbine (turbineEngine.ts, gasGenerator.ts): one spool, compressor and the turbine that
+ * drives it. Speeds are fractions of referenceRpm (Ng 1 = 100 %). The map is the engine's steady running line at
+ * sea-level ISA, written CORRECTED (speed / sqrt(theta), flow / (delta sqrt(theta)), power / (delta sqrt(theta)),
+ * absolute temperature / theta, with delta and theta the inlet total pressure and temperature over sea-level
+ * ISA), so the same table gives the engine on a hot day and at altitude.
+ */
+export interface GasGeneratorDef {
+  /** Gas-generator speed at Ng = 1, rpm. */
+  referenceRpm: number;
+  /** Polar inertia of the gas-generator rotor (compressor, its turbine, the accessory drive reflected to it), kg m^2. */
+  inertia: number;
+  /** Power the compressor absorbs at Ng = 1, sea-level ISA, W (it scales as the cube of the corrected speed). */
+  compressorPower: number;
+  /**
+   * Steady running line, sea-level ISA, corrected: Ng (ascending; the first entry is the lowest steady speed, at
+   * or below low idle), fuel flow, kg/s, inter-turbine temperature, C, and the gas power the output stage makes
+   * of it at its design speed, W.
+   */
+  map: { ng: readonly number[]; fuelFlow: readonly number[]; itt: readonly number[]; power: readonly number[] };
+  /** The igniters light the fuel from this Ng. */
+  lightOffNg: number;
+  /** Above this Ng the engine accelerates on its acceleration schedule without the starter (solved into the start region). */
+  selfSustainingNg: number;
+  /** Below this Ng the fuel control meters nothing (no fuel pressure from the engine-driven pump). */
+  minFuelNg: number;
+  fcu: {
+    /** Ng the fuel control governs to with the power lever at idle: condition lever at LOW IDLE and at HIGH IDLE; and with the power lever at its maximum. */
+    lowIdleNg: number; highIdleNg: number; maxNg: number;
+    /** Acceleration schedule, sea-level ISA, corrected: the most fuel the FCU meters at each Ng, kg/s (the start schedule below the map). */
+    accelFuel: { ng: readonly number[]; fuelFlow: readonly number[] };
+    /** The least fuel it meters when decelerating, as a fraction of the steady flow at that Ng (minimum-flow stop). */
+    decelFraction: number;
+    /** Governor gain: fuel per unit Ng error, as a fraction of the steady flow at Ng = 1 per unit Ng. */
+    gain: number;
+  };
+  /** The flame goes out below this fraction of the steady fuel flow at the speed (lean blow-out). */
+  leanBlowout: number;
+  /** Time constant of the ITT thermocouples, s. */
+  ittLag: number;
+  /** ITT the engine reset() warm reads before its first step, C. */
+  warmItt: number;
+}
+
+/**
+ * A gas turbine (EngineDef.kind 'freeTurbine'). Its EngineDef "crank" is the POWER TURBINE: ratedRpm is the
+ * power turbine's design speed, gearRatio is power-turbine rpm / propeller rpm, rotatingInertia is the power
+ * turbine and gear train, and runningRpm and the starter, alternators and engine-driven pumps are on the GAS
+ * GENERATOR (its rpm). Of the piston fields only induction.ramRecovery and the thermal oil model are read.
+ */
+export interface TurbineDef {
+  kind: 'freeTurbine';
+  gasGenerator: GasGeneratorDef;
+  powerTurbine: {
+    /** Torque with the power turbine held still over its torque at the design speed, for the same gas power (about 2). */
+    stallTorqueRatio: number;
+    /** Power-turbine and reduction-gearbox friction at the power-turbine shaft, N m: a constant and a part per 1000 power-turbine rpm. */
+    friction: readonly [number, number];
+    /** Fuel topping governor: above this power-turbine speed (fraction of ratedRpm) it takes `gain` Ng per unit overspeed off the FCU's set point. */
+    topping: { np: number; gain: number };
+  };
+}
+
 export interface EngineDef {
   name: string;
-  kind: 'sparkPiston' | 'dieselFadec';
+  kind: 'sparkPiston' | 'dieselFadec' | 'freeTurbine';
   cylinders: 4 | 6;
   /** W at ratedRpm (crank), sea level ISA. */
   ratedPower: number; ratedRpm: number;
@@ -210,6 +277,8 @@ export interface EngineDef {
   airStartRpm: number; groundStartRpm: number;
   starter: { k: number; r: number };
   fadec?: FadecDef;
+  /** kind 'freeTurbine': the gas generator and power turbine. */
+  turbine?: TurbineDef;
 }
 
 export interface EngineInstallation {

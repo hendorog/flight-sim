@@ -119,12 +119,17 @@ describe('R22 procedural exterior and cockpit', () => {
       const ray = new THREE.Raycaster(visual.pilotEye, target.clone().sub(visual.pilotEye).normalize());
       expect(ray.intersectObject(pod, true)[0].object, g.id).toBe(panel);
     }
-    const compass = visual.root.getObjectByName('compassCard')!;
+    const compass = visual.root.getObjectByName('compassBall') as THREE.Mesh;
+    const compassState = { heading: 1.1, roll: 0.08, pitch: -0.04, atStop: false };
+    visual.setCompassReading(compassState);
     const governor = visual.root.getObjectByName('governorSwitch')!;
     const heat = visual.root.getObjectByName('carbHeatPullControl')!;
     ctx.state.heading = 1.2; ctx.controls.rotorGovernor = true; ctx.controls.carbHeat = 0;
     visual.update(0, ctx); const pushed = heat.position.z, on = governor.rotation.x;
-    expect(compass.rotation.y).toBeCloseTo(1.2);
+    expect(compass.geometry).toBeInstanceOf(THREE.SphereGeometry);
+    expect(compass.rotation.y).toBeCloseTo(compassState.heading);
+    expect(compass.parent!.rotation.z).toBeCloseTo(-compassState.roll);
+    expect(compass.parent!.rotation.x).toBeCloseTo(compassState.pitch);
     ctx.controls.rotorGovernor = false; ctx.controls.carbHeat = 1; visual.update(0, ctx);
     expect(governor.rotation.x).toBeGreaterThan(on);
     expect(heat.position.z).toBeGreaterThan(pushed);

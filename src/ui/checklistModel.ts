@@ -5,14 +5,15 @@ import { FPM, FT, KT, RAD } from '../core/math';
 import { engineControl } from '../core/types';
 import { compile } from '../training/engine/predicates';
 import { STANDARDS } from '../training/grading/standards';
+import { propShaftTorqueFtLb } from '../training/telemetry/providers/powerplant';
 import type { AircraftTypeDef, CompiledPred, EvalContext, Pred, SignalFrame } from '../training/types';
 import type { FlightChecklist, FlightChecklistItem } from '../training/checklistData';
 
 export type ChecklistTab = 'normal' | 'emergency';
 export interface ChecklistMark { done: boolean; mode: 'auto' | 'manual'; overridden: boolean }
 const EMERGENCIES = new Set(['engineFailure', 'forcedLandingSecurity']);
-const ORDER = ['preflight', 'beforeStart', 'engineStart', 'afterStart', 'runup', 'beforeTakeoff', 'afterTakeoff', 'climb', 'cruise', 'descent', 'downwind', 'final', 'afterLanding', 'shutdown'];
-const EMERGENCY_ORDER = ['powerFailure', 'engineFailure', 'lowHeightFailure', 'lowRpm', 'forcedLandingSecurity', 'startFire', 'engineFire', 'electricalFire', 'electrical'];
+const ORDER = ['preflight', 'beforeStart', 'engineStart', 'afterStart', 'runup', 'beforeTakeoff', 'takeoff', 'afterTakeoff', 'climb', 'cruise', 'descent', 'downwind', 'final', 'afterLanding', 'shutdown'];
+const EMERGENCY_ORDER = ['powerFailure', 'engineFailure', 'lowHeightFailure', 'lowRpm', 'forcedLandingSecurity', 'startFire', 'hotStart', 'engineFire', 'chipLight', 'electricalFire', 'electrical'];
 
 // Legacy school checks sometimes cover only part of their challenge. Explicitly admit the simple switch,
 // lever and gauge items; combined inspections / timed sequences remain manual in the reference panel.
@@ -21,11 +22,20 @@ const LIVE_IDS = new Set(['fuelSelector', 'fuelPump', 'mixture', 'mags', 'parkin
   'flapsUp', 'flaps', 'rpm', 'runupRpm', 'climbPower', 'mixtureCutoff', 'magsOff', 'fuelOff',
   'masterOff', 'throttleIdle', 'mixturesForward', 'throttlesForward', 'throttlesIdle', 'fuelSelectorTank']);
 
+// Cessna 208 (turboprop): audited simple lever / switch items. The battery is checked alone (the generator comes
+// on after the start); the start sequence (starter, condition lever at 13 % Ng, starter off at 52 %) stays manual.
+const C208_LIVE_IDS = new Set(['powerIdle', 'conditionCutoff', 'conditionHighIdle', 'conditionLowIdle', 'propMax',
+  'propFeather', 'generator', 'runupPower', 'flapsLanding', 'ignitionOn']);
+
 export function livePredicate(item: FlightChecklistItem, section: FlightChecklist, type: AircraftTypeDef): Pred | null {
   if (item.live !== undefined) return item.live;
   if (item.id === 'carbHeat' && ['c152', 'pa38'].includes(type.id)) {
     if (/^cold$/i.test(item.response)) return { sig: 'checklist.carbHeat', op: '<=', v: 0.01 };
     if (/^on$/i.test(item.response)) return { sig: 'checklist.carbHeat', op: '>=', v: 0.99 };
+  }
+  if (type.id === 'c208') {
+    if (item.id === 'master' || C208_LIVE_IDS.has(item.id)) return item.state === null ? null : item.state ?? item.check ?? null;
+    if (item.id === 'flapsUp' && section.id === 'afterTakeoff') return null; // retraction above 90 KIAS is a sequence
   }
   if (item.id === 'gear' && type.id === 'pa34') return { sig: 'checklist.gearDown', eq: true };
   if (item.id === 'fuelSelector' && type.id === 'pa38') return null; // proper / other tank requires judgement or a sequence
@@ -80,6 +90,13 @@ export function checklistFrame(ctx: Pick<SimContext, 'state' | 'controls' | 'wea
     propeller: 'propeller', cowlFlaps: 'cowlFlaps', alternateAir: 'alternateAir' } as const;
   for (const [signal, key] of Object.entries(engineKeys)) f[signal] = engineControl(c, engine, key);
   if (e) { f.rpm = e.rpm; f.engineRunning = e.running; f.oilPsi = e.oilPressure; f.oilTempF = e.oilTemp * 9 / 5 + 32; }
+  // The 'powerplant' telemetry signals, per engine (training/telemetry/providers/powerplant.ts).
+  f['prop.lever'] = engineControl(c, engine, 'propeller');
+  f['prop.rpm'] = e?.propRpm ?? 0;
+  const turbine = e?.ng !== undefined;
+  f['turbine.ng'] = turbine ? e?.ng ?? 0 : 0;
+  f['turbine.itt'] = turbine ? e?.itt ?? 0 : 0;
+  f['turbine.torqueFtLb'] = turbine && e ? propShaftTorqueFtLb(e.torque, e.rpm, e.propRpm) : 0;
   const rotor = s.rotorcraft, d = ctx.aircraft.rotorcraft;
   if (rotor && d) {
     f['checklist.collective'] = c.collective ?? 0; f['checklist.governor'] = c.rotorGovernor ?? false; f['checklist.clutch'] = c.rotorClutch ?? false;

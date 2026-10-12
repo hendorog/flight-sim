@@ -361,6 +361,8 @@ export interface AutoflightProfile {
     aileronAliveKias: number;
     /** Height above restHeight at which the autopilot takes over (and 'climb' controls are applied), m. */
     handoverM: number;
+    /** Throttle / power lever for the take-off roll. Absent: 1. A flat-rated turboprop: the lever at the torque limit. */
+    throttle?: number;
   };
   climb: {
     kias: number; vsLimit: number;

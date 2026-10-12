@@ -18,9 +18,9 @@ export interface LeverMetering {
   leanestFraction: number;
 }
 
-/** The lever metering of a spark engine's definition (a FADEC diesel has no mixture lever). */
+/** The lever metering of a spark engine's definition (a FADEC diesel and a gas turbine have no mixture lever). */
 export function leverMetering(def: FuelMeteringDef): LeverMetering {
-  if (def.kind === 'fadecDiesel') throw new Error('combustion: a FADEC diesel has no mixture lever');
+  if (def.kind === 'fadecDiesel' || def.kind === 'turbineFcu') throw new Error(`combustion: metering '${def.kind}' has no mixture lever`);
   if (def.fullRichPhi === undefined && def.takeoffFuelFlow === undefined) throw new Error('combustion: the metering needs fullRichPhi or takeoffFuelFlow');
   return { fullRichPhi: def.fullRichPhi ?? NaN, leanestFraction: def.leanestFraction };
 }

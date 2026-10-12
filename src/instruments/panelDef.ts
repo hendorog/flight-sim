@@ -120,7 +120,12 @@ export interface LampDef { id: string; text: string; color: string; lit(r: Instr
 
 export type IgnitionPanelDef =
   | { kind: 'key'; at: At; prime?: boolean }                         // OFF / R / L / BOTH / START
-  | { kind: 'toggles'; at: At; engines: number }    // L and R magneto toggles per engine + starter rocker (PA-34)
+  | { kind: 'toggles'; at: At; engines: number;    // L and R magneto toggles per engine + starter rocker (PA-34)
+      /**
+       * 'ignition': ONE IGNITION toggle per engine instead of the two magneto toggles, and the rocker lettered
+       * STARTER (a turbine's igniters: off = magnetos 0, on = both bits). Absent: 'magnetos'.
+       */
+      switches?: 'magnetos' | 'ignition' }
   | { kind: 'engineMaster'; at: At; engines: number }; // ENGINE MASTER per engine + START (DA42)
 
 export interface PanelDef {

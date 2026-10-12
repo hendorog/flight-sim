@@ -16,8 +16,8 @@ Close with: installed HO-360-C1A power-available/MAP/fuel-flow data, fan/drivetr
 
 ## Coupled lead-lag and ground resonance — **missing feature**
 
-Production lag remains zero. Coupled lag was rejected after instability near 190–230 rotor RPM with assumed damper/support values; oleo gas/poppet dynamics are absent.
-Evidence: [round-2 lag audit](../../../docs/s269-round2.md#lead-lag-why-the-rejected-experiment-is-still-unsuitable).
+Production lag remains zero. Coupled lag was rejected after instability near 190–230 rotor RPM with assumed damper/support values. Four reduced gas/poppet oleo supports now exist, but their unmeasured coefficients do not establish a healthy rotor/airframe stability boundary.
+Evidence: [round-2 lag audit](../../../docs/s269-round2.md#lead-lag-why-the-rejected-experiment-is-still-unsuitable) and [new contact model](../../../docs/helicopter-ground-contact.md#269-oleos-and-lag-boundary).
 Close with: a full body/blade kinetic model, measured damper/oleo support data and healthy/degraded startup, shutdown and impact validation.
 
 ## Development status and handling validation — **unvalidated**
@@ -67,3 +67,9 @@ Close with: HMI/IPC dimensions/rotation drawings and a suspension-state contract
 The corrected window/frame geometry was inspected only with software Vulkan; default-high hardware-GPU acceptance is outstanding.
 Evidence: [round-2 visual evidence](../../../docs/s269-round2.md): the adjacent oval is identified as a ventilation ring, so its identity is no longer an open issue.
 Close with: hardware-GPU/default-high cockpit checks, including side, roof and night views.
+
+## Ground-contact parameters — **estimate / unvalidated**
+
+Oleo area/volume/stroke, metering/relief, soil/edge forces and blade collision envelopes are engineering estimates. Gas energy and passive damping are checked; they are not an HMI force/stroke calibration. Blades still have no elastic sag and oleos are visually static.
+Evidence: [contact model and tests](../../../docs/helicopter-ground-contact.md).
+Close with: HMI load/stroke/velocity curves, measured mounting leverage, soil/shoe data and blade/airframe survey, then healthy/degraded support and landing validation.

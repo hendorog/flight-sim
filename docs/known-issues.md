@@ -10,6 +10,7 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Diamond DA20-C1 | [7 entries](../src/aircraft/da20/KNOWN_ISSUES.md) |
 | Piper PA-34 Seneca I | [8 entries](../src/aircraft/pa34/KNOWN_ISSUES.md) |
 | Diamond DA42 NG | [1 entry](../src/aircraft/da42/KNOWN_ISSUES.md) |
+| Cessna 208 Caravan 675 | [6 entries](../src/aircraft/c208/KNOWN_ISSUES.md) |
 | Robinson R22 Beta II | [7 entries](../src/aircraft/r22/KNOWN_ISSUES.md) |
 | Robinson R44 Raven II | [11 entries](../src/aircraft/r44/KNOWN_ISSUES.md) |
 | Schweizer 269C-1 / 300CB | [11 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
@@ -39,17 +40,21 @@ R22/R44/269 mouse hover is covered by a calm 20-second script, not human wind/gu
 Evidence: [mouse hover tests](../tests/rotorcraft/mouse.test.ts), [R22 control evidence](r22-flight-model.md) and the individual aircraft lists.
 Close with: human mouse/keyboard/hardware trials in steady wind and gusts, recording drift and workload.
 
-### Magnetic compass errors — **missing feature**
+### Magnetic compass errors — **implemented; approximate field and calibration**
 
-The rendered compass uses the heading datum without magnetic deviation or turning/dip errors.
-Evidence: [compass builder](../src/render/aircraft/rotorcraft/fittings.ts), explicitly shared with the aeroplanes.
-Close with: a sourced compass-error model and turn/acceleration checks.
+All aircraft now share a damped wet-compass model with dip/turning errors, ANDS, force-driven swing, an 18° tilt
+stop and per-aircraft residual deviation. Cockpits use a rotating/tilting spherical card with a correction
+placard; both fixed-panel sections show the same state. DG alignment copies the compass indication.
+Evidence: [model, parameters, sources and limitations](magnetic-compass.md), [dynamics tests](../tests/instruments/magneticCompass.test.ts),
+[shared 3D compass](../src/render/aircraft/compass.ts).
+Remaining: the world retains its zero-variation heading datum; inclination is a latitude/dipole approximation,
+and deviation cards/damping are simulation estimates. The DA42 still inherits its existing placeholder cockpit.
 
-### Rotor/ground-contact limits — **missing feature**
+### Rotor/ground-contact limits — **estimate / unvalidated**
 
-Helicopter contacts omit structural skid flexure, terrain snagging and blade/tailcone collision; stopped teetering rotors omit stop friction and azimuth-resolved blade sailing.
-Evidence: [R22 model/contact limits](r22-flight-model.md), [rotor solver](../src/physics/rotorcraft/rotorcraft.ts); the 269 has additional lag/oleo gaps in its own list.
-Close with: measured contact/structural data and coupled models checked across surfaces, slopes and low-speed rotor conditions.
+Reduced cross-tube yielding, soil/edge snagging, blade/airframe intersection, low-speed teeter friction/sailing and 269 gas/poppet support are implemented with estimated coefficients. Flexible-body/soil history and closed blade/body stop-work coupling remain absent; the 269 still has no production lag or ground resonance.
+Evidence: [ground-contact model and tests](helicopter-ground-contact.md), including exact airborne comparisons and explicit remaining limitations.
+Close with: measured structural, collision, friction and oleo/damper data; coupled-model validation across surfaces, slopes and low-speed rotor conditions.
 
 ### Type-specific training and helicopter sound — **missing feature**
 

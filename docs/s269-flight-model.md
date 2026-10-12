@@ -69,7 +69,7 @@ Its implicit-midpoint step has a discrete work balance including kinetic energy,
 
 There are no persistent per-blade lag coordinates in production. Consequently no regressive/progressive in-plane rotor modes, rotor mass-centre displacement or lag reaction forces are exchanged with the airframe. The isolated oscillator must not be advertised as implemented helicopter lead-lag dynamics. Actual hinge sequence, blade inertia, damper geometry/law and a joint body/blade integration and save-state contract are prerequisites for wiring it in.
 
-Ground contact continues to use the existing skid/tail solver with frozen contacts. It does not model the four gas/poppet oleos, gas energy, load/stroke laws, lift-off mode coupling or degraded-damper ground resonance. The published 350/725 psi charges and inspection lengths are insufficient to derive those laws. The additional primary-source search found FAA/NTSB references to load/stroke inspections, not the needed applicable HMI curves. No artificial shake, resonance RPM window or crash timer was added. Keep the aircraft incomplete for this hazard.
+The [ground-contact extension](helicopter-ground-contact.md#269-oleos-and-lag-boundary) adds four precharged gas supports, extension stops, series foot compliance, stored gas energy and passive hydraulic metering/relief. Published 350/725 psi charges are retained; effective area/volume, stroke, damping and relief are explicitly unmeasured estimates. Soil/edge contacts and blade/airframe intersection are also added. Lift-off lag/body mode coupling and degraded-damper ground resonance remain absent. No artificial shake, resonance RPM window or crash timer was added. Keep the aircraft incomplete for this hazard.
 
 ## Drivetrain and controls
 
@@ -90,7 +90,7 @@ npx vitest run --config work/s269-fm/vitest.config.ts work/s269-fm/legacy-regres
 
 The ignored legacy directory contains original solver files copied before modification. Six direct R22/R44 comparisons cover governor/manual input, clutch release/bus loss, low RPM, angular rates, opposing cyclic commands and zero-dt stages. The tracked `s269Legacy.test.ts` also compares SHA-256 digests of every serialized output in 960 force evaluations per case against those original sources (5,760 evaluations total), preserving exact numeric bits as represented by round-trippable JSON. Existing R22/R44 tests are unchanged.
 
-The 269 tests use ordinary pilot controls at 1/240 s, with no force assist, rotor-speed clamp or in-flight state reset. The test pilot moves the manual throttle using tach value/trend. Fixed-pose trim tests solve all six force/moment residuals; trim convergence demonstrates numerical authority, not measured handling. Whole-aircraft airborne energy/work error is checked against the same 10 W limit as the existing R22/R44 audit. Omitted blade/oleo energy is not in that budget.
+The 269 tests use ordinary pilot controls at 1/240 s, with no force assist, rotor-speed clamp or in-flight state reset. The test pilot moves the manual throttle using tach value/trend. Fixed-pose trim tests solve all six force/moment residuals; trim convergence demonstrates numerical authority, not measured handling. Whole-aircraft airborne energy/work error is checked against the same 10 W limit as the existing R22/R44 audit. Omitted blade kinetic energy is not in that airborne budget; gas/plastic contact energy is audited separately in the contact tests.
 
 Final counts and viewed browser captures are recorded below.
 
@@ -235,3 +235,7 @@ node work/s269-fm/shot-software.mjs 'index.html?aircraft=c152&scenario=runway&re
 - `git diff --check`: clean. No commits, pushes, branch changes, patch files or out-of-ownership edits.
 
 The complete fully coupled articulated rotor, ground resonance and validated hot/high hover performance are **not delivered** by this stage. The placeholder and disclosures intentionally remain.
+
+## Ground-contact verification (heli/contact)
+
+See the [shared report](helicopter-ground-contact.md#verification-and-reproduction) for mechanism tests, exact all-type airborne comparisons and the full-suite result. Production lag remains zero for the reasons documented in round 2. No IGE power/handling coefficient, articulated airborne solver, reference geometry, instrument or rendering change is included.

@@ -9,7 +9,9 @@
 //   TWIN_FP_POWERPLANT     two Cessna 172S units side by side, co-rotating, the same tanks and bus;
 //   dieselUnit()           a FADEC turbodiesel with a 1.69 reduction gear and a three-blade constant-speed
 //                          propeller unfeathered by an accumulator, the ECU scheduling load and propeller speed;
-//   TWIN_DIESEL_POWERPLANT two of them, co-rotating, crossfeed, two alternators on 28 V (the DA42 pattern).
+//   TWIN_DIESEL_POWERPLANT two of them, co-rotating, crossfeed, two alternators on 28 V (the DA42 pattern);
+//   TURBOPROP_POWERPLANT   a PT6A-like free turbine (gas generator, power turbine, fuel control, starter-
+//                          generator) with a three-blade feathering propeller (the Cessna 208 pattern).
 //
 // The numbers are handbook figures of the aircraft named (work/aircraft-data) where one exists, and plausible
 // stand-ins where none does (blade planforms, inertias, thermal masses, governor gains): these are test-beds of
@@ -394,3 +396,153 @@ export function singlePowerplant(install: EngineInstallation, like: PowerplantDe
     electrical: { ...like.electrical, alternators: [like.electrical.alternators[0]] },
   };
 }
+
+// ------------------------------------------------------------------------------------------- free-turbine single
+/** kg/s per lb/h. */
+const LB_PER_H = 0.45359237 / 3600;
+/** Gas-generator speed at 100 % Ng, rpm, and the power turbine's design speed (propeller 1900 rpm), rpm. */
+export const PT6_NG_RPM = 37_500;
+const PT6_PT_RPM = 33_000;
+
+/**
+ * PT6A-114A-like free turbine (the Cessna 208 Caravan pattern): 675 shp flat rated, power turbine 33 000 rpm geared
+ * 17.4 : 1 to a 1900 rpm propeller (1865 ft lbf at the propeller shaft), low idle 52 % Ng, high idle 65 %, 101.6 %
+ * Ng limit, ITT 805 C maximum and 1090 C for a start. The running line (fuel flow, ITT and shaft power against Ng at
+ * sea level) is a plausible PT6 shape, not a P&WC deck: thermodynamically the engine makes about 690 shp at 100 %
+ * Ng, so it is torque, not Ng, that limits it at sea level and ITT that limits it hot and high. Starter-generator
+ * on the gas generator (generator on line from 52 % Ng). Piston fields the turbine does not read are written 0 or
+ * left at the 172's.
+ */
+export const PT6_ENGINE: EngineDef = {
+  ...C172_ENGINE,
+  name: 'PT6A-114A-like free turbine (test-bed)',
+  kind: 'freeTurbine',
+  ratedPower: 675 * HP,
+  ratedRpm: PT6_PT_RPM,
+  idleRpm: 0,
+  displacement: 0,
+  compressionRatio: 0,
+  fuel: JET_A1,
+  induction: { ...C172_ENGINE.induction, ramRecovery: 0.8 },
+  metering: { kind: 'turbineFcu' },
+  ignition: { kind: 'igniters' },
+  thermal: {
+    ...C172_THERMAL,
+    headHeatFraction: 0,
+    oilCapacity: 25e3,
+    oilCoolerConductance: 450,
+    crankcaseConductance: 20,
+    // 85-105 psi from 72 % Ng; the oil pump is on the gas generator.
+    oilPsiPerRpm: 0.0038,
+    oilReliefPsi: 100,
+    oilColdOverdrivePsi: 15,
+    warm: { egt: 560, cht: 15, oilTemp: 70, oilPressure: 95 },
+  },
+  fmep: [0, 0, 0],
+  coldFrictionFactor: 1,
+  compressionLossTorque: 0,
+  breakawayTorque: 0.5,
+  // Power turbine, its shaft and the first gear stage.
+  rotatingInertia: 0.012,
+  gearRatio: PT6_PT_RPM / 1900,
+  // Gas-generator rpm: running from 45 % Ng.
+  runningRpm: 0.45 * PT6_NG_RPM,
+  airStartRpm: PT6_PT_RPM,
+  groundStartRpm: 17_000,
+  // Starter-generator through its gear, at the gas-generator shaft: about 30 N m stalled, 2.7 N m at 30 % Ng.
+  starter: { k: 6e-5, r: 0.02 },
+  turbine: {
+    kind: 'freeTurbine',
+    gasGenerator: {
+      referenceRpm: PT6_NG_RPM,
+      inertia: 0.08,
+      compressorPower: 860e3,
+      map: {
+        ng: [0.5, 0.52, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0, 1.05, 1.1],
+        fuelFlow: [81, 85, 115, 160, 215, 290, 335, 390, 455, 530].map((lbh) => lbh * LB_PER_H),
+        itt: [565, 560, 530, 540, 580, 640, 680, 725, 775, 840],
+        power: [10, 20, 70, 170, 300, 470, 575, 690, 820, 960].map((shp) => shp * HP),
+      },
+      lightOffNg: 0.09,
+      selfSustainingNg: 0.35,
+      minFuelNg: 0.03,
+      fcu: {
+        lowIdleNg: 0.52,
+        highIdleNg: 0.65,
+        maxNg: 1.016,
+        // Start schedule (a minimum-flow stop that makes early fuel a hot start), then 25 % over the running line.
+        accelFuel: {
+          ng: [0, 0.1, 0.13, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.05, 1.1],
+          fuelFlow: [23.5, 24.3, 30, 41.3, 55.1, 71.3, 97.2, 143.8, 200, 268.8, 362.5, 487.5, 569, 662].map((lbh) => lbh * LB_PER_H),
+        },
+        decelFraction: 0.6,
+        gain: 2,
+      },
+      leanBlowout: 0.35,
+      ittLag: 1,
+      warmItt: 560,
+    },
+    powerTurbine: { stallTorqueRatio: 2, friction: [0.5, 0.07], topping: { np: 1.06, gain: 5 } },
+  },
+};
+
+const PT6_FINE = 15 * DEG;
+const PT6_FEATHER = 88 * DEG;
+
+/**
+ * Three-blade 106 in constant-speed, full-feathering propeller (Hartzell, the Caravan's). Oil from the engine
+ * drives the blades fine against counterweights and a spring: no latches, so the propeller feathers whenever the
+ * engine stops (as a PT6's does), and comes out of feather as the gas generator's oil pressure builds.
+ */
+export const PT6_PROPELLER: PropellerDef = {
+  ...C172_PROPELLER,
+  name: 'three-blade constant-speed feathering propeller, 106 in (test-bed)',
+  diameter: 106 * INCH,
+  blades: 3,
+  hubRadius: 0.2,
+  chordOverR: C172_PROPELLER.chordOverR.map((c) => 0.95 * c),
+  twist: helixTwist(26 * DEG, 0.75),
+  referenceStation: 0.75,
+  section: FAST_SECTION,
+  inertia: 9,
+  pitchControl: {
+    kind: 'constantSpeed',
+    fineStop: PT6_FINE,
+    coarseStop: PT6_FEATHER,
+    feather: { angle: PT6_FEATHER, latchRpm: 0, latchAngle: 0, unfeather: 'starter' },
+    rateToFine: 12 * DEG,
+    rateToCoarse: 12 * DEG,
+    governor: { minRpm: 1600, maxRpm: 1900, gain: 0.03, dampingTime: 0.2 },
+    failsTo: 'feather',
+    pitchNodes: [15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, 38, 42, 48, 58, 70, 88].map((deg) => deg * DEG),
+  },
+};
+
+/** Single free turbine: two wing tanks into one feed, engine-driven and electric boost pumps, 28 V bus with a starter-generator. */
+export const TURBOPROP_POWERPLANT: PowerplantDef = {
+  engines: [{ engine: PT6_ENGINE, propeller: PT6_PROPELLER, hub: { x: 3.2, y: 0, z: 0 }, rotation: 1 }],
+  fuel: {
+    tanks: [
+      { id: 'left', side: 'left', capacity: 500, position: { x: 0, y: -2.5, z: -1.2 } },
+      { id: 'right', side: 'right', capacity: 500, position: { x: 0, y: 2.5, z: -1.2 } },
+    ],
+    feeds: [
+      {
+        positions: { on: [0, 1], both: [0, 1], left: [0], right: [1] },
+        gravityHeadPsi: 1,
+        feedCapacity: 0.3,
+        lineCapacity: 1,
+        lineUnusable: 0.05,
+        enginePump: { psi: 40 },
+        auxPump: { psi: 30, minVolts: 18 },
+        delivery: { kind: 'commonRail', minPsi: 10 },
+        film: { fraction: 0, time: 0 },
+      },
+    ],
+  },
+  electrical: {
+    ...C172_POWERPLANT.electrical,
+    battery: { ...C172_POWERPLANT.electrical.battery, capacityAh: 42, rDischarge: 0.012 },
+    alternators: [{ engine: 0, maxAmps: 200, cutInRpm: 0.5 * PT6_NG_RPM, fullRpm: 0.56 * PT6_NG_RPM, efficiency: 0.6 }],
+  },
+};

@@ -32,10 +32,10 @@ Blade bending stiffness and droop stops are unmeasured; the quasi-static visual 
 Evidence: [coning parameters](../../../docs/rotor-coning.md#shared-balance-and-parameters): 12 kg/blade, −1° stop, EI 3600 N m².
 Close with: measured blade mass distribution, hinge/stop dimensions and flapwise stiffness/coning curves.
 
-## Rotor and ground-contact fidelity — **missing feature**
+## Rotor and ground-contact fidelity — **estimate / missing coupled dynamics**
 
-Free wake/LTE, elastic blade dynamics, dynamic-stall hysteresis and ground resonance are unresolved; terrain snagging and blade/tailcone collision are absent.
-Evidence: [remaining work](../../../docs/r22-flight-model.md#remaining-work) and [model notes](../../../docs/r22-flight-model.md).
+Free wake/LTE, elastic blade dynamics and dynamic-stall hysteresis remain unresolved. Reduced cross-tube yielding, terrain snagging, blade/tailcone/cabin contact and stopped-rotor friction/sailing now exist, with estimated parameters and no closed blade/body stop-work coupling.
+Evidence: [contact implementation and limitations](../../../docs/helicopter-ground-contact.md) and [remaining work](../../../docs/r22-flight-model.md#remaining-work).
 Close with: the missing coupled dynamics/contact models and validation of VRS recovery, sideward/rearward flight and retreating-blade stall.
 
 ## Demonstrations differ from POH procedures — **unvalidated**
