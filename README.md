@@ -655,3 +655,9 @@ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Gen
 
 You should have received a copy of the GNU General Public License along with this program (`LICENSE`). If not, see
 <https://www.gnu.org/licenses/>.
+
+### Helicopter adaptive-control research
+
+A repeatable R22 Matrix Pencil identification experiment and its limitations are
+described in [the adaptive-control notes](docs/helicopter-adaptive-control.md).
+This first stage measures small free-response pulses; online adaptation is not enabled.
