@@ -13,8 +13,8 @@ import type { Quat, Vec3 } from './math';
 // ---------------------------------------------------------------------------------------------- identity
 export const ROTORCRAFT_IDS = ['r22', 'r44', 's269'] as const;
 export type RotorcraftId = typeof ROTORCRAFT_IDS[number];
-export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | RotorcraftId;
-export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', ...ROTORCRAFT_IDS];
+export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'c208' | RotorcraftId;
+export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', ...ROTORCRAFT_IDS];
 /** Node-safe identity check for snapshot validation before aircraft definitions are loaded. */
 export const isRotorcraftId = (v: unknown): v is RotorcraftId => ROTORCRAFT_IDS.includes(v as RotorcraftId);
 export const DEFAULT_AIRCRAFT_ID: AircraftId = 'c172s';
@@ -261,6 +261,8 @@ export interface EngineState {
   /** Gas turbines only: gas-generator speed, % of its reference speed, and inter-turbine temperature, degrees C (egt reads the same). */
   ng?: number;
   itt?: number;
+  /** Gas turbines only: the flame is alight (from light-off, before the engine counts as `running`). */
+  lit?: boolean;
 }
 export function emptyEngineState(): EngineState {
   return { running: false, rpm: 0, manifoldPressure: 29.92, power: 0, torque: 0, fuelFlow: 0, egt: 15, cht: 15,

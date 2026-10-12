@@ -9,8 +9,9 @@
 //     state (Ng, ITT, whether it is alight); the unit routes the starter's torque to it, not to the propeller;
 //   - power lever -> the Ng the fuel control governs to, from the idle Ng (condition lever LOW / HIGH IDLE) to
 //     maxNg; mixture lever = condition lever: below CUTOFF_BELOW the fuel is shut off;
-//   - the igniters spark while the starter is engaged, unless the ignition (magneto) switch is OFF, which motors
-//     the engine dry (to blow out the fuel a failed start left in it);
+//   - the igniters spark while the starter is engaged with the IGNITION (magneto) switch at NORM (0), and
+//     continuously at ON (any other position); a dry motoring run (to blow out the fuel a failed start left in the
+//     combustor) is the starter with the condition lever at CUT-OFF;
 //   - power-turbine torque falls linearly with its speed for a given gas power, from stallTorqueRatio times the
 //     design-speed torque with the power turbine held still: a free turbine gives the most torque stalled;
 //   - the fuel topping governor takes Ng off when the power turbine overspeeds (a failed propeller governor).

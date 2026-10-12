@@ -15,6 +15,7 @@ import { defineSignals } from './providers/define';
 import { createCoreProvider } from './providers/core';
 import { createGeoProvider } from './providers/geo';
 import { createNavProvider } from './providers/nav';
+import { createPowerplantProvider } from './providers/powerplant';
 import { createTaxiProvider } from './providers/taxi';
 
 /** Rate filter time constant for signals whose definition gives none, s. */
@@ -46,10 +47,10 @@ export class Telemetry {
   private stepAlt0 = NaN;
   private lastHdg = NaN;
 
-  /** Default providers: core, geo, nav and taxi (createCoreProvider/createGeoProvider/createNavProvider/createTaxiProvider). */
+  /** Default providers: core, geo, nav, taxi and powerplant (createCoreProvider/createGeoProvider/createNavProvider/createTaxiProvider/createPowerplantProvider). */
   constructor(providers?: readonly SignalProvider[]) {
     for (const d of STEP_SIGNALS) this.register(d);
-    for (const p of providers ?? [createCoreProvider(), createGeoProvider(), createNavProvider(), createTaxiProvider()]) this.addProvider(p);
+    for (const p of providers ?? [createCoreProvider(), createGeoProvider(), createNavProvider(), createTaxiProvider(), createPowerplantProvider()]) this.addProvider(p);
     this.markStep();
   }
 

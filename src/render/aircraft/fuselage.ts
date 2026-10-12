@@ -392,8 +392,15 @@ function addInletDucts(batch: MeshBatch, mat: AircraftMaterials, outer: Fuselage
   }
 }
 
-/** Exhaust stack exiting the lower cowling at `pos`, angled down and aft. */
+/**
+ * Exhaust stack exiting the lower cowling at `pos`, angled down and aft (or along `dir`, the stack's
+ * root-to-mouth vector, where the definition gives one).
+ */
 function addExhaust(batch: MeshBatch, mat: AircraftMaterials, exhaust: NonNullable<AirframeVisualDef['fuselage']['exhaust']>): void {
+  if (exhaust.dir) {
+    addExhaustAlong(batch, mat, exhaust.pos, exhaust.dir, exhaust.radius);
+    return;
+  }
   const [x0, y0, z0] = exhaust.pos;
   const a = new THREE.Vector3();
   const spec = sweepGeometry(
@@ -422,6 +429,35 @@ function addExhaust(batch: MeshBatch, mat: AircraftMaterials, exhaust: NonNullab
     lip.push(end.clone().addScaledVector(side, Math.cos(ang) * bore).addScaledVector(up, Math.sin(ang) * bore));
   }
   batch.add(mat.black, capGeometry(lip, dir));
+}
+
+/** An exhaust stack from `pos` along `dir` (FRD, m: its length and direction), open and dark at its mouth. */
+function addExhaustAlong(batch: MeshBatch, mat: AircraftMaterials, pos: readonly [number, number, number], dir: readonly [number, number, number], radius: number): void {
+  const start = frd(pos[0], pos[1], pos[2]);
+  const end = frd(pos[0] + dir[0], pos[1] + dir[1], pos[2] + dir[2]);
+  const axis = end.clone().sub(start).normalize();
+  // A reference across the stack: the model's lateral axis, or its vertical one for a stack pointing sideways.
+  const ref = Math.abs(axis.x) > 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const spec = sweepGeometry(
+    (t, out) => out.lerpVectors(start, end, t),
+    (t, ang, out) => {
+      const r = radius - 0.002 * t;
+      out.set(Math.cos(ang) * r, Math.sin(ang) * r);
+    },
+    6,
+    20,
+    ref,
+  );
+  batch.add(mat.exhaust, gridGeometry(spec));
+  const up = ref.clone().addScaledVector(axis, -ref.dot(axis)).normalize();
+  const side = new THREE.Vector3().crossVectors(axis, up);
+  const bore = radius - 0.005;
+  const lip: THREE.Vector3[] = [];
+  for (let k = 0; k < 20; k++) {
+    const ang = (k / 20) * Math.PI * 2;
+    lip.push(end.clone().addScaledVector(side, Math.cos(ang) * bore).addScaledVector(up, Math.sin(ang) * bore));
+  }
+  batch.add(mat.black, capGeometry(lip, axis));
 }
 
 /** Blade antennas standing on the roof (VHF comm), stubs hanging from the belly (transponder / DME) and whips. */

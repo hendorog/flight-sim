@@ -110,7 +110,8 @@ export interface ConformanceTargets {
   cruise?: { altitudeFt: number; powerFraction: number; bracketKt: readonly [number, number]; leanAtKt?: number; resetKt: number; ktas: Band; powerFractionReached: Band; rpm?: Range };
   /** Full throttle on the brakes at the field (rpm of every engine; MAP for governed engines). */
   staticRun: { rpm?: Range; mapInHg?: Range; groundSpeed: Range };
-  takeoff: { flapDeg: number; rotateKias: number; pitchDeg: number; staticRunUp: boolean; controls?: ControlPatch; groundRollM: Band };
+  /** throttle: the power lever for the run (a flat-rated turboprop: at its torque limit); absent: 1. */
+  takeoff: { flapDeg: number; rotateKias: number; pitchDeg: number; staticRunUp: boolean; controls?: ControlPatch; throttle?: number; groundRollM: Band };
   /** brake: the pedal on the roll the handbook's chart implies (LandingOptions.brake); absent: full. */
   landing: { flapDeg: number; approachKt: number; touchdownPitchDeg: number; brake?: number; groundRollM: Band };
   glide: {

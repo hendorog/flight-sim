@@ -436,7 +436,7 @@ function stallRecoveryBlock(t: ConformanceTargets, def: DefinitionOf): PlanBlock
 /** Take-off and landing ground rolls (on a castering nosewheel: steered with the brakes). */
 export function groundRollBlock(t: Pick<ConformanceTargets, 'takeoff' | 'landing'>, def: DefinitionOf): PlanBlock {
   const to = t.takeoff, la = t.landing;
-  const r = once(() => takeoffRoll(runwayRig(def(), 'maxGross'), { flapLever: flapLever(def(), to.flapDeg), rotateKias: to.rotateKias, pitch: to.pitchDeg * DEG, staticRunUp: to.staticRunUp, controls: to.controls }));
+  const r = once(() => takeoffRoll(runwayRig(def(), 'maxGross'), { flapLever: flapLever(def(), to.flapDeg), rotateKias: to.rotateKias, pitch: to.pitchDeg * DEG, staticRunUp: to.staticRunUp, controls: to.controls, throttle: to.throttle }));
   const l = once(() => landingRoll(runwayRig(def(), 'maxGross'), { approachKt: la.approachKt, flapLever: flapLever(def(), la.flapDeg), touchdownPitch: la.touchdownPitchDeg * DEG, brake: la.brake }));
   return {
     name: 'take-off and landing',

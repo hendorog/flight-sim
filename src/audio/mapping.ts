@@ -5,7 +5,7 @@ import { C172S_AUDIO } from '../aircraft/c172s/audio';
 import { clamp, DEG, smoothstep } from '../core/math';
 import { engineControl, type AircraftState, type ControlInputs, type Environment, type SurfaceType, type WeatherSettings } from '../core/types';
 import { ENGINE_P, ENGINE_PARAMS, P, PARAM_COUNT } from './params';
-import type { AudioProfile, EngineSoundProfile, PropSoundProfile } from './profile';
+import type { AudioProfile, EngineSoundProfile, PropSoundProfile, TurbineSoundProfile } from './profile';
 
 // Every function that needs a number of the aircraft type takes the profile (or its engine / propeller part) as
 // a trailing parameter; left out, it is the Cessna 172S.
@@ -63,6 +63,35 @@ export function roughness(mixture: number, magnetos: number): number {
  */
 export function turboSpool(load: number, running: boolean): number {
   return running ? Math.sqrt(clamp(0.1 + 0.9 * load, 0, 1)) : 0;
+}
+
+/** Gas-generator speed for the turbine voice, rev/min, from Ng in % (EngineState.ng; absent: stopped). */
+export function gasGeneratorRpm(ngPercent: number | undefined, turbine: TurbineSoundProfile): number {
+  return (Math.max(ngPercent ?? 0, 0) / 100) * turbine.ngRpm;
+}
+
+/**
+ * ITT above which a gas generator that is not yet "running" (EngineState.running: lit AND above the running
+ * Ng) counts as lit for the sound, degrees C. Fuel flowing into a burner that has not lit leaves the ITT cold; at
+ * light-off it climbs through this within a second (a PT6 peaks at 700-1000 C on a start).
+ */
+export const TURBINE_LIT_ITT = 250;
+
+/** A gas turbine's burner is alight: running, or on a start with fuel flowing and the ITT climbing. */
+export function turbineLit(running: boolean, fuelFlow: number, itt: number | undefined): boolean {
+  return running || (fuelFlow > 0 && (itt ?? 0) > TURBINE_LIT_ITT);
+}
+
+/**
+ * The burner's output for the turbine voice's roar, 0..~1.2: 60 % from the fuel flow relative to the flow at
+ * 100 % Ng (sea level), 40 % from the shaft power relative to the rated power. A gas generator at low idle burns
+ * about a fifth of its full-power fuel for almost no shaft power, so it roars softly; an unlit one not at all.
+ */
+export function turbineLoad(fuelFlow: number, powerW: number, lit: boolean, engine: EngineSoundProfile): number {
+  if (!lit || !engine.turbine) return 0;
+  const ff = clamp(fuelFlow / engine.turbine.fuelFlowRef, 0, 1.3);
+  const pwr = clamp(powerW / engine.ratedPowerW, 0, 1.2);
+  return 0.6 * ff + 0.4 * pwr;
 }
 
 /** Helical blade-tip Mach number: rotational tip speed combined with the forward speed. */
@@ -209,25 +238,41 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
       continue;
     }
     const voice = profile.engines[i];
-    const diesel = voice.engine.combustion === 'diesel';
     const starter = engineControl(c, i, 'starter') && powered;
-    // No combustion, no load: a cranking or windmilling engine's manifold sits near ambient pressure.
-    const load = e.running ? engineLoad(e.manifoldPressure, e.power, voice.engine) : 0;
-    out[ix.rpm] = crankRpm(e.rpm, starter, e.running, voice.engine);
-    out[ix.firing] = e.running ? 1 : 0;
-    out[ix.load] = load;
-    // Intake roar: the throttle plate's opening. A diesel has none: its intake noise follows the air it is given.
-    out[ix.throttle] = diesel ? Math.min(load, 1) : engineControl(c, i, 'throttle');
-    out[ix.starter] = starter ? 1 : 0;
-    // A diesel has neither a mixture to lean nor magnetos. Melt water from carburettor ice (EngineState.roughness,
-    // absent on an engine without a carburettor) runs rough on top, at full strength like one magneto off.
-    const rough = diesel ? 0 : roughness(engineControl(c, i, 'mixture'), engineControl(c, i, 'magnetos'));
-    const melt = e.roughness;
-    out[ix.roughness] = melt ? Math.min(1, rough + melt * MELT_WATER_ROUGHNESS) : rough;
+    const turbine = voice.engine.combustion === 'turbine' ? voice.engine.turbine : undefined;
+    let load = 0;
+    if (turbine) {
+      // A gas turbine: the gas generator's speed, whether its burner is alight and what it burns; no throttle
+      // plate, no mixture, no magnetos, no turbocharger.
+      // The engine reports its flame (EngineState.lit); a state without it (recorded, mocked) is judged by fuel and ITT.
+      const lit = e.lit ?? turbineLit(e.running, e.fuelFlow, e.itt);
+      out[ix.rpm] = gasGeneratorRpm(e.ng, turbine);
+      out[ix.firing] = lit ? 1 : 0;
+      load = turbineLoad(e.fuelFlow, e.power, lit, voice.engine);
+      out[ix.load] = load;
+      out[ix.throttle] = 0;
+      out[ix.starter] = starter ? 1 : 0;
+      out[ix.roughness] = 0;
+    } else {
+      const diesel = voice.engine.combustion === 'diesel';
+      // No combustion, no load: a cranking or windmilling engine's manifold sits near ambient pressure.
+      load = e.running ? engineLoad(e.manifoldPressure, e.power, voice.engine) : 0;
+      out[ix.rpm] = crankRpm(e.rpm, starter, e.running, voice.engine);
+      out[ix.firing] = e.running ? 1 : 0;
+      out[ix.load] = load;
+      // Intake roar: the throttle plate's opening. A diesel has none: its intake noise follows the air it is given.
+      out[ix.throttle] = diesel ? Math.min(load, 1) : engineControl(c, i, 'throttle');
+      out[ix.starter] = starter ? 1 : 0;
+      // A diesel has neither a mixture to lean nor magnetos. Melt water from carburettor ice (EngineState.roughness,
+      // absent on an engine without a carburettor) runs rough on top, at full strength like one magneto off.
+      const rough = diesel ? 0 : roughness(engineControl(c, i, 'mixture'), engineControl(c, i, 'magnetos'));
+      const melt = e.roughness;
+      out[ix.roughness] = melt ? Math.min(1, rough + melt * MELT_WATER_ROUGHNESS) : rough;
+    }
     out[ix.propLoad] = propLoad(prop.thrust, voice.prop);
     out[ix.tipMach] = tipMach(prop.rpm, s.tas, x.speedOfSound, voice.prop);
     out[ix.propRpm] = prop.rpm;
-    out[ix.turbo] = voice.engine.turbo ? turboSpool(load, e.running) : 0;
+    out[ix.turbo] = !turbine && voice.engine.turbo ? turboSpool(load, e.running) : 0;
   }
   const w = windNoise(s.ias, s.beta, s.surfaces.flaps, profile);
   out[P.windLevel] = w.level;

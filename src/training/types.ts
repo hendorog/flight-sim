@@ -119,7 +119,7 @@ export type ExtSettingId =
 /** (multi-aircraft addition) What the aeroplane has, as plain data. */
 export interface AircraftSystemsDef {
   engines: 1 | 2;
-  induction: 'carburettor' | 'injected' | 'fadecDiesel';
+  induction: 'carburettor' | 'injected' | 'fadecDiesel' | 'turbine';
   carbHeat: boolean;
   primer: 'manual' | 'pump' | 'none';
   electricFuelPump: boolean;

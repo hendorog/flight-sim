@@ -10,6 +10,7 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Diamond DA20-C1 | [7 entries](../src/aircraft/da20/KNOWN_ISSUES.md) |
 | Piper PA-34 Seneca I | [8 entries](../src/aircraft/pa34/KNOWN_ISSUES.md) |
 | Diamond DA42 NG | [1 entry](../src/aircraft/da42/KNOWN_ISSUES.md) |
+| Cessna 208 Caravan 675 | [6 entries](../src/aircraft/c208/KNOWN_ISSUES.md) |
 | Robinson R22 Beta II | [7 entries](../src/aircraft/r22/KNOWN_ISSUES.md) |
 | Robinson R44 Raven II | [11 entries](../src/aircraft/r44/KNOWN_ISSUES.md) |
 | Schweizer 269C-1 / 300CB | [11 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |

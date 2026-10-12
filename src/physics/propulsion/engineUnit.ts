@@ -287,9 +287,12 @@ export class EngineUnit {
 
   /**
    * Starting point of a trim evaluation (Powerplant.primeForTrim): turning at propeller speed `omega`, rad/s,
-   * with the blades where settle() starts from; a feathered propeller stopped on its feather stop.
+   * with the blades where settle() starts from; a feathered propeller stopped on its feather stop; a gas turbine alight.
    */
   prime(omega: number): void {
+    // A gas turbine is primed alight, as a turning spark engine fires: the controls of the evaluation put it out
+    // again (condition lever at cut-off, no fuel).
+    this.turbine?.light();
     const governor = this.governor;
     if (governor?.feathered) {
       this.omega = 0;
@@ -357,8 +360,9 @@ export class EngineUnit {
       ei.moisture = input.moisture;
       if (this.hasCarbHeat) ei.carbHeat = engineControl(controls, this.index, 'carbHeat');
       if (this.hasAlternateAir) ei.alternateAir = engineControl(controls, this.index, 'alternateAir');
-      // A gas turbine's igniters spark while it is started, unless the ignition (magneto) switch is OFF: a dry motoring run.
-      if (this.turbine) ei.igniters = engineControl(controls, this.index, 'starter') && ei.magnetos !== 0;
+      // A gas turbine's igniters: with the IGNITION (magneto) switch at NORM (0) they spark while the starter runs;
+      // at ON (any other position) continuously.
+      if (this.turbine) ei.igniters = engineControl(controls, this.index, 'starter') || ei.magnetos !== 0;
       if (this.diesel) {
         ei.engineMaster = engineControl(controls, this.index, 'engineMaster');
         ei.busVoltage = busVoltage;
@@ -507,6 +511,7 @@ export class EngineUnit {
       if (turbine) {
         e.ng = 100 * turbine.ng;
         e.itt = e.egt = turbine.ittC;
+        e.lit = turbine.firing;
       }
       if (this.thermal.liquid) {
         e.coolantTemp = this.thermal.coolantTemp;

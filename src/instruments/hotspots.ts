@@ -156,6 +156,19 @@ function ignitionHotspots(def: PanelDef): PanelHotspot[] {
         },
         value: (c) => onOff(engineControl(c, e, 'engineMaster')),
       });
+    } else if (t.kind === 'ignition') {
+      // A turbine's IGNITION switch: on = both bits of MagnetoPosition (BOTH), off = 0.
+      spots.push({
+        ...base,
+        id: `engine${e + 1}Ignition`,
+        name: engineName(n, e, 'ignition'),
+        toggle(c) {
+          const next: MagnetoPosition = engineControl(c, e, 'magnetos') !== 0 ? 0 : 3;
+          if (n > 1) setEngineControl(c, e, 'magnetos', next);
+          else c.magnetos = next;
+        },
+        value: (c) => (engineControl(c, e, 'magnetos') !== 0 ? 'ON' : 'OFF'),
+      });
     } else {
       // The bit of the magneto in MagnetoPosition: OFF 0, R 1, L 2, BOTH 3.
       const bit = t.kind === 'magnetoLeft' ? 2 : 1;

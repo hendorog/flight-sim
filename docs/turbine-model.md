@@ -27,8 +27,19 @@ fuel network, bus and constant-speed propeller/governor. For a `'freeTurbine'` e
 - **Piston fields not read.** Only `induction.ramRecovery` and the oil part of `thermal` are used. Write the rest
   as 0 or copy them, as the diesel definitions already do.
 
-New `EngineState` fields: `ng` (%) and `itt` (°C; `egt` reads the same value). `EngineSnapshot.gasGenerator`
-holds Ng, ITT and whether it is lit, for resume.
+New `EngineState` fields: `ng` (%), `itt` (°C; `egt` reads the same value) and `lit` (the flame is alight, from
+light-off; `running` only from `runningRpm`). `EngineSnapshot.gasGenerator` holds Ng, ITT and whether it is lit,
+for resume.
+
+**Trims.** A piston engine fires whenever its shaft turns with the switches on; a gas turbine's flame is state.
+`Powerplant.primeForTrim` therefore lights every turbine before a trim evaluation, and the trim's own controls put
+it out again (condition lever at cut-off, fuel off): a trim with a failed engine is made with it unlit, every
+other trim with it running, whatever the flight model's history.
+
+**First user: the Cessna 208 Caravan 675** (`src/aircraft/c208/`), with its own PT6A-114A definition (the
+test-bed's map rescaled for the flat rating: 675 shp at about 97 % Ng at sea level and still over 600 shp at
+10 000 ft). The scripted pilot sets take-off power with the lever at its torque limit
+(`AutoflightProfile.takeoff.throttle`, new and optional; absent means 1).
 
 ### Controls (no new control keys)
 
@@ -38,7 +49,7 @@ holds Ng, ITT and whether it is lit, for resume.
 | Condition lever | `mixture`: below `CUTOFF_BELOW` (0.1) = fuel cut-off; 0.1 → 1 = LOW IDLE → HIGH IDLE |
 | Propeller lever | `propeller`: the existing governor and feather |
 | Starter switch | `starter`: turns the gas generator; the igniters spark while it is on |
-| Ignition switch | `magnetos`: 0 = OFF (dry motoring run, no igniters); anything else = normal |
+| Ignition switch | `magnetos`: 0 = NORM (igniters spark while the starter runs); anything else = ON (continuous) |
 
 ## The physics
 
@@ -63,8 +74,9 @@ over about 20 s.
 
 **Pooled fuel (wet start).** Fuel that reaches an unlit combustor collects there. It drains overboard, faster when
 air is blown through by motoring. At light-off it burns off over about 2.5 s ("torching"): it heats the ITT but
-does no work on the spool. So fuel introduced with the ignition off, then lit, gives a hot start (> 1090 °C).
-A dry motoring run clears it.
+does no work on the spool. So fuel introduced before the engine can light, then lit, gives a hot start
+(> 1090 °C).
+A dry motoring run (starter with the condition lever at CUT-OFF) clears it.
 
 **FCU.** A proportional Ng governor around the steady flow. It is clamped between the acceleration schedule
 (`fcu.accelFuel`: the start schedule below the map, then about 25 % over the running line) and a minimum-flow
@@ -79,7 +91,8 @@ design speed. The PT and gearbox friction is a constant plus a part per rpm.
 failed propeller governor.
 
 **Flame-out and relight.** The flame goes out on fuel starvation or lean blow-out. There is no auto-relight: a
-relight needs the igniters (starter on) and Ng above light-off, so an air start is starter-assisted.
+relight needs the igniters (starter on, or IGNITION ON) and Ng above light-off; Ng runs down to zero after a
+flame-out, so an air start is starter-assisted.
 
 **Oil.** The existing `EngineThermal` oil model, driven by Ng. The propeller governor takes its oil pressure from
 it. So the prop (no feather latches) feathers once the engine has stopped, and unfeathers as oil pressure builds
@@ -92,7 +105,7 @@ during a start, as a PT6's does.
 | Start: fuel at 13 % Ng | Light-off; peak ITT about 720 °C; stable at 52 % low idle about 37 s after the starter (tested: 20–50 s) |
 | Starter released at 30 % | Hung start: Ng decays |
 | Starter released above 35 % | Reaches idle |
-| Fuel in with ignition off, then lit | Hot start, over 1090 °C |
+| Fuel in before the engine can light, then lit (late light-off) | Hot start, over 1090 °C |
 | Full power, sea level, 150 kt | 101.6 % Ng, about 730 shp (over the 1865 ft-lb torque limit if the pilot lets it), ITT about 746 °C |
 
 ## Not modelled yet (next steps)

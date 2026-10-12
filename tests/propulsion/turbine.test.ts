@@ -56,13 +56,11 @@ interface StartOptions {
   fuelAtNg?: number;
   /** Ng, %, at which the starter is released. */
   starterOffNg?: number;
-  /** Ignition switch (the magnetos control): 0 = OFF, a dry motoring run. */
-  ignition?: 0 | 3;
 }
 
 /** The ground start from a stopped, feathered engine: starter on, fuel at fuelAtNg, starter off at starterOffNg. */
 function start(sys: Powerplant, o: StartOptions = {}, seconds = 60) {
-  const input = makeInput({ controls: { throttle: 0, mixture: 0, magnetos: o.ignition ?? 3 } });
+  const input = makeInput({ controls: { throttle: 0, mixture: 0, magnetos: 0 } });
   setEngineControl(input.controls, 0, 'starter', true);
   let lightOff = NaN;
   const result = fly(sys, input, seconds, (out, t) => {
@@ -298,24 +296,45 @@ describe('starting', () => {
     expect(ok.units[0].state.ng! / 100).toBeCloseTo(GG.fcu.lowIdleNg, 2);
   }, 30_000);
 
-  it('fuel in before the flame is lit (ignition off) pools, and torches into a hot start when it lights', () => {
-    const sys = stopped();
-    // Motoring with fuel on and the ignition OFF: no light-off, the fuel collects in the combustor.
-    const wet = start(sys, { fuelAtNg: 5, starterOffNg: 100, ignition: 0 }, 8);
+  it('fuel that arrives before the flame lights pools, and torches into a hot start when it lights', () => {
+    // The gas generator alone, held at a motoring speed of 15 % Ng with start fuel flowing and the igniters not
+    // sparking (fuel before light-off: a failed igniter, or fuel brought in too early).
+    const gg = new GasGenerator(GG, PT6_ENGINE.fuel.lhv);
+    gg.reset(288.15);
+    const input = { inletPressure: 101325, inletTemperature: 288.15, ngDemand: GG.fcu.lowIdleNg, cutoff: false, igniters: false, accessoryPower: 0, starterTorque: 0, dt: DT, steady: false };
+    let peak = -Infinity;
+    for (let t = 0; t < 18; t += DT) {
+      gg.omega = 0.15 * gg.omegaRef;
+      input.igniters = t >= 8;
+      gg.burn(input, gg.breathe(input));
+      if (t < 8) expect(gg.lit).toBe(false);
+      if (t >= 8) peak = Math.max(peak, gg.ittC);
+      if (Math.abs(t - 8 + DT) < DT / 2) expect(gg.pooled).toBeGreaterThan(0.01);
+    }
+    expect(peak).toBeGreaterThan(ITT_START_MAX);
+    // The same light-off with nothing pooled stays inside the starting limit.
+    const dry = new GasGenerator(GG, PT6_ENGINE.fuel.lhv);
+    dry.reset(288.15);
+    let dryPeak = -Infinity;
+    for (let t = 0; t < 10; t += DT) {
+      dry.omega = 0.15 * dry.omegaRef;
+      input.igniters = true;
+      dry.burn(input, dry.breathe(input));
+      dryPeak = Math.max(dryPeak, dry.ittC);
+    }
+    expect(dryPeak).toBeLessThan(ITT_START_MAX);
+  });
+
+  it('a dry motoring run (starter, condition lever at cut-off) blows the pooled fuel out within a minute', () => {
+    // An engine whose fuel cannot light at starter speed: the start fuel pools while it is motored.
+    const unlit = { ...PT6_ENGINE, turbine: { ...PT6_ENGINE.turbine!, gasGenerator: { ...GG, lightOffNg: 0.3 } } };
+    const sys = new Powerplant({ ...TURBOPROP_POWERPLANT, engines: [{ ...TURBOPROP_POWERPLANT.engines[0], engine: unlit }] });
+    sys.reset({ running: false, tanks: [400, 400], feathered: [true] });
+    const wet = start(sys, { fuelAtNg: 5, starterOffNg: 100 }, 8);
     expect(wet.lightOff).toBeNaN();
     const gg = (sys.units[0].engine as TurbineEngine).gasGenerator;
-    expect(gg.pooled).toBeGreaterThan(0.01);
-    // Ignition on.
-    wet.input.controls.magnetos = 3;
-    const hot = fly(sys, wet.input, 10);
-    expect(hot.peakItt).toBeGreaterThan(ITT_START_MAX);
-  }, 30_000);
-
-  it('a dry motoring run (ignition off, fuel cut off) blows the pooled fuel out within a minute', () => {
-    const sys = stopped();
-    const wet = start(sys, { fuelAtNg: 5, starterOffNg: 100, ignition: 0 }, 8);
-    const gg = (sys.units[0].engine as TurbineEngine).gasGenerator;
     const pooled = gg.pooled;
+    expect(pooled).toBeGreaterThan(0.01);
     wet.input.controls.mixture = 0;
     fly(sys, wet.input, 60);
     expect(gg.pooled).toBeLessThan(0.05 * pooled);
@@ -335,9 +354,9 @@ describe('shutdown, flame-out and relight', () => {
     expect(sys.units[0].state.running).toBe(false);
   }, 30_000);
 
-  it('starved of fuel in flight it flames out, the propeller windmills, and it relights only with the starter (igniters) above light-off', () => {
+  it('starved of fuel in flight it flames out, the propeller windmills; with IGNITION at NORM it relights only with the starter above light-off', () => {
     const sys = running();
-    const input = makeInput({ ktas: 140, altitudeFt: 5000, controls: { throttle: 0.8, mixture: 1 } });
+    const input = makeInput({ ktas: 140, altitudeFt: 5000, controls: { throttle: 0.8, mixture: 1, magnetos: 0 } });
     sys.settle(input);
     input.controls.fuelSelector = 'off';
     const out = fly(sys, input, 30, () => !sys.units[0].engine.firing);
