@@ -67,3 +67,9 @@ Close with: the applicable POH IAS/CAS curve and indication checks at low and cr
 The shelf/pedestal share a single plane, PANEL/RADIO dimmers are coupled, and placards/flood lighting are unlit.
 Evidence: [integration presentation limits](../../../docs/r44-integration.md); small placards require cockpit zoom.
 Close with: separate geometry/circuits and sourced lighting/layout validation.
+
+## Ground-contact and stopped-rotor parameters — **estimate / unvalidated**
+
+Cross-tube yielding/spreading, soil/edge snagging, blade/airframe collision and low-speed teeter friction/sailing use reduced models and estimated coefficients. Elastic transient blade/body coupling, measured critical rollover boundaries and damage propagation remain absent.
+Evidence: [contact model, sources and verification](../../../docs/helicopter-ground-contact.md). Normal flight-load arithmetic and existing mast-bump classification are unchanged.
+Close with: measured gear/drop, soil/shoe, droop-stop friction and blade/airframe geometry data, followed by coupled ground-handling validation.

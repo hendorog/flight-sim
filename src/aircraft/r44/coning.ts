@@ -1,8 +1,8 @@
 import { DEG } from '../../core/math';
 import type { BladeConingDefinition } from '../../physics/rotorcraft/coning';
-import { R44_ROTORCRAFT } from './rotorcraft';
+import { MAIN_ROTOR_RADIUS } from './dimensions';
 
-const rotor = R44_ROTORCRAFT.main;
+const rotor = { radius: MAIN_ROTOR_RADIUS, rootCutout: 1.0, inertia: 450, blades: 2 };
 /** Engineering estimates, not measured blade/stop data; see docs/rotor-coning.md.
  * Uses the existing 21 kg/blade distribution and rotor inertia. POH 1-4's 1° is TAIL precone. */
 export const R44_BLADE_CONING: BladeConingDefinition = {

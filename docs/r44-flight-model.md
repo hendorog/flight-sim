@@ -142,3 +142,7 @@ The R44 runway capture reports zero ground speed, 2705 engine RPM / 406.04 rotor
 6. Continue shared autorotation-flare investigation with these R44 traces. Do not remove either R44 expected failure until it meets the strict landing envelope without artificial energy or state intervention.
 
 All six edited aircraft modules, four new acceptance-test files and this document are within flight-model ownership. No frozen or supervisor-owned file was edited. Rendering remains the parallel exterior/panel workers' responsibility.
+
+## Ground-contact extension (heli/contact)
+
+The [shared contact report](helicopter-ground-contact.md) documents cross-tube yielding/spreading, actual terrain edge/soil reactions, physical blade/tailcone/cabin collision, and low-speed teeter friction/sailing. Ordinary elastic gear stiffness/damping and longitudinal friction are retained. All new structural/friction/soil parameters are estimates, and elastic transient blade/body coupling and the critical rollover envelope still require validation. R44 airborne loads/state remain exactly equal to main. The pre-existing teeter-stop/mast-bump classification and autorotation-landing expected failures are unchanged.

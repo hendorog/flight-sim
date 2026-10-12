@@ -26,7 +26,7 @@ export class Rotorcraft {
   private readonly loads: ForceMoment = { force: v3.zero(), moment: v3.zero() };
   constructor(readonly def: RotorcraftDefinition) {}
   reset(running: boolean): void {
-    delete this.state.articulated;
+    delete this.state.articulated; delete this.state.contactRotor;
     delete this.state.transmission; delete this.state.springTrim; delete this.state.clutchDisengaged;
     Object.assign(this.state, emptyRotorcraftState());
     this.state.omega = running ? this.def.nominalRpm * Math.PI / 30 : 0;

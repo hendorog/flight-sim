@@ -68,13 +68,30 @@ export interface RotorcraftDefinition {
   dragCentre: Vec3;
   tailProtection?: { stinger: readonly Vec3[]; radius: number; fin: readonly Vec3[];
     stiffness: number; damping: number; maxSink: number; maxCompression: number };
+  /** Collision/low-speed pose data; never used by the airborne load solver. */
+  groundRotor?: { blade: BladeConingDefinition; stopFriction: number;
+    tailcone: { front: Vec3; rear: Vec3; frontRadius: number; rearRadius: number };
+    cabin: { centre: Vec3; radii: Vec3 } };
   skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number;
-    /** Installation only. Oleo gas/poppet dynamics and ground resonance are not yet simulated. */
     suspension?: 'cross-tube' | 'oleo';
+    /** Per contact, N, N/m, m. Bilinear compression plasticity; spread is m lateral/m stroke. */
+    flexure?: { yieldForce: number; hardening: number; maxStroke: number; spread: number };
+    /** Effective vertical strut quantities after mount leverage. P0 is absolute Pa; gasLength=V0/A.
+     * A compliant foot acts in series; the extension stop carries gas preload before breakaway. */
+    oleo?: { pressure: readonly [number, number]; area: number; gasLength: number; exponent: number;
+      contactStiffness: number; maxStroke: number; orifice: number; rebound: number;
+      reliefForce: number; reliefDamping: number };
+    terrain?: { tubeRadius: number; toe: number; heel: number; toeRise: number;
+      edgeStiffness: number; edgeDamping: number;
+      /** Soil bearing stiffness N/m per contact and passive lateral stress Pa. */
+      soil: Partial<Record<SurfaceType, { bearing: number; passive: number }>> };
     /** Shoe/terrain contact, distinct from tyre coefficients. Lateral includes soil ploughing by the tube. */
     surfaces?: Partial<Record<SurfaceType, { static: number; sliding: number; lateral: number }>> };
 }
 export interface RotorcraftState {
+  /** Ground-only physical teeter coordinate. Separate from the unchanged aerodynamic harmonics.
+   * Blade zero is body right at azimuth zero; angle is positive up. */
+  contactRotor?: { angle: number; rate: number; frictionWork: number; stopWork: number };
   /** Physical per-blade pose, radians; optional hub coning data adds weight and droop stops
    * around the reduced solver's harmonic flap. `coning` below remains aerodynamic. Lag stays zero until a
    * validated body/shaft coupling exists. Blade zero starts body right at azimuth zero. */
@@ -107,6 +124,7 @@ export interface RotorcraftState {
 /** Snapshots own every nested state; legacy scalar serialization remains identical. */
 export function cloneRotorcraftState(s: RotorcraftState): RotorcraftState {
   return { ...s, ...(s.transmission ? { transmission: { ...s.transmission } } : {}),
+    ...(s.contactRotor ? { contactRotor: { ...s.contactRotor } } : {}),
     ...(s.springTrim ? { springTrim: { ...s.springTrim } } : {}),
     ...(s.articulated ? { articulated: { blades: s.articulated.blades.map(b => ({ ...b })) } } : {}) };
 }

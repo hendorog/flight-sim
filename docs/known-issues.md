@@ -49,11 +49,11 @@ Evidence: [model, parameters, sources and limitations](magnetic-compass.md), [dy
 Remaining: the world retains its zero-variation heading datum; inclination is a latitude/dipole approximation,
 and deviation cards/damping are simulation estimates. The DA42 still inherits its existing placeholder cockpit.
 
-### Rotor/ground-contact limits — **missing feature**
+### Rotor/ground-contact limits — **estimate / unvalidated**
 
-Helicopter contacts omit structural skid flexure, terrain snagging and blade/tailcone collision; stopped teetering rotors omit stop friction and azimuth-resolved blade sailing.
-Evidence: [R22 model/contact limits](r22-flight-model.md), [rotor solver](../src/physics/rotorcraft/rotorcraft.ts); the 269 has additional lag/oleo gaps in its own list.
-Close with: measured contact/structural data and coupled models checked across surfaces, slopes and low-speed rotor conditions.
+Reduced cross-tube yielding, soil/edge snagging, blade/airframe intersection, low-speed teeter friction/sailing and 269 gas/poppet support are implemented with estimated coefficients. Flexible-body/soil history and closed blade/body stop-work coupling remain absent; the 269 still has no production lag or ground resonance.
+Evidence: [ground-contact model and tests](helicopter-ground-contact.md), including exact airborne comparisons and explicit remaining limitations.
+Close with: measured structural, collision, friction and oleo/damper data; coupled-model validation across surfaces, slopes and low-speed rotor conditions.
 
 ### Type-specific training and helicopter sound — **missing feature**
 

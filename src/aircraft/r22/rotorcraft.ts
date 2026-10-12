@@ -1,3 +1,5 @@
+import { R22_BLADE_CONING } from './coning';
+import { SKID_FRONT_X, SKID_REAR_X } from './dimensions';
 import { DEG, HP } from '../../core/math';
 import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 import { R22_MAP, R22_VNE } from './limits';
@@ -52,12 +54,23 @@ export const R22_ROTORCRAFT: RotorcraftDefinition = {
   // the stinger; excessive penetration/sink or a fin/disc contact requires an inspection/stop.
   tailProtection: { stinger: TAIL_STINGER, radius: TAIL_STINGER_RADIUS, fin: LOWER_FIN_OUTLINE,
     stiffness: 15000, damping: 600, maxSink: 1, maxCompression: 0.08 },
+  // Collision envelopes copied from the existing three-view estimates; no rendering edits.
+  groundRotor: { blade: R22_BLADE_CONING, stopFriction: 0.16,
+    tailcone: { front: { x: -0.86, y: 0, z: -0.48 }, rear: { ...TAIL_HUB, y: 0 }, frontRadius: 0.15, rearRadius: 0.052 },
+    cabin: { centre: { x: 0.6, y: 0, z: -0.17 }, radii: { x: 1.08, y: 0.56, z: 0.65 } } },
   skids: { halfTrack: SKID_HALF_TRACK, front: SKID_CONTACT_FRONT_X, rear: SKID_CONTACT_REAR_X, z: SKID_Z,
     stiffness: 65000, damping: 2200, friction: 0.5, maxSink: 3.5,
     // ESTIMATES, not measured R22 coefficients: smooth steel shoes slide along firm turf more readily
     // than rubber tyres; broadside tubes plough soil. Dry paving has higher longitudinal drag.
     // Static grip is separate so low sliding drag does not imply creep on a modest slope.
-    // See docs/r22-flight-model.md for assumptions and run-on/slope checks; no terrain snag model.
+    // See docs/r22-flight-model.md for assumptions and run-on/slope checks; terrain assumptions are documented separately.
+    // ESTIMATED bilinear gear: existing elastic K/C, ~3 g yield load at gross, 10% hardening.
+    suspension: 'cross-tube',
+    flexure: { yieldForce: 4500, hardening: 6500, maxStroke: 0.25, spread: 0.5 },
+    terrain: { tubeRadius: 0.03, toe: SKID_FRONT_X, heel: SKID_REAR_X, toeRise: 0.10,
+      edgeStiffness: 80000, edgeDamping: 1800,
+      soil: { grass: { bearing: 500000, passive: 60000 }, dirt: { bearing: 800000, passive: 90000 },
+        snow: { bearing: 100000, passive: 10000 } } },
     surfaces: {
       grass: { static: 0.65, sliding: 0.2, lateral: 0.65 },
       dirt: { static: 0.65, sliding: 0.25, lateral: 0.65 },
