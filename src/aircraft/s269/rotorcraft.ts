@@ -53,6 +53,17 @@ export const S269_ROTORCRAFT: RotorcraftDefinition = {
     incidence: D.HORIZONTAL_STABILIZER.incidenceDeg * DEG, dihedral: D.HORIZONTAL_STABILIZER.dihedralDeg * DEG },
   fins: [{ ...base.fins[0], centre: D.VERTICAL_FIN_CENTRE, area: D.VERTICAL_FIN_AREA }],
   tailProtection: { ...base.tailProtection!, stinger: D.TAIL_STINGER, radius: D.TAIL_STINGER_RADIUS, fin: D.VERTICAL_FIN_OUTLINE },
-  skids: { ...base.skids, suspension: 'oleo', halfTrack: D.SKID_HALF_TRACK, front: D.SKID_CONTACT_FRONT_X,
+  groundRotor: { blade: S269_BLADE_CONING, stopFriction: 0,
+    tailcone: { front: { x: -0.82, y: 0, z: -0.42 }, rear: { ...D.TAIL_HUB, y: 0 },
+      frontRadius: 0.078, rearRadius: 0.052 },
+    cabin: { centre: { x: 0.72, y: 0, z: -0.12 }, radii: { x: 0.94, y: 0.6477, z: 0.66 } } },
+  skids: { ...base.skids, flexure: undefined,
+    // RFM 7-13 / FAA 4H12: four gas/poppet oleos, 350 psi front / 725 psi aft.
+    // Effective area, volume, metering and relief are ESTIMATES, not servicing dimensions.
+    oleo: { pressure: [350 * 6894.757 + 101325, 725 * 6894.757 + 101325],
+      area: 0.00025, gasLength: 0.08, exponent: 1.3,
+      contactStiffness: 400000,
+      maxStroke: 0.06, orifice: 1800, rebound: 3000, reliefForce: 4500, reliefDamping: 400 },
+    terrain: { ...base.skids.terrain!, tubeRadius: D.SKID_TUBE_RADIUS, toe: D.SKID_FRONT_X, heel: D.SKID_REAR_X }, suspension: 'oleo', halfTrack: D.SKID_HALF_TRACK, front: D.SKID_CONTACT_FRONT_X,
     rear: D.SKID_CONTACT_REAR_X, z: D.SKID_Z },
 };

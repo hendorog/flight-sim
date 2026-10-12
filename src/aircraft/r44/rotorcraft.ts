@@ -1,5 +1,7 @@
 // R44 Raven II teetering-rotor data. Published dimensions/rigging plus explicit engineering estimates.
 // See docs/r44-flight-model.md for chart errors and limitations; no flight-test handling validation.
+import { R44_BLADE_CONING } from './coning';
+import { SKID_FRONT_X, SKID_REAR_X } from './dimensions';
 import { DEG, type Vec3 } from '../../core/math';
 import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 import { R44_REFERENCE as V } from './reference';
@@ -68,8 +70,19 @@ export const R44_ROTORCRAFT: RotorcraftDefinition = {
   // Contact compliance and damage thresholds are estimates, not certified structural limits.
   tailProtection: { stinger: TAIL_STINGER, radius: TAIL_STINGER_RADIUS, fin: LOWER_FIN_OUTLINE,
     stiffness: 20000, damping: 800, maxSink: 1, maxCompression: 0.08 },
+  // Collision envelopes copied from the existing three-view estimates; no rendering edits.
+  groundRotor: { blade: R44_BLADE_CONING, stopFriction: 0.16,
+    tailcone: { front: { x: -0.35, y: 0, z: -0.38 }, rear: { ...TAIL_HUB, y: 0 }, frontRadius: 0.205, rearRadius: 0.065 },
+    cabin: { centre: { x: 0.95, y: 0, z: -0.20 }, radii: { x: 1.5, y: 0.64135, z: 0.75 } } },
   skids: { halfTrack: SKID_HALF_TRACK, front: SKID_CONTACT_FRONT_X,
     rear: SKID_CONTACT_REAR_X, z: SKID_Z, stiffness: 110000, damping: 3600, friction: 0.5, maxSink: 3.5,
+    // ESTIMATED bilinear gear: existing elastic K/C, ~3 g yield load at gross, 10% hardening.
+    suspension: 'cross-tube',
+    flexure: { yieldForce: 8500, hardening: 11000, maxStroke: 0.25, spread: 0.5 },
+    terrain: { tubeRadius: 0.03, toe: SKID_FRONT_X, heel: SKID_REAR_X, toeRise: 0.10,
+      edgeStiffness: 80000, edgeDamping: 1800,
+      soil: { grass: { bearing: 500000, passive: 60000 }, dirt: { bearing: 800000, passive: 90000 },
+        snow: { bearing: 100000, passive: 10000 } } },
     surfaces: {
       grass: { static: 0.65, sliding: 0.2, lateral: 0.65 },
       dirt: { static: 0.65, sliding: 0.25, lateral: 0.65 },
