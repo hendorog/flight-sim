@@ -1,4 +1,4 @@
-// Pteranodon: the species profile (WP4 owns this file; WP0b stub with the plan's numbers). Pure and three-free:
+// Pteranodon: the species profile (WP4 owns this file). Pure and three-free:
 // profiles.ts imports PROFILE (the export name is fixed).
 //
 // A flyer on the azhdarchid rig (Look-only variant): 3 of the 6 birds of showcase kettle 0, and ambient kettles at
@@ -20,8 +20,8 @@ export const PROFILE: SpeciesProfile = Object.freeze({
     lod0Max: Object.freeze({ low: 6, medium: 10, high: 14, ultra: 20 }),
     lodRangeScale: 1,
     farRangeM: 0,
-    // STUB budgets fit the stub body (the small azhdarchid, ~1.8k tris). WP4: the plan's 1500 / 250 / 40 / 600.
-    lod0Tris: 1900,
-    tris: Object.freeze([1900, 320, 50, 1900] as const),
+    // The plan's budgets: lod0 1500 / lod1 250 / lod2 40 / caster 600.
+    lod0Tris: 1500,
+    tris: Object.freeze([1500, 250, 40, 600] as const),
   }),
 });
