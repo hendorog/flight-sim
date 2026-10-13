@@ -25,6 +25,7 @@
 import type { AgentContext, SoloAgentPool, SoloBrain } from '../agents';
 import { AGENT_MEM } from '../agents';
 import { cellRandom } from '../habitat';
+import { makeSample } from '../../terrain/heightfield';
 import { REACTION_KIND } from '../herds';
 import { THREAT } from '../reactions';
 import { PROFILE } from './tyrannosaurus.data';
@@ -48,6 +49,11 @@ export const TREX_BRAIN = Object.freeze({
   /** It stops this far from the nearest member, m. */
   STOP_SHORT: 25,
   CHARGE_ACCEL: 3,
+  /** While moving it looks WATER_AHEAD m ahead every WATER_CHECK_S (one terrain read) and stops at a river's edge
+   * (closer than WATER_MARGIN to the channel): the lair is across the river from the herd. */
+  WATER_AHEAD: 14,
+  WATER_CHECK_S: 0.5,
+  WATER_MARGIN: 4,
   /** The threat's source is re-sent once the animal has moved this far from where it was last sent, m (a call per
    * frame would box its double arguments, ~20 B a frame; the herds read it at their 10 Hz brain tick anyway). */
   RESEND_M: 8,
@@ -64,6 +70,24 @@ const M_REARM_T = 3;
 const M_THREAT = 4; // 0 none, 1 alert sent, 2 flee sent
 const M_VN = 5;
 const M_VE = 6;
+/** Water check: the next check time (pool clock), negated while the way ahead is water. */
+const M_WATER = 7;
+
+const SAMPLE = makeSample();
+
+/** True while the way ahead (WATER_AHEAD m along the heading) is the river; re-checked every WATER_CHECK_S. */
+function waterAhead(pool: SoloAgentPool, i: number, ctx: AgentContext): boolean {
+  const m = i * AGENT_MEM;
+  const w = pool.mem[m + M_WATER];
+  const blocked = w < 0;
+  if (ctx.time < Math.abs(w) || ctx.terrainLeft() <= 1) return blocked;
+  const n = pool.n[i] + K.WATER_AHEAD * Math.cos(pool.yaw[i]);
+  const e = pool.e[i] + K.WATER_AHEAD * Math.sin(pool.yaw[i]);
+  const s = ctx.terrain.sample(n, e, SAMPLE);
+  const wet = s.riverDist - s.riverHalfWidth < K.WATER_MARGIN || s.standing > s.ground;
+  pool.mem[m + M_WATER] = (wet ? -1 : 1) * (ctx.time + K.WATER_CHECK_S);
+  return wet;
+}
 
 const wrapPi = (a: number): number => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
 
@@ -149,7 +173,7 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
         const dn = pool.mem[m + M_AIM_N] - pool.n[i];
         const de = pool.mem[m + M_AIM_E] - pool.e[i];
         pool.wantYaw[i] = Math.atan2(de, dn);
-        pool.wantSpeed[i] = dn * dn + de * de > 25 ? K.STALK_SPEED : 0;
+        pool.wantSpeed[i] = dn * dn + de * de > 25 && !waterAhead(pool, i, ctx) ? K.STALK_SPEED : 0;
         pool.turnRate[i] = 0.5;
         pool.accel[i] = 0.8;
         lookN = pool.mem[m + M_AIM_N];
@@ -186,6 +210,8 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
             // No kill: pull up short of the nearest animal.
             if (dn * dn + de * de < K.STOP_SHORT * K.STOP_SHORT) pool.wantSpeed[i] = 0;
           }
+          // ... and at the water's edge.
+          if (waterAhead(pool, i, ctx)) pool.wantSpeed[i] = 0;
           if (ctx.time - t0 >= K.ROAR_AFTER) pool.setState(i, S.roar);
         } else {
           // The roar: stop, rear the head up and open the jaw (eased in and out).

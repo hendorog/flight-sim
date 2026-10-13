@@ -15,6 +15,7 @@ import { buildFaunaSpecies } from '../../src/world/fauna/species/index';
 import { TREX_STATE, TYRANNOSAURUS_BRAIN } from '../../src/world/fauna/species/tyrannosaurus.brain';
 import { TYRANNOSAURUS_ROAR_GAPE } from '../../src/world/fauna/species/tyrannosaurus';
 import { BONE } from '../../src/world/fauna/types';
+import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { SOLE_POINTS, footPoint, theropodFoot, theropodLegIK, theropodPositions } from './theropodPoseMirror';
 import { THEROPOD_GAIT, THEROPOD_LEG } from '../../src/world/fauna/poses/theropod';
 
@@ -117,19 +118,27 @@ interface Trace {
   faceSet: number;
   fleeBearing: number;
   maxAgentReads: number;
+  /** Closest the T. rex came to the river channel's edge (m; negative = in the water), sampled every 0.5 s. */
+  riverClear: number;
   lines: string[];
 }
 
-/** A flat terrain at the river herd's ground that does not allocate (the real terrainHeight allocates internally). */
+/**
+ * A flat, dry terrain at the river herd's ground that does not allocate (the real terrain allocates internally;
+ * the allocation test measures the brain and the pool, not the terrain).
+ */
 function flatTerrain(): FaunaTerrain {
-  const base = countingTerrain();
   const g = Anchors.RIVER_HERD_SITE.ground;
   const t: FaunaTerrain = {
     calls: 0,
-    sample: (n, e, out) => {
+    sample: (_n, _e, out) => {
       t.calls++;
-      const s = base.sample(n, e, out);
-      return s;
+      out.ground = g;
+      out.standing = -1000;
+      out.river = -Infinity;
+      out.riverDist = Infinity;
+      out.riverHalfWidth = 0;
+      return out;
     },
     height: () => {
       t.calls++;
@@ -152,6 +161,7 @@ function setup(terrain: FaunaTerrain): { herds: HerdPool; pool: SoloAgentPool; r
 }
 
 const hd = Anchors.safariHeading();
+const WS = makeSample();
 const AT = { north: 0, east: 0, alt: 0 };
 function aircraftAt(t: number, ac: AircraftView): AircraftView {
   Anchors.safariAt(t, AT);
@@ -169,7 +179,7 @@ function aircraftAt(t: number, ac: AircraftView): AircraftView {
 /** Fly the safari for `seconds` with the herds and the T. rex as FaunaSystem steps them (herds, then agents). */
 function runSafari(seconds: number, terrain: FaunaTerrain = flatTerrain()): Trace {
   const { herds, pool, river, tri } = setup(terrain);
-  const tr: Trace = { stalk: NaN, charge: NaN, fleeSet: NaN, roar: NaN, faceSet: NaN, fleeBearing: NaN, maxAgentReads: 0, lines: [] };
+  const tr: Trace = { stalk: NaN, charge: NaN, fleeSet: NaN, roar: NaN, faceSet: NaN, fleeBearing: NaN, maxAgentReads: 0, riverClear: Infinity, lines: [] };
   const ac: AircraftView = { n: 0, e: 0, alt: 0, vN: 0, vE: 0, vD: 0, tas: 0 };
   const frames = Math.round(seconds / DT);
   for (let f = 1; f <= frames; f++) {
@@ -196,6 +206,10 @@ function runSafari(seconds: number, terrain: FaunaTerrain = flatTerrain()): Trac
       }
       const b = Math.atan2(se, sn) - hd;
       tr.fleeBearing = (Math.atan2(Math.sin(b), Math.cos(b)) * 180) / Math.PI;
+    }
+    if (f % 30 === 0) {
+      const w = sampleTerrain(pool.n[0], pool.e[0], WS);
+      tr.riverClear = Math.min(tr.riverClear, w.riverDist - w.riverHalfWidth);
     }
     if (f % 30 === 0) tr.lines.push(`${t.toFixed(2)} ${s} ${pool.n[0].toFixed(4)} ${pool.e[0].toFixed(4)} ${pool.yaw[0].toFixed(5)} ${pool.speed[0].toFixed(4)} ${pool.flap[0].toFixed(3)} ${pool.head[0].toFixed(4)} ${herds.fleeing[river]} ${herds.cN[river].toFixed(3)} ${herds.cE[river].toFixed(3)}`);
   }
@@ -275,8 +289,10 @@ describe('T. rex brain on the scripted safari', () => {
     expect(b.lines.length).toBe(60);
   });
 
-  it('keeps within 12 terrain reads per frame (the real terrain)', () => {
-    const real = runSafari(12, countingTerrain());
+  it('keeps within 12 terrain reads per frame and stops at the river (the real terrain)', () => {
+    const real = runSafari(40, countingTerrain());
+    expect(real.riverClear).toBeGreaterThan(0);
+    expect(real.roar).toBeCloseTo(tr.roar, 0);
     expect(real.maxAgentReads).toBeLessThanOrEqual(AGENT_RESERVE);
     expect(AGENT_RESERVE).toBe(12);
     expect(real.charge).toBeCloseTo(tr.charge, 6);
