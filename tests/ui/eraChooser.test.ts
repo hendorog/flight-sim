@@ -8,6 +8,7 @@ import {
   ERA_LOADING_LINES,
   eraChoiceUrl,
   eraConfirmation,
+  eraDevChoiceUrl,
   eraDefaultScenario,
   eraGates,
   eraLoadingTitle,
@@ -40,6 +41,13 @@ describe('addresses', () => {
     expect(eraChoiceUrl(url)).toBe('https://fs.local/index.html?aircraft=c208&cam=chase#x');
   });
 
+  it('a dev page (no setEra command) names the era in the address, as its harness reads only the URL', () => {
+    const url = 'https://fs.local/dev/flats.html?era=present&scenario=runway&cam=1,2,3';
+    expect(new URL(eraDevChoiceUrl(url, 'cretaceous')).searchParams.get('era')).toBe('cretaceous');
+    expect(new URL(eraDevChoiceUrl(url, 'cretaceous')).searchParams.get('scenario')).toBeNull();
+    expect(new URL(eraDevChoiceUrl('https://fs.local/dev/flats.html?era=cretaceous&cam=1,2,3', 'present')).searchParams.has('era')).toBe(false);
+  });
+
   it('the Cretaceous starts the safari', () => {
     expect(eraDefaultScenario('cretaceous')).toBe('safari');
     expect(eraDefaultScenario('present')).toBeUndefined();
@@ -58,6 +66,9 @@ describe('confirmation', () => {
     expect(ask?.kind).toBe('flight');
     expect(ask?.text).toContain('Reloads the world');
     expect(ask?.text).toContain(present.label);
+    expect(ask?.text).toContain(rows[1].label);
+    // Snapshots are kept per aircraft and never restored across eras: nothing may promise a resume.
+    expect(ask?.text).not.toMatch(/resumes|saved/);
   });
 
   it('a lesson is abandoned first', () => {
@@ -65,6 +76,7 @@ describe('confirmation', () => {
   });
 });
 
+// The menu itself applies these gates: tests/ui/eraMenu.test.ts builds the PauseMenu in each era.
 describe('gates', () => {
   it('hide the School tab and the tower camera in the Cretaceous only', () => {
     expect(eraGates(ERAS.present)).toEqual({ school: true, towerCamera: true });

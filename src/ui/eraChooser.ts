@@ -34,6 +34,16 @@ export function eraChoiceUrl(current: string): string {
   return eraSwitchUrl(current);
 }
 
+/**
+ * The same for a dev page (no commands.setEra): src/dev/harness.ts reads only the URL's `era`, not the stored
+ * preference, so the address names the chosen era (the present day: none, its default).
+ */
+export function eraDevChoiceUrl(current: string, id: EraId): string {
+  const url = new URL(eraSwitchUrl(current));
+  if (id !== 'present') url.searchParams.set('era', id);
+  return url.toString();
+}
+
 /** What the menu hides in an era (the School tab and the tower camera only exist where there is an airport). */
 export interface EraGates {
   school: boolean;
@@ -57,7 +67,7 @@ export function eraConfirmation(s: AircraftState, lessonActive: boolean, current
   const reload = 'Reloads the world.';
   if (lessonActive) return { kind: 'lesson', text: `${reload} Abandon the lesson and go to ${chosen.label}? The flight so far is logged.` };
   const airborne = !s.wheels.some((w) => w.onGround);
-  if (airborne || s.groundSpeed > STANDING_STILL) return { kind: 'flight', text: `${reload} This flight is saved and resumes when you return to ${current.label}.` };
+  if (airborne || s.groundSpeed > STANDING_STILL) return { kind: 'flight', text: `${reload} Leave this flight in ${current.label} and go to ${chosen.label}? It is not resumed later.` };
   return null;
 }
 

@@ -11,7 +11,7 @@ import type { SchoolCommand } from '../training/types';
 import { AIRPORT, sunDirectionNED } from '../core/world';
 import { el, formatHours } from './dom';
 import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
-import { eraChoiceUrl, eraConfirmation, eraGates, eraRows, type EraGates, type EraRow } from './eraChooser';
+import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, type EraGates, type EraRow } from './eraChooser';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
 import { ERAS } from '../world/era/registry';
 import type { EraId } from '../world/era/types';
@@ -435,13 +435,14 @@ export class PauseMenu {
         ctx().commands.setEra?.(row.id);
         return;
       }
-      // A shell without the command (dev pages): store the preference and reload as the command would.
+      // A shell without the command (dev pages): store the preference and reload with ?era= (the dev harness
+      // reads only the URL).
       try {
         localStorage.setItem(ERA_PREF_KEY, row.id);
       } catch {
-        // Storage unavailable: the reload falls back to the present day.
+        // Storage unavailable: the URL still names the era.
       }
-      location.replace(eraChoiceUrl(location.href));
+      location.replace(eraDevChoiceUrl(location.href, row.id));
     };
     go.addEventListener('click', () => {
       confirm.classList.add('hidden');
@@ -496,7 +497,8 @@ export class PauseMenu {
         c.commands.setAircraft(row.id);
         return;
       }
-      // A shell without the command (dev pages): store the preference and reload as the command would.
+      // A shell without the command (dev pages): store the preference and reload with ?era= (the dev harness
+      // reads only the URL).
       try {
         localStorage.setItem(AIRCRAFT_PREF_KEY, row.id);
       } catch {

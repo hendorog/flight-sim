@@ -273,6 +273,9 @@ export class UISystem implements Subsystem, MenuHost {
         this.lastSwitches = null;
         this.lastMixture.fill(NaN);
         this.startupCheck = true;
+        // A new start on the Flats from the menu (the Flats, Off the trail): the wind advice again. At boot the
+        // loading screen still covers the start; hideLoading gives it then.
+        if (this.loaded) this.spawnWindToast();
       }),
       ev.on('cameraMode', (e) => this.showToast(`${CAMERA_NAMES[e.mode]} view`)),
       ev.on('qualityChanged', (e) => this.showToast(`Graphics quality: ${e.quality}`)),
@@ -362,14 +365,18 @@ export class UISystem implements Subsystem, MenuHost {
 
   hideLoading(): void {
     this.loading.hide();
+    this.loaded = true;
     if (this.hintsMode === 'always') this.hints.show(true);
     else if (this.hintsMode === 'auto' && !this.automated && !this.schoolUi?.hasProfile) this.hints.show();
     this.startupCheck = true;
     this.spawnWindToast();
   }
 
+  /** The loading screen has been hidden once (boot finished): later starts give their own wind advice. */
+  private loaded = false;
+
   /**
-   * The Flats have no windsock: once, at the start on the ground, say which way the wind blows and which way to
+   * The Flats have no windsock: at each start on the ground (after boot and after each reset), say which way the wind blows and which way to
    * take off. After the loading screen has faded.
    */
   private spawnWindToast(): void {
