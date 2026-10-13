@@ -62,6 +62,12 @@ describe('eraSwitchUrl', () => {
     expect([...u.searchParams.keys()].sort()).toEqual(['aircraft', 'tod']);
     expect(u.pathname).toBe('/index.html');
   });
+
+  it('drops the R22 demo and its trace, so the new era starts its own scenario and weather', () => {
+    const u = new URL(eraSwitchUrl('https://x.test/?aircraft=r22&demo=hover&trace=1&era=present'));
+    expect([...u.searchParams.keys()]).toEqual(['aircraft']);
+    expect(parseParams(u.search).demo).toBeNull();
+  });
 });
 
 describe('params', () => {

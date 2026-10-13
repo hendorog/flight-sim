@@ -27,9 +27,11 @@ export const ERA_PREF_KEY = 'fs.era';
 
 /**
  * URL parameters a change of era removes: the era itself (the choice is stored instead) and those that would
- * bring the old world's flight back (scenario, lesson, phase, brief, resume). The aircraft stays.
+ * bring the old world's flight back (scenario, lesson, phase, brief, resume, and the R22 scripted demo with its
+ * trace graph, which would otherwise restart the demo and its weather in place of the new era's start). The
+ * aircraft stays.
  */
-export const ERA_SWITCH_DROPS = ['era', 'scenario', 'lesson', 'phase', 'brief', 'resume'] as const;
+export const ERA_SWITCH_DROPS = ['era', 'scenario', 'lesson', 'phase', 'brief', 'resume', 'demo', 'trace'] as const;
 
 export interface EraChoice {
   id: EraId;
