@@ -483,7 +483,7 @@ export class FlyerPool {
           this.heading[i] = Math.atan2(re, rn);
           this.setMode(i, FLYER_MODE.launch);
         }
-      } else if (airborne && d < FLYER_REACTION.evadeRange && mode !== FLYER_MODE.evade && budget >= 0) {
+      } else if (airborne && d < FLYER_REACTION.evadeRange && mode !== FLYER_MODE.evade) {
         // Wing-over away from the aircraft: horizontally away, and down if the aircraft is above (else up).
         const hl = Math.hypot(rn, re) || 1;
         this.evadeDN[i] = rn / hl;
@@ -516,7 +516,7 @@ export class FlyerPool {
     switch (this.mode[i] as FlyerMode) {
       case FLYER_MODE.stand:
       case FLYER_MODE.walk:
-        this.groundStep(i, dt, daylight && thermals);
+        this.groundStep(i, dt);
         break;
       case FLYER_MODE.launch: {
         const p = (this.time - this.modeT[i]) / LAUNCH_S;
@@ -645,7 +645,7 @@ export class FlyerPool {
     this.bank[i] += (bank - this.bank[i]) * Math.min(1, 3 * dt);
   }
 
-  private groundStep(i: number, dt: number, lift: boolean): void {
+  private groundStep(i: number, dt: number): void {
     // Wander about the anchor: walk to a point, stand a while, pick another.
     const seed = this.seed[i];
     const t = this.time;
@@ -678,7 +678,6 @@ export class FlyerPool {
     this.phase[i] = p - Math.floor(p);
     const target = this.speed[i] < 0.15 ? 0 : 1;
     this.blend[i] += (target - this.blend[i]) * Math.min(1, 2 * dt);
-    void lift;
   }
 
   private kettleStep(i: number, dt: number, t: number, f: ThermalFrame | null, thermals: boolean, terrain: FaunaTerrain, budget: number, windToN: number, windToE: number): void {
