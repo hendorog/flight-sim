@@ -63,7 +63,8 @@ describe('the Flats', () => {
     expect(sc.id).toBe('safari');
     const { x, y, z } = sc.ic.position;
     expect(sc.ic.onGround).toBe(false);
-    expect(-z - terrainHeight(x, y)).toBeGreaterThan(150);
+    // SAFARI.aglFt (450 ft, cretaceousAnchors.ts) above the ground.
+    expect(-z - terrainHeight(x, y)).toBeGreaterThan(130);
     const rc = runwayCoords(x, y);
     expect(rc.along).toBeGreaterThan(4000);
     expect(Math.abs(rc.across - 3000)).toBeLessThan(500);
@@ -76,6 +77,7 @@ describe('the Flats', () => {
     p.reset('safari');
     p.step(30);
     expect(p.state.crashed).toBe(false);
-    expect(p.state.altitudeMSL - terrainHeight(p.state.position.x, p.state.position.y)).toBeGreaterThan(200);
+    // The hold keeps the start altitude (450 ft above the start's ground); the valley floor stays below it.
+    expect(p.state.altitudeMSL - terrainHeight(p.state.position.x, p.state.position.y)).toBeGreaterThan(120);
   }, 60000);
 });

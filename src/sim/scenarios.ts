@@ -19,6 +19,7 @@ import type { AircraftDefinition, ControlSystemDef } from '../aircraft/types';
 import { tasFromCas } from '../physics/atmosphere';
 import { LINE_UP, PARKING } from '../world/airport/layout';
 import { isPresent } from '../world/era/eraState';
+import { SAFARI } from '../world/era/cretaceousAnchors';
 import { terrainHeight } from '../world/terrain/heightfield';
 import type { StartSpec } from './starts';
 
@@ -29,19 +30,15 @@ export const PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
 /** Downwind leg offset from the runway centreline, m (left-hand traffic for 07: north-west of the runway). */
 export const DOWNWIND_OFFSET = 900;
 /**
- * The 'safari' start (Deep Time) in the runway frame, m: along the runway, across to its right; and its track,
- * this far right of the 25 direction (rad); 600 ft above the ground. Chosen so the first 40 s show the showcase
- * wildlife from the left seat (src/world/fauna/showcase.ts): the river herd (along ~3.5 km, across ~3 km) is
- * ~25 deg left of the nose and ~12 deg down from the start (in the windscreen's lower left), ~40 deg left at
- * 700 m ~14 s in, and passes ~450 m off the left wing ~21 s in; the 07-side kettle (on the default weather's
- * thermal core at along ~3.0 km, across ~1.8 km, stacked about the aircraft's height) is just right of the nose
- * and passes ~250 m off the right wing ~40 s in; the volcano is ~7 deg left of the nose.
+ * The 'safari' start (Deep Time) comes from src/world/era/cretaceousAnchors.ts SAFARI (computed there by
+ * scripts/safari-geometry.mjs; see its header for the first minute it stages): along / across the runway frame, m;
+ * the track, this far right of the 25 direction (rad); the height above the ground. Aliases of SAFARI's fields.
  */
-export const SAFARI_ALONG = 4870;
-export const SAFARI_ACROSS = 3450;
-export const SAFARI_TRACK = 35 * DEG;
+export const SAFARI_ALONG = SAFARI.along;
+export const SAFARI_ACROSS = SAFARI.across;
+export const SAFARI_TRACK = SAFARI.trackDeg * DEG;
 /** The safari start's height above the ground, m. */
-export const SAFARI_AGL = 600 * FT;
+export const SAFARI_AGL = SAFARI.aglFt * FT;
 /** Glide path of the final-approach scenario and the aim point beyond the threshold (m). */
 export const GLIDE_PATH = 3 * DEG;
 export const AIM_POINT = 150;
@@ -104,6 +101,8 @@ export interface Scenario {
   attitude?: { pitch: number; roll: number };
   /** The lesson start this scenario was built from (stored in the resume snapshot). */
   start?: StartSpec;
+  /** Engage `autoflight` on every reset to this scenario (the Cretaceous safari's hold), as ap=1 does for all. */
+  engageAutoflight?: boolean;
 }
 
 /** True airspeed (m/s) for an indicated airspeed (kt) at an altitude MSL (m) in `env`'s atmosphere. */
@@ -207,22 +206,24 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
       };
     }
     case 'safari': {
-      // The Cretaceous era's airborne start: SAFARI_AGL (600 ft) above the ground over the river valley,
-      // SAFARI_ALONG m along the runway frame and SAFARI_ACROSS m to the right of it, flying down the valley toward the volcano
-      // (heading 250 + SAFARI_TRACK) past the showcase herd and kettle, at the type's cruise speed and clean.
+      // The Cretaceous era's airborne start (cretaceousAnchors.ts SAFARI): SAFARI_AGL above the ground over the
+      // river valley, SAFARI_ALONG m along the runway frame and SAFARI_ACROSS m to the right of it, flying down the
+      // valley toward the volcano (heading 250 + SAFARI_TRACK) past the showcase groups, at the type's cruise speed (SAFARI.kias for the C172), clean, the
+      // autoflight's heading and altitude hold engaged (the pilot's first input disconnects it).
       const rwy = AIRPORT.runway.heading;
-      const n = SAFARI_ALONG * Math.cos(rwy) - SAFARI_ACROSS * Math.sin(rwy);
-      const e = SAFARI_ALONG * Math.sin(rwy) + SAFARI_ACROSS * Math.cos(rwy);
+      const n = AIRPORT.runway.center.north + SAFARI_ALONG * Math.cos(rwy) - SAFARI_ACROSS * Math.sin(rwy);
+      const e = AIRPORT.runway.center.east + SAFARI_ALONG * Math.sin(rwy) + SAFARI_ACROSS * Math.cos(rwy);
       const alt = terrainHeight(n, e) + SAFARI_AGL;
       const heading = wrapTwoPi(rwy + Math.PI + SAFARI_TRACK);
       const ic: InitialConditions = { position: { x: n, y: e, z: -alt }, heading, airspeed: kiasToTas(sc.cruiseKias, alt, env), onGround: false, engineRunning: true };
       if (retractable) ic.gearDown = false;
       return {
         id,
-        title: 'Safari: the river valley, 600 ft',
+        title: `Safari: the river valley, ${SAFARI.aglFt} ft`,
         ic,
         controls: presets.airborne,
         autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
+        engageAutoflight: true,
       };
     }
     case 'downwind': {

@@ -18,8 +18,9 @@ import { AIRPORT } from '../../core/world';
 import { localToNed, RUNWAY_HALF_LENGTH } from '../airport/layout';
 import { herdGround, type FaunaTerrain } from './habitat';
 
-/** Runway-frame seed of the river herd (along, across), m. */
-export const RIVER_HERD_SEED = { u: 3500, v: 3000 } as const;
+/** Runway-frame seed of the river herd (along, across), m: defined with the safari's anchors (increment 2). */
+export { RIVER_HERD_SEED } from '../era/cretaceousAnchors';
+import { RIVER_HERD_SEED } from '../era/cretaceousAnchors';
 export const RIVER_HERD_SIZE = 60;
 /** Spiral search for valid ground around the seed: rings of this step, up to this many probes. */
 const SEARCH_STEP = 60;

@@ -19,6 +19,7 @@
 import { clamp } from '../../core/math';
 import type { VolcanoSpec } from '../era/types';
 import { fbm, gullies, type Deriv } from './noise';
+import { era } from '../era/eraState';
 
 /** Exponent of the concave flank profile. */
 export const VOLCANO_PROFILE = 1.6;
@@ -211,3 +212,71 @@ float volcanoCone(float rN) { return 1.0 - smoothstep(${CONE_IN.toFixed(3)}, ${C
 // Bare basalt crags (volcano.ts volcanoCrag): steep ground on the upper cone, the slope edge broken by noise.
 float volcanoCrag(float cone, float rN, float up) { return cone * smoothstep(${CRAG_UP_NONE.toFixed(3)}, ${CRAG_UP_FULL.toFixed(3)}, up) * smoothstep(${CRAG_R_NONE.toFixed(3)}, ${CRAG_R_FULL.toFixed(3)}, rN); }
 `;
+
+// ------------------------------------------------------------------------------------------------ increment 2
+//
+// WP0a contract (FROZEN names; WP5 owns the contents): the volcano's colours as GLSL literals, the lava shader
+// slots of the terrain material, and the lava state behind ERA_UNIFORMS.uLava.
+
+/**
+ * The volcano's terrain colours (linear albedo), as the exact GLSL text the terrain material splices in
+ * (terrainMaterial.ts VOLCANO_ROCK, VOLCANO_ASH, VOLCANO_CRATER). Strings, not numbers, so the shader text is
+ * byte-identical to the literals they replaced (tests/era/eraHooks.test.ts). WP5 lifts them.
+ */
+export const VOLCANO_PALETTE = Object.freeze({
+  /** Near-black basalt of the cone. */
+  basalt: 'vec3(0.052, 0.049, 0.046)',
+  /** Oxidised red-brown scoria near the top. */
+  scoria: 'vec3(0.12, 0.052, 0.03)',
+  /** Ash and scoria fall (the sand channel within the cone's reach), and its paler patches. */
+  ash: 'vec3(0.05, 0.048, 0.046)',
+  ashPale: 'vec3(0.095, 0.088, 0.078)',
+  /** Hydrothermally altered crater floor: ochre, sulphur-yellow, pale crusts. */
+  craterOchre: 'vec3(0.16, 0.09, 0.04)',
+  craterSulphur: 'vec3(0.52, 0.44, 0.12)',
+  craterPale: 'vec3(0.5, 0.48, 0.42)',
+});
+
+/**
+ * Lava, fragment HEAD slot (WP5): functions and constants, emitted in the terrain fragment shader's head inside
+ * `#if VOLCANO` (after VOLCANO_GLSL and ERA_TERRAIN_UNIFORMS_GLSL: uVolcano, uEraTime, uNight, uLava and the
+ * terrain helpers / tNoise are in scope). Empty: nothing is emitted (the stub).
+ */
+export const VOLCANO_LAVA_HEAD_GLSL = '';
+
+/**
+ * Lava, BODY slot (WP5): emitted inside `#if VOLCANO` immediately before `#include <opaque_fragment>` of the terrain
+ * material (MeshStandardMaterial), where `outgoingLight` (linear HDR scene units: cd/m^2 x 0.1, before fog and tone
+ * mapping) can be added to. In scope: everything of the splat (tP, tXZ, tN, tUp, tDist, tVolR, tVolc, the noise
+ * samples nA..nD, sB..sD, acc) and the uniforms above. Empty: nothing is emitted (the stub). Switched off by
+ * ?eraoff=lava (the slot stays empty).
+ */
+export const VOLCANO_LAVA_GLSL = '';
+
+/** (east, north, altitude MSL, intensity): the uLava uniform's value. */
+export interface LavaState {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}
+
+/**
+ * The volcano's glow for ERA_UNIFORMS.uLava at sim time `t` (WP5 fills the intensity from the night ramp and its
+ * own animation). Stub: the crater's position and summit, intensity 0 (no glow). Allocation-free; writes `out`.
+ */
+export function volcanoLavaState(sky: { sunDir: { y: number } }, t: number, out: LavaState): LavaState {
+  const V = era().terrain.volcano;
+  if (!V) {
+    out.x = out.y = out.z = out.w = 0;
+    return out;
+  }
+  out.x = V.east;
+  out.y = V.north;
+  out.z = V.summit - V.craterDepth;
+  // The stub glows not at all. WP5: e.g. nightRamp(sky.sunDir.y) (world/era/eraLight.ts) times its flicker at t.
+  void sky;
+  void t;
+  out.w = 0;
+  return out;
+}

@@ -127,10 +127,12 @@ describe('Deep Time integration', () => {
     const de = herd.east - y;
     const ahead = dn * Math.cos(h) + de * Math.sin(h);
     const right = -dn * Math.sin(h) + de * Math.cos(h);
-    // Abeam within ~25 s at cruise (~60 m/s), 300-900 m off the left wing (seen from the left seat).
+    // Abeam within ~25 s at cruise (~60 m/s), off the left wing: 200-400 m left of the start track (the hold's
+    // drift puts it HERD_LATERAL_M = 300 m left of the flown path; cretaceousAnchors.ts), so it crosses the left
+    // door window (seen from the left seat).
     expect(ahead).toBeGreaterThan(300);
     expect(ahead).toBeLessThan(1500);
-    expect(-right).toBeGreaterThan(300);
-    expect(-right).toBeLessThan(900);
+    expect(-right).toBeGreaterThan(200);
+    expect(-right).toBeLessThan(400);
   });
 });

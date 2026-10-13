@@ -62,6 +62,8 @@ import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
 import { era, isPresent, setEra } from '../world/era/eraState';
+import { createEraEffects } from '../render/post/eraEffects';
+import { bootCameraMode, cameraModeAllowed, safariHeadPitch, startTimeOfDay } from './safariStart';
 import type { EraId } from '../world/era/types';
 import { createFaunaSystem, type FaunaSystem } from '../world/fauna/FaunaSystem';
 import { SceneMaterialPatches } from './cloudShadows';
@@ -280,6 +282,13 @@ export class Simulator {
     const events = createEventBus();
     // Resume the last flight (a reload), or start the URL's (or the remembered) scenario.
     const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId ? false : p.resume, explicitScenario: !!demoId || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id, era: era().id });
+    // An era's own start (the Cretaceous safari) when the URL names no scenario and nothing is resumed.
+    const eraStart = !p.explicitScenario && !demoId ? era().world.defaultScenario : undefined;
+    const startId = decision.kind === 'scenario' ? decision.scenario : (eraStart ?? p.scenario);
+    // The safari's own time of day (cretaceousAnchors.ts SAFARI.tod) unless the URL sets tod=; a resumed flight's
+    // snapshot weather (below) overrides it, and a failed resume restores it with weatherBefore.
+    const startTod = startTimeOfDay({ scenario: startId, urlTod: p.weather.timeOfDay !== undefined, resumed: false });
+    if (startTod !== null) this.weather.timeOfDay = startTod;
     const weatherBefore = { ...this.weather };
     if (decision.kind === 'resume') Object.assign(this.weather, decision.snapshot.weather);
     const physics = new SimPhysics({ weather: this.weather, events, aircraft: def });
@@ -301,9 +310,7 @@ export class Simulator {
         this.bootDecision = { kind: 'normal', reason: 'restore failed' };
       }
     }
-    // An era's own start (the Cretaceous safari) when the URL names no scenario and nothing is resumed.
-    const eraStart = !p.explicitScenario && !demoId ? era().world.defaultScenario : undefined;
-    if (!resumed) physics.reset(decision.kind === 'scenario' ? decision.scenario : (eraStart ?? p.scenario), this.weather);
+    if (!resumed) physics.reset(startId, this.weather);
     if (resumed) {
       const snap = resumed.snapshot;
       if (p.renderScale === null) p.renderScale = snap.renderScale;
@@ -362,7 +369,7 @@ export class Simulator {
       paused: false,
       timeScale: 1,
       achievedTimeScale: 1,
-      cameraMode: resumed && !p.camPos ? resumed.snapshot.cameraMode : p.cam,
+      cameraMode: bootCameraMode(resumed && !p.camPos ? resumed.snapshot.cameraMode : p.cam),
       panelView: loadPanelView(this.store),
       quality: resumed ? resumed.snapshot.quality : p.quality,
       commands,
@@ -397,7 +404,8 @@ export class Simulator {
       pilotEye: { x: presentation.visual.cockpit.pilotEye[0], y: presentation.visual.cockpit.pilotEye[1], z: presentation.visual.cockpit.pilotEye[2] },
       radius: def.geometry.bounds.radius,
       fitSize: def.geometry.bounds.fitSize,
-      defaultPitchDeg: presentation.visual.cockpit.defaultPitchDeg,
+      // A safari-only head pitch (cretaceousAnchors.ts SAFARI.headPitchDeg; null today: the type's own view).
+      defaultPitchDeg: (resumed ? null : safariHeadPitch(physics.scenario.id)) ?? presentation.visual.cockpit.defaultPitchDeg,
       defaultFovDeg: presentation.visual.cockpit.defaultFovDeg,
     });
     // A camera cut (cockpit <-> exterior, a reset) must not blend the old view into the new one.
@@ -547,6 +555,9 @@ export class Simulator {
     await progress(0.9, 'Post-processing and clouds');
     const post = new PostPipeline(renderer, scene, camera);
     const clouds = new CloudsEffect(renderer);
+    // The era's scene effects (the volcano's plume, WP5) go before the clouds, so the cumulus in front of them
+    // occludes them. Nothing is called in the present day.
+    if (!isPresent()) for (const effect of createEraEffects({ ctx, renderer, scene, camera, weather: this.weather })) post.addEffect(effect);
     post.addEffect(clouds);
     this.post = post;
     post.setAircraftRadius(def.geometry.bounds.radius);
@@ -955,6 +966,8 @@ export class Simulator {
   }
 
   setCameraMode(mode: CameraMode): void {
+    // The tower camera stands in the airport's tower: not in an era without one (the Cretaceous Flats).
+    if (!cameraModeAllowed(mode)) return;
     this.fixedCamera = null;
     if (this.ctx.cameraMode === mode) return;
     this.ctx.cameraMode = mode;

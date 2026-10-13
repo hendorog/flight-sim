@@ -32,7 +32,10 @@ import { RIVER_STRIP, TREE_LINE_ASPECT, treeLineBase } from './biome';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
 import { snowLineBase } from './heightfield';
 import { era, isPresent } from '../era/eraState';
-import { ASH_REACH, VOLCANO_GLSL } from './volcano';
+import { ASH_REACH, VOLCANO_GLSL, VOLCANO_LAVA_GLSL, VOLCANO_LAVA_HEAD_GLSL, VOLCANO_PALETTE } from './volcano';
+import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS } from './eraUniforms';
+import { UNDERSTOREY_HEAD_GLSL, UNDERSTOREY_SPECKLE_GLSL } from './vegetation/understorey';
+import { eraOff, type EraLayerName } from '../era/eraOff';
 import { RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
@@ -101,6 +104,17 @@ const glslVec = (c: readonly number[]): string => `vec3(${c.map((x) => x.toFixed
 
 /** Era-only shader text: '' in the present day. */
 const eraText = (t: string): string => (isPresent() ? '' : t);
+
+/**
+ * Increment 2 (WP0a): an era shader SLOT. Its text comes from the owning package's module (volcano.ts lava,
+ * vegetation/understorey.ts speckle); it is emitted only outside the present day, only when non-empty, and not when
+ * ?eraoff= switches the layer off. `wrap` puts it inside a capability block (e.g. VOLCANO). An empty slot adds no
+ * text at all, so the shader is byte-identical to one without the slot.
+ */
+const eraSlot = (name: EraLayerName, text: string, wrap = ''): string => {
+  if (isPresent() || !text || eraOff(name)) return '';
+  return wrap ? `#if ${wrap}\n${text}${text.endsWith('\n') ? '' : '\n'}#endif\n` : `${text}${text.endsWith('\n') ? '' : '\n'}`;
+};
 
 /** The era's capability defines (only applied outside the present day). */
 export function eraDefines(): Record<string, number> {
@@ -185,8 +199,8 @@ rockW = max(rockW, volcanoCrag(tVolc, tVolR, tUpN + 0.1 * fineN + 0.04 * sC.g));
 const VOLCANO_ROCK = /* glsl */ `#if VOLCANO
 ledge *= 1.0 - tVolc;
 {
-  vec3 basalt = vec3(0.052, 0.049, 0.046) * (0.75 + 0.35 * nC.a + 0.1 * sD.r) * (0.7 + 0.6 * rib);
-  basalt = mix(basalt, vec3(0.12, 0.052, 0.03) * (0.8 + 0.3 * nD.b), smoothstep(0.42, 0.2, tVolR + 0.05 * sC.r) * 0.7);
+  vec3 basalt = ${VOLCANO_PALETTE.basalt} * (0.75 + 0.35 * nC.a + 0.1 * sD.r) * (0.7 + 0.6 * rib);
+  basalt = mix(basalt, ${VOLCANO_PALETTE.scoria} * (0.8 + 0.3 * nD.b), smoothstep(0.42, 0.2, tVolR + 0.05 * sC.r) * 0.7);
   base = mix(base, basalt * mix(1.0, 0.62 + 0.55 * streak, smoothstep(0.85, 0.6, tUp)), tVolc);
 }
 #endif
@@ -197,11 +211,11 @@ const VOLCANO_ASH = /* glsl */ `#if VOLCANO
 {
   float ashW = sandW * (1.0 - smoothstep(${(ASH_REACH - 0.1).toFixed(3)}, ${ASH_REACH.toFixed(3)}, tVolR));
   if (ashW > 0.001) {
-    vec3 ash = vec3(0.05, 0.048, 0.046) * (0.8 + 0.1 * sB.g + 0.08 * sC.b + 0.05 * sD.a);
+    vec3 ash = ${VOLCANO_PALETTE.ash} * (0.8 + 0.1 * sB.g + 0.08 * sC.b + 0.05 * sD.a);
     vec2 aFall = normalize(tN.xz + 1e-4);
     float aStreak = texture(tNoise, vec2(dot(tXZ, vec2(-aFall.y, aFall.x)) / 40.0, dot(tXZ, aFall) / 400.0)).b;
     ash *= 0.7 + 0.55 * aStreak;
-    ash = mix(ash, vec3(0.095, 0.088, 0.078), smoothstep(0.62, 0.85, nD.r) * 0.35);
+    ash = mix(ash, ${VOLCANO_PALETTE.ashPale}, smoothstep(0.62, 0.85, nD.r) * 0.35);
     addMat(acc, layerTop(${LAYER.gravel}, tXZ, tDist), ash, ashW);
     sandW -= ashW;
   }
@@ -214,8 +228,8 @@ const VOLCANO_CRATER = /* glsl */ `#if VOLCANO
 {
   float crater = 1.0 - smoothstep(0.8, 1.05, tVolR * uVolcano.z / uVolcano.w + 0.1 * sC.b);
   if (crater > 0.001) {
-    vec3 alt = mix(vec3(0.16, 0.09, 0.04), vec3(0.52, 0.44, 0.12), smoothstep(0.5, 0.8, nC.a + 0.3 * (nD.g - 0.5)));
-    alt = mix(alt, vec3(0.5, 0.48, 0.42), smoothstep(0.7, 0.9, nD.b) * 0.5);
+    vec3 alt = mix(${VOLCANO_PALETTE.craterOchre}, ${VOLCANO_PALETTE.craterSulphur}, smoothstep(0.5, 0.8, nC.a + 0.3 * (nD.g - 0.5)));
+    alt = mix(alt, ${VOLCANO_PALETTE.craterPale}, smoothstep(0.7, 0.9, nD.b) * 0.5);
     acc.albedo = mix(acc.albedo, alt * (0.8 + 0.3 * sD.r), crater * smoothstep(0.35, 0.65, nB.r + 0.25 * sC.g));
   }
 }
@@ -421,7 +435,7 @@ varying vec2 vRiver;
 ${HASH_GLSL}
 ${ROT_GLSL}
 ${E('#if ERA_FARM\n')}${FIELDS_GLSL}
-${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}`)}
+${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
 
 // Runway coordinates of a world (three.js xz) position: x along the centreline (+ toward the 25 end),
@@ -996,7 +1010,7 @@ if (grassW > 0.001) {
 }
 if (farmSoil > 0.5 && farmWeight > 0.001) addMat(acc, layerTop(${LAYER.soil}, tXZ, tDist), fieldCol, farmWeight);
 ${E(VOLCANO_ASH)}if (sandW > 0.001) addMat(acc, layerTop(${LAYER.sand}, tXZ, tDist), ${P.sand} * (0.9 + 0.1 * sC.b), sandW);
-
+${eraSlot('speckle', UNDERSTOREY_SPECKLE_GLSL)}
 acc.albedo *= tEdgeShade;
 // Wet ground by water: darker and smoother.
 acc.albedo *= 1.0 - 0.35 * wet;
@@ -1146,6 +1160,8 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   // Built now, in the era this thread was set in (never at module load).
   const head = fragmentHead();
   const splat = fragmentSplat();
+  // The lava's emission (increment 2 slot; empty in the present day and in the stub).
+  const lava = eraSlot('lava', VOLCANO_LAVA_GLSL, 'VOLCANO');
   Object.assign(uniforms, {
     tNoise: { value: tex.noise },
     tDetailA: { value: tex.albedo },
@@ -1163,6 +1179,8 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   // The era's uniforms (not in the present day, whose uniform names stay as they were).
   const V = era().terrain.volcano;
   if (!isPresent() && V) Object.assign(uniforms, { uVolcano: { value: new THREE.Vector4(V.east, V.north, V.baseRadius, V.craterRadius) } });
+  // Increment 2: the era's per-frame uniforms (eraUniforms.ts), shared by reference.
+  if (!isPresent()) Object.assign(uniforms, ERA_UNIFORMS);
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -1180,7 +1198,7 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
         '#include <lights_physical_fragment>\nmaterial.specularF90 = mix(0.5, 0.15, tFoliageW);\nmaterial.specularColorBlended *= 1.0 - 0.6 * tFoliageW;',
       )
       // Debug view 4: unlit albedo, scaled to be visible under the scene's exposure.
-      .replace('#include <opaque_fragment>', '#if TERRAIN_DEBUG == 4\noutgoingLight = diffuseColor.rgb * 4000.0;\n#endif\n#include <opaque_fragment>');
+      .replace('#include <opaque_fragment>', `#if TERRAIN_DEBUG == 4\noutgoingLight = diffuseColor.rgb * 4000.0;\n#endif\n${lava}#include <opaque_fragment>`);
   };
   const suffix = eraKeySuffix();
   mat.customProgramCacheKey = () => `terrain-v5-${mat.defines?.TERRAIN_DETAIL}-${mat.defines?.TERRAIN_DEBUG}${suffix}`;

@@ -13,6 +13,23 @@
 //                  are rendered on main twice to measure the main-vs-main noise floor; the branch passes when it
 //                  differs from the nearer main run by at most 1.25x main-vs-main at tolerances 4, 16 and 32
 //   --no-sheet     no contact-sheet montage (needs ImageMagick's `montage`)
+//   --plugins list only these plugin files of scripts/era-shots/ (names without .mjs; 'none' for none; default all)
+//
+// PLUGINS (increment 2): every scripts/era-shots/<name>.mjs adds era shots. Its default export is a function
+// `(h) => shot[]`, called with the helpers below; a shot is { name, label, page, evalJs?, wait? } exactly as in
+// ERA_SHOTS (names must be unique; --only selects them too). Plugins run after the built-in shots, in file-name
+// order, and share the contact sheets. If a shot's eval returns { label: '...' } that text is appended to its
+// label (e.g. the measured tod and each group's bearing / depression / distance). The helpers `h`:
+//   h.CRET           'index.html?era=cretaceous&clock=0&mute=1&resume=0' (add &tod=, &scenario=, &ui=0 ...)
+//   h.DEFAULT_BOOT   the look gate's default boot: 'index.html?era=cretaceous&ui=0&mute=1&resume=0' (no tod, no
+//                    scenario: the safari at SAFARI.tod, cockpit, the clock running)
+//   h.timed(body)    wrap an async page body (sim, f, F, H, sleep, until in scope; the panel readback stubbed)
+//   h.PANEL_STUB     the panel stub expression on its own
+//   h.SAFARI_AT(ms)  body: wait ms, return the herd / kettle bearings
+//   h.AT_FRAME(id)   body: wait for FIRST_MINUTE_FRAMES' frame id (cretaceousAnchors.ts, imported in the page) and
+//                    return { label, frame, groups } with each group's bearing / depression / distance from the
+//                    aircraft as flown (not the model)
+//   h.LOW_PASS, h.KETTLE, h.PAIR_LAUNCH, h.PAIR_SCALE, h.SETTLE, h.TOAST   the built-in bodies
 //
 // Every shot is one run of scripts/shot.mjs (headless Chrome on the GPU, a private vite server), strictly one at a
 // time. Shots that need a place no scenario starts from drive window.__sim through --eval (resetTo, a fixed
@@ -25,9 +42,9 @@
 // present-vs-main comparison: those pages are compared exactly as they run.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -77,7 +94,8 @@ const LINEUP_25 = `
 const LOW_PASS = `
   const h = f.riverHerd, cn = H.cN[h], ce = H.cE[h], ch = H.cH[h];
   const base = sim.physics.scenario;
-  sim.physics.resetTo({ ...base, ic: { ...base.ic, position: { x: cn, y: ce - 700, z: -(ch + 60) }, heading: Math.PI / 2, airspeed: 50, onGround: false } });
+  // Hands-off (the safari scenario engages its hold on reset: not this pass).
+  sim.physics.resetTo({ ...base, engageAutoflight: false, ic: { ...base.ic, position: { x: cn, y: ce - 700, z: -(ch + 60) }, heading: Math.PI / 2, airspeed: 50, onGround: false } });
   sim.setCamera('chase');
   const near = await until(() => { const s = sim.summary(); return Math.hypot(s.north - cn, s.east - ce) < 60; }, 60000);
   await sleep(1200);
@@ -168,6 +186,26 @@ const SAFARI_AT = (ms) => `
   kettle.sort((a, b) => a[0] - b[0]);
   return { herd: rel(H.cN[h], H.cE[h]), nearestKettleBirds: kettle.slice(0, 3), agl: s.altitudeAGL };`;
 
+/**
+ * Wait for a G frame of the first minute (FIRST_MINUTE_FRAMES, imported in the page so WP8's retuning applies) and
+ * report where each of its groups is from the aircraft as flown: bearing off the nose (deg, + right), depression
+ * (deg, + down), distance (m). The river herd from the live pool; the other groups at their anchors.
+ */
+const AT_FRAME = (id) => `
+  const A = await import('/src/world/era/cretaceousAnchors.ts');
+  const fr = A.FIRST_MINUTE_FRAMES.find((x) => x.id === '${id}');
+  if (!fr) return { label: 'no frame ${id}' };
+  await until(() => sim.summary().time >= fr.t, 300000);
+  const s = sim.summary(), hd = s.headingDeg * Math.PI / 180;
+  const rel = (n, e, h) => { const dn = n - s.north, de = e - s.east; let b = Math.atan2(de, dn) - hd; b = Math.atan2(Math.sin(b), Math.cos(b)); const d = Math.hypot(dn, de); return { bearing: Math.round(b * 57.3), depression: +(Math.atan2(s.altitudeMSL - h, d) * 57.3).toFixed(1), dist: Math.round(d) }; };
+  const groups = {};
+  for (const e of fr.expect) {
+    const g = A.groupAnchor(e.group);
+    groups[e.group] = e.group === 'riverHerd' && H && f.riverHerd >= 0 ? rel(H.cN[f.riverHerd], H.cE[f.riverHerd], H.cH[f.riverHerd]) : rel(g.north, g.east, g.h);
+  }
+  const txt = Object.entries(groups).map(([k, v]) => k + ' ' + v.bearing + '/' + v.depression + '/' + v.dist).join(', ');
+  return { frame: fr.id, t: s.time, label: ' t ' + s.time.toFixed(1) + ' tod ' + s.timeOfDay.toFixed(2) + ': ' + txt, groups };`;
+
 /** Present-day facts: era, no fauna, no fauna group in the scene. */
 const PRESENT_FACTS = `(() => { const s = window.__sim; let faunaGroup = false; s.ctx.scene.traverse((o) => { if (o.name === 'fauna') faunaGroup = true; }); return { era: s.era, fauna: s.fauna, faunaGroup, training: !!s.training.system }; })()`;
 
@@ -191,6 +229,24 @@ const ERA_SHOTS = [
   { name: 'forest-300m', label: 'Cretaceous trees, meshes and impostors, 300 m', page: 'dev/terraintrees.html?era=cretaceous&tod=10&freeze=1&dist=300', wait: 2500 },
   { name: 'field-guide-toast', label: 'Field Guide toast (safari)', page: `${CRET}&tod=10`, evalJs: timed(TOAST), wait: 0 },
 ];
+
+// Increment-2 plugins (see the header): scripts/era-shots/*.mjs, each `export default (h) => shot[]`.
+const DEFAULT_BOOT = 'index.html?era=cretaceous&ui=0&mute=1&resume=0';
+const HELPERS = Object.freeze({ CRET, DEFAULT_BOOT, PANEL_STUB, timed, SAFARI_AT, AT_FRAME, LOW_PASS, KETTLE, PAIR_LAUNCH, PAIR_SCALE, SETTLE, TOAST, LINEUP_25 });
+const pluginDir = join(root, 'scripts', 'era-shots');
+const pluginWanted = flags.plugins === undefined ? null : new Set(String(flags.plugins).split(',').filter((x) => x && x !== 'none'));
+if (existsSync(pluginDir)) {
+  for (const file of readdirSync(pluginDir).filter((x) => x.endsWith('.mjs')).sort()) {
+    const name = file.replace(/\.mjs$/, '');
+    if (pluginWanted && !pluginWanted.has(name)) continue;
+    const mod = await import(pathToFileURL(join(pluginDir, file)).href);
+    const list = typeof mod.default === 'function' ? mod.default(HELPERS) : [];
+    for (const shotDef of list) {
+      if (ERA_SHOTS.some((x) => x.name === shotDef.name)) throw new Error(`era-shots/${file}: duplicate shot name ${shotDef.name}`);
+      ERA_SHOTS.push({ ...shotDef, plugin: name });
+    }
+  }
+}
 
 const PRES = 'index.html?clock=0&mute=1&resume=0&freeze=1';
 const PRESENT_SHOTS = [
@@ -242,7 +298,8 @@ if (!flags['skip-era']) {
   for (const s of ERA_SHOTS.filter((x) => want(x.name))) {
     const file = join(out, `${s.name}.png`);
     const r = shot(root, s.page, file, s);
-    summary.era.push({ name: s.name, label: s.label, page: s.page, file, ...r });
+    const label = typeof r.result?.label === 'string' ? `${s.label}${r.result.label}` : s.label;
+    summary.era.push({ name: s.name, label, page: s.page, file, plugin: s.plugin ?? null, ...r });
     console.log(`[era] ${s.name}: ${r.ok ? 'ok' : 'FAILED'} in ${r.seconds}s ${r.result ? JSON.stringify(r.result).slice(0, 400) : ''}`);
     for (const p of r.problems) console.log(`      ${p}`);
   }

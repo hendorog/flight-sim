@@ -16,9 +16,11 @@ import { CANOPY_HEIGHT, createTerrainDepthMaterial, createTerrainMaterial, MAX_L
 import { createTerrainTextures, type TerrainTextures } from './textures';
 import { buildTileIndices, type TileData } from './tileBuilder';
 import { AirfieldGrass } from './vegetation/grass';
+import { createEraLayers, type EraLayer } from './eraLayers';
+import { updateEraUniforms } from './eraUniforms';
 import { VegetationSystem } from './vegetation/VegetationSystem';
 import { setTownSite, townSite } from './townMask';
-import { era } from '../era/eraState';
+import { era, isPresent } from '../era/eraState';
 import { createRiverGeometry, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
 import { WorkerPool } from './workerPool';
 
@@ -77,6 +79,8 @@ export class TerrainSystem implements Subsystem {
   private indices!: THREE.BufferAttribute;
   private vegetation: VegetationSystem | null = null;
   private grass: AirfieldGrass | null = null;
+  /** The era's extra layers (eraLayers.ts; none in the present day). */
+  private eraLayers: EraLayer[] = [];
   private readonly nodes = new Map<number, TerrainNode>();
   private readonly inflight = new Set<number>();
   private readonly arrived: TileData[] = [];
@@ -172,6 +176,11 @@ export class TerrainSystem implements Subsystem {
         this.grass.setQuality(ctx.quality);
         this.root.add(this.grass.mesh);
       }
+      // Increment 2: the era's layers (WP6's near understorey), never in the present day.
+      if (era().flora !== 'present') {
+        this.eraLayers = createEraLayers({ renderer: ctx.renderer, quality: ctx.quality, terrainUniforms: this.uniforms, noise: this.textures.noise, heightAt: terrainHeight });
+        for (const l of this.eraLayers) this.root.add(l.object);
+      }
     }
     this.initTiming.vegetation = lap();
     await this.preload(ctx.camera);
@@ -194,6 +203,10 @@ export class TerrainSystem implements Subsystem {
     this.waterUniforms.uHazeColor.value.copy(ctx.sky.hazeColor);
     this.vegetation?.update(dt, ctx);
     this.grass?.update(dt, ctx.camera);
+    if (!isPresent()) {
+      updateEraUniforms(dt, ctx.sky);
+      for (const l of this.eraLayers) l.update(ctx, ctx.camera, dt);
+    }
   }
 
   dispose(): void {
@@ -201,6 +214,7 @@ export class TerrainSystem implements Subsystem {
     this.clearNodes();
     this.vegetation?.dispose();
     this.grass?.dispose();
+    for (const l of this.eraLayers) l.dispose();
     this.pool.dispose();
     this.uploader?.dispose();
     this.textures.dispose();
@@ -253,6 +267,7 @@ export class TerrainSystem implements Subsystem {
     this.preset = PRESETS[q];
     setTerrainDetail(this.material, q === 'low' ? 0 : 1);
     this.grass?.setQuality(q);
+    for (const l of this.eraLayers) l.setQuality?.(q);
     const s: LodSettings = {
       grid: this.preset.grid,
       leafSize: LEAF_SIZE,
