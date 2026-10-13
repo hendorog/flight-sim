@@ -372,3 +372,8 @@ export interface BuiltLod {
 export function res(base: number, detail: number, min: number): number {
   return Math.max(min, Math.round(base * detail));
 }
+
+/** uFold[4] for a rig without a wing fold: four identity quaternions. */
+export function identityFold(): Float32Array {
+  return new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+}

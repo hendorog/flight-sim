@@ -19,6 +19,14 @@
 // LOD0/1/2 (LOD0 capped; the nearest LOD0 also cast shadows), write the 12-float instances (types.ts) and upload
 // only the used range.
 //
+// INCREMENT 2 (WP0b): solo agents (agents.ts, brains.ts) step after the herds with AGENT_RESERVE terrain reads;
+// the showcase hooks (showcaseHooks.ts) add the T. rex, the Triceratops group, the Alamosaurus trio and kettle
+// places; showcase kettles circle a virtual core when the real thermals are dead (flight.ts). Rendering is
+// budgeted per species (profiles.ts render: lod0Max per quality, lodRangeScale, farRangeM) and by a shared LOD0
+// triangle pool (preset.lod0TriPool, nearest first: agents, then herds, then flyers); meshes with no instances
+// are hidden (no draw, no state change; visible through init so warmUpShaders compiles them); stats.tris and
+// stats.draws count what was submitted.
+//
 // ART SEAM: the species meshes and the animated material come from a FaunaArt; the default, CREATURE_ART (art.ts),
 // is the procedural creature art (species/index.ts and faunaMaterial.ts). Tests may pass their own.
 // Meshes are THREE.Mesh + InstancedBufferGeometry (the vegetation idiom: no 64-byte instanceMatrix per instance);
@@ -29,13 +37,18 @@ import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { makeThermalCore } from '../../physics/weather/thermals';
 import type { ThermalFrame } from '../../physics/weather/windField';
 import type { SimEnvironment } from '../../physics/environment';
+import * as Anchors from '../era/cretaceousAnchors';
 import type { EraParams } from '../era/types';
+import { SoloAgentPool } from './agents';
+import { brainFor } from './brains';
 import { HABITAT_CELL, HERD_EPOCH_S, cellRandom, countingTerrain, makeSite, probeHabitatCell, type FaunaTerrain, type HabitatSite } from './habitat';
 import { HerdPool, type AircraftView } from './herds';
 import { FLYER_MODE, FlyerPool, type FlyerMode } from './flight';
-import { FAUNA_MAX, FAUNA_PRESETS, FLYER_RANGE_FACTOR, MAX_GROUND_ANIMALS, MAX_HERD_SIZE, MAX_HERDS, TERRAIN_CALLS_PER_FRAME, type FaunaPreset } from './presets';
+import { AGENT_RESERVE, FAUNA_MAX, FAUNA_PRESETS, FLYER_RANGE_FACTOR, FLYER_RESERVE, MAX_AGENTS, MAX_GROUND_ANIMALS, MAX_HERD_SIZE, MAX_HERDS, TERRAIN_CALLS_PER_FRAME, type FaunaPreset } from './presets';
+import { PROFILES, type SpeciesProfile } from './profiles';
 import { ROSTERS, SPECIES_REFERENCE_M } from './roster';
-import { KETTLE_BIRDS, KETTLE_MAX_AGL, KETTLE_MIN_AGL, RIVER_HERD_SIZE, kettleSeeds, restingPair, riverHerdSite } from './showcase';
+import { KETTLE_BIRDS, KETTLE_MAX_AGL, KETTLE_MIN_AGL, RIVER_HERD_SIZE, SAFARI_AGL_M, kettleSeeds, restingPair, riverHerdSite } from './showcase';
+import { kettleComposition, showcaseSpawns, type ShowcaseSpawn } from './showcaseHooks';
 import { CREATURE_ART } from './art';
 import { FAUNA_SPECIES } from './species/index';
 import { FAUNA_SPECIES_IDS, FAUNA_STRIDE, type CreatureMeshSet, type FaunaRoster, type FaunaSpeciesId, type FaunaStats } from './types';
@@ -110,9 +123,10 @@ class InstanceDraw {
     this.mesh.matrixAutoUpdate = false;
   }
 
-  /** Upload the used range and set the draw count. */
+  /** Upload the used range and set the draw count; a mesh with no instances is hidden (no draw call at all). */
   commit(): void {
     this.geometry.instanceCount = this.count;
+    this.mesh.visible = this.count > 0;
     if (this.count === 0 && this.uploaded === 0) return;
     this.uploaded = this.count;
     this.buffer.clearUpdateRanges();
@@ -135,6 +149,13 @@ interface SpeciesDraws {
   tris: [number, number, number];
   /** Height of the body origin above the feet at scale 1, m (the azhdarchids' origin is the centre of mass). */
   originM: number;
+  profile: SpeciesProfile;
+  /** At the current quality: squared LOD0/LOD1 ranges, the squared and plain draw range, the LOD0 cap. */
+  lod0R2: number;
+  lod1R2: number;
+  farR2: number;
+  farR: number;
+  lod0Cap: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -185,21 +206,25 @@ const SIGHT_CLOSER = 25;
 const FLYER_RELEASE = 1.3;
 /** Streaming (release, one probe, one spawn) runs this often, s. */
 const STREAM_PERIOD = 0.25;
-/** Terrain reads kept back from the herds for the flyers each frame. */
-const FLYER_RESERVE = 40;
 
 export class FaunaSystemImpl implements FaunaSystem {
-  readonly stats: FaunaStats = { visible: 0, terrainCalls: 0, reallocs: 0, cpuMs: 0 };
+  readonly stats: FaunaStats = { visible: 0, terrainCalls: 0, reallocs: 0, cpuMs: 0, tris: 0, draws: 0 };
   /** Diagnostics (window.__sim.fauna.debug). */
-  readonly debug = { herds: 0, animals: 0, flyers: 0, cellsProbed: 0, triangles: 0, deferred: 0, errors: 0 };
+  readonly debug = { herds: 0, animals: 0, flyers: 0, agents: 0, cellsProbed: 0, triangles: 0, deferred: 0, errors: 0, agentTerrainCalls: 0 };
 
   readonly root = new THREE.Group();
   readonly herds = new HerdPool();
   readonly flyers = new FlyerPool(FAUNA_MAX.flyers);
+  readonly agents: SoloAgentPool;
   private readonly cells = new CellCache();
   readonly terrain: FaunaTerrain;
   private readonly art: FaunaArt;
   private preset: FaunaPreset = FAUNA_PRESETS.high;
+  private quality: QualityLevel = 'high';
+  /** Showcase herd slots by species (the hooks' pinned herds; the river herd is riverHerd). */
+  readonly showcaseHerds: number[] = [];
+  /** Showcase kettle membership of each flyer slot (-1 none, 0 / 1 the kettle). */
+  readonly kettleOf = new Int8Array(FAUNA_MAX.flyers).fill(-1);
   private draws: SpeciesDraws[] = [];
   /** Roster entry index -> species draw index. */
   private entryDraw: number[] = [];
@@ -230,6 +255,8 @@ export class FaunaSystemImpl implements FaunaSystem {
   private readonly orderD = new Float64Array(MAX_HERDS);
   private readonly lod0Used = new Int32Array(FAUNA_SPECIES_IDS.length);
   private readonly casterUsed = new Int32Array(FAUNA_SPECIES_IDS.length);
+  /** LOD0 triangles still available this frame (preset.lod0TriPool). */
+  private poolLeft = 0;
 
   constructor(
     private readonly roster: FaunaRoster,
@@ -237,8 +264,10 @@ export class FaunaSystemImpl implements FaunaSystem {
   ) {
     this.terrain = opts.terrain ?? countingTerrain();
     this.art = opts.art ?? CREATURE_ART;
+    this.agents = new SoloAgentPool(this.herds, this.terrain, Anchors);
     this.root.name = 'fauna';
-    roster.entries.forEach((e, i) => e.role === 'flyer' && this.flyerEntries.push(i));
+    // Ambient kettles pick among the ambient flyer entries by weight.
+    roster.entries.forEach((e, i) => e.role === 'flyer' && e.ambient !== false && e.weight > 0 && this.flyerEntries.push(i));
   }
 
   init(ctx: SimContext): void {
@@ -251,8 +280,10 @@ export class FaunaSystemImpl implements FaunaSystem {
       const set = this.art.build(sp);
       const mats = this.art.materials(sp, set);
       const flyer = this.roster.entries.some((e) => e.species === sp && e.role === 'flyer');
-      const cap = flyer ? FAUNA_MAX.flyers : FAUNA_MAX.groundVisible;
-      const lod0 = new InstanceDraw(set.lod0, mats.material, Math.min(cap, FAUNA_MAX.lod0Max), `fauna-${sp}-lod0`);
+      const solo = this.roster.entries.every((e) => e.species !== sp || e.role === 'solo');
+      const cap = flyer ? FAUNA_MAX.flyers : solo ? MAX_AGENTS : FAUNA_MAX.groundVisible;
+      const profile = PROFILES[sp];
+      const lod0 = new InstanceDraw(set.lod0, mats.material, Math.min(cap, Math.max(1, profile.render.lod0Max.ultra)), `fauna-${sp}-lod0`);
       const lod1 = new InstanceDraw(set.lod1, mats.material, cap, `fauna-${sp}-lod1`);
       const lod2 = new InstanceDraw(set.lod2, mats.material, cap, `fauna-${sp}-lod2`);
       const caster = new InstanceDraw(set.caster, CASTER_HIDDEN, Math.min(cap, FAUNA_MAX.casters), `fauna-${sp}-caster`);
@@ -269,11 +300,13 @@ export class FaunaSystemImpl implements FaunaSystem {
       const radius = bs ? bs.radius + bs.center.length() : set.lengthM;
       const unit = SPECIES_REFERENCE_M[sp] / Math.max(0.1, set.lengthM);
       const tris: [number, number, number] = [triangles(set.lod0), triangles(set.lod1), triangles(set.lod2)];
-      this.draws.push({ species: sp, set, mats, lod: [lod0, lod1, lod2], caster, unit, radius, tris, originM: FAUNA_SPECIES[sp].groundOffsetM });
+      this.draws.push({ species: sp, set, mats, lod: [lod0, lod1, lod2], caster, unit, radius, tris, originM: FAUNA_SPECIES[sp].groundOffsetM, profile, lod0R2: 0, lod1R2: 0, farR2: 0, farR: 0, lod0Cap: 0 });
     }
     this.entryDraw = this.roster.entries.map((e) => this.draws.findIndex((d) => d.species === e.species));
     ctx.scene.add(this.root);
     this.preset = FAUNA_PRESETS[ctx.quality] ?? FAUNA_PRESETS.high;
+    this.quality = FAUNA_PRESETS[ctx.quality] ? ctx.quality : 'high';
+    this.applyRanges();
     this.spawnShowcase(ctx);
     // After the showcase is in the pool, so its flyers are trimmed to the preset too.
     this.setQuality(ctx.quality);
@@ -282,6 +315,8 @@ export class FaunaSystemImpl implements FaunaSystem {
 
   setQuality(q: QualityLevel): void {
     this.preset = FAUNA_PRESETS[q] ?? FAUNA_PRESETS.high;
+    this.quality = FAUNA_PRESETS[q] ? q : 'high';
+    this.applyRanges();
     // Fewer flyers: release ambient ones first, then showcase ones from the top.
     let n = this.flyers.count();
     for (let pass = 0; pass < 2; pass++) {
@@ -289,8 +324,23 @@ export class FaunaSystemImpl implements FaunaSystem {
         if (!this.flyers.active[i] || (pass === 0 && this.showcaseFlyer[i])) continue;
         this.flyers.release(i);
         this.showcaseFlyer[i] = 0;
+        this.kettleOf[i] = -1;
         n--;
       }
+    }
+  }
+
+  /** Per-species LOD ranges and LOD0 caps at the current quality (profiles.ts render). */
+  private applyRanges(): void {
+    const P = this.preset;
+    for (const d of this.draws) {
+      const r = d.profile.render;
+      const k = r.lodRangeScale > 0 ? r.lodRangeScale : 1;
+      d.lod0R2 = (P.lod0Range * k) ** 2;
+      d.lod1R2 = (P.lod1Range * k) ** 2;
+      d.farR = r.farRangeM > 0 ? r.farRangeM : P.lod2Range * k;
+      d.farR2 = d.farR * d.farR;
+      d.lod0Cap = Math.min(d.lod[0].capacity, Math.max(0, r.lod0Max[this.quality] ?? P.lod0Max));
     }
   }
 
@@ -314,16 +364,20 @@ export class FaunaSystemImpl implements FaunaSystem {
 
   private spawnShowcase(ctx: SimContext): void {
     const herdEntry = this.roster.entries.findIndex((e) => e.role === 'herd');
+    const site = riverHerdSite(this.terrain);
     if (herdEntry >= 0) {
-      const s = riverHerdSite(this.terrain);
       const e = this.roster.entries[herdEntry];
       this.riverHerd = this.herds.spawn(
-        { north: s.north, east: s.east, ground: s.ground, size: RIVER_HERD_SIZE, entry: herdEntry, scale: e.scale, variant: e.variant, seed: 0x5ca1ab1e, heading: s.heading, pinned: true },
+        { north: site.north, east: site.east, ground: site.ground, size: RIVER_HERD_SIZE, entry: herdEntry, scale: e.scale, variant: e.variant, seed: 0x5ca1ab1e, heading: site.heading, pinned: true, species: e.species },
         -1,
       );
     }
-    const big = this.roster.entries.findIndex((e) => e.species === 'quetzalcoatlus');
-    const small = this.roster.entries.findIndex((e) => e.species === 'azhdarchidSmall');
+    // The species' hooks (inc 2): herds, solo agents, kettle places and standing flyers.
+    const entryOf = (sp: FaunaSpeciesId): number => this.roster.entries.findIndex((e) => e.species === sp);
+    const spawns = showcaseSpawns({ anchors: Anchors, riverHerd: site, terrain: this.terrain, quality: this.quality }, (sp) => entryOf(sp) >= 0);
+    for (const sp of spawns) this.spawnHook(sp, entryOf(sp.species));
+
+    const big = entryOf('quetzalcoatlus');
     // The resting pair, standing on the Flats beside the strip.
     if (big >= 0) {
       restingPair().forEach((p, k) => {
@@ -331,14 +385,18 @@ export class FaunaSystemImpl implements FaunaSystem {
         if (i >= 0) this.showcaseFlyer[i] = 1;
       });
     }
-    // Two kettles of mixed sizes, on the cores nearest the seeds (ridge by day without thermals; roost at night).
+    // Two kettles of mixed sizes (kettleComposition: the hooks' birds replace places from the end), on the cores
+    // nearest the seeds by day with thermals, on a virtual core by day without (the dusk safari), roosting at night.
     const f = this.thermalFrame(ctx);
     const t = ctx.simTime ?? 0;
     const wind = this.windTo(ctx);
     const day = (ctx.sky?.dayFactor ?? 1) > 0.25;
+    const line: FaunaSpeciesId[] = [];
     kettleSeeds().forEach((p, g) => {
+      kettleComposition(spawns, g as 0 | 1, line);
       for (let b = 0; b < KETTLE_BIRDS; b++) {
-        const entry = b === 0 && big >= 0 ? big : small >= 0 ? small : big;
+        let entry = entryOf(line[b]);
+        if (entry < 0) entry = b === 0 && big >= 0 ? big : entryOf('azhdarchidSmall') >= 0 ? entryOf('azhdarchidSmall') : big;
         if (entry < 0) continue;
         const seed = 0xce77 + g * 16 + b;
         const ground = this.terrain.height(p.north, p.east);
@@ -346,9 +404,44 @@ export class FaunaSystemImpl implements FaunaSystem {
         const i = this.spawnFlyer(entry, p.north, p.east, ground + agl, ground, FLYER_MODE.glide, 0, seed, p.north, p.east);
         if (i < 0) continue;
         this.showcaseFlyer[i] = 1;
+        this.kettleOf[i] = g;
+        if (day && !(f && f.wStar > 0.05)) {
+          // The dusk licence: a pinned virtual core. Kettle 0 at the computed evening point, at the safari's own
+          // altitude +- the band (eye level); kettle 1 over its seed.
+          const k0 = Anchors.KETTLE0_EVENING;
+          if (g === 0) this.flyers.startVirtualKettle(i, k0.north, k0.east, k0.ground, Anchors.SAFARI_FLIGHT.altitudeMSL + (agl - SAFARI_AGL_M));
+          else this.flyers.startVirtualKettle(i, p.north, p.east, ground, ground + agl);
+          continue;
+        }
         this.placeAirborne(i, f, t, day, wind, p.north, p.east, agl);
       }
     });
+  }
+
+  /** Spawn one hook's showcase group. */
+  private spawnHook(sp: ShowcaseSpawn, entry: number): void {
+    if (entry < 0) return;
+    const re = this.roster.entries[entry];
+    if (sp.kind === 'herd') {
+      const ground = sp.ground ?? this.terrain.height(sp.north, sp.east);
+      const h = this.herds.spawn(
+        { north: sp.north, east: sp.east, ground, size: Math.min(MAX_HERD_SIZE, Math.max(1, sp.size)), entry, scale: sp.scale ?? re.scale, variant: sp.variant ?? re.variant, seed: sp.seed, heading: sp.heading, pinned: true, species: sp.species },
+        -1,
+      );
+      if (h >= 0) this.showcaseHerds.push(h);
+    } else if (sp.kind === 'solo') {
+      const ground = sp.ground ?? this.terrain.height(sp.north, sp.east);
+      this.agents.spawn({ species: sp.species, entry, north: sp.north, east: sp.east, ground, heading: sp.heading, scale: sp.scale ?? re.scale, variant: sp.variant ?? re.variant, seed: sp.seed }, brainFor(sp.species));
+    } else if (sp.kettle === undefined && sp.north !== undefined && sp.east !== undefined) {
+      const ground = this.terrain.height(sp.north, sp.east);
+      for (let c = 0; c < Math.max(0, Math.floor(sp.count)); c++) {
+        const seed = ((sp.seed ?? 0x5f1e) + c) >>> 0;
+        const n = sp.north + 6 * c;
+        const i = this.spawnFlyer(entry, n, sp.east, ground, ground, FLYER_MODE.stand, sp.heading ?? 0, seed, sp.north, sp.east);
+        if (i >= 0) this.showcaseFlyer[i] = 1;
+      }
+    }
+    // (Kettle places are taken in spawnShowcase through kettleComposition.)
   }
 
   /** Put an airborne flyer in a kettle on the nearest core, else on the ridge (day) or landed at its roost (night). */
@@ -421,7 +514,9 @@ export class FaunaSystemImpl implements FaunaSystem {
       const wind = this.windTo(ctx);
       const day = (ctx.sky?.dayFactor ?? 1) > 0.25;
       const budget = TERRAIN_CALLS_PER_FRAME;
-      this.herds.step(dt, ac, this.terrain, Math.max(0, budget - this.terrain.calls - FLYER_RESERVE), camN, camE);
+      this.herds.step(dt, ac, this.terrain, Math.max(0, budget - this.terrain.calls - FLYER_RESERVE - AGENT_RESERVE), camN, camE);
+      // Solo agents after the herds (their brains read and drive the herds), on the herds' clock.
+      this.debug.agentTerrainCalls = this.agents.step(dt, ac, this.terrain, this.riverHerd);
       this.flyers.step(dt, ctx.simTime ?? this.sceneTime, f, ac, this.terrain, Math.max(0, budget - this.terrain.calls), day, wind.n, wind.e);
       this.debug.deferred = this.herds.deferred;
       this.brainClock += dt;
@@ -555,7 +650,18 @@ export class FaunaSystemImpl implements FaunaSystem {
     for (let i = 0; i < F.capacity; i++) {
       if (F.active[i] && F.mode[i] === FLYER_MODE.kettle && F.coreI[i] === this.core.i && F.coreJ[i] === this.core.j) return;
     }
-    const entry = this.flyerEntries[Math.floor(cellRandom(k, 0xa3b, 2) * this.flyerEntries.length)];
+    // Species by roster weight among the ambient flyer entries.
+    let total = 0;
+    for (const fe of this.flyerEntries) total += this.roster.entries[fe].weight;
+    let pick = cellRandom(k, 0xa3b, 2) * total;
+    let entry = this.flyerEntries[this.flyerEntries.length - 1];
+    for (const fe of this.flyerEntries) {
+      pick -= this.roster.entries[fe].weight;
+      if (pick < 0) {
+        entry = fe;
+        break;
+      }
+    }
     const re = this.roster.entries[entry];
     const birds = Math.min(this.preset.flyers - F.count(), re.groupMin + Math.floor(cellRandom(k, 0xa3b, 3) * (re.groupMax - re.groupMin + 1)));
     const cn = this.core.x + f.driftN;
@@ -588,6 +694,13 @@ export class FaunaSystemImpl implements FaunaSystem {
       if (!sp) continue;
       this.sight(ctx, sp, Math.hypot(F.n[i] - ac.n, F.e[i] - ac.e, F.alt[i] - ac.alt));
     }
+    const A = this.agents;
+    for (let i = 0; i < A.capacity; i++) {
+      if (!A.active[i]) continue;
+      const sp = this.draws[this.entryDraw[A.entry[i]]]?.species;
+      if (!sp) continue;
+      this.sight(ctx, sp, Math.hypot(A.n[i] - ac.n, A.e[i] - ac.e, A.h[i] - ac.alt));
+    }
   }
 
   /** Emit 'faunaSighted' for a first approach within range, or one SIGHT_CLOSER m closer than the last emit. */
@@ -601,6 +714,33 @@ export class FaunaSystemImpl implements FaunaSystem {
 
   // ------------------------------------------------------------------------------------------------- render
 
+  /**
+   * The LOD for an instance of draw di at squared distance d2 (-1: beyond its range): LOD0 while within its LOD0
+   * range, under the species' LOD0 cap and the frame's LOD0 triangle pool; else LOD1 / LOD2 by range.
+   */
+  private pickLod(di: number, d2: number): number {
+    const d = this.draws[di];
+    if (!(d2 < d.farR2)) return -1;
+    let lod = d2 < d.lod0R2 && this.lod0Used[di] < d.lod0Cap && this.poolLeft >= d.tris[0] ? 0 : d2 < d.lod1R2 ? 1 : 2;
+    if (d.lod[lod].count >= d.lod[lod].capacity) lod = 2;
+    return d.lod[lod].count >= d.lod[lod].capacity ? -1 : lod;
+  }
+
+  /** Write one instance at its LOD (and as a caster for the nearest LOD0s). */
+  private emit(di: number, lod: number, east: number, alt: number, north: number, yaw: number, pitch: number, bank: number, phase: number, blend: number, flap: number, head: number, scale: number, variant: number): void {
+    const draw = this.draws[di];
+    const tgt = draw.lod[lod];
+    writeInstance(tgt.array, tgt.count++, east, alt, north, yaw, pitch, bank, phase, blend, flap, head, scale, variant);
+    if (lod !== 0) return;
+    this.lod0Used[di]++;
+    this.poolLeft -= draw.tris[0];
+    const c = draw.caster;
+    if (this.casterUsed[di] < this.preset.casters && c.count < c.capacity) {
+      this.casterUsed[di]++;
+      writeInstance(c.array, c.count++, east, alt, north, yaw, pitch, bank, phase, blend, flap, head, scale, variant);
+    }
+  }
+
   private render(cam: THREE.Camera): void {
     cam.updateMatrixWorld();
     this.projView.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
@@ -612,7 +752,29 @@ export class FaunaSystemImpl implements FaunaSystem {
     for (const d of this.draws) d.lod[0].count = d.lod[1].count = d.lod[2].count = d.caster.count = 0;
     this.lod0Used.fill(0);
     this.casterUsed.fill(0);
+    this.poolLeft = P.lod0TriPool;
     let visible = 0;
+
+    // Solo agents first (few, and the showcase's stars).
+    const A = this.agents;
+    for (let i = 0; i < A.capacity && visible < P.groundVisible; i++) {
+      if (!A.active[i]) continue;
+      const di = this.entryDraw[A.entry[i]];
+      const draw = this.draws[di];
+      if (!draw) continue;
+      const sc = A.scale[i] * draw.unit;
+      const y = A.h[i] + draw.originM * sc;
+      this.sphere.center.set(A.e[i], y + 2, -A.n[i]);
+      this.sphere.radius = draw.radius * sc + 2;
+      if (!this.frustum.intersectsSphere(this.sphere)) continue;
+      const dx = A.e[i] - cx;
+      const dy = y - cy;
+      const dz = -A.n[i] - cz;
+      const lod = this.pickLod(di, dx * dx + dy * dy + dz * dz);
+      if (lod < 0) continue;
+      this.emit(di, lod, A.e[i], y, A.n[i], A.yaw[i], A.pitch[i], 0, A.phase[i], A.blend[i], A.flap[i], A.head[i], sc, A.variant[i]);
+      visible++;
+    }
 
     // Herds, nearest first (insertion sort of <= MAX_HERDS).
     const H = this.herds;
@@ -629,9 +791,6 @@ export class FaunaSystemImpl implements FaunaSystem {
       this.order[k] = h;
       this.orderD[k] = d;
     }
-    const lod0R2 = P.lod0Range * P.lod0Range;
-    const lod1R2 = P.lod1Range * P.lod1Range;
-    const lod2R2 = P.lod2Range * P.lod2Range;
     for (let o = 0; o < nh && visible < P.groundVisible; o++) {
       const h = this.order[o];
       const di = this.entryDraw[H.entry[h]];
@@ -639,9 +798,9 @@ export class FaunaSystemImpl implements FaunaSystem {
       if (!draw) continue;
       // The members' current spread (a scattered herd reaches far beyond its formation radius).
       const spread = Math.max(H.radius[h], this.herdSpread(h));
-      if (this.orderD[o] - spread > P.lod2Range) continue;
+      if (this.orderD[o] - spread > draw.farR) continue;
       this.sphere.center.set(H.cE[h], H.cH[h] + 2, -H.cN[h]);
-      this.sphere.radius = spread + draw.radius * 1.5 + 30;
+      this.sphere.radius = spread + draw.radius * draw.unit * 1.5 + 30;
       if (!this.frustum.intersectsSphere(this.sphere)) continue;
       const base = h * MAX_HERD_SIZE;
       const size = H.size[h];
@@ -650,29 +809,15 @@ export class FaunaSystemImpl implements FaunaSystem {
         const dx = H.mE[i] - cx;
         const dy = H.mH[i] - cy;
         const dz = -H.mN[i] - cz;
-        const d2 = dx * dx + dy * dy + dz * dz;
-        if (!(d2 < lod2R2)) continue;
-        let lod = d2 < lod0R2 && this.lod0Used[di] < P.lod0Max ? 0 : d2 < lod1R2 ? 1 : 2;
-        if (draw.lod[lod].count >= draw.lod[lod].capacity) lod = 2;
-        const tgt = draw.lod[lod];
-        if (tgt.count >= tgt.capacity) continue;
-        const sc = H.scale[i] * draw.unit;
-        writeInstance(tgt.array, tgt.count++, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], H.alert[i], H.head[i], sc, H.variant[i]);
+        const lod = this.pickLod(di, dx * dx + dy * dy + dz * dz);
+        if (lod < 0) continue;
+        this.emit(di, lod, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], H.alert[i], H.head[i], H.scale[i] * draw.unit, H.variant[i]);
         visible++;
-        if (lod === 0) {
-          this.lod0Used[di]++;
-          const c = draw.caster;
-          if (this.casterUsed[di] < P.casters && c.count < c.capacity) {
-            this.casterUsed[di]++;
-            writeInstance(c.array, c.count++, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], H.alert[i], H.head[i], sc, H.variant[i]);
-          }
-        }
       }
     }
 
     // Flyers (silhouettes against the sky: a longer range).
     const F = this.flyers;
-    const fR = P.lod2Range * FLYER_RANGE_FACTOR;
     for (let i = 0; i < F.capacity; i++) {
       if (!F.active[i]) continue;
       const di = this.entryDraw[F.entry[i]];
@@ -682,40 +827,37 @@ export class FaunaSystemImpl implements FaunaSystem {
       // The flyers' alt is their feet (the ground when standing); the rig's origin is the centre of mass above it.
       const y = F.alt[i] + draw.originM * F.scale[i];
       const z = -F.n[i];
-      const d = Math.hypot(x - cx, y - cy, z - cz);
-      if (!(d < fR)) continue;
+      const d2 = (x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2;
+      if (!(d2 < draw.farR2 * FLYER_RANGE_FACTOR * FLYER_RANGE_FACTOR)) continue;
       this.sphere.center.set(x, y, z);
       this.sphere.radius = draw.radius * F.scale[i] + 2;
       if (!this.frustum.intersectsSphere(this.sphere)) continue;
-      let lod = d < P.lod0Range && this.lod0Used[di] < P.lod0Max ? 0 : d < P.lod1Range ? 1 : 2;
-      if (draw.lod[lod].count >= draw.lod[lod].capacity) lod = 2;
-      const tgt = draw.lod[lod];
-      if (tgt.count >= tgt.capacity) continue;
-      writeInstance(tgt.array, tgt.count++, x, y, F.n[i], F.heading[i], F.pitch[i], F.bank[i], F.phase[i], F.blend[i], F.flap[i], F.head[i], F.scale[i], F.variant[i]);
+      // (pickLod's range test is the ground one: beyond it a flyer still draws at LOD2.)
+      let lod = this.pickLod(di, Math.min(d2, draw.farR2 * 0.999));
+      if (lod < 0) continue;
+      if (lod < 2 && !(d2 < draw.lod1R2)) lod = 2;
+      this.emit(di, lod, x, y, F.n[i], F.heading[i], F.pitch[i], F.bank[i], F.phase[i], F.blend[i], F.flap[i], F.head[i], F.scale[i], F.variant[i]);
       visible++;
-      if (lod === 0) {
-        this.lod0Used[di]++;
-        const c = draw.caster;
-        if (this.casterUsed[di] < P.casters && c.count < c.capacity) {
-          this.casterUsed[di]++;
-          writeInstance(c.array, c.count++, x, y, F.n[i], F.heading[i], F.pitch[i], F.bank[i], F.phase[i], F.blend[i], F.flap[i], F.head[i], F.scale[i], F.variant[i]);
-        }
-      }
     }
 
     let tris = 0;
+    let draws = 0;
     for (const d of this.draws) {
       for (let l = 0; l < 3; l++) {
         d.lod[l].commit();
         tris += d.lod[l].count * d.tris[l];
+        if (d.lod[l].count > 0) draws++;
       }
       d.caster.commit();
     }
     this.stats.visible = visible;
+    this.stats.tris = tris;
+    this.stats.draws = draws;
     this.debug.triangles = tris;
     this.debug.herds = H.count();
     this.debug.animals = H.members();
     this.debug.flyers = F.count();
+    this.debug.agents = A.count();
   }
 
   /** Farthest member of herd h from its centre (cN, cE, cH + 2), m. */

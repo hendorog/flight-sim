@@ -16,7 +16,7 @@
 
 import * as THREE from 'three';
 import { Pchip } from '../../../render/aircraft/geometry';
-import { BONE, type CreatureMeshSet } from '../types';
+import { BONE, type CreatureMeshSet, type SpeciesRender } from '../types';
 import {
   chainWeight,
   clampAlbedo,
@@ -478,6 +478,20 @@ function buildSet(look: AzhdarchidLook): CreatureMeshSet {
   const lod2 = buildAzhdarchid(0, look, true).geometry;
   return { lod0, lod1, lod2, caster: lod1, pivots, lengthM: AZHDARCHID_SPAN_M };
 }
+
+/**
+ * A complete azhdarchid mesh set from a Look (inc 2, for Look-only variants such as the Pteranodon, WP4): LOD0
+ * (detail 1), LOD1 (0.34), LOD2 (minimal) and the LOD1 as the caster, on the shared azhdarchid pivots, with
+ * lengthM = AZHDARCHID_SPAN_M (the roster's SPECIES_REFERENCE_M scales it to the species' span). For other LOD
+ * details call buildAzhdarchid(detail, look, minimal) directly. Uses the rig's sub-joints and fold
+ * (AZHDARCHID_RENDER) unchanged.
+ */
+export function createAzhdarchidSet(look: AzhdarchidLook): CreatureMeshSet {
+  return buildSet(look);
+}
+
+/** The animated material's view of the azhdarchid rig (sub-joints, wing fold): every azhdarchid-rig species uses it. */
+export const AZHDARCHID_RENDER: SpeciesRender = Object.freeze({ rig: 'azhdarchid', subJoints: azhdarchidSubJoints, fold: () => azhdarchidFold().quats, subBlend: 0.09 });
 
 /** Quetzalcoatlus northropi at scale 1 (10.5 m span). */
 export function createQuetzalcoatlus(): CreatureMeshSet {

@@ -129,13 +129,16 @@ export function herdGround(north: number, east: number, terrain: FaunaTerrain, g
 
 const groundOut = { h: 0 };
 
-/** Herd entries of a roster (indices), cached per roster. */
+/**
+ * Ambient herd entries of a roster (indices), cached per roster: role 'herd' and not ambient: false (solo agents
+ * and showcase-only species are never streamed).
+ */
 const herdEntriesCache = new WeakMap<FaunaRoster, number[]>();
-function herdEntries(roster: FaunaRoster): number[] {
+export function herdEntries(roster: FaunaRoster): number[] {
   let list = herdEntriesCache.get(roster);
   if (!list) {
     list = [];
-    roster.entries.forEach((e, i) => e.role === 'herd' && list!.push(i));
+    roster.entries.forEach((e, i) => e.role === 'herd' && e.ambient !== false && list!.push(i));
     herdEntriesCache.set(roster, list);
   }
   return list;

@@ -13,6 +13,7 @@ import { createFaunaSystem, FaunaSystemImpl } from '../../src/world/fauna/FaunaS
 import { countingTerrain, type FaunaTerrain } from '../../src/world/fauna/habitat';
 import { FLYER_MODE } from '../../src/world/fauna/flight';
 import { FAUNA_PRESETS, TERRAIN_CALLS_PER_FRAME } from '../../src/world/fauna/presets';
+import { ROSTERS } from '../../src/world/fauna/roster';
 import { makeThermalCore } from '../../src/physics/weather/thermals';
 import { FAUNA_STRIDE } from '../../src/world/fauna/types';
 
@@ -180,8 +181,9 @@ describe('fauna budget', () => {
     });
     expect(sys.root.children.length).toBe(meshes);
     expect(sys.stats.reallocs).toBe(0);
-    // 3 species x (3 LODs + 1 caster).
-    expect(meshes).toBe(12);
+    // Every roster species (7 in inc 2) x (3 LODs + 1 caster).
+    expect(meshes).toBe(new Set(ROSTERS.cretaceous.entries.map((e) => e.species)).size * 4);
+    expect(meshes).toBe(28);
   });
 
   it('soaks 10k frames without NaN, whatever dt it is given', () => {

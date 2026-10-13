@@ -12,11 +12,17 @@
 //    above LAUNCH_HEIGHT, or at once from the nearer line-up). The one scripted exception to "nothing in the
 //    flat zone".
 // 3. Two kettles of azhdarchids (mixed sizes), each on the real thermal core nearest a point 1.5 km past a
-//    departure end, 150-270 m above the ground (stacked about a safari start's height).
+//    departure end, in the band SAFARI agl +- KETTLE_BAND_M above the ground (inc 2: centred on the safari
+//    start's height). Without real thermals by day (the dusk safari: w* = 0) they circle a pinned VIRTUAL core
+//    instead (flight.ts startVirtualKettle): kettle 0 at anchors.KETTLE0_EVENING at the safari's altitude
+//    +- KETTLE_BAND_M (eye level ahead right, 20-30 s in), kettle 1 at its seed point.
+// 4. Inc 2: the species' showcase hooks (showcaseHooks.ts): the T. rex, the Triceratops group, the Alamosaurus
+//    trio, and Pteranodon places in kettle 0.
 
 import { AIRPORT } from '../../core/world';
 import { localToNed, RUNWAY_HALF_LENGTH } from '../airport/layout';
 import { herdGround, type FaunaTerrain } from './habitat';
+import { KETTLE_BAND_M, SAFARI } from '../era/cretaceousAnchors';
 
 /** Runway-frame seed of the river herd (along, across), m: defined with the safari's anchors (increment 2). */
 export { RIVER_HERD_SEED } from '../era/cretaceousAnchors';
@@ -38,13 +44,15 @@ export const KETTLE_SEEDS = [
   { u: -RUNWAY_HALF_LENGTH - 1500, v: 0 },
 ] as const;
 /**
- * Birds per showcase kettle (mixed sizes) and their height band above the ground, m: a stack around the safari
- * start's height (scenarios.ts SAFARI_AGL, ~180 m). Two kettles and the resting pair are 14 flyers (the medium
- * preset has 16; on low the second kettle is not spawned).
+ * Birds per showcase kettle (mixed sizes; showcaseHooks.ts kettleComposition) and their height band above the
+ * ground, m: SAFARI's height above the ground +- KETTLE_BAND_M (450 ft: 77-197 m). Two kettles and the resting
+ * pair are 14 flyers (the medium preset has 16; on low the second kettle is trimmed: 8).
  */
 export const KETTLE_BIRDS = 6;
-export const KETTLE_MIN_AGL = 150;
-export const KETTLE_MAX_AGL = 270;
+/** The safari start's height above the ground, m (the showcase kettles' band centre). */
+export const SAFARI_AGL_M = SAFARI.aglFt * 0.3048;
+export const KETTLE_MIN_AGL = SAFARI_AGL_M - KETTLE_BAND_M;
+export const KETTLE_MAX_AGL = SAFARI_AGL_M + KETTLE_BAND_M;
 
 export interface ShowcaseSite {
   north: number;

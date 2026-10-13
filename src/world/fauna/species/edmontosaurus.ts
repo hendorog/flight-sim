@@ -9,9 +9,10 @@
 // bill and eye, AO under the body and inside the limbs. Linear albedo 0.03-0.15.
 
 import * as THREE from 'three';
-import { BONE, type CreatureMeshSet } from '../types';
+import { BONE, type CreatureMeshSet, type SpeciesRender } from '../types';
 import {
   chainWeight,
+  identityFold,
   clampAlbedo,
   loftSpec,
   mixRGB,
@@ -288,3 +289,6 @@ export function createEdmontosaurus(): CreatureMeshSet {
   const lod2 = buildEdmontosaurus(0, true).geometry;
   return { lod0, lod1, lod2, caster: lod1, pivots, lengthM: EDMONTOSAURUS_LENGTH_M };
 }
+
+/** The animated material's view of the hadrosaur rig (also the stub render of the inc-2 ground species). */
+export const EDMONTOSAURUS_RENDER: SpeciesRender = Object.freeze({ rig: 'hadrosaur', subJoints: edmontosaurusSubJoints, fold: identityFold, subBlend: 0.15 });

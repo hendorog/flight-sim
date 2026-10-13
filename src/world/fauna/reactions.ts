@@ -12,6 +12,12 @@
 // within 60 m (the flyer integrator enforces it).
 //
 // No collision in v1: creatures are visual only.
+//
+// Increment 2 (WP0b): every species has a ReactionProfile (profiles.ts PROFILES[id].reaction; Edmontosaurus's is
+// HADROSAUR_REACTION byte-for-byte) with a kind: 'flee' (the above), 'face' (turn toward the threat and stop) or
+// 'ignore' (heads turn only); speciesThreat() is hadrosaurThreat() for any profile. Herds also take EXTERNAL
+// threats (herds.ts setExternalThreat: a predator, or any scripted source), which flee DIRECTLY AWAY from the
+// source's position (externalFleeDirection), not from a track line as from the aircraft.
 
 export const HADROSAUR_REACTION = Object.freeze({
   alertRange: 600,
@@ -64,30 +70,68 @@ export function closingSpeed(relN: number, relE: number, relD: number, vN: numbe
  * ground, closing at `closing` m/s, flying at `tas`.
  */
 export function hadrosaurThreat(slant: number, height: number, closing: number, tas: number): Threat {
+  return speciesThreat(HADROSAUR_REACTION, slant, height, closing, tas);
+}
+
+/** The ranges speciesThreat and the herd timing read (profiles.ts ReactionProfile has these and more). */
+export type ReactionRanges = { readonly [K in keyof typeof HADROSAUR_REACTION]: number };
+
+/**
+ * A species' threat level from the aircraft (as hadrosaurThreat, with that species' ranges R): FLEE level inside
+ * fleeRange (noise-scaled) below fleeHeight and closing, ALERT inside alertRange below alertHeight. What a herd DOES
+ * at the flee level depends on its reaction kind (herds.ts).
+ */
+export function speciesThreat(R: ReactionRanges, slant: number, height: number, closing: number, tas: number): Threat {
   if (!(slant >= 0) || !(height === height)) return THREAT.none;
   const k = noiseFactor(tas);
-  const R = HADROSAUR_REACTION;
   if (slant < R.fleeRange * k && height < R.fleeHeight && closing > 0) return THREAT.flee;
   if (slant < R.alertRange * k && height < R.alertHeight) return THREAT.alert;
   return THREAT.none;
 }
 
 /** When the alarm reaches an animal `dist` m from where it started, s after the start. */
-export function alarmDelay(dist: number): number {
-  return dist / HADROSAUR_REACTION.waveSpeed;
+export function alarmDelay(dist: number, R: ReactionRanges = HADROSAUR_REACTION): number {
+  return dist / R.waveSpeed;
 }
 
 /** Run speed `t` s into a flight, m/s. */
-export function fleeSpeed(t: number): number {
-  const R = HADROSAUR_REACTION;
+export function fleeSpeed(t: number, R: ReactionRanges = HADROSAUR_REACTION): number {
   const f = Math.min(1, Math.max(0, t / R.fleeAccelS));
   return R.fleeSpeed0 + (R.fleeSpeed1 - R.fleeSpeed0) * f * (2 - f);
 }
 
 /** Calm-down delay after the last threat for a herd hash u in [0, 1), s. */
-export function calmDelay(u: number): number {
-  const R = HADROSAUR_REACTION;
+export function calmDelay(u: number, R: ReactionRanges = HADROSAUR_REACTION): number {
   return R.calmMinS + (R.calmMaxS - R.calmMinS) * u;
+}
+
+/**
+ * Direction to flee from an EXTERNAL threat (a predator): directly away from the source's position (srcN/E), with
+ * a share `lead` (0..1) of the source's own heading (vN/vE) mixed in, so a charge drives the herd ahead of it
+ * rather than splitting it about its track line. lead 0 (the default) = straight away from the source; a source
+ * on top of the animal (< 1 m) breaks along the source's heading (or north). Writes a unit (north, east) vector.
+ */
+export function externalFleeDirection(n: number, e: number, srcN: number, srcE: number, vN: number, vE: number, lead: number, out: { n: number; e: number }): { n: number; e: number } {
+  let dn = n - srcN;
+  let de = e - srcE;
+  let dl = Math.hypot(dn, de);
+  const sp = Math.hypot(vN, vE);
+  if (dl < 1) {
+    dn = sp > 1e-6 ? vN : 1;
+    de = sp > 1e-6 ? vE : 0;
+    dl = Math.hypot(dn, de);
+  }
+  let fn = dn / dl;
+  let fe = de / dl;
+  const k = Math.min(1, Math.max(0, lead));
+  if (k > 0 && sp > 1e-6) {
+    fn = (1 - k) * fn + (k * vN) / sp;
+    fe = (1 - k) * fe + (k * vE) / sp;
+  }
+  const l = Math.hypot(fn, fe) || 1;
+  out.n = fn / l;
+  out.e = fe / l;
+  return out;
 }
 
 /**

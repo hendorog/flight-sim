@@ -5,14 +5,13 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { azhdarchidFold, AZHDARCHID_GROUND_OFFSET_M } from '../../src/world/fauna/species/azhdarchid';
 import { buildFaunaSpecies, FAUNA_SPECIES, strideM } from '../../src/world/fauna/species/index';
-import { createFaunaInstances, createFaunaMaterials, createFaunaMesh, faunaVertexGLSL, writeFaunaInstance } from '../../src/world/fauna/faunaMaterial';
+import { createFaunaInstances, createFaunaMaterials, createFaunaMesh, faunaVertexGLSL, rigOf, writeFaunaInstance } from '../../src/world/fauna/faunaMaterial';
+import { PROFILES } from '../../src/world/fauna/profiles';
 import { BONE, BONE_COUNT, FAUNA_SPECIES_IDS, FAUNA_STRIDE, type CreatureMeshSet } from '../../src/world/fauna/types';
 
-const BUDGET: Record<string, [number, number, number]> = {
-  edmontosaurus: [2600, 450, 70],
-  quetzalcoatlus: [1900, 320, 50],
-  azhdarchidSmall: [1900, 320, 50],
-};
+// Triangle budgets [lod0, lod1, lod2, caster] per species: profiles.ts PROFILES[id].render.tris (types.ts table;
+// the inc-2 packages own their species' rows in species/<id>.data.ts).
+const BUDGET = (id: (typeof FAUNA_SPECIES_IDS)[number]): readonly [number, number, number, number] => PROFILES[id].render.tris;
 
 const sets = new Map<string, CreatureMeshSet>(FAUNA_SPECIES_IDS.map((id) => [id, buildFaunaSpecies(id)]));
 const lods = (s: CreatureMeshSet): [string, THREE.BufferGeometry][] => [
@@ -61,11 +60,12 @@ describe.each(FAUNA_SPECIES_IDS)('%s', (id) => {
   });
 
   it('meets the triangle budgets', () => {
-    const [b0, b1, b2] = BUDGET[id];
+    const [b0, b1, b2, bc] = BUDGET(id);
     expect(tris(set.lod0)).toBeLessThanOrEqual(b0);
+    expect(tris(set.lod0)).toBeLessThanOrEqual(PROFILES[id].render.lod0Tris);
     expect(tris(set.lod1)).toBeLessThanOrEqual(b1);
     expect(tris(set.lod2)).toBeLessThanOrEqual(b2);
-    expect(tris(set.caster)).toBeLessThanOrEqual(b0);
+    expect(tris(set.caster)).toBeLessThanOrEqual(bc);
     // Each LOD is a real step down.
     expect(tris(set.lod1)).toBeLessThan(tris(set.lod0) * 0.3);
     expect(tris(set.lod2)).toBeLessThan(tris(set.lod1) * 0.4);
@@ -75,7 +75,8 @@ describe.each(FAUNA_SPECIES_IDS)('%s', (id) => {
     for (const [, g] of lods(set)) {
       g.computeBoundingBox();
       const size = g.boundingBox!.getSize(new THREE.Vector3());
-      const measured = FAUNA_SPECIES[id].rig === 'hadrosaur' ? size.x : size.z;
+      // Walkers by their length (x), flyers (the azhdarchid rig) by their span (z).
+      const measured = FAUNA_SPECIES[id].rig === 'azhdarchid' ? size.z : size.x;
       expect(Math.abs(measured / set.lengthM - 1)).toBeLessThan(0.1);
     }
   });
@@ -91,19 +92,20 @@ describe.each(FAUNA_SPECIES_IDS)('%s', (id) => {
     }
   });
 
-  it('shares one set of pivots across all LODs, parents before children', () => {
+  it('shares one set of pivots across all LODs: an acyclic tree to the root, every chain within the shader bound', () => {
     expect(set.pivots.length).toBe(BONE_COUNT * 4);
     expect(set.pivots[BONE.root * 4 + 3]).toBe(-1);
+    // Parents need not come before children (the sauropod's head hangs off wingR = neck4, types.ts BONE_ALIAS):
+    // the shader only follows uPivots[b].w. Every bone reaches the root without a cycle, walking at most 8 parents
+    // after its own rotation (faunaSkin's loop bound), so the root is applied.
     for (let b = 1; b < BONE_COUNT; b++) {
       const parent = set.pivots[b * 4 + 3];
-      expect(parent).toBeGreaterThanOrEqual(0);
-      expect(parent).toBeLessThan(b);
-    }
-    // Every bone used by any LOD has a chain to the root of length <= 8 (the shader's loop bound).
-    for (let b = 0; b < BONE_COUNT; b++) {
-      let depth = 0;
-      for (let i = b; i >= 0; i = set.pivots[i * 4 + 3]) depth++;
-      expect(depth).toBeLessThanOrEqual(8);
+      expect(Number.isInteger(parent) && parent >= 0 && parent < BONE_COUNT && parent !== b).toBe(true);
+      let parents = 0;
+      let i = parent;
+      for (; i >= 0 && parents <= BONE_COUNT; i = set.pivots[i * 4 + 3]) parents++;
+      expect(i, `bone ${b} reaches the root`).toBe(-1);
+      expect(parents, `bone ${b} chain`).toBeLessThanOrEqual(8);
     }
     for (const [, g] of lods(set)) for (const v of g.getAttribute('aBone').array as Float32Array) expect(v).toBeLessThan(BONE_COUNT);
   });
@@ -144,8 +146,12 @@ describe('species set', () => {
     for (const id of FAUNA_SPECIES_IDS) {
       const set = sets.get(id)!;
       const m = createFaunaMaterials(id, set);
-      const rig = FAUNA_SPECIES[id].rig === 'hadrosaur' ? 0 : 1;
+      const rig = rigOf(id);
+      expect(rig).toBe({ hadrosaur: 0, azhdarchid: 1, theropod: 2, ceratopsian: 3, sauropod: 4 }[FAUNA_SPECIES[id].rig]);
       expect(m.material.customProgramCacheKey()).toBe(`fauna-v2-${rig}`);
+      // FAUNA_WINGS (wing fold, 14/15 mirroring, wing sub-joints) only on the azhdarchid rig.
+      expect('FAUNA_WINGS' in (m.material.defines ?? {})).toBe(rig === 1);
+      expect(m.material.defines?.FAUNA_RIG).toBe(rig);
       expect(m.depth.customProgramCacheKey()).toBe(`fauna-depth-v1-${rig}`);
       expect(m.uniforms.uPivots.value.length).toBe(BONE_COUNT);
       // The patch applies to three's actual chunks.
@@ -175,8 +181,10 @@ describe('species set', () => {
   });
 
   it('emits a vertex stage with every bone of the contract in range', () => {
-    for (const rig of [0, 1] as const) {
+    for (const rig of [0, 1, 2, 3, 4] as const) {
       const src = faunaVertexGLSL(rig);
+      expect(src).toContain('void faunaPose()');
+      expect(src).toContain('#ifdef FAUNA_WINGS');
       expect(src).toContain(`uniform vec4 uPivots[${BONE_COUNT}]`);
       expect(src).not.toMatch(/NaN|undefined/);
     }

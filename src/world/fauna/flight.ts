@@ -11,6 +11,11 @@
 // in the way (the reach to a core is judged from the last ground known).
 // RIDGE (w* = 0 by day): a long figure along the windward valley wall, 80-150 m above the slope.
 // ROOST (night): the birds glide down and stand.
+// VIRTUAL CORE (inc 2, showcase kettles only): at the dusk safari start the real thermals are dead (w* = 0 from
+// ~18.6 h), so a showcase kettle is put on a pinned virtual core (startVirtualKettle: a fixed NED point, no drift)
+// that holds it circling in its height band, never leaving for lack of lift. Poetic licence, inactive whenever
+// real thermals exist (w* > 0.05): then a virtual bird drops the core and follows the real rules. Ambient kettles
+// never use it. Night still sends every bird to roost.
 // GROUND: stand and walk slowly (folded wings as forelimbs); when the aircraft comes within LAUNCH_RANGE on the
 // ground or low, the quad launch: crouch, vault, first downstroke, then a flapping climb-out to the nearest core.
 // Never within 60 m of the aircraft: inside 120 m a wing-over and flap burst away, and a hard push-out at 60 m.
@@ -190,6 +195,9 @@ export class FlyerPool {
   /** Ground walking target. */
   readonly walkN: Float64Array;
   readonly walkE: Float64Array;
+  /** 1 while bird i circles a virtual core (coreX/coreY are then NED, not the drifting frame); its band centre MSL. */
+  readonly virt: Uint8Array;
+  readonly virtAlt: Float64Array;
 
   time = 0;
   /** Diagnostics: closest approach to the aircraft seen last step, m. */
@@ -254,6 +262,8 @@ export class FlyerPool {
     this.resume = new Uint8Array(capacity);
     this.walkN = f64();
     this.walkE = f64();
+    this.virt = new Uint8Array(capacity);
+    this.virtAlt = f64();
   }
 
   count(): number {
@@ -301,6 +311,7 @@ export class FlyerPool {
     this.bank[i] = 0;
     this.walkN[i] = sp.north;
     this.walkE[i] = sp.east;
+    this.virt[i] = 0;
     const ground = sp.mode === FLYER_MODE.stand || sp.mode === FLYER_MODE.walk || sp.mode === FLYER_MODE.roost;
     this.speed[i] = ground ? 0 : this.cruise(i);
     this.blend[i] = ground ? 0 : 2;
@@ -344,7 +355,53 @@ export class FlyerPool {
     this.orbitR[i] = Math.max(this.kettleRadius(i), Math.min(400, Math.hypot(this.n[i] - cn, this.e[i] - ce)));
     this.sinkT[i] = 0;
     this.ground[i] = g;
+    this.virt[i] = 0;
     this.setMode(i, FLYER_MODE.kettle);
+  }
+
+  /**
+   * Spawn-time helper (showcase kettles when the real thermals are dead): bird i circles a VIRTUAL core pinned at
+   * NED (north, east) over `ground`, holding `alt` MSL (its place in the kettle's band) with no terrain reads.
+   */
+  startVirtualKettle(i: number, north: number, east: number, ground: number, alt: number): void {
+    const r = this.kettleRadius(i);
+    this.coreX[i] = north;
+    this.coreY[i] = east;
+    this.coreI[i] = -0x7fffffff;
+    this.coreJ[i] = -0x7fffffff;
+    this.coreGround[i] = ground;
+    this.coreZi[i] = 1200;
+    this.coreT[i] = this.time;
+    this.orbitR[i] = r;
+    this.n[i] = north + r * Math.cos(this.orbitAng[i]);
+    this.e[i] = east + r * Math.sin(this.orbitAng[i]);
+    this.alt[i] = alt;
+    this.ground[i] = ground;
+    this.sinkT[i] = 0;
+    this.speed[i] = this.cruise(i);
+    this.blend[i] = 2;
+    this.virt[i] = 1;
+    this.virtAlt[i] = alt;
+    this.setMode(i, FLYER_MODE.kettle);
+  }
+
+  /** Re-enter the virtual kettle after an evade (the core and band are kept). */
+  private rejoinVirtual(i: number): void {
+    const cn = this.coreX[i];
+    const ce = this.coreY[i];
+    this.orbitAng[i] = Math.atan2(this.e[i] - ce, this.n[i] - cn);
+    this.orbitR[i] = Math.max(this.kettleRadius(i), Math.min(400, Math.hypot(this.n[i] - cn, this.e[i] - ce)));
+    this.ground[i] = this.coreGround[i];
+    this.setMode(i, FLYER_MODE.kettle);
+  }
+
+  /** Bird i drops its virtual core (real thermals are back, or it leaves for the night / a ridge). */
+  private dropVirtual(i: number, f: ThermalFrame | null): void {
+    if (!this.virt[i]) return;
+    this.virt[i] = 0;
+    // Back to the drifting frame, so the circle stays where it is.
+    this.coreX[i] -= f ? f.driftN : 0;
+    this.coreY[i] -= f ? f.driftE : 0;
   }
 
   /**
@@ -463,6 +520,7 @@ export class FlyerPool {
     this.rOff[i] = 100 + 30 * rand(this.seed[i], 12);
     this.rPh[i] = 2 * Math.PI * rand(this.seed[i], 13);
     this.ground[i] = bh;
+    this.virt[i] = 0;
     this.setMode(i, FLYER_MODE.ridge);
   }
 
@@ -471,6 +529,7 @@ export class FlyerPool {
     this.tgtX[i] = this.anchorN[i] + 60 * (rand(this.seed[i], 20) - 0.5);
     this.tgtY[i] = this.anchorE[i] + 60 * (rand(this.seed[i], 21) - 0.5);
     this.ground[i] = terrain.height(this.tgtX[i], this.tgtY[i]);
+    this.virt[i] = 0;
     this.setMode(i, FLYER_MODE.roost);
   }
 
@@ -785,7 +844,42 @@ export class FlyerPool {
     this.blend[i] += (target - this.blend[i]) * Math.min(1, 2 * dt);
   }
 
+  /** A kettle on a virtual core: circle the pinned point, hold the band centre (no terrain reads, never leaves). */
+  private virtualKettleStep(i: number, dt: number): void {
+    this.blend[i] = 2;
+    this.flap[i] *= 1 - Math.min(1, 2 * dt);
+    this.flapPhase(i, dt);
+    const v = this.cruise(i);
+    this.speed[i] += (v - this.speed[i]) * Math.min(1, dt);
+    const r0 = this.kettleRadius(i);
+    this.orbitR[i] += (r0 - this.orbitR[i]) * Math.min(1, 0.3 * dt);
+    const r = this.orbitR[i];
+    const dir = this.orbitDir[i];
+    this.orbitAng[i] = wrapPi(this.orbitAng[i] + (dir * this.speed[i] * dt) / r);
+    const a = this.orbitAng[i];
+    this.n[i] = this.coreX[i] + r * Math.cos(a);
+    this.e[i] = this.coreY[i] + r * Math.sin(a);
+    this.heading[i] = wrapPi(a + (dir * Math.PI) / 2);
+    const bank = dir * Math.atan((this.speed[i] * this.speed[i]) / (G * r));
+    this.bank[i] += (bank - this.bank[i]) * Math.min(1, 2 * dt);
+    // Gentle undulation about the band centre (a lazy climb and sink, never a trend).
+    const want = this.virtAlt[i] + 6 * Math.sin(0.11 * this.time + 6.283 * rand(this.seed[i], 30));
+    const climb = Math.max(-0.6, Math.min(0.6, 0.15 * (want - this.alt[i])));
+    this.climb[i] = climb;
+    this.alt[i] += climb * dt;
+    this.pitch[i] = Math.atan2(climb, this.speed[i]) * 0.5;
+    this.ground[i] = this.coreGround[i];
+  }
+
   private kettleStep(i: number, dt: number, t: number, f: ThermalFrame | null, thermals: boolean, terrain: FaunaTerrain, budget: number, windToN: number, windToE: number): void {
+    if (this.virt[i]) {
+      if (!thermals) {
+        this.virtualKettleStep(i, dt);
+        return;
+      }
+      // Real lift again: back to the real rules (it will find a real core).
+      this.dropVirtual(i, f);
+    }
     this.blend[i] = 2;
     this.flap[i] *= 1 - Math.min(1, 2 * dt);
     this.flapPhase(i, dt);
@@ -857,8 +951,9 @@ export class FlyerPool {
     this.flapPhase(i, dt);
     const v = this.cruise(i) * 1.15;
     this.speed[i] += (v - this.speed[i]) * Math.min(1, dt);
-    const dN = f ? f.driftN : 0;
-    const dE = f ? f.driftE : 0;
+    const virt = this.virt[i] === 1;
+    const dN = f && !virt ? f.driftN : 0;
+    const dE = f && !virt ? f.driftE : 0;
     const tn = this.tgtX[i] + dN;
     const te = this.tgtY[i] + dE;
     this.steer(i, Math.atan2(te - this.e[i], tn - this.n[i]), dt, (30 * Math.PI) / 180);
@@ -870,6 +965,14 @@ export class FlyerPool {
     const flapping = this.terrainGuard(i, dt, terrain, budget);
     this.pitch[i] = flapping ? 0.15 : -Math.atan(1 / GLIDE_RATIO);
     const d = Math.hypot(tn - this.n[i], te - this.e[i]);
+    if (virt) {
+      // Gliding back to its virtual core (after an evade): rejoin on arrival; real thermals end the licence.
+      if (thermals) this.dropVirtual(i, f);
+      else {
+        if (d < this.kettleRadius(i) * 1.3) this.rejoinVirtual(i);
+        return;
+      }
+    }
     if (d < this.kettleRadius(i) * 1.3 && budget >= 1 && f) {
       // Arrived: acquire the core (its live state from the lattice).
       const nc = thermalCores(f.seed, this.tgtX[i], this.tgtY[i], t, this.cores, 0);
@@ -969,7 +1072,10 @@ export class FlyerPool {
     this.terrainGuard(i, dt, terrain, budget);
     if (this.time >= this.evadeUntil[i]) {
       const back = this.resume[i] as FlyerMode;
-      if (back === FLYER_MODE.kettle && f) {
+      if (back === FLYER_MODE.kettle && this.virt[i]) {
+        // Glide back to the virtual core it left.
+        this.setMode(i, FLYER_MODE.glide);
+      } else if (back === FLYER_MODE.kettle && f) {
         // Glide back to the core it left.
         this.setMode(i, FLYER_MODE.glide);
       } else if (back === FLYER_MODE.ridge) {

@@ -1,48 +1,54 @@
 // A CPU mirror of the fauna vertex stage (src/world/fauna/faunaMaterial.ts faunaPose + faunaSkin, body space,
 // before the instance transform), so tests can measure posed geometry: feet and hands against the ground.
 // Keep it in step with the GLSL; it ports the same expressions line for line.
+//
+// Inc 2: the skinning is exported (skinPositions) with the quaternion helpers, so a rig's own pose mirror
+// (tests/fauna/<rig>PoseMirror.ts, WP1-WP3) only ports its faunaPose and calls skinPositions with its sub-joints,
+// sub-blend and wings = false (FAUNA_WINGS is defined for the azhdarchid rig only).
 
 import * as THREE from 'three';
 import { AZHDARCHID_CROUCH_DROP_M, azhdarchidCrouchFlex, azhdarchidFold, azhdarchidSubJoints } from '../../src/world/fauna/species/azhdarchid';
 import { EDMONTOSAURUS_HIND_SOLE, edmontosaurusPivots, edmontosaurusSubJoints } from '../../src/world/fauna/species/edmontosaurus';
 import { BONE as B, BONE_COUNT, type CreatureMeshSet } from '../../src/world/fauna/types';
 
-type Q = [number, number, number, number];
-type V = [number, number, number];
-const TAU = 6.2831853;
-const QI: Q = [0, 0, 0, 1];
-const AX: V = [1, 0, 0];
-const AY: V = [0, 1, 0];
-const AZ: V = [0, 0, 1];
+export type Q = [number, number, number, number];
+export type V = [number, number, number];
+export const TAU = 6.2831853;
+export const QI: Q = [0, 0, 0, 1];
+export const AX: V = [1, 0, 0];
+export const AY: V = [0, 1, 0];
+export const AZ: V = [0, 0, 1];
 
-const clamp = (x: number, a: number, b: number): number => Math.min(b, Math.max(a, x));
-const smoothstep = (a: number, b: number, x: number): number => {
+export const clamp = (x: number, a: number, b: number): number => Math.min(b, Math.max(a, x));
+export const smoothstep = (a: number, b: number, x: number): number => {
   const t = clamp((x - a) / (b - a), 0, 1);
   return t * t * (3 - 2 * t);
 };
 const cross = (a: V, b: V): V => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const qAx = (a: V, t: number): Q => [a[0] * Math.sin(0.5 * t), a[1] * Math.sin(0.5 * t), a[2] * Math.sin(0.5 * t), Math.cos(0.5 * t)];
-const qMul = (a: Q, b: Q): Q => {
+export const qAx = (a: V, t: number): Q => [a[0] * Math.sin(0.5 * t), a[1] * Math.sin(0.5 * t), a[2] * Math.sin(0.5 * t), Math.cos(0.5 * t)];
+export const qMul = (a: Q, b: Q): Q => {
   const c = cross([a[0], a[1], a[2]], [b[0], b[1], b[2]]);
   return [a[3] * b[0] + b[3] * a[0] + c[0], a[3] * b[1] + b[3] * a[1] + c[1], a[3] * b[2] + b[3] * a[2] + c[2], a[3] * b[3] - (a[0] * b[0] + a[1] * b[1] + a[2] * b[2])];
 };
-const qRot = (q: Q, v: V): V => {
+export const qRot = (q: Q, v: V): V => {
   const u: V = [q[0], q[1], q[2]];
   const c1 = cross(u, v);
   const t: V = [2 * c1[0], 2 * c1[1], 2 * c1[2]];
   const c2 = cross(u, t);
   return [v[0] + q[3] * t[0] + c2[0], v[1] + q[3] * t[1] + c2[1], v[2] + q[3] * t[2] + c2[2]];
 };
-const qPart = (q: Q, w: number): Q => {
+export const qPart = (q: Q, w: number): Q => {
   const s = q[3] < 0 ? -1 : 1;
   const m: Q = [QI[0] + (s * q[0] - QI[0]) * w, QI[1] + (s * q[1] - QI[1]) * w, QI[2] + (s * q[2] - QI[2]) * w, QI[3] + (s * q[3] - QI[3]) * w];
   const l = Math.hypot(m[0], m[1], m[2], m[3]);
   return [m[0] / l, m[1] / l, m[2] / l, m[3] / l];
 };
-const qMirror = (q: Q, side: number): Q => (side > 0 ? q : [-q[0], -q[1], q[2], q[3]]);
-const qRightUp = (t: number): Q => qAx(AX, -t);
-const qConj = (q: Q): Q => [-q[0], -q[1], -q[2], q[3]];
-const qInFrame = (up: Q, r: Q): Q => qMul(qConj(up), qMul(r, up));
+export const qMirror = (q: Q, side: number): Q => (side > 0 ? q : [-q[0], -q[1], q[2], q[3]]);
+export const qRightUp = (t: number): Q => qAx(AX, -t);
+export const qConj = (q: Q): Q => [-q[0], -q[1], -q[2], q[3]];
+export const qInFrame = (up: Q, r: Q): Q => qMul(qConj(up), qMul(r, up));
+/** qYawPitch of the GLSL: pitch about z, then yaw about y on top. */
+export const qYawPitch = (yaw: number, pitch: number): Q => qMul(qAx(AY, yaw), qAx(AZ, pitch));
 const add = (a: V, b: V): V => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const subv = (a: V, b: V): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 
@@ -57,7 +63,8 @@ export interface PoseInput {
   seed?: number;
 }
 
-interface PoseOut {
+/** What a faunaPose writes (per vertex: fSubQ depends on the vertex's limb). */
+export interface PoseOut {
   fQ: Q[];
   fSubQ: Q[];
   fRootOff: V;
@@ -183,10 +190,21 @@ function azhdarchidPose(inp: PoseInput, bone: number): PoseOut {
   return { fQ, fSubQ, fRootOff, fFold };
 }
 
-/** Posed body-space positions of every vertex of `g` (scale 1, no placement). */
-export function posePositions(rig: 0 | 1, set: CreatureMeshSet, g: THREE.BufferGeometry, inp: PoseInput, filter?: (bone: number) => boolean): V[] {
-  const subRaw = rig === 0 ? edmontosaurusSubJoints() : azhdarchidSubJoints();
-  const subBlend = rig === 0 ? 0.15 : 0.09;
+/** A rig's pose function: the GLSL faunaPose for one vertex of bone `bone`. */
+export type PoseFn = (inp: PoseInput, bone: number) => PoseOut;
+
+export interface SkinOptions {
+  /** uSub (rig.ts packSubJoints) and uSubBlend of the species (its render descriptor). */
+  sub: Float32Array;
+  subBlend: number;
+  /** FAUNA_WINGS: true only for the azhdarchid rig (fold tuck, 14/15 mirroring and wing sub-joints). */
+  wings: boolean;
+}
+
+/** faunaSkin on the CPU: posed body-space positions of every vertex of `g` (scale 1, no placement). */
+export function skinPositions(set: CreatureMeshSet, g: THREE.BufferGeometry, inp: PoseInput, pose: PoseFn, opts: SkinOptions, filter?: (bone: number) => boolean): V[] {
+  const subRaw = opts.sub;
+  const subBlend = opts.subBlend;
   const pos = g.getAttribute('position');
   const boneA = g.getAttribute('aBone');
   const boneWA = g.getAttribute('aBoneW');
@@ -196,35 +214,43 @@ export function posePositions(rig: 0 | 1, set: CreatureMeshSet, g: THREE.BufferG
   for (let v = 0; v < pos.count; v++) {
     const b = Math.round(boneA.getX(v));
     if (filter && !filter(b)) continue;
-    const pose = rig === 0 ? hadrosaurPose(inp, b) : azhdarchidPose(inp, b);
+    const ps = pose(inp, b);
     let p: V = [pos.getX(v), pos.getY(v), pos.getZ(v)];
-    if (rig === 1 && b >= B.wingL) p[0] += rigA.getY(v) * pose.fFold * 0.88;
-    if (b >= B.legFL) {
-      const base = b >= B.wingL ? 6 : b >= B.legHL ? 3 : 0;
-      const side = b === B.legFR || b === B.legHR || b === B.wingR ? 1 : -1;
+    if (opts.wings && b >= B.wingL) p[0] += rigA.getY(v) * ps.fFold * 0.88;
+    if (b >= B.legFL && (opts.wings || b <= B.legHR)) {
+      const base = opts.wings && b >= B.wingL ? 6 : b >= B.legHL ? 3 : 0;
+      const side = b === B.legFR || b === B.legHR || (opts.wings && b === B.wingR) ? 1 : -1;
       for (let k = 2; k >= 0; k--) {
         const j = [subRaw[(base + k) * 4], subRaw[(base + k) * 4 + 1], subRaw[(base + k) * 4 + 2], subRaw[(base + k) * 4 + 3]];
         if (j[3] > 1e5) continue;
         const w = smoothstep(j[3] - subBlend, j[3] + subBlend, rigA.getX(v));
         if (w <= 0) continue;
-        const sq = qPart(pose.fSubQ[k], w);
+        const sq = qPart(ps.fSubQ[k], w);
         const c: V = [j[0], j[1], j[2] * side];
         p = add(c, qRot(sq, subv(p, c)));
       }
     }
     const pv: V = [piv[b * 4], piv[b * 4 + 1], piv[b * 4 + 2]];
-    let pb = add(pv, qRot(pose.fQ[b], subv(p, pv)));
+    let pb = add(pv, qRot(ps.fQ[b], subv(p, pv)));
     let pp = p;
     let i = Math.round(piv[b * 4 + 3]);
     for (let k = 0; k < 8 && i >= 0; k++) {
       const vv: V = [piv[i * 4], piv[i * 4 + 1], piv[i * 4 + 2]];
-      const q = pose.fQ[i];
+      const q = ps.fQ[i];
       pb = add(vv, qRot(q, subv(pb, vv)));
       pp = add(vv, qRot(q, subv(pp, vv)));
       i = Math.round(piv[i * 4 + 3]);
     }
     const w = boneWA.getX(v);
-    out.push(add([pp[0] + (pb[0] - pp[0]) * w, pp[1] + (pb[1] - pp[1]) * w, pp[2] + (pb[2] - pp[2]) * w], pose.fRootOff));
+    out.push(add([pp[0] + (pb[0] - pp[0]) * w, pp[1] + (pb[1] - pp[1]) * w, pp[2] + (pb[2] - pp[2]) * w], ps.fRootOff));
   }
   return out;
 }
+
+/** Posed body-space positions of every vertex of `g` (scale 1, no placement), for the inc-1 rigs 0 and 1. */
+export function posePositions(rig: 0 | 1, set: CreatureMeshSet, g: THREE.BufferGeometry, inp: PoseInput, filter?: (bone: number) => boolean): V[] {
+  return skinPositions(set, g, inp, rig === 0 ? hadrosaurPose : azhdarchidPose, { sub: rig === 0 ? edmontosaurusSubJoints() : azhdarchidSubJoints(), subBlend: rig === 0 ? 0.15 : 0.09, wings: rig === 1 }, filter);
+}
+
+/** The inc-1 pose functions (the inc-2 stubs on rigs 2-4 use hadrosaurPose until their packages replace them). */
+export { hadrosaurPose, azhdarchidPose };

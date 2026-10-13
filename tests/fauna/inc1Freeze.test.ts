@@ -12,9 +12,6 @@
 // Re-capture (only with the inc-1 code, never to make a change pass): CAPTURE_FAUNA_INC1=1 npx vitest run
 // tests/fauna/inc1Freeze.test.ts
 
-import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { ThermalFrame } from '../../src/physics/weather/windField';
@@ -27,8 +24,19 @@ import { HerdPool, type AircraftView } from '../../src/world/fauna/herds';
 import { buildFaunaSpecies } from '../../src/world/fauna/species/index';
 import type { FaunaSpeciesId } from '../../src/world/fauna/types';
 
-const FIXTURE = resolve(__dirname, '../fixtures/faunaInc1.json');
-const CAPTURE = !!process.env.CAPTURE_FAUNA_INC1;
+// node:fs and node:crypto at run time (the project type-checks tests without node's types, as presentGuard does).
+interface Fs {
+  readFileSync(path: URL, encoding: 'utf8'): string;
+  writeFileSync(path: URL, data: string): void;
+}
+interface Hash {
+  update(data: Uint8Array): Hash;
+  digest(encoding: 'hex'): string;
+}
+const { readFileSync, writeFileSync } = (await import(/* @vite-ignore */ 'node:fs' as string)) as Fs;
+const { createHash } = (await import(/* @vite-ignore */ 'node:crypto' as string)) as { createHash(alg: 'sha256'): Hash };
+const FIXTURE = new URL('../fixtures/faunaInc1.json', import.meta.url);
+const CAPTURE = !!(globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.CAPTURE_FAUNA_INC1;
 const INC1: FaunaSpeciesId[] = ['edmontosaurus', 'quetzalcoatlus', 'azhdarchidSmall'];
 const DT = 1 / 60;
 

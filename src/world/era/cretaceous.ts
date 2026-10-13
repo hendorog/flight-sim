@@ -16,7 +16,9 @@ export const CRETACEOUS: EraParams = Object.freeze({
   blurb:
     'Fern prairie, swamp cypress and palms along a warm river plain; hadrosaur herds by the water and giant ' +
     'azhdarchid pterosaurs riding the thermals. No airfield: take off from the dry mud flats. Fly at dusk ' +
-    '(about 19:30) and the volcano to the west stands black against the sunset.',
+    '(about 19:30) and the volcano to the west stands black against the sunset. ' +
+    'Watch for Tyrannosaurus rex stalking the herds, Triceratops standing their ground, long-necked ' +
+    'Alamosaurus among the trees and crested Pteranodon circling overhead.',
   terrain: Object.freeze({
     // Tree line up to ~2350 m.
     treeLineOffset: 600,

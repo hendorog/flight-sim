@@ -3,10 +3,13 @@
 // animated instanced materials (faunaMaterial.ts).
 //
 //   dev/fauna.html?species=all&gait=1&freeze=1
-//   species=edmontosaurus|quetzalcoatlus|azhdarchidSmall|all   (default all: a line-up, no strip)
+//   species=edmontosaurus|quetzalcoatlus|azhdarchidSmall|tyrannosaurus|triceratops|alamosaurus|pteranodon|inc1|all
+//                  (default all: a line-up of every species, no strip; inc1 = the increment-1 line-up)
 //   gait=0..2      gaitBlend (0 graze/stand, 1 walk, 2 run; azhdarchid 1..2 = launch progress, 2 = airborne)
-//   action=graze|alert|walk|run|stand|launch|flap|glide        (overrides gait; the strip spans the action)
-//   alert=0..1     hadrosaur alertness (head up)            flap=0..1  azhdarchid stroke amplitude aloft
+//   action=graze|alert|walk|run|roar|face|stand|launch|flap|glide   (overrides gait; the strip spans the action)
+//   alert=0..1     ground rigs' action channel aInstC.x (hadrosaur head up; theropod roar; ceratopsian facing)
+//   flap=0..1      azhdarchid stroke amplitude aloft
+// Every species is drawn at its real size (roster SPECIES_REFERENCE_M; the inc-2 stubs are scaled bodies).
 //   lod=0|1|2      which LOD to draw                          strip=N   copies in the strip (0 = none)
 //   t=seconds      animation time (phase and secondary motion; with freeze=1 it is the frozen instant)
 //   turn=rad/s     hero turntable rate (yaw = 90 deg + turn * t)
@@ -17,6 +20,7 @@ import * as THREE from 'three';
 import { AIRPORT } from '../core/world';
 import { createFaunaInstances, createFaunaMaterials, createFaunaMesh, writeFaunaInstance, type FaunaInstances, type FaunaMaterials } from '../world/fauna/faunaMaterial';
 import { azhdarchidLaunch, AZHDARCHID_LAUNCH_S, buildFaunaSpecies, FAUNA_SPECIES, strideM } from '../world/fauna/species/index';
+import { SPECIES_REFERENCE_M } from '../world/fauna/roster';
 import { FAUNA_SPECIES_IDS, type FaunaSpeciesId } from '../world/fauna/types';
 import { runHarness } from './harness';
 
@@ -26,7 +30,13 @@ const num = (k: string, d: number): number => {
   return v === null || v === '' || Number.isNaN(Number(v)) ? d : Number(v);
 };
 const speciesParam = params.get('species') ?? 'all';
-const shown: FaunaSpeciesId[] = FAUNA_SPECIES_IDS.includes(speciesParam as FaunaSpeciesId) ? [speciesParam as FaunaSpeciesId] : [...FAUNA_SPECIES_IDS];
+const INC1: FaunaSpeciesId[] = ['edmontosaurus', 'quetzalcoatlus', 'azhdarchidSmall'];
+const shown: FaunaSpeciesId[] = FAUNA_SPECIES_IDS.includes(speciesParam as FaunaSpeciesId)
+  ? [speciesParam as FaunaSpeciesId]
+  : speciesParam === 'inc1'
+    ? INC1
+    : [...FAUNA_SPECIES_IDS];
+const lineupAll = !shown.every((id) => INC1.includes(id));
 const single = shown.length === 1;
 const action = params.get('action');
 const lod = Math.max(0, Math.min(2, Math.round(num('lod', 0))));
@@ -51,9 +61,9 @@ function poseFor(id: FaunaSpeciesId, f: number | null, time: number): Pose {
   const rig = FAUNA_SPECIES[id].rig;
   const gait = num('gait', 1);
   const base: Pose = { gait, alert: num('alert', 0), flap: num('flap', 1), lift: 0, airborne: false };
-  if (rig === 'hadrosaur') {
+  if (rig !== 'azhdarchid') {
     if (action === 'graze') return { ...base, gait: 0, alert: 0 };
-    if (action === 'alert') return { ...base, gait: 0, alert: 1 };
+    if (action === 'alert' || action === 'roar' || action === 'face') return { ...base, gait: 0, alert: 1 };
     if (action === 'walk') return { ...base, gait: 1 };
     if (action === 'run') return { ...base, gait: 2 };
     return { ...base, gait: Math.min(2, Math.max(0, gait)) };
@@ -74,6 +84,8 @@ function poseFor(id: FaunaSpeciesId, f: number | null, time: number): Pose {
 
 interface Exhibit {
   id: FaunaSpeciesId;
+  /** Real-size factor: SPECIES_REFERENCE_M / mesh lengthM. */
+  unit: number;
   inst: FaunaInstances;
   mats: FaunaMaterials;
   /** Instance placements: east, north, yaw, strip fraction (null = hero). */
@@ -86,7 +98,8 @@ const y0 = AIRPORT.elevation;
 function writeAll(time: number): void {
   for (const ex of exhibits) {
     const info = FAUNA_SPECIES[ex.id];
-    const scale = info.defaultScale;
+    // Real size: x the mesh unit (exactly 1 for the inc-1 species, whose builders report their reference size).
+    const scale = info.defaultScale * ex.unit;
     ex.slots.forEach((s, i) => {
       const p = poseFor(ex.id, s.f, time);
       let phase: number;
@@ -94,7 +107,7 @@ function writeAll(time: number): void {
       else if (p.airborne) phase = time * (info.flapHz / Math.sqrt(scale));
       else phase = (time * (p.gait >= 1.5 ? info.speed.run : info.speed.walk) * scale) / strideM(ex.id, p.gait, scale);
       const alt = y0 + (info.groundOffsetM + p.lift) * scale;
-      const flap = info.rig === 'hadrosaur' ? p.alert : p.flap;
+      const flap = info.rig !== 'azhdarchid' ? p.alert : p.flap;
       const yaw = s.f === null ? s.yaw + turn * time : s.yaw;
       const hero = s.f === null;
       writeFaunaInstance(ex.inst.array, i, s.east, alt, s.north + far, yaw, hero ? heroPitch : 0, hero ? heroBank : 0, phase, p.gait, flap, 0, scale, i + 0.37 * i);
@@ -109,13 +122,19 @@ void runHarness({
     {
       init(ctx) {
         const airborne = shown.some((id) => poseFor(id, null, 0).airborne);
+        // A single big species is framed from farther (x1 up to the Edmontosaurus's 11.5 m).
+        const k = single && FAUNA_SPECIES[shown[0]].rig !== 'azhdarchid' ? Math.max(1, SPECIES_REFERENCE_M[shown[0]] / 11.5) : 1;
         if (!params.has('cam')) {
           if (single && stripN > 0) {
-            ctx.camera.position.set(0, y0 + (airborne ? 10 : 8), 50);
-            ctx.camera.lookAt(0, y0 + (airborne ? 6 : 2), 4);
+            ctx.camera.position.set(0, y0 + (airborne ? 10 : 8) * k, 50 * k);
+            ctx.camera.lookAt(0, y0 + (airborne ? 6 : 2) * k, 4 * k);
           } else if (single) {
-            ctx.camera.position.set(0, y0 + (airborne ? 9 : 4.5), 26);
-            ctx.camera.lookAt(0, y0 + (airborne ? 8 : 2.6), 0);
+            ctx.camera.position.set(0, y0 + (airborne ? 9 : 4.5) * k, 26 * k);
+            ctx.camera.lookAt(0, y0 + (airborne ? 8 : 2.6) * k, 0);
+          } else if (lineupAll) {
+            // Every species: a wider, higher view (the 26 m Alamosaurus).
+            ctx.camera.position.set(0, y0 + 9, 70);
+            ctx.camera.lookAt(0, y0 + 4, 0);
           } else {
             ctx.camera.position.set(3, y0 + 3.4, 23);
             ctx.camera.lookAt(3, y0 + 2.4, 0);
@@ -147,14 +166,20 @@ void runHarness({
         ctx.scene.add(figure);
 
         const lines: string[] = [];
-        const colX: Record<FaunaSpeciesId, number> = { edmontosaurus: -6, quetzalcoatlus: 7, azhdarchidSmall: 13 };
+        // Columns: the inc-1 line-up as before; with every species, a wider one.
+        const colX: Record<FaunaSpeciesId, number> = lineupAll
+          ? { alamosaurus: -42, tyrannosaurus: -16, edmontosaurus: -2, triceratops: 11, quetzalcoatlus: 22, azhdarchidSmall: 31, pteranodon: 38 }
+          : { edmontosaurus: -6, quetzalcoatlus: 7, azhdarchidSmall: 13, tyrannosaurus: 0, triceratops: 0, alamosaurus: 0, pteranodon: 0 };
         for (const id of shown) {
           const set = buildFaunaSpecies(id);
           const mats = createFaunaMaterials(id, set);
+          const unit = SPECIES_REFERENCE_M[id] / set.lengthM;
+          // Strip spacing grows with the body (x1 for the inc-1 species).
+          const size = Math.max(1, (unit * set.lengthM) / 11.5);
           const slots: Exhibit['slots'] = [];
           // Hero facing east (side view from the south), at the column or the centre.
           slots.push({ east: single ? 0 : colX[id], north: 0, yaw: Math.PI / 2, f: null });
-          const spacing = (FAUNA_SPECIES[id].rig === 'hadrosaur' ? 12.5 : 11.5) * FAUNA_SPECIES[id].defaultScale;
+          const spacing = (FAUNA_SPECIES[id].rig === 'azhdarchid' ? 11.5 : 12.5) * FAUNA_SPECIES[id].defaultScale * (FAUNA_SPECIES[id].rig === 'azhdarchid' ? 1 : size);
           for (let i = 0; i < stripN; i++) slots.push({ east: (i - (stripN - 1) / 2) * spacing, north: -16, yaw: Math.PI / 2, f: i / stripN });
           const inst = createFaunaInstances(slots.length);
           const geo = [set.lod0, set.lod1, set.lod2][lod];
@@ -162,7 +187,7 @@ void runHarness({
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           ctx.scene.add(mesh);
-          exhibits.push({ id, inst, mats, slots });
+          exhibits.push({ id, unit, inst, mats, slots });
           lines.push(`${FAUNA_SPECIES[id].name}: LOD${lod} ${geo.index!.count / 3} tris (LOD0 ${set.lod0.index!.count / 3} / LOD1 ${set.lod1.index!.count / 3} / LOD2 ${set.lod2.index!.count / 3}), x${FAUNA_SPECIES[id].defaultScale}`);
         }
         // The strip runs from left to right in phase; north = -16 puts it nearer the camera than the hero row.

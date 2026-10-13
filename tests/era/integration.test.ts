@@ -112,7 +112,7 @@ describe('Deep Time integration', () => {
     expect(createFaunaSystem(PRESENT)).toBeNull();
     const sys = createFaunaSystem(CRETACEOUS, { terrain: countingTerrain() });
     expect(sys).not.toBeNull();
-    expect(sys!.stats).toEqual({ visible: 0, terrainCalls: 0, reallocs: 0, cpuMs: 0 });
+    expect(sys!.stats).toEqual({ visible: 0, terrainCalls: 0, reallocs: 0, cpuMs: 0, tris: 0, draws: 0 });
     sys!.dispose();
   });
 

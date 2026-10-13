@@ -15,6 +15,7 @@ import { FLYER_MODE, FlyerPool, LAUNCH_END_PHASE, LAUNCH_S, WALK_STRIDE, launchP
 import { countingTerrain } from '../../src/world/fauna/habitat';
 import { HerdPool, STRIDE_RUN, STRIDE_WALK } from '../../src/world/fauna/herds';
 import { AZHDARCHID_LAUNCH_S, FAUNA_SPECIES, azhdarchidLaunch, buildFaunaSpecies } from '../../src/world/fauna/species/index';
+import { SPECIES_REFERENCE_M } from '../../src/world/fauna/roster';
 import { FAUNA_ATTR, FAUNA_STRIDE } from '../../src/world/fauna/types';
 
 function makeCtx() {
@@ -37,7 +38,7 @@ function makeCtx() {
 
 interface Draw {
   species: string;
-  set: { lod0: THREE.BufferGeometry; caster: THREE.BufferGeometry };
+  set: { lod0: THREE.BufferGeometry; caster: THREE.BufferGeometry; lengthM: number };
   mats: { material: THREE.Material; depthMaterial: THREE.Material; setTime?(t: number): void };
   lod: { mesh: THREE.Mesh; geometry: THREE.InstancedBufferGeometry; array: Float32Array; count: number }[];
   caster: { mesh: THREE.Mesh; geometry: THREE.InstancedBufferGeometry; array: Float32Array; count: number };
@@ -55,19 +56,20 @@ function build() {
 describe('creature art in the fauna system', () => {
   it('draws the species meshes and animated materials by default, in init', () => {
     const { draws } = build();
-    expect(draws.map((d) => d.species).sort()).toEqual(['azhdarchidSmall', 'edmontosaurus', 'quetzalcoatlus']);
+    expect(draws.map((d) => d.species).sort()).toEqual(['alamosaurus', 'azhdarchidSmall', 'edmontosaurus', 'pteranodon', 'quetzalcoatlus', 'triceratops', 'tyrannosaurus']);
     for (const d of draws) {
       const ref = buildFaunaSpecies(d.species as 'edmontosaurus');
       expect(d.set.lod0.index!.count).toBe(ref.lod0.index!.count);
       // The rig attributes reach the instanced geometry (aRig: limb coordinate and membrane chord).
       for (const a of ['position', 'normal', 'color', 'aBone', 'aBoneW', 'aRig']) expect(d.lod[0].geometry.getAttribute(a)).toBeTruthy();
-      expect((d.mats.material as THREE.MeshStandardMaterial).customProgramCacheKey()).toMatch(/^fauna-v2-[01]$/);
+      expect((d.mats.material as THREE.MeshStandardMaterial).customProgramCacheKey()).toMatch(/^fauna-v2-[0-4]$/);
       // The caster mesh draws the animated depth material into the shadow maps, and only it casts.
       expect(d.caster.mesh.customDepthMaterial).toBe(d.mats.depthMaterial);
       expect(d.caster.mesh.castShadow).toBe(true);
       for (const l of d.lod) expect(l.mesh.castShadow).toBe(false);
-      // Real size: the builders report the reference lengths.
-      expect(d.unit).toBeCloseTo(1, 6);
+      // Real size: the inc-1 builders report the reference lengths (the inc-2 stubs are scaled by the unit).
+      if (['edmontosaurus', 'quetzalcoatlus', 'azhdarchidSmall'].includes(d.species)) expect(d.unit).toBeCloseTo(1, 6);
+      expect(d.unit * d.set.lengthM).toBeCloseTo(SPECIES_REFERENCE_M[d.species as 'edmontosaurus'], 5);
       expect(d.originM).toBe(FAUNA_SPECIES[d.species as 'edmontosaurus'].groundOffsetM);
     }
   });

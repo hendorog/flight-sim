@@ -18,13 +18,19 @@
 // The channel meanings (gait, alert, launch, flap) are documented in species/index.ts.
 
 import * as THREE from 'three';
-import { AZHDARCHID_CROUCH_DROP_M, azhdarchidCrouchFlex, azhdarchidFold, azhdarchidSubJoints } from './species/azhdarchid';
-import { EDMONTOSAURUS_HIND_SOLE, edmontosaurusSubJoints } from './species/edmontosaurus';
+import { POSE_GLSL as CERATOPSIAN_POSE } from './poses/ceratopsian';
+import { POSE_GLSL as SAUROPOD_POSE } from './poses/sauropod';
+import { POSE_GLSL as THEROPOD_POSE } from './poses/theropod';
+import { AZHDARCHID_CROUCH_DROP_M, azhdarchidCrouchFlex } from './species/azhdarchid';
+import { EDMONTOSAURUS_HIND_SOLE } from './species/edmontosaurus';
+import { FAUNA_SPECIES } from './species/index';
 import { SUB_COUNT } from './rig';
-import { BONE, BONE_COUNT, FAUNA_ATTR, FAUNA_STRIDE, type CreatureMeshSet, type FaunaSpeciesId } from './types';
+import { BONE, BONE_COUNT, FAUNA_ATTR, FAUNA_STRIDE, RIG, type CreatureMeshSet, type FaunaSpeciesId, type RigIndex } from './types';
 
-/** Rig kind per species (FAUNA_RIG define): 0 hadrosaur, 1 azhdarchid. */
-const RIG_OF: Record<FaunaSpeciesId, 0 | 1> = { edmontosaurus: 0, quetzalcoatlus: 1, azhdarchidSmall: 1 };
+/** Rig kind of a species (the FAUNA_RIG define, types.ts RIG), from its render descriptor (species/index.ts). */
+export function rigOf(id: FaunaSpeciesId): RigIndex {
+  return RIG[FAUNA_SPECIES[id].render.rig];
+}
 
 const B = BONE;
 
@@ -243,13 +249,19 @@ void faunaSkin() {
   int b = int(aBone + 0.5);
   vec3 p = position;
   vec3 n = normal;
-#if FAUNA_RIG == 1
+#ifdef FAUNA_WINGS
   // Folding wings: the membrane tucks in toward the leading edge.
   if (b >= ${B.wingL}) p.x += aRig.y * fFold * 0.88;
-#endif
+  // Limb sub-joints: forelimbs (uSub 0-2), hind limbs (3-5), wings (6-8); the right side as packed, the left mirrored.
   if (b >= ${B.legFL}) {
     int base = b >= ${B.wingL} ? 6 : (b >= ${B.legHL} ? 3 : 0);
     float side = (b == ${B.legFR} || b == ${B.legHR} || b == ${B.wingR}) ? 1.0 : -1.0;
+#else
+  // No wings on this rig: bones 14/15 are plain bones (the sauropod's neck3/neck4), with no sub-joints.
+  if (b >= ${B.legFL} && b <= ${B.legHR}) {
+    int base = b >= ${B.legHL} ? 3 : 0;
+    float side = (b == ${B.legFR} || b == ${B.legHR}) ? 1.0 : -1.0;
+#endif
     for (int k = 2; k >= 0; k--) {
       vec4 j = uSub[base + k];
       if (j.w > 1e5) continue;
@@ -310,27 +322,39 @@ export interface FaunaMaterials {
 const vec4s = (a: Float32Array, n: number): THREE.Vector4[] =>
   Array.from({ length: n }, (_, i) => new THREE.Vector4(a[i * 4], a[i * 4 + 1], a[i * 4 + 2], a[i * 4 + 3]));
 
-/** The full vertex code of a rig (exported for tests and the shader-text check). */
-export function faunaVertexGLSL(rig: 0 | 1): string {
-  return `${COMMON_GLSL}\n${rig === 0 ? HADROSAUR_POSE : AZHDARCHID_POSE}\n${SKIN_GLSL}`;
+/** The pose code of each rig (types.ts RIG): rigs 2-4 come from poses/*.ts (WP1-WP3). */
+const POSES: Readonly<Record<RigIndex, string>> = { 0: HADROSAUR_POSE, 1: AZHDARCHID_POSE, 2: THEROPOD_POSE, 3: CERATOPSIAN_POSE, 4: SAUROPOD_POSE };
+
+/**
+ * The full vertex code of a rig (exported for tests and the shader-text check). The material also defines
+ * FAUNA_RIG = rig and, for the azhdarchid rig only, FAUNA_WINGS (faunaDefines).
+ */
+export function faunaVertexGLSL(rig: RigIndex): string {
+  return `${COMMON_GLSL}\n${POSES[rig]}\n${SKIN_GLSL}`;
+}
+
+/** The material defines of a rig: FAUNA_RIG, and FAUNA_WINGS (wing fold, 14/15 mirroring, wing sub-joints) for rig 1. */
+export function faunaDefines(rig: RigIndex): Record<string, number> {
+  return rig === RIG.azhdarchid ? { FAUNA_RIG: rig, FAUNA_WINGS: 1 } : { FAUNA_RIG: rig };
 }
 
 /** The animated material and depth material of a species, with their shared uniforms. */
 export function createFaunaMaterials(id: FaunaSpeciesId, set: CreatureMeshSet): FaunaMaterials {
-  const rig = RIG_OF[id];
-  const sub = rig === 0 ? edmontosaurusSubJoints() : azhdarchidSubJoints();
-  const fold = rig === 1 ? azhdarchidFold().quats : new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  const render = FAUNA_SPECIES[id].render;
+  const rig = RIG[render.rig];
+  const sub = render.subJoints();
+  const fold = render.fold();
   const uniforms: FaunaUniforms = {
     uTime: { value: 0 },
     uPivots: { value: vec4s(set.pivots, BONE_COUNT) },
     uSub: { value: vec4s(sub, SUB_COUNT) },
     uFold: { value: vec4s(fold, 4) },
-    uSubBlend: { value: rig === 0 ? 0.15 : 0.09 },
+    uSubBlend: { value: render.subBlend },
     uVariantTint: {
       value: [new THREE.Vector3(1, 1, 1), new THREE.Vector3(1.08, 0.97, 0.88), new THREE.Vector3(0.9, 0.95, 1.0), new THREE.Vector3(1.1, 1.05, 0.95)],
     },
   };
-  const defines = { FAUNA_RIG: rig };
+  const defines = faunaDefines(rig);
   const vertex = faunaVertexGLSL(rig);
 
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
