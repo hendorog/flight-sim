@@ -26,8 +26,9 @@ export const CRETACEOUS: EraParams = Object.freeze({
     town: false,
     marsh: true,
     // NED (2000, -17500): 17.6 km from the field on bearing 276 (backlit at sunset, ~26 deg right of the nose
-    // lined up on 25), ~1.7 km clear of the nearest lake rim and of the far end of the 07 approach corridor.
-    volcano: Object.freeze({ north: 2000, east: -17500, baseRadius: 7000, summit: 2600, craterRadius: 400, craterDepth: 160 }),
+    // lined up on 25), clear of the nearest lake rim and of the far end of the 07 approach corridor
+    // (tests/era/volcano.test.ts); a 5.5 km base for a steep cone that reads as a landmark from the cockpit.
+    volcano: Object.freeze({ north: 2000, east: -17500, baseRadius: 5500, summit: 2600, craterRadius: 400, craterDepth: 160 }),
   }),
   palette: 'cretaceous',
   flora: 'cretaceous',

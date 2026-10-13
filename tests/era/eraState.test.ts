@@ -83,7 +83,7 @@ describe('registry', () => {
       farmland: false,
       town: false,
       marsh: true,
-      volcano: { north: 2000, east: -17500, baseRadius: 7000, summit: 2600, craterRadius: 400, craterDepth: 160 },
+      volcano: { north: 2000, east: -17500, baseRadius: 5500, summit: 2600, craterRadius: 400, craterDepth: 160 },
     });
     expect(CRETACEOUS.world).toEqual({ airport: 'flats', flatSurface: 'dirt', school: false, towerCamera: false, defaultScenario: 'safari' });
     expect(CRETACEOUS.weather).toEqual({ visibilityM: 45000, cloudCover: 0.35, cloudBaseM: 1500, cirrusCover: 0.2, isaDeviation: 10 });

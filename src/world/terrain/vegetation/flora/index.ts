@@ -108,7 +108,7 @@ const CRETACEOUS_FLORA: FloraSet = Object.freeze({
           { kind: 'ellipsoid', y0: 0.84, y1: 0.1, rx: 0.24 },
           { kind: 'ellipsoid', y0: 0.66, y1: 0.1, rx: 0.17 },
         ],
-        trunk: [0.9, 0.016],
+        trunk: [0.9, 0.024],
       },
     },
     {
@@ -136,9 +136,9 @@ const CRETACEOUS_FLORA: FloraSet = Object.freeze({
       key: 'sabal',
       name: 'Sabalites fan palm',
       conifer: false,
-      height: [6, 12],
+      height: [8, 15],
       tint: [0.95, 1.0, 0.9],
-      proxy: { crown: [{ kind: 'ellipsoid', y0: 0.75, y1: 0.1, rx: 0.2 }], trunk: [0.74, 0.02] },
+      proxy: { crown: [{ kind: 'ellipsoid', y0: 0.7, y1: 0.1, rx: 0.26 }], trunk: [0.68, 0.03] },
     },
   ] as const),
 });

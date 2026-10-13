@@ -128,6 +128,30 @@ const PAIR_LAUNCH = `
   await sleep(200);
   return { pair: pair.length, launched, modes: pair.map((k) => F.mode[k]), birdAgl: pair.map((k) => +(F.alt[k] - F.ground[k]).toFixed(1)), aircraft: { onGround: s.onGround, kias: s.kias, dist: Math.round(Math.hypot(s.north - n, s.east - e)) } };`;
 
+/** Scale: the resting pair beside the C172 (paused, so they do not launch), from a chase-like camera behind both. */
+const PAIR_SCALE = `
+  const pair = [];
+  for (let k = 0; k < F.capacity; k++) if (F.active[k] && F.mode[k] <= 1) pair.push(k);
+  if (!pair.length) return { pair: 0 };
+  sim.pause(true);
+  const i = pair[0], n = F.n[i], e = F.e[i], g = F.ground[i];
+  const base = sim.physics.scenario, h = base.ic.heading;
+  const fwd = [Math.cos(h), Math.sin(h)], right = [-Math.sin(h), Math.cos(h)];
+  // The aircraft 18 m inboard of the bird (toward the centreline), on the ground, nose along the strip.
+  const an = n - 18 * right[0], ae = e - 18 * right[1];
+  sim.physics.resetTo({ ...base, ic: { ...base.ic, position: { x: an, y: ae, z: base.ic.position.z }, heading: h } });
+  sim.setCamera('chase');
+  await sleep(300);
+  // Behind and a little above, looking at the midpoint of the two.
+  const mn = (n + an) / 2, me = (e + ae) / 2;
+  sim.setFixedCamera([mn - 45 * fwd[0] - 6 * right[0], me - 45 * fwd[1] - 6 * right[1], g + 7], [mn, me, g + 3]);
+  await sleep(600);
+  const s = sim.summary();
+  return { pair: pair.length, modes: pair.map((k) => F.mode[k]), sep: Math.round(Math.hypot(s.north - n, s.east - e)), size: +F.size[i].toFixed(2), onGround: s.onGround };`;
+
+/** The valley overview: wait for the fauna to stream in, then report how many animals are drawn (stats.visible). */
+const SETTLE = `await sleep(3500); return {};`;
+
 /** Wait for the first Field Guide toast. */
 const TOAST = `
   const ok = await until(() => [...document.querySelectorAll('.toast')].some((t) => /Field Guide/.test(t.textContent)), 60000);
@@ -158,9 +182,10 @@ const ERA_SHOTS = [
   { name: 'safari-kettle-1000', label: 'Safari, tod 10, 36 s in (kettle ahead right)', page: `${CRET}&tod=10&ui=0`, evalJs: timed(SAFARI_AT(36000)), wait: 0 },
   { name: 'herd-lowpass', label: 'Low pass over the river herd (flee)', page: `${CRET}&tod=10&ui=0`, evalJs: timed(LOW_PASS), wait: 0 },
   { name: 'kettle-close', label: 'Kettle of azhdarchids, 45 m', page: `${CRET}&tod=10&ui=0`, evalJs: timed(KETTLE), wait: 0 },
+  { name: 'pair-scale', label: 'Scale: the resting pair beside the C172', page: `${CRET}&scenario=runway&tod=10&ui=0`, evalJs: timed(PAIR_SCALE), wait: 0 },
   { name: 'pair-launch', label: 'Resting pair launching on the 07 roll', page: `${CRET}&scenario=runway&tod=10&ui=0`, evalJs: timed(PAIR_LAUNCH), wait: 0 },
   { name: 'volcano-close', label: 'Volcano from 3000 m', page: 'dev/terrain.html?era=cretaceous&cam=7000,-9500,3000&look=2000,-17500,1700&tod=10&freeze=1', wait: 2500 },
-  { name: 'valley-1500ft', label: 'Valley overview, 1500 ft above the Flats, toward the river herd', page: `${CRET}&tod=10&ui=0&camPos=-2600,-1400,580&camLook=-1622,4315,130`, wait: 4000 },
+  { name: 'valley-1500ft', label: 'Valley overview, 1500 ft above the Flats, toward the river herd', page: `${CRET}&tod=10&ui=0&camPos=-2600,-1400,580&camLook=-1622,4315,130`, evalJs: timed(SETTLE), wait: 500 },
   { name: 'night-2200', label: 'Night, tod 22 (safari, chase)', page: `${CRET}&tod=22&cam=chase&ui=0`, wait: 3000 },
   { name: 'forest-close', label: 'Cretaceous trees (dev/terraintrees)', page: 'dev/terraintrees.html?era=cretaceous&tod=10&freeze=1', wait: 2500 },
   { name: 'field-guide-toast', label: 'Field Guide toast (safari)', page: `${CRET}&tod=10`, evalJs: timed(TOAST), wait: 0 },

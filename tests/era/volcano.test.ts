@@ -72,7 +72,7 @@ function fromRunway(along: number, across: number): [number, number] {
 
 describe('the volcano spec', () => {
   it('is where the plan puts it: 17.6 km west of the field, clear of every lake and the river', () => {
-    expect(V).toEqual({ north: 2000, east: -17500, baseRadius: 7000, summit: 2600, craterRadius: 400, craterDepth: 160 });
+    expect(V).toEqual({ north: 2000, east: -17500, baseRadius: 5500, summit: 2600, craterRadius: 400, craterDepth: 160 });
     const b = volcanoBound(V);
     for (const l of hydrology.lakes) expect(Math.hypot(l.north - V.north, l.east - V.east) - l.bound).toBeGreaterThan(b);
     const r = hydrology.river;

@@ -186,7 +186,7 @@ const VOLCANO_ROCK = /* glsl */ `#if VOLCANO
 ledge *= 1.0 - tVolc;
 {
   vec3 basalt = vec3(0.052, 0.049, 0.046) * (0.75 + 0.35 * nC.a + 0.1 * sD.r) * (0.7 + 0.6 * rib);
-  basalt = mix(basalt, vec3(0.085, 0.046, 0.032) * (0.8 + 0.3 * nD.b), smoothstep(0.3, 0.15, tVolR + 0.05 * sC.r) * 0.7);
+  basalt = mix(basalt, vec3(0.12, 0.052, 0.03) * (0.8 + 0.3 * nD.b), smoothstep(0.42, 0.2, tVolR + 0.05 * sC.r) * 0.7);
   base = mix(base, basalt * mix(1.0, 0.62 + 0.55 * streak, smoothstep(0.85, 0.6, tUp)), tVolc);
 }
 #endif
@@ -214,9 +214,9 @@ const VOLCANO_CRATER = /* glsl */ `#if VOLCANO
 {
   float crater = 1.0 - smoothstep(0.8, 1.05, tVolR * uVolcano.z / uVolcano.w + 0.1 * sC.b);
   if (crater > 0.001) {
-    vec3 alt = mix(vec3(0.16, 0.09, 0.04), vec3(0.42, 0.36, 0.13), smoothstep(0.5, 0.8, nC.a + 0.3 * (nD.g - 0.5)));
+    vec3 alt = mix(vec3(0.16, 0.09, 0.04), vec3(0.52, 0.44, 0.12), smoothstep(0.5, 0.8, nC.a + 0.3 * (nD.g - 0.5)));
     alt = mix(alt, vec3(0.5, 0.48, 0.42), smoothstep(0.7, 0.9, nD.b) * 0.5);
-    acc.albedo = mix(acc.albedo, alt * (0.8 + 0.3 * sD.r), crater * 0.75 * smoothstep(0.35, 0.65, nB.r + 0.25 * sC.g));
+    acc.albedo = mix(acc.albedo, alt * (0.8 + 0.3 * sD.r), crater * smoothstep(0.35, 0.65, nB.r + 0.25 * sC.g));
   }
 }
 #endif
@@ -271,8 +271,8 @@ meadow = mix(meadow, ${G.soil} * (0.8 + 0.3 * sD.r + 0.15 * sC.b), smoothstep(0.
 #endif
 `;
   const mud = /* glsl */ `#if STRIP_MUD
-// The Flats: dry mud over the flattened zone, its edge ragged where the fern cover closes in.
-float tMudW = 1.0 - smoothstep(0.0, 0.25, airportBlendAt(tRw) - 0.06 + 0.14 * sC.g + 0.07 * sD.r + 0.1 * sB.b);
+// The Flats: dry mud over the flattened zone, its edge wide and ragged where the fern cover closes in.
+float tMudW = 1.0 - smoothstep(0.0, 0.45, airportBlendAt(tRw) - 0.06 + 0.26 * sC.g + 0.12 * sD.r + 0.15 * sB.b);
 vec3 tMudCol = vec3(0.0);
 farmW *= 1.0 - tMudW;
 // Pixel footprints, taken outside the branch below (derivatives need uniform control flow).
@@ -293,14 +293,17 @@ if (tMudW > 0.001) {
   float pathD = abs(fract(tPathX + 0.5) - 0.5);
   float paths = mix(1.0 - smoothstep(0.14 - tPathFw, 0.14 + tPathFw, pathD), 0.28, smoothstep(0.2, 0.5, tPathFw));
   vec3 trailCol = ${G.trail} * (0.86 + 0.22 * sD.r + 0.1 * sC.g) * (1.0 - 0.22 * paths);
-  // Desiccation cracks: plates about 1.4 m across, fewer where the trail is trampled; 9 m polygons above them.
-  float cracks = crackCover(tXZ / 1.4, 0.05, tMudFw / 1.4) * (1.0 - 0.75 * trail);
-  cracks = max(cracks, crackCover(tXZ / 9.0 + 17.0, 0.012, tMudFw / 9.0) * 0.6);
+  // Desiccation cracks: plates about 0.6 m across, fewer where the trail is trampled; 9 m polygons above them,
+  // fading out past ~150 m (at range they read as a regular tiling).
+  float cracks = crackCover(tXZ / 0.6, 0.035, tMudFw / 0.6) * (1.0 - 0.75 * trail);
+  cracks = max(cracks, crackCover(tXZ / 9.0 + 17.0, 0.012, tMudFw / 9.0) * 0.6 * (1.0 - smoothstep(60.0, 220.0, tDist)));
   mud = mix(mud, trailCol, trail * 0.8);
-  mud = mix(mud, ${G.mudCrack}, cracks * 0.85);
+  mud = mix(mud, ${G.mudCrack}, cracks * 0.6);
   // Sparse fern and horsetail tufts creeping onto the mud from its edge.
-  float tufts = smoothstep(0.62, 0.8, nD.g + 0.6 * (1.0 - tMudW)) * (1.0 - trail);
+  float tufts = smoothstep(0.55, 0.78, nD.g + 0.8 * (1.0 - tMudW)) * (1.0 - trail);
   mud = mix(mud, meadow, tufts);
+  // At range the flat fades toward the prairie (no hard grey road from altitude).
+  mud = mix(mud, meadow, 0.3 * smoothstep(1500.0, 4000.0, tDist));
   tMudCol = mud;
 }
 #else

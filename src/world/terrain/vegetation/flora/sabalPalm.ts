@@ -19,10 +19,10 @@ const unit = (v: V3): V3 => {
 const mix = (a: V3, b: V3, ca: number, cb: number): V3 => unit([a[0] * ca + b[0] * cb, a[1] * ca + b[1] * cb, a[2] * ca + b[2] * cb]);
 
 /** Crown centre (the top of the trunk), in tree heights. */
-const CROWN: V3 = [0.03, 0.74, 0.01];
+const CROWN: V3 = [0.03, 0.68, 0.01];
 /** Petiole and blade length, and the blade's full width (the atlas fan is ~1.9 times as wide as long). */
-const PETIOLE = 0.06;
-const BLADE = 0.2;
+const PETIOLE = 0.075;
+const BLADE = 0.25;
 const WIDTH = 0.36;
 
 export function sabalPalm(kit: TreeKit, lod: number): THREE.BufferGeometry {
