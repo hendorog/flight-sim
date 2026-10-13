@@ -150,9 +150,9 @@ float crackDistance(vec2 p) {
     }
   return md;
 }
-// Coverage of the crack lines (half-width w cells) at p, fading to its mean once a cell is a few pixels across.
-float crackCover(vec2 p, float w) {
-  float fw = max(fwidth(p.x), fwidth(p.y));
+// Coverage of the crack lines (half-width w cells) at p, fw the pixel footprint in cells (taken by the caller in
+// uniform control flow), fading to its mean once a cell is a few pixels across.
+float crackCover(vec2 p, float w, float fw) {
   float far = smoothstep(0.08, 0.3, fw);
   if (far >= 1.0) return 2.6 * w;
   float d = crackDistance(p);
@@ -215,6 +215,10 @@ meadow = mix(meadow, ${G.soil} * (0.8 + 0.3 * sD.r + 0.15 * sC.b), smoothstep(0.
 float tMudW = 1.0 - smoothstep(0.0, 0.25, airportBlendAt(tRw) - 0.06 + 0.14 * sC.g + 0.07 * sD.r + 0.1 * sB.b);
 vec3 tMudCol = vec3(0.0);
 farmW *= 1.0 - tMudW;
+// Pixel footprints, taken outside the branch below (derivatives need uniform control flow).
+float tMudFw = max(fwidth(tXZ.x), fwidth(tXZ.y));
+float tPathX = tRw.y / 3.7 + 0.5 * sD.a;
+float tPathFw = fwidth(tPathX);
 if (tMudW > 0.001) {
   vec3 mud = ${G.mudFlat} * (0.82 + 0.22 * sB.g + 0.14 * sC.a + 0.1 * sD.b);
   // Damper, darker hollows and paler salt-dusted crusts.
@@ -226,11 +230,12 @@ if (tMudW > 0.001) {
   float past = abs(tRw.x) - uRunwayDims.x;
   float trail = (1.0 - smoothstep(trailHalf - 6.0, trailHalf + 2.0, abs(tRw.y))) * (1.0 - smoothstep(0.0, 350.0, past + 80.0 * sC.r));
   trail *= 0.55 + 0.45 * smoothstep(0.3, 0.7, nC.b + 0.3 * (nD.r - 0.5));
-  float paths = stripe(tRw.y / 3.7 + 0.5 * sD.a, 0.14);
+  float pathD = abs(fract(tPathX + 0.5) - 0.5);
+  float paths = mix(1.0 - smoothstep(0.14 - tPathFw, 0.14 + tPathFw, pathD), 0.28, smoothstep(0.2, 0.5, tPathFw));
   vec3 trailCol = ${G.trail} * (0.86 + 0.22 * sD.r + 0.1 * sC.g) * (1.0 - 0.22 * paths);
   // Desiccation cracks: plates about 1.4 m across, fewer where the trail is trampled; 9 m polygons above them.
-  float cracks = crackCover(tXZ / 1.4, 0.05) * (1.0 - 0.75 * trail);
-  cracks = max(cracks, crackCover(tXZ / 9.0 + 17.0, 0.012) * 0.6);
+  float cracks = crackCover(tXZ / 1.4, 0.05, tMudFw / 1.4) * (1.0 - 0.75 * trail);
+  cracks = max(cracks, crackCover(tXZ / 9.0 + 17.0, 0.012, tMudFw / 9.0) * 0.6);
   mud = mix(mud, trailCol, trail * 0.8);
   mud = mix(mud, ${G.mudCrack}, cracks * 0.85);
   // Sparse fern and horsetail tufts creeping onto the mud from its edge.
