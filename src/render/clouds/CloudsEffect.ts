@@ -32,9 +32,11 @@ interface QualitySettings {
   minStep: number;
   /**
    * Share of the step budget the coarse step plan may use to cover the layer (the rest is headroom for fine
-   * steps, surface bisection and the skin ramp). Rays seldom use even a third of maxSteps, so a larger share
-   * mostly shortens the coarse steps through the thin outer parts of clouds, whose integration noise shows as
-   * grain (0.4 -> 0.75: about 35 % less noise over the tops, ~1 ms more at 1080p on an integrated GPU).
+   * steps, surface bisection and the skin ramp). Rays seldom use even a third of maxSteps (they turn opaque
+   * long before the end of the layer), so a larger share mostly shortens the coarse steps. Long coarse steps
+   * hit or miss the small turrets of the cloud tops depending on the per-frame jitter, which shows as grain
+   * over a cumulus field (0.4 -> 1.0: ~60 % less noise seen from above the tops, ~1.5 ms more at 1080p on an
+   * integrated GPU). A ray that does run short re-plans its remaining steps (march shader).
    */
   coarseShare: number;
   /** Distance over which detail erosion is applied, m. */
@@ -44,9 +46,9 @@ interface QualitySettings {
 
 const QUALITY: Record<QualityLevel, QualitySettings> = {
   low: { scale: 0.33, maxSteps: 64, lightSteps: 3, lightDetailSteps: 1, minStep: 60, coarseShare: 0.4, detailDist: 8_000, shadowRes: 256 },
-  medium: { scale: 0.5, maxSteps: 112, lightSteps: 4, lightDetailSteps: 2, minStep: 40, coarseShare: 0.5, detailDist: 15_000, shadowRes: 512 },
-  high: { scale: 0.55, maxSteps: 128, lightSteps: 6, lightDetailSteps: 3, minStep: 25, coarseShare: 0.6, detailDist: 25_000, shadowRes: 512 },
-  ultra: { scale: 0.7, maxSteps: 192, lightSteps: 6, lightDetailSteps: 3, minStep: 20, coarseShare: 0.75, detailDist: 35_000, shadowRes: 1024 },
+  medium: { scale: 0.5, maxSteps: 112, lightSteps: 4, lightDetailSteps: 2, minStep: 40, coarseShare: 0.75, detailDist: 15_000, shadowRes: 512 },
+  high: { scale: 0.55, maxSteps: 128, lightSteps: 6, lightDetailSteps: 3, minStep: 25, coarseShare: 1.0, detailDist: 25_000, shadowRes: 512 },
+  ultra: { scale: 0.7, maxSteps: 192, lightSteps: 6, lightDetailSteps: 3, minStep: 20, coarseShare: 1.0, detailDist: 35_000, shadowRes: 1024 },
 };
 
 /** Clouds are marched out to this distance, m (the curved layer dips below the horizon at ~140 km). */

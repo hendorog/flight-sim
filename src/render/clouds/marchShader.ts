@@ -310,7 +310,12 @@ void main() {
     float tPrev = t;         // the previous sample and the integration state before it
     vec4 prevA = vec4(L, T);
     vec2 prevF = vec2(frontSum, frontW);
+    int replanAt = steps + (uMaxSteps - steps) * 3 / 4;
     for (; steps < uMaxSteps && t < seg.y && T > T_STOP; steps++) {
+      // The plan may take the whole budget (uCoarseShare 1), leaving fine steps and bisections no headroom: a
+      // ray that has used three quarters of it stretches the rest to still reach the end of the layer, rather
+      // than stopping short of the distant clouds.
+      if (steps == replanAt) growth = max(growth, stepGrowth(t, seg.y, float(uMaxSteps - steps) * 0.8));
       float coarse = max(uMinStep, t * growth);
       // Fine steps matter only until the ray has entered the cloud (where the surface is located and the
       // lit skin is sampled); once most of the light is absorbed coarse steps do.
