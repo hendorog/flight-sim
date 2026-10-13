@@ -1,4 +1,4 @@
-// Triceratops: the species profile (WP2 owns this file; WP0b stub with the plan's numbers). Pure and three-free:
+// Triceratops: the species profile (WP2 owns this file). Pure and three-free:
 // profiles.ts imports PROFILE (the export name is fixed).
 //
 // A showcase herd (pinned, never ambient in inc 2) whose reaction is 'face': alarmed members turn on the spot
@@ -19,8 +19,8 @@ export const PROFILE: SpeciesProfile = Object.freeze({
     lod0Max: Object.freeze({ low: 8, medium: 12, high: 16, ultra: 24 }),
     lodRangeScale: 1,
     farRangeM: 0,
-    // STUB budgets fit the stub body (Edmontosaurus, ~2.5k tris). WP2: the plan's 2200 / 350 / 60 / 900.
-    lod0Tris: 2600,
-    tris: Object.freeze([2600, 450, 70, 900] as const),
+    // The plan's budgets (lod0 / lod1 / lod2 / caster); bodies.test holds the meshes to them.
+    lod0Tris: 2200,
+    tris: Object.freeze([2200, 350, 60, 900] as const),
   }),
 });
