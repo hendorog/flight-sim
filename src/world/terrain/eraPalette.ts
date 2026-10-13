@@ -97,8 +97,8 @@ const PRESENT_PALETTE: TerrainPalette = Object.freeze({
  * siltier shelf sea; darker conifer stands and fresher angiosperm (platanoid, magnolia) woods.
  */
 const CRETACEOUS_PALETTE: TerrainPalette = Object.freeze({
-  meadowWet: 'vec3(0.036, 0.050, 0.016)',
-  meadowDry: 'vec3(0.095, 0.072, 0.028)',
+  meadowWet: 'vec3(0.040, 0.044, 0.022)',
+  meadowDry: 'vec3(0.092, 0.074, 0.036)',
   floor: 'vec3(0.034, 0.036, 0.020)',
   // Unused while the airport zone is the Flats (STRIP_MUD); fern cover in case an era keeps an airfield.
   turfA: 'vec3(0.034, 0.062, 0.026)',
@@ -112,13 +112,13 @@ const CRETACEOUS_PALETTE: TerrainPalette = Object.freeze({
   mud: 'vec3(0.060, 0.046, 0.030)',
   mudLight: 'vec3(0.095, 0.078, 0.056)',
   riverBed: 'vec3(0.042, 0.034, 0.024)',
-  bankRoughA: 'vec3(0.036, 0.062, 0.024)',
-  bankRoughB: 'vec3(0.070, 0.080, 0.034)',
-  reeds: 'vec3(0.085, 0.100, 0.040)',
+  bankRoughA: 'vec3(0.034, 0.046, 0.024)',
+  bankRoughB: 'vec3(0.066, 0.068, 0.036)',
+  reeds: 'vec3(0.088, 0.088, 0.044)',
   alpine: 'vec3(0.070, 0.066, 0.040)',
   scree: 'vec3(0.150, 0.135, 0.118)',
-  canopyBroadleaf: 'vec3(0.62, 0.66, 0.46)',
-  canopyConifer: 'vec3(0.42, 0.52, 0.46)',
+  canopyBroadleaf: 'vec3(0.60, 0.72, 0.50)',
+  canopyConifer: 'vec3(0.36, 0.44, 0.44)',
   seaAtten: 'vec3(0.42, 0.10, 0.13)',
   seaBodyDeep: 'vec3(0.0045, 0.016, 0.016)',
   seaBodyShallow: 'vec3(0.016, 0.036, 0.024)',
@@ -147,7 +147,7 @@ export const ERA_GROUND: Readonly<Record<PaletteId, EraGroundPalette | null>> = 
   present: null,
   cretaceous: Object.freeze({
     soil: 'vec3(0.120, 0.070, 0.045)',
-    marsh: 'vec3(0.068, 0.090, 0.026)',
+    marsh: 'vec3(0.056, 0.062, 0.030)',
     marshWet: 'vec3(0.026, 0.032, 0.020)',
     mudFlat: 'vec3(0.118, 0.098, 0.060)',
     mudCrack: 'vec3(0.045, 0.034, 0.024)',
