@@ -32,6 +32,7 @@ import { RIVER_STRIP, TREE_LINE_ASPECT, treeLineBase } from './biome';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
 import { snowLineBase } from './heightfield';
 import { era, isPresent } from '../era/eraState';
+import { ASH_REACH, VOLCANO_GLSL } from './volcano';
 import { RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
@@ -95,6 +96,8 @@ const glslVec = (c: readonly number[]): string => `vec3(${c.map((x) => x.toFixed
 //   STRIP_MUD      1: no airfield (the era's 'flats'): the flattened airport zone is a dry oxbow mud flat, its
 //                  desiccation cracks and a darker, trampled 30 m game trail on the runway centreline, blending
 //                  into the land cover over the airport blend band, in place of the turf and the fence.
+//   VOLCANO        1: the era's stratovolcano (volcano.ts; uniform uVolcano): near-black basalt crags with no strata
+//                  on its cone, ash and scoria (the biome's sand channel within its reach) and an altered crater.
 
 /** Era-only shader text: '' in the present day. */
 const eraText = (t: string): string => (isPresent() ? '' : t);
@@ -102,7 +105,7 @@ const eraText = (t: string): string => (isPresent() ? '' : t);
 /** The era's capability defines (only applied outside the present day). */
 export function eraDefines(): Record<string, number> {
   const e = era();
-  return { ERA_FARM: e.terrain.farmland ? 1 : 0, MARSH_CHANNEL: e.terrain.marsh ? 1 : 0, STRIP_MUD: e.world.airport === 'flats' ? 1 : 0 };
+  return { ERA_FARM: e.terrain.farmland ? 1 : 0, MARSH_CHANNEL: e.terrain.marsh ? 1 : 0, STRIP_MUD: e.world.airport === 'flats' ? 1 : 0, VOLCANO: e.terrain.volcano ? 1 : 0 };
 }
 
 /** Program cache key suffix: '' in the present day, '-<era id>' otherwise. */
@@ -158,6 +161,63 @@ float crackCover(vec2 p, float w, float fw) {
   float d = crackDistance(p);
   float c = 1.0 - smoothstep(w - fw, w + fw, d);
   return mix(c, 2.6 * w, far);
+}
+#endif
+`;
+
+/** The volcano's helpers and uniform (era builds only). */
+const VOLCANO_HEAD = /* glsl */ `#ifndef VOLCANO
+#define VOLCANO 0
+#endif
+#if VOLCANO
+${VOLCANO_GLSL}#endif
+`;
+
+/** The volcano's cone weight, and lava crags on the upper cone on less steep ground than elsewhere. */
+const VOLCANO_WEIGHTS = /* glsl */ `#if VOLCANO
+float tVolR = volcanoR(tXZ);
+float tVolc = volcanoCone(tVolR);
+rockW = max(rockW, volcanoCrag(tVolc, tVolR, tUpN + 0.1 * fineN + 0.04 * sC.g));
+#endif
+`;
+
+/** Basalt on the cone: no strata, bedding or grassy ledges; near-black, oxidised red-brown scoria near the top. */
+const VOLCANO_ROCK = /* glsl */ `#if VOLCANO
+ledge *= 1.0 - tVolc;
+{
+  vec3 basalt = vec3(0.052, 0.049, 0.046) * (0.75 + 0.35 * nC.a + 0.1 * sD.r) * (0.7 + 0.6 * rib);
+  basalt = mix(basalt, vec3(0.085, 0.046, 0.032) * (0.8 + 0.3 * nD.b), smoothstep(0.3, 0.15, tVolR + 0.05 * sC.r) * 0.7);
+  base = mix(base, basalt * mix(1.0, 0.62 + 0.55 * streak, smoothstep(0.85, 0.6, tUp)), tVolc);
+}
+#endif
+`;
+
+/** Ash and scoria: the sand channel within the volcano's reach (biome.ts), streaked down the fall line. */
+const VOLCANO_ASH = /* glsl */ `#if VOLCANO
+{
+  float ashW = sandW * (1.0 - smoothstep(${(ASH_REACH - 0.1).toFixed(3)}, ${ASH_REACH.toFixed(3)}, tVolR));
+  if (ashW > 0.001) {
+    vec3 ash = vec3(0.05, 0.048, 0.046) * (0.8 + 0.1 * sB.g + 0.08 * sC.b + 0.05 * sD.a);
+    vec2 aFall = normalize(tN.xz + 1e-4);
+    float aStreak = texture(tNoise, vec2(dot(tXZ, vec2(-aFall.y, aFall.x)) / 40.0, dot(tXZ, aFall) / 400.0)).b;
+    ash *= 0.7 + 0.55 * aStreak;
+    ash = mix(ash, vec3(0.095, 0.088, 0.078), smoothstep(0.62, 0.85, nD.r) * 0.35);
+    addMat(acc, layerTop(${LAYER.gravel}, tXZ, tDist), ash, ashW);
+    sandW -= ashW;
+  }
+}
+#endif
+`;
+
+/** The crater: hydrothermally altered ground, ochre and sulphur-yellow around the vents. */
+const VOLCANO_CRATER = /* glsl */ `#if VOLCANO
+{
+  float crater = 1.0 - smoothstep(0.8, 1.05, tVolR * uVolcano.z / uVolcano.w + 0.1 * sC.b);
+  if (crater > 0.001) {
+    vec3 alt = mix(vec3(0.16, 0.09, 0.04), vec3(0.42, 0.36, 0.13), smoothstep(0.5, 0.8, nC.a + 0.3 * (nD.g - 0.5)));
+    alt = mix(alt, vec3(0.5, 0.48, 0.42), smoothstep(0.7, 0.9, nD.b) * 0.5);
+    acc.albedo = mix(acc.albedo, alt * (0.8 + 0.3 * sD.r), crater * 0.75 * smoothstep(0.35, 0.65, nB.r + 0.25 * sC.g));
+  }
 }
 #endif
 `;
@@ -358,7 +418,7 @@ varying vec2 vRiver;
 ${HASH_GLSL}
 ${ROT_GLSL}
 ${E('#if ERA_FARM\n')}${FIELDS_GLSL}
-${E(`#endif\n${ERA_HEAD}`)}
+${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}`)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
 
 // Runway coordinates of a world (three.js xz) position: x along the centreline (+ toward the 25 end),
@@ -633,7 +693,7 @@ float fineN = 0.0;
 if ((tUpN > 0.55 && tUpN < 0.9) || (tBio.x > 0.1 && tBio.x < 0.7)) fineN = (texture(tNoise, rot2(tXZ, 5.3) * (1.0 / 13.0)).g - 0.5) * 2.5;
 float rockW = smoothstep(mix(0.70, 0.76, highZone) + rockShift, mix(0.60, 0.63, highZone) + rockShift, tUpN + 0.1 * fineN);
 rockW = max(rockW, smoothstep(snowLine - 200.0, snowLine + 150.0, tH + 120.0 * sB.g) * smoothstep(0.93 + rockShift, 0.84 + rockShift, tUp + 0.03 * sC.g));
-// Scree: debris fans in the hollows below the rock on high ground, a fringe of broken rock around the
+${E(VOLCANO_WEIGHTS)}// Scree: debris fans in the hollows below the rock on high ground, a fringe of broken rock around the
 // outcrops, and stony patches in the thin alpine turf.
 float screeW = (1.0 - rockW) * smoothstep(0.9, 0.8, tUp + 0.04 * sC.a) * alpine * smoothstep(0.1, 0.5, concave + 0.3 * sC.b);
 screeW = max(screeW, smoothstep(0.05, 0.45, rockW) * (1.0 - smoothstep(0.55, 0.9, rockW)) * (0.4 + 0.6 * alpine));
@@ -932,7 +992,7 @@ if (grassW > 0.001) {
   addMat(acc, grass, meadow, landW);
 }
 if (farmSoil > 0.5 && farmWeight > 0.001) addMat(acc, layerTop(${LAYER.soil}, tXZ, tDist), fieldCol, farmWeight);
-if (sandW > 0.001) addMat(acc, layerTop(${LAYER.sand}, tXZ, tDist), ${P.sand} * (0.9 + 0.1 * sC.b), sandW);
+${E(VOLCANO_ASH)}if (sandW > 0.001) addMat(acc, layerTop(${LAYER.sand}, tXZ, tDist), ${P.sand} * (0.9 + 0.1 * sC.b), sandW);
 
 acc.albedo *= tEdgeShade;
 // Wet ground by water: darker and smoother.
@@ -993,7 +1053,7 @@ if (rockW > 0.001) {
   float lc = tH / 31.0 + sB.r * 3.0 + sC.g * 0.8;
   float ledgeRnd = hash2f(int(floor(lc)), 57);
   float ledge = step(ledgeRnd, 0.45) * smoothstep(0.1, 0.3, fract(lc)) * smoothstep(0.8, 0.6, fract(lc)) * smoothstep(0.5, 0.68, tUp + 0.08 * sD.r);
-  // Height-aware edge, broken up by noise at two scales so outcrops have ragged, irregular outlines (the
+${E(VOLCANO_ROCK)}  // Height-aware edge, broken up by noise at two scales so outcrops have ragged, irregular outlines (the
   // rock texture's own relief alone gives a regular saw-tooth edge).
   float edgeH = 0.45 * r.height + 0.35 * nD.a + 0.2 * nC.g;
   float w = clamp(rockW * (0.65 + edgeH) - 0.15, 0.0, 1.0);
@@ -1009,7 +1069,7 @@ if (rockW > 0.001) {
   acc.cavity = mix(acc.cavity, r.cavity, w);
   acc.height = mix(acc.height, r.height, w);
 }
-if (snowW > 0.001) {
+${E(VOLCANO_CRATER)}if (snowW > 0.001) {
   Mat s = layerTop(${LAYER.snow}, tXZ, tDist);
   // Snow fills hollows first: height-aware blend against whatever lies beneath.
   float w = clamp((snowW * 1.6 - 0.3) + (0.5 - acc.height) * 0.6, 0.0, 1.0);
@@ -1097,6 +1157,9 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
     uFence: { value: new THREE.Vector4(FENCE_RECT.u0, FENCE_RECT.u1, FENCE_RECT.v0, FENCE_RECT.v1) },
     uTown: { value: townUniform() },
   });
+  // The era's uniforms (not in the present day, whose uniform names stay as they were).
+  const V = era().terrain.volcano;
+  if (!isPresent() && V) Object.assign(uniforms, { uVolcano: { value: new THREE.Vector4(V.east, V.north, V.baseRadius, V.craterRadius) } });
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
