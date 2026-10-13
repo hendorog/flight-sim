@@ -86,7 +86,7 @@ describe('applyEraWeather', () => {
 
   it('the Cretaceous preset goes over the defaults and keeps the cloud layer depth', () => {
     const w = applyEraWeather(defaultWeather(), CRETACEOUS.weather);
-    expect(w).toMatchObject({ visibilityM: 45000, cloudCover: 0.35, cloudBaseM: 1500, cirrusCover: 0, isaDeviation: 10 });
+    expect(w).toMatchObject({ visibilityM: 45000, cloudCover: 0.35, cloudBaseM: 1500, cirrusCover: 0.2, isaDeviation: 10 });
     const d = defaultWeather();
     expect(w.cloudTopM - w.cloudBaseM).toBe(d.cloudTopM - d.cloudBaseM);
     expect(applyEraWeather(defaultWeather(), { cloudBaseM: 2000 }).cloudTopM).toBe(2000 + d.cloudTopM - d.cloudBaseM);

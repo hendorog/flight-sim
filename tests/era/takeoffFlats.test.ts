@@ -63,7 +63,7 @@ describe('the Flats', () => {
     expect(sc.id).toBe('safari');
     const { x, y, z } = sc.ic.position;
     expect(sc.ic.onGround).toBe(false);
-    expect(-z - terrainHeight(x, y)).toBeGreaterThan(250);
+    expect(-z - terrainHeight(x, y)).toBeGreaterThan(150);
     const rc = runwayCoords(x, y);
     expect(rc.along).toBeGreaterThan(4000);
     expect(Math.abs(rc.across - 3000)).toBeLessThan(500);

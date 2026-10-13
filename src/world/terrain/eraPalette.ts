@@ -97,8 +97,8 @@ const PRESENT_PALETTE: TerrainPalette = Object.freeze({
  * siltier shelf sea; darker conifer stands and fresher angiosperm (platanoid, magnolia) woods.
  */
 const CRETACEOUS_PALETTE: TerrainPalette = Object.freeze({
-  meadowWet: 'vec3(0.034, 0.056, 0.020)',
-  meadowDry: 'vec3(0.080, 0.072, 0.034)',
+  meadowWet: 'vec3(0.036, 0.050, 0.016)',
+  meadowDry: 'vec3(0.095, 0.072, 0.028)',
   floor: 'vec3(0.034, 0.036, 0.020)',
   // Unused while the airport zone is the Flats (STRIP_MUD); fern cover in case an era keeps an airfield.
   turfA: 'vec3(0.034, 0.062, 0.026)',
@@ -117,8 +117,8 @@ const CRETACEOUS_PALETTE: TerrainPalette = Object.freeze({
   reeds: 'vec3(0.085, 0.100, 0.040)',
   alpine: 'vec3(0.070, 0.066, 0.040)',
   scree: 'vec3(0.150, 0.135, 0.118)',
-  canopyBroadleaf: 'vec3(0.78, 0.9, 0.70)',
-  canopyConifer: 'vec3(0.50, 0.58, 0.54)',
+  canopyBroadleaf: 'vec3(0.62, 0.66, 0.46)',
+  canopyConifer: 'vec3(0.42, 0.52, 0.46)',
   seaAtten: 'vec3(0.42, 0.10, 0.13)',
   seaBodyDeep: 'vec3(0.0045, 0.016, 0.016)',
   seaBodyShallow: 'vec3(0.016, 0.036, 0.024)',

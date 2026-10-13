@@ -78,7 +78,7 @@ export const ERA_LOADING_LINES: Readonly<Record<EraId, readonly string[]>> = {
     'There is no airfield: the dry mud flats are all the runway you get, and the dark game trail is your centreline.',
     'Hadrosaur herds graze the river plain; they scatter from low, fast aircraft.',
     'The giant pterosaurs ride the same thermals you do. Follow a kettle and you will find lift.',
-    'The volcano 17 km to the west is visible on a clear day: a handy landmark.',
+    'The volcano 17 km to the west is a handy landmark; at dusk (about 19:30) it stands black against the sunset.',
     'Dirt is rougher than pavement: expect a longer take-off roll.',
     'There is no snow here, and no tower: the wind is yours to read.',
   ],

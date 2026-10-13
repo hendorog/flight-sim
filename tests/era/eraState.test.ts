@@ -86,7 +86,7 @@ describe('registry', () => {
       volcano: { north: 2000, east: -17500, baseRadius: 7000, summit: 2600, craterRadius: 400, craterDepth: 160 },
     });
     expect(CRETACEOUS.world).toEqual({ airport: 'flats', flatSurface: 'dirt', school: false, towerCamera: false, defaultScenario: 'safari' });
-    expect(CRETACEOUS.weather).toEqual({ visibilityM: 45000, cloudCover: 0.35, cloudBaseM: 1500, cirrusCover: 0, isaDeviation: 10 });
+    expect(CRETACEOUS.weather).toEqual({ visibilityM: 45000, cloudCover: 0.35, cloudBaseM: 1500, cirrusCover: 0.2, isaDeviation: 10 });
     // 17.6 km from the field, bearing ~276.
     const v = CRETACEOUS.terrain.volcano!;
     expect(Math.hypot(v.north, v.east)).toBeCloseTo(17614, -1);

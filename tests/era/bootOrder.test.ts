@@ -38,7 +38,7 @@ describe('boot order', () => {
   it('?era=cretaceous: the era is set before the physics environment exists, with its weather preset', () => {
     const sim = new Simulator('?era=cretaceous&scenario=runway');
     expect(era().id).toBe('cretaceous');
-    expect(sim.weather).toMatchObject({ visibilityM: 45000, cirrusCover: 0, isaDeviation: 10, cloudBaseM: 1500, cloudTopM: 2600 });
+    expect(sim.weather).toMatchObject({ visibilityM: 45000, cirrusCover: 0.2, isaDeviation: 10, cloudBaseM: 1500, cloudTopM: 2600 });
     bootPhysics(sim);
     expect(seen.eraAtEnv).toEqual(['cretaceous']);
   });

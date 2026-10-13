@@ -30,15 +30,18 @@ export const PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
 export const DOWNWIND_OFFSET = 900;
 /**
  * The 'safari' start (Deep Time) in the runway frame, m: along the runway, across to its right; and its track,
- * this far right of the 25 direction (rad). Chosen so the first 30 s show the showcase wildlife from the left
- * seat (src/world/fauna/showcase.ts): the river herd (along ~3.5 km, across ~3 km) is in the left window from
- * the start and passes ~550 m off the left wing ~14 s in; the 07-side kettle (on the default weather's thermal
- * core at along ~3.0 km, across ~1.8 km, at about the aircraft's height) is ahead right of the nose and passes
- * ~150 m off the right wing ~32 s in; the volcano is ~7 deg left of the nose.
+ * this far right of the 25 direction (rad); 600 ft above the ground. Chosen so the first 40 s show the showcase
+ * wildlife from the left seat (src/world/fauna/showcase.ts): the river herd (along ~3.5 km, across ~3 km) is
+ * ~25 deg left of the nose and ~12 deg down from the start (in the windscreen's lower left), ~40 deg left at
+ * 700 m ~14 s in, and passes ~450 m off the left wing ~21 s in; the 07-side kettle (on the default weather's
+ * thermal core at along ~3.0 km, across ~1.8 km, stacked about the aircraft's height) is just right of the nose
+ * and passes ~250 m off the right wing ~40 s in; the volcano is ~7 deg left of the nose.
  */
-export const SAFARI_ALONG = 4500;
-export const SAFARI_ACROSS = 3040;
+export const SAFARI_ALONG = 4870;
+export const SAFARI_ACROSS = 3450;
 export const SAFARI_TRACK = 35 * DEG;
+/** The safari start's height above the ground, m. */
+export const SAFARI_AGL = 600 * FT;
 /** Glide path of the final-approach scenario and the aim point beyond the threshold (m). */
 export const GLIDE_PATH = 3 * DEG;
 export const AIM_POINT = 150;
@@ -204,19 +207,19 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
       };
     }
     case 'safari': {
-      // The Cretaceous era's airborne start: 1000 ft above the ground over the river valley, SAFARI_ALONG m along
-      // the runway frame and SAFARI_ACROSS m to the right of it, flying down the valley toward the volcano
+      // The Cretaceous era's airborne start: SAFARI_AGL (600 ft) above the ground over the river valley,
+      // SAFARI_ALONG m along the runway frame and SAFARI_ACROSS m to the right of it, flying down the valley toward the volcano
       // (heading 250 + SAFARI_TRACK) past the showcase herd and kettle, at the type's cruise speed and clean.
       const rwy = AIRPORT.runway.heading;
       const n = SAFARI_ALONG * Math.cos(rwy) - SAFARI_ACROSS * Math.sin(rwy);
       const e = SAFARI_ALONG * Math.sin(rwy) + SAFARI_ACROSS * Math.cos(rwy);
-      const alt = terrainHeight(n, e) + 1000 * FT;
+      const alt = terrainHeight(n, e) + SAFARI_AGL;
       const heading = wrapTwoPi(rwy + Math.PI + SAFARI_TRACK);
       const ic: InitialConditions = { position: { x: n, y: e, z: -alt }, heading, airspeed: kiasToTas(sc.cruiseKias, alt, env), onGround: false, engineRunning: true };
       if (retractable) ic.gearDown = false;
       return {
         id,
-        title: 'Safari: the river valley, 1000 ft',
+        title: 'Safari: the river valley, 600 ft',
         ic,
         controls: presets.airborne,
         autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },

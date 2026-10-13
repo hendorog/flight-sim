@@ -15,7 +15,8 @@ export const CRETACEOUS: EraParams = Object.freeze({
   epoch: '~67 Ma',
   blurb:
     'Fern prairie, swamp cypress and palms along a warm river plain; hadrosaur herds by the water and giant ' +
-    'azhdarchid pterosaurs riding the thermals. No airfield: take off from the dry mud flats.',
+    'azhdarchid pterosaurs riding the thermals. No airfield: take off from the dry mud flats. Fly at dusk ' +
+    '(about 19:30) and the volcano to the west stands black against the sunset.',
   terrain: Object.freeze({
     // Tree line up to ~2350 m.
     treeLineOffset: 600,
@@ -33,6 +34,6 @@ export const CRETACEOUS: EraParams = Object.freeze({
   fauna: 'cretaceous',
   world: Object.freeze({ airport: 'flats', flatSurface: 'dirt', school: false, towerCamera: false, defaultScenario: 'safari' }),
   // 45 km visibility keeps the volcano visible from the line-up; a 1500 m MSL cumulus base; ISA +10 (a higher
-  // density altitude, honestly). No sun tint and no colour grade.
-  weather: Object.freeze({ visibilityM: 45000, cloudCover: 0.35, cloudBaseM: 1500, cirrusCover: 0, isaDeviation: 10 }),
+  // density altitude, honestly); a little cirrus for the low sun to colour at dusk. No sun tint and no colour grade.
+  weather: Object.freeze({ visibilityM: 45000, cloudCover: 0.35, cloudBaseM: 1500, cirrusCover: 0.2, isaDeviation: 10 }),
 } as const satisfies EraParams);

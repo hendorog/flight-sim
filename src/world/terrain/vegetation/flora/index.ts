@@ -102,7 +102,7 @@ const CRETACEOUS_FLORA: FloraSet = Object.freeze({
       name: 'Araucarian conifer',
       conifer: true,
       height: [18, 28],
-      tint: [0.78, 0.86, 0.88],
+      tint: [0.62, 0.72, 0.70],
       proxy: {
         crown: [
           { kind: 'ellipsoid', y0: 0.84, y1: 0.1, rx: 0.24 },
@@ -127,7 +127,7 @@ const CRETACEOUS_FLORA: FloraSet = Object.freeze({
       name: 'Platanoid broadleaf',
       conifer: false,
       height: [10, 18],
-      tint: [0.95, 1.02, 0.9],
+      tint: [0.80, 0.80, 0.58],
       proxy: { crown: [{ kind: 'ellipsoid', y0: 0.6, y1: 0.22, rx: 0.27 }], trunk: [0.42, 0.03] },
     },
     {

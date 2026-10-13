@@ -12,7 +12,7 @@
 //    above LAUNCH_HEIGHT, or at once from the nearer line-up). The one scripted exception to "nothing in the
 //    flat zone".
 // 3. Two kettles of azhdarchids (mixed sizes), each on the real thermal core nearest a point 1.5 km past a
-//    departure end, 150-380 m above the ground (about a safari start's height).
+//    departure end, 150-270 m above the ground (stacked about a safari start's height).
 
 import { AIRPORT } from '../../core/world';
 import { localToNed, RUNWAY_HALF_LENGTH } from '../airport/layout';
@@ -36,10 +36,14 @@ export const KETTLE_SEEDS = [
   { u: RUNWAY_HALF_LENGTH + 1500, v: 0 },
   { u: -RUNWAY_HALF_LENGTH - 1500, v: 0 },
 ] as const;
-/** Birds per showcase kettle (mixed sizes) and their height band above the ground, m. */
-export const KETTLE_BIRDS = 4;
+/**
+ * Birds per showcase kettle (mixed sizes) and their height band above the ground, m: a stack around the safari
+ * start's height (scenarios.ts SAFARI_AGL, ~180 m). Two kettles and the resting pair are 14 flyers (the medium
+ * preset has 16; on low the second kettle is not spawned).
+ */
+export const KETTLE_BIRDS = 6;
 export const KETTLE_MIN_AGL = 150;
-export const KETTLE_MAX_AGL = 380;
+export const KETTLE_MAX_AGL = 270;
 
 export interface ShowcaseSite {
   north: number;

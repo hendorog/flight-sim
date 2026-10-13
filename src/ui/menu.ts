@@ -94,7 +94,7 @@ const FLATS_SCENARIOS: Partial<Record<ScenarioId, { name: string; text: string }
   final: { name: 'Final approach', text: 'On a 3 degree approach to the mud flats, configured to land.' },
   downwind: { name: 'Circuit', text: 'In the circuit over the flats at pattern altitude.' },
 };
-const SAFARI = { id: 'safari' as ScenarioId, name: 'Safari', text: 'Airborne at 1000 ft over the river valley, the herds ahead and the volcano beyond.' };
+const SAFARI = { id: 'safari' as ScenarioId, name: 'Safari', text: 'Airborne at 600 ft over the river valley, the herds ahead and the volcano beyond.' };
 
 const SCENARIOS: { id: ScenarioId; name: string; text: string }[] = [
   { id: 'runway', name: 'Runway 07', text: 'Lined up on the runway, ready for take-off.' },
