@@ -1,6 +1,8 @@
 // Terrain, water and vegetation harness page.
 //   dev/terrain.html?cam=north,east,alt&look=north,east,alt&tod=9.5&quality=high&veg=1&haze=1&stats=1
 //   camagl=H / lookagl=H: treat the cam / look altitudes as heights above the terrain instead of MSL.
+//   era=cretaceous: the world era (read by harness.ts before this page builds anything): its palette, land cover
+//   and the Flats where the airfield was. A strip close-up (150 m over LINE_UP 07): cam=-301,-827,270&look=300,830,120.
 //
 // Stands in for the modules that own lighting and post-processing in the real simulator: a Preetham sky
 // as background and PMREM environment, a shadow-casting sun that follows the camera, and a simple

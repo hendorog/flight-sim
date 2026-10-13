@@ -16,6 +16,7 @@ import type { SurfaceType } from '../../core/types';
 import { AIRPORT } from '../../core/world';
 import { LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, lakeRadius, type Hydrology, type RiverHit } from './hydrology';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
+import { era, isPresent } from '../era/eraState';
 
 const ELEV = AIRPORT.elevation;
 const RW = AIRPORT.runway;
@@ -392,7 +393,15 @@ export function terrainNormal(north: number, east: number): Vec3 {
 
 /** Snow line elevation at a point, m; varies with position so the snow edge is irregular. */
 export function snowLine(north: number, east: number): number {
-  return 2500 + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
+  if (isPresent()) {
+    return 2500 + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
+  }
+  return snowLineBase() + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
+}
+
+/** Level of the snow line before its noise, m: 2500 plus the era's offset (the shader's threshold, its GLSL twin). */
+export function snowLineBase(): number {
+  return 2500 + era().terrain.snowLineOffset;
 }
 
 /**
@@ -403,7 +412,7 @@ export function snowLine(north: number, east: number): number {
 export function terrainSurface(north: number, east: number): SurfaceType {
   const s = sampleTerrain(north, east, scratch);
   if (s.ground < Math.max(s.standing, s.river)) return 'water';
-  if (s.airportBlend === 0) return 'grass';
+  if (s.airportBlend === 0) return isPresent() ? 'grass' : era().world.flatSurface;
   const h = s.ground;
   const standing = s.standing;
   const nrm = terrainNormal(north, east);

@@ -10,10 +10,12 @@
 //     whatever the water's transparency, or of an analytic sky gradient when there is no environment map.
 
 import * as THREE from 'three';
+import { PALETTES } from './eraPalette';
 import { HASH_GLSL } from './glsl';
 import { hydrology } from './heightfield';
 import { RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
 import type { WaterData } from './tileBuilder';
+import { era, isPresent } from '../era/eraState';
 
 export interface WaterUniforms {
   uTime: { value: number };
@@ -108,7 +110,10 @@ vec3 BRDF_Water(vec3 L, vec3 V, vec3 N, float roughness) {
 }
 `;
 
-const FRAGMENT_MAIN = /* glsl */ `
+/** The body of the water fragment, coloured from the era's palette (eraPalette.ts; the present strings are today's literals). */
+export function fragmentMain(): string {
+  const P = PALETTES[era().palette];
+  return /* glsl */ `
 float wDist = length(vWaterPos - cameraPosition);
 float depth = max(vDepth, 0.0);
 #ifdef RIVER
@@ -140,11 +145,11 @@ float wRough = clamp(sqrt(sqrt(unresolved)), 0.05, 0.6);
 // (its bed shows only in the last few decimetres of the shallows). What does not reach the bed is scattered
 // back by the water itself (the body colour).
 #ifdef RIVER
-vec3 atten = vec3(1.25, 0.95, 1.05);
-vec3 body = vec3(0.030, 0.034, 0.021);
+vec3 atten = ${P.riverAtten};
+vec3 body = ${P.riverBody};
 #else
-vec3 atten = vec3(0.46, 0.085, 0.07);
-vec3 body = mix(vec3(0.0035, 0.013, 0.021), vec3(0.012, 0.03, 0.026), exp(-depth * 0.08));
+vec3 atten = ${P.seaAtten};
+vec3 body = mix(${P.seaBodyDeep}, ${P.seaBodyShallow}, exp(-depth * 0.08));
 #endif
 vec3 trans = exp(-2.0 * depth * atten);
 float wTrans = dot(trans, vec3(0.25, 0.5, 0.25));
@@ -157,6 +162,7 @@ float foam = smoothstep(0.7, 0.0, vDepth) * smoothstep(0.35, 0.6, foamN + 0.25 *
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.75), foam);
 wTrans *= 1.0 - foam;
 `;
+}
 
 const FRAGMENT_OUTPUT = /* glsl */ `
 vec3 V = normalize(cameraPosition - vWaterPos);
@@ -249,6 +255,8 @@ export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniform
   // ribbon's triangles (createRiverGeometry) face up.
   if (river) mat.defines = { RIVER: '' };
   Object.assign(uniforms, { tNoise: { value: noise } });
+  // Built now, in the era this thread was set in (never at module load).
+  const main = fragmentMain();
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -256,13 +264,14 @@ export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniform
       .replace('#include <begin_vertex>', VERTEX_BEGIN);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${FRAGMENT_HEAD}`)
-      .replace('#include <map_fragment>', FRAGMENT_MAIN)
+      .replace('#include <map_fragment>', main)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = wRough;')
       .replace('#include <lights_physical_pars_fragment>', WATER_LIGHTS_PARS)
       .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(wNormal, 0.0)).xyz);')
       .replace('#include <opaque_fragment>', FRAGMENT_OUTPUT);
   };
-  mat.customProgramCacheKey = () => (river ? 'river-v4' : 'water-v4');
+  const key = `${river ? 'river-v4' : 'water-v4'}${isPresent() ? '' : `-${era().id}`}`;
+  mat.customProgramCacheKey = () => key;
   return mat;
 }
 
