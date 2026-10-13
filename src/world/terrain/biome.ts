@@ -11,6 +11,7 @@ import { SEA_LEVEL, makeSample, sampleTerrain, snowLine, type TerrainSample } fr
 import { fbm } from './noise';
 import { townFieldFactor, townWoodFactor } from './townMask';
 import { era, isPresent } from '../era/eraState';
+import { makeVolcanoMask, volcanoMask } from './volcano';
 
 export interface Biome {
   /** Tree cover density, 0..1. Trees are placed where this is above 0.2 (dense stands from ~0.8). */
@@ -39,6 +40,7 @@ const smooth = (e0: number, e1: number, x: number): number => {
 };
 
 const shapeScratch = makeSample();
+const volcanoScratch = makeVolcanoMask();
 /** Scale of the landform measures used for land cover, m: coarse enough to ignore small bumps, and
  * independent of mesh LOD. */
 const SHAPE_STEP = 30;
@@ -280,6 +282,15 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
       (1 - sand) *
       (1 - forest) *
       smooth(0.15, 0.6, s.airportBlend);
+  }
+  if (E.volcano) {
+    // Ash: the bare upper cone and the fall streaked over its flanks (volcano.ts volcanoMask) on the sand
+    // channel, which the shader paints as ash within the cone's reach (VOLCANO). No woods or marsh on the ash
+    // or the basalt cone, so the trees placed from this agree with the painted ground.
+    const v = volcanoMask(north, east, E.volcano, volcanoScratch);
+    out.sand = Math.max(out.sand, v.ash);
+    out.forest *= 1 - Math.max(v.cone * 0.5, v.ash);
+    out.marsh *= 1 - v.ash;
   }
   return out;
 }
