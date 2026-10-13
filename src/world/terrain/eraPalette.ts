@@ -36,6 +36,18 @@ export interface TerrainPalette {
   readonly snow: string;
   /** Bare wet ground at the river banks (`mud`, dry end of its first mix). */
   readonly mud: string;
+  /** River bank silt and gravel, lighter end of the bank mix (multiplied by the gravel detail). */
+  readonly mudLight: string;
+  /** River bed under the shallows. */
+  readonly riverBed: string;
+  /** Rough bankside vegetation strip along the river, the two ends of its mix, and the pale reed beds. */
+  readonly bankRoughA: string;
+  readonly bankRoughB: string;
+  readonly reeds: string;
+  /** Thin ground cover above the tree line (`meadow` in the alpine zone). */
+  readonly alpine: string;
+  /** Scree and broken rock base. */
+  readonly scree: string;
   /** Canopy shell stand tint: broadleaf and conifer ends of its mix. */
   readonly canopyBroadleaf: string;
   readonly canopyConifer: string;
@@ -62,6 +74,13 @@ const PRESENT_PALETTE: TerrainPalette = Object.freeze({
   sand: 'vec3(0.38, 0.33, 0.24)',
   snow: 'vec3(0.74, 0.76, 0.80)',
   mud: 'vec3(0.045, 0.040, 0.030)',
+  mudLight: 'vec3(0.075, 0.068, 0.055)',
+  riverBed: 'vec3(0.034, 0.031, 0.025)',
+  bankRoughA: 'vec3(0.040, 0.060, 0.022)',
+  bankRoughB: 'vec3(0.075, 0.078, 0.036)',
+  reeds: 'vec3(0.11, 0.105, 0.05)',
+  alpine: 'vec3(0.072, 0.074, 0.040)',
+  scree: 'vec3(0.15, 0.145, 0.135)',
   canopyBroadleaf: 'vec3(0.9, 0.92, 0.86)',
   canopyConifer: 'vec3(0.56, 0.62, 0.62)',
   seaAtten: 'vec3(0.46, 0.085, 0.07)',
@@ -71,9 +90,72 @@ const PRESENT_PALETTE: TerrainPalette = Object.freeze({
   riverBody: 'vec3(0.030, 0.034, 0.021)',
 });
 
+/**
+ * Late Cretaceous Laramidia, ~67 Ma. No grass before the Cenozoic: the open ground is fern prairie with
+ * horsetail and low herbaceous angiosperms, a muted olive (drier and browner where it thins); red-brown
+ * laterite where the cover is sparse; warmer sedimentary strata; a tea- and silt-brown river and a greener,
+ * siltier shelf sea; darker conifer stands and fresher angiosperm (platanoid, magnolia) woods.
+ */
+const CRETACEOUS_PALETTE: TerrainPalette = Object.freeze({
+  meadowWet: 'vec3(0.034, 0.056, 0.020)',
+  meadowDry: 'vec3(0.080, 0.072, 0.034)',
+  floor: 'vec3(0.034, 0.036, 0.020)',
+  // Unused while the airport zone is the Flats (STRIP_MUD); fern cover in case an era keeps an airfield.
+  turfA: 'vec3(0.034, 0.062, 0.026)',
+  turfB: 'vec3(0.066, 0.068, 0.034)',
+  rockA: 'vec3(0.108, 0.088, 0.068)',
+  rockB: 'vec3(0.205, 0.168, 0.128)',
+  strataTintA: 'vec3(0.88, 0.84, 0.80)',
+  strataTintB: 'vec3(1.14, 1.02, 0.88)',
+  sand: 'vec3(0.31, 0.27, 0.20)',
+  snow: 'vec3(0.74, 0.76, 0.80)',
+  mud: 'vec3(0.060, 0.046, 0.030)',
+  mudLight: 'vec3(0.095, 0.078, 0.056)',
+  riverBed: 'vec3(0.042, 0.034, 0.024)',
+  bankRoughA: 'vec3(0.036, 0.062, 0.024)',
+  bankRoughB: 'vec3(0.070, 0.080, 0.034)',
+  reeds: 'vec3(0.085, 0.100, 0.040)',
+  alpine: 'vec3(0.070, 0.066, 0.040)',
+  scree: 'vec3(0.150, 0.135, 0.118)',
+  canopyBroadleaf: 'vec3(0.78, 0.9, 0.70)',
+  canopyConifer: 'vec3(0.50, 0.58, 0.54)',
+  seaAtten: 'vec3(0.42, 0.10, 0.13)',
+  seaBodyDeep: 'vec3(0.0045, 0.016, 0.016)',
+  seaBodyShallow: 'vec3(0.016, 0.036, 0.024)',
+  riverAtten: 'vec3(0.95, 1.35, 2.3)',
+  riverBody: 'vec3(0.048, 0.036, 0.019)',
+});
+
+/**
+ * Ground colours that exist only outside the present day (emitted only when !isPresent(), under the capability
+ * defines of terrainMaterial.ts): the marsh channel, bare soil showing through sparse cover and the Flats.
+ * GLSL vec3 text, linear albedo.
+ */
+export interface EraGroundPalette {
+  /** Bare soil where the ground cover is sparse (laterite in the Cretaceous). */
+  readonly soil: string;
+  /** Marsh cover (MARSH_CHANNEL): horsetail brakes, and the darker wet ground between them. */
+  readonly marsh: string;
+  readonly marshWet: string;
+  /** The Flats (STRIP_MUD): dry mud plates, the cracks between them, and the trampled game trail. */
+  readonly mudFlat: string;
+  readonly mudCrack: string;
+  readonly trail: string;
+}
+
+export const ERA_GROUND: Readonly<Record<PaletteId, EraGroundPalette | null>> = Object.freeze({
+  present: null,
+  cretaceous: Object.freeze({
+    soil: 'vec3(0.120, 0.070, 0.045)',
+    marsh: 'vec3(0.068, 0.090, 0.026)',
+    marshWet: 'vec3(0.026, 0.032, 0.020)',
+    mudFlat: 'vec3(0.118, 0.098, 0.060)',
+    mudCrack: 'vec3(0.045, 0.034, 0.024)',
+    trail: 'vec3(0.070, 0.056, 0.040)',
+  }),
+});
+
 export const PALETTES: Readonly<Record<PaletteId, TerrainPalette>> = Object.freeze({
   present: PRESENT_PALETTE,
-  // STUB (WP0): aliased to the present day until WP1 authors the fern prairie, laterite, warm strata, tea/silt
-  // river and greener shelf sea.
-  cretaceous: PRESENT_PALETTE,
+  cretaceous: CRETACEOUS_PALETTE,
 });

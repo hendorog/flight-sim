@@ -28,7 +28,10 @@ import { AIRPORT } from '../../core/world';
 import { FENCE_RECT } from '../airport/layout';
 import { FIELDS_GLSL } from './fields';
 import { HASH_GLSL, ROT_GLSL } from './glsl';
-import { RIVER_STRIP, TREE_LINE_ASPECT } from './biome';
+import { RIVER_STRIP, TREE_LINE_ASPECT, treeLineBase } from './biome';
+import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
+import { snowLineBase } from './heightfield';
+import { era, isPresent } from '../era/eraState';
 import { RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
@@ -78,6 +81,167 @@ export const SOIL_ALBEDO = {
 } as const;
 
 const glslVec = (c: readonly number[]): string => `vec3(${c.map((x) => x.toFixed(4)).join(', ')})`;
+
+// ------------------------------------------------------------------------------------------ eras (Deep Time)
+// The shader is built when the material is created, in the era this thread was set in (src/world/era). Colours
+// come from PALETTES[era().palette] (eraPalette.ts; the present strings are today's literals, so substituting them
+// leaves the present text unchanged) and the tree and snow line thresholds from the CPU twins in biome.ts and
+// heightfield.ts. Structural differences are CAPABILITY defines, set (and their #if lines and helpers emitted)
+// only outside the present day, so the present shader text, defines and cache keys stay byte-identical
+// (tests/era/presentGuard.test.ts):
+//   ERA_FARM       1: field patchwork, hedgerows and the valley town; 0 compiles their paths (and FIELDS_GLSL) out.
+//   MARSH_CHANNEL  1: the biome's second channel (aBiome.y) is marsh weight, not farmland (biome.ts computeBiome):
+//                  horsetail brakes with dark wet ground and standing pools between them.
+//   STRIP_MUD      1: no airfield (the era's 'flats'): the flattened airport zone is a dry oxbow mud flat, its
+//                  desiccation cracks and a darker, trampled 30 m game trail on the runway centreline, blending
+//                  into the land cover over the airport blend band, in place of the turf and the fence.
+
+/** Era-only shader text: '' in the present day. */
+const eraText = (t: string): string => (isPresent() ? '' : t);
+
+/** The era's capability defines (only applied outside the present day). */
+export function eraDefines(): Record<string, number> {
+  const e = era();
+  return { ERA_FARM: e.terrain.farmland ? 1 : 0, MARSH_CHANNEL: e.terrain.marsh ? 1 : 0, STRIP_MUD: e.world.airport === 'flats' ? 1 : 0 };
+}
+
+/** Program cache key suffix: '' in the present day, '-<era id>' otherwise. */
+export function eraKeySuffix(): string {
+  return isPresent() ? '' : `-${era().id}`;
+}
+
+/** Defaults for the capability defines, and the helpers they use (era builds only). */
+const ERA_HEAD = /* glsl */ `#ifndef ERA_FARM
+#define ERA_FARM 1
+#endif
+#ifndef MARSH_CHANNEL
+#define MARSH_CHANNEL 0
+#endif
+#ifndef STRIP_MUD
+#define STRIP_MUD 0
+#endif
+#if STRIP_MUD
+// Jittered cell site of a desiccation-crack polygon (new hash salts).
+vec2 crackSite(vec2 c) {
+  ivec2 k = ivec2(c);
+  return vec2(0.12) + 0.76 * vec2(hash2f(k.x * 3 + 1, k.y + 7319), hash2f(k.x + 4817, k.y * 3 + 2));
+}
+// Distance from p to the nearest crack (the border between the two nearest jittered cell sites), in cells.
+float crackDistance(vec2 p) {
+  vec2 ip = floor(p);
+  vec2 fp = p - ip;
+  vec2 mr = vec2(0.0);
+  vec2 mo = vec2(0.0);
+  float md = 8.0;
+  for (int j = -1; j <= 1; j++)
+    for (int i = -1; i <= 1; i++) {
+      vec2 o = vec2(float(i), float(j));
+      vec2 r = o + crackSite(ip + o) - fp;
+      float d = dot(r, r);
+      if (d < md) { md = d; mr = r; mo = o; }
+    }
+  md = 8.0;
+  for (int j = -2; j <= 2; j++)
+    for (int i = -2; i <= 2; i++) {
+      vec2 o = mo + vec2(float(i), float(j));
+      vec2 r = o + crackSite(ip + o) - fp;
+      vec2 dr = r - mr;
+      if (dot(dr, dr) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(dr)));
+    }
+  return md;
+}
+// Coverage of the crack lines (half-width w cells) at p, fading to its mean once a cell is a few pixels across.
+float crackCover(vec2 p, float w) {
+  float fw = max(fwidth(p.x), fwidth(p.y));
+  float far = smoothstep(0.08, 0.3, fw);
+  if (far >= 1.0) return 2.6 * w;
+  float d = crackDistance(p);
+  float c = 1.0 - smoothstep(w - fw, w + fw, d);
+  return mix(c, 2.6 * w, far);
+}
+#endif
+`;
+
+/** The marsh weight from the second biome channel (MARSH_CHANNEL; 0 otherwise). */
+const MARSH_WEIGHT = /* glsl */ `#if MARSH_CHANNEL
+float tMarshW = smoothstep(0.1, 0.45, tBio.y + 0.08 * sB.a + 0.06 * sC.r);
+#else
+float tMarshW = 0.0;
+#endif
+`;
+
+/** Standing water between the brakes: wet, dark and smooth ground (the shared 'wet' darkening). */
+const MARSH_WET = /* glsl */ `#if MARSH_CHANNEL
+wet = max(wet, tMarshW * smoothstep(0.5, 0.75, nC.g + 0.3 * (nD.b - 0.5)) * 0.85);
+#endif
+`;
+
+/** The Flats' ground: dry mud on the soil detail layer instead of the meadow's grass layer. */
+const MUD_LAYER = /* glsl */ `#if STRIP_MUD
+float tMudL = tMudW * landW;
+if (tMudL > 0.001) addMat(acc, layerTop(${LAYER.soil}, tXZ, tDist), tMudCol, tMudL);
+landW -= tMudL;
+#endif
+`;
+
+/** Palette-dependent era text spliced into the splat ('' in the present day). */
+interface EraSplice {
+  /** Ground cover changes after the meadow colour: bare soil through sparse cover, marsh. */
+  cover: string;
+  /** Opens '#if STRIP_MUD' (the Flats) '#else' (the airfield turf, closed after it). */
+  mud: string;
+}
+const NO_SPLICE: EraSplice = { cover: '', mud: '' };
+
+function eraSplice(G: EraGroundPalette | null): EraSplice {
+  if (!G) throw new Error(`terrain: palette '${era().palette}' has no ERA_GROUND entry`);
+  const cover = /* glsl */ `// No lawn-like sward: the ground cover is a patchwork of darker fern brakes and paler, drier, thinner stands.
+meadow = mix(meadow, meadow * vec3(0.68, 0.78, 0.72), smoothstep(0.5, 0.75, nB.g + 0.35 * (nC.b - 0.5)) * 0.6);
+meadow = mix(meadow, meadow * vec3(1.28, 1.14, 0.86), smoothstep(0.55, 0.8, nB.a + 0.3 * (nC.r - 0.5)) * 0.5 * (1.0 - alpine));
+// Sparse cover: bare soil shows through in patches (not above the tree line or in the marsh).
+meadow = mix(meadow, ${G.soil} * (0.8 + 0.3 * sD.r + 0.15 * sC.b), smoothstep(0.6, 0.8, nB.r + 0.35 * (nC.a - 0.5) + 0.25 * (nD.g - 0.5) + 0.2 * dryness) * 0.5 * (1.0 - alpine) * (1.0 - tMarshW));
+#if MARSH_CHANNEL
+{
+  // Horsetail brakes: brighter, yellower green than the fern prairie, broken by darker wet ground.
+  vec3 marsh = ${G.marsh} * (0.8 + 0.25 * sD.b + 0.15 * sC.a);
+  marsh = mix(marsh, marsh * vec3(1.15, 1.05, 0.7), smoothstep(0.4, 0.7, nB.b) * 0.5);
+  marsh = mix(marsh, ${G.marshWet}, smoothstep(0.4, 0.75, nC.g + 0.3 * (nD.b - 0.5)) * 0.6);
+  meadow = mix(meadow, marsh, tMarshW);
+}
+#endif
+`;
+  const mud = /* glsl */ `#if STRIP_MUD
+// The Flats: dry mud over the flattened zone, its edge ragged where the fern cover closes in.
+float tMudW = 1.0 - smoothstep(0.0, 0.25, airportBlendAt(tRw) - 0.06 + 0.14 * sC.g + 0.07 * sD.r + 0.1 * sB.b);
+vec3 tMudCol = vec3(0.0);
+farmW *= 1.0 - tMudW;
+if (tMudW > 0.001) {
+  vec3 mud = ${G.mudFlat} * (0.82 + 0.22 * sB.g + 0.14 * sC.a + 0.1 * sD.b);
+  // Damper, darker hollows and paler salt-dusted crusts.
+  mud = mix(mud, mud * vec3(0.7, 0.68, 0.66), smoothstep(0.55, 0.8, nC.r) * 0.55);
+  mud = mix(mud, mud * 1.18, smoothstep(0.6, 0.85, nD.a) * 0.4);
+  // Game trail: a 30 m band of trampled, darker ground along the centreline (the line-up cue), worn into
+  // paths along it, running out past both ends into the cover.
+  float trailHalf = 15.0 + 1.5 * sD.g + 1.0 * sC.b;
+  float past = abs(tRw.x) - uRunwayDims.x;
+  float trail = (1.0 - smoothstep(trailHalf - 6.0, trailHalf + 2.0, abs(tRw.y))) * (1.0 - smoothstep(0.0, 350.0, past + 80.0 * sC.r));
+  trail *= 0.55 + 0.45 * smoothstep(0.3, 0.7, nC.b + 0.3 * (nD.r - 0.5));
+  float paths = stripe(tRw.y / 3.7 + 0.5 * sD.a, 0.14);
+  vec3 trailCol = ${G.trail} * (0.86 + 0.22 * sD.r + 0.1 * sC.g) * (1.0 - 0.22 * paths);
+  // Desiccation cracks: plates about 1.4 m across, fewer where the trail is trampled; 9 m polygons above them.
+  float cracks = crackCover(tXZ / 1.4, 0.05) * (1.0 - 0.75 * trail);
+  cracks = max(cracks, crackCover(tXZ / 9.0 + 17.0, 0.012) * 0.6);
+  mud = mix(mud, trailCol, trail * 0.8);
+  mud = mix(mud, ${G.mudCrack}, cracks * 0.85);
+  // Sparse fern and horsetail tufts creeping onto the mud from its edge.
+  float tufts = smoothstep(0.62, 0.8, nD.g + 0.6 * (1.0 - tMudW)) * (1.0 - trail);
+  mud = mix(mud, meadow, tufts);
+  tMudCol = mud;
+}
+#else
+`;
+  return { cover, mud };
+}
 
 const VERTEX_HEAD = /* glsl */ `
 // Vertex attributes (tileBuilder.ts): normals (own x, z; parent x, z), morph height, biome, shape
@@ -158,7 +322,9 @@ vCoverUp = aShape.w;
 vRiver = aRiver * ${(1 / RIVER_UNITS).toFixed(4)};
 `;
 
-const FRAGMENT_HEAD = /* glsl */ `
+export function fragmentHead(): string {
+  const E = eraText;
+  return /* glsl */ `
 precision highp sampler2DArray;
 uniform sampler2D tNoise;
 uniform sampler2DArray tDetailA;
@@ -186,8 +352,8 @@ varying float vCoverUp;
 varying vec2 vRiver;
 ${HASH_GLSL}
 ${ROT_GLSL}
-${FIELDS_GLSL}
-
+${E('#if ERA_FARM\n')}${FIELDS_GLSL}
+${E(`#endif\n${ERA_HEAD}`)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
 
 // Runway coordinates of a world (three.js xz) position: x along the centreline (+ toward the 25 end),
@@ -405,8 +571,13 @@ float passWave(float x) {
   return s * (1.0 - smoothstep(0.2, 0.45, fw));
 }
 `;
+}
 
-const FRAGMENT_SPLAT = /* glsl */ `
+export function fragmentSplat(): string {
+  const E = eraText;
+  const P = PALETTES[era().palette];
+  const X = isPresent() ? NO_SPLICE : eraSplice(ERA_GROUND[era().palette]);
+  return /* glsl */ `
 vec3 tP = vTerrainPos;
 vec2 tXZ = tP.xz;
 vec3 tN = normalize(vTerrainNormal);
@@ -432,9 +603,9 @@ vec3 tSunW = vec3(0.0, 1.0, 0.0);
 #endif
 // --- Layer weights ---
 // Tree line as in biome.ts: higher on sunny south faces, lower on shaded north faces (tN.z < 0 faces north).
-float treeLine = 1750.0 + 150.0 * sA.a + ${TREE_LINE_ASPECT.toFixed(1)} * tN.z;
+float treeLine = ${treeLineBase().toFixed(1)} + 150.0 * sA.a + ${TREE_LINE_ASPECT.toFixed(1)} * tN.z;
 // Summer snow line: lower on shaded north-facing slopes, higher on sunny south faces.
-float snowLine = 2500.0 + 180.0 * sA.b + 60.0 * sB.r + ${SNOW_ASPECT.toFixed(1)} * tN.z;
+float snowLine = ${snowLineBase().toFixed(1)} + 180.0 * sA.b + 60.0 * sB.r + ${SNOW_ASPECT.toFixed(1)} * tN.z;
 float alpine = smoothstep(treeLine + 150.0, treeLine + 600.0, tH);
 // From the tree line up: the zone where bare rock comes out on moderately steep ground.
 float highZone = smoothstep(treeLine - 100.0, treeLine + 300.0, tH);
@@ -480,40 +651,40 @@ if (tFarForest > 0.0) {
   forestW = mix(forestW, smoothstep(0.42 - few, 0.42 + few, fe), tFarForest);
 }
 float farmW = smoothstep(0.25, 0.6, tBio.y + 0.12 * sB.a);
-if (tFarForest > 0.0) {
+${E('#if ERA_FARM\n')}if (tFarForest > 0.0) {
   // Land cover multiplies farmland by (1 - forest), so across a wood's edge ramp (a few hundred metres) the
   // two would blend half and half. Far away, recover the farmland share beneath and let the crisp forest
   // mask cut it: the fields run right up to the wall of trees.
   float farmUnder = clamp(tBio.y / max(1.0 - tBio.x, 0.08), 0.0, 1.0);
   farmW = mix(farmW, smoothstep(0.25, 0.6, farmUnder + 0.12 * sB.a) * (1.0 - forestW), tFarForest);
 }
-float wet = smoothstep(0.78, 1.0, tBio.z);
-
+${E(`#else\nfarmW = 0.0;\n#endif\n${MARSH_WEIGHT}`)}float wet = smoothstep(0.78, 1.0, tBio.z);
+${E(MARSH_WET)}
 // --- Land cover base: meadow, fields, forest, sand ---
 Mat acc = Mat(vec3(0.0), vec2(0.0), 0.0, 0.0, 0.0);
 // Weight of foliage (the canopy shell), which gets the trees' weak, rough-leaf specular response.
 float tFoliageW = 0.0;
 float dryness = clamp(0.45 + 0.35 * sA.r + 0.25 * sB.g + 0.15 * sC.g - 0.6 * tBio.z + 0.35 * alpine, 0.0, 1.0);
-vec3 meadow = mix(vec3(0.038, 0.072, 0.020), vec3(0.105, 0.098, 0.045), dryness);
+vec3 meadow = mix(${P.meadowWet}, ${P.meadowDry}, dryness);
 // Patchwork within meadows: lusher and sparser patches, clover, trampled spots.
 meadow *= 0.8 + 0.2 * sD.b + 0.15 * sC.a;
 meadow = mix(meadow, meadow * vec3(0.75, 0.92, 0.7), smoothstep(0.35, 0.75, nC.r) * 0.6);
 // Above the tree line the turf is thin, short and tussocky: olive and straw rather than lowland green.
-meadow = mix(meadow, vec3(0.072, 0.074, 0.040) * (0.8 + 0.25 * sD.b + 0.15 * sC.g), alpine * 0.75);
+meadow = mix(meadow, ${P.alpine} * (0.8 + 0.25 * sD.b + 0.15 * sC.g), alpine * 0.75);
 // Just above the tree line: thickets of dwarf pine and green alder, darkest in the hollows.
 float krumm = smoothstep(treeLine - 50.0, treeLine + 100.0, tH) * (1.0 - smoothstep(treeLine + 250.0, treeLine + 450.0, tH));
 krumm *= smoothstep(0.5, 0.68, nC.b + 0.35 * (nD.g - 0.5) + 0.25 * concave);
 meadow = mix(meadow, vec3(0.022, 0.036, 0.016) * (0.85 + 0.3 * sD.a), krumm * 0.85);
-// Airfield: mown grass inside the perimeter fence.
+${X.cover}// Airfield: mown grass inside the perimeter fence.
 vec2 tRw = runwayLocal(tXZ);
 float tFence = fenceDistance(tRw);
-float airfield = 1.0 - smoothstep(-1.5, 1.5, tFence);
+${X.mud}float airfield = 1.0 - smoothstep(-1.5, 1.5, tFence);
 farmW *= smoothstep(2.0, 6.0, tFence);
 if (airfield > 0.001) {
   // Turf: a lush sward with drier and clover-rich patches; the runway strip (the graded area beside the
   // runway) is cut shortest and reads a little lighter and yellower than the outfield.
   float stripArea = 1.0 - smoothstep(60.0, 85.0, abs(tRw.y));
-  vec3 turf = mix(vec3(0.046, 0.084, 0.028), vec3(0.078, 0.092, 0.038), clamp(0.3 + 0.3 * sB.g + 0.2 * sC.r + 0.15 * sA.b, 0.0, 1.0));
+  vec3 turf = mix(${P.turfA}, ${P.turfB}, clamp(0.3 + 0.3 * sB.g + 0.2 * sC.r + 0.15 * sA.b, 0.0, 1.0));
   turf = mix(turf, turf * vec3(1.1, 1.06, 0.95), stripArea * 0.6);
   turf *= 0.9 + 0.1 * sD.b + 0.08 * sC.a;
   turf = mix(turf, vec3(0.105, 0.095, 0.052), smoothstep(0.64, 0.82, nC.b) * 0.45);
@@ -531,12 +702,12 @@ if (airfield > 0.001) {
   turf *= 1.0 + 0.2 * par * viewAlong * (1.0 - 0.7 * clamp(tV.y, 0.0, 1.0)) * stripeVis * mix(0.5, 1.0, edge);
   meadow = mix(meadow, turf, airfield);
 }
-// Valley town: no woods in or near it; urban ground (gardens, lawns, shrubs, hard standing) in its built-up
+${E('#endif\n')}// Valley town: no woods in or near it; urban ground (gardens, lawns, shrubs, hard standing) in its built-up
 // core, and only grass parcels (see the farmland block) out to its edge. The per-vertex land cover already
 // says so, but coarse tiles interpolate it over tens of metres.
 float tTownD = 1e9;
 float tUrbanW = 0.0;
-if (uTown.w > 0.5) {
+${E('#if ERA_FARM\n')}if (uTown.w > 0.5) {
   tTownD = length(vec2(tXZ.x, -tXZ.y) - uTown.xy);
   forestW *= smoothstep(uTown.z + ${TOWN_WOOD_MARGIN.toFixed(1)}, uTown.z + ${(TOWN_WOOD_MARGIN + TOWN_WOOD_FADE).toFixed(1)}, tTownD);
   float core = 1.0 - smoothstep(uTown.z * ${TOWN_CORE.toFixed(3)}, uTown.z * ${TOWN_CORE_FADE.toFixed(3)}, tTownD + 60.0 * sC.g);
@@ -553,7 +724,7 @@ if (uTown.w > 0.5) {
     meadow = mix(meadow, urban, urbanW);
   }
 }
-// River: the bed under the water, muddy and gravelly banks, then a strip of rough grass, reeds and tall herbs
+${E('#endif\n')}// River: the bed under the water, muddy and gravelly banks, then a strip of rough grass, reeds and tall herbs
 // (the bankside trees stand in it) before the fields begin. vRiver.x interpolates linearly across the
 // channel, so the banks are placed right even on coarse tiles.
 float tRiverBank = 0.0;
@@ -570,8 +741,8 @@ if (vRiver.y > 1.0) {
     farmW *= 1.0 - strip;
     // Rough bankside vegetation: tussocky, olive and dark, with pale reed beds at the water's edge.
     float reeds = (1.0 - smoothstep(bankW + 1.0, bankW + 6.0, rEdge + 2.0 * sD.g)) * smoothstep(0.45, 0.6, nC.r);
-    vec3 rough = mix(vec3(0.040, 0.060, 0.022), vec3(0.075, 0.078, 0.036), smoothstep(0.3, 0.7, nD.g)) * (0.85 + 0.3 * sD.b);
-    rough = mix(rough, vec3(0.11, 0.105, 0.05), reeds * 0.7);
+    vec3 rough = mix(${P.bankRoughA}, ${P.bankRoughB}, smoothstep(0.3, 0.7, nD.g)) * (0.85 + 0.3 * sD.b);
+    rough = mix(rough, ${P.reeds}, reeds * 0.7);
     meadow = mix(meadow, rough, strip);
   }
 }
@@ -580,7 +751,7 @@ float landW = 1.0 - sandW;
 float farmWeight = 0.0;
 float farmSoil = 0.0;
 vec3 fieldCol = vec3(0.0);
-if (farmW > 0.001) {
+${E('#if ERA_FARM\n')}if (farmW > 0.001) {
   Parcel pc = parcelAt(vec2(tP.x, -tP.z));
   float soil, rows, passW;
   // Regional grassland share, evaluated at the parcel centre so a parcel is all crop or all pasture.
@@ -650,13 +821,13 @@ if (farmW > 0.001) {
   farmSoil = soil;
   landW *= 1.0 - farmW;
 }
-
+${E('#endif\n')}
 if (forestW > 0.001) {
   // Near: forest floor under the instanced trees. Beyond: the canopy shell, tree crowns seen from above.
   float canopy = smoothstep(uForestFade.x, uForestFade.y, tDist);
   // Shaded understorey: litter, moss and low growth. Seen from beyond a few tree spacings the floor shows
   // only through gaps in the crowns, where it lies in their shade: darker with distance.
-  vec3 floorCol = vec3(0.036, 0.042, 0.022) * (0.8 + 0.3 * sD.r) * mix(1.0, 0.4, smoothstep(25.0, 90.0, tDist));
+  vec3 floorCol = ${P.floor} * (0.8 + 0.3 * sD.r) * mix(1.0, 0.4, smoothstep(25.0, 90.0, tDist));
   Mat ff = Mat(vec3(1.0), vec2(0.0), 0.9, 1.0, 0.5);
   if (canopy < 0.999) ff = layerTop(${LAYER.forest}, tXZ, tDist);
   Mat fo = ff;
@@ -685,7 +856,7 @@ if (forestW > 0.001) {
     float conifer = smoothstep(0.35, 0.65, smoothstep(400.0, 1300.0, tH + 300.0 * sB.r) + 0.45 * sB.b);
     // Closed canopy seen from above is far darker than grassland (deep shade between the crowns): spruce
     // and fir stands nearly black-green, broadleaf woods a little lighter and yellower.
-    vec3 tint = mix(vec3(0.9, 0.92, 0.86), vec3(0.56, 0.62, 0.62), conifer);
+    vec3 tint = mix(${P.canopyBroadleaf}, ${P.canopyConifer}, conifer);
     tint *= 0.78 + 0.2 * sC.b + 0.14 * sB.g + 0.1 * sD.a;
     // Stand structure that survives distance (crown clusters, gaps, height classes, a few tens of metres
     // across), as tone and as relief the sun picks out; the crown texture itself filters away beyond ~1 km.
@@ -749,14 +920,14 @@ if (tFarForest > 0.0 && tSunW.y > 0.02 && vLiftK < 0.999 && tBio.x > 0.02 && tBi
 
 // Ground layers, each sampled only where it shows: grass under the meadow and the grassy parcels, soil
 // under bare and row-crop parcels.
-float grassW = landW + (farmSoil < 0.5 ? farmWeight : 0.0);
+${E(MUD_LAYER)}float grassW = landW + (farmSoil < 0.5 ? farmWeight : 0.0);
 if (grassW > 0.001) {
   Mat grass = layerTop(${LAYER.grass}, tXZ, tDist);
   if (farmSoil < 0.5) addMat(acc, grass, fieldCol, farmWeight);
   addMat(acc, grass, meadow, landW);
 }
 if (farmSoil > 0.5 && farmWeight > 0.001) addMat(acc, layerTop(${LAYER.soil}, tXZ, tDist), fieldCol, farmWeight);
-if (sandW > 0.001) addMat(acc, layerTop(${LAYER.sand}, tXZ, tDist), vec3(0.38, 0.33, 0.24) * (0.9 + 0.1 * sC.b), sandW);
+if (sandW > 0.001) addMat(acc, layerTop(${LAYER.sand}, tXZ, tDist), ${P.sand} * (0.9 + 0.1 * sC.b), sandW);
 
 acc.albedo *= tEdgeShade;
 // Wet ground by water: darker and smoother.
@@ -766,8 +937,8 @@ acc.rough *= 1.0 - 0.3 * wet;
 // River banks and bed: wet silt and gravel, darker and smoother toward the water.
 if (tRiverBank > 0.001) {
   Mat g = layerTop(${LAYER.gravel}, tXZ, tDist);
-  vec3 mud = mix(vec3(0.045, 0.040, 0.030), vec3(0.075, 0.068, 0.055) * g.albedo, smoothstep(0.6, 0.8, nD.b + 0.3 * g.height));
-  mud = mix(mud, vec3(0.034, 0.031, 0.025), tRiverBed);
+  vec3 mud = mix(${P.mud}, ${P.mudLight} * g.albedo, smoothstep(0.6, 0.8, nD.b + 0.3 * g.height));
+  mud = mix(mud, ${P.riverBed}, tRiverBed);
   acc.albedo = mix(acc.albedo, mud, tRiverBank);
   acc.slope = mix(acc.slope, g.slope * 0.5, tRiverBank);
   acc.rough = mix(acc.rough, 0.45, tRiverBank);
@@ -778,7 +949,7 @@ if (tRiverBank > 0.001) {
 // --- Scree, rock and snow cover the land, with height-aware transitions ---
 if (screeW > 0.001) {
   Mat g = layerTop(${LAYER.gravel}, tXZ, tDist);
-  vec3 base = vec3(0.15, 0.145, 0.135) * (0.85 + 0.25 * sB.g);
+  vec3 base = ${P.scree} * (0.85 + 0.25 * sB.g);
   float w = clamp(screeW * (0.6 + g.height) - 0.1, 0.0, 1.0);
   acc.albedo = mix(acc.albedo, base * g.albedo, w);
   acc.slope = mix(acc.slope, g.slope, w);
@@ -791,13 +962,13 @@ if (rockW > 0.001) {
   float sc = tH / 9.0 + sB.r * 5.0 + sC.g * 1.5 + sD.b * 0.3;
   float band = fract(sc);
   float bandRnd = hash2f(int(floor(sc)), 91);
-  vec3 tint = mix(vec3(0.86, 0.86, 0.86), vec3(1.08, 1.04, 0.98), bandRnd);
+  vec3 tint = mix(${P.strataTintA}, ${P.strataTintB}, bandRnd);
   // Bedding planes: faint, of irregular strength, fading where the band noise says the bed is massive.
   float bed = mix(mix(0.8, 1.0, fract(bandRnd * 7.3)), 1.0, smoothstep(0.0, 0.05, band) * smoothstep(1.0, 0.95, band));
   // Alpine rock is grey (limestone lighter, schists and granite darker), weathered darker on its surface:
   // weathered limestone and gneiss have a warm, yellow-brown cast (a neutral grey hazes to lilac under the
   // blue sky light and aerial perspective).
-  vec3 base = mix(vec3(0.098, 0.089, 0.075), vec3(0.19, 0.174, 0.148), nA.g) * tint * bed * (0.78 + 0.3 * nC.a);
+  vec3 base = mix(${P.rockA}, ${P.rockB}, nA.g) * tint * bed * (0.78 + 0.3 * nC.a);
   // Weathering streaks down the fall line (water and lichen stains): noise stretched along the slope.
   vec2 fall = normalize(tN.xz + 1e-4);
   vec2 across = vec2(-fall.y, fall.x);
@@ -838,7 +1009,7 @@ if (snowW > 0.001) {
   // Snow fills hollows first: height-aware blend against whatever lies beneath.
   float w = clamp((snowW * 1.6 - 0.3) + (0.5 - acc.height) * 0.6, 0.0, 1.0);
   // Old summer snow (firn) is a little grey; fresh snow near 0.8.
-  vec3 snowCol = vec3(0.74, 0.76, 0.80) * (0.92 + 0.08 * sC.g);
+  vec3 snowCol = ${P.snow} * (0.92 + 0.08 * sC.g);
   // Glaciers: in the big hollows above the snow line the snow flows as ice. Its lower tongue is bare
   // blue-grey ice with dirty moraine edges; where it steepens it breaks into crevasses across the flow.
   float glacier = smoothstep(0.15, 0.55, concave + 0.25 * sB.a) * smoothstep(0.72, 0.85, tUp) * smoothstep(snowLine - 350.0, snowLine - 100.0, tH);
@@ -871,6 +1042,7 @@ vec3 tNormalW = normalize(tN + vec3(acc.slope.x, 0.0, acc.slope.y) * 0.35);
 // Unlit albedo (x4), written as emissive in the output patch below.
 #endif
 `;
+}
 
 /**
  * Shader detail level: 0 = single-scale near detail and top projection only (low quality), 1 = anti-tiled
@@ -901,6 +1073,11 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
   mat.name = 'terrain';
   mat.defines = { TERRAIN_DETAIL: 1, TERRAIN_DEBUG: 0 };
+  // The era's capability switches (not in the present day, whose defines and shader text stay as they were).
+  if (!isPresent()) Object.assign(mat.defines, eraDefines());
+  // Built now, in the era this thread was set in (never at module load).
+  const head = fragmentHead();
+  const splat = fragmentSplat();
   Object.assign(uniforms, {
     tNoise: { value: tex.noise },
     tDetailA: { value: tex.albedo },
@@ -922,8 +1099,8 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
       .replace('#include <beginnormal_vertex>', VERTEX_NORMAL)
       .replace('#include <begin_vertex>', VERTEX_BEGIN);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${FRAGMENT_HEAD}`)
-      .replace('#include <map_fragment>', FRAGMENT_SPLAT)
+      .replace('#include <common>', `#include <common>\n${head}`)
+      .replace('#include <map_fragment>', splat)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;')
       .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(tNormalW, 0.0)).xyz);')
       // Vegetated and rough ground: weaker grazing Fresnel than a smooth dielectric (no plastic sheen).
@@ -934,7 +1111,8 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
       // Debug view 4: unlit albedo, scaled to be visible under the scene's exposure.
       .replace('#include <opaque_fragment>', '#if TERRAIN_DEBUG == 4\noutgoingLight = diffuseColor.rgb * 4000.0;\n#endif\n#include <opaque_fragment>');
   };
-  mat.customProgramCacheKey = () => `terrain-v5-${mat.defines?.TERRAIN_DETAIL}-${mat.defines?.TERRAIN_DEBUG}`;
+  const suffix = eraKeySuffix();
+  mat.customProgramCacheKey = () => `terrain-v5-${mat.defines?.TERRAIN_DETAIL}-${mat.defines?.TERRAIN_DEBUG}${suffix}`;
   return mat;
 }
 
@@ -953,6 +1131,7 @@ export function createTerrainDepthMaterial(uniforms: TerrainUniforms): THREE.Mes
     // (it would disable early depth testing).
     shader.fragmentShader = shader.fragmentShader.replace('#include <logdepthbuf_fragment>', '');
   };
-  mat.customProgramCacheKey = () => 'terrain-depth-v4';
+  const key = `terrain-depth-v4${eraKeySuffix()}`;
+  mat.customProgramCacheKey = () => key;
   return mat;
 }

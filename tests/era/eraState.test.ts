@@ -13,8 +13,8 @@ import { BONE, BONE_COUNT, FAUNA_ATTR, FAUNA_STRIDE } from '../../src/world/faun
 import { PALETTES } from '../../src/world/terrain/eraPalette';
 import { FLORA, FLORA_SLOTS } from '../../src/world/terrain/vegetation/flora';
 import { SPECIES, SPECIES_COUNT } from '../../src/world/terrain/vegetation/placement';
-import terrainSource from '../../src/world/terrain/terrainMaterial.ts?raw';
-import waterSource from '../../src/world/terrain/water.ts?raw';
+import { fragmentHead, fragmentSplat } from '../../src/world/terrain/terrainMaterial';
+import { fragmentMain } from '../../src/world/terrain/water';
 
 afterEach(() => {
   setEra('present');
@@ -104,6 +104,10 @@ describe('subsystem tables', () => {
   });
 
   it('the present palette strings are today’s shader literals, byte for byte', () => {
+    // The shaders are templated from the palette (WP1); the present text itself is pinned byte for byte by
+    // presentGuard.test.ts. Here: every present string is a vec3 literal that the present shader text uses.
+    const terrainSource = fragmentHead() + fragmentSplat();
+    const waterSource = fragmentMain();
     const p = PALETTES.present;
     const water = new Set(['seaAtten', 'seaBodyDeep', 'seaBodyShallow', 'riverAtten', 'riverBody']);
     for (const [key, glsl] of Object.entries(p)) {
