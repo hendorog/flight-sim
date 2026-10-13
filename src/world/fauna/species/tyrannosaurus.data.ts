@@ -1,4 +1,4 @@
-// Tyrannosaurus rex: the species profile (WP1 owns this file; WP0b stub with the plan's numbers). Pure and
+// Tyrannosaurus rex: the species profile (WP1; the plan's numbers). Pure and
 // three-free: profiles.ts imports PROFILE (the export name is fixed).
 //
 // A solo agent (agents.ts), driven by tyrannosaurus.brain.ts: speed.walk is the stalk walk, speed.run the charge;

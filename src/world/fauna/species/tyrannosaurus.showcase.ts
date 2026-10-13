@@ -1,5 +1,7 @@
-// The T. rex's showcase hook (WP1 owns this file; the export name `showcase` is fixed: showcaseHooks.ts calls it).
-// WP0b STUB (the plan's placement, which WP1 keeps): one solo agent at anchors.TREX_LAIR, facing the river herd.
+// The T. rex's showcase hook (WP1; the export name `showcase` is fixed: showcaseHooks.ts calls it).
+// One solo agent at anchors.TREX_LAIR (cretaceousAnchors.ts: 260 m from the river herd, placed so that a charge
+// from it drives the stampede TREX_FLEE_HEADING, ahead of and in toward the safari track), facing the herd. Its
+// brain (tyrannosaurus.brain.ts) stalks, charges and roars on the safari's first-minute timeline.
 
 import type { ShowcaseContext, ShowcaseSpawn } from '../showcaseHooks';
 
