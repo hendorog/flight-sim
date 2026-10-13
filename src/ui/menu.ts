@@ -11,6 +11,10 @@ import type { SchoolCommand } from '../training/types';
 import { AIRPORT, sunDirectionNED } from '../core/world';
 import { el, formatHours } from './dom';
 import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
+import { eraChoiceUrl, eraConfirmation, eraGates, eraRows, type EraGates, type EraRow } from './eraChooser';
+import { ERA_PREF_KEY } from '../sim/eraChoice';
+import { ERAS } from '../world/era/registry';
+import type { EraId } from '../world/era/types';
 import { achievedRateLabel, SIM_RATES, splitKeyAlternatives, splitKeyCombo, STARTUP_STEPS } from './cues';
 import { GamepadPage, type GamepadSettings } from './gamepadPage';
 
@@ -78,6 +82,15 @@ function flownType(ctx: SimContext): { def: AircraftDefinition | null; presentat
   const c = ctx as Partial<Pick<SimContext, 'aircraft' | 'presentation'>>;
   return { def: c.aircraft ?? null, presentation: c.presentation ?? null };
 }
+
+/** Scenario names and texts on the Flats, where there is no runway or apron (and 'safari' exists). */
+const FLATS_SCENARIOS: Partial<Record<ScenarioId, { name: string; text: string }>> = {
+  runway: { name: 'The Flats', text: 'Lined up on the game trail on the mud flats, ready for take-off.' },
+  apron: { name: 'Off the trail', text: 'Parked on the mud flats, cold and dark: start the engine and take off from anywhere.' },
+  final: { name: 'Final approach', text: 'On a 3 degree approach to the mud flats, configured to land.' },
+  downwind: { name: 'Circuit', text: 'In the circuit over the flats at pattern altitude.' },
+};
+const SAFARI = { id: 'safari' as ScenarioId, name: 'Safari', text: 'Airborne at 1000 ft over the river valley, the herds ahead and the volcano beyond.' };
 
 const SCENARIOS: { id: ScenarioId; name: string; text: string }[] = [
   { id: 'runway', name: 'Runway 07', text: 'Lined up on the runway, ready for take-off.' },
@@ -156,7 +169,8 @@ export class PauseMenu {
     const nav = el('nav', '', card);
     const brand = el('div', 'brand', nav);
     el('b', '', brand, flownType(host.ctx).def?.shortName ?? 'Cessna 172S');
-    el('span', '', brand, `${AIRPORT.name} · ${AIRPORT.icao}`);
+    const world = ERAS[host.ctx.era ?? 'present'];
+    el('span', '', brand, world.id === 'present' ? `${AIRPORT.name} · ${AIRPORT.icao}` : `${world.label} · ${world.epoch}`);
     const tabs: [MenuTab, string][] = [
       ['flight', 'Flight'],
       ['school', 'Flight School'],
@@ -222,7 +236,7 @@ export class PauseMenu {
   }
 
   show(tab: MenuTab): void {
-    if (tab === 'school' && !this.host.school) tab = 'flight';
+    if (tab === 'school' && (!this.host.school || !this.gates().school)) tab = 'flight';
     this.tab = tab;
     for (const [id, b] of this.nav) b.classList.toggle('active', id === tab);
     for (const [id, p] of this.pages) p.classList.toggle('hidden', id !== tab);
@@ -230,7 +244,7 @@ export class PauseMenu {
   }
 
   refresh(): void {
-    this.nav.get('school')?.classList.toggle('hidden', !this.host.school);
+    this.nav.get('school')?.classList.toggle('hidden', !this.host.school || !this.gates().school);
     for (const r of this.refreshers) r();
   }
 
@@ -245,6 +259,7 @@ export class PauseMenu {
   private buildFlight(card: HTMLElement): HTMLElement {
     const p = this.page(card, 'Flight', 'Resume, or start again from one of the scenarios below.');
     this.buildChooser(p);
+    this.buildWorld(p);
     const checklist = el('button', '', p, 'Open aircraft checklist · F');
     checklist.addEventListener('click', () => { this.host.close(); this.host.showChecklist?.(); });
     const schoolRow = el('div', 'chips', p);
@@ -253,7 +268,7 @@ export class PauseMenu {
       this.host.close();
       this.host.school?.command({ kind: 'openHome' });
     });
-    this.refreshers.push(() => schoolRow.classList.toggle('hidden', !this.host.school));
+    this.refreshers.push(() => schoolRow.classList.toggle('hidden', !this.host.school || !this.gates().school));
     if (flownType(this.host.ctx).def?.id === 'r22') {
       el('h3', '', p, 'R22 demonstrations');
       el('p', 'sub', p, 'Watch the scripted pilot. Moving a control or pressing Enter gives you control. Pause, rate and view keys remain available.');
@@ -285,7 +300,9 @@ export class PauseMenu {
     });
     this.refreshers.push(() => confirm.classList.add('hidden'));
     const grid = el('div', 'scenarios', p);
-    for (const s of SCENARIOS) {
+    const eraId = this.eraId();
+    const scenarios = eraId === 'present' ? SCENARIOS : [SAFARI, ...SCENARIOS.map((sc) => ({ ...sc, ...FLATS_SCENARIOS[sc.id] }))];
+    for (const s of scenarios) {
       const b = el('button', '', grid);
       el('b', '', b, s.name);
       el('span', '', b, s.text);
@@ -387,6 +404,73 @@ export class PauseMenu {
       achieved.textContent = achievedRateLabel(c.timeScale, at.requested === c.timeScale ? at.achieved : undefined, false);
     });
     return p;
+  }
+
+  /** The era flown (ctx.era; the present day in a shell or fake without one). */
+  private eraId(): EraId {
+    return this.host.ctx.era ?? 'present';
+  }
+
+  /** What the era hides: the School tab and the tower camera (eraChooser.eraGates). */
+  private gates(): EraGates {
+    return eraGates(ERAS[this.eraId()]);
+  }
+
+  /**
+   * The World chips below the aircraft chooser: the present day or a prehistoric era. Another world is a reload
+   * (commands.setEra), so it asks first unless the aircraft stands still on the ground.
+   */
+  private buildWorld(p: HTMLElement): void {
+    const ctx = (): SimContext => this.host.ctx;
+    const rows = eraRows(this.eraId());
+    el('h3', '', p, 'World');
+    const confirm = el('div', 'sc-confirm hidden', p);
+    const confirmText = el('span', '', confirm);
+    const keep = el('button', '', confirm, 'Keep flying');
+    keep.addEventListener('click', () => confirm.classList.add('hidden'));
+    const go = el('button', 'danger', confirm, 'Go');
+    let pending: { row: EraRow; lesson: boolean } | null = null;
+    const choose = (row: EraRow): void => {
+      if (ctx().commands.setEra) {
+        ctx().commands.setEra?.(row.id);
+        return;
+      }
+      // A shell without the command (dev pages): store the preference and reload as the command would.
+      try {
+        localStorage.setItem(ERA_PREF_KEY, row.id);
+      } catch {
+        // Storage unavailable: the reload falls back to the present day.
+      }
+      location.replace(eraChoiceUrl(location.href));
+    };
+    go.addEventListener('click', () => {
+      confirm.classList.add('hidden');
+      if (!pending) return;
+      if (pending.lesson) this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      choose(pending.row);
+    });
+    this.refreshers.push(() => confirm.classList.add('hidden'));
+    const current = rows.find((r) => r.current)!;
+    const chips = el('div', 'chips', p);
+    for (const row of rows) {
+      const b = el('button', row.current ? 'sel' : '', chips, row.epoch ? `${row.label} · ${row.epoch}` : row.label);
+      b.dataset.era = row.id;
+      b.title = row.blurb;
+      if (row.current) continue;
+      b.addEventListener('click', () => {
+        const ask = eraConfirmation(ctx().state, !!this.host.school?.lessonActive, current, row);
+        if (!ask) {
+          choose(row);
+          return;
+        }
+        pending = { row, lesson: ask.kind === 'lesson' };
+        confirmText.textContent = ask.text;
+        keep.textContent = 'Keep flying';
+        go.textContent = ask.kind === 'lesson' ? 'Abandon and go' : 'Go';
+        confirm.classList.remove('hidden');
+      });
+    }
+    el('p', 'sub', p, current.blurb);
   }
 
   /**
@@ -625,6 +709,8 @@ export class PauseMenu {
     el('h3', '', p, 'Camera');
     const cams = el('div', 'chips', p);
     for (const cam of CAMERAS) {
+      // The tower camera stands in the airport's tower: not where there is no airport.
+      if (cam.id === 'tower' && !this.gates().towerCamera) continue;
       const b = el('button', '', cams, cam.name);
       b.addEventListener('click', () => {
         ctx().commands.setCameraMode(cam.id);

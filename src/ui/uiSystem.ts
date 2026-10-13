@@ -39,6 +39,8 @@ import { el, setText } from './dom';
 import type { GamepadSettings } from './gamepadPage';
 import { Hud } from './hud';
 import { PauseMenu, type AutopilotLink, type KeyBinding, type MenuHost, type MenuTab, type ResumePreferenceLink, type SchoolMenuLink } from './menu';
+import { era, isPresent } from '../world/era/eraState';
+import { spawnWindAdvice } from './eraChooser';
 import { CrashDialog, FpsMeter, HintsCard, LoadingScreen, Toasts, type CrashAction } from './overlays';
 import type { SchoolUi } from './school/schoolUi';
 import { Annunciators, ControlsWidget, type WidgetAircraft, type YokeSource } from './status';
@@ -363,6 +365,20 @@ export class UISystem implements Subsystem, MenuHost {
     if (this.hintsMode === 'always') this.hints.show(true);
     else if (this.hintsMode === 'auto' && !this.automated && !this.schoolUi?.hasProfile) this.hints.show();
     this.startupCheck = true;
+    this.spawnWindToast();
+  }
+
+  /**
+   * The Flats have no windsock: once, at the start on the ground, say which way the wind blows and which way to
+   * take off. After the loading screen has faded.
+   */
+  private spawnWindToast(): void {
+    if (isPresent() || era().world.airport !== 'flats' || !this.context) return;
+    const ctx = this.context;
+    if (!ctx.state.wheels.some((w) => w.onGround)) return;
+    const w = ctx.weather;
+    const text = spawnWindAdvice(w.windDirectionDeg, w.windSpeedKt);
+    window.setTimeout(() => this.showToast(text, 9000), 800);
   }
 
   /**

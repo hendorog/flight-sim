@@ -4,7 +4,9 @@ import { C172S_REFERENCE } from '../aircraft/c172s/reference';
 import { C172S_UI } from '../aircraft/c172s/ui';
 import type { UiProfile } from '../aircraft/types';
 import { parkingBrakeStepText } from './cues';
+import { era } from '../world/era/eraState';
 import { el } from './dom';
+import { ERA_LOADING_LINES, eraLoadingTitle } from './eraChooser';
 
 /** Loading-screen title when the shell gives none. */
 const DEFAULT_TITLE = 'Cessna 172S Skyhawk';
@@ -23,15 +25,29 @@ export class LoadingScreen {
   private readonly fill: HTMLElement;
   private readonly label: HTMLElement;
 
+  private flavour: number | undefined;
+
   constructor(parent: HTMLElement, title = DEFAULT_TITLE) {
+    // A prehistoric era names itself (title, epoch) and rotates its own lines; the present day is as before.
+    const e = era();
+    const named = eraLoadingTitle(e, title);
     this.root = el('div', 'loading', parent);
-    el('div', 'title', this.root, title);
-    el('div', 'tag', this.root, 'Flight simulator');
+    el('div', 'title', this.root, named?.title ?? title);
+    el('div', 'tag', this.root, named?.tag ?? 'Flight simulator');
     const track = el('div', 'track', this.root);
     this.fill = el('i', '', track);
     this.label = el('div', 'label', this.root);
-    const tip = el('div', 'tip', this.root, LOADING_TIPS[Math.floor(Math.random() * LOADING_TIPS.length)]);
+    const lines = named ? ERA_LOADING_LINES[e.id] : [];
+    const tip = el('div', 'tip', this.root, named ? [e.blurb, ...lines][0] : LOADING_TIPS[Math.floor(Math.random() * LOADING_TIPS.length)]);
     tip.setAttribute('aria-live', 'off');
+    if (named && lines.length > 0) {
+      const all = [e.blurb, ...lines];
+      let i = 0;
+      this.flavour = window.setInterval(() => {
+        i = (i + 1) % all.length;
+        tip.textContent = all[i];
+      }, 4500);
+    }
   }
 
   setProgress(fraction: number, label?: string): void {
@@ -43,6 +59,8 @@ export class LoadingScreen {
   hide(): void {
     if (this.root.classList.contains('hidden')) return;
     this.root.classList.add('done');
+    if (this.flavour !== undefined) window.clearInterval(this.flavour);
+    this.flavour = undefined;
     // Remove from hit-testing immediately; drop from layout after the fade.
     this.root.style.pointerEvents = 'none';
     window.setTimeout(() => {

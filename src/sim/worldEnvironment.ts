@@ -8,7 +8,21 @@ import type { SurfaceType, WeatherSettings } from '../core/types';
 import { createEnvironment, type SimEnvironment, type TerrainProvider } from '../physics';
 import { airportSurface } from '../world/airport/layout';
 import { RUNWAY_HEIGHT, TAXIWAY_HEIGHT } from '../world/airport/pavement';
-import { terrainHeight, terrainNormal, terrainSurface } from '../world/terrain/heightfield';
+import { isPresent, era } from '../world/era/eraState';
+import { makeSample, sampleTerrain, terrainHeight, terrainNormal, terrainSurface } from '../world/terrain/heightfield';
+
+// Deep Time: an era with no airport ('flats') has neither the pavement surface nor its lift: the ground is the
+// terrain (terrainSurface gives the era's flat surface inside the airport zone). Read per call (era is boot data,
+// never at module load); the present day takes today's code verbatim.
+const noAirport = (): boolean => !isPresent() && era().world.airport === 'flats';
+
+const scratch = makeSample();
+/** terrainSurface, with the era's flat surface ('dirt') inside the flat airport zone (the terrain gives 'grass' there). */
+function flatsSurface(north: number, east: number): SurfaceType {
+  const t = terrainSurface(north, east);
+  if (t !== 'grass') return t;
+  return sampleTerrain(north, east, scratch).airportBlend === 0 ? era().world.flatSurface : t;
+}
 
 /**
  * Ground under a horizontal NED position as the wheels feel it: the drawn pavement is raised above the
@@ -17,6 +31,7 @@ import { terrainHeight, terrainNormal, terrainSurface } from '../world/terrain/h
  */
 export const worldTerrain: TerrainProvider = {
   height(north: number, east: number): number {
+    if (noAirport()) return terrainHeight(north, east);
     const paved = airportSurface(north, east);
     const h = terrainHeight(north, east);
     return paved === 'runway' ? h + RUNWAY_HEIGHT : paved === 'taxiway' ? h + TAXIWAY_HEIGHT : h;
@@ -25,6 +40,7 @@ export const worldTerrain: TerrainProvider = {
     return terrainNormal(north, east);
   },
   surface(north: number, east: number): SurfaceType {
+    if (noAirport()) return flatsSurface(north, east);
     return airportSurface(north, east) ?? terrainSurface(north, east);
   },
 };
