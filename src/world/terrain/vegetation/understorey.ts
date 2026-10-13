@@ -304,8 +304,11 @@ export const UNDERSTOREY_SPECKLE_GLSL = /* glsl */ `// Understorey speckle (WP6)
         usSh = usClump(usV + usSun * usLen, usR * 0.92, usDir, usTwin, 1.0, usFw) * usPresent * usSunUp;
       }
       // Plant colour: cycads near-black glossy green, ferns a little lighter and yellower.
-      vec3 usCol = usCycad ? vec3(0.008, 0.024, 0.005) : vec3(0.019, 0.040, 0.007);
+      vec3 usCol = usCycad ? vec3(0.010, 0.030, 0.004) : vec3(0.022, 0.044, 0.005);
       usCol *= 0.8 + 0.4 * usTone;
+      // Fronds: lighter along each frond, darker between (while they resolve), and a lighter crown top.
+      float usFr = usCycad ? usCmul(usU4, usU4).x : usCmul(usU4, usU).x;
+      usCol *= 1.0 + usAmp * (0.3 * usFr + 0.35 * (1.0 - smoothstep(0.0, 0.6, usD)));
       // Mean preservation: the expected plant and shadow cover at this density, and the lift between them.
       float usMc = usDen * ${f(SPECKLE_MEAN_COVER)};
       float usMs = usMc * 0.4 * usSunUp;
