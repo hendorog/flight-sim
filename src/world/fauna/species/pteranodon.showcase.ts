@@ -1,5 +1,5 @@
 // The Pteranodon showcase hook (WP4 owns this file; the export name `showcase` is fixed: showcaseHooks.ts calls it).
-// WP0b STUB (the plan's placement): 3 birds in showcase kettle 0 (with 1 Quetzalcoatlus and 2 small azhdarchids).
+// The plan's placement: 3 birds in showcase kettle 0 (with 1 Quetzalcoatlus and 2 small azhdarchids).
 
 import type { ShowcaseContext, ShowcaseSpawn } from '../showcaseHooks';
 
