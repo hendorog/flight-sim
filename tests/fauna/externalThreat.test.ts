@@ -101,6 +101,75 @@ describe('external threats', () => {
     expect(pool.externalFlee(h)).toBe(true);
   });
 
+  it('an external flee takes over the wave of a herd the aircraft has already alarmed (origin and timing)', () => {
+    const { pool, h, terrain } = herd('edmontosaurus', 60);
+    // The aircraft alarms the herd first, low and closing from the east.
+    const ac: AircraftView = { n: 0, e: 200, alt: G + 60, vN: 0, vE: -50, vD: 0, tas: 50 };
+    run(pool, terrain, 10 * DT, ac, () => (ac.e -= 50 * DT));
+    expect(pool.fleeing[h]).toBe(1);
+    expect(pool.externalFlee(h)).toBe(false);
+    const ids = members(pool, h);
+    const before = ids.map((i) => pool.fleeT0[i]);
+    // Then a predator to the west.
+    const now = pool.time;
+    expect(pool.setExternalThreat(h, 0, -150, 0, 0, now + 20, THREAT.flee)).toBe(true);
+    run(pool, terrain, 0.15);
+    expect(pool.externalFlee(h)).toBe(true);
+    // The wave now starts at the member nearest the predator (it is off at once) ...
+    const near = pool.nearestMember(h, 0, -150);
+    expect(pool.fleeT0[near] - now).toBeLessThan(0.5);
+    // ... no member starts later than the aircraft's wave had it, and the west side starts earlier.
+    ids.forEach((i, k) => expect(pool.fleeT0[i]).toBeLessThanOrEqual(before[k]));
+    const sooner = ids.filter((i, k) => pool.fleeT0[i] < before[k] - 0.5);
+    expect(sooner.length).toBeGreaterThan(3);
+    for (const i of sooner) expect(pool.mE[i]).toBeLessThan(pool.herdCentroid(h, { north: 0, east: 0, ground: 0 }).east + 20);
+    // And the direction is the predator's: east, away from it.
+    for (const i of ids) expect(pool.fleeDE[i]).toBeGreaterThan(0.6);
+    // Repeated calls (moving / extending the threat) do not restart the wave.
+    const after = ids.map((i) => pool.fleeT0[i]);
+    pool.setExternalThreat(h, 0, -140, 0, 0, now + 25, THREAT.flee);
+    run(pool, terrain, 0.15);
+    ids.forEach((i, k) => expect(pool.fleeT0[i]).toBe(after[k]));
+  });
+
+  it("a 'face' herd that bolted from a predator stops and faces the aircraft once the predator has gone", () => {
+    const { pool, h, terrain } = herd('triceratops', 7);
+    // A predator right on top of the group: it runs.
+    pool.setExternalThreat(h, 0, -60, 0, 0, pool.time + 2, THREAT.flee);
+    run(pool, terrain, 2.5);
+    expect(pool.externalFlee(h)).toBe(false);
+    expect(pool.react[h]).toBe(ALARM.run);
+    const ids = members(pool, h);
+    expect(ids.some((i) => pool.speed[i] > 2)).toBe(true);
+    // The aircraft now: low, closing from the north-east of where the group has run to.
+    const c = pool.herdCentroid(h, { north: 0, east: 0, ground: 0 });
+    const ac: AircraftView = { n: c.north + 250, e: c.east + 250, alt: G + 50, vN: -35, vE: -35, vD: 0, tas: 50 };
+    run(pool, terrain, 2, ac, () => {
+      ac.n -= 35 * DT;
+      ac.e -= 35 * DT;
+    });
+    expect(pool.react[h]).toBe(ALARM.face);
+    run(pool, terrain, 4);
+    expect(pool.fleeing[h]).toBe(1);
+    for (const i of ids) {
+      expect(pool.speed[i]).toBeLessThan(0.2);
+      const want = Math.atan2(pool.faceE[h] - pool.mE[i], pool.faceN[h] - pool.mN[i]);
+      expect(Math.abs(((pool.yaw[i] - want + 3 * Math.PI) % (2 * Math.PI)) - Math.PI)).toBeLessThan((35 * Math.PI) / 180);
+    }
+  });
+
+  it("a 'face' herd stops running once the predator is beyond predatorFleeRange", () => {
+    const { pool, h, terrain } = herd('triceratops', 7);
+    pool.setExternalThreat(h, 0, -60, 0, 0, pool.time + 30, THREAT.flee);
+    run(pool, terrain, 2);
+    expect(pool.react[h]).toBe(ALARM.run);
+    // The predator backs off to 400 m (the threat still active).
+    pool.setExternalThreat(h, 0, -400, 0, 0, pool.time + 30, THREAT.flee);
+    run(pool, terrain, 6);
+    expect(pool.react[h]).toBe(ALARM.face);
+    for (const i of members(pool, h)) expect(pool.speed[i]).toBeLessThan(0.2);
+  });
+
   it('after untilT the aircraft rules apply again', () => {
     const { pool, h, terrain } = herd();
     pool.setExternalThreat(h, 0, -150, 0, 0, pool.time + 1, THREAT.flee);

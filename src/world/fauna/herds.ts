@@ -11,10 +11,14 @@
 // - EXTERNAL THREATS: setExternalThreat(h, n, e, vN, vE, untilT, level, lead). PRECEDENCE:
 //     * while an external FLEE is active (time < untilT) it OWNS the flee direction (reactions.ts
 //       externalFleeDirection: away from the source position, `lead` of its heading mixed in) and the wave
-//       origin (the herd edge nearest the source: its nearest member; the wave then spreads at waveSpeed);
+//       origin (the herd edge nearest the source: its nearest member; the wave then spreads at waveSpeed). A herd
+//       the aircraft has already alarmed is taken over too: the wave restarts at the member nearest the source,
+//       each member keeping the earlier of its two start times (no one already running stops; no one waits longer);
 //     * the aircraft can only ESCALATE: a member still waiting for the alarm wave (alert, not yet running)
 //       starts running at once; it never re-aims an active external flee;
-//     * after untilT the aircraft rules apply as in inc 1 (and the herd calms calmMin-calmMax s after untilT).
+//     * after untilT the aircraft rules apply as in inc 1 (and the herd calms calmMin-calmMax s after untilT); a
+//       'face' herd the predator had put to flight stops and faces again (the aircraft, or the predator once it is
+//       beyond predatorFleeRange).
 //   An external ALERT only raises heads (and stills 'flee'/'face' herds) toward the source. untilT is in this
 //   pool's clock (HerdPool.time, which FaunaSystem advances with the agents' clock).
 // - Pinned herds beyond NEAR_SNAP_M (the far showcase herds) take at most 2 terrain reads per brain tick: the
@@ -165,6 +169,8 @@ export class HerdPool {
   readonly extVN = new Float64Array(MAX_HERDS);
   readonly extVE = new Float64Array(MAX_HERDS);
   readonly extLead = new Float32Array(MAX_HERDS);
+  /** 1 from a setExternalThreat that starts a flee-level threat until the brain tick that takes the wave over. */
+  readonly extFresh = new Uint8Array(MAX_HERDS);
   /** Brain ticks of a far pinned herd (which of its cheap reads it takes). */
   readonly farTick = new Uint32Array(MAX_HERDS);
   /** Each herd's species profile. */
@@ -238,6 +244,7 @@ export class HerdPool {
     this.react[h] = ALARM.run;
     this.extUntil[h] = -Infinity;
     this.extLevel[h] = THREAT.none;
+    this.extFresh[h] = 0;
     this.farTick[h] = 0;
     this.active[h] = 1;
     this.pinned[h] = sp.pinned ? 1 : 0;
@@ -346,6 +353,7 @@ export class HerdPool {
   setExternalThreat(h: number, n: number, e: number, vN: number, vE: number, untilT: number, level: number, lead = 0): boolean {
     if (!(h >= 0 && h < MAX_HERDS) || !this.active[h]) return false;
     if (!(Number.isFinite(n) && Number.isFinite(e) && untilT === untilT)) return false;
+    const wasFlee = this.externalFlee(h);
     this.extN[h] = n;
     this.extE[h] = e;
     this.extVN[h] = Number.isFinite(vN) ? vN : 0;
@@ -353,6 +361,8 @@ export class HerdPool {
     this.extUntil[h] = untilT;
     this.extLevel[h] = level >= THREAT.flee ? THREAT.flee : level >= THREAT.alert ? THREAT.alert : THREAT.none;
     this.extLead[h] = Math.min(1, Math.max(0, lead || 0));
+    // A new flee-level threat (not a call that moves or extends an active one) takes over the alarm wave.
+    if (this.extLevel[h] === THREAT.flee && !wasFlee) this.extFresh[h] = 1;
     return true;
   }
 
@@ -499,9 +509,10 @@ export class HerdPool {
             this.setFleeDir(i, seed, k);
           }
         } else {
-          // 'face': turn toward the aircraft and stand.
+          // 'face': turn toward the aircraft and stand (also a herd still running from an expired predator).
           this.calmAt[h] = t + calmDelay(rand(seed, 4000 + Math.floor(t / 60)), R);
           if (!this.fleeing[h]) this.startAlarm(h, ac.n, ac.e, ALARM.face);
+          this.react[h] = ALARM.face;
           this.faceN[h] = ac.n;
           this.faceE[h] = ac.e;
         }
@@ -515,7 +526,12 @@ export class HerdPool {
       const calm = this.extUntil[h] + calmDelay(rand(seed, 4100 + Math.floor(this.extUntil[h] / 60)), R);
       if (calm > this.calmAt[h] || !this.fleeing[h]) this.calmAt[h] = calm;
       if (!this.fleeing[h]) this.startAlarm(h, sn, se, run ? ALARM.run : ALARM.face, true);
-      else if (run) this.react[h] = ALARM.run;
+      // Already alarmed (by the aircraft, or an earlier threat): a NEW external flee owns the wave origin too. The
+      // wave restarts from the member nearest the source; no member waits longer than it already had to.
+      else if (this.extFresh[h]) this.startAlarm(h, sn, se, run ? ALARM.run : ALARM.face, true, true);
+      // A 'face' herd runs while the predator is inside predatorFleeRange and stops to face it once it is not.
+      else this.react[h] = run ? ALARM.run : ALARM.face;
+      this.extFresh[h] = 0;
       if (run) {
         this.trackN[h] = sn;
         this.trackE[h] = se;
@@ -531,6 +547,7 @@ export class HerdPool {
         this.faceE[h] = se;
       }
     }
+    if (ext !== THREAT.flee) this.extFresh[h] = 0;
     if (ext > threat) threat = ext;
     if (threat >= THREAT.alert) this.alertUntil[h] = t + 6;
     // Heads turn to the threat while alert: the external source while it is active, else the aircraft.
@@ -646,16 +663,18 @@ export class HerdPool {
   /**
    * Start the alarm wave of herd h from its edge nearest (srcN, srcE); `react` = ALARM.run or ALARM.face. The
    * aircraft's edge (inc 1) is the formation radius toward it; an external threat's is the member nearest to it
-   * (`member`), so the wave starts at once where the predator is.
+   * (`member`), so the wave starts at once where the predator is. `merge`: the herd is already alarmed (an external
+   * threat taking over the aircraft's wave): each member's start is the earlier of its own and the new wave's, so
+   * running members keep running and waiting ones go no later than they would have.
    */
-  private startAlarm(h: number, srcN: number, srcE: number, react: number, member = false): void {
+  private startAlarm(h: number, srcN: number, srcE: number, react: number, member = false, merge = false): void {
     const t = this.time;
     const seed = this.seed[h];
     const base = h * MAX_HERD_SIZE;
     const R = this.prof[h].reaction;
     this.fleeing[h] = 1;
     this.react[h] = react;
-    this.alarmT[h] = t;
+    if (!merge) this.alarmT[h] = t;
     // The alarm starts at the herd's edge nearest the threat and spreads at the wave speed.
     const cn = this.cN[h];
     const ce = this.cE[h];
@@ -672,7 +691,8 @@ export class HerdPool {
     }
     for (let k = 0; k < this.size[h]; k++) {
       const i = base + k;
-      this.fleeT0[i] = t + alarmDelay(Math.hypot(this.mN[i] - on, this.mE[i] - oe), R) + 0.3 * rand(seed, 5000 + k);
+      const t0 = t + alarmDelay(Math.hypot(this.mN[i] - on, this.mE[i] - oe), R) + 0.3 * rand(seed, 5000 + k);
+      this.fleeT0[i] = merge ? Math.min(this.fleeT0[i], t0) : t0;
     }
   }
 
