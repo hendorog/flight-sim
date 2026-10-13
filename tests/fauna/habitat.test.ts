@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { AIRPORT } from '../../src/core/world';
-import { RUNWAY_HALF_WIDTH, nedToLocal } from '../../src/world/airport/layout';
+import { LINE_UP, RUNWAY_HALF_WIDTH, nedToLocal } from '../../src/world/airport/layout';
+import { LAUNCH_RANGE } from '../../src/world/fauna/flight';
 import { treeLine } from '../../src/world/terrain/biome';
 import { SEA_LEVEL, makeSample, sampleTerrain, terrainHeight } from '../../src/world/terrain/heightfield';
 import {
@@ -104,14 +105,16 @@ describe('showcase', () => {
     expect(local.v).toBeLessThan(4000);
   });
 
-  it('the resting pair stands on the Flats beyond the 25 end, off the trail', () => {
+  it('the resting pair stands on the Flats beside the strip, off the trail, launch range from neither line-up', () => {
     const s = makeSample();
     for (const p of restingPair()) {
       sampleTerrain(p.north, p.east, s);
       expect(s.airportBlend).toBe(0);
       expect(s.ground).toBe(AIRPORT.elevation);
       const local = nedToLocal(p.north, p.east);
-      expect(local.u).toBeGreaterThan(AIRPORT.runway.length / 2);
+      // Inside the runway's length (passed on the roll both ways), and beyond LAUNCH_RANGE of both line-ups.
+      expect(Math.abs(local.u)).toBeLessThan(AIRPORT.runway.length / 2);
+      for (const l of LINE_UP) expect(Math.hypot(p.north - l.north, p.east - l.east)).toBeGreaterThan(LAUNCH_RANGE + 100);
       expect(Math.abs(local.v)).toBeGreaterThan(RUNWAY_HALF_WIDTH + 30);
     }
   });

@@ -324,7 +324,7 @@ export class FaunaSystemImpl implements FaunaSystem {
     }
     const big = this.roster.entries.findIndex((e) => e.species === 'quetzalcoatlus');
     const small = this.roster.entries.findIndex((e) => e.species === 'azhdarchidSmall');
-    // The resting pair, standing on the Flats beyond the 25 end.
+    // The resting pair, standing on the Flats beside the strip.
     if (big >= 0) {
       restingPair().forEach((p, k) => {
         const i = this.spawnFlyer(big, p.north, p.east, p.ground, p.ground, FLYER_MODE.stand, p.heading, 0x9a1200 + k, p.north, p.east);

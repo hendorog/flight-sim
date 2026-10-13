@@ -28,9 +28,17 @@ export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 
 export const PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
 /** Downwind leg offset from the runway centreline, m (left-hand traffic for 07: north-west of the runway). */
 export const DOWNWIND_OFFSET = 900;
-/** The 'safari' start (Deep Time) in the runway frame, m: along the runway, across to its right. */
-export const SAFARI_ALONG = 5500;
-export const SAFARI_ACROSS = 3000;
+/**
+ * The 'safari' start (Deep Time) in the runway frame, m: along the runway, across to its right; and its track,
+ * this far right of the 25 direction (rad). Chosen so the first 30 s show the showcase wildlife from the left
+ * seat (src/world/fauna/showcase.ts): the river herd (along ~3.5 km, across ~3 km) is in the left window from
+ * the start and passes ~550 m off the left wing ~14 s in; the 07-side kettle (on the default weather's thermal
+ * core at along ~3.0 km, across ~1.8 km, at about the aircraft's height) is ahead right of the nose and passes
+ * ~150 m off the right wing ~32 s in; the volcano is ~7 deg left of the nose.
+ */
+export const SAFARI_ALONG = 4500;
+export const SAFARI_ACROSS = 3040;
+export const SAFARI_TRACK = 35 * DEG;
 /** Glide path of the final-approach scenario and the aim point beyond the threshold (m). */
 export const GLIDE_PATH = 3 * DEG;
 export const AIM_POINT = 150;
@@ -196,15 +204,14 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
       };
     }
     case 'safari': {
-      // The Cretaceous era's airborne start: 1000 ft above the ground over the river, SAFARI_ALONG m along the
-      // runway frame and SAFARI_ACROSS m to the right of it, flying downstream (toward the volcano, heading 250:
-      // the river runs parallel to the runway ~3 km south), 2 km before the showcase herd at the river crossing
-      // (along ~+3.5 km), at the type's cruise speed and clean.
+      // The Cretaceous era's airborne start: 1000 ft above the ground over the river valley, SAFARI_ALONG m along
+      // the runway frame and SAFARI_ACROSS m to the right of it, flying down the valley toward the volcano
+      // (heading 250 + SAFARI_TRACK) past the showcase herd and kettle, at the type's cruise speed and clean.
       const rwy = AIRPORT.runway.heading;
       const n = SAFARI_ALONG * Math.cos(rwy) - SAFARI_ACROSS * Math.sin(rwy);
       const e = SAFARI_ALONG * Math.sin(rwy) + SAFARI_ACROSS * Math.cos(rwy);
       const alt = terrainHeight(n, e) + 1000 * FT;
-      const heading = wrapTwoPi(rwy + Math.PI);
+      const heading = wrapTwoPi(rwy + Math.PI + SAFARI_TRACK);
       const ic: InitialConditions = { position: { x: n, y: e, z: -alt }, heading, airspeed: kiasToTas(sc.cruiseKias, alt, env), onGround: false, engineRunning: true };
       if (retractable) ic.gearDown = false;
       return {

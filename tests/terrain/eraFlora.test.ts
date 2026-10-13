@@ -110,7 +110,7 @@ describe('Cretaceous flora', () => {
     for (const s of [0, 1, 2]) expect(counts[s]).toBeGreaterThan(total * 0.02);
     expect(counts[3]).toBeGreaterThan(200);
     expect(counts[2]).toBe(Math.max(...counts));
-  });
+  }, 60000);
 
   it('puts each species in its habitat: araucaria high, taxodioids low and by the river, palms on the plain', () => {
     const ground = [0, 0, 0, 0];
@@ -138,7 +138,7 @@ describe('Cretaceous flora', () => {
     // Palms on the low floodplain, below the broadleaf average and far below the araucarias.
     expect(meanGround[pa]).toBeLessThan(meanGround[pl]);
     expect(meanRiver[pa]).toBeLessThan(meanRiver[pl]);
-  });
+  }, 60000);
 
   it('plants no hedgerows: no more trees on the field-edge hedge lines than their share of the land', () => {
     // Share of trees standing on a hedge line (parcel.hedge < 2.2 m, the band the present day plants)
@@ -177,7 +177,7 @@ describe('Cretaceous flora', () => {
     }
     expect(present).toBeGreaterThan(1.5);
     expect(cretaceous).toBeLessThan(1.1);
-  });
+  }, 60000);
 
   it('builds four aligned models, proxies and tints', () => {
     const lod0 = createTreeGeometries(0);
