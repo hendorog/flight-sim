@@ -20,6 +20,7 @@ import { clamp } from '../../core/math';
 import type { VolcanoSpec } from '../era/types';
 import { fbm, gullies, type Deriv } from './noise';
 import { era } from '../era/eraState';
+import { nightRamp } from '../era/eraLight';
 
 /** Exponent of the concave flank profile. */
 export const VOLCANO_PROFILE = 1.6;
@@ -237,21 +238,251 @@ export const VOLCANO_PALETTE = Object.freeze({
   craterPale: 'vec3(0.5, 0.48, 0.42)',
 });
 
+// ------------------------------------------------------------------------------------------------ lava (WP5)
+//
+// Shader-only lava, all through ERA_UNIFORMS (uEraTime, uLava) and no THREE light:
+//   - the crater floor: a cracked crust (animated voronoi plates whose seams glow), a molten lake that wanders
+//     about its middle, and a hot lip where the floor meets the walls;
+//   - LAVA_LOBES: 2-3 flows spilling over the rim and 1-1.5 km down the W/SW flanks along the fall line (radial on
+//     the cone, the barrancos' direction), mostly dark crust with glowing seams and a glowing front;
+//   - a faked orange irradiance on the ground within LAVA_GLOW_REACH of the vent (the light the lit underside of
+//     the plume throws back down) and a short halo either side of each lobe.
+// lavaMask() is the pure CPU twin of the GLSL masks (tests/era/lava.test.ts holds them to each other).
+//
+// Brightness: the auto-exposure spans ~11 EV between the safari's dusk start and the night (measured: adapted
+// log2 luminance 5.08 at the default boot, -13.26 at tod 22 in the chase view), so one physical emission cannot be
+// both visible at dusk and below FIREFLY_MAX at night. lavaGain(uLava.w) therefore interpolates the crater's peak
+// emission in log space from LAVA_DUSK_PEAK (at the dusk start's ramp value) to LAVA_NIGHT_PEAK (full night):
+// an artistic, exposure-tracking glow (poetic license: the lava does not dim, the eye adapts).
+
+/** A lava flow down the cone: its bearing from the vent (deg true), length down the flank from the rim (m), half
+ *  width at the rim (m; it widens downhill), and the amplitude (rad) and phase of its gentle meander. */
+export interface LavaLobe {
+  readonly bearingDeg: number;
+  readonly lengthM: number;
+  readonly halfWidthM: number;
+  readonly wiggle: number;
+  readonly phase: number;
+}
+
+/** The flows: W and SW flanks, 1.0-1.45 km long (data; WP8 may move them). */
+export const LAVA_LOBES: readonly LavaLobe[] = Object.freeze([
+  Object.freeze({ bearingDeg: 236, lengthM: 1450, halfWidthM: 42, wiggle: 0.04, phase: 0.4 }),
+  Object.freeze({ bearingDeg: 263, lengthM: 1150, halfWidthM: 34, wiggle: 0.035, phase: 2.1 }),
+  Object.freeze({ bearingDeg: 211, lengthM: 1000, halfWidthM: 30, wiggle: 0.045, phase: 4.0 }),
+]);
+/** Wavelength scale of the meander, m: the centre line swings sideways by lavaMeander(s) m (two sines, growing
+ *  over the first 200 m below the rim), times the lobe's `wiggle`. */
+export const LAVA_MEANDER_M = 120;
+/** Sideways swing of the meander at wiggle 1, m. */
+export const LAVA_MEANDER_AMP = 1000;
+/** The molten crater floor: within this fraction of the crater radius. */
+export const LAVA_CRATER_FLOOR = 0.78;
+/** Width of the floor's soft edge, m. */
+export const LAVA_CRATER_EDGE = 40;
+/** The ground glow (and the whole lava term) reaches this far from the vent, m (horizontal). */
+export const LAVA_GLOW_REACH = 2000;
+/** The ramp value (ERA_UNIFORMS.uNight / uLava.w) at the safari's dusk start (sun 7.2 deg up). */
+export const LAVA_DUSK_W = 0.31;
+/** Peak crater emission at the dusk start and at full night, scene units (cd/m^2 x 0.1). */
+export const LAVA_DUSK_PEAK = 700;
+export const LAVA_NIGHT_PEAK = 0.55;
+/** Lobe emission relative to the crater peak (the plan's ~150 against 1500). */
+export const LAVA_LOBE_REL = 0.12;
+/** Largest factor the crater's crack, lake and flicker terms put on lavaGain (the shader's maximum). */
+export const LAVA_PEAK_FACTOR = 1.0;
+/**
+ * The adapted log2 luminance (AutoExposure, scene units) at night: tod 22, the chase view of the default boot
+ * (measured with scripts/shot.mjs, before the lava existed). With EXPOSURE_GLSL's key bias it gives the night
+ * exposure the FIREFLY_MAX check uses (tests/era/lava.test.ts).
+ */
+export const LAVA_NIGHT_LOG_L = -13.26;
+/** Bloom's FIREFLY_MAX (render/post/Bloom.ts, module-private): the largest exposed luminance worth emitting. */
+export const LAVA_FIREFLY_MAX = 64;
+
+/**
+ * The crater's peak emission (scene units) for the ramp value w = uLava.w: none at 0, LAVA_DUSK_PEAK at the dusk
+ * start, log-interpolated down to LAVA_NIGHT_PEAK at 1 (the GLSL lavaGain is the same formula).
+ */
+export function lavaGain(w: number): number {
+  if (!(w > 0)) return 0;
+  const t = clamp((w - LAVA_DUSK_W) / (1 - LAVA_DUSK_W), 0, 1);
+  const g = Math.pow(2, Math.log2(LAVA_DUSK_PEAK) + (Math.log2(LAVA_NIGHT_PEAK) - Math.log2(LAVA_DUSK_PEAK)) * t);
+  return g * smooth(0, LAVA_DUSK_W, w);
+}
+
+/** The lobe's centre line s m down the flank from the rim: its sideways offset from the radial line, m. */
+function lobeMeander(L: LavaLobe, s: number): number {
+  return LAVA_MEANDER_AMP * L.wiggle * (Math.sin(s / LAVA_MEANDER_M + L.phase) + 0.5 * Math.sin(s / (0.39 * LAVA_MEANDER_M) + 2 * L.phase)) * smooth(0, 200, s);
+}
+
+/** How much of the lava is at a point. */
+export interface LavaMaskValue {
+  /** The molten crater floor, 0..1. */
+  crater: number;
+  /** The strongest lobe, 0..1. */
+  lobe: number;
+}
+
+export function makeLavaMask(): LavaMaskValue {
+  return { crater: 0, lobe: 0 };
+}
+
+/** One lobe's weight at a point (dn, de m from the vent, r its distance) on a cone with crater radius rc. */
+function lobeWeight(L: LavaLobe, dn: number, de: number, r: number, rc: number): number {
+  const s = r - rc;
+  const hw0 = L.halfWidthM;
+  if (s < -20 || s > L.lengthM + hw0) return 0;
+  const b = (L.bearingDeg * Math.PI) / 180;
+  const theta = Math.atan2(de, dn);
+  const c = Math.cos(theta - b);
+  if (c <= 0) return 0;
+  const d = Math.abs(r * Math.sin(theta - b) - lobeMeander(L, s));
+  const hw = hw0 * (0.55 + 0.6 * clamp(s / L.lengthM, 0, 1));
+  return (1 - smooth(0.6 * hw, hw, d)) * smooth(-20, 30, s) * (1 - smooth(L.lengthM - 0.4 * hw, L.lengthM + 0.4 * hw, s));
+}
+
+/**
+ * The lava's masks at (north, east): the crater floor and the lobes (the CPU twin of VOLCANO_LAVA_HEAD_GLSL's
+ * lavaCraterMask / lavaLobes, without the crack pattern). Writes `out` (no allocation) and returns it.
+ */
+export function lavaMask(north: number, east: number, V: VolcanoSpec, out: LavaMaskValue): LavaMaskValue {
+  const dn = north - V.north;
+  const de = east - V.east;
+  const r = Math.sqrt(dn * dn + de * de);
+  const rf = LAVA_CRATER_FLOOR * V.craterRadius;
+  out.crater = 1 - smooth(rf - LAVA_CRATER_EDGE, rf, r);
+  let lobe = 0;
+  for (const L of LAVA_LOBES) lobe = Math.max(lobe, lobeWeight(L, dn, de, r, V.craterRadius));
+  out.lobe = lobe;
+  return out;
+}
+
+const f = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
+const lobeGlsl = (L: LavaLobe, i: number): string =>
+  `  { float s = r - rc; float hw = ${f(L.halfWidthM)} * (0.55 + 0.6 * clamp(s / ${f(L.lengthM)}, 0.0, 1.0));
+    float b = ${((L.bearingDeg * Math.PI) / 180).toFixed(6)};
+    float c = cos(theta - b);
+    float m = ${f(LAVA_MEANDER_AMP * L.wiggle)} * (sin(s / ${f(LAVA_MEANDER_M)} + ${f(L.phase)}) + 0.5 * sin(s / ${f(0.39 * LAVA_MEANDER_M)} + ${f(2 * L.phase)})) * smoothstep(0.0, 200.0, s);
+    float d = abs(r * sin(theta - b) - m);
+    float w = c > 0.0 && s > -20.0 && s < ${f(L.lengthM + L.halfWidthM)} ? (1.0 - smoothstep(0.6 * hw, hw, d)) * smoothstep(-20.0, 30.0, s) * (1.0 - smoothstep(${f(L.lengthM)} - 0.4 * hw, ${f(L.lengthM)} + 0.4 * hw, s)) : 0.0;
+    float front = smoothstep(${f(L.lengthM)} - 3.0 * hw, ${f(L.lengthM)} - 0.3 * hw, s);
+    float halo = c > 0.0 && s > 0.0 && s < ${f(L.lengthM)} ? exp(-max(d - hw, 0.0) / 45.0) * (1.0 - smoothstep(${f(L.lengthM - 100)}, ${f(L.lengthM + 60)}, s)) : 0.0;
+    if (w > best.x) best = vec4(w, front, s, ${f(i)} + min(d / hw, 0.999));
+    glow = max(glow, halo);
+  }
+`;
+
+/** GLSL twin of lavaGain (also used by the plume's underglow, render/post/VolcanoPlumeEffect.ts). */
+export const LAVA_GAIN_GLSL = /* glsl */ `float lavaGain(float w) {
+  if (w <= 0.0) return 0.0;
+  float t = clamp((w - ${f(LAVA_DUSK_W)}) / ${(1 - LAVA_DUSK_W).toFixed(4)}, 0.0, 1.0);
+  return exp2(mix(${Math.log2(LAVA_DUSK_PEAK).toFixed(6)}, ${Math.log2(LAVA_NIGHT_PEAK).toFixed(6)}, t)) * smoothstep(0.0, ${f(LAVA_DUSK_W)}, w);
+}
+`;
+
 /**
  * Lava, fragment HEAD slot (WP5): functions and constants, emitted in the terrain fragment shader's head inside
  * `#if VOLCANO` (after VOLCANO_GLSL and ERA_TERRAIN_UNIFORMS_GLSL: uVolcano, uEraTime, uNight, uLava and the
- * terrain helpers / tNoise are in scope). Empty: nothing is emitted (the stub).
+ * terrain helpers / tNoise are in scope).
  */
-export const VOLCANO_LAVA_HEAD_GLSL = '';
+export const VOLCANO_LAVA_HEAD_GLSL = /* glsl */ `// Lava (volcano.ts): the crater's peak emission for the ramp w (lavaGain), the masks and the crust pattern.
+${LAVA_GAIN_GLSL}float lavaCraterMask(float r, float rc) {
+  float rf = ${f(LAVA_CRATER_FLOOR)} * rc;
+  return 1.0 - smoothstep(rf - ${f(LAVA_CRATER_EDGE)}, rf, r);
+}
+// The strongest lobe at a point r m from the vent on bearing theta (rad): x = weight, y = how near its front,
+// z = metres down the flank, w = which lobe + the distance from its centre line in half widths (fract, < 1);
+// glow = the halo either side of any lobe.
+vec4 lavaLobes(float r, float theta, float rc, out float glow) {
+  vec4 best = vec4(0.0);
+  glow = 0.0;
+${LAVA_LOBES.map(lobeGlsl).join('')}  return best;
+}
+vec2 lavaHash2(vec2 p) {
+  p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+  return fract(sin(p) * 43758.5453);
+}
+// Crust plates: the distance to the nearest seam between voronoi cells (cell units), the plates creeping slowly.
+float lavaSeam(vec2 p, float t) {
+  vec2 i = floor(p), fp = fract(p);
+  float d1 = 8.0, d2 = 8.0;
+  for (int y = -1; y <= 1; y++)
+  for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(float(x), float(y));
+    vec2 h = lavaHash2(i + g);
+    vec2 o = 0.5 + 0.38 * sin(t * (0.04 + 0.05 * h.yx) + 6.2831 * h);
+    float d = length(g + o - fp);
+    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+  }
+  return d2 - d1;
+}
+// Seam glow 0..1 of a crust with cells cell m across at footprint fp m per pixel: thin bright seams up close,
+// their mean coverage once a cell is only a few pixels wide (no aliasing).
+float lavaCracks(vec2 xz, float cell, float t, float fp) {
+  float seam = lavaSeam(xz / cell, t);
+  float sharp = exp(-seam * 14.0) + 0.35 * exp(-seam * 4.0);
+  return mix(sharp, 0.22, smoothstep(0.08, 0.4, fp / cell));
+}
+const vec3 LAVA_DEEP = vec3(1.0, 0.24, 0.035);
+const vec3 LAVA_HOT = vec3(1.0, 0.36, 0.07);
+const vec3 LAVA_CORE = vec3(1.0, 0.62, 0.24);
+const vec3 LAVA_GLOW = vec3(0.9, 0.35, 0.08);
+`;
 
 /**
  * Lava, BODY slot (WP5): emitted inside `#if VOLCANO` immediately before `#include <opaque_fragment>` of the terrain
- * material (MeshStandardMaterial), where `outgoingLight` (linear HDR scene units: cd/m^2 x 0.1, before fog and tone
- * mapping) can be added to. In scope: everything of the splat (tP, tXZ, tN, tUp, tDist, tVolR, tVolc, the noise
- * samples nA..nD, sB..sD, acc) and the uniforms above. Empty: nothing is emitted (the stub). Switched off by
- * ?eraoff=lava (the slot stays empty).
+ * material, adding to `outgoingLight` (linear HDR scene units). Everything is gated on the ramp (uLava.w > 0) and on
+ * the vent's reach, so the day and the rest of the world never run it. Switched off by ?eraoff=lava.
  */
-export const VOLCANO_LAVA_GLSL = '';
+export const VOLCANO_LAVA_GLSL = /* glsl */ `{
+  vec2 lvRel = vec2(tXZ.x, -tXZ.y) - uVolcano.xy;
+  float lvR = length(lvRel);
+  if (uLava.w > 0.0 && lvR < ${f(LAVA_GLOW_REACH)}) {
+    float lvGain = lavaGain(uLava.w);
+    float lvT = uEraTime;
+    // Footprint of a pixel on the ground, m (no derivatives: this is non-uniform control flow).
+    float lvFp = tDist * 0.0015 / max(abs(dot(normalize(tP - cameraPosition), tN)), 0.15);
+    float lvFlick = 0.9 + 0.1 * sin(lvT * 1.3 + 0.004 * tXZ.x) * sin(lvT * 0.71 - 0.003 * tXZ.y);
+    vec3 lvEm = vec3(0.0);
+    // The crater floor: crust plates with glowing seams, a wandering molten lake, a hot lip at the walls.
+    float lvCm = lavaCraterMask(lvR, uVolcano.w);
+    if (lvCm > 0.0) {
+      float cracks = lavaCracks(tXZ, 22.0, lvT, lvFp);
+      vec2 lakeC = vec2(sin(lvT * 0.013), cos(lvT * 0.017)) * 60.0;
+      float lake = 1.0 - smoothstep(35.0, 75.0, length(lvRel - lakeC) + 40.0 * (texture(tNoise, tXZ / 260.0 + lvT * 0.002).r - 0.5));
+      float lip = smoothstep(${f(LAVA_CRATER_FLOOR - 0.25)} * uVolcano.w, ${f(LAVA_CRATER_FLOOR)} * uVolcano.w, lvR);
+      float heat = max(0.015 + 0.45 * cracks * cracks, max(lake * (0.7 + 0.3 * cracks), 0.5 * lip * cracks));
+      lvEm += mix(LAVA_HOT, LAVA_CORE, lake) * (lvCm * min(heat, 1.0) * lvFlick * lvGain);
+    }
+    // The lobes: dark crust with glowing seams, brightest at the front; a halo either side of them.
+    float lvHalo;
+    vec4 lvL = lavaLobes(lvR, atan(lvRel.x, lvRel.y), uVolcano.w, lvHalo);
+    if (lvL.x > 0.0) {
+      // Width pulsing along the flow and ragged edges and breakouts; the noise only ever narrows lavaMask's
+      // envelope, so the GLSL lobe stays inside the CPU twin.
+      float lvId = floor(lvL.w), lvDn = fract(lvL.w);
+      float lvN1 = texture(tNoise, vec2(lvL.z / 230.0, 0.31 * lvId + 0.1)).g;
+      float lvN2 = texture(tNoise, tXZ / 31.0 + 0.53 * lvId).r;
+      float wide = 0.3 + 0.75 * smoothstep(0.25, 0.75, lvN1);
+      float core = lvL.x * (1.0 - smoothstep(0.75 * wide, wide, lvDn + 0.22 * (lvN2 - 0.5)));
+      float rim = core * smoothstep(0.35 * wide, 0.9 * wide, lvDn + 0.22 * (lvN2 - 0.5));
+      float cracks = lavaCracks(vec2(tXZ.x + 37.0 * lvId, tXZ.y), 11.0, lvT * 3.0, lvFp);
+      float hotSpots = smoothstep(0.6, 0.85, texture(tNoise, tXZ / 140.0 - 0.21 * lvId + lvT * 0.0005).b);
+      float heat = core * (0.002 + cracks * (0.015 + 0.6 * hotSpots)) + 0.6 * rim * cracks + 0.9 * core * lvL.y * (0.4 + 0.6 * cracks);
+      lvEm += mix(LAVA_DEEP, LAVA_HOT, smoothstep(0.1, 0.6, heat)) * (min(heat, 1.0) * lvFlick * lvGain * ${f(LAVA_LOBE_REL * 2)});
+    }
+    // Ground glow: the lit underside of the plume (and the lobes) throw an orange light on the cone around them.
+    vec3 lvToV = vec3(uLava.x, uLava.z + 400.0, -uLava.y) - tP;
+    float lvD = length(lvToV);
+    float lvNdl = 0.35 + 0.65 * max(dot(tN, lvToV / max(lvD, 1.0)), 0.0);
+    float lvIrr = 1.2 * lvNdl / (1.0 + lvD * lvD / (450.0 * 450.0)) * (1.0 - smoothstep(${f(LAVA_GLOW_REACH - 600)}, ${f(LAVA_GLOW_REACH)}, lvR));
+    lvIrr += 0.25 * lvHalo * ${f(LAVA_LOBE_REL)};
+    lvEm += diffuseColor.rgb * LAVA_GLOW * (lvIrr * lvGain * lvFlick);
+    outgoingLight += lvEm;
+  }
+}
+`;
 
 /** (east, north, altitude MSL, intensity): the uLava uniform's value. */
 export interface LavaState {
@@ -262,8 +493,10 @@ export interface LavaState {
 }
 
 /**
- * The volcano's glow for ERA_UNIFORMS.uLava at sim time `t` (WP5 fills the intensity from the night ramp and its
- * own animation). Stub: the crater's position and summit, intensity 0 (no glow). Allocation-free; writes `out`.
+ * The volcano's glow for ERA_UNIFORMS.uLava at sim time `t`: the crater floor's position and altitude, and the
+ * intensity w = the night ramp of the sun's elevation (world/era/eraLight.ts: 0 above +15 deg, 1 at -6 deg). The
+ * flicker and crust animation live in the shaders (uEraTime), so w is exactly the ramp. ?eraoff=lava is applied by
+ * the caller (eraUniforms.ts). Allocation-free; writes `out`.
  */
 export function volcanoLavaState(sky: { sunDir: { y: number } }, t: number, out: LavaState): LavaState {
   const V = era().terrain.volcano;
@@ -271,12 +504,10 @@ export function volcanoLavaState(sky: { sunDir: { y: number } }, t: number, out:
     out.x = out.y = out.z = out.w = 0;
     return out;
   }
+  void t;
   out.x = V.east;
   out.y = V.north;
   out.z = V.summit - V.craterDepth;
-  // The stub glows not at all. WP5: e.g. nightRamp(sky.sunDir.y) (world/era/eraLight.ts) times its flicker at t.
-  void sky;
-  void t;
-  out.w = 0;
+  out.w = nightRamp(sky.sunDir.y);
   return out;
 }
