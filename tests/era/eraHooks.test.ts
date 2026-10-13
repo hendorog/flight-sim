@@ -94,13 +94,31 @@ describe('increment 2 era hooks', () => {
     expect(speckle).toBeLessThan(f.indexOf('acc.albedo *= tEdgeShade;'));
     expect(f.indexOf('lavaHeadMarker')).toBeLessThan(f.indexOf('void main()'));
     expect(f.indexOf('speckleHeadMarker')).toBeLessThan(f.indexOf('void main()'));
-    // ?eraoff=lava,speckle: the same program without them.
+    // ?eraoff=lava,speckle: the same program without them. A fresh module graph, still the Cretaceous: the markers
+    // are there without eraoff and gone with it, so eraOff (not the era) removes them.
     vi.resetModules();
+    const fresh = await import('../../src/world/era/eraState');
+    fresh.setEra('cretaceous');
     const eo = await import('../../src/world/era/eraOff');
+    eo.setEraOff(null);
+    const on = await terrainProgram();
+    expect(on.fragment).toContain('LAVA_BODY_MARKER');
+    expect(on.fragment).toContain('SPECKLE_MARKER');
     eo.setEraOff(['lava', 'speckle']);
+    expect(fresh.isPresent()).toBe(false);
     const q = await terrainProgram();
+    expect(fresh.isPresent()).toBe(false);
+    const { ERA_TERRAIN_UNIFORMS_GLSL } = await import('../../src/world/terrain/eraUniforms');
+    expect(q.fragment).toContain(ERA_TERRAIN_UNIFORMS_GLSL);
     expect(q.fragment).not.toContain('MARKER');
     expect(q.fragment).not.toContain('lavaHeadMarker');
+    expect(q.fragment).not.toContain('speckleHeadMarker');
+    // Only the named layers: eraoff=lava keeps the speckle.
+    eo.setEraOff(['lava']);
+    const l = await terrainProgram();
+    expect(l.fragment).not.toContain('LAVA_BODY_MARKER');
+    expect(l.fragment).toContain('SPECKLE_MARKER');
+    eo.setEraOff(null);
     // And never in the present day.
     vi.resetModules();
     const es = await import('../../src/world/era/eraState');
