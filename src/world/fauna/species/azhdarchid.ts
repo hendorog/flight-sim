@@ -178,13 +178,7 @@ export function azhdarchidSubJoints(): Float32Array {
 
 const sub = (a: Vec3, b: Vec3): THREE.Vector3 => new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
 
-/**
- * The folded (walking) wing of the right side: local rotations (x, y, z, w) of the shoulder, elbow, wrist and
- * knuckle, each about its rest pivot, child first (uFold[4]). The humerus points back, down and out, the
- * forearm nearly straight down, the long metacarpal down and forward to the hand on the ground, and the wing
- * finger folds back up along the arm. The metacarpal's slope is solved so the hand rests on the ground.
- */
-export function azhdarchidFold(): { quats: Float32Array; hand: THREE.Vector3 } {
+function foldDirections(): { len: number[]; dirs: THREE.Vector3[] } {
   const segs = [sub(SHOULDER, ELBOW), sub(ELBOW, WRIST), sub(WRIST, KNUCKLE), sub(KNUCKLE, TIP)];
   const len = segs.map((v) => v.length());
   const d0 = new THREE.Vector3(-0.4, -0.55, 0.72).normalize();
@@ -196,7 +190,19 @@ export function azhdarchidFold(): { quats: Float32Array; hand: THREE.Vector3 } {
   const d2 = new THREE.Vector3(0.998 * hor, dy, -0.06 * hor).normalize();
   // The wing finger folds back up along the metacarpal and forearm, a little outboard of them.
   const d3 = d2.clone().multiplyScalar(-0.62).addScaledVector(d1, -0.38).add(new THREE.Vector3(-0.08, 0, 0.1)).normalize();
-  const dirs = [d0, d1, d2, d3];
+  return { len, dirs: [d0, d1, d2, d3] };
+}
+
+/**
+ * The folded (walking) wing of the right side: local rotations (x, y, z, w) of the shoulder, elbow, wrist and
+ * knuckle, each about its rest pivot, child first (uFold[4]). The humerus points back, down and out, the
+ * forearm nearly straight down, the long metacarpal down and forward to the hand on the ground, and the wing
+ * finger folds back up along the arm. The metacarpal's slope is solved so the hand rests on the ground.
+ */
+export function azhdarchidFold(): { quats: Float32Array; hand: THREE.Vector3 } {
+  const segs = [sub(SHOULDER, ELBOW), sub(ELBOW, WRIST), sub(WRIST, KNUCKLE), sub(KNUCKLE, TIP)];
+  const { len, dirs } = foldDirections();
+  const [d0, d1, d2] = dirs;
   const globals = segs.map((s, k) => new THREE.Quaternion().setFromUnitVectors(s.clone().normalize(), dirs[k]));
   const quats = new Float32Array(16);
   let prev = new THREE.Quaternion();
@@ -211,6 +217,48 @@ export function azhdarchidFold(): { quats: Float32Array; hand: THREE.Vector3 } {
     .addScaledVector(d2, len[2]);
   hand.y -= G;
   return { quats, hand };
+}
+
+/** How far the quad-launch crouch lowers the body, m (scale 1; the material's root offset at full crouch). */
+export const AZHDARCHID_CROUCH_DROP_M = 0.42;
+
+/**
+ * The folded forelimb's flex at full crouch: body-frame pitch rotations (rad, about +z, nose-up positive) of
+ * the shoulder, elbow and wrist that keep the wrist where it was on the ground while the body sinks by
+ * AZHDARCHID_CROUCH_DROP_M, with the metacarpal (and so the hand) unturned: a planar two-link solve of the
+ * humerus and forearm in the side view (pitch rotations leave z alone, so the side-view projections decouple).
+ */
+export function azhdarchidCrouchFlex(drop = AZHDARCHID_CROUCH_DROP_M): { shoulder: number; elbow: number; wrist: number } {
+  const { len, dirs } = foldDirections();
+  const [d0, d1] = dirs;
+  const sx = SHOULDER[0];
+  const sy = SHOULDER[1];
+  const ex = sx + len[0] * d0.x;
+  const ey = sy + len[0] * d0.y;
+  const wx = ex + len[1] * d1.x;
+  const wy = ey + len[1] * d1.y;
+  const r0 = Math.hypot(ex - sx, ey - sy);
+  const r1 = Math.hypot(wx - ex, wy - ey);
+  // The wrist's target relative to the lowered shoulder.
+  const tx = wx - sx;
+  const ty = wy + drop - sy;
+  const dist = Math.hypot(tx, ty);
+  // The two elbow solutions on the circles about the shoulder and the wrist; keep the one nearer the rest elbow.
+  const a = (r0 * r0 - r1 * r1 + dist * dist) / (2 * dist);
+  const h = Math.sqrt(Math.max(0, r0 * r0 - a * a));
+  const mx = (a * tx) / dist;
+  const my = (a * ty) / dist;
+  const cands = [
+    [mx - (h * ty) / dist, my + (h * tx) / dist],
+    [mx + (h * ty) / dist, my - (h * tx) / dist],
+  ];
+  const near = (c: number[]): number => Math.hypot(c[0] - (ex - sx), c[1] - (ey - sy));
+  const [nx, ny] = near(cands[0]) <= near(cands[1]) ? cands[0] : cands[1];
+  // Signed angle from (x0, y0) to (x1, y1), in (-pi, pi].
+  const turn = (x0: number, y0: number, x1: number, y1: number): number => Math.atan2(x0 * y1 - y0 * x1, x0 * x1 + y0 * y1);
+  const shoulder = turn(ex - sx, ey - sy, nx, ny);
+  const forearm = turn(wx - ex, wy - ey, tx - nx, ty - ny);
+  return { shoulder, elbow: forearm - shoulder, wrist: -forearm };
 }
 
 export interface AzhdarchidLook {

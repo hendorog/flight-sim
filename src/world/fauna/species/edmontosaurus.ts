@@ -98,6 +98,9 @@ const HIND: Vec3[] = [
 ];
 const HIND_KNEE: Vec3 = [0.55, 1.45, 0.66];
 const HIND_ANKLE: Vec3 = [-0.06, 0.48, 0.62];
+/** The hind foot's sole points (heel, toe) on the limb path, body xy: the material keeps the lower of the posed
+ * feet on the ground with them (faunaMaterial.ts hadrosaur root offset). */
+export const EDMONTOSAURUS_HIND_SOLE: readonly [number, number, number, number] = [HIND[5][0], HIND[5][1], HIND[6][0], HIND[6][1]];
 const FORE: Vec3[] = [
   [2.6, 2.25, 0.46],
   [2.45, 1.8, 0.52],

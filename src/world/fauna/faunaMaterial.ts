@@ -18,8 +18,8 @@
 // The channel meanings (gait, alert, launch, flap) are documented in species/index.ts.
 
 import * as THREE from 'three';
-import { azhdarchidFold, azhdarchidSubJoints } from './species/azhdarchid';
-import { edmontosaurusSubJoints } from './species/edmontosaurus';
+import { AZHDARCHID_CROUCH_DROP_M, azhdarchidCrouchFlex, azhdarchidFold, azhdarchidSubJoints } from './species/azhdarchid';
+import { EDMONTOSAURUS_HIND_SOLE, edmontosaurusSubJoints } from './species/edmontosaurus';
 import { SUB_COUNT } from './rig';
 import { BONE, BONE_COUNT, FAUNA_ATTR, FAUNA_STRIDE, type CreatureMeshSet, type FaunaSpeciesId } from './types';
 
@@ -27,6 +27,11 @@ import { BONE, BONE_COUNT, FAUNA_ATTR, FAUNA_STRIDE, type CreatureMeshSet, type 
 const RIG_OF: Record<FaunaSpeciesId, 0 | 1> = { edmontosaurus: 0, quetzalcoatlus: 1, azhdarchidSmall: 1 };
 
 const B = BONE;
+
+/** A float literal for GLSL. */
+const f = (x: number): string => (Number.isInteger(x) ? x.toFixed(1) : String(x));
+const SOLE = EDMONTOSAURUS_HIND_SOLE;
+const CROUCH = azhdarchidCrouchFlex();
 
 const COMMON_GLSL = /* glsl */ `
 attribute vec4 aInstA;
@@ -61,6 +66,9 @@ vec4 qYawPitch(float yaw, float pitch) { return qMul(qAx(AY, yaw), qAx(AZ, pitch
 // Roll about the body x axis with the right side (+z) going UP for positive t (a right-handed +x rotation
 // takes +z down). Right-wing rotations go through this; qMirror makes the left wing's twin.
 vec4 qRightUp(float t) { return qAx(AX, -t); }
+vec4 qConj(vec4 q) { return vec4(-q.xyz, q.w); }
+// A body-frame rotation r applied at a joint whose parent chain has rotated by up, as the joint's local rotation.
+vec4 qInFrame(vec4 up, vec4 r) { return qMul(qConj(up), qMul(r, up)); }
 
 vec4 fQ[${BONE_COUNT}];
 vec4 fSubQ[3];
@@ -73,11 +81,27 @@ vec3 fWorldN;
 /** Hadrosaur pose: quadrupedal diagonal walk -> bipedal run, graze/alert head, tail lag. */
 const HADROSAUR_POSE = /* glsl */ `
 vec3 hindLeg(float ph, float walk, float run) {
-  // (hip swing, knee flex, ankle): swing forward while sin rises; the knee lifts the foot during the swing.
-  float s = sin(ph), c = max(0.0, cos(ph));
+  // (hip swing, knee flex, ankle): swing forward while sin rises; the knee lifts the foot during the swing and,
+  // in the run, gives a little under the body's weight at mid-stance.
+  float s = sin(ph), c = max(0.0, cos(ph)), st = max(0.0, -cos(ph));
   float swing = 0.28 * s * walk + 0.5 * s * run;
-  float knee = (0.42 * walk + 0.95 * run) * c;
+  float knee = (0.42 * walk + 0.95 * run) * c + 0.3 * run * st;
   return vec3(swing, knee, knee * 0.85 - swing * 0.85);
+}
+vec2 rotZ(vec2 p, vec2 c, float a) { vec2 d = p - c; float s = sin(a), k = cos(a); return c + vec2(k * d.x - s * d.y, s * d.x + k * d.y); }
+// Lowest sole point of a posed hind leg (body xy; every hind-leg rotation is about z, so the side view is exact):
+// ankle, knee, hip swing, then the root pitch, as faunaSkin applies them.
+float soleLow(vec3 leg, float hipRot, float rootRot) {
+  float lo = 1e9;
+  for (int k = 0; k < 2; k++) {
+    vec2 p = k == 0 ? vec2(${f(SOLE[0])}, ${f(SOLE[1])}) : vec2(${f(SOLE[2])}, ${f(SOLE[3])});
+    p = rotZ(p, uSub[4].xy, leg.z);
+    p = rotZ(p, uSub[3].xy, -leg.y);
+    p = rotZ(p, uPivots[${B.legHR}].xy, hipRot);
+    p = rotZ(p, uPivots[${B.root}].xy, rootRot);
+    lo = min(lo, p.y);
+  }
+  return lo;
 }
 vec3 foreLeg(float ph, float walk, float run) {
   float s = sin(ph), c = max(0.0, cos(ph));
@@ -99,7 +123,8 @@ void faunaPose() {
   float still = 1.0 - alert * (1.0 - move);
   for (int i = 0; i < ${BONE_COUNT}; i++) fQ[i] = QI;
   float rootPitch = 0.11 * run;
-  fQ[${B.root}] = qAx(AZ, rootPitch + 0.012 * sin(2.0 * ph) * walk);
+  float rootRot = rootPitch + 0.012 * sin(2.0 * ph) * walk;
+  fQ[${B.root}] = qAx(AZ, rootRot);
   fQ[${B.spine1}] = qAx(AY, 0.03 * sin(ph) * move);
   fQ[${B.spine2}] = qAx(AZ, -0.07 * graze);
   float yaw = -aInstC.y;
@@ -129,8 +154,8 @@ void faunaPose() {
   fSubQ[0] = qAx(AZ, hind ? -leg.y : leg.y);
   fSubQ[1] = qAx(AZ, leg.z);
   fSubQ[2] = QI;
-  // Body bob at twice the stride frequency; the run sinks onto flexed legs.
-  fRootOff = vec3(0.0, -(0.04 * walk + 0.1 * run) * (0.5 + 0.5 * cos(2.0 * ph)) - 0.12 * run, 0.0);
+  // The body rides on the lower hind foot, which stays on the ground (the bob follows from the leg pose).
+  fRootOff = vec3(0.0, ${f(Math.min(SOLE[1], SOLE[3]))} - min(soleLow(hl, hl.x - rootPitch, rootRot), soleLow(hr, hr.x - rootPitch, rootRot)), 0.0);
   fFold = 0.0;
 }
 `;
@@ -149,7 +174,8 @@ void faunaPose() {
   float ph = F_TAU * aInstB.z;
   float seed = fract(aInstC.w);
   float t = uTime + seed * 57.0;
-  float flying = step(1.999, b);
+  // Launch hands over to flight over its last fifth (the first downstroke blends into the flight stroke).
+  float flying = smoothstep(0.8, 1.0, L);
   float ground = 1.0 - trail;
   for (int i = 0; i < ${BONE_COUNT}; i++) fQ[i] = QI;
   // Torso: sloped when standing, level in flight; pitched up in the vault.
@@ -171,7 +197,7 @@ void faunaPose() {
   float legPh = ph + (side > 0.0 ? 0.5 : 0.0) * F_TAU;
   float armPh = ph + (side > 0.0 ? 0.75 : 0.25) * F_TAU;
   fFold = 1.0 - unfold;
-  vec4 wingR = qMul(qAx(AZ, swF * sin(armPh) + 0.5 * trail), qMul(qRightUp(stroke + 0.14 * max(0.0, cos(armPh)) * walk), qPart(uFold[0], fFold)));
+  vec4 wingR = qMul(qAx(AZ, swF * sin(armPh) + 0.5 * trail + ${f(CROUCH.shoulder)} * crouch), qMul(qRightUp(stroke + 0.14 * max(0.0, cos(armPh)) * walk), qPart(uFold[0], fFold)));
   fQ[${B.wingR}] = wingR;
   fQ[${B.wingL}] = qMirror(wingR, -1.0);
   // Hind legs: walk, crouch and push, trail in flight.
@@ -185,15 +211,18 @@ void faunaPose() {
     // Wing sub-joints: elbow, wrist (swept back on the upstroke), knuckle (tip flex lagging the stroke).
     float sweep = -0.28 * flap * flying * max(0.0, cos(ph));
     float flex = -0.22 * flap * flying * cos(ph) + 0.05 * (1.0 - flap) * flying;
-    fSubQ[0] = qMirror(qPart(uFold[1], fFold), side);
-    fSubQ[1] = qMirror(qMul(qAx(AY, sweep), qPart(uFold[2], fFold)), side);
+    // The crouch flexes the folded elbow and wrist (body-frame pitch, azhdarchidCrouchFlex) so the hands stay put.
+    vec4 elbowR = qMul(qInFrame(wingR, qAx(AZ, ${f(CROUCH.elbow)} * crouch)), qPart(uFold[1], fFold));
+    vec4 wristR = qMul(qInFrame(qMul(wingR, elbowR), qAx(AZ, ${f(CROUCH.wrist)} * crouch)), qMul(qAx(AY, sweep), qPart(uFold[2], fFold)));
+    fSubQ[0] = qMirror(elbowR, side);
+    fSubQ[1] = qMirror(wristR, side);
     fSubQ[2] = qMirror(qMul(qRightUp(flex), qPart(uFold[3], fFold)), side);
   } else {
     fSubQ[0] = qAx(AZ, -knee);
     fSubQ[1] = qAx(AZ, knee * 0.8);
     fSubQ[2] = QI;
   }
-  fRootOff = vec3(0.0, -0.03 * (0.5 + 0.5 * cos(2.0 * ph)) * walk - 0.42 * crouch + 0.3 * vault, 0.0);
+  fRootOff = vec3(0.0, -0.03 * (0.5 + 0.5 * cos(2.0 * ph)) * walk - ${f(AZHDARCHID_CROUCH_DROP_M)} * crouch + 0.3 * vault, 0.0);
 }
 `;
 
