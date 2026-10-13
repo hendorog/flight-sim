@@ -4,8 +4,8 @@
 // Run just these: node scripts/shot-era.mjs --plugins understorey --only <name,...> --out <dir>
 //
 // Every frame comes as an A/B pair: '<name>' with the speckle and '<name>-off' with ?eraoff=speckle.
-//   us-1000ft / us-500ft  the cockpit, 1000 / 500 ft over the floodplain beside the river herd's site, flying down
-//                         the valley with the river and its marsh band in the left door window (paused there), at the
+//   us-1000ft / us-500ft  the cockpit, 1000 / 500 ft over dry floodplain 400 m right of the river herd's site, flying down
+//                         the valley with the marsh band (0-450 m left: biome marsh 1.0) in the left door window (paused), at the
 //                         default boot's dusk (no tod: the safari's SAFARI.tod); the -1000 variants at tod 10
 //   us-G7                 the default boot at the first minute's G7 frame (cockpit, the speckled marsh below)
 //   us-overview           dev/terrain.html, 1000 ft over the river herd's site looking along the river (tod 10)
@@ -29,10 +29,10 @@ export default function shots(h) {
     list.push({ name, label: `${label} (speckle)`, page, evalJs, wait });
     list.push({ name: `${name}-off`, label: `${label} (eraoff=speckle)`, page: `${page}&eraoff=speckle`, evalJs, wait });
   };
-  pair('us-1000ft', 'Understorey: cockpit 1000 ft over the marsh, dusk', `${h.CRET}&ui=0`, h.timed(OVER_MARSH(305)), 0);
-  pair('us-500ft', 'Understorey: cockpit 500 ft over the marsh, dusk', `${h.CRET}&ui=0`, h.timed(OVER_MARSH(152)), 0);
-  pair('us-1000ft-1000', 'Understorey: cockpit 1000 ft over the marsh, tod 10', `${h.CRET}&ui=0&tod=10`, h.timed(OVER_MARSH(305)), 0);
-  pair('us-500ft-1000', 'Understorey: cockpit 500 ft over the marsh, tod 10', `${h.CRET}&ui=0&tod=10`, h.timed(OVER_MARSH(152)), 0);
+  pair('us-1000ft', 'Understorey: cockpit 1000 ft beside the marsh (door window), dusk', `${h.CRET}&ui=0`, h.timed(OVER_MARSH(305)), 0);
+  pair('us-500ft', 'Understorey: cockpit 500 ft beside the marsh (door window), dusk', `${h.CRET}&ui=0`, h.timed(OVER_MARSH(152)), 0);
+  pair('us-1000ft-1000', 'Understorey: cockpit 1000 ft beside the marsh (door window), tod 10', `${h.CRET}&ui=0&tod=10`, h.timed(OVER_MARSH(305)), 0);
+  pair('us-500ft-1000', 'Understorey: cockpit 500 ft beside the marsh (door window), tod 10', `${h.CRET}&ui=0&tod=10`, h.timed(OVER_MARSH(152)), 0);
   pair('us-G7', 'Understorey: default boot, G7', h.DEFAULT_BOOT, h.timed(h.AT_FRAME('G7')), 0);
   pair('us-overview', 'Understorey: 1000 ft over the river herd site, along the river, tod 10', 'dev/terrain.html?era=cretaceous&cam=-2100,3900,470&look=-1622,4315,164&tod=10&freeze=1', undefined, 3000);
   return list;
