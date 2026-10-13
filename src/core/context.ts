@@ -213,5 +213,18 @@ export interface SceneEffect {
     ctx: SimContext,
     dt: number,
   ): void;
+  /**
+   * A translucent layer this effect drew over the scene in its last render (clouds), or null. The temporal
+   * stabilisation reprojects its pixels at the layer's distance instead of the depth buffer's.
+   */
+  reprojectionLayer?(): ReprojectionLayer | null;
   dispose?(): void;
+}
+
+/** See SceneEffect.reprojectionLayer. Both textures cover the screen (any resolution). */
+export interface ReprojectionLayer {
+  /** r: log2(1 + distance along the view ray to the layer's front, m). */
+  readonly distance: THREE.Texture;
+  /** a: transmittance of the layer (1 = nothing drawn). */
+  readonly transmittance: THREE.Texture;
 }

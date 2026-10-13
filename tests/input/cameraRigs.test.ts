@@ -218,7 +218,7 @@ function reprojectionRadius(taa: TemporalAA): number {
   let radius = NaN;
   taa.setSize(8, 8);
   for (let k = 0; k < 2; k++) {
-    taa.render(null as unknown as THREE.WebGLRenderer, texture, texture, camera, aircraft, (material) => {
+    taa.render(null as unknown as THREE.WebGLRenderer, texture, texture, null, camera, aircraft, (material) => {
       radius = (material.uniforms.uAircraft.value as THREE.Vector4).w;
     });
   }

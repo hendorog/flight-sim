@@ -9,7 +9,7 @@
 
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
-import type { QualityLevel, SceneEffect, SimContext } from '../../core/context';
+import type { QualityLevel, ReprojectionLayer, SceneEffect, SimContext } from '../../core/context';
 import type { WeatherSettings } from '../../core/types';
 import { Atmosphere } from '../sky/Atmosphere';
 import { transmittanceToSpace } from '../sky/transmittance';
@@ -157,6 +157,7 @@ export class CloudsEffect implements SceneEffect {
   private history: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
   private historyIndex = 0;
   private historyValid = false;
+  private layer: ReprojectionLayer | null = null;
 
   private quality: QualityLevel = 'high';
   private width = 1;
@@ -286,6 +287,7 @@ export class CloudsEffect implements SceneEffect {
 
     if ((ctx.weather.cloudCover <= 0 && cirrusCover(ctx.weather) <= 0) || !this.noise) {
       this.historyValid = false;
+      this.layer = null;
       this.shadow.uniforms.cloudShadowLight.value.w = 0;
       this.copyMat.uniforms.uScene.value = input;
       this.draw(renderer, this.copyMat, output);
@@ -329,6 +331,7 @@ export class CloudsEffect implements SceneEffect {
       c.uAux.value = this.marchRT.textures[1];
       c.uCompositeShadows.value = this.compositeShadows ? 1 : 0;
       this.draw(renderer, this.compositeMat, output);
+      this.layer = { distance: this.marchRT.textures[1], transmittance: dst.texture };
 
       this.prevViewProj.multiplyMatrices(ctx.camera.projectionMatrix, ctx.camera.matrixWorldInverse);
       this.prevCamPos.copy(this.camPos);
@@ -337,6 +340,11 @@ export class CloudsEffect implements SceneEffect {
 
     renderer.setRenderTarget(prevTarget);
     renderer.autoClear = prevAutoClear;
+  }
+
+  /** The clouds just drawn, for the sim's temporal stabilisation (aux r: front distance; history a: T). */
+  reprojectionLayer(): ReprojectionLayer | null {
+    return this.layer;
   }
 
   /**

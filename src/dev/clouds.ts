@@ -24,6 +24,8 @@ import { CloudsEffect } from '../render/clouds';
 import { COVER_CALIBRATION } from '../render/clouds/coverage';
 import { createDevScene, DevPipeline } from './cloudsDevScene';
 import type { QualityLevel } from '../core/context';
+import { FullscreenPass } from '../render/post/FullscreenPass';
+import { TemporalAA } from '../render/post/TemporalAA';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number): number => (params.has(k) && !Number.isNaN(Number(params.get(k))) ? Number(params.get(k)) : d);
@@ -34,6 +36,8 @@ const SLICE = params.has('slice') ? (params.get('slice') ?? '').split(',').map(N
 const FLY_SPEED = num('fly', 0);
 const YAW_RATE = THREE.MathUtils.degToRad(num('yaw', 0));
 const STEP = num('step', 0);
+/** The sim's temporal stabilisation after the clouds: 1 = with the clouds' reprojection layer, 2 = without. */
+const TAA = num('taa', 0);
 
 /**
  * Frame capture for artefact measurements (scripts or --eval): `moving` pauses the fly/yaw motion,
@@ -73,6 +77,8 @@ let pipeline: DevPipeline;
 let clouds: CloudsEffect;
 let dev: { update(): void };
 let timer: GpuTimer | null = null;
+let taa: TemporalAA | null = null;
+const taaPass = new FullscreenPass();
 
 /** Averages GPU time spans with EXT_disjoint_timer_query_webgl2 (results arrive a few frames late). */
 class GpuTimer {
@@ -133,6 +139,10 @@ void runHarness({
     const height = r.domElement.height;
     pipeline = new DevPipeline(width, height, num('exp', 1));
     clouds.setSize(width, height);
+    if (TAA > 0) {
+      taa = new TemporalAA();
+      taa.setSize(width, height);
+    }
     dev = createDevScene(ctx);
     if (params.get('timing') === '1') {
       const gl = r.getContext() as WebGL2RenderingContext;
@@ -153,6 +163,7 @@ void runHarness({
     window.addEventListener('resize', () => {
       pipeline.setSize(r.domElement.width, r.domElement.height);
       clouds.setSize(r.domElement.width, r.domElement.height);
+      taa?.setSize(r.domElement.width, r.domElement.height);
     });
   },
   beforeUpdate(dt, ctx) {
@@ -174,7 +185,12 @@ void runHarness({
     timer?.begin();
     clouds.render(ctx.renderer, pipeline.hazedRT.texture, pipeline.sceneRT.depthTexture!, pipeline.effectRT, ctx, dt);
     timer?.end();
-    pipeline.toneMap(ctx.renderer, pipeline.effectRT.texture);
+    let out = pipeline.effectRT.texture;
+    if (taa) {
+      const layer = TAA === 1 ? clouds.reprojectionLayer() : null;
+      out = taa.render(ctx.renderer, out, pipeline.sceneRT.depthTexture!, layer, ctx.camera, null, (m, t) => taaPass.render(ctx.renderer, m, t));
+    }
+    pipeline.toneMap(ctx.renderer, out);
     if (SLICE) {
       // Vertical density slice (CloudsEffect.renderDensitySlice) over the whole canvas.
       const [x, z, dx, dz, len, mode] = SLICE;
