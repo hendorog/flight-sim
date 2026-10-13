@@ -705,6 +705,13 @@ export class HerdPool {
     const facing = this.fleeing[h] === 1 && this.react[h] === ALARM.face;
     const gN = this.gN[h];
     const gE = this.gE[h];
+    // The profile's numbers, hoisted out of the member loop.
+    const wander = F.wanderSpeed;
+    const walkMax = F.memberWalkMax;
+    const runFrom = F.runFrom;
+    const runSpan = F.runSpan;
+    const strideWalk = P.strideM.walk;
+    const strideSpan = P.strideM.run - P.strideM.walk;
     for (let k = 0; k < size; k++) {
       const i = base + k;
       const sc = this.scale[i];
@@ -730,10 +737,10 @@ export class HerdPool {
         const de = this.cE[h] + this.offE[i] - this.mE[i];
         const d = Math.sqrt(dn * dn + de * de);
         if (d > 0.6) {
-          want = Math.min(F.memberWalkMax, 0.35 * d + (walking ? F.wanderSpeed : 0));
+          want = Math.min(walkMax, 0.35 * d + (walking ? wander : 0));
           wantYaw = Math.atan2(de, dn);
         } else if (walking) {
-          want = F.wanderSpeed;
+          want = wander;
           wantYaw = this.heading[h];
         }
       }
@@ -758,12 +765,12 @@ export class HerdPool {
       // Gait: phase by distance / the stride of the gait being drawn (so the planted feet do not skate);
       // blend 0 graze / stand .. 1 walk .. 2 run. An alert animal stands still, head up (the alert channel).
       const v = this.speed[i];
-      const run = v > F.runFrom ? Math.min(1, (v - F.runFrom) / F.runSpan) : 0;
+      const run = v > runFrom ? Math.min(1, (v - runFrom) / runSpan) : 0;
       const drawnRun = Math.min(1, Math.max(0, this.blend[i] - 1));
-      const stride = (P.strideM.walk + (P.strideM.run - P.strideM.walk) * drawnRun) * sc;
+      const stride = (strideWalk + strideSpan * drawnRun) * sc;
       const ph = this.phase[i] + step / stride;
       this.phase[i] = ph - Math.floor(ph);
-      const target = v < 0.25 ? v / 0.25 : v <= F.runFrom ? 1 : 1 + run;
+      const target = v < 0.25 ? v / 0.25 : v <= runFrom ? 1 : 1 + run;
       this.blend[i] += (target - this.blend[i]) * Math.min(1, 3 * dt);
       const alertTarget = alert || fleeingNow ? 1 : 0;
       this.alert[i] += (alertTarget - this.alert[i]) * Math.min(1, ALERT_RATE * dt);
