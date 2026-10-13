@@ -126,7 +126,10 @@ export interface SimEvents {
   qualityChanged: { quality: QualityLevel };
   /** Gear events for sound and UI: a leg unlocked, reached down-and-locked, or reached up. Emitted by SimPhysics. */
   gear: { kind: 'unlock' | 'downLocked' | 'up'; leg: 0 | 1 | 2 };
-  /** A species seen close for the first time this session (within 500 m, below 300 m AGL). Emitted by the FaunaSystem. */
+  /**
+   * A species seen close (within 500 m, below 300 m AGL): on its first approach in a session, then again on each
+   * approach at least 25 m closer than the last emit (the Field Guide's closest distance). Emitted by the FaunaSystem.
+   */
   faunaSighted: { species: FaunaSpeciesId; distanceM: number };
 }
 
