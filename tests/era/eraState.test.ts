@@ -122,8 +122,8 @@ describe('subsystem tables', () => {
   it('the present roster is empty and builds no fauna system', () => {
     expect(ROSTERS.none.entries).toEqual([]);
     expect(createFaunaSystem(PRESENT)).toBeNull();
-    // WP0 stub: no Cretaceous animals yet either.
-    expect(createFaunaSystem(CRETACEOUS)).toBeNull();
+    // The Cretaceous roster has animals (WP5).
+    expect(createFaunaSystem(CRETACEOUS)).not.toBeNull();
   });
 
   it('the fauna instance format and bones fit the shader contract', () => {
