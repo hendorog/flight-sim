@@ -1,16 +1,24 @@
 // Deep Time flora (WP2): the Late Cretaceous trees in the four existing slots. Placement (deterministic,
 // species 0..3 by habitat, no hedgerows, heights in each slot's range, a valid bucket layout), the models
 // (card budgets, LOD 1 at most half, every vertex inside the impostor bound), and arrays aligned slot for slot.
-// The present day's trees are pinned by tests/era/presentGuard.test.ts (buildTreeCell hashes).
+// The present day's tree cells are pinned by tests/era/presentGuard.test.ts (buildTreeCell hashes); its tree
+// models and patched shaders are pinned here, to hashes taken before Deep Time (commit 2cdce84).
 
 import * as THREE from 'three';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setEra } from '../../src/world/era/eraState';
 import { FLORA, FLORA_SLOTS } from '../../src/world/terrain/vegetation/flora';
 import { BUCKETS, buildTreeCell, SPECIES_COUNT, TREE_STRIDE, type TreeCellData, type TreeCellRequest } from '../../src/world/terrain/vegetation/placement';
-import { createNearTreeMaterial, type TreeUniforms } from '../../src/world/terrain/vegetation/treeMaterials';
+import {
+  createImpostorDepthMaterial,
+  createImpostorMaterial,
+  createNearTreeMaterial,
+  createShadowProxyMaterials,
+  type TreeUniforms,
+} from '../../src/world/terrain/vegetation/treeMaterials';
 import { createShadowProxies, createTreeGeometries, SPECIES_TINT, speciesTints, TREE_BOUND_RADIUS } from '../../src/world/terrain/vegetation/treeModels';
-import { hydrology } from '../../src/world/terrain/heightfield';
+import { hydrology, makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
+import { makeParcel, parcelAt } from '../../src/world/terrain/fields';
 
 const SLOTS = FLORA.cretaceous.slots;
 
@@ -104,6 +112,73 @@ describe('Cretaceous flora', () => {
     expect(counts[2]).toBe(Math.max(...counts));
   });
 
+  it('puts each species in its habitat: araucaria high, taxodioids low and by the river, palms on the plain', () => {
+    const ground = [0, 0, 0, 0];
+    const river = [0, 0, 0, 0];
+    const n = [0, 0, 0, 0];
+    const s = makeSample();
+    for (const req of cells()) {
+      const c = buildTreeCell(req);
+      for (let k = 0; k < c.count; k++) {
+        const sp = Math.floor(c.instances[k * TREE_STRIDE + 5]);
+        sampleTerrain(c.instances[k * TREE_STRIDE + 2], c.instances[k * TREE_STRIDE], s);
+        n[sp]++;
+        ground[sp] += s.ground;
+        river[sp] += s.riverHalfWidth > 0 ? Math.min(2000, s.riverDist - s.riverHalfWidth) : 2000;
+      }
+    }
+    const meanGround = ground.map((g, i) => g / n[i]);
+    const meanRiver = river.map((r, i) => r / n[i]);
+    const [ar, tx, pl, pa] = [0, 1, 2, 3];
+    // Uplands and slopes: the araucarias stand well above the lowland broadleaf forest.
+    expect(meanGround[ar]).toBeGreaterThan(meanGround[pl] + 250);
+    // Wet ground: the taxodioids are the lowest of all and much nearer the river than the broadleaves.
+    expect(meanGround[tx]).toBe(Math.min(...meanGround));
+    expect(meanRiver[tx]).toBeLessThan(0.6 * meanRiver[pl]);
+    // Palms on the low floodplain, below the broadleaf average and far below the araucarias.
+    expect(meanGround[pa]).toBeLessThan(meanGround[pl]);
+    expect(meanRiver[pa]).toBeLessThan(meanRiver[pl]);
+  });
+
+  it('plants no hedgerows: no more trees on the field-edge hedge lines than their share of the land', () => {
+    // Share of trees standing on a hedge line (parcel.hedge < 2.2 m, the band the present day plants)
+    // over that band's share of the land. The present day's hedgerows put it well above 1 (a control that
+    // the measure sees them); the Cretaceous has no farmland, so its trees ignore the lines.
+    const p = makeParcel();
+    let bandArea = 0;
+    let area = 0;
+    for (const req of cells()) {
+      for (let i = 0; i < 400; i++) {
+        parcelAt(req.cx * req.size + ((i % 20) + 0.5) * 12.8, req.cz * req.size + (Math.floor(i / 20) + 0.5) * 12.8, p);
+        area++;
+        if (p.hedge < 2.2) bandArea++;
+      }
+    }
+    const enrichment = (): number => {
+      let on = 0;
+      let total = 0;
+      for (const req of cells()) {
+        const c = buildTreeCell(req);
+        for (let k = 0; k < c.count; k++) {
+          parcelAt(c.instances[k * TREE_STRIDE], c.instances[k * TREE_STRIDE + 2], p);
+          if (p.hedge < 2.2) on++;
+          total++;
+        }
+      }
+      return on / total / (bandArea / area);
+    };
+    const cretaceous = enrichment();
+    setEra('present');
+    let present: number;
+    try {
+      present = enrichment();
+    } finally {
+      setEra('cretaceous');
+    }
+    expect(present).toBeGreaterThan(1.5);
+    expect(cretaceous).toBeLessThan(1.1);
+  });
+
   it('builds four aligned models, proxies and tints', () => {
     const lod0 = createTreeGeometries(0);
     const lod1 = createTreeGeometries(1);
@@ -177,6 +252,25 @@ describe('present-day trees (era code off)', () => {
     expect(shader.key).toBe('tree-near-v6-0');
     expect(shader.vertex).not.toContain('TREE_PALM');
   });
+
+  it('keeps today’s tree models and patched shaders byte for byte (hashes from before Deep Time)', () => {
+    setEra('present');
+    // Geometry: every attribute and index buffer of each species (userData, which gained a card count, is
+    // left out). Materials: type, defines, program cache key, patched vertex and fragment text and the
+    // uniforms the patch adds (textures by kind, not uuid). Taken at commit 2cdce84; a three.js upgrade that
+    // changes ShaderLib moves the material hashes, which then need retaking on a pre-Deep-Time checkout.
+    expect(presentTreeHashes()).toEqual({
+      lod0: '8c673bc2',
+      lod1: 'ad188453',
+      proxies: 'd8cc6740',
+      near0: '6d06d983',
+      near1: '8a345959',
+      proxyMain: '37d4d04c',
+      proxyDepth: 'b21e918c',
+      impostor: '97f2d485',
+      impostorDepth: 'bb759d55',
+    });
+  });
 });
 
 function patchNear(): { defines: Record<string, unknown>; key: string; vertex: string } {
@@ -194,4 +288,72 @@ function patchNear(): { defines: Record<string, unknown>; key: string; vertex: s
   (mat.onBeforeCompile as unknown as (s: typeof shader, r: unknown) => void)(shader, null);
   expect(shader.vertexShader).not.toContain('#include <begin_vertex>');
   return { defines: { ...mat.defines }, key: mat.customProgramCacheKey(), vertex: shader.vertexShader };
+}
+
+/** FNV-1a over a byte stream. */
+class Fnv {
+  h = 0x811c9dc5;
+  bytes(b: Uint8Array): this {
+    for (let i = 0; i < b.length; i++) this.h = Math.imul(this.h ^ b[i], 0x01000193) >>> 0;
+    return this;
+  }
+  text(s: string): this {
+    return this.bytes(new TextEncoder().encode(s));
+  }
+  hex(): string {
+    return this.h.toString(16).padStart(8, '0');
+  }
+}
+
+function geometryHash(geos: THREE.BufferGeometry[]): string {
+  const f = new Fnv();
+  for (const g of geos) {
+    for (const name of Object.keys(g.attributes).sort()) {
+      const a = g.getAttribute(name) as THREE.BufferAttribute;
+      f.text(`${name}:${a.itemSize}:${a.count}`);
+      f.bytes(new Uint8Array(a.array.buffer, a.array.byteOffset, a.array.byteLength));
+    }
+    const idx = g.getIndex();
+    if (idx) f.bytes(new Uint8Array(idx.array.buffer, idx.array.byteOffset, idx.array.byteLength));
+  }
+  return f.hex();
+}
+
+const LIB: Record<string, string> = { MeshStandardMaterial: 'standard', MeshDepthMaterial: 'depth', MeshBasicMaterial: 'basic' };
+
+function uniformsText(u: Record<string, { value: unknown }>): string {
+  return JSON.stringify(Object.keys(u).sort().map((k) => [k, u[k].value instanceof THREE.Texture ? 'texture' : u[k].value]));
+}
+
+/** The patched shader text, defines, cache key and patch-added uniforms of a tree material. */
+function materialHash(mat: THREE.Material): string {
+  const src = THREE.ShaderLib[LIB[mat.type]];
+  const shader = { uniforms: {} as Record<string, { value: unknown }>, vertexShader: src.vertexShader, fragmentShader: src.fragmentShader };
+  (mat.onBeforeCompile as unknown as (s: typeof shader, r: unknown) => void)(shader, null);
+  const m = mat as THREE.Material & { defines?: Record<string, unknown> };
+  return new Fnv().text(mat.type).text(JSON.stringify(m.defines ?? {})).text(mat.customProgramCacheKey()).text(shader.vertexShader).text(shader.fragmentShader).text(uniformsText(shader.uniforms)).hex();
+}
+
+function presentTreeHashes(): Record<string, string> {
+  const uniforms: TreeUniforms = {
+    uTime: { value: 0 },
+    uFade: { value: new THREE.Vector4() },
+    uDensityRange: { value: 1 },
+    uViewPos: { value: new THREE.Vector3() },
+    uShadowRange: { value: 1 },
+    uLodFade: { value: new THREE.Vector2() },
+  };
+  const tex = new THREE.Texture();
+  const proxy = createShadowProxyMaterials(uniforms);
+  return {
+    lod0: geometryHash(createTreeGeometries(0)),
+    lod1: geometryHash(createTreeGeometries(1)),
+    proxies: geometryHash(createShadowProxies()),
+    near0: materialHash(createNearTreeMaterial(tex, uniforms, 0)),
+    near1: materialHash(createNearTreeMaterial(tex, uniforms, 1)),
+    proxyMain: materialHash(proxy.main),
+    proxyDepth: materialHash(proxy.depth),
+    impostor: materialHash(createImpostorMaterial(tex, tex, uniforms)),
+    impostorDepth: materialHash(createImpostorDepthMaterial(tex, uniforms)),
+  };
 }

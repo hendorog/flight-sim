@@ -267,20 +267,28 @@ function dilate(d: Uint8ClampedArray, x0: number, y0: number, x1: number, y1: nu
   }
 }
 
+/**
+ * Paint one atlas region at canvas pixels (x, y), clipped to its w x h rect so no stroke can bleed into a
+ * neighbouring region (the scale-spray ropes sweep forward past the needle quadrant's right edge).
+ */
+function region(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, draw: () => void): void {
+  g.save();
+  g.beginPath();
+  g.rect(x, y, w, h);
+  g.clip();
+  g.translate(x, y);
+  draw();
+  g.restore();
+}
+
 function eraAtlas(renderer: THREE.WebGLRenderer, canvas: HTMLCanvasElement, g: CanvasRenderingContext2D, rnd: () => number): THREE.DataTexture {
-  g.save();
-  drawScaleSpray(g, rnd);
-  g.translate(S, 0);
-  drawBigLeaves(g, rnd);
-  g.restore();
-  g.save();
-  g.translate(0, S);
-  drawStringyBark(g, rnd);
-  g.translate(S, 0);
-  drawPalmFibre(g, rnd, Math.round(0.2 * S));
-  g.translate(Math.round(0.24 * S), 0);
-  drawPalmFan(g, rnd, 258, S);
-  g.restore();
+  const fibre = Math.round(0.2 * S);
+  const fan = Math.round(0.24 * S);
+  region(g, 0, 0, S, S, () => drawScaleSpray(g, rnd));
+  region(g, S, 0, S, S, () => drawBigLeaves(g, rnd));
+  region(g, 0, S, S, S, () => drawStringyBark(g, rnd));
+  region(g, S, S, fibre, S, () => drawPalmFibre(g, rnd, fibre));
+  region(g, S + fan, S, S - fan, S, () => drawPalmFan(g, rnd, 258, S));
   const d = g.getImageData(0, 0, canvas.width, canvas.height).data;
   dilate(d, 0, 0, S, S);
   dilate(d, S, 0, 2 * S, S);
