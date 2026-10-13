@@ -18,6 +18,7 @@ import {
 } from '../../src/world/terrain/vegetation/treeMaterials';
 import { createShadowProxies, createTreeGeometries, SPECIES_TINT, speciesTints, TREE_BOUND_RADIUS } from '../../src/world/terrain/vegetation/treeModels';
 import { hydrology, makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
+import { computeBiome, CoverShapeField, makeBiome, makeCoverShape } from '../../src/world/terrain/biome';
 import { makeParcel, parcelAt } from '../../src/world/terrain/fields';
 
 const SLOTS = FLORA.cretaceous.slots;
@@ -138,6 +139,43 @@ describe('Cretaceous flora', () => {
     // Palms on the low floodplain, below the broadleaf average and far below the araucarias.
     expect(meanGround[pa]).toBeLessThan(meanGround[pl]);
     expect(meanRiver[pa]).toBeLessThan(meanRiver[pl]);
+  }, 60000);
+
+  it('reads the marsh weight: taxodioids crowd the marsh, palms thin out there', () => {
+    // biome.marsh, not biome.farmland (0 in the Cretaceous): the swamp-cypress term and the palms' marsh
+    // suppression only work from the marsh channel.
+    const field = new CoverShapeField();
+    const shape = makeCoverShape();
+    const biome = makeBiome();
+    const s = makeSample();
+    const inMarsh = [0, 0, 0, 0];
+    const all = [0, 0, 0, 0];
+    for (const req of cells()) {
+      const c = buildTreeCell(req);
+      const n0 = req.cz * req.size;
+      const e0 = req.cx * req.size;
+      field.build(n0 - 64, e0 - 64, n0 + req.size + 64, e0 + req.size + 64);
+      for (let k = 0; k < c.count; k++) {
+        const sp = Math.floor(c.instances[k * TREE_STRIDE + 5]);
+        const north = c.instances[k * TREE_STRIDE + 2];
+        const east = c.instances[k * TREE_STRIDE];
+        all[sp]++;
+        sampleTerrain(north, east, s);
+        field.at(north, east, shape);
+        computeBiome(north, east, s, shape.up, biome, shape.north);
+        if (biome.marsh > 0.3) inMarsh[sp]++;
+      }
+    }
+    const tm = inMarsh.reduce((a, b) => a + b, 0);
+    const ta = all.reduce((a, b) => a + b, 0);
+    expect(tm).toBeGreaterThan(100);
+    // Taxodioids are most of the marsh trees and far above their share of the land (with the farmland channel
+    // read by mistake: ~60% taxodioid, ~20% palm, ~18% broadleaf in the marsh).
+    expect(inMarsh[1] / tm).toBeGreaterThan(0.8);
+    expect(inMarsh[1] / tm).toBeGreaterThan(5 * (all[1] / ta));
+    // The open floodplain's palms are thinned in the marsh itself, and the broadleaf forest stays out of it.
+    expect(inMarsh[3] / tm).toBeLessThan(0.15);
+    expect(inMarsh[2] / tm).toBeLessThan(0.05);
   }, 60000);
 
   it('plants no hedgerows: no more trees on the field-edge hedge lines than their share of the land', () => {

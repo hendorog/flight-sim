@@ -286,3 +286,88 @@ describe('review fixes', () => {
     expect(launched).toBe(true);
   });
 });
+
+describe('branch-final review fixes', () => {
+  /** A steep cone (1:1 flanks, 900 m high) at (cn, ce) on a 100 m plain, counted. */
+  function coneTerrain(cn: number, ce: number): FaunaTerrain & { h(n: number, e: number): number } {
+    const h = (n: number, e: number) => 100 + Math.max(0, 900 - Math.hypot(n - cn, e - ce));
+    const t = {
+      calls: 0,
+      h,
+      sample(n: number, e: number, out: TerrainSample): TerrainSample {
+        t.calls++;
+        Object.assign(out, makeSample());
+        out.ground = h(n, e);
+        out.airportBlend = 1;
+        return out;
+      },
+      height(n: number, e: number): number {
+        t.calls++;
+        return h(n, e);
+      },
+    };
+    return t;
+  }
+
+  it('a glide between cores never passes through a hill in the way', () => {
+    const terrain = coneTerrain(2000, 0);
+    const pool = new FlyerPool(8);
+    const f = frame(2);
+    const i = spawnBird(pool, 0, 0, 500, 100);
+    // The next core is beyond the cone; the reach was judged from the plain.
+    pool.tgtX[i] = 4500;
+    pool.tgtY[i] = 0;
+    let t = 0;
+    let crossed = false;
+    for (let k = 0; k < 60 * 400 && pool.mode[i] === FLYER_MODE.glide; k++) {
+      pool.step(DT, (t += DT), f, null, terrain, 200, true, 0, 0);
+      expect(pool.alt[i]).toBeGreaterThan(terrain.h(pool.n[i], pool.e[i]));
+      if (pool.n[i] > 2000) crossed = true;
+    }
+    expect(crossed).toBe(true);
+  });
+
+  it('a grounded bird is not pushed by an aircraft passing well overhead', () => {
+    const terrain = planeTerrain(120);
+    const pool = new FlyerPool(8);
+    const i = pool.spawn({ north: 0, east: 0, alt: 120, ground: 120, entry: 1, scale: 1, size: 1, variant: 0, seed: 3, mode: FLYER_MODE.stand, heading: 0, anchorN: 0, anchorE: 0 });
+    const ac: AircraftView = { n: 20, e: 0, alt: 420, vN: 0, vE: 0, vD: 0, tas: 50 };
+    pool.step(DT, 1, frame(0), ac, terrain, 200, false, 0, 0);
+    expect(pool.n[i]).toBeCloseTo(0, 6);
+    expect(pool.e[i]).toBeCloseTo(0, 6);
+    // Low over it, it steps aside horizontally to 60 m in 3-D and stays on the ground.
+    ac.alt = 130;
+    pool.step(DT, 1 + DT, frame(0), ac, terrain, 200, false, 0, 0);
+    expect(Math.hypot(pool.n[i] - ac.n, pool.e[i] - ac.e, pool.alt[i] - ac.alt)).toBeCloseTo(60, 3);
+    expect(pool.alt[i]).toBe(120);
+  });
+
+  it('a bird landed at its roost is on the ground: no evade when the aircraft comes close', () => {
+    const terrain = planeTerrain(120);
+    const pool = new FlyerPool(8);
+    const i = spawnBird(pool, 0, 0, 500, 120);
+    pool.startRoosted(i, terrain);
+    const ac: AircraftView = { n: pool.n[i] + 90, e: pool.e[i], alt: 140, vN: 0, vE: 0, vD: 0, tas: 30 };
+    for (let k = 0; k < 30; k++) pool.step(DT, 1 + k * DT, frame(0), ac, terrain, 200, false, 0, 0);
+    expect(pool.mode[i]).toBe(FLYER_MODE.roost);
+    expect(pool.alt[i]).toBe(120);
+    expect(pool.roosted(i)).toBe(true);
+  });
+
+  it('a roost-bound bird that evades flies on to its roost afterwards', () => {
+    const terrain = coneTerrain(-3000, -3000);
+    const pool = new FlyerPool(8);
+    const i = spawnBird(pool, 0, 0, 400, 100, 5);
+    pool.step(DT, 0, frame(0), null, terrain, 200, false, 0, 0);
+    expect(pool.mode[i]).toBe(FLYER_MODE.roost);
+    const roostGround = pool.ground[i];
+    const ac: AircraftView = { n: pool.n[i] + 80, e: pool.e[i], alt: pool.alt[i] + 10, vN: 0, vE: 0, vD: 0, tas: 30 };
+    pool.step(DT, DT, frame(0), ac, terrain, 200, false, 0, 0);
+    expect(pool.mode[i]).toBe(FLYER_MODE.evade);
+    let t = DT;
+    for (let k = 0; k < 60 * 120; k++) pool.step(DT, (t += DT), frame(0), null, terrain, 200, false, 0, 0);
+    expect(pool.mode[i]).toBe(FLYER_MODE.roost);
+    expect(pool.ground[i]).toBe(roostGround);
+    expect(pool.roosted(i)).toBe(true);
+  });
+});

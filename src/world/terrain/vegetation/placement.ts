@@ -201,7 +201,7 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
 // Another era's trees (Deep Time; flora/index.ts). The same cell, lattice and exclusions as the present
 // buildTreeCell above, with the era's four species by habitat and every random draw on a new hash salt (11+):
 //   slot 0 (araucaria)  uplands and slopes
-//   slot 1 (taxodioid)  wet ground: riverbanks, marsh (the farmland channel is marsh weight when the era has
+//   slot 1 (taxodioid)  wet ground: riverbanks, marsh (biome.marsh, nonzero only when the era has
 //                       marsh), wet lowland forest
 //   slot 2 (platanoid)  lowland forest, the majority (angiosperm-dominated)
 //   slot 3 (palm)       lone trees and clumps on the open, flat, moist floodplain; some in forest edges and
@@ -242,7 +242,7 @@ function buildTreeCellEra(req: TreeCellRequest): TreeCellData {
       const k = j * m + i;
       dens[k] = biome.forest;
       bank[k] = sample.riverHalfWidth > 0 ? Math.min(1e4, sample.riverDist - sample.riverHalfWidth) : 1e4;
-      const marsh = marshChannel ? biome.farmland : 0;
+      const marsh = marshChannel ? biome.marsh : 0;
       const slope = clamp01((0.97 - shape.up) / 0.08);
       upland[k] = clamp01((sample.ground - 380) / 500 + 1.2 * slope - 0.05);
       wet[k] = clamp01(1.6 * marsh + 1.5 * (biome.moisture - 0.7) + (bank[k] < 150 ? 0.4 : 0) - Math.max(0, (sample.ground - 300) / 400) - slope);
