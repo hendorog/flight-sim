@@ -15,8 +15,9 @@
 //
 // INSTANCE CHANNELS this writes for the azhdarchid rig (FaunaSystem copies them into aInstB/C):
 //   gaitBlend  0 standing .. 1 walking (wings folded, quadrupedal) .. 2 airborne (wings spread);
-//              between 1 and 2 is the launch (crouch -> vault -> first downstroke) with gaitPhase = launch progress.
-//   gaitPhase  walking: cycles of the stride (distance / stride); airborne: cycles of the wing stroke (~1 Hz).
+//              between 1 and 2 is the launch progress (crouch -> vault -> first downstroke; launchPose).
+//   gaitPhase  walking: cycles of the stride (distance / stride); launch and airborne: the wingbeat phase (~1 Hz).
+//   alt        the feet (the ground when standing); FaunaSystem adds the rig's centre-of-mass height.
 //   flap       0 glide .. 1 full stroke (airborne only).
 //   pitch, bank  rad (bank + right wing down).
 
@@ -47,8 +48,25 @@ export const RIDGE_MIN = 80;
 export const RIDGE_MAX = 150;
 /** Wing-stroke frequency, Hz. */
 const FLAP_HZ = 1;
-/** Stride per walking cycle at scale 1 (Quetzalcoatlus), m. */
-const WALK_STRIDE = 2.4;
+/** Stride per walking cycle at scale 1 (Quetzalcoatlus), m: what the creature art's posed limbs cover
+ * (species/index.ts FAUNA_SPECIES.quetzalcoatlus.strideM.walk; copied to keep this module three-free). */
+export const WALK_STRIDE = 2.6;
+
+/**
+ * The quad launch at progress p (0..1 of LAUNCH_S): the height the body has risen above its standing height, m,
+ * and the wingbeat phase to draw. The same curve as the creature art's azhdarchidLaunch (species/index.ts): the
+ * vault throws the animal up from p 0.32. The material's first downstroke (wings from high to low over
+ * p 0.72..1) hands over to the flight stroke 0.62 sin(2 pi phase); the phase runs a matching downstroke
+ * (0.25 wings up -> 0.75 wings down) so the climb-out starts from the bottom of that stroke without a jump.
+ */
+export function launchPose(p: number): { climbM: number; phase: number } {
+  const L = Math.min(1, Math.max(0, p));
+  const k = Math.min(1, Math.max(0, (L - 0.32) / 0.68));
+  const ph = 0.25 + ((L - 0.72) / 0.28) * 0.5;
+  return { climbM: 4.0 * k * k * (3 - 2 * k), phase: ph - Math.floor(ph) };
+}
+/** Wingbeat phase at the end of the launch (the bottom of the first downstroke). */
+export const LAUNCH_END_PHASE = 0.75;
 
 export const FLYER_MODE = {
   stand: 0,
@@ -250,7 +268,8 @@ export class FlyerPool {
     this.heading[i] = sp.heading;
     this.scale[i] = sp.scale;
     this.size[i] = sp.size;
-    this.variant[i] = sp.variant;
+    // Integer variant plus a per-animal fraction (individual tint and idle timing in the material).
+    this.variant[i] = sp.variant + 0.99 * rand(sp.seed, 4);
     this.anchorN[i] = sp.anchorN;
     this.anchorE[i] = sp.anchorE;
     this.orbitDir[i] = rand(sp.seed, 1) < 0.5 ? -1 : 1;
@@ -551,17 +570,19 @@ export class FlyerPool {
         break;
       case FLYER_MODE.launch: {
         const p = (this.time - this.modeT[i]) / LAUNCH_S;
-        // Crouch (0-0.35), vault (0.35-0.6), first downstroke (0.6-1).
+        // Crouch (0-0.35), vault (0.32-0.6), first downstroke (0.72-1): gaitBlend 1 + p drives the pose.
+        const lp = launchPose(p);
         this.blend[i] = 1 + Math.min(1, Math.max(0, p));
-        this.phase[i] = Math.min(0.999, Math.max(0, p));
+        this.phase[i] = lp.phase;
+        this.flap[i] = 1;
         const vault = p > 0.35 ? Math.min(1, (p - 0.35) / 0.65) : 0;
         this.speed[i] = 9 * vault * Math.sqrt(this.size[i]);
-        this.alt[i] = this.ground[i] + 3 * vault * vault;
+        this.alt[i] = this.ground[i] + lp.climbM * this.size[i];
         this.pitch[i] = 0.5 * vault;
         this.advance(i, dt);
         if (p >= 1) {
           this.flap[i] = 1;
-          this.phase[i] = 0;
+          this.phase[i] = LAUNCH_END_PHASE;
           this.setMode(i, FLYER_MODE.climbOut);
         }
         break;

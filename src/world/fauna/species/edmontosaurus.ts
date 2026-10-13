@@ -157,10 +157,11 @@ export function edmontosaurusSubJoints(): Float32Array {
   });
 }
 
-// Colours (linear albedo).
-const BACK: RGB = [0.08, 0.079, 0.056];
-const BAND: RGB = [0.048, 0.045, 0.036];
-const BELLY: RGB = [0.15, 0.14, 0.115];
+// Colours (linear albedo). Judged in the sim (blue sky light, the real post pipeline): a near-grey palette reads
+// as plain grey there, so the back is a warm olive-brown with strong dark bands.
+const BACK: RGB = [0.085, 0.066, 0.038];
+const BAND: RGB = [0.03, 0.025, 0.018];
+const BELLY: RGB = [0.16, 0.142, 0.105];
 const BILL: RGB = [0.035, 0.032, 0.028];
 const HOOF: RGB = [0.04, 0.036, 0.032];
 
@@ -172,10 +173,10 @@ function bodyColour(p: THREE.Vector3, n: THREE.Vector3, sectionBottom: number, s
   // Transverse dorsal bands along the back and tail (fading down the flanks), broken up by noise.
   const m = mottle(p, 0.35, 3);
   const band = 0.5 + 0.5 * Math.sin(p.x * 2.6 + 1.5 * m);
-  const dorsal = smoothstep(-0.2, 0.6, n.y) * (1 - below);
-  c = mixRGB(c, BAND, smoothstep(0.55, 0.9, band) * dorsal * 0.75);
+  const dorsal = smoothstep(-0.55, 0.35, n.y) * (1 - 0.7 * below);
+  c = mixRGB(c, BAND, smoothstep(0.45, 0.8, band) * dorsal * 0.85);
   // Mottling everywhere, stronger on the back.
-  c = scaleRGB(c, 0.82 + 0.36 * mottle(p, 0.18, 7) * (0.6 + 0.4 * dorsal));
+  c = scaleRGB(c, 0.74 + 0.52 * mottle(p, 0.18, 7) * (0.6 + 0.4 * dorsal));
   // AO under the body and in the armpits.
   const ao = 1 - 0.35 * down * smoothstep(1.2, 0.0, Math.abs(p.z) - 0.2);
   return scaleRGB(c, ao);
