@@ -116,10 +116,16 @@ const FRILL_BOT = 0.3; // down into the skull
 const FRILL_THICK = 0.085; // half-thickness
 /** The frill's sides curl forward (the squamosal margins around the skull), so the side view shows a fan, m at the rim. */
 const FRILL_CUP = 0.42;
-/** Lens rings across the thickness (rim to rim through each face's centre), by LOD: radius factors. */
+/**
+ * Lens rings across the thickness (back face centre -> rim -> front face centre), by LOD: radius factors. The end
+ * rings close each face on its centre (the loft has no caps): 0.005 (a few mm) rather than 0, because the grid's
+ * finite-difference normals fall back to +y on a collapsed ring, which would light the back face's centre. LOD2's
+ * coarse 3-column lens keeps 0.06: it passes the hole test there (tests/fauna/triceratops.test.ts), and 0.005 left
+ * one test ray hitting a single face.
+ */
 const FRILL_RINGS: Record<'lod0' | 'lod1' | 'lod2', readonly number[]> = {
-  lod0: [0.25, 0.6, 0.88, 1, 0.88, 0.6, 0.25],
-  lod1: [0.25, 0.75, 1, 0.75, 0.25],
+  lod0: [0.005, 0.6, 0.88, 1, 0.88, 0.6, 0.005],
+  lod1: [0.005, 0.75, 1, 0.75, 0.005],
   lod2: [0.06, 1, 0.06],
 };
 

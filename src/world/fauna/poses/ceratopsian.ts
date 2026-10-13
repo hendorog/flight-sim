@@ -12,7 +12,9 @@
 //
 // FEET. Each leg follows an explicit foot path in body space: in stance (the first `duty` of its cycle) the ankle
 // moves straight back at exactly the ground speed (stride x the phase rate; the herd advances aInstB.z by distance /
-// stride, herds.ts), in swing it returns forward on a lifted arc that leaves and lands at the stance's speed. A two-link IK (hip / shoulder -> knee / elbow ->
+// stride, herds.ts), in swing it returns forward on a lifted arc that leaves and lands at the stance's speed. The
+// offsets are NOT scaled by the gait blend (a stop freezes the phase while the blend decays, so scaling would slide
+// the planted feet): below blend 1 the legs instead step to rest in diagonal pairs (CERATOPSIAN_GAIT settle). A two-link IK (hip / shoulder -> knee / elbow ->
 // ankle / wrist, the pivots and sub-joints of the species, read from uPivots and uSub) puts the ankle there and the
 // ankle / wrist sub-joint keeps the foot flat, so a planted foot does not slide. When a target is out of the leg's
 // reach (97 % of its length) the whole body drops (fRootOff) until every foot reaches: that is the bob.
@@ -40,6 +42,15 @@ export const CERATOPSIAN_GAIT = Object.freeze({
   foreLagWalk: 0.15,
   /** A leg reaches at most this share of its length (thigh + shin). */
   reach: 0.97,
+  /**
+   * SETTLE. As the gait blend falls below 1 (stopping: the herd freezes the phase), each leg steps from its frozen
+   * gait position to rest on a lifted arc, in diagonal pairs (HL + FR, then HR + FL), over these windows of
+   * (1 - blend); the planted feet hold still meanwhile. Done by blend 0.1.
+   */
+  settleA: Object.freeze([0, 0.45] as const),
+  settleB: Object.freeze([0.45, 0.9] as const),
+  /** Settle step lift, m. */
+  settleLift: 0.18,
 });
 const G = CERATOPSIAN_GAIT;
 
@@ -55,6 +66,11 @@ vec2 cFootOff(float u, float duty, float S, float lift) {
   float m = -S * (1.0 - duty);
   float x = (2.0 * w3 - 3.0 * w2 + 1.0) * (-0.5 * S * duty) + (w3 - 2.0 * w2 + w) * m + (3.0 * w2 - 2.0 * w3) * (0.5 * S * duty) + (w3 - w2) * m;
   return vec2(x, lift * sin(3.14159265 * w));
+}
+// The settle: the gait offset carried to rest (p 0 -> 1) on a lifted step that rises before it moves forward and
+// moves only while clear of the ground (horizontal progress over p 0.2 .. 0.8).
+vec2 cSettle(vec2 off, float p, float lift) {
+  return off * (1.0 - smoothstep(0.2, 0.8, p)) + vec2(0.0, lift * sin(3.14159265 * p));
 }
 // How far the body must drop for this leg to reach its target (0 if it reaches).
 float cLegDrop(vec2 off, vec2 H, vec2 K, vec2 A) {
@@ -101,10 +117,12 @@ void faunaPose() {
   float duty = mix(${f(G.dutyWalk)}, ${f(G.dutyTrot)}, run);
   float lift = mix(${f(G.liftWalk)}, ${f(G.liftTrot)}, run);
   float oF = ${f(G.foreLagWalk)} * (1.0 - run);
-  vec2 oHL = cFootOff(u0, duty, S, lift) * move;
-  vec2 oHR = cFootOff(fract(u0 + 0.5), duty, S, lift) * move;
-  vec2 oFR = cFootOff(fract(u0 + oF), duty, S, lift) * move;
-  vec2 oFL = cFootOff(fract(u0 + 0.5 + oF), duty, S, lift) * move;
+  float pA = smoothstep(${f(G.settleA[0])}, ${f(G.settleA[1])}, still);
+  float pB = smoothstep(${f(G.settleB[0])}, ${f(G.settleB[1])}, still);
+  vec2 oHL = cSettle(cFootOff(u0, duty, S, lift), pA, ${f(G.settleLift)});
+  vec2 oHR = cSettle(cFootOff(fract(u0 + 0.5), duty, S, lift), pB, ${f(G.settleLift)});
+  vec2 oFR = cSettle(cFootOff(fract(u0 + oF), duty, S, lift), pA, ${f(G.settleLift)});
+  vec2 oFL = cSettle(cFootOff(fract(u0 + 0.5 + oF), duty, S, lift), pB, ${f(G.settleLift)});
   vec2 hH = uPivots[${B.legHR}].xy;
   vec2 hK = uSub[3].xy;
   vec2 hA = uSub[4].xy;

@@ -4,7 +4,7 @@
 import { CERATOPSIAN_GAIT as G } from '../../src/world/fauna/poses/ceratopsian';
 import { TRICERATOPS_RENDER, triceratopsPivots, triceratopsSubJoints } from '../../src/world/fauna/species/triceratops';
 import { BONE as B, BONE_COUNT } from '../../src/world/fauna/types';
-import { AZ, QI, TAU, clamp, qAx, qYawPitch, skinPositions, type PoseInput, type PoseOut, type Q, type V } from './poseMirror';
+import { AZ, QI, TAU, clamp, qAx, smoothstep, qYawPitch, skinPositions, type PoseInput, type PoseOut, type Q, type V } from './poseMirror';
 import type { CreatureMeshSet } from '../../src/world/fauna/types';
 import type { BufferGeometry } from 'three';
 
@@ -21,6 +21,12 @@ export function footOff(u: number, duty: number, S: number, lift: number): V2 {
   const m = -S * (1 - duty);
   const x = (2 * w3 - 3 * w2 + 1) * (-0.5 * S * duty) + (w3 - 2 * w2 + w) * m + (3 * w2 - 2 * w3) * (0.5 * S * duty) + (w3 - w2) * m;
   return [x, lift * Math.sin(3.14159265 * w)];
+}
+
+/** The settle: the gait offset carried to rest (p 0 -> 1) on a lifted step (horizontal over p 0.2 .. 0.8). */
+export function settle(off: V2, p: number, lift: number): V2 {
+  const h = 1 - smoothstep(0.2, 0.8, p);
+  return [off[0] * h, off[1] * h + lift * Math.sin(3.14159265 * p)];
 }
 
 function legDrop(off: V2, H: V2, K: V2, A: V2): number {
@@ -76,12 +82,14 @@ export function ceratopsianLegs(inp: PoseInput): CeratopsianLegs {
   const duty = G.dutyWalk + (G.dutyTrot - G.dutyWalk) * run;
   const lift = G.liftWalk + (G.liftTrot - G.liftWalk) * run;
   const oF = G.foreLagWalk * (1 - run);
-  const m = (o: V2): V2 => [o[0] * move, o[1] * move];
+  const still = 1 - move;
+  const pA = smoothstep(G.settleA[0], G.settleA[1], still);
+  const pB = smoothstep(G.settleB[0], G.settleB[1], still);
   const off: Record<number, V2> = {
-    [B.legHL]: m(footOff(u0, duty, S, lift)),
-    [B.legHR]: m(footOff(fract(u0 + 0.5), duty, S, lift)),
-    [B.legFR]: m(footOff(fract(u0 + oF), duty, S, lift)),
-    [B.legFL]: m(footOff(fract(u0 + 0.5 + oF), duty, S, lift)),
+    [B.legHL]: settle(footOff(u0, duty, S, lift), pA, G.settleLift),
+    [B.legHR]: settle(footOff(fract(u0 + 0.5), duty, S, lift), pB, G.settleLift),
+    [B.legFR]: settle(footOff(fract(u0 + oF), duty, S, lift), pA, G.settleLift),
+    [B.legFL]: settle(footOff(fract(u0 + 0.5 + oF), duty, S, lift), pB, G.settleLift),
   };
   const [hH, hK, hA] = legJoints(true);
   const [fH, fK, fA] = legJoints(false);

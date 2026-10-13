@@ -61,6 +61,27 @@ describe('Triceratops body', () => {
     expect(jaw).toBeGreaterThan(10);
   });
 
+  // The frill is a lens loft with no caps: its end rings must close each face (a 0.25 ring left a ~0.4 m hole
+  // through the middle of the plate; the end ring is now a few mm). Rays along the plate normal through the centre
+  // region (off the exact centre, the closing ring's own pinhole) hit both faces.
+  it.each(['lod0', 'lod1', 'lod2', 'caster'] as const)('the frill plate has no hole through its centre (%s)', (lod) => {
+    // triceratops.ts FRILL_C, FRILL_N (forward face tilted up 50 deg), FRILL_UP.
+    const tilt = 50 * DEG;
+    const C = new THREE.Vector3(2.74, 2.33, 0);
+    const N = new THREE.Vector3(Math.cos(tilt), Math.sin(tilt), 0);
+    const UP = new THREE.Vector3(-Math.sin(tilt), Math.cos(tilt), 0);
+    const mesh = new THREE.Mesh(tri[lod], new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+    const ray = new THREE.Raycaster();
+    for (const [dz, du] of [[0.03, 0.02], [0.1, 0], [-0.1, 0], [0, 0.12], [0, -0.05], [0.15, 0.1], [-0.15, 0.1]]) {
+      const at = C.clone().addScaledVector(UP, du).add(new THREE.Vector3(0, 0, dz));
+      ray.set(at.clone().addScaledVector(N, 1), N.clone().negate());
+      ray.far = 1.3;
+      // Both faces of the plate (within its thickness of the centre plane), whatever lies behind.
+      const plate = ray.intersectObject(mesh).filter((h) => Math.abs(h.distance - 1) < 0.15);
+      expect(plate.length, `ray at dz ${dz}, up ${du}`).toBeGreaterThanOrEqual(2);
+    }
+  });
+
   it('keeps the frill disc on LOD2 and a rust frill against a darker grey-olive body', () => {
     const lod2 = tri.lod2;
     const pos = lod2.getAttribute('position');
@@ -323,6 +344,92 @@ describe('Triceratops reaction (face)', () => {
     // 40 s after the pass started (the pass is over ~32 s in): calm again.
     for (let k = 0; k < 60 * 30; k++) pool.step(DT, null, terrain, 10000, 0, 0);
     expect(pool.fleeing[h]).toBe(0);
+  });
+});
+
+// EVOLVING-INPUT SOLE SLIP. The herd drives (phase, blend, yaw, position) frame by frame; a facing stop holds the
+// phase while the gait blend decays over ~1 s, so any body-frame foot motion then is slip. A member walking at
+// blend ~1 is stopped by an external threat dead ahead of it. Each frame its posed sole vertices (scale sc, rotated
+// by yaw: body +x forward = (cos yaw, sin yaw) in (N, E), +z right = (-sin yaw, cos yaw)) are placed in the ground
+// frame at its position before and after the step, both with the yaw from before it: the herd's steering (arcs at
+// up to 0.8 rad/s, the face pivot) rotates the whole body over its planted feet, which the side-view pose cannot
+// absorb and is not what this measures. A leg is planted when its lowest sole vertex is within 0.04 m of the ground
+// in both frames and not rising or sinking faster than 0.05 m/s (a foot lifting off or setting down is not planted:
+// the walk's own toe-off is the stance-window test's business); its slip is its horizontal ground speed.
+describe('Triceratops stop (evolving herd inputs)', () => {
+  it('the planted feet slip < 0.15 m/s while a walking member stops to face, >= 2 feet stay down, and it settles to rest', () => {
+    const pool = new HerdPool();
+    const h = pool.spawn({ north: 0, east: 0, ground: G0, size: 7, entry: 0, scale: 1, variant: 0, seed: 0x7c1e7a, heading: 105 * DEG, pinned: true, species: 'triceratops' }, -1);
+    const terrain = flat();
+    const ids = members(pool, h);
+    // Walk the group until a member is at full walk.
+    let i = -1;
+    for (let k = 0; k < 60 * 120 && i < 0; k++) {
+      pool.step(DT, null, terrain, 10000, 0, 0);
+      i = ids.find((m) => pool.blend[m] > 0.98 && pool.blend[m] < 1.02 && pool.speed[m] > 0.5) ?? -1;
+    }
+    expect(i).toBeGreaterThanOrEqual(0);
+    const R = 280;
+    pool.setExternalThreat(h, pool.mN[i] + R * Math.cos(pool.yaw[i]), pool.mE[i] + R * Math.sin(pool.yaw[i]), 0, 0, pool.time + 20, THREAT.flee);
+    const g = tri.lod0;
+    const pos = g.getAttribute('position');
+    const boneA = g.getAttribute('aBone');
+    const sole: Record<number, boolean[]> = {};
+    for (const leg of LEGS) {
+      sole[leg] = [];
+      for (let v = 0; v < pos.count; v++) if (boneA.getX(v) === leg) sole[leg].push(pos.getY(v) < 0.1);
+    }
+    type Foot = { n: number; e: number; h: number; low: number };
+    const feet = (yaw: number): Record<number, Foot> => {
+      const sc = pool.scale[i];
+      const cy = Math.cos(yaw);
+      const sy = Math.sin(yaw);
+      const out: Record<number, Foot> = {};
+      for (const leg of LEGS) {
+        const p = ceratopsianPositions(tri, g, { phase: pool.phase[i], gaitBlend: pool.blend[i], flap: pool.alert[i] }, (b) => b === leg).filter((_, j) => sole[leg][j]);
+        let n = 0;
+        let e = 0;
+        let y = 0;
+        let low = Infinity;
+        for (const v of p) {
+          n += pool.mN[i] + sc * (v[0] * cy - v[2] * sy);
+          e += pool.mE[i] + sc * (v[0] * sy + v[2] * cy);
+          y += sc * v[1];
+          low = Math.min(low, sc * v[1]);
+        }
+        out[leg] = { n: n / p.length, e: e / p.length, h: y / p.length, low };
+      }
+      return out;
+    };
+    const yaw0 = pool.yaw[i];
+    let max = 0;
+    let minDown = 4;
+    let frames = 0;
+    for (let k = 0; k < 60 * 4; k++) {
+      const yawPrev = pool.yaw[i];
+      const prev = feet(yawPrev);
+      pool.step(DT, null, terrain, 10000, 0, 0);
+      const cur = feet(yawPrev);
+      let down = 0;
+      for (const leg of LEGS) {
+        if (cur[leg].low > 0.04 || prev[leg].low > 0.04 || Math.abs(cur[leg].low - prev[leg].low) > 0.05 * DT) continue;
+        down++;
+        const sv = Math.hypot(cur[leg].n - prev[leg].n, cur[leg].e - prev[leg].e) / DT;
+        max = Math.max(max, sv);
+      }
+      minDown = Math.min(minDown, down);
+      frames++;
+    }
+    console.log(`ceratopsian stop: max planted-foot slip ${max.toFixed(4)} m/s over ${frames} frames, min feet down ${minDown}, yaw change ${(Math.abs(pool.yaw[i] - yaw0) / DEG).toFixed(2)} deg, blend ${pool.blend[i].toFixed(4)}`);
+    expect(pool.react[h]).toBe(ALARM.face);
+    expect(pool.speed[i]).toBe(0);
+    expect(pool.blend[i]).toBeLessThan(0.02);
+    expect(Math.abs(pool.yaw[i] - yaw0)).toBeLessThan(2 * DEG);
+    expect(max).toBeLessThan(0.15);
+    expect(minDown).toBeGreaterThanOrEqual(2);
+    // Settled: every foot back under its hip / shoulder.
+    const legs = ceratopsianLegs({ phase: pool.phase[i], gaitBlend: pool.blend[i], flap: 1 });
+    for (const leg of LEGS) expect(Math.hypot(...legs.off[leg])).toBeLessThan(0.01);
   });
 });
 
