@@ -102,7 +102,7 @@ const CRETACEOUS_FLORA: FloraSet = Object.freeze({
       name: 'Araucarian conifer',
       conifer: true,
       height: [18, 28],
-      tint: [0.62, 0.72, 0.70],
+      tint: [0.48, 0.58, 0.62],
       proxy: {
         crown: [
           { kind: 'ellipsoid', y0: 0.84, y1: 0.1, rx: 0.24 },
@@ -118,7 +118,7 @@ const CRETACEOUS_FLORA: FloraSet = Object.freeze({
       name: 'Swamp cypress',
       conifer: true,
       height: [16, 26],
-      tint: [1.05, 1.08, 0.78],
+      tint: [0.78, 0.88, 0.76],
       proxy: { crown: [{ kind: 'cone', y0: 0.33, y1: 0.95, rx: 0.18 }], trunk: [0.5, 0.032] },
     },
     {
@@ -127,7 +127,7 @@ const CRETACEOUS_FLORA: FloraSet = Object.freeze({
       name: 'Platanoid broadleaf',
       conifer: false,
       height: [10, 18],
-      tint: [0.80, 0.80, 0.58],
+      tint: [0.86, 0.92, 0.56],
       proxy: { crown: [{ kind: 'ellipsoid', y0: 0.6, y1: 0.22, rx: 0.27 }], trunk: [0.42, 0.03] },
     },
     {
@@ -137,7 +137,7 @@ const CRETACEOUS_FLORA: FloraSet = Object.freeze({
       name: 'Sabalites fan palm',
       conifer: false,
       height: [8, 15],
-      tint: [0.95, 1.0, 0.9],
+      tint: [1.0, 1.02, 0.70],
       proxy: { crown: [{ kind: 'ellipsoid', y0: 0.7, y1: 0.1, rx: 0.26 }], trunk: [0.68, 0.03] },
     },
   ] as const),
