@@ -283,7 +283,8 @@ export class UISystem implements Subsystem, MenuHost {
       }),
       ev.on('faunaSighted', (e) => {
         if (isPresent()) return;
-        if (this.fieldGuide.record(e.species, e.distanceM)) this.showToast(sightingToastText(e.species), 7000);
+        // The Field Guide toast only: no cockpit cue line repeating it (it is not a flight cue).
+        if (this.fieldGuide.record(e.species, e.distanceM)) this.showToast(sightingToastText(e.species), 7000, { cue: false });
       }),
       ev.on('cameraMode', (e) => this.showToast(`${CAMERA_NAMES[e.mode]} view`)),
       ev.on('qualityChanged', (e) => this.showToast(`Graphics quality: ${e.quality}`)),
@@ -585,8 +586,9 @@ export class UISystem implements Subsystem, MenuHost {
     this.autopilotLink = link;
   }
 
-  showToast(text: string, durationMs?: number): void {
-    this.flightCues.say(text);
+  /** A toast, echoed as a cockpit cue line unless `opts.cue` is false. */
+  showToast(text: string, durationMs?: number, opts?: { cue?: boolean }): void {
+    if (opts?.cue !== false) this.flightCues.say(text);
     this.toasts.show(text, durationMs);
   }
 
