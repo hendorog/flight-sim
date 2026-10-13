@@ -50,7 +50,7 @@ export const SPECKLE = Object.freeze({
   /** Ground brightness in the shadow. */
   shadowK: 0.55,
   /** The plant's dome tilt (acc.slope units: tNormalW adds 0.35 x slope), at its rim. */
-  dome: 1.6,
+  dome: 0.7,
   /** Probability that a cell at density 1 holds a plant. */
   pMax: 0.9,
   /** Density terms: the prairie's base (x the patch noise), the marsh's extra, the river's and the margins'. */
@@ -318,7 +318,7 @@ export const UNDERSTOREY_SPECKLE_GLSL = /* glsl */ `// Understorey speckle (WP6)
       acc.slope = mix(acc.slope, usV / usR * ${f(S.dome)}, usCov * usStr);
       // Matte foliage, deeper in the crown's rim (the shade under the fronds).
       acc.rough = mix(acc.rough, 0.95, usCov * usStr);
-      acc.cavity = mix(acc.cavity, mix(1.0, 0.65, clamp(usD, 0.0, 1.0)), usCov * usStr);
+      acc.cavity *= mix(1.0, mix(0.85, 0.55, clamp(usD, 0.0, 1.0)), usCov * usStr);
     }
   }
 }
