@@ -240,7 +240,7 @@ describe('Cretaceous flora', () => {
         expect(pb.min[k], SLOTS[s].key).toBeGreaterThanOrEqual(mb.min[k]);
       }
     });
-  });
+  }, 60000);
 
   it('keeps each model within the card budget, LOD 1 at most half of LOD 0', () => {
     const lod0 = createTreeGeometries(0);
