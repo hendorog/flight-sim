@@ -226,6 +226,17 @@ void faunaPose() {
 }
 `;
 
+// Hide is a rough, dusty scatterer: a smooth dielectric's grazing-angle Fresnel reflects the bright sky as a pale
+// grey sheen over the whole silhouette and washes out the baked pattern under the sim's sky light (as foliage,
+// treeMaterials.ts). Keep a little of it for form.
+const SKIN_SPECULAR = '#include <lights_physical_fragment>\nmaterial.specularF90 = 0.3;\nmaterial.specularColorBlended *= 0.5;';
+
+const SKIN_IBL = /* glsl */ `
+#if defined( RE_IndirectDiffuse ) && defined( USE_ENVMAP ) && defined( ENVMAP_TYPE_CUBE_UV )
+iblIrradiance += getIBLIrradiance( geometryNormal );
+#endif
+`;
+
 const SKIN_GLSL = /* glsl */ `
 void faunaSkin() {
   faunaPose();
@@ -322,7 +333,7 @@ export function createFaunaMaterials(id: FaunaSpeciesId, set: CreatureMeshSet): 
   const defines = { FAUNA_RIG: rig };
   const vertex = faunaVertexGLSL(rig);
 
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0 });
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
   material.name = `fauna-${id}`;
   material.defines = { ...defines };
   material.onBeforeCompile = (shader) => {
@@ -336,9 +347,11 @@ export function createFaunaMaterials(id: FaunaSpeciesId, set: CreatureMeshSet): 
       .replace('#include <begin_vertex>', 'vec3 transformed = fWorldP;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFaunaTint;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vFaunaTint;');
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vFaunaTint;')
+      .replace('#include <lights_physical_fragment>', SKIN_SPECULAR)
+      .replace('#include <lights_fragment_maps>', SKIN_IBL);
   };
-  material.customProgramCacheKey = () => `fauna-v1-${rig}`;
+  material.customProgramCacheKey = () => `fauna-v2-${rig}`;
 
   const depth = new THREE.MeshDepthMaterial();
   depth.name = `fauna-depth-${id}`;

@@ -30,9 +30,12 @@ const NEIGHBOURS = [1, 8, 13] as const;
 const PERSONAL = 4.5;
 const WALK_SPEED = 0.8;
 const MEMBER_WALK_MAX = 1.6;
-/** Stride per gait cycle at scale 1, m: walk and run. */
-const STRIDE_WALK = 2.6;
-const STRIDE_RUN = 5.5;
+/** Stride per gait cycle at scale 1, m: walk and run. The creature art's posed legs cover exactly this
+ * (species/index.ts FAUNA_SPECIES.edmontosaurus.strideM; copied, not imported, to keep this module three-free). */
+export const STRIDE_WALK = 3.3;
+export const STRIDE_RUN = 7.2;
+/** Alertness (head up) follows its target at this rate, 1/s (~0.4 s to settle). */
+const ALERT_RATE = 6;
 const MAX_SLOPE = 0.3;
 const LEASH = 600;
 const PLANE_STEP = 30;
@@ -133,6 +136,8 @@ export class HerdPool {
   readonly phase = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
   readonly blend = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
   readonly head = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
+  /** Alertness 0..1 (aInstC.x for the hadrosaur rig: head up and still; also carried while fleeing). */
+  readonly alert = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
   readonly scale = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
   readonly variant = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
   /** When the alarm reaches this member (Infinity: not alarmed). */
@@ -219,10 +224,12 @@ export class HerdPool {
       this.phase[i] = rand(sp.seed, 400 + k);
       this.blend[i] = 0;
       this.head[i] = 0;
+      this.alert[i] = 0;
       // One in ten is a juvenile.
       const juvenile = rand(sp.seed, 500 + k) < 0.1;
       this.scale[i] = sp.scale * (juvenile ? 0.5 + 0.1 * rand(sp.seed, 600 + k) : 0.88 + 0.2 * rand(sp.seed, 600 + k));
-      this.variant[i] = sp.variant;
+      // Integer variant plus a per-animal fraction (individual tint and idle timing in the material).
+      this.variant[i] = sp.variant + 0.99 * rand(sp.seed, 700 + k);
       this.fleeT0[i] = Infinity;
       this.fleeDN[i] = this.fleeDE[i] = 0;
       this.snapped[i] = 0;
@@ -534,14 +541,18 @@ export class HerdPool {
       this.mE[i] += sy * step;
       this.mH[i] = this.snapH[i] + gN * (this.mN[i] - this.snapN[i]) + gE * (this.mE[i] - this.snapE[i]);
       this.pitch[i] = Math.atan(gN * cy + gE * sy);
-      // Gait: phase by distance / stride; blend 0 graze .. 1 walk .. 2 run.
+      // Gait: phase by distance / the stride of the gait being drawn (so the planted feet do not skate);
+      // blend 0 graze / stand .. 1 walk .. 2 run. An alert animal stands still, head up (the alert channel).
       const v = this.speed[i];
       const run = v > 2 ? Math.min(1, (v - 2) / 3) : 0;
-      const stride = (STRIDE_WALK + (STRIDE_RUN - STRIDE_WALK) * run) * sc;
+      const drawnRun = Math.min(1, Math.max(0, this.blend[i] - 1));
+      const stride = (STRIDE_WALK + (STRIDE_RUN - STRIDE_WALK) * drawnRun) * sc;
       const ph = this.phase[i] + step / stride;
       this.phase[i] = ph - Math.floor(ph);
-      const target = alert ? 1 : v < 0.25 ? v / 0.25 : v <= 2 ? 1 : 1 + run;
+      const target = v < 0.25 ? v / 0.25 : v <= 2 ? 1 : 1 + run;
       this.blend[i] += (target - this.blend[i]) * Math.min(1, 3 * dt);
+      const alertTarget = alert || fleeingNow ? 1 : 0;
+      this.alert[i] += (alertTarget - this.alert[i]) * Math.min(1, ALERT_RATE * dt);
       if (ac && !alert && !fleeingNow) this.head[i] *= 1 - Math.min(1, dt);
     }
   }

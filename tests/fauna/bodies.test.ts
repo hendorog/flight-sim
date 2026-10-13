@@ -145,7 +145,7 @@ describe('species set', () => {
       const set = sets.get(id)!;
       const m = createFaunaMaterials(id, set);
       const rig = FAUNA_SPECIES[id].rig === 'hadrosaur' ? 0 : 1;
-      expect(m.material.customProgramCacheKey()).toBe(`fauna-v1-${rig}`);
+      expect(m.material.customProgramCacheKey()).toBe(`fauna-v2-${rig}`);
       expect(m.depth.customProgramCacheKey()).toBe(`fauna-depth-v1-${rig}`);
       expect(m.uniforms.uPivots.value.length).toBe(BONE_COUNT);
       // The patch applies to three's actual chunks.

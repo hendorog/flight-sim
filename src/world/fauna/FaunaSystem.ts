@@ -18,14 +18,12 @@
 // LOD0/1/2 (LOD0 capped; the nearest LOD0 also cast shadows), write the 12-float instances (types.ts) and upload
 // only the used range.
 //
-// ART SEAM: the species meshes and the animated material come from a FaunaArt (WP4: species/index.ts and
-// faunaMaterial.ts). Until that lands, PLACEHOLDER_ART builds simple primitive bodies behind the same API
-// (CreatureMeshSet + the 12-float instance attributes), so integration is a swap of `art`.
+// ART SEAM: the species meshes and the animated material come from a FaunaArt; the default, CREATURE_ART (art.ts),
+// is the procedural creature art (species/index.ts and faunaMaterial.ts). Tests may pass their own.
 // Meshes are THREE.Mesh + InstancedBufferGeometry (the vegetation idiom: no 64-byte instanceMatrix per instance);
 // the material places each vertex from aInstA/B/C itself; frustumCulled = false.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { makeThermalCore } from '../../physics/weather/thermals';
 import type { ThermalFrame } from '../../physics/weather/windField';
@@ -37,7 +35,9 @@ import { FLYER_MODE, FlyerPool, type FlyerMode } from './flight';
 import { FAUNA_MAX, FAUNA_PRESETS, FLYER_RANGE_FACTOR, MAX_GROUND_ANIMALS, MAX_HERD_SIZE, MAX_HERDS, TERRAIN_CALLS_PER_FRAME, type FaunaPreset } from './presets';
 import { ROSTERS, SPECIES_REFERENCE_M } from './roster';
 import { KETTLE_BIRDS, KETTLE_MAX_AGL, KETTLE_MIN_AGL, RIVER_HERD_SIZE, kettleSeeds, restingPair, riverHerdSite } from './showcase';
-import { BONE, BONE_COUNT, FAUNA_SPECIES_IDS, FAUNA_STRIDE, type CreatureMeshSet, type FaunaRoster, type FaunaSpeciesId, type FaunaStats } from './types';
+import { CREATURE_ART } from './art';
+import { FAUNA_SPECIES } from './species/index';
+import { FAUNA_SPECIES_IDS, FAUNA_STRIDE, type CreatureMeshSet, type FaunaRoster, type FaunaSpeciesId, type FaunaStats } from './types';
 
 export interface FaunaSystem extends Subsystem {
   init(ctx: SimContext): void | Promise<void>;
@@ -55,7 +55,7 @@ export interface FaunaMaterials {
   dispose?(): void;
 }
 
-/** Where the creature art comes from (WP4's species builders and animated material, or the placeholders). */
+/** Where the creature art comes from (default CREATURE_ART: the species builders and the animated material). */
 export interface FaunaArt {
   build(species: FaunaSpeciesId): CreatureMeshSet;
   materials(species: FaunaSpeciesId, set: CreatureMeshSet): FaunaMaterials;
@@ -132,6 +132,8 @@ interface SpeciesDraws {
   radius: number;
   /** Triangles per instance, LOD0/1/2. */
   tris: [number, number, number];
+  /** Height of the body origin above the feet at scale 1, m (the azhdarchids' origin is the centre of mass). */
+  originM: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -230,7 +232,7 @@ export class FaunaSystemImpl implements FaunaSystem {
     opts: FaunaSystemOptions,
   ) {
     this.terrain = opts.terrain ?? countingTerrain();
-    this.art = opts.art ?? PLACEHOLDER_ART;
+    this.art = opts.art ?? CREATURE_ART;
     this.root.name = 'fauna';
     roster.entries.forEach((e, i) => e.role === 'flyer' && this.flyerEntries.push(i));
   }
@@ -263,7 +265,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       const radius = bs ? bs.radius + bs.center.length() : set.lengthM;
       const unit = SPECIES_REFERENCE_M[sp] / Math.max(0.1, set.lengthM);
       const tris: [number, number, number] = [triangles(set.lod0), triangles(set.lod1), triangles(set.lod2)];
-      this.draws.push({ species: sp, set, mats, lod: [lod0, lod1, lod2], caster, unit, radius, tris });
+      this.draws.push({ species: sp, set, mats, lod: [lod0, lod1, lod2], caster, unit, radius, tris, originM: FAUNA_SPECIES[sp].groundOffsetM });
     }
     this.entryDraw = this.roster.entries.map((e) => this.draws.findIndex((d) => d.species === e.species));
     ctx.scene.add(this.root);
@@ -651,14 +653,14 @@ export class FaunaSystemImpl implements FaunaSystem {
         const tgt = draw.lod[lod];
         if (tgt.count >= tgt.capacity) continue;
         const sc = H.scale[i] * draw.unit;
-        writeInstance(tgt.array, tgt.count++, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], 0, H.head[i], sc, H.variant[i]);
+        writeInstance(tgt.array, tgt.count++, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], H.alert[i], H.head[i], sc, H.variant[i]);
         visible++;
         if (lod === 0) {
           this.lod0Used[di]++;
           const c = draw.caster;
           if (this.casterUsed[di] < P.casters && c.count < c.capacity) {
             this.casterUsed[di]++;
-            writeInstance(c.array, c.count++, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], 0, H.head[i], sc, H.variant[i]);
+            writeInstance(c.array, c.count++, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], H.alert[i], H.head[i], sc, H.variant[i]);
           }
         }
       }
@@ -673,7 +675,8 @@ export class FaunaSystemImpl implements FaunaSystem {
       const draw = this.draws[di];
       if (!draw) continue;
       const x = F.e[i];
-      const y = F.alt[i];
+      // The flyers' alt is their feet (the ground when standing); the rig's origin is the centre of mass above it.
+      const y = F.alt[i] + draw.originM * F.scale[i];
       const z = -F.n[i];
       const d = Math.hypot(x - cx, y - cy, z - cz);
       if (!(d < fR)) continue;
@@ -790,160 +793,3 @@ const CASTER_HIDDEN = (() => {
   return m;
 })();
 
-// ---------------------------------------------------------------------------------------------------------------
-// PLACEHOLDER ART (until WP4's species/index.ts and faunaMaterial.ts land): simple primitive bodies with the
-// contract's attributes (aBone, aBoneW, color), and a material that places them from aInstA/B/C with a little
-// motion (leg swing by gait phase, wing fold by gaitBlend, flap, head down to graze). Swapped out by passing
-// WP4's FaunaArt.
-
-const PLACEHOLDER_INSTANCE_GLSL = /* glsl */ `
-attribute vec4 aInstA;
-attribute vec4 aInstB;
-attribute vec4 aInstC;
-attribute float aBone;
-// Body space (+x forward, +y up, +z right) -> world offset (three: x east, y up, z = -north).
-vec3 faunaOrient(vec3 p) {
-  float cb = cos(aInstB.y), sb = sin(aInstB.y);
-  p = vec3(p.x, p.y * cb - p.z * sb, p.y * sb + p.z * cb);
-  float cp = cos(aInstB.x), sp = sin(aInstB.x);
-  p = vec3(p.x * cp - p.y * sp, p.x * sp + p.y * cp, p.z);
-  float cy = cos(aInstA.w), sy = sin(aInstA.w);
-  float north = p.x * cy - p.z * sy;
-  float east = p.x * sy + p.z * cy;
-  return vec3(east, p.y, -north);
-}
-vec3 faunaPose(vec3 p) {
-  float phase = 6.2831853 * aInstB.z;
-  float gait = aInstB.w;
-  int bone = int(aBone + 0.5);
-  if (bone >= ${BONE.legFL} && bone <= ${BONE.legHR}) {
-    float side = (bone == ${BONE.legFL} || bone == ${BONE.legHR}) ? 0.0 : 3.14159;
-    float swing = sin(phase + side) * clamp(gait, 0.0, 1.0) * (1.0 - step(1.5, gait));
-    p.x += swing * 0.45 * max(0.0, 2.2 - p.y);
-  }
-  if (bone == ${BONE.wingL} || bone == ${BONE.wingR}) {
-    float spread = smoothstep(1.2, 1.9, gait);
-    p.z *= mix(0.12, 1.0, spread);
-    p.y += spread * aInstC.x * sin(phase) * abs(p.z) * 0.35;
-  }
-  if (bone == ${BONE.head}) {
-    float graze = 1.0 - clamp(gait, 0.0, 1.0);
-    p.y -= graze * 1.5;
-    float c = cos(aInstC.y), s = sin(aInstC.y);
-    p.xz = vec2(p.x * c + p.z * s, -p.x * s + p.z * c);
-  }
-  return p;
-}
-`;
-
-const PLACEHOLDER_BEGIN = 'vec3 transformed = faunaOrient(faunaPose(position) * aInstC.z) + aInstA.xyz * vec3(1.0, 1.0, -1.0);';
-
-function placeholderMaterials(species: FaunaSpeciesId): FaunaMaterials {
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
-  material.name = `fauna-${species}`;
-  material.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${PLACEHOLDER_INSTANCE_GLSL}`)
-      .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = faunaOrient(normal);\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3(tangent.xyz);\n#endif')
-      .replace('#include <begin_vertex>', PLACEHOLDER_BEGIN);
-  };
-  material.customProgramCacheKey = () => `fauna-placeholder-v1-${species}`;
-  const depthMaterial = new THREE.MeshDepthMaterial();
-  depthMaterial.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${PLACEHOLDER_INSTANCE_GLSL}`).replace('#include <begin_vertex>', PLACEHOLDER_BEGIN);
-  };
-  depthMaterial.customProgramCacheKey = () => `fauna-placeholder-depth-v1-${species}`;
-  return {
-    material,
-    depthMaterial,
-    dispose() {
-      material.dispose();
-      depthMaterial.dispose();
-    },
-  };
-}
-
-type RGB = [number, number, number];
-
-/** A primitive part in body space, tagged with a bone and a colour. */
-function part(g: THREE.BufferGeometry, bone: number, color: RGB, m: THREE.Matrix4): THREE.BufferGeometry {
-  const ng = (g.index ? g.toNonIndexed() : g.clone()).applyMatrix4(m);
-  const n = ng.getAttribute('position').count;
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', ng.getAttribute('position'));
-  out.setAttribute('normal', ng.getAttribute('normal'));
-  const col = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) col.set(color, i * 3);
-  out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  out.setAttribute('aBone', new THREE.Float32BufferAttribute(new Float32Array(n).fill(bone), 1));
-  out.setAttribute('aBoneW', new THREE.Float32BufferAttribute(new Float32Array(n).fill(1), 1));
-  return out;
-}
-
-const M = (x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, rz = 0): THREE.Matrix4 =>
-  new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rz)), new THREE.Vector3(sx, sy, sz));
-
-function placeholderHadrosaur(detail: number): THREE.BufferGeometry {
-  const seg = Math.max(4, detail);
-  const sphere = new THREE.SphereGeometry(1, seg, Math.max(3, seg >> 1));
-  const cyl = new THREE.CylinderGeometry(0.22, 0.16, 1, Math.max(3, seg >> 1));
-  const cone = new THREE.ConeGeometry(1, 1, seg);
-  const skin: RGB = [0.085, 0.075, 0.05];
-  const belly: RGB = [0.13, 0.115, 0.08];
-  return mergeGeometries([
-    part(sphere, BONE.spine1, skin, M(0, 2.4, 0, 3.0, 1.15, 0.95)),
-    part(sphere, BONE.spine2, belly, M(0.4, 2.0, 0, 2.2, 0.8, 0.8)),
-    part(cone, BONE.tail1, skin, M(-4.6, 2.4, 0, 0.75, 4.8, 0.6, Math.PI / 2)),
-    part(cyl, BONE.neck1, skin, M(3.3, 2.9, 0, 2.2, 1.6, 2.2, -1.0)),
-    part(sphere, BONE.head, skin, M(4.6, 3.3, 0, 0.9, 0.4, 0.35)),
-    part(cyl, BONE.legHL, skin, M(-0.8, 1.0, 0.6, 2.6, 2.0, 2.6)),
-    part(cyl, BONE.legHR, skin, M(-0.8, 1.0, -0.6, 2.6, 2.0, 2.6)),
-    part(cyl, BONE.legFL, skin, M(1.9, 0.9, 0.5, 1.3, 1.8, 1.3)),
-    part(cyl, BONE.legFR, skin, M(1.9, 0.9, -0.5, 1.3, 1.8, 1.3)),
-  ])!;
-}
-
-function placeholderAzhdarchid(detail: number, small: boolean): THREE.BufferGeometry {
-  const seg = Math.max(4, detail);
-  const sphere = new THREE.SphereGeometry(1, seg, Math.max(3, seg >> 1));
-  const cyl = new THREE.CylinderGeometry(0.12, 0.09, 1, Math.max(3, seg >> 1));
-  const cone = new THREE.ConeGeometry(1, 1, seg);
-  const skin: RGB = small ? [0.11, 0.09, 0.06] : [0.12, 0.115, 0.1];
-  const wingC: RGB = small ? [0.09, 0.06, 0.04] : [0.1, 0.085, 0.06];
-  const crest: RGB = small ? [0.15, 0.05, 0.03] : [0.14, 0.09, 0.04];
-  // Wing membrane: a flat quad from the shoulder out to the tip (half span 5.25 m) and back to the hip.
-  const wing = (side: number): THREE.BufferGeometry => {
-    const g = new THREE.BufferGeometry();
-    const p = [0.4, 0, 0, -0.6, 0, 5.25 * side, -0.9, 0, 0];
-    g.setAttribute('position', new THREE.Float32BufferAttribute(side > 0 ? p : [p[0], p[1], p[2], p[6], p[7], p[8], p[3], p[4], p[5]], 3));
-    g.computeVertexNormals();
-    return g;
-  };
-  // Standing: the body sits ~2.5 m up on its legs (origin on the ground under the hips while standing).
-  return mergeGeometries([
-    part(sphere, BONE.spine1, skin, M(0, 2.4, 0, 1.0, 0.45, 0.4)),
-    part(cyl, BONE.neck1, skin, M(1.6, 3.4, 0, 2.2, 2.6, 2.2, -0.9)),
-    part(cone, BONE.head, skin, M(3.6, 4.1, 0, 0.2, 2.2, 0.15, -Math.PI / 2 - 0.15)),
-    part(cone, BONE.neck2, crest, M(2.5, 4.5, 0, 0.12, 0.9, 0.05, 0.6)),
-    part(wing(1), BONE.wingR, wingC, M(0, 2.6, 0)),
-    part(wing(-1), BONE.wingL, wingC, M(0, 2.6, 0)),
-    part(cyl, BONE.legHL, skin, M(-0.6, 1.1, 0.3, 1, 2.2, 1)),
-    part(cyl, BONE.legHR, skin, M(-0.6, 1.1, -0.3, 1, 2.2, 1)),
-    part(cyl, BONE.legFL, skin, M(0.7, 1.2, 0.4, 1, 2.4, 1)),
-    part(cyl, BONE.legFR, skin, M(0.7, 1.2, -0.4, 1, 2.4, 1)),
-  ])!;
-}
-
-/** Placeholder bodies at real size (lengthM: hadrosaur length, azhdarchid span, at scale 1). */
-export const PLACEHOLDER_ART: FaunaArt = {
-  build(species) {
-    const flyer = species !== 'edmontosaurus';
-    const make = (d: number) => (flyer ? placeholderAzhdarchid(d, species === 'azhdarchidSmall') : placeholderHadrosaur(d));
-    const pivots = new Float32Array(BONE_COUNT * 4);
-    for (let b = 0; b < BONE_COUNT; b++) pivots[b * 4 + 3] = b === 0 ? -1 : 0;
-    return { lod0: make(12), lod1: make(6), lod2: make(4), caster: make(6), pivots, lengthM: flyer ? 10.5 : 11.5 };
-  },
-  materials(species) {
-    return placeholderMaterials(species);
-  },
-};
