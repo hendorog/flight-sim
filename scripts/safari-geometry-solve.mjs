@@ -236,10 +236,29 @@ export async function place(load, flags) {
   const hh = herd.heading;
   report('  herd end +90 m', herd.north + 90 * Math.cos(hh), herd.east + 90 * Math.sin(hh), herd.ground, 9);
   report('  herd end -90 m', herd.north - 90 * Math.cos(hh), herd.east - 90 * Math.sin(hh), herd.ground, 9);
-  // Triceratops: the herd site + 120 m toward the track + 100 m along it.
-  const tri = A.pathToNed(q.s + 100, q.c + 120);
-  report('triceratops (8.5 m)', tri.north, tri.east, terrainHeight(tri.north, tri.east), 8.5);
-  console.log(`   herdGround verdict there: '${herdGround(tri.north, tri.east, T)}'`);
+  // Triceratops: the herd-ground point nearest the herd site (track-frame offsets on a 10 m grid) that is in the
+  // windscreen at G1, in the door window (bearing <= -22.5, a margin off its -21 edge) at G3 and G4, >= 200 m from
+  // the T. rex's charge line (lair -> herd site, extended) and from the herd site (predatorFleeRange), on the far
+  // side of the herd from the track. Writes TRICERATOPS_ALONG_M / _AWAY_M.
+  const tAt = (id) => A.FIRST_MINUTE_FRAMES.find((f) => f.id === id).t;
+  const L0 = A.TREX_LAIR, cn = herd.north - L0.north, ce = herd.east - L0.east, cl = Math.hypot(cn, ce);
+  let triBest = null;
+  for (let ds = -300; ds <= 450; ds += 10)
+    for (let dc = -300; dc <= -10; dc += 10) {
+      const p = A.pathToNed(q.s + ds, q.c + dc);
+      const g = terrainHeight(p.north, p.east);
+      const seen = (t, door) => (A.projectFromCockpit(t, p.north, p.east, g + 1.5, P), P.visible && A.inDoorWindow(P.bodyBearingDeg) === door && (!door || P.bodyBearingDeg <= -22.5));
+      if (!seen(tAt('G1'), false) || !seen(tAt('G3'), true) || !seen(tAt('G4'), true)) continue;
+      const offLine = Math.abs((p.north - L0.north) * ce - (p.east - L0.east) * cn) / cl;
+      if (offLine < 200 || Math.hypot(ds, dc) < 200) continue;
+      if (herdGround(p.north, p.east, T) !== '') continue;
+      const d = Math.hypot(ds, dc);
+      if (!triBest || d < triBest.d) triBest = { d, ds, dc, p, g };
+    }
+  if (triBest) {
+    console.log(`triceratops: TRICERATOPS_ALONG_M ${triBest.ds}, TRICERATOPS_AWAY_M ${-triBest.dc}; heading to the lair ${((((Math.atan2(L0.east - triBest.p.east, L0.north - triBest.p.north) * 180) / Math.PI) % 360) + 360) % 360}`);
+    report('triceratops (8.5 m)', triBest.p.north, triBest.p.east, triBest.g, 8.5);
+  } else console.log('triceratops: no site meets the G1/G3/G4 and charge-clearance rules');
   // T. rex lair: beyond the herd so its charge drives the herd 45 deg from the track direction toward the track.
   const fleeDeg = Number(flags.flee ?? 45), lairDist = Number(flags.lair ?? 260);
   const hd = A.safariHeading() + (fleeDeg * Math.PI) / 180 * (q.c < 0 ? 1 : -1);

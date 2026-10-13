@@ -33,6 +33,8 @@ import {
   SILL_PROFILE,
   TREX_FLEE_HEADING,
   TREX_LAIR,
+  TRICERATOPS_ALONG_M,
+  TRICERATOPS_AWAY_M,
   TRICERATOPS_GROUP,
   groupAnchor,
   inDoorWindow,
@@ -135,8 +137,8 @@ describe('the anchors', () => {
     expect(q.s).toBeGreaterThan(1000);
   });
 
-  it('Triceratops: the herd site + 120 m toward the track + 100 m along it, on herd ground', () => {
-    const t = pathToNed(q.s + 100, q.c + 120);
+  it('Triceratops: the herd site + TRICERATOPS_ALONG_M along, TRICERATOPS_AWAY_M away from the track, on herd ground, clear of the charge', () => {
+    const t = pathToNed(q.s + TRICERATOPS_ALONG_M, q.c - TRICERATOPS_AWAY_M);
     expect(TRICERATOPS_GROUP.north).toBeCloseTo(t.north, 0);
     expect(TRICERATOPS_GROUP.east).toBeCloseTo(t.east, 0);
     expect(TRICERATOPS_GROUP.ground).toBeCloseTo(terrainHeight(t.north, t.east), 0);
@@ -144,6 +146,18 @@ describe('the anchors', () => {
     // Facing the T. rex's lair (within 10 deg).
     const toLair = Math.atan2(TREX_LAIR.east - t.east, TREX_LAIR.north - t.north);
     expect(Math.abs(Math.atan2(Math.sin(toLair - TRICERATOPS_GROUP.heading), Math.cos(toLair - TRICERATOPS_GROUP.heading)))).toBeLessThan(10 * DEG);
+    // A charge from the lair through the herd site (and on along it) stays >= 200 m away (predatorFleeRange):
+    // the group faces the T. rex, it does not bolt.
+    const cn = RIVER_HERD_SITE.north - TREX_LAIR.north;
+    const ce = RIVER_HERD_SITE.east - TREX_LAIR.east;
+    const cl = Math.hypot(cn, ce);
+    const along = ((t.north - TREX_LAIR.north) * cn + (t.east - TREX_LAIR.east) * ce) / cl;
+    const offLine = Math.abs((t.north - TREX_LAIR.north) * ce - (t.east - TREX_LAIR.east) * cn) / cl;
+    expect(along).toBeGreaterThan(cl);
+    expect(offLine).toBeGreaterThanOrEqual(200);
+    expect(Math.hypot(t.north - RIVER_HERD_SITE.north, t.east - RIVER_HERD_SITE.east)).toBeGreaterThanOrEqual(200);
+    // The far side of the herd from the track.
+    expect(nedToPath(t.north, t.east).c).toBeLessThan(q.c);
   });
 
   it('the T. rex lair drives the herd 30-60 deg off the track direction, toward the track', () => {

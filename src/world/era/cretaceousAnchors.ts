@@ -312,7 +312,7 @@ export function projectFromCockpit(
 //   river herd            W 0-3 s (5-6 px per 9 m body); behind the A-pillar / under the glareshield 4-9 s;
 //                         D 10-17 s (9-20 px); ends of the formation (+-90 m) D 10-18 s.
 //   T. rex lair           D 0-11 s (8-17 px per 12.3 m): in the door window from the boot, through the charge.
-//   Triceratops group     W 0-7 s (5-6 px per 8.5 m); D 18-21 s (18-28 px), after the stampede has passed.
+//   Triceratops group     W 0-3 s and 10 s (4-7 px per 8.5 m); D 11-19 s (8-14 px), beside the stampede (G3, G4).
 //   kettle 0 (evening)    W 0-29 s at eye level, 6 -> 17 -> 22 deg right (4-30 px per 10 m span; 15-20 px at 25 s).
 //   Alamosaurus trio      W 0-19 s (8-13 px per 26 m, a teaser left of the nose); D 26-37 s (19-45 px).
 //   volcano               W throughout, 8-9 deg right of the nose, its summit 4-5 deg above the body horizontal.
@@ -342,8 +342,23 @@ export const HERD_LATERAL_M = 300;
 export const TREX_FLEE_HEADING = 315 * DEG;
 export const TREX_LAIR: GroundAnchor = Object.freeze({ north: -1805.9, east: 4498.8, ground: 162.8, heading: TREX_FLEE_HEADING });
 
-/** The Triceratops group: the herd site + 120 m toward the track + 100 m along it (herd ground). Facing the lair. */
-export const TRICERATOPS_GROUP: GroundAnchor = Object.freeze({ north: -1502.0, east: 4215.0, ground: 170.7, heading: 135 * DEG });
+/**
+ * Where the Triceratops group stands relative to the river herd site, in the track frame: TRICERATOPS_ALONG_M along
+ * the track and TRICERATOPS_AWAY_M AWAY from it (left, the side away from the track). The plan's draft (+100 along,
+ * 120 m toward the track) is under the glareshield / A-pillar at G3 (bearing -12.6, 10.9 deg down: hidden), so the
+ * stampede and the facing line could never share the G3 frame. This spot is the nearest herd ground that:
+ *   - is in the door window at G3 (12 s: bearing -23.3, 9.5 deg down, ~8 px per 8.5 m body) and at G4 (17 s:
+ *     bearing -34, ~12 px), and in the windscreen at G1 (2 s: 13 deg left, ~4.5 px);
+ *   - is >= 200 m from the T. rex's charge line (lair -> herd site, extended) and from the herd site, so a charge
+ *     that reaches the herd stays outside the Triceratops' predatorFleeRange (200 m): they face, they do not run;
+ *   - lies on the far side of the herd from the track, so the stampede (ahead and inward, toward the track) pulls
+ *     away from the facing line to the right in the door window: two distinct masses.
+ * Found by `node scripts/safari-geometry.mjs solve --place 1` (its Triceratops search); re-derived by the test.
+ */
+export const TRICERATOPS_ALONG_M = 210;
+export const TRICERATOPS_AWAY_M = 80;
+/** The Triceratops group (herd ground; see TRICERATOPS_ALONG_M). Facing the lair. */
+export const TRICERATOPS_GROUP: GroundAnchor = Object.freeze({ north: -1702.0, east: 4105.0, ground: 163.5, heading: 105 * DEG });
 
 /**
  * The Alamosaurus trio: open herd ground 330 m left of the track, 2660 m along, 87 m from the nearest tall trees
@@ -400,7 +415,7 @@ export const FIRST_MINUTE_FRAMES: readonly FirstMinuteFrame[] = Object.freeze([
     expect: [
       { group: 'volcano', where: 'windscreen', minPx: 300, note: 'cone 8 deg right of the nose, summit 4 deg above the body horizontal' },
       { group: 'riverHerd', where: 'windscreen', minPx: 4, note: '1.3 km: ~5 px bodies (the plan asked >= 6 px: not reachable through the windscreen)' },
-      { group: 'triceratops', where: 'windscreen', minPx: 4, note: '1.45 km, 6 deg left, ~5 px' },
+      { group: 'triceratops', where: 'windscreen', minPx: 4, note: '1.6 km, 13 deg left (just right of the A-pillar), ~4.5 px' },
       { group: 'tyrannosaurus', where: 'door', minPx: 8, note: 'lurking/stalking at the lair, 23 deg left' },
       { group: 'alamosaurus', where: 'windscreen', minPx: 7, note: 'teaser silhouette 8 deg left, 2.7 km' },
     ],
@@ -417,18 +432,19 @@ export const FIRST_MINUTE_FRAMES: readonly FirstMinuteFrame[] = Object.freeze([
   {
     id: 'G3',
     t: 12,
-    label: 'the stampede in the door window',
+    label: 'the stampede in the door window, the Triceratops facing line beyond it',
     expect: [
       { group: 'riverHerd', where: 'door', minPx: 10, note: '24 deg left, 12 deg down; running ahead and inward. The T. rex is wherever its charge took it (its lair leaves the frame at ~11 s)' },
+      { group: 'triceratops', where: 'door', minPx: 7, note: '23 deg left, 9.5 deg down, 225 m beyond the herd site: ~8 px bodies; the colour mass (WP2 frill palette) carries the read' },
     ],
   },
   {
     id: 'G4',
     t: 17,
-    label: 'the stampede near the door sill; the Triceratops line coming into the door window',
+    label: 'the stampede near the door sill; the Triceratops line still standing in the door window',
     expect: [
       { group: 'riverHerd', where: 'door', minPx: 15, note: 'the formation end nearest the track; the centre leaves at ~17 s' },
-      { group: 'triceratops', where: 'door', minPx: 12, note: 'enters the door window at ~17 s (18-28 px at 18-21 s)' },
+      { group: 'triceratops', where: 'door', minPx: 11, note: '35 deg left, 12.7 deg down (~12 px); leaves the door window at ~19 s' },
     ],
   },
   {
