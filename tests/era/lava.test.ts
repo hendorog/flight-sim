@@ -4,6 +4,7 @@
 //   - the CPU mask twin is non-zero only in the crater and along the lobes' fall lines (and is there along each);
 //   - the brightest emission at night, under the measured night exposure, stays below Bloom's FIREFLY_MAX.
 
+import * as THREE from 'three';
 import { afterAll, describe, expect, it } from 'vitest';
 import { SCENE_UNITS_PER_LUX } from '../../src/core/context';
 import { sunDirectionNED } from '../../src/core/world';
@@ -26,13 +27,20 @@ import {
   volcanoLavaState,
 } from '../../src/world/terrain/volcano';
 import { PLUME_GLOW_K } from '../../src/render/post/VolcanoPlumeEffect';
+import { setEraOff } from '../../src/world/era/eraOff';
+import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS, updateEraUniforms } from '../../src/world/terrain/eraUniforms';
+import { createTerrainMaterial, type TerrainUniforms } from '../../src/world/terrain/terrainMaterial';
+import type { TerrainTextures } from '../../src/world/terrain/textures';
 
 const V = CRETACEOUS.terrain.volcano!;
 const DEG = Math.PI / 180;
 const sky = (elDeg: number) => ({ sunDir: { y: Math.sin(elDeg * DEG) } });
 const w = (elDeg: number): number => volcanoLavaState(sky(elDeg), 0, { x: 0, y: 0, z: 0, w: 0 }).w;
 
-afterAll(() => setEra('present'));
+afterAll(() => {
+  setEraOff(null);
+  setEra('present');
+});
 
 describe('uLava', () => {
   it('w follows the night ramp: 0 at 20 deg, faint at the safari start, > 0.5 at 0 deg, 1 at -6 deg', () => {
@@ -134,5 +142,80 @@ describe('brightness', () => {
     expect(crater).toBeLessThan(LAVA_FIREFLY_MAX);
     expect(underglow).toBeLessThan(LAVA_FIREFLY_MAX);
     expect(LAVA_FIREFLY_MAX).toBe(64); // render/post/Bloom.ts FIREFLY_MAX
+  });
+});
+
+// The terrain program with the lava in its slots (the replacement for eraHooks.test's WP0a stub assertions, which
+// expected the slots empty and uLava.w == 0): with ?eraoff=lava the Cretaceous program is still increment 1's
+// byte for byte; with the lava on, its text lands inside #if VOLCANO; the present day never carries it.
+interface Fs {
+  readFileSync(path: URL, encoding: 'utf8'): string;
+}
+const fs = (await import(/* @vite-ignore */ 'node:fs' as string)) as Fs;
+const FIXTURE = JSON.parse(fs.readFileSync(new URL('../fixtures/eraCretaceousTerrainInc1.json', import.meta.url), 'utf8')) as Record<string, { vertex: string; fragment: string; defines: Record<string, number>; uniforms: string[]; cacheKey: string }>;
+
+function terrainProgram(): { vertex: string; fragment: string; defines: Record<string, unknown>; uniforms: Record<string, unknown>; cacheKey: string } {
+  const textures = { noise: new THREE.Texture(), albedo: new THREE.DataArrayTexture(), normal: new THREE.DataArrayTexture(), layerMeans: [0, 1, 2, 3].map(() => new THREE.Vector3()), ready: Promise.resolve(), dispose: () => {} } as unknown as TerrainTextures;
+  const uniforms = { uMorph: { value: [] }, uSkirt: { value: [] }, uLodCenter: { value: new THREE.Vector3() }, uForestFade: { value: new THREE.Vector2() }, uCanopyKeep: { value: new THREE.Vector4() }, uViewPos: { value: new THREE.Vector3() } } as unknown as TerrainUniforms;
+  const mat = createTerrainMaterial(textures, uniforms);
+  const src = THREE.ShaderLib.standard;
+  const shader = { uniforms: {} as Record<string, unknown>, vertexShader: src.vertexShader, fragmentShader: src.fragmentShader };
+  (mat.onBeforeCompile as unknown as (s: unknown, r: unknown) => void)(shader, null);
+  return { vertex: shader.vertexShader, fragment: shader.fragmentShader, defines: { ...(mat.defines ?? {}) }, uniforms: shader.uniforms, cacheKey: mat.customProgramCacheKey() };
+}
+
+describe('the terrain program', () => {
+  it('?eraoff=lava: the Cretaceous program equals increment 1 apart from the era uniform declarations', () => {
+    setEra('cretaceous');
+    setEraOff(['lava']);
+    try {
+      const p = terrainProgram();
+      const f = FIXTURE.terrain;
+      expect(p.fragment.split(ERA_TERRAIN_UNIFORMS_GLSL).length).toBe(2);
+      expect(p.fragment.replace(ERA_TERRAIN_UNIFORMS_GLSL, '')).toBe(f.fragment);
+      expect(p.vertex).toBe(f.vertex);
+      expect(p.defines).toEqual(f.defines);
+      expect(p.cacheKey).toBe(f.cacheKey);
+      expect(Object.keys(p.uniforms).sort()).toEqual([...f.uniforms, 'uEraTime', 'uLava', 'uNight'].sort());
+    } finally {
+      setEraOff(null);
+    }
+  });
+
+  it('the lava on: its head and body land inside #if VOLCANO, the body before opaque_fragment', () => {
+    setEra('cretaceous');
+    setEraOff(null);
+    const f = terrainProgram().fragment;
+    expect(VOLCANO_LAVA_HEAD_GLSL.length).toBeGreaterThan(0);
+    expect(VOLCANO_LAVA_GLSL.length).toBeGreaterThan(0);
+    expect(f).toContain(`#if VOLCANO\n${VOLCANO_LAVA_HEAD_GLSL}`);
+    expect(f).toContain(`#if VOLCANO\n${VOLCANO_LAVA_GLSL}`);
+    const body = f.indexOf(VOLCANO_LAVA_GLSL);
+    expect(body).toBeLessThan(f.indexOf('#include <opaque_fragment>'));
+    expect(f.indexOf(VOLCANO_LAVA_HEAD_GLSL)).toBeLessThan(f.indexOf('void main()'));
+  });
+
+  it('never in the present day', () => {
+    setEra('present');
+    const f = terrainProgram().fragment;
+    expect(f).not.toContain('VOLCANO');
+    expect(f).not.toContain('lavaGain');
+    expect(f).not.toContain(ERA_TERRAIN_UNIFORMS_GLSL);
+  });
+
+  it('updateEraUniforms fills uLava: the crater floor, w = 1 at -10 deg, 0 with ?eraoff=lava', () => {
+    setEra('cretaceous');
+    setEraOff(null);
+    const u = { uEraTime: { value: 0 }, uNight: { value: 0 }, uLava: { value: new THREE.Vector4() } } as typeof ERA_UNIFORMS;
+    updateEraUniforms(0.5, sky(-10), u);
+    expect(u.uNight.value).toBe(1);
+    expect([u.uLava.value.x, u.uLava.value.y, u.uLava.value.z]).toEqual([V.east, V.north, V.summit - V.craterDepth]);
+    expect(u.uLava.value.w).toBe(1);
+    updateEraUniforms(0.5, sky(20), u);
+    expect(u.uLava.value.w).toBe(0);
+    setEraOff(['lava']);
+    updateEraUniforms(0.5, sky(-10), u);
+    expect(u.uLava.value.w).toBe(0);
+    setEraOff(null);
   });
 });
