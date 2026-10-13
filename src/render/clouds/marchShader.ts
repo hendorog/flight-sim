@@ -60,6 +60,7 @@ uniform int uMaxSteps;
 uniform int uLightSteps;
 uniform int uLightDetailSteps;  // light-march steps (from the first) that include the detail erosion
 uniform float uMinStep;
+uniform float uCoarseShare;     // share of the step budget for the coarse step plan
 uniform float uMaxDist;
 uniform float uDetailDist;      // beyond this distance detail erosion fades out (60 degree field of view)
 uniform float uDetailScale;     // 1 / (angular size of a low-res pixel at a 60 degree field of view)
@@ -284,9 +285,9 @@ void main() {
     vec2 seg = s == 0 ? seg0 : seg1;
     if (seg.y <= seg.x || T < T_STOP) continue;
     float t = seg.x;
-    // The step plan leaves headroom for fine steps, surface bisection and the skin ramp. (Since the surfaces
-    // are located by bisection, the coarse steps can be long: 40 % of the budget.)
-    float growth = stepGrowth(seg.x, seg.y, float(uMaxSteps - steps) * 0.4);
+    // The step plan leaves headroom for fine steps, surface bisection and the skin ramp (uCoarseShare of the
+    // budget; since the surfaces are located by bisection, the coarse steps can be long).
+    float growth = stepGrowth(seg.x, seg.y, float(uMaxSteps - steps) * uCoarseShare);
     t += max(uMinStep, t * growth) * noise;
     // Coarse steps through empty space, fine steps (a fraction of the coarse one) once the ray has met
     // cloud, back to coarse after a run of empty samples (Schneider 2015).
@@ -467,10 +468,12 @@ void main() {
         // from turret to turret: real bases are mottled, darker under the dense cores and lighter under thin
         // parts. The coarse light march is too smooth to show it, so the lower part of each cloud takes a
         // soft ~60-250 m modulation from the detail noise (within ~10 km, where a base can be seen at all).
+        // Gentle (-28 % to +12 %): a base seen at a grazing angle squeezes the pockets into thin horizontal
+        // bands, and a stronger contrast (it was -55 % to +30 %) read as dark ripple lines across it.
         float baseMix = (1.0 - smoothstep(0.03, 0.12, h - wt.z)) * (1.0 - smoothstep(20.0, 40.0, footprint));
         if (baseMix > 0.0) {
           float mt = baseMottle(p, lod, dlod);
-          float mott = mix(1.0, mix(mix(1.3, 1.08, deck), mix(0.45, 0.8, deck), mt), baseMix);
+          float mott = mix(1.0, mix(mix(1.12, 1.05, deck), mix(0.72, 0.85, deck), mt), baseMix);
           sun *= mott;
           ambient *= mott;
         }
@@ -553,8 +556,12 @@ void main() {
       vec4 hc = hazeAlong(rayUv, tc, uCirrus.y, behind);
       vec3 Lc = alpha * (lc * hc.a + hc.rgb);
       L += T * Lc;
-      // Front distance for reprojection: opacity-weighted mean of the cumulus front and the cirrus sheet.
-      front = (front * (1.0 - T) + tc * T * alpha) / max(1.0 - T + T * alpha, 1e-4);
+      // Front distance for reprojection: opacity-weighted mean of the cumulus front and the cirrus sheet, the
+      // sheet where neither has any opacity (clear sky in front of the deck). (A plain max(weights, 1e-4)
+      // denominator collapsed the front to ~0 m there: the temporal pass then reprojected the camera position
+      // itself, and the history beside every cloud outline against the sky was thrown away.)
+      float wCu = 1.0 - T, wCi = T * alpha + 1e-4;
+      front = (front * wCu + tc * wCi) / (wCu + wCi);
       T *= 1.0 - alpha;
     }
   }

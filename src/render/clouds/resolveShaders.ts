@@ -60,14 +60,20 @@ void main() {
   vec4 c = texelFetch(uCurr, px, 0);
   vec4 m1 = c, m2 = c * c;
   vec4 nMin = vec4(1e20), nMax = vec4(-1e20);
+  float front = exp2(texelFetch(uAux, px, 0).r) - 1.0;
+  float fMin = front, fMax = front;
   for (int y = -1; y <= 1; y++)
   for (int x = -1; x <= 1; x++) {
     if (x == 0 && y == 0) continue;
-    vec4 v = texelFetch(uCurr, clamp(px + ivec2(x, y), ivec2(0), maxPx), 0);
+    ivec2 q = clamp(px + ivec2(x, y), ivec2(0), maxPx);
+    vec4 v = texelFetch(uCurr, q, 0);
     m1 += v;
     m2 += v * v;
     nMin = min(nMin, v);
     nMax = max(nMax, v);
+    float f = exp2(texelFetch(uAux, q, 0).r) - 1.0;
+    fMin = min(fMin, f);
+    fMax = max(fMax, f);
   }
   // Isolated single-pixel outliers (a ray that slipped through a dense cloud to the sun, a lone bright
   // sample) are clamped to the range of their neighbours; lines and edges are unaffected.
@@ -77,7 +83,6 @@ void main() {
 
   vec4 result = c;
   if (uHistoryValid > 0.5) {
-    float front = exp2(texelFetch(uAux, px, 0).r) - 1.0;
     vec3 dir = normalize(mat3(uCamWorld) * rayDirView(vUv));
     vec4 prev = uPrevViewProj * vec4(uCamPos + dir * front, 1.0);
     vec2 puv = prev.xy / prev.w * 0.5 + 0.5;
@@ -85,14 +90,26 @@ void main() {
       vec4 h = historyCatmullRom(puv);
       // The reprojection uses one depth per pixel (the opacity-weighted cloud front), which is only exact for
       // a hard surface: in a translucent volume seen while the camera moves, the history drifts against the
-      // parallax of what lies in front of and behind that depth and smears the clouds into fog. The blend
-      // therefore rises with the reprojection offset (the single-frame image is clean enough with the blue
-      // noise to carry more weight), and the clip box tightens.
-      float motion = length((puv - vUv) * vec2(textureSize(uCurr, 0)));
-      float moving = smoothstep(0.05, 0.6, motion);
+      // parallax of what lies in front of and behind that depth and smears the clouds into fog. How far it can
+      // drift is the parallax between the nearest and farthest cloud fronts around the pixel (widened by the
+      // depth of the translucent skin): the reprojected positions of those two depths, apart by that many
+      // pixels. Where they agree (a turn, which moves every depth alike; a distant or uniformly deep cloud) the
+      // history is reliable and keeps averaging the noise away; where they disagree the blend rises (the
+      // single-frame image is clean enough with the blue noise to carry more weight) and the clip box tightens.
+      // (Blending by the reprojection offset alone threw the history away in every turn and at any airspeed,
+      // which left the clouds grainy and shimmering in flight.)
+      vec4 pn = uPrevViewProj * vec4(uCamPos + dir * (fMin * 0.8), 1.0);
+      vec4 pf = uPrevViewProj * vec4(uCamPos + dir * min(fMax * 1.25, 2e6), 1.0);
+      float motion = pn.w > 0.0 && pf.w > 0.0 ? length((pn.xy / pn.w - pf.xy / pf.w) * 0.5 * vec2(textureSize(uCurr, 0))) : 10.0;
+      float moving = smoothstep(0.1, 0.8, motion);
       float gamma = mix(uClipGamma, 0.75, moving);
       h = clamp(h, mean - gamma * sigma, mean + gamma * sigma);
-      result = mix(h, c, mix(uBlend, 0.5, moving));
+      // A still image keeps a longer history (half the residual noise): nothing is resampled. Once the
+      // history is resampled at fractional offsets every frame (any motion), each pass softens it a little, and
+      // a long history adds that up into blur: the usual blend.
+      float shift = length((puv - vUv) * vec2(textureSize(uCurr, 0)));
+      float blend = mix(uBlend * 0.6, uBlend, smoothstep(0.0, 0.3, shift));
+      result = mix(h, c, mix(blend, 0.5, moving));
     }
   }
   outColor = result;
