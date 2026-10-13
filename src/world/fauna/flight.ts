@@ -5,7 +5,8 @@
 //
 // KETTLE: a circle about the core (which drifts with the wind) at 15 m/s and 20 deg bank, r = v^2 / (g tan 20)
 // ~ 63 m; climb = thermalUpdraft(at the bird) - 0.8 m/s sink. At 0.8 zi a bird leaves on a glide at L/D 15 to the
-// next core; a core that dies or stops lifting is left too. Terrain is read only when a core is acquired.
+// next core; a core that dies or stops lifting is left too. Terrain is read when a core is acquired and then once
+// every CORE_REFRESH_S per bird (the ground under the drifting core, which sets the AGL and the layer depth zi).
 // RIDGE (w* = 0 by day): a long figure along the windward valley wall, 80-150 m above the slope.
 // ROOST (night): the birds glide down and stand.
 // GROUND: stand and walk slowly (folded wings as forelimbs); when the aircraft comes within LAUNCH_RANGE on the
@@ -89,6 +90,12 @@ const wrapPi = (a: number): number => a - 2 * Math.PI * Math.floor((a + Math.PI)
 const rand = (seed: number, k: number): number => cellRandom(seed, 0xf1e5, k);
 
 const CORE_SCAN = 25;
+/** A kettling bird re-reads the ground under its drifting core this often (1 terrain read), s. */
+export const CORE_REFRESH_S = 2;
+/** Lowest a kettling bird may be over the ground at its core, m. */
+const KETTLE_FLOOR = 15;
+/** While joining a ridge beat, a bird closes on it at most this multiple of its speed. */
+const RIDGE_CATCH_UP = 1.5;
 
 export class FlyerPool {
   readonly capacity = FAUNA_MAX.flyers;
@@ -122,6 +129,8 @@ export class FlyerPool {
   readonly coreJ: Int32Array;
   readonly coreGround: Float64Array;
   readonly coreZi: Float64Array;
+  /** When the core's ground and zi were last read (they follow the drifting core over the terrain), s. */
+  readonly coreT: Float64Array;
   readonly orbitDir: Int8Array;
   readonly orbitAng: Float64Array;
   readonly orbitR: Float64Array;
@@ -189,6 +198,7 @@ export class FlyerPool {
     this.coreJ = new Int32Array(capacity);
     this.coreGround = f64();
     this.coreZi = f64();
+    this.coreT = f64();
     this.orbitDir = new Int8Array(capacity);
     this.orbitAng = f64();
     this.orbitR = f64();
@@ -293,6 +303,8 @@ export class FlyerPool {
     const g = terrain.height(c.x + f.driftN, c.y + f.driftE);
     this.coreGround[i] = g;
     this.coreZi[i] = Math.max(f.minDepth, f.cloudBaseM - g);
+    // Staggered per bird, so the refreshes of a kettle spread over frames.
+    this.coreT[i] = this.time - CORE_REFRESH_S * rand(this.seed[i], 4);
     const cn = c.x + f.driftN;
     const ce = c.y + f.driftE;
     this.orbitAng[i] = Math.atan2(this.e[i] - ce, this.n[i] - cn);
@@ -421,6 +433,27 @@ export class FlyerPool {
     this.setMode(i, FLYER_MODE.ridge);
   }
 
+  /** Send bird i to its roost beside the anchor (terrain read: the roost's ground, 1 call). */
+  private goRoost(i: number, terrain: FaunaTerrain): void {
+    this.tgtX[i] = this.anchorN[i] + 60 * (rand(this.seed[i], 20) - 0.5);
+    this.tgtY[i] = this.anchorE[i] + 60 * (rand(this.seed[i], 21) - 0.5);
+    this.ground[i] = terrain.height(this.tgtX[i], this.tgtY[i]);
+    this.setMode(i, FLYER_MODE.roost);
+  }
+
+  /** Spawn-time helper (night): bird i already landed at its roost, so it launches again at dawn (1 terrain read). */
+  startRoosted(i: number, terrain: FaunaTerrain): void {
+    this.goRoost(i, terrain);
+    this.n[i] = this.tgtX[i];
+    this.e[i] = this.tgtY[i];
+    this.alt[i] = this.ground[i];
+    this.speed[i] = 0;
+    this.flap[i] = 0;
+    this.bank[i] = 0;
+    this.pitch[i] = 0;
+    this.blend[i] = 0;
+  }
+
   /** Ground height under the ridge beat at along-coordinate s (-L..L), piecewise linear through 3 samples. */
   private ridgeGround(i: number, s: number): number {
     const u = s / this.rL[i];
@@ -490,7 +523,8 @@ export class FlyerPool {
         this.evadeDE[i] = re / hl;
         this.evadeDU[i] = ru >= 0 ? 1 : -1;
         this.evadeUntil[i] = this.time + FLYER_REACTION.evadeS;
-        this.resume[i] = mode === FLYER_MODE.roost ? FLYER_MODE.roost : mode === FLYER_MODE.ridge ? FLYER_MODE.ridge : FLYER_MODE.kettle;
+        // Resume what it was doing: a glide keeps its target, a climb-out climbs on, a kettle glides back to its core.
+        this.resume[i] = mode === FLYER_MODE.kettle ? FLYER_MODE.kettle : mode;
         if (mode === FLYER_MODE.kettle) {
           // Come back to this core afterwards.
           this.tgtX[i] = this.coreX[i];
@@ -502,10 +536,7 @@ export class FlyerPool {
 
     // Night: everyone airborne goes to roost; at dawn with lift, roosting birds launch again.
     if (!daylight && airborne && this.mode[i] !== FLYER_MODE.roost && this.mode[i] !== FLYER_MODE.evade && budget >= 1) {
-      this.tgtX[i] = this.anchorN[i] + 60 * (rand(this.seed[i], 20) - 0.5);
-      this.tgtY[i] = this.anchorE[i] + 60 * (rand(this.seed[i], 21) - 0.5);
-      this.ground[i] = terrain.height(this.tgtX[i], this.tgtY[i]);
-      this.setMode(i, FLYER_MODE.roost);
+      this.goRoost(i, terrain);
     }
 
     // Dawn: a bird that roosted takes off again once there is light (and lift, or a ridge to work).
@@ -702,6 +733,15 @@ export class FlyerPool {
     this.heading[i] = wrapPi(a + (dir * Math.PI) / 2);
     const bank = dir * Math.atan((this.speed[i] * this.speed[i]) / (G * r));
     this.bank[i] += (bank - this.bank[i]) * Math.min(1, 2 * dt);
+    // The core drifts over the terrain: re-read the ground (and the layer depth) under it now and then.
+    if (budget >= 1 && this.time - this.coreT[i] >= CORE_REFRESH_S) {
+      this.coreT[i] = this.time;
+      const g = terrain.height(cn, ce);
+      this.coreGround[i] = g;
+      this.ground[i] = g;
+      if (f) this.coreZi[i] = Math.max(f.minDepth, f.cloudBaseM - g);
+    }
+    if (this.alt[i] < this.coreGround[i] + KETTLE_FLOOR) this.alt[i] = this.coreGround[i] + KETTLE_FLOOR;
     const agl = this.alt[i] - this.coreGround[i];
     const w = thermals && f ? thermalUpdraft(f.seed, this.n[i] - dN, this.e[i] - dE, agl, t, f.wStar, this.coreZi[i]) : 0;
     const climb = w - SOAR_SINK;
@@ -796,10 +836,18 @@ export class FlyerPool {
       this.bank[i] += (Math.max(-0.7, Math.min(0.7, bank)) - this.bank[i]) * Math.min(1, 3 * dt);
     }
     const target = this.ridgeGround(i, along) + this.rOff[i];
-    // Converge on the beat smoothly (from wherever the bird joined it).
-    const k = Math.min(1, 0.6 * dt);
-    this.n[i] += (nn - this.n[i]) * Math.max(k, Math.min(1, (this.time - this.modeT[i]) / 20));
-    this.e[i] += (ne - this.e[i]) * Math.max(k, Math.min(1, (this.time - this.modeT[i]) / 20));
+    // Converge on the beat smoothly, never faster than the bird can fly (a beat found far off takes a while to reach).
+    const k = Math.max(Math.min(1, 0.6 * dt), Math.min(1, (this.time - this.modeT[i]) / 20));
+    let sn = vn * k;
+    let se = ve * k;
+    const step = Math.hypot(sn, se);
+    const maxStep = RIDGE_CATCH_UP * Math.max(3, this.speed[i]) * dt;
+    if (step > maxStep) {
+      sn *= maxStep / step;
+      se *= maxStep / step;
+    }
+    this.n[i] += sn;
+    this.e[i] += se;
     const da = target - this.alt[i];
     this.alt[i] += Math.max(-3 * dt, Math.min(3 * dt, da));
     this.pitch[i] = 0;
@@ -849,8 +897,8 @@ export class FlyerPool {
         this.setMode(i, FLYER_MODE.glide);
       } else if (back === FLYER_MODE.ridge) {
         this.setMode(i, FLYER_MODE.ridge);
-      } else if (back === FLYER_MODE.roost) {
-        this.setMode(i, FLYER_MODE.roost);
+      } else if (back === FLYER_MODE.roost || back === FLYER_MODE.climbOut || (back === FLYER_MODE.glide && f)) {
+        this.setMode(i, back);
       } else if (budget >= 30) {
         this.startRidge(i, terrain, windToN, windToE);
       } else {

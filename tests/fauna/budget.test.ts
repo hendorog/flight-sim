@@ -220,4 +220,49 @@ describe('fauna budget', () => {
     }
     expect(seen.filter((s) => s === 'edmontosaurus')).toHaveLength(1);
   });
+
+  it('starting at low quality trims the showcase flyers to the preset', () => {
+    const { sys } = build('low');
+    expect(sys.flyers.count()).toBeLessThanOrEqual(FAUNA_PRESETS.low.flyers);
+    expect(sys.flyers.count()).toBeGreaterThan(0);
+  });
+
+  it('a night start roosts the showcase kettles, and they relaunch at dawn', () => {
+    const terrain = spyTerrain();
+    const sys = createFaunaSystem(eraById('cretaceous'), { terrain }) as FaunaSystemImpl;
+    const ctx = makeCtx('high');
+    (ctx.sky as { dayFactor: number }).dayFactor = 0;
+    sys.init(ctx);
+    const F = sys.flyers;
+    const roosting: number[] = [];
+    for (let i = 0; i < F.capacity; i++) if (F.active[i] && F.mode[i] === FLYER_MODE.roost) roosting.push(i);
+    expect(roosting.length).toBeGreaterThanOrEqual(8);
+    (ctx.sky as { dayFactor: number }).dayFactor = 1;
+    // Far from the birds (no launch from the aircraft), long enough for the 30 s roost hold.
+    for (let k = 0; k < 60 * 40; k++) {
+      ctx.simTime += DT;
+      place(ctx, 30000, 30000, 2000, 0);
+      sys.update(DT, ctx);
+    }
+    for (const i of roosting) expect(F.mode[i]).not.toBe(FLYER_MODE.roost);
+  });
+
+  it('a scattered herd is still drawn when its centroid is out of view', () => {
+    const { sys, ctx } = build('high');
+    const H = sys.herds;
+    const h = sys.riverHerd;
+    const base = h * H.memberCap;
+    // Every member 700 m east of the (unchanged) centroid, as after a long flight.
+    for (let k = 0; k < H.size[h]; k++) {
+      H.mE[base + k] = H.cE[h] + 700 + (k % 8) * 4;
+      H.mN[base + k] = H.cN[h] + Math.floor(k / 8) * 4;
+      H.mH[base + k] = H.cH[h];
+    }
+    // Looking north at the members, 200 m short of them: the centroid is ~74 deg off the view axis.
+    place(ctx, H.cN[h] - 200, H.cE[h] + 712, H.cH[h] + 50, 0);
+    sys.update(0, ctx);
+    const draws = (sys as unknown as { draws: { species: string; lod: { count: number }[] }[] }).draws;
+    const herd = draws.find((d) => d.species === 'edmontosaurus')!;
+    expect(herd.lod.reduce((a, l) => a + l.count, 0)).toBe(H.size[h]);
+  });
 });

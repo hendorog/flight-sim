@@ -267,9 +267,11 @@ export class FaunaSystemImpl implements FaunaSystem {
     }
     this.entryDraw = this.roster.entries.map((e) => this.draws.findIndex((d) => d.species === e.species));
     ctx.scene.add(this.root);
+    this.preset = FAUNA_PRESETS[ctx.quality] ?? FAUNA_PRESETS.high;
+    this.spawnShowcase(ctx);
+    // After the showcase is in the pool, so its flyers are trimmed to the preset too.
     this.setQuality(ctx.quality);
     this.unsubscribe = ctx.events.on('qualityChanged', (e) => this.setQuality(e.quality));
-    this.spawnShowcase(ctx);
   }
 
   setQuality(q: QualityLevel): void {
@@ -343,15 +345,12 @@ export class FaunaSystemImpl implements FaunaSystem {
     });
   }
 
-  /** Put an airborne flyer in a kettle on the nearest core, else on the ridge (day) or standing (night). */
+  /** Put an airborne flyer in a kettle on the nearest core, else on the ridge (day) or landed at its roost (night). */
   private placeAirborne(i: number, f: ThermalFrame | null, t: number, day: boolean, wind: { n: number; e: number }, n: number, e: number, agl: number): void {
     const fl = this.flyers;
     if (!day) {
-      fl.alt[i] = fl.ground[i];
-      fl.speed[i] = 0;
-      fl.blend[i] = 0;
-      fl.mode[i] = FLYER_MODE.stand;
-      fl.modeT[i] = fl.time;
+      // Roosting (not standing): the dawn handler relaunches roosted birds.
+      fl.startRoosted(i, this.terrain);
       return;
     }
     if (f && f.wStar > 0.05 && fl.nearestCore(f, t, n, e, this.core)) {
@@ -632,9 +631,11 @@ export class FaunaSystemImpl implements FaunaSystem {
       const di = this.entryDraw[H.entry[h]];
       const draw = this.draws[di];
       if (!draw) continue;
-      if (this.orderD[o] - H.radius[h] > P.lod2Range) continue;
+      // The members' current spread (a scattered herd reaches far beyond its formation radius).
+      const spread = Math.max(H.radius[h], this.herdSpread(h));
+      if (this.orderD[o] - spread > P.lod2Range) continue;
       this.sphere.center.set(H.cE[h], H.cH[h] + 2, -H.cN[h]);
-      this.sphere.radius = H.radius[h] + draw.radius * 1.5 + 30;
+      this.sphere.radius = spread + draw.radius * 1.5 + 30;
       if (!this.frustum.intersectsSphere(this.sphere)) continue;
       const base = h * MAX_HERD_SIZE;
       const size = H.size[h];
@@ -708,6 +709,25 @@ export class FaunaSystemImpl implements FaunaSystem {
     this.debug.herds = H.count();
     this.debug.animals = H.members();
     this.debug.flyers = F.count();
+  }
+
+  /** Farthest member of herd h from its centre (cN, cE, cH + 2), m. */
+  private herdSpread(h: number): number {
+    const H = this.herds;
+    const base = h * MAX_HERD_SIZE;
+    const cn = H.cN[h];
+    const ce = H.cE[h];
+    const ch = H.cH[h] + 2;
+    let m2 = 0;
+    for (let k = 0; k < H.size[h]; k++) {
+      const i = base + k;
+      const dn = H.mN[i] - cn;
+      const de = H.mE[i] - ce;
+      const dh = H.mH[i] - ch;
+      const d2 = dn * dn + de * de + dh * dh;
+      if (d2 > m2) m2 = d2;
+    }
+    return Math.sqrt(m2);
   }
 
   dispose(): void {

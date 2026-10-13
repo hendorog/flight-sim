@@ -200,3 +200,89 @@ describe('separation', () => {
     expect(minD).toBeGreaterThanOrEqual(60 - 1e-6);
   });
 });
+
+describe('review fixes', () => {
+  it('joins a far ridge beat no faster than it can fly', () => {
+    const terrain = planeTerrain(300, 0.2, 0);
+    const pool = new FlyerPool(8);
+    const i = spawnBird(pool, 0, 0, 600, 300);
+    pool.startRidge(i, terrain, 1, 0);
+    // Start well away from the beat (startRidge searches up to 1200 m out).
+    pool.n[i] = pool.rN[i] - 1100;
+    pool.e[i] = pool.rE[i];
+    let t = 0;
+    let maxV = 0;
+    for (let k = 0; k < 60 * 30; k++) {
+      t += DT;
+      const n0 = pool.n[i];
+      const e0 = pool.e[i];
+      pool.step(DT, t, frame(0), null, terrain, 200, true, 1, 0);
+      maxV = Math.max(maxV, Math.hypot(pool.n[i] - n0, pool.e[i] - e0) / DT);
+    }
+    expect(maxV).toBeLessThanOrEqual(1.5 * pool.cruise(i) + 1e-6);
+  });
+
+  it('follows the ground under a core drifting over rising terrain (AGL and zi refreshed)', () => {
+    // Ground rising 0.08 to the north; the core drifts north 4 km over the run.
+    const terrain = planeTerrain(100, 0.08, 0);
+    const pool = new FlyerPool(8);
+    const f = frame(2);
+    const core = makeThermalCore();
+    expect(pool.nearestCore(f, 100, 0, 0, core)).toBe(true);
+    const i = spawnBird(pool, 0, 0, 500, 100);
+    pool.startKettle(i, core, f, terrain);
+    pool.alt[i] = terrain.h(core.x, core.y) + 300;
+    let t = 100;
+    for (let k = 0; k < 60 * 200; k++) {
+      t += DT;
+      f.driftN += 20 * DT;
+      pool.step(DT, t, f, null, terrain, 200, true, 0, 0);
+      if (pool.mode[i] !== FLYER_MODE.kettle) break;
+      const g = terrain.h(pool.coreX[i] + f.driftN, pool.coreY[i] + f.driftE);
+      // Re-read at most CORE_REFRESH_S ago: at 20 m/s and 0.08 that is <= ~3.2 m (+ the kettle's slope).
+      expect(Math.abs(pool.coreGround[i] - g)).toBeLessThan(5);
+      expect(pool.coreZi[i]).toBeCloseTo(Math.max(f.minDepth, f.cloudBaseM - pool.coreGround[i]), 6);
+      expect(pool.alt[i]).toBeGreaterThan(terrain.h(pool.n[i], pool.e[i]));
+    }
+  });
+
+  it('an evade during the climb-out resumes the climb-out, not a glide to a stale target', () => {
+    const terrain = planeTerrain(120);
+    const pool = new FlyerPool(8);
+    const i = pool.spawn({ north: 0, east: 0, alt: 160, ground: 120, entry: 1, scale: 1, size: 1, variant: 0, seed: 9, mode: FLYER_MODE.climbOut, heading: 0, anchorN: 0, anchorE: 0 });
+    pool.tgtX[i] = 0;
+    pool.tgtY[i] = 0;
+    const ac: AircraftView = { n: 60, e: 0, alt: 180, vN: 0, vE: 0, vD: 0, tas: 0 };
+    pool.step(DT, 1, frame(0), ac, terrain, 200, true, 1, 0);
+    expect(pool.mode[i]).toBe(FLYER_MODE.evade);
+    expect(pool.resume[i]).toBe(FLYER_MODE.climbOut);
+    let t = 1;
+    let sawGlide = false;
+    for (let k = 0; k < 60 * 90; k++) {
+      t += DT;
+      pool.step(DT, t, frame(0), null, terrain, 200, true, 1, 0);
+      if (pool.mode[i] === FLYER_MODE.glide) sawGlide = true;
+      if (pool.mode[i] === FLYER_MODE.ridge) break;
+    }
+    expect(sawGlide).toBe(false);
+    expect(pool.mode[i]).toBe(FLYER_MODE.ridge);
+  });
+
+  it('a bird placed roosted at night launches again at dawn', () => {
+    const terrain = planeTerrain(120);
+    const pool = new FlyerPool(8);
+    const i = spawnBird(pool, 0, 0, 500, 120);
+    pool.startRoosted(i, terrain);
+    expect(pool.mode[i]).toBe(FLYER_MODE.roost);
+    let t = 0;
+    for (let k = 0; k < 60 * 20; k++) pool.step(DT, (t += DT), frame(0), null, terrain, 200, false, 1, 0);
+    expect(pool.mode[i]).toBe(FLYER_MODE.roost);
+    expect(pool.alt[i]).toBe(120);
+    let launched = false;
+    for (let k = 0; k < 60 * 40 && !launched; k++) {
+      pool.step(DT, (t += DT), frame(0), null, terrain, 200, true, 1, 0);
+      launched = pool.mode[i] === FLYER_MODE.launch;
+    }
+    expect(launched).toBe(true);
+  });
+});
