@@ -220,9 +220,19 @@ describe('Alamosaurus pose (CPU mirror)', () => {
     expect(Math.abs(p.fRootOff[1])).toBeLessThan(1e-9);
     expect(Math.abs(p.rootPitch)).toBeLessThan(1e-9);
     expect(sauLeg(0.3, 0)).toEqual([0, 0]);
-    const ys = sauropodPositions(set, set.lod0, { phase: 0.37, gaitBlend: 0, flap: 0, time: 3 }, (b) => legs.includes(b)).map((v) => v[1]);
-    expect(Math.min(...ys)).toBeGreaterThan(-0.06);
-    expect(Math.min(...ys)).toBeLessThan(0.06);
+    // Every pad on the ground (not just the lowest one), at any phase: a browsing animal holds no foot raised.
+    for (const phase of [0, 0.15, 0.37, 0.6, 0.85]) {
+      const order: number[] = [];
+      const bone = set.lod0.getAttribute('aBone');
+      for (let v = 0; v < bone.count; v++) if (legs.includes(Math.round(bone.getX(v)))) order.push(v);
+      const slot = new Map(order.map((v, i) => [v, i]));
+      const pos = sauropodPositions(set, set.lod0, { phase, gaitBlend: 0, flap: 0, time: 3 }, (b) => legs.includes(b));
+      for (const b of legs) {
+        const low = Math.min(...padIdx.get(b)!.map((v) => pos[slot.get(v)!][1]));
+        expect(low, `leg ${b} at phase ${phase}`).toBeGreaterThan(-0.06);
+        expect(low, `leg ${b} at phase ${phase}`).toBeLessThan(0.06);
+      }
+    }
   });
 });
 

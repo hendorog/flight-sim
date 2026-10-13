@@ -63,7 +63,8 @@ export function sauropodPose(inp: PoseInput, bone: number): PoseOut & { rootPitc
   const F = FORE_IK;
   const rootPitch = Math.atan2(F.hy - dF - (H.hy - dH), F.hx - H.hx) - Math.atan2(F.hy - H.hy, F.hx - H.hx);
   const tilt = -G.padTilt * move;
-  const ik = (leg: [number, number], k: LimbIK, d: number): [number, number, number] => sauIK(k.ax - k.hx + leg[0], k.ay - k.hy + d + G.lift * leg[1], k, tilt * leg[1]);
+  const lift = G.lift * move;
+  const ik = (leg: [number, number], k: LimbIK, d: number): [number, number, number] => sauIK(k.ax - k.hx + leg[0], k.ay - k.hy + d + lift * leg[1], k, tilt * leg[1]);
   const jLH = ik(lh, HIND_IK, dH);
   const jRH = ik(rh, HIND_IK, dH);
   const ca = Math.cos(rootPitch);
@@ -73,7 +74,7 @@ export function sauropodPose(inp: PoseInput, bone: number): PoseOut & { rootPitc
   const sd = [F.hx - rc[0], F.hy - rc[1]];
   const off: V = [H.hx - rc[0] - (ca * hd[0] - sa * hd[1]), H.hy - dH - rc[1] - (sa * hd[0] + ca * hd[1]), 0];
   const shoW = [rc[0] + ca * sd[0] - sa * sd[1] + off[0], rc[1] + sa * sd[0] + ca * sd[1] + off[1]];
-  const ikF = (leg: [number, number]): [number, number, number] => sauIK(F.ax - shoW[0] + leg[0], F.ay - shoW[1] + G.lift * leg[1], F, tilt * leg[1]);
+  const ikF = (leg: [number, number]): [number, number, number] => sauIK(F.ax - shoW[0] + leg[0], F.ay - shoW[1] + lift * leg[1], F, tilt * leg[1]);
   const jLF = ikF(lf);
   const jRF = ikF(rf);
   fQ[B.root] = qAx(AZ, rootPitch);

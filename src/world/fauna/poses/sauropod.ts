@@ -171,8 +171,10 @@ void faunaPose() {
   vec2 shoT = fH - vec2(0.0, dF);
   float rootPitch = atan(shoT.y - hipT.y, shoT.x - hipT.x) - ${f(Math.atan2(FI.hy - HI.hy, FI.hx - HI.hx))};
   float tilt = -${f(G.padTilt)} * move;
-  vec3 jLH = sauIK(hA - hH + vec2(lh.x, dH + ${f(G.lift)} * lh.y), ${ikArgs(HI)}, tilt * lh.y);
-  vec3 jRH = sauIK(hA - hH + vec2(rh.x, dH + ${f(G.lift)} * rh.y), ${ikArgs(HI)}, tilt * rh.y);
+  // The swing lift scales with move too, so a browsing (gait 0) animal stands with every pad on the ground.
+  float lift = ${f(G.lift)} * move;
+  vec3 jLH = sauIK(hA - hH + vec2(lh.x, dH + lift * lh.y), ${ikArgs(HI)}, tilt * lh.y);
+  vec3 jRH = sauIK(hA - hH + vec2(rh.x, dH + lift * rh.y), ${ikArgs(HI)}, tilt * rh.y);
   // The root offset puts the hip pivot exactly on its drop; the shoulder lands within millimetres of its own, and
   // the fore legs reach from where it actually is.
   vec2 rc = vec2(${f(ALAMOSAURUS_ROOT[0])}, ${f(ALAMOSAURUS_ROOT[1])});
@@ -180,8 +182,8 @@ void faunaPose() {
   vec2 hd = hH - rc, sd = fH - rc;
   vec2 off = hipT - rc - vec2(ca * hd.x - sa * hd.y, sa * hd.x + ca * hd.y);
   vec2 shoW = rc + vec2(ca * sd.x - sa * sd.y, sa * sd.x + ca * sd.y) + off;
-  vec3 jLF = sauIK(fA - shoW + vec2(lf.x, ${f(G.lift)} * lf.y), ${ikArgs(FI)}, tilt * lf.y);
-  vec3 jRF = sauIK(fA - shoW + vec2(rf.x, ${f(G.lift)} * rf.y), ${ikArgs(FI)}, tilt * rf.y);
+  vec3 jLF = sauIK(fA - shoW + vec2(lf.x, lift * lf.y), ${ikArgs(FI)}, tilt * lf.y);
+  vec3 jRF = sauIK(fA - shoW + vec2(rf.x, lift * rf.y), ${ikArgs(FI)}, tilt * rf.y);
   fQ[${B.root}] = qAx(AZ, rootPitch);
   fQ[${B.legHL}] = qAx(AZ, jLH.x - rootPitch);
   fQ[${B.legHR}] = qAx(AZ, jRH.x - rootPitch);
