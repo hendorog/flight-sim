@@ -178,7 +178,7 @@ const ERA_SHOTS = [
   { name: 'flats-lineup-0900', label: 'Flats, line-up 07, tod 9', page: `${CRET}&scenario=runway&tod=9&cam=chase&ui=0`, wait: 2500 },
   { name: 'flats-lineup25-1936', label: 'Flats, line-up 25, tod 19.6 (volcano backlit)', page: `${CRET}&scenario=runway&tod=19.6&cam=chase&ui=0`, evalJs: timed(LINEUP_25), wait: 1500 },
   { name: 'safari-start-1000', label: 'Safari start, tod 10, 8 s in (herd, left window)', page: `${CRET}&tod=10&ui=0`, evalJs: timed(SAFARI_AT(8000)), wait: 0 },
-  { name: 'safari-herd-1400', label: 'Safari start, tod 10, 14 s in (herd abeam left)', page: `${CRET}&tod=10&ui=0`, evalJs: timed(SAFARI_AT(14000)), wait: 0 },
+  { name: 'safari-herd-1400', label: 'Safari start, tod 10, 14 s in (herd ahead left, 600 m)', page: `${CRET}&tod=10&ui=0`, evalJs: timed(SAFARI_AT(14000)), wait: 0 },
   { name: 'safari-kettle-1000', label: 'Safari, tod 10, 36 s in (kettle ahead right)', page: `${CRET}&tod=10&ui=0`, evalJs: timed(SAFARI_AT(36000)), wait: 0 },
   { name: 'herd-lowpass', label: 'Low pass over the river herd (flee)', page: `${CRET}&tod=10&ui=0`, evalJs: timed(LOW_PASS), wait: 0 },
   { name: 'kettle-close', label: 'Kettle of azhdarchids, 45 m', page: `${CRET}&tod=10&ui=0`, evalJs: timed(KETTLE), wait: 0 },
