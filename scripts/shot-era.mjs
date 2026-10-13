@@ -187,7 +187,8 @@ const ERA_SHOTS = [
   { name: 'volcano-close', label: 'Volcano from 3000 m', page: 'dev/terrain.html?era=cretaceous&cam=7000,-9500,3000&look=2000,-17500,1700&tod=10&freeze=1', wait: 2500 },
   { name: 'valley-1500ft', label: 'Valley overview, 1500 ft above the Flats, toward the river herd', page: `${CRET}&tod=10&ui=0&camPos=-2600,-1400,580&camLook=-1622,4315,130`, evalJs: timed(SETTLE), wait: 500 },
   { name: 'night-2200', label: 'Night, tod 22 (safari, chase)', page: `${CRET}&tod=22&cam=chase&ui=0`, wait: 3000 },
-  { name: 'forest-close', label: 'Cretaceous trees (dev/terraintrees)', page: 'dev/terraintrees.html?era=cretaceous&tod=10&freeze=1', wait: 2500 },
+  { name: 'forest-close', label: 'Cretaceous trees, meshes and impostors, 90 m', page: 'dev/terraintrees.html?era=cretaceous&tod=10&freeze=1&dist=90', wait: 2500 },
+  { name: 'forest-300m', label: 'Cretaceous trees, meshes and impostors, 300 m', page: 'dev/terraintrees.html?era=cretaceous&tod=10&freeze=1&dist=300', wait: 2500 },
   { name: 'field-guide-toast', label: 'Field Guide toast (safari)', page: `${CRET}&tod=10`, evalJs: timed(TOAST), wait: 0 },
 ];
 
