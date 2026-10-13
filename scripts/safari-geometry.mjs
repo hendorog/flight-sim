@@ -20,10 +20,12 @@
 //       (riverHerdSite), `across` per track (closed form), the AGL clearance table, the araucaria stand search,
 //       the sun / volcano / dayFactor table over the tod x track grid.
 //
-//   node scripts/safari-geometry.mjs sweep [--out dir] [--tods 17.8,18.3] [--tracks 20,27] [--times 2,11]
+//   node scripts/safari-geometry.mjs sweep [--out dir] [--tods 17.8,18.3] [--tracks 20,27] [--times 2,11] [--lateral 300]
 //       Shoot the default boot (cockpit, the stub content) at each tod x track at the given times, writing
-//       <out>/wp0a-sweep-<tod>-<track>-<t>.png, and print each frame's measurements (sun on screen, herd box,
-//       herd / ground luminance from the frame's own pixels, auto-exposure).
+//       <out>/wp0a-sweep-<tod>-<track>-<t>.png, and print each frame's measurements (sun on screen, herd / ground
+//       luminance contrast, the cone / sky contrast below and above the summit, auto-exposure). A track other than
+//       SAFARI's re-solves `across` (the herd --lateral m left, default HERD_LATERAL_M) and re-starts the hold there
+//       in the page; SAFARI's own track flies the default boot unchanged.
 //
 // The TypeScript sources are loaded through vite's SSR module loader (no build step).
 
@@ -230,7 +232,14 @@ else if (mode === 'solve') {
   await ssr((load) => (flags.timeline ? timeline(load, flags) : flags.place ? place(load, flags) : solve(load, flags)));
 } else if (mode === 'sweep') {
   const { sweep } = await import('./safari-geometry-sweep.mjs');
-  await sweep({ root, flags, shot });
+  const { acrossFor } = await import('./safari-geometry-solve.mjs');
+  const tracks = String(flags.tracks ?? '20,27,35').split(',').map(Number);
+  const { across, safari } = await ssr(async (load) => ({
+    across: await acrossFor(load, tracks, flags.lateral === undefined ? undefined : Number(flags.lateral)),
+    safari: { ...(await load('/src/world/era/cretaceousAnchors.ts')).SAFARI },
+  }));
+  console.log(`across per track: ${JSON.stringify(Object.fromEntries(Object.entries(across).map(([k, v]) => [k, Math.round(v)])))} (SAFARI: track ${safari.trackDeg}, across ${safari.across})`);
+  await sweep({ root, flags, shot, tracks, across, safari });
 } else {
   console.error('usage: node scripts/safari-geometry.mjs sill|fly|solve|sweep [...]');
   process.exit(2);

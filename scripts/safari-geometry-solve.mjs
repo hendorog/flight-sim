@@ -201,6 +201,33 @@ export async function timeline(load, flags) {
 }
 
 /**
+ * `across` for each track: the start's runway-frame offset that puts the ACTUAL river-herd site `lateral` m left of
+ * the drifted hold path at closest approach (the timeline's solve; track 20 at HERD_LATERAL_M gives SAFARI.across).
+ * Returns { [track]: across }.
+ */
+export async function acrossFor(load, tracks, lateral) {
+  const { setEra } = await load('/src/world/era/eraState.ts');
+  setEra('cretaceous');
+  const A = await load('/src/world/era/cretaceousAnchors.ts');
+  const { riverHerdSite } = await load('/src/world/fauna/showcase.ts');
+  const { countingTerrain } = await load('/src/world/fauna/habitat.ts');
+  const herd = riverHerdSite(countingTerrain());
+  const F = A.SAFARI_FLIGHT;
+  const L = lateral ?? A.HERD_LATERAL_M;
+  const out = {};
+  for (const track of tracks) {
+    const lat = (across) => {
+      const q = A.nedToPath(herd.north, herd.east, { s: 0, c: 0 }, { ...A.SAFARI, trackDeg: track, across });
+      return F.driftRight * (q.s / F.groundSpeed) - q.c;
+    };
+    const a0 = 3000, a1 = 4000, l0 = lat(a0), l1 = lat(a1);
+    out[track] = a0 + ((L - l0) * (a1 - a0)) / (l1 - l0);
+  }
+  setEra('present');
+  return out;
+}
+
+/**
  * `solve --place`: the anchors for the current SAFARI (cretaceousAnchors.ts) and each group's visibility over the
  * first minute (centre point; D = left door window, W = windscreen, - = hidden), with body sizes in px.
  */
