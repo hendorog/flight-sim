@@ -43,9 +43,12 @@ const SCALE = `${REX}
   return { cam: [-cp.z, cp.x, cp.y], label: ' (aircraft ' + Math.round(Math.hypot(s.north - r.n, s.east - r.e)) + ' m from it, ' + Math.round(s.altitudeMSL - r.h) + ' m up)', rex: r, ac: [s.north, s.east, s.altitudeMSL], want: [an, ae, r.h + 20] };`;
 
 const CHARGE = `${REX}
-  await until(() => i >= 0 && A.state[i] === 2 && f.herds.time - A.stateT[i] > 4.5, 60000);
+  const h = f.riverHerd;
+  const runningNow = () => { let c = 0; for (let k = 0; k < H.size[h]; k++) if (H.speed[h * H.memberCap + k] > 2) c++; return c; };
+  // Late in the charge or the roar, once the stampede is under way.
+  await until(() => i >= 0 && A.state[i] >= 2 && runningNow() >= 15, 60000);
   const r = rex();
-  const h = f.riverHerd, cn = H.cN[h], ce = H.cE[h], ch = H.cH[h];
+  const cn = H.cN[h], ce = H.cE[h], ch = H.cH[h];
   // Above and behind the T. rex, looking past it at the herd's centre.
   const dn = cn - r.n, de = ce - r.e, d = Math.hypot(dn, de) || 1;
   sim.setFixedCamera([r.n - 70 * dn / d + 25 * de / d, r.e - 70 * de / d - 25 * dn / d, r.h + 45], [r.n + 0.55 * dn, r.e + 0.55 * de, ch]);
@@ -75,7 +78,7 @@ export default function shots(h) {
     { name: 'trex-gallery-lod1-300', label: 'T. rex LOD1 at 300 m (walk)', page: `${DEV}&gait=1&strip=0&lod=1&cam=-300,0,215&look=0,0,124`, wait: 1500 },
     { name: 'trex-gallery-lod2-700', label: 'T. rex LOD2 at 700 m (charge)', page: `${DEV}&gait=2&strip=0&lod=2&cam=-700,0,340&look=0,0,124`, wait: 1500 },
     { name: 'trex-scale', label: 'T. rex beside the C172 (40 m), paused', page: `${h.CRET}&tod=17.5&ui=0`, evalJs: h.timed(SCALE), wait: 0 },
-    { name: 'trex-charge', label: 'T. rex charging the river herd (default boot)', page: h.DEFAULT_BOOT, evalJs: h.timed(CHARGE), wait: 0 },
+    { name: 'trex-charge', label: 'T. rex charge and the stampede (default boot)', page: h.DEFAULT_BOOT, evalJs: h.timed(CHARGE), wait: 0 },
     { name: 'trex-G2', label: 'G2 (default boot, cockpit)', page: h.DEFAULT_BOOT, evalJs: h.timed(frame(h, 'G2')), wait: 0 },
     { name: 'trex-G3', label: 'G3 (default boot, cockpit)', page: h.DEFAULT_BOOT, evalJs: h.timed(frame(h, 'G3')), wait: 0 },
   ];

@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as Anchors from '../../src/world/era/cretaceousAnchors';
 import { SoloAgentPool } from '../../src/world/fauna/agents';
 import { countingTerrain, type FaunaTerrain } from '../../src/world/fauna/habitat';
-import { HerdPool, type AircraftView } from '../../src/world/fauna/herds';
+import { ALARM, HerdPool, type AircraftView } from '../../src/world/fauna/herds';
 import { AGENT_RESERVE, FLYER_RESERVE, TERRAIN_CALLS_PER_FRAME } from '../../src/world/fauna/presets';
 import { PROFILES } from '../../src/world/fauna/profiles';
 import { THREAT } from '../../src/world/fauna/reactions';
@@ -116,6 +116,8 @@ interface Trace {
   fleeSet: number;
   roar: number;
   faceSet: number;
+  /** The Triceratops herd ran (ALARM.run) at any time while alarmed in the first 25 s. */
+  triRan: boolean;
   fleeBearing: number;
   maxAgentReads: number;
   /** Closest the T. rex came to the river channel's edge (m; negative = in the water), sampled every 0.5 s. */
@@ -179,7 +181,7 @@ function aircraftAt(t: number, ac: AircraftView): AircraftView {
 /** Fly the safari for `seconds` with the herds and the T. rex as FaunaSystem steps them (herds, then agents). */
 function runSafari(seconds: number, terrain: FaunaTerrain = flatTerrain()): Trace {
   const { herds, pool, river, tri } = setup(terrain);
-  const tr: Trace = { stalk: NaN, charge: NaN, fleeSet: NaN, roar: NaN, faceSet: NaN, fleeBearing: NaN, maxAgentReads: 0, riverClear: Infinity, lines: [] };
+  const tr: Trace = { stalk: NaN, charge: NaN, fleeSet: NaN, roar: NaN, faceSet: NaN, triRan: false, fleeBearing: NaN, maxAgentReads: 0, riverClear: Infinity, lines: [] };
   const ac: AircraftView = { n: 0, e: 0, alt: 0, vN: 0, vE: 0, vD: 0, tas: 0 };
   const frames = Math.round(seconds / DT);
   for (let f = 1; f <= frames; f++) {
@@ -195,6 +197,7 @@ function runSafari(seconds: number, terrain: FaunaTerrain = flatTerrain()): Trac
     if (s === TREX_STATE.roar && Number.isNaN(tr.roar)) tr.roar = t;
     if (herds.fleeing[river] && Number.isNaN(tr.fleeSet)) tr.fleeSet = t;
     if (herds.fleeing[tri] && Number.isNaN(tr.faceSet)) tr.faceSet = t;
+    if (herds.fleeing[tri] && t < 25 && herds.react[tri] === ALARM.run) tr.triRan = true;
     // The stampede's direction while the external flee owns it (~12 s), off the track heading (+ right).
     if (Number.isNaN(tr.fleeBearing) && t >= 12 && herds.fleeing[river]) {
       let sn = 0;
@@ -256,6 +259,8 @@ describe('T. rex brain allocation', () => {
   });
 });
 
+const flatTerrainShared = flatTerrain();
+
 describe('T. rex brain on the scripted safari', () => {
   let tr: Trace;
   beforeAll(() => {
@@ -276,6 +281,8 @@ describe('T. rex brain on the scripted safari', () => {
   it('makes the Triceratops group face it (they stand: no run)', () => {
     expect(tr.faceSet).toBeGreaterThan(tr.charge);
     expect(tr.faceSet).toBeLessThan(tr.charge + 5);
+    // Faced throughout (never ALARM.run: the charge stays outside their predatorFleeRange).
+    expect(tr.triRan).toBe(false);
   });
 
   it('drives the stampede 30-60 deg off the track direction, toward the track side (right)', () => {
@@ -317,5 +324,4 @@ describe('T. rex brain on the scripted safari', () => {
     }
   });
 });
-const flatTerrainShared = flatTerrain();
 
