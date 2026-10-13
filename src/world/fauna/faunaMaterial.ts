@@ -58,6 +58,9 @@ vec4 qPart(vec4 q, float w) { return normalize(mix(QI, q.w < 0.0 ? -q : q, w)); 
 vec4 qMirror(vec4 q, float side) { return side > 0.0 ? q : vec4(-q.x, -q.y, q.z, q.w); }
 // Rotation about z then a second about y (pitch, then yaw on top), the common neck/head case.
 vec4 qYawPitch(float yaw, float pitch) { return qMul(qAx(AY, yaw), qAx(AZ, pitch)); }
+// Roll about the body x axis with the right side (+z) going UP for positive t (a right-handed +x rotation
+// takes +z down). Right-wing rotations go through this; qMirror makes the left wing's twin.
+vec4 qRightUp(float t) { return qAx(AX, -t); }
 
 vec4 fQ[${BONE_COUNT}];
 vec4 fSubQ[3];
@@ -168,7 +171,7 @@ void faunaPose() {
   float legPh = ph + (side > 0.0 ? 0.5 : 0.0) * F_TAU;
   float armPh = ph + (side > 0.0 ? 0.75 : 0.25) * F_TAU;
   fFold = 1.0 - unfold;
-  vec4 wingR = qMul(qAx(AZ, swF * sin(armPh) + 0.5 * trail), qMul(qAx(AX, stroke + 0.14 * max(0.0, cos(armPh)) * walk), qPart(uFold[0], fFold)));
+  vec4 wingR = qMul(qAx(AZ, swF * sin(armPh) + 0.5 * trail), qMul(qRightUp(stroke + 0.14 * max(0.0, cos(armPh)) * walk), qPart(uFold[0], fFold)));
   fQ[${B.wingR}] = wingR;
   fQ[${B.wingL}] = qMirror(wingR, -1.0);
   // Hind legs: walk, crouch and push, trail in flight.
@@ -184,7 +187,7 @@ void faunaPose() {
     float flex = -0.22 * flap * flying * cos(ph) + 0.05 * (1.0 - flap) * flying;
     fSubQ[0] = qMirror(qPart(uFold[1], fFold), side);
     fSubQ[1] = qMirror(qMul(qAx(AY, sweep), qPart(uFold[2], fFold)), side);
-    fSubQ[2] = qMirror(qMul(qAx(AX, flex), qPart(uFold[3], fFold)), side);
+    fSubQ[2] = qMirror(qMul(qRightUp(flex), qPart(uFold[3], fFold)), side);
   } else {
     fSubQ[0] = qAx(AZ, -knee);
     fSubQ[1] = qAx(AZ, knee * 0.8);
@@ -237,7 +240,8 @@ void faunaSkin() {
   vec3 bp = mix(pp, pb, aBoneW) + fRootOff;
   vec3 bn = normalize(mix(np, nb, aBoneW));
   // Instance: scale, bank (right wing down +), pitch (nose up +), yaw (heading, 0 = north, clockwise).
-  vec4 qi = qMul(qAx(AY, 1.5707963 - aInstA.w), qMul(qAx(AZ, aInstB.x), qAx(AX, -aInstB.y)));
+  // (a right-handed +x rotation takes the right side down: exactly right-wing-down-positive bank)
+  vec4 qi = qMul(qAx(AY, 1.5707963 - aInstA.w), qMul(qAx(AZ, aInstB.x), qAx(AX, aInstB.y)));
   fWorldP = qRot(qi, bp * aInstC.z) + vec3(aInstA.x, aInstA.y, -aInstA.z);
   fWorldN = qRot(qi, bn);
   float seed = fract(aInstC.w);

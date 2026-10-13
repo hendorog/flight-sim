@@ -10,6 +10,7 @@
 //   lod=0|1|2      which LOD to draw                          strip=N   copies in the strip (0 = none)
 //   t=seconds      animation time (phase and secondary motion; with freeze=1 it is the frozen instant)
 //   turn=rad/s     hero turntable rate (yaw = 90 deg + turn * t)
+//   pitch=, bank=  hero attitude, degrees (nose up +, right wing down +; checks the instance convention)
 //   far=metres     move the whole exhibit this far north of the default camera (LOD2 checks: far=5000)
 //   cam=, look=, tod=, freeze=1 as in every harness page.
 import * as THREE from 'three';
@@ -32,6 +33,8 @@ const lod = Math.max(0, Math.min(2, Math.round(num('lod', 0))));
 const stripN = Math.max(0, Math.round(num('strip', single ? 6 : 0)));
 const turn = num('turn', 0);
 const far = num('far', 0);
+const heroPitch = (num('pitch', 0) * Math.PI) / 180;
+const heroBank = (num('bank', 0) * Math.PI) / 180;
 let t = num('t', 0);
 
 interface Pose {
@@ -93,7 +96,8 @@ function writeAll(time: number): void {
       const alt = y0 + (info.groundOffsetM + p.lift) * scale;
       const flap = info.rig === 'hadrosaur' ? p.alert : p.flap;
       const yaw = s.f === null ? s.yaw + turn * time : s.yaw;
-      writeFaunaInstance(ex.inst.array, i, s.east, alt, s.north + far, yaw, 0, 0, phase, p.gait, flap, 0, scale, i + 0.37 * i);
+      const hero = s.f === null;
+      writeFaunaInstance(ex.inst.array, i, s.east, alt, s.north + far, yaw, hero ? heroPitch : 0, hero ? heroBank : 0, phase, p.gait, flap, 0, scale, i + 0.37 * i);
     });
     ex.inst.setCount(ex.slots.length);
     ex.mats.uniforms.uTime.value = time;
