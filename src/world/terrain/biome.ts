@@ -184,6 +184,9 @@ export function treeLineBase(): number {
  * MARSH_RIVER_DIST of the river. */
 export const MARSH_MOISTURE = 0.6;
 export const MARSH_RIVER_DIST = 900;
+/** Marsh slope limit, as the up component of the normal: none at 4 degrees or steeper, full at 2.5 or flatter. */
+export const MARSH_UP_MIN = Math.cos((4 * Math.PI) / 180);
+export const MARSH_UP_FULL = Math.cos((2.5 * Math.PI) / 180);
 
 /** How much higher the tree line lies on a sunny south face than on level ground (and lower facing north),
  * per unit of the normal's horizontal southward component, m. */
@@ -266,12 +269,12 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
   const E = era().terrain;
   if (!E.farmland) out.farmland = 0;
   if (E.marsh) {
-    // Horsetail flats: wet (moisture over 0.6), level (slope under ~4 degrees: up over cos 4 = 0.9976) ground
+    // Horsetail flats: wet (moisture over 0.6), level (slope under 4 degrees: MARSH_UP_MIN) ground
     // on the floodplain within 900 m of the river, above the water, off the beaches and the woods, and not on
     // the dead-flat airport zone (the Flats are a dry mud flat).
     out.marsh =
       smooth(MARSH_MOISTURE, MARSH_MOISTURE + 0.12, moisture) *
-      smooth(0.9945, 0.9985, up) *
+      smooth(MARSH_UP_MIN, MARSH_UP_FULL, up) *
       (1 - smooth(MARSH_RIVER_DIST - 300, MARSH_RIVER_DIST, s.riverDist)) *
       smooth(0.3, 1.5, aboveWater) *
       (1 - sand) *

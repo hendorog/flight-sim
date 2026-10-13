@@ -51,6 +51,74 @@ function materials() {
   };
 }
 
+/** The era capability defines, the only macros preprocess() resolves. */
+const ERA_DEFINES = ['ERA_FARM', 'MARSH_CHANNEL', 'STRIP_MUD'] as const;
+
+/**
+ * A minimal GLSL preprocessor for the era capability defines: it resolves the #if / #ifdef / #ifndef / #elif /
+ * #else / #endif blocks whose condition names one of ERA_DEFINES (as NAME, NAME > n or NAME == n), dropping the
+ * lines a real compile would skip, and leaves every other conditional (three.js's own) and its lines in place.
+ */
+function preprocess(src: string, defs: Record<(typeof ERA_DEFINES)[number], number>): string {
+  const evalCond = (kind: string, expr: string): boolean | null => {
+    const name = ERA_DEFINES.find((d) => new RegExp(`\\b${d}\\b`).test(expr));
+    if (!name) return null;
+    const v = defs[name];
+    if (kind === 'ifdef') return true;
+    if (kind === 'ifndef') return false;
+    const m = new RegExp(`^${name}\\s*(==|>|!=)?\\s*(\\d+)?$`).exec(expr.trim());
+    if (!m) throw new Error(`unsupported era condition: ${expr}`);
+    if (!m[1]) return v !== 0;
+    const n = Number(m[2]);
+    return m[1] === '==' ? v === n : m[1] === '>' ? v > n : v !== n;
+  };
+  // Each frame: whether it is resolved here, whether its current branch is live, and whether a branch was taken.
+  const stack: { resolved: boolean; live: boolean; taken: boolean; outer: boolean }[] = [];
+  const out: string[] = [];
+  const active = (): boolean => stack.every((f) => f.live);
+  for (const line of src.split('\n')) {
+    const t = line.trim();
+    const open = /^#(if|ifdef|ifndef)\b\s*(.*)$/.exec(t);
+    if (open) {
+      const outer = active();
+      const c = evalCond(open[1], open[2]);
+      if (c === null) {
+        stack.push({ resolved: false, live: true, taken: false, outer });
+        if (outer) out.push(line);
+      } else stack.push({ resolved: true, live: c, taken: c, outer });
+      continue;
+    }
+    const top = stack[stack.length - 1];
+    const elif = /^#elif\b\s*(.*)$/.exec(t);
+    if (elif && top) {
+      if (!top.resolved) {
+        if (top.outer) out.push(line);
+        continue;
+      }
+      const c = evalCond('if', elif[1]);
+      if (c === null) throw new Error(`mixed era #elif: ${t}`);
+      top.live = !top.taken && c;
+      top.taken ||= c;
+      continue;
+    }
+    if (t.startsWith('#else') && top) {
+      if (top.resolved) {
+        top.live = !top.taken;
+        top.taken = true;
+      } else if (top.outer) out.push(line);
+      continue;
+    }
+    if (t.startsWith('#endif') && top) {
+      stack.pop();
+      if (!top.resolved && top.outer) out.push(line);
+      continue;
+    }
+    if (active()) out.push(line);
+  }
+  if (stack.length) throw new Error('unbalanced conditionals');
+  return out.join('\n');
+}
+
 /** The tree / snow line threshold literal the fragment shader emits. */
 const threshold = (frag: string, name: 'treeLine' | 'snowLine'): string => {
   const m = new RegExp(`float ${name} = (\\d+\\.\\d) \\+`).exec(frag);
@@ -148,16 +216,35 @@ describe('era look: the Late Cretaceous', () => {
     expect(m.river.customProgramCacheKey()).toBe('river-v4-cretaceous');
   });
 
-  it('guards the farm, marsh and Flats paths with balanced conditionals', () => {
+  it('guards the farm, marsh and Flats paths: each drops out when its define is off', () => {
     const frag = patch(materials().terrain, 'standard').fragmentShader;
     expect(conditionalDepth(frag)).toBe(0);
     for (const d of ['#if ERA_FARM', '#if MARSH_CHANNEL', '#if STRIP_MUD']) expect(frag, d).toContain(d);
-    // The field patchwork (and its parcel helpers) and the town sit inside ERA_FARM.
-    const farmOpen = frag.indexOf('#if ERA_FARM');
-    expect(farmOpen).toBeGreaterThan(-1);
-    expect(frag.indexOf('Parcel parcelAt(')).toBeGreaterThan(farmOpen);
-    // The Flats' crack helpers come with STRIP_MUD.
-    expect(frag).toContain('float crackDistance(vec2 p)');
+    // Preprocessed as compiled (the material's own defines) and with each capability flipped: the field
+    // patchwork (its parcel helpers and the parcel lookup), the farm weight and the town drop out without
+    // ERA_FARM; the marsh weight without MARSH_CHANNEL; the Flats' cracks without STRIP_MUD.
+    const on = { ERA_FARM: 1, MARSH_CHANNEL: 1, STRIP_MUD: 1 };
+    const farm = ['Parcel parcelAt(vec2 p)', 'parcelAt(vec2(tP.x, -tP.z))', 'vec3 crop = cropColor(', 'farmW = mix(farmW,', 'tTownD = length(', 'tUrbanW = urbanW;'];
+    const marsh = ['float tMarshW = smoothstep(', 'meadow = mix(meadow, marsh, tMarshW);'];
+    const mud = ['float crackDistance(vec2 p)'];
+    const all = preprocess(frag, on);
+    for (const s of [...farm, ...marsh, ...mud]) expect(all, s).toContain(s);
+    const noFarm = preprocess(frag, { ...on, ERA_FARM: 0 });
+    for (const s of farm) expect(noFarm, s).not.toContain(s);
+    expect(noFarm).toContain('farmW = 0.0;');
+    for (const s of [...marsh, ...mud]) expect(noFarm, s).toContain(s);
+    const noMarsh = preprocess(frag, { ...on, MARSH_CHANNEL: 0 });
+    for (const s of marsh) expect(noMarsh, s).not.toContain(s);
+    expect(noMarsh).toContain('float tMarshW = 0.0;');
+    for (const s of [...farm, ...mud]) expect(noMarsh, s).toContain(s);
+    const noMud = preprocess(frag, { ...on, STRIP_MUD: 0 });
+    for (const s of mud) expect(noMud, s).not.toContain(s);
+    for (const s of [...farm, ...marsh]) expect(noMud, s).toContain(s);
+    // As compiled for the Cretaceous: no farm or town code, marsh and the Flats in.
+    const d = materials().terrain.defines as Record<string, number>;
+    const cret = preprocess(frag, { ERA_FARM: d.ERA_FARM, MARSH_CHANNEL: d.MARSH_CHANNEL, STRIP_MUD: d.STRIP_MUD });
+    for (const s of farm) expect(cret, s).not.toContain(s);
+    for (const s of [...marsh, ...mud]) expect(cret, s).toContain(s);
   });
 
   it('emits the CPU tree and snow lines as the shader thresholds (CPU/GLSL twins)', () => {

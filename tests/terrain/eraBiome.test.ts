@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setEra } from '../../src/world/era/eraState';
 import { LINE_UP } from '../../src/world/airport/layout';
-import { computeBiome, CoverShapeField, makeBiome, makeCoverShape, treeLine } from '../../src/world/terrain/biome';
+import { computeBiome, CoverShapeField, makeBiome, makeCoverShape, MARSH_UP_FULL, MARSH_UP_MIN, treeLine } from '../../src/world/terrain/biome';
 import { hydrology, makeSample, sampleTerrain, snowLine, terrainSurface } from '../../src/world/terrain/heightfield';
 import { buildTile } from '../../src/world/terrain/tileBuilder';
 
@@ -95,7 +95,7 @@ describe('era land cover: the Late Cretaceous', () => {
   });
 
   it('has marsh along the floodplain river', () => {
-    const c = coverAt(besideRiver(60)).filter((x) => x.airportBlend === 1 && x.up > 0.9985);
+    const c = coverAt(besideRiver(60)).filter((x) => x.airportBlend === 1 && x.up > MARSH_UP_FULL);
     expect(c.length).toBeGreaterThan(20);
     const marshy = c.filter((x) => x.marsh > 0).length;
     expect(marshy / c.length).toBeGreaterThan(0.3);
@@ -103,9 +103,13 @@ describe('era land cover: the Late Cretaceous', () => {
   });
 
   it('has no marsh on slopes, far from the river or on the Flats', () => {
+    // The slope limit is 4 degrees (plan), stated here independently of the constants.
+    const up4 = Math.cos((4 * Math.PI) / 180);
+    expect(MARSH_UP_MIN).toBeCloseTo(up4, 6);
+    expect(MARSH_UP_FULL).toBeGreaterThan(up4);
     const c = coverAt([...lattice(45_000, 1500), ...besideRiver(60), ...besideRiver(1500), ...lattice(1500, 150)]);
     for (const x of c) {
-      if (x.up < 0.9945) expect(x.marsh).toBe(0);
+      if (x.up <= up4) expect(x.marsh).toBe(0);
       if (x.airportBlend < 0.15) expect(x.marsh).toBe(0);
     }
     const far = coverAt(besideRiver(1500));
