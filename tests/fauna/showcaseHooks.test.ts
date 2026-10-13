@@ -10,8 +10,9 @@ import { ALAMOSAURUS_STAND, KETTLE0_EVENING, KETTLE_BAND_M, SAFARI_FLIGHT, TREX_
 import { eraById } from '../../src/world/era/registry';
 import { createFaunaSystem, type FaunaSystemImpl } from '../../src/world/fauna/FaunaSystem';
 import { FLYER_MODE } from '../../src/world/fauna/flight';
-import { countingTerrain } from '../../src/world/fauna/habitat';
+import { countingTerrain, herdEntries } from '../../src/world/fauna/habitat';
 import { FAUNA_PRESETS } from '../../src/world/fauna/presets';
+import { PROFILES } from '../../src/world/fauna/profiles';
 import { ROSTERS } from '../../src/world/fauna/roster';
 import { KETTLE_BIRDS, KETTLE_MAX_AGL, KETTLE_MIN_AGL, SAFARI_AGL_M } from '../../src/world/fauna/showcase';
 import { DEFAULT_KETTLE, SHOWCASE_HOOKS, kettleComposition, type ShowcaseSpawn } from '../../src/world/fauna/showcaseHooks';
@@ -87,6 +88,13 @@ describe('showcase hooks', () => {
       else if (F.mode[i] === FLYER_MODE.stand) pair++;
     }
     expect(k0.sort()).toEqual(['azhdarchidSmall', 'azhdarchidSmall', 'pteranodon', 'pteranodon', 'pteranodon', 'quetzalcoatlus']);
+    // Each bird flies with its species' wingbeat and its size relative to Quetzalcoatlus (speeds scale with it).
+    for (let i = 0; i < F.capacity; i++) {
+      if (!F.active[i] || speciesOfFlyer(sys, i) !== 'pteranodon') continue;
+      expect(F.hz[i]).toBeCloseTo(PROFILES.pteranodon.flapHz, 6);
+      expect(F.size[i]).toBeGreaterThan((6.5 / 10.5) * 0.9);
+      expect(F.size[i]).toBeLessThan((6.5 / 10.5) * 1.1);
+    }
     expect(k1).toBe(KETTLE_BIRDS);
     expect(pair).toBe(2);
     expect(F.count()).toBe(14);
@@ -144,5 +152,14 @@ describe('showcase hooks', () => {
     }
     expect(sys.herds.active[ala]).toBe(1);
     expect(speciesOfHerd(sys, ala)).toBe('alamosaurus');
+  });
+
+  it('the habitat streaming never spawns solo or showcase-only species (roster append-only)', () => {
+    const R = ROSTERS.cretaceous;
+    expect(R.entries.slice(0, 3).map((e) => e.species)).toEqual(['edmontosaurus', 'quetzalcoatlus', 'azhdarchidSmall']);
+    expect(herdEntries(R).map((i) => R.entries[i].species)).toEqual(['edmontosaurus']);
+    for (const sp of ['triceratops', 'alamosaurus', 'tyrannosaurus'] as const) expect(R.entries.find((e) => e.species === sp)!.ambient).toBe(false);
+    expect(R.entries.find((e) => e.species === 'tyrannosaurus')!.role).toBe('solo');
+    expect(R.entries.find((e) => e.species === 'pteranodon')!.weight).toBeCloseTo(0.3, 6);
   });
 });

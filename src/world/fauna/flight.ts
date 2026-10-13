@@ -109,6 +109,8 @@ export interface FlyerSpawn {
   /** The group's home (kettles stay within a leash of it; ground birds walk about it), NED m. */
   anchorN: number;
   anchorE: number;
+  /** Wingbeat frequency at size 1, Hz (the species' PROFILES flapHz; default 1, the azhdarchids'). */
+  flapHz?: number;
 }
 
 const wrapPi = (a: number): number => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
@@ -198,6 +200,8 @@ export class FlyerPool {
   /** 1 while bird i circles a virtual core (coreX/coreY are then NED, not the drifting frame); its band centre MSL. */
   readonly virt: Uint8Array;
   readonly virtAlt: Float64Array;
+  /** Wingbeat frequency at size 1, Hz (FlyerSpawn.flapHz). */
+  readonly hz: Float32Array;
 
   time = 0;
   /** Diagnostics: closest approach to the aircraft seen last step, m. */
@@ -264,6 +268,7 @@ export class FlyerPool {
     this.walkE = f64();
     this.virt = new Uint8Array(capacity);
     this.virtAlt = f64();
+    this.hz = f32();
   }
 
   count(): number {
@@ -312,6 +317,7 @@ export class FlyerPool {
     this.walkN[i] = sp.north;
     this.walkE[i] = sp.east;
     this.virt[i] = 0;
+    this.hz[i] = sp.flapHz !== undefined && sp.flapHz > 0 ? sp.flapHz : FLAP_HZ;
     const ground = sp.mode === FLYER_MODE.stand || sp.mode === FLYER_MODE.walk || sp.mode === FLYER_MODE.roost;
     this.speed[i] = ground ? 0 : this.cruise(i);
     this.blend[i] = ground ? 0 : 2;
@@ -794,7 +800,7 @@ export class FlyerPool {
   }
 
   private flapPhase(i: number, dt: number): void {
-    const p = this.phase[i] + (FLAP_HZ / Math.sqrt(Math.max(0.3, this.size[i]))) * dt;
+    const p = this.phase[i] + (this.hz[i] / Math.sqrt(Math.max(0.3, this.size[i]))) * dt;
     this.phase[i] = p - Math.floor(p);
   }
 

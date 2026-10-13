@@ -465,8 +465,12 @@ export class FaunaSystemImpl implements FaunaSystem {
     const re = this.roster.entries[entry];
     const draw = this.draws[this.entryDraw[entry]];
     const unit = draw ? draw.unit : 1;
-    const size = re.scale * (0.92 + 0.16 * cellRandom(seed, 3, 1));
-    return this.flyers.spawn({ north: n, east: e, alt, ground, entry, scale: size * unit, size, variant: re.variant, seed, mode, heading, anchorN: an, anchorE: ae });
+    // Size relative to Quetzalcoatlus (speeds and wingbeat scale with it): the roster scale x the species' real
+    // span over Quetzalcoatlus's (1 for the inc-1 azhdarchids, which share its body; 6.5 / 10.5 for Pteranodon).
+    const rel = SPECIES_REFERENCE_M[re.species] / SPECIES_REFERENCE_M.quetzalcoatlus;
+    const size = re.scale * rel * (0.92 + 0.16 * cellRandom(seed, 3, 1));
+    const shown = re.scale * (0.92 + 0.16 * cellRandom(seed, 3, 1));
+    return this.flyers.spawn({ north: n, east: e, alt, ground, entry, scale: shown * unit, size, variant: re.variant, seed, mode, heading, anchorN: an, anchorE: ae, flapHz: PROFILES[re.species].flapHz });
   }
 
   // ------------------------------------------------------------------------------------------------- update
