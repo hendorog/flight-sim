@@ -34,6 +34,17 @@ const GULLY_OCTAVES = 3;
 /** Radial cone weight (basalt), as a fraction of the base radius: full inside CONE_IN, none beyond CONE_OUT. */
 export const CONE_IN = 0.55;
 export const CONE_OUT = 0.82;
+/**
+ * Bare basalt crags on the cone (VOLCANO_GLSL volcanoCrag): the cone weight times the slope ramp, from none at an up
+ * component of CRAG_UP_NONE to full at CRAG_UP_FULL, times the radial ramp, full inside CRAG_R_FULL base radii and
+ * none beyond CRAG_R_NONE.
+ */
+export const CRAG_UP_NONE = 0.95;
+export const CRAG_UP_FULL = 0.86;
+export const CRAG_R_FULL = 0.35;
+export const CRAG_R_NONE = 0.75;
+/** The shader breaks the crag edge with noise on the slope; the woods keep this far (in up) clear of it. */
+const CRAG_WOOD_MARGIN = 0.03;
 /** The shader paints the sand channel as ash inside ASH_REACH base radii (beaches are far beyond it). */
 export const ASH_REACH = 1.15;
 
@@ -138,10 +149,26 @@ export interface VolcanoMask {
   cone: number;
   /** Ash and scoria, 0..1: the bare upper cone and a ragged apron blown east (downwind) over the lower flanks. */
   ash: number;
+  /** Distance from the centre in base radii. */
+  rN: number;
 }
 
 export function makeVolcanoMask(): VolcanoMask {
-  return { cone: 0, ash: 0 };
+  return { cone: 0, ash: 0, rN: 0 };
+}
+
+/**
+ * The bare basalt crag weight the terrain shader paints at a point (the CPU twin of VOLCANO_GLSL volcanoCrag, without
+ * its noise), from the cone weight, the distance in base radii and the land-cover up component (the shader's
+ * vCoverUp). `margin` shifts the slope ramp toward gentler ground.
+ */
+export function volcanoCrag(cone: number, rN: number, up: number, margin = 0): number {
+  return cone * smooth(CRAG_UP_NONE + margin, CRAG_UP_FULL + margin, up) * smooth(CRAG_R_NONE, CRAG_R_FULL, rN);
+}
+
+/** How much the cone thins the woods at a point: bare where the shader paints crags or ash, half elsewhere on it. */
+export function volcanoWoodsCut(m: VolcanoMask, up: number): number {
+  return Math.max(m.cone * 0.5, volcanoCrag(m.cone, m.rN, up, CRAG_WOOD_MARGIN), m.ash);
 }
 
 /** Radial cone weight from the distance in base radii (the CPU twin of VOLCANO_GLSL volcanoCone). */
@@ -156,6 +183,7 @@ export function volcanoMask(north: number, east: number, V: VolcanoSpec, out: Vo
   const r = Math.sqrt(dn * dn + de * de);
   const rN = r / V.baseRadius;
   out.cone = volcanoCone(rN);
+  out.rN = rN;
   if (rN >= ASH_REACH) {
     out.ash = 0;
     return out;
@@ -180,4 +208,6 @@ export const VOLCANO_GLSL = /* glsl */ `uniform vec4 uVolcano;
 float volcanoR(vec2 xz) { return length(vec2(xz.x, -xz.y) - uVolcano.xy) / uVolcano.z; }
 // Basalt cone weight (volcano.ts volcanoCone).
 float volcanoCone(float rN) { return 1.0 - smoothstep(${CONE_IN.toFixed(3)}, ${CONE_OUT.toFixed(3)}, rN); }
+// Bare basalt crags (volcano.ts volcanoCrag): steep ground on the upper cone, the slope edge broken by noise.
+float volcanoCrag(float cone, float rN, float up) { return cone * smoothstep(${CRAG_UP_NONE.toFixed(3)}, ${CRAG_UP_FULL.toFixed(3)}, up) * smoothstep(${CRAG_R_NONE.toFixed(3)}, ${CRAG_R_FULL.toFixed(3)}, rN); }
 `;

@@ -19,7 +19,15 @@ import { buildHydrology, lakeRadius } from '../../src/world/terrain/hydrology';
 import { createTerrainMaterial, type TerrainUniforms } from '../../src/world/terrain/terrainMaterial';
 import type { TerrainTextures } from '../../src/world/terrain/textures';
 import { buildTile } from '../../src/world/terrain/tileBuilder';
-import { makeVolcanoMask, volcanoBound, volcanoCone, volcanoHeight, volcanoMask, VOLCANO_GLSL } from '../../src/world/terrain/volcano';
+import {
+  makeVolcanoMask,
+  volcanoBound,
+  volcanoCone,
+  volcanoCrag,
+  volcanoHeight,
+  volcanoMask,
+  VOLCANO_GLSL,
+} from '../../src/world/terrain/volcano';
 
 const V = CRETACEOUS.terrain.volcano!;
 /** Same as heightfield.ts APPROACH_LENGTH. */
@@ -204,6 +212,54 @@ describe('the look', () => {
     expect(volcanoMask(V.north, V.east + V.baseRadius * 1.2, V, m).ash).toBe(0);
     expect(m.cone).toBe(0);
     setEra('present');
+  });
+
+  it('no woods where the shader paints bare basalt crags on the cone', () => {
+    setEra('cretaceous');
+    const s = makeSample();
+    const b = makeBiome();
+    const m = makeVolcanoMask();
+    let wooded = 0; // samples where the old half-density cut would have left trees on the crags
+    let crags = 0;
+    for (let rN = 0.3; rN <= 0.8; rN += 0.05)
+      for (let a = 0; a < 24; a++) {
+        const n = V.north + Math.cos((a / 24) * 2 * Math.PI) * rN * V.baseRadius;
+        const e = V.east + Math.sin((a / 24) * 2 * Math.PI) * rN * V.baseRadius;
+        volcanoMask(n, e, V, m);
+        for (const up of [0.8, 0.86, 0.9, 0.95]) {
+          sampleTerrain(n, e, s);
+          computeBiome(n, e, s, up, b, 0);
+          const crag = volcanoCrag(m.cone, m.rN, up);
+          if (crag > 0.999) {
+            crags++;
+            expect(b.forest).toBe(0);
+          }
+          expect(b.forest).toBeLessThanOrEqual(1 - crag + 1e-9);
+          setEra('present');
+          computeBiome(n, e, s, up, b, 0);
+          if (crag > 0.5 && b.forest * (1 - Math.max(m.cone * 0.5, m.ash)) > 0.05) wooded++;
+          setEra('cretaceous');
+        }
+      }
+    expect(crags).toBeGreaterThan(20);
+    expect(wooded).toBeGreaterThan(0);
+    setEra('present');
+  });
+
+  it('the GLSL crag weight is the CPU volcanoCrag (thresholds parsed from the emitted text)', () => {
+    const m =
+      /volcanoCrag\(float cone, float rN, float up\) \{ return cone \* smoothstep\(([\d.]+), ([\d.]+), up\) \* smoothstep\(([\d.]+), ([\d.]+), rN\); \}/.exec(
+        VOLCANO_GLSL,
+      );
+    expect(m).not.toBeNull();
+    const [u0, u1, r0, r1] = m!.slice(1).map(Number);
+    const ss = (e0: number, e1: number, x: number): number => {
+      const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1);
+      return t * t * (3 - 2 * t);
+    };
+    for (let r = 0; r <= 1; r += 0.05)
+      for (let up = 0.7; up <= 1; up += 0.02)
+        expect(0.8 * ss(u0, u1, up) * ss(r0, r1, r)).toBeCloseTo(volcanoCrag(0.8, r, up), 6);
   });
 
   it('the GLSL cone weight is the CPU volcanoCone (thresholds parsed from the emitted text)', () => {

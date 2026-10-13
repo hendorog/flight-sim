@@ -177,7 +177,7 @@ ${VOLCANO_GLSL}#endif
 const VOLCANO_WEIGHTS = /* glsl */ `#if VOLCANO
 float tVolR = volcanoR(tXZ);
 float tVolc = volcanoCone(tVolR);
-rockW = max(rockW, tVolc * smoothstep(0.95, 0.86, tUpN + 0.1 * fineN + 0.04 * sC.g) * smoothstep(0.75, 0.35, tVolR));
+rockW = max(rockW, volcanoCrag(tVolc, tVolR, tUpN + 0.1 * fineN + 0.04 * sC.g));
 #endif
 `;
 
