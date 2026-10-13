@@ -38,7 +38,7 @@ export interface AirportSystemOptions {
   lightIntensity?: number;
   /**
    * Deep Time: an era with no airport ('flats', src/world/era): build nothing (no pavement, buildings, lights,
-   * windsocks or valley). Accepted and not yet acted on (the Flats package implements it). Default false.
+   * windsocks or valley): the root stays empty, `lights` is empty and update() does almost nothing. Default false.
    */
   bare?: boolean;
 }
@@ -58,6 +58,8 @@ export class AirportSystem implements Subsystem {
    * floodlights also light them (e.g. the player aircraft or the terrain grass).
    */
   readonly shared: SharedUniforms = createSharedUniforms();
+  /** Every light the system draws (airfield, windsocks, valley); empty in bare mode. */
+  readonly lights: readonly LightSpec[] = [];
   private readonly disposables: { dispose(): void }[] = [];
   private materials!: MaterialSet;
   private signMaterial!: THREE.MeshStandardMaterial;
@@ -75,6 +77,12 @@ export class AirportSystem implements Subsystem {
   }
 
   init(ctx: SimContext): void {
+    if (this.options.bare) {
+      // The Flats (Deep Time): no airport exists. The root stays empty; it is still added so dispose() and the
+      // scene walkers (cloud shadows, post) treat it like any other.
+      ctx.scene.add(this.root);
+      return;
+    }
     const aniso = ctx.renderer.capabilities.getMaxAnisotropy();
     const pave: PavementTextures = {
       asphalt: makeAsphaltTexture(aniso),
@@ -122,6 +130,7 @@ export class AirportSystem implements Subsystem {
       this.root.add(valley.group);
     }
 
+    (this as { lights: readonly LightSpec[] }).lights = lights;
     const pts = createLightPoints(lights, this.shared);
     this.lightUniforms = pts.uniforms;
     this.lightUniforms.uIntensity.value = this.options.lightIntensity ?? 1;
@@ -132,6 +141,7 @@ export class AirportSystem implements Subsystem {
   }
 
   update(dt: number, ctx: SimContext): void {
+    if (this.options.bare) return;
     const night = nightFromDayFactor(ctx.sky.dayFactor);
     this.shared.uNight.value = night;
     this.shared.uTime.value = ctx.simTime;
@@ -159,7 +169,7 @@ export class AirportSystem implements Subsystem {
    * moonlight and clips to a uniform white.
    */
   artificialIlluminance(position: THREE.Vector3): number {
-    if (!(this.floodPower > 0)) return 0;
+    if (!(this.floodPower > 0)) return 0; // also bare mode: floodPower is never set
     const fade = 1 - smoothstep(20, 80, position.y - AIRPORT.elevation);
     if (fade <= 0) return 0;
     let e = 0;
@@ -172,6 +182,7 @@ export class AirportSystem implements Subsystem {
 
   /** Change the global light radiance multiplier at run time (see AirportSystemOptions.lightIntensity). */
   setLightIntensity(k: number): void {
+    if (!this.lightUniforms) return;
     this.lightUniforms.uIntensity.value = k;
   }
 

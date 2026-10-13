@@ -18,6 +18,8 @@ import type { AircraftDefinition, ControlSystemDef } from '../aircraft/types';
 // Not from the '../physics' barrel (see sim/autoflight.ts): it carries the flight model.
 import { tasFromCas } from '../physics/atmosphere';
 import { LINE_UP, PARKING } from '../world/airport/layout';
+import { isPresent } from '../world/era/eraState';
+import { terrainHeight } from '../world/terrain/heightfield';
 import type { StartSpec } from './starts';
 
 export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 'cruise', 'downwind'];
@@ -26,6 +28,9 @@ export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 
 export const PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
 /** Downwind leg offset from the runway centreline, m (left-hand traffic for 07: north-west of the runway). */
 export const DOWNWIND_OFFSET = 900;
+/** The 'safari' start (Deep Time) in the runway frame, m: along the runway, across to its right. */
+export const SAFARI_ALONG = 5500;
+export const SAFARI_ACROSS = 3000;
 /** Glide path of the final-approach scenario and the aim point beyond the threshold (m). */
 export const GLIDE_PATH = 3 * DEG;
 export const AIM_POINT = 150;
@@ -148,7 +153,7 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
       const p = LINE_UP.find((l) => l.runway === '07')!;
       return {
         id,
-        title: 'Runway 07, ready for take-off',
+        title: isPresent() ? 'Runway 07, ready for take-off' : 'The Flats, heading 070, ready for take-off',
         ic: { position: { x: p.north, y: p.east, z: -AIRPORT.elevation }, heading: p.heading, airspeed: 0, onGround: true, engineRunning: true },
         controls: presets.linedUp,
         autoflight: { kind: 'takeoff', heading: p.heading, climbTo: PATTERN_ALTITUDE, cruiseKias: sc.afterTakeoffKias },
@@ -157,7 +162,7 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
     case 'apron':
       return {
         id,
-        title: `Apron, stand ${PARKING.name}, cold and dark`,
+        title: isPresent() ? `Apron, stand ${PARKING.name}, cold and dark` : 'The Flats, off the trail, cold and dark',
         ic: { position: { x: PARKING.north, y: PARKING.east, z: -AIRPORT.elevation }, heading: PARKING.heading, airspeed: 0, onGround: true, engineRunning: false },
         controls: presets.cold,
         autoflight: { kind: 'parked' },
@@ -190,9 +195,26 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
         autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
       };
     }
-    case 'safari':
-      // The Cretaceous era's airborne start (WP3 builds it). Until then: the cruise start under this id.
-      return { ...buildScenario('cruise', env, def), id };
+    case 'safari': {
+      // The Cretaceous era's airborne start: 1000 ft above the ground over the river, SAFARI_ALONG m along the
+      // runway frame and SAFARI_ACROSS m to the right of it, flying downstream (toward the volcano, heading 250:
+      // the river runs parallel to the runway ~3 km south), 2 km before the showcase herd at the river crossing
+      // (along ~+3.5 km), at the type's cruise speed and clean.
+      const rwy = AIRPORT.runway.heading;
+      const n = SAFARI_ALONG * Math.cos(rwy) - SAFARI_ACROSS * Math.sin(rwy);
+      const e = SAFARI_ALONG * Math.sin(rwy) + SAFARI_ACROSS * Math.cos(rwy);
+      const alt = terrainHeight(n, e) + 1000 * FT;
+      const heading = wrapTwoPi(rwy + Math.PI);
+      const ic: InitialConditions = { position: { x: n, y: e, z: -alt }, heading, airspeed: kiasToTas(sc.cruiseKias, alt, env), onGround: false, engineRunning: true };
+      if (retractable) ic.gearDown = false;
+      return {
+        id,
+        title: 'Safari: the river valley, 1000 ft',
+        ic,
+        controls: presets.airborne,
+        autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
+      };
+    }
     case 'downwind': {
       // Left of runway 07 (across < 0), abeam midfield.
       const ic = startOnDownwind(env, 0, sc.downwindKias, lever(sc.downwindFlapsDeg));

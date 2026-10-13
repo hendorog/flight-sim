@@ -39,6 +39,8 @@ import { el, setText } from './dom';
 import type { GamepadSettings } from './gamepadPage';
 import { Hud } from './hud';
 import { PauseMenu, type AutopilotLink, type KeyBinding, type MenuHost, type MenuTab, type ResumePreferenceLink, type SchoolMenuLink } from './menu';
+import { era, isPresent } from '../world/era/eraState';
+import { spawnWindAdvice } from './eraChooser';
 import { CrashDialog, FpsMeter, HintsCard, LoadingScreen, Toasts, type CrashAction } from './overlays';
 import type { SchoolUi } from './school/schoolUi';
 import { Annunciators, ControlsWidget, type WidgetAircraft, type YokeSource } from './status';
@@ -271,6 +273,9 @@ export class UISystem implements Subsystem, MenuHost {
         this.lastSwitches = null;
         this.lastMixture.fill(NaN);
         this.startupCheck = true;
+        // A new start on the Flats from the menu (the Flats, Off the trail): the wind advice again. At boot the
+        // loading screen still covers the start; hideLoading gives it then.
+        if (this.loaded) this.spawnWindToast();
       }),
       ev.on('cameraMode', (e) => this.showToast(`${CAMERA_NAMES[e.mode]} view`)),
       ev.on('qualityChanged', (e) => this.showToast(`Graphics quality: ${e.quality}`)),
@@ -360,9 +365,27 @@ export class UISystem implements Subsystem, MenuHost {
 
   hideLoading(): void {
     this.loading.hide();
+    this.loaded = true;
     if (this.hintsMode === 'always') this.hints.show(true);
     else if (this.hintsMode === 'auto' && !this.automated && !this.schoolUi?.hasProfile) this.hints.show();
     this.startupCheck = true;
+    this.spawnWindToast();
+  }
+
+  /** The loading screen has been hidden once (boot finished): later starts give their own wind advice. */
+  private loaded = false;
+
+  /**
+   * The Flats have no windsock: at each start on the ground (after boot and after each reset), say which way the wind blows and which way to
+   * take off. After the loading screen has faded.
+   */
+  private spawnWindToast(): void {
+    if (isPresent() || era().world.airport !== 'flats' || !this.context) return;
+    const ctx = this.context;
+    if (!ctx.state.wheels.some((w) => w.onGround)) return;
+    const w = ctx.weather;
+    const text = spawnWindAdvice(w.windDirectionDeg, w.windSpeedKt);
+    window.setTimeout(() => this.showToast(text, 9000), 800);
   }
 
   /**
