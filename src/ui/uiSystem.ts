@@ -41,6 +41,8 @@ import { Hud } from './hud';
 import { PauseMenu, type AutopilotLink, type KeyBinding, type MenuHost, type MenuTab, type ResumePreferenceLink, type SchoolMenuLink } from './menu';
 import { era, isPresent } from '../world/era/eraState';
 import { spawnWindAdvice } from './eraChooser';
+import { FieldGuide } from './fieldGuide';
+import { sightingToastText } from '../world/fauna/fieldGuideData';
 import { CrashDialog, FpsMeter, HintsCard, LoadingScreen, Toasts, type CrashAction } from './overlays';
 import type { SchoolUi } from './school/schoolUi';
 import { Annunciators, ControlsWidget, type WidgetAircraft, type YokeSource } from './status';
@@ -129,6 +131,8 @@ export class UISystem implements Subsystem, MenuHost {
   private readonly flightCues: FlightCues;
   private readonly loading: LoadingScreen;
   private readonly toasts: Toasts;
+  /** Deep Time field guide (sightings persisted); the menu lists it outside the present era. */
+  readonly fieldGuide = new FieldGuide();
   private readonly fps: FpsMeter;
   private readonly crash: CrashDialog;
   private readonly pausedBadge: HTMLElement;
@@ -276,6 +280,10 @@ export class UISystem implements Subsystem, MenuHost {
         // A new start on the Flats from the menu (the Flats, Off the trail): the wind advice again. At boot the
         // loading screen still covers the start; hideLoading gives it then.
         if (this.loaded) this.spawnWindToast();
+      }),
+      ev.on('faunaSighted', (e) => {
+        if (isPresent()) return;
+        if (this.fieldGuide.record(e.species, e.distanceM)) this.showToast(sightingToastText(e.species), 7000);
       }),
       ev.on('cameraMode', (e) => this.showToast(`${CAMERA_NAMES[e.mode]} view`)),
       ev.on('qualityChanged', (e) => this.showToast(`Graphics quality: ${e.quality}`)),
