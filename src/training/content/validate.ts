@@ -54,7 +54,8 @@ const LEGS = { none: 1, ground: 1, upwind: 1, crosswind: 1, downwind: 1, base: 1
 const COACH_LEVELS = { full: 1, reduced: 1, minimal: 1, silent: 1 } as const satisfies Record<CoachLevel, 1>;
 const INSTRUMENTS = { asi: 1, ai: 1, alt: 1, tc: 1, dg: 1, vsi: 1, tach: 1, ball: 1, flaps: 1, fuel: 1, oil: 1 } as const satisfies Record<InstrumentId, 1>;
 const AREAS = { trainingArea: 1, fieldOverhead: 1, pflHighKey: 1 } as const satisfies Record<AreaId, 1>;
-const SCENARIOS = { runway: 1, apron: 1, final: 1, cruise: 1, downwind: 1 } as const satisfies Record<ScenarioId, 1>;
+// Lessons start from the present-day scenarios only ('safari' is an era start).
+const SCENARIOS = { runway: 1, apron: 1, final: 1, cruise: 1, downwind: 1 } as const satisfies Record<Exclude<ScenarioId, 'safari'>, 1>;
 const PATTERNS = { ok: 1, biasHigh: 1, biasLow: 1, oscillation: 1, drift: 1, late: 1 } as const satisfies Record<Pattern, 1>;
 const SKILLS = {
   effectsOfControls: 1, groundOps: 1, straightLevel: 1, climb: 1, descent: 1, turns: 1, slowFlight: 1, stalls: 1, takeoff: 1,

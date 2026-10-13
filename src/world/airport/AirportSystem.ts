@@ -36,6 +36,11 @@ export interface AirportSystemOptions {
    * project's photometric scale, see core/context.ts).
    */
   lightIntensity?: number;
+  /**
+   * Deep Time: an era with no airport ('flats', src/world/era): build nothing (no pavement, buildings, lights,
+   * windsocks or valley). Accepted and not yet acted on (the Flats package implements it). Default false.
+   */
+  bare?: boolean;
 }
 
 /** Night factor from the sky's day factor: lights come on through dusk, fully on at night. */

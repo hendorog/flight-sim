@@ -190,6 +190,9 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
         autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
       };
     }
+    case 'safari':
+      // The Cretaceous era's airborne start (WP3 builds it). Until then: the cruise start under this id.
+      return { ...buildScenario('cruise', env, def), id };
     case 'downwind': {
       // Left of runway 07 (across < 0), abeam midfield.
       const ic = startOnDownwind(env, 0, sc.downwindKias, lever(sc.downwindFlapsDeg));

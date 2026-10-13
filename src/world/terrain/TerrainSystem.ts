@@ -18,6 +18,7 @@ import { buildTileIndices, type TileData } from './tileBuilder';
 import { AirfieldGrass } from './vegetation/grass';
 import { VegetationSystem } from './vegetation/VegetationSystem';
 import { setTownSite, townSite } from './townMask';
+import { era } from '../era/eraState';
 import { createRiverGeometry, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
 import { WorkerPool } from './workerPool';
 
@@ -55,7 +56,7 @@ export interface TerrainSystemOptions {
   workers?: number;
   /** Disable the instanced trees (the ground still shows forest). */
   vegetation?: boolean;
-  /** Keep land cover off the airport module's valley town (default true). */
+  /** Keep land cover off the airport module's valley town (default true; the Simulator passes false in an era without the town). */
   town?: boolean;
 }
 
@@ -141,8 +142,9 @@ export class TerrainSystem implements Subsystem {
     this.pool = new WorkerPool(this.options.workers ?? Math.min(8, Math.max(2, threads - 2)));
     // Keep woodland and crop fields off the valley town (the airport module builds it on the site
     // findTownSite picks for this terrain); the workers need it before their first job.
-    if (this.options.town !== false) setTownSite(findTownSite(terrainHeight));
-    this.pool.broadcast({ kind: 'setup', town: townSite() });
+    // (Not in an era without the town, whatever the option says.)
+    if (this.options.town !== false && era().terrain.town) setTownSite(findTownSite(terrainHeight));
+    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id });
     this.uploader = new GeometryUploader(ctx.renderer);
     this.textures = createTerrainTextures(ctx.renderer);
     this.material = createTerrainMaterial(this.textures, this.uniforms);
@@ -164,9 +166,12 @@ export class TerrainSystem implements Subsystem {
       this.vegetation = new VegetationSystem(this.pool, this.uniforms.uForestFade.value, this.uniforms.uCanopyKeep.value);
       await this.vegetation.init(ctx);
       this.root.add(this.vegetation.root);
-      this.grass = new AirfieldGrass();
-      this.grass.setQuality(ctx.quality);
-      this.root.add(this.grass.mesh);
+      // Mown airfield grass only where there is an airfield (not on an era's bare flats).
+      if (era().world.airport !== 'flats') {
+        this.grass = new AirfieldGrass();
+        this.grass.setQuality(ctx.quality);
+        this.root.add(this.grass.mesh);
+      }
     }
     this.initTiming.vegetation = lap();
     await this.preload(ctx.camera);

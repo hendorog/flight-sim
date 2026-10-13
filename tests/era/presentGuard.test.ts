@@ -29,6 +29,7 @@ import { buildTile, type TileRequest } from '../../src/world/terrain/tileBuilder
 import { setTownSite, townSite } from '../../src/world/terrain/townMask';
 import { buildTreeCell, type TreeCellRequest } from '../../src/world/terrain/vegetation/placement';
 import { createWaterMaterial, type WaterUniforms } from '../../src/world/terrain/water';
+import { setEra } from '../../src/world/era/eraState';
 
 // node:fs and node:crypto at run time (the project type-checks tests without node's types, as tests/golden does).
 interface Fs {
@@ -277,5 +278,16 @@ describe('present guard: the present-day world is byte-identical to the pinned f
     expect(now.tiles).toEqual(pinned.tiles);
     expect(now.trees).toEqual(pinned.trees);
     expect(now.shaders).toEqual(pinned.shaders);
+  });
+
+  it.skipIf(CAPTURE)('is restored after a setEra(cretaceous) -> setEra(present) round trip', { timeout: 120_000 }, () => {
+    try {
+      setEra('cretaceous');
+      computeFixture();
+    } finally {
+      setEra('present');
+    }
+    const pinned = JSON.parse(fs.readFileSync(FIXTURE, 'utf8')) as EraPresentFixture;
+    expect(computeFixture()).toEqual(pinned);
   });
 });

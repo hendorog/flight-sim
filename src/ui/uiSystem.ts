@@ -91,6 +91,7 @@ const SCENARIO_NAMES: Record<ScenarioId, string> = {
   final: 'final approach',
   cruise: 'cruise',
   downwind: 'downwind',
+  safari: 'safari',
 };
 function isScenario(s: string | null | undefined): s is ScenarioId {
   return !!s && Object.prototype.hasOwnProperty.call(SCENARIO_NAMES, s);
