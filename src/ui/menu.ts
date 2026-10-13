@@ -16,9 +16,11 @@ import { ERA_PREF_KEY } from '../sim/eraChoice';
 import { ERAS } from '../world/era/registry';
 import type { EraId } from '../world/era/types';
 import { achievedRateLabel, SIM_RATES, splitKeyAlternatives, splitKeyCombo, STARTUP_STEPS } from './cues';
+import type { FieldGuide } from './fieldGuide';
+import { FIELD_GUIDE_SPECIES, fieldGuideEntry } from '../world/fauna/fieldGuideData';
 import { GamepadPage, type GamepadSettings } from './gamepadPage';
 
-export type MenuTab = 'flight' | 'school' | 'weather' | 'time' | 'display' | 'controls' | 'controllers';
+export type MenuTab = 'flight' | 'school' | 'weather' | 'time' | 'display' | 'controls' | 'controllers' | 'fieldguide';
 
 /** The Flight School's side of the menu (SchoolUi implements it; UISystem.attachSchool provides it). */
 export interface SchoolMenuLink {
@@ -75,6 +77,8 @@ export interface MenuHost {
   readonly school?: SchoolMenuLink | null;
   /** The types the aircraft chooser offers. Absent: AIRCRAFT_CATALOGUE (its available rows). */
   readonly aircraftChoices?: readonly AircraftSummary[] | null;
+  /** Deep Time field guide store (absent in tests); its tab shows outside the present era only. */
+  readonly fieldGuide?: FieldGuide | null;
 }
 
 /** The type flown and its presentation, when the context carries them (test fakes may not). */
@@ -179,6 +183,7 @@ export class PauseMenu {
       ['display', 'Display & camera'],
       ['controls', 'Controls'],
       ['controllers', 'Joysticks & yokes'],
+      ['fieldguide', 'Field Guide'],
     ];
     for (const [id, name] of tabs) {
       const b = el('button', '', nav, name);
@@ -198,6 +203,7 @@ export class PauseMenu {
     const pads = this.page(card, 'Joysticks & yokes', 'Assign and calibrate game controllers, yokes, pedals and throttle quadrants. Settings are saved per device.');
     this.gamepadPage = new GamepadPage(pads);
     this.pages.set('controllers', pads);
+    this.pages.set('fieldguide', this.buildFieldGuide(card));
   }
 
   /** The input module's controller manager (null: the page says it is unavailable). */
@@ -237,6 +243,7 @@ export class PauseMenu {
 
   show(tab: MenuTab): void {
     if (tab === 'school' && (!this.host.school || !this.gates().school)) tab = 'flight';
+    if (tab === 'fieldguide' && this.eraId() === 'present') tab = 'flight';
     this.tab = tab;
     for (const [id, b] of this.nav) b.classList.toggle('active', id === tab);
     for (const [id, p] of this.pages) p.classList.toggle('hidden', id !== tab);
@@ -245,7 +252,31 @@ export class PauseMenu {
 
   refresh(): void {
     this.nav.get('school')?.classList.toggle('hidden', !this.host.school || !this.gates().school);
+    this.nav.get('fieldguide')?.classList.toggle('hidden', this.eraId() === 'present');
     for (const r of this.refreshers) r();
+  }
+
+  private buildFieldGuide(card: HTMLElement): HTMLElement {
+    const p = this.page(card, 'Field Guide', 'Creatures you have spotted from the air. Fly close enough to a new species to add it.');
+    const list = el('div', '', p);
+    this.refreshers.push(() => {
+      list.textContent = '';
+      const g = this.host.fieldGuide;
+      if (!g) return;
+      for (const id of FIELD_GUIDE_SPECIES) {
+        const e = fieldGuideEntry(id);
+        const rec = g.get(id);
+        const row = el('div', 'fg-row', list);
+        el('b', '', row, rec ? e.name : '? ? ?');
+        if (!rec) {
+          el('p', 'sub', row, 'Not seen yet.');
+          continue;
+        }
+        el('p', 'sub', row, `${e.size}. First seen ${rec.firstSeen.slice(0, 10)}, closest ${Math.round(rec.closestM)} m.`);
+        for (const f of e.facts) el('p', 'sub', row, `- ${f}`);
+      }
+    });
+    return p;
   }
 
   private page(card: HTMLElement, title: string, sub: string): HTMLElement {

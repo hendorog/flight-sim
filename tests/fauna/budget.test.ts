@@ -206,7 +206,7 @@ describe('fauna budget', () => {
     expect(createFaunaSystem(eraById('present'))).toBeNull();
   });
 
-  it('emits faunaSighted once per species on a close, low approach', () => {
+  it('emits faunaSighted once per species while the approach distance holds', () => {
     const { sys, ctx } = build('high');
     const seen: string[] = [];
     ctx.events.on('faunaSighted', (e) => seen.push(e.species));
@@ -219,6 +219,31 @@ describe('fauna budget', () => {
       sys.update(DT, ctx);
     }
     expect(seen.filter((s) => s === 'edmontosaurus')).toHaveLength(1);
+  });
+
+  it('emits faunaSighted again on a closer approach, so the guide keeps the closest distance', () => {
+    const { sys, ctx } = build('high');
+    const dists: number[] = [];
+    ctx.events.on('faunaSighted', (e) => {
+      if (e.species === 'edmontosaurus') dists.push(e.distanceM);
+    });
+    const H = sys.herds;
+    const h = sys.riverHerd;
+    const fly = (back: number, frames: number) => {
+      for (let k = 0; k < frames; k++) {
+        ctx.simTime += DT;
+        place(ctx, H.cN[h] - H.radius[h] - back, H.cE[h], H.cH[h] + 150, 0);
+        sys.update(DT, ctx);
+      }
+    };
+    fly(450, 60);
+    const first = dists.length;
+    expect(first).toBeGreaterThanOrEqual(1);
+    fly(40, 60);
+    expect(dists.length).toBeGreaterThan(first);
+    expect(Math.min(...dists)).toBeLessThan(200);
+    // Each repeat is at least 25 m closer than the last, so the emits are bounded (<= 500 / 25 per species).
+    for (let k = 1; k < dists.length; k++) expect(dists[k]).toBeLessThanOrEqual(dists[k - 1] - 24);
   });
 
   it('starting at low quality trims the showcase flyers to the preset', () => {

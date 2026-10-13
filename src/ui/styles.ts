@@ -193,6 +193,8 @@ ${FLIGHT_CUES_CSS}
 #fsui .menu section { padding: 26px 30px; overflow-y: auto; }
 #fsui .menu h2 { margin: 0 0 4px; font-size: 20px; font-weight: 650; }
 #fsui .menu .sub { color: var(--fg-dim); margin: 0 0 20px; font-size: 13px; }
+#fsui .menu .fg-row { margin: 0 0 16px; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+#fsui .menu .fg-row .sub { margin: 4px 0 0; }
 #fsui .menu h3 { margin: 22px 0 10px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-dim); font-weight: 600; }
 #fsui .scenarios { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
 #fsui .scenarios button { text-align: left; padding: 14px; display: flex; flex-direction: column; gap: 4px; min-height: 86px; }

@@ -10,7 +10,8 @@
 //   - update(dt, ctx) runs every frame after the airport (Simulator.run('fauna', ...)), with the frame's simulated
 //     dt (0 while paused; clamped here to 0.1 s per step); it never throws (NaN guarded, counts clamped).
 //   - Emits 'faunaSighted' {species, distanceM} on a species' first approach within 500 m and below 300 m AGL
-//     in a session.
+//     in a session, and again each time the pilot gets at least SIGHT_CLOSER m closer than the last emit (so the
+//     Field Guide's 'closest' distance tracks the session's best approach; at most ~20 emits per species).
 //
 // FRAME: (1) every STREAM_PERIOD, release far herds/flyers, probe at most one habitat cell (<= 30 terrain samples)
 // and spawn at most one herd or kettle; (2) herd brains at 10 Hz round-robin and the flyers, sharing the
@@ -178,6 +179,8 @@ class CellCache {
 
 const SIGHT_RANGE = 500;
 const SIGHT_AGL = 300;
+/** A repeat 'faunaSighted' needs an approach at least this much closer than the species' last one, m. */
+const SIGHT_CLOSER = 25;
 /** Ambient flyers are released beyond this multiple of the active radius. */
 const FLYER_RELEASE = 1.3;
 /** Streaming (release, one probe, one spawn) runs this often, s. */
@@ -207,7 +210,8 @@ export class FaunaSystemImpl implements FaunaSystem {
   private readonly showcaseFlyer = new Uint8Array(FAUNA_MAX.flyers);
   /** Slot of the showcase river herd (-1 none). */
   riverHerd = -1;
-  private readonly sighted = new Set<FaunaSpeciesId>();
+  /** Per species, the distance of its last 'faunaSighted' emit this session, m. */
+  private readonly sighted = new Map<FaunaSpeciesId, number>();
   private brainClock = 0;
   private streamClock = 0;
   private ambientSerial = 0;
@@ -568,31 +572,31 @@ export class FaunaSystemImpl implements FaunaSystem {
   }
 
   private checkSightings(ctx: SimContext, ac: AircraftView): void {
-    if (this.sighted.size >= this.draws.length) return;
     const agl = ctx.state.altitudeAGL;
     if (!(agl < SIGHT_AGL)) return;
     const H = this.herds;
     for (let h = 0; h < MAX_HERDS; h++) {
       if (!H.active[h]) continue;
       const sp = this.draws[this.entryDraw[H.entry[h]]]?.species;
-      if (!sp || this.sighted.has(sp)) continue;
-      const d = Math.max(0, Math.hypot(H.cN[h] - ac.n, H.cE[h] - ac.e, H.cH[h] - ac.alt) - H.radius[h]);
-      if (d < SIGHT_RANGE) {
-        this.sighted.add(sp);
-        ctx.events.emit('faunaSighted', { species: sp, distanceM: Math.round(d) });
-      }
+      if (!sp) continue;
+      this.sight(ctx, sp, Math.max(0, Math.hypot(H.cN[h] - ac.n, H.cE[h] - ac.e, H.cH[h] - ac.alt) - H.radius[h]));
     }
     const F = this.flyers;
     for (let i = 0; i < F.capacity; i++) {
       if (!F.active[i]) continue;
       const sp = this.draws[this.entryDraw[F.entry[i]]]?.species;
-      if (!sp || this.sighted.has(sp)) continue;
-      const d = Math.hypot(F.n[i] - ac.n, F.e[i] - ac.e, F.alt[i] - ac.alt);
-      if (d < SIGHT_RANGE) {
-        this.sighted.add(sp);
-        ctx.events.emit('faunaSighted', { species: sp, distanceM: Math.round(d) });
-      }
+      if (!sp) continue;
+      this.sight(ctx, sp, Math.hypot(F.n[i] - ac.n, F.e[i] - ac.e, F.alt[i] - ac.alt));
     }
+  }
+
+  /** Emit 'faunaSighted' for a first approach within range, or one SIGHT_CLOSER m closer than the last emit. */
+  private sight(ctx: SimContext, sp: FaunaSpeciesId, d: number): void {
+    if (!(d < SIGHT_RANGE)) return;
+    const last = this.sighted.get(sp);
+    if (last !== undefined && !(d <= last - SIGHT_CLOSER)) return;
+    this.sighted.set(sp, d);
+    ctx.events.emit('faunaSighted', { species: sp, distanceM: Math.round(d) });
   }
 
   // ------------------------------------------------------------------------------------------------- render
