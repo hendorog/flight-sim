@@ -11,6 +11,9 @@
 import type * as THREE from 'three';
 import type { SceneEffect, SimContext } from '../../core/context';
 import type { WeatherSettings } from '../../core/types';
+import { era, isPresent } from '../../world/era/eraState';
+import { eraOff } from '../../world/era/eraOff';
+import { VolcanoPlumeEffect } from './VolcanoPlumeEffect';
 
 /** What an era effect is built with (per-frame state comes through SceneEffect.render's SimContext). */
 export interface EraEffectContext {
@@ -23,7 +26,14 @@ export interface EraEffectContext {
   weather: WeatherSettings;
 }
 
-/** The era's scene effects, in order (stub: none). Called once at boot, outside the present day only. */
-export function createEraEffects(_ctx: EraEffectContext): SceneEffect[] {
-  return [];
+/**
+ * The era's scene effects, in order: the volcano's plume when the era has a volcano and ?eraoff=plume is not set.
+ * Called once at boot, outside the present day only (and returns none in the present day regardless).
+ */
+export function createEraEffects(ctx: EraEffectContext): SceneEffect[] {
+  if (isPresent()) return [];
+  const effects: SceneEffect[] = [];
+  const V = era().terrain.volcano;
+  if (V && !eraOff('plume')) effects.push(new VolcanoPlumeEffect(V, ctx.weather));
+  return effects;
 }
