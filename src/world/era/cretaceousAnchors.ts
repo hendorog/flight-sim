@@ -42,6 +42,10 @@
 //   6. The default boot engages the safari's autoflight HOLD (heading 270, start altitude, 110 KIAS), as the plan's
 //      firstMinute describes; without it the trimmed aircraft wanders +-15 deg of heading and ~300 m off track in a
 //      minute (turbulence), which no anchor can follow. Any pilot input disconnects it (Simulator's overpower rule).
+//   7. The Triceratops group is NOT the plan's herd + 100 m along + 120 m toward the track (under the glareshield at
+//      G3, so it could never share the G3 frame with the stampede), nor "in the windscreen between the stampede and
+//      the track" (no windscreen ground nearer than ~1.3 km). It stands beyond the herd on the far side from the
+//      track, in the door window at G3 and G4 and clear of the T. rex's charge: see TRICERATOPS_ALONG_M.
 //
 // SWEEP TABLE (tod x track; sun relative bearing / elevation, dayFactor; volcano bearing; clearance at 450 ft)
 //   At f = 779.4 px the frame's central 60 % of width is +-31.6 deg off the nose, the central 40 % +-22.3 deg.
