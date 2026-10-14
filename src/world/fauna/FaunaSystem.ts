@@ -207,6 +207,15 @@ const FLYER_RELEASE = 1.3;
 /** Streaming (release, one probe, one spawn) runs this often, s. */
 const STREAM_PERIOD = 0.25;
 
+/**
+ * Herd terrain reads per frame at most (inside TERRAIN_CALLS_PER_FRAME's share for the herds). A stampede of a few
+ * hundred running members wants a ground snap for each of them every ~0.2 s; uncapped, the river herd's brain tick
+ * took 104-111 reads in one frame (measured at G3-G4). The cap bounds that worst-case burst (Deep Time inc 2 WP8;
+ * it did not measurably move the 4x-throttled CPU p95, which is noise-bound). Between snaps a member follows its
+ * herd's terrain plane, so the cap only spreads the snaps.
+ */
+const HERD_FRAME_READS = 64;
+
 export class FaunaSystemImpl implements FaunaSystem {
   readonly stats: FaunaStats = { visible: 0, terrainCalls: 0, reallocs: 0, cpuMs: 0, tris: 0, draws: 0 };
   /** Diagnostics (window.__sim.fauna.debug). */
@@ -518,7 +527,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       const wind = this.windTo(ctx);
       const day = (ctx.sky?.dayFactor ?? 1) > 0.25;
       const budget = TERRAIN_CALLS_PER_FRAME;
-      this.herds.step(dt, ac, this.terrain, Math.max(0, budget - this.terrain.calls - FLYER_RESERVE - AGENT_RESERVE), camN, camE);
+      this.herds.step(dt, ac, this.terrain, Math.min(HERD_FRAME_READS, Math.max(0, budget - this.terrain.calls - FLYER_RESERVE - AGENT_RESERVE)), camN, camE);
       // Solo agents after the herds (their brains read and drive the herds), on the herds' clock.
       this.debug.agentTerrainCalls = this.agents.step(dt, ac, this.terrain, this.riverHerd);
       this.flyers.step(dt, ctx.simTime ?? this.sceneTime, f, ac, this.terrain, Math.max(0, budget - this.terrain.calls), day, wind.n, wind.e);
