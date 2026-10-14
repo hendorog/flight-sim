@@ -48,7 +48,7 @@ import type { ThermalFrame } from '../../physics/weather/windField';
 import type { SimEnvironment } from '../../physics/environment';
 import * as Anchors from '../era/cretaceousAnchors';
 import type { EraParams } from '../era/types';
-import { SoloAgentPool } from './agents';
+import { SoloAgentPool, type AgentContext, type SoloBrain } from './agents';
 import { brainFor } from './brains';
 import { HABITAT_CELL, HERD_BANK_MARGIN, HERD_EPOCH_S, REX_QUIET_M, cellRandom, countingTerrain, kettleEntry, kettleNearWater, makeSite, probeCell, rexRandom, safariFootprintDist, type FaunaTerrain, type HabitatSite } from './habitat';
 import { HerdPool, type AircraftView } from './herds';
@@ -234,6 +234,32 @@ export const REX_RANGE_MIN = 320;
 export const REX_RANGE_SPAN = 130;
 /** A roaming T. rex is only placed beyond this distance from the camera, or outside the view, m. */
 const REX_UNSEEN_M = 2500;
+/**
+ * The brain a roaming T. rex runs: the T. rex brain with ctx.riverHerd masked to -1 for its init and step. The river
+ * herd belongs to the scripted encounter (slot 0); a roaming T. rex never sees it, so it can never stalk it or send it
+ * a threat, whichever T. rex brain is in the build (the inc-2 brain, which only hunts ctx.riverHerd, keeps a roaming
+ * one in LURK; the generalised brain is ambient for riverHerd -1 and picks its own unpinned prey). No allocation.
+ */
+export const AMBIENT_REX_BRAIN: SoloBrain = {
+  init(pool: SoloAgentPool, i: number, ctx: AgentContext): void {
+    const rh = ctx.riverHerd;
+    ctx.riverHerd = -1;
+    try {
+      brainFor('tyrannosaurus').init(pool, i, ctx);
+    } finally {
+      ctx.riverHerd = rh;
+    }
+  },
+  step(pool: SoloAgentPool, i: number, ctx: AgentContext): void {
+    const rh = ctx.riverHerd;
+    ctx.riverHerd = -1;
+    try {
+      brainFor('tyrannosaurus').step(pool, i, ctx);
+    } finally {
+      ctx.riverHerd = rh;
+    }
+  },
+};
 const EDMONTOSAURUS = speciesIndex('edmontosaurus');
 const TRICERATOPS = speciesIndex('triceratops');
 
@@ -671,8 +697,10 @@ export class FaunaSystemImpl implements FaunaSystem {
     const rings = Math.ceil(R / HABITAT_CELL);
     let probed = false;
     let spawned = false;
-    /** The herd slots are full and no site here is near enough to evict for. */
+    /** The herd slots are full and there is no unpinned herd to evict (or a spawn failed): no candidate qualifies. */
     let full = false;
+    /** When the slots are full: the farthest unpinned herd (-1 none; found once per tick, its distance in farD). */
+    let far = -2;
     let members = H.members();
     for (let ring = 0; ring <= rings && !(probed && (spawned || full)); ring++) {
       for (let di = -ring; di <= ring; di++) {
@@ -705,14 +733,17 @@ export class FaunaSystemImpl implements FaunaSystem {
           if (spawned || full || C.status[slot] !== CELL_SITE || C.herd[slot] >= 0) continue;
           if (members + C.size[slot] > MAX_GROUND_ANIMALS) continue;
           if (H.count() >= MAX_HERDS) {
-            // Full: the farthest unpinned herd gives up its slot to a site well nearer the camera.
-            const far = this.farthestUnpinned(camN, camE);
-            const sn = C.n[slot] - camN;
-            const se = C.e[slot] - camE;
-            if (far < 0 || Math.sqrt(sn * sn + se * se) > this.farD - EVICT_MARGIN) {
+            // Full: the farthest unpinned herd gives up its slot to a site well nearer the camera. A site that is not
+            // near enough is skipped, not taken as the end of the scan: the ring walk is not ordered by site distance,
+            // so a nearer site may follow.
+            if (far === -2) far = this.farthestUnpinned(camN, camE);
+            if (far < 0) {
               full = true;
               continue;
             }
+            const sn = C.n[slot] - camN;
+            const se = C.e[slot] - camE;
+            if (Math.sqrt(sn * sn + se * se) > this.farD - EVICT_MARGIN) continue;
             members -= H.size[far];
             this.releaseHerd(far);
             this.debug.evictions++;
@@ -879,7 +910,7 @@ export class FaunaSystemImpl implements FaunaSystem {
           variant: 0,
           seed: Math.floor(rexRandom(ci, cj, 3) * 4294967296) >>> 0,
         },
-        brainFor('tyrannosaurus'),
+        AMBIENT_REX_BRAIN,
       );
       if (i < 0) return false;
       this.ambientAgent[i] = 1;

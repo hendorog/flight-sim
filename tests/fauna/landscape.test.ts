@@ -19,7 +19,11 @@ import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
 import { SAFARI, SAFARI_FLIGHT, TREX_LAIR, safariAt, safariHeading } from '../../src/world/era/cretaceousAnchors';
 import { setEra } from '../../src/world/era/eraState';
 import { eraById } from '../../src/world/era/registry';
-import { AMBIENT_REX_MAX, REX_RANGE_MIN, REX_RANGE_SPAN, createFaunaSystem, type FaunaSystemImpl } from '../../src/world/fauna/FaunaSystem';
+import { AMBIENT_REX_BRAIN, AMBIENT_REX_MAX, REX_RANGE_MIN, REX_RANGE_SPAN, createFaunaSystem, type FaunaSystemImpl } from '../../src/world/fauna/FaunaSystem';
+import * as Anchors from '../../src/world/era/cretaceousAnchors';
+import { SoloAgentPool } from '../../src/world/fauna/agents';
+import { HerdPool, type AircraftView } from '../../src/world/fauna/herds';
+import { THREAT } from '../../src/world/fauna/reactions';
 import {
   CELL_READS,
   HABITAT_CELL,
@@ -504,17 +508,21 @@ describe('the first minute', () => {
     let charged = false;
     let quietBreach = 0;
     let slot0 = true;
+    /** Frames where the river herd's external threat came from somewhere other than the showcase T. rex (slot 0). */
+    let foreignThreat = 0;
     for (let f = 1; f <= 75 * 30; f++) {
       ctx.simTime = f * dt;
       flyTo(ctx, f * dt);
       sys.update(dt, ctx);
       if (A.state[0] === TREX_STATE.charge) charged = true;
+      const rh = sys.riverHerd;
+      if (rh >= 0 && H.active[rh] && H.extLevel[rh] !== THREAT.none && Math.hypot(H.extN[rh] - A.n[0], H.extE[rh] - A.e[0]) > 50) foreignThreat++;
       if (f % 15) continue;
       for (let h = 0; h < MAX_HERDS; h++) if (H.active[h] && !H.pinned[h] && H.entry[h] !== 0 && inQuietZone(H.homeN[h], H.homeE[h])) quietBreach++;
       for (let i = 0; i < A.capacity; i++) if (sys.ambientAgent[i]) ambient.push({ t: f * dt, state: A.state[i], foot: safariFootprintDist(A.n[i], A.e[i]) });
       if (sys.ambientAgent[0] || Math.hypot(A.homeN[0] - TREX_LAIR.north, A.homeE[0] - TREX_LAIR.east) >= 2) slot0 = false;
     }
-    return { sys, ambient, charged, quietBreach, slot0 };
+    return { sys, ambient, charged, quietBreach, slot0, foreignThreat };
   }
   const runs = new Map<QualityLevel, ReturnType<typeof runFirstMinute>>();
   const run = (q: QualityLevel) => {
@@ -532,12 +540,14 @@ describe('the first minute', () => {
       expect(r.charged).toBe(true);
     });
 
-    // Needs P2's ambient brain (tyrannosaurus.brain.ts: an agent away from TREX_LAIR hunts its own prey herd, not the
-    // river herd). With the inc-2 brain a roaming T. rex placed at ultra (~22 s, 8.4 km from the footprint) stalks
-    // the river herd as the aircraft passes it. Red on deep-time-2b/p1 alone; the merge's integration proof.
-    it(`${quality}: no roaming T. rex leaves LURK in the first 75 s (with P2's ambient T. rex brain)`, () => {
+    // A roaming T. rex runs AMBIENT_REX_BRAIN (ctx.riverHerd masked to -1), so it never sees the river herd: with
+    // the inc-2 brain it stays in LURK; with the generalised brain it shadows its own unpinned prey, far from here.
+    // (Unmasked, the inc-2 brain made the roaming T. rex placed at ultra, ~22 s and 8.4 km from the footprint, stalk
+    // the river herd from kilometres away and break up the scripted stampede.)
+    it(`${quality}: no roaming T. rex leaves LURK in the first 75 s; only the showcase T. rex threatens the river herd`, () => {
       const r = run(quality);
       for (const a of r.ambient) expect(a.state, `roaming T. rex at ${a.t.toFixed(1)} s`).toBe(TREX_STATE.lurk);
+      expect(r.foreignThreat).toBe(0);
     });
   }
 });
@@ -559,5 +569,92 @@ describe('ambient kettle species by water', () => {
     console.log(`Pteranodon kettle share near water ${near.toFixed(3)}, far ${far.toFixed(3)}`);
     expect(far).toBeGreaterThan(0);
     expect(near).toBeGreaterThanOrEqual(2 * far);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// A roaming T. rex never sees the river herd
+
+describe('AMBIENT_REX_BRAIN', () => {
+  it('masks ctx.riverHerd: beside a pinned river herd with the aircraft over it, it stays in LURK and sends no threat', () => {
+    const terrain = countingTerrain();
+    const herds = new HerdPool();
+    const pool = new SoloAgentPool(herds, terrain, Anchors);
+    const n0 = VREX.n;
+    const e0 = VREX.e;
+    const g = terrain.sample(n0, e0, makeSample()).ground;
+    const rh = herds.spawn({ north: n0, east: e0, ground: g, size: 20, entry: 0, scale: 1, variant: 0, seed: 0x5eed, heading: 0, pinned: true, species: 'edmontosaurus' }, -1);
+    expect(rh).toBeGreaterThanOrEqual(0);
+    const i = pool.spawn({ species: 'tyrannosaurus', entry: 2, north: n0 + 380, east: e0, ground: g, heading: Math.PI, scale: 1, variant: 0, seed: 0x7e3a12 }, AMBIENT_REX_BRAIN);
+    expect(i).toBeGreaterThanOrEqual(0);
+    const ac: AircraftView = { n: n0, e: e0, alt: g + 150, vN: 0, vE: 50, vD: 0, tas: 50 };
+    const dt = 1 / 30;
+    for (let k = 0; k < 30 * 30; k++) {
+      terrain.calls = 0;
+      pool.step(dt, ac, terrain, rh);
+      expect(pool.state[i]).toBe(TREX_STATE.lurk);
+      expect(herds.extLevel[rh]).toBe(THREAT.none);
+      // Restored after every step (the scripted agent in the same pass still sees it).
+      expect(pool.context().riverHerd).toBe(rh);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Eviction scan: an ineligible candidate does not end it
+
+describe('eviction when the herd slots are full', () => {
+  it('a site not near enough to evict for is skipped; a nearer site later in the ring walk still evicts', () => {
+    const { sys, ctx } = build('ultra');
+    const H = sys.herds;
+    const p = sys as unknown as {
+      cells: { find(k: number): number; keys: Float64Array; status: Uint8Array; n: Float64Array; e: Float64Array; ground: Float64Array; size: Uint8Array; entry: Int16Array; herd: Int16Array; used: number };
+      stream(ctx: SimContext, camN: number, camE: number): void;
+    };
+    // The camera at the middle of cell (ci0, cj0), far from the safari.
+    const ci0 = Math.floor(VREX.n / HABITAT_CELL);
+    const cj0 = Math.floor(VREX.e / HABITAT_CELL);
+    const camN = (ci0 + 0.5) * HABITAT_CELL;
+    const camE = (cj0 + 0.5) * HABITAT_CELL;
+    place(ctx, camN, camE, 500, 0);
+    // Every free herd slot: small unpinned herds 4.5 km out (the farthest one sets farD).
+    let k = 0;
+    while (H.count() < MAX_HERDS) {
+      const a = (k / 24) * 2 * Math.PI;
+      H.spawn({ north: camN + 4500 * Math.cos(a), east: camE + 4500 * Math.sin(a), ground: 100, size: 3, entry: 0, scale: 1, variant: 0, seed: 7000 + k, heading: 0, pinned: false, species: 'edmontosaurus' }, -1);
+      k++;
+    }
+    // Every cell in range known and empty, except two sites: the ring walk meets (ci0-1, cj0-1) first, its site 3960
+    // m out (not EVICT_MARGIN nearer than 4.5 km), then (ci0, cj0+1), its site 1050 m out.
+    const C = p.cells;
+    const key = (ci: number, cj: number) => (ci + 32768) * 65536 + (cj + 32768);
+    const rings = Math.ceil(10000 / HABITAT_CELL) + 1;
+    for (let di = -rings; di <= rings; di++)
+      for (let dj = -rings; dj <= rings; dj++) {
+        const kk = key(ci0 + di, cj0 + dj);
+        const slot = C.find(kk);
+        C.keys[slot] = kk;
+        C.status[slot] = 1;
+        C.herd[slot] = -1;
+        C.used++;
+      }
+    const site = (ci: number, cj: number, n: number, e: number): number => {
+      const slot = C.find(key(ci, cj));
+      C.status[slot] = 2;
+      C.n[slot] = n;
+      C.e[slot] = e;
+      C.ground[slot] = 100;
+      C.size[slot] = 5;
+      C.entry[slot] = 0;
+      C.herd[slot] = -1;
+      return slot;
+    };
+    const farSlot = site(ci0 - 1, cj0 - 1, camN - 2800, camE - 2800);
+    const nearSlot = site(ci0, cj0 + 1, camN, camE + 1050);
+    const ev0 = sys.debug.evictions;
+    p.stream(ctx as unknown as SimContext, camN, camE);
+    expect(sys.debug.evictions).toBe(ev0 + 1);
+    expect(C.herd[nearSlot]).toBeGreaterThanOrEqual(0);
+    expect(C.herd[farSlot]).toBe(-1);
   });
 });
