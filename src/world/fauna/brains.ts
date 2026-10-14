@@ -1,6 +1,8 @@
 // Solo agent brains by species (Deep Time inc 2, WP0b contract, FROZEN for WP1-WP7). FaunaSystem spawns a 'solo'
 // showcase entry with BRAINS[species] (or WANDER_BRAIN when a species has none). Each brain lives in its species'
 // file species/<id>.brain.ts under a fixed export name; this registry only wires them.
+// Inc 2b: FaunaSystem also spawns roaming (ambient) T. rex beside streamed herds with brainFor('tyrannosaurus');
+// the one brain tells the scripted lair agent from an ambient one by its home (tyrannosaurus.brain.ts).
 
 import type { AgentContext, SoloAgentPool, SoloBrain } from './agents';
 import { AGENT_MEM } from './agents';
