@@ -289,7 +289,7 @@ export const LAVA_GLOW_REACH = 2000;
 export const LAVA_DUSK_W = 0.31;
 /** Peak crater emission at the dusk start and at full night, scene units (cd/m^2 x 0.1). */
 export const LAVA_DUSK_PEAK = 700;
-export const LAVA_NIGHT_PEAK = 11;
+export const LAVA_NIGHT_PEAK = 6;
 /** Lobe emission relative to the crater peak (the plan's ~150 against 1500). */
 export const LAVA_LOBE_REL = 0.12;
 /** Largest factor the crater's crack, lake and flicker terms put on lavaGain (the shader's maximum). */
