@@ -207,7 +207,7 @@ describe('increment-1 fauna freeze', () => {
 
   // The production path (art.ts creatureMaterials, what CREATURE_ART gives FaunaSystem): the inc-1 materials as
   // frozen, except the deliberate WP8 look-gate albedo lift of the Edmontosaurus (owner-approved: the stampede's
-  // contrast against the olive marsh, commits 8c15ac4 / 5a27f5e), pinned here so any further change fails.
+  // contrast against the olive marsh, commit 8c15ac4), pinned here so any further change fails.
   const APPROVED_LIFT: Partial<Record<FaunaSpeciesId, readonly [number, number, number]>> = { edmontosaurus: [1.3, 1.25, 1.12] };
   it('the production materials are the frozen ones, but for the approved look-gate lift', () => {
     expect(ART_ALBEDO_LIFT).toEqual(APPROVED_LIFT);
