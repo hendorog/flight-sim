@@ -848,17 +848,22 @@ export class FaunaSystemImpl implements FaunaSystem {
     const cj = (key % 65536) - 32768;
     const r = REX_RANGE_MIN + REX_RANGE_SPAN * rexRandom(ci, cj, 1);
     const b0 = 2 * Math.PI * rexRandom(ci, cj, 2);
+    let seen = false;
     for (let attempt = 0; attempt < 2; attempt++) {
       const b = b0 + attempt * Math.PI;
       const n = H.homeN[best] + r * Math.cos(b);
       const e = H.homeE[best] + r * Math.sin(b);
-      // Never in sight as it appears: beyond REX_UNSEEN_M, or outside the last frame's view.
+      // Never in sight as it appears: beyond REX_UNSEEN_M, or outside the last frame's view (else the other side,
+      // or a later tick).
       const dn = n - camN;
       const de = e - camE;
       if (dn * dn + de * de <= REX_UNSEEN_M * REX_UNSEEN_M) {
         this.sphere.center.set(e, H.cH[best] + 4, -n);
         this.sphere.radius = 20;
-        if (this.frustum.intersectsSphere(this.sphere)) return false;
+        if (this.frustum.intersectsSphere(this.sphere)) {
+          seen = true;
+          continue;
+        }
       }
       const s = this.terrain.sample(n, e, this.sample);
       if (s.ground < Math.max(s.standing, s.river) + 0.3 || (s.riverHalfWidth > 0 && s.riverDist < s.riverHalfWidth + HERD_BANK_MARGIN)) continue;
@@ -883,7 +888,8 @@ export class FaunaSystemImpl implements FaunaSystem {
       this.debug.ambientRex = amb + 1;
       return true;
     }
-    this.rexFailKey[best] = key;
+    // Water (or the bank) on both sides: this herd gets none. (In sight: try again on a later tick.)
+    if (!seen) this.rexFailKey[best] = key;
     return false;
   }
 
