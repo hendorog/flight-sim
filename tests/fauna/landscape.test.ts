@@ -320,7 +320,7 @@ const streamed = (sys: FaunaSystemImpl): number[] => {
 
 describe('FaunaSystem streaming across the landscape', () => {
   for (const quality of ['high', 'ultra'] as const) {
-    for (const v of [VPOINTS[0], VPOINTS[3], DENSE]) {
+    for (const v of [...VPOINTS, DENSE]) {
       it(`${v.id} at ${quality}: the right species, caps, roaming T. rexes beside their herds, released with them`, () => {
         const { sys, ctx, terrain } = build(quality);
         const H = sys.herds;
