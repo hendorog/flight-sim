@@ -12,8 +12,8 @@
 // THE SAFARI START (computed, not chosen; see the tables below)
 //   SAFARI: along 4870 m, across solved, track 20 deg right of the 25 direction (heading 270, due west, down the
 //   valley toward the volcano), 450 ft above the ground at the start, 110 KIAS on the autoflight's heading and
-//   altitude hold (the type's cruise; 110 KIAS for the C172), tod 19.0 (local solar time; the sun 7.2 deg up,
-//   26.7 deg right of the nose).
+//   altitude hold (the type's cruise; 110 KIAS for the C172), tod 20.0 (local solar time; the sun just set, 1.6 deg
+//   below the horizon ~37 deg right of the nose; 19.0 until WP8's look gate round 2, see the sweep table).
 //
 // WHAT THE MEASUREMENTS CHANGED (versus the plan's draft numbers; the owner and WP8 should read this)
 //   1. The cockpit SILL (scripts/safari-geometry.mjs sill, a magenta-background cockpit mask at the default head
@@ -52,6 +52,8 @@
 //   At f = 779.4 px the frame's central 60 % of width is +-31.6 deg off the nose, the central 40 % +-22.3 deg.
 //   track 20 (hdg 270.0): volcano +8.2 deg, 23.4 km;  clearance 450 ft: 304 ft (across 3220)
 //     17.8: sun +14.6 / 18.8 day 1.00 | 18.3: +19.6 / 13.8 1.00 | 18.6: +22.6 / 10.9 1.00 | 19.0: +26.7 / 7.2 1.00 | 19.4: +30.9 / 3.6 0.92
+//     (WP8 round 2, outside the plan's table) 19.6: sun x 1295-1327 px / 1.8 day 0.77 | 19.8: x 1336-1370 / 0.1 0.58 |
+//     20.0: x 1379-1416 / -1.6 0.38 (night ramp 0.31 at 19.0, 0.80 at 19.8, 0.88 at 20.0)
 //   track 27 (hdg 277.0): volcano +2.0 deg, 23.6 km;  clearance 450 ft: 216 ft (fails)
 //     17.8: +7.6 / 18.8 | 18.3: +12.6 / 13.8 | 18.6: +15.6 / 10.9 | 19.0: +19.7 / 7.2 | 19.4: +23.9 / 3.6
 //   track 35 (hdg 285.0): volcano -5.5 deg, 23.7 km;  clearance 450 ft: 183 ft (fails)
@@ -67,6 +69,20 @@
 //   of only 1.0-1.2 at every tod (best: 19.4 at G1, 1.2); none meets 1.3. That is the bodies' palette against the
 //   olive marsh, not the light: WP7 / WP1-WP2 colours (and WP8's palette tuning) must carry it.
 //
+// WP8 LOOK GATE ROUND 2 (OWNER DECISION: outside the plan's 17.8-19.4 sweep): tod 19.0 -> 20.0. Round 1 found the
+//   landmark absent at G1: with the sun 7 deg up and 26 deg right of the nose the cone (238/255) sat in the sun's
+//   veil (5 % contrast) and the forward-scattered plume read brighter than the sky; at tod 10 the same cone read
+//   well, so the limiter was the sun's geometry, not the haze. Extended sweep (W/shots/gate-2/sweep-tod, `sweep
+//   --tods 19.6,19.8,20.0 --times 2,16,18,110`; herd / ground | cone / sky luminance contrast, the cone measured
+//   below vs above its summit):
+//     19.6:  t 2: 1.10 | 1.04   t 16: 1.00 | 1.01   t 18: 1.03 | 1.00   t 110: 1.01 | 1.20   (exposure log2 3.7)
+//     19.8:  t 2: 1.06 | 1.20   t 16: 1.00 | 1.26   t 18: 1.03 | 1.28   t 110: 1.06 | 1.82   (2.5)
+//     20.0:  t 2: 1.07 | 1.38   t 16: 1.01 | 1.41   t 18: 1.01 | 1.40   t 110: 1.06 | 2.10   (0.18)
+//   (19.8 and 20.0 frames include the round-2 plume edits.) All three put the disc outside the central 60 % (480 px);
+//   at 19.6 / 19.8 the low sun still reflects as a full disc in the left door glazing (x ~250). 20.0: the cone a
+//   dark silhouette under a sunlit plume top, no veil, dayFactor 0.38 (> 0.25: the showcase flyers fly; ~0.35 at
+//   G7), the crater ramp 0.88 (volcano.ts LAVA_DUSK_W re-pinned there). The herd / ground contrast is ~1.0 at
+//   every tod (the bodies' colour carries the read, as before).//
 // LATERAL TABLE (river herd centre left of the track at closest approach; 450 ft, the HOLD trajectory): seconds
 // the herd centre is visible in the door window (bearing 21-45 left, above the sill) and its Edmontosaurus
 // (9 m) size there; plus the windscreen at the start.
@@ -108,7 +124,7 @@ export const SAFARI: SafariStart = Object.freeze({
   across: 3277,
   trackDeg: 20,
   aglFt: 450,
-  tod: 19.0,
+  tod: 20.0,
   headPitchDeg: null,
   kias: 110,
 });
@@ -321,7 +337,8 @@ export function projectFromCockpit(
 //                         D 14-18 s (13-23 px); ends of the formation (+-90 m) D 14-19 s.
 //   T. rex lair           W 2 s at the windscreen's lower-left edge, D 4-12 s (10-20 px per 12.3 m), through the charge.
 //   Triceratops group     W 0-3 s and 10 s (4-7 px per 8.5 m); D 12-20 s (8-18 px), beside the stampede (G3, G4).
-//   kettle 0 (evening)    W 0-31 s at eye level, 4 -> 11 -> 18 deg right (4-44 px per 10 m span; ~22 px at 27 s).
+//   kettle 0 (evening)    W 0-31 s just above eye level, ~0 -> 2 deg left of the nose (round 2: core 35 m right,
+//                         lifted 20 m; ~22 px per 10 m span at 27 s); the aircraft passes under it at ~33 s.
 //   Alamosaurus trio      W 0-19 s (8-13 px per 26 m, a teaser left of the nose); D 28-37 s (21-41 px).
 //   volcano               W throughout, 8-9 deg right of the nose, its summit 4-5 deg above the body horizontal.
 
@@ -379,13 +396,22 @@ export const ALAMOSAURUS_STAND: GroundAnchor = Object.freeze({ north: -1743.7, e
 
 /**
  * Showcase kettle 0's evening core: a virtual thermal core (used only when the real one has wStar < 0.05, i.e. at
- * the dusk start; WP0b flight.ts), 1993 m along the track and 150 m right (200 m before WP8's look gate: the
- * kettle read as one speck at 500 m; closer, G5 moves to 27 s at ~370 m, clear of the compass), so the kettle (band = SAFARI height
- * +-60 m) circles at eye level ahead right 20-30 s in. `ground` is the terrain under it.
+ * the dusk start; WP0b flight.ts), 1993 m along the track and KETTLE0_ACROSS_M right of it, so the kettle circles
+ * just above eye level AHEAD 20-30 s in. History: WP0a put it 200 m right; look gate round 0 moved it to 150 m (one
+ * speck at 500 m); round 1 found it behind the compass and the sun's veil at 27 s (bearing +14..+32: the compass
+ * hides +22..+30 above 5 deg), so round 2 moves it to 35 m right: at G5 (27 s) the core is 2 deg left of the nose
+ * at 360 m and its ~63 m orbit spans about -12..+8 deg, on the afterglow sky left of the cone's summit. The
+ * aircraft passes under it at ~33 s (the birds' evade breaks the kettle up: a wing-over moment, after G5).
+ * `ground` is the terrain under it.
  */
-export const KETTLE0_EVENING: GroundAnchor = Object.freeze({ north: -1263.7, east: 3704.1, ground: 149.4, heading: 0 });
-/** The showcase kettle's height band about the safari start's height above the ground, m (+-). */
-export const KETTLE_BAND_M = 60;
+export const KETTLE0_ACROSS_M = 35;
+export const KETTLE0_EVENING: GroundAnchor = Object.freeze({ north: -1378.7, east: 3704.1, ground: 155.7, heading: 0 });
+/** The showcase kettle's height band about the safari start's height above the ground, m (+-). 60 before round 2
+ *  (the band then spread kettle 0 over +-9 deg at 370 m); 35 keeps it within ~+-5 deg. */
+export const KETTLE_BAND_M = 35;
+/** Kettle 0's evening band centre above the safari's altitude, m (round 2: ~3 deg up at G5, on the sky rather than
+ *  the far ground or the cone). */
+export const KETTLE0_LIFT_M = 20;
 
 // ------------------------------------------------------------------------------------------------ the look gate
 
@@ -440,16 +466,16 @@ export const FIRST_MINUTE_FRAMES: readonly FirstMinuteFrame[] = Object.freeze([
   },
   {
     id: 'G3',
-    t: 14,
+    t: 16,
     label: 'the stampede in the door window, the Triceratops facing line beyond it',
     expect: [
-      { group: 'riverHerd', where: 'door', minPx: 10, note: '24 deg left, 14 deg down (the site; WP8: 14 s, L 250 m); running ahead and inward. The T. rex is wherever its charge took it (its lair leaves the frame at ~12 s)' },
+      { group: 'riverHerd', where: 'door', minPx: 12, note: 'the site in the door window (WP8 round 2: 16 s, L 250 m; 14 s gave 3-5 px specks); running ahead and inward, strung out into lanes (profiles.ts stampede). The T. rex is wherever its charge took it (its lair leaves the frame at ~12 s)' },
       { group: 'triceratops', where: 'door', minPx: 7, note: '26 deg left, 11 deg down, ~210 m beyond the herd site: ~9 px bodies; the colour mass (WP2 frill palette, lifted by WP8) carries the read' },
     ],
   },
   {
     id: 'G4',
-    t: 17,
+    t: 18,
     label: 'the stampede near the door sill; the Triceratops line still standing in the door window',
     expect: [
       { group: 'riverHerd', where: 'door', minPx: 15, note: 'the formation end nearest the track; the centre leaves at ~17 s' },
@@ -460,7 +486,7 @@ export const FIRST_MINUTE_FRAMES: readonly FirstMinuteFrame[] = Object.freeze([
     id: 'G5',
     t: 27,
     label: 'kettle 0 at eye level ahead right',
-    expect: [{ group: 'kettle0', where: 'windscreen', minPx: 15, note: '~16 deg right at ~370 m (WP8: 27 s, core 150 m right), 10 m spans ~22 px (Pteranodon 6.5 m: ~14 px)' }],
+    expect: [{ group: 'kettle0', where: 'windscreen', minPx: 15, note: '~2 deg left at ~360 m, ~3 deg up (WP8 round 2: core 35 m right, lifted 20 m, band +-35 m: clear of the compass, on the afterglow), 10 m spans ~22 px (Pteranodon 6.5 m: ~14 px)' }],
   },
   {
     id: 'G6',
@@ -488,7 +514,7 @@ export function groupAnchor(g: ShowcaseGroupId, volcano: { north: number; east: 
     case 'triceratops':
       return { north: TRICERATOPS_GROUP.north, east: TRICERATOPS_GROUP.east, h: TRICERATOPS_GROUP.ground + 1.5, size: 8.5 };
     case 'kettle0':
-      return { north: KETTLE0_EVENING.north, east: KETTLE0_EVENING.east, h: SAFARI_FLIGHT.altitudeMSL, size: 10 };
+      return { north: KETTLE0_EVENING.north, east: KETTLE0_EVENING.east, h: SAFARI_FLIGHT.altitudeMSL + KETTLE0_LIFT_M, size: 10 };
     case 'alamosaurus':
       return { north: ALAMOSAURUS_STAND.north, east: ALAMOSAURUS_STAND.east, h: ALAMOSAURUS_STAND.ground + 4, size: 26 };
   }

@@ -45,7 +45,7 @@ export const KETTLE_SEEDS = [
 ] as const;
 /**
  * Birds per showcase kettle (mixed sizes; showcaseHooks.ts kettleComposition) and their height band above the
- * ground, m: SAFARI's height above the ground +- KETTLE_BAND_M (450 ft: 77-197 m). Two kettles and the resting
+ * ground, m: SAFARI's height above the ground +- KETTLE_BAND_M (450 ft: 102-172 m). Two kettles and the resting
  * pair are 14 flyers (the medium preset has 16; on low the second kettle is trimmed: 8).
  */
 export const KETTLE_BIRDS = 6;

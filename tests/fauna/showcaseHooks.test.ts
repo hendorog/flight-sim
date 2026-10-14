@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { createEventBus, type QualityLevel, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
-import { ALAMOSAURUS_STAND, KETTLE0_EVENING, KETTLE_BAND_M, SAFARI_FLIGHT, TREX_LAIR, TRICERATOPS_GROUP } from '../../src/world/era/cretaceousAnchors';
+import { ALAMOSAURUS_STAND, KETTLE0_EVENING, KETTLE0_LIFT_M, KETTLE_BAND_M, SAFARI_FLIGHT, TREX_LAIR, TRICERATOPS_GROUP } from '../../src/world/era/cretaceousAnchors';
 import { eraById } from '../../src/world/era/registry';
 import { createFaunaSystem, type FaunaSystemImpl } from '../../src/world/fauna/FaunaSystem';
 import { FLYER_MODE } from '../../src/world/fauna/flight';
@@ -108,7 +108,7 @@ describe('showcase hooks', () => {
     for (let i = 0; i < sys.flyers.capacity; i++) if (sys.flyers.active[i]) expect(sys.kettleOf[i]).not.toBe(1);
   });
 
-  it('at dusk (no thermals) kettle 0 circles the virtual evening core at eye level, and keeps at it', () => {
+  it('at dusk (no thermals) kettle 0 circles the virtual evening core just above eye level (KETTLE0_LIFT_M), and keeps at it', () => {
     const { sys, ctx } = boot(19);
     const F = sys.flyers;
     const k0 = () => Array.from({ length: F.capacity }, (_, i) => i).filter((i) => F.active[i] && sys.kettleOf[i] === 0);
@@ -123,7 +123,7 @@ describe('showcase hooks', () => {
       expect(F.mode[i]).toBe(FLYER_MODE.kettle);
       expect(F.virt[i]).toBe(1);
       expect(Math.hypot(F.n[i] - KETTLE0_EVENING.north, F.e[i] - KETTLE0_EVENING.east)).toBeLessThan(120);
-      expect(Math.abs(F.alt[i] - SAFARI_FLIGHT.altitudeMSL)).toBeLessThan(KETTLE_BAND_M + 8);
+      expect(Math.abs(F.alt[i] - SAFARI_FLIGHT.altitudeMSL - KETTLE0_LIFT_M)).toBeLessThan(KETTLE_BAND_M + 8);
     }
   });
 

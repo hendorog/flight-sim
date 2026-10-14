@@ -34,7 +34,7 @@ import { FULLSCREEN_VERT } from '../clouds/resolveShaders';
 import { AERIAL_ATLAS_GLSL } from './AerialPerspectiveEffect';
 
 /** Extinction of the full-density ash, 1/m (optically thick: a dark column on a bright sky). */
-export const PLUME_DENSITY = 1 / 25;
+export const PLUME_DENSITY = 1 / 16;
 /** Ray-march steps through the plume's bounds (the shader's only loop; tests/era/plume.test.ts caps it at 24). */
 export const PLUME_STEPS = 20;
 /** Linear resolution of the march relative to the screen. */
@@ -43,7 +43,7 @@ export const PLUME_SCALE = 0.5;
 export const PLUME_TOP_MSL = 6500;
 /** Radius of the column at the vent, at the umbrella's base, and of the umbrella, m. */
 export const PLUME_VENT_R = 550;
-export const PLUME_COLUMN_R = 1600;
+export const PLUME_COLUMN_R = 1900;
 export const PLUME_UMBRELLA_R = 2400;
 /** Where the umbrella starts spreading, as a fraction of the rise from the vent to the top. */
 export const PLUME_UMBRELLA_FROM = 0.6;
@@ -264,7 +264,7 @@ void main() {
     float u;
     float den = plumeDensity(p, u);
     if (den <= 0.002) continue;
-    float steam = smoothstep(0.35, 0.9, u + 0.25 * (1.0 - den));
+    float steam = smoothstep(0.55, 0.95, u + 0.25 * (1.0 - den));
     float sigma = den * uDensity * mix(1.0, 0.45, steam);
     // Sunlight through the plume toward the sun: two taps.
     float tau = (plumeDensity(p + uSunDir * 140.0) * 140.0 + plumeDensity(p + uSunDir * 520.0) * 380.0) * uDensity * mix(1.0, 0.45, steam);

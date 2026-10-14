@@ -3,8 +3,8 @@
 // effect. Pure, three-free (the volcano module runs in the terrain workers).
 //
 // 0 with the sun NIGHT_RAMP_FROM_DEG or more above the horizon, 1 at NIGHT_RAMP_TO_DEG below it, smoothstep
-// between. The +15 deg start lets a faint crater glow exist at the safari's dusk start (SAFARI.tod 19.0: the sun
-// 7.2 deg up gives 0.31; 10 deg up gives 0.14).
+// between. The safari's dusk start (SAFARI.tod 20.0 since WP8 round 2: the sun 1.6 deg below the horizon) is at
+// 0.88 (the old 19.0 start, 7.2 deg up, was 0.31; 10 deg up gives 0.14).
 
 export const NIGHT_RAMP_FROM_DEG = 15;
 export const NIGHT_RAMP_TO_DEG = -6;

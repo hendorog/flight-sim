@@ -117,7 +117,7 @@ const CRETACEOUS_PALETTE: TerrainPalette = Object.freeze({
   reeds: 'vec3(0.088, 0.088, 0.044)',
   alpine: 'vec3(0.070, 0.066, 0.040)',
   scree: 'vec3(0.150, 0.135, 0.118)',
-  canopyBroadleaf: 'vec3(0.56, 0.64, 0.44)',
+  canopyBroadleaf: 'vec3(0.50, 0.58, 0.40)',
   canopyConifer: 'vec3(0.36, 0.44, 0.44)',
   seaAtten: 'vec3(0.42, 0.10, 0.13)',
   seaBodyDeep: 'vec3(0.0045, 0.016, 0.016)',

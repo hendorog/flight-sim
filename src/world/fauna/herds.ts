@@ -201,6 +201,14 @@ export class HerdPool {
   readonly fleeDE = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
   /** 1 while snapH is this member's own ground sample (0: the herd plane). */
   readonly snapped = new Uint8Array(MAX_HERDS * MAX_HERD_SIZE);
+  /** Stampede string-out (profiles.ts HerdFormation.stampede): 1 once a predator's run has set it up. */
+  readonly stampede = new Uint8Array(MAX_HERDS);
+  /** The herd's flee direction at the centroid (unit, NED), refreshed each brain tick of the run. */
+  readonly laneDN = new Float32Array(MAX_HERDS);
+  readonly laneDE = new Float32Array(MAX_HERDS);
+  /** Per member: run speed factor and target lane offset right of the flee direction from the centroid, m. */
+  readonly spdK = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
+  readonly laneC = new Float32Array(MAX_HERDS * MAX_HERD_SIZE);
 
   /** Diagnostics: brain ticks run last step, ticks deferred for lack of terrain budget. */
   ticks = 0;
@@ -262,6 +270,7 @@ export class HerdPool {
     this.modeUntil[h] = this.time + 30 + 90 * rand(sp.seed, 1);
     this.threat[h] = THREAT.none;
     this.fleeing[h] = 0;
+    this.stampede[h] = 0;
     this.alertUntil[h] = -Infinity;
     this.calmAt[h] = -Infinity;
     this.alarmT[h] = -Infinity;
@@ -537,6 +546,7 @@ export class HerdPool {
         this.trackE[h] = se;
         this.trackVN[h] = this.extVN[h];
         this.trackVE[h] = this.extVE[h];
+        if (this.prof[h].formation.stampede) this.stringOut(h, sn, se);
         for (let k = 0; k < size; k++) {
           const i = base + k;
           externalFleeDirection(this.mN[i], this.mE[i], sn, se, this.extVN[h], this.extVE[h], this.extLead[h], this.dir);
@@ -566,6 +576,7 @@ export class HerdPool {
     // Calm down: the herd re-forms where it stopped.
     if (this.fleeing[h] && t >= this.calmAt[h]) {
       this.fleeing[h] = 0;
+      this.stampede[h] = 0;
       let sn = 0;
       let se = 0;
       for (let k = 0; k < size; k++) {
@@ -696,6 +707,34 @@ export class HerdPool {
     }
   }
 
+  /**
+   * A predator's run (profile formation.stampede): refresh the herd's flee direction at the centroid and, the first
+   * time, give each member its speed factor and lane (see HerdFormation.stampede). Pure arithmetic, no terrain.
+   */
+  private stringOut(h: number, sn: number, se: number): void {
+    const S = this.prof[h].formation.stampede!;
+    externalFleeDirection(this.cN[h], this.cE[h], sn, se, this.extVN[h], this.extVE[h], this.extLead[h], this.dir);
+    this.laneDN[h] = this.dir.n;
+    this.laneDE[h] = this.dir.e;
+    if (this.stampede[h]) return;
+    this.stampede[h] = 1;
+    const seed = this.seed[h];
+    const base = h * MAX_HERD_SIZE;
+    const r = Math.max(1, this.radius[h]);
+    const lanes = Math.max(1, Math.round(S.lanes));
+    const span = S.laneSpread * r;
+    for (let k = 0; k < this.size[h]; k++) {
+      const i = base + k;
+      const dn = this.mN[i] - this.cN[h];
+      const de = this.mE[i] - this.cE[h];
+      const along = (dn * this.dir.n + de * this.dir.e) / r;
+      const across = (-dn * this.dir.e + de * this.dir.n) / r;
+      this.spdK[i] = 1 + S.speedJitter * (2 * rand(seed, 6500 + k) - 1) + S.stretch * Math.max(-1, Math.min(1, along));
+      const lane = Math.min(lanes - 1, Math.max(0, Math.floor(((across + 1) / 2) * lanes)));
+      this.laneC[i] = lanes > 1 ? span * (lane / (lanes - 1) - 0.5) : 0;
+    }
+  }
+
   /** Member i's flee direction: this.dir with its own jitter. */
   private setFleeDir(i: number, seed: number, k: number): void {
     const jit = 0.5 * (rand(seed, 6000 + k) - 0.5);
@@ -723,6 +762,7 @@ export class HerdPool {
     const alert = !ignore && !this.fleeing[h] && t < this.alertUntil[h];
     const headHold = ignore && t < this.alertUntil[h];
     const facing = this.fleeing[h] === 1 && this.react[h] === ALARM.face;
+    const strung = this.stampede[h] === 1 && this.fleeing[h] === 1;
     const gN = this.gN[h];
     const gE = this.gE[h];
     // The profile's numbers, hoisted out of the member loop.
@@ -750,6 +790,13 @@ export class HerdPool {
       } else if (fleeingNow) {
         want = fleeSpeed(t - this.fleeT0[i], R) * (0.75 + 0.25 * sc);
         wantYaw = Math.atan2(this.fleeDE[i], this.fleeDN[i]);
+        if (strung) {
+          // Stampede string-out: own pace, and steer into the member's lane across the run.
+          want *= this.spdK[i];
+          const cur = -(this.mN[i] - this.cN[h]) * this.laneDE[h] + (this.mE[i] - this.cE[h]) * this.laneDN[h];
+          const b = 0.06 * (this.laneC[i] - cur);
+          wantYaw += b > 0.35 ? 0.35 : b < -0.35 ? -0.35 : b;
+        }
         turnRate = 1.6;
         accel = 3;
       } else if (!alert) {

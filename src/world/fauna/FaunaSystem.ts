@@ -415,10 +415,10 @@ export class FaunaSystemImpl implements FaunaSystem {
         this.showcaseFlyer[i] = 1;
         this.kettleOf[i] = g;
         if (day && !(f && f.wStar > 0.05)) {
-          // The dusk licence: a pinned virtual core. Kettle 0 at the computed evening point, at the safari's own
-          // altitude +- the band (eye level); kettle 1 over its seed.
+          // The dusk licence: a pinned virtual core. Kettle 0 at the computed evening point, KETTLE0_LIFT_M above the
+          // safari's own altitude +- the band (just above eye level, on the sky); kettle 1 over its seed.
           const k0 = Anchors.KETTLE0_EVENING;
-          if (g === 0) this.flyers.startVirtualKettle(i, k0.north, k0.east, k0.ground, Anchors.SAFARI_FLIGHT.altitudeMSL + (agl - SAFARI_AGL_M));
+          if (g === 0) this.flyers.startVirtualKettle(i, k0.north, k0.east, k0.ground, Anchors.SAFARI_FLIGHT.altitudeMSL + Anchors.KETTLE0_LIFT_M + (agl - SAFARI_AGL_M));
           else this.flyers.startVirtualKettle(i, p.north, p.east, ground, ground + agl);
           continue;
         }

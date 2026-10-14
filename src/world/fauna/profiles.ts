@@ -67,6 +67,15 @@ export interface HerdFormation {
   /** Drawn gait from the speed: walk (gaitBlend 1) up to runFrom m/s, then gaitBlend 1 + (v - runFrom) / runSpan up to 2. */
   runFrom: number;
   runSpan: number;
+  /**
+   * Optional (inc 2, WP8 look gate): how a herd strings out when a PREDATOR stampedes it (an external flee-level
+   * threat that makes it run; never the aircraft's flee, so inc 1 is unchanged). Each running member keeps a speed
+   * factor 1 + speedJitter * u (u in -1..1, per member) + stretch * (its place along the flee direction at the
+   * start, -1 rear .. 1 front), and steers toward one of `lanes` lanes across the run (centred on the moving
+   * centroid, laneSpread x the formation radius apart in all), so the sunflower lattice breaks into strung-out
+   * files within a few seconds.
+   */
+  stampede?: Readonly<{ speedJitter: number; stretch: number; lanes: number; laneSpread: number }>;
 }
 
 /** Render budgeting (FaunaSystem.render). */
@@ -116,7 +125,8 @@ const EDMONTOSAURUS: SpeciesProfile = Object.freeze({
   speed: Object.freeze({ walk: 1.6, run: 7 }),
   groundOffsetM: 0,
   flapHz: 0,
-  formation: INC1_FORMATION,
+  // The inc-1 formation plus the stampede string-out (used only under a predator's external flee).
+  formation: Object.freeze({ ...INC1_FORMATION, stampede: Object.freeze({ speedJitter: 0.14, stretch: 0.3, lanes: 3, laneSpread: 1.1 }) }),
   reaction: HADROSAUR,
   render: Object.freeze({ lod0Max: INC1_LOD0_MAX, lodRangeScale: 1, farRangeM: 0, lod0Tris: 2600, tris: Object.freeze([2600, 450, 70, 2600] as const) }),
 });

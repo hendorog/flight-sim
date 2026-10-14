@@ -23,6 +23,7 @@ import {
   COCKPIT_VIEW,
   FIRST_MINUTE_FRAMES,
   HERD_LATERAL_M,
+  KETTLE0_ACROSS_M,
   KETTLE0_EVENING,
   RIVER_HERD_SEED,
   RIVER_HERD_SITE,
@@ -185,8 +186,8 @@ describe('the anchors', () => {
     expect(near).toBeLessThanOrEqual(90);
   }, 60000);
 
-  it("kettle 0's evening core is 1993 m along and 150 m right of the track", () => {
-    const k = pathToNed(1993, 150);
+  it("kettle 0's evening core is 1993 m along and KETTLE0_ACROSS_M right of the track", () => {
+    const k = pathToNed(1993, KETTLE0_ACROSS_M);
     expect(KETTLE0_EVENING.north).toBeCloseTo(k.north, 0);
     expect(KETTLE0_EVENING.east).toBeCloseTo(k.east, 0);
     expect(KETTLE0_EVENING.ground).toBeCloseTo(terrainHeight(k.north, k.east), 0);
@@ -233,6 +234,8 @@ describe('lighting and clearance at SAFARI', () => {
     const rel = Math.atan2(Math.sin(Math.atan2(s.y, s.x) - safariHeading()), Math.cos(Math.atan2(s.y, s.x) - safariHeading()));
     const x = COCKPIT_VIEW.focalPx * Math.tan(rel);
     expect(Math.abs(x)).toBeGreaterThan(0.2 * COCKPIT_VIEW.width);
+    // WP8 round 2 (tod 20.0): outside the plan's own central 60 % as well.
+    expect(Math.abs(x)).toBeGreaterThan(0.3 * COCKPIT_VIEW.width);
     const t = Math.min(1, Math.max(0, (-s.z + 0.12) / 0.22));
     expect(t * t * (3 - 2 * t)).toBeGreaterThan(0.25);
     const V = CRETACEOUS.terrain.volcano!;

@@ -13,6 +13,9 @@ import { CRETACEOUS } from '../../src/world/era/cretaceous';
 import { SAFARI } from '../../src/world/era/cretaceousAnchors';
 import {
   LAVA_CRATER_FLOOR,
+  LAVA_DUSK_LOG_L_COCKPIT,
+  LAVA_DUSK_PEAK,
+  LAVA_DUSK_W,
   LAVA_FIREFLY_MAX,
   LAVA_GAIN_GLSL,
   LAVA_LOBES,
@@ -48,10 +51,12 @@ describe('uLava', () => {
   it('w follows the night ramp: 0 at 20 deg, faint at the safari start, > 0.5 at 0 deg, 1 at -6 deg', () => {
     setEra('cretaceous');
     // The safari's start elevation, from its time of day (midsummer, the field's latitude).
+    // Since WP8 round 2 the start is just after sunset (tod 20.0, -1.6 deg): LAVA_DUSK_W is pinned to its ramp value.
     const startEl = Math.asin(-sunDirectionNED(SAFARI.tod, 172).z) / DEG;
-    expect(startEl).toBeGreaterThan(0);
+    expect(startEl).toBeGreaterThan(-6);
     expect(w(20)).toBe(0);
     expect(w(startEl)).toBeGreaterThan(0.15);
+    expect(w(startEl)).toBeCloseTo(LAVA_DUSK_W, 2);
     expect(w(0)).toBeGreaterThan(0.5);
     expect(w(-6)).toBe(1);
     expect(w(-30)).toBe(1);
@@ -67,7 +72,8 @@ describe('uLava', () => {
 
   it('lavaGain: none in daylight, bright at the dusk start, dimmer (exposure-tracking) at night', () => {
     expect(lavaGain(0)).toBe(0);
-    expect(lavaGain(0.31)).toBeGreaterThan(100);
+    expect(lavaGain(LAVA_DUSK_W)).toBeGreaterThan(100);
+    expect(lavaGain(LAVA_DUSK_W)).toBeCloseTo(LAVA_DUSK_PEAK, 6);
     expect(lavaGain(1)).toBeLessThan(lavaGain(0.5));
     expect(LAVA_GAIN_GLSL).toContain('float lavaGain(float w)');
     expect(VOLCANO_LAVA_HEAD_GLSL).toContain(LAVA_GAIN_GLSL);
@@ -141,7 +147,7 @@ describe('brightness', () => {
     const exposure = exposureAt(LAVA_NIGHT_LOG_L_COCKPIT);
     expect(exposure).toBeGreaterThan(3); // a night exposure, not a daylight one
     // Full night (w = 1): the exposure above belongs to it. Twilight's brighter gain meets a far lower exposure
-    // (the dusk start's adapted log2 luminance is +5.1: see volcano.ts).
+    // (the dusk start's: see the next test).
     const peak = lavaGain(1);
     const crater = peak * LAVA_PEAK_FACTOR * exposure;
     const underglow = peak * PLUME_GLOW_K * (0.35 + 0.6) * exposure;
@@ -150,6 +156,15 @@ describe('brightness', () => {
     expect(LAVA_FIREFLY_MAX).toBe(64); // render/post/Bloom.ts FIREFLY_MAX
     // ... and bright enough to read there: the crater peak exposes to at least 16 (an ember, not a smudge).
     expect(crater).toBeGreaterThan(16);
+  });
+
+  it('at the dusk start (SAFARI.tod) the crater exposes as a hot point under FIREFLY_MAX in the default view', () => {
+    const exposure = exposureAt(LAVA_DUSK_LOG_L_COCKPIT);
+    const crater = lavaGain(LAVA_DUSK_W) * LAVA_PEAK_FACTOR * exposure;
+    expect(crater).toBeLessThan(LAVA_FIREFLY_MAX);
+    expect(crater).toBeGreaterThan(16);
+    // The plume's underglow reads against the afterglow sky (~0.3 exposed at the start).
+    expect(lavaGain(LAVA_DUSK_W) * PLUME_GLOW_K * (0.35 + 0.6) * exposure).toBeGreaterThan(0.5);
   });
 
   it('a chase view at night exposes hotter: there the crater may clip into the Bloom clamp (recorded, allowed)', () => {

@@ -250,7 +250,8 @@ export const VOLCANO_PALETTE = Object.freeze({
 // lavaMask() is the pure CPU twin of the GLSL masks (tests/era/lava.test.ts holds them to each other).
 //
 // Brightness: the auto-exposure spans ~11-18 EV between the safari's dusk start and the night (measured: adapted
-// log2 luminance 5.08 at the default boot; at tod 22 -8.08 in the default COCKPIT view, where the lit panel holds
+// log2 luminance 5.08 at the 19.0 default boot, 0.18 at the 20.0 one (LAVA_DUSK_LOG_L_COCKPIT); at tod 22
+// -8.08 in the default COCKPIT view, where the lit panel holds
 // the adaptation up, and -13.26 in the chase view), so one physical emission cannot be both visible at dusk and
 // below FIREFLY_MAX at night. The night peak is sized to the default (cockpit) view: from the safari the crater
 // floor and the W/SW lobes are behind the rim, so what reads at 23 km is the glow on the cone's top and the lit
@@ -285,10 +286,20 @@ export const LAVA_CRATER_FLOOR = 0.78;
 export const LAVA_CRATER_EDGE = 40;
 /** The ground glow (and the whole lava term) reaches this far from the vent, m (horizontal). */
 export const LAVA_GLOW_REACH = 2000;
-/** The ramp value (ERA_UNIFORMS.uNight / uLava.w) at the safari's dusk start (sun 7.2 deg up). */
-export const LAVA_DUSK_W = 0.31;
-/** Peak crater emission at the dusk start and at full night, scene units (cd/m^2 x 0.1). */
+/**
+ * The ramp value (ERA_UNIFORMS.uNight / uLava.w) at the safari's dusk start: nightRamp at SAFARI.tod (20.0 since the
+ * WP8 look gate round 2: the sun 1.6 deg below the horizon, 0.8848; 0.31 at the earlier 19.0 start, sun 7.2 deg up).
+ */
+export const LAVA_DUSK_W = 0.885;
+/** Peak crater emission at the dusk start and at full night, scene units (cd/m^2 x 0.1). At the 20.0 start the
+ *  cockpit's adapted exposure (LAVA_DUSK_LOG_L_COCKPIT) puts 700 at ~39 exposed (FIREFLY_MAX 64): a hot point. */
 export const LAVA_DUSK_PEAK = 700;
+/**
+ * The adapted log2 luminance at the dusk start in the DEFAULT view: SAFARI.tod 20.0, the default boot's cockpit at
+ * ~2-4 s (AutoExposure readback, WP8 round 2; sky-driven: the chase view there reads 0.62, i.e. a lower exposure).
+ * tests/era/lava.test.ts holds the dusk crater under FIREFLY_MAX with it.
+ */
+export const LAVA_DUSK_LOG_L_COCKPIT = 0.18;
 export const LAVA_NIGHT_PEAK = 6;
 /** Lobe emission relative to the crater peak (the plan's ~150 against 1500). */
 export const LAVA_LOBE_REL = 0.12;
