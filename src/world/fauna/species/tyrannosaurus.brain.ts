@@ -25,8 +25,8 @@
 //   pins its 30 s trace hash). Every other agent is AMBIENT:
 //   PREY    the nearest active herd with pinned === 0 and kind !== ignore (never the Alamosaurus) whose centroid is
 //           within PREY_RADIUS (1500 m); 'flee' herds (Edmontosaurus) are preferred over 'face' herds (Triceratops)
-//           when both are in range. Re-picked only in LURK (on each PREY_REPICK_S boundary, or at once while it has
-//           none), LOCKED at LURK -> STALK and held through charge, roar and wander. The lock is the herd slot plus
+//           when both are in range. Re-picked only in LURK, on each PREY_REPICK_S (2 s) boundary; LOCKED at
+//           LURK -> STALK and held through charge, roar and wander. The lock is the herd slot plus
 //           H.seed[slot]: a released slot, or one reused by another herd, loses it (-> WANDER, then LURK re-picks).
 //   LURK    shadows the prey, keeping within SHADOW_NEAR..SHADOW_FAR (220-450 m; 100 m further out from 'face' prey):
 //           it walks in (or backs off) once SHADOW_PAD (15 m) inside an edge, to SHADOW_AT (320 m), and otherwise
@@ -293,7 +293,7 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
     const scripted = ctx.riverHerd >= 0 && hn * hn + he * he < K.SCRIPTED_HOME_M * K.SCRIPTED_HOME_M;
     if (!scripted && pool.state[i] === S.lurk) {
       const T = K.PREY_REPICK_S;
-      if (!preyHeld(pool, i, ctx) || Math.floor(ctx.time / T) !== Math.floor((ctx.time - ctx.dt) / T)) pickPrey(pool, i, ctx);
+      if (Math.floor(ctx.time / T) !== Math.floor((ctx.time - ctx.dt) / T)) pickPrey(pool, i, ctx);
     }
     // (An int: a double index or argument would be boxed.)
     const rh = scripted ? ctx.riverHerd : pool.mem[m + M_PREY] | 0;

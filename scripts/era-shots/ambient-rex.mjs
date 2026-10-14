@@ -82,8 +82,8 @@ const BODY = (species, at, cam) => `
     cam === 'fixed'
       ? `const px = -Math.sin(hdg), pe = Math.cos(hdg);
   if (${at === 'pass'}) {
-    // On the T. rex's side of the herd, behind it and up: the T. rex, the stampede beyond it and the aircraft
-    // passing over the far side (the track is 300 m beyond the herd, the aircraft ~150 m up).
+    // On the T. rex's side of the herd, behind it and up: the T. rex charging and the stampede beyond it (the
+    // aircraft, 300 m beyond the herd and ~150 m up, is above the frame).
     const cn = H_.cN[prey], ce = H_.cE[prey], tn = A.n[rex], te = A.e[rex];
     const dn = cn - tn, de = ce - te, d = Math.hypot(dn, de) || 1;
     const ac = sim.summary();
