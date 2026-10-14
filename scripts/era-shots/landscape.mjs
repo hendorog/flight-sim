@@ -11,8 +11,8 @@
 //   landscape-rex (V6)    a roaming T. rex beside its prey herd (the far-east plains, where rexRandom puts eligible
 //                         prey; it needs no P2 to be placed), over its shoulder toward the herd
 //   landscape-rex-pass    then a pass on the autoflight hold 300 m abeam of the herd at 150 m, shot side-on at
-//                         closest approach. The hunt itself (stalk, charge, stampede) needs P2's ambient brain:
-//                         before P2 the T. rex just lurks.
+//                         closest approach: the ambient hunt (stalk, charge, stampede). The reset sets the
+//                         airspeed (a runway ic starts at rest, and the aircraft would drop).
 
 const PAGE = (h, cam, look) => `${h.CRET}&ui=0&tod=10&scenario=runway&camPos=${cam.join(',')}&camLook=${look.join(',')}`;
 
@@ -84,7 +84,7 @@ const REX_PASS = `${FIND_REX}
   const an = cn + 300 * rxN / rxL, ae = ce + 300 * rxE / rxL;
   const sn = an - 5000 * Math.cos(hdg), se = ae - 5000 * Math.sin(hdg);
   const base = sim.physics.scenario;
-  sim.physics.resetTo({ ...base, id: 'safari', ic: { ...base.ic, position: { x: sn, y: se, z: -(ch + 150) }, heading: hdg, onGround: false, engineRunning: true }, autoflight: { kind: 'hold', heading: hdg, altitude: ch + 150, kias: 110 } });
+  sim.physics.resetTo({ ...base, id: 'safari', ic: { ...base.ic, position: { x: sn, y: se, z: -(ch + 150) }, heading: hdg, airspeed: 56.6, onGround: false, engineRunning: true }, autoflight: { kind: 'hold', heading: hdg, altitude: ch + 150, kias: 110 } });
   sim.setAutoflight(true);
   sim.setCamera('chase');
   const states = [];
@@ -95,7 +95,7 @@ const REX_PASS = `${FIND_REX}
   }, 240000);
   frame();
   await sleep(1500);
-  return { rexSlot: i, herd: h, states: states.join('>'), fleeing: H.fleeing[h], label: ' [' + what() + ', T. rex states ' + states.join('>') + ', herd fleeing ' + H.fleeing[h] + ' (the hunt needs P2)]' };`;
+  return { rexSlot: i, herd: h, states: states.join('>'), fleeing: H.fleeing[h], label: ' [' + what() + ', T. rex states ' + states.join('>') + ', herd fleeing ' + H.fleeing[h] + ']' };`;
 
 /** The verification points (plan section 9): camera, look-at, the shot's target species. */
 const V = [
@@ -118,6 +118,6 @@ export default function shots(h) {
     list.push({ name: `landscape-${v.id}-near`, label: `${v.id} nearest ${v.target}`, page: PAGE(h, v.cam, v.look), evalJs: h.timed(NEAR(v.target)), wait: 0, timeout: 400000 });
   }
   list.push({ name: 'landscape-rex', label: 'V6 roaming T. rex beside its prey herd (far-east plains)', page: PAGE(h, VREX.cam, VREX.look), evalJs: h.timed(REX), wait: 0, timeout: 600000 });
-  list.push({ name: 'landscape-rex-pass', label: 'V6 the pass 300 m abeam at 150 m (hunt: after P2 merges)', page: PAGE(h, VREX.cam, VREX.look), evalJs: h.timed(REX_PASS), wait: 0, timeout: 600000 });
+  list.push({ name: 'landscape-rex-pass', label: 'V6 the pass 300 m abeam at 150 m (the ambient hunt)', page: PAGE(h, VREX.cam, VREX.look), evalJs: h.timed(REX_PASS), wait: 0, timeout: 600000 });
   return list;
 }

@@ -41,6 +41,8 @@
 //             time (the cells probed and the herds spawned)
 //   away-up   (inc 2b) the same over the lake-east Araucaria uplands (10600, 4300): Triceratops, plains
 //             Edmontosaurus and the Alamosaurus groups
+//   away-coast / away-lakew / away-east   (inc 2b) the plan's V3 (southern coastal plain), V4 (lake west) and V5
+//             (far-east interior) camPos / camLook, measured the same way
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -199,6 +201,9 @@ const AWAY = `
   return { t: sim.summary().time, herds: f ? f.herds.count() : 0, animals: f ? f.herds.members() : 0, agents: f ? f.agents.count() : 0 };`;
 POSES['away-sw'] = { page: CRET('&scenario=runway&tod=10&camPos=-15000,-14000,420&camLook=-14301,-13749,110'), setup: AWAY };
 POSES['away-up'] = { page: CRET('&scenario=runway&tod=10&camPos=10600,4300,720&camLook=13106,6726,660'), setup: AWAY };
+POSES['away-coast'] = { page: CRET('&scenario=runway&tod=10&camPos=-17200,4800,520&camLook=-19498,6474,220'), setup: AWAY };
+POSES['away-lakew'] = { page: CRET('&scenario=runway&tod=10&camPos=4600,-7000,560&camLook=5225,-9180,240'), setup: AWAY };
+POSES['away-east'] = { page: CRET('&scenario=runway&tod=10&camPos=-3800,9800,460&camLook=-5625,11330,220'), setup: AWAY };
 
 // ------------------------------------------------------------------------------------------------ running
 
