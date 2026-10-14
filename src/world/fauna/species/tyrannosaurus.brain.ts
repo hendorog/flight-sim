@@ -40,8 +40,9 @@
 //           AMB_BREAK_COVER_MAX_S, 14 s, into the charge) and only then bolts: a close chase. The face fan-out reaches UNPINNED
 //           herds only: an ambient agent never threatens a pinned (showcase) herd. Against 'face' prey (Triceratops)
 //           it pulls up FACE_STANDOFF_M (240 m) from the nearest member, outside their predatorFleeRange (200 m):
-//           they face it, horns forward, and never run (poetic licence). It roars AMB_ROAR_AFTER (20 s) into the
-//           charge, or once pulled up at the stand-off (and at least ROAR_AFTER in).
+//           they face it, horns forward, and never run (poetic licence). It roars as the aircraft goes by (the range
+//           opening, within AMB_ROAR_PASS_M; at least AMB_ROAR_MIN_S, 8 s, into the charge) or AMB_ROAR_AFTER (30 s)
+//           into it.
 //   WANDER  home (its spawn point beside the herd), then LURK; re-armed after AMB_REARM_S (120 s).
 //   All of these numbers are agent choices (tuned to tests/fauna/ambientHunt.test.ts's pass: a 60 m/s pass from
 //   5 km out sees the stalk at ~3 km and the charge at ~1.3 km, the stampede running as it goes by).
@@ -104,7 +105,11 @@ export const TREX_BRAIN = Object.freeze({
   AMB_STALK_AGL: 1000,
   AMB_CHARGE_RANGE: 1300,
   AMB_STALK_TIMEOUT: 30,
-  AMB_ROAR_AFTER: 20,
+  /** Ambient: it roars as the aircraft goes by (the range to the prey opening, within AMB_ROAR_PASS_M), at least
+   * AMB_ROAR_MIN_S into the charge, and at the latest AMB_ROAR_AFTER into it, s. */
+  AMB_ROAR_MIN_S: 8,
+  AMB_ROAR_PASS_M: 1500,
+  AMB_ROAR_AFTER: 30,
   /** Ambient: the threat lasts this long from the charge start, s (the chase runs longer than the scripted one). */
   AMB_THREAT_S: 30,
   /** Ambient, 'flee' prey: the herd only bolts (the flee-level threat) once the T. rex is this near its nearest
@@ -190,6 +195,28 @@ function threaten(pool: SoloAgentPool, i: number, ctx: AgentContext, level: numb
 }
 
 /**
+ * HerdPool.nearestMember(h, pool.n[i], pool.e[i]) with the same arithmetic and tie order (the same member), but
+ * reading the agent's position itself: a call with double arguments boxes them (~36 B a frame) once this brain's
+ * step is too large for TurboFan to inline nearestMember.
+ */
+function nearestMemberOf(pool: SoloAgentPool, i: number, H: AgentContext['herds'], h: number): number {
+  if (!(h >= 0 && h < H.capacity) || !H.active[h]) return -1;
+  const n = pool.n[i];
+  const e = pool.e[i];
+  const base = h * H.memberCap;
+  let best = -1;
+  let bd = Infinity;
+  for (let k = 0; k < H.size[h]; k++) {
+    const d = (H.mN[base + k] - n) ** 2 + (H.mE[base + k] - e) ** 2;
+    if (d < bd) {
+      bd = d;
+      best = base + k;
+    }
+  }
+  return best;
+}
+
+/**
  * The agent's distance to 'face' prey p for the stand-off: the nearer of the nearest member and the centroid less
  * the formation radius (the herd's own predatorFleeRange test is the latter).
  */
@@ -199,7 +226,7 @@ function standOff(pool: SoloAgentPool, i: number, H: AgentContext['herds'], p: n
   let dn = H.cN[p] - n;
   let de = H.cE[p] - e;
   let d = Math.sqrt(dn * dn + de * de) - H.radius[p];
-  const k = H.nearestMember(p, n, e);
+  const k = nearestMemberOf(pool, i, H, p);
   if (k >= 0) {
     dn = H.mN[k] - n;
     de = H.mE[k] - e;
@@ -212,7 +239,7 @@ function standOff(pool: SoloAgentPool, i: number, H: AgentContext['herds'], p: n
 /** True while the ambient lock (slot + seed in mem) names a live herd. */
 function preyHeld(pool: SoloAgentPool, i: number, ctx: AgentContext): boolean {
   const m = i * AGENT_MEM;
-  const p = pool.mem[m + M_PREY];
+  const p = pool.mem[m + M_PREY] | 0;
   const H = ctx.herds;
   return p >= 0 && H.active[p] === 1 && H.seed[p] === pool.mem[m + M_PREY_SEED];
 }
@@ -268,7 +295,8 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
       const T = K.PREY_REPICK_S;
       if (!preyHeld(pool, i, ctx) || Math.floor(ctx.time / T) !== Math.floor((ctx.time - ctx.dt) / T)) pickPrey(pool, i, ctx);
     }
-    const rh = scripted ? ctx.riverHerd : pool.mem[m + M_PREY];
+    // (An int: a double index or argument would be boxed.)
+    const rh = scripted ? ctx.riverHerd : pool.mem[m + M_PREY] | 0;
     const herdOk = scripted ? rh >= 0 && H.active[rh] === 1 : preyHeld(pool, i, ctx);
     const face = !scripted && herdOk && H.kind[rh] === REACTION_KIND.face;
     const inState = ctx.time - pool.stateT[i];
@@ -277,10 +305,13 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
     // call would be boxed every frame).
     const ac = ctx.aircraft;
     let acD2 = Infinity;
+    // The aircraft is moving away from the prey (it has gone by).
+    let acOpening = false;
     if (ac && herdOk) {
       const dn = ac.n - H.cN[rh];
       const de = ac.e - H.cE[rh];
       acD2 = dn * dn + de * de;
+      acOpening = dn * ac.vN + de * ac.vE >= 0;
     }
     let lookN = Number.NaN;
     let lookE = 0;
@@ -373,18 +404,18 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
         }
         const t0 = pool.mem[m + M_CHARGE_T];
         const until = t0 + (scripted ? K.THREAT_S : K.AMB_THREAT_S);
-        let memberD2 = Infinity;
+        // The nearest member is within AMB_BREAK_COVER_M (a boolean: a double let merged across branches boxes).
+        let memberClose = false;
         if (pool.state[i] === S.charge) {
           pool.accel[i] = K.CHARGE_ACCEL;
           pool.turnRate[i] = 0.7;
           pool.wantSpeed[i] = PROFILE.speed.run;
-          let pulledUp = false;
-          const k = herdOk ? H.nearestMember(rh, pool.n[i], pool.e[i]) : -1;
+          const k = herdOk ? nearestMemberOf(pool, i, H, rh) : -1;
           if (k >= 0) {
             const dn = H.mN[k] - pool.n[i];
             const de = H.mE[k] - pool.e[i];
             pool.wantYaw[i] = Math.atan2(de, dn);
-            memberD2 = dn * dn + de * de;
+            memberClose = dn * dn + de * de < K.AMB_BREAK_COVER_M * K.AMB_BREAK_COVER_M;
             lookN = H.mN[k];
             lookE = H.mE[k];
             // No kill: pull up short of the nearest animal.
@@ -392,16 +423,19 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
             // 'face' prey: pull up at the stand-off (braking distance at the pool's 1.5 x accel deceleration).
             if (face) {
               const v = pool.speed[i];
-              if (standOff(pool, i, H, rh) < K.FACE_STANDOFF_M + (v * v) / (3 * K.CHARGE_ACCEL) + K.FACE_BRAKE_PAD) {
-                pool.wantSpeed[i] = 0;
-                pulledUp = v < 0.5;
-              }
+              if (standOff(pool, i, H, rh) < K.FACE_STANDOFF_M + (v * v) / (3 * K.CHARGE_ACCEL) + K.FACE_BRAKE_PAD) pool.wantSpeed[i] = 0;
             }
           }
           // ... and at the water's edge.
           if (waterAhead(pool, i, ctx)) pool.wantSpeed[i] = 0;
           const dtc = ctx.time - t0;
-          if (scripted ? dtc >= K.ROAR_AFTER : dtc >= K.AMB_ROAR_AFTER || (pulledUp && dtc >= K.ROAR_AFTER)) pool.setState(i, S.roar);
+          let roar: boolean;
+          if (scripted) roar = dtc >= K.ROAR_AFTER;
+          else {
+            // The aircraft has gone by: near the prey and the range opening.
+            roar = dtc >= K.AMB_ROAR_AFTER || (dtc >= K.AMB_ROAR_MIN_S && acOpening && acD2 < K.AMB_ROAR_PASS_M * K.AMB_ROAR_PASS_M);
+          }
+          if (roar) pool.setState(i, S.roar);
         } else {
           // The roar: stop, rear the head up and open the jaw (eased in and out).
           pool.wantSpeed[i] = 0;
@@ -419,7 +453,7 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
           const se = pool.e[i] - pool.mem[m + M_AIM_E];
           let send = sn * sn + se * se > K.RESEND_M * K.RESEND_M;
           const dtc = ctx.time - t0;
-          const bolt = scripted || face ? dtc >= K.BREAK_COVER_S : dtc >= K.AMB_BREAK_COVER_MAX_S || (dtc >= K.BREAK_COVER_S && memberD2 < K.AMB_BREAK_COVER_M * K.AMB_BREAK_COVER_M);
+          const bolt = scripted || face ? dtc >= K.BREAK_COVER_S : dtc >= K.AMB_BREAK_COVER_MAX_S || (dtc >= K.BREAK_COVER_S && memberClose);
           if (pool.mem[m + M_THREAT] < 2 && bolt) {
             pool.mem[m + M_THREAT] = 2;
             send = true;

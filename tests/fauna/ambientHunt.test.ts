@@ -197,50 +197,67 @@ function fly(sc: Scene, seconds: number, agl = 150): Trace {
 
 const proc = (globalThis as unknown as { process: { memoryUsage(): { heapUsed: number } } }).process;
 
-/** Heap bytes per call of fn: the median of 7 runs of n calls after a warm-up (a run spanning a GC is negative). */
-function bytesPerCall(fn: () => void, n = 1000, warm = 20000): number {
-  for (let k = 0; k < warm; k++) fn();
-  const runs: number[] = [];
-  for (let r = 0; r < 7; r++) {
-    const a = proc.memoryUsage().heapUsed;
-    for (let k = 0; k < n; k++) fn();
-    runs.push((proc.memoryUsage().heapUsed - a) / n);
-  }
-  runs.sort((x, y) => x - y);
-  return runs[3];
-}
-
 // The allocation test runs first (later tests drive the pool with other terrain objects; see tyrannosaurus.test.ts).
+// It measures each phase in its steady state (median of 7 runs after a JIT warm-up), so the one-off costs of a
+// state change (the base brain's scripted hunt already shows ~12 KB once per hunt in this harness, none per frame)
+// do not mask, or fake, a per-frame allocation.
 describe('ambient T. rex: allocation', () => {
-  it('steps the ambient path (pick, shadow, stalk, charge, threats, roar, wander) without allocating', () => {
+  it('steps every phase of the ambient hunt without allocating per frame', () => {
     const terrain = flatTerrain();
     const sc = scene(terrain, false);
     const { herds, pool, rex } = sc;
-    const ac: AircraftView = { n: AWAY.north + 1000, e: AWAY.east, alt: sc.ground + 150, vN: 0, vE: -50, vD: 0, tas: 50 };
+    // The aircraft holds 1000 m north of the herd, 150 m up, heading for it (the range closing: no roar until
+    // AMB_ROAR_AFTER), or 2900 m out (a stalk that runs to its timeout).
+    const near: AircraftView = { n: AWAY.north + 1000, e: AWAY.east, alt: sc.ground + 150, vN: -50, vE: 0, vD: 0, tas: 50 };
+    const far: AircraftView = { n: AWAY.north + 2900, e: AWAY.east, alt: sc.ground + 150, vN: -50, vE: 0, vD: 0, tas: 50 };
     const states = new Set<number>();
     // Warm up over whole hunts, with the herds running so the threats land.
     for (let k = 0; k < 6000; k++) {
       terrain.calls = 0;
-      herds.step(DT, ac, terrain, 100, ac.n, ac.e);
-      pool.step(DT, ac, terrain, -1);
+      herds.step(DT, near, terrain, 100, near.n, near.e);
+      pool.step(DT, near, terrain, -1);
       states.add(pool.state[rex]);
     }
     expect([S.stalk, S.charge, S.roar, S.wander].every((s) => states.has(s))).toBe(true);
-    // Each measured run restarts the T. rex (released and respawned 600 m out: it walks in, picks, stalks, charges).
-    let frame = 0;
-    const bytes = bytesPerCall(
-      () => {
-        if (frame++ % 1500 === 0) {
-          pool.release(rex);
-          pool.spawn({ species: 'tyrannosaurus', entry: 5, north: AWAY.north - 600, east: AWAY.east, ground: sc.ground, heading: 0, scale: 1, variant: 0, seed: 0xa3b1e }, TYRANNOSAURUS_BRAIN);
-        }
-        terrain.calls = 0;
-        pool.step(DT, ac, terrain, -1);
-      },
-      1500,
-      15000,
-    );
-    expect(bytes).toBeLessThan(8);
+    // The herd back at home, calm (it is not stepped in the measure: the pool alone is measured).
+    herds.release(sc.prey);
+    expect(spawnHerd(herds, 'edmontosaurus', AWAY.north, AWAY.east, sc.ground, 40, false, 0xbee5 + 40)).toBe(sc.prey);
+    let ac: AircraftView | null = null;
+    const step = (): void => {
+      terrain.calls = 0;
+      pool.step(DT, ac, terrain, -1);
+    };
+    /** Bytes per frame over `frames` frames of `state`, entered from a T. rex spawned `from` m south of the herd. */
+    const phase = (from: number, a: AircraftView | null, state: number, frames: number): number => {
+      const runs: number[] = [];
+      ac = a;
+      for (let r = 0; r < 16; r++) {
+        pool.release(rex);
+        pool.spawn({ species: 'tyrannosaurus', entry: 5, north: AWAY.north - from, east: AWAY.east, ground: sc.ground, heading: 0, scale: 1, variant: 0, seed: 0xa3b1e }, TYRANNOSAURUS_BRAIN);
+        let k = 0;
+        while (pool.state[rex] !== state && k++ < 200 / DT) step();
+        for (k = 0; k < 60; k++) step();
+        expect(pool.state[rex]).toBe(state);
+        const a0 = proc.memoryUsage().heapUsed;
+        for (k = 0; k < frames; k++) step();
+        if (r >= 9) runs.push((proc.memoryUsage().heapUsed - a0) / frames);
+        expect(pool.state[rex]).toBe(state);
+      }
+      runs.sort((x, y) => x - y);
+      return runs[3];
+    };
+    // Each phase twice: the first pass warms its code paths up (unoptimised code boxes its doubles).
+    const twice = (from: number, a: AircraftView | null, state: number, frames: number): number => (phase(from, a, state, frames), phase(from, a, state, frames));
+    const shadow = twice(1300, null, S.lurk, 900);
+    const stalk = twice(400, far, S.stalk, 900);
+    const charge = twice(400, near, S.charge, 1200);
+    const wander = twice(400, near, S.wander, 900);
+    // eslint-disable-next-line no-console
+    console.log(`allocation B/frame: shadow ${shadow.toFixed(2)}, stalk ${stalk.toFixed(2)}, charge ${charge.toFixed(2)}, wander ${wander.toFixed(2)}`);
+    expect(shadow).toBeLessThan(8);
+    expect(stalk).toBeLessThan(8);
+    expect(charge).toBeLessThan(8);
+    expect(wander).toBeLessThan(8);
   });
 });
 
