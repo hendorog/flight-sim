@@ -1,8 +1,10 @@
 // Alamosaurus: the species profile (WP3 owns this file; WP0b stub with the plan's numbers). Pure and three-free:
 // profiles.ts imports PROFILE (the export name is fixed).
 //
-// A pinned showcase trio (never ambient in inc 2), reaction 'ignore' (heads turn, nothing else), drawn as LOD2 out
-// to farRangeM (12 km) so the necks are a landmark; its LOD bands are lodRangeScale x the preset's.
+// A pinned showcase trio and, from inc 2b, rare groups of 2-4 streamed at forest edges and on the open Araucaria
+// uplands (roster.ts habitat 'woodland'); reaction 'ignore' (heads turn, nothing else). Drawn as LOD2 out to
+// farRangeM (12 km) so the necks are a landmark (streamed groups clamped inside the active radius: FaunaSystem
+// ambR, so they do not pop in); its LOD bands are lodRangeScale x the preset's.
 
 import type { SpeciesProfile } from '../profiles';
 import { HADROSAUR_REACTION } from '../reactions';

@@ -11,7 +11,7 @@ import { eraById } from '../../src/world/era/registry';
 import { makeSample, type TerrainSample } from '../../src/world/terrain/heightfield';
 import { createFaunaSystem, type FaunaSystemImpl } from '../../src/world/fauna/FaunaSystem';
 import { faunaVertexGLSL } from '../../src/world/fauna/faunaMaterial';
-import { countingTerrain, makeSite, probeHabitatCell, type FaunaTerrain } from '../../src/world/fauna/habitat';
+import { countingTerrain, herdEntries, layer2Entries, makeSite, probeHabitatCell, type FaunaTerrain } from '../../src/world/fauna/habitat';
 import { ALARM, HerdPool, REACTION_KIND, type AircraftView } from '../../src/world/fauna/herds';
 import { PROFILES } from '../../src/world/fauna/profiles';
 import { THREAT } from '../../src/world/fauna/reactions';
@@ -443,11 +443,18 @@ describe('Triceratops stop (evolving herd inputs)', () => {
 });
 
 describe('Triceratops placement', () => {
-  it('probeHabitatCell never yields Triceratops (the roster entry is not ambient)', () => {
+  it('probeHabitatCell (layer 1) never yields Triceratops; it streams as a layer-2 open-country group', () => {
     const roster = ROSTERS.cretaceous;
     const idx = roster.entries.findIndex((e) => e.species === 'triceratops');
     expect(idx).toBeGreaterThanOrEqual(0);
-    expect(roster.entries[idx].ambient).toBe(false);
+    // Inc 2b: ambient, placed by probeCell's layer 2 (habitat 'open', occupancy > 0), never by the layer-1 pick.
+    const e = roster.entries[idx];
+    expect(e.ambient).toBe(true);
+    expect(e.habitat).toBe('open');
+    expect(e.occupancy ?? 0).toBeGreaterThan(0);
+    expect(e.weight).toBe(0);
+    expect(layer2Entries(roster)).toContain(idx);
+    expect(herdEntries(roster)).not.toContain(idx);
     const terrain = countingTerrain();
     const site = makeSite();
     let found = 0;

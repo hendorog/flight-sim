@@ -164,11 +164,17 @@ describe('showcase hooks', () => {
     expect(speciesOfHerd(sys, ala)).toBe('alamosaurus');
   });
 
-  it('the habitat streaming never spawns solo or showcase-only species (roster append-only)', () => {
+  it('layer-1 habitat streaming spawns only the waterside Edmontosaurus; the rest stream by habitat (roster append-only)', () => {
     const R = ROSTERS.cretaceous;
     expect(R.entries.slice(0, 3).map((e) => e.species)).toEqual(['edmontosaurus', 'quetzalcoatlus', 'azhdarchidSmall']);
     expect(herdEntries(R).map((i) => R.entries[i].species)).toEqual(['edmontosaurus']);
-    for (const sp of ['triceratops', 'alamosaurus', 'tyrannosaurus'] as const) expect(R.entries.find((e) => e.species === sp)!.ambient).toBe(false);
+    // Inc 2b: entries 3-6 keep their order; the showcase species stream by habitat (layer 2 / beside herds).
+    expect(R.entries.slice(3, 8).map((e) => e.species)).toEqual(['triceratops', 'alamosaurus', 'tyrannosaurus', 'pteranodon', 'edmontosaurus']);
+    const by = (i: number) => R.entries[i];
+    expect([by(3).habitat, by(4).habitat, by(5).habitat, by(7).habitat]).toEqual(['open', 'woodland', 'nearHerd', 'plain']);
+    for (const i of [3, 4, 5, 7]) expect(by(i).occupancy).toBeGreaterThan(0);
+    expect(by(7).weight).toBe(0);
+    expect(by(6).waterAffinity).toBeGreaterThan(1);
     expect(R.entries.find((e) => e.species === 'tyrannosaurus')!.role).toBe('solo');
     expect(R.entries.find((e) => e.species === 'pteranodon')!.weight).toBeCloseTo(0.3, 6);
   });

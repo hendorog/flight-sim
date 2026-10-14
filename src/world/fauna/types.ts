@@ -142,7 +142,8 @@ export interface SpeciesRender {
 
 /**
  * How a roster entry lives: ground herds, soaring flyers (kettles on thermals; they also stand and launch), or
- * solo agents (agents.ts SoloAgentPool, driven by a species brain from brains.ts; showcase-only in inc 2).
+ * solo agents (agents.ts SoloAgentPool, driven by a species brain from brains.ts: the showcase T. rex, and from
+ * inc 2b roaming ones placed beside streamed herds).
  */
 export type FaunaRole = 'herd' | 'flyer' | 'solo';
 
@@ -163,7 +164,27 @@ export interface FaunaRosterEntry {
    * only appears where a showcase hook places it (the system still builds its meshes).
    */
   ambient?: boolean;
+  /**
+   * Where the habitat streaming places this entry (inc 2b, habitat.ts): 'waterside' (or absent) = layer 1, the
+   * herds beside the river and the lake shores (probeHabitatCell); 'plain' / 'open' / 'woodland' = layer 2 (probeCell:
+   * cells layer 1 left empty, each kind its own predicate); 'nearHerd' = a solo animal placed beside a streamed prey
+   * herd (FaunaSystem: the roaming T. rex).
+   */
+  habitat?: HabitatKind;
+  /**
+   * Layer 2: the share of 2 km cells (among those layer 1 left empty) that draw this entry, before its habitat test.
+   * 'nearHerd': the share of streamed prey herds that get one.
+   */
+  occupancy?: number;
+  /**
+   * Flyers: ambient-kettle weight x this near water (within 2 km of the river, a lake zone, or the coastal strip
+   * below 40 m), / this elsewhere. Absent: x 1.
+   */
+  waterAffinity?: number;
 }
+
+/** Habitat kinds of the streaming (FaunaRosterEntry.habitat). */
+export type HabitatKind = 'waterside' | 'plain' | 'open' | 'woodland' | 'nearHerd';
 
 /** An era's animals. The 'none' roster (the present day) has no entries and builds no fauna system. */
 export interface FaunaRoster {

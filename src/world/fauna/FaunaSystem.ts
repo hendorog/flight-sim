@@ -13,7 +13,7 @@
 //     in a session, and again each time the pilot gets at least SIGHT_CLOSER m closer than the last emit (so the
 //     Field Guide's 'closest' distance tracks the session's best approach; at most ~20 emits per species).
 //
-// FRAME: (1) every STREAM_PERIOD, release far herds/flyers, probe at most one habitat cell (<= 30 terrain samples)
+// FRAME: (1) every STREAM_PERIOD, release far herds/flyers, probe at most one habitat cell (<= 40 terrain samples)
 // and spawn at most one herd or kettle; (2) herd brains at 10 Hz round-robin and the flyers, sharing the
 // 200-terrain-read budget; (3) sphere-cull each herd and flyer against the frustum, bucket by distance into
 // LOD0/1/2 (LOD0 capped; the nearest LOD0 also cast shadows), write the 12-float instances (types.ts) and upload
@@ -27,6 +27,15 @@
 // are hidden (no draw, no state change; visible through init so warmUpShaders compiles them); stats.tris and
 // stats.draws count what was submitted.
 //
+// INCREMENT 2b (fauna across the landscape): the stream probes both habitat layers (habitat.ts probeCell: the
+// layer-1 Edmontosaurus waterside herds, unchanged, and layer 2: plains Edmontosaurus, Triceratops, Alamosaurus),
+// spawning each herd with its own species (and `roam` for layer 2); when the herd slots are full a site at least
+// EVICT_MARGIN nearer the camera than the farthest unpinned herd takes that herd's slot. On a quiet stream tick (no
+// probe, no spawn) a roaming T. rex may be placed beside a streamed prey herd (placeRex: at most AMBIENT_REX_MAX,
+// never within REX_QUIET_M of the safari footprint, out of sight), and released with its herd. Ambient kettles weight
+// their species toward water (roster waterAffinity) from the one terrain read they take. Every number an agent
+// choice.
+//
 // ART SEAM: the species meshes and the animated material come from a FaunaArt; the default, CREATURE_ART (art.ts),
 // is the procedural creature art (species/index.ts and faunaMaterial.ts). Tests may pass their own.
 // Meshes are THREE.Mesh + InstancedBufferGeometry (the vegetation idiom: no 64-byte instanceMatrix per instance);
@@ -39,9 +48,9 @@ import type { ThermalFrame } from '../../physics/weather/windField';
 import type { SimEnvironment } from '../../physics/environment';
 import * as Anchors from '../era/cretaceousAnchors';
 import type { EraParams } from '../era/types';
-import { SoloAgentPool } from './agents';
+import { SoloAgentPool, type AgentContext, type SoloBrain } from './agents';
 import { brainFor } from './brains';
-import { HABITAT_CELL, HERD_EPOCH_S, cellRandom, countingTerrain, makeSite, probeHabitatCell, type FaunaTerrain, type HabitatSite } from './habitat';
+import { HABITAT_CELL, HERD_BANK_MARGIN, HERD_EPOCH_S, REX_QUIET_M, cellRandom, countingTerrain, kettleEntry, kettleNearWater, makeSite, probeCell, rexRandom, safariFootprintDist, type FaunaTerrain, type HabitatSite } from './habitat';
 import { HerdPool, type AircraftView } from './herds';
 import { FLYER_MODE, FlyerPool, type FlyerMode } from './flight';
 import { AGENT_RESERVE, FAUNA_MAX, FAUNA_PRESETS, FLYER_RANGE_FACTOR, FLYER_RESERVE, MAX_AGENTS, MAX_GROUND_ANIMALS, MAX_HERD_SIZE, MAX_HERDS, TERRAIN_CALLS_PER_FRAME, type FaunaPreset } from './presets';
@@ -51,7 +60,8 @@ import { KETTLE_BIRDS, KETTLE_MAX_AGL, KETTLE_MIN_AGL, RIVER_HERD_SIZE, SAFARI_A
 import { kettleComposition, showcaseSpawns, type ShowcaseSpawn } from './showcaseHooks';
 import { CREATURE_ART } from './art';
 import { FAUNA_SPECIES } from './species/index';
-import { FAUNA_SPECIES_IDS, FAUNA_STRIDE, type CreatureMeshSet, type FaunaRoster, type FaunaSpeciesId, type FaunaStats } from './types';
+import { FAUNA_SPECIES_IDS, FAUNA_STRIDE, speciesIndex, type CreatureMeshSet, type FaunaRoster, type FaunaSpeciesId, type FaunaStats } from './types';
+import { makeSample } from '../terrain/heightfield';
 
 export interface FaunaSystem extends Subsystem {
   init(ctx: SimContext): void | Promise<void>;
@@ -155,6 +165,13 @@ interface SpeciesDraws {
   lod1R2: number;
   farR2: number;
   farR: number;
+  /**
+   * The draw range of streamed animals (unpinned herds, ambient agents): farR, but for a species drawn beyond the
+   * preset (profile.render.farRangeM > 0: Alamosaurus, T. rex) clamped inside activeRadius - POP_MARGIN, so a group
+   * that streams in at the edge of the active radius does not pop into view.
+   */
+  ambR2: number;
+  ambR: number;
   lod0Cap: number;
 }
 
@@ -206,6 +223,45 @@ const SIGHT_CLOSER = 25;
 const FLYER_RELEASE = 1.3;
 /** Streaming (release, one probe, one spawn) runs this often, s. */
 const STREAM_PERIOD = 0.25;
+/** A site must be this much nearer the camera than the farthest unpinned herd to evict it when the slots are full, m. */
+const EVICT_MARGIN = 1500;
+/** Streamed far-drawn species are clamped inside activeRadius minus this (ambR), m. */
+const POP_MARGIN = 1500;
+/** Roaming T. rexes alive at once at most (the agent pool keeps one slot spare: MAX_AGENTS - 1). */
+export const AMBIENT_REX_MAX = 2;
+/** A roaming T. rex stands this far (+ up to REX_RANGE_SPAN) from its prey herd's home, m. */
+export const REX_RANGE_MIN = 320;
+export const REX_RANGE_SPAN = 130;
+/** A roaming T. rex is only placed beyond this distance from the camera, or outside the view, m. */
+const REX_UNSEEN_M = 2500;
+/**
+ * The brain a roaming T. rex runs: the T. rex brain with ctx.riverHerd masked to -1 for its init and step. The river
+ * herd belongs to the scripted encounter (slot 0); a roaming T. rex never sees it, so it can never stalk it or send it
+ * a threat, whichever T. rex brain is in the build (the inc-2 brain, which only hunts ctx.riverHerd, keeps a roaming
+ * one in LURK; the generalised brain is ambient for riverHerd -1 and picks its own unpinned prey). No allocation.
+ */
+export const AMBIENT_REX_BRAIN: SoloBrain = {
+  init(pool: SoloAgentPool, i: number, ctx: AgentContext): void {
+    const rh = ctx.riverHerd;
+    ctx.riverHerd = -1;
+    try {
+      brainFor('tyrannosaurus').init(pool, i, ctx);
+    } finally {
+      ctx.riverHerd = rh;
+    }
+  },
+  step(pool: SoloAgentPool, i: number, ctx: AgentContext): void {
+    const rh = ctx.riverHerd;
+    ctx.riverHerd = -1;
+    try {
+      brainFor('tyrannosaurus').step(pool, i, ctx);
+    } finally {
+      ctx.riverHerd = rh;
+    }
+  },
+};
+const EDMONTOSAURUS = speciesIndex('edmontosaurus');
+const TRICERATOPS = speciesIndex('triceratops');
 
 /**
  * Herd terrain reads per frame at most (inside TERRAIN_CALLS_PER_FRAME's share for the herds). A stampede of a few
@@ -227,7 +283,7 @@ const MAX_FRAME_SIM_S = 1;
 export class FaunaSystemImpl implements FaunaSystem {
   readonly stats: FaunaStats = { visible: 0, terrainCalls: 0, reallocs: 0, cpuMs: 0, tris: 0, draws: 0 };
   /** Diagnostics (window.__sim.fauna.debug). */
-  readonly debug = { herds: 0, animals: 0, flyers: 0, agents: 0, cellsProbed: 0, triangles: 0, deferred: 0, errors: 0, agentTerrainCalls: 0 };
+  readonly debug = { herds: 0, animals: 0, flyers: 0, agents: 0, cellsProbed: 0, triangles: 0, deferred: 0, errors: 0, agentTerrainCalls: 0, ambientRex: 0, evictions: 0 };
 
   readonly root = new THREE.Group();
   readonly herds = new HerdPool();
@@ -258,9 +314,21 @@ export class FaunaSystemImpl implements FaunaSystem {
   private streamClock = 0;
   private ambientSerial = 0;
   private sceneTime = 0;
+  /** Roaming T. rex bookkeeping per agent slot: 1 = ambient (placed by placeRex), its prey herd slot and that herd's key. */
+  readonly ambientAgent = new Uint8Array(MAX_AGENTS);
+  readonly agentHerd = new Int16Array(MAX_AGENTS).fill(-1);
+  readonly agentHerdKey = new Float64Array(MAX_AGENTS).fill(-1);
+  /** Per herd slot: the key of a herd whose T. rex could not be placed (water both ways), so it is not retried. */
+  private readonly rexFailKey = new Float64Array(MAX_HERDS).fill(-1);
+  /** Roster entry of the T. rex and its 'nearHerd' occupancy (-1 / 0: none). */
+  private readonly rexEntry: number;
+  private readonly rexOccupancy: number;
+  /** Farthest unpinned herd's distance from the camera (farthestUnpinned's second result), m. */
+  private farD = 0;
 
   // Scratch (no per-frame allocation).
   private readonly site: HabitatSite = makeSite();
+  private readonly sample = makeSample();
   private readonly ac: AircraftView = { n: 0, e: 0, alt: 0, vN: 0, vE: 0, vD: 0, tas: 0 };
   private readonly frame: ThermalFrame = { seed: 0, driftN: 0, driftE: 0, wStar: 0, cloudBaseM: 0, minDepth: 300 };
   private readonly wind = { n: 0, e: 0 };
@@ -285,6 +353,8 @@ export class FaunaSystemImpl implements FaunaSystem {
     this.root.name = 'fauna';
     // Ambient kettles pick among the ambient flyer entries by weight.
     roster.entries.forEach((e, i) => e.role === 'flyer' && e.ambient !== false && e.weight > 0 && this.flyerEntries.push(i));
+    this.rexEntry = roster.entries.findIndex((e) => e.species === 'tyrannosaurus' && e.role === 'solo' && e.habitat === 'nearHerd' && e.ambient !== false);
+    this.rexOccupancy = this.rexEntry >= 0 ? (roster.entries[this.rexEntry].occupancy ?? 0) : 0;
   }
 
   init(ctx: SimContext): void {
@@ -317,7 +387,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       const radius = bs ? bs.radius + bs.center.length() : set.lengthM;
       const unit = SPECIES_REFERENCE_M[sp] / Math.max(0.1, set.lengthM);
       const tris: [number, number, number] = [triangles(set.lod0), triangles(set.lod1), triangles(set.lod2)];
-      this.draws.push({ species: sp, set, mats, lod: [lod0, lod1, lod2], caster, unit, radius, tris, originM: FAUNA_SPECIES[sp].groundOffsetM, profile, lod0R2: 0, lod1R2: 0, farR2: 0, farR: 0, lod0Cap: 0 });
+      this.draws.push({ species: sp, set, mats, lod: [lod0, lod1, lod2], caster, unit, radius, tris, originM: FAUNA_SPECIES[sp].groundOffsetM, profile, lod0R2: 0, lod1R2: 0, farR2: 0, farR: 0, ambR2: 0, ambR: 0, lod0Cap: 0 });
     }
     this.entryDraw = this.roster.entries.map((e) => this.draws.findIndex((d) => d.species === e.species));
     ctx.scene.add(this.root);
@@ -348,6 +418,10 @@ export class FaunaSystemImpl implements FaunaSystem {
     for (const h of this.showcaseHerds) if (this.herds.active[h]) this.herds.release(h);
     this.showcaseHerds.length = 0;
     for (let i = 0; i < this.agents.capacity; i++) if (this.agents.active[i]) this.agents.release(i);
+    // (The roaming T. rexes go too; placeRex puts them back beside their herds, after the showcase T. rex's slot 0.)
+    this.ambientAgent.fill(0);
+    this.agentHerd.fill(-1);
+    this.agentHerdKey.fill(-1);
     for (let i = 0; i < this.flyers.capacity; i++) {
       if (!this.showcaseFlyer[i]) continue;
       if (this.flyers.active[i]) this.flyers.release(i);
@@ -385,6 +459,8 @@ export class FaunaSystemImpl implements FaunaSystem {
       d.lod1R2 = (P.lod1Range * k) ** 2;
       d.farR = r.farRangeM > 0 ? r.farRangeM : P.lod2Range * k;
       d.farR2 = d.farR * d.farR;
+      d.ambR = r.farRangeM > 0 ? Math.max(0, Math.min(d.farR, P.activeRadius - POP_MARGIN)) : d.farR;
+      d.ambR2 = d.ambR * d.ambR;
       d.lod0Cap = Math.min(d.lod[0].capacity, Math.max(0, r.lod0Max[this.quality] ?? P.lod0Max));
     }
   }
@@ -553,7 +629,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       ac = a;
     }
     if (dt > 0) {
-      // Streaming first (bounded: one probe of <= 30 reads), then the brains and flyers with what is left.
+      // Streaming first (bounded: one probe of <= 40 reads), then the brains and flyers with what is left.
       this.streamClock += dt;
       if (this.streamClock >= STREAM_PERIOD) {
         this.streamClock = 0;
@@ -590,22 +666,29 @@ export class FaunaSystemImpl implements FaunaSystem {
     this.render(cam);
   }
 
-  /** Stream habitat: release far herds/flyers, probe at most one new cell, spawn at most one herd or kettle. */
+  /**
+   * Stream habitat: release far herds/flyers, probe at most one new cell (both layers, <= 40 reads), spawn at most
+   * one herd (evicting the farthest unpinned one when the slots are full and the site is EVICT_MARGIN nearer),
+   * release roaming T. rexes whose herd is gone, and on a quiet tick place a roaming T. rex or an ambient kettle.
+   */
   private stream(ctx: SimContext, camN: number, camE: number): void {
     const R = this.preset.activeRadius;
     const H = this.herds;
     const C = this.cells;
+    const rel2 = R * 1.15 * (R * 1.15);
     for (let h = 0; h < MAX_HERDS; h++) {
       if (!H.active[h] || H.pinned[h]) continue;
-      if (Math.hypot(H.cN[h] - camN, H.cE[h] - camE) > R * 1.15) {
-        const slot = C.find(H.key[h]);
-        if (slot >= 0 && C.status[slot] !== CELL_EMPTY) C.herd[slot] = -1;
-        H.release(h);
-      }
+      const dn = H.cN[h] - camN;
+      const de = H.cE[h] - camE;
+      if (dn * dn + de * de > rel2) this.releaseHerd(h);
     }
     const F = this.flyers;
+    const fr2 = R * FLYER_RELEASE * (R * FLYER_RELEASE);
     for (let i = 0; i < F.capacity; i++) {
-      if (F.active[i] && !this.showcaseFlyer[i] && Math.hypot(F.n[i] - camN, F.e[i] - camE) > R * FLYER_RELEASE) F.release(i);
+      if (!F.active[i] || this.showcaseFlyer[i]) continue;
+      const dn = F.n[i] - camN;
+      const de = F.e[i] - camE;
+      if (dn * dn + de * de > fr2) F.release(i);
     }
     if (C.used > CELL_SLOTS * 0.7) this.resetCells();
     // Cells in range, ring by ring from the camera's: probe the first unknown one, spawn the first unspawned site.
@@ -614,14 +697,20 @@ export class FaunaSystemImpl implements FaunaSystem {
     const rings = Math.ceil(R / HABITAT_CELL);
     let probed = false;
     let spawned = false;
+    /** The herd slots are full and there is no unpinned herd to evict (or a spawn failed): no candidate qualifies. */
+    let full = false;
+    /** When the slots are full: the farthest unpinned herd (-1 none; found once per tick, its distance in farD). */
+    let far = -2;
     let members = H.members();
-    for (let ring = 0; ring <= rings && !(probed && spawned); ring++) {
+    for (let ring = 0; ring <= rings && !(probed && (spawned || full)); ring++) {
       for (let di = -ring; di <= ring; di++) {
         for (let dj = -ring; dj <= ring; dj++) {
           if (Math.max(Math.abs(di), Math.abs(dj)) !== ring) continue;
           const ci = ci0 + di;
           const cj = cj0 + dj;
-          if (Math.hypot((ci + 0.5) * HABITAT_CELL - camN, (cj + 0.5) * HABITAT_CELL - camE) > R) continue;
+          const cn = (ci + 0.5) * HABITAT_CELL - camN;
+          const ce = (cj + 0.5) * HABITAT_CELL - camE;
+          if (cn * cn + ce * ce > R * R) continue;
           const key = cellKey(ci, cj);
           const slot = C.find(key);
           if (slot < 0) continue;
@@ -631,7 +720,7 @@ export class FaunaSystemImpl implements FaunaSystem {
             this.debug.cellsProbed++;
             C.keys[slot] = key;
             C.used++;
-            if (probeHabitatCell(ci, cj, this.roster, this.terrain, this.site)) {
+            if (probeCell(ci, cj, this.roster, this.terrain, this.site)) {
               C.status[slot] = CELL_SITE;
               C.n[slot] = this.site.north;
               C.e[slot] = this.site.east;
@@ -641,8 +730,24 @@ export class FaunaSystemImpl implements FaunaSystem {
             } else C.status[slot] = CELL_NONE;
             continue;
           }
-          if (spawned || C.status[slot] !== CELL_SITE || C.herd[slot] >= 0) continue;
+          if (spawned || full || C.status[slot] !== CELL_SITE || C.herd[slot] >= 0) continue;
           if (members + C.size[slot] > MAX_GROUND_ANIMALS) continue;
+          if (H.count() >= MAX_HERDS) {
+            // Full: the farthest unpinned herd gives up its slot to a site well nearer the camera. A site that is not
+            // near enough is skipped, not taken as the end of the scan: the ring walk is not ordered by site distance,
+            // so a nearer site may follow.
+            if (far === -2) far = this.farthestUnpinned(camN, camE);
+            if (far < 0) {
+              full = true;
+              continue;
+            }
+            const sn = C.n[slot] - camN;
+            const se = C.e[slot] - camE;
+            if (Math.sqrt(sn * sn + se * se) > this.farD - EVICT_MARGIN) continue;
+            members -= H.size[far];
+            this.releaseHerd(far);
+            this.debug.evictions++;
+          }
           // Herd state from (cell, epoch): a herd revisited later is somewhere plausible, not where it was left.
           const epoch = Math.floor(Math.max(0, ctx.simTime ?? 0) / HERD_EPOCH_S);
           const seed = (Math.imul(ci, 73856093) ^ Math.imul(cj, 19349663) ^ Math.imul(epoch + 1, 83492791)) >>> 0;
@@ -659,19 +764,164 @@ export class FaunaSystemImpl implements FaunaSystem {
               seed,
               heading: 2 * Math.PI * cellRandom(ci, cj, 50 + epoch),
               pinned: false,
+              species: e.species,
+              roam: e.habitat !== undefined && e.habitat !== 'waterside',
             },
             key,
           );
           if (h >= 0) {
             C.herd[slot] = h;
             members += H.size[h];
-          }
-          spawned = true;
+            spawned = true;
+          } else full = true;
         }
       }
     }
-    // Ambient kettles on thermal cores near the camera, by day, up to the preset.
-    if (!spawned && !probed && this.flyerEntries.length > 0 && F.count() + 2 <= this.preset.flyers) this.spawnAmbientKettle(ctx, camN, camE);
+    // Roaming T. rexes whose herd was released or evicted (its slot's key changed), or that are out of range.
+    this.sweepAmbientAgents(camN, camE, R);
+    if (spawned || probed) return;
+    // A quiet tick: a roaming T. rex first (capped, rarely due), else an ambient kettle on a thermal core.
+    if (this.placeRex(camN, camE)) return;
+    if (this.flyerEntries.length > 0 && F.count() + 2 <= this.preset.flyers) this.spawnAmbientKettle(ctx, camN, camE);
+  }
+
+  /** Release herd h and unlink it from its habitat cell (its roaming T. rex goes at the next sweep). */
+  private releaseHerd(h: number): void {
+    const H = this.herds;
+    const C = this.cells;
+    if (H.key[h] >= 0) {
+      const slot = C.find(H.key[h]);
+      if (slot >= 0 && C.status[slot] !== CELL_EMPTY && C.herd[slot] === h) C.herd[slot] = -1;
+    }
+    H.release(h);
+  }
+
+  /** The farthest unpinned live herd from the camera (-1 none); its distance in farD. */
+  private farthestUnpinned(camN: number, camE: number): number {
+    const H = this.herds;
+    let best = -1;
+    let bestD2 = -1;
+    for (let h = 0; h < MAX_HERDS; h++) {
+      if (!H.active[h] || H.pinned[h]) continue;
+      const dn = H.cN[h] - camN;
+      const de = H.cE[h] - camE;
+      const d2 = dn * dn + de * de;
+      if (d2 > bestD2) {
+        bestD2 = d2;
+        best = h;
+      }
+    }
+    this.farD = best >= 0 ? Math.sqrt(bestD2) : 0;
+    return best;
+  }
+
+  /** Release every roaming T. rex whose herd is gone (released, or its slot holds another key) or that is out of range. */
+  private sweepAmbientAgents(camN: number, camE: number, R: number): void {
+    const A = this.agents;
+    const H = this.herds;
+    const rel2 = R * 1.15 * (R * 1.15);
+    let n = 0;
+    for (let i = 0; i < A.capacity; i++) {
+      if (!this.ambientAgent[i]) continue;
+      const h = this.agentHerd[i];
+      const dn = A.n[i] - camN;
+      const de = A.e[i] - camE;
+      if (!A.active[i] || h < 0 || !H.active[h] || H.key[h] !== this.agentHerdKey[i] || dn * dn + de * de > rel2) {
+        if (A.active[i]) A.release(i);
+        this.ambientAgent[i] = 0;
+        this.agentHerd[i] = -1;
+        this.agentHerdKey[i] = -1;
+        continue;
+      }
+      n++;
+    }
+    this.debug.ambientRex = n;
+  }
+
+  /**
+   * Place a roaming T. rex beside the nearest streamed prey herd (an unpinned Edmontosaurus or Triceratops herd)
+   * whose cell draws one (rexRandom < the roster occupancy), at least REX_QUIET_M from the safari footprint and
+   * without one yet; at most AMBIENT_REX_MAX alive, one agent slot always spare, never where the camera would see it
+   * appear. Its spawn point is the herd's home + REX_RANGE_MIN..+SPAN at a drawn bearing (the opposite one if that is
+   * water or the river bank): <= 2 terrain reads. Returns true when one was placed.
+   */
+  private placeRex(camN: number, camE: number): boolean {
+    if (this.rexEntry < 0 || !(this.rexOccupancy > 0)) return false;
+    const A = this.agents;
+    const H = this.herds;
+    let amb = 0;
+    for (let i = 0; i < A.capacity; i++) amb += this.ambientAgent[i];
+    if (amb >= AMBIENT_REX_MAX || A.count() >= MAX_AGENTS - 1) return false;
+    let best = -1;
+    let bestD2 = Infinity;
+    for (let h = 0; h < MAX_HERDS; h++) {
+      if (!H.active[h] || H.pinned[h] || H.key[h] < 0) continue;
+      if (H.species[h] !== EDMONTOSAURUS && H.species[h] !== TRICERATOPS) continue;
+      if (this.rexFailKey[h] === H.key[h]) continue;
+      let taken = false;
+      for (let i = 0; i < A.capacity; i++) if (this.ambientAgent[i] && this.agentHerd[i] === h) taken = true;
+      if (taken) continue;
+      const ci = Math.floor(H.key[h] / 65536) - 32768;
+      const cj = (H.key[h] % 65536) - 32768;
+      if (!(rexRandom(ci, cj, 0) < this.rexOccupancy)) continue;
+      if (safariFootprintDist(H.homeN[h], H.homeE[h]) < REX_QUIET_M) continue;
+      const dn = H.cN[h] - camN;
+      const de = H.cE[h] - camE;
+      const d2 = dn * dn + de * de;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = h;
+      }
+    }
+    if (best < 0) return false;
+    const key = H.key[best];
+    const ci = Math.floor(key / 65536) - 32768;
+    const cj = (key % 65536) - 32768;
+    const r = REX_RANGE_MIN + REX_RANGE_SPAN * rexRandom(ci, cj, 1);
+    const b0 = 2 * Math.PI * rexRandom(ci, cj, 2);
+    let seen = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const b = b0 + attempt * Math.PI;
+      const n = H.homeN[best] + r * Math.cos(b);
+      const e = H.homeE[best] + r * Math.sin(b);
+      // Never in sight as it appears: beyond REX_UNSEEN_M, or outside the last frame's view (else the other side,
+      // or a later tick).
+      const dn = n - camN;
+      const de = e - camE;
+      if (dn * dn + de * de <= REX_UNSEEN_M * REX_UNSEEN_M) {
+        this.sphere.center.set(e, H.cH[best] + 4, -n);
+        this.sphere.radius = 20;
+        if (this.frustum.intersectsSphere(this.sphere)) {
+          seen = true;
+          continue;
+        }
+      }
+      const s = this.terrain.sample(n, e, this.sample);
+      if (s.ground < Math.max(s.standing, s.river) + 0.3 || (s.riverHalfWidth > 0 && s.riverDist < s.riverHalfWidth + HERD_BANK_MARGIN)) continue;
+      const i = A.spawn(
+        {
+          species: 'tyrannosaurus',
+          entry: this.rexEntry,
+          north: n,
+          east: e,
+          ground: s.ground,
+          heading: Math.atan2(H.cE[best] - e, H.cN[best] - n),
+          scale: 1,
+          variant: 0,
+          seed: Math.floor(rexRandom(ci, cj, 3) * 4294967296) >>> 0,
+        },
+        AMBIENT_REX_BRAIN,
+      );
+      if (i < 0) return false;
+      this.ambientAgent[i] = 1;
+      this.agentHerd[i] = best;
+      this.agentHerdKey[i] = key;
+      this.debug.ambientRex = amb + 1;
+      return true;
+    }
+    // Water (or the bank) on both sides: this herd gets none. (In sight: try again on a later tick.)
+    if (!seen) this.rexFailKey[best] = key;
+    return false;
   }
 
   /** Forget the probed cells (the table is nearly full): live herds keep running and are re-linked by key. */
@@ -711,23 +961,15 @@ export class FaunaSystemImpl implements FaunaSystem {
     for (let i = 0; i < F.capacity; i++) {
       if (F.active[i] && F.mode[i] === FLYER_MODE.kettle && F.coreI[i] === this.core.i && F.coreJ[i] === this.core.j) return;
     }
-    // Species by roster weight among the ambient flyer entries.
-    let total = 0;
-    for (const fe of this.flyerEntries) total += this.roster.entries[fe].weight;
-    let pick = cellRandom(k, 0xa3b, 2) * total;
-    let entry = this.flyerEntries[this.flyerEntries.length - 1];
-    for (const fe of this.flyerEntries) {
-      pick -= this.roster.entries[fe].weight;
-      if (pick < 0) {
-        entry = fe;
-        break;
-      }
-    }
-    const re = this.roster.entries[entry];
-    const birds = Math.min(this.preset.flyers - F.count(), re.groupMin + Math.floor(cellRandom(k, 0xa3b, 3) * (re.groupMax - re.groupMin + 1)));
+    // One terrain read at the core: its surface height (terrainHeight's max of ground and water) and whether it is
+    // near water, which weights the species (roster waterAffinity: the Pteranodon keeps to the water).
     const cn = this.core.x + f.driftN;
     const ce = this.core.y + f.driftE;
-    const ground = this.terrain.height(cn, ce);
+    const s = this.terrain.sample(cn, ce, this.sample);
+    const ground = Math.max(s.ground, s.standing, s.river);
+    const entry = kettleEntry(this.roster, this.flyerEntries, cellRandom(k, 0xa3b, 2), kettleNearWater(s));
+    const re = this.roster.entries[entry];
+    const birds = Math.min(this.preset.flyers - F.count(), re.groupMin + Math.floor(cellRandom(k, 0xa3b, 3) * (re.groupMax - re.groupMin + 1)));
     for (let b = 0; b < birds; b++) {
       const seed = (0xa3b000 + k * 8 + b) >>> 0;
       const agl = 300 + 600 * cellRandom(seed, 5, b);
@@ -776,12 +1018,13 @@ export class FaunaSystemImpl implements FaunaSystem {
   // ------------------------------------------------------------------------------------------------- render
 
   /**
-   * The LOD for an instance of draw di at squared distance d2 (-1: beyond its range): LOD0 while within its LOD0
+   * The LOD for an instance of draw di at squared distance d2 (-1: beyond far2, its squared draw range: farR2, or
+   * ambR2 for streamed animals): LOD0 while within its LOD0
    * range, under the species' LOD0 cap and the frame's LOD0 triangle pool; else LOD1 / LOD2 by range.
    */
-  private pickLod(di: number, d2: number): number {
+  private pickLod(di: number, d2: number, far2: number): number {
     const d = this.draws[di];
-    if (!(d2 < d.farR2)) return -1;
+    if (!(d2 < far2)) return -1;
     let lod = d2 < d.lod0R2 && this.lod0Used[di] < d.lod0Cap && this.poolLeft >= d.tris[0] ? 0 : d2 < d.lod1R2 ? 1 : 2;
     if (d.lod[lod].count >= d.lod[lod].capacity) lod = 2;
     return d.lod[lod].count >= d.lod[lod].capacity ? -1 : lod;
@@ -831,7 +1074,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       const dx = A.e[i] - cx;
       const dy = y - cy;
       const dz = -A.n[i] - cz;
-      const lod = this.pickLod(di, dx * dx + dy * dy + dz * dz);
+      const lod = this.pickLod(di, dx * dx + dy * dy + dz * dz, this.ambientAgent[i] ? draw.ambR2 : draw.farR2);
       if (lod < 0) continue;
       this.emit(di, lod, A.e[i], y, A.n[i], A.yaw[i], A.pitch[i], 0, A.phase[i], A.blend[i], A.flap[i], A.head[i], sc, A.variant[i]);
       visible++;
@@ -842,7 +1085,10 @@ export class FaunaSystemImpl implements FaunaSystem {
     let nh = 0;
     for (let h = 0; h < MAX_HERDS; h++) {
       if (!H.active[h]) continue;
-      const d = Math.hypot(H.cE[h] - cx, H.cH[h] - cy, -H.cN[h] - cz);
+      const ex = H.cE[h] - cx;
+      const ey = H.cH[h] - cy;
+      const ez = -H.cN[h] - cz;
+      const d = Math.sqrt(ex * ex + ey * ey + ez * ez);
       let k = nh++;
       while (k > 0 && this.orderD[k - 1] > d) {
         this.order[k] = this.order[k - 1];
@@ -859,7 +1105,9 @@ export class FaunaSystemImpl implements FaunaSystem {
       if (!draw) continue;
       // The members' current spread (a scattered herd reaches far beyond its formation radius).
       const spread = Math.max(H.radius[h], this.herdSpread(h));
-      if (this.orderD[o] - spread > draw.farR) continue;
+      const farR = H.pinned[h] ? draw.farR : draw.ambR;
+      const far2 = H.pinned[h] ? draw.farR2 : draw.ambR2;
+      if (this.orderD[o] - spread > farR) continue;
       this.sphere.center.set(H.cE[h], H.cH[h] + 2, -H.cN[h]);
       this.sphere.radius = spread + draw.radius * draw.unit * 1.5 + 30;
       if (!this.frustum.intersectsSphere(this.sphere)) continue;
@@ -870,7 +1118,7 @@ export class FaunaSystemImpl implements FaunaSystem {
         const dx = H.mE[i] - cx;
         const dy = H.mH[i] - cy;
         const dz = -H.mN[i] - cz;
-        const lod = this.pickLod(di, dx * dx + dy * dy + dz * dz);
+        const lod = this.pickLod(di, dx * dx + dy * dy + dz * dz, far2);
         if (lod < 0) continue;
         this.emit(di, lod, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], H.alert[i], H.head[i], H.scale[i] * draw.unit, H.variant[i]);
         visible++;
@@ -894,7 +1142,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       this.sphere.radius = draw.radius * F.scale[i] + 2;
       if (!this.frustum.intersectsSphere(this.sphere)) continue;
       // (pickLod's range test is the ground one: beyond it a flyer still draws at LOD2.)
-      let lod = this.pickLod(di, Math.min(d2, draw.farR2 * 0.999));
+      let lod = this.pickLod(di, Math.min(d2, draw.farR2 * 0.999), draw.farR2);
       if (lod < 0) continue;
       if (lod < 2 && !(d2 < draw.lod1R2)) lod = 2;
       this.emit(di, lod, x, y, F.n[i], F.heading[i], F.pitch[i], F.bank[i], F.phase[i], F.blend[i], F.flap[i], F.head[i], F.scale[i], F.variant[i]);

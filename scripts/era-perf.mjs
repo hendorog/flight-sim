@@ -35,6 +35,12 @@
 //             110 KIAS on the autoflight hold, cockpit view, measured from 14 s after the reset. Built
 //             explicitly here, so it stays the same pose after SAFARI moves (cretaceousAnchors.ts)
 //   g1..g7    the DEFAULT boot (no tod, the safari at SAFARI), cockpit, from FIRST_MINUTE_FRAMES' time
+//   away-sw   (inc 2b) the runway scenario at tod 10 with a fixed camera (camPos / camLook: the streaming follows
+//             the camera) at (-15000, -14000, 420) over the river floodplain SW, the densest streaming point (waterside and
+//             plains Edmontosaurus, Triceratops, an Alamosaurus group, a roaming T. rex), measured after 30 s of sim
+//             time (the cells probed and the herds spawned)
+//   away-up   (inc 2b) the same over the lake-east Araucaria uplands (10600, 4300): Triceratops, plains
+//             Edmontosaurus and the Alamosaurus groups
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -186,6 +192,13 @@ const POSES = {
   safari14: { page: CRET('&scenario=runway&tod=10'), setup: SAFARI14 },
 };
 for (let g = 1; g <= 7; g++) POSES[`g${g}`] = { page: CRET(''), setup: GFRAME(`g${g}`) };
+
+/** Away from the start (inc 2b): wait for 30 s of sim time at a fixed camera, so the habitat cells are streamed. */
+const AWAY = `
+  await until(() => sim.summary().time > 30, 300000);
+  return { t: sim.summary().time, herds: f ? f.herds.count() : 0, animals: f ? f.herds.members() : 0, agents: f ? f.agents.count() : 0 };`;
+POSES['away-sw'] = { page: CRET('&scenario=runway&tod=10&camPos=-15000,-14000,420&camLook=-14301,-13749,110'), setup: AWAY };
+POSES['away-up'] = { page: CRET('&scenario=runway&tod=10&camPos=10600,4300,720&camLook=13106,6726,660'), setup: AWAY };
 
 // ------------------------------------------------------------------------------------------------ running
 
