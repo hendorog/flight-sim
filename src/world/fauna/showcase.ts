@@ -14,8 +14,8 @@
 // 3. Two kettles of azhdarchids (mixed sizes), each on the real thermal core nearest a point 1.5 km past a
 //    departure end, in the band SAFARI agl +- KETTLE_BAND_M above the ground (inc 2: centred on the safari
 //    start's height). Without real thermals by day (the dusk safari: w* = 0) they circle a pinned VIRTUAL core
-//    instead (flight.ts startVirtualKettle): kettle 0 at anchors.KETTLE0_EVENING at the safari's altitude
-//    +- KETTLE_BAND_M (eye level ahead right, 20-30 s in), kettle 1 at its seed point.
+//    instead (flight.ts startVirtualKettle): kettle 0 at anchors.KETTLE0_EVENING, KETTLE0_LIFT_M above the
+//    safari's altitude +- KETTLE_BAND_M (just above eye level, ahead, 20-30 s in), kettle 1 at its seed point.
 // 4. Inc 2: the species' showcase hooks (showcaseHooks.ts): the T. rex, the Triceratops group, the Alamosaurus
 //    trio, and Pteranodon places in kettle 0.
 

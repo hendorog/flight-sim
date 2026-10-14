@@ -62,7 +62,7 @@
 //   ground contrast >= 1.3. NO grid point puts the sun outside the central 60 % (flying west at dusk it is 0-31 deg
 //   right of the nose everywhere; the best, track 20 at 19.4, is 466 of 480 px), so the plan's pre-authorised
 //   fallback applies: outside the central 40 %. That leaves track 20 at 18.6 (barely: 324 px) to 19.4; only track 20
-//   passes the clearance at 450 ft. 19.0 is chosen: the sun 392 px right of centre and 7 deg up, just above the
+//   passes the clearance at 450 ft. 19.0 was WP0a's choice (superseded by WP8 round 2, below): the sun 392 px right of centre and 7 deg up, just above the
 //   compass's deviation card (rendered at x 1206, y 266 px: glare beside the compass in the shots), and the crater glow ramp (eraLight.ts) at 0.31
 //   at the start (WP5's > 0.15 gate; 18.6 gives 0.14). Rendered (W/shots/sweep, scripts/safari-geometry.mjs sweep:
 //   the herd members' pixels vs a 10-16 px ring around them): the inc-1 Edmontosaurus reach a herd / ground contrast
