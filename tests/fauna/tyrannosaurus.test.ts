@@ -335,3 +335,31 @@ describe('T. rex brain on the scripted safari', () => {
   });
 });
 
+
+// ------------------------------------------------------------------------------------------------ inc 2b freeze
+
+/** FNV-1a 32-bit over the trace lines joined by '\n' (hex). */
+function traceHash(lines: string[]): string {
+  const s = lines.join('\n');
+  let h = 0x811c9dc5;
+  for (let k = 0; k < s.length; k++) {
+    h ^= s.charCodeAt(k);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+/**
+ * The scripted safari beat's 30 s trace (flat terrain), hashed from feat/deep-time-2 at 4f85c4f BEFORE the
+ * inc 2b ambient-hunt brain was written: the generalised brain must leave the scripted T. rex byte-identical.
+ * Never update this constant to make a change pass.
+ */
+const SCRIPTED_TRACE_HASH_4F85C4F = '9091b3cf';
+
+describe('T. rex brain: the scripted beat is frozen (inc 2b)', () => {
+  it('runSafari(30) on flat terrain hashes to the pre-inc-2b value', () => {
+    const tr = runSafari(30);
+    expect(tr.lines.length).toBe(60);
+    expect(traceHash(tr.lines)).toBe(SCRIPTED_TRACE_HASH_4F85C4F);
+  });
+});

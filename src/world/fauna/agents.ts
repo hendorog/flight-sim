@@ -34,8 +34,9 @@ import { AGENT_RESERVE, MAX_AGENTS } from './presets';
 import { PROFILES, profileStride, type SpeciesProfile } from './profiles';
 import { FAUNA_SPECIES_IDS, type FaunaSpeciesId } from './types';
 
-/** Floats of private memory per agent for its brain (mem[i * AGENT_MEM + k]). */
-export const AGENT_MEM = 8;
+/** Floats of private memory per agent for its brain (mem[i * AGENT_MEM + k]). 11 since inc 2b: the T. rex's
+ * ambient hunt keeps its locked prey (herd slot + H.seed) and its shadowing mode beside the scripted beat's 8. */
+export const AGENT_MEM = 11;
 /** An agent re-reads the ground once it has moved this far, m, or after SNAP_S. */
 export const SNAP_MOVE = 1.5;
 export const SNAP_S = 1;
