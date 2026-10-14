@@ -37,7 +37,7 @@
 //   CHARGE  at AMB_CHARGE_RANGE (1300 m) or AMB_STALK_TIMEOUT (30 s) into the stalk, never before CHARGE_EARLIEST;
 //           the same alert -> flee threat sequence on the prey (lasting AMB_THREAT_S, 30 s), but an Edmontosaurus
 //           herd stands alert, heads up, until the T. rex is within AMB_BREAK_COVER_M (180 m) of it (or
-//           AMB_BREAK_COVER_MAX_S, 14 s, into the charge) and only then bolts: a close chase. The face fan-out reaches UNPINNED
+//           AMB_BREAK_COVER_MAX_S, 14 s, into the charge, or the roar) and only then bolts: a close chase. The face fan-out reaches UNPINNED
 //           herds only: an ambient agent never threatens a pinned (showcase) herd. Against 'face' prey (Triceratops)
 //           it pulls up FACE_STANDOFF_M (240 m) from the nearest member, outside their predatorFleeRange (200 m):
 //           they face it, horns forward, and never run (poetic licence). It roars as the aircraft goes by (the range
@@ -113,7 +113,7 @@ export const TREX_BRAIN = Object.freeze({
   /** Ambient: the threat lasts this long from the charge start, s (the chase runs longer than the scripted one). */
   AMB_THREAT_S: 30,
   /** Ambient, 'flee' prey: the herd only bolts (the flee-level threat) once the T. rex is this near its nearest
-   * member, m, or AMB_BREAK_COVER_MAX_S into the charge; until then it stands alert, heads up, watching it come. */
+   * member, m, AMB_BREAK_COVER_MAX_S into the charge, or at the roar; until then it stands alert, heads up, watching it come. */
   AMB_BREAK_COVER_M: 180,
   AMB_BREAK_COVER_MAX_S: 14,
   AMB_REARM_S: 120,
@@ -217,10 +217,13 @@ function nearestMemberOf(pool: SoloAgentPool, i: number, H: AgentContext['herds'
 }
 
 /**
- * The agent's distance to 'face' prey p for the stand-off: the nearer of the nearest member and the centroid less
- * the formation radius (the herd's own predatorFleeRange test is the latter).
+ * True when the agent is inside its stand-off from 'face' prey p: its distance (the nearer of the nearest member and
+ * the centroid less the formation radius, the latter being the herd's own predatorFleeRange test) is under
+ * FACE_STANDOFF_M plus FACE_STALK_ROOM (stalk) or plus its braking distance at the pool's 1.5 x accel deceleration
+ * and FACE_BRAKE_PAD (charge). A boolean, with the limit worked out here: a double return or argument boxes
+ * (~20 B a frame) once this brain's step is too large for TurboFan to inline the call.
  */
-function standOff(pool: SoloAgentPool, i: number, H: AgentContext['herds'], p: number): number {
+function insideStandOff(pool: SoloAgentPool, i: number, H: AgentContext['herds'], p: number, charging: boolean): boolean {
   const n = pool.n[i];
   const e = pool.e[i];
   let dn = H.cN[p] - n;
@@ -233,7 +236,9 @@ function standOff(pool: SoloAgentPool, i: number, H: AgentContext['herds'], p: n
     const dm = Math.sqrt(dn * dn + de * de);
     if (dm < d) d = dm;
   }
-  return d;
+  if (!charging) return d < K.FACE_STANDOFF_M + K.FACE_STALK_ROOM;
+  const v = pool.speed[i];
+  return d < K.FACE_STANDOFF_M + (v * v) / (3 * K.CHARGE_ACCEL) + K.FACE_BRAKE_PAD;
 }
 
 /** True while the ambient lock (slot + seed in mem) names a live herd. */
@@ -381,7 +386,7 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
           break;
         }
         // Against 'face' prey the stalk creeps no nearer than the stand-off (plus a charge's worth of room).
-        if (face && standOff(pool, i, H, rh) < K.FACE_STANDOFF_M + K.FACE_STALK_ROOM) pool.wantSpeed[i] = 0;
+        if (face && insideStandOff(pool, i, H, rh, false)) pool.wantSpeed[i] = 0;
         const chargeR = scripted ? K.CHARGE_RANGE : K.AMB_CHARGE_RANGE;
         const timeout = scripted ? K.STALK_TIMEOUT : K.AMB_STALK_TIMEOUT;
         if (inState >= K.CHARGE_EARLIEST && (acD2 < chargeR * chargeR || inState >= timeout)) {
@@ -421,10 +426,7 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
             // No kill: pull up short of the nearest animal.
             if (dn * dn + de * de < K.STOP_SHORT * K.STOP_SHORT) pool.wantSpeed[i] = 0;
             // 'face' prey: pull up at the stand-off (braking distance at the pool's 1.5 x accel deceleration).
-            if (face) {
-              const v = pool.speed[i];
-              if (standOff(pool, i, H, rh) < K.FACE_STANDOFF_M + (v * v) / (3 * K.CHARGE_ACCEL) + K.FACE_BRAKE_PAD) pool.wantSpeed[i] = 0;
-            }
+            if (face && insideStandOff(pool, i, H, rh, true)) pool.wantSpeed[i] = 0;
           }
           // ... and at the water's edge.
           if (waterAhead(pool, i, ctx)) pool.wantSpeed[i] = 0;
@@ -453,7 +455,11 @@ export const TYRANNOSAURUS_BRAIN: SoloBrain = {
           const se = pool.e[i] - pool.mem[m + M_AIM_E];
           let send = sn * sn + se * se > K.RESEND_M * K.RESEND_M;
           const dtc = ctx.time - t0;
-          const bolt = scripted || face ? dtc >= K.BREAK_COVER_S : dtc >= K.AMB_BREAK_COVER_MAX_S || (dtc >= K.BREAK_COVER_S && memberClose);
+          // Ambient 'flee' prey bolts when it is close, at AMB_BREAK_COVER_MAX_S, or at the roar (an early roar, the
+          // aircraft already going away, must not end the hunt with the herd still standing alert).
+          const bolt = scripted || face
+            ? dtc >= K.BREAK_COVER_S
+            : dtc >= K.AMB_BREAK_COVER_MAX_S || (pool.state[i] as number) === S.roar || (dtc >= K.BREAK_COVER_S && memberClose);
           if (pool.mem[m + M_THREAT] < 2 && bolt) {
             pool.mem[m + M_THREAT] = 2;
             send = true;

@@ -202,9 +202,13 @@ const proc = (globalThis as unknown as { process: { memoryUsage(): { heapUsed: n
 // state change (the base brain's scripted hunt already shows ~12 KB once per hunt in this harness, none per frame)
 // do not mask, or fake, a per-frame allocation.
 describe('ambient T. rex: allocation', () => {
-  it('steps every phase of the ambient hunt without allocating per frame', () => {
+  // Both prey kinds: 'flee' (Edmontosaurus) and 'face' (Triceratops: the stand-off paths in STALK and CHARGE).
+  it.each([
+    ['edmontosaurus', 40, 380],
+    ['triceratops', 7, 430],
+  ] as [FaunaSpeciesId, number, number][])('%s prey: steps every phase of the ambient hunt without allocating per frame', (species, size, dist) => {
     const terrain = flatTerrain();
-    const sc = scene(terrain, false);
+    const sc = scene(terrain, false, species, size, false, dist);
     const { herds, pool, rex } = sc;
     // The aircraft holds 1000 m north of the herd, 150 m up, heading for it (the range closing: no roar until
     // AMB_ROAR_AFTER), or 2900 m out (a stalk that runs to its timeout).
@@ -221,7 +225,7 @@ describe('ambient T. rex: allocation', () => {
     expect([S.stalk, S.charge, S.roar, S.wander].every((s) => states.has(s))).toBe(true);
     // The herd back at home, calm (it is not stepped in the measure: the pool alone is measured).
     herds.release(sc.prey);
-    expect(spawnHerd(herds, 'edmontosaurus', AWAY.north, AWAY.east, sc.ground, 40, false, 0xbee5 + 40)).toBe(sc.prey);
+    expect(spawnHerd(herds, species, AWAY.north, AWAY.east, sc.ground, size, false, 0xbee5 + size)).toBe(sc.prey);
     let ac: AircraftView | null = null;
     const step = (): void => {
       terrain.calls = 0;
@@ -253,7 +257,7 @@ describe('ambient T. rex: allocation', () => {
     const charge = twice(400, near, S.charge, 1200);
     const wander = twice(400, near, S.wander, 900);
     // eslint-disable-next-line no-console
-    console.log(`allocation B/frame: shadow ${shadow.toFixed(2)}, stalk ${stalk.toFixed(2)}, charge ${charge.toFixed(2)}, wander ${wander.toFixed(2)}`);
+    console.log(`allocation B/frame (${species}): shadow ${shadow.toFixed(2)}, stalk ${stalk.toFixed(2)}, charge ${charge.toFixed(2)}, wander ${wander.toFixed(2)}`);
     expect(shadow).toBeLessThan(8);
     expect(stalk).toBeLessThan(8);
     expect(charge).toBeLessThan(8);
@@ -331,6 +335,38 @@ describe('ambient T. rex: a low pass at an away point', () => {
     expect(Number.isNaN(tr.stalk)).toBe(true);
     expect(Number.isNaN(tr.charge)).toBe(true);
     expect(sc.herds.extUntil[sc.prey]).toBe(-Infinity);
+  });
+
+  it('an early roar (the aircraft already going away at AMB_ROAR_MIN_S) still sends the herd running', () => {
+    // The aircraft holds 1000 m north of the herd, 150 m up, flying away from it (the range opening): the charge
+    // starts at CHARGE_EARLIEST into the stalk and the roar comes at AMB_ROAR_MIN_S, long before the T. rex
+    // (~320 m out) is within AMB_BREAK_COVER_M of a member or AMB_BREAK_COVER_MAX_S has run.
+    const sc = scene(flatTerrain(), false);
+    const { herds, pool, terrain, rex, prey } = sc;
+    const ac: AircraftView = { n: 0, e: 0, alt: sc.ground + 150, vN: 50, vE: 0, vD: 0, tas: 50 };
+    let charge = Number.NaN;
+    let roar = Number.NaN;
+    let levelAtRoar = -1;
+    let ran = false;
+    for (let f = 1; f <= Math.round(60 / DT); f++) {
+      const t = f * DT;
+      ac.n = herds.cN[prey] + 1000;
+      ac.e = herds.cE[prey];
+      terrain.calls = 0;
+      herds.step(DT, ac, terrain, HERD_BUDGET, ac.n, ac.e);
+      pool.step(DT, ac, terrain, -1);
+      const s = pool.state[rex];
+      if (s === S.charge && Number.isNaN(charge)) charge = t;
+      if (s === S.roar && Number.isNaN(roar)) {
+        roar = t;
+        levelAtRoar = herds.extLevel[prey];
+      }
+      if (herds.fleeing[prey] && herds.react[prey] === ALARM.run) ran = true;
+    }
+    expect(roar - charge).toBeLessThan(K.AMB_BREAK_COVER_MAX_S);
+    // The roar breaks cover: the flee threat goes out no later than the roar.
+    expect(levelAtRoar).toBe(THREAT.flee);
+    expect(ran).toBe(true);
   });
 });
 
@@ -429,13 +465,26 @@ describe('ambient T. rex: the prey goes away mid-hunt', () => {
     expect(until(sc, at)).toBeGreaterThan(0);
     const old = sc.prey;
     herds.release(old);
-    // A new herd elsewhere: in the same slot (a new seed) or, after the release, in a fresh one.
     const nn = AWAY.north + 700;
     const ne = AWAY.east - 300;
+    if (!reuse) {
+      // The slot merely inactive (nothing spawned into it yet): the very next frame it has given up the hunt (no
+      // charge toward a herd that is gone), and it stays off it while the slot stays empty.
+      expect(herds.active[old]).toBe(0);
+      for (let f = 1; f <= 60; f++) {
+        terrain.calls = 0;
+        herds.step(DT, null, terrain, HERD_BUDGET, nn, ne);
+        pool.step(DT, null, terrain, -1);
+        expect(pool.state[rex]).toBe(S.wander);
+        expect(Number.isFinite(pool.n[rex]) && Number.isFinite(pool.e[rex]) && Number.isFinite(pool.yaw[rex])).toBe(true);
+      }
+    }
+    // A new herd elsewhere: in the same slot at once (a new seed), or after the release has been seen (HerdPool
+    // takes the first free slot, so this may be the old slot too).
     const fresh = spawnHerd(herds, 'edmontosaurus', nn, ne, sc.ground, 25, false, 0xfeed);
     if (reuse) expect(fresh).toBe(old);
     const ac: AircraftView = { n: 0, e: 0, alt: 0, vN: 0, vE: 0, vD: 0, tas: 0 };
-    let sawWander = false;
+    let sawWander = !reuse;
     let threatenedFresh = false;
     for (let f = 1; f <= Math.round(900 / DT); f++) {
       terrain.calls = 0;
