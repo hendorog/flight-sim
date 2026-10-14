@@ -16,7 +16,7 @@
 //   --plugins list only these plugin files of scripts/era-shots/ (names without .mjs; 'none' for none; default all)
 //
 // PLUGINS (increment 2): every scripts/era-shots/<name>.mjs adds era shots. Its default export is a function
-// `(h) => shot[]`, called with the helpers below; a shot is { name, label, page, evalJs?, wait? } exactly as in
+// `(h) => shot[]`, called with the helpers below; a shot is { name, label, page, evalJs?, wait?, timeout? } exactly as in
 // ERA_SHOTS (names must be unique; --only selects them too). Plugins run after the built-in shots, in file-name
 // order, and share the contact sheets. If a shot's eval returns { label: '...' } that text is appended to its
 // label (e.g. the measured tod and each group's bearing / depression / distance). The helpers `h`:
@@ -265,8 +265,9 @@ const PRESENT_SHOTS = [
 
 const summary = { out, era: [], present: [] };
 
-function shot(checkout, page, file, { evalJs, wait = 1500 } = {}) {
-  const args = [join(checkout, 'scripts', 'shot.mjs'), page, file, '--wait', String(wait), '--timeout', '180000'];
+function shot(checkout, page, file, { evalJs, wait = 1500, timeout = 180000 } = {}) {
+  // timeout (ms): shot.mjs's page budget; a shot def may raise it (late first-minute frames run ~130 s on an idle box).
+  const args = [join(checkout, 'scripts', 'shot.mjs'), page, file, '--wait', String(wait), '--timeout', String(timeout)];
   if (evalJs) args.push('--eval', evalJs);
   const t0 = Date.now();
   const r = spawnSync(process.execPath, args, { cwd: checkout, encoding: 'utf8', maxBuffer: 1 << 26 });

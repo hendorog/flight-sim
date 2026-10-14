@@ -31,6 +31,7 @@ import { setEraOff } from '../../src/world/era/eraOff';
 import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS, updateEraUniforms } from '../../src/world/terrain/eraUniforms';
 import { createTerrainMaterial, type TerrainUniforms } from '../../src/world/terrain/terrainMaterial';
 import type { TerrainTextures } from '../../src/world/terrain/textures';
+import { normaliseToInc1 } from './inc1Palette';
 
 const V = CRETACEOUS.terrain.volcano!;
 const DEG = Math.PI / 180;
@@ -165,14 +166,14 @@ function terrainProgram(): { vertex: string; fragment: string; defines: Record<s
 }
 
 describe('the terrain program', () => {
-  it('?eraoff=lava: the Cretaceous program equals increment 1 apart from the era uniform declarations', () => {
+  it('?eraoff=lava,speckle: the Cretaceous program equals increment 1 apart from the era uniform declarations and the palette', () => {
     setEra('cretaceous');
-    setEraOff(['lava']);
+    setEraOff(['lava', 'speckle']);
     try {
       const p = terrainProgram();
       const f = FIXTURE.terrain;
       expect(p.fragment.split(ERA_TERRAIN_UNIFORMS_GLSL).length).toBe(2);
-      expect(p.fragment.replace(ERA_TERRAIN_UNIFORMS_GLSL, '')).toBe(f.fragment);
+      expect(normaliseToInc1(p.fragment.replace(ERA_TERRAIN_UNIFORMS_GLSL, ''))).toBe(f.fragment);
       expect(p.vertex).toBe(f.vertex);
       expect(p.defines).toEqual(f.defines);
       expect(p.cacheKey).toBe(f.cacheKey);

@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NIGHT_RAMP_FROM_DEG, NIGHT_RAMP_TO_DEG, nightRamp } from '../../src/world/era/eraLight';
 import { parseEraOff } from '../../src/world/era/eraOff';
+import { normaliseToInc1 } from './inc1Palette';
 import type { TerrainTextures } from '../../src/world/terrain/textures';
 import type { TerrainUniforms } from '../../src/world/terrain/terrainMaterial';
 
@@ -60,23 +61,26 @@ describe('increment 2 era hooks', () => {
     expect(p.fragment).not.toContain('VOLCANO');
   });
 
-  it('Cretaceous: the terrain program equals increment 1 apart from the era uniform declarations', async () => {
+  it('Cretaceous, ?eraoff=lava,speckle: the terrain program equals increment 1 apart from the era uniform declarations and the palette', async () => {
     await useEra('cretaceous');
+    // WP5 fills the lava slots and WP6 the speckle slots; with them switched off, and WP7's retuned palette literals
+    // mapped back to increment 1's (inc1Palette.ts), the program is still increment 1's byte for byte.
+    (await import('../../src/world/era/eraOff')).setEraOff(['lava', 'speckle']);
     const { ERA_TERRAIN_UNIFORMS_GLSL } = await import('../../src/world/terrain/eraUniforms');
     const p = await terrainProgram();
     const f = FIXTURE.terrain;
     expect(p.fragment.split(ERA_TERRAIN_UNIFORMS_GLSL).length).toBe(2);
-    expect(p.fragment.replace(ERA_TERRAIN_UNIFORMS_GLSL, '')).toBe(f.fragment);
+    expect(normaliseToInc1(p.fragment.replace(ERA_TERRAIN_UNIFORMS_GLSL, ''))).toBe(f.fragment);
     expect(p.vertex).toBe(f.vertex);
     expect(p.defines).toEqual(f.defines);
     expect(p.cacheKey).toBe(f.cacheKey);
     expect(Object.keys(p.uniforms).sort()).toEqual([...f.uniforms, 'uEraTime', 'uLava', 'uNight'].sort());
   });
 
-  it('VOLCANO_PALETTE holds the exact increment-1 literals', async () => {
+  it('VOLCANO_PALETTE holds the exact increment-1 literals (after any increment-2 retune is mapped back)', async () => {
     const { VOLCANO_PALETTE } = await import('../../src/world/terrain/volcano');
     const frag = FIXTURE.terrain.fragment;
-    for (const v of Object.values(VOLCANO_PALETTE)) expect(frag).toContain(v);
+    for (const v of Object.values(VOLCANO_PALETTE)) expect(frag).toContain(normaliseToInc1(v));
   });
 
   it('the slots: lava inside #if VOLCANO before opaque_fragment, the speckle after the ground layers; eraoff removes them', async () => {
@@ -128,7 +132,7 @@ describe('increment 2 era hooks', () => {
     es.setEra('cretaceous');
   });
 
-  it('ERA_UNIFORMS: uNight ramps +15 .. -6 deg; uEraTime counts simulation time; the lava stub gives no glow', async () => {
+  it('ERA_UNIFORMS: uNight ramps +15 .. -6 deg; uEraTime counts simulation time; the lava follows the ramp', async () => {
     await useEra('cretaceous');
     const { ERA_UNIFORMS, updateEraUniforms } = await import('../../src/world/terrain/eraUniforms');
     const sin = (deg: number): number => Math.sin((deg * Math.PI) / 180);
@@ -142,10 +146,12 @@ describe('increment 2 era hooks', () => {
     updateEraUniforms(Number.NaN, { sunDir: { y: sin(-10) } });
     expect(ERA_UNIFORMS.uEraTime.value).toBeCloseTo(t0 + 0.5, 9);
     expect(ERA_UNIFORMS.uNight.value).toBe(1);
-    // The volcano's crater floor, intensity 0 (WP5 fills it).
+    // The volcano's crater floor; WP5's lava follows the night ramp (full at -10 deg, none at +20 deg).
     expect(ERA_UNIFORMS.uLava.value.x).toBe(-17500);
     expect(ERA_UNIFORMS.uLava.value.y).toBe(2000);
     expect(ERA_UNIFORMS.uLava.value.z).toBe(2600 - 160);
+    expect(ERA_UNIFORMS.uLava.value.w).toBe(1);
+    updateEraUniforms(0.1, { sunDir: { y: sin(20) } });
     expect(ERA_UNIFORMS.uLava.value.w).toBe(0);
   });
 
@@ -179,7 +185,7 @@ describe('increment 2 era hooks', () => {
     expect(calls.length).toBe(1);
   });
 
-  it('the era effects and layers are reached only behind the era checks (stubs return nothing)', async () => {
+  it('the era effects and layers are reached only behind the era checks (the plume; the layer stubs return nothing)', async () => {
     const sim = fs.readFileSync(new URL('../../src/sim/Simulator.ts', import.meta.url), 'utf8');
     // Inserted before the clouds, behind isPresent().
     const at = sim.indexOf('if (!isPresent()) for (const effect of createEraEffects(');
@@ -194,7 +200,11 @@ describe('increment 2 era hooks', () => {
     const { createEraLayers } = await import('../../src/world/terrain/eraLayers');
     const { createUnderstorey } = await import('../../src/world/terrain/vegetation/understorey');
     await useEra('cretaceous');
-    expect(createEraEffects({} as never)).toEqual([]);
+    // WP5: the volcano plume is the one era effect (render/post/VolcanoPlumeEffect; tests/era/plume.test.ts).
+    const { VolcanoPlumeEffect } = await import('../../src/render/post/VolcanoPlumeEffect');
+    const fx = createEraEffects({ ctx: {}, renderer: {}, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), weather: { windDirectionDeg: 270, windSpeedKt: 10 } } as never);
+    expect(fx.length).toBe(1);
+    expect(fx[0]).toBeInstanceOf(VolcanoPlumeEffect);
     expect(createEraLayers({} as never)).toEqual([]);
     expect(createUnderstorey({} as never)).toBeNull();
   });

@@ -26,6 +26,8 @@ export default function shots(h) {
     evalJs: h.timed(h.AT_FRAME(id)),
     // The frame is grabbed as soon as the eval returns: the aircraft covers ~57 m a second.
     wait: 0,
+    // Headless sim time runs slow: G7 (t >= 110 s) took 129-135 s idle, so give the late frames room under load.
+    timeout: 360000,
   }));
   return [
     ...frames,
