@@ -61,6 +61,7 @@ uniform int uLightSteps;
 uniform int uLightDetailSteps;  // light-march steps (from the first) that include the detail erosion
 uniform float uMinStep;
 uniform float uCoarseShare;     // share of the step budget for the coarse step plan
+uniform float uNearClip;        // no cloud nearer than this, m (the cabin, from the cockpit view)
 uniform float uMaxDist;
 uniform float uDetailDist;      // beyond this distance detail erosion fades out (60 degree field of view)
 uniform float uDetailScale;     // 1 / (angular size of a low-res pixel at a 60 degree field of view)
@@ -239,8 +240,8 @@ void main() {
   vec2 seg0, seg1;
   if (bot.x > bot.y) { seg0 = top; seg1 = vec2(1.0, 0.0); }
   else { seg0 = vec2(top.x, min(top.y, bot.x)); seg1 = vec2(max(top.x, bot.y), top.y); }
-  seg0 = vec2(max(seg0.x, 0.0), min(seg0.y, tEnd));
-  seg1 = vec2(max(seg1.x, 0.0), min(seg1.y, tEnd));
+  seg0 = vec2(max(seg0.x, uNearClip), min(seg0.y, tEnd));
+  seg1 = vec2(max(seg1.x, uNearClip), min(seg1.y, tEnd));
   if (uLayer.w <= 0.0) { seg0 = vec2(1.0, 0.0); seg1 = seg0; }   // cirrus only
 
   float noise = fract(texelFetch(uBlueNoise, ivec2(gl_FragCoord.xy) & ${BLUE_NOISE_SIZE - 1}, 0).r + uJitter);
@@ -288,7 +289,12 @@ void main() {
     // The step plan leaves headroom for fine steps, surface bisection and the skin ramp (uCoarseShare of the
     // budget; since the surfaces are located by bisection, the coarse steps can be long).
     float growth = stepGrowth(seg.x, seg.y, float(uMaxSteps - steps) * uCoarseShare);
-    t += max(uMinStep, t * growth) * noise;
+    // The march grid is offset by a jittered fraction of a step. That first stretch is integrated too, by one
+    // sample at the segment's start: skipped, a ray that starts inside cloud (the camera in it, or a surface
+    // just behind the entry point) lost a random 0-25 m of fog, which showed as a sandstorm when flying through
+    // cloud and as white specks on a cockpit panel a metre away.
+    float firstDs = max(uMinStep, t * growth) * noise;
+    bool first = true;
     // Coarse steps through empty space, fine steps (a fraction of the coarse one) once the ray has met
     // cloud, back to coarse after a run of empty samples (Schneider 2015).
     //
@@ -316,10 +322,13 @@ void main() {
       // ray that has used three quarters of it stretches the rest to still reach the end of the layer, rather
       // than stopping short of the distant clouds.
       if (steps == replanAt) growth = max(growth, stepGrowth(t, seg.y, float(uMaxSteps - steps) * 0.8));
-      float coarse = max(uMinStep, t * growth);
+      // Within a few hundred metres the steps shrink to 30 % of the minimum (8 m on high): a cloud that close
+      // shows its 10-40 m turrets and wisps, which 25 m steps sample at random (the jitter) into grain, and a
+      // nearby cloud fills much of the view, where the temporal filter can keep little history (parallax).
+      float coarse = max(uMinStep * mix(0.3, 1.0, smoothstep(30.0, 400.0, t)), t * growth);
       // Fine steps matter only until the ray has entered the cloud (where the surface is located and the
       // lit skin is sampled); once most of the light is absorbed coarse steps do.
-      float ds = min((fine && T > 0.55 ? coarse * FINE_FRACTION : coarse) * exp2(-float(max(skinLevels - skin, 0))), seg.y - t);
+      float ds = min(first ? firstDs : (fine && T > 0.55 ? coarse * FINE_FRACTION : coarse) * exp2(-float(max(skinLevels - skin, 0))), seg.y - t);
       float tHere = t;
       vec4 hereA = vec4(L, T);
       vec2 hereF = vec2(frontSum, frontW);
@@ -335,7 +344,8 @@ void main() {
       // there would bounce the ray back and forth across every cloud top.
       bool possible = wt.x * heightProfile(h, wt) >= 0.01;
       if (!possible && !fine) {
-        t += coarse * 1.5;
+        t += first ? ds : coarse * 1.5;
+        first = false;
         tPrev = tHere; prevA = hereA; prevF = hereF;
         wasSig = false; armed = true;
         continue;
@@ -368,7 +378,8 @@ void main() {
       // (On the density without the faint fringe around every cloud, which coarse steps integrate well enough.)
       float sigThreshold = 0.1 / (uExtinction * coarse);
       bool significant = core > sigThreshold;
-      if (significant && !wasSig && armed) {
+      // (Not on the first sample: there is no earlier one to bisect from, the ray starts inside the cloud.)
+      if (significant && !wasSig && armed && !first) {
         // Locate the surface between the previous sample and this one, then restart from just outside it
         // with the integration state from before the previous sample (which was not significant).
         float lo = tPrev, hi = t;
@@ -491,6 +502,7 @@ void main() {
       }
       tPrev = tHere; prevA = hereA; prevF = hereF;
       t += ds;
+      first = false;
     }
   }
 

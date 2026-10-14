@@ -31,6 +31,7 @@ uniform sampler2D uCurr;
 uniform sampler2D uAux;
 uniform sampler2D uHistory;
 uniform mat4 uPrevViewProj;
+uniform vec3 uDrift;          // how far the wind carried the clouds since the previous frame, m
 uniform float uBlend;
 uniform float uClipGamma;
 uniform float uHistoryValid;
@@ -84,7 +85,9 @@ void main() {
   vec4 result = c;
   if (uHistoryValid > 0.5) {
     vec3 dir = normalize(mat3(uCamWorld) * rayDirView(vUv));
-    vec4 prev = uPrevViewProj * vec4(uCamPos + dir * front, 1.0);
+    // The cloud at this pixel was upwind by the drift a frame ago: at a few tens of metres, a 6 kt wind moves
+    // it a few low-res pixels per frame, which the clip rejected and the history was lost (grain up close).
+    vec4 prev = uPrevViewProj * vec4(uCamPos + dir * front - uDrift, 1.0);
     vec2 puv = prev.xy / prev.w * 0.5 + 0.5;
     if (prev.w > 0.0 && all(greaterThanEqual(puv, vec2(0.0))) && all(lessThanEqual(puv, vec2(1.0)))) {
       vec4 h = historyCatmullRom(puv);
@@ -94,12 +97,13 @@ void main() {
       // drift is the parallax between the nearest and farthest cloud fronts around the pixel (widened by the
       // depth of the translucent skin): the reprojected positions of those two depths, apart by that many
       // pixels. Where they agree (a turn, which moves every depth alike; a distant or uniformly deep cloud) the
-      // history is reliable and keeps averaging the noise away; where they disagree the blend rises (the
-      // single-frame image is clean enough with the blue noise to carry more weight) and the clip box tightens.
+      // history is reliable and keeps averaging the noise away; where they disagree the blend rises to 0.2 and
+      // the clip box tightens (the clip rejects what the reprojection got wrong; a blend of 0.5 there left the
+      // fog around the camera inside a cloud fizzing like a sandstorm, with no less smear elsewhere).
       // (Blending by the reprojection offset alone threw the history away in every turn and at any airspeed,
       // which left the clouds grainy and shimmering in flight.)
-      vec4 pn = uPrevViewProj * vec4(uCamPos + dir * (fMin * 0.8), 1.0);
-      vec4 pf = uPrevViewProj * vec4(uCamPos + dir * min(fMax * 1.25, 2e6), 1.0);
+      vec4 pn = uPrevViewProj * vec4(uCamPos + dir * (fMin * 0.8) - uDrift, 1.0);
+      vec4 pf = uPrevViewProj * vec4(uCamPos + dir * min(fMax * 1.25, 2e6) - uDrift, 1.0);
       float motion = pn.w > 0.0 && pf.w > 0.0 ? length((pn.xy / pn.w - pf.xy / pf.w) * 0.5 * vec2(textureSize(uCurr, 0))) : 10.0;
       float moving = smoothstep(0.1, 0.8, motion);
       float gamma = mix(uClipGamma, 0.75, moving);
@@ -109,7 +113,7 @@ void main() {
       // a long history adds that up into blur: the usual blend.
       float shift = length((puv - vUv) * vec2(textureSize(uCurr, 0)));
       float blend = mix(uBlend * 0.6, uBlend, smoothstep(0.0, 0.3, shift));
-      result = mix(h, c, mix(blend, 0.5, moving));
+      result = mix(h, c, mix(blend, 0.2, moving));
     }
   }
   outColor = result;

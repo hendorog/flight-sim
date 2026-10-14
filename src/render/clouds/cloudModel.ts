@@ -420,6 +420,8 @@ export class CloudModel {
   readonly cirrusOffset = new THREE.Vector2();
   /** Unit vector (three.js x, z) of the upper wind: the cirrus fibres are stretched along it. */
   readonly cirrusAxis = new THREE.Vector2(1, 0);
+  /** How far the wind carried the clouds in the last update, m (three.js world; y = 0): for reprojection. */
+  readonly drift = new THREE.Vector3();
 
   constructor() {
     this.uniforms = {
@@ -463,6 +465,7 @@ export class CloudModel {
     const vx = -Math.sin(from) * speed;
     const vz = Math.cos(from) * speed;
     advect(this.shapeDrift, vx, vz, dt, WEATHER_PERIOD);
+    this.drift.set(vx * dt, 0, vz * dt);
     // Detail noise moves a little faster than the cells so their edges boil while the cells hold their shape.
     advect(this.detailDrift, vx * 1.15, vz * 1.15, dt, WEATHER_PERIOD);
     // The second coverage field drifts slightly off-wind so the cross-fade between fields never repeats.

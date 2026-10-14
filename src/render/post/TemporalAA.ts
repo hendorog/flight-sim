@@ -47,6 +47,7 @@ uniform sampler2D tDepth;
 uniform sampler2D tLayerDist;  // r: log2(1 + distance to the translucent layer's front)
 uniform sampler2D tLayerT;     // a: the layer's transmittance
 uniform float uLayerOn;
+uniform vec3 uLayerDrift;      // the layer's own motion since the previous frame (wind), m
 uniform vec2 uTexel;
 uniform vec2 uTanHalf;
 uniform vec2 uPrevTanHalf;
@@ -121,6 +122,7 @@ void main() {
   vec3 view = vec3((vUv * 2.0 - 1.0) * uTanHalf, -1.0);
   // Forward depth to reproject at; 0 = at infinity (the sky: rotation only).
   float z = isSky(d) ? 0.0 : viewZFromDepth(d);
+  float onLayer = 0.0;           // share of the layer's motion this pixel takes
   if (uLayerOn > 0.5) {
     // The layer's front (a distance along the ray) where it lies in front of the surface, in log distance
     // between the two by its opacity (the sky taken as 100 km); the opacity ramp keeps thin wisps with the
@@ -137,7 +139,7 @@ void main() {
     float front = (exp2(fr) - 1.0) / length(view);
     float a = smoothstep(0.02, 0.25, op);
     float behind = z > 0.0 ? z : 1e5;
-    if (a > 0.0 && front < behind * 0.9) z = exp2(mix(log2(behind), log2(max(front, 1.0)), a));
+    if (a > 0.0 && front < behind * 0.9) { z = exp2(mix(log2(behind), log2(max(front, 1.0)), a)); onLayer = a; }
   }
   vec3 prevView;
   if (z <= 0.0) {
@@ -147,7 +149,7 @@ void main() {
     vec3 ac = rel - uAircraft.xyz;
     vec3 prevRel = dot(ac, ac) < uAircraft.w * uAircraft.w
       ? uAircraftPrev + uAircraftPrevRot * (transpose(uAircraftRot) * ac)
-      : rel + uCamDelta;
+      : rel + uCamDelta - uLayerDrift * onLayer;
     prevView = uPrevWorldToCam * prevRel;
   }
   vec2 prevUv = prevView.z < 0.0 ? (prevView.xy / -prevView.z) / uPrevTanHalf * 0.5 + 0.5 : vec2(-1.0);
@@ -201,6 +203,7 @@ export class TemporalAA {
       tLayerDist: { value: null },
       tLayerT: { value: null },
       uLayerOn: { value: 0 },
+      uLayerDrift: { value: new THREE.Vector3() },
       uTexel: { value: new THREE.Vector2() },
       uTanHalf: { value: new THREE.Vector2() },
       uPrevTanHalf: { value: new THREE.Vector2() },
@@ -280,6 +283,8 @@ export class TemporalAA {
     u.uLayerOn.value = layer ? 1 : 0;
     u.tLayerDist.value = layer?.distance ?? null;
     u.tLayerT.value = layer?.transmittance ?? null;
+    if (layer?.drift) u.uLayerDrift.value.copy(layer.drift);
+    else u.uLayerDrift.value.set(0, 0, 0);
     u.tHistory.value = this.targets[this.current].texture;
     u.uTanHalf.value.copy(tan);
     (u.uCamToWorld.value as THREE.Matrix3).setFromMatrix4(_rot.makeRotationFromQuaternion(this.camQuat));
