@@ -53,6 +53,16 @@ vec3 treeTint() {
 // Per-tree crown width relative to its height.
 float treeWidth() { return 0.8 + 0.45 * fract(treeRank() * 13.71); }
 vec3 rotY(vec3 p, float c, float s) { return vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z); }
+// Impostor thinning: the fraction of trees kept at distance d (full density to uDensityRange, then
+// (d0/d)^1.5; may exceed 1), and the size of this tree within it. A tree enters where the kept fraction
+// reaches its rank and grows to full size by where it reaches THIN_BAND times its rank (37 % closer):
+// slowly, next to its own growth in perspective, so trees are not seen swelling up ahead of the aircraft.
+const float THIN_BAND = 2.0;
+float treeKeep(float d) { return pow(uDensityRange / max(d, 1.0), 1.5) * (1.0 - smoothstep(uFade.z, uFade.w, d)); }
+float treeThin(float keep) {
+  float r = treeRank();
+  return smoothstep(0.0, 1.0, clamp((keep - r) / ((THIN_BAND - 1.0) * max(r, 1e-3)), 0.0, 1.0));
+}
 `;
 
 // Foliage is a rough, porous scatterer: much weaker grazing-angle Fresnel than a smooth dielectric.
@@ -241,10 +251,10 @@ vec3 d = toCam / dist;
 vec3 dl = vec3(tc * d.x - ts * d.z, max(d.y, 0.02), ts * d.x + tc * d.z);
 vec2 e = hemiOctEncode(normalize(dl));
 vGrid = clamp((e * 0.5 + 0.5) * ${IMPOSTOR_GRID.toFixed(1)} - 0.5, 0.0, ${(IMPOSTOR_GRID - 1).toFixed(1)});
-// Keep full density to uDensityRange, then thin as (d0/d)^1.5; the kept trees grow a little to cover.
-// A tree leaving the kept fraction shrinks away rather than dithering out (no noise without TAA).
-float keep = min(1.0, pow(uDensityRange / max(dist, 1.0), 1.5)) * (1.0 - smoothstep(uFade.z, uFade.w, dist));
-float thin = smoothstep(0.0, 1.0, clamp((keep - treeRank()) * 8.0, 0.0, 1.0));
+// Thin out with distance (treeThin); the kept trees grow a little to cover. A tree leaving the kept
+// fraction shrinks away rather than dithering out (no noise without TAA).
+float keep = treeKeep(dist);
+float thin = treeThin(keep);
 float grow = (1.0 + 0.5 * (1.0 - sqrt(clamp(keep, 0.0, 1.0)))) * thin;
 // Hand-over from the near mesh: the complement of its dither.
 vFade = thin > 0.0 ? smoothstep(uFade.x, uFade.y, dist) : 0.0;
@@ -323,7 +333,7 @@ export function createImpostorMaterial(albedo: THREE.Texture, normal: THREE.Text
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-v5';
+  mat.customProgramCacheKey = () => 'tree-impostor-v6';
   return mat;
 }
 
@@ -348,7 +358,7 @@ export function createImpostorDepthMaterial(albedo: THREE.Texture, uniforms: Tre
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${IMPOSTOR_SHADOW_FRAGMENT}`)
       .replace('#include <logdepthbuf_fragment>', '');
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-depth-v2';
+  mat.customProgramCacheKey = () => 'tree-impostor-depth-v3';
   return mat;
 }
 
@@ -364,8 +374,8 @@ vec3 centre = treeBase() + vec3(0.0, 0.5 * tH, 0.0);
 float dist = distance(centre, uViewPos);
 if (tH > 0.0 && sunCascade && dist > uShadowRange) {
   // The visible impostors' thinning (IMPOSTOR_BEGIN), by the distance from the viewer.
-  float keep = min(1.0, pow(uDensityRange / max(dist, 1.0), 1.5)) * (1.0 - smoothstep(uFade.z, uFade.w, dist));
-  float thin = smoothstep(0.0, 1.0, clamp((keep - treeRank()) * 8.0, 0.0, 1.0));
+  float keep = treeKeep(dist);
+  float thin = treeThin(keep);
   if (thin > 0.0) {
     float grow = (1.0 + 0.5 * (1.0 - sqrt(clamp(keep, 0.0, 1.0)))) * thin;
     centre.y -= clamp((dist - 800.0) * 0.0008, 0.0, 2.5);
