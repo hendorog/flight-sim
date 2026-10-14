@@ -24,6 +24,7 @@ const makeUniforms = (fade: THREE.Vector4): TreeUniforms => ({
   uShadowRange: { value: 1e6 },
   // LOD 0 everywhere, or (lod=1) the reduced meshes everywhere.
   uLodFade: { value: lod ? new THREE.Vector2(0, 1e-3) : new THREE.Vector2(1e6, 2e6) },
+  uFrame: { value: 0 },
 });
 
 function instances(base: THREE.BufferGeometry, rows: number[][]): THREE.InstancedBufferGeometry {

@@ -27,6 +27,8 @@ export interface TreeUniforms {
   uShadowRange: { value: number };
   /** Distances over which the full tree meshes (LOD 0) hand over to the reduced ones (LOD 1), m. */
   uLodFade: { value: THREE.Vector2 };
+  /** Frame counter: moves the hand-over dither every frame where the frame is stabilised over time. */
+  uFrame: { value: number };
   [name: string]: { value: unknown };
 }
 
@@ -107,8 +109,19 @@ export function useVertexLogDepth(shader: { vertexShader: string; fragmentShader
 
 const DITHER_GLSL = /* glsl */ `
 varying float vFade;
-// Interleaved gradient noise (Jimenez 2014): a stable per-pixel threshold in [0, 1).
+uniform float uFrame;
+// Interleaved gradient noise (Jimenez 2014): a per-pixel threshold in [0, 1).
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+// Hand-over threshold. With MSAA (medium and above) the frame is also stabilised over time (TemporalAA.ts):
+// a pattern that moves every frame averages there into a smooth cross-fade, where a fixed stipple would be a
+// band of screen-door the scene slides under. Without it (low), a fixed pattern.
+float treeDither() {
+#ifdef ALPHA_TO_COVERAGE
+  return ign(gl_FragCoord.xy + 5.588238 * mod(uFrame, 64.0));
+#else
+  return ign(gl_FragCoord.xy);
+#endif
+}
 `;
 
 const NEAR_BEGIN = /* glsl */ `
@@ -139,23 +152,16 @@ if (vFade >= 1.0 || vLod >= 1.0) transformed = vec3(0.0, -1e6, 0.0);
 if (vFade >= 1.0 || vLod <= 0.0) transformed = vec3(0.0, -1e6, 0.0);
 #endif
 `;
-// With MSAA (medium and above) the fades are alpha-to-coverage: a smooth dissolve, and antialiased leaf
-// edges from the alpha test. Without it, a screen-door dither with complementary thresholds.
+// The fades are a screen-door dither with complementary thresholds: every pixel of a tree in a hand-over band
+// is drawn by exactly one of its two representations. (Not alpha-to-coverage, even with MSAA, where it only
+// antialiases the leaf edges: two trees each at half coverage get the same sample mask, not complementary
+// ones, so half the foliage went missing in every band - a see-through ring travelling with the viewer.)
 const NEAR_DISCARD = /* glsl */ `
-#ifdef ALPHA_TO_COVERAGE
-#if TREE_LOD == 0
-diffuseColor.a *= 1.0 - max(vFade, vLod);
-#else
-diffuseColor.a *= min(vLod, 1.0 - vFade);
-#endif
-if (diffuseColor.a <= 0.0) discard;
-#else
-float tDither = ign(gl_FragCoord.xy);
+float tDither = treeDither();
 #if TREE_LOD == 0
 if (tDither < max(vFade, vLod)) discard;
 #else
 if (tDither < vFade || tDither >= vLod) discard;
-#endif
 #endif
 `;
 
@@ -195,7 +201,7 @@ export function createNearTreeMaterial(foliage: THREE.Texture, uniforms: TreeUni
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => `tree-near-v6-${lod}`;
+  mat.customProgramCacheKey = () => `tree-near-v8-${lod}`;
   return mat;
 }
 
@@ -256,8 +262,8 @@ vGrid = clamp((e * 0.5 + 0.5) * ${IMPOSTOR_GRID.toFixed(1)} - 0.5, 0.0, ${(IMPOS
 float keep = treeKeep(dist);
 float thin = treeThin(keep);
 float grow = (1.0 + 0.5 * (1.0 - sqrt(clamp(keep, 0.0, 1.0)))) * thin;
-// Hand-over from the near mesh: the complement of its dither.
-vFade = thin > 0.0 ? smoothstep(uFade.x, uFade.y, dist) : 0.0;
+// Hand-over from the near mesh: the complement of its dither, by the same distance (from the tree's base).
+vFade = thin > 0.0 ? smoothstep(uFade.x, uFade.y, distance(treeBase(), cameraPosition)) : 0.0;
 vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), d));
 vec3 up = cross(d, right);
 float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH * grow;
@@ -301,12 +307,14 @@ vec4 alb = texture2D(tImpAlbedo, u00) * w.x + texture2D(tImpAlbedo, u10) * w.y +
 // Mipmapping averages alpha toward the foliage coverage; sharpen it so distant crowns do not thin out.
 float fw = length(fwidth(vImpUv)) * ${IMPOSTOR_FRAME.toFixed(1)};
 float a = alb.a * (1.0 + 0.3 * log2(max(fw, 1.0)));
+// Hand-over from the near meshes: the complement of their dither (NEAR_DISCARD).
+if (treeDither() >= vFade) discard;
 #ifdef ALPHA_TO_COVERAGE
-// Antialiased silhouette and a smooth hand-over from the near meshes, as coverage.
-diffuseColor.a = smoothstep(0.5, 0.5 + max(fwidth(a), 1e-3), a) * vFade;
+// Antialiased silhouette, as coverage.
+diffuseColor.a = smoothstep(0.5, 0.5 + max(fwidth(a), 1e-3), a);
 if (diffuseColor.a <= 0.0) discard;
 #else
-if (a < 0.5 || ign(gl_FragCoord.xy) >= vFade) discard;
+if (a < 0.5) discard;
 #endif
 vec2 un = w.x >= max(w.y, max(w.z, w.w)) ? u00 : w.y >= max(w.z, w.w) ? u10 : w.z >= w.w ? u01 : u11;
 vec4 nrm = texture2D(tImpNormal, un);
@@ -333,7 +341,7 @@ export function createImpostorMaterial(albedo: THREE.Texture, normal: THREE.Text
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-v6';
+  mat.customProgramCacheKey = () => 'tree-impostor-v8';
   return mat;
 }
 

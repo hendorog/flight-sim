@@ -24,7 +24,7 @@ import { createImpostorDepthMaterial, createImpostorMaterial, createNearTreeMate
 import { createShadowProxies, createTreeGeometries } from './treeModels';
 
 interface VegetationPreset {
-  /** Near meshes are drawn to this distance (hand-over to impostors over its last 8%), m. */
+  /** Near meshes are drawn to this distance (hand-over to impostors over its last 12%), m. */
   near: number;
   /** Impostors are gone by this distance, m. */
   far: number;
@@ -155,6 +155,7 @@ export class VegetationSystem {
     uViewPos: { value: new THREE.Vector3() },
     uShadowRange: { value: 100 },
     uLodFade: { value: new THREE.Vector2(60, 75) },
+    uFrame: { value: 0 },
   };
   private foliage!: THREE.Texture;
   private geometries: THREE.BufferGeometry[] = [];
@@ -275,8 +276,8 @@ export class VegetationSystem {
 
   setQuality(q: QualityLevel): void {
     const p = PRESETS[q];
-    // The scene is multisampled from medium up (render/post/PostPipeline.ts): fade and antialias foliage
-    // through alpha-to-coverage there.
+    // The scene is multisampled from medium up (render/post/PostPipeline.ts): antialias the foliage through
+    // alpha-to-coverage there (the define also selects the moving hand-over dither, treeMaterials.ts).
     for (const m of this.materials) {
       if (m.name.startsWith('tree') && m.alphaToCoverage !== (q !== 'low')) {
         m.alphaToCoverage = q !== 'low';
@@ -302,6 +303,7 @@ export class VegetationSystem {
 
   update(dt: number, ctx: SimContext): void {
     this.uniforms.uTime.value += dt;
+    this.uniforms.uFrame.value = (this.uniforms.uFrame.value + 1) % 64;
     this.uniforms.uViewPos.value.copy(ctx.camera.position);
     // Ease the budgeted ranges so a change of budget never makes a batch of trees pop (while paused, dt is
     // 0: settle at once, so a paused scene shows what it will look like).
@@ -329,7 +331,9 @@ export class VegetationSystem {
 
   private applyRanges(): void {
     const p = this.preset;
-    this.uniforms.uFade.value.set(this.nearRange * 0.92, this.nearRange, p.far * 0.75, p.far);
+    // Hand-over bands: they must not overlap (treeMaterials.ts). Inside one both representations are drawn,
+    // so wider bands (smoother still) cost frame time in dense forest: about 15 % at a quarter of the range.
+    this.uniforms.uFade.value.set(this.nearRange * 0.88, this.nearRange, p.far * 0.75, p.far);
     this.uniforms.uDensityRange.value = this.denseRange;
     this.uniforms.uShadowRange.value = Math.min(p.shadowRange, this.nearRange);
     this.uniforms.uLodFade.value.set(Math.min(p.lod, this.nearRange * 0.6), Math.min(p.lod * 1.25, this.nearRange * 0.75));
