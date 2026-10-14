@@ -39,6 +39,8 @@ export const SAFARI_ACROSS = SAFARI.across;
 export const SAFARI_TRACK = SAFARI.trackDeg * DEG;
 /** The safari start's height above the ground, m. */
 export const SAFARI_AGL = SAFARI.aglFt * FT;
+/** Increment 1's safari start (along, across, track deg, ft AGL): what the 'safari' scenario still builds in the present. */
+export const PRESENT_SAFARI = Object.freeze({ along: 4870, across: 3450, trackDeg: 35, aglFt: 600 });
 /** Glide path of the final-approach scenario and the aim point beyond the threshold (m). */
 export const GLIDE_PATH = 3 * DEG;
 export const AIM_POINT = 150;
@@ -210,21 +212,26 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
       // river valley, SAFARI_ALONG m along the runway frame and SAFARI_ACROSS m to the right of it, flying down the
       // valley toward the volcano (heading 250 + SAFARI_TRACK) past the showcase groups, at the type's cruise speed (SAFARI.kias for the C172), clean, the
       // autoflight's heading and altitude hold engaged (the pilot's first input disconnects it).
+      // In the present (only an explicit ?era=present&scenario=safari gets here) the start stays increment 1's:
+      // PRESENT_SAFARI's place and height, the hold armed but not engaged.
+      const present = isPresent();
+      const g = present ? PRESENT_SAFARI : SAFARI;
       const rwy = AIRPORT.runway.heading;
-      const n = AIRPORT.runway.center.north + SAFARI_ALONG * Math.cos(rwy) - SAFARI_ACROSS * Math.sin(rwy);
-      const e = AIRPORT.runway.center.east + SAFARI_ALONG * Math.sin(rwy) + SAFARI_ACROSS * Math.cos(rwy);
-      const alt = terrainHeight(n, e) + SAFARI_AGL;
-      const heading = wrapTwoPi(rwy + Math.PI + SAFARI_TRACK);
+      const n = AIRPORT.runway.center.north + g.along * Math.cos(rwy) - g.across * Math.sin(rwy);
+      const e = AIRPORT.runway.center.east + g.along * Math.sin(rwy) + g.across * Math.cos(rwy);
+      const alt = terrainHeight(n, e) + g.aglFt * FT;
+      const heading = wrapTwoPi(rwy + Math.PI + g.trackDeg * DEG);
       const ic: InitialConditions = { position: { x: n, y: e, z: -alt }, heading, airspeed: kiasToTas(sc.cruiseKias, alt, env), onGround: false, engineRunning: true };
       if (retractable) ic.gearDown = false;
-      return {
+      const s: Scenario = {
         id,
-        title: `Safari: the river valley, ${SAFARI.aglFt} ft`,
+        title: `Safari: the river valley, ${g.aglFt} ft`,
         ic,
         controls: presets.airborne,
         autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
-        engageAutoflight: true,
       };
+      if (!present) s.engageAutoflight = true;
+      return s;
     }
     case 'downwind': {
       // Left of runway 07 (across < 0), abeam midfield.

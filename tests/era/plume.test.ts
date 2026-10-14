@@ -72,6 +72,27 @@ describe('bounds', () => {
     expect(plumeBounds(V, weather(0, 0), makePlumeBounds()).lean.length()).toBe(0);
     expect(plumeBounds(V, weather(360, 15), makePlumeBounds()).lean.y).toBeGreaterThan(500);
   });
+
+  it('hold the whole density support (no clipped smoke at the box edge)', async () => {
+    const P = await import('../../src/render/post/VolcanoPlumeEffect');
+    const reach = Math.max(P.PLUME_UMBRELLA_R, P.PLUME_COLUMN_R, P.PLUME_VENT_R) * P.PLUME_SUPPORT;
+    expect(P.PLUME_MARCH_FRAG).toContain(`r > R * ${P.PLUME_SUPPORT.toFixed(2)}`);
+    for (const w of [weather(0, 0), weather(270, 20), weather(45, 30)]) {
+      const b = P.plumeBounds(V, w, P.makePlumeBounds());
+      // Every column centre from the vent to the leaned top, out to the support radius in every direction.
+      for (let k = 0; k <= 8; k++) {
+        const u = k / 8;
+        const cx = b.vent.x + b.lean.x * u ** 1.5;
+        const cz = b.vent.z + b.lean.y * u ** 1.5;
+        const y = b.vent.y + (b.top - b.vent.y) * u;
+        for (let a = 0; a < 8; a++) {
+          const th = (a / 8) * 2 * Math.PI;
+          const p = new THREE.Vector3(cx + Math.cos(th) * reach * 0.999, y, cz + Math.sin(th) * reach * 0.999);
+          expect(b.box.containsPoint(p)).toBe(true);
+        }
+      }
+    }
+  });
 });
 
 /** The uniform names a GLSL text declares (`uniform <type> name;`). */

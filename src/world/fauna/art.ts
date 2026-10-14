@@ -8,7 +8,7 @@
 import type { FaunaArt, FaunaMaterials } from './FaunaSystem';
 import { createFaunaMaterials } from './faunaMaterial';
 import { buildFaunaSpecies } from './species/index';
-import type { FaunaSpeciesId } from './types';
+import type { CreatureMeshSet, FaunaSpeciesId } from './types';
 
 /**
  * Look-gate albedo lifts (Deep Time inc 2, WP8), multiplied into a species' variant tints when its materials are
@@ -22,12 +22,21 @@ export const ART_ALBEDO_LIFT: Readonly<Partial<Record<FaunaSpeciesId, readonly [
   edmontosaurus: Object.freeze([1.3, 1.25, 1.12] as const),
 });
 
+/**
+ * The materials as the game makes them: createFaunaMaterials with ART_ALBEDO_LIFT applied (CREATURE_ART.materials'
+ * path; tests/fauna/inc1Freeze.test.ts hashes its uniforms).
+ */
+export function creatureMaterials(species: FaunaSpeciesId, set: CreatureMeshSet): ReturnType<typeof createFaunaMaterials> {
+  const m = createFaunaMaterials(species, set);
+  const lift = ART_ALBEDO_LIFT[species];
+  if (lift) for (const t of m.uniforms.uVariantTint.value) t.set(t.x * lift[0], t.y * lift[1], t.z * lift[2]);
+  return m;
+}
+
 export const CREATURE_ART: FaunaArt = {
   build: (species) => buildFaunaSpecies(species),
   materials(species, set): FaunaMaterials {
-    const m = createFaunaMaterials(species, set);
-    const lift = ART_ALBEDO_LIFT[species];
-    if (lift) for (const t of m.uniforms.uVariantTint.value) t.set(t.x * lift[0], t.y * lift[1], t.z * lift[2]);
+    const m = creatureMaterials(species, set);
     return {
       material: m.material,
       depthMaterial: m.depth,

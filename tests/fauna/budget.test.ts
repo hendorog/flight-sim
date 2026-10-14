@@ -3,7 +3,7 @@
 // node, no renderer).
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEventBus, type QualityLevel, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
@@ -16,6 +16,15 @@ import { FAUNA_PRESETS, TERRAIN_CALLS_PER_FRAME } from '../../src/world/fauna/pr
 import { ROSTERS } from '../../src/world/fauna/roster';
 import { makeThermalCore } from '../../src/physics/weather/thermals';
 import { FAUNA_STRIDE } from '../../src/world/fauna/types';
+import { setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 const DT = 1 / 60;
 

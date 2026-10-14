@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import type { ThermalFrame } from '../../src/physics/weather/windField';
 import { makeThermalCore } from '../../src/physics/weather/thermals';
 import { RIVER_HERD_SITE } from '../../src/world/era/cretaceousAnchors';
+import { ART_ALBEDO_LIFT, creatureMaterials } from '../../src/world/fauna/art';
 import { createFaunaMaterials } from '../../src/world/fauna/faunaMaterial';
 import { FLYER_MODE, FlyerPool } from '../../src/world/fauna/flight';
 import { countingTerrain } from '../../src/world/fauna/habitat';
@@ -56,9 +57,10 @@ function geometryHash(id: FaunaSpeciesId): string {
   return sha(parts);
 }
 
-function uniformHash(id: FaunaSpeciesId): string {
+function uniformHash(id: FaunaSpeciesId, make: typeof createFaunaMaterials = createFaunaMaterials, tint: readonly [number, number, number] = [1, 1, 1]): string {
   const set = buildFaunaSpecies(id);
-  const u = createFaunaMaterials(id, set).uniforms;
+  const u = make(id, set).uniforms;
+  for (const c of u.uVariantTint.value) c.set(c.x * tint[0], c.y * tint[1], c.z * tint[2]);
   const v: number[] = [];
   for (const q of u.uPivots.value) v.push(q.x, q.y, q.z, q.w);
   for (const q of u.uSub.value) v.push(q.x, q.y, q.z, q.w);
@@ -201,6 +203,18 @@ describe('increment-1 fauna freeze', () => {
 
   it.each(INC1)('%s material uniforms are unchanged', (id) => {
     expect(uniformHash(id)).toBe(fx.uniforms[id]);
+  });
+
+  // The production path (art.ts creatureMaterials, what CREATURE_ART gives FaunaSystem): the inc-1 materials as
+  // frozen, except the deliberate WP8 look-gate albedo lift of the Edmontosaurus (owner-approved: the stampede's
+  // contrast against the olive marsh, commits 8c15ac4 / 5a27f5e), pinned here so any further change fails.
+  const APPROVED_LIFT: Partial<Record<FaunaSpeciesId, readonly [number, number, number]>> = { edmontosaurus: [1.3, 1.25, 1.12] };
+  it('the production materials are the frozen ones, but for the approved look-gate lift', () => {
+    expect(ART_ALBEDO_LIFT).toEqual(APPROVED_LIFT);
+  });
+  it.each(INC1)('%s production material uniforms are the frozen ones (times the approved lift)', (id) => {
+    const lift = APPROVED_LIFT[id];
+    expect(uniformHash(id, creatureMaterials)).toBe(lift ? uniformHash(id, createFaunaMaterials, lift) : fx.uniforms[id]);
   });
 
   it('the seeded herd trace (graze, wander, aircraft flee, far plane) is unchanged', () => {

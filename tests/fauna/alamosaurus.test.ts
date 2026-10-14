@@ -3,7 +3,7 @@
 // released, drawn as LOD2 to 12 km, cheap on terrain reads beyond NEAR_SNAP_M).
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEventBus, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
@@ -22,6 +22,15 @@ import { makeSample, type TerrainSample } from '../../src/world/terrain/heightfi
 import { BONE, BONE_COUNT, RIG } from '../../src/world/fauna/types';
 import type { V } from './poseMirror';
 import { sauLeg, sauropodPose, sauropodPositions } from './sauropodPoseMirror';
+import { setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 const set = buildFaunaSpecies('alamosaurus');
 const lods = [set.lod0, set.lod1, set.lod2, set.caster];

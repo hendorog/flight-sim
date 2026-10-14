@@ -2,7 +2,7 @@
 // AGENT_RESERVE terrain reads per frame, and FaunaSystem draws them (the showcase T. rex at its lair).
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEventBus, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
@@ -16,6 +16,15 @@ import { HerdPool, type AircraftView } from '../../src/world/fauna/herds';
 import { AGENT_RESERVE, MAX_AGENTS } from '../../src/world/fauna/presets';
 import { THREAT } from '../../src/world/fauna/reactions';
 import { TYRANNOSAURUS_BRAIN } from '../../src/world/fauna/species/tyrannosaurus.brain';
+import { setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 const DT = 1 / 60;
 

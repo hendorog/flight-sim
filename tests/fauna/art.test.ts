@@ -3,7 +3,7 @@
 // launch timing, variant fraction).
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEventBus, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
@@ -17,6 +17,15 @@ import { HerdPool, STRIDE_RUN, STRIDE_WALK } from '../../src/world/fauna/herds';
 import { AZHDARCHID_LAUNCH_S, FAUNA_SPECIES, azhdarchidLaunch, buildFaunaSpecies } from '../../src/world/fauna/species/index';
 import { SPECIES_REFERENCE_M } from '../../src/world/fauna/roster';
 import { FAUNA_ATTR, FAUNA_STRIDE } from '../../src/world/fauna/types';
+import { setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 function makeCtx() {
   const weather = { ...defaultWeather(), timeOfDay: 12, cloudCover: 0.35, windSpeedKt: 6 };

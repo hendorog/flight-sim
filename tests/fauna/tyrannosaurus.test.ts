@@ -2,7 +2,7 @@
 // charge, the jaw opens on the roar) and the brain on the scripted safari (stalk, charge, the river herd's flee,
 // the roar; deterministic, allocation-free, within the agents' terrain reserve, the flee 30-60 deg off the track).
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as Anchors from '../../src/world/era/cretaceousAnchors';
 import { SoloAgentPool } from '../../src/world/fauna/agents';
 import { countingTerrain, type FaunaTerrain } from '../../src/world/fauna/habitat';
@@ -18,6 +18,15 @@ import { BONE } from '../../src/world/fauna/types';
 import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { SOLE_POINTS, footPoint, theropodFoot, theropodLegIK, theropodPositions } from './theropodPoseMirror';
 import { THEROPOD_GAIT, THEROPOD_LEG } from '../../src/world/fauna/poses/theropod';
+import { era, setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 const DT = 1 / 60;
 const rex = buildFaunaSpecies('tyrannosaurus');
@@ -297,6 +306,7 @@ describe('T. rex brain on the scripted safari', () => {
   });
 
   it('keeps within 12 terrain reads per frame and stops at the river (the real terrain)', () => {
+    expect(era().id).toBe('cretaceous');
     const real = runSafari(40, countingTerrain());
     expect(real.riverClear).toBeGreaterThan(0);
     expect(real.roar).toBeCloseTo(tr.roar, 0);

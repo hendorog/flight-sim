@@ -18,6 +18,10 @@ import { SimPhysics } from '../../src/sim/SimPhysics';
 import { parseParams } from '../../src/sim/params';
 import { SAFARI } from '../../src/world/era/cretaceousAnchors';
 import { setEra } from '../../src/world/era/eraState';
+import { buildScenario } from '../../src/sim/scenarios';
+import { AIRPORT } from '../../src/core/world';
+import { DEG, FT, wrapTwoPi } from '../../src/core/math';
+import { terrainHeight } from '../../src/world/terrain/heightfield';
 
 afterEach(() => setEra('present'));
 
@@ -82,5 +86,25 @@ describe('the safari start rules', () => {
     expect(safariHeadPitch('safari')).toBe(SAFARI.headPitchDeg);
     expect(SAFARI.headPitchDeg).toBeNull();
     expect(safariHeadPitch('runway')).toBeNull();
+  });
+
+  it("in the present, ?scenario=safari stays increment 1's start (600 ft, track 35, the hold not engaged)", () => {
+    setEra('present');
+    const env = new SimPhysics({ weather: defaultWeather() }).env;
+    const sc = buildScenario('safari', env);
+    expect(sc.engageAutoflight).toBeUndefined();
+    expect(sc.title).toBe('Safari: the river valley, 600 ft');
+    const rwy = AIRPORT.runway.heading;
+    const n = 4870 * Math.cos(rwy) - 3450 * Math.sin(rwy);
+    const e = 4870 * Math.sin(rwy) + 3450 * Math.cos(rwy);
+    expect(sc.ic.position.x).toBeCloseTo(n, 6);
+    expect(sc.ic.position.y).toBeCloseTo(e, 6);
+    expect(-sc.ic.position.z).toBeCloseTo(terrainHeight(n, e) + 600 * FT, 6);
+    expect(sc.ic.heading).toBeCloseTo(wrapTwoPi(rwy + Math.PI + 35 * DEG), 9);
+    const p = new SimPhysics({ weather: defaultWeather() });
+    p.reset('safari');
+    expect(p.autoflight.engaged).toBe(false);
+    setEra('cretaceous');
+    expect(buildScenario('safari', env).engageAutoflight).toBe(true);
   });
 });

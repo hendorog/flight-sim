@@ -48,6 +48,8 @@ export const PLUME_UMBRELLA_R = 2400;
 /** Where the umbrella starts spreading, as a fraction of the rise from the vent to the top. */
 export const PLUME_UMBRELLA_FROM = 0.6;
 /** Horizontal lean of the top per m/s of wind, as a fraction of the rise; and its largest value. */
+/** The density reaches out to this multiple of the local radius (plumeDensity's cut-off; plumeBounds' box). */
+export const PLUME_SUPPORT = 1.3;
 export const PLUME_LEAN_PER_MS = 0.06;
 export const PLUME_LEAN_MAX = 1.2;
 /** Upward advection of the noise, m/s. */
@@ -87,7 +89,9 @@ export function plumeBounds(V: VolcanoSpec, weather: Pick<WeatherSettings, 'wind
   const toN = -Math.cos(from);
   const toE = -Math.sin(from);
   out.lean.set(toE * lean, -toN * lean);
-  const R = Math.max(PLUME_UMBRELLA_R, PLUME_COLUMN_R) * 1.15;
+  // The density's support (plumeDensity: r > R * PLUME_SUPPORT is empty, and the noise keeps it non-zero up to
+  // there), R the widest of the vent, column and umbrella radii: the march must not clip it.
+  const R = Math.max(PLUME_UMBRELLA_R, PLUME_COLUMN_R, PLUME_VENT_R) * PLUME_SUPPORT;
   out.box.min.set(out.vent.x + Math.min(0, out.lean.x) - R, floor - 60, out.vent.z + Math.min(0, out.lean.y) - R);
   out.box.max.set(out.vent.x + Math.max(0, out.lean.x) + R, out.top + 250, out.vent.z + Math.max(0, out.lean.y) + R);
   return out;
@@ -219,7 +223,7 @@ float plumeDensity(vec3 p, out float u) {
   float R = mix(uRadii.x, uRadii.y, smoothstep(0.0, uRadii.w, u));
   float umb = smoothstep(uRadii.w, 0.97, u);
   R = mix(R, uRadii.z, umb * umb * (3.0 - 2.0 * umb));
-  if (r > R * 1.3 || h < -20.0 || h > rise + 200.0) return 0.0;
+  if (r > R * ${PLUME_SUPPORT.toFixed(2)} || h < -20.0 || h > rise + 200.0) return 0.0;
   // Noise rising with the column (and drifting downwind with the lean), two octaves.
   vec3 q = p - vec3(uLean.x, rise, uLean.y) * (uEraTime * ${PLUME_RISE.toFixed(1)} / rise);
   float n = texture(uNoise, q / 1700.0).r * 0.62 + texture(uNoise, q / 430.0 + 0.37).r * 0.38;

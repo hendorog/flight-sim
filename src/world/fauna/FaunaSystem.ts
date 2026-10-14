@@ -215,6 +215,14 @@ const STREAM_PERIOD = 0.25;
  * herd's terrain plane, so the cap only spreads the snaps.
  */
 const HERD_FRAME_READS = 64;
+/** The herds' and agents' sub-step, s (their models are tuned for dt <= this). */
+const SUB_DT = 0.1;
+/**
+ * Sim time the herds and agents follow per frame at most, s (in SUB_DT sub-steps): time acceleration (up to 16x)
+ * at a low frame rate must not leave the scripted encounter (charge, roar, stampede) behind the aircraft, which
+ * flies the real sim time. Beyond this the animals fall behind (a frame longer than a second is a stall anyway).
+ */
+const MAX_FRAME_SIM_S = 1;
 
 export class FaunaSystemImpl implements FaunaSystem {
   readonly stats: FaunaStats = { visible: 0, terrainCalls: 0, reallocs: 0, cpuMs: 0, tris: 0, draws: 0 };
@@ -319,7 +327,35 @@ export class FaunaSystemImpl implements FaunaSystem {
     this.spawnShowcase(ctx);
     // After the showcase is in the pool, so its flyers are trimmed to the preset too.
     this.setQuality(ctx.quality);
-    this.unsubscribe = ctx.events.on('qualityChanged', (e) => this.setQuality(e.quality));
+    const offQuality = ctx.events.on('qualityChanged', (e) => this.setQuality(e.quality));
+    // A scenario reset (a restart, a new start) stages the showcase again: the opening hunt replays.
+    const offReset = ctx.events.on('reset', () => this.reseedShowcase(ctx));
+    this.unsubscribe = () => {
+      offQuality?.();
+      offReset?.();
+    };
+  }
+
+  /**
+   * Release the showcase (the river herd, the hooks' herds, the solo agents and the showcase flyers) and spawn it
+   * again from its anchors: every brain re-inits (the T. rex lurks, its rearm cooldown cleared), every herd is back in
+   * place and calm. Streamed herds and ambient kettles stay.
+   */
+  reseedShowcase(ctx: SimContext): void {
+    if (!this.initialised) return;
+    if (this.riverHerd >= 0 && this.herds.active[this.riverHerd]) this.herds.release(this.riverHerd);
+    this.riverHerd = -1;
+    for (const h of this.showcaseHerds) if (this.herds.active[h]) this.herds.release(h);
+    this.showcaseHerds.length = 0;
+    for (let i = 0; i < this.agents.capacity; i++) if (this.agents.active[i]) this.agents.release(i);
+    for (let i = 0; i < this.flyers.capacity; i++) {
+      if (!this.showcaseFlyer[i]) continue;
+      if (this.flyers.active[i]) this.flyers.release(i);
+      this.showcaseFlyer[i] = 0;
+      this.kettleOf[i] = -1;
+    }
+    this.spawnShowcase(ctx);
+    this.setQuality(this.quality);
   }
 
   setQuality(q: QualityLevel): void {
@@ -527,9 +563,21 @@ export class FaunaSystemImpl implements FaunaSystem {
       const wind = this.windTo(ctx);
       const day = (ctx.sky?.dayFactor ?? 1) > 0.25;
       const budget = TERRAIN_CALLS_PER_FRAME;
-      this.herds.step(dt, ac, this.terrain, Math.min(HERD_FRAME_READS, Math.max(0, budget - this.terrain.calls - FLYER_RESERVE - AGENT_RESERVE)), camN, camE);
-      // Solo agents after the herds (their brains read and drive the herds), on the herds' clock.
-      this.debug.agentTerrainCalls = this.agents.step(dt, ac, this.terrain, this.riverHerd);
+      // Herds and agents follow the whole sim time (up to MAX_FRAME_SIM_S) in sub-steps of <= SUB_DT, on one clock
+      // (agents.ts CLOCK). HERD_FRAME_READS holds across the sub-steps; the agents get AGENT_RESERVE a sub-step
+      // (in practice a few: a ground snap per 1.5 m or 1 s, a water check per 0.5 s), and the flyers what is left.
+      const total = Number.isFinite(dtIn) ? Math.min(MAX_FRAME_SIM_S, Math.max(0, dtIn)) : 0;
+      const subs = Math.max(1, Math.ceil(total / SUB_DT - 1e-9));
+      const sub = total / subs;
+      const herdStart = this.terrain.calls;
+      let agentReads = 0;
+      for (let k = 0; k < subs; k++) {
+        const herdLeft = Math.max(0, HERD_FRAME_READS - (this.terrain.calls - herdStart - agentReads));
+        this.herds.step(sub, ac, this.terrain, Math.min(herdLeft, Math.max(0, budget - this.terrain.calls - FLYER_RESERVE - AGENT_RESERVE)), camN, camE);
+        // Solo agents after the herds (their brains read and drive the herds), on the herds' clock.
+        agentReads += this.agents.step(sub, ac, this.terrain, this.riverHerd);
+      }
+      this.debug.agentTerrainCalls = agentReads;
       this.flyers.step(dt, ctx.simTime ?? this.sceneTime, f, ac, this.terrain, Math.max(0, budget - this.terrain.calls), day, wind.n, wind.e);
       this.debug.deferred = this.herds.deferred;
       this.brainClock += dt;

@@ -2,7 +2,7 @@
 // caps per quality, the shared LOD0 triangle pool, and hidden count-0 meshes with stats.tris / stats.draws.
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEventBus, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
@@ -13,6 +13,15 @@ import { FAUNA_PRESETS } from '../../src/world/fauna/presets';
 import { PROFILES } from '../../src/world/fauna/profiles';
 import { ROSTERS } from '../../src/world/fauna/roster';
 import type { FaunaSpeciesId } from '../../src/world/fauna/types';
+import { setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 // Far from every showcase group (they stand within ~5 km of the field).
 const N0 = 40000;

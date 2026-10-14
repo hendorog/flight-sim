@@ -2,7 +2,7 @@
 // species hooks, kettle composition is data, and the dusk kettles circle the pinned virtual evening core.
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEventBus, type QualityLevel, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
@@ -16,6 +16,15 @@ import { PROFILES } from '../../src/world/fauna/profiles';
 import { ROSTERS } from '../../src/world/fauna/roster';
 import { KETTLE_BIRDS, KETTLE_MAX_AGL, KETTLE_MIN_AGL, SAFARI_AGL_M } from '../../src/world/fauna/showcase';
 import { DEFAULT_KETTLE, SHOWCASE_HOOKS, kettleComposition, type ShowcaseSpawn } from '../../src/world/fauna/showcaseHooks';
+import { era, setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 const DT = 1 / 60;
 
@@ -28,6 +37,7 @@ function makeCtx(tod: number, quality: QualityLevel = 'high') {
 }
 
 function boot(tod = 19, quality: QualityLevel = 'high') {
+  expect(era().id).toBe('cretaceous');
   const ctx = makeCtx(tod, quality);
   const sys = createFaunaSystem(eraById('cretaceous'), { terrain: countingTerrain() }) as FaunaSystemImpl;
   sys.init(ctx);

@@ -3,7 +3,7 @@
 // species adds no per-frame allocation of its own (drawn, beside the same slots drawn as azhdarchids).
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEventBus, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
@@ -15,6 +15,15 @@ import { ROSTERS, SPECIES_REFERENCE_M } from '../../src/world/fauna/roster';
 import { PTERANODON_SKULL_REAR_X, createPteranodon } from '../../src/world/fauna/species/pteranodon';
 import { PROFILE } from '../../src/world/fauna/species/pteranodon.data';
 import { BONE } from '../../src/world/fauna/types';
+import { setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 const DT = 1 / 60;
 

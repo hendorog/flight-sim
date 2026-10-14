@@ -1,7 +1,7 @@
 // Fauna habitat (Deep Time WP5): herd sites are deterministic per cell and only on valid ground; the showcase
 // placements are valid.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AIRPORT } from '../../src/core/world';
 import { LINE_UP, RUNWAY_HALF_WIDTH, nedToLocal } from '../../src/world/airport/layout';
 import { LAUNCH_RANGE } from '../../src/world/fauna/flight';
@@ -18,6 +18,15 @@ import {
 } from '../../src/world/fauna/habitat';
 import { ROSTERS } from '../../src/world/fauna/roster';
 import { KETTLE_SEEDS, kettleSeeds, restingPair, riverHerdSite } from '../../src/world/fauna/showcase';
+import { setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 const roster = ROSTERS.cretaceous;
 

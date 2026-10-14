@@ -2,7 +2,7 @@
 // the 'face' reaction of the showcase group, that it is never ambient, and the fauna triangle budget with it in.
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEventBus, type QualityLevel, type SimContext } from '../../src/core/context';
 import { defaultWeather } from '../../src/core/types';
 import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
@@ -21,6 +21,15 @@ import { BONE, RIG } from '../../src/world/fauna/types';
 import { CERATOPSIAN_GAIT } from '../../src/world/fauna/poses/ceratopsian';
 import { ceratopsianLegs, ceratopsianPositions, footOff, legIK, legJoints } from './ceratopsianPoseMirror';
 import type { PoseInput, V } from './poseMirror';
+import { setEra } from '../../src/world/era/eraState';
+
+// The Cretaceous world (terrain with the volcano, environment, flora): createFaunaSystem's era only picks the roster.
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 
 const DT = 1 / 60;
 const DEG = Math.PI / 180;
