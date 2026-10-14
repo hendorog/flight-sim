@@ -171,8 +171,8 @@ export function tyrannosaurusSubJoints(): Float32Array {
 // predator separates from the herd and from the olive marsh.
 const BACK: RGB = [0.04, 0.032, 0.02];
 const BAND: RGB = [0.025, 0.021, 0.017];
-const FLANK: RGB = [0.078, 0.05, 0.03];
-const BELLY: RGB = [0.155, 0.138, 0.1];
+const FLANK: RGB = [0.095, 0.06, 0.035];
+const BELLY: RGB = [0.2, 0.18, 0.13];
 const BROW: RGB = [0.03, 0.026, 0.021];
 const MOUTH: RGB = [0.1, 0.03, 0.027];
 const TEETH: RGB = [0.155, 0.148, 0.12];

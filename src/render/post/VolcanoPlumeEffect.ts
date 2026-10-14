@@ -33,6 +33,8 @@ import { transmittanceToSpace } from '../sky/transmittance';
 import { FULLSCREEN_VERT } from '../clouds/resolveShaders';
 import { AERIAL_ATLAS_GLSL } from './AerialPerspectiveEffect';
 
+/** Extinction of the full-density ash, 1/m (optically thick: a dark column on a bright sky). */
+export const PLUME_DENSITY = 1 / 25;
 /** Ray-march steps through the plume's bounds (the shader's only loop; tests/era/plume.test.ts caps it at 24). */
 export const PLUME_STEPS = 20;
 /** Linear resolution of the march relative to the screen. */
@@ -40,11 +42,11 @@ export const PLUME_SCALE = 0.5;
 /** Top of the plume (the umbrella's top), m MSL. */
 export const PLUME_TOP_MSL = 6500;
 /** Radius of the column at the vent, at the umbrella's base, and of the umbrella, m. */
-export const PLUME_VENT_R = 350;
-export const PLUME_COLUMN_R = 1250;
+export const PLUME_VENT_R = 550;
+export const PLUME_COLUMN_R = 1600;
 export const PLUME_UMBRELLA_R = 2400;
 /** Where the umbrella starts spreading, as a fraction of the rise from the vent to the top. */
-export const PLUME_UMBRELLA_FROM = 0.72;
+export const PLUME_UMBRELLA_FROM = 0.6;
 /** Horizontal lean of the top per m/s of wind, as a fraction of the rise; and its largest value. */
 export const PLUME_LEAN_PER_MS = 0.06;
 export const PLUME_LEAN_MAX = 1.2;
@@ -52,7 +54,7 @@ export const PLUME_LEAN_MAX = 1.2;
 export const PLUME_RISE = 4;
 /** Underglow scale height above the vent, m, and its strength relative to the crater's lavaGain. */
 export const PLUME_GLOW_H = 400;
-export const PLUME_GLOW_K = 0.025;
+export const PLUME_GLOW_K = 0.05;
 
 const KT = 0.514444;
 
@@ -266,8 +268,8 @@ void main() {
     float sigma = den * uDensity * mix(1.0, 0.45, steam);
     // Sunlight through the plume toward the sun: two taps.
     float tau = (plumeDensity(p + uSunDir * 140.0) * 140.0 + plumeDensity(p + uSunDir * 520.0) * 380.0) * uDensity * mix(1.0, 0.45, steam);
-    // Ash (brown-grey, albedo ~0.08) grading to the steam cap (0.6).
-    vec3 albedo = mix(vec3(0.1, 0.082, 0.066), vec3(0.6), steam);
+    // Ash (brown-grey, albedo ~0.08) grading to a grey steam-and-ash cap (0.45: grey, not white, against the sky).
+    vec3 albedo = mix(vec3(0.1, 0.082, 0.066), vec3(0.45), steam);
     float h = p.y - uVent.y;
     vec3 S = albedo * (uSunTop * exp(-tau) * phase + uSkyColor * (0.55 + 0.45 * u))
            + vec3(0.9, 0.35, 0.08) * (glow * exp(-h / ${PLUME_GLOW_H.toFixed(1)}) * (0.35 + albedo.g));
@@ -413,7 +415,7 @@ export class VolcanoPlumeEffect implements SceneEffect {
       uRadii: { value: new THREE.Vector4(PLUME_VENT_R, PLUME_COLUMN_R, PLUME_UMBRELLA_R, PLUME_UMBRELLA_FROM) },
       uBoxMin: { value: b.box.min },
       uBoxMax: { value: b.box.max },
-      uDensity: { value: 1 / 60 },
+      uDensity: { value: PLUME_DENSITY },
       uSunDir: { value: this.sunDir },
       uSunTop: { value: this.sunTop },
       uSkyColor: { value: this.skyColor },

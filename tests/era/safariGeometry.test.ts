@@ -185,8 +185,8 @@ describe('the anchors', () => {
     expect(near).toBeLessThanOrEqual(90);
   }, 60000);
 
-  it("kettle 0's evening core is 1993 m along and 200 m right of the track", () => {
-    const k = pathToNed(1993, 200);
+  it("kettle 0's evening core is 1993 m along and 150 m right of the track", () => {
+    const k = pathToNed(1993, 150);
     expect(KETTLE0_EVENING.north).toBeCloseTo(k.north, 0);
     expect(KETTLE0_EVENING.east).toBeCloseTo(k.east, 0);
     expect(KETTLE0_EVENING.ground).toBeCloseTo(terrainHeight(k.north, k.east), 0);

@@ -105,6 +105,8 @@ import { validateTrainingBlock } from '../training/career/validate';
 const DPR_CAP: Record<QualityLevel, number> = { low: 1, medium: 1, high: 1, ultra: 1 };
 /** Render scale when neither scale= nor the menu slider set one. */
 const DEFAULT_RENDER_SCALE: Record<QualityLevel, number> = { low: 0.75, medium: 1, high: 1, ultra: 1 };
+/** PostPipeline.sunGlare outside the present day (the present keeps PostPipeline's SUN_GLARE, 3). */
+const ERA_SUN_GLARE = 1.5;
 /** CPU time per frame the physics may use before time acceleration gives way, ms. */
 const PHYSICS_BUDGET_MS = 8;
 /**
@@ -554,6 +556,10 @@ export class Simulator {
 
     await progress(0.9, 'Post-processing and clouds');
     const post = new PostPipeline(renderer, scene, camera);
+    // The era's softer veiling glare (Deep Time inc 2 look gate): the safari flies west at dusk with the sun ~7 deg up
+    // and 27 deg right of the nose, and the present day's coated-camera veil (3) whitens the volcano's side of the
+    // windscreen. The present day keeps its constant.
+    if (!isPresent()) post.sunGlare = ERA_SUN_GLARE;
     const clouds = new CloudsEffect(renderer);
     // The era's scene effects (the volcano's plume, WP5) go before the clouds, so the cumulus in front of them
     // occludes them. Nothing is called in the present day.

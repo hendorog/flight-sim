@@ -173,12 +173,12 @@ export function triceratopsSubJoints(): Float32Array {
 // Colours (linear albedo). Grey-olive body, pale belly; rust frill, cream rim; cream horns with dark tips.
 const BACK: RGB = [0.07, 0.075, 0.052];
 const SADDLE: RGB = [0.03, 0.032, 0.025];
-const BELLY: RGB = [0.14, 0.135, 0.105];
+const BELLY: RGB = [0.19, 0.18, 0.14];
 const BEAK: RGB = [0.03, 0.027, 0.024];
 const HOOF: RGB = [0.04, 0.036, 0.03];
-const RUST: RGB = [0.16, 0.055, 0.022];
+const RUST: RGB = [0.2, 0.07, 0.025];
 const RUST_DARK: RGB = [0.085, 0.03, 0.018];
-const CREAM: RGB = [0.16, 0.15, 0.112];
+const CREAM: RGB = [0.21, 0.2, 0.15];
 const HORN_TIP: RGB = [0.04, 0.035, 0.03];
 
 function bodyColour(p: THREE.Vector3, n: THREE.Vector3, sectionBottom: number, spineY: number): RGB {

@@ -36,7 +36,9 @@ export const CRETACEOUS: EraParams = Object.freeze({
   flora: 'cretaceous',
   fauna: 'cretaceous',
   world: Object.freeze({ airport: 'flats', flatSurface: 'dirt', school: false, towerCamera: false, defaultScenario: 'safari' }),
-  // 45 km visibility keeps the volcano visible from the line-up; a 1500 m MSL cumulus base; ISA +10 (a higher
-  // density altitude, honestly); a little cirrus for the low sun to colour at dusk. No sun tint and no colour grade.
-  weather: Object.freeze({ visibilityM: 45000, cloudCover: 0.35, cloudBaseM: 1500, cirrusCover: 0.2, isaDeviation: 10 }),
+  // 85 km visibility (a clear post-rain evening: increment 2's look gate measured the cone at ~13 % contrast from
+  // the safari, 23 km out, at 45 km; ~34 % at 85 km); a 2600 m MSL cumulus base at 0.25 cover, level with the
+  // summit, so the plume column rises into clear sky instead of behind the deck; ISA +10 (a higher density
+  // altitude, honestly); a little cirrus for the low sun to colour at dusk. No sun tint and no colour grade.
+  weather: Object.freeze({ visibilityM: 85000, cloudCover: 0.25, cloudBaseM: 2600, cirrusCover: 0.2, isaDeviation: 10 }),
 } as const satisfies EraParams);

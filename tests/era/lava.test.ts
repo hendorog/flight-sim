@@ -18,6 +18,7 @@ import {
   LAVA_LOBES,
   LAVA_MEANDER_AMP,
   LAVA_NIGHT_LOG_L,
+  LAVA_NIGHT_LOG_L_COCKPIT,
   LAVA_PEAK_FACTOR,
   VOLCANO_LAVA_GLSL,
   VOLCANO_LAVA_HEAD_GLSL,
@@ -128,13 +129,17 @@ describe('the lava masks (CPU twin)', () => {
 });
 
 describe('brightness', () => {
-  it('the night-maximum exposed luminance is below FIREFLY_MAX', () => {
-    // EXPOSURE_GLSL (render/post/AutoExposure.ts) at the measured night adaptation.
-    const logL = LAVA_NIGHT_LOG_L;
+  // EXPOSURE_GLSL (render/post/AutoExposure.ts) at an adapted log2 luminance.
+  const exposureAt = (logL: number): number => {
     const ev = logL - Math.log2(SCENE_UNITS_PER_LUX);
     const keyBias = Math.max(-0.2 * Math.max(0, 11 - ev), -4.5);
-    const exposure = 0.18 * Math.pow(2, keyBias - logL);
-    expect(exposure).toBeGreaterThan(10); // a night exposure, not a daylight one
+    return 0.18 * Math.pow(2, keyBias - logL);
+  };
+
+  it('the night-maximum exposed luminance in the default (cockpit) view is below FIREFLY_MAX', () => {
+    // The default view's night adaptation (the panel flood holds it ~5 EV above the chase view's).
+    const exposure = exposureAt(LAVA_NIGHT_LOG_L_COCKPIT);
+    expect(exposure).toBeGreaterThan(3); // a night exposure, not a daylight one
     // Full night (w = 1): the exposure above belongs to it. Twilight's brighter gain meets a far lower exposure
     // (the dusk start's adapted log2 luminance is +5.1: see volcano.ts).
     const peak = lavaGain(1);
@@ -143,6 +148,15 @@ describe('brightness', () => {
     expect(crater).toBeLessThan(LAVA_FIREFLY_MAX);
     expect(underglow).toBeLessThan(LAVA_FIREFLY_MAX);
     expect(LAVA_FIREFLY_MAX).toBe(64); // render/post/Bloom.ts FIREFLY_MAX
+    // ... and bright enough to read there: the crater peak exposes to at least 16 (an ember, not a smudge).
+    expect(crater).toBeGreaterThan(16);
+  });
+
+  it('a chase view at night exposes hotter: there the crater may clip into the Bloom clamp (recorded, allowed)', () => {
+    const exposure = exposureAt(LAVA_NIGHT_LOG_L);
+    expect(exposure).toBeGreaterThan(exposureAt(LAVA_NIGHT_LOG_L_COCKPIT) * 8);
+    // The underglow on the plume stays under the clamp even there.
+    expect(lavaGain(1) * PLUME_GLOW_K * (0.35 + 0.6) * exposure).toBeLessThan(LAVA_FIREFLY_MAX);
   });
 });
 

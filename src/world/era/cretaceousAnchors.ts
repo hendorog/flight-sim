@@ -28,7 +28,8 @@
 //      the LEFT DOOR WINDOW, at bearings 21-45 left and 8-30 deg down (slant ~300-1000 m at 450 ft).
 //   2. So the river herd does NOT pass 100-150 m left of the track (the plan's lever, derived from the 15 deg
 //      sill): at that offset it is under the glareshield from ~1.1 km to ~300 m ahead and crosses the door window
-//      in ~3 s. It passes HERD_LATERAL_M (300 m) left, where it is in the door window for ~9 s (bodies 9-19 px),
+//      in ~3 s. It passes HERD_LATERAL_M (250 m since the WP8 look gate; 300 m before) left, where it is in the
+//      door window for ~5-6 s (bodies 13-25 px),
 //      and in the lower-left windscreen at the start (5-6 px). See the lateral table below.
 //   3. Ahead-RIGHT ground content (the plan's Alamosaurus stand) can never be closer than ~1.3 km in the frame
 //      (sill 6.5 deg). ALAMOSAURUS_STAND is therefore LEFT of the track beyond the herd, in the door window at
@@ -73,7 +74,9 @@
 //     L 125 m: door window 0.5 s, windscreen 4.5 s (5-6 px)   | L 300 m: door 7.5 s (9-22 px), windscreen 4 s
 //     L 200 m: door 5 s,   windscreen 5.5 s                  | L 350 m: door 8.5 s (9-19 px), windscreen 2.5 s
 //     L 250 m: door 6 s (13-25 px), windscreen 5.5 s         | L 400 m: door 10 s (7-17 px), windscreen 1.5 s
-//   L = 300 m (across 3220): the longest door-window pass that keeps bodies near 20 px.
+//   L = 300 m (across 3220) was WP0a's pick: the longest door-window pass that keeps bodies near 20 px. WP8's look
+//   gate (round 0: the herd read as 4-8 px specks at the A-pillar) moved to L = 250 m (across 3277, solved with
+//   `solve --timeline 1 --laterals 250`): fewer seconds, bigger bodies. Clearance at 450 ft there: 284 ft.
 //
 // AGL TABLE (track 20, across 3220; ft above the highest ground or tree top within 500 m of the first 6 km):
 //   400 ft: 254 | 450 ft: 304 | 500 ft: 354 | 550 ft: 404. 450 ft chosen: the margin, and the door-window pass is
@@ -102,7 +105,7 @@ export interface SafariStart {
 
 export const SAFARI: SafariStart = Object.freeze({
   along: 4870,
-  across: 3220,
+  across: 3277,
   trackDeg: 20,
   aglFt: 450,
   tod: 19.0,
@@ -120,8 +123,8 @@ export const SAFARI_FLIGHT: { readonly groundSpeed: number; readonly driftRight:
   groundSpeed: 60.5,
   driftRight: 1.82,
   pitchDeg: 1.3,
-  startGround: 163.1,
-  altitudeMSL: 163.1 + 450 * 0.3048,
+  startGround: 164.5,
+  altitudeMSL: 164.5 + 450 * 0.3048,
 });
 export const SAFARI_MODEL_TOLERANCE_M = 30;
 
@@ -313,12 +316,13 @@ export function projectFromCockpit(
 //
 // Computed by `node scripts/safari-geometry.mjs solve --place 1` for the SAFARI above (and re-derived by the test).
 // Visibility over the first minute, centre points, the hold model (D = left door window, W = windscreen):
-//   river herd            W 0-3 s (5-6 px per 9 m body); behind the A-pillar / under the glareshield 4-9 s;
-//                         D 10-17 s (9-20 px); ends of the formation (+-90 m) D 10-18 s.
-//   T. rex lair           D 0-11 s (8-17 px per 12.3 m): in the door window from the boot, through the charge.
-//   Triceratops group     W 0-3 s and 10 s (4-7 px per 8.5 m); D 11-19 s (8-14 px), beside the stampede (G3, G4).
-//   kettle 0 (evening)    W 0-29 s at eye level, 6 -> 17 -> 22 deg right (4-30 px per 10 m span; 15-20 px at 25 s).
-//   Alamosaurus trio      W 0-19 s (8-13 px per 26 m, a teaser left of the nose); D 26-37 s (19-45 px).
+//   (WP8, L = 250 m; the centre of a herd that is not running)
+//   river herd            W 0-5 s (5-6 px per 9 m body); behind the A-pillar / under the glareshield 6-13 s;
+//                         D 14-18 s (13-23 px); ends of the formation (+-90 m) D 14-19 s.
+//   T. rex lair           W 2 s at the windscreen's lower-left edge, D 4-12 s (10-20 px per 12.3 m), through the charge.
+//   Triceratops group     W 0-3 s and 10 s (4-7 px per 8.5 m); D 12-20 s (8-18 px), beside the stampede (G3, G4).
+//   kettle 0 (evening)    W 0-31 s at eye level, 4 -> 11 -> 18 deg right (4-44 px per 10 m span; ~22 px at 27 s).
+//   Alamosaurus trio      W 0-19 s (8-13 px per 26 m, a teaser left of the nose); D 28-37 s (21-41 px).
 //   volcano               W throughout, 8-9 deg right of the nose, its summit 4-5 deg above the body horizontal.
 
 /** Runway-frame seed of the river herd (along, across), m (re-exported by world/fauna/showcase.ts). */
@@ -337,7 +341,7 @@ export interface GroundAnchor {
  * passes HERD_LATERAL_M left of the flown path at closest approach (~22 s).
  */
 export const RIVER_HERD_SITE: GroundAnchor = Object.freeze({ north: -1622.0, east: 4315.0, ground: 164.2, heading: 250 * DEG });
-export const HERD_LATERAL_M = 300;
+export const HERD_LATERAL_M = 250;
 
 /**
  * The T. rex's lair: 260 m from the herd centre, placed so that a charge from it drives the herd along
@@ -351,7 +355,7 @@ export const TREX_LAIR: GroundAnchor = Object.freeze({ north: -1805.9, east: 449
  * the track and TRICERATOPS_AWAY_M AWAY from it (left, the side away from the track). The plan's draft (+100 along,
  * 120 m toward the track) is under the glareshield / A-pillar at G3 (bearing -12.6, 10.9 deg down: hidden), so the
  * stampede and the facing line could never share the G3 frame. This spot is the nearest herd ground that:
- *   - is in the door window at G3 (12 s: bearing -23.3, 9.5 deg down, ~8 px per 8.5 m body) and at G4 (17 s:
+ *   - is in the door window at G3 (14 s since WP8: bearing -26, 11 deg down, ~9 px per 8.5 m body) and at G4 (17 s:
  *     bearing -34, ~12 px), and in the windscreen at G1 (2 s: 13 deg left, ~4.5 px);
  *   - is >= 200 m from the T. rex's charge line (lair -> herd site, extended) and from the herd site, so a charge
  *     that reaches the herd stays outside the Triceratops' predatorFleeRange (200 m): they face, they do not run;
@@ -359,10 +363,10 @@ export const TREX_LAIR: GroundAnchor = Object.freeze({ north: -1805.9, east: 449
  *     away from the facing line to the right in the door window: two distinct masses.
  * Found by `node scripts/safari-geometry.mjs solve --place 1` (its Triceratops search); re-derived by the test.
  */
-export const TRICERATOPS_ALONG_M = 210;
-export const TRICERATOPS_AWAY_M = 80;
+export const TRICERATOPS_ALONG_M = 180;
+export const TRICERATOPS_AWAY_M = 110;
 /** The Triceratops group (herd ground; see TRICERATOPS_ALONG_M). Facing the lair. */
-export const TRICERATOPS_GROUP: GroundAnchor = Object.freeze({ north: -1702.0, east: 4105.0, ground: 163.5, heading: 105 * DEG });
+export const TRICERATOPS_GROUP: GroundAnchor = Object.freeze({ north: -1732.0, east: 4135.0, ground: 162.6, heading: 101 * DEG });
 
 /**
  * The Alamosaurus trio: open herd ground 330 m left of the track, 2660 m along, 87 m from the nearest tall trees
@@ -371,14 +375,15 @@ export const TRICERATOPS_GROUP: GroundAnchor = Object.freeze({ north: -1702.0, e
  * these broadleaf crowns, not the plan's araucaria stand; and it stands LEFT of the track, not ahead right (the
  * right side has no window below 6.5 deg). Heading north: across the track, toward it.
  */
-export const ALAMOSAURUS_STAND: GroundAnchor = Object.freeze({ north: -1690.2, east: 3017.6, ground: 151.6, heading: 0 });
+export const ALAMOSAURUS_STAND: GroundAnchor = Object.freeze({ north: -1743.7, east: 3037.1, ground: 155.1, heading: 0 });
 
 /**
  * Showcase kettle 0's evening core: a virtual thermal core (used only when the real one has wStar < 0.05, i.e. at
- * the dusk start; WP0b flight.ts), 1993 m along the track and 200 m right, so the kettle (band = SAFARI height
+ * the dusk start; WP0b flight.ts), 1993 m along the track and 150 m right (200 m before WP8's look gate: the
+ * kettle read as one speck at 500 m; closer, G5 moves to 27 s at ~370 m, clear of the compass), so the kettle (band = SAFARI height
  * +-60 m) circles at eye level ahead right 20-30 s in. `ground` is the terrain under it.
  */
-export const KETTLE0_EVENING: GroundAnchor = Object.freeze({ north: -1160.2, east: 3684.6, ground: 143.0, heading: 0 });
+export const KETTLE0_EVENING: GroundAnchor = Object.freeze({ north: -1263.7, east: 3704.1, ground: 149.4, heading: 0 });
 /** The showcase kettle's height band about the safari start's height above the ground, m (+-). */
 export const KETTLE_BAND_M = 60;
 
@@ -420,7 +425,7 @@ export const FIRST_MINUTE_FRAMES: readonly FirstMinuteFrame[] = Object.freeze([
       { group: 'volcano', where: 'windscreen', minPx: 300, note: 'cone 8 deg right of the nose, summit 4 deg above the body horizontal' },
       { group: 'riverHerd', where: 'windscreen', minPx: 4, note: '1.3 km: ~5 px bodies (the plan asked >= 6 px: not reachable through the windscreen)' },
       { group: 'triceratops', where: 'windscreen', minPx: 4, note: '1.6 km, 13 deg left (just right of the A-pillar), ~4.5 px' },
-      { group: 'tyrannosaurus', where: 'door', minPx: 8, note: 'lurking/stalking at the lair, 23 deg left' },
+      { group: 'tyrannosaurus', where: 'windscreen', minPx: 8, note: 'lurking/stalking at the lair, 20 deg left at the windscreen\'s lower-left edge (the door window from ~4 s)' },
       { group: 'alamosaurus', where: 'windscreen', minPx: 7, note: 'teaser silhouette 8 deg left, 2.7 km' },
     ],
   },
@@ -435,11 +440,11 @@ export const FIRST_MINUTE_FRAMES: readonly FirstMinuteFrame[] = Object.freeze([
   },
   {
     id: 'G3',
-    t: 12,
+    t: 14,
     label: 'the stampede in the door window, the Triceratops facing line beyond it',
     expect: [
-      { group: 'riverHerd', where: 'door', minPx: 10, note: '24 deg left, 12 deg down; running ahead and inward. The T. rex is wherever its charge took it (its lair leaves the frame at ~11 s)' },
-      { group: 'triceratops', where: 'door', minPx: 7, note: '23 deg left, 9.5 deg down, 225 m beyond the herd site: ~8 px bodies; the colour mass (WP2 frill palette) carries the read' },
+      { group: 'riverHerd', where: 'door', minPx: 10, note: '24 deg left, 14 deg down (the site; WP8: 14 s, L 250 m); running ahead and inward. The T. rex is wherever its charge took it (its lair leaves the frame at ~12 s)' },
+      { group: 'triceratops', where: 'door', minPx: 7, note: '26 deg left, 11 deg down, ~210 m beyond the herd site: ~9 px bodies; the colour mass (WP2 frill palette, lifted by WP8) carries the read' },
     ],
   },
   {
@@ -453,9 +458,9 @@ export const FIRST_MINUTE_FRAMES: readonly FirstMinuteFrame[] = Object.freeze([
   },
   {
     id: 'G5',
-    t: 25,
+    t: 27,
     label: 'kettle 0 at eye level ahead right',
-    expect: [{ group: 'kettle0', where: 'windscreen', minPx: 15, note: '17-22 deg right, 10 m spans (Pteranodon 6.5 m: ~10 px)' }],
+    expect: [{ group: 'kettle0', where: 'windscreen', minPx: 15, note: '~16 deg right at ~370 m (WP8: 27 s, core 150 m right), 10 m spans ~22 px (Pteranodon 6.5 m: ~14 px)' }],
   },
   {
     id: 'G6',

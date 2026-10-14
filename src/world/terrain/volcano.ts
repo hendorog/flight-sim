@@ -249,9 +249,12 @@ export const VOLCANO_PALETTE = Object.freeze({
 //     the plume throws back down) and a short halo either side of each lobe.
 // lavaMask() is the pure CPU twin of the GLSL masks (tests/era/lava.test.ts holds them to each other).
 //
-// Brightness: the auto-exposure spans ~11 EV between the safari's dusk start and the night (measured: adapted
-// log2 luminance 5.08 at the default boot, -13.26 at tod 22 in the chase view), so one physical emission cannot be
-// both visible at dusk and below FIREFLY_MAX at night. lavaGain(uLava.w) therefore interpolates the crater's peak
+// Brightness: the auto-exposure spans ~11-18 EV between the safari's dusk start and the night (measured: adapted
+// log2 luminance 5.08 at the default boot; at tod 22 -8.08 in the default COCKPIT view, where the lit panel holds
+// the adaptation up, and -13.26 in the chase view), so one physical emission cannot be both visible at dusk and
+// below FIREFLY_MAX at night. The night peak is sized to the default (cockpit) view: from the safari the crater
+// floor and the W/SW lobes are behind the rim, so what reads at 23 km is the glow on the cone's top and the lit
+// underside of the plume (PLUME_GLOW_K); close chase views at night may clip into Bloom's FIREFLY clamp (wanted). lavaGain(uLava.w) therefore interpolates the crater's peak
 // emission in log space from LAVA_DUSK_PEAK (at the dusk start's ramp value) to LAVA_NIGHT_PEAK (full night):
 // an artistic, exposure-tracking glow (poetic license: the lava does not dim, the eye adapts).
 
@@ -286,17 +289,23 @@ export const LAVA_GLOW_REACH = 2000;
 export const LAVA_DUSK_W = 0.31;
 /** Peak crater emission at the dusk start and at full night, scene units (cd/m^2 x 0.1). */
 export const LAVA_DUSK_PEAK = 700;
-export const LAVA_NIGHT_PEAK = 0.55;
+export const LAVA_NIGHT_PEAK = 11;
 /** Lobe emission relative to the crater peak (the plan's ~150 against 1500). */
 export const LAVA_LOBE_REL = 0.12;
 /** Largest factor the crater's crack, lake and flicker terms put on lavaGain (the shader's maximum). */
 export const LAVA_PEAK_FACTOR = 1.0;
 /**
  * The adapted log2 luminance (AutoExposure, scene units) at night: tod 22, the chase view of the default boot
- * (measured with scripts/shot.mjs, before the lava existed). With EXPOSURE_GLSL's key bias it gives the night
- * exposure the FIREFLY_MAX check uses (tests/era/lava.test.ts).
+ * (measured with scripts/shot.mjs, before the lava existed). Documentation only since the look gate: a chase view
+ * at night exposes ~5 EV hotter than the cockpit, and the crater may clip into Bloom's clamp there.
  */
 export const LAVA_NIGHT_LOG_L = -13.26;
+/**
+ * The adapted log2 luminance at night in the DEFAULT view: tod 22, the default boot's cockpit at G1 (the panel flood
+ * holds it up; measured with the AutoExposure readback, steady from 2 s to 25 s). With EXPOSURE_GLSL's key bias it
+ * gives the night exposure the FIREFLY_MAX check uses (tests/era/lava.test.ts).
+ */
+export const LAVA_NIGHT_LOG_L_COCKPIT = -8.08;
 /** Bloom's FIREFLY_MAX (render/post/Bloom.ts, module-private): the largest exposed luminance worth emitting. */
 export const LAVA_FIREFLY_MAX = 64;
 

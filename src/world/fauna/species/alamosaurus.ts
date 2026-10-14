@@ -247,8 +247,8 @@ export function alamosaurusSubJoints(): Float32Array {
 // lies against sunlit olive-brown floodplain under haze: a darker silhouette than the ground is the read.
 const BACK: RGB = [0.05, 0.043, 0.034];
 const BLOTCH: RGB = [0.028, 0.025, 0.021];
-const BELLY: RGB = [0.12, 0.11, 0.09];
-const NECK: RGB = [0.08, 0.07, 0.056];
+const BELLY: RGB = [0.19, 0.17, 0.13];
+const NECK: RGB = [0.09, 0.08, 0.065];
 const PAD: RGB = [0.04, 0.036, 0.032];
 
 function bodyColour(p: THREE.Vector3, n: THREE.Vector3, station: number, sectionBottom: number, spineY: number): RGB {
