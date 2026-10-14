@@ -1,5 +1,6 @@
 // Fauna habitat (Deep Time WP5): herd sites are deterministic per cell and only on valid ground; the showcase
-// placements are valid.
+// placements are valid. These are the LAYER-1 sites (probeHabitatCell: the waterside Edmontosaurus, roster entry 0);
+// the inc-2b layer-2 sites (probeCell: plains, open lowland, woodland) are checked in landscape.test.ts.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AIRPORT } from '../../src/core/world';
@@ -39,7 +40,7 @@ function slopeAt(n: number, e: number, d = 30): number {
   return Math.hypot((he - hw) / (2 * d), (hn - hs) / (2 * d));
 }
 
-/** Every herd site found over +-24 km. */
+/** Every layer-1 herd site found over +-24 km. */
 const sites = (() => {
   const terrain = countingTerrain();
   const out: ReturnType<typeof makeSite>[] = [];
@@ -89,6 +90,7 @@ describe('habitat cells', () => {
       expect(site.size).toBeGreaterThanOrEqual(30);
       expect(site.size).toBeLessThanOrEqual(80);
       expect(roster.entries[site.entry].role).toBe('herd');
+      expect(site.entry).toBe(0);
     }
   });
 

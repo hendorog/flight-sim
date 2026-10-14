@@ -25,8 +25,8 @@
 //   centroid every tick, plus one of the plane's two gradient samples or the wander look-ahead in turn.
 //
 // - The herd centroid grazes in place or wanders at walking pace; every brain tick (10 Hz, round-robin) it looks
-//   40 m ahead and turns away from water, slopes > 0.3, the airfield and dry ground far from water, and keeps a
-//   leash on its home site.
+//   40 m ahead and turns away from water, slopes > 0.3, the airfield and dry ground far from water (not a roaming
+//   herd: HerdSpawn.roam, inc 2b), and keeps a leash on its home site.
 // - Members hold jittered sunflower formation offsets about the centroid (index neighbours i +- 1, 8, 13 are
 //   spatial neighbours, which makes separation cheap), steer toward them, and advance their gait phase by
 //   distance / stride so the feet do not skate.
@@ -94,6 +94,12 @@ export interface HerdSpawn {
   pinned: boolean;
   /** The species (its profile drives formation, gait and reaction); default 'edmontosaurus'. */
   species?: FaunaSpeciesId;
+  /**
+   * A herd that lives away from the water (inc 2b layer 2: plains, open lowland, woodland): its wander look-ahead
+   * does not treat ground far from the river / a lake as bad (every other rule, the leash included, still holds).
+   * Default false (the waterside herds, as in inc 1).
+   */
+  roam?: boolean;
 }
 
 /** Herd centroid out-parameter (herdCentroid). */
@@ -171,6 +177,8 @@ export class HerdPool {
   readonly extLead = new Float32Array(MAX_HERDS);
   /** 1 from a setExternalThreat that starts a flee-level threat until the brain tick that takes the wave over. */
   readonly extFresh = new Uint8Array(MAX_HERDS);
+  /** 1: the wander look-ahead ignores the distance to water (HerdSpawn.roam). */
+  readonly roam = new Uint8Array(MAX_HERDS);
   /** Brain ticks of a far pinned herd (which of its cheap reads it takes). */
   readonly farTick = new Uint32Array(MAX_HERDS);
   /** Each herd's species profile. */
@@ -256,6 +264,7 @@ export class HerdPool {
     this.farTick[h] = 0;
     this.active[h] = 1;
     this.pinned[h] = sp.pinned ? 1 : 0;
+    this.roam[h] = sp.roam ? 1 : 0;
     this.size[h] = size;
     this.entry[h] = sp.entry;
     this.key[h] = key;
@@ -479,7 +488,7 @@ export class HerdPool {
         slope > MAX_SLOPE ||
         Math.hypot(this.gN[h], this.gE[h]) > MAX_SLOPE ||
         a.airportBlend < HERD_MIN_AIRPORT_BLEND ||
-        !(a.riverDist < HERD_MAX_RIVER_DIST + 200 || a.standing > 0) ||
+        (!this.roam[h] && !(a.riverDist < HERD_MAX_RIVER_DIST + 200 || a.standing > 0)) ||
         Math.hypot(ln - this.homeN[h], le - this.homeE[h]) > P.formation.leash;
       if (bad) {
         // Turn back toward home, with a random swing.
