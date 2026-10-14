@@ -13,6 +13,10 @@
 // ONE SNAPSHOT PER TYPE (snapshotKey): flying another type never overwrites a flight in progress, and a
 // snapshot of another type than the one booted is never restored (decideBoot).
 //
+// ERAS (Deep Time): a snapshot taken in another era than the present day carries `era` (optional; absent means
+// 'present', so present-day snapshots are unchanged and SNAPSHOT_SCHEMA did not move). A snapshot of another era
+// than the one booted is never restored (decideBoot), exactly as for another aircraft.
+//
 // WHEN IT IS RESTORED (decideBoot): a snapshot that parses, has the current schema and is younger than
 // MAX_AGE_MS, with `resume` set, of an aircraft that is not crashed and not parked (on the ground, stationary,
 // engine off; a parked aircraft in the middle of a lesson, e.g. before the engine start of L02, still resumes). A deliberate scenario restart writes `resume: false` (the restarted scenario is booted fresh
@@ -33,6 +37,9 @@ import type { AutoflightPhase } from './autoflight';
 import type { AutoflightPlan } from './scenarios';
 import { SCENARIO_IDS } from './scenarios';
 import type { StartSpec } from './starts';
+import { ERA_SCENARIO_IDS } from './eraChoice';
+import { isEraId } from '../world/era/registry';
+import type { EraId } from '../world/era/types';
 
 /**
  * Bump when the snapshot layout changes. Snapshots from MIN_SNAPSHOT_SCHEMA up are read (migrated to this
@@ -82,6 +89,8 @@ export interface FlightSnapshot {
   schema: number;
   /** (schema 3) The type flown. Absent on read (schema 1, 2): 'c172s'. */
   aircraft: AircraftId;
+  /** The era the flight was in; written only for a non-present era. Absent: 'present'. */
+  era?: EraId;
   /** Epoch ms of the save. */
   savedAt: number;
   /** False right after a deliberate scenario restart: a reload then starts that scenario fresh. */
@@ -213,7 +222,8 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (!isObj(v) || !isNum(v.schema) || v.schema < MIN_SNAPSHOT_SCHEMA || v.schema > SNAPSHOT_SCHEMA) return null;
   if (!isNum(v.savedAt) || typeof v.resume !== 'boolean') return null;
   if (v.aircraft !== undefined && !isAircraftId(v.aircraft)) return null;
-  if (!SCENARIO_IDS.includes(v.scenario as ScenarioId) || !isNum(v.simTime) || v.simTime < 0) return null;
+  if (v.era !== undefined && !isEraId(v.era)) return null;
+  if (!(SCENARIO_IDS.includes(v.scenario as ScenarioId) || ERA_SCENARIO_IDS.includes(v.scenario as ScenarioId)) || !isNum(v.simTime) || v.simTime < 0) return null;
   const b = v.body;
   if (!isObj(b) || !isVec(b.position) || !isVec(b.velocity) || !isQuat(b.orientation) || !isVec(b.angularVelocity)) return null;
   const e = v.engine;
@@ -282,13 +292,15 @@ export interface BootOptions {
    * calls in tests/sim/resume.test.ts keep compiling and keep resuming.
    */
   aircraft?: AircraftId;
+  /** The era this session is set in. Optional (absent = 'present'), like `aircraft`. */
+  era?: EraId;
 }
 
 /**
  * What to boot: resume the snapshot, start the snapshot's scenario fresh, or start normally (URL / default).
  * resume=1 resumes even with scenario= in the URL or the preference off; resume=0 never resumes. A snapshot
  * of another type than the one booted is never used (not even with resume=1): the guard against a snapshot
- * stored under the wrong key.
+ * stored under the wrong key. Likewise a snapshot of another era (absent on either side = the present day).
  */
 export function decideBoot(snap: FlightSnapshot | null, o: BootOptions): BootDecision {
   if (o.param === false) return { kind: 'normal', reason: 'resume=0' };
@@ -298,6 +310,7 @@ export function decideBoot(snap: FlightSnapshot | null, o: BootOptions): BootDec
   }
   if (!snap) return { kind: 'normal', reason: 'no valid snapshot' };
   if ((snap.aircraft ?? DEFAULT_AIRCRAFT_ID) !== (o.aircraft ?? DEFAULT_AIRCRAFT_ID)) return { kind: 'normal', reason: 'snapshot is for another aircraft' };
+  if ((snap.era ?? 'present') !== (o.era ?? 'present')) return { kind: 'normal', reason: 'snapshot is from another era' };
   const ageMs = o.now - snap.savedAt;
   if (!(ageMs >= 0) || ageMs > MAX_AGE_MS) return { kind: 'normal', reason: 'snapshot too old' };
   if (snap.status.crashed) return { kind: 'normal', reason: 'crashed' };

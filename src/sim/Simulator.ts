@@ -14,6 +14,13 @@
 // lesson it owns Enter, Shift+Enter, R, [, Tab and Shift+R (section 5.9), caps the time scale, gates the A key,
 // and adds the lesson to the resume snapshot (schema 2). With no lesson active nothing here changes free flight.
 //
+// THE ERA (Deep Time, src/world/era) is chosen once, at boot, before anything else (eraChoice.ts: URL era=, stored
+// preference, else the present day): the constructor calls setEra() right after parseParams, so the weather preset,
+// the physics environment, the airport, the terrain (and its workers, via the setup broadcast) all see it. Another era
+// is a reload (commands.setEra). The present day takes every path exactly as before eras existed; a prehistoric era
+// has no Flight School (TrainingSystem not constructed) and may have a FaunaSystem (createFaunaSystem, null in the
+// present). A snapshot of another era is never resumed (resume.ts decideBoot).
+//
 // THE AIRCRAFT is chosen once, at boot (aircraftChoice.ts: URL, stored preference, else the Cessna 172S); every
 // subsystem receives the type's definition or presentation through its constructor. Another type is a reload
 // (commands.setAircraft). Each type keeps its own resume snapshot (resume.ts snapshotKey).
@@ -53,6 +60,12 @@ import { SIM_RATES, UISystem, type KeyBinding } from '../ui';
 import { AirportSystem, TOWER } from '../world/airport';
 import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
+import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
+import { era, isPresent, setEra } from '../world/era/eraState';
+import { createEraEffects } from '../render/post/eraEffects';
+import { bootCameraMode, cameraModeAllowed, safariHeadPitch, startTimeOfDay } from './safariStart';
+import type { EraId } from '../world/era/types';
+import { createFaunaSystem, type FaunaSystem } from '../world/fauna/FaunaSystem';
 import { SceneMaterialPatches } from './cloudShadows';
 import { advanceTimeOfDay } from './clock';
 import { showContextLost, showCurtain, type Curtain } from './overlays';
@@ -92,6 +105,8 @@ import { validateTrainingBlock } from '../training/career/validate';
 const DPR_CAP: Record<QualityLevel, number> = { low: 1, medium: 1, high: 1, ultra: 1 };
 /** Render scale when neither scale= nor the menu slider set one. */
 const DEFAULT_RENDER_SCALE: Record<QualityLevel, number> = { low: 0.75, medium: 1, high: 1, ultra: 1 };
+/** PostPipeline.sunGlare outside the present day (the present keeps PostPipeline's SUN_GLARE, 3). */
+const ERA_SUN_GLARE = 1.5;
 /** CPU time per frame the physics may use before time acceleration gives way, ms. */
 const PHYSICS_BUDGET_MS = 8;
 /**
@@ -141,6 +156,8 @@ export interface SimSystems {
   ui: UISystem;
   panel: InstrumentPanel;
   clouds: CloudsEffect;
+  /** The era's animals (src/world/fauna); null in the present day and in eras without a roster. */
+  fauna: FaunaSystem | null;
 }
 
 const nextFrame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -213,7 +230,10 @@ export class Simulator {
 
   constructor(search: string = location.search) {
     this.params = parseParams(search);
-    this.weather = defaultWeather();
+    // The era first: everything built from here on (weather, physics environment, airport, terrain and its
+    // workers) reads it. Its weather preset goes under the URL's weather.
+    setEra(chooseEra(this.params, this.store).id);
+    this.weather = applyEraWeather(defaultWeather(), era().weather);
     const w = this.params.weather;
     if (w.cloudBaseM !== undefined) w.cloudTopM ??= w.cloudBaseM + (this.weather.cloudTopM - this.weather.cloudBaseM);
     Object.assign(this.weather, w);
@@ -263,7 +283,14 @@ export class Simulator {
     await progress(0.06, 'Building the flight model');
     const events = createEventBus();
     // Resume the last flight (a reload), or start the URL's (or the remembered) scenario.
-    const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId ? false : p.resume, explicitScenario: !!demoId || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id });
+    const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId ? false : p.resume, explicitScenario: !!demoId || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id, era: era().id });
+    // An era's own start (the Cretaceous safari) when the URL names no scenario and nothing is resumed.
+    const eraStart = !p.explicitScenario && !demoId ? era().world.defaultScenario : undefined;
+    const startId = decision.kind === 'scenario' ? decision.scenario : (eraStart ?? p.scenario);
+    // The safari's own time of day (cretaceousAnchors.ts SAFARI.tod) unless the URL sets tod=; a resumed flight's
+    // snapshot weather (below) overrides it, and a failed resume restores it with weatherBefore.
+    const startTod = startTimeOfDay({ scenario: startId, urlTod: p.weather.timeOfDay !== undefined, resumed: false });
+    if (startTod !== null) this.weather.timeOfDay = startTod;
     const weatherBefore = { ...this.weather };
     if (decision.kind === 'resume') Object.assign(this.weather, decision.snapshot.weather);
     const physics = new SimPhysics({ weather: this.weather, events, aircraft: def });
@@ -285,7 +312,7 @@ export class Simulator {
         this.bootDecision = { kind: 'normal', reason: 'restore failed' };
       }
     }
-    if (!resumed) physics.reset(decision.kind === 'scenario' ? decision.scenario : p.scenario, this.weather);
+    if (!resumed) physics.reset(startId, this.weather);
     if (resumed) {
       const snap = resumed.snapshot;
       if (p.renderScale === null) p.renderScale = snap.renderScale;
@@ -313,6 +340,7 @@ export class Simulator {
         this.applySize();
       },
       setAircraft: (next, opts) => this.setAircraft(next, opts),
+      setEra: (next) => this.setEra(next),
       setCarbIcing: (on) => {
         saveCarbIcing(this.store, on);
         this.ctx.carbIcing = on;
@@ -343,7 +371,7 @@ export class Simulator {
       paused: false,
       timeScale: 1,
       achievedTimeScale: 1,
-      cameraMode: resumed && !p.camPos ? resumed.snapshot.cameraMode : p.cam,
+      cameraMode: bootCameraMode(resumed && !p.camPos ? resumed.snapshot.cameraMode : p.cam),
       panelView: loadPanelView(this.store),
       quality: resumed ? resumed.snapshot.quality : p.quality,
       commands,
@@ -351,6 +379,7 @@ export class Simulator {
       aircraft: def,
       presentation,
       carbIcing,
+      era: era().id,
     };
     this.ctx = ctx;
     this.applySize();
@@ -377,7 +406,8 @@ export class Simulator {
       pilotEye: { x: presentation.visual.cockpit.pilotEye[0], y: presentation.visual.cockpit.pilotEye[1], z: presentation.visual.cockpit.pilotEye[2] },
       radius: def.geometry.bounds.radius,
       fitSize: def.geometry.bounds.fitSize,
-      defaultPitchDeg: presentation.visual.cockpit.defaultPitchDeg,
+      // A safari-only head pitch (cretaceousAnchors.ts SAFARI.headPitchDeg; null today: the type's own view).
+      defaultPitchDeg: (resumed ? null : safariHeadPitch(physics.scenario.id)) ?? presentation.visual.cockpit.defaultPitchDeg,
       defaultFovDeg: presentation.visual.cockpit.defaultFovDeg,
     });
     // A camera cut (cockpit <-> exterior, a reset) must not blend the old view into the new one.
@@ -405,11 +435,13 @@ export class Simulator {
     this.liveryBaked = () => liveryBaked;
 
     await progress(0.34, 'Airport and valley');
-    const airport = new AirportSystem({ heightAt: terrainHeight });
+    // 'flats' (no airport in the era): bare mode (accepted and ignored until the Flats package lands).
+    const airport = new AirportSystem({ heightAt: terrainHeight, bare: era().world.airport === 'flats' });
     airport.init(ctx);
 
     await progress(0.42, 'Terrain (streaming tiles around the start position)');
-    const terrain = new TerrainSystem();
+    // An era without the valley town keeps no land-cover clearing for it.
+    const terrain = new TerrainSystem({ town: era().terrain.town ? undefined : false });
     const terrainDone = terrain.init(ctx);
     // Report streaming progress while the preload runs.
     let terrainFinished = false;
@@ -421,6 +453,14 @@ export class Simulator {
       await new Promise((r) => setTimeout(r, 100));
     }
     await terrainDone;
+
+    // The era's animals (none in the present day: nothing is constructed). Initialised here, before the cloud
+    // shadow scan and the shader warm-up, so every mesh it will ever draw is patched and compiled.
+    const fauna = createFaunaSystem(era());
+    if (fauna) {
+      await progress(0.83, 'Wildlife');
+      await fauna.init(ctx);
+    }
 
     await progress(0.84, 'Controls, instruments and sound');
     const input = new InputSystem({ view: cameras, profile: def.input });
@@ -454,8 +494,8 @@ export class Simulator {
     if (p.freeze) ui.pausedBadgeEnabled = false;
     ui.setGamepads(input.gamepads);
     // The Flight School after the UI (its screens mount on the UI's school layer) and before the loading
-    // screen lifts (a training profile keeps the first-flight hints away).
-    const training = new TrainingSystem({
+    // screen lifts (a training profile keeps the first-flight hints away). Not in an era without one.
+    const training = !era().world.school ? null : new TrainingSystem({
       physics,
       weather: this.weather,
       params: p.school,
@@ -478,7 +518,7 @@ export class Simulator {
       audio,
       persist: () => this.persist(),
     });
-    training.init(ctx);
+    training?.init(ctx);
     this.training = training;
     this.schoolCopilot = physics.copilot;
     if (id === 'r22') {
@@ -516,7 +556,14 @@ export class Simulator {
 
     await progress(0.9, 'Post-processing and clouds');
     const post = new PostPipeline(renderer, scene, camera);
+    // The era's softer veiling glare (Deep Time inc 2 look gate): the safari flies west at dusk with the sun ~7 deg up
+    // and 27 deg right of the nose, and the present day's coated-camera veil (3) whitens the volcano's side of the
+    // windscreen. The present day keeps its constant.
+    if (!isPresent()) post.sunGlare = ERA_SUN_GLARE;
     const clouds = new CloudsEffect(renderer);
+    // The era's scene effects (the volcano's plume, WP5) go before the clouds, so the cumulus in front of them
+    // occludes them. Nothing is called in the present day.
+    if (!isPresent()) for (const effect of createEraEffects({ ctx, renderer, scene, camera, weather: this.weather })) post.addEffect(effect);
     post.addEffect(clouds);
     this.post = post;
     post.setAircraftRadius(def.geometry.bounds.radius);
@@ -527,7 +574,7 @@ export class Simulator {
     clouds.compositeShadows = false;
     this.cloudShadows.scan(scene);
 
-    this.systems = { sky, terrain, airport, aircraft, cameras, input, audio, ui, panel, clouds };
+    this.systems = { sky, terrain, airport, aircraft, cameras, input, audio, ui, panel, clouds, fauna };
     this.wireEvents();
     window.addEventListener('keydown', this.onKey);
     // While a curtain is up nothing may be operated underneath it (the menu stays clickable otherwise).
@@ -542,7 +589,7 @@ export class Simulator {
     const lessonResumed = !!resumed && resumed.snapshot.training !== undefined && validateTrainingBlock(resumed.snapshot.training) !== null;
     if (resumed && !lessonResumed) ui.showToast(`Resumed flight from ${formatAge(resumed.ageMs)} ago · Shift+R / menu: Restart scenario`, 7000);
     if (demoId) await this.startDemo(demoId, false);
-    else training.afterBoot({ resumed: resumed?.snapshot ?? null, explicitScenario: p.explicitScenario });
+    else training?.afterBoot({ resumed: resumed?.snapshot ?? null, explicitScenario: p.explicitScenario });
     this.fastForwardLeft = p.run;
     if (p.freeze && p.run === 0) this.setPaused(true);
     this.readyPhase = p.run > 0 ? 'fastForward' : 'streaming';
@@ -575,6 +622,17 @@ export class Simulator {
     this.persist();
     saveAircraftPreference(this.store, id);
     location.replace(aircraftSwitchUrl(location.href, opts));
+  }
+
+  /**
+   * Another era (SimCommands.setEra; the UI has asked for confirmation): the flight is saved, the choice stored,
+   * and the page reloaded without the parameters that would undo it. The new world then starts its default
+   * scenario; this flight is not resumed there (decideBoot refuses a snapshot of another era).
+   */
+  setEra(id: EraId): void {
+    this.persist();
+    saveEraPreference(this.store, id);
+    location.replace(eraSwitchUrl(location.href));
   }
 
   /**
@@ -754,13 +812,16 @@ export class Simulator {
 
   /** The flight as a resume snapshot (also a lesson checkpoint's flight part). */
   captureFlight(resume: boolean): FlightSnapshot {
-    return this.physics.captureSnapshot({
+    const snap = this.physics.captureSnapshot({
       weather: this.weather,
       cameraMode: this.ctx.cameraMode,
       quality: this.ctx.quality,
       renderScale: this.params.renderScale,
       resume,
     });
+    // Only outside the present day: present snapshots stay exactly as they were.
+    if (!isPresent()) snap.era = era().id;
+    return snap;
   }
 
   /**
@@ -911,6 +972,8 @@ export class Simulator {
   }
 
   setCameraMode(mode: CameraMode): void {
+    // The tower camera stands in the airport's tower: not in an era without one (the Cretaceous Flats).
+    if (!cameraModeAllowed(mode)) return;
     this.fixedCamera = null;
     if (this.ctx.cameraMode === mode) return;
     this.ctx.cameraMode = mode;
@@ -1136,6 +1199,7 @@ export class Simulator {
     this.run('sky', s.sky, subsystemDt);
     this.run('terrain', s.terrain, subsystemDt);
     this.run('airport', s.airport, subsystemDt);
+    if (s.fauna) this.run('fauna', s.fauna, subsystemDt);
     try {
       s.panel.update(subsystemDt, ctx);
     } catch (e) {
@@ -1298,6 +1362,14 @@ export class Simulator {
       },
       get systems() {
         return sim.systems;
+      },
+      /** The era this session is set in (src/world/era). */
+      get era() {
+        return era().id;
+      },
+      /** The era's FaunaSystem (stats: visible, terrainCalls, reallocs, cpuMs), or null (the present day). */
+      get fauna() {
+        return sim.systems?.fauna ?? null;
       },
       get errors() {
         return sim.errors;

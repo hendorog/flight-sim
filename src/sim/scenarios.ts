@@ -18,6 +18,9 @@ import type { AircraftDefinition, ControlSystemDef } from '../aircraft/types';
 // Not from the '../physics' barrel (see sim/autoflight.ts): it carries the flight model.
 import { tasFromCas } from '../physics/atmosphere';
 import { LINE_UP, PARKING } from '../world/airport/layout';
+import { isPresent } from '../world/era/eraState';
+import { SAFARI } from '../world/era/cretaceousAnchors';
+import { terrainHeight } from '../world/terrain/heightfield';
 import type { StartSpec } from './starts';
 
 export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 'cruise', 'downwind'];
@@ -26,6 +29,18 @@ export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 
 export const PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
 /** Downwind leg offset from the runway centreline, m (left-hand traffic for 07: north-west of the runway). */
 export const DOWNWIND_OFFSET = 900;
+/**
+ * The 'safari' start (Deep Time) comes from src/world/era/cretaceousAnchors.ts SAFARI (computed there by
+ * scripts/safari-geometry.mjs; see its header for the first minute it stages): along / across the runway frame, m;
+ * the track, this far right of the 25 direction (rad); the height above the ground. Aliases of SAFARI's fields.
+ */
+export const SAFARI_ALONG = SAFARI.along;
+export const SAFARI_ACROSS = SAFARI.across;
+export const SAFARI_TRACK = SAFARI.trackDeg * DEG;
+/** The safari start's height above the ground, m. */
+export const SAFARI_AGL = SAFARI.aglFt * FT;
+/** Increment 1's safari start (along, across, track deg, ft AGL): what the 'safari' scenario still builds in the present. */
+export const PRESENT_SAFARI = Object.freeze({ along: 4870, across: 3450, trackDeg: 35, aglFt: 600 });
 /** Glide path of the final-approach scenario and the aim point beyond the threshold (m). */
 export const GLIDE_PATH = 3 * DEG;
 export const AIM_POINT = 150;
@@ -88,6 +103,8 @@ export interface Scenario {
   attitude?: { pitch: number; roll: number };
   /** The lesson start this scenario was built from (stored in the resume snapshot). */
   start?: StartSpec;
+  /** Engage `autoflight` on every reset to this scenario (the Cretaceous safari's hold), as ap=1 does for all. */
+  engageAutoflight?: boolean;
 }
 
 /** True airspeed (m/s) for an indicated airspeed (kt) at an altitude MSL (m) in `env`'s atmosphere. */
@@ -148,7 +165,7 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
       const p = LINE_UP.find((l) => l.runway === '07')!;
       return {
         id,
-        title: 'Runway 07, ready for take-off',
+        title: isPresent() ? 'Runway 07, ready for take-off' : 'The Flats, heading 070, ready for take-off',
         ic: { position: { x: p.north, y: p.east, z: -AIRPORT.elevation }, heading: p.heading, airspeed: 0, onGround: true, engineRunning: true },
         controls: presets.linedUp,
         autoflight: { kind: 'takeoff', heading: p.heading, climbTo: PATTERN_ALTITUDE, cruiseKias: sc.afterTakeoffKias },
@@ -157,7 +174,7 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
     case 'apron':
       return {
         id,
-        title: `Apron, stand ${PARKING.name}, cold and dark`,
+        title: isPresent() ? `Apron, stand ${PARKING.name}, cold and dark` : 'The Flats, off the trail, cold and dark',
         ic: { position: { x: PARKING.north, y: PARKING.east, z: -AIRPORT.elevation }, heading: PARKING.heading, airspeed: 0, onGround: true, engineRunning: false },
         controls: presets.cold,
         autoflight: { kind: 'parked' },
@@ -189,6 +206,32 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
         controls: presets.airborne,
         autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
       };
+    }
+    case 'safari': {
+      // The Cretaceous era's airborne start (cretaceousAnchors.ts SAFARI): SAFARI_AGL above the ground over the
+      // river valley, SAFARI_ALONG m along the runway frame and SAFARI_ACROSS m to the right of it, flying down the
+      // valley toward the volcano (heading 250 + SAFARI_TRACK) past the showcase groups, at the type's cruise speed (SAFARI.kias for the C172), clean, the
+      // autoflight's heading and altitude hold engaged (the pilot's first input disconnects it).
+      // In the present (only an explicit ?era=present&scenario=safari gets here) the start stays increment 1's:
+      // PRESENT_SAFARI's place and height, the hold armed but not engaged.
+      const present = isPresent();
+      const g = present ? PRESENT_SAFARI : SAFARI;
+      const rwy = AIRPORT.runway.heading;
+      const n = AIRPORT.runway.center.north + g.along * Math.cos(rwy) - g.across * Math.sin(rwy);
+      const e = AIRPORT.runway.center.east + g.along * Math.sin(rwy) + g.across * Math.cos(rwy);
+      const alt = terrainHeight(n, e) + g.aglFt * FT;
+      const heading = wrapTwoPi(rwy + Math.PI + g.trackDeg * DEG);
+      const ic: InitialConditions = { position: { x: n, y: e, z: -alt }, heading, airspeed: kiasToTas(sc.cruiseKias, alt, env), onGround: false, engineRunning: true };
+      if (retractable) ic.gearDown = false;
+      const s: Scenario = {
+        id,
+        title: `Safari: the river valley, ${g.aglFt} ft`,
+        ic,
+        controls: presets.airborne,
+        autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
+      };
+      if (!present) s.engageAutoflight = true;
+      return s;
     }
     case 'downwind': {
       // Left of runway 07 (across < 0), abeam midfield.

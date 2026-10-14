@@ -280,7 +280,8 @@ export function buildTile(req: TileRequest): TileData {
       form[v * 4 + 3] = Math.round(Math.min(1, Math.max(0, shape.up)) * 255);
       form[v * 4] = Math.round(Math.min(1, Math.max(0, 0.5 + shape.curvature * CURVATURE_SCALE)) * 255);
       bio[v * 4] = Math.round(biome.forest * 255);
-      bio[v * 4 + 1] = Math.round(biome.farmland * 255);
+      // Farmland, or marsh in an era with marsh and no farmland (biome.ts; marsh is 0 in the present day).
+      bio[v * 4 + 1] = Math.round((biome.farmland + biome.marsh) * 255);
       bio[v * 4 + 2] = Math.round(biome.moisture * 255);
       bio[v * 4 + 3] = Math.round(biome.sand * 255);
     }

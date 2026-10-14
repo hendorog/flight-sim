@@ -16,6 +16,8 @@ import type { SurfaceType } from '../../core/types';
 import { AIRPORT } from '../../core/world';
 import { LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, lakeRadius, type Hydrology, type RiverHit } from './hydrology';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
+import { era, isPresent } from '../era/eraState';
+import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
 
 const ELEV = AIRPORT.elevation;
 const RW = AIRPORT.runway;
@@ -182,8 +184,8 @@ function coastProfile(inland: number): number {
   return -80 * (1 - Math.exp(-off / 5000)) - 320 * smooth(8000, 40000, off);
 }
 
-/** Regional terrain before rivers, lakes and the airport, m MSL. */
-function naturalHeight(north: number, east: number): number {
+/** Regional terrain before rivers, lakes and the airport, m MSL. Exported for tests (tests/era/volcano.test.ts). */
+export function naturalHeight(north: number, east: number): number {
   const dn = north - RW.center.north;
   const de = east - RW.center.east;
   const along = dn * RW_COS + de * RW_SIN;
@@ -219,6 +221,16 @@ function naturalHeight(north: number, east: number): number {
   }
   relief += amplitude * 0.13 * erode(east, north, gE, gN);
   let h = base + relief;
+
+  // An era's stratovolcano (volcano.ts): merged by a smooth maximum that leaves the land exactly as it was beyond
+  // the cone's foot and wherever the cone lies below it (no hydrology, approach or airfield sample is touched).
+  const V = era().terrain.volcano;
+  if (V) {
+    const vn = north - V.north;
+    const ve = east - V.east;
+    const b = volcanoBound(V);
+    if (vn * vn + ve * ve < b * b) h = volcanoMerge(h, volcanoHeight(north, east, V));
+  }
 
   // The valley: floor at valleyFloor(along), walls starting 1-2.5 km from the axis, merging into the
   // coastal plain. Away from the airfield some of the hills survive on the floor as low spurs and knolls.
@@ -392,7 +404,15 @@ export function terrainNormal(north: number, east: number): Vec3 {
 
 /** Snow line elevation at a point, m; varies with position so the snow edge is irregular. */
 export function snowLine(north: number, east: number): number {
-  return 2500 + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
+  if (isPresent()) {
+    return 2500 + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
+  }
+  return snowLineBase() + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
+}
+
+/** Level of the snow line before its noise, m: 2500 plus the era's offset (the shader's threshold, its GLSL twin). */
+export function snowLineBase(): number {
+  return 2500 + era().terrain.snowLineOffset;
 }
 
 /**
@@ -403,7 +423,7 @@ export function snowLine(north: number, east: number): number {
 export function terrainSurface(north: number, east: number): SurfaceType {
   const s = sampleTerrain(north, east, scratch);
   if (s.ground < Math.max(s.standing, s.river)) return 'water';
-  if (s.airportBlend === 0) return 'grass';
+  if (s.airportBlend === 0) return isPresent() ? 'grass' : era().world.flatSurface;
   const h = s.ground;
   const standing = s.standing;
   const nrm = terrainNormal(north, east);

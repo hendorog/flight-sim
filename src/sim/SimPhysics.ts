@@ -234,7 +234,7 @@ export class SimPhysics {
     this.wasCrashed = false;
     this.gearEvents.sync(this.fm.state.gear);
     this.autoflight.disengage();
-    if (this.autoflightOnReset && !this.definition.rotorcraft) this.autoflight.engage(sc.autoflight, this.fm.state, c);
+    if ((this.autoflightOnReset || sc.engageAutoflight) && !this.definition.rotorcraft) this.autoflight.engage(sc.autoflight, this.fm.state, c);
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();

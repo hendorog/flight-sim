@@ -2,6 +2,8 @@
 // ground, for inspecting models, impostor baking and lighting.
 //   dev/terraintrees.html?tod=10&dist=40&h=18&lod=0   (lod=1 shows the reduced far-LOD meshes; cam=n,e,alt
 //   and look=n,e,alt as in the other harness pages, else a view from the ground at the trees)
+//   dev/terraintrees.html?era=cretaceous   another era's four species (harness.ts sets the era); without h=, each
+//   at the middle of its height range (flora/index.ts)
 import * as THREE from 'three';
 import { createFoliageAtlas } from '../world/terrain/vegetation/foliageTexture';
 import { bakeImpostors } from '../world/terrain/vegetation/impostors';
@@ -9,12 +11,20 @@ import { SPECIES_COUNT, TREE_STRIDE } from '../world/terrain/vegetation/placemen
 import { createImpostorMaterial, createNearTreeMaterial, type TreeUniforms } from '../world/terrain/vegetation/treeMaterials';
 import { createTreeGeometries } from '../world/terrain/vegetation/treeModels';
 import { AIRPORT } from '../core/world';
+import { era, isPresent } from '../world/era/eraState';
+import { FLORA } from '../world/terrain/vegetation/flora';
 import { runHarness } from './harness';
 
 const params = new URLSearchParams(location.search);
 const dist = Number(params.get('dist') ?? 40);
 const height = Number(params.get('h') ?? 18);
 const lod = params.get('lod') === '1' ? 1 : 0;
+/** Height of species s in the gallery: h= for all, or (another era, no h=) the middle of its range. */
+const heightOf = (s: number): number => {
+  if (isPresent() || params.has('h')) return height;
+  const [lo, hi] = FLORA[era().flora].slots[s].height;
+  return (lo + hi) / 2;
+};
 
 const makeUniforms = (fade: THREE.Vector4): TreeUniforms => ({
   uTime: { value: 0 },
@@ -76,13 +86,13 @@ void runHarness({
         // Meshes on the left, impostors on the right, all at north = dist.
         for (let s = 0; s < SPECIES_COUNT; s++) {
           const east = (s - 4) * spacing;
-          const mesh = new THREE.Mesh(instances(meshGeos[s], [[east, y, dist, height, 0.3 * s, s + 0.5]]), nearMat);
+          const mesh = new THREE.Mesh(instances(meshGeos[s], [[east, y, dist, heightOf(s), 0.3 * s, s + 0.5]]), nearMat);
           mesh.frustumCulled = false;
           mesh.castShadow = true;
           ctx.scene.add(mesh);
         }
         const rows: number[][] = [];
-        for (let s = 0; s < SPECIES_COUNT; s++) rows.push([(s + 1) * spacing, y, dist, height, 0.3 * s, s + 0.5]);
+        for (let s = 0; s < SPECIES_COUNT; s++) rows.push([(s + 1) * spacing, y, dist, heightOf(s), 0.3 * s, s + 0.5]);
         const imp = new THREE.Mesh(instances(new THREE.PlaneGeometry(2, 2), rows), impMat);
         imp.frustumCulled = false;
         ctx.scene.add(imp);
