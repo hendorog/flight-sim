@@ -412,8 +412,10 @@ describe('FaunaSystem streaming across the landscape', () => {
     const h0 = sys.agentHerd[i0];
     const home0 = A.homeN[i0];
     const oldKey = sys.agentHerdKey[i0];
+    // (A layer-2 herd's slot is reused by the next layer-2 spawn: those take the highest free slot.)
+    const bg = H.background[h0] === 1;
     H.release(h0);
-    expect(H.spawn({ north: H.homeN[h0] + 50, east: H.homeE[h0], ground: H.cH[h0], size: 5, entry: 3, scale: 1, variant: 0, seed: 1, heading: 0, pinned: false, species: 'triceratops' }, 12345)).toBe(h0);
+    expect(H.spawn({ north: H.homeN[h0] + 50, east: H.homeE[h0], ground: H.cH[h0], size: 5, entry: 3, scale: 1, variant: 0, seed: 1, heading: 0, pinned: false, species: 'triceratops', background: bg }, 12345)).toBe(h0);
     hold(sys, ctx, terrain, VREX.n, VREX.e, VREX.alt, 0.3);
     // (Released; the slot may already hold a new T. rex placed for another herd.)
     expect(A.active[i0] === 0 || A.homeN[i0] !== home0).toBe(true);
@@ -656,5 +658,123 @@ describe('eviction when the herd slots are full', () => {
     expect(sys.debug.evictions).toBe(ev0 + 1);
     expect(C.herd[nearSlot]).toBeGreaterThanOrEqual(0);
     expect(C.herd[farSlot]).toBe(-1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Roaming T. rex placement: a spawn point fixed by the cell, the next herd when one is in sight, inside the radius
+
+describe('roaming T. rex placement (placeRex)', () => {
+  type Placer = {
+    placeRex(camN: number, camE: number): boolean;
+    sweepAmbientAgents(camN: number, camE: number, R: number): void;
+    frustum: THREE.Frustum;
+    preset: { activeRadius: number };
+  };
+  const key = (ci: number, cj: number) => (ci + 32768) * 65536 + (cj + 32768);
+  /** A fresh system with the real layer-1/2 herds of the given cells, unpinned, streamed as stream() would. */
+  function withHerds(cells: [number, number][]) {
+    const { sys, ctx } = build('high');
+    const H = sys.herds;
+    for (let h = 0; h < MAX_HERDS; h++) H.release(h);
+    for (let i = 0; i < sys.agents.capacity; i++) sys.agents.release(i);
+    const sites = cells.map(([ci, cj]) => {
+      const s = makeSite();
+      expect(probeCell(ci, cj, roster, countingTerrain(), s), `cell (${ci}, ${cj}) has a site`).toBe(true);
+      expect(rexRandom(ci, cj, 0), `cell (${ci}, ${cj}) draws a T. rex`).toBeLessThan(roster.entries.find((e) => e.habitat === 'nearHerd')!.occupancy!);
+      const h = H.spawn({ north: s.north, east: s.east, ground: s.ground, size: 12, entry: s.entry, scale: 1, variant: 0, seed: 99, heading: 0, pinned: false, species: 'edmontosaurus' }, key(ci, cj));
+      return { ...s, h, ci, cj };
+    });
+    return { sys, ctx, p: sys as unknown as Placer, sites };
+  }
+  /** The last-frame view: the camera at (n, e, alt) looking at (ln, le, lh). */
+  function look(p: Placer, n: number, e: number, alt: number, ln: number, le: number, lh: number): void {
+    const cam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 400000);
+    cam.position.set(e, alt, -n);
+    cam.lookAt(le, lh, -ln);
+    cam.updateMatrixWorld();
+    p.frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  }
+  const spot = (ci: number, cj: number) => ({ r: REX_RANGE_MIN + REX_RANGE_SPAN * rexRandom(ci, cj, 1), b: 2 * Math.PI * rexRandom(ci, cj, 2) });
+
+  it('the spawn point is the same whichever way the camera looks; in sight it waits, it does not move', () => {
+    const placed: { n: number; e: number }[] = [];
+    let deferred = 0;
+    for (const dir of [1, -1]) {
+      const { sys, p, sites } = withHerds([[-7, 10]]);
+      const s = sites[0];
+      const { r, b } = spot(-7, 10);
+      // Standing on the herd, looking toward (dir 1) or away from (dir -1) its drawn bearing.
+      look(p, s.north, s.east, s.ground + 30, s.north + dir * r * Math.cos(b), s.east + dir * r * Math.sin(b), s.ground + 4);
+      const ok = p.placeRex(s.north, s.east);
+      deferred += ok ? 0 : 1;
+      if (!ok) {
+        // In sight: nothing placed; once the camera turns away it appears where it would have.
+        expect(sys.agents.count()).toBe(0);
+        look(p, s.north, s.east, s.ground + 30, s.north - dir * r * Math.cos(b), s.east - dir * r * Math.sin(b), s.ground + 4);
+        expect(p.placeRex(s.north, s.east)).toBe(true);
+      }
+      const i = sys.agentHerd.findIndex((h) => h === s.h);
+      expect(i).toBeGreaterThanOrEqual(0);
+      placed.push({ n: sys.agents.n[i], e: sys.agents.e[i] });
+    }
+    expect(deferred).toBe(1);
+    expect(placed[1].n).toBe(placed[0].n);
+    expect(placed[1].e).toBe(placed[0].e);
+  });
+
+  it('a nearer herd whose T. rex would appear in sight does not block one beside a farther herd', () => {
+    const { sys, p, sites } = withHerds([
+      [-7, 10],
+      [-10, 10],
+    ]);
+    const [near, far] = sites;
+    const camN = -15000;
+    const camE = 21000;
+    expect(Math.hypot(near.north - camN, near.east - camE)).toBeLessThan(Math.hypot(far.north - camN, far.east - camE));
+    const { r, b } = spot(-7, 10);
+    const sn = near.north + r * Math.cos(b);
+    const se = near.east + r * Math.sin(b);
+    expect(Math.hypot(sn - camN, se - camE)).toBeLessThan(2500);
+    look(p, camN, camE, 500, sn, se, near.ground);
+    expect(p.placeRex(camN, camE)).toBe(true);
+    expect(sys.agents.count()).toBe(1);
+    const i = sys.ambientAgent.indexOf(1);
+    expect(sys.agentHerd[i]).toBe(far.h);
+    // The nearer herd gets its T. rex once its spot is out of view, at the point drawn for its cell.
+    look(p, camN, camE, 500, camN - 1000 * Math.cos(b), camE - 1000 * Math.sin(b), 0);
+    expect(p.placeRex(camN, camE)).toBe(true);
+    const j = sys.agentHerd.findIndex((h, k) => h === near.h && sys.ambientAgent[k] === 1);
+    expect(j).toBeGreaterThanOrEqual(0);
+    expect(Math.hypot(sys.agents.n[j] - near.north, sys.agents.e[j] - near.east)).toBeCloseTo(r, 6);
+  });
+
+  it('never places a T. rex outside the active radius: no release-and-respawn churn at the retain edge', () => {
+    const { sys, p, sites } = withHerds([[-7, 10]]);
+    const s = sites[0];
+    const R = p.preset.activeRadius;
+    const { r, b } = spot(-7, 10);
+    // The herd 1.14 R out (retained: the release is at 1.15 R), its T. rex's drawn point on the far side of it.
+    const camN = s.north - 1.14 * R * Math.cos(b);
+    const camE = s.east - 1.14 * R * Math.sin(b);
+    look(p, camN, camE, 5000, camN, camE, 0);
+    let placed = 0;
+    for (let k = 0; k < 4; k++) {
+      p.sweepAmbientAgents(camN, camE, R);
+      if (p.placeRex(camN, camE)) placed++;
+      for (let i = 0; i < sys.agents.capacity; i++) if (sys.ambientAgent[i]) expect(Math.hypot(sys.agents.n[i] - camN, sys.agents.e[i] - camE)).toBeLessThanOrEqual(R);
+    }
+    expect(Math.hypot(s.north + r * Math.cos(b) - camN, s.east + r * Math.sin(b) - camE)).toBeGreaterThan(R);
+    expect(placed).toBe(0);
+    // Nearer, the same herd's T. rex is placed once and stays (no churn).
+    const nearN = s.north - 0.8 * R * Math.cos(b);
+    const nearE = s.east - 0.8 * R * Math.sin(b);
+    placed = 0;
+    for (let k = 0; k < 4; k++) {
+      p.sweepAmbientAgents(nearN, nearE, R);
+      if (p.placeRex(nearN, nearE)) placed++;
+    }
+    expect(placed).toBe(1);
+    expect(sys.debug.ambientRex).toBe(1);
   });
 });

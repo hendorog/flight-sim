@@ -100,6 +100,13 @@ export interface HerdSpawn {
    * Default false (the waterside herds, as in inc 1).
    */
   roam?: boolean;
+  /**
+   * A landscape herd (inc 2b layer 2): it takes its slot from the top of the pool and its brain ticks after every
+   * other herd's, with the terrain reads they leave, so the herds of inc 2 (the showcase herds and the layer-1
+   * river herds) keep the slots, tick times and reads they had without it, and the scripted first minute plays
+   * exactly as before. Default false.
+   */
+  background?: boolean;
 }
 
 /** Herd centroid out-parameter (herdCentroid). */
@@ -179,6 +186,8 @@ export class HerdPool {
   readonly extFresh = new Uint8Array(MAX_HERDS);
   /** 1: the wander look-ahead ignores the distance to water (HerdSpawn.roam). */
   readonly roam = new Uint8Array(MAX_HERDS);
+  /** 1: a landscape herd, scheduled after the others (HerdSpawn.background). */
+  readonly background = new Uint8Array(MAX_HERDS);
   /** Brain ticks of a far pinned herd (which of its cheap reads it takes). */
   readonly farTick = new Uint32Array(MAX_HERDS);
   /** Each herd's species profile. */
@@ -223,6 +232,8 @@ export class HerdPool {
   deferred = 0;
 
   private cursor = 0;
+  /** The background herds' round-robin cursor. */
+  private bgCursor = 0;
   private readonly s: TerrainSample = makeSample();
   private readonly dir = { n: 0, e: 0 };
 
@@ -242,8 +253,10 @@ export class HerdPool {
 
   /** Start a herd; returns its slot or -1 when full. No terrain reads (members take the site plane until snapped). */
   spawn(sp: HerdSpawn, key: number): number {
+    // The lowest free slot; a background herd the highest (the other herds keep the slots they would have alone).
     let h = -1;
-    for (let i = 0; i < MAX_HERDS; i++) {
+    for (let k = 0; k < MAX_HERDS; k++) {
+      const i = sp.background ? MAX_HERDS - 1 - k : k;
       if (!this.active[i]) {
         h = i;
         break;
@@ -265,6 +278,7 @@ export class HerdPool {
     this.active[h] = 1;
     this.pinned[h] = sp.pinned ? 1 : 0;
     this.roam[h] = sp.roam ? 1 : 0;
+    this.background[h] = sp.background ? 1 : 0;
     this.size[h] = size;
     this.entry[h] = sp.entry;
     this.key[h] = key;
@@ -401,21 +415,26 @@ export class HerdPool {
     const start = terrain.calls;
     this.ticks = 0;
     this.deferred = 0;
-    // Brains, round-robin from the cursor.
-    for (let k = 0; k < MAX_HERDS; k++) {
-      const h = (this.cursor + k) % MAX_HERDS;
-      if (!this.active[h] || this.nextBrain[h] > t) continue;
-      const near = Math.hypot(this.cN[h] - viewN, this.cE[h] - viewE) < NEAR_SNAP_M;
-      const left = budget - (terrain.calls - start);
-      // The plane and the look-ahead take 4 reads; a near herd wants one per member on top.
-      if (left < 4) {
-        this.deferred++;
-        continue;
+    // Brains, round-robin from the cursor: the other herds first, then the background (landscape) herds from
+    // their own cursor with the reads left, so the background herds never change when the others tick or what
+    // they read. (The cursor is read live: a tick moves it, and with it the rest of the walk, as in inc 1.)
+    for (let pass = 0; pass < 2; pass++) {
+      for (let k = 0; k < MAX_HERDS; k++) {
+        const h = ((pass === 0 ? this.cursor : this.bgCursor) + k) % MAX_HERDS;
+        if (!this.active[h] || this.background[h] !== pass || this.nextBrain[h] > t) continue;
+        const near = Math.hypot(this.cN[h] - viewN, this.cE[h] - viewE) < NEAR_SNAP_M;
+        const left = budget - (terrain.calls - start);
+        // The plane and the look-ahead take 4 reads; a near herd wants one per member on top.
+        if (left < 4) {
+          this.deferred++;
+          continue;
+        }
+        this.brain(h, ac, terrain, near, left - 4);
+        this.ticks++;
+        this.nextBrain[h] = Math.max(this.nextBrain[h] + BRAIN_DT, t);
+        if (pass === 0) this.cursor = (h + 1) % MAX_HERDS;
+        else this.bgCursor = (h + 1) % MAX_HERDS;
       }
-      this.brain(h, ac, terrain, near, left - 4);
-      this.ticks++;
-      this.nextBrain[h] = Math.max(this.nextBrain[h] + BRAIN_DT, t);
-      this.cursor = (h + 1) % MAX_HERDS;
     }
     for (let h = 0; h < MAX_HERDS; h++) if (this.active[h]) this.move(h, dt, ac);
     return terrain.calls - start;

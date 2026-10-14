@@ -29,10 +29,12 @@
 //
 // INCREMENT 2b (fauna across the landscape): the stream probes both habitat layers (habitat.ts probeCell: the
 // layer-1 Edmontosaurus waterside herds, unchanged, and layer 2: plains Edmontosaurus, Triceratops, Alamosaurus),
-// spawning each herd with its own species (and `roam` for layer 2); when the herd slots are full a site at least
+// spawning each herd with its own species (and `roam` and `background` for layer 2: the layer-2 herds take the top
+// slots and their brain ticks after the inc-2 herds, so the scripted first minute is unchanged); when the herd slots are full a site at least
 // EVICT_MARGIN nearer the camera than the farthest unpinned herd takes that herd's slot. On a quiet stream tick (no
 // probe, no spawn) a roaming T. rex may be placed beside a streamed prey herd (placeRex: at most AMBIENT_REX_MAX,
-// never within REX_QUIET_M of the safari footprint, out of sight), and released with its herd. Ambient kettles weight
+// never within REX_QUIET_M of the safari footprint, at a spawn point fixed by the herd's cell, inside the active
+// radius and out of sight, else the next-nearest herd), and released with its herd. Ambient kettles weight
 // their species toward water (roster waterAffinity) from the one terrain read they take. Every number an agent
 // choice.
 //
@@ -234,6 +236,8 @@ export const REX_RANGE_MIN = 320;
 export const REX_RANGE_SPAN = 130;
 /** A roaming T. rex is only placed beyond this distance from the camera, or outside the view, m. */
 const REX_UNSEEN_M = 2500;
+/** placeRex resolves at most this many new spawn points a call (2 terrain reads each). */
+const REX_PLACE_SPOTS = 2;
 /**
  * The brain a roaming T. rex runs: the T. rex brain with ctx.riverHerd masked to -1 for its init and step. The river
  * herd belongs to the scripted encounter (slot 0); a roaming T. rex never sees it, so it can never stalk it or send it
@@ -320,6 +324,11 @@ export class FaunaSystemImpl implements FaunaSystem {
   readonly agentHerdKey = new Float64Array(MAX_AGENTS).fill(-1);
   /** Per herd slot: the key of a herd whose T. rex could not be placed (water both ways), so it is not retried. */
   private readonly rexFailKey = new Float64Array(MAX_HERDS).fill(-1);
+  /** Per herd slot: its roaming T. rex spawn point (rexSpot), valid while rexSpotKey holds the herd's key. */
+  private readonly rexSpotKey = new Float64Array(MAX_HERDS).fill(-1);
+  private readonly rexSpotN = new Float64Array(MAX_HERDS);
+  private readonly rexSpotE = new Float64Array(MAX_HERDS);
+  private readonly rexSpotG = new Float64Array(MAX_HERDS);
   /** Roster entry of the T. rex and its 'nearHerd' occupancy (-1 / 0: none). */
   private readonly rexEntry: number;
   private readonly rexOccupancy: number;
@@ -766,6 +775,8 @@ export class FaunaSystemImpl implements FaunaSystem {
               pinned: false,
               species: e.species,
               roam: e.habitat !== undefined && e.habitat !== 'waterside',
+              // Layer 2: scheduled after the inc-2 herds, so the scripted first minute is unchanged.
+              background: e.habitat !== undefined && e.habitat !== 'waterside',
             },
             key,
           );
@@ -839,11 +850,14 @@ export class FaunaSystemImpl implements FaunaSystem {
   }
 
   /**
-   * Place a roaming T. rex beside the nearest streamed prey herd (an unpinned Edmontosaurus or Triceratops herd)
-   * whose cell draws one (rexRandom < the roster occupancy), at least REX_QUIET_M from the safari footprint and
-   * without one yet; at most AMBIENT_REX_MAX alive, one agent slot always spare, never where the camera would see it
-   * appear. Its spawn point is the herd's home + REX_RANGE_MIN..+SPAN at a drawn bearing (the opposite one if that is
-   * water or the river bank): <= 2 terrain reads. Returns true when one was placed.
+   * Place a roaming T. rex beside a streamed prey herd (an unpinned Edmontosaurus or Triceratops herd) whose cell
+   * draws one (rexRandom < the roster occupancy), at least REX_QUIET_M from the safari footprint and without one yet;
+   * at most AMBIENT_REX_MAX alive, one agent slot always spare. The herds are tried nearest first. Each herd's spawn
+   * point depends on its cell alone (rexSpot: the home + REX_RANGE_MIN..+SPAN at a drawn bearing, the opposite one
+   * if that is water or the river bank), never on where the camera is or looks; a herd whose point is in sight of
+   * the camera (within REX_UNSEEN_M and in the last frame's view), or outside the active radius (it would be
+   * released at once), waits for a later tick and the next herd is tried. <= REX_PLACE_SPOTS new spots a call
+   * (2 terrain reads each). Returns true when one was placed.
    */
   private placeRex(camN: number, camE: number): boolean {
     if (this.rexEntry < 0 || !(this.rexOccupancy > 0)) return false;
@@ -852,59 +866,71 @@ export class FaunaSystemImpl implements FaunaSystem {
     let amb = 0;
     for (let i = 0; i < A.capacity; i++) amb += this.ambientAgent[i];
     if (amb >= AMBIENT_REX_MAX || A.count() >= MAX_AGENTS - 1) return false;
-    let best = -1;
-    let bestD2 = Infinity;
-    for (let h = 0; h < MAX_HERDS; h++) {
-      if (!H.active[h] || H.pinned[h] || H.key[h] < 0) continue;
-      if (H.species[h] !== EDMONTOSAURUS && H.species[h] !== TRICERATOPS) continue;
-      if (this.rexFailKey[h] === H.key[h]) continue;
-      let taken = false;
-      for (let i = 0; i < A.capacity; i++) if (this.ambientAgent[i] && this.agentHerd[i] === h) taken = true;
-      if (taken) continue;
-      const ci = Math.floor(H.key[h] / 65536) - 32768;
-      const cj = (H.key[h] % 65536) - 32768;
-      if (!(rexRandom(ci, cj, 0) < this.rexOccupancy)) continue;
-      if (safariFootprintDist(H.homeN[h], H.homeE[h]) < REX_QUIET_M) continue;
-      const dn = H.cN[h] - camN;
-      const de = H.cE[h] - camE;
-      const d2 = dn * dn + de * de;
-      if (d2 < bestD2) {
+    const R = this.preset.activeRadius;
+    let resolved = 0;
+    // Nearest first, without a list: each pass takes the nearest eligible herd beyond the last one tried.
+    let lastD2 = -1;
+    let lastH = -1;
+    for (let pass = 0; pass < MAX_HERDS; pass++) {
+      let best = -1;
+      let bestD2 = Infinity;
+      for (let h = 0; h < MAX_HERDS; h++) {
+        if (!H.active[h] || H.pinned[h] || H.key[h] < 0) continue;
+        if (H.species[h] !== EDMONTOSAURUS && H.species[h] !== TRICERATOPS) continue;
+        if (this.rexFailKey[h] === H.key[h]) continue;
+        const dn = H.cN[h] - camN;
+        const de = H.cE[h] - camE;
+        const d2 = dn * dn + de * de;
+        // Strictly after the last one tried in (distance, slot) order.
+        if (d2 < lastD2 || (d2 === lastD2 && h <= lastH)) continue;
+        if (d2 > bestD2 || (d2 === bestD2 && h > best)) continue;
+        let taken = false;
+        for (let i = 0; i < A.capacity; i++) if (this.ambientAgent[i] && this.agentHerd[i] === h) taken = true;
+        if (taken) continue;
+        const ci = Math.floor(H.key[h] / 65536) - 32768;
+        const cj = (H.key[h] % 65536) - 32768;
+        if (!(rexRandom(ci, cj, 0) < this.rexOccupancy)) continue;
+        if (safariFootprintDist(H.homeN[h], H.homeE[h]) < REX_QUIET_M) continue;
         bestD2 = d2;
         best = h;
       }
-    }
-    if (best < 0) return false;
-    const key = H.key[best];
-    const ci = Math.floor(key / 65536) - 32768;
-    const cj = (key % 65536) - 32768;
-    const r = REX_RANGE_MIN + REX_RANGE_SPAN * rexRandom(ci, cj, 1);
-    const b0 = 2 * Math.PI * rexRandom(ci, cj, 2);
-    let seen = false;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const b = b0 + attempt * Math.PI;
-      const n = H.homeN[best] + r * Math.cos(b);
-      const e = H.homeE[best] + r * Math.sin(b);
-      // Never in sight as it appears: beyond REX_UNSEEN_M, or outside the last frame's view (else the other side,
-      // or a later tick).
-      const dn = n - camN;
-      const de = e - camE;
-      if (dn * dn + de * de <= REX_UNSEEN_M * REX_UNSEEN_M) {
-        this.sphere.center.set(e, H.cH[best] + 4, -n);
-        this.sphere.radius = 20;
-        if (this.frustum.intersectsSphere(this.sphere)) {
-          seen = true;
+      if (best < 0) return false;
+      lastD2 = bestD2;
+      lastH = best;
+      const key = H.key[best];
+      if (this.rexSpotKey[best] !== key) {
+        if (resolved >= REX_PLACE_SPOTS) return false;
+        resolved++;
+        if (!this.rexSpot(best)) {
+          // Water (or the bank) on both sides: this herd gets none.
+          this.rexFailKey[best] = key;
           continue;
         }
       }
-      const s = this.terrain.sample(n, e, this.sample);
-      if (s.ground < Math.max(s.standing, s.river) + 0.3 || (s.riverHalfWidth > 0 && s.riverDist < s.riverHalfWidth + HERD_BANK_MARGIN)) continue;
+      const n = this.rexSpotN[best];
+      const e = this.rexSpotE[best];
+      const g = this.rexSpotG[best];
+      const dn = n - camN;
+      const de = e - camE;
+      const d2 = dn * dn + de * de;
+      // Inside the active radius (the sweep releases a roaming T. rex beyond 1.15x it), so it is not released and
+      // placed again every quiet tick.
+      if (d2 > R * R) continue;
+      // Never in sight as it appears: beyond REX_UNSEEN_M, or outside the last frame's view (else a later tick).
+      if (d2 <= REX_UNSEEN_M * REX_UNSEEN_M) {
+        this.sphere.center.set(e, g + 4, -n);
+        this.sphere.radius = 20;
+        if (this.frustum.intersectsSphere(this.sphere)) continue;
+      }
+      const ci = Math.floor(key / 65536) - 32768;
+      const cj = (key % 65536) - 32768;
       const i = A.spawn(
         {
           species: 'tyrannosaurus',
           entry: this.rexEntry,
           north: n,
           east: e,
-          ground: s.ground,
+          ground: g,
           heading: Math.atan2(H.cE[best] - e, H.cN[best] - n),
           scale: 1,
           variant: 0,
@@ -919,8 +945,33 @@ export class FaunaSystemImpl implements FaunaSystem {
       this.debug.ambientRex = amb + 1;
       return true;
     }
-    // Water (or the bank) on both sides: this herd gets none. (In sight: try again on a later tick.)
-    if (!seen) this.rexFailKey[best] = key;
+    return false;
+  }
+
+  /**
+   * Resolve herd h's roaming T. rex spawn point from its cell alone: the home + REX_RANGE_MIN..+SPAN at a drawn
+   * bearing, or the opposite bearing if that is water or the river bank (<= 2 terrain reads). Caches it under the
+   * herd's key (rexSpotKey); false when both sides are water.
+   */
+  private rexSpot(h: number): boolean {
+    const H = this.herds;
+    const key = H.key[h];
+    const ci = Math.floor(key / 65536) - 32768;
+    const cj = (key % 65536) - 32768;
+    const r = REX_RANGE_MIN + REX_RANGE_SPAN * rexRandom(ci, cj, 1);
+    const b0 = 2 * Math.PI * rexRandom(ci, cj, 2);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const b = b0 + attempt * Math.PI;
+      const n = H.homeN[h] + r * Math.cos(b);
+      const e = H.homeE[h] + r * Math.sin(b);
+      const s = this.terrain.sample(n, e, this.sample);
+      if (s.ground < Math.max(s.standing, s.river) + 0.3 || (s.riverHalfWidth > 0 && s.riverDist < s.riverHalfWidth + HERD_BANK_MARGIN)) continue;
+      this.rexSpotKey[h] = key;
+      this.rexSpotN[h] = n;
+      this.rexSpotE[h] = e;
+      this.rexSpotG[h] = s.ground;
+      return true;
+    }
     return false;
   }
 

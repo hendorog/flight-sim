@@ -123,3 +123,36 @@ describe('herds', () => {
     expect(dx / dt).toBeLessThan(25);
   });
 });
+
+describe('background (landscape) herds', () => {
+  /** A pinned herd (as the river herd) and an unpinned one, alone or with background herds around them. */
+  function run(background: number): { trace: number[]; slots: number[]; pool: HerdPool } {
+    const site = riverHerdSite(countingTerrain());
+    const pool = new HerdPool();
+    const terrain = countingTerrain();
+    const slots: number[] = [];
+    pool.spawn({ north: site.north, east: site.east, ground: site.ground, size: 60, entry: 0, scale: 1, variant: 0, seed: 1234, heading: site.heading, pinned: true }, -1);
+    for (let b = 0; b < background; b++)
+      slots.push(pool.spawn({ north: site.north + 300 + 40 * b, east: site.east - 200, ground: site.ground, size: 30, entry: 0, scale: 1, variant: 0, seed: 77 + b, heading: 0, pinned: false, roam: true, background: true }, 1000 + b));
+    const other = pool.spawn({ north: site.north - 400, east: site.east + 300, ground: site.ground, size: 40, entry: 0, scale: 1, variant: 0, seed: 4321, heading: 1, pinned: false }, 7);
+    const ac: AircraftView = { n: site.north - 2000, e: site.east, alt: site.ground + 60, vN: 50, vE: 0, vD: 0, tas: 50 };
+    const trace: number[] = [];
+    // A tight budget (one near herd's snaps do not fit) and an aircraft pass that sets off the flee.
+    for (let k = 0; k < 900; k++) {
+      ac.n += 50 * DT;
+      pool.step(DT, k > 120 ? ac : null, terrain, 40, site.north, site.east);
+      for (const h of [0, other]) for (let m = 0; m < pool.size[h]; m++) trace.push(pool.mN[h * pool.memberCap + m], pool.mH[h * pool.memberCap + m]);
+    }
+    return { trace, slots, pool };
+  }
+
+  it('take the top slots and tick after the others: the other herds move exactly as without them', () => {
+    const alone = run(0);
+    const crowded = run(4);
+    expect(crowded.slots).toEqual([23, 22, 21, 20]);
+    expect(crowded.trace).toEqual(alone.trace);
+    // ...and the background herds still get their ticks (with the reads left over).
+    const P = crowded.pool;
+    for (const h of crowded.slots) expect(P.nextBrain[h]).toBeGreaterThan(P.time - 1);
+  });
+});
