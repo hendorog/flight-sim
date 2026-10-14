@@ -1,7 +1,8 @@
 // Triceratops: the species profile (WP2 owns this file). Pure and three-free:
 // profiles.ts imports PROFILE (the export name is fixed).
 //
-// A showcase herd (pinned, never ambient in inc 2) whose reaction is 'face': alarmed members turn on the spot
+// A showcase herd (pinned) and, from inc 2b, groups of 3-8 streamed on open lowland across the map (roster.ts
+// habitat 'open'), whose reaction is 'face': alarmed members turn on the spot
 // toward the threat and stop (herds.ts), calming after 15-30 s. A predator source nearer than predatorFleeRange
 // to the herd's edge makes it flee instead.
 
