@@ -12,7 +12,7 @@
 //   ambient-rex-charge-fixed   3 s into the charge, a fixed camera beside the herd
 //   ambient-rex-charge-chase   3 s into the charge, the chase camera (the herd ahead and to the left)
 //   ambient-rex-pass-fixed     at the closest approach, a fixed camera beside the herd (the stampede, the aircraft)
-//   ambient-rex-pass-chase     at the closest approach, the chase camera
+//   ambient-rex-pass-chase     450 m before the closest approach, the chase camera (the herd ~35 deg off the nose)
 //   ambient-rex-tri-standoff   Triceratops prey: the T. rex pulled up at the stand-off (roaring), the group facing it
 
 /** The away site: dry, level floodplain 1.2 km from the river, 1.9 km from the V1 camera (searched on the terrain). */
@@ -52,7 +52,7 @@ const BODY = (species, at, cam) => `
   const rex = A.spawn({ species: 'tyrannosaurus', entry: Math.max(0, entryOf('tyrannosaurus')), north: rn, east: re, ground: hf.sampleTerrain(rn, re, S).ground, heading: Math.atan2(HE - re, HN - rn), scale: 1, variant: 0, seed: 0x2b0a5e }, B.brainFor('tyrannosaurus'));
   if (prey < 0 || rex < 0) return { label: ' (spawn failed: herd ' + prey + ', rex ' + rex + ')' };
   // The pass: SAFARI14's recipe (resetTo + the autoflight hold) with the hold's 110 kt as the initial airspeed (the
-  // runway scenario's ic starts at rest), 5 km out, 300 m abeam (the herd on the left).
+  // runway scenario's ic starts at rest), 5 km out, 300 m abeam.
   const sn = HN - 5000 * Math.cos(hdg) - 300 * Math.sin(hdg), se = HE - 5000 * Math.sin(hdg) + 300 * Math.cos(hdg);
   const alt = g + 150;
   const base = sim.physics.scenario;
@@ -69,7 +69,7 @@ const BODY = (species, at, cam) => `
     at === 'charge'
       ? `await until(() => A.state[rex] === 2, 200000); const tc = sim.summary().time; await until(() => sim.summary().time >= tc + 3, 20000);`
       : at === 'pass'
-        ? `await until(() => { const s = sim.summary(); return (s.north - HN) * Math.cos(hdg) + (s.east - HE) * Math.sin(hdg) >= 0; }, 260000);`
+        ? `await until(() => { const s = sim.summary(); return (s.north - HN) * Math.cos(hdg) + (s.east - HE) * Math.sin(hdg) >= ${cam === 'chase' ? -450 : 0}; }, 260000);`
         : `await until(() => A.state[rex] === 3, 260000); await sleep(600);`
   }
   clearInterval(iv);
@@ -82,9 +82,12 @@ const BODY = (species, at, cam) => `
     cam === 'fixed'
       ? `const px = -Math.sin(hdg), pe = Math.cos(hdg);
   if (${at === 'pass'}) {
-    // Beyond the herd on the far side from the track, low: the herd (and the T. rex) with the aircraft above.
-    const cn = H_.cN[prey], ce = H_.cE[prey];
-    sim.setFixedCamera([cn - 230 * px - 60 * Math.cos(hdg), ce - 230 * pe - 60 * Math.sin(hdg), g + 28], [cn + 160 * px, ce + 160 * pe, g + 55]);
+    // On the T. rex's side of the herd, behind it and up: the T. rex, the stampede beyond it and the aircraft
+    // passing over the far side (the track is 300 m beyond the herd, the aircraft ~150 m up).
+    const cn = H_.cN[prey], ce = H_.cE[prey], tn = A.n[rex], te = A.e[rex];
+    const dn = cn - tn, de = ce - te, d = Math.hypot(dn, de) || 1;
+    const ac = sim.summary();
+    sim.setFixedCamera([tn - 140 * dn / d - 40 * de / d, te - 140 * de / d + 40 * dn / d, A.h[rex] + 55], [(cn + ac.north) / 2, (ce + ac.east) / 2, g + 40]);
   } else {
     // Above and behind the T. rex, looking past it at the herd (tyrannosaurus.mjs's trex-charge framing).
     const dn = H_.cN[prey] - A.n[rex], de = H_.cE[prey] - A.e[rex], d = Math.hypot(dn, de) || 1;
@@ -103,7 +106,7 @@ export default function shots(h) {
     { name: 'ambient-rex-charge-fixed', label: 'Ambient T. rex at V1: charge + 3 s (fixed camera)', page: PAGE(h), evalJs: h.timed(BODY('edmontosaurus', 'charge', 'fixed')), wait: 0, timeout: T },
     { name: 'ambient-rex-charge-chase', label: 'Ambient T. rex at V1: charge + 3 s (chase)', page: PAGE(h), evalJs: h.timed(BODY('edmontosaurus', 'charge', 'chase')), wait: 0, timeout: T },
     { name: 'ambient-rex-pass-fixed', label: 'Ambient T. rex at V1: closest approach (fixed camera)', page: PAGE(h), evalJs: h.timed(BODY('edmontosaurus', 'pass', 'fixed')), wait: 0, timeout: T },
-    { name: 'ambient-rex-pass-chase', label: 'Ambient T. rex at V1: closest approach (chase)', page: PAGE(h), evalJs: h.timed(BODY('edmontosaurus', 'pass', 'chase')), wait: 0, timeout: T },
+    { name: 'ambient-rex-pass-chase', label: 'Ambient T. rex at V1: 450 m before closest approach (chase)', page: PAGE(h), evalJs: h.timed(BODY('edmontosaurus', 'pass', 'chase')), wait: 0, timeout: T },
     { name: 'ambient-rex-tri-standoff', label: 'Ambient T. rex at V1: Triceratops stand-off, the roar (fixed camera)', page: PAGE(h), evalJs: h.timed(BODY('triceratops', 'standoff', 'fixed')), wait: 0, timeout: T },
   ];
 }
