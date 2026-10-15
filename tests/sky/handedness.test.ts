@@ -1,7 +1,7 @@
 // Handedness proofs of the real sky: an equirectangular map or a catalogue seen from inside the sphere is easily
 // mirrored. Catalogue stars are placed exactly as the Points layer places them (world = equatorialToWorld * e) and
-// projected into a camera at the airfield; the Milky Way map's lookup (milkyWayUv, the TS mirror of the shader) is
-// checked against where the map itself is brightest.
+// projected into a camera at the airfield; the shipped Milky Way map is decoded and sampled through the shader's own
+// lookup (see the block above its describe).
 
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
@@ -9,6 +9,7 @@ import { AIRPORT } from '../../src/core/world';
 import { Celestial } from '../../src/render/sky/celestial';
 import { EQ_TO_GAL, MILKY_WAY_GLSL, MILKY_WAY_MAP, milkyWayUv } from '../../src/render/sky/glsl/milkyWay';
 import { decodeStarCatalog, equatorialVector, starIndexByHR } from '../../src/render/sky/starCatalog';
+import { configureMilkyWayTexture } from '../../src/render/sky/StarField';
 
 interface Fs {
   readFileSync(path: URL): Uint8Array;
@@ -109,37 +110,205 @@ describe('catalogue handedness at the airfield (46.5 N), 2016-12-29 23:30', () =
   });
 });
 
-describe('Milky Way map handedness', () => {
-  /** J2000 unit vector of the direction whose map lookup is (u, v): the inverse of milkyWayUv. */
-  const fromUv = (u: number, v: number): THREE.Vector3 => {
-    const ra = 2 * Math.PI * (0.5 - u);
-    const dec = Math.PI * (v - 0.5);
-    return new THREE.Vector3(Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec));
-  };
-  const sgrA = { ra: 266.417 * DEG, dec: -29.008 * DEG };
-  const sgrDir = new THREE.Vector3(...(equatorialVector(sgrA.ra, sgrA.dec) as [number, number, number]));
-  // The map's own brightest region (2 deg smoothing), as the build script found it in image rows/columns. flipY:
-  // texture v = 1 - row from the top.
-  const peak = { u: MILKY_WAY_MAP.peakColumn, v: 1 - MILKY_WAY_MAP.peakRowFromTop };
+// The Milky Way map, proved on the shipped file through the shader's own lookup: the shipped webp is decoded
+// (ImageMagick; node has no webp decoder), sRGB-decoded to linear light as the GPU does (SRGBColorSpace), and
+// addressed exactly as the GPU addresses it: the GLSL milkyWayUv() body (evaluated from MILKY_WAY_GLSL itself) gives
+// (u, v); the loader's own texture configuration (configureMilkyWayTexture) gives flipY, hence the image row.
+// Directions come from equatorialVector, the catalogue's frame, so "the bulge sits on the catalogue's Sagittarius
+// stars" is checked in one frame from end to end. A mirrored or flipped file, a flipY change or a changed GLSL
+// lookup each moves the bulge tens of degrees (the controls below show by how much).
 
-  it('maps Sgr A* next to the map’s bright bulge', () => {
-    const [u, v] = milkyWayUv(sgrA.ra, sgrA.dec);
-    expect(fromUv(u, v).angleTo(sgrDir)).toBeLessThan(1e-6);
-    // The 2 deg-smoothed peak is the Large Sagittarius Star Cloud, ~4.8 deg from Sgr A* (whose own light is behind
-    // the Great Rift's dust), so 6 deg rather than 3: the mirrored or flipped lookups below miss by far more.
-    expect(fromUv(peak.u, peak.v).angleTo(sgrDir) / DEG).toBeLessThan(6);
-    // A mirrored map (RA increasing to the right) would put the core near RA 90 deg, a flipped one at Dec +29.
-    expect(fromUv(1 - peak.u, peak.v).angleTo(sgrDir) / DEG).toBeGreaterThan(90);
-    expect(fromUv(peak.u, 1 - peak.v).angleTo(sgrDir) / DEG).toBeGreaterThan(40);
+interface ChildProcess {
+  execFileSync(cmd: string, args: string[], opts: { maxBuffer: number; stdio?: unknown }): Uint8Array;
+}
+const cp = (await import(/* @vite-ignore */ 'node:child_process' as string)) as ChildProcess;
+const MAP_URL = new URL('../../public/sky/stars/milkyway_4k.webp', import.meta.url);
+
+/** The shipped map as linear-light luminance (map units: decoded value * lRef), top row first, or null without magick. */
+function decodeShippedMap(): { lum: Float32Array; w: number; h: number } | null {
+  const { width: w, height: h } = MILKY_WAY_MAP;
+  let rgb: Uint8Array;
+  try {
+    rgb = cp.execFileSync('magick', [MAP_URL.pathname, '-depth', '8', 'rgb:-'], { maxBuffer: w * h * 3 + 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return null;
+  }
+  expect(rgb.length, 'decoded size matches MILKY_WAY_MAP').toBe(w * h * 3);
+  const lin = new Float32Array(256);
+  for (let k = 0; k < 256; k++) lin[k] = new THREE.Color().setRGB(k / 255, 0, 0, THREE.SRGBColorSpace).r;
+  const lum = new Float32Array(w * h);
+  for (let p = 0; p < w * h; p++) {
+    lum[p] = (0.2126 * lin[rgb[3 * p]] + 0.7152 * lin[rgb[3 * p + 1]] + 0.0722 * lin[rgb[3 * p + 2]]) * MILKY_WAY_MAP.lRef;
+  }
+  return { lum, w, h };
+}
+const shipped = decodeShippedMap();
+if (!shipped) console.warn('handedness.test: ImageMagick (magick) not found; the shipped Milky Way map proof is SKIPPED.');
+
+type Vec = { x: number; y: number; z: number };
+/** The shader's milkyWayUv(), evaluated from the GLSL source (a single return expression, valid JS with these shims). */
+const glslUv = ((): ((e: Vec) => [number, number]) => {
+  const m = /vec2 milkyWayUv\(vec3 e\)\s*\{([^}]*)\}/.exec(MILKY_WAY_GLSL);
+  expect(m, 'milkyWayUv in MILKY_WAY_GLSL').not.toBeNull();
+  const body = m![1].trim();
+  expect(body.startsWith('return ')).toBe(true);
+  const fn = new Function('vec2', 'fract', 'atan', 'asin', 'clamp', 'e', body) as (...a: unknown[]) => [number, number];
+  const vec2 = (a: number, b: number): [number, number] => [a, b];
+  const fract = (x: number): number => x - Math.floor(x);
+  const atan = (y: number, x: number): number => Math.atan2(y, x);
+  const clamp = (x: number, a: number, b: number): number => Math.min(Math.max(x, a), b);
+  return (e) => fn(vec2, fract, atan, Math.asin, clamp, e);
+})();
+
+/** Image row from the top of texture coordinate v, from the loader's own texture configuration. */
+const rowFromTop = ((): ((v: number) => number) => {
+  const tex = new THREE.Texture();
+  configureMilkyWayTexture(tex);
+  return tex.flipY ? (v) => 1 - v : (v) => v;
+})();
+
+type Lookup = (e: Vec) => number;
+/** Map luminance in a direction, sampled as the GPU does (nearest texel; u wraps, v clamps); `mod` injects controls. */
+function lookup(map: { lum: Float32Array; w: number; h: number }, mod: (uv: [number, number]) => [number, number] = (uv) => uv): Lookup {
+  return (e) => {
+    const [u, v] = mod(glslUv(e));
+    const col = ((Math.floor(u * map.w) % map.w) + map.w) % map.w;
+    const row = Math.min(map.h - 1, Math.max(0, Math.floor(rowFromTop(v) * map.h)));
+    return map.lum[row * map.w + col];
+  };
+}
+
+/** Even sphere sampling (Fibonacci), J2000 unit vectors in the catalogue's frame. */
+const N_DIRS = 120000;
+const dirs = new Float64Array(N_DIRS * 3);
+for (let k = 0; k < N_DIRS; k++) {
+  const z = 1 - (2 * k + 1) / N_DIRS;
+  const ra = k * Math.PI * (3 - Math.sqrt(5));
+  equatorialVector(ra, Math.asin(z), dirs as unknown as number[], 3 * k);
+}
+const dirAt = (k: number): Vec => ({ x: dirs[3 * k], y: dirs[3 * k + 1], z: dirs[3 * k + 2] });
+
+/** Brightest direction of the map smoothed with a 2 deg (sigma) Gaussian, and its smoothed value (map units). */
+function smoothedPeak(look: Lookup): { dir: THREE.Vector3; value: number } {
+  const raw = new Float64Array(N_DIRS);
+  for (let k = 0; k < N_DIRS; k++) raw[k] = look(dirAt(k));
+  const order = Array.from({ length: N_DIRS }, (_, k) => k).sort((a, b) => raw[b] - raw[a]);
+  const sigma = 2 * DEG;
+  const cosCut = Math.cos(3 * sigma);
+  let best = { k: -1, value: -1 };
+  for (const c of order.slice(0, 300)) {
+    let sw = 0;
+    let s = 0;
+    for (let k = 0; k < N_DIRS; k++) {
+      const cosA = dirs[3 * c] * dirs[3 * k] + dirs[3 * c + 1] * dirs[3 * k + 1] + dirs[3 * c + 2] * dirs[3 * k + 2];
+      if (cosA < cosCut) continue;
+      const a = Math.acos(Math.min(1, cosA));
+      const w = Math.exp((-0.5 * a * a) / (sigma * sigma));
+      sw += w;
+      s += w * raw[k];
+    }
+    if (s / sw > best.value) best = { k: c, value: s / sw };
+  }
+  const d = dirAt(best.k);
+  return { dir: new THREE.Vector3(d.x, d.y, d.z), value: best.value };
+}
+
+/** Mean luminance at |b| < 3 deg over mean at |b| > 30 deg (b from EQ_TO_GAL), equal-area samples. */
+function bandContrast(look: Lookup): number {
+  let inBand = 0;
+  let nIn = 0;
+  let off = 0;
+  let nOff = 0;
+  for (let k = 0; k < N_DIRS; k++) {
+    const d = dirAt(k);
+    const sinB = EQ_TO_GAL[2][0] * d.x + EQ_TO_GAL[2][1] * d.y + EQ_TO_GAL[2][2] * d.z;
+    const b = Math.abs(Math.asin(sinB)) / DEG;
+    if (b < 3) {
+      inBand += look(d);
+      nIn++;
+    } else if (b > 30) {
+      off += look(d);
+      nOff++;
+    }
+  }
+  return inBand / nIn / (off / nOff);
+}
+
+const starVec = (hr: number): THREE.Vector3 => {
+  const i = starIndexByHR(cat, hr);
+  expect(i, `HR ${hr}`).toBeGreaterThanOrEqual(0);
+  return new THREE.Vector3(...(equatorialVector(cat.ra[i], cat.dec[i]) as [number, number, number]));
+};
+const sgrA = new THREE.Vector3(...(equatorialVector(266.417 * DEG, -29.008 * DEG) as [number, number, number]));
+
+describe('Milky Way map handedness (the shipped file, through the shader lookup)', () => {
+  it('the loader samples the map as the proof assumes: flipY, sRGB, RA wraps, Dec clamps', () => {
+    const tex = new THREE.Texture();
+    tex.flipY = false;
+    configureMilkyWayTexture(tex);
+    expect(tex.flipY).toBe(true);
+    expect(tex.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(tex.wrapS).toBe(THREE.RepeatWrapping);
+    expect(tex.wrapT).toBe(THREE.ClampToEdgeWrapping);
   });
 
-  it('the galactic plane of EQ_TO_GAL runs along the map’s band', () => {
-    const ngp = new THREE.Vector3(...EQ_TO_GAL[2]);
-    const band = fromUv(0.5 - MILKY_WAY_MAP.bandPoleRaDeg / 360, 0.5 + MILKY_WAY_MAP.bandPoleDecDeg / 180);
-    expect(band.angleTo(ngp) / DEG).toBeLessThan(3);
-    expect(MILKY_WAY_MAP.bandContrast).toBeGreaterThan(5);
-    // The galactic centre direction is EQ_TO_GAL's first row.
-    expect(new THREE.Vector3(...EQ_TO_GAL[0]).angleTo(sgrDir) / DEG).toBeLessThan(0.1);
+  it('the GLSL lookup agrees with the TS mirror (milkyWayUv) all over the sphere', () => {
+    for (let k = 0; k < N_DIRS; k += 97) {
+      const d = dirAt(k);
+      const [u, v] = glslUv(d);
+      const [tu, tv] = milkyWayUv(Math.atan2(d.y, d.x), Math.asin(d.z));
+      const du = Math.abs(u - tu);
+      expect(Math.min(du, 1 - du)).toBeLessThan(1e-6);
+      expect(v).toBeCloseTo(tv, 6);
+    }
+    // RA increases to the left (u decreasing), Dec up (v increasing).
+    const a = glslUv({ x: 1, y: 0, z: 0 });
+    const b = glslUv({ x: Math.cos(0.1), y: Math.sin(0.1), z: 0 });
+    expect(b[0]).toBeLessThan(a[0]);
+    expect(glslUv({ x: 0.8, y: 0, z: 0.6 })[1]).toBeGreaterThan(0.5);
+  });
+
+  it.skipIf(!shipped)('the bulge sits on the catalogue’s Sagittarius stars; mirrored or flipped lookups miss it', () => {
+    const map = shipped!;
+    const peak = smoothedPeak(lookup(map));
+    // The 2 deg-smoothed peak is the Large Sagittarius Star Cloud, ~4.8 deg from Sgr A* (whose own light is behind
+    // the Great Rift's dust), just north of the Teapot's spout (Alnasl, gamma2 Sgr, HR 6746).
+    expect(peak.dir.angleTo(sgrA) / DEG).toBeLessThan(6);
+    expect(peak.dir.angleTo(starVec(6746)) / DEG).toBeLessThan(8);
+    // Closer to the Teapot (Alnasl, Kaus Media/Australis/Borealis, Nunki, Ascella) than to any other bright star's
+    // constellation: the Teapot's centroid within 15 deg.
+    const teapot = [6746, 6859, 6879, 6913, 7121, 7194].reduce((s, hr) => s.add(starVec(hr)), new THREE.Vector3()).normalize();
+    expect(peak.dir.angleTo(teapot) / DEG).toBeLessThan(15);
+    // The recorded constants describe this file (q75 lossy and a different sampler: 10 %).
+    expect(peak.value / MILKY_WAY_MAP.peak2deg).toBeGreaterThan(0.9);
+    expect(peak.value / MILKY_WAY_MAP.peak2deg).toBeLessThan(1.1);
+    // Controls: the same statistic through a mirrored (RA increasing to the right) or a flipped (flipY wrong) lookup.
+    const mirrored = smoothedPeak(lookup(map, ([u, v]) => [1 - u, v]));
+    const flipped = smoothedPeak(lookup(map, ([u, v]) => [u, 1 - v]));
+    expect(mirrored.dir.angleTo(sgrA) / DEG).toBeGreaterThan(90);
+    expect(flipped.dir.angleTo(sgrA) / DEG).toBeGreaterThan(40);
+  });
+
+  it.skipIf(!shipped)('the band runs along EQ_TO_GAL’s galactic plane; a mirrored lookup loses it', () => {
+    const map = shipped!;
+    const c = bandContrast(lookup(map));
+    expect(c).toBeGreaterThan(5);
+    expect(c / MILKY_WAY_MAP.bandContrast).toBeGreaterThan(0.8);
+    expect(c / MILKY_WAY_MAP.bandContrast).toBeLessThan(1.25);
+    // The mirrored band crosses the true plane twice (~3.7), a third of the real contrast.
+    expect(bandContrast(lookup(map, ([u, v]) => [1 - u, v]))).toBeLessThan(c / 2);
+    // Deneb sits in the Cygnus band (~3x the sky's mean on the shipped map), Regulus well off it.
+    const look = lookup(map);
+    const at = (hr: number): number => {
+      const s = starVec(hr);
+      return look({ x: s.x, y: s.y, z: s.z });
+    };
+    expect(at(7924) / MILKY_WAY_MAP.mean).toBeGreaterThan(2);
+    expect(at(3982) / MILKY_WAY_MAP.mean).toBeLessThan(1);
+  });
+
+  it('the galactic centre direction is EQ_TO_GAL’s first row', () => {
+    expect(new THREE.Vector3(...EQ_TO_GAL[0]).angleTo(sgrA) / DEG).toBeLessThan(0.1);
   });
 
   it('the shader holds the same rotation as the TS matrix (column by column)', () => {

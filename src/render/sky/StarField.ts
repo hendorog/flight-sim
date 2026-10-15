@@ -35,6 +35,8 @@ const POINT_SIZE = 5;
 const STAR_SIGMA_PX = 0.6;
 /** Points whose brightest pixel would display below this (display-linear, 0.18 = middle grey) are skipped. */
 const NEGLIGIBLE_DISPLAY = 1 / 2048;
+/** Ceiling of a star pixel's radiance: the dome's (skyDome.ts) and the post chain's, below half-float's 65504. */
+export const STAR_RADIANCE_CLAMP = 60000;
 
 const STAR_VERT = /* glsl */ `
 ${ATMOSPHERE_GLSL}
@@ -81,7 +83,8 @@ void main() {
 }
 `;
 
-const STAR_FRAG = /* glsl */ `
+/** Fragment shader of the catalogue layer (exported for tests). */
+export const STAR_FRAG = /* glsl */ `
 varying vec3 vRadiance;
 
 // erf, Abramowitz & Stegun 7.1.26 (|error| < 1.5e-7).
@@ -99,12 +102,14 @@ float pixelShare(float c) {
 void main() {
   // gl_PointCoord is measured from the star's exact (sub-pixel) position to this pixel's centre.
   vec2 o = (gl_PointCoord - 0.5) * ${POINT_SIZE.toFixed(1)};
-  gl_FragColor = vec4(vRadiance * (pixelShare(o.x) * pixelShare(o.y)), 1.0);
+  // Clamped like the dome (skyDome.ts): radiance grows as 1 / uPixelAngle^2, so at a very narrow FOV a bright star's
+  // central pixel would pass half-float's 65504 and write Inf into the HDR target.
+  gl_FragColor = vec4(min(vRadiance * (pixelShare(o.x) * pixelShare(o.y)), vec3(${STAR_RADIANCE_CLAMP.toFixed(1)})), 1.0);
 }
 `;
 
 /** Share of a centred star's flux in its central pixel (for the negligible-star cut). */
-function peakWeight(): number {
+export function peakWeight(): number {
   const erf = (x: number): number => {
     const t = 1 / (1 + 0.3275911 * Math.abs(x));
     const y = 1 - t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-x * x);
@@ -216,14 +221,7 @@ export class StarField {
           tex.dispose();
           return;
         }
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.ClampToEdgeWrapping;
-        tex.minFilter = THREE.LinearMipmapLinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.generateMipmaps = true;
-        tex.anisotropy = 4;
-        tex.needsUpdate = true;
+        configureMilkyWayTexture(tex);
         this.milkyWayMap = tex;
         const placeholder = this.uniforms.tMilkyWay.value as THREE.Texture;
         this.uniforms.tMilkyWay.value = tex;
@@ -254,6 +252,23 @@ export class StarField {
     this.object.add(points);
     this.uniforms.uCatalogReady.value = 1;
   }
+}
+
+/**
+ * Sampling state of the Milky Way map (exported so the handedness test reads the same flipY the GPU uses): flipY,
+ * so texture v = 1 is the image's top row (Dec +90); sRGB-encoded, decoded by the GPU so mipmaps filter in linear
+ * light; RA wraps, Dec clamps.
+ */
+export function configureMilkyWayTexture(tex: THREE.Texture): void {
+  tex.flipY = true;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
 }
 
 function placeholderTexture(): THREE.DataTexture {

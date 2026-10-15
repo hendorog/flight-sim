@@ -4,7 +4,7 @@ import type { SimContext } from '../../src/core/context';
 import { Celestial } from '../../src/render/sky/celestial';
 import { STAR_E0 } from '../../src/render/sky/glsl/stars';
 import { decodeStarCatalog, starIndexByHR } from '../../src/render/sky/starCatalog';
-import { StarField, starAttributes } from '../../src/render/sky/StarField';
+import { STAR_FRAG, STAR_RADIANCE_CLAMP, StarField, peakWeight, starAttributes } from '../../src/render/sky/StarField';
 
 interface Fs {
   readFileSync(path: URL): Uint8Array;
@@ -60,5 +60,20 @@ describe('StarField', () => {
       expect(sum).toBeGreaterThan(0.999);
       expect(sum).toBeLessThan(1.0001);
     }
+  });
+
+  it('clamps a star pixel below half-float overflow, which a narrow FOV would otherwise reach', () => {
+    // Sirius's central pixel, unit gains, no extinction, a 900 px tall view: radiance = E w / pixelAngle^2.
+    const e = STAR_E0 * Math.pow(10, 0.4 * 1.46);
+    const centre = (fovDeg: number): number => {
+      const pixelAngle = (2 * Math.tan((fovDeg * Math.PI) / 360)) / 900;
+      return (e * peakWeight()) / (pixelAngle * pixelAngle);
+    };
+    expect(centre(0.1)).toBeGreaterThan(65504);
+    expect(centre(60)).toBeLessThan(STAR_RADIANCE_CLAMP / 100);
+    expect(STAR_RADIANCE_CLAMP).toBeLessThan(65504);
+    const out = /gl_FragColor\s*=\s*vec4\(min\((.*)\),\s*1\.0\);/.exec(STAR_FRAG);
+    expect(out, 'the fragment output is min(..., vec3(clamp))').not.toBeNull();
+    expect(out![1]).toContain(`vec3(${STAR_RADIANCE_CLAMP.toFixed(1)})`);
   });
 });
