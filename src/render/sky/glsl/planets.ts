@@ -30,23 +30,23 @@ float planetKernel(float x) {
 }
 
 vec3 planets(vec3 d, float airmass) {
-  vec3 fwd = cross(uPlanetUp, uPlanetRight);
-  float cd = dot(d, fwd);
-  if (cd <= 0.05) return vec3(0.0);
   float pa = uPixelAngle;
-  // Screen position of this pixel, in tangent units.
-  vec2 sd = vec2(dot(d, uPlanetRight), dot(d, uPlanetUp)) / cd;
-  // Pixels are at most pa across (on the axis): 3 pa covers the kernel's 2 px radius everywhere.
+  // Pixels are at most pa across (on the axis): 3 pa covers the kernel's 2 px radius everywhere. Almost every sky
+  // pixel stops at these six dot products.
   float cosMax = 1.0 - 4.5 * pa * pa;
   vec3 sum = vec3(0.0);
   for (int i = 0; i < 6; i++) {
     vec4 p = uPlanets[i];
     if (p.w <= 0.0 || dot(d, p.xyz) < cosMax) continue;
+    vec3 fwd = cross(uPlanetUp, uPlanetRight);
+    float cd = dot(d, fwd);
     float cp = dot(p.xyz, fwd);
-    vec2 o = (vec2(dot(p.xyz, uPlanetRight), dot(p.xyz, uPlanetUp)) / cp - sd) / pa;
-    sum += p.w * (planetKernel(o.x) * planetKernel(o.y)) * uPlanetColours[i];
+    if (cd <= 0.05 || cp <= 0.05) continue;
+    // Screen offset of the planet from this pixel, px (perspective projection through the camera's axes).
+    vec2 o = (vec2(dot(p.xyz, uPlanetRight), dot(p.xyz, uPlanetUp)) / cp - vec2(dot(d, uPlanetRight), dot(d, uPlanetUp)) / cd) / pa;
+    // A pixel at angle acos(cd) off the axis subtends pa^2 cd^3 sr.
+    sum += p.w * (planetKernel(o.x) * planetKernel(o.y)) / (pa * pa * cd * cd * cd) * uPlanetColours[i];
   }
-  // A pixel at angle acos(cd) off the axis subtends pa^2 cd^3 sr.
-  return sum / (pa * pa * cd * cd * cd);
+  return sum;
 }
 `;
