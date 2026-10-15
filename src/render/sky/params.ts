@@ -26,6 +26,18 @@ export const MOON_FULL_ILLUMINANCE_TOA = 0.26 * SCENE_UNITS_PER_LUX;
 export const SUN_ANGULAR_RADIUS = 0.004654;
 export const MOON_ANGULAR_RADIUS = 0.00452;
 
+/**
+ * The Moon's presentation size setting (ctx.moonScale; src/sim/skyPrefs.ts stores it, ./moon.ts applies it): a
+ * multiple of MOON_ANGULAR_RADIUS above 35 deg altitude, with extra growth toward the horizon. Owner: "about 3x",
+ * then "more cinematic", a menu range from real size up; the default 4 and the range 1..5 are agent choices.
+ */
+export const DEFAULT_MOON_SCALE = 4;
+export const MOON_SCALE_MIN = 1;
+export const MOON_SCALE_MAX = 5;
+export const MOON_SCALE_STEP = 0.25;
+/** Extent of the Moon's cinematic night aureole, disc radii (agent choice; glsl/moon.ts). */
+export const MOON_AUREOLE_RADII = 4;
+
 export const EARTH_RADIUS_KM = 6360;
 export const ATMOSPHERE_TOP_KM = 6460;
 
