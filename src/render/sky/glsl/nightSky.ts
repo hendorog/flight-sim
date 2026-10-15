@@ -30,13 +30,16 @@ vec3 airglow(vec3 d) {
   return AIRGLOW_LUMINANCE * min(vanRhijn, 4.0) * vec3(0.85, 1.0, 1.0);
 }
 
-// d: view direction (world); moonCover: share of the pixel covered by the Moon's disc.
-vec3 nightSky(vec3 d, float moonCover) {
+// d: view direction (world); moonCover: share of the pixel covered by the Moon's disc. point: the planets' share of
+// the result (for the tone map's point-source flag, skyDome.ts).
+vec3 nightSky(vec3 d, float moonCover, out vec3 point) {
+  point = vec3(0.0);
   if (uNight <= 0.0) return vec3(0.0);
   vec3 e = uWorldToEquatorial * d;
   float airmass = 1.0 / max(d.y, 0.05);
   // The Moon hides what lies behind it (stars, planets, the Milky Way); the airglow (~90 km up) is in front of it.
-  vec3 behind = uStarGain * stars(e, airmass) + uStarGain * planets(d, airmass, uStarGain) + uDiffuseGain * milkyWay(e);
-  return uNight * ((1.0 - moonCover) * behind + uAirglowGain * airglow(d));
+  point = uNight * (1.0 - moonCover) * uStarGain * planets(d, airmass, uStarGain);
+  vec3 behind = uStarGain * stars(e, airmass) + uDiffuseGain * milkyWay(e);
+  return point + uNight * ((1.0 - moonCover) * behind + uAirglowGain * airglow(d));
 }
 `;

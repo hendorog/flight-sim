@@ -62,6 +62,8 @@ varying vec3 vDir;
 void main() {
   vec3 d = normalize(vDir);
   vec4 sky = skyViewRadiance(d);
+  // Alpha: 1, or minus the planets' share of the pixel's light (the tone map's point-source flag, post/ToneMap.ts).
+  float outAlpha = 1.0;
 #ifdef ENV_MAP
   // The environment (ambient light and reflections) includes the cloud layer.
   vec3 inscatter = sky.rgb;
@@ -81,12 +83,16 @@ void main() {
   }
   else {
     float moonCover;
+    vec3 point;
     vec3 space = moonDisc(d, moonCover) + sunDisc(d);
-    space += nightSky(d, moonCover);
-    radiance += transmittanceToTop(uCamR, d.y) * space;
+    space += nightSky(d, moonCover, point);
+    vec3 t = transmittanceToTop(uCamR, d.y);
+    radiance += t * space;
+    float pl = dot(t * point, vec3(0.2126, 0.7152, 0.0722));
+    if (pl > 0.0) outAlpha = -min(pl / max(dot(radiance, vec3(0.2126, 0.7152, 0.0722)), 1e-30), 1.0);
   }
 #endif
   // Half-float headroom: the sun disc (~6e6) is clamped; bloom still sees a very bright source.
-  gl_FragColor = vec4(min(radiance, vec3(60000.0)), 1.0);
+  gl_FragColor = vec4(min(radiance, vec3(60000.0)), outAlpha);
 }
 `;

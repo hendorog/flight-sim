@@ -208,7 +208,8 @@ void main() {
       color *= mix(1.0, s, surface);
     }
   }
-  outColor = vec4(color * cloud.a + cloud.rgb, scene.a);
+  // A planet's point-source flag (alpha < 0, post/ToneMap.ts) fades with the cloud's transmittance.
+  outColor = vec4(color * cloud.a + cloud.rgb, scene.a < 0.0 ? scene.a * cloud.a : scene.a);
 }
 `;
 

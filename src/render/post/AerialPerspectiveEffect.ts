@@ -137,7 +137,8 @@ varying vec2 vUv;
 vec3 spectralTransmittance(float tg) { return pow(vec3(max(tg, 1e-6)), uSpectralRatio); }
 
 void main() {
-  vec3 c = texture2D(tInput, vUv).rgb;
+  vec4 input4 = texture2D(tInput, vUv);
+  vec3 c = input4.rgb;
   c = any(isnan(c)) ? vec3(0.0) : min(c, vec3(60000.0));
   float d = texture2D(tDepth, vUv).r;
   vec3 view = vec3((vUv * 2.0 - 1.0) * uTanHalf, -1.0);
@@ -173,7 +174,8 @@ void main() {
       c = mix(c, uGroundRadiance * spectralTransmittance(ap.a) + ap.rgb, below);
     }
   }
-  gl_FragColor = vec4(c, 1.0);
+  // Keep the scene's alpha (the tone map's point-source flag, post/ToneMap.ts).
+  gl_FragColor = vec4(c, input4.a);
 }
 `;
 

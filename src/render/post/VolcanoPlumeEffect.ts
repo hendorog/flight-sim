@@ -345,7 +345,7 @@ void main() {
     wsum += bw * dw;
   }
   vec4 p = acc / max(wsum, 1e-6);
-  outColor = vec4(scene.rgb * p.a + p.rgb, scene.a);
+  outColor = vec4(scene.rgb * p.a + p.rgb, scene.a < 0.0 ? scene.a * p.a : scene.a);
 }
 `;
 

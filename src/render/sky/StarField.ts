@@ -47,6 +47,9 @@ const NEGLIGIBLE_DISPLAY = 1 / 2048;
  * display white at every exposure where stars draw, so it changes nothing visible.
  */
 export const STAR_RADIANCE_CLAMP = 20000;
+/** Peak display level (display-linear, 0.18 = middle grey) below which a star's colour fades to neutral, and where it is gone. */
+const FAINT_COLOUR_HI = 0.6;
+const FAINT_COLOUR_LO = 0.1;
 
 /** Vertex shader of the catalogue layer (exported for tests). */
 export const STAR_VERT = /* glsl */ `
@@ -101,6 +104,13 @@ void main() {
   vec3 steady = aFlux * transmittanceToTop(uCamR, dir.y) * (uStarGain * uNight / (uPixelAngle * uPixelAngle * cd * cd * cd));
   vRadiance = steady * twinkle;
   float peakDisplay = uExposureValid > 0.5 ? PEAK_WEIGHT * dot(vRadiance, vec3(0.2126, 0.7152, 0.0722)) * sceneExposure() : 0.0;
+  // A faint star stimulates only the rods, which see no colour: below FAINT_COLOUR_HI of display white its colour
+  // (and the atmosphere's reddening of it near the horizon) fades to neutral at the same luminance, gone by
+  // FAINT_COLOUR_LO (agent choice, night-sky round 3: the low sky read as a field of salmon dots).
+  if (uExposureValid > 0.5) {
+    float colourful = smoothstep(${FAINT_COLOUR_LO.toFixed(4)}, ${FAINT_COLOUR_HI.toFixed(4)}, peakDisplay / twinkle);
+    vRadiance = mix(vec3(dot(vRadiance, vec3(0.2126, 0.7152, 0.0722))), vRadiance, colourful);
+  }
   if (uExposureValid > 0.5 && peakDisplay < ${NEGLIGIBLE_DISPLAY.toExponential(4)}) {
     cull();
     return;

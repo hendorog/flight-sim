@@ -59,6 +59,17 @@ const LOCAL_MAX_LIFT_DAY = 2.0;
 const LOCAL_MAX_LIFT_NIGHT = 0.7;
 const LOCAL_MAX_CUT = 0.7;
 /**
+ * The cut inside the cabin while the lamps hold their own share of the exposure (night, lampShareEV > 0): EV per EV
+ * above white and the most, as LOCAL_CUT / LOCAL_MAX_CUT. Agent choice, night-sky round 3: in the dark-adapted
+ * cabin the panel flood lights the C172's compass deviation card, 0.34 m from the lamp, ~4.5 EV over the adaptation,
+ * and it clipped to a flat white rectangle in the pilot's eyeline; the eye's local adaptation holds it back (card
+ * p95 255 -> 198 of 255, its text legible, and the gauges keep their coloured arcs). Only the cabin's pixels (the
+ * tone map's outside mask) take it: the view out, the Moon and every frame without the lamps' share (all of the
+ * day) keep LOCAL_CUT / LOCAL_MAX_CUT.
+ */
+const CABIN_CUT = 1.0;
+const CABIN_MAX_CUT = 3.0;
+/**
  * Degree of chromatic adaptation to the scene illuminant (0 = none, as a camera on fixed daylight white
  * balance; 1 = full). The eye and a camera on auto white balance adapt partially: a sunset stays warm
  * and twilight stays blue, but the purple cast of a twilight-lit scene is mostly neutralised.
@@ -188,6 +199,7 @@ export class PostPipeline {
       uLocal: { value: new THREE.Vector4() },
       tDepth: { value: null as THREE.Texture | null },
       uOutsideGain: { value: 0 },
+      uCabinCut: { value: new THREE.Vector2() },
       uOutsideNear: { value: OUTSIDE_NEAR },
     },
   });
@@ -284,6 +296,7 @@ export class PostPipeline {
     u.tLocal.value = this.local.texture;
     u.tDepth.value = this.hdr.depthTexture;
     u.uOutsideGain.value = lampShareEV > 0 ? 2 ** lampShareEV : 0;
+    (u.uCabinCut.value as THREE.Vector2).set(this.localExposure ? CABIN_CUT : 0, CABIN_MAX_CUT);
     u.uLocal.value.set(
       this.localExposure ? LOCAL_LIFT : 0,
       THREE.MathUtils.lerp(LOCAL_MAX_LIFT_NIGHT, LOCAL_MAX_LIFT_DAY, ctx.sky.dayFactor),

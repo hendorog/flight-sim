@@ -14,7 +14,7 @@
 // A planet over display white spreads (glsl/pointSpread.ts): the kernel is widened by s, weight k(o / s) / s^2, which
 // still integrates to 1 (the pixel sums to within ~1 % for s > 1), so its flux is unchanged.
 
-import { POINT_COLOUR_GAIN_MAX, POINT_SPREAD_GLSL, POINT_SPREAD_MAX } from './pointSpread';
+import { POINT_SPREAD_GLSL, POINT_SPREAD_MAX } from './pointSpread';
 import { SCOTOPIC_GLSL } from '../../post/ToneMap';
 
 export const PLANETS_GLSL = /* glsl */ `
@@ -59,9 +59,10 @@ vec3 planets(vec3 d, float airmass, float gain) {
     float radiance = p.w / (pa * pa * cd * cd * cd);
     float s = uExposureValid > 0.5 ? pointSpread(0.4444 * radiance * dot(uPlanetColours[i], vec3(0.2126, 0.7152, 0.0722)) * gain * uNight * sceneExposure(), ${POINT_SPREAD_MAX.toFixed(4)}) : 1.0;
     float w = radiance * (planetKernel(o.x / s) * planetKernel(o.y / s)) / (s * s);
-    // The planet's colour survives the tone map's rod shift, as the catalogue stars' (StarField.ts).
+    // The planet's colour survives the tone map's rod shift (post/ToneMap.ts SCOTOPIC_GLSL's header).
     vec3 colour = uPlanetColours[i];
-    sum += w * scotopicCompensate(colour, w * dot(colour, vec3(0.2126, 0.7152, 0.0722)) * gain * uNight, ${POINT_COLOUR_GAIN_MAX.toFixed(2)});
+    // Flagged in the HDR alpha (skyDome.ts), so the tone map applies only POINT_ROD_KEEP of its shift.
+    sum += w * scotopicCompensateShare(colour, POINT_ROD_KEEP * scotopicShare(w * dot(colour, vec3(0.2126, 0.7152, 0.0722)) * gain * uNight));
   }
   return sum;
 }

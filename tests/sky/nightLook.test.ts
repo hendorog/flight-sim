@@ -8,16 +8,16 @@ import type { Atmosphere } from '../../src/render/sky/Atmosphere';
 const gainsAt = (cdm2: number) => nightGains(nightDarkness(cdm2));
 
 describe('night presentation gains', () => {
-  it('calibrate point sources below photometric at every light level (a magnitude ladder, not one white dot)', () => {
+  it('calibrate point sources below photometric on a dark night (a magnitude ladder, not one white dot)', () => {
     expect(STAR_GAIN).toBeGreaterThan(0);
     expect(STAR_GAIN).toBeLessThan(1);
   });
 
-  it('keep the diffuse light photometric in daylight, twilight and under a full Moon', () => {
+  it('keep the stars and the diffuse light photometric in daylight, twilight and under a full Moon', () => {
     // Noon grey card ~1e3 cd/m^2; civil twilight ~1; winter full Moon at 60 deg ~1.2e-2; June full Moon at ~16 deg ~2.6e-3.
     for (const level of [1e3, 1, 1.2e-2, 2.6e-3, BRIGHT_LEVEL]) {
       const g = gainsAt(level);
-      expect(g.star).toBe(STAR_GAIN);
+      expect(g.star).toBe(1);
       expect(g.diffuse).toBe(1);
       expect(g.airglow).toBe(1);
     }
@@ -37,7 +37,7 @@ describe('night presentation gains', () => {
     let prev = gainsAt(1e-6);
     for (let lg = -6; lg <= 3; lg += 0.05) {
       const g = gainsAt(10 ** lg);
-      expect(g.star).toBeLessThanOrEqual(prev.star);
+      expect(g.star).toBeGreaterThanOrEqual(prev.star);
       expect(g.diffuse).toBeLessThanOrEqual(prev.diffuse);
       expect(g.airglow).toBeGreaterThanOrEqual(prev.airglow);
       prev = g;
@@ -65,7 +65,7 @@ describe('night presentation gains', () => {
     // A full Moon 60 deg up: back to photometric.
     sky.moonDir.set(0, 0.87, 0.5);
     look.update(ctx, atmosphere);
-    expect(uniforms.uStarGain.value).toBe(STAR_GAIN);
+    expect(uniforms.uStarGain.value).toBe(1);
     expect(uniforms.uDiffuseGain.value).toBe(1);
     expect(uniforms.uAirglowGain.value).toBe(1);
   });

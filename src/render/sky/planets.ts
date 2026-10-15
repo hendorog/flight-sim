@@ -58,14 +58,17 @@ export const PLANET_IDS: readonly PlanetId[] = ['mercury', 'venus', 'mars', 'jup
 /**
  * Display colours (linear sRGB, normalised to luminance 1 below): AGENT choice, the planets' colours as the eye sees
  * them at night (Venus pale cream, Mars orange, Jupiter warm white, Saturn pale gold, Mercury pinkish grey, Uranus
- * pale cyan), kept unsaturated like the stars.
+ * pale cyan), kept unsaturated like the stars. Since night-sky round 3 the tone map shows the planets' own colour
+ * (post/ToneMap.ts, the point-source flag) where the rod shift used to neutralise it: Mars deepened from
+ * (1, 0.72, 0.5) to read orange on the display's shoulder, Saturn paled from (1, 0.92, 0.74), as the atmosphere's
+ * reddening at its usual altitudes already warms it.
  */
 const COLOURS: Record<PlanetId, readonly [number, number, number]> = {
   mercury: [1.0, 0.93, 0.86],
   venus: [1.0, 0.97, 0.88],
-  mars: [1.0, 0.72, 0.5],
+  mars: [1.0, 0.62, 0.4],
   jupiter: [1.0, 0.95, 0.86],
-  saturn: [1.0, 0.92, 0.74],
+  saturn: [1.0, 0.97, 0.9],
   uranus: [0.82, 0.96, 1.0],
 };
 

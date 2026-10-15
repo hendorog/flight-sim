@@ -101,7 +101,9 @@ vec3 history(vec2 uv) {
 
 void main() {
   vec3 cur = load(vUv);
-  if (uAlpha >= 1.0) { gl_FragColor = vec4(cur, 1.0); return; }
+  // The alpha passes through from this frame (the tone map's point-source flag, ToneMap.ts).
+  float alpha = texture2D(tCurrent, vUv).a;
+  if (uAlpha >= 1.0) { gl_FragColor = vec4(cur, alpha); return; }
 
   // Neighbourhood statistics (3x3) in tone-weighted YCoCg.
   vec3 m1 = vec3(0.0), m2 = vec3(0.0);
@@ -154,7 +156,7 @@ void main() {
   }
   vec2 prevUv = prevView.z < 0.0 ? (prevView.xy / -prevView.z) / uPrevTanHalf * 0.5 + 0.5 : vec2(-1.0);
   if (any(lessThan(prevUv, vec2(0.0))) || any(greaterThan(prevUv, vec2(1.0)))) {
-    gl_FragColor = vec4(cur, 1.0);
+    gl_FragColor = vec4(cur, alpha);
     return;
   }
 
@@ -169,7 +171,7 @@ void main() {
   if (m > 1.0) h = 0.5 * (hi + lo) + (h - 0.5 * (hi + lo)) / m;
 
   vec3 y = mix(h, toYCoCg(cur), uAlpha);
-  gl_FragColor = vec4(fromYCoCg(y), 1.0);
+  gl_FragColor = vec4(fromYCoCg(y), alpha);
 }
 `;
 
