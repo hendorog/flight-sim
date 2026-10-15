@@ -69,6 +69,21 @@ describe('every type lights its panel at night', () => {
         // No flood: the console's own glow holds the adaptation.
         expect(lum(cabinLamps.floodColor.value)).toBe(0);
         expect(cockpitAdaptation.panelGlow).toBeGreaterThan(0);
+        // NAV interlock (R44): with NAV off the dial markings are dark, so only the displays' share of glow stays.
+        // Checked at the night dimmer and at full, where the markings carry most of the glow.
+        for (const level of [NIGHT_PANEL_LIGHT, 1]) {
+          ctx.controls.lights.panel = level;
+          ctx.controls.lights.nav = true;
+          visual.update(1 / 60, ctx);
+          const navOn = cockpitAdaptation.panelGlow;
+          ctx.controls.lights.nav = false;
+          visual.update(1 / 60, ctx);
+          const navOff = cockpitAdaptation.panelGlow;
+          if (PANELS[id].lightingRequiresNav) {
+            expect(navOff).toBeGreaterThan(0);
+            expect(navOff).toBeLessThan(level === 1 ? 0.2 * navOn : navOn);
+          } else expect(navOff).toBe(navOn);
+        }
       } else {
         const flood = cabinLamps.floodColor.value;
         expect(lum(flood)).toBeGreaterThan(0);

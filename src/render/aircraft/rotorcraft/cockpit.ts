@@ -201,7 +201,10 @@ export class RotorcraftCockpit {
     // No panel flood: the eye adapts to the console's own glow (cabinLight.cockpitAdaptation), its displays and
     // annunciators (full circuit) and its dimmed markings over their share of the face (agent estimates).
     cockpitAdaptation.floodExposure = 1;
-    cockpitAdaptation.panelGlow = nits * (GLOW_DISPLAYS + GLOW_MARKINGS * this.dimmer.value) * this.faceSolidAngle;
+    // The R44's dial lighting runs through the NAV switch (panel.ts lightingRequiresNav): with NAV off the markings
+    // are dark and only the displays and annunciators glow.
+    const markings = !this.panelDef?.lightingRequiresNav || c.lights.nav ? GLOW_MARKINGS * this.dimmer.value : 0;
+    cockpitAdaptation.panelGlow = nits * (GLOW_DISPLAYS + markings) * this.faceSolidAngle;
   }
 
   dispose(): void { this.panel.material.dispose(); this.materials.forEach(m => m.dispose()); this.textures.forEach(t => t.dispose()); this.compass?.dispose(); this.pullControls.forEach(c => c.dispose()); }
