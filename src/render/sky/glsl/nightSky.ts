@@ -3,9 +3,10 @@
 // presentation. Called by skyDome.ts once per sky pixel above the horizon; returns radiance at the top of the
 // atmosphere (the caller applies the transmittance).
 //
-// uStarGain / uDiffuseGain: presentation gains (1 = photometric) for point sources (stars, planets) and for
-// diffuse light (Milky Way, airglow), set by NightLook. The catalogue star layer (../StarField.ts) reads
-// uStarGain too.
+// uStarGain / uDiffuseGain / uAirglowGain: presentation gains (1 = photometric) for point sources (stars,
+// planets), for the Milky Way's diffuse light, and for the airglow background, set by NightLook (see its header
+// for why the airglow has its own gain: the dark-adapted look is a contrast change, agent choice). The catalogue
+// star layer (../StarField.ts) reads uStarGain too.
 
 import { SCENE_UNITS_PER_LUX } from '../params';
 
@@ -14,6 +15,7 @@ const f = (v: number): string => v.toExponential(6);
 export const NIGHT_SKY_GLSL = /* glsl */ `
 uniform float uStarGain;
 uniform float uDiffuseGain;
+uniform float uAirglowGain;
 
 /** Airglow ~1.2e-4 cd/m^2 at the zenith. */
 const float AIRGLOW_LUMINANCE = ${f(1.2e-4 * SCENE_UNITS_PER_LUX)};
@@ -32,7 +34,7 @@ vec3 nightSky(vec3 d, float moonCover) {
   float airmass = 1.0 / max(d.y, 0.05);
   // Summed in this order (stars, planets, Milky Way, airglow) so that with unit gains and no planets the sum is
   // bit-identical to the pre-split shader.
-  vec3 sky = uStarGain * stars(e, airmass) + uStarGain * planets(d, airmass) + uDiffuseGain * milkyWay(e) + uDiffuseGain * airglow(d);
+  vec3 sky = uStarGain * stars(e, airmass) + uStarGain * planets(d, airmass) + uDiffuseGain * milkyWay(e) + uAirglowGain * airglow(d);
   return (1.0 - moonCover) * uNight * sky;
 }
 `;
