@@ -1205,7 +1205,12 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   return mat;
 }
 
-/** Depth material for shadow casting with the same geomorph as the visible surface. */
+/**
+ * Depth material for shadow casting with the same geomorph as the visible surface. Skirts are not dropped
+ * here: they collapse onto their tile edge and cast nothing. Hanging, they were the only casters on ground
+ * that faces the light (three draws a front-sided material's back faces into the shadow map, and a skirt has
+ * both windings), and at low sun every tile edge showed on the ground as a thin dark line.
+ */
 export function createTerrainDepthMaterial(uniforms: TerrainUniforms): THREE.MeshDepthMaterial {
   const mat = new THREE.MeshDepthMaterial();
   mat.onBeforeCompile = (shader) => {
@@ -1214,7 +1219,7 @@ export function createTerrainDepthMaterial(uniforms: TerrainUniforms): THREE.Mes
       .replace('#include <common>', `#include <common>\n${VERTEX_HEAD}`)
       .replace(
         '#include <begin_vertex>',
-        `float tDrop;\nfloat tMorph = terrainMorph(position, tDrop);\nvec3 transformed = position;\ntransformed.y += aMorph * tMorph - tDrop;\ntransformed.y += canopyLift((modelMatrix * vec4(transformed, 1.0)).xyz, tMorph, tileLevel());`,
+        `float tDrop;\nfloat tMorph = terrainMorph(position, tDrop);\nvec3 transformed = position;\ntransformed.y += aMorph * tMorph;\ntransformed.y += canopyLift((modelMatrix * vec4(transformed, 1.0)).xyz, tMorph, tileLevel());`,
       );
     // Shadow maps are orthographic, where log depth is plain window depth: do not write gl_FragDepth
     // (it would disable early depth testing).
