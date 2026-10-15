@@ -54,7 +54,7 @@ describe('R22 simulation integration', () => {
       'takeoffPowerSeconds','powerLimitExceeded'] as const)
       expect(copy.state.rotorcraft![key]).toBe(snap.systems.rotorcraft![key]);
     expect(copy.controls.collective).toBe(sim.controls.collective);
-    copy.setAutoflight(true); expect(copy.autoflight.engaged).toBe(false);
+    copy.setAutoflight(true); expect(copy.autoflight.engaged).toBe(true);
     copy.step(0.1); expect(Number.isFinite(copy.state.rotorcraft!.rotorRpm)).toBe(true);
     const corrupt = structuredClone(snap); corrupt.systems.rotorcraft!.omega = -1;
     expect(parseSnapshot(JSON.stringify(corrupt))).toBeNull();

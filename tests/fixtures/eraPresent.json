@@ -1,0 +1,39 @@
+{
+  "shaders": {
+    "river": "{\"vertex\":\"888bdc6c90c882d53103ea23ec4a1f05a787d46de169d7c6a1dbc13b24331a0d\",\"fragment\":\"a49dcd58998e5feb22e6528b8a0ae5e5a07edcf3ea8616991afbbbc6958ea20a\",\"defines\":\"[[\\\"RIVER\\\",\\\"\\\"]]\",\"uniforms\":\"tNoise,uHazeColor,uSkyColor,uTime\",\"cacheKey\":\"river-v4\"}",
+    "terrain": "{\"vertex\":\"03b13ed8023fbd4667971b871c6567e865d06e1ec4d06af11a7d23c70ec54102\",\"fragment\":\"2579ca84b84c79aa36a46a89ddaf9b944defa6ff18b72fd53d8cf4c1f3c2c9f9\",\"defines\":\"[[\\\"TERRAIN_DEBUG\\\",0],[\\\"TERRAIN_DETAIL\\\",1]]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-v5-1-0\"}",
+    "terrainDepth": "{\"vertex\":\"63b8d79adb0b03dc095e85d920737e4cdf61c61f5dd57c00a62bb3f808c9ef3d\",\"fragment\":\"0c4ec80cc2a5bcfb37e653fae3d4dbda6ebd5ce45d901b42f5103799e4c63267\",\"defines\":\"[]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-depth-v4\"}",
+    "water": "{\"vertex\":\"888bdc6c90c882d53103ea23ec4a1f05a787d46de169d7c6a1dbc13b24331a0d\",\"fragment\":\"a49dcd58998e5feb22e6528b8a0ae5e5a07edcf3ea8616991afbbbc6958ea20a\",\"defines\":\"[[\\\"STANDARD\\\",\\\"\\\"]]\",\"uniforms\":\"tNoise,uHazeColor,uSkyColor,uTime\",\"cacheKey\":\"water-v4\"}"
+  },
+  "terrain": {
+    "computeBiome": "db6f94abcd7dca31265c76743d2072ce6e04bf769e2f64735af59634ac1109cb",
+    "hydrology": "7a806984738bd5589d0c19f1233e8bf71aa06133d41dece2d3b81d65f009ddf6",
+    "points": "2ea4439a37e888ad52e15f95300debefd524de6e89a0f21452a4f41ef53adc80",
+    "sampleTerrain": "22504a6627f31af0d7dfc8c633a1effa5fc5023e84931afe7bf92e53400f2931",
+    "snowAndTreeLine": "e2229d1f6273ee1e790c397f23d3736a9f872830495cc498cb9716e0accceff6",
+    "terrainSurface": "68b2bd8050777b3273771eefd9095dfe1ce0e47d04715fd18a3347b08e1b667b"
+  },
+  "tiles": {
+    "airport-l0-g64": "469c8b3421564a8769162a913deb1d67aee3758beccf73ec9e17efdade678e5c",
+    "l3-g32": "e9dddb578ca515291e50f053bf130bb90a00b5d5fe414b308a8742627b34b45c",
+    "l6-g32": "518ce02e6f3ce0e2d9486aa470755e8356a2e72c2a1649ec477168f8ab90463d",
+    "lake-l2-g64": "32da70938c7bc050c820dc671dec4dc63c2c50ec6b528ea488404c9d5cfbcd33",
+    "river-l0-g64": "13b69e64da3fd5341f4742bc7ff2c3f4e10fdd5cc1c3a450a2f8459792a9150a",
+    "root-l10-g32": "f661590af46df4aec9db9190a9c6685391783762dd45c61f8b0cbbb45922d8a1"
+  },
+  "townSite": {
+    "east": -3338.562686473753,
+    "north": -643.4276870675965,
+    "radius": 700
+  },
+  "trees": {
+    "airport": "90d24db697497ddcd9fc225a7032919a19bf9f68d5cb1530a1f1547e4ae1b9b6",
+    "airport-sw": "9822ae62cdce5489ac1d42a05dbd024ab1a29a96545d640d175cfcf3d500f142",
+    "far-e": "2a35b1787c4c613513a6339bfc6a67fbd8f3ac2af3a2c34a09cd7afcebb8e7cf",
+    "far-w": "71a9c823d75b3bca16c7403625f1042f2ab299198822f2bd72f6b1d50351799f",
+    "ne": "3429a57c2a42bdf479b0a68c3dec07082fdf1086f92c972111a6f9fc44f94c12",
+    "nw": "466e1215817163a017e509035527b8aa9e37318766317ca720e8960fd5041c90",
+    "river": "24d639ef1c69430e1fbb81d95ab1ebce6c1e2ed46a1d8394b7472763501ec783",
+    "town": "eb3eb2861eca72dd807139f05974500624cfe64d47127e46c444a9ad4ae8386b"
+  }
+}

@@ -16,8 +16,11 @@ import { CANOPY_HEIGHT, createTerrainDepthMaterial, createTerrainMaterial, MAX_L
 import { createTerrainTextures, type TerrainTextures } from './textures';
 import { buildTileIndices, type TileData } from './tileBuilder';
 import { AirfieldGrass } from './vegetation/grass';
+import { createEraLayers, type EraLayer } from './eraLayers';
+import { updateEraUniforms } from './eraUniforms';
 import { VegetationSystem } from './vegetation/VegetationSystem';
 import { setTownSite, townSite } from './townMask';
+import { era, isPresent } from '../era/eraState';
 import { createRiverGeometry, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
 import { WorkerPool } from './workerPool';
 
@@ -55,7 +58,7 @@ export interface TerrainSystemOptions {
   workers?: number;
   /** Disable the instanced trees (the ground still shows forest). */
   vegetation?: boolean;
-  /** Keep land cover off the airport module's valley town (default true). */
+  /** Keep land cover off the airport module's valley town (default true; the Simulator passes false in an era without the town). */
   town?: boolean;
 }
 
@@ -76,6 +79,8 @@ export class TerrainSystem implements Subsystem {
   private indices!: THREE.BufferAttribute;
   private vegetation: VegetationSystem | null = null;
   private grass: AirfieldGrass | null = null;
+  /** The era's extra layers (eraLayers.ts; none in the present day). */
+  private eraLayers: EraLayer[] = [];
   private readonly nodes = new Map<number, TerrainNode>();
   private readonly inflight = new Set<number>();
   private readonly arrived: TileData[] = [];
@@ -141,8 +146,9 @@ export class TerrainSystem implements Subsystem {
     this.pool = new WorkerPool(this.options.workers ?? Math.min(8, Math.max(2, threads - 2)));
     // Keep woodland and crop fields off the valley town (the airport module builds it on the site
     // findTownSite picks for this terrain); the workers need it before their first job.
-    if (this.options.town !== false) setTownSite(findTownSite(terrainHeight));
-    this.pool.broadcast({ kind: 'setup', town: townSite() });
+    // (Not in an era without the town, whatever the option says.)
+    if (this.options.town !== false && era().terrain.town) setTownSite(findTownSite(terrainHeight));
+    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id });
     this.uploader = new GeometryUploader(ctx.renderer);
     this.textures = createTerrainTextures(ctx.renderer);
     this.material = createTerrainMaterial(this.textures, this.uniforms);
@@ -164,9 +170,17 @@ export class TerrainSystem implements Subsystem {
       this.vegetation = new VegetationSystem(this.pool, this.uniforms.uForestFade.value, this.uniforms.uCanopyKeep.value);
       await this.vegetation.init(ctx);
       this.root.add(this.vegetation.root);
-      this.grass = new AirfieldGrass();
-      this.grass.setQuality(ctx.quality);
-      this.root.add(this.grass.mesh);
+      // Mown airfield grass only where there is an airfield (not on an era's bare flats).
+      if (era().world.airport !== 'flats') {
+        this.grass = new AirfieldGrass();
+        this.grass.setQuality(ctx.quality);
+        this.root.add(this.grass.mesh);
+      }
+      // Increment 2: the era's layers (WP6's near understorey), never in the present day.
+      if (era().flora !== 'present') {
+        this.eraLayers = createEraLayers({ renderer: ctx.renderer, quality: ctx.quality, terrainUniforms: this.uniforms, noise: this.textures.noise, heightAt: terrainHeight });
+        for (const l of this.eraLayers) this.root.add(l.object);
+      }
     }
     this.initTiming.vegetation = lap();
     await this.preload(ctx.camera);
@@ -189,6 +203,10 @@ export class TerrainSystem implements Subsystem {
     this.waterUniforms.uHazeColor.value.copy(ctx.sky.hazeColor);
     this.vegetation?.update(dt, ctx);
     this.grass?.update(dt, ctx.camera);
+    if (!isPresent()) {
+      updateEraUniforms(dt, ctx.sky);
+      for (const l of this.eraLayers) l.update(ctx, ctx.camera, dt);
+    }
   }
 
   dispose(): void {
@@ -196,6 +214,7 @@ export class TerrainSystem implements Subsystem {
     this.clearNodes();
     this.vegetation?.dispose();
     this.grass?.dispose();
+    for (const l of this.eraLayers) l.dispose();
     this.pool.dispose();
     this.uploader?.dispose();
     this.textures.dispose();
@@ -248,6 +267,7 @@ export class TerrainSystem implements Subsystem {
     this.preset = PRESETS[q];
     setTerrainDetail(this.material, q === 'low' ? 0 : 1);
     this.grass?.setQuality(q);
+    for (const l of this.eraLayers) l.setQuality?.(q);
     const s: LodSettings = {
       grid: this.preset.grid,
       leafSize: LEAF_SIZE,

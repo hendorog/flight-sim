@@ -10,7 +10,7 @@ import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from '../../src/ui
 
 describe('navigation URL', () => {
   it('drops the parameters that would undo the choice and keeps the rest', () => {
-    const url = 'https://fs.local/index.html?aircraft=c152&scenario=final&lesson=L03&phase=2&brief=0&resume=1&cam=chase&mute=1#x';
+    const url = 'https://fs.local/index.html?aircraft=c152&scenario=final&hover=1&lesson=L03&phase=2&brief=0&resume=1&cam=chase&mute=1#x';
     expect(aircraftChoiceUrl(url)).toBe('https://fs.local/index.html?cam=chase&mute=1#x');
   });
 

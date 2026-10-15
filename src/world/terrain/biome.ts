@@ -10,6 +10,8 @@ import { FENCE_RECT } from '../airport/layout';
 import { SEA_LEVEL, makeSample, sampleTerrain, snowLine, type TerrainSample } from './heightfield';
 import { fbm } from './noise';
 import { townFieldFactor, townWoodFactor } from './townMask';
+import { era, isPresent } from '../era/eraState';
+import { makeVolcanoMask, volcanoMask, volcanoWoodsCut } from './volcano';
 
 export interface Biome {
   /** Tree cover density, 0..1. Trees are placed where this is above 0.2 (dense stands from ~0.8). */
@@ -20,10 +22,16 @@ export interface Biome {
   moisture: number;
   /** Beach sand, 0..1. */
   sand: number;
+  /**
+   * Marsh (horsetail flats on the wet floodplain), 0..1: only in an era with EraTerrain.marsh (0 in the present
+   * day). It shares the farmland channel of the terrain's biome attribute (tileBuilder.ts), which such an era
+   * has no farmland for, and the shader reads it as marsh under MARSH_CHANNEL (terrainMaterial.ts).
+   */
+  marsh: number;
 }
 
 export function makeBiome(): Biome {
-  return { forest: 0, farmland: 0, moisture: 0, sand: 0 };
+  return { forest: 0, farmland: 0, moisture: 0, sand: 0, marsh: 0 };
 }
 
 const smooth = (e0: number, e1: number, x: number): number => {
@@ -32,6 +40,7 @@ const smooth = (e0: number, e1: number, x: number): number => {
 };
 
 const shapeScratch = makeSample();
+const volcanoScratch = makeVolcanoMask();
 /** Scale of the landform measures used for land cover, m: coarse enough to ignore small bumps, and
  * independent of mesh LOD. */
 const SHAPE_STEP = 30;
@@ -162,8 +171,24 @@ export const RIVER_STRIP = 14;
 
 /** Tree line elevation on level ground, m: forests thin out above it and stop 250 m higher. */
 export function treeLine(north: number, east: number): number {
-  return 1750 + 150 * fbm(east / 4000 - 7.1, north / 4000 + 2.6, 2);
+  if (isPresent()) {
+    return 1750 + 150 * fbm(east / 4000 - 7.1, north / 4000 + 2.6, 2);
+  }
+  return treeLineBase() + 150 * fbm(east / 4000 - 7.1, north / 4000 + 2.6, 2);
 }
+
+/** Level of the tree line before its noise, m: 1750 plus the era's offset (the shader's threshold, its GLSL twin). */
+export function treeLineBase(): number {
+  return 1750 + era().terrain.treeLineOffset;
+}
+
+/** Marsh: on wet ground (moisture above MARSH_MOISTURE), nearly level (slope under ~4 degrees), within
+ * MARSH_RIVER_DIST of the river. */
+export const MARSH_MOISTURE = 0.6;
+export const MARSH_RIVER_DIST = 900;
+/** Marsh slope limit, as the up component of the normal: none at 4 degrees or steeper, full at 2.5 or flatter. */
+export const MARSH_UP_MIN = Math.cos((4 * Math.PI) / 180);
+export const MARSH_UP_FULL = Math.cos((2.5 * Math.PI) / 180);
 
 /** How much higher the tree line lies on a sunny south face than on level ground (and lower facing north),
  * per unit of the normal's horizontal southward component, m. */
@@ -240,5 +265,33 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
   out.farmland = farmland;
   out.moisture = moisture;
   out.sand = sand;
+  out.marsh = 0;
+  if (isPresent()) return out;
+
+  const E = era().terrain;
+  if (!E.farmland) out.farmland = 0;
+  if (E.marsh) {
+    // Horsetail flats: wet (moisture over 0.6), level (slope under 4 degrees: MARSH_UP_MIN) ground
+    // on the floodplain within 900 m of the river, above the water, off the beaches and the woods, and not on
+    // the dead-flat airport zone (the Flats are a dry mud flat).
+    out.marsh =
+      smooth(MARSH_MOISTURE, MARSH_MOISTURE + 0.12, moisture) *
+      smooth(MARSH_UP_MIN, MARSH_UP_FULL, up) *
+      (1 - smooth(MARSH_RIVER_DIST - 300, MARSH_RIVER_DIST, s.riverDist)) *
+      smooth(0.3, 1.5, aboveWater) *
+      (1 - sand) *
+      (1 - forest) *
+      smooth(0.15, 0.6, s.airportBlend);
+  }
+  if (E.volcano) {
+    // Ash: the bare upper cone and the fall streaked over its flanks (volcano.ts volcanoMask) on the sand
+    // channel, which the shader paints as ash within the cone's reach (VOLCANO). No woods on the ash or the
+    // bare basalt crags (volcanoWoodsCut, the shader's crag weight with a margin), thinner woods elsewhere on the
+    // cone, and no marsh on the ash, so the trees placed from this agree with the painted ground.
+    const v = volcanoMask(north, east, E.volcano, volcanoScratch);
+    out.sand = Math.max(out.sand, v.ash);
+    out.forest *= 1 - volcanoWoodsCut(v, up);
+    out.marsh *= 1 - v.ash;
+  }
   return out;
 }

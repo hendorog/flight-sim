@@ -20,7 +20,7 @@ export const R22_DEFINITION: AircraftDefinition = {
     'Clutch, governor and throttle correlation are reduced-order models; power/MAP calibration needs flight-test data.',
     'Autorotation descent is checked; a complete slow flare/cushion landing has not yet been validated.',
     'Synthesized audio is not an R22 sound recording.',
-    'Fixed-wing autoflight and Flight School are unavailable; R44 and Schweizer 269 are not yet implemented.',
+    'Experimental helicopter hold is opt-in; fixed-wing scripted autoflight and Flight School are unavailable.',
   ],
   geometry: { ...base.geometry,
     wing: { ...base.geometry.wing, span: 2 * MAIN_ROTOR_RADIUS, area: Math.PI * MAIN_ROTOR_RADIUS ** 2 },

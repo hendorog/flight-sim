@@ -27,6 +27,8 @@ import type { PanelView } from '../instruments/fixedPanel';
 import type * as THREE from 'three';
 import type { AircraftDefinition, AircraftPresentation } from '../aircraft/types';
 import type { AircraftId, AircraftState, ControlInputs, Environment, WeatherSettings } from './types';
+import type { EraId } from '../world/era/types';
+import type { FaunaSpeciesId } from '../world/fauna/types';
 
 export const CAMERA_NEAR = 0.1;
 export const CAMERA_FAR = 400_000;
@@ -35,7 +37,11 @@ export const SCENE_UNITS_PER_LUX = 0.1;
 
 export type QualityLevel = 'low' | 'medium' | 'high' | 'ultra';
 export type CameraMode = 'cockpit' | 'chase' | 'orbit' | 'flyby' | 'tower';
-export type ScenarioId = 'runway' | 'apron' | 'final' | 'cruise' | 'downwind';
+/**
+ * Start scenarios. 'safari' is the Cretaceous era's airborne start (src/sim/scenarios.ts; not in SCENARIO_IDS,
+ * which the present-day suites iterate; src/sim/params.ts URL_SCENARIO_IDS lists every id a URL may name).
+ */
+export type ScenarioId = 'runway' | 'apron' | 'final' | 'cruise' | 'downwind' | 'safari';
 
 /** Lighting state published by the sky module every frame. Vectors are in three.js world space. */
 export interface SkyState {
@@ -93,6 +99,12 @@ export interface SimCommands {
   setAircraft?(id: AircraftId, opts?: { open?: 'school' }): void;
   /** Carburettor-icing realism toggle: stores 'fs.carbIcing' ('0' = off; absent = on) and sets ctx.carbIcing. */
   setCarbIcing?(on: boolean): void;
+  /**
+   * Choose another era (Deep Time): saves the flight, stores the preference ('fs.era') and RELOADS the page without
+   * the URL parameters that would undo the choice (src/sim/eraChoice.ts eraSwitchUrl). The era is selected at boot
+   * only. Optional: older mocks do not implement it.
+   */
+  setEra?(id: EraId): void;
 }
 
 export interface SimEvents {
@@ -114,6 +126,11 @@ export interface SimEvents {
   qualityChanged: { quality: QualityLevel };
   /** Gear events for sound and UI: a leg unlocked, reached down-and-locked, or reached up. Emitted by SimPhysics. */
   gear: { kind: 'unlock' | 'downLocked' | 'up'; leg: 0 | 1 | 2 };
+  /**
+   * A species seen close (within 500 m, below 300 m AGL): on its first approach in a session, then again on each
+   * approach at least 25 m closer than the last emit (the Field Guide's closest distance). Emitted by the FaunaSystem.
+   */
+  faunaSighted: { species: FaunaSpeciesId; distanceM: number };
 }
 
 export interface EventBus {
@@ -168,6 +185,11 @@ export interface SimContext {
   engineSelection?: 'all' | 0 | 1;
   /** Carburettor icing enabled (default true). SimPhysics passes PropulsionInput.moisture only while it is not false. */
   carbIcing?: boolean;
+  /**
+   * The era the world is set in (src/world/era; the same for the whole session). Absent on test fakes and older
+   * mocks means 'present'. Subsystems read src/world/era/eraState.ts era() for its data.
+   */
+  era?: EraId;
 }
 
 /** A per-frame subsystem. update() runs once per rendered frame with the real frame dt (0 when paused). */

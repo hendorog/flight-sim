@@ -4,8 +4,12 @@
 import type { AircraftId, AircraftSummary } from '../aircraft/types';
 import type { AircraftState } from '../core/types';
 
-/** URL parameters that would undo or outlive the choice: they are removed when another type is chosen. */
-export const CHOICE_DROPPED_PARAMS: readonly string[] = ['aircraft', 'scenario', 'lesson', 'phase', 'brief', 'resume'];
+/**
+ * URL parameters that would undo or outlive the choice: they are removed when another type is chosen. `era` is
+ * deliberately NOT among them: another aircraft is flown in the same world (the era survives the switch;
+ * tests/ui/eraChooser.test.ts pins it).
+ */
+export const CHOICE_DROPPED_PARAMS: readonly string[] = ['aircraft', 'scenario', 'lesson', 'phase', 'brief', 'resume', 'hover'];
 
 /**
  * The address the page reloads into after a choice (contract 2.5, commands.setAircraft): the current one
