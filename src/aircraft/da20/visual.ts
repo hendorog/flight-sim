@@ -507,7 +507,8 @@ const COCKPIT: CockpitDef = {
   // The overhead light module between the seat backs (s.12) carries the flood light, aimed at the panel.
   // Flood: white flood from the module behind the seats, 24.5 cd at full dimmer so its panel ~1.55 m away gets the Cessna 172S's ~10 lx (agent choice,
   // panel lighting for every type); the mask's glareshield top is this cabin's (box.glareshieldZ). From that far back
-  // a narrower beam (26 degrees) still covers the panel and leaves the canopy frame beside the seats dark.
+  // a narrower beam (26 degrees) still covers the panel; the canopy frame round it stays in the beam (lining p90 ~80
+  // of 255 on a moonless night against the Cessna 172S's door pillar ~66).
   lamps: { flood: { pos: [CABIN_REAR_X + 0.15, 0, FZ(0.58)], aim: [PANEL_X, 0, PANEL_ZTOP + 0.12], cd: 24.5, maskTop: -(PANEL_ZTOP - 0.03), cone: [26, 14] } },
   // Simplified cabin for the occlusion bake: tub floor, the canopy as a glazed roof, flat sides at the sill width,
   // rear bulkhead, panel face and glareshield, the canopy's base on the cowl deck.
