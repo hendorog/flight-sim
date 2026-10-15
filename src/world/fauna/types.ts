@@ -177,6 +177,11 @@ export interface FaunaRosterEntry {
    */
   occupancy?: number;
   /**
+   * Layers 2 and 3 (fauna across the landscape, AGENT choice): a further share of cells drawing this entry, laid out
+   * after every entry's `occupancy` band, so each cell that drew an entry before still draws it. Absent: 0.
+   */
+  occupancyExtra?: number;
+  /**
    * Flyers: ambient-kettle weight x this near water (within 2 km of the river, a lake zone, or the coastal strip
    * below 40 m), / this elsewhere. Absent: x 1.
    */

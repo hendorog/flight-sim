@@ -33,16 +33,21 @@ import {
   inQuietZone,
   kettleEntry,
   layer2Entries,
+  LAYER2_PROBES,
+  SAMPLES_PER_PROBE,
   layer2Random,
+  layer3Random,
   makeSite,
   probeCell,
+  probeCellExtra,
+  rexDraw,
   probeHabitatCell,
   rexRandom,
   safariFootprintDist,
   uplandIndex,
   type FaunaTerrain,
 } from '../../src/world/fauna/habitat';
-import { MAX_AGENTS, MAX_HERDS, TERRAIN_CALLS_PER_FRAME } from '../../src/world/fauna/presets';
+import { FAUNA_PRESETS, MAX_AGENTS, MAX_HERDS, TERRAIN_CALLS_PER_FRAME } from '../../src/world/fauna/presets';
 import { ROSTERS } from '../../src/world/fauna/roster';
 import { TREX_STATE } from '../../src/world/fauna/species/tyrannosaurus.brain';
 import { FAUNA_SPECIES_IDS, type FaunaSpeciesId } from '../../src/world/fauna/types';
@@ -109,12 +114,17 @@ interface Site {
   size: number;
   entry: number;
   samples: number;
+  /** Cell sub-slot: 0 probeCell (layers 1 and 2), 1 probeCellExtra (layer 3); absent = 0. */
+  sub?: number;
 }
 /** Animal class of a site: the plains Edmontosaurus count as Edmontosaurus. */
 const speciesOf = (entry: number): FaunaSpeciesId => roster.entries[entry].species;
 
-/** Every site (both layers) over +-30 km; computed on first use, inside the tests (after setEra('cretaceous')). */
-let survey: { all: Site[]; layer2: Site[]; maxSamples: number } | null = null;
+/**
+ * Every site over +-30 km: `all` holds layers 1-3, `layer2` the probeCell layer-2 sites, `layer3` the probeCellExtra
+ * ones (fauna across the landscape); computed on first use, inside the tests (after setEra('cretaceous')).
+ */
+let survey: { all: Site[]; layer2: Site[]; layer3: Site[]; maxSamples: number; maxSamples3: number } | null = null;
 const S = () => (survey ??= runSurvey());
 function runSurvey() {
   const terrain = countingTerrain();
@@ -130,7 +140,19 @@ function runSurvey() {
       if (ok) all.push({ ...s });
     }
   }
-  return { all, layer2: all.filter((s) => s.entry !== 0), maxSamples };
+  const layer3: Site[] = [];
+  let maxSamples3 = 0;
+  for (let ci = -15; ci < 15; ci++) {
+    for (let cj = -15; cj < 15; cj++) {
+      const s = makeSite();
+      const before = terrain.calls;
+      const ok = probeCellExtra(ci, cj, roster, terrain, s);
+      expect(s.samples).toBe(terrain.calls - before);
+      maxSamples3 = Math.max(maxSamples3, s.samples);
+      if (ok) layer3.push({ ...s, sub: 1 });
+    }
+  }
+  return { all: [...all, ...layer3], layer2: all.filter((s) => s.entry !== 0), layer3, maxSamples, maxSamples3 };
 }
 
 /** The predicate of a layer-2 site, re-evaluated independently from sampleTerrain + computeBiome. */
@@ -153,8 +175,9 @@ function predicate(site: Site): { ok: boolean; upland: number; forest: number } 
     b.sand < 0.3;
   const kind = roster.entries[site.entry].habitat;
   let own = false;
-  if (kind === 'plain') own = slope < 0.15 && s.ground < 450 && b.forest < 0.3 && (b.moisture >= 0.5 || s.riverDist < 2000 || s.standing > SEA_LEVEL);
-  else if (kind === 'open') own = slope < 0.15 && s.ground < 700 && b.forest < 0.35;
+  // (The height caps 900 / 1100 m: fauna across the landscape, AGENT choice; 450 / 700 m before.)
+  if (kind === 'plain') own = slope < 0.15 && s.ground < 900 && b.forest < 0.3 && (b.moisture >= 0.5 || s.riverDist < 2000 || s.standing > SEA_LEVEL);
+  else if (kind === 'open') own = slope < 0.15 && s.ground < 1100 && b.forest < 0.35;
   else if (kind === 'woodland') own = slope < 0.2 && s.ground > 120 && ((b.forest >= 0.08 && b.forest < 0.55) || (upland >= 0.3 && b.forest < 0.08));
   return { ok: shared && own, upland, forest: b.forest };
 }
@@ -162,7 +185,8 @@ function predicate(site: Site): { ok: boolean; upland: number; forest: number } 
 describe('layer 2 (plains Edmontosaurus, Triceratops, Alamosaurus)', () => {
   it('layer 1 is unchanged inside probeCell: every layer-1 site is the fixture site', () => {
     const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8')) as { rows: Layer1Row[] };
-    const layer1 = S().all.filter((s) => s.entry === 0);
+    const layer1 = S().all.filter((s) => s.entry === 0 && !s.sub);
+    expect(S().layer3.every((s) => s.entry !== 0)).toBe(true);
     const want = fixture.rows.filter((r) => r[2] === 1);
     expect(layer1.map((s) => [s.ci, s.cj, s.north, s.east, s.size])).toEqual(want.map((r) => [r[0], r[1], r[3], r[4], r[6]]));
     expect(layer2Entries(roster).map((i) => [speciesOf(i), roster.entries[i].habitat])).toEqual([
@@ -174,7 +198,8 @@ describe('layer 2 (plains Edmontosaurus, Triceratops, Alamosaurus)', () => {
 
   it('every layer-2 site passes its own predicate, outside the quiet zone, within 40 reads a cell', () => {
     expect(S().layer2.length).toBeGreaterThan(40);
-    for (const site of S().layer2) {
+    expect(S().layer3.length).toBeGreaterThan(40);
+    for (const site of [...S().layer2, ...S().layer3]) {
       expect(predicate(site).ok, `${speciesOf(site.entry)} at ${site.north.toFixed(0)}, ${site.east.toFixed(0)}`).toBe(true);
       expect(inQuietZone(site.north, site.east)).toBe(false);
       // In its own cell, its own group size.
@@ -185,6 +210,7 @@ describe('layer 2 (plains Edmontosaurus, Triceratops, Alamosaurus)', () => {
       expect(site.size).toBeLessThanOrEqual(e.groupMax);
     }
     expect(S().maxSamples).toBeLessThanOrEqual(CELL_READS);
+    expect(S().maxSamples3).toBeLessThanOrEqual(LAYER2_PROBES * SAMPLES_PER_PROBE);
     // The quiet zone is real: the showcase anchors and the first-minute path are inside it.
     const p = safariAt(40);
     expect(inQuietZone(p.north, p.east)).toBe(true);
@@ -198,6 +224,13 @@ describe('layer 2 (plains Edmontosaurus, Triceratops, Alamosaurus)', () => {
       expect(probeCell(s.ci, s.cj, roster, terrain, again)).toBe(true);
       expect({ ...again }).toEqual(s);
     }
+    for (const s of [...S().layer3].reverse().slice(0, 30)) {
+      const again = makeSite();
+      expect(probeCellExtra(s.ci, s.cj, roster, terrain, again)).toBe(true);
+      expect({ ...again, sub: 1 }).toEqual(s);
+    }
+    expect(layer3Random(3, -4, 7)).not.toBe(layer2Random(3, -4, 7));
+    expect(layer3Random(3, -4, 7)).not.toBe(rexRandom(3, -4, 7));
     expect(layer2Random(3, -4, 7)).toBe(layer2Random(3, -4, 7));
     expect(layer2Random(3, -4, 7)).not.toBe(rexRandom(3, -4, 7));
   });
@@ -218,7 +251,7 @@ describe('layer 2 (plains Edmontosaurus, Triceratops, Alamosaurus)', () => {
       const p = predicate(s);
       return p.upland >= 0.2 || p.forest >= 0.15;
     }).length;
-    const rexPrey = S().all.filter((s) => (speciesOf(s.entry) === 'edmontosaurus' || speciesOf(s.entry) === 'triceratops') && rexRandom(s.ci, s.cj, 0) < roster.entries[5].occupancy! && safariFootprintDist(s.north, s.east) >= REX_QUIET_M).length;
+    const rexPrey = S().all.filter((s) => (speciesOf(s.entry) === 'edmontosaurus' || speciesOf(s.entry) === 'triceratops') && rexDraw(s.ci, s.cj, s.sub ?? 0, 0) < roster.entries[5].occupancy! && safariFootprintDist(s.north, s.east) >= REX_QUIET_M).length;
     console.log(`abundance +-30 km: groups ${JSON.stringify(groups)} animals ${JSON.stringify(animals)}; Alamosaurus upland/edge ${alamoUp}/${alamo.length}; T. rex-eligible prey herds ${rexPrey}`);
     expect(edmo).toBeGreaterThanOrEqual(5 * tri);
     expect(tri).toBeGreaterThanOrEqual(2.5 * ala);
@@ -227,7 +260,9 @@ describe('layer 2 (plains Edmontosaurus, Triceratops, Alamosaurus)', () => {
     expect(alamo.length).toBeLessThanOrEqual(30);
     expect(alamoUp / alamo.length).toBeGreaterThanOrEqual(0.5);
     expect(rexPrey).toBeGreaterThanOrEqual(5);
-    expect(rexPrey).toBeLessThanOrEqual(30);
+    // 30 -> 60 with layer 3 and the denser layer 2 (fauna across the landscape, AGENT choice: measured 40; at most
+    // AMBIENT_REX_MAX roam at once whatever this is, so the T. rex stays the rarest animal in sight).
+    expect(rexPrey).toBeLessThanOrEqual(60);
   });
 
   it('each verification point V1-V5 has >= 2 species within 8 km, its named target among them', () => {
@@ -346,7 +381,7 @@ describe('FaunaSystem streaming across the landscape', () => {
         expect(H.count()).toBeLessThanOrEqual(MAX_HERDS);
         const near = S().all.filter((s) => Math.hypot(s.north - v.n, s.east - v.e) < 5000);
         const keys = new Set(streamed(sys).map((h) => H.key[h]));
-        for (const s of near) expect(keys.has((s.ci + 32768) * 65536 + (s.cj + 32768)), `${speciesOf(s.entry)} site ${s.ci},${s.cj}`).toBe(true);
+        for (const s of near) expect(keys.has((s.ci + 32768) * 65536 + (s.cj + 32768) + (s.sub ?? 0) * 4294967296), `${speciesOf(s.entry)} site ${s.ci},${s.cj} sub ${s.sub ?? 0}`).toBe(true);
         // Roaming T. rexes: at most AMBIENT_REX_MAX, never in the showcase slot, beside an unpinned herd's home.
         let amb = 0;
         for (let i = 0; i < A.capacity; i++) {
@@ -449,7 +484,8 @@ describe('FaunaSystem streaming across the landscape', () => {
     hold(sys, ctx, terrain, v.n, v.e, v.alt, 30);
     expect(sys.debug.evictions).toBeGreaterThan(0);
     const keys = new Set(streamed(sys).map((h) => H.key[h]));
-    const near = S().all.filter((s) => Math.hypot(s.north - v.n, s.east - v.e) < 5000);
+    // (Sub-slot 0 sites: a layer-3 site never evicts a sub-0 herd, only a farther layer-3 one.)
+    const near = S().all.filter((s) => !s.sub && Math.hypot(s.north - v.n, s.east - v.e) < 5000);
     expect(near.length).toBeGreaterThan(3);
     for (const s of near) expect(keys.has((s.ci + 32768) * 65536 + (s.cj + 32768))).toBe(true);
   });
@@ -777,4 +813,47 @@ describe('roaming T. rex placement (placeRex)', () => {
     expect(placed).toBe(1);
     expect(sys.debug.ambientRex).toBe(1);
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Fauna across the landscape (AGENT choices): layer 3 streams, flyers away from the start at the dusk boot
+
+describe('fauna across the landscape', () => {
+  it('layer-3 herds stream in beside the sub-0 ones, keyed by sub-slot, background-scheduled', () => {
+    const { sys, ctx, terrain } = build('high');
+    const H = sys.herds;
+    hold(sys, ctx, terrain, VPOINTS[2].n, VPOINTS[2].e, VPOINTS[2].alt, 40);
+    let l3 = 0;
+    for (const h of streamed(sys)) {
+      if (H.key[h] < 4294967296) continue;
+      l3++;
+      expect(H.background[h]).toBe(1);
+      expect(H.entry[h]).not.toBe(0);
+    }
+    expect(l3).toBeGreaterThan(0);
+    expect(sys.debug.errors).toBe(0);
+  });
+
+  for (const quality of ['low', 'medium'] as const) {
+    it(`${quality}, the tod-20 dusk boot (no thermals): flyers away from the start once the opening is over`, () => {
+      const terrain = spyTerrain();
+      const sys = createFaunaSystem(eraById('cretaceous'), { terrain }) as FaunaSystemImpl;
+      const ctx = makeCtx(quality, 20);
+      (ctx as unknown as { sky: { dayFactor: number } }).sky.dayFactor = 0.38;
+      place(ctx, 0, 0, 400, 0);
+      sys.init(ctx);
+      // The opening: nothing ambient is added at dusk, and the showcase flyers stay put.
+      const showcase = sys.flyers.count();
+      hold(sys, ctx, terrain, 0, 0, 400, 20);
+      expect(sys.flyers.count()).toBe(showcase);
+      // Then 20 km east, after the opening: the showcase flyers are released and ambient kettles circle nearby.
+      ctx.simTime = 130;
+      hold(sys, ctx, terrain, 0, 20000, 600, 30);
+      const F = sys.flyers;
+      let near = 0;
+      for (let i = 0; i < F.capacity; i++) if (F.active[i] && Math.hypot(F.n[i], F.e[i] - 20000) < 8000) near++;
+      expect(near).toBeGreaterThanOrEqual(2);
+      expect(F.count()).toBeLessThanOrEqual(FAUNA_PRESETS[quality].flyers);
+    });
+  }
 });

@@ -45,8 +45,8 @@ export const FLYER_RANGE_FACTOR = 1.2;
 
 /** Simulated ground animals at most (more than are drawn: herds behind the camera keep living). */
 export const MAX_GROUND_ANIMALS = 1200;
-/** Herds alive at once at most. */
-export const MAX_HERDS = 24;
+/** Herds alive at once at most (24 -> 40 for the denser landscape, layers 2 and 3: AGENT choice). */
+export const MAX_HERDS = 40;
 /** Members per herd at most. */
 export const MAX_HERD_SIZE = 80;
 /** terrainHeight-equivalent calls per frame at most, over everything the fauna does. */

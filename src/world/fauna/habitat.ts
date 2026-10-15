@@ -13,6 +13,9 @@
 // forest edges and on the open Araucaria uplands (predicates at layer2Verdict; every number an agent choice). Layer
 // 1 is untouched (tests/fixtures/faunaHabitatInc2.json pins it); layer 2 spends what is left of the cell's 40 reads
 // and keeps out of the safari's showcase quiet zone.
+//
+// LAYER 3 (fauna across the landscape, probeCellExtra; AGENT choice): a second, independent layer-2-style group in
+// every cell on its own salt (layer3Random), probed as the cell's sub-slot 1 on its own stream tick (<= 20 reads).
 
 import { SEA_LEVEL, hydrology, makeSample, sampleTerrain, terrainHeight, type TerrainSample } from '../terrain/heightfield';
 import { computeBiome, makeBiome, treeLine } from '../terrain/biome';
@@ -286,11 +289,15 @@ export const QUIET_PATH_M = 1500;
 /** The roaming T. rex keeps this far from the safari footprint (the path and the river herd), m. */
 export const REX_QUIET_M = 6000;
 
-/** Layer-2 predicate thresholds (agent choices, plan section 2). */
+/**
+ * Layer-2 predicate thresholds (agent choices, plan section 2). Fauna across the landscape (AGENT choice): the plain
+ * and open height caps went 450 -> 900 m and 700 -> 1100 m, so the foothills and uplands north of ~24 km hold
+ * plains herds and Triceratops, not nothing; the tree line stays the real upper bound.
+ */
 export const LAYER2 = Object.freeze({
   maxSand: 0.3,
-  plain: Object.freeze({ maxSlope: 0.15, maxGround: 450, maxForest: 0.3, minMoisture: 0.5, riverDist: 2000 }),
-  open: Object.freeze({ maxSlope: 0.15, maxGround: 700, maxForest: 0.35 }),
+  plain: Object.freeze({ maxSlope: 0.15, maxGround: 900, maxForest: 0.3, minMoisture: 0.5, riverDist: 2000 }),
+  open: Object.freeze({ maxSlope: 0.15, maxGround: 1100, maxForest: 0.35 }),
   woodland: Object.freeze({ maxSlope: 0.2, minGround: 120, edgeMin: 0.08, edgeMax: 0.55, minUpland: 0.3, lowland: 0.2, lowlandAccept: 0.4 }),
 });
 
@@ -428,10 +435,23 @@ export function layer2Entries(roster: FaunaRoster): number[] {
 
 /** The layer-2 entry a cell draws (by cumulative occupancy, roster order), or -1 for none. No terrain reads. */
 export function layer2Pick(ci: number, cj: number, roster: FaunaRoster): number {
-  const u = layer2Random(ci, cj, 0);
+  return layerPick(ci, cj, roster, layer2Random);
+}
+
+/**
+ * The layer-2 entry for draw 0 of `rand` (layer2Random or layer3Random), or -1 for none: the occupancy bands in roster
+ * order, then the occupancyExtra bands in roster order (so the inc-2b picks are kept).
+ */
+function layerPick(ci: number, cj: number, roster: FaunaRoster, rand: (ci: number, cj: number, k: number) => number): number {
+  const u = rand(ci, cj, 0);
+  const list = layer2Entries(roster);
   let acc = 0;
-  for (const i of layer2Entries(roster)) {
+  for (const i of list) {
     acc += roster.entries[i].occupancy ?? 0;
+    if (u < acc) return i;
+  }
+  for (const i of list) {
+    acc += roster.entries[i].occupancyExtra ?? 0;
     if (u < acc) return i;
   }
   return -1;
@@ -444,29 +464,78 @@ export function layer2Pick(ci: number, cj: number, roster: FaunaRoster): number 
  */
 export function probeCell(ci: number, cj: number, roster: FaunaRoster, terrain: FaunaTerrain, out: HabitatSite): boolean {
   if (probeHabitatCell(ci, cj, roster, terrain, out)) return true;
-  const entry = layer2Pick(ci, cj, roster);
+  const before = terrain.calls - out.samples;
+  const probes = Math.min(LAYER2_PROBES, Math.floor((CELL_READS - out.samples) / SAMPLES_PER_PROBE));
+  const ok = probeLayered(ci, cj, roster, terrain, out, layer2Random, probes);
+  out.samples = terrain.calls - before;
+  return ok;
+}
+
+/**
+ * The layer-2 placement shared by layers 2 and 3: the cell's pick by `rand` draw 0 (cumulative occupancy), then up
+ * to `probes` uniform candidates (draws 1-8), the group size (draw 9) and the edge acceptance (draws 10+). Writes
+ * out's site fields (not out.samples). No allocation.
+ */
+function probeLayered(ci: number, cj: number, roster: FaunaRoster, terrain: FaunaTerrain, out: HabitatSite, rand: (ci: number, cj: number, k: number) => number, probes: number): boolean {
+  const entry = layerPick(ci, cj, roster, rand);
   if (entry < 0) return false;
   const e: FaunaRosterEntry = roster.entries[entry];
   const kind = e.habitat as HabitatKind;
-  const before = terrain.calls - out.samples;
   const n0 = ci * HABITAT_CELL;
   const e0 = cj * HABITAT_CELL;
-  const probes = Math.min(LAYER2_PROBES, Math.floor((CELL_READS - out.samples) / SAMPLES_PER_PROBE));
   for (let k = 0; k < probes; k++) {
-    const n = n0 + HABITAT_CELL * (0.1 + 0.8 * layer2Random(ci, cj, 1 + 2 * k));
-    const ea = e0 + HABITAT_CELL * (0.1 + 0.8 * layer2Random(ci, cj, 2 + 2 * k));
+    const n = n0 + HABITAT_CELL * (0.1 + 0.8 * rand(ci, cj, 1 + 2 * k));
+    const ea = e0 + HABITAT_CELL * (0.1 + 0.8 * rand(ci, cj, 2 + 2 * k));
     if (inQuietZone(n, ea)) continue;
-    if (layer2Verdict(kind, n, ea, terrain, layer2Random(ci, cj, 10 + k)) !== '') continue;
+    if (layer2Verdict(kind, n, ea, terrain, rand(ci, cj, 10 + k)) !== '') continue;
     out.north = n;
     out.east = ea;
     out.ground = layer2Ground.ground;
     out.entry = entry;
-    out.size = e.groupMin + Math.floor(layer2Random(ci, cj, 9) * (e.groupMax - e.groupMin + 1));
-    out.samples = terrain.calls - before;
+    out.size = e.groupMin + Math.floor(rand(ci, cj, 9) * (e.groupMax - e.groupMin + 1));
     return true;
   }
-  out.samples = terrain.calls - before;
   return false;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Layer 3 (fauna across the landscape; AGENT choice): a second, independent group per cell
+
+/** Fresh salt for layer 3 (never shared with cellRandom, layer2Random or rexRandom). */
+const LAYER3_SALT = 0x5b1d34c7;
+
+/** Uniform [0, 1) draw k of a cell's layer-3 group (the same draw layout as layer2Random). */
+export function layer3Random(ci: number, cj: number, k: number): number {
+  return hashU32(hash2i(ci ^ LAYER3_SALT, cj) + Math.imul(k + 1, 0x9e3779b9)) / 4294967296;
+}
+
+/** Layers per habitat cell: sub-slot 0 is probeCell (layers 1 and 2), sub-slot 1 is probeCellExtra (layer 3). */
+export const CELL_LAYERS = 2;
+
+/**
+ * Layer 3: a second group in a cell, drawn on its own salt whatever layers 1 and 2 found (so the land that suits a
+ * layer-2 kind gets about twice the groups, and a waterside cell can also hold a plains herd or Triceratops nearby),
+ * with the layer-2 entries, occupancies and predicates, outside the quiet zone, at up to LAYER2_PROBES candidates
+ * (<= LAYER2_PROBES * SAMPLES_PER_PROBE reads, counted in out.samples). Deterministic per cell. AGENT choice.
+ */
+export function probeCellExtra(ci: number, cj: number, roster: FaunaRoster, terrain: FaunaTerrain, out: HabitatSite): boolean {
+  out.ci = ci;
+  out.cj = cj;
+  out.entry = -1;
+  const before = terrain.calls;
+  const ok = probeLayered(ci, cj, roster, terrain, out, layer3Random, LAYER2_PROBES);
+  out.samples = terrain.calls - before;
+  return ok;
+}
+
+/** Probe sub-slot `sub` of a cell (0: probeCell, 1: probeCellExtra). */
+export function probeCellLayer(ci: number, cj: number, sub: number, roster: FaunaRoster, terrain: FaunaTerrain, out: HabitatSite): boolean {
+  return sub === 0 ? probeCell(ci, cj, roster, terrain, out) : probeCellExtra(ci, cj, roster, terrain, out);
+}
+
+/** A cell's roaming T. rex draw k for the group in sub-slot `sub` (sub 0 is rexRandom itself). */
+export function rexDraw(ci: number, cj: number, sub: number, k: number): number {
+  return rexRandom(ci, cj, k + 16 * sub);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

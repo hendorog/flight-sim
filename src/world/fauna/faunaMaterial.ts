@@ -290,7 +290,10 @@ void faunaSkin() {
     i = int(v.w);
   }
   vec3 bp = mix(pp, pb, aBoneW) + fRootOff;
-  vec3 bn = normalize(mix(np, nb, aBoneW));
+  // Guarded blend: near-opposite parent and own-bone normals at aBoneW ~ 0.5 cancel to ~0, and normalize(0) is NaN
+  // (black or sky-blue single pixels in far herds). Fall back to the parent's normal there.
+  vec3 bm = mix(np, nb, aBoneW);
+  vec3 bn = dot(bm, bm) > 1e-8 ? normalize(bm) : np;
   // Instance: scale, bank (right wing down +), pitch (nose up +), yaw (heading, 0 = north, clockwise).
   // (a right-handed +x rotation takes the right side down: exactly right-wing-down-positive bank)
   vec4 qi = qMul(qAx(AY, 1.5707963 - aInstA.w), qMul(qAx(AZ, aInstB.x), qAx(AX, aInstB.y)));

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { terrainHeight } from '../../src/world/terrain/heightfield';
 import { countingTerrain } from '../../src/world/fauna/habitat';
 import { HerdPool, type AircraftView } from '../../src/world/fauna/herds';
+import { MAX_HERDS } from '../../src/world/fauna/presets';
 import { THREAT, hadrosaurThreat, trackDistance } from '../../src/world/fauna/reactions';
 import { riverHerdSite } from '../../src/world/fauna/showcase';
 
@@ -149,7 +150,7 @@ describe('background (landscape) herds', () => {
   it('take the top slots and tick after the others: the other herds move exactly as without them', () => {
     const alone = run(0);
     const crowded = run(4);
-    expect(crowded.slots).toEqual([23, 22, 21, 20]);
+    expect(crowded.slots).toEqual([MAX_HERDS - 1, MAX_HERDS - 2, MAX_HERDS - 3, MAX_HERDS - 4]);
     expect(crowded.trace).toEqual(alone.trace);
     // ...and the background herds still get their ticks (with the reads left over).
     const P = crowded.pool;
