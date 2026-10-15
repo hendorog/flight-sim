@@ -1,8 +1,14 @@
 // Stars drawn inside the sky dome's fragment shader (package P2 of the night-sky plan owns this file and
-// ../StarField.ts, which may add a separate catalogue layer).
+// ../StarField.ts, whose catalogue layer draws the real stars).
 //
-// Today: one hashed star per cell of a cube map over the celestial sphere, drawn as a Gaussian a little under a
-// pixel wide carrying the star's full flux, so they neither alias nor change brightness with zoom.
+// One hashed star per cell of a cube map over the celestial sphere, drawn as a Gaussian a little under a pixel wide
+// carrying the star's full flux, so they neither alias nor change brightness with zoom.
+//
+// Until the Bright Star Catalogue has loaded (uCatalogReady = 0: node tests, the first frames, a failed fetch) these
+// are the whole star field, magnitudes up to 7. Once it has, the catalogue (complete to ~6.5) draws every star the
+// eye names, and these become the FILLER (agent choice): only 6.5 < m < 8.0, where the catalogue stops and the
+// Milky Way map (which omits every Hipparcos/Tycho star) has not begun, thinned where the map is faint so they
+// crowd toward the galactic band like real faint stars. The unresolved light below that is the map's.
 
 import { SCENE_UNITS_PER_LUX } from '../params';
 
@@ -11,12 +17,23 @@ const f = (v: number): string => v.toExponential(6);
 /** Stars per cube-map face side; ~240 000 cells, one star each, magnitudes -1.4 .. 9.4. */
 const STAR_CELLS = 200;
 
+/** Filler magnitude range once the catalogue is in (agent choice; the catalogue is complete to ~6.5). */
+export const FILLER_MAG_MIN = 6.5;
+export const FILLER_MAG_MAX = 8.0;
+
+/** Illuminance of a magnitude-0 star (2.54e-6 lux), scene units; the catalogue layer uses the same. */
+export const STAR_E0 = 2.54e-6 * SCENE_UNITS_PER_LUX;
+
 export const STARS_GLSL = /* glsl */ `
+uniform float uCatalogReady;
 /** Illuminance of a magnitude-0 star, 2.54e-6 lux, in scene units. */
-const float STAR_E0 = ${f(2.54e-6 * SCENE_UNITS_PER_LUX)};
+const float STAR_E0 = ${f(STAR_E0)};
 const float STAR_CELLS = ${STAR_CELLS}.0;
 /** Brightest magnitude + 2 log10(cell count): N(<m) grows ~x3.2 per magnitude (Allen). */
 const float STAR_MAG_LIMIT = ${(-1.4 + 2 * Math.log10(6 * STAR_CELLS * STAR_CELLS)).toFixed(3)};
+
+// Defined in milkyWay.ts (included after this module): the map's local brightness relative to its sky mean.
+float milkyWayDensity(vec3 e);
 
 vec3 starColour(float t) {
   vec3 c = t < 0.1 ? vec3(0.65, 0.75, 1.0)
@@ -36,8 +53,14 @@ vec3 stars(vec3 e, float airmass) {
   vec2 cell = floor((uv * 0.5 + 0.5) * STAR_CELLS);
   vec3 r0 = random3(uvec3(uvec2(cell), face));
   float mag = STAR_MAG_LIMIT + 2.0 * log(max(r0.z, 1e-9)) / log(10.0);
+  if (uCatalogReady > 0.5) {
+    if (mag <= ${FILLER_MAG_MIN.toFixed(1)} || mag > ${FILLER_MAG_MAX.toFixed(1)}) return vec3(0.0);
+    // Keep a share that grows with the Milky Way's local brightness: ~1/4 at the galactic poles, all in the band.
+    float keep = clamp(0.5 * sqrt(milkyWayDensity(e)), 0.25, 1.0);
+    if (random3(uvec3(uvec2(cell), face + 12u)).x > keep) return vec3(0.0);
+  }
   // Fainter stars than ~7th magnitude sit below the night-sky background even for dark-adapted eyes.
-  if (mag > 7.0) return vec3(0.0);
+  else if (mag > 7.0) return vec3(0.0);
   vec2 suv = (cell + 0.2 + 0.6 * r0.xy) / STAR_CELLS * 2.0 - 1.0;
   float s = face % 2u == 0u ? 1.0 : -1.0;
   vec3 star = face < 2u ? vec3(s, suv) : face < 4u ? vec3(suv.x, s, suv.y) : vec3(suv, s);
