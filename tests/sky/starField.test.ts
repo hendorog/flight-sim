@@ -4,6 +4,7 @@ import type { SimContext } from '../../src/core/context';
 import { Celestial } from '../../src/render/sky/celestial';
 import { STAR_E0 } from '../../src/render/sky/glsl/stars';
 import { decodeStarCatalog, starIndexByHR } from '../../src/render/sky/starCatalog';
+import { POINT_SPREAD_MAX, POINT_SPREAD_WHITE, pointSpread } from '../../src/render/sky/glsl/pointSpread';
 import { STAR_FRAG, STAR_RADIANCE_CLAMP, StarField, peakWeight, starAttributes } from '../../src/render/sky/StarField';
 
 interface Fs {
@@ -60,6 +61,34 @@ describe('StarField', () => {
       expect(sum).toBeGreaterThan(0.999);
       expect(sum).toBeLessThan(1.0001);
     }
+  });
+
+  it('a star over display white spreads wider but keeps its flux in its (larger) sprite', () => {
+    const erf = (x: number): number => {
+      const t = 1 / (1 + 0.3275911 * Math.abs(x));
+      return Math.sign(x) * (1 - t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-x * x));
+    };
+    expect(pointSpread(0.5)).toBe(1);
+    expect(pointSpread(POINT_SPREAD_WHITE)).toBe(1);
+    expect(pointSpread(POINT_SPREAD_WHITE * 4)).toBeGreaterThan(1.5);
+    expect(pointSpread(1e9)).toBe(POINT_SPREAD_MAX);
+    for (const spread of [1, 1.7, POINT_SPREAD_MAX]) {
+      const sigma = 0.6 * spread;
+      // As the vertex shader: side = ceil(5 / 0.6 * sigma), so the sprite reaches +-4.17 sigma.
+      const size = Math.ceil((5 / 0.6) * sigma - 0.001);
+      const k = 1 / (sigma * Math.SQRT2);
+      const share = (c: number): number => 0.5 * (erf((c + 0.5) * k) - erf((c - 0.5) * k));
+      for (let phase = -0.5; phase <= 0.5; phase += 0.1) {
+        let sum = 0;
+        for (let p = -12; p <= 12; p++) {
+          const c = p - phase;
+          if (Math.abs(c) <= size / 2) sum += share(c);
+        }
+        expect(sum).toBeGreaterThan(0.999);
+        expect(sum).toBeLessThan(1.0001);
+      }
+    }
+    expect(STAR_FRAG).toContain('(gl_PointCoord - 0.5) * vSize');
   });
 
   it('clamps a star pixel below half-float overflow, which a narrow FOV would otherwise reach', () => {

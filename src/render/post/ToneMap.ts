@@ -5,8 +5,29 @@ import { SCENE_UNITS_PER_LUX } from '../sky/params';
 import { EXPOSURE_GLSL } from './AutoExposure';
 import { LOCAL_EXPOSURE_GLSL } from './LocalExposure';
 
+/**
+ * GLSL: rod vision. Below ~3 cd/m^2 colour fades and shifts toward blue (Purkinje), complete by ~0.01 cd/m^2:
+ * scotopicShare(lum) is the share of a pixel's colour (luminance `lum`, scene units) replaced by the rods' tint.
+ * Exported for the night sky's point sources (StarField, glsl/planets.ts), which pre-compensate it: a bright star
+ * stimulates the cones however dim its rendered spot's pixels are, so it keeps its colour (Antares, Mars).
+ */
+export const SCOTOPIC_GLSL = /* glsl */ `
+const vec3 SCOTOPIC_TINT = vec3(0.78, 0.94, 1.32);
+float scotopicShare(float lum) {
+  return 0.7 * (1.0 - smoothstep(-2.0, 0.5, log(max(lum / ${SCENE_UNITS_PER_LUX.toExponential(6)}, 1e-9)) / log(10.0)));
+}
+// Colour c (linear) pre-saturated so that the tone map's rod shift at luminance \`lum\` leaves roughly its hue (the
+// saturation gain is capped at maxGain; luminance kept).
+vec3 scotopicCompensate(vec3 c, float lum, float maxGain) {
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  vec3 s = max(vec3(l) + (c - vec3(l)) * min(1.0 / (1.0 - scotopicShare(lum)), maxGain), vec3(0.0));
+  return s * (l / max(dot(s, vec3(0.2126, 0.7152, 0.0722)), 1e-30));
+}
+`;
+
 export const TONEMAP_FRAG = /* glsl */ `
 ${EXPOSURE_GLSL}
+${SCOTOPIC_GLSL}
 uniform sampler2D tScene;
 uniform sampler2D tBloom;
 uniform float uBloomWeight;
@@ -113,8 +134,7 @@ void main() {
 
   // Rod vision: below ~3 cd/m^2 colour fades and shifts toward blue (Purkinje), complete by ~0.01 cd/m^2.
   float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  float scotopic = 1.0 - smoothstep(-2.0, 0.5, log(max(lum / ${SCENE_UNITS_PER_LUX.toExponential(6)}, 1e-9)) / log(10.0));
-  c = mix(c, lum * vec3(0.78, 0.94, 1.32), 0.7 * scotopic);
+  c = mix(c, lum * SCOTOPIC_TINT, scotopicShare(lum));
 
   // Local adaptation around the global exposure (see LocalExposure.ts).
   float logAdapted = texture2D(tExposure, vec2(0.5)).r;

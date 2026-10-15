@@ -16,7 +16,8 @@
 //
 // The catalogue layer: one point per star at infinity (rotation only, like the dome), drawn right after the dome in
 // the opaque list (renderOrder just above it, transparent: false) with additive blending and no depth, so every
-// opaque object drawn after it covers it. Each star is a box-integrated Gaussian (sigma 0.6 px): the weights of the
+// opaque object drawn after it covers it. Each star is a box-integrated Gaussian (sigma 0.6 px; wider for a star
+// over display white, glsl/pointSpread.ts): the weights of the
 // pixels it touches sum to 1 at any sub-pixel position, so stars carry their exact flux, neither shimmer as the
 // view turns nor change brightness with zoom. Radiance = E * w / (pixel solid angle) with
 // E = STAR_E0 * 10^(-0.4 m) * colour(B-V) * transmittance * twinkle * uStarGain * uNight.
@@ -28,11 +29,15 @@ import { ATMOSPHERE_GLSL } from './glsl/atmosphere';
 import { STAR_E0 } from './glsl/stars';
 import { decodeStarCatalog, equatorialVector, starColour, type StarCatalog } from './starCatalog';
 import { EXPOSURE_GLSL } from '../post/AutoExposure';
+import { POINT_COLOUR_GAIN_MAX, POINT_SPREAD_GLSL } from './glsl/pointSpread';
+import { SCOTOPIC_GLSL } from '../post/ToneMap';
 
-/** Sprite side, px: the Gaussian's tails beyond +-2.5 px (4 sigma) carry < 0.1 % of the flux. */
+/** Sprite side of a sharp star, px: the Gaussian's tails beyond +-2.5 px (4 sigma) carry < 0.1 % of the flux. */
 const POINT_SIZE = 5;
-/** Gaussian sigma, px (as the dome's procedural stars). */
+/** Gaussian sigma of a sharp star, px (as the dome's procedural stars); stars over display white spread wider (glsl/pointSpread.ts). */
 const STAR_SIGMA_PX = 0.6;
+/** Sprite side in sigmas (5 px / 0.6 px), kept as a star spreads. */
+const SPRITE_SIGMAS = POINT_SIZE / STAR_SIGMA_PX;
 /** Points whose brightest pixel would display below this (display-linear, 0.18 = middle grey) are skipped. */
 const NEGLIGIBLE_DISPLAY = 1 / 2048;
 /** Ceiling of a star pixel's radiance: the dome's (skyDome.ts) and the post chain's, below half-float's 65504. */
@@ -50,9 +55,13 @@ uniform float uPixelAngle;
 uniform float uCamR;
 uniform float uExposureValid;
 ${EXPOSURE_GLSL}
+${POINT_SPREAD_GLSL}
 attribute vec3 aFlux;
 attribute vec2 aTwinkle;
 varying vec3 vRadiance;
+/** Sprite side, px, and 1 / (sigma sqrt 2) of the star's Gaussian, px^-1. */
+varying float vSize;
+varying float vErfK;
 
 const float PEAK_WEIGHT = ${peakWeight().toFixed(6)};
 
@@ -61,6 +70,8 @@ void cull() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   gl_PointSize = 0.0;
   vRadiance = vec3(0.0);
+  vSize = 1.0;
+  vErfK = 1.0;
 }
 
 void main() {
@@ -72,20 +83,29 @@ void main() {
   }
   float airmass = 1.0 / max(dir.y, 0.05);
   float twinkle = 1.0 + 0.3 * min(airmass - 1.0, 3.0) * sin(uTime * (7.0 + 9.0 * aTwinkle.x) + 6.2831853 * aTwinkle.y);
-  vRadiance = aFlux * transmittanceToTop(uCamR, dir.y) * (twinkle * uStarGain * uNight / (uPixelAngle * uPixelAngle));
-  if (uExposureValid > 0.5 && PEAK_WEIGHT * dot(vRadiance, vec3(0.2126, 0.7152, 0.0722)) * sceneExposure() < ${NEGLIGIBLE_DISPLAY.toExponential(4)}) {
+  vec3 steady = aFlux * transmittanceToTop(uCamR, dir.y) * (uStarGain * uNight / (uPixelAngle * uPixelAngle));
+  vRadiance = steady * twinkle;
+  float peakDisplay = uExposureValid > 0.5 ? PEAK_WEIGHT * dot(vRadiance, vec3(0.2126, 0.7152, 0.0722)) * sceneExposure() : 0.0;
+  if (uExposureValid > 0.5 && peakDisplay < ${NEGLIGIBLE_DISPLAY.toExponential(4)}) {
     cull();
     return;
   }
+  // Brighter than display white: a wider spot, same flux (from the steady light, so the twinkle does not pulse its size).
+  float sigma = ${STAR_SIGMA_PX.toFixed(2)} * pointSpread(peakDisplay / twinkle);
+  vErfK = 1.0 / (sigma * 1.41421356);
+  vSize = ceil(${SPRITE_SIGMAS.toFixed(4)} * sigma - 0.001);
   // Rotation only, at a radius well inside the camera's near/far range; depth is neither tested nor written.
   gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * dir * 10.0, 1.0);
-  gl_PointSize = ${POINT_SIZE.toFixed(1)};
+  gl_PointSize = vSize;
 }
 `;
 
 /** Fragment shader of the catalogue layer (exported for tests). */
 export const STAR_FRAG = /* glsl */ `
+${SCOTOPIC_GLSL}
 varying vec3 vRadiance;
+varying float vSize;
+varying float vErfK;
 
 // erf, Abramowitz & Stegun 7.1.26 (|error| < 1.5e-7).
 float erfApprox(float x) {
@@ -93,18 +113,20 @@ float erfApprox(float x) {
   float y = 1.0 - t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * exp(-x * x);
   return sign(x) * y;
 }
-// Share of a unit Gaussian (sigma in px) that falls in the pixel [c - 0.5, c + 0.5].
-float pixelShare(float c) {
-  const float k = ${(1 / (STAR_SIGMA_PX * Math.SQRT2)).toFixed(6)};
+// Share of a unit Gaussian (k = 1 / (sigma sqrt 2), sigma in px) that falls in the pixel [c - 0.5, c + 0.5].
+float pixelShare(float c, float k) {
   return 0.5 * (erfApprox((c + 0.5) * k) - erfApprox((c - 0.5) * k));
 }
 
 void main() {
   // gl_PointCoord is measured from the star's exact (sub-pixel) position to this pixel's centre.
-  vec2 o = (gl_PointCoord - 0.5) * ${POINT_SIZE.toFixed(1)};
+  vec2 o = (gl_PointCoord - 0.5) * vSize;
   // Clamped like the dome (skyDome.ts): radiance grows as 1 / uPixelAngle^2, so at a very narrow FOV a bright star's
   // central pixel would pass half-float's 65504 and write Inf into the HDR target.
-  gl_FragColor = vec4(min(vRadiance * (pixelShare(o.x) * pixelShare(o.y)), vec3(${STAR_RADIANCE_CLAMP.toFixed(1)})), 1.0);
+  vec3 c = vRadiance * (pixelShare(o.x, vErfK) * pixelShare(o.y, vErfK));
+  // The star's own colour survives the tone map's rod shift (see SCOTOPIC_GLSL; gain capped: agent choice).
+  c = scotopicCompensate(c, dot(c, vec3(0.2126, 0.7152, 0.0722)), ${POINT_COLOUR_GAIN_MAX.toFixed(2)});
+  gl_FragColor = vec4(min(c, vec3(${STAR_RADIANCE_CLAMP.toFixed(1)})), 1.0);
 }
 `;
 

@@ -24,7 +24,10 @@ const float AIRGLOW_LUMINANCE = ${f(1.2e-4 * SCENE_UNITS_PER_LUX)};
 vec3 airglow(vec3 d) {
   float sinZ2 = 1.0 - d.y * d.y;
   float vanRhijn = 1.0 / sqrt(1.0 - 0.972 * sinZ2);
-  return AIRGLOW_LUMINANCE * min(vanRhijn, 4.0) * vec3(0.75, 1.0, 0.8);
+  // Tint: the OI 557.7 nm line makes airglow green in long exposures, but the dark-adapted eye sees a neutral to
+  // blue-grey black (and the tone map's Purkinje shift already cools it); a green tint read as a teal video-game
+  // night (agent choice, night-sky gate 1).
+  return AIRGLOW_LUMINANCE * min(vanRhijn, 4.0) * vec3(0.85, 1.0, 1.0);
 }
 
 // d: view direction (world); moonCover: share of the pixel covered by the Moon's disc.
@@ -32,9 +35,8 @@ vec3 nightSky(vec3 d, float moonCover) {
   if (uNight <= 0.0) return vec3(0.0);
   vec3 e = uWorldToEquatorial * d;
   float airmass = 1.0 / max(d.y, 0.05);
-  // Summed in this order (stars, planets, Milky Way, airglow) so that with unit gains and no planets the sum is
-  // bit-identical to the pre-split shader.
-  vec3 sky = uStarGain * stars(e, airmass) + uStarGain * planets(d, airmass) + uDiffuseGain * milkyWay(e) + uAirglowGain * airglow(d);
-  return (1.0 - moonCover) * uNight * sky;
+  // The Moon hides what lies behind it (stars, planets, the Milky Way); the airglow (~90 km up) is in front of it.
+  vec3 behind = uStarGain * stars(e, airmass) + uStarGain * planets(d, airmass, uStarGain) + uDiffuseGain * milkyWay(e);
+  return uNight * ((1.0 - moonCover) * behind + uAirglowGain * airglow(d));
 }
 `;

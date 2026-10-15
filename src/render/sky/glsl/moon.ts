@@ -80,12 +80,14 @@ vec3 moonDisc(vec3 d, out float cover) {
     vec3 earthshine = mix(uMoonLook.y, uMoonLook.z, night) * mix(vec3(1.0), EARTHSHINE_TINT, night);
     moon = uMoonRadiance * k * moonAlbedo(ps, mu) * (lommelSeeliger + earthshine) * cover;
   }
-  // Aureole (cinematic, night only): 1/theta^3 from the limb, reaching 0 at MOON_AUREOLE_RADII.
-  if (night > 0.0 && x > 1.0 - aa) {
+  // Aureole (cinematic, night only): 1/theta^3 from the limb, reaching 0 at MOON_AUREOLE_RADII. It is light
+  // scattered in the atmosphere, in front of the Moon, so it lies over the disc too (at its limb value): a crescent's
+  // dark side and the sliver of a just-past-full Moon then join the aureole without a dark ring at the limb.
+  if (night > 0.0) {
     float t = max(x, 1.0);
     const float tail = 1.0 / (MOON_AUREOLE_RADII * MOON_AUREOLE_RADII * MOON_AUREOLE_RADII);
     float halo = max(0.0, 1.0 / (t * t * t) - tail) / (1.0 - tail);
-    moon += uMoonRadiance * (k * uMoonLook.w * night * halo * (1.0 - cover));
+    moon += uMoonRadiance * (k * uMoonLook.w * night * halo);
   }
   return moon;
 }

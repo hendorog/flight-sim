@@ -21,27 +21,27 @@ const f = (v: number): string => v.toExponential(6);
 export const MILKY_WAY_LUMINANCE_CDM2 = 5e-4;
 
 /**
- * Constants printed by scripts/sky/milkyway-build.sh for public/sky/stars/milkyway_4k.webp (4096x2048, WebP q75;
- * encoding v = sRGB_OETF(rgb / L_REF), decoded by the GPU as SRGBColorSpace so mipmaps filter in linear light).
+ * Constants printed by scripts/sky/milkyway-build.sh for public/sky/stars/milkyway_4k.webp (4096x2048, WebP q85,
+ * pre-filtered with a 1-texel Gaussian isotropic on the sky; encoding v = sRGB_OETF(rgb / L_REF), decoded by the GPU as SRGBColorSpace so mipmaps filter in linear light).
  * Map units are the EXR's linear values (0..1). All measured on the decoded 8-bit file.
  */
 export const MILKY_WAY_MAP = {
   width: 4096,
   height: 2048,
   /** Linear map value of a texel at 1.0: the map's 99.99th luminance percentile (agent choice: keeps the bulge's structure, clips single pixels). */
-  lRef: 0.713126,
+  lRef: 0.694355,
   /** Peak of the map's luminance smoothed with a 2 deg (sigma) Gaussian, map units ... */
-  peak2deg: 0.475504,
+  peak2deg: 0.47445,
   /** ... and where it is: image row from the top / height, column / width (texel centres). */
   peakRowFromTop: 0.661133,
   peakColumn: 0.744629,
   /** Mean luminance over the sphere (solid-angle weighted), map units. */
-  mean: 0.0274334,
+  mean: 0.0273207,
   /** Pole of the great circle best fitting the bright band (luminance-weighted, SVS's RA/Dec convention), deg. */
-  bandPoleRaDeg: 194.644,
-  bandPoleDecDeg: 25.726,
+  bandPoleRaDeg: 194.637,
+  bandPoleDecDeg: 25.749,
   /** Mean luminance at |b| < 3 deg over mean at |b| > 30 deg, b from EQ_TO_GAL. */
-  bandContrast: 11.85,
+  bandContrast: 12.0,
 } as const;
 
 /**
@@ -98,7 +98,13 @@ vec3 milkyWay(vec3 e) {
     float cosDec = sqrt(max(1.0 - e.z * e.z, 1e-6));
     vec2 du = vec2(min(uPixelAngle / (6.2831853 * cosDec), 1.0), 0.0);
     vec2 dv = vec2(0.0, uPixelAngle / 3.14159265);
-    return textureGrad(tMilkyWay, uv, du, dv).rgb * MILKY_WAY_MAP_SCALE;
+    vec3 c = textureGrad(tMilkyWay, uv, du, dv).rgb;
+    // A little warmth on the bright star clouds, as a dark-site photograph shows them (the tone map's mesopic shift
+    // greys the faint light); luminance kept. Agent choice (cinematic look, night-sky gate 1).
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    vec3 warm = vec3(1.08, 0.99, 0.86);
+    c *= mix(vec3(1.0), warm / dot(warm, vec3(0.2126, 0.7152, 0.0722)), smoothstep(0.08, 0.6, l));
+    return c * MILKY_WAY_MAP_SCALE;
   }
   const mat3 EQ_TO_GAL = mat3(
     -0.0548755604, 0.4941094279, -0.8676661490,

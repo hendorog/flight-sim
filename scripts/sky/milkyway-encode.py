@@ -2,11 +2,16 @@
 """Encode the NASA SVS Milky Way map (linear float RGB) into the 8-bit file the sky dome samples, and report the
 constants src/render/sky/glsl/milkyWay.ts needs.
 
-    python3 -I scripts/sky/milkyway-encode.py <raw.f32> <width> <height> <out.webp|out.jpg> [quality]
+    python3 -I scripts/sky/milkyway-encode.py <raw.f32> <width> <height> <out.webp|out.jpg> [quality] [sigma]
 
 <raw.f32>: the EXR as little-endian float32 RGB, top row first (scripts/sky/milkyway-build.sh makes it with
 ImageMagick). The map is plate carree in J2000 RA/Dec, "centered at 0h right ascension, and r.a. increases to the
 left" (SVS page 4851): column u = (c + 0.5) / W has RA = (0.5 - u) * 360 deg (mod 360), the top row is Dec +90.
+
+Pre-filter (agent choice): a Gaussian of `sigma` texels ON THE SKY, in linear light: rows (Dec) by sigma, each row
+(RA, wrapping) by sigma / cos(Dec), capped at W / 8. The map's per-texel noise (shot noise of the faint star counts)
+is otherwise amplified by the night look's Milky Way gain into a grainy sky, and the plate carree's shrinking rows
+near the poles turn it into radial streaks around Polaris; the blur makes the map's resolution isotropic on the sky.
 
 Encoding (agent choice): v = sRGB_OETF(clamp(rgb / L_REF, 0, 1)) per channel, L_REF = the 99.99th percentile of
 the map's luminance, so only single bright pixels clip and the bulge keeps its structure. The texture is loaded as
@@ -76,6 +81,29 @@ def blur_sphere(img, sigma_deg):
     return res
 
 
+def prefilter(a, sigma):
+    """Isotropic-on-the-sky Gaussian blur of an equirect RGB map (h, w, 3), sigma in texels (rows)."""
+    if sigma <= 0:
+        return a
+    h, w, _ = a.shape
+    k = np.arange(-int(4 * sigma) - 1, int(4 * sigma) + 2)
+    g = np.exp(-0.5 * (k / sigma) ** 2)
+    g /= g.sum()
+    pad = len(k) // 2
+    p = np.pad(a, ((pad, pad), (0, 0), (0, 0)), mode='edge')
+    out = np.zeros_like(a)
+    for i, gi in enumerate(g):
+        out += gi * p[i : i + h]
+    freq = np.fft.rfftfreq(w)
+    for r in range(h):
+        dec = math.radians(90 - (r + 0.5) * 180 / h)
+        sh = min(sigma / max(math.cos(dec), 1e-6), w / 8)
+        # Circular Gaussian along the row (RA wraps), applied in the frequency domain.
+        tf = np.exp(-2 * (math.pi * freq * sh) ** 2)
+        out[r] = np.fft.irfft(np.fft.rfft(out[r], axis=0) * tf[:, None], w, axis=0)
+    return np.maximum(out, 0)
+
+
 def directions(h, w):
     u = (np.arange(w) + 0.5) / w
     ra = np.radians(((0.5 - u) * 360) % 360)
@@ -84,8 +112,8 @@ def directions(h, w):
     return np.stack([np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)], -1), dec
 
 
-def main(raw, w, h, out, quality):
-    a = np.fromfile(raw, dtype='<f4').reshape(h, w, 3).astype(np.float64)
+def main(raw, w, h, out, quality, sigma):
+    a = prefilter(np.fromfile(raw, dtype='<f4').reshape(h, w, 3).astype(np.float64), sigma)
     l_ref = float(np.percentile(lum(a), 99.99))
     enc = np.round(srgb_oetf(np.clip(a / l_ref, 0, 1)) * 255).astype(np.uint8)
     im = Image.fromarray(enc, 'RGB')
@@ -127,7 +155,7 @@ def main(raw, w, h, out, quality):
     band = float((Ls * weight)[np.abs(b) < 3].sum() / weight[np.abs(b) < 3].sum())
     high = float((Ls * weight)[np.abs(b) > 30].sum() / weight[np.abs(b) > 30].sum())
 
-    print(f'wrote {out}: {w}x{h}, {len(buf.getvalue())} bytes, quality {quality}')
+    print(f'wrote {out}: {w}x{h}, {len(buf.getvalue())} bytes, quality {quality}, pre-filter sigma {sigma} texels')
     print(f'L_REF = {l_ref:.6g}')
     print(f'PEAK_2DEG = {sm[r, c]:.6g} at row {peak_row:.6f} (from top), u {peak_u:.6f}: RA {peak_ra:.3f} Dec {peak_dec:.3f}')
     print(f'MEAN = {mean:.6g}')
@@ -136,6 +164,13 @@ def main(raw, w, h, out, quality):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) not in (5, 6):
+    if len(sys.argv) not in (5, 6, 7):
         raise SystemExit(__doc__)
-    main(sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4], int(sys.argv[5]) if len(sys.argv) == 6 else 80)
+    main(
+        sys.argv[1],
+        int(sys.argv[2]),
+        int(sys.argv[3]),
+        sys.argv[4],
+        int(sys.argv[5]) if len(sys.argv) >= 6 else 80,
+        float(sys.argv[6]) if len(sys.argv) == 7 else 0.0,
+    )
