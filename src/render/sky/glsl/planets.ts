@@ -31,13 +31,15 @@ float planetKernel(float x) {
 
 vec3 planets(vec3 d, float airmass) {
   float pa = uPixelAngle;
-  // Pixels are at most pa across (on the axis): 3 pa covers the kernel's 2 px radius everywhere. Almost every sky
-  // pixel stops at these six dot products.
-  float cosMax = 1.0 - 4.5 * pa * pa;
+  // Pixels are at most pa across (on the axis): 3 pa covers the kernel's 2 px radius everywhere. Tested on the
+  // difference vector (|p - d|^2 ~ angle^2, full float precision; a cosine next to 1.0 would round away at narrow
+  // fields of view). Almost every sky pixel stops at these six tests.
+  float r2Max = 9.0 * pa * pa;
   vec3 sum = vec3(0.0);
   for (int i = 0; i < 6; i++) {
     vec4 p = uPlanets[i];
-    if (p.w <= 0.0 || dot(d, p.xyz) < cosMax) continue;
+    vec3 t = p.xyz - d;
+    if (p.w <= 0.0 || dot(t, t) > r2Max) continue;
     vec3 fwd = cross(uPlanetUp, uPlanetRight);
     float cd = dot(d, fwd);
     float cp = dot(p.xyz, fwd);
