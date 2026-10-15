@@ -61,6 +61,7 @@ import { AirportSystem, TOWER } from '../world/airport';
 import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
+import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
 import { era, isPresent, setEra } from '../world/era/eraState';
 import { createEraEffects } from '../render/post/eraEffects';
 import { bootCameraMode, cameraModeAllowed, safariHeadPitch, startTimeOfDay } from './safariStart';
@@ -349,6 +350,12 @@ export class Simulator {
         this.ctx.carbIcing = on;
         this.physics.carbIcing = on;
       },
+      setMoonScale: (scale) => {
+        const v = sanitizeMoonScale(scale);
+        if (v === null) return;
+        saveMoonScale(this.store, v);
+        this.ctx.moonScale = v;
+      },
     };
     const ctx: SimContext = {
       renderer,
@@ -383,6 +390,7 @@ export class Simulator {
       presentation,
       carbIcing,
       era: era().id,
+      moonScale: chooseMoonScale(p, this.store),
     };
     this.ctx = ctx;
     this.applySize();
