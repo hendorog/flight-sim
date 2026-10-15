@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import type { SimContext } from '../../core/context';
 import type { Celestial } from './celestial';
-import { SCENE_UNITS_PER_LUX } from './params';
+import { EARTH_RADIUS_KM, SCENE_UNITS_PER_LUX } from './params';
 import { skyJulianDate } from './skyTime';
 
 const DEG = Math.PI / 180;
@@ -200,6 +200,17 @@ export function planetKernel(x: number): number {
   return (t * t * t) / 6;
 }
 
+/**
+ * World-up component of a direction below which the planet is skipped (E = 0): 0.02 below the geometric horizon
+ * seen from `altitudeM` (the same camera radius as the dome's uCamR), so the skip never hides a planet the dome would
+ * still draw above the ground - the horizon dips ~1.15 deg at 1.3 km, ~3 deg at 9 km. The margin keeps a planet just
+ * under the horizon whose 2 px kernel still reaches sky pixels.
+ */
+export function planetCutoffY(altitudeM: number): number {
+  const r = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + Math.max(altitudeM / 1000, 0.002));
+  return -Math.sqrt(1 - r * r) - 0.02;
+}
+
 /** Most planets the dome draws (the GLSL array size). */
 export const MAX_PLANETS = 6;
 
@@ -234,6 +245,7 @@ export class PlanetModel {
       for (let i = 0; i < PLANET_IDS.length; i++) planetPosition(PLANET_IDS[i], jd, this.positions[i]);
     }
     const cam = ctx.camera?.matrixWorld.elements;
+    const cutoffY = planetCutoffY(cam ? cam[13] : 0);
     if (cam) {
       this.uniforms.uPlanetRight.value.set(cam[0], cam[1], cam[2]).normalize();
       this.uniforms.uPlanetUp.value.set(cam[4], cam[5], cam[6]).normalize();
@@ -248,8 +260,8 @@ export class PlanetModel {
       const wx = m[0] * x + m[3] * y + m[6] * z;
       const wy = m[1] * x + m[4] * y + m[7] * z;
       const wz = m[2] * x + m[5] * y + m[8] * z;
-      // Below the horizon the dome draws the ground there anyway; E = 0 lets the shader skip the planet.
-      v.set(wx, wy, wz, wy > -0.02 ? MAG0_ILLUMINANCE * Math.pow(10, -0.4 * p.mag) : 0);
+      // Below the (altitude-dipped) horizon the dome draws the ground there anyway; E = 0 lets the shader skip it.
+      v.set(wx, wy, wz, wy > cutoffY ? MAG0_ILLUMINANCE * Math.pow(10, -0.4 * p.mag) : 0);
     }
   }
 }

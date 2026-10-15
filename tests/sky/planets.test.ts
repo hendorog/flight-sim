@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { Celestial } from '../../src/render/sky/celestial';
-import { MAG0_ILLUMINANCE, PLANET_IDS, PlanetModel, planetKernel, planetPosition } from '../../src/render/sky/planets';
+import { MAG0_ILLUMINANCE, PLANET_IDS, PlanetModel, planetCutoffY, planetKernel, planetPosition } from '../../src/render/sky/planets';
 import { skyJulianDate } from '../../src/render/sky/skyTime';
 import type { SimContext } from '../../src/core/context';
 
@@ -90,6 +90,39 @@ describe('PlanetModel', () => {
       expect(u.z).toBeGreaterThan(0.5);
       expect(u.w).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('planet horizon cutoff', () => {
+  it('follows the geometric horizon dip with camera altitude', () => {
+    expect(planetCutoffY(0)).toBeCloseTo(-0.0208, 3);
+    // ~1.15 deg dip at 1.3 km, ~3 deg at 9 km (sin), plus the 0.02 margin.
+    expect(planetCutoffY(1300)).toBeCloseTo(-Math.sin(1.157 * DEG) - 0.02, 3);
+    expect(planetCutoffY(9000)).toBeCloseTo(-Math.sin(3.045 * DEG) - 0.02, 3);
+  });
+
+  it('keeps a planet that is below sea-level horizontal but above the horizon seen from 9 km', () => {
+    const model = new PlanetModel();
+    const celestial = new Celestial();
+    const camAt = (altM: number) => {
+      const camera = new THREE.PerspectiveCamera();
+      camera.position.set(0, altM, 0);
+      camera.updateMatrixWorld();
+      return camera;
+    };
+    // Find a moment when some planet sits between the sea-level cutoff and the 9 km horizon.
+    let found: { tod: number; i: number } | undefined;
+    for (let tod = 0; tod < 24 && !found; tod += 0.05) {
+      celestial.update(tod, 186);
+      model.update({ weather: { dayOfYear: 186, timeOfDay: tod }, camera: camAt(0) } as unknown as SimContext, celestial);
+      const i = model.uniforms.uPlanets.value.findIndex((u) => u.y < -0.03 && u.y > -0.06);
+      if (i >= 0) found = { tod, i };
+    }
+    expect(found).toBeDefined();
+    const { tod, i } = found!;
+    expect(model.uniforms.uPlanets.value[i].w).toBe(0);
+    model.update({ weather: { dayOfYear: 186, timeOfDay: tod }, camera: camAt(9000) } as unknown as SimContext, celestial);
+    expect(model.uniforms.uPlanets.value[i].w).toBeGreaterThan(0);
   });
 });
 
