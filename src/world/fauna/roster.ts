@@ -20,8 +20,8 @@
 //   - Pteranodon kettles are drawn 3x toward water (waterAffinity), the azhdarchids as before.
 //
 // Fauna across the landscape (AGENT choices, after measuring 14-70 animals per 100 km2 of land beyond 10 km): the
-// layer-2 occupancies went plain 0.12 -> 0.35, open 0.06 -> 0.15, woodland 0.10 -> 0.15 (the rise as occupancyExtra,
-// drawn after the old bands, so every cell keeps the species it drew before), the plains herds 12-35 -> 20-50, and
+// layer-2 occupancies went plain 0.12 -> 0.20, open 0.06 -> 0.15, woodland 0.10 -> 0.15 (the rise as occupancyExtra,
+// drawn after the old bands, so every cell keeps the species it drew before), the plains herds 12-35 -> 15-40, and
 // habitat.ts adds a second, independent layer-2-style group per cell (layer 3, the same entries and shares).
 
 import type { RosterId } from '../era/types';

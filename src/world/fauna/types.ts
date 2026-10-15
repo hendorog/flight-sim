@@ -172,7 +172,8 @@ export interface FaunaRosterEntry {
    */
   habitat?: HabitatKind;
   /**
-   * Layer 2: the share of 2 km cells (among those layer 1 left empty) that draw this entry, before its habitat test.
+   * Layers 2 and 3: the share of 2 km cells (layer 2: among those layer 1 left empty; layer 3: every cell) that draw
+   * this entry, before its habitat test.
    * 'nearHerd': the share of streamed prey herds that get one.
    */
   occupancy?: number;
