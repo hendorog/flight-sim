@@ -68,16 +68,17 @@ float treeThin(float keep) {
   float r = treeRank();
   return smoothstep(0.0, 1.0, clamp((keep - r) / ((THIN_BAND - 1.0) * max(r, 1e-3)), 0.0, 1.0));
 }
-// Impostor radius (m) of a tree of height tH at kept fraction keep and thinning thin, and how far (m) it sinks.
-// The kept trees grow a little to cover for the rest (an open tree's own kind is kept to 1 / OPEN_RANK times
-// the fraction). A thinned tree in closed forest keeps its size and sinks into the canopy shell
-// (terrainMaterial.ts) and the ground, so it comes up through the canopy crown first, like a taller crown;
-// a tree in the open, with no canopy to hide in, shrinks away instead.
+// Impostor radius (m) of a tree of height tH at kept fraction keep and thinning thin, and how far (m) its
+// centre drops. The kept trees grow a little to cover for the rest (an open tree's own kind is kept to
+// 1 / OPEN_RANK times the fraction). A thinned tree in closed forest keeps its size and sinks into the canopy
+// shell (terrainMaterial.ts) and the ground, so it comes up through the canopy crown first, like a taller
+// crown; a tree in the open, with no canopy to hide in, shrinks toward its foot (not its middle, which left
+// a small tree hanging in mid-air, half the tree's height up, that grew into the full one).
 float treeRadius(float tH, float keep, float thin) {
   float grow = 1.0 + 0.5 * (1.0 - sqrt(clamp(treeOpen() ? keep / ${OPEN_RANK.toFixed(3)} : keep, 0.0, 1.0)));
   return ${TREE_BOUND_RADIUS.toFixed(3)} * tH * grow * (treeOpen() ? thin : 1.0);
 }
-float treeSink(float tH, float R, float thin) { return treeOpen() ? 0.0 : (1.0 - thin) * (0.5 * tH + R); }
+float treeSink(float tH, float R, float thin) { return (1.0 - thin) * (treeOpen() ? 0.5 * tH : 0.5 * tH + R); }
 `;
 
 // Foliage is a rough, porous scatterer: much weaker grazing-angle Fresnel than a smooth dielectric.
@@ -354,7 +355,7 @@ export function createImpostorMaterial(albedo: THREE.Texture, normal: THREE.Text
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-v10';
+  mat.customProgramCacheKey = () => 'tree-impostor-v11';
   return mat;
 }
 
@@ -379,7 +380,7 @@ export function createImpostorDepthMaterial(albedo: THREE.Texture, uniforms: Tre
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${IMPOSTOR_SHADOW_FRAGMENT}`)
       .replace('#include <logdepthbuf_fragment>', '');
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-depth-v5';
+  mat.customProgramCacheKey = () => 'tree-impostor-depth-v6';
   return mat;
 }
 
