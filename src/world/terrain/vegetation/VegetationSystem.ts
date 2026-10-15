@@ -122,6 +122,11 @@ class InstanceList {
   private bind(g: THREE.InstancedBufferGeometry): void {
     g.setAttribute('aInstA', new THREE.InterleavedBufferAttribute(this.buffer, 4, 0));
     g.setAttribute('aInstB', new THREE.InterleavedBufferAttribute(this.buffer, 2, 4));
+    // three caps every draw of an instanced geometry at the instance count of the buffer it first bound
+    // (WebGLBindingStates sets _maxInstanceCount once). Without this, a list that grew drew only as many
+    // instances as it first held: the farthest near trees went missing, leaving bare forest floor beside the
+    // aircraft until the list shrank again.
+    delete (g as unknown as { _maxInstanceCount?: number })._maxInstanceCount;
   }
 
   reserve(n: number): void {
