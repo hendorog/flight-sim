@@ -62,6 +62,15 @@ const PRESETS: Record<QualityLevel, VegetationPreset> = {
 };
 
 const CELL = 256;
+/**
+ * Dev: `?treenear=400` draws every tree's full mesh to that distance (m), instead of handing over to the
+ * impostors at the quality's near ranges (for comparing look and cost).
+ */
+function withNearOverride(p: VegetationPreset): VegetationPreset {
+  const v = typeof location === 'undefined' ? NaN : Number(new URLSearchParams(location.search).get('treenear'));
+  return Number.isFinite(v) && v > 0 ? { ...p, near: v, nearOpen: Math.max(p.nearOpen, v) } : p;
+}
+
 /** Rebuild the near / far instance lists after the camera moves this far, m. */
 const NEAR_REBUILD = 30;
 const FAR_REBUILD = 150;
@@ -280,7 +289,7 @@ export class VegetationSystem {
   }
 
   setQuality(q: QualityLevel): void {
-    const p = PRESETS[q];
+    const p = withNearOverride(PRESETS[q]);
     // The scene is multisampled from medium up (render/post/PostPipeline.ts): antialias the foliage through
     // alpha-to-coverage there (the define also selects the moving hand-over dither, treeMaterials.ts).
     for (const m of this.materials) {
