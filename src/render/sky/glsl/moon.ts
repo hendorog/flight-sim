@@ -63,7 +63,9 @@ vec3 moonDisc(vec3 d, out float cover) {
   vec3 ay = cross(uMoonDir, ax);
   vec2 p = vec2(dot(d, ax), dot(d, ay)) / r;
   float x = length(p);
-  float aa = uPixelAngle / r;
+  // Limb anti-aliasing: +-1 px, widened to +-1.5 px at night (agent choice, night-sky review round 2: the large
+  // horizon Moon's limb read hard), unchanged by day.
+  float aa = uPixelAngle / r * mix(1.0, 1.5, uNight);
   cover = 1.0 - smoothstep(1.0 - aa, 1.0 + aa, x);
   // Night display cap (moon.ts moonDisplayScale): one scale for the whole disc; gated by uNight (0 with the sun
   // above +5.7 deg), so it is 1 by day (a dim overcast day's exposure would otherwise cap it and add the night

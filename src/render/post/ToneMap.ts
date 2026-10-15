@@ -1,6 +1,7 @@
 // Final display transform: bloom mix, exposure, mesopic/scotopic shift, AgX tone mapping, sRGB
 // encoding and dithering.
 
+import { DEPTH_GLSL } from '../../core/shaderLib';
 import { SCENE_UNITS_PER_LUX } from '../sky/params';
 import { EXPOSURE_GLSL } from './AutoExposure';
 import { LOCAL_EXPOSURE_GLSL } from './LocalExposure';
@@ -16,12 +17,14 @@ const vec3 SCOTOPIC_TINT = vec3(0.78, 0.94, 1.32);
 float scotopicShare(float lum) {
   return 0.7 * (1.0 - smoothstep(-2.0, 0.5, log(max(lum / ${SCENE_UNITS_PER_LUX.toExponential(6)}, 1e-9)) / log(10.0)));
 }
-// Colour c (linear) pre-saturated so that the tone map's rod shift at luminance \`lum\` leaves roughly its hue (the
-// saturation gain is capped at maxGain; luminance kept).
+// Colour c (linear) pre-compensated so that the tone map's rod shift at luminance \`lum\` leaves its hue: the shift
+// mix(c, l T, s) inverted, (c - s l T) / (1 - s), with s capped where 1 / (1 - s) reaches maxGain, clamped at 0 and
+// rescaled to c's luminance (a deep red star loses a little saturation instead of going negative).
 vec3 scotopicCompensate(vec3 c, float lum, float maxGain) {
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  vec3 s = max(vec3(l) + (c - vec3(l)) * min(1.0 / (1.0 - scotopicShare(lum)), maxGain), vec3(0.0));
-  return s * (l / max(dot(s, vec3(0.2126, 0.7152, 0.0722)), 1e-30));
+  float s = min(scotopicShare(lum), 1.0 - 1.0 / maxGain);
+  vec3 inv = max((c - s * l * SCOTOPIC_TINT) / (1.0 - s), vec3(0.0));
+  return inv * (l / max(dot(inv, vec3(0.2126, 0.7152, 0.0722)), 1e-30));
 }
 `;
 
@@ -39,8 +42,25 @@ uniform vec2 uSunTap;
 uniform vec3 uSunGlare;
 uniform float uSunExpected;
 uniform vec3 uWhiteBalance;
+uniform sampler2D tDepth;
+uniform float uOutsideGain;
+uniform float uOutsideNear;
 varying vec2 vUv;
 ${LOCAL_EXPOSURE_GLSL}
+${DEPTH_GLSL}
+
+// 1 where the pixel and its neighbours two pixels away all lie beyond the cabin (PostPipeline OUTSIDE_NEAR): the
+// erosion keeps the outside gain off pixels that blend a window frame with the view out (no bright fringe).
+float outsideMask() {
+  ivec2 size = textureSize(tDepth, 0);
+  ivec2 p = ivec2(vUv * vec2(size));
+  for (int k = 0; k < 5; k++) {
+    ivec2 o = k == 0 ? ivec2(0) : k == 1 ? ivec2(2, 0) : k == 2 ? ivec2(-2, 0) : k == 3 ? ivec2(0, 2) : ivec2(0, -2);
+    float d = texelFetch(tDepth, clamp(p + o, ivec2(0), size - 1), 0).r;
+    if (!isSky(d) && viewZFromDepth(d) < uOutsideNear) return 0.0;
+  }
+  return 1.0;
+}
 
 // Veiling glare of the sun in the eye (Stiles-Holladay: L = 10 E / theta^2, L in cd/m^2, E in lux,
 // theta in degrees), scaled by how much of the disc is visible in the frame (so terrain, the airframe
@@ -125,6 +145,13 @@ float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00
 void main() {
   vec3 c = texture2D(tScene, vUv).rgb;
   c = any(isnan(c)) || any(isinf(c)) ? vec3(0.0) : clamp(c, vec3(0.0), vec3(60000.0));
+  // The view out of the cockpit at night, exposed without the lamps (PostPipeline lampShareEV); before the bloom
+  // so the panel's glow over the windscreen is not lifted with it. lumGain undoes it for the physical terms.
+  float lumGain = 1.0;
+  if (uOutsideGain > 0.0) {
+    lumGain = mix(1.0, uOutsideGain, outsideMask());
+    c *= lumGain;
+  }
   // Energy-conserving bloom: the blur replaces a fraction of the image instead of adding to it.
   c = c * (1.0 - uBloomWeight) + texture2D(tBloom, vUv).rgb * uBloomScale;
   if (uSunExpected > 0.0) c += sunGlare();
@@ -134,11 +161,11 @@ void main() {
 
   // Rod vision: below ~3 cd/m^2 colour fades and shifts toward blue (Purkinje), complete by ~0.01 cd/m^2.
   float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c = mix(c, lum * SCOTOPIC_TINT, scotopicShare(lum));
+  c = mix(c, lum * SCOTOPIC_TINT, scotopicShare(lum / lumGain));
 
   // Local adaptation around the global exposure (see LocalExposure.ts).
   float logAdapted = texture2D(tExposure, vec2(0.5)).r;
-  float ev = localExposureEV(log2(max(lum, 1e-9)), logAdapted);
+  float ev = localExposureEV(log2(max(lum / lumGain, 1e-9)), logAdapted);
   c = agx(c * (sceneExposure() * exp2(ev)));
   c = srgbEncode(c);
   // Triangular dither of +-1 LSB breaks up banding in dark gradients (sky, fog).

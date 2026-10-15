@@ -50,6 +50,7 @@ import { SNAPSHOT_SCHEMA, snapshotSystems, type FlightSnapshot } from './resume'
 import { buildScenario, type Scenario } from './scenarios';
 import type { StartSpec } from './starts';
 import { createWorldEnvironment } from './worldEnvironment';
+import { sunDirectionNED } from '../core/world';
 
 /** Most simulated time one advance() call may run per unit of time scale, s. */
 const MAX_FRAME_SIM = 0.1;
@@ -114,6 +115,14 @@ function copyInto<T extends object>(dst: T, src: T): T {
   }
   return dst;
 }
+
+/**
+ * Panel-light dimmer a flight starts with at night (sun more than 6 degrees below the horizon), when the
+ * scenario's own setting is brighter (agent choice: the day setting, 0.6, floods the panel at ~3 lx; at night a
+ * pilot turns the flood and the backlighting down to just readable to keep the eye dark-adapted for the view out).
+ */
+export const NIGHT_PANEL_LIGHT = 0.2;
+const NIGHT_SUN_SIN = Math.sin((-6 * Math.PI) / 180);
 
 export class SimPhysics {
   readonly fm: AircraftFlightModel;
@@ -206,6 +215,7 @@ export class SimPhysics {
     copyControls(c, trim);
     applyControls(c, sc.controls ?? {});
     c.starter = false;
+    if (weather && c.lights.panel > NIGHT_PANEL_LIGHT && -sunDirectionNED(weather.timeOfDay, weather.dayOfYear).z < NIGHT_SUN_SIN) c.lights.panel = NIGHT_PANEL_LIGHT;
     if (this.definition.input.threePositionClutch) {
       if (sc.controls?.rotorClutchCommand !== undefined) c.rotorClutchCommand = sc.controls.rotorClutchCommand;
       else if (sc.controls?.rotorClutch !== undefined) c.rotorClutchCommand = sc.controls.rotorClutch ? 'engage' : 'release';

@@ -57,7 +57,7 @@ vec3 planets(vec3 d, float airmass, float gain) {
     vec2 o = (vec2(dot(p.xyz, uPlanetRight), dot(p.xyz, uPlanetUp)) / cp - vec2(dot(d, uPlanetRight), dot(d, uPlanetUp)) / cd) / pa;
     // A pixel at angle acos(cd) off the axis subtends pa^2 cd^3 sr. The sharp kernel's peak weight is 4/9.
     float radiance = p.w / (pa * pa * cd * cd * cd);
-    float s = uExposureValid > 0.5 ? pointSpread(0.4444 * radiance * dot(uPlanetColours[i], vec3(0.2126, 0.7152, 0.0722)) * gain * uNight * sceneExposure()) : 1.0;
+    float s = uExposureValid > 0.5 ? pointSpread(0.4444 * radiance * dot(uPlanetColours[i], vec3(0.2126, 0.7152, 0.0722)) * gain * uNight * sceneExposure(), ${POINT_SPREAD_MAX.toFixed(4)}) : 1.0;
     float w = radiance * (planetKernel(o.x / s) * planetKernel(o.y / s)) / (s * s);
     // The planet's colour survives the tone map's rod shift, as the catalogue stars' (StarField.ts).
     vec3 colour = uPlanetColours[i];

@@ -68,7 +68,7 @@ vec3 stars(vec3 e, float airmass) {
   float sigma = 0.6 * uPixelAngle;
   float profile = exp(-0.5 * dot(dv, dv) / (sigma * sigma)) / (6.2831853 * sigma * sigma);
   vec3 r1 = random3(uvec3(uvec2(cell), face + 6u));
-  float twinkle = 1.0 + 0.3 * min(airmass - 1.0, 3.0) * sin(uTime * (7.0 + 9.0 * r1.x) + 6.2831853 * r1.y);
+  float twinkle = 1.0 + 0.3 * min(airmass - 1.0, 1.5) * sin(uTime * (7.0 + 9.0 * r1.x) + 6.2831853 * r1.y);
   return STAR_E0 * pow(10.0, -0.4 * mag) * profile * twinkle * starColour(r1.z);
 }
 `;

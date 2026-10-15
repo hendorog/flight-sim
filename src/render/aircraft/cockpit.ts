@@ -73,6 +73,22 @@ const PEDAL_SWING = 0.22;
  * and placards without spoiling their dark adaptation; the displays themselves are 20-200 cd/m2.
  */
 const FLOOD_CD = 5;
+/**
+ * Share of the flood's flux that enters the cabin's bounce, relative to a surface of the cabin's mean albedo
+ * (cabinLight.CABIN_ALBEDO, ~0.25): the beam falls on the panel face and glareshield (~0.03) and partly on the
+ * yokes, the pilots' knees and the switch row, ~0.05 overall (agent estimate).
+ */
+const FLOOD_FIRST_BOUNCE = 0.2;
+/**
+ * Backlighting dimmer below its usual day setting (agent choice, night-sky review round 2): from DIMMER_KNEE down
+ * the backlight falls with the square of the knob, to 0 at 0, as a real lighting dimmer reaches far below its
+ * linear range (a night panel is set to ~1 cd/m2 markings, not the 2 cd/m2 floor the linear curve had).
+ * At and over the knee the curve is unchanged.
+ */
+const DIMMER_KNEE = 0.6;
+function dimmerLow(level: number): number {
+  return level >= DIMMER_KNEE ? 1 : (Math.max(level, 0) / DIMMER_KNEE) ** 2;
+}
 /** Dome light over the rear seats and its intensity, candela. */
 const DOME_POS = { x: -0.55, y: 0, z: -0.605 };
 const DOME_CD = 6;
@@ -1067,7 +1083,7 @@ export class Cockpit {
     // Clockwise as the pilot sees it (looking along -z) is a negative rotation about three's z.
     if (this.fuelHandle) this.fuelHandle.rotation.z = (-(this.def.fuelSelectorHandle!.angles[controls.fuelSelector] ?? 0) * Math.PI) / 180;
     if (this.brakeHandle) this.brakeHandle.position.z = -this.def.parkingBrakeHandle!.pos[0] + (controls.parkingBrake ? this.def.parkingBrakeHandle!.travel : 0);
-    if (compass) this.compass?.update(compass, controls.lights.panel * (state.electrical.busVoltage > 10 ? 1 : 0) * 1.2 * panelEmissiveScale);
+    if (compass) this.compass?.update(compass, Math.max(controls.lights.panel, DIMMER_KNEE) * dimmerLow(controls.lights.panel) * (state.electrical.busVoltage > 10 ? 1 : 0) * 1.2 * panelEmissiveScale);
     this.poseRockers(controls);
     // Key: OFF, R, L, BOTH 30 degrees apart clockwise, START a further 30 (spring-loaded).
     this.magnetoKey.rotation.z = -((controls.starter ? 4 : controls.magnetos) - 2) * (Math.PI / 6);
@@ -1078,7 +1094,7 @@ export class Cockpit {
     // (core/context.ts: an instrument backlight is ~5-20 cd/m2), in scene units.
     // With the dedicated map the displays are at full value and the markings at 0.1 of it, so the scale is
     // 10x: markings 2-20 cd/m2, displays 20-200 cd/m2.
-    const nits = this.dedicatedEmissive ? 20 + 180 * level : 2 + 18 * level;
+    const nits = (this.dedicatedEmissive ? 20 + 180 * Math.max(level, DIMMER_KNEE) : 2 + 18 * Math.max(level, DIMMER_KNEE)) * dimmerLow(level);
     this.panelMat.emissiveIntensity = this.hasPanelTexture || this.dedicatedEmissive ? power * nits * SCENE_UNITS_PER_LUX * panelEmissiveScale : 0;
 
     // Interior lamps (cabinLight.cabinLamps): the flood on the PANEL dimmer, the dome on its own switch.
@@ -1121,10 +1137,19 @@ export class Cockpit {
     for (const g of this.details()) g.visible = visible;
   }
 
-  /** Luminous flux of the interior lamps now, lumens x SCENE_UNITS_PER_LUX (linear RGB), for the cabin bounce. */
+  /** Luminous flux of the interior lamps now, lumens x SCENE_UNITS_PER_LUX (linear RGB). */
   lampFlux(out: THREE.Color): THREE.Color {
     // A spot of ~45 degrees half-angle subtends ~1.9 sr; a downward Lambertian emitter PI sr.
     return out.copy(cabinLamps.floodColor.value).multiplyScalar(1.9).add(this.tmpColor.copy(cabinLamps.domeColor.value).multiplyScalar(Math.PI));
+  }
+
+  /**
+   * The lamps' flux as the cabin bounce (cabinLight.updateCabinBounce) should take it: the flood lands on the dark
+   * panel and glareshield first, so only FLOOD_FIRST_BOUNCE of its flux counts against the cabin's (much lighter)
+   * mean albedo, and the lining is not lit as if it were in the beam.
+   */
+  lampBounceFlux(out: THREE.Color): THREE.Color {
+    return out.copy(cabinLamps.floodColor.value).multiplyScalar(1.9 * FLOOD_FIRST_BOUNCE).add(this.tmpColor.copy(cabinLamps.domeColor.value).multiplyScalar(Math.PI));
   }
   private readonly tmpColor = new THREE.Color();
 

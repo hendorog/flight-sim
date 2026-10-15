@@ -29,7 +29,7 @@ import { ATMOSPHERE_GLSL } from './glsl/atmosphere';
 import { STAR_E0 } from './glsl/stars';
 import { decodeStarCatalog, equatorialVector, starColour, type StarCatalog } from './starCatalog';
 import { EXPOSURE_GLSL } from '../post/AutoExposure';
-import { POINT_COLOUR_GAIN_MAX, POINT_SPREAD_GLSL } from './glsl/pointSpread';
+import { POINT_COLOUR_GAIN_MAX, POINT_SPREAD_GLSL, STAR_SPREAD_MAX } from './glsl/pointSpread';
 import { SCOTOPIC_GLSL } from '../post/ToneMap';
 
 /** Sprite side of a sharp star, px: the Gaussian's tails beyond +-2.5 px (4 sigma) carry < 0.1 % of the flux. */
@@ -95,7 +95,7 @@ void main() {
     return;
   }
   float airmass = 1.0 / max(dir.y, 0.05);
-  float twinkle = 1.0 + 0.3 * min(airmass - 1.0, 3.0) * sin(uTime * (7.0 + 9.0 * aTwinkle.x) + 6.2831853 * aTwinkle.y);
+  float twinkle = 1.0 + 0.3 * min(airmass - 1.0, 1.5) * sin(uTime * (7.0 + 9.0 * aTwinkle.x) + 6.2831853 * aTwinkle.y);
   // A pixel at angle acos(cd) off the axis subtends uPixelAngle^2 cd^3 sr (as the planets, glsl/planets.ts), so the
   // same flux spread over the same pixels needs cd^-3 more radiance toward the edges of a wide view.
   vec3 steady = aFlux * transmittanceToTop(uCamR, dir.y) * (uStarGain * uNight / (uPixelAngle * uPixelAngle * cd * cd * cd));
@@ -106,7 +106,7 @@ void main() {
     return;
   }
   // Brighter than display white: a wider spot, same flux (from the steady light, so the twinkle does not pulse its size).
-  float sigma = ${STAR_SIGMA_PX.toFixed(2)} * pointSpread(peakDisplay / twinkle);
+  float sigma = ${STAR_SIGMA_PX.toFixed(2)} * pointSpread(peakDisplay / twinkle, ${STAR_SPREAD_MAX.toFixed(4)});
   vErfK = 1.0 / (sigma * 1.41421356);
   vSize = ceil(${SPRITE_SIGMAS.toFixed(4)} * sigma - 0.001);
   // Rotation only, at a radius well inside the camera's near/far range; depth is neither tested nor written.

@@ -381,7 +381,7 @@ export class AircraftVisual implements Subsystem {
     if (this.cockpit.group.visible) {
       this.cockpit.update(st, ctx.controls, this.opts.panelEmissiveScale, compass);
       cabinLamps.cabinModelFromWorld.value.copy(this.root.matrixWorld).invert();
-      updateCabinBounce(ctx.sky, this.root.getWorldQuaternion(this.rootQuat), this.cockpit.lampFlux(this.lampFlux), this.def.cockpit);
+      updateCabinBounce(ctx.sky, this.root.getWorldQuaternion(this.rootQuat), this.cockpit.lampBounceFlux(this.lampFlux), this.def.cockpit);
     }
   }
 

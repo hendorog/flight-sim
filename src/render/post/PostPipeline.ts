@@ -79,14 +79,6 @@ const NIGHT_SKY_ILLUMINANCE = 1e-3 * SCENE_UNITS_PER_LUX;
 const FLOOD_SOLID_ANGLE = 1.9;
 const FLOOD_AREA = 1.0;
 const DOME_AREA = 3.0;
-/**
- * Most the cockpit lamps add to the eye's adaptation, as a multiple of the outdoor illuminance (agent choice:
- * a pilot's eye keeps some dark adaptation for the view out; the panel then reads brighter, held by the local
- * exposure's cut, and the night sky and moonlit land stay visible from the seat).
- */
-const COCKPIT_LAMP_ADAPTATION_MAX = 1;
-/** ... lowering the lamps' share of the adaptation by at most this many EV (agent choice: the panel stays legible). */
-const COCKPIT_LAMP_MAX_DROP_EV = 3;
 
 /**
  * Luminance of an 18 % grey card under the light the eye adapts to, scene units: sun, moon, sky and
@@ -102,16 +94,39 @@ function greyCardLuminance(ctx: SimContext, moonIlluminance: THREE.Vector3, dire
   let lamps = 0;
   if (ctx.cameraMode === 'cockpit') {
     lamps = (lum(cabinLamps.floodColor.value) * FLOOD_SOLID_ANGLE) / FLOOD_AREA + (lum(cabinLamps.domeColor.value) * Math.PI) / DOME_AREA;
-    // ... but the eye also looks out of the windows: the lamps lift the adaptation at most log2(1 + K) EV over the
-    // outdoor light, or a 3 lx panel flood under a 0.1 lx Moon held it ~5 EV over the outside and the sky, the
-    // stars and the moonlit land were black from the seat. The cap lowers the lamps' share by at most
-    // COCKPIT_LAMP_MAX_DROP_EV, or on a moonless night (~1e-3 lx outside) the lit panel would blow out to white.
-    // By day the outside is ~1e5 lx and none of this binds.
-    const outside = direct + NIGHT_SKY_ILLUMINANCE + Math.PI * lum(skyColor);
-    lamps = Math.max(lamps * 2 ** -COCKPIT_LAMP_MAX_DROP_EV, Math.min(lamps, COCKPIT_LAMP_ADAPTATION_MAX * outside));
+    // The view out keeps its own exposure (lampShareEV, the tone map's outside gain): with a single exposure the
+    // lamps held the adaptation ~5-9 EV over the outside at night and the sky, the stars and the moonlit land were
+    // black from the seat. By day the outside is ~1e5 lx and the lamps change nothing.
   }
-  return 0.18 * ((direct + NIGHT_SKY_ILLUMINANCE + lamps + artificial) / Math.PI + lum(skyColor));
+  const outdoor = (direct + NIGHT_SKY_ILLUMINANCE + artificial) / Math.PI + lum(skyColor);
+  const withLamps = outdoor + lamps / Math.PI;
+  const share = Math.log2(withLamps / outdoor);
+  lampShareEV = share * OUTSIDE_SHARE > OUTSIDE_MIN_EV ? share * OUTSIDE_SHARE : 0;
+  return 0.18 * withLamps;
 }
+
+/**
+ * EV the cockpit lamps add to the adaptation reference (greyCardLuminance's last result; 0 outside the cockpit
+ * and by day).
+ */
+let lampShareEV = 0;
+/**
+ * Outside view from the cockpit at night (agent choice, cinematic): the eye adapts to the lit panel, and a single
+ * exposure for the frame made the sky, the stars and the moonlit land through the windows black (night-sky gate 1,
+ * review round 2: windscreen max 22/255 under a full Moon, black moonless). The eye's local adaptation spans both;
+ * a display does not, so what lies beyond the cabin (depth over OUTSIDE_NEAR) is exposed as if the lamps were off,
+ * the lamps' share of the reference (lampShareEV) lifted back out. Below OUTSIDE_MIN_EV (day, dusk with the
+ * panel dimmed) nothing changes.
+ */
+const OUTSIDE_MIN_EV = 0.05;
+/**
+ * Share of the lamps' EV given back to the view out: the adaptation follows the reference only half way (the
+ * other half is the metered frame, AutoExposure METER_WEIGHT_DARK), so the full share would expose the outside
+ * brighter than the free camera does under the same sky.
+ */
+const OUTSIDE_SHARE = 0.6;
+/** View depth from which a pixel lies outside the cabin, m: past the windscreen and the A-pillars (~0.9 m). */
+const OUTSIDE_NEAR = 1.3;
 
 function lum(c: THREE.Color): number {
   return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
@@ -171,6 +186,9 @@ export class PostPipeline {
       uWhiteBalance: { value: new THREE.Vector3(1, 1, 1) },
       tLocal: { value: this.local.texture },
       uLocal: { value: new THREE.Vector4() },
+      tDepth: { value: null as THREE.Texture | null },
+      uOutsideGain: { value: 0 },
+      uOutsideNear: { value: OUTSIDE_NEAR },
     },
   });
   private readonly fxaa = passMaterial({ fragmentShader: FXAA_FRAG, uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } } });
@@ -255,7 +273,8 @@ export class PostPipeline {
     // Next frame's sky dome places the Moon relative to this adaptation (Atmosphere.exposureUniforms).
     const shared = atmosphere.exposureUniforms;
     shared.tExposure.value = this.exposure.texture;
-    shared.uExposureBias.value = this.exposureBias;
+    // The sky's point sources and Moon place themselves against the exposure the outside view gets.
+    shared.uExposureBias.value = this.exposureBias + lampShareEV;
     shared.uExposureValid.value = 1;
 
     const u = this.tonemap.uniforms;
@@ -263,6 +282,8 @@ export class PostPipeline {
     u.tBloom.value = this.bloom.texture;
     u.uBloomScale.value = BLOOM_WEIGHT * this.bloom.normalisation;
     u.tLocal.value = this.local.texture;
+    u.tDepth.value = this.hdr.depthTexture;
+    u.uOutsideGain.value = lampShareEV > 0 ? 2 ** lampShareEV : 0;
     u.uLocal.value.set(
       this.localExposure ? LOCAL_LIFT : 0,
       THREE.MathUtils.lerp(LOCAL_MAX_LIFT_NIGHT, LOCAL_MAX_LIFT_DAY, ctx.sky.dayFactor),
