@@ -290,8 +290,9 @@ void faunaSkin() {
     i = int(v.w);
   }
   vec3 bp = mix(pp, pb, aBoneW) + fRootOff;
-  // Guarded blend: near-opposite parent and own-bone normals at aBoneW ~ 0.5 cancel to ~0, and normalize(0) is NaN
-  // (black or sky-blue single pixels in far herds). Fall back to the parent's normal there.
+  // Guarded blend (defensive): near-opposite parent and own-bone normals at aBoneW ~ 0.5 cancel to ~0, whose normalize
+  // is ill-defined; fall back to the parent's normal there. (Not the far-herd black / sky-blue speckle: shots at 1.5 km
+  // keep it with this guard and with a fragment-side one.)
   vec3 bm = mix(np, nb, aBoneW);
   vec3 bn = dot(bm, bm) > 1e-8 ? normalize(bm) : np;
   // Instance: scale, bank (right wing down +), pitch (nose up +), yaw (heading, 0 = north, clockwise).
