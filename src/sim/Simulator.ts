@@ -1035,6 +1035,9 @@ export class Simulator {
 
   /** Fix the camera at an NED position (alt MSL) looking at another point (null: keep the direction). */
   setFixedCamera(pos: [number, number, number], look: [number, number, number] | null): void {
+    // A free camera is not the cockpit view: leave it so the cabin lamps stop setting the eye's adaptation
+    // (an era without a tower boots ?camPos in the cockpit, and the lamps then rendered the night sky black).
+    if (this.ctx.cameraMode === 'cockpit') this.setCameraMode('chase');
     this.fixedCamera = {
       pos: new THREE.Vector3(pos[1], pos[2], -pos[0]),
       look: look ? new THREE.Vector3(look[1], look[2], -look[0]) : null,
