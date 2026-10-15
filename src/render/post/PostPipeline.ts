@@ -19,7 +19,7 @@
 import * as THREE from 'three';
 import type { QualityLevel, ReprojectionLayer, SceneEffect, SimContext } from '../../core/context';
 import { AerialPerspectiveEffect } from './AerialPerspectiveEffect';
-import { AutoExposure } from './AutoExposure';
+import { AutoExposure, TAU_BRIGHTEN, TAU_DARKEN } from './AutoExposure';
 import { Bloom } from './Bloom';
 import { FullscreenPass, passMaterial } from './FullscreenPass';
 import { FXAA_FRAG } from './Fxaa';
@@ -111,16 +111,15 @@ function greyCardLuminance(ctx: SimContext, moonIlluminance: THREE.Vector3, dire
   }
   const outdoor = (direct + NIGHT_SKY_ILLUMINANCE + artificial) / Math.PI + lum(skyColor);
   const withLamps = outdoor + lamps / Math.PI;
-  const share = Math.log2(withLamps / outdoor);
-  lampShareEV = share * OUTSIDE_SHARE > OUTSIDE_MIN_EV ? share * OUTSIDE_SHARE : 0;
+  lampShareTarget = Math.log2(withLamps / outdoor) * OUTSIDE_SHARE;
   return 0.18 * withLamps;
 }
 
 /**
- * EV the cockpit lamps add to the adaptation reference (greyCardLuminance's last result; 0 outside the cockpit
- * and by day).
+ * EV of the cockpit lamps' share of the adaptation reference given back to the view out (greyCardLuminance's last
+ * result; 0 outside the cockpit and by day). PostPipeline follows it at the eye's own pace (lampShareEV).
  */
-let lampShareEV = 0;
+let lampShareTarget = 0;
 /**
  * Outside view from the cockpit at night (agent choice, cinematic): the eye adapts to the lit panel, and a single
  * exposure for the frame made the sky, the stars and the moonlit land through the windows black (night-sky gate 1,
@@ -136,8 +135,37 @@ const OUTSIDE_MIN_EV = 0.05;
  * brighter than the free camera does under the same sky.
  */
 const OUTSIDE_SHARE = 0.6;
-/** View depth from which a pixel lies outside the cabin, m: past the windscreen and the A-pillars (~0.9 m). */
+/**
+ * Without a cabin box (setCabinBox), the view depth from which a pixel lies outside the cabin, m: past the windscreen
+ * and the A-pillars (~0.9 m).
+ */
 const OUTSIDE_NEAR = 1.3;
+/**
+ * Margin around the definition's simplified cabin (CockpitDef.box) within which a surface counts as the cabin's, m:
+ * the box is the occlusion bake's flat walls, and the lining, the window frames and the panel's knobs stand a few
+ * centimetres off them. Agent choice, night-sky final gate.
+ */
+const CABIN_MARGIN = 0.1;
+
+/** The part of CockpitDef.box the tone map's cabin needs: body axes FRD (z down), m. */
+export interface CabinBox {
+  floor: number;
+  roof: number;
+  side: number;
+  rear: number;
+  windscreenX: number;
+}
+
+/** Aircraft model space -> [-1, 1]^3 over the cabin box grown by CABIN_MARGIN (PostPipeline.setCabinBox). */
+export function cabinFromModel(box: CabinBox, out = new THREE.Matrix4()): THREE.Matrix4 {
+  // FRD -> model (geometry.frd): model x = y, model y = -z, model z = -x.
+  const m = CABIN_MARGIN;
+  const y0 = -box.floor - m, y1 = -box.roof + m;
+  const z0 = -box.windscreenX - m, z1 = -box.rear + m;
+  return out
+    .makeScale(1 / (box.side + m), 2 / (y1 - y0), 2 / (z1 - z0))
+    .multiply(new THREE.Matrix4().makeTranslation(0, -(y0 + y1) / 2, -(z0 + z1) / 2));
+}
 
 function lum(c: THREE.Color): number {
   return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
@@ -200,12 +228,26 @@ export class PostPipeline {
       tDepth: { value: null as THREE.Texture | null },
       uOutsideGain: { value: 0 },
       uCabinCut: { value: new THREE.Vector2() },
-      uOutsideNear: { value: OUTSIDE_NEAR },
+      uCabinFromView: { value: new THREE.Matrix4() },
     },
   });
   private readonly fxaa = passMaterial({ fragmentShader: FXAA_FRAG, uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } } });
   private readonly size = new THREE.Vector2();
   private lastTime = -1;
+  /**
+   * lampShareTarget as the adaptation has followed it (agent choice, night-sky final gate): AutoExposure moves over
+   * TAU_BRIGHTEN / TAU_DARKEN, so a share that followed the lamps at once flashed the view out and the stars by up
+   * to the full share when the dimmer moved, the lamps went off or the camera left the cockpit. A rising share
+   * raises the reference (TAU_BRIGHTEN), a falling one lowers it (TAU_DARKEN); a snap jumps with the exposure.
+   */
+  private lampShareSmoothed = 0;
+  /**
+   * Aircraft model space -> the cabin box's [-1, 1]^3 (setCabinBox), or null: then the tone map's cabin is the
+   * view-space slab nearer than OUTSIDE_NEAR.
+   */
+  private cabinFromModel: THREE.Matrix4 | null = null;
+  private readonly modelFromWorld = new THREE.Matrix4();
+  private lampShareSnap = true;
 
   constructor(
     private readonly renderer: THREE.WebGLRenderer,
@@ -235,6 +277,16 @@ export class PostPipeline {
     this.taa.setAircraftRadius(radius);
   }
 
+  /**
+   * The cabin the tone map keeps on the lamps' exposure at night (its outside mask): the airframe definition's
+   * simplified cabin (CockpitDef.box, body axes FRD, z down, m), grown by CABIN_MARGIN. A forward depth cutoff
+   * counted the rear seats and bulkhead (~1.5-2.5 m from the eye) as outside, and the same surface flipped exposure
+   * as the head turned; the box holds whatever the cabin's length. Not called: the depth cutoff.
+   */
+  setCabinBox(box: CabinBox): void {
+    this.cabinFromModel = cabinFromModel(box);
+  }
+
   /** Drop the temporal-AA history (camera cuts the TAA's own cut detection misses). */
   resetTemporalHistory(): void {
     this.taa.reset();
@@ -243,6 +295,7 @@ export class PostPipeline {
   /** Jump the eye adaptation to the current scene (after a scenario reset or camera cut). */
   snapExposure(): void {
     this.exposure.snap();
+    this.lampShareSnap = true;
     this.taa.reset();
   }
 
@@ -277,6 +330,10 @@ export class PostPipeline {
     this.exposureUniforms.uExposureBias.value = this.exposureBias;
     const atmosphere = Atmosphere.for(r);
     const reference = greyCardLuminance(ctx, atmosphere.moonIlluminance, atmosphere.cloudSky.directCamera, this.artificialIlluminance);
+    const tau = lampShareTarget > this.lampShareSmoothed ? TAU_BRIGHTEN : TAU_DARKEN;
+    this.lampShareSmoothed = this.lampShareSnap ? lampShareTarget : this.lampShareSmoothed + (lampShareTarget - this.lampShareSmoothed) * (1 - Math.exp(-realDt / tau));
+    this.lampShareSnap = false;
+    const lampShareEV = this.lampShareSmoothed > OUTSIDE_MIN_EV ? this.lampShareSmoothed : 0;
     this.bloom.render(r, src, () => {
       this.exposure.update(r, this.bloom.level(METER_LEVEL).texture, realDt, reference);
       this.local.update(r, this.bloom.level(METER_LEVEL));
@@ -296,6 +353,7 @@ export class PostPipeline {
     u.tLocal.value = this.local.texture;
     u.tDepth.value = this.hdr.depthTexture;
     u.uOutsideGain.value = lampShareEV > 0 ? 2 ** lampShareEV : 0;
+    if (lampShareEV > 0) this.updateCabinFromView(ctx, u.uCabinFromView.value as THREE.Matrix4);
     (u.uCabinCut.value as THREE.Vector2).set(this.localExposure ? CABIN_CUT : 0, CABIN_MAX_CUT);
     u.uLocal.value.set(
       this.localExposure ? LOCAL_LIFT : 0,
@@ -311,6 +369,17 @@ export class PostPipeline {
       this.pass.render(r, this.fxaa, null);
     } else {
       this.pass.render(r, this.tonemap, null);
+    }
+  }
+
+  /** View space -> the cabin box's [-1, 1]^3 for the tone map's outside mask (setCabinBox). */
+  private updateCabinFromView(ctx: SimContext, out: THREE.Matrix4): void {
+    const root = ctx.aircraftRoot;
+    if (this.cabinFromModel && root) {
+      out.copy(this.cabinFromModel).multiply(this.modelFromWorld.copy(root.matrixWorld).invert()).multiply(this.camera.matrixWorld);
+    } else {
+      // Every x and y inside, view z in [-OUTSIDE_NEAR, 0] inside: the plain depth cutoff.
+      out.makeScale(0, 0, 2 / OUTSIDE_NEAR).setPosition(0, 0, 1);
     }
   }
 

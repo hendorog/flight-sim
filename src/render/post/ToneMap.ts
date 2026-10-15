@@ -58,20 +58,26 @@ uniform vec3 uWhiteBalance;
 uniform sampler2D tDepth;
 uniform float uOutsideGain;
 uniform vec2 uCabinCut;
-uniform float uOutsideNear;
+uniform mat4 uCabinFromView;
 varying vec2 vUv;
 ${LOCAL_EXPOSURE_GLSL}
 ${DEPTH_GLSL}
 
-// 1 where the pixel and its neighbours two pixels away all lie beyond the cabin (PostPipeline OUTSIDE_NEAR): the
-// erosion keeps the outside gain off pixels that blend a window frame with the view out (no bright fringe).
+// 1 where the pixel and its neighbours two pixels away all lie outside the cabin (PostPipeline cabin box: the
+// surface's view-space point mapped into the box's [-1, 1]^3): the erosion keeps the outside gain off pixels that
+// blend a window frame with the view out (no bright fringe).
 float outsideMask() {
   ivec2 size = textureSize(tDepth, 0);
   ivec2 p = ivec2(vUv * vec2(size));
   for (int k = 0; k < 5; k++) {
     ivec2 o = k == 0 ? ivec2(0) : k == 1 ? ivec2(2, 0) : k == 2 ? ivec2(-2, 0) : k == 3 ? ivec2(0, 2) : ivec2(0, -2);
-    float d = texelFetch(tDepth, clamp(p + o, ivec2(0), size - 1), 0).r;
-    if (!isSky(d) && viewZFromDepth(d) < uOutsideNear) return 0.0;
+    ivec2 q = clamp(p + o, ivec2(0), size - 1);
+    float d = texelFetch(tDepth, q, 0).r;
+    if (isSky(d)) continue;
+    float z = viewZFromDepth(d);
+    vec2 uv = (vec2(q) + 0.5) / vec2(size);
+    vec3 b = (uCabinFromView * vec4((uv * 2.0 - 1.0) * uTanHalf * z, -z, 1.0)).xyz;
+    if (all(lessThan(abs(b), vec3(1.0)))) return 0.0;
   }
   return 1.0;
 }

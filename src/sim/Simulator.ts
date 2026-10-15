@@ -596,6 +596,7 @@ export class Simulator {
     post.addEffect(clouds);
     this.post = post;
     post.setAircraftRadius(def.geometry.bounds.radius);
+    post.setCabinBox(presentation.visual.cockpit.box);
     await clouds.ready;
     // Cloud shadows dim the sun term of every lit material instead of the whole pixel in the composite;
     // the apron floodlight pools also reach the aircraft exterior and the terrain grass (cloudShadows.ts).

@@ -4,7 +4,7 @@ import type { SimContext } from '../../src/core/context';
 import { Celestial } from '../../src/render/sky/celestial';
 import { STAR_E0 } from '../../src/render/sky/glsl/stars';
 import { decodeStarCatalog, starIndexByHR } from '../../src/render/sky/starCatalog';
-import { POINT_SPREAD_MAX, POINT_SPREAD_WHITE, pointSpread } from '../../src/render/sky/glsl/pointSpread';
+import { POINT_SPREAD_MAX, POINT_SPREAD_WHITE, STAR_SPREAD_MAX, pointSpread } from '../../src/render/sky/glsl/pointSpread';
 import { STAR_FRAG, STAR_RADIANCE_CLAMP, STAR_VERT, StarField, peakWeight, starAttributes } from '../../src/render/sky/StarField';
 
 interface Fs {
@@ -68,11 +68,15 @@ describe('StarField', () => {
       const t = 1 / (1 + 0.3275911 * Math.abs(x));
       return Math.sign(x) * (1 - t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-x * x));
     };
-    expect(pointSpread(0.5)).toBe(1);
-    expect(pointSpread(POINT_SPREAD_WHITE)).toBe(1);
-    expect(pointSpread(POINT_SPREAD_WHITE * 4)).toBeGreaterThan(1.5);
+    // The stars use their own, tighter cap (fill cost); the planets the general one.
+    expect(STAR_SPREAD_MAX).toBeLessThan(POINT_SPREAD_MAX);
+    expect(STAR_VERT).toContain(`pointSpread(peakDisplay / twinkle, ${STAR_SPREAD_MAX.toFixed(4)})`);
+    expect(pointSpread(0.5, STAR_SPREAD_MAX)).toBe(1);
+    expect(pointSpread(POINT_SPREAD_WHITE, STAR_SPREAD_MAX)).toBe(1);
+    expect(pointSpread(POINT_SPREAD_WHITE * 4, STAR_SPREAD_MAX)).toBeGreaterThan(1.5);
+    expect(pointSpread(1e9, STAR_SPREAD_MAX)).toBe(STAR_SPREAD_MAX);
     expect(pointSpread(1e9)).toBe(POINT_SPREAD_MAX);
-    for (const spread of [1, 1.7, POINT_SPREAD_MAX]) {
+    for (const spread of [1, 1.7, STAR_SPREAD_MAX]) {
       const sigma = 0.6 * spread;
       // As the vertex shader: side = ceil(5 / 0.6 * sigma), so the sprite reaches +-4.17 sigma.
       const size = Math.ceil((5 / 0.6) * sigma - 0.001);

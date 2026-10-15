@@ -345,7 +345,14 @@ void main() {
     wsum += bw * dw;
   }
   vec4 p = acc / max(wsum, 1e-6);
-  outColor = vec4(scene.rgb * p.a + p.rgb, scene.a < 0.0 ? scene.a * p.a : scene.a);
+  // A planet's flag (alpha < 0) is its share of the pixel's luminance: the planet's light through the plume over
+  // the composite's (as the cloud resolve).
+  float flag = scene.a;
+  if (scene.a < 0.0) {
+    float through = dot(scene.rgb, vec3(0.2126, 0.7152, 0.0722)) * p.a;
+    flag = scene.a * through / max(through + dot(p.rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-30);
+  }
+  outColor = vec4(scene.rgb * p.a + p.rgb, flag);
 }
 `;
 

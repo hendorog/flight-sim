@@ -12,8 +12,8 @@ import { FullscreenPass, passMaterial } from './FullscreenPass';
 
 const METER_SIZE = 64;
 /** Adaptation time constants, s: faster toward bright (pupil) than toward dark (retina). */
-const TAU_BRIGHTEN = 0.6;
-const TAU_DARKEN = 1.8;
+export const TAU_BRIGHTEN = 0.6;
+export const TAU_DARKEN = 1.8;
 /**
  * Share of the adaptation target taken from the frame's metering rather than the illumination level
  * (an incident-light reading), for frames darker and brighter than an average scene under that light.
