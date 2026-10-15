@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { BRIGHT_LEVEL, DARK_LEVEL, NightLook, nightDarkness, nightGains, outdoorGreyCard } from '../../src/render/sky/NightLook';
+import { BRIGHT_LEVEL, DARK_LEVEL, NightLook, STAR_GAIN, nightDarkness, nightGains, outdoorGreyCard } from '../../src/render/sky/NightLook';
 import { SCENE_UNITS_PER_LUX } from '../../src/render/sky/params';
 import type { SimContext } from '../../src/core/context';
 import type { Atmosphere } from '../../src/render/sky/Atmosphere';
@@ -8,21 +8,26 @@ import type { Atmosphere } from '../../src/render/sky/Atmosphere';
 const gainsAt = (cdm2: number) => nightGains(nightDarkness(cdm2));
 
 describe('night presentation gains', () => {
-  it('are exactly photometric in daylight, twilight and under a full Moon', () => {
+  it('calibrate point sources below photometric at every light level (a magnitude ladder, not one white dot)', () => {
+    expect(STAR_GAIN).toBeGreaterThan(0);
+    expect(STAR_GAIN).toBeLessThan(1);
+  });
+
+  it('keep the diffuse light photometric in daylight, twilight and under a full Moon', () => {
     // Noon grey card ~1e3 cd/m^2; civil twilight ~1; winter full Moon at 60 deg ~1.2e-2; June full Moon at ~16 deg ~2.6e-3.
     for (const level of [1e3, 1, 1.2e-2, 2.6e-3, BRIGHT_LEVEL]) {
       const g = gainsAt(level);
-      expect(g.star).toBe(1);
+      expect(g.star).toBe(STAR_GAIN);
       expect(g.diffuse).toBe(1);
       expect(g.airglow).toBe(1);
     }
   });
 
-  it('brighten the stars and the Milky Way and darken the airglow on a moonless night', () => {
+  it('brighten the Milky Way and darken the airglow on a moonless night', () => {
     for (const level of [5.7e-5, DARK_LEVEL]) {
       const g = gainsAt(level);
       expect(nightDarkness(level)).toBe(1);
-      expect(g.star).toBeGreaterThan(1);
+      expect(g.star).toBe(STAR_GAIN);
       expect(g.diffuse).toBeGreaterThan(1);
       expect(g.airglow).toBeLessThan(1);
     }
@@ -54,12 +59,13 @@ describe('night presentation gains', () => {
     const uniforms = look.uniforms;
     look.update(ctx, atmosphere);
     expect(look.uniforms).toBe(uniforms);
-    expect(uniforms.uStarGain.value).toBeGreaterThan(1);
+    expect(uniforms.uStarGain.value).toBe(STAR_GAIN);
+    expect(uniforms.uDiffuseGain.value).toBeGreaterThan(1);
     expect(uniforms.uAirglowGain.value).toBeLessThan(1);
     // A full Moon 60 deg up: back to photometric.
     sky.moonDir.set(0, 0.87, 0.5);
     look.update(ctx, atmosphere);
-    expect(uniforms.uStarGain.value).toBe(1);
+    expect(uniforms.uStarGain.value).toBe(STAR_GAIN);
     expect(uniforms.uDiffuseGain.value).toBe(1);
     expect(uniforms.uAirglowGain.value).toBe(1);
   });

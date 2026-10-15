@@ -19,7 +19,8 @@
 // the sky looks the same whichever view it is seen from; the lamps lower its display brightness through the
 // exposure anyway). D = 1 below DARK_LEVEL (a moonless night, ~5.7e-5 cd/m^2), 0 above BRIGHT_LEVEL (a full
 // Moon ~15 deg up, ~2.6e-3; a high winter full Moon ~1e-2; twilight and day far above), smoothstep in log
-// between. With D = 0 every gain is exactly 1: frames lit by the sun, twilight, or a bright Moon are unchanged.
+// between. With D = 0 the diffuse and airglow gains are exactly 1: frames lit by the sun, twilight, or a bright Moon
+// keep the photometric Milky Way and airglow. (The star gain is a constant display calibration; see STAR_GAIN.)
 //
 // Interface (frozen by the scaffold; see the plan): `uniforms` is spread into the sky dome's uniforms (the star
 // layer in StarField reads uStarGain too, the one gain for ALL stars); update() runs once per frame from
@@ -38,13 +39,19 @@ export const DARK_LEVEL = 1.5e-4;
 export const BRIGHT_LEVEL = 2.5e-3;
 
 /**
- * Gains at full darkness (agent choices; retune here once the catalogue stars and the Milky Way map land):
- *  - STAR_GAIN: stars and planets (all point sources; P2's catalogue layer reads the same uniform).
- *  - MILKY_WAY_GAIN: the Milky Way's diffuse light (uDiffuseGain).
- *  - AIRGLOW_GAIN: the airglow background (< 1: the dark-adapted eye's black sky; see the header).
+ * Gains (agent choices, tuned at integration against the catalogue stars and the Milky Way map):
+ *  - STAR_GAIN: stars and planets (all point sources; the catalogue layer reads the same uniform). Unlike the other
+ *    two it does NOT depend on the darkness: it is the calibration of a point source to the display, not a look.
+ *    At photometric flux a star's whole light lands in one pixel (~1e-6 sr), so even an 8th-magnitude star rendered
+ *    at or above middle grey, every star down to 8th magnitude bright and alike. Scaled by 2^-2 the magnitudes form a
+ *    ladder under a moonless sky's adaptation: ~6.5 mag sits near the bottom of the display (the naked-eye limit at
+ *    a dark site), ~1 mag reaches white and the brightest bloom. Under a bright Moon the eye adapts ~5 EV higher and
+ *    the same constant drops the limit to ~3 mag, as the Moon washes out the faint stars in reality.
+ *  - MILKY_WAY_GAIN: the Milky Way's diffuse light (uDiffuseGain), at full darkness.
+ *  - AIRGLOW_GAIN: the airglow background (< 1: the dark-adapted eye's black sky; see the header), at full darkness.
  */
-export const STAR_GAIN = 1.5;
-export const MILKY_WAY_GAIN = 2.2;
+export const STAR_GAIN = 2 ** -2;
+export const MILKY_WAY_GAIN = 2.8;
 export const AIRGLOW_GAIN = 0.3;
 
 /** Darkness of the night, 0 (bright) .. 1 (moonless), from the outdoor grey-card luminance in cd/m^2. */
@@ -61,9 +68,9 @@ export interface NightGains {
   airglow: number;
 }
 
-/** The presentation gains at darkness `d` (exactly 1 at d = 0). */
+/** The presentation gains at darkness `d` (the diffuse and airglow gains are exactly 1 at d = 0; the star gain is constant). */
 export function nightGains(d: number, out: NightGains = { star: 1, diffuse: 1, airglow: 1 }): NightGains {
-  out.star = 1 + (STAR_GAIN - 1) * d;
+  out.star = STAR_GAIN;
   out.diffuse = 1 + (MILKY_WAY_GAIN - 1) * d;
   out.airglow = 1 + (AIRGLOW_GAIN - 1) * d;
   return out;
