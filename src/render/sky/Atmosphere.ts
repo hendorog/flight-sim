@@ -94,6 +94,17 @@ export class Atmosphere {
     uAirLight: { value: new THREE.Vector2(1, 0) },
   };
 
+  /**
+   * The eye's adaptation for shaders that place a radiance relative to the display (skyCommon.ts includes
+   * EXPOSURE_GLSL): the PostPipeline points these at its AutoExposure texture and bias after each frame's
+   * adaptation and sets uExposureValid to 1; until then (no post-processing) uExposureValid is 0.
+   */
+  readonly exposureUniforms = {
+    tExposure: { value: null as THREE.Texture | null },
+    uExposureBias: { value: 0 },
+    uExposureValid: { value: 0 },
+  };
+
   private readonly pass = new FullscreenPass();
   private readonly transmittanceMat = passMaterial({ fragmentShader: TRANSMITTANCE_FRAG, uniforms: this.uniforms });
   private readonly multiScatterMat = passMaterial({ fragmentShader: MULTISCATTER_FRAG, uniforms: this.uniforms });

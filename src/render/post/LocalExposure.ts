@@ -35,14 +35,15 @@ void main() {
 `;
 
 /**
- * GLSL for the tone-mapping pass: localExposureEV(logL, pivot) returns the EV adjustment for a pixel of
- * log2 luminance logL, given the globally adapted log2 luminance `pivot`.
+ * GLSL for the tone-mapping pass: localExposureEV(logL, pivot, cut) returns the EV adjustment for a pixel of
+ * log2 luminance logL, given the globally adapted log2 luminance `pivot`; `cut` is (EV of cut per EV above white,
+ * most cut in EV), uLocal.wz unless the caller overrides it.
  */
 export const LOCAL_EXPOSURE_GLSL = /* glsl */ `
 uniform sampler2D tLocal;
 uniform vec4 uLocal; // lift (EV per EV below the pivot), max lift (EV), max cut (EV), cut (EV per EV above)
-float localExposureEV(float logL, float pivot) {
-  if (uLocal.x <= 0.0 && uLocal.w <= 0.0) return 0.0;
+float localExposureEV(float logL, float pivot, vec2 cut) {
+  if (uLocal.x <= 0.0 && cut.x <= 0.0) return 0.0;
   ivec2 size = textureSize(tLocal, 0);
   vec2 p = vUv * vec2(size) - 0.5;
   ivec2 base = ivec2(floor(p)) - 1;
@@ -70,7 +71,7 @@ float localExposureEV(float logL, float pivot) {
   // Regions up to diffuse white under the adapted light (~2.3 EV over the adapted grey) are not cut:
   // sunlit cloud and white paint keep their brightness; only brighter regions (the sky around a low sun,
   // specular glare) are held back.
-  return d < 0.0 ? min(-uLocal.x * d, uLocal.y) : -min(uLocal.w * max(d - 2.3, 0.0), uLocal.z);
+  return d < 0.0 ? min(-uLocal.x * d, uLocal.y) : -min(cut.x * max(d - 2.3, 0.0), cut.y);
 }
 `;
 

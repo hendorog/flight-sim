@@ -5,9 +5,11 @@
 //   doy=172      day of year
 //   q=high       quality level
 //   ev=0         exposure compensation, EV
+//   moon=4       Moon size, a multiple of its real size (1..5; default 4, as the sim's default)
 import type { QualityLevel } from '../core/context';
 import { PostPipeline } from '../render/post';
 import { SkySystem } from '../render/sky';
+import { sanitizeMoonScale } from '../sim/skyPrefs';
 import { runHarness } from './harness';
 import { buildSkyTestScene } from './skyScene';
 
@@ -20,6 +22,8 @@ void runHarness({
     if (params.has('vis')) ctx.weather.visibilityM = Number(params.get('vis'));
     if (params.has('doy')) ctx.weather.dayOfYear = Number(params.get('doy'));
     if (params.has('q')) ctx.quality = params.get('q') as QualityLevel;
+    const moon = sanitizeMoonScale(params.get('moon'));
+    if (moon !== null) ctx.moonScale = moon;
     buildSkyTestScene(ctx.scene, ctx.aircraftRoot);
     post = new PostPipeline(ctx.renderer, ctx.scene, ctx.camera);
     post.exposureBias = Number(params.get('ev') ?? 0);

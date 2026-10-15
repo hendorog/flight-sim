@@ -28,6 +28,8 @@
 //   mute=1         no sound
 //   camPos=n,e,alt & camLook=n,e,alt   fixed free camera (NED metres, alt MSL); overrides cam
 //   fov=60         camera vertical field of view for the fixed camera, degrees
+//   moon=4         Moon size, a multiple of its real size, 1..5 (default: the menu's setting, else 4; it grows
+//                  further toward the horizon; not stored, see src/sim/skyPrefs.ts)
 //   resume=0|1     resume on reload (see resume.ts). Absent: the last flight is resumed unless scenario= is given
 //                  or the menu's "Resume where I left off on reload" is off; resume=1 resumes even then;
 //                  resume=0 neither resumes nor saves
@@ -51,6 +53,7 @@ import { SCENARIO_IDS } from './scenarios';
 import { ERA_IDS, type EraId } from '../world/era/types';
 import { ERA_SCENARIO_IDS } from './eraChoice';
 import { isR22Demo, type R22DemoId } from './rotorcraft/flights';
+import { sanitizeMoonScale } from './skyPrefs';
 
 const CAMERA_MODES: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
 const QUALITIES: readonly QualityLevel[] = ['low', 'medium', 'high', 'ultra'];
@@ -93,6 +96,8 @@ export interface SimParams {
   camPos: [number, number, number] | null;
   camLook: [number, number, number] | null;
   fov: number | null;
+  /** moon=<1..5> (clamped, step 0.25), or null when absent or not a number (skyPrefs.ts uses the stored setting). */
+  moonScale: number | null;
   /** Weather overrides to apply to the defaults. */
   weather: Partial<WeatherSettings>;
   /** Flight School parameters (section 5.10). */
@@ -196,6 +201,7 @@ export function parseParams(search: string): SimParams {
     camPos,
     camLook: triple('camLook'),
     fov: num('fov'),
+    moonScale: sanitizeMoonScale(q.get('moon')),
     weather,
     school: {
       open: q.get('school') === '1' ? true : q.get('school') === '0' ? false : null,

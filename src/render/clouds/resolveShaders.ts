@@ -208,7 +208,15 @@ void main() {
       color *= mix(1.0, s, surface);
     }
   }
-  outColor = vec4(color * cloud.a + cloud.rgb, scene.a);
+  // A planet's point-source flag (alpha < 0, post/ToneMap.ts) is its share of the pixel's luminance: the planet's
+  // light through the cloud over the composite's, so a dark cloud in front (night) leaves the share as it was.
+  vec3 outRgb = color * cloud.a + cloud.rgb;
+  float flag = scene.a;
+  if (scene.a < 0.0) {
+    float through = dot(color, vec3(0.2126, 0.7152, 0.0722)) * cloud.a;
+    flag = scene.a * through / max(through + dot(cloud.rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-30);
+  }
+  outColor = vec4(outRgb, flag);
 }
 `;
 
