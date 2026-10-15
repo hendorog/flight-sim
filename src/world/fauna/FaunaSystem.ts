@@ -58,7 +58,7 @@ import * as Anchors from '../era/cretaceousAnchors';
 import type { EraParams } from '../era/types';
 import { SoloAgentPool, type AgentContext, type SoloBrain } from './agents';
 import { brainFor } from './brains';
-import { HABITAT_CELL, HERD_BANK_MARGIN, HERD_EPOCH_S, REX_QUIET_M, CELL_LAYERS, cellRandom, countingTerrain, kettleEntry, kettleNearWater, layer3Random, makeSite, probeCellLayer, rexDraw, safariFootprintDist, type FaunaTerrain, type HabitatSite } from './habitat';
+import { HABITAT_CELL, HERD_BANK_MARGIN, HERD_EPOCH_S, QUIET_ANCHOR_M, REX_QUIET_M, CELL_LAYERS, cellRandom, countingTerrain, kettleEntry, layer2IsInc2b, kettleNearWater, layer3Random, makeSite, probeCellLayer, rexDraw, safariFootprintDist, type FaunaTerrain, type HabitatSite } from './habitat';
 import { HerdPool, type AircraftView } from './herds';
 import { FLYER_MODE, FlyerPool, type FlyerMode } from './flight';
 import { AGENT_RESERVE, FAUNA_MAX, FAUNA_PRESETS, FLYER_RANGE_FACTOR, FLYER_RESERVE, MAX_AGENTS, MAX_GROUND_ANIMALS, MAX_HERD_SIZE, MAX_HERDS, TERRAIN_CALLS_PER_FRAME, type FaunaPreset } from './presets';
@@ -167,6 +167,8 @@ interface SpeciesDraws {
   tris: [number, number, number];
   /** Height of the body origin above the feet at scale 1, m (the azhdarchids' origin is the centre of mass). */
   originM: number;
+  /** Standing height of the LOD0 mesh at scale 1 (its bounding box), m: the far-size floor's measure (FAUNA_MIN_PX). */
+  heightM: number;
   profile: SpeciesProfile;
   /** At the current quality: squared LOD0/LOD1 ranges, the squared and plain draw range, the LOD0 cap. */
   lod0R2: number;
@@ -253,6 +255,25 @@ const EVICT_MARGIN = 1500;
 const LAYER3_SLOT_RESERVE = 8;
 /** Streamed far-drawn species are clamped inside activeRadius minus this (ambR), m. */
 const POP_MARGIN = 1500;
+/**
+ * FAR-SIZE FLOOR (fauna across the landscape, AGENT choice): a streamed (unpinned) ground animal drawn at LOD1/LOD2 is
+ * scaled up about its feet so its standing height never projects below this many screen pixels. The eye resolves
+ * ~0.3 mrad; a screen pixel at 900 px over a 60 deg field is ~1.2 mrad, so without it the screen shows a far herd ~4x
+ * smaller than a pilot sees it and groups vanish at 1-2 km. Off for the showcase and during the scripted opening near
+ * the safari footprint (minSizeActive), so the first minute is unchanged. FaunaSystem.minPx = 0 turns it off (A/B).
+ */
+export const FAUNA_MIN_PX = 1.5;
+/**
+ * Streamed LOD1 animals nearer than this also cast a sun shadow, inside the preset's casters budget (LOD0 ones first
+ * in practice: herds are drawn nearest first). A ground shadow roughly doubles the footprint of a small group seen
+ * from the air at 0.4-1 km, the range where Triceratops and Alamosaurus groups are a few pixels. Same gate as the
+ * far-size floor (not the showcase, not the opening), AGENT choice.
+ */
+export const LOD1_CASTER_M = 1000;
+/** nearFootprint re-measures after the camera moves this far, m. */
+const FOOTPRINT_STEP_M = 50;
+/** The floor scales an animal by at most this factor (beyond, it shrinks with distance again), AGENT choice. */
+export const FAUNA_MAX_BOOST = 3;
 /** Roaming T. rexes alive at once at most (the agent pool keeps one slot spare: MAX_AGENTS - 1). */
 export const AMBIENT_REX_MAX = 2;
 /** A roaming T. rex stands this far (+ up to REX_RANGE_SPAN) from its prey herd's home, m. */
@@ -358,6 +379,16 @@ export class FaunaSystemImpl implements FaunaSystem {
   private readonly rexOccupancy: number;
   /** Farthest unpinned herd's distance from the camera (farthestUnpinned's second result), m. */
   private farD = 0;
+  /** The far-size floor, px of standing height (FAUNA_MIN_PX; 0 = off, for A/B shots). */
+  minPx = FAUNA_MIN_PX;
+  /** This frame: screen pixels per radian at the view centre (0 = unknown: no floor). */
+  private pxPerRad = 0;
+  /** nearFootprint's last measure: where (NaN: never) and the answer. */
+  private footN = Number.NaN;
+  private footE = Number.NaN;
+  private footNear = false;
+  /** This frame: the floor applies (past the opening, or the camera away from the safari footprint). */
+  private minSizeActive = false;
 
   // Scratch (no per-frame allocation).
   private readonly site: HabitatSite = makeSite();
@@ -420,7 +451,10 @@ export class FaunaSystemImpl implements FaunaSystem {
       const radius = bs ? bs.radius + bs.center.length() : set.lengthM;
       const unit = SPECIES_REFERENCE_M[sp] / Math.max(0.1, set.lengthM);
       const tris: [number, number, number] = [triangles(set.lod0), triangles(set.lod1), triangles(set.lod2)];
-      this.draws.push({ species: sp, set, mats, lod: [lod0, lod1, lod2], caster, unit, radius, tris, originM: FAUNA_SPECIES[sp].groundOffsetM, profile, lod0R2: 0, lod1R2: 0, farR2: 0, farR: 0, ambR2: 0, ambR: 0, lod0Cap: 0 });
+      set.lod0.computeBoundingBox();
+      const bb = set.lod0.boundingBox;
+      const heightM = bb ? Math.max(0.1, bb.max.y - bb.min.y) : 1;
+      this.draws.push({ species: sp, set, mats, lod: [lod0, lod1, lod2], caster, unit, radius, tris, originM: FAUNA_SPECIES[sp].groundOffsetM, heightM, profile, lod0R2: 0, lod1R2: 0, farR2: 0, farR: 0, ambR2: 0, ambR: 0, lod0Cap: 0 });
     }
     this.entryDraw = this.roster.entries.map((e) => this.draws.findIndex((d) => d.species === e.species));
     ctx.scene.add(this.root);
@@ -716,6 +750,11 @@ export class FaunaSystemImpl implements FaunaSystem {
       }
     }
     for (const d of this.draws) d.mats.setTime?.(this.sceneTime);
+    // The far-size floor's frame inputs (FAUNA_MIN_PX): not in the scripted opening near the safari footprint.
+    const canvasH = ctx.renderer?.domElement?.height ?? 0;
+    const p5 = (cam as THREE.PerspectiveCamera).projectionMatrix.elements[5];
+    this.pxPerRad = canvasH > 0 && p5 > 0 ? 0.5 * canvasH * p5 : 0;
+    this.minSizeActive = this.minPx > 0 && this.pxPerRad > 0 && ((ctx.simTime ?? this.sceneTime) >= SHOWCASE_FLYER_HOLD_S || !this.nearFootprint(camN, camE));
     this.render(cam);
   }
 
@@ -759,6 +798,10 @@ export class FaunaSystemImpl implements FaunaSystem {
     let busy = false;
     /** Habitat reads of this tick's probes (both layers; <= STREAM_PROBE_READS, debug.probeReads). */
     let probeReads = 0;
+    // The scripted opening (camera near the safari footprint, before SHOWCASE_FLYER_HOLD_S): sites the landscape
+    // changes added (layer 3, the occupancyExtra picks, the raised height caps) wait until it is over or out of draw
+    // range, so the first-minute picture is inc 2b's (look review: no new distant specks at t=16). AGENT choice.
+    const opening = (ctx.simTime ?? this.sceneTime) < SHOWCASE_FLYER_HOLD_S && this.nearFootprint(camN, camE);
     // Sub-slot 0 (layers 1 and 2) walks first, exactly as before layer 3: its probes, spawns and evictions keep their
     // inc-2b timeline (the foreground waterside herds share the herd read budget with the showcase, so their timing
     // is part of the scripted first minute). Layer 3 (sub 1) then walks on its own (one probe of <= 20 reads, only when
@@ -805,6 +848,12 @@ export class FaunaSystemImpl implements FaunaSystem {
               continue;
             }
             if (spawned || full || C.status[slot] !== CELL_SITE || C.herd[slot] >= 0) continue;
+            if (opening && (sub > 0 || !layer2IsInc2b(ci, cj, this.roster, C.entry[slot], C.ground[slot]))) {
+              const od = this.draws[this.entryDraw[C.entry[slot]]];
+              const on = C.n[slot] - camN;
+              const oe = C.e[slot] - camE;
+              if (!od || on * on + oe * oe < od.ambR2) continue;
+            }
             if (sub > 0) {
               // Layer 3: below the slot reserve and the ground-animal cap; when either is reached, the farthest layer-3
               // herd gives way to a site EVICT_MARGIN nearer the camera (never a sub-0 herd).
@@ -901,6 +950,21 @@ export class FaunaSystemImpl implements FaunaSystem {
     if (this.flyerEntries.length > 0 && F.count() + 2 <= this.preset.flyers) this.spawnAmbientKettle(ctx, camN, camE);
   }
 
+  /**
+   * The camera is within QUIET_ANCHOR_M of the safari footprint (the scripted opening's ground). Re-measured only when
+   * the camera has moved FOOTPRINT_STEP_M since the last measure, so the per-frame callers allocate nothing.
+   */
+  private nearFootprint(camN: number, camE: number): boolean {
+    const dn = camN - this.footN;
+    const de = camE - this.footE;
+    if (!(dn * dn + de * de <= FOOTPRINT_STEP_M * FOOTPRINT_STEP_M)) {
+      this.footN = camN;
+      this.footE = camE;
+      this.footNear = safariFootprintDist(camN, camE) < QUIET_ANCHOR_M;
+    }
+    return this.footNear;
+  }
+
   /** Release herd h and unlink it from its habitat cell (its roaming T. rex goes at the next sweep). */
   private releaseHerd(h: number): void {
     const H = this.herds;
@@ -928,11 +992,17 @@ export class FaunaSystemImpl implements FaunaSystem {
     return n;
   }
 
-  /** The farthest live layer-3 herd from the camera (-1 none). */
+  /**
+   * The layer-3 herd to evict (-1 none): the farthest one that is not drawn (beyond its draw range, or outside the last
+   * frame's frustum), else the farthest, so an eviction does not make a herd in view vanish when a nearer one exists
+   * out of view. AGENT choice.
+   */
   private farthestLayer3(camN: number, camE: number): number {
     const H = this.herds;
     let best = -1;
     let bestD2 = -1;
+    let hidden = -1;
+    let hiddenD2 = -1;
     for (let h = 0; h < MAX_HERDS; h++) {
       if (!H.active[h] || H.key[h] < SUB_KEY) continue;
       const dn = H.cN[h] - camN;
@@ -942,8 +1012,20 @@ export class FaunaSystemImpl implements FaunaSystem {
         bestD2 = d2;
         best = h;
       }
+      if (d2 <= hiddenD2) continue;
+      const draw = this.draws[this.entryDraw[H.entry[h]]];
+      let drawn = !!draw && d2 < draw.ambR2;
+      if (drawn) {
+        this.sphere.center.set(H.cE[h], H.cH[h] + 2, -H.cN[h]);
+        this.sphere.radius = Math.max(H.radius[h], 50) + draw!.radius * draw!.unit * 1.5 + 30;
+        drawn = this.frustum.intersectsSphere(this.sphere);
+      }
+      if (!drawn) {
+        hiddenD2 = d2;
+        hidden = h;
+      }
     }
-    return best;
+    return hidden >= 0 ? hidden : best;
   }
 
   /** The farthest unpinned live herd from the camera (-1 none); its distance in farD. */
@@ -1142,7 +1224,9 @@ export class FaunaSystemImpl implements FaunaSystem {
     const f = this.thermalFrame(ctx);
     const thermals = !!f && f.wStar > 0.05;
     const t = ctx.simTime ?? 0;
-    if (!thermals && t < SHOWCASE_FLYER_HOLD_S) return;
+    // (During the opening only near the safari footprint: a pilot who leaves the field early gets dusk gliders sooner.
+    // AGENT choice.)
+    if (!thermals && t < SHOWCASE_FLYER_HOLD_S && this.nearFootprint(camN, camE)) return;
     const F = this.flyers;
     const k = this.ambientSerial++;
     const R = this.preset.activeRadius * 0.8;
@@ -1239,14 +1323,16 @@ export class FaunaSystemImpl implements FaunaSystem {
     return d.lod[lod].count >= d.lod[lod].capacity ? -1 : lod;
   }
 
-  /** Write one instance at its LOD (and as a caster for the nearest LOD0s). */
-  private emit(di: number, lod: number, east: number, alt: number, north: number, yaw: number, pitch: number, bank: number, phase: number, blend: number, flap: number, head: number, scale: number, variant: number): void {
+  /** Write one instance at its LOD (and as a caster for the nearest LOD0s; LOD1 too when cast is set). */
+  private emit(di: number, lod: number, east: number, alt: number, north: number, yaw: number, pitch: number, bank: number, phase: number, blend: number, flap: number, head: number, scale: number, variant: number, cast = false): void {
     const draw = this.draws[di];
     const tgt = draw.lod[lod];
     writeInstance(tgt.array, tgt.count++, east, alt, north, yaw, pitch, bank, phase, blend, flap, head, scale, variant);
-    if (lod !== 0) return;
-    this.lod0Used[di]++;
-    this.poolLeft -= draw.tris[0];
+    if (lod !== 0 && !(cast && lod === 1)) return;
+    if (lod === 0) {
+      this.lod0Used[di]++;
+      this.poolLeft -= draw.tris[0];
+    }
     const c = draw.caster;
     if (this.casterUsed[di] < this.preset.casters && c.count < c.capacity) {
       this.casterUsed[di]++;
@@ -1322,14 +1408,23 @@ export class FaunaSystemImpl implements FaunaSystem {
       if (!this.frustum.intersectsSphere(this.sphere)) continue;
       const base = h * MAX_HERD_SIZE;
       const size = H.size[h];
+      // The far-size floor (FAUNA_MIN_PX): streamed herds only; standing height px per metre of distance at scale 1.
+      const floorK = this.minSizeActive && !H.pinned[h] ? draw.heightM * draw.unit * this.pxPerRad : 0;
       for (let k = 0; k < size && visible < P.groundVisible; k++) {
         const i = base + k;
         const dx = H.mE[i] - cx;
         const dy = H.mH[i] - cy;
         const dz = -H.mN[i] - cz;
-        const lod = this.pickLod(di, dx * dx + dy * dy + dz * dz, far2);
+        const d2 = dx * dx + dy * dy + dz * dz;
+        const lod = this.pickLod(di, d2, far2);
         if (lod < 0) continue;
-        this.emit(di, lod, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], H.alert[i], H.head[i], H.scale[i] * draw.unit, H.variant[i]);
+        let sc = H.scale[i] * draw.unit;
+        if (floorK > 0 && lod > 0) {
+          // Scaled about the instance origin, which is the feet for the ground species (groundOffsetM 0).
+          const px = (floorK * H.scale[i]) / Math.sqrt(d2);
+          if (px < this.minPx) sc *= Math.min(FAUNA_MAX_BOOST, this.minPx / px);
+        }
+        this.emit(di, lod, H.mE[i], H.mH[i], H.mN[i], H.yaw[i], H.pitch[i], 0, H.phase[i], H.blend[i], H.alert[i], H.head[i], sc, H.variant[i], floorK > 0 && d2 < LOD1_CASTER_M * LOD1_CASTER_M);
         visible++;
       }
     }

@@ -442,6 +442,28 @@ export function layer2Entries(roster: FaunaRoster): number[] {
   return list;
 }
 
+/** The inc-2b layer-2 height caps (before fauna across the landscape raised them to LAYER2's), m. */
+export const LAYER2_INC2B_MAX_GROUND = Object.freeze({ plain: 450, open: 700 });
+
+/**
+ * True when a sub-slot-0 site (entry, ground) is one the inc-2b streaming also placed: a layer-1 (waterside) site, or a
+ * layer-2 pick in the cell's original occupancy band (not an occupancyExtra one) under the inc-2b height caps. (A
+ * looser cap only accepts candidates, so a site under the old cap is the one inc 2b found.) FaunaSystem holds back the
+ * other sites in draw range during the scripted opening, so the first-minute picture stays inc 2b's. No terrain reads.
+ */
+export function layer2IsInc2b(ci: number, cj: number, roster: FaunaRoster, entry: number, ground: number): boolean {
+  const e = roster.entries[entry];
+  if (!e || e.habitat === undefined || e.habitat === 'waterside') return true;
+  const u = layer2Random(ci, cj, 0);
+  let acc = 0;
+  const list = layer2Entries(roster);
+  for (let k = 0; k < list.length; k++) acc += roster.entries[list[k]].occupancy ?? 0;
+  if (!(u < acc)) return false;
+  if (e.habitat === 'plain' && ground >= LAYER2_INC2B_MAX_GROUND.plain) return false;
+  if (e.habitat === 'open' && ground >= LAYER2_INC2B_MAX_GROUND.open) return false;
+  return true;
+}
+
 /** The layer-2 entry a cell draws (by cumulative occupancy, roster order), or -1 for none. No terrain reads. */
 export function layer2Pick(ci: number, cj: number, roster: FaunaRoster): number {
   return layerPick(ci, cj, roster, layer2Random);

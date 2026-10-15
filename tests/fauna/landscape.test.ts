@@ -19,7 +19,7 @@ import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
 import { SAFARI, SAFARI_FLIGHT, TREX_LAIR, safariAt, safariHeading } from '../../src/world/era/cretaceousAnchors';
 import { setEra } from '../../src/world/era/eraState';
 import { eraById } from '../../src/world/era/registry';
-import { AMBIENT_REX_BRAIN, AMBIENT_REX_MAX, REX_RANGE_MIN, REX_RANGE_SPAN, createFaunaSystem, type FaunaSystemImpl } from '../../src/world/fauna/FaunaSystem';
+import { AMBIENT_REX_BRAIN, AMBIENT_REX_MAX, FAUNA_MAX_BOOST, FAUNA_MIN_PX, REX_RANGE_MIN, REX_RANGE_SPAN, createFaunaSystem, type FaunaSystemImpl } from '../../src/world/fauna/FaunaSystem';
 import * as Anchors from '../../src/world/era/cretaceousAnchors';
 import { SoloAgentPool } from '../../src/world/fauna/agents';
 import { HerdPool, type AircraftView } from '../../src/world/fauna/herds';
@@ -941,5 +941,69 @@ describe('streaming review fixes', () => {
     expect(H.active[old]).toBe(1);
     expect(C.herd[sl]).toBe(-1);
     expect(sys.debug.evictions).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Look review round 2 (AGENT choices): the opening keeps inc 2b's picture; the far-size floor
+
+describe('look review round 2', () => {
+  it('in the scripted opening no layer-3 herd streams in within its draw range (held back, not switched off)', () => {
+    const { sys, ctx } = bootSafari('high');
+    const H = sys.herds;
+    const internals = sys as unknown as { draws: { ambR2: number }[]; entryDraw: number[] };
+    const seen = new Float64Array(MAX_HERDS).fill(-1);
+    let spawnedNear = 0;
+    let spawnedFar = 0;
+    for (let f = 1; f <= 40 * 30; f++) {
+      ctx.simTime = f / 30;
+      flyTo(ctx, f / 30);
+      sys.update(1 / 30, ctx);
+      const cn = -ctx.camera.position.z;
+      const ce = ctx.camera.position.x;
+      for (let h = 0; h < MAX_HERDS; h++) {
+        if (!H.active[h] || H.pinned[h] || H.key[h] < 4294967296 || seen[h] === H.key[h]) continue;
+        seen[h] = H.key[h];
+        const d2 = (H.homeN[h] - cn) ** 2 + (H.homeE[h] - ce) ** 2;
+        if (d2 < internals.draws[internals.entryDraw[H.entry[h]]].ambR2) spawnedNear++;
+        else spawnedFar++;
+      }
+    }
+    expect(spawnedNear).toBe(0);
+    expect(spawnedFar).toBeGreaterThan(0);
+  });
+
+  it('the far-size floor scales streamed LOD1/LOD2 animals up to FAUNA_MIN_PX tall, capped, and only past the opening', () => {
+    const { sys, ctx, terrain } = build('high');
+    (ctx as unknown as { renderer: unknown }).renderer = { domElement: { height: 900 } };
+    hold(sys, ctx, terrain, VPOINTS[0].n, VPOINTS[0].e, VPOINTS[0].alt, 20);
+    const internals = sys as unknown as { draws: { species: string; lod: { array: Float32Array; count: number }[]; unit: number; heightM: number }[]; minSizeActive: boolean };
+    const ground = (d: { species: string }) => d.species === 'edmontosaurus' || d.species === 'triceratops' || d.species === 'alamosaurus';
+    expect(internals.minSizeActive).toBe(true);
+    const pxPerRad = (0.5 * 900) / Math.tan((ctx.camera.fov * Math.PI) / 360);
+    let boosted = 0;
+    let checked = 0;
+    const cp = ctx.camera.position;
+    for (const d of internals.draws) {
+      if (!ground(d)) continue;
+      for (let l = 1; l < 3; l++) {
+        const L = d.lod[l];
+        for (let k = 0; k < L.count; k++) {
+          const o = k * 12;
+          const dist = Math.hypot(L.array[o] - cp.x, L.array[o + 1] - cp.y, -L.array[o + 2] - cp.z);
+          const tall = ((d.heightM * L.array[o + 10]) / dist) * pxPerRad;
+          checked++;
+          // Never drawn below the floor unless the cap binds (FAUNA_MAX_BOOST).
+          if (tall < FAUNA_MIN_PX - 1e-6) expect(L.array[o + 10] / d.unit).toBeGreaterThan(FAUNA_MAX_BOOST * 0.5);
+          if (L.array[o + 10] > d.unit * 1.2) boosted++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    expect(boosted).toBeGreaterThan(0);
+    // Off: the same frame draws every animal at its own size.
+    sys.minPx = 0;
+    hold(sys, ctx, terrain, VPOINTS[0].n, VPOINTS[0].e, VPOINTS[0].alt, 1 / 30);
+    for (const d of internals.draws) if (ground(d)) for (let l = 1; l < 3; l++) for (let k = 0; k < d.lod[l].count; k++) expect(d.lod[l].array[k * 12 + 10]).toBeLessThan(d.unit * 1.2);
   });
 });

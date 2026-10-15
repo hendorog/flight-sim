@@ -375,7 +375,11 @@ export function createFaunaMaterials(id: FaunaSpeciesId, set: CreatureMeshSet): 
       .replace('#include <begin_vertex>', 'vec3 transformed = fWorldP;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFaunaTint;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vFaunaTint;')
+      // MSAA shades a pixel once at its centre even when only a sample of a sub-pixel triangle covers it, so the
+      // vertex colours are extrapolated there: on far (LOD1/LOD2) animals a dark-patterned facet extrapolates
+      // to a negative albedo, which the tone map shows as a pure black or deep-blue speck (fauna-across-the-
+      // landscape review: the specks vanish with MSAA off, and a float render of the same frame has none). Clamp.
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vFaunaTint;\ndiffuseColor.rgb = clamp(diffuseColor.rgb, 0.0, 1.0);')
       .replace('#include <lights_physical_fragment>', SKIN_SPECULAR)
       .replace('#include <lights_fragment_maps>', SKIN_IBL);
   };
