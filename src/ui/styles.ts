@@ -216,6 +216,12 @@ ${FLIGHT_CUES_CSS}
 #fsui input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: none; }
 #fsui .toggle { display: flex; align-items: center; gap: 10px; padding: 6px 0; color: var(--fg-dim); cursor: pointer; pointer-events: auto; }
 #fsui .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+#fsui .toggle input[type=number] { width: 96px; height: auto; margin-left: auto; font: inherit; font-size: 13px; color: var(--fg);
+  background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; text-align: right; }
+#fsui .toggle input[type=number]:disabled { opacity: .6; }
+#fsui a.button { display: inline-block; margin: 4px 0 8px; font-weight: 650; text-decoration: none; color: #04121c; background: var(--accent);
+  border-radius: 10px; padding: 9px 14px; cursor: pointer; pointer-events: auto; }
+#fsui a.button:hover { background: #7fd3ff; }
 #fsui .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 4px 28px; }
 #fsui .keys .k { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 #fsui .keys .k span { color: var(--fg-dim); }
