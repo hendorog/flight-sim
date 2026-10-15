@@ -29,7 +29,8 @@ export interface TreeCellData {
   cx: number;
   cz: number;
   /**
-   * Per tree: east, ground height, north, tree height (m), yaw (rad), species + 0.99 * rank.
+   * Per tree: east, ground height, north, tree height (m), yaw (rad), species + 0.99 * rank; outside closed
+   * forest, species + SPECIES_COUNT + 0.99 * OPEN_RANK * rank.
    * Sorted by rank, ascending.
    */
   instances: Float32Array;
@@ -51,6 +52,14 @@ export const SPECIES = { spruce: 0, pine: 1, oak: 2, birch: 3 } as const;
 export const SPECIES_COUNT = 4;
 
 const LATTICE = 16;
+/**
+ * Rank scale of trees outside closed forest (hedgerows, bankside, edge and lone trees, forest density under
+ * 0.5). The impostors thin out by rank with distance; inside closed forest the canopy shell fills the gaps,
+ * but a tree standing alone against a field would be seen to appear and grow in. Scaling its rank keeps it
+ * to (1 / OPEN_RANK)^(2/3), about 2.5 times, the distance of the forest trees (they are about a tenth of
+ * all trees). The terrain's stand-in for the open trees not drawn follows the same law (terrainMaterial.ts).
+ */
+export const OPEN_RANK = 0.25;
 const sample = makeSample();
 const biome = makeBiome();
 const parcel = makeParcel();
@@ -162,7 +171,8 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
         const vigour = 0.75 + 0.25 * Math.min(1, f * 1.5);
         height = (conifer ? 14 + 14 * rnd(h0, 6) : 10 + 12 * rnd(h0, 6)) * vigour;
       }
-      out.push(east, sample.ground, north, height, rnd(h0, 7) * Math.PI * 2, species + 0.99 * rnd(h0, 8));
+      const open = hedge || riparian || f < 0.5;
+      out.push(east, sample.ground, north, height, rnd(h0, 7) * Math.PI * 2, species + (open ? SPECIES_COUNT : 0) + 0.99 * rnd(h0, 8) * (open ? OPEN_RANK : 1));
     }
   }
 

@@ -499,7 +499,7 @@ export class VegetationSystem {
     const picked: Array<Array<Array<{ a: Float32Array; o: number; d: number }>>> = [0, 1].map(() => this.near[0].map(() => []));
     visit((a, o, d, base) => {
       if (d > reach) return;
-      const s = Math.floor(a[o + 5]);
+      const s = Math.floor(a[o + 5]) % SPECIES_COUNT;
       if (base <= lod1) picked[0][s].push({ a, o, d });
       if (base >= lod0) picked[1][s].push({ a, o, d });
     });

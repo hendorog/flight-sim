@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import { HEMI_OCT_GLSL, IMPOSTOR_FRAME, IMPOSTOR_GRID } from './impostors';
+import { OPEN_RANK, SPECIES_COUNT } from './placement';
 import { SPECIES_TINT, TREE_BOUND_RADIUS } from './treeModels';
 
 export interface TreeUniforms {
@@ -43,7 +44,9 @@ uniform float uShadowRange;
 uniform vec3 uSpeciesTint[4];
 varying float vFade;
 varying vec3 vTint;
-float treeSpecies() { return floor(aInstB.y); }
+float treeSpecies() { return mod(floor(aInstB.y), ${SPECIES_COUNT.toFixed(1)}); }
+// Trees outside closed forest (placement.ts OPEN_RANK): their ranks are scaled, so they thin out later.
+bool treeOpen() { return aInstB.y >= ${SPECIES_COUNT.toFixed(1)}; }
 float treeRank() { return fract(aInstB.y) / 0.99; }
 vec3 treeBase() { return vec3(aInstA.x, aInstA.y, -aInstA.z); }
 vec3 treeTint() {
@@ -65,6 +68,16 @@ float treeThin(float keep) {
   float r = treeRank();
   return smoothstep(0.0, 1.0, clamp((keep - r) / ((THIN_BAND - 1.0) * max(r, 1e-3)), 0.0, 1.0));
 }
+// Impostor radius (m) of a tree of height tH at kept fraction keep and thinning thin, and how far (m) it sinks.
+// The kept trees grow a little to cover for the rest (an open tree's own kind is kept to 1 / OPEN_RANK times
+// the fraction). A thinned tree in closed forest keeps its size and sinks into the canopy shell
+// (terrainMaterial.ts) and the ground, so it comes up through the canopy crown first, like a taller crown;
+// a tree in the open, with no canopy to hide in, shrinks away instead.
+float treeRadius(float tH, float keep, float thin) {
+  float grow = 1.0 + 0.5 * (1.0 - sqrt(clamp(treeOpen() ? keep / ${OPEN_RANK.toFixed(3)} : keep, 0.0, 1.0)));
+  return ${TREE_BOUND_RADIUS.toFixed(3)} * tH * grow * (treeOpen() ? thin : 1.0);
+}
+float treeSink(float tH, float R, float thin) { return treeOpen() ? 0.0 : (1.0 - thin) * (0.5 * tH + R); }
 `;
 
 // Foliage is a rough, porous scatterer: much weaker grazing-angle Fresnel than a smooth dielectric.
@@ -201,7 +214,7 @@ export function createNearTreeMaterial(foliage: THREE.Texture, uniforms: TreeUni
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => `tree-near-v8-${lod}`;
+  mat.customProgramCacheKey = () => `tree-near-v9-${lod}`;
   return mat;
 }
 
@@ -257,16 +270,16 @@ vec3 d = toCam / dist;
 vec3 dl = vec3(tc * d.x - ts * d.z, max(d.y, 0.02), ts * d.x + tc * d.z);
 vec2 e = hemiOctEncode(normalize(dl));
 vGrid = clamp((e * 0.5 + 0.5) * ${IMPOSTOR_GRID.toFixed(1)} - 0.5, 0.0, ${(IMPOSTOR_GRID - 1).toFixed(1)});
-// Thin out with distance (treeThin); the kept trees grow a little to cover. A tree leaving the kept
-// fraction shrinks away rather than dithering out (no noise without TAA).
+// Thin out with distance (treeThin, treeRadius): a tree leaving the kept fraction goes by its size or by
+// sinking rather than dithering out (no noise without TAA).
 float keep = treeKeep(dist);
 float thin = treeThin(keep);
-float grow = (1.0 + 0.5 * (1.0 - sqrt(clamp(keep, 0.0, 1.0)))) * thin;
+float R = treeRadius(tH, keep, thin);
+centre.y -= treeSink(tH, R, thin);
 // Hand-over from the near mesh: the complement of its dither, by the same distance (from the tree's base).
 vFade = thin > 0.0 ? smoothstep(uFade.x, uFade.y, distance(treeBase(), cameraPosition)) : 0.0;
 vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), d));
 vec3 up = cross(d, right);
-float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH * grow;
 // Crown width variation stretches the quad sideways (exact for side views, close enough from above).
 vec3 transformed = centre + (right * position.x * treeWidth() + up * position.y) * R + d * (0.2 * tH);
 vImpUv = position.xy * 0.5 + 0.5;
@@ -341,7 +354,7 @@ export function createImpostorMaterial(albedo: THREE.Texture, normal: THREE.Text
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-v8';
+  mat.customProgramCacheKey = () => 'tree-impostor-v10';
   return mat;
 }
 
@@ -366,7 +379,7 @@ export function createImpostorDepthMaterial(albedo: THREE.Texture, uniforms: Tre
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${IMPOSTOR_SHADOW_FRAGMENT}`)
       .replace('#include <logdepthbuf_fragment>', '');
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-depth-v3';
+  mat.customProgramCacheKey = () => 'tree-impostor-depth-v5';
   return mat;
 }
 
@@ -385,8 +398,8 @@ if (tH > 0.0 && sunCascade && dist > uShadowRange) {
   float keep = treeKeep(dist);
   float thin = treeThin(keep);
   if (thin > 0.0) {
-    float grow = (1.0 + 0.5 * (1.0 - sqrt(clamp(keep, 0.0, 1.0)))) * thin;
-    centre.y -= clamp((dist - 800.0) * 0.0008, 0.0, 2.5);
+    float R = treeRadius(tH, keep, thin);
+    centre.y -= clamp((dist - 800.0) * 0.0008, 0.0, 2.5) + treeSink(tH, R, thin);
     // Toward the light: the shadow camera's +z axis.
     vec3 d = normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]));
     float tc = cos(aInstB.x), ts = sin(aInstB.x);
@@ -395,7 +408,6 @@ if (tH > 0.0 && sunCascade && dist > uShadowRange) {
     vFrame = floor(clamp((e * 0.5 + 0.5) * ${IMPOSTOR_GRID.toFixed(1)} - 0.5, 0.0, ${(IMPOSTOR_GRID - 1).toFixed(1)}) + 0.5);
     vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), d));
     vec3 up = cross(d, right);
-    float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH * grow;
     // The billboard stands at the back of the crown (seen from the light). Sliding a caster along the light
     // direction leaves its shadow on the ground unchanged, but a flat caster through the crown's centre would
     // cut neighbouring crowns that reach into it with straight-edged shadows, and shade its own front half.

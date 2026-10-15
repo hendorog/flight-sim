@@ -32,6 +32,7 @@ import { RIVER_STRIP, TREE_LINE_ASPECT } from './biome';
 import { RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
+import { OPEN_RANK } from './vegetation/placement';
 
 export const MAX_LEVELS = 16;
 /**
@@ -490,14 +491,17 @@ if (tFarForest > 0.0) {
 }
 // Fraction of the trees the impostors still draw here (VegetationSystem: full density to uCanopyKeep.x, then
 // (x / d)^1.5, gone by uCanopyKeep.z; none without impostors).
-float tKeep = uCanopyKeep.w > 0.5 ? min(1.0, pow(uCanopyKeep.x / max(tDist, 1.0), 1.5)) * (1.0 - smoothstep(uCanopyKeep.y, uCanopyKeep.z, tDist)) : 0.0;
+float tKeepRaw = uCanopyKeep.w > 0.5 ? pow(uCanopyKeep.x / max(tDist, 1.0), 1.5) * (1.0 - smoothstep(uCanopyKeep.y, uCanopyKeep.z, tDist)) : 0.0;
+float tKeep = min(1.0, tKeepRaw);
+// The same for the trees outside closed forest, which are thinned later (placement.ts OPEN_RANK).
+float tKeepOpen = min(1.0, tKeepRaw / ${OPEN_RANK.toFixed(3)});
 // Scattered trees outside the closed stands (placement.ts: from forest density 0.2 up, edge trees and open
 // woodland). As the impostors thin out, stand in for the crowns no longer drawn with partial canopy cover,
 // so the land keeps its tone and a wood its extent as the trees come and go. Crown cover is about 1.3 times
 // the share of placement candidates taken, (f - 0.2) * 1.6.
 if (tFarForest > 0.0) {
   float scatter = clamp((forestE - 0.2) * 2.1, 0.0, 1.0);
-  forestW += (1.0 - forestW) * scatter * (1.0 - tKeep) * tFarForest;
+  forestW += (1.0 - forestW) * scatter * (1.0 - tKeepOpen) * tFarForest;
 }
 float farmW = smoothstep(0.25, 0.6, tBio.y + 0.12 * sB.a);
 if (tFarForest > 0.0) {
@@ -671,7 +675,7 @@ if (farmW > 0.001) {
   // side also covering the strip of ground the row hides at a low view (their mean height, about 6 m, over
   // the tangent of the view's elevation). The far side is where the distance to the hedge grows away from
   // the viewer (its gradient from the screen-space derivatives).
-  float hedgeMiss = (1.0 - tKeep) * tFarForest * step(0.25, nD.r) * smoothstep(0.97, 0.995, airportBlendAt(tRw)) * (1.0 - townParcel);
+  float hedgeMiss = (1.0 - tKeepOpen) * tFarForest * step(0.25, nD.r) * smoothstep(0.97, 0.995, airportBlendAt(tRw)) * (1.0 - townParcel);
   vec2 dpx = dFdx(tXZ);
   vec2 dpy = dFdy(tXZ);
   float hx = dFdx(pc.hedge);
