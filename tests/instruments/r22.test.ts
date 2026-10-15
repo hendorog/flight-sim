@@ -68,7 +68,7 @@ describe('R22 console', () => {
     const stub = stubCanvas();
     const panel = new InstrumentPanel({ def: R22_PANEL, systems: R22_INSTRUMENT_SYSTEMS });
     expect([panel.canvas.width, panel.canvas.height]).toEqual([PANEL_CANVAS.w, PANEL_CANVAS.h]);
-    expect(panel.emissiveTexture.image.width).toBe(PANEL_CANVAS.w);
+    expect((panel.emissiveTexture.image as { width: number }).width).toBe(PANEL_CANVAS.w);
     // Complete scaled artwork has precisely the bounds used by layout checking and dirty uploads.
     const components = (panel as unknown as { components: { id: string; bounds: unknown }[] }).components;
     for (const g of R22_PANEL.gauges) expect(components.find(c => c.id === g.id)?.bounds).toEqual(gaugeParts(g, R22_PANEL.apertures, R22_PANEL.instrumentScale)[0].rect);
