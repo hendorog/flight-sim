@@ -17,7 +17,7 @@
 // inputs, so one broken pixel cannot spread through the blur chain.
 
 import * as THREE from 'three';
-import type { QualityLevel, SceneEffect, SimContext } from '../../core/context';
+import type { QualityLevel, ReprojectionLayer, SceneEffect, SimContext } from '../../core/context';
 import { AerialPerspectiveEffect } from './AerialPerspectiveEffect';
 import { AutoExposure } from './AutoExposure';
 import { Bloom } from './Bloom';
@@ -223,8 +223,11 @@ export class PostPipeline {
       src = out.texture;
     });
 
+    let layer: ReprojectionLayer | null = null;
+    for (const effect of this.effects) layer = effect.reprojectionLayer?.() ?? layer;
+
     this.taa.enabled = this.temporalAA && ctx.quality !== 'low';
-    src = this.taa.render(r, src, this.hdr.depthTexture as THREE.DepthTexture, this.camera, ctx.aircraftRoot ?? null, (m, t) => this.pass.render(r, m, t));
+    src = this.taa.render(r, src, this.hdr.depthTexture as THREE.DepthTexture, layer, this.camera, ctx.aircraftRoot ?? null, (m, t) => this.pass.render(r, m, t));
 
     this.exposureUniforms.uExposureBias.value = this.exposureBias;
     const atmosphere = Atmosphere.for(r);

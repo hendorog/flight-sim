@@ -10,13 +10,19 @@
 // Reprojection: each pixel's position is rebuilt from the log depth buffer (camera-relative, so float32
 // keeps mm precision at any distance from the origin) and moved with the camera to the previous frame;
 // pixels on the player aircraft (within its bounding sphere) move with the aircraft instead, so the
-// airframe in chase, cockpit and tower views reprojects correctly. The history is sampled with a 5-tap
+// airframe in chase, cockpit and tower views reprojects correctly. Where a translucent layer was drawn over
+// the scene (the clouds, SceneEffect.reprojectionLayer), the pixel moves with the layer's front instead,
+// blended toward the surface behind by the layer's opacity: the depth buffer holds only the terrain or the
+// sky behind the clouds, which in flight moves at a very different rate (the sky not at all), so the cloud
+// history was dragged across the clouds and the clip box threw it away, leaving their grain unfiltered.
+// The history is sampled with a 5-tap
 // Catmull-Rom filter (no progressive blur) and clipped to the current 3x3 neighbourhood's colour
 // distribution in YCoCg (variance clipping, Salvi 2016), which rejects disocclusions, moving lights,
 // the propeller and instrument needles. Blending is done on 1/(1+luma)-weighted colour so a bright pixel
 // cannot smear (Karis 2014).
 
 import * as THREE from 'three';
+import type { ReprojectionLayer } from '../../core/context';
 import { C172S_GEOMETRY } from '../../aircraft/c172s/geometry';
 import { DEPTH_GLSL } from '../../core/shaderLib';
 import { passMaterial } from './FullscreenPass';
@@ -38,6 +44,9 @@ ${DEPTH_GLSL}
 uniform sampler2D tCurrent;
 uniform sampler2D tHistory;
 uniform sampler2D tDepth;
+uniform sampler2D tLayerDist;  // r: log2(1 + distance to the translucent layer's front)
+uniform sampler2D tLayerT;     // a: the layer's transmittance
+uniform float uLayerOn;
 uniform vec2 uTexel;
 uniform vec2 uTanHalf;
 uniform vec2 uPrevTanHalf;
@@ -110,11 +119,31 @@ void main() {
   // Reproject: camera-relative position of this pixel, then into the previous frame's camera.
   float d = texture2D(tDepth, vUv).r;
   vec3 view = vec3((vUv * 2.0 - 1.0) * uTanHalf, -1.0);
+  // Forward depth to reproject at; 0 = at infinity (the sky: rotation only).
+  float z = isSky(d) ? 0.0 : viewZFromDepth(d);
+  if (uLayerOn > 0.5) {
+    // The layer's front (a distance along the ray) where it lies in front of the surface, in log distance
+    // between the two by its opacity (the sky taken as 100 km); the opacity ramp keeps thin wisps with the
+    // scene behind them. Front and opacity are the nearest and most opaque of the layer texel and its four
+    // neighbours (closest-depth dilation): a cloud's outline then moves with the cloud, not with the sky.
+    vec2 lt = 1.0 / vec2(textureSize(tLayerDist, 0));
+    float fr = 1e9, op = 0.0;
+    for (int k = 0; k < 5; k++) {
+      vec2 o = k == 0 ? vec2(0.0) : k == 1 ? vec2(lt.x, 0.0) : k == 2 ? vec2(-lt.x, 0.0) : k == 3 ? vec2(0.0, lt.y) : vec2(0.0, -lt.y);
+      float ok = 1.0 - texture2D(tLayerT, vUv + o).a;
+      if (ok > 0.02) fr = min(fr, texture2D(tLayerDist, vUv + o).r);
+      op = max(op, ok);
+    }
+    float front = (exp2(fr) - 1.0) / length(view);
+    float a = smoothstep(0.02, 0.25, op);
+    float behind = z > 0.0 ? z : 1e5;
+    if (a > 0.0 && front < behind * 0.9) z = exp2(mix(log2(behind), log2(max(front, 1.0)), a));
+  }
   vec3 prevView;
-  if (isSky(d)) {
+  if (z <= 0.0) {
     prevView = uPrevWorldToCam * (uCamToWorld * view);
   } else {
-    vec3 rel = uCamToWorld * (view * viewZFromDepth(d));
+    vec3 rel = uCamToWorld * (view * z);
     vec3 ac = rel - uAircraft.xyz;
     vec3 prevRel = dot(ac, ac) < uAircraft.w * uAircraft.w
       ? uAircraftPrev + uAircraftPrevRot * (transpose(uAircraftRot) * ac)
@@ -169,6 +198,9 @@ export class TemporalAA {
       tCurrent: { value: null },
       tHistory: { value: null },
       tDepth: { value: null },
+      tLayerDist: { value: null },
+      tLayerT: { value: null },
+      uLayerOn: { value: 0 },
       uTexel: { value: new THREE.Vector2() },
       uTanHalf: { value: new THREE.Vector2() },
       uPrevTanHalf: { value: new THREE.Vector2() },
@@ -219,12 +251,14 @@ export class TemporalAA {
 
   /**
    * Blend `input` with the reprojected history; returns the stabilised frame (valid until the next call).
+   * @param layer a translucent layer drawn over the scene (the clouds), reprojected at its own distance
    * @param aircraft the player aircraft's root (moves with its own motion), or null
    */
   render(
     renderer: THREE.WebGLRenderer,
     input: THREE.Texture,
     depth: THREE.Texture,
+    layer: ReprojectionLayer | null,
     camera: THREE.PerspectiveCamera,
     aircraft: THREE.Object3D | null,
     draw: (material: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget) => void,
@@ -243,6 +277,9 @@ export class TemporalAA {
     u.uAlpha.value = cut ? 1 : this.alpha;
     u.tCurrent.value = input;
     u.tDepth.value = depth;
+    u.uLayerOn.value = layer ? 1 : 0;
+    u.tLayerDist.value = layer?.distance ?? null;
+    u.tLayerT.value = layer?.transmittance ?? null;
     u.tHistory.value = this.targets[this.current].texture;
     u.uTanHalf.value.copy(tan);
     (u.uCamToWorld.value as THREE.Matrix3).setFromMatrix4(_rot.makeRotationFromQuaternion(this.camQuat));

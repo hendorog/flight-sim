@@ -10,7 +10,9 @@
 
 import * as THREE from 'three';
 import { HEMI_OCT_GLSL, IMPOSTOR_FRAME, IMPOSTOR_GRID } from './impostors';
-import { SPECIES_TINT, TREE_BOUND_RADIUS } from './treeModels';
+import { speciesTints, TREE_BOUND_RADIUS } from './treeModels';
+import { era, isPresent } from '../../era/eraState';
+import { FLORA } from './flora';
 
 export interface TreeUniforms {
   uTime: { value: number };
@@ -151,8 +153,36 @@ if (tDither < vFade || tDither >= vLod) discard;
 
 /** Uniforms every tree material reads besides TreeUniforms. */
 function speciesTint(): { uSpeciesTint: { value: THREE.Vector3[] } } {
-  return { uSpeciesTint: { value: SPECIES_TINT.map((t) => new THREE.Vector3(...t)) } };
+  return { uSpeciesTint: { value: speciesTints().map((t) => new THREE.Vector3(...t)) } };
 }
+
+/**
+ * Another era (Deep Time) with a palm in its flora: the slot of the palm, whose crown bends as a whole and
+ * whose fronds flutter (TREE_PALM, inserted into the near trees' vertex stage only then). -1 otherwise, and
+ * always in the present day (whose shaders stay as they are).
+ */
+function palmSlot(): number {
+  if (isPresent()) return -1;
+  return FLORA[era().flora].slots.findIndex((s) => s.key === 'sabal');
+}
+
+// After NEAR_BEGIN (tp, tH, ph and transformed are its locals). The crown, above the trunk's top two-fifths,
+// leans a little more with the gusts than the y^2 sway alone, and each frond flaps up and down, more at its
+// tip and faster than the tree sways.
+const PALM_SWAY = /* glsl */ `
+#ifdef TREE_PALM
+if (treeSpecies() == float(TREE_PALM)) {
+  float crown = smoothstep(0.55, 0.8, position.y);
+  vec3 off = position - vec3(0.03, 0.77, 0.01);
+  float reach = length(off);
+  float gust = 0.5 + 0.5 * sin(uTime * 0.45 + ph * 0.3);
+  vec2 lean = vec2(sin(uTime * 0.9 + ph), cos(uTime * 0.75 + ph * 1.3)) * (0.004 + 0.006 * gust) * crown * tH;
+  float flap = sin(uTime * 3.1 + ph + atan(off.z, off.x) * 3.0) * reach * reach * tH * (0.25 + 0.35 * gust) * crown;
+  transformed.xz += lean;
+  transformed.y += flap;
+}
+#endif
+`;
 
 export function createNearTreeMaterial(foliage: THREE.Texture, uniforms: TreeUniforms, lod: 0 | 1 = 0): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({
@@ -165,6 +195,9 @@ export function createNearTreeMaterial(foliage: THREE.Texture, uniforms: TreeUni
   });
   mat.name = `tree-lod${lod}`;
   mat.defines = { TREE_LOD: lod };
+  const palm = palmSlot();
+  if (palm >= 0) mat.defines.TREE_PALM = palm;
+  const keySuffix = isPresent() ? '' : `-${era().id}`;
   const tint = speciesTint();
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms, tint);
@@ -174,7 +207,7 @@ export function createNearTreeMaterial(foliage: THREE.Texture, uniforms: TreeUni
         '#include <beginnormal_vertex>',
         'vec3 objectNormal = rotY(normal, cos(aInstB.x), sin(aInstB.x));\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3(tangent.xyz);\n#endif',
       )
-      .replace('#include <begin_vertex>', `${NEAR_BEGIN}\n${NEAR_CULL}\nvTint = treeTint();`);
+      .replace('#include <begin_vertex>', `${NEAR_BEGIN}\n${palm >= 0 ? `${PALM_SWAY}\n` : ''}${NEAR_CULL}\nvTint = treeTint();`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${DITHER_GLSL}\nvarying vec3 vTint;\nvarying float vLod;`)
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vTint;')
@@ -185,7 +218,7 @@ export function createNearTreeMaterial(foliage: THREE.Texture, uniforms: TreeUni
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => `tree-near-v6-${lod}`;
+  mat.customProgramCacheKey = () => `tree-near-v6-${lod}${keySuffix}`;
   return mat;
 }
 

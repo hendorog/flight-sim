@@ -32,6 +32,23 @@ const MIN_CONVECTIVE_DEPTH = 300;
 /** Past a record-length backward time jump (a reset), the advection restarts from t = 0. */
 const TIME_RESET = 1;
 
+/**
+ * The convective state the thermals are drawn from (WindField.thermalFrame; read-only, for the wildlife that
+ * soars in them). thermalUpdraft(seed, north - driftN, east - driftE, agl, t, wStar, zi(ground)) is the
+ * thermal part of sample() at a point.
+ */
+export interface ThermalFrame {
+  seed: number;
+  /** Advection displacement of the thermal field, NED m (as of the last sample()). */
+  driftN: number;
+  driftE: number;
+  /** Convective velocity scale w*, m/s (0 at night, under overcast or in strong wind). */
+  wStar: number;
+  /** Cloud base MSL, m: the convective layer depth over ground at h is max(minDepth, cloudBaseM - h). */
+  cloudBaseM: number;
+  minDepth: number;
+}
+
 /** Contributions to the wind at one point, for diagnostics and tests. */
 export interface WindBreakdown {
   /** Steady boundary-layer wind, NED m/s. */
@@ -154,6 +171,27 @@ export class WindField {
       heightAGL: b.heightAGL,
       intensity: { ...b.intensity },
     };
+  }
+
+  /**
+   * The thermal field's seed, drift and convective scales as sample() uses them (read-only: it neither advects
+   * the field nor changes any state the flight model sees). Writes into `out` when given.
+   */
+  thermalFrame(out?: ThermalFrame): ThermalFrame {
+    const w = this.weather;
+    const f = out ?? { seed: 0, driftN: 0, driftE: 0, wStar: 0, cloudBaseM: 0, minDepth: MIN_CONVECTIVE_DEPTH };
+    f.seed = this.thermalSeed;
+    f.driftN = this.driftN;
+    f.driftE = this.driftE;
+    f.wStar = this.convectiveVelocity(Math.max(0, w.windSpeedKt) * KT);
+    f.cloudBaseM = w.cloudBaseM;
+    f.minDepth = MIN_CONVECTIVE_DEPTH;
+    return f;
+  }
+
+  /** Convective layer depth zi over ground at `groundM` MSL, m (as sample() computes it). */
+  convectiveDepth(groundM: number): number {
+    return Math.max(MIN_CONVECTIVE_DEPTH, this.weather.cloudBaseM - groundM);
   }
 
   /**

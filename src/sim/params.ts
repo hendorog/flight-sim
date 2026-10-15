@@ -1,7 +1,10 @@
 // URL parameters of index.html (automation hooks and screenshot set-ups). All optional.
 //
 //   aircraft=c172s|c152|pa38|da20|pa34|da42       aircraft type (default: the type chosen in the menu, else c172s)
-//   scenario=runway|apron|final|cruise|downwind   start scenario (default runway)
+//   era=present|cretaceous                        world era (default: the era chosen in the menu, else present;
+//                                                 see src/sim/eraChoice.ts and src/world/era/types.ts)
+//   scenario=runway|apron|final|cruise|downwind|safari   start scenario (default runway, or the era's default
+//                                                 start, e.g. safari in the Cretaceous)
 //   cam=cockpit|chase|orbit|flyby|tower           camera mode (default cockpit)
 //   tod=9.5        local solar time, hours          doy=172      day of year
 //   cover=0.35     cloud cover 0..1                 base=1500    cloud base, m MSL (the layer keeps its depth)
@@ -45,14 +48,23 @@
 import type { CameraMode, QualityLevel, ScenarioId } from '../core/context';
 import { isAircraftId, type AircraftId, type WeatherSettings } from '../core/types';
 import { SCENARIO_IDS } from './scenarios';
+import { ERA_IDS, type EraId } from '../world/era/types';
+import { ERA_SCENARIO_IDS } from './eraChoice';
 import { isR22Demo, type R22DemoId } from './rotorcraft/flights';
 
 const CAMERA_MODES: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
 const QUALITIES: readonly QualityLevel[] = ['low', 'medium', 'high', 'ultra'];
+/**
+ * Every scenario a URL may name: SCENARIO_IDS plus the era starts (eraChoice.ts ERA_SCENARIO_IDS: 'safari'),
+ * which are not in SCENARIO_IDS (the present-day suites and goldens iterate that list).
+ */
+export const URL_SCENARIO_IDS: readonly ScenarioId[] = [...new Set([...SCENARIO_IDS, ...ERA_SCENARIO_IDS])];
 
 export interface SimParams {
   /** aircraft=<id>, or null when it is absent or not a known id. */
   aircraft: AircraftId | null;
+  /** era=<id>, or undefined when it is absent or not a known id (eraChoice.ts then uses the stored choice). */
+  era: EraId | undefined;
   scenario: ScenarioId;
   /** scenario= was given (a valid id): the URL asks for that scenario, not for the resumed flight. */
   explicitScenario: boolean;
@@ -161,8 +173,9 @@ export function parseParams(search: string): SimParams {
   const aircraft = q.get('aircraft');
   return {
     aircraft: isAircraftId(aircraft) ? aircraft : null,
-    scenario: oneOf('scenario', SCENARIO_IDS, 'runway'),
-    explicitScenario: SCENARIO_IDS.includes(q.get('scenario') as ScenarioId),
+    era: (ERA_IDS as readonly string[]).includes(q.get('era') ?? '') ? (q.get('era') as EraId) : undefined,
+    scenario: oneOf('scenario', URL_SCENARIO_IDS, 'runway'),
+    explicitScenario: URL_SCENARIO_IDS.includes(q.get('scenario') as ScenarioId),
     resume: q.get('resume') === '1' ? true : q.get('resume') === '0' ? false : null,
     cam: oneOf('cam', CAMERA_MODES, camPos ? 'tower' : 'cockpit'),
     quality: oneOf('quality', QUALITIES, 'high'),

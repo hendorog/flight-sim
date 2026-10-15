@@ -12,6 +12,8 @@
 //   tas=54                  mock aircraft true airspeed, m/s
 //   freeze=1                do not advance time (deterministic screenshots)
 //   aircraft=c172s          the type in the context (ctx.aircraft / ctx.presentation) and the mock state (default c172s)
+//   era=cretaceous          the world era (src/world/era; default present), set when this module loads, before the
+//                           page builds anything
 // Any other parameter is left for the module under test to read from location.search.
 //
 // Manual inspection: drag = look, WASD/QE = move, shift = fast, wheel = change speed.
@@ -25,6 +27,7 @@ import { makeMockEnvironment, makeMockState } from '../core/mockState';
 import { createCamera, createRenderer } from '../core/renderSetup';
 import { defaultControls, defaultWeather } from '../core/types';
 import { AIRPORT, sunDirectionNED } from '../core/world';
+import { era, setEra } from '../world/era/eraState';
 
 export interface HarnessOptions {
   /** Subsystems under test, initialised in order. */
@@ -43,6 +46,8 @@ export interface HarnessOptions {
 }
 
 const params = new URLSearchParams(location.search);
+// The era before any page code runs (a dev page imports this module first and builds its subsystems after).
+setEra(params.get('era'));
 const num = (key: string, fallback: number): number => {
   const v = params.get(key);
   return v === null || v === '' || Number.isNaN(Number(v)) ? fallback : Number(v);
@@ -126,6 +131,7 @@ export async function runHarness(opts: HarnessOptions): Promise<SimContext> {
     events: createEventBus(),
     aircraft: def,
     presentation,
+    era: era().id,
   };
 
   if (basic) {

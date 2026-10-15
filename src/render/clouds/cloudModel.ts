@@ -201,16 +201,19 @@ float shapeMargin(vec3 p, float cov, float lod) {
 // a uniform deck shows as a lattice and at grazing angles as radial moire streaks). High values hang lower
 // (cloudDensity) and are darker (the march): real bases are flat but lumpy, with darker pockets under the
 // thicker parts. lod / dlod: mip levels of the shape / detail volume at their native scales.
+// The field is 2D (one horizontal slice of each volume): the pockets are columns, darker where the cloud
+// above is thicker. Sliced at the sample's altitude, a ray grazing the base crossed the volume's iso-surfaces
+// and showed them as stacked, wavy contour lines ("ripples") across every distant base.
 float baseMottleCoarse(vec3 p, float lod) {
   vec3 q = p + uShapeOffset;   // drifts with the cells
-  vec3 qa = vec3(q.x * 0.825 + q.z * 0.565, q.y * 0.6, q.z * 0.825 - q.x * 0.565) * (1.0 / 1170.0);
+  vec3 qa = vec3(q.x * 0.825 + q.z * 0.565, 0.37 * 1170.0, q.z * 0.825 - q.x * 0.565) * (1.0 / 1170.0);
   return textureLod(uShapeTex, qa, clamp(lod + 0.36, 0.0, 4.0)).r;
 }
 float baseMottle(vec3 p, float lod, float dlod) {
   vec3 q = p + uShapeOffset;
-  vec3 qb = vec3(q.x * 0.454 - q.z * 0.891, q.y * 0.6, q.z * 0.454 + q.x * 0.891) * (1.0 / 370.0);
+  vec3 qb = vec3(q.x * 0.454 - q.z * 0.891, 0.61 * 370.0, q.z * 0.454 + q.x * 0.891) * (1.0 / 370.0);
   float mb = textureLod(uDetailTex, qb, clamp(dlod + 0.37, 0.0, 4.0)).r;
-  return smoothstep(0.2, 0.8, 0.5 * baseMottleCoarse(p, lod) + 0.5 * mb);
+  return smoothstep(0.05, 0.95, 0.5 * baseMottleCoarse(p, lod) + 0.5 * mb);
 }
 
 // The flat base turns up into the flanks through a rounded shoulder (~140 m high, ~100 m of margin): without

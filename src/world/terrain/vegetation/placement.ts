@@ -12,6 +12,8 @@ import { makeSample, sampleTerrain } from '../heightfield';
 import { makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
 import { inTownClearZone } from '../townMask';
+import { era } from '../../era/eraState';
+import { FLORA } from './flora';
 
 export interface TreeCellRequest {
   cx: number;
@@ -60,6 +62,7 @@ const shapeField = new CoverShapeField();
 const rnd = (h: number, salt: number): number => hash2i(h, salt) / 4294967296;
 
 export function buildTreeCell(req: TreeCellRequest): TreeCellData {
+  if (era().flora !== 'present') return buildTreeCellEra(req);
   const { cx, cz, size, spacing } = req;
   const e0 = cx * size;
   const n0 = cz * size;
@@ -177,6 +180,171 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
   const instances = new Float32Array(count * TREE_STRIDE);
   for (let k = 0; k < count; k++) for (let c = 0; c < TREE_STRIDE; c++) instances[k * TREE_STRIDE + c] = out[order[k] * TREE_STRIDE + c];
   // Counting sort of the instances into sub-square buckets.
+  const bucketOf = new Uint8Array(count);
+  const bucketStart = new Uint16Array(BUCKETS * BUCKETS + 1);
+  const sub = size / BUCKETS;
+  for (let k = 0; k < count; k++) {
+    const bx = Math.min(BUCKETS - 1, Math.max(0, Math.floor((instances[k * TREE_STRIDE] - e0) / sub)));
+    const bz = Math.min(BUCKETS - 1, Math.max(0, Math.floor((instances[k * TREE_STRIDE + 2] - n0) / sub)));
+    bucketOf[k] = bz * BUCKETS + bx;
+    bucketStart[bucketOf[k] + 1]++;
+  }
+  for (let b = 0; b < BUCKETS * BUCKETS; b++) bucketStart[b + 1] += bucketStart[b];
+  const fill = bucketStart.slice(0, BUCKETS * BUCKETS);
+  const byBucket = new Uint16Array(count);
+  for (let k = 0; k < count; k++) byBucket[fill[bucketOf[k]]++] = k;
+  return { cx, cz, instances, count, order: byBucket, bucketStart };
+}
+
+// ------------------------------------------------------------------------------------------------ eras
+//
+// Another era's trees (Deep Time; flora/index.ts). The same cell, lattice and exclusions as the present
+// buildTreeCell above, with the era's four species by habitat and every random draw on a new hash salt (11+):
+//   slot 0 (araucaria)  uplands and slopes
+//   slot 1 (taxodioid)  wet ground: riverbanks, marsh (biome.marsh, nonzero only when the era has
+//                       marsh), wet lowland forest
+//   slot 2 (platanoid)  lowland forest, the majority (angiosperm-dominated)
+//   slot 3 (palm)       lone trees and clumps on the open, flat, moist floodplain; some in forest edges and
+//                       with the cypresses along the river
+// No hedgerows (no farmland). Heights within each slot's range.
+
+const ARAUCARIA = 0;
+const TAXODIOID = 1;
+const PLATANOID = 2;
+const PALM = 3;
+
+const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
+
+function buildTreeCellEra(req: TreeCellRequest): TreeCellData {
+  const { cx, cz, size, spacing } = req;
+  const E = era();
+  const slots = FLORA[E.flora].slots;
+  const marshChannel = E.terrain.marsh;
+  const e0 = cx * size;
+  const n0 = cz * size;
+
+  const m = Math.ceil(size / LATTICE) + 1;
+  shapeField.build(n0, e0, n0 + (m - 1) * LATTICE, e0 + (m - 1) * LATTICE);
+  const dens = new Float32Array(m * m);
+  // Share of araucaria among forest trees (uplands, slopes), of taxodioids (wet ground) and the open
+  // floodplain's suitability for palms.
+  const upland = new Float32Array(m * m);
+  const wet = new Float32Array(m * m);
+  const plain = new Float32Array(m * m);
+  const bank = new Float32Array(m * m);
+  for (let j = 0; j < m; j++) {
+    for (let i = 0; i < m; i++) {
+      const north = n0 + j * LATTICE;
+      const east = e0 + i * LATTICE;
+      sampleTerrain(north, east, sample);
+      shapeField.at(north, east, shape);
+      computeBiome(north, east, sample, shape.up, biome, shape.north);
+      const k = j * m + i;
+      dens[k] = biome.forest;
+      bank[k] = sample.riverHalfWidth > 0 ? Math.min(1e4, sample.riverDist - sample.riverHalfWidth) : 1e4;
+      const marsh = marshChannel ? biome.marsh : 0;
+      const slope = clamp01((0.97 - shape.up) / 0.08);
+      upland[k] = clamp01((sample.ground - 380) / 500 + 1.2 * slope - 0.05);
+      wet[k] = clamp01(1.6 * marsh + 1.5 * (biome.moisture - 0.7) + (bank[k] < 150 ? 0.4 : 0) - Math.max(0, (sample.ground - 300) / 400) - slope);
+      plain[k] = clamp01((biome.moisture - 0.35) * 3) * clamp01((shape.up - 0.975) / 0.015) * clamp01((700 - sample.ground) / 300) * (1 - 0.7 * marsh);
+    }
+  }
+  const lerp2 = (arr: Float32Array, fx: number, fz: number): number => {
+    const i = Math.min(m - 2, Math.floor(fx));
+    const j = Math.min(m - 2, Math.floor(fz));
+    const tx = fx - i;
+    const tz = fz - j;
+    const a = arr[j * m + i] + (arr[j * m + i + 1] - arr[j * m + i]) * tx;
+    const b = arr[(j + 1) * m + i] + (arr[(j + 1) * m + i + 1] - arr[(j + 1) * m + i]) * tx;
+    return a + (b - a) * tz;
+  };
+  const heightOf = (s: number, t: number): number => {
+    const [lo, hi] = slots[s].height;
+    return lo + (hi - lo) * clamp01(t);
+  };
+
+  const per = Math.round(size / spacing);
+  const out: number[] = [];
+  for (let j = 0; j < per; j++) {
+    for (let i = 0; i < per; i++) {
+      const gi = cx * per + i;
+      const gj = cz * per + j;
+      const h0 = hash2i(gi, gj);
+      const east = e0 + (i + rnd(h0, 11)) * spacing;
+      const north = n0 + (j + rnd(h0, 12)) * spacing;
+      const fx = (east - e0) / LATTICE;
+      const fz = (north - n0) / LATTICE;
+      const f = lerp2(dens, fx, fz);
+      const p = f < 0.2 ? 0 : Math.min(1, (f - 0.2) * 1.6);
+      const lone = f < 0.1 ? 0 : 0.004;
+      const u = rnd(h0, 13);
+      let kind: 'forest' | 'riparian' | 'palm' = 'forest';
+      if (u >= p + lone) {
+        // Palm groves: clumps of a few to a few dozen on the open floodplain, and the odd lone palm.
+        const pl = lerp2(plain, fx, fz);
+        let palm = false;
+        if (pl > 0.05) {
+          const grove = fbm(east / 160 + 17.3, north / 160 - 5.9, 2);
+          const pp = pl * (grove > 0.32 ? Math.min(0.5, (grove - 0.32) * 3) : 0.0025);
+          palm = rnd(h0, 14) < pp;
+        }
+        if (palm) kind = 'palm';
+        else {
+          // Bankside trees along the river where riparianPresence says (the water shader reflects them).
+          let riparian = false;
+          const be = lerp2(bank, fx, fz);
+          if (be > RIPARIAN_NEAR - 4 && be < RIPARIAN_FAR + 4) {
+            sampleTerrain(north, east, sample);
+            const edge = sample.riverDist - sample.riverHalfWidth;
+            if (sample.riverHalfWidth > 0 && edge > RIPARIAN_NEAR && edge < RIPARIAN_FAR) {
+              const pr = riparianPresence(sample.riverArc, Math.sign(sample.riverSigned));
+              riparian = u < 0.6 * pr * (1 - 0.6 * (edge - RIPARIAN_NEAR) / (RIPARIAN_FAR - RIPARIAN_NEAR));
+            }
+          }
+          if (!riparian) continue;
+          kind = 'riparian';
+        }
+      }
+      if (inTownClearZone(north, east)) continue;
+      sampleTerrain(north, east, sample);
+      if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
+      if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + 2.5) continue;
+      let species: number;
+      let height: number;
+      if (kind === 'riparian') {
+        species = rnd(h0, 15) < 0.72 ? TAXODIOID : PALM;
+        height = heightOf(species, rnd(h0, 16));
+      } else if (kind === 'palm') {
+        species = PALM;
+        // Taller palms in the middle of a grove, a few young ones.
+        height = heightOf(PALM, 0.15 + 0.85 * rnd(h0, 16));
+      } else {
+        const r = rnd(h0, 15);
+        const up = lerp2(upland, fx, fz);
+        const w = lerp2(wet, fx, fz);
+        if (r < up) species = ARAUCARIA;
+        else if (rnd(h0, 19) < w) species = TAXODIOID;
+        // Palms in the understorey of open, low, edge woodland.
+        else if (f < 0.55 && rnd(h0, 20) < 0.12 * lerp2(plain, fx, fz) + 0.03) species = PALM;
+        else species = PLATANOID;
+        // Edge and lone trees are shorter than forest-grown ones.
+        const vigour = 0.55 + 0.45 * Math.min(1, f * 1.5);
+        height = heightOf(species, rnd(h0, 16) * vigour + (1 - vigour) * 0.15);
+      }
+      out.push(east, sample.ground, north, height, rnd(h0, 17) * Math.PI * 2, species + 0.99 * rnd(h0, 18));
+    }
+  }
+
+  // Sort by rank and bucket, as buildTreeCell does.
+  const count = out.length / TREE_STRIDE;
+  const order = Array.from({ length: count }, (_, k) => k);
+  const rank = (k: number): number => {
+    const v = out[k * TREE_STRIDE + 5];
+    return v - Math.floor(v);
+  };
+  order.sort((a, b) => rank(a) - rank(b));
+  const instances = new Float32Array(count * TREE_STRIDE);
+  for (let k = 0; k < count; k++) for (let c = 0; c < TREE_STRIDE; c++) instances[k * TREE_STRIDE + c] = out[order[k] * TREE_STRIDE + c];
   const bucketOf = new Uint8Array(count);
   const bucketStart = new Uint16Array(BUCKETS * BUCKETS + 1);
   const sub = size / BUCKETS;

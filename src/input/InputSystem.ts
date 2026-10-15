@@ -42,6 +42,7 @@ import { Activity, LeverOwner, mixCentring, mouseAxisFromPickup, mouseYokeDeflec
 import { nextPanelSection } from '../instruments/fixedPanel';
 import { MouseFlightGesture } from './mouseFlightGesture';
 import { MouseYokeOverlay } from './mouseYokeOverlay';
+import { era } from '../world/era/eraState';
 import type { InputProfile } from './profile';
 import {
   GroundSteeringAssist,
@@ -144,6 +145,16 @@ export interface YokeIndicator {
 }
 
 const CAMERA_CYCLE: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
+/** The cycle without the tower: an era with no airport tower (EraWorld.towerCamera false, the Cretaceous Flats). */
+const CAMERA_CYCLE_NO_TOWER: readonly CameraMode[] = CAMERA_CYCLE.filter((m) => m !== 'tower');
+
+/** The camera C (next) or Shift+C (previous) gives from `mode`, in this thread's era. */
+export function cycleCameraMode(mode: CameraMode, dir: 1 | -1): CameraMode {
+  const cycle = era().world.towerCamera ? CAMERA_CYCLE : CAMERA_CYCLE_NO_TOWER;
+  const n = cycle.length;
+  const i = cycle.indexOf(mode);
+  return cycle[(i + (dir > 0 ? 1 : n - 1)) % n];
+}
 
 /** Held-key lever rates, fraction of travel per second at full rate. Trim: full travel in ~8 s like the wheel. */
 const THROTTLE_RATE = 0.5;
@@ -1297,9 +1308,7 @@ export class InputSystem implements Subsystem {
         break;
       case 'cameraNext':
       case 'cameraPrev': {
-        const i = CAMERA_CYCLE.indexOf(ctx.cameraMode);
-        const n = CAMERA_CYCLE.length;
-        ctx.commands.setCameraMode(CAMERA_CYCLE[(i + (a === 'cameraNext' ? 1 : n - 1)) % n]);
+        ctx.commands.setCameraMode(cycleCameraMode(ctx.cameraMode, a === 'cameraNext' ? 1 : -1));
         break;
       }
       case 'viewRecentre':

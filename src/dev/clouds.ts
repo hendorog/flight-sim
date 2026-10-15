@@ -10,6 +10,7 @@
 //   time=0             simulation time to start from, s (sets the evolution phase; wind drift integrates dt)
 //   fly=60             move the camera forward at this speed, m/s (tests temporal reprojection)
 //   yaw=10             turn the camera at this rate, deg/s
+//   step=0.016667      fixed time step per frame, s (repeatable motion for window.__cloudsDev captures)
 //   timing=1           measure the GPU time of the cloud pass (EXT_disjoint_timer_query_webgl2) and print
 //                      the average as a console warning every 300 frames
 //   slice=x,z,dx,dz,len[,mode]  show a vertical density slice (red: full density, green: coarse shape, blue: mask)
@@ -23,6 +24,8 @@ import { CloudsEffect } from '../render/clouds';
 import { COVER_CALIBRATION } from '../render/clouds/coverage';
 import { createDevScene, DevPipeline } from './cloudsDevScene';
 import type { QualityLevel } from '../core/context';
+import { FullscreenPass } from '../render/post/FullscreenPass';
+import { TemporalAA } from '../render/post/TemporalAA';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number): number => (params.has(k) && !Number.isNaN(Number(params.get(k))) ? Number(params.get(k)) : d);
@@ -32,11 +35,50 @@ const UP = new THREE.Vector3(0, 1, 0);
 const SLICE = params.has('slice') ? (params.get('slice') ?? '').split(',').map(Number) : null;
 const FLY_SPEED = num('fly', 0);
 const YAW_RATE = THREE.MathUtils.degToRad(num('yaw', 0));
+const STEP = num('step', 0);
+/** The sim's temporal stabilisation after the clouds: 1 = with the clouds' reprojection layer, 2 = without. */
+const TAA = num('taa', 0);
+
+/**
+ * Frame capture for artefact measurements (scripts or --eval): `moving` pauses the fly/yaw motion,
+ * `frames(n)` resolves with the canvas luminance (0..255) of the next n frames, `png()` with the next frame.
+ */
+const devHooks = {
+  moving: true,
+  pending: [] as ((gl: WebGL2RenderingContext) => boolean)[],
+  frames(n: number): Promise<Uint8Array[]> {
+    const out: Uint8Array[] = [];
+    return new Promise((resolve) => {
+      devHooks.pending.push((gl) => {
+        const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+        const px = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        const lum = new Uint8Array(w * h);
+        for (let i = 0; i < w * h; i++) lum[i] = (px[i * 4] * 54 + px[i * 4 + 1] * 183 + px[i * 4 + 2] * 19) >> 8;
+        out.push(lum);
+        if (out.length < n) return false;
+        resolve(out);
+        return true;
+      });
+    });
+  },
+  png(): Promise<string> {
+    return new Promise((resolve) => {
+      devHooks.pending.push((gl) => {
+        resolve((gl.canvas as HTMLCanvasElement).toDataURL('image/png'));
+        return true;
+      });
+    });
+  },
+};
+(window as unknown as { __cloudsDev: typeof devHooks }).__cloudsDev = devHooks;
 
 let pipeline: DevPipeline;
 let clouds: CloudsEffect;
 let dev: { update(): void };
 let timer: GpuTimer | null = null;
+let taa: TemporalAA | null = null;
+const taaPass = new FullscreenPass();
 
 /** Averages GPU time spans with EXT_disjoint_timer_query_webgl2 (results arrive a few frames late). */
 class GpuTimer {
@@ -97,6 +139,10 @@ void runHarness({
     const height = r.domElement.height;
     pipeline = new DevPipeline(width, height, num('exp', 1));
     clouds.setSize(width, height);
+    if (TAA > 0) {
+      taa = new TemporalAA();
+      taa.setSize(width, height);
+    }
     dev = createDevScene(ctx);
     if (params.get('timing') === '1') {
       const gl = r.getContext() as WebGL2RenderingContext;
@@ -117,24 +163,42 @@ void runHarness({
     window.addEventListener('resize', () => {
       pipeline.setSize(r.domElement.width, r.domElement.height);
       clouds.setSize(r.domElement.width, r.domElement.height);
+      taa?.setSize(r.domElement.width, r.domElement.height);
     });
   },
   beforeUpdate(dt, ctx) {
+    if (STEP > 0) {
+      // The harness has already advanced the clock by the real frame time: replace it with the fixed step,
+      // and hold it while a capture has stopped the motion (a still reference of the same instant).
+      ctx.simTime += (devHooks.moving ? STEP : 0) - dt;
+      dt = STEP;
+    }
+    if (!devHooks.moving) return;
     const cam = ctx.camera;
     cam.translateZ(-FLY_SPEED * dt);
     cam.rotateOnWorldAxis(UP, -YAW_RATE * dt);
   },
   render(dt, ctx) {
+    if (STEP > 0) dt = devHooks.moving ? STEP : 0;
     dev.update();
     pipeline.renderScene(ctx);
     timer?.begin();
     clouds.render(ctx.renderer, pipeline.hazedRT.texture, pipeline.sceneRT.depthTexture!, pipeline.effectRT, ctx, dt);
     timer?.end();
-    pipeline.toneMap(ctx.renderer, pipeline.effectRT.texture);
+    let out = pipeline.effectRT.texture;
+    if (taa) {
+      const layer = TAA === 1 ? clouds.reprojectionLayer() : null;
+      out = taa.render(ctx.renderer, out, pipeline.sceneRT.depthTexture!, layer, ctx.camera, null, (m, t) => taaPass.render(ctx.renderer, m, t));
+    }
+    pipeline.toneMap(ctx.renderer, out);
     if (SLICE) {
       // Vertical density slice (CloudsEffect.renderDensitySlice) over the whole canvas.
       const [x, z, dx, dz, len, mode] = SLICE;
       clouds.renderDensitySlice(ctx.renderer, null as unknown as THREE.WebGLRenderTarget, x, z, dx, dz, len, mode ?? 0);
+    }
+    if (devHooks.pending.length) {
+      const gl = ctx.renderer.getContext() as WebGL2RenderingContext;
+      devHooks.pending = devHooks.pending.filter((f) => !f(gl));
     }
   },
 });

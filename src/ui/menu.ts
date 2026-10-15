@@ -1,6 +1,7 @@
 // Pause menu: flight (aircraft, resume, scenarios, sim rate), the Flight School tab, weather, time of day,
 // display (quality, camera, HUD) and the controls reference.
 
+import { SAFARI as SAFARI_START } from '../world/era/cretaceousAnchors';
 import { R22_DEMOS, DEMO_TITLES, type R22DemoId } from '../sim/rotorcraft/flights';
 import { AIRCRAFT_CATALOGUE, AIRCRAFT_PREF_KEY, aircraftSummary } from '../aircraft/registry';
 import type { AircraftDefinition, AircraftPresentation, AircraftSummary } from '../aircraft/types';
@@ -11,10 +12,16 @@ import type { SchoolCommand } from '../training/types';
 import { AIRPORT, sunDirectionNED } from '../core/world';
 import { el, formatHours } from './dom';
 import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
+import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, type EraGates, type EraRow } from './eraChooser';
+import { ERA_PREF_KEY } from '../sim/eraChoice';
+import { ERAS } from '../world/era/registry';
+import type { EraId } from '../world/era/types';
 import { achievedRateLabel, SIM_RATES, splitKeyAlternatives, splitKeyCombo, STARTUP_STEPS } from './cues';
+import type { FieldGuide } from './fieldGuide';
+import { FIELD_GUIDE_SPECIES, fieldGuideEntry } from '../world/fauna/fieldGuideData';
 import { GamepadPage, type GamepadSettings } from './gamepadPage';
 
-export type MenuTab = 'flight' | 'school' | 'weather' | 'time' | 'display' | 'controls' | 'controllers';
+export type MenuTab = 'flight' | 'school' | 'weather' | 'time' | 'display' | 'controls' | 'controllers' | 'fieldguide';
 
 /** The Flight School's side of the menu (SchoolUi implements it; UISystem.attachSchool provides it). */
 export interface SchoolMenuLink {
@@ -77,6 +84,8 @@ export interface MenuHost {
   readonly school?: SchoolMenuLink | null;
   /** The types the aircraft chooser offers. Absent: AIRCRAFT_CATALOGUE (its available rows). */
   readonly aircraftChoices?: readonly AircraftSummary[] | null;
+  /** Deep Time field guide store (absent in tests); its tab shows outside the present era only. */
+  readonly fieldGuide?: FieldGuide | null;
 }
 
 /** The type flown and its presentation, when the context carries them (test fakes may not). */
@@ -84,6 +93,15 @@ function flownType(ctx: SimContext): { def: AircraftDefinition | null; presentat
   const c = ctx as Partial<Pick<SimContext, 'aircraft' | 'presentation'>>;
   return { def: c.aircraft ?? null, presentation: c.presentation ?? null };
 }
+
+/** Scenario names and texts on the Flats, where there is no runway or apron (and 'safari' exists). */
+const FLATS_SCENARIOS: Partial<Record<ScenarioId, { name: string; text: string }>> = {
+  runway: { name: 'The Flats', text: 'Lined up on the game trail on the mud flats, ready for take-off.' },
+  apron: { name: 'Off the trail', text: 'Parked on the mud flats, cold and dark: start the engine and take off from anywhere.' },
+  final: { name: 'Final approach', text: 'On a 3 degree approach to the mud flats, configured to land.' },
+  downwind: { name: 'Circuit', text: 'In the circuit over the flats at pattern altitude.' },
+};
+const SAFARI = { id: 'safari' as ScenarioId, name: 'Safari', text: `Airborne at ${SAFARI_START.aglFt} ft over the river valley at dusk, the herds ahead and the volcano beyond.` };
 
 const SCENARIOS: { id: ScenarioId; name: string; text: string }[] = [
   { id: 'runway', name: 'Runway 07', text: 'Lined up on the runway, ready for take-off.' },
@@ -162,7 +180,8 @@ export class PauseMenu {
     const nav = el('nav', '', card);
     const brand = el('div', 'brand', nav);
     el('b', '', brand, flownType(host.ctx).def?.shortName ?? 'Cessna 172S');
-    el('span', '', brand, `${AIRPORT.name} · ${AIRPORT.icao}`);
+    const world = ERAS[host.ctx.era ?? 'present'];
+    el('span', '', brand, world.id === 'present' ? `${AIRPORT.name} · ${AIRPORT.icao}` : `${world.label} · ${world.epoch}`);
     const tabs: [MenuTab, string][] = [
       ['flight', 'Flight'],
       ['school', 'Flight School'],
@@ -171,6 +190,7 @@ export class PauseMenu {
       ['display', 'Display & camera'],
       ['controls', 'Controls'],
       ['controllers', 'Joysticks & yokes'],
+      ['fieldguide', 'Field Guide'],
     ];
     for (const [id, name] of tabs) {
       const b = el('button', '', nav, name);
@@ -190,6 +210,7 @@ export class PauseMenu {
     const pads = this.page(card, 'Joysticks & yokes', 'Assign and calibrate game controllers, yokes, pedals and throttle quadrants. Settings are saved per device.');
     this.gamepadPage = new GamepadPage(pads);
     this.pages.set('controllers', pads);
+    this.pages.set('fieldguide', this.buildFieldGuide(card));
   }
 
   /** The input module's controller manager (null: the page says it is unavailable). */
@@ -228,7 +249,8 @@ export class PauseMenu {
   }
 
   show(tab: MenuTab): void {
-    if (tab === 'school' && !this.host.school) tab = 'flight';
+    if (tab === 'school' && (!this.host.school || !this.gates().school)) tab = 'flight';
+    if (tab === 'fieldguide' && this.eraId() === 'present') tab = 'flight';
     this.tab = tab;
     for (const [id, b] of this.nav) b.classList.toggle('active', id === tab);
     for (const [id, p] of this.pages) p.classList.toggle('hidden', id !== tab);
@@ -236,8 +258,32 @@ export class PauseMenu {
   }
 
   refresh(): void {
-    this.nav.get('school')?.classList.toggle('hidden', !this.host.school);
+    this.nav.get('school')?.classList.toggle('hidden', !this.host.school || !this.gates().school);
+    this.nav.get('fieldguide')?.classList.toggle('hidden', this.eraId() === 'present');
     for (const r of this.refreshers) r();
+  }
+
+  private buildFieldGuide(card: HTMLElement): HTMLElement {
+    const p = this.page(card, 'Field Guide', 'Creatures you have spotted from the air. Fly close enough to a new species to add it.');
+    const list = el('div', '', p);
+    this.refreshers.push(() => {
+      list.textContent = '';
+      const g = this.host.fieldGuide;
+      if (!g) return;
+      for (const id of FIELD_GUIDE_SPECIES) {
+        const e = fieldGuideEntry(id);
+        const rec = g.get(id);
+        const row = el('div', 'fg-row', list);
+        el('b', '', row, rec ? e.name : '? ? ?');
+        if (!rec) {
+          el('p', 'sub', row, 'Not seen yet.');
+          continue;
+        }
+        el('p', 'sub', row, `${e.size}. First seen ${rec.firstSeen.slice(0, 10)}, closest ${Math.round(rec.closestM)} m.`);
+        for (const f of e.facts) el('p', 'sub', row, `- ${f}`);
+      }
+    });
+    return p;
   }
 
   private page(card: HTMLElement, title: string, sub: string): HTMLElement {
@@ -251,6 +297,7 @@ export class PauseMenu {
   private buildFlight(card: HTMLElement): HTMLElement {
     const p = this.page(card, 'Flight', 'Resume, or start again from one of the scenarios below.');
     this.buildChooser(p);
+    this.buildWorld(p);
     const checklist = el('button', '', p, 'Open aircraft checklist · F');
     checklist.addEventListener('click', () => { this.host.close(); this.host.showChecklist?.(); });
     const schoolRow = el('div', 'chips', p);
@@ -259,7 +306,7 @@ export class PauseMenu {
       this.host.close();
       this.host.school?.command({ kind: 'openHome' });
     });
-    this.refreshers.push(() => schoolRow.classList.toggle('hidden', !this.host.school));
+    this.refreshers.push(() => schoolRow.classList.toggle('hidden', !this.host.school || !this.gates().school));
     if (flownType(this.host.ctx).def?.id === 'r22') {
       el('h3', '', p, 'R22 demonstrations');
       el('p', 'sub', p, 'Watch the scripted pilot. Moving a control or pressing Enter gives you control. Pause, rate and view keys remain available.');
@@ -291,7 +338,9 @@ export class PauseMenu {
     });
     this.refreshers.push(() => confirm.classList.add('hidden'));
     const grid = el('div', 'scenarios', p);
-    for (const s of SCENARIOS) {
+    const eraId = this.eraId();
+    const scenarios = eraId === 'present' ? SCENARIOS : [SAFARI, ...SCENARIOS.map((sc) => ({ ...sc, ...FLATS_SCENARIOS[sc.id] }))];
+    for (const s of scenarios) {
       const b = el('button', '', grid);
       el('b', '', b, s.name);
       el('span', '', b, s.text);
@@ -423,6 +472,74 @@ export class PauseMenu {
     return p;
   }
 
+  /** The era flown (ctx.era; the present day in a shell or fake without one). */
+  private eraId(): EraId {
+    return this.host.ctx.era ?? 'present';
+  }
+
+  /** What the era hides: the School tab and the tower camera (eraChooser.eraGates). */
+  private gates(): EraGates {
+    return eraGates(ERAS[this.eraId()]);
+  }
+
+  /**
+   * The World chips below the aircraft chooser: the present day or a prehistoric era. Another world is a reload
+   * (commands.setEra), so it asks first unless the aircraft stands still on the ground.
+   */
+  private buildWorld(p: HTMLElement): void {
+    const ctx = (): SimContext => this.host.ctx;
+    const rows = eraRows(this.eraId());
+    el('h3', '', p, 'World');
+    const confirm = el('div', 'sc-confirm hidden', p);
+    const confirmText = el('span', '', confirm);
+    const keep = el('button', '', confirm, 'Keep flying');
+    keep.addEventListener('click', () => confirm.classList.add('hidden'));
+    const go = el('button', 'danger', confirm, 'Go');
+    let pending: { row: EraRow; lesson: boolean } | null = null;
+    const choose = (row: EraRow): void => {
+      if (ctx().commands.setEra) {
+        ctx().commands.setEra?.(row.id);
+        return;
+      }
+      // A shell without the command (dev pages): store the preference and reload with ?era= (the dev harness
+      // reads only the URL).
+      try {
+        localStorage.setItem(ERA_PREF_KEY, row.id);
+      } catch {
+        // Storage unavailable: the URL still names the era.
+      }
+      location.replace(eraDevChoiceUrl(location.href, row.id));
+    };
+    go.addEventListener('click', () => {
+      confirm.classList.add('hidden');
+      if (!pending) return;
+      if (pending.lesson) this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      choose(pending.row);
+    });
+    this.refreshers.push(() => confirm.classList.add('hidden'));
+    const current = rows.find((r) => r.current)!;
+    const chips = el('div', 'chips', p);
+    for (const row of rows) {
+      const b = el('button', row.current ? 'sel' : '', chips, row.epoch ? `${row.label} · ${row.epoch}` : row.label);
+      b.dataset.era = row.id;
+      b.title = row.blurb;
+      if (row.current) continue;
+      b.addEventListener('click', () => {
+        const ask = eraConfirmation(ctx().state, !!this.host.school?.lessonActive, current, row);
+        if (!ask) {
+          choose(row);
+          return;
+        }
+        pending = { row, lesson: ask.kind === 'lesson' };
+        confirmText.textContent = ask.text;
+        keep.textContent = 'Keep flying';
+        go.textContent = ask.kind === 'lesson' ? 'Abandon and go' : 'Go';
+        confirm.classList.remove('hidden');
+      });
+    }
+    el('p', 'sub', p, current.blurb);
+  }
+
   /**
    * The aircraft chooser at the top of the Flight page: the available types, the one flown first. Choosing
    * another reloads the page into it (commands.setAircraft); airborne or moving it asks first, during a lesson
@@ -446,7 +563,8 @@ export class PauseMenu {
         c.commands.setAircraft(row.id);
         return;
       }
-      // A shell without the command (dev pages): store the preference and reload as the command would.
+      // A shell without the command (dev pages): store the preference and reload with ?era= (the dev harness
+      // reads only the URL).
       try {
         localStorage.setItem(AIRCRAFT_PREF_KEY, row.id);
       } catch {
@@ -659,6 +777,8 @@ export class PauseMenu {
     el('h3', '', p, 'Camera');
     const cams = el('div', 'chips', p);
     for (const cam of CAMERAS) {
+      // The tower camera stands in the airport's tower: not where there is no airport.
+      if (cam.id === 'tower' && !this.gates().towerCamera) continue;
       const b = el('button', '', cams, cam.name);
       b.addEventListener('click', () => {
         ctx().commands.setCameraMode(cam.id);

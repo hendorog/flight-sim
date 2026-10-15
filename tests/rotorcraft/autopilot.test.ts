@@ -105,6 +105,7 @@ it('holds hover position and height in moderate crosswind and gusts', () => {
   const sim = new SimPhysics({ aircraft: R22_DEFINITION,
     weather: calmWeather({ windSpeedKt: 8, windDirectionDeg: 270, gustKt: 3, turbulence: 0.1 }) });
   sim.resetTo(hoverScenario(sim.env, R22_DEFINITION.rotorcraft!)); sim.setAutoflight(true);
+  expect(sim.autoflight.autopilot.settings.airspeed).toBe(0);
   const start = { ...sim.state.position }, altitude = sim.state.altitudeMSL;
   sim.step(45);
   expect(sim.autoflight.engaged).toBe(true); expect(sim.state.crashed).toBe(false);

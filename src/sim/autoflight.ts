@@ -201,7 +201,7 @@ export class Autoflight {
       if (!this.helicopter.engage(s, c)) return;
       c.headingBugDeg = wrapDeg((s.heading + this.dgOffset) / DEG);
       this.phase = 'hold';
-      this.plan = { kind: 'hold', heading: s.heading, altitude: s.altitudeMSL, kias: s.groundSpeed < 3 ? 0 : Math.max(0, this.helicopter.engagementSpeed)/KT, followBug: true, autothrottle: false };
+      this.plan = { kind: 'hold', heading: s.heading, altitude: s.altitudeMSL, kias: s.groundSpeed < 3 || s.ias < 3*KT ? 0 : Math.max(0, this.helicopter.engagementSpeed)/KT, followBug: true, autothrottle: false };
       this.autopilot.settings = { ...this.autopilot.settings, lateral: 'heading', vertical: 'altitude',
         heading: s.heading, altitude: s.altitudeMSL, airspeed: this.plan.kias*KT, autothrottle: false, autoTrim: false };
       return;

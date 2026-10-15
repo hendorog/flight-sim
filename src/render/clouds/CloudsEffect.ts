@@ -9,7 +9,7 @@
 
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
-import type { QualityLevel, SceneEffect, SimContext } from '../../core/context';
+import type { QualityLevel, ReprojectionLayer, SceneEffect, SimContext } from '../../core/context';
 import type { WeatherSettings } from '../../core/types';
 import { Atmosphere } from '../sky/Atmosphere';
 import { transmittanceToSpace } from '../sky/transmittance';
@@ -30,16 +30,25 @@ interface QualitySettings {
   lightDetailSteps: number;
   /** Shortest view-ray step, m. */
   minStep: number;
+  /**
+   * Share of the step budget the coarse step plan may use to cover the layer (the rest is headroom for fine
+   * steps, surface bisection and the skin ramp). Rays seldom use even a third of maxSteps (they turn opaque
+   * long before the end of the layer), so a larger share mostly shortens the coarse steps. Long coarse steps
+   * hit or miss the small turrets of the cloud tops depending on the per-frame jitter, which shows as grain
+   * over a cumulus field (0.4 -> 1.0: ~60 % less noise seen from above the tops, ~1.5 ms more at 1080p on an
+   * integrated GPU). A ray that does run short re-plans its remaining steps (march shader).
+   */
+  coarseShare: number;
   /** Distance over which detail erosion is applied, m. */
   detailDist: number;
   shadowRes: number;
 }
 
 const QUALITY: Record<QualityLevel, QualitySettings> = {
-  low: { scale: 0.33, maxSteps: 64, lightSteps: 3, lightDetailSteps: 1, minStep: 60, detailDist: 8_000, shadowRes: 256 },
-  medium: { scale: 0.5, maxSteps: 112, lightSteps: 4, lightDetailSteps: 2, minStep: 40, detailDist: 15_000, shadowRes: 512 },
-  high: { scale: 0.55, maxSteps: 128, lightSteps: 6, lightDetailSteps: 3, minStep: 25, detailDist: 25_000, shadowRes: 512 },
-  ultra: { scale: 0.7, maxSteps: 192, lightSteps: 6, lightDetailSteps: 3, minStep: 20, detailDist: 35_000, shadowRes: 1024 },
+  low: { scale: 0.33, maxSteps: 64, lightSteps: 3, lightDetailSteps: 1, minStep: 60, coarseShare: 0.4, detailDist: 8_000, shadowRes: 256 },
+  medium: { scale: 0.5, maxSteps: 112, lightSteps: 4, lightDetailSteps: 2, minStep: 40, coarseShare: 0.75, detailDist: 15_000, shadowRes: 512 },
+  high: { scale: 0.55, maxSteps: 128, lightSteps: 6, lightDetailSteps: 3, minStep: 25, coarseShare: 1.0, detailDist: 25_000, shadowRes: 512 },
+  ultra: { scale: 0.7, maxSteps: 192, lightSteps: 6, lightDetailSteps: 3, minStep: 20, coarseShare: 1.0, detailDist: 35_000, shadowRes: 1024 },
 };
 
 /** Clouds are marched out to this distance, m (the curved layer dips below the horizon at ~140 km). */
@@ -148,6 +157,7 @@ export class CloudsEffect implements SceneEffect {
   private history: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
   private historyIndex = 0;
   private historyValid = false;
+  private layer: ReprojectionLayer | null = null;
 
   private quality: QualityLevel = 'high';
   private width = 1;
@@ -219,6 +229,7 @@ export class CloudsEffect implements SceneEffect {
       uLightSteps: { value: 0 },
       uLightDetailSteps: { value: 0 },
       uMinStep: { value: 0 },
+      uCoarseShare: { value: 0.4 },
       uMaxDist: { value: MAX_DISTANCE },
       uDetailDist: { value: 0 },
       uDetailScale: { value: 1 },
@@ -276,6 +287,7 @@ export class CloudsEffect implements SceneEffect {
 
     if ((ctx.weather.cloudCover <= 0 && cirrusCover(ctx.weather) <= 0) || !this.noise) {
       this.historyValid = false;
+      this.layer = null;
       this.shadow.uniforms.cloudShadowLight.value.w = 0;
       this.copyMat.uniforms.uScene.value = input;
       this.draw(renderer, this.copyMat, output);
@@ -319,6 +331,7 @@ export class CloudsEffect implements SceneEffect {
       c.uAux.value = this.marchRT.textures[1];
       c.uCompositeShadows.value = this.compositeShadows ? 1 : 0;
       this.draw(renderer, this.compositeMat, output);
+      this.layer = { distance: this.marchRT.textures[1], transmittance: dst.texture };
 
       this.prevViewProj.multiplyMatrices(ctx.camera.projectionMatrix, ctx.camera.matrixWorldInverse);
       this.prevCamPos.copy(this.camPos);
@@ -327,6 +340,11 @@ export class CloudsEffect implements SceneEffect {
 
     renderer.setRenderTarget(prevTarget);
     renderer.autoClear = prevAutoClear;
+  }
+
+  /** The clouds just drawn, for the sim's temporal stabilisation (aux r: front distance; history a: T). */
+  reprojectionLayer(): ReprojectionLayer | null {
+    return this.layer;
   }
 
   /**
@@ -435,6 +453,7 @@ export class CloudsEffect implements SceneEffect {
     this.fullSize.set(this.width, this.height);
     const m = this.marchMat.uniforms;
     m.uMaxSteps.value = s.maxSteps;
+    m.uCoarseShare.value = s.coarseShare;
     m.uLightSteps.value = s.lightSteps;
     m.uLightDetailSteps.value = s.lightDetailSteps;
     m.uDetailDist.value = s.detailDist;

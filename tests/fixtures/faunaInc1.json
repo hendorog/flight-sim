@@ -1,0 +1,14 @@
+{
+  "geometry": {
+    "edmontosaurus": "ed225c73c097bd358821361a9410c07bca29a943fe2a609f5852f6f601f04140",
+    "quetzalcoatlus": "0d4216a2c41d1672540e7014bbde4654f3efe98ecffef1a082edd3999bcf3a9b",
+    "azhdarchidSmall": "a907d2e1721d4a2a6824b02fd23a3b4d51b867d67d3a1a17faa5025e0dd4f833"
+  },
+  "uniforms": {
+    "edmontosaurus": "fba37e14e36586be5d931052142ad65cb448c69f4025eaf8fc5d6f88f09cf6e0",
+    "quetzalcoatlus": "7fe1a9ea3af72fba62ca6cdba2ba79335f91be1a147c32bc04eaa8ab680c0fa5",
+    "azhdarchidSmall": "7fe1a9ea3af72fba62ca6cdba2ba79335f91be1a147c32bc04eaa8ab680c0fa5"
+  },
+  "herdTrace": "6f0e25a9cb8c0f976bffa76916fc9eef0f5851296ecdcc745be200aa1f3f6866",
+  "flyerTrace": "baf92693b39d7514695c4c1d2a9812ae017daafbc1c7b824460ddf5ce30105ae"
+}
