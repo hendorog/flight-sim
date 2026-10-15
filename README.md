@@ -655,3 +655,13 @@ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Gen
 
 You should have received a copy of the GNU General Public License along with this program (`LICENSE`). If not, see
 <https://www.gnu.org/licenses/>.
+
+### Helicopter adaptive-control research
+
+R22, R44 and Schweizer 269 now support opt-in helicopter hover/position, heading,
+altitude and forward-speed hold. Start at
+`index.html?aircraft=r22&hover=1&ap=1&resume=0` (or choose **Start helicopter hover test**
+in the Flight menu). **A** engages/disconnects; **Escape → Flight → Autopilot** sets
+targets and enables optional bounded adaptation. Moving cyclic, pedals or collective
+returns control to you. S269 throttle must be managed manually: it has no governor.
+See [flying instructions and identification limits](docs/helicopter-adaptive-control.md).

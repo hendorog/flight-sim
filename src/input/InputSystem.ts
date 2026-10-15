@@ -326,6 +326,8 @@ export class InputSystem implements Subsystem {
   private lastPilotInput = -Infinity;
   /** An explicitly started control-only demonstration (idle in ordinary flight and Flight School). */
   scriptedPilot: { flying(): boolean; stop(): void } | null = null;
+  /** Helicopter hold shares cyclic/pedals/collective authority, preserving idle hardware. */
+  autopilotFlying: (() => boolean) | null = null;
   /** Hardware waits to match the released position, like the school's throttle handover. */
   private readonly pickup = new Set<AxisControl>();
 
@@ -585,6 +587,7 @@ export class InputSystem implements Subsystem {
       else this.followControls();
     }
     const demoControls = this.scriptedPilot?.flying() ? cloneControls(ctx.controls) : null;
+    const heldControls = this.profile.rotorcraft && this.autopilotFlying?.() ? cloneControls(ctx.controls) : null;
 
     this.held.clear();
     for (const a of this.keysDown.values()) this.held.add(a);
@@ -613,8 +616,11 @@ export class InputSystem implements Subsystem {
     if ((lx !== 0 || ly !== 0) && wallDt > 0) this.view?.lookBy?.(lx * LOOK_RATE * wallDt, ly * LOOK_RATE * wallDt);
 
     const yokeKeys = ['pitchUp', 'pitchDown', 'rollLeft', 'rollRight', 'rudderLeft', 'rudderRight'] as const;
-    if (yokeKeys.some((a) => this.held.has(a)) || this.hardwareTakeover() || this.mouseTakingOver) this.lastPilotInput = now;
+    if (yokeKeys.some((a) => this.held.has(a)) || (this.profile.rotorcraft && (this.held.has('flapsUp') || this.held.has('flapsDown'))) || this.hardwareTakeover() || this.mouseTakingOver) this.lastPilotInput = now;
 
+    if (heldControls && !this.pilotFlying()) {
+      for (const k of ['elevator', 'aileron', 'rudder', 'collective'] as const) ctx.controls[k] = heldControls[k]!;
+    }
     if (demoControls && this.scriptedPilot?.flying()) {
       copyControls(ctx.controls, demoControls);
       if (this.mouseTakingOver) this.takeControl();
@@ -630,7 +636,8 @@ export class InputSystem implements Subsystem {
   /** A hardware yoke, stick or pedal axis is being deliberately worked (not merely resting off centre). */
   private hardwareTakeover(): boolean {
     for (const r of this.gamepads.readings) {
-      if (r.takeover && (r.control === 'aileron' || r.control === 'elevator' || r.control === 'rudder')) return true;
+      if (this.profile.rotorcraft && r.moved && (r.control === 'collective' || r.control === 'throttle')) return true;
+      if (r.takeover && (r.control === 'aileron' || r.control === 'elevator' || r.control === 'rudder' || (this.profile.rotorcraft && (r.control === 'collective' || r.control === 'throttle')))) return true;
     }
     return false;
   }

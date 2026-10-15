@@ -91,7 +91,7 @@ import {
 import type { Scenario } from './scenarios';
 import { SimPhysics } from './SimPhysics';
 import { R22Flight, isR22Demo, type R22DemoId } from './rotorcraft/flights';
-import { demoScenario, demoWeather } from './rotorcraft/starts';
+import { demoScenario, demoWeather, hoverScenario } from './rotorcraft/starts';
 import { RotorcraftDemoUi } from '../ui/rotorcraftDemo';
 import type { StepController } from '../training/types';
 import { TrainingSystem } from '../training/TrainingSystem';
@@ -283,9 +283,9 @@ export class Simulator {
     await progress(0.06, 'Building the flight model');
     const events = createEventBus();
     // Resume the last flight (a reload), or start the URL's (or the remembered) scenario.
-    const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId ? false : p.resume, explicitScenario: !!demoId || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id, era: era().id });
+    const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId || (p.helicopterHover && def.rotorcraft) ? false : p.resume, explicitScenario: !!demoId || p.helicopterHover || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id, era: era().id });
     // An era's own start (the Cretaceous safari) when the URL names no scenario and nothing is resumed.
-    const eraStart = !p.explicitScenario && !demoId ? era().world.defaultScenario : undefined;
+    const eraStart = !p.explicitScenario && !demoId && !(p.helicopterHover && def.rotorcraft) ? era().world.defaultScenario : undefined;
     const startId = decision.kind === 'scenario' ? decision.scenario : (eraStart ?? p.scenario);
     // The safari's own time of day (cretaceousAnchors.ts SAFARI.tod) unless the URL sets tod=; a resumed flight's
     // snapshot weather (below) overrides it, and a failed resume restores it with weatherBefore.
@@ -312,7 +312,10 @@ export class Simulator {
         this.bootDecision = { kind: 'normal', reason: 'restore failed' };
       }
     }
-    if (!resumed) physics.reset(startId, this.weather);
+    if (!resumed) {
+      if (p.helicopterHover && def.rotorcraft && !demoId) physics.resetTo(hoverScenario(physics.env, def.rotorcraft), this.weather);
+      else physics.reset(startId, this.weather);
+    }
     if (resumed) {
       const snap = resumed.snapshot;
       if (p.renderScale === null) p.renderScale = snap.renderScale;
@@ -477,6 +480,36 @@ export class Simulator {
     audio.onError = (reason) => ui.showToast(reason, 12000);
     ui.fpsExtra = () => audio.status();
     if (p.mute) audio.setMuted(true);
+    input.autopilotFlying = () => !!physics.autoflight.helicopter && physics.autoflight.engaged;
+    ui.autopilot = {
+      helicopter: def.rotorcraft ? {
+        hoverUrl: `?aircraft=${id}&hover=1&ap=1&resume=0`,
+        get: () => ({ heading: ctx.controls.headingBugDeg, altitude: physics.autoflight.targetAltitude/0.3048,
+          speed: physics.autoflight.autopilot.settings.airspeed/0.5144444444444445, adaptive: physics.autoflight.helicopter!.adaptive }),
+        set: (key, value) => {
+          const af = physics.autoflight;
+          if (key === 'adaptive') af.helicopter!.adaptive = !!value;
+          else if (Number.isFinite(value) && af.engaged) {
+            if (key === 'heading') ctx.controls.headingBugDeg = ((Number(value)%360)+360)%360;
+            if (key === 'altitude') af.autopilot.settings.altitude = Math.max(physics.state.altitudeMSL-physics.state.altitudeAGL+3, Number(value)*0.3048);
+            if (key === 'speed') af.autopilot.settings.airspeed = Math.min(80, Math.max(0, Number(value)))*0.5144444444444445;
+          }
+        },
+        status: () => physics.autoflight.helicopter!.reason || physics.autoflight.helicopter!.status,
+      } : undefined,
+      engaged: () => physics.autoflight.engaged,
+      // KAP 140 style annunciation while holding: 'HDG 070 ALT 4500'; the scripted phases otherwise.
+      mode: () => {
+        const af = physics.autoflight;
+        if (af.helicopter) return `${af.autopilot.settings.airspeed < 1.6 ? 'HOVER' : 'SPEED'} HDG ${Math.round(ctx.controls.headingBugDeg)} ALT ${Math.round(af.targetAltitude/0.3048)}${af.helicopter.adaptive ? ' · ADAPT' : ''}`;
+        if (af.phase !== 'hold' || af.plan?.kind !== 'hold' || !af.plan.followBug) return String(af.phase);
+        const bug = String(Math.round((((ctx.controls.headingBugDeg % 360) + 360) % 360)) || 360).padStart(3, '0');
+        const alt = af.targetAltitude;
+        return Number.isNaN(alt) ? `HDG ${bug}` : `HDG ${bug} ALT ${Math.round(alt / 0.3048 / 10) * 10}`;
+      },
+      toggle: () => this.toggleAutoflight(),
+    };
+
     ui.init(ctx);
     ui.setPanelSource(panel);
     ui.scenario = physics.scenario.id;
@@ -541,18 +574,6 @@ export class Simulator {
     input.setShell({ flightViewRect: () => ui.flightViewRect(), toast: (t) => ui.showToast(t), blocksMouseFlight: (x, y, gesture) => ui.blocksMouseFlight(x, y, gesture) });
     ui.setYokeIndicator(() => input.getYokeIndicator());
     ui.assists = input.assists;
-    ui.autopilot = {
-      engaged: () => physics.autoflight.engaged,
-      // KAP 140 style annunciation while holding: 'HDG 070 ALT 4500'; the scripted phases otherwise.
-      mode: () => {
-        const af = physics.autoflight;
-        if (af.phase !== 'hold' || af.plan?.kind !== 'hold' || !af.plan.followBug) return String(af.phase);
-        const bug = String(Math.round((((ctx.controls.headingBugDeg % 360) + 360) % 360)) || 360).padStart(3, '0');
-        const alt = af.targetAltitude;
-        return Number.isNaN(alt) ? `HDG ${bug}` : `HDG ${bug} ALT ${Math.round(alt / 0.3048 / 10) * 10}`;
-      },
-      toggle: () => this.toggleAutoflight(),
-    };
 
     await progress(0.9, 'Post-processing and clouds');
     const post = new PostPipeline(renderer, scene, camera);
@@ -1134,6 +1155,9 @@ export class Simulator {
       this.systems.ui.showToast('Autopilot: available once airborne');
       return;
     }
+    if (on && !this.physics.autoflight.engaged) {
+      this.systems.ui.showToast(this.physics.autoflight.helicopter?.reason || 'Autopilot unavailable'); return;
+    }
     const alt = this.physics.autoflight.targetAltitude;
     this.systems.ui.showToast(on ? (Number.isNaN(alt) ? 'Autopilot engaged' : `Autopilot engaged: HDG bug, ALT ${Math.round(alt / 0.3048)} ft`) : 'Autopilot disengaged');
   }
@@ -1160,6 +1184,7 @@ export class Simulator {
       physics.setAutoflight(false);
       s.ui.showToast('Autopilot disconnected');
     }
+    const helicopterHolding = !!physics.autoflight.helicopter && physics.autoflight.engaged;
     if (this.fastForwardLeft > 0 && !ctx.paused) {
       // run=: as many fixed steps as fit in the budget, rendering in between so terrain keeps streaming.
       const t0 = performance.now();
@@ -1181,6 +1206,8 @@ export class Simulator {
       this.advanceClock(subsystemDt);
       this.trackTimeScale(held ? 0 : wallDt, subsystemDt, physics.budgetLimited);
     }
+    if (helicopterHolding && !physics.autoflight.engaged)
+      s.ui.showToast(physics.autoflight.helicopter!.reason || 'Helicopter hold disconnected');
     this.finishDemo();
     ctx.simTime = physics.time;
     if (physics.lastAdvance > 0) this.flown = true;

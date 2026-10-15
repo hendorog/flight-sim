@@ -30,3 +30,10 @@ export function demoScenario(id: R22DemoId, env: Environment, d: Pick<Rotorcraft
     autoflight: { kind: 'parked' },
   };
 }
+
+/** Opt-in airborne start for trying helicopter hold; no demonstration pilot. */
+export function hoverScenario(env: Environment, d: Pick<RotorcraftDefinition, 'skids'>): Scenario {
+  const sc = demoScenario('hover', env, d);
+  return { ...sc, title: 'Helicopter hold test · 15 m hover',
+    ic: { ...sc.ic, position: { ...sc.ic.position, z: sc.ic.position.z - 12 } } };
+}

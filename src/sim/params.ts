@@ -83,6 +83,7 @@ export interface SimParams {
   hud: boolean;
   ui: boolean;
   autoflight: boolean;
+  helicopterHover: boolean;
   /** Explicit R22 scripted flight (ignored for other aircraft). */
   demo: R22DemoId | null;
   demoTrace: boolean;
@@ -186,6 +187,7 @@ export function parseParams(search: string): SimParams {
     hud: q.get('hud') !== '0',
     ui: q.get('ui') !== '0',
     autoflight: q.get('ap') === '1',
+    helicopterHover: q.get('hover') === '1',
     demo: isR22Demo(q.get('demo')) ? q.get('demo') as R22DemoId : null,
     demoTrace: q.get('trace') === '1',
     run: Math.max(0, num('run') ?? 0),
