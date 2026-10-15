@@ -63,12 +63,13 @@ const PRESETS: Record<QualityLevel, VegetationPreset> = {
 
 const CELL = 256;
 /**
- * Dev: `?treenear=400` draws every tree's full mesh to that distance (m), instead of handing over to the
- * impostors at the quality's near ranges (for comparing look and cost).
+ * Dev: `?treenear=400` draws every tree's full mesh to that distance (m) instead of handing over to the
+ * impostors at the quality's near ranges; `?treenear=0` draws impostors only (for comparing look and cost).
  */
 function withNearOverride(p: VegetationPreset): VegetationPreset {
-  const v = typeof location === 'undefined' ? NaN : Number(new URLSearchParams(location.search).get('treenear'));
-  return Number.isFinite(v) && v > 0 ? { ...p, near: v, nearOpen: Math.max(p.nearOpen, v) } : p;
+  const q = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('treenear');
+  const v = q === null || q.trim() === '' ? NaN : Number(q);
+  return Number.isFinite(v) && v >= 0 ? { ...p, near: v, nearOpen: v } : p;
 }
 
 /** Rebuild the near / far instance lists after the camera moves this far, m. */
