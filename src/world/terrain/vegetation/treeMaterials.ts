@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import { HEMI_OCT_GLSL, IMPOSTOR_FRAME, IMPOSTOR_GRID } from './impostors';
+import { SPECIES_COUNT } from './placement';
 import { speciesTints, TREE_BOUND_RADIUS } from './treeModels';
 import { era, isPresent } from '../../era/eraState';
 import { FLORA } from './flora';
@@ -29,6 +30,12 @@ export interface TreeUniforms {
   uShadowRange: { value: number };
   /** Distances over which the full tree meshes (LOD 0) hand over to the reduced ones (LOD 1), m. */
   uLodFade: { value: THREE.Vector2 };
+  /** Distances over which the impostors of forest trees fade out (z, w of uFade: of open trees), m. */
+  uForestFar: { value: THREE.Vector2 };
+  /** Distances over which the near meshes of trees outside closed forest hand over (x, y of uFade: forest). */
+  uNearOpen: { value: THREE.Vector2 };
+  /** Frame counter: moves the hand-over dither every frame where the frame is stabilised over time. */
+  uFrame: { value: number };
   [name: string]: { value: unknown };
 }
 
@@ -37,13 +44,15 @@ attribute vec4 aInstA;
 attribute vec2 aInstB;
 uniform float uTime;
 uniform vec4 uFade;
+uniform vec2 uForestFar;
+uniform vec2 uNearOpen;
 uniform float uDensityRange;
 uniform vec3 uViewPos;
 uniform float uShadowRange;
 uniform vec3 uSpeciesTint[4];
 varying float vFade;
 varying vec3 vTint;
-float treeSpecies() { return floor(aInstB.y); }
+float treeSpecies() { return mod(floor(aInstB.y), ${SPECIES_COUNT.toFixed(1)}); }
 float treeRank() { return fract(aInstB.y) / 0.99; }
 vec3 treeBase() { return vec3(aInstA.x, aInstA.y, -aInstA.z); }
 vec3 treeTint() {
@@ -55,6 +64,25 @@ vec3 treeTint() {
 // Per-tree crown width relative to its height.
 float treeWidth() { return 0.8 + 0.45 * fract(treeRank() * 13.71); }
 vec3 rotY(vec3 p, float c, float s) { return vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z); }
+// Impostor thinning: the fraction of trees kept at distance d (full density to uDensityRange, then
+// (d0/d)^1.5; may exceed 1), and how far this tree has faded in. A tree is always drawn at its true size: it
+// fades in (over the terrain's stand-in for it, terrainMaterial.ts, coloured like it) from where the kept
+// fraction reaches its rank to where it reaches THIN_BAND times its rank (37 % closer).
+const float THIN_BAND = 2.0;
+// Trees outside closed forest (placement.ts): flagged in the species field, ranks scaled by OPEN_RANK; they
+// fade out by uFade.w, forest trees (where the canopy shell stands in) by uForestFar.y.
+bool treeOpen() { return aInstB.y >= ${SPECIES_COUNT.toFixed(1)}; }
+// Mesh-to-impostor hand-over band: forest trees go to impostors sooner (the canopy surrounds them, and from
+// above an impostor looks like the mesh); trees in the open, seen side-on, keep the mesh further.
+vec2 treeNear() { return treeOpen() ? uNearOpen : uFade.xy; }
+float treeKeep(float d) {
+  vec2 far = treeOpen() ? uFade.zw : uForestFar;
+  return pow(uDensityRange / max(d, 1.0), 1.5) * (1.0 - smoothstep(far.x, far.y, d));
+}
+float treeThin(float keep) {
+  float r = treeRank();
+  return smoothstep(0.0, 1.0, clamp((keep - r) / ((THIN_BAND - 1.0) * max(r, 1e-3)), 0.0, 1.0));
+}
 `;
 
 // Foliage is a rough, porous scatterer: much weaker grazing-angle Fresnel than a smooth dielectric.
@@ -99,8 +127,19 @@ export function useVertexLogDepth(shader: { vertexShader: string; fragmentShader
 
 const DITHER_GLSL = /* glsl */ `
 varying float vFade;
-// Interleaved gradient noise (Jimenez 2014): a stable per-pixel threshold in [0, 1).
+uniform float uFrame;
+// Interleaved gradient noise (Jimenez 2014): a per-pixel threshold in [0, 1).
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+// Hand-over threshold. With MSAA (medium and above) the frame is also stabilised over time (TemporalAA.ts):
+// a pattern that moves every frame averages there into a smooth cross-fade, where a fixed stipple would be a
+// band of screen-door the scene slides under. Without it (low), a fixed pattern.
+float treeDither() {
+#ifdef ALPHA_TO_COVERAGE
+  return ign(gl_FragCoord.xy + 5.588238 * mod(uFrame, 64.0));
+#else
+  return ign(gl_FragCoord.xy);
+#endif
+}
 `;
 
 const NEAR_BEGIN = /* glsl */ `
@@ -114,7 +153,8 @@ float ph = treeRank() * 40.0;
 tp.x += sway * sin(uTime * 1.3 + ph);
 tp.z += sway * cos(uTime * 1.1 + ph * 1.7);
 vec3 transformed = rotY(tp, tc, ts) + treeBase();
-vFade = smoothstep(uFade.x, uFade.y, distance(treeBase(), cameraPosition));
+vec2 tNear = treeNear();
+vFade = smoothstep(tNear.x, tNear.y, distance(treeBase(), cameraPosition));
 `;
 // Mesh LODs: LOD 0 hands over to LOD 1 over uLodFade with the same complementary screen-door dither as the
 // hand-over to impostors (the two bands do not overlap). Trees wholly handed over (the instance lists keep
@@ -131,23 +171,16 @@ if (vFade >= 1.0 || vLod >= 1.0) transformed = vec3(0.0, -1e6, 0.0);
 if (vFade >= 1.0 || vLod <= 0.0) transformed = vec3(0.0, -1e6, 0.0);
 #endif
 `;
-// With MSAA (medium and above) the fades are alpha-to-coverage: a smooth dissolve, and antialiased leaf
-// edges from the alpha test. Without it, a screen-door dither with complementary thresholds.
+// The fades are a screen-door dither with complementary thresholds: every pixel of a tree in a hand-over band
+// is drawn by exactly one of its two representations. (Not alpha-to-coverage, even with MSAA, where it only
+// antialiases the leaf edges: two trees each at half coverage get the same sample mask, not complementary
+// ones, so half the foliage went missing in every band - a see-through ring travelling with the viewer.)
 const NEAR_DISCARD = /* glsl */ `
-#ifdef ALPHA_TO_COVERAGE
-#if TREE_LOD == 0
-diffuseColor.a *= 1.0 - max(vFade, vLod);
-#else
-diffuseColor.a *= min(vLod, 1.0 - vFade);
-#endif
-if (diffuseColor.a <= 0.0) discard;
-#else
-float tDither = ign(gl_FragCoord.xy);
+float tDither = treeDither();
 #if TREE_LOD == 0
 if (tDither < max(vFade, vLod)) discard;
 #else
 if (tDither < vFade || tDither >= vLod) discard;
-#endif
 #endif
 `;
 
@@ -218,7 +251,7 @@ export function createNearTreeMaterial(foliage: THREE.Texture, uniforms: TreeUni
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => `tree-near-v6-${lod}${keySuffix}`;
+  mat.customProgramCacheKey = () => `tree-near-v11-${lod}${keySuffix}`;
   return mat;
 }
 
@@ -274,16 +307,15 @@ vec3 d = toCam / dist;
 vec3 dl = vec3(tc * d.x - ts * d.z, max(d.y, 0.02), ts * d.x + tc * d.z);
 vec2 e = hemiOctEncode(normalize(dl));
 vGrid = clamp((e * 0.5 + 0.5) * ${IMPOSTOR_GRID.toFixed(1)} - 0.5, 0.0, ${(IMPOSTOR_GRID - 1).toFixed(1)});
-// Keep full density to uDensityRange, then thin as (d0/d)^1.5; the kept trees grow a little to cover.
-// A tree leaving the kept fraction shrinks away rather than dithering out (no noise without TAA).
-float keep = min(1.0, pow(uDensityRange / max(dist, 1.0), 1.5)) * (1.0 - smoothstep(uFade.z, uFade.w, dist));
-float thin = smoothstep(0.0, 1.0, clamp((keep - treeRank()) * 8.0, 0.0, 1.0));
-float grow = (1.0 + 0.5 * (1.0 - sqrt(clamp(keep, 0.0, 1.0)))) * thin;
-// Hand-over from the near mesh: the complement of its dither.
-vFade = thin > 0.0 ? smoothstep(uFade.x, uFade.y, dist) : 0.0;
+// Thin out with distance (treeThin): the tree fades, never changes size.
+float thin = treeThin(treeKeep(dist));
+float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH;
+// Coverage: the hand-over from the near mesh (the complement of its dither, by the same distance, from the
+// tree's base) and the distance fade, through the same dither (TemporalAA.ts smooths it from medium up).
+vec2 tNear = treeNear();
+vFade = smoothstep(tNear.x, tNear.y, distance(treeBase(), cameraPosition)) * thin;
 vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), d));
 vec3 up = cross(d, right);
-float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH * grow;
 // Crown width variation stretches the quad sideways (exact for side views, close enough from above).
 vec3 transformed = centre + (right * position.x * treeWidth() + up * position.y) * R + d * (0.2 * tH);
 vImpUv = position.xy * 0.5 + 0.5;
@@ -324,12 +356,14 @@ vec4 alb = texture2D(tImpAlbedo, u00) * w.x + texture2D(tImpAlbedo, u10) * w.y +
 // Mipmapping averages alpha toward the foliage coverage; sharpen it so distant crowns do not thin out.
 float fw = length(fwidth(vImpUv)) * ${IMPOSTOR_FRAME.toFixed(1)};
 float a = alb.a * (1.0 + 0.3 * log2(max(fw, 1.0)));
+// Hand-over from the near meshes: the complement of their dither (NEAR_DISCARD).
+if (treeDither() >= vFade) discard;
 #ifdef ALPHA_TO_COVERAGE
-// Antialiased silhouette and a smooth hand-over from the near meshes, as coverage.
-diffuseColor.a = smoothstep(0.5, 0.5 + max(fwidth(a), 1e-3), a) * vFade;
+// Antialiased silhouette, as coverage.
+diffuseColor.a = smoothstep(0.5, 0.5 + max(fwidth(a), 1e-3), a);
 if (diffuseColor.a <= 0.0) discard;
 #else
-if (a < 0.5 || ign(gl_FragCoord.xy) >= vFade) discard;
+if (a < 0.5) discard;
 #endif
 vec2 un = w.x >= max(w.y, max(w.z, w.w)) ? u00 : w.y >= max(w.z, w.w) ? u10 : w.z >= w.w ? u01 : u11;
 vec4 nrm = texture2D(tImpNormal, un);
@@ -356,7 +390,7 @@ export function createImpostorMaterial(albedo: THREE.Texture, normal: THREE.Text
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-v5';
+  mat.customProgramCacheKey = () => 'tree-impostor-v14';
   return mat;
 }
 
@@ -381,7 +415,7 @@ export function createImpostorDepthMaterial(albedo: THREE.Texture, uniforms: Tre
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${IMPOSTOR_SHADOW_FRAGMENT}`)
       .replace('#include <logdepthbuf_fragment>', '');
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-depth-v2';
+  mat.customProgramCacheKey = () => 'tree-impostor-depth-v9';
   return mat;
 }
 
@@ -395,12 +429,15 @@ float tH = aInstA.w;
 bool sunCascade = projectionMatrix[3][3] == 1.0 && projectionMatrix[0][0] > 1.0 / 8000.0;
 vec3 centre = treeBase() + vec3(0.0, 0.5 * tH, 0.0);
 float dist = distance(centre, uViewPos);
-if (tH > 0.0 && sunCascade && dist > uShadowRange) {
-  // The visible impostors' thinning (IMPOSTOR_BEGIN), by the distance from the viewer.
-  float keep = min(1.0, pow(uDensityRange / max(dist, 1.0), 1.5)) * (1.0 - smoothstep(uFade.z, uFade.w, dist));
-  float thin = smoothstep(0.0, 1.0, clamp((keep - treeRank()) * 8.0, 0.0, 1.0));
-  if (thin > 0.0) {
-    float grow = (1.0 + 0.5 * (1.0 - sqrt(clamp(keep, 0.0, 1.0)))) * thin;
+// Beyond the shadow proxies, measured as they are (from the tree's base), so every tree has exactly one
+// caster: by mid-height, seen from above, a tree at the boundary cast both shadows or neither, and the
+// shadows of a row of trees blinked as the boundary swept along it.
+if (tH > 0.0 && sunCascade && distance(treeBase(), uViewPos) > uShadowRange) {
+  // The visible impostors' thinning (IMPOSTOR_BEGIN), by the distance from the viewer: a shadow map has no
+  // partial cover, so a fading tree casts once it is half in.
+  float thin = treeThin(treeKeep(dist));
+  if (thin > 0.5) {
+    float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH;
     centre.y -= clamp((dist - 800.0) * 0.0008, 0.0, 2.5);
     // Toward the light: the shadow camera's +z axis.
     vec3 d = normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]));
@@ -410,7 +447,6 @@ if (tH > 0.0 && sunCascade && dist > uShadowRange) {
     vFrame = floor(clamp((e * 0.5 + 0.5) * ${IMPOSTOR_GRID.toFixed(1)} - 0.5, 0.0, ${(IMPOSTOR_GRID - 1).toFixed(1)}) + 0.5);
     vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), d));
     vec3 up = cross(d, right);
-    float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH * grow;
     // The billboard stands at the back of the crown (seen from the light). Sliding a caster along the light
     // direction leaves its shadow on the ground unchanged, but a flat caster through the crown's centre would
     // cut neighbouring crowns that reach into it with straight-edged shadows, and shade its own front half.

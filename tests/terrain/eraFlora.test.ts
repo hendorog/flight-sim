@@ -56,15 +56,21 @@ function checkLayout(c: TreeCellData, req: TreeCellRequest): void {
       expect(bz * BUCKETS + bx).toBe(b);
     }
   }
-  // Ranks ascending (sorted in float64, stored with the species in float32).
+  // Open trees (flagged by SPECIES_COUNT in the species field) first, then forest trees, each with ranks
+  // ascending (sorted in float64, stored with the species in float32).
   let last = -1;
   for (let k = 0; k < c.count; k++) {
     const v = c.instances[k * TREE_STRIDE + 5];
+    expect(v >= SPECIES_COUNT).toBe(k < c.openCount);
+    if (k === c.openCount) last = -1;
     const r = v - Math.floor(v);
     expect(r).toBeGreaterThanOrEqual(last - 1e-6);
     last = r;
   }
 }
+
+/** The species slot of instance k (placement.ts adds SPECIES_COUNT to open trees). */
+const speciesOf = (c: TreeCellData, k: number): number => Math.floor(c.instances[k * TREE_STRIDE + 5]) % SPECIES_COUNT;
 
 describe('Cretaceous flora', () => {
   beforeAll(() => {
@@ -94,7 +100,7 @@ describe('Cretaceous flora', () => {
       expect(Array.from(b.order)).toEqual(Array.from(a.order));
       checkLayout(a, req);
       for (let k = 0; k < a.count; k++) {
-        const s = Math.floor(a.instances[k * TREE_STRIDE + 5]);
+        const s = speciesOf(a, k);
         expect(s).toBeGreaterThanOrEqual(0);
         expect(s).toBeLessThan(SPECIES_COUNT);
         const h = a.instances[k * TREE_STRIDE + 3];
@@ -121,7 +127,7 @@ describe('Cretaceous flora', () => {
     for (const req of cells()) {
       const c = buildTreeCell(req);
       for (let k = 0; k < c.count; k++) {
-        const sp = Math.floor(c.instances[k * TREE_STRIDE + 5]);
+        const sp = speciesOf(c, k);
         sampleTerrain(c.instances[k * TREE_STRIDE + 2], c.instances[k * TREE_STRIDE], s);
         n[sp]++;
         ground[sp] += s.ground;
@@ -156,7 +162,7 @@ describe('Cretaceous flora', () => {
       const e0 = req.cx * req.size;
       field.build(n0 - 64, e0 - 64, n0 + req.size + 64, e0 + req.size + 64);
       for (let k = 0; k < c.count; k++) {
-        const sp = Math.floor(c.instances[k * TREE_STRIDE + 5]);
+        const sp = speciesOf(c, k);
         const north = c.instances[k * TREE_STRIDE + 2];
         const east = c.instances[k * TREE_STRIDE];
         all[sp]++;
@@ -274,7 +280,7 @@ describe('Cretaceous flora', () => {
   it('gives the palm its crown sway in the near material, and the era its own program key', () => {
     const shader = patchNear();
     expect(shader.defines.TREE_PALM).toBe(3);
-    expect(shader.key).toBe('tree-near-v6-0-cretaceous');
+    expect(shader.key).toBe('tree-near-v11-0-cretaceous');
     expect(shader.vertex).toContain('#ifdef TREE_PALM');
   });
 });
@@ -287,7 +293,7 @@ describe('present-day trees (era code off)', () => {
     expect(cards.length).toBe(4);
     const shader = patchNear();
     expect(shader.defines).toEqual({ TREE_LOD: 0 });
-    expect(shader.key).toBe('tree-near-v6-0');
+    expect(shader.key).toBe('tree-near-v11-0');
     expect(shader.vertex).not.toContain('TREE_PALM');
   });
 
@@ -295,18 +301,19 @@ describe('present-day trees (era code off)', () => {
     setEra('present');
     // Geometry: every attribute and index buffer of each species (userData, which gained a card count, is
     // left out). Materials: type, defines, program cache key, patched vertex and fragment text and the
-    // uniforms the patch adds (textures by kind, not uuid). Taken at commit 2cdce84; a three.js upgrade that
+    // uniforms the patch adds (textures by kind, not uuid). Taken at commit 2cdce84, materials retaken after
+    // render/vegetation (fixed tree ranges, open trees) changed the tree shaders; a three.js upgrade that
     // changes ShaderLib moves the material hashes, which then need retaking on a pre-Deep-Time checkout.
     expect(presentTreeHashes()).toEqual({
       lod0: '8c673bc2',
       lod1: 'ad188453',
       proxies: 'd8cc6740',
-      near0: '6d06d983',
-      near1: '8a345959',
+      near0: 'f31ffcde',
+      near1: 'af737fb6',
       proxyMain: '37d4d04c',
-      proxyDepth: 'b21e918c',
-      impostor: '97f2d485',
-      impostorDepth: 'bb759d55',
+      proxyDepth: '4b5551a6',
+      impostor: 'e5e564c9',
+      impostorDepth: '4dc691bd',
     });
   });
 });
@@ -319,6 +326,9 @@ function patchNear(): { defines: Record<string, unknown>; key: string; vertex: s
     uViewPos: { value: new THREE.Vector3() },
     uShadowRange: { value: 1 },
     uLodFade: { value: new THREE.Vector2() },
+    uForestFar: { value: new THREE.Vector2() },
+    uNearOpen: { value: new THREE.Vector2() },
+    uFrame: { value: 0 },
   };
   const mat = createNearTreeMaterial(new THREE.Texture(), uniforms, 0);
   const src = THREE.ShaderLib.standard;
@@ -380,6 +390,9 @@ function presentTreeHashes(): Record<string, string> {
     uViewPos: { value: new THREE.Vector3() },
     uShadowRange: { value: 1 },
     uLodFade: { value: new THREE.Vector2() },
+    uForestFar: { value: new THREE.Vector2() },
+    uNearOpen: { value: new THREE.Vector2() },
+    uFrame: { value: 0 },
   };
   const tex = new THREE.Texture();
   const proxy = createShadowProxyMaterials(uniforms);

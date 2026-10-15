@@ -39,6 +39,7 @@ import { eraOff, type EraLayerName } from '../era/eraOff';
 import { RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
+import { OPEN_RANK } from './vegetation/placement';
 
 export const MAX_LEVELS = 16;
 /**
@@ -61,8 +62,9 @@ export interface TerrainUniforms {
   /** Distances from the viewer over which the forest canopy shell rises from the ground (forest floor) to its full height, m. */
   uForestFade: { value: THREE.Vector2 };
   /**
-   * The tree impostors' thinning (VegetationSystem): full density to x, then (x / d)^1.5, fading out from y to
-   * z (m); w = 1 when there are impostors. Where they thin, the canopy shell shows the sunlit crowns itself.
+   * The tree impostors' thinning (VegetationSystem): full density to x, then (x / d)^1.5; forest trees gone by
+   * y, trees outside closed forest by z, each fading out from 3/4 of it (m); w = 1 when there are impostors.
+   * Where they thin, the canopy shell shows the sunlit crowns itself.
    */
   uCanopyKeep: { value: THREE.Vector4 };
   /** The viewer's position (three.js world). The shadow pass needs it: there cameraPosition is the light's. */
@@ -683,6 +685,15 @@ vec3 tSunW = normalize((vec4(directionalLights[0].direction, 0.0) * viewMatrix).
 #else
 vec3 tSunW = vec3(0.0, 1.0, 0.0);
 #endif
+// Far away the terrain stands for trees the impostors no longer draw (the canopy shell, scattered trees,
+// hedgerows), so it takes on their look as a whole: greener than the canopy texture, and lit like a field
+// of crowns - bright looking down-sun, where the crowns hide their own shadows, dark toward the sun, where
+// their shaded sides and the gaps show; a little darker from overhead; the lower the sun the stronger the
+// contrast (longer shadows). Fitted to impostor forest against the bare shell over view and sun directions
+// (cos phase -0.7 to 1, sun 35-65 degrees up).
+vec3 tToCam = normalize(cameraPosition - tP);
+float tCrownsK = clamp(0.95 + (0.68 + 0.72 * (1.0 - tSunW.y)) * dot(tToCam, tSunW) - 0.43 * tToCam.y, 0.15, 1.8);
+vec3 tCrowns = vec3(0.814, 1.064, 0.912) * mix(1.0, tCrownsK, smoothstep(0.0, 0.15, tSunW.y));
 // --- Layer weights ---
 // Tree line as in biome.ts: higher on sunny south faces, lower on shaded north faces (tN.z < 0 faces north).
 float treeLine = ${treeLineBase().toFixed(1)} + 150.0 * sA.a + ${TREE_LINE_ASPECT.toFixed(1)} * tN.z;
@@ -731,6 +742,21 @@ if (tFarForest > 0.0) {
   float fe = forestE + 0.05 * (nD.b - 0.5);
   float few = clamp(fwidth(fe), 0.01, 0.25);
   forestW = mix(forestW, smoothstep(0.42 - few, 0.42 + few, fe), tFarForest);
+}
+// Fraction of the forest trees the impostors still draw here (VegetationSystem: full density to uCanopyKeep.x,
+// then (x / d)^1.5, gone by uCanopyKeep.y; none without impostors).
+float tKeepRaw = uCanopyKeep.w > 0.5 ? pow(uCanopyKeep.x / max(tDist, 1.0), 1.5) : 0.0;
+float tKeep = min(1.0, tKeepRaw) * (1.0 - smoothstep(0.75 * uCanopyKeep.y, uCanopyKeep.y, tDist));
+// The same for the trees outside closed forest, which are thinned later (placement.ts OPEN_RANK) and fade
+// out further away.
+float tKeepOpen = min(1.0, tKeepRaw / ${OPEN_RANK.toFixed(3)}) * (1.0 - smoothstep(0.75 * uCanopyKeep.z, uCanopyKeep.z, tDist));
+// Scattered trees outside the closed stands (placement.ts: from forest density 0.2 up, edge trees and open
+// woodland). As the impostors thin out, stand in for the crowns no longer drawn with partial canopy cover,
+// so the land keeps its tone and a wood its extent as the trees come and go. Crown cover is about 1.3 times
+// the share of placement candidates taken, (f - 0.2) * 1.6.
+if (tFarForest > 0.0) {
+  float scatter = clamp((forestE - 0.2) * 2.1, 0.0, 1.0);
+  forestW += (1.0 - forestW) * scatter * (1.0 - tKeepOpen) * tFarForest;
 }
 float farmW = smoothstep(0.25, 0.6, tBio.y + 0.12 * sB.a);
 ${E('#if ERA_FARM\n')}if (tFarForest > 0.0) {
@@ -899,6 +925,24 @@ ${E('#if ERA_FARM\n')}if (farmW > 0.001) {
   float hEnd = 3.5 + 1.5 * sD.b;
   float hedge = bandCover(pc.hedge, 0.5 * (1.5 + hEnd), hEnd - 1.5, edgeFw) * step(0.25, nD.r) * smoothstep(0.97, 0.995, airportBlendAt(tRw)) * (1.0 - townParcel);
   fieldCol = mix(fieldCol, vec3(0.022, 0.038, 0.014), hedge);
+  // Beyond the impostors' full density the hedgerow trees (placement.ts) thin out and go. Stand in for the
+  // ones not drawn with a band of crowns: as wide as theirs on the side toward the viewer, and on the far
+  // side also covering the strip of ground the row hides at a low view (their mean height, about 6 m, over
+  // the tangent of the view's elevation). The far side is where the distance to the hedge grows away from
+  // the viewer (its gradient from the screen-space derivatives).
+  float hedgeMiss = (1.0 - tKeepOpen) * tFarForest * step(0.25, nD.r) * smoothstep(0.97, 0.995, airportBlendAt(tRw)) * (1.0 - townParcel);
+  vec2 dpx = dFdx(tXZ);
+  vec2 dpy = dFdy(tXZ);
+  float hx = dFdx(pc.hedge);
+  float hy = dFdy(pc.hedge);
+  if (hedgeMiss > 0.0) {
+    float det = dpx.x * dpy.y - dpx.y * dpy.x;
+    vec2 grad = vec2(hx * dpy.y - hy * dpx.y, hy * dpx.x - hx * dpy.x) / (abs(det) > 1e-8 ? det : 1e-8);
+    float behind = step(0.0, -dot(grad, tToCam.xz));
+    float hw = 3.0 + behind * min(40.0, 6.0 * sqrt(1.0 - tToCam.y * tToCam.y) / max(tToCam.y, 0.05));
+    vec3 crown = canopyLayer(tXZ, nC.b).albedo * vec3(0.9, 0.92, 0.86) * 0.85 * tCrowns;
+    fieldCol = mix(fieldCol, crown, 0.85 * bandCover(pc.hedge, hw, 2.0, edgeFw) * hedgeMiss);
+  }
   farmWeight = farmW * landW;
   farmSoil = soil;
   landW *= 1.0 - farmW;
@@ -946,16 +990,11 @@ if (forestW > 0.001) {
     vec4 nT = texture(tNoise, rot2(tXZ, 3.7) * (1.0 / 13.0));
     tint *= mix(1.0, 0.72 + 0.34 * nS.r + 0.22 * nT.g, tFarForest);
     cm.slope += ((nS.zw - 0.5) * 1.3 + (nT.xy - 0.5) * 0.8) * tFarForest;
-    // Canopy hot spot: looking down-sun the crowns hide their own shadows and the canopy brightens; toward
-    // the sun the shaded sides and gaps show (Hapke-style shadow hiding, about 0.3 rad wide).
-    if (tSunW.y > 0.0) {
-      float phase = acos(clamp(dot(normalize(cameraPosition - tP), tSunW), -1.0, 1.0));
-      tint *= mix(1.0, 0.84 + 0.45 * exp(-phase / 0.3), tFarForest);
-    }
+    // Far away the shell stands for the tree impostors: their look as a whole (tCrowns).
+    tint *= mix(vec3(1.0), tCrowns, tFarForest);
     // Where the impostors stand at full density the shell is the lower canopy between their crowns, mostly
     // in their shade; as they thin out with distance it becomes the canopy's sunlit top itself.
-    float keep = uCanopyKeep.w > 0.5 ? min(1.0, pow(uCanopyKeep.x / max(tDist, 1.0), 1.5)) * (1.0 - smoothstep(uCanopyKeep.y, uCanopyKeep.z, tDist)) : 0.0;
-    fo.albedo = mix(fo.albedo, cm.albedo * tint * mix(1.12, 0.8, keep), canopy);
+    fo.albedo = mix(fo.albedo, cm.albedo * tint * mix(1.12, 0.8, tKeep), canopy);
     tFoliageW = canopy * forestW * landW;
     fo.slope = mix(ff.slope, cm.slope, canopy);
     fo.rough = mix(ff.rough, cm.rough, canopy);
@@ -1197,6 +1236,9 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
         '#include <lights_physical_fragment>',
         '#include <lights_physical_fragment>\nmaterial.specularF90 = mix(0.5, 0.15, tFoliageW);\nmaterial.specularColorBlended *= 1.0 - 0.6 * tFoliageW;',
       )
+      // The canopy shell reflects no sky, like the tree impostors it stands for (treeMaterials.ts FOLIAGE_IBL):
+      // a grey sheen toward the sun otherwise.
+      .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>\nradiance *= 1.0 - tFoliageW;')
       // Debug view 4: unlit albedo, scaled to be visible under the scene's exposure.
       .replace('#include <opaque_fragment>', `#if TERRAIN_DEBUG == 4\noutgoingLight = diffuseColor.rgb * 4000.0;\n#endif\n${lava}#include <opaque_fragment>`);
   };

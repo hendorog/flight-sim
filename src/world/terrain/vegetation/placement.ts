@@ -31,11 +31,14 @@ export interface TreeCellData {
   cx: number;
   cz: number;
   /**
-   * Per tree: east, ground height, north, tree height (m), yaw (rad), species + 0.99 * rank.
-   * Sorted by rank, ascending.
+   * Per tree: east, ground height, north, tree height (m), yaw (rad), species + 0.99 * rank; outside closed
+   * forest, species + SPECIES_COUNT + 0.99 * OPEN_RANK * rank.
+   * The trees outside closed forest first (openCount of them), then those in it, each sorted by rank,
+   * ascending: the impostors keep a rank-sorted prefix of each part, by their own laws (VegetationSystem).
    */
   instances: Float32Array;
   count: number;
+  openCount: number;
   /**
    * The same trees grouped by BUCKETS x BUCKETS sub-squares of the cell (index = bz * BUCKETS + bx, bx
    * east, bz north): order[bucketStart[b] .. bucketStart[b + 1]) are the instance indices in bucket b.
@@ -53,6 +56,20 @@ export const SPECIES = { spruce: 0, pine: 1, oak: 2, birch: 3 } as const;
 export const SPECIES_COUNT = 4;
 
 const LATTICE = 16;
+/**
+ * Rank scale of the trees that show (hedgerows, bankside, lone and scattered trees, forest density under
+ * 0.5, and the forest's edge trees, within EDGE_REACH of land where it drops below that). They are the ones
+ * seen against fields and sky; a forest's interior is seen as a canopy, which the terrain's canopy shell
+ * stands in for. The impostors thin out by rank with distance: scaling the rank keeps these to
+ * (1 / OPEN_RANK)^(2/3), about 2.5 times, the distance of interior trees (they are about a quarter of all
+ * trees), and they keep their meshes further (VegetationSystem nearOpen). The terrain's stand-in for the
+ * ones not drawn follows the same law (terrainMaterial.ts).
+ */
+export const OPEN_RANK = 0.25;
+/** A forest tree within this distance of land under forest density 0.5 is an edge tree (OPEN_RANK), m. */
+const EDGE_REACH = 25;
+/** Lattice samples beyond the cell on each side, for the edge test. */
+const EDGE_MARGIN = Math.ceil(EDGE_REACH / LATTICE);
 const sample = makeSample();
 const biome = makeBiome();
 const parcel = makeParcel();
@@ -69,20 +86,28 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
 
   // Forest density on a coarse lattice (with slope from neighbouring samples), bilinearly interpolated.
   const m = Math.ceil(size / LATTICE) + 1;
+  // For the edge test, the density also on EDGE_MARGIN samples beyond the cell on each side.
+  const M = EDGE_MARGIN;
+  const mx = m + 2 * M;
+  const densX = new Float32Array(mx * mx);
   // Landform on the same world lattice the terrain tiles use, so trees and ground agree.
-  shapeField.build(n0, e0, n0 + (m - 1) * LATTICE, e0 + (m - 1) * LATTICE);
+  shapeField.build(n0 - M * LATTICE, e0 - M * LATTICE, n0 + (m - 1 + M) * LATTICE, e0 + (m - 1 + M) * LATTICE);
   const dens = new Float32Array(m * m);
   const cons = new Float32Array(m * m);
   const farm = new Float32Array(m * m);
   // Distance from the river's water edge (m, large away from it) for the bankside trees.
   const bank = new Float32Array(m * m);
-  for (let j = 0; j < m; j++) {
-    for (let i = 0; i < m; i++) {
+  for (let jx = 0; jx < mx; jx++) {
+    for (let ix = 0; ix < mx; ix++) {
+      const i = ix - M;
+      const j = jx - M;
       const north = n0 + j * LATTICE;
       const east = e0 + i * LATTICE;
       sampleTerrain(north, east, sample);
       shapeField.at(north, east, shape);
       computeBiome(north, east, sample, shape.up, biome, shape.north);
+      densX[jx * mx + ix] = biome.forest;
+      if (i < 0 || j < 0 || i >= m || j >= m) continue;
       dens[j * m + i] = biome.forest;
       farm[j * m + i] = biome.farmland;
       bank[j * m + i] = sample.riverHalfWidth > 0 ? Math.min(1e4, sample.riverDist - sample.riverHalfWidth) : 1e4;
@@ -99,6 +124,18 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
     const a = arr[j * m + i] + (arr[j * m + i + 1] - arr[j * m + i]) * tx;
     const b = arr[(j + 1) * m + i] + (arr[(j + 1) * m + i + 1] - arr[(j + 1) * m + i]) * tx;
     return a + (b - a) * tz;
+  };
+
+  // Whether land under forest density 0.5 lies within EDGE_REACH of lattice position (fx, fz): the lowest
+  // density of the lattice samples within reach (each bilinear corner can only lie between them).
+  const reach = EDGE_REACH / LATTICE;
+  const nearOpenLand = (fx: number, fz: number): boolean => {
+    for (let j = Math.ceil(fz - reach); j <= Math.floor(fz + reach); j++) {
+      for (let i = Math.ceil(fx - reach); i <= Math.floor(fx + reach); i++) {
+        if ((i - fx) ** 2 + (j - fz) ** 2 <= reach * reach && densX[(j + M) * mx + i + M] < 0.5) return true;
+      }
+    }
+    return false;
   };
 
   const per = Math.round(size / spacing);
@@ -165,18 +202,28 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
         const vigour = 0.75 + 0.25 * Math.min(1, f * 1.5);
         height = (conifer ? 14 + 14 * rnd(h0, 6) : 10 + 12 * rnd(h0, 6)) * vigour;
       }
-      out.push(east, sample.ground, north, height, rnd(h0, 7) * Math.PI * 2, species + 0.99 * rnd(h0, 8));
+      const open = hedge || riparian || f < 0.5 || nearOpenLand(fx, fz);
+      out.push(east, sample.ground, north, height, rnd(h0, 7) * Math.PI * 2, species + (open ? SPECIES_COUNT : 0) + 0.99 * rnd(h0, 8) * (open ? OPEN_RANK : 1));
     }
   }
 
-  // Sort by rank (the fractional part of the last field).
+  return finishCell(cx, cz, size, out);
+}
+
+/** Sorts a cell's instances (open trees first, then forest trees, each by rank) and buckets them. */
+function finishCell(cx: number, cz: number, size: number, out: number[]): TreeCellData {
+  const e0 = cx * size;
+  const n0 = cz * size;
   const count = out.length / TREE_STRIDE;
   const order = Array.from({ length: count }, (_, k) => k);
+  const isOpen = (k: number): number => (out[k * TREE_STRIDE + 5] >= SPECIES_COUNT ? 0 : 1);
   const rank = (k: number): number => {
     const v = out[k * TREE_STRIDE + 5];
     return v - Math.floor(v);
   };
-  order.sort((a, b) => rank(a) - rank(b));
+  order.sort((a, b) => isOpen(a) - isOpen(b) || rank(a) - rank(b));
+  let openCount = 0;
+  while (openCount < count && isOpen(order[openCount]) === 0) openCount++;
   const instances = new Float32Array(count * TREE_STRIDE);
   for (let k = 0; k < count; k++) for (let c = 0; c < TREE_STRIDE; c++) instances[k * TREE_STRIDE + c] = out[order[k] * TREE_STRIDE + c];
   // Counting sort of the instances into sub-square buckets.
@@ -193,7 +240,7 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
   const fill = bucketStart.slice(0, BUCKETS * BUCKETS);
   const byBucket = new Uint16Array(count);
   for (let k = 0; k < count; k++) byBucket[fill[bucketOf[k]]++] = k;
-  return { cx, cz, instances, count, order: byBucket, bucketStart };
+  return { cx, cz, instances, count, openCount, order: byBucket, bucketStart };
 }
 
 // ------------------------------------------------------------------------------------------------ eras
@@ -206,7 +253,8 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
 //   slot 2 (platanoid)  lowland forest, the majority (angiosperm-dominated)
 //   slot 3 (palm)       lone trees and clumps on the open, flat, moist floodplain; some in forest edges and
 //                       with the cypresses along the river
-// No hedgerows (no farmland). Heights within each slot's range.
+// No hedgerows (no farmland). Heights within each slot's range. Palms, bankside trees and trees in thin forest
+// (density under 0.5) are open trees, as in the present (no forest-edge reach).
 
 const ARAUCARIA = 0;
 const TAXODIOID = 1;
@@ -331,32 +379,10 @@ function buildTreeCellEra(req: TreeCellRequest): TreeCellData {
         const vigour = 0.55 + 0.45 * Math.min(1, f * 1.5);
         height = heightOf(species, rnd(h0, 16) * vigour + (1 - vigour) * 0.15);
       }
-      out.push(east, sample.ground, north, height, rnd(h0, 17) * Math.PI * 2, species + 0.99 * rnd(h0, 18));
+      const open = kind !== 'forest' || f < 0.5;
+      out.push(east, sample.ground, north, height, rnd(h0, 17) * Math.PI * 2, species + (open ? SPECIES_COUNT : 0) + 0.99 * rnd(h0, 18) * (open ? OPEN_RANK : 1));
     }
   }
 
-  // Sort by rank and bucket, as buildTreeCell does.
-  const count = out.length / TREE_STRIDE;
-  const order = Array.from({ length: count }, (_, k) => k);
-  const rank = (k: number): number => {
-    const v = out[k * TREE_STRIDE + 5];
-    return v - Math.floor(v);
-  };
-  order.sort((a, b) => rank(a) - rank(b));
-  const instances = new Float32Array(count * TREE_STRIDE);
-  for (let k = 0; k < count; k++) for (let c = 0; c < TREE_STRIDE; c++) instances[k * TREE_STRIDE + c] = out[order[k] * TREE_STRIDE + c];
-  const bucketOf = new Uint8Array(count);
-  const bucketStart = new Uint16Array(BUCKETS * BUCKETS + 1);
-  const sub = size / BUCKETS;
-  for (let k = 0; k < count; k++) {
-    const bx = Math.min(BUCKETS - 1, Math.max(0, Math.floor((instances[k * TREE_STRIDE] - e0) / sub)));
-    const bz = Math.min(BUCKETS - 1, Math.max(0, Math.floor((instances[k * TREE_STRIDE + 2] - n0) / sub)));
-    bucketOf[k] = bz * BUCKETS + bx;
-    bucketStart[bucketOf[k] + 1]++;
-  }
-  for (let b = 0; b < BUCKETS * BUCKETS; b++) bucketStart[b + 1] += bucketStart[b];
-  const fill = bucketStart.slice(0, BUCKETS * BUCKETS);
-  const byBucket = new Uint16Array(count);
-  for (let k = 0; k < count; k++) byBucket[fill[bucketOf[k]]++] = k;
-  return { cx, cz, instances, count, order: byBucket, bucketStart };
+  return finishCell(cx, cz, size, out);
 }

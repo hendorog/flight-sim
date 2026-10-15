@@ -1,7 +1,7 @@
 {
   "shaders": {
     "river": "{\"vertex\":\"888bdc6c90c882d53103ea23ec4a1f05a787d46de169d7c6a1dbc13b24331a0d\",\"fragment\":\"a49dcd58998e5feb22e6528b8a0ae5e5a07edcf3ea8616991afbbbc6958ea20a\",\"defines\":\"[[\\\"RIVER\\\",\\\"\\\"]]\",\"uniforms\":\"tNoise,uHazeColor,uSkyColor,uTime\",\"cacheKey\":\"river-v4\"}",
-    "terrain": "{\"vertex\":\"03b13ed8023fbd4667971b871c6567e865d06e1ec4d06af11a7d23c70ec54102\",\"fragment\":\"784b175f4352241be1754fc9901410bc8f4dbccd5d6e5996f5b15f241956a0a7\",\"defines\":\"[[\\\"TERRAIN_DEBUG\\\",0],[\\\"TERRAIN_DETAIL\\\",1]]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-v5-1-0\"}",
+    "terrain": "{\"vertex\":\"03b13ed8023fbd4667971b871c6567e865d06e1ec4d06af11a7d23c70ec54102\",\"fragment\":\"2579ca84b84c79aa36a46a89ddaf9b944defa6ff18b72fd53d8cf4c1f3c2c9f9\",\"defines\":\"[[\\\"TERRAIN_DEBUG\\\",0],[\\\"TERRAIN_DETAIL\\\",1]]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-v5-1-0\"}",
     "terrainDepth": "{\"vertex\":\"63b8d79adb0b03dc095e85d920737e4cdf61c61f5dd57c00a62bb3f808c9ef3d\",\"fragment\":\"0c4ec80cc2a5bcfb37e653fae3d4dbda6ebd5ce45d901b42f5103799e4c63267\",\"defines\":\"[]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-depth-v4\"}",
     "water": "{\"vertex\":\"888bdc6c90c882d53103ea23ec4a1f05a787d46de169d7c6a1dbc13b24331a0d\",\"fragment\":\"a49dcd58998e5feb22e6528b8a0ae5e5a07edcf3ea8616991afbbbc6958ea20a\",\"defines\":\"[[\\\"STANDARD\\\",\\\"\\\"]]\",\"uniforms\":\"tNoise,uHazeColor,uSkyColor,uTime\",\"cacheKey\":\"water-v4\"}"
   },
@@ -29,11 +29,11 @@
   "trees": {
     "airport": "90d24db697497ddcd9fc225a7032919a19bf9f68d5cb1530a1f1547e4ae1b9b6",
     "airport-sw": "9822ae62cdce5489ac1d42a05dbd024ab1a29a96545d640d175cfcf3d500f142",
-    "far-e": "0e39b511e48dd0ac1454c07dc3c5da32569c1442c314c3cb1a8e163bdd16d6a5",
-    "far-w": "08c2de5e5270f9274aae42f52d46eb49ef05856fecd4eb557f46ed229a30c93d",
+    "far-e": "2a35b1787c4c613513a6339bfc6a67fbd8f3ac2af3a2c34a09cd7afcebb8e7cf",
+    "far-w": "71a9c823d75b3bca16c7403625f1042f2ab299198822f2bd72f6b1d50351799f",
     "ne": "3429a57c2a42bdf479b0a68c3dec07082fdf1086f92c972111a6f9fc44f94c12",
-    "nw": "77c5d3f81e0c0cb8dde587d1fef69832bfa8784890fceb385a4b045090ead9f6",
-    "river": "ae5fd6fdb480cbdb6f5606f01a212916f829193d2ade823ab7d3ae4022df83f5",
+    "nw": "466e1215817163a017e509035527b8aa9e37318766317ca720e8960fd5041c90",
+    "river": "24d639ef1c69430e1fbb81d95ab1ebce6c1e2ed46a1d8394b7472763501ec783",
     "town": "eb3eb2861eca72dd807139f05974500624cfe64d47127e46c444a9ad4ae8386b"
   }
 }
