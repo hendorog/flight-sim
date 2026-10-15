@@ -12,7 +12,8 @@ import {
   moonSurfaceLatLon,
   moonTexCoord,
 } from '../../src/render/sky/moon';
-import { DEFAULT_MOON_SCALE, MOON_ANGULAR_RADIUS } from '../../src/render/sky/params';
+import { DEFAULT_MOON_SCALE, MOON_ANGULAR_RADIUS, SCENE_UNITS_PER_LUX } from '../../src/render/sky/params';
+import { MOON_GLSL } from '../../src/render/sky/glsl/moon';
 
 const R = MOON_ANGULAR_RADIUS;
 
@@ -95,17 +96,44 @@ describe('Moon map orientation', () => {
 });
 
 describe('night display cap', () => {
-  const peak = 1000;
-  it('is physical by day and without a known exposure', () => {
-    // Daylight: grey card ~1e3 scene units -> exposure 0.18/1e3; the cap lies far above the Moon.
-    expect(moonDisplayScale(0.18 / 1e4, true, peak)).toBe(1);
-    expect(moonDisplayScale(1e3, false, peak)).toBe(1);
+  // The real peak (brightest highlands at full phase), as the shader sees it through uMoonLook.x.
+  const model = new MoonModel();
+  const c = new Celestial();
+  c.update(23, 172);
+  model.update({ moonScale: 4 } as unknown as SimContext, c);
+  const peak = (2 ** MOON_DISPLAY_EV * 0.18) / model.uniforms.uMoonLook.value.x;
+  /** The dome's uNight (SkyDome.update). */
+  const uNight = (cel: Celestial): number => THREE.MathUtils.smoothstep(-cel.sunDir.y, -0.1, 0.05);
+
+  it('is physical by day, even on a dim day with exposure bias, and without a known exposure', () => {
+    const day = new Celestial();
+    day.update(10, 172);
+    expect(uNight(day)).toBe(0);
+    /** EXPOSURE_GLSL's sceneExposure() (post/AutoExposure.ts) for an adapted luminance in cd/m^2 and a bias, EV. */
+    const sceneExposure = (cdm2: number, bias: number): number => {
+      const logL = Math.log2(cdm2 * SCENE_UNITS_PER_LUX);
+      const keyBias = Math.max(-0.2 * Math.max(0, 11 - Math.log2(cdm2)), -4.5);
+      return 0.18 * 2 ** (keyBias + bias - logL);
+    };
+    // Overcast / low-sun days, and a bright day under the dev harness's ev=2: the cap alone would bite here.
+    for (const [cdm2, bias] of [[300, 0], [1000, 2], [2000, 3]]) {
+      const exposure = sceneExposure(cdm2, bias);
+      expect(moonDisplayScale(exposure, true, peak, 1)).toBeLessThan(0.6);
+      expect(moonDisplayScale(exposure, true, peak, uNight(day))).toBe(1);
+    }
+    expect(moonDisplayScale(1e3, false, peak, 1)).toBe(1);
   });
+
   it('places the brightest highlands MOON_DISPLAY_EV over grey at night', () => {
+    expect(uNight(c)).toBe(1);
     const exposure = 0.18 / 1e-2;
-    const k = moonDisplayScale(exposure, true, peak);
+    const k = moonDisplayScale(exposure, true, peak, uNight(c));
     expect(k).toBeLessThan(1);
     expect(Math.log2((peak * k * exposure) / 0.18)).toBeCloseTo(MOON_DISPLAY_EV, 9);
+  });
+
+  it('gates the cap in the shader by uNight', () => {
+    expect(MOON_GLSL).toMatch(/mix\(1\.0, min\(1\.0, uMoonLook\.x \/ sceneExposure\(\)\), uNight\)/);
   });
 });
 

@@ -1,8 +1,8 @@
 // Positions of the sun, moon and the celestial sphere for the sky and lighting.
 //
 // The sun comes from sunDirectionNED (the one source every module shares). The celestial sphere is consistent
-// with it: the sun's ecliptic longitude follows the same day-of-year formula and the local sidereal time follows
-// from the sun's hour angle, so equatorialToWorld places J2000 equatorial directions (stars, the Milky Way, the
+// with it: the sun's ecliptic longitude follows the same day-of-year formula (with a fractional day, so the
+// sphere turns continuously across midnight) and the local sidereal time follows from the sun's hour angle, so equatorialToWorld places J2000 equatorial directions (stars, the Milky Way, the
 // Moon, the planets) around the sim's sun.
 //
 // The Moon comes from a low-precision lunar theory (Meeus, Astronomical Algorithms 2nd ed., ch. 47, the leading
@@ -178,8 +178,11 @@ export class Celestial {
   update(timeOfDay: number, dayOfYear: number, latitudeDeg: number = AIRPORT.latitudeDeg): void {
     nedToThree(sunDirectionNED(timeOfDay, dayOfYear, latitudeDeg), this.sunDir);
 
-    // Local sidereal time = sun hour angle + sun right ascension.
-    const sunLongitude = ((2 * Math.PI) / 365) * (dayOfYear - 81);
+    // Local sidereal time = sun hour angle + sun right ascension. The sun's longitude follows sunDirectionNED's
+    // day-of-year formula but with a fractional day, dayOfYear + (timeOfDay - 12) / 24: equal to the sim's at noon
+    // and continuous across midnight (the integer day stepped the sphere, and the Moon on it, ~1 deg at 0h). The
+    // sphere's sun is then at most ~0.5 deg (half a day of solar motion) from the sim's, at midnight.
+    const sunLongitude = ((2 * Math.PI) / 365) * (dayOfYear + (timeOfDay - 12) / 24 - 81);
     const sunRA = Math.atan2(Math.cos(OBLIQUITY) * Math.sin(sunLongitude), Math.cos(sunLongitude));
     const lst = (timeOfDay - 12) * 15 * DEG + sunRA;
     const lat = latitudeDeg * DEG;

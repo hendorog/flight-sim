@@ -1,6 +1,7 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DEG } from '../../src/core/math';
-import { Celestial, eclipticToEquatorial, moonEcliptic, sunEclipticLongitude } from '../../src/render/sky/celestial';
+import { Celestial, eclipticToEquatorial, moonEcliptic, moonEquatorialJ2000, sunEclipticLongitude } from '../../src/render/sky/celestial';
 import { skyJulianDate } from '../../src/render/sky/skyTime';
 
 /** Julian Date of a Gregorian UT instant. */
@@ -71,7 +72,8 @@ describe('lunar ephemeris (Meeus ch. 47, truncated)', () => {
   });
 
   it('shifts the Moon down by the horizontal parallax near the horizon', () => {
-    // Geocentric vs topocentric altitude: ~0.95 deg near the horizon.
+    // Independent geocentric direction from the production ephemeris and frame, compared with the drawn
+    // (topocentric) direction: the separation is the parallax in altitude, asin(R / d) * cos(alt), ~0.95 deg low.
     const c = new Celestial();
     let best = { tod: 0, alt: 90 };
     for (let tod = 18; tod < 23; tod += 0.02) {
@@ -80,11 +82,30 @@ describe('lunar ephemeris (Meeus ch. 47, truncated)', () => {
       if (Math.abs(alt - 2) < Math.abs(best.alt - 2)) best = { tod, alt };
     }
     c.update(best.tod, 172);
-    const topo = c.moonDir.clone();
-    // Recompute geocentric: undo the parallax shift.
-    const geoY = topo.y + 6378.14 / c.moonDistanceKm;
-    const shift = Math.asin(Math.min(1, geoY / Math.hypot(topo.x, geoY, topo.z))) / DEG - best.alt;
-    expect(shift).toBeGreaterThan(0.85);
-    expect(shift).toBeLessThan(1.05);
+    const eq = [0, 0, 0];
+    const dist = moonEquatorialJ2000(c.julianDate, eq);
+    const geo = new THREE.Vector3().fromArray(eq).applyMatrix3(c.equatorialToWorld).normalize();
+    const topo = c.moonDir;
+    const geoAlt = Math.asin(geo.y);
+    const expected = Math.asin(6378.14 / dist) * Math.cos(geoAlt);
+    expect(expected / DEG).toBeGreaterThan(0.85);
+    expect(Math.abs(geo.angleTo(topo) - expected) / DEG).toBeLessThan(0.02);
+    expect(topo.y).toBeLessThan(geo.y);
+    const az = (v: THREE.Vector3): number => Math.atan2(v.x, -v.z);
+    expect(Math.abs(az(topo) - az(geo)) / DEG).toBeLessThan(0.01);
+  });
+
+  it('moves the Moon and the celestial sphere continuously across midnight', () => {
+    const a = new Celestial();
+    const b = new Celestial();
+    for (const doy of [10, 100, 172, 250, 364]) {
+      a.update(24 - 1e-4, doy);
+      b.update(1e-4, doy + 1);
+      // The Moon moves ~0.5 deg/h against the stars and ~15 deg/h across the sky: 0.0002 h is < 0.01 deg.
+      expect(a.moonDir.angleTo(b.moonDir) / DEG).toBeLessThan(0.01);
+      const ea = a.equatorialToWorld.elements;
+      const eb = b.equatorialToWorld.elements;
+      for (let i = 0; i < 9; i++) expect(Math.abs(ea[i] - eb[i])).toBeLessThan(1e-3);
+    }
   });
 });

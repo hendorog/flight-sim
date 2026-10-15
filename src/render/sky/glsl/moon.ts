@@ -65,8 +65,10 @@ vec3 moonDisc(vec3 d, out float cover) {
   float x = length(p);
   float aa = uPixelAngle / r;
   cover = 1.0 - smoothstep(1.0 - aa, 1.0 + aa, x);
-  // Night display cap (moon.ts): one scale for the whole disc; 1 by day and without a known exposure.
-  float k = uExposureValid > 0.5 ? min(1.0, uMoonLook.x / sceneExposure()) : 1.0;
+  // Night display cap (moon.ts moonDisplayScale): one scale for the whole disc; gated by uNight (0 with the sun
+  // above +5.7 deg), so it is 1 by day (a dim overcast day's exposure would otherwise cap it and add the night
+  // styling) and without a known exposure.
+  float k = uExposureValid > 0.5 ? mix(1.0, min(1.0, uMoonLook.x / sceneExposure()), uNight) : 1.0;
   float night = 1.0 - k;
   vec3 moon = vec3(0.0);
   if (cover > 0.0) {

@@ -26,7 +26,8 @@
 // - Moonlight on the ground, aircraft and sky (Atmosphere.moonIlluminance, the sky-view LUT) comes from
 //   Celestial.moonIlluminance and never from the disc or the size setting.
 // - Earthshine and a faint aureole are cinematic (agent choice), and only where the cap acts (by day the disc is
-//   physical: earthshine 1.5e-4 of full, no aureole).
+//   physical: earthshine 1.5e-4 of full, no aureole). The cap itself is gated by the dome's uNight (sun below
+//   +5.7 deg), so a dim day never caps or styles the disc.
 
 import * as THREE from 'three';
 import type { SimContext } from '../../core/context';
@@ -83,15 +84,18 @@ export function moonApparentRadius(scale: number, altitudeRad: number): number {
 }
 
 /**
- * Scale applied to the whole disc's physical radiance (the shader's k): 1 by day, when no exposure is known
- * (exposureValid false), or whenever the real Moon is darker than the display cap; < 1 at night.
+ * Scale applied to the whole disc's physical radiance (the shader's k, mirrored here): 1 by day (night = 0), when
+ * no exposure is known (exposureValid false), or whenever the real Moon is darker than the display cap; < 1 at
+ * night. The daylight gate matters: an overcast or low-sun day adapts to a few hundred cd/m^2, where the cap alone
+ * would dim the disc and switch on the night styling (earthshine, aureole: the shader gates both by 1 - k).
  * @param sceneExposure the eye's multiplier from scene radiance to display-linear (0.18 = grey), as sceneExposure()
  * @param peakLuminance luminance of the brightest highlands at full phase, scene units
+ * @param night the dome's uNight (SkyDome.update: smoothstep(-sunDir.y, -0.1, 0.05); 0 with the sun above +5.7 deg)
  */
-export function moonDisplayScale(sceneExposure: number, exposureValid: boolean, peakLuminance: number): number {
+export function moonDisplayScale(sceneExposure: number, exposureValid: boolean, peakLuminance: number, night: number): number {
   if (!exposureValid) return 1;
   const cap = (2 ** MOON_DISPLAY_EV * 0.18) / Math.max(sceneExposure, 1e-30);
-  return Math.min(1, cap / peakLuminance);
+  return THREE.MathUtils.lerp(1, Math.min(1, cap / peakLuminance), night);
 }
 
 /**
