@@ -2,7 +2,8 @@
 // every buffer at FAUNA_MAX (the ultra row) in init() and only changes counts when the quality changes.
 //
 // Budget (plan "fauna" section): fauna CPU <= 0.4 ms/frame on high, <= 200k fauna triangles, <= 200
-// terrainHeight calls per frame, <= 1 habitat cell (<= 40 terrain samples) per frame, zero per-frame allocations.
+// terrainHeight calls per frame, <= 1 habitat cell per layer (<= 40 + 20 terrain
+// samples, habitat.ts STREAM_PROBE_READS) per frame, zero per-frame allocations.
 //
 // Pure data.
 

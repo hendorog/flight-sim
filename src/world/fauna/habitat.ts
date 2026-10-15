@@ -15,7 +15,8 @@
 // and keeps out of the safari's showcase quiet zone.
 //
 // LAYER 3 (fauna across the landscape, probeCellExtra; AGENT choice): a second, independent layer-2-style group in
-// every cell on its own salt (layer3Random), probed as the cell's sub-slot 1 on its own stream tick (<= 20 reads).
+// every cell on its own salt (layer3Random), probed as the cell's sub-slot 1 (<= 20 reads), possibly on the same stream tick as a sub-slot-0 probe
+// (STREAM_PROBE_READS, 60 a tick in all).
 
 import { SEA_LEVEL, hydrology, makeSample, sampleTerrain, terrainHeight, type TerrainSample } from '../terrain/heightfield';
 import { computeBiome, makeBiome, treeLine } from '../terrain/biome';
@@ -282,6 +283,14 @@ export function rexRandom(ci: number, cj: number, k: number): number {
 export const LAYER2_PROBES = 4;
 /** A cell's total terrain reads (layers 1 + 2) at most. */
 export const CELL_READS = 40;
+/**
+ * Habitat reads one stream tick may take at most: a sub-slot-0 probe (CELL_READS) and a layer-3 probe
+ * (LAYER2_PROBES * SAMPLES_PER_PROBE) can land on the same tick. Layer 3 is not deferred to keep the tick under
+ * CELL_READS: its probe timing decides which slots the background herds take, and through the round-robin the
+ * scripted first minute (tests/fauna/firstMinuteTrace.test.ts). 60 + the herds' 64 + AGENT_RESERVE + FLYER_RESERVE
+ * still fits TERRAIN_CALLS_PER_FRAME. AGENT choice.
+ */
+export const STREAM_PROBE_READS = CELL_READS + LAYER2_PROBES * SAMPLES_PER_PROBE;
 /** Layer-2 sites keep this far from the showcase anchors (river herd, Triceratops, Alamosaurus), m. */
 export const QUIET_ANCHOR_M = 2500;
 /** ... and this far from the safari's first-minute path (the start to safariAt(75)), m. */

@@ -13,9 +13,9 @@
 //     in a session, and again each time the pilot gets at least SIGHT_CLOSER m closer than the last emit (so the
 //     Field Guide's 'closest' distance tracks the session's best approach; at most ~20 emits per species).
 //
-// FRAME: (1) every STREAM_PERIOD, release far herds/flyers, probe at most one habitat cell (<= 40 terrain samples)
-// and spawn at most one herd or kettle; (2) herd brains at 10 Hz round-robin and the flyers, sharing the
-// 200-terrain-read budget; (3) sphere-cull each herd and flyer against the frustum, bucket by distance into
+// FRAME: (1) every STREAM_PERIOD, release far herds/flyers, probe at most one habitat cell per layer (<= 40 + 20
+// terrain samples, habitat.ts STREAM_PROBE_READS) and spawn at most one herd per layer or a kettle; (2) herd brains
+// at 10 Hz round-robin and the flyers, sharing the 200-terrain-read budget; (3) sphere-cull each herd and flyer against the frustum, bucket by distance into
 // LOD0/1/2 (LOD0 capped; the nearest LOD0 also cast shadows), write the 12-float instances (types.ts) and upload
 // only the used range.
 //
@@ -311,7 +311,7 @@ const MAX_FRAME_SIM_S = 1;
 export class FaunaSystemImpl implements FaunaSystem {
   readonly stats: FaunaStats = { visible: 0, terrainCalls: 0, reallocs: 0, cpuMs: 0, tris: 0, draws: 0 };
   /** Diagnostics (window.__sim.fauna.debug). */
-  readonly debug = { herds: 0, animals: 0, flyers: 0, agents: 0, cellsProbed: 0, triangles: 0, deferred: 0, errors: 0, agentTerrainCalls: 0, ambientRex: 0, evictions: 0 };
+  readonly debug = { herds: 0, animals: 0, flyers: 0, agents: 0, cellsProbed: 0, triangles: 0, deferred: 0, errors: 0, agentTerrainCalls: 0, ambientRex: 0, evictions: 0, probeReads: 0 };
 
   readonly root = new THREE.Group();
   readonly herds = new HerdPool();
@@ -442,7 +442,8 @@ export class FaunaSystemImpl implements FaunaSystem {
   /**
    * Release the showcase (the river herd, the hooks' herds, the solo agents and the showcase flyers) and spawn it
    * again from its anchors: every brain re-inits (the T. rex lurks, its rearm cooldown cleared), every herd is back in
-   * place and calm. Streamed herds and ambient kettles stay.
+   * place and calm. Streamed herds stay; ambient kettles stay too unless the pool is full, when the showcase flyers
+   * take their slots back (roomForShowcaseFlyer).
    */
   reseedShowcase(ctx: SimContext): void {
     if (!this.initialised) return;
@@ -535,6 +536,7 @@ export class FaunaSystemImpl implements FaunaSystem {
     // The resting pair, standing on the Flats beside the strip.
     if (big >= 0) {
       restingPair().forEach((p, k) => {
+        this.roomForShowcaseFlyer();
         const i = this.spawnFlyer(big, p.north, p.east, p.ground, p.ground, FLYER_MODE.stand, p.heading, 0x9a1200 + k, p.north, p.east);
         if (i >= 0) this.showcaseFlyer[i] = 1;
       });
@@ -555,6 +557,7 @@ export class FaunaSystemImpl implements FaunaSystem {
         const seed = 0xce77 + g * 16 + b;
         const ground = this.terrain.height(p.north, p.east);
         const agl = KETTLE_MIN_AGL + (KETTLE_MAX_AGL - KETTLE_MIN_AGL) * cellRandom(seed, 7, b);
+        this.roomForShowcaseFlyer();
         const i = this.spawnFlyer(entry, p.north, p.east, ground + agl, ground, FLYER_MODE.glide, 0, seed, p.north, p.east);
         if (i < 0) continue;
         this.showcaseFlyer[i] = 1;
@@ -591,6 +594,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       for (let c = 0; c < Math.max(0, Math.floor(sp.count)); c++) {
         const seed = ((sp.seed ?? 0x5f1e) + c) >>> 0;
         const n = sp.north + 6 * c;
+        this.roomForShowcaseFlyer();
         const i = this.spawnFlyer(entry, n, sp.east, ground, ground, FLYER_MODE.stand, sp.heading ?? 0, seed, sp.north, sp.east);
         if (i >= 0) this.showcaseFlyer[i] = 1;
       }
@@ -613,6 +617,22 @@ export class FaunaSystemImpl implements FaunaSystem {
     }
     fl.startRidge(i, this.terrain, wind.n, wind.e);
     fl.alt[i] = fl.ground[i] + fl.rOff[i];
+  }
+
+  /**
+   * A showcase flyer about to spawn into a full pool takes the slot of the highest ambient one (stream() releases the
+   * showcase flyers after SHOWCASE_FLYER_HOLD_S and ambient kettles fill the pool, so a reset must reclaim it;
+   * setQuality then trims ambient flyers first). A no-op while the pool has room. AGENT choice.
+   */
+  private roomForShowcaseFlyer(): void {
+    const F = this.flyers;
+    if (F.count() < F.capacity) return;
+    for (let i = F.capacity - 1; i >= 0; i--) {
+      if (!F.active[i] || this.showcaseFlyer[i]) continue;
+      F.release(i);
+      this.kettleOf[i] = -1;
+      return;
+    }
   }
 
   private spawnFlyer(entry: number, n: number, e: number, alt: number, ground: number, mode: FlyerMode, heading: number, seed: number, an: number, ae: number): number {
@@ -662,7 +682,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       ac = a;
     }
     if (dt > 0) {
-      // Streaming first (bounded: one probe of <= 40 reads), then the brains and flyers with what is left.
+      // Streaming first (bounded: a probe of <= 40 reads and a layer-3 one of <= 20, STREAM_PROBE_READS), then the brains and flyers with what is left.
       this.streamClock += dt;
       if (this.streamClock >= STREAM_PERIOD) {
         this.streamClock = 0;
@@ -700,9 +720,9 @@ export class FaunaSystemImpl implements FaunaSystem {
   }
 
   /**
-   * Stream habitat: release far herds/flyers, probe at most one new cell (both layers, <= 40 reads), spawn at most
-   * one herd (evicting the farthest unpinned one when the slots are full and the site is EVICT_MARGIN nearer),
-   * release roaming T. rexes whose herd is gone, and on a quiet tick place a roaming T. rex or an ambient kettle.
+   * Stream habitat: release far herds/flyers, probe at most one new cell per layer (<= 40 + 20 reads,
+   * STREAM_PROBE_READS), spawn at most one herd per layer (evicting the farthest unpinned one when the slots are full
+   * and the site is EVICT_MARGIN nearer), release roaming T. rexes whose herd is gone, and on a quiet tick place a roaming T. rex or an ambient kettle.
    */
   private stream(ctx: SimContext, camN: number, camE: number): void {
     const R = this.preset.activeRadius;
@@ -737,10 +757,12 @@ export class FaunaSystemImpl implements FaunaSystem {
     const rings = Math.ceil(R / HABITAT_CELL);
     /** Sub-slot 0 probed or spawned this tick (a tick it leaves idle is a quiet tick, as before layer 3). */
     let busy = false;
+    /** Habitat reads of this tick's probes (both layers; <= STREAM_PROBE_READS, debug.probeReads). */
+    let probeReads = 0;
     // Sub-slot 0 (layers 1 and 2) walks first, exactly as before layer 3: its probes, spawns and evictions keep their
     // inc-2b timeline (the foreground waterside herds share the herd read budget with the showcase, so their timing
-    // is part of the scripted first minute). Layer 3 (sub 1) then walks on its own (one probe of <= 20 reads and one
-    // spawn a tick, so a disc fills as fast as before), takes slots only below LAYER3_SLOT_RESERVE, evicts only
+    // is part of the scripted first minute). Layer 3 (sub 1) then walks on its own (one probe of <= 20 reads, only when
+    // it fits in the tick's CELL_READS after sub 0's probe, and one spawn a tick), takes slots only below LAYER3_SLOT_RESERVE, evicts only
     // layer-3 herds, and gives way: a sub-0 site that finds the slots or the ground-animal cap taken by layer-3 herds
     // releases the farthest of them first. AGENT choice.
     for (let sub = 0; sub < CELL_LAYERS; sub++) {
@@ -769,7 +791,10 @@ export class FaunaSystemImpl implements FaunaSystem {
               this.debug.cellsProbed++;
               C.keys[slot] = key;
               C.used++;
-              if (probeCellLayer(ci, cj, sub, this.roster, this.terrain, this.site)) {
+              const before = this.terrain.calls;
+              const found = probeCellLayer(ci, cj, sub, this.roster, this.terrain, this.site);
+              probeReads += this.terrain.calls - before;
+              if (found) {
                 C.status[slot] = CELL_SITE;
                 C.n[slot] = this.site.north;
                 C.e[slot] = this.site.east;
@@ -794,10 +819,12 @@ export class FaunaSystemImpl implements FaunaSystem {
                 const fn = H.cN[f3] - camN;
                 const fe = H.cE[f3] - camE;
                 if (Math.sqrt(sn * sn + se * se) > Math.sqrt(fn * fn + fe * fe) - EVICT_MARGIN) continue;
+                // Only evict when the site then fits (slot reserve and ground-animal cap with f3 gone): a victim
+                // released for a site that still does not fit would just lose a herd.
+                if (H.count() - 1 >= MAX_HERDS - LAYER3_SLOT_RESERVE || members - H.size[f3] + C.size[slot] > MAX_GROUND_ANIMALS) continue;
                 members -= H.size[f3];
                 this.releaseHerd(f3);
                 this.debug.evictions++;
-                if (H.count() >= MAX_HERDS - LAYER3_SLOT_RESERVE || members + C.size[slot] > MAX_GROUND_ANIMALS) continue;
               }
             } else {
               if (members + C.size[slot] > MAX_GROUND_ANIMALS) continue;
@@ -865,6 +892,7 @@ export class FaunaSystemImpl implements FaunaSystem {
       }
       if (sub === 0) busy = probed || spawned;
     }
+    this.debug.probeReads = probeReads;
     // Roaming T. rexes whose herd was released or evicted (its slot's key changed), or that are out of range.
     this.sweepAmbientAgents(camN, camE, R);
     if (busy) return;
