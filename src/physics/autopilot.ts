@@ -88,6 +88,13 @@ export const BALL_KP = C172S_AUTOPILOT.ballKp;
 export const BALL_KI = C172S_AUTOPILOT.ballKi;
 export const YAW_KR = C172S_AUTOPILOT.yawKr;
 export const RUDDER_LIMIT = C172S_AUTOPILOT.rudderLimit;
+/**
+ * Share of the ball loop's proportional gain kept at and above the reference dynamic pressure (full gain from
+ * 1.5 times the reference's inverse up, i.e. below about 75 % of its speed). In light turbulence the full gain
+ * made the rudder hunt and raised yaw-rate wobble 20-60 % above flight with the damper off; at this share the
+ * rudder moves 3-4 times less and the ball is steadier, and turns stay coordinated.
+ */
+export const BALL_KP_CRUISE = 0.3;
 export const TRIM_RATE = C172S_AUTOPILOT.trimRate;
 export const PITCH_LIMIT = C172S_AUTOPILOT.pitchLimit;
 /** Yoke travel equivalent to one unit of trim wheel (nose-up float over nose-up yoke travel). */
@@ -165,7 +172,11 @@ export class Autopilot {
       // in the slipstream, keeps its authority while the ball swings with every wing drop, and a 3x gain there
       // fed the wing rock instead of damping it.
       const yawScale = Math.min(qScale, 1.5);
-      const cmd = yawScale * (g.ballKp * s.slipBall - g.yawKr * (r - coordinatedR)) + this.ballI;
+      // From about the circuit speed up the ball's proportional gain drops to BALL_KP_CRUISE of the type's: there
+      // the ball's swings in light turbulence (1.5-2.5 Hz) drove the rudder back and forth, and the loop added to
+      // the yaw it was meant to damp. Slower, toward the stall, the rudder needs its full say on a wing drop.
+      const ballKp = g.ballKp * (BALL_KP_CRUISE + (1 - BALL_KP_CRUISE) * clamp((qScale - 1) / 0.5, 0, 1));
+      const cmd = yawScale * (ballKp * s.slipBall - g.yawKr * (r - coordinatedR)) + this.ballI;
       if (Math.abs(cmd) < 1) this.ballI = clamp(this.ballI + yawScale * g.ballKi * s.slipBall * dt, -g.rudderLimit, g.rudderLimit);
       controls.rudder = clamp(cmd, -1, 1);
     }
