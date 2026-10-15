@@ -84,7 +84,7 @@ export class SkySystem implements Subsystem {
 
     this.atmosphere = Atmosphere.for(renderer);
     this.dome = new SkyDome(this.atmosphere);
-    scene.add(this.dome.mesh, this.shadows.group);
+    scene.add(this.dome.mesh, this.dome.stars.object, this.shadows.group);
     this.applyQuality(ctx);
 
     this.atmosphere.update(ctx);
@@ -198,7 +198,7 @@ export class SkySystem implements Subsystem {
 
     ctx.renderer.getDrawingBufferSize(_size);
     const pixelAngle = (2 * Math.tan(THREE.MathUtils.degToRad(ctx.camera.fov) / 2)) / (ctx.camera.zoom * Math.max(_size.y, 1));
-    this.dome.update(ctx.simTime, pixelAngle, this.groundRadiance);
+    this.dome.update(ctx, pixelAngle, this.groundRadiance);
     this.envAge += dt;
   }
 
@@ -281,6 +281,7 @@ export class SkySystem implements Subsystem {
 
   dispose(): void {
     this.dome.mesh.removeFromParent();
+    this.dome.stars.object.removeFromParent();
     this.dome.dispose();
     this.shadows.dispose();
     this.env.dispose();

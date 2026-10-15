@@ -237,6 +237,11 @@ export class PostPipeline {
       this.local.update(r, this.bloom.level(METER_LEVEL));
     });
     this.exposureUniforms.tExposure.value = this.exposure.texture;
+    // Next frame's sky dome places the Moon relative to this adaptation (Atmosphere.exposureUniforms).
+    const shared = atmosphere.exposureUniforms;
+    shared.tExposure.value = this.exposure.texture;
+    shared.uExposureBias.value = this.exposureBias;
+    shared.uExposureValid.value = 1;
 
     const u = this.tonemap.uniforms;
     u.tScene.value = src;
