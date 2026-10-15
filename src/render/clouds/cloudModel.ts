@@ -329,8 +329,11 @@ float cloudDensity(vec3 p, float h, vec3 wt, float lod, float dlod, float detail
     // Two scales of Worley fBm: 160 / 80 / 40 m lobes and, for clouds seen at a footprint of a few tens of
     // metres or less, 40 / 20 / 10 m turrets and wisps on them.
     float dn = textureLod(uDetailTex, q * DETAIL_FREQ, dlod).r;
-    if (fineWeight > 0.0) dn = mix(dn, dn * 0.6 + 0.4 * textureLod(uDetailTex, (q + uDetailOffset * 0.25) * FINE_FREQ, dlod + 1.0).r, fineWeight);
-    if (gMicroWeight > 0.0) dn = mix(dn, dn * 0.7 + 0.3 * textureLod(uDetailTex, (q.zxy + uDetailOffset * 0.1) * MICRO_FREQ, gMicroLod).r, gMicroWeight);
+    // The finer octaves move with the detail (fixed offsets decorrelate them from it): drifting faster on their
+    // own, their small structures swept past a nearby viewer at metres per second, a churn the temporal filter
+    // could not follow (grain inside cloud).
+    if (fineWeight > 0.0) dn = mix(dn, dn * 0.6 + 0.4 * textureLod(uDetailTex, (q + vec3(37.0, 11.0, 73.0)) * FINE_FREQ, dlod + 1.0).r, fineWeight);
+    if (gMicroWeight > 0.0) dn = mix(dn, dn * 0.7 + 0.3 * textureLod(uDetailTex, (q.zxy + vec3(5.0, 23.0, 13.0)) * MICRO_FREQ, gMicroLod).r, gMicroWeight);
     // Contrast: the levelled fBm sits mostly mid-range; stretching it sharpens the creases between lobes.
     dn = smoothstep(0.1, 0.9, dn);
     // Billowy above the base: the inverted fBm erodes the creases between round lobes (cauliflower); wispy
@@ -420,6 +423,8 @@ export class CloudModel {
   readonly cirrusOffset = new THREE.Vector2();
   /** Unit vector (three.js x, z) of the upper wind: the cirrus fibres are stretched along it. */
   readonly cirrusAxis = new THREE.Vector2(1, 0);
+  /** How far the wind carried the clouds in the last update, m (three.js world; y = 0): for reprojection. */
+  readonly drift = new THREE.Vector3();
 
   constructor() {
     this.uniforms = {
@@ -463,8 +468,11 @@ export class CloudModel {
     const vx = -Math.sin(from) * speed;
     const vz = Math.cos(from) * speed;
     advect(this.shapeDrift, vx, vz, dt, WEATHER_PERIOD);
+    this.drift.set(vx * dt, 0, vz * dt);
     // Detail noise moves a little faster than the cells so their edges boil while the cells hold their shape.
-    advect(this.detailDrift, vx * 1.15, vz * 1.15, dt, WEATHER_PERIOD);
+    // Gently (6 %, and 0.3 m/s of rise): close up the churn reads as fast motion that the temporal filter
+    // cannot follow (it reprojects with the cells' drift), which left the clouds grainy when flying through.
+    advect(this.detailDrift, vx * 1.06, vz * 1.06, dt, WEATHER_PERIOD);
     // The second coverage field drifts slightly off-wind so the cross-fade between fields never repeats.
     advect(this.fieldDrift, vx * 0.9 + 0.35, vz * 0.9 - 0.2, dt, WEATHER_PERIOD);
     this.cirrusAxis.set(-Math.sin(from), Math.cos(from));
@@ -473,7 +481,7 @@ export class CloudModel {
     const t = ctx.simTime;
     const u = this.uniforms;
     u.uShapeOffset.value.set(this.shapeDrift.x, 0, this.shapeDrift.y);
-    u.uDetailOffset.value.set(this.detailDrift.x, wrap(-t * 0.6, DETAIL_PERIOD), this.detailDrift.y);
+    u.uDetailOffset.value.set(this.detailDrift.x, wrap(-t * 0.3, DETAIL_PERIOD), this.detailDrift.y);
     u.uWeatherOffset.value.set(
       this.shapeDrift.x + WEATHER_PHASE[0],
       this.shapeDrift.y + WEATHER_PHASE[1],

@@ -65,6 +65,13 @@ const MOONLIGHT = new THREE.Color(0.55, 0.65, 0.85).multiplyScalar(0.04);
 const GROUND_ALBEDO = new THREE.Color(0.1, 0.11, 0.08);
 /** Camera moves further than this in one frame (teleport, reset): drop the temporal history. */
 const HISTORY_RESET_DISTANCE = 1_000;
+/**
+ * From the cockpit the cloud starts this far out, m: the cabin is closed, and the metre of cloud between the
+ * eye and the panel otherwise veils the instruments in the bright cloud's in-scattered light. Beyond the
+ * glareshield, door frames and struts; the wings and nose further out are fogged (the first metres of the
+ * cloud outside, missing, change little once it is dense enough to matter).
+ */
+const COCKPIT_NEAR_CLIP = 3;
 
 type Uniforms = Record<string, THREE.IUniform>;
 
@@ -230,6 +237,7 @@ export class CloudsEffect implements SceneEffect {
       uLightDetailSteps: { value: 0 },
       uMinStep: { value: 0 },
       uCoarseShare: { value: 0.4 },
+      uNearClip: { value: 0 },
       uMaxDist: { value: MAX_DISTANCE },
       uDetailDist: { value: 0 },
       uDetailScale: { value: 1 },
@@ -244,6 +252,7 @@ export class CloudsEffect implements SceneEffect {
       uAux: { value: null },
       uHistory: { value: null },
       uPrevViewProj: { value: this.prevViewProj },
+      uDrift: { value: this.model.drift },
       uBlend: { value: 0.1 },
       uClipGamma: { value: 1.25 },
       uHistoryValid: { value: 0 },
@@ -308,6 +317,7 @@ export class CloudsEffect implements SceneEffect {
       const m = this.marchMat.uniforms;
       m.uDepth.value = depth;
       m.uScene.value = input;
+      m.uNearClip.value = ctx.cameraMode === 'cockpit' ? COCKPIT_NEAR_CLIP : 0;
       m.uJitter.value = (this.frame * 0.618034) % 1;
       const j = (this.frame % 16) + 1;
       (m.uPixelJitter.value as THREE.Vector2).set(halton(j, 2) - 0.5, halton(j, 3) - 0.5);
@@ -331,7 +341,7 @@ export class CloudsEffect implements SceneEffect {
       c.uAux.value = this.marchRT.textures[1];
       c.uCompositeShadows.value = this.compositeShadows ? 1 : 0;
       this.draw(renderer, this.compositeMat, output);
-      this.layer = { distance: this.marchRT.textures[1], transmittance: dst.texture };
+      this.layer = { distance: this.marchRT.textures[1], transmittance: dst.texture, drift: this.model.drift };
 
       this.prevViewProj.multiplyMatrices(ctx.camera.projectionMatrix, ctx.camera.matrixWorldInverse);
       this.prevCamPos.copy(this.camPos);

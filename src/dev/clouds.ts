@@ -43,8 +43,18 @@ const TAA = num('taa', 0);
  * Frame capture for artefact measurements (scripts or --eval): `moving` pauses the fly/yaw motion,
  * `frames(n)` resolves with the canvas luminance (0..255) of the next n frames, `png()` with the next frame.
  */
+const DRIFTS = ['shapeDrift', 'detailDrift', 'fieldDrift', 'cirrusOffset'];
 const devHooks = {
   moving: true,
+  /** The wind-drift state of the cloud field, saved with a pose so its still reference shows the same clouds. */
+  getDrift(): number[] {
+    const m = (clouds as unknown as { model: Record<string, THREE.Vector2> }).model;
+    return DRIFTS.flatMap((k) => [m[k].x, m[k].y]);
+  },
+  setDrift(v: number[]): void {
+    const m = (clouds as unknown as { model: Record<string, THREE.Vector2> }).model;
+    DRIFTS.forEach((k, i) => m[k].set(v[2 * i], v[2 * i + 1]));
+  },
   pending: [] as ((gl: WebGL2RenderingContext) => boolean)[],
   frames(n: number): Promise<Uint8Array[]> {
     const out: Uint8Array[] = [];

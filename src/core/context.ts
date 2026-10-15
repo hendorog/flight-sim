@@ -259,4 +259,6 @@ export interface ReprojectionLayer {
   readonly distance: THREE.Texture;
   /** a: transmittance of the layer (1 = nothing drawn). */
   readonly transmittance: THREE.Texture;
+  /** How far the layer moved since the previous frame (wind), m (three.js world). */
+  readonly drift?: THREE.Vector3;
 }
