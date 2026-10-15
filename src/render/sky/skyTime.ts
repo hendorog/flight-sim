@@ -15,6 +15,14 @@
 /** The fixed year of the sky's ephemerides (see the header). */
 export const SKY_EPOCH_YEAR = 2016;
 
+/** Days in SKY_EPOCH_YEAR (a leap year): weather.dayOfYear runs 1..366, the clock wraps after 366 (31 December). */
+export const SKY_DAYS_IN_YEAR = 366;
+
+/** Calendar label ("20 Jun") of day `dayOfYear` of SKY_EPOCH_YEAR, for the menu's date slider. */
+export function skyDateLabel(dayOfYear: number): string {
+  return new Date(Date.UTC(SKY_EPOCH_YEAR, 0, Math.round(dayOfYear))).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
 /** Julian Date of 0h UT on 1 January of SKY_EPOCH_YEAR (2016-01-01T00:00Z). */
 export const SKY_EPOCH_JD = 2457388.5;
 

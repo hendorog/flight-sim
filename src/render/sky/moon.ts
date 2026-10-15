@@ -159,14 +159,7 @@ export class MoonModel {
           tex.dispose();
           return;
         }
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.generateMipmaps = true;
-        tex.minFilter = THREE.LinearMipmapLinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.ClampToEdgeWrapping;
-        tex.anisotropy = 4;
-        tex.needsUpdate = true;
+        configureMoonTexture(tex);
         this.map = tex;
         this.uniforms.uMoonMap.value = tex;
         this.uniforms.uMoonMapReady.value = 1;
@@ -200,4 +193,21 @@ export class MoonModel {
     this.map?.dispose();
     this.placeholder.dispose();
   }
+}
+
+/**
+ * Sampling state of the Moon map (exported so the orientation test reads the same flipY the GPU uses): flipY, so
+ * texture v = 1 is the image's top row (lunar north); sRGB-encoded, decoded by the GPU; longitude wraps, latitude
+ * clamps.
+ */
+export function configureMoonTexture(tex: THREE.Texture): void {
+  tex.flipY = true;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
 }

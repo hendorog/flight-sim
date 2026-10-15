@@ -5,7 +5,7 @@ import { Celestial } from '../../src/render/sky/celestial';
 import { STAR_E0 } from '../../src/render/sky/glsl/stars';
 import { decodeStarCatalog, starIndexByHR } from '../../src/render/sky/starCatalog';
 import { POINT_SPREAD_MAX, POINT_SPREAD_WHITE, pointSpread } from '../../src/render/sky/glsl/pointSpread';
-import { STAR_FRAG, STAR_RADIANCE_CLAMP, StarField, peakWeight, starAttributes } from '../../src/render/sky/StarField';
+import { STAR_FRAG, STAR_RADIANCE_CLAMP, STAR_VERT, StarField, peakWeight, starAttributes } from '../../src/render/sky/StarField';
 
 interface Fs {
   readFileSync(path: URL): Uint8Array;
@@ -100,9 +100,39 @@ describe('StarField', () => {
     };
     expect(centre(0.1)).toBeGreaterThan(65504);
     expect(centre(60)).toBeLessThan(STAR_RADIANCE_CLAMP / 100);
-    expect(STAR_RADIANCE_CLAMP).toBeLessThan(65504);
+    // Per sprite, but sprites add: three coincident clamped sprites (a close pair at an extreme zoom) stay finite.
+    expect(3 * STAR_RADIANCE_CLAMP).toBeLessThan(65504);
     const out = /gl_FragColor\s*=\s*vec4\(min\((.*)\),\s*1\.0\);/.exec(STAR_FRAG);
     expect(out, 'the fragment output is min(..., vec3(clamp))').not.toBeNull();
     expect(out![1]).toContain(`vec3(${STAR_RADIANCE_CLAMP.toFixed(1)})`);
+  });
+
+  it('keeps a star\'s flux off the view axis: radiance scales as 1 / cos^3 of the off-axis angle', () => {
+    // The gnomonic pixel solid angle, measured: the pixel at tangent-plane offset (x, y) spans pa^2 / (1 + x^2 + y^2)^1.5.
+    const pa = 1e-3;
+    for (const [x, y] of [[0, 0], [0.4, 0.2], [0.51, 0.29], [1, 0.7]]) {
+      const corner = (a: number, b: number): number[] => {
+        const n = Math.hypot(a, b, 1);
+        return [a / n, b / n, 1 / n];
+      };
+      // Solid angle of the small quad from its corner directions (two spherical triangles, Van Oosterom & Strackee).
+      const tri = (a: number[], b: number[], c: number[]): number => {
+        const dot = (u: number[], v: number[]): number => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+        const cr = [b[1] * c[2] - b[2] * c[1], b[2] * c[0] - b[0] * c[2], b[0] * c[1] - b[1] * c[0]];
+        return 2 * Math.atan2(Math.abs(dot(a, cr)), 1 + dot(a, b) + dot(b, c) + dot(c, a));
+      };
+      const h = pa / 2;
+      const p00 = corner(x - h, y - h);
+      const p10 = corner(x + h, y - h);
+      const p11 = corner(x + h, y + h);
+      const p01 = corner(x - h, y + h);
+      const omega = tri(p00, p10, p11) + tri(p00, p11, p01);
+      const cd = 1 / Math.hypot(x, y, 1);
+      expect(omega / (pa * pa * cd ** 3)).toBeCloseTo(1, 5);
+    }
+    // ...and the vertex shader divides by exactly that (cd = -view.z, the off-axis cosine).
+    expect(STAR_VERT).toMatch(/float cd = -view\.z;/);
+    expect(STAR_VERT).toMatch(/\/ \(uPixelAngle \* uPixelAngle \* cd \* cd \* cd\)/);
+    expect(STAR_VERT).toMatch(/vec3 view = mat3\(viewMatrix\) \* dir;/);
   });
 });

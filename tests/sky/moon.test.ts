@@ -11,6 +11,7 @@ import {
   moonDisplayScale,
   moonSurfaceLatLon,
   moonTexCoord,
+  configureMoonTexture,
 } from '../../src/render/sky/moon';
 import { DEFAULT_MOON_SCALE, MOON_ANGULAR_RADIUS, SCENE_UNITS_PER_LUX } from '../../src/render/sky/params';
 import { MOON_GLSL } from '../../src/render/sky/glsl/moon';
@@ -92,6 +93,136 @@ describe('Moon map orientation', () => {
     expect(tycho.y).toBeLessThan(-0.5);
     const crisium = screen(17, 59);
     expect(crisium.x).toBeGreaterThan(0.75);
+  });
+});
+
+// The shipped map, proved through the shader's own lookup (as handedness.test.ts proves the Milky Way map): the JPEG
+// is decoded (ImageMagick) and sRGB-decoded to linear light as the GPU does; a screen point on a camera looking at a
+// Moon due south becomes a disc point through the shader's basis (ax, ay: checked against MOON_GLSL's text), then
+// a texture coordinate through moonAlbedo()'s uv expression evaluated from MOON_GLSL itself, then an image row through
+// the loader's own configureMoonTexture() flipY. The truth is the familiar look of a full Moon from the northern
+// hemisphere (screen positions, not the TS helpers above): maria upper left and right, bright southern highlands
+// with Tycho lower centre. A reversed longitude sign, a flipped latitude or a flipY change each fails it (controls).
+interface MoonCp {
+  execFileSync(cmd: string, args: string[], opts: { maxBuffer: number; stdio?: unknown }): Uint8Array;
+}
+const moonCp = (await import(/* @vite-ignore */ 'node:child_process' as string)) as MoonCp;
+const MOON_MAP_URL = new URL('../../public/sky/moon/lroc_color_2k.jpg', import.meta.url);
+const MOON_MAP_W = 2048;
+const MOON_MAP_H = 1024;
+
+function decodeMoonMap(): Float32Array | null {
+  let rgb: Uint8Array;
+  try {
+    rgb = moonCp.execFileSync('magick', [MOON_MAP_URL.pathname, '-depth', '8', 'rgb:-'], {
+      maxBuffer: MOON_MAP_W * MOON_MAP_H * 3 + 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return null;
+  }
+  expect(rgb.length, 'decoded size').toBe(MOON_MAP_W * MOON_MAP_H * 3);
+  const lin = new Float32Array(256);
+  for (let k = 0; k < 256; k++) lin[k] = new THREE.Color().setRGB(k / 255, 0, 0, THREE.SRGBColorSpace).r;
+  const lum = new Float32Array(MOON_MAP_W * MOON_MAP_H);
+  for (let i = 0; i < lum.length; i++) lum[i] = 0.2126 * lin[rgb[3 * i]] + 0.7152 * lin[rgb[3 * i + 1]] + 0.0722 * lin[rgb[3 * i + 2]];
+  return lum;
+}
+const moonMap = decodeMoonMap();
+if (!moonMap) console.warn('moon.test: ImageMagick (magick) not found; the shipped Moon map orientation proof is SKIPPED.');
+
+/** moonAlbedo()'s uv expression, evaluated from the GLSL source with JS shims. */
+const moonGlslUv = ((): ((p: { x: number; y: number }, mu: number) => [number, number]) => {
+  const m = /vec2 uv = (vec2\(.*\));\n/.exec(MOON_GLSL);
+  expect(m, 'uv expression in MOON_GLSL').not.toBeNull();
+  const fn = new Function('vec2', 'atan', 'asin', 'clamp', 'max', 'MOON_INV_TWO_PI', 'MOON_INV_PI', 'p', 'mu', `return ${m![1]};`) as (
+    ...a: unknown[]
+  ) => [number, number];
+  const vec2 = (a: number, b: number): [number, number] => [a, b];
+  const atan = (y: number, x: number): number => Math.atan2(y, x);
+  const clamp = (x: number, a: number, b: number): number => Math.min(Math.max(x, a), b);
+  return (p, mu) => fn(vec2, atan, Math.asin, clamp, Math.max, 1 / (2 * Math.PI), 1 / Math.PI, p, mu);
+})();
+
+/** Image row from the top of texture coordinate v, from the loader's own texture configuration. */
+const moonRowFromTop = ((): ((v: number) => number) => {
+  const tex = new THREE.Texture();
+  configureMoonTexture(tex);
+  return tex.flipY ? (v) => 1 - v : (v) => v;
+})();
+
+/** A Moon due south at the airfield (Celestial), with its shader basis and the camera's screen axes. */
+function moonDueSouth(): { D: THREE.Vector3; ax: THREE.Vector3; ay: THREE.Vector3; right: THREE.Vector3; up: THREE.Vector3 } {
+  const c = new Celestial();
+  let best = { tod: 0, east: 1 };
+  for (let tod = 20; tod < 28; tod += 0.01) {
+    c.update(tod % 24, tod >= 24 ? 351 : 350);
+    if (c.moonDir.y > 0 && c.moonDir.z > 0 && Math.abs(c.moonDir.x) < Math.abs(best.east)) best = { tod, east: c.moonDir.x };
+  }
+  c.update(best.tod % 24, best.tod >= 24 ? 351 : 350);
+  const D = c.moonDir.clone();
+  const pole = new THREE.Vector3(0, 0, 1).applyMatrix3(c.equatorialToWorld);
+  // As MOON_GLSL: ax = normalize(cross(uCelestialPole, uMoonDir)), ay = cross(uMoonDir, ax).
+  const ax = new THREE.Vector3().crossVectors(pole, D).normalize();
+  const ay = new THREE.Vector3().crossVectors(D, ax);
+  const right = new THREE.Vector3().crossVectors(D, new THREE.Vector3(0, 1, 0)).normalize();
+  const up = new THREE.Vector3().crossVectors(right, D);
+  return { D, ax, ay, right, up };
+}
+
+describe('shipped Moon map through the shader lookup', () => {
+  it.skipIf(!moonMap)('shows a full Moon the right way round for a Moon due south', () => {
+    expect(MOON_GLSL).toContain('vec3 ax = normalize(cross(uCelestialPole, uMoonDir));');
+    expect(MOON_GLSL).toContain('vec3 ay = cross(uMoonDir, ax);');
+    expect(MOON_GLSL).toContain('vec2 p = vec2(dot(d, ax), dot(d, ay)) / r;');
+    const map = moonMap!;
+    const { D, ax, ay, right, up } = moonDueSouth();
+    const eps = 0.01;
+    type Mod = (uv: [number, number]) => [number, number];
+    /** Mean linear luminance of a 7x7 texel patch at screen point (sx, sy) of the disc (units of its radius). */
+    const sample = (sx: number, sy: number, mod: Mod = (uv) => uv): number => {
+      const d = D.clone().addScaledVector(right, sx * eps).addScaledVector(up, sy * eps).normalize();
+      const p = { x: d.dot(ax) / eps, y: d.dot(ay) / eps };
+      const mu = Math.sqrt(Math.max(0, 1 - p.x * p.x - p.y * p.y));
+      const [u, v] = mod(moonGlslUv(p, mu));
+      const row = Math.min(MOON_MAP_H - 1, Math.max(0, Math.floor(moonRowFromTop(v) * MOON_MAP_H)));
+      const col = Math.floor(u * MOON_MAP_W);
+      let sum = 0;
+      for (let dr = -3; dr <= 3; dr++) {
+        for (let dc = -3; dc <= 3; dc++) {
+          const r = Math.min(MOON_MAP_H - 1, Math.max(0, row + dr));
+          sum += map[r * MOON_MAP_W + ((((col + dc) % MOON_MAP_W) + MOON_MAP_W) % MOON_MAP_W)];
+        }
+      }
+      return sum / 49;
+    };
+    // Screen positions (x right, y up, units of the disc radius) of a full Moon seen from the northern hemisphere.
+    const dark: [string, number, number][] = [
+      ['Mare Imbrium (upper left)', -0.3, 0.5],
+      ['Oceanus Procellarum (left)', -0.7, 0.25],
+      ['Mare Humorum (lower left)', -0.55, -0.4],
+      ['Mare Tranquillitatis (right of centre)', 0.4, 0.15],
+      ['Mare Crisium (right limb)', 0.82, 0.29],
+    ];
+    const bright: [string, number, number][] = [
+      ['Tycho (lower centre)', -0.14, -0.68],
+      ['southern highlands', 0.3, -0.75],
+      ['central highlands', 0.1, -0.4],
+    ];
+    const classify = (mod?: Mod): string[] => {
+      const disc: number[] = [];
+      for (let x = -0.95; x <= 0.95; x += 0.05) for (let y = -0.95; y <= 0.95; y += 0.05) if (x * x + y * y < 0.9) disc.push(sample(x, y, mod));
+      disc.sort((a, b) => a - b);
+      const median = disc[disc.length >> 1];
+      const wrong: string[] = [];
+      for (const [name, x, y] of dark) if (!(sample(x, y, mod) < 0.8 * median)) wrong.push(name);
+      for (const [name, x, y] of bright) if (!(sample(x, y, mod) > 1.15 * median)) wrong.push(name);
+      return wrong;
+    };
+    expect(classify()).toEqual([]);
+    // Controls: a reversed longitude sign (east-west mirror) or a flipped latitude / flipY (north-south) fail.
+    expect(classify(([u, v]) => [1 - u, v]).length).toBeGreaterThanOrEqual(3);
+    expect(classify(([u, v]) => [u, 1 - v]).length).toBeGreaterThanOrEqual(3);
   });
 });
 

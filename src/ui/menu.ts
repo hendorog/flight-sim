@@ -15,7 +15,7 @@ import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
 import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, type EraGates, type EraRow } from './eraChooser';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
 import { DEFAULT_MOON_SCALE, MOON_SCALE_MAX, MOON_SCALE_MIN, MOON_SCALE_STEP } from '../sim/skyPrefs';
-import { SKY_EPOCH_YEAR } from '../render/sky/skyTime';
+import { SKY_DAYS_IN_YEAR, skyDateLabel } from '../render/sky/skyTime';
 import { ERAS } from '../world/era/registry';
 import type { EraId } from '../world/era/types';
 import { achievedRateLabel, SIM_RATES, splitKeyAlternatives, splitKeyCombo, STARTUP_STEPS } from './cues';
@@ -741,10 +741,10 @@ export class PauseMenu {
       w().timeOfDay = v;
       this.host.weatherEdited();
     }, formatHours);
-    this.slider(p, 'Date', [1, 365, 1], () => w().dayOfYear, (v) => {
+    this.slider(p, 'Date', [1, SKY_DAYS_IN_YEAR, 1], () => w().dayOfYear, (v) => {
       w().dayOfYear = v;
       this.host.weatherEdited();
-    }, (v) => new Date(Date.UTC(SKY_EPOCH_YEAR, 0, v)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }));
+    }, skyDateLabel);
     return p;
   }
 

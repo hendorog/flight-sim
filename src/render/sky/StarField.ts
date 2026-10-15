@@ -19,8 +19,8 @@
 // opaque object drawn after it covers it. Each star is a box-integrated Gaussian (sigma 0.6 px; wider for a star
 // over display white, glsl/pointSpread.ts): the weights of the
 // pixels it touches sum to 1 at any sub-pixel position, so stars carry their exact flux, neither shimmer as the
-// view turns nor change brightness with zoom. Radiance = E * w / (pixel solid angle) with
-// E = STAR_E0 * 10^(-0.4 m) * colour(B-V) * transmittance * twinkle * uStarGain * uNight.
+// view turns nor change brightness with zoom. Radiance = E * w / (pixel solid angle), the pixel solid angle being
+// uPixelAngle^2 cos^3(off-axis angle), with E = STAR_E0 * 10^(-0.4 m) * colour(B-V) * transmittance * twinkle * uStarGain * uNight.
 
 import * as THREE from 'three';
 import type { SimContext } from '../../core/context';
@@ -40,10 +40,16 @@ const STAR_SIGMA_PX = 0.6;
 const SPRITE_SIGMAS = POINT_SIZE / STAR_SIGMA_PX;
 /** Points whose brightest pixel would display below this (display-linear, 0.18 = middle grey) are skipped. */
 const NEGLIGIBLE_DISPLAY = 1 / 2048;
-/** Ceiling of a star pixel's radiance: the dome's (skyDome.ts) and the post chain's, below half-float's 65504. */
-export const STAR_RADIANCE_CLAMP = 60000;
+/**
+ * Ceiling of one star sprite's pixel radiance. Sprites blend additively into the RGBA16F target, so the clamp is per
+ * sprite, not per pixel: a third of half-float's 65504 lets three coincident clamped sprites (a close pair such as
+ * HR 4825/4826 at an extreme zoom, plus one more) sum without overflowing to Inf. Any value this high is far above
+ * display white at every exposure where stars draw, so it changes nothing visible.
+ */
+export const STAR_RADIANCE_CLAMP = 20000;
 
-const STAR_VERT = /* glsl */ `
+/** Vertex shader of the catalogue layer (exported for tests). */
+export const STAR_VERT = /* glsl */ `
 ${ATMOSPHERE_GLSL}
 uniform mat3 uWorldToEquatorial;
 uniform vec3 uMoonDir;
@@ -81,9 +87,18 @@ void main() {
     cull();
     return;
   }
+  // View space (rotation only): the cosine of the star's angle off the view axis is -view.z.
+  vec3 view = mat3(viewMatrix) * dir;
+  float cd = -view.z;
+  if (cd <= 0.05) {
+    cull();
+    return;
+  }
   float airmass = 1.0 / max(dir.y, 0.05);
   float twinkle = 1.0 + 0.3 * min(airmass - 1.0, 3.0) * sin(uTime * (7.0 + 9.0 * aTwinkle.x) + 6.2831853 * aTwinkle.y);
-  vec3 steady = aFlux * transmittanceToTop(uCamR, dir.y) * (uStarGain * uNight / (uPixelAngle * uPixelAngle));
+  // A pixel at angle acos(cd) off the axis subtends uPixelAngle^2 cd^3 sr (as the planets, glsl/planets.ts), so the
+  // same flux spread over the same pixels needs cd^-3 more radiance toward the edges of a wide view.
+  vec3 steady = aFlux * transmittanceToTop(uCamR, dir.y) * (uStarGain * uNight / (uPixelAngle * uPixelAngle * cd * cd * cd));
   vRadiance = steady * twinkle;
   float peakDisplay = uExposureValid > 0.5 ? PEAK_WEIGHT * dot(vRadiance, vec3(0.2126, 0.7152, 0.0722)) * sceneExposure() : 0.0;
   if (uExposureValid > 0.5 && peakDisplay < ${NEGLIGIBLE_DISPLAY.toExponential(4)}) {
@@ -95,7 +110,7 @@ void main() {
   vErfK = 1.0 / (sigma * 1.41421356);
   vSize = ceil(${SPRITE_SIGMAS.toFixed(4)} * sigma - 0.001);
   // Rotation only, at a radius well inside the camera's near/far range; depth is neither tested nor written.
-  gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * dir * 10.0, 1.0);
+  gl_Position = projectionMatrix * vec4(view * 10.0, 1.0);
   gl_PointSize = vSize;
 }
 `;
@@ -121,8 +136,8 @@ float pixelShare(float c, float k) {
 void main() {
   // gl_PointCoord is measured from the star's exact (sub-pixel) position to this pixel's centre.
   vec2 o = (gl_PointCoord - 0.5) * vSize;
-  // Clamped like the dome (skyDome.ts): radiance grows as 1 / uPixelAngle^2, so at a very narrow FOV a bright star's
-  // central pixel would pass half-float's 65504 and write Inf into the HDR target.
+  // Clamped (STAR_RADIANCE_CLAMP): radiance grows as 1 / uPixelAngle^2, so at a very narrow FOV a bright star's
+  // central pixel would pass half-float's 65504 and write Inf into the HDR target, alone or summed with a neighbour.
   vec3 c = vRadiance * (pixelShare(o.x, vErfK) * pixelShare(o.y, vErfK));
   // The star's own colour survives the tone map's rod shift (see SCOTOPIC_GLSL; gain capped: agent choice).
   c = scotopicCompensate(c, dot(c, vec3(0.2126, 0.7152, 0.0722)), ${POINT_COLOUR_GAIN_MAX.toFixed(2)});
