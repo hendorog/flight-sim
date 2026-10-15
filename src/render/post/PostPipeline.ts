@@ -85,6 +85,8 @@ const DOME_AREA = 3.0;
  * exposure's cut, and the night sky and moonlit land stay visible from the seat).
  */
 const COCKPIT_LAMP_ADAPTATION_MAX = 1;
+/** ... lowering the lamps' share of the adaptation by at most this many EV (agent choice: the panel stays legible). */
+const COCKPIT_LAMP_MAX_DROP_EV = 3;
 
 /**
  * Luminance of an 18 % grey card under the light the eye adapts to, scene units: sun, moon, sky and
@@ -102,8 +104,11 @@ function greyCardLuminance(ctx: SimContext, moonIlluminance: THREE.Vector3, dire
     lamps = (lum(cabinLamps.floodColor.value) * FLOOD_SOLID_ANGLE) / FLOOD_AREA + (lum(cabinLamps.domeColor.value) * Math.PI) / DOME_AREA;
     // ... but the eye also looks out of the windows: the lamps lift the adaptation at most log2(1 + K) EV over the
     // outdoor light, or a 3 lx panel flood under a 0.1 lx Moon held it ~5 EV over the outside and the sky, the
-    // stars and the moonlit land were black from the seat. By day the outside is ~1e5 lx and this never binds.
-    lamps = Math.min(lamps, COCKPIT_LAMP_ADAPTATION_MAX * (direct + NIGHT_SKY_ILLUMINANCE + Math.PI * lum(skyColor)));
+    // stars and the moonlit land were black from the seat. The cap lowers the lamps' share by at most
+    // COCKPIT_LAMP_MAX_DROP_EV, or on a moonless night (~1e-3 lx outside) the lit panel would blow out to white.
+    // By day the outside is ~1e5 lx and none of this binds.
+    const outside = direct + NIGHT_SKY_ILLUMINANCE + Math.PI * lum(skyColor);
+    lamps = Math.max(lamps * 2 ** -COCKPIT_LAMP_MAX_DROP_EV, Math.min(lamps, COCKPIT_LAMP_ADAPTATION_MAX * outside));
   }
   return 0.18 * ((direct + NIGHT_SKY_ILLUMINANCE + lamps + artificial) / Math.PI + lum(skyColor));
 }
