@@ -708,9 +708,11 @@ const COCKPIT: CockpitDef = {
     toeBoard: { x0: PANEL_X + 0.2, x1: BULKHEAD_X - 0.01, z: 0.18 },
   },
   // Flood light in the overhead console aimed at the panel; dome light over the centre seats.
-  // Flood: red overhead flood, 7.2 cd at full dimmer so its panel ~0.84 m away gets the Cessna 172S's ~10 lx (agent choice,
-  // panel lighting for every type); the mask's glareshield top is this cabin's (box.glareshieldZ).
-  lamps: { flood: { pos: [0.1, 0, ROOF_Z + 0.08], aim: [PANEL_X, -0.2, -0.25], cd: 7.2, colour: 'red', maskTop: -(PANEL_ZTOP - 0.02) }, dome: { pos: [-1.0, 0, ROOF_Z + 0.08] } },
+  // Flood: red overhead flood over the pilot's side, 5.2 cd at full dimmer, aimed at the pilot's instruments (agent
+  // choice, panel lighting for every type). On the centreline at 7.2 cd its beam's core held the compass deviation card
+  // 0.42 m ahead and it clipped at full dimmer; from 0.36 m outboard the card sits at the beam's soft edge (look review).
+  // The mask's glareshield top is this cabin's (box.glareshieldZ).
+  lamps: { flood: { pos: [0.1, -0.36, ROOF_Z + 0.08], aim: [PANEL_X, -0.3, -0.2], cd: 5.2, cone: [40, 22], colour: 'red', maskTop: -(PANEL_ZTOP - 0.02) }, dome: { pos: [-1.0, 0, ROOF_Z + 0.08] } },
   // Simplified cabin for the occlusion bake: floor, headliner, flat sides, aft bulkhead, panel face and glareshield,
   // the windscreen's lower edge.
   box: { floor: FLOOR_Z, roof: ROOF_Z + 0.08, side: 0.6, rear: CABIN_REAR_X + 0.05, panelX: PANEL_X, glareshieldZ: PANEL_ZTOP - 0.02, sillZ: SCREEN_SILL_Z, windscreenX: SCREEN_BASE_X, roofGlazed: false },

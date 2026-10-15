@@ -547,10 +547,11 @@ const COCKPIT: CockpitDef = {
     toeBoard: { x0: 0.56, x1: FIREWALL_X - 0.01, z: 0.24 },
   },
   // Flood light under the metal roof strip aimed at the panel; dome light over the baggage shelf.
-  // Flood: red/white roof flood set to red at night (agent choice), 1.8 cd at full dimmer: its panel ~0.60 m away gets
-  // ~0.7 of the Cessna 172S's light, held down because the compass deviation card sits 0.17 m from the lamp and clipped
-  // at 3.7 cd (agent choice, panel lighting for every type); the mask's glareshield top is this cabin's (box.glareshieldZ).
-  lamps: { flood: { pos: [-0.02, 0, -0.73], aim: [PANEL_X, -0.12, -0.25], cd: 1.8, colour: 'red', maskTop: -(PANEL_ZTOP - 0.02) }, dome: { pos: [-0.62, 0, -0.71] } },
+  // Flood: red/white roof flood set to red at night (agent choice), 3.7 cd at full dimmer so its panel ~0.6 m away gets
+  // the Cessna 172S's light. It sits in the roof strip just aft of and above the compass (agent choice, look review):
+  // from 7 cm further aft the aft-facing deviation card hung in the beam's core and clipped at full dimmer; from here
+  // the card and the compass face are lit at a grazing angle. The mask's glareshield top is this cabin's (box.glareshieldZ).
+  lamps: { flood: { pos: [0.035, 0, -0.74], aim: [PANEL_X, -0.12, -0.25], cd: 3.7, colour: 'red', maskTop: -(PANEL_ZTOP - 0.02) }, dome: { pos: [-0.62, 0, -0.71] } },
   // Simplified cabin for the occlusion bake: floor, roof, flat sides, aft bulkhead, panel face and glareshield, the
   // windshield's lower edge (forward of the panel). The roof is mostly glass.
   box: { floor: FLOOR_Z, roof: -0.77, side: 0.53, rear: CABIN_REAR_X + 0.04, panelX: PANEL_X, glareshieldZ: PANEL_ZTOP - 0.02, sillZ: -0.385, windscreenX: FIREWALL_X - 0.01, roofGlazed: true },

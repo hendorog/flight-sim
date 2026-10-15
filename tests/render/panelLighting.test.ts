@@ -107,3 +107,30 @@ function lumRed(): number {
   const w = new THREE.Color(1.0, 0.8, 0.6).multiplyScalar(1 / (0.2126 + 0.7152 * 0.8 + 0.0722 * 0.6));
   return lum(new THREE.Color(w.r, w.g * 0.1, w.b * 0.033));
 }
+
+describe('the Piper floods keep the compass deviation card out of their beam core (look review, agent choice)', () => {
+  // The card hangs 0.068 m under the compass pivot (compass.ts) facing aft. Lit in the beam's core it clipped at full
+  // dimmer (PA38 61 %, PA34 52 % of its pixels): the PA38 lamp now sits just aft of and above the compass, so the card
+  // takes it at a grazing angle; the PA34 lamp sits over the pilot's side, the card at its soft edge.
+  for (const id of ['pa38', 'pa34'] as const) {
+    it(`${id}: the card is outside the full-intensity cone or nearly edge-on to the lamp`, async () => {
+      const airframe = await loadAirframeVisual(id);
+      const { flood } = airframe.cockpit.lamps;
+      const compass = airframe.cockpit.compass!.pos;
+      const card = new THREE.Vector3(compass[0], compass[1], compass[2] + 0.068);
+      const pos = new THREE.Vector3(...flood.pos);
+      const axis = new THREE.Vector3(...flood.aim).sub(pos).normalize();
+      const toCard = card.clone().sub(pos);
+      const dist = toCard.length();
+      toCard.normalize();
+      const offAxis = (Math.acos(axis.dot(toCard)) * 180) / Math.PI;
+      const inner = (flood.cone ?? [44, 24])[1];
+      // Cosine of incidence on the aft-facing card (FRD: aft is -x).
+      const incidence = Math.max(0, toCard.x);
+      const relativeLux = ((flood.cd ?? 5) * (offAxis > inner ? 0.5 : 1) * incidence) / (dist * dist);
+      // The Cessna 172S's card (no clip at full): ~29 relative units by the same estimate.
+      expect(offAxis > inner || incidence < 0.3).toBe(true);
+      expect(relativeLux).toBeLessThan(29);
+    });
+  }
+});
