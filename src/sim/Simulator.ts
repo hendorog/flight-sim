@@ -61,6 +61,7 @@ import { AirportSystem, TOWER } from '../world/airport';
 import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
+import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
 import { era, isPresent, setEra } from '../world/era/eraState';
 import { createEraEffects } from '../render/post/eraEffects';
 import { bootCameraMode, cameraModeAllowed, safariHeadPitch, startTimeOfDay } from './safariStart';
@@ -349,6 +350,12 @@ export class Simulator {
         this.ctx.carbIcing = on;
         this.physics.carbIcing = on;
       },
+      setMoonScale: (scale) => {
+        const v = sanitizeMoonScale(scale);
+        if (v === null) return;
+        saveMoonScale(this.store, v);
+        this.ctx.moonScale = v;
+      },
     };
     const ctx: SimContext = {
       renderer,
@@ -383,6 +390,7 @@ export class Simulator {
       presentation,
       carbIcing,
       era: era().id,
+      moonScale: chooseMoonScale(p, this.store),
     };
     this.ctx = ctx;
     this.applySize();
@@ -588,6 +596,7 @@ export class Simulator {
     post.addEffect(clouds);
     this.post = post;
     post.setAircraftRadius(def.geometry.bounds.radius);
+    post.setCabinBox(presentation.visual.cockpit.box);
     await clouds.ready;
     // Cloud shadows dim the sun term of every lit material instead of the whole pixel in the composite;
     // the apron floodlight pools also reach the aircraft exterior and the terrain grass (cloudShadows.ts).
@@ -1027,6 +1036,9 @@ export class Simulator {
 
   /** Fix the camera at an NED position (alt MSL) looking at another point (null: keep the direction). */
   setFixedCamera(pos: [number, number, number], look: [number, number, number] | null): void {
+    // A free camera is not the cockpit view: leave it so the cabin lamps stop setting the eye's adaptation
+    // (an era without a tower boots ?camPos in the cockpit, and the lamps then rendered the night sky black).
+    if (this.ctx.cameraMode === 'cockpit') this.setCameraMode('chase');
     this.fixedCamera = {
       pos: new THREE.Vector3(pos[1], pos[2], -pos[0]),
       look: look ? new THREE.Vector3(look[1], look[2], -look[0]) : null,

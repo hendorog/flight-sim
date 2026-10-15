@@ -14,6 +14,8 @@ import { el, formatHours } from './dom';
 import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
 import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, type EraGates, type EraRow } from './eraChooser';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
+import { DEFAULT_MOON_SCALE, MOON_SCALE_MAX, MOON_SCALE_MIN, MOON_SCALE_STEP } from '../sim/skyPrefs';
+import { SKY_DAYS_IN_YEAR, skyDateLabel } from '../render/sky/skyTime';
 import { ERAS } from '../world/era/registry';
 import type { EraId } from '../world/era/types';
 import { achievedRateLabel, SIM_RATES, splitKeyAlternatives, splitKeyCombo, STARTUP_STEPS } from './cues';
@@ -739,10 +741,10 @@ export class PauseMenu {
       w().timeOfDay = v;
       this.host.weatherEdited();
     }, formatHours);
-    this.slider(p, 'Date', [1, 365, 1], () => w().dayOfYear, (v) => {
+    this.slider(p, 'Date', [1, SKY_DAYS_IN_YEAR, 1], () => w().dayOfYear, (v) => {
       w().dayOfYear = v;
       this.host.weatherEdited();
-    }, (v) => new Date(Date.UTC(2025, 0, v)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }));
+    }, skyDateLabel);
     return p;
   }
 
@@ -795,6 +797,18 @@ export class PauseMenu {
         this.refreshers.push(() => b.classList.toggle('sel', ctx().cameraMode === 'cockpit' && (ctx().panelView ?? '3d') === view));
       }
       el('p', 'sub', p, 'Shift+V: 3D / fixed. ]: Upper / Lower / hidden. Fixed view looks ahead; use 3D for mouse-look and zoom.');
+    }
+    if (ctx().commands.setMoonScale) {
+      el('h3', '', p, 'Sky');
+      this.slider(
+        p,
+        'Moon size',
+        [MOON_SCALE_MIN, MOON_SCALE_MAX, MOON_SCALE_STEP],
+        () => ctx().moonScale ?? DEFAULT_MOON_SCALE,
+        (v) => ctx().commands.setMoonScale?.(v),
+        (v) => (v <= MOON_SCALE_MIN ? 'Real size' : `${Number(v.toFixed(2))}x`),
+      );
+      el('p', 'sub', p, 'Larger than life, and larger still near the horizon. Real size: 1x.');
     }
     el('h3', '', p, 'Overlays');
     const toggle = (text: string, get: () => boolean, set: (v: boolean) => void): void => {

@@ -1,12 +1,49 @@
 // Final display transform: bloom mix, exposure, mesopic/scotopic shift, AgX tone mapping, sRGB
 // encoding and dithering.
 
+import { DEPTH_GLSL } from '../../core/shaderLib';
 import { SCENE_UNITS_PER_LUX } from '../sky/params';
 import { EXPOSURE_GLSL } from './AutoExposure';
 import { LOCAL_EXPOSURE_GLSL } from './LocalExposure';
 
+/**
+ * GLSL: rod vision. Below ~3 cd/m^2 colour fades and shifts toward blue (Purkinje), complete by ~0.01 cd/m^2:
+ * scotopicShare(lum) is the share of a pixel's colour (luminance `lum`, scene units) replaced by the rods' tint.
+ * Exported for the night sky's point sources (StarField, glsl/planets.ts), which pre-compensate it: a bright star
+ * stimulates the cones however dim its rendered spot's pixels are, so it keeps its colour (Antares, Mars).
+ *
+ * The planets go further (night-sky round 3): the pre-compensation alone cannot keep an orange planet orange, as
+ * the inverse clamps blue at 0 and the full shift (share 0.7) then caps any colour at R/B ~1.3 (Mars read white).
+ * So the sky dome flags the planets' pixels in the HDR alpha (alpha = -share of the pixel's light from a planet;
+ * every other surface writes alpha >= 0, so nothing else is flagged), and the tone map applies only
+ * POINT_ROD_KEEP of the rod shift and none of the white balance to that share; glsl/planets.ts pre-compensates
+ * for that reduced shift, which no colour needs to clamp. Agent choice.
+ */
+export const POINT_ROD_KEEP = 0.15;
+
+export const SCOTOPIC_GLSL = /* glsl */ `
+const vec3 SCOTOPIC_TINT = vec3(0.78, 0.94, 1.32);
+const float POINT_ROD_KEEP = ${POINT_ROD_KEEP.toFixed(4)};
+float scotopicShare(float lum) {
+  return 0.7 * (1.0 - smoothstep(-2.0, 0.5, log(max(lum / ${SCENE_UNITS_PER_LUX.toExponential(6)}, 1e-9)) / log(10.0)));
+}
+// Colour c (linear) pre-compensated so that a rod shift of share s leaves its hue: the shift mix(c, l T, s)
+// inverted, (c - s l T) / (1 - s), clamped at 0 and rescaled to c's luminance (a deep red star loses a little
+// saturation instead of going negative).
+vec3 scotopicCompensateShare(vec3 c, float s) {
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  vec3 inv = max((c - s * l * SCOTOPIC_TINT) / (1.0 - s), vec3(0.0));
+  return inv * (l / max(dot(inv, vec3(0.2126, 0.7152, 0.0722)), 1e-30));
+}
+// The same against the tone map's shift at luminance \`lum\`, with s capped where 1 / (1 - s) reaches maxGain.
+vec3 scotopicCompensate(vec3 c, float lum, float maxGain) {
+  return scotopicCompensateShare(c, min(scotopicShare(lum), 1.0 - 1.0 / maxGain));
+}
+`;
+
 export const TONEMAP_FRAG = /* glsl */ `
 ${EXPOSURE_GLSL}
+${SCOTOPIC_GLSL}
 uniform sampler2D tScene;
 uniform sampler2D tBloom;
 uniform float uBloomWeight;
@@ -18,8 +55,32 @@ uniform vec2 uSunTap;
 uniform vec3 uSunGlare;
 uniform float uSunExpected;
 uniform vec3 uWhiteBalance;
+uniform sampler2D tDepth;
+uniform float uOutsideGain;
+uniform vec2 uCabinCut;
+uniform mat4 uCabinFromView;
 varying vec2 vUv;
 ${LOCAL_EXPOSURE_GLSL}
+${DEPTH_GLSL}
+
+// 1 where the pixel and its neighbours two pixels away all lie outside the cabin (PostPipeline cabin box: the
+// surface's view-space point mapped into the box's [-1, 1]^3): the erosion keeps the outside gain off pixels that
+// blend a window frame with the view out (no bright fringe).
+float outsideMask() {
+  ivec2 size = textureSize(tDepth, 0);
+  ivec2 p = ivec2(vUv * vec2(size));
+  for (int k = 0; k < 5; k++) {
+    ivec2 o = k == 0 ? ivec2(0) : k == 1 ? ivec2(2, 0) : k == 2 ? ivec2(-2, 0) : k == 3 ? ivec2(0, 2) : ivec2(0, -2);
+    ivec2 q = clamp(p + o, ivec2(0), size - 1);
+    float d = texelFetch(tDepth, q, 0).r;
+    if (isSky(d)) continue;
+    float z = viewZFromDepth(d);
+    vec2 uv = (vec2(q) + 0.5) / vec2(size);
+    vec3 b = (uCabinFromView * vec4((uv * 2.0 - 1.0) * uTanHalf * z, -z, 1.0)).xyz;
+    if (all(lessThan(abs(b), vec3(1.0)))) return 0.0;
+  }
+  return 1.0;
+}
 
 // Veiling glare of the sun in the eye (Stiles-Holladay: L = 10 E / theta^2, L in cd/m^2, E in lux,
 // theta in degrees), scaled by how much of the disc is visible in the frame (so terrain, the airframe
@@ -102,23 +163,35 @@ vec3 srgbEncode(vec3 c) {
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 
 void main() {
-  vec3 c = texture2D(tScene, vUv).rgb;
+  vec4 scene = texture2D(tScene, vUv);
+  vec3 c = scene.rgb;
+  // Share of this pixel's light from a planet (SCOTOPIC_GLSL's header): 0 for everything else (alpha >= 0).
+  float pointShare = clamp(-scene.a, 0.0, 1.0);
   c = any(isnan(c)) || any(isinf(c)) ? vec3(0.0) : clamp(c, vec3(0.0), vec3(60000.0));
+  // The view out of the cockpit at night, exposed without the lamps (PostPipeline lampShareEV); before the bloom
+  // so the panel's glow over the windscreen is not lifted with it. lumGain undoes it for the physical terms.
+  float lumGain = 1.0;
+  float outside = 1.0;
+  if (uOutsideGain > 0.0) {
+    outside = outsideMask();
+    lumGain = mix(1.0, uOutsideGain, outside);
+    c *= lumGain;
+  }
   // Energy-conserving bloom: the blur replaces a fraction of the image instead of adding to it.
   c = c * (1.0 - uBloomWeight) + texture2D(tBloom, vUv).rgb * uBloomScale;
   if (uSunExpected > 0.0) c += sunGlare();
 
   // Partial chromatic adaptation to the ambient illuminant (von Kries gains, computed on the CPU).
-  c *= uWhiteBalance;
+  c *= mix(uWhiteBalance, vec3(1.0), pointShare);
 
   // Rod vision: below ~3 cd/m^2 colour fades and shifts toward blue (Purkinje), complete by ~0.01 cd/m^2.
   float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  float scotopic = 1.0 - smoothstep(-2.0, 0.5, log(max(lum / ${SCENE_UNITS_PER_LUX.toExponential(6)}, 1e-9)) / log(10.0));
-  c = mix(c, lum * vec3(0.78, 0.94, 1.32), 0.7 * scotopic);
+  c = mix(c, lum * SCOTOPIC_TINT, scotopicShare(lum / lumGain) * mix(1.0, POINT_ROD_KEEP, pointShare));
 
   // Local adaptation around the global exposure (see LocalExposure.ts).
   float logAdapted = texture2D(tExposure, vec2(0.5)).r;
-  float ev = localExposureEV(log2(max(lum, 1e-9)), logAdapted);
+  // The cabin at night holds back more of what the lamps light over white (uCabinCut, PostPipeline CABIN_CUT).
+  float ev = localExposureEV(log2(max(lum / lumGain, 1e-9)), logAdapted, mix(uCabinCut, uLocal.wz, outside));
   c = agx(c * (sceneExposure() * exp2(ev)));
   c = srgbEncode(c);
   // Triangular dither of +-1 LSB breaks up banding in dark gradients (sky, fog).

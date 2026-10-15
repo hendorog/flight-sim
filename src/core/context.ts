@@ -105,6 +105,11 @@ export interface SimCommands {
    * only. Optional: older mocks do not implement it.
    */
   setEra?(id: EraId): void;
+  /**
+   * Moon size setting (night sky; 1 = real size .. 5, src/sim/skyPrefs.ts): stores 'fs.moonScale' and sets
+   * ctx.moonScale; applies live. Optional: older mocks do not implement it.
+   */
+  setMoonScale?(scale: number): void;
 }
 
 export interface SimEvents {
@@ -190,6 +195,11 @@ export interface SimContext {
    * mocks means 'present'. Subsystems read src/world/era/eraState.ts era() for its data.
    */
   era?: EraId;
+  /**
+   * Presentation size of the Moon, a multiple of its real size above 35 deg altitude (1..5; it grows further
+   * toward the horizon, src/render/sky/moon.ts). Absent on test fakes and dev pages: DEFAULT_MOON_SCALE (4).
+   */
+  moonScale?: number;
 }
 
 /** A per-frame subsystem. update() runs once per rendered frame with the real frame dt (0 when paused). */

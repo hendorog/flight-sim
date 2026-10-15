@@ -217,6 +217,38 @@ describe('cockpit from the definitions', () => {
     cockpit.dispose();
   });
 
+  it('the panel dimmer: dial markings dim to nothing at the low end, the displays and annunciators keep their floor', async () => {
+    const { Cockpit } = await import('../../src/render/aircraft/cockpit');
+    const { defaultControls } = await import('../../src/core/types');
+    const cockpit = new Cockpit(fakeMaterials(), new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3)));
+    cockpit.setPanelEmissiveTexture(new THREE.Texture());
+    const mat = cockpit.panelMesh.material as THREE.MeshStandardMaterial;
+    const shader = { uniforms: {} as Record<string, { value: unknown }>, vertexShader: '', fragmentShader: '#include <common>\n#include <emissivemap_fragment>' };
+    mat.onBeforeCompile(shader as never, null as never);
+    expect(shader.fragmentShader).toContain('mix( panelDial, 1.0, smoothstep( 0.12, 0.25, emissivePeak ) )');
+    const dial = shader.uniforms.panelDial as { value: number };
+    const state = { electrical: { busVoltage: 28 } } as never;
+    const controls = defaultControls();
+    const at = (level: number): { display: number; dial: number } => {
+      controls.lights.panel = level;
+      cockpit.update(state, controls, 1);
+      return { display: mat.emissiveIntensity, dial: dial.value };
+    };
+    // Display luminance 20 + 180 x level (cd/m2 in scene units); markings at 0.1 of it times the dial gain.
+    const full = at(1);
+    const day = at(0.6);
+    expect(day.dial).toBe(1);
+    expect(day.display / full.display).toBeCloseTo(128 / 200, 6);
+    const night = at(0.2);
+    expect(night.display / full.display).toBeCloseTo(56 / 200, 6);
+    // Markings ~1.4 cd/m2 at the night setting: (2 + 18 x 0.6) x (0.2 / 0.6)^2.
+    expect((0.1 * night.dial * night.display) / (0.1 * full.display / 20)).toBeCloseTo(12.8 / 9, 4);
+    const off = at(0);
+    expect(off.display / full.display).toBeCloseTo(20 / 200, 6);
+    expect(off.dial).toBe(0);
+    cockpit.dispose();
+  });
+
   it('AircraftVisual takes the airframe and the panel definition as options, the C172S by default', async () => {
     const { AircraftVisual } = await import('../../src/render/aircraft/AircraftVisual');
     const eye = C172.fuselage.pilotEye;

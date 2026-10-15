@@ -83,9 +83,13 @@ describe('local clock', () => {
   it('advances with simulated time and rolls the date at midnight', () => {
     const w = defaultWeather();
     w.timeOfDay = 23.5;
+    // The sky's year is the leap year 2016 (skyTime.ts): 30 December (365) -> 31 December (366) -> 1 January.
     w.dayOfYear = 365;
     advanceTimeOfDay(w, 3600);
     expect(w.timeOfDay).toBeCloseTo(0.5, 9);
+    expect(w.dayOfYear).toBe(366);
+    w.timeOfDay = 23.5;
+    advanceTimeOfDay(w, 3600);
     expect(w.dayOfYear).toBe(1);
     advanceTimeOfDay(w, 0);
     advanceTimeOfDay(w, -5);
