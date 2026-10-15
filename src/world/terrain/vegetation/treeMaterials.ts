@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { HEMI_OCT_GLSL, IMPOSTOR_FRAME, IMPOSTOR_GRID } from './impostors';
-import { OPEN_RANK, SPECIES_COUNT } from './placement';
+import { SPECIES_COUNT } from './placement';
 import { SPECIES_TINT, TREE_BOUND_RADIUS } from './treeModels';
 
 export interface TreeUniforms {
@@ -45,8 +45,6 @@ uniform vec3 uSpeciesTint[4];
 varying float vFade;
 varying vec3 vTint;
 float treeSpecies() { return mod(floor(aInstB.y), ${SPECIES_COUNT.toFixed(1)}); }
-// Trees outside closed forest (placement.ts OPEN_RANK): their ranks are scaled, so they thin out later.
-bool treeOpen() { return aInstB.y >= ${SPECIES_COUNT.toFixed(1)}; }
 float treeRank() { return fract(aInstB.y) / 0.99; }
 vec3 treeBase() { return vec3(aInstA.x, aInstA.y, -aInstA.z); }
 vec3 treeTint() {
@@ -59,26 +57,15 @@ vec3 treeTint() {
 float treeWidth() { return 0.8 + 0.45 * fract(treeRank() * 13.71); }
 vec3 rotY(vec3 p, float c, float s) { return vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z); }
 // Impostor thinning: the fraction of trees kept at distance d (full density to uDensityRange, then
-// (d0/d)^1.5; may exceed 1), and the size of this tree within it. A tree enters where the kept fraction
-// reaches its rank and grows to full size by where it reaches THIN_BAND times its rank (37 % closer):
-// slowly, next to its own growth in perspective, so trees are not seen swelling up ahead of the aircraft.
+// (d0/d)^1.5; may exceed 1), and how far this tree has faded in. A tree is always drawn at its true size: it
+// fades in (over the terrain's stand-in for it, terrainMaterial.ts, coloured like it) from where the kept
+// fraction reaches its rank to where it reaches THIN_BAND times its rank (37 % closer).
 const float THIN_BAND = 2.0;
 float treeKeep(float d) { return pow(uDensityRange / max(d, 1.0), 1.5) * (1.0 - smoothstep(uFade.z, uFade.w, d)); }
 float treeThin(float keep) {
   float r = treeRank();
   return smoothstep(0.0, 1.0, clamp((keep - r) / ((THIN_BAND - 1.0) * max(r, 1e-3)), 0.0, 1.0));
 }
-// Impostor radius (m) of a tree of height tH at kept fraction keep and thinning thin, and how far (m) its
-// centre drops. The kept trees grow a little to cover for the rest (an open tree's own kind is kept to
-// 1 / OPEN_RANK times the fraction). A thinned tree in closed forest keeps its size and sinks into the canopy
-// shell (terrainMaterial.ts) and the ground, so it comes up through the canopy crown first, like a taller
-// crown; a tree in the open, with no canopy to hide in, shrinks toward its foot (not its middle, which left
-// a small tree hanging in mid-air, half the tree's height up, that grew into the full one).
-float treeRadius(float tH, float keep, float thin) {
-  float grow = 1.0 + 0.5 * (1.0 - sqrt(clamp(treeOpen() ? keep / ${OPEN_RANK.toFixed(3)} : keep, 0.0, 1.0)));
-  return ${TREE_BOUND_RADIUS.toFixed(3)} * tH * grow * (treeOpen() ? thin : 1.0);
-}
-float treeSink(float tH, float R, float thin) { return (1.0 - thin) * (treeOpen() ? 0.5 * tH : 0.5 * tH + R); }
 `;
 
 // Foliage is a rough, porous scatterer: much weaker grazing-angle Fresnel than a smooth dielectric.
@@ -271,14 +258,12 @@ vec3 d = toCam / dist;
 vec3 dl = vec3(tc * d.x - ts * d.z, max(d.y, 0.02), ts * d.x + tc * d.z);
 vec2 e = hemiOctEncode(normalize(dl));
 vGrid = clamp((e * 0.5 + 0.5) * ${IMPOSTOR_GRID.toFixed(1)} - 0.5, 0.0, ${(IMPOSTOR_GRID - 1).toFixed(1)});
-// Thin out with distance (treeThin, treeRadius): a tree leaving the kept fraction goes by its size or by
-// sinking rather than dithering out (no noise without TAA).
-float keep = treeKeep(dist);
-float thin = treeThin(keep);
-float R = treeRadius(tH, keep, thin);
-centre.y -= treeSink(tH, R, thin);
-// Hand-over from the near mesh: the complement of its dither, by the same distance (from the tree's base).
-vFade = thin > 0.0 ? smoothstep(uFade.x, uFade.y, distance(treeBase(), cameraPosition)) : 0.0;
+// Thin out with distance (treeThin): the tree fades, never changes size.
+float thin = treeThin(treeKeep(dist));
+float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH;
+// Coverage: the hand-over from the near mesh (the complement of its dither, by the same distance, from the
+// tree's base) and the distance fade, through the same dither (TemporalAA.ts smooths it from medium up).
+vFade = smoothstep(uFade.x, uFade.y, distance(treeBase(), cameraPosition)) * thin;
 vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), d));
 vec3 up = cross(d, right);
 // Crown width variation stretches the quad sideways (exact for side views, close enough from above).
@@ -355,7 +340,7 @@ export function createImpostorMaterial(albedo: THREE.Texture, normal: THREE.Text
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-v11';
+  mat.customProgramCacheKey = () => 'tree-impostor-v12';
   return mat;
 }
 
@@ -380,7 +365,7 @@ export function createImpostorDepthMaterial(albedo: THREE.Texture, uniforms: Tre
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${IMPOSTOR_SHADOW_FRAGMENT}`)
       .replace('#include <logdepthbuf_fragment>', '');
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-depth-v6';
+  mat.customProgramCacheKey = () => 'tree-impostor-depth-v7';
   return mat;
 }
 
@@ -394,13 +379,16 @@ float tH = aInstA.w;
 bool sunCascade = projectionMatrix[3][3] == 1.0 && projectionMatrix[0][0] > 1.0 / 8000.0;
 vec3 centre = treeBase() + vec3(0.0, 0.5 * tH, 0.0);
 float dist = distance(centre, uViewPos);
-if (tH > 0.0 && sunCascade && dist > uShadowRange) {
-  // The visible impostors' thinning (IMPOSTOR_BEGIN), by the distance from the viewer.
-  float keep = treeKeep(dist);
-  float thin = treeThin(keep);
-  if (thin > 0.0) {
-    float R = treeRadius(tH, keep, thin);
-    centre.y -= clamp((dist - 800.0) * 0.0008, 0.0, 2.5) + treeSink(tH, R, thin);
+// Beyond the shadow proxies, measured as they are (from the tree's base), so every tree has exactly one
+// caster: by mid-height, seen from above, a tree at the boundary cast both shadows or neither, and the
+// shadows of a row of trees blinked as the boundary swept along it.
+if (tH > 0.0 && sunCascade && distance(treeBase(), uViewPos) > uShadowRange) {
+  // The visible impostors' thinning (IMPOSTOR_BEGIN), by the distance from the viewer: a shadow map has no
+  // partial cover, so a fading tree casts once it is half in.
+  float thin = treeThin(treeKeep(dist));
+  if (thin > 0.5) {
+    float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH;
+    centre.y -= clamp((dist - 800.0) * 0.0008, 0.0, 2.5);
     // Toward the light: the shadow camera's +z axis.
     vec3 d = normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]));
     float tc = cos(aInstB.x), ts = sin(aInstB.x);
