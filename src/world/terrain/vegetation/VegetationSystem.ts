@@ -46,15 +46,19 @@ interface VegetationPreset {
   impostorBudget: number;
   /** Near trees cast shadows within this distance, m. */
   shadowRange: number;
-  /** Full meshes hand over to the reduced LOD over [lod, lod * 1.25], m. */
-  lod: number;
+  /**
+   * Full meshes hand over to the reduced LOD over [lod, lod * 1.25], m; null: full meshes throughout. (Off on
+   * every quality: inside the hand-over band both are drawn, which cost more than the reduced meshes saved,
+   * and it was one more visible change in the trees right beside the aircraft.)
+   */
+  lod: number | null;
 }
 
 const PRESETS: Record<QualityLevel, VegetationPreset> = {
-  low: { near: 45, nearOpen: 90, far: 2000, forestFar: 1000, dense: 150, spacing: 6.5, impostorBudget: 20_000, shadowRange: 70, lod: 30 },
-  medium: { near: 60, nearOpen: 140, far: 2800, forestFar: 1250, dense: 190, spacing: 6, impostorBudget: 32_000, shadowRange: 140, lod: 45 },
-  high: { near: 80, nearOpen: 180, far: 3600, forestFar: 1500, dense: 245, spacing: 5.5, impostorBudget: 50_000, shadowRange: 180, lod: 60 },
-  ultra: { near: 120, nearOpen: 280, far: 5000, forestFar: 2000, dense: 330, spacing: 5, impostorBudget: 90_000, shadowRange: 280, lod: 100 },
+  low: { near: 55, nearOpen: 90, far: 2000, forestFar: 1000, dense: 150, spacing: 6.5, impostorBudget: 20_000, shadowRange: 70, lod: null },
+  medium: { near: 75, nearOpen: 140, far: 2800, forestFar: 1250, dense: 190, spacing: 6, impostorBudget: 32_000, shadowRange: 140, lod: null },
+  high: { near: 100, nearOpen: 180, far: 3600, forestFar: 1500, dense: 245, spacing: 5.5, impostorBudget: 50_000, shadowRange: 180, lod: null },
+  ultra: { near: 150, nearOpen: 280, far: 5000, forestFar: 2000, dense: 330, spacing: 5, impostorBudget: 90_000, shadowRange: 280, lod: null },
 };
 
 const CELL = 256;
@@ -328,7 +332,8 @@ export class VegetationSystem {
     this.uniforms.uForestFar.value.set(p.forestFar * 0.75, p.forestFar);
     this.uniforms.uDensityRange.value = p.dense;
     this.uniforms.uShadowRange.value = Math.min(p.shadowRange, p.near);
-    this.uniforms.uLodFade.value.set(Math.min(p.lod, p.near * 0.6), Math.min(p.lod * 1.25, p.near * 0.75));
+    if (p.lod === null) this.uniforms.uLodFade.value.set(1e5, 2e5);
+    else this.uniforms.uLodFade.value.set(Math.min(p.lod, p.near * 0.6), Math.min(p.lod * 1.25, p.near * 0.75));
     // The canopy shell rises where the tree meshes hand over to impostors.
     this.forestFade.set(p.near * 0.8, p.near * 1.05);
     this.canopyKeep.set(p.dense, p.forestFar, p.far, 1);
