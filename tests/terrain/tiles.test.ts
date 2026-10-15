@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { morphWindow, nodeKey, nodeSize, NodeRefPool, selectNodes, type LodSettings, type NodeRef } from '../../src/world/terrain/quadtree';
 import { buildTile, buildTileIndices, tileVertexCount } from '../../src/world/terrain/tileBuilder';
-import { BUCKETS, buildTreeCell, TREE_STRIDE } from '../../src/world/terrain/vegetation/placement';
+import { BUCKETS, buildTreeCell, SPECIES_COUNT, TREE_STRIDE } from '../../src/world/terrain/vegetation/placement';
 import { AIRPORT } from '../../src/core/world';
 import { makeParcel, parcelAt } from '../../src/world/terrain/fields';
 
@@ -178,11 +178,13 @@ describe('quadtree selection', () => {
 });
 
 describe('vegetation placement', () => {
-  it('is deterministic, sorted by rank and keeps the airfield clear', () => {
+  it('is deterministic, open trees then forest trees, each sorted by rank, and keeps the airfield clear', () => {
     const a = buildTreeCell({ cx: 3, cz: 20, size: 256, spacing: 5.5 });
     const b = buildTreeCell({ cx: 3, cz: 20, size: 256, spacing: 5.5 });
     expect(Array.from(a.instances)).toEqual(Array.from(b.instances));
+    for (let i = 0; i < a.count; i++) expect(a.instances[i * TREE_STRIDE + 5] >= SPECIES_COUNT).toBe(i < a.openCount);
     for (let i = 1; i < a.count; i++) {
+      if (i === a.openCount) continue;
       const r0 = a.instances[(i - 1) * TREE_STRIDE + 5] % 1;
       const r1 = a.instances[i * TREE_STRIDE + 5] % 1;
       expect(r1).toBeGreaterThanOrEqual(r0 - 1e-6);

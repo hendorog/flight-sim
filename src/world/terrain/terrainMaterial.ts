@@ -55,8 +55,9 @@ export interface TerrainUniforms {
   /** Distances from the viewer over which the forest canopy shell rises from the ground (forest floor) to its full height, m. */
   uForestFade: { value: THREE.Vector2 };
   /**
-   * The tree impostors' thinning (VegetationSystem): full density to x, then (x / d)^1.5, fading out from y to
-   * z (m); w = 1 when there are impostors. Where they thin, the canopy shell shows the sunlit crowns itself.
+   * The tree impostors' thinning (VegetationSystem): full density to x, then (x / d)^1.5; forest trees gone by
+   * y, trees outside closed forest by z, each fading out from 3/4 of it (m); w = 1 when there are impostors.
+   * Where they thin, the canopy shell shows the sunlit crowns itself.
    */
   uCanopyKeep: { value: THREE.Vector4 };
   /** The viewer's position (three.js world). The shadow pass needs it: there cameraPosition is the light's. */
@@ -489,12 +490,13 @@ if (tFarForest > 0.0) {
   float few = clamp(fwidth(fe), 0.01, 0.25);
   forestW = mix(forestW, smoothstep(0.42 - few, 0.42 + few, fe), tFarForest);
 }
-// Fraction of the trees the impostors still draw here (VegetationSystem: full density to uCanopyKeep.x, then
-// (x / d)^1.5, gone by uCanopyKeep.z; none without impostors).
-float tKeepRaw = uCanopyKeep.w > 0.5 ? pow(uCanopyKeep.x / max(tDist, 1.0), 1.5) * (1.0 - smoothstep(uCanopyKeep.y, uCanopyKeep.z, tDist)) : 0.0;
-float tKeep = min(1.0, tKeepRaw);
-// The same for the trees outside closed forest, which are thinned later (placement.ts OPEN_RANK).
-float tKeepOpen = min(1.0, tKeepRaw / ${OPEN_RANK.toFixed(3)});
+// Fraction of the forest trees the impostors still draw here (VegetationSystem: full density to uCanopyKeep.x,
+// then (x / d)^1.5, gone by uCanopyKeep.y; none without impostors).
+float tKeepRaw = uCanopyKeep.w > 0.5 ? pow(uCanopyKeep.x / max(tDist, 1.0), 1.5) : 0.0;
+float tKeep = min(1.0, tKeepRaw) * (1.0 - smoothstep(0.75 * uCanopyKeep.y, uCanopyKeep.y, tDist));
+// The same for the trees outside closed forest, which are thinned later (placement.ts OPEN_RANK) and fade
+// out further away.
+float tKeepOpen = min(1.0, tKeepRaw / ${OPEN_RANK.toFixed(3)}) * (1.0 - smoothstep(0.75 * uCanopyKeep.z, uCanopyKeep.z, tDist));
 // Scattered trees outside the closed stands (placement.ts: from forest density 0.2 up, edge trees and open
 // woodland). As the impostors thin out, stand in for the crowns no longer drawn with partial canopy cover,
 // so the land keeps its tone and a wood its extent as the trees come and go. Crown cover is about 1.3 times

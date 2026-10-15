@@ -24,6 +24,8 @@ const makeUniforms = (fade: THREE.Vector4): TreeUniforms => ({
   uShadowRange: { value: 1e6 },
   // LOD 0 everywhere, or (lod=1) the reduced meshes everywhere.
   uLodFade: { value: lod ? new THREE.Vector2(0, 1e-3) : new THREE.Vector2(1e6, 2e6) },
+  uForestFar: { value: new THREE.Vector2(fade.z, fade.w) },
+  uNearOpen: { value: new THREE.Vector2(fade.x, fade.y) },
   uFrame: { value: 0 },
 });
 

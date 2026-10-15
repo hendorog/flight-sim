@@ -28,6 +28,10 @@ export interface TreeUniforms {
   uShadowRange: { value: number };
   /** Distances over which the full tree meshes (LOD 0) hand over to the reduced ones (LOD 1), m. */
   uLodFade: { value: THREE.Vector2 };
+  /** Distances over which the impostors of forest trees fade out (z, w of uFade: of open trees), m. */
+  uForestFar: { value: THREE.Vector2 };
+  /** Distances over which the near meshes of trees outside closed forest hand over (x, y of uFade: forest). */
+  uNearOpen: { value: THREE.Vector2 };
   /** Frame counter: moves the hand-over dither every frame where the frame is stabilised over time. */
   uFrame: { value: number };
   [name: string]: { value: unknown };
@@ -38,6 +42,8 @@ attribute vec4 aInstA;
 attribute vec2 aInstB;
 uniform float uTime;
 uniform vec4 uFade;
+uniform vec2 uForestFar;
+uniform vec2 uNearOpen;
 uniform float uDensityRange;
 uniform vec3 uViewPos;
 uniform float uShadowRange;
@@ -61,7 +67,16 @@ vec3 rotY(vec3 p, float c, float s) { return vec3(c * p.x + s * p.z, p.y, -s * p
 // fades in (over the terrain's stand-in for it, terrainMaterial.ts, coloured like it) from where the kept
 // fraction reaches its rank to where it reaches THIN_BAND times its rank (37 % closer).
 const float THIN_BAND = 2.0;
-float treeKeep(float d) { return pow(uDensityRange / max(d, 1.0), 1.5) * (1.0 - smoothstep(uFade.z, uFade.w, d)); }
+// Trees outside closed forest (placement.ts): flagged in the species field, ranks scaled by OPEN_RANK; they
+// fade out by uFade.w, forest trees (where the canopy shell stands in) by uForestFar.y.
+bool treeOpen() { return aInstB.y >= ${SPECIES_COUNT.toFixed(1)}; }
+// Mesh-to-impostor hand-over band: forest trees go to impostors sooner (the canopy surrounds them, and from
+// above an impostor looks like the mesh); trees in the open, seen side-on, keep the mesh further.
+vec2 treeNear() { return treeOpen() ? uNearOpen : uFade.xy; }
+float treeKeep(float d) {
+  vec2 far = treeOpen() ? uFade.zw : uForestFar;
+  return pow(uDensityRange / max(d, 1.0), 1.5) * (1.0 - smoothstep(far.x, far.y, d));
+}
 float treeThin(float keep) {
   float r = treeRank();
   return smoothstep(0.0, 1.0, clamp((keep - r) / ((THIN_BAND - 1.0) * max(r, 1e-3)), 0.0, 1.0));
@@ -136,7 +151,8 @@ float ph = treeRank() * 40.0;
 tp.x += sway * sin(uTime * 1.3 + ph);
 tp.z += sway * cos(uTime * 1.1 + ph * 1.7);
 vec3 transformed = rotY(tp, tc, ts) + treeBase();
-vFade = smoothstep(uFade.x, uFade.y, distance(treeBase(), cameraPosition));
+vec2 tNear = treeNear();
+vFade = smoothstep(tNear.x, tNear.y, distance(treeBase(), cameraPosition));
 `;
 // Mesh LODs: LOD 0 hands over to LOD 1 over uLodFade with the same complementary screen-door dither as the
 // hand-over to impostors (the two bands do not overlap). Trees wholly handed over (the instance lists keep
@@ -202,7 +218,7 @@ export function createNearTreeMaterial(foliage: THREE.Texture, uniforms: TreeUni
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => `tree-near-v9-${lod}`;
+  mat.customProgramCacheKey = () => `tree-near-v11-${lod}`;
   return mat;
 }
 
@@ -263,7 +279,8 @@ float thin = treeThin(treeKeep(dist));
 float R = ${TREE_BOUND_RADIUS.toFixed(3)} * tH;
 // Coverage: the hand-over from the near mesh (the complement of its dither, by the same distance, from the
 // tree's base) and the distance fade, through the same dither (TemporalAA.ts smooths it from medium up).
-vFade = smoothstep(uFade.x, uFade.y, distance(treeBase(), cameraPosition)) * thin;
+vec2 tNear = treeNear();
+vFade = smoothstep(tNear.x, tNear.y, distance(treeBase(), cameraPosition)) * thin;
 vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), d));
 vec3 up = cross(d, right);
 // Crown width variation stretches the quad sideways (exact for side views, close enough from above).
@@ -340,7 +357,7 @@ export function createImpostorMaterial(albedo: THREE.Texture, normal: THREE.Text
       .replace('#include <lights_fragment_maps>', FOLIAGE_IBL);
     useVertexLogDepth(shader);
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-v12';
+  mat.customProgramCacheKey = () => 'tree-impostor-v14';
   return mat;
 }
 
@@ -365,7 +382,7 @@ export function createImpostorDepthMaterial(albedo: THREE.Texture, uniforms: Tre
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${IMPOSTOR_SHADOW_FRAGMENT}`)
       .replace('#include <logdepthbuf_fragment>', '');
   };
-  mat.customProgramCacheKey = () => 'tree-impostor-depth-v7';
+  mat.customProgramCacheKey = () => 'tree-impostor-depth-v9';
   return mat;
 }
 

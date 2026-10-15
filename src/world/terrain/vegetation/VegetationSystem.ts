@@ -10,9 +10,12 @@
 // the second buffer at most FAR_UPLOAD_BUDGET instances per frame (streaming never uploads megabytes in
 // one frame, and never into the buffer being drawn), and the two swap when it is complete. The staging
 // list is drawn with no instances meanwhile: that is what makes three upload each frame's part.
-// Per-pixel distance fades in the shaders make rebuild points invisible. Both lists are capped by
-// per-quality budgets: in dense forest the near range and the impostors' full-density range shrink (eased
-// over a second or so) until the counts fit.
+// Per-pixel distance fades in the shaders make rebuild points invisible.
+// Every range is fixed per quality: how a tree is drawn depends only on its own distance, never on a budget
+// re-fitted as the viewer moves (that thinned and restored trees all around at once, while their distance
+// hardly changed). The ranges are chosen to fit the impostor budget over unbroken forest: forest trees,
+// which the terrain's canopy shell stands in for, go by `forestFar`; the few trees outside closed forest
+// (placement.ts OPEN_RANK) keep full density further and go by `far`.
 
 import * as THREE from 'three';
 import type { QualityLevel, SimContext } from '../../../core/context';
@@ -24,17 +27,22 @@ import { createImpostorDepthMaterial, createImpostorMaterial, createNearTreeMate
 import { createShadowProxies, createTreeGeometries } from './treeModels';
 
 interface VegetationPreset {
-  /** Near meshes are drawn to this distance (hand-over to impostors over its last 12%), m. */
+  /** Near meshes of forest trees are drawn to this distance (hand-over to impostors over its last 12%), m. */
   near: number;
-  /** Impostors are gone by this distance, m. */
+  /** The same for trees outside closed forest (fencelines, hedgerows, lone trees), m. */
+  nearOpen: number;
+  /** Impostors of trees outside closed forest are gone by this distance, m. */
   far: number;
-  /** Impostors keep full density to this distance, m. */
+  /** Impostors of forest trees are gone by this distance (the canopy shell stands in beyond), m. */
+  forestFar: number;
+  /** Impostors keep full density to this distance (open trees to about 2.5 times it), m. */
   dense: number;
   /** Candidate spacing in dense forest, m. */
   spacing: number;
-  /** Most near meshes drawn; in dense forest the near range shrinks to fit. */
-  nearBudget: number;
-  /** Most impostors drawn; in dense forest the full-density range shrinks to fit. */
+  /**
+   * Impostor list capacity. `dense` and `forestFar` keep unbroken forest to about 85 % of it; the nearest
+   * cells are listed first, so an overflow would only drop the farthest.
+   */
   impostorBudget: number;
   /** Near trees cast shadows within this distance, m. */
   shadowRange: number;
@@ -43,13 +51,11 @@ interface VegetationPreset {
 }
 
 const PRESETS: Record<QualityLevel, VegetationPreset> = {
-  low: { near: 90, far: 2000, dense: 350, spacing: 6.5, nearBudget: 600, impostorBudget: 20_000, shadowRange: 70, lod: 30 },
-  medium: { near: 140, far: 2800, dense: 450, spacing: 6, nearBudget: 1000, impostorBudget: 32_000, shadowRange: 140, lod: 45 },
-  high: { near: 180, far: 3600, dense: 550, spacing: 5.5, nearBudget: 1600, impostorBudget: 50_000, shadowRange: 180, lod: 60 },
-  ultra: { near: 280, far: 5000, dense: 800, spacing: 5, nearBudget: 3500, impostorBudget: 90_000, shadowRange: 280, lod: 100 },
+  low: { near: 45, nearOpen: 90, far: 2000, forestFar: 1000, dense: 150, spacing: 6.5, impostorBudget: 20_000, shadowRange: 70, lod: 30 },
+  medium: { near: 60, nearOpen: 140, far: 2800, forestFar: 1250, dense: 190, spacing: 6, impostorBudget: 32_000, shadowRange: 140, lod: 45 },
+  high: { near: 80, nearOpen: 180, far: 3600, forestFar: 1500, dense: 245, spacing: 5.5, impostorBudget: 50_000, shadowRange: 180, lod: 60 },
+  ultra: { near: 120, nearOpen: 280, far: 5000, forestFar: 2000, dense: 330, spacing: 5, impostorBudget: 90_000, shadowRange: 280, lod: 100 },
 };
-/** Rate at which the effective ranges follow their budgeted targets, 1/s. */
-const RANGE_RATE = 1.5;
 
 const CELL = 256;
 /** Rebuild the near / far instance lists after the camera moves this far, m. */
@@ -155,6 +161,8 @@ export class VegetationSystem {
     uViewPos: { value: new THREE.Vector3() },
     uShadowRange: { value: 100 },
     uLodFade: { value: new THREE.Vector2(60, 75) },
+    uForestFar: { value: new THREE.Vector2(1125, 1500) },
+    uNearOpen: { value: new THREE.Vector2(158, 180) },
     uFrame: { value: 0 },
   };
   private foliage!: THREE.Texture;
@@ -167,8 +175,8 @@ export class VegetationSystem {
   /** The two impostor lists: far[farLive] is drawn, the other is the one being written. */
   private readonly far: InstanceList[] = [];
   private farLive = 0;
-  /** The list being written: cells (nearest first) and how many of each one's trees; next to write. */
-  private readonly farPlan: Array<[TreeCellData, number]> = [];
+  /** The list being written: cells (nearest first) and how many of each one's open and forest trees. */
+  private readonly farPlan: Array<[TreeCellData, number, number]> = [];
   private farPlanPos = 0;
   private farBuilding = false;
   private readonly bucketOrder = new Uint8Array(BUCKETS * BUCKETS);
@@ -194,20 +202,13 @@ export class VegetationSystem {
   private readonly wantOrder: number[] = [];
   private readonly byWantDistance = (a: number, b: number): number => this.wantD[a] - this.wantD[b];
   private generation = 0;
-  /** Budget-limited near range and impostor full-density range: targets and eased current values. */
-  private nearTarget = 0;
-  private nearRange = 0;
-  private denseTarget = 0;
-  private denseRange = 0;
-  /** Ranges the current instance lists were built for. */
-  private nearBuilt = 0;
-  private denseBuilt = 0;
 
   /**
    * @param pool       the terrain worker pool (tree cells are built there, behind terrain tiles)
    * @param forestFade receives the distances over which the terrain's forest canopy shell rises
-   * @param canopyKeep receives the impostors' thinning (full-density range, fade-out start and end, m), so
-   *                   the canopy shell can take over the sunlit crowns where the impostors thin out
+   * @param canopyKeep receives the impostors' thinning (full-density range, forest and open trees' fade-out
+   *                   ends; each fade-out starts at 3/4 of its end, m), so the canopy shell can take over the
+   *                   sunlit crowns where the impostors thin out
    */
   constructor(
     private readonly pool: WorkerPool,
@@ -286,8 +287,6 @@ export class VegetationSystem {
     }
     const spacingChanged = p.spacing !== this.preset.spacing;
     this.preset = p;
-    this.nearTarget = this.nearRange = p.near;
-    this.denseTarget = this.denseRange = p.dense;
     this.applyRanges();
     if (spacingChanged) {
       this.cells.clear();
@@ -305,27 +304,18 @@ export class VegetationSystem {
     this.uniforms.uTime.value += dt;
     this.uniforms.uFrame.value = (this.uniforms.uFrame.value + 1) % 64;
     this.uniforms.uViewPos.value.copy(ctx.camera.position);
-    // Ease the budgeted ranges so a change of budget never makes a batch of trees pop (while paused, dt is
-    // 0: settle at once, so a paused scene shows what it will look like).
-    const k = dt > 0 ? Math.min(1, dt * RANGE_RATE) : 1;
-    this.nearRange += (this.nearTarget - this.nearRange) * k;
-    this.denseRange += (this.denseTarget - this.denseRange) * k;
-    this.applyRanges();
     const cam = ctx.camera.position;
     this.streamCells(cam);
-    // Re-plan after moving, when cells arrive or leave, or once the eased ranges have shrunk enough that
-    // the lists carry many instances the shaders no longer draw.
-    const farStale = this.denseRange < this.denseBuilt * 0.85;
-    const nearStale = this.nearRange < this.nearBuilt * 0.85;
-    // While cells stream in (after a teleport) they arrive every frame: re-plan the impostors at most every
-    // FAR_REBUILD_INTERVAL_MS of wall-clock time (dt is 0 while paused, and a paused scene must still fill
-    // in after a teleport or quality change), the near list (small) at once.
+    // Re-plan after moving, or when cells arrive or leave. While cells stream in (after a teleport) they
+    // arrive every frame: re-plan the impostors at most every FAR_REBUILD_INTERVAL_MS of wall-clock time (dt
+    // is 0 while paused, and a paused scene must still fill in after a teleport or quality change), the near
+    // list (small) at once.
     const now = performance.now();
     const farDue = this.farCellsChanged && now - this.lastFarPlan >= FAR_REBUILD_INTERVAL_MS;
     // (A list being written is finished first: restarting it on every arriving cell could starve it.)
-    if (!this.farBuilding && (farDue || farStale || cam.distanceToSquared(this.lastFar) > FAR_REBUILD * FAR_REBUILD)) this.planFar(cam);
+    if (!this.farBuilding && (farDue || cam.distanceToSquared(this.lastFar) > FAR_REBUILD * FAR_REBUILD)) this.planFar(cam);
     this.pumpFar(cam, FAR_UPLOAD_BUDGET);
-    if (this.cellsChanged || nearStale || cam.distanceToSquared(this.lastNear) > NEAR_REBUILD * NEAR_REBUILD) this.rebuildNear(cam);
+    if (this.cellsChanged || cam.distanceToSquared(this.lastNear) > NEAR_REBUILD * NEAR_REBUILD) this.rebuildNear(cam);
     this.cellsChanged = false;
   }
 
@@ -333,13 +323,15 @@ export class VegetationSystem {
     const p = this.preset;
     // Hand-over bands: they must not overlap (treeMaterials.ts). Inside one both representations are drawn,
     // so wider bands (smoother still) cost frame time in dense forest: about 15 % at a quarter of the range.
-    this.uniforms.uFade.value.set(this.nearRange * 0.88, this.nearRange, p.far * 0.75, p.far);
-    this.uniforms.uDensityRange.value = this.denseRange;
-    this.uniforms.uShadowRange.value = Math.min(p.shadowRange, this.nearRange);
-    this.uniforms.uLodFade.value.set(Math.min(p.lod, this.nearRange * 0.6), Math.min(p.lod * 1.25, this.nearRange * 0.75));
+    this.uniforms.uFade.value.set(p.near * 0.88, p.near, p.far * 0.75, p.far);
+    this.uniforms.uNearOpen.value.set(p.nearOpen * 0.88, p.nearOpen);
+    this.uniforms.uForestFar.value.set(p.forestFar * 0.75, p.forestFar);
+    this.uniforms.uDensityRange.value = p.dense;
+    this.uniforms.uShadowRange.value = Math.min(p.shadowRange, p.near);
+    this.uniforms.uLodFade.value.set(Math.min(p.lod, p.near * 0.6), Math.min(p.lod * 1.25, p.near * 0.75));
     // The canopy shell rises where the tree meshes hand over to impostors.
-    this.forestFade.set(this.nearRange * 0.8, this.nearRange * 1.05);
-    this.canopyKeep.set(this.denseRange, p.far * 0.75, p.far, 1);
+    this.forestFade.set(p.near * 0.8, p.near * 1.05);
+    this.canopyKeep.set(p.dense, p.forestFar, p.far, 1);
   }
 
   /** Instances in the near (mesh) and far (impostor) lists, and cells held, for diagnostics. */
@@ -358,12 +350,6 @@ export class VegetationSystem {
       if (missing === 0) break;
       await new Promise((r) => setTimeout(r, 5));
     }
-    // Start at the budgeted ranges rather than easing into them.
-    this.planFar(cam);
-    this.rebuildNear(cam);
-    this.denseRange = this.denseTarget;
-    this.nearRange = this.nearTarget;
-    this.applyRanges();
     this.planFar(cam);
     this.pumpFar(cam, Infinity);
     this.rebuildNear(cam);
@@ -448,7 +434,7 @@ export class VegetationSystem {
         this.farCellsChanged = this.scanDirty = true;
         // The near list only needs rebuilding for cells within its reach.
         const cam = this.uniforms.uViewPos.value;
-        if (cellDistance(cx, cz, cam.x, -cam.z) < this.preset.near + NEAR_REBUILD + 20) this.cellsChanged = true;
+        if (cellDistance(cx, cz, cam.x, -cam.z) < this.preset.nearOpen + NEAR_REBUILD + 20) this.cellsChanged = true;
       })
       .catch(() => undefined);
   }
@@ -458,14 +444,13 @@ export class VegetationSystem {
     const east = cam.x;
     const north = -cam.z;
     const margin = NEAR_REBUILD + 20;
-    const maxReach = this.preset.near + margin;
-    // Distances (squared, 3D: the shaders fade by 3D distance, so trees far below a high camera never
-    // need the near mesh) of every candidate, histogrammed to find the range that fits the budget.
-    const bins = new Uint32Array(64);
-    const binSize = maxReach / bins.length;
+    // Distances 3D (the shaders fade by 3D distance, so trees far below a high camera never need the mesh).
+    // Forest trees to the forest near range, open ones (the first openCount of a cell) to theirs.
+    const reach = this.preset.nearOpen + margin;
+    const reachForest = this.preset.near + margin;
     const visit = (fn: (a: Float32Array, o: number, d: number, base: number) => void): void => {
       for (const c of this.cells.values()) {
-        if (!c.data || cellDistance(c.cx, c.cz, east, north) > maxReach) continue;
+        if (!c.data || cellDistance(c.cx, c.cz, east, north) > reach) continue;
         const a = c.data.instances;
         for (let i = 0; i < c.data.count; i++) {
           const o = i * TREE_STRIDE;
@@ -474,31 +459,17 @@ export class VegetationSystem {
           const dy = Math.max(0, cam.y - a[o + 1] - a[o + 3]);
           const d2 = de * de + dn * dn + dy * dy;
           const dyBase = cam.y - a[o + 1];
-          if (d2 < maxReach * maxReach) fn(a, o, Math.sqrt(d2), Math.sqrt(de * de + dn * dn + dyBase * dyBase));
+          const r = i < c.data.openCount ? reach : reachForest;
+          if (d2 < r * r) fn(a, o, Math.sqrt(d2), Math.sqrt(de * de + dn * dn + dyBase * dyBase));
         }
       }
     };
-    visit((_a, _o, d) => bins[Math.min(bins.length - 1, Math.floor(d / binSize))]++);
-    let total = 0;
-    let fit = maxReach;
-    for (let b = 0; b < bins.length; b++) {
-      total += bins[b];
-      if (total > this.preset.nearBudget) {
-        fit = b * binSize;
-        break;
-      }
-    }
-    this.nearTarget = Math.max(20, Math.min(this.preset.near, fit - margin));
-    // Keep everything the eased range can still reach; the dither fades the rest.
-    this.nearBuilt = Math.max(this.nearTarget, this.nearRange);
-    const reach = this.nearBuilt + margin;
     // Gather per LOD and species with distances, then write each list front to back: with depth written
     // from the vertex stage (treeMaterials.ts) the GPU rejects foliage hidden behind nearer trees before
     // shading. A tree within the LOD hand-over band (plus the rebuild margin) goes into both LOD lists.
     const [lod0, lod1] = [this.uniforms.uLodFade.value.x - margin, this.uniforms.uLodFade.value.y + margin];
     const picked: Array<Array<Array<{ a: Float32Array; o: number; d: number }>>> = [0, 1].map(() => this.near[0].map(() => []));
     visit((a, o, d, base) => {
-      if (d > reach) return;
       const s = Math.floor(a[o + 5]) % SPECIES_COUNT;
       if (base <= lod1) picked[0][s].push({ a, o, d });
       if (base >= lod0) picked[1][s].push({ a, o, d });
@@ -524,7 +495,7 @@ export class VegetationSystem {
     this.farCellsChanged = false;
     const east = cam.x;
     const north = -cam.z;
-    const { far, dense, impostorBudget } = this.preset;
+    const { far, forestFar, dense } = this.preset;
     // Conservative per-cell distance: the nearest point of the cell, less the rebuild margin.
     const cells: Array<[TreeCellData, number]> = [];
     for (const c of this.cells.values()) {
@@ -532,40 +503,21 @@ export class VegetationSystem {
       const d = Math.max(1, cellDistance(c.cx, c.cz, east, north) - FAR_REBUILD);
       if (d <= far) cells.push([c.data, d]);
     }
-    // Nearest cells first, so the impostors are drawn roughly front to back.
+    // Nearest cells first, so the impostors are drawn roughly front to back (and an overflow of the
+    // capacity drops only the farthest).
     cells.sort((x, y) => x[1] - y[1]);
-    const total = (range: number): number => {
-      let n = 0;
-      for (const [data, d] of cells) n += keptCount(data, d, range);
-      return n;
-    };
-    // Largest full-density range (<= preset) whose impostor count fits the budget.
-    let target = dense;
-    if (total(dense) > impostorBudget) {
-      let lo = 20;
-      let hi = dense;
-      for (let it = 0; it < 8; it++) {
-        const mid = 0.5 * (lo + hi);
-        if (total(mid) > impostorBudget) hi = mid;
-        else lo = mid;
-      }
-      target = lo;
-    }
-    this.denseTarget = target;
-    // Build for whichever of the eased and target ranges is larger, so nothing the shader still keeps
-    // is missing from the list while the range eases down.
-    const range = Math.max(target, this.denseRange);
-    this.denseBuilt = range;
     const plan = this.farPlan;
     plan.length = 0;
     const staging = this.far[1 - this.farLive];
     const capacity = staging.array.length / TREE_STRIDE;
     let n = 0;
     for (const [data, d] of cells) {
-      const k = Math.min(keptCount(data, d, range), capacity - n);
-      if (k <= 0) continue;
-      plan.push([data, k]);
-      n += k;
+      const keep = Math.pow(dense / d, 1.5);
+      const open = Math.min(rankPrefix(data, 0, data.openCount, keep), capacity - n);
+      n += open;
+      const forest = Math.min(d > forestFar ? 0 : rankPrefix(data, data.openCount, data.count, keep) - data.openCount, capacity - n);
+      n += forest;
+      if (open + forest > 0) plan.push([data, open, forest]);
     }
     this.farPlanPos = 0;
     staging.count = 0;
@@ -582,8 +534,8 @@ export class VegetationSystem {
     const plan = this.farPlan;
     const start = staging.count;
     while (this.farPlanPos < plan.length && staging.count - start < budget) {
-      const [data, n] = plan[this.farPlanPos++];
-      this.writeNearFirst(staging, data, n, cam);
+      const [data, open, forest] = plan[this.farPlanPos++];
+      this.writeNearFirst(staging, data, open, forest, cam);
     }
     staging.touch(start, staging.count - start);
     if (this.farPlanPos < plan.length) return;
@@ -596,11 +548,11 @@ export class VegetationSystem {
   }
 
   /**
-   * Append a cell's first n trees by rank (the ones the shader keeps at this distance), its sub-square
-   * buckets nearest the camera first: where impostors overlap, front-to-back order lets the GPU reject
-   * hidden ones early.
+   * Append a cell's first `open` open trees and first `forest` forest trees by rank (the ones the shader
+   * keeps at this distance), its sub-square buckets nearest the camera first: where impostors overlap,
+   * front-to-back order lets the GPU reject hidden ones early.
    */
-  private writeNearFirst(list: InstanceList, data: TreeCellData, n: number, cam: THREE.Vector3): void {
+  private writeNearFirst(list: InstanceList, data: TreeCellData, open: number, forest: number, cam: THREE.Vector3): void {
     const sub = CELL / BUCKETS;
     const nb = BUCKETS * BUCKETS;
     const order = this.bucketOrder;
@@ -621,15 +573,19 @@ export class VegetationSystem {
     const src = data.instances;
     const dst = list.array;
     let o = list.count * TREE_STRIDE;
+    const forestEnd = data.openCount + forest;
     for (let i = 0; i < nb; i++) {
       const b = order[i];
-      // (Each bucket lists its trees in rank order: the kept ones come first.)
-      for (let k = data.bucketStart[b]; k < data.bucketStart[b + 1] && data.order[k] < n; k++) {
-        const s0 = data.order[k] * TREE_STRIDE;
+      // (Each bucket lists its trees in instance order: open ones, then forest ones, each by rank.)
+      for (let k = data.bucketStart[b]; k < data.bucketStart[b + 1]; k++) {
+        const t = data.order[k];
+        if (t >= forestEnd) break;
+        if (t >= open && t < data.openCount) continue;
+        const s0 = t * TREE_STRIDE;
         for (let c = 0; c < TREE_STRIDE; c++) dst[o++] = src[s0 + c];
       }
     }
-    list.count += n;
+    list.count += open + forest;
   }
 }
 
@@ -643,19 +599,11 @@ function cellDistance(cx: number, cz: number, east: number, north: number): numb
 }
 
 /**
- * Impostors of a cell the shader may keep at distance d (m) with full density to `range`: all within it,
- * then the rank-sorted prefix of fraction (range / d)^1.5 (the same law as the impostor vertex shader).
+ * Index in [lo, hi) (instances sorted by rank there) of the first tree whose rank is not below `keep`: the
+ * end of the part's kept prefix.
  */
-function keptCount(data: TreeCellData, d: number, range: number): number {
-  const keep = Math.min(1, Math.pow(range / d, 1.5));
-  return keep >= 1 ? data.count : rankPrefix(data, keep);
-}
-
-/** Number of leading instances (sorted by rank) whose rank is below `keep`. */
-function rankPrefix(cell: TreeCellData, keep: number): number {
+function rankPrefix(cell: TreeCellData, lo: number, hi: number, keep: number): number {
   const a = cell.instances;
-  let lo = 0;
-  let hi = cell.count;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     const v = a[mid * TREE_STRIDE + 5];
