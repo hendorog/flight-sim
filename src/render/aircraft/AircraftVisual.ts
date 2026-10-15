@@ -28,7 +28,7 @@ import { C172S_VISUAL } from '../../aircraft/c172s/visual';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import type { PanelDef } from '../../instruments/panelDef';
 import type { AirframeVisualDef } from './airframe/types';
-import { CabinBake, cabinLamps, patchCabinMaterial, updateCabinBounce } from './cabinLight';
+import { CabinBake, cabinLamps, patchCabinMaterial, resetCabinLamps, updateCabinBounce } from './cabinLight';
 import { Cockpit } from './cockpit';
 import { buildFuselage, buildNacelles, cabinFloorGeometry, createFuselageShapes, type FuselageParts, type NacelleParts } from './fuselage';
 import { LandingGear } from './gear';
@@ -148,6 +148,8 @@ export class AircraftVisual implements Subsystem {
 
   init(ctx: SimContext): void {
     const def = this.def;
+    // The lamp state is shared by every cabin material and the exposure: start dark, not with the last aircraft's lamps.
+    resetCabinLamps();
     if (def.rotorcraft) {
       const t0 = performance.now();
       const Visual = def.id === 's269' ? S269ExteriorVisual : def.id === 'r44' ? R44ExteriorVisual : RotorcraftVisual;
@@ -177,11 +179,11 @@ export class AircraftVisual implements Subsystem {
       this.nacelles = buildNacelles(mat, this.root, def.nacelles, def.fairings);
       this.root.add(this.nacelles.group);
     }
-    this.lights = new AircraftLights(ctx.quality !== 'low', this.opts.lightScale, this.tail.rudder.object, def.lamps, this.gear.noseMount);
+    this.lights = new AircraftLights(ctx.quality !== 'low', this.opts.lightScale, this.tail.rudder.object, def.lamps, this.gear.noseMount, def.nominalVoltage ?? 28);
     this.quality = ctx.quality;
     this.root.add(this.lights.group);
     const floor = def.cockpit.floor;
-    this.cockpit = new Cockpit(mat, cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1), shapes, def.cockpit, this.opts.panelDef, isAircraftId(def.id) ? def.id : 'c172s');
+    this.cockpit = new Cockpit(mat, cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1), shapes, def.cockpit, this.opts.panelDef, isAircraftId(def.id) ? def.id : 'c172s', def.nominalVoltage ?? 28);
     // The lining belongs to the interior so it is culled with it at a distance.
     this.cockpit.group.add(this.fuselage.lining);
     this.occupants = buildOccupants(def.cockpit);
@@ -387,6 +389,7 @@ export class AircraftVisual implements Subsystem {
 
   dispose(): void {
     this.disposed = true;
+    resetCabinLamps();
     if (this.helicopter) { this.helicopter.dispose(); this.contactShadow.mesh.removeFromParent(); this.contactShadow.dispose(); this.root.removeFromParent(); return; }
     this.root.removeFromParent();
     this.contactShadow.mesh.removeFromParent();

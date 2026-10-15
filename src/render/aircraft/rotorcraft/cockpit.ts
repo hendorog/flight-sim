@@ -1,5 +1,7 @@
 // Shaped helicopter panels and controls, independent of the aeroplane panel/yoke builder.
 import { BallCompass } from '../compass';
+import { cockpitAdaptation } from '../cabinLight';
+import { compassLight } from '../cockpit';
 import type { CompassReading } from '../../../instruments/dynamics/magneticCompass';
 import * as THREE from 'three';
 import type { AirframeVisualDef } from '../airframe/types';
@@ -11,6 +13,14 @@ import type { AircraftMaterials } from '../materials';
 import { box, pathTube, tube } from './geometry';
 import { buildConsole, consoleShape } from './console';
 import { collectiveFittings, ConsolePullControl, ConsoleSwitchCover, pedalPlate } from './fittings';
+
+/**
+ * Shares of the console face that glow at the displays' luminance (displays, annunciators, warning lamps) and at
+ * the dimmed markings' (dial markings, pointers, labels): agent estimates from the R22 / R44 / S269 panels at night,
+ * that put the eye's adaptation ~1 EV under the Cessna 172S's flood-lit panel at the same dimmer.
+ */
+const GLOW_DISPLAYS = 0.01;
+const GLOW_MARKINGS = 0.1;
 
 export class RotorcraftCockpit {
   readonly group = new THREE.Group();
@@ -28,6 +38,8 @@ export class RotorcraftCockpit {
   private readonly textures: THREE.Texture[] = [];
   private readonly materials: THREE.Material[] = [];
   private readonly dimmer = { value: 1 };
+  /** Solid angle of the console face from the pilot eye, sr (for the eye's adaptation to its glow). */
+  private readonly faceSolidAngle: number;
 
   constructor(private readonly def: AirframeVisualDef, mat: AircraftMaterials, floor: THREE.BufferGeometry,
     private readonly panelDef?: PanelDef) {
@@ -38,6 +50,9 @@ export class RotorcraftCockpit {
     const p = d.panel;
     const pod = new THREE.Group(); pod.name = 'consolePod';
     pod.position.copy(frd(...p.centre)); pod.rotation.x = -p.tiltBackDeg * Math.PI / 180;
+    const eye = def.cockpit.pilotEye;
+    const toFace = Math.hypot(p.centre[0] - eye[0], p.centre[1] - eye[1], p.centre[2] - eye[2]);
+    this.faceSolidAngle = (p.width * p.height) / (toFace * toFace);
     const outline = p.outline ?? [[0, 0], [p.canvas.w, 0], [p.canvas.w, p.canvas.h], [0, p.canvas.h]];
     const shape = consoleShape(outline, p);
     this.materials.push(...buildConsole(pod, p, panelDef, mat.glareshield));
@@ -163,7 +178,7 @@ export class RotorcraftCockpit {
   setPanelEmissiveTexture(texture: THREE.Texture): void { this.panel.material.emissiveMap = texture; this.panel.material.needsUpdate = true; }
 
   update(c: ControlInputs, busVoltage: number, emissiveScale: number, compass?: CompassReading): void {
-    if (compass) this.compass?.update(compass, c.lights.panel * (busVoltage > 10 ? 1 : 0) * 1.2 * emissiveScale);
+    if (compass) this.compass?.update(compass, compassLight(c.lights.panel, false) * (busVoltage > 10 ? 1 : 0) * 1.2 * emissiveScale);
     this.pullControls.forEach(control => control.update(c));
     this.switchCovers.forEach(cover => cover.update(c));
     this.governorSwitches.forEach(s => { s.rotation.x = (c.rotorGovernor ? -1 : 1) * 0.25; });
@@ -181,7 +196,12 @@ export class RotorcraftCockpit {
     const power = Math.min(1, Math.max(0, (busVoltage - dead) / (full - dead)));
     this.dimmer.value = this.panelDef?.lightingDimmerExponent === undefined ? 1
       : Math.max(0, Math.min(1, c.lights.panel)) ** this.panelDef.lightingDimmerExponent;
-    this.panel.material.emissive.setScalar(power * (this.def.rotorcraftVisual!.panel.emissiveLuminance ?? (20 + 180 * c.lights.panel)) * SCENE_UNITS_PER_LUX * emissiveScale);
+    const nits = power * (this.def.rotorcraftVisual!.panel.emissiveLuminance ?? (20 + 180 * c.lights.panel)) * SCENE_UNITS_PER_LUX * emissiveScale;
+    this.panel.material.emissive.setScalar(nits);
+    // No panel flood: the eye adapts to the console's own glow (cabinLight.cockpitAdaptation), its displays and
+    // annunciators (full circuit) and its dimmed markings over their share of the face (agent estimates).
+    cockpitAdaptation.floodExposure = 1;
+    cockpitAdaptation.panelGlow = nits * (GLOW_DISPLAYS + GLOW_MARKINGS * this.dimmer.value) * this.faceSolidAngle;
   }
 
   dispose(): void { this.panel.material.dispose(); this.materials.forEach(m => m.dispose()); this.textures.forEach(t => t.dispose()); this.compass?.dispose(); this.pullControls.forEach(c => c.dispose()); }

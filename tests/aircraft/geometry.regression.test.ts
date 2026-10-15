@@ -443,6 +443,37 @@ describe('Cessna 172S model: the builders give what they gave', () => {
     });
   });
 
+  it('cockpit lamps of the other aeroplanes: flood geometry, colour and flux at the night dimmer and at full', async () => {
+    const cockpit = await import('../../src/render/aircraft/cockpit');
+    const { cabinLamps, cockpitAdaptation } = await import('../../src/render/aircraft/cabinLight');
+    const { createFuselageShapes, cabinFloorGeometry } = await import('../../src/render/aircraft/fuselage');
+    const types = [
+      ['c152', (await import('../../src/aircraft/c152/visual')).C152_VISUAL, (await import('../../src/aircraft/c152/panel')).C152_PANEL],
+      ['pa38', (await import('../../src/aircraft/pa38/visual')).PA38_VISUAL, (await import('../../src/aircraft/pa38/panel')).PA38_PANEL],
+      ['da20', (await import('../../src/aircraft/da20/visual')).DA20_VISUAL, (await import('../../src/aircraft/da20/panel')).DA20_PANEL],
+      ['pa34', (await import('../../src/aircraft/pa34/visual')).PA34_VISUAL, (await import('../../src/aircraft/pa34/panel')).PA34_PANEL],
+      ['c208', (await import('../../src/aircraft/c208/visual')).C208_VISUAL, (await import('../../src/aircraft/c208/panel')).C208_PANEL],
+    ] as const;
+    for (const [id, visual, panelDef] of types) {
+      const shapes = createFuselageShapes(visual);
+      const f = visual.cockpit.floor;
+      const c = new cockpit.Cockpit(fakeMaterials(), cabinFloorGeometry(shapes.lining, f.z, f.x0, f.x1), shapes, visual.cockpit, panelDef, id, visual.nominalVoltage ?? 28);
+      const geometry = [cabinLamps.floodPos.value, cabinLamps.floodAxis.value, cabinLamps.domePos.value].flatMap((v) => v.toArray())
+        .concat(cabinLamps.floodMask.value.toArray(), cabinLamps.floodCone.value.toArray());
+      const state = makeMockState({ heightAGL: 0 });
+      state.electrical.busVoltage = (visual.nominalVoltage ?? 28) + 0.1;
+      const controls = defaultControls();
+      const posed = (level: number) => {
+        controls.lights.panel = level;
+        c.update(state, controls, 1);
+        return { flood: cabinLamps.floodColor.value.toArray(), lampFlux: c.lampFlux(new THREE.Color()).toArray(),
+          bounce: c.lampBounceFlux(new THREE.Color()).toArray(), floodExposure: cockpitAdaptation.floodExposure };
+      };
+      check(`cockpit.lamps.${id}`, { geometry, night: posed(0.2), full: posed(1) });
+      c.dispose();
+    }
+  });
+
   it('propeller, exterior lights and the ground contact shadow', async () => {
     const { Propeller } = await import('../../src/render/aircraft/propeller');
     const { AircraftLights, LIGHT_UNITS_PER_CANDELA } = await import('../../src/render/aircraft/lights');

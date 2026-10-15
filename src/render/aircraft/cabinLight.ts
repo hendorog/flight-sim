@@ -402,6 +402,26 @@ export const cabinLamps = {
 };
 
 /**
+ * What the eye in the cockpit adapts to besides the lamps' light (PostPipeline greyCardLuminance), written by the
+ * aircraft's cockpit every frame it is drawn. Agent choice (panel lighting for every type):
+ * - floodExposure: weight of the flood's flux in the adaptation. A flood that sits further from its panel is
+ *   brighter for the same light on the panel (CockpitDef.lamps.flood.cd), so its flux is weighted down to
+ *   leave the adaptation where the Cessna 172S's flood puts it for the same panel illuminance (1 there).
+ * - panelGlow: illuminance at the eye from the panel's own backlighting, scene units. Only a cockpit without a
+ *   panel flood (the helicopters: their instruments are internally lit) writes it; with a flood the lit panel
+ *   already holds the adaptation, so aeroplanes keep 0. The eye adapts to the larger of the two.
+ */
+export const cockpitAdaptation = { floodExposure: 1, panelGlow: 0 };
+
+/** No lamps lit and nothing glowing: the state a newly built aircraft visual starts from (no allocation). */
+export function resetCabinLamps(): void {
+  cabinLamps.floodColor.value.setRGB(0, 0, 0);
+  cabinLamps.domeColor.value.setRGB(0, 0, 0);
+  cockpitAdaptation.floodExposure = 1;
+  cockpitAdaptation.panelGlow = 0;
+}
+
+/**
  * Make a material use the per-vertex `cabinVis` attribute as its ambient occlusion (in place of aoMap).
  * Every mesh drawn with the returned material must carry the attribute.
  */

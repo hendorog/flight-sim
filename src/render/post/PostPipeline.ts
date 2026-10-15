@@ -27,7 +27,7 @@ import { LocalExposure } from './LocalExposure';
 import { TemporalAA } from './TemporalAA';
 import { TONEMAP_FRAG } from './ToneMap';
 import { Atmosphere } from '../sky/Atmosphere';
-import { cabinLamps } from '../aircraft/cabinLight';
+import { cabinLamps, cockpitAdaptation } from '../aircraft/cabinLight';
 import { SCENE_UNITS_PER_LUX, SUN_ANGULAR_RADIUS } from '../sky/params';
 
 /**
@@ -103,15 +103,21 @@ function greyCardLuminance(ctx: SimContext, moonIlluminance: THREE.Vector3, dire
   const { sunColor, skyColor, sunDir, moonDir } = ctx.sky;
   const direct = (lum(sunColor) * Math.max(sunDir.y, 0) + moonIlluminance.y * Math.max(moonDir.y, 0)) * directShare;
   let lamps = 0;
+  let share = OUTSIDE_SHARE;
   if (ctx.cameraMode === 'cockpit') {
-    lamps = (lum(cabinLamps.floodColor.value) * FLOOD_SOLID_ANGLE) / FLOOD_AREA + (lum(cabinLamps.domeColor.value) * Math.PI) / DOME_AREA;
+    lamps = (lum(cabinLamps.floodColor.value) * FLOOD_SOLID_ANGLE * cockpitAdaptation.floodExposure) / FLOOD_AREA + (lum(cabinLamps.domeColor.value) * Math.PI) / DOME_AREA;
+    // A cockpit with no flood (the helicopters) adapts to its internally lit instruments (cabinLight.cockpitAdaptation).
+    if (cockpitAdaptation.panelGlow > lamps) {
+      lamps = cockpitAdaptation.panelGlow;
+      share = OUTSIDE_SHARE_GLOW;
+    }
     // The view out keeps its own exposure (lampShareEV, the tone map's outside gain): with a single exposure the
     // lamps held the adaptation ~5-9 EV over the outside at night and the sky, the stars and the moonlit land were
     // black from the seat. By day the outside is ~1e5 lx and the lamps change nothing.
   }
   const outdoor = (direct + NIGHT_SKY_ILLUMINANCE + artificial) / Math.PI + lum(skyColor);
   const withLamps = outdoor + lamps / Math.PI;
-  lampShareTarget = Math.log2(withLamps / outdoor) * OUTSIDE_SHARE;
+  lampShareTarget = Math.log2(withLamps / outdoor) * share;
   return 0.18 * withLamps;
 }
 
@@ -135,6 +141,14 @@ const OUTSIDE_MIN_EV = 0.05;
  * brighter than the free camera does under the same sky.
  */
 const OUTSIDE_SHARE = 0.6;
+/**
+ * The same for a cockpit adapted to its instruments' own glow (no flood: the helicopters). Their light falls on
+ * nothing, so the metered frame stays dark and the adaptation follows the reference only ~a fifth of the way;
+ * the flood's share lifted the view out ~3 EV over the free camera's. Agent choice (panel lighting for every
+ * type): the R22's view out is then exposed ~0.8 EV brighter than the Cessna 172S's at the night dimmer (adapted
+ * EV -18.0 vs -13.4) and ~1 EV darker at full, where its adaptation follows the brighter instruments further.
+ */
+const OUTSIDE_SHARE_GLOW = 0.15;
 /**
  * Without a cabin box (setCabinBox), the view depth from which a pixel lies outside the cabin, m: past the windscreen
  * and the A-pillars (~0.9 m).
