@@ -81,7 +81,7 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
     shortName: 'PC-12',
     blurb: 'Pressurised single-engine turboprop, PT6A-67B 1200 shp, with beta and reverse (in development)',
     engineCount: 1,
-    available: false,
+    available: true,
   },
   { id: 'r22', name: 'Robinson R22 Beta II', shortName: 'R22 Beta II',
     blurb: 'Two-seat training helicopter, O-360 derated to 131 hp; autorotation flare still being validated', engineCount: 1, available: true },
@@ -90,7 +90,7 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
   { id: 's269', name: 'Schweizer 269C-1 / 300CB (in development)', shortName: 'Schweizer 300CB',
     blurb: 'Two-seat articulated-rotor trainer, HO-360 180 hp; in development', engineCount: 1, available: true },
   { id: 'md500', name: 'MD Helicopters MD 500E', shortName: 'MD 500E',
-    blurb: 'Five-seat turbine helicopter, 250-C20B 375 shp take-off, five-blade articulated rotor (in development)', engineCount: 1, available: false },
+    blurb: 'Five-seat turbine helicopter, 250-C20B 375 shp take-off, five-blade articulated rotor (in development)', engineCount: 1, available: true },
 ];
 
 export function aircraftSummary(id: AircraftId): AircraftSummary {

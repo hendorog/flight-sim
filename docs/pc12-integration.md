@@ -2,7 +2,7 @@
 
 This records the integration of the Pilatus PC-12/47 (`pc12`) on `feat/pc12-md500`: the turbine core's beta and
 reverse (T1a), the flight model and systems (P1), the C208's beta and the keys (T1b), the sound (A1), the exterior and
-cockpit shell (P2) and the panel (P3), merged in that order. **The type still ships `available: false`.** It is a
+cockpit shell (P2) and the panel (P3), merged in that order. **Available in the chooser since 17 October 2026 (owner decision), with the open items below.** It is a
 flight-model and integration record, not a release sign-off: the shots, the browser circuits, the build check and the
 reviews of plan §8 steps 5-9 were not run in this pass (see the end).
 

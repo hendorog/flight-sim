@@ -2,7 +2,7 @@
 
 This records the integration of the MD Helicopters MD 500E (`md500`, 369E, Rolls-Royce 250-C20B) on
 `feat/pc12-md500`: the turboshaft stage and flight model (T2), the sound (A1), the exterior (M2) and the panel (M3),
-merged in plan §7's order. **The type still ships `available: false`.** It is a flight-model and integration record,
+merged in plan §7's order. **Available in the chooser since 17 October 2026 (owner decision), with the open items below.** It is a flight-model and integration record,
 not a release sign-off: the hover shots, the heliHold probe, the build check and the reviews of plan §8 steps 5-9 were
 not run in this pass (see the end). The turboshaft model itself is described in [turboshaft-model.md](turboshaft-model.md),
 the flight model in [md500-flight-model.md](md500-flight-model.md), T2's contract notes in
