@@ -23,7 +23,9 @@ The conformance suite's keyboard circuit (`keyboardCircuit`, torque in psi) pass
 targets brakeKias 80 (brakes as soon as the nosewheel is down) and flareM 8: light turbulence: touchdown 77 KIAS at
 1.0 m/s, 354 m past the threshold, stopped 0.7 m off the centreline, minimum 0.55 g; 10 kt crosswind: 77 KIAS at
 1.7 m/s (limit 1.8), 425 m past, 0.2 m off. The roll-out still stays on the gate at FLIGHT IDLE (about 4-5 kN at a
-standstill on the 5.5 deg stop) and the aircraft floats nose-high on the mains for up to 55 s; with the old brakeKias 50
+standstill on the 5.5 deg stop) and the aircraft floats nose-high on the mains for up to 55 s: in light turbulence it
+touches down 354 m past the threshold and stops about 600 m beyond the far end of the 1800 m runway (a 2.0 km roll; the
+harness has no roll-length item, so this passes). With the old brakeKias 50
 the roll was 2.3-2.7 km with 0.21 g of nose-leg rocking and 11-12 m of drift in the crosswind. The pass is not robust:
 flareM 7 crashes the crosswind circuit (2.7 m/s at 88 KIAS), flareM 9 stops 8.8 m off (limit 8). The 47E technique
 (4.16: PCL to IDLE at touchdown, reverse as required, condition lever to GROUND IDLE) is the keyboard pilot's
@@ -34,8 +36,8 @@ Close with: the keyboard pilot's roll-out taking the PCL into beta and the condi
 ## Landing roll in the generic block — **open (plumbing)**
 
 The generic landing roll (tests/fdm/measure.ts `landingRoll`) cannot move the condition lever: it rolls at FLIGHT IDLE
-(66 % Ng: about 5 kN at a standstill), so it measures 460-520 m and a reverse ratio of 0.59-0.61 against the chart's
-389 m and 0.72. The two items are held on `PC12-beta`. The chart's own technique (Fig 5-2-52: "average braking, ground
+(66 % Ng: about 5 kN at a standstill), so it measures 581 m on the gate, 373 m in full reverse, ratio 0.64 (brakes
+0.4, maxGross) against the chart's 389 m and 0.72. The two items are held on `PC12-beta`. The chart's own technique (Fig 5-2-52: "average braking, ground
 idle after touch down"; Fig 5-2-54: full reverse) is judged in pc12.test.ts at the chart's weight (MLW 4500 kg):
 385 m on the gate with brakes 0.4 (the AGENT reading of "average braking"; 0.5 gives 322 m, outside 389 +- 30), 290 m in
 full reverse, ratio 0.75. Before the review the roll was flown at 4740 kg, where brakes 0.5 happened to give 384 m.
@@ -73,7 +75,8 @@ Close with: the AFM's blade-angle rigging and an idle-thrust figure.
 
 With the rudder trim at zero the full-power roll swings left at 5-15 kt and the centreline pilot (the test's PI law)
 uses up to 0.50 of right pedal at 14 kt, 0.20 steady above 30 kt, the heading within 3.2 deg (plan row: <= 0.6, <= 5
-deg). The swing is the propeller's swirl on the fin: `swirlBehindWing` 0.5 (ESTIMATE, the DA20's value the comment
+deg). With the scripted pilot's take-off rudder trim (+0.3, ESTIMATE, set at the old swirl) the swing is still to the
+left: 0.42 of right pedal, 2.7 deg. The swing is the propeller's swirl on the fin: `swirlBehindWing` 0.5 (ESTIMATE, the DA20's value the comment
 always cited); at the first estimate, 0.6, it was 0.67 and 4.2 deg. Full-power climb at 130 KIAS: 0.22 of the pedal.
 Evidence: [pc12.test.ts](../../../tests/conformance/pc12.test.ts) "take-off roll heading", [aero.ts](aero.ts).
 Close with: the owner's judgement of the swing and of the climb pedal.

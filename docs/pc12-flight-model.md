@@ -154,9 +154,9 @@ Measured on the conformance suite (FS_AIRCRAFT=pc12; `node scripts/aircraft-repo
 | Start | GROUND IDLE at 13 % Ng, peak ITT 750 °C, 50 % Ng at 29 s, cut-out 50.0 %, Np ≥ 950 | plan 5.7 |
 | Gear horn; overspeed | actuator logic as 47E 7-4; Vmo/Mmo crossover between 14 000 and 18 000 ft | 47E 7-4; TCDS |
 | Hands-off cruise 200 KTAS, 60 s | 0.7 m, 1.5°, 7 ft/min, 0.04 m/s | contract 3.10 |
-| Keyboard circuit (headless; brakeKias 80, flareM 8) | no crash in either weather; touchdown 77 KIAS at 1.0 / 1.7 m/s, 354 / 425 m past the threshold; stopped 0.7 / 0.2 m off the centreline; min 0.55 / 0.53 g; roll-out still on the gate at FLIGHT IDLE and fragile to flareM (see KNOWN_ISSUES) | completes, touchdown ≤ 450 m, beta below 60 KIAS (AGENT; the input package's roll-out) |
+| Keyboard circuit (headless; brakeKias 80, flareM 8) | no crash in either weather; touchdown 77 KIAS at 1.0 / 1.7 m/s, 354 / 425 m past the threshold; stopped 0.7 / 0.2 m off the centreline (the light-turbulence roll 2.0 km, ending about 600 m past the runway end); min 0.55 / 0.53 g; roll-out still on the gate at FLIGHT IDLE and fragile to flareM (see KNOWN_ISSUES) | completes, touchdown ≤ 450 m, beta below 60 KIAS (AGENT; the input package's roll-out) |
 | Keyboard circuit, real app (scripts/fly-keyboard.mjs) | completes: touchdown 74.7 KIAS at 0.16 m/s, 393 m past the threshold, the stop 2.78 km further on, on the gate | as above |
-| Autoflight circuit, real app (scripts/fly-circuit.mjs) | completes: lift-off 95 KIAS, climb-out 105 KIAS at 1390 ft/min, touchdown 84 KIAS at 0.6 m/s, stop in 175 m (full reverse) | — |
+| Autoflight circuit, real app (scripts/fly-circuit.mjs; flown before the review fixes' fin swirl 0.6 -> 0.5, not re-flown) | completes: lift-off 95 KIAS, climb-out 105 KIAS at 1390 ft/min, touchdown 84 KIAS at 0.6 m/s, stop in 175 m (full reverse) | — |
 
 ## Changes outside the type directory (P1's shared files)
 

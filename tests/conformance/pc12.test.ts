@@ -161,7 +161,7 @@ describe(`conformance ${ID}: items of plan 5.7 outside the generic blocks`, () =
     // neutral for 1.5 s and recovers (POH): the autopilot's pitch hold back to 5 deg at full power. Measured from the
     // push: the angle of attack it takes off in the held 1.5 s, the nose's fall (pitch at the push less the lowest
     // pitch), the height lost to the lowest point, and any later push. Measured with pushElevator 0 (no actuator): no
-    // AOA off, the aircraft departs (84 deg nose down, 455 ft, three trips).
+    // AOA off, the aircraft departs (83 deg nose down, 511 ft, three trips).
     const r = once(() => {
       const rig = makeRig({ def, loading: 'forward' });
       const s = rig.fm.state, c = rig.controls;
