@@ -343,12 +343,14 @@ const GLAZING: GlazingDef = {
   tRange: [0.2, 0.8],
   windows: [
     // The cockpit side windows behind the A-post (3V: 2.13-2.57 m, less 0.07; the direct-vision panel in their forward part).
-    // Their front edge runs parallel to the A-post plane's trace on the skin, about 0.08 m behind it, so the post is a
-    // frame of even width from the panes' lower corner to the roof (it pinched to nothing at the top before).
+    // Their front edge runs parallel to the A-post plane's trace on the skin, a few cm behind it, so the post is a
+    // slender frame of even width from the panes' lower corner to the roof (PHOTO BOUTIQUE AIR cockpit). It pinched to
+    // nothing at the top with the edge too far forward (4.07 at the top), and blanked a wide wedge of the forward-left
+    // view at 4.17; 4.13 keeps it even and slim.
     {
       pts: [
-        [sx(3.48), hz(2.08)],
-        [sx(4.17), hz(2.5)],
+        [sx(3.47), hz(2.085)],
+        [sx(4.13), hz(2.5)],
         [sx(4.45), hz(2.5)],
         [sx(4.45), hz(2.06)],
       ],
@@ -552,15 +554,16 @@ const LAMPS: readonly LampVisualDef[] = ((): LampVisualDef[] => {
 
 // --- Cockpit ---------------------------------------------------------------------------------------------------------
 
-// Fitted to the pilot's eye: the panel top 0.27 m below it and 0.60 m ahead of it (the windscreen's sill is just ahead
-// of the panel: a shallow glareshield, as in the cockpit photographs). The fuselage, windscreen and cabin box are the
+// Fitted to the pilot's eye: the panel top 0.15 m below it and 0.60 m ahead of it, 14 deg down (the C208's is 13), so
+// at the default -8 deg view the whole primary T and the engine instruments show over the glareshield (PHOTO linke
+// Seite: the glareshield meets the windscreen's base). At 0.27 m (24 deg) only the top row was on screen. The fuselage, windscreen and cabin box are the
 // airframe's and do not move with it.
 const PX = PC12_PANEL_PX_PER_M;
 // The face shows the whole canvas (panelLayout.ts: 2800 x 1040 px at 2000 px/m, 1.40 x 0.52 m; the cabin is 1.52 m
 // wide inside, 47E 1-8).
 const PX_RECT = PC12_PANEL_PX_RECT;
 const PANEL_X = EYE.x + 0.6;
-const PANEL_ZTOP = EYE.z + 0.27;
+const PANEL_ZTOP = EYE.z + 0.15;
 const PANEL_W = PX_RECT.w / PX;
 const PANEL_ZB = PANEL_ZTOP + PX_RECT.h / PX;
 /** A point of the panel canvas, px, on the face (FRD y, z). */

@@ -85,7 +85,8 @@ reference point if P1 moves the CG height.
 
 The cockpit is fitted to the pilot's eye. The eye is at station 4.20, 0.40 m left of the centre line and 2.33 m up.
 That puts it 0.30 m under the windscreen's top line over the seat, in the middle of the side window, and 1.15 m above
-the floor. The panel face is 0.60 m ahead of the eye, with its top 0.27 m below the eye. It shows P3's 2048 × 1024
+the floor. The panel face is 0.60 m ahead of the eye, with its top 0.15 m below the eye (14° down, the C208's is 13°), so at the
+default −8° view pitch the whole primary T and the engine instruments show over the glareshield. It shows P3's 2048 × 1024
 canvas at 1250 px/m, less 64 px on each side (±0.77 m; the cabin is 1.52 m wide inside, 47E §1-8). A 0.12 m
 glareshield sits above the panel. There are two crew seats, four club seats, two control wheels on columns, and the
 pedals. The knee panel, the centre pedestal and the overhead panel sit behind the windscreen's top edge. The compass

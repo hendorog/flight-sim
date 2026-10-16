@@ -280,7 +280,10 @@ nine-seat commuter cabin. ESTIMATE in the drawing: the stabiliser pivot (65 % ch
 washout (2 deg to 0; the aerodynamic rigging in geometry.ts is -0.5 / -3.0 deg), the tailplane incidence and the
 winglet cant (62 deg). The "propeller blade" left of the windscreen in the cockpit views (gate 0) was the
 cabin lining: the windscreen's side-projection post line pinched out at the shoulder and left a tapered opaque strip;
-it is now the A-post plane above (gate 1). The bright patch at the lower left of the night cockpit view is the left
+it is now the A-post plane above (gate 1). The look review found the post still blanking a wide wedge of the forward-left view (the side
+window's front edge stood up to 0.16 m behind it near the head) and the panel top 0.27 m under the eye, so only the
+top instrument row was on screen; the side window's front edge now runs closer (slim, even-width post) and the panel
+top is 0.15 m under the eye (2026-10-17, shots in work/pcmd/shots/eyepoint). The bright patch at the lower left of the night cockpit view is the left
 landing light's pool on the runway, seen past the post (the lamp in the left leading edge aims straight ahead).
 Evidence: [visual.ts](visual.ts), [docs/pc12-exterior.md](../../../docs/pc12-exterior.md).
 Close with: a /47 windscreen and pedestal drawing; the commuter cabin as a variant.

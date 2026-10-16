@@ -167,7 +167,12 @@ describe('Pilatus PC-12/47 airframe visual', () => {
     expect(c.floor.z - eye[2]).toBeLessThan(1.25);
     // Over the windscreen's sill (a view over the nose) and over the glareshield.
     expect(eye[2]).toBeLessThan(PC12_VISUAL.glazing.windscreen!.sillC[1]);
-    expect(eye[2]).toBeLessThan(c.panel.zTop - 0.2);
+    expect(eye[2]).toBeLessThan(c.panel.zTop - 0.1);
+    // The panel's top no more than 16 deg under the eye (the C208's is 13 deg): with the default -8 deg view pitch the
+    // whole primary T and the engine instruments are on screen over the glareshield (look review: at 0.27 m / 24 deg
+    // only the top row showed).
+    const topDeg = (Math.atan2(c.panel.zTop - eye[2], c.panel.x - eye[0]) * 180) / Math.PI;
+    expect(topDeg).toBeLessThan(16);
     // 0.70-0.85 m above the seat cushion; inside the cabin's side.
     expect(c.seats[0].z! - eye[2]).toBeGreaterThan(0.7);
     expect(c.seats[0].z! - eye[2]).toBeLessThan(0.85);
