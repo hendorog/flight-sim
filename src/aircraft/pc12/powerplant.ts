@@ -35,14 +35,15 @@ export const PC12_PT_RPM = PC12_NP_GOVERNED * PC12_GEAR_RATIO;
  *  - power: 1200 shp at about 94.5 % Ng static at sea level (the torque limiter holds 44.3 psi there); 1000 shp at the
  *    47E maximum-cruise rows (sea level, 8000 and 12 000 ft ISA at 36.9 psi) inside 104 % Ng; the limiter's 41.6 psi at
  *    10 000 ft and 150 KIAS below the 102 % Ng taper;
- *  - fuel: 634 / 564 / 541 lb/h at those cruise rows (47E Fig 5-2-31, 8000 lb); the 90 lb/h minimum flow (47E 7-10:
- *    a failed Py winds the engine down to it) at the map's first point;
+ *  - fuel: 634 / 564 / 541 lb/h at those cruise rows (47E Fig 5-2-31, 8000 lb); about 175 lb/h at ground idle (55 %
+ *    Ng; ESTIMATE): the 47E's 90 lb/h minimum flow holds only about 35 % Ng on the ground (7-10: a failed Py), below the
+ *    map, which starts at 50 %;
  *  - ITT: the 47E example, 34.1 psi at 8000 ft / 26 C at its 850 C limit, carried to the /47's 800 C (about 32 psi);
  *    about 770 C static take-off at sea level; at most 760 C at 12 000 ft cruise (TCDS MCP ITT).
  */
 const MAP = {
   ng: [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15],
-  fuelFlowLbH: [92, 130, 185, 250, 320, 395, 470, 540, 610, 703, 790, 880, 975, 1075],
+  fuelFlowLbH: [195, 205, 225, 260, 320, 395, 470, 540, 610, 703, 790, 880, 975, 1075],
   ittC: [560, 530, 520, 525, 545, 575, 615, 665, 725, 775, 822, 875, 932, 995],
   powerShp: [18, 48, 110, 165, 255, 390, 600, 790, 1000, 1240, 1530, 1830, 2140, 2460],
 };
@@ -90,8 +91,8 @@ export const PT6A_67B: EngineDef = {
   airStartRpm: PC12_PT_RPM,
   groundStartRpm: 17_000,
   // GEN 1 is the starter-generator (ESTIMATE on the /47: FAA N 8900.428 gives GEN 1 300 A): the C208's motor scaled
-  // to the larger spool (2.5 x its torque at the same speed), as the PT6A-67 test-bed's.
-  starter: { k: 6e-5 / 2.5, r: 0.02 / 2.5 },
+  // to the larger spool (3.5 x its torque at the same speed: CALIBRATED on the start, 50 % Ng in about 30 s).
+  starter: { k: 6e-5 / 3.5, r: 0.02 / 3.5 },
   // One press of STARTER latches it until 50 % Ng or 80 s (47E-PROXY 4.5, 7-10; PC12_START).
   starterLatch: { cutoutNg: PC12_START.starterCutoutNg, cutoutSeconds: PC12_START.starterCutoutSeconds },
   turbine: {
@@ -110,7 +111,7 @@ export const PT6A_67B: EngineDef = {
         power: MAP.powerShp.map((shp) => shp * HP),
       },
       lightOffNg: 0.09,
-      selfSustainingNg: 0.35,
+      selfSustainingNg: 0.32,
       minFuelNg: 0.03,
       fcu: {
         // Condition lever GROUND IDLE: about 55 % Ng (47E-PROXY 2-6: 50.7-61.4 %); FLIGHT IDLE: at least 64 % (66 %
@@ -121,7 +122,7 @@ export const PT6A_67B: EngineDef = {
         // Start schedule (a minimum-flow stop that makes early fuel a hot start), then about 25 % over the running line.
         accelFuel: {
           ng: [0, 0.1, 0.13, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.05, 1.1],
-          fuelFlow: [55, 58, 72, 99, 132, 171, 233, 300, 400, 588, 762, 988, 1100, 1220].map((lbh) => lbh * LB_PER_H),
+          fuelFlow: [59, 61, 75, 103, 138, 178, 243, 290, 400, 588, 762, 988, 1100, 1220].map((lbh) => lbh * LB_PER_H),
         },
         decelFraction: 0.6,
         gain: 2,
@@ -154,7 +155,7 @@ const STATION = PC12_PROP.STATION;
  * both be flight angles there. Started at 17 deg and calibrated on (a) the static ground-idle Np on the gate,
  * 1060 +/- 60 rpm (47E 7-11), and (b) 8-18 psi on a 3 deg approach at Vref, flaps 40.
  */
-export const PC12_FLIGHT_IDLE_STOP = 6 * DEG;
+export const PC12_FLIGHT_IDLE_STOP = 5.5 * DEG;
 /** Feather 79.6 deg, full reverse -17.5 deg at 0.80 R (TCDS C.III.6.6). */
 const FEATHER = 79.6 * DEG;
 const REVERSE = -17.5 * DEG;

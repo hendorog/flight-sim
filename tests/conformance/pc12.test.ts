@@ -237,14 +237,14 @@ describe(`conformance ${ID}: items of plan 5.7 outside the generic blocks`, () =
 
   describe.runIf(flownTier(ID))('take-off roll heading with the rudder trim at zero (flown tier)', () => {
     // The take-off ground roll of the targets (flaps 15, PCL full) with the rudder trim at zero, the pilot holding the
-    // runway heading on the pedals (a firm PI law: 8 per rad of error, 2 per rad/s of yaw rate, the integral at 2 per
+    // runway heading on the pedals (a PI law: 5 per rad of error, 2.5 per rad/s of yaw rate, the integral at 2 per
     // rad s): the largest heading error and the largest pedal up to lift-off.
     const r = once(() => {
       let maxErr = 0, maxPedal = 0, integral = 0;
       const steer: SteerFn = (s, c) => {
         const e = wrapPi(RUNWAY_HEADING - s.heading);
         integral = Math.max(-0.5, Math.min(0.5, integral + 2 * e * FRAME));
-        c.rudder = Math.max(-1, Math.min(1, 8 * e - 2 * s.angularVelocity.z + integral));
+        c.rudder = Math.max(-1, Math.min(1, 5 * e - 2.5 * s.angularVelocity.z + integral));
         if (s.onGround) {
           maxErr = Math.max(maxErr, Math.abs(e) / DEG);
           maxPedal = Math.max(maxPedal, Math.abs(c.rudder));
