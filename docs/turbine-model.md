@@ -215,35 +215,38 @@ calibration (P1) will want its blade's negative side checked against that row.
   back to the gate below `cancelKias` and when stopped, and on the gate on the take-off roll and in the flare; a
   profile without it never writes the control.
 
-### Hand-overs and known issues (T1a)
+### Hand-overs and known issues (T1a; status at integration)
 
-1. **No STARTER INTERRUPT control.** A second press of `starter` is the interrupt. `ControlInputs.starterInterrupt`
-   (held, per engine) would be the overhead switch: requested from the integrator, bound by T1b.
-2. **Readers of the latched starter.** `EngineState.starter` (only on a latching type) carries it; audio
-   (`src/audio/mapping.ts`, A1) and the starter indication (P3) still read `controls.starter`, which on a latching
-   type is only the press: they should read `e.starter ?? controls.starter`. The live resume path
-   (`FlightModel.restoreSystems`, T2) copies snapshot fields by hand after `Powerplant.reset()` and does not call
-   `EngineUnit.restore()`: it drops `starterLatch` and `gasGenerator`, and clamps the blade angle at the fine stop
-   (a reversed blade comes back on the flight stop) until it delegates to the unit.
-3. **Reverse held into the stop with full brakes.** On the C208 with the test-bed's beta range grafted on, full
-   reverse held to the stop with full brakes sat the aircraft back at walking pace (pitch 19 deg, nose and left
-   wheels off) and collapsed the right main leg (70 kN). Out of reverse to ground fine below 40 KIAS it stops in
-   209 m (ground fine throughout 221 m, on the gate 292 m; flaps 30, 80 KTAS approach, full braking). For the gear
-   owner (P1) and T1b; the conformance roll has `reverseCancel` meanwhile.
-4. **C208 idle on the gate as built** (no beta yet): at LOW IDLE 670 N static with Np 500 rpm, and it does not break
-   away; at HIGH IDLE 3.5 kN, Np 1124 rpm, and unbraked it runs to 69 kt without settling. T1b's lever positions
-   (a)-(c) calibrate this.
+1. **STARTER INTERRUPT** — closed. `ControlInputs.starterInterrupt` (held) cancels a latched start
+   (`EngineUnit.starterCommand`); Shift+N and the PC-12's STARTER INTR button hold it. A second press of `starter`
+   still works too. A reload releases it (`src/sim/resume.ts`).
+2. **Readers of the latched starter** — closed. Audio (`src/audio/mapping.ts`: the starter whine and the igniters) and
+   the PC-12's STARTER and IGNITION lenses read `e.starter ?? controls.starter`. The live resume path restores the
+   latch, the gas generator and a reversed blade (`EngineUnit.restoreSpoolAndPitch`, P1's fix to
+   `FlightModel.restoreSystems`).
+3. **Reverse held into the stop with full brakes** — open, reproduced on the C208 with its own beta data: full
+   reverse (-2.9 kN) held to a stop with full brakes locks the left main at about 12 kt, unloads the left main and the
+   nose, pitches to +5 deg and collapses the right main (55-71 kN) near 5 kt. Ground fine, or reverse cancelled to
+   ground fine at 40 KIAS (the POH technique), ends normally. For the gear model (`src/physics/gear`); carried in
+   `src/aircraft/c208/KNOWN_ISSUES.md`.
+4. **C208 idle on the gate** — closed by T1b. LOW IDLE on the gate gives 1292 N static, Np 691 and a steady 22.1 kt
+   unbraked; ground fine 186 N and 0 kt; half the pitch-only travel through the beta cam (`BetaDef.pitchOnlySchedule`,
+   integration) 1089 N and 10.9 kt.
 5. **Windmilling in the beta range at speed.** Between about -6 and +6 deg at 80 kt the test-bed blade drives the
    shaft; the valve takes the blades through it in about 0.4 s and the topping reset holds Np.
 6. **Torque limiter dynamics.** The cap is the steady solution (no pneumatic lag); transients overshoot only by the
    gas generator's fuel ratio. The MOR and the limiter's failure modes are not modelled.
+7. **Power-turbine characteristic** — open (T2 request). The power turbine's stall-torque law is fixed, so a lightly
+   loaded free turbine cannot show its low runaway speed at idle; the MD 500E carries a 20 kW power-turbine loss
+   (instead of the gear train's 4-5 kW) to hold both ground idle (N2 59 %) and an unloaded idle N2 below the set
+   point. A characteristic that depends on gas power would let that loss come down.
 
 ## Not modelled yet (next steps)
 
 1. **Windmilling gas generator.** After an in-flight flame-out, Ng spools down to 0 instead of windmilling at
    10–15 %.
-2. **Other output stages.** Turboshaft (feeding `rotorcraft`; the rotor governor would trim Ng), turbojet and
-   turbofan (thrust from nozzle and fan, no propeller), and the single-shaft TPE331 (Np = Ng, with
+2. **Other output stages.** (The turboshaft stage exists: `src/physics/rotorcraft/turboshaft.ts`,
+   docs/turboshaft-model.md.) Turbojet and turbofan (thrust from nozzle and fan, no propeller), and the single-shaft TPE331 (Np = Ng, with
    underspeed/fuel governing and negative-torque sensing).
 3. **Engine controls.** FADEC/EEC limiters (torque, ITT, Ng) for newer engines; auto-ignition; bleed air and
    inertial separator (ITT and power penalties); engine anti-ice.

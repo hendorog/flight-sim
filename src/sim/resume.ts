@@ -287,6 +287,11 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (c.lampTestId !== undefined) { if (typeof c.lampTestId !== 'string') return null; delete c.lampTestId; }
   // A held key cannot survive a reload. It must not leave the pump priming unattended.
   if (c.fuelPrime !== undefined) c.fuelPrime = false;
+  // Held interrupt switches (stick pusher, STARTER INTERRUPT) are released by a reload too.
+  for (const key of ['pusherInterrupt', 'starterInterrupt']) {
+    if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+    if (c[key] !== undefined) c[key] = false;
+  }
   if (isRotorcraftId(v.aircraft) && (!isObj(v.systems) || !isObj(v.systems.rotorcraft))) return null;
   for (const k of ['elevator', 'aileron', 'rudder', 'throttle', 'mixture', 'flaps', 'elevatorTrim', 'brakeLeft', 'brakeRight', 'magnetos', 'kollsmanHpa', 'headingBugDeg', 'obsDeg']) {
     if (!isNum(c[k])) return null;

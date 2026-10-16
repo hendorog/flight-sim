@@ -98,6 +98,13 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
     same('no flap detents', { expected: [0], input: def.input.flapDetents, training: pres.training.flapDetentsDeg });
     // The engine kind against the sound (the fixed-wing rule below never runs for a rotorcraft).
     same('engine is a gas turbine', { powerplant: pp.engines[0].engine.kind === 'freeTurbine', audio: audio.engines[0].engine.combustion === 'turbine' });
+    // The tail rotor's voice (when the sound has one) is the tail rotor of the definition.
+    const tail = audio.tailRotor;
+    if (tail) {
+      sameNumber('tail rotor blades', { rotor: rotor.tail.blades, audio: tail.blades });
+      sameNumber('tail rotor diameter', { rotor: rotor.tail.radius * 2, audio: tail.diameterM });
+      sameNumber('tail rotor ratio', { rotor: rotor.tailRatio, audio: tail.ratio });
+    }
     // Turboshaft installations (MD 500E): one fuel control, the freewheel, the twist grip and the beep, defined once.
     const ts = rotor.systems.turboshaft;
     if (ts) {
@@ -279,12 +286,22 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
       // Beta and reverse: the lever, the blades and the reversing cam go together.
       same(`beta and reverse (engine ${i})`, { 'input.has.reverse': has.reverse === true,
         powerplant: pitch.beta !== undefined && e.turbine?.reversingCam !== undefined && e.kind === 'freeTurbine' });
+      // The reverse growl of the sound: on a reversing propeller only, full at its own full-reverse blade angle.
+      const growl = audio.engines[i]?.prop.reverse;
+      same(`reverse growl of the sound (engine ${i})`, { 'input.has.reverse': has.reverse === true, audio: growl !== undefined });
+      if (growl && pitch.beta) sameNumber(`full-reverse blade angle (engine ${i}), deg`, { powerplant: pitch.beta.reverse * RAD, audio: growl.fullPitchDeg });
       const beta = pitch.beta;
       if (beta) {
         check(beta.reverse < beta.groundFine && beta.groundFine <= pitch.fineStop, `beta angles (engine ${i}): reverse < groundFine <= fineStop`);
         check(pitch.pitchNodes[0] <= beta.reverse, `pitch nodes (engine ${i}) start at or below the reverse angle`);
         check(beta.pitchOnlyTravel > 0 && beta.pitchOnlyTravel < 1, `beta pitch-only travel (engine ${i}) inside (0, 1)`);
         check(beta.rate > 0, `beta valve rate (engine ${i}) positive`);
+        const cam = beta.pitchOnlySchedule;
+        if (cam) {
+          check(cam.lever.length >= 2 && cam.lever.length === cam.fraction.length, `beta cam (engine ${i}): lever and fraction columns of one length, two rows at least`);
+          check(cam.lever[0] === 0 && cam.lever[cam.lever.length - 1] === 1 && cam.lever.every((l, k) => k === 0 || l > cam.lever[k - 1]), `beta cam (engine ${i}): lever ascending from 0 to 1`);
+          check(cam.fraction[0] === 0 && cam.fraction[cam.fraction.length - 1] === 1 && cam.fraction.every((f, k) => k === 0 || f >= cam.fraction[k - 1]), `beta cam (engine ${i}): fraction ascending from 0 (the stop) to 1 (ground fine)`);
+        }
         const lps = beta.lowPitchSchedule;
         if (lps) {
           check(lps.lever.length >= 2 && lps.lever.length === lps.angle.length, `low-pitch schedule (engine ${i}): lever and angle columns of one length, two rows at least`);
@@ -342,6 +359,11 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
     same('reverse arc of the cockpit power lever', { 'input.has.reverse': has.reverse === true,
       visual: cockpit.engineControls.some((l) => l.kind === 'lever' && (l.reverseTravel ?? 0) > 0) });
   }
+
+  // The aural overspeed warning and the stick shaker: the sound has one exactly when the definition has it.
+  same('overspeed warning', { limits: def.limits.overspeedWarning ?? null,
+    audio: audio.overspeedWarning ? { kias: audio.overspeedWarning.kias, mach: audio.overspeedWarning.mach } : null });
+  same('stick shaker', { 'controls.stickPusher': def.controls.stickPusher !== undefined, audio: audio.stickShaker !== undefined });
 
   // ------------------------------------------------------------------------------------------ electrical
   const el = pp.electrical;
