@@ -79,12 +79,13 @@ export const PC12_MASS: MassDef = {
 };
 
 export const PC12_LIMITS: LimitsDef = {
-  // TCDS C.III.5: +3.4 / -1.36 g flaps up, +2.0 / 0 g flaps down; ultimate 1.5 x.
+  // TCDS C.III.5: +3.4 / -1.36 g flaps up, +2.0 / 0 g flaps down; ultimate 1.5 x. The flaps-down negative limit is
+  // left at the flaps-up one: the structural model fails the wing at limit x ultimateFactor, which for the TCDS's 0 g
+  // would break it at the first slightly negative g (a gust or a brisk push after lift-off).
   loadFactorPositive: 3.4,
   loadFactorNegative: -1.36,
   ultimateFactor: 1.5,
   loadFactorPositiveFlaps: 2.0,
-  loadFactorNegativeFlaps: 0,
   // TCDS C.III.9: Vd 280 KCAS.
   diveSpeedCas: 280 * KT,
   structureTime: 0.03,
@@ -202,8 +203,10 @@ export const PC12_AUTOPILOT: AutopilotGains = {
   altitudeK: 0.12,
   vsKp: 0.02,
   vsKi: 0.008,
-  speedKp: 0.03,
-  speedKi: 0.006,
+  // Half the C208's speed gains: the PC-12 climbs out 30-40 kt below its climb speed, and the C208's gain made the
+  // speed hold push the nose 20 deg down at the hand-over from the take-off attitude.
+  speedKp: 0.015,
+  speedKi: 0.003,
   throttleKp: 0.06,
   throttleKi: 0.015,
   ballKp: 0.6,

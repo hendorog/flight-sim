@@ -70,7 +70,7 @@ export const PC12_SIM: SimProfile = {
       // 47E-PROXY 4.2: flaps 15, rotate at 82 KIAS (10 450 lb), climb out and flaps up above 100 KIAS.
       flapsDeg: 15,
       rotateKias: PC12_REFERENCE.vr,
-      rotatePitchDeg: [6, 10],
+      rotatePitchDeg: [5, 8],
       rotateBlendKt: 8,
       elevatorBias: 0.2,
       pitchGain: 3,
@@ -79,7 +79,10 @@ export const PC12_SIM: SimProfile = {
       handoverM: 20,
       throttle: PC12_TAKEOFF_LEVER,
     },
-    climb: { kias: PC12_REFERENCE.vy, vsLimit: 4, throttle: PC12_CLIMB_LEVER },
+    // The climb-out at 105 KIAS with flaps 15 (AGENT: the speed hold takes over from the lift-off attitude at about 95
+    // KIAS; a hand-over to Vy, 35 kt faster, pushed the nose through the horizon at 30 m), at the maximum-continuous
+    // torque.
+    climb: { kias: 105, vsLimit: 4, throttle: PC12_CLIMB_LEVER },
     hold: { minKias: PC12_FLAPS_UP_ABOVE_KIAS + 10, maxBankDeg: 25, vsLimit: 4 },
     // Flaps 40 at 85-90 KIAS: a small flare, mains first at about 75 KIAS.
     flare: { minHeightM: 7, timeS: 4, pitchRiseDeg: 7, maxPitchDeg: 7 },
