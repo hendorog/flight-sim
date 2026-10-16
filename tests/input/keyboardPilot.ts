@@ -133,6 +133,12 @@ export function pilotTargets(reference: ReferenceSpeeds = C172S_REFERENCE): Pilo
     throttleOffM: 3,
     flareBankDeg: 5,
     decrabM: Infinity,
+    downwindDescentFt: 250,
+    // Full throttle (F4) for the take-off and the climb, no take-off flaps, no beta on the roll-out.
+    takeoffPower: undefined,
+    climbPower: undefined,
+    takeoffFlapDetent: 0,
+    rolloutReverse: undefined,
   };
 }
 
