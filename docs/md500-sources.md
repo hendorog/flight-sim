@@ -111,6 +111,11 @@ fields used by the R22, R44 and S269.
   `tests/rotorcraft/oh6a.ts` with the full-travel controller table (Fig II-2: collective 22.9, longitudinal 31.8,
   lateral 29.2, pedal 9.3 cm). Units checked against the US-unit tables (L'δA 0.4956 /cm = 1.2588 /in). The hover
   trim of case 4 (θ 1.66°, φ −3.05°) is the family evidence for the hover-attitude row. **F**.
+- **Control-system flexibility** (Heffley CR-3144 Fig II-2, printed p 22): a factor after each linkage gain, from
+  full-scale wind-tunnel tests: collective 0.88, longitudinal 0.75, lateral 0.75, pedal 0.67. The linkage gains equal
+  the 369A TCDS ranges, so the Table II-3 derivatives include the factor. Used as `controlFlex` in
+  `src/aircraft/md500/rotorcraft.ts` (cyclic and pedal; the collective 0.88 is not applied, see KNOWN_ISSUES). The
+  pivots (zero-cyclic swashplate; tail pitch range centre +6.5°) are **ESTIMATE**; the factors are **F**.
 - **Hinge offset**: the 500C's 0.458 ft plus the inch by which the 500D hub is wider (heli-archive, **S**): 0.165 m.
 - **Tail-rotor hub height**: Fig 1-1's 2.0 ft tip clearance is in the 4.7° nose-up ground attitude, which lowers
   STA 284 by 15.1 in; in level axes the hub is at WL 51.4 (**D**; the OH-6A's is WL 54.3).
