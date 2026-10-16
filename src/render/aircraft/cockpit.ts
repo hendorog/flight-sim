@@ -282,7 +282,8 @@ export function cockpitControls(cockpit: CockpitDef, panel: PanelDef): Readonly<
   if (row.dimmers) out.panelLights = fromPx(row.bounds.x + row.dimmers.panel, row.bounds.y + row.dimmers.y);
   out.magnetos = fromPx(panel.ignition.at[0], panel.ignition.at[1]);
   for (const e of cockpit.engineControls) {
-    if (e.engine === 0 && (e.control === 'throttle' || e.control === 'mixture')) out[e.control] = fromFrd(e.pos[0] - 0.04, e.pos[1], e.pos[2]);
+    // (A lever drawn fixed, such as the PC-12's manual override, is not the one the instructor means.)
+    if (e.engine === 0 && e.fixed === undefined && (e.control === 'throttle' || e.control === 'mixture')) out[e.control] = fromFrd(e.pos[0] - 0.04, e.pos[1], e.pos[2]);
   }
   const flap = cockpit.flapControl.pos;
   out.flapLever = fromFrd(flap[0] - 0.045, flap[1], flap[2]);
@@ -493,6 +494,8 @@ export class Cockpit {
   private readonly pedals: { obj: THREE.Group; sign: 1 | -1 }[] = [];
   /** Engine controls: push-pull knobs sliding aft as they are pulled, quadrant levers swinging about their pivots. */
   private readonly knobs: { group: THREE.Group; def: CockpitDef['engineControls'][number] }[] = [];
+  /** Levers drawn at a fixed position (`fixed`): never animated, but small controls like the others. */
+  private readonly fixedLevers: THREE.Group[] = [];
   private readonly flapLever = new THREE.Group();
   private readonly gearLever: THREE.Group | null = null;
   private readonly trimWheel: THREE.Group | null = null;
@@ -775,8 +778,16 @@ export class Cockpit {
       const g = new THREE.Group();
       // The mixture knob is ribbed (told by touch from the smooth throttle).
       if (e.kind === 'knob') this.buildKnob(g, knobMat, mat, e.pos, e.control === 'mixture');
-      else this.buildLever(g, knobMat, mat, e.pos, e.length ?? 0.11, e.control);
-      this.knobs.push({ group: g, def: e });
+      else {
+        this.buildLever(g, knobMat, mat, e.pos, e.length ?? 0.11, e.fixed !== undefined ? 'fixed' : e.control);
+        addLeverMarks(fixed, mat, e, def.consoles);
+      }
+      // A lever drawn fixed (not modelled) stands where it is put and is never animated.
+      if (e.kind === 'lever' && e.fixed !== undefined) {
+        g.rotation.x = e.travel * (1 - e.fixed - 0.5);
+        this.group.add(g);
+        this.fixedLevers.push(g);
+      } else this.knobs.push({ group: g, def: e });
     }
     for (const k of this.knobs) this.group.add(k.group);
     const FLAP = def.flapControl.pos;
@@ -1038,12 +1049,15 @@ export class Cockpit {
     frd(pos[0], pos[1], pos[2], g.position);
     const b = new MeshBatch();
     b.add(mat.darkMetal, new THREE.BoxGeometry(0.005, length, 0.012).translate(0, length / 2, 0));
+    // A fixed (unmodelled) lever has a small flat T-grip.
     const knob =
       control === 'throttle'
         ? new THREE.SphereGeometry(0.017, 14, 10)
         : control === 'propeller'
           ? new THREE.CylinderGeometry(0.017, 0.017, 0.022, 8).rotateZ(Math.PI / 2)
-          : roundedBox(0.022, 0.03, 0.026, 1, 0.005);
+          : control === 'fixed'
+            ? roundedBox(0.03, 0.012, 0.016, 1, 0.004)
+            : roundedBox(0.022, 0.03, 0.026, 1, 0.005);
     b.add(knobMat, knob.translate(0, length, 0));
     g.add(...b.build('lever').children);
   }
@@ -1086,7 +1100,11 @@ export class Cockpit {
       // are pulled (back) for on.
       const pulled = k.def.control === 'carbHeat' || k.def.control === 'alternateAir' ? value : 1 - value;
       if (k.def.kind === 'knob') k.group.position.z = -k.def.pos[0] + k.def.travel * pulled - 0.055;
-      else k.group.rotation.x = k.def.travel * (pulled - 0.5);
+      else {
+        // A power lever with a beta / reverse range swings on aft of its idle gate as ControlInputs.reverse rises.
+        const aft = k.def.reverseTravel ? k.def.reverseTravel * clamp01(Number(engineControl(controls, k.def.engine, 'reverse') ?? 0)) : 0;
+        k.group.rotation.x = k.def.travel * (pulled + aft - 0.5);
+      }
     }
     const flap = this.def.flapControl;
     if (flap.kind === 'panelLever') this.flapLever.position.y = -(flap.pos[2] + flap.travel * controls.flaps);
@@ -1138,7 +1156,7 @@ export class Cockpit {
 
   /** The small controls under and on the lower panel. */
   private details(): THREE.Group[] {
-    const groups = [...this.knobs.map((k) => k.group), this.flapLever];
+    const groups = [...this.knobs.map((k) => k.group), ...this.fixedLevers, this.flapLever];
     if (this.trimWheel) groups.push(this.trimWheel);
     groups.push(...this.pedals.map((p) => p.obj));
     if (this.gearLever) groups.push(this.gearLever);
@@ -1191,5 +1209,53 @@ export class Cockpit {
     this.visorMat.dispose();
     this.rockerMat.dispose();
     this.knobBlue?.dispose();
+  }
+}
+
+const clamp01 = (v: number): number => (v > 0 ? (v < 1 ? v : 1) : 0);
+
+/**
+ * The top (FRD z) of the box console the lever's pivot sits under (the pedestal it stands out of), or undefined when
+ * the pivot is not under one: the nearest box top above the pivot whose plan contains it.
+ */
+export function leverSurfaceZ(consoles: CockpitDef['consoles'], pos: readonly [number, number, number]): number | undefined {
+  let top: number | undefined;
+  for (const c of consoles) {
+    if (c.profile) continue;
+    const inside = pos[0] >= c.min[0] && pos[0] <= c.max[0] && pos[1] >= c.min[1] && pos[1] <= c.max[1];
+    if (inside && c.min[2] < pos[2] && (top === undefined || c.min[2] > top)) top = c.min[2];
+  }
+  return top;
+}
+
+/**
+ * The quadrant's marks beside a lever's slot (fixed parts): a white notch at each detent (lever fraction), and for a
+ * lever with a beta / reverse range the idle gate (a red stop across the slot at lever 0) and a red arc beyond it.
+ * A lever at value v stands at rotation travel x (1 - v - 0.5) about the lateral axis through its pivot (see update).
+ * When the pivot sits under a console's top (a pedestal), each mark lies flat on that top where the lever at that
+ * angle comes out through it, just proud of the surface; otherwise on an arc 35 mm from the pivot.
+ */
+function addLeverMarks(fixed: MeshBatch, mat: AircraftMaterials, e: CockpitDef['engineControls'][number], consoles: CockpitDef['consoles']): void {
+  if (e.kind !== 'lever' || (!e.detents?.length && !e.reverseTravel)) return;
+  const p = frd(e.pos[0], e.pos[1], e.pos[2]);
+  const top = leverSurfaceZ(consoles, e.pos);
+  /** Height of the console top above the pivot, m (model +y up = -FRD z). */
+  const h = top === undefined ? 0 : e.pos[2] - top;
+  /** The mark at lever angle a (rad, + = aft), on the slot's right side (lateral offset y). */
+  const mark = (a: number, w: number, m: THREE.Material, y = 0.011): void => {
+    const g = new THREE.BoxGeometry(w, 0.003, 0.004);
+    // Lever frame: the lever stands up +y; a rotation about +x by a moves its top toward +z (aft in three's frame).
+    if (top === undefined) g.translate(0, 0.035, 0).rotateX(a);
+    else g.translate(0, h + 0.0015, h * Math.tan(a));
+    g.translate(p.x + y, p.y, p.z);
+    fixed.add(m, g);
+  };
+  const angle = (v: number): number => e.travel * (1 - v - 0.5);
+  for (const d of e.detents ?? []) mark(angle(d), 0.016, mat.knobWhite);
+  if (e.reverseTravel) {
+    // The gate at idle (lever 0) across the slot, and the beta / reverse range beyond it in red.
+    mark(angle(0), 0.034, mat.knobRed, 0);
+    const n = 4;
+    for (let i = 1; i <= n; i++) mark(angle(0) + (e.travel * e.reverseTravel * i) / n, 0.01, mat.knobRed);
   }
 }

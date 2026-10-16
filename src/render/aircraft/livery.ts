@@ -58,6 +58,8 @@ class ConvexOutline {
   constructor(
     pts: readonly (readonly [number, number])[],
     private readonly r: number,
+    /** Skip the bounding-box early-out within `margin` of the box (a well-rounded outline: oval windows). */
+    private readonly margin = 0,
   ) {
     this.x0 = Math.min(...pts.map((p) => p[0]));
     this.x1 = Math.max(...pts.map((p) => p[0]));
@@ -89,7 +91,7 @@ class ConvexOutline {
   sdf(x: number, z: number): number {
     const bx = Math.max(this.x0 - x, x - this.x1);
     const bz = Math.max(this.z0 - z, z - this.z1);
-    if (bx > 0 || bz > 0) return Math.max(bx, bz);
+    if (bx > this.margin || bz > this.margin) return Math.max(bx, bz);
     let d = -Infinity;
     for (const p of this.planes) {
       const e = p.nx * x + p.nz * z + p.d;
@@ -133,7 +135,9 @@ interface SidedOutline {
 }
 
 const sided = (o: OutlineDef): SidedOutline => ({
-  outline: new ConvexOutline(o.pts, o.r),
+  // A strongly rounded outline (an oval window) is exact out to the seal's width beyond its box, so the seal follows
+  // the rounded corners and does not draw the box's sides.
+  outline: new ConvexOutline(o.pts, o.r, o.oval ? 0.05 : 0),
   side: o.sides === 'both' ? 0 : o.sides === 'left' ? -1 : 1,
   maxX: o.maxX ?? Infinity,
 });
