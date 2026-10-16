@@ -125,8 +125,9 @@ are their packages' (T1b, P1); the numbers below are the test-beds' (`tests/prop
 **The beta valve** (`governor.ts`). The power lever aft of the gate (`ControlInputs.reverse`, r) commands a blade
 angle: the flight low-pitch stop at r = 0, `beta.groundFine` at r = `pitchOnlyTravel`, `beta.reverse` at r = 1
 (linear in between). The blades' lower limit is then the command, not the stop. Aft of the gate the valve has the
-authority: it drives the blades to its command at `beta.rate` x the oil authority (the governor's 25 psi law), finer
-or coarser, and the primary governor's coarse signal is not acted on; only the overspeed governor and feather still
+authority: it drives the blades to its command at `beta.rate`, finer at that rate x the oil authority (the
+governor's 25 psi law) and coarser at that rate (on a feathering hub the springs and counterweights, no oil needed),
+and the primary governor's coarse signal is not acted on; only the overspeed governor and feather still
 take them coarse. Letting the primary governor coarsen them trapped the blades: entering reverse at 80 kt they pass
 through zero thrust, where this blade windmills, Np reached the 1700 rpm set speed and the governor parked the
 blades near -5 deg with 0.9 kN of reverse thrust instead of 8.5 kN. Back on the gate the governor has them again,

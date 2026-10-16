@@ -217,6 +217,19 @@ describe('settle in beta (acceptance 6)', () => {
   }, 60_000);
 });
 
+describe('settle in beta without fuel', () => {
+  it('with the fuel off the speed search finds no root and the shaft is stepped from where it was: it runs down (a reversed blade does not windmill at 50 kt)', () => {
+    const sys = running(BETA_TURBOPROP_POWERPLANT);
+    const input = makeInput({ ktas: 50, controls: { throttle: 0, mixture: GROUND_IDLE, magnetos: 0, reverse: 1, fuelSelector: 'off' } });
+    sys.primeForTrim(BETA_TURBOPROP_POWERPLANT.engines[0].engine.ratedRpm);
+    const out = sys.settle(input);
+    log(`settle, full reverse, fuel off, 50 kt: Np ${out.engine.propRpm.toFixed(0)}, blade ${pitchDeg(out).toFixed(1)} deg, thrust ${out.propeller.thrust.toFixed(0)} N`);
+    for (const x of [out.engine.propRpm, out.propeller.thrust, out.propeller.bladePitch]) expect(Number.isFinite(x)).toBe(true);
+    expect(out.engine.propRpm).toBeLessThan(50);
+    expect(out.propeller.thrust).toBeLessThan(0);
+  }, 30_000);
+});
+
 describe('the latching start switch (acceptance 7)', () => {
   /** Cold and feathered, condition at CUT-OFF; one press of STARTER, the condition lever to GROUND IDLE at 13 % Ng. */
   function startOnce(o: { interruptAtNg?: number; fuel?: boolean } = {}) {

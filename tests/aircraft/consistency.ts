@@ -311,13 +311,14 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
       const cam = t.reversingCam;
       check(cam.maxReverseNg > t.gasGenerator.fcu.lowIdleNg && cam.maxReverseNg <= t.gasGenerator.fcu.maxNg, `reversing cam (engine ${i}): maximum reverse Ng between low idle and maxNg`);
       check(cam.reverseNp > 0 && cam.reverseNp < t.powerTurbine.topping.np, `reversing cam (engine ${i}): the reverse Np reset below the topping governor`);
-      if (pitch.kind === 'constantSpeed') check(cam.reverseNp * e.ratedRpm / e.gearRatio < pitch.governor.maxRpm, `reversing cam (engine ${i}): the reverse Np reset below the propeller governor's highest speed (it must stay in underspeed)`);
+      // With the reverse topping droop (1 %, turbineEngine.ts) on top: the propeller governor must stay in underspeed.
+      if (pitch.kind === 'constantSpeed') check(1.01 * cam.reverseNp * e.ratedRpm / e.gearRatio < pitch.governor.maxRpm, `reversing cam (engine ${i}): the reverse Np reset, with its 1 % droop, below the propeller governor's highest speed (it must stay in underspeed)`);
     }
     if (t?.torqueLimiter) {
       const l = t.torqueLimiter;
       check(l.lapse.altFt.length >= 2 && l.lapse.altFt.length === l.lapse.psi.length, `torque limiter (engine ${i}): lapse columns of one length, two rows at least`);
       check(l.lapse.altFt.every((a, k) => k === 0 || a > l.lapse.altFt[k - 1]), `torque limiter (engine ${i}): lapse altitudes ascending`);
-      check(l.psi > 0 && l.psiPerNm > 0 && l.taperPsi >= 0, `torque limiter (engine ${i}): positive limit, scale and taper`);
+      check(l.psi > 0 && l.psiPerNm > 0 && l.taperPsi >= 0 && l.lapse.psi[0] > 0, `torque limiter (engine ${i}): positive limit, scale, sea-level lapse and taper`);
       check(l.ngTaper[0] < l.ngTaper[1] && l.ngTaper[1] <= t.gasGenerator.fcu.maxNg + 1e-9, `torque limiter (engine ${i}): Ng taper ascending, ending at or below maxNg`);
     }
     same(`carburettor heat (engine ${i})`, { 'input.has.carbHeat': has.carbHeat, powerplant: e.induction.carburettor !== undefined });

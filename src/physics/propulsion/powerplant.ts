@@ -377,9 +377,14 @@ export class Powerplant implements PowerplantSeam {
       unit.finish(input, air, fed ? demand : 0, 0);
       return unit.shaftTorque - unit.propeller.loads.torque;
     };
+    const start = unit.omega;
     let lo = SETTLE_BETA_CRAWL;
     let hi = 1.3 * unit.governedSpeed;
-    if (!(net(lo) > 0) || net(hi) > 0) return false;
+    if (!(net(lo) > 0) || net(hi) > 0) {
+      // No root in the bracket: the shaft is stepped from where it was (the probes moved it).
+      unit.omega = start;
+      return false;
+    }
     while (hi - lo > SETTLE_BETA_TOLERANCE) {
       const mid = 0.5 * (lo + hi);
       if (net(mid) > 0) lo = mid;
