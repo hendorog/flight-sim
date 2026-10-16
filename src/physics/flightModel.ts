@@ -75,6 +75,7 @@ import type {
 } from './interfaces';
 import { createMassModel, type MassModel, type MassProperties } from './massModel';
 import { Powerplant, PropulsionSystem } from './propulsion';
+import { CUTOFF_BELOW } from './propulsion/turbineEngine';
 import type { SimEnvironment } from './environment';
 import { Rotorcraft } from './rotorcraft/rotorcraft';
 import { cloneRotorcraftState } from './rotorcraft/definition';
@@ -111,6 +112,12 @@ export function engineStopControls(def: AircraftDefinition, i: number, mode: Eng
   const fadec = def.powerplant.engines[i].engine.fadec !== undefined;
   if (mode === 'parked') return fadec ? { engineMaster: false } : { magnetos: 0, mixture: 0 };
   if (fadec) return { throttle: 0, fuelSelector: 'off', engineMaster: mode === 'windmilling' };
+  // No propeller lever (PC-12): the condition lever below CUTOFF_BELOW is CUT-OFF/FEATHER, so a windmilling
+  // engine has fuel cut by the selector and the condition lever just above the feather detent.
+  const pitch = def.powerplant.engines[i].propeller.pitchControl;
+  if (pitch.kind === 'constantSpeed' && pitch.selectedBy === 'conditionLever') {
+    return { throttle: 0, mixture: mode === 'windmilling' ? CUTOFF_BELOW : 0, fuelSelector: 'off' };
+  }
   return { throttle: 0, mixture: 0, fuelSelector: 'off', propeller: mode === 'windmilling' ? 1 : 0 };
 }
 
