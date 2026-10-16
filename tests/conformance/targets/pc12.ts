@@ -282,4 +282,7 @@ export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
   rolloutReverse: { belowKias: 75, lever: GROUND_FINE },
   // ...and stops holding the round-out 1 s after the mains touch (the nose otherwise floats high on the mains).
   rolloutOnMainsS: 1,
+  // ...and taps the condition lever back to GROUND IDLE (47E-PROXY Fig 5-2-52 "ground idle after touch down"; the
+  // keyboard's condition detents, polish 2026-10-17). At FLIGHT IDLE the 64.5 % Ng idle pulls 3.7 kN at a standstill.
+  rolloutGroundIdle: true,
 };

@@ -26,12 +26,23 @@ brakes come on from 80 KIAS. Measured: light turbulence, touchdown 77.2 KIAS at 
 stopped after 250 m, 1.8 m off the centreline, minimum 0.55 g, bank at most 26.8 deg; 10 kt crosswind, 77.2 KIAS at
 1.67 m/s (limit 1.8), stopped after 269 m, 1.7 m off, minimum 0.53 g. Before, on the gate at FLIGHT IDLE (4-5 kN at a
 standstill on the 5.5 deg stop), the aircraft floated nose-high on its mains for up to 66 s and rolled 2.0 km in
-turbulence, past the far end of the 1800 m runway. Still open: the condition lever stays at FLIGHT IDLE (the keyboard's
-lean key runs it through to CUT-OFF), and the round-out is sensitive to the flare height (P1: flareM 7 crashed the
-crosswind circuit at 2.7 m/s and 88 KIAS; flareM 9 stopped 8.8 m off).
+turbulence, past the far end of the 1800 m runway. Still open: the round-out is sensitive to the flare height (P1:
+flareM 7 crashed the crosswind circuit at 2.7 m/s and 88 KIAS; flareM 9 stopped 8.8 m off), and the crosswind
+touchdown sink sits close to its limit (1.74 m/s against 1.8).
+
+The condition lever now has keyboard detents (polish 2026-10-17, `InputProfile.conditionDetents`): M steps it back
+from FLIGHT IDLE to GROUND IDLE and stops there however long it is held; CUT-OFF/FEATHER takes a fresh M at GROUND
+IDLE held for 1 s (the pilot is told so); Shift+M steps forward a detent a press. The keyboard pilot taps M once on
+the roll-out (`rolloutGroundIdle`, 47E-PROXY Fig 5-2-52 "ground idle after touch down") and the circuit test checks
+the lever is on GROUND IDLE at the stop with the engine running. Measured (same circuits, the tap off / on): light
+turbulence, touchdown 76.2 KIAS at 0.81 m/s, stopped after 255 / 254 m, 0.6 / 1.5 m off the centreline; 10 kt
+crosswind, 76.0 KIAS at 1.74 m/s, 293 / 291 m, 1.2 / 1.1 m off. The roll barely changes because the pilot is already
+in ground fine with the brakes on by then; GROUND IDLE matters for the taxi that follows (FLIGHT IDLE on the gate
+pulls 3.7 kN at a standstill, GROUND IDLE 1.7 kN).
 Evidence: [conformance test](../../../tests/conformance/pc12.test.ts) (flown tier), [targets](../../../tests/conformance/targets/pc12.ts)
-`KEYBOARD_PILOT_TARGETS`.
-Close with: a condition-lever detent key (GROUND IDLE) and a round-out that does not depend on the flare height.
+`KEYBOARD_PILOT_TARGETS`; tests/input/turbineKeys.test.ts "the condition lever with detents"; scripts/check-keys.mjs
+(the Caravan's lever with real key events).
+Close with: a round-out that does not depend on the flare height.
 
 Gate 0 (browser, `fly-keyboard.mjs pc12`, default weather 6 kt from 100 deg): climb 130.3-134.4 KIAS, downwind flaps 15
 at 123.4-130.9 KIAS (0.9 kt over the 120-130 band at the top), take-off torque 44 psi, touchdown 75.1 KIAS 360 m past the
@@ -68,14 +79,45 @@ rule works in the simulator: gear up, PCL idle, about 170 KIAS: silent; 130 KIAS
 "below 200 ft radio altitude with torque below 10 psi" rule is not modelled (no radio altimeter).
 Evidence: [tests/aircraft/pc12.test.ts](../../../tests/aircraft/pc12.test.ts) "gear horn" (actuator and flight model).
 
-## Reverse torque — **estimate**
+## Reverse torque — **short of the 47E figure; blade geometry (estimate)**
 
-Full reverse static absorbs about 16 psi at 1650 rpm (Ng about 75 %, the topping governor holding Np) for 5.35 kN,
-52 % of the 10.3 kN static take-off thrust. The 47E's maximum reverse, 900 shp / 34.25 psi at 1650 rpm, is a limit the
-model's blade does not reach: its negative side stalls short of it, and a stronger reverse would shorten the reversed
-landing roll below the chart's (the model's ratio is 0.73-0.76 against 0.72).
-Evidence: [powerplant.ts](powerplant.ts) `PC12_PROPELLER`, `reversingCam`.
-Close with: the HC-E4A-3D blade's reverse data.
+Full reverse static: 16.1 psi (about 420 shp) at Np 1655, Ng 76 %, -5.35 kN (52 % of the 10.3 kN static take-off
+thrust). Target: the 47E's maximum reverse, 34.25 psi / 900 shp at Np 1650 (47E-PROXY 2-6; ESTIMATE for the /47).
+Polish 2026-10-17 tried to reach 30-34 psi and could not without breaking calibrated rows; nothing was changed.
+- Section levers inside the TCDS reverse angle (-17.5 deg at 0.80 R): clMin -1.2 / -1.4 / -1.6 gave 17.1 / 17.1 /
+  17.0 psi; alpha0 0 deg 17.1 (+1 deg 17.5); cdMax 1.6 16.3; all of them together (alpha0 0, clMin -1.6, cdMax 2.0)
+  20.0 psi at -6.8 kN. The blade angle itself: 30 psi needs about -34 deg (BEMT, static, 1650 rpm), twice the TCDS stop.
+- A drag rise on the negative side only (a new section term, tried and reverted): 32 psi static for 5.0-5.1 kN
+  with the cam raised to 90 % Ng (ITT 690 C), but (a) as a symmetric-bucket term it leaked into every regime: idle
+  descents steeper (120 KIAS -667 -> -796 ft/min), the half-beta taxi 4.6 -> 0.6 kt (band 8-12), touchdown 72 -> 78
+  KIAS, the crosswind keyboard circuit 2.1 m/s at touchdown (limit 1.8), the feathered glide 15.6 -> 15.0; (b) as a
+  rise below cl -0.7 it kept those but broke the 180 KTAS descent trim and the 12 000 ft cruise (205 KTAS against 256).
+- Either way the reversed landing roll got longer, not shorter: 284 -> 302-316 m, ratio 0.75 -> 0.80 (band 0.72 +-
+  0.08). With the thrust pinned (the 40-70 % test, the chart's 0.72 ratio, the aft-CG sit-back below) every extra psi
+  is Ng the gas generator must reach first: Np sagged to 970 rpm and the thrust to 2.9 kN for about 1.5 s while Ng
+  climbed 56 -> 88 % instead of 56 -> 76 %.
+Cause: the blade's twist is an ESTIMATE helix of 25 deg at 0.80 R. In reverse its inner third keeps a positive angle
+(0.20-0.45 R at +19.6 to -2.9 deg with the tip at -22 deg) and pushes forward, so the disc absorbs little power for its
+thrust. Evidence: [powerplant.ts](powerplant.ts) `PC12_PROPELLER`, `reversingCam`; the sweeps in the polish logs
+(work/pcmd/polish-pc12-logs: pc12-report-rev*.txt, conf-pc12-rev1.txt, idle-*.txt).
+Close with: the HC-E4A-3D twist and chord distribution, with the forward fit (the flight-idle stop, the climb and cruise
+rows) redone against it.
+
+## Full reverse held to a stop at the aft CG — **sits on its tail (estimate geometry)**
+
+Full reverse with full brakes held to a standstill and on for 10 s (polish 2026-10-17, landing roll at 86 KIAS, flaps
+40, no cancel): at maxGross, MLW and the forward limit the aircraft stops normally (mains at most 25 kN, the nose
+unloaded for at most 0.3 s as it rocks back after the braked stop, pitch -2.2 to +0.25 deg, no crash). At MTOW on the
+aft limit (station 6.107) it sits back on its tail at 13.7 deg and stays there while the reverse is held, the nose
+wheel off for 9.6 s; the same from rest on full brakes. The statics are consistent: the brake reaction at the
+ground against the aft thrust pitches it up by about T x 1.6 m (5.35 kN: 8.7 kN m) against W x 0.19 m (the CG ahead of
+the mains: 9.1 kN m) less the nose's share, which at the aft limit is only about 5 % of the weight. The C208 at its
+aft loading does not tip (-2.9 kN of reverse). Not changed: the CG height (1.54 m), the hub height (1.635 m) and the
+nose-wheel load at the aft limit are ESTIMATES, and a real PC-12 sits back lightly on the nose gear at most. Any
+increase of the reverse thrust (above) makes this worse at every CG.
+Evidence: [geometry.ts](geometry.ts) `REF_H`, `PC12_THRUST_Z`, `PC12_GEAR`; [systems.ts](systems.ts) loadings.
+Close with: the /47 CG height and the nose-wheel reaction at the aft limit (47E weighing data), or a POH caution on
+reverse at a standstill.
 
 ## Flight-idle low-pitch stop — **calibrated unknown**
 
@@ -94,7 +136,14 @@ Close with: the AFM's blade-angle rigging and an idle-thrust figure.
 ## Idle descents shallow — **owner to judge**
 
 FLIGHT IDLE power is ESTIMATE: 130 shp at 65 % Ng (was 165; pilot review 2026-10-17). Idle descents at MTOW: 120 KIAS
--648 ft/min (was -600), 150 KIAS -978 (-927), 85 KIAS flaps 40 gear down -1282 (-7.4 deg; was -1234). Type experience
+-648 ft/min (was -600), 150 KIAS -978 (-927), 85 KIAS flaps 40 gear down -1282 (-7.4 deg; was -1234).
+Polish 2026-10-17, clean, gear up, MTOW, energy-corrected, FLIGHT IDLE against feathered at the same height (2000 ft
+and 10 800 ft): 100 KIAS 21.4 / 20.5 : 1 against 14.8; 119 KIAS 23.3 / 22.4 : 1 (-539 / -629 ft/min) against 16.2 /
+16.3 (-771 / -860; the feathered best glide 15.8 +- 1.5 at 119 KIAS, 47E-PROXY 3.2 / Fig 5-2-46); 150 KIAS 19.9 / 18.4
+against 15.0 / 14.7. At FLIGHT IDLE the propeller governs 1700 rpm on a 13.6-23 deg blade, 3.7-4.0 psi, and gives
++0.6 to +1.07 kN of net thrust (+0.8-0.9 kN at 119 KIAS, about a quarter of the airframe's drag there): positive, as
+a PT6 at flight idle is, but more than "small". Not changed (not clearly wrong; the gate Np band blocks less idle
+power, see below). Type experience
 (ESTIMATE): -1000 to -1300 at 120-150 KIAS. Lower power breaks the ESTIMATE band for FLIGHT IDLE on the gate (95 shp:
 Np 1364 against 1500-1730) and gains little: at 120 KIAS zero propeller thrust gives about the feathered glide
 (-889 ft/min); steeper needs the propeller to drag with Np below 1700. The same shallow descent is open on the C208.

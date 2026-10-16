@@ -35,13 +35,13 @@ const STARTUP_STEPS: readonly [string, string][] = [
   ['Fuel tank selectors', 'check both ON (Shift+J cycles them)'],
   ['Power lever', 'IDLE: F1'],
   ['Propeller lever', 'full forward: hold Shift+; (the blades unfeather as the oil pressure builds)'],
-  ['Condition lever', 'CUT-OFF: hold M until COND shows CUT-OFF'],
+  ['Condition lever', 'CUT-OFF: check COND; if not, M (to LO IDLE), then M again held 1 s until COND shows CUT-OFF'],
   ['Battery', 'W: ON (battery and generator); voltage 24 V or more'],
   ['Fuel boost and beacon', 'J: FUEL BOOST ON, FUEL PRESS LOW goes out · Shift+O: beacon ON'],
   ['Ignition', '1: NORM (the igniters spark while the starter runs; 4 is ON, continuous)'],
   ['Parking brake', 'check SET (PARKING BRAKE shown); only if it is not, Shift+B sets it'],
   ['Starter', 'hold S: STARTER ENERGIZED and IGNITION ON light, oil pressure rises, Ng climbs'],
-  ['At 13 % Ng or more', 'Shift+M briefly until COND shows LO IDLE: fuel on. Light-off: watch the ITT, 1090 °C for 2 s at most; if it races up, M to CUT-OFF at once'],
+  ['At 13 % Ng or more', 'Shift+M once: COND shows LO IDLE, fuel on. Light-off: watch the ITT, 1090 °C for 2 s at most; if it races up, M held 1 s: CUT-OFF at once'],
   ['At about 50 % Ng', 'let go of S: starter OFF. Ng settles at 52 % or more, ITT falls back, GENERATOR OFF goes out'],
   ['After start', 'oil pressure green · I avionics ON · lights as needed · release the parking brake (Shift+B) to taxi'],
 ];
@@ -77,7 +77,7 @@ export const C208_UI: UiProfile = {
     if (engineControl(c, engine, 'fuelSelector') === 'off') return 'Starter: both fuel tank selectors are OFF (FUEL SELECT OFF). Shift+J to turn them ON.';
     if (engineControl(c, engine, 'throttle') > POWER_IDLE_MAX) return 'Power lever is not at IDLE: F1 first. A start with the power lever forward overheats the turbine.';
     if (!engineControl(c, engine, 'fuelPump')) return 'FUEL BOOST is OFF: press J; the start is made on the boost pump (FUEL PRESS LOW out).';
-    if (engineControl(c, engine, 'mixture') < CUTOFF_BELOW) return 'Condition lever at CUT-OFF: once Ng shows 13 % or more, Shift+M briefly until COND shows LO IDLE. Keep S held to about 50 % Ng.';
+    if (engineControl(c, engine, 'mixture') < CUTOFF_BELOW) return 'Condition lever at CUT-OFF: once Ng shows 13 % or more, Shift+M once: COND shows LO IDLE. Keep S held to about 50 % Ng.';
     return null;
   },
   // In the order they are announced. 'masterBattery' and 'alternator' (battery and generator) are announced as one
@@ -126,7 +126,7 @@ export const C208_UI: UiProfile = {
     ['Power lever', 'F1 idle · F2 / F3 (Page Down / Up) less / more · F4 full; set torque, keep ITT and Ng in the green'],
     ['Beta and reverse', 'on the ground only: hold Shift+F2 to the idle gate, let go, hold it again: BETA (blades only, taxi speed), then REVERSE · F3 back to the gate · F1 idle on the gate'],
     ['Propeller lever', '; lower rpm · Shift+; higher rpm (1600-1900) · Shift+F feathers'],
-    ['Condition lever', 'M / Shift+M: CUT-OFF (shuts the engine down), LOW IDLE, HIGH IDLE'],
+    ['Condition lever', 'one detent a press: Shift+M forward (LOW IDLE, HIGH IDLE), M back to LOW IDLE; CUT-OFF (shuts the engine down): M pressed again at LOW IDLE and held 1 s'],
     ['Starter and ignition', 'S held: STARTER · 1 IGNITION NORM, 4 ON (continuous) · a dry motoring run: STARTER with the condition lever at CUT-OFF'],
     ['Fuel', 'J FUEL BOOST · Shift+J tank selectors (keep both ON)'],
     ['Generator', 'Shift+W: generator ON / OFF (on line from about 52 % Ng)'],

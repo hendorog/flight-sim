@@ -5,8 +5,9 @@
 // keys (F, V, [ ]) do nothing, and F5 with the menu open does not reload the page. Then the Caravan on the runway: the
 // power lever's lift-over idle gate with real key events (Shift+F2 held from forward of the gate stops on it; let go
 // and held again it goes aft into beta and reverse; F3 brings it back to the gate and stops; F1 idle on the gate;
-// Shift+F2 then F4 full forward), and that Shift+F2 does nothing on the Cessna 172S. Prints and writes
-// keycheck.json; exits 1 if a check of the Caravan's gate fails.
+// Shift+F2 then F4 full forward) and its condition lever's detents (M / Shift+M a detent a press, CUT-OFF by a fresh M
+// held 1 s at LOW IDLE), and that Shift+F2 does nothing on the Cessna 172S. Prints and writes keycheck.json; exits 1
+// if a check of the Caravan's gate or condition lever fails.
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import net from 'node:net';
@@ -122,6 +123,26 @@ try {
   check('Caravan: F4 from beta is full forward', g.f4.thr === 1 && g.f4.rev === 0, g.f4);
   res.c208Hud = await q.evaluate(() => document.body.innerText.includes('BETA') || document.body.innerText.includes('REV'));
   await q.screenshot({ path: `${out}/keycheck_c208.png` });
+  // The condition lever's detents (InputProfile.conditionDetents): M a detent back, stopping at LOW IDLE; a fresh M
+  // held there 1 s goes on to CUT-OFF (the engine stops: last); Shift+M a detent forward.
+  const cond = () => q.evaluate(() => +__sim.ctx.controls.mixture.toFixed(3));
+  const m = {};
+  m.start = await cond();
+  await qhold('KeyM', 80); m.mTap = await cond();
+  await qhold('KeyM', 80, true); m.shiftMToHigh = await cond();
+  await qhold('KeyM', 1500); m.mHeldFromHigh = await cond();
+  await qhold('KeyM', 400); m.mShortAtLow = await cond();
+  await qhold('KeyM', 80, true); m.shiftMTap = await cond();
+  await qhold('KeyM', 80); await qhold('KeyM', 1300); m.mHeldAtLow = await cond();
+  await qhold('KeyM', 80, true); m.shiftMFromCutoff = await cond();
+  res.c208Condition = m;
+  check('Caravan: M from HIGH IDLE stops at LOW IDLE', m.mTap === 0.1, m);
+  check('Caravan: Shift+M from LOW IDLE is HIGH IDLE', m.shiftMToHigh === 1, m);
+  check('Caravan: M held from HIGH IDLE (key auto-repeat) stops at LOW IDLE', m.mHeldFromHigh === 0.1, m);
+  check('Caravan: a short M at LOW IDLE does not cut the engine', m.mShortAtLow === 0.1, m);
+  check('Caravan: Shift+M from LOW IDLE is HIGH IDLE (again)', m.shiftMTap === 1, m);
+  check('Caravan: a fresh M held 1 s at LOW IDLE is CUT-OFF', m.mHeldAtLow === 0, m);
+  check('Caravan: Shift+M from CUT-OFF is LOW IDLE', m.shiftMFromCutoff === 0.1, m);
 } catch (e) {
   res.error = String(e.stack ?? e);
 } finally {

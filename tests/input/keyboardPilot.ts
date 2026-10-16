@@ -101,6 +101,12 @@ export interface PilotTargets {
    * centre, the nosewheel down, beta and brakes). Absent: only once the nosewheel touches.
    */
   rolloutOnMainsS?: number;
+  /**
+   * Turboprops whose condition lever has detents (InputProfile.conditionDetents): on the roll-out the pilot taps M once,
+   * taking the condition lever from the high idle (FLIGHT IDLE) to the low one (GROUND IDLE: 47E-PROXY Fig 5-2-52
+   * "ground idle after touch down"). Absent: the lever stays where the approach had it.
+   */
+  rolloutGroundIdle?: boolean;
 }
 
 /**
@@ -146,6 +152,7 @@ export function pilotTargets(reference: ReferenceSpeeds = C172S_REFERENCE): Pilo
     takeoffFlapDetent: 0,
     rolloutReverse: undefined,
     rolloutOnMainsS: undefined,
+    rolloutGroundIdle: undefined,
   };
 }
 
@@ -201,6 +208,8 @@ export interface FlightLog {
   /** Flap lever, and the power lever aft of the gate (types with beta: ControlInputs.reverse; else absent). */
   flaps: number;
   reverse?: number;
+  /** The condition lever (ControlInputs.mixture) of a type with condition detents; else absent. */
+  condition?: number;
 }
 
 export interface CircuitResult {
@@ -376,6 +385,7 @@ export function createCircuitPilot(
     idle: k('F1'),
     full: k('F4'),
     reverse: k('F2', true),
+    lean: k('KeyM'),
     centre: k('Numpad5'),
   };
   const all = Object.values(keys);
@@ -629,6 +639,9 @@ export function createCircuitPilot(
           moveTo(keys.fwd, keys.back, c.elevator, 0, AXES.elevator, 0.02);
           steer(heading07 - Math.atan2(rc.across, 60));
           if (kias < T.brakeKias && s.wheels[0].onGround) keys.brakes.press(t, DECIDE + 0.02);
+          // GROUND IDLE: one tap of M (a detent a press; the cut-off needs a second press held at the detent).
+          const groundIdle = profile.conditionDetents?.groundIdle;
+          if (T.rolloutGroundIdle && groundIdle !== undefined && c.mixture > groundIdle + 0.005) keys.lean.press(t, DECIDE + 0.02);
           // Beta: the power lever over the gate (a fresh press with the lever at idle) and held to ground fine.
           const rr = T.rolloutReverse;
           if (rr && kias < rr.belowKias && c.throttle <= 0) {
@@ -668,6 +681,7 @@ export function createCircuitPilot(
         power: Math.round(T.power(s)),
         flaps: +c.flaps.toFixed(3),
         ...(c.reverse !== undefined ? { reverse: +c.reverse.toFixed(3) } : {}),
+        ...(profile.conditionDetents ? { condition: +c.mixture.toFixed(3) } : {}),
       });
     }
   };

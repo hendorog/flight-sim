@@ -4,7 +4,8 @@
 // The quadrant on the existing controls (plan sect. 0): the throttle keys move the POWER CONTROL LEVER forward of the
 // idle gate; aft of it the reverse input (ControlInputs.reverse: beta, then reverse; keyboard and hardware binding by
 // the input package) moves it into the ground range; the mixture keys move the CONDITION lever (CUT-OFF/FEATHER,
-// GROUND IDLE, FLIGHT IDLE). There is no propeller lever (the governor holds 1700 rpm; feathering is the condition
+// GROUND IDLE, FLIGHT IDLE), a detent a press: back stops at GROUND IDLE, and CUT-OFF takes a fresh press there held
+// for a second (InputProfile.conditionDetents). There is no propeller lever (the governor holds 1700 rpm; feathering is the condition
 // lever's), so no propeller or feather keys. The STARTER is a press switch that latches (powerplant.ts); the magneto
 // keys work the IGNITION switch ('toggles'). The assists are the C208's with the speeds scaled by the ratio of the
 // clean stall speeds, 97 / 70 KCAS.
@@ -35,6 +36,9 @@ export const PC12_INPUT: InputProfile = {
     rudderTrim: true,
     fuelPump: true,
   },
+  // The condition lever's detents: CUT-OFF/FEATHER 0, GROUND IDLE at turbineEngine CUTOFF_BELOW (0.1, sim.ts
+  // PC12_GROUND_IDLE), FLIGHT IDLE 1.
+  conditionDetents: { groundIdle: 0.1 },
   // PUSHER INTR on the control wheel (Shift+D) and the overhead STARTER INTERRUPT switch (Shift+N), both held.
   pusherInterrupt: true,
   starterInterrupt: true,
@@ -65,7 +69,7 @@ export const PC12_INPUT: InputProfile = {
     throttleDown: 'Power lever back (to the idle gate)',
     powerLeverReverse: 'Power lever to the idle gate; let go and hold again: over the gate into BETA, then REVERSE (on the ground)',
     throttleIdle: 'Power lever IDLE, on the gate',
-    mixtureRich: 'Condition lever forward (FLIGHT IDLE)',
-    mixtureLean: 'Condition lever back (CUT-OFF/FEATHER)',
+    mixtureRich: 'Condition lever forward one detent (CUT-OFF/FEATHER, GROUND IDLE, FLIGHT IDLE)',
+    mixtureLean: 'Condition lever back to GROUND IDLE; pressed again there and held 1 s: CUT-OFF/FEATHER',
   },
 };

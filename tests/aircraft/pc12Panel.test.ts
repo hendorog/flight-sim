@@ -409,7 +409,7 @@ describe('PC-12 UI', () => {
     c.throttle = 0; c.fuelPump = false;
     expect(PC12_UI.starterAdvice(c, 0)).toMatch(/FUEL PUMPS/);
     c.fuelPump = true; c.mixture = 0;
-    expect(PC12_UI.starterAdvice(c, 0)).toBe('Press STARTER once; condition lever to GROUND IDLE at 13 % Ng (Shift+M briefly); the starter cuts out at 50 % Ng. ITT 1000 °C for 5 s at most.');
+    expect(PC12_UI.starterAdvice(c, 0)).toBe('Press STARTER once; condition lever to GROUND IDLE at 13 % Ng (Shift+M once); the starter cuts out at 50 % Ng. ITT 1000 °C for 5 s at most.');
     c.mixture = 0.3;
     expect(PC12_UI.starterAdvice(c, 0)).toBeNull();
   });

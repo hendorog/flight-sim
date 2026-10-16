@@ -3,16 +3,19 @@
 See also the [cross-aircraft issues](../../../docs/known-issues.md#cross-aircraft-issues) and the
 [turbine model](../../../docs/turbine-model.md). Entries are ordered by pilot impact.
 
-## Full reverse held to a stop with full brakes — **defect**
+## Full reverse held to a stop with full brakes — **not reproduced (closed)**
 
-Holding the power lever in full reverse (-14.6 deg, Ng 85 %, about 2.9 kN aft) with full braking down to walking
-pace lifts the left main wheel at about 5 kt, then the nose wheel, and collapses the right main leg (about 55-71 kN):
-`crashed` "Right main gear collapsed". In ground fine, or out of reverse to ground fine by 40 KIAS (the POH's
-technique), the roll ends normally (205 m in ground fine, 195 m with reverse cancelled at 40 KIAS, 274 m on the gate).
-Evidence: a landing roll at 78 KTAS, flaps 30, `rollReverse 1` with no cancel (tests/fdm/measure.ts landingRoll); the
-same defect on the turbine-core test-bed (docs/turbine-model.md, hand-over 3).
-Close with: a look at the brake and tyre model with aft thrust near zero speed (physics/gear), then a reverse-to-stop
-item in the conformance targets.
+The defect seen on the turbine-core test-bed and on the C208 at T1b (full reverse held to walking pace with full
+brakes lifted a main wheel, then the nose, and collapsed the other main at 55-71 kN) does not reproduce on the
+integrated aircraft (polish 2026-10-17). A landing roll at 78 KTAS, flaps 30, `rollReverse 1` with no cancel and full
+brakes (tests/fdm/measure.ts landingRoll), then reverse and full brakes held 10 s at the stop, at maxGross, MLW, the
+forward and the aft loading: no crash, rolls 180-196 m, mains at most 20.3 kN, the nose at least 0.3 kN except at the
+aft loading (unloaded for 0.17 s as the aircraft rocks back after the braked stop), pitch -1.0 to +1.0 deg, full
+reverse -2.9 kN at Np 1801 and Ng 85 %. From rest on full brakes: the nose keeps 0.9-4.2 kN. The PC-12 at its aft
+limit does sit back on its tail in the same test (its own KNOWN_ISSUES): a matter of its CG and thrust, not a gear defect.
+The test-bed graft was not re-run.
+Evidence: the polish probes (work/pcmd/polish-pc12-tools/collapse.test.ts, static.test.ts).
+Close with: a reverse-to-stop item in the conformance targets if the POH gives a technique for it.
 
 ## Beta range lever schedule — **estimate**
 
