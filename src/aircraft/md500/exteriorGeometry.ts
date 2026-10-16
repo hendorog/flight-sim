@@ -103,8 +103,13 @@ export function aerofoilPanel(rootLe: FRD, rootTe: FRD, tipLe: FRD, tipTe: FRD, 
     const chord = te.distanceTo(le);
     return out.copy(le).lerp(te, xc).addScaledVector(n, face * half * chord);
   };
+  // The grid's unflipped winding faces along (row direction x column direction): span x chord on the +normal face
+  // (columns run leading to trailing edge there). Flip whenever that disagrees with `normal`, so the skin faces out
+  // whichever way the caller orders the chord lines (the lower fin, the stabiliser and the endplates are mirrored).
+  const span0 = frd(...tipLe).sub(frd(...rootLe)), chord0 = frd(...rootTe).sub(frd(...rootLe));
+  const flip = span0.cross(chord0).dot(n) < 0;
   const batch = new MeshBatch(), dummy = new THREE.MeshBasicMaterial();
-  const skin = gridGeometry({ rows, cols, wrap: true, position: (i, j, out) => void at(i, j, out) });
+  const skin = gridGeometry({ rows, cols, wrap: true, flip, position: (i, j, out) => void at(i, j, out) });
   batch.add(dummy, skin);
   for (const i of [0, rows - 1]) {
     const loop = Array.from({ length: cols - 1 }, (_, j) => at(i, j, new THREE.Vector3()));
@@ -113,7 +118,7 @@ export function aerofoilPanel(rootLe: FRD, rootTe: FRD, tipLe: FRD, tipTe: FRD, 
   }
   const mesh = batch.build('panel').children[0] as THREE.Mesh;
   dummy.dispose();
-  // Wrapped grid winding depends on the chord direction: render both faces' lighting correctly by recomputing normals.
+  // Smooth normals across the wrapped seam and the caps from the (outward) winding.
   mesh.geometry.computeVertexNormals();
   return mesh.geometry;
 }
@@ -152,7 +157,10 @@ export function fairingLoft(keys: readonly (readonly [number, number, number, nu
     return keys[x > xs[0] ? 0 : keys.length - 1][c];
   };
   const xAt = (i: number) => THREE.MathUtils.lerp(xs[0], xs[xs.length - 1], i / (rows - 1));
-  const shell = gridGeometry({ rows, cols, flip: true,
+  // Rows run along x, columns from the left lower edge over the top to the right: the unflipped winding faces out
+  // when x increases down the rows. Callers list stations front to rear (x decreasing), so the flip follows the order.
+  const descending = xs[xs.length - 1] < xs[0];
+  const shell = gridGeometry({ rows, cols, flip: !descending,
     position(i, j, out) {
       const x = xAt(i), a = THREE.MathUtils.lerp(-Math.PI / 2, Math.PI / 2, j / (cols - 1));
       const top = lerpKey(x, 1), bottom = lerpKey(x, 2), hw = lerpKey(x, 3);
@@ -163,7 +171,7 @@ export function fairingLoft(keys: readonly (readonly [number, number, number, nu
     } });
   if (!closed) return shell;
   // Flat floor between the two lower edges, facing down.
-  const floor = gridGeometry({ rows, cols: 2,
+  const floor = gridGeometry({ rows, cols: 2, flip: descending,
     position(i, j, out) { const x = xAt(i); frd(x, (j === 0 ? -1 : 1) * lerpKey(x, 3), lerpKey(x, 2), out); } });
   const batch = new MeshBatch(), dummy = new THREE.MeshBasicMaterial();
   batch.add(dummy, shell); batch.add(dummy, floor);

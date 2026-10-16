@@ -4,13 +4,13 @@
 // 4.7 deg nose up), nothing below the skid sole, pilot's eye on dimensions.ts PILOT_EYE (within 3 cm).
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { MD500_VISUAL as def, GROUND_ATTITUDE_DEG, TAIL_HUB_LEVEL, TAIL_HUB_WL, BOOM, boomWl, sta, wl, SEAT, UPPER_FIN } from '../../src/aircraft/md500/visual';
+import { MD500_VISUAL as def, ENDPLATE, LOWER_FIN, GROUND_ATTITUDE_DEG, TAIL_HUB_LEVEL, TAIL_HUB_WL, BOOM, boomWl, sta, wl, SEAT, UPPER_FIN } from '../../src/aircraft/md500/visual';
 import { MD500_PANEL } from '../../src/aircraft/md500/panel';
 import { MD500_ROTORCRAFT } from '../../src/aircraft/md500/rotorcraft';
 import { md500ExteriorVisualClass } from '../../src/aircraft/md500/exterior';
 import { MD500MainRotor, buildMD500TailHead, DOME_RISE, MD500_MAIN_SECTION, type MD500RotorPose } from '../../src/aircraft/md500/exteriorRotor';
-import { STAB_INCIDENCE_DEG } from '../../src/aircraft/md500/exteriorDetails';
-import { md500Materials } from '../../src/aircraft/md500/exteriorGeometry';
+import { BOOM_ROOT_FAIRING, INLET_FAIRING, STAB_INCIDENCE_DEG } from '../../src/aircraft/md500/exteriorDetails';
+import { aerofoilPanel, fairingLoft, md500Materials } from '../../src/aircraft/md500/exteriorGeometry';
 import * as D from '../../src/aircraft/md500/dimensions';
 import { MD500_PANEL_CANVAS, MD500_PANEL_FACE, MD500_PANEL_OUTLINE } from '../../src/aircraft/md500/panelLayout';
 import { FuselageShape } from '../../src/render/aircraft/fuselageShape';
@@ -62,6 +62,27 @@ function bladeTips(rotor: TeeteringRotor, radius: number, root: THREE.Object3D):
     for (const z of [-0.08, 0, 0.08]) out.push(toFrd(new THREE.Vector3(radius, 0, z).applyMatrix4(m).applyMatrix4(rotor.blades.matrixWorld).applyMatrix4(inv)));
   }
   return out;
+}
+
+/** Area fractions of a closed (or skin-sitting) shell whose triangle winding and vertex normals face away from its centroid. */
+function outwardFraction(g: THREE.BufferGeometry): { winding: number; normals: number } {
+  const p = g.getAttribute('position'), nAttr = g.getAttribute('normal'), idx = g.getIndex()!;
+  const c = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), d = new THREE.Vector3(), vn = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) c.add(a.fromBufferAttribute(p, i));
+  c.divideScalar(p.count);
+  let wOut = 0, nOut = 0, total = 0;
+  for (let t = 0; t < idx.count; t += 3) {
+    const i0 = idx.getX(t), i1 = idx.getX(t + 1), i2 = idx.getX(t + 2);
+    a.fromBufferAttribute(p, i0); b.fromBufferAttribute(p, i1); d.fromBufferAttribute(p, i2);
+    const centre = a.clone().add(b).add(d).divideScalar(3).sub(c);
+    const n = b.clone().sub(a).cross(d.clone().sub(a)), area = n.length();
+    if (area < 1e-12) continue;
+    vn.fromBufferAttribute(nAttr, i0).add(new THREE.Vector3().fromBufferAttribute(nAttr, i1)).add(new THREE.Vector3().fromBufferAttribute(nAttr, i2));
+    total += area;
+    if (n.dot(centre) > 0) wOut += area;
+    if (vn.dot(centre) > 0) nOut += area;
+  }
+  return { winding: wOut / total, normals: nOut / total };
 }
 
 describe('MD 500E exterior', () => {
@@ -265,6 +286,40 @@ describe('MD 500E exterior', () => {
       ctx.cameraMode = 'cockpit'; visual.update(ctx);
       expect(visual.cockpit.group.getObjectByName('occupants')!.visible).toBe(false);
     });
+  });
+
+  it('faces every aerofoil panel and fairing loft outward (FrontSide), whichever way the caller orders it', () => {
+    const shells: [string, THREE.BufferGeometry][] = [];
+    shells.push(['upper fin', aerofoilPanel(UPPER_FIN[0], UPPER_FIN[3], UPPER_FIN[1], UPPER_FIN[2], [0, 1, 0], 0.13)]);
+    shells.push(['lower fin', aerofoilPanel(LOWER_FIN[0], LOWER_FIN[3], LOWER_FIN[1], LOWER_FIN[2], [0, 1, 0], 0.12)]);
+    shells.push(['lower fin, normal reversed', aerofoilPanel(LOWER_FIN[0], LOWER_FIN[3], LOWER_FIN[1], LOWER_FIN[2], [0, -1, 0], 0.12)]);
+    shells.push(['upper fin, root and tip swapped', aerofoilPanel(UPPER_FIN[1], UPPER_FIN[2], UPPER_FIN[0], UPPER_FIN[3], [0, 1, 0], 0.13)]);
+    // Stabiliser and endplates exactly as exteriorDetails.ts builds them.
+    const hs = D.HORIZONTAL_STABILIZER, inc = STAB_INCIDENCE_DEG * Math.PI / 180, midX = hs.leadingX - hs.chord / 2;
+    const chordEnd = (y: number, lead: boolean): [number, number, number] => {
+      const k = lead ? 1 : -1; return [midX + k * hs.chord / 2 * Math.cos(inc), y, hs.z - k * hs.chord / 2 * Math.sin(inc)];
+    };
+    const half = hs.span / 2 - 0.01;
+    shells.push(['stabiliser', aerofoilPanel(chordEnd(-half, true), chordEnd(-half, false), chordEnd(half, true), chordEnd(half, false),
+      [Math.sin(inc), 0, -Math.cos(inc)], 0.12, 4)]);
+    for (const side of [-1, 1]) {
+      const toe = ENDPLATE.toeDeg * Math.PI / 180, y = side * hs.span / 2, c = ENDPLATE.chord / 2;
+      const le = [midX + c * Math.cos(toe), y - side * c * Math.sin(toe)], te = [midX - c * Math.cos(toe), y + side * c * Math.sin(toe)];
+      const top = hs.z - ENDPLATE.height * 0.4, bottom = hs.z + ENDPLATE.height * 0.6;
+      shells.push([`endplate ${side}`, aerofoilPanel([le[0], le[1], top], [te[0], te[1], top], [le[0] - 0.03, le[1], bottom],
+        [te[0] + 0.01, te[1], bottom], [Math.sin(toe) * side, Math.cos(toe), 0], 0.08, 4)]);
+    }
+    const inlet = INLET_FAIRING.map(([s, top, bot, hw]) => [sta(s), wl(top), wl(bot), hw * 0.0254] as const);
+    const root = BOOM_ROOT_FAIRING.map(([s, top, bot, hw]) => [sta(s), wl(top), wl(bot), hw * 0.0254] as const);
+    shells.push(['inlet fairing', fairingLoft(inlet, 3.2)], ['boom-root fairing', fairingLoft(root, 2.4, true)]);
+    shells.push(['inlet fairing, rear to front', fairingLoft([...inlet].reverse(), 3.2)]);
+    shells.push(['boom-root fairing, rear to front', fairingLoft([...root].reverse(), 2.4, true)]);
+    for (const [name, g] of shells) {
+      const f = outwardFraction(g);
+      expect(f.winding, `${name} winding`).toBeGreaterThan(0.95);
+      expect(f.normals, `${name} normals`).toBeGreaterThan(0.95);
+      g.dispose();
+    }
   });
 
   it('draws the stabiliser leading edge down (download) at the TCDS incidence less the shaft tilt', () => {
