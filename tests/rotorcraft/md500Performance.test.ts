@@ -131,13 +131,14 @@ describe('MD 500E control power against the OH-6A derivatives (Heffley CR-3144 p
       within30('pitch acceleration deg/s2', pitch.accel, pitchRef.accel);
       within30('pitch rate at 0.5 s deg/s', pitch.rate05, pitchRef.rate05);
     });
-    // Tracked handling gaps (md500/KNOWN_ISSUES.md): one assertion per test, so each is reported on its own and a fix
-    // that closes one turns its it.fails red.
-    it.fails(`KNOWN CONTROL-POWER GAP — ${kt} KIAS: roll rate at 0.5 s within 30 % of the OH-6A`, () => {
+    // Closed by the control-system flexibility of Heffley Fig II-2 (controlFlex, md500/rotorcraft.ts).
+    it(`${kt} KIAS: roll rate at 0.5 s within 30 % of the OH-6A`, () => {
       const roll = stepResponse(kt, 'aileron', 0.2), rollRef = referenceResponse(k, 'DA', 'p');
       rows.push({ kt, rollRate05: roll.rate05, rollRate05Ref: rollRef.rate05 });
       within30('roll rate at 0.5 s deg/s', roll.rate05, rollRef.rate05);
     });
+    // Tracked handling gap (md500/KNOWN_ISSUES.md): one assertion per test, so a fix that closes it turns it.fails red.
+    // The peak is the largest single-step (1/240 s) rate change in the first 0.3 s.
     it.fails(`KNOWN CONTROL-POWER GAP — ${kt} KIAS: pedal step yaw acceleration within 30 % of the OH-6A`, () => {
       const yaw = stepResponse(kt, 'rudder', 0.2), yawRef = referenceResponse(k, 'DP', 'r');
       rows.push({ kt, yawAccel: yaw.accel, yawAccelRef: yawRef.accel });
@@ -145,7 +146,7 @@ describe('MD 500E control power against the OH-6A derivatives (Heffley CR-3144 p
     });
     // Yaw rate at 1 s: +/-30 %, with a 3 deg/s floor where the reference is under 10 deg/s (at 60 KIAS the
     // weathercock returns both to a few deg/s, where 30 % is below the measurement's meaning).
-    (kt === 0 ? it.fails : it)(`${kt === 0 ? 'KNOWN CONTROL-POWER GAP — ' : ''}${kt} KIAS: pedal step yaw rate at 1 s within 30 % of the OH-6A (3 deg/s floor)`, () => {
+    it(`${kt} KIAS: pedal step yaw rate at 1 s within 30 % of the OH-6A (3 deg/s floor)`, () => {
       const yaw = stepResponse(kt, 'rudder', 0.2), yawRef = referenceResponse(k, 'DP', 'r');
       rows.push({ kt, yawRate1: yaw.rate1, yawRate1Ref: yawRef.rate1 });
       const error = Math.abs(yaw.rate1 - yawRef.rate1) / Math.max(yawRef.rate1, 10);

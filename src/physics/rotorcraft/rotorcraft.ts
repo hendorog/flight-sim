@@ -297,7 +297,7 @@ export class Rotorcraft {
     this.articulatedPower.hub = v3.dot(shaftHubMoment, rate);
     this.articulatedPower.shaft = -this.articulatedPower.hub;
     const hubTorque = s.omega > 0 ? this.articulatedPower.hub / s.omega : 0;
-    const main = bladeElements(d.main, s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true);
+    const main = bladeElements(d.main, d.yawInRotorSpeed ? Math.max(0, s.omega - d.rotation * rate.z) : s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true);
     const h = Math.max(0.3 * d.main.radius, height - quat.rotate(b.orientation, d.main.hub).z);
     // NDARC TP-2015-218751 §12-4.1.2: constant-thrust induced-velocity factor (exponent 3/2).
     // Use the wake's angle to the ground normal; an upward autorotative wake gets no image correction.
@@ -312,7 +312,10 @@ export class Rotorcraft {
     const tailArm = v3.sub(d.tail.hub, b.cgOffset);
     const tailAir = v3.add(air, v3.cross(b.angularVelocity, tailArm));
     // Positive tail thrust acts right: tail arm aft makes nose-left anti-torque for CCW main rotor.
-    const tailPitch = d.tail.minPitch + (1 - clamp(c.rudder, -1, 1) * d.rotation) * 0.5 * (d.tail.maxPitch - d.tail.minPitch);
+    const rigged = d.tail.minPitch + (1 - clamp(c.rudder, -1, 1) * d.rotation) * 0.5 * (d.tail.maxPitch - d.tail.minPitch);
+    // Control-system flexibility (controlFlex): the blade reaches a fraction of the linkage's travel from the centre.
+    const tailPitch = d.controlFlex
+      ? (d.tail.minPitch + d.tail.maxPitch) / 2 + d.controlFlex.pedal * (rigged - (d.tail.minPitch + d.tail.maxPitch) / 2) : rigged;
     // Tail disc is on the left; the useful anti-torque force is to the right. Main wake enters its
     // in-plane flow, while signed sideslip enters its axial momentum equation (including adverse flow).
     const wakeAtTail = 0.35 * s.inflow / (1 + (air.x / 18) ** 2);
@@ -342,8 +345,10 @@ export class Rotorcraft {
         s.retreatingFlap += (clamp(stallTarget, 0, 0.2) - s.retreatingFlap) * lag;
       }
       s.inflow += (targetInflow * ge * (d.main.inducedFactor ?? 1) - s.inflow) * (1 - Math.exp(-dt / inflowTau));
-      s.tailInflow += (inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation,
-        tailHorizontal) - s.tailInflow) * (1 - Math.exp(-dt / 0.08));
+      const tailTarget = inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation, tailHorizontal);
+      const tailTau = d.tail.pittPetersInflow
+        ? inflowTimeConstant(d.tail.radius, tailAir.y * d.rotation, tailHorizontal, tailTarget) : 0.08;
+      s.tailInflow += (tailTarget - s.tailInflow) * (1 - Math.exp(-dt / tailTau));
     }
     const shaftForce = v3.scale(axis, thrust);
     if (horizontal > 0) Object.assign(shaftForce, v3.sub(shaftForce, v3.scale(inPlane, main.inPlane / horizontal)));

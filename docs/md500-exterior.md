@@ -51,7 +51,7 @@ the panel face stays in `panelLayout.ts` (M3).
 | Boom | straight from the cant STA 197.78, WL 55.34 to the TR hub height; radii 0.135 → 0.068 m | P (root) / D (end) / 3V radii |
 | Tail-rotor hub | STA 284, BL −0.30 (left), **WL 51.4 in level axes** | P / F (BL) / **D** (below) |
 | Upper fin | dimensions.ts outline, leading and trailing edges extended down to the boom | 3V (T2) |
-| Stabiliser | span 5.43 ft, chord 0.30, centreline WL 96.91; drawn leading edge **down 6.17°** to the waterline | P / ESTIMATE chord / D |
+| Stabiliser | span 5.43 ft, chord 0.30, centreline WL 96.91; drawn leading edge **up 6.17°** to the waterline | P / ESTIMATE chord / D |
 | Endplates | height 0.30 (40 % above, 60 % below), chord 1.2 × stab, toe 5° in | ESTIMATE (dimensions.ts, photographs) |
 | Skids | track 6.45 ft outside, STA 28–128, struts at STA 78.5 / 124 (feet 0.08 m ahead of the tops) | P / 3V / ESTIMATE lean |
 | Pilot | LEFT seat, eye at `PILOT_EYE` (STA 70.4, BL −13.0, 1.73 m above the sole) | P (seat arms) / ESTIMATE eye |
@@ -67,9 +67,10 @@ drawn for a boom near WL 52) off the tube. The visual uses the level-axis value 
 of `TAIL_HUB.z` is handed to T2 (PR text).
 
 **Stabiliser incidence.** TCDS p14: 8.92–9.42° (mid 9.17°) measured to a line perpendicular to the mast; the mast is
-tilted 3° forward, so the stab sits 6.17° to the fuselage waterline. It is drawn leading edge down (a download in
-forward flight, the heli-archive description of the 500D stab). The aerodynamic sign is T2's to prove (plan §6.2);
-the drawing follows `HORIZONTAL_STABILIZER.incidenceToMastNormalDeg` and `SHAFT_TILT_DEG`.
+tilted 3° forward, so the stab sits 6.17° to the fuselage waterline, leading edge **up** (the TCDS signs a nose-down
+setting where it means one; docs/md500-flight-model.md "Stabiliser sign"). The drawing and the flight model both read
+`STAB_INCIDENCE_TO_WL_DEG` (dimensions.ts). The section is drawn symmetric; the flight model assumes an inverted
+cambered one (the download). Until the polish pass the drawing had the leading edge down.
 
 ## Acceptance (measured on the built model, `md500Exterior.test.ts`)
 

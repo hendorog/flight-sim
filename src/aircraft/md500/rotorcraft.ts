@@ -56,6 +56,14 @@ export const MD500_ROTORCRAFT: RotorcraftDefinition = {
   cyclicLimit: (D.CYCLIC_LIMITS_DEG.forward + D.CYCLIC_LIMITS_DEG.aft + D.CYCLIC_LIMITS_DEG.left + D.CYCLIC_LIMITS_DEG.right) / 4 * DEG,
   // F / 3V: 3 deg forward static mast (OH-6A, Heffley p34; RFM Fig 6-3 cant lines).
   shaftTilt: D.SHAFT_TILT_DEG * DEG,
+  // F: OH-6A control-system flexibility from full-scale wind-tunnel tests (Heffley CR-3144 Fig II-2, p22): the blade
+  // reaches 0.75 of the commanded cyclic and 0.67 of the commanded tail-rotor pitch (the same figure's linkage gains,
+  // 0.24 / 0.135 / 0.39 deg per % of travel, are the 369A's TCDS ranges, so the factors sit on top of the rigging).
+  // Pivots (ESTIMATE): the zero-cyclic swashplate and the centre of the tail-rotor range. The collective's 0.88 is
+  // not applied (it would re-calibrate minPitch and the autorotation law): KNOWN_ISSUES.md.
+  controlFlex: { longitudinal: 0.75, lateral: 0.75, pedal: 0.67 },
+  // The governed rotor's air speed carries the fuselage yaw rate (main-rotor yaw damping; Heffley's OH-6A Z_r).
+  yawInRotorSpeed: true,
   // Articulated: no teeter stop (the harmonic hub never reads it); the legacy field.
   teeterLimit: 12 * DEG,
   airspeedLimits: MD500_VNE, airspeedCorrections: MD500_SPEED_CORRECTIONS, manifoldLimits: undefined,
@@ -119,16 +127,18 @@ export const MD500_ROTORCRAFT: RotorcraftDefinition = {
     liftSlope: 5.7, maxCl: 1.2, profileCd: 0.012, inducedDrag: 0.012,
     // ESTIMATE: two ~1 kg blades and the teetering hub.
     inertia: 0.35, hub: D.TAIL_HUB,
+    // The small, fast tail rotor's inflow settles in about 5 ms in the hover (Pitt-Peters), not the legacy 0.08 s.
+    pittPetersInflow: true,
   },
   // T-stab on the upper fin (dimensions.ts): span 5.43 ft (with endplates), chord ESTIMATE 0.30 m. TCDS p14:
-  // incidence 8.92-9.42 deg to the mast normal, which lies 3 deg nose-down of the body axis; the sign is not printed.
-  // Read leading edge UP (+6.17 deg to the body axis) with an inverted cambered section (zero-lift angle ESTIMATE
-  // +6 deg): the surface carries a DOWNLOAD at every forward speed (heli-archive: "set at +5 deg and produces
-  // negative lift", S). The other reading, leading edge down (-12.17 deg), puts the nose 0.9 deg UP at 120 KIAS and
-  // fails the cruise-attitude row; a symmetric section at +6.17 deg lifts below 120 KIAS. docs/md500-flight-model.md
-  // ("Stabiliser sign") has the sweep. The model's surface is symmetric: incidence = geometric - zero-lift angle.
+  // incidence 8.92-9.42 deg to the mast normal, which lies 3 deg nose-down of the body axis: leading edge UP, +6.17 deg
+  // to the body axis (STAB_INCIDENCE_TO_WL_DEG; the TCDS signs a nose-down setting where it means one, p21), drawn so
+  // by the exterior. An inverted cambered section (zero-lift angle ESTIMATE +6 deg) makes it carry a DOWNLOAD at every
+  // forward speed (heli-archive: "set at +5 deg and produces negative lift", S); a symmetric section at +6.17 deg lifts
+  // below 120 KIAS. docs/md500-flight-model.md ("Stabiliser sign") has the sweep. The model's surface is symmetric:
+  // incidence = geometric - zero-lift angle.
   stabilizer: { centre: { x: HS.leadingX - HS.chord / 4, y: 0, z: HS.z }, area: HS.span * HS.chord,
-    liftSlope: 3.8, incidence: (HS.incidenceToMastNormalDeg - D.SHAFT_TILT_DEG - STAB_ZERO_LIFT_DEG) * DEG, maxCl: 1.1, wash: 0.45 },
+    liftSlope: 3.8, incidence: (D.STAB_INCIDENCE_TO_WL_DEG - STAB_ZERO_LIFT_DEG) * DEG, maxCl: 1.1, wash: 0.45 },
   // Upper (swept, under the T-stab) and lower fins, 3V outlines; symmetric sections, no offset. ESTIMATES.
   // The tail rotor turns 0.30 m to the left of them and draws its inflow across them (the fins are on its intake
   // side): the 0.70 m disc covers all of the lower fin's outline and 60 % of the upper's (dimensions.ts outlines
