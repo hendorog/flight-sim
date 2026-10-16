@@ -367,11 +367,12 @@ export class InputSystem implements Subsystem {
     for (const axis of ['aileron', 'elevator', 'rudder'] as const) this.written[axis] = c[axis];
   }
 
-  private pickedUp(r: AxisReading): boolean {
+  /** `at`: where the control stands in the axis's own travel, when that is not the control's value (a reverse zone). */
+  private pickedUp(r: AxisReading, at?: number): boolean {
     if (!this.pickup.has(r.control)) return true;
     const c = this.ctx.controls;
-    const target = r.control === 'throttleRate' ? 0 : r.control === 'throttle' && this.profile.rotorcraft ? c.collective ?? 0 :
-      r.control === 'brakes' ? c.brakeLeft : r.control === 'none' ? 0 : c[r.control] ?? 0;
+    const target = at ?? (r.control === 'throttleRate' ? 0 : r.control === 'throttle' && this.profile.rotorcraft ? c.collective ?? 0 :
+      r.control === 'brakes' ? c.brakeLeft : r.control === 'none' ? 0 : c[r.control] ?? 0);
     if (Math.abs(r.value - target) > 0.05) return false;
     this.pickup.delete(r.control);
     return true;
@@ -1069,14 +1070,24 @@ export class InputSystem implements Subsystem {
    * Without beta, or with no zone, the throttle as it reads.
    */
   private hardwareThrottle(): { value: number; moved: boolean; reverse: number | null } | null {
+    const zone = (r: AxisReading): number => {
+      const d = this.profile.has.reverse ? r.reverseZone ?? 0 : 0;
+      return d > 0 && d < 1 ? d : 0;
+    };
+    const c = this.ctx.controls;
     let found: AxisReading | null = null;
     for (const r of this.gamepads.readings) {
-      if (r.control !== 'throttle' || !this.pickedUp(r)) continue;
+      if (r.control !== 'throttle') continue;
+      // Taking over from the scripted pilot: the lever is matched where it stands in the axis's travel, aft of the
+      // detent when it is in beta or reverse, so a pickup at idle happens at the detent and does not skip beta.
+      const d = zone(r);
+      const rev = c.reverse ?? 0;
+      if (!this.pickedUp(r, d > 0 ? (rev > 0 ? d * (1 - rev) : d + (1 - d) * c.throttle) : undefined)) continue;
       if (!found || r.moved) found = r;
     }
     if (!found) return null;
-    const d = this.profile.has.reverse ? found.reverseZone ?? 0 : 0;
-    if (!(d > 0 && d < 1)) return { value: found.value, moved: found.moved, reverse: null };
+    const d = zone(found);
+    if (d === 0) return { value: found.value, moved: found.moved, reverse: null };
     return { value: clamp((found.value - d) / (1 - d), 0, 1), moved: found.moved, reverse: clamp((d - found.value) / d, 0, 1) };
   }
 
@@ -1085,7 +1096,7 @@ export class InputSystem implements Subsystem {
    * back toward the gate), a hardware throttle's reverse zone or a dedicated reverse axis; whichever moved last owns
    * it. The throttle is held at 0 while the lever is aft of the gate (ControlInputs.reverse: never both non-zero).
    */
-  private updateReverse(dt: number, c: ControlInputs, reverseHeld: boolean, hw: { moved: boolean; reverse: number | null } | null): void {
+  private updateReverse(dt: number, c: ControlInputs, reverseHeld: boolean, hw: { value: number; moved: boolean; reverse: number | null } | null): void {
     const target = this.target('reverse');
     const now = readEngineControl(c, target, 'reverse') ?? 0;
     let kb = 0;
@@ -1093,7 +1104,10 @@ export class InputSystem implements Subsystem {
     if (this.forwardToGate && now > 0) kb -= REVERSE_RATE;
     // A reverse lever of its own, or the throttle's reverse zone.
     const axis = this.hardwareLever('reverse');
-    const hwReverse = axis ?? (hw && hw.reverse !== null ? { value: hw.reverse, moved: hw.moved } : null);
+    // A throttle axis without a reverse zone cannot go aft of the gate, but moved forward of idle it takes the whole
+    // power lever: a reverse set by the keys or a held Reverse button comes back to the gate.
+    const hwReverse = axis ?? (hw && hw.reverse !== null ? { value: hw.reverse, moved: hw.moved } :
+      hw && hw.value > 0 ? { value: 0, moved: hw.moved } : null);
     let v = now;
     if (this.reverseOwner.update(kb !== 0, hwReverse?.moved ?? false) === 'hardware' && hwReverse) v = hwReverse.value;
     else v = clamp(now + kb * dt, 0, 1);

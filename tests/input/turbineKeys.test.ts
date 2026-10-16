@@ -131,6 +131,54 @@ describe('the power lever aft of the idle gate (types with beta and reverse)', (
     expect(rev(r)).toBe(0);
   });
 
+  it('a held Reverse button, let go, is cancelled by a throttle axis without a reverse zone moved forward', () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0 });
+    const g = r.input.gamepads;
+    g.poll = () => {};
+    const reading: AxisReading = { control: 'throttle', value: 0, moved: true, takeover: false };
+    g.readings.push(reading);
+    r.run(FRAME);
+    reading.moved = false;
+    g.held.add('powerLeverReverse');
+    g.pressed.push('powerLeverReverse');
+    r.run(FRAME);
+    g.pressed.length = 0;
+    r.run(1);
+    g.held.delete('powerLeverReverse');
+    r.run(FRAME);
+    expect(rev(r)).toBeGreaterThan(0.4);
+    expect(r.c.throttle).toBe(0);
+    // Left at idle the axis does not take the lever out of reverse; moved forward it does.
+    reading.moved = true;
+    r.run(FRAME);
+    expect(rev(r)).toBeGreaterThan(0.4);
+    reading.value = 0.6;
+    r.run(FRAME);
+    expect(r.c.throttle).toBeCloseTo(0.6, 6);
+    expect(rev(r)).toBe(0);
+  });
+
+  it('taking over from the scripted pilot, a reverse-zone throttle picks up at the detent with the lever at idle, not deep in reverse', () => {
+    for (const [start, at] of [[{ throttle: 0 }, 0.15], [{ throttle: 0.5 }, 0.575], [{ throttle: 0, reverse: 0.4 }, 0.09]] as const) {
+      const r = makeInputRig(C208_INPUT, start);
+      const g = r.input.gamepads;
+      g.poll = () => {};
+      const reading: AxisReading = { control: 'throttle', value: 1, moved: true, takeover: false, reverseZone: 0.15 };
+      g.readings.push(reading);
+      (r.input as unknown as { pickup: Set<string> }).pickup.add('throttle');
+      // Well away from the lever: no pickup, the controls stay where the pilot left them.
+      reading.value = at > 0.5 ? 0.1 : 0.9;
+      r.run(FRAME);
+      expect([r.c.throttle, rev(r)]).toEqual([start.throttle, 'reverse' in start ? start.reverse : 0]);
+      // At the lever's place in the axis's travel: picked up, and the lever stays where it was.
+      reading.value = at;
+      r.run(FRAME);
+      expect(r.c.throttle).toBeCloseTo(start.throttle, 6);
+      expect(rev(r)).toBeCloseTo('reverse' in start ? start.reverse : 0, 6);
+      expect((r.input as unknown as { pickup: Set<string> }).pickup.has('throttle')).toBe(false);
+    }
+  });
+
   it('the reverse zone does nothing on a type without reverse: the whole travel is throttle', () => {
     const r = makeInputRig(C172S_INPUT, { throttle: 0 });
     const g = r.input.gamepads;

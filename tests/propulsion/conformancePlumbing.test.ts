@@ -22,13 +22,13 @@ type ConstantSpeed = Extract<PropellerDef['pitchControl'], { kind: 'constantSpee
 const BETA = (PT6_BETA_PROPELLER.pitchControl as ConstantSpeed).beta!;
 const log = (line: string): void => console.log(`[beta] ${line}`);
 
-/** The C208 with the beta test-bed's range on its propeller (same blade) and a reversing cam (85 % Ng, 95 % Np). */
+/** The C208 with the beta test-bed's range on its propeller (same blade; the test-bed's beta slices replace the C208's own) and a reversing cam (85 % Ng, 95 % Np). */
 const C208_BETA: AircraftDefinition = (() => {
   const install = C208_DEFINITION.powerplant.engines[0];
   const pc = install.propeller.pitchControl as ConstantSpeed;
   const propeller: PropellerDef = {
     ...install.propeller,
-    pitchControl: { ...pc, beta: BETA, pitchNodes: [...(PT6_BETA_PROPELLER.pitchControl as ConstantSpeed).pitchNodes.filter((n) => n < pc.fineStop), ...pc.pitchNodes] },
+    pitchControl: { ...pc, beta: BETA, pitchNodes: [...(PT6_BETA_PROPELLER.pitchControl as ConstantSpeed).pitchNodes.filter((n) => n < pc.fineStop), ...pc.pitchNodes.filter((n) => n >= pc.fineStop)] },
   };
   const engine = { ...install.engine, turbine: { ...install.engine.turbine!, reversingCam: { maxReverseNg: 0.85, reverseNp: 0.95 } } };
   return { ...C208_DEFINITION, powerplant: { ...C208_DEFINITION.powerplant, engines: [{ ...install, engine, propeller }] } };
@@ -37,10 +37,12 @@ const C208_BETA: AircraftDefinition = (() => {
 describe('idle taxi (measure.ts idleTaxi)', () => {
   it('on the gate at high idle the aircraft runs away; ground fine holds it near a stop with |static thrust| < 500 N; half beta between', () => {
     const rig = () => makeRig({ def: C208_BETA, loading: 'maxGross', env: flatEnvironment() });
-    // On the gate at HIGH idle (at low idle the C208's 670 N does not break it away); the beta positions at low idle.
+    // On the gate at HIGH idle (the clear runaway: 3.5 kN); the beta positions at low idle. Half beta (1.35 kN at
+    // LOW IDLE since the C208's low idle went from 20 to 40 shp) is still accelerating at 150 s (20.1 kt) and settles
+    // at about 22.7 kt by 400 s: it gets the longer window.
     const gate = idleTaxi(rig(), { reverse: 0, condition: 1 });
     const fine = idleTaxi(rig(), { reverse: BETA.pitchOnlyTravel, condition: CUTOFF_BELOW });
-    const half = idleTaxi(rig(), { reverse: 0.5 * BETA.pitchOnlyTravel, condition: CUTOFF_BELOW });
+    const half = idleTaxi(rig(), { reverse: 0.5 * BETA.pitchOnlyTravel, condition: CUTOFF_BELOW, seconds: 400 });
     for (const [name, r] of [['high idle, gate', gate], ['low idle, ground fine', fine], ['low idle, half beta', half]] as const) {
       log(`C208 + beta test-bed, ${name}: static ${r.staticThrustN.toFixed(0)} N, Np ${r.staticNp.toFixed(0)}, Ng ${r.staticNg.toFixed(1)} %, ITT ${r.staticIttC.toFixed(0)} C; unbraked ${r.speedKt.toFixed(1)} kt (Np ${r.np.toFixed(0)}, steady ${r.steady})`);
       for (const x of [r.staticThrustN, r.staticNp, r.staticNg, r.staticIttC, r.speedKt, r.np]) expect(Number.isFinite(x)).toBe(true);

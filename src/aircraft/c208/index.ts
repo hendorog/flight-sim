@@ -22,7 +22,8 @@ export const C208_DEFINITION: AircraftDefinition = {
   icaoType: 'C208',
   engineCount: 1,
   // Both tank selectors ON; the condition lever (mixture) starts at CUT-OFF only through the cold preset.
-  controlDefaults: { fuelSelector: 'on' },
+  // The power lever on the forward side of the gate (a reset after beta or reverse must not keep the lever aft).
+  controlDefaults: { fuelSelector: 'on', reverse: 0 },
   notModelled: [
     'The beta range on a cam: the blade angle follows the power lever linearly from the low-pitch stop to ground fine, so the first half of the beta travel slows a taxi less than the real lever does.',
     'The reverse limits as timed exceedances (1 min at 1825 rpm) and the beta / reverse annunciation: the lever reads BETA / REV on the HUD only.',

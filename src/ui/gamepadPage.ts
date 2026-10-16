@@ -98,7 +98,8 @@ export class GamepadPage {
   /** Called every frame while the page is visible: rebuild on hot-plug, otherwise refresh live values. */
   update(): void {
     const list = this.manager?.list() ?? [];
-    const sig = this.manager ? 'pads:' + list.map((d) => `${d.index}:${d.id}:${d.axes.length}:${d.buttons.length}:${d.calibrating}`).join('|') : 'none';
+    // Which axes are throttles is in the signature: the reverse-zone controls are built for throttle axes only.
+    const sig = this.manager ? 'pads:' + list.map((d) => `${d.index}:${d.id}:${d.axes.length}:${d.buttons.length}:${d.calibrating}:${d.axes.map((a) => (a.control === 'throttle' ? 't' : '-')).join('')}`).join('|') : 'none';
     if (sig !== this.signature) {
       this.signature = sig;
       this.build(list);
