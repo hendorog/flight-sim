@@ -94,10 +94,11 @@ export function pc12WingPlanform(): Planform {
     section: WING_ROOT,
     mirror: true,
     stations: [station(0), station(w.rootY), station(tip, WING_TIP), top],
-    // The carry-over strip across the fuselage (contract 3.1 "Low wing"), then 11 strips a side on the panel (5 over
-    // the flap, 4 over the aileron, one between and the tip) and two on the winglet.
+    // The carry-over strip across the fuselage (contract 3.1 "Low wing"), then 8 strips a side on the panel (5 over
+    // the flap, 3 over the aileron, the flap's and the aileron's ends inside strips) and one on the winglet: the cost
+    // of a trim and reset (contract 3.10).
     centre: 'carryover',
-    edges: [w.rootY, 1.7, 2.55, 3.4, 4.25, w.flap.outerY, w.aileron.innerY, 5.85, 6.5, 7.15, w.aileron.outerY, tip, tip + WINGLET.height / 2, TIP_SPAN],
+    edges: [w.rootY, 1.75, 2.7, 3.65, 4.4, 5.1, 5.9, 6.7, tip, TIP_SPAN],
     controls: [
       {
         source: 'flaps',
@@ -277,7 +278,7 @@ const WAKE_MAX_LOSS = 0.25;
 export function createPC12AeroDefinition(): AircraftAeroDefinition {
   const wing = buildStrips(pc12WingPlanform());
   // The vanes are on the wing leading edges, inboard of the ailerons (the left one here).
-  const sensor = wing.findIndex((s) => s.side === -1 && s.span > 3.4 && s.span < 4.25);
+  const sensor = wing.findIndex((s) => s.side === -1 && s.span > 3.65 && s.span < 4.4);
   const prop = G.propellers[0];
   return {
     referenceArea: G.wing.area,
