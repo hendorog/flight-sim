@@ -45,13 +45,17 @@ autothrottle rarely goes near full.
 Evidence: [C208 targets](../tests/conformance/targets/c208.ts) `C208_TAKEOFF_LIMITS`; T1b hand-over (integration).
 Close with: an optional maximum autothrottle lever in `AutopilotGains`, used by the instructor's recovery too.
 
-### Reverse held to a stop with full brakes — **defect**
+### Reverse held to a stop with full brakes — **not reproduced on the integrated aircraft; test-bed not re-run**
 
-On a turboprop with reverse (C208; the same on the turbine-core test-bed), full reverse held to a standstill with full
-brakes unloads the nose and one main and collapses the other main leg (55-71 kN). Out of reverse to ground fine by 40
-KIAS, as the handbooks say, the roll ends normally. Not reproduced on the PC-12's conformance rolls (cancelled at 40 KIAS).
-Evidence: [C208 known issues](../src/aircraft/c208/KNOWN_ISSUES.md), [turbine model](turbine-model.md) hand-over 3.
-Close with: the brake and tyre model with aft thrust near zero speed (src/physics/gear).
+At T1b, full reverse held to a standstill with full brakes collapsed a C208 main leg (55-71 kN). Re-run on the
+integrated C208 and PC-12 (polish 2026-10-17: landing roll with no cancel, then reverse and full brakes held 10 s at
+the stop, four loadings each): no crash. C208 rolls 180-196 m, mains at most 20.3 kN, reverse -2.9 kN at Np 1801 and
+Ng 85 %; PC-12 at maxGross, MLW and the forward limit mains at most 25.5 kN. The PC-12 at MTOW on its aft limit sits
+back on its tail (13.7 deg, nose wheel off 9.6 s): a CG and thrust matter on ESTIMATE geometry (CG height 1.54 m, hub
+1.635 m), tracked in its own KNOWN_ISSUES. The turbine-core test-bed graft has no reverse-to-stop case and was not re-run.
+Evidence: [C208 known issues](../src/aircraft/c208/KNOWN_ISSUES.md), [PC-12 known issues](../src/aircraft/pc12/KNOWN_ISSUES.md),
+[turbine model](turbine-model.md) hand-over 3.
+Close with: the same case on the test-bed graft; a reverse-to-stop conformance item if a POH gives the technique.
 
 ### Human helicopter input in wind — **unvalidated**
 
