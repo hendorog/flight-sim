@@ -55,12 +55,19 @@ Evidence: the ESTIMATE / 3V comments in [geometry.ts](geometry.ts), [systems.ts]
 [gear.ts](gear.ts).
 Close with: a data sheet like the other types' (TCDS A37CE, POH, maintenance manual) and the numbers moved to it.
 
-## Keyboard circuit — **unvalidated**
+## Keyboard circuit — **workaround**
 
-The conformance suite's keyboard circuit is not flown: its pilot sets power by rpm, which a governed turboprop
-does not show (the propeller holds 1900).
-Evidence: [conformance test](../../../tests/conformance/c208.test.ts).
-Close with: a torque-based keyboard pilot and the circuit flown.
+The keyboard circuit is flown by torque (the pilot reads ft lbf and sets it with taps; take-off 1750, climb 1650),
+flaps 20 for the take-off and the climb at 85-95 KIAS, and beta after touchdown. It needs a wider circuit than the
+172's: at flight idle (HIGH IDLE) the propeller on its low-pitch stop still turns about 400 ft lbf at 78-95 KIAS, so
+with flaps FULL at idle the Caravan comes down at only about 3.6 deg; the pilot descends 450 ft from abeam the
+threshold and turns base 2500 m beyond it. A real Caravan comes down far more steeply at idle, so the flight-idle
+thrust (or drag) on approach is suspect; it was not recalibrated here (the low-pitch stop carries the climb and cruise
+fit).
+Evidence: [conformance targets](../../../tests/conformance/targets/c208.ts) `KEYBOARD_PILOT_TARGETS`,
+`C208_KEYBOARD_CIRCUIT`; `node scripts/fly-keyboard.mjs c208 <dir>`.
+Close with: the POH's idle descent figures (rate of descent at idle, flaps FULL), the flight-idle thrust checked
+against them, and the 172's circuit flown unchanged.
 
 ## Roll spoilers, anti-ice, inertial separator — **missing feature**
 

@@ -1,8 +1,8 @@
 // Conformance of the Cessna 208 Caravan 675 (quick tier always; flown tier with FS_AIRCRAFT=c208 or all): the suite's
 // blocks on the targets of targets/c208.ts, and the items no generic block measures: the rest attitude and propeller
 // clearance, the engine at the take-off power setting (torque, ITT, Ng, Np inside the limits), and the fuel flow
-// of the maximum cruise. The keyboard circuit is not flown yet: its pilot sets power by rpm, which a governed
-// turboprop does not show.
+// of the maximum cruise, the idle taxi on the gate and in beta, and the keyboard circuit (flown by torque:
+// targets/c208.ts KEYBOARD_PILOT_TARGETS) with the plan's speed, flap, touchdown and beta checks.
 
 import { beforeAll, describe } from 'vitest';
 import { loadAircraft } from '../../src/aircraft/registry';
@@ -11,8 +11,11 @@ import { DEG, FT, KT } from '../../src/core/math';
 import { at, flatEnvironment, makeRig, resetTo } from '../fdm/helpers';
 import { LOW_TERRAIN, cruiseSpeed, idleTaxi, restOnGround } from '../fdm/measure';
 import { once } from './plan';
+import { flyCircuit, makeRig as makeKeyboardRig, type FlightLog } from '../input/keyboardPilot';
+import { keyboardCircuit, keyboardPilotOptions } from './keyboard';
 import { describeAircraft, flownTier, item } from './suite';
-import { C208_BETA_TAXI, C208_CRUISE_FUEL_PPH, C208_REST, C208_TAKEOFF_LIMITS, C208_TARGETS } from './targets/c208';
+import { AIRPORT } from '../../src/core/world';
+import { C208_BETA_TAXI, C208_CRUISE_FUEL_PPH, C208_KEYBOARD_CIRCUIT, C208_REST, C208_TAKEOFF_LIMITS, C208_TARGETS, KEYBOARD_PILOT_TARGETS } from './targets/c208';
 
 const ID = 'c208';
 const QUICK_MS = 120_000;
@@ -23,6 +26,8 @@ const PPH = 3600 / 0.45359237;
 const FT_LB = 1 / 1.3558179;
 
 describeAircraft(C208_TARGETS);
+// The circuit pilot flies by torque (targets/c208.ts KEYBOARD_PILOT_TARGETS).
+keyboardCircuit({ aircraft: ID });
 
 describe(`conformance ${ID}: items outside the generic blocks`, () => {
   let def!: AircraftDefinition;
@@ -85,5 +90,40 @@ describe(`conformance ${ID}: items outside the generic blocks`, () => {
       return rig.fm.state.engines[0].fuelFlow * PPH;
     });
     item(ID, 'fuel flow at maximum cruise, 10 000 ft', () => r(), C208_CRUISE_FUEL_PPH, 'lb/h', FLOWN_MS);
+  });
+
+  describe.runIf(flownTier(ID))('keyboard circuit: speeds, flaps, touchdown and beta (flown tier)', () => {
+    // The circuit pilot of keyboardCircuit in light turbulence, judged on the numbers a Caravan pilot flies.
+    const r = once(() => {
+      const res = flyCircuit(makeKeyboardRig({ turbulence: 0.1 }, keyboardPilotOptions(def, KEYBOARD_PILOT_TARGETS)));
+      const log = res.log;
+      const range = (a: FlightLog[], f: (l: FlightLog) => number): [number, number] => [Math.min(...a.map(f)), Math.max(...a.map(f))];
+      const climb = log.filter((l) => l.phase === 'climb' && l.altAgl > 60);
+      // Established on the downwind (20 s after the turn) and before the power comes back abeam the threshold.
+      const downwind = log.filter((l) => l.phase === 'downwind' && l.t > (res.phaseTimes.downwind ?? 0) + 20 && l.along > -AIRPORT.runway.length / 2 + 100);
+      const vfe = def.reference.vfe, detents = def.input.flapDetents;
+      const flapOverspeed = log.filter((l) => detents.some((d, i) => i > 0 && l.flaps >= d - 0.01 && l.kias > vfe[i - 1])).length;
+      const slow = log.filter((l) => l.phase === 'rollout' && l.kias < 60);
+      const takeoff = log.filter((l) => l.phase === 'takeoffRoll' || l.phase === 'rotate' || l.phase === 'climb' || l.phase === 'crosswind');
+      return {
+        res,
+        climb: range(climb, (l) => l.kias),
+        downwind: range(downwind, (l) => l.kias),
+        flapOverspeed,
+        betaBelow60: slow.length ? Math.min(...slow.map((l) => l.reverse ?? 0)) : NaN,
+        torqueMax: Math.max(...takeoff.map((l) => l.power)),
+        touchdownM: res.touchdown ? res.touchdown.along + AIRPORT.runway.length / 2 : NaN,
+      };
+    });
+    const K = C208_KEYBOARD_CIRCUIT;
+    item(ID, 'keyboard circuit: completed to a stop, no crash (1 = yes)', () => Number(!r().res.crashed && r().res.stop !== null), K.completed, '', FLOWN_MS);
+    item(ID, 'keyboard circuit: slowest climb speed (flaps 20)', () => r().climb[0], K.climbKias, 'KIAS', FLOWN_MS);
+    item(ID, 'keyboard circuit: fastest climb speed (flaps 20)', () => r().climb[1], K.climbKias, 'KIAS', FLOWN_MS);
+    item(ID, 'keyboard circuit: slowest downwind speed', () => r().downwind[0], K.downwindKias, 'KIAS', FLOWN_MS);
+    item(ID, 'keyboard circuit: fastest downwind speed', () => r().downwind[1], K.downwindKias, 'KIAS', FLOWN_MS);
+    item(ID, 'keyboard circuit: highest torque from the take-off to the downwind', () => r().torqueMax, K.torqueFtLb, 'ft lb', FLOWN_MS);
+    item(ID, 'keyboard circuit: decisions with the flaps beyond their speed', () => r().flapOverspeed, K.flapOverspeed, '', FLOWN_MS);
+    item(ID, 'keyboard circuit: touchdown beyond the threshold', () => r().touchdownM, K.touchdownM, 'm', FLOWN_MS);
+    item(ID, 'keyboard circuit: power lever aft of the gate below 60 KIAS on the roll-out (least)', () => r().betaBelow60, K.betaBelow60, '', FLOWN_MS);
   });
 });

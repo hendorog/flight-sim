@@ -6,7 +6,8 @@
 // Weak data are marked: no engineering data sheet exists for this type yet, and some POH figures are recalled
 // from the published brochure tables rather than read off the charts.
 
-import { C208_BETA } from '../../../src/aircraft/c208/powerplant';
+import { C208_BETA, PT6A_114A } from '../../../src/aircraft/c208/powerplant';
+import type { PilotTargets } from '../../input/keyboardPilot';
 import type { ConformanceTargets } from '../targets';
 import { band, below, pct, range } from '../targets';
 
@@ -170,3 +171,64 @@ export const C208_BETA_TAXI = [
     settled: range(1, 1, 'measure.ts idleTaxi steady', 'C208-beta-cam'),
   },
 ] as const;
+
+/** ft lbf per N m. */
+const FT_LB_PER_NM = 1 / 1.3558179;
+
+/**
+ * The keyboard circuit pilot's targets (keyboardTargets.ts; tests/input/keyboardPilot.ts): power is set by TORQUE, ft lbf
+ * on the propeller shaft, as the Caravan is flown (the propeller holds 1900 rpm on its governor whatever the power). The
+ * torques are those of the trimmed scenario starts (downwind 115 KIAS level about 790 ft lbf; final 95 KIAS flaps 20 on
+ * the 3 deg path about 470) and the POH's take-off and climb settings (1865 ft lbf maximum: take-off at 1750 with a
+ * margin for the spool-up overshoot, climb 1650). Take-off and climb with flaps 20 at 90 KIAS (POH sect. 4: "climb out at
+ * 85-95 KIAS with flaps 20"), flaps up at the level-off, 10 abeam the threshold, 20 on base at 95, FULL on final at 78.
+ * On the roll-out the power lever goes over the gate into beta, to ground fine, once the nose wheel is down (below
+ * 75 KIAS; POH: beta after touchdown), and the brakes come on below 55 KIAS.
+ */
+export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
+  power: (s) => s.engines[0].torque * PT6A_114A.gearRatio * FT_LB_PER_NM,
+  takeoffPower: 1750,
+  climbPower: 1650,
+  takeoffFlapDetent: 2,
+  rotateKias: 72,
+  climbKias: 90,
+  rotatePitchDeg: 8,
+  climbPitchDeg: 9,
+  levelPitchDeg: 3,
+  finalPitchDeg: -1.5,
+  landingPitchDeg: 5,
+  powerDownwind: 800,
+  powerPattern: 600,
+  powerBase: 450,
+  powerFinal: 550,
+  powerMin: 150,
+  powerMax: 1400,
+  powerPerKt: 20,
+  powerPerMetre: 10,
+  powerBand: 60,
+  // A wider circuit than the 172's: at flight idle the Caravan's propeller still turns about 400 ft lbf on approach,
+  // so it can steepen a 3 deg path only a little (flaps FULL, 78 KIAS, idle: about 3.6 deg). The pilot comes down
+  // 450 ft from abeam the threshold, turns base 2500 m beyond it and flies base at 450 ft, so the final starts on
+  // or a little under the path, where power, not idle, corrects it.
+  baseTurnM: 2500,
+  baseFt: 450,
+  downwindDescentFt: 450,
+  // A heavy aircraft that floats in the round-out: a lower flare, and the crab kept until just before the wheels touch
+  // (its ailerons would not hold a wing down against the drift through a long float).
+  flareM: 7,
+  decrabM: 2,
+  flareBankDeg: 8,
+  brakeKias: 55,
+  rolloutReverse: { belowKias: 75, lever: C208_BETA.pitchOnlyTravel },
+};
+
+/** The keyboard circuit's checks (plan 4, T1b): what a Caravan pilot flying the circuit by hand would be held to. */
+export const C208_KEYBOARD_CIRCUIT = {
+  completed: range(1, 1, 'take-off, circuit, landing and a stop'),
+  climbKias: range(85, 95, 'POH sect. 4: climb out at 85-95 KIAS with flaps 20'),
+  downwindKias: range(100, 130, 'SCHOOL: downwind 110-120 KIAS (+/-10)'),
+  torqueFtLb: below(1865, 'POH sect. 2: 1865 ft lb maximum'),
+  flapOverspeed: range(0, 0, 'POH sect. 2: flaps 10 175, 20 150, FULL 125 KIAS'),
+  touchdownM: range(0, 450, 'within the first 450 m of the runway (plan 4)'),
+  betaBelow60: range(C208_BETA.pitchOnlyTravel - 0.01, 1, 'POH sect. 4: beta after touchdown (ground fine or further aft)'),
+};

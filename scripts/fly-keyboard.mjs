@@ -14,6 +14,10 @@
 // sends each one to the page as a real keystroke (Playwright keyboard.down / up), so everything goes through
 // the app's own keyboard listeners. Checks every sample for NaNs, a crash event, console errors and subsystem
 // errors; prints a JSON summary and writes a screenshot per phase plus keyboard.json (the pilot's 10 Hz log).
+// The summary's `circuit` block has the numbers a pilot is judged on: climb and established-downwind speeds, the
+// highest power from the take-off to the downwind (rpm, or torque on a turboprop), decisions flown with a flap beyond
+// its speed (a failure), the touchdown point beyond the threshold, and on a type whose pilot uses beta on the roll-out
+// (PilotTargets.rolloutReverse) the least lever aft of the gate below 60 KIAS (short of ground fine is a failure).
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import net from 'node:net';
@@ -64,12 +68,16 @@ try {
     const sim = window.__sim;
     const q = [];
     const m = (window.__kb = { q, nan: [], crashes: [], done: false, result: null, phase: 'takeoffRoll', samples: [] });
+    const d0 = sim.physics.definition;
+    const world = await import('/src/core/world.ts');
+    m.meta = { vfe: d0.reference.vfe, detents: d0.input.flapDetents, half: world.AIRPORT.runway.length / 2 };
     sim.ctx.events.on('crash', (e) => m.crashes.push({ t: sim.ctx.state.time, ...e }));
     const backend = { keyDown: (code, shift = false) => q.push({ down: true, code, shift }), keyUp: (code) => q.push({ down: false, code }) };
     // Another type than the Cessna 172S: the pilot flies with its input profile, reference speeds and rest height,
     // and with the targets of its tests/conformance/targets/<id>.ts (KEYBOARD_PILOT_TARGETS), as keyboardCircuit does.
     const def = sim.physics.definition;
     const targets = await kt.keyboardPilotTargets(def.id);
+    m.meta.rolloutReverse = targets?.rolloutReverse ?? null;
     const type = def.id === 'c172s' && !targets ? undefined : { profile: def.input, reference: def.reference, restHeight: def.geometry.restHeight, ...(targets ? { targets } : {}) };
     const pilot = kp.createCircuitPilot(backend, sim.ctx.state, sim.ctx.controls, sim.ctx.events, type);
     const t0 = sim.ctx.state.time;
@@ -130,7 +138,22 @@ try {
   const res = await p.evaluate(() => ({ ...window.__kb, q: undefined, errors: window.__sim.errors }));
   await shot('09_stopped');
   const log = res.log ?? [];
-  const summary = { ...res.result, nan: res.nan, crashes: res.crashes, errors: res.errors, consoleErrors, wallSeconds: (Date.now() - start) / 1000 };
+  // The pilot's numbers (see the header).
+  const span = (a, f) => (a.length ? [Math.min(...a.map(f)), Math.max(...a.map(f))] : null);
+  const r0 = res.result ?? {};
+  const meta = res.meta ?? {};
+  const half = meta.half ?? 900;
+  const dwFrom = (r0.phaseTimes?.downwind ?? 0) + 20;
+  const slow = log.filter((l) => l.phase === 'rollout' && l.kias < 60);
+  const circuit = {
+    climbKias: span(log.filter((l) => l.phase === 'climb' && l.altAgl > 60), (l) => l.kias),
+    downwindKias: span(log.filter((l) => l.phase === 'downwind' && l.t > dwFrom && l.along > -half + 100), (l) => l.kias),
+    takeoffPowerMax: span(log.filter((l) => ['takeoffRoll', 'rotate', 'climb', 'crosswind'].includes(l.phase)), (l) => l.power ?? NaN)?.[1] ?? null,
+    flapOverspeed: log.filter((l) => (meta.detents ?? []).some((d, i) => i > 0 && l.flaps >= d - 0.01 && l.kias > meta.vfe[i - 1])).length,
+    touchdownFromThresholdM: r0.touchdown ? +(r0.touchdown.along + half).toFixed(1) : null,
+    betaBelow60: meta.rolloutReverse && slow.length ? Math.min(...slow.map((l) => l.reverse ?? 0)) : null,
+  };
+  const summary = { ...res.result, circuit, nan: res.nan, crashes: res.crashes, errors: res.errors, consoleErrors, wallSeconds: (Date.now() - start) / 1000 };
   // A compact trace: one line every 5 s and at each phase change.
   let last = '';
   const trace = log.filter((l, i) => {
@@ -142,6 +165,8 @@ try {
   console.log(JSON.stringify(summary));
   writeFileSync(`${outDir}/keyboard.json`, JSON.stringify({ summary, log }, null, 1));
   if (!res.result || res.result.crashed || !res.result.stop || res.nan.length || res.crashes.length || consoleErrors.length || res.errors.length) exitCode = 1;
+  if (circuit.flapOverspeed > 0) exitCode = 1;
+  if (meta.rolloutReverse && !(circuit.betaBelow60 >= meta.rolloutReverse.lever - 0.01)) exitCode = 1;
 } finally {
   await browser.close();
   await server.close();
