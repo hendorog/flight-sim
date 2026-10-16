@@ -2,8 +2,9 @@
 // (emergency, pp 3-3..3-15) and Section IV (normal, pp 4-12..4-27). Condensed simulator reference: inspections, timed
 // sequences and judgements stay manual (no `live`). Live checks read the checklist frame (ui/checklistModel.ts):
 // turbine.ng (N1 %), turbine.itt (TOT C), checklist.rotorPercent / enginePercent (Nr / N2 % of 477.7 rpm / 6016 rpm).
-import { all, eq, ge, le } from '../../training/engine/dsl';
+import { all, eq, ge, le, not } from '../../training/engine/dsl';
 import { checklist, checkItem as i, type FlightChecklist } from '../../training/checklistData';
+import { MD500_NR_100, MD500_NR_LIMITS } from './facts';
 
 const normal = (id: string, title: string, page: string, items: FlightChecklist['items'], note?: string) =>
   checklist(id, title, items, { category: 'normal', source: `MD 500E RFM CSP-E-1 ${page}`, note });
@@ -11,7 +12,11 @@ const emergency = (id: string, title: string, page: string, items: FlightCheckli
   checklist(id, title, items, { category: 'emergency', source: `MD 500E RFM CSP-E-1 ${page}`, note });
 
 const down = i('collective', 'Collective', 'Full down, friction on', le('checklist.collective', 0.01));
-const fuelOpen = i('fuelValve', 'Fuel shutoff valve', 'Open (pushed in)', eq('fuelSel', 'on'));
+// The panel pull knob writes 'both' when pushed in and 'off' when pulled; any value but 'off' is an open valve.
+const fuelOpen = i('fuelValve', 'Fuel shutoff valve', 'Open (pushed in)', not(eq('fuelSel', 'off')));
+/** Nr within the power-off range 410–523 rpm (RFM 2-4), as checklist.rotorPercent of MD500_NR_100. */
+const nrPct = (rpm: number) => rpm / MD500_NR_100 * 100;
+const nrInRange = all(ge('checklist.rotorPercent', nrPct(MD500_NR_LIMITS.powerOff[0])), le('checklist.rotorPercent', nrPct(MD500_NR_LIMITS.powerOff[1])));
 const genOn = i('genOn', 'Generator', 'ON; GEN OUT light out', eq('alternator', true));
 const genOff = i('genOff', 'Generator', 'OFF', eq('alternator', false));
 const flightRpm = i('flightRpm', 'N2 and Nr', '102–103 %, needles lying on each other',
@@ -42,7 +47,8 @@ export const MD500_CHECKLISTS = {
     i('startPress', 'START button', 'Press and hold (1 min on, 1 off, 1 on, then 23 off)', ge('turbine.ng', 5)),
     i('idle', 'Grip to GROUND IDLE', 'At 12–15 % N1 (12 % in the cold)', ge('turbine.ng', 12)),
     i('watch', 'During the start', 'TOT must rise at once; oil pressure showing; rotor turning by 25 % N1; ammeter not zero. Otherwise abort'),
-    i('tot', 'TOT', 'Peak under 810 °C (up to 10 s over, 927 °C for 1 s allowed)', le('turbine.itt', 927)),
+    // A peak and a time-over-limit rule: an instantaneous reading cannot certify it, so it stays manual.
+    i('tot', 'TOT', 'Peak under 810 °C (up to 10 s over, 927 °C for 1 s allowed)'),
     i('release', 'START button', 'Release at 58–60 % N1', all(ge('turbine.ng', 58), eq('starter', false))),
     i('oil', 'Oil pressure', '50–130 psi', ge('oilPsi', 50)),
     i('xmsn', 'XMSN OIL PRESS light', 'Out within 30 s of light-off; the RE-IGN light may come on then'),
@@ -90,7 +96,7 @@ export const MD500_CHECKLISTS = {
   ]),
   shutdown: normal('shutdown', 'Shutdown', '4-25–4-27', [
     down,
-    i('settle', 'Ground idle', 'Two minutes', all(ge('turbine.ng', 63), le('turbine.ng', 66))),
+    i('settle', 'Ground idle', 'Two minutes (timed: tick it yourself)'),
     i('neutral', 'Cyclic', 'Neutral and friction on; pedals centred'),
     i('bleed', 'Bleed air and electrical loads', 'OFF'),
     i('cutoff', 'Twist grip', 'CUTOFF (the idle release): hold it there until N1 is zero', le('turbine.ng', 55)),
@@ -102,7 +108,7 @@ export const MD500_CHECKLISTS = {
     i('afterfire', 'Afterfire', 'If TOT climbs fast after cutoff: starter on, keep motoring, close the fuel valve'),
   ]),
   engineFailure: emergency('engineFailure', 'Engine failure', '3-3–3-5', [
-    i('collective', 'Collective', 'Adjust at once to hold Nr between 410 and 523 rpm (ENGINE OUT light and horn)', ge('checklist.rotorPercent', 85)),
+    i('collective', 'Collective', 'Adjust at once to hold Nr between 410 and 523 rpm (ENGINE OUT light and horn)', nrInRange),
     i('yaw', 'Yaw', 'Left yaw as torque goes: right pedal'),
     i('speed', 'Airspeed', 'Settle at 130 KIAS or less (check the Vne card); minimum descent rate 60 KIAS, maximum glide 80 KIAS'),
     i('confirm', 'Complete power loss confirmed', 'If time and height allow: grip to CUTOFF, fuel valve closed'),
@@ -113,7 +119,7 @@ export const MD500_CHECKLISTS = {
   lowRotor: emergency('lowRotor', 'Low rotor speed', '3-7', [
     i('adjust', 'Collective', 'Adjust at once to bring Nr back within limits'),
     i('check', 'Other lights and engine instruments', 'Look for an engine problem and follow its procedure'),
-    i('rpm', 'Nr', 'Back in the green 410–523 rpm', ge('checklist.rotorPercent', 85.8)),
+    i('rpm', 'Nr', 'Back in the green 410–523 rpm', nrInRange),
   ], 'Low rotor lights at Nr below 468 rpm: engine failure, a rapid large power increase, or a governor underspeed.'),
   governorFailure: emergency('governorFailure', 'Fuel control or N2 governor failure', '3-14–3-15', [
     i('over', 'Overspeed (torque, TOT, N1, N2 all rising)', 'Raise collective to load the rotor and roll the grip toward ground idle until you control N2'),

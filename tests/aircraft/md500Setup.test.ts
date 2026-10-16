@@ -23,7 +23,10 @@ import { panelLayoutProblems } from '../../src/instruments/panelLayout';
 import { stubCanvas } from '../instruments/stubCanvas';
 import { run } from '../instruments/testbed';
 import { livePredicate } from '../../src/ui/checklistModel';
-import { checklistSections } from '../../src/ui/checklistModel';
+import { checklistSections, ChecklistSession } from '../../src/ui/checklistModel';
+import { MD500_DEFINITION } from '../../src/aircraft/md500';
+import type { SimContext } from '../../src/core/context';
+import { defaultWeather } from '../../src/core/types';
 import { compile } from '../../src/training/engine/predicates';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -231,5 +234,26 @@ describe('MD 500E UI, checklists and training', () => {
     const all = JSON.stringify(MD500_CHECKLISTS);
     expect(all).toContain('64–65 % N1'); expect(all).toContain('58–60 % N1'); expect(all).toContain('410 and 523');
     expect(all).not.toMatch(/Schweizer|clutch|mixture|propeller/i);
+  });
+
+  it('ticks the fuel valve as the panel knob sets it, bounds Nr both ways, and leaves timed items manual', () => {
+    // Rotor % is of referenceRpm; pin it to the 500E's 477.7 rpm (T2's value) so the test does not depend on the scaffold stub.
+    const def = { ...MD500_DEFINITION, rotorcraft: { ...MD500_DEFINITION.rotorcraft!, referenceRpm: MD500_NR_100 } };
+    const state = makeMockState({ def }); state.rotorcraft = emptyRotorcraftState();
+    const ctx = { aircraft: def, state, controls: defaultControls(def), weather: defaultWeather(), simTime: 0 } as SimContext;
+    const m = new ChecklistSession(MD500_TRAINING, 'md500', 1);
+    const valve = MD500_PANEL.gauges.find(g => g.id === 'fuelValve') as unknown as { set: (c: typeof ctx.controls, v: number) => void };
+    m.select('beforeStart');
+    valve.set(ctx.controls, 1); expect(ctx.controls.fuelSelector).toBe('off'); m.update(ctx); expect(m.mark('fuelValve').done).toBe(false);
+    valve.set(ctx.controls, 0); expect(ctx.controls.fuelSelector).toBe('both'); m.update(ctx); expect(m.mark('fuelValve')).toEqual({ done: true, mode: 'auto', overridden: false });
+    // Nr power-off limits 410–523 rpm (RFM 2-4): 405 and 530 rpm fail, 410, 480 and 523 pass.
+    for (const [section, item] of [['engineFailure', 'collective'], ['lowRotor', 'rpm']] as const) {
+      m.select(section);
+      for (const [rpm, ok] of [[405, false], [410.5, true], [480, true], [522.5, true], [530, false], [600, false]] as const) {
+        state.rotorcraft.rotorRpm = rpm; m.update(ctx); expect([section, rpm, m.mark(item).done]).toEqual([section, rpm, ok]);
+      }
+    }
+    m.select('engineStart'); expect(m.mark('tot').mode).toBe('manual');
+    m.select('shutdown'); state.engine.ng = 64; m.update(ctx); expect(m.mark('settle')).toEqual({ done: false, mode: 'manual', overridden: false });
   });
 });
