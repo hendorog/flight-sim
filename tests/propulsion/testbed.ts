@@ -11,7 +11,11 @@
 //                          propeller unfeathered by an accumulator, the ECU scheduling load and propeller speed;
 //   TWIN_DIESEL_POWERPLANT two of them, co-rotating, crossfeed, two alternators on 28 V (the DA42 pattern);
 //   TURBOPROP_POWERPLANT   a PT6A-like free turbine (gas generator, power turbine, fuel control, starter-
-//                          generator) with a three-blade feathering propeller (the Cessna 208 pattern).
+//                          generator) with a three-blade feathering propeller (the Cessna 208 pattern);
+//   BETA_TURBOPROP_POWERPLANT  the same with beta and reverse (reversing cam, beta propeller), hold-to-run starter;
+//   PT6A67_POWERPLANT      a PT6A-67-like free turbine with the PC-12's turbine extras: a four-blade beta /
+//                          reverse propeller selected by the condition lever with an overspeed governor, the torque
+//                          limiter with the PC-12's law, and the latching start switch.
 //
 // The numbers are handbook figures of the aircraft named (work/aircraft-data) where one exists, and plausible
 // stand-ins where none does (blade planforms, inertias, thermal masses, governor gains): these are test-beds of
@@ -19,6 +23,9 @@
 
 import { DEG, HP, type Vec3 } from '../../src/core/math';
 import { C172_BLADE_SECTION, C172_ENGINE, C172_POWERPLANT, C172_PROPELLER } from '../../src/physics/propulsion/c172Powerplant';
+import {
+  PC12_NG_MAX, PC12_NP_OVERSPEED_GOVERNOR, PC12_NP_TOPPING, PC12_PSI_PER_NM, PC12_START, PC12_TORQUE_LIMITER,
+} from '../../src/aircraft/pc12/facts';
 import {
   AVGAS_100LL, JET_A1,
   type BladeSectionDef, type ElectricalDef, type EngineDef, type EngineInstallation, type FuelFeedDef, type PowerplantDef, type PropellerDef,
@@ -544,5 +551,140 @@ export const TURBOPROP_POWERPLANT: PowerplantDef = {
     ...C172_POWERPLANT.electrical,
     battery: { ...C172_POWERPLANT.electrical.battery, capacityAh: 42, rDischarge: 0.012 },
     alternators: [{ engine: 0, maxAmps: 200, cutInRpm: 0.5 * PT6_NG_RPM, fullRpm: 0.56 * PT6_NG_RPM, efficiency: 0.6 }],
+  },
+};
+
+// ------------------------------------------------------------------------------------- beta and reverse (C208 pattern)
+/**
+ * The three-blade propeller with beta and reverse: ground fine -5.5 deg (this blade's zero static thrust), full
+ * reverse -14 deg at 0.75 R (a test-bed: the C208's own angles are its definition's), the first 40 % of the aft travel
+ * pitch only, the beta valve at 30 deg/s; five beta slices prepended to the fifteen of the governing and feather range
+ * (PROP_MAX_SLICES, 20, in all).
+ */
+export const PT6_BETA_PROPELLER: PropellerDef = {
+  ...PT6_PROPELLER,
+  name: 'three-blade constant-speed feathering and reversing propeller, 106 in (test-bed)',
+  pitchControl: {
+    ...(PT6_PROPELLER.pitchControl as Extract<PropellerDef['pitchControl'], { kind: 'constantSpeed' }>),
+    beta: { groundFine: -5.5 * DEG, reverse: -14 * DEG, pitchOnlyTravel: 0.4, rate: 30 * DEG },
+    pitchNodes: [-14, -9.5, -5.5, 0, 7, 15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, 38, 42, 48, 58, 70, 88].map((deg) => deg * DEG),
+  },
+};
+
+/** The PT6A-like engine with a reversing cam: 85 % Ng at full reverse, the topping governor reset to 95 % Np. */
+export const PT6_BETA_ENGINE: EngineDef = {
+  ...PT6_ENGINE,
+  name: 'PT6A-114A-like free turbine with reverse (test-bed)',
+  turbine: { ...PT6_ENGINE.turbine!, reversingCam: { maxReverseNg: 0.85, reverseNp: 0.95 } },
+};
+
+export const BETA_TURBOPROP_POWERPLANT: PowerplantDef = {
+  ...TURBOPROP_POWERPLANT,
+  engines: [{ ...TURBOPROP_POWERPLANT.engines[0], engine: PT6_BETA_ENGINE, propeller: PT6_BETA_PROPELLER }],
+};
+
+// ------------------------------------------------------------------------- PT6A-67-like with the PC-12's extras
+/** Propeller speed of the PC-12 (TCDS: 1700 rpm, one governed speed) and the power turbine's design speed, rpm. */
+export const PT6A67_NP = 1700;
+export const PT6A67_PT_RPM = 29_894;
+/** Gas generator at 100 % Ng, rpm (PT6A-67: 37 468). */
+export const PT6A67_NG_RPM = 37_468;
+
+/**
+ * PT6A-67-like free turbine: 1200 shp flat rated at 1700 propeller rpm (44.34 psi), gear 29 894 / 1700, Ng limit
+ * 104 %, topping governor at 109 % Np (1853 rpm), a reversing cam to 90 % Ng with the topping reset to 1650 rpm.
+ * The running line is the PT6A-114A test-bed's scaled 2.5 x in power and fuel (a test-bed of MECHANISMS, not the
+ * PC-12's calibrated engine): thermodynamically strong enough that the torque limiter, not Ng or ITT, binds at sea
+ * level, 10 000 ft and 20 000 ft, which is what its test measures. The PC-12's torque-limiter law, psi per
+ * propeller-shaft N m and the latching starter's cut-out are the PC-12's own facts (src/aircraft/pc12/facts.ts).
+ */
+export const PT6A67_ENGINE: EngineDef = {
+  ...PT6_ENGINE,
+  name: 'PT6A-67-like free turbine (test-bed)',
+  ratedPower: 1200 * HP,
+  ratedRpm: PT6A67_PT_RPM,
+  gearRatio: PT6A67_PT_RPM / PT6A67_NP,
+  runningRpm: 0.45 * PT6A67_NG_RPM,
+  airStartRpm: PT6A67_PT_RPM,
+  rotatingInertia: 0.02,
+  // A starter-generator for the 2.5 x larger spool (GEN 1 on the PC-12): the PT6A-114A test-bed's motor with k and r
+  // divided by 2.5, which gives 2.5 x its torque at the same speed.
+  starter: { k: 6e-5 / 2.5, r: 0.02 / 2.5 },
+  starterLatch: { cutoutNg: PC12_START.starterCutoutNg, cutoutSeconds: PC12_START.starterCutoutSeconds },
+  turbine: {
+    kind: 'freeTurbine',
+    gasGenerator: {
+      ...PT6_ENGINE.turbine!.gasGenerator,
+      referenceRpm: PT6A67_NG_RPM,
+      inertia: 0.12,
+      compressorPower: 2.5 * 860e3,
+      map: {
+        ng: [0.5, 0.52, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15],
+        fuelFlow: [81, 85, 115, 160, 215, 290, 335, 390, 455, 530, 615].map((lbh) => 2.5 * lbh * LB_PER_H),
+        itt: [565, 560, 530, 540, 580, 640, 680, 725, 775, 840, 910],
+        power: [10, 20, 70, 170, 300, 470, 575, 690, 820, 960, 1110].map((shp) => 2.5 * shp * HP),
+      },
+      fcu: {
+        ...PT6_ENGINE.turbine!.gasGenerator.fcu,
+        lowIdleNg: 0.55,
+        highIdleNg: 0.66,
+        maxNg: PC12_NG_MAX,
+        accelFuel: {
+          ...PT6_ENGINE.turbine!.gasGenerator.fcu.accelFuel,
+          fuelFlow: PT6_ENGINE.turbine!.gasGenerator.fcu.accelFuel.fuelFlow.map((f) => 2.5 * f),
+        },
+      },
+    },
+    powerTurbine: { stallTorqueRatio: 2, friction: [0.8, 0.1], topping: { np: PC12_NP_TOPPING / PT6A67_NP, gain: 5 } },
+    reversingCam: { maxReverseNg: 0.9, reverseNp: 1650 / PT6A67_NP },
+    torqueLimiter: { ...PC12_TORQUE_LIMITER, psiPerNm: PC12_PSI_PER_NM },
+  },
+};
+
+/**
+ * Thin, lightly cambered turboprop blade section (NACA 16-series-like): zero lift at -2 deg and a negative stall at
+ * cl -1.0, where the Clark Y face of the light-aircraft blades stalls at -0.75. A reversing blade works on that side.
+ */
+const REVERSING_SECTION: BladeSectionDef = { ...FAST_SECTION, alpha0: -2 * DEG, clMin: -1.0 };
+
+/**
+ * Four-blade 2.67 m reversing propeller (the Hartzell HC-E4A-3D's size; blade angles at the 0.80 R station of the
+ * TCDS: reverse -17.5 deg, feather 79.6 deg; flight low-pitch stop 17 deg and ground fine -4.5 deg, this blade's zero
+ * static thrust, are test-bed values), governed at one speed and feathered by the condition lever, with an overspeed
+ * governor at 1802 rpm (TCDS). Wide blades (1.4 x the 172's chord, activity factor about 125): 1200 shp static at
+ * 1700 rpm at about 25 deg, 15.5 kN.
+ */
+export const PT6A67_PROPELLER: PropellerDef = {
+  ...PT6_PROPELLER,
+  name: 'four-blade reversing propeller, 2.67 m, condition-lever feather (test-bed)',
+  diameter: 2.67,
+  blades: 4,
+  hubRadius: 0.22,
+  chordOverR: C172_PROPELLER.chordOverR.map((c) => 1.4 * c),
+  twist: helixTwist(20 * DEG, 0.8),
+  referenceStation: 0.8,
+  section: REVERSING_SECTION,
+  inertia: 12,
+  pitchControl: {
+    kind: 'constantSpeed',
+    fineStop: 17 * DEG,
+    coarseStop: 79.6 * DEG,
+    feather: { angle: 79.6 * DEG, latchRpm: 0, latchAngle: 0, unfeather: 'starter' },
+    rateToFine: 12 * DEG,
+    rateToCoarse: 12 * DEG,
+    governor: { minRpm: PT6A67_NP, maxRpm: PT6A67_NP, gain: 0.03, dampingTime: 0.2, overspeedRpm: PC12_NP_OVERSPEED_GOVERNOR },
+    failsTo: 'feather',
+    selectedBy: 'conditionLever',
+    beta: { groundFine: -4.5 * DEG, reverse: -17.5 * DEG, pitchOnlyTravel: 0.45, rate: 30 * DEG },
+    pitchNodes: [-17.5, -11, -4.5, 2, 9, 17, 20, 23, 26, 29, 32, 35, 38, 42, 48, 56, 66, 79.6].map((deg) => deg * DEG),
+  },
+};
+
+export const PT6A67_POWERPLANT: PowerplantDef = {
+  ...TURBOPROP_POWERPLANT,
+  engines: [{ engine: PT6A67_ENGINE, propeller: PT6A67_PROPELLER, hub: { x: 4.2, y: 0, z: 0 }, rotation: 1 }],
+  electrical: {
+    ...TURBOPROP_POWERPLANT.electrical,
+    alternators: [{ engine: 0, maxAmps: 300, cutInRpm: 0.5 * PT6A67_NG_RPM, fullRpm: 0.56 * PT6A67_NG_RPM, efficiency: 0.6 }],
   },
 };
