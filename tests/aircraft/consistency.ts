@@ -284,7 +284,42 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
         check(beta.reverse < beta.groundFine && beta.groundFine <= pitch.fineStop, `beta angles (engine ${i}): reverse < groundFine <= fineStop`);
         check(pitch.pitchNodes[0] <= beta.reverse, `pitch nodes (engine ${i}) start at or below the reverse angle`);
         check(beta.pitchOnlyTravel > 0 && beta.pitchOnlyTravel < 1, `beta pitch-only travel (engine ${i}) inside (0, 1)`);
+        check(beta.rate > 0, `beta valve rate (engine ${i}) positive`);
+        const lps = beta.lowPitchSchedule;
+        if (lps) {
+          check(lps.lever.length >= 2 && lps.lever.length === lps.angle.length, `low-pitch schedule (engine ${i}): lever and angle columns of one length, two rows at least`);
+          check(lps.lever.every((l, k) => l >= 0 && l <= 1 && (k === 0 || l > lps.lever[k - 1])), `low-pitch schedule (engine ${i}): lever ascending within [0, 1]`);
+          check(lps.angle.every((a) => a >= beta.groundFine && a <= pitch.coarseStop), `low-pitch schedule (engine ${i}): angles between ground fine and the coarse stop`);
+        }
       }
+      const os = pitch.governor.overspeedRpm;
+      if (os !== undefined) {
+        check(os > pitch.governor.maxRpm, `overspeed governor (engine ${i}) ${show(os)} rpm above the governed ${show(pitch.governor.maxRpm)} rpm`);
+        // A free turbine's fuel topping governor is the backstop behind it, at a higher propeller speed.
+        const topping = e.turbine?.powerTurbine.topping.np;
+        if (topping !== undefined) check(os < topping * e.ratedRpm / e.gearRatio, `overspeed governor (engine ${i}) below the fuel topping governor`);
+      }
+    }
+    // The turbine extras: on a free turbine only, and each within what its fuel control can do.
+    const t = e.turbine;
+    if (e.starterLatch) {
+      check(e.kind === 'freeTurbine', `latching starter (engine ${i}) on a free turbine (it cuts out on Ng)`);
+      check(e.starterLatch.cutoutNg > (t?.gasGenerator.selfSustainingNg ?? 0) && e.starterLatch.cutoutNg < (t?.gasGenerator.fcu.lowIdleNg ?? 1), `latching starter (engine ${i}) cuts out between the self-sustaining and the idle Ng`);
+      check(e.starterLatch.cutoutSeconds > 0, `latching starter (engine ${i}) times out`);
+    }
+    if (t?.reversingCam) {
+      const cam = t.reversingCam;
+      check(cam.maxReverseNg > t.gasGenerator.fcu.lowIdleNg && cam.maxReverseNg <= t.gasGenerator.fcu.maxNg, `reversing cam (engine ${i}): maximum reverse Ng between low idle and maxNg`);
+      check(cam.reverseNp > 0 && cam.reverseNp < t.powerTurbine.topping.np, `reversing cam (engine ${i}): the reverse Np reset below the topping governor`);
+      // With the reverse topping droop (1 %, turbineEngine.ts) on top: the propeller governor must stay in underspeed.
+      if (pitch.kind === 'constantSpeed') check(1.01 * cam.reverseNp * e.ratedRpm / e.gearRatio < pitch.governor.maxRpm, `reversing cam (engine ${i}): the reverse Np reset, with its 1 % droop, below the propeller governor's highest speed (it must stay in underspeed)`);
+    }
+    if (t?.torqueLimiter) {
+      const l = t.torqueLimiter;
+      check(l.lapse.altFt.length >= 2 && l.lapse.altFt.length === l.lapse.psi.length, `torque limiter (engine ${i}): lapse columns of one length, two rows at least`);
+      check(l.lapse.altFt.every((a, k) => k === 0 || a > l.lapse.altFt[k - 1]), `torque limiter (engine ${i}): lapse altitudes ascending`);
+      check(l.psi > 0 && l.psiPerNm > 0 && l.taperPsi >= 0 && l.lapse.psi[0] > 0, `torque limiter (engine ${i}): positive limit, scale, sea-level lapse and taper`);
+      check(l.ngTaper[0] < l.ngTaper[1] && l.ngTaper[1] <= t.gasGenerator.fcu.maxNg + 1e-9, `torque limiter (engine ${i}): Ng taper ascending, ending at or below maxNg`);
     }
     same(`carburettor heat (engine ${i})`, { 'input.has.carbHeat': has.carbHeat, powerplant: e.induction.carburettor !== undefined });
     same(`alternate air (engine ${i})`, { 'input.has.alternateAir': has.alternateAir, powerplant: e.induction.alternateAir !== undefined });
