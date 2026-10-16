@@ -62,8 +62,8 @@ export interface InputProfile {
   pusherInterrupt?: boolean;
   /**
    * STARTER INTERRUPT switch (Shift+N, held) of a latching start switch (EngineDef.starterLatch). It writes
-   * `starterInterrupt` on the controls, which the turbine core reads once ControlInputs declares it; until then a
-   * second press of the starter is the interrupt. Absent: none.
+   * ControlInputs.starterInterrupt, which cancels the latch in the turbine core (a second press of the starter
+   * does too). Absent: none.
    */
   starterInterrupt?: boolean;
   /**

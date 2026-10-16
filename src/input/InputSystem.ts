@@ -1121,8 +1121,7 @@ export class InputSystem implements Subsystem {
    */
   private updateSwitchesHeld(c: ControlInputs): void {
     if (this.profile.pusherInterrupt) c.pusherInterrupt = this.held.has('pusherInterrupt');
-    // ControlInputs does not declare `starterInterrupt` yet (the turbine core reads it once it does).
-    if (this.profile.starterInterrupt) (c as ControlInputs & { starterInterrupt?: boolean }).starterInterrupt = this.held.has('starterInterrupt');
+    if (this.profile.starterInterrupt) c.starterInterrupt = this.held.has('starterInterrupt');
   }
 
   /**

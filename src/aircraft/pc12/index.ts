@@ -23,7 +23,7 @@ export const PC12_DEFINITION: AircraftDefinition = {
   icaoType: 'PC12',
   engineCount: 1,
   // Both wings feeding; the condition lever starts at CUT-OFF/FEATHER only through the cold preset.
-  controlDefaults: { fuelSelector: 'on' },
+  controlDefaults: { fuelSelector: 'on', reverse: 0 },
   notModelled: [
     'The MANUAL OVERRIDE (MOR) lever and its emergency fuel path: the lever is drawn fixed at OFF; the torque limiter, Nf and Ng governors always work.',
     'Pressurisation and the environmental system: the cabin altitude and differential gauges follow a display schedule of the pressure altitude, not a cabin model.',

@@ -35,6 +35,9 @@ export const PC12_INPUT: InputProfile = {
     rudderTrim: true,
     fuelPump: true,
   },
+  // PUSHER INTR on the control wheel (Shift+D) and the overhead STARTER INTERRUPT switch (Shift+N), both held.
+  pusherInterrupt: true,
+  starterInterrupt: true,
   assists: {
     axes: {
       aileron: { baseRate: 0.2, maxRate: 1.0, accelTime: 1.2, accelExponent: 2, reverseGain: 1.3, fullAuthoritySpeed: 33 * (48 / 53) * C208_RATIO * STALL_RATIO, authorityExponent: 1, minAuthority: 0.4, negativeScale: 1 },
@@ -58,8 +61,10 @@ export const PC12_INPUT: InputProfile = {
     handoverSpeed: 8 * (48 / 53) * C208_RATIO * STALL_RATIO,
   },
   labels: {
-    throttleUp: 'Power lever forward',
-    throttleDown: 'Power lever back',
+    throttleUp: 'Power lever forward (from BETA / REVERSE: back to the idle gate)',
+    throttleDown: 'Power lever back (to the idle gate)',
+    powerLeverReverse: 'Power lever to the idle gate; let go and hold again: over the gate into BETA, then REVERSE (on the ground)',
+    throttleIdle: 'Power lever IDLE, on the gate',
     mixtureRich: 'Condition lever forward (FLIGHT IDLE)',
     mixtureLean: 'Condition lever back (CUT-OFF/FEATHER)',
   },
