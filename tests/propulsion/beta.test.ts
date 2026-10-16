@@ -246,7 +246,7 @@ describe('settle in beta without fuel', () => {
 
 describe('the latching start switch (acceptance 7)', () => {
   /** Cold and feathered, condition at CUT-OFF; one press of STARTER, the condition lever to GROUND IDLE at 13 % Ng. */
-  function startOnce(o: { interruptAtNg?: number; fuel?: boolean } = {}) {
+  function startOnce(o: { interruptAtNg?: number; fuel?: boolean; interruptSwitch?: boolean } = {}) {
     const sys = new Powerplant(PT6A67_POWERPLANT);
     sys.reset({ running: false, tanks: [400, 400], feathered: [true] });
     const input = makeInput({ controls: { throttle: 0, mixture: 0, magnetos: 0 } });
@@ -260,7 +260,8 @@ describe('the latching start switch (acceptance 7)', () => {
       if ((o.fuel ?? true) && input.controls.mixture < CUTOFF_BELOW && ng >= 13) input.controls.mixture = GROUND_IDLE;
       if (o.interruptAtNg !== undefined && !interrupted && ng >= o.interruptAtNg) {
         interrupted = true;
-        setEngineControl(input.controls, 0, 'starter', true);
+        if (o.interruptSwitch) input.controls.starterInterrupt = true;
+        else setEngineControl(input.controls, 0, 'starter', true);
       }
       peakItt = Math.max(peakItt, out.engine.itt!);
       if (Number.isNaN(cutout) && !unit.starterEngaged && t > 2 * DT) {
@@ -285,6 +286,13 @@ describe('the latching start switch (acceptance 7)', () => {
   it('a second press (the interrupt) disengages it: the start hangs below the self-sustaining speed', () => {
     const s = startOnce({ interruptAtNg: 20 });
     log(`interrupted at 20 % Ng: starter out at ${s.cutoutNg.toFixed(2)} %, Ng ${s.sys.units[0].state.ng!.toFixed(1)} % after 100 s`);
+    expect(s.cutoutNg).toBeLessThan(21);
+    expect(s.sys.units[0].state.running).toBe(false);
+  }, 60_000);
+
+  it('the STARTER INTERRUPT switch (ControlInputs.starterInterrupt) disengages it the same way', () => {
+    const s = startOnce({ interruptAtNg: 20, interruptSwitch: true });
+    log(`STARTER INTERRUPT at 20 % Ng: starter out at ${s.cutoutNg.toFixed(2)} %, Ng ${s.sys.units[0].state.ng!.toFixed(1)} % after 100 s`);
     expect(s.cutoutNg).toBeLessThan(21);
     expect(s.sys.units[0].state.running).toBe(false);
   }, 60_000);

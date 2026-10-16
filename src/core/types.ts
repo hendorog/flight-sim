@@ -74,6 +74,11 @@ export interface ControlInputs {
   n2Beep?: number;
   /** Stick-pusher interrupt (PUSHER INTR / the trim interrupt switch on the yoke), held. Absent = false. */
   pusherInterrupt?: boolean;
+  /**
+   * STARTER INTERRUPT switch (PC-12 overhead), held. Cancels a latched start (EngineDef.starterLatch) on every
+   * engine while true; no effect on a hold-to-run starter. Absent = false. Momentary, never persisted.
+   */
+  starterInterrupt?: boolean;
   /** [-1, 1]. + = yoke back = nose up. */
   elevator: number;
   /** [-1, 1]. + = yoke right = roll right. */

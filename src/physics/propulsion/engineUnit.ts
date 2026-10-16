@@ -365,7 +365,7 @@ export class EngineUnit {
   /**
    * The starter's state for this step, from the switch: hold-to-run (the switch itself), or with
    * EngineDef.starterLatch a press latches it until the gas generator reaches cutoutNg, cutoutSeconds pass, or
-   * the switch is pressed again (the interrupt: there is no STARTER INTERRUPT control yet). Advanced by `dt`;
+   * the switch is pressed again, or ControlInputs.starterInterrupt is held (the STARTER INTERRUPT switch). Advanced by `dt`;
    * held still in a steady evaluation. Powerplant.step calls it once per step, before the bus.
    */
   starterCommand(controls: ControlInputs, dt: number): boolean {
@@ -380,6 +380,7 @@ export class EngineUnit {
       this.starterLatchTime = 0;
     } else if (this.starterLatched) {
       this.starterLatchTime += dt;
+      if (controls.starterInterrupt) this.starterLatched = false;
       const ng = this.turbine ? this.turbine.ng : 0;
       if (ng >= latch.cutoutNg || this.starterLatchTime >= latch.cutoutSeconds) this.starterLatched = false;
     }
