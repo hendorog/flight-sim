@@ -92,9 +92,36 @@ export interface SystemsTargets {
   gearDownClimb?: { kcas: number; throttle?: number; lossFpm: Range };
 }
 
+/**
+ * One lever position of an idle taxi on a level runway, no brakes (types with beta: plan 3.2, measure.ts idleTaxi).
+ * The static items are read on the parking brake after 10 s, the speed once it is steady with the brakes off.
+ */
+export interface IdleTaxiCase {
+  /** The position as the items name it, e.g. "on the gate, ground idle" / "ground fine" / "half beta". */
+  label: string;
+  /** ControlInputs.reverse (0 the gate, BetaDef.pitchOnlyTravel ground fine) and the condition lever (ControlInputs.mixture). */
+  reverse: number;
+  condition: number;
+  /** Steady unbraked ground speed, kt (negative: rolling backwards). */
+  idleTaxiKt?: Limit;
+  /** Np on the parking brake, rpm. */
+  idleNp?: Limit;
+  /** Propeller thrust on the parking brake, N, signed (a "|thrust| < 500 N" item is range(-500, 500)). */
+  staticThrustN?: Limit;
+  /** Ng, %, and ITT, C, on the parking brake. */
+  idleNgPct?: Limit;
+  idleIttC?: Limit;
+  /** Longest unbraked roll before the speed counts as steady, s (measure.ts idleTaxi `seconds`; default 150). */
+  seconds?: number;
+}
+
 export interface ConformanceTargets {
   aircraft: AircraftId;
-  stall: { clean: StallTarget; landing: StallTarget };
+  /**
+   * trip 'pusher' (PC-12): the stall speed is the first stick-pusher activation (AircraftState.stickPusher), not
+   * the aerodynamic CLmax. Absent: 'aero'. Declared at the scaffold; the turbine-core package implements it in plan.ts.
+   */
+  stall: { clean: StallTarget; landing: StallTarget; trip?: 'aero' | 'pusher' };
   /** Contract 3.1: full aft stick 5 s at idle from a trimmed glide at `entryKias` (1.3 Vs), then forward. */
   stallRecovery: { entryKias: number; recoveryS: Range };
   climb: {
@@ -113,7 +140,21 @@ export interface ConformanceTargets {
   /** throttle: the power lever for the run (a flat-rated turboprop: at its torque limit); absent: 1. */
   takeoff: { flapDeg: number; rotateKias: number; pitchDeg: number; staticRunUp: boolean; controls?: ControlPatch; throttle?: number; groundRollM: Band };
   /** brake: the pedal on the roll the handbook's chart implies (LandingOptions.brake); absent: full. */
-  landing: { flapDeg: number; approachKt: number; touchdownPitchDeg: number; brake?: number; groundRollM: Band };
+  /**
+   * reverse: ControlInputs.reverse on the roll (LandingOptions.rollReverse; C208 = beta.pitchOnlyTravel, the POH
+   * "beta, no reverse"); absent: on the gate. withReverse: a second roll with that lever, judged on its own band
+   * (PC-12). Declared at the scaffold; the turbine-core package implements them in plan.ts.
+   */
+  landing: { flapDeg: number; approachKt: number; touchdownPitchDeg: number; brake?: number; groundRollM: Band;
+    reverse?: number;
+    /** Both rolls: the lever forward to `to` below `kias` (LandingOptions.rollReverseCancel); absent: held to the stop. */
+    reverseCancel?: { kias: number; to: number };
+    /** Both rolls: the condition lever after touchdown (LandingOptions.rollCondition, PC-12 GROUND IDLE); absent: unchanged. */
+    rollCondition?: number;
+    /** Both rolls at the maximum landing mass (measure.ts maxLandingLoading) instead of maxGross (a handbook chart drawn at MLW). */
+    atMaxLanding?: boolean;
+    /** ratio: that roll over the first one (PC-12: 0.72, DERIVED from the 47E example); absent: not judged. */
+    withReverse?: { reverse: number; groundRollM: Band; ratio?: Limit } };
   glide: {
     /** TAS sweep at 300 m, every engine off. */
     range: SpeedRange;
@@ -145,6 +186,8 @@ export interface ConformanceTargets {
     parkedDriftMm: Range;
     parkedRateDegS: Range;
     taxi: { meanSteer: Range; maxHeadingErrorDeg: Range; speedKt: Band; radiusM: Range; maxYawAccelDegS2: Range };
+    /** Idle taxi at the lever positions of a type with beta (flown tier, block 'idle taxi'); absent: none. */
+    idleTaxi?: readonly IdleTaxiCase[];
   };
   /** Pedal for zero sideslip with power (+ = right): signed, so a counter-rotating twin asks for about 0. */
   yaw: {

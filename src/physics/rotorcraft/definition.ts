@@ -12,7 +12,71 @@ export interface RotorDefinition {
   inertia: number; hub: Vec3;
   /** Nonuniform-wake induced-velocity correction; one is ideal uniform momentum theory. */
   inducedFactor?: number;
+  /**
+   * Tail rotor only: relax the induced velocity with the uniform Pitt-Peters time constant (inflowTimeConstant, about
+   * 5 ms for a small, fast tail rotor in the hover) instead of the legacy fixed 0.08 s. Absent: the legacy lag (every
+   * type before the MD 500E; their arithmetic is untouched).
+   */
+  pittPetersInflow?: boolean;
 }
+/**
+ * Turboshaft fuel control and power-turbine governor (MD 500E / Allison 250-C20B). Declared at the scaffold; the
+ * turboshaft package (T2) implements it in src/physics/rotorcraft/turboshaft.ts as
+ *   stepTurboshaft(dt, c, engine, out, busVolts): void
+ * which flightModel calls IN PLACE OF Rotorcraft.throttle() when `systems.turboshaft` is present (throttle()
+ * itself stays byte-identical). It writes out.throttle (the PLA-equivalent lever the existing TurbineEngine
+ * reads: with fcu.lowIdleNg = fcu.highIdleNg = plaNg.groundIdle the lever law ngDemand = idle + (maxNg - idle) x
+ * throttle inverts exactly), out.mixture (0 below grip.cutoffBelow, else 1), out.magnetos (3 while
+ * auto-reignition is armed, else c.magnetos), out.engines = [{}] (a fresh array, so no per-engine override masks
+ * the scalars), and fills RotorcraftState.turboshaft. The fcu numbers are read from
+ * engine.def.turbine.gasGenerator.fcu, never duplicated here: plaNg.groundIdle === fcu.lowIdleNg ===
+ * fcu.highIdleNg and plaNg.fullOpen === fcu.maxNg (consistency rule).
+ */
+export interface TurboshaftControlDef {
+  /** Twist grip as ControlInputs.throttle fractions: CUTOFF below cutoffBelow; the GROUND IDLE stop; 1 = FULL OPEN. */
+  grip: { cutoffBelow: number; groundIdle: number };
+  /** Gas-producer (N1) demand the grip's PLA schedule allows at the ground-idle stop and at full open, fraction of N1 100 %. */
+  plaNg: { groundIdle: number; fullOpen: number };
+  /** Hydromechanical power-turbine governor (no bus power). Fractions of N2 100 % (engine ratedRpm). */
+  governor: {
+    /** Beep limits, e.g. [0.975, 1.045]. */
+    setRange: readonly [number, number];
+    /** Set point after reset, e.g. 1.03. */
+    setDefault: number;
+    /** Set-point change per second while beeping, fraction. */
+    beepRate: number;
+    /** Steady N2 fall per unit Ng-demand rise (proportional droop). */
+    droop: number;
+    /** Droop compensator: Ng demand per unit collective POSITION (feed-forward; RFM 4-22 over-compensation). */
+    anticipation: number;
+    /**
+     * N1 at which the compensator's datum sits with the collective fully down: the steady N2 equals the beep set
+     * point there (flat pitch at 103 % N2, so the RFM 4-18 run-up beep check reads the set point). Absent:
+     * plaNg.groundIdle.
+     */
+    datumNg?: number;
+    /** Ng demand per unit N2 error, and its integral gain, 1/s. */
+    gain: number; integralGain: number;
+    /** Rate lead on N2, s. */
+    lead: number;
+  };
+  /** ENGINE OUT warning (RFM 3-3): N1 below n1Below, or Nr below nrBelow x referenceRpm. No collective inhibit. */
+  engineOut: { n1Below: number; nrBelow: number };
+  /** Torquemeter: psi per output-shaft N m (gearRatio 1: the power-turbine torque). */
+  psiPerNm: number;
+  /** RFM 2-5 limits that replace the power/MAP-based powerLimitExceeded. */
+  limits: {
+    mcpPsi: number; mcpPsiAboveTot: { psi: number; totC: number };
+    takeoffPsi: number; takeoffSeconds: number;
+    /** [psi for 15 s, psi for 3 s]. */
+    transientPsi: readonly [number, number];
+    totC: { mcp: number; takeoff: number; transient6s: number; start1s: number };
+    n1Pct: { continuous: number; transient15s: number };
+    /** Steady N2 avoid band, %. */
+    n2AvoidPct: readonly [number, number];
+  };
+}
+
 export interface RotorcraftDefinition {
   /** Installation metadata. Absent retains the legacy teetering hub. Articulated selects the
    * reduced harmonic offset-hinge solver; per-blade transients/ground resonance remain unmodelled. */
@@ -33,6 +97,30 @@ export interface RotorcraftDefinition {
   tailRotation?: 1 | -1;
   engineRatio: number; tailRatio: number; transmissionEfficiency: number;
   cyclicLimit: number;
+  /**
+   * Asymmetric cyclic travel (MD 500E TCDS rigging: forward 17.75, aft 8.15, left 8.15, right 7 deg), rad. Absent:
+   * cyclicLimit each way (every type before the MD 500). Declared at the scaffold; T2 implements it.
+   */
+  cyclicLimits?: { forward: number; aft: number; left: number; right: number };
+  /**
+   * Forward tilt of the main-rotor shaft from the body's -z axis, rad (MD 500E: 3 deg, RFM Fig 6-3). The main rotor's
+   * flow, flapping, forces and moments are solved in the shaft frame and turned back to the body. Absent: 0 (every
+   * type before the MD 500; their arithmetic is untouched).
+   */
+  shaftTilt?: number;
+  /**
+   * The main rotor's blade elements see the fuselage's yaw rate: the governed rotor speed is held relative to the
+   * fuselage, so the air sees Omega - rotation x r (shaft axes). This is the main-rotor yaw damping (and the thrust
+   * change with yaw rate, Heffley CR-3144 OH-6A Z_r = 0.45 m/s^2 per rad/s). Absent: Omega alone (every type before
+   * the MD 500E).
+   */
+  yawInRotorSpeed?: boolean;
+  /**
+   * Control-system flexibility: the blade angle reached is this fraction of the linkage's commanded angle, measured
+   * from the rigging neutral (cyclic: the zero-cyclic swashplate; pedals: the centre of the tail-rotor pitch range).
+   * Heffley CR-3144 Fig II-2 (OH-6A, full-scale wind-tunnel tests): pitch 0.75, roll 0.75, yaw 0.67. Absent: 1.
+   */
+  controlFlex?: { longitudinal: number; lateral: number; pedal: number };
   teeterLimit: number;
   /** Inputs command position; optional spring trim reports forces but drives no force-feedback hardware. */
   controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical';
@@ -50,14 +138,36 @@ export interface RotorcraftDefinition {
     governorGain?: number; governorIntegralGain?: number;
     /** Estimated RPM prediction horizon of the governor's rate feedback, seconds. */
     governorLead?: number;
-    continuousPower: number; takeoffPower: number; takeoffSeconds: number };
+    continuousPower: number; takeoffPower: number; takeoffSeconds: number;
+    /**
+     * 'belt' (S269/Robinson actuator clutch; the default) or 'freewheel' (sprag clutch only, MD 500E). On
+     * 'freewheel' the clutch/belt/correlator/governor fields above are ignored except lowRpmWarning and
+     * hornCollectiveMin (-1: no collective inhibit); clutchEngagement is always 1, there is no clutch light, and
+     * the coupling cap is transmissionTorqueLimit. Declared at the scaffold; T2 implements it.
+     */
+    drive?: 'belt' | 'freewheel';
+    /**
+     * Freewheel coupling cap, N m at the ENGINE OUTPUT SHAFT (the side beltTorque is applied on in drive()), used
+     * with drive 'freewheel' in place of beltTorque. Set well above the transient torque so it never binds in
+     * normal use: the transmission rating is a pilot limit (powerLimitExceeded), not a slipping clutch.
+     */
+    transmissionTorqueLimit?: number;
+    /** Turboshaft fuel control and N2 governor (MD 500E). Absent: piston engine with throttle()/correlator. */
+    turboshaft?: TurboshaftControlDef };
   /** Main transmission rotor-driven oil pump and lumped thermal model, SI except psi/rpm. */
   transmission?: { pressurePsi: number; pumpRpm: number; pressureSeconds: number;
     heatCapacity: number; cooling: number };
   stabilizer: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number; wash: number;
     /** Single right-hand surface: positive cant raises its tip. Absent retains horizontal surface. */
     dihedral?: number };
-  fins: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number }[];
+  fins: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number;
+    /**
+     * The part of the fin inside the tail rotor's stream tube (a fin beside the disc: MD 500E): `areaFraction` of
+     * the area meets the rotor's induced flow at `velocityRatio` x the disc's induced velocity, across the fin (the
+     * blockage that costs anti-torque thrust, and the yaw damping the fin adds as a yaw rate changes that flow).
+     * Absent: the whole fin sees the free stream only (every type before the MD 500E).
+     */
+    tailRotorFlow?: { areaFraction: number; velocityRatio: number } }[];
   /** Fuselage destabilising moment derivatives, Nm/(Pa rad). */
   fuselageMoment: { pitch: number; yaw: number };
   /** Equivalent flat plate areas along FRD axes, m². */
@@ -73,6 +183,9 @@ export interface RotorcraftDefinition {
     tailcone: { front: Vec3; rear: Vec3; frontRadius: number; rearRadius: number };
     cabin: { centre: Vec3; radii: Vec3 } };
   skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number;
+    /** Body z of the FRONT contacts when they differ from the rear ones (`z`), m (MD 500E: the 4.7 deg nose-up
+     * ground attitude). Absent: all four at `z`. */
+    frontZ?: number;
     suspension?: 'cross-tube' | 'oleo';
     /** Per contact, N, N/m, m. Bilinear compression plasticity; spread is m lateral/m stroke. */
     flexure?: { yieldForce: number; hardening: number; maxStroke: number; spread: number };
@@ -100,6 +213,49 @@ export interface RotorcraftState {
   transmission?: { oilPressurePsi: number; oilTemperatureC: number; tailChips: boolean };
   clutchDisengaged?: boolean;
   springTrim?: { pitch: number; roll: number; pitchForce: number; rollForce: number };
+  /**
+   * Turboshaft installations only (systems.turboshaft). NEVER created by emptyRotorcraftState() and deleted at the
+   * top of Rotorcraft.reset() on other types, so the legacy digests (s269Legacy, contactAirborne) are unchanged.
+   * N1 and TOT are NOT duplicated: read EngineState.ng and EngineState.itt.
+   *
+   * What the existing systems fields mean on a 'freewheel' type: clutchEngagement = 1, clutchLight = false,
+   * clutchDisengaged absent, governorActive = (governorMode === 'governed'), lowRpmLight/lowRpmHorn =
+   * engineOutLight/engineOutHorn, governorThrottle = the PTG output throttle, powerLimitExceeded from the psi,
+   * TOT and N1 bands of TurboshaftControlDef.limits (not from power or MAP).
+   */
+  turboshaft?: {
+    /** Beep set point, % of N2 100 % (persisted). */
+    n2SetPct: number;
+    /** Governor integrator, Ng-demand fraction (persisted). */
+    ptgIntegral: number;
+    /**
+     * N2 of the last governor step (fraction of ratedRpm) and its filtered rate (1/s), the rate term's memory
+     * (persisted, so a resume mid-transient matches the uninterrupted flight). Absent after a reset: seeded from the
+     * shaft at the next step with no rate.
+     */
+    n2Last?: number;
+    n2Rate?: number;
+    grip: 'cutoff' | 'groundIdle' | 'between' | 'fullOpen';
+    /** 'manual': grip below full open, or ControlInputs.rotorGovernor === false (governor failure). */
+    governorMode: 'governed' | 'manual';
+    /** Engine output shaft speed, % of ratedRpm (6016 rpm). */
+    n2Pct: number;
+    /** Rotor speed, % of referenceRpm (477.7 rpm). */
+    nrPct: number;
+    /** Torquemeter reading, psi. */
+    torquePsi: number;
+    /** Nr x engineRatio above N2 by more than 1 %: the rotor overrunning the freewheel (autorotation, shutdown). */
+    needlesSplit: boolean;
+    /** N1 < 55 % or Nr < 468 rpm; needs bus power (ENG OUT circuit breaker). */
+    engineOutLight: boolean;
+    /** Same condition, horn (no collective inhibit). */
+    engineOutHorn: boolean;
+    /** RE-IGN P RST: latched when auto-reignition fired; cleared by lampTestId 'reign'. */
+    reignitionLight: boolean;
+    overTorque: boolean; overTemp: boolean; avoidRange: boolean;
+    /** The low-rotor half of the warning is armed (Nr has reached the threshold since it was last below 70 %). Absent = false. */
+    lowRotorArmed?: boolean;
+  };
   omega: number; azimuth: number; inflow: number; tailInflow: number;
   flapForward: number; flapRight: number; governorThrottle: number;
   thrust: number; tailThrust: number; torque: number; driveTorque: number;
@@ -121,11 +277,27 @@ export interface RotorcraftState {
    * lowRpmHorn: audible warning below the type's threshold with collective not fully down. */
   clutchEngagement: number; clutchLight: boolean; governorActive: boolean; lowRpmHorn: boolean; lowRpmLight: boolean;
 }
+/**
+ * Cyclic blade-pitch command of the stick, rad: `aft` (+ = disc aft, ControlInputs.elevator +) and `right`
+ * (+ = disc right, aileron +). With `cyclicLimits` the stick's travel is linear from the forward to the aft stop
+ * (elevator -1 .. +1) and from the left to the right stop, so its centre sits half the difference away from the
+ * rigging neutral; without it, cyclicLimit each way.
+ */
+export function cyclicAngles(d: Pick<RotorcraftDefinition, 'cyclicLimit' | 'cyclicLimits' | 'controlFlex'>,
+  c: { elevator: number; aileron: number }): { aft: number; right: number } {
+  const l = d.cyclicLimits;
+  if (!l) return { aft: c.elevator * d.cyclicLimit, right: c.aileron * d.cyclicLimit };
+  const aft = c.elevator * (l.forward + l.aft) / 2 - (l.forward - l.aft) / 2;
+  const right = c.aileron * (l.left + l.right) / 2 + (l.right - l.left) / 2;
+  const flex = d.controlFlex;
+  return flex ? { aft: aft * flex.longitudinal, right: right * flex.lateral } : { aft, right };
+}
 /** Snapshots own every nested state; legacy scalar serialization remains identical. */
 export function cloneRotorcraftState(s: RotorcraftState): RotorcraftState {
   return { ...s, ...(s.transmission ? { transmission: { ...s.transmission } } : {}),
     ...(s.contactRotor ? { contactRotor: { ...s.contactRotor } } : {}),
     ...(s.springTrim ? { springTrim: { ...s.springTrim } } : {}),
+    ...(s.turboshaft ? { turboshaft: { ...s.turboshaft } } : {}),
     ...(s.articulated ? { articulated: { blades: s.articulated.blades.map(b => ({ ...b })) } } : {}) };
 }
 export function emptyRotorcraftState(): RotorcraftState {

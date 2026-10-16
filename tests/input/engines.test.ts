@@ -592,9 +592,12 @@ describe('gear lever and rudder trim', () => {
 describe('the Cessna 172S: none of the new keys does anything', () => {
   it('pressing and holding every new key leaves every control as it was', () => {
     const fresh = KEY_MAP.filter((m) => !profileHasAction(C172S_INPUT, m.action));
-    // The sixteen key entries of the levers and switches this type has not, and nothing it had before.
+    // The sixteen key entries of the levers and switches this type has not, the five turbine keys (reverse, grip
+    // CUTOFF, STARTER INTERRUPT, pusher interrupt), and nothing it had before.
     expect(fresh.map((m) => `${m.shift === true ? 'Shift+' : ''}${m.code}`)).toEqual([
+      'Shift+F2', 'Shift+PageDown', 'Shift+F1',
       'Insert', 'Delete', 'F7', 'Shift+F7', 'F10', 'Digit6', 'Digit7', 'Semicolon', 'Shift+Semicolon', 'Shift+KeyF', 'Slash', 'Backslash', 'Shift+Backslash', 'Digit8', 'Digit9', 'Digit0',
+      'Shift+KeyN', 'Shift+KeyD',
     ]);
     for (const airborne of [false, true]) {
       const r = makeInputRig(C172S_INPUT);

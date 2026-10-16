@@ -7,7 +7,7 @@
 import { C172S_PANEL } from '../aircraft/c172s/panel';
 import { engineControl, setEngineControl, type ControlInputs, type MagnetoPosition } from '../core/types';
 import type { InputAction } from '../input/bindings';
-import type { PanelDef } from './panelDef';
+import { gaugeScale, type PanelDef } from './panelDef';
 import { FLAP_SWITCH, flapLeverValues, flapPositionOf, GEAR_LEVER, GUARDED_KNOB, ignitionLayout, leverId } from './panelParts';
 
 /** The hotspots of the C172S panel. */
@@ -320,12 +320,16 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
       });
     } else if (g.kind === 'cdi' && g.receiver === 'nav1') {
       spots.push(knob('obs', g.at[0] - 70, g.at[1] + 72, 'NAV 1 course (OBS)', OBS));
+    } else if (g.kind === 'hsi') {
+      // Course knob lower left (the OBS of NAV 1), heading bug lower right.
+      if (g.receiver === 'nav1') spots.push(knob('obs', g.at[0] - BEZEL_KNOB, g.at[1] + BEZEL_KNOB, 'NAV 1 course (HSI)', OBS));
+      spots.push(knob('headingBug', g.at[0] + BEZEL_KNOB, g.at[1] + BEZEL_KNOB, 'Heading bug', HEADING_BUG));
     } else {
       spots.push(...gaugeHotspots(g));
     }
     // Bezel knobs move with the complete round instrument when a type specifies its physical size.
-    const k = def.instrumentScale?.large ?? 1;
-    if (k !== 1 && 'at' in g && ['altimeter', 'heading', 'cdi'].includes(g.kind)) {
+    const k = (def.instrumentScale?.large ?? 1) * gaugeScale(g);
+    if (k !== 1 && 'at' in g && ['altimeter', 'heading', 'cdi', 'hsi'].includes(g.kind)) {
       for (const h of spots.slice(start)) {
         h.x = g.at[0] + (h.x - g.at[0]) * k; h.y = g.at[1] + (h.y - g.at[1]) * k;
         h.hw *= k; h.hh *= k;

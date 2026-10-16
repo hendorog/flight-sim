@@ -168,6 +168,7 @@ export class AudioSystem implements Subsystem {
       ctx.events.on('crash', () => this.g?.synth.port.postMessage({ type: 'crash', amp: 1 })),
       // Retractable gear: a leg unlocking, locking down or reaching its well.
       ctx.events.on('gear', (e) => this.g?.synth.port.postMessage({ type: 'thump', amp: gearThumpAmplitude(e.kind) })),
+      ctx.events.on('caws', (e) => this.caws(e.level)),
       // React to a pause at once: update() runs in the frame loop, which stops altogether when the tab is
       // hidden or the WebGL context is lost, and the worklet would otherwise keep synthesising the last
       // engine, propeller and wind parameters indefinitely.
@@ -251,6 +252,15 @@ export class AudioSystem implements Subsystem {
     if (!g) return;
     g.synth.port.postMessage({ type: 'config', profile });
     g.mix = this.buildMix(g.ac, g.synth, g.interior, g.delay, g.mix);
+  }
+
+  /**
+   * Strike the caution and warning system's chime (a type whose profile has `caws`: the PC-12): 'warning' a triple
+   * chime, 'caution' a single one. For the code that lights a NEW red or amber CAWS legend; ignored by a profile
+   * without `caws`, and before the first gesture.
+   */
+  caws(level: 'warning' | 'caution'): void {
+    this.g?.synth.port.postMessage({ type: 'caws', level });
   }
 
   /** Play a speech cue (intercom click, captions-only chime, radio squelch). Silent before the first gesture. */

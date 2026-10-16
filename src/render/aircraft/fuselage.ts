@@ -203,7 +203,12 @@ export function buildFuselage(shapes: FuselageShapes, mat: AircraftMaterials, de
   batch.add(mat.panelPlastic, sectionCap(shapes.lining, glazing.cabinFrontX - 0.002, 64, -1));
 
   addInletDucts(batch, mat, outer, fuselage);
-  if (fuselage.exhaust) addExhaust(batch, mat, fuselage.exhaust);
+  if (fuselage.exhaust) {
+    const ex = fuselage.exhaust;
+    addExhaust(batch, mat, ex);
+    // The other side's stack of a bifurcated exhaust (PT6A-67 on the PC-12): the same stack mirrored in y.
+    if (ex.mirror) addExhaust(batch, mat, { ...ex, pos: [ex.pos[0], -ex.pos[1], ex.pos[2]], ...(ex.dir ? { dir: [ex.dir[0], -ex.dir[1], ex.dir[2]] as const } : {}) });
+  }
   addAntennas(batch, mat, fuselage.antennas);
   addDoorHardware(batch, mat, outer, glazing.doors);
   const fittings = batch.build('fuselageFittings');
@@ -398,7 +403,8 @@ function addInletDucts(batch: MeshBatch, mat: AircraftMaterials, outer: Fuselage
  */
 function addExhaust(batch: MeshBatch, mat: AircraftMaterials, exhaust: NonNullable<AirframeVisualDef['fuselage']['exhaust']>): void {
   if (exhaust.dir) {
-    addExhaustAlong(batch, mat, exhaust.pos, exhaust.dir, exhaust.radius);
+    const oval = exhaust.oval ?? [exhaust.radius, exhaust.radius];
+    addExhaustAlong(batch, mat, exhaust.pos, exhaust.dir, oval, exhaust.finish === 'polished' ? mat.exhaustPolished : mat.exhaust);
     return;
   }
   const [x0, y0, z0] = exhaust.pos;
@@ -432,7 +438,14 @@ function addExhaust(batch: MeshBatch, mat: AircraftMaterials, exhaust: NonNullab
 }
 
 /** An exhaust stack from `pos` along `dir` (FRD, m: its length and direction), open and dark at its mouth. */
-function addExhaustAlong(batch: MeshBatch, mat: AircraftMaterials, pos: readonly [number, number, number], dir: readonly [number, number, number], radius: number): void {
+function addExhaustAlong(
+  batch: MeshBatch,
+  mat: AircraftMaterials,
+  pos: readonly [number, number, number],
+  dir: readonly [number, number, number],
+  [ra, rb]: readonly [number, number],
+  finish: THREE.Material,
+): void {
   const start = frd(pos[0], pos[1], pos[2]);
   const end = frd(pos[0] + dir[0], pos[1] + dir[1], pos[2] + dir[2]);
   const axis = end.clone().sub(start).normalize();
@@ -441,21 +454,19 @@ function addExhaustAlong(batch: MeshBatch, mat: AircraftMaterials, pos: readonly
   const spec = sweepGeometry(
     (t, out) => out.lerpVectors(start, end, t),
     (t, ang, out) => {
-      const r = radius - 0.002 * t;
-      out.set(Math.cos(ang) * r, Math.sin(ang) * r);
+      out.set(Math.cos(ang) * (ra - 0.002 * t), Math.sin(ang) * (rb - 0.002 * t));
     },
     6,
     20,
     ref,
   );
-  batch.add(mat.exhaust, gridGeometry(spec));
+  batch.add(finish, gridGeometry(spec));
   const up = ref.clone().addScaledVector(axis, -ref.dot(axis)).normalize();
   const side = new THREE.Vector3().crossVectors(axis, up);
-  const bore = radius - 0.005;
   const lip: THREE.Vector3[] = [];
   for (let k = 0; k < 20; k++) {
     const ang = (k / 20) * Math.PI * 2;
-    lip.push(end.clone().addScaledVector(side, Math.cos(ang) * bore).addScaledVector(up, Math.sin(ang) * bore));
+    lip.push(end.clone().addScaledVector(side, Math.cos(ang) * (ra - 0.005)).addScaledVector(up, Math.sin(ang) * (rb - 0.005)));
   }
   batch.add(mat.black, capGeometry(lip, axis));
 }

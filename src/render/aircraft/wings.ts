@@ -151,6 +151,7 @@ export function buildWings(mat: AircraftMaterials, root: THREE.Object3D, def: Wi
       if (walk.side === 'both' || (walk.side === 'right') === side > 0) addWalkway(batch, mat, side, walk, planform, section);
     }
     for (const strip of def.stallStrips ?? []) addStallStrip(batch, mat, side, strip, planform, section);
+    for (const boot of def.boots ?? []) addBoot(batch, mat, side, boot, planform, section);
   }
   if (def.pitot) addPitot(batch, mat, def.pitot, planform, section);
   if (def.liftDetector) addLiftDetector(batch, mat, def.liftDetector, planform, section);
@@ -280,6 +281,48 @@ function addWalkway(batch: MeshBatch, mat: AircraftMaterials, side: 1 | -1, w: N
     // Facing up on either wing (the mirror flips the winding).
     if (side > 0) index.push(a, b, c, b, d, c);
     else index.push(a, c, b, b, c, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  batch.add(mat.black, g);
+}
+
+/** De-ice boot: a thin black skin wrapped round the leading edge, 2 mm proud of it, from upper xc round to lower xc. */
+function addBoot(batch: MeshBatch, mat: AircraftMaterials, side: 1 | -1, boot: NonNullable<WingVisualDef['boots']>[number], planform: Planform, section: SectionShape): void {
+  // Chord samples: upper surface from xcUpper forward to the nose, then the lower surface back to xcLower.
+  const n = 8;
+  const samples: [number, 1 | -1][] = [];
+  for (let i = 0; i <= n; i++) samples.push([boot.xcUpper * (1 - i / n) ** 2, 1]);
+  for (let i = 1; i <= n; i++) samples.push([boot.xcLower * (i / n) ** 2, -1]);
+  const rows = Math.max(2, Math.round(4 * (boot.y1 - boot.y0)) + 1);
+  const pos: number[] = [];
+  const index: number[] = [];
+  const p = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const q = new THREE.Vector3();
+  for (let r = 0; r < rows; r++) {
+    const y = boot.y0 + ((boot.y1 - boot.y0) * r) / (rows - 1);
+    // Offset outward from a point inside the nose (the mid-thickness at 15 % chord).
+    surfacePointOn(planform, section, y, 0.15, 1, side, c);
+    surfacePointOn(planform, section, y, 0.15, -1, side, q);
+    c.add(q).multiplyScalar(0.5);
+    for (const [xc, surf] of samples) {
+      surfacePointOn(planform, section, y, xc, surf, side, p);
+      q.subVectors(p, c);
+      const l = q.length() || 1;
+      p.addScaledVector(q, 0.002 / l);
+      pos.push(p.x, p.y, p.z);
+    }
+  }
+  const m = samples.length;
+  for (let r = 0; r < rows - 1; r++) {
+    for (let i = 0; i < m - 1; i++) {
+      const a = r * m + i, b = a + 1, cc = a + m, d = cc + 1;
+      if (side > 0) index.push(a, cc, b, b, cc, d);
+      else index.push(a, b, cc, b, d, cc);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

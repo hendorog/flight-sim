@@ -284,3 +284,25 @@ describe('turbine mapping', () => {
     expect(fill(s)[P.rpm]).toBe(0);
   });
 });
+
+describe('the voices of the later turbine types leave the Caravan and the Cessna 172S as they were', () => {
+  it('the appended parameters at any value, and a CAWS message, change no sample of a profile without them', () => {
+    const extras = { reverse: 1.2, shaker: 1, overspeed: 1, ignitor: 1, tailRpm: 2933, tailLoad: 2, tailTipMach: 0.63 };
+    const same = (profile: AudioProfile | undefined, params: Record<string, number>): void => {
+      const plain = new SynthHost(profile).set(params).render(1.5);
+      const host = new SynthHost(profile).set({ ...params, ...extras });
+      host.message({ type: 'caws', level: 'warning' });
+      const loaded = host.render(1.5);
+      for (let s = 0; s < plain.length; s++) {
+        let differing = 0;
+        for (let i = 0; i < plain[s].length; i++) if (!Object.is(plain[s][i], loaded[s][i])) differing++;
+        expect(differing, `stem ${s}`).toBe(0);
+      }
+    };
+    // The Caravan as it was before the later types: without the reverse growl it gained at integration.
+    const caravan = C208_AUDIO.engines[0];
+    const noReverse: AudioProfile = { ...C208_AUDIO, engines: [{ ...caravan, prop: { ...caravan.prop, reverse: undefined } }] };
+    same(noReverse, { ...TAKE_OFF, starter: 1, windLevel: 1, windFreq: 700, gyro: 1, fan: 1 });
+    same(undefined, { rpm: 2400, firing: 1, load: 0.8, throttle: 0.8, propLoad: 1, tipMach: 0.76, windLevel: 1, windFreq: 700, horn: 0.6, gyro: 1, fan: 1 });
+  }, 60_000);
+});

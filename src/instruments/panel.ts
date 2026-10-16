@@ -14,7 +14,7 @@ import { C172S_PANEL } from '../aircraft/c172s/panel';
 import type { SimContext } from '../core/context';
 import type { AircraftState } from '../core/types';
 import { InstrumentSet, type InstrumentSetOptions } from './dynamics/instrumentSet';
-import { gaugeRecess, type GaugeDef, type PanelDef } from './panelDef';
+import { gaugeRecess, gaugeScale, type GaugeDef, type PanelDef } from './panelDef';
 import { panelLayoutProblems } from './panelLayout';
 import { gaugeParts, ignitionLayout, isLargeGauge, leverId } from './panelParts';
 import { ScaledGauge } from './render/scaledGauge';
@@ -29,9 +29,11 @@ import { context2d, LABEL_FONT, makeCanvas, noiseCanvas, rng, type Ctx2D } from 
 import { LIGHT_DIAL_LINEAR, type PanelComponent, type Rect } from './render/component';
 import { AnnunciatorPanel, FlapIndicator, paintBlankPlate, paintEngineControls, paintPlacard, SwitchPanel } from './render/controls';
 import { EngineDisplay } from './render/engineDisplay';
+import { EisWindow } from './render/eisWindow';
 import { ammeterGauge, ClockOatGauge, DualGauge, SingleGauge, suctionGauge, TachometerGauge, TwinNeedleGauge } from './render/engineGauges';
 import { AttitudeGauge, HeadingGauge, TurnCoordinatorGauge } from './render/gyroGauges';
 import { FlapLights, FlapSwitch, GearLights, GearSelector, GuardedKnob, IgnitionSwitches, TrimBar } from './render/lights';
+import { HsiGauge, RmiGauge } from './render/hsiGauges';
 import { CdiGauge } from './render/navGauges';
 import { AirspeedGauge, AltimeterGauge, VerticalSpeedGauge } from './render/pitotStaticGauges';
 
@@ -207,6 +209,9 @@ export class InstrumentPanel {
     const s = ctx.state;
     if (this.teleported(s)) this.reset(s);
     const r = this.instruments.step(dt, s, ctx.controls, ctx.weather);
+    // A caution or warning legend that has just lit strikes the master chime (PC-12 CAWS; audio listens).
+    const chime = this.instruments.takeChime();
+    if (chime) ctx.events.emit('caws', { level: chime });
     if (this.drawOnlyInCockpit && ctx.cameraMode !== 'cockpit') {
       // Latches keep their last drawn values, so the first cockpit frame redraws whatever changed.
       this.upload.flush(ctx.renderer); // completes a pending mip rebuild
@@ -289,7 +294,7 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
   const rest: PanelComponent[] = [];
   for (const g of def.gauges) {
     const into = 'at' in g ? dials : rest;
-    const k = def.instrumentScale?.[isLargeGauge(g) ? 'large' : 'small'] ?? 1;
+    const k = (def.instrumentScale?.[isLargeGauge(g) ? 'large' : 'small'] ?? 1) * gaugeScale(g);
     if (k !== 1 && gaugeRecess(g, def.apertures) && 'at' in g) {
       const apertures = { large: def.apertures.large / k, small: def.apertures.small / k };
       const component = buildGauge(g, apertures, tuning, paintLevers);
@@ -304,7 +309,7 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
     if (g.kind === 'gearLights' && g.lever) into.push(new GearSelector(leverId(g.id), g.lever));
     if (g.kind === 'flapLights' && g.lever) into.push(new FlapSwitch(leverId(g.id), g.lever, g));
   }
-  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns, def.annunciator.cells));
+  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns, def.annunciator.cells, def.annunciator.lensLegend));
   dials.push(new SwitchPanel(def.switchRow, def.ignition));
   const ignition = ignitionLayout(def.ignition);
   if (ignition && def.ignition.kind !== 'key') dials.push(new IgnitionSwitches(def.ignition.kind, ignition));
@@ -330,7 +335,7 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
     case 'asi':
       return new AirspeedGauge(g.id, g.at[0], g.at[1], r, g.marks);
     case 'attitude':
-      return new AttitudeGauge(g.id, g.at[0], g.at[1], r);
+      return new AttitudeGauge(g.id, g.at[0], g.at[1], r, g.inclinometer ?? false);
     case 'altimeter':
       return new AltimeterGauge(g.id, g.at[0], g.at[1], r);
     case 'turn':
@@ -341,6 +346,10 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return new VerticalSpeedGauge(g.id, g.at[0], g.at[1], r);
     case 'cdi':
       return new CdiGauge(g.id, g.at[0], g.at[1], r, g.receiver, g.fixedCourseDeg);
+    case 'hsi':
+      return new HsiGauge(g.id, g.at[0], g.at[1], r, g.receiver, g.fixedCourseDeg);
+    case 'rmi':
+      return new RmiGauge(g.id, g.at[0], g.at[1], r);
     case 'clock':
       return new ClockOatGauge(g.id, g.at[0], g.at[1], r);
     case 'suction':
@@ -370,6 +379,8 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return new GuardedKnob(g.id, g.at, g.label, (g.action as string) === 'gearEmergency' ? (c) => c.gearEmergency : undefined);
     case 'engineDisplay':
       return new EngineDisplay(g.id, g.bounds, g.engines, g.rows);
+    case 'eisWindow':
+      return new EisWindow(g);
     case 'gps':
       return new GpsUnit(g.id, g.bounds.x, g.bounds.y, tuning);
     case 'navcom':

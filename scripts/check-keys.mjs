@@ -1,22 +1,31 @@
 #!/usr/bin/env node
-// Usage: node scripts/check-keys.mjs <outDir>
+// Usage: node scripts/check-keys.mjs [outDir]   (default shots/final/check-keys)
 // Real-key-event check of the keyboard controls in the real app (cruise scenario): the yoke and rudder keys hold
 // their position after release, 5 / Num 5 recentre, F2 / F3 step the throttle, F5 / F6 the flaps, the old flap
-// keys (F, V, [ ]) do nothing, and F5 with the menu open does not reload the page. Prints and writes keycheck.json.
+// keys (F, V, [ ]) do nothing, and F5 with the menu open does not reload the page. Then the Caravan on the runway: the
+// power lever's lift-over idle gate with real key events (Shift+F2 held from forward of the gate stops on it; let go
+// and held again it goes aft into beta and reverse; F3 brings it back to the gate and stops; F1 idle on the gate;
+// Shift+F2 then F4 full forward) and its condition lever's detents (M / Shift+M a detent a press, CUT-OFF by a fresh M
+// held 1 s at LOW IDLE), and that Shift+F2 does nothing on the Cessna 172S. Prints and writes keycheck.json; exits 1
+// if a check of the Caravan's gate or condition lever fails.
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import net from 'node:net';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
-const out = process.argv[2];
+// Without an argument the output goes under shots/ (git-ignored), never to a stray directory in the tree.
+const out = process.argv[2] ?? `${root}/shots/final/check-keys`;
+mkdirSync(out, { recursive: true });
 const port = await new Promise((res) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 const server = await createServer({ root, logLevel: 'error', server: { port, strictPort: true, host: '127.0.0.1', hmr: false, watch: null } });
 await server.listen();
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=vulkan', '--enable-features=Vulkan', '--enable-webgl'] });
 const errs = [];
 const res = {};
+const failures = [];
+const check = (name, ok, value) => { if (!ok) failures.push(`${name}: ${JSON.stringify(value)}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 try {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
@@ -72,10 +81,74 @@ try {
   res.markerAfterF5InMenu = await p.evaluate(() => window.__marker).catch(() => 'navigated');
   res.loads = loads;
   await p.screenshot({ path: `${out}/keycheck_menu.png` });
+
+  // The Cessna 172S: Shift+F2 is nothing (it has no reverse); the throttle stays where it is.
+  await hold('Escape', 60); await sleep(300);
+  const thr172 = (await c()).thr;
+  await p.keyboard.down('Shift'); await hold('F2', 400); await p.keyboard.up('Shift'); await sleep(150);
+  res.c172ShiftF2 = { before: thr172, after: (await c()).thr, reverse: await p.evaluate(() => __sim.ctx.controls.reverse ?? null) };
+  check('C172S: Shift+F2 leaves the throttle and has no reverse', res.c172ShiftF2.after === thr172 && res.c172ShiftF2.reverse === null, res.c172ShiftF2);
+
+  // The Caravan on the runway, engine running.
+  const q = await ctx.newPage();
+  q.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+  q.on('pageerror', (e) => errs.push(String(e)));
+  await q.goto(`http://127.0.0.1:${port}/index.html?aircraft=c208&scenario=runway&cam=cockpit&mute=1`, { waitUntil: 'load' });
+  await q.waitForFunction(() => window.__ready === true, null, { timeout: 90000 });
+  await q.mouse.click(640, 100).catch(() => {});
+  await sleep(300);
+  const lever = () => q.evaluate(() => { const k = __sim.ctx.controls; return { thr: +k.throttle.toFixed(3), rev: +(k.reverse ?? 0).toFixed(3) }; });
+  const qhold = async (code, ms, shift = false) => { if (shift) await q.keyboard.down('Shift'); await q.keyboard.down(code); await sleep(ms); await q.keyboard.up(code); if (shift) await q.keyboard.up('Shift'); await sleep(150); };
+  const g = {};
+  await qhold('F3', 600); g.forward = await lever();
+  await qhold('F2', 1500, true); g.heldBackToGate = await lever();
+  await qhold('F2', 800, true); g.overTheGate = await lever();
+  await qhold('PageDown', 1500, true); g.fullReverse = await lever();
+  await qhold('F3', 300); g.f3Short = await lever();
+  await qhold('F3', 2500); g.f3ToGate = await lever();
+  await qhold('F3', 400); g.f3Again = await lever();
+  await qhold('F1', 80); g.f1 = await lever();
+  await qhold('F2', 600, true); g.aftAgain = await lever();
+  await qhold('F4', 80); g.f4 = await lever();
+  await qhold('F1', 80);
+  res.c208Gate = g;
+  check('Caravan: F3 moves the power lever forward', g.forward.thr > 0.05 && g.forward.rev === 0, g.forward);
+  check('Caravan: Shift+F2 held from forward stops on the gate', g.heldBackToGate.thr === 0 && g.heldBackToGate.rev === 0, g.heldBackToGate);
+  check('Caravan: a fresh Shift+F2 goes over the gate into beta', g.overTheGate.rev >= 0.3 && g.overTheGate.thr === 0, g.overTheGate);
+  check('Caravan: Shift+Page Down held goes on to full reverse', g.fullReverse.rev === 1 && g.fullReverse.thr === 0, g.fullReverse);
+  check('Caravan: F3 from reverse comes forward', g.f3Short.rev < 1 && g.f3Short.rev > 0, g.f3Short);
+  check('Caravan: F3 held stops on the gate', g.f3ToGate.rev === 0 && g.f3ToGate.thr === 0, g.f3ToGate);
+  check('Caravan: a fresh F3 goes forward of the gate', g.f3Again.thr > 0 && g.f3Again.rev === 0, g.f3Again);
+  check('Caravan: F1 is idle on the gate', g.f1.thr === 0 && g.f1.rev === 0, g.f1);
+  check('Caravan: F4 from beta is full forward', g.f4.thr === 1 && g.f4.rev === 0, g.f4);
+  res.c208Hud = await q.evaluate(() => document.body.innerText.includes('BETA') || document.body.innerText.includes('REV'));
+  await q.screenshot({ path: `${out}/keycheck_c208.png` });
+  // The condition lever's detents (InputProfile.conditionDetents): M a detent back, stopping at LOW IDLE; a fresh M
+  // held there 1 s goes on to CUT-OFF (the engine stops: last); Shift+M a detent forward.
+  const cond = () => q.evaluate(() => +__sim.ctx.controls.mixture.toFixed(3));
+  const m = {};
+  m.start = await cond();
+  await qhold('KeyM', 80); m.mTap = await cond();
+  await qhold('KeyM', 80, true); m.shiftMToHigh = await cond();
+  await qhold('KeyM', 1500); m.mHeldFromHigh = await cond();
+  await qhold('KeyM', 400); m.mShortAtLow = await cond();
+  await qhold('KeyM', 80, true); m.shiftMTap = await cond();
+  await qhold('KeyM', 80); await qhold('KeyM', 1300); m.mHeldAtLow = await cond();
+  await qhold('KeyM', 80, true); m.shiftMFromCutoff = await cond();
+  res.c208Condition = m;
+  check('Caravan: M from HIGH IDLE stops at LOW IDLE', m.mTap === 0.1, m);
+  check('Caravan: Shift+M from LOW IDLE is HIGH IDLE', m.shiftMToHigh === 1, m);
+  check('Caravan: M held from HIGH IDLE (key auto-repeat) stops at LOW IDLE', m.mHeldFromHigh === 0.1, m);
+  check('Caravan: a short M at LOW IDLE does not cut the engine', m.mShortAtLow === 0.1, m);
+  check('Caravan: Shift+M from LOW IDLE is HIGH IDLE (again)', m.shiftMTap === 1, m);
+  check('Caravan: a fresh M held 1 s at LOW IDLE is CUT-OFF', m.mHeldAtLow === 0, m);
+  check('Caravan: Shift+M from CUT-OFF is LOW IDLE', m.shiftMFromCutoff === 0.1, m);
 } catch (e) {
   res.error = String(e.stack ?? e);
 } finally {
   res.consoleErrors = errs;
+  res.failures = failures;
+  if (failures.length || res.error) process.exitCode = 1;
   console.log(JSON.stringify(res, null, 1));
   writeFileSync(`${out}/keycheck.json`, JSON.stringify(res, null, 1));
   await browser.close();

@@ -40,8 +40,11 @@ export function fixedSections(def: PanelDef): FixedSections {
   }));
   // Engine/auxiliary instruments in short columns beside the flight instruments. Never shrink an
   // individual gauge: the whole section has one scale, including its hotspot boxes.
-  const engineKinds = ['tach', 'single', 'dual', 'twinNeedle', 'dualSector', 'suction', 'ammeter', 'clock', 'digitalTemperature', 'engineDisplay'];
-  const engine = def.gauges.filter(g => !flight.has(g.id) && engineKinds.includes(g.kind));
+  const engineKinds = ['tach', 'single', 'dual', 'twinNeedle', 'dualSector', 'suction', 'ammeter', 'clock', 'digitalTemperature', 'engineDisplay', 'eisWindow'];
+  const crops = def.fixed?.crops ?? [];
+  const within = (r: Rect, o: Rect): boolean => r.x >= o.x && r.y >= o.y && r.x + r.w <= o.x + o.w && r.y + r.h <= o.y + o.h;
+  const cropped = (id: string): boolean => crops.some(c => (parts.get(id) ? within(parts.get(id)!, c) : false));
+  const engine = def.gauges.filter(g => !flight.has(g.id) && !cropped(g.id) && engineKinds.includes(g.kind));
   const columns = (section: FixedSection, rects: readonly Rect[], startX: number, height: number): void => {
     let x = startX, y = GAP, width = 0;
     for (const p of rects) {
@@ -55,9 +58,14 @@ export function fixedSections(def: PanelDef): FixedSections {
   // Lamps may be scattered around a helicopter pod. Their explicit cells keep unrelated blank canvas
   // out of the fixed view, while retaining every warning, in the original order.
   const lamps = def.annunciator ? def.annunciator.cells ?? [def.annunciator.bounds] : [];
-  let lampX = GAP;
-  const lampY = upper.size.h;
-  for (const p of lamps) { add(upper, p, lampX, lampY); lampX += p.w + GAP; }
+  for (const crop of crops) add(upper, crop, upper.size.w, GAP);
+  if (def.fixed?.lampsBeside) {
+    columns(upper, lamps, upper.size.w, upper.size.h);
+  } else {
+    let lampX = GAP;
+    const lampY = upper.size.h;
+    for (const p of lamps) { add(upper, p, lampX, lampY); lampX += p.w + GAP; }
+  }
   const engineIds = new Set(engine.map(g => g.id));
   const controls = def.fixed?.controls ?? panelParts(def).filter(p => p.id === 'switches' || p.id === 'ignition').map(p => p.rect);
   const radios = def.gauges.filter(g => g.kind === 'gps' || g.kind === 'navcom' || g.kind === 'xpdr');
@@ -70,7 +78,7 @@ export function fixedSections(def: PanelDef): FixedSections {
     const x = Math.min(...radioRects.map(r => r.x)), y = Math.min(...radioRects.map(r => r.y));
     stack.push({ x, y, w: Math.max(...radioRects.map(r => r.x + r.w)) - x, h: Math.max(...radioRects.map(r => r.y + r.h)) - y });
   }
-  columns(lower, [...controls, ...def.gauges.filter(g => !flight.has(g.id) && !engineIds.has(g.id) && !radioIds.has(g.id))
+  columns(lower, [...controls, ...def.gauges.filter(g => !flight.has(g.id) && !engineIds.has(g.id) && !radioIds.has(g.id) && !cropped(g.id))
     .flatMap(g => gaugeParts(g, def.apertures, def.instrumentScale).map(p => p.rect)), ...stack], GAP, 420);
   // A separate compass projection accompanies both views, outside the native panel canvas.
   // It consumes the same instrument state as the windshield compass and has no click hotspot.

@@ -189,8 +189,12 @@ with the wheel, a click on either half, or a drag (right/up increases), and hold
 | **Engine** | |
 | F2, Page Down / F3, Page Up | Throttle back / forward |
 | F1 / F4 | Throttle idle / full |
+| Shift+F2, Shift+Page Down | Turboprops (C208; PC-12 when available): power lever to the idle gate; release and hold again to go over the gate into BETA, then REVERSE (hold) |
+| Shift+F1 | Turboshaft (MD 500E when available): twist grip to CUTOFF |
+| ; / Shift+; | Turboshaft: N2 governor beep DECR / INCR (hold) |
 | M / Shift+M | Mixture lean / rich (hold; lean to rich takes about 3 s) |
-| S | Starter (hold) |
+| S | Starter (hold; on a latching start switch, PC-12, one press) |
+| Shift+N | STARTER INTERRUPT (hold; PC-12) |
 | 1 / 2 / 3 / 4 | Magnetos OFF / R / L / BOTH |
 | **Switches** | |
 | W | Master switch (BAT + ALT) |
@@ -207,6 +211,7 @@ with the wheel, a click on either half, or a drag (right/up increases), and hold
 | K / Shift+K | Altimeter setting up / down (1 hPa) |
 | U / Shift+U | NAV1 OBS course up / down |
 | D | Align the heading indicator with the compass (hold) |
+| Shift+D | Stick pusher interrupt (hold; PC-12) |
 | **View** | |
 | C / Shift+C | Next / previous camera (cockpit, chase, orbit, flyby, tower) |
 | Shift+V | Switch between the 3D cockpit and fixed instrument panel |

@@ -83,6 +83,8 @@ export interface EngineInput {
   moisture?: MoistureSample;
   /** Quasi-steady evaluation (settle): slow states hold, lagged ones sit at their targets. */
   steady?: boolean;
+  /** ControlInputs.reverse for this engine, [0, 1] (types with PitchControlDef.beta). Absent: 0. */
+  reverse?: number;
   /** FADEC engines: the ENGINE MASTER switch, the bus voltage, whether the engine's own alternator is delivering, and the coolant temperature, C. */
   engineMaster?: boolean;
   busVoltage?: number;

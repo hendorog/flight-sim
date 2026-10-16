@@ -132,6 +132,11 @@ export interface SimEvents {
   /** Gear events for sound and UI: a leg unlocked, reached down-and-locked, or reached up. Emitted by SimPhysics. */
   gear: { kind: 'unlock' | 'downLocked' | 'up'; leg: 0 | 1 | 2 };
   /**
+   * A caution and warning panel legend has just lit (PC-12 CAWS): emitted on the EDGE of a new red ('warning') or
+   * amber ('caution') legend, never for legends already lit at a spawn or reset. The audio chimes on it.
+   */
+  caws: { level: 'warning' | 'caution' };
+  /**
    * A species seen close (within 500 m, below 300 m AGL): on its first approach in a session, then again on each
    * approach at least 25 m closer than the last emit (the Field Guide's closest distance). Emitted by the FaunaSystem.
    */

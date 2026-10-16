@@ -326,6 +326,8 @@ export class AircraftMaterials {
   readonly propFront: THREE.MeshStandardMaterial;
   readonly propBack: THREE.MeshStandardMaterial;
   readonly exhaust: THREE.MeshStandardMaterial;
+  /** Bare, lightly heat-stained steel stubs (PT6A-67 on the PC-12); named 'exhaust' like the stained finish. */
+  readonly exhaustPolished: THREE.MeshStandardMaterial;
   // Cabin
   readonly panelPlastic: THREE.MeshStandardMaterial;
   readonly glareshield: THREE.MeshStandardMaterial;
@@ -460,6 +462,7 @@ export class AircraftMaterials {
     this.propFront = new THREE.MeshStandardMaterial({ name: 'propFront', vertexColors: true, metalness: 0.35, roughness: 0.4 });
     this.propBack = new THREE.MeshStandardMaterial({ name: 'propBack', vertexColors: true, roughness: 0.85 });
     this.exhaust = new THREE.MeshStandardMaterial({ name: 'exhaust', color: srgb([70, 58, 48]), metalness: 0.9, roughness: 0.6 });
+    this.exhaustPolished = new THREE.MeshStandardMaterial({ name: 'exhaust', color: srgb([168, 160, 150]), metalness: 0.9, roughness: 0.3 });
     for (const m of [this.propFront, this.propBack]) {
       m.transparent = true;
       m.depthWrite = true;

@@ -23,7 +23,7 @@ import {
   windNoise,
   type SoundContext,
 } from '../../src/audio/mapping';
-import { ENGINE_P, ENGINE_PARAMS, MAX_ENGINES, P, PARAM_COUNT, SYNTH_PARAMS } from '../../src/audio/params';
+import { ENGINE_P, ENGINE_PARAMS, EXTRA_PARAMS, MAX_ENGINES, P, PARAM_COUNT, SYNTH_PARAMS } from '../../src/audio/params';
 import type { AudioProfile } from '../../src/audio/profile';
 import { DEG, KT } from '../../src/core/math';
 import { makeMockState } from '../../src/core/mockState';
@@ -55,8 +55,12 @@ describe('parameter block layout', () => {
     // Engine 0 keeps the indices its eight parameters always had.
     expect(ENGINE_P[0]).toEqual({ rpm: 0, firing: 1, load: 2, throttle: 3, starter: 4, roughness: 5, propLoad: 6, tipMach: 7, propRpm: 26, turbo: 27 });
     expect(ENGINE_PARAMS.map((n) => ENGINE_P[1][n])).toEqual([28, 29, 30, 31, 32, 33, 34, 35, 36, 37]);
-    expect(PARAM_COUNT).toBe(38);
-    expect(makeParamBlock()).toHaveLength(38);
+    // The voices of the turbine types (PC-12, MD 500E) appended at the very end, after the second engine's block,
+    // so every index above keeps its value (the frozen golden rigs send them as 0).
+    expect(EXTRA_PARAMS).toEqual(['reverse', 'shaker', 'overspeed', 'ignitor', 'tailRpm', 'tailLoad', 'tailTipMach']);
+    expect(EXTRA_PARAMS.map((n) => P[n])).toEqual([38, 39, 40, 41, 42, 43, 44]);
+    expect(PARAM_COUNT).toBe(38 + EXTRA_PARAMS.length);
+    expect(makeParamBlock()).toHaveLength(45);
     // No index is used twice.
     const all = [...Object.values(P), ...Object.values(ENGINE_P[1])];
     expect(new Set(all).size).toBe(PARAM_COUNT);
@@ -147,7 +151,9 @@ describe('two engines', () => {
   it('the Cessna 172S profile writes nothing into the second block and no gear sound', () => {
     const s = makeMockState();
     const out = fillSynthParams(s, defaultControls(), sound(), makeParamBlock());
-    expect(Array.from(out.subarray(ENGINE_P[1].rpm))).toEqual(ENGINE_PARAMS.map(() => 0));
+    expect(Array.from(out.subarray(ENGINE_P[1].rpm, ENGINE_P[1].turbo + 1))).toEqual(ENGINE_PARAMS.map(() => 0));
+    // Nor anything into the parameters appended after it (the voices of the turbine types).
+    expect(Array.from(out.subarray(P[EXTRA_PARAMS[0]]))).toEqual(EXTRA_PARAMS.map(() => 0));
     expect([out[P.gearPump], out[P.gearHorn], out[P.gearWind], out[P.turbo]]).toEqual([0, 0, 0, 0]);
     expect(out[P.propRpm]).toBe(s.propeller.rpm);
     // Even with a (mock) retractable gear in transit and warning: the profile has no gear.

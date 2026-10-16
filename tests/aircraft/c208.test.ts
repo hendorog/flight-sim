@@ -13,7 +13,8 @@ import { setEngineControl } from '../../src/core/types';
 import { buildHotspots } from '../../src/instruments/hotspots';
 import { panelLayoutProblems } from '../../src/instruments/panelLayout';
 import { CUTOFF_BELOW } from '../../src/physics/propulsion/turbineEngine';
-import { at, makeRig, resetTo } from '../fdm/helpers';
+import { SimPhysics } from '../../src/sim/SimPhysics';
+import { at, calmWeather, makeRig, resetTo } from '../fdm/helpers';
 
 describe('Cessna 208 Caravan 675', () => {
   it('is what the registry loads: the type itself, a free turbine with a constant-speed feathering propeller', async () => {
@@ -77,4 +78,16 @@ describe('Cessna 208 Caravan 675', () => {
     expect(s.engine.ng).toBeLessThan(5);
     expect(s.propeller.feathered).toBe(true);
   }, 60_000);
+
+  it('a scenario reset after reverse puts the power lever forward of the gate (controlDefaults reverse 0)', () => {
+    const sim = new SimPhysics({ aircraft: C208_DEFINITION, weather: calmWeather() });
+    sim.reset('cruise');
+    const trimmed = sim.controls.throttle;
+    sim.controls.throttle = 0;
+    sim.controls.reverse = 1;
+    sim.reset('cruise');
+    expect(sim.controls.reverse).toBe(0);
+    expect(sim.controls.throttle).toBeCloseTo(trimmed, 6);
+    expect(sim.controls.throttle).toBeGreaterThan(0.5);
+  });
 });

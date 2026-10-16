@@ -60,10 +60,29 @@ export const SYNTH_PARAMS = [
   'turbo',
 ] as const;
 
-export type SynthParamName = (typeof SYNTH_PARAMS)[number];
+/**
+ * Shared parameters appended AFTER the blocks of the further engines (the end of the parameter block), for the
+ * voices added with the turbine types (PC-12, MD 500E). Each is 0 = off: a sound profile without the member that
+ * uses it never reads it, and a host that predates it (tests/golden: the frozen Cessna 172S rigs) sends it as 0.
+ */
+export const EXTRA_PARAMS = [
+  /** Turboprop reverse growl of engine 0, 0..~1.5: negative thrust relative to cruise thrust, on blades at a negative angle. */
+  'reverse',
+  /** Stick shaker running 0..1 (AircraftState.stickShaker). */
+  'shaker',
+  /** Aural overspeed warning (the clacker) sounding 0..1 (above AudioProfile.overspeedWarning's KIAS or Mach). */
+  'overspeed',
+  /** Turbine igniters firing 0..1 (the snap of the exciter's sparks on a start). */
+  'ignitor',
+  /** Tail-rotor shaft speed, rev/min (0: none). */
+  'tailRpm',
+  /** Tail-rotor loading 0..~2: |tail-rotor thrust| relative to its hover thrust. */
+  'tailLoad',
+  /** Tail-rotor helical blade-tip Mach number. */
+  'tailTipMach',
+] as const;
 
-/** name -> index into the Float32Array sent to the worklet (the shared parameters and those of engine 0). */
-export const P = Object.fromEntries(SYNTH_PARAMS.map((n, i) => [n, i])) as Record<SynthParamName, number>;
+export type SynthParamName = (typeof SYNTH_PARAMS)[number] | (typeof EXTRA_PARAMS)[number];
 
 /** The parameters every engine has. Engine 0's are the names above; each further engine has a block of them after the list. */
 export const ENGINE_PARAMS = ['rpm', 'firing', 'load', 'throttle', 'starter', 'roughness', 'propLoad', 'tipMach', 'propRpm', 'turbo'] as const;
@@ -71,12 +90,18 @@ export type EngineParamName = (typeof ENGINE_PARAMS)[number];
 /** Engines the parameter block has room for. */
 export const MAX_ENGINES = 2;
 
+/** Index of the first of EXTRA_PARAMS: after the shared parameters and the blocks of the further engines. */
+const EXTRA_BASE = SYNTH_PARAMS.length + (MAX_ENGINES - 1) * ENGINE_PARAMS.length;
+
+/** name -> index into the Float32Array sent to the worklet (the shared parameters, those of engine 0, and the appended EXTRA_PARAMS). */
+export const P = Object.fromEntries([...SYNTH_PARAMS.map((n, i) => [n, i]), ...EXTRA_PARAMS.map((n, i) => [n, EXTRA_BASE + i])]) as Record<SynthParamName, number>;
+
 /** Per engine: name -> index of its parameters. ENGINE_P[0].rpm === P.rpm. */
 export const ENGINE_P: readonly Record<EngineParamName, number>[] = Array.from(
   { length: MAX_ENGINES },
   (_, e) => Object.fromEntries(ENGINE_PARAMS.map((n, k) => [n, e === 0 ? P[n] : SYNTH_PARAMS.length + (e - 1) * ENGINE_PARAMS.length + k])) as Record<EngineParamName, number>,
 );
-export const PARAM_COUNT = SYNTH_PARAMS.length + (MAX_ENGINES - 1) * ENGINE_PARAMS.length;
+export const PARAM_COUNT = EXTRA_BASE + EXTRA_PARAMS.length;
 
 /** Worklet outputs (each mono). */
 export const STEM = { engine: 0, prop: 1, airframe: 2, cabin: 3 } as const;

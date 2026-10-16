@@ -30,6 +30,13 @@ import { runHarness } from './harness';
 import { MockFlight } from './instrumentsFlight';
 import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
 import type { AircraftDefinition } from '../aircraft/types';
+import type { DevMock } from './devMock';
+
+/** Per-type mock readings: src/aircraft/<id>/devMock.ts (optional), called after the generic mock flight. */
+const DEV_MOCKS: Record<string, DevMock> = Object.fromEntries(
+  Object.entries(import.meta.glob<DevMock>('../aircraft/*/devMock.ts', { import: 'devMock', eager: true }))
+    .map(([path, mock]) => [path.split('/')[2], mock]),
+);
 
 const params = new URLSearchParams(location.search);
 const preRoll = Number(params.get('t') ?? 60);
@@ -183,6 +190,7 @@ function stepFlight(dt: number, ctx: SimContext): void {
   if (dt <= 0) return;
   flight.step(dt, ctx.state, ctx.controls);
   if (type || iasSweep || rpmSweep || mapSweep) extendFlight(ctx.state, ctx.controls);
+  if (type) DEV_MOCKS[type]?.(ctx.state, ctx.controls, flight.t, aircraft);
 }
 
 const info = document.createElement('div');

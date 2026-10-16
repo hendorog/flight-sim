@@ -65,6 +65,17 @@ const AMP_STEP = 0.5;
  * an excess jet at the velocity ratio |Vj - V| / (Vj + V).
  */
 const DEFICIT_EXPANSION = 1.15;
+/**
+ * Bound on the swirl the airframe sees: the tangential speed at the tube's edge, swirlRate x R_far, at most
+ * SWIRL_SPEED_RATIO x the jet's axial speed (V + 2 |v_i|) plus SWIRL_SPEED_FLOOR, m/s. Momentum theory carries the shaft
+ * torque on the axial mass flow (swirlRate = 2 Q / (mdot R^2)), which is singular where that flow vanishes: a propeller
+ * near zero thrust on the ground still absorbs torque (blades passing through ground fine into reverse, a reversing
+ * PT6 static), and its swirl rose without limit (to 14 000 rad/s and 1e8 N of side force on the PC-12 entering reverse
+ * on the brakes). Real swirl there is a churning, mixing flow, not a solid jet. In flight (V >= 20 m/s) and at any
+ * thrusting static the bound is far above the momentum value, so no thrusting case is changed.
+ */
+const SWIRL_SPEED_RATIO = 2;
+const SWIRL_SPEED_FLOOR = 3;
 /** Most stations the jet's convected path (setPath) can be given at. */
 export const MAX_PATH = 16;
 
@@ -236,7 +247,10 @@ export class SlipstreamField {
     this.vi = ss.inducedVelocity;
     const deficit = ss.inducedVelocity < 0;
     this.rFar = Math.min(Math.max(ss.radius, 0.3 * this.discRadius), deficit ? DEFICIT_EXPANSION * this.discRadius : this.discRadius);
-    this.kScale = 0.5 * ss.swirlRate * this.rFar * this.rFar;
+    const V0 = Math.max(-freeStream.x, 0);
+    const swirlCap = (SWIRL_SPEED_RATIO * (V0 + 2 * Math.abs(ss.inducedVelocity)) + SWIRL_SPEED_FLOOR) / this.rFar;
+    const swirl = Math.abs(ss.swirlRate) > swirlCap ? Math.sign(ss.swirlRate) * swirlCap : ss.swirlRate;
+    this.kScale = 0.5 * swirl * this.rFar * this.rFar;
     const k = ss.swirlProfile && ss.swirlProfile.length === PROFILE_BINS ? ss.swirlProfile : SOLID_BODY;
     for (let j = 0; j < PROFILE_BINS; j++) this.profile[j] = k[j];
     const V = Math.max(-freeStream.x, 0);

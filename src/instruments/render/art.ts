@@ -338,13 +338,17 @@ export class NeedleSprite {
   draw(g: Ctx2D, x: number, y: number, angle: number, shadow = true): void {
     const c = Math.cos(angle);
     const s = Math.sin(angle);
+    // Composed with the current transform (a ScaledGauge draws its gauge scaled about the dial centre).
     if (shadow) {
-      g.setTransform(c, s, -s, c, x + SHADOW_DX, y + SHADOW_DY);
+      g.save();
+      g.transform(c, s, -s, c, x + SHADOW_DX, y + SHADOW_DY);
       g.drawImage(this.shadow, -this.half, -this.half);
+      g.restore();
     }
-    g.setTransform(c, s, -s, c, x, y);
+    g.save();
+    g.transform(c, s, -s, c, x, y);
     g.drawImage(this.sprite, -this.half, -this.half);
-    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.restore();
   }
 }
 

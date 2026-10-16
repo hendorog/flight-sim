@@ -2,7 +2,8 @@
 // cycle and the tuning of the keyboard assists). Plain data.
 //
 // The turboprop's levers on the existing controls: the throttle keys move the POWER lever, the mixture keys the
-// CONDITION lever (CUT-OFF / LOW IDLE / HIGH IDLE), the propeller keys the PROP lever (with FEATHER at its aft
+// CONDITION lever (CUT-OFF / LOW IDLE / HIGH IDLE, a detent a press: back stops at LOW IDLE, and CUT-OFF takes a fresh
+// press there held for a second: InputProfile.conditionDetents), the propeller keys the PROP lever (with FEATHER at its aft
 // end); the starter is its own switch and the magneto keys work the IGNITION switch ('toggles'). The assists are
 // the Cessna 152's with the speeds scaled by the ratio of the stall speeds, 70 / 48 KCAS.
 
@@ -28,7 +29,11 @@ export const C208_INPUT: InputProfile = {
     gear: false,
     rudderTrim: true,
     fuelPump: true,
+    // The power lever aft of the idle gate: beta, then reverse (powerplant.ts C208_BETA).
+    reverse: true,
   },
+  // The condition lever's detents: CUT-OFF 0, LOW IDLE at turbineEngine CUTOFF_BELOW (0.1), HIGH IDLE 1.
+  conditionDetents: { groundIdle: 0.1 },
   assists: {
     axes: {
       aileron: { baseRate: 0.2, maxRate: 1.0, accelTime: 1.2, accelExponent: 2, reverseGain: 1.3, fullAuthoritySpeed: 33 * (48 / 53) * STALL_RATIO, authorityExponent: 1, minAuthority: 0.4, negativeScale: 1 },
@@ -51,5 +56,5 @@ export const C208_INPUT: InputProfile = {
     gStops: { pull: 2.2, push: 0.35 },
     handoverSpeed: 8 * (48 / 53) * STALL_RATIO,
   },
-  labels: { throttleUp: 'Power lever forward', throttleDown: 'Power lever back', mixtureRich: 'Condition lever forward (HIGH IDLE)', mixtureLean: 'Condition lever back (CUT-OFF)' },
+  labels: { throttleUp: 'Power lever forward (from BETA / REVERSE: back to the idle gate)', throttleDown: 'Power lever back (to the idle gate)', powerLeverReverse: 'Power lever to the idle gate; let go and hold again: over the gate into BETA, then REVERSE (on the ground)', throttleIdle: 'Power lever IDLE, on the gate', mixtureRich: 'Condition lever forward one detent (CUT-OFF, LOW IDLE, HIGH IDLE)', mixtureLean: 'Condition lever back to LOW IDLE; pressed again there and held 1 s: CUT-OFF' },
 };

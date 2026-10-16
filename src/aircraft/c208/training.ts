@@ -348,6 +348,9 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('conditionLowIdle', 'Condition lever', 'LOW IDLE', {
       control: 'mixture', state: conditionLowIdle, key: CONDITION_KEYS, stateLabel: 'LOW IDLE',
       why: why('Low idle for the taxi: less thrust, so less braking.') }),
+    item('powerBeta', 'Power lever', 'BETA as required for the taxi speed', {
+      control: 'throttle', state: null, key: 'powerLeverReverse', stateLabel: 'BETA',
+      why: why('Even at low idle the propeller on its stop pulls us along: beta flattens the blades and holds the taxi speed without riding the brakes.') }),
     item('ignitionNorm', 'Ignition switch', 'NORM', {
       control: 'magnetos', state: null, key: null, stateLabel: 'NORM',
       why: why('Ignition back to NORM: continuous ignition wears the igniters.') }),

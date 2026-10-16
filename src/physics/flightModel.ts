@@ -58,6 +58,7 @@ import { AeroModel } from './aero';
 import { casFromTas, pressureAltitude } from './atmosphere';
 import { configuredVne } from './rotorcraft/limits';
 import { ControlSystem } from './controlSystem';
+import { StickPusher } from './aero/stickPusher';
 import { LandingGear, RetractActuator, type RetractInput } from './gear';
 import type {
   AeroInput,
@@ -74,6 +75,7 @@ import type {
 } from './interfaces';
 import { createMassModel, type MassModel, type MassProperties } from './massModel';
 import { Powerplant, PropulsionSystem } from './propulsion';
+import { CUTOFF_BELOW } from './propulsion/turbineEngine';
 import type { SimEnvironment } from './environment';
 import { Rotorcraft } from './rotorcraft/rotorcraft';
 import { cloneRotorcraftState } from './rotorcraft/definition';
@@ -110,6 +112,12 @@ export function engineStopControls(def: AircraftDefinition, i: number, mode: Eng
   const fadec = def.powerplant.engines[i].engine.fadec !== undefined;
   if (mode === 'parked') return fadec ? { engineMaster: false } : { magnetos: 0, mixture: 0 };
   if (fadec) return { throttle: 0, fuelSelector: 'off', engineMaster: mode === 'windmilling' };
+  // No propeller lever (PC-12): the condition lever below CUTOFF_BELOW is CUT-OFF/FEATHER, so a windmilling
+  // engine has fuel cut by the selector and the condition lever just above the feather detent.
+  const pitch = def.powerplant.engines[i].propeller.pitchControl;
+  if (pitch.kind === 'constantSpeed' && pitch.selectedBy === 'conditionLever') {
+    return { throttle: 0, mixture: mode === 'windmilling' ? CUTOFF_BELOW : 0, fuelSelector: 'off' };
+  }
   return { throttle: 0, mixture: 0, fuelSelector: 'off', propeller: mode === 'windmilling' ? 1 : 0 };
 }
 
@@ -234,6 +242,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
    * longer than the rule's time. Nothing else follows from it in the physics; a rule 'none' leaves it false.
    */
   readonly overspeed = { flaps: false, gear: false };
+  /** Stick shaker / pusher (types with controls.stickPusher only) and the scratch controls it hands the control system. */
+  private readonly stickPusher: StickPusher | null;
+  private readonly pusherControls: ControlInputs | null;
   get physicsRate(): number {
     return this.rate;
   }
@@ -358,6 +369,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.aero = new AeroModel(aeroDef);
     const sensors = aeroDef.stallWarning;
     this.stallWarnerDeadVolts = (Array.isArray(sensors) ? sensors : [sensors]).some((w) => w.needsBus) ? def.powerplant.electrical.busDeadVolts : null;
+    this.stickPusher = def.controls.stickPusher ? new StickPusher(def.controls.stickPusher) : null;
+    this.pusherControls = this.stickPusher ? defaultControls(def) : null;
     // Each propeller's jet and inflow is the aero station of the same index.
     if (this.aero.propellerInflows.length !== n) throw new Error(`BladeElementFlightModel: ${def.id} has ${n} engines and ${this.aero.propellerInflows.length} aero propeller stations`);
     this.propulsion = n === 1 ? new PropulsionSystem(undefined, def.powerplant) : new Powerplant(def.powerplant);
@@ -492,6 +505,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.gear.reset();
     this.skids?.reset();
     this.aero.reset();
+    this.stickPusher?.reset();
     // A new flight computes as on a new model: no influence matrices kept from an earlier flight or trim.
     this.aero.resetInfluence();
     this.trimAero.resetInfluence();
@@ -595,6 +609,13 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     r.state.rotorRpm = r.state.omega * 30 / Math.PI;
     this.propulsion.reset({ ...powerplant, rpm: ic.engineRunning ? d.nominalRpm * d.engineRatio : 0, warm: !ic.onGround || ic.engineRunning });
     c.throttle = ic.engineRunning ? 1 : 0;
+    // A turboshaft: the grip FULL OPEN with fuel on when running (the governor flies the engine), CUTOFF when not;
+    // the igniters off (auto-reignition fires them); transmission oil already up when the rotor turns.
+    if (r.turboshaft) {
+      c.mixture = 1; c.magnetos = 0;
+      if (r.state.transmission && r.state.omega > 0) r.state.transmission.oilPressurePsi = d.transmission!.pressurePsi *
+        Math.min(1, r.state.rotorRpm / d.transmission!.pumpRpm);
+    }
     c.collective = 0; c.parkingBrake = false; c.elevatorTrim = 0;
     let orientation = quat.fromEuler(0, 0, ic.heading);
     let position = { ...ic.position };
@@ -602,6 +623,10 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const velocityAir = { x: ic.airspeed * Math.cos(path) * Math.cos(ic.heading),
       y: ic.airspeed * Math.cos(path) * Math.sin(ic.heading), z: -ic.airspeed * Math.sin(path) };
     if (ic.onGround) {
+      // Asymmetric cyclic travel (MD 500E): the cyclic sits at its rigging neutral on the ground (RFM 4-12, about
+      // a third of the travel from full aft), not at the stick's centre.
+      const l = d.cyclicLimits;
+      if (l) { c.elevator = (l.forward - l.aft) / (l.forward + l.aft); c.aileron = (l.left - l.right) / (l.left + l.right); }
       const pose = this.skids!.restingPose(this.mp.mass, this.mp.cgOffset);
       position.z = -this.groundElevation - pose.height;
       orientation = quat.fromEuler(pose.roll, pose.pitch, ic.heading);
@@ -658,15 +683,45 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.propIn.controls = ec; this.propIn.dt = 0.02;
     let lo = 0, hi = 1;
     const target = r.state.torque / (d.engineRatio * d.transmissionEfficiency);
-    for (let i = 0; i < 20; i++) {
+    const ts = r.turboshaft;
+    if (ts) {
+      // A gas turbine: the quasi-steady engine (gas producer at the governed N1, TOT settled) instead of 0.4 s
+      // probes that would catch the spool mid-acceleration. The bisection finds the PLA-equivalent N1 demand
+      // whose output-shaft torque drives the trimmed rotor at the reset speed.
+      unit.steady = true;
+      ec.engines = [{}];
+      for (let i = 0; i < 40; i++) {
+        ec.throttle = (lo + hi) / 2;
+        this.prop = this.propulsion.step(this.propIn);
+        if (unit.shaftTorque > target) hi = ec.throttle; else lo = ec.throttle;
+      }
       ec.throttle = (lo + hi) / 2;
-      for (let j = 0; j < 20; j++) this.prop = this.propulsion.step(this.propIn);
-      if (unit.shaftTorque > target) hi = ec.throttle; else lo = ec.throttle;
+      this.prop = this.propulsion.step(this.propIn);
+      unit.steady = false;
+    } else {
+      for (let i = 0; i < 20; i++) {
+        ec.throttle = (lo + hi) / 2;
+        for (let j = 0; j < 20; j++) this.prop = this.propulsion.step(this.propIn);
+        if (unit.shaftTorque > target) hi = ec.throttle; else lo = ec.throttle;
+      }
     }
     r.state.governorThrottle = r.state.governorIntegral = ic.engineRunning ? ec.throttle : 0;
-    c.throttle = r.state.governorThrottle;
-    r.state.previousThrottle = c.throttle; r.state.previousCollective = c.collective ?? 0;
-    r.throttle(0, c, unit);
+    if (ts) {
+      // The grip stays where the pilot left it; the governor holds the N1 the trim needs at this N2 (the beep set
+      // where a pilot would have beeped it: N2 on the reset speed, no transient at release).
+      const tsd = ts.ts, s = r.state.turboshaft!;
+      const n2 = ts.n2(unit), ng = tsd.plaNg.groundIdle + (tsd.plaNg.fullOpen - tsd.plaNg.groundIdle) * ec.throttle;
+      if (ic.engineRunning) {
+        s.n2SetPct = clamp(ts.steadySetPct(ng, n2, c.collective ?? 0), 100 * tsd.governor.setRange[0], 100 * tsd.governor.setRange[1]);
+        s.ptgIntegral = ts.steadyIntegral(ng, n2, s.n2SetPct, c.collective ?? 0);
+      }
+      ts.stepTurboshaft(0, c, unit, cloneControls(c), this.prop.electrical.busVoltage);
+      ts.publish(0, c, unit, this.prop.electrical.busVoltage, ic.onGround);
+    } else {
+      c.throttle = r.state.governorThrottle;
+      r.state.previousThrottle = c.throttle; r.state.previousCollective = c.collective ?? 0;
+      r.throttle(0, c, unit);
+    }
     this.controlsIn = cloneControls(c); this.rotorControls = this.controlsIn;
     // Numerical initialisation must not consume fuel or reset the already-settled intake wall film.
     this.propulsion.fuel.quantities.set(this.loading.tanks);
@@ -916,6 +971,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       batteryCharge: pp.batteryCharge,
       surfaces: { ...this.controlSystem.surfaces },
       gear: this.retract ? this.retract.capture() : { extension: [ext[0], ext[1], ext[2]], emergency: false },
+      ...(this.stickPusher ? { stickPusher: this.stickPusher.capture() } : {}),
     };
   }
 
@@ -951,16 +1007,18 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
         engine.backupUsed = e.ecuBackupUsed ?? 0;
         engine.glowSeconds = e.glowSeconds ?? 0;
       }
-      const governor = unit.governor;
-      if (governor) {
-        governor.pitch = clamp(e.bladePitch, governor.def.fineStop, Math.max(governor.def.coarseStop, governor.def.feather?.angle ?? 0));
-        governor.latched = e.featherLatched;
-        governor.accumulatorCharged = e.accumulatorCharged ?? true;
-      }
+      // Gas generator, blade angle (beta and reverse included), feather latch and the latching start switch.
+      unit.restoreSpoolAndPitch(e);
     }
     if (this.retract) {
       this.retract.restore(s.gear);
       this.publishGear();
+    }
+    if (this.stickPusher) {
+      // The lift-off inhibit, the trips' hysteresis and the push ramp as saved (reset() would arm it at once).
+      this.stickPusher.restore(s.stickPusher);
+      this.state.stickShaker = this.stickPusher.shaker;
+      this.state.stickPusher = this.stickPusher.pusher;
     }
     if (this.rotorcraft) {
       if (s.rotorcraft) Object.assign(this.rotorcraft.state, cloneRotorcraftState(s.rotorcraft));
@@ -1038,7 +1096,19 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.updateAtmosphere(-x[2]);
     this.groundElevation = env.groundElevation(x[0], x[1]);
     this.sampleWind(env);
-    this.controlSystem.update(h, controls, this.dynamicPressure(), this.prop.electrical.busVoltage);
+    // The stick pusher (if fitted) sees the pilot's yoke and hands the control system its own copy of the
+    // controls with the elevator it commands; the pilot's object is never written.
+    let surfaceControls = controls;
+    if (this.stickPusher) {
+      const s = this.state;
+      surfaceControls = copyControls(this.pusherControls!, controls);
+      surfaceControls.elevator = this.stickPusher.step({
+        alphaDeg: s.alpha / DEG, flapDeg: s.surfaces.flaps / DEG, loadFactor: s.gLoad,
+        busVolts: this.prop.electrical.busVoltage, weightOnWheels: s.onGround,
+        ptTorqueNm: this.prop.engines[0].torque, interrupt: controls.pusherInterrupt === true, dt: h,
+      }, controls.elevator);
+    }
+    this.controlSystem.update(h, surfaceControls, this.dynamicPressure(), this.prop.electrical.busVoltage);
     // A castering nosewheel is not linked to the pedals: the gear gets the pilot's (ignored) input.
     if (this.gearIn.controls === this.freeRudderControls && !this.castering) this.freeRudderControls.rudder = this.controlSystem.pedalPosition;
     // Retraction system: once per step, on the bus and the wheel loads of the step before.
@@ -1072,11 +1142,15 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     if (this.rotorcraft) {
       const engineControls = this.controlsIn;
       Object.assign(engineControls, controls);
-      engineControls.throttle = this.rotorcraft.throttle(h, controls, this.propulsion.units[0]);
+      const ts = this.rotorcraft.turboshaft;
+      // A turboshaft's fuel control and N2 governor replace the piston governor/correlator (throttle(), unchanged).
+      if (ts) ts.stepTurboshaft(h, controls, this.propulsion.units[0], engineControls, this.prop.electrical.busVoltage);
+      else engineControls.throttle = this.rotorcraft.throttle(h, controls, this.propulsion.units[0]);
       this.propIn.controls = engineControls;
     }
     this.prop = this.propulsion.step(this.propIn);
-    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage);
+    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage,
+      this.state.onGround);
     const scales = this.dragScales;
     if (scales) {
       const units = this.propulsion.units;
@@ -1128,6 +1202,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     r.minThrottle = minThrottle;
     r.flapLever = controls.flaps;
     r.onGround = g !== null && g.onGround;
+    // The airspeed switch of a horn with RetractConfig.warning.kiasBelow (PC-12): the step before's indicated airspeed.
+    r.kias = this.state.ias / KT;
     this.retract!.update(h, r);
   }
 
@@ -1410,6 +1486,10 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const a = this.lastAero;
     s.stallWarning = a ? a.stallWarning && (this.stallWarnerDeadVolts === null || this.prop.electrical.busVoltage > this.stallWarnerDeadVolts) : false;
     s.stallFraction = a ? a.stallFraction : 0;
+    if (this.stickPusher) {
+      s.stickShaker = this.stickPusher.shaker;
+      s.stickPusher = this.stickPusher.pusher;
+    }
     const g = this.gearOut;
     if (g) {
       for (let i = 0; i < 3; i++) Object.assign(s.wheels[i], g.wheels[i]);

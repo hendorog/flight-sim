@@ -132,8 +132,22 @@ describe('key bindings', () => {
       'Digit9/undefined/engineSelect2',
       'Digit0/undefined/engineSelectAll',
     ]);
-    // 71 originals, fourteen aircraft controls, two rotorcraft controls, two panel view keys.
-    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2);
+    // 71 originals, fourteen aircraft controls, two rotorcraft controls, two panel view keys, and the turbine keys:
+    // the power lever aft of the gate (Shift+F2, Shift+Page Down), the twist grip's CUTOFF (Shift+F1), STARTER
+    // INTERRUPT (Shift+N) and the stick pusher's interrupt (Shift+D).
+    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5);
+    expect(KEY_MAP.filter((m) => ['F1', 'F2', 'PageDown', 'KeyN', 'KeyD'].includes(m.code)).map((m) => `${m.code}/${m.shift}/${m.action}`)).toEqual([
+      'F2/false/throttleDown',
+      'PageDown/false/throttleDown',
+      'F1/false/throttleIdle',
+      'F2/true/powerLeverReverse',
+      'PageDown/true/powerLeverReverse',
+      'F1/true/gripCutoff',
+      'KeyN/false/navLights',
+      'KeyN/true/starterInterrupt',
+      'KeyD/false/dgAlign',
+      'KeyD/true/pusherInterrupt',
+    ]);
     // A code is bound either once for both shift states or with explicit flags, never both ways (one would shadow the other).
     for (const code of new Set(KEY_MAP.map((m) => m.code))) {
       const entries = KEY_MAP.filter((m) => m.code === code);

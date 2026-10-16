@@ -19,6 +19,8 @@ export type AxisControl =
   | 'throttle'
   | 'throttleRate'
   | 'mixture'
+  /** A reverse lever of its own (types with beta and reverse): 0 on the idle gate, 1 full reverse. */
+  | 'reverse'
   | 'brakeLeft'
   | 'brakeRight'
   | 'brakes'
@@ -32,6 +34,7 @@ export const AXIS_CONTROLS: readonly AxisControl[] = [
   'throttle',
   'throttleRate',
   'mixture',
+  'reverse',
   'brakeLeft',
   'brakeRight',
   'brakes',
@@ -46,7 +49,17 @@ export function isBipolar(control: AxisControl): boolean {
 export interface AxisBinding {
   control: AxisControl;
   cal: AxisCalibration;
+  /**
+   * Throttle axes only: the reverse zone, the part of the lever's travel at its aft end that is the power lever aft of
+   * the idle gate on a type with beta and reverse (a quadrant with no separate reverse lever). The fraction of the
+   * travel at the detent (DEFAULT_REVERSE_DETENT when switched on); absent or 0: off (the default). On a type
+   * without reverse the whole travel stays throttle.
+   */
+  reverseZone?: number;
 }
+
+/** Where the reverse zone of a throttle axis begins when it is switched on, fraction of the travel from the aft stop. */
+export const DEFAULT_REVERSE_DETENT = 0.15;
 
 export interface DeviceProfile {
   kind: DeviceKind;

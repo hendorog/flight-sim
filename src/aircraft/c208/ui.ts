@@ -8,12 +8,13 @@
 // STARTER switch is S (held), the IGNITION switch the magneto keys (1 = OFF, 4 = NORM), FUEL BOOST is J, the
 // two tank selectors Shift+J, the generator Shift+W. The start is the PT6 start of POH sect. 4: starter on with
 // the condition lever at CUT-OFF, fuel at 13 % Ng, watch the ITT (1090 C for 2 s at most), starter off at 50 %.
+// Aft of the idle gate the power lever is ControlInputs.reverse (Shift+F2 / Shift+Page Down): BETA, then REVERSE.
 
 import { RAD } from '../../core/math';
 import { engineControl, PROP_FEATHER_GATE, type ControlInputs, type FuelSelector } from '../../core/types';
 import { CUTOFF_BELOW } from '../../physics/propulsion/turbineEngine';
 import type { UiProfile } from '../types';
-import { PT6A_114A } from './powerplant';
+import { C208_BETA, PT6A_114A } from './powerplant';
 
 /** Condition lever: from CUT-OFF up to this it reads LOW IDLE (the gate just above CUT-OFF). */
 const LOW_IDLE_TOP = CUTOFF_BELOW + 0.1;
@@ -34,19 +35,27 @@ const STARTUP_STEPS: readonly [string, string][] = [
   ['Fuel tank selectors', 'check both ON (Shift+J cycles them)'],
   ['Power lever', 'IDLE: F1'],
   ['Propeller lever', 'full forward: hold Shift+; (the blades unfeather as the oil pressure builds)'],
-  ['Condition lever', 'CUT-OFF: hold M until COND shows CUT-OFF'],
+  ['Condition lever', 'CUT-OFF: check COND; if not, M (to LO IDLE), then M again held 1 s until COND shows CUT-OFF'],
   ['Battery', 'W: ON (battery and generator); voltage 24 V or more'],
   ['Fuel boost and beacon', 'J: FUEL BOOST ON, FUEL PRESS LOW goes out · Shift+O: beacon ON'],
   ['Ignition', '1: NORM (the igniters spark while the starter runs; 4 is ON, continuous)'],
   ['Parking brake', 'check SET (PARKING BRAKE shown); only if it is not, Shift+B sets it'],
   ['Starter', 'hold S: STARTER ENERGIZED and IGNITION ON light, oil pressure rises, Ng climbs'],
-  ['At 13 % Ng or more', 'Shift+M briefly until COND shows LO IDLE: fuel on. Light-off: watch the ITT, 1090 °C for 2 s at most; if it races up, M to CUT-OFF at once'],
+  ['At 13 % Ng or more', 'Shift+M once: COND shows LO IDLE, fuel on. Light-off: watch the ITT, 1090 °C for 2 s at most; if it races up, M held 1 s: CUT-OFF at once'],
   ['At about 50 % Ng', 'let go of S: starter OFF. Ng settles at 52 % or more, ITT falls back, GENERATOR OFF goes out'],
   ['After start', 'oil pressure green · I avionics ON · lights as needed · release the parking brake (Shift+B) to taxi'],
 ];
 
 const onOff = (b: boolean): string => (b ? 'ON' : 'OFF');
 const percent = (v: number): string => `${Math.round(v * 100)}%`;
+
+/** The power lever as its quadrant is lettered: aft of the gate BETA (blades only, Ng at idle), then REVERSE. */
+function powerLabel(c: ControlInputs): string {
+  const r = c.reverse ?? 0;
+  // A hair past ground fine (the cam has barely moved Ng) still reads BETA.
+  if (r > 0) return r <= C208_BETA.pitchOnlyTravel + 0.02 ? 'BETA' : 'REV';
+  return c.throttle <= POWER_IDLE_MAX ? 'IDLE' : percent(c.throttle);
+}
 
 /** The condition lever's position as its quadrant is lettered. */
 function conditionLabel(m: number): string {
@@ -68,7 +77,7 @@ export const C208_UI: UiProfile = {
     if (engineControl(c, engine, 'fuelSelector') === 'off') return 'Starter: both fuel tank selectors are OFF (FUEL SELECT OFF). Shift+J to turn them ON.';
     if (engineControl(c, engine, 'throttle') > POWER_IDLE_MAX) return 'Power lever is not at IDLE: F1 first. A start with the power lever forward overheats the turbine.';
     if (!engineControl(c, engine, 'fuelPump')) return 'FUEL BOOST is OFF: press J; the start is made on the boost pump (FUEL PRESS LOW out).';
-    if (engineControl(c, engine, 'mixture') < CUTOFF_BELOW) return 'Condition lever at CUT-OFF: once Ng shows 13 % or more, Shift+M briefly until COND shows LO IDLE. Keep S held to about 50 % Ng.';
+    if (engineControl(c, engine, 'mixture') < CUTOFF_BELOW) return 'Condition lever at CUT-OFF: once Ng shows 13 % or more, Shift+M once: COND shows LO IDLE. Keep S held to about 50 % Ng.';
     return null;
   },
   // In the order they are announced. 'masterBattery' and 'alternator' (battery and generator) are announced as one
@@ -89,7 +98,7 @@ export const C208_UI: UiProfile = {
   ],
   hud: {
     levers: [
-      { label: 'PWR', read: (c) => c.throttle, text: (c) => (c.throttle <= POWER_IDLE_MAX ? 'IDLE' : percent(c.throttle)) },
+      { label: 'PWR', read: (c) => c.throttle, text: powerLabel },
       { label: 'PROP', read: (c) => c.propeller, text: propLabel },
       { label: 'COND', read: (c) => c.mixture, text: (c) => conditionLabel(c.mixture), style: 'mixture' },
       // The bar is the selector, the number the flap angle reached.
@@ -115,8 +124,9 @@ export const C208_UI: UiProfile = {
   },
   hints: [
     ['Power lever', 'F1 idle · F2 / F3 (Page Down / Up) less / more · F4 full; set torque, keep ITT and Ng in the green'],
+    ['Beta and reverse', 'on the ground only: hold Shift+F2 to the idle gate, let go, hold it again: BETA (blades only, taxi speed), then REVERSE · F3 back to the gate · F1 idle on the gate'],
     ['Propeller lever', '; lower rpm · Shift+; higher rpm (1600-1900) · Shift+F feathers'],
-    ['Condition lever', 'M / Shift+M: CUT-OFF (shuts the engine down), LOW IDLE, HIGH IDLE'],
+    ['Condition lever', 'one detent a press: Shift+M forward (LOW IDLE, HIGH IDLE), M back to LOW IDLE; CUT-OFF (shuts the engine down): M pressed again at LOW IDLE and held 1 s'],
     ['Starter and ignition', 'S held: STARTER · 1 IGNITION NORM, 4 ON (continuous) · a dry motoring run: STARTER with the condition lever at CUT-OFF'],
     ['Fuel', 'J FUEL BOOST · Shift+J tank selectors (keep both ON)'],
     ['Generator', 'Shift+W: generator ON / OFF (on line from about 52 % Ng)'],
