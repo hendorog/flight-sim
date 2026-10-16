@@ -3,9 +3,11 @@
 // item it blocked is judged again (and fails if its number is still not met).
 
 export const OPEN_REQUESTS: readonly string[] = [
-  // Beta and reverse on the PT6A turboprop: without them the propeller pulls about 3.5 kN at idle on the landing
-  // roll (docs/turbine-model.md, "Not modelled yet").
-  'C208-beta',
+  // The C208's beta range on a cam: with the blade angle linear in the lever between the low-pitch stop and ground
+  // fine (governor.ts), half the pitch-only travel puts the blades at about 5 deg, where this propeller's static
+  // thrust at idle is as high as on the gate (it is partly stalled there); the real lever slows the taxi from the
+  // first part of its travel. Needs a lever-to-blade-angle schedule in BetaDef (turbine core).
+  'C208-beta-cam',
   // The PC-12's items that need the turbine core's beta, reverse, condition-lever feather, latching starter,
   // torque limiter and pusher conformance plumbing (package T1a). Removed by the integrator once T1a and P1 are merged.
   'PC12-beta',

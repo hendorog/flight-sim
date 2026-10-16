@@ -40,6 +40,8 @@ export type InputAction =
   | 'throttleUp'
   | 'throttleIdle'
   | 'throttleFull'
+  | 'powerLeverReverse' // power lever aft of the idle gate: beta, then reverse (held)
+  | 'gripCutoff' // twist grip through the idle release to CUTOFF
   | 'flapsUp'
   | 'flapsDown'
   | 'trimNoseDown'
@@ -61,6 +63,8 @@ export type InputAction =
   | 'engineSelect2'
   | 'engineSelectAll'
   | 'starter'
+  | 'starterInterrupt'
+  | 'pusherInterrupt'
   | 'magnetoOff'
   | 'magnetoRight'
   | 'magnetoLeft'
@@ -121,11 +125,17 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'Period', action: 'brakeRight' },
   { code: 'KeyB', shift: false, action: 'brakes' },
   { code: 'KeyB', shift: true, action: 'parkingBrake' },
-  { code: 'F2', action: 'throttleDown' },
-  { code: 'PageDown', action: 'throttleDown' },
+  { code: 'F2', shift: false, action: 'throttleDown' },
+  { code: 'PageDown', shift: false, action: 'throttleDown' },
   { code: 'F3', action: 'throttleUp' },
   { code: 'PageUp', action: 'throttleUp' },
-  { code: 'F1', action: 'throttleIdle' },
+  { code: 'F1', shift: false, action: 'throttleIdle' },
+  // Types with beta and reverse: held, the power lever comes back to the idle gate; let go and held again, it lifts
+  // over the gate into beta and on into reverse.
+  { code: 'F2', shift: true, action: 'powerLeverReverse' },
+  { code: 'PageDown', shift: true, action: 'powerLeverReverse' },
+  // Twist-grip types: through the idle release to CUTOFF.
+  { code: 'F1', shift: true, action: 'gripCutoff' },
   { code: 'F4', action: 'throttleFull' },
   { code: 'Numpad5', action: 'centreControls' },
   { code: 'Digit5', action: 'centreControls' },
@@ -161,7 +171,9 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'Digit4', action: 'magnetoBoth' },
   { code: 'KeyL', shift: false, action: 'landingLight' },
   { code: 'KeyL', shift: true, action: 'taxiLight' },
-  { code: 'KeyN', action: 'navLights' },
+  { code: 'KeyN', shift: false, action: 'navLights' },
+  // Types with a latching start switch: its STARTER INTERRUPT switch (held).
+  { code: 'KeyN', shift: true, action: 'starterInterrupt' },
   { code: 'KeyO', shift: false, action: 'strobes' },
   { code: 'KeyO', shift: true, action: 'beacon' },
   { code: 'KeyW', shift: false, action: 'masterSwitch' },
@@ -177,7 +189,9 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'KeyK', shift: true, action: 'kollsmanDown' },
   { code: 'KeyU', shift: false, action: 'obsUp' },
   { code: 'KeyU', shift: true, action: 'obsDown' },
-  { code: 'KeyD', action: 'dgAlign' },
+  { code: 'KeyD', shift: false, action: 'dgAlign' },
+  // Types with a stick pusher: the PUSHER INTERRUPT button on the control wheel (held).
+  { code: 'KeyD', shift: true, action: 'pusherInterrupt' },
   { code: 'KeyY', action: 'mouseYoke' },
   { code: 'KeyV', shift: true, action: 'panelToggle' },
   { code: 'BracketRight', shift: false, action: 'panelSection' },
@@ -252,6 +266,8 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   throttleUp: { label: 'Throttle forward', category: 'Engine' },
   throttleIdle: { label: 'Throttle idle', category: 'Engine' },
   throttleFull: { label: 'Throttle full', category: 'Engine' },
+  powerLeverReverse: { label: 'Power lever to the idle gate; again (hold) over the gate into beta and reverse', category: 'Engine' },
+  gripCutoff: { label: 'Twist grip to CUTOFF (through the idle release)', category: 'Engine' },
   mixtureLean: { label: 'Mixture lean', category: 'Engine' },
   mixtureRich: { label: 'Mixture rich', category: 'Engine' },
   propDecrease: { label: 'Propeller lever back (lower rpm), as far as the feather gate', category: 'Engine' },
@@ -264,6 +280,8 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   engineSelect2: { label: 'Engine keys act on the RIGHT engine', category: 'Engine' },
   engineSelectAll: { label: 'Engine keys act on both engines', category: 'Engine' },
   starter: { label: 'Starter (hold)', category: 'Engine' },
+  starterInterrupt: { label: 'STARTER INTERRUPT (hold)', category: 'Engine' },
+  pusherInterrupt: { label: 'Stick pusher interrupt (hold)', category: 'Flight controls' },
   magnetoOff: { label: 'Magnetos OFF', category: 'Engine' },
   magnetoRight: { label: 'Magnetos R', category: 'Engine' },
   magnetoLeft: { label: 'Magnetos L', category: 'Engine' },
@@ -334,6 +352,7 @@ const ACTION_NEEDS: Partial<Record<InputAction, keyof InputProfile['has']>> = {
   gearEmergency: 'gear',
   rudderTrimLeft: 'rudderTrim',
   rudderTrimRight: 'rudderTrim',
+  powerLeverReverse: 'reverse',
 };
 
 /**
@@ -345,6 +364,11 @@ export function profileHasAction(profile: InputProfile, action: InputAction): bo
   if (action === 'cyclicTrimLeft' || action === 'cyclicTrimRight') return !!profile.springTrim;
   if (profile.springTrim && ['trimNoseUp', 'trimNoseDown', 'rudderTrimLeft', 'rudderTrimRight'].includes(action)) return true;
   if (action === 'fuelPrime') return !!profile.primeKey;
+  if (action === 'gripCutoff') return !!profile.twistGrip;
+  if (action === 'pusherInterrupt') return !!profile.pusherInterrupt;
+  if (action === 'starterInterrupt') return !!profile.starterInterrupt;
+  // The collective's governor beep switch is worked with the propeller keys.
+  if (profile.n2Beep && (action === 'propDecrease' || action === 'propIncrease')) return true;
   if (action === 'rotorClutch') return !!profile.rotorcraft;
   if (action === 'rotorGovernor') return !!profile.rotorcraft && profile.rotorGovernor !== false;
   if (profile.rotorcraft && ['trimNoseUp', 'trimNoseDown', 'parkingBrake', 'brakes', 'brakeLeft', 'brakeRight'].includes(action)) return false;
@@ -360,6 +384,14 @@ export function profileHasAction(profile: InputProfile, action: InputAction): bo
 /** The standard text of an action on a type (before InputProfile.labels). */
 function actionLabel(profile: InputProfile, action: InputAction): string {
   if (action === 'carbHeat' && !profile.has.carbHeat) return 'Alternate air off / on';
+  if (profile.n2Beep && action === 'propDecrease') return 'Governor beep DECR (hold)';
+  if (profile.n2Beep && action === 'propIncrease') return 'Governor beep INCR (hold)';
+  if (profile.twistGrip) {
+    if (action === 'throttleIdle') return 'Twist grip to GROUND IDLE (the idle stop)';
+    if (action === 'throttleDown') return 'Twist grip closed (to the idle stop)';
+    if (action === 'throttleUp') return 'Twist grip open';
+    if (action === 'throttleFull') return 'Twist grip FULL OPEN';
+  }
   return ACTION_INFO[action].label;
 }
 

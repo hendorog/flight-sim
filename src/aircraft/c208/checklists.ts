@@ -50,6 +50,19 @@ export const C208_EXTRA_CHECKLISTS: Record<string, FlightChecklist> = {
     i('condition', 'Before landing: condition lever', 'HIGH IDLE', ge('mixture', 0.95)),
     i('prop', 'Before landing: propeller lever', 'MAX (1900 RPM)', ge('prop.lever', 0.95)),
   ], { ...POH('sect. 4, descent and before landing'), category: 'normal' }),
+  landing: checklist('landing', 'Normal landing', [
+    i('flaps', 'Flaps', 'FULL below 125 KIAS'),
+    i('speed', 'Approach', '78 KIAS short field, 80–85 normal (flaps FULL)'),
+    i('touchdown', 'Touchdown', 'Main wheels first, power lever IDLE'),
+    i('beta', 'After touchdown: power lever', 'BETA (lift over the idle gate: Shift+F2, let go, Shift+F2 again)'),
+    i('reverse', 'Reverse', 'As required: further aft (hold Shift+F2); back to BETA by about 40 KIAS'),
+    i('brakes', 'Brakes', 'As required'),
+  ], { ...POH('sect. 4, landing'), category: 'normal', note: 'SCHOOL: the POH short-field ground roll (715 ft) is with beta and no reverse.' }),
+  taxi: checklist('taxi', 'Taxi', [
+    i('condition', 'Condition lever', 'LOW IDLE', le('mixture', 0.2)),
+    i('beta', 'Taxi speed', 'Power lever in BETA as required (Shift+F2 over the gate; F3 back toward it); brakes as little as possible'),
+    i('reverse', 'Reverse on the ground', 'Avoid at low speed over loose ground: the propeller picks up stones'),
+  ], { ...POH('sect. 4, taxiing'), category: 'normal' }),
   powerFailure: checklist('powerFailure', 'Engine failure after take-off', [
     i('fly', 'Airspeed', 'Lower the nose at once: 95 KIAS flaps UP best glide; slower with flaps down'),
     i('site', 'Landing site', 'Land ahead; only small heading changes'),

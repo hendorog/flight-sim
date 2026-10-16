@@ -48,16 +48,24 @@ export interface InputProfile {
   ignition: 'key' | 'toggles' | 'engineMaster';
   has: { mixture: boolean; propeller: boolean; feather: boolean; carbHeat: boolean; alternateAir: boolean; cowlFlaps: boolean;
          gear: boolean; rudderTrim: boolean; fuelPump: boolean;
-         /** Power lever aft of the gate into beta and reverse (ControlInputs.reverse). Absent = false. Turbine-core package wires the keys. */
+         /** Power lever aft of the gate into beta and reverse (ControlInputs.reverse): Shift+F2 / Shift+Page Down (InputSystem). Absent = false. */
          reverse?: boolean };
   /**
    * Twist-grip turboshaft (MD 500E): ControlInputs.throttle is the grip. F1 stops at `groundIdle`; CUTOFF (below
    * `cutoffBelow`) needs the idle release. Deep-equals RotorcraftDefinition.systems.turboshaft.grip. Absent: a
-   * throttle lever. Declared at the scaffold; the turbine-core package wires the keys.
+   * throttle lever. Shift+F1 is CUTOFF; F1 / F3 / F4 bring the grip out of it (InputSystem).
    */
   twistGrip?: { cutoffBelow: number; groundIdle: number };
   /** Governor beep switch on the collective: the propDecrease / propIncrease keys drive ControlInputs.n2Beep while held. */
   n2Beep?: boolean;
+  /** Stick pusher interrupt button on the control wheel (Shift+D, held): ControlInputs.pusherInterrupt. Absent: none. */
+  pusherInterrupt?: boolean;
+  /**
+   * STARTER INTERRUPT switch (Shift+N, held) of a latching start switch (EngineDef.starterLatch). It writes
+   * `starterInterrupt` on the controls, which the turbine core reads once ControlInputs declares it; until then a
+   * second press of the starter is the interrupt. Absent: none.
+   */
+  starterInterrupt?: boolean;
   /**
    * Per-engine keys that are ONE control on this type: they write the scalar whatever the engine selection
    * (DA42: ['alternateAir'], one lever for both engines). Absent: none.

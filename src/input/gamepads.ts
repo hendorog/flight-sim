@@ -21,13 +21,15 @@ export interface AxisReading {
    * see TakeoverDetector): the pilot taking over from the autopilot. Never true for a steady deflection.
    */
   takeover: boolean;
+  /** Throttle axes with a reverse zone (AxisBinding.reverseZone): its detent, fraction of the travel; 0 or absent: none. */
+  reverseZone?: number;
 }
 
 export interface DeviceInfo {
   index: number;
   id: string;
   kind: DeviceKind;
-  axes: { control: AxisControl; raw: number; value: number; cal: AxisCalibration }[];
+  axes: { control: AxisControl; raw: number; value: number; cal: AxisCalibration; reverseZone?: number }[];
   buttons: { pressed: boolean; action: InputAction | null }[];
   calibrating: boolean;
 }
@@ -122,11 +124,11 @@ export class GamepadManager {
       const value = isBipolar(b.control) ? normalizeBipolar(raw, b.cal) : normalizeUnipolar(raw, b.cal);
       dev.values[i] = value;
       const takeover = isBipolar(b.control) && dev.takeovers[i].update(value, this.pollDt);
-      this.emit(b.control, value, dev.detectors[i].moved(value), takeover);
+      this.emit(b.control, value, dev.detectors[i].moved(value), takeover, b.control === 'throttle' ? b.reverseZone ?? 0 : 0);
     }
     for (const ab of profile.analogButtons) {
       const btn = pad.buttons[ab.button];
-      if (btn) this.emit(ab.control, btn.value, false, false);
+      if (btn) this.emit(ab.control, btn.value, false, false, 0);
     }
     for (let i = 0; i < pad.buttons.length; i++) {
       const down = pad.buttons[i].pressed;
@@ -140,13 +142,14 @@ export class GamepadManager {
   }
 
   /** Append a reading, reusing pooled objects so polling does not allocate. */
-  private emit(control: AxisControl, value: number, moved: boolean, takeover: boolean): void {
+  private emit(control: AxisControl, value: number, moved: boolean, takeover: boolean, reverseZone: number): void {
     const n = this.readings.length;
-    const r = this.pool[n] ?? (this.pool[n] = { control, value, moved, takeover });
+    const r = this.pool[n] ?? (this.pool[n] = { control, value, moved, takeover, reverseZone });
     r.control = control;
     r.value = value;
     r.moved = moved;
     r.takeover = takeover;
+    r.reverseZone = reverseZone;
     this.readings.push(r);
   }
 
@@ -170,7 +173,7 @@ export class GamepadManager {
       index: d.index,
       id: d.id,
       kind: d.profile.kind,
-      axes: d.profile.axes.map((a, i) => ({ control: a.control, raw: d.raw[i] ?? 0, value: d.values[i] ?? 0, cal: a.cal })),
+      axes: d.profile.axes.map((a, i) => ({ control: a.control, raw: d.raw[i] ?? 0, value: d.values[i] ?? 0, cal: a.cal, reverseZone: a.reverseZone ?? 0 })),
       buttons: d.buttonsDown.map((pressed, i) => ({ pressed, action: d.profile.buttons[i] ?? null })),
       calibrating: this.calibrating?.index === d.index,
     }));
@@ -192,6 +195,18 @@ export class GamepadManager {
     const b = this.devices.get(index)?.profile.axes[axis];
     if (!b) return;
     Object.assign(b.cal, opts);
+    this.save();
+  }
+
+  /**
+   * Switch a throttle axis's reverse zone on at `detent` (fraction of the travel from the aft stop; the default
+   * DEFAULT_REVERSE_DETENT) or off (null / 0). Used only by types with beta and reverse.
+   */
+  setReverseZone(index: number, axis: number, detent: number | null): void {
+    const b = this.devices.get(index)?.profile.axes[axis];
+    if (!b) return;
+    if (detent && detent > 0) b.reverseZone = Math.min(0.5, detent);
+    else delete b.reverseZone;
     this.save();
   }
 

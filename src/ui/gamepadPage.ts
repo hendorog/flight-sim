@@ -1,9 +1,11 @@
 // Controllers page of the pause menu: every connected game controller / yoke / pedals / quadrant with live
 // axis and button read-outs, axis assignment, invert, dead zone and response curve, button assignment,
-// the calibration flow and profile reset. Built on the input module's GamepadManager (profiles persist
+// the calibration flow and profile reset. A throttle axis can carry a reverse zone (types with beta and reverse:
+// the aft end of the lever's travel is the power lever aft of the idle gate), off by default. Built on the input module's GamepadManager (profiles persist
 // per device id in localStorage, which the manager handles).
 
 import type { AxisControl, DeviceInfo, InputAction } from '../input';
+import { DEFAULT_REVERSE_DETENT } from '../input/devices';
 import { el, setText } from './dom';
 
 /** The part of the input module's GamepadManager this page uses. */
@@ -12,6 +14,8 @@ export interface GamepadSettings {
   setAxisControl(index: number, axis: number, control: AxisControl): void;
   setAxisOptions(index: number, axis: number, opts: { invert?: boolean; deadzone?: number; curve?: number }): void;
   setButtonAction(index: number, button: number, action: InputAction | null): void;
+  /** A throttle axis's reverse zone on at `detent` (fraction of the travel from the aft stop) or off (null). */
+  setReverseZone?(index: number, axis: number, detent: number | null): void;
   beginCalibration(index: number): void;
   endCalibration(): void;
   resetProfile(index: number): void;
@@ -26,6 +30,7 @@ const AXIS_CHOICES: [AxisControl, string][] = [
   ['throttle', 'Throttle lever'],
   ['throttleRate', 'Throttle (rate, centring stick)'],
   ['mixture', 'Mixture'],
+  ['reverse', 'Reverse lever (beta / reverse)'],
   ['brakeLeft', 'Left toe brake'],
   ['brakeRight', 'Right toe brake'],
   ['brakes', 'Both brakes'],
@@ -41,6 +46,8 @@ const BUTTON_CHOICES: [InputAction | '', string][] = [
   ['trimNoseDown', 'Trim nose down'],
   ['throttleUp', 'Throttle forward'],
   ['throttleDown', 'Throttle back'],
+  ['powerLeverReverse', 'Reverse (hold; turboprops)'],
+  ['pusherInterrupt', 'Pusher interrupt (hold)'],
   ['mixtureRich', 'Mixture rich'],
   ['mixtureLean', 'Mixture lean'],
   ['starter', 'Starter (hold)'],
@@ -91,7 +98,8 @@ export class GamepadPage {
   /** Called every frame while the page is visible: rebuild on hot-plug, otherwise refresh live values. */
   update(): void {
     const list = this.manager?.list() ?? [];
-    const sig = this.manager ? 'pads:' + list.map((d) => `${d.index}:${d.id}:${d.axes.length}:${d.buttons.length}:${d.calibrating}`).join('|') : 'none';
+    // Which axes are throttles is in the signature: the reverse-zone controls are built for throttle axes only.
+    const sig = this.manager ? 'pads:' + list.map((d) => `${d.index}:${d.id}:${d.axes.length}:${d.buttons.length}:${d.calibrating}:${d.axes.map((a) => (a.control === 'throttle' ? 't' : '-')).join('')}`).join('|') : 'none';
     if (sig !== this.signature) {
       this.signature = sig;
       this.build(list);
@@ -179,6 +187,27 @@ export class GamepadPage {
         rows.push({ fill, raw });
       });
       this.axisRows.push(rows);
+
+      // Throttle axes: the reverse zone (turboprops with beta and reverse, a quadrant without a reverse lever).
+      const setZone = m.setReverseZone?.bind(m);
+      if (setZone) {
+        d.axes.forEach((a, k) => {
+          if (a.control !== 'throttle') return;
+          const row = el('div', 'pad-note', card);
+          const label = el('label', '', row);
+          const on = el('input', '', label);
+          on.type = 'checkbox';
+          on.checked = (a.reverseZone ?? 0) > 0;
+          el('span', '', label, ` Axis ${k}: reverse zone. On a turboprop with beta and reverse (Caravan) the aft end of the lever, below the detent, is the power lever aft of the idle gate: beta, then reverse. Other types use the whole travel.`);
+          const detent = (a.reverseZone ?? 0) > 0 ? a.reverseZone! : DEFAULT_REVERSE_DETENT;
+          let value = detent;
+          on.addEventListener('change', () => setZone(d.index, k, on.checked ? value : null));
+          rangeInput(row, 0.05, 0.3, 0.01, detent, (v) => {
+            value = v;
+            if (on.checked) setZone(d.index, k, v);
+          }, (v) => `detent ${Math.round(v * 100)}%`);
+        });
+      }
 
       if (d.buttons.length) {
         el('h3', '', card, 'Buttons');
