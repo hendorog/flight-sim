@@ -3,8 +3,8 @@
 // against the controls and the state.
 //
 // What differs from the C208 (a PT6 too): the quadrant has a POWER CONTROL LEVER (the throttle keys) with beta and
-// reverse AFT of the idle gate (the reverse control), a CONDITION lever (the mixture keys: CUT-OFF/FEATHER, GROUND
-// IDLE, FLIGHT IDLE) and NO propeller lever (the propeller is governed at 1700 rpm; feathering is by the condition
+// reverse AFT of the idle gate (the reverse control), a CONDITION lever (the mixture keys, a detent a press:
+// CUT-OFF/FEATHER, GROUND IDLE, FLIGHT IDLE; input.ts) and NO propeller lever (the propeller is governed at 1700 rpm; feathering is by the condition
 // lever at CUT-OFF). One press of the STARTER latches it until 50 % Ng. There is no fuel selector: FUEL PUMPS only.
 // Torque is read in psi (pc12TorquePsi), as on the PC-12's gauge.
 
@@ -41,12 +41,12 @@ export function pc12PowerLabel(c: ControlInputs, bladePitchRad: number): string 
 const STARTUP_STEPS: readonly [string, string][] = [
   ['Parking brake', 'check SET (PARKING BRAKE shown); only if it is not, Shift+B sets it'],
   ['Power lever (PCL)', 'IDLE: F1'],
-  ['Condition lever', 'CUT-OFF / FEATHER: hold M until COND shows CUT-OFF'],
+  ['Condition lever', 'CUT-OFF / FEATHER: check COND; if not, M (to GND IDLE), then M again held 1 s until COND shows CUT-OFF'],
   ['Battery', 'W: ON (battery and generators); voltage 24 V or more'],
   ['Fuel pumps and beacon', 'J: FUEL PUMPS ON · Shift+O: beacon ON'],
   ['Ignition', '1: AUTO (the igniters spark while the starter runs; 4 is ON, continuous)'],
   ['Starter', 'S: ONE press: STARTER lights, Ng climbs (the start latches; Shift+N or the STARTER INTR button is the STARTER INTERRUPT; pressing S again also cuts it)'],
-  ['At 13 % Ng or more', 'Shift+M briefly until COND shows GND IDLE: fuel on. Watch the ITT: 1000 °C for 5 s at most; if it races up, M to CUT-OFF at once'],
+  ['At 13 % Ng or more', 'Shift+M once: COND shows GND IDLE, fuel on. Watch the ITT: 1000 °C for 5 s at most; if it races up, M held 1 s: CUT-OFF at once'],
   ['At about 50 % Ng', 'the starter cuts out by itself; Ng settles at 50.7-61.4 %, ITT falls back, GEN 1 OFF goes out'],
   ['After start', 'oil pressure green · I avionics ON · release the parking brake (Shift+B) to taxi; use beta (PCL aft of the gate) to control the taxi speed'],
 ];
@@ -61,7 +61,7 @@ export const PC12_UI: UiProfile = {
     if (engineControl(c, engine, 'throttle') > POWER_IDLE_MAX || reverseOf(c, engine) > 0) return 'Power lever (PCL) is not at IDLE: F1 first. A start with the power lever forward overheats the turbine.';
     if (!engineControl(c, engine, 'fuelPump')) return 'FUEL PUMPS are OFF: press J; the start is made with the pumps on (FUEL PRESS out).';
     if (engineControl(c, engine, 'mixture') < CUTOFF_BELOW) {
-      return `Press STARTER once; condition lever to GROUND IDLE at ${Math.round(PC12_START.conditionAtNg * 100)} % Ng (Shift+M briefly); the starter cuts out at ${Math.round(PC12_START.starterCutoutNg * 100)} % Ng. ITT ${PC12_ITT_C.start} °C for 5 s at most.`;
+      return `Press STARTER once; condition lever to GROUND IDLE at ${Math.round(PC12_START.conditionAtNg * 100)} % Ng (Shift+M once); the starter cuts out at ${Math.round(PC12_START.starterCutoutNg * 100)} % Ng. ITT ${PC12_ITT_C.start} °C for 5 s at most.`;
     }
     return null;
   },
@@ -104,7 +104,7 @@ export const PC12_UI: UiProfile = {
   },
   hints: [
     ['Power lever (PCL)', 'F1 idle · F2 / F3 (Page Down / Up) less / more · F4 full; aft of the idle gate: BETA then REV (reverse keys, see Controls); set torque in psi'],
-    ['Condition lever', 'M / Shift+M: CUT-OFF / FEATHER (shuts the engine down and feathers the propeller), GROUND IDLE, FLIGHT IDLE'],
+    ['Condition lever', 'one detent a press: Shift+M forward (GROUND IDLE, FLIGHT IDLE), M back to GROUND IDLE (after touchdown, for the roll-out and the taxi); CUT-OFF / FEATHER (shuts the engine down and feathers the propeller): M pressed again at GROUND IDLE and held 1 s'],
     ['Propeller', 'No propeller lever: the propeller is governed at 1700 rpm; stabilised ground running between 350 and 950 rpm is prohibited'],
     ['Starter and ignition', 'S: STARTER (one press latches it to 50 % Ng) · 1 IGNITION AUTO, 4 ON (continuous)'],
     ['Fuel pumps', 'J FUEL PUMPS (no fuel selector)'],

@@ -199,7 +199,10 @@ the static take-off thrust at -17.5 deg. The PT6A-67 test-bed uses a thin, light
 -2 deg, cl -1.0) and 1.4 x the 172's chord (activity factor 127 per blade): 16.1 kN static at the torque limit,
 -6.7 kN in full reverse (41.7 %; acceptance band 40-70 %, ESTIMATE), zero static thrust at -4.5 deg. The real
 PC-12 absorbs 900 shp in maximum reverse (47E, 34.25 psi); this blade absorbs about 500 shp there, so the PC-12's
-calibration (P1) will want its blade's negative side checked against that row.
+calibration (P1) will want its blade's negative side checked against that row. Checked at the PC-12 polish
+(2026-10-17): the PC-12's own blade absorbs about 420 shp (16 psi) and no section setting inside the TCDS -17.5 deg
+passes 20 psi; the limit is the helix twist, whose inner third stays at a positive angle in reverse
+(src/aircraft/pc12/KNOWN_ISSUES.md "Reverse torque").
 
 ### Conformance plumbing
 
@@ -224,11 +227,12 @@ calibration (P1) will want its blade's negative side checked against that row.
    the PC-12's STARTER and IGNITION lenses read `e.starter ?? controls.starter`. The live resume path restores the
    latch, the gas generator and a reversed blade (`EngineUnit.restoreSpoolAndPitch`, P1's fix to
    `FlightModel.restoreSystems`).
-3. **Reverse held into the stop with full brakes** — open, reproduced on the C208 with its own beta data: full
-   reverse (-2.9 kN) held to a stop with full brakes locks the left main at about 12 kt, unloads the left main and the
-   nose, pitches to +5 deg and collapses the right main (55-71 kN) near 5 kt. Ground fine, or reverse cancelled to
-   ground fine at 40 KIAS (the POH technique), ends normally. For the gear model (`src/physics/gear`); carried in
-   `src/aircraft/c208/KNOWN_ISSUES.md`.
+3. **Reverse held into the stop with full brakes** — not reproduced on the integrated aircraft (PC-12 polish,
+   2026-10-17). At T1b, on the C208 with its own beta data, full reverse (-2.9 kN) held to a stop with full brakes
+   locked the left main at about 12 kt and collapsed the right main (55-71 kN) near 5 kt. Re-run on the integrated
+   C208 and PC-12 (landing roll with no cancel, then 10 s held at the stop, four loadings): no crash, mains at most
+   20 kN (C208) and 25 kN (PC-12). The PC-12 at MTOW on its aft limit sits back on its tail while the reverse is held,
+   a CG and thrust matter (its KNOWN_ISSUES). The test-bed graft was not re-run.
 4. **C208 idle on the gate** — closed by T1b. LOW IDLE on the gate gives 1292 N static, Np 691 and a steady 22.1 kt
    unbraked; ground fine 186 N and 0 kt; half the pitch-only travel through the beta cam (`BetaDef.pitchOnlySchedule`,
    integration) 1089 N and 10.9 kt.

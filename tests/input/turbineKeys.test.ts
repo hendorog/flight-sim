@@ -1,17 +1,21 @@
 // The turbine keys (plan 3.1): the power lever aft of the idle gate on a type with beta and reverse (Shift+F2 /
 // Shift+Page Down, the lift-over gate, F3 back to the gate, F1 and F4), a throttle quadrant's reverse zone and a held
 // Reverse button; the twist grip of a turboshaft (F1 to the idle stop, Shift+F1 CUTOFF, out of CUTOFF by F1 / F3 / F4);
-// the governor beep switch on the propeller keys; the stick pusher's interrupt (Shift+D) and STARTER INTERRUPT (Shift+N).
-// None of them does anything on a type without the lever or switch.
+// the governor beep switch on the propeller keys; the stick pusher's interrupt (Shift+D) and STARTER INTERRUPT (Shift+N);
+// the condition lever's detents on the mixture keys (M / Shift+M a detent a press, CUT-OFF only by a fresh press held
+// at the low idle). None of them does anything on a type without the lever or switch.
 
 import { describe, expect, it } from 'vitest';
 import { C172S_INPUT } from '../../src/aircraft/c172s/input';
 import { C208_INPUT } from '../../src/aircraft/c208/input';
 import { C208_BETA } from '../../src/aircraft/c208/powerplant';
+import { PC12_INPUT } from '../../src/aircraft/pc12/input';
+import { PC12_GROUND_IDLE } from '../../src/aircraft/pc12/sim';
+import { CUTOFF_BELOW } from '../../src/physics/propulsion/turbineEngine';
 import { cloneControls } from '../../src/core/types';
 import { actionForKey, keyBindingsFor, profileHasAction } from '../../src/input/bindings';
 import type { AxisReading } from '../../src/input/gamepads';
-import { REVERSE_RATE } from '../../src/input/InputSystem';
+import { CONDITION_CUTOFF_HOLD, REVERSE_RATE } from '../../src/input/InputSystem';
 import type { InputProfile } from '../../src/input/profile';
 import { FRAME, makeInputRig, type InputRig } from './testbed';
 
@@ -289,5 +293,82 @@ describe('the held interrupt switches', () => {
     expect('starterInterrupt' in r.c).toBe(false);
     // ; moved the propeller lever (the Caravan has one), nothing else.
     expect({ ...r.c, propeller: before.propeller }).toEqual(before);
+  });
+});
+
+describe('the condition lever with detents (PC-12, C208: InputProfile.conditionDetents)', () => {
+  it('has its low-idle detent where the engine starts to burn fuel (CUTOFF_BELOW, the PC-12 GROUND IDLE)', () => {
+    expect(PC12_INPUT.conditionDetents?.groundIdle).toBe(CUTOFF_BELOW);
+    expect(PC12_GROUND_IDLE).toBe(CUTOFF_BELOW);
+    expect(C208_INPUT.conditionDetents?.groundIdle).toBe(CUTOFF_BELOW);
+    expect(C172S_INPUT.conditionDetents).toBeUndefined();
+  });
+
+  it('M from FLIGHT IDLE goes to GROUND IDLE and stays there, tapped or held: the engine keeps running', () => {
+    for (const profile of [PC12_INPUT, C208_INPUT]) {
+      const r = makeInputRig(profile, { mixture: 1 });
+      r.tap('KeyM');
+      expect(r.c.mixture).toBe(CUTOFF_BELOW);
+      r.tap('KeyM');
+      expect(r.c.mixture).toBe(CUTOFF_BELOW);
+      // A held key from FLIGHT IDLE stops on the detent, however long it is held.
+      r.c.mixture = 1;
+      hold(r, 'KeyM', 3);
+      expect(r.c.mixture).toBe(CUTOFF_BELOW);
+    }
+  });
+
+  it('a second press at GROUND IDLE, held for CONDITION_CUTOFF_HOLD, goes on to CUT-OFF; the pilot is told how', () => {
+    const r = makeInputRig(PC12_INPUT, { mixture: PC12_GROUND_IDLE });
+    hold(r, 'KeyM', CONDITION_CUTOFF_HOLD - 0.2);
+    expect(r.c.mixture).toBe(PC12_GROUND_IDLE);
+    expect(r.toasts.at(-1)).toMatch(/Hold M for 1 s .* CUT-OFF/);
+    hold(r, 'KeyM', CONDITION_CUTOFF_HOLD + 0.05);
+    expect(r.c.mixture).toBe(0);
+  });
+
+  it('Shift+M steps forward a detent a press: CUT-OFF to GROUND IDLE (the start), then FLIGHT IDLE', () => {
+    const r = makeInputRig(PC12_INPUT, { mixture: 0 });
+    hold(r, 'KeyM', 1, true);
+    expect(r.c.mixture).toBe(PC12_GROUND_IDLE);
+    r.tap('KeyM', true);
+    expect(r.c.mixture).toBe(1);
+    r.tap('KeyM', true);
+    expect(r.c.mixture).toBe(1);
+  });
+
+  it('a lever left between the detents by a hardware axis steps to the next detent', () => {
+    const r = makeInputRig(C208_INPUT, { mixture: 0.5 });
+    r.tap('KeyM');
+    expect(r.c.mixture).toBe(CUTOFF_BELOW);
+    r.c.mixture = 0.5;
+    r.tap('KeyM', true);
+    expect(r.c.mixture).toBe(1);
+    r.c.mixture = 0.05;
+    r.tap('KeyM', true);
+    expect(r.c.mixture).toBe(CUTOFF_BELOW);
+  });
+
+  it('a hardware mixture axis still sets the lever anywhere', () => {
+    const r = makeInputRig(PC12_INPUT, { mixture: 1 });
+    const g = r.input.gamepads;
+    g.poll = () => {};
+    const reading: AxisReading = { control: 'mixture', value: 0.4, moved: true, takeover: false };
+    g.readings.push(reading);
+    r.run(FRAME);
+    expect(r.c.mixture).toBeCloseTo(0.4, 6);
+  });
+
+  it('the help text describes the detents', () => {
+    const rows = keyBindingsFor(PC12_INPUT);
+    expect(rows.find((b) => b.keys === 'M')?.action).toMatch(/GROUND IDLE.*held 1 s.*CUT-OFF/);
+    expect(rows.find((b) => b.keys === 'Shift+M')?.action).toMatch(/one detent/);
+  });
+
+  it('leaves the continuous mixture of a piston type as it was', () => {
+    const r = makeInputRig(C172S_INPUT, { mixture: 1 });
+    hold(r, 'KeyM', 1);
+    expect(r.c.mixture).toBeGreaterThan(0.5);
+    expect(r.c.mixture).toBeLessThan(0.9);
   });
 });

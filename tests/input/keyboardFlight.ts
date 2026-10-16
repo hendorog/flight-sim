@@ -378,6 +378,13 @@ export function describeKeyboardFlight(options: KeyboardFlightOptions = {}): voi
         expect(res.maxBank).toBeLessThan(B.circuit.bank);
         expect(res.maxG).toBeLessThan(B.circuit.maxG);
         expect(res.minG).toBeGreaterThan(B.circuit.minG);
+        // A turboprop pilot who selects GROUND IDLE on the roll-out stops with the condition lever on that detent
+        // and the engine running (one tap: the cut-off takes a second press held at the detent).
+        const groundIdle = type.profile.conditionDetents?.groundIdle;
+        if (type.targets.rolloutGroundIdle && groundIdle !== undefined) {
+          expect(res.log.at(-1)?.condition).toBe(groundIdle);
+          expect(r.physics.renderState.engine.running).toBe(true);
+        }
       }, 60_000);
     });
   }

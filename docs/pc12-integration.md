@@ -94,14 +94,19 @@ On the PC-12 itself (P1): one press reaches 50 % Ng at 29 s, peak ITT about 750 
 
 - **The /47 book.** Every performance, start, idle, pusher and quadrant target above is 47E-PROXY or ESTIMATE. The
   /47's 760 °C MCP ITT makes less power above about 14 000 ft than the 47E's charts; the model follows its own ITT there.
-- **Reverse torque about 16 psi** against the 47E's maximum reverse of 34.25 psi (900 shp): the blade's negative side
-  stalls first. Full reverse static is -5.35 kN, 52 % of the take-off thrust (T1a band 40-70 %, ESTIMATE).
-- **Reverse held to a stop with full brakes** collapses a main leg on the C208 and on the turbine test-bed; the PC-12's
-  rolls are cancelled at 40 KIAS and were not tested held to the stop (docs/known-issues.md cross-aircraft entry).
+- **Reverse torque about 16 psi** against the 47E's maximum reverse of 34.25 psi (900 shp). Full reverse static is
+  -5.35 kN, 52 % of the take-off thrust (T1a band 40-70 %, ESTIMATE). Polish 2026-10-17: no section setting inside the
+  TCDS -17.5 deg passes 20 psi, and a negative-side drag rise that reached 32 psi broke the idle, taxi, cruise-trim and
+  reversed-roll rows; the cause is the ESTIMATE helix twist (the inner third stays at a positive angle in reverse).
+  KNOWN_ISSUES "Reverse torque".
+- **Reverse held to a stop with full brakes**: no gear collapse on the PC-12 or the C208 (polish 2026-10-17, four
+  loadings, 10 s at the stop); the PC-12 at MTOW on the aft limit sits back on its tail (13.7 deg) while the reverse is
+  held (ESTIMATE CG and hub heights; KNOWN_ISSUES). docs/known-issues.md still carries the old cross-aircraft entry.
 - **Take-off swing** (owner to judge): peak pedal 0.50 at about 14 kt with the 47E take-off trim, 0.67 without it in
   P1's measurement (0.58 with +0.3 trim); in the conformance roll with rudder trim 0 the heading stays within 3.2°.
-- **Keyboard circuit**: the condition lever stays at FLIGHT IDLE (no GROUND IDLE key), and the round-out depends on the
-  flare height (P1: flareM 7 crashed the crosswind circuit at 2.7 m/s).
+- **Keyboard circuit**: the round-out depends on the flare height (P1: flareM 7 crashed the crosswind circuit at
+  2.7 m/s). The condition lever has keyboard detents since the polish (M back to GROUND IDLE, CUT-OFF by a fresh M held
+  1 s there); the keyboard pilot selects GROUND IDLE on the roll-out.
 - **Not modelled**: the MOR, pressurisation (the cabin gauges are a display function), ice protection and the inertial
   separator, the aileron trim, the collector tanks and fuel balance, the elevator float and down-spring; GEN 1 / GEN 2
   are one control.

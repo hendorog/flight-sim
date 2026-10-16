@@ -167,7 +167,7 @@ and more; the selector UP on the ground.
 Take-off with the PCL fully forward (the limiter holds 44.3 psi), flaps 15, rotate at 82 KIAS, take-off rudder trim
 +0.3 (nose right, ESTIMATE); the scripted climb-out at 105 KIAS (half the C208's speed-hold gains: the hand-over from
 the lift-off attitude to Vy, 35 kt faster, dived it into the runway) at 36.6 psi (PCL 0.63); roll-out in full reverse back to the gate below 40
-KIAS. The input profile has the condition lever (mixture keys), the PCL's reverse, the gear and the rudder trim; no
+KIAS. The input profile has the condition lever (mixture keys, a detent a press: `conditionDetents`), the PCL's reverse, the gear and the rudder trim; no
 propeller lever (the governor holds 1700 rpm; feathering is the condition lever's).
 
 ## Results against plan 5.7

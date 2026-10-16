@@ -165,6 +165,13 @@ const THROTTLE_RATE = 0.5;
  */
 export const REVERSE_RATE = 0.5;
 const MIXTURE_RATE = 0.35;
+/**
+ * A condition lever with detents (InputProfile.conditionDetents): how long the lean key, pressed afresh with the
+ * lever on its low-idle detent, must be held before the lever goes on to CUT-OFF, s.
+ */
+export const CONDITION_CUTOFF_HOLD = 1;
+/** A condition lever within this of a detent is on it (a hardware axis left it a hair off). */
+const DETENT_EPS = 0.005;
 const PROPELLER_RATE = 0.35;
 const TRIM_RATE = 0.25;
 /** Knob rates at full speed (after a second of holding), per second; a tap turns one detent. */
@@ -337,6 +344,11 @@ export class InputSystem implements Subsystem {
   private gateLifted = false;
   /** F3 / Page Up was taken from aft of the gate in this hold: it stops on the gate (a fresh press goes forward of it). */
   private forwardToGate = false;
+  /**
+   * Condition-lever detents: the lean key was pressed afresh with the lever on its low-idle detent, and the engine(s)
+   * it was pressed for. Held for CONDITION_CUTOFF_HOLD s it takes the lever on to CUT-OFF; let go, it is disarmed.
+   */
+  private cutoffArmed: { target: EngineTarget } | null = null;
   private time = 0;
   private lastWall = -1;
   /** Wall time (ms) of the last pilot flight-control input (keys held, hardware moved). */
@@ -963,6 +975,29 @@ export class InputSystem implements Subsystem {
     else writeEngineControl(ctx.controls, this.target(k, engine), 'magnetos', position);
   }
 
+  /**
+   * A press of a mixture key on a condition lever with detents (InputProfile.conditionDetents). Forward: to the next
+   * detent up (CUT-OFF -> low idle -> high idle). Back: from above the low idle onto it; on it, the press arms the
+   * cut-off (held CONDITION_CUTOFF_HOLD s, updateLevers) and the pilot is told how. In the air with both engines of a
+   * twin selected the twin guard applies first.
+   */
+  private stepCondition(ctx: SimContext, target: EngineTarget, dir: 1 | -1): void {
+    const c = ctx.controls;
+    const low = this.profile.conditionDetents!.groundIdle;
+    const v = readEngineControl(c, target, 'mixture');
+    if (!this.ownLever(c, 'mixture', target)) this.mixtureOwner.owner = 'keyboard';
+    this.cutoffArmed = null;
+    if (dir > 0) {
+      writeEngineControl(c, target, 'mixture', v < low - DETENT_EPS ? low : 1);
+      return;
+    }
+    if (v > low + DETENT_EPS) writeEngineControl(c, target, 'mixture', low);
+    else if (v > 0 && !this.guard(ctx.state, 'mixture')) {
+      this.cutoffArmed = { target };
+      this.shell.toast?.(`Hold ${keyLabelForAction('mixtureLean') ?? 'the key'} for ${CONDITION_CUTOFF_HOLD} s to move the condition lever to CUT-OFF`);
+    }
+  }
+
   /** Where a mixture key stops for `target`: above idle cut-off behind the airborne guard, else at the stop. */
   private mixtureFloor(s: AircraftState, target: EngineTarget): number {
     return target === 'all' && this.guarded(s, 'mixture') ? MIXTURE_GUARD : 0;
@@ -1038,14 +1073,28 @@ export class InputSystem implements Subsystem {
     this.leverHeld(c, 'throttle', nudging && dt > 0);
     if (beta) this.updateReverse(dt, c, reverseHeld, hwRaw, stickToGate);
 
-    const kbMixture = rate('mixtureRich', MIXTURE_RATE) - rate('mixtureLean', MIXTURE_RATE);
-    const hwMixture = this.hardwareLever('mixture');
-    const mixtureTarget = this.leverTarget('mixture', 'mixtureRich', 'mixtureLean');
-    const ownMixture = this.ownLever(c, 'mixture', mixtureTarget);
-    if (ownMixture) this.moveLever(c, 'mixture', kbMixture * dt, mixtureTarget, 0, false);
-    if (this.mixtureOwner.update(kbMixture !== 0 && !ownMixture, hwMixture?.moved ?? false) === 'hardware' && hwMixture) c.mixture = hwMixture.value;
-    else this.moveLever(c, 'mixture', ownMixture ? 0 : kbMixture * dt, ownMixture ? 'all' : mixtureTarget, this.mixtureFloor(s, mixtureTarget), false);
-    this.leverHeld(c, 'mixture', kbMixture !== 0 && dt > 0);
+    const detents = this.profile.conditionDetents;
+    if (detents) {
+      // Detents: the presses step the lever (onPressed); a held lean key only carries an armed press on to CUT-OFF.
+      const armed = this.cutoffArmed;
+      if (armed && !this.held.has('mixtureLean')) this.cutoffArmed = null;
+      else if (armed && (this.heldTime.get('mixtureLean') ?? 0) >= CONDITION_CUTOFF_HOLD) {
+        this.cutoffArmed = null;
+        this.mixtureOwner.owner = 'keyboard';
+        writeEngineControl(c, armed.target, 'mixture', 0);
+      }
+      const hw = this.hardwareLever('mixture');
+      if (this.mixtureOwner.update(false, hw?.moved ?? false) === 'hardware' && hw) c.mixture = hw.value;
+    } else {
+      const kbMixture = rate('mixtureRich', MIXTURE_RATE) - rate('mixtureLean', MIXTURE_RATE);
+      const hwMixture = this.hardwareLever('mixture');
+      const mixtureTarget = this.leverTarget('mixture', 'mixtureRich', 'mixtureLean');
+      const ownMixture = this.ownLever(c, 'mixture', mixtureTarget);
+      if (ownMixture) this.moveLever(c, 'mixture', kbMixture * dt, mixtureTarget, 0, false);
+      if (this.mixtureOwner.update(kbMixture !== 0 && !ownMixture, hwMixture?.moved ?? false) === 'hardware' && hwMixture) c.mixture = hwMixture.value;
+      else this.moveLever(c, 'mixture', ownMixture ? 0 : kbMixture * dt, ownMixture ? 'all' : mixtureTarget, this.mixtureFloor(s, mixtureTarget), false);
+      this.leverHeld(c, 'mixture', kbMixture !== 0 && dt > 0);
+    }
 
     // The collective's governor beep switch (turboshaft types) on the propeller keys: held, not a lever.
     if (this.profile.n2Beep) c.n2Beep = this.dir('propDecrease', 'propIncrease');
@@ -1258,6 +1307,10 @@ export class InputSystem implements Subsystem {
       }
       case 'mixtureLean': {
         const target = this.target('mixture', engine);
+        if (this.profile.conditionDetents) {
+          this.stepCondition(ctx, target, -1);
+          break;
+        }
         const floor = this.mixtureFloor(ctx.state, target);
         // Already at the guard's stop: the key does nothing, and says why.
         if (floor > 0 && c.mixture <= floor) this.guard(ctx.state, 'mixture', engine);
@@ -1266,6 +1319,10 @@ export class InputSystem implements Subsystem {
       }
       case 'mixtureRich': {
         const target = this.target('mixture', engine);
+        if (this.profile.conditionDetents) {
+          this.stepCondition(ctx, target, 1);
+          break;
+        }
         this.moveLever(c, 'mixture', LEVER_TAP, target, this.mixtureFloor(ctx.state, target), false);
         break;
       }
