@@ -67,8 +67,16 @@ Attitudes (forward / aft limit, MTOW, 3000 ft): flaps-40 approach at 85 KIAS on 
   not float with the stabiliser or the tail's angle of attack (KNOWN_ISSUES).
 - **Aileron–rudder interconnect** 0.15 of rudder travel per unit aileron (ESTIMATE, plan 5.2).
 - **Stick shaker and pusher**: trip angles (body AOA) against flap, the shaker about 6 kt before the push, the push
-  0.35 of the nose-down travel ramped in 0.3 s, a slip clutch when the yoke is hauled onto its stop, 5 s lift-off
-  inhibit, 0.5 g switch, dead below 18 V, the interrupt held; trip angles +0.03° per psi of torque (ESTIMATE).
+  drives the column to 0.35 of the nose-down travel (`pushTo`, ramped in 0.3 s) whatever the yoke is held at, 5 s
+  lift-off inhibit, 0.5 g switch, dead below 18 V, the PUSHER INTERRUPT held stops it; trip angles +0.03° per psi of
+  torque (ESTIMATE). Pilot review 2026-10-17: the first fit subtracted 0.35 from the yoke and slipped a clutch at
+  0.95, so a held yoke beat it: flaps 40 idle, yoke held 0.7 / 0.9 / 1.0 from the shaker: 87 / 80 / 81° of bank,
+  632 / 951 / 855 ft lost, 33° AOA at 1.0; clean at take-off torque with 1.0 held: inverted, 1722 ft. With the
+  column driven (AGENT: no clutch override for a position input; the real clutch slips at 85-90 lbf): 7.5 / 5.7 /
+  6.6° of bank, 315 / 304 / 308 ft, AOA at most 14.8° (2-3 pushes as the held yoke pulls back after each reset);
+  clean at take-off torque, 1.0 held: 15° of bank, no height lost, 5 pushes; clean idle 1.0 held: 200 ft. The
+  aerodynamic stall check (conformance "stall recovery") holds the interrupt through the hold, as a stall flight
+  test does.
 
 ## Powerplant (powerplant.ts)
 
@@ -138,7 +146,7 @@ Measured on the conformance suite (FS_AIRCRAFT=pc12; `node scripts/aircraft-repo
 | Pusher, flaps 0 / 40, forward CG, MTOW | 96.3 / 68.4 KCAS = 94.3 / 66.5 KIAS | 95 / 67 KIAS ± 3 (CHART-READ Fig 5-2-1) |
 | Pusher, flaps 15 / 30, maxGross | 79.1 / 70.5 KCAS = 77.3 / 68.7 KIAS | 78 / 70 KIAS ± 3 |
 | Shaker margin, flaps 0 / 40 | 6.4 / 6.9 kt | 5–10 kt (47E 7-21) |
-| Push at 1 kt/s, flaps 40, yoke held at the trip 1.5 s, then neutral 1.5 s, then the recovery | the push alone takes 3.9° of AOA off (13.0° → 9.1°); nose falls 17.2°, 144 ft lost, one push (with `pushElevator` 0: no AOA off, 83° nose down, 511 ft, three trips) | AOA ≥ 1.5° off (AGENT: the pusher reset); 8–20°, ≤ 300 ft, no second push (47E 5 p. 329) |
+| Push at 1 kt/s, flaps 40, yoke held at the trip 1.5 s, then neutral 1.5 s, then the recovery | the push alone takes 5.8° of AOA off; nose falls 17.9°, 146 ft lost, one push (relative push of the first fit: 3.9°, 17.2°, 144 ft; with no actuator: no AOA off, 83° nose down, 511 ft, three trips) | AOA ≥ 1.5° off (AGENT: the pusher reset); 8–20°, ≤ 300 ft, no second push (47E 5 p. 329) |
 | Static, PCL full; 10 000 ft; hot and high | see the powerplant table | |
 | Take-off ground roll, flaps 15, MTOW | 488 m | 518 m ± 15 % (CHART-READ 1700 ft) |
 | Climb at MCP (36.95 psi), SL ISA, MTOW | 1525 ft/min at Vy 121 KIAS | 1650 ± 20 %, Vy 130 ± 10 (ESTIMATE / 47E 4.2) |

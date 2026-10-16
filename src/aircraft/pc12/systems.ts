@@ -128,9 +128,13 @@ export const PC12_STICK_PUSHER: StickPusherDef = {
   torqueBias: 0.03,
   psiPerPtNm: PC12_PSI_PER_PT_NM,
   pushElevator: 0.35,
+  // The actuator drives the column to 0.35 of the down travel (60-65 lbf on the column, 47E 7-21; the position is
+  // ESTIMATE: the hands-off push of the first fit, 0.35 below a near-neutral trimmed yoke). AGENT (pilot review
+  // 2026-10-17): no clutch override for a hold-position input: a held yoke subtracted from left 0.35-0.65 of aft
+  // elevator and departed the aircraft (yoke held 0.7-1.0: 80-180 deg of bank); the real clutch slips only at
+  // 85-90 lbf, which a position cannot express. The PUSHER INTERRUPT (ControlInputs.pusherInterrupt) stops it.
+  pushTo: -0.35,
   rampSeconds: 0.3,
-  // AGENT: the slip clutch slips (85-90 lbf, 47E 7-21) when the pilot hauls the yoke onto its aft stop.
-  clutchYoke: 0.95,
   liftoffInhibitSeconds: 5,
   minLoadFactor: 0.5,
   minBusVolts: 18,

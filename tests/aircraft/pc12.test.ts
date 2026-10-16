@@ -215,7 +215,7 @@ describe('Pilatus PC-12/47: the stick shaker and pusher (47E-PROXY 7-21)', () =>
   const trip = PC12_STICK_PUSHER.pusherAlphaDeg[0];
   const shake = PC12_STICK_PUSHER.shakerAlphaDeg[0];
 
-  it('shakes above the shaker angle, pushes above the pusher angle (0.35 of the travel, ramped), lets go below its reset', () => {
+  it('shakes above the shaker angle, pushes above the pusher angle (the column driven to 0.35 of the down travel, ramped), lets go below its reset', () => {
     const p = new StickPusher(PC12_STICK_PUSHER);
     expect(fly(p, { alphaDeg: shake - 0.1 }, 1)).toBe(0.5);
     expect(p.shaker).toBe(false);
@@ -224,7 +224,8 @@ describe('Pilatus PC-12/47: the stick shaker and pusher (47E-PROXY 7-21)', () =>
     expect(p.pusher).toBe(false);
     const pushed = fly(p, { alphaDeg: trip + 0.2 }, 1);
     expect(p.pusher).toBe(true);
-    expect(pushed).toBeCloseTo(0.5 - PC12_STICK_PUSHER.pushElevator, 12);
+    expect(pushed).toBeCloseTo(PC12_STICK_PUSHER.pushTo!, 12);
+    expect(PC12_STICK_PUSHER.pushTo).toBeCloseTo(-0.35, 12);
     // Still pushing a degree below the trip; let go 1.5 deg below it, the push ramping out.
     fly(p, { alphaDeg: trip - 1 }, 0.1);
     expect(p.pusher).toBe(true);
@@ -232,7 +233,7 @@ describe('Pilatus PC-12/47: the stick shaker and pusher (47E-PROXY 7-21)', () =>
     expect(p.pusher).toBe(false);
   });
 
-  it('is inhibited on the ground, for 5 s after lift-off, below 0.5 g, with a dead bus, while the interrupt is held; the clutch slips at the aft stop', () => {
+  it('is inhibited on the ground, for 5 s after lift-off, below 0.5 g, with a dead bus, while the interrupt is held; a yoke held on the aft stop is driven forward all the same', () => {
     const p = new StickPusher(PC12_STICK_PUSHER);
     fly(p, { alphaDeg: trip + 3, weightOnWheels: true }, 1);
     expect(p.shaker || p.pusher).toBe(false);
@@ -249,7 +250,8 @@ describe('Pilatus PC-12/47: the stick shaker and pusher (47E-PROXY 7-21)', () =>
     expect(q.pusher || q.shaker).toBe(false);
     expect(fly(q, { alphaDeg: trip + 3, interrupt: true }, 1)).toBe(0.5);
     expect(q.shaker).toBe(true);
-    expect(fly(q, { alphaDeg: trip + 3 }, 1, 1)).toBe(1);
+    // Pilot review 2026-10-17: a hold-position yoke (0.7, 0.9, the stop) no longer defeats the push.
+    for (const held of [0.7, 0.9, 1]) expect(fly(new StickPusher(PC12_STICK_PUSHER), { alphaDeg: trip + 3 }, 1, held)).toBeCloseTo(-0.35, 12);
   });
 
   it('keeps its trips, push ramp and lift-off timer through a snapshot; a snapshot without them restores as reset()', () => {

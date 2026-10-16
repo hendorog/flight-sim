@@ -587,12 +587,17 @@ export function stallRecovery(rig: AnyRig, o: { entryKias: number; ftAboveField?
   c.elevator = 1;
   c.aileron = 0;
   c.rudder = 0;
+  // A type with a stick pusher (PC-12) is stalled the way its aerodynamic stall is flight-tested: the pilot holds the
+  // PUSHER INTERRUPT through the hold (the actuator out-pushes a held yoke) and lets it go with the push. No effect
+  // on a type without a pusher.
+  if (def.controls.stickPusher) c.pusherInterrupt = true;
   let stalledFraction = 0, maxAlpha = -Infinity;
   rig.run(o.holdS ?? 5, () => {
     stalledFraction = Math.max(stalledFraction, s.stallFraction);
     maxAlpha = Math.max(maxAlpha, s.alpha);
   });
   c.elevator = o.push ?? -0.3;
+  if (def.controls.stickPusher) c.pusherInterrupt = false;
   const t0 = s.time;
   let recoveryTime = Infinity;
   const unstalled = o.unstalled ?? 0.02;

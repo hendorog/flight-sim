@@ -10,10 +10,10 @@
 //  - Pusher: armed only in the air, LIFTOFF inhibit seconds after the wheels leave, above minLoadFactor (the g-switch)
 //    and with the bus alive; while armed and above its angle it pushes, until the angle falls 1.5 deg below the trip
 //    (the computers' reset). The push ramps in and out over rampSeconds; the elevator the control system gets is the
-//    pilot's yoke less pushElevator x the ramp (the pilot cannot hold the column against it: the slip clutch is at
-//    85-90 lbf, 47E 7-21), never further aft than the yoke; a pilot hauling the yoke onto the aft stop (clutchYoke)
-//    slips the clutch and overrides it. The interrupt (ControlInputs.pusherInterrupt, held) stops
-//    the push at once; the shaker runs on.
+//    pilot's yoke moved toward pushTo by the ramp (the actuator drives the column; the pilot cannot hold it against
+//    the push: the slip clutch is at 85-90 lbf, 47E 7-21), or, without pushTo, the yoke less pushElevator x the ramp;
+//    never further aft than the yoke. With clutchYoke set, a yoke held at or beyond it slips the clutch and overrides
+//    the push. The interrupt (ControlInputs.pusherInterrupt, held) stops the push at once; the shaker runs on.
 // The flight model constructs one only for a type whose ControlSystemDef has `stickPusher`, so no other type runs
 // this code.
 
@@ -33,6 +33,13 @@ export interface StickPusherDef {
   psiPerPtNm?: number;
   /** Nose-down elevator command the pusher adds, as a fraction of full down travel, and its ramp time, s. */
   pushElevator: number;
+  /**
+   * The column position the actuator drives to while it pushes, as an elevator command (+ = yoke back): the push no
+   * longer adds to the pilot's yoke but moves the column there, whatever the yoke is held at (a hold-position input
+   * cannot express the force a pilot pulls with; the actuator out-pushes any hold short of the clutch). Present, it
+   * replaces pushElevator's relative push. Absent: the relative push.
+   */
+  pushTo?: number;
   rampSeconds: number;
   /**
    * The slip clutch (PC-12: it slips at 85-90 lbf against the pusher's 60-65): a pilot holding the yoke at or beyond
@@ -148,6 +155,7 @@ export class StickPusher {
     else this.ramp = Math.max(0, Math.min(1, this.ramp + (this.pusherOn ? rate : -rate)));
     if (this.ramp <= 0) return yoke;
     if (d.clutchYoke !== undefined && yoke >= d.clutchYoke) return yoke;
+    if (d.pushTo !== undefined) return Math.max(-1, Math.min(yoke, yoke + (d.pushTo - yoke) * this.ramp));
     return Math.max(-1, Math.min(yoke, yoke - d.pushElevator * this.ramp));
   }
 
