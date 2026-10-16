@@ -40,6 +40,11 @@ export interface RetractInput {
   /** Flap lever position, in the units of RetractConfig.warning.flapsAtOrBeyond. */
   flapLever: number;
   onGround: boolean;
+  /**
+   * Indicated airspeed, kt, for RetractConfig.warning.kiasBelow (PC-12). Absent (or NaN): the throttle rule applies at
+   * any speed. The flight model's stepRetract sets it (src/physics/flightModel.ts: `r.kias = this.state.ias / KT`).
+   */
+  kias?: number;
 }
 
 export class RetractActuator {
@@ -109,8 +114,10 @@ export class RetractActuator {
     this.indicate();
     const w = cfg.warning;
     const unsafe = !(s.locked[0] && s.locked[1] && s.locked[2]);
+    // PC-12: the power-lever rule only below kiasBelow (an IAS the input does not carry counts as below).
+    const slow = w.kiasBelow === undefined || !(i.kias !== undefined && i.kias >= w.kiasBelow);
     s.warning =
-      (unsafe && ((w.throttleBelow !== undefined && i.minThrottle < w.throttleBelow) || (w.flapsAtOrBeyond !== undefined && i.flapLever >= w.flapsAtOrBeyond))) ||
+      (unsafe && ((w.throttleBelow !== undefined && slow && i.minThrottle < w.throttleBelow) || (w.flapsAtOrBeyond !== undefined && i.flapLever >= w.flapsAtOrBeyond))) ||
       (w.leverUpOnGround && s.lever === 'up' && i.onGround);
     return s;
   }

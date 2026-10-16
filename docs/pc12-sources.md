@@ -61,14 +61,33 @@ PDFs, rendered figures, Commons photographs and `manifest.json` (URL, byte count
 | Maximum altitude | 30 000 ft | TCDS C.III.10 |
 | Glide | 65 NM from 25 000 ft (POH example), L/D ≈ 15.8 | 47E proxy Fig 5-2-46 |
 
-## Geometry contract and panel interpretation
+## Flight-model data and the readings it rests on (P1)
 
-A future `src/aircraft/pc12/dimensions.ts` should take the TCDS external dimensions without tuning. Several values are **ESTIMATE** pending AFM 02211 or a measured survey:
-- dihedral, about 5°, read from the three-view;
-- incidence, twist and tail areas (measure from the three-view);
-- gear transit time;
-- control deflections;
-- all panel and eye coordinates.
+The definition's numbers live in `src/aircraft/pc12/{facts,geometry,reference,systems,powerplant,aero,gear}.ts`, each
+with its tag (TCDS, ETCDS, 47E-PROXY, CHART-READ, 3V, DERIVED, SECONDARY, ESTIMATE, AGENT). The model and its
+calibration are in [pc12-flight-model.md](pc12-flight-model.md); what is missing, in
+[KNOWN_ISSUES.md](../src/aircraft/pc12/KNOWN_ISSUES.md). Readings made for the flight model:
+
+| Quantity | Reading | Source / how |
+| --- | --- | --- |
+| Landing ground roll, flaps 40, SL ISA, 9921 lb, zero wind and slope | **1275 ft (389 m)**, CHART-READ ±100 ft | 47E Fig 5-2-52 (PDF p. 415) rendered at 300 dpi: the pressure-altitude 0 line at 15 °C carried across the weight panel's reference line (9921 lb), the wind and slope reference lines, onto the 800–3200 ft scale (0.369 px/ft). Associated conditions printed on the chart: "average braking technique, ground idle after touch down" (the PCL at IDLE on the gate). |
+| Landing with full reverse | ratio 0.72 to the roll on the gate, DERIVED | 47E Fig 5-2-54 (p. 417, "full reverse thrust after touch down", average braking) example 1680 ft over 50 ft against Fig 5-2-50's 1990 ft for the same conditions; the 870 ft air distance (1990 − 1120) is common, so the ground rolls are 810 and 1120 ft. |
+| Stall (pusher) speeds at 10 450 lb, idle | 95 / 78 / 70 / 67 KIAS for flaps 0 / 15 / 30 / 40 | 47E Fig 5-2-1 (p. 345), CHART-READ ±2 kt, cross-checked with Vr = 1.1 Vs1 (flaps 15), the power-chop 1.1 Vs1 (flaps 30) and Vref = 1.3 Vs1 (flaps 40). "Stall is defined by pusher activation" (§5 p. 329). |
+| Take-off ground roll, flaps 15, SL ISA, MTOW | about 1700 ft (518 m), CHART-READ ±150 ft | 47E Fig 5-2-12 (p. 356); SECONDARY 1650 ft (Plane & Pilot). |
+| Maximum cruise rows | 36.9 psi; SL 634 lb/h 229 KTAS, 8000 ft 564 lb/h 247 KTAS, 12 000 ft 541 lb/h 256 KTAS (10 400 lb) | 47E Fig 5-2-31 sheet 3 (p. 377); torque-limited at the /47's own MCP torque, so valid for the /47 where its 760 °C ITT is not reached. |
+| Hot and high static | 34.1 psi at 8000 ft / 26 °C at 850 °C | 47E Fig 5-2-3 example; carried to the /47's 800 °C as 29–34 psi (ESTIMATE). |
+| 3V heights | belly 0.93, roof 2.73, wing root chord plane 1.05, floor 1.18, eye 2.33 m (station 4.20); stowed gear and hinges | POH Fig 1-1 three-view measured by the exterior package (P2: [pc12-exterior.md](pc12-exterior.md) "Requested geometry changes"), adopted in geometry.ts. The scaffold's heights were read from the fuselage-depth bracket as if it stood on the ground. |
+| CG height | 1.54 m above the ground at the maxGross loading (the reference point) | DERIVED from a component build-up on the 3V heights (empty 1.62 m, fuel 1.24 m, occupants 1.73 m): systems.ts. |
+| Blade angles | 0.80 R (42 in): fine 19°, ground minimum 17°, flight minimum 6°, reverse −17.5°, feather 79.6° | TCDS C.III.6.6, recorded verbatim; how the model uses them is in pc12-flight-model.md "Blade angles". |
+
+### What is ESTIMATE in the geometry
+
+Dihedral (about 5°, three-view), incidence and washout (calibrated: −0.5° root, −3.0° tip), tail areas and arms (3V),
+control deflections, the stabiliser's rigging (−1.5°) and trim range (−4° nose-up … +2.5° nose-down), the hub height
+(1.635 m: 0.30 m of propeller clearance), gear transit times, the main legs' trailing-link travel and every panel
+coordinate.
+
+## Panel interpretation
 
 The legacy /47 panel is a hybrid:
 - **Round mechanical gauges:** ASI, altimeter, VSI, RMI, flap gauge, cabin gauges.
