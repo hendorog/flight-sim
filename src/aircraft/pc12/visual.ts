@@ -46,7 +46,7 @@ import type {
   WheelVisualDef,
   WingVisualDef,
 } from '../types';
-import { PC12_FUSELAGE, PC12_GEAR, PC12_PROP, PC12_REST_HEIGHT, PC12_TAIL, PC12_THRUST_Z, PC12_WING } from './geometry';
+import { PC12_FUSELAGE, PC12_GEAR, PC12_GEOMETRY, PC12_PROP, PC12_REST_HEIGHT, PC12_TAIL, PC12_THRUST_Z, PC12_WING } from './geometry';
 import { PC12_GEAR_HANDLE, PC12_PANEL_CENTRE_PX, PC12_PANEL_PX_PER_M, PC12_PANEL_SIZE, PC12_PEDESTAL, PC12_YOKES } from './panelLayout';
 
 const DEG = Math.PI / 180;
@@ -377,6 +377,8 @@ const GLAZING: GlazingDef = {
 // --- Landing gear: trailing-link mains folding inward, nose leg folding aft (47E 7-4) ------------------------------
 
 const G = PC12_GEAR;
+/** Contact points of the legs fully extended (the definition's, below PC12_GEAR's static ones by the static sag). */
+const EXTENDED = PC12_GEOMETRY.gear;
 /**
  * Main leg (3V, PHOTO HB-FPT): a post down from the wing to the trailing arm's pivot 0.38 m ahead of the axle, the arm
  * running aft and down to the axle. The leg hangs on a fore-aft hinge in the wing at the post's top and folds inward
@@ -425,7 +427,7 @@ const mainWheel = (contact: { x: number; y: number; z: number }, side: 1 | -1): 
 const NOSE_PIVOT: FRD = [sx(2.74), 0, hz(1.12)];
 const NOSE_WELL = { fore: sx(2.5), aft: sx(3.85), halfWidth: 0.15 };
 const NOSE_WHEEL: WheelVisualDef = {
-  contact: [G.nose.x, G.nose.y, G.nose.z],
+  contact: [EXTENDED.nose.x, EXTENDED.nose.y, EXTENDED.nose.z],
   radius: G.noseWheelRadius,
   width: NOSE_TYRE.width,
   rimRadius: NOSE_TYRE.rim,
@@ -458,7 +460,7 @@ const NOSE_WHEEL: WheelVisualDef = {
   },
 };
 
-const GEAR: AirframeVisualDef['gear'] = [NOSE_WHEEL, mainWheel(G.leftMain, -1), mainWheel(G.rightMain, 1)];
+const GEAR: AirframeVisualDef['gear'] = [NOSE_WHEEL, mainWheel(EXTENDED.leftMain, -1), mainWheel(EXTENDED.rightMain, 1)];
 
 // --- Flap-track fairings: two canoes under each wing (the third track is inside the root fairing) ------------------
 

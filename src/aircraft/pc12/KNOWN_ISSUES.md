@@ -159,3 +159,17 @@ ground idle; it is not a P&WC deck. The start (one press: 50 % Ng at 29 s, peak 
 starter's torque and the start's fuel schedule.
 Evidence: [powerplant.ts](powerplant.ts), [docs/pc12-flight-model.md](../../../docs/pc12-flight-model.md).
 Close with: a P&WC deck or the /47 power-setting tables.
+
+## Exterior and cockpit shell — **simplified / estimate**
+
+The windscreen is one lofted surface cut by a sill plane and A-post lines: the real two flat panes and their centre
+post are not drawn. The legs are hidden at extension 0, so the main tyres standing about 25 mm proud of the wing root
+show only in the last few per cent of the swing. The flap selector is drawn as a slot lever on the panel face over the
+pedestal, not the pedestal lever right of the power controls; the MOR lever is drawn fixed at OFF and there is no
+aileron trim tab. The exhaust stubs are round, not oval. The cabin has four club seats (the executive layout), not the
+nine-seat commuter cabin. ESTIMATE in the drawing: the stabiliser pivot (65 % chord), the drawn wing incidence and
+washout (2 deg to 0; the aerodynamic rigging in geometry.ts is -0.5 / -3.0 deg), the tailplane incidence and the
+winglet cant (62 deg). A bright lit wedge on the inside of the left A-post in the night cockpit view (probably the
+landing light on the post lining) was not investigated.
+Evidence: [visual.ts](visual.ts), [docs/pc12-exterior.md](../../../docs/pc12-exterior.md).
+Close with: a /47 windscreen and pedestal drawing; the commuter cabin as a variant.

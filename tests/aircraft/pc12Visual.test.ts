@@ -8,7 +8,7 @@
 
 import * as THREE from 'three';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { PC12_FUSELAGE, PC12_GEAR, PC12_PROP, PC12_REST_HEIGHT, PC12_TAIL, PC12_THRUST_Z, PC12_WING } from '../../src/aircraft/pc12/geometry';
+import { PC12_EYE, PC12_FUSELAGE, PC12_GEAR, PC12_GEOMETRY, PC12_PROP, PC12_REST_HEIGHT, PC12_TAIL, PC12_THRUST_Z, PC12_WING } from '../../src/aircraft/pc12/geometry';
 import { PC12_PANEL } from '../../src/aircraft/pc12/panel';
 import { PC12_PANEL_PX_PER_M, PC12_PEDESTAL, pc12PanelPx } from '../../src/aircraft/pc12/panelLayout';
 import { PC12_VISUAL, PC12_VISUAL_HEIGHTS } from '../../src/aircraft/pc12/visual';
@@ -75,7 +75,8 @@ describe('Pilatus PC-12/47 airframe visual', () => {
     expect(v.props[0].rotation).toBe(1);
     expect(v.props[0].variablePitch).toBe(true);
     expect(v.props[0].spinner.baseX + v.props[0].spinner.length).toBeCloseTo(PC12_PROP.spinnerTipX, 12);
-    const G = PC12_GEAR;
+    // The legs fully extended: the definition's contact points (PC12_GEAR's static ones plus the static sag).
+    const G = PC12_GEOMETRY.gear;
     expect(v.gear.map((w) => w.contact)).toEqual([G.nose, G.leftMain, G.rightMain].map((p) => [p.x, p.y, p.z]));
     expect(v.gear.map((w) => w.radius)).toEqual([G.noseWheelRadius, G.mainWheelRadius, G.mainWheelRadius]);
     expect(v.gear.every((w) => w.retract !== undefined)).toBe(true);
@@ -172,7 +173,10 @@ describe('Pilatus PC-12/47 airframe visual', () => {
     expect(c.seats[0].z! - eye[2]).toBeLessThan(0.85);
     expect(Math.abs(eye[1])).toBeLessThan(sectionHalfWidth(outer, eye[0], eye[2]) - 0.15);
   });
-  it.todo("once geometry.ts adopts the 3V cockpit (PC12_EYE station 4.20, 2.33 m up), the eye equals PC12_EYE within 3 cm");
+  it("geometry.ts adopted the 3V cockpit: the eye equals PC12_EYE (station 4.20, 2.33 m up) within 3 cm", () => {
+    const eye = PC12_VISUAL.cockpit.pilotEye;
+    expect(Math.hypot(eye[0] - PC12_EYE.x, eye[1] - PC12_EYE.y, eye[2] - PC12_EYE.z)).toBeLessThan(0.03);
+  });
 
   it('the whole stabiliser trims: + elevatorTrim lifts the leading edge and drops the trailing edge', () => {
     const { outer } = createFuselageShapes(PC12_VISUAL);
