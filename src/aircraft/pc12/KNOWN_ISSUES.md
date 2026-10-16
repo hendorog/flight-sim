@@ -17,21 +17,21 @@ Evidence: [docs/pc12-sources.md](../../../docs/pc12-sources.md), the `47E-PROXY`
 [reference.ts](reference.ts), [tests/conformance/targets/pc12.ts](../../../tests/conformance/targets/pc12.ts).
 Close with: AFM 02211 / AFMS 33; the targets re-sourced row by row.
 
-## Keyboard circuit — **passes, fragile (needs the input package)**
+## Keyboard circuit — **passes; round-out fragile**
 
-The conformance suite's keyboard circuit (`keyboardCircuit`, torque in psi) passes in both weathers with the pilot
-targets brakeKias 80 (brakes as soon as the nosewheel is down) and flareM 8: light turbulence: touchdown 77 KIAS at
-1.0 m/s, 354 m past the threshold, stopped 0.7 m off the centreline, minimum 0.55 g; 10 kt crosswind: 77 KIAS at
-1.7 m/s (limit 1.8), 425 m past, 0.2 m off. The roll-out still stays on the gate at FLIGHT IDLE (about 4-5 kN at a
-standstill on the 5.5 deg stop) and the aircraft floats nose-high on the mains for up to 55 s: in light turbulence it
-touches down 354 m past the threshold and stops about 600 m beyond the far end of the 1800 m runway (a 2.0 km roll; the
-harness has no roll-length item, so this passes). With the old brakeKias 50
-the roll was 2.3-2.7 km with 0.21 g of nose-leg rocking and 11-12 m of drift in the crosswind. The pass is not robust:
-flareM 7 crashes the crosswind circuit (2.7 m/s at 88 KIAS), flareM 9 stops 8.8 m off (limit 8). The 47E technique
-(4.16: PCL to IDLE at touchdown, reverse as required, condition lever to GROUND IDLE) is the keyboard pilot's
-(tests/input/keyboardPilot.ts, the input package's: "beta/reverse engaged below 60 KIAS").
-Evidence: [conformance test](../../../tests/conformance/pc12.test.ts) (flown tier), [targets](../../../tests/conformance/targets/pc12.ts).
-Close with: the keyboard pilot's roll-out taking the PCL into beta and the condition lever to GROUND IDLE.
+The conformance suite's keyboard circuit (`keyboardCircuit`, torque in psi) passes in both weathers. At integration
+the roll-out was given the 47E technique the keyboard can fly (4.16): 1 s after the mains touch the pilot stops holding
+the round-out (`rolloutOnMainsS`), the PCL goes over the gate into ground fine below 75 KIAS (`rolloutReverse`) and the
+brakes come on from 80 KIAS. Measured: light turbulence, touchdown 77.2 KIAS at 0.99 m/s, 354 m past the threshold,
+stopped after 250 m, 1.8 m off the centreline, minimum 0.55 g, bank at most 26.8 deg; 10 kt crosswind, 77.2 KIAS at
+1.67 m/s (limit 1.8), stopped after 269 m, 1.7 m off, minimum 0.53 g. Before, on the gate at FLIGHT IDLE (4-5 kN at a
+standstill on the 5.5 deg stop), the aircraft floated nose-high on its mains for up to 66 s and rolled 2.0 km in
+turbulence, past the far end of the 1800 m runway. Still open: the condition lever stays at FLIGHT IDLE (the keyboard's
+lean key runs it through to CUT-OFF), and the round-out is sensitive to the flare height (P1: flareM 7 crashed the
+crosswind circuit at 2.7 m/s and 88 KIAS; flareM 9 stopped 8.8 m off).
+Evidence: [conformance test](../../../tests/conformance/pc12.test.ts) (flown tier), [targets](../../../tests/conformance/targets/pc12.ts)
+`KEYBOARD_PILOT_TARGETS`.
+Close with: a condition-lever detent key (GROUND IDLE) and a round-out that does not depend on the flare height.
 
 ## Landing roll in the generic block — **closed (integration)**
 

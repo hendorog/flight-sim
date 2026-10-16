@@ -96,6 +96,11 @@ export interface PilotTargets {
    * (Shift+F2) and holds it until ControlInputs.reverse reaches `lever` (ground fine: BetaDef.pitchOnlyTravel).
    */
   rolloutReverse?: { belowKias: number; lever: number };
+  /**
+   * Seconds on the main wheels after which the pilot stops holding the round-out and flies the roll-out (yoke to
+   * centre, the nosewheel down, beta and brakes). Absent: only once the nosewheel touches.
+   */
+  rolloutOnMainsS?: number;
 }
 
 /**
@@ -134,11 +139,13 @@ export function pilotTargets(reference: ReferenceSpeeds = C172S_REFERENCE): Pilo
     flareBankDeg: 5,
     decrabM: Infinity,
     downwindDescentFt: 250,
-    // Full throttle (F4) for the take-off and the climb, no take-off flaps, no beta on the roll-out.
+    // Full throttle (F4) for the take-off and the climb, no take-off flaps, no beta on the roll-out, the round-out
+    // held until the nosewheel touches.
     takeoffPower: undefined,
     climbPower: undefined,
     takeoffFlapDetent: 0,
     rolloutReverse: undefined,
+    rolloutOnMainsS: undefined,
   };
 }
 
@@ -389,6 +396,8 @@ export function createCircuitPilot(
   let elevAvg = 0;
   let lastTrimAt = 0;
   let flareStart = 0;
+  /** Time the main wheels first touched in the flare (NaN: not yet). */
+  let mainsAt = NaN;
   const unsub = events.on('touchdown', (e) => {
     if (!touchdown && (phase === 'flare' || phase === 'final')) {
       const rc = runwayCoords(s.position.x, s.position.y);
@@ -609,7 +618,8 @@ export function createCircuitPilot(
           const attitude = (1 - clamp(agl / 3, 0, 1)) * T.landingPitchDeg * DEG;
           const want = clamp(Math.max(s.pitch + (vsWant - s.verticalSpeed) * 3 * DEG, attitude), flareStart, 10 * DEG);
           flyPitch(want, 1.2);
-          if (s.wheels[0].onGround) setPhase('rollout');
+          if (Number.isNaN(mainsAt) && (s.wheels[1].onGround || s.wheels[2].onGround)) mainsAt = t;
+          if (s.wheels[0].onGround || (T.rolloutOnMainsS !== undefined && t - mainsAt >= T.rolloutOnMainsS)) setPhase('rollout');
           break;
         }
         case 'rollout': {

@@ -239,10 +239,11 @@ export const PC12_START_TARGETS = {
 /**
  * The keyboard circuit (AGENT targets, plan 5.7): the pilot reads the torque gauge, psi. Climb at Vy 130, downwind and
  * base with flaps 15 at 125 / 115 KIAS, final flaps 40 at Vref + 5 (90) on about 13 psi, base leg 600 ft, the round-out
- * from 8 m with the PCL closed (the flaps-40 drag stops the float), the brakes as soon as the nosewheel is down (the
- * roll-out stays on the gate at FLIGHT IDLE: the input package's pilot has no beta yet; braking from 50 KIAS left
- * 2.3 km of roll, 0.21 g of nose-leg rocking and 12 m of drift in the crosswind). Fragile: flareM 7 crashes the
- * crosswind circuit (2.7 m/s at 88 KIAS) and 9 ends 8.8 m off the centreline; see KNOWN_ISSUES "Keyboard circuit".
+ * from 8 m with the PCL closed (the flaps-40 drag stops the float), the roll-out 1 s after the mains touch: nosewheel
+ * down, PCL into ground fine below 75 KIAS, brakes from 80 KIAS (integration: 250 / 269 m rolls in turbulence / the
+ * crosswind; on the gate at FLIGHT IDLE the aircraft floated on its mains and rolled 2.0 km). The condition lever stays
+ * at FLIGHT IDLE (the keyboard's lean key would run it through to CUT-OFF). Fragile on the round-out: flareM 7 crashed
+ * the crosswind circuit (2.7 m/s at 88 KIAS) before integration; see KNOWN_ISSUES "Keyboard circuit".
  */
 export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
   power: (s: AircraftState) => pc12TorquePsi(s.engines[0].torque),
@@ -270,4 +271,9 @@ export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
   baseTurnM: 3600,
   flareM: 8,
   throttleOffM: 4,
+  // Integration (AGENT): the roll-out lifts the PCL over the gate into ground fine below 75 KIAS (47E 4.16: beta /
+  // reverse as required), as the C208's pilot does.
+  rolloutReverse: { belowKias: 75, lever: GROUND_FINE },
+  // ...and stops holding the round-out 1 s after the mains touch (the nose otherwise floats high on the mains).
+  rolloutOnMainsS: 1,
 };
