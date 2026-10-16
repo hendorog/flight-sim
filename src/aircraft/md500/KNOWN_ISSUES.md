@@ -7,12 +7,15 @@ impact. Numbers are from [md500Performance](../../../tests/rotorcraft/md500Perfo
 
 ## Pedal (yaw) response stronger than the OH-6A's — **unvalidated**
 
-A step of 0.1 of pedal travel in the hover at 2550 lb gives an initial yaw acceleration of 148 °/s² and 65 °/s after
+A step of 0.1 of pedal travel in the hover at 2550 lb gives an initial yaw acceleration of 148 °/s² and 62 °/s after
 1 s; the OH-6A's derivatives (Heffley CR-3144 case 4, F) give 54 °/s² and 37 °/s. At 60 KIAS the weathercock brings
-both back to a few °/s after 1 s (3.8 against 5.7). The 500E has the D-model's larger tail rotor (55 against 51 in)
+both back to a few °/s after 1 s (4.6 against 5.7). The 500E has the D-model's larger tail rotor (55 against 51 in)
 on a +27/−14° range, and Heffley's derivatives fold in the OH-6A's control-system flexibility, so part of the gap is
-real; how much is not known. The pedal-step yaw subsidence in the hover is also slower: 1.39 s to half rate after
-release against the OH-6A's 0.91 s (weaker yaw damping; not a plan row). Not tuned.
+real; how much is not known. Pilot review 2026-10-17 ("2-3x too powerful and weakly damped"): the fins now sit in the
+tail rotor's inflow (blockage), which brought the pedal-step half-time from 1.40 to 1.11 s (OH-6A 0.91) and the 1 s
+rate from 65 to 62 °/s; the acceleration is unchanged. A lower tail-rotor lift slope or a larger Izz lowers the
+acceleration but lengthens the half-time (4.0: 105 °/s², 2.07 s; Izz 1500: 116 °/s², 1.98 s), so neither was applied.
+The model's damping-to-power ratio is about 2.7 times smaller than the OH-6A's; no sourced knob closes it.
 Evidence: `KNOWN CONTROL-POWER GAP` [expected failures, one per row: yaw acceleration hover and 60 kt, yaw rate at 1 s hover](../../../tests/rotorcraft/md500Performance.test.ts) and the
 table in [md500-flight-model.md §7](../../../docs/md500-flight-model.md).
 Close with: a 500D/E pedal-step or yaw-derivative record (or the OH-6A's tail-rotor pitch range per pedal travel).

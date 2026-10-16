@@ -141,7 +141,14 @@ export interface RotorcraftDefinition {
   stabilizer: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number; wash: number;
     /** Single right-hand surface: positive cant raises its tip. Absent retains horizontal surface. */
     dihedral?: number };
-  fins: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number }[];
+  fins: { centre: Vec3; area: number; liftSlope: number; incidence: number; maxCl: number;
+    /**
+     * The part of the fin inside the tail rotor's stream tube (a fin beside the disc: MD 500E): `areaFraction` of
+     * the area meets the rotor's induced flow at `velocityRatio` x the disc's induced velocity, across the fin (the
+     * blockage that costs anti-torque thrust, and the yaw damping the fin adds as a yaw rate changes that flow).
+     * Absent: the whole fin sees the free stream only (every type before the MD 500E).
+     */
+    tailRotorFlow?: { areaFraction: number; velocityRatio: number } }[];
   /** Fuselage destabilising moment derivatives, Nm/(Pa rad). */
   fuselageMoment: { pitch: number; yaw: number };
   /** Equivalent flat plate areas along FRD axes, m². */

@@ -142,16 +142,16 @@ turning at 23 % N1, START released at 58.5 % 26 s after the grip opened, a TOT p
 
 | Row (plan §6.6) | Target (tag) | Model |
 | --- | --- | --- |
-| HIGE 3000 lb ISA | 8450 ft ±400 (P Fig 5-4) | 8428 ft |
-| HIGE 3000 lb ISA+20 | 5750 ft | 5732 ft |
-| HIGE 2600 lb ISA | 12 300 ft | 12 295 ft |
-| HOGE 2900 lb ISA | 6980 ft ±400 (P Fig 8-1) | 6924 ft |
-| HOGE 2900 lb ISA+20 | 4200 ft | 4131 ft |
-| HOGE 2600 lb ISA | 10 350 ft | 10 186 ft |
-| Hover 3000 lb torque IGE / OGE | 62–72 / 72–82 psi (DERIVED) | 71.5 / 79.3 psi |
-| Hover TOT | 620–720 °C (ESTIMATE) | 647 / 692 °C, N1 95.4 / 97.2 %, 210 / 226 lb/h |
+| HIGE 3000 lb ISA | 8450 ft ±400 (P Fig 5-4) | 8271 ft (8428 before the fins' tail-rotor blockage) |
+| HIGE 3000 lb ISA+20 | 5750 ft | 5557 ft |
+| HIGE 2600 lb ISA | 12 300 ft | 12 158 ft |
+| HOGE 2900 lb ISA | 6980 ft ±400 (P Fig 8-1) | 6768 ft |
+| HOGE 2900 lb ISA+20 | 4200 ft | 3975 ft |
+| HOGE 2600 lb ISA | 10 350 ft | 10 049 ft |
+| Hover 3000 lb torque IGE / OGE | 62–72 / 72–82 psi (DERIVED) | 71.9 / 79.8 psi |
+| Hover TOT | 620–720 °C (ESTIMATE) | 649 / 695 °C, N1 95.4 / 97.3 %, 211 / 227 lb/h |
 | Hover IGE attitude | pitch +1…+5°, roll 1–3° left (ESTIMATE) | pitch +2.5°, roll **3.7° left** (KNOWN GAP; OH-6A trims at 3.05° left at 2550 lb, F); OGE +2.6°, 4.1° left |
-| Hover IGE pedal | −0.20…−0.45 (ESTIMATE) | −0.26 |
+| Hover IGE pedal | −0.20…−0.45 (ESTIMATE) | −0.28 (OGE −0.33) |
 | Vy (minimum power) | 62 ±8 KIAS (P Fig 5-3) | 64.9 KIAS |
 | Max ROC at 87.2 psi, Vy | 1770 ft/min ±20 % (M) at the design gross weight | 1848 ft/min at 3000 lb (TOT 737 °C); 2355 at 2600 lb |
 | Level speed at MCP 81.3 psi, 3000 lb | 130–135 KTAS ±5 % (M) | 139.3 KTAS (pitch −4.4°, TOT 703 °C, N1 97.6 %) |
@@ -180,10 +180,27 @@ reference responses to a step of 0.1 of full travel, at the OH-6A's 2550 lb:
 | Roll rate at 0.5 s, °/s | 15.1 / 13.8 | 20.4 / 20.8 (**+35 / +51 %**, KNOWN GAP) |
 | Pitch acceleration, °/s² | 53.1 / 53.5 | 57.6 / 54.2 |
 | Pitch rate at 0.5 s, °/s | 17.1 / 14.7 | 21.6 / 18.4 |
-| Yaw acceleration (pedal), °/s² | 53.9 / 56.0 | 148 / 152 (initial; **+170 %**, KNOWN GAP) |
-| Yaw rate at 1 s, °/s | 36.8 / 5.7 | 65.5 / 3.8 |
+| Yaw acceleration (pedal), °/s² | 53.9 / 56.0 | 148 / 151 (initial; **+174 %**, KNOWN GAP) |
+| Yaw rate at 1 s, °/s | 36.8 / 5.7 | 62.1 / 4.6 (65.3 / 3.8 before the fins' tail-rotor flow) |
 | Subsidence (hover): a 0.5 s step released, time to half the rate at release, roll / pitch, s | 0.129 / 0.352 | 0.154 / 0.354 (+19 / +1 %) |
-| Same, pedal (hover; reported, not a plan row), s | 0.91 | 1.39 (+52 %) |
+| Same, pedal (hover; reported, not a plan row), s | 0.91 | 1.11 (+22 %; 1.40 before the fins' tail-rotor flow) |
+
+**Fins in the tail rotor's inflow (pilot review 2026-10-17).** The tail rotor turns 0.30 m to the left of the fins and
+draws its inflow across them: its 0.70 m disc covers all of the lower fin and 60 % of the upper fin (the 3V outlines),
+where the actuator-disc inflow 0.30 m upstream is about 0.6 of the disc's induced velocity. That part of each fin now
+sees the flow (`fins[].tailRotorFlow`, new and optional; no other type has it): it costs anti-torque (hover pedal
+−0.26 → −0.28; 0.4-0.5 psi; the ceilings 140-380 ft lower, all inside ±400 ft) and damps the yaw, because a yaw rate
+changes the flow across the fin. Pedal-step half-time 1.40 → 1.11 s (OH-6A 0.91 s), yaw rate 1 s after a 0.1 step
+65.3 → 62.1 °/s, the initial acceleration unchanged at 148 °/s². A 0.5 s blip of 0.1 travel: 36.9 °/s at release (38.8
+before), 80° net heading (91°). Collective +0.1 in 1 s with the pedals frozen: 23.2 °/s at 1 s (24), 119° in 3 s (124).
+
+What was tried and not applied: the tail rotor's lift slope 5.7 → 4.0 cuts the acceleration to 105 °/s² and the 1 s
+rate to 55 °/s but cuts the rotor's own damping as much (half-time 2.07 s); Izz 1200 → 1500 kg·m² gives 116 °/s², 55 °/s
+and 1.98 s. The model's ratio of yaw damping to pedal power is about 2.7 times smaller than the OH-6A derivatives' (N_r
+−0.86 /s against N_δp 0.94 rad/s² per 0.1 of travel); with the TCDS tail-rotor range (41° over the pedal travel) and a
+blade-element tail rotor no sourced knob closes that: it needs either a smaller blade angle per pedal than the TCDS
+range implies (nonlinear rigging, control-system stretch) or damping from a source the model lacks. Neither is
+sourced; a yaw-rate damping derivative added by hand was not used (no hidden servo in the airframe).
 
 The 500E differs from the OH-6A where these rows miss: a five-blade hub with a wider hinge, and the D/E's larger
 (55 in) tail rotor on a +27/−14° pitch range. Heffley's derivatives also fold in the OH-6A's control-system

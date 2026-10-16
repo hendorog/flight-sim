@@ -130,9 +130,13 @@ export const MD500_ROTORCRAFT: RotorcraftDefinition = {
   stabilizer: { centre: { x: HS.leadingX - HS.chord / 4, y: 0, z: HS.z }, area: HS.span * HS.chord,
     liftSlope: 3.8, incidence: (HS.incidenceToMastNormalDeg - D.SHAFT_TILT_DEG - STAB_ZERO_LIFT_DEG) * DEG, maxCl: 1.1, wash: 0.45 },
   // Upper (swept, under the T-stab) and lower fins, 3V outlines; symmetric sections, no offset. ESTIMATES.
+  // The tail rotor turns 0.30 m to the left of them and draws its inflow across them (the fins are on its intake
+  // side): the 0.70 m disc covers all of the lower fin's outline and 60 % of the upper's (dimensions.ts outlines
+  // against TAIL_HUB), where the actuator-disc inflow 0.30 m upstream of the disc is about 0.6 of the disc's induced
+  // velocity (1 - 0.3 / sqrt(0.3^2 + 0.7^2)). Pilot review 2026-10-17 (yaw damping): docs/md500-flight-model.md sect. 7.
   fins: [
-    { centre: UPPER_FIN.centre, area: UPPER_FIN.area, liftSlope: 3.0, incidence: 0, maxCl: 1.1 },
-    { centre: LOWER_FIN.centre, area: LOWER_FIN.area, liftSlope: 2.6, incidence: 0, maxCl: 1.1 },
+    { centre: UPPER_FIN.centre, area: UPPER_FIN.area, liftSlope: 3.0, incidence: 0, maxCl: 1.1, tailRotorFlow: { areaFraction: 0.6, velocityRatio: 0.6 } },
+    { centre: LOWER_FIN.centre, area: LOWER_FIN.area, liftSlope: 2.6, incidence: 0, maxCl: 1.1, tailRotorFlow: { areaFraction: 1, velocityRatio: 0.6 } },
   ],
   // ESTIMATE: the egg cabin is about twice the R22's in volume.
   fuselageMoment: { pitch: 0.25, yaw: 0.15 },

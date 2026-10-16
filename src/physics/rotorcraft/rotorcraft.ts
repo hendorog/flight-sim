@@ -349,7 +349,7 @@ export class Rotorcraft {
     if (horizontal > 0) Object.assign(shaftForce, v3.sub(shaftForce, v3.scale(inPlane, main.inPlane / horizontal)));
     const mainForce = tilt ? toBody(shaftForce, tilt) : shaftForce;
     const tailForce = { x: tailHForce.x, y: tail.thrust * d.rotation, z: tailHForce.z };
-    const frame = airframeLoads(d, b, air, density, s.inflow);
+    const frame = airframeLoads(d, b, air, density, s.inflow, s.tailInflow);
     Object.assign(this.power, frame.power);
     const f = this.loads.force, m = this.loads.moment;
     Object.assign(f, v3.add(v3.add(mainForce, tailForce), frame.force));
