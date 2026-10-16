@@ -282,7 +282,8 @@ export function cockpitControls(cockpit: CockpitDef, panel: PanelDef): Readonly<
   if (row.dimmers) out.panelLights = fromPx(row.bounds.x + row.dimmers.panel, row.bounds.y + row.dimmers.y);
   out.magnetos = fromPx(panel.ignition.at[0], panel.ignition.at[1]);
   for (const e of cockpit.engineControls) {
-    if (e.engine === 0 && (e.control === 'throttle' || e.control === 'mixture')) out[e.control] = fromFrd(e.pos[0] - 0.04, e.pos[1], e.pos[2]);
+    // (A lever drawn fixed, such as the PC-12's manual override, is not the one the instructor means.)
+    if (e.engine === 0 && e.fixed === undefined && (e.control === 'throttle' || e.control === 'mixture')) out[e.control] = fromFrd(e.pos[0] - 0.04, e.pos[1], e.pos[2]);
   }
   const flap = cockpit.flapControl.pos;
   out.flapLever = fromFrd(flap[0] - 0.045, flap[1], flap[2]);
@@ -493,6 +494,8 @@ export class Cockpit {
   private readonly pedals: { obj: THREE.Group; sign: 1 | -1 }[] = [];
   /** Engine controls: push-pull knobs sliding aft as they are pulled, quadrant levers swinging about their pivots. */
   private readonly knobs: { group: THREE.Group; def: CockpitDef['engineControls'][number] }[] = [];
+  /** Levers drawn at a fixed position (`fixed`): never animated, but small controls like the others. */
+  private readonly fixedLevers: THREE.Group[] = [];
   private readonly flapLever = new THREE.Group();
   private readonly gearLever: THREE.Group | null = null;
   private readonly trimWheel: THREE.Group | null = null;
@@ -783,6 +786,7 @@ export class Cockpit {
       if (e.kind === 'lever' && e.fixed !== undefined) {
         g.rotation.x = e.travel * (1 - e.fixed - 0.5);
         this.group.add(g);
+        this.fixedLevers.push(g);
       } else this.knobs.push({ group: g, def: e });
     }
     for (const k of this.knobs) this.group.add(k.group);
@@ -1152,7 +1156,7 @@ export class Cockpit {
 
   /** The small controls under and on the lower panel. */
   private details(): THREE.Group[] {
-    const groups = [...this.knobs.map((k) => k.group), this.flapLever];
+    const groups = [...this.knobs.map((k) => k.group), ...this.fixedLevers, this.flapLever];
     if (this.trimWheel) groups.push(this.trimWheel);
     groups.push(...this.pedals.map((p) => p.obj));
     if (this.gearLever) groups.push(this.gearLever);

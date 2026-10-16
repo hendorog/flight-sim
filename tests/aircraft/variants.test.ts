@@ -1471,6 +1471,15 @@ describe('PC-12 builder variants', () => {
     expect(fixedLever.rotation.x).toBe(fixedAt);
     // The marks: white notches at the three detents, the red gate and reverse arc, in the fixed parts.
     const count = (c: Cockpit, mat: string): number => meshesNamed(c.group, new RegExp(`:${mat}$`)).filter((m) => !c.group.children.some((g) => g.children.includes(m) && g !== m.parent)).reduce((n, m) => n + m.geometry.getAttribute('position').count, 0);
+    // The instructor points at the power lever, never at the fixed one; the fixed lever is a small control that does
+    // not cast (the shadow rig's `none`) and hides with the others from outside.
+    const points = cockpitControls(def.cockpit, C172S_PANEL);
+    expect(points.throttle.x).toBeCloseTo(throttle.pos[1], 9);
+    const none = new Set(cockpit.shadowRig().none);
+    for (const m of fixedLever.children) expect(none.has(m as THREE.Mesh)).toBe(true);
+    cockpit.setDetailVisible(false);
+    expect(fixedLever.visible).toBe(false);
+    cockpit.setDetailVisible(true);
     expect(count(cockpit, 'knobRed')).toBeGreaterThan(count(plain, 'knobRed'));
     expect(count(cockpit, 'knobWhite')).toBeGreaterThan(count(plain, 'knobWhite'));
     cockpit.dispose();
