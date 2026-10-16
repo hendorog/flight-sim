@@ -116,18 +116,20 @@ const ELEVATOR_UP = PC12_GEOMETRY.hTail.elevator.maxUp;
  * against flap: CALIBRATED so that the push comes at the published stall (pusher) speeds at 10 450 lb, flight idle
  * (95 / 78 / 70 / 67 KIAS for flaps 0 / 15 / 30 / 40, CHART-READ Fig 5-2-1) and the shaker 5-10 kt before it (7-21).
  * Push: 60-65 lbf at the wheel against a 3/4 pull (7-21) is taken as 0.35 of the full nose-down travel, ramped in
- * 0.3 s (ESTIMATE). Inhibits (7-21): 5 s after lift-off, below 0.5 g; the computers are on the essential bus
+ * 0.3 s (ESTIMATE); the slip clutch (85-90 lbf) lets a pilot who hauls the yoke onto its stop override it. Inhibits (7-21): 5 s after lift-off, below 0.5 g; the computers are on the essential bus
  * (dead below 18 V, ESTIMATE). Torque input: the trip angles rise 0.03 deg per psi (ESTIMATE: the slipstream delays
  * the stall at power).
  */
 export const PC12_STICK_PUSHER: StickPusherDef = {
   flapDeg: [0, 15, 30, 40],
-  shakerAlphaDeg: [9.6, 9.0, 8.0, 7.6],
-  pusherAlphaDeg: [11.6, 11.0, 10.0, 9.6],
+  shakerAlphaDeg: [8.6, 6.7, 5.5, 5.5],
+  pusherAlphaDeg: [10.2, 9.65, 10.9, 11.85],
   torqueBias: 0.03,
   psiPerPtNm: PC12_PSI_PER_PT_NM,
   pushElevator: 0.35,
   rampSeconds: 0.3,
+  // AGENT: the slip clutch slips (85-90 lbf, 47E 7-21) when the pilot hauls the yoke onto its aft stop.
+  clutchYoke: 0.95,
   liftoffInhibitSeconds: 5,
   minLoadFactor: 0.5,
   minBusVolts: 18,

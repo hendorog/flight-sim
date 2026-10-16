@@ -11,7 +11,8 @@
 //    and with the bus alive; while armed and above its angle it pushes, until the angle falls 1.5 deg below the trip
 //    (the computers' reset). The push ramps in and out over rampSeconds; the elevator the control system gets is the
 //    pilot's yoke less pushElevator x the ramp (the pilot cannot hold the column against it: the slip clutch is at
-//    85-90 lbf, 47E 7-21), never further aft than the yoke. The interrupt (ControlInputs.pusherInterrupt, held) stops
+//    85-90 lbf, 47E 7-21), never further aft than the yoke; a pilot hauling the yoke onto the aft stop (clutchYoke)
+//    slips the clutch and overrides it. The interrupt (ControlInputs.pusherInterrupt, held) stops
 //    the push at once; the shaker runs on.
 // The flight model constructs one only for a type whose ControlSystemDef has `stickPusher`, so no other type runs
 // this code.
@@ -33,6 +34,11 @@ export interface StickPusherDef {
   /** Nose-down elevator command the pusher adds, as a fraction of full down travel, and its ramp time, s. */
   pushElevator: number;
   rampSeconds: number;
+  /**
+   * The slip clutch (PC-12: it slips at 85-90 lbf against the pusher's 60-65): a pilot holding the yoke at or beyond
+   * this position (hauling it onto the aft stop) overrides the push. Absent: the push always acts.
+   */
+  clutchYoke?: number;
   /** Inhibits: seconds after lift-off; below this load factor, g; below this bus voltage, V. */
   liftoffInhibitSeconds: number;
   minLoadFactor: number;
@@ -111,6 +117,7 @@ export class StickPusher {
     if (i.interrupt || !powered) this.ramp = 0;
     else this.ramp = Math.max(0, Math.min(1, this.ramp + (this.pusherOn ? rate : -rate)));
     if (this.ramp <= 0) return yoke;
+    if (d.clutchYoke !== undefined && yoke >= d.clutchYoke) return yoke;
     return Math.max(-1, Math.min(yoke, yoke - d.pushElevator * this.ramp));
   }
 

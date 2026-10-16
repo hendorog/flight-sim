@@ -8,7 +8,7 @@
 //
 // Design point: 4740 kg with the CG at about station 5.95 (the maxGross loading, systems.ts), which puts about 10 %
 // of the weight on the nose: about 4.6 kN on the nose and 20.9 kN on each main. The springs below then compress the
-// nose 0.085 m (oleo 0.07, tyre 0.015) and the mains 0.10 m vertically (geometry.ts PC12_GEAR_STATIC_SAG): the
+// nose 0.075 m (oleo 0.06, tyre 0.015) and the mains 0.10 m vertically (geometry.ts PC12_GEAR_STATIC_SAG): the
 // reference point stands 1.30 m above the ground, the aircraft about level.
 
 import { DEG } from '../../core/math';
@@ -141,8 +141,9 @@ export function createPC12Gear(): GearConfig {
         name: 'nose',
         position: G.gear.nose,
         axis: { x: 0, y: 0, z: -1 },
-        // About 0.07 m of the stroke at the static nose load (4.6 kN), 0.15 m in all (ESTIMATE).
-        strut: new OleoPneumaticSpring(1500, 0.115, 1.2, 0.15),
+        // About 0.06 m of the stroke at the static nose load (4.6 kN), 0.2 m in all, a long gas column so that the
+        // strut keeps stroke in hand for a nose-down pitch on the brakes (ESTIMATE).
+        strut: new OleoPneumaticSpring(3000, 0.2, 1.2, 0.2),
         tyreSpring: { stiffness: 300e3, hardening: 0.05 },
         damping: oleoDamping(30000, 6000, 15000),
         tyre: tyre(G.gear.noseWheelRadius, 0.5),

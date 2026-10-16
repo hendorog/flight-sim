@@ -177,7 +177,7 @@ const WINGLET = { height: PC12_WING.winglet.height, cant: PC12_WING.winglet.cant
  * wheel moves up and AFT as the leg compresses, along an axis tilted aft by PC12_MAIN_LEG_TILT (mainTrailShift 0.18 m
  * over the 0.20 m of travel), so the extended main wheels also sit forward of the static ones by sag x tan(tilt).
  */
-export const PC12_GEAR_STATIC_SAG = { nose: 0.085, main: 0.1 } as const;
+export const PC12_GEAR_STATIC_SAG = { nose: 0.075, main: 0.1 } as const;
 export const PC12_MAIN_LEG_TILT = Math.atan2(PC12_GEAR.mainTrailShift, 0.2);
 const MAIN_FORWARD = PC12_GEAR_STATIC_SAG.main * Math.tan(PC12_MAIN_LEG_TILT);
 

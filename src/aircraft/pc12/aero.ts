@@ -29,16 +29,30 @@ const HINGE_GAP_LEAKAGE = 0.95;
 const WING_SKIN = 1.3;
 const TAIL_SKIN = 1.3;
 
+/** How much earlier than the clean record the boot-covered wing breaks, rad (CALIBRATED: see WING_ROOT). */
+const STALL_SHIFT = 3.8 * DEG;
+/**
+ * The Fowler flap (CALIBRATED with STALL_SHIFT on the pusher speeds with the pusher at 0.90-0.93 of C_L,max, plan 5.2,
+ * and on the attitudes: about 3 deg nose-down on a 3 deg flaps-40 approach at Vref, a flare to a few degrees
+ * nose-up). A single-slotted Fowler on tracks: the chord extension (0.30 of the chord, 3V ESTIMATE) comes first, by
+ * 20 deg; the camber's effectiveness at large deflection, relative to its 10 deg value, falls as the slotted table's
+ * less 10 % (FOWLER_LARGE_DEFLECTION, at 0 / 10 / 20 / 30 / 45 / 60 / 90 deg); and the slot re-energises the flap so
+ * that the section's break moves out by 1.22 x the zero-lift shift (FOWLER_CLMAX_RATIO; the generic slotted 0.8 put
+ * the flaps-40 C_L,max at 0.98 of the pusher's and the stall 9 deg of body angle below the clean one).
+ */
+const FOWLER_LARGE_DEFLECTION = [1, 0.8, 0.72, 0.64, 0.52, 0.42, 0.3];
+const FOWLER_CLMAX_RATIO = 1.22;
+const FOWLER_FULL_AT = 20 * DEG;
 /**
  * Root section: NASA LS(1)-0417 MOD (UIUC guide, SECONDARY), the per-type copy of sections.ts's record (TN D-7428).
  * The PC-12 flies its stall at about Re 6-7e6 on a 2 m chord, where the clean section reaches c_l,max 1.9; the
- * de-ice boots over the leading edge cost about 0.15-0.25 of it (Bragg et al., boot-on airfoil data), so the break
- * is set 2 deg earlier than the record's. CALIBRATED with the pusher schedule on the pusher speeds (the published
+ * de-ice boots over the leading edge cost about 0.15-0.25 of it (boot-on aerofoil data), and the break is set
+ * STALL_SHIFT (3.8 deg) earlier than the record's: the wing's C_L,max 1.36 clean. CALIBRATED with the pusher schedule on the pusher speeds (the published
  * stall speeds ARE pusher speeds, 47E-PROXY sect. 5): the pusher must trip at 0.90-0.93 of the wing's C_L,max.
  */
-const WING_ROOT = { ...NASA_LS1_0417, name: 'NASA LS(1)-0417 MOD (PC-12 copy)', stallPos: NASA_LS1_0417.stallPos - 2 * DEG };
+const WING_ROOT = { ...NASA_LS1_0417, name: 'NASA LS(1)-0417 MOD (PC-12 copy)', stallPos: NASA_LS1_0417.stallPos - STALL_SHIFT };
 /** Tip section: LS(1)-0313, 13 % thick: lower drag, an earlier break (thinner leading edge). */
-const WING_TIP = { ...WING_ROOT, name: 'NASA LS(1)-0313 (PC-12 copy)', cdMin: 0.0088, stallPos: WING_ROOT.stallPos - 1 * DEG, cm0: -0.1 };
+const WING_TIP = { ...WING_ROOT, name: 'NASA LS(1)-0313 (PC-12 copy)', cdMin: 0.0088, stallPos: WING_ROOT.stallPos - 3.5 * DEG, cm0: -0.1 };
 
 const WINGLET = G.wing.winglet!;
 /** Span coordinate (arc length) at the winglet's top. */
@@ -84,7 +98,7 @@ export function pc12WingPlanform(): Planform {
         gain: 1,
         // Single-piece Fowler on three tracks (47E-PROXY 7-3): it runs well aft before it turns down; about 30 %
         // of the local chord of extension at 40 deg (3V ESTIMATE; the drawing runs it 0.42 m aft).
-        geometry: { kind: 'slotted', chordFraction: w.flap.chordFraction, fowler: 0.3, fowlerDeflection: w.flap.maxDeflection },
+        geometry: { kind: 'slotted', chordFraction: w.flap.chordFraction, fowler: 0.3, fowlerDeflection: FOWLER_FULL_AT, largeDeflection: FOWLER_LARGE_DEFLECTION, clMaxRatio: FOWLER_CLMAX_RATIO },
         from: w.flap.innerY,
         to: w.flap.outerY,
       },
@@ -249,7 +263,7 @@ function dragItems(): DragItem[] {
  * the generic FlightState.stallWarning (the horn, the HUD and the coach): set to sound with the shaker, about
  * 5-10 kt before the push (47E-PROXY 7-21). Electric: no warning with a dead bus.
  */
-const WARNING_MARGIN = { clean: 3.2 * DEG, flaps: 4.5 * DEG };
+const WARNING_MARGIN = { clean: 4.6 * DEG, flaps: 5.5 * DEG };
 const WARNING_FLAP_SWITCH = 7 * DEG;
 /** Largest dynamic-pressure loss of the wing's wake at the T-tail (aeroModel.ts applyWingWake; the PA-38's knob). */
 const WAKE_MAX_LOSS = 0.25;

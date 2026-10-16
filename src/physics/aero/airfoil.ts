@@ -124,6 +124,13 @@ export interface FlapGeometry {
    * plain table falls to 0.8 / 0.64 / 0.55 / 0.42. Absent: the table.
    */
   largeDeflection?: readonly number[];
+  /**
+   * Fraction of the flap's lift increment also gained in c_l,max, replacing the kind's (CLMAX_RATIO: plain 0.6,
+   * slotted 0.8): the break angle, measured from the shifted zero-lift angle, moves out by this fraction of |d alpha0|.
+   * A Fowler flap whose slot re-energises the flap fully stalls at about the clean section's angle (a ratio near 1;
+   * PC-12). Absent: the kind's.
+   */
+  clMaxRatio?: number;
 }
 
 /** Pre-computed thin-aerofoil constants for one flap geometry. */
@@ -143,6 +150,8 @@ export interface FlapModel {
   alphaCoupling: number;
   /** FlapGeometry.largeDeflection, when given (absent: the kind's table). */
   effect?: readonly number[];
+  /** FlapGeometry.clMaxRatio, when given (absent: the kind's CLMAX_RATIO). */
+  clMaxRatio?: number;
 }
 
 /**
@@ -191,6 +200,7 @@ export function makeFlapModel(g: FlapGeometry): FlapModel {
     alphaCoupling: g.kind === 'plain' ? flapAlphaCoupling(g.chordFraction) : 0,
   };
   if (g.largeDeflection) m.effect = g.largeDeflection;
+  if (g.clMaxRatio !== undefined) m.clMaxRatio = g.clMaxRatio;
   return m;
 }
 
@@ -274,7 +284,7 @@ export function addFlapDeflection(m: FlapModel, delta: number, inc: FlapIncremen
   inc.dAlpha0 += da0;
   // Flap down raises c_l,max by a fraction of the lift increment: the break angle, measured from the
   // shifted zero-lift angle, moves out by that fraction of |da0| (and in for a flap deflected up).
-  inc.dStall -= CLMAX_RATIO[m.kind] * da0;
+  inc.dStall -= (m.clMaxRatio ?? CLMAX_RATIO[m.kind]) * da0;
   const s = Math.sin(delta);
   // A plain surface's profile-drag increment comes from the same separated flow and grows with its inclination
   // to the oncoming flow: the increment over the undeflected section, sin^2(delta + alpha) - sin^2(alpha) (a down

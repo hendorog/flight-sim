@@ -154,12 +154,12 @@ const STATION = PC12_PROP.STATION;
  * both be flight angles there. Started at 17 deg and calibrated on (a) the static ground-idle Np on the gate,
  * 1060 +/- 60 rpm (47E 7-11), and (b) 8-18 psi on a 3 deg approach at Vref, flaps 40.
  */
-export const PC12_FLIGHT_IDLE_STOP = 17 * DEG;
+export const PC12_FLIGHT_IDLE_STOP = 8 * DEG;
 /** Feather 79.6 deg, full reverse -17.5 deg at 0.80 R (TCDS C.III.6.6). */
 const FEATHER = 79.6 * DEG;
 const REVERSE = -17.5 * DEG;
 /** Ground fine: about zero static thrust (this blade: CALIBRATED, |static thrust| < 500 N at reverse = pitchOnlyTravel). */
-const GROUND_FINE = -4.5 * DEG;
+const GROUND_FINE = -5 * DEG;
 
 /** Twist table of a constant-pitch helix that is `design` at the reference station. */
 function helixTwist(design: number): PropellerDef['twist'] {
@@ -181,7 +181,7 @@ export const PC12_PROPELLER: PropellerDef = {
   diameter: PC12_PROP.diameter,
   blades: PC12_PROP.blades,
   hubRadius: 0.22,
-  chordOverR: C172_PROPELLER.chordOverR.map((c) => 1.4 * c),
+  chordOverR: C172_PROPELLER.chordOverR.map((c) => 1.1 * c),
   twist: helixTwist(25 * DEG),
   referenceStation: STATION,
   section: BLADE_SECTION,
@@ -209,7 +209,7 @@ export const PC12_PROPELLER: PropellerDef = {
       lowPitchSchedule: { lever: [0, 0.5, 1], angle: [PC12_FLIGHT_IDLE_STOP, PC12_FLIGHT_IDLE_STOP + 6 * DEG, PC12_FLIGHT_IDLE_STOP + 6 * DEG] },
     },
     // 19 slices from full reverse to feather (PROP_MAX_SLICES 20).
-    pitchNodes: [-17.5, -11, -4.5, 2, 9, 13, 17, 20, 23, 26, 29, 32, 35, 38, 42, 48, 56, 66, 79.6].map((deg) => deg * DEG),
+    pitchNodes: [-17.5, -11, -5, 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 45, 52, 60, 70, 79.6].map((deg) => deg * DEG),
   },
 };
 
