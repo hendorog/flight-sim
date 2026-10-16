@@ -97,7 +97,12 @@ export type GaugeDef =
       read(c: ControlInputs): number; set(c: ControlInputs, position: number): void;
       guard?: { closed(c: ControlInputs): boolean; toggle(c: ControlInputs): void } }
   | { kind: 'dualSector'; id: string; bounds: Rect; left: ScaleDef; right: ScaleDef }
-  | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef }
+  /**
+   * `onSample`: called with the readings and the panel clock before each sample of the gauge, for a gauge whose scales read
+   * a display model the type steps (the cabin altitude display, dynamics/cabinDisplay.ts).
+   */
+  | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef;
+      onSample?(r: InstrumentReadings, time: number): void }
   | { kind: 'single'; id: string; at: At; seed: number; size: 'large' | 'small'; a0: number; a1: number; title: string; units: string;
       labels: readonly number[]; scale: ScaleDef }
   /** Two needles (L, R) on one dial: twin tachometer, manifold pressure, fuel flow. */

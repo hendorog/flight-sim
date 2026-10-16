@@ -191,7 +191,7 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('climbPower', 'Power lever', 'Climb: 36.95 psi max, ITT 760 °C max', { control: 'throttle', state: null, key: POWER_KEYS, stateLabel: 'CLIMB TORQUE', why: why('Climb power: torque at its limit low down, ITT the limit higher up.') }),
     item('engineInstruments', 'Engine instruments', 'In limits', { control: 'oil', state: null, key: null, why: why('Torque, ITT, Ng and oil: check them as the climb settles.') }),
   ]),
-  hasell: { ...C208.checklists.hasell, id: 'hasell', title: 'HASELL', items: C208.checklists.hasell.items, source: undefined, sourceUrl: undefined } as ChecklistDef,
+  hasell: list('hasell', 'HASELL', C208.checklists.hasell.items),
   downwind: list('downwind', 'Before landing', [
     item('brakes', 'Brakes', 'Off, pressure checked', { control: 'parkingBrake', state: eq('parkingBrake', false), key: 'parkingBrake', stateLabel: 'OFF', why: why('Brakes off and firm: landing with the parking brake on bursts tyres.') }),
     gearDown,
@@ -237,7 +237,7 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('masterOff', 'Generators and battery', 'Off', { control: 'master', state: all(eq('master', false), eq('alternator', false)), key: 'masterSwitch', why: why('Electrics off once the flaps are set: they are electric.') }),
     item('harnesses', 'Doors and harnesses', 'Doors unlatched, harnesses tight', { control: null, state: null, key: null, why: why('Harnesses tight, doors unlatched: we can get out after the landing.') }),
   ]),
-  nightLights: { ...C208.checklists.nightLights, id: 'nightLights', title: 'Night: lights', items: C208.checklists.nightLights.items, source: undefined, sourceUrl: undefined } as ChecklistDef,
+  nightLights: list('nightLights', 'Night: lights', C208.checklists.nightLights.items),
 };
 void lookout;
 

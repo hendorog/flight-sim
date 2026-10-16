@@ -35,7 +35,7 @@ export const PC12_T_PITCH = { x: 184, y: 184 } as const;
 /** The EIS: (x, y) the centre of the 3 x 3 window grid, (x0, y0) its top left, `cell` the window size, px. */
 export const PC12_EIS = { x: 1125, y: 289, x0: 900, y0: 64, cell: 150, cols: 3, rows: 3 } as const;
 /** The CAWS 6 x 8 legend grid: origin, bounds and cell size (cells share the bounds with a 5 px gap), px. */
-export const PC12_CAWS = { x0: 900, y0: 560, cols: 6, rows: 8, w: 450, h: 300, cellW: 69, cellH: 32 } as const;
+export const PC12_CAWS = { x0: 900, y0: 560, cols: 6, rows: 8, w: 430, h: 300, cellW: 66, cellH: 32 } as const;
 /** Gear handle (left of the CAWS) and the light cluster above it: three greens and the red unsafe light. */
 export const PC12_GEAR_HANDLE = { x: 796, y: 770 } as const;
 export const PC12_GEAR_LIGHTS: Rect = { x: 740, y: 560, w: 112, h: 150 };

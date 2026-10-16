@@ -1,21 +1,18 @@
-// A round gauge whose needles read a CabinDisplay (cabin altitude and differential pressure as a display function of
-// pressure altitude, dynamics/cabinDisplay.ts). It wraps the gauge component the panel definition builds, steps the
-// display from the panel's own clock before the wrapped gauge samples, and passes everything else through.
+// A gauge component with a hook run before each sample: the panel definition's `onSample` steps a display model (the cabin
+// altitude display) from the readings and the panel's clock, then the wrapped gauge samples and draws as it always does.
 
 import type { ControlInputs } from '../../core/types';
-import type { CabinDisplay } from '../dynamics/cabinDisplay';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
 import type { Ctx2D } from './canvas';
 import type { PanelComponent, Rect } from './component';
 
-export class CabinGauge implements PanelComponent {
+export class SampleHook implements PanelComponent {
   readonly id: string;
   readonly bounds: Rect;
-  private last = NaN;
 
   constructor(
     private readonly inner: PanelComponent,
-    private readonly cabin: CabinDisplay,
+    private readonly hook: (r: InstrumentReadings, time: number) => void,
   ) {
     this.id = inner.id;
     this.bounds = inner.bounds;
@@ -24,9 +21,7 @@ export class CabinGauge implements PanelComponent {
   get paintRects(): readonly Rect[] | undefined { return this.inner.paintRects; }
 
   sample(r: InstrumentReadings, c: ControlInputs, time: number): boolean {
-    const dt = Number.isNaN(this.last) ? Infinity : time - this.last;
-    this.last = time;
-    this.cabin.step(dt, r.pressureAltitudeFt);
+    this.hook(r, time);
     return this.inner.sample(r, c, time);
   }
 

@@ -30,6 +30,7 @@ import { LIGHT_DIAL_LINEAR, type PanelComponent, type Rect } from './render/comp
 import { AnnunciatorPanel, FlapIndicator, paintBlankPlate, paintEngineControls, paintPlacard, SwitchPanel } from './render/controls';
 import { EngineDisplay } from './render/engineDisplay';
 import { EisWindow } from './render/eisWindow';
+import { SampleHook } from './render/sampleHook';
 import { ammeterGauge, ClockOatGauge, DualGauge, SingleGauge, suctionGauge, TachometerGauge, TwinNeedleGauge } from './render/engineGauges';
 import { AttitudeGauge, HeadingGauge, TurnCoordinatorGauge } from './render/gyroGauges';
 import { FlapLights, FlapSwitch, GearLights, GearSelector, GuardedKnob, IgnitionSwitches, TrimBar } from './render/lights';
@@ -352,8 +353,10 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return new TachometerGauge(g.id, g.at[0], g.at[1], r, g.marks, g.size, g.engine);
     case 'dualSector':
       return new DualSectorGauge(g.id, g.bounds, g.left, g.right);
-    case 'dual':
-      return new DualGauge(g.id, g.at[0], g.at[1], r, g.seed, g.title, g.left, g.right);
+    case 'dual': {
+      const dual = new DualGauge(g.id, g.at[0], g.at[1], r, g.seed, g.title, g.left, g.right);
+      return g.onSample ? new SampleHook(dual, g.onSample) : dual;
+    }
     case 'single':
       return new SingleGauge(g.id, g.at[0], g.at[1], r, g.seed, g, g.scale, g.size);
     case 'twinNeedle':

@@ -23,8 +23,6 @@
 
 import { CabinDisplay } from '../../instruments/dynamics/cabinDisplay';
 import type { EngineReadings } from '../../instruments/dynamics/instrumentSet';
-import { CabinGauge } from '../../instruments/render/cabinGauge';
-import { DualGauge } from '../../instruments/render/engineGauges';
 import { singleGauge, type EngineDial } from '../../instruments/panels/gauges';
 import type { AsiMarkings, EisDial, EisReadout, GaugeDef, InstrumentSystemsDef, LampDef, LampInputs, PanelDef, Rect, ScaleDef, SwitchDef } from '../types';
 import {
@@ -93,7 +91,7 @@ const STANDBY = { x: PILOT_COLS[0] - PC12_T_PITCH.x, y: [PC12_PILOT_T.y, ROWS[1]
 const FLAP = PC12_FLAP_GAUGE;
 const CLOCK = { x: PILOT_COLS[1], y: 520 };
 /** Radio stack: rack units are 320 px wide (render/avionics.ts); heights as the C208's. */
-const STACK = { x: 1380, navcom1: 92, navcom2: 176, gps: 260, gpsH: 220, xpdr: 488, blank: 556, blankH: 128 };
+const STACK = { x: 1380, navcom1: 92, navcom2: 176, gps: 260, gpsH: 220, xpdr: 504, blank: 572, blankH: 128 };
 const CABIN_GAUGE = { x: 1812, y: 150 };
 /** Lower left: starter interrupt, pusher interrupt and CAWS test buttons over the STARTER / IGNITION group and the switch row. */
 const BUTTONS = { y: 770, w: 96, h: 78, xs: [30, 150, 270] as const };
@@ -268,6 +266,7 @@ export const PC12_CABIN_SCHEDULE = {
 /** Maximum cabin differential, psi (placard, PHOTO). */
 export const PC12_MAX_DIFF_PSI = 5.75;
 export const PC12_CABIN = new CabinDisplay(PC12_CABIN_SCHEDULE);
+let cabinClock = NaN;
 
 const CABIN_ALT_SCALE: ScaleDef = {
   label: 'FT', min: 0, max: 15, majors: [0, 5, 10, 15], minorStep: 1, numbers: true,
@@ -298,7 +297,6 @@ const CAWS_CELLS: readonly Cell[] = [
   ['batHot', 'BAT HOT', AMBER], ['inverter', 'INVERTER', AMBER], ['gen1Off', 'GEN 1 OFF', AMBER], ['gen2Off', 'GEN 2 OFF', AMBER], ['busTie', 'BUS TIE', AMBER], ['pusher', 'PUSHER', AMBER],
   ['cabPress', 'CAB PRESS', AMBER], ['passDoor', 'PASS DOOR', AMBER], ['engOilCaws', 'ENG OIL', AMBER], ['fuelImbal', 'FUEL IMBAL', AMBER], ['starter', 'STARTER', GREEN], ['ignition', 'IGNITION', GREEN],
   ['pusherIce', 'PUSHER ICE', GREEN], ['gen1Hot', 'GEN 1 HOT', AMBER], ['eps', 'EPS', AMBER], SPARE, SPARE, SPARE,
-  SPARE, SPARE, SPARE, SPARE, SPARE, SPARE,
   SPARE, SPARE, SPARE, SPARE, SPARE, SPARE,
 ];
 /** The CAWS lenses the simulation drives, id by id (the rest are unlit and lamp-test only). */
@@ -360,8 +358,9 @@ export const PC12_PANEL: PanelDef = {
     { kind: 'guardedKnob', id: 'gearEmergency', at: [PC12_GEAR_HANDLE.x, PC12_GEAR_HANDLE.y + 110], label: 'EMERG GEAR', action: 'gearEmergency' },
     // Cabin altitude / differential (a display function of pressure altitude, see PC12_CABIN_SCHEDULE).
     {
-      kind: 'customRound', id: 'cabin', at: [CABIN_GAUGE.x, CABIN_GAUGE.y], size: 'small',
-      create: (id, x, y, r) => new CabinGauge(new DualGauge(id, x, y, r, 1202, ['CABIN', 'ALT   PSI'], CABIN_ALT_SCALE, CABIN_DIFF_SCALE), PC12_CABIN),
+      kind: 'dual', id: 'cabin', at: [CABIN_GAUGE.x, CABIN_GAUGE.y], seed: 1202, title: ['CABIN', 'ALT   PSI'], left: CABIN_ALT_SCALE, right: CABIN_DIFF_SCALE,
+      // Steps the display from the panel's own clock (the first call, or a long gap, jumps to the commanded value).
+      onSample: (r, time) => { PC12_CABIN.step(Number.isNaN(cabinClock) ? Infinity : time - cabinClock, r.pressureAltitudeFt); cabinClock = time; },
     },
     // Momentary buttons: the STARTER INTERRUPT (cuts the latched start), the stick PUSHER INTR (held) and the CAWS lamp test.
     { kind: 'pushButton', id: 'starterInterrupt', bounds: { x: BUTTONS.xs[0], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'STARTER INTR',
