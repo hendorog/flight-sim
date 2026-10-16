@@ -264,9 +264,10 @@ export class Powerplant implements PowerplantSeam {
       if (unit.featherCommanded && !governor.latched) {
         governor.toFeather();
         unit.omega = 0;
-      } else if (unit.betaCommanded) {
+      } else if (unit.betaHolds) {
         // Power lever aft of the gate: the blades sit at the beta valve's command (EngineUnit.breathe in steady
-        // mode) and the shaft speed is where the reversing cam's topping governor balances the propeller.
+        // mode) and the shaft speed is where the reversing cam's topping governor balances the propeller. Not with
+        // feather selected (latched short of the stop) or without the oil to move the blades (governor.step()).
         governor.toCommand();
         if (unit.omega > 0) {
           unit.shaftHeld = true;

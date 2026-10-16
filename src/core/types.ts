@@ -275,6 +275,11 @@ export interface EngineState {
   itt?: number;
   /** Gas turbines only: the flame is alight (from light-off, before the engine counts as `running`). */
   lit?: boolean;
+  /**
+   * Types with a latching start switch (EngineDef.starterLatch) only: the starter is engaged (latched, or the
+   * switch held), which outlasts the momentary switch. Absent: the starter runs while the switch is held.
+   */
+  starter?: boolean;
 }
 export function emptyEngineState(): EngineState {
   return { running: false, rpm: 0, manifoldPressure: 29.92, power: 0, torque: 0, fuelFlow: 0, egt: 15, cht: 15,

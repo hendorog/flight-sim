@@ -237,6 +237,19 @@ export class PropGovernor {
     this.pitch = clamp(pitch + rate * dt, floor, Math.max(coarsest, pitch));
   }
 
+  /**
+   * The beta valve has the blades (step()'s test): the power lever aft of the gate, feather not selected (`feather`)
+   * on a hub that can feather, and enough oil (`oilPsi`) to overcome the springs and counterweights, or a charged
+   * accumulator standing in for it on a feathering hub. A steady evaluation puts the blades at the command only then.
+   */
+  betaHasAuthority(feather: boolean, oilPsi: number): boolean {
+    const def = this.def;
+    if (!def.beta || this.reverse <= 0 || (feather && def.feather)) return false;
+    const authority = clamp(oilPsi / FULL_AUTHORITY_PSI, 0, 1);
+    const stored = def.failsTo === 'feather' && authority < 1 && this.accumulator > 0;
+    return stored || authority >= DRIFT_BELOW_AUTHORITY;
+  }
+
   /** Steady (settle) evaluation in beta: the blades sit at the valve's command, the valve's steady state. */
   toCommand(): void {
     this.pitch = this.commanded;

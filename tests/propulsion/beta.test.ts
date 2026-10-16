@@ -102,6 +102,20 @@ describe('the beta valve (acceptance 2)', () => {
     const out = advance(sys, input, 3);
     expect(out.propeller.bladePitch).toBeCloseTo(CS.feather!.angle, 6);
   });
+
+  it('settle() honours feather and the oil as stepping does: a cold, stopped, feathered engine stays feathered with the lever in full reverse', () => {
+    for (const mixture of [0, GROUND_IDLE]) {
+      // CUT-OFF/FEATHER (feather selected), then GROUND IDLE with no oil (the springs hold the blades).
+      const sys = new Powerplant(PT6A67_POWERPLANT);
+      sys.reset({ running: false, tanks: [400, 400], feathered: [true] });
+      const input = makeInput({ controls: { throttle: 0, mixture, magnetos: 0, reverse: 1 } });
+      const out = sys.settle(input);
+      log(`settle, cold and stopped, condition ${mixture === 0 ? 'CUT-OFF' : 'GROUND IDLE'}, reverse 1: blade ${pitchDeg(out).toFixed(1)} deg (feather ${(CS.feather!.angle / DEG).toFixed(1)}), Np ${out.engine.propRpm.toFixed(0)}`);
+      expect(out.propeller.bladePitch).toBeCloseTo(CS.feather!.angle, 6);
+      expect(out.propeller.feathered).toBe(true);
+      expect(out.engine.propRpm).toBe(0);
+    }
+  }, 30_000);
 });
 
 describe('Np in reverse (acceptance 3)', () => {
@@ -298,6 +312,67 @@ describe('the latching start switch (acceptance 7)', () => {
     setEngineControl(input.controls, 0, 'starter', true);
     expect(advance(latch, input, 5).engine.ng!).toBeGreaterThan(10);
     expect(latch.units[0].starterEngaged).toBe(true);
+  }, 60_000);
+
+  it('EngineState.starter publishes the latch (on after the switch is let go, off at the cut-out); absent on a hold-to-run type', () => {
+    const sys = new Powerplant(PT6A67_POWERPLANT);
+    sys.reset({ running: false, tanks: [400, 400], feathered: [true] });
+    expect(sys.units[0].state.starter).toBe(false);
+    const input = makeInput({ controls: { throttle: 0, mixture: 0, magnetos: 0 } });
+    setEngineControl(input.controls, 0, 'starter', true);
+    expect(sys.step(input).engine.starter).toBe(true);
+    setEngineControl(input.controls, 0, 'starter', false);
+    let offNg = NaN;
+    watch(sys, input, 60, (out) => {
+      if (input.controls.mixture < CUTOFF_BELOW && out.engine.ng! >= 13) input.controls.mixture = GROUND_IDLE;
+      if (Number.isNaN(offNg) && !out.engine.starter) offNg = out.engine.ng!;
+      if (out.engine.ng! < 45) expect(out.engine.starter).toBe(true);
+    });
+    log(`EngineState.starter: on with the switch released, off at ${offNg.toFixed(2)} % Ng`);
+    expect(Math.abs(offNg - 100 * PT6A67_ENGINE.starterLatch!.cutoutNg)).toBeLessThanOrEqual(1);
+    const plain = new Powerplant(TURBOPROP_POWERPLANT);
+    plain.reset({ running: false, tanks: [400, 400], feathered: [true] });
+    expect('starter' in plain.step(input).engine).toBe(false);
+  }, 60_000);
+
+  it('a start resumed mid-way runs on: capture() and restore() carry the latch, its timer and the switch', () => {
+    /** One press, then capture when `when` says; restored into a fresh unit reset as a resume resets it; on to 100 s. */
+    function resumed(fuel: boolean, when: (ng: number, t: number) => boolean) {
+      const a = new Powerplant(PT6A67_POWERPLANT);
+      a.reset({ running: false, tanks: [400, 400], feathered: [true] });
+      const input = makeInput({ controls: { throttle: 0, mixture: 0, magnetos: 0 } });
+      setEngineControl(input.controls, 0, 'starter', true);
+      let t = 0, ng = 0;
+      for (; t < 100 && !(t > DT && when(ng, t)); t += DT) {
+        ng = a.step(input).engine.ng!;
+        if (t >= DT) setEngineControl(input.controls, 0, 'starter', false);
+        if (fuel && input.controls.mixture < CUTOFF_BELOW && ng >= 13) input.controls.mixture = GROUND_IDLE;
+      }
+      const snap = a.capture();
+      const b = new Powerplant(PT6A67_POWERPLANT);
+      b.reset({ running: false, tanks: [400, 400], feathered: [true] });
+      b.restore(snap);
+      expect(b.units[0].state.starter).toBe(true);
+      const capturedAt = { ng, t };
+      let cutoutNg = NaN, cutoutT = NaN;
+      watch(b, input, 100, (out, s) => {
+        if (fuel && input.controls.mixture < CUTOFF_BELOW && out.engine.ng! >= 13) input.controls.mixture = GROUND_IDLE;
+        if (Number.isNaN(cutoutNg) && !out.engine.starter) {
+          cutoutNg = out.engine.ng!;
+          cutoutT = capturedAt.t + s;
+        }
+      });
+      return { capturedAt, cutoutNg, cutoutT, end: b.units[0].state };
+    }
+    const start = resumed(true, (ng) => ng >= 20);
+    log(`resumed at ${start.capturedAt.ng.toFixed(1)} % Ng: starter out at ${start.cutoutNg.toFixed(2)} % Ng; idle Ng ${start.end.ng!.toFixed(1)} %, running ${start.end.running}`);
+    expect(Math.abs(start.cutoutNg - 100 * PT6A67_ENGINE.starterLatch!.cutoutNg)).toBeLessThanOrEqual(1);
+    expect(start.end.running).toBe(true);
+    expect(start.end.ng! / 100).toBeCloseTo(PT6A67_ENGINE.turbine!.gasGenerator.fcu.lowIdleNg, 2);
+    // Dry motoring captured at 10 s: the timer came across, so it still times out at cutoutSeconds from the press.
+    const dry = resumed(false, (_ng, t) => t >= 10);
+    log(`dry motoring resumed at ${dry.capturedAt.t.toFixed(2)} s: starter out at ${dry.cutoutT.toFixed(2)} s (cutoutSeconds ${PT6A67_ENGINE.starterLatch!.cutoutSeconds})`);
+    expect(dry.cutoutT).toBeCloseTo(PT6A67_ENGINE.starterLatch!.cutoutSeconds, 1);
   }, 60_000);
 });
 

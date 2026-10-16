@@ -288,6 +288,7 @@ export class EngineUnit {
     this.rotation = 0;
     this.starterLatched = this.starterWas = this.starterEngaged = false;
     this.starterLatchTime = 0;
+    if (this.install.engine.starterLatch) this.state.starter = false;
     if (!this.extras) return;
     this.cowlFlap = 1;
     const governor = this.governor;
@@ -350,6 +351,15 @@ export class EngineUnit {
   /** The power lever is aft of the gate (beta or reverse commanded) as of the last breathe() / command(). */
   get betaCommanded(): boolean {
     return this.governor !== undefined && this.governor.reverse > 0;
+  }
+
+  /**
+   * The beta valve has the blades as of the last breathe() / command(): the lever aft of the gate, feather not
+   * selected, and the oil to move them (PropGovernor.betaHasAuthority).
+   */
+  get betaHolds(): boolean {
+    const governor = this.governor;
+    return governor !== undefined && governor.betaHasAuthority(this.featherSelected, this.thermal.oilPressure);
   }
 
   /**
@@ -427,7 +437,8 @@ export class EngineUnit {
       }
       this.readGovernor(controls, ei.throttle, ei.engineMaster !== false);
       // Steady (settle) evaluation in beta: the blades at the valve's command (finish() does not step the governor).
-      if (this.steady && this.governor?.def.beta && this.governor.reverse > 0) this.governor.toCommand();
+      // Feather (condition lever at CUT-OFF/FEATHER) and a hub without oil keep the blades, as governor.step() does.
+      if (this.steady && this.betaHolds) this.governor!.toCommand();
       if (this.hasCowlFlaps && !this.steady) {
         const travel = input.dt / COWL_FLAP_SECONDS;
         this.cowlFlap += clamp(clamp(engineControl(controls, this.index, 'cowlFlaps'), 0, 1) - this.cowlFlap, -travel, travel);
@@ -566,6 +577,7 @@ export class EngineUnit {
         e.ecuPowered = diesel.ecuPowered;
         e.glow = diesel.glowing;
       }
+      if (this.install.engine.starterLatch) e.starter = this.starterEngaged;
       if (turbine) {
         e.ng = 100 * turbine.ng;
         e.itt = e.egt = turbine.ittC;
@@ -651,10 +663,11 @@ export class EngineUnit {
       snap.gasGenerator = { ng: gg.ng, itt: gg.ittC, lit: gg.lit };
     }
     if (governor?.def.feather?.unfeather === 'accumulator') snap.accumulatorCharged = governor.accumulatorCharged;
+    if (this.install.engine.starterLatch) snap.starterLatch = { latched: this.starterLatched, seconds: this.starterLatchTime, pressed: this.starterWas };
     return snap;
   }
 
-  /** Put the unit into the state of a snapshot (shaft speed, blade angle and latch, temperatures, ice, timers). */
+  /** Put the unit into the state of a snapshot (shaft speed, blade angle and latch, temperatures, ice, timers, start switch latch). */
   restore(snap: EngineSnapshot): void {
     const th = this.thermal;
     this.engine.reset(101325, 288.15);
@@ -690,9 +703,13 @@ export class EngineUnit {
       this.propState.feathered = governor.feathered;
       if (governor.def.beta) this.propState.beta = governor.inBeta;
     }
-    this.starterLatched = this.starterWas = this.starterEngaged = false;
-    this.starterLatchTime = 0;
+    // The latching start switch as it was (a start resumed mid-way runs on to its cut-out); hold-to-run has no state.
+    const latch = this.install.engine.starterLatch ? snap.starterLatch : undefined;
+    this.starterLatched = this.starterEngaged = latch?.latched ?? false;
+    this.starterWas = latch?.pressed ?? false;
+    this.starterLatchTime = latch?.seconds ?? 0;
     const e = this.state;
+    if (this.install.engine.starterLatch) e.starter = this.starterEngaged;
     e.running = snap.running;
     e.rpm = snap.rpm;
     e.propRpm = snap.propRpm;

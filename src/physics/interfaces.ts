@@ -197,6 +197,11 @@ export interface EngineSnapshot {
   glowSeconds?: number;
   /** Gas turbines: Ng (fraction), ITT (C), and whether the flame is alight. */
   gasGenerator?: { ng: number; itt: number; lit: boolean };
+  /**
+   * Latching start switch (EngineDef.starterLatch): latched, seconds since it latched, and the switch as last seen
+   * (a switch held through the resume is not a new press). Absent: not latched.
+   */
+  starterLatch?: { latched: boolean; seconds: number; pressed: boolean };
 }
 
 /** The aircraft-level powerplant the assembly programs against: N engine units + ONE fuel network + ONE bus. */

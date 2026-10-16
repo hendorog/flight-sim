@@ -14,7 +14,7 @@ output stages (turboshaft, jet nozzle, fan).
 | `src/physics/propulsion/defs.ts` | `GasGeneratorDef`, `TurbineDef` (`reversingCam`, `torqueLimiter`); `BetaDef`, `PitchControlDef.selectedBy`, `GovernorDef.overspeedRpm`, `EngineDef.starterLatch`; `EngineDef.kind 'freeTurbine'`, `metering 'turbineFcu'`, `ignition 'igniters'` |
 | `tests/propulsion/testbed.ts` | `PT6_ENGINE`, `PT6_PROPELLER`, `TURBOPROP_POWERPLANT` (PT6A-114A-like); `BETA_TURBOPROP_POWERPLANT` (the same with beta and reverse); `PT6A67_POWERPLANT` (PT6A-67-like with the PC-12's extras) |
 | `tests/propulsion/turbine.test.ts` | 19 tests: running line, corrected scaling, power turbine, FCU, starts, shutdown, relight, resume |
-| `tests/propulsion/beta.test.ts` | 20 tests: the T1a acceptance 1-9 (static reverse, the beta valve, Np in reverse, back to the gate, no NaN, settle, latching starter, torque limiter, overspeed governor), the condition-lever propeller, the scheduled stop, state and resume |
+| `tests/propulsion/beta.test.ts` | 24 tests: the T1a acceptance 1-9 (static reverse, the beta valve, Np in reverse, back to the gate, no NaN, settle, latching starter, torque limiter, overspeed governor), the condition-lever propeller, the scheduled stop, state and resume |
 | `tests/propulsion/conformancePlumbing.test.ts` | idle taxi, landing roll with reverse, the roll-out lever, the plan's blocks, on the C208 with the test-bed's beta range grafted on |
 | `tests/propulsion/turbineConsistency.test.ts` | the consistency rules of the turbine extras fire on broken data |
 
@@ -173,7 +173,10 @@ condition lever below `CUTOFF_BELOW` (CUT-OFF/FEATHER).
 
 **Latching start switch** (`EngineDef.starterLatch`, PC-12). One press of `starter` (a rising edge) latches the
 starter until Ng reaches `cutoutNg`, `cutoutSeconds` pass, or the switch is pressed again (the interrupt: there is
-no STARTER INTERRUPT control yet). `EngineUnit.starterEngaged` reports it; the bus and the igniters use it. Without
+no STARTER INTERRUPT control yet). `EngineUnit.starterEngaged` reports it; the bus and the igniters use it, and the
+unit publishes it as `EngineState.starter` (only on a latching type; absent, the switch is the starter). The latch,
+its timer and the switch as last seen are in the resume snapshot (`EngineSnapshot.starterLatch`): a start captured
+at 20 % Ng and restored cuts out at 50.03 % Ng and reaches idle; a dry run captured at 10 s still times out at 80 s. Without
 `starterLatch` the starter is hold-to-run as before (the C208). Test-bed (cut-out 50 % / 80 s, `PC12_START`): one
 press, condition lever to GROUND IDLE at 13 % Ng: light-off, peak ITT 733 C, cut-out at 50.03 % Ng after 42 s,
 idle at 54.9 % Ng; a second press at 20 % Ng drops it out (the start hangs); a dry motoring run times out at 80 s.
@@ -186,7 +189,9 @@ give finite loads from -20 to 90 deg blade angle at 0-150 kt, turning or stopped
 torque (engine with Ng from the cam and the topping reset, less losses, less propeller), evaluated in steady mode.
 Stepping the shaft instead rang: with the gas generator at its set point at once, the stiff reverse topping gain and
 the 1/30 s step oscillated (settle returned Ng 50 % and 0.35 psi). The solution holds within 0.01 % of Np over the
-next 3 s of the time loop.
+next 3 s of the time loop. Only where stepping would give the valve the blades (`PropGovernor.betaHasAuthority`:
+feather not selected, oil above the drift threshold or a charged accumulator): a cold, stopped, feathered engine with
+the lever in full reverse settles on the feather stop (79.6 deg), at CUT-OFF and at GROUND IDLE alike.
 
 **Reverse thrust of the test-bed blade.** A reversing blade works on the negative side of its section. The Clark Y
 section of the light-aircraft blades (zero lift -4.5 deg to the face, negative stall at cl -0.75) gave only 35 % of
@@ -214,10 +219,12 @@ calibration (P1) will want its blade's negative side checked against that row.
 
 1. **No STARTER INTERRUPT control.** A second press of `starter` is the interrupt. `ControlInputs.starterInterrupt`
    (held, per engine) would be the overhead switch: requested from the integrator, bound by T1b.
-2. **The latched starter is not in `EngineState`.** Panels, lamps, audio and the UI read `controls.starter`, which
-   on a latching type is only the press. `EngineState.starterEngaged?` (written by the unit only when
-   `starterLatch` is defined) is requested from the integrator; until then `EngineUnit.starterEngaged`. The latch is
-   not in the resume snapshot either (`interfaces.ts`): a restore disengages it.
+2. **Readers of the latched starter.** `EngineState.starter` (only on a latching type) carries it; audio
+   (`src/audio/mapping.ts`, A1) and the starter indication (P3) still read `controls.starter`, which on a latching
+   type is only the press: they should read `e.starter ?? controls.starter`. The live resume path
+   (`FlightModel.restoreSystems`, T2) copies snapshot fields by hand after `Powerplant.reset()` and does not call
+   `EngineUnit.restore()`: it drops `starterLatch` and `gasGenerator`, and clamps the blade angle at the fine stop
+   (a reversed blade comes back on the flight stop) until it delegates to the unit.
 3. **Reverse held into the stop with full brakes.** On the C208 with the test-bed's beta range grafted on, full
    reverse held to the stop with full brakes sat the aircraft back at walking pace (pitch 19 deg, nose and left
    wheels off) and collapsed the right main leg (70 kN). Out of reverse to ground fine below 40 KIAS it stops in
