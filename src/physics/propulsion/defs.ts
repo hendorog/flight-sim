@@ -70,6 +70,12 @@ export interface BetaDef {
   /** Beta-valve slew, rad/s (oil-driven; scaled by oil authority as rateToFine is). */
   rate: number;
   /**
+   * The beta cam over the pitch-only travel: how far the blades have gone from the low-pitch stop toward groundFine
+   * (`fraction`, 0 at the stop .. 1 at groundFine, ascending) against the lever as a part of pitchOnlyTravel (`lever`,
+   * 0 .. 1, ascending). Absent: linear (the blade angle proportional to the lever).
+   */
+  pitchOnlySchedule?: { lever: readonly number[]; fraction: readonly number[] };
+  /**
    * Flight low-pitch stop scheduled against the power lever FORWARD of the gate (throttle 0..1), rad (PC-12 POH:
    * the stop rises with the PCL). Absent: fineStop throughout. Below the stop in flight a type may show PROP LOW P.
    */

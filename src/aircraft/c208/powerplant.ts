@@ -152,6 +152,12 @@ export const C208_BETA: BetaDef = {
   reverse: REVERSE_DEG * DEG,
   pitchOnlyTravel: 0.4,
   rate: 20 * DEG,
+  // The beta cam (ESTIMATE, AGENT choice, integration): half the pitch-only travel puts the blades at about 0 deg
+  // (73 % of the way from the 15 deg stop to ground fine), a walking taxi at LOW IDLE (conformance: 1089 N static,
+  // Np 1285, 10.9 kt steady unbraked); with the angle linear in the lever, half travel was 4.75 deg, where this blade at idle
+  // pulls as hard as on the stop (1346 N, 22.8 kt). Probe: 2 deg 1310 N / 19.1 kt, -1 deg 932 N / 6.0 kt, -2 deg 767 N /
+  // 0.7 kt, -4 deg 415 N / 0 kt.
+  pitchOnlySchedule: { lever: [0, 0.5, 1], fraction: [0, 0.73, 1] },
 };
 
 /**

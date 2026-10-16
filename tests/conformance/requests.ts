@@ -2,10 +2,4 @@
 // these in `blockedBy` is reported as SKIPPED with the id; remove an id here when its request is closed, and every
 // item it blocked is judged again (and fails if its number is still not met).
 
-export const OPEN_REQUESTS: readonly string[] = [
-  // The C208's beta range on a cam: with the blade angle linear in the lever between the low-pitch stop and ground
-  // fine (governor.ts), half the pitch-only travel puts the blades at about 5 deg, where this propeller's static
-  // thrust at idle is as high as on the gate (it is partly stalled there); the real lever slows the taxi from the
-  // first part of its travel. Needs a lever-to-blade-angle schedule in BetaDef (turbine core).
-  'C208-beta-cam',
-];
+export const OPEN_REQUESTS: readonly string[] = [];

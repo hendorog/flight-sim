@@ -520,3 +520,21 @@ describe('state and resume', () => {
     expect(eb.propeller.thrust).toBeCloseTo(ta, 3);
   }, 30_000);
 });
+
+describe('the beta cam (BetaDef.pitchOnlySchedule)', () => {
+  it('maps the pitch-only travel through the schedule; linear without one; reverse unchanged', async () => {
+    const { PropGovernor } = await import('../../src/physics/propulsion/governor');
+    const { C208_PROPELLER, C208_BETA } = await import('../../src/aircraft/c208/powerplant');
+    const pitch = C208_PROPELLER.pitchControl;
+    if (pitch.kind !== 'constantSpeed') throw new Error('constant speed');
+    const cam = new PropGovernor(pitch);
+    const linear = new PropGovernor({ ...pitch, beta: { ...C208_BETA, pitchOnlySchedule: undefined } });
+    const pot = C208_BETA.pitchOnlyTravel, stop = pitch.fineStop, gf = C208_BETA.groundFine;
+    const at = (g: InstanceType<typeof PropGovernor>, r: number) => { g.setLevers(r, 0); return g.commanded; };
+    expect(at(cam, 0)).toBe(stop);
+    expect(at(cam, pot)).toBeCloseTo(gf, 12);
+    expect(at(cam, pot / 2)).toBeCloseTo(stop + 0.73 * (gf - stop), 12);
+    expect(at(linear, pot / 2)).toBeCloseTo(stop + 0.5 * (gf - stop), 12);
+    for (const r of [pot + 0.1, 0.8, 1]) expect(at(cam, r)).toBeCloseTo(at(linear, r), 12);
+  });
+});

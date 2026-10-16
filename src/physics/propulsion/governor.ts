@@ -34,7 +34,7 @@
 
 import { clamp, interp1 } from '../../core/math';
 import { PROP_FEATHER_GATE } from '../../core/types';
-import type { PitchControlDef } from './defs';
+import type { BetaDef, PitchControlDef } from './defs';
 
 const RPM_TO_RAD_S = (2 * Math.PI) / 60;
 /** Oil pressure at which the governor has its full rate, psi. */
@@ -96,7 +96,7 @@ export class PropGovernor {
     this.stop = schedule ? interp1(schedule.lever, schedule.angle, clamp(throttle, 0, 1)) : this.def.fineStop;
     const pot = beta.pitchOnlyTravel;
     this.commanded = r <= 0 ? this.stop
-      : r <= pot ? this.stop + (beta.groundFine - this.stop) * (r / pot)
+      : r <= pot ? this.stop + (beta.groundFine - this.stop) * pitchOnlyFraction(beta, r / pot)
         : beta.groundFine + (beta.reverse - beta.groundFine) * ((r - pot) / (1 - pot));
   }
 
@@ -254,4 +254,10 @@ export class PropGovernor {
   toCommand(): void {
     this.pitch = this.commanded;
   }
+}
+
+/** Part of the way from the low-pitch stop to ground fine at `x` of the pitch-only travel (BetaDef.pitchOnlySchedule, else linear). */
+function pitchOnlyFraction(beta: BetaDef, x: number): number {
+  const cam = beta.pitchOnlySchedule;
+  return cam ? interp1(cam.lever, cam.fraction, clamp(x, 0, 1)) : x;
 }

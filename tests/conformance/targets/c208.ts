@@ -150,8 +150,8 @@ export const C208_TAKEOFF_LIMITS = {
  * The power lever's positions on the ground at LOW IDLE that settle slower than the suite's idle-taxi block rolls
  * (c208.test.ts; plan 4, T1b items a and c). On the gate the propeller on its low-pitch stop pulls the aircraft to a
  * brisk taxi, which is why the POH taxies it in beta; halfway through the pitch-only travel it should be a walking
- * taxi. Both bands are ESTIMATES. Half travel is held open: with the blade angle linear in the lever, 5 deg of blade
- * makes as much static thrust as the low-pitch stop (requests.ts 'C208-beta-cam').
+ * taxi. Both bands are ESTIMATES. Half travel puts the blades at about 0 deg through the beta cam
+ * (C208_BETA.pitchOnlySchedule; 'C208-beta-cam' closed at integration).
  */
 export const C208_BETA_TAXI = [
   {
@@ -165,10 +165,10 @@ export const C208_BETA_TAXI = [
   {
     label: 'half the pitch-only travel',
     reverse: C208_BETA.pitchOnlyTravel / 2,
-    speedKt: range(8, 12, 'halfway into beta: a walking taxi (plan 4 item c, ESTIMATE)', 'C208-beta-cam'),
-    thrustN: range(500, 1200, 'between ground fine and the gate (ESTIMATE)', 'C208-beta-cam'),
+    speedKt: range(8, 12, 'halfway into beta: a walking taxi (plan 4 item c, ESTIMATE)'),
+    thrustN: range(500, 1200, 'between ground fine and the gate (ESTIMATE)'),
     np: range(600, 1700, 'between the gate and ground fine; under 95 % Np, the beta topping (ESTIMATE)'),
-    settled: range(1, 1, 'measure.ts idleTaxi steady', 'C208-beta-cam'),
+    settled: range(1, 1, 'measure.ts idleTaxi steady'),
   },
 ] as const;
 

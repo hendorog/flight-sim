@@ -14,16 +14,17 @@ same defect on the turbine-core test-bed (docs/turbine-model.md, hand-over 3).
 Close with: a look at the brake and tyre model with aft thrust near zero speed (physics/gear), then a reverse-to-stop
 item in the conformance targets.
 
-## Beta range lever schedule — **simplification**
+## Beta range lever schedule — **estimate**
 
-The blade angle follows the power lever linearly from the low-pitch stop (15 deg at 0.75 R) to ground fine (-5.5 deg)
-over the first 40 % of the aft travel. This propeller makes as much static thrust at idle with 5-8 deg of blade as on
-the stop (it is partly stalled there at 700 rpm), so the first half of the beta travel does not slow a taxi: at LOW IDLE
-the aircraft settles at 22 kt on the gate, 23 kt at half the pitch-only travel and stops in ground fine. The real lever
-slows the taxi progressively. The half-travel items (8-12 kt) are held open as `C208-beta-cam`.
+The beta cam (`C208_BETA.pitchOnlySchedule`, integration) is three points: the low-pitch stop (15 deg at 0.75 R) at the
+gate, about 0 deg at half the pitch-only travel (73 % of the way to ground fine), ground fine (-5.5 deg) at 40 % of the
+aft travel. With the angle linear in the lever, half travel was 4.75 deg, where this blade at idle pulls as hard as on the
+stop (1346 N, 22.8 kt). Measured at LOW IDLE, maximum gross, level, unbraked: on the gate 1292 N and a steady 22 kt;
+half travel (lever 0.2) 1089 N, Np 1285 and a steady 10.9 kt (band 8-12 kt, ESTIMATE); ground fine 186 N and 0 kt. The first quarter of the
+travel still passes the 5 deg hump (about as much thrust as on the stop), so the taxi slows over the second quarter.
 Evidence: [conformance targets](../../../tests/conformance/targets/c208.ts) `C208_BETA_TAXI`,
-[requests](../../../tests/conformance/requests.ts).
-Close with: a lever-to-blade-angle schedule (beta cam) in BetaDef, and the half-travel items judged again.
+[powerplant.ts](powerplant.ts) `C208_BETA`.
+Close with: the real cam profile (a PT6A-114A / McCauley beta schedule).
 
 ## Beta and reverse data — **estimate**
 

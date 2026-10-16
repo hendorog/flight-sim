@@ -25,7 +25,7 @@ export const C208_DEFINITION: AircraftDefinition = {
   // The power lever on the forward side of the gate (a reset after beta or reverse must not keep the lever aft).
   controlDefaults: { fuelSelector: 'on', reverse: 0 },
   notModelled: [
-    'The beta range on a cam: the blade angle follows the power lever linearly from the low-pitch stop to ground fine, so the first half of the beta travel slows a taxi less than the real lever does.',
+    'The beta cam is an estimate: three points (the stop, about 0 deg at half the pitch-only travel, ground fine), not the real cam profile.',
     'The reverse limits as timed exceedances (1 min at 1825 rpm) and the beta / reverse annunciation: the lever reads BETA / REV on the HUD only.',
     'The roll spoilers: the ailerons alone carry the roll power.',
     'The cargo pod, the 208B Grand Caravan and the G1000 cockpit: the 208 Caravan 675 with its analogue panel.',
