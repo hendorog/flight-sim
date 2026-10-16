@@ -160,7 +160,7 @@ export const PC12_FLIGHT_IDLE_STOP = 5.5 * DEG;
 const FEATHER = 79.6 * DEG;
 const REVERSE = -17.5 * DEG;
 /** Ground fine: about zero static thrust (this blade: CALIBRATED, |static thrust| < 500 N at reverse = pitchOnlyTravel). */
-const GROUND_FINE = -5 * DEG;
+const GROUND_FINE = -4.5 * DEG;
 
 /** Twist table of a constant-pitch helix that is `design` at the reference station. */
 function helixTwist(design: number): PropellerDef['twist'] {
@@ -210,7 +210,7 @@ export const PC12_PROPELLER: PropellerDef = {
       lowPitchSchedule: { lever: [0, 0.5, 1], angle: [PC12_FLIGHT_IDLE_STOP, PC12_FLIGHT_IDLE_STOP + 6 * DEG, PC12_FLIGHT_IDLE_STOP + 6 * DEG] },
     },
     // 19 slices from full reverse to feather (PROP_MAX_SLICES 20).
-    pitchNodes: [-17.5, -11, -5, 0, 3, 6, 10, 14, 18, 22, 26, 30, 34, 38, 43, 50, 58, 68, 79.6].map((deg) => deg * DEG),
+    pitchNodes: [-17.5, -11, -4.5, 0, 3, 5.5, 10, 14, 18, 22, 26, 30, 34, 38, 43, 50, 58, 68, 79.6].map((deg) => deg * DEG),
   },
 };
 
