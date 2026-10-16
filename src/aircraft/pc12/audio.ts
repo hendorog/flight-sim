@@ -141,9 +141,9 @@ export const PC12_AUDIO: AudioProfile = {
     level: 1.0,
   },
   // The stick shaker: an eccentric motor on the column, rattling it at about 22 Hz. ESTIMATE.
-  stickShaker: { hz: 22, level: 0.5 },
+  stickShaker: { hz: 22, level: 1.4 },
   // The aural overspeed warning above Vmo 236 KIAS or Mmo 0.48: a clacker, 8 strokes a second (ESTIMATE rate).
-  overspeedWarning: { kias: PC12_OVERSPEED.kias, mach: PC12_OVERSPEED.mach, perSecond: 8, level: 0.45 },
+  overspeedWarning: { kias: PC12_OVERSPEED.kias, mach: PC12_OVERSPEED.mach, perSecond: 8, level: 1.8 },
   // CAWS: a triple chime with a new red warning, a single chime with a new amber caution (47E-PROXY). Pitch ESTIMATE.
-  caws: { hz: 1047, level: 0.6 },
+  caws: { hz: 1047, level: 1.2 },
 };

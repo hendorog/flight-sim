@@ -18,16 +18,22 @@
 //                revolution) with cycle-to-cycle variation, exhaust-system resonances, intake roar, valve-train
 //                ticks, starter motor and compression chug, start stumble / shutdown misfires, idle lope;
 //                a diesel's sharper pulse and combustion knock, a turbocharger's whine; or a gas turbine
-//                (TurbineVoice): the gas generator's whine, burner and exhaust roar, light-off, starter-generator
-//                and reduction gearbox, and no pulses at all
+//                (TurbineVoice): the gas generator's whine, burner and exhaust roar, light-off, starter-generator,
+//                igniters and reduction gearbox (or a helicopter's main transmission), and no pulses at all
 //   1 prop     - blade-passage harmonics (phase-locked to the crank on a direct-drive engine, on the
 //                propeller's own shaft angle behind a reduction gear) plus broadband tip noise rising with
-//                tip Mach, amplitude-modulated at blade passage; a turboprop's growl at the shaft rate
+//                tip Mach, amplitude-modulated at blade passage; a turboprop's growl at the shaft rate and its
+//                reverse growl; a helicopter's main rotor (as the propeller) and its tail rotor (TailRotorVoice)
 //   2 airframe - wind, sideslip whistle, flap flow noise, stall buffet, tyre rolling by surface, brake
 //                squeal, tyre skid, touchdown chirps, crash, the flow over an extended landing gear and the
 //                thump of its locks
-//   3 cabin    - stall warning (a reed horn or an electric tone), flap motor, instrument gyros, avionics
-//                fan, landing-gear pump and gear warning (a beeping horn or a repeating chime)
+//   3 cabin    - stall warning (a reed horn or an electric tone; a helicopter's low-rotor / ENGINE OUT horn),
+//                flap motor, instrument gyros, avionics fan, landing-gear pump and gear warning (a beeping horn
+//                or a repeating chime), stick shaker, overspeed clacker, caution / warning chimes
+//
+// The voices added with the turbine types read the parameters appended at the very end of the block
+// (params.ts EXTRA_PARAMS) and draw from noise sources of their own; a profile without them builds none of them
+// and smooths none of those parameters, so every other type plays sample for sample as before.
 //
 // Every parameter is smoothed per sample (one-pole, ~30 ms) so frame-rate parameter updates never zipper,
 // and every transient has an attack ramp so nothing clicks.
@@ -1203,7 +1209,9 @@ class AircraftSynth extends AudioWorkletProcessor {
     if (this.clackEnv > 1e-4) {
       this.clackEnv *= 0.9988;
       const strike = nz.next() * this.clackEnv * this.clackEnv;
-      out += this.clackLevel * Math.min(1, ck * 1.5) * (this.clackF.process(strike) * 0.5 + this.clackF2.process(strike) * 0.3);
+      // The plate's ring, hard-limited as a small speaker driven flat out does: a dense clack, not a spike.
+      const ring = this.clackF.process(strike) * 0.5 + this.clackF2.process(strike) * 0.3;
+      out += this.clackLevel * Math.min(1, ck * 1.5) * Math.tanh(3 * ring) * 0.35;
     }
     // Caution / warning chimes: one resonator (so repeated strikes add, never cancel) with two overtones, struck
     // with a 5 ms attack, ringing out over about half a second.

@@ -221,6 +221,28 @@ describe('warnings in the cabin', () => {
   }, 30_000);
 });
 
+describe('warnings heard over take-off power', () => {
+  it('shaker, clacker, CAWS warning and gear horn each reach the cockpit within 10 dB of the take-off level', () => {
+    const background = dbfs(rms(interiorMix(new SynthHost(PC12_AUDIO).set(TAKE_OFF).render(3), PC12_AUDIO), SR));
+    const silent = new Float32Array(3 * SR);
+    const alone = (params: Record<string, number>, message?: unknown): number => {
+      const host = new SynthHost(PC12_AUDIO).set(params);
+      if (message) host.message(message);
+      return dbfs(rms(interiorMix([silent, silent, silent, host.render(3)[STEM.cabin]], PC12_AUDIO), 0, 2 * SR));
+    };
+    const levels = {
+      shaker: alone({ shaker: 1 }),
+      clacker: alone({ overspeed: 1 }),
+      warning: alone({}, { type: 'caws', level: 'warning' }),
+      gearHorn: alone({ gearHorn: 1 }),
+    };
+    for (const [name, level] of Object.entries(levels)) {
+      expect(level, name).toBeGreaterThan(background - 10);
+      expect(level, name).toBeLessThan(background);
+    }
+  }, 60_000);
+});
+
 describe('PC-12 mapping', () => {
   const sound = (): SoundContext => ({ surface: 'runway', speedOfSound: SPEED_OF_SOUND, turbulence: 0, gyroSpin: 0, flapMotor: 0 });
   const fill = (edit: (s: ReturnType<typeof makeMockState>) => void, starter = false, volts = 28): Float32Array => {
