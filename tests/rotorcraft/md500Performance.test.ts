@@ -105,7 +105,7 @@ describe('MD 500E control power against the OH-6A derivatives (Heffley CR-3144 p
     it.fails(`KNOWN CONTROL-POWER GAP — ${kt} KIAS: roll rate at 0.5 s and the pedal (yaw) response within 30 % of the OH-6A`, () => {
       const roll = stepResponse(kt, 'aileron', 0.2), rollRef = referenceResponse(k, 'DA', 'p');
       const yaw = stepResponse(kt, 'rudder', 0.2), yawRef = referenceResponse(k, 'DP', 'r');
-      rows.push({ kt, roll, rollRef, yaw, yawRef });
+      rows.push({ kt, yaw, yawRef });
       expect(roll.rate05 / rollRef.rate05).toBeLessThan(1.3);
       expect(yaw.accel / yawRef.accel).toBeLessThan(1.3);
       expect(Math.abs(yaw.rate1 - yawRef.rate1) / Math.max(yawRef.rate1, 10)).toBeLessThan(0.3);

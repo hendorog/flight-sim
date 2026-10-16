@@ -192,7 +192,7 @@ describe('MD 500E N2 governor (RFM 4-18, 4-22; plan 6.6)', () => {
       const psi = t.torquePsi, cc = r.c.collective!;
       let peak = 0;
       run(r, 8, (time) => { fly(DT); r.c.collective = cc * (1 - Math.min(1, time)); peak = Math.max(peak, t.n2Pct); });
-      report[`transient ${ramp} s`] = { n2Before, min, settled, recoveredAfterRamp: back / step - ramp, psi, dumpPeak: peak };
+      report[`transient ${ramp} s`] = { n2Before, min, settled, recoveredAfterRamp: Math.max(0, back / step - ramp), psi, dumpPeak: peak };
       expect(psi).toBeGreaterThan(84);
       expect(min).toBeGreaterThanOrEqual(ramp === 2 ? 100.5 : 98.5);
       expect(engOut).toBe(false);
