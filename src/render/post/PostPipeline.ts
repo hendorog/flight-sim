@@ -19,7 +19,7 @@
 import * as THREE from 'three';
 import type { QualityLevel, ReprojectionLayer, SceneEffect, SimContext } from '../../core/context';
 import { AerialPerspectiveEffect } from './AerialPerspectiveEffect';
-import { AutoExposure, TAU_BRIGHTEN, TAU_DARKEN } from './AutoExposure';
+import { AutoExposure, NO_METER_FLOOR, TAU_BRIGHTEN, TAU_DARKEN } from './AutoExposure';
 import { Bloom } from './Bloom';
 import { FullscreenPass, passMaterial } from './FullscreenPass';
 import { FXAA_FRAG } from './Fxaa';
@@ -27,7 +27,7 @@ import { LocalExposure } from './LocalExposure';
 import { TemporalAA } from './TemporalAA';
 import { TONEMAP_FRAG } from './ToneMap';
 import { Atmosphere } from '../sky/Atmosphere';
-import { cabinLamps } from '../aircraft/cabinLight';
+import { cabinLamps, cockpitAdaptation } from '../aircraft/cabinLight';
 import { SCENE_UNITS_PER_LUX, SUN_ANGULAR_RADIUS } from '../sky/params';
 
 /**
@@ -103,8 +103,17 @@ function greyCardLuminance(ctx: SimContext, moonIlluminance: THREE.Vector3, dire
   const { sunColor, skyColor, sunDir, moonDir } = ctx.sky;
   const direct = (lum(sunColor) * Math.max(sunDir.y, 0) + moonIlluminance.y * Math.max(moonDir.y, 0)) * directShare;
   let lamps = 0;
+  meterFloor = NO_METER_FLOOR;
   if (ctx.cameraMode === 'cockpit') {
-    lamps = (lum(cabinLamps.floodColor.value) * FLOOD_SOLID_ANGLE) / FLOOD_AREA + (lum(cabinLamps.domeColor.value) * Math.PI) / DOME_AREA;
+    lamps = (lum(cabinLamps.floodColor.value) * FLOOD_SOLID_ANGLE * cockpitAdaptation.floodExposure) / FLOOD_AREA + (lum(cabinLamps.domeColor.value) * Math.PI) / DOME_AREA;
+    // A cockpit with no flood (the helicopters) adapts to its internally lit instruments (cabinLight.cockpitAdaptation).
+    // Their light falls on nothing, so the frame around them meters black; it may pull the adaptation no further
+    // below the reference than a flood-lit cabin's does (METER_FLOOR_GLOW), and the view out then takes the
+    // flood's share back as the Cessna 172S's does.
+    if (cockpitAdaptation.panelGlow > lamps) {
+      lamps = cockpitAdaptation.panelGlow;
+      meterFloor = METER_FLOOR_GLOW;
+    }
     // The view out keeps its own exposure (lampShareEV, the tone map's outside gain): with a single exposure the
     // lamps held the adaptation ~5-9 EV over the outside at night and the sky, the stars and the moonlit land were
     // black from the seat. By day the outside is ~1e5 lx and the lamps change nothing.
@@ -120,6 +129,8 @@ function greyCardLuminance(ctx: SimContext, moonIlluminance: THREE.Vector3, dire
  * result; 0 outside the cockpit and by day). PostPipeline follows it at the eye's own pace (lampShareEV).
  */
 let lampShareTarget = 0;
+/** The metered frame's floor below the reference for AutoExposure.update (greyCardLuminance's last result), EV. */
+let meterFloor = NO_METER_FLOOR;
 /**
  * Outside view from the cockpit at night (agent choice, cinematic): the eye adapts to the lit panel, and a single
  * exposure for the frame made the sky, the stars and the moonlit land through the windows black (night-sky gate 1,
@@ -135,6 +146,15 @@ const OUTSIDE_MIN_EV = 0.05;
  * brighter than the free camera does under the same sky.
  */
 const OUTSIDE_SHARE = 0.6;
+/**
+ * How far the metered frame may pull the adaptation below the reference, EV, in a cockpit adapted to its
+ * instruments' own glow (no flood: the helicopters). Their light falls on nothing, so the frame meters the black
+ * cabin and night (~18 EV under the reference on a moonless night) and, at METER_WEIGHT_DARK, held the eye ~4.6 EV
+ * darker than the Cessna 172S's: the instruments over-exposed (the attitude indicator's sky white). The 172S's
+ * flood-lit frame meters ~9 EV under the same reference; the glow cockpit's may pull no further. Under the Moon
+ * (~3.5 EV) and by day the floor does not bind. Agent choice (panel lighting for every type, look review).
+ */
+const METER_FLOOR_GLOW = -9;
 /**
  * Without a cabin box (setCabinBox), the view depth from which a pixel lies outside the cabin, m: past the windscreen
  * and the A-pillars (~0.9 m).
@@ -335,7 +355,7 @@ export class PostPipeline {
     this.lampShareSnap = false;
     const lampShareEV = this.lampShareSmoothed > OUTSIDE_MIN_EV ? this.lampShareSmoothed : 0;
     this.bloom.render(r, src, () => {
-      this.exposure.update(r, this.bloom.level(METER_LEVEL).texture, realDt, reference);
+      this.exposure.update(r, this.bloom.level(METER_LEVEL).texture, realDt, reference, meterFloor);
       this.local.update(r, this.bloom.level(METER_LEVEL));
     });
     this.exposureUniforms.tExposure.value = this.exposure.texture;

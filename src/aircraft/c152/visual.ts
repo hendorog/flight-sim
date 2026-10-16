@@ -561,7 +561,9 @@ const COCKPIT: CockpitDef = {
     toeBoard: { x0: 0.6, x1: FIREWALL_X - 0.01, z: 0.32 },
   },
   // Overhead-console flood light and the point on the panel it is aimed at; dome light over the baggage shelf.
-  lamps: { flood: { pos: [0.02, 0, -0.57], aim: [0.45, -0.1, 0.02] }, dome: { pos: [-0.75, 0, -0.57] } },
+  // Flood: red overhead-console flood (the C152's), 5.4 cd at full dimmer so its panel ~0.73 m away gets the Cessna 172S's ~10 lx (agent choice,
+  // panel lighting for every type); the mask's glareshield top is this cabin's (box.glareshieldZ).
+  lamps: { flood: { pos: [0.02, 0, -0.57], aim: [0.45, -0.1, 0.02], cd: 5.4, colour: 'red', maskTop: -(PANEL_ZTOP - 0.02) }, dome: { pos: [-0.75, 0, -0.57] } },
   // Simplified cabin for the occlusion bake: floor, headliner, flat sides, aft bulkhead, panel face and glareshield
   // top, the windshield sill (forward of the panel).
   box: { floor: FLOOR_Z, roof: -0.585, side: 0.475, rear: CABIN_REAR_X + 0.04, panelX: PANEL_X, glareshieldZ: PANEL_ZTOP - 0.02, sillZ: -0.212, windscreenX: 0.775, roofGlazed: false },

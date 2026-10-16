@@ -329,7 +329,14 @@ export interface CockpitDef {
     airOutlet?: readonly [number, number];
     toeBoard?: { x0: number; x1: number; z: number };
   };
-  lamps: { flood: { pos: FRD; aim: FRD }; dome?: { pos: FRD } };
+  /**
+   * Interior lamps. flood: the panel flood light on the PANEL dimmer. cd: its intensity at full dimmer, candela
+   * (absent: 5, the Cessna 172S overhead console's, ~5 lx on its panel 0.7 m away); colour: 'red' for a red
+   * cockpit flood (absent: warm white); maskTop: model y (up) of the glareshield top, above which the panel no
+   * longer shades the flood (absent: 0.29, the Cessna 172S's); cone: outer and full-intensity half-angles of its
+   * beam, degrees (absent: 44 and 24).
+   */
+  lamps: { flood: { pos: FRD; aim: FRD; cd?: number; colour?: 'white' | 'red'; maskTop?: number; cone?: readonly [number, number] }; dome?: { pos: FRD } };
   /** Box model for the cabin occlusion bake and the radiosity budget. */
   box: { floor: number; roof: number; side: number; rear: number; panelX: number; glareshieldZ: number; sillZ: number;
          windscreenX: number; roofGlazed: boolean };
@@ -386,6 +393,8 @@ export interface AirframeVisualDef {
   /** Data-only escape hatch for junction shapes the builders do not derive. Default none. */
   fairings?: readonly FairingDef[];
   lamps: readonly LampVisualDef[];
+  /** Nominal bus voltage of the electrical system, V (the powerplant's electrical.nominalVolts). Absent: 28. */
+  nominalVoltage?: number;
   cockpit: CockpitDef;
   livery: LiveryDef;
   /**
