@@ -165,7 +165,19 @@ function isTurboshaft(t: unknown, aircraft: unknown): boolean {
 const SURFACE_KEYS = ['elevator', 'aileronLeft', 'aileronRight', 'rudder', 'flaps', 'elevatorTrim'];
 
 function isEngineSnapshot(v: unknown): v is EngineSnapshot {
-  return isObj(v) && typeof v.running === 'boolean' && typeof v.featherLatched === 'boolean' && ENGINE_NUMBERS.every((k) => isNum(v[k]));
+  if (!(isObj(v) && typeof v.running === 'boolean' && typeof v.featherLatched === 'boolean' && ENGINE_NUMBERS.every((k) => isNum(v[k])))) return false;
+  // Gas turbines: Ng (fraction), ITT (C) and the flame; a latching start switch (PC-12).
+  const g = v.gasGenerator;
+  if (g !== undefined && !(isObj(g) && isNum(g.ng) && g.ng >= 0 && g.ng <= 1.2 && isNum(g.itt) && typeof g.lit === 'boolean')) return false;
+  const l = v.starterLatch;
+  if (l !== undefined && !(isObj(l) && typeof l.latched === 'boolean' && isNum(l.seconds) && l.seconds >= 0 && typeof l.pressed === 'boolean')) return false;
+  return true;
+}
+
+/** Stick shaker / pusher block (types with controls.stickPusher). */
+function isStickPusher(v: unknown): boolean {
+  return isObj(v) && typeof v.shaker === 'boolean' && typeof v.pusher === 'boolean' &&
+    isNum(v.ramp) && v.ramp >= 0 && v.ramp <= 1 && isNum(v.airborneSeconds) && v.airborneSeconds >= 0;
 }
 
 /** A schema-3 `systems` block: every engine, the tanks, the battery, the surfaces and the gear. */
@@ -207,6 +219,7 @@ function isSystems(v: unknown, aircraft?: unknown): v is SystemsSnapshot {
       (rotor.clutchEngagement as number) < 0 || (rotor.clutchEngagement as number) > 1 ||
       (rotor.takeoffPowerSeconds as number) < 0 || (rotor.takeoffMass as number) < 0) return false;
   }
+  if (v.stickPusher !== undefined && !isStickPusher(v.stickPusher)) return false;
   const s = v.surfaces;
   if (!isObj(s) || !SURFACE_KEYS.every((k) => isNum(s[k]))) return false;
   const g = v.gear;
