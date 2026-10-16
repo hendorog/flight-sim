@@ -32,6 +32,9 @@ const SETTLE_HELD_PASSES = 3;
 /** settle(): the blade angle is searched in steps of this from the fine stop, rad, then bisected to this tolerance. */
 const SETTLE_PITCH_STEP = (2 * Math.PI) / 180;
 const SETTLE_PITCH_TOLERANCE = 1e-7;
+/** settle(): the shaft speed of a unit in beta is bisected between this crawl and 1.3 x its governed speed, to this tolerance, rad/s. */
+const SETTLE_BETA_CRAWL = 1;
+const SETTLE_BETA_TOLERANCE = 1e-6;
 const RPM_TO_RAD_S = (2 * Math.PI) / 60;
 /** Slow states of a unit that settle() puts back. */
 const SAVED_PER_UNIT = 8;
@@ -67,6 +70,8 @@ export class Powerplant implements PowerplantSeam {
   private readonly crankRpm: number[];
   private readonly crankOmega: number[];
   private readonly pumpCommands: boolean[];
+  /** Per engine: the starter engaged this step (latching start switches); undefined when no engine latches its starter. */
+  private readonly starterCommands: boolean[] | undefined;
   private readonly demand: number[];
   /** Per engine: the alternators it drives (indices into the definition's list). */
   private readonly alternatorsOf: readonly (readonly number[])[];
@@ -80,6 +85,9 @@ export class Powerplant implements PowerplantSeam {
   private readonly d2: Float64Array;
   private readonly sinceJump: Int32Array;
   private readonly held: EngineUnit[] = [];
+  /** settle(): units in beta whose shaft speed is solved (see solveBetaSpeed), and each unit's fuel delivered last step, kg/s. */
+  private readonly betaHeld: EngineUnit[] = [];
+  private readonly delivered: Float64Array;
 
   /** `propellers`: per engine, a propeller to use instead of one made from the definition. */
   constructor(readonly def: PowerplantDef = C172_POWERPLANT, propellers: readonly (Propeller | undefined)[] = []) {
@@ -96,6 +104,7 @@ export class Powerplant implements PowerplantSeam {
     this.crankOmega = this.units.map(() => 0);
     this.demand = this.units.map(() => 0);
     this.pumpCommands = this.units.map(() => false);
+    this.starterCommands = def.engines.some((install) => install.engine.starterLatch !== undefined) ? this.units.map(() => false) : undefined;
     this.alternatorsOf = this.units.map((_, i) => def.electrical.alternators.flatMap((alternator, a) => (alternator.engine === i ? [a] : [])));
     this.fadecUnits = this.units.filter((unit) => unit.install.engine.fadec !== undefined);
     this.saved = new Float64Array(n * SAVED_PER_UNIT);
@@ -104,6 +113,7 @@ export class Powerplant implements PowerplantSeam {
     this.d1 = new Float64Array(n);
     this.d2 = new Float64Array(n);
     this.sinceJump = new Int32Array(n);
+    this.delivered = new Float64Array(n);
     const first = this.units[0];
     this.output = {
       force: { x: 0, y: 0, z: 0 },
@@ -240,9 +250,11 @@ export class Powerplant implements PowerplantSeam {
     input.dt = SETTLE_DT;
     this.fuel.steady = true;
 
-    // Constant-speed units: which are solved at their governed speed.
+    // Constant-speed units: which are solved at their governed speed; units in beta: their speed is solved.
     const held = this.held;
     held.length = 0;
+    const betaHeld = this.betaHeld;
+    betaHeld.length = 0;
     for (let i = 0; i < n; i++) {
       const unit = units[i];
       const governor = unit.governor;
@@ -252,6 +264,14 @@ export class Powerplant implements PowerplantSeam {
       if (unit.featherCommanded && !governor.latched) {
         governor.toFeather();
         unit.omega = 0;
+      } else if (unit.betaCommanded) {
+        // Power lever aft of the gate: the blades sit at the beta valve's command (EngineUnit.breathe in steady
+        // mode) and the shaft speed is where the reversing cam's topping governor balances the propeller.
+        governor.toCommand();
+        if (unit.omega > 0) {
+          unit.shaftHeld = true;
+          betaHeld.push(unit);
+        }
       } else if (unit.omega > 0 && !unit.featherCommanded) {
         this.before[i] = unit.omega;
         unit.omega = unit.governedSpeed;
@@ -261,13 +281,20 @@ export class Powerplant implements PowerplantSeam {
     }
 
     let out = this.step(input);
-    for (let pass = 0; pass < SETTLE_HELD_PASSES && held.length > 0; pass++) {
+    for (let pass = 0; pass < SETTLE_HELD_PASSES && held.length + betaHeld.length > 0; pass++) {
+      for (let h = betaHeld.length - 1; h >= 0; h--) {
+        const unit = betaHeld[h];
+        if (this.solveBetaSpeed(unit, input)) continue;
+        // No balance: let the shaft find its own speed.
+        unit.shaftHeld = false;
+        betaHeld.splice(h, 1);
+      }
       for (let h = held.length - 1; h >= 0; h--) {
         const unit = held[h];
         if (this.solveBladeAngle(unit)) continue;
         // No balance between the stops: the blades are on one, and the shaft finds its own speed from where it was.
         unit.shaftHeld = false;
-        if (unit.governor!.pitch <= unit.governor!.def.fineStop) unit.omega = this.before[unit.index];
+        if (unit.governor!.pitch <= unit.governor!.floor) unit.omega = this.before[unit.index];
         held.splice(h, 1);
       }
       out = this.step(input);
@@ -331,6 +358,38 @@ export class Powerplant implements PowerplantSeam {
   }
 
   /**
+   * settle(): the shaft speed of a unit in beta (blades at the valve's command), by bisection on the net shaft
+   * torque of the unit alone, evaluated in steady mode at a held speed: engine (Ng set by the reversing cam and the
+   * topping governor's reset at that speed) less losses less the propeller. Stepping the shaft instead rings: with
+   * the gas generator at its set point at once, the stiff reverse topping governor and the 1/30 s step oscillate. The
+   * net torque falls with speed (the propeller takes more, the topping governor takes Ng off), so the root is
+   * bracketed between a crawl and 1.3 x the governed speed. False when there is no root there (the shaft is then
+   * stepped). Leaves the unit at the root, held.
+   */
+  private solveBetaSpeed(unit: EngineUnit, input: PropulsionInput): boolean {
+    const i = unit.index;
+    const air = input.airVelocityAt !== undefined ? input.airVelocityAt[i] : input.airVelocityBody;
+    const accessory = this.electrical.state.alternatorShaftPowers[i];
+    const fed = this.delivered[i] > 0;
+    const net = (omega: number): number => {
+      unit.omega = omega;
+      const demand = unit.breathe(input, air, accessory);
+      unit.finish(input, air, fed ? demand : 0, 0);
+      return unit.shaftTorque - unit.propeller.loads.torque;
+    };
+    let lo = SETTLE_BETA_CRAWL;
+    let hi = 1.3 * unit.governedSpeed;
+    if (!(net(lo) > 0) || net(hi) > 0) return false;
+    while (hi - lo > SETTLE_BETA_TOLERANCE) {
+      const mid = 0.5 * (lo + hi);
+      if (net(mid) > 0) lo = mid;
+      else hi = mid;
+    }
+    net(0.5 * (lo + hi));
+    return true;
+  }
+
+  /**
    * settle(): the blade angle at which the propeller of a unit held at its governed speed takes the torque the
    * engine gave in the step just made. Propeller torque rises with blade angle, so the first crossing above the
    * fine stop is found by stepping and then bisected. False when the balance lies beyond a stop: the blades are
@@ -338,7 +397,9 @@ export class Powerplant implements PowerplantSeam {
    */
   private solveBladeAngle(unit: EngineUnit): boolean {
     const governor = unit.governor!;
-    const { fineStop, coarseStop } = governor.def;
+    // The lowest angle is the flight low-pitch stop (fineStop, or a type's lowPitchSchedule at its power lever).
+    const fineStop = governor.floor;
+    const { coarseStop } = governor.def;
     const torque = unit.shaftTorque;
     let lo = fineStop;
     if (unit.propellerTorqueAt(lo) >= torque) {
@@ -387,7 +448,9 @@ export class Powerplant implements PowerplantSeam {
         ? !!controls.fuelPrime || (!!controls.rotorClutch && units[i].thermal.oilPressure > automatic.oilPressurePsi)
         : engineControl(controls, i, 'fuelPump');
     }
-    const elec = this.electrical.step(dt, controls, rpm, omega, this.pumpCommands);
+    const starters = this.starterCommands;
+    if (starters) for (let i = 0; i < n; i++) starters[i] = units[i].starterCommand(controls, dt);
+    const elec = this.electrical.step(dt, controls, rpm, omega, this.pumpCommands, starters);
 
     // 2. Induction of every unit.
     const demand = this.demand;
@@ -407,6 +470,7 @@ export class Powerplant implements PowerplantSeam {
       const air = airAt !== undefined ? airAt[i] : input.airVelocityBody;
       const fed = fuel.stepFeed(i, dt, demand[i], engineControl(controls, i, 'fuelSelector'), rpm[i], this.pumpCommands[i], elec.busVoltage, unit.thermal.cht);
       unit.finish(input, air, fed.delivered, elec.starterTorques[i]);
+      this.delivered[i] = fed.delivered;
       unit.state.fuelFlow = fed.metered;
       unit.state.fuelPressure = fed.pressurePsi;
       unit.state.auxFuelPressure = fed.auxPressurePsi;

@@ -23,6 +23,12 @@
 // goes to its gas generator instead of the shaft, and the alternator, the engine-driven pumps and the oil pressure
 // follow the gas generator's speed (driveRpm).
 //
+// Beta and reverse (PitchControlDef.beta): the unit reads ControlInputs.reverse and hands it to the governor (the
+// beta valve, governor.ts) and to a gas turbine (the reversing cam and the topping reset, turbineEngine.ts). A
+// propeller selected by the condition lever (selectedBy 'conditionLever', PC-12) is governed at maxRpm and
+// feathers with the condition lever at CUT-OFF/FEATHER. A latching start switch (EngineDef.starterLatch) keeps the
+// starter engaged after one press until its cut-out (see starterCommand).
+//
 // Rotation sense: a propeller turning counter-clockwise seen from the cockpit reverses the torque reaction and
 // the angular momentum here, and the P-factor moment and the swirl in propeller.ts; thrust and the in-plane
 // force do not change. Such a unit is the mirror image, in the aircraft's plane of symmetry, of a clockwise one.
@@ -36,7 +42,7 @@ import { DieselEngine } from './dieselEngine';
 import { PistonEngine, type EngineInput } from './engine';
 import { EngineThermal, type ThermalInput } from './engineThermal';
 import { PropGovernor } from './governor';
-import { TurbineEngine } from './turbineEngine';
+import { CUTOFF_BELOW, TurbineEngine } from './turbineEngine';
 import { Propeller } from './propeller';
 import { propellerCharacteristicsFor } from './propellerMap';
 
@@ -133,6 +139,12 @@ export class EngineUnit {
   /** Governed propeller speed (rad/s) and feather selection of the present controls. */
   private omegaSet = 0;
   private featherSelected = false;
+  /** Latching start switch (EngineDef.starterLatch): engaged, seconds since it latched, the switch as last seen. */
+  private starterLatched = false;
+  private starterLatchTime = 0;
+  private starterWas = false;
+  /** The starter is engaged: the switch held (hold-to-run) or the latch (starterLatch), as of the last starterCommand(). */
+  starterEngaged = false;
   /** Thrust-line tilt: rows of the shaft-to-body rotation (absent: the shaft lies along body x). */
   private readonly tilt: readonly [Vec3, Vec3, Vec3] | undefined;
   private readonly shaftAir: Vec3 = { x: 0, y: 0, z: 0 };
@@ -189,7 +201,8 @@ export class EngineUnit {
     const def = install.engine;
     if (propeller.rotation !== install.rotation) throw new Error(`${install.propeller.name}: the propeller supplied turns the other way`);
     this.diesel = def.kind === 'dieselFadec' ? new DieselEngine(def) : undefined;
-    this.turbine = def.kind === 'freeTurbine' ? new TurbineEngine(def) : undefined;
+    const control = install.propeller.pitchControl;
+    this.turbine = def.kind === 'freeTurbine' ? new TurbineEngine(def, control.kind === 'constantSpeed' ? control.beta : undefined) : undefined;
     this.engine = this.diesel ?? this.turbine ?? new PistonEngine(def);
     this.propeller = propeller;
     this.thermal = new EngineThermal(def.thermal);
@@ -202,7 +215,6 @@ export class EngineUnit {
     this.breakawayTorque = def.breakawayTorque * def.gearRatio;
     this.runningRpm = def.runningRpm;
     this.ratedPower = def.ratedPower;
-    const control = install.propeller.pitchControl;
     this.governor = control.kind === 'constantSpeed' ? new PropGovernor(control) : undefined;
     // A fixed-pitch propeller reports its geometric blade angle at the reference station.
     const station = install.propeller.referenceStation ?? PROP_REFERENCE_STATION;
@@ -223,6 +235,8 @@ export class EngineUnit {
     }
     // No carburettor and no cowl flaps (carbIce 0, cowlFlap 1).
     this.propState = { ...emptyPropellerState(install.rotation), bladePitch: this.fixedPitch };
+    // PropellerState.beta only on a hub that has it (the state of every other type is unchanged).
+    if (control.kind === 'constantSpeed' && control.beta) this.propState.beta = false;
     this.slipstream = { origin: { ...install.hub }, radius: this.propeller.radius, inducedVelocity: 0, swirlRate: 0 };
 
     // The idle bypass of a definition that gives the idle speed instead: what the engine must deliver to turn
@@ -272,6 +286,8 @@ export class EngineUnit {
     if (running) this.turbine?.light();
     this.omega = (rpm * 2 * Math.PI) / 60 / this.gearRatio;
     this.rotation = 0;
+    this.starterLatched = this.starterWas = this.starterEngaged = false;
+    this.starterLatchTime = 0;
     if (!this.extras) return;
     this.cowlFlap = 1;
     const governor = this.governor;
@@ -282,6 +298,7 @@ export class EngineUnit {
       governor.relatch(this.omega);
       this.propState.bladePitch = governor.pitch;
       this.propState.feathered = governor.feathered;
+      if (governor.def.beta) this.propState.beta = false;
     }
   }
 
@@ -312,16 +329,51 @@ export class EngineUnit {
     if (this.diesel) {
       this.omegaSet = interp1(this.scheduleLever, this.scheduleRpm, clamp(lever, 0, 1)) / RAD_S_TO_RPM;
       this.featherSelected = governor.def.feather !== undefined && !master;
+    } else if (governor.def.selectedBy === 'conditionLever') {
+      // No propeller lever: governed at maxRpm (= minRpm), feathered with the condition lever at CUT-OFF/FEATHER.
+      this.omegaSet = governor.leverSpeed(1);
+      this.featherSelected = governor.def.feather !== undefined && engineControl(controls, this.index, 'mixture') < CUTOFF_BELOW;
     } else {
       const propLever = engineControl(controls, this.index, 'propeller');
       this.omegaSet = governor.leverSpeed(propLever);
       this.featherSelected = governor.leverFeathers(propLever);
     }
+    // The beta valve: the power lever aft of the gate, and forward of it for a scheduled low-pitch stop.
+    if (governor.def.beta) governor.setLevers(engineControl(controls, this.index, 'reverse') ?? 0, lever);
   }
 
   /** Read the governor's orders from the controls without stepping (settle() needs them before its first step). */
   command(controls: ControlInputs): void {
     if (this.governor) this.readGovernor(controls, engineControl(controls, this.index, 'throttle'), engineControl(controls, this.index, 'engineMaster'));
+  }
+
+  /** The power lever is aft of the gate (beta or reverse commanded) as of the last breathe() / command(). */
+  get betaCommanded(): boolean {
+    return this.governor !== undefined && this.governor.reverse > 0;
+  }
+
+  /**
+   * The starter's state for this step, from the switch: hold-to-run (the switch itself), or with
+   * EngineDef.starterLatch a press latches it until the gas generator reaches cutoutNg, cutoutSeconds pass, or
+   * the switch is pressed again (the interrupt: there is no STARTER INTERRUPT control yet). Advanced by `dt`;
+   * held still in a steady evaluation. Powerplant.step calls it once per step, before the bus.
+   */
+  starterCommand(controls: ControlInputs, dt: number): boolean {
+    const pressed = engineControl(controls, this.index, 'starter');
+    const latch = this.install.engine.starterLatch;
+    if (!latch) return (this.starterEngaged = pressed);
+    if (this.steady) return this.starterEngaged;
+    const press = pressed && !this.starterWas;
+    this.starterWas = pressed;
+    if (press) {
+      this.starterLatched = !this.starterLatched;
+      this.starterLatchTime = 0;
+    } else if (this.starterLatched) {
+      this.starterLatchTime += dt;
+      const ng = this.turbine ? this.turbine.ng : 0;
+      if (ng >= latch.cutoutNg || this.starterLatchTime >= latch.cutoutSeconds) this.starterLatched = false;
+    }
+    return (this.starterEngaged = this.starterLatched);
   }
 
   /** Governed propeller speed of the last breathe(), rad/s. */
@@ -362,7 +414,11 @@ export class EngineUnit {
       if (this.hasAlternateAir) ei.alternateAir = engineControl(controls, this.index, 'alternateAir');
       // A gas turbine's igniters: with the IGNITION (magneto) switch at NORM (0) they spark while the starter runs;
       // at ON (any other position) continuously.
-      if (this.turbine) ei.igniters = engineControl(controls, this.index, 'starter') || ei.magnetos !== 0;
+      if (this.turbine) {
+        const starter = this.install.engine.starterLatch ? this.starterEngaged : engineControl(controls, this.index, 'starter');
+        ei.igniters = starter || ei.magnetos !== 0;
+        ei.reverse = engineControl(controls, this.index, 'reverse') ?? 0;
+      }
       if (this.diesel) {
         ei.engineMaster = engineControl(controls, this.index, 'engineMaster');
         ei.busVoltage = busVoltage;
@@ -370,6 +426,8 @@ export class EngineUnit {
         ei.coolantTemperature = this.thermal.coolantTemp;
       }
       this.readGovernor(controls, ei.throttle, ei.engineMaster !== false);
+      // Steady (settle) evaluation in beta: the blades at the valve's command (finish() does not step the governor).
+      if (this.steady && this.governor?.def.beta && this.governor.reverse > 0) this.governor.toCommand();
       if (this.hasCowlFlaps && !this.steady) {
         const travel = input.dt / COWL_FLAP_SECONDS;
         this.cowlFlap += clamp(clamp(engineControl(controls, this.index, 'cowlFlaps'), 0, 1) - this.cowlFlap, -travel, travel);
@@ -520,6 +578,7 @@ export class EngineUnit {
       if (governor) {
         p.bladePitch = governor.pitch;
         p.feathered = governor.feathered;
+        if (governor.def.beta) p.beta = governor.inBeta;
       }
     }
   }
@@ -623,12 +682,16 @@ export class EngineUnit {
     }
     const governor = this.governor;
     if (governor) {
-      governor.pitch = clamp(snap.bladePitch, governor.def.fineStop, Math.max(governor.def.coarseStop, governor.def.feather?.angle ?? 0));
+      // A snapshot taken in beta holds a blade angle below the fine stop (down to the reverse angle).
+      governor.pitch = clamp(snap.bladePitch, governor.def.beta?.reverse ?? governor.def.fineStop, Math.max(governor.def.coarseStop, governor.def.feather?.angle ?? 0));
       governor.latched = snap.featherLatched;
       governor.accumulatorCharged = snap.accumulatorCharged ?? true;
       this.propState.bladePitch = governor.pitch;
       this.propState.feathered = governor.feathered;
+      if (governor.def.beta) this.propState.beta = governor.inBeta;
     }
+    this.starterLatched = this.starterWas = this.starterEngaged = false;
+    this.starterLatchTime = 0;
     const e = this.state;
     e.running = snap.running;
     e.rpm = snap.rpm;
