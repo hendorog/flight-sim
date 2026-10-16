@@ -64,6 +64,8 @@ const flight = new MockFlight();
 // Without `type` the page is what it always was: the C172S panel, built before the harness.
 let panel: InstrumentPanel | null = type ? null : new InstrumentPanel({ gyrosSpunUp: false, paintLevers: !view3d });
 const samples: number[] = [];
+/** The emissive=1 view: the self-illumination map, painted on the CPU each frame. */
+let emissive: CanvasRenderingContext2D | null = null;
 if (panel) expose(panel);
 
 function expose(p: InstrumentPanel): void {
@@ -229,7 +231,12 @@ void runHarness({
           ctx.scene.add(ctx.camera);
           return;
         }
-        const c = params.get('emissive') === '1' ? p.emissiveTexture.image as HTMLCanvasElement : p.canvas;
+        let c = p.canvas;
+        if (params.get('emissive') === '1') {
+          c = document.createElement('canvas');
+          [c.width, c.height] = [p.canvas.width, p.canvas.height];
+          emissive = c.getContext('2d');
+        }
         c.style.cssText = 'position:fixed;left:0;top:0;z-index:2;transform-origin:0 0';
         if (zoom.length === 3 && zoom.every(Number.isFinite)) {
           const [x, y, s] = zoom;
@@ -242,6 +249,7 @@ void runHarness({
       update(dt, ctx) {
         const p = panel!;
         p.update(dt, ctx);
+        if (emissive) p.drawEmissiveTo(emissive);
         samples.push(p.lastUpdateMs);
         if (samples.length > 120) samples.shift();
         const avg = samples.reduce((a, b) => a + b, 0) / samples.length;

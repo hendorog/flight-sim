@@ -23,6 +23,7 @@ import { BlankGauge, RotorTachGauge } from './render/rotorTach';
 import { ConsoleControl, DigitalTemperature, Hourmeter } from './render/panelControls';
 import { screw } from './render/art';
 import { DirtyRectUploader } from './render/dirtyUpload';
+import { PanelLightComposer } from './render/emissiveCompose';
 import { DEFAULT_TUNING, GpsUnit, NavComRadio, Transponder, type RadioTuning } from './render/avionics';
 import { context2d, LABEL_FONT, makeCanvas, noiseCanvas, rng, type Ctx2D } from './render/canvas';
 import { LIGHT_DIAL_LINEAR, type PanelComponent, type Rect } from './render/component';
@@ -97,12 +98,9 @@ export class InstrumentPanel {
   private dialLevel = 1;
   private displayLevel = 1;
   private light: {
-    canvas: HTMLCanvasElement;
-    g: Ctx2D;
     mask: HTMLCanvasElement;
     dimmer: HTMLCanvasElement | null;
-    texture: THREE.CanvasTexture;
-    upload: DirtyRectUploader;
+    composer: PanelLightComposer;
   } | null = null;
   /** Re-uploads only the redrawn instrument rectangles of `texture` (see render/dirtyUpload.ts). */
   readonly upload: DirtyRectUploader;
@@ -141,9 +139,10 @@ export class InstrumentPanel {
    * markings and needles behind the glass at PANEL_DIAL_LIGHT, and the radio / GPS displays and the
    * annunciator lamps at full value. For a dimmer profile, alpha distinguishes dimmed circuits (0.5)
    * from independent warning lamps (1); the material dims after RGB filtering. Created on first
-   * access; from then on it is kept up to date with `texture` (costs a second texture upload per change).
+   * access; from then on it is kept up to date with `texture` (one GPU pass on the frames where a lit
+   * instrument was redrawn).
    */
-  get emissiveTexture(): THREE.CanvasTexture {
+  get emissiveTexture(): THREE.Texture {
     if (!this.light) {
       const { w, h } = this.def.size;
       const mask = makeCanvas(w, h);
@@ -153,18 +152,31 @@ export class InstrumentPanel {
       this.paintLightMask(mg);
       const dimmer = this.def.lightingRequiresNav || this.def.lightingDimmerExponent !== undefined ? makeCanvas(w, h) : null;
       if (dimmer) this.paintDimmerMask(context2d(dimmer));
-      const canvas = makeCanvas(w, h);
-      // CPU-backed composition avoids Chrome/ANGLE Vulkan turning consecutive canvas multiply draws
-      // black. Keep the main panel accelerated; only the small dirty light rectangles use this surface.
-      const g = context2d(canvas, { willReadFrequently: true });
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = this.texture.anisotropy;
-      texture.name = 'instrumentPanelEmissive';
-      this.light = { canvas, g, mask, dimmer, texture, upload: new DirtyRectUploader(texture) };
-      this.updateLight({ x: 0, y: 0, w, h });
+      // Composed on the GPU (render/emissiveCompose.ts): reading the panel canvas back into a CPU canvas
+      // stalled the pipeline once per redrawn instrument.
+      this.light = { mask, dimmer, composer: new PanelLightComposer(this.texture, mask, dimmer, this.texture.anisotropy) };
     }
-    return this.light.texture;
+    return this.light.composer.texture;
+  }
+
+  /**
+   * Paint the self-illumination map (as emissiveTexture holds it) into a 2D context of the panel's size, on
+   * the CPU: for inspecting it on the dev page.
+   */
+  drawEmissiveTo(g: Ctx2D): void {
+    void this.emissiveTexture;
+    const L = this.light!;
+    const { w, h } = this.def.size;
+    g.save();
+    g.globalCompositeOperation = 'copy';
+    g.drawImage(this.canvas, 0, 0);
+    g.globalCompositeOperation = 'multiply';
+    g.drawImage(L.mask, 0, 0);
+    if (L.dimmer) {
+      g.globalCompositeOperation = 'destination-in';
+      g.drawImage(L.dimmer, 0, 0, w, h);
+    }
+    g.restore();
   }
 
   private paintLightMask(g: Ctx2D): void {
@@ -184,25 +196,6 @@ export class InstrumentPanel {
     g.globalAlpha = 1;
   }
 
-  /** Emissive = panel image x light mask, over one rectangle. */
-  private updateLight(b: Rect): void {
-    const L = this.light!;
-    const g = L.g;
-    g.save();
-    g.beginPath();
-    g.rect(b.x, b.y, b.w, b.h);
-    g.clip();
-    g.globalCompositeOperation = 'copy';
-    g.drawImage(this.canvas, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
-    g.globalCompositeOperation = 'multiply';
-    g.drawImage(L.mask, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
-    if (L.dimmer) {
-      g.globalCompositeOperation = 'destination-in';
-      g.drawImage(L.dimmer, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
-    }
-    g.restore();
-  }
-
   /** Re-initialise instrument dynamics after a scenario reset or teleport. */
   reset(state: AircraftState): void {
     this.instruments.reset(state);
@@ -217,7 +210,7 @@ export class InstrumentPanel {
     if (this.drawOnlyInCockpit && ctx.cameraMode !== 'cockpit') {
       // Latches keep their last drawn values, so the first cockpit frame redraws whatever changed.
       this.upload.flush(ctx.renderer); // completes a pending mip rebuild
-      this.light?.upload.flush(ctx.renderer);
+      this.light?.composer.render(ctx.renderer);
       this.lastUpdateMs = performance.now() - t0;
       return;
     }
@@ -228,8 +221,7 @@ export class InstrumentPanel {
       this.dialLevel = dial; this.displayLevel = display;
       if (light?.dimmer) {
         this.paintDimmerMask(context2d(light.dimmer));
-        const full = { x: 0, y: 0, ...this.def.size };
-        this.updateLight(full); light.upload.add(full);
+        light.composer.dimmerChanged();
       }
     }
     for (const c of this.components) {
@@ -240,15 +232,12 @@ export class InstrumentPanel {
       this.version++;
       for (const b of rects) {
         this.upload.add(b);
-        if (light && c.paintLightMask) {
-          this.updateLight(b);
-          light.upload.add(b);
-        }
+        if (light && c.paintLightMask) light.composer.markDirty();
       }
     }
     // Only the redrawn rectangles go to the GPU (a full upload until three.js has created the textures).
     this.upload.flush(ctx.renderer);
-    light?.upload.flush(ctx.renderer);
+    light?.composer.render(ctx.renderer);
     this.lastUpdateMs = performance.now() - t0;
   }
 
@@ -271,7 +260,7 @@ export class InstrumentPanel {
 
   dispose(): void {
     this.texture.dispose();
-    this.light?.texture.dispose();
+    this.light?.composer.dispose();
   }
 
   /** A scenario reset shows up as simulation time going backwards or a jump in position. */
