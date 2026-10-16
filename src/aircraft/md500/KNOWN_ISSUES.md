@@ -102,10 +102,12 @@ Close with: each item's data and an owner decision to add it.
 
 ## Skid dampers and ground attitude — **estimate**
 
-The nitrogen dampers are the S269's oleo law scaled to 3000 lb; the 4.7° nose-up ground attitude comes from the
-front contacts sitting 0.087 m lower in body axes (`skids.frontZ`), which leaves the ground under the mast about 5 cm
-below the RFM's WL −15.2 line.
-Evidence: [dimensions.ts](dimensions.ts) `SKID_FRONT_Z`; the ground-attitude test in md500Systems.
+The nitrogen dampers have no published stroke or charge: 0.14 m of stroke on a 0.155 m gas column, sized so the
+3000 lb aircraft survives the FAR 27.725 limit drop (about 2.55 m/s; measured: 2.78 m/s survives, 3.52 m/s crashes)
+and a 30 kt run-on. The 4.7° nose-up ground attitude comes from the front contacts sitting 0.061 m lower in body
+axes (`skids.frontZ`), calibrated with the pilot alone and full fuel; at 3000 lb the stance is 3.9-4.1°.
+Evidence: [dimensions.ts](dimensions.ts) `SKID_FRONT_Z`, [rotorcraft.ts](rotorcraft.ts) `skids.oleo`; the
+ground-attitude test and "skid gear touchdowns" in md500Systems; docs/md500-flight-model.md "Skid gear".
 Close with: 500E damper charge, stroke and the skid-tube geometry.
 
 ## Exterior and head drawing — **estimate**

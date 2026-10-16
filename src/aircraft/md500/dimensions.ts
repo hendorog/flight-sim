@@ -133,10 +133,11 @@ export const SKID_CONTACT_REAR_X = x(124);
 /**
  * The skid tubes are not parallel to the waterlines: with full fuel the 500E sits 4.7 deg nose up on level ground
  * (RFM Fig 1-1 note 1). The front strut contacts are lower in body axes than the rear ones (SKID_Z, which stays the
- * reference height at the rear struts): the contact span x tan(4.7 deg) = 0.095 m, less the 0.4 deg the dampers'
- * unequal static strokes add (pilot, full fuel; docs/md500-flight-model.md): 0.087 m. D / calibrated.
+ * reference height at the rear struts): the contact span x tan(4.7 deg) = 0.095 m, less the 1.7 deg the dampers'
+ * unequal static strokes and the tall CG's aft load shift on the nose-up stance add (pilot, full fuel, the 0.14 m
+ * dampers of rotorcraft.ts; docs/md500-flight-model.md "Skid gear"): 0.061 m. D / calibrated.
  */
-export const SKID_FRONT_Z = SKID_Z + (SKID_CONTACT_FRONT_X - SKID_CONTACT_REAR_X) * Math.tan((GROUND_ATTITUDE_DEG - 0.4) * Math.PI / 180);
+export const SKID_FRONT_Z = SKID_Z + (SKID_CONTACT_FRONT_X - SKID_CONTACT_REAR_X) * Math.tan((GROUND_ATTITUDE_DEG - 1.7) * Math.PI / 180);
 
 // ------------------------------------------------------------------------------------------- crew
 /** TCDS p13 / RFM 6-3: pilot (LH command) seat STA 73.5, BL -13.0; RH forward passenger BL +15.5. */

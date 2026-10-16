@@ -150,10 +150,16 @@ export const MD500_ROTORCRAFT: RotorcraftDefinition = {
       radii: { x: 79.5 * IN, y: D.CABIN_WIDTH / 2, z: (6.77 - 1.27) / 2 * 0.3048 } } },
   skids: { ...R22_ROTORCRAFT.skids, flexure: undefined,
     // RFM 1-9: skid gear on nitrogen-charged dampers (springs and shock absorbers; ground-resonance stability).
-    // Effective areas, charges and orifices: the S269's oleo scaled to the 500E's 3000 lb (1.71x). ESTIMATES.
-    oleo: { pressure: [600 * 6894.757 + 101325, 1240 * 6894.757 + 101325],
-      area: 0.00025, gasLength: 0.08, exponent: 1.3, contactStiffness: 600000,
-      maxStroke: 0.06, orifice: 2600, rebound: 4500, reliefForce: 7700, reliefDamping: 600 },
+    // No stroke or charge data (research-md500 gap 11): ESTIMATES. Sized so the 3000 lb aircraft survives the
+    // FAR 27.725 limit drop (13 in, about 2.55 m/s with rotor lift; the 369 was certificated to CAR 6, assumed
+    // comparable) and a 2-2.5 m/s touchdown (type experience, ESTIMATE): 0.14 m usable stroke, static strokes
+    // 0.04-0.05 m at 3000 lb (about a third), a short gas column (0.155 m) so the stance stays stiff in pitch under
+    // the tall CG (a longer column halves the static pitch stiffness and the nose rises onto the tail), the relief
+    // valve at 11 kN a damper. Pilot review 2026-10-17: the S269's 0.06 m stroke scaled up bottomed under the static
+    // weight at 3000 lb. docs/md500-flight-model.md "Skid gear".
+    oleo: { pressure: [1300 * 6894.757 + 101325, 1400 * 6894.757 + 101325],
+      area: 0.00025, gasLength: 0.155, exponent: 1.3, contactStiffness: 600000,
+      maxStroke: 0.14, orifice: 3500, rebound: 4500, reliefForce: 11000, reliefDamping: 900 },
     terrain: { ...R22_ROTORCRAFT.skids.terrain!, tubeRadius: D.SKID_TUBE_RADIUS, toe: D.SKID_FRONT_X, heel: D.SKID_REAR_X },
     suspension: 'oleo', halfTrack: D.SKID_HALF_TRACK, front: D.SKID_CONTACT_FRONT_X, rear: D.SKID_CONTACT_REAR_X, z: D.SKID_Z,
     frontZ: D.SKID_FRONT_Z },

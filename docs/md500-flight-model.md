@@ -69,9 +69,35 @@ the nose yawing **8.9° left** in the first 0.5 s (RFM 3-3).
 - Drag: x 0.6 m² equivalent flat plate (calibrated to the MCP speed), y 3.6, z 3.2 m² (ESTIMATE); egg-cabin pitch and
   yaw moment slopes twice the R22's.
 - Fins: the upper (0.38 m²) and lower (0.20 m²) fins from the 3V outlines, symmetric, no offset.
-- Skids: four nitrogen-damper supports (RFM 1-9), the S269's oleo law scaled to the 500E's weight (ESTIMATE). The
-  skid contacts are not parallel to the waterlines: the front contacts sit 0.087 m lower (new optional
-  `skids.frontZ`), which gives the RFM's **4.7° nose-up ground attitude** with full fuel (measured 4.70°).
+- Skids: four nitrogen-damper supports (RFM 1-9); see "Skid gear" below. The skid contacts are not parallel to the
+  waterlines: the front contacts sit 0.061 m lower (new optional `skids.frontZ`), which gives the RFM's **4.7° nose-up
+  ground attitude** with full fuel (measured 4.74°).
+
+### Skid gear
+
+No damper stroke, charge or orifice data was found (research-md500 gap 11), so the dampers are ESTIMATES sized to
+what the gear must do. The first fit (the S269's oleo scaled to 3000 lb: 0.06 m stroke on a 0.08 m gas column) sat
+at 0.05 m static stroke at 3000 lb and bottomed (`Hard skid impact`) 2-4 s after a 0.2 m/s touchdown as the
+collective came down (pilot review 2026-10-17). Now: 0.14 m usable stroke, a 0.155 m gas column charged 1300 psi
+front / 1400 psi rear (on the model's 2.5 cm² effective area), the orifice 3500 N/(m/s)², the relief valve at 11 kN.
+The targets: the FAR 27.725 limit drop (13 in, about 2.55 m/s with rotor lift; the 369 was certificated to CAR 6,
+assumed comparable) and type experience of 2-2.5 m/s touchdowns and 30 kt run-ons (ESTIMATE).
+
+| Case, 3000 lb SL | Before (0.06 m stroke) | Now (0.14 m) |
+| --- | --- | --- |
+| Static strokes front / rear | 0.05 / 0.03 m | 0.05 / 0.04 m |
+| 0.2 m/s touchdown, collective lowered at 0.15/s | crash 2.3-4.2 s after contact | no crash, 0.10 m peak |
+| Drop, collective 0.75 × hover, 4 ft | (crash) | 2.08 m/s, 0.11 m, 5.5 g peak side load |
+| Drop, 0.7 × hover, 5 ft / 6 ft | (crash) | 2.56 / 2.78 m/s, 0.13 m, no crash |
+| Drop 8 ft, 0.65 × hover | (crash) | 3.52 m/s: crash (above the skids' 3.5 m/s `maxSink`) |
+| Hovering autorotation 3 / 5 ft | crash at 1.61 / 1.85-2.14 m/s | no crash; 8 ft (2.80 m/s) crashes |
+| Power-off run-on 30 / 40 kt, 0.8-1.0 m/s | crash | stops in 5.7-7.4 s |
+
+The gas column is kept short on purpose: the CG stands about 1.3 m above the skids, so on the nose-up stance the
+weight shifts aft onto the rear dampers and a soft gas spring lets the nose rise further. A 0.22 m column (static
+stroke a third of 0.15 m) sat at 8.4° instead of 4.7° and rocked onto the tail-rotor guard during a landing; with
+0.155 m the static pitch at 3000 lb is 3.9-4.1° and 4.7° with the pilot alone and full fuel. Tests: md500Systems
+"skid gear touchdowns" (drops from 4 and 5 ft, a 30 kt run-on).
 
 ### Stabiliser sign
 

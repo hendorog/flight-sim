@@ -2,7 +2,7 @@
 // flies the production flight model with ordinary controls (grip, collective, beep, switches) and reads the gauges.
 // P = RFM CSP-E-1 Rev 16; D = derived; ESTIMATE = no source. MD500_TRACE=<dir> writes the report.
 import { afterAll, describe, expect, it } from 'vitest';
-import { DEG } from '../../src/core/math';
+import { DEG, FT, KT } from '../../src/core/math';
 import { applyControls, cloneControls } from '../../src/core/types';
 import { MD500_N1_PCT, MD500_NR_LIMITS, MD500_N2_PCT, MD500_XMSN_PRESS_SWITCH_PSI, MD500_ENGINE_OUT } from '../../src/aircraft/md500/facts';
 import { buildScenario } from '../../src/sim/scenarios';
@@ -281,6 +281,48 @@ describe('MD 500E engine failure (RFM 3-3; rotor energy, docs/md500-flight-model
     expect(f.minNr).toBeGreaterThanOrEqual(380);
     expect(f.backIn).toBeGreaterThan(0); expect(f.backIn - 1.0).toBeLessThanOrEqual(3);
   });
+});
+
+describe('MD 500E skid gear touchdowns (pilot review 2026-10-17)', () => {
+  // From a 3000 lb hover at a 4 deg nose-up attitude, the collective cut to a fraction of its hover value at a set
+  // skid height (the FAR 27.725 drop shape: rotor lift below the weight); the contact sink is the last airborne
+  // step's. The limit drop (13 in, about 2.55 m/s) and a 2-2.5 m/s touchdown (type experience) survive: ESTIMATE.
+  for (const [hFt, frac, minSink] of [[4, 0.75, 1.9], [5, 0.7, 2.45]] as const) {
+    it(`drop from ${hFt} ft at ${frac} x hover collective, 3000 lb: contact at ${minSink} m/s or more, no crash, the dampers inside their stroke`, () => {
+      const r = rig(3000, { height: d.skids.z + hFt * FT }), s = r.fm.state, fly = pilot(r, 0);
+      run(r, 1, () => fly(DT, 4 * DEG));
+      r.c.collective = r.c.collective! * frac;
+      let sink = NaN, last = 0, maxCompression = 0;
+      run(r, 8, () => {
+        fly(DT, 4 * DEG);
+        if (!s.onGround && !s.crashed) last = -s.verticalSpeed;
+        else if (Number.isNaN(sink)) sink = last;
+        if (!Number.isNaN(sink)) r.c.collective = Math.max(0, r.c.collective! - 0.3 * DT);
+        for (const w of s.wheels) maxCompression = Math.max(maxCompression, w.compression);
+      });
+      report[`drop${hFt}ft`] = { sink, maxCompression, crashed: s.crashed, reason: s.crashReason };
+      expect(sink).toBeGreaterThanOrEqual(minSink);
+      expect(s.crashed, s.crashReason).toBe(false);
+      expect(maxCompression).toBeLessThan(d.skids.oleo!.maxStroke);
+    }, 60_000);
+  }
+  it('power-off run-on at 30 kt, 3000 lb, about 1 m/s at contact: no crash, stopped on the skids within 10 s (RFM 4-25 technique)', () => {
+    const r = rig(3000, { kt: 30, height: d.skids.z + 6 * FT }), s = r.fm.state, fly = pilot(r, 30);
+    run(r, 1, () => fly(DT, 2 * DEG));
+    r.c.throttle = 0;
+    let td = NaN, sink = NaN, gs = NaN, stopped = NaN;
+    run(r, 20, () => {
+      if (Number.isNaN(td)) { fly(DT, 2 * DEG); collectiveServo(r.c, 0.8 * (-0.6 - s.verticalSpeed), 1, DT, 0.8); }
+      else { fly(DT, 3 * DEG); r.c.collective = Math.max(0, r.c.collective! - 0.3 * DT); }
+      if (Number.isNaN(td) && s.onGround) { td = s.time; sink = -s.verticalSpeed; gs = s.groundSpeed / KT; }
+      if (!Number.isNaN(td) && Number.isNaN(stopped) && s.groundSpeed < 0.5) stopped = s.time - td;
+    });
+    report.runOn = { sink, gs, stopped, crashed: s.crashed, reason: s.crashReason };
+    expect(gs).toBeGreaterThan(27);
+    expect(sink).toBeGreaterThan(0.6);
+    expect(s.crashed, s.crashReason).toBe(false);
+    expect(stopped).toBeLessThan(10);
+  }, 60_000);
 });
 
 describe('MD 500E warnings and resume', () => {
