@@ -2,7 +2,8 @@ import { clamp, quat, v3, type Vec3 } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import type { BodyState } from '../interfaces';
 import { bladeBendShape, bladeConing } from './coning';
-import type { RotorcraftDefinition, RotorcraftState } from './definition';
+import { cyclicAngles, type RotorcraftDefinition, type RotorcraftState } from './definition';
+import { hubPointToBody } from './shaftFrame';
 
 /** Implicit midpoint oscillator with a Coulomb impulse (including exact stiction).
  * Friction opposes midpoint velocity; stops remove outward kinetic energy. No speed floor. */
@@ -55,7 +56,8 @@ export function advanceGroundRotor(d: RotorcraftDefinition, s: RotorcraftState, 
     for (let i = 0; i < 2; i++) {
       const az = s.azimuth + i * Math.PI + d.rotation * s.omega * (step + 0.5) * h;
       const ex = Math.sin(az), ey = Math.cos(az), sign = i === 0 ? 1 : -1;
-      const pitch = collective + d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey);
+      const pitch = collective + (d.cyclicLimits ? d.rotation * (cyclicAngles(d, c).right * ex + cyclicAngles(d, c).aft * ey)
+        : d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey));
       let moment = 0;
       const dr = (rotor.radius - rotor.rootCutout) / 12;
       for (let j = 0; j < 12; j++) {
@@ -90,7 +92,7 @@ export function bladePath(d: RotorcraftDefinition, s: RotorcraftState, c: Contro
   normalAcceleration = 9.80665): Vec3[] {
   const p = d.groundRotor;
   if (!p) return [];
-  const r = d.main, blade = p.blade, points: Vec3[] = [];
+  const r = d.main, blade = p.blade, points: Vec3[] = [], tilt = d.shaftTilt ?? 0;
   const fraction = s.omega / (d.referenceRpm * Math.PI / 30);
   const low = s.contactRotor && fraction < 0.5;
   const poses = low ? r.blades : 64;
@@ -104,16 +106,21 @@ export function bladePath(d: RotorcraftDefinition, s: RotorcraftState, c: Contro
     const teeter = harmonic * (1 - blend) + (low ? s.contactRotor!.angle * (i % 2 === 0 ? 1 : -1) : 0) * blend;
     const flap = cone.angle + teeter;
     const pitch = r.minPitch + clamp(c.collective ?? 0, 0, 1) * (r.maxPitch - r.minPitch) +
-      d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey);
+      (d.cyclicLimits ? d.rotation * (cyclicAngles(d, c).right * ex + cyclicAngles(d, c).aft * ey)
+        : d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey));
     for (let j = 0; j <= 32; j++) {
       const radius = r.rootCutout + (r.radius - r.rootCutout) * j / 32;
       const bend = cone.tipBend * bladeBendShape((radius - r.rootCutout) / (r.radius - r.rootCutout));
       const horizontal = blade.hingeRadius + (radius - blade.hingeRadius) * Math.cos(flap);
       for (const side of [-1, 0, 1]) {
         const chord = side * r.chord / 2, theta = pitch + r.twist * (radius / r.radius - 0.75);
-        points.push({ x: r.hub.x + horizontal * ex + chord * Math.cos(theta) * ey,
-          y: r.hub.y + horizontal * ey - chord * Math.cos(theta) * ex,
-          z: r.hub.z - (radius - blade.hingeRadius) * Math.sin(flap) - bend - chord * Math.sin(theta) });
+        // The flap coordinates are in the shaft frame: a tilted mast (MD 500E) rotates the path to the body.
+        points.push(tilt ? hubPointToBody(r.hub, { x: horizontal * ex + chord * Math.cos(theta) * ey,
+          y: horizontal * ey - chord * Math.cos(theta) * ex,
+          z: -(radius - blade.hingeRadius) * Math.sin(flap) - bend - chord * Math.sin(theta) }, tilt)
+          : { x: r.hub.x + horizontal * ex + chord * Math.cos(theta) * ey,
+            y: r.hub.y + horizontal * ey - chord * Math.cos(theta) * ex,
+            z: r.hub.z - (radius - blade.hingeRadius) * Math.sin(flap) - bend - chord * Math.sin(theta) });
       }
     }
   }
@@ -126,7 +133,9 @@ export function bladeAirframeStrike(d: RotorcraftDefinition, s: RotorcraftState,
   const { tailcone: t, cabin } = d.groundRotor, span = v3.sub(t.rear, t.front), length2 = v3.dot(span, span);
   const cone = bladeConing(d.groundRotor.blade, s.omega, s.thrust / d.main.blades, normalAcceleration);
   const maxFlap = Math.max(Math.hypot(s.flapForward, s.flapRight), Math.abs(s.contactRotor?.angle ?? 0));
-  const lowest = d.main.hub.z + d.main.radius * Math.sin(Math.min(Math.PI / 2, maxFlap - cone.angle)) +
+  // A tilted shaft lowers one side of the disc by up to R sin(tilt) in body axes (conservative early-out).
+  const tilt = Math.abs(d.shaftTilt ?? 0);
+  const lowest = d.main.hub.z + d.main.radius * Math.sin(Math.min(Math.PI / 2, maxFlap - cone.angle + tilt)) +
     Math.abs(cone.tipBend) + d.main.chord / 2;
   if (lowest < Math.min(t.front.z - t.frontRadius, t.rear.z - t.rearRadius, cabin.centre.z - cabin.radii.z)) return '';
   for (const p of bladePath(d, s, c, normalAcceleration)) {

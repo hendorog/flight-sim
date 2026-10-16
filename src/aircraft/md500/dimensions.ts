@@ -38,8 +38,8 @@ export const MAIN_ROTOR_TWIST_DEG = -8;
 /** Counter-clockwise from above (RFM 3-3 left yaw on power loss; 3-5 right pedal at hover engine failure). */
 export const MAIN_ROTOR_ROTATION = 1;
 /** F / ESTIMATE: 500C flap hinge 0.458 ft (CR-166256 p5); e/R 0.035. Lag hinge: ESTIMATE at the same radius. */
-export const FLAP_HINGE_OFFSET = 0.458 * FT;
-export const LAG_HINGE_OFFSET = 0.458 * FT;
+export const FLAP_HINGE_OFFSET = 0.458 * FT + IN;
+export const LAG_HINGE_OFFSET = 0.458 * FT + IN;
 /** F / ESTIMATE: start of the aerofoil 1.576 ft (500C, CR-166256 p5). */
 export const MAIN_BLADE_ROOT = 1.576 * FT;
 /** F / 3V: 3 deg forward shaft tilt (OH-6A, Heffley p34; RFM Fig 6-3 cant lines). */
@@ -60,11 +60,17 @@ export const TAIL_ROTOR_CHORD = 0.12;
 export const TAIL_ROTOR_TWIST_DEG = -8;
 /** ESTIMATE (the S269 legacy sense); T2 verifies against the render and the yaw response. */
 export const TAIL_ROTOR_ROTATION = -1;
+/** RFM Fig 1-1 note 1: on the ground (full fuel) the cargo deck sits 4.7 deg nose up. Fig 1-1 heights are taken in that attitude. */
+export const GROUND_ATTITUDE_DEG = 4.7;
 /**
- * RFM Fig 6-3: tail-rotor centreline STA 284.0. Height: lowest tip 2.0 ft above the ground (Fig 1-1), so the hub is
- * 2.0 ft + R up. Lateral: on the left of the boom; ESTIMATE 0.30 m (OH-6A hub BL -11.6 in = -0.295 m, F).
+ * RFM Fig 6-3: tail-rotor centreline STA 284.0. Height: the lowest tip is 2.0 ft above the ground in the 4.7 deg
+ * ground attitude (Fig 1-1); the ground line WL -15.2 holds at the mast (the hub-fairing check above), and at STA 284
+ * the nose-up attitude has lowered the tail by (284 - 100) sin 4.7 = 15.1 in, so in these level axes the hub is
+ * 24 + 27.5 + 15.1 = 66.6 in above that line: WL 51.4 (the OH-6A's is WL 54.3, Heffley p34, F). D. Lateral: on the
+ * left of the boom; ESTIMATE 0.30 m (OH-6A hub BL -11.6 in = -0.295 m, F).
  */
-export const TAIL_HUB = { x: x(284), y: -0.3, z: zh(2.0 * FT + TAIL_ROTOR_RADIUS) } as const;
+export const TAIL_HUB = { x: x(284), y: -0.3,
+  z: zh(2.0 * FT + TAIL_ROTOR_RADIUS + (284 - 100) * IN * Math.sin(GROUND_ATTITUDE_DEG * Math.PI / 180)) } as const;
 /** TCDS p14: tail-rotor pitch +27 deg (thrust to the right, anti-torque) to -13..-15 deg. */
 export const TAIL_PITCH_DEG = { max: 27, min: -14 } as const;
 
@@ -124,6 +130,13 @@ export const SKID_REAR_X = x(128);
 /** RFM Fig 6-2 (3V): gear struts at the cargo-compartment frames STA 78.5 and STA 124; nitrogen dampers (RFM 1-9). */
 export const SKID_CONTACT_FRONT_X = x(78.5);
 export const SKID_CONTACT_REAR_X = x(124);
+/**
+ * The skid tubes are not parallel to the waterlines: with full fuel the 500E sits 4.7 deg nose up on level ground
+ * (RFM Fig 1-1 note 1). The front strut contacts are lower in body axes than the rear ones (SKID_Z, which stays the
+ * reference height at the rear struts): the contact span x tan(4.7 deg) = 0.095 m, less the 0.4 deg the dampers'
+ * unequal static strokes add (pilot, full fuel; docs/md500-flight-model.md): 0.087 m. D / calibrated.
+ */
+export const SKID_FRONT_Z = SKID_Z + (SKID_CONTACT_FRONT_X - SKID_CONTACT_REAR_X) * Math.tan((GROUND_ATTITUDE_DEG - 0.4) * Math.PI / 180);
 
 // ------------------------------------------------------------------------------------------- crew
 /** TCDS p13 / RFM 6-3: pilot (LH command) seat STA 73.5, BL -13.0; RH forward passenger BL +15.5. */

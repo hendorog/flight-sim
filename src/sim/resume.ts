@@ -30,6 +30,9 @@ import type { CameraMode, QualityLevel, ScenarioId } from '../core/context';
 import type { Quat, Vec3 } from '../core/math';
 import { isRotorcraftId } from '../core/types';
 import { emptyRotorcraftState } from '../physics/rotorcraft/definition';
+import { MAIN_ROTOR_BLADES as S269_BLADES } from '../aircraft/s269/dimensions';
+import { MAIN_ROTOR_BLADES as MD500_BLADES } from '../aircraft/md500/dimensions';
+import { MD500_N2_BEEP } from '../aircraft/md500/facts';
 import { DEFAULT_AIRCRAFT_ID, isAircraftId, type AircraftId, type ControlInputs, type SurfaceState, type WeatherSettings } from '../core/types';
 import type { AutopilotSettings } from '../physics';
 import type { EngineSnapshot, SystemsSnapshot } from '../physics/interfaces';
@@ -138,6 +141,27 @@ const isQuat = (v: unknown): v is Quat => {
 };
 
 const ENGINE_NUMBERS = ['rpm', 'propRpm', 'bladePitch', 'egt', 'cht', 'oilTemp', 'oilPressure', 'carbIce', 'cowlFlap'] as const;
+
+/** Main-rotor blade count of each articulated-hub type (the per-blade pose array a save carries). Plain data imports. */
+const ARTICULATED_BLADES: Partial<Record<AircraftId, number>> = { s269: S269_BLADES, md500: MD500_BLADES };
+/** Turboshaft governor beep limits, % (the set point a save may carry). */
+const TURBOSHAFT_SET_PCT: Partial<Record<AircraftId, readonly [number, number]>> = {
+  md500: [100 * MD500_N2_BEEP.range[0], 100 * MD500_N2_BEEP.range[1]],
+};
+const GRIPS = ['cutoff', 'groundIdle', 'between', 'fullOpen'];
+
+/** RotorcraftState.turboshaft of a save, field by field (finite numbers, enums in their sets, the set point in range). */
+function isTurboshaft(t: unknown, aircraft: unknown): boolean {
+  if (!isObj(t)) return false;
+  if (!['n2SetPct', 'ptgIntegral', 'n2Pct', 'nrPct', 'torquePsi'].every((k) => isNum(t[k]))) return false;
+  if (!['needlesSplit', 'engineOutLight', 'engineOutHorn', 'reignitionLight', 'overTorque', 'overTemp', 'avoidRange']
+    .every((k) => typeof t[k] === 'boolean')) return false;
+  if (t.lowRotorArmed !== undefined && typeof t.lowRotorArmed !== 'boolean') return false;
+  if (!GRIPS.includes(t.grip as string) || !['governed', 'manual'].includes(t.governorMode as string)) return false;
+  const range = isAircraftId(aircraft) ? TURBOSHAFT_SET_PCT[aircraft] : undefined;
+  if (range && ((t.n2SetPct as number) < range[0] - 1e-9 || (t.n2SetPct as number) > range[1] + 1e-9)) return false;
+  return Math.abs(t.ptgIntegral as number) <= 1 && (t.n2Pct as number) >= 0 && (t.nrPct as number) >= 0;
+}
 const SURFACE_KEYS = ['elevator', 'aileronLeft', 'aileronRight', 'rudder', 'flaps', 'elevatorTrim'];
 
 function isEngineSnapshot(v: unknown): v is EngineSnapshot {
@@ -145,7 +169,7 @@ function isEngineSnapshot(v: unknown): v is EngineSnapshot {
 }
 
 /** A schema-3 `systems` block: every engine, the tanks, the battery, the surfaces and the gear. */
-function isSystems(v: unknown): v is SystemsSnapshot {
+function isSystems(v: unknown, aircraft?: unknown): v is SystemsSnapshot {
   if (!isObj(v) || !Array.isArray(v.engines) || v.engines.length === 0 || !v.engines.every(isEngineSnapshot)) return false;
   if (!Array.isArray(v.tanks) || !v.tanks.every((q) => isNum(q) && q >= 0) || !isNum(v.batteryCharge)) return false;
   const rotor = v.rotorcraft;
@@ -153,11 +177,13 @@ function isSystems(v: unknown): v is SystemsSnapshot {
     if (!isObj(rotor)) return false;
     if (rotor.articulated !== undefined) {
       const a = rotor.articulated;
+      const blades = (isAircraftId(aircraft) ? ARTICULATED_BLADES[aircraft] : undefined) ?? 3;
       if (!isObj(a) ||
-        !Array.isArray(a.blades) || a.blades.length !== 3 ||
+        !Array.isArray(a.blades) || a.blades.length !== blades ||
         !a.blades.every(b => isObj(b) && ['flap', 'lag', 'pitch'].every(k => isNum(b[k])))) return false;
     }
     if (rotor.clutchDisengaged !== undefined && typeof rotor.clutchDisengaged !== 'boolean') return false;
+    if (rotor.turboshaft !== undefined && !isTurboshaft(rotor.turboshaft, aircraft)) return false;
     if (rotor.transmission !== undefined) {
       const t = rotor.transmission;
       if (!isObj(t) || !isNum(t.oilPressurePsi) || t.oilPressurePsi < 0 ||
@@ -233,16 +259,18 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (!isNum(v.batteryCharge)) return null;
   const s = v.surfaces;
   if (!isObj(s) || !SURFACE_KEYS.every((k) => isNum(s[k]))) return null;
-  if (v.systems !== undefined && !isSystems(v.systems)) return null;
+  if (v.systems !== undefined && !isSystems(v.systems, v.aircraft)) return null;
   const c = v.controls;
   if (!isObj(c) || !isObj(c.lights)) return null;
   if (c.collective !== undefined && (!isNum(c.collective) || c.collective < 0 || c.collective > 1)) return null;
   for (const key of ['rotorGovernor', 'rotorClutch', 'rotorClutchGuardOpen', 'rotorDoorsOff', 'fuelPrime']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
   if (c.rotorClutchCommand !== undefined && !['engage', 'hold', 'release'].includes(c.rotorClutchCommand as string)) return null;
-  for (const key of ['cyclicTrimPitch', 'cyclicTrimRoll']) {
+  for (const key of ['cyclicTrimPitch', 'cyclicTrimRoll', 'n2Beep']) {
     if (c[key] !== undefined && (!isNum(c[key]) || Math.abs(c[key] as number) > 1)) return null;
+    // Momentary switches (trim motors, the governor beep) cannot be held through a reload.
     if (c[key] !== undefined) c[key] = 0;
   }
+  if (c.reverse !== undefined && (!isNum(c.reverse) || c.reverse < 0 || c.reverse > 1)) return null;
   if (c.lampTestId !== undefined) { if (typeof c.lampTestId !== 'string') return null; delete c.lampTestId; }
   // A held key cannot survive a reload. It must not leave the pump priming unattended.
   if (c.fuelPrime !== undefined) c.fuelPrime = false;

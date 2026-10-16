@@ -602,6 +602,13 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     r.state.rotorRpm = r.state.omega * 30 / Math.PI;
     this.propulsion.reset({ ...powerplant, rpm: ic.engineRunning ? d.nominalRpm * d.engineRatio : 0, warm: !ic.onGround || ic.engineRunning });
     c.throttle = ic.engineRunning ? 1 : 0;
+    // A turboshaft: the grip FULL OPEN with fuel on when running (the governor flies the engine), CUTOFF when not;
+    // the igniters off (auto-reignition fires them); transmission oil already up when the rotor turns.
+    if (r.turboshaft) {
+      c.mixture = 1; c.magnetos = 0;
+      if (r.state.transmission && r.state.omega > 0) r.state.transmission.oilPressurePsi = d.transmission!.pressurePsi *
+        Math.min(1, r.state.rotorRpm / d.transmission!.pumpRpm);
+    }
     c.collective = 0; c.parkingBrake = false; c.elevatorTrim = 0;
     let orientation = quat.fromEuler(0, 0, ic.heading);
     let position = { ...ic.position };
@@ -609,6 +616,10 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const velocityAir = { x: ic.airspeed * Math.cos(path) * Math.cos(ic.heading),
       y: ic.airspeed * Math.cos(path) * Math.sin(ic.heading), z: -ic.airspeed * Math.sin(path) };
     if (ic.onGround) {
+      // Asymmetric cyclic travel (MD 500E): the cyclic sits at its rigging neutral on the ground (RFM 4-12, about
+      // a third of the travel from full aft), not at the stick's centre.
+      const l = d.cyclicLimits;
+      if (l) { c.elevator = (l.forward - l.aft) / (l.forward + l.aft); c.aileron = (l.left - l.right) / (l.left + l.right); }
       const pose = this.skids!.restingPose(this.mp.mass, this.mp.cgOffset);
       position.z = -this.groundElevation - pose.height;
       orientation = quat.fromEuler(pose.roll, pose.pitch, ic.heading);
@@ -665,15 +676,45 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.propIn.controls = ec; this.propIn.dt = 0.02;
     let lo = 0, hi = 1;
     const target = r.state.torque / (d.engineRatio * d.transmissionEfficiency);
-    for (let i = 0; i < 20; i++) {
+    const ts = r.turboshaft;
+    if (ts) {
+      // A gas turbine: the quasi-steady engine (gas producer at the governed N1, TOT settled) instead of 0.4 s
+      // probes that would catch the spool mid-acceleration. The bisection finds the PLA-equivalent N1 demand
+      // whose output-shaft torque drives the trimmed rotor at the reset speed.
+      unit.steady = true;
+      ec.engines = [{}];
+      for (let i = 0; i < 40; i++) {
+        ec.throttle = (lo + hi) / 2;
+        this.prop = this.propulsion.step(this.propIn);
+        if (unit.shaftTorque > target) hi = ec.throttle; else lo = ec.throttle;
+      }
       ec.throttle = (lo + hi) / 2;
-      for (let j = 0; j < 20; j++) this.prop = this.propulsion.step(this.propIn);
-      if (unit.shaftTorque > target) hi = ec.throttle; else lo = ec.throttle;
+      this.prop = this.propulsion.step(this.propIn);
+      unit.steady = false;
+    } else {
+      for (let i = 0; i < 20; i++) {
+        ec.throttle = (lo + hi) / 2;
+        for (let j = 0; j < 20; j++) this.prop = this.propulsion.step(this.propIn);
+        if (unit.shaftTorque > target) hi = ec.throttle; else lo = ec.throttle;
+      }
     }
     r.state.governorThrottle = r.state.governorIntegral = ic.engineRunning ? ec.throttle : 0;
-    c.throttle = r.state.governorThrottle;
-    r.state.previousThrottle = c.throttle; r.state.previousCollective = c.collective ?? 0;
-    r.throttle(0, c, unit);
+    if (ts) {
+      // The grip stays where the pilot left it; the governor holds the N1 the trim needs at this N2 (the beep set
+      // where a pilot would have beeped it: N2 on the reset speed, no transient at release).
+      const tsd = ts.ts, s = r.state.turboshaft!;
+      const n2 = ts.n2(unit), ng = tsd.plaNg.groundIdle + (tsd.plaNg.fullOpen - tsd.plaNg.groundIdle) * ec.throttle;
+      if (ic.engineRunning) {
+        s.n2SetPct = clamp(ts.steadySetPct(ng, n2, c.collective ?? 0), 100 * tsd.governor.setRange[0], 100 * tsd.governor.setRange[1]);
+        s.ptgIntegral = ts.steadyIntegral(ng, n2, s.n2SetPct, c.collective ?? 0);
+      }
+      ts.stepTurboshaft(0, c, unit, cloneControls(c), this.prop.electrical.busVoltage);
+      ts.publish(0, c, unit, this.prop.electrical.busVoltage, ic.onGround);
+    } else {
+      c.throttle = r.state.governorThrottle;
+      r.state.previousThrottle = c.throttle; r.state.previousCollective = c.collective ?? 0;
+      r.throttle(0, c, unit);
+    }
     this.controlsIn = cloneControls(c); this.rotorControls = this.controlsIn;
     // Numerical initialisation must not consume fuel or reset the already-settled intake wall film.
     this.propulsion.fuel.quantities.set(this.loading.tanks);
@@ -1091,11 +1132,15 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     if (this.rotorcraft) {
       const engineControls = this.controlsIn;
       Object.assign(engineControls, controls);
-      engineControls.throttle = this.rotorcraft.throttle(h, controls, this.propulsion.units[0]);
+      const ts = this.rotorcraft.turboshaft;
+      // A turboshaft's fuel control and N2 governor replace the piston governor/correlator (throttle(), unchanged).
+      if (ts) ts.stepTurboshaft(h, controls, this.propulsion.units[0], engineControls, this.prop.electrical.busVoltage);
+      else engineControls.throttle = this.rotorcraft.throttle(h, controls, this.propulsion.units[0]);
       this.propIn.controls = engineControls;
     }
     this.prop = this.propulsion.step(this.propIn);
-    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage);
+    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage,
+      this.state.onGround);
     const scales = this.dragScales;
     if (scales) {
       const units = this.propulsion.units;
