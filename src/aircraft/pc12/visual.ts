@@ -283,8 +283,9 @@ const FUSELAGE: AirframeVisualDef['fuselage'] = {
   // The crescent chin inlet under the spinner (PHOTO propeller and nose): a wide, low opening in the lower lip.
   inlets: [{ y: 0, z: hz(T_H - 0.34), w: 0.46, h: 0.13, r: 0.05, exponent: 3, xMin: FRONT_X - 0.04, baffleX: FRONT_X - 0.3 }],
   // The two exhaust stubs, one each side of the cowling at the thrust line behind the propeller, pointing out and
-  // aft (PHOTO: N814WA station about 1.9; front view).
-  exhaust: { pos: [sx(1.85), 0.5, hz(T_H + 0.02)], radius: 0.085, dir: [-0.24, 0.2, 0.0], mirror: true },
+  // aft (PHOTO: N814WA station about 1.9; front view): flattened polished pipes 0.12 m tall and 0.2 m wide, their
+  // mouths standing 0.1 m proud of the cowl (skin half width 0.60 m at the mouth), dark inside.
+  exhaust: { pos: [sx(1.85), 0.5, hz(T_H + 0.02)], radius: 0.085, dir: [-0.28, 0.2, 0.01], mirror: true, oval: [0.06, 0.1], finish: 'polished' },
   antennas: [
     // VHF blades on the roof, GPS on the roof, a VHF blade and the transponder stub under the belly.
     { kind: 'blade', pos: [sx(6.4), 0, topZ(sx(6.4))], height: 0.24 },
@@ -342,10 +343,12 @@ const GLAZING: GlazingDef = {
   tRange: [0.2, 0.8],
   windows: [
     // The cockpit side windows behind the A-post (3V: 2.13-2.57 m, less 0.07; the direct-vision panel in their forward part).
+    // Their front edge runs parallel to the A-post plane's trace on the skin, about 0.08 m behind it, so the post is a
+    // frame of even width from the panes' lower corner to the roof (it pinched to nothing at the top before).
     {
       pts: [
-        [sx(3.47), hz(2.08)],
-        [sx(3.96), hz(2.5)],
+        [sx(3.48), hz(2.08)],
+        [sx(4.17), hz(2.5)],
         [sx(4.45), hz(2.5)],
         [sx(4.45), hz(2.06)],
       ],
@@ -360,7 +363,15 @@ const GLAZING: GlazingDef = {
     sillN: SCREEN_SILL_N,
     post: [SCREEN_CORNER, SCREEN_POST_TOP],
     postY: 0.56,
+    // The A-post leans inward from the panes' lower corners to the top frame over the seats (3V front view; PHOTO
+    // BOUTIQUE AIR cockpit): a plane across the shoulder, so the post keeps its width up to the roof.
+    postLine: [
+      [SCREEN_CORNER[0], 0.74, SCREEN_CORNER[1]],
+      [SCREEN_TOP_X, 0.5, hz(2.62)],
+    ],
     topX: SCREEN_TOP_X,
+    // Two panes either side of a centre post 0.06 m wide (PHOTO BOUTIQUE AIR cockpit, cockpit linke Seite).
+    centrePost: 0.03,
   },
   doors: [
     // The airstair door, hinged at its foot; the cargo door, hinged at its top; the over-wing exit on the right.
@@ -705,6 +716,8 @@ const LIVERY: LiveryDef = {
   cowlSplitZ: hz(T_H - 0.05),
   cowl: { oilDoor: { x: sx(2.2), halfLength: 0.08, halfWidth: 0.07 } },
   floorRivets: { z: FLOOR_Z + 0.02, x1: CABIN_REAR_X },
+  // The airstair, cargo and exit door gaps read as dark outlines from across the ramp (PHOTO ZS-JDD cargo door).
+  doorSeam: { halfWidth: 0.004, darken: 0.55 },
   fin: { bandZ0: hz(2.45), bandX0: sx(12.2), slope: 0.75, cap: 0.12 },
   texture: { w: 4096, h: 2048 },
 };

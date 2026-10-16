@@ -27,4 +27,5 @@ export const MD500_ROWS = { top: 186, second: 394 } as const;
 /** The four engine / right-column gauge rows (2-1/4 in cases, 137 px). */
 export const MD500_STACK_Y = [150, 292, 434, 576] as const;
 export const MD500_CONSOLE_TOP = 652;
-export const MD500_ANNUNCIATOR_STRIP = { x: 32, y: 20, cell: 62, h: 48 } as const;
+/** The 16 press-to-test lenses (RFM Fig 3-1), legends on the lens caps: 60 x 58 px cells (25 x 24 mm), as tall as the oil gauges below allow. */
+export const MD500_ANNUNCIATOR_STRIP = { x: 32, y: 20, cell: 62, h: 58 } as const;

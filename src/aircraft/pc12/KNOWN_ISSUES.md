@@ -220,15 +220,19 @@ Close with: a P&WC deck or the /47 power-setting tables.
 
 ## Exterior and cockpit shell — **simplified / estimate**
 
-The windscreen is one lofted surface cut by a sill plane and A-post lines: the real two flat panes and their centre
-post are not drawn. The legs are hidden at extension 0, so the main tyres standing about 25 mm proud of the wing root
+The windscreen is one lofted surface cut by a sill plane, a body-space A-post plane (the post leans inward over the
+shoulder to the top frame at |y| 0.5 m) and a 0.06 m centre post: the two panes follow the fuselage loft's curve, not
+flat glass. The legs are hidden at extension 0, so the main tyres standing about 25 mm proud of the wing root
 show only in the last few per cent of the swing. The flap selector is drawn as a slot lever on the panel face over the
 pedestal, not the pedestal lever right of the power controls; the MOR lever is drawn fixed at OFF and there is no
-aileron trim tab. The exhaust stubs are round, not oval. The cabin has four club seats (the executive layout), not the
+aileron trim tab. The exhaust stubs are polished flattened pipes (0.12 x 0.20 m, mouths 0.1 m proud) with no
+fairing at their root. The cabin has four club seats (the executive layout), not the
 nine-seat commuter cabin. ESTIMATE in the drawing: the stabiliser pivot (65 % chord), the drawn wing incidence and
 washout (2 deg to 0; the aerodynamic rigging in geometry.ts is -0.5 / -3.0 deg), the tailplane incidence and the
-winglet cant (62 deg). A bright lit wedge on the inside of the left A-post in the night cockpit view (probably the
-landing light on the post lining) was not investigated.
+winglet cant (62 deg). The "propeller blade" left of the windscreen in the cockpit views (gate 0) was the
+cabin lining: the windscreen's side-projection post line pinched out at the shoulder and left a tapered opaque strip;
+it is now the A-post plane above (gate 1). The bright patch at the lower left of the night cockpit view is the left
+landing light's pool on the runway, seen past the post (the lamp in the left leading edge aims straight ahead).
 Evidence: [visual.ts](visual.ts), [docs/pc12-exterior.md](../../../docs/pc12-exterior.md).
 Close with: a /47 windscreen and pedestal drawing; the commuter cabin as a variant.
 
@@ -236,13 +240,16 @@ Close with: a /47 windscreen and pedestal drawing; the commuter cabin as a varia
 
 GEN 1 and GEN 2 rockers are tied (one `alternator` control) and the two fuel pumps are one rocker. The pusher test,
 MOR, EIS FUEL RESET / MENU / TEST buttons, the ice-protection switches, ECS and cabin controls are painted or absent.
-The standby instruments are full size, and the RMI places hold NAV indicators (no RMI / HSI renderer); no turn
-coordinator is fitted (the attitude indicators carry inclinometers). The EIS is drawn as nine round-dial windows; the
+The standby instruments are 2-inch cases (0.64 scale). The pilot's EHSI place holds an
+electromechanical HSI on NAV 1 and the RMI place an RMI whose no. 1 needle points at the GPS waypoint (there is no
+VOR bearing in the simulation) and whose no. 2 (ADF) needle is parked; the co-pilot's side keeps a NAV 2 CDI and a
+heading indicator, and the slaved HSI card still shows the shared directional gyro (aligned from the co-pilot's
+heading indicator). No turn coordinator is fitted (the attitude indicators carry inclinometers). The EIS is drawn as nine round-dial windows; the
 /47's EIS is a monochrome LCD whose window list is not sourced. The HYDR lens shows the emergency gear selection (there
 is no hydraulic model). Cabin altitude and differential are a display function of pressure altitude (no
 pressurisation).
 Evidence: [docs/pc12-panel.md](../../../docs/pc12-panel.md) "Not modelled / KNOWN ISSUES", [panel.ts](panel.ts).
-Close with: GEN 2 and the second pump as their own controls; an RMI / HSI; the /47 EIS window list.
+Close with: GEN 2 and the second pump as their own controls; VOR / ADF bearings for the RMI; the /47 EIS window list.
 
 ## Sound — **estimate**
 

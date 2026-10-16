@@ -37,8 +37,64 @@ export class AnnunciatorPanel implements PanelComponent {
     private readonly lamps: readonly LampDef[] = C172S_ANNUNCIATOR_LAMPS,
     private readonly columns?: number,
     private readonly cells?: readonly Rect[],
+    private readonly lensLegend = false,
   ) {
     this.latch = new Latch(lamps.length);
+  }
+
+  /**
+   * The legend of a lens cap: one, two or three lines, whichever gives the largest type that fits the cap, and its
+   * size, px (cap heights of 56 px give 11-15 px type).
+   */
+  private static legend(g: Ctx2D, text: string, w: number, h: number): { lines: string[]; size: number } {
+    const words = text.split(' ').filter(Boolean);
+    const options: string[][] = [[text]];
+    for (let k = 1; k < words.length; k++) {
+      options.push([words.slice(0, k).join(' '), words.slice(k).join(' ')]);
+      for (let m = k + 1; m < words.length; m++) options.push([words.slice(0, k).join(' '), words.slice(k, m).join(' '), words.slice(m).join(' ')]);
+    }
+    // Fewer lines unless one more line buys at least 1.5 px of type.
+    options.sort((a, b) => a.length - b.length);
+    let best = { lines: [text], size: 0 };
+    for (const lines of options) {
+      let size = Math.min(15, (h - 6) / (lines.length * 1.1));
+      g.font = `700 ${size}px ${LABEL_FONT}`;
+      const widest = Math.max(...lines.map((l) => g.measureText(l).width));
+      if (widest > w - 4) size *= (w - 4) / widest;
+      if (size > best.size + (lines.length > best.lines.length && best.size > 0 ? 1.5 : 0.01)) best = { lines, size };
+    }
+    return best;
+  }
+
+  private drawLens(g: Ctx2D, lamp: LampDef, b: Rect, on: boolean): void {
+    const { x, y, w, h } = b;
+    g.save();
+    // Bezel, then the coloured cap: dark tinted while out, full colour with a glow when lit.
+    g.fillStyle = '#101011';
+    g.fillRect(x, y, w, h);
+    const cap = { x: x + 3, y: y + 3, w: w - 6, h: h - 6 };
+    if (on) { g.shadowColor = lamp.color; g.shadowBlur = 10; }
+    g.fillStyle = lamp.color;
+    g.globalAlpha = on ? 1 : 0.22;
+    g.fillRect(cap.x, cap.y, cap.w, cap.h);
+    g.globalAlpha = 1;
+    g.shadowBlur = 0;
+    if (!on) { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(cap.x, cap.y, cap.w, cap.h); }
+    const { lines, size } = AnnunciatorPanel.legend(g, lamp.text, cap.w, cap.h);
+    g.font = `700 ${size}px ${LABEL_FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    // Engraved legend: dark on the lit colour, light grey on the unlit cap (readable by day).
+    g.fillStyle = on ? 'rgba(20,14,6,0.92)' : 'rgba(225,220,205,0.62)';
+    const lh = size * 1.1;
+    lines.forEach((l, j) => g.fillText(l, x + w / 2, y + h / 2 + (j - (lines.length - 1) / 2) * lh + 0.5));
+    const glass = g.createLinearGradient(x, cap.y, x, cap.y + cap.h);
+    glass.addColorStop(0, 'rgba(255,255,255,0.16)');
+    glass.addColorStop(0.45, 'rgba(255,255,255,0.03)');
+    glass.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = glass;
+    g.fillRect(cap.x, cap.y, cap.w, cap.h);
+    g.restore();
   }
 
   get paintRects(): readonly Rect[] | undefined { return this.cells; }
@@ -77,7 +133,10 @@ export class AnnunciatorPanel implements PanelComponent {
   paintLightMask(g: Ctx2D): void {
     this.lamps.forEach((lamp, i) => {
       const b = this.cell(i);
-      if (this.cells) {
+      if (this.cells && this.lensLegend) {
+        // A lit lens is self-lit; an unlit cap only shows its legend under the panel lights.
+        g.fillStyle = this.latch.get(i) === 1 ? '#ffffff' : LIGHT_DIAL; g.fillRect(b.x + 3, b.y + 3, b.w - 6, b.h - 6);
+      } else if (this.cells) {
         const cx = b.x + b.w / 2, cy = b.y + b.h - 14;
         g.save(); g.fillStyle = LIGHT_DIAL; g.font = `600 7px ${LABEL_FONT}`;
         g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -95,6 +154,10 @@ export class AnnunciatorPanel implements PanelComponent {
     this.lamps.forEach((lamp, i) => {
       const { x, y, w, h } = this.cell(i);
       const on = this.latch.get(i) === 1;
+      if (this.cells && this.lensLegend) {
+        this.drawLens(g, lamp, { x, y, w, h }, on);
+        return;
+      }
       if (this.cells) {
         const cx = x + w / 2, cy = y + h - 14;
         g.save();

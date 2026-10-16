@@ -12,6 +12,7 @@
 //   feather=1|2|all        that propeller (or every one) stopped with its blades feathered
 //   rpm2=1200              rpm of the second propeller (default: rpm)
 //   view=front|side|rear|top|low|flaps|gear|gearfront|nose|door|root|tail|cockpit|cockpitleft|cockpitdown   camera preset (follows the aircraft)
+//   view=sidefar|sidefarright  level side views from 70 m (use fov=12), for counting windows and doors
 //   anim=1                 cycle surfaces, flaps, gear compression, steering, prop rpm and lights over time
 //   flaps=deg ail=deg elev=deg rud=deg trim=deg   surface deflections (ail = left aileron; right is opposite)
 //   rpm=2300 comp=0.06 steer=deg                  propeller rpm, strut compression (m), nosewheel steering
@@ -88,6 +89,9 @@ const eye = visual.pilotEye;
 const PRESETS: Record<string, [THREE.Vector3, THREE.Vector3]> = {
   front: [new THREE.Vector3(-6.5, 0.9, -8.5), new THREE.Vector3(0, -0.2, -0.6)],
   side: [new THREE.Vector3(-13, 0.2, -0.9), new THREE.Vector3(0, -0.1, 0.9)],
+  // Far, level side views (use with fov=12): the near wing does not climb over the cabin windows in perspective.
+  sidefar: [new THREE.Vector3(-70, 0.6, 0.6), new THREE.Vector3(0, 0.4, 0.6)],
+  sidefarright: [new THREE.Vector3(70, 0.6, 0.6), new THREE.Vector3(0, 0.4, 0.6)],
   rear: [new THREE.Vector3(7.5, 2.6, 9.5), new THREE.Vector3(0, -0.2, 0.8)],
   top: [new THREE.Vector3(0.001, 16, 0.6), new THREE.Vector3(0, 0, 0.6)],
   low: [new THREE.Vector3(-3.2, -1.05, -6.4), new THREE.Vector3(0, 0, -0.6)],

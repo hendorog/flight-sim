@@ -134,7 +134,8 @@ console twin comes with the shared ignition group, which also draws an IGNITION 
 does not have. The ammeter reads generator output (0-150 A), so the RFM's start-abort cue (battery discharge) cannot be
 seen. The tach generators are self-powered (ESTIMATE). Circuit breakers are painted (no ENG OUT breaker caution), the
 attitude indicator and DG are an optional electric fit (AGENT), and there is no RE-IGN TEST switch. The checklists have
-no N2-beep, grip or torque-psi signal, so the grip items are judged from N1 only.
+no N2-beep, grip or torque-psi signal, so the grip items are judged from N1 only. The 16 warning lenses carry their
+legend on the cap (12.6-15 px type on the 1056 px panel, up to three lines), not the RFM's exact two-line wording.
 Evidence: [docs/md500-panel.md](../../../docs/md500-panel.md) "Compromises", [panel.ts](panel.ts).
 Close with: a dot primitive, a start-button ignition kind (panelDef.ts), checklist signals for the grip and torque.
 

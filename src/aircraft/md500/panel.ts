@@ -80,7 +80,9 @@ export const MD500_PANEL: PanelDef = {
     { kind: 'xpdr', id: 'xpdr', bounds: { x: 700, y: 748, w: 320, h: 60 } },
   ],
   annunciator: { bounds: { x: STRIP.x, y: STRIP.y, w: 16 * STRIP.cell, h: STRIP.h }, lamps: MD500_ANNUNCIATOR_LAMPS,
-    cells: Array.from({ length: 16 }, (_, i) => ({ x: STRIP.x + i * STRIP.cell, y: STRIP.y, w: STRIP.cell - 2, h: STRIP.h })) },
+    cells: Array.from({ length: 16 }, (_, i) => ({ x: STRIP.x + i * STRIP.cell, y: STRIP.y, w: STRIP.cell - 2, h: STRIP.h })),
+    // The legend is on each lens cap (two lines), readable from the seat: ENGINE OUT apart from GEN OUT.
+    lensLegend: true },
   switchRow: { bounds: { x: 150, y: MD500_CONSOLE_TOP + 2, w: 412, h: 104 }, rockerTop: 44, rockerW: 28, rockerH: 38,
     switches: [
       // RFM Fig 4-2 lower row: BAT/OFF/EXT PWR, START PUMP, ANTI-COLL, POS LT, LDG LT (utility), PNL LT, GEN. Order ESTIMATE.

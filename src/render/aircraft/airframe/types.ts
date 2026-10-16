@@ -43,7 +43,15 @@ export interface GlazingDef {
   /** Side-projection (x, z) convex outlines. A bubble canopy is one large outline bounded by sill, front and rear bows. */
   windows: readonly OutlineDef[];
   windscreen?: { sillC: readonly [number, number]; sillN: readonly [number, number];
-                 post: readonly [readonly [number, number], readonly [number, number]]; postY: number; topX: number };
+                 post: readonly [readonly [number, number], readonly [number, number]]; postY: number; topX: number;
+                 /** Half width (m) of a centre post dividing the windscreen into two panes; none when absent. */
+                 centrePost?: number;
+                 /**
+                  * The A-post as a body-space line (FRD x, |y|, z; lower corner first) in place of `post`/`postY`: the
+                  * glass ends at the plane through it that faces aft and outboard-up across the cabin's shoulder, so a
+                  * post that leans inward to the roof (seen from ahead) keeps its width over the shoulder's curve.
+                  */
+                 postLine?: readonly [readonly [number, number, number], readonly [number, number, number]] };
   /** Panel lines only (doors, baggage doors, canopy joint). */
   doors: readonly (OutlineDef & { handle?: { x: number; z: number } })[];
   /** Cabin-lining roof limit (FRD z); -Infinity is not cloneable-safe in JSON, so use -1e9 for "no headliner" (canopy). */
@@ -385,6 +393,8 @@ export interface LiveryDef {
   cowl?: { splitEndX?: number; camlocEndX?: number;
            grille?: { x: number; z0: number; z1: number; halfWidth: number };
            oilDoor?: { x: number; halfLength: number; halfWidth: number } };
+  /** Door outlines painted as a dark seam (gap shadow) of this half width, m, and darkening 0..1. Absent: groove only. */
+  doorSeam?: { halfWidth: number; darken: number };
   /** A rivet row along the cabin floor line at height z, from the firewall aft to station x1 ('metal' only). Absent: none. */
   floorRivets?: { z: number; x1: number };
   fin: { bandZ0: number; bandX0: number; slope: number; cap: number };
@@ -401,7 +411,11 @@ export interface AirframeVisualDef {
                         /** An exhaust stack at `pos`; `dir`: its root-to-mouth vector, m (absent: 0.14 m aft and 0.10 m down). */
                         exhaust?: { pos: FRD; radius: number; dir?: FRD;
                                     /** A second stack mirrored on the other side (pos and dir with y negated). Absent: one stack. */
-                                    mirror?: boolean };
+                                    mirror?: boolean;
+                                    /** A flattened stack (with `dir`): semi-axes across it, m, [up/down, fore/aft]. Absent: round. */
+                                    oval?: readonly [number, number];
+                                    /** 'polished': bare polished metal (the PT6A-67 stubs). Absent: the heat-stained exhaust finish. */
+                                    finish?: 'polished' };
                         antennas: readonly { kind: 'blade' | 'stub' | 'whip'; pos: FRD;
                                              /** Length of the antenna from its base at `pos`, m. Absent: 0.2 (blade), 0.09 (stub). */
                                              height?: number }[] };

@@ -5,9 +5,10 @@
 // The legacy /47 panel as the owner's analogue-style panel (owner decision 1: no glass / EPECS), arranged from the
 // Commons photographs of the /47 cockpit (research-pc12.md section 15; PHOTO) and the 47E POH section 7 text
 // (47E-PROXY). The EFIS tubes of the real /47 are drawn as electromechanical instruments in the EADI / EHSI places
-// (AGENT choice: the attitude indicator and the heading indicator; the RMI places hold the NAV indicators):
-//   outboard left   standby attitude indicator, airspeed indicator, altimeter
-//   pilot's T       ASI | attitude | altimeter over RMI | horizontal situation (heading) | VSI; flap gauge, clock below
+// (AGENT choice: the attitude indicator and, on the pilot's side, an electromechanical HSI on NAV 1 beside an RMI; the
+// co-pilot's RMI place holds the NAV 2 indicator and the EHSI place a heading indicator):
+//   outboard left   standby attitude indicator, airspeed indicator, altimeter (2-inch cases)
+//   pilot's T       ASI | attitude | altimeter over RMI | HSI | VSI; flap gauge, clock below
 //   centre          EIS 3 x 3 window grid (TQ, ITT, NG / FUEL FLOW, FUEL QTY, NP / BAT, GEN, ENG OIL), the CAWS 6 x 8
 //                   legend grid below it with the gear handle and its lights at the left
 //   right of EIS    radio stack (two NAV / COM, GPS, transponder); cabin altitude / differential gauge
@@ -85,8 +86,11 @@ const ROWS = [PC12_PILOT_T.y, PC12_PILOT_T.y + PC12_T_PITCH.y] as const;
 const cols = (x: number): readonly [number, number, number] => [x - PC12_T_PITCH.x, x, x + PC12_T_PITCH.x];
 const PILOT_COLS = cols(PX);
 const COPILOT_COLS = cols(CX);
-/** The standby instruments, one column outboard of the pilot's T. */
-const STANDBY = { x: PILOT_COLS[0] - PC12_T_PITCH.x, y: [PC12_PILOT_T.y, ROWS[1], 518] as const };
+/**
+ * The standby instruments: 2-inch cases (0.64 of a 3-1/8" one, 110 px bezels) stacked 124 px apart in one column
+ * outboard of the pilot's T (PHOTO C-GMPY: a small standby horizon over a small altimeter outboard of the ASI).
+ */
+const STANDBY = { x: PILOT_COLS[0] - 160, y: [ROWS[0] - 30, ROWS[0] + 94, ROWS[0] + 218] as const, scale: 2 / 3.125 };
 const FLAP = PC12_FLAP_GAUGE;
 const CLOCK = { x: PILOT_COLS[1], y: 520 };
 /** Radio stack: rack units are 320 px wide (render/avionics.ts); heights as the C208's. */
@@ -308,7 +312,7 @@ const SMALL = APERTURES.small * 1.15;
 export const PC12_PANEL: PanelDef = {
   id: 'pc12',
   fixed: {
-    flightRows: [['asi', 'attitude', 'altimeter'], ['rmi', 'heading', 'vsi']],
+    flightRows: [['asi', 'attitude', 'altimeter'], ['rmi', 'hsi', 'vsi']],
     controls: [{ x: 20, y: 870, w: 680, h: 140 }],
     crops: [EIS_ALL],
     lampsBeside: true,
@@ -320,14 +324,14 @@ export const PC12_PANEL: PanelDef = {
     { kind: 'asi', id: 'asi', at: [PILOT_COLS[0], ROWS[0]], marks: PC12_ASI_MARKS },
     { kind: 'attitude', id: 'attitude', at: [PILOT_COLS[1], ROWS[0]], inclinometer: true },
     { kind: 'altimeter', id: 'altimeter', at: [PILOT_COLS[2], ROWS[0]] },
-    // RMI place: the NAV 1 indicator; horizontal situation: the heading indicator; VSI.
-    { kind: 'cdi', id: 'rmi', at: [PILOT_COLS[0], ROWS[1]], receiver: 'nav1', fixedCourseDeg: 70 },
-    { kind: 'heading', id: 'heading', at: [PILOT_COLS[1], ROWS[1]] },
+    // RMI (GPS bearing on no. 1, the ADF needle parked), the HSI on NAV 1 in the EHSI place, VSI (PHOTO C-GMPY).
+    { kind: 'rmi', id: 'rmi', at: [PILOT_COLS[0], ROWS[1]] },
+    { kind: 'hsi', id: 'hsi', at: [PILOT_COLS[1], ROWS[1]], receiver: 'nav1', fixedCourseDeg: 70 },
     { kind: 'vsi', id: 'vsi', at: [PILOT_COLS[2], ROWS[1]] },
-    // Standby instruments, outboard.
-    { kind: 'attitude', id: 'attitudeSb', at: [STANDBY.x, STANDBY.y[0]], inclinometer: true },
-    { kind: 'asi', id: 'asiSb', at: [STANDBY.x, STANDBY.y[1]], marks: PC12_ASI_MARKS },
-    { kind: 'altimeter', id: 'altimeterSb', at: [STANDBY.x, STANDBY.y[2]] },
+    // Standby instruments, outboard: 2-inch cases (0.64 of the 3-1/8" primaries) stacked in one column.
+    { kind: 'attitude', id: 'attitudeSb', at: [STANDBY.x, STANDBY.y[0]], inclinometer: true, scale: STANDBY.scale },
+    { kind: 'asi', id: 'asiSb', at: [STANDBY.x, STANDBY.y[1]], marks: PC12_ASI_MARKS, scale: STANDBY.scale },
+    { kind: 'altimeter', id: 'altimeterSb', at: [STANDBY.x, STANDBY.y[2]], scale: STANDBY.scale },
     singleGauge('flaps', [FLAP.x, FLAP.y], FLAP_DIAL, (r) => r.flapsDeg),
     { kind: 'clock', id: 'clock', at: [CLOCK.x, CLOCK.y] },
     // The co-pilot's T (one pitot-static system and one set of gyros feed both sides here).

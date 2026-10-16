@@ -108,7 +108,7 @@ export class AttitudeGauge extends RoundGauge {
     g.beginPath();
     g.arc(this.cx, this.cy, this.r, 0, Math.PI * 2);
     g.clip();
-    g.setTransform(c, s, -s, c, this.cx, this.cy);
+    g.transform(c, s, -s, c, this.cx, this.cy);
     g.drawImage(this.ring!, -this.ring!.width / 2, -this.ring!.height / 2);
     g.beginPath();
     g.arc(0, 0, AttitudeGauge.CARD_R, 0, Math.PI * 2);
@@ -484,9 +484,10 @@ export class HeadingGauge extends RoundGauge {
     const hdg = this.latch.get(0);
     const c = Math.cos(-hdg);
     const s = Math.sin(-hdg);
-    g.setTransform(c, s, -s, c, this.cx, this.cy);
+    g.save();
+    g.transform(c, s, -s, c, this.cx, this.cy);
     g.drawImage(this.card!, -this.card!.width / 2, -this.card!.height / 2);
-    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.restore();
     this.bug.draw(g, this.cx, this.cy, this.latch.get(1) - hdg, false);
   }
 

@@ -81,11 +81,22 @@ export type GaugeDef =
   /** Aircraft-specific dial using the shared sizing, recess, lighting and redraw contract. */
   | { kind: 'customRound'; id: string; at: At; size: 'large' | 'small';
       create(id: string, x: number, y: number, aperture: number): PanelComponent }
-  | { kind: 'asi'; id: string; at: At; marks: AsiMarkings }
-  | { kind: 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At }
+  /**
+   * `scale` of a flight instrument: its size against the 3-1/8" case (a 2" standby instrument is 0.64), drawn,
+   * recessed and hit-tested at that size. Absent: 1 (the panel's instrumentScale still applies on top).
+   */
+  | { kind: 'asi'; id: string; at: At; marks: AsiMarkings; scale?: number }
+  | { kind: 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At; scale?: number }
   /** `inclinometer`: a slip ball in a tube across the foot of the face (an EADI, a standby horizon), on a panel without a turn coordinator. */
-  | { kind: 'attitude'; id: string; at: At; inclinometer?: boolean }
+  | { kind: 'attitude'; id: string; at: At; inclinometer?: boolean; scale?: number }
   | { kind: 'cdi'; id: string; at: At; receiver: 'nav1' | 'nav2'; fixedCourseDeg: number }
+  /**
+   * Horizontal situation indicator: a slaved compass card with the heading bug, the course pointer set by the OBS
+   * (NAV 1; `fixedCourseDeg` otherwise), its deviation bar and the glideslope pointers of `receiver`.
+   */
+  | { kind: 'hsi'; id: string; at: At; receiver: 'nav1' | 'nav2'; fixedCourseDeg: number }
+  /** Radio magnetic indicator: a slaved card and two bearing needles, no. 1 on the GPS's active waypoint, no. 2 (ADF) parked. */
+  | { kind: 'rmi'; id: string; at: At }
   | { kind: 'tach'; id: string; at: At; size: 'large' | 'small'; marks: TachMarkings; engine?: number }
   | { kind: 'rotorTach'; id: string; at: At; marks: RotorTachMarkings }
   | { kind: 'hourmeter'; id: string; bounds: Rect }
@@ -178,7 +189,11 @@ export interface PanelDef {
   console?: { podOutline: readonly At[]; pedestalOutline: readonly At[]; hoodOverhang: number;
     color: number; pedestalColor: number };
   gauges: readonly GaugeDef[];
-  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[] };
+  /**
+   * `lensLegend` (with `cells`): each cell is a rectangular press-to-test lens with the legend on the lens cap itself
+   * (MD 500E), instead of a round lens under a painted legend.
+   */
+  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[]; lensLegend?: boolean };
   switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[]; ink?: string; distributed?: boolean;
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
@@ -208,6 +223,11 @@ const RECESS_DEPTH_SMALL = 0.01;
 
 export interface LampInputs { state: AircraftState; controls: ControlInputs; fuelGal: readonly number[]; suctionInHg: number }
 
+/** A gauge's own size factor (GaugeDef `scale`), 1 when it has none. */
+export function gaugeScale(g: GaugeDef): number {
+  return 'scale' in g && typeof g.scale === 'number' ? g.scale : 1;
+}
+
 /**
  * The 3D recess of a gauge: centre and aperture radius, px on the canvas, and how far the dial sits behind the
  * panel face, m; or null for a kind that has none (rack units, light clusters, levers). The ONE place that
@@ -218,7 +238,7 @@ export interface LampInputs { state: AircraftState; controls: ControlInputs; fue
 export function gaugeRecess(g: GaugeDef, apertures: { large: number; small: number }): { x: number; y: number; r: number; depth: number } | null {
   let large: boolean;
   switch (g.kind) {
-    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'rotorTach': case 'blank':
+    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'hsi': case 'rmi': case 'rotorTach': case 'blank':
       large = true;
       break;
     case 'tach': case 'single': case 'twinNeedle': case 'customRound':
@@ -230,6 +250,8 @@ export function gaugeRecess(g: GaugeDef, apertures: { large: number; small: numb
     default:
       return null;
   }
+  const k = gaugeScale(g);
+  if (k !== 1) return { x: g.at[0], y: g.at[1], r: (large ? apertures.large : apertures.small) * k, depth: large ? RECESS_DEPTH_LARGE : RECESS_DEPTH_SMALL };
   return { x: g.at[0], y: g.at[1], r: large ? apertures.large : apertures.small, depth: large ? RECESS_DEPTH_LARGE : RECESS_DEPTH_SMALL };
 }
 

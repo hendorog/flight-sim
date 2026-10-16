@@ -120,11 +120,32 @@ function lineSdf(x: number, z: number, a: readonly [number, number], b: readonly
  * itself (the roof rises to the wing leading edge through the same x, z), so applied everywhere it would close
  * the upper centre of the windscreen well below the wing: the post bounds the glass only on the sides.
  */
+/** The plane of a body-space A-post line (see GlazingDef windscreen.postLine): unit normal pointing aft, and offset. */
+function postPlane(line: readonly [readonly [number, number, number], readonly [number, number, number]]): [number, number, number, number] {
+  const [a, b] = line;
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  // Outboard and up across the shoulder (FRD: z down).
+  const o = [0, Math.SQRT1_2, -Math.SQRT1_2];
+  let n = [d[1] * o[2] - d[2] * o[1], d[2] * o[0] - d[0] * o[2], d[0] * o[1] - d[1] * o[0]];
+  const l = Math.hypot(n[0], n[1], n[2]);
+  n = n.map((c) => c / l);
+  if (n[0] > 0) n = n.map((c) => -c);
+  return [n[0], n[1], n[2], -(n[0] * a[0] + n[1] * a[1] + n[2] * a[2])];
+}
+const POST_PLANES = new WeakMap<object, [number, number, number, number]>();
+
 function windscreenSdf(w: NonNullable<GlazingDef['windscreen']>, x: number, y: number, z: number): number {
   const sill = (x - w.sillC[0]) * w.sillN[0] + (z - w.sillC[1]) * w.sillN[1];
-  const post = lineSdf(x, z, w.post[0], w.post[1]) - Math.max(0, w.postY - Math.abs(y));
+  let post: number;
+  if (w.postLine) {
+    let p = POST_PLANES.get(w.postLine);
+    if (!p) POST_PLANES.set(w.postLine, (p = postPlane(w.postLine)));
+    post = p[0] * x + p[1] * Math.abs(y) + p[2] * z + p[3];
+  } else post = lineSdf(x, z, w.post[0], w.post[1]) - Math.max(0, w.postY - Math.abs(y));
   const top = w.topX - x;
-  return intersectRound(intersectRound(sill, post, 0.025), top, 0.015);
+  const d = intersectRound(intersectRound(sill, post, 0.025), top, 0.015);
+  // A centre post between two panes: opaque within its half width of the centre line.
+  return w.centrePost === undefined ? d : intersectRound(d, w.centrePost - Math.abs(y), 0.01);
 }
 
 /** An outline of the definition with its distance function; side 0 = both sides, -1 left, 1 right. */
@@ -499,6 +520,7 @@ export function bakeFuselageData(outer: FuselageShape, glassShape: FuselageShape
   const grille = livery.cowl?.grille;
   const oilDoor = livery.cowl?.oilDoor;
   const floorRivets = metal ? livery.floorRivets : undefined;
+  const doorSeam = livery.doorSeam;
 
   // Per-column state (depends only on the body station x).
   let col = -1;
@@ -585,7 +607,17 @@ export function bakeFuselageData(outer: FuselageShape, glassShape: FuselageShape
       groove = Math.max(groove, grooveK(intersectRound(Math.abs(x - oilDoor.x) - oilDoor.halfLength, Math.abs(y) - oilDoor.halfWidth, 0.02)));
     for (let d = 0; d < doors.length; d++) {
       const door = doors[d];
-      if (nearDoor[d] && (door.side === 0 || right === door.side > 0)) groove = Math.max(groove, grooveK(door.outline.sdf(x, z)));
+      if (nearDoor[d] && (door.side === 0 || right === door.side > 0)) {
+        const dd = door.outline.sdf(x, z);
+        groove = Math.max(groove, grooveK(dd));
+        // The door gap's shadow, read from a distance (colour; not part of the relief).
+        if (doorSeam && Math.abs(y) > 0.3) {
+          const k = doorSeam.darken * (1 - smooth(doorSeam.halfWidth * 0.5, doorSeam.halfWidth + AA, Math.abs(dd)));
+          rgb[0] *= 1 - k;
+          rgb[1] *= 1 - k;
+          rgb[2] *= 1 - k;
+        }
+      }
     }
     let h = 0.5 - 0.32 * groove;
     rough += 0.25 * groove;

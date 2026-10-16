@@ -14,7 +14,7 @@ import { C172S_PANEL } from '../aircraft/c172s/panel';
 import type { SimContext } from '../core/context';
 import type { AircraftState } from '../core/types';
 import { InstrumentSet, type InstrumentSetOptions } from './dynamics/instrumentSet';
-import { gaugeRecess, type GaugeDef, type PanelDef } from './panelDef';
+import { gaugeRecess, gaugeScale, type GaugeDef, type PanelDef } from './panelDef';
 import { panelLayoutProblems } from './panelLayout';
 import { gaugeParts, ignitionLayout, isLargeGauge, leverId } from './panelParts';
 import { ScaledGauge } from './render/scaledGauge';
@@ -33,6 +33,7 @@ import { EisWindow } from './render/eisWindow';
 import { ammeterGauge, ClockOatGauge, DualGauge, SingleGauge, suctionGauge, TachometerGauge, TwinNeedleGauge } from './render/engineGauges';
 import { AttitudeGauge, HeadingGauge, TurnCoordinatorGauge } from './render/gyroGauges';
 import { FlapLights, FlapSwitch, GearLights, GearSelector, GuardedKnob, IgnitionSwitches, TrimBar } from './render/lights';
+import { HsiGauge, RmiGauge } from './render/hsiGauges';
 import { CdiGauge } from './render/navGauges';
 import { AirspeedGauge, AltimeterGauge, VerticalSpeedGauge } from './render/pitotStaticGauges';
 
@@ -293,7 +294,7 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
   const rest: PanelComponent[] = [];
   for (const g of def.gauges) {
     const into = 'at' in g ? dials : rest;
-    const k = def.instrumentScale?.[isLargeGauge(g) ? 'large' : 'small'] ?? 1;
+    const k = (def.instrumentScale?.[isLargeGauge(g) ? 'large' : 'small'] ?? 1) * gaugeScale(g);
     if (k !== 1 && gaugeRecess(g, def.apertures) && 'at' in g) {
       const apertures = { large: def.apertures.large / k, small: def.apertures.small / k };
       const component = buildGauge(g, apertures, tuning, paintLevers);
@@ -308,7 +309,7 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
     if (g.kind === 'gearLights' && g.lever) into.push(new GearSelector(leverId(g.id), g.lever));
     if (g.kind === 'flapLights' && g.lever) into.push(new FlapSwitch(leverId(g.id), g.lever, g));
   }
-  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns, def.annunciator.cells));
+  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns, def.annunciator.cells, def.annunciator.lensLegend));
   dials.push(new SwitchPanel(def.switchRow, def.ignition));
   const ignition = ignitionLayout(def.ignition);
   if (ignition && def.ignition.kind !== 'key') dials.push(new IgnitionSwitches(def.ignition.kind, ignition));
@@ -345,6 +346,10 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return new VerticalSpeedGauge(g.id, g.at[0], g.at[1], r);
     case 'cdi':
       return new CdiGauge(g.id, g.at[0], g.at[1], r, g.receiver, g.fixedCourseDeg);
+    case 'hsi':
+      return new HsiGauge(g.id, g.at[0], g.at[1], r, g.receiver, g.fixedCourseDeg);
+    case 'rmi':
+      return new RmiGauge(g.id, g.at[0], g.at[1], r);
     case 'clock':
       return new ClockOatGauge(g.id, g.at[0], g.at[1], r);
     case 'suction':
