@@ -29,6 +29,7 @@ import { context2d, LABEL_FONT, makeCanvas, noiseCanvas, rng, type Ctx2D } from 
 import { LIGHT_DIAL_LINEAR, type PanelComponent, type Rect } from './render/component';
 import { AnnunciatorPanel, FlapIndicator, paintBlankPlate, paintEngineControls, paintPlacard, SwitchPanel } from './render/controls';
 import { EngineDisplay } from './render/engineDisplay';
+import { EisWindow } from './render/eisWindow';
 import { ammeterGauge, ClockOatGauge, DualGauge, SingleGauge, suctionGauge, TachometerGauge, TwinNeedleGauge } from './render/engineGauges';
 import { AttitudeGauge, HeadingGauge, TurnCoordinatorGauge } from './render/gyroGauges';
 import { FlapLights, FlapSwitch, GearLights, GearSelector, GuardedKnob, IgnitionSwitches, TrimBar } from './render/lights';
@@ -330,7 +331,7 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
     case 'asi':
       return new AirspeedGauge(g.id, g.at[0], g.at[1], r, g.marks);
     case 'attitude':
-      return new AttitudeGauge(g.id, g.at[0], g.at[1], r);
+      return new AttitudeGauge(g.id, g.at[0], g.at[1], r, g.inclinometer ?? false);
     case 'altimeter':
       return new AltimeterGauge(g.id, g.at[0], g.at[1], r);
     case 'turn':
@@ -370,6 +371,8 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return new GuardedKnob(g.id, g.at, g.label, (g.action as string) === 'gearEmergency' ? (c) => c.gearEmergency : undefined);
     case 'engineDisplay':
       return new EngineDisplay(g.id, g.bounds, g.engines, g.rows);
+    case 'eisWindow':
+      return new EisWindow(g);
     case 'gps':
       return new GpsUnit(g.id, g.bounds.x, g.bounds.y, tuning);
     case 'navcom':

@@ -27,14 +27,71 @@ export class AttitudeGauge extends RoundGauge {
   private card: HTMLCanvasElement | null = null;
   private ring: HTMLCanvasElement | null = null;
 
-  constructor(id: string, cx: number, cy: number, aperture: number) {
-    super(id, cx, cy, { ...SIX, aperture, values: 2, seed: 102 });
+  /** `inclinometer`: a slip ball (InstrumentReadings.ball) in a tube across the foot of the face, in place of the lower mask. */
+  constructor(id: string, cx: number, cy: number, aperture: number, readonly inclinometer = false) {
+    super(id, cx, cy, { ...SIX, aperture, values: inclinometer ? 3 : 2, seed: 102 });
   }
 
   sample(r: InstrumentReadings): boolean {
     this.latch.track(0, r.attitudeRoll, 0.002);
     this.latch.track(1, r.attitudePitch, 0.0015);
+    if (this.inclinometer) this.latch.track(2, r.ball, 0.004);
     return this.latch.take();
+  }
+
+  /** Inclinometer tube: centreline radius, the y of its lowest point and its half-span (rad), in units of the aperture. */
+  private tube(): { R: number; y: number; span: number } {
+    return { R: this.r * 1.1, y: this.r * 0.74, span: 0.3 };
+  }
+
+  /** Point on the tube centreline for a ball deflection -1..1, dial-centred. */
+  tubePoint(b: number): [number, number] {
+    const T = this.tube();
+    const a = b * T.span;
+    return [Math.sin(a) * T.R, T.y - T.R * (1 - Math.cos(a))];
+  }
+
+  private drawInclinometer(g: Ctx2D): void {
+    const T = this.tube();
+    const sw = this.r * 0.15; // tube width
+    g.save();
+    g.translate(this.cx, this.cy);
+    g.lineCap = 'round';
+    const arc = (w: number, style: string | CanvasGradient): void => {
+      g.strokeStyle = style;
+      g.lineWidth = w;
+      g.beginPath();
+      g.arc(0, T.y - T.R, T.R, Math.PI / 2 + T.span, Math.PI / 2 - T.span, true);
+      g.stroke();
+    };
+    arc(sw + 4, '#121213');
+    arc(sw + 1.5, '#d9d5c4');
+    const liquid = g.createLinearGradient(0, T.y - sw / 2, 0, T.y + sw / 2);
+    liquid.addColorStop(0, '#6d6a5e');
+    liquid.addColorStop(0.5, '#c4c0ab');
+    liquid.addColorStop(1, '#8a8676');
+    arc(sw - 1, liquid);
+    // Two reference wires either side of centre.
+    g.strokeStyle = '#161616';
+    g.lineWidth = 1.4;
+    for (const b of [-0.26, 0.26]) {
+      const [x, y] = this.tubePoint(b);
+      g.beginPath();
+      g.moveTo(x, y - sw / 2);
+      g.lineTo(x, y + sw / 2);
+      g.stroke();
+    }
+    const [x, y] = this.tubePoint(this.latch.get(2));
+    const br = sw * 0.42;
+    const ball = g.createRadialGradient(x - br * 0.3, y - br * 0.35, br * 0.1, x, y, br);
+    ball.addColorStop(0, '#6a6a6a');
+    ball.addColorStop(0.5, '#141414');
+    ball.addColorStop(1, '#000');
+    g.fillStyle = ball;
+    g.beginPath();
+    g.arc(x, y, br, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
   }
 
   protected paintFace(): void {
@@ -59,6 +116,7 @@ export class AttitudeGauge extends RoundGauge {
     const shift = (pitch / DEG) * AttitudeGauge.PX_PER_DEG;
     g.drawImage(this.card!, -this.card!.width / 2, -this.card!.height / 2 + shift);
     g.restore();
+    if (this.inclinometer) this.drawInclinometer(g);
   }
 
   private buildSprites(): void {
@@ -145,7 +203,12 @@ export class AttitudeGauge extends RoundGauge {
   }
 
   protected paintFixtures(g: Ctx2D): void {
-    // Lower mask with the pitch-trim knob stem, flat black.
+    // Lower mask with the pitch-trim knob stem, flat black (the inclinometer takes its place).
+    if (!this.inclinometer) this.paintLowerMask(g);
+    this.paintAeroplane(g);
+  }
+
+  private paintLowerMask(g: Ctx2D): void {
     g.fillStyle = '#121213';
     g.beginPath();
     g.moveTo(-20, this.r + 2);
@@ -157,6 +220,9 @@ export class AttitudeGauge extends RoundGauge {
     g.strokeStyle = 'rgba(255,255,255,0.1)';
     g.lineWidth = 0.8;
     g.stroke();
+  }
+
+  private paintAeroplane(g: Ctx2D): void {
     // Fixed bank index at 12 o'clock, pointing at the ring.
     g.fillStyle = ORANGE;
     g.beginPath();
