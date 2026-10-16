@@ -111,6 +111,34 @@ always cited); at the first estimate, 0.6, it was 0.67 and 4.2 deg. Full-power c
 Evidence: [pc12.test.ts](../../../tests/conformance/pc12.test.ts) "take-off roll heading", [aero.ts](aero.ts).
 Close with: the owner's judgement of the swing and of the climb pedal.
 
+## Go-around rudder at flaps 40 — **owner to judge**
+
+Zero-sideslip trims at full PCL (pilot review 2026-10-17): 86 KIAS flaps 40 gear down 0.01 of right pedal; 86 KIAS
+flaps 15 0.31, flaps 30 0.10; 95 KIAS flaps 15 0.22; 130 KIAS clean 0.22. Type experience (ESTIMATE): 0.3-0.5 for a
+Vref go-around at 44 psi. Measured cause: the rudder is all propeller swirl on the fin (with `swirlBehindWing` 0 every
+row is within ±0.05; at 1.0, flaps 15 needs 0.60 and flaps 40 still 0.03). With flaps 40 the aircraft flies at -0.4 deg
+of body angle of attack (flaps 15: +5.4), and the jet, which leaves the disc along the free stream, passes the fin
+about 1 m lower: its centre 0.4 m below the hub line at the fin, under the upswept tailcone, against the fin's root at
+0.5 m above it; at flaps 15 the free-stream line lifts it 1.2 m into the fin. Not tuned: the swirl knob cannot reach
+flaps 40 without overshooting flaps 15 and the take-off swing (0.6: 0.67 of pedal at 15 kt), and the model has no
+slipstream that wraps the fuselage onto the fin. PCL slam at Vref flaps 40: 44.0 psi, 40 psi after 1.0 s, ITT 772 C,
+controls frozen: -9.7 deg of roll and -3.2 deg of heading after 6 s (the pilot review's figures, not re-flown).
+Evidence: [aero.ts](aero.ts) `swirlBehindWing`; docs/pc12-flight-model.md.
+Close with: a PC-12 pilot's go-around pedal figure, or a fuselage-bound swirl model.
+
+## Flap trim change — **owner to judge (sign and size)**
+
+Level at 130 KIAS, MTOW: the stabiliser goes from -1.55 deg (nose-up trim) clean to +0.98 deg (nose-down) with flaps 15,
+2.5 deg of the 6.5 deg range; controls frozen, flaps 0 -> 15: +12.3 deg of pitch in 6 s. Type experience (ESTIMATE): a
+modest change, tending nose-down. The model's split: flaps 15 lift so much more at the same angle (the flap lift is
+calibrated on the 47E pusher speeds, 95 -> 78 KIAS) that the body angle of attack falls 5.7 deg (4.6 -> -1.1); the
+stabiliser, fixed to the body, loses 6.2 deg (0.6 of it the flap's extra downwash at the T-tail), and its download
+grows by 4.05 kN; the wing's section moment goes from -0.087 to -0.235 (the Fowler's aft lift) but does not
+cancel it. The C208 and the C172S show the same nose-up tendency from the same core. Not tuned: no sourced flap
+moment or trim figure; a smaller flap lift would move the pusher speeds.
+Evidence: [aero.ts](aero.ts) the Fowler flap; pilot-review logs.
+Close with: the sign and size of the PC-12's flap-15 retrim from a PC-12 pilot.
+
 ## Trailing-link mains — **simplified**
 
 The main legs are trailing links: the wheel moves about 0.18 m aft over its 0.20 m of travel. The contact model moves
