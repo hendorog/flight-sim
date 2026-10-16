@@ -57,7 +57,7 @@ export interface TurbineSoundProfile {
  * behind it) beats each blade's passage at the shaft rate: the depth of that roughness at full thrust (0 or
  * absent: none; 0.3 is strong). Read behind a reduction gear only.
  */
-export interface PropSoundProfile { blades: 2 | 3; diameterM: number; cruiseThrustN: number; level: number; growl?: number }
+export interface PropSoundProfile { /** Blades on the disc (PC-12 4; MD 500E main rotor 5). */ blades: 2 | 3 | 4 | 5; diameterM: number; cruiseThrustN: number; level: number; growl?: number }
 export interface StemRoute {
   stem: number;
   /** Low-pass cutoff of this stem, Hz; 0 = no low-pass (the stem is routed unfiltered). */

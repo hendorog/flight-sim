@@ -288,7 +288,11 @@ export interface CockpitDef {
    * its swing, rad (forward = 1), `length` (absent: 0.11) the pivot-to-knob distance, m.
    */
   engineControls: readonly { kind: 'knob' | 'lever'; control: 'throttle' | 'mixture' | 'propeller' | 'carbHeat' | 'cowlFlaps' | 'alternateAir';
-                             engine: number; pos: FRD; travel: number; colour: 'black' | 'red' | 'blue' | 'white'; length?: number }[];
+                             engine: number; pos: FRD; travel: number; colour: 'black' | 'red' | 'blue' | 'white'; length?: number;
+                             /** Lever only: extra AFT arc, as a fraction of `travel`, swept as ControlInputs.reverse goes 0 -> 1 (beta and reverse). Absent: 0. */
+                             reverseTravel?: number;
+                             /** Lever only: drawn notches, as lever fractions 0..1 (PC-12 condition lever: CUT-OFF, GROUND IDLE, FLIGHT IDLE). */
+                             detents?: readonly number[] }[];
   /**
    * panelLever: a lever in a slot on the panel face, `travel` m down from UP to FULL. panelSwitch: a paddle
    * switch on the face, tilting `travel` rad. floorLever: a hand lever between the seats pivoted at `pos`,

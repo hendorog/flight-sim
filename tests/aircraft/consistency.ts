@@ -96,6 +96,24 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
     check(def.input.rotorcraft === true, 'rotorcraft input is missing');
     check(controls.collective !== undefined && controls.rotorGovernor !== undefined && controls.rotorClutch !== undefined, 'rotorcraft default controls are missing');
     same('no flap detents', { expected: [0], input: def.input.flapDetents, training: pres.training.flapDetentsDeg });
+    // The engine kind against the sound (the fixed-wing rule below never runs for a rotorcraft).
+    same('engine is a gas turbine', { powerplant: pp.engines[0].engine.kind === 'freeTurbine', audio: audio.engines[0].engine.combustion === 'turbine' });
+    // Turboshaft installations (MD 500E): one fuel control, the freewheel, the twist grip and the beep, defined once.
+    const ts = rotor.systems.turboshaft;
+    if (ts) {
+      const e = pp.engines[0].engine;
+      const fcu = e.turbine?.gasGenerator.fcu;
+      check(e.kind === 'freeTurbine' && e.gearRatio === 1, 'a turboshaft (rotorcraft.systems.turboshaft) needs a freeTurbine engine with gearRatio 1');
+      same('drive of a turboshaft', { expected: 'freewheel', rotor: rotor.systems.drive });
+      same('twist grip', { rotor: ts.grip, input: def.input.twistGrip });
+      check(def.input.n2Beep === true, 'a turboshaft needs input.n2Beep (the governor beep)');
+      check(controls.magnetos === 0, 'a turbine starts with the igniters off (controlDefaults.magnetos 0)');
+      if (fcu) {
+        sameNumber('ground-idle Ng of the twist grip', { 'turboshaft.plaNg.groundIdle': ts.plaNg.groundIdle, 'fcu.lowIdleNg': fcu.lowIdleNg, 'fcu.highIdleNg': fcu.highIdleNg });
+        sameNumber('full-open Ng of the twist grip', { 'turboshaft.plaNg.fullOpen': ts.plaNg.fullOpen, 'fcu.maxNg': fcu.maxNg });
+      }
+      same('ENGINE OUT horn without a collective inhibit', { expected: -1, rotor: rotor.systems.hornCollectiveMin });
+    }
     for (const gauge of gauges) if (gauge.kind === 'asi') sameNumber('airspeed red line', { reference: def.reference.vne, panel: gauge.marks.redLine });
     const fuel = pp.fuel.tanks.reduce((sum, t) => sum + t.capacity, 0);
     for (const [name, l] of Object.entries(def.mass.loadings))
@@ -251,9 +269,23 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
     const pitch = unit.propeller.pitchControl;
     const fadec = e.fadec !== undefined;
     same(`mixture lever (engine ${i})`, { 'input.has.mixture': has.mixture, powerplant: e.metering.kind !== 'fadecDiesel' });
-    // A FADEC engine governs its own propeller: no propeller lever, feathering by the engine master.
-    same(`propeller lever (engine ${i})`, { 'input.has.propeller': has.propeller, powerplant: pitch.kind === 'constantSpeed' && !fadec });
-    same(`feathering by the propeller lever (engine ${i})`, { 'input.has.feather': has.feather, powerplant: pitch.kind === 'constantSpeed' && pitch.feather !== undefined && !fadec });
+    // A FADEC engine governs its own propeller: no propeller lever, feathering by the engine master. A propeller
+    // selected by the condition lever (PC-12) has no propeller lever either: it feathers at CUT-OFF/FEATHER.
+    const byLever = pitch.kind === 'constantSpeed' && !fadec && pitch.selectedBy !== 'conditionLever';
+    same(`propeller lever (engine ${i})`, { 'input.has.propeller': has.propeller, powerplant: byLever });
+    same(`feathering by the propeller lever (engine ${i})`, { 'input.has.feather': has.feather, powerplant: byLever && pitch.kind === 'constantSpeed' && pitch.feather !== undefined });
+    if (pitch.kind === 'constantSpeed') {
+      if (pitch.selectedBy === 'conditionLever') sameNumber(`governor of a condition-lever propeller (engine ${i}) holds one speed`, { minRpm: pitch.governor.minRpm, maxRpm: pitch.governor.maxRpm });
+      // Beta and reverse: the lever, the blades and the reversing cam go together.
+      same(`beta and reverse (engine ${i})`, { 'input.has.reverse': has.reverse === true,
+        powerplant: pitch.beta !== undefined && e.turbine?.reversingCam !== undefined && e.kind === 'freeTurbine' });
+      const beta = pitch.beta;
+      if (beta) {
+        check(beta.reverse < beta.groundFine && beta.groundFine <= pitch.fineStop, `beta angles (engine ${i}): reverse < groundFine <= fineStop`);
+        check(pitch.pitchNodes[0] <= beta.reverse, `pitch nodes (engine ${i}) start at or below the reverse angle`);
+        check(beta.pitchOnlyTravel > 0 && beta.pitchOnlyTravel < 1, `beta pitch-only travel (engine ${i}) inside (0, 1)`);
+      }
+    }
     same(`carburettor heat (engine ${i})`, { 'input.has.carbHeat': has.carbHeat, powerplant: e.induction.carburettor !== undefined });
     same(`alternate air (engine ${i})`, { 'input.has.alternateAir': has.alternateAir, powerplant: e.induction.alternateAir !== undefined });
     same(`cowl flaps (engine ${i})`, { 'input.has.cowlFlaps': has.cowlFlaps, powerplant: e.thermal.cowlFlapClosedFactor !== 1 });
@@ -270,6 +302,11 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
     check(feed.positions[start] !== undefined, `the default fuel selector position '${start}' shuts feed ${i}`);
   });
   same('cockpit rudder trim', { 'input.has.rudderTrim': has.rudderTrim, 'controls.rudder.trim': def.controls.rudder.trim !== undefined });
+  // A power lever drawn with an aft (beta / reverse) arc exists exactly on a type with reverse.
+  if (cockpit.engineControls) {
+    same('reverse arc of the cockpit power lever', { 'input.has.reverse': has.reverse === true,
+      visual: cockpit.engineControls.some((l) => l.kind === 'lever' && (l.reverseTravel ?? 0) > 0) });
+  }
 
   // ------------------------------------------------------------------------------------------ electrical
   const el = pp.electrical;

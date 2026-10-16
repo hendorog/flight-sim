@@ -467,6 +467,8 @@ function applyStatic(ctx: SimContext): void {
   c.rudder = clamp(-num('rud', 0) / 16, -1, 1);
   c.throttle = clamp((rpm - 700) / 2000, 0, 1);
   c.mixture = num('mixture', 1);
+  // Power lever aft of the gate (beta / reverse), 0..1: the PC-12 and C208 levers and blades show it.
+  c.reverse = num('reverse', 0);
   c.elevatorTrim = clamp(num('trim', 0) / 20, -1, 1);
   if (s.rotorcraft) {
     s.rotorcraft.rotorRpm = num('rpm', 0);

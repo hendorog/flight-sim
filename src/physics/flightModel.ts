@@ -58,6 +58,7 @@ import { AeroModel } from './aero';
 import { casFromTas, pressureAltitude } from './atmosphere';
 import { configuredVne } from './rotorcraft/limits';
 import { ControlSystem } from './controlSystem';
+import { StickPusher } from './aero/stickPusher';
 import { LandingGear, RetractActuator, type RetractInput } from './gear';
 import type {
   AeroInput,
@@ -234,6 +235,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
    * longer than the rule's time. Nothing else follows from it in the physics; a rule 'none' leaves it false.
    */
   readonly overspeed = { flaps: false, gear: false };
+  /** Stick shaker / pusher (types with controls.stickPusher only) and the scratch controls it hands the control system. */
+  private readonly stickPusher: StickPusher | null;
+  private readonly pusherControls: ControlInputs | null;
   get physicsRate(): number {
     return this.rate;
   }
@@ -358,6 +362,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.aero = new AeroModel(aeroDef);
     const sensors = aeroDef.stallWarning;
     this.stallWarnerDeadVolts = (Array.isArray(sensors) ? sensors : [sensors]).some((w) => w.needsBus) ? def.powerplant.electrical.busDeadVolts : null;
+    this.stickPusher = def.controls.stickPusher ? new StickPusher(def.controls.stickPusher) : null;
+    this.pusherControls = this.stickPusher ? defaultControls(def) : null;
     // Each propeller's jet and inflow is the aero station of the same index.
     if (this.aero.propellerInflows.length !== n) throw new Error(`BladeElementFlightModel: ${def.id} has ${n} engines and ${this.aero.propellerInflows.length} aero propeller stations`);
     this.propulsion = n === 1 ? new PropulsionSystem(undefined, def.powerplant) : new Powerplant(def.powerplant);
@@ -492,6 +498,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.gear.reset();
     this.skids?.reset();
     this.aero.reset();
+    this.stickPusher?.reset();
     // A new flight computes as on a new model: no influence matrices kept from an earlier flight or trim.
     this.aero.resetInfluence();
     this.trimAero.resetInfluence();
@@ -1038,7 +1045,19 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.updateAtmosphere(-x[2]);
     this.groundElevation = env.groundElevation(x[0], x[1]);
     this.sampleWind(env);
-    this.controlSystem.update(h, controls, this.dynamicPressure(), this.prop.electrical.busVoltage);
+    // The stick pusher (if fitted) sees the pilot's yoke and hands the control system its own copy of the
+    // controls with the elevator it commands; the pilot's object is never written.
+    let surfaceControls = controls;
+    if (this.stickPusher) {
+      const s = this.state;
+      surfaceControls = copyControls(this.pusherControls!, controls);
+      surfaceControls.elevator = this.stickPusher.step({
+        alphaDeg: s.alpha / DEG, flapDeg: s.surfaces.flaps / DEG, loadFactor: s.gLoad,
+        busVolts: this.prop.electrical.busVoltage, weightOnWheels: s.onGround,
+        ptTorqueNm: this.prop.engines[0].torque, interrupt: controls.pusherInterrupt === true, dt: h,
+      }, controls.elevator);
+    }
+    this.controlSystem.update(h, surfaceControls, this.dynamicPressure(), this.prop.electrical.busVoltage);
     // A castering nosewheel is not linked to the pedals: the gear gets the pilot's (ignored) input.
     if (this.gearIn.controls === this.freeRudderControls && !this.castering) this.freeRudderControls.rudder = this.controlSystem.pedalPosition;
     // Retraction system: once per step, on the bus and the wheel loads of the step before.
@@ -1410,6 +1429,10 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     const a = this.lastAero;
     s.stallWarning = a ? a.stallWarning && (this.stallWarnerDeadVolts === null || this.prop.electrical.busVoltage > this.stallWarnerDeadVolts) : false;
     s.stallFraction = a ? a.stallFraction : 0;
+    if (this.stickPusher) {
+      s.stickShaker = this.stickPusher.shaker;
+      s.stickPusher = this.stickPusher.pusher;
+    }
     const g = this.gearOut;
     if (g) {
       for (let i = 0; i < 3; i++) Object.assign(s.wheels[i], g.wheels[i]);

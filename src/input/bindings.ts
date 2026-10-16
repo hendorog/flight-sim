@@ -354,7 +354,7 @@ export function profileHasAction(profile: InputProfile, action: InputAction): bo
   if (action === 'carbHeat') return profile.has.carbHeat || profile.has.alternateAir;
   if (action === 'engineSelect1' || action === 'engineSelect2' || action === 'engineSelectAll') return profile.engines > 1;
   const needs = ACTION_NEEDS[action];
-  return needs === undefined || profile.has[needs];
+  return needs === undefined || profile.has[needs] === true;
 }
 
 /** The standard text of an action on a type (before InputProfile.labels). */

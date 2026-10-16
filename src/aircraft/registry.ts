@@ -75,12 +75,22 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
     engineCount: 1,
     available: true,
   },
+  {
+    id: 'pc12',
+    name: 'Pilatus PC-12/47',
+    shortName: 'PC-12',
+    blurb: 'Pressurised single-engine turboprop, PT6A-67B 1200 shp, with beta and reverse (in development)',
+    engineCount: 1,
+    available: false,
+  },
   { id: 'r22', name: 'Robinson R22 Beta II', shortName: 'R22 Beta II',
     blurb: 'Two-seat training helicopter, O-360 derated to 131 hp; autorotation flare still being validated', engineCount: 1, available: true },
   { id: 'r44', name: 'Robinson R44 Raven II', shortName: 'R44 Raven II',
     blurb: 'Four-seat helicopter, IO-540 fuel injected, 245 hp takeoff', engineCount: 1, available: true },
   { id: 's269', name: 'Schweizer 269C-1 / 300CB (in development)', shortName: 'Schweizer 300CB',
     blurb: 'Two-seat articulated-rotor trainer, HO-360 180 hp; in development', engineCount: 1, available: true },
+  { id: 'md500', name: 'MD Helicopters MD 500E', shortName: 'MD 500E',
+    blurb: 'Five-seat turbine helicopter, 250-C20B 375 shp take-off, five-blade articulated rotor (in development)', engineCount: 1, available: false },
 ];
 
 export function aircraftSummary(id: AircraftId): AircraftSummary {
@@ -98,9 +108,11 @@ const DEFINITION_LOADERS: Readonly<Record<Exclude<AircraftId, 'c172s'>, () => Pr
   pa34: () => import('./pa34/index'),
   da42: () => import('./da42/index'),
   c208: () => import('./c208/index'),
+  pc12: () => import('./pc12/index'),
   r22: () => import('./r22/index'),
   r44: () => import('./r44/index'),
   s269: () => import('./s269/index'),
+  md500: () => import('./md500/index'),
 };
 
 // The C172S presentation is imported statically by the application shell, so there this resolves without a
@@ -113,9 +125,11 @@ const PRESENTATION_LOADERS: Readonly<Record<AircraftId, () => Promise<{ default:
   pa34: () => import('./pa34/presentation'),
   da42: () => import('./da42/presentation'),
   c208: () => import('./c208/presentation'),
+  pc12: () => import('./pc12/presentation'),
   r22: () => import('./r22/presentation'),
   r44: () => import('./r44/presentation'),
   s269: () => import('./s269/presentation'),
+  md500: () => import('./md500/presentation'),
 };
 
 const definitions = new Map<AircraftId, AircraftDefinition>([[C172S_DEFINITION.id, C172S_DEFINITION]]);

@@ -47,7 +47,17 @@ export interface InputProfile {
   /** 'engineMaster': the magneto keys act on ENGINE MASTER (Digit1 = off, Digit4 = on); Digit2 / Digit3 do nothing. */
   ignition: 'key' | 'toggles' | 'engineMaster';
   has: { mixture: boolean; propeller: boolean; feather: boolean; carbHeat: boolean; alternateAir: boolean; cowlFlaps: boolean;
-         gear: boolean; rudderTrim: boolean; fuelPump: boolean };
+         gear: boolean; rudderTrim: boolean; fuelPump: boolean;
+         /** Power lever aft of the gate into beta and reverse (ControlInputs.reverse). Absent = false. Turbine-core package wires the keys. */
+         reverse?: boolean };
+  /**
+   * Twist-grip turboshaft (MD 500E): ControlInputs.throttle is the grip. F1 stops at `groundIdle`; CUTOFF (below
+   * `cutoffBelow`) needs the idle release. Deep-equals RotorcraftDefinition.systems.turboshaft.grip. Absent: a
+   * throttle lever. Declared at the scaffold; the turbine-core package wires the keys.
+   */
+  twistGrip?: { cutoffBelow: number; groundIdle: number };
+  /** Governor beep switch on the collective: the propDecrease / propIncrease keys drive ControlInputs.n2Beep while held. */
+  n2Beep?: boolean;
   /**
    * Per-engine keys that are ONE control on this type: they write the scalar whatever the engine selection
    * (DA42: ['alternateAir'], one lever for both engines). Absent: none.

@@ -107,6 +107,10 @@ export class ControlLaw {
     const trim = cfg.pitchTrim;
     this.elevatorUp = cfg.elevator.maxUp;
     this.elevatorDown = cfg.elevator.maxDown;
+    if (trim.kind === 'stabilizer') {
+      // Declared at the scaffold (src/aircraft/types.ts PitchTrimDef); the PC-12 package implements the law.
+      throw new Error("ControlLaw: pitch trim kind 'stabilizer' is not implemented yet");
+    }
     if (trim.kind === 'spring') {
       this.tabDown = this.tabUp = this.floatRatio = 0;
       this.spring = { noseUp: -Math.abs(trim.springUp), noseDown: Math.abs(trim.springDown), q: trim.springQ };

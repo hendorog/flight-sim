@@ -33,6 +33,12 @@ export interface GovernorDef {
    * integrator of the speed error, which rings at any gain fast enough to follow a power change).
    */
   dampingTime?: number;
+  /**
+   * Propeller overspeed governor (PC-12: 1802 rpm, TCDS): above this PROPELLER rpm it dumps governor oil and the
+   * blades go coarse regardless of the primary governor. Absent: none (the fuel topping governor is the only
+   * backstop). Declared at the scaffold; the turbine-core package implements it.
+   */
+  overspeedRpm?: number;
 }
 
 export interface FeatherDef {
@@ -42,6 +48,32 @@ export interface FeatherDef {
   latchRpm: number; latchAngle: number;
   /** 'starter': oil pressure from cranking drives the blades fine. 'accumulator': stored pressure does, once, when feather is deselected. */
   unfeather: 'starter' | 'accumulator';
+}
+
+/**
+ * Beta and reverse (PT6 installations: the C208 and the PC-12). Declared at the scaffold; the turbine-core package
+ * implements it in governor.ts / engineUnit.ts / turbineEngine.ts. Lever positions are ControlInputs.reverse:
+ *   0                     on the gate: blades on the flight low-pitch stop (fineStop, or lowPitchSchedule at lever 0);
+ *   0 .. pitchOnlyTravel  the blades move fineStop -> groundFine with Ng at idle (ground fine at pitchOnlyTravel);
+ *   pitchOnlyTravel .. 1  groundFine -> reverse, and TurbineDef.reversingCam raises Ng.
+ * In beta the flyweight governor is in underspeed and the beta valve sets the blade angle; Np is then held by
+ * the fuel topping governor's reset set point (reversingCam.reverseNp). In `steady` (settle) evaluation the
+ * blades sit at the commanded beta angle directly (the valve's steady state).
+ */
+export interface BetaDef {
+  /** Blade angle at the end of the pitch-only aft travel (ground fine: about zero static thrust), rad at referenceStation. */
+  groundFine: number;
+  /** Blade angle at full reverse, rad (< groundFine, negative). */
+  reverse: number;
+  /** Part of the aft travel (ControlInputs.reverse) that moves the blades only, Ng at idle: fineStop -> groundFine. */
+  pitchOnlyTravel: number;
+  /** Beta-valve slew, rad/s (oil-driven; scaled by oil authority as rateToFine is). */
+  rate: number;
+  /**
+   * Flight low-pitch stop scheduled against the power lever FORWARD of the gate (throttle 0..1), rad (PC-12 POH:
+   * the stop rises with the PCL). Absent: fineStop throughout. Below the stop in flight a type may show PROP LOW P.
+   */
+  lowPitchSchedule?: { lever: readonly number[]; angle: readonly number[] };
 }
 
 export type PitchControlDef =
@@ -56,8 +88,20 @@ export type PitchControlDef =
       governor: GovernorDef;
       /** With no oil pressure the blades go to: */
       failsTo: 'fine' | 'feather';
-      /** Blade angles at which map slices are tabulated, rad, ascending from fineStop to the feather (or coarse) stop. At most 16. */
+      /**
+       * Blade angles at which map slices are tabulated, rad, ascending from beta.reverse (types with beta) or
+       * fineStop, to the feather (or coarse) stop. At most PROP_MAX_SLICES (propellerMap.ts).
+       */
       pitchNodes: readonly number[];
+      /** Beta and reverse range aft of the gate. Absent: the power lever stops at flight idle (every type before the scaffold). */
+      beta?: BetaDef;
+      /**
+       * Which cockpit control selects governing and feather. 'propellerLever' (default): ControlInputs.propeller.
+       * 'conditionLever': there is no propeller lever; the governor holds governor.maxRpm (minRpm must equal
+       * maxRpm) and the blades feather when the condition lever (ControlInputs.mixture) is at CUT-OFF/FEATHER
+       * (PC-12). Declared at the scaffold; the turbine-core package implements it.
+       */
+      selectedBy?: 'propellerLever' | 'conditionLever';
     };
 
 export interface PropellerDef {
@@ -242,6 +286,25 @@ export interface TurbineDef {
     /** Fuel topping governor: above this power-turbine speed (fraction of ratedRpm) it takes `gain` Ng per unit overspeed off the FCU's set point. */
     topping: { np: number; gain: number };
   };
+  /**
+   * Reversing cam and the beta-mode topping reset (types with PitchControlDef.beta). Aft of the pitch-only travel
+   * the cam raises the Ng demand linearly from idle to maxReverseNg at full reverse, and the fuel topping
+   * governor's set point drops to reverseNp (fraction of ratedRpm) so that it, not the propeller governor,
+   * holds Np in reverse. Absent: no reverse. Declared at the scaffold; turbine-core package.
+   */
+  reversingCam?: { maxReverseNg: number; reverseNp: number };
+  /**
+   * Torque limiter (PC-12, 47E sect. 7-10; ESTIMATE for the /47): an Ng-demand cap that holds the PROPELLER-shaft
+   * torque at `psi` x lapse. `lapse` is the limit against pressure altitude (ft, psi; linear between points);
+   * `ngTaper` = [Ng from, Ng to] over which the limit falls by a further `taperPsi`. `psiPerNm` converts
+   * propeller-shaft torque (power-turbine torque x gearRatio) to psi. Implemented as a cut on the Ng demand in the
+   * same path as the topping governor. Absent: none (the pilot sets torque, as on the C208).
+   */
+  torqueLimiter?: {
+    psi: number; psiPerNm: number;
+    lapse: { altFt: readonly number[]; psi: readonly number[] };
+    ngTaper: readonly [number, number]; taperPsi: number;
+  };
 }
 
 export interface EngineDef {
@@ -276,6 +339,13 @@ export interface EngineDef {
   /** Crank rpm an in-air start / trim is primed with, and the ground value. */
   airStartRpm: number; groundStartRpm: number;
   starter: { k: number; r: number };
+  /**
+   * Latching start switch (PC-12): one press engages the starter, which then runs until the gas generator reaches
+   * cutoutNg (fraction) or cutoutSeconds have passed, or the STARTER INTERRUPT is pressed. Absent: hold-to-run
+   * (ControlInputs.starter held), as on every type before the PC-12 including the C208. Declared at the scaffold;
+   * the turbine-core package implements it in engineUnit.
+   */
+  starterLatch?: { cutoutNg: number; cutoutSeconds: number };
   fadec?: FadecDef;
   /** kind 'freeTurbine': the gas generator and power turbine. */
   turbine?: TurbineDef;

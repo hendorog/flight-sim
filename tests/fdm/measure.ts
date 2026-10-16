@@ -832,6 +832,12 @@ export interface LandingOptions {
   /** Lever retracting the flaps on the roll (0); undefined: as they are. */
   rollFlaps?: number;
   /**
+   * ControlInputs.reverse on the roll after touchdown (types with beta): BetaDef.pitchOnlyTravel = ground fine
+   * ("beta, no reverse"), 1 = full reverse. Absent: 0 (on the gate). Declared at the scaffold; the turbine-core
+   * package applies it in landingRoll.
+   */
+  rollReverse?: number;
+  /**
    * Brake pedal on the roll, 0..1; absent: 1 (full). A handbook whose "maximum braking" chart is flown well below
    * the tyres' limit (Piper, Diamond) is matched by the braking it implies, not by weaker brakes (DECISIONS-D2).
    */

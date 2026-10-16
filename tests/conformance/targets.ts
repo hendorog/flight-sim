@@ -94,7 +94,11 @@ export interface SystemsTargets {
 
 export interface ConformanceTargets {
   aircraft: AircraftId;
-  stall: { clean: StallTarget; landing: StallTarget };
+  /**
+   * trip 'pusher' (PC-12): the stall speed is the first stick-pusher activation (AircraftState.stickPusher), not
+   * the aerodynamic CLmax. Absent: 'aero'. Declared at the scaffold; the turbine-core package implements it in plan.ts.
+   */
+  stall: { clean: StallTarget; landing: StallTarget; trip?: 'aero' | 'pusher' };
   /** Contract 3.1: full aft stick 5 s at idle from a trimmed glide at `entryKias` (1.3 Vs), then forward. */
   stallRecovery: { entryKias: number; recoveryS: Range };
   climb: {
@@ -113,7 +117,13 @@ export interface ConformanceTargets {
   /** throttle: the power lever for the run (a flat-rated turboprop: at its torque limit); absent: 1. */
   takeoff: { flapDeg: number; rotateKias: number; pitchDeg: number; staticRunUp: boolean; controls?: ControlPatch; throttle?: number; groundRollM: Band };
   /** brake: the pedal on the roll the handbook's chart implies (LandingOptions.brake); absent: full. */
-  landing: { flapDeg: number; approachKt: number; touchdownPitchDeg: number; brake?: number; groundRollM: Band };
+  /**
+   * reverse: ControlInputs.reverse on the roll (LandingOptions.rollReverse; C208 = beta.pitchOnlyTravel, the POH
+   * "beta, no reverse"); absent: on the gate. withReverse: a second roll with that lever, judged on its own band
+   * (PC-12). Declared at the scaffold; the turbine-core package implements them in plan.ts.
+   */
+  landing: { flapDeg: number; approachKt: number; touchdownPitchDeg: number; brake?: number; groundRollM: Band;
+    reverse?: number; withReverse?: { reverse: number; groundRollM: Band } };
   glide: {
     /** TAS sweep at 300 m, every engine off. */
     range: SpeedRange;
