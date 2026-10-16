@@ -70,7 +70,10 @@ describe('aircraft type data, every type (generic)', () => {
       expect(v.Vs0, id).toBeLessThanOrEqual(v.Vs1);
       expect(v.Vs1, id).toBeLessThan(v.Vx);
       expect(v.Vx, id).toBeLessThanOrEqual(v.Vy);
-      expect(v.Vr, id).toBeGreaterThanOrEqual(v.Vs1);
+      // Vr is quoted at the take-off flap setting: at or above that configuration's stall speed (Vs1 for a flaps-up
+      // take-off; with take-off flap, above the full-flap Vs0 and so above the take-off flap stall speed, e.g. the
+      // PC-12's 82 KIAS at flaps 15, pusher 78, against Vs1 95 flaps up).
+      expect(v.Vr, id).toBeGreaterThanOrEqual(type.settings.takeoffFlapLever > 0 ? v.Vs0 : v.Vs1);
       expect(v.VfeFull, id).toBeLessThanOrEqual(v.Vfe10);
       expect(v.Vfe10, id).toBeLessThanOrEqual(v.Vno);
       // A turbine has Vmo, no Vno / Vne pair: the two slots both hold Vmo (no yellow arc).

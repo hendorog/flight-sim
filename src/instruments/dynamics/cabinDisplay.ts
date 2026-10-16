@@ -9,11 +9,21 @@ export interface CabinSchedule {
   cabinFt: readonly number[];
   /** Maximum cabin climb / descent rate, ft/min. */
   rateFpm: number;
+  /**
+   * Maximum differential, psi: the outflow / safety valve does not let the cabin pressure exceed the ambient by more,
+   * whatever the rate limit (a fast climb drives the cabin up faster than rateFpm). Absent: no limit.
+   */
+  maxDiffPsi?: number;
 }
 
 /** Standard-atmosphere static pressure, psi, at pressure altitude h (ft), troposphere formula (valid to 36 000 ft). */
 export function standardPressurePsi(h: number): number {
   return 14.6959 * Math.pow(Math.max(0, 1 - 6.8756e-6 * h), 5.2559);
+}
+
+/** Pressure altitude, ft, of a standard-atmosphere static pressure p (psi): the inverse of standardPressurePsi. */
+export function standardAltitudeFt(p: number): number {
+  return (1 - Math.pow(Math.max(0, p) / 14.6959, 1 / 5.2559)) / 6.8756e-6;
 }
 
 export class CabinDisplay {
@@ -35,25 +45,35 @@ export class CabinDisplay {
     return c[i - 1] + t * (c[i] - c[i - 1]);
   }
 
-  /** Differential pressure at aircraft altitude `altFt` with the cabin where it is now, psi (never negative). */
+  /** Differential pressure at aircraft altitude `altFt` with the cabin where it is now, psi (0 to maxDiffPsi). */
   diffPsi(altFt: number): number {
-    return Math.max(0, standardPressurePsi(this.cabinAltFt) - standardPressurePsi(altFt));
+    const d = Math.max(0, standardPressurePsi(this.cabinAltFt) - standardPressurePsi(altFt));
+    return Math.min(d, this.schedule.maxDiffPsi ?? Infinity);
   }
 
-  /** Jump to the commanded value (first sample, a teleport). */
+  /** Jump to the commanded value (first sample, a teleport, a resume). */
   reset(altFt: number): void {
     this.cabinAltFt = this.target(altFt);
+    this.limitDiff(altFt);
     this.started = true;
   }
 
-  /** Advance dt seconds at aircraft altitude `altFt`. The first call (or a call after a long gap) resets. */
+  /** The valve relieves the cabin to maxDiffPsi above the ambient: the cabin altitude is never below the altitude of that pressure. */
+  private limitDiff(altFt: number): void {
+    const max = this.schedule.maxDiffPsi;
+    if (max === undefined) return;
+    this.cabinAltFt = Math.max(this.cabinAltFt, standardAltitudeFt(standardPressurePsi(altFt) + max));
+  }
+
+  /** Advance dt seconds at aircraft altitude `altFt`. The first call resets (InstrumentSet.reset resets on a teleport or resume). */
   step(dt: number, altFt: number): void {
-    if (!this.started || dt < 0 || dt > 30) {
+    if (!this.started || !(dt >= 0)) {
       this.reset(altFt);
       return;
     }
     const goal = this.target(altFt);
     const maxMove = (this.schedule.rateFpm / 60) * dt;
     this.cabinAltFt += Math.max(-maxMove, Math.min(maxMove, goal - this.cabinAltFt));
+    this.limitDiff(altFt);
   }
 }

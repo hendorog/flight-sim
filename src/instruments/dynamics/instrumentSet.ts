@@ -6,6 +6,7 @@ import { C172S_INSTRUMENT_SYSTEMS } from '../../aircraft/c172s/panel';
 import { RAD } from '../../core/math';
 import { engineControl, type AircraftState, type ControlInputs, type EngineState, type WeatherSettings } from '../../core/types';
 import type { InstrumentSystemsDef, LampInputs } from '../panelDef';
+import { CabinDisplay } from './cabinDisplay';
 import { batteryCurrentAmps, ElectricNeedle, Tachometer, type Annunciators } from './engineSystems';
 import { lagStep } from './filters';
 import { SUCTION_RATED_INHG } from './gyro';
@@ -119,7 +120,18 @@ export interface InstrumentReadings {
   busVolts: number;
   /** Output of each alternator, A (the load meters). */
   alternatorAmps: number[];
+  /**
+   * Fuel used since the last reset (a new scenario, a teleport, a resume) or refuelling, US gal, from the tank senders: the
+   * gauged quantity when it was last re-based less the quantity now. Any rise of the total (a refuel) re-bases it to 0.
+   */
+  fuelUsedGal: number;
+  /** Cabin altitude, ft, and differential, psi, of InstrumentSystemsDef.cabin (0 without one). */
+  cabinAltFt: number;
+  cabinDiffPsi: number;
 }
+
+/** A rise of the gauged total above this, US gal, is a refuel (FUEL USED re-bases). */
+const REFUEL_GAL = 0.5;
 
 export interface InstrumentSetOptions {
   /** Start with the gyros at speed (engine running). Default true. */
@@ -216,6 +228,11 @@ export class InstrumentSet {
   private readonly engines: EngineIndicators[];
   private readonly gear: GearReadings = { nose: false, left: false, right: false, inTransit: false };
   private amps = 0;
+  /** FUEL USED: the gauged total it is counted from, and the total of the last step (NaN: re-base on the next step). */
+  private fuelBaseGal = NaN;
+  private fuelLastGal = NaN;
+  /** The cabin altitude display, when the systems definition has one. */
+  private readonly cabin: CabinDisplay | null;
   private lampInputs: LampInputs | null = null;
   /** `readings.annunciators` by lamp id (the C172S lamp ids are its members). */
   private readonly lamps: Record<string, boolean>;
@@ -233,6 +250,7 @@ export class InstrumentSet {
     this.tach = this.engines[0].tach;
     this.fuel = sys.fuel.tanks.map(() => new ElectricNeedle(2.5, 0));
     this.fuelGal = sys.fuel.tanks.map(() => 0);
+    this.cabin = sys.cabin ? new CabinDisplay(sys.cabin) : null;
     // Spun-up gyros start with the suction of a cruise rpm.
     this.suction = spun && sys.vacuum ? sys.vacuum.suction(2300) : 0;
     const annunciators: Annunciators & Record<string, boolean> = { lowFuelLeft: false, lowFuelRight: false, oilPress: false, lowVolts: false, vacuum: false };
@@ -294,6 +312,9 @@ export class InstrumentSet {
       carbHeat: 0,
       busVolts: 0,
       alternatorAmps: [],
+      fuelUsedGal: 0,
+      cabinAltFt: 0,
+      cabinDiffPsi: 0,
     };
     this.heading.bug = (70 * Math.PI) / 180;
   }
@@ -315,6 +336,10 @@ export class InstrumentSet {
     this.heading.align(state.heading);
     this.heading.bug = state.heading;
     this.suction = this.pumpSuction(state, true);
+    this.fuelBaseGal = this.fuelLastGal = NaN;
+    this.readings.fuelUsedGal = 0;
+    // The cabin is where the controller holds it at this altitude (a resume or a teleport in cruise: no climb from 0).
+    this.cabin?.reset(pressureAltitudeFt(state.staticPressure));
   }
 
   /**
@@ -368,6 +393,11 @@ export class InstrumentSet {
       this.fuelGal[i] = gal;
       r.fuelGal[i] = this.fuel[i].step(dt, gal, powered);
     }
+    let totalGal = 0;
+    for (let i = 0; i < this.fuelGal.length; i++) totalGal += this.fuelGal[i];
+    if (!(totalGal <= this.fuelLastGal + REFUEL_GAL) || !(this.fuelBaseGal >= totalGal)) this.fuelBaseGal = totalGal;
+    this.fuelLastGal = totalGal;
+    r.fuelUsedGal = this.fuelBaseGal - totalGal;
     // The ammeter shows the battery current (+ = charging). Older state producers without batteryAmps
     // fall back to an estimate from the alternator output and the switched loads.
     const batteryAmps = Number.isFinite(s.electrical.batteryAmps)
@@ -443,6 +473,11 @@ export class InstrumentSet {
     ils07(s.position, r.ils);
     gpsToAirport(s.position, s.track, s.groundSpeed, r.gps);
     r.pressureAltitudeFt = pressureAltitudeFt(s.staticPressure);
+    if (this.cabin) {
+      this.cabin.step(dt, r.pressureAltitudeFt);
+      r.cabinAltFt = this.cabin.cabinAltFt;
+      r.cabinDiffPsi = this.cabin.diffPsi(r.pressureAltitudeFt);
+    }
     return r;
   }
 }

@@ -9,6 +9,7 @@
 import type { AircraftState, ControlInputs } from '../core/types';
 import type { InputAction } from '../input/bindings';                 // type-only
 import type { InstrumentReadings } from './dynamics/instrumentSet';   // type-only
+import type { CabinSchedule } from './dynamics/cabinDisplay';     // type-only
 import type { PanelComponent } from './render/component';
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -81,7 +82,9 @@ export type GaugeDef =
   | { kind: 'customRound'; id: string; at: At; size: 'large' | 'small';
       create(id: string, x: number, y: number, aperture: number): PanelComponent }
   | { kind: 'asi'; id: string; at: At; marks: AsiMarkings }
-  | { kind: 'attitude' | 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At }
+  | { kind: 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At }
+  /** `inclinometer`: a slip ball in a tube across the foot of the face (an EADI, a standby horizon), on a panel without a turn coordinator. */
+  | { kind: 'attitude'; id: string; at: At; inclinometer?: boolean }
   | { kind: 'cdi'; id: string; at: At; receiver: 'nav1' | 'nav2'; fixedCourseDeg: number }
   | { kind: 'tach'; id: string; at: At; size: 'large' | 'small'; marks: TachMarkings; engine?: number }
   | { kind: 'rotorTach'; id: string; at: At; marks: RotorTachMarkings }
@@ -97,12 +100,7 @@ export type GaugeDef =
       read(c: ControlInputs): number; set(c: ControlInputs, position: number): void;
       guard?: { closed(c: ControlInputs): boolean; toggle(c: ControlInputs): void } }
   | { kind: 'dualSector'; id: string; bounds: Rect; left: ScaleDef; right: ScaleDef }
-  /**
-   * `onSample`: called with the readings and the panel clock before each sample of the gauge, for a gauge whose scales read
-   * a display model the type steps (the cabin altitude display, dynamics/cabinDisplay.ts).
-   */
-  | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef;
-      onSample?(r: InstrumentReadings, time: number): void }
+  | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef }
   | { kind: 'single'; id: string; at: At; seed: number; size: 'large' | 'small'; a0: number; a1: number; title: string; units: string;
       labels: readonly number[]; scale: ScaleDef }
   /** Two needles (L, R) on one dial: twin tachometer, manifold pressure, fuel flow. */
@@ -251,5 +249,7 @@ export interface InstrumentSystemsDef {
   /** Carburettor probe temperature, C. A type may supply an explicitly documented estimate. */
   carbAirTempC?(s: AircraftState, c: ControlInputs): number;
   hourmeterRunning?(s: AircraftState, c: ControlInputs): boolean;
+  /** Cabin altitude / differential display (dynamics/cabinDisplay.ts), stepped with the instruments: readings.cabinAltFt, cabinDiffPsi. */
+  cabin?: CabinSchedule;
   lamps: readonly { id: string; lit(i: LampInputs): boolean }[];
 }

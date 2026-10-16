@@ -1,7 +1,7 @@
 # Pilatus PC-12/47: panel, EIS, CAWS, UI, checklists and training
 
 Package P3 of the PC-12/MD 500E feature (branch `pcmd/p3`). Files: `src/aircraft/pc12/{panel,panelLayout,ui,training,checklists,devMock}.ts`,
-`src/instruments/render/eisWindow.ts`, `src/instruments/render/sampleHook.ts`, `src/instruments/dynamics/cabinDisplay.ts`,
+`src/instruments/render/eisWindow.ts`, `src/instruments/dynamics/cabinDisplay.ts`,
 `src/instruments/{panelDef,panelParts,panel,fixedPanel}.ts`, `src/ui/checklistModel.ts`, test `tests/aircraft/pc12Panel.test.ts`.
 
 Tags as in `docs/pc12-sources.md`: PHOTO (Commons photographs of the /47 cockpit), 47E-PROXY (47E POH Report 02277 Rev 20),
@@ -35,7 +35,7 @@ FUEL QTY (L, R bars and figures), NP / BAT (DC A, DC V), GEN 1 / GEN 2 (A each, 
 | ITT C, 0 to 1100 | green 400 to 760, yellow to 800, red lines 800 and 1000 (start), red above 870 | TCDS via `PC12_ITT_C` |
 | NG %, 0 to 110 | green 50.7 to 104, red line 104 | ETCDS / 47E-PROXY 2-6 |
 | NP rpm, 0 to 2000 | red arc 350 to 950 (prohibited on the ground), green 1600 to 1700, yellow to 1870 | TCDS C.III.6.7, `PC12_NP_*` |
-| FUEL FLOW pph, 0 to 800 | none; USED integrates the quantity drop since the panel was built (re-based on a rise) | AGENT; FUEL RESET not modelled |
+| FUEL FLOW pph, 0 to 800 | none; USED is `readings.fuelUsedGal`: the tank-sender drop since the last instrument reset (scenario, teleport, resume), re-based to 0 by any refuel (a rise above 0.5 gal) | AGENT; FUEL RESET not modelled |
 | ENG OIL | pressure green 85 to 105, yellow 40 to 85, red lines 40 and 105; temperature red above 99 C | the C208 panel's PT6 figures, ESTIMATE for the -67B |
 
 Torque is `pc12TorquePsi(EngineState.torque)` everywhere (panel, HUD, devMock, test). Fuel is read in pounds at 6.7 lb/US gal.
@@ -57,9 +57,11 @@ INVERTER, BUS TIE, CHIP and the rest).
 * Gear handle with three greens and the red unsafe light (`gearLights`, lever clickable), emergency gear knob.
 * Flap gauge (small dial, UP / 15 / 30 / 40 from `flapsDeg`).
 * Cabin altitude / differential gauge: a **display function** of pressure altitude on the 47E controller schedule (FL300 10 000 ft,
-  FL250 7379, FL200 5315, FL150 3680, FL100 2252; max 5.75 psid, standard-atmosphere differential), cabin rate limited to 500 ft/min.
-  No pressurisation systems model (`dynamics/cabinDisplay.ts`; `onSample` hook on the `dual` gauge kind).
-* Buttons: STARTER INTR (cuts the start), PUSHER INTR (`pusherInterrupt`, held), CAWS TEST.
+  FL250 7379, FL200 5315, FL150 3680, FL100 2252; max 5.75 psid, standard-atmosphere differential), cabin rate limited to 500 ft/min,
+  and the differential held to 5.75 psid by the (display) safety valve in a climb faster than the rate limit allows. No
+  pressurisation systems model: `dynamics/cabinDisplay.ts`, owned and stepped by `InstrumentSet` (`InstrumentSystemsDef.cabin`,
+  `readings.cabinAltFt` / `cabinDiffPsi`) in every camera view; a reset, teleport or resume puts the cabin on the schedule.
+* Buttons: STARTER INTR (painted; not wired, see below), PUSHER INTR (`pusherInterrupt`, held), CAWS TEST.
 * Switch row: BAT, GEN 1, GEN 2, AVIONICS, FUEL PUMPS, beacon, nav, strobe, landing, taxi, pitot heat; STARTER and IGNITION
   (`switches: 'ignition'`).
 * Placards: Vmo / Mmo / Vo, Vfe, Vlo / Vle, engine limits, 5.75 psid, "350 to 950 rpm prohibited".
@@ -81,11 +83,16 @@ INVERTER, BUS TIE, CHIP and the rest).
 ## Not modelled / KNOWN ISSUES (for docs/known-issues.md at integration)
 
 * GEN 1 and GEN 2 rockers are tied (one `alternator` control); real GEN 2 cannot carry the ice loads. Fuel pumps are one rocker.
-* STARTER INTR works only while the start latch exists (turbine core). The pusher test, MOR, EIS FUEL RESET / MENU / TEST buttons,
+* STARTER INTR is a placeholder: `ControlInputs` has no interrupt input yet (requested). The turbine core cuts a latched start on
+  a second STARTER press (S again). The STARTER and IGNITION lenses read `controls.starter`, so with the latch they light only
+  while S is held, not for the whole latched start (no engaged-starter state is published yet; requested with the interrupt).
+  The pusher test, MOR, EIS FUEL RESET / MENU / TEST buttons,
   ice-protection switches, ECS and cabin controls are painted or absent, not working.
-* `Vs1` in the training data is the flaps-15 pusher speed (78 KIAS), because the generic type test requires Vr >= Vs1 and Vr 82 is
-  a flaps-15 speed; the clean pusher speed is 95 (`reference.vs1`). The consistency check wants the two equal (see contract request).
-* The standby instruments are full-size (`instrumentScale` is per class); no turn coordinator is fitted, so the lesson spots `tc`
-  and `ball` name the standby attitude indicator.
+* `Vs1` in the training data is the flaps-UP pusher speed, 95 KIAS (`reference.vs1`). The generic type test compares Vr (82, a
+  flaps-15 speed) with Vs0 when the type takes off with flap. The low-and-slow safety rule uses Vs0 + 10 = 77 KIAS, not the
+  other types' Vs1 + 5 (100), which is above the PC-12's normal approach speeds (AGENT choice).
+* The standby instruments are full-size (`instrumentScale` is per class). No turn coordinator is fitted: the pilot's, co-pilot's
+  and standby attitude indicators carry an inclinometer (slip ball across the foot of the face, `inclinometer: true`), so the
+  lesson spot `ball` names the pilot's attitude indicator's tube and `tc` the pilot's attitude indicator.
 * The EIS is drawn as nine round-dial windows; the real /47 EIS is a monochrome LCD whose exact window list is not sourced
   (research-pc12.md section 15 gap).

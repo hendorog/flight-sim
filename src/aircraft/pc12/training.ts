@@ -17,7 +17,7 @@ import type {
 import { C208 } from '../c208/training';
 import { PC12_CHECKLIST_SOURCE, PC12_EXTRA_CHECKLISTS } from './checklists';
 import { PC12_FLAP_DETENTS_DEG, PC12_NP_GOVERNED } from './facts';
-import { PC12_APPROACH_KIAS, PC12_DEMO_CROSSWIND_KT, PC12_PUSHER_KIAS, PC12_REFERENCE } from './reference';
+import { PC12_APPROACH_KIAS, PC12_DEMO_CROSSWIND_KT, PC12_REFERENCE } from './reference';
 
 const R = PC12_REFERENCE;
 
@@ -26,13 +26,13 @@ const FLAP_DETENTS_DEG = [...PC12_FLAP_DETENTS_DEG];
 const FLAP_LEVER: Record<number, number> = Object.fromEntries(FLAP_DETENTS_DEG.map((d) => [d, d / 40]));
 
 /**
- * Speeds, KIAS. The shared ones are the reference table's. `Vs1` is the stick-PUSHER speed with flaps 15 (78, the take-off
- * setting; PC12_PUSHER_KIAS[15]) rather than flaps up (95): the generic type check wants Vr (82, flaps 15) at or above Vs1.
- * The airplane stall is defined by pusher activation (47E-PROXY 5.2). There is no Vno: Vno = Vne = Vmo (no yellow arc).
+ * Speeds, KIAS. The shared ones are the reference table's. `Vs1` is the flaps-UP stall (stick-pusher) speed, 95 (47E-PROXY
+ * 5.2, PC12_PUSHER_KIAS[0]); Vr (82) is quoted at the flaps-15 take-off setting, whose pusher speed is 78. The airplane
+ * stall is defined by pusher activation. There is no Vno: Vno = Vne = Vmo (no yellow arc).
  */
 const VSPEEDS: Record<VSpeedId, number> = {
   Vs0: R.vs0,
-  Vs1: PC12_PUSHER_KIAS[15],
+  Vs1: R.vs1,
   Vr: R.vr,
   Vx: R.vx,
   Vy: R.vy,
@@ -78,7 +78,10 @@ const ENVELOPE: SafetyEnvelope = {
   maxG: 3.0,
   minG: 0,
   minAglFt: 1000,
-  lowAndSlow: { aglFt: 300, belowKias: { vspeed: 'Vs1', add: 5 } },
+  // Vs0 + 10 = 77 KIAS (AGENT choice): the PC-12's normal approach speeds sit BELOW the flaps-up stall speed (Vref 85 at
+  // flaps 40, Vapp 99 at flaps 15, Vs1 95), so the other types' Vs1 + 5 (100) would call "low and slow" on every normal
+  // final. 77 is 8 kt under Vref and 1 kt under the flaps-15 pusher speed (78, 47E-PROXY 5.2).
+  lowAndSlow: { aglFt: 300, belowKias: { vspeed: 'Vs0', add: 10 } },
   maxSinkFpmBelow200: 1000,
   stallAllowed: false,
   runwayExcursionM: 15,

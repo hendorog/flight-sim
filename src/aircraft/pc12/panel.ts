@@ -21,7 +21,6 @@
 // real size. Airspeeds in knots. Torque everywhere through pc12TorquePsi (facts.ts). docs/pc12-panel.md has the
 // sources, the AGENT choices and what is not modelled.
 
-import { CabinDisplay } from '../../instruments/dynamics/cabinDisplay';
 import type { EngineReadings } from '../../instruments/dynamics/instrumentSet';
 import { singleGauge, type EngineDial } from '../../instruments/panels/gauges';
 import type { AsiMarkings, EisDial, EisReadout, GaugeDef, InstrumentSystemsDef, LampDef, LampInputs, PanelDef, Rect, ScaleDef, SwitchDef } from '../types';
@@ -189,19 +188,6 @@ const FF_DIAL: EisDial = {
 
 const readout = (label: string, unit: string, decimals: number, read: EisReadout['read'], alert?: EisReadout['alert']): EisReadout => ({ label, unit, decimals, read, alert });
 
-/**
- * Fuel used since the panel was built, lb: the quantity at the first reading less the quantity now. A rise (refuelling, a
- * new scenario) re-bases it. The EIS FUEL RESET button is not modelled.
- */
-function fuelUsedLb(): (fuelGal: readonly number[]) => number {
-  let base = NaN;
-  return (fuelGal) => {
-    const now = fuelGal.reduce((a, b) => a + b, 0);
-    if (!(base >= now)) base = now;
-    return (base - now) * LB_PER_GAL;
-  };
-}
-const usedLb = fuelUsedLb();
 
 /** The nine windows of the EIS (the order of research 15), left to right, top to bottom. */
 const EIS_WINDOWS: GaugeDef[] = [
@@ -212,7 +198,7 @@ const EIS_WINDOWS: GaugeDef[] = [
   { kind: 'eisWindow', id: 'eisNg', bounds: eisRect(2, 0), title: 'NG', dial: NG_DIAL,
     readouts: [readout('', '%', 1, (r) => NG_DIAL.read(r), (v) => (v > NG_LIMIT ? 'red' : undefined))] },
   { kind: 'eisWindow', id: 'eisFuelFlow', bounds: eisRect(0, 1), title: 'FUEL FLOW', dial: FF_DIAL,
-    readouts: [readout('FF', 'PPH', 0, (r) => FF_DIAL.read(r)), readout('USED', 'LB', 0, (r) => usedLb(r.fuelGal))] },
+    readouts: [readout('FF', 'PPH', 0, (r) => FF_DIAL.read(r)), readout('USED', 'LB', 0, (r) => r.fuelUsedGal * LB_PER_GAL)] },
   { kind: 'eisWindow', id: 'eisFuelQty', bounds: eisRect(1, 1), title: 'FUEL QTY',
     bars: {
       min: 0, max: 1400,
@@ -256,27 +242,27 @@ const FLAP_DIAL: EngineDial = {
 
 /**
  * Cabin pressure display, 47E POH 7-17 controller schedule (47E-PROXY; the /47 controller is believed equivalent, ESTIMATE):
- * FL300 -> 10 000 ft, FL250 -> 7379, FL200 -> 5315, FL150 -> 3680, FL100 -> 2252; cabin rate limited to 500 ft/min.
+ * FL300 -> 10 000 ft, FL250 -> 7379, FL200 -> 5315, FL150 -> 3680, FL100 -> 2252; cabin rate limited to 500 ft/min; the
+ * differential never above the 5.75 psid maximum (placard, PHOTO: the safety valve relieves the cabin in a fast climb).
  */
 export const PC12_CABIN_SCHEDULE = {
   altFt: [10_000, 15_000, 20_000, 25_000, 30_000],
   cabinFt: [2252, 3680, 5315, 7379, 10_000],
   rateFpm: 500,
+  maxDiffPsi: 5.75,
 } as const;
 /** Maximum cabin differential, psi (placard, PHOTO). */
-export const PC12_MAX_DIFF_PSI = 5.75;
-export const PC12_CABIN = new CabinDisplay(PC12_CABIN_SCHEDULE);
-let cabinClock = NaN;
+export const PC12_MAX_DIFF_PSI = PC12_CABIN_SCHEDULE.maxDiffPsi;
 
 const CABIN_ALT_SCALE: ScaleDef = {
   label: 'FT', min: 0, max: 15, majors: [0, 5, 10, 15], minorStep: 1, numbers: true,
   arcs: [{ from: 0, to: 10, color: 'green' }], redLines: [14.5],
-  read: () => PC12_CABIN.cabinAltFt / 1000,
+  read: (r) => r.cabinAltFt / 1000,
 };
 const CABIN_DIFF_SCALE: ScaleDef = {
   label: 'PSI', min: 0, max: 7, majors: [0, 2, 4, 6], minorStep: 0.5, numbers: true,
   arcs: [{ from: 0, to: PC12_MAX_DIFF_PSI, color: 'green' }], redLines: [PC12_MAX_DIFF_PSI],
-  read: (r) => PC12_CABIN.diffPsi(r.pressureAltitudeFt),
+  read: (r) => r.cabinDiffPsi,
 };
 
 // ---------------------------------------------------------------------------------------------------
@@ -332,21 +318,21 @@ export const PC12_PANEL: PanelDef = {
   gauges: [
     // The pilot's T.
     { kind: 'asi', id: 'asi', at: [PILOT_COLS[0], ROWS[0]], marks: PC12_ASI_MARKS },
-    { kind: 'attitude', id: 'attitude', at: [PILOT_COLS[1], ROWS[0]] },
+    { kind: 'attitude', id: 'attitude', at: [PILOT_COLS[1], ROWS[0]], inclinometer: true },
     { kind: 'altimeter', id: 'altimeter', at: [PILOT_COLS[2], ROWS[0]] },
     // RMI place: the NAV 1 indicator; horizontal situation: the heading indicator; VSI.
     { kind: 'cdi', id: 'rmi', at: [PILOT_COLS[0], ROWS[1]], receiver: 'nav1', fixedCourseDeg: 70 },
     { kind: 'heading', id: 'heading', at: [PILOT_COLS[1], ROWS[1]] },
     { kind: 'vsi', id: 'vsi', at: [PILOT_COLS[2], ROWS[1]] },
     // Standby instruments, outboard.
-    { kind: 'attitude', id: 'attitudeSb', at: [STANDBY.x, STANDBY.y[0]] },
+    { kind: 'attitude', id: 'attitudeSb', at: [STANDBY.x, STANDBY.y[0]], inclinometer: true },
     { kind: 'asi', id: 'asiSb', at: [STANDBY.x, STANDBY.y[1]], marks: PC12_ASI_MARKS },
     { kind: 'altimeter', id: 'altimeterSb', at: [STANDBY.x, STANDBY.y[2]] },
     singleGauge('flaps', [FLAP.x, FLAP.y], FLAP_DIAL, (r) => r.flapsDeg),
     { kind: 'clock', id: 'clock', at: [CLOCK.x, CLOCK.y] },
     // The co-pilot's T (one pitot-static system and one set of gyros feed both sides here).
     { kind: 'asi', id: 'asi2', at: [COPILOT_COLS[0], ROWS[0]], marks: PC12_ASI_MARKS },
-    { kind: 'attitude', id: 'attitude2', at: [COPILOT_COLS[1], ROWS[0]] },
+    { kind: 'attitude', id: 'attitude2', at: [COPILOT_COLS[1], ROWS[0]], inclinometer: true },
     { kind: 'altimeter', id: 'altimeter2', at: [COPILOT_COLS[2], ROWS[0]] },
     { kind: 'cdi', id: 'rmi2', at: [COPILOT_COLS[0], ROWS[1]], receiver: 'nav2', fixedCourseDeg: 70 },
     { kind: 'heading', id: 'heading2', at: [COPILOT_COLS[1], ROWS[1]] },
@@ -358,13 +344,16 @@ export const PC12_PANEL: PanelDef = {
     { kind: 'guardedKnob', id: 'gearEmergency', at: [PC12_GEAR_HANDLE.x, PC12_GEAR_HANDLE.y + 110], label: 'EMERG GEAR', action: 'gearEmergency' },
     // Cabin altitude / differential (a display function of pressure altitude, see PC12_CABIN_SCHEDULE).
     {
+      // The display model is stepped by the instruments (PC12_INSTRUMENT_SYSTEMS.cabin), in every camera view.
       kind: 'dual', id: 'cabin', at: [CABIN_GAUGE.x, CABIN_GAUGE.y], seed: 1202, title: ['CABIN', 'ALT   PSI'], left: CABIN_ALT_SCALE, right: CABIN_DIFF_SCALE,
-      // Steps the display from the panel's own clock (the first call, or a long gap, jumps to the commanded value).
-      onSample: (r, time) => { PC12_CABIN.step(Number.isNaN(cabinClock) ? Infinity : time - cabinClock, r.pressureAltitudeFt); cabinClock = time; },
     },
-    // Momentary buttons: the STARTER INTERRUPT (cuts the latched start), the stick PUSHER INTR (held) and the CAWS lamp test.
+    // Momentary buttons: the STARTER INTERRUPT, the stick PUSHER INTR (held) and the CAWS lamp test.
+    // STARTER INTR is NOT wired yet: ControlInputs has no interrupt input. The turbine core (EngineUnit.starterCommand) cuts a
+    // latched start on a SECOND STARTER press, so a button that pressed STARTER would ENGAGE the starter whenever the latch
+    // is off; clearing `starter` (the earlier wiring) did nothing a released key does not. The button is a painted
+    // placeholder until `ControlInputs.starterInterrupt` exists (requested from the integrator / T1a); press S again meanwhile.
     { kind: 'pushButton', id: 'starterInterrupt', bounds: { x: BUTTONS.xs[0], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'STARTER INTR',
-      read: (c) => !c.starter, press: (down, c) => { if (down) c.starter = false; } },
+      read: () => false, press: () => {} },
     { kind: 'pushButton', id: 'pusherIntr', bounds: { x: BUTTONS.xs[1], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'PUSHER INTR',
       read: (c) => c.pusherInterrupt ?? false, press: (down, c) => { c.pusherInterrupt = down; } },
     { kind: 'pushButton', id: 'lampTest', bounds: { x: BUTTONS.xs[2], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'CAWS TEST',
@@ -440,14 +429,14 @@ export const PC12_PANEL: PanelDef = {
     stack: { x: STACK.x, y: STACK.navcom1, w: 320, h: STACK.xpdr + 60 - STACK.navcom1 },
   },
   // Ring centre and radius of each instrument a lesson can name (training/types.ts InstrumentId). The power instrument
-  // of a turboprop is the torque window: 'tach' points at it. No turn coordinator is fitted (the slip is on the attitude
-  // indicator), so 'tc' and 'ball' name the standby attitude indicator.
+  // of a turboprop is the torque window: 'tach' points at it. No turn coordinator is fitted: 'tc' names the pilot's attitude
+  // indicator and 'ball' the inclinometer across its foot (AttitudeGauge: the tube's lowest point at 0.74 aperture).
   spots: {
     asi: { x: PILOT_COLS[0], y: ROWS[0], r: BIG },
     ai: { x: PILOT_COLS[1], y: ROWS[0], r: BIG },
     alt: { x: PILOT_COLS[2], y: ROWS[0], r: BIG },
-    tc: { x: STANDBY.x, y: STANDBY.y[0], r: BIG },
-    ball: { x: STANDBY.x, y: STANDBY.y[0], r: BIG * 0.5 },
+    tc: { x: PILOT_COLS[1], y: ROWS[0], r: BIG },
+    ball: { x: PILOT_COLS[1], y: ROWS[0] + APERTURES.large * 0.72, r: APERTURES.large * 0.36 },
     dg: { x: PILOT_COLS[1], y: ROWS[1], r: BIG },
     vsi: { x: PILOT_COLS[2], y: ROWS[1], r: BIG },
     tach: { x: PC12_EIS.x0 + EIS_CELL / 2, y: PC12_EIS.y0 + EIS_CELL / 2, r: EIS_CELL * 0.55 },
@@ -496,6 +485,8 @@ export const PC12_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
   // The propeller tachometer paces the readings' tach hours.
   tachHourRpm: PC12_NP_GOVERNED,
   tachShaft: 'propeller',
+  // Cabin altitude / differential display (PC12_CABIN_SCHEDULE), stepped with the instruments and reset with them.
+  cabin: PC12_CABIN_SCHEDULE,
   lamps: [
     ...Object.entries(CAWS_LOGIC).map(([id, lit]) => ({
       id,
