@@ -58,13 +58,17 @@ export const PC12_TARGETS: ConformanceTargets = {
   takeoff: { flapDeg: 15, rotateKias: 80, pitchDeg: 8, staticRunUp: true, throttle: PC12_TAKEOFF_LEVER, groundRollM: pct(518, 15, '47E-PROXY Fig 5-2-12 CHART-READ: 1700 ft (SECONDARY 1650)') },
   // 47E-PROXY Fig 5-2-52 (flaps 40) read at SL ISA, 9921 lb (its weight reference line), zero wind and slope: 1275 ft
   // CHART-READ +/-100 ft. Its associated conditions: "average braking technique, ground idle after touch down" (the PCL
-  // at IDLE on the gate, no beta): brake 0.6 of full (AGENT reading of "average"). Vref 85 KIAS.
+  // at IDLE on the gate, the condition lever to GROUND IDLE): brake 0.5 of full (AGENT reading of "average"). Vref 85
+  // KIAS. The generic roll (measure.ts landingRoll) cannot move the condition lever: on the roll it stays at FLIGHT
+  // IDLE, whose 66 % Ng pulls about 5 kN at a standstill on the 6 deg stop (460 m, ratio 0.59). Those two items are held
+  // on the beta plumbing ('PC12-beta': LandingOptions.rollCondition requested); pc12.test.ts judges the chart's
+  // technique (ground idle after touchdown) against the same bands.
   landing: {
     flapDeg: 40,
     approachKt: 86,
     touchdownPitchDeg: 5,
-    brake: 0.6,
-    groundRollM: band(389, 30, '47E-PROXY Fig 5-2-52 CHART-READ: 1275 ft +/-100 at SL ISA, 9921 lb, average braking, on the gate'),
+    brake: 0.5,
+    groundRollM: band(389, 30, '47E-PROXY Fig 5-2-52 CHART-READ: 1275 ft +/-100 at SL ISA, 9921 lb, average braking, ground idle after touchdown', 'PC12-beta'),
     reverse: 0,
     // 47E-PROXY 4.16: the PCL back to IDLE before the aircraft stops.
     reverseCancel: { kias: 40, to: 0 },
@@ -73,8 +77,8 @@ export const PC12_TARGETS: ConformanceTargets = {
     // 0.72 (DERIVED).
     withReverse: {
       reverse: 1,
-      groundRollM: band(280, 35, 'DERIVED: 0.72 x the chart-read 389 m (47E-PROXY Fig 5-2-52/54)'),
-      ratio: band(0.72, 0.08, 'DERIVED: 47E-PROXY example 1680 / 1990 ft over 50 ft -> 810 / 1120 ft on the ground'),
+      groundRollM: band(280, 35, 'DERIVED: 0.72 x the chart-read 389 m (47E-PROXY Fig 5-2-52/54)', 'PC12-beta'),
+      ratio: band(0.72, 0.08, 'DERIVED: 47E-PROXY example 1680 / 1990 ft over 50 ft -> 810 / 1120 ft on the ground', 'PC12-beta'),
     },
   },
   glide: {
@@ -111,9 +115,10 @@ export const PC12_TARGETS: ConformanceTargets = {
   },
   ground: {
     restHeightM: band(1.54, 0.03, 'geometry.restHeight; contract 5 intro (3 cm)'),
-    // Power-turbine rpm on the gate at the definition's default condition lever (FLIGHT IDLE): the propeller on its
-    // low-pitch stop at about 1100-1450 rpm (ESTIMATE: above the 950 rpm floor, below governing).
-    idleRpm: range(1100 * (29_894 / 1700), 1450 * (29_894 / 1700), 'ESTIMATE: FLIGHT IDLE on the gate, Np 1100-1450'),
+    // Power-turbine rpm on the gate at the definition's default condition lever (FLIGHT IDLE, 66 % Ng): the propeller
+    // on its 6 deg stop runs up to about its governed speed (ESTIMATE; the 47E: 1700 rpm "except at low power settings
+    // at low speeds").
+    idleRpm: range(1500 * (29_894 / 1700), 1730 * (29_894 / 1700), 'ESTIMATE: FLIGHT IDLE on the gate, Np 1500-1730'),
     parkedDriftMm: below(5, 'contract 3.10 generic block'),
     parkedRateDegS: below(0.05, 'contract 3.10 generic block'),
     taxi: {
@@ -124,12 +129,14 @@ export const PC12_TARGETS: ConformanceTargets = {
       radiusM: range(12, 30, '47E-PROXY 7-4: pedal steering +/-12 deg'),
       maxYawAccelDegS2: below(5, 'contract 3.10 generic block'),
     },
+    // The static items at each lever position (the generic block). The steady unbraked speeds take 200-300 s to
+    // settle at 4740 kg (the thrust falls slowly with speed), longer than the block's 150 s: pc12.test.ts judges them
+    // over 300 s (IdleTaxiCase.seconds requested).
     idleTaxi: [
       {
         label: 'on the gate, ground idle',
         reverse: 0,
         condition: PC12_GROUND_IDLE,
-        idleTaxiKt: range(15, 30, 'ESTIMATE (plan 5.7 (a)): the reason the POH taxis in beta'),
         idleNp: band(1060, 60, '47E-PROXY 7-11 p. 707: ground idle about 1060 rpm'),
         idleNgPct: range(50.7, 61.4, '47E-PROXY 2-6: ground idle Ng 50.7-61.4 %'),
         idleIttC: below(750, '47E-PROXY 2-6 note 5: minimum-idle ITT 750 C'),
@@ -140,12 +147,6 @@ export const PC12_TARGETS: ConformanceTargets = {
         condition: PC12_GROUND_IDLE,
         staticThrustN: range(-500, 500, 'AGENT (plan 5.7 (b)): ground fine is about zero thrust'),
         idleTaxiKt: below(5, 'AGENT (plan 5.7 (b))'),
-      },
-      {
-        label: 'half beta',
-        reverse: GROUND_FINE / 2,
-        condition: PC12_GROUND_IDLE,
-        idleTaxiKt: range(8, 12, '47E-PROXY 4.7 ("use the beta range to control taxi speed") / AGENT (plan 5.7 (c))'),
       },
     ],
   },
@@ -202,6 +203,16 @@ export const PC12_PUSHER_FLAPS = [
   { flapDeg: 15, entryKt: 105, kcas: band(80, 3, '47E-PROXY Fig 5-2-1 CHART-READ: 78 KIAS (pusher), 10 450 lb') },
   { flapDeg: 30, entryKt: 98, kcas: band(72, 3, '47E-PROXY Fig 5-2-1 CHART-READ / DERIVED 77 / 1.1: 70 KIAS (pusher)') },
 ] as const;
+/** Steady unbraked idle taxi at ground idle, over 300 s (plan 5.7 (a), (c)). */
+export const PC12_TAXI = [
+  { label: 'on the gate, ground idle', reverse: 0, speedKt: range(15, 30, 'ESTIMATE (plan 5.7 (a)): the reason the POH taxis in beta') },
+  { label: 'half beta', reverse: GROUND_FINE / 2, speedKt: range(8, 12, '47E-PROXY 4.7 ("use the beta range to control taxi speed") / AGENT (plan 5.7 (c))') },
+] as const;
+/** Take-off roll with the rudder trim at zero (plan 5.7, AGENT). */
+export const PC12_TAKEOFF_HEADING = {
+  headingErrorDeg: below(5, 'AGENT (plan 5.7): heading held within 5 deg'),
+  pedal: below(0.6, 'AGENT (plan 5.7): with no more than 0.6 of the pedal'),
+};
 /** Pusher at a 1 kt/s deceleration, flaps 40 (plan 5.7). */
 export const PC12_PUSH = {
   pitchDownDeg: range(8, 20, '47E-PROXY 5 p. 329 / ESTIMATE: the nose drops through the horizon'),
@@ -219,31 +230,33 @@ export const PC12_START_TARGETS = {
 
 /**
  * The keyboard circuit (AGENT targets, plan 5.7): the pilot reads the torque gauge, psi. Climb at Vy 130, downwind and
- * base with flaps 15 at 125 KIAS, final flaps 40 at Vref + 3 (88), base leg 600 ft, the PCL closed 3 m up.
+ * base with flaps 15 at 125 / 115 KIAS, final flaps 40 at Vref + 5 (90) on about 13 psi, base leg 600 ft, the round-out
+ * from 8 m with the PCL closed (the flaps-40 drag stops the float).
  */
 export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
   power: (s: AircraftState) => pc12TorquePsi(s.engines[0].torque),
   rotateKias: 82,
   climbKias: 130,
   downwindKias: 125,
-  baseKias: 120,
-  finalKias: 88,
+  baseKias: 115,
+  finalKias: 90,
   brakeKias: 50,
   rotatePitchDeg: 8,
   climbPitchDeg: 9,
   levelPitchDeg: 2,
-  finalPitchDeg: -2,
-  landingPitchDeg: 5,
+  finalPitchDeg: -3,
+  landingPitchDeg: 6,
   powerDownwind: 16,
-  powerPattern: 12,
-  powerBase: 10,
-  powerFinal: 11,
-  powerMin: 4,
+  powerPattern: 13,
+  powerBase: 12,
+  powerFinal: 13,
+  powerMin: 6,
   powerMax: 37,
-  powerPerKt: 0.6,
-  powerPerMetre: 0.4,
+  powerPerKt: 0.3,
+  powerPerMetre: 0.25,
   powerBand: 1,
-  baseFt: 600,
-  baseTurnM: 1800,
-  throttleOffM: 3,
+  baseFt: 500,
+  baseTurnM: 3600,
+  flareM: 10,
+  throttleOffM: 4,
 };

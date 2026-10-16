@@ -166,19 +166,21 @@ export const PC12_MAC = (() => {
  * Wing incidence at the root and the tip, rad. ESTIMATE (2.5 deg of washout); CALIBRATED on the attitudes: the
  * fuselage about level in the fast cruise and a few degrees nose-down on a flaps-40 approach.
  */
-const ROOT_INCIDENCE = 0.5 * DEG;
-const TIP_INCIDENCE = -2.0 * DEG;
+const ROOT_INCIDENCE = -0.5 * DEG;
+const TIP_INCIDENCE = -3.0 * DEG;
 /** Winglet: 0.45 m along itself, canted 62 deg up, chord 0.95 -> 0.45 m, leading edge swept 32 deg (3V / PHOTO, as P2 drew it). */
 const WINGLET = { height: PC12_WING.winglet.height, cant: PC12_WING.winglet.cant, rootChord: 0.95, tipChord: 0.45, sweep: 32 * DEG, rootY: PC12_WING.winglet.rootY };
 
 /**
  * Static compression of the legs at the design loading (gear.ts), m: the fully extended contact points hang this much
- * below the static ones of PC12_GEAR (nose oleo + tyre, main oleo + tyre). The main legs are trailing links: the
- * wheel moves up and AFT as the leg compresses, along an axis tilted aft by PC12_MAIN_LEG_TILT (mainTrailShift 0.18 m
- * over the 0.20 m of travel), so the extended main wheels also sit forward of the static ones by sag x tan(tilt).
+ * below the static ones of PC12_GEAR (nose oleo + tyre, main oleo + tyre). The main legs are trailing links (the wheel
+ * moves up and about 0.18 m aft over its 0.20 m of travel, PC12_GEAR.mainTrailShift), but the contact model moves a
+ * wheel along a straight leg axis and loads the spring with the part of the tyre's drag along it: a leg tilted aft by
+ * the link's 42 deg made the spin-up and brake forces load and unload the spring in a loop (the mains chattered between
+ * 0 and 39 kN on the roll-out). The legs are vertical (PC12_MAIN_LEG_TILT 0): KNOWN_ISSUES "Trailing-link mains".
  */
-export const PC12_GEAR_STATIC_SAG = { nose: 0.075, main: 0.1 } as const;
-export const PC12_MAIN_LEG_TILT = Math.atan2(PC12_GEAR.mainTrailShift, 0.2);
+export const PC12_GEAR_STATIC_SAG = { nose: 0.011, main: 0.1 } as const;
+export const PC12_MAIN_LEG_TILT = 0;
 const MAIN_FORWARD = PC12_GEAR_STATIC_SAG.main * Math.tan(PC12_MAIN_LEG_TILT);
 
 export const PC12_GEOMETRY: AircraftGeometry = {
@@ -215,7 +217,7 @@ export const PC12_GEOMETRY: AircraftGeometry = {
     tipQuarterChordX: PC12_TAIL.hTipQuarterChordX,
     // ESTIMATE: the stabiliser's rigging with the trim at zero; the trim adds -4 .. +2.5 deg (systems.ts). CALIBRATED so
     // that the trim's travel covers a flaps-40 approach at the forward limit and a Vmo descent at the aft limit.
-    incidence: -0.7 * DEG,
+    incidence: -1.5 * DEG,
     // ESTIMATE: 0.36 of the chord; 20 deg up, 15 down.
     elevator: { chordFraction: 0.36, maxUp: 20 * DEG, maxDown: 15 * DEG },
   },

@@ -6,10 +6,11 @@
 // braking. 8.50-10 main and 17.5x6.25-6 nose tyres at 60 psi (TCDS C.III.19). A factory's value: the configuration
 // holds spring objects and damping closures.
 //
-// Design point: 4740 kg with the CG at about station 5.95 (the maxGross loading, systems.ts), which puts about 10 %
-// of the weight on the nose: about 4.6 kN on the nose and 20.9 kN on each main. The springs below then compress the
-// nose 0.075 m (oleo 0.06, tyre 0.015) and the mains 0.10 m vertically (geometry.ts PC12_GEAR_STATIC_SAG): the
-// reference point stands 1.30 m above the ground, the aircraft about level.
+// Design point: 4740 kg with the CG at about station 5.97 (the maxGross loading, systems.ts), which puts about 7 % of
+// the weight on the nose (the trailing links carry the main wheels aft as they compress): about 3.3 kN on the nose and
+// 21.6 kN on each main. The springs below then compress the
+// nose 0.011 m (oleo 0, tyre 0.011) and the mains 0.10 m vertically (geometry.ts PC12_GEAR_STATIC_SAG): the
+// reference point stands 1.54 m above the ground, the aircraft about level.
 
 import { DEG } from '../../core/math';
 import type { GearConfig, RetractConfig, StructuralPoint, WheelConfig } from '../../physics/gear/gearConfig';
@@ -73,7 +74,7 @@ export const PC12_RETRACT: RetractConfig = {
   warning: { throttleBelow: 0.05, kiasBelow: 130, flapsAtOrBeyond: 0.749, leverUpOnGround: true },
 };
 
-/** Main leg axis: the contact point moves up and aft along it as the trailing link compresses (geometry.ts). */
+/** Main leg axis (geometry.ts PC12_MAIN_LEG_TILT: vertical; the trailing link's aft travel is not modelled). */
 const MAIN_AXIS = { x: -Math.sin(PC12_MAIN_LEG_TILT), y: 0, z: -Math.cos(PC12_MAIN_LEG_TILT) };
 
 function main(name: 'left' | 'right'): WheelConfig {
@@ -83,12 +84,12 @@ function main(name: 'left' | 'right'): WheelConfig {
     name,
     position: name === 'left' ? G.gear.leftMain : G.gear.rightMain,
     axis: MAIN_AXIS,
-    // Along the tilted axis: about 0.11 m of oleo at the static axial load (20.9 kN vertical x cos 42 deg = 15.5 kN),
-    // the gas column stiffening it toward the 0.17 m stroke (ESTIMATE).
-    strut: new OleoPneumaticSpring(5000, 0.18, 1.2, 0.17),
-    // About 25 mm of tyre along the axis at the static load.
-    tyreSpring: { stiffness: 620e3, hardening: 0.08 },
-    damping: oleoDamping(16000, 9000, 22000),
+    // About 0.08 m of oleo at the static load (21.6 kN), the gas column stiffening it toward the 0.17 m stroke
+    // (ESTIMATE).
+    strut: new OleoPneumaticSpring(10500, 0.18, 1.2, 0.17),
+    // About 20 mm of tyre at the static load.
+    tyreSpring: { stiffness: 1.08e6, hardening: 0.08 },
+    damping: oleoDamping(20000, 4000, 40000),
     tyre: tyre(G.gear.mainWheelRadius, 1.2),
     steering: null,
     brake: name,
@@ -141,16 +142,19 @@ export function createPC12Gear(): GearConfig {
         name: 'nose',
         position: G.gear.nose,
         axis: { x: 0, y: 0, z: -1 },
-        // About 0.06 m of the stroke at the static nose load (4.6 kN), 0.2 m in all, a long gas column so that the
-        // strut keeps stroke in hand for a nose-down pitch on the brakes (ESTIMATE).
-        strut: new OleoPneumaticSpring(3000, 0.2, 1.2, 0.2),
+        // A stiff, progressive nose strut (ESTIMATE): preloaded to about the static load (3.3 kN), 0.07 m at the 12.6 kN
+        // of a full-brake stop, 0.11 m at 60 kN, its gas column closing short of the 0.119 m stroke so that it never
+        // meets a hard stop; with the tyre the propeller (0.30 m of clearance, 1.5 x the nose's travel at the disc)
+        // keeps about 0.12 m on a braked nose.
+        strut: new OleoPneumaticSpring(3500, 0.12, 1.2, 0.119),
         tyreSpring: { stiffness: 300e3, hardening: 0.05 },
-        damping: oleoDamping(30000, 6000, 15000),
+        damping: oleoDamping(35000, 5000, 15000),
         tyre: tyre(G.gear.noseWheelRadius, 0.5),
         steering: NOSE_STEERING,
         brake: null,
         maxBrakeTorque: 0,
-        limitLoad: 45e3,
+        // About 6 x the nose load of a full-brake stop (ESTIMATE).
+        limitLoad: 80e3,
         stowed: PC12_GEAR.stowed.nose,
       },
       main('left'),

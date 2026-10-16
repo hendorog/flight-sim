@@ -44,6 +44,12 @@ const FOWLER_LARGE_DEFLECTION = [1, 0.8, 0.72, 0.64, 0.52, 0.42, 0.3];
 const FOWLER_CLMAX_RATIO = 1.22;
 const FOWLER_FULL_AT = 20 * DEG;
 /**
+ * The Fowler's profile drag at deflection, on the slotted fit's (FlapGeometry.dragFactor): 2 x, for the big flap run
+ * aft on three tracks under their fairings with an open slot. CALIBRATED: 13 psi on a 3 deg flaps-40 approach at Vref
+ * (plan 5.7: 8-18 psi) and a 6.8 deg flight-idle descent at 85 KIAS with flaps 40 and the gear down.
+ */
+const FOWLER_DRAG_FACTOR = 2;
+/**
  * Root section: NASA LS(1)-0417 MOD (UIUC guide, SECONDARY), the per-type copy of sections.ts's record (TN D-7428).
  * The PC-12 flies its stall at about Re 6-7e6 on a 2 m chord, where the clean section reaches c_l,max 1.9; the
  * de-ice boots over the leading edge cost about 0.15-0.25 of it (boot-on aerofoil data), and the break is set
@@ -98,7 +104,7 @@ export function pc12WingPlanform(): Planform {
         gain: 1,
         // Single-piece Fowler on three tracks (47E-PROXY 7-3): it runs well aft before it turns down; about 30 %
         // of the local chord of extension at 40 deg (3V ESTIMATE; the drawing runs it 0.42 m aft).
-        geometry: { kind: 'slotted', chordFraction: w.flap.chordFraction, fowler: 0.3, fowlerDeflection: FOWLER_FULL_AT, largeDeflection: FOWLER_LARGE_DEFLECTION, clMaxRatio: FOWLER_CLMAX_RATIO },
+        geometry: { kind: 'slotted', chordFraction: w.flap.chordFraction, fowler: 0.3, fowlerDeflection: FOWLER_FULL_AT, largeDeflection: FOWLER_LARGE_DEFLECTION, clMaxRatio: FOWLER_CLMAX_RATIO, dragFactor: FOWLER_DRAG_FACTOR },
         from: w.flap.innerY,
         to: w.flap.outerY,
       },

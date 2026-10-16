@@ -131,6 +131,11 @@ export interface FlapGeometry {
    * PC-12). Absent: the kind's.
    */
   clMaxRatio?: number;
+  /**
+   * Factor on the kind's profile-drag increment (FLAP_DRAG_K): a Fowler flap at landing deflection, run aft on its
+   * tracks under fairings with a wide slot, has much more than the single-slotted fit's (PC-12). Absent: 1.
+   */
+  dragFactor?: number;
 }
 
 /** Pre-computed thin-aerofoil constants for one flap geometry. */
@@ -152,6 +157,8 @@ export interface FlapModel {
   effect?: readonly number[];
   /** FlapGeometry.clMaxRatio, when given (absent: the kind's CLMAX_RATIO). */
   clMaxRatio?: number;
+  /** FlapGeometry.dragFactor, when given (absent: 1). */
+  dragFactor?: number;
 }
 
 /**
@@ -201,6 +208,7 @@ export function makeFlapModel(g: FlapGeometry): FlapModel {
   };
   if (g.largeDeflection) m.effect = g.largeDeflection;
   if (g.clMaxRatio !== undefined) m.clMaxRatio = g.clMaxRatio;
+  if (g.dragFactor !== undefined) m.dragFactor = g.dragFactor;
   return m;
 }
 
@@ -296,7 +304,7 @@ export function addFlapDeflection(m: FlapModel, delta: number, inc: FlapIncremen
     const sr = Math.sin(delta + a), sa = Math.sin(a);
     drag = Math.max(sr * sr - sa * sa, 0);
   }
-  inc.dCd += FLAP_DRAG_K[m.kind] * m.chordFraction * drag;
+  inc.dCd += (m.dragFactor === undefined ? FLAP_DRAG_K[m.kind] : FLAP_DRAG_K[m.kind] * m.dragFactor) * m.chordFraction * drag;
   if (delta < 0 && m.friseNoseDrag > 0) inc.dCd -= m.friseNoseDrag * m.chordFraction * s;
   const extension = fowlerExtension(m, delta);
   // Quarter-chord moment. A plain flap loses lift at large deflection because the flow separates over it,

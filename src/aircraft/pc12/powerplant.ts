@@ -43,8 +43,8 @@ export const PC12_PT_RPM = PC12_NP_GOVERNED * PC12_GEAR_RATIO;
 const MAP = {
   ng: [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15],
   fuelFlowLbH: [92, 130, 185, 250, 320, 395, 470, 540, 610, 703, 790, 880, 975, 1075],
-  ittC: [560, 530, 520, 525, 545, 575, 615, 665, 725, 778, 828, 880, 935, 995],
-  powerShp: [25, 65, 125, 205, 310, 440, 600, 790, 1000, 1240, 1530, 1830, 2140, 2460],
+  ittC: [560, 530, 520, 525, 545, 575, 615, 665, 725, 775, 822, 875, 932, 995],
+  powerShp: [18, 48, 110, 165, 255, 390, 600, 790, 1000, 1240, 1530, 1830, 2140, 2460],
 };
 
 /**
@@ -116,7 +116,7 @@ export const PT6A_67B: EngineDef = {
         // Condition lever GROUND IDLE: about 55 % Ng (47E-PROXY 2-6: 50.7-61.4 %); FLIGHT IDLE: at least 64 % (66 %
         // ESTIMATE, for the cabin's bleed and the go-around response, 47E-PROXY 7-10); 104 % maximum (TCDS).
         lowIdleNg: 0.55,
-        highIdleNg: 0.66,
+        highIdleNg: 0.645,
         maxNg: PC12_NG_MAX,
         // Start schedule (a minimum-flow stop that makes early fuel a hot start), then about 25 % over the running line.
         accelFuel: {
@@ -154,7 +154,7 @@ const STATION = PC12_PROP.STATION;
  * both be flight angles there. Started at 17 deg and calibrated on (a) the static ground-idle Np on the gate,
  * 1060 +/- 60 rpm (47E 7-11), and (b) 8-18 psi on a 3 deg approach at Vref, flaps 40.
  */
-export const PC12_FLIGHT_IDLE_STOP = 8 * DEG;
+export const PC12_FLIGHT_IDLE_STOP = 6 * DEG;
 /** Feather 79.6 deg, full reverse -17.5 deg at 0.80 R (TCDS C.III.6.6). */
 const FEATHER = 79.6 * DEG;
 const REVERSE = -17.5 * DEG;
@@ -209,7 +209,7 @@ export const PC12_PROPELLER: PropellerDef = {
       lowPitchSchedule: { lever: [0, 0.5, 1], angle: [PC12_FLIGHT_IDLE_STOP, PC12_FLIGHT_IDLE_STOP + 6 * DEG, PC12_FLIGHT_IDLE_STOP + 6 * DEG] },
     },
     // 19 slices from full reverse to feather (PROP_MAX_SLICES 20).
-    pitchNodes: [-17.5, -11, -5, 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 45, 52, 60, 70, 79.6].map((deg) => deg * DEG),
+    pitchNodes: [-17.5, -11, -5, 0, 3, 6, 10, 14, 18, 22, 26, 30, 34, 38, 43, 50, 58, 68, 79.6].map((deg) => deg * DEG),
   },
 };
 

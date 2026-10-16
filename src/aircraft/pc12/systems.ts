@@ -122,8 +122,8 @@ const ELEVATOR_UP = PC12_GEOMETRY.hTail.elevator.maxUp;
  */
 export const PC12_STICK_PUSHER: StickPusherDef = {
   flapDeg: [0, 15, 30, 40],
-  shakerAlphaDeg: [8.6, 6.7, 5.5, 5.5],
-  pusherAlphaDeg: [10.2, 9.65, 10.9, 11.85],
+  shakerAlphaDeg: [9.6, 7.7, 6.5, 6.5],
+  pusherAlphaDeg: [11.2, 10.65, 11.9, 12.85],
   torqueBias: 0.03,
   psiPerPtNm: PC12_PSI_PER_PT_NM,
   pushElevator: 0.35,
