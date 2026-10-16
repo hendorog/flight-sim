@@ -4,7 +4,7 @@
 // read these rules, so they cannot disagree.
 
 import type { GaugeDef, IgnitionPanelDef, PanelDef, Rect } from './panelDef';
-import { gaugeRecess } from './panelDef';
+import { gaugeRecess, gaugeScale } from './panelDef';
 
 /** Bezel of a 3-1/8" instrument and of a 2-1/4" one, px. */
 export const LARGE_BEZEL = 172;
@@ -160,7 +160,7 @@ export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures'], scale?
   const recess = gaugeRecess(g, apertures);
   if (recess) {
     const large = isLargeGauge(g);
-    const k = scale?.[large ? 'large' : 'small'] ?? 1;
+    const k = (scale?.[large ? 'large' : 'small'] ?? 1) * gaugeScale(g);
     const bezel = (large ? LARGE_BEZEL : SMALL_BEZEL) * k;
     const rect = scaledGaugeRect(recess.x, recess.y, large ? LARGE_BEZEL : SMALL_BEZEL, k);
     // A 3-1/8" instrument has a square bezel; a 2-1/4" one a round flange.
@@ -177,7 +177,7 @@ export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures'], scale?
       return [{ id: g.id, rect: guardedKnobRect(g.at) }];
     case 'flapLever':
       return [{ id: g.id, rect: g.bounds, solid: [] }];
-    case 'dualSector': case 'trimBar': case 'engineDisplay': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'digitalTemperature': case 'pullKnob': case 'pushButton': case 'positionSwitch':
+    case 'dualSector': case 'trimBar': case 'engineDisplay': case 'eisWindow': case 'gps': case 'navcom': case 'xpdr': case 'hourmeter': case 'digitalTemperature': case 'pullKnob': case 'pushButton': case 'positionSwitch':
       return [{ id: g.id, rect: g.bounds }];
     default:
       return [];
@@ -187,7 +187,7 @@ export function gaugeParts(g: GaugeDef, apertures: PanelDef['apertures'], scale?
 /** Whether a round gauge has the 3-1/8" case (the rule of gaugeRecess, by kind and size). */
 export function isLargeGauge(g: GaugeDef): boolean {
   switch (g.kind) {
-    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'rotorTach': case 'blank':
+    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'hsi': case 'rmi': case 'rotorTach': case 'blank':
       return true;
     case 'tach': case 'single': case 'twinNeedle': case 'customRound':
       return g.size === 'large';

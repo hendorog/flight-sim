@@ -5,7 +5,7 @@ import type { RotorcraftDefinition } from './definition';
 /** Local flow at each fixed surface includes body rotation and a bounded main-rotor wake estimate.
  * Lift is normal to the local flow, including in a descent; no attitude/rate servo is hidden here.
  */
-export function airframeLoads(d: RotorcraftDefinition, b: BodyState, air: Vec3, rho: number, inflow: number): ForceMoment & {
+export function airframeLoads(d: RotorcraftDefinition, b: BodyState, air: Vec3, rho: number, inflow: number, tailInflow = 0): ForceMoment & {
   power: { fuselage: number; stabilizer: number; fins: number; moments: number };
 } {
   const force = v3.zero(), moment = v3.zero();
@@ -51,12 +51,22 @@ export function airframeLoads(d: RotorcraftDefinition, b: BodyState, air: Vec3, 
     power.stabilizer = add(h.centre, { x: qh * (hp.cl * Math.sign(flow.x) * flow.z - hp.cd * flow.x) / speed, y: 0,
       z: qh * (-hp.cl * Math.abs(flow.x) - hp.cd * flow.z) / speed });
   }
-  for (const fin of d.fins) {
-    const f = local(fin.centre), v = Math.max(Math.hypot(f.x, f.y), 1e-6);
+  const finLoad = (centre: Vec3, area: number, fin: RotorcraftDefinition['fins'][number], sideFlow: number): number => {
+    const f = local(centre);
+    // The tail rotor draws its inflow across the fin: the air moves against the thrust (+y thrust with rotation 1),
+    // which is the fin moving along the thrust through still air.
+    f.y += sideFlow;
+    const v = Math.max(Math.hypot(f.x, f.y), 1e-6);
     const fp = polar(Math.atan2(f.y, Math.abs(f.x)) + fin.incidence, fin.liftSlope, fin.maxCl);
-    const q = 0.5 * rho * v * v * fin.area;
-    power.fins += add(fin.centre, { x: q * (fp.cl * Math.sign(f.x) * f.y - fp.cd * f.x) / v,
+    const q = 0.5 * rho * v * v * area;
+    return add(centre, { x: q * (fp.cl * Math.sign(f.x) * f.y - fp.cd * f.x) / v,
       y: q * (-fp.cl * Math.abs(f.x) - fp.cd * f.y) / v, z: 0 });
+  };
+  for (const fin of d.fins) {
+    const tr = fin.tailRotorFlow;
+    if (!tr) { power.fins += finLoad(fin.centre, fin.area, fin, 0); continue; }
+    power.fins += finLoad(fin.centre, fin.area * (1 - tr.areaFraction), fin, 0) +
+      finLoad(fin.centre, fin.area * tr.areaFraction, fin, tr.velocityRatio * tailInflow * d.rotation);
   }
   const q = 0.5 * rho * v3.dot(air, air);
   const pitchMoment = q * d.fuselageMoment.pitch * Math.atan2(air.z, Math.max(Math.abs(air.x), 1));

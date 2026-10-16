@@ -155,6 +155,16 @@ export class GasGenerator {
     return interp1(a.ng, a.fuelFlow, nc);
   }
 
+  /** Steady gas power at corrected speed nc, sea level, W (the running line; the torque limiter solves on it). */
+  steadyGasPower(nc: number): number {
+    return this.power(nc, 1);
+  }
+
+  /** The running line's first (lowest) corrected speed. */
+  get firstMapNg(): number {
+    return this.mapNg[0];
+  }
+
   /** Fraction of the fuel heat that drives the spool at corrected speed nc. */
   efficiency(nc: number): number {
     const ng0 = this.mapNg[0];

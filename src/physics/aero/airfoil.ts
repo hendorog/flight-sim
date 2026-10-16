@@ -124,6 +124,18 @@ export interface FlapGeometry {
    * plain table falls to 0.8 / 0.64 / 0.55 / 0.42. Absent: the table.
    */
   largeDeflection?: readonly number[];
+  /**
+   * Fraction of the flap's lift increment also gained in c_l,max, replacing the kind's (CLMAX_RATIO: plain 0.6,
+   * slotted 0.8): the break angle, measured from the shifted zero-lift angle, moves out by this fraction of |d alpha0|.
+   * A Fowler flap whose slot re-energises the flap fully stalls at about the clean section's angle (a ratio near 1;
+   * PC-12). Absent: the kind's.
+   */
+  clMaxRatio?: number;
+  /**
+   * Factor on the kind's profile-drag increment (FLAP_DRAG_K): a Fowler flap at landing deflection, run aft on its
+   * tracks under fairings with a wide slot, has much more than the single-slotted fit's (PC-12). Absent: 1.
+   */
+  dragFactor?: number;
 }
 
 /** Pre-computed thin-aerofoil constants for one flap geometry. */
@@ -143,6 +155,10 @@ export interface FlapModel {
   alphaCoupling: number;
   /** FlapGeometry.largeDeflection, when given (absent: the kind's table). */
   effect?: readonly number[];
+  /** FlapGeometry.clMaxRatio, when given (absent: the kind's CLMAX_RATIO). */
+  clMaxRatio?: number;
+  /** FlapGeometry.dragFactor, when given (absent: 1). */
+  dragFactor?: number;
 }
 
 /**
@@ -191,6 +207,8 @@ export function makeFlapModel(g: FlapGeometry): FlapModel {
     alphaCoupling: g.kind === 'plain' ? flapAlphaCoupling(g.chordFraction) : 0,
   };
   if (g.largeDeflection) m.effect = g.largeDeflection;
+  if (g.clMaxRatio !== undefined) m.clMaxRatio = g.clMaxRatio;
+  if (g.dragFactor !== undefined) m.dragFactor = g.dragFactor;
   return m;
 }
 
@@ -274,7 +292,7 @@ export function addFlapDeflection(m: FlapModel, delta: number, inc: FlapIncremen
   inc.dAlpha0 += da0;
   // Flap down raises c_l,max by a fraction of the lift increment: the break angle, measured from the
   // shifted zero-lift angle, moves out by that fraction of |da0| (and in for a flap deflected up).
-  inc.dStall -= CLMAX_RATIO[m.kind] * da0;
+  inc.dStall -= (m.clMaxRatio ?? CLMAX_RATIO[m.kind]) * da0;
   const s = Math.sin(delta);
   // A plain surface's profile-drag increment comes from the same separated flow and grows with its inclination
   // to the oncoming flow: the increment over the undeflected section, sin^2(delta + alpha) - sin^2(alpha) (a down
@@ -286,7 +304,7 @@ export function addFlapDeflection(m: FlapModel, delta: number, inc: FlapIncremen
     const sr = Math.sin(delta + a), sa = Math.sin(a);
     drag = Math.max(sr * sr - sa * sa, 0);
   }
-  inc.dCd += FLAP_DRAG_K[m.kind] * m.chordFraction * drag;
+  inc.dCd += (m.dragFactor === undefined ? FLAP_DRAG_K[m.kind] : FLAP_DRAG_K[m.kind] * m.dragFactor) * m.chordFraction * drag;
   if (delta < 0 && m.friseNoseDrag > 0) inc.dCd -= m.friseNoseDrag * m.chordFraction * s;
   const extension = fowlerExtension(m, delta);
   // Quarter-chord moment. A plain flap loses lift at large deflection because the flow separates over it,

@@ -65,8 +65,12 @@ const SLICE_BETA_FROM = -20;
 const SLICE_BETA_BAND = 20;
 const SLICE_BETA_FINE = 2;
 const SLICE_BETA_COARSE = 5;
-/** Most slices a constant-speed propeller may have (about 1 600 operating points each: 0.4 MB and under a second to tabulate in all). */
-export const PROP_MAX_SLICES = 16;
+/**
+ * Most slices a constant-speed propeller may have (about 1 600 operating points each: 0.5 MB and about a second to
+ * tabulate in all). 20 since beta and reverse: a PT6 propeller prepends 3-5 slices from its reverse angle up to the
+ * fine stop to the 15 of its governing and feather range.
+ */
+export const PROP_MAX_SLICES = 20;
 /** Advance angle of a stopped propeller, rad: the angle-of-attack alignment of the slices fades out toward it (see sample). */
 const STOPPED_BETA = Math.PI / 2;
 
@@ -264,8 +268,8 @@ export class PropellerMap {
  * The coefficient tables of one propeller design.
  *
  * A fixed-pitch propeller has ONE slice: the PropellerMap of the blade as built. A constant-speed propeller has
- * one slice per entry of its definition's `pitchNodes` (blade angles at the reference station, fine stop to
- * feather or coarse stop), each on the reduced grid of sliceGrid(); sample() interpolates linearly in blade
+ * one slice per entry of its definition's `pitchNodes` (blade angles at the reference station, fine stop, or a
+ * beta propeller's reverse angle, to feather or coarse stop), each on the reduced grid of sliceGrid(); sample() interpolates linearly in blade
  * angle between the two neighbouring slices, each read at the advance angle that gives its blade the angle of
  * attack the blade between them has.
  *
@@ -338,6 +342,9 @@ export class PropellerCharacteristics {
    * ratio (take-off, climb) in two places, and the blend of the two knees was 7-13 % off the solver between
    * nodes (review-Bm-propulsion F2); aligned, within the 3-4 % the grid makes on a node. The shift fades out over
    * the last node spacing before the stopped propeller (beta 90 degrees), the edge of every slice's grid.
+   * Beta and reverse need nothing more: slices below the fine stop (down to the reverse angle) are slices like any
+   * other, each on its own grid round its blade angle; the grid's floor of -20 deg advance angle (flow from behind)
+   * is unchanged.
    */
   sample(beta: number, eta: number, mach: number, pitch: number, out: MapSample): MapSample {
     if (!this.variablePitch) return this.slice(0).sample(beta, eta, mach, out);

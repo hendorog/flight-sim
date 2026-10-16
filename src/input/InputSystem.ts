@@ -158,7 +158,20 @@ export function cycleCameraMode(mode: CameraMode, dir: 1 | -1): CameraMode {
 
 /** Held-key lever rates, fraction of travel per second at full rate. Trim: full travel in ~8 s like the wheel. */
 const THROTTLE_RATE = 0.5;
+/**
+ * Power lever aft of the idle gate (types with beta and reverse), travel per second while the reverse key is held
+ * or F3 brings it back to the gate: steady, so that a held key reaches ground fine (BetaDef.pitchOnlyTravel, about
+ * 0.4) in under a second and full reverse in two.
+ */
+export const REVERSE_RATE = 0.5;
 const MIXTURE_RATE = 0.35;
+/**
+ * A condition lever with detents (InputProfile.conditionDetents): how long the lean key, pressed afresh with the
+ * lever on its low-idle detent, must be held before the lever goes on to CUT-OFF, s.
+ */
+export const CONDITION_CUTOFF_HOLD = 1;
+/** A condition lever within this of a detent is on it (a hardware axis left it a hair off). */
+const DETENT_EPS = 0.005;
 const PROPELLER_RATE = 0.35;
 const TRIM_RATE = 0.25;
 /** Knob rates at full speed (after a second of holding), per second; a tap turns one detent. */
@@ -195,6 +208,7 @@ const LEVER_TAP = 0.02;
 const LEVER_ACTIONS: readonly InputAction[] = [
   'throttleUp',
   'throttleDown',
+  'powerLeverReverse',
   'mixtureLean',
   'mixtureRich',
   'trimNoseUp',
@@ -320,6 +334,21 @@ export class InputSystem implements Subsystem {
   private readonly collectiveOwner = new LeverOwner();
   private readonly throttleOwner = new LeverOwner();
   private readonly mixtureOwner = new LeverOwner();
+  /** Power lever aft of the gate (types with beta): keyboard or a hardware reverse zone / reverse axis. */
+  private readonly reverseOwner = new LeverOwner();
+  /**
+   * The reverse key was pressed (afresh) with the power lever on the idle gate: the gate is lifted and the held key
+   * moves the lever on into beta and reverse. A press with the lever forward of the gate only brings it back to the
+   * gate; it takes another press to go over it (the PT6 power levers' lift-over gate).
+   */
+  private gateLifted = false;
+  /** F3 / Page Up was taken from aft of the gate in this hold: it stops on the gate (a fresh press goes forward of it). */
+  private forwardToGate = false;
+  /**
+   * Condition-lever detents: the lean key was pressed afresh with the lever on its low-idle detent, and the engine(s)
+   * it was pressed for. Held for CONDITION_CUTOFF_HOLD s it takes the lever on to CUT-OFF; let go, it is disarmed.
+   */
+  private cutoffArmed: { target: EngineTarget } | null = null;
   private time = 0;
   private lastWall = -1;
   /** Wall time (ms) of the last pilot flight-control input (keys held, hardware moved). */
@@ -350,11 +379,12 @@ export class InputSystem implements Subsystem {
     for (const axis of ['aileron', 'elevator', 'rudder'] as const) this.written[axis] = c[axis];
   }
 
-  private pickedUp(r: AxisReading): boolean {
+  /** `at`: where the control stands in the axis's own travel, when that is not the control's value (a reverse zone). */
+  private pickedUp(r: AxisReading, at?: number): boolean {
     if (!this.pickup.has(r.control)) return true;
     const c = this.ctx.controls;
-    const target = r.control === 'throttleRate' ? 0 : r.control === 'throttle' && this.profile.rotorcraft ? c.collective ?? 0 :
-      r.control === 'brakes' ? c.brakeLeft : r.control === 'none' ? 0 : c[r.control] ?? 0;
+    const target = at ?? (r.control === 'throttleRate' ? 0 : r.control === 'throttle' && this.profile.rotorcraft ? c.collective ?? 0 :
+      r.control === 'brakes' ? c.brakeLeft : r.control === 'none' ? 0 : c[r.control] ?? 0);
     if (Math.abs(r.value - target) > 0.05) return false;
     this.pickup.delete(r.control);
     return true;
@@ -433,6 +463,10 @@ export class InputSystem implements Subsystem {
     this.rollTrim.reset();
     this.rotation.reset();
     this.selection = 'all';
+    this.gateLifted = this.forwardToGate = false;
+    // An armed condition-lever cut-off belongs to the previous flight: holding the key through the reset must not stop
+    // the new flight's engine.
+    this.cutoffArmed = null;
     // A new scenario must pick up its own controls, not the previous flight's mouse position.
     if (this.mouseYoke) {
       this.mouseArmed = true;
@@ -606,6 +640,7 @@ export class InputSystem implements Subsystem {
     this.updateKnobs(dt, ctx.controls);
     this.updateBrakes(dt, ctx.controls, ctx.state);
     this.updateStarter(ctx.controls, ctx.state);
+    this.updateSwitchesHeld(ctx.controls);
     ctx.controls.dgAlign = this.held.has('dgAlign');
     if (this.profile.primeKey) ctx.controls.fuelPrime = this.held.has('fuelPrime') || this.held.has('fuelPump');
     if (this.twin) ctx.engineSelection = this.selection;
@@ -943,6 +978,31 @@ export class InputSystem implements Subsystem {
     else writeEngineControl(ctx.controls, this.target(k, engine), 'magnetos', position);
   }
 
+  /**
+   * A press of a mixture key on a condition lever with detents (InputProfile.conditionDetents). Forward: to the next
+   * detent up (CUT-OFF -> low idle -> high idle). Back: from above the low idle onto it; on it, the press arms the
+   * cut-off (held CONDITION_CUTOFF_HOLD s, updateLevers) and the pilot is told how. In the air with both engines of a
+   * twin selected the twin guard applies first.
+   */
+  private stepCondition(ctx: SimContext, target: EngineTarget, dir: 1 | -1): void {
+    const c = ctx.controls;
+    const low = this.profile.conditionDetents!.groundIdle;
+    const v = readEngineControl(c, target, 'mixture');
+    if (!this.ownLever(c, 'mixture', target)) this.mixtureOwner.owner = 'keyboard';
+    this.cutoffArmed = null;
+    if (dir > 0) {
+      writeEngineControl(c, target, 'mixture', v < low - DETENT_EPS ? low : 1);
+      return;
+    }
+    if (v > low + DETENT_EPS) writeEngineControl(c, target, 'mixture', low);
+    else if (v > 0 && !this.guard(ctx.state, 'mixture')) {
+      this.cutoffArmed = { target };
+      // The hold is timed from this press: a release and re-press inside one update must not inherit the old hold.
+      this.heldTime.set('mixtureLean', 0);
+      this.shell.toast?.(`Hold ${keyLabelForAction('mixtureLean') ?? 'the key'} for ${CONDITION_CUTOFF_HOLD} s to move the condition lever to CUT-OFF`);
+    }
+  }
+
   /** Where a mixture key stops for `target`: above idle cut-off behind the airborne guard, else at the stop. */
   private mixtureFloor(s: AircraftState, target: EngineTarget): number {
     return target === 'all' && this.guarded(s, 'mixture') ? MIXTURE_GUARD : 0;
@@ -984,28 +1044,65 @@ export class InputSystem implements Subsystem {
 
     // Throttle: keys and a rate stick (gamepad) nudge the lever; an absolute lever axis owns it once moved (it
     // is the lever of all engines: an engine whose lever has left the scalar keeps its own position).
-    const kbThrottle = rate('throttleUp', THROTTLE_RATE) - rate('throttleDown', THROTTLE_RATE);
+    // Beta and reverse (InputProfile.has.reverse): the reverse key brings the power lever back to the gate, and once
+    // the gate is lifted (a fresh press on the gate) moves it on aft; F3 from aft of the gate brings it forward to the
+    // gate and stops there. The reverse rate is steady (REVERSE_RATE).
+    const beta = this.profile.has.reverse === true;
+    const reverseHeld = beta && this.held.has('powerLeverReverse');
+    const aft = beta && (c.reverse ?? 0) > 0;
+    if (!this.held.has('throttleUp')) this.forwardToGate = false;
+    else if (aft) this.forwardToGate = true;
+    if (!reverseHeld && !aft) this.gateLifted = false;
+    const throttleUp = this.forwardToGate ? 0 : rate('throttleUp', THROTTLE_RATE);
+    const throttleBack = rate('throttleDown', THROTTLE_RATE) + (reverseHeld && !this.gateLifted ? rate('powerLeverReverse', THROTTLE_RATE) : 0);
+    const kbThrottle = throttleUp - throttleBack;
     let stick = 0;
     for (const r of this.gamepads.readings) if (r.control === 'throttleRate' && this.pickedUp(r)) stick += r.value;
-    const hwThrottle = this.profile.rotorcraft ? null : this.hardwareLever('throttle');
+    const hwRaw = this.profile.rotorcraft ? null : this.hardwareThrottle();
+    const hwThrottle = hwRaw && { value: hwRaw.value, moved: hwRaw.moved };
+    // A rate stick pushed forward with the lever aft of the gate brings it forward to the gate first (updateReverse),
+    // like F3: the throttle does not move until the lever is at the gate.
+    const stickToGate = aft && stick > 0 ? Math.min(stick, 1) : 0;
+    if (stickToGate > 0) stick = 0;
     const nudging = kbThrottle !== 0 || stick !== 0;
     const throttleInc = (kbThrottle + stick * THROTTLE_STICK_RATE) * dt;
     const throttleTarget = this.leverTarget('throttle', 'throttleUp', 'throttleDown');
     const ownThrottle = this.ownLever(c, 'throttle', throttleTarget);
-    if (ownThrottle) this.moveLever(c, 'throttle', throttleInc, throttleTarget, 0, false);
+    // A twist grip closes to its idle stop; CUTOFF is Shift+F1 through the idle release, and opening it from CUTOFF
+    // starts at the stop.
+    const gripFloor = this.profile.twistGrip?.groundIdle ?? 0;
+    const gripLift = gripFloor > 0;
+    if (ownThrottle) this.moveLever(c, 'throttle', throttleInc, throttleTarget, gripFloor, gripLift);
     if (this.throttleOwner.update(nudging && !ownThrottle, hwThrottle?.moved ?? false) === 'hardware' && hwThrottle) c.throttle = hwThrottle.value;
-    else this.moveLever(c, 'throttle', ownThrottle ? 0 : throttleInc, ownThrottle ? 'all' : throttleTarget, 0, false);
+    else this.moveLever(c, 'throttle', ownThrottle ? 0 : throttleInc, ownThrottle ? 'all' : throttleTarget, gripFloor, gripLift);
     this.leverHeld(c, 'throttle', nudging && dt > 0);
+    if (beta) this.updateReverse(dt, c, reverseHeld, hwRaw, stickToGate);
 
-    const kbMixture = rate('mixtureRich', MIXTURE_RATE) - rate('mixtureLean', MIXTURE_RATE);
-    const hwMixture = this.hardwareLever('mixture');
-    const mixtureTarget = this.leverTarget('mixture', 'mixtureRich', 'mixtureLean');
-    const ownMixture = this.ownLever(c, 'mixture', mixtureTarget);
-    if (ownMixture) this.moveLever(c, 'mixture', kbMixture * dt, mixtureTarget, 0, false);
-    if (this.mixtureOwner.update(kbMixture !== 0 && !ownMixture, hwMixture?.moved ?? false) === 'hardware' && hwMixture) c.mixture = hwMixture.value;
-    else this.moveLever(c, 'mixture', ownMixture ? 0 : kbMixture * dt, ownMixture ? 'all' : mixtureTarget, this.mixtureFloor(s, mixtureTarget), false);
-    this.leverHeld(c, 'mixture', kbMixture !== 0 && dt > 0);
+    const detents = this.profile.conditionDetents;
+    if (detents) {
+      // Detents: the presses step the lever (onPressed); a held lean key only carries an armed press on to CUT-OFF.
+      const armed = this.cutoffArmed;
+      if (armed && !this.held.has('mixtureLean')) this.cutoffArmed = null;
+      else if (armed && (this.heldTime.get('mixtureLean') ?? 0) >= CONDITION_CUTOFF_HOLD) {
+        this.cutoffArmed = null;
+        this.mixtureOwner.owner = 'keyboard';
+        writeEngineControl(c, armed.target, 'mixture', 0);
+      }
+      const hw = this.hardwareLever('mixture');
+      if (this.mixtureOwner.update(false, hw?.moved ?? false) === 'hardware' && hw) c.mixture = hw.value;
+    } else {
+      const kbMixture = rate('mixtureRich', MIXTURE_RATE) - rate('mixtureLean', MIXTURE_RATE);
+      const hwMixture = this.hardwareLever('mixture');
+      const mixtureTarget = this.leverTarget('mixture', 'mixtureRich', 'mixtureLean');
+      const ownMixture = this.ownLever(c, 'mixture', mixtureTarget);
+      if (ownMixture) this.moveLever(c, 'mixture', kbMixture * dt, mixtureTarget, 0, false);
+      if (this.mixtureOwner.update(kbMixture !== 0 && !ownMixture, hwMixture?.moved ?? false) === 'hardware' && hwMixture) c.mixture = hwMixture.value;
+      else this.moveLever(c, 'mixture', ownMixture ? 0 : kbMixture * dt, ownMixture ? 'all' : mixtureTarget, this.mixtureFloor(s, mixtureTarget), false);
+      this.leverHeld(c, 'mixture', kbMixture !== 0 && dt > 0);
+    }
 
+    // The collective's governor beep switch (turboshaft types) on the propeller keys: held, not a lever.
+    if (this.profile.n2Beep) c.n2Beep = this.dir('propDecrease', 'propIncrease');
     if (this.profile.has.propeller) {
       // Propeller lever: down to the feather gate and no further (Shift+F feathers); up from feather starts at the gate.
       const kbPropeller = rate('propIncrease', PROPELLER_RATE) - rate('propDecrease', PROPELLER_RATE);
@@ -1022,6 +1119,69 @@ export class InputSystem implements Subsystem {
       const rudderTrim = rate('rudderTrimRight', TRIM_RATE) - rate('rudderTrimLeft', TRIM_RATE);
       c.rudderTrim = clamp(c.rudderTrim + rudderTrim * dt, -1, 1);
     }
+  }
+
+  /**
+   * The throttle axis of the hardware with its reverse zone applied (types with beta): below the zone's detent
+   * (AxisReading.reverseZone, a fraction of the lever's travel) the lever is aft of the gate and the throttle reads
+   * 0; above it the throttle spans the rest of the travel. `reverse` is how far aft (0 at the detent, 1 at the stop).
+   * Without beta, or with no zone, the throttle as it reads.
+   */
+  private hardwareThrottle(): { value: number; moved: boolean; reverse: number | null } | null {
+    const zone = (r: AxisReading): number => {
+      const d = this.profile.has.reverse ? r.reverseZone ?? 0 : 0;
+      return d > 0 && d < 1 ? d : 0;
+    };
+    const c = this.ctx.controls;
+    let found: AxisReading | null = null;
+    for (const r of this.gamepads.readings) {
+      if (r.control !== 'throttle') continue;
+      // Taking over from the scripted pilot: the lever is matched where it stands in the axis's travel, aft of the
+      // detent when it is in beta or reverse, so a pickup at idle happens at the detent and does not skip beta.
+      const d = zone(r);
+      const rev = c.reverse ?? 0;
+      if (!this.pickedUp(r, d > 0 ? (rev > 0 ? d * (1 - rev) : d + (1 - d) * c.throttle) : undefined)) continue;
+      if (!found || r.moved) found = r;
+    }
+    if (!found) return null;
+    const d = zone(found);
+    if (d === 0) return { value: found.value, moved: found.moved, reverse: null };
+    return { value: clamp((found.value - d) / (1 - d), 0, 1), moved: found.moved, reverse: clamp((d - found.value) / d, 0, 1) };
+  }
+
+  /**
+   * The power lever aft of the gate (types with beta): the keyboard (the reverse key once the gate is lifted, F3
+   * back toward the gate, or a gamepad's throttle rate stick pushed forward: `stickToGate`, 0-1), a hardware throttle's
+   * reverse zone or a dedicated reverse axis; whichever moved last owns it. The throttle is held at 0 while the lever is
+   * aft of the gate (ControlInputs.reverse: never both non-zero).
+   */
+  private updateReverse(dt: number, c: ControlInputs, reverseHeld: boolean, hw: { value: number; moved: boolean; reverse: number | null } | null, stickToGate: number): void {
+    const target = this.target('reverse');
+    const now = readEngineControl(c, target, 'reverse') ?? 0;
+    let kb = 0;
+    if (reverseHeld && this.gateLifted && readEngineControl(c, target, 'throttle') <= 0) kb += REVERSE_RATE;
+    if (this.forwardToGate && now > 0) kb -= REVERSE_RATE;
+    else if (stickToGate > 0 && now > 0) kb -= REVERSE_RATE * stickToGate;
+    // A reverse lever of its own, or the throttle's reverse zone.
+    const axis = this.hardwareLever('reverse');
+    // A throttle axis without a reverse zone cannot go aft of the gate, but moved forward of idle it takes the whole
+    // power lever: a reverse set by the keys or a held Reverse button comes back to the gate.
+    const hwReverse = axis ?? (hw && hw.reverse !== null ? { value: hw.reverse, moved: hw.moved } :
+      hw && hw.value > 0 ? { value: 0, moved: hw.moved } : null);
+    let v = now;
+    if (this.reverseOwner.update(kb !== 0, hwReverse?.moved ?? false) === 'hardware' && hwReverse) v = hwReverse.value;
+    else v = clamp(now + kb * dt, 0, 1);
+    if (v !== now) writeEngineControl(c, target, 'reverse', v);
+    if (v > 0 && readEngineControl(c, target, 'throttle') !== 0) writeEngineControl(c, target, 'throttle', 0);
+  }
+
+  /**
+   * Held switches of particular types: the stick pusher's interrupt button (InputProfile.pusherInterrupt) and the
+   * STARTER INTERRUPT switch of a latching start (InputProfile.starterInterrupt). Written only on those types.
+   */
+  private updateSwitchesHeld(c: ControlInputs): void {
+    if (this.profile.pusherInterrupt) c.pusherInterrupt = this.held.has('pusherInterrupt');
+    if (this.profile.starterInterrupt) c.starterInterrupt = this.held.has('starterInterrupt');
   }
 
   /**
@@ -1103,22 +1263,59 @@ export class InputSystem implements Subsystem {
     if (this.absent.has(a)) return;
     const c = ctx.controls;
     switch (a) {
-      case 'throttleUp':
-        this.moveLever(c, 'throttle', LEVER_TAP, this.target('throttle', engine), 0, false);
+      case 'throttleUp': {
+        // From aft of the gate the first step is toward the gate (and the held key stops on it).
+        const aft = this.profile.has.reverse ? readEngineControl(c, this.target('reverse', engine), 'reverse') ?? 0 : 0;
+        if (aft > 0) {
+          this.reverseOwner.owner = 'keyboard';
+          this.forwardToGate = true;
+          writeEngineControl(c, this.target('reverse', engine), 'reverse', Math.max(0, aft - LEVER_TAP));
+        } else this.moveLever(c, 'throttle', LEVER_TAP, this.target('throttle', engine), this.profile.twistGrip?.groundIdle ?? 0, !!this.profile.twistGrip);
         break;
+      }
       case 'throttleDown':
-        this.moveLever(c, 'throttle', -LEVER_TAP, this.target('throttle', engine), 0, false);
+        this.moveLever(c, 'throttle', -LEVER_TAP, this.target('throttle', engine), this.profile.twistGrip?.groundIdle ?? 0, !!this.profile.twistGrip);
         break;
+      case 'powerLeverReverse': {
+        // On the gate a fresh press lifts it (and the lever starts aft at once); forward of it the held key first
+        // brings the lever back to the gate (updateLevers).
+        const target = this.target('reverse', engine);
+        if (readEngineControl(c, this.target('throttle', engine), 'throttle') <= 0) {
+          this.gateLifted = true;
+          this.reverseOwner.owner = 'keyboard';
+          writeEngineControl(c, target, 'reverse', Math.min(1, (readEngineControl(c, target, 'reverse') ?? 0) + LEVER_TAP));
+        } else {
+          this.gateLifted = false;
+          this.moveLever(c, 'throttle', -LEVER_TAP, this.target('throttle', engine), 0, false);
+        }
+        break;
+      }
       case 'throttleIdle':
       case 'throttleFull': {
-        // Both engines selected: the levers are brought together, whatever their split.
+        // Both engines selected: the levers are brought together, whatever their split. A power lever aft of the gate
+        // comes back onto it; a twist grip's idle is its idle stop (GROUND IDLE).
         const target = this.target('throttle', engine);
         if (!this.ownLever(c, 'throttle', target)) this.throttleOwner.owner = 'keyboard';
-        writeEngineControl(c, target, 'throttle', a === 'throttleIdle' ? 0 : 1);
+        if (this.profile.has.reverse) {
+          this.reverseOwner.owner = 'keyboard';
+          this.gateLifted = false;
+          writeEngineControl(c, this.target('reverse', engine), 'reverse', 0);
+        }
+        writeEngineControl(c, target, 'throttle', a === 'throttleIdle' ? this.profile.twistGrip?.groundIdle ?? 0 : 1);
+        break;
+      }
+      case 'gripCutoff': {
+        const target = this.target('throttle', engine);
+        if (!this.ownLever(c, 'throttle', target)) this.throttleOwner.owner = 'keyboard';
+        writeEngineControl(c, target, 'throttle', 0);
         break;
       }
       case 'mixtureLean': {
         const target = this.target('mixture', engine);
+        if (this.profile.conditionDetents) {
+          this.stepCondition(ctx, target, -1);
+          break;
+        }
         const floor = this.mixtureFloor(ctx.state, target);
         // Already at the guard's stop: the key does nothing, and says why.
         if (floor > 0 && c.mixture <= floor) this.guard(ctx.state, 'mixture', engine);
@@ -1127,6 +1324,10 @@ export class InputSystem implements Subsystem {
       }
       case 'mixtureRich': {
         const target = this.target('mixture', engine);
+        if (this.profile.conditionDetents) {
+          this.stepCondition(ctx, target, 1);
+          break;
+        }
         this.moveLever(c, 'mixture', LEVER_TAP, target, this.mixtureFloor(ctx.state, target), false);
         break;
       }

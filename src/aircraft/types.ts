@@ -10,6 +10,7 @@
 import type { Vec3 } from '../core/math';
 import type { AircraftId, AircraftState, ControlInputs, ControlPatch } from '../core/types';
 import type { AircraftAeroDefinition } from '../physics/aero/definition';
+import type { StickPusherDef } from '../physics/aero/stickPusher';
 import type { GearConfig } from '../physics/gear/gearConfig';
 import type { PowerplantDef } from '../physics/propulsion/defs';
 import type { AirframeVisualDef } from '../render/aircraft/airframe/types';
@@ -229,6 +230,11 @@ export interface LimitsDef {
   vleCas?: number; vloExtendCas?: number; vloRetractCas?: number;
   flapOverspeed: OverspeedRule;
   gearOverspeed: OverspeedRule;
+  /**
+   * Aural overspeed warning (PC-12: Vmo 236 KIAS / Mmo 0.48), heard above either limit; independent of the
+   * annunciators. Absent: none (every type before the PC-12). Declared at the scaffold; the PC-12 package wires it.
+   */
+  overspeedWarning?: { kias: number; mach: number };
 }
 
 // ---------------------------------------------------------------------------------------------- control system, air data, autopilot, reference speeds
@@ -248,7 +254,16 @@ export type PitchTrimDef =
    *   (delta_s + (q / springQ) x alphaFloat(tailAlpha)) / (1 + q / springQ).
    * springUp is the TE-up (negative) deflection at full nose-up trim, springDown the TE-down one, rad.
    */
-  | { kind: 'spring'; springUp: number; springDown: number; springQ: number };
+  | { kind: 'spring'; springUp: number; springDown: number; springQ: number }
+  /**
+   * Electrically trimmed horizontal stabiliser (PC-12). The trim moves the whole tailplane's incidence; the
+   * elevator is a plain hinged surface on it with no tab. For this kind SurfaceState.elevatorTrim is the
+   * stabiliser incidence CHANGE, rad, + = leading edge UP / trailing edge DOWN = nose-DOWN trim, so
+   * `noseUp < 0 < noseDown` (ESTIMATE range about -4 deg .. +2 deg). `rate` is the actuator rate, rad/s.
+   * The aero tail and the moving-stabiliser visual both read SurfaceState.elevatorTrim as that incidence change.
+   * Declared at the scaffold: ControlLaw rejects it until the PC-12 package implements it.
+   */
+  | { kind: 'stabilizer'; noseUp: number; noseDown: number; rate: number };
 
 export type FlapDriveDef =
   /** Bus-powered motor: moves toward the lever at `rate` rad/s while busVoltage > minVolts (C172S: 3 deg/s, 20 V). */
@@ -302,6 +317,10 @@ export interface ControlSystemDef {
   /** Surface rate limit, rad/s. */
   surfaceRate: number;
   steering: SteeringLinkDef;
+  /** Stick shaker and pusher (PC-12): src/physics/aero/stickPusher.ts. Absent: none. */
+  stickPusher?: StickPusherDef;
+  /** Aileron-rudder interconnect springs: rudder (fraction of travel) per unit aileron input (PC-12 ESTIMATE 0.15). Absent: none. */
+  aileronRudderInterconnect?: number;
 }
 
 export interface AirDataDef {
@@ -368,11 +387,24 @@ export interface AutoflightProfile {
     kias: number; vsLimit: number;
     /** Throttle / power lever held through the climb phase. Absent: 1 (today). DA42: 0.92. */
     throttle?: number;
+    /**
+     * Flaps up in the climb once the IAS passes `kias`, then the climb at `climbKias` (clean). Absent: the take-off
+     * flaps stay set through the climb (today). PC-12: flaps 15 up above 100 KIAS, then the
+     * speed target rises at 0.5 kt/s to Vy 130.
+     */
+    flapsUp?: { kias: number; climbKias: number };
   };
   hold: { minKias: number; maxBankDeg: number; vsLimit: number };
   flare: { minHeightM: number; timeS: number; pitchRiseDeg: number; maxPitchDeg: number };
   /** Nose-holding elevator on the roll-out: clamp((kias - noseHoldKias[0]) / (noseHoldKias[1] - noseHoldKias[0]), 0, noseHoldMax). */
-  rollout: { brake: number; noseHoldKias: readonly [number, number]; noseHoldMax: number };
+  rollout: {
+    brake: number; noseHoldKias: readonly [number, number]; noseHoldMax: number;
+    /**
+     * Beta / reverse on the roll-out (types with PitchControlDef.beta): ControlInputs.reverse = `lever` after
+     * touchdown, back to 0 (the gate) below `cancelKias`. Absent: the power lever stays on the gate.
+     */
+    reverse?: { lever: number; cancelKias: number };
+  };
   /** Ground steering of the scripted pilot: rudder (pedal-steered nosewheel) or differential brake blending to rudder. */
   steering: { kind: 'rudder' } | { kind: 'differentialBrake'; rudderEffectiveKias: number; brakeGain: number };
   /**

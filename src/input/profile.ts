@@ -47,7 +47,34 @@ export interface InputProfile {
   /** 'engineMaster': the magneto keys act on ENGINE MASTER (Digit1 = off, Digit4 = on); Digit2 / Digit3 do nothing. */
   ignition: 'key' | 'toggles' | 'engineMaster';
   has: { mixture: boolean; propeller: boolean; feather: boolean; carbHeat: boolean; alternateAir: boolean; cowlFlaps: boolean;
-         gear: boolean; rudderTrim: boolean; fuelPump: boolean };
+         gear: boolean; rudderTrim: boolean; fuelPump: boolean;
+         /** Power lever aft of the gate into beta and reverse (ControlInputs.reverse): Shift+F2 / Shift+Page Down (InputSystem). Absent = false. */
+         reverse?: boolean };
+  /**
+   * Twist-grip turboshaft (MD 500E): ControlInputs.throttle is the grip. F1 stops at `groundIdle`; CUTOFF (below
+   * `cutoffBelow`) needs the idle release. Deep-equals RotorcraftDefinition.systems.turboshaft.grip. Absent: a
+   * throttle lever. Shift+F1 is CUTOFF; F1 / F3 / F4 bring the grip out of it (InputSystem).
+   */
+  twistGrip?: { cutoffBelow: number; groundIdle: number };
+  /**
+   * Turboprop condition lever with three detents on ControlInputs.mixture: CUT-OFF (0), the low idle at `groundIdle`
+   * (PC-12 GROUND IDLE, C208 LOW IDLE: turbineEngine CUTOFF_BELOW) and the high idle at 1 (FLIGHT IDLE / HIGH IDLE).
+   * The mixture keys step between the detents, a press each (InputSystem): back from above the low idle stops on it,
+   * forward goes to the next detent up. From the low idle to CUT-OFF the lean key has to be pressed afresh there and
+   * held for CONDITION_CUTOFF_HOLD s, so a tap or a held key on the roll-out cannot shut the engine down. A
+   * hardware mixture axis still sets the lever directly. Absent: the mixture keys move the lever continuously.
+   */
+  conditionDetents?: { groundIdle: number };
+  /** Governor beep switch on the collective: the propDecrease / propIncrease keys drive ControlInputs.n2Beep while held. */
+  n2Beep?: boolean;
+  /** Stick pusher interrupt button on the control wheel (Shift+D, held): ControlInputs.pusherInterrupt. Absent: none. */
+  pusherInterrupt?: boolean;
+  /**
+   * STARTER INTERRUPT switch (Shift+N, held) of a latching start switch (EngineDef.starterLatch). It writes
+   * ControlInputs.starterInterrupt, which cancels the latch in the turbine core (a second press of the starter
+   * does too). Absent: none.
+   */
+  starterInterrupt?: boolean;
   /**
    * Per-engine keys that are ONE control on this type: they write the scalar whatever the engine selection
    * (DA42: ['alternateAir'], one lever for both engines). Absent: none.

@@ -239,6 +239,50 @@ export function trimAttitude(alpha: number, beta: number, roll: number, gamma: n
   return { orientation, pitch, heading: quat.toEuler(orientation).heading };
 }
 
+/** Throttle seeds of retryBelowPlateau, as fractions of the plateau's start. */
+const PLATEAU_SEEDS = [0.5, 0.75, 0.25];
+
+/**
+ * A powerplant whose thrust stops rising with the lever beyond some point (a torque limiter: the PC-12's PCL above
+ * the limit gives the same torque) has a flat throttle column there, and Newton can land on the plateau and stall.
+ * When the solve failed with the throttle on such a plateau (no change of the axial acceleration over a step of 0.01
+ * up), the start of the plateau is found by bisection at the failed condition and the trim is solved again with
+ * the throttle bounded below it, from seeds under it; the first that converges is taken. Every other powerplant
+ * responds to its lever everywhere, so this is never reached for them.
+ */
+function retryBelowPlateau(f: (x: Float64Array, out: Float64Array) => void, x0: readonly number[], o: NewtonOptions, failed: NewtonResult): NewtonResult {
+  const throttle = failed.x[5];
+  if (!(throttle > 0.05 && throttle < 1)) return failed;
+  const top = new Float64Array(6);
+  const r = new Float64Array(6);
+  const x = Float64Array.from(failed.x);
+  x[5] = Math.min(1, throttle + 0.01);
+  f(x, top);
+  const flatAt = (t: number) => {
+    x[5] = t;
+    f(x, r);
+    return Math.abs(r[0] - top[0]) <= 1e-9;
+  };
+  if (!flatAt(throttle)) return failed;
+  let lo = 0, hi = throttle;
+  if (flatAt(lo)) return failed;
+  for (let i = 0; i < 14; i++) {
+    const mid = 0.5 * (lo + hi);
+    if (flatAt(mid)) hi = mid;
+    else lo = mid;
+  }
+  const upper = o.upper.slice();
+  upper[5] = lo;
+  const bounded: NewtonOptions = { ...o, upper };
+  for (const k of PLATEAU_SEEDS) {
+    const start = x0.slice();
+    start[5] = k * lo;
+    const sol = solveNewton(f, start, bounded);
+    if (sol.converged) return sol;
+  }
+  return failed;
+}
+
 /** Trim for steady straight flight. */
 export function trimFlight(plant: TrimPlant, spec: TrimSpec): TrimResult {
   const fixedThrottle = spec.throttle !== undefined;
@@ -287,12 +331,14 @@ export function trimFlight(plant: TrimPlant, spec: TrimSpec): TrimResult {
     residual(Float64Array.from(x0), r);
     if (r[5] !== 0 && Number.isFinite(r[5])) x0[4] = -0.5 * Math.sign(r[5]);
   }
-  const sol = solveNewton(residual, x0, {
+  const options: NewtonOptions = {
     lower: [-10 * DEG, slip ? -30 * DEG : -20 * DEG, -40 * DEG, -1, slip ? -45 * DEG : -1, lastLower],
     upper: [30 * DEG, slip ? 30 * DEG : 20 * DEG, 30 * DEG, 1, slip ? 45 * DEG : 1, lastUpper],
     step: [1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4],
     weight: [1, 1, 1, REFERENCE_ARM, REFERENCE_ARM, REFERENCE_ARM],
-  });
+  };
+  let sol = solveNewton(residual, x0, options);
+  if (!sol.converged && !fixedThrottle) sol = retryBelowPlateau(residual, x0, options, sol);
   // Leave the plant (e.g. the powerplant's shaft speed) at the solution.
   residual(sol.x, new Float64Array(6));
   const s = apply(sol.x);

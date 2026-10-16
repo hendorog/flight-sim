@@ -9,6 +9,7 @@
 import type { AircraftState, ControlInputs } from '../core/types';
 import type { InputAction } from '../input/bindings';                 // type-only
 import type { InstrumentReadings } from './dynamics/instrumentSet';   // type-only
+import type { CabinSchedule } from './dynamics/cabinDisplay';     // type-only
 import type { PanelComponent } from './render/component';
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -48,6 +49,28 @@ export interface PanelEngineDisplayRow {
   read(r: InstrumentReadings, engine: number): number;
 }
 
+/** One digital readout line of an EIS window: label, unit, a value with its alert colour. */
+export interface EisReadout {
+  label: string; unit?: string; decimals: number;
+  read(r: InstrumentReadings): number;
+  /** Colour the figure takes at this value (absent: white). */
+  alert?(v: number): 'red' | 'amber' | undefined;
+}
+/** The round dial of an EIS window: a sweep in degrees clockwise from 12 o'clock, bands, red lines and numbered marks. */
+export interface EisDial {
+  min: number; max: number; fromDeg: number; toDeg: number;
+  majors: readonly number[]; labels?: readonly number[];
+  arcs?: readonly ArcDef[]; redLines?: readonly number[];
+  read(r: InstrumentReadings): number;
+  /** Divisor applied to the numbers printed on the scale (scale x100). */
+  labelDivisor?: number;
+}
+/** Vertical bar indicators of an EIS window (fuel quantity, oil temperature and pressure). */
+export interface EisBars {
+  min: number; max: number; arcs?: readonly ArcDef[]; redLines?: readonly number[];
+  items: readonly { label: string; read(r: InstrumentReadings): number }[];
+}
+
 type At = readonly [number, number];
 /**
  * `marks` of the airspeed indicator and the tachometer are REQUIRED: a type never inherits another's arcs by
@@ -58,9 +81,22 @@ export type GaugeDef =
   /** Aircraft-specific dial using the shared sizing, recess, lighting and redraw contract. */
   | { kind: 'customRound'; id: string; at: At; size: 'large' | 'small';
       create(id: string, x: number, y: number, aperture: number): PanelComponent }
-  | { kind: 'asi'; id: string; at: At; marks: AsiMarkings }
-  | { kind: 'attitude' | 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At }
+  /**
+   * `scale` of a flight instrument: its size against the 3-1/8" case (a 2" standby instrument is 0.64), drawn,
+   * recessed and hit-tested at that size. Absent: 1 (the panel's instrumentScale still applies on top).
+   */
+  | { kind: 'asi'; id: string; at: At; marks: AsiMarkings; scale?: number }
+  | { kind: 'altimeter' | 'turn' | 'heading' | 'vsi' | 'clock' | 'blank'; id: string; at: At; scale?: number }
+  /** `inclinometer`: a slip ball in a tube across the foot of the face (an EADI, a standby horizon), on a panel without a turn coordinator. */
+  | { kind: 'attitude'; id: string; at: At; inclinometer?: boolean; scale?: number }
   | { kind: 'cdi'; id: string; at: At; receiver: 'nav1' | 'nav2'; fixedCourseDeg: number }
+  /**
+   * Horizontal situation indicator: a slaved compass card with the heading bug, the course pointer set by the OBS
+   * (NAV 1; `fixedCourseDeg` otherwise), its deviation bar and the glideslope pointers of `receiver`.
+   */
+  | { kind: 'hsi'; id: string; at: At; receiver: 'nav1' | 'nav2'; fixedCourseDeg: number }
+  /** Radio magnetic indicator: a slaved card and two bearing needles, no. 1 on the GPS's active waypoint, no. 2 (ADF) parked. */
+  | { kind: 'rmi'; id: string; at: At }
   | { kind: 'tach'; id: string; at: At; size: 'large' | 'small'; marks: TachMarkings; engine?: number }
   | { kind: 'rotorTach'; id: string; at: At; marks: RotorTachMarkings }
   | { kind: 'hourmeter'; id: string; bounds: Rect }
@@ -101,7 +137,12 @@ export type GaugeDef =
   | { kind: 'guardedKnob'; id: string; at: At; label: string; action: InputAction; engine?: number }
   /** Boxed engine display (DA42, D6): per engine LOAD %, RPM, fuel flow, oil temp/pressure, coolant, gearbox, volts/amps, one `rows` entry each. */
   | { kind: 'engineDisplay'; id: string; bounds: Rect; engines: number; rows: readonly PanelEngineDisplayRow[] }
-  | { kind: 'gps' | 'navcom' | 'xpdr'; id: string; bounds: Rect };
+  | { kind: 'gps' | 'navcom' | 'xpdr'; id: string; bounds: Rect }
+  /**
+   * One window of a legacy engine instrument system (Pilatus EIS): a self-lit black window with a title, an optional
+   * round dial, up to three digital readouts and optional vertical bars. Dark while the bus is unpowered.
+   */
+  | { kind: 'eisWindow'; id: string; bounds: Rect; title: string; dial?: EisDial; readouts: readonly EisReadout[]; bars?: EisBars };
 
 export interface SwitchDef {
   id: string; label: string; name: string;
@@ -132,7 +173,11 @@ export interface PanelDef {
   id: string;
   /** Fixed view: rows preserve the type's flight-instrument arrangement. Controls are canvas crops,
    * including their legends; remaining gauges and annunciators are arranged automatically. */
-  fixed?: { flightRows: readonly (readonly string[])[]; controls: readonly Rect[] };
+  fixed?: { flightRows: readonly (readonly string[])[]; controls: readonly Rect[];
+    /** Canvas crops shown whole in the Upper view after the flight rows (an engine display whose windows must stay together); gauges inside one are not placed again. */
+    crops?: readonly Rect[];
+    /** Put the annunciator beside the engine instruments instead of below them (a tall engine display and a large warning grid). */
+    lampsBeside?: boolean };
   /** Dial lighting interlock; self-lit radios and warning lenses remain independent. */
   lightingRequiresNav?: boolean;
   /** Optional dimmer curve: emissive alpha tags dimmed circuits (0.5) versus warning lamps (1).
@@ -144,7 +189,11 @@ export interface PanelDef {
   console?: { podOutline: readonly At[]; pedestalOutline: readonly At[]; hoodOverhang: number;
     color: number; pedestalColor: number };
   gauges: readonly GaugeDef[];
-  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[] };
+  /**
+   * `lensLegend` (with `cells`): each cell is a rectangular press-to-test lens with the legend on the lens cap itself
+   * (MD 500E), instead of a round lens under a painted legend.
+   */
+  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[]; lensLegend?: boolean };
   switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[]; ink?: string; distributed?: boolean;
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
@@ -174,6 +223,11 @@ const RECESS_DEPTH_SMALL = 0.01;
 
 export interface LampInputs { state: AircraftState; controls: ControlInputs; fuelGal: readonly number[]; suctionInHg: number }
 
+/** A gauge's own size factor (GaugeDef `scale`), 1 when it has none. */
+export function gaugeScale(g: GaugeDef): number {
+  return 'scale' in g && typeof g.scale === 'number' ? g.scale : 1;
+}
+
 /**
  * The 3D recess of a gauge: centre and aperture radius, px on the canvas, and how far the dial sits behind the
  * panel face, m; or null for a kind that has none (rack units, light clusters, levers). The ONE place that
@@ -184,7 +238,7 @@ export interface LampInputs { state: AircraftState; controls: ControlInputs; fue
 export function gaugeRecess(g: GaugeDef, apertures: { large: number; small: number }): { x: number; y: number; r: number; depth: number } | null {
   let large: boolean;
   switch (g.kind) {
-    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'rotorTach': case 'blank':
+    case 'asi': case 'attitude': case 'altimeter': case 'turn': case 'heading': case 'vsi': case 'cdi': case 'hsi': case 'rmi': case 'rotorTach': case 'blank':
       large = true;
       break;
     case 'tach': case 'single': case 'twinNeedle': case 'customRound':
@@ -196,6 +250,8 @@ export function gaugeRecess(g: GaugeDef, apertures: { large: number; small: numb
     default:
       return null;
   }
+  const k = gaugeScale(g);
+  if (k !== 1) return { x: g.at[0], y: g.at[1], r: (large ? apertures.large : apertures.small) * k, depth: large ? RECESS_DEPTH_LARGE : RECESS_DEPTH_SMALL };
   return { x: g.at[0], y: g.at[1], r: large ? apertures.large : apertures.small, depth: large ? RECESS_DEPTH_LARGE : RECESS_DEPTH_SMALL };
 }
 
@@ -215,5 +271,11 @@ export interface InstrumentSystemsDef {
   /** Carburettor probe temperature, C. A type may supply an explicitly documented estimate. */
   carbAirTempC?(s: AircraftState, c: ControlInputs): number;
   hourmeterRunning?(s: AircraftState, c: ControlInputs): boolean;
-  lamps: readonly { id: string; lit(i: LampInputs): boolean }[];
+  /** Cabin altitude / differential display (dynamics/cabinDisplay.ts), stepped with the instruments: readings.cabinAltFt, cabinDiffPsi. */
+  cabin?: CabinSchedule;
+  /**
+   * `chime`: a caution and warning panel lens (PC-12 CAWS) whose lighting strikes the master chime: InstrumentSet
+   * reports the edge (takeChime), the panel emits the 'caws' sim event. Not on the lamp test, not at a reset.
+   */
+  lamps: readonly { id: string; lit(i: LampInputs): boolean; chime?: 'warning' | 'caution' }[];
 }

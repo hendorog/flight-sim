@@ -1,6 +1,6 @@
 // Cessna 208 Caravan 675: the sound profile. One Pratt & Whitney Canada PT6A-114A free turbine (no combustion
 // pulses: the gas generator's whine, the burner and exhaust roar, the starter-generator, a faint reduction gearbox)
-// driving a Hartzell three-blade 106 in propeller governed at 1900 rpm: about 95 Hz blade passage, the buzzing,
+// driving a McCauley three-blade 106 in propeller governed at 1900 rpm: about 95 Hz blade passage, the buzzing,
 // growling drone that dominates a Caravan at power. An electric stall warning horn, electric flaps, fixed gear,
 // vacuum and electric gyros, a 28 V bus, a big cabin behind a long nose. Plain data.
 //
@@ -10,10 +10,10 @@
 // rotor tone at the shaft rate), not taken from P&WC data.
 
 import { STEM } from '../../audio/params';
-import { HP, LB } from '../../core/math';
+import { DEG, HP, LB } from '../../core/math';
 import type { AudioProfile, EngineSoundProfile, PropSoundProfile } from '../types';
 import { C208_GEOMETRY } from './geometry';
-import { PT6A_114A, PT6A_NG_RPM } from './powerplant';
+import { C208_BETA, PT6A_114A, PT6A_NG_RPM } from './powerplant';
 
 const GEOMETRY_PROP = C208_GEOMETRY.propellers[0];
 /** Fuel flow at 100 % Ng, sea level ISA (the gas generator's running line, powerplant.ts): 390 lb/h. */
@@ -60,13 +60,16 @@ const ENGINE: EngineSoundProfile = {
 };
 
 const PROP: PropSoundProfile = {
-  // Hartzell HC-B3MN-3, three blades, 106 in.
+  // McCauley 3GFR34C703/106GA-0 (TCDS IM.A.226 sect. 6.2), three blades, 106 in.
   blades: 3,
   diameterM: GEOMETRY_PROP.diameter,
   // Thrust giving propLoad = 1: a cruise at about 500 shp and 165 KTAS, efficiency 0.82: ~3500 N.
   cruiseThrustN: 3500,
   // The Caravan's growl: the blades pass the cowl's chin intake and the two exhaust stacks once a revolution.
   growl: 0.3,
+  // Beta and reverse: the roar of the disc driven against its own wake below flat pitch (the PC-12's voice, a little
+  // weaker for the smaller reverse power; strength ESTIMATE). Full reverse at the powerplant's reference station.
+  reverse: { growl: 1.0, fullPitchDeg: C208_BETA.reverse / DEG },
   level: 1,
 };
 

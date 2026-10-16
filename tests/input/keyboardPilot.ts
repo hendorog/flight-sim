@@ -18,7 +18,7 @@ import { createEventBus, type SimContext } from '../../src/core/context';
 import { clamp, DEG, FT, KT, RAD, wrapPi } from '../../src/core/math';
 import { defaultWeather, type AircraftState, type ControlInputs, type WeatherSettings } from '../../src/core/types';
 import { AIRPORT, runwayCoords } from '../../src/core/world';
-import { InputSystem } from '../../src/input/InputSystem';
+import { InputSystem, REVERSE_RATE } from '../../src/input/InputSystem';
 import type { InputProfile } from '../../src/input/profile';
 import { keyAuthority, keyRate, type KeyAxisTuning } from '../../src/input/virtualYoke';
 import { SimPhysics, type SimPhysicsOptions } from '../../src/sim/SimPhysics';
@@ -77,10 +77,36 @@ export interface PilotTargets {
    */
   baseFt?: number;
   baseTurnM?: number;
+  /** How far the pilot descends from abeam the threshold to the base turn, ft (250). */
+  downwindDescentFt?: number;
   flareM?: number;
   throttleOffM?: number;
   flareBankDeg?: number;
   decrabM?: number;
+  /**
+   * A torque-limited turboprop (C208, PC-12): the power (as `power` reads it) the pilot sets with throttle taps for
+   * the take-off and in the climb, instead of F4 (full forward would over-torque the engine low down). Absent: F4.
+   */
+  takeoffPower?: number;
+  climbPower?: number;
+  /** Flap detent (index into the detents) for the take-off, set on the roll and raised at the level-off. Absent: 0. */
+  takeoffFlapDetent?: number;
+  /**
+   * Types with beta and reverse: below `belowKias` on the roll-out the pilot lifts the power lever over the idle gate
+   * (Shift+F2) and holds it until ControlInputs.reverse reaches `lever` (ground fine: BetaDef.pitchOnlyTravel).
+   */
+  rolloutReverse?: { belowKias: number; lever: number };
+  /**
+   * Seconds on the main wheels after which the pilot stops holding the round-out and flies the roll-out (yoke to
+   * centre, the nosewheel down, beta and brakes). Absent: only once the nosewheel touches.
+   */
+  rolloutOnMainsS?: number;
+  /**
+   * Turboprops whose condition lever has detents (InputProfile.conditionDetents): on the roll-out the pilot taps M once,
+   * taking the condition lever from the high idle (FLIGHT IDLE) to the low one (GROUND IDLE: 47E-PROXY Fig 5-2-52
+   * "ground idle after touch down"). Absent: the lever stays where the approach had it.
+   */
+  rolloutGroundIdle?: boolean;
 }
 
 /**
@@ -118,6 +144,15 @@ export function pilotTargets(reference: ReferenceSpeeds = C172S_REFERENCE): Pilo
     throttleOffM: 3,
     flareBankDeg: 5,
     decrabM: Infinity,
+    downwindDescentFt: 250,
+    // Full throttle (F4) for the take-off and the climb, no take-off flaps, no beta on the roll-out, the round-out
+    // held until the nosewheel touches.
+    takeoffPower: undefined,
+    climbPower: undefined,
+    takeoffFlapDetent: 0,
+    rolloutReverse: undefined,
+    rolloutOnMainsS: undefined,
+    rolloutGroundIdle: undefined,
   };
 }
 
@@ -168,6 +203,13 @@ export interface FlightLog {
   trim: number;
   throttle: number;
   rudder: number;
+  /** The power as the pilot reads it (PilotTargets.power: rpm, or torque on a turboprop). */
+  power: number;
+  /** Flap lever, and the power lever aft of the gate (types with beta: ControlInputs.reverse; else absent). */
+  flaps: number;
+  reverse?: number;
+  /** The condition lever (ControlInputs.mixture) of a type with condition detents; else absent. */
+  condition?: number;
 }
 
 export interface CircuitResult {
@@ -342,6 +384,8 @@ export function createCircuitPilot(
     parking: k('KeyB', true),
     idle: k('F1'),
     full: k('F4'),
+    reverse: k('F2', true),
+    lean: k('KeyM'),
     centre: k('Numpad5'),
   };
   const all = Object.values(keys);
@@ -362,6 +406,8 @@ export function createCircuitPilot(
   let elevAvg = 0;
   let lastTrimAt = 0;
   let flareStart = 0;
+  /** Time the main wheels first touched in the flare (NaN: not yet). */
+  let mainsAt = NaN;
   const unsub = events.on('touchdown', (e) => {
     if (!touchdown && (phase === 'flare' || phase === 'final')) {
       const rc = runwayCoords(s.position.x, s.position.y);
@@ -472,7 +518,11 @@ export function createCircuitPilot(
       nextDecision = t + DECIDE;
       switch (phase) {
         case 'takeoffRoll': {
-          if (t > 0.3 && c.throttle < 1) keys.full.press(t, 0.1);
+          const tf = T.takeoffFlapDetent ?? 0;
+          if (tf > 0 && flapsShortOf(tf)) keys.flapsDn.press(t, 0.1);
+          if (T.takeoffPower !== undefined) {
+            if (t > 0.3) rpmTo(T.takeoffPower);
+          } else if (t > 0.3 && c.throttle < 1) keys.full.press(t, 0.1);
           // Centreline with the rudder (the first press takes the pedals from the auto-rudder).
           steer(heading07 - Math.atan2(rc.across, 80));
           flyBank(0);
@@ -508,13 +558,15 @@ export function createCircuitPilot(
             // the line before it tracked back (the classified downwind then averaged ~0.535 NM out, not 0.49).
             if (rc.across < -700) setPhase('downwind');
           } else if (phase === 'downwind') {
+            // Take-off flaps up at the level-off (before the downwind flaps go down abeam the threshold).
+            if ((T.takeoffFlapDetent ?? 0) > 0 && rc.along > -HALF + 100 && c.flaps > 0.01) keys.flapsUp.press(t, 0.1);
             hdg = trackCourse(heading25, -900);
             kiasT = T.downwindKias;
             if (rc.along < -HALF + 100) {
               // Abeam the threshold: power back, first flaps, start down.
               if (flapsShortOf(1)) keys.flapsDn.press(t, 0.1);
               kiasT = T.climbKias;
-              alt = PATTERN - 250 * FT;
+              alt = PATTERN - (T.downwindDescentFt ?? 250) * FT;
             }
             if (rc.along < -HALF - (T.baseTurnM ?? 1300)) setPhase('base');
           } else {
@@ -527,8 +579,9 @@ export function createCircuitPilot(
           flyBank(bankForHeading(hdg));
           const climbing = phase === 'climb' || (phase === 'crosswind' && s.altitudeMSL < alt - 30);
           if (climbing) {
-            // Full power, pitch for Vy.
+            // Full power (or the climb torque of a turboprop), pitch for the climb speed.
             flyPitch(pitchForSpeed(kiasT, T.climbPitchDeg * DEG));
+            if (T.climbPower !== undefined) rpmTo(T.climbPower);
           } else {
             // Level off / hold altitude with pitch, speed with power.
             const altErr = alt - s.altitudeMSL;
@@ -575,7 +628,8 @@ export function createCircuitPilot(
           const attitude = (1 - clamp(agl / 3, 0, 1)) * T.landingPitchDeg * DEG;
           const want = clamp(Math.max(s.pitch + (vsWant - s.verticalSpeed) * 3 * DEG, attitude), flareStart, 10 * DEG);
           flyPitch(want, 1.2);
-          if (s.wheels[0].onGround) setPhase('rollout');
+          if (Number.isNaN(mainsAt) && (s.wheels[1].onGround || s.wheels[2].onGround)) mainsAt = t;
+          if (s.wheels[0].onGround || (T.rolloutOnMainsS !== undefined && t - mainsAt >= T.rolloutOnMainsS)) setPhase('rollout');
           break;
         }
         case 'rollout': {
@@ -585,6 +639,17 @@ export function createCircuitPilot(
           moveTo(keys.fwd, keys.back, c.elevator, 0, AXES.elevator, 0.02);
           steer(heading07 - Math.atan2(rc.across, 60));
           if (kias < T.brakeKias && s.wheels[0].onGround) keys.brakes.press(t, DECIDE + 0.02);
+          // GROUND IDLE: one tap of M (a detent a press; the cut-off needs a second press held at the detent).
+          const groundIdle = profile.conditionDetents?.groundIdle;
+          if (T.rolloutGroundIdle && groundIdle !== undefined && c.mixture > groundIdle + 0.005) keys.lean.press(t, DECIDE + 0.02);
+          // Beta: the power lever over the gate (a fresh press with the lever at idle) and held to ground fine.
+          const rr = T.rolloutReverse;
+          if (rr && kias < rr.belowKias && c.throttle <= 0) {
+            // Held for as long as the lever needs at its steady rate (InputSystem REVERSE_RATE), so it stops at the mark.
+            const gap = rr.lever - (c.reverse ?? 0);
+            if (gap > 0.005) keys.reverse.press(t, Math.min(DECIDE + 0.02, gap / REVERSE_RATE));
+            else keys.reverse.release();
+          }
           if (s.groundSpeed < 0.2) {
             keys.brakes.release();
             keys.parking.press(t, 0.1);
@@ -613,6 +678,10 @@ export function createCircuitPilot(
         trim: +c.elevatorTrim.toFixed(3),
         throttle: +c.throttle.toFixed(2),
         rudder: +c.rudder.toFixed(3),
+        power: Math.round(T.power(s)),
+        flaps: +c.flaps.toFixed(3),
+        ...(c.reverse !== undefined ? { reverse: +c.reverse.toFixed(3) } : {}),
+        ...(profile.conditionDetents ? { condition: +c.mixture.toFixed(3) } : {}),
       });
     }
   };

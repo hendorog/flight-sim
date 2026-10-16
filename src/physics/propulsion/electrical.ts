@@ -189,7 +189,7 @@ export class ElectricalSystem {
    * Advance by dt with the CRANK speed of each engine (`rpm`, and `omega` in rad/s): one number each for a
    * single-engine aircraft, one per engine otherwise. The returned object is reused.
    */
-  step(dt: number, controls: ControlInputs, rpm: number | ArrayLike<number>, omega: number | ArrayLike<number>, pumps?: readonly boolean[]): ElectricalResult {
+  step(dt: number, controls: ControlInputs, rpm: number | ArrayLike<number>, omega: number | ArrayLike<number>, pumps?: readonly boolean[], starters?: readonly boolean[]): ElectricalResult {
     const r = this.state;
     if (typeof rpm === 'number') {
       this.oneRpm[0] = rpm;
@@ -221,7 +221,8 @@ export class ElectricalSystem {
     }
     for (let i = 0; i < this.engineCount; i++) {
       this.backEmfPerAmp[i] = this.starterK[i] * Math.max(omega[i], 0);
-      this.starterOn[i] = engineControl(controls, i, 'starter');
+      // `starters`: the engaged state of each starter when an engine latches it (EngineDef.starterLatch); else the switch.
+      this.starterOn[i] = starters ? starters[i] : engineControl(controls, i, 'starter');
     }
     const g = this.loadConductance(controls, pumps);
 

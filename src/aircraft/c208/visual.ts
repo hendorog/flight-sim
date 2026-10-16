@@ -16,7 +16,7 @@
 // wing; crew doors each side, the two-piece cargo door on the left aft side and the airstair door on the right;
 // five square cabin windows a side; the high wing on the cabin roof with one streamlined strut a side; a long
 // tailcone rising to a tall swept fin with a dorsal fin and a low swept tailplane; tubular spring-steel main legs
-// on big 6.50-10 wheels, an oleo nose leg; a three-blade feathering Hartzell with a large spinner. Inside: two crew
+// on big 6.50-10 wheels, an oleo nose leg; a three-blade feathering and reversing McCauley with a large spinner. Inside: two crew
 // seats, control wheels on both sides, a full-width analogue panel, the centre pedestal with the power, propeller
 // and condition levers and the trim wheel, the flap selector on the right of the lower panel, the fuel selectors
 // overhead.
@@ -358,7 +358,7 @@ const GEAR: AirframeVisualDef['gear'] = [
   mainWheel(G.rightMain, 1),
 ];
 
-// --- Propeller: Hartzell three-blade 106 in, constant speed, full feathering, reversing ------------------------------
+// --- Propeller: McCauley three-blade 106 in, constant speed, full feathering, reversing ------------------------------
 
 const SPINNER_BASE_X = 3.55;
 
@@ -506,9 +506,11 @@ const COCKPIT: CockpitDef = {
   column: { kind: 'yoke', x: PANEL_X - 0.2, y: SEAT_Y, z: faceZ(C208_PANEL_PARTS.yokes.y), travel: 0.09, rollDeg: 45 },
   pedals: { x: PANEL_X + 0.24, ys: [-SEAT_Y, SEAT_Y] },
   // The pedestal's levers, left to right: POWER (black), PROP (blue), CONDITION (red; it moves with the
-  // per-engine 'mixture' control: forward HIGH IDLE, aft CUTOFF).
+  // per-engine 'mixture' control: forward HIGH IDLE, aft CUTOFF). The power lever goes on aft of its idle gate
+  // through BETA to REVERSE (ControlInputs.reverse) over a further third of its forward swing (ESTIMATE from cockpit
+  // photographs: the reverse slot is about a third as long as the IDLE-MAX slot).
   engineControls: [
-    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, faceY(PED.levers.power), LEVER.z], travel: 0.8, colour: 'black', length: LEVER.length },
+    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, faceY(PED.levers.power), LEVER.z], travel: 0.8, colour: 'black', length: LEVER.length, reverseTravel: 0.35 },
     { kind: 'lever', control: 'propeller', engine: 0, pos: [LEVER.x, faceY(PED.levers.propeller), LEVER.z], travel: 0.8, colour: 'blue', length: LEVER.length },
     { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, faceY(PED.levers.condition), LEVER.z], travel: 0.8, colour: 'red', length: LEVER.length },
   ],

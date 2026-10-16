@@ -11,10 +11,10 @@
 import type { Quat, Vec3 } from './math';
 
 // ---------------------------------------------------------------------------------------------- identity
-export const ROTORCRAFT_IDS = ['r22', 'r44', 's269'] as const;
+export const ROTORCRAFT_IDS = ['r22', 'r44', 's269', 'md500'] as const;
 export type RotorcraftId = typeof ROTORCRAFT_IDS[number];
-export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'c208' | RotorcraftId;
-export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', ...ROTORCRAFT_IDS];
+export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'c208' | 'pc12' | RotorcraftId;
+export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', 'pc12', ...ROTORCRAFT_IDS];
 /** Node-safe identity check for snapshot validation before aircraft definitions are loaded. */
 export const isRotorcraftId = (v: unknown): v is RotorcraftId => ROTORCRAFT_IDS.includes(v as RotorcraftId);
 export const DEFAULT_AIRCRAFT_ID: AircraftId = 'c172s';
@@ -36,7 +36,7 @@ export const PROP_FEATHER_GATE = 0.08;
 /** The levers and switches that exist once per engine. */
 export type EngineControlKey =
   | 'throttle' | 'propeller' | 'mixture' | 'magnetos' | 'starter' | 'fuelPump' | 'fuelSelector' | 'alternator'
-  | 'carbHeat' | 'cowlFlaps' | 'alternateAir' | 'engineMaster';
+  | 'carbHeat' | 'cowlFlaps' | 'alternateAir' | 'engineMaster' | 'reverse';
 /** Per-engine overrides: a field that is absent follows the scalar of the same name in ControlInputs. */
 export type EngineControls = { [K in EngineControlKey]?: ControlInputs[K] };
 
@@ -62,6 +62,23 @@ export interface ControlInputs {
   rotorDoorsOff?: boolean;
   /** Momentary ignition-key PRIME, separate from the starter and manual pump switch. */
   fuelPrime?: boolean;
+  /**
+   * Power-lever travel AFT of the flight-idle gate, [0, 1] (types with PitchControlDef.beta; others ignore it).
+   * 0 = on the gate (blades on the flight low-pitch stop / lowPitchSchedule); up to BetaDef.pitchOnlyTravel the
+   * lever moves the blades only, fineStop -> groundFine, with Ng at idle (ground fine); beyond it the reversing
+   * cam raises Ng and the blades go on to BetaDef.reverse at 1 (maximum reverse). Only meaningful with
+   * throttle = 0: the input system never makes both non-zero. Absent = 0. Per engine (EngineControlKey).
+   */
+  reverse?: number;
+  /** Turboshaft N2 governor beep switch on the collective, momentary, [-1, 1] (+ = INCREASE). Absent = 0. Never persisted. */
+  n2Beep?: number;
+  /** Stick-pusher interrupt (PUSHER INTR / the trim interrupt switch on the yoke), held. Absent = false. */
+  pusherInterrupt?: boolean;
+  /**
+   * STARTER INTERRUPT switch (PC-12 overhead), held. Cancels a latched start (EngineDef.starterLatch) on every
+   * engine while true; no effect on a hold-to-run starter. Absent = false. Momentary, never persisted.
+   */
+  starterInterrupt?: boolean;
   /** [-1, 1]. + = yoke back = nose up. */
   elevator: number;
   /** [-1, 1]. + = yoke right = roll right. */
@@ -263,6 +280,11 @@ export interface EngineState {
   itt?: number;
   /** Gas turbines only: the flame is alight (from light-off, before the engine counts as `running`). */
   lit?: boolean;
+  /**
+   * Types with a latching start switch (EngineDef.starterLatch) only: the starter is engaged (latched, or the
+   * switch held), which outlasts the momentary switch. Absent: the starter runs while the switch is held.
+   */
+  starter?: boolean;
 }
 export function emptyEngineState(): EngineState {
   return { running: false, rpm: 0, manifoldPressure: 29.92, power: 0, torque: 0, fuelFlow: 0, egt: 15, cht: 15,
@@ -282,6 +304,8 @@ export interface PropellerState {
   bladePitch: number;
   /** Blades at (within 2 degrees of) the feather stop. */
   feathered: boolean;
+  /** Blades under beta-valve control (power lever aft of the gate; blade angle finer than the flight low-pitch stop). Absent: false (types without beta). */
+  beta?: boolean;
   /** +1 clockwise seen from the cockpit, -1 counter-clockwise. */
   direction: 1 | -1;
 }
@@ -391,6 +415,9 @@ export interface AircraftState {
   // --- Status ---
   onGround: boolean;
   stallWarning: boolean;
+  /** Stick shaker running / stick pusher pushing (types with ControlSystemDef.stickPusher only; absent elsewhere). */
+  stickShaker?: boolean;
+  stickPusher?: boolean;
   /** 0..1 fraction of the wing that is stalled (buffet intensity). */
   stallFraction: number;
   crashed: boolean;

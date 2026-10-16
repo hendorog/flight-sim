@@ -50,11 +50,23 @@
 //   travel to the left (maxRight): pedal -1 .. +1 maps each side to its own travel.
 // - Steering link 'direct': as the bungee, with its own restraint; 'castering': the pedals are not linked to the
 //   nosewheel, so nothing restrains a free rudder on the ground.
+// - Pitch trim 'stabilizer' (PC-12): the trim turns the whole horizontal stabiliser; SurfaceState.elevatorTrim is its
+//   incidence change, rad, + = leading edge up = nose DOWN (noseUp < 0 < noseDown), moving at the actuator's `rate`.
+//   The elevator is a plain surface on it, set by the yoke alone: it does not float with the stabiliser and, in this
+//   model, not with the tail's angle of attack either (the hands-off elevator is held by the down-spring and the
+//   pilot; the stick-free float of the tab kinds is not applied: docs/pc12-flight-model.md). The trim solver's single
+//   pitch control, an equivalent elevator deflection, is split as a stabiliser incidence of STABILIZER_EQUIVALENCE x
+//   that deflection (the elevator's effectiveness relative to the whole surface, thin-aerofoil theory for a 0.36-chord
+//   elevator times its viscous factor) and whatever the stabiliser's travel cannot give as yoke.
+// - Aileron-rudder interconnect (ControlSystemDef.aileronRudderInterconnect, PC-12): springs between the circuits add
+//   that fraction of rudder travel per unit of aileron input to the pedal command (right aileron, right rudder), and
+//   to a free rudder's float.
 
 import { C172S_CONTROLS } from '../aircraft/c172s/systems';
 import type { ControlSystemDef } from '../aircraft/types';
 import { clamp } from '../core/math';
 import type { ControlInputs, SurfaceState } from '../core/types';
+import { STABILIZER_EQUIVALENCE } from './stabilizerEquivalence';
 
 // The Cessna 172S (aircraft/c172s/systems.ts, where each number is explained) under the names this module has
 // always exported.
@@ -89,6 +101,9 @@ export const FLAP_RATE = C172S_FLAP_DRIVE.rate;
 export const FLAP_MIN_VOLTS = C172S_FLAP_DRIVE.minVolts;
 export const TRIM_RATE = C172S_CONTROLS.trimRate;
 
+/** Stabiliser trim equivalence (stabilizerEquivalence.ts, a pure module the aircraft leaf files read). */
+export { STABILIZER_EQUIVALENCE };
+
 /** The control law of one control system: travels, trim, float and rigging, without state. */
 export class ControlLaw {
   private readonly elevatorUp: number;
@@ -98,6 +113,10 @@ export class ControlLaw {
   private readonly floatRatio: number;
   /** Spring trim: the elevator datum at full nose-up trim (trailing edge up, < 0) and full nose-down (> 0), rad, and springQ, Pa. */
   private readonly spring: { noseUp: number; noseDown: number; q: number } | null;
+  /** Stabiliser trim: incidence at full nose-up (< 0) and full nose-down (> 0) trim, rad. Null for the other kinds. */
+  private readonly stab: { noseUp: number; noseDown: number } | null;
+  /** Aileron-rudder interconnect: pedal per unit aileron input (0 without). */
+  private readonly interconnect: number;
   /** Rudder travel to the right, rad (maxRight, or the travel to the left). */
   private readonly rudderRight: number;
   /** The rudder's travel differs left and right, or it has a cockpit trim (the C172S has neither). */
@@ -107,7 +126,16 @@ export class ControlLaw {
     const trim = cfg.pitchTrim;
     this.elevatorUp = cfg.elevator.maxUp;
     this.elevatorDown = cfg.elevator.maxDown;
-    if (trim.kind === 'spring') {
+    this.stab = null;
+    if (trim.kind === 'stabilizer') {
+      if (!(trim.noseUp < 0 && trim.noseDown > 0 && trim.rate > 0)) throw new Error("ControlLaw: pitch trim 'stabilizer' needs noseUp < 0 < noseDown and a rate");
+      // trimTabDeflection() is then the stabiliser's incidence: + trim (nose up) x noseUp, - trim x -noseDown.
+      this.tabDown = trim.noseUp;
+      this.tabUp = -trim.noseDown;
+      this.floatRatio = 0;
+      this.spring = null;
+      this.stab = { noseUp: trim.noseUp, noseDown: trim.noseDown };
+    } else if (trim.kind === 'spring') {
       this.tabDown = this.tabUp = this.floatRatio = 0;
       this.spring = { noseUp: -Math.abs(trim.springUp), noseDown: Math.abs(trim.springDown), q: trim.springQ };
     } else {
@@ -117,6 +145,7 @@ export class ControlLaw {
       this.floatRatio = trim.floatRatio;
       this.spring = null;
     }
+    this.interconnect = cfg.aileronRudderInterconnect ?? 0;
     const R = cfg.rudder;
     this.rudderRight = R.maxRight ?? R.maxDeflection;
     this.rudderExtras = R.maxRight !== undefined || R.trim !== undefined;
@@ -128,7 +157,15 @@ export class ControlLaw {
     return e > 0 ? -e * this.elevatorUp : -e * this.elevatorDown;
   }
 
-  /** Trim tab deflection (rad, + = trailing edge down) for a trim input (+ = nose up); 0 on a spring-trimmed elevator. */
+  /** The pitch trim turns the stabiliser (PitchTrimDef 'stabilizer'). */
+  get stabilizerTrim(): boolean {
+    return this.stab !== null;
+  }
+
+  /**
+   * Trim tab deflection (rad, + = trailing edge down) for a trim input (+ = nose up); 0 on a spring-trimmed elevator;
+   * on a trimmed stabiliser its incidence change (rad, + = leading edge up).
+   */
   trimTabDeflection(trim: number): number {
     const t = clamp(trim, -1, 1);
     return t > 0 ? t * this.tabDown : t * this.tabUp;
@@ -185,9 +222,23 @@ export class ControlLaw {
    */
   pitchControlsFor(deflection: number, float = 0, q = 0): { elevatorTrim: number; elevator: number } {
     if (this.spring) return this.springControlsFor(deflection, float, q);
+    if (this.stab) return this.stabilizerControlsFor(deflection);
     const tab = -(deflection - float) / this.floatRatio;
     const trim = clamp(tab > 0 ? tab / this.tabDown : tab / this.tabUp, -1, 1);
     const rest = deflection - float + this.floatRatio * this.trimTabDeflection(trim);
+    const elevator = clamp(rest < 0 ? -rest / this.elevatorUp : -rest / this.elevatorDown, -1, 1);
+    return { elevatorTrim: trim, elevator };
+  }
+
+  /**
+   * pitchControlsFor() of a trimmed stabiliser: the stabiliser takes STABILIZER_EQUIVALENCE x deflection within its
+   * travel, the yoke the rest (no float: see the header).
+   */
+  private stabilizerControlsFor(deflection: number): { elevatorTrim: number; elevator: number } {
+    const st = this.stab!;
+    const incidence = clamp(STABILIZER_EQUIVALENCE * deflection, st.noseUp, st.noseDown);
+    const trim = clamp(incidence < 0 ? incidence / st.noseUp : -incidence / st.noseDown, -1, 1);
+    const rest = deflection - this.trimTabDeflection(trim) / STABILIZER_EQUIVALENCE;
     const elevator = clamp(rest < 0 ? -rest / this.elevatorUp : -rest / this.elevatorDown, -1, 1);
     return { elevatorTrim: trim, elevator };
   }
@@ -225,6 +276,10 @@ export class ControlLaw {
       const elevator = clamp(this.yokeDeflection(c.elevator) + handsOff, -this.elevatorUp, this.elevatorDown);
       out.elevator = elevator / (1 + q / cfg.stretchQ.elevator);
       out.elevatorTrim = 0;
+    } else if (this.stab) {
+      // The elevator from the yoke alone; the stabiliser at the trim's incidence (pitchTrim: the actuator's position).
+      out.elevator = clamp(this.yokeDeflection(c.elevator), -this.elevatorUp, this.elevatorDown) / (1 + q / cfg.stretchQ.elevator);
+      out.elevatorTrim = this.trimTabDeflection(pitchTrim);
     } else {
       const tab = this.trimTabDeflection(c.elevatorTrim);
       const elevator = clamp(this.yokeDeflection(c.elevator) - this.floatRatio * tab + float, -this.elevatorUp, this.elevatorDown);
@@ -241,8 +296,9 @@ export class ControlLaw {
     // float, rad) ignores the pedal input.
     const R = cfg.rudder;
     if (this.rudderExtras) {
-      const r = clamp(c.rudder, -1, 1);
-      const pedal = rudderFree === null ? (r > 0 ? -r * this.rudderRight : -r * R.maxDeflection) : rudderFree;
+      const k = this.interconnect;
+      const r = k === 0 ? clamp(c.rudder, -1, 1) : clamp(c.rudder + k * clamp(c.aileron, -1, 1), -1, 1);
+      const pedal = rudderFree === null ? (r > 0 ? -r * this.rudderRight : -r * R.maxDeflection) : k === 0 ? rudderFree : rudderFree - k * clamp(c.aileron, -1, 1) * R.maxDeflection;
       out.rudder = clamp(this.rudderOffset(rudderTrim) + pedal, -this.rudderRight, R.maxDeflection) / (1 + q / cfg.stretchQ.rudder);
       out.rudderTrim = this.rudderTrimTab(rudderTrim);
     } else {
@@ -359,6 +415,8 @@ export class ControlSystem {
   private readonly flapMinVolts: number;
   /** The pitch trim moves only above this bus voltage (an electric trim); undefined for a trim wheel. */
   private readonly trimMinVolts: number | undefined;
+  /** Rate of SurfaceState.elevatorTrim, rad/s: the tab's (trimRate), or the stabiliser actuator's (PitchTrimDef 'stabilizer' rate). */
+  private readonly trimSurfaceRate: number;
 
   constructor(readonly cfg: ControlSystemDef = C172S_CONTROLS) {
     this.law = new ControlLaw(cfg);
@@ -368,6 +426,7 @@ export class ControlSystem {
     this.flapRate = drive.rate;
     this.flapMinVolts = drive.kind === 'electric' ? drive.minVolts : -Infinity;
     this.trimMinVolts = cfg.trimDrive?.minVolts;
+    this.trimSurfaceRate = cfg.pitchTrim.kind === 'stabilizer' ? cfg.pitchTrim.rate : cfg.trimRate;
   }
 
   /** The free rudder's float target, rad, restrained by the loaded nosewheel on the ground. */
@@ -397,7 +456,7 @@ export class ControlSystem {
     s.aileronLeft = approach(s.aileronLeft, t.aileronLeft, step);
     s.aileronRight = approach(s.aileronRight, t.aileronRight, step);
     s.rudder = approach(s.rudder, t.rudder, step);
-    if (this.trimMinVolts === undefined || busVoltage > this.trimMinVolts) s.elevatorTrim = approach(s.elevatorTrim, t.elevatorTrim, cfg.trimRate * dt);
+    if (this.trimMinVolts === undefined || busVoltage > this.trimMinVolts) s.elevatorTrim = approach(s.elevatorTrim, t.elevatorTrim, this.trimSurfaceRate * dt);
     if (busVoltage > this.flapMinVolts) s.flaps = approach(s.flaps, t.flaps, this.flapRate * dt);
     if (R.trim) s.rudderTrim = t.rudderTrim;
     if (!this.rudderFree) this.pedalPosition = clamp(controls.rudder, -1, 1);

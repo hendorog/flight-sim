@@ -7,6 +7,7 @@
 
 import type { ControlPatch } from '../../core/types';
 import type { SimProfile } from '../types';
+import { C208_BETA } from './powerplant';
 import { C208_REFERENCE } from './reference';
 
 /** Power lever at the take-off torque limit at sea level, and the climb setting. */
@@ -77,7 +78,9 @@ export const C208_SIM: SimProfile = {
     hold: { minKias: 90, maxBankDeg: 25, vsLimit: 3 },
     // Flaps FULL at 78 KIAS: a small flare, mains first at about 65 KIAS.
     flare: { minHeightM: 6, timeS: 4, pitchRiseDeg: 8, maxPitchDeg: 8 },
-    rollout: { brake: 0.8, noseHoldKias: [30, 70], noseHoldMax: 0.4 },
+    // POH landing: the power lever over the gate into BETA after touchdown (the short-field roll is "beta, no
+    // reverse"), back on the gate as the aircraft comes to a stop.
+    rollout: { brake: 0.8, noseHoldKias: [30, 70], noseHoldMax: 0.4, reverse: { lever: C208_BETA.pitchOnlyTravel, cancelKias: 5 } },
     steering: { kind: 'rudder' },
     centreline: { headingGain: 4, yawRateGain: 1.5, lookAheadM: 80 },
     phaseControls: {

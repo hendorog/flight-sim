@@ -50,7 +50,14 @@ export interface RetractConfig {
    * (`leverUpOnGround`). There is no manifold-pressure rule: the PA-34 sets `throttleBelow` to the lever
    * position that gives 14 inHg at sea level and 2000 rpm.
    */
-  warning: { throttleBelow?: number; flapsAtOrBeyond?: number; leverUpOnGround: boolean };
+  warning: {
+    throttleBelow?: number; flapsAtOrBeyond?: number; leverUpOnGround: boolean;
+    /**
+     * PC-12 (47E): the throttle rule applies only below this IAS, kt (horn below 130 KIAS with the PCL at idle).
+     * Absent: at any speed (every type before the PC-12). Declared at the scaffold; the PC-12 package implements it.
+     */
+    kiasBelow?: number;
+  };
 }
 
 export interface WheelConfig {

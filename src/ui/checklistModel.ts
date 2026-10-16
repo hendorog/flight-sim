@@ -12,8 +12,8 @@ import type { FlightChecklist, FlightChecklistItem } from '../training/checklist
 export type ChecklistTab = 'normal' | 'emergency';
 export interface ChecklistMark { done: boolean; mode: 'auto' | 'manual'; overridden: boolean }
 const EMERGENCIES = new Set(['engineFailure', 'forcedLandingSecurity']);
-const ORDER = ['preflight', 'beforeStart', 'engineStart', 'afterStart', 'runup', 'beforeTakeoff', 'takeoff', 'afterTakeoff', 'climb', 'cruise', 'descent', 'downwind', 'final', 'afterLanding', 'shutdown'];
-const EMERGENCY_ORDER = ['powerFailure', 'engineFailure', 'lowHeightFailure', 'lowRpm', 'forcedLandingSecurity', 'startFire', 'hotStart', 'engineFire', 'chipLight', 'electricalFire', 'electrical'];
+const ORDER = ['preflight', 'beforeStart', 'engineStart', 'afterStart', 'taxi', 'runup', 'beforeTakeoff', 'takeoff', 'afterTakeoff', 'climb', 'cruise', 'descent', 'downwind', 'final', 'landing', 'afterLanding', 'shutdown'];
+const EMERGENCY_ORDER = ['powerFailure', 'engineFailure', 'lowHeightFailure', 'lowRpm', 'forcedLandingSecurity', 'startFire', 'hotStart', 'engineFire', 'chipLight', 'electricalFire', 'electrical', 'pusher'];
 
 // Legacy school checks sometimes cover only part of their challenge. Explicitly admit the simple switch,
 // lever and gauge items; combined inspections / timed sequences remain manual in the reference panel.
@@ -27,6 +27,13 @@ const LIVE_IDS = new Set(['fuelSelector', 'fuelPump', 'mixture', 'mags', 'parkin
 const C208_LIVE_IDS = new Set(['powerIdle', 'conditionCutoff', 'conditionHighIdle', 'conditionLowIdle', 'propMax',
   'propFeather', 'generator', 'runupPower', 'flapsLanding', 'ignitionOn']);
 
+// Pilatus PC-12/47 (turboprop with a condition lever on `mixture` and no propeller lever): the audited simple lever and
+// switch items. The battery is checked alone (the generators come on after the start); the start sequence (one STARTER
+// press, condition lever to GROUND IDLE at 13 % Ng, the starter cutting out at 50 %) and the engine checks stay manual
+// or are the explicit live predicates of the item itself.
+const PC12_LIVE_IDS = new Set(['powerIdle', 'conditionCutoff', 'conditionGndIdle', 'conditionFltIdle', 'generators', 'runupPower',
+  'flapsLanding', 'ignitionOn', 'fuelPump']);
+
 export function livePredicate(item: FlightChecklistItem, section: FlightChecklist, type: AircraftTypeDef): Pred | null {
   if (item.live !== undefined) return item.live;
   if (item.id === 'carbHeat' && ['c152', 'pa38'].includes(type.id)) {
@@ -36,6 +43,11 @@ export function livePredicate(item: FlightChecklistItem, section: FlightChecklis
   if (type.id === 'c208') {
     if (item.id === 'master' || C208_LIVE_IDS.has(item.id)) return item.state === null ? null : item.state ?? item.check ?? null;
     if (item.id === 'flapsUp' && section.id === 'afterTakeoff') return null; // retraction above 90 KIAS is a sequence
+  }
+  if (type.id === 'pc12') {
+    if (item.id === 'master' || PC12_LIVE_IDS.has(item.id)) return item.state === null ? null : item.state ?? item.check ?? null;
+    if (item.id === 'gear' || item.id === 'gearUp') return item.id === 'gear' ? { sig: 'checklist.gearDown', eq: true } : null; // gear up after take-off is a sequence
+    if (item.id === 'flapsUp' && section.id === 'afterTakeoff') return null; // retraction above 100 KIAS is a sequence
   }
   if (item.id === 'gear' && type.id === 'pa34') return { sig: 'checklist.gearDown', eq: true };
   if (item.id === 'fuelSelector' && type.id === 'pa38') return null; // proper / other tank requires judgement or a sequence

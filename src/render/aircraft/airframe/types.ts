@@ -28,6 +28,11 @@ export interface OutlineDef {
   pts: readonly (readonly [number, number])[]; r: number; sides: 'both' | 'left' | 'right';
   /** The outline is only looked at aft of this station (an early-out of the window distance). Absent: everywhere. */
   maxX?: number;
+  /**
+   * A strongly rounded outline (an oval cabin window, r near half its width): its distance is computed exactly near
+   * its corners, so the rubber seal follows the rounding. Absent: the bounding box stands in outside the outline.
+   */
+  oval?: boolean;
 }
 
 export interface GlazingDef {
@@ -38,7 +43,15 @@ export interface GlazingDef {
   /** Side-projection (x, z) convex outlines. A bubble canopy is one large outline bounded by sill, front and rear bows. */
   windows: readonly OutlineDef[];
   windscreen?: { sillC: readonly [number, number]; sillN: readonly [number, number];
-                 post: readonly [readonly [number, number], readonly [number, number]]; postY: number; topX: number };
+                 post: readonly [readonly [number, number], readonly [number, number]]; postY: number; topX: number;
+                 /** Half width (m) of a centre post dividing the windscreen into two panes; none when absent. */
+                 centrePost?: number;
+                 /**
+                  * The A-post as a body-space line (FRD x, |y|, z; lower corner first) in place of `post`/`postY`: the
+                  * glass ends at the plane through it that faces aft and outboard-up across the cabin's shoulder, so a
+                  * post that leans inward to the roof (seen from ahead) keeps its width over the shoulder's curve.
+                  */
+                 postLine?: readonly [readonly [number, number, number], readonly [number, number, number]] };
   /** Panel lines only (doors, baggage doors, canopy joint). */
   doors: readonly (OutlineDef & { handle?: { x: number; z: number } })[];
   /** Cabin-lining roof limit (FRD z); -Infinity is not cloneable-safe in JSON, so use -1e9 for "no headliner" (canopy). */
@@ -85,6 +98,11 @@ export interface WingVisualDef {
   pitot?: { side: 1 | -1; y: number; xc: number };
   /** Black non-slip walkways on the upper surface from span y0 to y1 and chord fraction xc0 to xc1. Absent: none. */
   walkways?: readonly { y0: number; y1: number; xc0: number; xc1: number; side: 'both' | 'left' | 'right' }[];
+  /**
+   * Pneumatic de-ice boots: a black rubber skin wrapped round the leading edge from span y0 to y1, both wings, back
+   * to chord fraction xcUpper on the upper surface and xcLower on the lower. Absent: none.
+   */
+  boots?: readonly { y0: number; y1: number; xcUpper: number; xcLower: number }[];
   /** Triangular stall (flow) strips on the leading edge from span y0 to y1, both wings. Absent: none. */
   stallStrips?: readonly { y0: number; y1: number }[];
   /** The stall-warning lift-detector vane: a small tab under the leading edge at span y (side -1 = left). Absent: none. */
@@ -107,7 +125,13 @@ export interface TailVisualDef {
        /** Inboard elevator cut (0 for a T-tail or stabilator). */
        innerCutY: number;
        /** gearing: anti-servo tab, tab angle = gearing x surface angle + state.surfaces.elevatorTrim. Absent: 0 (a trim tab). */
-       tab?: { y0: number; y1: number; xc: number; sides: 'right' | 'both'; gearing?: number } };
+       tab?: { y0: number; y1: number; xc: number; sides: 'right' | 'both'; gearing?: number };
+       /**
+        * A trimmable stabiliser ('elevator' kind only, no tab): the whole tailplane, elevators included, turns about
+        * the spanwise line at `pivotFraction` of the chord by state.surfaces.elevatorTrim (rad, + = leading edge up =
+        * nose-down trim, the PitchTrimDef 'stabilizer' sign). It is TailParts.tabs[0] with tabGearing 0. Absent: none.
+        */
+       trim?: { pivotFraction: number } };
   v: { base: { x: number; z: number }; tip: { x: number; z: number }; rootChord: number; tipChord: number;
        rudderChordFraction: number; rudderExtension?: { bottomH: number; aftChord: number };
        /** A tab in the rudder's trailing edge from fin height h0 to h1, hinged at chord station xc; it shows state.surfaces.rudderTrim. */
@@ -126,6 +150,12 @@ export interface TailVisualDef {
   dorsalFillet?: { x0: number; height: number };
   /** A thin fin under the tail cone from station x0 aft to x1, `depth` deep at its aft end. */
   ventralFin?: { x0: number; x1: number; depth: number };
+  /**
+   * A pair of ventral strakes, mirrored: thin plates standing out of the lower body skin from station x0 aft to
+   * x1, rooted at `angle` (rad) round the section from the bottom centreline, leaning outward from the vertical
+   * by `cant` (rad), `depth` deep at their deepest point (they taper in at both ends). Absent: none.
+   */
+  strakes?: { x0: number; x1: number; depth: number; angle: number; cant: number };
   vorAntenna?: boolean;
 }
 
@@ -288,7 +318,13 @@ export interface CockpitDef {
    * its swing, rad (forward = 1), `length` (absent: 0.11) the pivot-to-knob distance, m.
    */
   engineControls: readonly { kind: 'knob' | 'lever'; control: 'throttle' | 'mixture' | 'propeller' | 'carbHeat' | 'cowlFlaps' | 'alternateAir';
-                             engine: number; pos: FRD; travel: number; colour: 'black' | 'red' | 'blue' | 'white'; length?: number }[];
+                             engine: number; pos: FRD; travel: number; colour: 'black' | 'red' | 'blue' | 'white'; length?: number;
+                             /** Lever only: extra AFT arc, as a fraction of `travel`, swept as ControlInputs.reverse goes 0 -> 1 (beta and reverse). Absent: 0. */
+                             reverseTravel?: number;
+                             /** Lever only: drawn notches, as lever fractions 0..1 (PC-12 condition lever: CUT-OFF, GROUND IDLE, FLIGHT IDLE). */
+                             detents?: readonly number[];
+                             /** Lever only: drawn standing at this value and never animated (the PC-12's MANUAL OVERRIDE lever, not modelled). */
+                             fixed?: number }[];
   /**
    * panelLever: a lever in a slot on the panel face, `travel` m down from UP to FULL. panelSwitch: a paddle
    * switch on the face, tilting `travel` rad. floorLever: a hand lever between the seats pivoted at `pos`,
@@ -364,6 +400,8 @@ export interface LiveryDef {
   cowl?: { splitEndX?: number; camlocEndX?: number;
            grille?: { x: number; z0: number; z1: number; halfWidth: number };
            oilDoor?: { x: number; halfLength: number; halfWidth: number } };
+  /** Door outlines painted as a dark seam (gap shadow) of this half width, m, and darkening 0..1. Absent: groove only. */
+  doorSeam?: { halfWidth: number; darken: number };
   /** A rivet row along the cabin floor line at height z, from the firewall aft to station x1 ('metal' only). Absent: none. */
   floorRivets?: { z: number; x1: number };
   fin: { bandZ0: number; bandX0: number; slope: number; cap: number };
@@ -378,7 +416,13 @@ export interface AirframeVisualDef {
   id: string;
   fuselage: LoftDef & { nose: 'prop' | 'closed'; inlets: readonly InletDef[];
                         /** An exhaust stack at `pos`; `dir`: its root-to-mouth vector, m (absent: 0.14 m aft and 0.10 m down). */
-                        exhaust?: { pos: FRD; radius: number; dir?: FRD };
+                        exhaust?: { pos: FRD; radius: number; dir?: FRD;
+                                    /** A second stack mirrored on the other side (pos and dir with y negated). Absent: one stack. */
+                                    mirror?: boolean;
+                                    /** A flattened stack (with `dir`): semi-axes across it, m, [up/down, fore/aft]. Absent: round. */
+                                    oval?: readonly [number, number];
+                                    /** 'polished': bare polished metal (the PT6A-67 stubs). Absent: the heat-stained exhaust finish. */
+                                    finish?: 'polished' };
                         antennas: readonly { kind: 'blade' | 'stub' | 'whip'; pos: FRD;
                                              /** Length of the antenna from its base at `pos`, m. Absent: 0.2 (blade), 0.09 (stub). */
                                              height?: number }[] };

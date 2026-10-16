@@ -31,10 +31,13 @@ export interface TailParts {
   structure: THREE.Group;
   /** Index 0 = left, 1 = right. The two halves of a stabilator are its "elevators". */
   elevators: [Hinge, Hinge];
-  /** The first of `tabs` (the Cessna 172S: the right elevator's trim tab); a tail without a tab has none. */
+  /** The first of `tabs` (the Cessna 172S: the right elevator's trim tab; a trimmable stabiliser's hinge); a tail without a tab has none. */
   trimTab: Hinge;
   rudder: Hinge;
-  /** Every tab in the elevators' (or the stabilator's) trailing edge; each shows tabGearing x elevator + elevatorTrim. */
+  /**
+   * Every tab in the elevators' (or the stabilator's) trailing edge; each shows tabGearing x elevator + elevatorTrim.
+   * A trimmable stabiliser (def.h.trim) is the one entry, with tabGearing 0: it turns by elevatorTrim.
+   */
   tabs: Hinge[];
   tabGearing: number;
   /** The tab in the rudder's trailing edge, if the definition has one. */
@@ -137,21 +140,37 @@ export function buildTail(mat: AircraftMaterials, root: THREE.Object3D, def: Tai
   } else {
     const stabCut = truncatedContour(section, elevatorHinge - 0.012, elevatorHinge - 0.012, 30, 5);
     const elev = controlSurfaceContour(section, elevatorHinge, 16, 10);
+    // A trimmable stabiliser: the fixed surface and both elevators ride on one hinge about a lateral line through
+    // the root section's pivot point; the axis points to the aircraft's right, so a positive angle (elevatorTrim)
+    // swings the trailing edge down and the leading edge up.
+    const trim = def.h.trim;
+    if (trim && tabDef) throw new Error('tail: a trimmable stabiliser has no trim tab');
+    let stab: Hinge | null = null;
+    let stabInv: THREE.Matrix4 | null = null;
+    const stabParts: THREE.BufferGeometry[] = [];
+    if (trim) {
+      const p = sectionPoint(stabPlanform, 0, trim.pivotFraction, 0);
+      stab = new Hinge(frd(p.x, 0, p.z), frd(0, 1, 0).sub(frd(0, 0, 0)));
+      stabInv = stab.object.matrix.clone().invert();
+    }
     for (const side of [-1, 1] as const) {
       const mirror = side < 0;
-      batch.add(
-        mat.wingPaint,
-        surfaceGeometry(stabPlanform, {
-          stations: [0, ...stations(0.12, hTip - 0.1, 10), ...tipStations(hTip - 0.1, hTip, 6).slice(1)],
-          contour: stabCut,
-          mirror,
-          thicknessScale: stabTip,
-        }),
-      );
+      const fixed = surfaceGeometry(stabPlanform, {
+        stations: [0, ...stations(0.12, hTip - 0.1, 10), ...tipStations(hTip - 0.1, hTip, 6).slice(1)],
+        contour: stabCut,
+        mirror,
+        thicknessScale: stabTip,
+      });
+      if (stab) stabParts.push(fixed);
+      else batch.add(mat.wingPaint, fixed);
       const y0 = elevatorY0;
       const y1 = hTip - 0.012;
       // Axis toward the aircraft's right on both sides: positive rotation = trailing edge down.
-      const hinge = hingeFrom(stabPlanform, elev.hinge, mirror ? y1 : y0, mirror ? y0 : y1, mirror);
+      const world = hingeFrom(stabPlanform, elev.hinge, mirror ? y1 : y0, mirror ? y0 : y1, mirror);
+      // On a trimmable stabiliser the elevator's hinge is written in the stabiliser hinge's frame.
+      const hinge = stab
+        ? new Hinge(world.origin.clone().applyMatrix4(stabInv!), new THREE.Vector3(1, 0, 0).applyQuaternion(world.object.quaternion).applyQuaternion(stab.object.quaternion.clone().invert()))
+        : world;
       const parts: THREE.BufferGeometry[] = [];
       const tipRound = roundTip(hTip - 0.1, y1 + 0.012, 0.05);
       const tabbed = tabDef !== undefined && (tabDef.sides === 'both' || side > 0);
@@ -167,12 +186,17 @@ export function buildTail(mat: AircraftMaterials, root: THREE.Object3D, def: Tai
         parts.push(surfaceGeometry(stabPlanform, { stations: stations(y0, y1, 12), contour: elev.pts, mirror, thicknessScale: tipRound }));
       }
       parts.push(surfaceCap(stabPlanform, elev.pts, y0, new THREE.Vector3(-side, 0, 0), mirror));
-      attach(hinge, mat.wingPaint, parts, 'elevator');
-      root.add(hinge.object);
+      attach(hinge, mat.wingPaint, stabInv ? parts.map((g) => g.applyMatrix4(stabInv!)) : parts, 'elevator');
+      (stab ? stab.object : root).add(hinge.object);
       elevators.push(hinge);
 
       // The tab rides on the elevator.
       if (tabDef && tabbed) addTab(hinge, tabDef, side);
+    }
+    if (stab) {
+      attach(stab, mat.wingPaint, stabParts, 'stabiliser');
+      root.add(stab.object);
+      tabs.push(stab);
     }
   }
 
@@ -243,9 +267,10 @@ export function buildTail(mat: AircraftMaterials, root: THREE.Object3D, def: Tai
   if (def.dorsalFillet) addDorsalFillet(batch, mat, def, def.dorsalFillet, finPlanform, skin);
   if (def.ventralFin && skin) addVentralFin(batch, mat, def.ventralFin, skin);
   if (def.vorAntenna) addVorAntenna(batch, mat, finPlanform, finHeight);
+  if (def.strakes && skin) addStrakes(batch, mat, def.strakes, skin);
   const structure = batch.build('tail');
   root.add(structure);
-  return { structure, elevators: elevators as [Hinge, Hinge], trimTab: tabs[0], rudder, tabs, tabGearing: tabDef?.gearing ?? 0, rudderTab };
+  return { structure, elevators: elevators as [Hinge, Hinge], trimTab: tabs[0], rudder, tabs, tabGearing: def.h.trim ? 0 : (tabDef?.gearing ?? 0), rudderTab };
 }
 
 /**
@@ -342,6 +367,53 @@ function addVentralFin(batch: MeshBatch, mat: AircraftMaterials, fin: NonNullabl
       14,
     ),
   );
+}
+
+/**
+ * Ventral strakes: a mirrored pair of thin plates out of the lower skin, rooted `angle` round the section from the
+ * bottom centreline and leaning outward by `cant` from the vertical, deepest in their middle third.
+ */
+function addStrakes(batch: MeshBatch, mat: AircraftMaterials, def: NonNullable<TailVisualDef['strakes']>, skin: FuselageShape): void {
+  const rows = 16;
+  const cols = 12;
+  const half = 0.008;
+  const rootAt = (x: number, out: THREE.Vector3): THREE.Vector3 => {
+    const sec = skin.section(x);
+    // The lower superellipse half at the angle from the bottom centreline (as the loft's Ring writes it), 1 cm in.
+    const yy = sec.hw * Math.pow(Math.sin(def.angle), 2 / sec.nBot);
+    const zz = sec.zMid + (sec.zBot - sec.zMid) * Math.pow(Math.cos(def.angle), 2 / sec.nBot);
+    return out.set(x, yy - 0.01 * Math.sin(def.angle), zz - 0.01 * Math.cos(def.angle));
+  };
+  const depth = (t: number): number => def.depth * Math.min(1, t / 0.3, (1 - t) / 0.25);
+  for (const side of [-1, 1] as const) {
+    // Out along (0, sin cant, cos cant) in FRD (y right, z down); thickness across it.
+    const out = new THREE.Vector3(0, side * Math.sin(def.cant), Math.cos(def.cant));
+    const across = new THREE.Vector3(0, Math.cos(def.cant), -side * Math.sin(def.cant)).multiplyScalar(side);
+    const r = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    const spec = {
+      rows,
+      cols: cols + 1,
+      wrap: true,
+      position(i: number, j: number, o: THREE.Vector3): void {
+        const t = i / (rows - 1);
+        const x = def.x0 + (def.x1 - def.x0) * t;
+        rootAt(x, r);
+        r.y *= side;
+        const a = (j / cols) * Math.PI * 2;
+        // Around the lens: the root at a = 0, the outer edge at pi.
+        const k = 0.5 - 0.5 * Math.cos(a);
+        p.copy(r).addScaledVector(out, (depth(t) + 0.012) * k).addScaledVector(across, half * Math.sin(a) * (0.3 + 0.7 * Math.min(1, t * 8, (1 - t) * 8)));
+        frd(p.x, p.y, p.z, o);
+      },
+    };
+    let g = gridGeometry(spec);
+    // Facing: the outward-normal side of the ring's first half must look along `across` (model space).
+    const nrm = new THREE.Vector3().fromBufferAttribute(g.getAttribute('normal'), Math.floor(rows / 2) * (cols + 1) + Math.floor(cols / 4));
+    const want = frd(across.x, across.y, across.z).sub(frd(0, 0, 0));
+    if (nrm.dot(want) < 0) g = gridGeometry({ ...spec, flip: true });
+    batch.add(mat.plainPaint, g);
+  }
 }
 
 /** Rudder trailing-edge bottom (tail light position), FRD. */

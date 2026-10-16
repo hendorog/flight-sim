@@ -2,7 +2,7 @@
 // every curve is unit-tested (tests/audio).
 
 import { C172S_AUDIO } from '../aircraft/c172s/audio';
-import { clamp, DEG, smoothstep } from '../core/math';
+import { clamp, DEG, KT, smoothstep } from '../core/math';
 import { engineControl, type AircraftState, type ControlInputs, type Environment, type SurfaceType, type WeatherSettings } from '../core/types';
 import { ENGINE_P, ENGINE_PARAMS, P, PARAM_COUNT } from './params';
 import type { AudioProfile, EngineSoundProfile, PropSoundProfile, TurbineSoundProfile } from './profile';
@@ -130,7 +130,7 @@ export function windNoise(
  * horn on the switch of a lift-detector vane: it is on or off, at one strength.
  */
 export function stallHorn(stallWarning: boolean, alpha: number, ias: number, warner: AudioProfile['stallWarner'] = C172S_AUDIO.stallWarner): number {
-  if (!stallWarning) return 0;
+  if (!stallWarning || warner.kind === 'none') return 0;
   if (warner.kind === 'electric') return 1;
   return (0.45 + 0.55 * smoothstep(10 * DEG, 16 * DEG, alpha)) * clamp(ias / 12, 0, 1);
 }
@@ -196,6 +196,49 @@ export function flapMotorRunning(prevFlapRad: number, flapRad: number, dt: numbe
   return Math.abs(flapRad - prevFlapRad) / dt > 0.2 * DEG ? 1 : 0;
 }
 
+/**
+ * Reverse growl of a reversing turboprop, 0..1.5: the disc at a negative blade angle driven against its own wake.
+ * It needs blades below flat (it grows with the angle toward full reverse, `prop.reverse.fullPitchDeg`) and grows
+ * with the reverse thrust relative to the cruise thrust; at flat pitch, in beta above it, or on a propeller
+ * without reverse, nothing. `bladePitch`: PropellerState.bladePitch, rad; `thrust`: N (negative in reverse).
+ */
+export function reverseGrowl(bladePitch: number, thrust: number, prop: PropSoundProfile): number {
+  const rev = prop.reverse;
+  if (!rev || !(rev.fullPitchDeg < 0)) return 0;
+  const angle = clamp(bladePitch / (rev.fullPitchDeg * DEG), 0, 1);
+  if (angle <= 0) return 0;
+  return angle * clamp(0.2 + Math.max(0, -thrust) / prop.cruiseThrustN, 0, 1.5);
+}
+
+/** Aural overspeed warning: above the KIAS or the Mach number of `limit` (LimitsDef.overspeedWarning). `ias`: m/s. */
+export function overspeedWarning(ias: number, mach: number, limit: { kias: number; mach: number }): boolean {
+  return ias / KT > limit.kias || mach > limit.mach;
+}
+
+/**
+ * The warning horn of a rotorcraft: a turboshaft installation's ENGINE OUT / low-rotor horn
+ * (RotorcraftState.turboshaft.engineOutHorn), otherwise the type's low-rotor-rpm horn; a fixed-wing type's stall warning.
+ */
+export function warningHornOn(s: AircraftState): boolean {
+  const r = s.rotorcraft;
+  if (!r) return s.stallWarning;
+  return r.turboshaft ? r.turboshaft.engineOutHorn : r.lowRpmHorn;
+}
+
+/** Tail-rotor parameters (rpm, loading, helical tip Mach) of a rotorcraft whose profile has a tail rotor; zeros otherwise. */
+export function tailRotorSound(s: AircraftState, speedOfSound: number, profile: AudioProfile): { rpm: number; load: number; tipMach: number } {
+  const tr = profile.tailRotor;
+  const r = s.rotorcraft;
+  if (!tr || !r) return { rpm: 0, load: 0, tipMach: 0 };
+  const rpm = Math.max(0, r.rotorRpm) * tr.ratio;
+  const vt = (Math.PI * tr.diameterM * rpm) / 60;
+  return {
+    rpm,
+    load: clamp(Math.abs(r.tailThrust) / tr.hoverThrustN, 0, 2),
+    tipMach: Math.sqrt(vt * vt + s.tas * s.tas) / speedOfSound,
+  };
+}
+
 /** Spherical spreading relative to the reference distance, capped close up. */
 export function distanceGain(d: number): number {
   return Math.min(1.4, REFERENCE_DISTANCE / Math.max(d, 1));
@@ -238,7 +281,8 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
       continue;
     }
     const voice = profile.engines[i];
-    const starter = engineControl(c, i, 'starter') && powered;
+    // A latching start switch (PC-12) publishes the engaged starter, which outlasts the momentary switch.
+    const starter = (e.starter ?? engineControl(c, i, 'starter')) && powered;
     const turbine = voice.engine.combustion === 'turbine' ? voice.engine.turbine : undefined;
     let load = 0;
     if (turbine) {
@@ -280,7 +324,7 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
   out[P.slip] = w.slip;
   out[P.flapNoise] = w.flap;
   out[P.buffet] = buffet(s.stallFraction);
-  out[P.horn] = powered || !profile.stallWarner.needsBus ? stallHorn(s.rotorcraft?.lowRpmHorn ?? s.stallWarning, s.alpha, s.ias, profile.stallWarner) : 0;
+  out[P.horn] = powered || !profile.stallWarner.needsBus ? stallHorn(warningHornOn(s), s.alpha, s.ias, profile.stallWarner) : 0;
   out[P.flapMotor] = powered && profile.flapMotor ? x.flapMotor : 0;
   let onGround = 0;
   let skid = 0;
@@ -310,6 +354,17 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
     out[P.gearHorn] = 0;
     out[P.gearWind] = 0;
   }
+  // The voices of the turbine types (params.ts EXTRA_PARAMS), each 0 unless the profile has it.
+  const voice0 = profile.engines[0];
+  out[P.reverse] = voice0?.prop.reverse && voice0.engine.gearRatio !== 1 ? reverseGrowl(s.propeller.bladePitch, s.propeller.thrust, voice0.prop) : 0;
+  out[P.shaker] = profile.stickShaker && powered && s.stickShaker === true ? 1 : 0;
+  out[P.overspeed] = profile.overspeedWarning && powered && overspeedWarning(s.ias, s.mach, profile.overspeedWarning) ? 1 : 0;
+  // The exciters fire while the starter turns the gas generator (the PT6's and the 250's start ignition).
+  out[P.ignitor] = voice0?.engine.turbine?.ignitor && (s.engines[0]?.starter ?? engineControl(c, 0, 'starter')) && powered ? 1 : 0;
+  const tail = tailRotorSound(s, x.speedOfSound, profile);
+  out[P.tailRpm] = tail.rpm;
+  out[P.tailLoad] = tail.load;
+  out[P.tailTipMach] = tail.tipMach;
   return out;
 }
 

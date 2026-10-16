@@ -8,6 +8,8 @@ import DA42 from '../../src/aircraft/da42/presentation';
 import { R22_PANEL } from '../../src/aircraft/r22/panel';
 import { R44_PANEL } from '../../src/aircraft/r44/panel';
 import { S269_PANEL } from '../../src/aircraft/s269/panel';
+import { PC12_PANEL } from '../../src/aircraft/pc12/panel';
+import { MD500_PANEL } from '../../src/aircraft/md500/panel';
 import { buildHotspots, hotspotAt } from '../../src/instruments/hotspots';
 import { fitPanel, fixedSections, fixedPanelClient, fixedPanelPoint, nextPanelSection, isFixedPanel } from '../../src/instruments/fixedPanel';
 import { gaugeParts } from '../../src/instruments/panelParts';
@@ -17,7 +19,7 @@ import { makeInputRig } from '../input/testbed';
 import { C172S_INPUT } from '../../src/aircraft/c172s/input';
 
 const panels = { c172s: C172S_PANEL, c152: C152_PANEL, pa38: PA38_PANEL, da20: DA20_PANEL,
-  pa34: PA34_PANEL, da42: DA42.panel, r22: R22_PANEL, r44: R44_PANEL, s269: S269_PANEL };
+  pa34: PA34_PANEL, da42: DA42.panel, pc12: PC12_PANEL, r22: R22_PANEL, r44: R44_PANEL, s269: S269_PANEL, md500: MD500_PANEL };
 for (const [id, def] of Object.entries(panels)) describe(`${id} fixed panel`, () => {
   const sections = fixedSections(def), spots = buildHotspots(def);
   it.each([[1366, 768], [1920, 1080], [800, 600], [600, 900], [2400, 700]])('every hotspot operates in both directions at %ix%i', (width, height) => {

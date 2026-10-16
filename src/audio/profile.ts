@@ -51,13 +51,38 @@ export interface TurbineSoundProfile {
   gearMesh: { perPropRev: number; level: number };
   /** Strength of the soft thud of light-off on a start (0: none). */
   lightOff: number;
+  /**
+   * Reduction-gearbox mesh, how its strength grows with the output shaft: the tone is at full strength from this
+   * output speed up, rev/s (absent: 30, a turboprop's propeller at 1800 rpm). A helicopter's main transmission turns
+   * the rotor at 8 rev/s and is loud: about 8.
+   */
+  gearMeshFullRps?: number;
+  /**
+   * The igniters on a start: the exciter's spark snaps `perSecond` times a second, each a sharp crack of strength
+   * `level` (absent or 0: not heard). Keyed on the `ignitor` parameter (the starter engaged and the gas generator not yet running).
+   */
+  ignitor?: { perSecond: number; level: number };
 }
 /**
  * growl: a turboprop's propeller loaded unevenly round its disc (the cowl, the intake and the exhaust stacks
  * behind it) beats each blade's passage at the shaft rate: the depth of that roughness at full thrust (0 or
  * absent: none; 0.3 is strong). Read behind a reduction gear only.
  */
-export interface PropSoundProfile { blades: 2 | 3; diameterM: number; cruiseThrustN: number; level: number; growl?: number }
+export interface PropSoundProfile {
+  /** Blades on the disc (PC-12 4; MD 500E main rotor 5). */
+  blades: 2 | 3 | 4 | 5;
+  diameterM: number;
+  cruiseThrustN: number;
+  level: number;
+  growl?: number;
+  /**
+   * A reversing turboprop (beta and reverse): the roar of the disc driven against its own wake, heard as the
+   * blades go through flat to a negative angle and the gas generator spools up for reverse thrust. `growl`: its
+   * strength at full reverse thrust (the `reverse` parameter 1); `fullPitchDeg`: the blade angle of full reverse at
+   * the propeller's reference station, deg (negative; PC-12 -17.5). Read behind a reduction gear only, on engine 0.
+   */
+  reverse?: { growl: number; fullPitchDeg: number };
+}
 export interface StemRoute {
   stem: number;
   /** Low-pass cutoff of this stem, Hz; 0 = no low-pass (the stem is routed unfiltered). */
@@ -71,8 +96,12 @@ export interface AudioProfile {
   engines: readonly { engine: EngineSoundProfile; prop: PropSoundProfile }[];
   /** Bus voltage above which bus-powered sounds work (20 on 28 V, 10 on 14 V). */
   busPoweredV: number;
-  /** 'reed': pitch baseHz .. baseHz + sweepHz and loudness rise toward the stall. 'electric': a steady tone at baseHz (sweepHz is not read). */
-  stallWarner: { kind: 'reed' | 'electric'; baseHz: number; sweepHz: number; needsBus: boolean };
+  /**
+   * 'reed': pitch baseHz .. baseHz + sweepHz and loudness rise toward the stall. 'electric': a steady tone at baseHz
+   * (sweepHz is not read). 'none': no stall horn at all (the PC-12/47: its stall warning is the stick shaker's
+   * rattle, `stickShaker`).
+   */
+  stallWarner: { kind: 'reed' | 'electric' | 'none'; baseHz: number; sweepHz: number; needsBus: boolean };
   flapMotor: boolean; flapMaxRad: number;
   /**
    * warningKind: what the gear warning sounds like (PA-34: a horn; DA42: a repeating chime). Absent: 'horn'.
@@ -84,4 +113,19 @@ export interface AudioProfile {
   gyros: 'vacuum+electric' | 'electric' | 'none';
   cabin: { routes: readonly StemRoute[]; bus: readonly BiquadSpec[]; level: number };
   exterior: { routes: readonly StemRoute[]; level: number };
+  /**
+   * A helicopter's tail rotor, in the propeller stem: blade passage at `blades` x its shaft rate (`ratio` x the
+   * main-rotor rpm), with the broadband noise of its tips, and a slap (the impulsive passage of each blade, its
+   * harmonics flattening) that grows with its loading |thrust| / `hoverThrustN`. Absent: none (every type before the MD 500E).
+   */
+  tailRotor?: { blades: 2 | 3 | 4; diameterM: number; ratio: number; hoverThrustN: number; slap: number; level: number };
+  /** A stick shaker (AircraftState.stickShaker): the rattle of its eccentric motor at `hz` on the control column, `level` strong. Absent: none. */
+  stickShaker?: { hz: number; level: number };
+  /** Aural overspeed warning: a clacker at `perSecond` strokes a second above `kias` or `mach` (LimitsDef.overspeedWarning), on the bus. Absent: none. */
+  overspeedWarning?: { kias: number; mach: number; perSecond: number; level: number };
+  /**
+   * The caution and warning system's chimes, struck by a { type: 'caws', level } message (AudioSystem.caws()):
+   * a warning is a triple chime, a caution a single one, at `hz`. Absent: the message is ignored.
+   */
+  caws?: { hz: number; level: number };
 }

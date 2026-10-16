@@ -149,7 +149,7 @@ function flatEnvironment(weather: WeatherSettings) {
 
 describe('aircraft ids', () => {
   it('lists the aircraft types, the C172S first and the default', () => {
-    expect(AIRCRAFT_IDS).toEqual(['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', 'r22', 'r44', 's269']);
+    expect(AIRCRAFT_IDS).toEqual(['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', 'pc12', 'r22', 'r44', 's269', 'md500']);
     expect(DEFAULT_AIRCRAFT_ID).toBe('c172s');
     expect(isAircraftId('pa34')).toBe(true);
     expect(isAircraftId('c172')).toBe(false);

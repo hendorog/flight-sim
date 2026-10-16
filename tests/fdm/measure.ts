@@ -27,6 +27,7 @@ import {
   type TrimResult,
   type TrimSpec,
 } from '../../src/physics';
+import type { LoadingRequest } from '../../src/physics/interfaces';
 import { ELEVATION, FRAME, at, calmWeather, flatEnvironment, fpm, kt, makeRig, resetTo, type Rig } from './helpers';
 
 /** A rig of any type. */
@@ -426,6 +427,14 @@ export interface StallRun {
   maxEntryBankDeg: number;
   warningCas: number;
   warningKias: number;
+  /**
+   * First stick-shaker and stick-pusher activation (AircraftState.stickShaker / stickPusher; types with a
+   * ControlSystemDef.stickPusher), KCAS and KIAS; NaN when it never came (or the type has none). A type judged by
+   * its pusher (ConformanceTargets.stall.trip 'pusher') takes pusherCas as its stall speed.
+   */
+  shakerCas: number;
+  pusherCas: number;
+  pusherKias: number;
   /** Largest nose-down pitch rate after the lift peak, rad/s (negative). */
   noseDropRate: number;
   pitchLoss: number;
@@ -469,6 +478,7 @@ export function stallRun(rig: AnyRig, o: StallOptions): StallRun {
   let target = kt(s.ias);
   let warningCas = 0;
   let warningKias = 0, peakKias = 0, peakKcas = 0;
+  let shakerCas = NaN, pusherCas = NaN, pusherKias = NaN;
   const W = fm.massProperties.mass * G0;
   // Record the entry: lift coefficient, pitch attitude and pitch rate.
   const cl: number[] = [], pitch: number[] = [], q: number[] = [], ias: number[] = [], bank: number[] = [];
@@ -490,6 +500,11 @@ export function stallRun(rig: AnyRig, o: StallOptions): StallRun {
     if (s.stallWarning && !warningCas) {
       warningCas = kt(fm.cas);
       warningKias = kt(s.ias);
+    }
+    if (s.stickShaker === true && Number.isNaN(shakerCas)) shakerCas = kt(fm.cas);
+    if (s.stickPusher === true && Number.isNaN(pusherCas)) {
+      pusherCas = kt(fm.cas);
+      pusherKias = kt(s.ias);
     }
     cl.push(fm.lastAero!.lift / (0.5 * s.airDensity * s.tas * s.tas * area));
     pitch.push(s.pitch);
@@ -535,6 +550,9 @@ export function stallRun(rig: AnyRig, o: StallOptions): StallRun {
     maxEntryBankDeg: Math.max(...bank.slice(0, peak + 1)),
     warningCas,
     warningKias,
+    shakerCas,
+    pusherCas,
+    pusherKias,
     noseDropRate,
     pitchLoss,
     heightLost: recoveryStart - lowest,
@@ -569,12 +587,17 @@ export function stallRecovery(rig: AnyRig, o: { entryKias: number; ftAboveField?
   c.elevator = 1;
   c.aileron = 0;
   c.rudder = 0;
+  // A type with a stick pusher (PC-12) is stalled the way its aerodynamic stall is flight-tested: the pilot holds the
+  // PUSHER INTERRUPT through the hold (the actuator out-pushes a held yoke) and lets it go with the push. No effect
+  // on a type without a pusher.
+  if (def.controls.stickPusher) c.pusherInterrupt = true;
   let stalledFraction = 0, maxAlpha = -Infinity;
   rig.run(o.holdS ?? 5, () => {
     stalledFraction = Math.max(stalledFraction, s.stallFraction);
     maxAlpha = Math.max(maxAlpha, s.alpha);
   });
   c.elevator = o.push ?? -0.3;
+  if (def.controls.stickPusher) c.pusherInterrupt = false;
   const t0 = s.time;
   let recoveryTime = Infinity;
   const unstalled = o.unstalled ?? 0.02;
@@ -761,9 +784,16 @@ export interface TakeoffOptions {
 }
 
 /** The rig of a ground-roll measurement: sea-level runway, calm or with a steady wind. */
-export function runwayRig(def: AircraftDefinition | undefined, loading: 'forward' | 'typical' | 'aft' | 'maxGross', windKt = 0, windFromDeg = 0): AnyRig {
+export function runwayRig(def: AircraftDefinition | undefined, loading: 'forward' | 'typical' | 'aft' | 'maxGross' | LoadingRequest, windKt = 0, windFromDeg = 0): AnyRig {
   const env = flatEnvironment(calmWeather({ windSpeedKt: windKt, windDirectionDeg: windFromDeg }), 0);
+  if (!def && typeof loading !== 'string') throw new Error('runwayRig: a LoadingRequest needs a definition');
   return def ? makeRig({ def, loading, env }) : makeRig({ env });
+}
+
+/** The maxGross loading less the payload that brings the aircraft down to its maximum landing mass. */
+export function maxLandingLoading(def: AircraftDefinition): LoadingRequest {
+  const mg = def.mass.loadings.maxGross;
+  return { payload: mg.payload - (def.mass.maxTakeoff - def.mass.maxLanding), payloadPosition: mg.payloadPosition };
 }
 
 /** Ground roll from brake release to lift-off, rotating to `pitch` at `rotateKias` (ground.test.ts takeoffRoll). */
@@ -832,6 +862,22 @@ export interface LandingOptions {
   /** Lever retracting the flaps on the roll (0); undefined: as they are. */
   rollFlaps?: number;
   /**
+   * ControlInputs.reverse on the roll after touchdown (types with beta): BetaDef.pitchOnlyTravel = ground fine
+   * ("beta, no reverse"), 1 = full reverse. Absent: 0 (on the gate). Declared at the scaffold; the turbine-core
+   * package applies it in landingRoll.
+   */
+  rollReverse?: number;
+  /**
+   * The lever brought forward to `to` (0 the gate, BetaDef.pitchOnlyTravel ground fine) once the IAS falls below
+   * `kias` (the handbooks' "out of reverse by ... KIAS"). Absent: rollReverse is held to the stop.
+   */
+  rollReverseCancel?: { kias: number; to: number };
+  /**
+   * Condition lever (ControlInputs.mixture, every engine) once the mains are down: a turboprop's GROUND IDLE after
+   * touchdown (PC-12 47E-PROXY Fig 5-2-52 "ground idle after touch down"). Absent: left where the approach had it.
+   */
+  rollCondition?: number;
+  /**
    * Brake pedal on the roll, 0..1; absent: 1 (full). A handbook whose "maximum braking" chart is flown well below
    * the tyres' limit (Piper, Diamond) is matched by the braking it implies, not by weaker brakes (DECISIONS-D2).
    */
@@ -862,6 +908,7 @@ export function landingRoll(rig: AnyRig, o: LandingOptions): LandingRun {
   ap.settings = { ...ap.settings, lateral: 'heading', heading: RUNWAY_HEADING, vertical: 'verticalSpeed', verticalSpeed: -1.6, autoTrim: false };
   const flareM = o.flareM ?? 6;
   let touchdown = NaN, stop = NaN, touchdownSink = NaN, touchdownKias = NaN, touchdownTime = 0, flareStart = 0;
+  if (o.rollReverse !== undefined) setReverse(c, 0);
   rig.run(60, () => {
     if (Number.isNaN(touchdown)) {
       // Flare: close the throttle and raise the nose progressively to the touchdown attitude.
@@ -884,6 +931,15 @@ export function landingRoll(rig: AnyRig, o: LandingOptions): LandingRun {
     } else {
       // Lower the nose wheel, flaps up, then heavy braking about a second after the mains touch.
       c.throttle = 0;
+      // Power lever aft of the gate once the mains are down (ground fine / reverse), held to the stop.
+      if (o.rollCondition !== undefined) {
+        c.mixture = o.rollCondition;
+        clearEngineControl(c, 'mixture');
+      }
+      if (o.rollReverse !== undefined) {
+        const cancel = o.rollReverseCancel;
+        setReverse(c, cancel && kt(s.ias) < cancel.kias ? Math.min(o.rollReverse, cancel.to) : o.rollReverse);
+      }
       c.elevator = 0;
       c.flaps = o.rollFlaps ?? 0;
       c.brakeLeft = c.brakeRight = s.time - touchdownTime > 1 ? (o.brake ?? 1) : 0;
@@ -895,6 +951,80 @@ export function landingRoll(rig: AnyRig, o: LandingOptions): LandingRun {
     }
   });
   return { roll: stop - touchdown, touchdownSink, touchdownKias, crashed: s.crashed };
+}
+
+/** The power lever aft of the gate on every engine (ControlInputs.reverse), any per-engine position given up. */
+function setReverse(c: ControlInputs, v: number): void {
+  c.reverse = v;
+  clearEngineControl(c, 'reverse');
+}
+
+export interface IdleTaxiOptions {
+  /** ControlInputs.reverse: 0 on the gate, BetaDef.pitchOnlyTravel ground fine, 1 full reverse. */
+  reverse: number;
+  /** Condition lever (ControlInputs.mixture): CUTOFF_BELOW = low / ground idle .. 1 = high / flight idle. */
+  condition: number;
+  /** Brake pedals while rolling (default 0: free). */
+  brakes?: number;
+  /** Longest roll before the speed counts as steady, s (default 150). */
+  seconds?: number;
+}
+
+export interface IdleTaxiResult {
+  /** On the parking brake after 10 s: propeller thrust of all engines, N; engine 0's Np, rpm, Ng, %, and ITT, C (NaN on a piston engine). */
+  staticThrustN: number;
+  staticNp: number;
+  staticNg: number;
+  staticIttC: number;
+  /** Brakes released, centreline held: the steady ground speed along the runway, kt (negative: rolling backwards). */
+  speedKt: number;
+  /** Np at that speed, rpm. */
+  np: number;
+  /** The speed changed less than 0.05 kt over the last 5 s (false: still accelerating when the time ran out). */
+  steady: boolean;
+}
+
+/**
+ * Idle taxi of a turboprop on a level runway (plan 3.2, the lever positions of a type with beta): power lever at
+ * idle with ControlInputs.reverse = `reverse`, condition lever at `condition`. First 10 s on the parking brake (the
+ * static thrust, Np, Ng, ITT), then the brakes off and the centreline held by the type's steering law until the
+ * speed is steady (or `seconds` pass): the steady speed and Np. The rig sits on the field (runwayRig or makeRig).
+ */
+export function idleTaxi(rig: AnyRig, o: IdleTaxiOptions): IdleTaxiResult {
+  resetTo(rig, { onGround: true, heading: RUNWAY_HEADING });
+  const s = rig.fm.state;
+  const c = rig.controls;
+  const steer = steerFor(rig.fm.definition);
+  c.throttle = 0;
+  clearEngineControl(c, 'throttle');
+  c.mixture = o.condition;
+  clearEngineControl(c, 'mixture');
+  setReverse(c, o.reverse);
+  c.parkingBrake = true;
+  c.brakeLeft = c.brakeRight = 0;
+  rig.run(10);
+  const e = s.engines[0];
+  const staticThrustN = s.propellers.reduce((sum, p) => sum + p.thrust, 0);
+  const staticNp = e.propRpm, staticNg = e.ng ?? NaN, staticIttC = e.itt ?? NaN;
+  c.parkingBrake = false;
+  const brakes = o.brakes ?? 0;
+  const history: number[] = [];
+  const window = Math.round(5 / FRAME);
+  let last = alongTrack(s), speed = 0, steady = false;
+  rig.run(o.seconds ?? 150, () => {
+    c.brakeLeft = c.brakeRight = brakes;
+    steer(s, c, centrelineHeading(s));
+    const along = alongTrack(s);
+    speed = (along - last) / FRAME;
+    last = along;
+    history.push(speed);
+    // Steady: at least 20 s rolled and under 0.05 kt of change over the last 5 s.
+    if (history.length > Math.max(window, 20 / FRAME) && Math.abs(speed - history[history.length - 1 - window]) < 0.05 * KT) {
+      steady = true;
+      return true;
+    }
+  });
+  return { staticThrustN, staticNp, staticNg, staticIttC, speedKt: kt(speed), np: s.engines[0].propRpm, steady };
 }
 
 // ------------------------------------------------------------------------------------------------ cost

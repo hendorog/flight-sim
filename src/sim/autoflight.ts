@@ -8,7 +8,9 @@
 //             it is a KAP 140-style HDG + ALT autopilot: it flies the heading bug, holds the altitude
 //             (adjustable), and leaves the throttle to the pilot
 //   approach  track the runway 07 centreline down the 3 degree path at the plan's speed, flare, land,
-//             brake to a stop on the centreline, then set the parking brake
+//             brake to a stop on the centreline, then set the parking brake; a type with beta
+//             (AutoflightProfile.rollout.reverse) also takes the power lever aft of the gate on the roll-out
+//             and back to the gate below the profile's cancel speed
 //   parked    nothing (brakes stay as they are)
 
 import { DEG, FT, KT, clamp, wrapPi } from '../core/math';
@@ -110,6 +112,15 @@ export function centrelineRudder(s: AircraftState, course: number, law: Autoflig
 function setAllThrottles(c: ControlInputs, v: number): void {
   c.throttle = v;
   for (let i = 0; i < c.engines.length; i++) if (c.engines[i].throttle !== undefined) clearEngineControl(c, 'throttle', i);
+}
+
+/**
+ * Every engine's power lever aft of the gate (ControlInputs.reverse) to `v`, any per-engine position given up. Only
+ * for a profile with rollout.reverse (a type with beta): every other type's controls are never touched.
+ */
+function setAllReverse(c: ControlInputs, v: number): void {
+  c.reverse = v;
+  for (let i = 0; i < c.engines.length; i++) if (c.engines[i].reverse !== undefined) clearEngineControl(c, 'reverse', i);
 }
 
 export class Autoflight {
@@ -341,6 +352,7 @@ export class Autoflight {
         if (plan.kind !== 'takeoff') return;
         const t = p.takeoff;
         setAllThrottles(c, t.throttle ?? 1);
+        if (p.rollout.reverse) setAllReverse(c, 0);
         const kias = s.ias / KT;
         // Lift the nose wheel at the rotation speed (C172S: 55 KIAS, POH) and let the aircraft fly itself off: the
         // attitude comes up from 4 deg as the speed builds, to 8 deg by 61 KIAS, so the lift-off is at ~58-60 KIAS
@@ -379,6 +391,12 @@ export class Autoflight {
         if (plan.kind === 'takeoff') {
           setAllThrottles(c, p.climb.throttle ?? 1);
           ap.settings.heading = this.climbOutHeading(s, plan.heading);
+          const fu = p.climb.flapsUp;
+          if (fu) {
+            if (c.flaps > 0 && s.ias / KT > fu.kias) c.flaps = 0;
+            // Clean: accelerate to the clean climb speed gently (0.5 kt/s), a pilot lowering the nose a little.
+            if (c.flaps === 0) ap.settings.airspeed = Math.min(fu.climbKias * KT, ap.settings.airspeed + 0.5 * KT * dt);
+          }
           if (s.altitudeMSL > plan.climbTo - 30) this.enterCruise(plan.heading, plan.climbTo, plan.cruiseKias, s, c);
         }
         break;
@@ -404,6 +422,7 @@ export class Autoflight {
         const f = p.flare;
         const agl = s.altitudeMSL - AIRPORT.elevation - this.restHeight;
         setAllThrottles(c, 0);
+        if (p.rollout.reverse) setAllReverse(c, 0);
         if (Number.isNaN(this.flareStartPitch)) {
           this.flareStartPitch = s.pitch;
           this.flareHeight = Math.max(f.minHeightM, -f.timeS * s.verticalSpeed, agl);
@@ -421,6 +440,8 @@ export class Autoflight {
       case 'rollout': {
         const r = p.rollout;
         setAllThrottles(c, 0);
+        // Beta / reverse once the mains are down, back on the gate below the cancel speed (types with beta).
+        if (r.reverse) setAllReverse(c, s.ias / KT > r.reverse.cancelKias ? r.reverse.lever : 0);
         // Hold the nosewheel off and let it down as the elevator loses authority (not dropped at once).
         c.elevator = clamp((s.ias / KT - r.noseHoldKias[0]) / (r.noseHoldKias[1] - r.noseHoldKias[0]), 0, r.noseHoldMax);
         c.aileron = 0;
@@ -433,6 +454,7 @@ export class Autoflight {
           c.parkingBrake = true;
           c.brakeLeft = c.brakeRight = 0;
           c.rudder = 0;
+          if (r.reverse) setAllReverse(c, 0);
         }
         return;
       }

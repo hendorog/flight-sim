@@ -184,6 +184,22 @@ describe('AudioSystem graph', () => {
     ]);
   });
 
+  it('caws() strikes the chime: a message to the worklet (which a profile without CAWS ignores); nothing before the graph', () => {
+    const idle = new AudioSystem();
+    expect(() => idle.caws('warning')).not.toThrow();
+  });
+
+  it('caws() posts a caws message per call', async () => {
+    const audio = await started(new AudioSystem());
+    const before = synth().posted.length;
+    audio.caws('warning');
+    audio.caws('caution');
+    expect(synth().posted.slice(before)).toEqual([
+      { type: 'caws', level: 'warning' },
+      { type: 'caws', level: 'caution' },
+    ]);
+  });
+
   it('a two-engine profile is sent whole, and its parameter blocks carry both engines', async () => {
     await started(new AudioSystem({ profile: TWIN_AUDIO_TESTBED }));
     expect(synth().posted[0]).toEqual({ type: 'config', profile: TWIN_AUDIO_TESTBED });

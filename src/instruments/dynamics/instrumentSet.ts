@@ -6,6 +6,7 @@ import { C172S_INSTRUMENT_SYSTEMS } from '../../aircraft/c172s/panel';
 import { RAD } from '../../core/math';
 import { engineControl, type AircraftState, type ControlInputs, type EngineState, type WeatherSettings } from '../../core/types';
 import type { InstrumentSystemsDef, LampInputs } from '../panelDef';
+import { CabinDisplay } from './cabinDisplay';
 import { batteryCurrentAmps, ElectricNeedle, Tachometer, type Annunciators } from './engineSystems';
 import { lagStep } from './filters';
 import { SUCTION_RATED_INHG } from './gyro';
@@ -119,7 +120,18 @@ export interface InstrumentReadings {
   busVolts: number;
   /** Output of each alternator, A (the load meters). */
   alternatorAmps: number[];
+  /**
+   * Fuel used since the last reset (a new scenario, a teleport, a resume) or refuelling, US gal, from the tank senders: the
+   * gauged quantity when it was last re-based less the quantity now. Any rise of the total (a refuel) re-bases it to 0.
+   */
+  fuelUsedGal: number;
+  /** Cabin altitude, ft, and differential, psi, of InstrumentSystemsDef.cabin (0 without one). */
+  cabinAltFt: number;
+  cabinDiffPsi: number;
 }
+
+/** A rise of the gauged total above this, US gal, is a refuel (FUEL USED re-bases). */
+const REFUEL_GAL = 0.5;
 
 export interface InstrumentSetOptions {
   /** Start with the gyros at speed (engine running). Default true. */
@@ -216,9 +228,18 @@ export class InstrumentSet {
   private readonly engines: EngineIndicators[];
   private readonly gear: GearReadings = { nose: false, left: false, right: false, inTransit: false };
   private amps = 0;
+  /** FUEL USED: the gauged total it is counted from, and the total of the last step (NaN: re-base on the next step). */
+  private fuelBaseGal = NaN;
+  private fuelLastGal = NaN;
+  /** The cabin altitude display, when the systems definition has one. */
+  private readonly cabin: CabinDisplay | null;
   private lampInputs: LampInputs | null = null;
   /** `readings.annunciators` by lamp id (the C172S lamp ids are its members). */
   private readonly lamps: Record<string, boolean>;
+  /** Chime lenses (lamps with `chime`): lit on the step before; null until the first step after a reset (no chime then). */
+  private chimeWas: boolean[] | null = null;
+  /** The strongest chime struck since takeChime() was last called. */
+  private chime: 'warning' | 'caution' | null = null;
 
   readonly readings: InstrumentReadings;
 
@@ -233,6 +254,7 @@ export class InstrumentSet {
     this.tach = this.engines[0].tach;
     this.fuel = sys.fuel.tanks.map(() => new ElectricNeedle(2.5, 0));
     this.fuelGal = sys.fuel.tanks.map(() => 0);
+    this.cabin = sys.cabin ? new CabinDisplay(sys.cabin) : null;
     // Spun-up gyros start with the suction of a cruise rpm.
     this.suction = spun && sys.vacuum ? sys.vacuum.suction(2300) : 0;
     const annunciators: Annunciators & Record<string, boolean> = { lowFuelLeft: false, lowFuelRight: false, oilPress: false, lowVolts: false, vacuum: false };
@@ -294,6 +316,9 @@ export class InstrumentSet {
       carbHeat: 0,
       busVolts: 0,
       alternatorAmps: [],
+      fuelUsedGal: 0,
+      cabinAltFt: 0,
+      cabinDiffPsi: 0,
     };
     this.heading.bug = (70 * Math.PI) / 180;
   }
@@ -303,6 +328,9 @@ export class InstrumentSet {
    */
   reset(state: AircraftState): void {
     this.compass.reset(state);
+    // Lenses already lit at a spawn, reset or teleport do not chime.
+    this.chimeWas = null;
+    this.chime = null;
     let spun = false;
     for (let i = 0; i < state.engines.length; i++) spun ||= state.engines[i].running;
     const powered = state.electrical.busVoltage > this.systems.busDeadVolts;
@@ -315,6 +343,35 @@ export class InstrumentSet {
     this.heading.align(state.heading);
     this.heading.bug = state.heading;
     this.suction = this.pumpSuction(state, true);
+    this.fuelBaseGal = this.fuelLastGal = NaN;
+    this.readings.fuelUsedGal = 0;
+    // The cabin is where the controller holds it at this altitude (a resume or a teleport in cruise: no climb from 0).
+    this.cabin?.reset(pressureAltitudeFt(state.staticPressure));
+  }
+
+  /**
+   * The caution and warning chime: a lens with `chime` that has just lit (not with the lamp test held, and not on the
+   * first step after a reset, when the lenses already lit are the state the aircraft was in).
+   */
+  private stepChimes(sys: InstrumentSystemsDef, c: ControlInputs): void {
+    const lamps = sys.lamps;
+    const first = this.chimeWas === null;
+    const was = (this.chimeWas ??= lamps.map(() => false));
+    const test = c.annunciatorTest ?? false;
+    for (let i = 0; i < lamps.length; i++) {
+      const level = lamps[i].chime;
+      if (level === undefined) continue;
+      const lit = this.lamps[lamps[i].id];
+      if (lit && !was[i] && !first && !test && this.chime !== 'warning') this.chime = level;
+      was[i] = lit;
+    }
+  }
+
+  /** The chime struck since the last call ('warning' over 'caution'), then cleared. */
+  takeChime(): 'warning' | 'caution' | null {
+    const level = this.chime;
+    this.chime = null;
+    return level;
   }
 
   /**
@@ -368,6 +425,11 @@ export class InstrumentSet {
       this.fuelGal[i] = gal;
       r.fuelGal[i] = this.fuel[i].step(dt, gal, powered);
     }
+    let totalGal = 0;
+    for (let i = 0; i < this.fuelGal.length; i++) totalGal += this.fuelGal[i];
+    if (!(totalGal <= this.fuelLastGal + REFUEL_GAL) || !(this.fuelBaseGal >= totalGal)) this.fuelBaseGal = totalGal;
+    this.fuelLastGal = totalGal;
+    r.fuelUsedGal = this.fuelBaseGal - totalGal;
     // The ammeter shows the battery current (+ = charging). Older state producers without batteryAmps
     // fall back to an estimate from the alternator output and the switched loads.
     const batteryAmps = Number.isFinite(s.electrical.batteryAmps)
@@ -436,6 +498,7 @@ export class InstrumentSet {
     r.carbAirTempC = lagStep(r.carbAirTempC, powered ? (sys.carbAirTempC?.(s, c) ?? 0) : -40, dt, 1.5);
     if (sys.hourmeterRunning ? sys.hourmeterRunning(s, c) : s.engine.running) r.engineHours += dt / 3600;
     for (let i = 0; i < sys.lamps.length; i++) this.lamps[sys.lamps[i].id] = sys.lamps[i].lit(li);
+    this.stepChimes(sys, c);
     r.oatC = s.oat - 273.15;
     r.clockSeconds = w.timeOfDay * 3600;
     r.flapsDeg = s.surfaces.flaps * RAD;
@@ -443,6 +506,11 @@ export class InstrumentSet {
     ils07(s.position, r.ils);
     gpsToAirport(s.position, s.track, s.groundSpeed, r.gps);
     r.pressureAltitudeFt = pressureAltitudeFt(s.staticPressure);
+    if (this.cabin) {
+      this.cabin.step(dt, r.pressureAltitudeFt);
+      r.cabinAltFt = this.cabin.cabinAltFt;
+      r.cabinDiffPsi = this.cabin.diffPsi(r.pressureAltitudeFt);
+    }
     return r;
   }
 }
