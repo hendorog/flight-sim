@@ -121,8 +121,8 @@ export const MD500_AUDIO: AudioProfile = {
   cabin: {
     routes: [
       { stem: STEM.engine, lowpassHz: 4000, gain: 0.6 },
-      { stem: STEM.prop, lowpassHz: 900, gain: 1.0 },
-      { stem: STEM.airframe, lowpassHz: 2200, gain: 0.35 },
+      { stem: STEM.prop, lowpassHz: 900, gain: 0.85 },
+      { stem: STEM.airframe, lowpassHz: 2200, gain: 0.25 },
       { stem: STEM.cabin, lowpassHz: 0, gain: 1.0 },
     ],
     bus: [

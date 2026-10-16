@@ -120,8 +120,10 @@ describe('rotors', () => {
 });
 
 describe('MD 500E mix', () => {
-  it('hover: in the cockpit window of the C172S (-17 .. -9 dBFS), nothing clips; a hard pedal turn neither', () => {
-    for (const [name, params] of [['hover', HOVER], ['pedal', { ...HOVER, ...tail(2) }]] as const) {
+  it('hover, a hard pedal turn and a fast cruise: in the cockpit window of the C172S (-17 .. -9 dBFS), nothing clips', () => {
+    // Cruise at 135 KTAS (69 m/s: wind level (69 / 50)^2 = 1.9), N1 95 %, the tail rotor unloaded by the fin.
+    const cruise = { ...HOVER, rpm: n1(0.95), load: 0.95, tipMach: 0.78, propLoad: 1.1, ...tail(0.5), tailTipMach: 0.66, windLevel: 1.9, windFreq: 250 + 69 * 9, turbulence: 0.1 };
+    for (const [name, params] of [['hover', HOVER], ['pedal', { ...HOVER, ...tail(2) }], ['cruise', cruise]] as const) {
       const all = new SynthHost(MD500_AUDIO).set(params).render(4);
       const inside = interiorMix(all, MD500_AUDIO);
       const level = dbfs(rms(inside, SR));
