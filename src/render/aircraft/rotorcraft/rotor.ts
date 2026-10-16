@@ -306,3 +306,20 @@ export class TeeteringRotor {
     this.hardwareMat.dispose(); this.blurMat.dispose(); this.texture.dispose();
   }
 }
+
+/**
+ * Change the normal thickness of a shared NACA 0012 blade grid to `thickness` (t/c) in each UNTWISTED section,
+ * keeping the published chord, twist, radial stations, paint and caps. `rotation` is the rotor's local sense
+ * (the grid mirrors the chordwise axis for -1). Used by aircraft heads whose section differs from 0012
+ * (MD 500E: NACA 0015, F tag). Call before any bend/coning pose is applied to the geometry.
+ */
+export function setRotorBladeThickness(g: THREE.BufferGeometry, spec: { root: number; radius: number; twist: number }, thickness: number, rotation: number): void {
+  const p = g.getAttribute('position');
+  for (let i = 0; i < p.count; i++) {
+    const beta = spec.twist * ((p.getX(i) - spec.root) / (spec.radius - spec.root) - 0.75);
+    const y = p.getY(i), z = p.getZ(i) * rotation, s = Math.sin(beta), c = Math.cos(beta);
+    const along = y * s - z * c, thick = (y * c + z * s) * thickness / 0.12;
+    p.setY(i, along * s + thick * c); p.setZ(i, (-along * c + thick * s) * rotation);
+  }
+  p.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere();
+}
