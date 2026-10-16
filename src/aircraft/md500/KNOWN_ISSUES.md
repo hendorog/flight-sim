@@ -107,3 +107,38 @@ front contacts sitting 0.087 m lower in body axes (`skids.frontZ`), which leaves
 below the RFM's WL −15.2 line.
 Evidence: [dimensions.ts](dimensions.ts) `SKID_FRONT_Z`; the ground-attitude test in md500Systems.
 Close with: 500E damper charge, stroke and the skid-tube geometry.
+
+## Exterior and head drawing — **estimate**
+
+The head hardware proportions (strap pack, pitch housings, dampers, swashplate) are photographic ESTIMATES: no
+369D/E hub drawing was found, and the strap flexure is drawn as fixed plates with discrete hinges at 0.140 m. The
+blade droop at rest uses the provisional S269 coning data (`MD500_BLADE_CONING`). The shared occupant figure's head sits
+0.11 m aft of `PILOT_EYE` (it leans on the seat back). The paint is generic (white, a blue / red stripe, orange blade
+tips), not a factory scheme. The stabiliser is drawn leading edge down 6.17 deg to the waterline while the aerodynamic
+model reads it leading edge up with an inverted cambered section (T2, the only reading that flies the cruise attitude
+row; docs/md500-flight-model.md): the drawing and the aerodynamics disagree on the sign.
+Evidence: [exterior.ts](exterior.ts), [docs/md500-exterior.md](../../../docs/md500-exterior.md).
+Close with: a 369E head drawing and the stabiliser's rigging from a primary source.
+
+## Panel — **simplified**
+
+The painted dots (torque 74.3 psi blue, TOT 738 blue / 843 red, the 35 lb fuel dot) are 1-2 deg arcs (no dot
+primitive). Dial spacing is artwork from RFM Fig 2-5 and a photograph; the ASI map (0-160 kt over 330 deg) is an
+ESTIMATE and the inner mph ring is not drawn. The START button is on the collective head in the real aircraft; the
+console twin comes with the shared ignition group, which also draws an IGNITION switch (continuous ignition) the 500E
+does not have. The ammeter reads generator output (0-150 A), so the RFM's start-abort cue (battery discharge) cannot be
+seen. The tach generators are self-powered (ESTIMATE). Circuit breakers are painted (no ENG OUT breaker caution), the
+attitude indicator and DG are an optional electric fit (AGENT), and there is no RE-IGN TEST switch. The checklists have
+no N2-beep, grip or torque-psi signal, so the grip items are judged from N1 only.
+Evidence: [docs/md500-panel.md](../../../docs/md500-panel.md) "Compromises", [panel.ts](panel.ts).
+Close with: a dot primitive, a start-button ignition kind (panelDef.ts), checklist signals for the grip and torque.
+
+## Sound — **estimate**
+
+The first turbine helicopter voice: the whine orders, roar, transmission mesh (1.36 kHz at 492 rpm), commutator bars
+(24), igniter rate (4/s), ENGINE OUT horn pitch (700 Hz), tail-rotor hover thrust (880 N, DERIVED from an ESTIMATE of
+hover power) and slap are ESTIMATES; there is no recording. Not voiced: main-rotor blade-vortex slap in descents, the N2
+power-turbine whine and the freewheel, the igniters in auto-reignition and on the RE-IGN test. Tail-rotor rpm is an
+ESTIMATE (2933 rpm at ratio 5.96, against 6.447 on the OH-6A).
+Evidence: [audio.ts](audio.ts) header.
+Close with: a 500E cockpit and exterior recording for a spectral calibration.

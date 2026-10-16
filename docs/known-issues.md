@@ -10,10 +10,12 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Diamond DA20-C1 | [7 entries](../src/aircraft/da20/KNOWN_ISSUES.md) |
 | Piper PA-34 Seneca I | [8 entries](../src/aircraft/pa34/KNOWN_ISSUES.md) |
 | Diamond DA42 NG | [1 entry](../src/aircraft/da42/KNOWN_ISSUES.md) |
-| Cessna 208 Caravan 675 | [6 entries](../src/aircraft/c208/KNOWN_ISSUES.md) |
+| Cessna 208 Caravan 675 | [8 entries](../src/aircraft/c208/KNOWN_ISSUES.md) |
+| Pilatus PC-12/47 (not yet available) | [20 entries](../src/aircraft/pc12/KNOWN_ISSUES.md) |
 | Robinson R22 Beta II | [7 entries](../src/aircraft/r22/KNOWN_ISSUES.md) |
 | Robinson R44 Raven II | [11 entries](../src/aircraft/r44/KNOWN_ISSUES.md) |
 | Schweizer 269C-1 / 300CB | [11 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
+| MD Helicopters MD 500E (not yet available) | [14 entries](../src/aircraft/md500/KNOWN_ISSUES.md) |
 
 Kinds: **defect** = demonstrated wrong behavior; **unvalidated** = evidence or acceptance still missing;
 **estimate** = a parameter without a measured/published value; **missing feature** = behavior not implemented.
@@ -33,6 +35,23 @@ Close with: a lighting/dimmer presentation for the flat canvas and day/night com
 Decorative radio controls and 3D parts without panel hotspots are not operable in the fixed panel.
 Evidence: [README fixed-panel limitations](../README.md#controls); existing keyboard actions remain available where defined.
 Close with: hotspot/action definitions for the missing controls and pointer/keyboard parity checks.
+
+### Turboprop full power in the autothrottle and the instructor — **defect (latent)**
+
+The autopilot's autothrottle and the instructor's recovery (`c.throttle = 1`, src/training/copilot/instructorPilot.ts)
+command the full power lever. On the C208 that is about 2270 ft lb against the 1865 limit (its take-off lever is 0.885);
+the PC-12's torque limiter caps it at 44.3 psi. Latent: neither turboprop is in the syllabus, and the approach
+autothrottle rarely goes near full.
+Evidence: [C208 targets](../tests/conformance/targets/c208.ts) `C208_TAKEOFF_LIMITS`; T1b hand-over (integration).
+Close with: an optional maximum autothrottle lever in `AutopilotGains`, used by the instructor's recovery too.
+
+### Reverse held to a stop with full brakes — **defect**
+
+On a turboprop with reverse (C208; the same on the turbine-core test-bed), full reverse held to a standstill with full
+brakes unloads the nose and one main and collapses the other main leg (55-71 kN). Out of reverse to ground fine by 40
+KIAS, as the handbooks say, the roll ends normally. Not reproduced on the PC-12's conformance rolls (cancelled at 40 KIAS).
+Evidence: [C208 known issues](../src/aircraft/c208/KNOWN_ISSUES.md), [turbine model](turbine-model.md) hand-over 3.
+Close with: the brake and tyre model with aft thrust near zero speed (src/physics/gear).
 
 ### Human helicopter input in wind — **unvalidated**
 

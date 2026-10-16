@@ -173,3 +173,26 @@ winglet cant (62 deg). A bright lit wedge on the inside of the left A-post in th
 landing light on the post lining) was not investigated.
 Evidence: [visual.ts](visual.ts), [docs/pc12-exterior.md](../../../docs/pc12-exterior.md).
 Close with: a /47 windscreen and pedestal drawing; the commuter cabin as a variant.
+
+## Panel — **simplified**
+
+GEN 1 and GEN 2 rockers are tied (one `alternator` control) and the two fuel pumps are one rocker. The pusher test,
+MOR, EIS FUEL RESET / MENU / TEST buttons, the ice-protection switches, ECS and cabin controls are painted or absent.
+The standby instruments are full size, and the RMI places hold NAV indicators (no RMI / HSI renderer); no turn
+coordinator is fitted (the attitude indicators carry inclinometers). The EIS is drawn as nine round-dial windows; the
+/47's EIS is a monochrome LCD whose window list is not sourced. The HYDR lens shows the emergency gear selection (there
+is no hydraulic model). Cabin altitude and differential are a display function of pressure altitude (no
+pressurisation).
+Evidence: [docs/pc12-panel.md](../../../docs/pc12-panel.md) "Not modelled / KNOWN ISSUES", [panel.ts](panel.ts).
+Close with: GEN 2 and the second pump as their own controls; an RMI / HSI; the /47 EIS window list.
+
+## Sound — **estimate**
+
+The PT6A-67B whine orders and strengths, the roar, the gearbox mesh, the igniter rate (2.5/s), the reverse growl's
+strength, the shaker's rate (22 Hz), the clacker's rate (8/s), the CAWS chime's pitch (1047 Hz), the gear horn and pump
+pitch and the cabin mix are ESTIMATES: there is no PC-12 recording or spectral calibration. The stall warning is the
+stick shaker alone (no horn; the 47E's voice "Stall" is not part of the /47). The beta range above flat pitch has no
+sound of its own beyond the propeller voice: the growl starts below 0 deg blade angle. The CAWS chimes are struck on the
+edge of a new red (warning) or amber (caution) legend (integration: the panel emits the 'caws' event).
+Evidence: [audio.ts](audio.ts) header.
+Close with: a PC-12 cockpit and exterior recording.
