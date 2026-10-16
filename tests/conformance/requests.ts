@@ -8,7 +8,4 @@ export const OPEN_REQUESTS: readonly string[] = [
   // thrust at idle is as high as on the gate (it is partly stalled there); the real lever slows the taxi from the
   // first part of its travel. Needs a lever-to-blade-angle schedule in BetaDef (turbine core).
   'C208-beta-cam',
-  // The PC-12's items that need the turbine core's beta, reverse, condition-lever feather, latching starter,
-  // torque limiter and pusher conformance plumbing (package T1a). Removed by the integrator once T1a and P1 are merged.
-  'PC12-beta',
 ];

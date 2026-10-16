@@ -33,16 +33,16 @@ flareM 7 crashes the crosswind circuit (2.7 m/s at 88 KIAS), flareM 9 stops 8.8 
 Evidence: [conformance test](../../../tests/conformance/pc12.test.ts) (flown tier), [targets](../../../tests/conformance/targets/pc12.ts).
 Close with: the keyboard pilot's roll-out taking the PCL into beta and the condition lever to GROUND IDLE.
 
-## Landing roll in the generic block — **open (plumbing)**
+## Landing roll in the generic block — **closed (integration)**
 
-The generic landing roll (tests/fdm/measure.ts `landingRoll`) cannot move the condition lever: it rolls at FLIGHT IDLE
-(66 % Ng: about 5 kN at a standstill), so it measures 581 m on the gate, 373 m in full reverse, ratio 0.64 (brakes
-0.4, maxGross) against the chart's 389 m and 0.72. The two items are held on `PC12-beta`. The chart's own technique (Fig 5-2-52: "average braking, ground
-idle after touch down"; Fig 5-2-54: full reverse) is judged in pc12.test.ts at the chart's weight (MLW 4500 kg):
-385 m on the gate with brakes 0.4 (the AGENT reading of "average braking"; 0.5 gives 322 m, outside 389 +- 30), 290 m in
-full reverse, ratio 0.75. Before the review the roll was flown at 4740 kg, where brakes 0.5 happened to give 384 m.
-Evidence: [targets](../../../tests/conformance/targets/pc12.ts) `landing`, [pc12.test.ts](../../../tests/conformance/pc12.test.ts).
-Close with: `LandingOptions.rollCondition` (requested of the turbine-core plumbing) and the items judged unblocked.
+The generic landing roll (tests/fdm/measure.ts `landingRoll`) now moves the condition lever to GROUND IDLE at
+touchdown (`LandingOptions.rollCondition`) and flies at the chart's weight (`landing.atMaxLanding`, MLW 4500 kg), so
+the conformance block flies the chart's technique (Fig 5-2-52: "average braking, ground idle after touch down";
+Fig 5-2-54: full reverse). Measured at integration: 385 m on the gate with brakes 0.4 (chart-read 389 +- 30 m),
+291 m in full reverse with the PCL back to the gate below 40 KIAS (DERIVED 280 +- 35), ratio 0.75 (DERIVED 0.72 +- 0.08).
+Brakes 0.4 is the AGENT reading of "average braking" (0.5 gives 322 m). At FLIGHT IDLE on the roll (the old generic
+roll at maxGross) it was 581 m: the 66 % Ng idle pulls about 5 kN at a standstill.
+Evidence: [targets](../../../tests/conformance/targets/pc12.ts) `landing`, `node scripts/aircraft-report.mjs pc12 --flown --block landing`.
 
 ## Gear horn above 130 KIAS — **closed**
 

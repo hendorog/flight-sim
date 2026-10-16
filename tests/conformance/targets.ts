@@ -111,6 +111,8 @@ export interface IdleTaxiCase {
   /** Ng, %, and ITT, C, on the parking brake. */
   idleNgPct?: Limit;
   idleIttC?: Limit;
+  /** Longest unbraked roll before the speed counts as steady, s (measure.ts idleTaxi `seconds`; default 150). */
+  seconds?: number;
 }
 
 export interface ConformanceTargets {
@@ -147,6 +149,10 @@ export interface ConformanceTargets {
     reverse?: number;
     /** Both rolls: the lever forward to `to` below `kias` (LandingOptions.rollReverseCancel); absent: held to the stop. */
     reverseCancel?: { kias: number; to: number };
+    /** Both rolls: the condition lever after touchdown (LandingOptions.rollCondition, PC-12 GROUND IDLE); absent: unchanged. */
+    rollCondition?: number;
+    /** Both rolls at the maximum landing mass (measure.ts maxLandingLoading) instead of maxGross (a handbook chart drawn at MLW). */
+    atMaxLanding?: boolean;
     /** ratio: that roll over the first one (PC-12: 0.72, DERIVED from the 47E example); absent: not judged. */
     withReverse?: { reverse: number; groundRollM: Band; ratio?: Limit } };
   glide: {

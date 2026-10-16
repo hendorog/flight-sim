@@ -60,17 +60,19 @@ export const PC12_TARGETS: ConformanceTargets = {
   // CHART-READ +/-100 ft. Its associated conditions: "average braking technique, ground idle after touch down" (the PCL
   // at IDLE on the gate, the condition lever to GROUND IDLE): brake 0.4 of full (AGENT reading of "average", set at
   // MLW: 0.5 rolled 322 m, 0.4 385 m, 0.35 428 m; the model's brakes may be strong rather than the pilot light). Vref 85
-  // KIAS. The generic roll (measure.ts landingRoll) cannot move the condition lever: on the roll it stays at FLIGHT
-  // IDLE, whose 66 % Ng pulls about 5 kN at a standstill on the 6 deg stop (460 m, ratio 0.59). Those two items are held
-  // on the beta plumbing ('PC12-beta': LandingOptions.rollCondition requested); pc12.test.ts judges the chart's
-  // technique (ground idle after touchdown) against the same bands.
+  // KIAS. The generic roll (measure.ts landingRoll, at MLW) moves the condition lever to GROUND IDLE at touchdown
+  // (rollCondition; at FLIGHT IDLE its 66 % Ng pulls about 5 kN at a standstill on the stop); pc12.test.ts flies the
+  // same technique at the chart's weight (MLW) against the same bands.
   landing: {
     flapDeg: 40,
     approachKt: 86,
     touchdownPitchDeg: 5,
     brake: 0.4,
-    groundRollM: band(389, 30, '47E-PROXY Fig 5-2-52 CHART-READ: 1275 ft +/-100 at SL ISA, 9921 lb, average braking, ground idle after touchdown', 'PC12-beta'),
+    groundRollM: band(389, 30, '47E-PROXY Fig 5-2-52 CHART-READ: 1275 ft +/-100 at SL ISA, 9921 lb, average braking, ground idle after touchdown'),
     reverse: 0,
+    rollCondition: PC12_GROUND_IDLE,
+    // The chart is drawn at MLW 4500 kg (9921 lb).
+    atMaxLanding: true,
     // 47E-PROXY 4.16: the PCL back to IDLE before the aircraft stops.
     reverseCancel: { kias: 40, to: 0 },
     // Fig 5-2-54 ("full reverse thrust after touch down", average braking): the example's 1680 ft over 50 ft against
@@ -78,8 +80,8 @@ export const PC12_TARGETS: ConformanceTargets = {
     // 0.72 (DERIVED).
     withReverse: {
       reverse: 1,
-      groundRollM: band(280, 35, 'DERIVED: 0.72 x the chart-read 389 m (47E-PROXY Fig 5-2-52/54)', 'PC12-beta'),
-      ratio: band(0.72, 0.08, 'DERIVED: 47E-PROXY example 1680 / 1990 ft over 50 ft -> 810 / 1120 ft on the ground', 'PC12-beta'),
+      groundRollM: band(280, 35, 'DERIVED: 0.72 x the chart-read 389 m (47E-PROXY Fig 5-2-52/54)'),
+      ratio: band(0.72, 0.08, 'DERIVED: 47E-PROXY example 1680 / 1990 ft over 50 ft -> 810 / 1120 ft on the ground'),
     },
   },
   glide: {
@@ -147,6 +149,8 @@ export const PC12_TARGETS: ConformanceTargets = {
         reverse: GROUND_FINE,
         condition: PC12_GROUND_IDLE,
         staticThrustN: range(-500, 500, 'AGENT (plan 5.7 (b)): ground fine is about zero thrust'),
+        // The PC-12 at maxGross settles in 200-300 s.
+        seconds: 300,
         idleTaxiKt: below(5, 'AGENT (plan 5.7 (b))'),
       },
     ],

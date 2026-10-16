@@ -26,6 +26,7 @@ import {
   idleTaxi,
   impossibleClimb,
   landingRoll,
+  maxLandingLoading,
   magnetoDrop,
   maxLevelSpeed,
   minTime,
@@ -449,17 +450,18 @@ function stallRecoveryBlock(t: ConformanceTargets, def: DefinitionOf): PlanBlock
 export function groundRollBlock(t: Pick<ConformanceTargets, 'takeoff' | 'landing'>, def: DefinitionOf): PlanBlock {
   const to = t.takeoff, la = t.landing;
   const r = once(() => takeoffRoll(runwayRig(def(), 'maxGross'), { flapLever: flapLever(def(), to.flapDeg), rotateKias: to.rotateKias, pitch: to.pitchDeg * DEG, staticRunUp: to.staticRunUp, controls: to.controls, throttle: to.throttle }));
-  const landing = (rollReverse: number | undefined) => landingRoll(runwayRig(def(), 'maxGross'), {
+  const landing = (rollReverse: number | undefined) => landingRoll(runwayRig(def(), la.atMaxLanding ? maxLandingLoading(def()) : 'maxGross'), {
     approachKt: la.approachKt, flapLever: flapLever(def(), la.flapDeg), touchdownPitch: la.touchdownPitchDeg * DEG, brake: la.brake,
     ...(rollReverse !== undefined ? { rollReverse } : {}),
     ...(rollReverse !== undefined && la.reverseCancel ? { rollReverseCancel: la.reverseCancel } : {}),
+    ...(la.rollCondition !== undefined ? { rollCondition: la.rollCondition } : {}),
   });
   const l = once(() => landing(la.reverse));
   const lever = (r: number | undefined) => (r === undefined ? '' : `, power lever ${r === 0 ? 'on the gate' : `aft ${r}`}`);
   const items: PlanItem[] = [
     value(`take-off ground roll, flaps ${to.flapDeg}, rotate ${to.rotateKias} KIAS`, () => r().roll, to.groundRollM, 'm'),
     flag('take-off: no crash, climbing', () => !r().crashed && r().climbing),
-    value(`landing ground roll, flaps ${la.flapDeg}, ${la.brake === undefined ? 'maximum braking' : `brakes ${la.brake}`}${lever(la.reverse)}`, () => l().roll, la.groundRollM, 'm'),
+    value(`landing ground roll${la.atMaxLanding ? ' at MLW' : ''}, flaps ${la.flapDeg}, ${la.brake === undefined ? 'maximum braking' : `brakes ${la.brake}`}${la.rollCondition !== undefined ? `, condition ${la.rollCondition} after touchdown` : ''}${lever(la.reverse)}`, () => l().roll, la.groundRollM, 'm'),
     flag('landing: no crash', () => !l().crashed),
   ];
   const w = la.withReverse;
@@ -481,7 +483,7 @@ export function groundRollBlock(t: Pick<ConformanceTargets, 'takeoff' | 'landing
 export function idleTaxiBlock(cases: readonly IdleTaxiCase[], def: DefinitionOf): PlanBlock {
   const items: PlanItem[] = [];
   for (const k of cases) {
-    const r = once(() => idleTaxi(rigOf(def)('maxGross'), { reverse: k.reverse, condition: k.condition }));
+    const r = once(() => idleTaxi(rigOf(def)('maxGross'), { reverse: k.reverse, condition: k.condition, ...(k.seconds !== undefined ? { seconds: k.seconds } : {}) }));
     const n = `idle taxi, ${k.label} (reverse ${k.reverse}, condition ${k.condition})`;
     if (k.staticThrustN) items.push(value(`${n}: static thrust on the parking brake`, () => r().staticThrustN, k.staticThrustN, 'N'));
     if (k.idleNp) items.push(value(`${n}: Np on the parking brake`, () => r().staticNp, k.idleNp, 'rpm'));

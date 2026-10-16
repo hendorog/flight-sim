@@ -27,6 +27,7 @@ import {
   type TrimResult,
   type TrimSpec,
 } from '../../src/physics';
+import type { LoadingRequest } from '../../src/physics/interfaces';
 import { ELEVATION, FRAME, at, calmWeather, flatEnvironment, fpm, kt, makeRig, resetTo, type Rig } from './helpers';
 
 /** A rig of any type. */
@@ -778,9 +779,16 @@ export interface TakeoffOptions {
 }
 
 /** The rig of a ground-roll measurement: sea-level runway, calm or with a steady wind. */
-export function runwayRig(def: AircraftDefinition | undefined, loading: 'forward' | 'typical' | 'aft' | 'maxGross', windKt = 0, windFromDeg = 0): AnyRig {
+export function runwayRig(def: AircraftDefinition | undefined, loading: 'forward' | 'typical' | 'aft' | 'maxGross' | LoadingRequest, windKt = 0, windFromDeg = 0): AnyRig {
   const env = flatEnvironment(calmWeather({ windSpeedKt: windKt, windDirectionDeg: windFromDeg }), 0);
+  if (!def && typeof loading !== 'string') throw new Error('runwayRig: a LoadingRequest needs a definition');
   return def ? makeRig({ def, loading, env }) : makeRig({ env });
+}
+
+/** The maxGross loading less the payload that brings the aircraft down to its maximum landing mass. */
+export function maxLandingLoading(def: AircraftDefinition): LoadingRequest {
+  const mg = def.mass.loadings.maxGross;
+  return { payload: mg.payload - (def.mass.maxTakeoff - def.mass.maxLanding), payloadPosition: mg.payloadPosition };
 }
 
 /** Ground roll from brake release to lift-off, rotating to `pitch` at `rotateKias` (ground.test.ts takeoffRoll). */
@@ -860,6 +868,11 @@ export interface LandingOptions {
    */
   rollReverseCancel?: { kias: number; to: number };
   /**
+   * Condition lever (ControlInputs.mixture, every engine) once the mains are down: a turboprop's GROUND IDLE after
+   * touchdown (PC-12 47E-PROXY Fig 5-2-52 "ground idle after touch down"). Absent: left where the approach had it.
+   */
+  rollCondition?: number;
+  /**
    * Brake pedal on the roll, 0..1; absent: 1 (full). A handbook whose "maximum braking" chart is flown well below
    * the tyres' limit (Piper, Diamond) is matched by the braking it implies, not by weaker brakes (DECISIONS-D2).
    */
@@ -914,6 +927,10 @@ export function landingRoll(rig: AnyRig, o: LandingOptions): LandingRun {
       // Lower the nose wheel, flaps up, then heavy braking about a second after the mains touch.
       c.throttle = 0;
       // Power lever aft of the gate once the mains are down (ground fine / reverse), held to the stop.
+      if (o.rollCondition !== undefined) {
+        c.mixture = o.rollCondition;
+        clearEngineControl(c, 'mixture');
+      }
       if (o.rollReverse !== undefined) {
         const cancel = o.rollReverseCancel;
         setReverse(c, cancel && kt(s.ias) < cancel.kias ? Math.min(o.rollReverse, cancel.to) : o.rollReverse);
