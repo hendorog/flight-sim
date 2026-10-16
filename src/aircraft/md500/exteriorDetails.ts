@@ -161,6 +161,7 @@ export function buildMD500Exterior(def: AirframeVisualDef, m: MD500Materials, sk
       add(m.dark, box([p[0], p[1] - side * 0.006, p[2]], [0.11, 0.008, 0.03], 0.004));
     }
     // Window frames: dark rubber surrounds on the door windows and the windshield aft edge (the A-post).
+    // Surrounds for the door windows only: indices 3+ of glazing.windows (0 windshield, 1 chin, 2 roof glass).
     for (const w of def.glazing.windows.slice(3)) add(m.frame, pathTube(skinPath(skin, side, roundedLoop(w.pts, w.r), 0.003, 3), 0.011, 160));
     const aPost: [number, number][] = [[sta(44.9), wl(10)], [sta(44.0), wl(29.8)], [sta(49.5), wl(47)], [sta(54.4), wl(61.9)], [sta(61), wl(64.4)]];
     add(m.frame, pathTube(skinPath(skin, side, aPost, 0.003, 10), 0.018, 80));
