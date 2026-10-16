@@ -52,7 +52,8 @@ const percent = (v: number): string => `${Math.round(v * 100)}%`;
 /** The power lever as its quadrant is lettered: aft of the gate BETA (blades only, Ng at idle), then REVERSE. */
 function powerLabel(c: ControlInputs): string {
   const r = c.reverse ?? 0;
-  if (r > 0) return r <= C208_BETA.pitchOnlyTravel + 1e-6 ? 'BETA' : 'REV';
+  // A hair past ground fine (the cam has barely moved Ng) still reads BETA.
+  if (r > 0) return r <= C208_BETA.pitchOnlyTravel + 0.02 ? 'BETA' : 'REV';
   return c.throttle <= POWER_IDLE_MAX ? 'IDLE' : percent(c.throttle);
 }
 

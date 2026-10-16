@@ -18,7 +18,7 @@ import { createEventBus, type SimContext } from '../../src/core/context';
 import { clamp, DEG, FT, KT, RAD, wrapPi } from '../../src/core/math';
 import { defaultWeather, type AircraftState, type ControlInputs, type WeatherSettings } from '../../src/core/types';
 import { AIRPORT, runwayCoords } from '../../src/core/world';
-import { InputSystem } from '../../src/input/InputSystem';
+import { InputSystem, REVERSE_RATE } from '../../src/input/InputSystem';
 import type { InputProfile } from '../../src/input/profile';
 import { keyAuthority, keyRate, type KeyAxisTuning } from '../../src/input/virtualYoke';
 import { SimPhysics, type SimPhysicsOptions } from '../../src/sim/SimPhysics';
@@ -616,7 +616,9 @@ export function createCircuitPilot(
           // Beta: the power lever over the gate (a fresh press with the lever at idle) and held to ground fine.
           const rr = T.rolloutReverse;
           if (rr && kias < rr.belowKias && c.throttle <= 0) {
-            if ((c.reverse ?? 0) < rr.lever) keys.reverse.press(t, DECIDE + 0.02);
+            // Held for as long as the lever needs at its steady rate (InputSystem REVERSE_RATE), so it stops at the mark.
+            const gap = rr.lever - (c.reverse ?? 0);
+            if (gap > 0.005) keys.reverse.press(t, Math.min(DECIDE + 0.02, gap / REVERSE_RATE));
             else keys.reverse.release();
           }
           if (s.groundSpeed < 0.2) {
