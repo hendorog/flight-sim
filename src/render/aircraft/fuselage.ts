@@ -203,7 +203,12 @@ export function buildFuselage(shapes: FuselageShapes, mat: AircraftMaterials, de
   batch.add(mat.panelPlastic, sectionCap(shapes.lining, glazing.cabinFrontX - 0.002, 64, -1));
 
   addInletDucts(batch, mat, outer, fuselage);
-  if (fuselage.exhaust) addExhaust(batch, mat, fuselage.exhaust);
+  if (fuselage.exhaust) {
+    const ex = fuselage.exhaust;
+    addExhaust(batch, mat, ex);
+    // The other side's stack of a bifurcated exhaust (PT6A-67 on the PC-12): the same stack mirrored in y.
+    if (ex.mirror) addExhaust(batch, mat, { pos: [ex.pos[0], -ex.pos[1], ex.pos[2]], radius: ex.radius, ...(ex.dir ? { dir: [ex.dir[0], -ex.dir[1], ex.dir[2]] as const } : {}) });
+  }
   addAntennas(batch, mat, fuselage.antennas);
   addDoorHardware(batch, mat, outer, glazing.doors);
   const fittings = batch.build('fuselageFittings');
