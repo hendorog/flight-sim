@@ -20,7 +20,7 @@ Close with: AFM 02211 / AFMS 33; the targets re-sourced row by row.
 ## Keyboard circuit — **open (needs the input package)**
 
 The conformance suite's keyboard circuit (`keyboardCircuit`, torque in psi) completes without a crash in light
-turbulence, but its roll-out stays on the gate at FLIGHT IDLE (about 4-5 kN of thrust at a standstill on the 5.5 deg
+turbulence (touchdown 74-79 KIAS, 404-543 m past the threshold against the plan's 450 m), but its roll-out stays on the gate at FLIGHT IDLE (about 4-5 kN of thrust at a standstill on the 5.5 deg
 stop) and only brakes in pulses below 50 KIAS: the roll is 2.4-2.8 km, the pitch rocks on the nose leg (minimum load
 factor 0.22 g against the harness's 0.3), and in the 10 kt crosswind the aircraft drifts 16 m off the centreline by the
 stop. The 47E technique (4.16: PCL to IDLE at touchdown, reverse as required, condition lever to GROUND IDLE) is the

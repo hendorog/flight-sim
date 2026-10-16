@@ -124,7 +124,8 @@ and more; the selector UP on the ground.
 ## Sim profile and input
 
 Take-off with the PCL fully forward (the limiter holds 44.3 psi), flaps 15, rotate at 82 KIAS, take-off rudder trim
-+0.3 (nose right, ESTIMATE); climb at 36.6 psi (PCL 0.63) at Vy; roll-out in full reverse back to the gate below 40
++0.3 (nose right, ESTIMATE); the scripted climb-out at 105 KIAS (half the C208's speed-hold gains: the hand-over from
+the lift-off attitude to Vy, 35 kt faster, dived it into the runway) at 36.6 psi (PCL 0.63); roll-out in full reverse back to the gate below 40
 KIAS. The input profile has the condition lever (mixture keys), the PCL's reverse, the gear and the rudder trim; no
 propeller lever (the governor holds 1700 rpm; feathering is the condition lever's).
 
@@ -134,26 +135,28 @@ Measured on the conformance suite (FS_AIRCRAFT=pc12; `node scripts/aircraft-repo
 
 | Item | Model | Target (tag) |
 | --- | --- | --- |
-| Pusher, flaps 0 / 40, forward CG, MTOW | 96.4 / 68.3 KCAS = 94.4 / 66.4 KIAS | 95 / 67 KIAS ± 3 (CHART-READ Fig 5-2-1) |
-| Pusher, flaps 15 / 30, maxGross | 79.2 / 71.0 KCAS = 77.4 / 69.0 KIAS | 78 / 70 KIAS ± 3 |
-| Shaker margin | 5.6–6.3 kt | 5–10 kt (47E 7-21) |
-| Push at 1 kt/s, flaps 40 | nose falls 15.4°, 109 ft lost, one push | 8–20°, ≤ 300 ft, no second push (47E 5 p. 329) |
+| Pusher, flaps 0 / 40, forward CG, MTOW | 96.3 / 68.4 KCAS = 94.3 / 66.5 KIAS | 95 / 67 KIAS ± 3 (CHART-READ Fig 5-2-1) |
+| Pusher, flaps 15 / 30, maxGross | 79.1 / 70.5 KCAS = 77.3 / 68.7 KIAS | 78 / 70 KIAS ± 3 |
+| Shaker margin, flaps 0 / 40 | 6.4 / 6.9 kt | 5–10 kt (47E 7-21) |
+| Push at 1 kt/s, flaps 40 | nose falls 15.3°, 109 ft lost, one push | 8–20°, ≤ 300 ft, no second push (47E 5 p. 329) |
 | Static, PCL full; 10 000 ft; hot and high | see the powerplant table | |
 | Take-off ground roll, flaps 15, MTOW | 488 m | 518 m ± 15 % (CHART-READ 1700 ft) |
-| Climb at MCP (36.95 psi), SL ISA, MTOW | 1520 ft/min at Vy 122 KIAS | 1650 ± 20 %, Vy 130 ± 10 (ESTIMATE / 47E 4.2) |
+| Climb at MCP (36.95 psi), SL ISA, MTOW | 1525 ft/min at Vy 121 KIAS | 1650 ± 20 %, Vy 130 ± 10 (ESTIMATE / 47E 4.2) |
 | Maximum cruise rows | see the powerplant table | |
-| Glide, feathered | L/D 15.5 at 119 KIAS (best) | 15.8 ± 1.5, 119 ± 10 KIAS (DERIVED 47E) |
+| Glide, feathered | L/D 15.6 at 119 KIAS (best) | 15.8 ± 1.5, 119 ± 10 KIAS (DERIVED 47E) |
 | Landing roll, flaps 40, chart technique (brakes 0.5, ground idle after touchdown) | 384 m on the gate, 297 m in full reverse, ratio 0.77 | 389 m ± 30 (CHART-READ Fig 5-2-52); 280 ± 35; 0.72 ± 0.08 (DERIVED Fig 5-2-54) |
-| (a) gate, ground idle | Np 1055 rpm, Ng 54.9 %, ITT 534 °C; 20.5 kt steady | 1060 ± 60, 50.7–61.4 %, ≤ 750 °C; 15–30 kt |
+| (a) gate, ground idle | Np 1057 rpm, Ng 54.9 %, ITT 534 °C; 20.7 kt steady | 1060 ± 60, 50.7–61.4 %, ≤ 750 °C; 15–30 kt |
 | (b) ground fine | +216 N static, 0 kt | \|T\| < 500 N, ≤ 5 kt |
 | (c) half of the pitch-only travel | 8.2 kt steady | 8–12 kt |
-| Approach, Vref 85, flaps 40, 3°, MLW | 13.3 psi | 8–18 psi (ESTIMATE) |
+| Approach, Vref 85, flaps 40, 3°, MLW | 13.5 psi | 8–18 psi (ESTIMATE) |
 | Yaw: full power at 130 KIAS / 200 KIAS level, rudder trim 0 | 0.26 / 0.05 of the pedal | 0.15–0.45 / −0.02–0.12 (ESTIMATE) |
-| Take-off roll heading, rudder trim 0 | within 4.1°, up to 0.66 of the pedal (with the +0.3 trim: 3.6°, 0.58) | ≤ 5°, ≤ 0.6 (AGENT) |
+| Take-off roll heading, rudder trim 0 | within 4.2°, up to 0.67 of the pedal (with the +0.3 trim: 3.6°, 0.58) | ≤ 5°, ≤ 0.6 (AGENT) |
 | Start | GROUND IDLE at 13 % Ng, peak ITT 750 °C, 50 % Ng at 29 s, cut-out 50.0 %, Np ≥ 950 | plan 5.7 |
 | Gear horn; overspeed | actuator logic as 47E 7-4; Vmo/Mmo crossover between 14 000 and 18 000 ft | 47E 7-4; TCDS |
-| Hands-off cruise 200 KTAS, 60 s | 0.7 m, 0.9°, 6 ft/min, 0.04 m/s | contract 3.10 |
-| Keyboard circuit | completes in light turbulence; roll-out on the gate, see KNOWN_ISSUES | completes, touchdown ≤ 450 m, beta below 60 KIAS (AGENT; needs the input package's roll-out) |
+| Hands-off cruise 200 KTAS, 60 s | 0.7 m, 1.5°, 7 ft/min, 0.04 m/s | contract 3.10 |
+| Keyboard circuit (headless) | no crash in either weather; touchdown 74–79 KIAS at 0.1–1.7 m/s, 404–543 m past the threshold; the roll-out on the gate at FLIGHT IDLE: 2.3–2.7 km, min 0.21 g, 12 m off the centreline in the crosswind (see KNOWN_ISSUES) | completes, touchdown ≤ 450 m, beta below 60 KIAS (AGENT; the input package's roll-out) |
+| Keyboard circuit, real app (scripts/fly-keyboard.mjs) | completes: touchdown 74.7 KIAS at 0.16 m/s, 393 m past the threshold, the stop 2.78 km further on, on the gate | as above |
+| Autoflight circuit, real app (scripts/fly-circuit.mjs) | completes: lift-off 95 KIAS, climb-out 105 KIAS at 1390 ft/min, touchdown 84 KIAS at 0.6 m/s, stop in 175 m (full reverse) | — |
 
 ## Changes outside the type directory (P1's shared files)
 
