@@ -8,7 +8,7 @@
 
 import { DEG, KT } from '../../core/math';
 import type { StickPusherDef } from '../../physics/aero/stickPusher';
-import { STABILIZER_EQUIVALENCE } from '../../physics/controlSystem';
+import { STABILIZER_EQUIVALENCE } from '../../physics/stabilizerEquivalence';
 import type { AirDataDef, AutopilotGains, ControlSystemDef, LimitsDef, MassDef, PayloadDef } from '../types';
 import { PC12_OVERSPEED } from './facts';
 import { PC12_EYE, PC12_GEOMETRY, PC12_MAC } from './geometry';

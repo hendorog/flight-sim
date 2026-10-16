@@ -66,6 +66,7 @@ import { C172S_CONTROLS } from '../aircraft/c172s/systems';
 import type { ControlSystemDef } from '../aircraft/types';
 import { clamp } from '../core/math';
 import type { ControlInputs, SurfaceState } from '../core/types';
+import { STABILIZER_EQUIVALENCE } from './stabilizerEquivalence';
 
 // The Cessna 172S (aircraft/c172s/systems.ts, where each number is explained) under the names this module has
 // always exported.
@@ -100,12 +101,8 @@ export const FLAP_RATE = C172S_FLAP_DRIVE.rate;
 export const FLAP_MIN_VOLTS = C172S_FLAP_DRIVE.minVolts;
 export const TRIM_RATE = C172S_CONTROLS.trimRate;
 
-/**
- * Stabiliser trim: incidence change per unit of equivalent elevator deflection the trim solver splits off to the
- * stabiliser (thin-aerofoil effectiveness of a 0.36-chord elevator, 0.71, times its viscous factor 0.88). It sets only
- * how the solver's pitch control maps to the two surfaces; the aerodynamics sees the real ones.
- */
-export const STABILIZER_EQUIVALENCE = 0.63;
+/** Stabiliser trim equivalence (stabilizerEquivalence.ts, a pure module the aircraft leaf files read). */
+export { STABILIZER_EQUIVALENCE };
 
 /** The control law of one control system: travels, trim, float and rigging, without state. */
 export class ControlLaw {
