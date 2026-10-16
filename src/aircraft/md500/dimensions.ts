@@ -93,9 +93,11 @@ export const BOOM_ROOT = { x: x(197.78), z: z(55.34) } as const;
 export const BOOM_END_X = x(281.12);
 /**
  * Horizontal stabiliser: T-tail on the upper fin, span 5.43 ft with toed endplates (RFM Fig 1-1; spec); centreline
- * WL 96.91, top WL 102.17 (Fig 6-3); incidence 8.92-9.42 deg to a line perpendicular to the mast (TCDS p14). Sign:
- * UNRESOLVED (research 13); T2 chooses the sign that gives a DOWNLOAD in forward flight and proves it with the
- * cruise-attitude row (plan 6.6). Leading edge station and chord ESTIMATE (3V): STA 287, chord 0.30 m.
+ * WL 96.91, top WL 102.17 (Fig 6-3); incidence 8.92-9.42 deg to a line perpendicular to the mast (TCDS p14), leading
+ * edge UP: the same TCDS signs the 369FF's stab "-1.9 deg nose down with respect to waterline plane" (p21), so its
+ * unsigned 369D/E figure is positive, and leading edge down (-12.17 deg to the waterline) would stall the surface at
+ * the cruise attitude. heli-archive (S): "set at +5 deg and produces negative lift" (an inverted cambered section,
+ * rotorcraft.ts). Leading edge station and chord ESTIMATE (3V): STA 287, chord 0.30 m.
  */
 export const HORIZONTAL_STABILIZER = {
   span: 5.43 * FT,
@@ -105,6 +107,9 @@ export const HORIZONTAL_STABILIZER = {
   incidenceToMastNormalDeg: 9.17,
   endplates: { height: 0.3, toeDeg: 5 },
 } as const;
+/** Stabiliser chord to the fuselage waterline, deg, leading edge up: the mast normal lies SHAFT_TILT_DEG nose-down of
+ * the waterline, so 9.17 - 3 = +6.17 deg. The flight model (rotorcraft.ts) and the exterior both read this. */
+export const STAB_INCIDENCE_TO_WL_DEG = HORIZONTAL_STABILIZER.incidenceToMastNormalDeg - SHAFT_TILT_DEG;
 /** Upper fin (swept, carries the T-stab; top 8.4 ft above the ground) and lower fin with the tail-skid bumper (bottom WL 25.46). 3V ESTIMATE outlines. */
 export const UPPER_FIN_TOP_Z = zh(8.4 * FT);
 export const LOWER_FIN_BOTTOM_Z = z(25.46);

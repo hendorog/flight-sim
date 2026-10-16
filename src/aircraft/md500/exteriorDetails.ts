@@ -13,9 +13,9 @@ import { aerofoilPanel, centreStrip, ellipsoid, fairedStrut, fairingLoft, ringPo
   type MD500Materials, type MD500Section, type MD500SkinWidth } from './exteriorGeometry';
 
 /** Stabiliser incidence drawn relative to the fuselage waterline: the TCDS 8.92-9.42 deg to the mast normal less the
- * 3 deg forward shaft tilt, leading edge DOWN (a download in forward flight). The sign is T2's call (plan 6.2); the
- * drawing follows HORIZONTAL_STABILIZER.incidenceToMastNormalDeg. */
-export const STAB_INCIDENCE_DEG = -(D.HORIZONTAL_STABILIZER.incidenceToMastNormalDeg - D.SHAFT_TILT_DEG);
+ * 3 deg forward shaft tilt, leading edge UP (dimensions.ts has the evidence for the sign; the flight model reads the
+ * same constant and gives the surface an inverted cambered section, so it carries a download). */
+export const STAB_INCIDENCE_DEG = D.STAB_INCIDENCE_TO_WL_DEG;
 /** Strut bottoms lean forward of their tops (photographs, G-SSCL / D-HHRM), m. */
 export const STRUT_LEAN = 0.08;
 /** The engine air-inlet fairing ("doghouse") over the mast and engine: [STA, top WL, bottom WL, half width in]. 3V from
@@ -65,7 +65,7 @@ export function buildMD500Exterior(def: AirframeVisualDef, m: MD500Materials, sk
   add(m.paint, aerofoilPanel(LOWER_FIN[0], LOWER_FIN[3], LOWER_FIN[1], LOWER_FIN[2], [0, 1, 0], 0.12));
   const hs = D.HORIZONTAL_STABILIZER, inc = STAB_INCIDENCE_DEG * Math.PI / 180;
   const midX = hs.leadingX - hs.chord / 2;
-  // Positive incidence would raise the leading edge (FRD z up is negative): a negative angle puts it down.
+  // Positive incidence raises the leading edge (FRD z up is negative).
   const chordEnd = (y: number, lead: boolean): FRD => {
     const s = lead ? 1 : -1;
     return [midX + s * hs.chord / 2 * Math.cos(inc), y, hs.z - s * hs.chord / 2 * Math.sin(inc)];

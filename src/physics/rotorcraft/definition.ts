@@ -12,6 +12,12 @@ export interface RotorDefinition {
   inertia: number; hub: Vec3;
   /** Nonuniform-wake induced-velocity correction; one is ideal uniform momentum theory. */
   inducedFactor?: number;
+  /**
+   * Tail rotor only: relax the induced velocity with the uniform Pitt-Peters time constant (inflowTimeConstant, about
+   * 5 ms for a small, fast tail rotor in the hover) instead of the legacy fixed 0.08 s. Absent: the legacy lag (every
+   * type before the MD 500E; their arithmetic is untouched).
+   */
+  pittPetersInflow?: boolean;
 }
 /**
  * Turboshaft fuel control and power-turbine governor (MD 500E / Allison 250-C20B). Declared at the scaffold; the
@@ -102,6 +108,19 @@ export interface RotorcraftDefinition {
    * type before the MD 500; their arithmetic is untouched).
    */
   shaftTilt?: number;
+  /**
+   * The main rotor's blade elements see the fuselage's yaw rate: the governed rotor speed is held relative to the
+   * fuselage, so the air sees Omega - rotation x r (shaft axes). This is the main-rotor yaw damping (and the thrust
+   * change with yaw rate, Heffley CR-3144 OH-6A Z_r = 0.45 m/s^2 per rad/s). Absent: Omega alone (every type before
+   * the MD 500E).
+   */
+  yawInRotorSpeed?: boolean;
+  /**
+   * Control-system flexibility: the blade angle reached is this fraction of the linkage's commanded angle, measured
+   * from the rigging neutral (cyclic: the zero-cyclic swashplate; pedals: the centre of the tail-rotor pitch range).
+   * Heffley CR-3144 Fig II-2 (OH-6A, full-scale wind-tunnel tests): pitch 0.75, roll 0.75, yaw 0.67. Absent: 1.
+   */
+  controlFlex?: { longitudinal: number; lateral: number; pedal: number };
   teeterLimit: number;
   /** Inputs command position; optional spring trim reports forces but drives no force-feedback hardware. */
   controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical';
@@ -264,12 +283,14 @@ export interface RotorcraftState {
  * (elevator -1 .. +1) and from the left to the right stop, so its centre sits half the difference away from the
  * rigging neutral; without it, cyclicLimit each way.
  */
-export function cyclicAngles(d: Pick<RotorcraftDefinition, 'cyclicLimit' | 'cyclicLimits'>,
+export function cyclicAngles(d: Pick<RotorcraftDefinition, 'cyclicLimit' | 'cyclicLimits' | 'controlFlex'>,
   c: { elevator: number; aileron: number }): { aft: number; right: number } {
   const l = d.cyclicLimits;
   if (!l) return { aft: c.elevator * d.cyclicLimit, right: c.aileron * d.cyclicLimit };
-  return { aft: c.elevator * (l.forward + l.aft) / 2 - (l.forward - l.aft) / 2,
-    right: c.aileron * (l.left + l.right) / 2 + (l.right - l.left) / 2 };
+  const aft = c.elevator * (l.forward + l.aft) / 2 - (l.forward - l.aft) / 2;
+  const right = c.aileron * (l.left + l.right) / 2 + (l.right - l.left) / 2;
+  const flex = d.controlFlex;
+  return flex ? { aft: aft * flex.longitudinal, right: right * flex.lateral } : { aft, right };
 }
 /** Snapshots own every nested state; legacy scalar serialization remains identical. */
 export function cloneRotorcraftState(s: RotorcraftState): RotorcraftState {

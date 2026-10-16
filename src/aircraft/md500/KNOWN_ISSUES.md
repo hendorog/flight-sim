@@ -5,36 +5,44 @@ impact. Numbers are from [md500Performance](../../../tests/rotorcraft/md500Perfo
 [md500Systems](../../../tests/rotorcraft/md500Systems.test.ts); the model is described in
 [md500-flight-model.md](../../../docs/md500-flight-model.md) and [turboshaft-model.md](../../../docs/turboshaft-model.md).
 
-## Pedal (yaw) response stronger than the OH-6A's — **unvalidated**
+## Pedal-step peak yaw acceleration above the OH-6A's — **unvalidated**
 
-A step of 0.1 of pedal travel in the hover at 2550 lb gives an initial yaw acceleration of 148 °/s² and 62 °/s after
-1 s; the OH-6A's derivatives (Heffley CR-3144 case 4, F) give 54 °/s² and 37 °/s. At 60 KIAS the weathercock brings
-both back to a few °/s after 1 s (4.6 against 5.7). The 500E has the D-model's larger tail rotor (55 against 51 in)
-on a +27/−14° range, and Heffley's derivatives fold in the OH-6A's control-system flexibility, so part of the gap is
-real; how much is not known. Pilot review 2026-10-17 ("2-3x too powerful and weakly damped"): the fins now sit in the
-tail rotor's inflow (blockage), which brought the pedal-step half-time from 1.40 to 1.11 s (OH-6A 0.91) and the 1 s
-rate from 65 to 62 °/s; the acceleration is unchanged. A lower tail-rotor lift slope or a larger Izz lowers the
-acceleration but lengthens the half-time (4.0: 105 °/s², 2.07 s; Izz 1500: 116 °/s², 1.98 s), so neither was applied.
-The model's damping-to-power ratio is about 2.7 times smaller than the OH-6A's; no sourced knob closes it.
-Evidence: `KNOWN CONTROL-POWER GAP` [expected failures, one per row: yaw acceleration hover and 60 kt, yaw rate at 1 s hover](../../../tests/rotorcraft/md500Performance.test.ts) and the
-table in [md500-flight-model.md §7](../../../docs/md500-flight-model.md).
-Close with: a 500D/E pedal-step or yaw-derivative record (or the OH-6A's tail-rotor pitch range per pedal travel).
+Since the polish pass the 500E flies the OH-6A's control-system flexibility (Heffley CR-3144 Fig II-2 p22, F, from
+full-scale wind-tunnel tests: the blade reaches 0.67 of the commanded tail-rotor pitch, 0.75 of the cyclic), its tail
+rotor's inflow settles in the Pitt-Peters time (about 5 ms) and the main rotor feels the fuselage's yaw rate (main-rotor
+yaw damping). A 0.1-travel pedal step at 2550 lb now gives 40.9 °/s after 1 s (OH-6A 36.8; was 62.1) and 3.6 °/s at
+60 KIAS (5.7), both inside ±30 %. The peak single-step acceleration is still high: 80.6 °/s² in the hover and 76.2 at
+60 KIAS against 53.9 / 56.0 (was 148 / 151). That peak is the first 1/240 s step after an ideal step input, before the
+tail rotor's inflow has answered; averaged over the first 50 ms it is 62.1 / 60.1 °/s². The rest is the 500E's larger
+tail rotor (55 against 51 in, 2933 rpm: about 15 % more thrust per degree than the OH-6A's).
+Evidence: `KNOWN CONTROL-POWER GAP` [expected failures: yaw acceleration hover and 60 kt](../../../tests/rotorcraft/md500Performance.test.ts);
+[md500-flight-model.md §7](../../../docs/md500-flight-model.md).
+Close with: a 500D/E pedal-step record (or a filtered-step criterion agreed for the row).
 
-## Roll rate per stick about 35-50 % above the OH-6A's — **unvalidated**
+## Control-system flexibility pivots and the collective's 0.88 — **estimate**
 
-Roll acceleration per 0.1 of lateral travel matches the OH-6A (82 °/s² against 84), but the rate at 0.5 s is 20 °/s
-against 15 (hover, +35 %) and 14 (60 kt, +51 %): the modelled roll response settles at a higher steady rate per degree
-of cyclic. The hover roll subsidence is inside the band (0.154 s to half rate after release against 0.129 s, +19 %) and the
-initial acceleration matches, so the gap is not explained by the roll damping alone (cause not identified). Pitch is inside 30 % at both speeds (subsidence
-0.354 against 0.352 s).
-Evidence: `KNOWN CONTROL-POWER GAP` expected failures (roll rate at 0.5 s, hover and 60 kt); [md500-flight-model.md §7](../../../docs/md500-flight-model.md).
-Close with: the 500E's lateral cyclic rigging under load or a 500D/E roll response record.
+Fig II-2 gives the flexibility as constant attenuation factors on the commanded blade angle, not where they pivot. The
+model scales the cyclic about the zero-cyclic swashplate and the tail-rotor pitch about the centre of its +27/−14°
+range (AGENT reading of the figure), so under load the blade reaches less than the TCDS stops: the tail rotor +20.2°
+at full left pedal, the cyclic 13.3° forward. Pedal positions move with it (3000 lb SL unless stated): hover IGE
+−0.28 → −0.42 (band −0.20…−0.45), OGE −0.33 → −0.49; held over a spot in a 17 kt wind from the right −0.41 → −0.61,
+and −0.51 → −0.76 at 2900 lb, 6500 ft (near Fig 8-1's HOGE ceiling); OGE 8000 ft −0.50 → −0.75; autorotation right
+pedal 0.37 → 0.55. The cruise row's cyclic forward of the hover trim grew from 0.22 to 0.30 of travel (limit 0.3), the
+MCP speed's elevator from −0.25 to −0.45. The md500Systems governor climb (87 psi at 60 KIAS, 2600 lb, a test pilot
+holding the wings level, so in sideslip) now holds full left pedal while drifting 0.55 °/s; a balanced climb at
+80 psi trims at −0.34. The collective's 0.88 is not applied: it would re-calibrate `minPitch`, the autorotation law and
+the hover ceilings.
+Evidence: [rotorcraft.ts](rotorcraft.ts) `controlFlex`; [md500-flight-model.md §7](../../../docs/md500-flight-model.md).
+Close with: a 500E pedal-margin statement beyond the RFM's "adequate in winds up to 17 knots", or loaded blade-angle data.
 
 ## Hover roll attitude 3.7° left at 3000 lb — **estimate**
 
-The plan's ESTIMATE band is 1-3° left skid low; the model hangs 3.7° left IGE and 4.1° OGE at 3000 lb SL. The OH-6A
-trims at 3.05° left at 2550 lb (Heffley case 4, F), and the tail-rotor thrust grows with weight, so the model is close
-to the family evidence; the band is not met.
+The plan's ESTIMATE band is 1-3° left skid low; the model hangs 3.7° left IGE and 4.1° OGE at 3000 lb SL (unchanged
+by the control-flexibility pass: a steady trim does not depend on control gain). At the OH-6A's 2550 lb the model
+hangs 4.1° OGE against the OH-6A's 3.05° (Heffley case 4, F). The bank is set by the tail-rotor thrust over the weight
+(876 N / 2550 lb: 4.4° of disc tilt) less the mast flapping the tail rotor's height above the CG buys; the 500E's
+five-blade rotor needs more torque than the OH-6A's four, and its tail rotor (WL 51.4, derived from the RFM's 2.0 ft
+tip clearance) sits lower than the OH-6A's WL 54.3. No source supports moving either, so nothing was changed.
 Evidence: `KNOWN ROLL GAP` [expected failure](../../../tests/rotorcraft/md500Performance.test.ts).
 Close with: a measured 500E hover attitude (or the lateral CG and tail-rotor height of a weighed aircraft).
 
@@ -61,8 +69,10 @@ Close with: a 250-C20B installed power and fuel-flow chart (the full RFM Fig 5-1
 
 No 369D21100 blade data exist: the blade is a uniform 11.5 kg blade fitted to the OH-6A's flap inertia; chord, twist
 and NACA 0015 are the OH-6A's; the flap/lag hinge is the 500C's plus the inch of the 500D hub (S). The tail rotor turns
-2933 rpm (S; the OH-6A's ratio would give 3172). The T-stab is read as +6.17° geometric with an inverted cambered
-section (zero-lift +6°, ESTIMATE) because only that reading flies the cruise attitude (−3.4° at 120 KIAS).
+2933 rpm (S; the OH-6A's ratio would give 3172). The T-stab's sign is settled (leading edge up +6.17° to the
+waterline: the TCDS signs the 369FF's "−1.9° nose down" where it means one, and leading edge down would stall it in
+cruise; docs/md500-flight-model.md §3), but its section is not: an inverted cambered section (zero-lift +6°,
+ESTIMATE) is what makes it carry the download heli-archive describes and fly the cruise attitude (−3.4° at 120 KIAS).
 Evidence: [articulated.ts](articulated.ts), [rotorcraft.ts](rotorcraft.ts), [md500-flight-model.md §3](../../../docs/md500-flight-model.md#stabiliser-sign).
 Close with: a 369D21100 blade weight and CG, the 500E tail-rotor gear ratio, the stabiliser's section.
 
@@ -119,11 +129,11 @@ The head hardware proportions (strap pack, pitch housings, dampers, swashplate) 
 369D/E hub drawing was found, and the strap flexure is drawn as fixed plates with discrete hinges at 0.140 m. The
 blade droop at rest uses the provisional S269 coning data (`MD500_BLADE_CONING`). The shared occupant figure's head sits
 0.11 m aft of `PILOT_EYE` (it leans on the seat back). The paint is generic (white, a blue / red stripe, orange blade
-tips), not a factory scheme. The stabiliser is drawn leading edge down 6.17 deg to the waterline while the aerodynamic
-model reads it leading edge up with an inverted cambered section (T2, the only reading that flies the cruise attitude
-row; docs/md500-flight-model.md): the drawing and the aerodynamics disagree on the sign.
+tips), not a factory scheme. The stabiliser is drawn leading edge up 6.17 deg to the waterline, the angle the flight
+model flies (both read `STAB_INCIDENCE_TO_WL_DEG`), with a symmetric section where the flight model assumes an
+inverted cambered one.
 Evidence: [exterior.ts](exterior.ts), [docs/md500-exterior.md](../../../docs/md500-exterior.md).
-Close with: a 369E head drawing and the stabiliser's rigging from a primary source.
+Close with: a 369E head drawing and the stabiliser's section from a primary source.
 
 ## Panel — **simplified**
 

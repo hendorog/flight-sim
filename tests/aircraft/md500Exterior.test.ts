@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { MD500_VISUAL as def, ENDPLATE, LOWER_FIN, GROUND_ATTITUDE_DEG, TAIL_HUB_LEVEL, TAIL_HUB_WL, BOOM, boomWl, sta, wl, SEAT, UPPER_FIN } from '../../src/aircraft/md500/visual';
 import { MD500_PANEL } from '../../src/aircraft/md500/panel';
-import { MD500_ROTORCRAFT } from '../../src/aircraft/md500/rotorcraft';
+import { MD500_ROTORCRAFT, STAB_ZERO_LIFT_DEG } from '../../src/aircraft/md500/rotorcraft';
 import { md500ExteriorVisualClass } from '../../src/aircraft/md500/exterior';
 import { MD500MainRotor, buildMD500TailHead, DOME_RISE, MD500_MAIN_SECTION, type MD500RotorPose } from '../../src/aircraft/md500/exteriorRotor';
 import { BOOM_ROOT_FAIRING, INLET_FAIRING, STAB_INCIDENCE_DEG } from '../../src/aircraft/md500/exteriorDetails';
@@ -322,9 +322,11 @@ describe('MD 500E exterior', () => {
     }
   });
 
-  it('draws the stabiliser leading edge down (download) at the TCDS incidence less the shaft tilt', () => {
-    expect(STAB_INCIDENCE_DEG).toBeCloseTo(-(D.HORIZONTAL_STABILIZER.incidenceToMastNormalDeg - D.SHAFT_TILT_DEG), 12);
-    expect(STAB_INCIDENCE_DEG).toBeLessThan(-5); expect(STAB_INCIDENCE_DEG).toBeGreaterThan(-7);
+  it('draws the stabiliser leading edge up at the TCDS incidence less the shaft tilt, the angle the flight model flies', () => {
+    expect(STAB_INCIDENCE_DEG).toBeCloseTo(D.HORIZONTAL_STABILIZER.incidenceToMastNormalDeg - D.SHAFT_TILT_DEG, 12);
+    expect(STAB_INCIDENCE_DEG).toBeGreaterThan(5); expect(STAB_INCIDENCE_DEG).toBeLessThan(7);
+    // The flight model's surface: the same geometric angle less the inverted section's zero-lift angle.
+    expect(MD500_ROTORCRAFT.stabilizer.incidence * 180 / Math.PI).toBeCloseTo(STAB_INCIDENCE_DEG - STAB_ZERO_LIFT_DEG, 9);
   });
 
   it('disposes every geometry, material and texture of the assembly', () => {

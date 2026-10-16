@@ -38,11 +38,14 @@ Numbers in the tables come from `tests/rotorcraft/md500Performance.test.ts` and 
 - Cyclic: asymmetric TCDS rigging (forward 17.75°, aft 8.15°, left 8.15°, right 7.0°, mid values) through the new
   `cyclicLimits`: the stick's travel is linear from stop to stop, so its centre sits 4.8° forward and 0.6° left of the
   rigging neutral, which is a third of the travel from full aft (RFM 4-12). On the ground the reset places the cyclic
-  at that neutral.
+  at that neutral. Under load the blades reach 0.75 of the commanded cyclic (OH-6A control-system flexibility,
+  Heffley Fig II-2, F; section 7).
 - Tail rotor: 2 blades, R 0.6985 m (55 in, Fig 1-1), chord 0.12 m, twist −8° (OH-6A, F), pitch +27° (anti-torque,
   left pedal) to −14° (TCDS p14), 2933 rpm at 492 (ratio 5.96, S; the OH-6A's 6.447 would give 3172), on the left of
   the boom at STA 284, **WL 51.4**: the RFM's "lowest tip 2.0 ft above the ground" is measured in the 4.7° nose-up
-  ground attitude, which lowers the tail 15.1 in below the level axes (D).
+  ground attitude, which lowers the tail 15.1 in below the level axes (D). Under load the blades reach 0.67 of the
+  commanded pitch from the range's centre (+6.5°): +20.2° at full left pedal (Heffley Fig II-2, F; section 7). The
+  inflow relaxes with the Pitt-Peters time constant (about 5 ms in the hover).
 
 ### Rotor energy
 
@@ -58,7 +61,7 @@ so at the 120 KIAS cruise (about 63 psi, 202 kW at the rotor) τ ≈ **4.8 s**: 
 little faster than either. Its reputation for a quick decay is about the reaction time the RFM demands at high power,
 not a radically smaller inertia. A primary blade weight refits `BLADE_MASS` (articulated.ts) and nothing else.
 Measured in the flight model (engine cut at 120 KIAS, 3000 lb, collective held): horn **0.27 s**, 410 rpm **1.08 s**,
-the nose yawing **8.9° left** in the first 0.5 s (RFM 3-3).
+the nose yawing **9.5° left** in the first 0.5 s (RFM 3-3; 9.1° before the polish pass).
 
 ## 3. Airframe
 
@@ -101,11 +104,18 @@ stroke a third of 0.15 m) sat at 8.4° instead of 4.7° and rocked onto the tail
 
 ### Stabiliser sign
 
-The T-stab's incidence is 8.92–9.42° to the mast normal (TCDS p14), which lies 3° nose-down of the body axis; the sign
-is not printed. heli-archive (S) says the 500's stab is "set at +5° and produces negative lift". Read as leading edge
-UP (+6.17° to the body axis) with an inverted cambered section (zero-lift angle ESTIMATE +6°), the surface carries a
-download at every forward speed. The other reading cannot fly the cruise row. Sweep at 120 KIAS, 2700 lb (the model's
-surface is symmetric: incidence = geometric − zero-lift angle):
+The T-stab's incidence is 8.92–9.42° to the mast normal (TCDS p14), which lies 3° nose-down of the body axis. The
+369D/E entry prints no sign, but the same data sheet writes the 369FF's stab as "−1.9° nose down with respect to
+waterline plane" (p21): where Hughes/MD mean nose down they sign it, so the 369D/E figure is leading edge **UP**,
++6.17° to the waterline (`STAB_INCIDENCE_TO_WL_DEG`, dimensions.ts). The other reading, leading edge down −12.17°,
+would sit at about −16° to the airflow at the cruise attitude (−3…−4°) before any downwash: a stalled surface no
+designer would rig. The RFM Fig 6-3 tail drawing shows the section edge-on but is schematic for the angle (its chord
+looks parallel to the canted stations), and the D-HHRM / G-SSCL photographs are three-quarter views that show the
+underside and leading edge, not a measurable chord line. heli-archive (S): the 500's stab is "set at +5° and produces
+negative lift", which at leading edge up needs an inverted cambered section (zero-lift angle ESTIMATE +6°); with it the
+surface carries a download at every forward speed. Until the polish pass the exterior drew the stab leading edge down;
+it now draws the flight model's angle (no aerodynamic change). Sweep at 120 KIAS, 2700 lb, before the control
+flexibility of section 7 (the model's surface is symmetric: incidence = geometric − zero-lift angle):
 
 | Aerodynamic incidence | 120 KIAS pitch | Cyclic forward of hover (travel) | Stab load at 120 KIAS |
 | --- | --- | --- | --- |
@@ -115,7 +125,8 @@ surface is symmetric: incidence = geometric − zero-lift angle):
 | +3° | −4.4° | 0.19 | slight download |
 | +6.17° (leading edge up, symmetric) | −5.6° | 0.14 | upload below 120 KIAS |
 
-Row (ESTIMATE): pitch −2…−6°, cyclic at most 0.3 of travel forward of the hover trim.
+Row (ESTIMATE): pitch −2…−6°, cyclic at most 0.3 of travel forward of the hover trim. With the control flexibility
+the chosen row reads −3.4° and 0.30 (the cyclic is in stick travel, so 0.75 of the blade angle needs 1/0.75 of it).
 
 ## 4. Engine
 
@@ -151,19 +162,19 @@ turning at 23 % N1, START released at 58.5 % 26 s after the grip opened, a TOT p
 | Hover 3000 lb torque IGE / OGE | 62–72 / 72–82 psi (DERIVED) | 71.9 / 79.8 psi |
 | Hover TOT | 620–720 °C (ESTIMATE) | 649 / 695 °C, N1 95.4 / 97.3 %, 211 / 227 lb/h |
 | Hover IGE attitude | pitch +1…+5°, roll 1–3° left (ESTIMATE) | pitch +2.5°, roll **3.7° left** (KNOWN GAP; OH-6A trims at 3.05° left at 2550 lb, F); OGE +2.6°, 4.1° left |
-| Hover IGE pedal | −0.20…−0.45 (ESTIMATE) | −0.28 (OGE −0.33) |
+| Hover IGE pedal | −0.20…−0.45 (ESTIMATE) | −0.42 (OGE −0.49; −0.28 / −0.33 before the control flexibility) |
 | Vy (minimum power) | 62 ±8 KIAS (P Fig 5-3) | 64.9 KIAS |
 | Max ROC at 87.2 psi, Vy | 1770 ft/min ±20 % (M) at the design gross weight | 1848 ft/min at 3000 lb (TOT 737 °C); 2355 at 2600 lb |
 | Level speed at MCP 81.3 psi, 3000 lb | 130–135 KTAS ±5 % (M) | 139.3 KTAS (pitch −4.4°, TOT 703 °C, N1 97.6 %) |
-| Cruise 120 KIAS, 2700 lb | pitch −2…−6°, cyclic ≤ 0.3 forward of hover | −3.4°, 0.22 |
+| Cruise 120 KIAS, 2700 lb | pitch −2…−6°, cyclic ≤ 0.3 forward of hover | −3.4°, 0.30 (0.22 before the control flexibility) |
 | Cruise fuel flow, 120 KIAS 3000 lb | 184 lb/h ±15 % (M) | 193 lb/h |
 
 ## 6. Autorotation
 
 `minPitch` calibrates the RFM 4-25 law (collective full down, 60 KIAS): **484.7 rpm at 2250 lb SL** (485 ± 5);
 −11.2 rpm per 100 lb less (−10 ± 3); +7.4 rpm per 1000 ft (+6.5 ± 2). Rate of descent at 60 KIAS, 3000 lb, Nr held
-at 490 rpm with the collective: **1808 ft/min** (ESTIMATE 1600–2200). Engine off, Nr held at 480, 2700 lb: glide
-ratio 3.4 at 60 KIAS (1763 ft/min) and 4.4 at 80 KIAS (1839 ft/min), 1.28 times (row ≥ 1.15). At 410 rpm (the RFM's minimum-sink and best-glide rotor speed) the
+at 490 rpm with the collective: **1814 ft/min** (ESTIMATE 1600–2200). Engine off, Nr held at 480, 2700 lb: glide
+ratio 3.4 at 60 KIAS (1763 ft/min) and 4.2 at 80 KIAS (1913 ft/min), 1.23 times (row ≥ 1.15). At 410 rpm (the RFM's minimum-sink and best-glide rotor speed) the
 60 KIAS sink falls to about 1500 ft/min; at 80 KIAS and 410 rpm the modelled rotor sits at the retreating-blade stall
 boundary, so that combination is reported, not asserted. With the grip at ground idle a low Nr lets the idling
 engine join the needles and drive the rotor, which is the RFM 4-24 note on practice autorotations.
@@ -172,39 +183,62 @@ engine join the needles and drive the rotor, which is the RFM 4-24 note on pract
 
 The OH-6A derivatives for case 4 (hover) and case 8 (60 kt) were digitised before calibrating (tests/rotorcraft/oh6a.ts,
 read from the rendered pp 27-28, SI, per cm of control) and integrated as the full 8-state linear model for the
-reference responses to a step of 0.1 of full travel, at the OH-6A's 2550 lb:
+reference responses to a step of 0.1 of full travel, at the OH-6A's 2550 lb. "Before" is the T2 model (02f5953),
+"now" the polish pass (below).
 
-| Response | OH-6A hover / 60 kt | MD 500E model hover / 60 kt |
-| --- | --- | --- |
-| Roll acceleration, °/s² | 84.3 / 82.7 | 82.3 / 82.8 |
-| Roll rate at 0.5 s, °/s | 15.1 / 13.8 | 20.4 / 20.8 (**+35 / +51 %**, KNOWN GAP) |
-| Pitch acceleration, °/s² | 53.1 / 53.5 | 57.6 / 54.2 |
-| Pitch rate at 0.5 s, °/s | 17.1 / 14.7 | 21.6 / 18.4 |
-| Yaw acceleration (pedal), °/s² | 53.9 / 56.0 | 148 / 151 (initial; **+174 %**, KNOWN GAP) |
-| Yaw rate at 1 s, °/s | 36.8 / 5.7 | 62.1 / 4.6 (65.3 / 3.8 before the fins' tail-rotor flow) |
-| Subsidence (hover): a 0.5 s step released, time to half the rate at release, roll / pitch, s | 0.129 / 0.352 | 0.154 / 0.354 (+19 / +1 %) |
-| Same, pedal (hover; reported, not a plan row), s | 0.91 | 1.11 (+22 %; 1.40 before the fins' tail-rotor flow) |
+| Response, hover / 60 kt | OH-6A | Before | Now |
+| --- | --- | --- | --- |
+| Roll acceleration, °/s² | 84.3 / 82.7 | 82.3 / 82.8 | 61.7 / 62.1 (−27 / −25 %) |
+| Roll rate at 0.5 s, °/s | 15.1 / 13.8 | 20.4 / 20.8 (+35 / +51 %) | **15.2 / 15.6** (+1 / +13 %) |
+| Pitch acceleration, °/s² | 53.1 / 53.5 | 57.6 / 54.2 | 43.2 / 41.0 (−19 / −23 %) |
+| Pitch rate at 0.5 s, °/s | 17.1 / 14.7 | 21.6 / 18.4 | 16.2 / 13.9 |
+| Yaw acceleration (pedal), peak single step, °/s² | 53.9 / 56.0 | 148 / 151 | 80.6 / 76.2 (**+50 / +36 %**, KNOWN GAP) |
+| Same, mean over the first 50 ms, °/s² | (initial) | 121 / 125 | 62.1 / 60.1 |
+| Yaw rate at 1 s, °/s | 36.8 / 5.7 | 62.1 / 4.6 | **40.9** / 3.6 |
+| Yaw rate at 2 s (hover), °/s | 54.5 | 98.2 | 60.8 |
+| Subsidence (hover): a 0.5 s step released, time to half the rate at release, roll / pitch, s | 0.129 / 0.352 | 0.154 / 0.354 | 0.154 / 0.358 |
+| Same, pedal (hover; reported, not a plan row), s | 0.91 | 1.11 | 0.98 |
+
+**Control-system flexibility (Heffley Fig II-2, p22, F).** The OH-6A's block diagram puts a LINKAGE gain and then a
+FLEX factor between each cockpit control and its blade angle: collective 0.155 °/% and 0.88, pitch 0.24 and 0.75, roll
+0.135 and 0.75, yaw 0.39 and 0.67, with the note "Full scale wind tunnel tests have shown that flexibility in the
+control system reduces commanded blade angles". The linkage gains are the 369A's TCDS ranges (24°, 13.5°, 39-41°), so
+the factors come on top of the rigging, and every Heffley derivative carries them. The 500E model flew the TCDS
+rigging rigidly. Now `controlFlex` (new, optional; no other type has it) scales the cyclic about the zero-cyclic
+swashplate by 0.75 and the tail-rotor pitch about the centre of its range by 0.67. The pivots are an AGENT reading;
+their cost in trim and margins is in KNOWN_ISSUES.md ("Control-system flexibility pivots"). The collective's 0.88 is
+not applied (it would re-calibrate `minPitch` and the autorotation law).
+
+With flexibility the roll and pitch rates match the OH-6A. The accelerations fall below it (still inside ±30 %): the
+model's hub moment per degree of flapping is about 25 % below the OH-6A's, and the hinge offset is the 500C's plus the
+inch of the 500D hub (S) either way, so it was not re-tuned. The steady roll rate per degree of cyclic is γΩ/16 for any
+hinge offset (Lock number 4.9 at 51.5 rad/s: about 16 °/s per degree); the OH-6A's L_δA / L_p implies the same per
+degree of blade angle once its 0.75 is applied.
+
+**Yaw: why the steady pedal rate was twice the OH-6A's.** In the hover a blade-element tail rotor yaws at
+r = Δθ · ΩR · (2/3) / l against its own damping: Δθ = 4.1° per 0.1 of pedal, ΩR 214 m/s, l 4.6 m give about 125 °/s
+(the pass-2 review measured 147 °/s at 8 s); the OH-6A's N_δp / N_r give 62. Three physical terms were missing:
+
+- The flexibility above: 0.67 of the commanded pitch.
+- Main-rotor yaw damping: the governor holds the rotor speed relative to the fuselage, so a yaw rate changes the
+  rotor's speed through the air, its torque and its thrust (the OH-6A's Z_r = 0.45 m/s² per rad/s is this term).
+  `yawInRotorSpeed` (new, optional) gives the main rotor's blade elements Ω − rotation · r. Pedal-blip half-time 1.26 →
+  0.95 s with it alone.
+- Tail-rotor inflow: the tail rotor relaxed its inflow over a fixed 0.08 s (every type), about 15 times the
+  Pitt-Peters time of a 0.70 m rotor at 2933 rpm (about 5 ms in the hover, `inflowTimeConstant`); for 80 ms after a
+  pedal input the thrust ran without its inflow feedback, about twice the quasi-steady value. `tail.pittPetersInflow`
+  (new, optional) uses the Pitt-Peters constant. Peak acceleration 148 → 125 °/s² with it alone; the rates barely move.
+
+The remaining peak (80.6 °/s²) is the first 1/240 s step after an ideal step, before the inflow has answered; over the
+first 50 ms the mean is 62 °/s², 15 % above the OH-6A, which is about what the 500E's larger, faster tail rotor (55 against
+51 in) gives per degree. It stays an expected failure; the metric was not changed.
 
 **Fins in the tail rotor's inflow (pilot review 2026-10-17).** The tail rotor turns 0.30 m to the left of the fins and
 draws its inflow across them: its 0.70 m disc covers all of the lower fin and 60 % of the upper fin (the 3V outlines),
-where the actuator-disc inflow 0.30 m upstream is about 0.6 of the disc's induced velocity. That part of each fin now
-sees the flow (`fins[].tailRotorFlow`, new and optional; no other type has it): it costs anti-torque (hover pedal
-−0.26 → −0.28; 0.4-0.5 psi; the ceilings 140-380 ft lower, all inside ±400 ft) and damps the yaw, because a yaw rate
-changes the flow across the fin. Pedal-step half-time 1.40 → 1.11 s (OH-6A 0.91 s), yaw rate 1 s after a 0.1 step
-65.3 → 62.1 °/s, the initial acceleration unchanged at 148 °/s². A 0.5 s blip of 0.1 travel: 36.9 °/s at release (38.8
-before), 80° net heading (91°). Collective +0.1 in 1 s with the pedals frozen: 23.2 °/s at 1 s (24), 119° in 3 s (124).
+where the actuator-disc inflow 0.30 m upstream is about 0.6 of the disc's induced velocity. That part of each fin sees
+the flow (`fins[].tailRotorFlow`): it costs anti-torque (0.4-0.5 psi; the ceilings 140-380 ft lower, all inside
+±400 ft) and damps the yaw, because a yaw rate changes the flow across the fin (pedal-step half-time 1.40 → 1.11 s
+before the polish pass).
 
-What was tried and not applied: the tail rotor's lift slope 5.7 → 4.0 cuts the acceleration to 105 °/s² and the 1 s
-rate to 55 °/s but cuts the rotor's own damping as much (half-time 2.07 s); Izz 1200 → 1500 kg·m² gives 116 °/s², 55 °/s
-and 1.98 s. The model's ratio of yaw damping to pedal power is about 2.7 times smaller than the OH-6A derivatives' (N_r
-−0.86 /s against N_δp 0.94 rad/s² per 0.1 of travel); with the TCDS tail-rotor range (41° over the pedal travel) and a
-blade-element tail rotor no sourced knob closes that: it needs either a smaller blade angle per pedal than the TCDS
-range implies (nonlinear rigging, control-system stretch) or damping from a source the model lacks. Neither is
-sourced; a yaw-rate damping derivative added by hand was not used (no hidden servo in the airframe).
-
-The 500E differs from the OH-6A where these rows miss: a five-blade hub with a wider hinge, and the D/E's larger
-(55 in) tail rotor on a +27/−14° pitch range. Heffley's derivatives also fold in the OH-6A's control-system
-flexibility ("constant control-attenuation coefficients"), which a rigging range does not have. Not tuned away: see
-KNOWN_ISSUES.md. Each KNOWN GAP row is its own expected failure (md500Performance), so closing one turns it red; the
-60 kt yaw rate at 1 s passes (3.8 against 5.7 °/s, inside the 3 °/s floor the row uses where the reference is under
-10 °/s).
+**Not applied.** A lower tail-rotor lift slope (5.7 → 4.0) or a larger Izz (1500 kg·m²) lowers the acceleration but
+slows the damping as much (half-times 2.07 / 1.98 s), and a hand-added yaw-rate damping term would be a hidden servo.
