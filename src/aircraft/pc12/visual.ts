@@ -494,6 +494,8 @@ const PROP: PropVisualDef = {
   // Built at the flight-idle low-pitch stop the flight model starts from (17 deg at the 42 in station, plan 5.1); the
   // state's blade pitch turns each blade from it, down to -17.5 deg in reverse and up to 79.6 deg feathered.
   referencePitch: 17 * DEG,
+  // The helix through 17 deg at that station (0.80 R), so the blade angle drawn there is the commanded one.
+  geometricPitch: Math.tan(17 * DEG) * 2 * Math.PI * PC12_PROP.STATION * (PC12_PROP.diameter / 2),
   variablePitch: true,
   // Slender aluminium blades about 0.19 m wide at their widest (PHOTO propeller and nose), rounded tips.
   chord: [

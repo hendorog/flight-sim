@@ -14,7 +14,8 @@ import { PC12_PANEL_PX_PER_M, PC12_PEDESTAL, pc12PanelPx } from '../../src/aircr
 import { PC12_VISUAL, PC12_VISUAL_HEIGHTS } from '../../src/aircraft/pc12/visual';
 import { loadAirframeVisual } from '../../src/aircraft/visualLoader';
 import { AircraftVisual } from '../../src/render/aircraft/AircraftVisual';
-import { Cockpit } from '../../src/render/aircraft/cockpit';
+import { Cockpit, leverSurfaceZ } from '../../src/render/aircraft/cockpit';
+import { Propeller } from '../../src/render/aircraft/propeller';
 import { cabinFloorGeometry, createFuselageShapes, sectionHalfWidth } from '../../src/render/aircraft/fuselage';
 import { LandingGear } from '../../src/render/aircraft/gear';
 import { buildTail } from '../../src/render/aircraft/tail';
@@ -235,6 +236,42 @@ describe('Pilatus PC-12/47 airframe visual', () => {
     expect(nonFinite(gear.group)).toBe(0);
   });
 
+  it('the blade angle drawn at the 42 in station (0.80 R) is the commanded one: flight idle, full reverse, feather', () => {
+    // TCDS C.III.6 quotes the HC-E4A-3D's angles at 42 in; the geometry is built at 17 deg there (plan 5.1).
+    const def = { ...PC12_VISUAL.props[0], hub: [0, 0, 0] as [number, number, number] };
+    const R = def.diameter / 2;
+    const prop = new Propeller(fakeMaterials(), def, true);
+    const front = prop.group.getObjectsByProperty('isInstancedMesh', true).find((m) => /^blade/.test(m.name)) as THREE.InstancedMesh;
+    const p = front.geometry.getAttribute('position');
+    const COLS = 13;
+    const rows = p.count / COLS;
+    /** The chord's angle to the plane of rotation, deg, interpolated to radius r (m), for blade instance k. */
+    const angleAt = (k: number, r: number): number => {
+      const m = new THREE.Matrix4();
+      front.getMatrixAt(k, m);
+      const axis = new THREE.Vector3(0, 1, 0).transformDirection(m);
+      const motion = new THREE.Vector3(0, 0, -1).cross(axis);
+      const row = (i: number): [number, number] => {
+        const te = new THREE.Vector3().fromBufferAttribute(p, i * COLS).applyMatrix4(m);
+        const lead = new THREE.Vector3().fromBufferAttribute(p, i * COLS + COLS - 1).applyMatrix4(m);
+        const chord = lead.clone().sub(te);
+        const mid = te.add(lead).multiplyScalar(0.5);
+        return [Math.hypot(mid.x, mid.y), Math.atan2(-chord.z, chord.dot(motion)) / DEG];
+      };
+      for (let i = 1; i < rows; i++) {
+        const [r0, a0] = row(i - 1);
+        const [r1, a1] = row(i);
+        if (r >= r0 && r <= r1) return a0 + ((a1 - a0) * (r - r0)) / (r1 - r0);
+      }
+      throw new Error('radius off the blade');
+    };
+    for (const pitch of [17, -17.5, 79.6]) {
+      prop.update(0, 0, pitch * DEG);
+      for (let k = 0; k < 4; k++) expect(angleAt(k, PC12_PROP.STATION * R), `${pitch} deg, blade ${k}`).toBeCloseTo(pitch, 1);
+    }
+    prop.dispose();
+  });
+
   it('the quadrant: the power lever swings aft of the gate into reverse; the condition lever has three detents; the MOR stands still', () => {
     const c = PC12_VISUAL.cockpit;
     const [mor, power, condition] = c.engineControls;
@@ -257,6 +294,28 @@ describe('Pilatus PC-12/47 airframe visual', () => {
     ctx.controls.reverse = 1;
     cockpit.update(ctx.state, ctx.controls, 1);
     expect((pcl.rotation.x - gate) / DEG).toBeCloseTo((power.travel * power.reverseTravel!) / DEG, 9);
+    // The detent notches, the idle gate and the reverse arc lie on the pedestal's top, just proud of it (not buried in
+    // it), within its fore and aft faces: every white and red mark in the fixed parts over the two slots.
+    const ped = c.consoles.find((k) => k.material === 'black' && k.min[0] < power.pos[0] && k.max[0] > power.pos[0])!;
+    for (const e of [power, condition]) expect(leverSurfaceZ(c.consoles, e.pos)).toBe(ped.min[2]);
+    const topY = -ped.min[2];
+    const slotY = [power.pos[1], condition.pos[1]];
+    let marks = 0;
+    for (const m of cockpit.group.getObjectsByProperty('isMesh', true) as THREE.Mesh[]) {
+      if (!/:(knobWhite|knobRed)$/.test(m.name) || cockpit.group.children.some((g) => g !== m.parent && g.children.includes(m))) continue;
+      const pos = m.geometry.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) {
+        const v = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+        if (!slotY.some((y) => Math.abs(v.x - y) < 0.03) || Math.abs(v.y - topY) > 0.01) continue;
+        marks++;
+        expect(v.y, 'mark above the pedestal top').toBeGreaterThanOrEqual(topY - 1e-9);
+        expect(v.y).toBeLessThan(topY + 0.005);
+        expect(-v.z).toBeGreaterThan(ped.min[0]);
+        expect(-v.z).toBeLessThan(ped.max[0]);
+      }
+    }
+    // Three detents + the gate + four reverse ticks = 8 boxes of 24 vertices.
+    expect(marks).toBe(8 * 24);
     cockpit.dispose();
   });
 

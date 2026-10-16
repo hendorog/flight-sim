@@ -780,7 +780,7 @@ export class Cockpit {
       if (e.kind === 'knob') this.buildKnob(g, knobMat, mat, e.pos, e.control === 'mixture');
       else {
         this.buildLever(g, knobMat, mat, e.pos, e.length ?? 0.11, e.fixed !== undefined ? 'fixed' : e.control);
-        addLeverMarks(fixed, mat, e);
+        addLeverMarks(fixed, mat, e, def.consoles);
       }
       // A lever drawn fixed (not modelled) stands where it is put and is never animated.
       if (e.kind === 'lever' && e.fixed !== undefined) {
@@ -1215,28 +1215,47 @@ export class Cockpit {
 const clamp01 = (v: number): number => (v > 0 ? (v < 1 ? v : 1) : 0);
 
 /**
+ * The top (FRD z) of the box console the lever's pivot sits under (the pedestal it stands out of), or undefined when
+ * the pivot is not under one: the nearest box top above the pivot whose plan contains it.
+ */
+export function leverSurfaceZ(consoles: CockpitDef['consoles'], pos: readonly [number, number, number]): number | undefined {
+  let top: number | undefined;
+  for (const c of consoles) {
+    if (c.profile) continue;
+    const inside = pos[0] >= c.min[0] && pos[0] <= c.max[0] && pos[1] >= c.min[1] && pos[1] <= c.max[1];
+    if (inside && c.min[2] < pos[2] && (top === undefined || c.min[2] > top)) top = c.min[2];
+  }
+  return top;
+}
+
+/**
  * The quadrant's marks beside a lever's slot (fixed parts): a white notch at each detent (lever fraction), and for a
  * lever with a beta / reverse range the idle gate (a red stop across the slot at lever 0) and a red arc beyond it.
  * A lever at value v stands at rotation travel x (1 - v - 0.5) about the lateral axis through its pivot (see update).
+ * When the pivot sits under a console's top (a pedestal), each mark lies flat on that top where the lever at that
+ * angle comes out through it, just proud of the surface; otherwise on an arc 35 mm from the pivot.
  */
-function addLeverMarks(fixed: MeshBatch, mat: AircraftMaterials, e: CockpitDef['engineControls'][number]): void {
+function addLeverMarks(fixed: MeshBatch, mat: AircraftMaterials, e: CockpitDef['engineControls'][number], consoles: CockpitDef['consoles']): void {
   if (e.kind !== 'lever' || (!e.detents?.length && !e.reverseTravel)) return;
-  /** The mark at lever angle a (rad, + = aft), radius r from the pivot, on the slot's right side. */
-  const mark = (a: number, r: number, w: number, m: THREE.Material, y = 0.011): void => {
+  const p = frd(e.pos[0], e.pos[1], e.pos[2]);
+  const top = leverSurfaceZ(consoles, e.pos);
+  /** Height of the console top above the pivot, m (model +y up = -FRD z). */
+  const h = top === undefined ? 0 : e.pos[2] - top;
+  /** The mark at lever angle a (rad, + = aft), on the slot's right side (lateral offset y). */
+  const mark = (a: number, w: number, m: THREE.Material, y = 0.011): void => {
     const g = new THREE.BoxGeometry(w, 0.003, 0.004);
     // Lever frame: the lever stands up +y; a rotation about +x by a moves its top toward +z (aft in three's frame).
-    g.translate(0, r, 0).rotateX(a);
-    const p = frd(e.pos[0], e.pos[1], e.pos[2]);
+    if (top === undefined) g.translate(0, 0.035, 0).rotateX(a);
+    else g.translate(0, h + 0.0015, h * Math.tan(a));
     g.translate(p.x + y, p.y, p.z);
     fixed.add(m, g);
   };
   const angle = (v: number): number => e.travel * (1 - v - 0.5);
-  const r = 0.035;
-  for (const d of e.detents ?? []) mark(angle(d), r, 0.016, mat.knobWhite);
+  for (const d of e.detents ?? []) mark(angle(d), 0.016, mat.knobWhite);
   if (e.reverseTravel) {
     // The gate at idle (lever 0) across the slot, and the beta / reverse range beyond it in red.
-    mark(angle(0), r, 0.034, mat.knobRed, 0);
+    mark(angle(0), 0.034, mat.knobRed, 0);
     const n = 4;
-    for (let i = 1; i <= n; i++) mark(angle(0) + (e.travel * e.reverseTravel * i) / n, r, 0.01, mat.knobRed);
+    for (let i = 1; i <= n; i++) mark(angle(0) + (e.travel * e.reverseTravel * i) / n, 0.01, mat.knobRed);
   }
 }
