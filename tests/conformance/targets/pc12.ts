@@ -67,7 +67,12 @@ export const PC12_TARGETS: ConformanceTargets = {
   landing: {
     flapDeg: 40,
     approachKt: 86,
-    touchdownPitchDeg: 5,
+    // Touchdown attitude 6 deg (5 until the flight-idle power came down, pilot review 2026-10-17): the generic flare
+    // (landingRoll: the PCL to idle 6 m up, the nose raised to this attitude) touched at 73.5 KIAS with the old idle
+    // thrust; with less, at 5 deg it touches early at 78.8 KIAS (428 m), a cliff between 5 and 5.5 deg. From 5.5 to
+    // 7.5 deg it lands at 72.8-70.4 KIAS and rolls 380-363 m; 6 deg (72.3 KIAS, 1.08 x the 67 KIAS pusher speed) is
+    // mid-plateau. Technique, not tolerance: the band is unchanged.
+    touchdownPitchDeg: 6,
     brake: 1280 / 2400,
     groundRollM: band(389, 30, '47E-PROXY Fig 5-2-52 CHART-READ: 1275 ft +/-100 at SL ISA, 9921 lb, average braking, ground idle after touchdown'),
     reverse: 0,

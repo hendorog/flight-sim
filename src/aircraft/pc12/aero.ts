@@ -46,7 +46,8 @@ const FOWLER_FULL_AT = 20 * DEG;
 /**
  * The Fowler's profile drag at deflection, on the slotted fit's (FlapGeometry.dragFactor): 2 x, for the big flap run
  * aft on three tracks under their fairings with an open slot. CALIBRATED: 13 psi on a 3 deg flaps-40 approach at Vref
- * (plan 5.7: 8-18 psi) and a 6.8 deg flight-idle descent at 85 KIAS with flaps 40 and the gear down.
+ * (plan 5.7: 8-18 psi; the governing point) and a 6.8 deg flight-idle descent at 85 KIAS with flaps 40 and the gear down
+ * (7.4 deg since the flight-idle power came down, docs/pc12-flight-model.md "Flight idle").
  */
 const FOWLER_DRAG_FACTOR = 2;
 /**

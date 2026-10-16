@@ -89,7 +89,7 @@ Attitudes (forward / aft limit, MTOW, 3000 ft): flaps-40 approach at 85 KIAS on 
 | PCL full, 10 000 ft ISA, 150 KIAS | 41.60 psi, ITT 778 °C | 40.5–43.0 psi, ≤ 800 °C (47E 7-10 limiter law) |
 | Hot and high static, 8000 ft, 26 °C, PCL at ITT 800 °C | 32.7 psi | 29–34 psi (47E example 34.1 psi at 850 °C) |
 | Maximum cruise SL / 8000 / 12 000 ft ISA at 36.9 psi, 10 450 lb | 231.8 / 248.0 / 256.1 KTAS; 635 / 565 / 526 lb/h; ITT 755 °C at 12 000 ft | 229 / 247 / 256 KTAS ± 4 %; 634 / 564 / 541 lb/h ± 10 %; ≤ 760 °C (47E Fig 5-2-31; TCDS MCP ITT) |
-| Ground idle (condition GROUND IDLE, on the gate) | Ng 54.9 %, ITT 534 °C, Np 1055 rpm | 50.7–61.4 %, ≤ 750 °C, about 1060 (47E 2-6, 7-11) |
+| Ground idle (condition GROUND IDLE, on the gate) | Ng 54.9 %, ITT 534 °C, Np 1053 rpm | 50.7–61.4 %, ≤ 750 °C, about 1060 (47E 2-6, 7-11) |
 
 Condition lever: GROUND IDLE = 55 % Ng (`lowIdleNg`), FLIGHT IDLE = 64.5 % (`highIdleNg`; 47E: at least 64 %). PCL →
 Ng demand linear from the idle to 104 %; the **torque limiter** (47E-PROXY 7-10, `PC12_TORQUE_LIMITER`) holds 44.3 psi
@@ -99,6 +99,39 @@ at sea level, less 2.7 psi per 10 000 ft to 12 000 ft and 4.5 psi per 10 000 ft 
 torque and the start's fuel schedule CALIBRATED: condition to GROUND IDLE at 13 % Ng, light-off, **peak ITT 750 °C**,
 **50 % Ng at 29 s**, cut-out at 50.0 % Ng, idle 54.8 % Ng with Np about 1005 rpm right after the start (the generator
 charging; 1055 rpm on the warm idle).
+
+### Flight idle
+
+Pilot review 2026-10-17: FLIGHT IDLE in flight read 4.9 psi (about 130 shp), the prop governing 1700 rpm with its
+blade well above the stop and pulling +1.2 kN at 120 KIAS, so the idle descents were shallow (type experience
+ESTIMATE -1000 to -1300 ft/min clean at 120-150 KIAS); on the ground FLIGHT IDLE gave 4.3 kN at a standstill. The gas
+power at 60 / 65 % Ng came down from 110 / 165 to 90 / 130 shp (ESTIMATE). Steady idle descents, MTOW, autopilot
+holding the speed, sink over the last 20 s of 70 s (180 and 200 KIAS not settled: report only):
+
+| FLIGHT IDLE | Before (110 / 165 shp) | Now (90 / 130 shp) | Reviewer's 95 shp (not applied) |
+| --- | --- | --- | --- |
+| Torque in the descent | 4.2-4.8 psi | 3.6 psi | 2.5 psi |
+| 120 KIAS clean | -600 ft/min, +955 N | -648 ft/min, +777 N | -737 ft/min, +451 N |
+| 150 KIAS clean | -927 ft/min | -978 ft/min | -1066 ft/min |
+| 85 KIAS flaps 40 gear down | -1234 ft/min (-7.1°) | -1282 ft/min (-7.4°) | -1380 ft/min (-8.0°) |
+| On the gate, static: thrust / Np | 4345 N / 1656 rpm | 3656 N / 1526 rpm | 2894 N / 1364 rpm |
+
+The reviewer's 95 shp breaks the ESTIMATE band for FLIGHT IDLE on the gate (Np 1500-1730, targets/pc12.ts `idleRpm`);
+130 shp is the lowest inside it. The ESTIMATE descent band at 120 KIAS is out of reach of the power alone: with zero
+propeller thrust the aircraft glides about as the feathered one (-889 ft/min at 119 KIAS); -1000 ft/min or more there
+needs the propeller to DRAG, i.e. the engine giving less than the propeller's own profile power at 1700 rpm so that Np
+falls below the governor. Whether a real PC-12 holds 1700 rpm in a 120 KIAS idle descent decides this (the owner's
+call). Raising the flight-idle stop (the reviewer's 10-12°) was measured and NOT applied: 10° put the ground-idle Np on
+the gate at 834 rpm (target 1060 ± 60), and with the ground idle raised to 58-60 % Ng to recover it (949 / 927 rpm)
+the half-beta taxi ran 15-20 kt (target 8-12) while FLIGHT IDLE on the gate still pulled 3.0 kN; in flight the blade
+governs well above any of these stops, so the stop does not change the descents.
+
+With less idle thrust the generic flare (the PCL to idle 6 m up, the nose raised to 5°) touched 5 kt faster (78.8
+against 73.5 KIAS) and rolled 428 m against the chart's 389 ± 30: the touchdown attitude of that technique is now 6°
+(conformance targets; 72.3 KIAS, 376.7 m; 5.5-7.5° gives 72.8-70.4 KIAS and 380-363 m, below 5.5° it falls off a
+cliff to 78-79 KIAS). The full-reverse roll is 284 m, ratio 0.75. The keyboard circuit in the 10 kt crosswind is
+sensitive to the power map at 70 % Ng (an unchanged 255 shp there passes it: 76.0 KIAS at 1.74 m/s; 225 or 230 shp
+crashed it on a bounced, nose-low round-out at 91 KIAS).
 
 ### Blade angles
 

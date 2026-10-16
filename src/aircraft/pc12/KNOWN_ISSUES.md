@@ -83,10 +83,23 @@ The TCDS gives fine 19 deg, minimum on ground 17 deg and minimum in flight 6 deg
 all be flight angles there (docs/pc12-flight-model.md "Blade angles"). The model's stop is 5.5 deg (the TCDS 6 deg
 less half a degree), calibrated on the 47E ground-idle Np (about 1060 rpm: 1034 measured) and guarded by the flaps-40
 approach torque (8-18 psi: 13 psi). The PCL's "6 to 12 deg" schedule forward of the detent is read as a 6 deg rise to
-mid-travel (ESTIMATE). With the stop that low the propeller reaches its governed 1700 rpm at FLIGHT IDLE on the
-ground, and the half-beta taxi (8.5 kt) and the gate taxi (22 kt) are close to their bands' edges.
-Evidence: [powerplant.ts](powerplant.ts) `PC12_FLIGHT_IDLE_STOP`.
+mid-travel (ESTIMATE). With the stop that low the propeller nearly reaches its governed speed at FLIGHT IDLE on the
+ground (1526 rpm, 3.7 kN static), and the half-beta taxi (8.2 kt) and the gate taxi (20.7 kt) are close to their
+bands' edges. Pilot review 2026-10-17 asked for 10-12 deg: measured and not applied. 10 deg dropped the gate
+ground-idle Np to 834 rpm; raising the ground idle to 58-60 % Ng to recover it (949 / 927 rpm) ran the half-beta taxi
+at 15-20 kt (8-12) and left 3.0 kN at FLIGHT IDLE on the gate. In flight the blade governs above any of these stops.
+Evidence: [powerplant.ts](powerplant.ts) `PC12_FLIGHT_IDLE_STOP`; docs/pc12-flight-model.md "Flight idle".
 Close with: the AFM's blade-angle rigging and an idle-thrust figure.
+
+## Idle descents shallow — **owner to judge**
+
+FLIGHT IDLE power is ESTIMATE: 130 shp at 65 % Ng (was 165; pilot review 2026-10-17). Idle descents at MTOW: 120 KIAS
+-648 ft/min (was -600), 150 KIAS -978 (-927), 85 KIAS flaps 40 gear down -1282 (-7.4 deg; was -1234). Type experience
+(ESTIMATE): -1000 to -1300 at 120-150 KIAS. Lower power breaks the ESTIMATE band for FLIGHT IDLE on the gate (95 shp:
+Np 1364 against 1500-1730) and gains little: at 120 KIAS zero propeller thrust gives about the feathered glide
+(-889 ft/min); steeper needs the propeller to drag with Np below 1700. The same shallow descent is open on the C208.
+Evidence: docs/pc12-flight-model.md "Flight idle"; [targets](../../../tests/conformance/targets/pc12.ts) `idleRpm`.
+Close with: whether Np holds 1700 in a real PC-12 idle descent, and an idle torque or descent figure from a PC-12 pilot.
 
 ## Take-off swing without rudder trim — **within the plan row; owner to judge**
 

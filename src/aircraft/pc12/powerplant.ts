@@ -32,7 +32,7 @@ export const PC12_PT_RPM = PC12_NP_GOVERNED * PC12_GEAR_RATIO;
 /**
  * Corrected-speed running line at sea level, static (gasGenerator.ts: anywhere else the fuel and the gas power scale
  * with delta sqrt(theta), the ITT in kelvin with theta). FITTED (docs/pc12-flight-model.md):
- *  - power: 1200 shp at about 94.5 % Ng static at sea level (the torque limiter holds 44.3 psi there); 1000 shp at the
+ *  - power: about 130 shp at flight idle (64.5 % Ng; ESTIMATE, the idle descents); 1200 shp at about 94.5 % Ng static at sea level (the torque limiter holds 44.3 psi there); 1000 shp at the
  *    47E maximum-cruise rows (sea level, 8000 and 12 000 ft ISA at 36.9 psi) inside 104 % Ng; the limiter's 41.6 psi at
  *    10 000 ft and 150 KIAS below the 102 % Ng taper;
  *  - fuel: 634 / 564 / 541 lb/h at those cruise rows (47E Fig 5-2-31, 8000 lb); about 175 lb/h at ground idle (55 %
@@ -45,7 +45,11 @@ const MAP = {
   ng: [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15],
   fuelFlowLbH: [195, 205, 225, 260, 320, 395, 470, 540, 610, 703, 790, 880, 975, 1075],
   ittC: [560, 530, 520, 525, 545, 575, 615, 665, 725, 775, 822, 875, 932, 995],
-  powerShp: [18, 48, 110, 165, 255, 390, 600, 790, 1000, 1240, 1530, 1830, 2140, 2460],
+  // 60-65 % Ng (flight idle 64.5 %): 90 / 130 shp (was 110 / 165; pilot review 2026-10-17: 4.9 psi at
+  // FLIGHT IDLE in an idle descent, -500 fpm at 120 KIAS, 4.3 kN at a standstill on the gate). The reviewer's 95 shp
+  // at flight idle puts FLIGHT IDLE on the gate at Np 1364, below the ESTIMATE band 1500-1730 (targets/pc12.ts
+  // idleRpm); 130 shp is the lowest inside it (Np about 1525). ESTIMATE; docs/pc12-flight-model.md "Flight idle".
+  powerShp: [18, 48, 90, 130, 255, 390, 600, 790, 1000, 1240, 1530, 1830, 2140, 2460],
 };
 
 /**
