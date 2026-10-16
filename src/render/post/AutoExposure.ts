@@ -24,6 +24,8 @@ export const TAU_DARKEN = 1.8;
  */
 const METER_WEIGHT_DARK = 0.5;
 const METER_WEIGHT_BRIGHT = 0.25;
+/** AutoExposure.update's meterFloor when the metered frame may pull the adaptation as far down as it likes. */
+export const NO_METER_FLOOR = -1e4;
 
 /**
  * GLSL: exposure multiplier from the adapted luminance texture. Luminances are log2 of scene units.
@@ -59,12 +61,13 @@ uniform float uDt;
 uniform bool uReset;
 uniform vec2 uLimits;
 uniform float uReference;
+uniform float uMeterFloor;
 varying vec2 vUv;
 void main() {
   vec2 m = textureLod(tMeter, vec2(0.5), ${Math.log2(METER_SIZE).toFixed(1)}).rg;
   // Partly the frame, partly the scene's illumination level: a white wing filling the view should not
   // turn the rest of the world black, as the eye adapts mostly to the ambient light.
-  float metered = m.x / max(m.y, 1e-6) - uReference;
+  float metered = max(m.x / max(m.y, 1e-6) - uReference, uMeterFloor);
   float target = clamp(uReference + metered * (metered < 0.0 ? ${METER_WEIGHT_DARK.toFixed(2)} : ${METER_WEIGHT_BRIGHT.toFixed(2)}), uLimits.x, uLimits.y);
   float prev = texture2D(tPrevious, vec2(0.5)).r;
   float tau = target > prev ? ${TAU_BRIGHTEN.toFixed(2)} : ${TAU_DARKEN.toFixed(2)};
@@ -92,6 +95,7 @@ export class AutoExposure {
       uDt: { value: 0 },
       uReset: { value: true },
       uReference: { value: 0 },
+      uMeterFloor: { value: NO_METER_FLOOR },
       // Adaptation range: 1e-5 .. 1e5 cd/m^2.
       uLimits: { value: new THREE.Vector2(Math.log2(1e-5 * SCENE_UNITS_PER_LUX), Math.log2(1e5 * SCENE_UNITS_PER_LUX)) },
     },
@@ -111,8 +115,9 @@ export class AutoExposure {
   /**
    * Meter `source` (any downsampled HDR copy of the frame) and adapt over `dt` seconds of real time.
    * @param referenceLuminance luminance of an 18 % grey card under the current light, scene units
+   * @param meterFloor how far below the reference the metered frame may pull, EV (negative; NO_METER_FLOOR: no limit)
    */
-  update(renderer: THREE.WebGLRenderer, source: THREE.Texture, dt: number, referenceLuminance: number): void {
+  update(renderer: THREE.WebGLRenderer, source: THREE.Texture, dt: number, referenceLuminance: number, meterFloor = NO_METER_FLOOR): void {
     this.meterMat.uniforms.tSrc.value = source;
     this.pass.render(renderer, this.meterMat, this.meter);
     this.adapted.reverse();
@@ -121,6 +126,7 @@ export class AutoExposure {
     u.uDt.value = dt;
     u.uReset.value = this.reset;
     u.uReference.value = Math.log2(Math.max(referenceLuminance, 1e-9));
+    u.uMeterFloor.value = meterFloor;
     this.pass.render(renderer, this.adaptMat, this.adapted[0]);
     this.reset = false;
   }

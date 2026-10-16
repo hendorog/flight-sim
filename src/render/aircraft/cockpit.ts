@@ -23,7 +23,7 @@ import { C172S_VISUAL } from '../../aircraft/c172s/visual';
 import { engineControl, type AircraftId, type AircraftState, type ControlInputs } from '../../core/types';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import type { CockpitDef } from './airframe/types';
-import { cabinLamps } from './cabinLight';
+import { cabinLamps, cockpitAdaptation } from './cabinLight';
 import { addCabinTrim, projectTrimUv } from './cabinTrim';
 import { sectionHalfWidth } from './fuselage';
 import { FuselageShape, Ring } from './fuselageShape';
@@ -89,11 +89,39 @@ const DIMMER_KNEE = 0.6;
 function dimmerLow(level: number): number {
   return level >= DIMMER_KNEE ? 1 : (Math.max(level, 0) / DIMMER_KNEE) ** 2;
 }
+/**
+ * The lit compass card's brightness for a panel dimmer setting, as a share of full: linear down to DIMMER_KNEE
+ * (with the aeroplanes' floor of DIMMER_KNEE over it), the low-dimmer curve under it. `aeroplane` keeps the
+ * aeroplanes' curve, flat at 1 over the knee; the helicopters keep their linear one there (unchanged by day)
+ * and share the aeroplanes' under it (agent choice: their compass was ~3.6x the aeroplanes' at a night setting).
+ */
+export function compassLight(level: number, aeroplane = true): number {
+  return (aeroplane || level < DIMMER_KNEE ? Math.max(level, DIMMER_KNEE) : level) * dimmerLow(level);
+}
+/**
+ * Electrical power share of the panel lighting for a bus voltage on a `nominal` (14 or 28) V system: 0 below
+ * 18/28 of nominal, full from 24/28 of it (18-24 V on a 28 V bus, 9-12 V on a 14 V one).
+ */
+export function panelPower(busVoltage: number, nominal = 28): number {
+  const v = nominal === 28 ? busVoltage : (busVoltage * 28) / nominal;
+  return Math.min(1, Math.max(0, (v - 18) / 6));
+}
 /** Dome light over the rear seats and its intensity, candela. */
 const DOME_POS = { x: -0.55, y: 0, z: -0.605 };
 const DOME_CD = 6;
 /** Warm white of incandescent / 3000 K LED interior lamps (linear RGB, unit luminance). */
 const LAMP_WHITE = new THREE.Color(1.0, 0.8, 0.6).multiplyScalar(1 / (0.2126 + 0.7152 * 0.8 + 0.0722 * 0.6));
+/**
+ * Red cockpit flood: the same lamp behind a red filter that passes its red and ~10 % / ~3 % of its green and blue
+ * (linear RGB; ~0.33 of the white lamp's luminance). Agent estimate: a red flood at the same setting is dimmer, and
+ * a red normalised to the white's luminance clipped the red channel of anything near the lamp (the PA38's
+ * deviation card).
+ */
+const LAMP_RED = new THREE.Color(LAMP_WHITE.r, LAMP_WHITE.g * 0.1, LAMP_WHITE.b * 0.033);
+/** The flood's cone half-angles when the definition gives none, degrees: outer edge and full-intensity core. */
+const FLOOD_CONE: readonly [number, number] = [44, 24];
+/** Glareshield top (model y) the flood mask uses when the definition gives none: the Cessna 172S's. */
+const FLOOD_MASK_TOP = 0.29;
 
 /**
  * RoundedBoxGeometry comes unindexed: 324 / 900 / 1764 vertices for 1 / 2 / 3 segments, each baked for the
@@ -523,6 +551,9 @@ export class Cockpit {
    * (agent choice, night-sky final gate). 1 at and over the knee.
    */
   private readonly panelDial = { value: 1 };
+  /** The panel flood: intensity at full dimmer (cd) and colour (unit luminance). */
+  private readonly floodCd: number;
+  private readonly floodLamp: THREE.Color;
 
   /**
    * @param floor cabin floor geometry fitted to the lining (see fuselage.cabinFloorGeometry)
@@ -539,8 +570,13 @@ export class Cockpit {
     def: CockpitDef = C172S_VISUAL.cockpit,
     panelDef: PanelDef = C172S_PANEL,
     aircraft: AircraftId = 'c172s',
+    /** Nominal bus voltage, V (AirframeVisualDef.nominalVoltage). */
+    private readonly nominalVoltage = 28,
   ) {
     const skin = shapes.outer;
+    const flood = def.lamps.flood;
+    this.floodCd = flood.cd ?? FLOOD_CD;
+    this.floodLamp = flood.colour === 'red' ? LAMP_RED : LAMP_WHITE;
     this.group.name = 'cockpit';
     this.def = def;
     const PANEL = (this.face = panelFace(def.panel, panelDef.size));
@@ -1115,12 +1151,13 @@ export class Cockpit {
     // Clockwise as the pilot sees it (looking along -z) is a negative rotation about three's z.
     if (this.fuelHandle) this.fuelHandle.rotation.z = (-(this.def.fuelSelectorHandle!.angles[controls.fuelSelector] ?? 0) * Math.PI) / 180;
     if (this.brakeHandle) this.brakeHandle.position.z = -this.def.parkingBrakeHandle!.pos[0] + (controls.parkingBrake ? this.def.parkingBrakeHandle!.travel : 0);
-    if (compass) this.compass?.update(compass, Math.max(controls.lights.panel, DIMMER_KNEE) * dimmerLow(controls.lights.panel) * (state.electrical.busVoltage > 10 ? 1 : 0) * 1.2 * panelEmissiveScale);
+    const bus = state.electrical.busVoltage;
+    if (compass) this.compass?.update(compass, compassLight(controls.lights.panel) * ((bus * 28) / this.nominalVoltage > 10 ? 1 : 0) * 1.2 * panelEmissiveScale);
     this.poseRockers(controls);
     // Key: OFF, R, L, BOTH 30 degrees apart clockwise, START a further 30 (spring-loaded).
     this.magnetoKey.rotation.z = -((controls.starter ? 4 : controls.magnetos) - 2) * (Math.PI / 6);
 
-    const power = Math.min(1, Math.max(0, (state.electrical.busVoltage - 18) / 6));
+    const power = panelPower(bus, this.nominalVoltage);
     const level = controls.lights.panel;
     // Backlight luminance of the white markings: ~2 cd/m2 at the dimmer's minimum up to ~20 cd/m2 at full
     // (core/context.ts: an instrument backlight is ~5-20 cd/m2), in scene units.
@@ -1135,10 +1172,12 @@ export class Cockpit {
     this.panelMat.emissiveIntensity = this.hasPanelTexture || this.dedicatedEmissive ? power * nits * SCENE_UNITS_PER_LUX * panelEmissiveScale : 0;
 
     // Interior lamps (cabinLight.cabinLamps): the flood on the PANEL dimmer, the dome on its own switch.
-    const flood = power * level * level * FLOOD_CD * SCENE_UNITS_PER_LUX;
-    cabinLamps.floodColor.value.copy(LAMP_WHITE).multiplyScalar(flood);
+    const flood = power * level * level * this.floodCd * SCENE_UNITS_PER_LUX;
+    cabinLamps.floodColor.value.copy(this.floodLamp).multiplyScalar(flood);
     const dome = (controls.lights as { dome?: boolean }).dome === true ? power * DOME_CD * SCENE_UNITS_PER_LUX : 0;
     cabinLamps.domeColor.value.copy(LAMP_WHITE).multiplyScalar(dome);
+    cockpitAdaptation.floodExposure = FLOOD_CD / this.floodCd;
+    cockpitAdaptation.panelGlow = 0;
   }
 
   /**
@@ -1183,10 +1222,12 @@ export class Cockpit {
   /**
    * The lamps' flux as the cabin bounce (cabinLight.updateCabinBounce) should take it: the flood lands on the dark
    * panel and glareshield first, so only FLOOD_FIRST_BOUNCE of its flux counts against the cabin's (much lighter)
-   * mean albedo, and the lining is not lit as if it were in the beam.
+   * mean albedo, and the lining is not lit as if it were in the beam. A flood brighter than the Cessna 172S's only
+   * because it sits further from its panel (CockpitDef.lamps.flood.cd) puts the same light on the panel, so its
+   * flux counts as the 172S's would (agent choice: the DA20's lamp behind the seats lit the whole canopy grey).
    */
   lampBounceFlux(out: THREE.Color): THREE.Color {
-    return out.copy(cabinLamps.floodColor.value).multiplyScalar(1.9 * FLOOD_FIRST_BOUNCE).add(this.tmpColor.copy(cabinLamps.domeColor.value).multiplyScalar(Math.PI));
+    return out.copy(cabinLamps.floodColor.value).multiplyScalar(1.9 * FLOOD_FIRST_BOUNCE * (FLOOD_CD / this.floodCd)).add(this.tmpColor.copy(cabinLamps.domeColor.value).multiplyScalar(Math.PI));
   }
   private readonly tmpColor = new THREE.Color();
 
@@ -1197,8 +1238,10 @@ export class Cockpit {
     frd(FLOOD_POS[0], FLOOD_POS[1], FLOOD_POS[2] + 0.006, cabinLamps.floodPos.value);
     const aim = frd(FLOOD_AIM[0], FLOOD_AIM[1], FLOOD_AIM[2]);
     cabinLamps.floodAxis.value.copy(aim).sub(cabinLamps.floodPos.value).normalize();
-    // Mask: aft of the panel face (model z > -PANEL.x) or above the glareshield top (model y > 0.29).
-    cabinLamps.floodMask.value.set(-face.x, 0.29);
+    // Mask: aft of the panel face (model z > -PANEL.x) or above the glareshield top (model y > maskTop).
+    cabinLamps.floodMask.value.set(-face.x, def.lamps.flood.maskTop ?? FLOOD_MASK_TOP);
+    const [outer, inner] = def.lamps.flood.cone ?? FLOOD_CONE;
+    cabinLamps.floodCone.value.set(Math.cos((outer * Math.PI) / 180), Math.cos((inner * Math.PI) / 180));
     const DOME_POS = def.lamps.dome?.pos;
     if (DOME_POS) frd(DOME_POS[0], DOME_POS[1], DOME_POS[2] + 0.006, cabinLamps.domePos.value);
   }

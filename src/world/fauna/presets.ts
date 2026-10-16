@@ -2,7 +2,8 @@
 // every buffer at FAUNA_MAX (the ultra row) in init() and only changes counts when the quality changes.
 //
 // Budget (plan "fauna" section): fauna CPU <= 0.4 ms/frame on high, <= 200k fauna triangles, <= 200
-// terrainHeight calls per frame, <= 1 habitat cell (<= 40 terrain samples) per frame, zero per-frame allocations.
+// terrainHeight calls per frame, <= 1 habitat cell per layer (<= 40 + 20 terrain
+// samples, habitat.ts STREAM_PROBE_READS) per frame, zero per-frame allocations.
 //
 // Pure data.
 
@@ -45,8 +46,8 @@ export const FLYER_RANGE_FACTOR = 1.2;
 
 /** Simulated ground animals at most (more than are drawn: herds behind the camera keep living). */
 export const MAX_GROUND_ANIMALS = 1200;
-/** Herds alive at once at most. */
-export const MAX_HERDS = 24;
+/** Herds alive at once at most (24 -> 40 for the denser landscape, layers 2 and 3: AGENT choice). */
+export const MAX_HERDS = 40;
 /** Members per herd at most. */
 export const MAX_HERD_SIZE = 80;
 /** terrainHeight-equivalent calls per frame at most, over everything the fauna does. */

@@ -290,7 +290,11 @@ void faunaSkin() {
     i = int(v.w);
   }
   vec3 bp = mix(pp, pb, aBoneW) + fRootOff;
-  vec3 bn = normalize(mix(np, nb, aBoneW));
+  // Guarded blend (defensive): near-opposite parent and own-bone normals at aBoneW ~ 0.5 cancel to ~0, whose normalize
+  // is ill-defined; fall back to the parent's normal there. (Not the far-herd black / sky-blue speckle: shots at 1.5 km
+  // keep it with this guard and with a fragment-side one.)
+  vec3 bm = mix(np, nb, aBoneW);
+  vec3 bn = dot(bm, bm) > 1e-8 ? normalize(bm) : np;
   // Instance: scale, bank (right wing down +), pitch (nose up +), yaw (heading, 0 = north, clockwise).
   // (a right-handed +x rotation takes the right side down: exactly right-wing-down-positive bank)
   vec4 qi = qMul(qAx(AY, 1.5707963 - aInstA.w), qMul(qAx(AZ, aInstB.x), qAx(AX, aInstB.y)));
@@ -371,7 +375,11 @@ export function createFaunaMaterials(id: FaunaSpeciesId, set: CreatureMeshSet): 
       .replace('#include <begin_vertex>', 'vec3 transformed = fWorldP;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFaunaTint;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vFaunaTint;')
+      // MSAA shades a pixel once at its centre even when only a sample of a sub-pixel triangle covers it, so the
+      // vertex colours are extrapolated there: on far (LOD1/LOD2) animals a dark-patterned facet extrapolates
+      // to a negative albedo, which the tone map shows as a pure black or deep-blue speck (fauna-across-the-
+      // landscape review: the specks vanish with MSAA off, and a float render of the same frame has none). Clamp.
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vFaunaTint;\ndiffuseColor.rgb = clamp(diffuseColor.rgb, 0.0, 1.0);')
       .replace('#include <lights_physical_fragment>', SKIN_SPECULAR)
       .replace('#include <lights_fragment_maps>', SKIN_IBL);
   };
