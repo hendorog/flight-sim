@@ -126,18 +126,19 @@ describe('MD 500E forward flight (plan 6.6)', () => {
     expect(Math.abs(vy - V.vy)).toBeLessThanOrEqual(8);
   }, 60_000);
 
-  it('maximum rate of climb at 87.2 psi and Vy: 1770 ft/min +/- 20 % at 2600 lb (M, spec p7)', () => {
+  it('maximum rate of climb at 87.2 psi and Vy: 1770 ft/min +/- 20 % at the design gross weight, 3000 lb (M, spec p7)', () => {
     const roc = (lb: number) => {
-      let lo = 0, hi = 15;
-      for (let i = 0; i < 12; i++) { const deg = (lo + hi) / 2; const t = level(lb, V.vy, deg); if (!t.converged || t.psi > 87.2) hi = deg; else lo = deg; }
+      let lo = 0, hi = 35;
+      for (let i = 0; i < 14; i++) { const deg = (lo + hi) / 2; const t = level(lb, V.vy, deg); if (!t.converged || t.psi > 87.2) hi = deg; else lo = deg; }
       const t = level(lb, V.vy, lo); return { lb, fpm: t.fpm, psi: t.psi, tot: t.tot };
     };
-    const rows = [roc(2600), roc(3000)];
+    const rows = [roc(3000), roc(2600)];
     report.climb = rows;
-    // "design gross weight" is not defined in the spec's footnotes: the 2600 lb row carries the M figure and the
-    // 3000 lb row is reported.
+    // The spec's table is "at design gross weight" and its weights row gives the normal capacity, 3000 lb; the
+    // 2600 lb climb is reported.
     expect(Math.abs(rows[0].fpm / 1770 - 1)).toBeLessThanOrEqual(0.2);
-    expect(rows[1].fpm).toBeGreaterThan(rows[0].fpm * 0.6);
+    expect(rows[1].fpm).toBeGreaterThan(rows[0].fpm);
+    for (const row of rows) expect(Math.abs(row.psi - 87.2)).toBeLessThan(0.5);
   }, 60_000);
 
   it('level speed at MCP 81.3 psi, SL ISA, 3000 lb: 130-135 KTAS +/- 5 % (M, spec p7)', () => {

@@ -102,7 +102,7 @@ The running line (`powerplant.ts`, corrected to SL ISA) was fitted, not read fro
 | Hover ceilings at the take-off limit (TOT-limited above SL) | RFM Fig 5-4, Fig 8-1 (P) | section 5 |
 | Ground idle 64–65 % N1; rotor N2 55–70 % | RFM 4-16 (P) / ESTIMATE | 64.4 % N1, N2 59 % |
 | Snap deceleration ≥ 2.0 s to 65 % N1 | RFM 4-19, 4-28 (P) | 2.2 s |
-| About 27 gal/h (184 lb/h) in cruise | spec p37 (M) | 180 lb/h at 120 KIAS, 3000 lb |
+| About 27 gal/h (184 lb/h) in cruise | spec p37 (M) | 193 lb/h at 120 KIAS, 3000 lb (62.8 psi, N1 93.1 %, TOT 614 °C) |
 
 The gas producer's inertia (0.030 kg·m², 0.43 MJ at 100 % N1) and the deceleration schedule (minimum flow 0.62 of
 steady) sit between two rows that pull opposite ways: the snap deceleration must not be faster than 2.0 s, and a 1 s
@@ -116,28 +116,28 @@ turning at 23 % N1, START released at 58.5 % 26 s after the grip opened, a TOT p
 
 | Row (plan §6.6) | Target (tag) | Model |
 | --- | --- | --- |
-| HIGE 3000 lb ISA | 8450 ft ±400 (P Fig 5-4) | 8457 ft |
-| HIGE 3000 lb ISA+20 | 5750 ft | 5762 ft |
-| HIGE 2600 lb ISA | 12 300 ft | 12 285 ft |
-| HOGE 2900 lb ISA | 6980 ft ±400 (P Fig 8-1) | 6934 ft |
-| HOGE 2900 lb ISA+20 | 4200 ft | 4160 ft |
-| HOGE 2600 lb ISA | 10 350 ft | 10 215 ft |
+| HIGE 3000 lb ISA | 8450 ft ±400 (P Fig 5-4) | 8428 ft |
+| HIGE 3000 lb ISA+20 | 5750 ft | 5732 ft |
+| HIGE 2600 lb ISA | 12 300 ft | 12 295 ft |
+| HOGE 2900 lb ISA | 6980 ft ±400 (P Fig 8-1) | 6924 ft |
+| HOGE 2900 lb ISA+20 | 4200 ft | 4131 ft |
+| HOGE 2600 lb ISA | 10 350 ft | 10 186 ft |
 | Hover 3000 lb torque IGE / OGE | 62–72 / 72–82 psi (DERIVED) | 71.5 / 79.3 psi |
-| Hover TOT | 620–720 °C (ESTIMATE) | 647 / 692 °C, N1 95.3 / 97.2 % |
-| Hover IGE attitude | pitch +1…+5°, roll 1–3° left (ESTIMATE) | pitch +2.4°, roll **3.6° left** (KNOWN GAP; OH-6A trims at 3.05° left at 2550 lb, F) |
+| Hover TOT | 620–720 °C (ESTIMATE) | 647 / 692 °C, N1 95.4 / 97.2 %, 210 / 226 lb/h |
+| Hover IGE attitude | pitch +1…+5°, roll 1–3° left (ESTIMATE) | pitch +2.5°, roll **3.7° left** (KNOWN GAP; OH-6A trims at 3.05° left at 2550 lb, F); OGE +2.6°, 4.1° left |
 | Hover IGE pedal | −0.20…−0.45 (ESTIMATE) | −0.26 |
-| Vy (minimum power) | 62 ±8 KIAS (P Fig 5-3) | see the trace (`vy`) |
-| Max ROC at 87.2 psi, Vy | 1770 ft/min ±20 % (M) at 2600 lb | see the trace (`climb`) |
-| Level speed at MCP 81.3 psi, 3000 lb | 130–135 KTAS ±5 % (M) | see the trace (`mcpSpeed`) |
+| Vy (minimum power) | 62 ±8 KIAS (P Fig 5-3) | 64.9 KIAS |
+| Max ROC at 87.2 psi, Vy | 1770 ft/min ±20 % (M) at the design gross weight | 1848 ft/min at 3000 lb (TOT 737 °C); 2355 at 2600 lb |
+| Level speed at MCP 81.3 psi, 3000 lb | 130–135 KTAS ±5 % (M) | 139.3 KTAS (pitch −4.4°, TOT 703 °C, N1 97.6 %) |
 | Cruise 120 KIAS, 2700 lb | pitch −2…−6°, cyclic ≤ 0.3 forward of hover | −3.4°, 0.22 |
-| Cruise fuel flow, 120 KIAS 3000 lb | 184 lb/h ±15 % (M) | see the trace (`cruiseFuel`) |
+| Cruise fuel flow, 120 KIAS 3000 lb | 184 lb/h ±15 % (M) | 193 lb/h |
 
 ## 6. Autorotation
 
 `minPitch` calibrates the RFM 4-25 law (collective full down, 60 KIAS): **484.7 rpm at 2250 lb SL** (485 ± 5);
 −11.2 rpm per 100 lb less (−10 ± 3); +7.4 rpm per 1000 ft (+6.5 ± 2). Rate of descent at 60 KIAS, 3000 lb, Nr held
-at 490 rpm with the collective: **1808 ft/min** (ESTIMATE 1600–2200). Engine off, Nr held at 480: the 80 KIAS glide
-ratio is 1.4 times the 60 KIAS one (row ≥ 1.15). At 410 rpm (the RFM's minimum-sink and best-glide rotor speed) the
+at 490 rpm with the collective: **1808 ft/min** (ESTIMATE 1600–2200). Engine off, Nr held at 480, 2700 lb: glide
+ratio 3.4 at 60 KIAS (1763 ft/min) and 4.4 at 80 KIAS (1839 ft/min), 1.28 times (row ≥ 1.15). At 410 rpm (the RFM's minimum-sink and best-glide rotor speed) the
 60 KIAS sink falls to about 1500 ft/min; at 80 KIAS and 410 rpm the modelled rotor sits at the retreating-blade stall
 boundary, so that combination is reported, not asserted. With the grip at ground idle a low Nr lets the idling
 engine join the needles and drive the rotor, which is the RFM 4-24 note on practice autorotations.
@@ -150,13 +150,13 @@ reference responses to a step of 0.1 of full travel, at the OH-6A's 2550 lb:
 
 | Response | OH-6A hover / 60 kt | MD 500E model hover / 60 kt |
 | --- | --- | --- |
-| Roll acceleration, °/s² | 84.3 / 82.7 | 82 / 83 |
+| Roll acceleration, °/s² | 84.3 / 82.7 | 82.3 / 82.8 |
 | Roll rate at 0.5 s, °/s | 15.1 / 13.8 | 20.4 / 20.8 (**+35 / +51 %**, KNOWN GAP) |
-| Pitch acceleration, °/s² | 53.1 / 53.5 | 57 / 53 |
-| Pitch rate at 0.5 s, °/s | 17.1 / 14.7 | 21.5 / 17.6 |
+| Pitch acceleration, °/s² | 53.1 / 53.5 | 57.6 / 54.2 |
+| Pitch rate at 0.5 s, °/s | 17.1 / 14.7 | 21.6 / 18.4 |
 | Yaw acceleration (pedal), °/s² | 53.9 / 56.0 | 148 / 152 (initial; **+170 %**, KNOWN GAP) |
-| Yaw rate at 1 s, °/s | 36.8 / 5.7 | 65.7 / 4.1 |
-| Roll / pitch subsidence t½ (hover), s | 0.14 / 0.35 | within twice the OH-6A's |
+| Yaw rate at 1 s, °/s | 36.8 / 5.7 | 65.5 / 3.8 |
+| Time to half of the 0.5 s rate (hover), roll / pitch, s | 0.12 / 0.19 | 0.15 / 0.23 |
 
 The 500E differs from the OH-6A where these rows miss: a five-blade hub with a wider hinge, and the D/E's larger
 (55 in) tail rotor on a +27/−14° pitch range. Heffley's derivatives also fold in the OH-6A's control-system

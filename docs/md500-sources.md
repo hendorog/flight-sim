@@ -103,3 +103,22 @@ Nothing in this record implies a calibrated 369E rotor. The blade aerodynamic da
 compensator are estimates or gaps (research-md500.md §17). The T-tail stabiliser has a published incidence but no area or airfoil. The freewheel,
 twist-grip fuel control and N2 governor are new turboshaft-stage behaviour (owner-notes item 4). Do not express them through the piston/clutch
 fields used by the R22, R44 and S269.
+
+## Readings made for the flight model (T2, 16 October 2026)
+
+- **OH-6A derivatives** (Heffley CR-3144 Table II-3, printed pp 27–28, SI, per cm of control): cases 4 (hover) and 8
+  (60 kt), 1157 kg, mid CG, read from the rendered pages (the text extract's OCR is unreliable). Transcribed in
+  `tests/rotorcraft/oh6a.ts` with the full-travel controller table (Fig II-2: collective 22.9, longitudinal 31.8,
+  lateral 29.2, pedal 9.3 cm). Units checked against the US-unit tables (L'δA 0.4956 /cm = 1.2588 /in). The hover
+  trim of case 4 (θ 1.66°, φ −3.05°) is the family evidence for the hover-attitude row. **F**.
+- **Hinge offset**: the 500C's 0.458 ft plus the inch by which the 500D hub is wider (heli-archive, **S**): 0.165 m.
+- **Tail-rotor hub height**: Fig 1-1's 2.0 ft tip clearance is in the 4.7° nose-up ground attitude, which lowers
+  STA 284 by 15.1 in; in level axes the hub is at WL 51.4 (**D**; the OH-6A's is WL 54.3).
+- **Stabiliser**: TCDS p14's 8.92–9.42° to the mast normal read leading edge UP (+6.17° to the waterline) with an
+  inverted cambered section (zero-lift +6°, ESTIMATE): a download at every forward speed, as heli-archive (**S**)
+  says; the leading-edge-down reading puts the nose 0.9° up at 120 KIAS (docs/md500-flight-model.md).
+- **"Design gross weight"** in the 2023 specification's performance table (p7) is not defined; its weights row gives
+  the normal capacity, 3000 lb, which the climb row uses (**M**).
+- **ENGINE OUT horn**: late-generic harness (S/N 509E on): the audio is enabled by the generator switch (RFM 1-11,
+  3-25 note); auto-reignition armed by transmission oil pressure, the igniter firing until RE-IGN P RST is pressed
+  (RFM 1-13).

@@ -54,12 +54,12 @@ only in transients:
 - `droop` 0.1 (10 % N2 per unit N1) and `anticipation` 0.535 N1 per unit collective; the datum `datumNg` 0.784 is the
   flat-pitch N1 on the ground at 103 % N2, so **the beep set point reads at flat pitch** (the RFM 4-18 run-up
   check works: high stop 104.5 %, low stop 97.5 % at flat pitch);
-- over-compensation: from 103.0 % set at flat pitch, a climb at 87 psi holds **N2 103.6–103.7 %** (RFM 4-22: "N2
+- over-compensation: from 103.0 % set at flat pitch, a climb at 87 psi holds **N2 103.76 %** (RFM 4-22: "N2
   should increase ½ to 1 percent on take-off"; row 103.5–104.0 %);
-- gains 4 and 1.5 /s, lead 0.15 s, calibrated to the transient rows: hover → 87 psi in 2 s: N2 min ≈ 102.7 % (row ≥
-  100.5 %); a 1 s snatch: ≈ 102.5 % (row ≥ 98.5 %), no ENG OUT, back within 0.5 % in under 3 s; then a 1 s
-  collective dump from 87 psi peaks N2 at ≈ 105.6 % (row ≤ 106 %, Fig 2-2). The compensator is what makes the 500
-  stiff: the droop on a collective snatch is under 1 %.
+- gains 4 and 1.5 /s, lead 0.15 s, calibrated to the transient rows: hover → 90 psi in 2 s: N2 min 102.77 % (row ≥
+  100.5 %); a 1 s snatch: 102.57 % (row ≥ 98.5 %), no ENG OUT, never more than 0.5 % from its settled value; then
+  a 1 s collective dump peaks N2 at 105.2–105.3 % (row ≤ 106 %, Fig 2-2). The compensator is what makes the 500
+  stiff: the droop on a collective snatch is under 0.5 %.
 - Grip below FULL OPEN, or `ControlInputs.rotorGovernor === false` (the governor-failure case, RFM 3-14/3-15):
   `governorMode 'manual'`, the grip alone sets N1, the integral tracks for a bumpless return.
 - The beep moves the set point at 1 %/s (`beepRate` 0.01) within 97.5–104.5 % (`MD500_N2_BEEP`; RFM 4-18: high 104–105,
@@ -77,9 +77,11 @@ pass). On the 0.1 kg·m² output side against the rotor's 2.3 kg·m² reflected 
 at 240 Hz and at the app's rate (plan §11 asked; the reset-to-hover holds N2 within 0.01 % for 10 s).
 
 `needlesSplit` (RotorcraftState.turboshaft) is set when Nr × ratio is above N2 by more than 1 %: autorotation and
-shutdown. Measured: grip FULL OPEN in autorotation at 3000 lb with Nr held at 510 rpm by the collective, N2 stays at
-the governed value (103.9 % against 103.0 % before the entry; never near 108 %), split; grip at idle in autorotation
-at 2250 lb, Nr 101.5 % and N2 95.7 % (split 5.8 %, row > 5 %); powered flight, needles together within 0.01 %.
+shutdown. Measured: grip FULL OPEN in autorotation at 3000 lb with Nr held at 510 rpm (106.7 %) by the collective,
+N2 settles at 103.6 % against 103.0 % before the entry (the proportional droop of an unloaded governor; peak 104.0 %,
+never near 108 %), split; grip at idle in autorotation at 2250 lb, Nr 101.5 % and N2 95.7 % (split 5.8 %, row > 5 %);
+powered flight, needles together; shutdowns from 103 % and from ground idle split within 0.05 s with the rotor
+lagging.
 
 ## 5. Unloaded power turbine (why the loss is 20 kW, not 4–8 kW)
 
