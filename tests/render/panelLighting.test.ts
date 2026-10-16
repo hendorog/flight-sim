@@ -19,11 +19,13 @@ import { C208_PANEL } from '../../src/aircraft/c208/panel';
 import { R22_PANEL } from '../../src/aircraft/r22/panel';
 import { R44_PANEL } from '../../src/aircraft/r44/panel';
 import { S269_PANEL } from '../../src/aircraft/s269/panel';
+import { PC12_PANEL } from '../../src/aircraft/pc12/panel';
+import { MD500_PANEL } from '../../src/aircraft/md500/panel';
 import { blankDocument, fakeContext } from '../aircraft/meshChecks';
 
 const PANELS: Record<AircraftId, PanelDef> = {
   c172s: C172S_PANEL, c152: C152_PANEL, pa38: PA38_PANEL, da20: DA20_PANEL, pa34: PA34_PANEL, da42: C172S_PANEL,
-  c208: C208_PANEL, r22: R22_PANEL, r44: R44_PANEL, s269: S269_PANEL,
+  c208: C208_PANEL, r22: R22_PANEL, r44: R44_PANEL, s269: S269_PANEL, pc12: PC12_PANEL, md500: MD500_PANEL,
 };
 const lum = (c: THREE.Color): number => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 
