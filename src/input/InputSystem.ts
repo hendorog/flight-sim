@@ -464,6 +464,9 @@ export class InputSystem implements Subsystem {
     this.rotation.reset();
     this.selection = 'all';
     this.gateLifted = this.forwardToGate = false;
+    // An armed condition-lever cut-off belongs to the previous flight: holding the key through the reset must not stop
+    // the new flight's engine.
+    this.cutoffArmed = null;
     // A new scenario must pick up its own controls, not the previous flight's mouse position.
     if (this.mouseYoke) {
       this.mouseArmed = true;
@@ -994,6 +997,8 @@ export class InputSystem implements Subsystem {
     if (v > low + DETENT_EPS) writeEngineControl(c, target, 'mixture', low);
     else if (v > 0 && !this.guard(ctx.state, 'mixture')) {
       this.cutoffArmed = { target };
+      // The hold is timed from this press: a release and re-press inside one update must not inherit the old hold.
+      this.heldTime.set('mixtureLean', 0);
       this.shell.toast?.(`Hold ${keyLabelForAction('mixtureLean') ?? 'the key'} for ${CONDITION_CUTOFF_HOLD} s to move the condition lever to CUT-OFF`);
     }
   }

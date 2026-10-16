@@ -26,6 +26,8 @@ export class Rotorcraft {
   readonly articulatedPower = { hub: 0, shaft: 0 };
   readonly drivePower = { aerodynamic: 0, rotorChange: 0, clutch: 0, integration: 0 };
   private readonly loads: ForceMoment = { force: v3.zero(), moment: v3.zero() };
+  /** Momentum-theory tail inflow for the last compute()'s tail thrust, m/s (settle() solves tailInflow = this). */
+  private tailInflowTarget = 0;
   /** Turboshaft fuel control and N2 governor (systems.turboshaft): the flight model calls its stepTurboshaft()
    * in place of throttle(). Null on piston installations. */
   readonly turboshaft: TurboshaftControl | null;
@@ -323,6 +325,8 @@ export class Rotorcraft {
     const tail = bladeElements(d.tail, s.omega * d.tailRatio, tailPitch,
       tailAir.y * d.rotation, tailHorizontal, s.tailInflow, density);
     const targetInflow = inflowTarget(main.thrust, density, d.main.radius, axial, horizontal);
+    const tailTarget = inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation, tailHorizontal);
+    this.tailInflowTarget = tailTarget;
     const inflowTau = inflowTimeConstant(d.main.radius, axial, horizontal, targetInflow);
     const tailHForce = tailHorizontal > 0 ? { x: -tail.inPlane * tailAir.x / tailHorizontal, y: 0,
       z: -tail.inPlane * (tailAir.z - wakeAtTail) / tailHorizontal } : v3.zero();
@@ -345,7 +349,6 @@ export class Rotorcraft {
         s.retreatingFlap += (clamp(stallTarget, 0, 0.2) - s.retreatingFlap) * lag;
       }
       s.inflow += (targetInflow * ge * (d.main.inducedFactor ?? 1) - s.inflow) * (1 - Math.exp(-dt / inflowTau));
-      const tailTarget = inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation, tailHorizontal);
       const tailTau = d.tail.pittPetersInflow
         ? inflowTimeConstant(d.tail.radius, tailAir.y * d.rotation, tailHorizontal, tailTarget) : 0.08;
       s.tailInflow += (tailTarget - s.tailInflow) * (1 - Math.exp(-dt / tailTau));
@@ -403,6 +406,22 @@ export class Rotorcraft {
           : d.rotation * d.cyclicLimit * (c.aileron * Math.cos(psi) - c.elevator * Math.sin(psi)));
     });
   }
+  /** settle() with Pitt-Peters tail inflow: its small time constant makes the 50 ms relaxation
+   * step a 2-cycle (tail thrust alternating -659/+1102 N about a 100 N trim, MD 500E hover, pedal 0.3).
+   * With the body, RPM and main inflow held, the tail's inflow is the root of target(inflow) - inflow;
+   * bisect for it. The time constant does not move that root, so the fixed point is the time-stepped one. */
+  private solveTailInflow(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs): void {
+    const s = this.state;
+    const residual = (x: number) => { s.tailInflow = x; this.compute(b, wind, density, height, c, 0); return this.tailInflowTarget - x; };
+    const start = s.tailInflow;
+    let lo = -60, hi = 60;
+    if (!(residual(lo) > 0 && residual(hi) < 0)) { s.tailInflow = start; return; }
+    for (let i = 0; i < 40; i++) {
+      const mid = 0.5 * (lo + hi);
+      if (residual(mid) > 0) lo = mid; else hi = mid;
+    }
+    s.tailInflow = 0.5 * (lo + hi);
+  }
   /** Converge the slow aerodynamic states at a held pose/RPM for the numerical trim solver. */
   settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true): ForceMoment {
     const s = this.state, d = this.def;
@@ -411,6 +430,7 @@ export class Rotorcraft {
     else { s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit; }
     s.inflow = s.tailInflow = s.omega > 0 ? 5 : 0;
     for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);
+    if (d.tail.pittPetersInflow) this.solveTailInflow(b, wind, density, height, c);
     s.mastBump = false;
     s.driveTorque = powered ? s.torque : 0;
     return this.compute(b, wind, density, height, c, 0);

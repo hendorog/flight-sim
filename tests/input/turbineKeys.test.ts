@@ -304,7 +304,7 @@ describe('the condition lever with detents (PC-12, C208: InputProfile.conditionD
     expect(C172S_INPUT.conditionDetents).toBeUndefined();
   });
 
-  it('M from FLIGHT IDLE goes to GROUND IDLE and stays there, tapped or held: the engine keeps running', () => {
+  it('M from FLIGHT IDLE goes to GROUND IDLE and stays on the detent, tapped or held (the lever position only)', () => {
     for (const profile of [PC12_INPUT, C208_INPUT]) {
       const r = makeInputRig(profile, { mixture: 1 });
       r.tap('KeyM');
@@ -325,6 +325,36 @@ describe('the condition lever with detents (PC-12, C208: InputProfile.conditionD
     expect(r.toasts.at(-1)).toMatch(/Hold M for 1 s .* CUT-OFF/);
     hold(r, 'KeyM', CONDITION_CUTOFF_HOLD + 0.05);
     expect(r.c.mixture).toBe(0);
+  });
+
+  it('a release and re-press inside one update times the hold from the new press, not the old one', () => {
+    const r = makeInputRig(PC12_INPUT, { mixture: PC12_GROUND_IDLE });
+    r.input.keyDown('KeyM');
+    r.run(0.6);
+    // Let go and press again between two updates (a stalled frame): the press arms the cut-off afresh.
+    r.input.keyUp('KeyM');
+    r.input.keyDown('KeyM');
+    r.run(CONDITION_CUTOFF_HOLD - 0.2);
+    expect(r.c.mixture).toBe(PC12_GROUND_IDLE);
+    r.run(0.25);
+    r.input.keyUp('KeyM');
+    expect(r.c.mixture).toBe(0);
+  });
+
+  it('a scenario reset disarms the cut-off: M held through the reset leaves the new flight\'s lever alone', () => {
+    for (const profile of [PC12_INPUT, C208_INPUT]) {
+      const r = makeInputRig(profile, { mixture: CUTOFF_BELOW });
+      r.input.keyDown('KeyM');
+      r.run(0.5);
+      expect(r.c.mixture).toBe(CUTOFF_BELOW);
+      // The reset writes the new flight's trimmed controls (FLIGHT IDLE), then tells the input system.
+      r.c.mixture = 1;
+      r.ctx.events.emit('reset', { scenario: 'runway' });
+      r.run(CONDITION_CUTOFF_HOLD + 0.5);
+      r.input.keyUp('KeyM');
+      r.run(FRAME);
+      expect(r.c.mixture).toBe(1);
+    }
   });
 
   it('Shift+M steps forward a detent a press: CUT-OFF to GROUND IDLE (the start), then FLIGHT IDLE', () => {
