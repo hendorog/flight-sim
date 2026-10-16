@@ -299,7 +299,10 @@ describe('the voices of the later turbine types leave the Caravan and the Cessna
         expect(differing, `stem ${s}`).toBe(0);
       }
     };
-    same(C208_AUDIO, { ...TAKE_OFF, starter: 1, windLevel: 1, windFreq: 700, gyro: 1, fan: 1 });
+    // The Caravan as it was before the later types: without the reverse growl it gained at integration.
+    const caravan = C208_AUDIO.engines[0];
+    const noReverse: AudioProfile = { ...C208_AUDIO, engines: [{ ...caravan, prop: { ...caravan.prop, reverse: undefined } }] };
+    same(noReverse, { ...TAKE_OFF, starter: 1, windLevel: 1, windFreq: 700, gyro: 1, fan: 1 });
     same(undefined, { rpm: 2400, firing: 1, load: 0.8, throttle: 0.8, propLoad: 1, tipMach: 0.76, windLevel: 1, windFreq: 700, horn: 0.6, gyro: 1, fan: 1 });
   }, 60_000);
 });

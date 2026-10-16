@@ -281,7 +281,8 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
       continue;
     }
     const voice = profile.engines[i];
-    const starter = engineControl(c, i, 'starter') && powered;
+    // A latching start switch (PC-12) publishes the engaged starter, which outlasts the momentary switch.
+    const starter = (e.starter ?? engineControl(c, i, 'starter')) && powered;
     const turbine = voice.engine.combustion === 'turbine' ? voice.engine.turbine : undefined;
     let load = 0;
     if (turbine) {
@@ -359,7 +360,7 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
   out[P.shaker] = profile.stickShaker && powered && s.stickShaker === true ? 1 : 0;
   out[P.overspeed] = profile.overspeedWarning && powered && overspeedWarning(s.ias, s.mach, profile.overspeedWarning) ? 1 : 0;
   // The exciters fire while the starter turns the gas generator (the PT6's and the 250's start ignition).
-  out[P.ignitor] = voice0?.engine.turbine?.ignitor && engineControl(c, 0, 'starter') && powered ? 1 : 0;
+  out[P.ignitor] = voice0?.engine.turbine?.ignitor && (s.engines[0]?.starter ?? engineControl(c, 0, 'starter')) && powered ? 1 : 0;
   const tail = tailRotorSound(s, x.speedOfSound, profile);
   out[P.tailRpm] = tail.rpm;
   out[P.tailLoad] = tail.load;

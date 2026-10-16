@@ -10,10 +10,10 @@
 // rotor tone at the shaft rate), not taken from P&WC data.
 
 import { STEM } from '../../audio/params';
-import { HP, LB } from '../../core/math';
+import { DEG, HP, LB } from '../../core/math';
 import type { AudioProfile, EngineSoundProfile, PropSoundProfile } from '../types';
 import { C208_GEOMETRY } from './geometry';
-import { PT6A_114A, PT6A_NG_RPM } from './powerplant';
+import { C208_BETA, PT6A_114A, PT6A_NG_RPM } from './powerplant';
 
 const GEOMETRY_PROP = C208_GEOMETRY.propellers[0];
 /** Fuel flow at 100 % Ng, sea level ISA (the gas generator's running line, powerplant.ts): 390 lb/h. */
@@ -67,6 +67,9 @@ const PROP: PropSoundProfile = {
   cruiseThrustN: 3500,
   // The Caravan's growl: the blades pass the cowl's chin intake and the two exhaust stacks once a revolution.
   growl: 0.3,
+  // Beta and reverse: the roar of the disc driven against its own wake below flat pitch (the PC-12's voice, a little
+  // weaker for the smaller reverse power; strength ESTIMATE). Full reverse at the powerplant's reference station.
+  reverse: { growl: 1.0, fullPitchDeg: C208_BETA.reverse / DEG },
   level: 1,
 };
 

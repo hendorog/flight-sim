@@ -168,6 +168,7 @@ export class AudioSystem implements Subsystem {
       ctx.events.on('crash', () => this.g?.synth.port.postMessage({ type: 'crash', amp: 1 })),
       // Retractable gear: a leg unlocking, locking down or reaching its well.
       ctx.events.on('gear', (e) => this.g?.synth.port.postMessage({ type: 'thump', amp: gearThumpAmplitude(e.kind) })),
+      ctx.events.on('caws', (e) => this.caws(e.level)),
       // React to a pause at once: update() runs in the frame loop, which stops altogether when the tab is
       // hidden or the WebGL context is lost, and the worklet would otherwise keep synthesising the last
       // engine, propeller and wind parameters indefinitely.

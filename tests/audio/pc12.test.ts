@@ -263,7 +263,10 @@ describe('PC-12 mapping', () => {
     expect(reverseGrowl(0, -PROP.cruiseThrustN, PROP)).toBe(0);
     expect(reverseGrowl(5 * DEG, 0, PROP)).toBe(0);
     expect(reverseGrowl(full, 0, PROP)).toBeCloseTo(0.2, 9);
-    expect(reverseGrowl(full, -PROP.cruiseThrustN, C208_AUDIO.engines[0].prop)).toBe(0);
+    // A propeller without `reverse` has no growl; the Caravan's (integration: prop.reverse added) growls at its own full reverse.
+    expect(reverseGrowl(full, -PROP.cruiseThrustN, { ...C208_AUDIO.engines[0].prop, reverse: undefined })).toBe(0);
+    const caravan = C208_AUDIO.engines[0].prop;
+    expect(reverseGrowl(caravan.reverse!.fullPitchDeg * DEG, -caravan.cruiseThrustN, caravan)).toBeGreaterThan(0.5);
     const out = fill((s) => Object.assign(s.propeller, { bladePitch: full, thrust: -4000, rpm: 1650, beta: true }));
     expect(out[P.reverse]).toBe(Math.fround(reverseGrowl(full, -4000, PROP)));
   });
