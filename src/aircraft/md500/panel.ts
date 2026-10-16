@@ -44,7 +44,7 @@ export const MD500_PANEL: PanelDef = {
   // Fixed 2D view: flight instruments with the N1 dial in the top rows, the engine / right column gauges beside them
   // automatically; the console crop holds the fuel valve, the switch row and the START control.
   fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'n1'], ['tach', 'heading', 'vsi']],
-    controls: [{ x: 24, y: MD500_CONSOLE_TOP - 6, w: 654, h: 116 }] },
+    controls: [{ x: 146, y: MD500_CONSOLE_TOP - 4, w: 556, h: 112 }] },
   id: 'md500', size: MD500_PANEL_CANVAS, instrumentScale: SCALE, instrumentBezel: 'round', lightingDimmerExponent: 2.2,
   apertures: { large: 74 * SCALE.large, small: 51 * SCALE.small },
   gauges: [
@@ -110,7 +110,6 @@ export const MD500_PANEL: PanelDef = {
       { x: 224, y: 14, size: 9, lines: ['MD 500E'] },
       { x: 640, y: 14, size: 8, lines: ['NO SMOKING'] },
       ...md500VnePlacards(28, 502, 200, 6),
-      { x: 440, y: 646, size: 7, lines: ['N2 / NR 102–103 % POWER ON · NR 410–523 RPM POWER OFF'] },
       
     ] },
   keepOut: [],
