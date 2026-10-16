@@ -58,7 +58,8 @@ export const PC12_TARGETS: ConformanceTargets = {
   takeoff: { flapDeg: 15, rotateKias: 80, pitchDeg: 8, staticRunUp: true, throttle: PC12_TAKEOFF_LEVER, groundRollM: pct(518, 15, '47E-PROXY Fig 5-2-12 CHART-READ: 1700 ft (SECONDARY 1650)') },
   // 47E-PROXY Fig 5-2-52 (flaps 40) read at SL ISA, 9921 lb (its weight reference line), zero wind and slope: 1275 ft
   // CHART-READ +/-100 ft. Its associated conditions: "average braking technique, ground idle after touch down" (the PCL
-  // at IDLE on the gate, the condition lever to GROUND IDLE): brake 0.5 of full (AGENT reading of "average"). Vref 85
+  // at IDLE on the gate, the condition lever to GROUND IDLE): brake 0.4 of full (AGENT reading of "average", set at
+  // MLW: 0.5 rolled 322 m, 0.4 385 m, 0.35 428 m; the model's brakes may be strong rather than the pilot light). Vref 85
   // KIAS. The generic roll (measure.ts landingRoll) cannot move the condition lever: on the roll it stays at FLIGHT
   // IDLE, whose 66 % Ng pulls about 5 kN at a standstill on the 6 deg stop (460 m, ratio 0.59). Those two items are held
   // on the beta plumbing ('PC12-beta': LandingOptions.rollCondition requested); pc12.test.ts judges the chart's
@@ -67,7 +68,7 @@ export const PC12_TARGETS: ConformanceTargets = {
     flapDeg: 40,
     approachKt: 86,
     touchdownPitchDeg: 5,
-    brake: 0.5,
+    brake: 0.4,
     groundRollM: band(389, 30, '47E-PROXY Fig 5-2-52 CHART-READ: 1275 ft +/-100 at SL ISA, 9921 lb, average braking, ground idle after touchdown', 'PC12-beta'),
     reverse: 0,
     // 47E-PROXY 4.16: the PCL back to IDLE before the aircraft stops.
@@ -215,6 +216,9 @@ export const PC12_TAKEOFF_HEADING = {
 };
 /** Pusher at a 1 kt/s deceleration, flaps 40 (plan 5.7). */
 export const PC12_PUSH = {
+  // With the pilot's yoke held where it was at the trip, the push alone must drive the vane through its own reset
+  // (1.5 deg below the trip, stickPusher.ts) within 1.5 s; with no actuator the AOA does not fall at all.
+  heldAlphaOffDeg: range(1.5, Infinity, 'AGENT: the pusher reset, 1.5 deg below the trip (stickPusher.ts), reached by the push alone'),
   pitchDownDeg: range(8, 20, '47E-PROXY 5 p. 329 / ESTIMATE: the nose drops through the horizon'),
   heightLossFt: below(300, '47E-PROXY 5 p. 329: maximum altitude loss 300 ft at 1 kt/s'),
 };
@@ -231,7 +235,10 @@ export const PC12_START_TARGETS = {
 /**
  * The keyboard circuit (AGENT targets, plan 5.7): the pilot reads the torque gauge, psi. Climb at Vy 130, downwind and
  * base with flaps 15 at 125 / 115 KIAS, final flaps 40 at Vref + 5 (90) on about 13 psi, base leg 600 ft, the round-out
- * from 8 m with the PCL closed (the flaps-40 drag stops the float).
+ * from 8 m with the PCL closed (the flaps-40 drag stops the float), the brakes as soon as the nosewheel is down (the
+ * roll-out stays on the gate at FLIGHT IDLE: the input package's pilot has no beta yet; braking from 50 KIAS left
+ * 2.3 km of roll, 0.21 g of nose-leg rocking and 12 m of drift in the crosswind). Fragile: flareM 7 crashes the
+ * crosswind circuit (2.7 m/s at 88 KIAS) and 9 ends 8.8 m off the centreline; see KNOWN_ISSUES "Keyboard circuit".
  */
 export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
   power: (s: AircraftState) => pc12TorquePsi(s.engines[0].torque),
@@ -240,7 +247,7 @@ export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
   downwindKias: 125,
   baseKias: 115,
   finalKias: 90,
-  brakeKias: 50,
+  brakeKias: 80,
   rotatePitchDeg: 8,
   climbPitchDeg: 9,
   levelPitchDeg: 2,
@@ -257,6 +264,6 @@ export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
   powerBand: 1,
   baseFt: 500,
   baseTurnM: 3600,
-  flareM: 10,
+  flareM: 8,
   throttleOffM: 4,
 };

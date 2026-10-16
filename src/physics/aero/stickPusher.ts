@@ -64,6 +64,16 @@ export interface StickPusherInput {
   dt: number;
 }
 
+/** The stick pusher's state in a resume snapshot (SystemsSnapshot.stickPusher). */
+export interface StickPusherSnapshot {
+  shaker: boolean;
+  pusher: boolean;
+  /** Push ramp, 0..1. */
+  ramp: number;
+  /** Seconds since the wheels left the ground, counted up to liftoffInhibitSeconds. */
+  airborneSeconds: number;
+}
+
 export class StickPusher {
   private shakerOn = false;
   private pusherOn = false;
@@ -86,6 +96,26 @@ export class StickPusher {
     this.ramp = 0;
     // A reset in the air is long past its lift-off; one on the ground counts again from the next lift-off.
     this.airborneTime = this.def.liftoffInhibitSeconds;
+  }
+
+  /** What a resume snapshot keeps: both trips (their hysteresis), the push ramp and the seconds since lift-off. */
+  capture(): StickPusherSnapshot {
+    return { shaker: this.shakerOn, pusher: this.pusherOn, ramp: this.ramp, airborneSeconds: this.airborneTime };
+  }
+
+  /**
+   * Put the system into the state of a snapshot. The block comes from storage: anything missing or not finite
+   * leaves reset()'s value for that field (a snapshot from before the pusher was saved restores as after reset()).
+   */
+  restore(snap: Partial<StickPusherSnapshot> | undefined): void {
+    this.reset();
+    if (!snap || typeof snap !== 'object') return;
+    if (typeof snap.shaker === 'boolean') this.shakerOn = snap.shaker;
+    if (typeof snap.pusher === 'boolean') this.pusherOn = snap.pusher;
+    if (typeof snap.ramp === 'number' && Number.isFinite(snap.ramp)) this.ramp = Math.max(0, Math.min(1, snap.ramp));
+    if (typeof snap.airborneSeconds === 'number' && Number.isFinite(snap.airborneSeconds)) {
+      this.airborneTime = Math.max(0, Math.min(this.def.liftoffInhibitSeconds, snap.airborneSeconds));
+    }
   }
 
   /** Trip angles (shaker, pusher), deg, at a flap deflection (deg) and torque-gauge psi. */

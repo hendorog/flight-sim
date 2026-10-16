@@ -156,9 +156,12 @@ describe(`conformance ${ID}: items of plan 5.7 outside the generic blocks`, () =
 
   describe.runIf(flownTier(ID))('the push at 1 kt/s, flaps 40 (flown tier)', () => {
     // Trimmed at 95 KTAS with flaps 40, idle, 3000 ft up; the autopilot slows it 1 kt/s on the yoke until the first push.
-    // Then the POH recovery: the pilot lets the yoke go to where the push puts it for 1.5 s, then flies the autopilot's
-    // pitch hold back to level flight at full power. Measured from the push: the nose's fall (pitch at the push less
-    // the lowest pitch), the height lost to the lowest point, and any later push.
+    // Then the pilot keeps the yoke where it was at the trip for 1.5 s, so only the pusher can lower the nose (a test
+    // that let go of the yoke at the trip passed with pushElevator 0), then follows the push through with the yoke at
+    // neutral for 1.5 s and recovers (POH): the autopilot's pitch hold back to 5 deg at full power. Measured from the
+    // push: the angle of attack it takes off in the held 1.5 s, the nose's fall (pitch at the push less the lowest
+    // pitch), the height lost to the lowest point, and any later push. Measured with pushElevator 0 (no actuator): no
+    // AOA off, the aircraft departs (84 deg nose down, 455 ft, three trips).
     const r = once(() => {
       const rig = makeRig({ def, loading: 'forward' });
       const s = rig.fm.state, c = rig.controls;
@@ -167,7 +170,7 @@ describe(`conformance ${ID}: items of plan 5.7 outside the generic blocks`, () =
       const ap = new Autopilot(def.autopilot);
       ap.settings = { ...ap.settings, lateral: 'wingLeveler', vertical: 'airspeed', autoTrim: false };
       let target = s.ias / KT;
-      let pushT = NaN, pushPitch = 0, pushAlt = 0, minPitch = Infinity, minAlt = Infinity, pushes = 0, was = false, t = 0;
+      let pushT = NaN, heldYoke = 0, pushAlpha = 0, minHeldAlpha = Infinity, pushPitch = 0, pushAlt = 0, minPitch = Infinity, minAlt = Infinity, pushes = 0, was = false, t = 0;
       rig.run(70, () => {
         t += FRAME;
         if (s.stickPusher && !was) pushes++;
@@ -180,7 +183,8 @@ describe(`conformance ${ID}: items of plan 5.7 outside the generic blocks`, () =
             pushT = t;
             pushPitch = s.pitch;
             pushAlt = s.altitudeMSL;
-            c.elevator = 0;
+            heldYoke = c.elevator;
+            pushAlpha = s.alpha;
           }
           return false;
         }
@@ -188,6 +192,12 @@ describe(`conformance ${ID}: items of plan 5.7 outside the generic blocks`, () =
         minPitch = Math.min(minPitch, s.pitch);
         minAlt = Math.min(minAlt, s.altitudeMSL);
         if (since < 1.5) {
+          // The pilot still holds the back pressure of the trip: only the pusher can lower the nose.
+          c.elevator = heldYoke;
+          minHeldAlpha = Math.min(minHeldAlpha, s.alpha);
+          return false;
+        }
+        if (since < 3) {
           c.elevator = 0;
           return false;
         }
@@ -199,29 +209,36 @@ describe(`conformance ${ID}: items of plan 5.7 outside the generic blocks`, () =
         ap.update(FRAME, s, c);
         return since > 25;
       });
-      return { pitchDown: (pushPitch - minPitch) / DEG, lostFt: (pushAlt - minAlt) / FT, pushes, crashed: s.crashed };
+      return { alphaOff: (pushAlpha - minHeldAlpha) / DEG, pitchDown: (pushPitch - minPitch) / DEG, lostFt: (pushAlt - minAlt) / FT, pushes, crashed: s.crashed };
     });
-    item(ID, 'push at 1 kt/s, flaps 40: the nose falls', () => r().pitchDown, PC12_PUSH.pitchDownDeg, 'deg', FLOWN_MS);
+    item(ID, 'push at 1 kt/s, flaps 40, the yoke held 1.5 s: AOA the push takes off', () => r().alphaOff, PC12_PUSH.heldAlphaOffDeg, 'deg', FLOWN_MS);
+    item(ID, '  the nose falls', () => r().pitchDown, PC12_PUSH.pitchDownDeg, 'deg', FLOWN_MS);
     item(ID, '  height lost to the recovery', () => r().lostFt, PC12_PUSH.heightLossFt, 'ft', FLOWN_MS);
     item(ID, '  pushes (one, no second)', () => r().pushes, { min: 1, max: 1, source: '47E-PROXY 7-21 / plan 5.7: no second push' }, '', FLOWN_MS);
   });
 
   describe.runIf(flownTier(ID))('landing rolls with the chart technique (flown tier)', () => {
-    // 47E-PROXY Fig 5-2-52 / 5-2-54: average braking (brake 0.5), the condition lever to GROUND IDLE at touchdown; the
+    // 47E-PROXY Fig 5-2-52 / 5-2-54 at MLW: average braking (la.brake), the condition lever to GROUND IDLE at touchdown; the
     // first roll on the gate, the second in full reverse, back to the gate below 40 KIAS.
     const groundIdle: SteerFn = (s, c, heading) => {
       if (s.onGround) c.mixture = PC12_GROUND_IDLE;
       pedalSteer(s, c, heading);
     };
     const la = PC12_TARGETS.landing;
-    const roll = (reverse: number) => landingRoll(runwayRig(def, 'maxGross'), {
+    // At the chart's weight: MLW 4500 kg (9921 lb), the maxGross payload less 240 kg, on a calm sea-level runway.
+    const mlwRig = () => {
+      const mg = def.mass.loadings.maxGross;
+      const loading = { payload: mg.payload - (def.mass.maxTakeoff - def.mass.maxLanding), payloadPosition: mg.payloadPosition };
+      return makeRig({ def, loading, env: flatEnvironment(calmWeather(), 0) });
+    };
+    const roll = (reverse: number) => landingRoll(mlwRig(), {
       approachKt: la.approachKt, flapLever: 1, touchdownPitch: la.touchdownPitchDeg * DEG, brake: la.brake, rollReverse: reverse,
       rollReverseCancel: la.reverseCancel, steer: groundIdle,
     });
     const gate = once(() => roll(0));
     const rev = once(() => roll(la.withReverse!.reverse));
     const strip = <T extends { blockedBy?: string }>(l: T): T => ({ ...l, blockedBy: undefined });
-    item(ID, 'landing roll, flaps 40, brakes 0.5, ground idle after touchdown, on the gate', () => gate().roll, strip(la.groundRollM), 'm', FLOWN_MS);
+    item(ID, `landing roll at MLW, flaps 40, brakes ${la.brake}, ground idle after touchdown, on the gate`, () => gate().roll, strip(la.groundRollM), 'm', FLOWN_MS);
     item(ID, '  in full reverse', () => rev().roll, strip(la.withReverse!.groundRollM), 'm', FLOWN_MS);
     item(ID, '  ratio, full reverse / on the gate', () => rev().roll / gate().roll, strip(la.withReverse!.ratio!), '', FLOWN_MS);
     item(ID, '  no crash', () => (gate().crashed || rev().crashed ? 1 : 0), { min: 0, max: 0, source: 'contract' }, '', FLOWN_MS);

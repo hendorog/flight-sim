@@ -287,6 +287,8 @@ export interface SystemsSnapshot {
   batteryCharge: number;
   surfaces: SurfaceState;
   gear: { extension: [number, number, number]; emergency: boolean };
+  /** Stick shaker / pusher (types with controls.stickPusher only): trips, push ramp, seconds since lift-off. */
+  stickPusher?: import('./aero/stickPusher').StickPusherSnapshot;
 }
 
 /** What the simulation shell, the test rigs and the tools use. The concrete class is BladeElementFlightModel (physics/flightModel.ts). */

@@ -17,36 +17,37 @@ Evidence: [docs/pc12-sources.md](../../../docs/pc12-sources.md), the `47E-PROXY`
 [reference.ts](reference.ts), [tests/conformance/targets/pc12.ts](../../../tests/conformance/targets/pc12.ts).
 Close with: AFM 02211 / AFMS 33; the targets re-sourced row by row.
 
-## Keyboard circuit — **open (needs the input package)**
+## Keyboard circuit — **passes, fragile (needs the input package)**
 
-The conformance suite's keyboard circuit (`keyboardCircuit`, torque in psi) completes without a crash in light
-turbulence (touchdown 74-79 KIAS, 404-543 m past the threshold against the plan's 450 m), but its roll-out stays on the gate at FLIGHT IDLE (about 4-5 kN of thrust at a standstill on the 5.5 deg
-stop) and only brakes in pulses below 50 KIAS: the roll is 2.4-2.8 km, the pitch rocks on the nose leg (minimum load
-factor 0.22 g against the harness's 0.3), and in the 10 kt crosswind the aircraft drifts 16 m off the centreline by the
-stop. The 47E technique (4.16: PCL to IDLE at touchdown, reverse as required, condition lever to GROUND IDLE) is the
-keyboard pilot's (tests/input/keyboardPilot.ts, the input package's: "beta/reverse engaged below 60 KIAS").
-Evidence: [conformance test](../../../tests/conformance/pc12.test.ts) (flown tier).
-Close with: the keyboard pilot's roll-out taking the PCL into beta and the condition lever to GROUND IDLE, the brakes
-held.
+The conformance suite's keyboard circuit (`keyboardCircuit`, torque in psi) passes in both weathers with the pilot
+targets brakeKias 80 (brakes as soon as the nosewheel is down) and flareM 8: light turbulence: touchdown 77 KIAS at
+1.0 m/s, 354 m past the threshold, stopped 0.7 m off the centreline, minimum 0.55 g; 10 kt crosswind: 77 KIAS at
+1.7 m/s (limit 1.8), 425 m past, 0.2 m off. The roll-out still stays on the gate at FLIGHT IDLE (about 4-5 kN at a
+standstill on the 5.5 deg stop) and the aircraft floats nose-high on the mains for up to 55 s; with the old brakeKias 50
+the roll was 2.3-2.7 km with 0.21 g of nose-leg rocking and 11-12 m of drift in the crosswind. The pass is not robust:
+flareM 7 crashes the crosswind circuit (2.7 m/s at 88 KIAS), flareM 9 stops 8.8 m off (limit 8). The 47E technique
+(4.16: PCL to IDLE at touchdown, reverse as required, condition lever to GROUND IDLE) is the keyboard pilot's
+(tests/input/keyboardPilot.ts, the input package's: "beta/reverse engaged below 60 KIAS").
+Evidence: [conformance test](../../../tests/conformance/pc12.test.ts) (flown tier), [targets](../../../tests/conformance/targets/pc12.ts).
+Close with: the keyboard pilot's roll-out taking the PCL into beta and the condition lever to GROUND IDLE.
 
 ## Landing roll in the generic block — **open (plumbing)**
 
 The generic landing roll (tests/fdm/measure.ts `landingRoll`) cannot move the condition lever: it rolls at FLIGHT IDLE
 (66 % Ng: about 5 kN at a standstill), so it measures 460-520 m and a reverse ratio of 0.59-0.61 against the chart's
 389 m and 0.72. The two items are held on `PC12-beta`. The chart's own technique (Fig 5-2-52: "average braking, ground
-idle after touch down"; Fig 5-2-54: full reverse) is judged in pc12.test.ts: 364-389 m on the gate with brakes 0.5,
-277-282 m in full reverse, ratio 0.73-0.76.
+idle after touch down"; Fig 5-2-54: full reverse) is judged in pc12.test.ts at the chart's weight (MLW 4500 kg):
+385 m on the gate with brakes 0.4 (the AGENT reading of "average braking"; 0.5 gives 322 m, outside 389 +- 30), 290 m in
+full reverse, ratio 0.75. Before the review the roll was flown at 4740 kg, where brakes 0.5 happened to give 384 m.
 Evidence: [targets](../../../tests/conformance/targets/pc12.ts) `landing`, [pc12.test.ts](../../../tests/conformance/pc12.test.ts).
 Close with: `LandingOptions.rollCondition` (requested of the turbine-core plumbing) and the items judged unblocked.
 
-## Gear horn above 130 KIAS — **open (plumbing)**
+## Gear horn above 130 KIAS — **closed**
 
-The horn's "PCL at idle below 130 KIAS" rule (`GearConfig.warning.kiasBelow`, implemented in
-[physics/gear/retract.ts](../../../src/physics/gear/retract.ts)) needs the IAS in `RetractInput.kias`; the flight
-model's `stepRetract` does not pass it yet, so in the simulator the horn sounds with a leg up and the PCL at idle at
-any speed. The 47E's "below 200 ft radio altitude with torque below 10 psi" rule is not modelled (no radio altimeter).
-Evidence: [tests/aircraft/pc12.test.ts](../../../tests/aircraft/pc12.test.ts) (actuator level).
-Close with: `r.kias = this.state.ias / KT` in `src/physics/flightModel.ts` stepRetract (requested).
+The flight model's `stepRetract` now passes the IAS (`RetractInput.kias`), so the horn's "PCL at idle below 130 KIAS"
+rule works in the simulator: gear up, PCL idle, about 170 KIAS: silent; 130 KIAS TAS at 2000 ft: the horn. The 47E's
+"below 200 ft radio altitude with torque below 10 psi" rule is not modelled (no radio altimeter).
+Evidence: [tests/aircraft/pc12.test.ts](../../../tests/aircraft/pc12.test.ts) "gear horn" (actuator and flight model).
 
 ## Reverse torque — **estimate**
 
@@ -68,13 +69,14 @@ ground, and the half-beta taxi (8.5 kt) and the gate taxi (22 kt) are close to t
 Evidence: [powerplant.ts](powerplant.ts) `PC12_FLIGHT_IDLE_STOP`.
 Close with: the AFM's blade-angle rigging and an idle-thrust figure.
 
-## Take-off swing without rudder trim — **design choice, accepted behaviour**
+## Take-off swing without rudder trim — **within the plan row; owner to judge**
 
-With the rudder trim at zero the full-power roll swings left at 5-15 kt and the centreline pilot uses up to 0.65 of
-right pedal (heading held within 4.1 deg; plan row: 0.6). With the 47E's take-off rudder trim (+0.3, the scripted
-pilot's) the peak pedal is 0.58 and the heading within 3.6 deg.
-Evidence: [pc12.test.ts](../../../tests/conformance/pc12.test.ts) "take-off roll heading".
-Close with: nothing if the owner's judgement is that this is the aircraft.
+With the rudder trim at zero the full-power roll swings left at 5-15 kt and the centreline pilot (the test's PI law)
+uses up to 0.50 of right pedal at 14 kt, 0.20 steady above 30 kt, the heading within 3.2 deg (plan row: <= 0.6, <= 5
+deg). The swing is the propeller's swirl on the fin: `swirlBehindWing` 0.5 (ESTIMATE, the DA20's value the comment
+always cited); at the first estimate, 0.6, it was 0.67 and 4.2 deg. Full-power climb at 130 KIAS: 0.22 of the pedal.
+Evidence: [pc12.test.ts](../../../tests/conformance/pc12.test.ts) "take-off roll heading", [aero.ts](aero.ts).
+Close with: the owner's judgement of the swing and of the climb pedal.
 
 ## Trailing-link mains — **simplified**
 

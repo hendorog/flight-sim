@@ -290,8 +290,9 @@ export function createPC12AeroDefinition(): AircraftAeroDefinition {
     dragItems: dragItems(),
     struts: [],
     // The low wing's root sections and the wing-body junction straighten part of the jet's swirl before the fin
-    // (PropellerStation.swirlBehindWing, as the DA20's); the T-tail stands above the jet.
-    propellers: [{ hub: { ...prop.hub }, radius: prop.diameter / 2, swirlBehindWing: 0.6 }],
+    // (PropellerStation.swirlBehindWing, ESTIMATE: the DA20's 0.5); the T-tail stands above the jet. At 0.6 (the first
+    // estimate) the full-power roll with the rudder trim at zero took 0.67 of the pedal at 15 kt (plan 5.7: 0.6).
+    propellers: [{ hub: { ...prop.hub }, radius: prop.diameter / 2, swirlBehindWing: 0.5 }],
     stallWarning: [
       { strip: sensor, margin: WARNING_MARGIN.clean, flaps: [0, WARNING_FLAP_SWITCH], referenceReynolds: WING_ROOT.reRef, needsBus: true },
       { strip: sensor, margin: WARNING_MARGIN.flaps, flaps: [WARNING_FLAP_SWITCH, G.wing.flap.maxDeflection + DEG], referenceReynolds: WING_ROOT.reRef, needsBus: true },

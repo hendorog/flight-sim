@@ -686,6 +686,27 @@ export class EngineUnit {
       diesel.backupUsed = snap.ecuBackupUsed ?? 0;
       diesel.glowSeconds = snap.glowSeconds ?? 0;
     }
+    this.restoreSpoolAndPitch(snap);
+    const e = this.state;
+    e.running = snap.running;
+    e.rpm = snap.rpm;
+    e.propRpm = snap.propRpm;
+    e.egt = snap.egt;
+    e.cht = snap.cht;
+    e.oilTemp = snap.oilTemp;
+    e.oilPressure = snap.oilPressure;
+    e.carbIce = snap.carbIce;
+    e.cowlFlap = snap.cowlFlap;
+    this.propState.rpm = snap.propRpm;
+  }
+
+  /**
+   * The parts of a snapshot that live outside the shaft speed and temperatures: the gas generator (Ng, ITT, alight),
+   * the governor's blade angle (down to the reverse angle in beta), feather latch and accumulator, and the latching
+   * start switch. restore() calls it; so does the fixed-wing FlightModel.restoreSystems() after Powerplant.reset(),
+   * which would otherwise leave a turbine at low idle, a beta blade on the fine stop and a start without its latch.
+   */
+  restoreSpoolAndPitch(snap: EngineSnapshot): void {
     const turbine = this.turbine;
     if (turbine && snap.gasGenerator) {
       const gg = turbine.gasGenerator;
@@ -708,17 +729,6 @@ export class EngineUnit {
     this.starterLatched = this.starterEngaged = latch?.latched ?? false;
     this.starterWas = latch?.pressed ?? false;
     this.starterLatchTime = latch?.seconds ?? 0;
-    const e = this.state;
-    if (this.install.engine.starterLatch) e.starter = this.starterEngaged;
-    e.running = snap.running;
-    e.rpm = snap.rpm;
-    e.propRpm = snap.propRpm;
-    e.egt = snap.egt;
-    e.cht = snap.cht;
-    e.oilTemp = snap.oilTemp;
-    e.oilPressure = snap.oilPressure;
-    e.carbIce = snap.carbIce;
-    e.cowlFlap = snap.cowlFlap;
-    this.propState.rpm = snap.propRpm;
+    if (this.install.engine.starterLatch) this.state.starter = this.starterEngaged;
   }
 }

@@ -23,6 +23,10 @@ import { RetractActuator, type RetractInput } from '../../src/physics/gear/retra
 import { CUTOFF_BELOW } from '../../src/physics/propulsion/turbineEngine';
 import { ELEVATION, FRAME, at, flatEnvironment, makeRig, resetTo } from '../fdm/helpers';
 import { restOnGround } from '../fdm/measure';
+import type { ScenarioId } from '../../src/core/context';
+import { defaultWeather, type WeatherSettings } from '../../src/core/types';
+import { parseSnapshot } from '../../src/sim/resume';
+import { SimPhysics } from '../../src/sim/SimPhysics';
 
 const def = PC12_DEFINITION;
 
@@ -248,6 +252,34 @@ describe('Pilatus PC-12/47: the stick shaker and pusher (47E-PROXY 7-21)', () =>
     expect(fly(q, { alphaDeg: trip + 3 }, 1, 1)).toBe(1);
   });
 
+  it('keeps its trips, push ramp and lift-off timer through a snapshot; a snapshot without them restores as reset()', () => {
+    // Mid-push, 0.2 s into the ramp, a degree below the trip (inside the reset hysteresis), 1 s after lift-off.
+    const p = new StickPusher(PC12_STICK_PUSHER);
+    fly(p, { alphaDeg: trip + 1 }, 0.2);
+    fly(p, { alphaDeg: trip - 1 }, 0.02);
+    const saved = JSON.parse(JSON.stringify(p.capture()));
+    const q = new StickPusher(PC12_STICK_PUSHER);
+    q.restore(saved);
+    expect(q.capture()).toEqual(p.capture());
+    expect(fly(q, { alphaDeg: trip - 1 }, 0.1)).toBe(fly(p, { alphaDeg: trip - 1 }, 0.1));
+    expect(q.pusher).toBe(true);
+    // During the 5 s lift-off inhibit: still inhibited after the restore.
+    const r = new StickPusher(PC12_STICK_PUSHER);
+    fly(r, { alphaDeg: trip + 3, weightOnWheels: true }, 0.1);
+    fly(r, { alphaDeg: 0 }, 2);
+    const t = new StickPusher(PC12_STICK_PUSHER);
+    t.restore(JSON.parse(JSON.stringify(r.capture())));
+    expect(t.capture().airborneSeconds).toBeCloseTo(2, 1);
+    fly(t, { alphaDeg: trip + 3 }, 1);
+    expect(t.pusher).toBe(false);
+    // Missing or corrupt: as reset(); out of range: clamped.
+    const u = new StickPusher(PC12_STICK_PUSHER);
+    u.restore(undefined);
+    expect(u.capture()).toEqual(new StickPusher(PC12_STICK_PUSHER).capture());
+    u.restore({ ramp: 7, airborneSeconds: -3, shaker: 'yes' as unknown as boolean });
+    expect(u.capture()).toEqual({ shaker: false, pusher: false, ramp: 1, airborneSeconds: 0 });
+  });
+
   it('trips later with torque (0.03 deg per psi) and earlier with flaps', () => {
     const p = new StickPusher(PC12_STICK_PUSHER);
     const idle = p.tripAngles(0, 0).pusher;
@@ -282,6 +314,25 @@ describe('Pilatus PC-12/47: the gear horn (47E-PROXY 7-4) and the overspeed warn
     expect(rig.fm.state.gear.warning).toBe(true);
   });
 
+  it('in the flight model: gear up, PCL idle, from 175 KCAS (above 135 KIAS throughout): no horn (the airspeed switch reads the flight model\'s IAS)', () => {
+    const rig = makeRig({ def, loading: 'maxGross' });
+    const alt = ELEVATION + 2000 * FT;
+    resetTo(rig, { position: at(alt), airspeed: tasFromCas(175 * KT, rig.env.atmosphere(alt)), gearDown: false });
+    rig.controls.throttle = 0;
+    let fast = Infinity, warnedFast = false;
+    rig.run(1, () => {
+      const kias = rig.fm.state.ias / KT;
+      fast = Math.min(fast, kias);
+      if (kias > 135 && rig.fm.state.gear.warning) warnedFast = true;
+    });
+    expect(fast).toBeGreaterThan(135);
+    expect(warnedFast).toBe(false);
+    // Flaps 30 sound it at any speed.
+    rig.controls.flaps = 30 / 40;
+    rig.run(0.1);
+    expect(rig.fm.state.gear.warning).toBe(true);
+  });
+
   it('the overspeed warning at Vmo 236 KIAS or Mmo 0.48: the Mach limit takes over near 16 000 ft (47E schedule about 15 200 ft)', () => {
     const env = flatEnvironment();
     const machAt = (kias: number, ft: number) => {
@@ -298,4 +349,98 @@ describe('Pilatus PC-12/47: the gear horn (47E-PROXY 7-4) and the overspeed warn
     expect(crossover).toBeGreaterThan(14_000);
     expect(crossover).toBeLessThan(18_000);
   });
+});
+
+describe('Pilatus PC-12/47: resume on reload (SimPhysics snapshot through JSON)', () => {
+  const NOW = 1_800_000_000_000;
+  const start = (id: ScenarioId, autoflight = false) => {
+    const weather = { ...defaultWeather(), turbulence: 0 };
+    const p = new SimPhysics({ weather, aircraft: def });
+    p.autoflightOnReset = autoflight;
+    p.reset(id);
+    return { p, weather };
+  };
+  const reload = (a: { p: SimPhysics; weather: WeatherSettings }) => {
+    const snap = parseSnapshot(JSON.stringify(a.p.captureSnapshot({ weather: a.weather, cameraMode: 'chase', quality: 'high', renderScale: null, resume: true, now: NOW })));
+    expect(snap).not.toBeNull();
+    const q = new SimPhysics({ weather: { ...snap!.weather }, aircraft: def });
+    q.restore(snap!);
+    return q;
+  };
+
+  it('in full reverse on the brakes: the blade stays at -17.5 deg and the gas generator at its reverse Ng', () => {
+    const a = start('runway');
+    const c = a.p.controls;
+    c.parkingBrake = true;
+    c.throttle = 0;
+    c.reverse = 1;
+    a.p.step(12);
+    const before = a.p.fm.captureSystems().engines[0];
+    expect(before.bladePitch / DEG).toBeCloseTo(-17.5, 3);
+    expect(before.gasGenerator!.ng).toBeGreaterThan(0.7);
+    const b = reload(a);
+    const after = b.fm.captureSystems().engines[0];
+    expect(after.bladePitch).toBeCloseTo(before.bladePitch, 9);
+    expect(after.gasGenerator!.ng).toBeCloseTo(before.gasGenerator!.ng, 9);
+    expect(after.gasGenerator!.itt).toBeCloseTo(before.gasGenerator!.itt, 6);
+    // And it runs on as the original does.
+    a.p.step(2);
+    b.step(2);
+    const sa = a.p.fm.state.engines[0], sb = b.fm.state.engines[0];
+    expect(Math.abs((sb.ng ?? 0) - (sa.ng ?? 0))).toBeLessThan(0.3);
+    expect(Math.abs(sb.propRpm - sa.propRpm)).toBeLessThan(10);
+    expect(Math.abs(b.fm.state.propellers[0].thrust - a.p.fm.state.propellers[0].thrust)).toBeLessThan(200);
+  }, 60_000);
+
+  it('a start resumed mid-way runs on to its cut-out: the latch, Ng and ITT as saved', () => {
+    const a = start('apron');
+    const c = a.p.controls;
+    c.masterBattery = true;
+    c.alternator = true;
+    c.fuelPump = true;
+    c.fuelSelector = 'on';
+    c.magnetos = 0;
+    c.throttle = 0;
+    c.parkingBrake = true;
+    setEngineControl(c, 0, 'starter', true);
+    a.p.step(0.2);
+    setEngineControl(c, 0, 'starter', false);
+    // The condition lever to GROUND IDLE at 13 % Ng (47E-PROXY 4.5), then on to 10 s into the start.
+    for (let t = 0.2; t < 10; t += 0.05) {
+      a.p.step(0.05);
+      if (c.mixture < CUTOFF_BELOW && (a.p.fm.state.engine.ng ?? 0) >= PC12_START.conditionAtNg * 100) c.mixture = PC12_GROUND_IDLE;
+    }
+    expect(c.mixture).toBe(PC12_GROUND_IDLE);
+    const before = a.p.fm.captureSystems().engines[0];
+    expect(before.starterLatch?.latched).toBe(true);
+    expect(before.gasGenerator!.ng).toBeGreaterThan(0.15);
+    expect(before.gasGenerator!.ng).toBeLessThan(0.45);
+    const b = reload(a);
+    const after = b.fm.captureSystems().engines[0];
+    expect(after.starterLatch).toEqual(before.starterLatch);
+    expect(after.gasGenerator!.ng).toBeCloseTo(before.gasGenerator!.ng, 9);
+    expect(b.fm.state.engine.starter).toBe(true);
+    b.step(50);
+    a.p.step(50);
+    for (const p of [a.p, b]) {
+      expect(p.fm.state.engine.running).toBe(true);
+      expect(p.fm.state.engine.starter).toBe(false);
+      expect(p.fm.state.engine.ng).toBeGreaterThan(50.7);
+    }
+  }, 60_000);
+
+  it('2 s after lift-off the pusher is still inside its 5 s inhibit after the restore', () => {
+    const a = start('runway', true);
+    let airborne = 0;
+    for (let i = 0; i < 1200 && airborne < 2; i++) {
+      a.p.step(0.05);
+      if (!a.p.fm.state.onGround) airborne += 0.05;
+    }
+    expect(airborne).toBeGreaterThanOrEqual(2);
+    const before = a.p.fm.captureSystems().stickPusher!;
+    expect(before.airborneSeconds).toBeGreaterThan(1.5);
+    expect(before.airborneSeconds).toBeLessThan(PC12_STICK_PUSHER.liftoffInhibitSeconds);
+    const b = reload(a);
+    expect(b.fm.captureSystems().stickPusher).toEqual(before);
+  }, 60_000);
 });

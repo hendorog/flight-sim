@@ -923,6 +923,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       batteryCharge: pp.batteryCharge,
       surfaces: { ...this.controlSystem.surfaces },
       gear: this.retract ? this.retract.capture() : { extension: [ext[0], ext[1], ext[2]], emergency: false },
+      ...(this.stickPusher ? { stickPusher: this.stickPusher.capture() } : {}),
     };
   }
 
@@ -958,16 +959,18 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
         engine.backupUsed = e.ecuBackupUsed ?? 0;
         engine.glowSeconds = e.glowSeconds ?? 0;
       }
-      const governor = unit.governor;
-      if (governor) {
-        governor.pitch = clamp(e.bladePitch, governor.def.fineStop, Math.max(governor.def.coarseStop, governor.def.feather?.angle ?? 0));
-        governor.latched = e.featherLatched;
-        governor.accumulatorCharged = e.accumulatorCharged ?? true;
-      }
+      // Gas generator, blade angle (beta and reverse included), feather latch and the latching start switch.
+      unit.restoreSpoolAndPitch(e);
     }
     if (this.retract) {
       this.retract.restore(s.gear);
       this.publishGear();
+    }
+    if (this.stickPusher) {
+      // The lift-off inhibit, the trips' hysteresis and the push ramp as saved (reset() would arm it at once).
+      this.stickPusher.restore(s.stickPusher);
+      this.state.stickShaker = this.stickPusher.shaker;
+      this.state.stickPusher = this.stickPusher.pusher;
     }
     if (this.rotorcraft) {
       if (s.rotorcraft) Object.assign(this.rotorcraft.state, cloneRotorcraftState(s.rotorcraft));
@@ -1147,6 +1150,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     r.minThrottle = minThrottle;
     r.flapLever = controls.flaps;
     r.onGround = g !== null && g.onGround;
+    // The airspeed switch of a horn with RetractConfig.warning.kiasBelow (PC-12): the step before's indicated airspeed.
+    r.kias = this.state.ias / KT;
     this.retract!.update(h, r);
   }
 

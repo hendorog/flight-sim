@@ -118,7 +118,7 @@ free fall 15 s). Trailing-link mains on **vertical** legs (the link's 0.18 m aft
 an oleo of 0.08 m static stroke and 75 kN limit; a stiff progressive nose strut (preloaded to the static load, 0.07 m
 at a full-brake stop's 12.6 kN, never a hard stop) so that the propeller (0.30 m of clearance) clears a braked nose;
 pedal steering ±12°, castoring to ±60°. Gear horn (47E 7-4): a leg not down and locked with the PCL at idle below
-**130 KIAS** (`warning.kiasBelow`, new in physics/gear/retract.ts: the flight model must pass the IAS) or with flaps 30
+**130 KIAS** (`warning.kiasBelow`, new in physics/gear/retract.ts; the flight model's stepRetract passes the IAS) or with flaps 30
 and more; the selector UP on the ground.
 
 ## Sim profile and input
@@ -138,23 +138,23 @@ Measured on the conformance suite (FS_AIRCRAFT=pc12; `node scripts/aircraft-repo
 | Pusher, flaps 0 / 40, forward CG, MTOW | 96.3 / 68.4 KCAS = 94.3 / 66.5 KIAS | 95 / 67 KIAS ± 3 (CHART-READ Fig 5-2-1) |
 | Pusher, flaps 15 / 30, maxGross | 79.1 / 70.5 KCAS = 77.3 / 68.7 KIAS | 78 / 70 KIAS ± 3 |
 | Shaker margin, flaps 0 / 40 | 6.4 / 6.9 kt | 5–10 kt (47E 7-21) |
-| Push at 1 kt/s, flaps 40 | nose falls 15.3°, 109 ft lost, one push | 8–20°, ≤ 300 ft, no second push (47E 5 p. 329) |
+| Push at 1 kt/s, flaps 40, yoke held at the trip 1.5 s, then neutral 1.5 s, then the recovery | the push alone takes 3.9° of AOA off (13.0° → 9.1°); nose falls 17.2°, 144 ft lost, one push (with `pushElevator` 0: no AOA off, 83° nose down, 511 ft, three trips) | AOA ≥ 1.5° off (AGENT: the pusher reset); 8–20°, ≤ 300 ft, no second push (47E 5 p. 329) |
 | Static, PCL full; 10 000 ft; hot and high | see the powerplant table | |
 | Take-off ground roll, flaps 15, MTOW | 488 m | 518 m ± 15 % (CHART-READ 1700 ft) |
 | Climb at MCP (36.95 psi), SL ISA, MTOW | 1525 ft/min at Vy 121 KIAS | 1650 ± 20 %, Vy 130 ± 10 (ESTIMATE / 47E 4.2) |
 | Maximum cruise rows | see the powerplant table | |
 | Glide, feathered | L/D 15.6 at 119 KIAS (best) | 15.8 ± 1.5, 119 ± 10 KIAS (DERIVED 47E) |
-| Landing roll, flaps 40, chart technique (brakes 0.5, ground idle after touchdown) | 384 m on the gate, 297 m in full reverse, ratio 0.77 | 389 m ± 30 (CHART-READ Fig 5-2-52); 280 ± 35; 0.72 ± 0.08 (DERIVED Fig 5-2-54) |
+| Landing roll, MLW 4500 kg, flaps 40, chart technique (brakes 0.4, ground idle after touchdown) | 385 m on the gate, 290 m in full reverse, ratio 0.75 (brakes 0.5: 322 m) | 389 m ± 30 (CHART-READ Fig 5-2-52); 280 ± 35; 0.72 ± 0.08 (DERIVED Fig 5-2-54) |
 | (a) gate, ground idle | Np 1057 rpm, Ng 54.9 %, ITT 534 °C; 20.7 kt steady | 1060 ± 60, 50.7–61.4 %, ≤ 750 °C; 15–30 kt |
 | (b) ground fine | +216 N static, 0 kt | \|T\| < 500 N, ≤ 5 kt |
 | (c) half of the pitch-only travel | 8.2 kt steady | 8–12 kt |
 | Approach, Vref 85, flaps 40, 3°, MLW | 13.5 psi | 8–18 psi (ESTIMATE) |
-| Yaw: full power at 130 KIAS / 200 KIAS level, rudder trim 0 | 0.26 / 0.05 of the pedal | 0.15–0.45 / −0.02–0.12 (ESTIMATE) |
-| Take-off roll heading, rudder trim 0 | within 4.2°, up to 0.67 of the pedal (with the +0.3 trim: 3.6°, 0.58) | ≤ 5°, ≤ 0.6 (AGENT) |
+| Yaw: full power at 130 KIAS / 200 KIAS level, rudder trim 0 | 0.22 / 0.04 of the pedal | 0.15–0.45 / −0.02–0.12 (ESTIMATE) |
+| Take-off roll heading, rudder trim 0 | within 3.2°, up to 0.50 of the pedal at 14 kt, 0.20 steady above 30 kt (swirl at the fin 0.5; at the first estimate 0.6: 4.2°, 0.67) | ≤ 5°, ≤ 0.6 (AGENT) |
 | Start | GROUND IDLE at 13 % Ng, peak ITT 750 °C, 50 % Ng at 29 s, cut-out 50.0 %, Np ≥ 950 | plan 5.7 |
 | Gear horn; overspeed | actuator logic as 47E 7-4; Vmo/Mmo crossover between 14 000 and 18 000 ft | 47E 7-4; TCDS |
 | Hands-off cruise 200 KTAS, 60 s | 0.7 m, 1.5°, 7 ft/min, 0.04 m/s | contract 3.10 |
-| Keyboard circuit (headless) | no crash in either weather; touchdown 74–79 KIAS at 0.1–1.7 m/s, 404–543 m past the threshold; the roll-out on the gate at FLIGHT IDLE: 2.3–2.7 km, min 0.21 g, 12 m off the centreline in the crosswind (see KNOWN_ISSUES) | completes, touchdown ≤ 450 m, beta below 60 KIAS (AGENT; the input package's roll-out) |
+| Keyboard circuit (headless; brakeKias 80, flareM 8) | no crash in either weather; touchdown 77 KIAS at 1.0 / 1.7 m/s, 354 / 425 m past the threshold; stopped 0.7 / 0.2 m off the centreline; min 0.55 / 0.53 g; roll-out still on the gate at FLIGHT IDLE and fragile to flareM (see KNOWN_ISSUES) | completes, touchdown ≤ 450 m, beta below 60 KIAS (AGENT; the input package's roll-out) |
 | Keyboard circuit, real app (scripts/fly-keyboard.mjs) | completes: touchdown 74.7 KIAS at 0.16 m/s, 393 m past the threshold, the stop 2.78 km further on, on the gate | as above |
 | Autoflight circuit, real app (scripts/fly-circuit.mjs) | completes: lift-off 95 KIAS, climb-out 105 KIAS at 1390 ft/min, touchdown 84 KIAS at 0.6 m/s, stop in 175 m (full reverse) | — |
 
@@ -170,3 +170,7 @@ Measured on the conformance suite (FS_AIRCRAFT=pc12; `node scripts/aircraft-repo
 - `physics/trim.ts`: when Newton fails with the throttle on a plateau (the torque limiter: thrust no longer rises with
   the PCL) it is solved again with the throttle bounded below the plateau's start. No other type reaches it.
 - `physics/gear/retract.ts`: `RetractInput.kias` and the horn's `kiasBelow`.
+- `physics/flightModel.ts` (review fixes): stepRetract passes `kias`; the fixed-wing `restoreSystems` restores the gas
+  generator (Ng, ITT, alight), the blade angle down to the reverse angle, and the latching starter through
+  `EngineUnit.restoreSpoolAndPitch` (it left a resumed turbine at low idle, a reversed blade on the fine stop and a start
+  without its latch, the C208's too); the stick pusher's state is in the snapshot (`SystemsSnapshot.stickPusher`).
