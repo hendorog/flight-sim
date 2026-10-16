@@ -54,5 +54,20 @@ export const MD500_GENERATOR_PAD_RATIO = 0.2361;
 /** Bus voltage below which bus-powered instruments, lamps and the horn are dead, V. ESTIMATE (the S269's 18 V). */
 export const MD500_BUS_DEAD_VOLTS = 18;
 
+/** XMSN OIL PRESS caution: the transmission's pressure switch (RFM 3-2; a switch, no gauge), psi. ESTIMATE. */
+export const MD500_XMSN_PRESS_SWITCH_PSI = 5;
+
 /** Fuel (RFM 1-13): 64.0 US gal total, 62.1 usable = 421.9 lb Jet A; FUEL LOW at about 35 lb (RFM 3-23). P */
 export const MD500_FUEL = { usableLb: 421.9, unusableLb: 13.1, lowLb: 35 } as const;
+
+/**
+ * Twist grip (ControlInputs.throttle) positions: CUTOFF below 0.05, the GROUND IDLE stop at 0.18, FULL OPEN 1
+ * (RFM 4-11, Fig 4-4: CUTOFF - GROUND IDLE - FULL OPEN). Fractions of grip travel: AGENT choice (no rigging angles
+ * are published). The input profile's twistGrip deep-equals this (consistency).
+ */
+export const MD500_TWIST_GRIP = { cutoffBelow: 0.05, groundIdle: 0.18 } as const;
+/**
+ * N2 governor beep limits as fractions of N2 100 % (RFM 4-18: high beep 104-105 %, low beep 98 % or less; take-off
+ * 103 %): [0.975, 1.045], reset set point 1.03. P (the RFM's check bands; the exact stops ESTIMATE).
+ */
+export const MD500_N2_BEEP = { range: [0.975, 1.045], setDefault: 1.03 } as const;

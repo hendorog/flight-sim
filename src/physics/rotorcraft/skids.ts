@@ -31,6 +31,12 @@ export class SkidGear {
     const d = this.d, weight = mass * 9.80665, span = d.front - d.rear;
     const front = suspensionStroke(d, weight * (cg.x - d.rear) / span / 2, 0);
     const rear = suspensionStroke(d, weight * (d.front - cg.x) / span / 2, 1);
+    if (d.frontZ !== undefined) {
+      // Front contacts lower than the rear ones (MD 500E: the nose-up ground attitude).
+      const pitch = (d.frontZ - d.z + rear - front) / span;
+      return { height: (d.frontZ + d.z) / 2 - (front + rear) / 2 - pitch * (d.front + d.rear) / 2, pitch,
+        roll: weight * cg.y / (4 * d.stiffness * d.halfTrack ** 2) };
+    }
     const pitch = (rear - front) / span;
     return { height: d.z - (front + rear) / 2 - pitch * (d.front + d.rear) / 2, pitch,
       roll: weight * cg.y / (4 * d.stiffness * d.halfTrack ** 2) };
@@ -47,7 +53,8 @@ export class SkidGear {
     for (const x of [d.front, d.rear]) for (const side of [-1, 1]) {
       const index = contact++;
       const plastic = this.suspension[index].plastic;
-      const point = { x, y: side * (d.halfTrack + (d.flexure?.spread ?? 0) * plastic), z: d.z - plastic };
+      const point = { x, y: side * (d.halfTrack + (d.flexure?.spread ?? 0) * plastic),
+        z: (d.frontZ !== undefined && index < 2 ? d.frontZ : d.z) - plastic };
       const arm = v3.sub(point, b.cgOffset);
       const world = v3.add(b.position, quat.rotate(b.orientation, point));
       const penetration = world.z + env.groundElevation(world.x, world.y);

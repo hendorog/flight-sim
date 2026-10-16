@@ -2,7 +2,7 @@ import { clamp, quat, v3, type Vec3 } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import type { BodyState } from '../interfaces';
 import { bladeBendShape, bladeConing } from './coning';
-import type { RotorcraftDefinition, RotorcraftState } from './definition';
+import { cyclicAngles, type RotorcraftDefinition, type RotorcraftState } from './definition';
 
 /** Implicit midpoint oscillator with a Coulomb impulse (including exact stiction).
  * Friction opposes midpoint velocity; stops remove outward kinetic energy. No speed floor. */
@@ -55,7 +55,8 @@ export function advanceGroundRotor(d: RotorcraftDefinition, s: RotorcraftState, 
     for (let i = 0; i < 2; i++) {
       const az = s.azimuth + i * Math.PI + d.rotation * s.omega * (step + 0.5) * h;
       const ex = Math.sin(az), ey = Math.cos(az), sign = i === 0 ? 1 : -1;
-      const pitch = collective + d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey);
+      const pitch = collective + (d.cyclicLimits ? d.rotation * (cyclicAngles(d, c).right * ex + cyclicAngles(d, c).aft * ey)
+        : d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey));
       let moment = 0;
       const dr = (rotor.radius - rotor.rootCutout) / 12;
       for (let j = 0; j < 12; j++) {
@@ -104,7 +105,8 @@ export function bladePath(d: RotorcraftDefinition, s: RotorcraftState, c: Contro
     const teeter = harmonic * (1 - blend) + (low ? s.contactRotor!.angle * (i % 2 === 0 ? 1 : -1) : 0) * blend;
     const flap = cone.angle + teeter;
     const pitch = r.minPitch + clamp(c.collective ?? 0, 0, 1) * (r.maxPitch - r.minPitch) +
-      d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey);
+      (d.cyclicLimits ? d.rotation * (cyclicAngles(d, c).right * ex + cyclicAngles(d, c).aft * ey)
+        : d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey));
     for (let j = 0; j <= 32; j++) {
       const radius = r.rootCutout + (r.radius - r.rootCutout) * j / 32;
       const bend = cone.tipBend * bladeBendShape((radius - r.rootCutout) / (r.radius - r.rootCutout));

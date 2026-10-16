@@ -43,6 +43,12 @@ export interface TurboshaftControlDef {
     droop: number;
     /** Droop compensator: Ng demand per unit collective POSITION (feed-forward; RFM 4-22 over-compensation). */
     anticipation: number;
+    /**
+     * N1 at which the compensator's datum sits with the collective fully down: the steady N2 equals the beep set
+     * point there (flat pitch at 103 % N2, so the RFM 4-18 run-up beep check reads the set point). Absent:
+     * plaNg.groundIdle.
+     */
+    datumNg?: number;
     /** Ng demand per unit N2 error, and its integral gain, 1/s. */
     gain: number; integralGain: number;
     /** Rate lead on N2, s. */
@@ -90,6 +96,12 @@ export interface RotorcraftDefinition {
    * cyclicLimit each way (every type before the MD 500). Declared at the scaffold; T2 implements it.
    */
   cyclicLimits?: { forward: number; aft: number; left: number; right: number };
+  /**
+   * Forward tilt of the main-rotor shaft from the body's -z axis, rad (MD 500E: 3 deg, RFM Fig 6-3). The main rotor's
+   * flow, flapping, forces and moments are solved in the shaft frame and turned back to the body. Absent: 0 (every
+   * type before the MD 500; their arithmetic is untouched).
+   */
+  shaftTilt?: number;
   teeterLimit: number;
   /** Inputs command position; optional spring trim reports forces but drives no force-feedback hardware. */
   controlSystem: { cyclic: 'mechanical' | 'hydraulic'; collective: 'mechanical' | 'hydraulic'; pedals: 'mechanical';
@@ -145,6 +157,9 @@ export interface RotorcraftDefinition {
     tailcone: { front: Vec3; rear: Vec3; frontRadius: number; rearRadius: number };
     cabin: { centre: Vec3; radii: Vec3 } };
   skids: { halfTrack: number; front: number; rear: number; z: number; stiffness: number; damping: number; friction: number; maxSink: number;
+    /** Body z of the FRONT contacts when they differ from the rear ones (`z`), m (MD 500E: the 4.7 deg nose-up
+     * ground attitude). Absent: all four at `z`. */
+    frontZ?: number;
     suspension?: 'cross-tube' | 'oleo';
     /** Per contact, N, N/m, m. Bilinear compression plasticity; spread is m lateral/m stroke. */
     flexure?: { yieldForce: number; hardening: number; maxStroke: number; spread: number };
@@ -205,6 +220,8 @@ export interface RotorcraftState {
     /** RE-IGN P RST: latched when auto-reignition fired; cleared by lampTestId 'reign'. */
     reignitionLight: boolean;
     overTorque: boolean; overTemp: boolean; avoidRange: boolean;
+    /** The low-rotor half of the warning is armed (Nr has reached the threshold since it was last below 70 %). Absent = false. */
+    lowRotorArmed?: boolean;
   };
   omega: number; azimuth: number; inflow: number; tailInflow: number;
   flapForward: number; flapRight: number; governorThrottle: number;
@@ -226,6 +243,19 @@ export interface RotorcraftState {
    * lowRpmLight: powered LOW RPM indication, independent of collective position.
    * lowRpmHorn: audible warning below the type's threshold with collective not fully down. */
   clutchEngagement: number; clutchLight: boolean; governorActive: boolean; lowRpmHorn: boolean; lowRpmLight: boolean;
+}
+/**
+ * Cyclic blade-pitch command of the stick, rad: `aft` (+ = disc aft, ControlInputs.elevator +) and `right`
+ * (+ = disc right, aileron +). With `cyclicLimits` the stick's travel is linear from the forward to the aft stop
+ * (elevator -1 .. +1) and from the left to the right stop, so its centre sits half the difference away from the
+ * rigging neutral; without it, cyclicLimit each way.
+ */
+export function cyclicAngles(d: Pick<RotorcraftDefinition, 'cyclicLimit' | 'cyclicLimits'>,
+  c: { elevator: number; aileron: number }): { aft: number; right: number } {
+  const l = d.cyclicLimits;
+  if (!l) return { aft: c.elevator * d.cyclicLimit, right: c.aileron * d.cyclicLimit };
+  return { aft: c.elevator * (l.forward + l.aft) / 2 - (l.forward - l.aft) / 2,
+    right: c.aileron * (l.left + l.right) / 2 + (l.right - l.left) / 2 };
 }
 /** Snapshots own every nested state; legacy scalar serialization remains identical. */
 export function cloneRotorcraftState(s: RotorcraftState): RotorcraftState {

@@ -2,7 +2,8 @@ import { clamp, quat, v3, type Vec3 } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import type { BodyState, ForceMoment } from '../interfaces';
 import type { EngineUnit } from '../propulsion/engineUnit';
-import { emptyRotorcraftState, type RotorcraftDefinition } from './definition';
+import { cyclicAngles, emptyRotorcraftState, type RotorcraftDefinition } from './definition';
+import { emptyTurboshaftState, TurboshaftControl } from './turboshaft';
 import { bladeElements, inflowTarget, inflowTimeConstant } from './rotor';
 import { airframeLoads } from './airframe';
 import { placardMap } from './limits';
@@ -24,8 +25,14 @@ export class Rotorcraft {
   readonly articulatedPower = { hub: 0, shaft: 0 };
   readonly drivePower = { aerodynamic: 0, rotorChange: 0, clutch: 0, integration: 0 };
   private readonly loads: ForceMoment = { force: v3.zero(), moment: v3.zero() };
-  constructor(readonly def: RotorcraftDefinition) {}
+  /** Turboshaft fuel control and N2 governor (systems.turboshaft): the flight model calls its stepTurboshaft()
+   * in place of throttle(). Null on piston installations. */
+  readonly turboshaft: TurboshaftControl | null;
+  constructor(readonly def: RotorcraftDefinition) {
+    this.turboshaft = def.systems.turboshaft ? new TurboshaftControl(def, this.state) : null;
+  }
   reset(running: boolean): void {
+    delete this.state.turboshaft;
     delete this.state.articulated; delete this.state.contactRotor;
     delete this.state.transmission; delete this.state.springTrim; delete this.state.clutchDisengaged;
     Object.assign(this.state, emptyRotorcraftState());
@@ -38,6 +45,12 @@ export class Rotorcraft {
         oilTemperatureC: 15, tailChips: false };
       this.state.clutchDisengaged = !running;
     }
+    if (this.def.systems.drive === 'freewheel') {
+      // A sprag clutch has no actuator: always engaged, no light, no disengaged switch.
+      this.state.clutchEngagement = 1;
+      delete this.state.clutchDisengaged;
+    }
+    if (this.def.systems.turboshaft) this.state.turboshaft = emptyTurboshaftState(this.def.systems.turboshaft, running);
     if (this.def.controlSystem.springTrim) this.state.springTrim = { pitch: 0, roll: 0, pitchForce: 0, rollForce: 0 };
     if (this.def.hubModel?.kind === 'articulated') this.state.articulated = {
       blades: Array.from({ length: this.def.main.blades }, () => ({
@@ -82,6 +95,7 @@ export class Rotorcraft {
    */
   drive(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample,
     clutchCommand?: 'engage' | 'hold' | 'release', busVoltage?: number): void {
+    if (this.def.systems.drive === 'freewheel') { this.driveFreewheel(dt, c, engine, atmosphere, busVoltage); return; }
     const s = this.state, d = this.def;
     clutchCommand ??= c.rotorClutchCommand;
     const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
@@ -146,6 +160,60 @@ export class Rotorcraft {
       t.rollForce = p.force * (t.roll - c.aileron);
     }
   }
+  /**
+   * Overrunning (sprag) clutch between the engine output shaft and the transmission (systems.drive 'freewheel', the
+   * MD 500E): the same one-way impulse coupling as the belt path, with no actuator (always engaged) and the
+   * transmission torque limit as the cap. The engine can drive the rotor but never be driven by it: in autorotation
+   * and at shutdown the rotor overruns and the needles split. Then the turboshaft's gauges and warnings.
+   */
+  private driveFreewheel(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample, busVoltage?: number): void {
+    const s = this.state, d = this.def;
+    const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
+    const oldOmega = s.omega;
+    s.omega = Math.max(0, s.omega - s.torque * dt / inertia);
+    const freeOmega = s.omega;
+    s.clutchEngagement = 1; s.clutchLight = false;
+    const excess = engine.omega - s.omega * d.engineRatio;
+    const impulse = excess > 0
+      ? Math.min(excess / (1 / engine.inertia + d.transmissionEfficiency * d.engineRatio ** 2 / inertia),
+        (d.systems.transmissionTorqueLimit ?? Infinity) * dt) : 0;
+    engine.omega -= impulse / engine.inertia;
+    s.omega += impulse * d.engineRatio * d.transmissionEfficiency / inertia;
+    s.driveTorque = dt > 0 ? impulse * d.engineRatio * d.transmissionEfficiency / dt : 0;
+    if (dt > 0) {
+      this.drivePower.aerodynamic = -s.torque * oldOmega;
+      this.drivePower.rotorChange = 0.5 * inertia * (s.omega ** 2 - oldOmega ** 2) / dt;
+      this.drivePower.clutch = 0.5 * inertia * (s.omega ** 2 - freeOmega ** 2) / dt;
+      this.drivePower.integration = 0.5 * inertia * (freeOmega ** 2 - oldOmega ** 2) / dt - this.drivePower.aerodynamic;
+    }
+    engine.state.rpm = engine.rpm;
+    s.rotorRpm = s.omega * 30 / Math.PI;
+    s.azimuth = (s.azimuth + d.rotation * s.omega * dt) % (2 * Math.PI);
+    if (s.transmission && d.transmission && dt > 0) {
+      const t = s.transmission, p = d.transmission;
+      t.oilPressurePsi += (p.pressurePsi * clamp(s.rotorRpm / p.pumpRpm, 0, 1) - t.oilPressurePsi) *
+        (1 - Math.exp(-dt / p.pressureSeconds));
+      const heat = Math.abs(s.torque * s.omega) * (1 / d.transmissionEfficiency - 1);
+      const target = (atmosphere?.temperature ?? 288.15) - 273.15 + heat / p.cooling;
+      t.oilTemperatureC += (target - t.oilTemperatureC) * (1 - Math.exp(-dt * p.cooling / p.heatCapacity));
+    }
+    const volts = busVoltage ?? (c.masterBattery ? 24 : 0);
+    if (s.springTrim && d.controlSystem.springTrim && dt > 0) {
+      const t = s.springTrim, p = d.controlSystem.springTrim;
+      if (volts > 18) {
+        t.pitch = clamp(t.pitch + clamp(c.cyclicTrimPitch ?? 0, -1, 1) * p.rate * dt, -1, 1);
+        t.roll = clamp(t.roll + clamp(c.cyclicTrimRoll ?? 0, -1, 1) * p.rate * dt, -1, 1);
+      }
+      t.pitchForce = p.force * (t.pitch - c.elevator);
+      t.rollForce = p.force * (t.roll - c.aileron);
+    }
+    if (this.turboshaft) this.turboshaft.publish(dt, c, engine, volts);
+    else {
+      s.lowRpm = s.rotorRpm < d.referenceRpm * d.systems.lowRpmWarning;
+      s.lowRpmLight = s.lowRpm && volts > 18;
+      s.lowRpmHorn = s.lowRpmLight && (c.collective ?? 0) > d.systems.hornCollectiveMin;
+    }
+  }
   /** The thrust axis follows cyclic with a finite teetering response and aerodynamic blowback.
    * Each RK stage sees its own air velocity. Only stage zero advances flap/inflow states.
    */
@@ -153,7 +221,12 @@ export class Rotorcraft {
     const d = this.def, s = this.state;
     const air = v3.sub(b.velocityBody, quat.rotateInv(b.orientation, wind));
     const mainArm = v3.sub(d.main.hub, b.cgOffset);
-    const hubAir = v3.add(air, v3.cross(b.angularVelocity, mainArm));
+    // A tilted shaft: the main rotor works in the shaft frame (toShaft / toBody); untilted types use the body's
+    // vectors themselves, so their arithmetic is unchanged.
+    const tilt = d.shaftTilt ?? 0;
+    const hubAir = tilt ? toShaft(v3.add(air, v3.cross(b.angularVelocity, mainArm)), tilt) : v3.add(air, v3.cross(b.angularVelocity, mainArm));
+    const rate = tilt ? toShaft(b.angularVelocity, tilt) : b.angularVelocity;
+    const cyclic = d.cyclicLimits ? cyclicAngles(d, c) : undefined;
     const articulated = d.hubModel?.kind === 'articulated'
       ? estimatedArticulatedGeometry(d.main, d.hubModel.flapHingeOffset, d.hubModel.lagHingeOffset) : undefined;
     const mu = Math.hypot(hubAir.x, hubAir.y) / Math.max(s.omega * d.main.radius, 1);
@@ -168,8 +241,8 @@ export class Rotorcraft {
     const lateral = d.rotation * (4 / 3 * mu * s.coning + 0.6 * skew * s.inflow / tip) / (1 + 0.5 * mu * mu);
     const ux = speed > 0 ? hubAir.x / speed : 0, uy = speed > 0 ? hubAir.y / speed : 0;
     const cyclicGain = (1 + 1.5 * mu * mu) / Math.max(0.5, 1 - 0.5 * mu * mu);
-    const targetForward = -c.elevator * d.cyclicLimit * cyclicGain - (blowback + s.retreatingFlap) * ux - lateral * uy;
-    const targetRight = c.aileron * d.cyclicLimit - (blowback + s.retreatingFlap) * uy + lateral * ux;
+    const targetForward = (cyclic ? -cyclic.aft : -c.elevator * d.cyclicLimit) * cyclicGain - (blowback + s.retreatingFlap) * ux - lateral * uy;
+    const targetRight = (cyclic ? cyclic.right : c.aileron * d.cyclicLimit) - (blowback + s.retreatingFlap) * uy + lateral * ux;
     // Averaged first-harmonic free-hinge equation: time constant 16/(Lock number × rotor speed).
     // Blade flapping inertia is half the polar inertia for this two-blade rotor. No fitted body damping.
     const lock = density * d.main.liftSlope * d.main.chord * d.main.radius ** 4 / (d.main.inertia / d.main.blades);
@@ -182,10 +255,11 @@ export class Rotorcraft {
       // mapping is an installation estimate; centrifugal detuning produces the actual flap phase.
       // This deliberately does not claim per-blade transient lag or blade-stop/ground resonance.
       const forcing = flapForcing(d.main, articulated, s.omega, density, collective,
-        d.rotation * c.aileron * d.cyclicLimit, -d.rotation * c.elevator * d.cyclicLimit,
-        hubAir, s.inflow, b.angularVelocity, d.rotation);
+        cyclic ? d.rotation * cyclic.right : d.rotation * c.aileron * d.cyclicLimit,
+        cyclic ? -d.rotation * cyclic.aft : -d.rotation * c.elevator * d.cyclicLimit,
+        hubAir, s.inflow, rate, d.rotation);
       const flap = advanceFlap(articulated, s.omega, forcing,
-        { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight }, d.rotation, dt, b.angularVelocity.z);
+        { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight }, d.rotation, dt, rate.z);
       if (dt > 0) {
         // Slow-amplitude reduction: all persistent coordinates already belong to RotorcraftState.
         // Zero-dt RK queries do not advance them; no private array can escape snapshot/reset.
@@ -194,12 +268,12 @@ export class Rotorcraft {
       }
     } else if (dt > 0) {
       if (s.omega > 0) {
-        s.flapForward += (targetForward - s.flapForward + (b.angularVelocity.y + b.angularVelocity.z * s.flapRight) * tau) * lag;
-        s.flapRight += (targetRight - s.flapRight - (b.angularVelocity.x + b.angularVelocity.z * s.flapForward) * tau) * lag;
+        s.flapForward += (targetForward - s.flapForward + (rate.y + rate.z * s.flapRight) * tau) * lag;
+        s.flapRight += (targetRight - s.flapRight - (rate.x + rate.z * s.flapForward) * tau) * lag;
       } else {
         // Finite zero-speed limit of body-axis transport: lim(tau * (1 - exp(-dt/tau))) = dt.
-        s.flapForward += (b.angularVelocity.y + b.angularVelocity.z * s.flapRight) * dt;
-        s.flapRight -= (b.angularVelocity.x + b.angularVelocity.z * s.flapForward) * dt;
+        s.flapForward += (rate.y + rate.z * s.flapRight) * dt;
+        s.flapRight -= (rate.x + rate.z * s.flapForward) * dt;
       }
       s.teeterAngle = Math.atan(Math.hypot(s.flapForward, s.flapRight));
       if (s.teeterAngle > d.teeterLimit) {
@@ -215,16 +289,17 @@ export class Rotorcraft {
     const axial = v3.dot(hubAir, axis);
     const inPlane = v3.sub(hubAir, v3.scale(axis, axial));
     const horizontal = v3.len(inPlane);
-    const hubMoment = articulated ? hingeMoment(articulated, d.main.blades, s.omega,
+    const shaftHubMoment = articulated ? hingeMoment(articulated, d.main.blades, s.omega,
       { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight }) : v3.zero();
-    this.articulatedPower.hub = v3.dot(hubMoment, b.angularVelocity);
+    const hubMoment = tilt ? toBody(shaftHubMoment, tilt) : shaftHubMoment;
+    this.articulatedPower.hub = v3.dot(shaftHubMoment, rate);
     this.articulatedPower.shaft = -this.articulatedPower.hub;
     const hubTorque = s.omega > 0 ? this.articulatedPower.hub / s.omega : 0;
     const main = bladeElements(d.main, s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true);
     const h = Math.max(0.3 * d.main.radius, height - quat.rotate(b.orientation, d.main.hub).z);
     // NDARC TP-2015-218751 §12-4.1.2: constant-thrust induced-velocity factor (exponent 3/2).
     // Use the wake's angle to the ground normal; an upward autorotative wake gets no image correction.
-    const wake = quat.rotate(b.orientation, v3.add(hubAir, v3.scale(axis, s.inflow)));
+    const wake = quat.rotate(b.orientation, tilt ? toBody(v3.add(hubAir, v3.scale(axis, s.inflow)), tilt) : v3.add(hubAir, v3.scale(axis, s.inflow)));
     const wakeCos = clamp(-wake.z / Math.max(v3.len(wake), 1e-6), 0, 1);
     const ge = (1 - (d.main.radius * wakeCos / (4 * h)) ** 2) ** 1.5;
     const vh = Math.sqrt(Math.abs(main.thrust) / Math.max(2 * density * Math.PI * d.main.radius ** 2, 1e-6));
@@ -253,7 +328,7 @@ export class Rotorcraft {
       tailShaft: -tail.torque * s.omega * d.tailRatio, tailThrust: tail.thrust * tailAir.y * d.rotation,
       tailH: v3.dot(tailHForce, tailAir), tailInduced: -tail.thrust * s.tailInflow, tailProfile: -tail.profilePower,
       tailWake: tailHForce.z * wakeAtTail,
-      driveReaction: d.rotation * s.driveTorque * b.angularVelocity.z,
+      driveReaction: d.rotation * s.driveTorque * rate.z,
       axial, horizontal, inflow: s.inflow, groundEffect: ge, inflowTau,
     });
     if (dt > 0) {
@@ -268,22 +343,26 @@ export class Rotorcraft {
       s.tailInflow += (inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation,
         tailHorizontal) - s.tailInflow) * (1 - Math.exp(-dt / 0.08));
     }
-    const mainForce = v3.scale(axis, thrust);
-    if (horizontal > 0) Object.assign(mainForce, v3.sub(mainForce, v3.scale(inPlane, main.inPlane / horizontal)));
+    const shaftForce = v3.scale(axis, thrust);
+    if (horizontal > 0) Object.assign(shaftForce, v3.sub(shaftForce, v3.scale(inPlane, main.inPlane / horizontal)));
+    const mainForce = tilt ? toBody(shaftForce, tilt) : shaftForce;
     const tailForce = { x: tailHForce.x, y: tail.thrust * d.rotation, z: tailHForce.z };
     const frame = airframeLoads(d, b, air, density, s.inflow);
     Object.assign(this.power, frame.power);
     const f = this.loads.force, m = this.loads.moment;
     Object.assign(f, v3.add(v3.add(mainForce, tailForce), frame.force));
     Object.assign(m, v3.add(v3.add(v3.cross(mainArm, mainForce), v3.cross(tailArm, tailForce)), frame.moment));
-    m.z += d.rotation * s.driveTorque;
+    if (tilt) {
+      // The drive torque reacts about the tilted shaft.
+      m.x -= d.rotation * s.driveTorque * Math.sin(tilt); m.z += d.rotation * s.driveTorque * Math.cos(tilt);
+    } else m.z += d.rotation * s.driveTorque;
     if (articulated) {
       Object.assign(m, v3.add(m, hubMoment));
     }
     // The freely teetering rotor carries H, but transfers no bending moment through its centre hinge.
     // Its aerodynamic reorientation moment minus body-frame dH/dt equals w×H. Account for both here;
     // the rigid-body Euler term subtracts w×H. Keeping just the latter would invent rigid-hub control.
-    Object.assign(this.angularMomentum, v3.scale(axis, d.rotation * d.main.inertia * s.omega));
+    Object.assign(this.angularMomentum, v3.scale(tilt ? toBody(axis, tilt) : axis, d.rotation * d.main.inertia * s.omega));
     Object.assign(m, v3.add(m, v3.cross(b.angularVelocity, this.angularMomentum)));
     s.thrust = thrust; s.tailThrust = tail.thrust; s.torque = main.torque + tail.torque * d.tailRatio;
     // The massless harmonic reduction retains no flap kinetic-energy store. Offset hinge work
@@ -311,19 +390,32 @@ export class Rotorcraft {
       b.flap = coning ? articulatedBladeConing(coning, s.omega, s.thrust / d.main.blades,
         harmonic, normalGravity, meanMoment).angle : s.coning + harmonic;
       b.lag = 0; // Coupled lag experiment rejected; see docs/s269-integration.md.
+      const cyclic = d.cyclicLimits ? cyclicAngles(d, c) : undefined;
       b.pitch = d.main.minPitch + clamp(c.collective ?? 0, 0, 1) * (d.main.maxPitch - d.main.minPitch) +
-        d.rotation * d.cyclicLimit * (c.aileron * Math.cos(psi) - c.elevator * Math.sin(psi));
+        (cyclic ? d.rotation * (cyclic.right * Math.cos(psi) - cyclic.aft * Math.sin(psi))
+          : d.rotation * d.cyclicLimit * (c.aileron * Math.cos(psi) - c.elevator * Math.sin(psi)));
     });
   }
   /** Converge the slow aerodynamic states at a held pose/RPM for the numerical trim solver. */
   settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true): ForceMoment {
     const s = this.state, d = this.def;
     s.driveTorque = 0; s.coning = 0; s.retreatingFlap = 0;
-    s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit;
+    if (d.cyclicLimits) { const cyclic = cyclicAngles(d, c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
+    else { s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit; }
     s.inflow = s.tailInflow = s.omega > 0 ? 5 : 0;
     for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);
     s.mastBump = false;
     s.driveTorque = powered ? s.torque : 0;
     return this.compute(b, wind, density, height, c, 0);
   }
+}
+/** Body vector to the frame of a shaft tilted forward by `tilt` (its z along the shaft, down). */
+function toShaft(v: Vec3, tilt: number): Vec3 {
+  const c = Math.cos(tilt), sn = Math.sin(tilt);
+  return { x: v.x * c + v.z * sn, y: v.y, z: v.z * c - v.x * sn };
+}
+/** Shaft-frame vector back to the body. */
+function toBody(v: Vec3, tilt: number): Vec3 {
+  const c = Math.cos(tilt), sn = Math.sin(tilt);
+  return { x: v.x * c - v.z * sn, y: v.y, z: v.x * sn + v.z * c };
 }
