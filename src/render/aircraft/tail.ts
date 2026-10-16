@@ -267,9 +267,9 @@ export function buildTail(mat: AircraftMaterials, root: THREE.Object3D, def: Tai
   if (def.dorsalFillet) addDorsalFillet(batch, mat, def, def.dorsalFillet, finPlanform, skin);
   if (def.ventralFin && skin) addVentralFin(batch, mat, def.ventralFin, skin);
   if (def.vorAntenna) addVorAntenna(batch, mat, finPlanform, finHeight);
+  if (def.strakes && skin) addStrakes(batch, mat, def.strakes, skin);
   const structure = batch.build('tail');
   root.add(structure);
-  if (def.strakes && skin) addStrakes(batch, mat, def.strakes, skin);
   return { structure, elevators: elevators as [Hinge, Hinge], trimTab: tabs[0], rudder, tabs, tabGearing: def.h.trim ? 0 : (tabDef?.gearing ?? 0), rudderTab };
 }
 

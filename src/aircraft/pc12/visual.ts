@@ -92,9 +92,19 @@ const WINGLET_SECTION: SectionShape = { m: 0, p: 0.4, t: 0.1 };
 
 // --- Wing: straight taper from the fuselage to the tip, winglets, Fowler flaps, de-ice boots ------------------------
 
-const TIP_Y = PC12_WING.span / 2;
-/** Chord of the straight-tapered trapezoid (2.10 m on the centre line, 1.08 at the tip; geometry.ts). */
-const chordAt = (y: number): number => PC12_WING.rootChord + ((PC12_WING.tipChord - PC12_WING.rootChord) * y) / TIP_Y;
+/** Half the TCDS span: the winglets' outer tips. */
+const HALF_SPAN = PC12_WING.span / 2;
+/** The winglet: 0.45 m high (geometry.ts), canted 62 deg up from the wing plane (ESTIMATE between the three-view's
+ * front view, about 30 deg, and the photographs, 60-70 deg). */
+const WINGLET_CANT = 62 * DEG;
+/** The flat wing's tip station: inboard of the half span by the winglet's outward reach, so that the drawing keeps
+ * the TCDS span of 16.28 m to the winglet tips (geometry.ts still ends the wing at 8.14: requested). */
+const TIP_Y = HALF_SPAN - PC12_WING.winglet.height * Math.cos(WINGLET_CANT) - 0.045;
+/** Chord of the straight-tapered trapezoid (2.10 m on the centre line, 1.08 at the half span; geometry.ts). */
+const chordAt = (y: number): number => PC12_WING.rootChord + ((PC12_WING.tipChord - PC12_WING.rootChord) * y) / HALF_SPAN;
+
+/** The aileron's outer end: geometry.ts's 7.95 m, held 8 cm inside the flat wing's tip. */
+const AILERON_OUTER_Y = Math.min(PC12_WING.aileron.outerY, TIP_Y - 0.08);
 
 const WING: WingVisualDef = {
   mount: 'low',
@@ -103,7 +113,7 @@ const WING: WingVisualDef = {
   // Straight quarter-chord line (geometry.ts quarterChordX 0 at every station): the leading edge sweeps back 1.8 deg.
   breaks: [
     { y: PC12_WING.rootY, chord: chordAt(PC12_WING.rootY), qcX: PC12_WING.quarterChordX },
-    { y: TIP_Y, chord: PC12_WING.tipChord, qcX: PC12_WING.quarterChordX },
+    { y: TIP_Y, chord: chordAt(TIP_Y), qcX: PC12_WING.quarterChordX },
   ],
   rootY: PC12_WING.rootY,
   qcZ: hz(WING_ROOT_PLANE_H),
@@ -115,8 +125,8 @@ const WING: WingVisualDef = {
     // The Fowler flap from the fuselage side to 5.05 m, a short fixed panel, the aileron to 7.95 m, the tip.
     { kind: 'flap', from: PC12_WING.rootY, to: PC12_WING.flap.outerY, chordFraction: 0.3 },
     { kind: 'fixed', from: PC12_WING.flap.outerY, to: PC12_WING.aileron.innerY },
-    { kind: 'aileron', from: PC12_WING.aileron.innerY, to: PC12_WING.aileron.outerY, chordFraction: 0.27 },
-    { kind: 'fixed', from: PC12_WING.aileron.outerY, to: TIP_Y },
+    { kind: 'aileron', from: PC12_WING.aileron.innerY, to: AILERON_OUTER_Y, chordFraction: 0.27 },
+    { kind: 'fixed', from: AILERON_OUTER_Y, to: TIP_Y },
   ],
   // Single-slotted Fowler flaps on tracks: at 40 deg they run most of their chord aft (PHOTO ZS-JDD on approach: a
   // deep slot opens between the shroud and the flap) and a little down.
@@ -124,9 +134,8 @@ const WING: WingVisualDef = {
   tip: {
     round: 0.08,
     chordRound: 0.05,
-    // A small, nearly upright winglet (PHOTO HB-FPT; front view of Fig 1-1): 0.45 m high (geometry.ts), canted 84 deg
-    // from the wing plane so that the drawing keeps the TCDS span, swept back, its chord narrowing to about 0.45 m.
-    winglet: { height: PC12_WING.winglet.height, cant: 84 * DEG, rootChord: 0.95, tipChord: 0.45, sweep: 32 * DEG, section: WINGLET_SECTION, blend: 0.35 },
+    // A small upturned winglet (PHOTO; front view of Fig 1-1), swept back, its chord narrowing to about 0.45 m.
+    winglet: { height: PC12_WING.winglet.height, cant: WINGLET_CANT, rootChord: 0.95, tipChord: 0.45, sweep: 32 * DEG, section: WINGLET_SECTION, blend: 0.3 },
   },
   fuelCaps: [{ y: 6.4, xc: 0.35, side: 'both' }],
   pitot: { side: -1, y: 4.6, xc: 0.18 },
@@ -332,13 +341,13 @@ const GLAZING: GlazingDef = {
   firewallX: FIREWALL_X,
   tRange: [0.2, 0.8],
   windows: [
-    // The cockpit side windows behind the A-post (with the small direct-vision panel in their forward part).
+    // The cockpit side windows behind the A-post (3V: 2.13-2.57 m, less 0.07; the direct-vision panel in their forward part).
     {
       pts: [
-        [sx(3.62), hz(2.3)],
-        [sx(4.06), hz(2.57)],
-        [sx(4.45), hz(2.57)],
-        [sx(4.45), hz(2.27)],
+        [sx(3.47), hz(2.08)],
+        [sx(3.96), hz(2.5)],
+        [sx(4.45), hz(2.5)],
+        [sx(4.45), hz(2.06)],
       ],
       r: 0.05,
       sides: 'both',
@@ -606,7 +615,7 @@ const COCKPIT: CockpitDef = {
   ],
   trimPanels: [
     // The cockpit side walls below the side windows, and the cabin walls below the window line.
-    { side: 0, x0: sx(3.5), x1: sx(4.6), z0: hz(2.12), z1: FLOOR_Z + 0.02, relief: 0.009, material: 'panelPlastic', grid: { rows: 30, cols: 36 }, edge: 0.02, openBelow: true },
+    { side: 0, x0: sx(3.5), x1: sx(4.6), z0: hz(2.02), z1: FLOOR_Z + 0.02, relief: 0.009, material: 'panelPlastic', grid: { rows: 30, cols: 36 }, edge: 0.02, openBelow: true },
     { side: 0, x0: sx(4.6), x1: CABIN_REAR_X + 0.06, z0: hz(1.94), z1: FLOOR_Z - 0.04, relief: 0.009, material: 'seatFabric', grid: { rows: 110, cols: 30 }, edge: 0.02 },
   ],
   occupants: [{ seat: 0 }],

@@ -22,6 +22,7 @@ import { SYNTHETIC_AIRFRAMES, SYNTHETIC_CANOPY, SYNTHETIC_TWIN } from '../../src
 import { AircraftVisual, interiorInView } from '../../src/render/aircraft/AircraftVisual';
 import { Cockpit, cockpitControls } from '../../src/render/aircraft/cockpit';
 import { buildNacelles, cabinFloorGeometry, createFuselageShapes, inletDecal, sectionHalfWidth } from '../../src/render/aircraft/fuselage';
+import { makeWindowSdf } from '../../src/render/aircraft/livery';
 import { FuselageShape } from '../../src/render/aircraft/fuselageShape';
 import { LandingGear } from '../../src/render/aircraft/gear';
 import { makeStabPlanform, makeWingletPlanform, makeWingPlanform, sectionPoint } from '../../src/render/aircraft/planformMath';
@@ -1237,5 +1238,262 @@ describe('whole synthetic aircraft', () => {
     expect(Object.keys(SYNTHETIC_AIRFRAMES)).toEqual(['syn-twin', 'syn-canopy']);
     // The Cessna 172S definition names every fitting the builders used to hard-wire.
     expect(Object.keys(C172S_VISUAL.cockpit.fittings!).sort()).toEqual(['airOutlet', 'defrosters', 'doorHandle', 'fuelSelector', 'overhead', 'toeBoard', 'vents', 'visors', 'windowLatch']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// The variants the Pilatus PC-12/47 brought (pc12/visual.ts), proven on the synthetic airframes.
+
+describe('PC-12 builder variants', () => {
+  it('trimmable stabiliser: the tailplane and both elevators turn together by elevatorTrim, leading edge up for +', () => {
+    const base = SYNTHETIC_CANOPY.tail;
+    const def = { ...base, h: { ...base.h, tab: undefined, trim: { pivotFraction: 0.65 } } };
+    const shapes = createFuselageShapes(SYNTHETIC_CANOPY);
+    const root = new THREE.Group();
+    const tail = buildTail(fakeMaterials(), root, def, shapes.outer);
+    expect(nonFinite(root)).toBe(0);
+    expect(expectOutward(root)).toBeGreaterThanOrEqual(5);
+    // The stabiliser is the one "tab" and turns by elevatorTrim alone (gearing 0); the elevators ride on it.
+    expect(tail.tabs).toHaveLength(1);
+    expect(tail.tabGearing).toBe(0);
+    expect(tail.trimTab).toBe(tail.tabs[0]);
+    const stab = tail.tabs[0];
+    for (const e of tail.elevators) expect(e.object.parent).toBe(stab.object);
+    // The pivot is the root section's 65 % chord point; the axis is lateral, pointing right.
+    const pf = makeStabPlanform(def);
+    const pivot = sectionPoint(pf, 0, 0.65, 0);
+    expect(stab.origin.distanceTo(model([pivot.x, 0, pivot.z]))).toBeLessThan(1e-9);
+    expect(new THREE.Vector3(1, 0, 0).applyQuaternion(stab.object.quaternion).x).toBeCloseTo(1, 12);
+    const surface = meshesNamed(stab.object, /^stabiliser/)[0];
+    const elevator = tail.elevators[1].object.children[0] as THREE.Mesh;
+    const before = positions(surface, root);
+    const le = argMax(before, (p) => -p.z);
+    const elevBefore = positions(elevator, root);
+    const te = argMax(elevBefore, (p) => p.z);
+    // +0.05 rad: the leading edge rises and the elevator's trailing edge falls, each by about 0.05 x its arm.
+    stab.setAngle(0.05);
+    const after = positions(surface, root);
+    const elevAfter = positions(elevator, root);
+    const arm = (p: THREE.Vector3): number => Math.abs(-p.z - pivot.x);
+    expect(after[le].y - before[le].y).toBeCloseTo(0.05 * arm(before[le]), 2);
+    expect(elevBefore[te].y - elevAfter[te].y).toBeCloseTo(0.05 * arm(elevBefore[te]), 2);
+    // The elevator still turns on its own hinge on top of the trim.
+    tail.elevators[1].setAngle(0.2);
+    expect(elevAfter[te].y - positions(elevator, root)[te].y).toBeGreaterThan(0.02);
+    expect(nonFinite(root)).toBe(0);
+    // A tab and a trimmable stabiliser together are refused.
+    expect(() => buildTail(fakeMaterials(), new THREE.Group(), { ...def, h: { ...def.h, tab: base.h.tab ?? { y0: 0.2, y1: 0.5, xc: 0.85, sides: 'both' } } }, shapes.outer)).toThrow();
+  });
+
+  it('ventral strakes: a mirrored pair below the body skin, inside their stations, leaning outward', () => {
+    const base = SYNTHETIC_CANOPY;
+    const shapes = createFuselageShapes(base);
+    const x0 = base.fuselage.endX + 1.6;
+    const x1 = base.fuselage.endX + 0.5;
+    const def = { ...base.tail, ventralFin: undefined, dorsalFillet: undefined, strakes: { x0, x1, depth: 0.15, angle: 45 * DEG, cant: 40 * DEG } };
+    const root = new THREE.Group();
+    const plainOf = (r: THREE.Group): THREE.Mesh => meshesNamed(r, 'tail:plainPaint')[0];
+    buildTail(fakeMaterials(), root, def, shapes.outer);
+    expect(nonFinite(root)).toBe(0);
+    const bare = new THREE.Group();
+    buildTail(fakeMaterials(), bare, { ...def, strakes: undefined }, shapes.outer);
+    // Only the strakes are new plain-painted vertices (the bullet is shared).
+    const pts = positions(plainOf(root), root).slice(plainOf(bare) ? positions(plainOf(bare), bare).length : 0);
+    expect(pts.length).toBeGreaterThan(0);
+    const left = pts.filter((p) => p.x < 0);
+    const right = pts.filter((p) => p.x > 0);
+    expect(left.length).toBe(right.length);
+    // Mirror images; within the stations; below the widest line and out beyond the skin by up to their depth.
+    expect(Math.max(...right.map((p) => p.x))).toBeCloseTo(-Math.min(...left.map((p) => p.x)), 6);
+    for (const p of pts) {
+      expect(-p.z).toBeLessThanOrEqual(x0 + 1e-6);
+      expect(-p.z).toBeGreaterThanOrEqual(x1 - 1e-6);
+      expect(-p.y).toBeGreaterThan(shapes.outer.section(-p.z).zMid);
+    }
+    const reach = Math.max(...right.map((p) => p.x - sectionHalfWidth(shapes.outer, -p.z, Math.min(-p.y, shapes.outer.section(-p.z).zBot - 1e-3))));
+    expect(reach).toBeGreaterThan(0.05);
+  });
+
+  it('de-ice boots: a black skin round the leading edge of both wings, 2 mm proud, facing out', () => {
+    const def = { ...SYNTHETIC_TWIN.wing, walkways: undefined, stallStrips: undefined, liftDetector: undefined, boots: [{ y0: 1.6, y1: 4.5, xcUpper: 0.06, xcLower: 0.08 }] };
+    const shapes = createFuselageShapes(SYNTHETIC_TWIN);
+    const root = new THREE.Group();
+    buildWings(fakeMaterials(), root, def, shapes.outer);
+    expect(nonFinite(root)).toBe(0);
+    const black = worldMeshes(root).filter((m) => /\|black$/.test(m.name));
+    const pts = black.flatMap((m) => positions(m, root));
+    expect(pts.length).toBeGreaterThan(0);
+    const pf = makeWingPlanform(def);
+    for (const p of pts) {
+      const y = Math.abs(p.x);
+      expect(y).toBeGreaterThanOrEqual(1.6 - 1e-6);
+      expect(y).toBeLessThanOrEqual(4.5 + 1e-6);
+      // Nowhere further aft than its chord fractions (plus the 2 mm stand-off).
+      const leX = sectionPoint(pf, y, 0, 0).x;
+      expect(leX - -p.z).toBeLessThan(0.08 * pf.chord(y) + 0.01);
+    }
+    expect(Math.min(...pts.map((p) => p.x))).toBeCloseTo(-Math.max(...pts.map((p) => p.x)), 6);
+    for (const m of black) {
+      const f = facing(m);
+      expect(f.outward / f.total, `${m.name} outward`).toBeGreaterThan(0.9);
+    }
+  });
+
+  it('four blades, variable pitch, into reverse: one instance a blade, balanced, turned to a negative blade angle', () => {
+    const def: PropVisualDef = { ...SYNTHETIC_TWIN.props[0], hub: [0, 0, 0], rotation: 1, blades: 4 };
+    const prop = new Propeller(fakeMaterials(), def, true);
+    const blades = meshesNamed(prop.group, /^blade/).filter((m): m is THREE.InstancedMesh => m instanceof THREE.InstancedMesh);
+    expect(blades.length).toBe(2);
+    for (const b of blades) expect(b.instanceMatrix.count).toBe(4);
+    // The blade's chord at mid-blade against the plane of rotation, before and at -17.5 deg (PC-12 full reverse).
+    const chordAngle = (k: number): number => {
+      const front = blades[0];
+      const p = front.geometry.getAttribute('position');
+      const m = new THREE.Matrix4();
+      front.getMatrixAt(k, m);
+      const COLS = 13;
+      const row = 12;
+      const te = new THREE.Vector3().fromBufferAttribute(p, row * COLS).applyMatrix4(m);
+      const lead = new THREE.Vector3().fromBufferAttribute(p, row * COLS + COLS - 1).applyMatrix4(m);
+      const chord = lead.sub(te);
+      const axis = new THREE.Vector3(0, 1, 0).transformDirection(m);
+      const motion = new THREE.Vector3(0, 0, -1).cross(axis);
+      return Math.atan2(-chord.z, chord.dot(motion)) / DEG;
+    };
+    prop.update(0, 0);
+    const built = chordAngle(0);
+    prop.update(0, 0, -17.5 * DEG);
+    expect(nonFinite(prop.group)).toBe(0);
+    for (let k = 0; k < 4; k++) expect(chordAngle(k)).toBeCloseTo(built - 17.5 - def.referencePitch / DEG, 3);
+    const sum = new THREE.Vector3();
+    const m = new THREE.Matrix4();
+    for (let k = 0; k < 4; k++) {
+      blades[0].getMatrixAt(k, m);
+      sum.add(new THREE.Vector3(0, 1, 0).transformDirection(m));
+    }
+    expect(sum.length()).toBeLessThan(1e-6);
+    prop.dispose();
+  });
+
+  it('trailing-link mains folding inward with a door: the axle lands on the rigid swing of its post hinge', () => {
+    const G = PA34_GEOMETRY.gear;
+    const link = (contact: { x: number; y: number; z: number }, side: 1 | -1): WheelVisualDef => {
+      const pivot: [number, number, number] = [contact.x + 0.38, contact.y, contact.z - G.mainWheelRadius - 0.23];
+      const top: [number, number, number] = [pivot[0], contact.y, pivot[2] - 0.55];
+      return {
+        contact: [contact.x, contact.y, contact.z],
+        radius: G.mainWheelRadius,
+        width: 0.16,
+        rimRadius: 0.08,
+        leg: { kind: 'trailingLink', pivot, armLen: Math.hypot(0.38, 0.23), top },
+        retract: {
+          pivot: top,
+          axis: [1, 0, 0],
+          angle: side * 90 * DEG,
+          doors: [{ hinge: [contact.x, contact.y + side * 0.14, top[2]], axis: [1, 0, 0], angle: -side * 80 * DEG, pts: [[contact.x + 0.4, contact.y + side * 0.14, top[2]], [contact.x + 0.4, contact.y, top[2]], [contact.x - 0.3, contact.y, top[2]], [contact.x - 0.3, contact.y + side * 0.14, top[2]]] }],
+          well: [[contact.x + 0.4, contact.y + side * 0.14, top[2] + 0.002], [contact.x + 0.4, contact.y - side, top[2] + 0.002], [contact.x - 0.3, contact.y - side, top[2] + 0.002], [contact.x - 0.3, contact.y + side * 0.14, top[2] + 0.002]],
+        },
+      };
+    };
+    const nose = SYNTHETIC_TWIN.gear[0];
+    const def: AirframeVisualDef['gear'] = [nose, link(G.leftMain, -1), link(G.rightMain, 1)];
+    const gear = new LandingGear(fakeMaterials(), false, def);
+    expect(nonFinite(gear.group)).toBe(0);
+    const all = meshesNamed(gear.group, '').filter((m) => (m.material as THREE.Material).name === 'tyre');
+    const centreOf = (mesh: THREE.Mesh): THREE.Vector3 => {
+      gear.group.updateMatrixWorld(true);
+      return new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().multiplyMatrices(gear.group.matrixWorld.clone().invert(), mesh.matrixWorld));
+    };
+    gear.update(wheels());
+    for (const i of [1, 2]) {
+      const w = def[i];
+      const axle = [w.contact[0], w.contact[1], w.contact[2] - w.radius];
+      const mesh = all.find((m) => centreOf(m).distanceTo(model(axle)) < 1e-3)!;
+      expect(mesh).toBeDefined();
+      // Nearly up: the axle has swung by 0.98 x 90 deg about the post's hinge, inboard and up.
+      const k = 0.02;
+      gear.update(wheels(), [1, k, k]);
+      const r = w.retract!;
+      const expected = turnFrd(axle, r.pivot, r.axis, r.angle);
+      // (the builder eases the extension; at 2 % it is all but up)
+      const now = centreOf(mesh);
+      expect(now.distanceTo(model(expected))).toBeLessThan(0.05);
+      expect(Math.abs(-now.z - w.contact[0])).toBeLessThan(1e-6 + 0.4);
+      expect(Math.abs(now.x)).toBeLessThan(Math.abs(w.contact[1]));
+      gear.update(wheels());
+    }
+    gear.update(wheels(), [1, 0, 0]);
+    expect(nonFinite(gear.group)).toBe(0);
+  });
+
+  it('quadrant: a power lever swings on aft of its gate with reverse; a fixed lever never moves; detent marks', () => {
+    const base = SYNTHETIC_CANOPY;
+    const levers = base.cockpit.engineControls;
+    const throttle = levers.find((l) => l.control === 'throttle')!;
+    const mixture = levers.find((l) => l.control === 'mixture')!;
+    const def: AirframeVisualDef = {
+      ...base,
+      cockpit: {
+        ...base.cockpit,
+        engineControls: [
+          { ...throttle, reverseTravel: 0.5 },
+          { ...mixture, detents: [0, 0.1, 1] },
+          { ...throttle, pos: [throttle.pos[0], throttle.pos[1] - 0.04, throttle.pos[2]], colour: 'white', fixed: 0 },
+        ],
+      },
+    };
+    const shapes = createFuselageShapes(def);
+    const floor = def.cockpit.floor;
+    const cockpit = new Cockpit(fakeMaterials(), cabinFloorGeometry(shapes.lining, floor.z, floor.x0, floor.x1), shapes, def.cockpit, C172S_PANEL);
+    const plainShapes = createFuselageShapes(base);
+    const plain = new Cockpit(fakeMaterials(), cabinFloorGeometry(plainShapes.lining, floor.z, floor.x0, floor.x1), plainShapes, base.cockpit, C172S_PANEL);
+    expect(nonFinite(cockpit.group)).toBe(0);
+    const holders = (c: Cockpit, name: string): THREE.Object3D[] => c.group.children.filter((g) => g.children.some((m) => m.name === name));
+    const power = holders(cockpit, 'lever:knobBlack')[0];
+    const fixedLever = holders(cockpit, 'lever:knobWhite')[0];
+    const ctx = fakeContext(1);
+    ctx.controls.engines = [{}];
+    const t = throttle.travel;
+    // Idle on the gate, then full reverse: half the travel again aft (+ = aft).
+    Object.assign(ctx.controls, { throttle: 0, reverse: 0, mixture: 1 });
+    cockpit.update(ctx.state, ctx.controls, 1);
+    expect(power.rotation.x).toBeCloseTo(t * 0.5, 9);
+    const fixedAt = fixedLever.rotation.x;
+    expect(fixedAt).toBeCloseTo(t * 0.5, 9);
+    ctx.controls.reverse = 1;
+    cockpit.update(ctx.state, ctx.controls, 1);
+    expect(power.rotation.x).toBeCloseTo(t * 1.0, 9);
+    // Per-engine override of reverse, as every engine control.
+    setEngineControl(ctx.controls, 0, 'reverse', 0.5);
+    ctx.controls.throttle = 1;
+    cockpit.update(ctx.state, ctx.controls, 1);
+    expect(power.rotation.x).toBeCloseTo(t * (0 + 0.25 - 0.5), 9);
+    expect(fixedLever.rotation.x).toBe(fixedAt);
+    // The marks: white notches at the three detents, the red gate and reverse arc, in the fixed parts.
+    const count = (c: Cockpit, mat: string): number => meshesNamed(c.group, new RegExp(`:${mat}$`)).filter((m) => !c.group.children.some((g) => g.children.includes(m) && g !== m.parent)).reduce((n, m) => n + m.geometry.getAttribute('position').count, 0);
+    expect(count(cockpit, 'knobRed')).toBeGreaterThan(count(plain, 'knobRed'));
+    expect(count(cockpit, 'knobWhite')).toBeGreaterThan(count(plain, 'knobWhite'));
+    cockpit.dispose();
+    plain.dispose();
+  });
+
+  it('oval window: the rubber seal follows the rounded corners, not the outline\'s bounding box', () => {
+    const glazing = SYNTHETIC_TWIN.glazing;
+    const pts: [number, number][] = [
+      [0.145, 0.2],
+      [0.145, -0.16],
+      [-0.145, -0.16],
+      [-0.145, 0.2],
+    ];
+    const window = (oval: boolean) => makeWindowSdf({ ...glazing, windscreen: undefined, xRange: [1, -1], windows: [{ pts, r: 0.135, sides: 'both', ...(oval ? { oval: true } : {}) }] });
+    // Just outside the box at the corner: the box distance (5 mm, inside the seal) against the true distance
+    // (beyond the seal: the corner of the box is 0.135 (sqrt 2 - 1) = 5.6 cm from the rounded outline).
+    const box = window(false)(0.15, 1, 0.205);
+    const exact = window(true)(0.15, 1, 0.205);
+    expect(box).toBeCloseTo(0.005, 6);
+    expect(exact).toBeGreaterThan(0.04);
+    // Inside and on the flat sides both agree.
+    expect(window(true)(0, 1, 0.02)).toBeCloseTo(window(false)(0, 1, 0.02), 9);
+    expect(window(true)(0.15, 1, 0.02)).toBeCloseTo(window(false)(0.15, 1, 0.02), 6);
   });
 });
