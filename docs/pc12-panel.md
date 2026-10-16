@@ -61,7 +61,7 @@ INVERTER, BUS TIE, CHIP and the rest).
   and the differential held to 5.75 psid by the (display) safety valve in a climb faster than the rate limit allows. No
   pressurisation systems model: `dynamics/cabinDisplay.ts`, owned and stepped by `InstrumentSet` (`InstrumentSystemsDef.cabin`,
   `readings.cabinAltFt` / `cabinDiffPsi`) in every camera view; a reset, teleport or resume puts the cabin on the schedule.
-* Buttons: STARTER INTR (painted; not wired, see below), PUSHER INTR (`pusherInterrupt`, held), CAWS TEST.
+* Buttons: STARTER INTR (`starterInterrupt`, held; also Shift+N), PUSHER INTR (`pusherInterrupt`, held), CAWS TEST.
 * Switch row: BAT, GEN 1, GEN 2, AVIONICS, FUEL PUMPS, beacon, nav, strobe, landing, taxi, pitot heat; STARTER and IGNITION
   (`switches: 'ignition'`).
 * Placards: Vmo / Mmo / Vo, Vfe, Vlo / Vle, engine limits, 5.75 psid, "350 to 950 rpm prohibited".
@@ -83,10 +83,10 @@ INVERTER, BUS TIE, CHIP and the rest).
 ## Not modelled / KNOWN ISSUES (for docs/known-issues.md at integration)
 
 * GEN 1 and GEN 2 rockers are tied (one `alternator` control); real GEN 2 cannot carry the ice loads. Fuel pumps are one rocker.
-* STARTER INTR is a placeholder: `ControlInputs` has no interrupt input yet (requested). The turbine core cuts a latched start on
-  a second STARTER press (S again). The STARTER and IGNITION lenses read `controls.starter`, so with the latch they light only
-  while S is held, not for the whole latched start (no engaged-starter state is published yet; requested with the interrupt).
-  The pusher test, MOR, EIS FUEL RESET / MENU / TEST buttons,
+* STARTER INTR (integration): the button and Shift+N hold `ControlInputs.starterInterrupt`, which cancels a latched start
+  in the turbine core (a second STARTER press does too). The STARTER and IGNITION lenses read the engaged starter
+  (`EngineState.starter`), so they stay lit for the whole latched start.
+* The pusher test, MOR, EIS FUEL RESET / MENU / TEST buttons,
   ice-protection switches, ECS and cabin controls are painted or absent, not working.
 * `Vs1` in the training data is the flaps-UP pusher speed, 95 KIAS (`reference.vs1`). The generic type test compares Vr (82, a
   flaps-15 speed) with Vs0 when the type takes off with flap. The low-and-slow safety rule uses Vs0 + 10 = 77 KIAS, not the

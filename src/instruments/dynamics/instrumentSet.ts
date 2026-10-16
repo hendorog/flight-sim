@@ -236,6 +236,10 @@ export class InstrumentSet {
   private lampInputs: LampInputs | null = null;
   /** `readings.annunciators` by lamp id (the C172S lamp ids are its members). */
   private readonly lamps: Record<string, boolean>;
+  /** Chime lenses (lamps with `chime`): lit on the step before; null until the first step after a reset (no chime then). */
+  private chimeWas: boolean[] | null = null;
+  /** The strongest chime struck since takeChime() was last called. */
+  private chime: 'warning' | 'caution' | null = null;
 
   readonly readings: InstrumentReadings;
 
@@ -324,6 +328,9 @@ export class InstrumentSet {
    */
   reset(state: AircraftState): void {
     this.compass.reset(state);
+    // Lenses already lit at a spawn, reset or teleport do not chime.
+    this.chimeWas = null;
+    this.chime = null;
     let spun = false;
     for (let i = 0; i < state.engines.length; i++) spun ||= state.engines[i].running;
     const powered = state.electrical.busVoltage > this.systems.busDeadVolts;
@@ -340,6 +347,31 @@ export class InstrumentSet {
     this.readings.fuelUsedGal = 0;
     // The cabin is where the controller holds it at this altitude (a resume or a teleport in cruise: no climb from 0).
     this.cabin?.reset(pressureAltitudeFt(state.staticPressure));
+  }
+
+  /**
+   * The caution and warning chime: a lens with `chime` that has just lit (not with the lamp test held, and not on the
+   * first step after a reset, when the lenses already lit are the state the aircraft was in).
+   */
+  private stepChimes(sys: InstrumentSystemsDef, c: ControlInputs): void {
+    const lamps = sys.lamps;
+    const first = this.chimeWas === null;
+    const was = (this.chimeWas ??= lamps.map(() => false));
+    const test = c.annunciatorTest ?? false;
+    for (let i = 0; i < lamps.length; i++) {
+      const level = lamps[i].chime;
+      if (level === undefined) continue;
+      const lit = this.lamps[lamps[i].id];
+      if (lit && !was[i] && !first && !test && this.chime !== 'warning') this.chime = level;
+      was[i] = lit;
+    }
+  }
+
+  /** The chime struck since the last call ('warning' over 'caution'), then cleared. */
+  takeChime(): 'warning' | 'caution' | null {
+    const level = this.chime;
+    this.chime = null;
+    return level;
   }
 
   /**
@@ -466,6 +498,7 @@ export class InstrumentSet {
     r.carbAirTempC = lagStep(r.carbAirTempC, powered ? (sys.carbAirTempC?.(s, c) ?? 0) : -40, dt, 1.5);
     if (sys.hourmeterRunning ? sys.hourmeterRunning(s, c) : s.engine.running) r.engineHours += dt / 3600;
     for (let i = 0; i < sys.lamps.length; i++) this.lamps[sys.lamps[i].id] = sys.lamps[i].lit(li);
+    this.stepChimes(sys, c);
     r.oatC = s.oat - 273.15;
     r.clockSeconds = w.timeOfDay * 3600;
     r.flapsDeg = s.surfaces.flaps * RAD;

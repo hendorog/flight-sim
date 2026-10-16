@@ -347,13 +347,10 @@ export const PC12_PANEL: PanelDef = {
       // The display model is stepped by the instruments (PC12_INSTRUMENT_SYSTEMS.cabin), in every camera view.
       kind: 'dual', id: 'cabin', at: [CABIN_GAUGE.x, CABIN_GAUGE.y], seed: 1202, title: ['CABIN', 'ALT   PSI'], left: CABIN_ALT_SCALE, right: CABIN_DIFF_SCALE,
     },
-    // Momentary buttons: the STARTER INTERRUPT, the stick PUSHER INTR (held) and the CAWS lamp test.
-    // STARTER INTR is NOT wired yet: ControlInputs has no interrupt input. The turbine core (EngineUnit.starterCommand) cuts a
-    // latched start on a SECOND STARTER press, so a button that pressed STARTER would ENGAGE the starter whenever the latch
-    // is off; clearing `starter` (the earlier wiring) did nothing a released key does not. The button is a painted
-    // placeholder until `ControlInputs.starterInterrupt` exists (requested from the integrator / T1a); press S again meanwhile.
+    // Momentary buttons: the STARTER INTERRUPT (held: ControlInputs.starterInterrupt cancels a latched start in the
+    // turbine core), the stick PUSHER INTR (held) and the CAWS lamp test.
     { kind: 'pushButton', id: 'starterInterrupt', bounds: { x: BUTTONS.xs[0], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'STARTER INTR',
-      read: () => false, press: () => {} },
+      read: (c) => c.starterInterrupt ?? false, press: (down, c) => { c.starterInterrupt = down; } },
     { kind: 'pushButton', id: 'pusherIntr', bounds: { x: BUTTONS.xs[1], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'PUSHER INTR',
       read: (c) => c.pusherInterrupt ?? false, press: (down, c) => { c.pusherInterrupt = down; } },
     { kind: 'pushButton', id: 'lampTest', bounds: { x: BUTTONS.xs[2], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'CAWS TEST',
@@ -454,6 +451,12 @@ const powered = (i: LampInputs): boolean => i.state.electrical.busVoltage > PC12
 /** Generator output below which GEN OFF shows, A. */
 const GENERATOR_LAMP_AMPS = 0.5;
 
+/** The chime a CAWS legend strikes as it lights, from its colour: red warning, amber caution, green none. */
+function chimeOf(id: string): { chime?: 'warning' | 'caution' } {
+  const color = CAWS_CELLS.find(([cell]) => cell === id)?.[2];
+  return color === RED ? { chime: 'warning' } : color === AMBER ? { chime: 'caution' } : {};
+}
+
 /** The modelled CAWS lenses: bus power gates every lens; the lamp test (annunciatorTest) lights all of them. */
 const CAWS_LOGIC: Record<(typeof PC12_CAWS_MODELLED)[number], (i: LampInputs) => boolean> = {
   esntlBus: (i) => i.state.electrical.busVoltage < PC12_CAWS_VOLTS.bus,
@@ -469,9 +472,10 @@ const CAWS_LOGIC: Record<(typeof PC12_CAWS_MODELLED)[number], (i: LampInputs) =>
   gen1Off: (i) => (i.state.electrical.alternators[0] ?? 0) < GENERATOR_LAMP_AMPS,
   gen2Off: (i) => (i.state.electrical.alternators[1] ?? 0) < GENERATOR_LAMP_AMPS,
   pusher: (i) => (i.state.stickPusher ?? false) || (i.state.stickShaker ?? false),
-  starter: (i) => i.controls.starter,
+  // The engaged starter (EngineState.starter: the latch outlasts the momentary switch), else the switch.
+  starter: (i) => i.state.engine.starter ?? i.controls.starter,
   // The igniters spark while the starter turns (IGNITION AUTO) or continuously with it ON (turbineEngine.ts).
-  ignition: (i) => i.controls.starter || i.controls.magnetos !== 0,
+  ignition: (i) => (i.state.engine.starter ?? i.controls.starter) || i.controls.magnetos !== 0,
 };
 
 export const PC12_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
@@ -491,6 +495,8 @@ export const PC12_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
     ...Object.entries(CAWS_LOGIC).map(([id, lit]) => ({
       id,
       lit: (i: LampInputs) => powered(i) && ((i.controls.annunciatorTest ?? false) || lit(i)),
+      // A red legend lighting strikes the warning chime, an amber one the caution chime (47E-PROXY CAWS; A1's sound).
+      ...chimeOf(id),
     })),
     // Every other lens is unlit but takes the lamp test.
     ...CAWS_CELLS.filter(([id]) => id && !(id in CAWS_LOGIC)).map(([id]) => ({

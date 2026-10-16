@@ -251,5 +251,9 @@ export interface InstrumentSystemsDef {
   hourmeterRunning?(s: AircraftState, c: ControlInputs): boolean;
   /** Cabin altitude / differential display (dynamics/cabinDisplay.ts), stepped with the instruments: readings.cabinAltFt, cabinDiffPsi. */
   cabin?: CabinSchedule;
-  lamps: readonly { id: string; lit(i: LampInputs): boolean }[];
+  /**
+   * `chime`: a caution and warning panel lens (PC-12 CAWS) whose lighting strikes the master chime: InstrumentSet
+   * reports the edge (takeChime), the panel emits the 'caws' sim event. Not on the lamp test, not at a reset.
+   */
+  lamps: readonly { id: string; lit(i: LampInputs): boolean; chime?: 'warning' | 'caution' }[];
 }

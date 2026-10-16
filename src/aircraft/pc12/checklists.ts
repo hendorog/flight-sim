@@ -79,7 +79,7 @@ export const PC12_EXTRA_CHECKLISTS: Record<string, FlightChecklist> = {
   hotStart: checklist('hotStart', 'Hot or hung start', [
     i('recognise', 'Recognise', 'ITT racing toward 1000 °C, or Ng hung below idle with ITT rising'),
     i('condition', 'Condition lever', 'CUT-OFF / FEATHER at once', lt('mixture', 0.05)),
-    i('motor', 'Starter', 'Keep motoring to clear the fuel and cool the ITT, then STARTER INTERRUPT (press STARTER again)'),
+    i('motor', 'Starter', 'Keep motoring to clear the fuel and cool the ITT, then STARTER INTERRUPT (Shift+N)'),
     i('log', 'Exceedance', 'Record peak ITT and its time; above the limit, maintenance before flight'),
   ], { ...POH('sect. 3, abnormal start'), category: 'emergency' }),
   engineFire: checklist('engineFire', 'Engine fire in flight', [

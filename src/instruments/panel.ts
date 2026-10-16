@@ -208,6 +208,9 @@ export class InstrumentPanel {
     const s = ctx.state;
     if (this.teleported(s)) this.reset(s);
     const r = this.instruments.step(dt, s, ctx.controls, ctx.weather);
+    // A caution or warning legend that has just lit strikes the master chime (PC-12 CAWS; audio listens).
+    const chime = this.instruments.takeChime();
+    if (chime) ctx.events.emit('caws', { level: chime });
     if (this.drawOnlyInCockpit && ctx.cameraMode !== 'cockpit') {
       // Latches keep their last drawn values, so the first cockpit frame redraws whatever changed.
       this.upload.flush(ctx.renderer); // completes a pending mip rebuild

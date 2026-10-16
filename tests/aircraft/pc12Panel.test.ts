@@ -183,6 +183,30 @@ describe('PC-12 CAWS', () => {
     expect(lit('propLowP', step(1).lamps)).toBe(false);
   });
 
+  it('strikes the chime on the edge of a new legend: caution for amber, warning for red; not at reset, not on the lamp test', () => {
+    const { s, c, set, step } = fixture();
+    // GEN 1 OFF already lit when the instruments start: the state the aircraft was in, no chime.
+    s.electrical.alternators[0] = 0;
+    step(1);
+    expect(set.takeChime()).toBe(null);
+    // A new amber legend: caution; taken once.
+    s.fuel.left = 20;
+    step(1);
+    expect(set.takeChime()).toBe('caution');
+    expect(set.takeChime()).toBe(null);
+    // A red one (PROP LOW P in the air) over an amber one in the same step: warning.
+    s.onGround = false; s.propellers[0].beta = true; s.fuel.right = 20;
+    step(1);
+    expect(set.takeChime()).toBe('warning');
+    // The lamp test lights everything without a chime; the green STARTER never chimes.
+    c.annunciatorTest = true;
+    step(1);
+    c.annunciatorTest = false;
+    c.starter = true;
+    step(1);
+    expect(set.takeChime()).toBe(null);
+  });
+
   it('lights every lens for the lamp test, and none with the bus dead', () => {
     const { s, c, step } = fixture();
     c.annunciatorTest = true;

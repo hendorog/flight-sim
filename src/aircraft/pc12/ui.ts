@@ -45,7 +45,7 @@ const STARTUP_STEPS: readonly [string, string][] = [
   ['Battery', 'W: ON (battery and generators); voltage 24 V or more'],
   ['Fuel pumps and beacon', 'J: FUEL PUMPS ON · Shift+O: beacon ON'],
   ['Ignition', '1: AUTO (the igniters spark while the starter runs; 4 is ON, continuous)'],
-  ['Starter', 'S: ONE press: STARTER lights, Ng climbs (the start latches; press S again to cut it, the STARTER INTERRUPT)'],
+  ['Starter', 'S: ONE press: STARTER lights, Ng climbs (the start latches; Shift+N or the STARTER INTR button is the STARTER INTERRUPT; pressing S again also cuts it)'],
   ['At 13 % Ng or more', 'Shift+M briefly until COND shows GND IDLE: fuel on. Watch the ITT: 1000 °C for 5 s at most; if it races up, M to CUT-OFF at once'],
   ['At about 50 % Ng', 'the starter cuts out by itself; Ng settles at 50.7-61.4 %, ITT falls back, GEN 1 OFF goes out'],
   ['After start', 'oil pressure green · I avionics ON · release the parking brake (Shift+B) to taxi; use beta (PCL aft of the gate) to control the taxi speed'],

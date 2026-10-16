@@ -47,7 +47,7 @@ import type {
   WingVisualDef,
 } from '../types';
 import { PC12_FUSELAGE, PC12_GEAR, PC12_GEOMETRY, PC12_PROP, PC12_REST_HEIGHT, PC12_TAIL, PC12_THRUST_Z, PC12_WING } from './geometry';
-import { PC12_GEAR_HANDLE, PC12_PANEL_CENTRE_PX, PC12_PANEL_PX_PER_M, PC12_PANEL_SIZE, PC12_PEDESTAL, PC12_YOKES } from './panelLayout';
+import { PC12_GEAR_HANDLE, PC12_PANEL_CENTRE_PX, PC12_PANEL_PX_PER_M, PC12_PANEL_PX_RECT, PC12_PEDESTAL, PC12_YOKES } from './panelLayout';
 
 const DEG = Math.PI / 180;
 /** FRD x of a station (m aft of the datum; geometry.ts: x = 6.00 - station). */
@@ -545,8 +545,9 @@ const LAMPS: readonly LampVisualDef[] = ((): LampVisualDef[] => {
 // of the panel: a shallow glareshield, as in the cockpit photographs). The fuselage, windscreen and cabin box are the
 // airframe's and do not move with it.
 const PX = PC12_PANEL_PX_PER_M;
-// The face shows the canvas less 64 px each side (+/-0.77 m: the cabin is 1.52 m wide inside, 47E 1-8).
-const PX_RECT = { x: 64, y: 0, w: PC12_PANEL_SIZE.w - 128, h: PC12_PANEL_SIZE.h };
+// The face shows the whole canvas (panelLayout.ts: 2800 x 1040 px at 2000 px/m, 1.40 x 0.52 m; the cabin is 1.52 m
+// wide inside, 47E 1-8).
+const PX_RECT = PC12_PANEL_PX_RECT;
 const PANEL_X = EYE.x + 0.6;
 const PANEL_ZTOP = EYE.z + 0.27;
 const PANEL_W = PX_RECT.w / PX;

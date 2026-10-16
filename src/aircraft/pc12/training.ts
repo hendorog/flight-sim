@@ -257,8 +257,8 @@ export const PC12: AircraftTypeDef = {
   settings: SETTINGS,
   flapDetentsDeg: FLAP_DETENTS_DEG,
   flapLeverForDeg: FLAP_LEVER,
-  // Normal category (TCDS): +3.2 / -1.28 g flaps up (47E-PROXY 2-4: 3.2 g flaps up, 2.0 g flaps down).
-  limits: { gPos: 3.2, gNeg: -1.28, maxDemoCrosswindKt: SETTINGS.maxDemoCrosswindKt },
+  // Flaps up (EASA TCDS A.089 C.III.5): +3.4 / -1.36 g (the 47E lists +3.3 / -1.32); flaps down +2.0 / 0 g.
+  limits: { gPos: 3.4, gNeg: -1.36, maxDemoCrosswindKt: SETTINGS.maxDemoCrosswindKt },
   checklists: { ...citeChecklists(CHECKLISTS, PC12_CHECKLIST_SOURCE), ...PC12_EXTRA_CHECKLISTS },
   envelope: ENVELOPE,
   demoTuning: { maxBankDeg: 30, rollRateDps: 8 },

@@ -306,13 +306,15 @@ describe('Pilatus PC-12/47 airframe visual', () => {
     const slotY = [power.pos[1], condition.pos[1]];
     let marks = 0;
     for (const m of cockpit.group.getObjectsByProperty('isMesh', true) as THREE.Mesh[]) {
-      if (!/:(knobWhite|knobRed)$/.test(m.name) || cockpit.group.children.some((g) => g !== m.parent && g.children.includes(m))) continue;
+      // Fixed parts only: the flap lever (a moving part) stands 0.032 m outboard of the condition slot at 2000 px/m.
+      if (!/^cabinFixed:(knobWhite|knobRed)$/.test(m.name) || cockpit.group.children.some((g) => g !== m.parent && g.children.includes(m))) continue;
       const pos = m.geometry.getAttribute('position');
       for (let i = 0; i < pos.count; i++) {
         const v = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
         if (!slotY.some((y) => Math.abs(v.x - y) < 0.03) || Math.abs(v.y - topY) > 0.01) continue;
         marks++;
-        expect(v.y, 'mark above the pedestal top').toBeGreaterThanOrEqual(topY - 1e-9);
+        // 1e-6: the vertices are float32 (0.08 m is stored as 0.0799999982).
+        expect(v.y, 'mark above the pedestal top').toBeGreaterThanOrEqual(topY - 1e-6);
         expect(v.y).toBeLessThan(topY + 0.005);
         expect(-v.z).toBeGreaterThan(ped.min[0]);
         expect(-v.z).toBeLessThan(ped.max[0]);
