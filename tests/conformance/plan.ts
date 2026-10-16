@@ -23,6 +23,7 @@ import {
   gearDownClimbLoss,
   gearTransit,
   handsOff,
+  idleTaxi,
   impossibleClimb,
   landingRoll,
   magnetoDrop,
@@ -51,7 +52,7 @@ import {
   type VmcaResult,
 } from '../fdm/measure';
 import { OPEN_REQUESTS } from './requests';
-import { isBand, range, type ConformanceTargets, type Limit, type SystemsTargets, type TwinTargets } from './targets';
+import { isBand, range, type ConformanceTargets, type IdleTaxiCase, type Limit, type SystemsTargets, type TwinTargets } from './targets';
 
 /** Whether a measured value meets a limit (NaN never does). */
 export function within(m: number, l: Limit): boolean {
@@ -409,10 +410,21 @@ export function twinBlocks(id: string, w: TwinTargets, def: DefinitionOf): PlanB
 
 // ------------------------------------------------------------------------------------------------ flown tier
 
-function stallBlock(t: ConformanceTargets, def: DefinitionOf): PlanBlock {
+/**
+ * Stall speeds and the warning margin. trip 'pusher' (PC-12): the stall speed is the first stick-pusher activation
+ * and the margin is the stick shaker's (or, without one, the stall warning's) above it.
+ */
+export function stallBlock(t: Pick<ConformanceTargets, 'stall'>, def: DefinitionOf): PlanBlock {
   const items: PlanItem[] = [];
+  const pusher = t.stall.trip === 'pusher';
   for (const [name, s] of [['clean', t.stall.clean], ['landing flap', t.stall.landing]] as const) {
     const r = once(() => stallRun(rigOf(def)('forward'), { flapLever: flapLever(def(), s.flapDeg), entryKt: s.entryKt }));
+    if (pusher) {
+      const warning = () => (Number.isNaN(r().shakerCas) ? r().warningCas : r().shakerCas);
+      items.push(value(`stall speed ${name} (flaps ${s.flapDeg}), forward CG (first stick push)`, () => r().pusherCas, s.vs1gKcas, 'KCAS'));
+      items.push(value(`stick shaker margin above the push ${name}`, () => warning() - r().pusherCas, s.warningMarginKt, 'kt'));
+      continue;
+    }
     items.push(value(`stall speed ${name} (flaps ${s.flapDeg}), forward CG (V_S1g)`, () => r().vs1g, s.vs1gKcas, 'KCAS'));
     items.push(value(`stall warning margin ${name}`, () => r().warningCas - r().vs1g, s.warningMarginKt, 'kt'));
   }
@@ -437,17 +449,50 @@ function stallRecoveryBlock(t: ConformanceTargets, def: DefinitionOf): PlanBlock
 export function groundRollBlock(t: Pick<ConformanceTargets, 'takeoff' | 'landing'>, def: DefinitionOf): PlanBlock {
   const to = t.takeoff, la = t.landing;
   const r = once(() => takeoffRoll(runwayRig(def(), 'maxGross'), { flapLever: flapLever(def(), to.flapDeg), rotateKias: to.rotateKias, pitch: to.pitchDeg * DEG, staticRunUp: to.staticRunUp, controls: to.controls, throttle: to.throttle }));
-  const l = once(() => landingRoll(runwayRig(def(), 'maxGross'), { approachKt: la.approachKt, flapLever: flapLever(def(), la.flapDeg), touchdownPitch: la.touchdownPitchDeg * DEG, brake: la.brake }));
-  return {
-    name: 'take-off and landing',
-    tier: 'flown',
-    items: [
-      value(`take-off ground roll, flaps ${to.flapDeg}, rotate ${to.rotateKias} KIAS`, () => r().roll, to.groundRollM, 'm'),
-      flag('take-off: no crash, climbing', () => !r().crashed && r().climbing),
-      value(`landing ground roll, flaps ${la.flapDeg}, ${la.brake === undefined ? 'maximum braking' : `brakes ${la.brake}`}`, () => l().roll, la.groundRollM, 'm'),
-      flag('landing: no crash', () => !l().crashed),
-    ],
-  };
+  const landing = (rollReverse: number | undefined) => landingRoll(runwayRig(def(), 'maxGross'), {
+    approachKt: la.approachKt, flapLever: flapLever(def(), la.flapDeg), touchdownPitch: la.touchdownPitchDeg * DEG, brake: la.brake,
+    ...(rollReverse !== undefined ? { rollReverse } : {}),
+    ...(rollReverse !== undefined && la.reverseCancel ? { rollReverseCancel: la.reverseCancel } : {}),
+  });
+  const l = once(() => landing(la.reverse));
+  const lever = (r: number | undefined) => (r === undefined ? '' : `, power lever ${r === 0 ? 'on the gate' : `aft ${r}`}`);
+  const items: PlanItem[] = [
+    value(`take-off ground roll, flaps ${to.flapDeg}, rotate ${to.rotateKias} KIAS`, () => r().roll, to.groundRollM, 'm'),
+    flag('take-off: no crash, climbing', () => !r().crashed && r().climbing),
+    value(`landing ground roll, flaps ${la.flapDeg}, ${la.brake === undefined ? 'maximum braking' : `brakes ${la.brake}`}${lever(la.reverse)}`, () => l().roll, la.groundRollM, 'm'),
+    flag('landing: no crash', () => !l().crashed),
+  ];
+  const w = la.withReverse;
+  if (w) {
+    // A second roll with the lever further aft (full reverse), judged on its own band and as a ratio to the first.
+    const lr = once(() => landing(w.reverse));
+    items.push(value(`landing ground roll, flaps ${la.flapDeg}${lever(w.reverse)}`, () => lr().roll, w.groundRollM, 'm'));
+    if (w.ratio) items.push(value(`landing ground roll${lever(w.reverse)} / the first`, () => lr().roll / l().roll, w.ratio, ''));
+    items.push(flag(`landing${lever(w.reverse)}: no crash`, () => !lr().crashed));
+  }
+  return { name: 'take-off and landing', tier: 'flown', items };
+}
+
+/**
+ * Idle taxi at the lever positions of a type with beta (targets ground.idleTaxi; measure.ts idleTaxi): per case
+ * ground.idleTaxiKt (steady unbraked speed), ground.idleNp, ground.staticThrustN and the idle Ng and ITT on the
+ * parking brake, each where the case has a limit.
+ */
+export function idleTaxiBlock(cases: readonly IdleTaxiCase[], def: DefinitionOf): PlanBlock {
+  const items: PlanItem[] = [];
+  for (const k of cases) {
+    const r = once(() => idleTaxi(rigOf(def)('maxGross'), { reverse: k.reverse, condition: k.condition }));
+    const n = `idle taxi, ${k.label} (reverse ${k.reverse}, condition ${k.condition})`;
+    if (k.staticThrustN) items.push(value(`${n}: static thrust on the parking brake`, () => r().staticThrustN, k.staticThrustN, 'N'));
+    if (k.idleNp) items.push(value(`${n}: Np on the parking brake`, () => r().staticNp, k.idleNp, 'rpm'));
+    if (k.idleNgPct) items.push(value(`${n}: Ng on the parking brake`, () => r().staticNg, k.idleNgPct, '%'));
+    if (k.idleIttC) items.push(value(`${n}: ITT on the parking brake`, () => r().staticIttC, k.idleIttC, 'C'));
+    if (k.idleTaxiKt) {
+      items.push(value(`${n}: steady unbraked ground speed`, () => r().speedKt, k.idleTaxiKt, 'kt'));
+      items.push(flag(`${n}: the speed settled`, () => r().steady));
+    }
+  }
+  return { name: 'idle taxi', tier: 'flown', items };
 }
 
 function cruiseClimbBlock(t: ConformanceTargets, def: DefinitionOf): PlanBlock {
@@ -518,6 +563,7 @@ export function conformancePlan(t: ConformanceTargets, def: DefinitionOf): PlanB
   ];
   if (t.twin) blocks.push(...twinBlocks(t.aircraft, t.twin, def));
   blocks.push(stallBlock(t, def), stallRecoveryBlock(t, def), groundRollBlock(t, def), cruiseClimbBlock(t, def));
+  if (t.ground.idleTaxi) blocks.push(idleTaxiBlock(t.ground.idleTaxi, def));
   if (t.systems) blocks.push(systemsBlock(t.systems, def));
   return blocks;
 }
