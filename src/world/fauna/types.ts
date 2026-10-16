@@ -172,10 +172,16 @@ export interface FaunaRosterEntry {
    */
   habitat?: HabitatKind;
   /**
-   * Layer 2: the share of 2 km cells (among those layer 1 left empty) that draw this entry, before its habitat test.
+   * Layers 2 and 3: the share of 2 km cells (layer 2: among those layer 1 left empty; layer 3: every cell) that draw
+   * this entry, before its habitat test.
    * 'nearHerd': the share of streamed prey herds that get one.
    */
   occupancy?: number;
+  /**
+   * Layers 2 and 3 (fauna across the landscape, AGENT choice): a further share of cells drawing this entry, laid out
+   * after every entry's `occupancy` band, so each cell that drew an entry before still draws it. Absent: 0.
+   */
+  occupancyExtra?: number;
   /**
    * Flyers: ambient-kettle weight x this near water (within 2 km of the river, a lake zone, or the coastal strip
    * below 40 m), / this elsewhere. Absent: x 1.

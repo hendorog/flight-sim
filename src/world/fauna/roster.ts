@@ -18,6 +18,11 @@
 //   - the T. rex ('nearHerd'): one beside 15 % of the streamed prey herds, never near the safari, at most 2 alive
 //     (FaunaSystem); the rarest, always solitary;
 //   - Pteranodon kettles are drawn 3x toward water (waterAffinity), the azhdarchids as before.
+//
+// Fauna across the landscape (AGENT choices, after measuring 14-70 animals per 100 km2 of land beyond 10 km): the
+// layer-2 occupancies went plain 0.12 -> 0.20, open 0.06 -> 0.15, woodland 0.10 -> 0.15 (the rise as occupancyExtra,
+// drawn after the old bands, so every cell keeps the species it drew before), the plains herds 12-35 -> 15-40, and
+// habitat.ts adds a second, independent layer-2-style group per cell (layer 3, the same entries and shares).
 
 import type { RosterId } from '../era/types';
 import type { FaunaRoster, FaunaSpeciesId } from './types';
@@ -34,12 +39,12 @@ const CRETACEOUS: FaunaRoster = Object.freeze({
     // showcase hooks (showcaseHooks.ts) also place Triceratops, Alamosaurus and the T. rex at the safari with their
     // own sizes; from inc 2b the habitat streaming places them across the map too (habitat / occupancy, above).
     // The Pteranodon joins ambient kettles at weight 0.3 against the azhdarchids' 1, x / waterAffinity.
-    Object.freeze({ species: 'triceratops', role: 'herd', groupMin: 3, groupMax: 8, weight: 0, scale: 1, variant: 0, ambient: true, habitat: 'open', occupancy: 0.06 }),
-    Object.freeze({ species: 'alamosaurus', role: 'herd', groupMin: 2, groupMax: 4, weight: 0, scale: 1, variant: 0, ambient: true, habitat: 'woodland', occupancy: 0.1 }),
+    Object.freeze({ species: 'triceratops', role: 'herd', groupMin: 3, groupMax: 8, weight: 0, scale: 1, variant: 0, ambient: true, habitat: 'open', occupancy: 0.06, occupancyExtra: 0.09 }),
+    Object.freeze({ species: 'alamosaurus', role: 'herd', groupMin: 2, groupMax: 4, weight: 0, scale: 1, variant: 0, ambient: true, habitat: 'woodland', occupancy: 0.1, occupancyExtra: 0.05 }),
     Object.freeze({ species: 'tyrannosaurus', role: 'solo', groupMin: 1, groupMax: 1, weight: 0, scale: 1, variant: 0, ambient: true, habitat: 'nearHerd', occupancy: 0.15 }),
     Object.freeze({ species: 'pteranodon', role: 'flyer', groupMin: 2, groupMax: 4, weight: 0.3, scale: 1, variant: 0, ambient: true, waterAffinity: 3 }),
     // Increment 2b: Edmontosaurus plains herds (smaller, away from the banks; weight 0: never the layer-1 pick).
-    Object.freeze({ species: 'edmontosaurus', role: 'herd', groupMin: 12, groupMax: 35, weight: 0, scale: 1, variant: 0, habitat: 'plain', occupancy: 0.12 }),
+    Object.freeze({ species: 'edmontosaurus', role: 'herd', groupMin: 15, groupMax: 40, weight: 0, scale: 1, variant: 0, habitat: 'plain', occupancy: 0.12, occupancyExtra: 0.08 }),
   ] as const),
 });
 
