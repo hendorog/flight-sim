@@ -253,6 +253,15 @@ export class AudioSystem implements Subsystem {
     g.mix = this.buildMix(g.ac, g.synth, g.interior, g.delay, g.mix);
   }
 
+  /**
+   * Strike the caution and warning system's chime (a type whose profile has `caws`: the PC-12): 'warning' a triple
+   * chime, 'caution' a single one. For the code that lights a NEW red or amber CAWS legend; ignored by a profile
+   * without `caws`, and before the first gesture.
+   */
+  caws(level: 'warning' | 'caution'): void {
+    this.g?.synth.port.postMessage({ type: 'caws', level });
+  }
+
   /** Play a speech cue (intercom click, captions-only chime, radio squelch). Silent before the first gesture. */
   chime(kind: ChimeKind): void {
     const g = this.g;
