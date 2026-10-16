@@ -53,5 +53,5 @@ export const C208_INPUT: InputProfile = {
     gStops: { pull: 2.2, push: 0.35 },
     handoverSpeed: 8 * (48 / 53) * STALL_RATIO,
   },
-  labels: { throttleUp: 'Power lever forward', throttleDown: 'Power lever back', mixtureRich: 'Condition lever forward (HIGH IDLE)', mixtureLean: 'Condition lever back (CUT-OFF)' },
+  labels: { throttleUp: 'Power lever forward (from BETA / REVERSE: back to the idle gate)', throttleDown: 'Power lever back (to the idle gate)', powerLeverReverse: 'Power lever to the idle gate; let go and hold again: over the gate into BETA, then REVERSE (on the ground)', throttleIdle: 'Power lever IDLE, on the gate', mixtureRich: 'Condition lever forward (HIGH IDLE)', mixtureLean: 'Condition lever back (CUT-OFF)' },
 };
