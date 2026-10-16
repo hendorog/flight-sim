@@ -82,7 +82,7 @@ const ENGINE: EngineSoundProfile = {
     gearMesh: { perPropRev: 80, level: 0.009 },
     lightOff: 0.5,
     // The igniters snap on a start while the starter turns the gas generator.
-    ignitor: { perSecond: 2.5, level: 0.05 },
+    ignitor: { perSecond: 2.5, level: 0.15 },
   },
   // Power-turbine revolutions per propeller revolution (29 894 : 1700).
   gearRatio: PC12_GEAR_RATIO,
@@ -98,7 +98,7 @@ const PROP: PropSoundProfile = {
   // the Caravan's (four blades share the disturbance).
   growl: 0.25,
   // Reverse: the disc churning its own wake, a hard roar beaten at the blade passage.
-  reverse: { growl: 0.9, fullPitchDeg: REVERSE_PITCH_DEG },
+  reverse: { growl: 1.1, fullPitchDeg: REVERSE_PITCH_DEG },
   level: 1,
 };
 
@@ -129,7 +129,7 @@ export const PC12_AUDIO: AudioProfile = {
       { type: 'peaking', hz: 227, gainDb: 3, q: 1.5 },
     ],
     // Full power on the ground inside the C172S's window (-17 .. -9 dBFS RMS at volume 1, tests/audio/pc12.test.ts).
-    level: 0.45,
+    level: 0.6,
   },
   // Exterior: the raw sources (the cabin stem is inaudible outside), then propagation. The -67's roar is louder.
   exterior: {

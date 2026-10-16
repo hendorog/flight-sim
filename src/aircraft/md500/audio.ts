@@ -84,11 +84,11 @@ const ENGINE: EngineSoundProfile = {
     starter: { perNgRev: MD500_GENERATOR_PAD_RATIO * COMMUTATOR_BARS, level: 0.06 },
     // The main transmission overhead: a mesh tone at 166 x the rotor's rate, 1.36 kHz at 492 rpm, at full strength
     // from about 8 rev/s of the rotor (480 rpm) up.
-    gearMesh: { perPropRev: 166, level: 0.022 },
+    gearMesh: { perPropRev: 166, level: 0.03 },
     gearMeshFullRps: 8,
     lightOff: 0.35,
     // The igniter fires through the start (and on the RE-IGN test): a dry snap, about four a second.
-    ignitor: { perSecond: 4, level: 0.05 },
+    ignitor: { perSecond: 4, level: 0.15 },
   },
   // Engine output shaft (N2) revolutions per rotor revolution.
   gearRatio: rotor.engineRatio,
@@ -122,7 +122,7 @@ export const MD500_AUDIO: AudioProfile = {
     routes: [
       { stem: STEM.engine, lowpassHz: 4000, gain: 0.6 },
       { stem: STEM.prop, lowpassHz: 900, gain: 1.0 },
-      { stem: STEM.airframe, lowpassHz: 2200, gain: 0.45 },
+      { stem: STEM.airframe, lowpassHz: 2200, gain: 0.35 },
       { stem: STEM.cabin, lowpassHz: 0, gain: 1.0 },
     ],
     bus: [
@@ -147,7 +147,7 @@ export const MD500_AUDIO: AudioProfile = {
     diameterM: rotor.tail.radius * 2,
     ratio: rotor.tailRatio,
     hoverThrustN: TAIL_HOVER_THRUST_N,
-    slap: 0.9,
-    level: 0.8,
+    slap: 0.5,
+    level: 0.6,
   },
 };

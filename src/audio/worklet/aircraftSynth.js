@@ -592,9 +592,11 @@ class PropVoice {
     this.revMidF.process(w);
     if (rev < 1e-4) return 0;
     const a = TAU * this.phase;
-    const beat = (1 + 0.7 * Math.sin(bp + 0.3)) * (1 + 0.45 * Math.sin(a + 0.4) + 0.25 * Math.sin(2 * a + 1.9));
+    const beat = (1 + 0.5 * Math.sin(bp + 0.3)) * (1 + 0.3 * Math.sin(a + 0.4) + 0.15 * Math.sin(2 * a + 1.9));
     const r = Math.min(rev, 1.5);
-    return this.revGrowl * r * beat * (this.revLowF.band * 0.9 + this.revMidF.band * 0.45 * Math.min(1, r));
+    // Rounded peaks (the roar is dense, not spiky): a soft limit on the noise bands before the beat.
+    const roar = Math.tanh(1.6 * (this.revLowF.band * 0.9 + this.revMidF.band * 0.45 * Math.min(1, r))) / 1.6;
+    return this.revGrowl * r * beat * roar;
   }
 
   /** `crankPhase`: the crank angle of its engine, revolutions. */
@@ -794,6 +796,7 @@ class AircraftSynth extends AudioWorkletProcessor {
     this.shakerMotorPh = 0;
     this.clackPh = 0.999;
     this.clackEnv = 0;
+    this.cawsPh = 0;
   }
 
   /**
@@ -1174,7 +1177,7 @@ class AircraftSynth extends AudioWorkletProcessor {
     let out = 0;
     // Stick shaker: spins up in about 0.1 s, down in 0.2 s.
     const sh = this.shakerLevel > 0 ? v[P.shaker] : 0;
-    this.shakerSpin += (sh - this.shakerSpin) * (1 / ((sh > this.shakerSpin ? 0.1 : 0.2) * SR));
+    this.shakerSpin += (sh - this.shakerSpin) * (1 / ((sh > this.shakerSpin ? 0.1 : 0.12) * SR));
     if (this.shakerSpin > 1e-3) {
       const spin = this.shakerSpin;
       const prev = this.shakerPh;
@@ -1202,16 +1205,21 @@ class AircraftSynth extends AudioWorkletProcessor {
       const strike = nz.next() * this.clackEnv * this.clackEnv;
       out += this.clackLevel * Math.min(1, ck * 1.5) * (this.clackF.process(strike) * 0.5 + this.clackF2.process(strike) * 0.3);
     }
-    // Caution / warning chimes: a struck tone with two partials, a 5 ms attack and a 0.6 s ring.
-    for (let c = this.chimes.length - 1; c >= 0; c--) {
-      const ch = this.chimes[c];
-      const t = ch.age;
-      ch.age += 1 / SR;
-      if (t < 0) continue;
-      const env = (1 - Math.exp(-t / 0.005)) * Math.exp(-t / 0.6);
-      const ph = TAU * this.cawsHz * t;
-      out += this.cawsLevel * ch.amp * env * (Math.sin(ph) + 0.4 * Math.sin(2 * ph) + 0.15 * Math.sin(3 * ph)) * 0.25;
-      if (t > 3) this.chimes.splice(c, 1);
+    // Caution / warning chimes: one resonator (so repeated strikes add, never cancel) with two overtones, struck
+    // with a 5 ms attack, ringing out over about half a second.
+    if (this.chimes.length > 0) {
+      let env = 0;
+      for (let c = this.chimes.length - 1; c >= 0; c--) {
+        const ch = this.chimes[c];
+        const t = ch.age;
+        ch.age += 1 / SR;
+        if (t < 0) continue;
+        env += ch.amp * (1 - Math.exp(-t / 0.005)) * Math.exp(-t / 0.35);
+        if (t > 3) this.chimes.splice(c, 1);
+      }
+      this.cawsPh = (this.cawsPh + this.cawsHz / SR) % 1;
+      const ph = TAU * this.cawsPh;
+      out += this.cawsLevel * env * (Math.sin(ph) + 0.4 * Math.sin(2 * ph) + 0.15 * Math.sin(3 * ph)) * 0.25;
     }
     return out;
   }
