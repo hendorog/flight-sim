@@ -11,6 +11,7 @@ import { estimatedArticulatedGeometry, flapForcing, advanceFlap, hingeMoment } f
 import { pressureAltitude } from '../atmosphere';
 import type { AtmosphereSample } from '../../core/types';
 import { articulatedBladeConing, bladeConing } from './coning';
+import { toBody, toShaft } from './shaftFrame';
 
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
@@ -94,8 +95,8 @@ export class Rotorcraft {
    * Called after the engine's free shaft step. The freewheel cannot back-drive a stopped/slow engine.
    */
   drive(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample,
-    clutchCommand?: 'engage' | 'hold' | 'release', busVoltage?: number): void {
-    if (this.def.systems.drive === 'freewheel') { this.driveFreewheel(dt, c, engine, atmosphere, busVoltage); return; }
+    clutchCommand?: 'engage' | 'hold' | 'release', busVoltage?: number, onGround = false): void {
+    if (this.def.systems.drive === 'freewheel') { this.driveFreewheel(dt, c, engine, atmosphere, busVoltage, onGround); return; }
     const s = this.state, d = this.def;
     clutchCommand ??= c.rotorClutchCommand;
     const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
@@ -166,7 +167,8 @@ export class Rotorcraft {
    * transmission torque limit as the cap. The engine can drive the rotor but never be driven by it: in autorotation
    * and at shutdown the rotor overruns and the needles split. Then the turboshaft's gauges and warnings.
    */
-  private driveFreewheel(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample, busVoltage?: number): void {
+  private driveFreewheel(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample, busVoltage?: number,
+    onGround = false): void {
     const s = this.state, d = this.def;
     const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
     const oldOmega = s.omega;
@@ -207,7 +209,7 @@ export class Rotorcraft {
       t.pitchForce = p.force * (t.pitch - c.elevator);
       t.rollForce = p.force * (t.roll - c.aileron);
     }
-    if (this.turboshaft) this.turboshaft.publish(dt, c, engine, volts);
+    if (this.turboshaft) this.turboshaft.publish(dt, c, engine, volts, onGround);
     else {
       s.lowRpm = s.rotorRpm < d.referenceRpm * d.systems.lowRpmWarning;
       s.lowRpmLight = s.lowRpm && volts > 18;
@@ -408,14 +410,4 @@ export class Rotorcraft {
     s.driveTorque = powered ? s.torque : 0;
     return this.compute(b, wind, density, height, c, 0);
   }
-}
-/** Body vector to the frame of a shaft tilted forward by `tilt` (its z along the shaft, down). */
-function toShaft(v: Vec3, tilt: number): Vec3 {
-  const c = Math.cos(tilt), sn = Math.sin(tilt);
-  return { x: v.x * c + v.z * sn, y: v.y, z: v.z * c - v.x * sn };
-}
-/** Shaft-frame vector back to the body. */
-function toBody(v: Vec3, tilt: number): Vec3 {
-  const c = Math.cos(tilt), sn = Math.sin(tilt);
-  return { x: v.x * c - v.z * sn, y: v.y, z: v.x * sn + v.z * c };
 }

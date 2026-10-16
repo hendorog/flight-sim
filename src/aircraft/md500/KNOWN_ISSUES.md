@@ -11,17 +11,20 @@ A step of 0.1 of pedal travel in the hover at 2550 lb gives an initial yaw accel
 1 s; the OH-6A's derivatives (Heffley CR-3144 case 4, F) give 54 °/s² and 37 °/s. At 60 KIAS the weathercock brings
 both back to a few °/s after 1 s (3.8 against 5.7). The 500E has the D-model's larger tail rotor (55 against 51 in)
 on a +27/−14° range, and Heffley's derivatives fold in the OH-6A's control-system flexibility, so part of the gap is
-real; how much is not known. Not tuned.
-Evidence: `KNOWN CONTROL-POWER GAP` [expected failures](../../../tests/rotorcraft/md500Performance.test.ts) and the
+real; how much is not known. The pedal-step yaw subsidence in the hover is also slower: 1.39 s to half rate after
+release against the OH-6A's 0.91 s (weaker yaw damping; not a plan row). Not tuned.
+Evidence: `KNOWN CONTROL-POWER GAP` [expected failures, one per row: yaw acceleration hover and 60 kt, yaw rate at 1 s hover](../../../tests/rotorcraft/md500Performance.test.ts) and the
 table in [md500-flight-model.md §7](../../../docs/md500-flight-model.md).
 Close with: a 500D/E pedal-step or yaw-derivative record (or the OH-6A's tail-rotor pitch range per pedal travel).
 
 ## Roll rate per stick about 35-50 % above the OH-6A's — **unvalidated**
 
 Roll acceleration per 0.1 of lateral travel matches the OH-6A (82 °/s² against 84), but the rate at 0.5 s is 20 °/s
-against 15 (hover) and 14 (60 kt): the modelled roll response settles at a higher steady rate per degree of cyclic.
-Pitch is inside 30 % at both speeds.
-Evidence: `KNOWN CONTROL-POWER GAP` expected failures; [md500-flight-model.md §7](../../../docs/md500-flight-model.md).
+against 15 (hover, +35 %) and 14 (60 kt, +51 %): the modelled roll response settles at a higher steady rate per degree
+of cyclic. The hover roll subsidence is inside the band (0.154 s to half rate after release against 0.129 s, +19 %) and the
+initial acceleration matches, so the gap is not explained by the roll damping alone (cause not identified). Pitch is inside 30 % at both speeds (subsidence
+0.354 against 0.352 s).
+Evidence: `KNOWN CONTROL-POWER GAP` expected failures (roll rate at 0.5 s, hover and 60 kt); [md500-flight-model.md §7](../../../docs/md500-flight-model.md).
 Close with: the 500E's lateral cyclic rigging under load or a 500D/E roll response record.
 
 ## Hover roll attitude 3.7° left at 3000 lb — **estimate**
@@ -71,10 +74,11 @@ Close with: a validated section stall model for the 0015 at low Mach; an autorot
 
 ## Governor dynamics and the ENGINE OUT arming — **estimate**
 
-The droop (10 % N2 per unit N1), the compensator (0.535 N1 per unit collective, datum at the flat-pitch N1) and the
+The droop (5 % N2 per unit N1), the compensator (0.65 N1 per unit collective, datum at the flat-pitch N1) and the
 gains are calibrated to the RFM 4-18/4-22 statements and the plan's transient rows; the Bendix governor's real
-dynamics were not obtained. The low-rotor half of ENGINE OUT arms once Nr reaches 468 rpm and disarms below 70 % Nr,
-so the warnings are out at ground idle (RFM 4-16); the real unit's logic is not documented. The auto-reignition arms
+dynamics were not obtained. The low-rotor half of ENGINE OUT arms once Nr reaches 468 rpm and disarms below 70 % Nr
+on the ground only (skids loaded), so the warnings are out at ground idle (RFM 4-16) and stay on in any in-flight
+underspeed; the real unit's logic is not documented. The auto-reignition arms
 at 5 psi transmission oil pressure (ESTIMATE).
 Evidence: [turboshaft.ts](../../physics/rotorcraft/turboshaft.ts), [turboshaft-model.md §3, §7](../../../docs/turboshaft-model.md).
 Close with: the 250-C20B / Bendix governor data (droop, compensator rigging) and the 500E engine-out unit's schematic.

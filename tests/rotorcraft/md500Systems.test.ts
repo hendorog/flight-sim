@@ -218,9 +218,8 @@ describe('MD 500E freewheel and autorotation (RFM 4-17, 4-25, 4-26)', () => {
     const g = gauges(r);
     report.autorotationFullOpen = { ...g, maxN2, governedBefore: governed };
     expect(g.nrRpm).toBeGreaterThanOrEqual(MD500_NR_LIMITS.powerOff[0] + 75); expect(g.nrRpm).toBeLessThanOrEqual(MD500_NR_LIMITS.powerOff[1]);
-    // The beep set point is defined at the compensator's flat-pitch datum: unloaded, the proportional droop puts
-    // N2 a little above it. The row's sense: N2 stays within 1 % of the N2 the governor held before the entry.
-    expect(Math.abs(g.n2 - governed)).toBeLessThanOrEqual(1);
+    // Plan 6.6: N2 within 1 % of the beep set point (n2SetPct), the governor unloaded with N1 near ground idle.
+    expect(Math.abs(g.n2 - g.set), `N2 ${g.n2.toFixed(2)} % against the set ${g.set.toFixed(2)} %`).toBeLessThanOrEqual(1);
     expect(maxN2).toBeLessThan(108);
     expect(g.split).toBe(true);
     expect(g.psi).toBeLessThan(1);
@@ -303,6 +302,36 @@ describe('MD 500E warnings and resume', () => {
     report.warnings = { relit, reignAfterReset: t.reignitionLight };
     expect(relit.lit).toBe(true); expect(relit.light).toBe(false); expect(relit.reign).toBe(true);
     expect(t.reignitionLight).toBe(false);
+  }, 30_000);
+
+  it('low rotor in flight: full collective with the grip at idle from a 3000 lb hover: ENG OUT light and horn stay on however low Nr falls while airborne (RFM 3-3, P / AGENT)', () => {
+    const r = rig(3000, { height: 1500 }), s = r.fm.state, t = s.rotorcraft!.turboshaft!;
+    r.c.throttle = GRIP.groundIdle; r.c.collective = 1;
+    let lit = -1, minRpm = Infinity, offWhileLow = 0, airborne = true, minN1 = Infinity;
+    run(r, 6, (time) => {
+      const rpm = s.rotorcraft!.rotorRpm;
+      if (lit < 0 && t.engineOutLight) lit = time;
+      if (lit >= 0) { minRpm = Math.min(minRpm, rpm); minN1 = Math.min(minN1, s.engine.ng ?? 0); airborne &&= !s.onGround;
+        if (rpm < MD500_ENGINE_OUT.nrBelowRpm && !(t.engineOutLight && t.engineOutHorn)) offWhileLow += DT; }
+    });
+    report.lowRotorInFlight = { lit, minRpm, minNrPct: 100 * minRpm / d.referenceRpm, minN1, offWhileLow, airborne };
+    expect(lit).toBeGreaterThanOrEqual(0);
+    expect(airborne).toBe(true);
+    // The case the review reproduced: below 70 % Nr (334 rpm) with N1 well above 55 %.
+    expect(minRpm).toBeLessThan(0.7 * d.referenceRpm); expect(minN1).toBeGreaterThan(55);
+    expect(offWhileLow).toBe(0);
+  }, 30_000);
+
+  it('low rotor on the ground: grip to ground idle from 103 %: the ENG OUT light and horn go out as Nr runs down to idle (RFM 4-16, P)', () => {
+    const r = rig(2250, { onGround: true }), s = r.fm.state, t = s.rotorcraft!.turboshaft!;
+    r.c.throttle = GRIP.groundIdle;
+    let litOnTheWay = false;
+    run(r, 60, () => { litOnTheWay ||= t.engineOutLight; });
+    const g = gauges(r);
+    report.lowRotorOnGround = { litOnTheWay, nr: g.nr, n1: g.n1, light: t.engineOutLight, horn: t.engineOutHorn, onGround: s.onGround };
+    expect(s.onGround).toBe(true);
+    expect(g.nr).toBeLessThan(70);
+    expect(t.engineOutLight).toBe(false); expect(t.engineOutHorn).toBe(false);
   }, 30_000);
 
   it('resume: a mid-hover snapshot through JSON restores with no Nr or N1 step above 0.2 % and the five-blade pose accepted (AGENT)', () => {

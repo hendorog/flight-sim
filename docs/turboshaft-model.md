@@ -51,21 +51,27 @@ only in transients:
 
 - the integral drives `(set − N2)` toward `droop × (PTG − datum − anticipation × collective)`, so in the steady
   state **N2 = set − droop × (N1 − datum − anticipation × collective)**;
-- `droop` 0.1 (10 % N2 per unit N1) and `anticipation` 0.535 N1 per unit collective; the datum `datumNg` 0.784 is the
+- `droop` 0.05 (5 % N2 per unit N1) and `anticipation` 0.65 N1 per unit collective; the datum `datumNg` 0.784 is the
   flat-pitch N1 on the ground at 103 % N2, so **the beep set point reads at flat pitch** (the RFM 4-18 run-up
-  check works: high stop 104.5 %, low stop 97.5 % at flat pitch);
-- over-compensation: from 103.0 % set at flat pitch, a climb at 87 psi holds **N2 103.76 %** (RFM 4-22: "N2
+  check works: high stop 104.5 %, low stop 97.6 % at flat pitch);
+- the two constants are fixed by two rows that pull opposite ways. Unloaded in autorotation (N1 about 66 %,
+  collective near flat pitch) the droop puts N2 above the set by `droop × (datum + anticipation × collective − N1)`,
+  which must stay within 1 % (plan 6.6); at take-off power the compensator must over-compensate by ½–1 %. The first
+  draft (droop 0.1, anticipation 0.535) gave 1.56 % in autorotation; 0.05 / 0.65 gives 0.8 % there and keeps the
+  take-off row;
+- over-compensation: from 103.0 % set at flat pitch, a climb at 87 psi holds **N2 103.68 %** (RFM 4-22: "N2
   should increase ½ to 1 percent on take-off"; row 103.5–104.0 %);
-- gains 4 and 1.5 /s, lead 0.15 s, calibrated to the transient rows: hover → 90 psi in 2 s: N2 min 102.77 % (row ≥
-  100.5 %); a 1 s snatch: 102.57 % (row ≥ 98.5 %), no ENG OUT, never more than 0.5 % from its settled value; then
-  a 1 s collective dump peaks N2 at 105.2–105.3 % (row ≤ 106 %, Fig 2-2). The compensator is what makes the 500
-  stiff: the droop on a collective snatch is under 0.5 %.
+- gains 4 and 1.5 /s, lead 0.15 s, calibrated to the transient rows: hover → 90.7 psi in 2 s: N2 min 102.89 % (row ≥
+  100.5 %); a 1 s snatch: 102.77 % (row ≥ 98.5 %), no ENG OUT, never more than 0.5 % from its settled value; then
+  a 1 s collective dump peaks N2 at 104.9–105.0 % (row ≤ 106 %, Fig 2-2). The compensator is what makes the 500
+  stiff: the droop on a collective snatch is under 0.3 %.
 - Grip below FULL OPEN, or `ControlInputs.rotorGovernor === false` (the governor-failure case, RFM 3-14/3-15):
   `governorMode 'manual'`, the grip alone sets N1, the integral tracks for a bumpless return.
 - The beep moves the set point at 1 %/s (`beepRate` 0.01) within 97.5–104.5 % (`MD500_N2_BEEP`; RFM 4-18: high 104–105,
   low 98 or less).
 - A reset trims the governor quasi-steadily (section 6), choosing the set point a pilot would have beeped to hold
-  103 % in that condition; a hover reset therefore reads about 102.3 % set with N2 at 103.0 %.
+  103 % in that condition; a hover reset therefore reads about 102.25 % set with N2 at 103.0 % (a cruise reset at
+  60 KIAS about 102.3 %).
 
 ## 4. Freewheel
 
@@ -78,8 +84,8 @@ at 240 Hz and at the app's rate (plan §11 asked; the reset-to-hover holds N2 wi
 
 `needlesSplit` (RotorcraftState.turboshaft) is set when Nr × ratio is above N2 by more than 1 %: autorotation and
 shutdown. Measured: grip FULL OPEN in autorotation at 3000 lb with Nr held at 510 rpm (106.7 %) by the collective,
-N2 settles at 103.6 % against 103.0 % before the entry (the proportional droop of an unloaded governor; peak 104.0 %,
-never near 108 %), split; grip at idle in autorotation at 2250 lb, Nr 101.5 % and N2 95.7 % (split 5.8 %, row > 5 %);
+N2 settles at 103.13 % against the beep set of 102.31 % (0.82 % above it: the droop of an unloaded governor, N1
+65.9 %; row ±1 %; peak 103.6 %, never near 108 %), split; grip at idle in autorotation at 2250 lb, Nr 101.5 % and N2 95.7 % (split 5.8 %, row > 5 %);
 powered flight, needles together; shutdowns from 103 % and from ground idle split within 0.05 s with the rotor
 lagging.
 
@@ -123,8 +129,9 @@ N1 at the reset N2 (`steadyIntegral`, `steadySetPct`). Measured: reset to hover 
 `TurboshaftControl.publish` (after the coupling):
 
 - **ENGINE OUT** (light, `lowRpmLight` on this type): N1 < 55 % or Nr < 468 rpm, with bus power (RFM 3-3). The low-rotor
-  half arms once Nr has reached 468 rpm and disarms below 70 % Nr (ESTIMATE: RFM 4-16 has every warning out at ground
-  idle, where Nr is about 59 %); so the light is on at battery ON, goes out at N1 55 % during the start, and comes on
+  half arms once Nr has reached 468 rpm and disarms below 70 % Nr **on the ground only** (skids loaded; ESTIMATE:
+  RFM 4-16 has every warning out at ground idle, where Nr is about 59 %). In flight it never disarms: full collective
+  with the grip at idle from a 3000 lb hover keeps the light and horn on down to Nr 131 rpm (27 %) with N1 at 64 %; so the light is on at battery ON, goes out at N1 55 % during the start, and comes on
   at N1 55 % at a shutdown from idle (or at Nr 468 on a shutdown from 103 %).
 - **Horn**: the light with the generator switch ON (pre-generic and late-generic harness, RFM 3-25 note; the start is
   made with GEN OFF, so it is silent).

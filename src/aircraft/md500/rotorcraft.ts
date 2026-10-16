@@ -80,11 +80,12 @@ export const MD500_ROTORCRAFT: RotorcraftDefinition = {
         setRange: MD500_N2_BEEP.range, setDefault: MD500_N2_BEEP.setDefault,
         // ESTIMATE: about 7 s from the low to the high stop (RFM 4-18 run-up check).
         beepRate: 0.01,
-        // Steady droop (10 % N2 per unit N1) and its collective compensator, zeroed at the flat-pitch N1 on the
-        // ground at 103 % N2 (78.4 %): the beep set point reads at flat pitch (the RFM 4-18 run-up check), and the
+        // Steady droop (5 % N2 per unit N1) and its collective compensator, zeroed at the flat-pitch N1 on the
+        // ground at 103 % N2 (78.4 %): the beep set point reads at flat pitch (the RFM 4-18 run-up check), the
         // compensator over-compensates by 0.5-1 % at take-off power (RFM 4-22 "N2 should increase 1/2 to 1 percent
-        // on take-off"). Gains and rate lead: calibrated to the plan 6.6 transient rows. ESTIMATE.
-        droop: 0.1, anticipation: 0.535, datumNg: 0.784, gain: 4, integralGain: 1.5, lead: 0.15,
+        // on take-off"), and unloaded in autorotation N2 stays within 1 % of the set (plan 6.6; droop 0.1 gave 1.6 %).
+        // Gains and rate lead: calibrated to the plan 6.6 transient rows. ESTIMATE.
+        droop: 0.05, anticipation: 0.65, datumNg: 0.784, gain: 4, integralGain: 1.5, lead: 0.15,
       },
       engineOut: { n1Below: MD500_ENGINE_OUT.n1Below, nrBelow: MD500_ENGINE_OUT.nrBelowRpm / MD500_NR_100 },
       psiPerNm: MD500_PSI_PER_NM,

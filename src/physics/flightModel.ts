@@ -709,7 +709,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
         s.ptgIntegral = ts.steadyIntegral(ng, n2, s.n2SetPct, c.collective ?? 0);
       }
       ts.stepTurboshaft(0, c, unit, cloneControls(c), this.prop.electrical.busVoltage);
-      ts.publish(0, c, unit, this.prop.electrical.busVoltage);
+      ts.publish(0, c, unit, this.prop.electrical.busVoltage, ic.onGround);
     } else {
       c.throttle = r.state.governorThrottle;
       r.state.previousThrottle = c.throttle; r.state.previousCollective = c.collective ?? 0;
@@ -1139,7 +1139,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.propIn.controls = engineControls;
     }
     this.prop = this.propulsion.step(this.propIn);
-    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage);
+    this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage,
+      this.state.onGround);
     const scales = this.dragScales;
     if (scales) {
       const units = this.propulsion.units;

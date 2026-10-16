@@ -156,9 +156,12 @@ reference responses to a step of 0.1 of full travel, at the OH-6A's 2550 lb:
 | Pitch rate at 0.5 s, °/s | 17.1 / 14.7 | 21.6 / 18.4 |
 | Yaw acceleration (pedal), °/s² | 53.9 / 56.0 | 148 / 152 (initial; **+170 %**, KNOWN GAP) |
 | Yaw rate at 1 s, °/s | 36.8 / 5.7 | 65.5 / 3.8 |
-| Time to half of the 0.5 s rate (hover), roll / pitch, s | 0.12 / 0.19 | 0.15 / 0.23 |
+| Subsidence (hover): a 0.5 s step released, time to half the rate at release, roll / pitch, s | 0.129 / 0.352 | 0.154 / 0.354 (+19 / +1 %) |
+| Same, pedal (hover; reported, not a plan row), s | 0.91 | 1.39 (+52 %) |
 
 The 500E differs from the OH-6A where these rows miss: a five-blade hub with a wider hinge, and the D/E's larger
 (55 in) tail rotor on a +27/−14° pitch range. Heffley's derivatives also fold in the OH-6A's control-system
 flexibility ("constant control-attenuation coefficients"), which a rigging range does not have. Not tuned away: see
-KNOWN_ISSUES.md.
+KNOWN_ISSUES.md. Each KNOWN GAP row is its own expected failure (md500Performance), so closing one turns it red; the
+60 kt yaw rate at 1 s passes (3.8 against 5.7 °/s, inside the 3 °/s floor the row uses where the reference is under
+10 °/s).

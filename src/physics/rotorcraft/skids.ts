@@ -3,6 +3,7 @@ import type { GearInput, GearOutput } from '../interfaces';
 import type { RotorcraftDefinition, RotorcraftState } from './definition';
 import { emptySuspension, suspensionLoad, suspensionStroke } from './skidSuspension';
 import { advanceGroundRotor, bladeAirframeStrike } from './groundRotor';
+import { hubPointToBody } from './shaftFrame';
 
 /** Lowest stinger tube clearance to local terrain, metres; diagnostic geometry, not a pilot sensor. */
 export function stingerClearance(d: RotorcraftDefinition, b: Pick<GearInput['body'], 'position' | 'orientation'>,
@@ -184,12 +185,16 @@ export class SkidGear {
       contacts.push({ point: { x: tail.hub.x + tail.radius * Math.cos(a), y: tail.hub.y,
         z: tail.hub.z + tail.radius * Math.sin(a) }, name: 'Tail rotor strike' });
     }
-    const main = this.definition.main;
+    const main = this.definition.main, tilt = this.definition.shaftTilt ?? 0;
     for (let i = 0; i < 8; i++) {
       const angle = i * Math.PI / 4;
-      contacts.push({ point: { x: main.hub.x + main.radius * Math.cos(angle),
-        y: main.hub.y + main.radius * Math.sin(angle), z: main.hub.z + main.radius * ((rotor?.flapForward ?? 0) * Math.cos(angle) +
-          (rotor?.flapRight ?? 0) * Math.sin(angle) - (rotor?.coning ?? 0)) }, name: 'Main rotor strike' });
+      // The flap coordinates are in the shaft frame: a tilted mast (MD 500E) rotates the tip ring to the body.
+      contacts.push({ point: tilt ? hubPointToBody(main.hub, { x: main.radius * Math.cos(angle), y: main.radius * Math.sin(angle),
+        z: main.radius * ((rotor?.flapForward ?? 0) * Math.cos(angle) + (rotor?.flapRight ?? 0) * Math.sin(angle) -
+          (rotor?.coning ?? 0)) }, tilt)
+        : { x: main.hub.x + main.radius * Math.cos(angle),
+          y: main.hub.y + main.radius * Math.sin(angle), z: main.hub.z + main.radius * ((rotor?.flapForward ?? 0) * Math.cos(angle) +
+            (rotor?.flapRight ?? 0) * Math.sin(angle) - (rotor?.coning ?? 0)) }, name: 'Main rotor strike' });
     }
     for (const { point, name } of contacts) {
       const world = v3.add(b.position, quat.rotate(b.orientation, point));

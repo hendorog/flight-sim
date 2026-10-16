@@ -73,15 +73,48 @@ function stepResponse(kt: number, axis: 'aileron' | 'elevator' | 'rudder', amoun
     last = w; at.set(i, (w - base) / DEG);
   }
   const rate = (t: number) => at.get(Math.round(t / DT))!;
-  // Time to half of the 0.5 s rate: a first-order subsidence's t1/2 = ln 2 x tau.
-  let half = 0; for (let i = 1; i <= 120; i++) if (Math.abs(at.get(i)!) < Math.abs(rate(0.5)) / 2) half = i * DT;
-  return { accel: Math.abs(peak) / DEG, rate05: Math.abs(rate(0.5)), rate1: Math.abs(rate(1)), half };
+  return { accel: Math.abs(peak) / DEG, rate05: Math.abs(rate(0.5)), rate1: Math.abs(rate(1)) };
 }
 function referenceResponse(k: Oh6aCase, control: 'DA' | 'DB' | 'DP', axis: 'p' | 'q' | 'r') {
   const times = Array.from({ length: 1000 }, (_, i) => (i + 1) * 0.001);
   const res = respond(k, control, 0.1, times), at = (t: number) => Math.abs(res.at[Math.round(t * 1000) - 1][axis]) / DEG;
-  let half = 0; for (let i = 1; i <= 500; i++) if (at(i / 1000) < at(0.5) / 2) half = i / 1000;
-  return { accel: Math.abs(axis === 'p' ? res.pDot : axis === 'q' ? res.qDot : res.rDot) / DEG, rate05: at(0.5), rate1: at(1), half };
+  return { accel: Math.abs(axis === 'p' ? res.pDot : axis === 'q' ? res.qDot : res.rDot) / DEG, rate05: at(0.5), rate1: at(1) };
+}
+/** Hold time of the subsidence doublet: the step is held this long, then the control returns to its trim. */
+const HOLD = 0.5;
+/**
+ * Subsidence after release: the control stepped by `amount` for HOLD s and returned to trim; the time from the release
+ * until the rate has fallen to half its value at the release (a first-order root lambda gives t1/2 = ln 2 / lambda).
+ */
+function releaseHalfTime(kt: number, axis: 'aileron' | 'elevator', amount: number) {
+  const r = rig(2550, { kt, height: 1500 }), s = r.fm.state;
+  const rateOf = () => axis === 'aileron' ? s.angularVelocity.x : s.angularVelocity.y;
+  run(r, 0.5);
+  const base = rateOf(), trim = r.c[axis];
+  r.c[axis] = trim + amount;
+  run(r, HOLD);
+  const atRelease = (rateOf() - base) / DEG;
+  r.c[axis] = trim;
+  for (let i = 1; i <= 480; i++) {
+    r.fm.step(DT, r.c, r.env);
+    if (Math.abs((rateOf() - base) / DEG) < Math.abs(atRelease) / 2) return { atRelease, half: i * DT };
+  }
+  return { atRelease, half: Infinity };
+}
+/** The same doublet on the OH-6A's linear model (superposition: x_step(t) - x_step(t - HOLD)). */
+function referenceReleaseHalfTime(k: Oh6aCase, control: 'DA' | 'DB', axis: 'p' | 'q') {
+  const times = Array.from({ length: 3000 }, (_, i) => (i + 1) * 0.001);
+  const res = respond(k, control, 0.1, times).at;
+  const step = (t: number) => (t <= 0 ? 0 : res[Math.round(t * 1000) - 1][axis]);
+  const doublet = (t: number) => (step(t) - step(t - HOLD)) / DEG;
+  const atRelease = doublet(HOLD);
+  for (let i = 1; i <= 2000; i++) if (Math.abs(doublet(HOLD + i / 1000)) < Math.abs(atRelease) / 2) return { atRelease, half: i / 1000 };
+  return { atRelease, half: Infinity };
+}
+/** `model / reference` inside the plan's +/-30 % band, with both numbers in the failure message. */
+function within30(label: string, model: number, reference: number) {
+  const ratio = model / reference, msg = `${label}: ${model.toFixed(2)} against ${reference.toFixed(2)} (ratio ${ratio.toFixed(2)})`;
+  expect(ratio, msg).toBeGreaterThan(0.7); expect(ratio, msg).toBeLessThan(1.3);
 }
 
 describe('MD 500E control power against the OH-6A derivatives (Heffley CR-3144 pp 27-28, cases 4 and 8, F)', () => {
@@ -90,27 +123,42 @@ describe('MD 500E control power against the OH-6A derivatives (Heffley CR-3144 p
   const rows: Record<string, unknown>[] = [];
   afterAll(() => { report.controlPower = rows; });
   for (const [kt, k] of [[0, OH6A_HOVER], [60, OH6A_60KT]] as const) {
-    it(`${kt} KIAS: roll and pitch acceleration and rate at 0.5 s within 30 % (roll rate excepted below)`, () => {
+    it(`${kt} KIAS: roll and pitch acceleration and the pitch rate at 0.5 s within 30 %`, () => {
       const roll = stepResponse(kt, 'aileron', 0.2), rollRef = referenceResponse(k, 'DA', 'p');
       const pitch = stepResponse(kt, 'elevator', -0.2), pitchRef = referenceResponse(k, 'DB', 'q');
       rows.push({ kt, roll, rollRef, pitch, pitchRef });
-      expect(roll.accel / rollRef.accel).toBeGreaterThan(0.7); expect(roll.accel / rollRef.accel).toBeLessThan(1.3);
-      expect(pitch.accel / pitchRef.accel).toBeGreaterThan(0.7); expect(pitch.accel / pitchRef.accel).toBeLessThan(1.3);
-      expect(pitch.rate05 / pitchRef.rate05).toBeGreaterThan(0.7); expect(pitch.rate05 / pitchRef.rate05).toBeLessThan(1.3);
-      if (kt === 0) {
-        // Time to half amplitude of the roll and pitch subsidences (OH-6A hover roots 4.93 and 2.01 /s).
-        expect(roll.half).toBeLessThan(2 * rollRef.half + 0.05); expect(pitch.half).toBeLessThan(2 * pitchRef.half + 0.05);
-      }
+      within30('roll acceleration deg/s2', roll.accel, rollRef.accel);
+      within30('pitch acceleration deg/s2', pitch.accel, pitchRef.accel);
+      within30('pitch rate at 0.5 s deg/s', pitch.rate05, pitchRef.rate05);
     });
-    it.fails(`KNOWN CONTROL-POWER GAP — ${kt} KIAS: roll rate at 0.5 s and the pedal (yaw) response within 30 % of the OH-6A`, () => {
+    // Tracked handling gaps (md500/KNOWN_ISSUES.md): one assertion per test, so each is reported on its own and a fix
+    // that closes one turns its it.fails red.
+    it.fails(`KNOWN CONTROL-POWER GAP — ${kt} KIAS: roll rate at 0.5 s within 30 % of the OH-6A`, () => {
       const roll = stepResponse(kt, 'aileron', 0.2), rollRef = referenceResponse(k, 'DA', 'p');
+      rows.push({ kt, rollRate05: roll.rate05, rollRate05Ref: rollRef.rate05 });
+      within30('roll rate at 0.5 s deg/s', roll.rate05, rollRef.rate05);
+    });
+    it.fails(`KNOWN CONTROL-POWER GAP — ${kt} KIAS: pedal step yaw acceleration within 30 % of the OH-6A`, () => {
       const yaw = stepResponse(kt, 'rudder', 0.2), yawRef = referenceResponse(k, 'DP', 'r');
-      rows.push({ kt, yaw, yawRef });
-      expect(roll.rate05 / rollRef.rate05).toBeLessThan(1.3);
-      expect(yaw.accel / yawRef.accel).toBeLessThan(1.3);
-      expect(Math.abs(yaw.rate1 - yawRef.rate1) / Math.max(yawRef.rate1, 10)).toBeLessThan(0.3);
+      rows.push({ kt, yawAccel: yaw.accel, yawAccelRef: yawRef.accel });
+      within30('yaw acceleration deg/s2', yaw.accel, yawRef.accel);
+    });
+    // Yaw rate at 1 s: +/-30 %, with a 3 deg/s floor where the reference is under 10 deg/s (at 60 KIAS the
+    // weathercock returns both to a few deg/s, where 30 % is below the measurement's meaning).
+    (kt === 0 ? it.fails : it)(`${kt === 0 ? 'KNOWN CONTROL-POWER GAP — ' : ''}${kt} KIAS: pedal step yaw rate at 1 s within 30 % of the OH-6A (3 deg/s floor)`, () => {
+      const yaw = stepResponse(kt, 'rudder', 0.2), yawRef = referenceResponse(k, 'DP', 'r');
+      rows.push({ kt, yawRate1: yaw.rate1, yawRate1Ref: yawRef.rate1 });
+      const error = Math.abs(yaw.rate1 - yawRef.rate1) / Math.max(yawRef.rate1, 10);
+      expect(error, `yaw rate at 1 s: ${yaw.rate1.toFixed(2)} against ${yawRef.rate1.toFixed(2)} deg/s`).toBeLessThan(0.3);
     });
   }
+  it('hover roll and pitch subsidence: after a 0.5 s step of 0.1 travel is released, the time to half the rate is within 30 % of the OH-6A (roots 4.93 and 2.01 /s)', () => {
+    const roll = releaseHalfTime(0, 'aileron', 0.2), rollRef = referenceReleaseHalfTime(OH6A_HOVER, 'DA', 'p');
+    const pitch = releaseHalfTime(0, 'elevator', -0.2), pitchRef = referenceReleaseHalfTime(OH6A_HOVER, 'DB', 'q');
+    rows.push({ kt: 0, subsidence: { roll, rollRef, pitch, pitchRef } });
+    within30('roll t1/2 after release s', roll.half, rollRef.half);
+    within30('pitch t1/2 after release s', pitch.half, pitchRef.half);
+  });
 });
 
 describe('MD 500E forward flight (plan 6.6)', () => {

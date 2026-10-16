@@ -28,7 +28,11 @@ import type { RotorcraftDefinition, RotorcraftState, TurboshaftControlDef } from
 export const TURBOSHAFT_BUS_VOLTS = 18;
 /** Transmission oil pressure that arms the auto-reignition (RFM 1-12: "armed by M/R transmission oil pressure"), psi. ESTIMATE. */
 export const REIGNITION_ARM_PSI = 5;
-/** The low-rotor half of the ENGINE OUT warning arms once Nr has reached its threshold and disarms below this fraction of 100 % Nr. ESTIMATE (RFM 4-16: all warnings out at ground idle). */
+/**
+ * The low-rotor half of the ENGINE OUT warning arms once Nr has reached its threshold and disarms below this fraction
+ * of 100 % Nr ON THE GROUND only (skids loaded): the warnings are out at ground idle (RFM 4-16), while a severe
+ * underspeed in flight keeps the light and horn on however low Nr falls. ESTIMATE (the unit's logic is not published).
+ */
 export const LOW_ROTOR_DISARM = 0.7;
 /** Time constant of the governor's N2-rate sensing, s. */
 const RATE_FILTER = 0.05;
@@ -135,10 +139,10 @@ export class TurboshaftControl {
   }
 
   /**
-   * After the coupling (Rotorcraft.drive): the gauges and warnings of the turboshaft installation. `n1`, `totC`
-   * and `torqueNm` are the engine's published N1 (fraction), TOT and output-shaft torque.
+   * After the coupling (Rotorcraft.drive): the gauges and warnings of the turboshaft installation, from the engine's
+   * N1, TOT and output-shaft torque. `onGround` (skids loaded) lets the low-rotor warning disarm at ground idle.
    */
-  publish(dt: number, c: Readonly<ControlInputs>, engine: EngineUnit, busVolts: number): void {
+  publish(dt: number, c: Readonly<ControlInputs>, engine: EngineUnit, busVolts: number, onGround = false): void {
     const ts = this.ts, d = this.def, r = this.state, s = r.turboshaft;
     if (!s) return;
     const turbine = engine.engine instanceof TurbineEngine ? engine.engine : undefined;
@@ -149,7 +153,7 @@ export class TurboshaftControl {
     s.needlesSplit = s.nrPct - s.n2Pct > 1;
     const powered = busVolts > TURBOSHAFT_BUS_VOLTS;
     if (nr >= ts.engineOut.nrBelow) s.lowRotorArmed = true;
-    else if (nr < LOW_ROTOR_DISARM) s.lowRotorArmed = false;
+    else if (nr < LOW_ROTOR_DISARM && onGround) s.lowRotorArmed = false;
     const warning = n1 < ts.engineOut.n1Below || (s.lowRotorArmed === true && nr < ts.engineOut.nrBelow);
     s.engineOutLight = powered && warning;
     // Pre-generic and late-generic harness: the audio is enabled by the generator switch (RFM 3-25 note, 4-17).
