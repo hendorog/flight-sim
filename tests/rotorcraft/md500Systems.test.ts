@@ -405,5 +405,36 @@ describe('MD 500E warnings and resume', () => {
     const badReverse = JSON.parse(JSON.stringify(snap)); badReverse.controls.reverse = 2;
     expect(parseSnapshot(JSON.stringify(badReverse))).toBeNull();
   }, 30_000);
+
+  it('resume mid collective transient: the governor rate term is persisted, the restored torque follows the original within 0.01 psi over 1 s (AGENT)', () => {
+    const w = calmWeather();
+    const a = new SimPhysics({ aircraft: def, weather: w });
+    // The typical payload: a snapshot does not carry the payload and restore() reloads the default (typical), so the
+    // demo hover's max-gross payload (1361 kg) would come back at 953 kg and confound the comparison. That gap is older
+    // than the turboshaft (main) and affects every type's resume of a non-default payload.
+    a.resetTo({ ...hoverScenario(a.env, d), payload: 'typical' });
+    a.step(3);
+    // A brisk collective raise: N2 droops and the governor's rate term is working when the snapshot is taken (0.1 s
+    // in). Without the persisted rate the restored torque leaves the original by 0.19 psi and N1 by 0.014 % within 1 s.
+    a.controls.collective = (a.controls.collective ?? 0) + 0.08;
+    a.step(0.1);
+    const snap = a.captureSnapshot({ weather: w, cameraMode: 'chase', quality: 'high', renderScale: null, resume: true, now: 1_800_000_000_000 });
+    const t = snap.systems.rotorcraft!.turboshaft!;
+    expect(Math.abs(t.n2Rate ?? 0)).toBeGreaterThan(1e-4);
+    const back = parseSnapshot(JSON.stringify(snap));
+    expect(back).not.toBeNull();
+    const b = new SimPhysics({ aircraft: def, weather: { ...back!.weather } });
+    b.restore(back!);
+    let maxDpsi = 0;
+    for (let i = 0; i < 20; i++) {
+      a.step(0.05); b.step(0.05);
+      maxDpsi = Math.max(maxDpsi, Math.abs(a.state.rotorcraft!.turboshaft!.torquePsi - b.state.rotorcraft!.turboshaft!.torquePsi));
+    }
+    report.resumeTransient = { n2Rate: t.n2Rate, maxDpsi };
+    expect(maxDpsi).toBeLessThan(0.01);
+    // A non-finite or negative governor memory is rejected.
+    const bad = JSON.parse(JSON.stringify(snap)); bad.systems.rotorcraft.turboshaft.n2Last = -1;
+    expect(parseSnapshot(JSON.stringify(bad))).toBeNull();
+  }, 30_000);
 });
 

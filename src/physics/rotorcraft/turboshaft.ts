@@ -54,10 +54,6 @@ export function plaNg(ts: TurboshaftControlDef, throttle: number): number {
 /** The turboshaft's fuel control and N2 governor. Its persistent state is RotorcraftState.turboshaft (snapshots). */
 export class TurboshaftControl {
   readonly ts: TurboshaftControlDef;
-  /** N2 of the last step and its filtered rate (not persisted: re-seeded after a reset or restore). */
-  private lastN2 = NaN;
-  private n2Rate = 0;
-  private seeded: RotorcraftState['turboshaft'] | undefined;
 
   constructor(readonly def: RotorcraftDefinition, private readonly state: RotorcraftState) {
     if (!def.systems.turboshaft) throw new Error('TurboshaftControl: the definition has no systems.turboshaft');
@@ -99,10 +95,13 @@ export class TurboshaftControl {
     const gi = ts.plaNg.groundIdle, fo = ts.plaNg.fullOpen;
     const grip = clamp(c.throttle, 0, 1), collective = clamp(c.collective ?? 0, 0, 1);
     const n2 = this.n2(engine);
-    if (this.seeded !== s || !Number.isFinite(this.lastN2)) { this.seeded = s; this.lastN2 = n2; this.n2Rate = 0; }
+    // N2 of the last step and its filtered rate live in the state (snapshots: a resume mid-transient keeps the
+    // governor's rate term); absent after a reset, they are seeded from the shaft with no rate.
+    const seeded = Number.isFinite(s.n2Last) && Number.isFinite(s.n2Rate);
+    let n2Rate = seeded ? s.n2Rate! : 0;
+    if (dt > 0 && seeded) n2Rate += ((n2 - s.n2Last!) / dt - n2Rate) * (1 - Math.exp(-dt / RATE_FILTER));
+    if (dt > 0 || !seeded) { s.n2Last = n2; s.n2Rate = n2Rate; }
     if (dt > 0) {
-      this.n2Rate += ((n2 - this.lastN2) / dt - this.n2Rate) * (1 - Math.exp(-dt / RATE_FILTER));
-      this.lastN2 = n2;
       // The beep actuator is electric (N2 GOV circuit breaker).
       if (busVolts > TURBOSHAFT_BUS_VOLTS) s.n2SetPct = clamp(s.n2SetPct + 100 * g.beepRate * clamp(c.n2Beep ?? 0, -1, 1) * dt,
         100 * g.setRange[0], 100 * g.setRange[1]);
@@ -110,7 +109,7 @@ export class TurboshaftControl {
     s.grip = gripPosition(ts.grip, grip);
     const pla = plaNg(ts, grip);
     const set = s.n2SetPct / 100, datum = this.datum(collective);
-    const ptg = datum + g.gain * (set - n2 - g.lead * this.n2Rate) + s.ptgIntegral;
+    const ptg = datum + g.gain * (set - n2 - g.lead * n2Rate) + s.ptgIntegral;
     const governing = c.rotorGovernor !== false;
     let demand: number;
     if (governing) {
@@ -120,11 +119,11 @@ export class TurboshaftControl {
       const limitedHigh = ptg > pla && drive > 0, limitedLow = ptg < gi && drive < 0;
       if (dt > 0 && !limitedHigh && !limitedLow) s.ptgIntegral += g.integralGain * g.gain * drive * dt;
       // Bumpless return from the grip's limit: the integral follows the demand the grip allows.
-      if (ptg > pla + 0.02) s.ptgIntegral = pla + 0.02 - datum - g.gain * (set - n2 - g.lead * this.n2Rate);
+      if (ptg > pla + 0.02) s.ptgIntegral = pla + 0.02 - datum - g.gain * (set - n2 - g.lead * n2Rate);
     } else {
       // Governor failed / out of the system (RFM 3-14): the grip alone; the integral tracks for a bumpless return.
       demand = pla;
-      s.ptgIntegral = demand - datum - g.gain * (set - n2 - g.lead * this.n2Rate);
+      s.ptgIntegral = demand - datum - g.gain * (set - n2 - g.lead * n2Rate);
     }
     s.ptgIntegral = clamp(s.ptgIntegral, -1, 1);
     s.governorMode = governing && s.grip === 'fullOpen' ? 'governed' : 'manual';

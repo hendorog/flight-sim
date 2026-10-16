@@ -36,7 +36,7 @@ FUEL QTY (L, R bars and figures), NP / BAT (DC A, DC V), GEN 1 / GEN 2 (A each, 
 | NG %, 0 to 110 | green 50.7 to 104, red line 104 | ETCDS / 47E-PROXY 2-6 |
 | NP rpm, 0 to 2000 | red arc 350 to 950 (prohibited on the ground), green 1600 to 1700, yellow to 1870 | TCDS C.III.6.7, `PC12_NP_*` |
 | FUEL FLOW pph, 0 to 800 | none; USED is `readings.fuelUsedGal`: the tank-sender drop since the last instrument reset (scenario, teleport, resume), re-based to 0 by any refuel (a rise above 0.5 gal) | AGENT; FUEL RESET not modelled |
-| ENG OIL | pressure green 85 to 105, yellow 40 to 85, red lines 40 and 105; temperature red above 99 C | the C208 panel's PT6 figures, ESTIMATE for the -67B |
+| ENG OIL | pressure green 90 to 135, yellow 60 to 90 and 135 to 200, red lines 60 and 200; temperature red above 105 C | ETCDS IV.4.2, POH 2-6 note 2 (pressure); TCDS C.III.4.3 (MCP oil temperature) |
 
 Torque is `pc12TorquePsi(EngineState.torque)` everywhere (panel, HUD, devMock, test). Fuel is read in pounds at 6.7 lb/US gal.
 

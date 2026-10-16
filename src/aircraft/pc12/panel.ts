@@ -135,8 +135,13 @@ export const PC12_KG_PER_GAL = LB_PER_GAL * KG_PER_LB;
 const FUEL_LOW_GAL = 20;
 /** Fuel pressure below which FUEL PRESS comes on, psi (SECONDARY flashcards: below 2 psi). */
 const FUEL_PRESS_LOW_PSI = 2;
-/** Oil: pressure green 85-105, minimum 40 at idle; temperature green 10-99 C (the C208 panel's PT6 figures: ESTIMATE for the -67B). */
-const OIL = { minPsi: 40, greenPsi: 85, maxPsi: 105, minC: 10, maxC: 99 };
+/**
+ * Oil pressure: green 90-135 psi (normal above 72 % Ng), yellow 60-90 (85 minimum below 35.87 psi torque, 60 the emergency
+ * minimum), red line at 60, yellow 135-200 and a red line at the 200 psi start / transient maximum (ETCDS IV.4.2; POH 2-6
+ * note 2). Oil temperature: red above 105 C, the MCP limit (TCDS C.III.4.3; take-off allows 110).
+ */
+export const PC12_OIL = { minPsi: 60, greenPsi: 90, maxPsi: 135, transientPsi: 200, minC: 10, maxC: 105 } as const;
+const OIL = PC12_OIL;
 /** Ng green band: ground-idle minimum 50.7 % to the 104 % limit (ETCDS / 47E-PROXY 2-6). */
 const NG_GREEN = [PC12_IDLE.groundNg[0] * 100, PC12_NG_MAX * 100] as const;
 const NG_LIMIT = PC12_NG_MAX * 100;
@@ -221,12 +226,13 @@ const EIS_WINDOWS: GaugeDef[] = [
   { kind: 'eisWindow', id: 'eisOil', bounds: eisRect(2, 2), title: 'ENG OIL',
     bars: {
       min: 0, max: 200,
-      arcs: [{ from: OIL.minPsi, to: OIL.greenPsi, color: 'yellow' }, { from: OIL.greenPsi, to: OIL.maxPsi, color: 'green' }],
-      redLines: [OIL.minPsi, OIL.maxPsi],
+      arcs: [{ from: OIL.minPsi, to: OIL.greenPsi, color: 'yellow' }, { from: OIL.greenPsi, to: OIL.maxPsi, color: 'green' },
+        { from: OIL.maxPsi, to: OIL.transientPsi, color: 'yellow' }],
+      redLines: [OIL.minPsi, OIL.transientPsi],
       items: [{ label: 'P', read: (r) => eng(r)?.oilPressurePsi ?? 0 }],
     },
     readouts: [readout('TEMP', '°C', 0, (r) => (((eng(r)?.oilTempF ?? 32) - 32) * 5) / 9, (v) => (v > OIL.maxC ? 'red' : undefined)),
-      readout('PRESS', 'PSI', 0, (r) => eng(r)?.oilPressurePsi ?? 0, (v) => (v > 0 && v < OIL.minPsi ? 'red' : v > OIL.maxPsi ? 'amber' : undefined))] },
+      readout('PRESS', 'PSI', 0, (r) => eng(r)?.oilPressurePsi ?? 0, (v) => (v > 0 && v < OIL.minPsi ? 'red' : v > OIL.transientPsi ? 'red' : v > OIL.maxPsi ? 'amber' : undefined))] },
 ];
 
 // ---------------------------------------------------------------------------------------------------
@@ -353,9 +359,9 @@ export const PC12_PANEL: PanelDef = {
     },
     // Momentary buttons: the STARTER INTERRUPT (held: ControlInputs.starterInterrupt cancels a latched start in the
     // turbine core), the stick PUSHER INTR (held) and the CAWS lamp test.
-    { kind: 'pushButton', id: 'starterInterrupt', bounds: { x: BUTTONS.xs[0], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'STARTER INTR',
+    { kind: 'pushButton', id: 'starterInterrupt', bounds: { x: BUTTONS.xs[0], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'STARTER INTR', holdAction: 'starterInterrupt',
       read: (c) => c.starterInterrupt ?? false, press: (down, c) => { c.starterInterrupt = down; } },
-    { kind: 'pushButton', id: 'pusherIntr', bounds: { x: BUTTONS.xs[1], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'PUSHER INTR',
+    { kind: 'pushButton', id: 'pusherIntr', bounds: { x: BUTTONS.xs[1], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'PUSHER INTR', holdAction: 'pusherInterrupt',
       read: (c) => c.pusherInterrupt ?? false, press: (down, c) => { c.pusherInterrupt = down; } },
     { kind: 'pushButton', id: 'lampTest', bounds: { x: BUTTONS.xs[2], y: BUTTONS.y, w: BUTTONS.w, h: BUTTONS.h }, label: 'CAWS TEST',
       read: (c) => c.annunciatorTest ?? false, press: (down, c) => { c.annunciatorTest = down; } },

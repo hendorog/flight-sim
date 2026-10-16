@@ -8,8 +8,9 @@ import {
   PC12_GEN_AMPS, PC12_ITT_C, PC12_NG_MAX, PC12_NP_PROHIBITED, PC12_NP_TRANSIENT, PC12_TORQUE_PSI, pc12TorquePsi, PC12_GEAR_RATIO, PC12_PSI_PER_NM,
 } from '../../src/aircraft/pc12/facts';
 import {
-  PC12_ASI_MARKS, PC12_CABIN_SCHEDULE, PC12_CAWS_LAMPS, PC12_CAWS_MODELLED, PC12_INSTRUMENT_SYSTEMS, PC12_MAX_DIFF_PSI, PC12_PANEL,
+  PC12_ASI_MARKS, PC12_CABIN_SCHEDULE, PC12_CAWS_LAMPS, PC12_CAWS_MODELLED, PC12_INSTRUMENT_SYSTEMS, PC12_MAX_DIFF_PSI, PC12_OIL, PC12_PANEL,
 } from '../../src/aircraft/pc12/panel';
+import { PT6A_67B } from '../../src/aircraft/pc12/powerplant';
 import { PC12_CAWS, PC12_EIS, PC12_PANEL_PX_RECT, PC12_PANEL_SIZE, PC12_PEDESTAL, PC12_YOKES } from '../../src/aircraft/pc12/panelLayout';
 import { PC12_REFERENCE } from '../../src/aircraft/pc12/reference';
 import { PC12 } from '../../src/aircraft/pc12/training';
@@ -131,6 +132,29 @@ describe('PC-12 markings', () => {
     expect(win('eisNg').dial!.redLines).toEqual([PC12_NG_MAX * 100]);
     expect(win('eisNp').dial!.arcs).toContainEqual({ from: PC12_NP_PROHIBITED[0], to: PC12_NP_PROHIBITED[1], color: 'red' });
     expect(win('eisNp').dial!.redLines).toEqual([PC12_NP_TRANSIENT]);
+  });
+
+  it('marks ENG OIL with the -67B limits: 90-135 psi green, red lines at 60 and 200, and the regulated 115 psi reads normal', () => {
+    const win = PC12_PANEL.gauges.find((g) => g.id === 'eisOil') as Extract<(typeof PC12_PANEL.gauges)[number], { kind: 'eisWindow' }>;
+    expect(PC12_OIL).toMatchObject({ minPsi: 60, greenPsi: 90, maxPsi: 135, transientPsi: 200, maxC: 105 });
+    expect(win.bars!.arcs).toContainEqual({ from: 90, to: 135, color: 'green' });
+    expect(win.bars!.redLines).toEqual([60, 200]);
+    const press = win.readouts.find((r) => r.label === 'PRESS')!;
+    // The engine regulates at its relief setting and starts warm at its warm figure: both inside the green band.
+    const engine = PT6A_67B.thermal as unknown as { oilReliefPsi: number; warm: { oilPressure: number } };
+    for (const psi of [engine.oilReliefPsi, engine.warm.oilPressure, 90, 135]) expect(press.alert?.(psi), `${psi} psi`).toBeUndefined();
+    expect(press.alert?.(55)).toBe('red');
+    expect(press.alert?.(150)).toBe('amber');
+    expect(press.alert?.(205)).toBe('red');
+    const temp = win.readouts.find((r) => r.label === 'TEMP')!;
+    expect(temp.alert?.(100)).toBeUndefined();
+    expect(temp.alert?.(106)).toBe('red');
+  });
+
+  it('routes STARTER INTR and PUSHER INTR through the held actions, so the input module does not clear them next frame', () => {
+    const spots = buildHotspots(PC12_PANEL);
+    expect(spots.find((h) => h.id === 'starterInterrupt')?.hold).toEqual({ action: 'starterInterrupt' });
+    expect(spots.find((h) => h.id === 'pusherIntr')?.hold).toEqual({ action: 'pusherInterrupt' });
   });
 });
 

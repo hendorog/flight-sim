@@ -209,6 +209,13 @@ export interface RotorcraftState {
     n2SetPct: number;
     /** Governor integrator, Ng-demand fraction (persisted). */
     ptgIntegral: number;
+    /**
+     * N2 of the last governor step (fraction of ratedRpm) and its filtered rate (1/s), the rate term's memory
+     * (persisted, so a resume mid-transient matches the uninterrupted flight). Absent after a reset: seeded from the
+     * shaft at the next step with no rate.
+     */
+    n2Last?: number;
+    n2Rate?: number;
     grip: 'cutoff' | 'groundIdle' | 'between' | 'fullOpen';
     /** 'manual': grip below full open, or ControlInputs.rotorGovernor === false (governor failure). */
     governorMode: 'governed' | 'manual';

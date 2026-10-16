@@ -1020,6 +1020,10 @@ export class InputSystem implements Subsystem {
     for (const r of this.gamepads.readings) if (r.control === 'throttleRate' && this.pickedUp(r)) stick += r.value;
     const hwRaw = this.profile.rotorcraft ? null : this.hardwareThrottle();
     const hwThrottle = hwRaw && { value: hwRaw.value, moved: hwRaw.moved };
+    // A rate stick pushed forward with the lever aft of the gate brings it forward to the gate first (updateReverse),
+    // like F3: the throttle does not move until the lever is at the gate.
+    const stickToGate = aft && stick > 0 ? Math.min(stick, 1) : 0;
+    if (stickToGate > 0) stick = 0;
     const nudging = kbThrottle !== 0 || stick !== 0;
     const throttleInc = (kbThrottle + stick * THROTTLE_STICK_RATE) * dt;
     const throttleTarget = this.leverTarget('throttle', 'throttleUp', 'throttleDown');
@@ -1032,7 +1036,7 @@ export class InputSystem implements Subsystem {
     if (this.throttleOwner.update(nudging && !ownThrottle, hwThrottle?.moved ?? false) === 'hardware' && hwThrottle) c.throttle = hwThrottle.value;
     else this.moveLever(c, 'throttle', ownThrottle ? 0 : throttleInc, ownThrottle ? 'all' : throttleTarget, gripFloor, gripLift);
     this.leverHeld(c, 'throttle', nudging && dt > 0);
-    if (beta) this.updateReverse(dt, c, reverseHeld, hwRaw);
+    if (beta) this.updateReverse(dt, c, reverseHeld, hwRaw, stickToGate);
 
     const kbMixture = rate('mixtureRich', MIXTURE_RATE) - rate('mixtureLean', MIXTURE_RATE);
     const hwMixture = this.hardwareLever('mixture');
@@ -1093,15 +1097,17 @@ export class InputSystem implements Subsystem {
 
   /**
    * The power lever aft of the gate (types with beta): the keyboard (the reverse key once the gate is lifted, F3
-   * back toward the gate), a hardware throttle's reverse zone or a dedicated reverse axis; whichever moved last owns
-   * it. The throttle is held at 0 while the lever is aft of the gate (ControlInputs.reverse: never both non-zero).
+   * back toward the gate, or a gamepad's throttle rate stick pushed forward: `stickToGate`, 0-1), a hardware throttle's
+   * reverse zone or a dedicated reverse axis; whichever moved last owns it. The throttle is held at 0 while the lever is
+   * aft of the gate (ControlInputs.reverse: never both non-zero).
    */
-  private updateReverse(dt: number, c: ControlInputs, reverseHeld: boolean, hw: { value: number; moved: boolean; reverse: number | null } | null): void {
+  private updateReverse(dt: number, c: ControlInputs, reverseHeld: boolean, hw: { value: number; moved: boolean; reverse: number | null } | null, stickToGate: number): void {
     const target = this.target('reverse');
     const now = readEngineControl(c, target, 'reverse') ?? 0;
     let kb = 0;
     if (reverseHeld && this.gateLifted && readEngineControl(c, target, 'throttle') <= 0) kb += REVERSE_RATE;
     if (this.forwardToGate && now > 0) kb -= REVERSE_RATE;
+    else if (stickToGate > 0 && now > 0) kb -= REVERSE_RATE * stickToGate;
     // A reverse lever of its own, or the throttle's reverse zone.
     const axis = this.hardwareLever('reverse');
     // A throttle axis without a reverse zone cannot go aft of the gate, but moved forward of idle it takes the whole

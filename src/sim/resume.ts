@@ -157,6 +157,8 @@ function isTurboshaft(t: unknown, aircraft: unknown): boolean {
   if (!['needlesSplit', 'engineOutLight', 'engineOutHorn', 'reignitionLight', 'overTorque', 'overTemp', 'avoidRange']
     .every((k) => typeof t[k] === 'boolean')) return false;
   if (t.lowRotorArmed !== undefined && typeof t.lowRotorArmed !== 'boolean') return false;
+  if (!['n2Last', 'n2Rate'].every((k) => t[k] === undefined || isNum(t[k]))) return false;
+  if (t.n2Last !== undefined && (t.n2Last as number) < 0) return false;
   if (!GRIPS.includes(t.grip as string) || !['governed', 'manual'].includes(t.governorMode as string)) return false;
   const range = isAircraftId(aircraft) ? TURBOSHAFT_SET_PCT[aircraft] : undefined;
   if (range && ((t.n2SetPct as number) < range[0] - 1e-9 || (t.n2SetPct as number) > range[1] + 1e-9)) return false;

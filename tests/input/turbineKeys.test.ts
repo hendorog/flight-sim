@@ -158,6 +158,27 @@ describe('the power lever aft of the idle gate (types with beta and reverse)', (
     expect(rev(r)).toBe(0);
   });
 
+  it("a gamepad's throttle rate stick pushed forward brings the lever out of reverse to the gate, then opens the throttle", () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0, reverse: 0.5 });
+    const g = r.input.gamepads;
+    g.poll = () => {};
+    const reading: AxisReading = { control: 'throttleRate', value: 1, moved: true, takeover: false };
+    g.readings.push(reading);
+    // Half the travel aft at REVERSE_RATE: the lever reaches the gate, and the throttle stays at 0 until it does.
+    r.run(0.5 / REVERSE_RATE - 0.1);
+    expect(rev(r)).toBeGreaterThan(0);
+    expect(rev(r)).toBeLessThan(0.1);
+    expect(r.c.throttle).toBe(0);
+    r.run(2);
+    expect(rev(r)).toBe(0);
+    expect(r.c.throttle).toBeGreaterThan(0);
+    // Pulled back, the stick stops at idle: it does not lift the gate.
+    reading.value = -1;
+    r.run(10);
+    expect(r.c.throttle).toBe(0);
+    expect(rev(r)).toBe(0);
+  });
+
   it('taking over from the scripted pilot, a reverse-zone throttle picks up at the detent with the lever at idle, not deep in reverse', () => {
     for (const [start, at] of [[{ throttle: 0 }, 0.15], [{ throttle: 0.5 }, 0.575], [{ throttle: 0, reverse: 0.4 }, 0.09]] as const) {
       const r = makeInputRig(C208_INPUT, start);
