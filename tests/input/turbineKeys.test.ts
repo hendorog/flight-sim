@@ -1,0 +1,224 @@
+// The turbine keys (plan 3.1): the power lever aft of the idle gate on a type with beta and reverse (Shift+F2 /
+// Shift+Page Down, the lift-over gate, F3 back to the gate, F1 and F4), a throttle quadrant's reverse zone and a held
+// Reverse button; the twist grip of a turboshaft (F1 to the idle stop, Shift+F1 CUTOFF, out of CUTOFF by F1 / F3 / F4);
+// the governor beep switch on the propeller keys; the stick pusher's interrupt (Shift+D) and STARTER INTERRUPT (Shift+N).
+// None of them does anything on a type without the lever or switch.
+
+import { describe, expect, it } from 'vitest';
+import { C172S_INPUT } from '../../src/aircraft/c172s/input';
+import { C208_INPUT } from '../../src/aircraft/c208/input';
+import { C208_BETA } from '../../src/aircraft/c208/powerplant';
+import { cloneControls } from '../../src/core/types';
+import { actionForKey, keyBindingsFor, profileHasAction } from '../../src/input/bindings';
+import type { AxisReading } from '../../src/input/gamepads';
+import { REVERSE_RATE } from '../../src/input/InputSystem';
+import type { InputProfile } from '../../src/input/profile';
+import { FRAME, makeInputRig, type InputRig } from './testbed';
+
+/** A turboshaft helicopter's profile (the MD 500E's shape): twist grip, beep switch, no propeller lever. */
+const GRIP: InputProfile['twistGrip'] = { cutoffBelow: 0.05, groundIdle: 0.2 };
+const TURBOSHAFT_INPUT: InputProfile = {
+  ...C172S_INPUT,
+  rotorcraft: true,
+  twistGrip: GRIP,
+  n2Beep: true,
+  has: { ...C172S_INPUT.has, mixture: false, propeller: false },
+};
+/** A turboprop with a stick pusher and a latching start switch (the PC-12's shape). */
+const PUSHER_INPUT: InputProfile = { ...C208_INPUT, pusherInterrupt: true, starterInterrupt: true };
+
+const rev = (r: InputRig): number => r.c.reverse ?? 0;
+/** Hold a key (with Shift or not) for `s` seconds, then let it go. */
+function hold(r: InputRig, code: string, s: number, shift = false): void {
+  r.input.keyDown(code, shift);
+  r.run(s);
+  r.input.keyUp(code);
+  r.run(FRAME);
+}
+
+describe('the power lever aft of the idle gate (types with beta and reverse)', () => {
+  it('binds Shift+F2 / Shift+Page Down to it, and leaves the bare keys the throttle', () => {
+    expect(actionForKey('F2', true)).toBe('powerLeverReverse');
+    expect(actionForKey('PageDown', true)).toBe('powerLeverReverse');
+    expect(actionForKey('F2', false)).toBe('throttleDown');
+    expect(actionForKey('F1', false)).toBe('throttleIdle');
+    expect(actionForKey('F1', true)).toBe('gripCutoff');
+    expect(profileHasAction(C208_INPUT, 'powerLeverReverse')).toBe(true);
+    expect(profileHasAction(C172S_INPUT, 'powerLeverReverse')).toBe(false);
+    expect(keyBindingsFor(C208_INPUT).find((b) => b.keys === 'Shift+F2 / Shift+Page Down')).toBeDefined();
+  });
+
+  it('held from forward of the gate, the lever comes back to the gate and stops there', () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0.3 });
+    hold(r, 'F2', 2, true);
+    expect(r.c.throttle).toBe(0);
+    expect(rev(r)).toBe(0);
+  });
+
+  it('a fresh press on the gate lifts it: the lever goes aft at the steady rate, to ground fine and on to reverse', () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0 });
+    // 0.78 s at 0.5 / s plus the press's tap: ground fine (0.4).
+    hold(r, 'F2', 0.78, true);
+    expect(rev(r)).toBeCloseTo(0.02 + REVERSE_RATE * 0.78, 1);
+    expect(rev(r)).toBeGreaterThanOrEqual(C208_BETA.pitchOnlyTravel - 0.01);
+    expect(r.c.throttle).toBe(0);
+    hold(r, 'PageDown', 2, true);
+    expect(rev(r)).toBe(1);
+  });
+
+  it('F3 from aft of the gate brings the lever forward to the gate and stops there; a fresh press goes on', () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0 });
+    hold(r, 'F2', 1, true);
+    const aft = rev(r);
+    hold(r, 'F3', 0.3);
+    expect(rev(r)).toBeLessThan(aft - 0.1);
+    expect(r.c.throttle).toBe(0);
+    hold(r, 'F3', 2);
+    expect(rev(r)).toBe(0);
+    expect(r.c.throttle).toBe(0);
+    hold(r, 'F3', 0.5);
+    expect(r.c.throttle).toBeGreaterThan(0.05);
+  });
+
+  it('the bare F2 never takes the lever over the gate', () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0.1 });
+    hold(r, 'F2', 2);
+    expect(r.c.throttle).toBe(0);
+    expect(rev(r)).toBe(0);
+  });
+
+  it('F1 puts the lever on the gate at idle and F4 forward to full, from anywhere aft', () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0 });
+    hold(r, 'F2', 1, true);
+    expect(rev(r)).toBeGreaterThan(0.3);
+    r.tap('F1');
+    expect([rev(r), r.c.throttle]).toEqual([0, 0]);
+    hold(r, 'F2', 1, true);
+    r.tap('F4');
+    expect([rev(r), r.c.throttle]).toEqual([0, 1]);
+  });
+
+  it('a gamepad button held as Reverse works as the key', () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0 });
+    const g = r.input.gamepads;
+    g.poll = () => {};
+    g.held.add('powerLeverReverse');
+    g.pressed.push('powerLeverReverse');
+    r.run(FRAME);
+    g.pressed.length = 0;
+    r.run(1);
+    expect(rev(r)).toBeGreaterThan(0.45);
+  });
+
+  it("a quadrant's reverse zone: below the detent the lever is aft of the gate, above it the throttle spans the rest", () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0 });
+    const g = r.input.gamepads;
+    g.poll = () => {};
+    const reading: AxisReading = { control: 'throttle', value: 0.15, moved: true, takeover: false, reverseZone: 0.15 };
+    g.readings.push(reading);
+    r.run(FRAME);
+    expect([r.c.throttle, rev(r)]).toEqual([0, 0]);
+    reading.value = 0;
+    r.run(FRAME);
+    expect(r.c.throttle).toBe(0);
+    expect(rev(r)).toBeCloseTo(1, 6);
+    reading.value = 0.075;
+    r.run(FRAME);
+    expect(rev(r)).toBeCloseTo(0.5, 6);
+    reading.value = 0.575;
+    r.run(FRAME);
+    expect(r.c.throttle).toBeCloseTo(0.5, 6);
+    expect(rev(r)).toBe(0);
+  });
+
+  it('the reverse zone does nothing on a type without reverse: the whole travel is throttle', () => {
+    const r = makeInputRig(C172S_INPUT, { throttle: 0 });
+    const g = r.input.gamepads;
+    g.poll = () => {};
+    g.readings.push({ control: 'throttle', value: 0.1, moved: true, takeover: false, reverseZone: 0.15 });
+    r.run(FRAME);
+    expect(r.c.throttle).toBeCloseTo(0.1, 6);
+    expect(r.c.reverse).toBeUndefined();
+  });
+});
+
+describe('the twist grip of a turboshaft', () => {
+  it('F1 closes it to the idle stop, Shift+F1 through the release to CUTOFF, F3 / F1 / F4 out of CUTOFF', () => {
+    const r = makeInputRig(TURBOSHAFT_INPUT, { throttle: 1 });
+    r.tap('F1');
+    expect(r.c.throttle).toBe(GRIP.groundIdle);
+    hold(r, 'F2', 2);
+    expect(r.c.throttle).toBe(GRIP.groundIdle);
+    r.tap('F1', true);
+    expect(r.c.throttle).toBe(0);
+    hold(r, 'F2', 1);
+    expect(r.c.throttle).toBe(0);
+    r.tap('F3');
+    expect(r.c.throttle).toBeGreaterThanOrEqual(GRIP.groundIdle);
+    r.tap('F1', true);
+    r.tap('F1');
+    expect(r.c.throttle).toBe(GRIP.groundIdle);
+    r.tap('F1', true);
+    r.tap('F4');
+    expect(r.c.throttle).toBe(1);
+  });
+
+  it('labels the grip keys as the grip, and has no CUTOFF key on a type without a grip', () => {
+    const rows = keyBindingsFor(TURBOSHAFT_INPUT);
+    expect(rows.find((b) => b.keys === 'Shift+F1')?.action).toMatch(/CUTOFF/);
+    expect(rows.find((b) => b.keys.startsWith('F1'))?.action).toMatch(/GROUND IDLE/);
+    expect(profileHasAction(C208_INPUT, 'gripCutoff')).toBe(false);
+  });
+});
+
+describe('the governor beep switch', () => {
+  it('; and Shift+; drive n2Beep -1 / +1 while held, 0 when let go', () => {
+    const r = makeInputRig(TURBOSHAFT_INPUT);
+    r.input.keyDown('Semicolon');
+    r.run(0.2);
+    expect(r.c.n2Beep).toBe(-1);
+    r.input.keyUp('Semicolon');
+    r.run(FRAME);
+    expect(r.c.n2Beep).toBe(0);
+    r.input.keyDown('Semicolon', true);
+    r.run(0.2);
+    expect(r.c.n2Beep).toBe(1);
+    r.input.keyUp('Semicolon');
+    r.run(FRAME);
+    expect(r.c.n2Beep).toBe(0);
+    expect(keyBindingsFor(TURBOSHAFT_INPUT).find((b) => b.keys === ';')?.action).toMatch(/beep DECR/);
+  });
+});
+
+describe('the held interrupt switches', () => {
+  it('Shift+D holds the pusher interrupt and Shift+N STARTER INTERRUPT on a type that has them', () => {
+    const r = makeInputRig(PUSHER_INPUT);
+    r.input.keyDown('KeyD', true);
+    r.run(0.1);
+    expect(r.c.pusherInterrupt).toBe(true);
+    r.input.keyUp('KeyD');
+    r.run(FRAME);
+    expect(r.c.pusherInterrupt).toBe(false);
+    r.input.keyDown('KeyN', true);
+    r.run(0.1);
+    expect((r.c as { starterInterrupt?: boolean }).starterInterrupt).toBe(true);
+    r.input.keyUp('KeyN');
+    r.run(FRAME);
+    expect((r.c as { starterInterrupt?: boolean }).starterInterrupt).toBe(false);
+    // The bare keys are what they were.
+    expect(actionForKey('KeyD', false)).toBe('dgAlign');
+    expect(actionForKey('KeyN', false)).toBe('navLights');
+  });
+
+  it('writes none of the new controls on the Caravan (no pusher, no latching start, no beep, no grip)', () => {
+    const r = makeInputRig(C208_INPUT, { throttle: 0.2 });
+    r.run(FRAME);
+    const before = cloneControls(r.c);
+    for (const [code, shift] of [['KeyD', true], ['KeyN', true], ['F1', true], ['Semicolon', false]] as const) hold(r, code, 0.2, shift);
+    expect(r.c.pusherInterrupt).toBeUndefined();
+    expect(r.c.n2Beep).toBeUndefined();
+    expect('starterInterrupt' in r.c).toBe(false);
+    // ; moved the propeller lever (the Caravan has one), nothing else.
+    expect({ ...r.c, propeller: before.propeller }).toEqual(before);
+  });
+});

@@ -24,7 +24,8 @@ export const C208_DEFINITION: AircraftDefinition = {
   // Both tank selectors ON; the condition lever (mixture) starts at CUT-OFF only through the cold preset.
   controlDefaults: { fuelSelector: 'on' },
   notModelled: [
-    'Beta and reverse: the power lever stops at flight idle, so there is no ground-idle beta for taxiing and no reverse on landing (at idle the propeller pulls hard on the ground).',
+    'The beta range on a cam: the blade angle follows the power lever linearly from the low-pitch stop to ground fine, so the first half of the beta travel slows a taxi less than the real lever does.',
+    'The reverse limits as timed exceedances (1 min at 1825 rpm) and the beta / reverse annunciation: the lever reads BETA / REV on the HUD only.',
     'The roll spoilers: the ailerons alone carry the roll power.',
     'The cargo pod, the 208B Grand Caravan and the G1000 cockpit: the 208 Caravan 675 with its analogue panel.',
     'The inertial separator, the engine and propeller anti-ice and their power and ITT penalties.',

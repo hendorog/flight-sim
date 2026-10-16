@@ -1,6 +1,6 @@
 // Cessna 208 Caravan 675: the sound profile. One Pratt & Whitney Canada PT6A-114A free turbine (no combustion
 // pulses: the gas generator's whine, the burner and exhaust roar, the starter-generator, a faint reduction gearbox)
-// driving a Hartzell three-blade 106 in propeller governed at 1900 rpm: about 95 Hz blade passage, the buzzing,
+// driving a McCauley three-blade 106 in propeller governed at 1900 rpm: about 95 Hz blade passage, the buzzing,
 // growling drone that dominates a Caravan at power. An electric stall warning horn, electric flaps, fixed gear,
 // vacuum and electric gyros, a 28 V bus, a big cabin behind a long nose. Plain data.
 //
@@ -60,7 +60,7 @@ const ENGINE: EngineSoundProfile = {
 };
 
 const PROP: PropSoundProfile = {
-  // Hartzell HC-B3MN-3, three blades, 106 in.
+  // McCauley 3GFR34C703/106GA-0 (TCDS IM.A.226 sect. 6.2), three blades, 106 in.
   blades: 3,
   diameterM: GEOMETRY_PROP.diameter,
   // Thrust giving propLoad = 1: a cruise at about 500 shp and 165 KTAS, efficiency 0.82: ~3500 N.

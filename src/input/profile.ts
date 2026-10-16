@@ -58,6 +58,14 @@ export interface InputProfile {
   twistGrip?: { cutoffBelow: number; groundIdle: number };
   /** Governor beep switch on the collective: the propDecrease / propIncrease keys drive ControlInputs.n2Beep while held. */
   n2Beep?: boolean;
+  /** Stick pusher interrupt button on the control wheel (Shift+D, held): ControlInputs.pusherInterrupt. Absent: none. */
+  pusherInterrupt?: boolean;
+  /**
+   * STARTER INTERRUPT switch (Shift+N, held) of a latching start switch (EngineDef.starterLatch). It writes
+   * `starterInterrupt` on the controls, which the turbine core reads once ControlInputs declares it; until then a
+   * second press of the starter is the interrupt. Absent: none.
+   */
+  starterInterrupt?: boolean;
   /**
    * Per-engine keys that are ONE control on this type: they write the scalar whatever the engine selection
    * (DA42: ['alternateAir'], one lever for both engines). Absent: none.

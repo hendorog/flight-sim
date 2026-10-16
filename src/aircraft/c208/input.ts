@@ -28,6 +28,8 @@ export const C208_INPUT: InputProfile = {
     gear: false,
     rudderTrim: true,
     fuelPump: true,
+    // The power lever aft of the idle gate: beta, then reverse (powerplant.ts C208_BETA).
+    reverse: true,
   },
   assists: {
     axes: {

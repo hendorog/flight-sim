@@ -135,7 +135,7 @@ export const C208_GEOMETRY: AircraftGeometry = {
     retractable: false,
   },
 
-  // --- Propeller (Hartzell three-blade 106 in, constant speed, full feathering, reversible; clockwise from the cockpit) ---
+  // --- Propeller (McCauley 3GFR34C703 three-blade 106 in (TCDS IM.A.226 sect. 6.2), constant speed, full feathering, reversible; clockwise from the cockpit) ---
   propellers: [{ hub: { x: 3.75, y: 0, z: T }, diameter: 106 * 0.0254, blades: 3, rotation: 1 }],
 
   // ESTIMATE, from the static contact points above: the thrust line 1.68 m above the ground.

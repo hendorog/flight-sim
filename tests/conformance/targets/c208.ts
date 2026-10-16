@@ -6,6 +6,7 @@
 // Weak data are marked: no engineering data sheet exists for this type yet, and some POH figures are recalled
 // from the published brochure tables rather than read off the charts.
 
+import { C208_BETA } from '../../../src/aircraft/c208/powerplant';
 import type { ConformanceTargets } from '../targets';
 import { band, below, pct, range } from '../targets';
 
@@ -44,8 +45,10 @@ export const C208_TARGETS: ConformanceTargets = {
   // POH sect. 5 (8000 lb, sea level, ISA, flaps 20): ground roll 970 ft, the chart's short-field technique (lift-off
   // about 70 KIAS: rotated at 65, as the other types' targets rotate a little below the published Vr).
   takeoff: { flapDeg: 20, rotateKias: 65, pitchDeg: 8, staticRunUp: true, throttle: TORQUE_LIMIT_LEVER, groundRollM: pct(296, 15, 'POH sect. 5: ground roll 970 ft') },
-  // POH sect. 5 (7800 lb, flaps FULL, 78 KIAS, maximum braking, no reverse): ground roll 715 ft.
-  landing: { flapDeg: 30, approachKt: 78, touchdownPitchDeg: 5, groundRollM: pct(218, 20, 'POH sect. 5: ground roll 715 ft (beta, no reverse)', 'C208-beta') },
+  // POH sect. 5 (7800 lb, flaps FULL, 78 KIAS, maximum braking, no reverse): ground roll 715 ft. The chart's
+  // technique is "beta, no reverse": the power lever aft of the gate to ground fine on the roll (the end of the
+  // pitch-only travel, C208_BETA.pitchOnlyTravel), Ng at idle.
+  landing: { flapDeg: 30, approachKt: 78, touchdownPitchDeg: 5, reverse: C208_BETA.pitchOnlyTravel, groundRollM: pct(218, 20, 'POH sect. 5: ground roll 715 ft (beta, no reverse)') },
   glide: {
     range: { fromKt: 90, toKt: 140 },
     propeller: 'feathered',
@@ -80,9 +83,10 @@ export const C208_TARGETS: ConformanceTargets = {
   },
   ground: {
     restHeightM: band(1.905, 0.03, 'geometry.restHeight; contract 5 intro (3 cm)'),
-    // Power-turbine rpm at HIGH IDLE on the ground (the definition's default condition lever): the propeller at
-    // about 900-1200 rpm.
-    idleRpm: range(15_500, 21_000, 'HIGH IDLE on the ground: Np about 900-1200'),
+    // Power-turbine rpm at HIGH IDLE on the ground (the definition's default condition lever), the power lever on
+    // the idle gate: the propeller at about 900-1200 rpm. The Ng is the POH's (high idle 65 %); the Np band is an
+    // ESTIMATE (no handbook figure in hand), the same as the idle-taxi case "on the gate, HIGH IDLE" below.
+    idleRpm: range(15_500, 21_000, 'POH sect. 7: HIGH IDLE 65 % Ng; Np about 900-1200 (ESTIMATE)'),
     parkedDriftMm: below(5, 'contract 3.10 generic block'),
     parkedRateDegS: below(0.05, 'contract 3.10 generic block'),
     taxi: {
@@ -93,6 +97,27 @@ export const C208_TARGETS: ConformanceTargets = {
       radiusM: range(9, 25, 'pedal steering +/-15 deg (POH sect. 7)'),
       maxYawAccelDegS2: below(5, 'contract 3.10 generic block'),
     },
+    // The power lever's positions on the ground with Ng at idle (plan 4, T1b): on the gate the propeller sits on the
+    // low-pitch stop and pulls; aft of the gate the beta valve flattens the blades to ground fine, where it makes
+    // about no thrust. The gate at LOW IDLE (a steady unbraked 15-30 kt) and half the pitch-only travel (8-12 kt)
+    // take longer to settle than this block rolls: they are type items in c208.test.ts.
+    idleTaxi: [
+      {
+        label: 'on the gate, HIGH IDLE',
+        reverse: 0,
+        condition: 1,
+        idleNp: range(900, 1200, 'HIGH IDLE on the ground: Np about 900-1200 (ESTIMATE, as ground.idleRpm)'),
+        idleNgPct: band(65, 1, 'POH sect. 7: HIGH IDLE 65 % Ng'),
+      },
+      {
+        label: 'ground fine, LOW IDLE',
+        reverse: C208_BETA.pitchOnlyTravel,
+        condition: 0.1,
+        staticThrustN: range(-500, 500, 'ground fine: about zero static thrust (plan 4 item b, ESTIMATE)'),
+        idleTaxiKt: range(-1, 5, 'held in ground fine the aircraft barely moves (plan 4 item b, ESTIMATE)'),
+        idleNgPct: band(52, 1, 'TCDS IM.A.226 sect. 5.3: idle 52 % Ng minimum (LOW IDLE)'),
+      },
+    ],
   },
   yaw: {
     ftAboveField: 3000,
@@ -119,3 +144,29 @@ export const C208_TAKEOFF_LIMITS = {
   ng: below(101.6, 'POH sect. 2: 101.6 % maximum'),
   np: range(1850, 1950, 'POH sect. 2: 1900 rpm'),
 };
+
+/**
+ * The power lever's positions on the ground at LOW IDLE that settle slower than the suite's idle-taxi block rolls
+ * (c208.test.ts; plan 4, T1b items a and c). On the gate the propeller on its low-pitch stop pulls the aircraft to a
+ * brisk taxi, which is why the POH taxies it in beta; halfway through the pitch-only travel it should be a walking
+ * taxi. Both bands are ESTIMATES. Half travel is held open: with the blade angle linear in the lever, 5 deg of blade
+ * makes as much static thrust as the low-pitch stop (requests.ts 'C208-beta-cam').
+ */
+export const C208_BETA_TAXI = [
+  {
+    label: 'on the gate',
+    reverse: 0,
+    speedKt: range(15, 30, 'on the gate at LOW IDLE the Caravan runs away and is taxied in beta (plan 4 item a, ESTIMATE)'),
+    thrustN: range(1000, 2500, 'enough to break away and accelerate (ESTIMATE)'),
+    np: range(600, 1000, 'below HIGH IDLE (900-1200): LOW IDLE 52 % Ng on the low-pitch stop (ESTIMATE)'),
+    settled: range(1, 1, 'measure.ts idleTaxi steady'),
+  },
+  {
+    label: 'half the pitch-only travel',
+    reverse: C208_BETA.pitchOnlyTravel / 2,
+    speedKt: range(8, 12, 'halfway into beta: a walking taxi (plan 4 item c, ESTIMATE)', 'C208-beta-cam'),
+    thrustN: range(500, 1200, 'between ground fine and the gate (ESTIMATE)', 'C208-beta-cam'),
+    np: range(600, 1700, 'between the gate and ground fine; under 95 % Np, the beta topping (ESTIMATE)'),
+    settled: range(1, 1, 'measure.ts idleTaxi steady', 'C208-beta-cam'),
+  },
+] as const;

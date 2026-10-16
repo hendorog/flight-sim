@@ -8,12 +8,13 @@
 // STARTER switch is S (held), the IGNITION switch the magneto keys (1 = OFF, 4 = NORM), FUEL BOOST is J, the
 // two tank selectors Shift+J, the generator Shift+W. The start is the PT6 start of POH sect. 4: starter on with
 // the condition lever at CUT-OFF, fuel at 13 % Ng, watch the ITT (1090 C for 2 s at most), starter off at 50 %.
+// Aft of the idle gate the power lever is ControlInputs.reverse (Shift+F2 / Shift+Page Down): BETA, then REVERSE.
 
 import { RAD } from '../../core/math';
 import { engineControl, PROP_FEATHER_GATE, type ControlInputs, type FuelSelector } from '../../core/types';
 import { CUTOFF_BELOW } from '../../physics/propulsion/turbineEngine';
 import type { UiProfile } from '../types';
-import { PT6A_114A } from './powerplant';
+import { C208_BETA, PT6A_114A } from './powerplant';
 
 /** Condition lever: from CUT-OFF up to this it reads LOW IDLE (the gate just above CUT-OFF). */
 const LOW_IDLE_TOP = CUTOFF_BELOW + 0.1;
@@ -47,6 +48,13 @@ const STARTUP_STEPS: readonly [string, string][] = [
 
 const onOff = (b: boolean): string => (b ? 'ON' : 'OFF');
 const percent = (v: number): string => `${Math.round(v * 100)}%`;
+
+/** The power lever as its quadrant is lettered: aft of the gate BETA (blades only, Ng at idle), then REVERSE. */
+function powerLabel(c: ControlInputs): string {
+  const r = c.reverse ?? 0;
+  if (r > 0) return r <= C208_BETA.pitchOnlyTravel + 1e-6 ? 'BETA' : 'REV';
+  return c.throttle <= POWER_IDLE_MAX ? 'IDLE' : percent(c.throttle);
+}
 
 /** The condition lever's position as its quadrant is lettered. */
 function conditionLabel(m: number): string {
@@ -89,7 +97,7 @@ export const C208_UI: UiProfile = {
   ],
   hud: {
     levers: [
-      { label: 'PWR', read: (c) => c.throttle, text: (c) => (c.throttle <= POWER_IDLE_MAX ? 'IDLE' : percent(c.throttle)) },
+      { label: 'PWR', read: (c) => c.throttle, text: powerLabel },
       { label: 'PROP', read: (c) => c.propeller, text: propLabel },
       { label: 'COND', read: (c) => c.mixture, text: (c) => conditionLabel(c.mixture), style: 'mixture' },
       // The bar is the selector, the number the flap angle reached.
@@ -115,6 +123,7 @@ export const C208_UI: UiProfile = {
   },
   hints: [
     ['Power lever', 'F1 idle · F2 / F3 (Page Down / Up) less / more · F4 full; set torque, keep ITT and Ng in the green'],
+    ['Beta and reverse', 'on the ground only: hold Shift+F2 to the idle gate, let go, hold it again: BETA (blades only, taxi speed), then REVERSE · F3 back to the gate · F1 idle on the gate'],
     ['Propeller lever', '; lower rpm · Shift+; higher rpm (1600-1900) · Shift+F feathers'],
     ['Condition lever', 'M / Shift+M: CUT-OFF (shuts the engine down), LOW IDLE, HIGH IDLE'],
     ['Starter and ignition', 'S held: STARTER · 1 IGNITION NORM, 4 ON (continuous) · a dry motoring run: STARTER with the condition lever at CUT-OFF'],
