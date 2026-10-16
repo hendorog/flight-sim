@@ -59,7 +59,8 @@ export const PC12_TARGETS: ConformanceTargets = {
   // 47E-PROXY Fig 5-2-52 (flaps 40) read at SL ISA, 9921 lb (its weight reference line), zero wind and slope: 1275 ft
   // CHART-READ +/-100 ft. Its associated conditions: "average braking technique, ground idle after touch down" (the PCL
   // at IDLE on the gate, the condition lever to GROUND IDLE): brake 0.4 of full (AGENT reading of "average", set at
-  // MLW: 0.5 rolled 322 m, 0.4 385 m, 0.35 428 m; the model's brakes may be strong rather than the pilot light). Vref 85
+  // MLW with 3200 N m brakes: 0.5 rolled 322 m, 0.4 385 m, 0.35 428 m; the model's brakes may be strong rather than
+  // the pilot light). Gate: the brakes went to 2400 N m (gear.ts), the reading kept as the same torque, 1280 N m. Vref 85
   // KIAS. The generic roll (measure.ts landingRoll, at MLW) moves the condition lever to GROUND IDLE at touchdown
   // (rollCondition; at FLIGHT IDLE its 66 % Ng pulls about 5 kN at a standstill on the stop); pc12.test.ts flies the
   // same technique at the chart's weight (MLW) against the same bands.
@@ -67,7 +68,7 @@ export const PC12_TARGETS: ConformanceTargets = {
     flapDeg: 40,
     approachKt: 86,
     touchdownPitchDeg: 5,
-    brake: 0.4,
+    brake: 1280 / 2400,
     groundRollM: band(389, 30, '47E-PROXY Fig 5-2-52 CHART-READ: 1275 ft +/-100 at SL ISA, 9921 lb, average braking, ground idle after touchdown'),
     reverse: 0,
     rollCondition: PC12_GROUND_IDLE,

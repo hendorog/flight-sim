@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Usage: node scripts/check-keys.mjs <outDir>
+// Usage: node scripts/check-keys.mjs [outDir]   (default shots/final/check-keys)
 // Real-key-event check of the keyboard controls in the real app (cruise scenario): the yoke and rudder keys hold
 // their position after release, 5 / Num 5 recentre, F2 / F3 step the throttle, F5 / F6 the flaps, the old flap
 // keys (F, V, [ ]) do nothing, and F5 with the menu open does not reload the page. Then the Caravan on the runway: the
@@ -10,11 +10,13 @@
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import net from 'node:net';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
-const out = process.argv[2];
+// Without an argument the output goes under shots/ (git-ignored), never to a stray directory in the tree.
+const out = process.argv[2] ?? `${root}/shots/final/check-keys`;
+mkdirSync(out, { recursive: true });
 const port = await new Promise((res) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 const server = await createServer({ root, logLevel: 'error', server: { port, strictPort: true, host: '127.0.0.1', hmr: false, watch: null } });
 await server.listen();

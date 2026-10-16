@@ -82,7 +82,8 @@ export const PC12_SIM: SimProfile = {
     // The climb-out at 105 KIAS with flaps 15 (AGENT: the speed hold takes over from the lift-off attitude at about 95
     // KIAS; a hand-over to Vy, 35 kt faster, pushed the nose through the horizon at 30 m), at the maximum-continuous
     // torque.
-    climb: { kias: 105, vsLimit: 4, throttle: PC12_CLIMB_LEVER },
+    // Flaps up above 100 KIAS (47E-PROXY 4.2), then the clean climb at Vy 130.
+    climb: { kias: 105, vsLimit: 4, throttle: PC12_CLIMB_LEVER, flapsUp: { kias: PC12_FLAPS_UP_ABOVE_KIAS, climbKias: PC12_REFERENCE.vy } },
     hold: { minKias: PC12_FLAPS_UP_ABOVE_KIAS + 10, maxBankDeg: 25, vsLimit: 4 },
     // Flaps 40 at 85-90 KIAS: a small flare, mains first at about 75 KIAS.
     flare: { minHeightM: 7, timeS: 4, pitchRiseDeg: 7, maxPitchDeg: 7 },
@@ -92,9 +93,9 @@ export const PC12_SIM: SimProfile = {
     centreline: { headingGain: 4, yawRateGain: 1.5, lookAheadM: 90 },
     phaseControls: {
       takeoff: { mixture: PC12_FLIGHT_IDLE, rudderTrim: TAKEOFF_RUDDER_TRIM },
-      climb: { mixture: PC12_FLIGHT_IDLE },
+      climb: { mixture: PC12_FLIGHT_IDLE, gearLever: 'up' },
       cruise: { mixture: PC12_FLIGHT_IDLE },
-      approach: { mixture: PC12_FLIGHT_IDLE },
+      approach: { mixture: PC12_FLIGHT_IDLE, gearLever: 'down' },
       rollout: { mixture: PC12_FLIGHT_IDLE },
     },
   },

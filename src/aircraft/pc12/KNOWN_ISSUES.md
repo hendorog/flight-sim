@@ -33,6 +33,23 @@ Evidence: [conformance test](../../../tests/conformance/pc12.test.ts) (flown tie
 `KEYBOARD_PILOT_TARGETS`.
 Close with: a condition-lever detent key (GROUND IDLE) and a round-out that does not depend on the flare height.
 
+Gate 0 (browser, `fly-keyboard.mjs pc12`, default weather 6 kt from 100 deg): climb 130.3-134.4 KIAS, downwind flaps 15
+at 123.4-130.9 KIAS (0.9 kt over the 120-130 band at the top), take-off torque 44 psi, touchdown 75.1 KIAS 360 m past the
+threshold, beta 0.462 below 60 KIAS (ground fine 0.45), stopped after 268 m, 1.8 m off the centreline. The roll-out
+heading wandered +9 / -8 deg while the brakes were on (the pilot's rudder law against the braked mains). Before the
+gate's brake change (below) the same roll-out swung 33 deg right with the rudder at -0.9 and stopped 8 m off.
+
+## Brakes — **estimate; changed at gate 0**
+
+Full pedal was 3200 N m a wheel (0.45 g at MLW). With the wing still lifting at 60 KIAS that locked both mains
+(no anti-skid), and a locked main has no cornering force: in the default 6 kt crosswind a braked stop from 60 KIAS
+swung 20-35 deg against full rudder (headless probe, an ideal rudder: 19.5 deg). At 2400 N m (about 0.34 g, ESTIMATE)
+the same stop holds the heading within 2 deg. The chart landing block keeps the same torque as before (1280 N m, now
+`brake` 0.533; the reading of "average braking" is unchanged), so its 385 m roll and the 0.75 reverse ratio did not move.
+The model's mains still lock briefly at full pedal; no anti-skid and no tyre-skid feel are modelled.
+Evidence: [gear.ts](gear.ts), [targets](../../../tests/conformance/targets/pc12.ts).
+Close with: a /47 brake capacity figure or a measured maximum deceleration.
+
 ## Landing roll in the generic block — **closed (integration)**
 
 The generic landing roll (tests/fdm/measure.ts `landingRoll`) now moves the condition lever to GROUND IDLE at

@@ -144,7 +144,7 @@ Measured on the conformance suite (FS_AIRCRAFT=pc12; `node scripts/aircraft-repo
 | Climb at MCP (36.95 psi), SL ISA, MTOW | 1525 ft/min at Vy 121 KIAS | 1650 ± 20 %, Vy 130 ± 10 (ESTIMATE / 47E 4.2) |
 | Maximum cruise rows | see the powerplant table | |
 | Glide, feathered | L/D 15.6 at 119 KIAS (best) | 15.8 ± 1.5, 119 ± 10 KIAS (DERIVED 47E) |
-| Landing roll, MLW 4500 kg, flaps 40, chart technique (brakes 0.4, ground idle after touchdown) | 385 m on the gate, 290 m in full reverse, ratio 0.75 (brakes 0.5: 322 m) | 389 m ± 30 (CHART-READ Fig 5-2-52); 280 ± 35; 0.72 ± 0.08 (DERIVED Fig 5-2-54) |
+| Landing roll, MLW 4500 kg, flaps 40, chart technique (brakes 1280 N m a wheel: 0.4 of the original 3200 N m, 0.533 of the gate-0 2400 N m; ground idle after touchdown) | 385 m on the gate, 290 m in full reverse, ratio 0.75 (1600 N m: 322 m) | 389 m ± 30 (CHART-READ Fig 5-2-52); 280 ± 35; 0.72 ± 0.08 (DERIVED Fig 5-2-54) |
 | (a) gate, ground idle | Np 1057 rpm, Ng 54.9 %, ITT 534 °C; 20.7 kt steady | 1060 ± 60, 50.7–61.4 %, ≤ 750 °C; 15–30 kt |
 | (b) ground fine | +216 N static, 0 kt | \|T\| < 500 N, ≤ 5 kt |
 | (c) half of the pitch-only travel | 8.2 kt steady | 8–12 kt |

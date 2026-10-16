@@ -391,6 +391,12 @@ export class Autoflight {
         if (plan.kind === 'takeoff') {
           setAllThrottles(c, p.climb.throttle ?? 1);
           ap.settings.heading = this.climbOutHeading(s, plan.heading);
+          const fu = p.climb.flapsUp;
+          if (fu) {
+            if (c.flaps > 0 && s.ias / KT > fu.kias) c.flaps = 0;
+            // Clean: accelerate to the clean climb speed gently (0.5 kt/s), a pilot lowering the nose a little.
+            if (c.flaps === 0) ap.settings.airspeed = Math.min(fu.climbKias * KT, ap.settings.airspeed + 0.5 * KT * dt);
+          }
           if (s.altitudeMSL > plan.climbTo - 30) this.enterCruise(plan.heading, plan.climbTo, plan.cruiseKias, s, c);
         }
         break;

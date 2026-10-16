@@ -41,7 +41,7 @@ from that run:
 | Push at 1 kt/s, flaps 40: nose drop / height lost / pushes | 17.2° / 144 ft / 1 | 8-20° / < 300 ft / 1 | 47E-PROXY 5 p. 329 |
 | Take-off roll, flaps 15, rotate 80 KIAS | 489 m | 518 ± 15 % | 47E-PROXY Fig 5-2-12 CHART-READ |
 | Take-off, rudder trim 0: peak heading error / pedal | 3.2° / 0.50 | < 5° / < 0.6 | AGENT |
-| Landing roll at MLW, flaps 40, brakes 0.4, GROUND IDLE after touchdown, on the gate | 385 m | 389 ± 30 | 47E-PROXY Fig 5-2-52 CHART-READ |
+| Landing roll at MLW, flaps 40, brakes 1280 N m (0.4 of the original 3200, 0.533 of the gate-0 2400), GROUND IDLE after touchdown, on the gate | 385 m | 389 ± 30 | 47E-PROXY Fig 5-2-52 CHART-READ |
 | — in full reverse, back to the gate below 40 KIAS | 291 m | 280 ± 35 | DERIVED (0.72 × 389) |
 | — ratio | 0.75 | 0.72 ± 0.08 | DERIVED from the 47E-PROXY example |
 | Approach at Vref 85 KIAS, flaps 40, 3°, MLW: torque | 13.5 psi | 8-18 | ESTIMATE |

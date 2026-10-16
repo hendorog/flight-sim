@@ -93,8 +93,11 @@ function main(name: 'left' | 'right'): WheelConfig {
     tyre: tyre(G.gear.mainWheelRadius, 1.2),
     steering: null,
     brake: name,
-    // Multi-piston steel brakes (47E 7-4): about 0.4 g on a dry runway at the landing weight.
-    maxBrakeTorque: 3200,
+    // Multi-piston steel brakes (47E 7-4), no anti-skid (ESTIMATE): about 0.34 g at full pedal at the landing weight.
+    // Gate: 3200 N m (0.45 g) locked both mains at full pedal from 60 KIAS (the wing still lifting), and with the
+    // cornering force gone the default 6 kt crosswind swung the aircraft 20-35 deg against full rudder; at 2400 the
+    // same stop holds the heading within 2 deg (work/pcmd gate-0 brake probe).
+    maxBrakeTorque: 2400,
     // About 3.5 g on one leg's axial share.
     limitLoad: 75e3,
     stowed: { ...stowed, y: side * Math.abs(stowed.y) },

@@ -387,6 +387,12 @@ export interface AutoflightProfile {
     kias: number; vsLimit: number;
     /** Throttle / power lever held through the climb phase. Absent: 1 (today). DA42: 0.92. */
     throttle?: number;
+    /**
+     * Flaps up in the climb once the IAS passes `kias`, then the climb at `climbKias` (clean). Absent: the take-off
+     * flaps stay set through the climb (today). PC-12: flaps 15 up above 100 KIAS, then the
+     * speed target rises at 0.5 kt/s to Vy 130.
+     */
+    flapsUp?: { kias: number; climbKias: number };
   };
   hold: { minKias: number; maxBankDeg: number; vsLimit: number };
   flare: { minHeightM: number; timeS: number; pitchRiseDeg: number; maxPitchDeg: number };
