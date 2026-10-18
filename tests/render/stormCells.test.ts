@@ -197,6 +197,14 @@ describe('stormTau', () => {
     stormTau([g], 1, camera, g.x, g.base + 300, g.z, tau);
     expect(tau.cloud).toBeGreaterThan(10);
   });
+
+  it('gives the same depth with a second cell whose bound the ray misses', () => {
+    const far = cellGeometry(cell({ motionKt: 0, northM: -60_000 }), defaultWeather(), 0, makeCellGeometry());
+    stormTau([g], 1, camera, g.x, g.base - 300, g.z, tau);
+    const one = { ...tau };
+    stormTau([far, g], 2, camera, g.x, g.base - 300, g.z, tau);
+    expect(tau).toEqual(one);
+  });
 });
 
 /** The part of a WebGLRenderer the full-screen passes use: counts the draws. */

@@ -28,21 +28,26 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
     lit, emits the `lightning` event and writes `ctx.weatherFx.flash`. Its `active` advances the strike schedule; it
     is skipped while no flash is lit.
     - Cloud-to-ground channel (`boltGeometry.ts` `boltPath`, `boltBranches`): 32 segments from 3000 m above the base
-      to the ground point, the top moved sideways by up to `BOLT_SLANT` 0.3 of the height, and 2 to 4 side branches
+      to the ground point, the top moved sideways by up to `BOLT_SLANT` 0.3 of the height and pulled in to at most
+      `BOLT_TOP_MAX_R` 0.5 of the core radius from the cell's centre (unconfirmed), and 2 to 4 side branches
       of 8 segments rooted on the channel below the base, all seeded by the strike id. Drawn per pixel as a
       Gaussian core of radius `BOLT_CORE_PX` 0.7 px and a halo of `BOLT_HALO_SHARE` 0.05 of the core falling off
-      over `BOLT_HALO_PX` 2.5 px. The core radiance is the lower of `BOLT_RADIANCE` 1e5 scene units and
+      over `BOLT_HALO_PX` 2.5 px; these widths are CSS pixels (render-buffer pixels divided by the ratio of the
+      render width to the canvas's CSS width, at least 1). The core radiance is the lower of `BOLT_RADIANCE` 1e5 scene units and
       `BOLT_CORE_EXPOSED` 64 in the tone map's input units at the last frame's adaptation. The channel follows the
       stroke envelope (`flashEnvelope`); the branches follow the first stroke only, at `BRANCH_SHARE` 0.6, fading to
       `BRANCH_TIP` 0.1 at the tip. All are unconfirmed look values.
     - Channel occlusion: the scene depth; the cumulus layer's front (hidden behind a front with transmittance below
       0.9); the storm cells by the optical depth from the camera to each channel point, integrated on the CPU over
-      the cells' density at mean noise (`stormTau`). Cloud optical depth dims the channel by exp(-tau), so the part
+      the cells' density at mean noise (`stormTau`, which skips a cell whose bounding circle the ray's ground track
+      misses). Cloud optical depth dims the channel by exp(-tau), so the part
       inside the cloud is not drawn. Rain dims it by exp(-0.5 tau) (`RAIN_DIFFRACTION_SHARE`, unconfirmed).
     - Intracloud strikes draw no channel. They light the storm cloud in full and send `FLASH_IC_OUTSIDE` 0.15 of
       their light to surfaces and the cumulus (unconfirmed).
-    - Cloud light of a flash: compressed to L / sqrt(1 + L / Lmax), Lmax = `FLASH_CLOUD_MAX` 6 times a white
-      surface under the light before the flash (unconfirmed).
+    - Cloud light of a flash: reduced by the factor 1 / sqrt(1 + L / Lmax), Lmax = `FLASH_CLOUD_MAX` 6 times a
+      white surface under the light before the flash; once the eye adaptation is known, the result L' is reduced
+      again by 1 / (1 + L' / Lc), Lc = `FLASH_CLOUD_EXPOSED_MAX` 8 in the tone map's input units at the last
+      frame's adaptation, so the lit cloud stays below the channel core's 64 (both unconfirmed).
 - Thunder: `src/audio/thunder.ts`, scheduled by `AudioSystem` on the `lightning` event; no sound beyond
   `THUNDER_MAX_DISTANCE_M` 20 km.
 - Physics (`src/physics/weather/convection.ts`, `windField.ts`, `src/physics/environment.ts`): updraft, downdraft
@@ -216,6 +221,9 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   console errors or warnings at `tod=13`, `19.2` and `23`. The eye adaptation's target (log2 scene units) was
   -11.65 with no flash and -10.67 with the cloud-to-ground flash held at `tod=23` (+0.98 EV), and -10.98 with the
   intracloud flash held (+0.67 EV).
+- Same page and views after `FLASH_CLOUD_EXPOSED_MAX` was added, 2026-10-18: at `tod=23` the rain shaft under the
+  base at 230 px from the top read RGB 199, 205, 214 with the cell 10 km north (207, 213, 220 before) and 180, 188,
+  199 with the cell 23 km away (213, 219, 226 before). No console errors or warnings.
 - Same page at 320x180, `q=low`, `tod=23`, clock running: SwiftShader drew about 1 frame per second, so each frame
   advanced `simTime` by 0.1 s and the adaptation by 0.25 s. After one injected and one scheduled cloud-to-ground
   strike (sim time 0.97 s and 1.67 s), the adapted level peaked 0.51 EV over its level before the strikes and was

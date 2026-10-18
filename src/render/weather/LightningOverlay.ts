@@ -20,11 +20,15 @@
 //                                  g = FLASH_CLOUD_GAIN, h = exp(-hazeExtinction front), E' softened by
 //                                  FLASH_CLOUD_SOFTEN_M; the sum L of the two is compressed to L / sqrt(1 + L /
 //                                  Lmax), Lmax = FLASH_CLOUD_MAX A / pi (FLASH_CLOUD_MAX times a white surface
-//                                  under A): unchanged by day, at night the square root of L above Lmax
+//                                  under A; for L above Lmax it grows as sqrt(L Lmax)); once the eye's adaptation
+//                                  is known, that result L' is reduced again to L' / (1 + L' / Lc), Lc =
+//                                  FLASH_CLOUD_EXPOSED_MAX / sceneExposure(), so the lit cloud stays below
+//                                  FLASH_CLOUD_EXPOSED_MAX in exposed units, under the channel's core
 // A cloud-to-ground strike also draws its channel (boltGeometry.ts: the BOLT_SEGMENTS segments of its path, its top
-// moved sideways by up to BOLT_SLANT of its height, and up to BOLT_MAX_BRANCHES side branches of BRANCH_SEGMENTS
+// moved sideways by up to BOLT_SLANT of its height and kept within BOLT_TOP_MAX_R of the core radius from the
+// cell's centre, and up to BOLT_MAX_BRANCHES side branches of BRANCH_SEGMENTS
 // segments rooted below the cloud base, projected on the CPU). Per pixel, at the distance r (px) to the nearest
-// segment: a core Lc exp(-r^2 / (2 BOLT_CORE_PX^2)) and a halo BOLT_HALO_SHARE Lc exp(-r / BOLT_HALO_PX), with Lc =
+// segment (in CSS pixels: render-buffer pixels / uPxScale): a core Lc exp(-r^2 / (2 BOLT_CORE_PX^2)) and a halo BOLT_HALO_SHARE Lc exp(-r / BOLT_HALO_PX), with Lc =
 // min(BOLT_RADIANCE, BOLT_CORE_EXPOSED / sceneExposure()) (the eye's adaptation of the last frame, shared through
 // Atmosphere.exposureUniforms; BOLT_RADIANCE before the first adaptation: a white core whose halo stays a few pixels
 // wide at night) x the stroke envelope (flashEnvelope) on the channel and BRANCH_SHARE x the first stroke's envelope on the branches (the later
@@ -75,6 +79,12 @@ export const FLASH_SURFACE_MAX = 8;
  * many times this; compressed, the lit cloud keeps a gradient instead of a white frame).
  */
 export const FLASH_CLOUD_MAX = 6;
+/**
+ * Radiance in the tone map's input (exposed) units that the cloud light of a flash approaches and stays below once
+ * the eye's adaptation is known (display white is about 16 there, the channel's core BOLT_CORE_EXPOSED). Unconfirmed:
+ * a look value.
+ */
+export const FLASH_CLOUD_EXPOSED_MAX = 8;
 /** Share of an intracloud flash's light that reaches the surfaces and the cumulus. Unconfirmed: a look value. */
 export const FLASH_IC_OUTSIDE = 0.15;
 /**
@@ -83,18 +93,23 @@ export const FLASH_IC_OUTSIDE = 0.15;
  */
 export const BOLT_RADIANCE = 1e5;
 export const BOLT_CORE_EXPOSED = 64;
-/** Gaussian radius of the core, px (about 1.6 px across at half its peak). Unconfirmed: a look value. */
+/** Gaussian radius of the core, CSS px (about 1.6 px across at half its peak). Unconfirmed: a look value. */
 export const BOLT_CORE_PX = 0.7;
-/** The halo's radiance as a share of the core's, and its falloff length, px. Unconfirmed: look values. */
+/** The halo's radiance as a share of the core's, and its falloff length, CSS px. Unconfirmed: look values. */
 export const BOLT_HALO_SHARE = 0.05;
 export const BOLT_HALO_PX = 2.5;
-/** Distance from the channel beyond which neither is drawn, px. */
+/** Distance from the channel beyond which neither is drawn, CSS px. */
 export const BOLT_MAX_PX = 10;
 /** Brightness of a branch's root relative to the channel, and of its tip relative to its root. Unconfirmed: look values. */
 export const BRANCH_SHARE = 0.6;
 export const BRANCH_TIP = 0.1;
 /** Largest sideways offset of the channel's top from its ground point, as a share of its height. Unconfirmed: a look value. */
 export const BOLT_SLANT = 0.3;
+/**
+ * Largest horizontal distance of the channel's top from the cell's centre, as a share of its core radius (the top is
+ * pulled in to it), so the upper channel stays inside the core, where stormTau hides it. Unconfirmed: a look value.
+ */
+export const BOLT_TOP_MAX_R = 0.5;
 /**
  * Share of the rain's extinction that is diffraction, kept in the channel's image: drops of about 1 mm diffract
  * within about lambda / d = 5e-4 rad, under a pixel. 0.5 is the large-particle limit (extinction efficiency 2, half
@@ -179,9 +194,14 @@ function stormSigma(cells: readonly CellGeometry[], count: number, x: number, y:
 
 const _sigma = { cloud: 0, rain: 0 };
 
+const _hit: CellGeometry[] = [];
+
 /**
  * Optical depth of the cells' cloud (out.cloud) and rain (out.rain) from `from` to (x, y, z), by the midpoint rule:
- * STORM_TAU_STEPS steps up to STORM_TAU_END_M before the point and STORM_TAU_END_STEPS over the rest.
+ * STORM_TAU_STEPS steps up to STORM_TAU_END_M before the point and STORM_TAU_END_STEPS over the rest. Cells whose
+ * bounding circle (boundX, boundZ, boundRadius; the density is 0 outside it) the ray's ground track misses are
+ * skipped. At 32 steps a ray of tens of km takes steps of several hundred metres, about the rain shaft's radius,
+ * so the rain's optical depth is coarse (it enters the channel's weight as exp(-0.5 tau)).
  */
 export function stormTau(cells: readonly CellGeometry[], count: number, from: THREE.Vector3, x: number, y: number, z: number, out: { cloud: number; rain: number }): void {
   out.cloud = 0;
@@ -190,13 +210,24 @@ export function stormTau(cells: readonly CellGeometry[], count: number, from: TH
   const dx = x - from.x, dy = y - from.y, dz = z - from.z;
   const len = Math.hypot(dx, dy, dz);
   if (len <= 0) return;
+  _hit.length = 0;
+  const h2 = dx * dx + dz * dz;
+  for (let i = 0; i < count; i++) {
+    const g = cells[i];
+    const ox = g.boundX - from.x, oz = g.boundZ - from.z;
+    const t = h2 > 0 ? Math.min(1, Math.max(0, (ox * dx + oz * dz) / h2)) : 0;
+    if (Math.hypot(ox - t * dx, oz - t * dz) <= g.boundRadius) _hit.push(g);
+  }
+  if (_hit.length === 0) return;
+  const hit = _hit;
+  const n = hit.length;
   const split = Math.max(0, len - STORM_TAU_END_M) / len;
   const part = (s0: number, s1: number, steps: number): void => {
     const ds = (s1 - s0) / steps;
     if (ds <= 0) return;
     for (let k = 0; k < steps; k++) {
       const s = s0 + (k + 0.5) * ds;
-      stormSigma(cells, count, from.x + dx * s, from.y + dy * s, from.z + dz * s, _sigma);
+      stormSigma(hit, n, from.x + dx * s, from.y + dy * s, from.z + dz * s, _sigma);
       out.cloud += _sigma.cloud * ds * len;
       out.rain += _sigma.rain * ds * len;
     }
@@ -221,7 +252,7 @@ uniform sampler2D uCbDist;
 uniform sampler2D uCbTrans;
 uniform float uHasCb;
 uniform vec4 uFlash[${MAX_FLASHES}];   // xyz world, w intensity (scene units x m^2)
-uniform vec4 uFlashOutside;            // per flash: the share of its light outside the storm cloud
+uniform float uFlashOutside[${MAX_FLASHES}]; // per flash: the share of its light outside the storm cloud
 uniform int uFlashCount;
 // Channel and branch points: xy pixel, z distance from the camera m, w weight 0..1 (negative: behind the camera).
 uniform vec4 uBolt[${BOLT_POINTS}];
@@ -231,6 +262,7 @@ uniform float uBranchGain;
 uniform float uExposureValid;
 ${EXPOSURE_GLSL}
 uniform vec2 uFullSize;
+uniform float uPxScale;                // render-buffer pixels per CSS pixel (>= 1)
 uniform float uAmbient;                // the surface's illuminance before the flash, scene units (> 0)
 uniform float uHazeExt;
 
@@ -276,7 +308,7 @@ vec2 boltSegment(vec4 a, vec4 b, vec2 px, float dist, vec2 cu) {
   if (a.w < 0.0 || b.w < 0.0 || a.w + b.w <= 0.0) return vec2(0.0);
   vec2 ab = b.xy - a.xy;
   float h = clamp(dot(px - a.xy, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
-  float r = length(px - a.xy - ab * h);
+  float r = length(px - a.xy - ab * h) / uPxScale;
   if (r > ${BOLT_MAX_PX.toFixed(1)}) return vec2(0.0);
   float z = mix(a.z, b.z, h);
   if (z > dist) return vec2(0.0);
@@ -324,7 +356,9 @@ void main() {
       float nearOut = cu.y <= cb.y ? 1.0 : 0.0;
       vec3 l = cloudLight(dir, near, nearOut) + near.x * cloudLight(dir, far, 1.0 - nearOut);
       float lmax = ${(FLASH_CLOUD_MAX / Math.PI).toFixed(4)} * uAmbient;
-      rgb += l / sqrt(1.0 + dot(l, vec3(0.2126, 0.7152, 0.0722)) / lmax);
+      l /= sqrt(1.0 + dot(l, vec3(0.2126, 0.7152, 0.0722)) / lmax);
+      if (uExposureValid > 0.5) l /= 1.0 + dot(l, vec3(0.2126, 0.7152, 0.0722)) * sceneExposure() / ${FLASH_CLOUD_EXPOSED_MAX.toFixed(1)};
+      rgb += l;
     }
   }
   if (uBoltGain > 0.0) {
@@ -390,7 +424,9 @@ export class LightningOverlay implements SceneEffect {
   private readonly camPos = new THREE.Vector3();
   private readonly fullSize = new THREE.Vector2(1, 1);
   private readonly flashU = Array.from({ length: MAX_FLASHES }, () => new THREE.Vector4());
-  private readonly flashOutside = new THREE.Vector4(1, 1, 1, 1);
+  private readonly flashOutside = new Float32Array(MAX_FLASHES).fill(1);
+  /** The first return stroke of the brightest lit ground strike (flashEnvelope of its branches). */
+  private readonly firstStroke = { tStart: 0, strokes: 1 };
   private readonly boltU = Array.from({ length: BOLT_POINTS }, () => new THREE.Vector4());
   private readonly branchU = Array.from({ length: BOLT_MAX_BRANCHES * BRANCH_POINTS }, () => new THREE.Vector4());
   private readonly tau = { cloud: 0, rain: 0 };
@@ -399,6 +435,7 @@ export class LightningOverlay implements SceneEffect {
   private readonly viewProj = new THREE.Matrix4();
   private readonly v = new THREE.Vector4();
   private readonly tmp = new THREE.Vector3();
+  private readonly size = new THREE.Vector2();
 
   /**
    * `clouds`: the cumulus effect (its reprojection layer gives the cloud front); `storms`: the storm layer of the
@@ -432,6 +469,7 @@ export class LightningOverlay implements SceneEffect {
       uExposureBias: { value: 0 },
       uExposureValid: { value: 0 },
       uFullSize: { value: this.fullSize },
+      uPxScale: { value: 1 },
       uAmbient: { value: 1 },
       uHazeExt: { value: 0 },
     });
@@ -517,7 +555,15 @@ export class LightningOverlay implements SceneEffect {
       const topY = Math.min(g.top, g.base + BOLT_TOP_ABOVE_BASE_M);
       const slant = BOLT_SLANT * hashUnit(SLANT_SEED, s.id, 0) * Math.max(0, topY - groundY);
       const heading = 2 * Math.PI * hashUnit(SLANT_SEED, s.id, 1);
-      boltPath(s.id, { x: x + slant * Math.cos(heading), y: topY, z: z + slant * Math.sin(heading) }, { x, y: groundY, z }, f.bolt);
+      let topX = x + slant * Math.cos(heading);
+      let topZ = z + slant * Math.sin(heading);
+      const fromC = Math.hypot(topX - g.x, topZ - g.z);
+      const maxC = BOLT_TOP_MAX_R * g.radius;
+      if (fromC > maxC) {
+        topX = g.x + (topX - g.x) * (maxC / fromC);
+        topZ = g.z + (topZ - g.z) * (maxC / fromC);
+      }
+      boltPath(s.id, { x: topX, y: topY, z: topZ }, { x, y: groundY, z }, f.bolt);
       f.branchCount = boltBranches(s.id, f.bolt, g.base, f.branches);
       // The channel's light comes out under the base, where the channel leaves the cloud; the thunder's channel
       // runs to its top.
@@ -565,7 +611,7 @@ export class LightningOverlay implements SceneEffect {
       const e = flashEnvelope(f.strike, t) * f.strike.energy;
       if (e < 1e-3) continue;
       const intensity = e * FLASH_INTENSITY_CD * SCENE_UNITS_PER_LUX;
-      this.flashOutside.setComponent(count, f.hasBolt ? 1 : FLASH_IC_OUTSIDE);
+      this.flashOutside[count] = f.hasBolt ? 1 : FLASH_IC_OUTSIDE;
       this.flashU[count++].set(f.x, f.y, f.z, intensity);
       if (intensity > bestE) {
         bestE = intensity;
@@ -574,7 +620,8 @@ export class LightningOverlay implements SceneEffect {
       if (f.hasBolt && e > boltE) {
         boltE = e;
         bolt = i;
-        boltFirst = flashEnvelope({ tStart: f.strike.tStart, strokes: 1 }, t) * f.strike.energy;
+        this.firstStroke.tStart = f.strike.tStart;
+        boltFirst = flashEnvelope(this.firstStroke, t) * f.strike.energy;
       }
     }
     const fx = ctx.weatherFx?.flash;
@@ -615,6 +662,9 @@ export class LightningOverlay implements SceneEffect {
     u.uCbTrans.value = stormOn ? storm.transmittance : null;
     if (stormOn) texelOf(storm.transmittance, u.uCbTexel.value);
     u.uBoltGain.value = bolt >= 0 ? boltE : 0;
+    // Render-buffer pixels per CSS pixel (1 for a renderer without a canvas size, the tests' fake).
+    const cssWidth = typeof renderer.getSize === 'function' ? renderer.getSize(this.size).x : this.width;
+    u.uPxScale.value = Math.max(1, this.width / Math.max(1, cssWidth));
     u.uBranchGain.value = bolt >= 0 ? BRANCH_SHARE * boltFirst : 0;
     const exposure = this.exposureOf(renderer);
     u.tExposure.value = exposure?.tExposure.value ?? null;
