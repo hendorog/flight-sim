@@ -10,9 +10,10 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
 - All four effect factories return an effect on every quality tier, created at boot whether or not the weather
   sets their fields. Each implements `SceneEffect.active` (`src/core/context.ts`); `PostPipeline` skips an effect or
   overlay whose `active(ctx)` returns false without a draw (`renderEffects`), so a frame in `defaultWeather()` draws
-  no full-screen pass for them (storm cells, precipitation and lightning after their first render, which compiles
-  their shaders). The shader warm-up (`Simulator.warmUpShaders`) renders all
-  four regardless, as before. Their GPU cost has not been measured (no GPU on the integration machine).
+  no full-screen pass for them after their first render. Each of the four draws its real material on its first
+  render whatever the weather, so the shader warm-up (`Simulator.warmUpShaders`), which renders all four, compiles
+  their shaders; the fog composite does this from commit 34193ab on (before it, a boot without fog compiled the
+  composite on the first frame with fog). Their GPU cost has not been measured (no GPU on the integration machine).
   - `createStormCellEffect` (`StormCellEffect.ts`): `storms`. A march at `STORM_SCALE` 0.5 resolution with
     `STORM_STEPS` 48 steps, then a depth-aware composite against the cumulus layer. Skipped when no cell is in the
     view frustum.
@@ -26,7 +27,8 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
     the drop's motion in 1/60 s (`STREAK_EXPOSURE_S`), with a width, length and brightness per drop and a fade with
     the shell's radius. Snow draws round flakes 3 to 15 mm across (`SNOWFLAKE_MIN_M`, `SNOWFLAKE_MAX_M`) that sway
     and vary in brightness, streaked over 1/800 s (`SNOW_STREAK_EXPOSURE_S`): 4 mm parked in a 6 kt wind, 6.4 cm at
-    100 kt. The audio parameter `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound.
+    100 kt. The sway and brightness phases use `uTime`, the summed render `dt` in s with no wrap (it wrapped at
+    3600 s before commit 34193ab). The audio parameter `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound.
   - `createLightningOverlay` (`LightningOverlay.ts`): `storms`. Schedules strikes (`src/sim/weather/lightning.ts`
     `strikesBetween`, `FLASH_PER_MIN` 6 per minute at intensity 1, `CG_FRACTION` 0.3), keeps up to `MAX_FLASHES` 4
     lit, emits the `lightning` event and writes `ctx.weatherFx.flash`. Its `active` advances the strike schedule; it
@@ -84,6 +86,14 @@ top, 6000..14000 m MSL; the base is `cloudBaseM`), `intensity` (0..1), `motionDe
 degrees true), `motionKt`, and optional `lightning` (`false` disables flashes; default true). The ranges in this
 paragraph are documented in the type; `stormsOf` does not clamp them. Writers replace the `storms` array and do
 not edit a cell in place.
+
+Clock changes: `SimPhysics.resetTo` (and `reset`, which calls it) restarts the clock at 0 and moves the cells of the
+weather it is given with `weatherPresets.reanchorStorms(w, tOld, tNew)`, so `stormCentreAt(cell, tNew)` after the
+reset equals `stormCentreAt(cell, tOld)` before it. `TrainingSystem` records the clock when it copies the player's
+weather at a lesson start and re-anchors the cells from it when it restores the copy at the lesson end. A snapshot
+restore sets the clock and the weather from the same snapshot and moves no cell. The boot resume restores the
+snapshot weather with `restoreWeather`, so an optional field set by the URL and absent from the snapshot goes back
+to its `NEUTRAL_EXTRAS` value.
 
 ## Accessors (`src/core/weatherFields.ts`)
 
@@ -243,3 +253,13 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   advanced `simTime` by 0.1 s and the adaptation by 0.25 s. After one injected and one scheduled cloud-to-ground
   strike (sim time 0.97 s and 1.67 s), the adapted level peaked 0.51 EV over its level before the strikes and was
   back within 0.1 EV at sim time 2.87 s.
+- `npx vitest run` at commit 34193ab (storm cells re-anchored across clock resets, boot resume through
+  `restoreWeather`, fog composite warm-up, precipitation `uTime` without a wrap), 2026-10-18: 327 files, 4280 tests
+  passed, 13 failed, 318 skipped, in 1654 s on a 4-CPU machine. The 13 failures are in the list recorded at commit
+  2223678: 11 time-outs and the 2 `c172Sim` golden records. `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: 51 of
+  53 pass; the 2 failures are the same `c172Sim` records.
+- Browser check at commit 34193ab, `index.html` on `quality=medium`, Chromium with SwiftShader at 960x540, chase and
+  cockpit view, 2026-10-18: the default weather and `wx=fog`, `drizzle`, `rain`, `snow` and `thunderstorm` reached
+  `__ready` in 184 to 215 s, with no console errors or warnings and an empty `__sim.errors` on every page.
+  `dev/weather.html` at 640x360, `q=medium`, `tod=19.2`, `flash=1`, one cell 10 km north: one cloud-to-ground strike
+  logged (3 strokes), no console errors or warnings.
