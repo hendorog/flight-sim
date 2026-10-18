@@ -1,19 +1,32 @@
 // The storm-cell render (render/weather): the march's step count stays within its cap, the cell geometry follows the
 // cell (motion, clamps, anvil downwind) and its bounding cylinder holds the density's support, and the lightning
-// channel runs from BOLT_TOP_ABOVE_BASE_M above the base to the ground point, the same for the same strike id. The
-// lightning overlay emits one 'lightning' event per scheduled strike, publishes the flash, and copies its input when
+// channel runs from BOLT_TOP_ABOVE_BASE_M above the base to the ground point, the same for the same strike id, with
+// BRANCH_MIN..BOLT_MAX_BRANCHES branches rooted on it under the base; the cells' optical depth seen by the channel
+// (stormTau) is that of the cloud above the base and of the rain below it. The lightning overlay emits one 'lightning' event per scheduled strike, publishes the flash, and copies its input when
 // no flash is lit.
 
 import { describe, expect, it } from 'vitest';
 import { defaultWeather, type StormCell } from '../../src/core/types';
 import { KT } from '../../src/core/math';
-import { BOLT_POINTS, BOLT_ROUGHNESS, BOLT_SEGMENTS, BOLT_TOP_ABOVE_BASE_M, boltPath } from '../../src/render/weather/boltGeometry';
+import {
+  BOLT_MAX_BRANCHES,
+  BOLT_POINTS,
+  BOLT_ROUGHNESS,
+  BOLT_SEGMENTS,
+  BOLT_TOP_ABOVE_BASE_M,
+  BRANCH_LEN_MAX,
+  BRANCH_MIN,
+  BRANCH_POINTS,
+  BRANCH_SEGMENTS,
+  boltBranches,
+  boltPath,
+} from '../../src/render/weather/boltGeometry';
 import { ANVIL_PER_RADIUS, SHAFT_PER_RADIUS, cellGeometry, makeCellGeometry } from '../../src/render/weather/StormCellEffect';
 import { STORM_MARCH_FRAG, STORM_STEPS } from '../../src/render/weather/stormGlsl';
 import * as THREE from 'three';
 import { createEventBus, type SimContext, type SimEvents } from '../../src/core/context';
 import { makeMockEnvironment } from '../../src/core/mockState';
-import { LightningOverlay, MAX_WINDOW_S } from '../../src/render/weather/LightningOverlay';
+import { LightningOverlay, MAX_WINDOW_S, stormTau } from '../../src/render/weather/LightningOverlay';
 import { strikesBetween, type Strike } from '../../src/sim/weather/lightning';
 
 const cell = (o: Partial<StormCell> = {}): StormCell => ({
@@ -122,6 +135,67 @@ describe('boltPath', () => {
       expect(p[3 * i + 1]).toBeGreaterThan(bottom.y - 0.2 * len);
       expect(p[3 * i + 1]).toBeLessThan(top.y + 0.2 * len);
     }
+  });
+});
+
+describe('boltBranches', () => {
+  const base = 1500;
+  const ground = 120;
+  const top = { x: 300, y: base + BOLT_TOP_ABOVE_BASE_M, z: -9000 };
+  const bottom = { x: 300, y: ground, z: -9000 };
+
+  it('roots BRANCH_MIN..BOLT_MAX_BRANCHES branches on the channel under the base, ending above the ground', () => {
+    const counts = new Set<number>();
+    for (let id = 0; id < 200; id++) {
+      const p = boltPath(id, top, bottom, new Float32Array(3 * BOLT_POINTS));
+      const b = new Float32Array(3 * BOLT_MAX_BRANCHES * BRANCH_POINTS);
+      const n = boltBranches(id, p, base, b);
+      expect(n).toBeGreaterThanOrEqual(BRANCH_MIN);
+      expect(n).toBeLessThanOrEqual(BOLT_MAX_BRANCHES);
+      counts.add(n);
+      for (let k = 0; k < n; k++) {
+        const r = 3 * k * BRANCH_POINTS;
+        const e = 3 * (k * BRANCH_POINTS + BRANCH_SEGMENTS);
+        let onPath = false;
+        for (let i = 1; i < BOLT_SEGMENTS; i++) if (p[3 * i] === b[r] && p[3 * i + 1] === b[r + 1] && p[3 * i + 2] === b[r + 2]) onPath = true;
+        expect(onPath).toBe(true);
+        expect(b[r + 1]).toBeLessThanOrEqual(base);
+        expect(b[e + 1]).toBeLessThan(b[r + 1]);
+        expect(b[e + 1]).toBeGreaterThan(ground);
+        expect(Math.hypot(b[e] - b[r], b[e + 1] - b[r + 1], b[e + 2] - b[r + 2])).toBeLessThanOrEqual(BRANCH_LEN_MAX * (base - ground) * (1 + 1e-5));
+      }
+    }
+    expect(counts.size).toBe(BOLT_MAX_BRANCHES - BRANCH_MIN + 1);
+  });
+
+  it('is the same for the same id, and has none when no channel point is under the given height', () => {
+    const p = boltPath(42, top, bottom, new Float32Array(3 * BOLT_POINTS));
+    const a = new Float32Array(3 * BOLT_MAX_BRANCHES * BRANCH_POINTS);
+    const b = new Float32Array(3 * BOLT_MAX_BRANCHES * BRANCH_POINTS);
+    expect(boltBranches(42, p, base, b)).toBe(boltBranches(42, p, base, a));
+    expect(Array.from(b)).toEqual(Array.from(a));
+    expect(boltBranches(42, p, ground - 10, a)).toBe(0);
+  });
+});
+
+describe('stormTau', () => {
+  const g = cellGeometry(cell({ motionKt: 0 }), defaultWeather(), 0, makeCellGeometry());
+  const camera = new THREE.Vector3(g.x, 300, g.z + 15_000);
+  const tau = { cloud: 0, rain: 0 };
+
+  it('is zero without cells and outside them', () => {
+    stormTau([g], 0, camera, g.x, 500, g.z, tau);
+    expect(tau).toEqual({ cloud: 0, rain: 0 });
+    stormTau([g], 1, camera, g.x + 3000, 500, g.z + 15_000, tau);
+    expect(tau).toEqual({ cloud: 0, rain: 0 });
+  });
+
+  it('is rain only under the base and opaque cloud a few hundred metres inside the core', () => {
+    stormTau([g], 1, camera, g.x, g.base - 300, g.z, tau);
+    expect(tau.cloud).toBe(0);
+    expect(tau.rain).toBeGreaterThan(0.5);
+    stormTau([g], 1, camera, g.x, g.base + 300, g.z, tau);
+    expect(tau.cloud).toBeGreaterThan(10);
   });
 });
 

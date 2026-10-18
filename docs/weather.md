@@ -27,6 +27,22 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
     `strikesBetween`, `FLASH_PER_MIN` 6 per minute at intensity 1, `CG_FRACTION` 0.3), keeps up to `MAX_FLASHES` 4
     lit, emits the `lightning` event and writes `ctx.weatherFx.flash`. Its `active` advances the strike schedule; it
     is skipped while no flash is lit.
+    - Cloud-to-ground channel (`boltGeometry.ts` `boltPath`, `boltBranches`): 32 segments from 3000 m above the base
+      to the ground point, the top moved sideways by up to `BOLT_SLANT` 0.3 of the height, and 2 to 4 side branches
+      of 8 segments rooted on the channel below the base, all seeded by the strike id. Drawn per pixel as a
+      Gaussian core of radius `BOLT_CORE_PX` 0.7 px and a halo of `BOLT_HALO_SHARE` 0.05 of the core falling off
+      over `BOLT_HALO_PX` 2.5 px. The core radiance is the lower of `BOLT_RADIANCE` 1e5 scene units and
+      `BOLT_CORE_EXPOSED` 64 in the tone map's input units at the last frame's adaptation. The channel follows the
+      stroke envelope (`flashEnvelope`); the branches follow the first stroke only, at `BRANCH_SHARE` 0.6, fading to
+      `BRANCH_TIP` 0.1 at the tip. All are unconfirmed look values.
+    - Channel occlusion: the scene depth; the cumulus layer's front (hidden behind a front with transmittance below
+      0.9); the storm cells by the optical depth from the camera to each channel point, integrated on the CPU over
+      the cells' density at mean noise (`stormTau`). Cloud optical depth dims the channel by exp(-tau), so the part
+      inside the cloud is not drawn. Rain dims it by exp(-0.5 tau) (`RAIN_DIFFRACTION_SHARE`, unconfirmed).
+    - Intracloud strikes draw no channel. They light the storm cloud in full and send `FLASH_IC_OUTSIDE` 0.15 of
+      their light to surfaces and the cumulus (unconfirmed).
+    - Cloud light of a flash: compressed to L / sqrt(1 + L / Lmax), Lmax = `FLASH_CLOUD_MAX` 6 times a white
+      surface under the light before the flash (unconfirmed).
 - Thunder: `src/audio/thunder.ts`, scheduled by `AudioSystem` on the `lightning` event; no sound beyond
   `THUNDER_MAX_DISTANCE_M` 20 km.
 - Physics (`src/physics/weather/convection.ts`, `windField.ts`, `src/physics/environment.ts`): updraft, downdraft
@@ -195,3 +211,12 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   `wx=fog`, `drizzle`, `rain`, `snow` and `thunderstorm`, each in chase and cockpit view. No console errors or
   warnings, no THREE shader compile errors and an empty `__sim.errors` on every page. SwiftShader advanced
   `simTime` by 0.27 s in 40 s of wall time, so no lightning strike was observed in the browser.
+- Lightning check, `dev/weather.html` at 640x360, `q=medium`, Chromium with SwiftShader, one cell 10 km north
+  (`cb=10,0`), camera 300 m MSL, strike held 4 ms after its first stroke (`flash=1`, `flash=ic`), 2026-10-18: no
+  console errors or warnings at `tod=13`, `19.2` and `23`. The eye adaptation's target (log2 scene units) was
+  -11.65 with no flash and -10.67 with the cloud-to-ground flash held at `tod=23` (+0.98 EV), and -10.98 with the
+  intracloud flash held (+0.67 EV).
+- Same page at 320x180, `q=low`, `tod=23`, clock running: SwiftShader drew about 1 frame per second, so each frame
+  advanced `simTime` by 0.1 s and the adaptation by 0.25 s. After one injected and one scheduled cloud-to-ground
+  strike (sim time 0.97 s and 1.67 s), the adapted level peaked 0.51 EV over its level before the strikes and was
+  back within 0.1 EV at sim time 2.87 s.
