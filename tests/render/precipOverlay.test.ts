@@ -59,6 +59,15 @@ describe('PrecipOverlay.render', () => {
     expect(drawn[1]).not.toBe(o.material);
   });
 
+  it('keeps uTime increasing past 3600 s (no wrap that would jump every flake\'s sway)', () => {
+    const drawn: THREE.Material[] = [];
+    const o = new PrecipOverlay();
+    const ctx = makeCtx({ precipType: 'snow', precipRateMmH: 2 });
+    o.render(fakeRenderer(drawn), input, depth, output, ctx, 3599);
+    o.render(fakeRenderer(drawn), input, depth, output, ctx, 2);
+    expect(o.material.uniforms.uTime.value).toBe(3601);
+  });
+
   it('copies its input on low', () => {
     const drawn: THREE.Material[] = [];
     const o = new PrecipOverlay();

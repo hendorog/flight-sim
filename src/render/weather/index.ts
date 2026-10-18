@@ -5,7 +5,8 @@
 //   - overlays (PostPipeline.addOverlay), after the temporal pass and before bloom: precipitation streaks, then
 //     lightning. They anti-alias themselves and are not reprojected.
 // Each factory lives in its own module and may return null when it has nothing to add (the four here always return
-// an effect); an effect it returns creates its materials in its constructor, so Simulator.warmUpShaders compiles them. Per-frame state (the live weather,
+// an effect); an effect it returns creates its materials in its constructor and draws its real material on its first
+// render whatever the weather, so Simulator.warmUpShaders compiles them. Per-frame state (the live weather,
 // ctx.sky) comes through SceneEffect.render's SimContext; an effect whose weather field is absent reports active() false
 // and PostPipeline skips it without a draw.
 

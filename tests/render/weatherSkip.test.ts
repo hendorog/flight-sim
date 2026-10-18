@@ -54,17 +54,40 @@ const depth = new THREE.DepthTexture(4, 4);
 const output = new THREE.WebGLRenderTarget(4, 4);
 
 describe('FogEffect.active', () => {
-  it('is false without a fog layer and true with one, writing the shared fog uniform either way', () => {
+  it('is true until the first render, then false without a fog layer and true with one, writing the shared fog uniform either way', () => {
+    vi.spyOn(Atmosphere, 'for').mockReturnValue({ cloudSky: { directGround: 1 } } as unknown as Atmosphere);
     const { renderer } = fakeRenderer();
     const fog = new FogEffect(renderer);
     const u = fogUniformFor(renderer);
     u.value.set(9, 9, 9, 9);
+    expect(fog.active(makeCtx())).toBe(true);
+    expect(u.value.toArray()).toEqual([0, 0, 0, 0]);
+    fog.render(renderer, input, depth, output, makeCtx());
     expect(fog.active(makeCtx())).toBe(false);
     expect(u.value.toArray()).toEqual([0, 0, 0, 0]);
     expect(fog.active(makeCtx({ fogTopM: 60, fogVisibilityM: 300 }))).toBe(true);
     expect(u.value.w).toBe(1);
     expect(u.value.x).toBeGreaterThan(0);
     fog.dispose();
+    vi.restoreAllMocks();
+  });
+
+  it('draws the composite on its first render without fog (the shader warm-up), then the copy until fog appears', () => {
+    vi.spyOn(Atmosphere, 'for').mockReturnValue({ cloudSky: { directGround: 1 } } as unknown as Atmosphere);
+    const drawn: string[] = [];
+    const r = {
+      autoClear: true,
+      setRenderTarget: () => undefined,
+      getRenderTarget: () => null,
+      render: (mesh: THREE.Mesh) => void drawn.push((mesh.material as THREE.ShaderMaterial).fragmentShader.includes('fogOpticalDepth') ? 'composite' : 'copy'),
+    } as unknown as THREE.WebGLRenderer;
+    const fog = new FogEffect(r);
+    fog.render(r, input, depth, output, makeCtx());
+    fog.render(r, input, depth, output, makeCtx());
+    fog.render(r, input, depth, output, makeCtx({ fogTopM: 60 }));
+    expect(drawn).toEqual(['composite', 'copy', 'composite']);
+    fog.dispose();
+    vi.restoreAllMocks();
   });
 });
 

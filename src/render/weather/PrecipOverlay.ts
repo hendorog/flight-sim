@@ -374,7 +374,7 @@ export class PrecipOverlay implements SceneEffect {
     this.updateShells(p, radii, dt);
     u.uSnow.value = p.type === 'snow' ? 1 : 0;
     this.updateLight(renderer, ctx, p.type);
-    this.time = (this.time + Math.max(0, dt)) % 3600;
+    this.time += Math.max(0, dt);
 
     this.invProj.copy(camera.projectionMatrixInverse);
     this.camWorld.copy(camera.matrixWorld);

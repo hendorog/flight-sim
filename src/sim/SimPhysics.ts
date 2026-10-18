@@ -51,6 +51,7 @@ import { buildScenario, type Scenario } from './scenarios';
 import type { StartSpec } from './starts';
 import { createWorldEnvironment } from './worldEnvironment';
 import { sunDirectionNED } from '../core/world';
+import { reanchorStorms } from './weatherPresets';
 
 /** Most simulated time one advance() call may run per unit of time scale, s. */
 const MAX_FRAME_SIM = 0.1;
@@ -203,9 +204,11 @@ export class SimPhysics {
    * Put the aircraft at any Scenario's start: one of the five free-flight scenarios (reset) or a Flight School
    * start (starts.ts buildStart). Applies the scenario's payload (default 'typical'), fuel and switches, and
    * for an unusual-attitude start rotates the trimmed aircraft to the requested attitude with the airspeed
-   * kept along the nose. The copilot, if any, is left to its owner (TrainingSystem).
+   * kept along the nose. The copilot, if any, is left to its owner (TrainingSystem). The clock restarts at 0;
+   * `weather`'s storm cells are re-anchored to it (weatherPresets.reanchorStorms) so they stay where they are.
    */
   resetTo(sc: Scenario, weather?: WeatherSettings): Scenario {
+    const tOld = this.time;
     this.scenario = sc;
     this.applyLoading(sc.payload ?? 'typical');
     this.fm.reset(sc.ic, this.env);
@@ -248,6 +251,7 @@ export class SimPhysics {
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
+    if (weather) reanchorStorms(weather, tOld, this.time);
     return sc;
   }
 

@@ -60,6 +60,18 @@ const backShift = (c: StormCell, t: number): StormCell => {
 
 const cells = (list: readonly StormCell[]): readonly StormCell[] => Object.freeze(list.slice(0, MAX_STORMS).map(stormCell));
 
+/**
+ * Move the live weather's storm cells, in place, from a clock reading `tOld` to `tNew` (s), so each cell stays where
+ * it is when the simulation clock is set back (a scenario reset sets it to 0): stormCentreAt(new, tNew) equals
+ * stormCentreAt(old, tOld). Without cells, or with tOld === tNew, the weather is left untouched.
+ */
+export function reanchorStorms(weather: WeatherSettings, tOld: number, tNew: number): WeatherSettings {
+  const list = weather.storms;
+  if (!list || list.length === 0 || tOld === tNew) return weather;
+  weather.storms = cells(list.map((c) => backShift(c, tNew - tOld)));
+  return weather;
+}
+
 // ---------------------------------------------------------------------------------------------- presets
 /**
  * The menu's presets, in chip order. The first five are the menu's original table (src/ui/menu.ts before the

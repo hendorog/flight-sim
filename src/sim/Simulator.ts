@@ -298,7 +298,7 @@ export class Simulator {
     const startTod = startTimeOfDay({ scenario: startId, urlTod: p.weather.timeOfDay !== undefined, resumed: false });
     if (startTod !== null) this.weather.timeOfDay = startTod;
     const weatherBefore = { ...this.weather };
-    if (decision.kind === 'resume') Object.assign(this.weather, decision.snapshot.weather);
+    if (decision.kind === 'resume') restoreWeather(this.weather, decision.snapshot.weather);
     const physics = new SimPhysics({ weather: this.weather, events, aircraft: def });
     const carbIcing = loadCarbIcing(this.store);
     physics.carbIcing = carbIcing;

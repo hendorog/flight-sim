@@ -13,6 +13,7 @@ import {
   LINE_SPACING_M,
   WEATHER_PRESETS,
   applyWeatherPreset,
+  reanchorStorms,
   restoreWeather,
   stormLayout,
   weatherPresetById,
@@ -25,6 +26,7 @@ import type { SimContext } from '../../src/core/context';
 import { makeMockEnvironment, makeMockState } from '../../src/core/mockState';
 import C172S_DEFINITION from '../../src/aircraft/c172s/index';
 import { PauseMenu, type MenuHost } from '../../src/ui/menu';
+import { SimPhysics } from '../../src/sim/SimPhysics';
 import { FakeElement, installFakeDom } from '../ui/fakeDom';
 
 const preset = (id: string) => weatherPresetById(id)!;
@@ -153,6 +155,55 @@ describe('presets applied after simulation time 0', () => {
 
   it('leaves a preset without cells unchanged by the time', () => {
     expect(applyWeatherPreset(defaultWeather(), preset('fair'), 1800)).toEqual(applyWeatherPreset(defaultWeather(), preset('fair')));
+  });
+});
+
+describe('storm cells across a clock reset', () => {
+  const centres = (w: WeatherSettings, t: number): number[][] =>
+    stormsOf(w).map((c) => {
+      const p = stormCentreAt(c, t, { north: 0, east: 0 });
+      return [p.north, p.east];
+    });
+
+  it('reanchorStorms keeps every cell where it is from one clock reading to another', () => {
+    const w = applyWeatherPreset(defaultWeather(), preset('thunderstorm'), 600);
+    const before = centres(w, 600);
+    reanchorStorms(w, 600, 0);
+    const after = centres(w, 0);
+    for (let i = 0; i < before.length; i++) {
+      expect(after[i][0]).toBeCloseTo(before[i][0], 6);
+      expect(after[i][1]).toBeCloseTo(before[i][1], 6);
+    }
+    expect(after[0][1]).toBeCloseTo(-12_000, 6);
+    expect(Object.isFrozen(w.storms![0])).toBe(true);
+  });
+
+  it('reanchorStorms leaves a weather without cells, or an unchanged clock, as it is', () => {
+    const w = defaultWeather();
+    reanchorStorms(w, 600, 0);
+    expect('storms' in w).toBe(false);
+    const t = applyWeatherPreset(defaultWeather(), preset('thunderstorm'), 600);
+    const list = t.storms;
+    reanchorStorms(t, 600, 600);
+    expect(t.storms).toBe(list);
+  });
+
+  it('a scenario reset (SimPhysics.reset, the clock back to 0) keeps the cells where they were', () => {
+    const w = defaultWeather();
+    const p = new SimPhysics({ weather: w });
+    p.reset('cruise', w);
+    p.step(30);
+    const t = p.time;
+    expect(t).toBeGreaterThan(29);
+    applyWeatherPreset(w, preset('thunderstorm'), t);
+    const before = centres(w, t);
+    p.reset('cruise', w);
+    expect(p.time).toBe(0);
+    const after = centres(w, 0);
+    for (let i = 0; i < before.length; i++) {
+      expect(after[i][0]).toBeCloseTo(before[i][0], 6);
+      expect(after[i][1]).toBeCloseTo(before[i][1], 6);
+    }
   });
 });
 

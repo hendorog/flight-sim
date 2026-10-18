@@ -1,8 +1,10 @@
 // Ground fog layer (WeatherSettings.fogTopM, fogVisibilityM): a scene effect after the storm cells and the clouds,
 // before the temporal pass. One full-resolution draw: per pixel the analytic optical depth of the layer between the
 // camera and the surface (fogModel.ts, GLSL in fogGlsl.ts), then out = in * e^-tau + L with the in-scatter L of
-// fogModel.fogRadiance. Without a fog layer (fogOf(w).topM === 0) active() is false and PostPipeline skips the effect;
-// rendered anyway (the shader warm-up) the draw is a plain copy.
+// fogModel.fogRadiance. Without a fog layer (fogOf(w).topM === 0) active() is false and PostPipeline skips the effect,
+// except before the first render: that render (the Simulator's shader warm-up) draws the composite whatever the
+// weather, so its program is compiled before the first frame with fog; with uFog.w = 0 the optical depth is 0 and the
+// output equals the input. Later renders without fog (rendered anyway) are a plain copy.
 //
 // Path length per pixel: opaque pixels use the log-depth distance (viewZFromDepth x the view ray's length, as
 // AerialPerspectiveEffect); sky pixels looking up end where the ray leaves the fog top (nothing when the camera is
@@ -91,6 +93,8 @@ export class FogEffect implements SceneEffect {
   private readonly fog: THREE.IUniform<THREE.Vector4>;
   private readonly compositeMat: THREE.ShaderMaterial;
   private readonly copyMat = passMaterial({ fragmentShader: COPY_FRAG, uniforms: { tInput: { value: null } } });
+  /** Whether the composite has been drawn once (its program compiled). */
+  private warmed = false;
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -118,7 +122,7 @@ export class FogEffect implements SceneEffect {
 
   /** Whether the weather has a fog layer; writes the shared fog uniform either way. */
   active(ctx: SimContext): boolean {
-    return fogUniformValue(ctx.weather, this.fog.value).w !== 0;
+    return fogUniformValue(ctx.weather, this.fog.value).w !== 0 || !this.warmed;
   }
 
   setSize(): void {
@@ -133,11 +137,12 @@ export class FogEffect implements SceneEffect {
     ctx: SimContext,
   ): void {
     const fog = fogUniformValue(ctx.weather, this.fog.value);
-    if (fog.w === 0) {
+    if (fog.w === 0 && this.warmed) {
       this.copyMat.uniforms.tInput.value = input;
       this.pass.render(renderer, this.copyMat, output);
       return;
     }
+    this.warmed = true;
     const u = this.compositeMat.uniforms;
     const cam = ctx.camera;
     cam.updateMatrixWorld();
