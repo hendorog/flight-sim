@@ -25,8 +25,15 @@ export const FALL_SPEED_MS: Readonly<Record<PrecipType, number>> = Object.freeze
   snow: 1,
 });
 
-/** Exposure time of a streak (the motion one frame of a 60 Hz display shows), s. */
+/** Exposure time of a rain or drizzle streak (the motion one frame of a 60 Hz display shows), s. */
 export const STREAK_EXPOSURE_S = 1 / 60;
+/**
+ * Exposure time of a snowflake's streak, s: shorter than STREAK_EXPOSURE_S, so a flake drifting at a few m/s in the
+ * wind stays a round flake (4 mm of motion at 3.3 m/s, against 5.5 cm in 1/60 s) and flakes streak at flight speeds
+ * (6.4 cm at 100 kt, 1.8 deg on the 2 m shell). Unconfirmed: tuning value set by eye, not a measured eye or camera
+ * integration time.
+ */
+export const SNOW_STREAK_EXPOSURE_S = 1 / 800;
 /** Longest streak drawn, m (a drop passing the camera at more than 180 m/s). */
 export const STREAK_MAX_M = 3;
 /** Grid cell size on a shell as a fraction of its radius (the angular spacing of the cells, rad). Tuning value. */
@@ -56,7 +63,7 @@ export const RATE_FULL_MMH: readonly number[] = [12, 9, 7, 6];
  * Multiplier on the rate for the drop count, by type: snow's rate is a liquid-water equivalent, and a millimetre of
  * water falls as many more flakes than drops. Unconfirmed: tuning values.
  */
-export const RATE_COUNT_SCALE: Readonly<Record<PrecipType, number>> = Object.freeze({ none: 0, rain: 1, drizzle: 2, snow: 6 });
+export const RATE_COUNT_SCALE: Readonly<Record<PrecipType, number>> = Object.freeze({ none: 0, rain: 1, drizzle: 2, snow: 10 });
 
 /** Fall speed of the precipitation type, m/s (0 for 'none'). */
 export function fallSpeed(type: PrecipType): number {
@@ -81,9 +88,13 @@ export function relativeVelocity(wind: V3, camera: V3, fallMs: number, out: V3):
   return out;
 }
 
-/** Length of a streak, m: the distance a drop moves relative to the camera in STREAK_EXPOSURE_S, at most STREAK_MAX_M. */
-export function streakLengthM(speedMs: number): number {
-  return Math.min(STREAK_MAX_M, Math.max(0, speedMs) * STREAK_EXPOSURE_S);
+/**
+ * Length of a streak, m: the distance a drop moves relative to the camera in STREAK_EXPOSURE_S
+ * (SNOW_STREAK_EXPOSURE_S for snow), at most STREAK_MAX_M.
+ */
+export function streakLengthM(speedMs: number, type: PrecipType = 'rain'): number {
+  const exposure = type === 'snow' ? SNOW_STREAK_EXPOSURE_S : STREAK_EXPOSURE_S;
+  return Math.min(STREAK_MAX_M, Math.max(0, speedMs) * exposure);
 }
 
 /**
@@ -100,20 +111,31 @@ export function psiScale(streakM: number, radiusM: number): number {
 export const PHI_CELLS = Math.round((2 * Math.PI) / CELL_ANGLE);
 
 /**
- * Drops the shader places in one cell, at most: a cell `scale` times CELL_ANGLE long holds min(scale, this) drops,
- * each hashed on its own, so the count can follow the rate after the cells lengthen. Tuning value (the cost is one
- * hash per drop per shell per pixel).
+ * Drops the shader places in one cell, at most (dropSlots), each hashed on its own. Tuning value. The cost is one
+ * pcg4d hash per slot per shell per pixel: at most 4 x 4 = 16 hashes per pixel on high and ultra, 4 x 3 = 12 on
+ * medium.
  */
 export const MAX_DROPS_PER_CELL = 4;
+/**
+ * Slots per mean drop in a cell (dropSlots): with 3 slots per drop, each slot holds a drop with a probability of at
+ * most 1/3 until the slots reach MAX_DROPS_PER_CELL, so the count per cell varies (0 to 3 for a mean of 1) instead of
+ * one drop in every cell, which reads as a jittered grid. Unconfirmed: tuning value.
+ */
+export const SLOTS_PER_DROP = 3;
 /**
  * Largest factor on a drop's coverage when the rate asks for more drops than a cell holds (dropWeight). Unconfirmed:
  * tuning value.
  */
 export const MAX_DROP_WEIGHT = 4;
 
-/** Drops the shader places in a cell `scale` times CELL_ANGLE long (psiScale). */
-export function dropSlots(scale: number): number {
-  return Math.min(scale, MAX_DROPS_PER_CELL);
+/**
+ * Drops the shader places in a cell `scale` times CELL_ANGLE long (psiScale) holding a mean of `perCell` drops
+ * (dropsPerCell): at least one per CELL_ANGLE of cell length and SLOTS_PER_DROP per mean drop, at most
+ * MAX_DROPS_PER_CELL. A change of the count redraws part of the shell's pattern (a rate change, or a doubling of
+ * the cell length).
+ */
+export function dropSlots(scale: number, perCell = 0): number {
+  return Math.min(MAX_DROPS_PER_CELL, Math.max(scale, Math.ceil(SLOTS_PER_DROP * Math.max(0, perCell))));
 }
 
 /**
@@ -126,9 +148,10 @@ export function dropsPerCell(rateMmH: number, shell: number, scale: number, type
   return ((Math.max(0, rateMmH) * (RATE_COUNT_SCALE[type] ?? 0)) / full) * scale;
 }
 
-/** Probability that each of a cell's dropSlots(scale) drops is present: dropsPerCell over the slots, at most 1. */
+/** Probability that each of a cell's dropSlots drops is present: dropsPerCell over the slots, at most 1. */
 export function dropProbability(rateMmH: number, shell: number, scale: number, type: PrecipType = 'rain'): number {
-  return Math.min(1, dropsPerCell(rateMmH, shell, scale, type) / dropSlots(scale));
+  const perCell = dropsPerCell(rateMmH, shell, scale, type);
+  return Math.min(1, perCell / dropSlots(scale, perCell));
 }
 
 /**
@@ -137,7 +160,8 @@ export function dropProbability(rateMmH: number, shell: number, scale: number, t
  * rate through the drops' opacity instead of their count.
  */
 export function dropWeight(rateMmH: number, shell: number, scale: number, type: PrecipType = 'rain'): number {
-  return Math.min(MAX_DROP_WEIGHT, Math.max(1, dropsPerCell(rateMmH, shell, scale, type) / dropSlots(scale)));
+  const perCell = dropsPerCell(rateMmH, shell, scale, type);
+  return Math.min(MAX_DROP_WEIGHT, Math.max(1, perCell / dropSlots(scale, perCell)));
 }
 
 /**

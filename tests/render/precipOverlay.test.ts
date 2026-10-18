@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SimContext } from '../../src/core/context';
 import type { WeatherSettings } from '../../src/core/types';
 import { Atmosphere } from '../../src/render/sky/Atmosphere';
-import { PRECIP_LOOK, PrecipOverlay } from '../../src/render/weather/PrecipOverlay';
+import { PRECIP_LOOK, PrecipOverlay, SNOWFLAKE_MAX_M, SNOW_SWAY_CELLS, precipMargin } from '../../src/render/weather/PrecipOverlay';
+import { CELL_ANGLE } from '../../src/render/weather/precipOptics';
 import type { WeatherEffectContext } from '../../src/render/weather/index';
 
 function fakeRenderer(drawn: THREE.Material[]): THREE.WebGLRenderer {
@@ -84,6 +85,38 @@ describe('PrecipOverlay.render', () => {
     const c0 = (u.uShellC.value as THREE.Vector4[])[0];
     expect(c0.x).toBe(2);
     expect(c0.y).toBe(1);
+    expect(u.uSnow.value).toBe(0);
+    // Depth fade: shell k's coverage scales as sqrt(2 m / radius).
+    const c = u.uShellC.value as THREE.Vector4[];
+    expect(c0.z).toBe(1);
+    expect(c[3].z).toBeCloseTo(Math.sqrt(2 / 30), 12);
+  });
+
+  it('snow 2 mm/h parked in a 6 kt crosswind: round flakes (streak under the largest flake), 4 slots, the sway margin', () => {
+    const o = new PrecipOverlay();
+    const ctx = makeCtx({ precipType: 'snow', precipRateMmH: 2 });
+    // 3.1 m/s from the east (three.js +x), NED: from 090 the air moves west.
+    (ctx as { env: unknown }).env = { wind: () => ({ x: 0, y: -3.1, z: 0 }) };
+    o.setSize(960, 540);
+    o.render(fakeRenderer([]), input, depth, output, ctx, 0.016);
+    const u = o.material.uniforms;
+    expect(u.uSnow.value).toBe(1);
+    expect(o.vRel.x).toBeCloseTo(-3.1, 12);
+    expect(o.vRel.y).toBe(-1);
+    const a0 = (u.uShellA.value as THREE.Vector4[])[0];
+    const b0 = (u.uShellB.value as THREE.Vector4[])[0];
+    const c0 = (u.uShellC.value as THREE.Vector4[])[0];
+    // Streak in psi x radius: under the largest flake.
+    expect(b0.x * a0.x).toBeLessThan(SNOWFLAKE_MAX_M);
+    // Largest flake on the 2 m shell, px: 0.015 m / 2 m over the pixel angle (2 tan 30 deg / 540).
+    const pixelAngle = (2 * Math.tan(Math.PI / 6)) / 540;
+    expect(b0.y).toBeCloseTo(SNOWFLAKE_MAX_M / (2 * pixelAngle), 6);
+    expect(b0.z).toBe(SNOW_SWAY_CELLS);
+    expect(c0.x).toBe(4);
+    expect(c0.z).toBe(1);
+    expect(c0.w).toBeCloseTo(precipMargin(b0.y, SNOW_SWAY_CELLS, pixelAngle), 12);
+    expect(c0.w).toBeCloseTo(SNOW_SWAY_CELLS + ((0.5 * b0.y + 1) * pixelAngle) / CELL_ANGLE, 6);
+    expect(c0.w).toBeLessThan(0.45);
   });
 
   it('masks the cabin only in the cockpit view with a post pipeline', () => {

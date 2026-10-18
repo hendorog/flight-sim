@@ -5,14 +5,22 @@
 // and 30 m on high and ultra, 2, 6 and 20 m on medium, none on low). On a shell the drops sit in the cells of a grid
 // aligned with their motion relative to the camera (precipOptics.ts header): psi = ln tan(theta / 2) along the
 // motion, phi about it. Every drop moves at the same rate in psi, so the grid scrolls by one phase per shell, and
-// every streak (the drop's path in STREAK_EXPOSURE_S, at most STREAK_MAX_M) fits in its own cell: the shader reads
-// the one cell the pixel falls in, hashes each of its drops (up to precipOptics.MAX_DROPS_PER_CELL; pcg4d, Jarzynski
-// and Olano 2020), places them in it and measures the pixel's distance to each streak in pixels (anti-aliased over
-// STREAK_WIDTH_PX, since nothing after the overlays filters it). Above the rate that fills every drop of a cell, the
-// drops' coverage grows instead (precipOptics.dropWeight).
+// every streak (the drop's path in STREAK_EXPOSURE_S, SNOW_STREAK_EXPOSURE_S for snow, at most STREAK_MAX_M) fits in
+// its own cell: the shader reads the one cell the pixel falls in, hashes each of its drop slots
+// (precipOptics.dropSlots, at most MAX_DROPS_PER_CELL; one pcg4d hash per slot, Jarzynski and Olano 2020), places
+// the drops in it and measures the pixel's distance to each streak in pixels (anti-aliased, since nothing after the
+// overlays filters it). Above the rate that fills every slot of a cell, the drops' coverage grows instead
+// (precipOptics.dropWeight). Cost: at most 16 hashes per pixel on high and ultra (4 shells x 4 slots), 12 on medium.
+//   - Each hash also sets a drop's look. Rain and drizzle: width (STREAK_WIDTH_PX, +-RAIN_WIDTH_SPREAD / 2), length
+//     (RAIN_LENGTH_MIN..1 of the streak), brightness (RAIN_BRIGHTNESS_MIN..1), and a fade with the shell's radius
+//     (RAIN_DEPTH_FADE_EXP). Snow: a round flake with a soft edge, SNOWFLAKE_MIN_M..SNOWFLAKE_MAX_M across (a flake
+//     under 1 px is drawn 1 px across with its coverage scaled by its width), a sway on a small ellipse and a
+//     brightness that varies at SNOW_TUMBLE_HZ (the flake tumbling).
 //   - Motion: vRel = wind at the camera (ctx.env.wind) - camera velocity (from its position in the last frame; a
 //     jump of more than CUT_DISTANCE_M or CUT_SPEED_MS, a change of camera mode or a scenario reset discards the
-//     last position) + the fall speed, smoothed with VREL_TAU_S. Snow adds a sideways sway of each flake.
+//     last position) + the fall speed, smoothed with VREL_TAU_S. Parked on index.html?scenario=runway&wx=snow (wind 6 kt from
+//     100 deg), vRel read (-2.6, -1.1, -0.1) m/s, mostly horizontal, so with a 1/60 s exposure snow streaks ran
+//     across the screen; SNOW_STREAK_EXPOSURE_S keeps them round flakes.
 //   - Occlusion: a shell beyond the scene's depth at the pixel (DEPTH_GLSL) is skipped, and in the cockpit a shell
 //     point inside the cabin box (PostPipeline.cabinFromView, the tone map's outside mask) draws nothing.
 //   - Light: the sky ambient and the direct sun under the cloud layer (Atmosphere.cloudSky.directGround); the
@@ -21,6 +29,7 @@
 // or on 'low' active() is false after the first frame and PostPipeline skips it; rendered anyway (the shader warm-up)
 // it copies its input. The streaks have no fade-out: they stop on the frame the rate reaches 0. The prevailing visibility in precipitation is not drawn here: the sky, haze and
 // clouds read core/weatherFields.effectiveVisibilityM.
+// Each column of cells in phi has its own offset in psi, so the cells' edges do not form rings about the axis.
 // Known limits: the grid's cells lengthen in powers of 2 as the streaks lengthen (precipOptics.psiScale), so the
 // drop pattern of a shell is redrawn at each doubling while the aircraft accelerates; near the axis of the motion
 // (the focus of expansion and its opposite) the drops are thinned out as sin^2(theta) so the drops per solid angle
@@ -45,6 +54,7 @@ import {
   dropProbability,
   dropSlots,
   dropWeight,
+  dropsPerCell,
   fallSpeed,
   psiScale,
   relativeVelocity,
@@ -56,19 +66,39 @@ import {
 
 /** Shells the shader reads (the length of its uniform arrays). */
 export const MAX_SHELLS = 4;
-/** Full width of a rain or drizzle streak on the screen, px. */
+/** Mean full width of a rain or drizzle streak on the screen, px. */
 export const STREAK_WIDTH_PX = 1.2;
-/** Diameter of a snowflake, m: its width on a shell is the larger of this and STREAK_WIDTH_PX. Unconfirmed: tuning value. */
-export const SNOWFLAKE_M = 0.01;
-/** A drop's position across its cell stays this fraction of the cell away from each edge (holds the sway). */
-const CELL_MARGIN = 0.2;
 /**
- * Snow sway: amplitude as a fraction of a cell's width in phi (an angle of SNOW_SWAY_CELLS x CELL_ANGLE at
- * theta = 90 deg, 0.015 m on a 2 m shell), inside CELL_MARGIN; and frequency, Hz (each flake with its own phase).
- * Unconfirmed: tuning values.
+ * Rain and drizzle drops' variation, from each drop's hash: width STREAK_WIDTH_PX x (1 +- RAIN_WIDTH_SPREAD / 2),
+ * length RAIN_LENGTH_MIN..1 of the streak, brightness RAIN_BRIGHTNESS_MIN..1; and the coverage of shell k scales as
+ * (radius of shell 0 / radius of shell k)^RAIN_DEPTH_FADE_EXP. Unconfirmed: tuning values.
  */
-export const SNOW_SWAY_CELLS = 0.15;
-export const SNOW_SWAY_HZ = 1.5;
+export const RAIN_WIDTH_SPREAD = 0.3;
+export const RAIN_LENGTH_MIN = 0.6;
+export const RAIN_BRIGHTNESS_MIN = 0.55;
+export const RAIN_DEPTH_FADE_EXP = 0.5;
+/**
+ * Snowflake diameters, m: SNOWFLAKE_MIN_M + (SNOWFLAKE_MAX_M - SNOWFLAKE_MIN_M) u^2 with u uniform (more small
+ * flakes than large). 0.7 to 3.5 px on the 2 m shell at 540 px and a 60 deg field of view. Unconfirmed: tuning values.
+ */
+export const SNOWFLAKE_MIN_M = 0.003;
+export const SNOWFLAKE_MAX_M = 0.015;
+/**
+ * Snow sway: amplitude across the motion as a fraction of a cell's width in phi (an angle of SNOW_SWAY_CELLS x
+ * CELL_ANGLE at theta = 90 deg, 0.01 m on a 2 m shell), SNOW_SWAY_ALONG of that along it; and frequency, Hz (each
+ * flake 0.7..1.3 times this, with its own phase). Unconfirmed: tuning values.
+ */
+export const SNOW_SWAY_CELLS = 0.1;
+export const SNOW_SWAY_ALONG = 0.5;
+export const SNOW_SWAY_HZ = 1.2;
+/**
+ * Snow tumble: a flake's coverage varies by up to SNOW_TUMBLE_DEPTH at 0.5..1.5 x SNOW_TUMBLE_HZ. Unconfirmed: tuning
+ * values.
+ */
+export const SNOW_TUMBLE_DEPTH = 0.35;
+export const SNOW_TUMBLE_HZ = 0.8;
+/** Largest margin of a drop from its cell's edges (precipMargin), fraction of the cell. */
+const MAX_CELL_MARGIN = 0.45;
 /** Camera motion between two frames treated as a cut (the velocity is kept), m and m/s. */
 export const CUT_DISTANCE_M = 100;
 export const CUT_SPEED_MS = 250;
@@ -100,9 +130,10 @@ uniform vec3 uAxis;          // unit relative velocity of the drops, world
 uniform vec3 uAxisU;         // phi = 0 reference, perpendicular to uAxis
 uniform vec3 uAxisW;         // uAxis x uAxisU
 uniform vec4 uShellA[${MAX_SHELLS}]; // radius m, psi phase, psi cell length, drop probability
-uniform vec4 uShellB[${MAX_SHELLS}]; // streak length in psi, width px, sway amplitude in phi cells, alpha
-uniform vec4 uShellC[${MAX_SHELLS}]; // drops per cell, coverage weight
+uniform vec4 uShellB[${MAX_SHELLS}]; // streak length in psi, width px (snow: the largest flake's), sway in phi cells, alpha
+uniform vec4 uShellC[${MAX_SHELLS}]; // drop slots per cell, coverage weight, depth fade, margin in phi cells
 uniform int uShells;
+uniform float uSnow;         // 1: snowflakes, 0: rain or drizzle streaks
 uniform float uPixelAngle;   // rad per pixel
 uniform float uTime;         // s
 uniform vec3 uRadiance;
@@ -111,6 +142,7 @@ uniform float uCabinOn;
 uniform mat4 uCabinFromView;
 
 const float PHI_CELLS = ${PHI_CELLS.toFixed(1)};
+const float CELL_ANGLE = ${CELL_ANGLE.toFixed(4)};
 const float PRECIP_TAU = 6.28318531;
 
 // pcg4d (Jarzynski and Olano 2020, "Hash Functions for GPU Rendering").
@@ -147,7 +179,9 @@ void main() {
       vec3 b = (uCabinFromView * vec4(dv * A.x, 1.0)).xyz;
       if (max(max(abs(b.x), abs(b.y)), abs(b.z)) < 1.0) continue;
     }
-    float gs = (psi + A.y) / A.z;
+    // Each column of cells (phi) and shell has its own psi offset (a golden-ratio sequence), so the cells' edges,
+    // and the streaks that start near them, do not line up in rings about the axis.
+    float gs = (psi + A.y) / A.z + fract(float(iP) * 0.618034 + float(k) * 0.381966);
     float cellS = floor(gs);
     float fs = gs - cellS;
     uint iS = uint(int(cellS) + ${PSI_TILE * 4}) & ${PSI_TILE - 1}u;
@@ -155,22 +189,49 @@ void main() {
     float len = B.x / A.z;
     // The drop's light spreads along a streak: fainter as the streak lengthens on the screen.
     float lenPx = s * B.x / uPixelAngle;
-    float blur = clamp(sqrt(B.y / max(lenPx, B.y)), ${BLUR_FLOOR.toFixed(2)}, 1.0);
+    float wRef = max(B.y, 1.0);
+    float blur = clamp(sqrt(wRef / max(lenPx, wRef)), ${BLUR_FLOOR.toFixed(2)}, 1.0);
+    // Margins from the cell's edges, across (phi cells) and along (psi cells), and the widest drop that fits inside
+    // them on the screen (a cell is s x CELL_ANGLE across).
+    float marginP = C.w;
+    float marginS = C.w * (CELL_ANGLE / A.z);
+    float wFit = max(1.0, 2.0 * ((marginP - B.z) * s * CELL_ANGLE / uPixelAngle - 1.0));
     for (int j = 0; j < ${MAX_DROPS_PER_CELL}; j++) {
       if (float(j) >= C.x) break;
-      vec4 r = vec4(pcg4d(uvec4(iP, iS, uint(k * 8 + j), 0x9e3779b9u))) * (1.0 / 4294967296.0);
+      uvec4 h = pcg4d(uvec4(iP, iS, uint(k * 8 + j), 0x9e3779b9u));
+      // Two 16-bit uniforms from each 32-bit word: r places the drop, e sets its look.
+      vec4 r = vec4(h >> 16u) * (1.0 / 65536.0);
+      vec4 e = vec4(h & 0xffffu) * (1.0 / 65536.0);
       // A drop in this slot, thinned as sin^2(theta) (a cell spans sin^2(theta) of the solid angle it does at the
       // equator), with a soft edge so a drop moving toward the axis fades out.
       float exist = smoothstep(r.x, r.x + 0.05, A.w * s * s);
       if (exist <= 0.0) continue;
-      float across = ${CELL_MARGIN.toFixed(2)} + ${(1 - 2 * CELL_MARGIN).toFixed(2)} * r.y + B.z * sin(PRECIP_TAU * (${SNOW_SWAY_HZ.toFixed(2)} * uTime + r.w));
-      float head = r.z * max(0.0, 1.0 - len);
-      // Distance from the pixel to the streak (from the head to the head + len in psi), as an angle, in pixels.
+      float w;
+      float l;
+      float bright;
+      if (uSnow > 0.5) {
+        w = B.y * mix(${(SNOWFLAKE_MIN_M / SNOWFLAKE_MAX_M).toFixed(4)}, 1.0, e.x * e.x);
+        l = len;
+        bright = 1.0 - ${SNOW_TUMBLE_DEPTH.toFixed(2)} * (0.5 + 0.5 * sin(PRECIP_TAU * (${SNOW_TUMBLE_HZ.toFixed(2)} * (0.5 + e.w) * uTime + e.y)));
+      } else {
+        w = B.y * (${(1 - RAIN_WIDTH_SPREAD / 2).toFixed(3)} + ${RAIN_WIDTH_SPREAD.toFixed(3)} * e.x);
+        l = len * mix(${RAIN_LENGTH_MIN.toFixed(2)}, 1.0, e.w);
+        bright = mix(${RAIN_BRIGHTNESS_MIN.toFixed(2)}, 1.0, e.y);
+      }
+      // A drop under 1 px is drawn 1 px across with its coverage scaled by its width. Unconfirmed: a choice for the
+      // look; its area (width^2) would hide the flakes of the 12 to 30 m shells (0.3 px and under at 540 px).
+      float sub = min(1.0, w);
+      w = min(max(w, 1.0), wFit);
+      float sway = PRECIP_TAU * (${SNOW_SWAY_HZ.toFixed(2)} * (0.7 + 0.6 * e.z) * uTime + r.w);
+      float across = marginP + (1.0 - 2.0 * marginP) * r.y + B.z * sin(sway);
+      float head = marginS + r.z * max(0.0, 1.0 - l - 2.0 * marginS) + B.z * ${SNOW_SWAY_ALONG.toFixed(2)} * (CELL_ANGLE / A.z) * cos(sway);
+      // Distance from the pixel to the streak (from the head to the head + l in psi), as an angle, in pixels.
       float ex = (fp - across) * (PRECIP_TAU / PHI_CELLS);
-      float ey = (fs - clamp(fs, head, head + len)) * A.z;
+      float ey = (fs - clamp(fs, head, head + l)) * A.z;
       float px = s * length(vec2(ex, ey)) / uPixelAngle;
-      float cover = clamp(0.5 * B.y + 0.5 - px, 0.0, 1.0);
-      keep *= 1.0 - min(1.0, cover * exist * blur * B.w * C.y);
+      // Snow: a soft disc, opaque inside a fifth of its radius. Rain: a line anti-aliased over 1 px.
+      float cover = uSnow > 0.5 ? 1.0 - smoothstep(0.2 * w - 0.5, 0.5 * w + 0.75, px) : clamp(0.5 * w + 0.5 - px, 0.0, 1.0);
+      keep *= 1.0 - min(1.0, cover * exist * blur * B.w * C.y * C.z * bright * sub);
     }
   }
   float a = 1.0 - keep;
@@ -239,6 +300,7 @@ export class PrecipOverlay implements SceneEffect {
         uShellB: { value: this.shellB },
         uShellC: { value: this.shellC },
         uShells: { value: 0 },
+        uSnow: { value: 0 },
         uPixelAngle: { value: 1e-3 },
         uTime: { value: 0 },
         uRadiance: { value: this.radiance },
@@ -310,6 +372,7 @@ export class PrecipOverlay implements SceneEffect {
     u.uPixelAngle.value = 2 / (camera.projectionMatrix.elements[5] * this.height);
     this.updateMotion(ctx, p.type, dt);
     this.updateShells(p, radii, dt);
+    u.uSnow.value = p.type === 'snow' ? 1 : 0;
     this.updateLight(renderer, ctx, p.type);
     this.time = (this.time + Math.max(0, dt)) % 3600;
 
@@ -388,7 +451,7 @@ export class PrecipOverlay implements SceneEffect {
   private updateShells(p: Precip, radii: readonly number[], dt: number): void {
     const v = this.vRel;
     const speed = Math.hypot(v.x, v.y, v.z);
-    const streak = streakLengthM(speed);
+    const streak = streakLengthM(speed, p.type);
     const look = PRECIP_LOOK[p.type as Exclude<PrecipType, 'none'>];
     const snow = p.type === 'snow';
     const pixelAngle = this.material.uniforms.uPixelAngle.value as number;
@@ -403,11 +466,14 @@ export class PrecipOverlay implements SceneEffect {
         this.phase[k] = shellPhase(this.phase[k], 0, R, 0, cell);
       }
       if (dt > 0) this.phase[k] = shellPhase(this.phase[k], speed, R, dt, cell);
+      const perCell = dropsPerCell(p.rateMmH, k, scale, p.type);
       this.shellA[k].set(R, this.phase[k], cell, dropProbability(p.rateMmH, k, scale, p.type));
-      this.shellC[k].set(dropSlots(scale), dropWeight(p.rateMmH, k, scale, p.type), 0, 0);
-      const width = snow ? Math.max(STREAK_WIDTH_PX, SNOWFLAKE_M / (R * pixelAngle)) : STREAK_WIDTH_PX;
+      const width = snow ? SNOWFLAKE_MAX_M / (R * pixelAngle) : STREAK_WIDTH_PX;
       const sway = snow ? SNOW_SWAY_CELLS : 0;
+      const fade = snow ? 1 : (radii[0] / R) ** RAIN_DEPTH_FADE_EXP;
+      const widest = snow ? width : STREAK_WIDTH_PX * (1 + RAIN_WIDTH_SPREAD / 2);
       this.shellB[k].set(streak / R, width, sway, look.alpha);
+      this.shellC[k].set(dropSlots(scale, perCell), dropWeight(p.rateMmH, k, scale, p.type), fade, precipMargin(widest, sway, pixelAngle));
     }
   }
 
@@ -423,6 +489,15 @@ export class PrecipOverlay implements SceneEffect {
     );
     this.material.uniforms.uOcclusion.value = look.occlusion;
   }
+}
+
+/**
+ * Margin of a drop from its cell's edges, fraction of a cell (CELL_ANGLE): the sway (in cells) plus half the widest
+ * drop and 1 px of anti-aliasing at theta = 90 deg (a cell CELL_ANGLE / pixelAngle px across), at most
+ * MAX_CELL_MARGIN. A drop inside it is not cut at the cell's edge, which the shader does not read past.
+ */
+export function precipMargin(widestPx: number, swayCells: number, pixelAngle: number): number {
+  return Math.min(MAX_CELL_MARGIN, swayCells + ((0.5 * widestPx + 1) * pixelAngle) / CELL_ANGLE);
 }
 
 /** The precipitation overlay. Always created (the weather can start raining at any time); skipped while nothing falls. */
