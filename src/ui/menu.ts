@@ -7,7 +7,9 @@ import { AIRCRAFT_CATALOGUE, AIRCRAFT_PREF_KEY, aircraftSummary } from '../aircr
 import type { AircraftDefinition, AircraftPresentation, AircraftSummary } from '../aircraft/types';
 import type { CameraMode, QualityLevel, ScenarioId, SimContext } from '../core/context';
 import { DEG } from '../core/math';
-import { DEFAULT_AIRCRAFT_ID, type WeatherSettings } from '../core/types';
+import { DEFAULT_AIRCRAFT_ID, type CloudType, type MidCloudType, type PrecipType, type WeatherSettings } from '../core/types';
+import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, PRECIP_RATE_MAX_MMH, cloudTypeOf, fogOf, midLayerOf, precipOf, stormsOf, type FogLayer, type MidLayer, type Precip } from '../core/weatherFields';
+import { WEATHER_PRESETS, applyWeatherPreset, stormLayout, type StormLayout } from '../sim/weatherPresets';
 import type { SchoolCommand } from '../training/types';
 import { AIRPORT, sunDirectionNED } from '../core/world';
 import { el, formatHours } from './dom';
@@ -122,14 +124,15 @@ const CAMERAS: { id: CameraMode; name: string }[] = [
   { id: 'tower', name: 'Tower' },
 ];
 
-type WeatherPreset = Partial<WeatherSettings> & { name: string };
-const WEATHER_PRESETS: WeatherPreset[] = [
-  { name: 'Clear & calm', windSpeedKt: 0, gustKt: 0, turbulence: 0.03, cloudCover: 0.05, visibilityM: 80000, cirrusCover: 0 },
-  { name: 'Fair', windDirectionDeg: 100, windSpeedKt: 8, gustKt: 0, turbulence: 0.15, cloudCover: 0.35, cloudBaseM: 1500, cloudTopM: 2600, visibilityM: 50000, cirrusCover: 0.15 },
-  { name: 'Overcast', windDirectionDeg: 230, windSpeedKt: 12, gustKt: 4, turbulence: 0.3, cloudCover: 0.95, cloudBaseM: 700, cloudTopM: 2200, visibilityM: 15000, cirrusCover: 0 },
-  { name: 'Gusty crosswind', windDirectionDeg: 160, windSpeedKt: 15, gustKt: 10, turbulence: 0.5, cloudCover: 0.3, cloudBaseM: 1400, cloudTopM: 2400, visibilityM: 40000, cirrusCover: 0.1 },
-  { name: 'Low IFR', windDirectionDeg: 60, windSpeedKt: 5, gustKt: 0, turbulence: 0.2, cloudCover: 1, cloudBaseM: 200, cloudTopM: 1500, visibilityM: 1500, cirrusCover: 0 },
-];
+/** Rate the menu sets when a precipitation type is chosen at rate 0, mm/h (a menu choice: light to moderate). */
+const MENU_PRECIP_RATE_MMH: Readonly<Record<Exclude<PrecipType, 'none'>, number>> = { drizzle: 0.5, rain: 4, snow: 2 };
+/** Range of the mid-level altitude slider, m MSL. */
+const MENU_MID_ALT_M = [2000, 12_000] as const;
+/** Left end of the precipitation-rate slider (log10 mm/h); values below -1 (0.1 mm/h) mean none. */
+const PRECIP_SLIDER_OFF = -1.2;
+function precipSliderRate(v: number): number {
+  return v < -1 ? 0 : Math.min(PRECIP_RATE_MAX_MMH, 10 ** v);
+}
 
 /** Local solar hour at which the sun crosses `altDeg` in the morning (rising) or evening. */
 function sunCrossing(altDeg: number, day: number, morning: boolean): number {
@@ -661,11 +664,10 @@ export class PauseMenu {
     for (const preset of WEATHER_PRESETS) {
       const b = el('button', '', presets, preset.name);
       b.addEventListener('click', () => {
-        const { name, ...values } = preset;
-        Object.assign(w(), values);
+        applyWeatherPreset(w(), preset);
         this.host.weatherEdited();
         this.refresh();
-        this.host.toast(`Weather: ${name}`);
+        this.host.toast(`Weather: ${preset.name}`);
       });
     }
 
@@ -702,6 +704,7 @@ export class PauseMenu {
       const m = 10 ** v;
       return m >= 9999 ? `${Math.round(m / 1000)} km` : `${(m / 1000).toFixed(1)} km`;
     });
+    this.buildWeatherExtras(p, w, edit);
 
     el('h3', '', p, 'Temperature & pressure');
     const fieldIsa = 15 - 0.0065 * AIRPORT.elevation;
@@ -712,6 +715,104 @@ export class PauseMenu {
       `${Math.round(v)} hPa`,
     );
     return p;
+  }
+
+  /**
+   * The optional weather fields (core/weatherFields.ts): cloud type and the mid-level sheet under "Clouds &
+   * visibility", then precipitation, ground fog and storm cells. Read through the accessors, written through edit().
+   */
+  private buildWeatherExtras(p: HTMLElement, w: () => WeatherSettings, edit: (fn: (w: WeatherSettings) => void) => void): void {
+    const mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
+    const precip: Precip = { type: 'none', rateMmH: 0 };
+    const fog: FogLayer = { topM: 0, visibilityM: 0 };
+    const chipRow = <T extends string>(options: readonly (readonly [T, string])[], current: () => T, pick: (v: T) => void): void => {
+      const row = el('div', 'chips', p);
+      for (const [v, label] of options) {
+        const b = el('button', '', row, label);
+        b.addEventListener('click', () => {
+          pick(v);
+          this.refresh();
+        });
+        this.refreshers.push(() => b.classList.toggle('sel', current() === v));
+      }
+    };
+
+    el('p', 'sub', p, 'Cloud type. Auto follows the cover: scattered cumulus at low cover, a stratocumulus deck near overcast.');
+    chipRow<CloudType>(
+      [['auto', 'Auto'], ['stratus', 'Stratus'], ['stratocumulus', 'Stratocumulus'], ['cumulus', 'Cumulus'], ['towering', 'Towering cumulus'], ['nimbostratus', 'Nimbostratus']],
+      () => cloudTypeOf(w()),
+      (v) => edit((x) => (x.cloudType = v)),
+    );
+    this.slider(p, 'Mid-level cloud', [0, 1, 0.05], () => midLayerOf(w(), mid).cover, (v) => edit((x) => (x.midCover = v)), (v) =>
+      v <= 0 ? 'none' : `${Math.round(v * 8)}/8`,
+    );
+    this.slider(p, 'Mid-level altitude', [MENU_MID_ALT_M[0], MENU_MID_ALT_M[1], 100], () => midLayerOf(w(), mid).altM, (v) => edit((x) => (x.midAltM = v)), (v) =>
+      `${Math.round(v / 0.3048 / 100) * 100} ft`,
+    );
+    chipRow<MidCloudType>([['altostratus', 'Altostratus'], ['altocumulus', 'Altocumulus']], () => midLayerOf(w(), mid).type, (v) => edit((x) => (x.midType = v)));
+
+    el('h3', '', p, 'Precipitation, fog and storms');
+    chipRow<PrecipType>(
+      [['none', 'No precipitation'], ['drizzle', 'Drizzle'], ['rain', 'Rain'], ['snow', 'Snow']],
+      () => precipOf(w(), precip).type,
+      (v) =>
+        edit((x) => {
+          x.precipType = v;
+          if (v === 'none') x.precipRateMmH = 0;
+          else if (!((x.precipRateMmH ?? 0) > 0)) x.precipRateMmH = MENU_PRECIP_RATE_MMH[v];
+        }),
+    );
+    // Rate on a log scale (slider value log10(mm/h)); the left end, below 0.1 mm/h, is none.
+    this.slider(
+      p,
+      'Precipitation rate',
+      [PRECIP_SLIDER_OFF, Math.log10(PRECIP_RATE_MAX_MMH), 0.01],
+      () => {
+        const r = precipOf(w(), precip).rateMmH;
+        return r > 0 ? Math.max(-1, Math.log10(r)) : PRECIP_SLIDER_OFF;
+      },
+      (v) =>
+        edit((x) => {
+          const rate = precipSliderRate(v);
+          x.precipRateMmH = rate;
+          if (rate > 0 && precipOf(x, precip).type === 'none') x.precipType = 'rain';
+        }),
+      (v) => {
+        const r = precipSliderRate(v);
+        return r <= 0 ? 'none' : `${r < 1 ? r.toFixed(1) : Math.round(r)} mm/h`;
+      },
+    );
+    this.slider(p, 'Ground fog depth', [0, FOG_TOP_MAX_M, 10], () => fogOf(w(), fog).topM, (v) => edit((x) => (x.fogTopM = v)), (v) =>
+      v <= 0 ? 'none' : `${Math.round(v / 0.3048 / 10) * 10} ft`,
+    );
+    // Visibility inside the fog on a log scale: slider value log10(metres).
+    this.slider(
+      p,
+      'Fog visibility',
+      [Math.log10(FOG_VIS_MIN_M), Math.log10(FOG_VIS_MAX_M), 0.01],
+      () => Math.log10(fogOf(w(), fog).visibilityM),
+      (v) => edit((x) => (x.fogVisibilityM = Math.min(FOG_VIS_MAX_M, Math.max(FOG_VIS_MIN_M, 10 ** v)))),
+      (v) => `${Math.round(Math.min(FOG_VIS_MAX_M, Math.max(FOG_VIS_MIN_M, 10 ** v)) / 10) * 10} m`,
+    );
+    el('p', 'sub', p, 'Storm cells are placed relative to the aircraft (the distant cell and the line upwind of it) and move with the wind.');
+    // The array each chip last wrote: the chip shows as selected while the weather still holds it.
+    const written = new Map<StormLayout, readonly unknown[]>();
+    chipRow<StormLayout | 'other'>(
+      [['none', 'No storms'], ['distant', 'Distant cell'], ['overhead', 'Overhead cell'], ['line', 'Line of three']],
+      () => {
+        const s = stormsOf(w());
+        if (s.length === 0) return 'none';
+        for (const [k, a] of written) if (a === w().storms) return k;
+        return 'other';
+      },
+      (v) => {
+        if (v === 'other') return;
+        const c = this.host.ctx;
+        const storms = stormLayout(v, c.state.position, c.simTime, w());
+        written.set(v, storms);
+        edit((x) => (x.storms = storms));
+      },
+    );
   }
 
   // ------------------------------------------------------------------------------------------------

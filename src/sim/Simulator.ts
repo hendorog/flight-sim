@@ -61,6 +61,8 @@ import { AirportSystem, TOWER } from '../world/airport';
 import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
+import { restoreWeather } from './weatherPresets';
+import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
 import { era, isPresent, setEra } from '../world/era/eraState';
 import { createEraEffects } from '../render/post/eraEffects';
@@ -237,7 +239,7 @@ export class Simulator {
     setEra(chooseEra(this.params, this.store).id);
     this.weather = applyEraWeather(defaultWeather(), era().weather);
     const w = this.params.weather;
-    if (w.cloudBaseM !== undefined) w.cloudTopM ??= w.cloudBaseM + (this.weather.cloudTopM - this.weather.cloudBaseM);
+    deriveCloudTop(w, this.weather);
     Object.assign(this.weather, w);
   }
 
@@ -782,7 +784,7 @@ export class Simulator {
     this.training?.end();
     const work = (): void => {
       this.clearDemo();
-      Object.assign(this.weather, demoWeather());
+      restoreWeather(this.weather, demoWeather());
       const sc = demoScenario(id, this.physics.env);
       this.physics.resetTo(sc, this.weather);
       this.demo = new R22Flight(id, this.physics.state, this.ctx.controls);
@@ -879,7 +881,7 @@ export class Simulator {
   /** A lesson checkpoint restore ("try again from the start of this phase"), behind the curtain. */
   private async restoreFlightBehindCurtain(snap: FlightSnapshot, opts: { lessonId: string; label: string }): Promise<void> {
     await this.curtained(opts.label, () => {
-      Object.assign(this.weather, snap.weather);
+      restoreWeather(this.weather, snap.weather);
       this.physics.restore(snap);
       this.ctx.simTime = this.physics.time;
       this.ctx.events.emit('reset', { scenario: snap.scenario, lessonId: opts.lessonId });
@@ -1487,7 +1489,10 @@ export class Simulator {
         sim.setFixedCamera(pos, look);
       },
       setWeather(w: Partial<WeatherSettings>) {
-        Object.assign(sim.weather, w);
+        // A base without a top keeps the layer depth, as the URL's base= and the era presets do.
+        const values = { ...w };
+        deriveCloudTop(values, sim.weather);
+        Object.assign(sim.weather, values);
         sim.ctx.events.emit('weatherChanged', {});
       },
       /** Resume on reload: what boot did, and save / read / clear the stored snapshot. */

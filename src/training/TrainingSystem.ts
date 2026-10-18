@@ -36,6 +36,7 @@ import type { FlightSnapshot } from '../sim/resume';
 import type { Scenario } from '../sim/scenarios';
 import type { SimPhysics } from '../sim/SimPhysics';
 import { buildStart } from '../sim/starts';
+import { restoreWeather, withoutExtras } from '../sim/weatherPresets';
 import type { UISystem } from '../ui';
 import type { CrashAction } from '../ui/overlays';
 import type { SchoolAircraft, SchoolCareer, SchoolImportPreview, SchoolVoice } from '../ui/school/models';
@@ -574,8 +575,10 @@ export class TrainingSystem implements Subsystem {
 
   private applyWeather(w: WeatherSpec, seed: number): void {
     this.playerWeather ??= { ...this.shell.weather };
-    const wx = buildWeather(w, this.playerWeather, mulberry32(seed));
-    Object.assign(this.shell.weather, wx);
+    // The lesson's weather is built without the player's optional fields (fog, precipitation, storm cells), so
+    // it is the same whatever the player flew in; restoreWeather clears any the lesson does not set.
+    const wx = buildWeather(w, withoutExtras(this.playerWeather), mulberry32(seed));
+    restoreWeather(this.shell.weather, wx);
     this.ctx.events.emit('weatherChanged', {});
   }
 
@@ -669,7 +672,7 @@ export class TrainingSystem implements Subsystem {
     this.apAllowed = true;
     this.speech.cancel({ priorityAtLeast: Priority.Instruction });
     if (this.playerWeather) {
-      Object.assign(this.shell.weather, this.playerWeather);
+      restoreWeather(this.shell.weather, this.playerWeather);
       this.playerWeather = null;
       this.ctx.events.emit('weatherChanged', {});
     }

@@ -12,6 +12,17 @@
 //   vis=60000      visibility, m                    qnh=1013.25  sea-level pressure, hPa
 //   wind=100,6[,12]  wind FROM direction deg true, speed kt[, gusts kt]
 //   turb=0.1       turbulence 0..1                  temp=0       ISA deviation, K
+//   top=2600       cloud top, m MSL (at least base + 100 when a base is also given by base= or wx=)
+// Optional weather fields (core/weatherFields.ts, docs/weather.md); absent, the weather has none of them:
+//   wx=fog         a free-flight preset (src/sim/weatherPresets.ts ids: clear, fair, overcast, gusty, lowifr,
+//                  fog, drizzle, rain, snow, thunderstorm), applied first: the other weather parameters override it
+//   ctype=stratus  low layer type: auto|stratus|stratocumulus|cumulus|towering|nimbostratus
+//   mid=as,0.8[,4500]   mid-level sheet: as (altostratus) or ac (altocumulus), cover 0..1[, altitude m MSL]
+//   precip=rain,4  precipitation: drizzle|rain|snow, rate mm/h 0..50 (precip=none: none)
+//   fog=60[,200]   ground fog depth above the field, m 0..300[, visibility inside it, m 50..1000]
+//   cb=-12,0[,11[,0.8[,3[,270,15]]]]   a cumulonimbus cell: north km, east km from the airport[, top km MSL
+//                  6..14[, intensity 0..1[, core radius km 1..5[, moving FROM deg, kt]]]]; repeat cb= for up to 4
+//                  cells; cb=none: no cells (over a wx= preset's)
 //   quality=low|medium|high|ultra (default high)    dpr=1.5      device-pixel-ratio cap (default 1: the 3D
 //                                                                  view renders at CSS-pixel resolution)
 //   scale=0.75     3D render scale 0.5..1 (times the capped pixel ratio; the DOM UI stays at native DPR;
@@ -54,8 +65,15 @@ import { ERA_IDS, type EraId } from '../world/era/types';
 import { ERA_SCENARIO_IDS } from './eraChoice';
 import { isR22Demo, type R22DemoId } from './rotorcraft/flights';
 import { sanitizeMoonScale } from './skyPrefs';
+import type { CloudType, MidCloudType, StormCell } from '../core/types';
+import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, MAX_STORMS, MID_ALT_MAX_M, NO_STORMS, PRECIP_RATE_MAX_MMH } from '../core/weatherFields';
+import { CB_DEFAULT_INTENSITY, CB_DEFAULT_RADIUS_M, CB_DEFAULT_TOP_M, stormCell, weatherPresetById } from './weatherPresets';
 
 const CAMERA_MODES: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
+const CLOUD_TYPES: readonly CloudType[] = ['auto', 'stratus', 'stratocumulus', 'cumulus', 'towering', 'nimbostratus'];
+const MID_KINDS: Readonly<Record<string, MidCloudType>> = { as: 'altostratus', ac: 'altocumulus' };
+/** top= is raised to at least the base plus this, m (a layer needs a depth). */
+const MIN_LAYER_DEPTH_M = 100;
 const QUALITIES: readonly QualityLevel[] = ['low', 'medium', 'high', 'ultra'];
 /**
  * Every scenario a URL may name: SCENARIO_IDS plus the era starts (eraChoice.ts ERA_SCENARIO_IDS: 'safari'),
@@ -148,7 +166,9 @@ export function parseParams(search: string): SimParams {
     return v && options.includes(v) ? v : fallback;
   };
 
-  const weather: Partial<WeatherSettings> = {};
+  // A preset first (wx=): every other weather parameter overrides it.
+  const preset = weatherPresetById(q.get('wx'));
+  const weather: Partial<WeatherSettings> = preset ? { ...preset.settings } : {};
   const tod = num('tod');
   if (tod !== null) weather.timeOfDay = ((tod % 24) + 24) % 24;
   const doy = num('doy');
@@ -172,7 +192,55 @@ export function parseParams(search: string): SimParams {
     weather.gustKt = wind.length >= 3 ? Math.max(0, wind[2]) : 0;
   }
   const base = num('base');
+  const top = num('top');
+  // base= without top= keeps the preset's layer depth (with no preset, the Simulator keeps the current depth).
+  if (base !== null && top === null && weather.cloudBaseM !== undefined && weather.cloudTopM !== undefined) {
+    weather.cloudTopM = base + (weather.cloudTopM - weather.cloudBaseM);
+  }
   if (base !== null) weather.cloudBaseM = base;
+  if (top !== null) weather.cloudTopM = weather.cloudBaseM !== undefined ? Math.max(weather.cloudBaseM + MIN_LAYER_DEPTH_M, top) : top;
+  const ctype = q.get('ctype');
+  if ((CLOUD_TYPES as readonly string[]).includes(ctype ?? '')) weather.cloudType = ctype as CloudType;
+  const mid = q.get('mid')?.split(',');
+  if (mid && MID_KINDS[mid[0]] && mid.length >= 2 && mid.slice(1).every((v) => v.trim() !== '' && Number.isFinite(Number(v)))) {
+    weather.midType = MID_KINDS[mid[0]];
+    weather.midCover = Math.min(1, Math.max(0, Number(mid[1])));
+    if (mid.length >= 3) weather.midAltM = Math.min(MID_ALT_MAX_M, Math.max(0, Number(mid[2])));
+  }
+  const precip = q.get('precip')?.split(',');
+  if (precip?.[0] === 'none') {
+    weather.precipType = 'none';
+    weather.precipRateMmH = 0;
+  } else if (precip && (precip[0] === 'drizzle' || precip[0] === 'rain' || precip[0] === 'snow') && precip.length === 2 && precip[1].trim() !== '' && Number.isFinite(Number(precip[1]))) {
+    weather.precipType = precip[0];
+    weather.precipRateMmH = Math.min(PRECIP_RATE_MAX_MMH, Math.max(0, Number(precip[1])));
+  }
+  const fog = list('fog');
+  if (fog && fog.length >= 1 && fog.length <= 2) {
+    weather.fogTopM = Math.min(FOG_TOP_MAX_M, Math.max(0, fog[0]));
+    if (fog.length === 2) weather.fogVisibilityM = Math.min(FOG_VIS_MAX_M, Math.max(FOG_VIS_MIN_M, fog[1]));
+  }
+  const cb = q.getAll('cb');
+  if (cb.includes('none')) weather.storms = NO_STORMS;
+  else if (cb.length > 0) {
+    const storms: StormCell[] = [];
+    for (const v of cb) {
+      const c = v.split(',').map((x) => (x.trim() === '' ? NaN : Number(x)));
+      if (c.length < 2 || c.length === 6 || c.length > 7 || !c.every(Number.isFinite)) continue;
+      if (storms.length < MAX_STORMS) {
+        storms.push(stormCell({
+          northM: c[0] * 1000,
+          eastM: c[1] * 1000,
+          topM: c.length > 2 ? c[2] * 1000 : CB_DEFAULT_TOP_M,
+          intensity: c.length > 3 ? c[3] : CB_DEFAULT_INTENSITY,
+          radiusM: c.length > 4 ? c[4] * 1000 : CB_DEFAULT_RADIUS_M,
+          motionDeg: c.length > 6 ? c[5] : 0,
+          motionKt: c.length > 6 ? c[6] : 0,
+        }));
+      }
+    }
+    if (storms.length > 0) weather.storms = Object.freeze(storms);
+  }
 
   const camPos = triple('camPos');
   const aircraft = q.get('aircraft');

@@ -335,6 +335,13 @@ All are optional, for example `index.html?scenario=final&cam=chase&tod=20.5&ap=1
 | `cirrus=` | Cirrus deck cover 0..1, independent of `cover=` (default 0.1) |
 | `vis=`, `qnh=`, `temp=` | Visibility in m; sea-level pressure in hPa; ISA deviation in K |
 | `wind=dir,kt[,gust]`, `turb=` | Wind FROM, degrees true, and speed in kt; turbulence 0..1 |
+| `top=` | Cloud top in m MSL, at least 100 m above a base given by `base=` or `wx=` (default: the base keeps the layer depth) |
+| `wx=` | A menu weather preset, applied before the other weather parameters: `clear`, `fair`, `overcast`, `gusty`, `lowifr`, `fog`, `drizzle`, `rain`, `snow`, `thunderstorm` (`src/sim/weatherPresets.ts`) |
+| `ctype=` | Low layer type: `auto` (default), `stratus`, `stratocumulus`, `cumulus`, `towering`, `nimbostratus` |
+| `mid=as\|ac,cover[,altM]` | Mid-level sheet: altostratus or altocumulus, cover 0..1, altitude in m MSL (default max(4500, cloud top + 1000)) |
+| `precip=type,rate` | Precipitation `drizzle`, `rain` or `snow` at a rate in mm/h 0..50; `precip=none` for none |
+| `fog=topM[,visM]` | Ground fog depth above the field, 0..300 m, and the visibility inside it, 50..1000 m (default 200) |
+| `cb=northKm,eastKm[,topKm[,intensity[,radiusKm[,fromDeg,kt]]]]` | A cumulonimbus cell from the airport (defaults: top 11 km, intensity 0.8, core radius 3 km, stationary); repeat for up to 4 cells; `cb=none` removes a preset's cells. Fields and accessors: `docs/weather.md` |
 | `quality=` | `low`, `medium`, `high` (default), `ultra` |
 | `dpr=`, `scale=` | The 3D view renders at CSS-pixel resolution (device pixel ratio capped at 1 on every quality); `dpr=2` raises the cap on a HiDPI screen, `scale=0.5..1` sets the render scale (default 0.75 on `low`, 1 otherwise; also a menu slider). The DOM UI stays at native resolution |
 | `depth=` | `reversed` (default where `EXT_clip_control` exists: reversed-Z float depth, keeps early-Z) or `log` (logarithmic depth written per fragment) |
@@ -349,14 +356,17 @@ All are optional, for example `index.html?scenario=final&cam=chase&tod=20.5&ap=1
 
 `window.__ready` becomes true once the terrain around the camera is built and exposure has settled.
 `window.__sim` is the automation API: `step(s)`, `reset(id)`, `pause(bool)`, `setAutoflight(on)`,
-`setCamera(mode)`, `setFixedCamera(pos, look)`, `setWeather({...})` (including `cirrusCover`), `summary()`,
+`setCamera(mode)`, `setFixedCamera(pos, look)`, `setWeather({...})` (including `cirrusCover` and the optional
+fields of `docs/weather.md`; a `cloudBaseM` without `cloudTopM` keeps the layer depth), `summary()`,
 `errors`, `depthMode`, `warmUpMs`, and the live objects (`ctx`, `physics`, `flightModel`, `autoflight`,
 `autopilot`, `systems`, `post`, `cloudShadows`). `__sim.autoflight.targetAltitude` is the held altitude (m MSL,
 NaN when not holding).
 
 The menu (Escape) has tabs for the flight (scenarios, autopilot, cabin dome light, keyboard assists, simulation
-rate with the rate actually achieved), weather (presets; wind, gusts, turbulence, cloud cover and base, cirrus,
-visibility, temperature, QNH), time of day and date, display (quality, render scale, camera, HUD), the controls
+rate with the rate actually achieved), weather (presets, including radiation fog, low stratus and drizzle, rain,
+snow and thunderstorm; wind, gusts, turbulence, cloud cover and base, cirrus, visibility, cloud type, mid-level
+sheet cover, altitude and kind, precipitation type and rate, ground fog depth and visibility, storm cells placed
+from the aircraft, temperature, QNH), time of day and date, display (quality, render scale, camera, HUD), the controls
 reference and joystick setup.
 
 Time acceleration (menu, up to 16x) keeps the display smooth: above 4x the airborne flight model runs at

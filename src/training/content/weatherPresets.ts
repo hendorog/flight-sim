@@ -9,6 +9,7 @@
 // approach and the circuit geometry assume 07). Wind directions are degrees true FROM, as WeatherSettings.
 
 import type { WeatherSettings } from '../../core/types';
+import { fogOf, precipOf, stormsOf, type FogLayer, type Precip } from '../../core/weatherFields';
 import type { Rng, WeatherPresetId, WeatherSpec } from '../types';
 
 /** Each preset is a partial override of the player's weather plus default sampling ranges. */
@@ -130,12 +131,37 @@ function turbulenceWord(t: number): string | null {
   return 'severe';
 }
 
+const _precip: Precip = { type: 'none', rateMmH: 0 };
+const _fog: FogLayer = { topM: 0, visibilityM: 0 };
+
+/**
+ * Present-weather groups of the optional fields (core/weatherFields.ts), in METAR order: TS when a storm cell has
+ * lightning, then the precipitation (DZ; -RA / RA / +RA below 2.5 / 10 mm/h / above; -SN / SN / +SN below 1 /
+ * 2.5 mm/h / above), then FG for a ground fog layer. Empty when the fields are absent.
+ */
+function presentWeather(w: Readonly<WeatherSettings>): string[] {
+  const groups: string[] = [];
+  if (stormsOf(w).some((c) => c.lightning !== false)) groups.push('TS');
+  const p = precipOf(w, _precip);
+  if (p.rateMmH > 0) {
+    if (p.type === 'drizzle') groups.push('DZ');
+    else if (p.type === 'rain') groups.push(p.rateMmH < 2.5 ? '-RA' : p.rateMmH < 10 ? 'RA' : '+RA');
+    else if (p.type === 'snow') groups.push(p.rateMmH < 1 ? '-SN' : p.rateMmH < 2.5 ? 'SN' : '+SN');
+  }
+  if (fogOf(w, _fog).topM > 0) groups.push('FG');
+  return groups;
+}
+
 /**
  * 'Wind 090/7, CAVOK, turbulence light, 09:30' (results, briefing). METAR-like: CAVOK when visibility is
- * at least 10 km and no cloud lies below 5,000 ft (1,524 m); otherwise the visibility and the cloud layer.
+ * at least 10 km, no cloud lies below 5,000 ft (1,524 m) and there is no present weather and no storm cell;
+ * otherwise the visibility, the present-weather groups and the cloud layer (CB after it when storm cells exist,
+ * FEW at the base when the cover alone reports no cloud).
  */
 export function weatherLine(w: Readonly<WeatherSettings>): string {
   const parts: string[] = [];
+  const wx = presentWeather(w);
+  const cb = stormsOf(w).length > 0;
   const kt = Math.round(w.windSpeedKt);
   if (kt < 1) parts.push('Wind calm');
   else {
@@ -143,13 +169,14 @@ export function weatherLine(w: Readonly<WeatherSettings>): string {
     const gust = Math.round(w.gustKt);
     parts.push(`Wind ${pad(dir === 0 ? 360 : dir, 3)}/${kt}${gust > kt ? `G${gust}` : ''}`);
   }
-  const amount = cloudAmount(w.cloudCover);
+  const amount = cb ? cloudAmount(w.cloudCover) ?? 'FEW' : cloudAmount(w.cloudCover);
   const baseFt = w.cloudBaseM / 0.3048;
-  if (w.visibilityM >= 10000 && (amount === null || baseFt >= 5000)) parts.push('CAVOK');
+  if (w.visibilityM >= 10000 && (amount === null || baseFt >= 5000) && wx.length === 0 && !cb) parts.push('CAVOK');
   else {
     // As in a METAR, 10 km or more is not worth a word once there is cloud to report.
     if (w.visibilityM < 10000) parts.push(w.visibilityM >= 5000 ? `visibility ${Math.round(w.visibilityM / 1000)} km` : `visibility ${thousands(w.visibilityM)} m`);
-    if (amount) parts.push(`${amount} ${thousands(Math.round(baseFt / 100) * 100)} ft`);
+    parts.push(...wx);
+    if (amount) parts.push(`${amount} ${thousands(Math.round(baseFt / 100) * 100)} ft${cb ? ' CB' : ''}`);
   }
   const turb = turbulenceWord(w.turbulence);
   if (turb) parts.push(`turbulence ${turb}`);

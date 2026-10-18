@@ -22,6 +22,8 @@ import { buildWeather, WEATHER_PRESETS, weatherLine } from '../../src/training/c
 import { Telemetry } from '../../src/training/telemetry/telemetry';
 import type { InlineCue, Lesson, LintIssue, StepDef, TaskStep } from '../../src/training/types';
 import { defaultWeather } from '../../src/core/types';
+import type { WeatherSettings } from '../../src/core/types';
+import { NEUTRAL_EXTRAS } from '../../src/core/weatherFields';
 import { terrainHeight } from '../../src/world/terrain/heightfield';
 import { TrainingBus } from '../../src/training/engine/bus';
 import { compile } from '../../src/training/engine/predicates';
@@ -390,6 +392,29 @@ describe('weather presets', () => {
     expect(weatherLine({ ...base, windDirectionDeg: 3 })).toMatch(/^Wind 360\/7/);
     expect(weatherLine({ ...base, visibilityM: 1500, cloudCover: 1, cloudBaseM: 600, timeOfDay: 21.5 })).toBe('Wind 090/7, visibility 1,500 m, OVC 2,000 ft, turbulence light, 21:30');
     expect(weatherLine({ ...base, visibilityM: 6000 })).toMatch(/visibility 6 km, SCT 4,900 ft/);
+  });
+
+  it('adds present-weather groups and CB for the optional weather fields', () => {
+    const base = { ...defaultWeather(), windDirectionDeg: 92, windSpeedKt: 7.2, gustKt: 0, turbulence: 0.1, cloudCover: 0.35, cloudBaseM: 1500, visibilityM: 40000, timeOfDay: 9.5 };
+    const cell = { northM: 0, eastM: -12_000, radiusM: 3000, topM: 11_000, intensity: 0.8, motionDeg: 270, motionKt: 15 };
+    const line = (x: Partial<WeatherSettings>): string => weatherLine({ ...base, ...x });
+    // Neutral values of the fields give the line without them.
+    expect(line(NEUTRAL_EXTRAS)).toBe(weatherLine(base));
+    expect(line({ precipType: 'drizzle', precipRateMmH: 0.5 })).toBe('Wind 090/7, DZ, SCT 4,900 ft, turbulence light, 09:30');
+    expect(line({ precipType: 'rain', precipRateMmH: 1 })).toMatch(/, -RA, /);
+    expect(line({ precipType: 'rain', precipRateMmH: 2.5 })).toMatch(/, RA, /);
+    expect(line({ precipType: 'rain', precipRateMmH: 10 })).toMatch(/, \+RA, /);
+    expect(line({ precipType: 'snow', precipRateMmH: 0.5 })).toMatch(/, -SN, /);
+    expect(line({ precipType: 'snow', precipRateMmH: 1 })).toMatch(/, SN, /);
+    expect(line({ precipType: 'snow', precipRateMmH: 2.5 })).toMatch(/, \+SN, /);
+    expect(line({ precipType: 'rain', precipRateMmH: 0 })).toBe(weatherLine(base));
+    expect(line({ fogTopM: 60, visibilityM: 8000 })).toBe('Wind 090/7, visibility 8 km, FG, SCT 4,900 ft, turbulence light, 09:30');
+    // No CAVOK with present weather or storm cells, even with the cloud above 5,000 ft.
+    expect(line({ cloudBaseM: 1800, fogTopM: 60 })).toBe('Wind 090/7, FG, SCT 5,900 ft, turbulence light, 09:30');
+    expect(line({ storms: [cell] })).toBe('Wind 090/7, TS, SCT 4,900 ft CB, turbulence light, 09:30');
+    expect(line({ storms: [{ ...cell, lightning: false }] })).toBe('Wind 090/7, SCT 4,900 ft CB, turbulence light, 09:30');
+    expect(line({ storms: [cell], cloudCover: 0 })).toBe('Wind 090/7, TS, FEW 4,900 ft CB, turbulence light, 09:30');
+    expect(line({ storms: [cell], precipType: 'rain', precipRateMmH: 12, fogTopM: 30 })).toMatch(/, TS, \+RA, FG, SCT 4,900 ft CB, /);
   });
 });
 
