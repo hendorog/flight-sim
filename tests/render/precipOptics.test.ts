@@ -12,6 +12,8 @@ import {
   RATE_COUNT_SCALE,
   RATE_FULL_MMH,
   SHELL_RADII_M,
+  SLOTS_PER_DROP,
+  SNOW_STREAK_EXPOSURE_S,
   STREAK_EXPOSURE_S,
   STREAK_MAX_M,
   MAX_DROPS_PER_CELL,
@@ -74,6 +76,16 @@ describe('streak geometry', () => {
     expect(streakLengthM(7)).toBeCloseTo(7 / 60, 12);
     expect(streakLengthM(1000)).toBe(STREAK_MAX_M);
     expect(streakLengthM(-1)).toBe(0);
+  });
+
+  it('snow streaks over SNOW_STREAK_EXPOSURE_S: a round flake in a 6 kt wind, a streak at 100 kt', () => {
+    expect(SNOW_STREAK_EXPOSURE_S).toBeLessThan(STREAK_EXPOSURE_S);
+    // Parked in 6 kt (3.1 m/s) of wind with 1 m/s of fall: 4 mm of motion, under the mean flake (7 mm).
+    expect(streakLengthM(Math.hypot(3.1, 1), 'snow')).toBeLessThan(0.0045);
+    // 100 kt: 6.4 cm.
+    expect(streakLengthM(51.4, 'snow')).toBeCloseTo(51.4 * SNOW_STREAK_EXPOSURE_S, 12);
+    expect(streakLengthM(51.4, 'snow')).toBeGreaterThan(0.06);
+    expect(streakLengthM(7, 'drizzle')).toBe(streakLengthM(7));
   });
 
   it('for a stationary camera in still air a raindrop streak points down the screen', () => {
@@ -143,10 +155,30 @@ describe('streak geometry', () => {
     expect(dropsPerCell(10, 0, 1, 'none')).toBe(0);
   });
 
-  it('drop slots: one per CELL_ANGLE of cell length, at most MAX_DROPS_PER_CELL', () => {
+  it('drop slots: one per CELL_ANGLE of cell length and SLOTS_PER_DROP per mean drop, at most MAX_DROPS_PER_CELL', () => {
     expect(dropSlots(1)).toBe(1);
     expect(dropSlots(2)).toBe(2);
     expect(dropSlots(16)).toBe(MAX_DROPS_PER_CELL);
+    expect(SLOTS_PER_DROP).toBe(3);
+    expect(dropSlots(1, 0.2)).toBe(1);
+    expect(dropSlots(1, 0.5)).toBe(2);
+    expect(dropSlots(1, 1)).toBe(3);
+    expect(dropSlots(2, 0.5)).toBe(2);
+    expect(dropSlots(1, 10)).toBe(MAX_DROPS_PER_CELL);
+    // Snow at 2 mm/h on the 2 m shell, parked (a cell of 1 CELL_ANGLE): a mean of 1.67 flakes in 4 slots, so a cell
+    // holds 0 to 4 flakes.
+    const perCell = dropsPerCell(2, 0, 1, 'snow');
+    expect(perCell).toBeCloseTo((2 * RATE_COUNT_SCALE.snow) / RATE_FULL_MMH[0], 12);
+    expect(dropSlots(1, perCell)).toBe(MAX_DROPS_PER_CELL);
+    expect(dropProbability(2, 0, 1, 'snow')).toBeCloseTo(perCell / MAX_DROPS_PER_CELL, 12);
+  });
+
+  it('rain at 25 mm/h fills more slots than at 4 mm/h (parked, the 2 m shell)', () => {
+    const slots = (rate: number) => dropSlots(2, dropsPerCell(rate, 0, 2));
+    expect(slots(4)).toBe(2);
+    expect(slots(25)).toBe(MAX_DROPS_PER_CELL);
+    const mean = (rate: number) => slots(rate) * dropProbability(rate, 0, 2) * dropWeight(rate, 0, 2);
+    expect(mean(25) / mean(4)).toBeCloseTo(25 / 4, 12);
   });
 
   it('drop probability and weight: unsaturated, the probability carries the rate; saturated, the weight does', () => {

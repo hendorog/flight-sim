@@ -3,7 +3,8 @@
 // the sky test scene. Extra URL parameters on top of the harness ones (cam, look, tod, freeze, ...):
 //   cover=0.35 base=1500 top=2600   cumulus cover 0..1 and layer altitudes, m MSL
 //   vis=60000                       visibility, m
-//   wind=270,15                     wind from degrees, knots
+//   wind=270,15                     wind from degrees, knots (also the steady wind env.wind returns)
+//   fly=100                         move the camera along its view direction at this speed, knots
 //   q=high                          quality level
 //   ev=0                            exposure compensation, EV
 //   cb=north,east[,top[,intensity[,radius[,motionDeg,motionKt]]]]
@@ -17,7 +18,9 @@
 // Example: dev/weather.html?cb=22,4&cam=0,0,400&look=22000,4000,5000&tod=19.2&flash=1
 // window.__weatherDev.strike(kind) starts a strike in the first cell at the current time.
 
+import * as THREE from 'three';
 import type { QualityLevel } from '../core/context';
+import { KT } from '../core/math';
 import type { PrecipType, StormCell } from '../core/types';
 import { CloudsEffect } from '../render/clouds';
 import { PostPipeline } from '../render/post';
@@ -52,6 +55,10 @@ function parseCell(v: string): StormCell | null {
   };
 }
 
+/** Camera speed along its view direction (fly=), m/s. */
+const FLY_MS = num('fly', 0) * KT;
+const flyDir = new THREE.Vector3();
+
 let post: PostPipeline;
 let lightning: LightningOverlay | null = null;
 let strikes = 0;
@@ -65,7 +72,14 @@ void runHarness({
     w.cloudTopM = num('top', w.cloudTopM);
     w.visibilityM = num('vis', w.visibilityM);
     const wind = list(params.get('wind'));
-    if (wind.length >= 2 && wind.every(Number.isFinite)) [w.windDirectionDeg, w.windSpeedKt] = wind;
+    if (wind.length >= 2 && wind.every(Number.isFinite)) {
+      [w.windDirectionDeg, w.windSpeedKt] = wind;
+      // The mock environment has no wind: a steady wind from windDirectionDeg, NED m/s (the air moves toward
+      // windDirectionDeg + 180).
+      const from = (wind[0] * Math.PI) / 180;
+      const steady = { x: -Math.cos(from) * wind[1] * KT, y: -Math.sin(from) * wind[1] * KT, z: 0 };
+      ctx.env.wind = () => ({ ...steady });
+    }
     const cells = params.getAll('cb').map(parseCell).filter((c): c is StormCell => c !== null).slice(0, 4);
     if (cells.length) w.storms = cells;
     const fog = list(params.get('fog'));
@@ -112,9 +126,14 @@ void runHarness({
     };
   },
   subsystems: [new SkySystem()],
-  beforeUpdate(_dt, ctx) {
+  beforeUpdate(dt, ctx) {
     // Hold the clock at the strike for the screenshot.
     if (FLASH) ctx.simTime = FLASH_AT_S + FLASH_HOLD_S;
+    if (FLY_MS > 0) {
+      ctx.camera.getWorldDirection(flyDir);
+      ctx.camera.position.addScaledVector(flyDir, FLY_MS * dt);
+      ctx.camera.updateMatrixWorld();
+    }
   },
   render(dt, ctx) {
     post.render(ctx, dt);

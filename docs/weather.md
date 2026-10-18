@@ -21,8 +21,12 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
     `active`); the aircraft light sprites read it only when no weather is passed to `AircraftLights.update`.
   - `createPrecipOverlay` (`PrecipOverlay.ts`): `precipType`, `precipRateMmH`. Skipped at rate 0 and on `low`; the
     streaks have no fade-out. Streaks on shells of 2, 5, 12 and 30 m about the camera on `high` and `ultra`, and
-    2, 6 and 20 m on `medium`, up to `MAX_DROPS_PER_CELL` 4 drops per grid cell. The audio parameter `rain` (`src/audio/params.ts`,
-    index 45) carries the precipitation sound.
+    2, 6 and 20 m on `medium`, up to `MAX_DROPS_PER_CELL` 4 drops per grid cell (`SLOTS_PER_DROP` 3 slots per mean
+    drop; at most 16 pcg4d hashes per pixel on `high` and `ultra`, 12 on `medium`). Rain and drizzle streaks span
+    the drop's motion in 1/60 s (`STREAK_EXPOSURE_S`), with a width, length and brightness per drop and a fade with
+    the shell's radius. Snow draws round flakes 3 to 15 mm across (`SNOWFLAKE_MIN_M`, `SNOWFLAKE_MAX_M`) that sway
+    and vary in brightness, streaked over 1/800 s (`SNOW_STREAK_EXPOSURE_S`): 4 mm parked in a 6 kt wind, 6.4 cm at
+    100 kt. The audio parameter `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound.
   - `createLightningOverlay` (`LightningOverlay.ts`): `storms`. Schedules strikes (`src/sim/weather/lightning.ts`
     `strikesBetween`, `FLASH_PER_MIN` 6 per minute at intensity 1, `CG_FRACTION` 0.3), keeps up to `MAX_FLASHES` 4
     lit, emits the `lightning` event and writes `ctx.weatherFx.flash`. Its `active` advances the strike schedule; it
