@@ -544,9 +544,12 @@ src/sim/               the application shell
   worldEnvironment.ts    terrain + airport pavement as the physics Environment
   cloudShadows.ts        scene-wide material patches: cloud shadows on the sun term, apron floodlights
   params.ts              URL parameters
+  weatherPresets.ts      the menu's weather presets (also `wx=`)
+  weather/lightning.ts   strike scheduler for the storm cells (node-safe)
 src/physics/           flight model: aero/ (blade elements, lifting line, slipstream, bodies),
                        propulsion/ (propeller BEMT, engine, thermal, fuel, electrical), gear/ (tyres,
-                       struts, steering), weather/ (wind field, turbulence), trim.ts, autopilot.ts,
+                       struts, steering), weather/ (wind field, turbulence, storm-cell updraft, downdraft and
+                       outflow in convection.ts), trim.ts, autopilot.ts,
                        c172FlightModel.ts (6-DOF RK4 assembly)
 src/world/terrain/     procedural heightfield, quadtree LOD tiles built in workers, land cover, trees
 src/world/airport/     runway, taxiways, markings, lights, signs, buildings, valley town and roads
@@ -561,13 +564,16 @@ src/render/clouds/     volumetric cumulus layer: a multi-scale weather map (cell
                        cloud type (`cloudType`: stratus, stratocumulus, cumulus, towering, nimbostratus; absent =
                        the cover-driven look) and a mid-level altostratus / altocumulus sheet (`midCover`,
                        `midType`, `midAltM`) drawn from below and coupled into the sky light (render/sky/cloudSky.ts)
+src/render/weather/    storm cells and ground fog (scene effects after the clouds), precipitation streaks and
+                       lightning (overlays after the temporal pass); fields, accessors and gaps: docs/weather.md
 src/render/post/       aerial perspective, bloom, eye adaptation, local exposure, AgX tone mapping
 src/render/aircraft/   the C172 model, cockpit, lights, livery bake (worker), contact shadow
 src/render/cameras/    cockpit, chase, orbit, flyby and tower cameras
 src/instruments/       the panel: instrument dynamics (gyros, pitot-static lags, engine gauges) and 2D canvas;
                        layout.ts is the panel geometry shared with the 3D cockpit and the click hotspots
 src/input/             keyboard, mouse yoke, gamepads, key bindings, assists
-src/audio/             engine / propeller / wind / gear synthesis in an AudioWorklet, mix and 3D panning
+src/audio/             engine / propeller / wind / gear / rain synthesis in an AudioWorklet, mix and 3D panning;
+                       thunder.ts schedules thunder for each lightning strike on the main thread
 src/ui/                menu, HUD, loading screen, toasts, controller setup, cockpit panel clicks;
                        school/ the Flight School screens, lesson strip, task card and captions
 src/training/          the Flight School: TrainingSystem.ts (glue to the simulator), engine/ (lesson runner,

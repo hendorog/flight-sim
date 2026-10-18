@@ -7,13 +7,30 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
 ## Status
 
 - The fields, accessors, the post-TAA overlay slot and the effect registry exist.
-- Three effect factories (`createStormCellEffect`, `createFogEffect`, `createLightningOverlay`) are stubs that
-  return `null`.
-- `createPrecipOverlay` returns a `PrecipOverlay` (`src/render/weather/PrecipOverlay.ts`) on every quality tier. It
-  reads `precipType` and `precipRateMmH`, and copies its input at rate 0 and on `low`. It draws streaks on shells of
-  2, 5, 12 and 30 m about the camera on `high` and `ultra`, and 2, 6 and 20 m on `medium`. The audio parameter
-  `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound.
+- All four effect factories return an effect on every quality tier, created at boot whether or not the weather
+  sets their fields. Each copies its input while its field is absent, so a frame in `defaultWeather()` draws four
+  full-screen copies more than before these effects existed. Their GPU cost has not been measured (no GPU on the
+  integration machine).
+  - `createStormCellEffect` (`StormCellEffect.ts`): `storms`. A march at `STORM_SCALE` 0.5 resolution with
+    `STORM_STEPS` 48 steps, then a depth-aware composite against the cumulus layer. One copy when no cell is in the
+    view frustum.
+  - `createFogEffect` (`FogEffect.ts`): `fogTopM`, `fogVisibilityM`. One full-resolution draw; a plain copy when
+    `fogOf(w).topM === 0`. It also writes the shared fog uniform (`fogGlsl.ts fogUniformFor`); the aircraft light sprites read it only
+    when no weather is passed to `AircraftLights.update`.
+  - `createPrecipOverlay` (`PrecipOverlay.ts`): `precipType`, `precipRateMmH`. Copies its input at rate 0 and on
+    `low`. Streaks on shells of 2, 5, 12 and 30 m about the camera on `high` and `ultra`, and 2, 6 and 20 m on
+    `medium`, up to `MAX_DROPS_PER_CELL` 4 drops per grid cell. The audio parameter `rain` (`src/audio/params.ts`,
+    index 45) carries the precipitation sound.
+  - `createLightningOverlay` (`LightningOverlay.ts`): `storms`. Schedules strikes (`src/sim/weather/lightning.ts`
+    `strikesBetween`, `FLASH_PER_MIN` 6 per minute at intensity 1, `CG_FRACTION` 0.3), keeps up to `MAX_FLASHES` 4
+    lit, emits the `lightning` event and writes `ctx.weatherFx.flash`. Copies its input with no flash lit.
+- Thunder: `src/audio/thunder.ts`, scheduled by `AudioSystem` on the `lightning` event; no sound beyond
+  `THUNDER_MAX_DISTANCE_M` 20 km.
+- Physics (`src/physics/weather/convection.ts`, `windField.ts`, `src/physics/environment.ts`): updraft, downdraft
+  and outflow of the storm cells, their turbulence severity, and moisture from fog, mid sheet, cells and rain.
 - `defaultWeather()` is unchanged and sets none of the new fields.
+- Presets (`src/sim/weatherPresets.ts`): the five earlier menu presets plus `fog` (Radiation fog), `drizzle` (Low
+  stratus & drizzle), `rain`, `snow` and `thunderstorm`, also selectable with the `wx=` URL parameter.
 
 ## Fields
 
@@ -68,7 +85,7 @@ the cloud-top rule of the absent default; with `midCover 0` no sheet is drawn.
 `precipExtinctionPerM` uses power laws in the rate R, 1/km: rain 0.25·R^0.63, drizzle 1.5·R^0.5, snow 1.3·R^0.8.
 Unconfirmed: no source has been checked for these coefficients.
 
-`CLOUD_TYPE_PROFILES` (unconfirmed tuning values, not yet read by the clouds module):
+`CLOUD_TYPE_PROFILES` (unconfirmed tuning values; read by `src/render/clouds/cloudModel.ts`):
 
 | Type | deckOverride | deckWeight | extinctionScale | shapeFreqScale | towerExt |
 | --- | --- | --- | --- | --- | --- |
@@ -94,18 +111,84 @@ The `auto` row's `towerExt` equals `TOWER_EXTENSION` in `src/render/clouds/cloud
   (precipitation, then lightning), called by `Simulator` after `post.addEffect(clouds)` and before
   `warmUpShaders()`. Each factory receives `{ctx, renderer, clouds, post, weather}`.
 - `SimContext.weatherFx.flash` (`{x, y, z, energy}`, three.js world, energy 0 when none) and the `lightning`
-  event in `SimEvents` are declared; the simulator and `src/dev/harness.ts` create `weatherFx` with every value 0.
-  Nothing writes them yet.
+  event in `SimEvents`. The simulator and `src/dev/harness.ts` create `weatherFx` with every value 0;
+  `LightningOverlay` writes `flash` (the brightest lit flash) and emits `lightning` once per strike.
+  `FLASH_INTENSITY_CD` is 1e8 (unconfirmed tuning value).
+
+## Clouds module (`src/render/clouds/`, `src/render/sky/cloudSky.ts`)
+
+- `CLOUD_TYPE_SHAPE` (`cloudModel.ts`, uniform `uCloudShape`): render-only shape terms per type (deck top scale,
+  base raggedness, erosion scale, type bias). Unconfirmed tuning values. With `'auto'` every uniform holds its
+  value from before the types existed.
+- `MID_TAU_MAX` (`cloudModel.ts`): sheet optical depth at full cover, altostratus 6, altocumulus 2 (unconfirmed).
+  `midSheetTau(cover, type)` = mix(0.5, `MID_TAU_MAX`, cover). For altocumulus this is the patch mean; element
+  centres carry up to 6 times it.
+- `extendedLayerTopM(w)`: the low layer's top extended by the type's `towerExt`, the value of `uLayer.y`.
+  `CloudModel.midAboveLayer` is `mid.cover > 0 && mid.altM > extendedLayerTopM`. The sheet is drawn, shadows the
+  ground and enters the sky model only when it is true.
+- `cloudSky.ts`: `directGround` takes the sheet's direct transmission; `directCamera` and `deckDirect` take it only
+  while the camera is below the sheet. The shadow pass multiplies by `uMidTrans`. Plan section 3.2 had
+  `deckDirect` take it unconditionally; the code follows the low deck's `(1 - above)` convention instead. This
+  difference is open for decision.
+- Sky, environment map refresh and cloud haze read `effectiveVisibilityM(w)` (`SkySystem.ts`, `CloudsEffect.ts`,
+  `Atmosphere.ts`).
+
+## Physics (`src/physics/`)
+
+| Export | What it does |
+| --- | --- |
+| `cbSample(cells, p, t, agl, groundM, baseM, out)` (`weather/convection.ts`) | updraft `up`, outflow `outN`/`outE`, `severity` and `inCore` of the cells at a point; writes `out` |
+| `WindField.stormTurbulence(p, t)` (`weather/windField.ts`) | the cells' severity 0..1 at a point, 0 without cells; read-only |
+| `WindBreakdown.convective` | `{up, outN, outE}` from the cells; all 0 without cells |
+| `SimEnvironment.moisture(altitudeMSL, north?, east?, time?)` (`environment.ts`) | `inCloud` also inside the fog layer, within 150 m of a mid sheet with cover 0.3 or more, and inside a cell core; dew point spread 0 below the base in rain or drizzle |
+
+Without cells `WindField.sample` skips the convective branch, so its arithmetic is unchanged. The severity is passed
+to the MIL-F-8785C intensities as max(`turbulence`, severity), clamped there at 1. The cockpit head motion
+(`src/render/cameras/cockpitRig.ts`) uses the same maximum. The physics clamps a cell's radius, top and intensity
+with `cellRadiusM`, `cellTopM` and `cellIntensity`.
+
+## Training weather line
+
+`weatherLine` (`src/training/content/weatherPresets.ts`) appends present-weather groups only when the fields are
+present: `TS` when a cell has lightning, `DZ`, `-RA` / `RA` / `+RA` (below 2.5 / 10 mm/h / above), `-SN` / `SN` /
+`+SN` (below 1 / 2.5 mm/h / above), `FG` for a fog layer, and `CB` after the cloud group when cells exist. The
+visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
 
 ## Recorded gaps
 
-These are limits of the planned designs, recorded before the effects are written:
-
 - Cloud cover is calibrated for `cloudType 'auto'` only. For the other types `cloudCover` has not been measured
   against the rendered cover (`CloudsEffect.measureCover` with `typeCover`).
-- Mid-level sheet: drawn only when the camera is below `midAltM`; the camera-above case has no design.
+- Mid-level sheet: drawn only when the camera is below `midAltM`; the camera-above case has no design. The cloud
+  shadow lookup's fades also move the sheet's share toward 1 (`cloudShadow.ts` header); the simulator runs with
+  `compositeShadows` off, so this shows on the dev page only.
 - Ground fog: with the camera above the fog and a cloud between the camera and the fog, the fog's in-scatter is
-  not dimmed by that cloud.
+  not dimmed by that cloud. The light sprites write no depth, so a lamp seen against a sky pixel is fogged with
+  that pixel's path instead of the lamp-to-camera path. Sun shadows and direct light are not dimmed inside fog.
 - Storm cells: the composite against the cumulus is an approximation from the cumulus front distance and
-  transmittance; a cell casts no ground shadow; the sky light does not darken under an anvil.
+  transmittance; a cell casts no ground shadow; the sky light does not darken under an anvil; the moon does not
+  light a cell; the temporal pass reprojects cell pixels with the depth buffer or the cumulus layer.
+- Storm cell ranges: render (`cellGeometry`: radius 500..8000 m, top at least base + 2000 m), physics
+  (`cellRadiusM`, `cellTopM`) and the lightning scheduler (radius only floored at 0) clamp out-of-range cells
+  differently. `stormsOf` and `isStormCell` check types, not ranges.
+- Downdraft centre: the physics places it toward the cell's motion; the drawn rain shaft is centred on the core.
+  For a cell moving across the wind the two are 0.6 R apart.
 - Landing-light beam: no volumetric term in fog.
+- Windshield drops and wet pavement: not built.
+- GPU timings: none of the plan's per-effect budgets (clouds +0.2 ms, fog 0.3 ms, precipitation 0.5 ms, storm cells
+  1.5 ms with two cells and under 0.05 ms with none, on `high`) has been measured. The test machine renders with
+  SwiftShader only.
+
+## Integration checks (2026-10-18)
+
+- `npx vitest run` after merging wx/W1, W6, W2, W3, W5 and W4: 323 files, 4238 tests passed, 14 failed, 318 skipped,
+  9 expected fail, in 1809 s on a 4-CPU machine. 12 of the 14 failures are time-outs in aircraft, fauna and
+  rotorcraft tests that also time out at commit 2223678, before the weather work. The other 2 are the
+  `c172Sim` golden records `autoflight.runway` and `restore.cruise`.
+- `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: 51 of 53 pass; the 2 failures are the same `c172Sim` records.
+  They fail from commit 1e19186 (autopilot ball gain `BALL_KP_CRUISE`, merged in 48337e7) on. With 1e19186
+  reverted on top of the integrated tree, 53 of 53 pass under `FS_GOLDEN_EXACT=1`. The golden data has not been
+  regenerated.
+- Browser check, `index.html` on `quality=medium` in Chromium with SwiftShader at 960x540: the default weather and
+  `wx=fog`, `drizzle`, `rain`, `snow` and `thunderstorm`, each in chase and cockpit view. No console errors or
+  warnings, no THREE shader compile errors and an empty `__sim.errors` on every page. SwiftShader advanced
+  `simTime` by 0.27 s in 40 s of wall time, so no lightning strike was observed in the browser.
