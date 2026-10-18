@@ -261,6 +261,13 @@ export interface SceneEffect {
     dt: number,
   ): void;
   /**
+   * Whether this frame needs render(): false when the effect would only copy its input, and PostPipeline then
+   * skips it without a draw (the next effect reads the same input). Called once per frame, before the effect's
+   * render slot, with the same context; it may update the state a skipped render would have left (fog uniform,
+   * strike schedule). Absent: always rendered. The shader warm-up renders every effect whatever this returns.
+   */
+  active?(ctx: SimContext): boolean;
+  /**
    * A translucent layer this effect drew over the scene in its last render (clouds), or null. The temporal
    * stabilisation reprojects its pixels at the layer's distance instead of the depth buffer's.
    */

@@ -8,22 +8,25 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
 
 - The fields, accessors, the post-TAA overlay slot and the effect registry exist.
 - All four effect factories return an effect on every quality tier, created at boot whether or not the weather
-  sets their fields. Each copies its input while its field is absent, so a frame in `defaultWeather()` draws four
-  full-screen copies more than before these effects existed. Their GPU cost has not been measured (no GPU on the
-  integration machine).
+  sets their fields. Each implements `SceneEffect.active` (`src/core/context.ts`); `PostPipeline` skips an effect or
+  overlay whose `active(ctx)` returns false without a draw (`renderEffects`), so a frame in `defaultWeather()` draws
+  no full-screen pass for them (storm cells, precipitation and lightning after their first render, which compiles
+  their shaders). The shader warm-up (`Simulator.warmUpShaders`) renders all
+  four regardless, as before. Their GPU cost has not been measured (no GPU on the integration machine).
   - `createStormCellEffect` (`StormCellEffect.ts`): `storms`. A march at `STORM_SCALE` 0.5 resolution with
-    `STORM_STEPS` 48 steps, then a depth-aware composite against the cumulus layer. One copy when no cell is in the
+    `STORM_STEPS` 48 steps, then a depth-aware composite against the cumulus layer. Skipped when no cell is in the
     view frustum.
-  - `createFogEffect` (`FogEffect.ts`): `fogTopM`, `fogVisibilityM`. One full-resolution draw; a plain copy when
-    `fogOf(w).topM === 0`. It also writes the shared fog uniform (`fogGlsl.ts fogUniformFor`); the aircraft light sprites read it only
-    when no weather is passed to `AircraftLights.update`.
-  - `createPrecipOverlay` (`PrecipOverlay.ts`): `precipType`, `precipRateMmH`. Copies its input at rate 0 and on
-    `low`. Streaks on shells of 2, 5, 12 and 30 m about the camera on `high` and `ultra`, and 2, 6 and 20 m on
-    `medium`, up to `MAX_DROPS_PER_CELL` 4 drops per grid cell. The audio parameter `rain` (`src/audio/params.ts`,
+  - `createFogEffect` (`FogEffect.ts`): `fogTopM`, `fogVisibilityM`. One full-resolution draw; skipped when
+    `fogOf(w).topM === 0`. It also writes the shared fog uniform (`fogGlsl.ts fogUniformFor`, every frame, from
+    `active`); the aircraft light sprites read it only when no weather is passed to `AircraftLights.update`.
+  - `createPrecipOverlay` (`PrecipOverlay.ts`): `precipType`, `precipRateMmH`. Skipped at rate 0 and on `low`; the
+    streaks have no fade-out. Streaks on shells of 2, 5, 12 and 30 m about the camera on `high` and `ultra`, and
+    2, 6 and 20 m on `medium`, up to `MAX_DROPS_PER_CELL` 4 drops per grid cell. The audio parameter `rain` (`src/audio/params.ts`,
     index 45) carries the precipitation sound.
   - `createLightningOverlay` (`LightningOverlay.ts`): `storms`. Schedules strikes (`src/sim/weather/lightning.ts`
     `strikesBetween`, `FLASH_PER_MIN` 6 per minute at intensity 1, `CG_FRACTION` 0.3), keeps up to `MAX_FLASHES` 4
-    lit, emits the `lightning` event and writes `ctx.weatherFx.flash`. Copies its input with no flash lit.
+    lit, emits the `lightning` event and writes `ctx.weatherFx.flash`. Its `active` advances the strike schedule; it
+    is skipped while no flash is lit.
 - Thunder: `src/audio/thunder.ts`, scheduled by `AudioSystem` on the `lightning` event; no sound beyond
   `THUNDER_MAX_DISTANCE_M` 20 km.
 - Physics (`src/physics/weather/convection.ts`, `windField.ts`, `src/physics/environment.ts`): updraft, downdraft

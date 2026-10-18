@@ -1,10 +1,10 @@
-// The post-TAA overlay slot (PostPipeline.addOverlay, renderOverlays): order, target alternation, size propagation
-// and disposal, with a fake renderer (no WebGL).
+// The post-TAA overlay slot (PostPipeline.addOverlay, renderEffects): order, target alternation, skipping of
+// inactive effects (SceneEffect.active), size propagation and disposal, with a fake renderer (no WebGL).
 
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { SceneEffect, SimContext } from '../../src/core/context';
-import { PostPipeline, renderOverlays } from '../../src/render/post/PostPipeline';
+import { PostPipeline, renderEffects } from '../../src/render/post/PostPipeline';
 
 interface Call {
   name: string;
@@ -29,6 +29,19 @@ function fakeOverlay(name: string, calls: Call[]): SceneEffect & { sizes: [numbe
   };
 }
 
+/** A fake overlay whose active() returns the next entry of `on` each call (the last one repeats). */
+function gatedOverlay(name: string, calls: Call[], on: boolean[], asked: string[]): SceneEffect {
+  let i = 0;
+  return {
+    ...fakeOverlay(name, calls),
+    active(c) {
+      expect(c).toBe(ctx);
+      asked.push(name);
+      return on[Math.min(i++, on.length - 1)];
+    },
+  };
+}
+
 function fakeRenderer(width = 320, height = 200): THREE.WebGLRenderer {
   const r = {
     getDrawingBufferSize: (v: THREE.Vector2) => v.set(width, height),
@@ -43,20 +56,20 @@ function fakeRenderer(width = 320, height = 200): THREE.WebGLRenderer {
 const ctx = {} as unknown as SimContext;
 const depth = new THREE.DepthTexture(4, 4);
 
-describe('renderOverlays', () => {
+describe('renderEffects', () => {
   const targets = [new THREE.WebGLRenderTarget(4, 4), new THREE.WebGLRenderTarget(4, 4)];
   const r = fakeRenderer();
 
   it('returns the input unchanged with no overlays', () => {
     const src = new THREE.Texture();
-    expect(renderOverlays([], r, src, depth, targets, ctx, 0.016)).toBe(src);
+    expect(renderEffects([], r, src, depth, targets, ctx, 0.016)).toBe(src);
   });
 
   it('runs overlays in order, each reading the previous output, alternating targets', () => {
     const calls: Call[] = [];
     const overlays = ['a', 'b', 'c'].map((n) => fakeOverlay(n, calls));
     const src = new THREE.Texture();
-    const out = renderOverlays(overlays, r, src, depth, targets, ctx, 0.016);
+    const out = renderEffects(overlays, r, src, depth, targets, ctx, 0.016);
     expect(calls.map((c) => c.name)).toEqual(['a', 'b', 'c']);
     expect(calls[0].input).toBe(src);
     expect(calls[0].output).toBe(targets[0]);
@@ -70,10 +83,85 @@ describe('renderOverlays', () => {
   it('never writes the target its input belongs to', () => {
     for (const k of [0, 1]) {
       const calls: Call[] = [];
-      renderOverlays([fakeOverlay('a', calls), fakeOverlay('b', calls)], r, targets[k].texture, depth, targets, ctx, 0);
+      renderEffects([fakeOverlay('a', calls), fakeOverlay('b', calls)], r, targets[k].texture, depth, targets, ctx, 0);
       for (const c of calls) expect(c.output.texture).not.toBe(c.input);
       expect(calls[0].output).toBe(targets[1 - k]);
     }
+  });
+});
+
+describe('renderEffects with inactive effects', () => {
+  const targets = [new THREE.WebGLRenderTarget(4, 4), new THREE.WebGLRenderTarget(4, 4)];
+  const r = fakeRenderer();
+
+  it('skips an inactive effect without a draw; the next one reads the same input and the alternation holds', () => {
+    const calls: Call[] = [];
+    const asked: string[] = [];
+    const overlays = [
+      gatedOverlay('a', calls, [false], asked),
+      fakeOverlay('b', calls),
+      gatedOverlay('c', calls, [false], asked),
+      gatedOverlay('d', calls, [true], asked),
+    ];
+    const src = new THREE.Texture();
+    const out = renderEffects(overlays, r, src, depth, targets, ctx, 0.016);
+    expect(asked).toEqual(['a', 'c', 'd']);
+    expect(calls.map((c) => c.name)).toEqual(['b', 'd']);
+    expect(calls[0].input).toBe(src);
+    expect(calls[0].output).toBe(targets[0]);
+    expect(calls[1].input).toBe(targets[0].texture);
+    expect(calls[1].output).toBe(targets[1]);
+    expect(out).toBe(targets[1].texture);
+  });
+
+  it('returns the input when every effect is inactive', () => {
+    const calls: Call[] = [];
+    const src = new THREE.Texture();
+    const overlays = ['a', 'b'].map((n) => gatedOverlay(n, calls, [false], []));
+    expect(renderEffects(overlays, r, src, depth, targets, ctx, 0)).toBe(src);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('never writes the target its input belongs to, for every pattern of 4 active flags and both input targets', () => {
+    for (let mask = 0; mask < 16; mask++) {
+      for (const k of [0, 1]) {
+        const calls: Call[] = [];
+        const overlays = [0, 1, 2, 3].map((i) => gatedOverlay(String(i), calls, [((mask >> i) & 1) === 1], []));
+        const src = targets[k].texture;
+        const out = renderEffects(overlays, r, src, depth, targets, ctx, 0);
+        expect(calls.map((c) => c.name)).toEqual(['0', '1', '2', '3'].filter((_, i) => (mask >> i) & 1));
+        let prev = src;
+        for (const c of calls) {
+          expect(c.input).toBe(prev);
+          expect(c.output.texture).not.toBe(c.input);
+          prev = c.output.texture;
+        }
+        expect(out).toBe(prev);
+      }
+    }
+  });
+
+  it('renders every effect with all = true (the shader warm-up) without asking active()', () => {
+    const calls: Call[] = [];
+    const asked: string[] = [];
+    const overlays = [gatedOverlay('a', calls, [false], asked), gatedOverlay('b', calls, [false], asked)];
+    const src = new THREE.Texture();
+    const out = renderEffects(overlays, r, src, depth, targets, ctx, 0, true);
+    expect(asked).toEqual([]);
+    expect(calls.map((c) => c.name)).toEqual(['a', 'b']);
+    expect(calls[0].output).toBe(targets[0]);
+    expect(calls[1].output).toBe(targets[1]);
+    expect(out).toBe(targets[1].texture);
+  });
+
+  it('follows active() frame by frame', () => {
+    const calls: Call[] = [];
+    const overlays = [gatedOverlay('a', calls, [true, false, true], [])];
+    const src = new THREE.Texture();
+    expect(renderEffects(overlays, r, src, depth, targets, ctx, 0)).toBe(targets[0].texture);
+    expect(renderEffects(overlays, r, src, depth, targets, ctx, 0)).toBe(src);
+    expect(renderEffects(overlays, r, src, depth, targets, ctx, 0)).toBe(targets[0].texture);
+    expect(calls).toHaveLength(2);
   });
 });
 

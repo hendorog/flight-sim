@@ -683,8 +683,8 @@ export class Simulator {
    * scene (all visible objects, not just those in the frustum) with an HDR render target bound, as the post
    * pipeline renders it (the program key depends on the output colour space), then one real frame through
    * the post chain for the shadow-depth and full-screen programs (the exterior one without frustum culling,
-   * so every caster reaches the shadow cascades). Finally every program is linked now
-   * (three otherwise finishes the link at first use, in the middle of a frame).
+   * so every caster reaches the shadow cascades; every post effect rendered, active or not). Finally every
+   * program is linked now (three otherwise finishes the link at first use, in the middle of a frame).
    */
   private warmUpShaders(): void {
     const { ctx, systems: s } = this;
@@ -723,7 +723,7 @@ export class Simulator {
           });
         }
         try {
-          this.post.render(ctx, 0);
+          this.post.render(ctx, 0, true);
         } finally {
           for (const o of unculled) o.frustumCulled = true;
         }

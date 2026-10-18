@@ -1,7 +1,8 @@
 // The frame renderer used by the main loop:
 //
 //   scene -> HDR target (RGBA16F, MSAA, float depth texture for the log depth buffer)
-//         -> SceneEffects in order (aerial perspective first; clouds etc. added by other modules)
+//         -> SceneEffects in order (aerial perspective first; clouds etc. added by other modules); an effect
+//            whose active() is false that frame is skipped without a draw (renderEffects)
 //         -> temporal stabilisation (TemporalAA.ts; not on 'low')
 //         -> overlays in order (addOverlay: weather drawn after the temporal pass, render/weather)
 //         -> bloom chain (its 1/8-res level also feeds the exposure meter and the local-exposure map)
@@ -189,22 +190,27 @@ export function cabinFromModel(box: CabinBox, out = new THREE.Matrix4()): THREE.
 }
 
 /**
- * Run the post-TAA overlays (PostPipeline.addOverlay) in order over `src`, alternating between the two targets and
- * never writing the one `src` belongs to. Returns the last overlay's output texture, or `src` itself with none.
+ * Run `effects` in order over `src`, alternating between the two targets and never writing the one `src` belongs
+ * to. An effect whose active(ctx) is false is skipped without a draw (the next one reads the same input) and does
+ * not advance the alternation; `all` renders every effect whatever active() says (the shader warm-up). Returns the
+ * last rendered effect's output texture, or `src` itself when none rendered. Used for the scene effects and for the
+ * post-TAA overlays (PostPipeline.addEffect, addOverlay).
  */
-export function renderOverlays(
-  overlays: readonly SceneEffect[],
+export function renderEffects(
+  effects: readonly SceneEffect[],
   renderer: THREE.WebGLRenderer,
   src: THREE.Texture,
   depth: THREE.DepthTexture,
   targets: readonly THREE.WebGLRenderTarget[],
   ctx: SimContext,
   dt: number,
+  all = false,
 ): THREE.Texture {
   let k = targets[0].texture === src ? 1 : 0;
-  for (const overlay of overlays) {
+  for (const effect of effects) {
+    if (!all && effect.active && !effect.active(ctx)) continue;
     const out = targets[k];
-    overlay.render(renderer, src, depth, out, ctx, dt);
+    effect.render(renderer, src, depth, out, ctx, dt);
     src = out.texture;
     k ^= 1;
   }
@@ -364,7 +370,11 @@ export class PostPipeline {
     this.taa.reset();
   }
 
-  render(ctx: SimContext, dt: number): void {
+  /**
+   * Draw one frame. `warmUp`: render every scene effect and overlay, including those whose active() is false, so
+   * that the shader warm-up (Simulator.warmUpShaders) compiles their materials.
+   */
+  render(ctx: SimContext, dt: number, warmUp = false): void {
     const r = this.renderer;
     r.getDrawingBufferSize(this.size);
     const samples = MSAA_SAMPLES[ctx.quality];
@@ -379,19 +389,15 @@ export class PostPipeline {
     r.clear();
     r.render(this.scene, this.camera);
 
-    let src = this.hdr.texture;
-    this.effects.forEach((effect, i) => {
-      const out = this.ping[i % 2];
-      effect.render(r, src, this.hdr.depthTexture as THREE.DepthTexture, out, ctx, dt);
-      src = out.texture;
-    });
+    const depth = this.hdr.depthTexture as THREE.DepthTexture;
+    let src = renderEffects(this.effects, r, this.hdr.texture, depth, this.ping, ctx, dt, warmUp);
 
     let layer: ReprojectionLayer | null = null;
     for (const effect of this.effects) layer = effect.reprojectionLayer?.() ?? layer;
 
     this.taa.enabled = this.temporalAA && ctx.quality !== 'low';
-    src = this.taa.render(r, src, this.hdr.depthTexture as THREE.DepthTexture, layer, this.camera, ctx.aircraftRoot ?? null, (m, t) => this.pass.render(r, m, t));
-    if (this.overlays.length > 0) src = renderOverlays(this.overlays, r, src, this.hdr.depthTexture as THREE.DepthTexture, this.ping, ctx, dt);
+    src = this.taa.render(r, src, depth, layer, this.camera, ctx.aircraftRoot ?? null, (m, t) => this.pass.render(r, m, t));
+    if (this.overlays.length > 0) src = renderEffects(this.overlays, r, src, depth, this.ping, ctx, dt, warmUp);
 
     this.exposureUniforms.uExposureBias.value = this.exposureBias;
     const atmosphere = Atmosphere.for(r);

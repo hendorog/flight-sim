@@ -1,6 +1,7 @@
 // Lightning flashes and bolts from the storm cells (WeatherSettings.storms): a post-TAA overlay (PostPipeline
 // addOverlay), so a flash shorter than a frame is not averaged away by the temporal pass. Created at boot whether or
-// not the weather has cells; with no flash lit it copies its input.
+// not the weather has cells. active() advances the strike schedule and is false while no flash is lit (after the
+// first render), so PostPipeline skips the overlay between flashes; rendered with no flash lit it copies its input.
 //
 // Each frame it asks the scheduler (sim/weather/lightning.ts strikesBetween) for the strikes that began since the
 // last frame's simulation time (none while paused; a jump back in time, a reset, drops the lit flashes; a jump of
@@ -366,6 +367,20 @@ export class LightningOverlay implements SceneEffect {
     ctx.events.emit('lightning', { id: s.id, kind: s.kind, north: s.north, east: s.east, altM, energy: s.energy, strokes: s.strokes });
   }
 
+  /**
+   * Advance the schedule (advance; render's own call at the same simTime then starts nothing) and report whether a
+   * flash is lit, or the first render (which compiles the lightning material) is still to come. A false result
+   * publishes no flash (ctx.weatherFx.flash energy 0), as render's copy does.
+   */
+  active(ctx: SimContext): boolean {
+    if (!this.warmed) return true;
+    this.advance(ctx);
+    if (this.lit > 0) return true;
+    const fx = ctx.weatherFx?.flash;
+    if (fx) fx.energy = 0;
+    return false;
+  }
+
   render(renderer: THREE.WebGLRenderer, input: THREE.Texture, depth: THREE.DepthTexture, output: THREE.WebGLRenderTarget, ctx: SimContext): void {
     const prevTarget = renderer.getRenderTarget();
     this.advance(ctx);
@@ -423,7 +438,7 @@ export class LightningOverlay implements SceneEffect {
     u.uCuTrans.value = layer?.transmittance ?? null;
     if (layer) texelOf(layer.transmittance, u.uCuTexel.value);
     const storm = this.storms(ctx);
-    const stormOn = storm !== null && storm.active;
+    const stormOn = storm !== null && storm.marched;
     u.uHasCb.value = stormOn ? 1 : 0;
     u.uCbDist.value = stormOn ? storm.distance : null;
     u.uCbTrans.value = stormOn ? storm.transmittance : null;
@@ -462,7 +477,7 @@ export class LightningOverlay implements SceneEffect {
   }
 }
 
-/** The lightning overlay: always created (it copies its input while no flash is lit). */
+/** The lightning overlay: always created (skipped while no flash is lit). */
 export function createLightningOverlay(c: WeatherEffectContext): SceneEffect | null {
   return new LightningOverlay(c.clouds);
 }

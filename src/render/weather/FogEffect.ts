@@ -1,7 +1,8 @@
 // Ground fog layer (WeatherSettings.fogTopM, fogVisibilityM): a scene effect after the storm cells and the clouds,
 // before the temporal pass. One full-resolution draw: per pixel the analytic optical depth of the layer between the
 // camera and the surface (fogModel.ts, GLSL in fogGlsl.ts), then out = in * e^-tau + L with the in-scatter L of
-// fogModel.fogRadiance. Without a fog layer (fogOf(w).topM === 0) the draw is a plain copy.
+// fogModel.fogRadiance. Without a fog layer (fogOf(w).topM === 0) active() is false and PostPipeline skips the effect;
+// rendered anyway (the shader warm-up) the draw is a plain copy.
 //
 // Path length per pixel: opaque pixels use the log-depth distance (viewZFromDepth x the view ray's length, as
 // AerialPerspectiveEffect); sky pixels looking up end where the ray leaves the fog top (nothing when the camera is
@@ -15,7 +16,8 @@
 // looking down) instead of the lamp-to-camera path the sprites' compensation assumes. The ambient term is ctx.sky.hazeColor, which carries the cloud
 // layer's dimming of the air light (cloudSky.ts summarize); the sun term is scaled by cloudSky.directGround.
 //
-// The fog uniform (fogGlsl.ts fogUniformFor) is written here every frame, for light sprites drawn without the weather.
+// The fog uniform (fogGlsl.ts fogUniformFor) is written here every frame (in active(), which PostPipeline calls each
+// frame, and in render), for light sprites drawn without the weather.
 
 import * as THREE from 'three';
 import { CAMERA_FAR, type SceneEffect, type SimContext } from '../../core/context';
@@ -114,6 +116,11 @@ export class FogEffect implements SceneEffect {
     });
   }
 
+  /** Whether the weather has a fog layer; writes the shared fog uniform either way. */
+  active(ctx: SimContext): boolean {
+    return fogUniformValue(ctx.weather, this.fog.value).w !== 0;
+  }
+
   setSize(): void {
     // Resolution independent: one full-screen draw at the output size.
   }
@@ -159,7 +166,7 @@ export class FogEffect implements SceneEffect {
   }
 }
 
-/** The ground-fog scene effect. Always created (the weather can gain a fog layer at any time); a copy without fog. */
+/** The ground-fog scene effect. Always created (the weather can gain a fog layer at any time); skipped without fog. */
 export function createFogEffect(c: WeatherEffectContext): SceneEffect | null {
   return new FogEffect(c.renderer, c.post);
 }

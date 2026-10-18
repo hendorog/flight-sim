@@ -1,10 +1,10 @@
 // Cumulonimbus cells (WeatherSettings.storms, read through stormsOf): a scene effect after the clouds, built on the
 // VolcanoPlumeEffect pattern. Created at boot whether or not the weather has cells, so that cells set later (menu,
-// presets, __sim.setWeather) appear without a shader compile; with no cell on screen it copies its input.
+// presets, __sim.setWeather) appear without a shader compile; with no cell on screen active() is false and PostPipeline
+// skips it (rendered anyway, as by the shader warm-up, it copies its input).
 //
-// Per frame (2 draws; 1 copy when no cell is in the view frustum, except on the first render, which draws both
-// passes with no cell so that their shaders compile in the Simulator's shader warm-up; the composite then returns
-// its input):
+// Per frame (2 draws; none when no cell is in the view frustum, except on the first render, which draws both passes
+// with no cell so that their shaders compile in the Simulator's shader warm-up; the composite then returns its input):
 //   1. march      (STORM_MARCH_FRAG, stormGlsl.ts)      STORM_SCALE resolution, MRT: premultiplied radiance +
 //                                                       transmittance, and the density-weighted front distance
 //                                                       with the scene depth the ray met
@@ -174,7 +174,7 @@ function fullscreenMaterial(fragmentShader: string, uniforms: Uniforms): THREE.S
 /** What the storm march drew in the last frame, for the lightning overlay. */
 export interface StormLayer {
   /** Whether the last frame marched (false: no cell on screen; the textures are stale). */
-  readonly active: boolean;
+  readonly marched: boolean;
   /** r: log2(1 + front distance, m); g: log2(1 + scene distance). STORM_SCALE resolution. */
   readonly distance: THREE.Texture;
   /** a: transmittance of the cells. */
@@ -194,7 +194,7 @@ export function stormLayerOf(ctx: SimContext): StormLayer | null {
 
 export class StormCellEffect implements SceneEffect, StormLayer {
   readonly name = 'stormCells';
-  active = false;
+  marched = false;
   count = 0;
   readonly cells: CellGeometry[] = Array.from({ length: MAX_STORMS }, makeCellGeometry);
 
@@ -328,6 +328,17 @@ export class StormCellEffect implements SceneEffect, StormLayer {
     return n;
   }
 
+  /**
+   * Whether a cell is in the view frustum (updateCells), or the first render (which compiles the march and
+   * composite) is still to come. A false result publishes a layer that did not march (marched false, count 0) for
+   * the lightning overlay, as render's copy does.
+   */
+  active(ctx: SimContext): boolean {
+    const on = this.updateCells(ctx) > 0;
+    this.marched = on;
+    return on || !this.warmed;
+  }
+
   render(renderer: THREE.WebGLRenderer, input: THREE.Texture, depth: THREE.DepthTexture, output: THREE.WebGLRenderTarget, ctx: SimContext): void {
     const prevTarget = renderer.getRenderTarget();
     const scale = ctx.quality === 'low' ? STORM_SCALE_LOW : STORM_SCALE;
@@ -335,8 +346,8 @@ export class StormCellEffect implements SceneEffect, StormLayer {
       this.scale = scale;
       this.resize();
     }
-    this.active = this.updateCells(ctx) > 0;
-    if (!this.active && this.warmed) {
+    this.marched = this.updateCells(ctx) > 0;
+    if (!this.marched && this.warmed) {
       this.copyMat.uniforms.uScene.value = input;
       this.draw(renderer, this.copyMat, output);
       renderer.setRenderTarget(prevTarget);
@@ -431,7 +442,7 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   }
 }
 
-/** The storm-cell scene effect: always created (it copies its input while no cell is on screen). */
+/** The storm-cell scene effect: always created (skipped while no cell is on screen). */
 export function createStormCellEffect(c: WeatherEffectContext): SceneEffect | null {
   const effect = new StormCellEffect(c.clouds);
   LAYERS.set(c.ctx, effect);

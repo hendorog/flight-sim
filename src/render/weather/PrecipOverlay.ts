@@ -18,7 +18,8 @@
 //   - Light: the sky ambient and the direct sun under the cloud layer (Atmosphere.cloudSky.directGround); the
 //     landing light and the airport lights do not light the drops.
 // The overlay writes the input's alpha unchanged (the tone map's point-source flag). With no precipitation (rate 0)
-// or on 'low' it copies its input. The prevailing visibility in precipitation is not drawn here: the sky, haze and
+// or on 'low' active() is false after the first frame and PostPipeline skips it; rendered anyway (the shader warm-up)
+// it copies its input. The streaks have no fade-out: they stop on the frame the rate reaches 0. The prevailing visibility in precipitation is not drawn here: the sky, haze and
 // clouds read core/weatherFields.effectiveVisibilityM.
 // Known limits: the grid's cells lengthen in powers of 2 as the streaks lengthen (precipOptics.psiScale), so the
 // drop pattern of a shell is redrawn at each doubling while the aircraft accelerates; near the axis of the motion
@@ -253,6 +254,26 @@ export class PrecipOverlay implements SceneEffect {
     this.height = Math.max(1, height);
   }
 
+  /**
+   * False when nothing falls (rate 0, or no shells on this quality) once the streak shader has been compiled (the
+   * first render). A false result forgets the camera's motion, as render's copy does.
+   */
+  active(ctx: SimContext): boolean {
+    if (!this.warm) return true;
+    const p = precipOf(ctx.weather, this.precip);
+    const radii = SHELL_RADII_M[ctx.quality] ?? SHELL_RADII_M.high;
+    if (p.rateMmH > 0 && radii.length > 0) return true;
+    this.drawn = false;
+    this.forgetMotion();
+    return false;
+  }
+
+  /** Nothing falling: forget the camera's motion so the next shower starts from the current pose. */
+  private forgetMotion(): void {
+    this.hasPrev = false;
+    this.primed = false;
+  }
+
   render(renderer: THREE.WebGLRenderer, input: THREE.Texture, depth: THREE.DepthTexture, output: THREE.WebGLRenderTarget, ctx: SimContext, dt: number): void {
     const prevTarget = renderer.getRenderTarget();
     const p = precipOf(ctx.weather, this.precip);
@@ -266,9 +287,7 @@ export class PrecipOverlay implements SceneEffect {
       this.pass.render(renderer, this.material, this.warm);
     }
     if (!this.drawn) {
-      // Nothing falling: forget the camera's motion so the next shower starts from the current pose.
-      this.hasPrev = false;
-      this.primed = false;
+      this.forgetMotion();
       this.copyMat.uniforms.uScene.value = input;
       this.pass.render(renderer, this.copyMat, output);
       renderer.setRenderTarget(prevTarget);
@@ -406,7 +425,7 @@ export class PrecipOverlay implements SceneEffect {
   }
 }
 
-/** The precipitation overlay. Always created (the weather can start raining at any time); it copies its input while nothing falls. */
+/** The precipitation overlay. Always created (the weather can start raining at any time); skipped while nothing falls. */
 export function createPrecipOverlay(c: WeatherEffectContext): SceneEffect | null {
   return new PrecipOverlay(c.post);
 }
