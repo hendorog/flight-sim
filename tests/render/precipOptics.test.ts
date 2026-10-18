@@ -14,9 +14,14 @@ import {
   SHELL_RADII_M,
   STREAK_EXPOSURE_S,
   STREAK_MAX_M,
+  MAX_DROPS_PER_CELL,
+  MAX_DROP_WEIGHT,
   dropProbability,
+  dropSlots,
+  dropWeight,
+  dropsPerCell,
   fallSpeed,
-  psiCell,
+  psiScale,
   psiOf,
   relativeVelocity,
   shellPhase,
@@ -111,13 +116,12 @@ describe('streak geometry', () => {
   });
 
   it('psi cells hold the streak: a power of 2 of CELL_ANGLE at least the streak plus 0.3 cells', () => {
-    expect(psiCell(0, 2)).toEqual([CELL_ANGLE, 1]);
+    expect(psiScale(0, 2)).toBe(1);
     for (const [L, R] of [[0.12, 2], [0.83, 2], [3, 2], [3, 30], [0.5, 12]] as const) {
-      const [len, scale] = psiCell(L, R);
+      const scale = psiScale(L, R);
       expect(Math.log2(scale) % 1).toBe(0);
-      expect(len).toBeCloseTo(CELL_ANGLE * scale, 12);
-      expect(len).toBeGreaterThanOrEqual(L / R + 0.3 * CELL_ANGLE - 1e-12);
-      if (scale > 1) expect(len / 2).toBeLessThan(L / R + 0.3 * CELL_ANGLE);
+      expect(CELL_ANGLE * scale).toBeGreaterThanOrEqual(L / R + 0.3 * CELL_ANGLE - 1e-12);
+      if (scale > 1) expect((CELL_ANGLE * scale) / 2).toBeLessThan(L / R + 0.3 * CELL_ANGLE);
     }
   });
 
@@ -129,15 +133,35 @@ describe('streak geometry', () => {
     expect((2 * Math.abs(psiOf(1))) / CELL_ANGLE).toBeLessThan(PSI_TILE);
   });
 
-  it('drop probability: rate over the full rate, times the cell length, at most 1', () => {
-    expect(dropProbability(0, 0, 1)).toBe(0);
-    expect(dropProbability(RATE_FULL_MMH[0] / 4, 0, 1)).toBeCloseTo(0.25, 12);
-    expect(dropProbability(RATE_FULL_MMH[0] / 4, 0, 2)).toBeCloseTo(0.5, 12);
-    expect(dropProbability(50, 0, 8)).toBe(1);
-    expect(dropProbability(1, 9, 1)).toBeCloseTo(1 / RATE_FULL_MMH[RATE_FULL_MMH.length - 1], 12);
+  it('drops per cell: rate over the full rate, times the cell length', () => {
+    expect(dropsPerCell(0, 0, 1)).toBe(0);
+    expect(dropsPerCell(RATE_FULL_MMH[0] / 4, 0, 1)).toBeCloseTo(0.25, 12);
+    expect(dropsPerCell(RATE_FULL_MMH[0] / 4, 0, 2)).toBeCloseTo(0.5, 12);
+    expect(dropsPerCell(1, 9, 1)).toBeCloseTo(1 / RATE_FULL_MMH[RATE_FULL_MMH.length - 1], 12);
     // Snow counts RATE_COUNT_SCALE.snow flakes per drop of the same water rate; none counts nothing.
-    expect(dropProbability(1, 0, 1, 'snow')).toBeCloseTo(RATE_COUNT_SCALE.snow / RATE_FULL_MMH[0], 12);
-    expect(dropProbability(10, 0, 1, 'none')).toBe(0);
+    expect(dropsPerCell(1, 0, 1, 'snow')).toBeCloseTo(RATE_COUNT_SCALE.snow / RATE_FULL_MMH[0], 12);
+    expect(dropsPerCell(10, 0, 1, 'none')).toBe(0);
+  });
+
+  it('drop slots: one per CELL_ANGLE of cell length, at most MAX_DROPS_PER_CELL', () => {
+    expect(dropSlots(1)).toBe(1);
+    expect(dropSlots(2)).toBe(2);
+    expect(dropSlots(16)).toBe(MAX_DROPS_PER_CELL);
+  });
+
+  it('drop probability and weight: unsaturated, the probability carries the rate; saturated, the weight does', () => {
+    expect(dropProbability(RATE_FULL_MMH[0] / 4, 0, 2)).toBeCloseTo(0.25, 12);
+    expect(dropWeight(RATE_FULL_MMH[0] / 4, 0, 2)).toBe(1);
+    expect(dropProbability(50, 0, 8)).toBe(1);
+    expect(dropWeight(50, 0, 8)).toBe(MAX_DROP_WEIGHT);
+    expect(dropWeight(10, 9, 1, 'none')).toBe(1);
+    // 110 kt (streak 0.94 m) on the 2 m shell: a cell of 16 CELL_ANGLE, 4 slots. The probability x weight (the mean
+    // coverage per slot) is proportional to the rate up to MAX_DROP_WEIGHT slots' worth.
+    const scale = psiScale(0.94, 2);
+    expect(scale).toBe(16);
+    const mean = (rate: number) => dropProbability(rate, 0, scale) * dropWeight(rate, 0, scale);
+    for (const rate of [0.5, 1, 4, 12]) expect(mean(rate)).toBeCloseTo(dropsPerCell(rate, 0, scale) / MAX_DROPS_PER_CELL, 12);
+    expect(mean(25)).toBeGreaterThan(mean(4));
   });
 
   it('shell phase advances at speed / R and wraps into one tile period', () => {

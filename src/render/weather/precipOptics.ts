@@ -87,27 +87,57 @@ export function streakLengthM(speedMs: number): number {
 }
 
 /**
- * Length of a grid cell along psi, in psi units, for a streak of length streakM on a shell of radius R: CELL_ANGLE
- * times the smallest power of 2 that holds the streak (streakM / R in psi) plus a margin of 0.3 cells, so each
- * streak lies inside its own cell and the shader reads one cell per shell. Returns [cell length, power of 2].
+ * Length of a grid cell along psi for a streak of length streakM on a shell of radius R, as a multiple of CELL_ANGLE:
+ * the smallest power of 2 that holds the streak (streakM / R in psi) plus a margin of 0.3 cells, so each streak lies
+ * inside its own cell and the shader reads one cell per shell. The cell is CELL_ANGLE times this long in psi.
  */
-export function psiCell(streakM: number, radiusM: number): [length: number, scale: number] {
+export function psiScale(streakM: number, radiusM: number): number {
   const need = streakM / radiusM / CELL_ANGLE + 0.3;
-  const scale = need <= 1 ? 1 : 2 ** Math.ceil(Math.log2(need));
-  return [CELL_ANGLE * scale, scale];
+  return need <= 1 ? 1 : 2 ** Math.ceil(Math.log2(need));
 }
 
 /** Number of cells around phi on every shell (a whole number, so the grid closes at phi = +-pi). */
 export const PHI_CELLS = Math.round((2 * Math.PI) / CELL_ANGLE);
 
 /**
- * Probability that a cell of shell k holds a drop at rate rateMmH, for a cell `scale` times CELL_ANGLE long in psi
- * (psiCell): the rate times RATE_COUNT_SCALE[type] over RATE_FULL_MMH[k], times the cell's length so the drops per solid angle do not fall as
- * the cells lengthen, at most 1.
+ * Drops the shader places in one cell, at most: a cell `scale` times CELL_ANGLE long holds min(scale, this) drops,
+ * each hashed on its own, so the count can follow the rate after the cells lengthen. Tuning value (the cost is one
+ * hash per drop per shell per pixel).
  */
-export function dropProbability(rateMmH: number, shell: number, scale: number, type: PrecipType = 'rain'): number {
+export const MAX_DROPS_PER_CELL = 4;
+/**
+ * Largest factor on a drop's coverage when the rate asks for more drops than a cell holds (dropWeight). Unconfirmed:
+ * tuning value.
+ */
+export const MAX_DROP_WEIGHT = 4;
+
+/** Drops the shader places in a cell `scale` times CELL_ANGLE long (psiScale). */
+export function dropSlots(scale: number): number {
+  return Math.min(scale, MAX_DROPS_PER_CELL);
+}
+
+/**
+ * Mean number of drops in a cell of shell k at rate rateMmH, for a cell `scale` times CELL_ANGLE long in psi
+ * (psiScale): the rate times RATE_COUNT_SCALE[type] over RATE_FULL_MMH[k], times the cell's length, so the drops
+ * per solid angle do not fall as the cells lengthen.
+ */
+export function dropsPerCell(rateMmH: number, shell: number, scale: number, type: PrecipType = 'rain'): number {
   const full = RATE_FULL_MMH[Math.min(shell, RATE_FULL_MMH.length - 1)];
-  return Math.min(1, ((Math.max(0, rateMmH) * (RATE_COUNT_SCALE[type] ?? 0)) / full) * scale);
+  return ((Math.max(0, rateMmH) * (RATE_COUNT_SCALE[type] ?? 0)) / full) * scale;
+}
+
+/** Probability that each of a cell's dropSlots(scale) drops is present: dropsPerCell over the slots, at most 1. */
+export function dropProbability(rateMmH: number, shell: number, scale: number, type: PrecipType = 'rain'): number {
+  return Math.min(1, dropsPerCell(rateMmH, shell, scale, type) / dropSlots(scale));
+}
+
+/**
+ * Factor on each drop's coverage: dropsPerCell over the slots once that exceeds 1 (every slot holds a drop), at most
+ * MAX_DROP_WEIGHT, else 1. Above the rate that fills the slots, the screen's mean coverage keeps rising with the
+ * rate through the drops' opacity instead of their count.
+ */
+export function dropWeight(rateMmH: number, shell: number, scale: number, type: PrecipType = 'rain'): number {
+  return Math.min(MAX_DROP_WEIGHT, Math.max(1, dropsPerCell(rateMmH, shell, scale, type) / dropSlots(scale)));
 }
 
 /**

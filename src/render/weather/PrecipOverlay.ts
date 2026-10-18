@@ -5,12 +5,14 @@
 // and 30 m on high and ultra, 2, 6 and 20 m on medium, none on low). On a shell the drops sit in the cells of a grid
 // aligned with their motion relative to the camera (precipOptics.ts header): psi = ln tan(theta / 2) along the
 // motion, phi about it. Every drop moves at the same rate in psi, so the grid scrolls by one phase per shell, and
-// every streak (the drop's path in STREAK_EXPOSURE_S, at most STREAK_MAX_M) fits in its own cell: the shader hashes
-// the one cell the pixel falls in (pcg4d, Jarzynski and Olano 2020), places the drop in it and measures the pixel's
-// distance to the streak in pixels (anti-aliased over STREAK_WIDTH_PX, since nothing after the overlays filters it).
+// every streak (the drop's path in STREAK_EXPOSURE_S, at most STREAK_MAX_M) fits in its own cell: the shader reads
+// the one cell the pixel falls in, hashes each of its drops (up to precipOptics.MAX_DROPS_PER_CELL; pcg4d, Jarzynski
+// and Olano 2020), places them in it and measures the pixel's distance to each streak in pixels (anti-aliased over
+// STREAK_WIDTH_PX, since nothing after the overlays filters it). Above the rate that fills every drop of a cell, the
+// drops' coverage grows instead (precipOptics.dropWeight).
 //   - Motion: vRel = wind at the camera (ctx.env.wind) - camera velocity (from its position in the last frame; a
-//     jump of more than CUT_DISTANCE_M or CUT_SPEED_MS keeps the previous velocity) + the fall speed, smoothed with
-//     VREL_TAU_S. Snow adds a sideways sway of each flake.
+//     jump of more than CUT_DISTANCE_M or CUT_SPEED_MS, a change of camera mode or a scenario reset discards the
+//     last position) + the fall speed, smoothed with VREL_TAU_S. Snow adds a sideways sway of each flake.
 //   - Occlusion: a shell beyond the scene's depth at the pixel (DEPTH_GLSL) is skipped, and in the cockpit a shell
 //     point inside the cabin box (PostPipeline.cabinFromView, the tone map's outside mask) draws nothing.
 //   - Light: the sky ambient and the direct sun under the cloud layer (Atmosphere.cloudSky.directGround); the
@@ -18,7 +20,7 @@
 // The overlay writes the input's alpha unchanged (the tone map's point-source flag). With no precipitation (rate 0)
 // or on 'low' it copies its input. The prevailing visibility in precipitation is not drawn here: the sky, haze and
 // clouds read core/weatherFields.effectiveVisibilityM.
-// Known limits: the grid's cells lengthen in powers of 2 as the streaks lengthen (precipOptics.psiCell), so the
+// Known limits: the grid's cells lengthen in powers of 2 as the streaks lengthen (precipOptics.psiScale), so the
 // drop pattern of a shell is redrawn at each doubling while the aircraft accelerates; near the axis of the motion
 // (the focus of expansion and its opposite) the drops are thinned out as sin^2(theta) so the drops per solid angle
 // stay uniform.
@@ -38,9 +40,12 @@ import {
   PHI_CELLS,
   PSI_TILE,
   SHELL_RADII_M,
+  MAX_DROPS_PER_CELL,
   dropProbability,
+  dropSlots,
+  dropWeight,
   fallSpeed,
-  psiCell,
+  psiScale,
   relativeVelocity,
   shellPhase,
   streakLengthM,
@@ -54,11 +59,15 @@ export const MAX_SHELLS = 4;
 export const STREAK_WIDTH_PX = 1.2;
 /** Diameter of a snowflake, m: its width on a shell is the larger of this and STREAK_WIDTH_PX. Unconfirmed: tuning value. */
 export const SNOWFLAKE_M = 0.01;
-/** Snow sway: amplitude, m, and frequency, Hz (each flake with its own phase). Unconfirmed: tuning values. */
-export const SNOW_SWAY_M = 0.3;
-export const SNOW_SWAY_HZ = 1.5;
 /** A drop's position across its cell stays this fraction of the cell away from each edge (holds the sway). */
 const CELL_MARGIN = 0.2;
+/**
+ * Snow sway: amplitude as a fraction of a cell's width in phi (an angle of SNOW_SWAY_CELLS x CELL_ANGLE at
+ * theta = 90 deg, 0.015 m on a 2 m shell), inside CELL_MARGIN; and frequency, Hz (each flake with its own phase).
+ * Unconfirmed: tuning values.
+ */
+export const SNOW_SWAY_CELLS = 0.15;
+export const SNOW_SWAY_HZ = 1.5;
 /** Camera motion between two frames treated as a cut (the velocity is kept), m and m/s. */
 export const CUT_DISTANCE_M = 100;
 export const CUT_SPEED_MS = 250;
@@ -74,8 +83,8 @@ const BLUR_FLOOR = 0.2;
  *   alpha             coverage of a streak's centre
  */
 export const PRECIP_LOOK: Readonly<Record<Exclude<PrecipType, 'none'>, { skyGain: number; sunGain: number; occlusion: number; alpha: number }>> = Object.freeze({
-  rain: { skyGain: 0.6, sunGain: 0.05, occlusion: 0.3, alpha: 0.7 },
-  drizzle: { skyGain: 0.6, sunGain: 0.05, occlusion: 0.3, alpha: 0.35 },
+  rain: { skyGain: 0.3, sunGain: 0.05, occlusion: 0.3, alpha: 0.7 },
+  drizzle: { skyGain: 0.3, sunGain: 0.05, occlusion: 0.3, alpha: 0.35 },
   snow: { skyGain: 0.8, sunGain: 0.25, occlusion: 1, alpha: 0.9 },
 });
 
@@ -91,6 +100,7 @@ uniform vec3 uAxisU;         // phi = 0 reference, perpendicular to uAxis
 uniform vec3 uAxisW;         // uAxis x uAxisU
 uniform vec4 uShellA[${MAX_SHELLS}]; // radius m, psi phase, psi cell length, drop probability
 uniform vec4 uShellB[${MAX_SHELLS}]; // streak length in psi, width px, sway amplitude in phi cells, alpha
+uniform vec4 uShellC[${MAX_SHELLS}]; // drops per cell, coverage weight
 uniform int uShells;
 uniform float uPixelAngle;   // rad per pixel
 uniform float uTime;         // s
@@ -140,23 +150,27 @@ void main() {
     float cellS = floor(gs);
     float fs = gs - cellS;
     uint iS = uint(int(cellS) + ${PSI_TILE * 4}) & ${PSI_TILE - 1}u;
-    vec4 r = vec4(pcg4d(uvec4(iP, iS, uint(k), 0x9e3779b9u))) * (1.0 / 4294967296.0);
-    // A drop in this cell, thinned as sin^2(theta) (a cell spans sin^2(theta) of the solid angle it does at the
-    // equator), with a soft edge so a drop moving toward the axis fades out.
-    float exist = smoothstep(r.x, r.x + 0.05, A.w * s * s);
-    if (exist <= 0.0) continue;
+    vec4 C = uShellC[k];
     float len = B.x / A.z;
-    float across = ${CELL_MARGIN.toFixed(2)} + ${(1 - 2 * CELL_MARGIN).toFixed(2)} * r.y + B.z * sin(PRECIP_TAU * (${SNOW_SWAY_HZ.toFixed(2)} * uTime + r.w));
-    float head = r.z * max(0.0, 1.0 - len);
-    // Distance from the pixel to the streak (from the head to the head + len in psi), as an angle, in pixels.
-    float ex = (fp - across) * (PRECIP_TAU / PHI_CELLS);
-    float ey = (fs - clamp(fs, head, head + len)) * A.z;
-    float px = s * length(vec2(ex, ey)) / uPixelAngle;
-    float cover = clamp(0.5 * B.y + 0.5 - px, 0.0, 1.0);
     // The drop's light spreads along a streak: fainter as the streak lengthens on the screen.
     float lenPx = s * B.x / uPixelAngle;
     float blur = clamp(sqrt(B.y / max(lenPx, B.y)), ${BLUR_FLOOR.toFixed(2)}, 1.0);
-    keep *= 1.0 - cover * exist * blur * B.w;
+    for (int j = 0; j < ${MAX_DROPS_PER_CELL}; j++) {
+      if (float(j) >= C.x) break;
+      vec4 r = vec4(pcg4d(uvec4(iP, iS, uint(k * 8 + j), 0x9e3779b9u))) * (1.0 / 4294967296.0);
+      // A drop in this slot, thinned as sin^2(theta) (a cell spans sin^2(theta) of the solid angle it does at the
+      // equator), with a soft edge so a drop moving toward the axis fades out.
+      float exist = smoothstep(r.x, r.x + 0.05, A.w * s * s);
+      if (exist <= 0.0) continue;
+      float across = ${CELL_MARGIN.toFixed(2)} + ${(1 - 2 * CELL_MARGIN).toFixed(2)} * r.y + B.z * sin(PRECIP_TAU * (${SNOW_SWAY_HZ.toFixed(2)} * uTime + r.w));
+      float head = r.z * max(0.0, 1.0 - len);
+      // Distance from the pixel to the streak (from the head to the head + len in psi), as an angle, in pixels.
+      float ex = (fp - across) * (PRECIP_TAU / PHI_CELLS);
+      float ey = (fs - clamp(fs, head, head + len)) * A.z;
+      float px = s * length(vec2(ex, ey)) / uPixelAngle;
+      float cover = clamp(0.5 * B.y + 0.5 - px, 0.0, 1.0);
+      keep *= 1.0 - min(1.0, cover * exist * blur * B.w * C.y);
+    }
   }
   float a = 1.0 - keep;
   gl_FragColor = vec4(scene.rgb * (1.0 - a * uOcclusion) + uRadiance * a, scene.a);
@@ -190,6 +204,7 @@ export class PrecipOverlay implements SceneEffect {
   private readonly axisW = new THREE.Vector3(0, 0, 1);
   private readonly shellA = Array.from({ length: MAX_SHELLS }, () => new THREE.Vector4());
   private readonly shellB = Array.from({ length: MAX_SHELLS }, () => new THREE.Vector4());
+  private readonly shellC = Array.from({ length: MAX_SHELLS }, () => new THREE.Vector4());
   private readonly phase = new Float64Array(MAX_SHELLS);
   private readonly cellScale = new Float64Array(MAX_SHELLS);
   private readonly radiance = new THREE.Vector3();
@@ -197,6 +212,9 @@ export class PrecipOverlay implements SceneEffect {
   private readonly camPos = new THREE.Vector3();
   private readonly prevCamPos = new THREE.Vector3();
   private hasPrev = false;
+  /** Camera mode and simTime of the last frame drawn (a mode change or a simTime that went back is a cut). */
+  private lastMode: SimContext['cameraMode'] | null = null;
+  private lastSimTime = 0;
   private readonly camVel: V3 = { x: 0, y: 0, z: 0 };
   private readonly wind: V3 = { x: 0, y: 0, z: 0 };
   private readonly target: V3 = { x: 0, y: 0, z: 0 };
@@ -218,6 +236,7 @@ export class PrecipOverlay implements SceneEffect {
         uAxisW: { value: this.axisW },
         uShellA: { value: this.shellA },
         uShellB: { value: this.shellB },
+        uShellC: { value: this.shellC },
         uShells: { value: 0 },
         uPixelAngle: { value: 1e-3 },
         uTime: { value: 0 },
@@ -255,6 +274,16 @@ export class PrecipOverlay implements SceneEffect {
       renderer.setRenderTarget(prevTarget);
       return;
     }
+    // A camera mode switch moves the camera without a cut-sized jump at low frame rates; a scenario reset restarts
+    // simTime at 0 and puts the aircraft elsewhere.
+    if (ctx.simTime < this.lastSimTime) {
+      this.primed = false;
+      this.camVel.x = this.camVel.y = this.camVel.z = 0;
+      this.hasPrev = false;
+    }
+    if (ctx.cameraMode !== this.lastMode) this.hasPrev = false;
+    this.lastMode = ctx.cameraMode;
+    this.lastSimTime = ctx.simTime;
     const camera = ctx.camera;
     this.camPos.setFromMatrixPosition(camera.matrixWorld);
     const u = this.material.uniforms;
@@ -301,7 +330,8 @@ export class PrecipOverlay implements SceneEffect {
       this.prevCamPos.copy(cam);
       this.hasPrev = true;
     }
-    // The wind at the camera, NED -> three.js (frames.ts nedToThree: x east, y up, z south).
+    // The wind at the camera, NED -> three.js (frames.ts nedToThree: x east, y up, z south). SimContext.env is
+    // required; the guard is for test contexts built without one.
     const env = ctx.env as Partial<SimContext['env']> | undefined;
     if (env && typeof env.wind === 'function') {
       this.ned.x = -cam.z;
@@ -346,7 +376,8 @@ export class PrecipOverlay implements SceneEffect {
     const n = Math.min(radii.length, MAX_SHELLS);
     for (let k = 0; k < n; k++) {
       const R = radii[k];
-      const [cell, scale] = psiCell(streak, R);
+      const scale = psiScale(streak, R);
+      const cell = CELL_ANGLE * scale;
       // A new cell length redraws the shell's pattern; keep the phase inside the new period.
       if (scale !== this.cellScale[k]) {
         this.cellScale[k] = scale;
@@ -354,9 +385,9 @@ export class PrecipOverlay implements SceneEffect {
       }
       if (dt > 0) this.phase[k] = shellPhase(this.phase[k], speed, R, dt, cell);
       this.shellA[k].set(R, this.phase[k], cell, dropProbability(p.rateMmH, k, scale, p.type));
+      this.shellC[k].set(dropSlots(scale), dropWeight(p.rateMmH, k, scale, p.type), 0, 0);
       const width = snow ? Math.max(STREAK_WIDTH_PX, SNOWFLAKE_M / (R * pixelAngle)) : STREAK_WIDTH_PX;
-      // The sway in phi cells at theta = 90 deg, held inside the cell's margin.
-      const sway = snow ? Math.min(SNOW_SWAY_M / (R * CELL_ANGLE), CELL_MARGIN - 0.05) : 0;
+      const sway = snow ? SNOW_SWAY_CELLS : 0;
       this.shellB[k].set(streak / R, width, sway, look.alpha);
     }
   }
