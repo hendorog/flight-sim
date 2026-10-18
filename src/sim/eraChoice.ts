@@ -11,6 +11,7 @@
 
 import type { ScenarioId } from '../core/context';
 import type { WeatherSettings } from '../core/types';
+import { deriveCloudTop } from '../core/weatherFields';
 import { isEraId } from '../world/era/registry';
 import type { EraId } from '../world/era/types';
 import type { SimParams } from './params';
@@ -81,6 +82,6 @@ export function eraSwitchUrl(href: string): string {
  */
 export function applyEraWeather(weather: WeatherSettings, preset: Readonly<Partial<WeatherSettings>>): WeatherSettings {
   const w: Partial<WeatherSettings> = { ...preset };
-  if (w.cloudBaseM !== undefined) w.cloudTopM ??= w.cloudBaseM + (weather.cloudTopM - weather.cloudBaseM);
+  deriveCloudTop(w, weather);
   return Object.assign(weather, w);
 }
