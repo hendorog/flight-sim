@@ -166,7 +166,10 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   `compositeShadows` off, so this shows on the dev page only.
 - Ground fog: with the camera above the fog and a cloud between the camera and the fog, the fog's in-scatter is
   not dimmed by that cloud. The light sprites write no depth, so a lamp seen against a sky pixel is fogged with
-  that pixel's path instead of the lamp-to-camera path. Sun shadows and direct light are not dimmed inside fog.
+  that pixel's path instead of the lamp-to-camera path. Inside the fog the sun term of every patched material
+  (`src/sim/cloudShadows.ts`) is scaled by the fog transmittance from the fragment to the layer top along the sun,
+  and the removed beam is added as diffuse light up to the two-stream total transmission `1 / (1 + 0.75 (1 - g) tau)`
+  (`FOG_DIFFUSE_K`, unconfirmed for this layer; no ground reflection, no incidence-angle term).
 - Storm cells: the composite against the cumulus is an approximation from the cumulus front distance and
   transmittance; a cell casts no ground shadow; the sky light does not darken under an anvil; the moon does not
   light a cell; the temporal pass reprojects cell pixels with the depth buffer or the cumulus layer.
