@@ -132,6 +132,7 @@ export async function runHarness(opts: HarnessOptions): Promise<SimContext> {
     aircraft: def,
     presentation,
     era: era().id,
+    weatherFx: { flash: { x: 0, y: 0, z: 0, energy: 0 } },
   };
 
   if (basic) {

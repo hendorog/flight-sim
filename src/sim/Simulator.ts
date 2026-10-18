@@ -64,6 +64,7 @@ import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './e
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
 import { era, isPresent, setEra } from '../world/era/eraState';
 import { createEraEffects } from '../render/post/eraEffects';
+import { createWeatherEffects, createWeatherOverlays } from '../render/weather';
 import { bootCameraMode, cameraModeAllowed, safariHeadPitch, startTimeOfDay } from './safariStart';
 import type { EraId } from '../world/era/types';
 import { createFaunaSystem, type FaunaSystem } from '../world/fauna/FaunaSystem';
@@ -391,6 +392,7 @@ export class Simulator {
       carbIcing,
       era: era().id,
       moonScale: chooseMoonScale(p, this.store),
+      weatherFx: { flash: { x: 0, y: 0, z: 0, energy: 0 } },
     };
     this.ctx = ctx;
     this.applySize();
@@ -594,6 +596,11 @@ export class Simulator {
     // occludes them. Nothing is called in the present day.
     if (!isPresent()) for (const effect of createEraEffects({ ctx, renderer, scene, camera, weather: this.weather })) post.addEffect(effect);
     post.addEffect(clouds);
+    // The weather's own effects (render/weather): storm cells and ground fog after the clouds, precipitation and
+    // lightning after the temporal pass. Each factory returns nothing while its weather field is absent.
+    const wx = { ctx, renderer, clouds, post, weather: this.weather };
+    for (const e of createWeatherEffects(wx)) post.addEffect(e);
+    for (const o of createWeatherOverlays(wx)) post.addOverlay(o);
     this.post = post;
     post.setAircraftRadius(def.geometry.bounds.radius);
     post.setCabinBox(presentation.visual.cockpit.box);

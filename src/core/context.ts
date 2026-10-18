@@ -141,6 +141,8 @@ export interface SimEvents {
    * approach at least 25 m closer than the last emit (the Field Guide's closest distance). Emitted by the FaunaSystem.
    */
   faunaSighted: { species: FaunaSpeciesId; distanceM: number };
+  /** A lightning strike began (LightningOverlay). Position NED m, altitude m MSL, energy 0..1, kind cloud-to-ground or intracloud. */
+  lightning: { id: number; kind: 'cg' | 'ic'; north: number; east: number; altM: number; energy: number; strokes: number };
 }
 
 export interface EventBus {
@@ -205,6 +207,14 @@ export interface SimContext {
    * toward the horizon, src/render/sky/moon.ts). Absent on test fakes and dev pages: DEFAULT_MOON_SCALE (4).
    */
   moonScale?: number;
+  /** Live weather effects state the overlays publish for other modules (audio, UI). Absent on test fakes and older stubs. */
+  weatherFx?: WeatherFx;
+}
+
+/** See SimContext.weatherFx. The simulator and the dev harness create it with every value 0. */
+export interface WeatherFx {
+  /** Current flash: three.js world position and luminous energy (scene units); energy 0 when none. */
+  flash: { x: number; y: number; z: number; energy: number };
 }
 
 /** A per-frame subsystem. update() runs once per rendered frame with the real frame dt (0 when paused). */

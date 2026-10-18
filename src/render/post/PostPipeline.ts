@@ -3,6 +3,7 @@
 //   scene -> HDR target (RGBA16F, MSAA, float depth texture for the log depth buffer)
 //         -> SceneEffects in order (aerial perspective first; clouds etc. added by other modules)
 //         -> temporal stabilisation (TemporalAA.ts; not on 'low')
+//         -> overlays in order (addOverlay: weather drawn after the temporal pass, render/weather)
 //         -> bloom chain (its 1/8-res level also feeds the exposure meter and the local-exposure map)
 //         -> eye adaptation -> bloom mix, sun glare, partial white balance, Purkinje shift,
 //            global x local exposure, AgX, sRGB, dither -> canvas (FXAA on 'low')
@@ -187,6 +188,29 @@ export function cabinFromModel(box: CabinBox, out = new THREE.Matrix4()): THREE.
     .multiply(new THREE.Matrix4().makeTranslation(0, -(y0 + y1) / 2, -(z0 + z1) / 2));
 }
 
+/**
+ * Run the post-TAA overlays (PostPipeline.addOverlay) in order over `src`, alternating between the two targets and
+ * never writing the one `src` belongs to. Returns the last overlay's output texture, or `src` itself with none.
+ */
+export function renderOverlays(
+  overlays: readonly SceneEffect[],
+  renderer: THREE.WebGLRenderer,
+  src: THREE.Texture,
+  depth: THREE.DepthTexture,
+  targets: readonly THREE.WebGLRenderTarget[],
+  ctx: SimContext,
+  dt: number,
+): THREE.Texture {
+  let k = targets[0].texture === src ? 1 : 0;
+  for (const overlay of overlays) {
+    const out = targets[k];
+    overlay.render(renderer, src, depth, out, ctx, dt);
+    src = out.texture;
+    k ^= 1;
+  }
+  return src;
+}
+
 function lum(c: THREE.Color): number {
   return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 }
@@ -222,6 +246,8 @@ export class PostPipeline {
   private ping: THREE.WebGLRenderTarget[] = [];
   private ldr: THREE.WebGLRenderTarget | null = null;
   private readonly effects: SceneEffect[] = [];
+  /** Effects drawn after the temporal pass, before bloom and exposure (addOverlay). */
+  private readonly overlays: SceneEffect[] = [];
   private readonly exposure = new AutoExposure();
   private readonly exposureUniforms = { tExposure: { value: this.exposure.texture }, uExposureBias: { value: 0 } };
   private readonly bloom = new Bloom(this.exposureUniforms);
@@ -290,6 +316,25 @@ export class PostPipeline {
   }
 
   /**
+   * An effect drawn after the temporal pass and before bloom and exposure (precipitation streaks, lightning), in the
+   * order added. It reads the stabilised colour and the scene depth, anti-aliases itself (no TAA follows), and must
+   * write the input's alpha unchanged (the tone map's point-source flag, ToneMap.ts).
+   */
+  addOverlay(effect: SceneEffect): void {
+    effect.setSize(this.width, this.height);
+    this.overlays.push(effect);
+  }
+
+  /**
+   * View space -> the cabin box's [-1, 1]^3, the box the tone map's outside mask uses (setCabinBox; without one the
+   * slab nearer than OUTSIDE_NEAR). For overlays that must not draw inside the cabin.
+   */
+  cabinFromView(ctx: SimContext, out: THREE.Matrix4): THREE.Matrix4 {
+    this.updateCabinFromView(ctx, out);
+    return out;
+  }
+
+  /**
    * The aircraft drawn: its bounding radius about the reference point, m (geometry.bounds.radius, the value
    * CameraSystem.setAircraft takes). The temporal pass adds its own margin. Not called: the Cessna 172S's.
    */
@@ -346,6 +391,7 @@ export class PostPipeline {
 
     this.taa.enabled = this.temporalAA && ctx.quality !== 'low';
     src = this.taa.render(r, src, this.hdr.depthTexture as THREE.DepthTexture, layer, this.camera, ctx.aircraftRoot ?? null, (m, t) => this.pass.render(r, m, t));
+    if (this.overlays.length > 0) src = renderOverlays(this.overlays, r, src, this.hdr.depthTexture as THREE.DepthTexture, this.ping, ctx, dt);
 
     this.exposureUniforms.uExposureBias.value = this.exposureBias;
     const atmosphere = Atmosphere.for(r);
@@ -469,6 +515,7 @@ export class PostPipeline {
     this.local.setSize(width, height);
     this.taa.setSize(width, height);
     for (const e of this.effects) e.setSize(width, height);
+    for (const o of this.overlays) o.setSize(width, height);
   }
 
   dispose(): void {
@@ -476,6 +523,7 @@ export class PostPipeline {
     for (const t of this.ping) t.dispose();
     this.ldr?.dispose();
     for (const e of this.effects) e.dispose?.();
+    for (const o of this.overlays) o.dispose?.();
     this.bloom.dispose();
     this.exposure.dispose();
     this.local.dispose();
