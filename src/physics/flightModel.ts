@@ -1137,7 +1137,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       air.z += up.z;
     }
     // The moisture of the air at this altitude (an environment without weather: dry air, no icing).
-    if (this.carburetted) this.propIn.moisture = (env as Partial<SimEnvironment>).moisture?.(-x[2]);
+    if (this.carburetted) this.propIn.moisture = (env as Partial<SimEnvironment>).moisture?.(-x[2], x[0], x[1], this.time);
     this.propIn.dt = h;
     if (this.rotorcraft) {
       const engineControls = this.controlsIn;
