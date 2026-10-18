@@ -1,4 +1,5 @@
-// Low-resolution ray march of the cloud layer and the cirrus deck.
+// Low-resolution ray march of the cloud layer, the mid-level sheet (altostratus / altocumulus) and the cirrus
+// deck.
 //
 // Outputs (MRT, half float):
 //   0: rgb = in-scattered radiance (already hazed), a = transmittance
@@ -12,17 +13,21 @@
 //     from the sun
 //   - sky ambient from above, ground bounce from below and diffusely transmitted sunlight, each
 //     attenuated by a two-stream estimate of the cloud above/below the sample
+//
+// The mid-level sheet and the cirrus are single intersections with a curved altitude, no march. Both are drawn
+// only from below (camera under the sheet's altitude); a camera above the mid-level sheet does not see it.
 
 import { DEPTH_GLSL } from '../../core/shaderLib';
 import { BLUE_NOISE_SIZE } from './blueNoise';
 import { ATMOSPHERE_GLSL, SKY_SAMPLING_GLSL } from '../sky/glsl/atmosphere';
 import { AERIAL_ATLAS_GLSL } from '../post/AerialPerspectiveEffect';
-import { CLOUD_MODEL_GLSL } from './cloudModel';
+import { CLOUD_MODEL_GLSL, MID_SHEET_GLSL } from './cloudModel';
 import { CLOUD_SHADOW_GLSL } from './cloudShadow';
 
 export const MARCH_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
 ${CLOUD_MODEL_GLSL}
+${MID_SHEET_GLSL}
 ${CLOUD_SHADOW_GLSL}
 ${AERIAL_ATLAS_GLSL}
 #ifdef CLOUDS_ATMOSPHERE
@@ -69,6 +74,16 @@ uniform float uDetailScale;     // 1 / (angular size of a low-res pixel at a 60 
 uniform vec2 uCirrus;           // cirrus cover 0..1, altitude m
 uniform vec2 uCirrusOffset;    // drift in the deck frame (x along the wind)
 uniform vec2 uCirrusAxis;      // upper-wind unit vector (world x, z)
+
+// Mid-level sheet texture scales (unconfirmed tuning values). Patches: the weather map's coverage channels at
+// the cirrus period (30 km), offset so they do not line up with the low layer's cells. Altostratus thickness
+// varies over AS_PERIOD, altocumulus elements are the cells of a horizontal slice of the shape volume at
+// AC_PERIOD (elements ~100-300 m across). Both periods divide the 30 km drift wrap of uMidOffset.
+const float MID_TEXEL = ${(30_000 / 1024).toFixed(3)};   // m per weather-map texel at the cirrus period
+const float AS_FREQ = ${(1 / 7_500).toExponential(6)};
+const float AS_TEXEL = ${(7_500 / 128).toFixed(3)};
+const float AC_FREQ = ${(1 / 750).toExponential(6)};
+const float AC_TEXEL = ${(750 / 128).toFixed(3)};
 
 // Diffusely transmitted sunlight reaching a sample through optical depth tau toward the light. The two-stream
 // slab result (diffuseTransmission, g = 0.85) overestimates it for a finite cloud: in a cumulus the diffusing
@@ -277,6 +292,18 @@ void main() {
     skyAmb += 0.1 * skyViewRadiance(normalize(vec3(cos(a), 0.45, sin(a)))).rgb;
   }
 #endif
+  // The sky light and sunlight above the mid-level sheet (the sheet itself is lit by these).
+  vec3 skyAmbTop = skyAmb;
+  // A mid-level sheet above the layer: the layer's sunlight is the beam the sheet lets through, and the sunlight
+  // it scatters joins the sky light (spread over the upper hemisphere, as the sheet's diffuse transmission).
+  if (uMid.x > 0.0 && uMid.y > uLayer.y) {
+    float mu0 = max(uLightDir.y, 0.0);
+    vec2 tm = midTransmission(mu0);
+    vec2 ts = midTransmission(2.0 / 3.0);
+    skyAmb = skyAmb * ts.y + lightTop * (mu0 / PI) * max(tm.y - tm.x, 0.0);
+    lightBase *= tm.x;
+    lightTop *= tm.x;
+  }
   vec3 L = vec3(0.0);
   float T = 1.0;
   float frontSum = 0.0, frontW = 0.0;
@@ -535,6 +562,77 @@ void main() {
   }
   L = L * hz.a + hz.rgb * (1.0 - T);
 
+  // Mid-level sheet (altostratus, altocumulus) on the curved sheet altitude, behind the low layer. Patches from
+  // the coverage field (uniform 0..1) thresholded for the cover. Altostratus: a broad, smooth sheet whose
+  // thickness varies over kilometres. Altocumulus: rounded elements (shape-volume cells) inside the patches,
+  // shaded on the side away from the sun. Light: the droplet phase function on the thin parts (bright near the
+  // sun), the two-stream diffuse transmission of sunlight and sky light on the thick ones (a grey sheet).
+  if (uMid.x > 0.0 && camY < uMid.y && T > 0.01) {
+    vec2 mi = belowInterval(uMid.y, camY, dir.y, k);
+    float tm = mi.y;
+    if (tm > 0.0 && tm < min(sceneDist, uMaxDist * 1.5)) {
+      vec3 p = uCamPos + dir * tm;
+      float mu = max(dir.y + tm * 2.0 * uInvTwoR, 0.03);
+      float footprint = tm * uPixelAngle / sqrt(mu);
+      vec2 axisN = vec2(-uCirrusAxis.y, uCirrusAxis.x);
+      vec2 q = vec2(dot(p.xz, uCirrusAxis), dot(p.xz, axisN)) + uMidOffset;
+      bool ac = uMid.z > 0.5;
+      // Altostratus patches from a blurred mip: broad sheets with soft, ragged edges.
+      float wl = max(0.0, log2(footprint / MID_TEXEL)) + (ac ? 0.0 : 1.5);
+      vec2 uvm = q * CIRRUS_FREQ + vec2(0.37, 0.61);
+      float f = blendFields(textureLod(uWeatherTex, uvm, wl).r, textureLod(uWeatherTex, uvm + vec2(0.23, 0.41), wl).g, uEvolve);
+      // The threshold runs from above the field's range (cover 0) to below it (cover 1, no gaps). The area with
+      // patchy > 0.5 is then about 1.3 * cover - 0.15 of the sky, while the sky model and the lighting pre-step
+      // above take cover itself as the area fraction (unconfirmed tuning; not matched).
+      float thr = 1.15 - 1.3 * uMid.x;
+      float patchy = smoothstep(thr - 0.15, thr + 0.15, f);
+      float tau = 0.0;
+      float shade = 1.0;
+      if (patchy > 0.0) {
+        float tauMean = midTau();
+        if (ac) {
+          float el = max(0.0, log2(footprint / AC_TEXEL));
+          vec3 qa = vec3(q.x, 0.37 / AC_FREQ, q.y) * AC_FREQ;
+          float e = textureLod(uShapeTex, qa, el).r;
+          // Elements thin out toward the edges of a patch.
+          float et = mix(0.8, 0.4, patchy);
+          float elem = smoothstep(et, et + 0.3, e);
+          // The side of an element away from the sun (the cell field rises toward the sun) is shaded.
+          vec2 sxz = vec2(dot(uLightDir.xz, uCirrusAxis), dot(uLightDir.xz, axisN));
+          sxz /= max(length(sxz), 1e-4);
+          float es = textureLod(uShapeTex, qa + vec3(sxz.x, 0.0, sxz.y) * (40.0 * AC_FREQ), el).r;
+          shade = mix(clamp(1.0 - 6.0 * (es - e), 0.45, 1.4), 1.0, smoothstep(1.0, 3.0, el));
+          // Thick, grey centres and thin, bright rims (up to 6 x the patch mean, see MID_TAU_MAX). The ramp on
+          // patchy takes the elements to 0 at the patch edge, where et alone leaves them at tau ~0.8.
+          tau = elem * elem * tauMean * 6.0 * smoothstep(0.0, 0.25, patchy);
+        } else {
+          float v = textureLod(uShapeTex, vec3(q.x, 0.61 / AS_FREQ, q.y) * AS_FREQ, max(0.0, log2(footprint / AS_TEXEL))).r;
+          tau = patchy * tauMean * mix(0.35, 1.65, v);
+        }
+      }
+      if (tau > 0.0) {
+        float fade = smoothstep(-0.02, 0.04, dir.y);
+        float alpha = (1.0 - exp(-tau / mu)) * fade;
+        float mu0 = max(uLightDir.y, 0.0);
+        float direct = exp(-tau / max(mu0, 0.05));
+        float scat = max(min(1.0, (2.0 + 3.0 * mu0) / (4.0 + 0.45 * tau)) - direct, 0.0);
+        float tSky = 1.0 / (1.0 + 0.1125 * tau);
+        float thin = exp(-0.5 * tau);
+        vec3 midLight = uLightColor;
+#ifdef CLOUDS_ATMOSPHERE
+        if (uSunByAltitude > 0.5) midLight = sunAt(uMid.y);
+#endif
+        vec3 Ls = midLight * (phase0 * alpha * thin + (mu0 / PI) * scat * (1.0 - thin) * fade) * shade + skyAmbTop * alpha * tSky;
+        vec4 hm = hazeAlong(rayUv, tm, uMid.y, behind);
+        L += T * (Ls * hm.a + alpha * hm.rgb);
+        // Front distance for reprojection, as for the cirrus below.
+        float wCu = 1.0 - T, wMid = T * alpha + 1e-4;
+        front = (front * wCu + tm * wMid) / (wCu + wMid);
+        T *= 1.0 - alpha;
+      }
+    }
+  }
+
   // Cirrus: a thin ice-crystal sheet (optical depth ~0.02-0.3) on the curved cirrus altitude. Coverage
   // patches come from the weather map, the fibres from the cirrus texture, both in the deck's own frame
   // with the fibres stretched along the upper wind. Single scattering with an ice-crystal phase function
@@ -569,7 +667,7 @@ void main() {
 #ifdef CLOUDS_ATMOSPHERE
       if (uSunByAltitude > 0.5) cirrusLight = sunAt(uCirrus.y);
 #endif
-      vec3 lc = cirrusLight * iceP + skyAmb;
+      vec3 lc = cirrusLight * iceP + skyAmbTop;
       vec4 hc = hazeAlong(rayUv, tc, uCirrus.y, behind);
       vec3 Lc = alpha * (lc * hc.a + hc.rgb);
       L += T * Lc;
