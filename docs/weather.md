@@ -133,6 +133,15 @@ The `auto` row's `towerExt` equals `TOWER_EXTENSION` in `src/render/clouds/cloud
   while the camera is below the sheet. The shadow pass multiplies by `uMidTrans`. Plan section 3.2 had
   `deckDirect` take it unconditionally; the code follows the low deck's `(1 - above)` convention instead. This
   difference is open for decision.
+- Stratiform lighting and deck haze (`marchShader.ts`, `CloudsEffect.ts`). `deckType` = `deckOverride` x
+  `deckWeight` of the cloud type: 1 for stratus, stratocumulus and nimbostratus, 0 for `'auto'`, cumulus and
+  towering. With `deckType` > 0: the light-march optical depth is scaled to the column above the sample along the
+  light, at the mean density of the light-march samples (an approximation, not checked against a reference);
+  `MS_ISO_K` is mixed toward `MS_ISO_K_SLAB` = 0.11 (0.75 (1 - g), g = 0.85); the 4 % sky-ambient floor at the base
+  is removed; the direct-sun share of `uGroundRadiance` is scaled by `cloudSky.directGround`. `uDeckHaze` =
+  `deckHaze(w)` = smoothstep(0.8, 1.0, cover) x max(`deckType`, 1 - `effectiveVisibilityM` / `visibilityM`). It
+  scales down the blend toward the frame behind the clouds in `hazeAlong` and the cloud-shadow dimming of the haze
+  below the layer. With `'auto'` and no precipitation, `deckType` and `uDeckHaze` are 0 and the march is unchanged.
 - Sky, environment map refresh and cloud haze read `effectiveVisibilityM(w)` (`SkySystem.ts`, `CloudsEffect.ts`,
   `Atmosphere.ts`).
 

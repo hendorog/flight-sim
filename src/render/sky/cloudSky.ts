@@ -53,7 +53,7 @@ const GROUND_ALBEDO_Y = 0.2126 * GROUND_ALBEDO[0] + 0.7152 * GROUND_ALBEDO[1] + 
  * from 0.8 to 1.0, see cloudWeather in render/clouds/cloudModel.ts): the local cloud-shadow map covers
  * the broken layer, the deck's direct transmission applies globally once it is closed.
  */
-const DECK_CLOSE = [0.8, 1.0] as const;
+export const DECK_CLOSE = [0.8, 1.0] as const;
 
 export function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(Math.max((x - a) / (b - a), 0), 1);

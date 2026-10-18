@@ -13,9 +13,9 @@ import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import type { QualityLevel, ReprojectionLayer, SceneEffect, SimContext } from '../../core/context';
 import type { WeatherSettings } from '../../core/types';
-import { effectiveVisibilityM, midLayerOf, type MidLayer } from '../../core/weatherFields';
+import { CLOUD_TYPE_PROFILES, cloudTypeOf, effectiveVisibilityM, midLayerOf, type MidLayer } from '../../core/weatherFields';
 import { Atmosphere } from '../sky/Atmosphere';
-import { midSheetTransmission } from '../sky/cloudSky';
+import { DECK_CLOSE, midSheetTransmission } from '../sky/cloudSky';
 import { transmittanceToSpace } from '../sky/transmittance';
 import { createBlueNoiseTexture } from './blueNoise';
 import { CloudModel, midSheetTau, SLICE_FRAG } from './cloudModel';
@@ -104,6 +104,23 @@ export function cirrusCover(w: WeatherSettings): number {
 
 const _mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
 const _midT: [number, number] = [1, 1];
+
+/**
+ * How far the haze in front of the low layer is taken as the terrain's (march uDeckHaze), 0..1: the deck's closure
+ * times the larger of the cloud type's deck weight (CLOUD_TYPE_PROFILES deckOverride x deckWeight) and the share of
+ * the visibility loss due to precipitation. Under a closed deck no sky shows around the clouds to blend toward, and
+ * the aerial-perspective volume is already lit by what the deck lets through. 0 for the 'auto' type without
+ * precipitation: the march then runs as it did before the cloud types and precipitation existed.
+ */
+export function deckHaze(w: WeatherSettings): number {
+  const profile = CLOUD_TYPE_PROFILES[cloudTypeOf(w)];
+  const deckType = profile.deckOverride * profile.deckWeight;
+  const vis = effectiveVisibilityM(w);
+  const precipShare = vis < w.visibilityM ? 1 - vis / w.visibilityM : 0;
+  const weight = Math.max(deckType, precipShare);
+  if (weight <= 0) return 0;
+  return THREE.MathUtils.smoothstep(w.cloudCover, DECK_CLOSE[0], DECK_CLOSE[1]) * weight;
+}
 
 /** Radical inverse in the given base: the Halton low-discrepancy sequence used for sub-pixel jitter. */
 function halton(index: number, base: number): number {
@@ -240,6 +257,7 @@ export class CloudsEffect implements SceneEffect {
       uGroundRadiance: { value: this.groundRadiance },
       uHazeColor: { value: new THREE.Color() },
       uHaze: { value: this.haze },
+      uDeckHaze: { value: 0 },
       // Step settings are filled in from QUALITY by resizeTargets().
       uMaxSteps: { value: 0 },
       uLightSteps: { value: 0 },
@@ -559,8 +577,13 @@ export class CloudsEffect implements SceneEffect {
     m.uSunByAltitude.value = this.useAtmosphere && sunLum >= moonLum ? 1 : 0;
     (m.uSkyColor.value as THREE.Color).copy(sky.skyColor);
     (m.uHazeColor.value as THREE.Color).copy(sky.hazeColor);
-    // Lambertian ground radiance: albedo * (direct irradiance + pi * sky radiance) / pi.
-    const direct = Math.max(this.lightDir.y, 0) / Math.PI;
+    // Lambertian ground radiance: albedo * (direct irradiance + pi * sky radiance) / pi. Under a stratiform type
+    // the direct share is what reaches the ground through the layer (Atmosphere.cloudSky.directGround): the full
+    // sunlight on the ground bounced more light onto a nimbostratus base than the 2 km of cloud above let through.
+    const profile = CLOUD_TYPE_PROFILES[cloudTypeOf(w)];
+    const deckType = profile.deckOverride * profile.deckWeight;
+    let direct = Math.max(this.lightDir.y, 0) / Math.PI;
+    if (deckType > 0) direct *= 1 - deckType * (1 - this.atmosphere.cloudSky.directGround);
     this.groundRadiance
       .copy(this.lightColor)
       .multiplyScalar(direct)
@@ -569,6 +592,7 @@ export class CloudsEffect implements SceneEffect {
     // Fade distant clouds like the aerial-perspective pass fades terrain (ctx.sky haze parameters).
     if (sky.hazeExtinction > 0 && sky.hazeScaleHeight > 0) this.haze.set(sky.hazeExtinction, sky.hazeScaleHeight);
     else this.haze.set(HAZE_CONTRAST / Math.max(effectiveVisibilityM(w), 100), HAZE_SCALE_HEIGHT);
+    m.uDeckHaze.value = deckHaze(w);
     const mid = this.model.mid;
     const cirrusAlt = Math.max(CIRRUS_ALTITUDE, layer.y + 2_000);
     (m.uCirrus.value as THREE.Vector2).set(cirrusCover(w), this.model.midAboveLayer ? Math.max(cirrusAlt, mid.altM + CIRRUS_ABOVE_MID) : cirrusAlt);

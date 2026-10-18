@@ -60,6 +60,7 @@ uniform vec3 uGroundRadiance;
 uniform vec3 uHazeColor;
 uniform vec2 uHaze;             // sea-level extinction 1/m, scale height m
 uniform float uAerialOn;        // 1: haze from the shared aerial-perspective volume (Atmosphere.aerial), 0: exponential haze
+uniform float uDeckHaze;        // 0..1: a closed deck the haze below it treats like the terrain (CloudsEffect deckHaze)
 
 uniform int uMaxSteps;
 uniform int uLightSteps;
@@ -139,13 +140,18 @@ float hazeDepth(float dist, float y0, float y1) {
 //
 // Below the 5 % contrast threshold (the visibility distance) the remaining transmittance fades to zero, so a
 // cloud deep in fog leaves no trace at all (it otherwise kept ~3 % of its radiance, visible as faint shapes).
+//
+// Under a closed deck (uDeckHaze) no sky shows around the clouds, and the frame behind them is the clear-sky dome
+// (its sunlit horizon, and in the cockpit the windshield drawn over it): blending toward it turned the haze in front
+// of the deck's far underside orange-brown in rain, where the haze closes up within a few km. There the haze is the
+// volume's own, the value the terrain at the same distance takes.
 float fogCut(float Th) { return Th * smoothstep(0.004, 0.05, Th); }
 vec4 hazeAlong(vec2 uv, float dist, float yEnd, vec3 behind) {
   if (uAerialOn > 0.5) {
     vec4 ap = aerialPerspective(uv, dist);
     float Th = fogCut(ap.a);
     float o = 1.0 - Th;
-    return vec4(mix(ap.rgb, behind * o, o * o), Th);
+    return vec4(mix(ap.rgb, behind * o, o * o * (1.0 - uDeckHaze)), Th);
   }
   float Th = fogCut(exp(-hazeDepth(dist, uCamPos.y, yEnd)));
   return vec4(uHazeColor * (1.0 - Th), Th);
@@ -182,6 +188,8 @@ const float MS2_W = 0.2, MS2_K = 0.1;
 // lobes' self-shading; K = 0.5 with a larger weight keeps their relief. (The earlier 0.2 / (1 + 0.9 tau) left the
 // lit sides grey.)
 const float MS_ISO = 0.3, MS_ISO_K = 0.5;
+// The slab value 0.75 (1 - g), g = 0.85, used for the stratiform cloud types (deckType below).
+const float MS_ISO_K_SLAB = 0.11;
 // Deep inside a finite cloud the diffusing light leaks out through the sides instead of reaching the far side
 // (Davis & Marshak 2010): an exponential cut-off on top of the slab falloff, which keeps the shaded flanks of
 // an isolated cumulus several times darker than its sunlit side.
@@ -271,6 +279,10 @@ void main() {
   // of dark between bright thin spots.
   float deck = deckness();
   float msLeak = MS_LEAK * (1.0 - deck);
+  // A stratiform cloud type (stratus, stratocumulus, nimbostratus: CLOUD_TYPE_PROFILES deckOverride x deckWeight;
+  // 0 for 'auto', cumulus and towering). Such a deck is lit from above through its whole depth, which is several
+  // times the reach of the light march (with a high sun ~240 m on medium, ~1 km on high): see below.
+  float deckType = uCloudType.x * uCloudType.y;
 
   // Light-march step growth: six steps from 16 m cover ~1 km toward a high sun; toward a low sun the path out
   // of a cloud runs sideways through it (km), so the steps stretch to cover ~3.5 km, or the bases and far
@@ -477,6 +489,17 @@ void main() {
           lds *= lg;
         }
         tauL *= uExtinction;
+        // Sky light arrives through the cloud above the sample, ground bounce through the cloud below. The
+        // column above reaches this cloud's own top (lower toward its edges), so the bases darken under the
+        // thick cores and stay lighter under thin parts (mottled bases), and the lit tops get the full sky.
+        float colAbove = max(uLayer.x + wt.y / uLayer.z - p.y, 0.0);
+        // A stratiform deck: the path to the light runs through the rest of the column above the light march's
+        // reach (lt), at the mean density the march found. Without it a 2 km nimbostratus base was lit through
+        // ~240 m of cloud on medium and showed bright white-cream instead of grey.
+        if (deckType > 0.0) {
+          float colLight = colAbove / max(uLightDir.y, 0.05);
+          if (colLight > lt && lt > 0.0) tauL = mix(tauL, tauL * colLight / lt, deckType);
+        }
         float hr = relHeight(h, wt);
         // Sunlight: single scattering plus two multiple-scattering octaves (Wrenninge 2013 / Hillaire 2016:
         // each octave sees a fraction of the extinction and a flatter phase), which carry light into the
@@ -489,7 +512,7 @@ void main() {
         // ~0.8: the sunlit side shines at ~E / 4 whatever the view), falling off with the optical depth toward
         // the sun as diffusion does (two-stream).
         vec3 sun = sunL * (exp(-tauL) * phase0 + MS1_W * exp(-tauL * MS1_K) * phase1 + MS2_W * exp(-tauL * MS2_K) * phase2
-                           + MS_ISO * exp(-msLeak * tauL) / (1.0 + MS_ISO_K * tauL))
+                           + MS_ISO * exp(-msLeak * tauL) / (1.0 + mix(MS_ISO_K, MS_ISO_K_SLAB, deckType) * tauL))
                  * mix(1.0, powder, powderAmount);
         // A low sun grazes the flat base: the underside presents almost no area to the beam, which reaches it
         // only through kilometres of cloud or by diffusion from the sunlit flank. The ray-marched base is a
@@ -498,15 +521,12 @@ void main() {
         // flanks at sunset. With a high sun the light march already darkens it.
         float grazing = (1.0 - smoothstep(0.05, 0.5, hr)) * (1.0 - smoothstep(0.08, 0.4, uLightDir.y)) * smoothstep(0.4, 0.9, wt.x) * smoothstep(0.0, 1.0, tauL);
         sun *= 1.0 - 0.85 * grazing;
-        // Sky light arrives through the cloud above the sample, ground bounce through the cloud below. The
-        // column above reaches this cloud's own top (lower toward its edges), so the bases darken under the
-        // thick cores and stay lighter under thin parts (mottled bases), and the lit tops get the full sky.
-        float colAbove = max(uLayer.x + wt.y / uLayer.z - p.y, 0.0);
         // The local density sets part of the column's optical depth: denser patches of the base (under the
         // turrets) are darker, the wispy ones between them lighter, which mottles the base.
         float up = diffuseTransmission(mix(uExtinction * 0.5, sigmaT, 0.6) * colAbove);
         float down = diffuseTransmission(uExtinction * 0.6 * max(p.y - uLayer.x, 0.0));
-        vec3 ambient = AMBIENT_SKY * skyAmb * mix(up, 1.0, 0.04 + 0.26 * hr) + AMBIENT_GROUND * uGroundRadiance * down;
+        // A stratiform deck drops the 4 % floor of the sky light at the base, as a closed deck drops MS_LEAK.
+        vec3 ambient = AMBIENT_SKY * skyAmb * mix(up, 1.0, (0.04 + 0.26 * hr) * (1.0 - deckType)) + AMBIENT_GROUND * uGroundRadiance * down;
         // The base is lit by light diffusing down through the cloud above it, whose optical thickness varies
         // from turret to turret: real bases are mottled, darker under the dense cores and lighter under thin
         // parts. The coarse light march is too smooth to show it, so the lower part of each cloud takes a
@@ -549,6 +569,12 @@ void main() {
   // partly in cloud shadow (under an overcast, almost all of it), so its in-scattered sunlight is dimmed by the
   // mean shadow along the path. Beyond the shadow map (40 km) the mean shadow of the cover stands in: without
   // it the far underside of a deck fades into a bright, sunlit-haze band on the horizon.
+  //
+  // Under a closed deck (uDeckHaze) the volume's haze is already lit only by what the deck lets through
+  // (Atmosphere uAirLight, render/sky/cloudSky.ts airScale), as the terrain's is: dimming it again made the haze in
+  // front of the deck darker than the terrain's at the same distance, a dark band along the horizon in rain. The
+  // exponential fallback's uHazeColor is dimmed the same way: CloudSky.summarize takes it from radiance(), which
+  // applies airLight (airScale) to the clear horizon.
   float forward = smoothstep(0.9, 0.99, cosTheta);
   float below = 1.0 - smoothstep(uLayer.x - 200.0, uLayer.x, camY);
   if (T < 0.99 && (forward > 0.0 || below > 0.0)) {
@@ -558,7 +584,7 @@ void main() {
     sh /= 3.0;
     float farShade = 1.0 - min(uLayer.w, 1.0) * 0.9 * cloudShadowLight.w;
     sh = mix(sh, farShade, smoothstep(12000.0, 40000.0, front) * below);
-    hz.rgb *= mix(1.0, sh, max(forward, 0.8 * below));
+    hz.rgb *= mix(1.0, sh, max(forward, 0.8 * below * (1.0 - uDeckHaze)));
   }
   L = L * hz.a + hz.rgb * (1.0 - T);
 
