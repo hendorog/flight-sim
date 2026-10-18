@@ -3,7 +3,8 @@
 
 import { C172S_AUDIO } from '../aircraft/c172s/audio';
 import { clamp, DEG, KT, smoothstep } from '../core/math';
-import { engineControl, type AircraftState, type ControlInputs, type Environment, type SurfaceType, type WeatherSettings } from '../core/types';
+import { engineControl, type AircraftState, type ControlInputs, type Environment, type PrecipType, type SurfaceType, type WeatherSettings } from '../core/types';
+import { precipOf, type Precip } from '../core/weatherFields';
 import { ENGINE_P, ENGINE_PARAMS, P, PARAM_COUNT } from './params';
 import type { AudioProfile, EngineSoundProfile, PropSoundProfile, TurbineSoundProfile } from './profile';
 
@@ -254,6 +255,30 @@ export function propagationDelay(d: number): number {
   return d / SPEED_OF_SOUND;
 }
 
+/**
+ * Rates at which the precipitation noise reaches full level, mm/h: rain and drizzle, and snow. Unconfirmed: tuning
+ * values set by ear, not measured.
+ */
+export const RAIN_FULL_MMH = 25;
+export const SNOW_FULL_MMH = 5;
+/** Level of the snow noise at SNOW_FULL_MMH, relative to rain at RAIN_FULL_MMH (flakes hit softly). Tuning value. */
+export const SNOW_LEVEL = 0.3;
+/** IAS at which rain on the windscreen reaches its full level, m/s (80 kt); parked it is RAIN_PARKED_SHARE of that. */
+export const RAIN_FULL_IAS = 80 * KT;
+export const RAIN_PARKED_SHARE = 0.3;
+
+/**
+ * Precipitation noise on the airframe, 0..1 (params.ts 'rain'): for rain and drizzle the rate over RAIN_FULL_MMH
+ * (at most 1) times RAIN_PARKED_SHARE + (1 - RAIN_PARKED_SHARE) x min(1, IAS / RAIN_FULL_IAS) (the drops strike
+ * harder and more often with airspeed); for snow SNOW_LEVEL x the rate over SNOW_FULL_MMH (at most 1); 0 for 'none'
+ * or a rate of 0. `ias`: m/s.
+ */
+export function precipNoise(type: PrecipType, rateMmH: number, ias: number): number {
+  if (type === 'none' || !(rateMmH > 0)) return 0;
+  if (type === 'snow') return SNOW_LEVEL * clamp(rateMmH / SNOW_FULL_MMH, 0, 1);
+  return clamp(rateMmH / RAIN_FULL_MMH, 0, 1) * (RAIN_PARKED_SHARE + (1 - RAIN_PARKED_SHARE) * Math.min(1, Math.max(ias, 0) / RAIN_FULL_IAS));
+}
+
 /** Everything the parameter block needs beyond AircraftState / ControlInputs. */
 export interface SoundContext {
   surface: SurfaceType;
@@ -261,6 +286,8 @@ export interface SoundContext {
   turbulence: number;
   gyroSpin: number;
   flapMotor: number;
+  /** Precipitation noise 0..1 (precipNoise); absent = 0. */
+  rain?: number;
 }
 
 /**
@@ -365,6 +392,7 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
   out[P.tailRpm] = tail.rpm;
   out[P.tailLoad] = tail.load;
   out[P.tailTipMach] = tail.tipMach;
+  out[P.rain] = x.rain ?? 0;
   return out;
 }
 
@@ -382,7 +410,8 @@ function fastestEngineRpm(s: AircraftState): number {
  * flap-motor detection and the surface under the wheels. Used by AudioSystem and by the offline analysis.
  */
 export class SoundTracker {
-  readonly sound: SoundContext = { surface: 'runway', speedOfSound: SPEED_OF_SOUND, turbulence: 0, gyroSpin: 0, flapMotor: 0 };
+  readonly sound: SoundContext = { surface: 'runway', speedOfSound: SPEED_OF_SOUND, turbulence: 0, gyroSpin: 0, flapMotor: 0, rain: 0 };
+  private readonly precip: Precip = { type: 'none', rateMmH: 0 };
   readonly params = makeParamBlock();
   private prevFlaps = Number.NaN;
 
@@ -405,6 +434,8 @@ export class SoundTracker {
     if (s.onGround || s.altitudeAGL < 5) x.surface = env.surface(s.position.x, s.position.y);
     x.speedOfSound = env.atmosphere(s.altitudeMSL).speedOfSound;
     x.turbulence = weather.turbulence;
+    const p = precipOf(weather, this.precip);
+    x.rain = precipNoise(p.type, p.rateMmH, s.ias);
     x.gyroSpin = stepGyro(x.gyroSpin, fastestEngineRpm(s), s.electrical.busVoltage, dt, this.profile);
     const flaps = s.surfaces.flaps;
     if (dt > 0) {

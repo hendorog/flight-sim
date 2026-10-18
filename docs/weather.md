@@ -7,8 +7,12 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
 ## Status
 
 - The fields, accessors, the post-TAA overlay slot and the effect registry exist.
-- The four effect factories (`createStormCellEffect`, `createFogEffect`, `createPrecipOverlay`,
-  `createLightningOverlay`) are stubs that return `null`. No module reads the new fields yet.
+- Three effect factories (`createStormCellEffect`, `createFogEffect`, `createLightningOverlay`) are stubs that
+  return `null`.
+- `createPrecipOverlay` returns a `PrecipOverlay` (`src/render/weather/PrecipOverlay.ts`) on every quality tier. It
+  reads `precipType` and `precipRateMmH`, and copies its input at rate 0 and on `low`. It draws streaks on shells of
+  2, 5, 12 and 30 m about the camera on `high` and `ultra`, and 2, 6 and 20 m on `medium`. The audio parameter
+  `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound.
 - `defaultWeather()` is unchanged and sets none of the new fields.
 
 ## Fields
