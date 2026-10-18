@@ -18,7 +18,8 @@
 //   - a veiling-glare halo L = GLARE * E / theta^2 (theta in degrees; Stiles-Holladay form) around it, sized from
 //     an estimate of the post chain's exposure so it is only as wide as it is visible;
 //   - in ground fog (uFog, render/weather/fogGlsl.ts) a forward-scatter aureole: the halo gains
-//     FOG_AUREOLE * (1 - e^-tau) * E and widens by (1 + tau), tau the fog's optical depth from lamp to camera.
+//     FOG_AUREOLE * (1 - e^-tau) * E on the display and widens by (1 + tau), tau the fog's optical depth from
+//     lamp to camera.
 // Auto exposure, bloom and aerial perspective in the post chain do the rest.
 //
 // Directional behaviour is evaluated per vertex against the camera position:
@@ -35,8 +36,8 @@ import * as THREE from 'three';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import { AIRPORT } from '../../core/world';
 import { nedToThree } from '../../core/frames';
-import { BEACON, BUILDINGS, FLOODLIGHTS, localToNed, PAPIS, PAVED_RECTS, pavedSD, RUNWAY_HALF_LENGTH, RUNWAY_HALF_WIDTH, TOWER } from './layout';
 import { FOG_GLSL } from '../../render/weather/fogGlsl';
+import { BEACON, BUILDINGS, FLOODLIGHTS, localToNed, PAPIS, PAVED_RECTS, pavedSD, RUNWAY_HALF_LENGTH, RUNWAY_HALF_WIDTH, TOWER } from './layout';
 import type { SharedUniforms } from './shared';
 
 export enum LightKind {
@@ -280,8 +281,12 @@ void main() {
   peak = mix(peak, min(peak, hueLimit), colored);
   vCore = min(col * peak, vec3(3.0e4));
   // Glare halo, only as wide as it is visible at the current exposure; in fog, plus the forward-scatter aureole.
-  float haloK = (${f(GLARE)} + ${f(FOG_AUREOLE)} * (1.0 - exp(-fogTau))) * E;
-  float haloDeg = min(min(sqrt(haloK * uExposure / ${f(HALO_CUTOFF)}), ${f(MAX_HALO_DEG)}) * (1.0 + fogTau), ${f(FOG_MAX_HALO_DEG)});
+  // FogEffect attenuates the halo by e^-fogTau as well; the aureole is light the fog scatters toward the eye, so
+  // its attenuation is divided out as for the core, and the radius is sized from the value that reaches the display.
+  float aureole = ${f(FOG_AUREOLE)} * (1.0 - exp(-fogTau));
+  float haloK = (${f(GLARE)} + aureole * exp(min(fogTau, 6.0))) * E;
+  float haloKDisp = (${f(GLARE)} * exp(-fogTau) + aureole) * E;
+  float haloDeg = min(min(sqrt(haloKDisp * uExposure / ${f(HALO_CUTOFF)}), ${f(MAX_HALO_DEG)}) * (1.0 + fogTau), ${f(FOG_MAX_HALO_DEG)});
   vHalo = col * haloK;
   float coreDeg = max(sigma * degPerPx, 0.06);
 #ifdef HALO_PASS

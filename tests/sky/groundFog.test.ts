@@ -2,7 +2,7 @@
 // exactly: the analytic optical depth along any straight segment must match a fine numeric integral of the density
 // profile (uniform below the ramp, smoothstep fall-off to the top), a horizontal path of fogVisibilityM inside the
 // uniform part must leave the Koschmieder 2 % contrast, nothing above the top may be fogged, and without a fog layer
-// the uniform and the composite must leave the scene untouched.
+// the uniform must leave the scene untouched.
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { defaultWeather, type WeatherSettings } from '../../src/core/types';

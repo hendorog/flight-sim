@@ -1,5 +1,6 @@
 // Ground fog layer: the medium and its CPU twin. Pure (no three.js, no DOM), so the node tests check the same
-// numbers the shaders compute (fogGlsl.ts holds the GLSL port of fogOpticalDepth and fogRadiance).
+// numbers the shaders compute (fogGlsl.ts holds the GLSL port of fogOpticalDepth and fogPhaseHG; FogEffect.ts
+// inlines fogRadiance).
 //
 // The layer (WeatherSettings.fogTopM, fogVisibilityM through core/weatherFields fogOf) has a uniform extinction
 // beta = 3.912 / fogVisibilityM (Koschmieder, the 2 % contrast threshold the rest of the sky uses) from the ground up

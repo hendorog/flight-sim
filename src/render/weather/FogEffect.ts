@@ -10,7 +10,9 @@
 //
 // The aerial perspective has already hazed the input over the whole path, so the fog adds only its own extinction
 // and in-scatter. Recorded error: with the camera above the fog and a cloud between the camera and the fog, the
-// fog's in-scatter is not dimmed by that cloud. The ambient term is ctx.sky.hazeColor, which carries the cloud
+// fog's in-scatter is not dimmed by that cloud. Recorded error: the light sprites (airport and aircraft) write no
+// depth, so a lamp seen against a sky pixel is attenuated with that pixel's path (to the fog top, or the far plane
+// looking down) instead of the lamp-to-camera path the sprites' compensation assumes. The ambient term is ctx.sky.hazeColor, which carries the cloud
 // layer's dimming of the air light (cloudSky.ts summarize); the sun term is scaled by cloudSky.directGround.
 //
 // The fog uniform (fogGlsl.ts fogUniformFor) is written here every frame for the aircraft light sprites.

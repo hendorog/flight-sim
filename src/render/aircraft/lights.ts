@@ -13,8 +13,8 @@
 //   - real three.js lights for what lights the world: spot lights for the landing / taxi pools, point
 //     lights for strobe and beacon flashes on the airframe.
 // In ground fog (render/weather/fogGlsl.ts, the uniform FogEffect publishes per renderer) the glare halo gains a
-// forward-scatter aureole, FOG_AUREOLE * (1 - e^-tau) on top of GLARE, and widens by (1 + tau), tau the fog's optical
-// depth from the lamp to the camera. The landing and taxi beams have no volumetric term in fog.
+// forward-scatter aureole, FOG_AUREOLE * (1 - e^-tau) on the display on top of the fogged GLARE, and widens by
+// (1 + tau), tau the fog's optical depth from the lamp to the camera. The landing and taxi beams have no volumetric term in fog.
 // The intensity of each lamp depends on the viewing direction (FAR 23.1387-1401 distributions): the red and
 // green position lights cover 0-110 degrees to their side of dead ahead, the white tail light the rear 140
 // degrees, the landing and taxi lights are narrow forward beams, and every light falls off vertically.
@@ -186,11 +186,14 @@ void main() {
   // viewport height.
   float degH = max(degPerPx, ${f(NOMINAL_FOV_DEG)} / uViewportH);
   float theta0 = max(0.5 * px * degH, ${f(HALO_CORE_DEG)});
-  // In fog, the forward-scatter aureole adds to the glare coefficient and widens the halo (header).
+  // In fog, the forward-scatter aureole adds to the glare coefficient and widens the halo (header). FogEffect
+  // attenuates the halo by e^-fogTau as well, so the peak cap and the radius use the value that reaches the
+  // display, and the sprite divides that attenuation out.
   float fogTau = fogOpticalDepth((modelMatrix * vec4(position, 1.0)).xyz, cameraPosition);
-  float glare = ${f(GLARE)} + ${f(FOG_AUREOLE)} * (1.0 - exp(-fogTau));
-  float amp = min(glare, ${f(HALO_PEAK)} * theta0 * theta0 / max(E * uExposure, 1e-30));
-  float haloDeg = min(min(sqrt(amp * E * uExposure / ${f(HALO_CUTOFF)}), ${f(MAX_HALO_DEG)}) * (1.0 + fogTau), ${f(FOG_MAX_HALO_DEG)});
+  float glareDisp = ${f(GLARE)} * exp(-fogTau) + ${f(FOG_AUREOLE)} * (1.0 - exp(-fogTau));
+  float ampDisp = min(glareDisp, ${f(HALO_PEAK)} * theta0 * theta0 / max(E * uExposure, 1e-30));
+  float amp = ampDisp * exp(min(fogTau, 6.0));
+  float haloDeg = min(min(sqrt(ampDisp * E * uExposure / ${f(HALO_CUTOFF)}), ${f(MAX_HALO_DEG)}) * (1.0 + fogTau), ${f(FOG_MAX_HALO_DEG)});
   vColor = glow / (dist * dist) * amp;
   px = min(2.0 * haloDeg / degH, uMaxPx);
   vShape = vec2(0.5 * px * degH, theta0 * theta0);
