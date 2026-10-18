@@ -7,13 +7,13 @@
 import { describe, expect, it } from 'vitest';
 import { defaultWeather, type StormCell } from '../../src/core/types';
 import { KT } from '../../src/core/math';
-import { BOLT_POINTS, BOLT_SEGMENTS, BOLT_TOP_ABOVE_BASE_M, boltPath } from '../../src/render/weather/boltGeometry';
+import { BOLT_POINTS, BOLT_ROUGHNESS, BOLT_SEGMENTS, BOLT_TOP_ABOVE_BASE_M, boltPath } from '../../src/render/weather/boltGeometry';
 import { ANVIL_PER_RADIUS, SHAFT_PER_RADIUS, cellGeometry, makeCellGeometry } from '../../src/render/weather/StormCellEffect';
 import { STORM_MARCH_FRAG, STORM_STEPS } from '../../src/render/weather/stormGlsl';
 import * as THREE from 'three';
 import { createEventBus, type SimContext, type SimEvents } from '../../src/core/context';
 import { makeMockEnvironment } from '../../src/core/mockState';
-import { LightningOverlay } from '../../src/render/weather/LightningOverlay';
+import { LightningOverlay, MAX_WINDOW_S } from '../../src/render/weather/LightningOverlay';
 import { strikesBetween, type Strike } from '../../src/sim/weather/lightning';
 
 const cell = (o: Partial<StormCell> = {}): StormCell => ({
@@ -83,15 +83,27 @@ describe('boltPath', () => {
   const top = { x: 300, y: base + BOLT_TOP_ABOVE_BASE_M, z: -9000 };
   const bottom = { x: 300, y: ground, z: -9000 };
 
-  it('runs from the top point to the ground point', () => {
-    const p = boltPath(42, top, bottom, new Float32Array(3 * BOLT_POINTS));
+  it('moves each midpoint at most BOLT_ROUGHNESS of its segment sideways and a fifth of that vertically', () => {
     expect(BOLT_SEGMENTS).toBeLessThanOrEqual(32);
-    expect(p[1]).toBeCloseTo(base + 3000, 0);
-    expect(Math.abs(p[0] - top.x)).toBeLessThan(1);
-    const last = 3 * BOLT_SEGMENTS;
-    expect(Math.abs(p[last + 1] - ground)).toBeLessThan(1);
-    expect(Math.abs(p[last] - bottom.x)).toBeLessThan(1);
-    expect(Math.abs(p[last + 2] - bottom.z)).toBeLessThan(1);
+    for (const id of [1, 42, 999, 123456]) {
+      const p = boltPath(id, top, bottom, new Float32Array(3 * BOLT_POINTS));
+      expect(p[1]).toBe(Math.fround(base + 3000));
+      expect(p[3 * BOLT_SEGMENTS + 1]).toBe(Math.fround(ground));
+      let moved = 0;
+      for (let stride = BOLT_SEGMENTS; stride >= 2; stride >>= 1) {
+        for (let a = 0; a < BOLT_SEGMENTS; a += stride) {
+          const b = a + stride;
+          const m = a + stride / 2;
+          const len = Math.hypot(p[3 * b] - p[3 * a], p[3 * b + 1] - p[3 * a + 1], p[3 * b + 2] - p[3 * a + 2]);
+          const side = Math.hypot(p[3 * m] - 0.5 * (p[3 * a] + p[3 * b]), p[3 * m + 2] - 0.5 * (p[3 * a + 2] + p[3 * b + 2]));
+          const up = Math.abs(p[3 * m + 1] - 0.5 * (p[3 * a + 1] + p[3 * b + 1]));
+          expect(side).toBeLessThanOrEqual(BOLT_ROUGHNESS * len * (1 + 1e-5) + 1e-2);
+          expect(up).toBeLessThanOrEqual(0.2 * BOLT_ROUGHNESS * len * (1 + 1e-5) + 1e-2);
+          if (side > 1) moved++;
+        }
+      }
+      expect(moved).toBeGreaterThan(BOLT_SEGMENTS / 2);
+    }
   });
 
   it('is the same for the same id and differs between ids', () => {
@@ -132,7 +144,7 @@ describe('LightningOverlay', () => {
       cameraMode: 'chase',
       env: makeMockEnvironment(),
       events: createEventBus(),
-      sky: { skyColor: new THREE.Color(300, 400, 600), hazeExtinction: 1e-4 },
+      sky: { skyColor: new THREE.Color(300, 400, 600), sunColor: new THREE.Color(1, 1, 1), sunDir: new THREE.Vector3(0, 1, 0), hazeExtinction: 1e-4 },
       weatherFx: { flash: { x: 0, y: 0, z: 0, energy: 0 } },
     } as unknown as SimContext;
   };
@@ -156,7 +168,14 @@ describe('LightningOverlay', () => {
     expect(got.map((e) => e.id).sort((a, b) => a - b)).toEqual(expected.slice(0, n).map((s) => s.id).sort((a, b) => a - b));
     expect(n).toBeGreaterThan(20);
     expect(lit).toBeGreaterThan(n);
+    // One draw per frame (the copy, or the lightning material on the first frame and while a flash is lit).
     expect(draws()).toBe(36_000);
+    // With the cells gone, every lit flash ends and none starts.
+    ctx.weather = { ...ctx.weather, storms: [] };
+    ctx.simTime = 600 + MAX_WINDOW_S * 0.9;
+    overlay.render(renderer, new THREE.Texture(), new THREE.DepthTexture(4, 4), target(), ctx);
+    expect(overlay.litCount).toBe(0);
+    expect(ctx.weatherFx?.flash.energy).toBe(0);
     for (const e of got) {
       if (e.kind === 'cg') expect(e.altM).toBe(Math.min(11_000, defaultWeather().cloudBaseM + BOLT_TOP_ABOVE_BASE_M));
     }

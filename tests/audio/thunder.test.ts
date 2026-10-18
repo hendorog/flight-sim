@@ -122,6 +122,16 @@ describe('scheduleThunder', () => {
     expect(stop.args[0] as number).toBeCloseTo(s.endAt + 0.01, 9);
   });
 
+  it('gives each envelope ramp a later time than the one before', () => {
+    for (const strokes of [1, 3, 5]) {
+      calls = [];
+      scheduleThunder(fakeContext(), {} as AudioNode, thunderPlan(strike({ strokes }), listener(), 120, 343)!, 0, false);
+      const times = calls.filter((c) => c.node === 'gain' && /Ramp|setValue/.test(c.method)).map((c) => c.args[1] as number);
+      expect(times.length).toBe(2 + 2 * strokes);
+      for (let i = 1; i < times.length; i++) expect(times[i]).toBeGreaterThan(times[i - 1]);
+    }
+  });
+
   it('adds the cabin low-pass in cockpit view', () => {
     const plan = thunderPlan(strike(), listener(), 120, 343)!;
     scheduleThunder(fakeContext(), {} as AudioNode, plan, 0, false);
@@ -157,10 +167,11 @@ describe('AudioSystem thunder', () => {
     vi.stubGlobal('DynamicsCompressorNode', standIn('limiter'));
   });
 
-  async function started() {
+  async function started(camX = 0, camZ = 0) {
     const events = createEventBus();
     const camera = new THREE.PerspectiveCamera();
-    camera.position.set(0, 120, 0);
+    camera.position.set(camX, 120, camZ);
+    camera.updateMatrixWorld();
     const ctx = {
       paused: false,
       events,
@@ -186,6 +197,15 @@ describe('AudioSystem thunder', () => {
     calls = [];
     events.emit('reset', { scenario: 'runway' });
     expect(calls.some((c) => c.node === 'source' && c.method === 'stop')).toBe(true);
+  });
+
+  it('measures the distance from the camera in NED (north = -z, east = x)', async () => {
+    // Camera 2000 m north and 1000 m east of the origin; the strike 3000 m north and 4000 m east of the camera.
+    const { events } = await started(1000, -2000);
+    calls = [];
+    events.emit('lightning', { id: 6, kind: 'cg', north: 5000, east: 5000, altM: 4500, energy: 1, strokes: 3 });
+    const start = calls.find((c) => c.node === 'source' && c.method === 'start')!;
+    expect(Math.abs((start.args[0] as number) - (40 + 5000 / 340))).toBeLessThan(1e-3);
   });
 
   it('makes no sound for a strike beyond THUNDER_MAX_DISTANCE_M', async () => {

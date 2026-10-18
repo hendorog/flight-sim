@@ -2,7 +2,9 @@
 // VolcanoPlumeEffect pattern. Created at boot whether or not the weather has cells, so that cells set later (menu,
 // presets, __sim.setWeather) appear without a shader compile; with no cell on screen it copies its input.
 //
-// Per frame (2 draws; 1 copy when no cell is in the view frustum):
+// Per frame (2 draws; 1 copy when no cell is in the view frustum, except on the first render, which draws both
+// passes with no cell so that their shaders compile in the Simulator's shader warm-up; the composite then returns
+// its input):
 //   1. march      (STORM_MARCH_FRAG, stormGlsl.ts)      STORM_SCALE resolution, MRT: premultiplied radiance +
 //                                                       transmittance, and the density-weighted front distance
 //                                                       with the scene depth the ray met
@@ -26,6 +28,7 @@ import type { SceneEffect, SimContext } from '../../core/context';
 import type { StormCell, WeatherSettings } from '../../core/types';
 import { DEG } from '../../core/math';
 import { MAX_STORMS, stormCentreAt, stormsOf, type NorthEast } from '../../core/weatherFields';
+import { mulberry32 } from '../../physics/weather/random';
 import { Atmosphere } from '../sky/Atmosphere';
 import { transmittanceToSpace } from '../sky/transmittance';
 import { FULLSCREEN_VERT } from '../clouds/resolveShaders';
@@ -109,17 +112,6 @@ export function cellGeometry(cell: StormCell, w: Pick<WeatherSettings, 'cloudBas
 // ------------------------------------------------------------------------------------------------ noise
 
 const NOISE_N = 32;
-
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /** Tileable Worley distance (nearest feature point) over a `cells`^3 grid, at a point in [0, 1)^3. */
 function worleyField(cells: number, seed: number): (x: number, y: number, z: number) => number {
@@ -217,6 +209,8 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   private height = 1;
   private scale = STORM_SCALE;
   private frame = 0;
+  /** Whether the march and composite have been drawn once (compiled). */
+  private warmed = false;
 
   private readonly invProj = new THREE.Matrix4();
   private readonly camWorld = new THREE.Matrix4();
@@ -342,17 +336,19 @@ export class StormCellEffect implements SceneEffect, StormLayer {
       this.resize();
     }
     this.active = this.updateCells(ctx) > 0;
-    if (!this.active) {
+    if (!this.active && this.warmed) {
       this.copyMat.uniforms.uScene.value = input;
       this.draw(renderer, this.copyMat, output);
       renderer.setRenderTarget(prevTarget);
       return;
     }
+    this.warmed = true;
     const camera = ctx.camera;
     this.invProj.copy(camera.projectionMatrixInverse);
     this.camWorld.copy(camera.matrixWorld);
     this.camPos.setFromMatrixPosition(camera.matrixWorld);
-    this.updateLighting(renderer, ctx);
+    // With no cell (the warm-up draw) the march returns before its lighting.
+    if (this.count > 0) this.updateLighting(renderer, ctx);
     const m = this.marchMat.uniforms;
     m.uDepth.value = depth;
     m.uFrame.value = this.frame++ % 4096;

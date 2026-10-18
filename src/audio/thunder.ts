@@ -147,10 +147,12 @@ export function scheduleThunder(ac: BaseAudioContext, dest: AudioNode, plan: Thu
   const g = env.gain;
   g.setValueAtTime(0, startAt);
   const swell = Math.min(plan.durationS * 0.5, 0.25 * plan.strokes);
+  // Each stroke's decay ends where the next stroke's swell starts (two ramps to one time would step the gain).
+  const per = swell / plan.strokes;
   for (let j = 0; j < plan.strokes; j++) {
-    const at = startAt + (swell * j) / plan.strokes;
-    g.linearRampToValueAtTime(plan.gain * (1 - 0.15 * j), at + 0.03);
-    g.linearRampToValueAtTime(plan.gain * 0.55, at + 0.03 + swell / plan.strokes);
+    const at = startAt + per * j;
+    g.linearRampToValueAtTime(plan.gain * (1 - 0.15 * j), at + Math.min(0.03, 0.5 * per));
+    g.linearRampToValueAtTime(plan.gain * 0.55, at + per);
   }
   g.exponentialRampToValueAtTime(0.0001, endAt);
   node.connect(env).connect(new StereoPannerNode(ac, { pan: plan.pan })).connect(dest);

@@ -9,14 +9,21 @@
 // A flash is a point light at the strike (cloud-to-ground: at the cloud base above the ground point; intracloud: at
 // its height in the cell) with luminous intensity FLASH_INTENSITY_CD x energy x the stroke envelope (flashEnvelope).
 // Per pixel, with E = intensity / (d^2 + FLASH_SOFTEN_M^2) at the pixel's point:
-//   opaque surface (depth buffer)  c *= min(8, 1 + E / (pi lum(skyColor) + 1e-3)), weighted by the clouds' T in front
-//   cloud (the cumulus front from the clouds' reprojection layer, the storm front from stormLayerOf; the nearer,
-//   each averaged over 5 taps)     c += (1 - T) E' FLASH_CLOUD_GAIN, E' softened by FLASH_CLOUD_SOFTEN_M
+//   opaque surface (depth buffer)  c *= min(8, 1 + E / A), weighted by the clouds' T in front; A, the surface's
+//                                  illuminance before the flash: pi lum(skyColor) + max(sunDir.y, 0) lum(sunColor)
+//   cloud (the cumulus front from the clouds' reprojection layer, the storm front from stormLayerOf, each averaged
+//   over a 3 x 3 box of taps)      each layer lit at its own front: c += a_near E'(front_near) g h_near
+//                                  + T_near a_far E'(front_far) g h_far, with a = smoothstep(0.02, 0.5, 1 - T),
+//                                  g = FLASH_CLOUD_GAIN, h = exp(-hazeExtinction front), E' softened by
+//                                  FLASH_CLOUD_SOFTEN_M
 // A cloud-to-ground strike also draws its channel (boltGeometry.ts, BOLT_SEGMENTS segments projected on the CPU):
-// glow min(BOLT_MAX, BOLT_RADIANCE envelope exp(-px / 2)) (the bloom adds the halo), depth-tested against the scene,
-// dimmed by the clouds' T where it lies behind their front, and by exp(-hazeExtinction d). Only the brightest lit
-// ground strike draws a channel. Alpha passes through. The flash enters none of the exposure references
-// (greyCardLuminance, NightLook.outdoorGreyCard, the estimateExposure copies); the auto exposure meters it after.
+// glow min(BOLT_MAX, BOLT_RADIANCE envelope exp(-BOLT_FALLOFF_PER_PX px)) (the bloom adds the halo), depth-tested
+// against the scene, hidden behind the front of a cloud layer with T < BOLT_HIDE_T and dimmed by a thinner one's T,
+// and dimmed by exp(-hazeExtinction d). Only the brightest lit ground strike draws a channel. Alpha passes through.
+// The flash enters none of the exposure references (greyCardLuminance, NightLook.outdoorGreyCard, the
+// estimateExposure copies); the auto exposure meters it after.
+// The first render draws the lightning material with no flash (output = input) instead of the copy, so the shader
+// compiles in the Simulator's shader warm-up rather than at the first strike.
 
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -34,7 +41,7 @@ import { STORM_RAY_GLSL } from './stormGlsl';
 /** Flashes lit at once. */
 export const MAX_FLASHES = 4;
 /** Luminous intensity of a flash at energy 1 and envelope 1, cd. Unconfirmed: a tuning value, no source checked. */
-export const FLASH_INTENSITY_CD = 1e7;
+export const FLASH_INTENSITY_CD = 1e8;
 /** Softening distance of the flash's inverse-square falloff, m. */
 export const FLASH_SOFTEN_M = 400;
 /** Softening distance for cloud pixels, m (the flash's light spreads through the cloud). Unconfirmed: a look value. */
@@ -44,8 +51,13 @@ export const FLASH_CLOUD_GAIN = 0.6;
 /** Largest brightening of an opaque surface by a flash (a multiple of its colour). */
 export const FLASH_SURFACE_MAX = 8;
 /** Radiance of a bolt's core at envelope 1, and its cap, scene units. Unconfirmed: look values. */
-export const BOLT_RADIANCE = 2e5;
+export const BOLT_RADIANCE = 2e4;
 export const BOLT_MAX = 60_000;
+/** The glow's falloff across the channel, 1/px, and the distance beyond which it is not drawn, px. */
+export const BOLT_FALLOFF_PER_PX = 1.5;
+export const BOLT_MAX_PX = 10;
+/** A cloud layer with less transmittance than this hides the part of the channel behind its front. */
+export const BOLT_HIDE_T = 0.9;
 /** A larger forward jump of the simulation time than this, s, skips the strikes of the window. */
 export const MAX_WINDOW_S = 2;
 
@@ -86,7 +98,7 @@ uniform int uFlashCount;
 uniform vec4 uBolt[${BOLT_POINTS}];    // xy pixel, z distance from the camera m, w 1 = in front of the camera
 uniform float uBoltGain;
 uniform vec2 uFullSize;
-uniform float uAmbient;                // pi lum(skyColor) + 1e-3
+uniform float uAmbient;                // the surface's illuminance before the flash, scene units (> 0)
 uniform float uHazeExt;
 
 float flashE(vec3 p, float soften2) {
@@ -99,11 +111,13 @@ float flashE(vec3 p, float soften2) {
   return e;
 }
 
-// A cloud layer's transmittance (x) and front distance (y, m; weighted by opacity) in front of a surface at dist.
+// A cloud layer's transmittance (x) and front distance (y, m; weighted by opacity) in front of a surface at dist,
+// averaged over a 3 x 3 box of taps 1.5 texels apart (the layer is the jittered, lower-resolution march of this
+// frame; the overlay runs after the temporal pass).
 vec2 layerAt(sampler2D trans, sampler2D front, vec2 texel, float dist) {
   float T = 0.0, fs = 0.0, fw = 0.0;
-  for (int k = 0; k < 5; k++) {
-    vec2 o = k == 0 ? vec2(0.0) : vec2(k < 3 ? -0.75 : 0.75, (k & 1) == 1 ? -0.75 : 0.75) * texel;
+  for (int k = 0; k < 9; k++) {
+    vec2 o = vec2(float(k % 3) - 1.0, float(k / 3) - 1.0) * 1.5 * texel;
     float t = clamp(texture(trans, vUv + o).a, 0.0, 1.0);
     float f = exp2(texture(front, vUv + o).r) - 1.0;
     if (f >= dist) t = 1.0;
@@ -111,7 +125,15 @@ vec2 layerAt(sampler2D trans, sampler2D front, vec2 texel, float dist) {
     fs += f * (1.0 - t);
     fw += 1.0 - t;
   }
-  return vec2(T / 5.0, fw > 1e-4 ? fs / fw : 1e9);
+  return vec2(T / 9.0, fw > 1e-4 ? fs / fw : 1e9);
+}
+
+// The light a flash adds to a cloud layer seen with transmittance T at its front: (1 - T) (from 0 below an
+// opacity of 0.02, so the march's edge noise stays unlit) x E at the front x FLASH_CLOUD_GAIN, through the haze.
+vec3 cloudLight(vec3 dir, vec2 tf) {
+  float a = smoothstep(0.02, 0.5, 1.0 - tf.x);
+  if (a <= 0.0) return vec3(0.0);
+  return vec3(a * flashE(uCamPos + dir * tf.y, ${(FLASH_CLOUD_SOFTEN_M * FLASH_CLOUD_SOFTEN_M).toFixed(1)}) * ${FLASH_CLOUD_GAIN.toFixed(3)} * exp(-uHazeExt * tf.y));
 }
 
 void main() {
@@ -121,25 +143,28 @@ void main() {
   vec3 dv = rayDirView(vUv);
   vec3 dir = normalize(mat3(uCamWorld) * dv);
   float dist = sky ? 1e8 : viewZFromDepth(dd) / max(-dv.z, 1e-4);
-  // The clouds in front of the surface: the nearer front and the product of the transmittances, each layer
-  // averaged over 5 taps of its (jittered, lower-resolution) march so the flash does not show its noise.
-  float T = 1.0;
-  float cloudDist = 1e9;
+  // The two cloud layers in front of the surface, each (transmittance, front distance); a layer that is absent or
+  // clear here is (1, 1e9). The nearer one is lit at its front, the farther at its own front behind the nearer's T.
+  vec2 cu = vec2(1.0, 1e9);
+  vec2 cb = vec2(1.0, 1e9);
   if (uHasCu > 0.5) {
     vec2 tf = layerAt(uCuTrans, uCuDist, uCuTexel, dist);
-    if (tf.x < 0.999) { T *= tf.x; cloudDist = min(cloudDist, tf.y); }
+    if (tf.x < 0.999) cu = tf;
   }
   if (uHasCb > 0.5) {
     vec2 tf = layerAt(uCbTrans, uCbDist, uCbTexel, dist);
-    if (tf.x < 0.999) { T *= tf.x; cloudDist = min(cloudDist, tf.y); }
+    if (tf.x < 0.999) cb = tf;
   }
+  vec2 near = cu.y <= cb.y ? cu : cb;
+  vec2 far = cu.y <= cb.y ? cb : cu;
+  float T = near.x * far.x;
   vec3 rgb = c.rgb;
   if (uFlashCount > 0) {
     if (!sky) {
       float k = min(${FLASH_SURFACE_MAX.toFixed(1)}, 1.0 + flashE(uCamPos + dir * dist, ${(FLASH_SOFTEN_M * FLASH_SOFTEN_M).toFixed(1)}) / uAmbient);
       rgb *= mix(1.0, k, T);
     }
-    if (T < 0.999) rgb += (1.0 - T) * flashE(uCamPos + dir * cloudDist, ${(FLASH_CLOUD_SOFTEN_M * FLASH_CLOUD_SOFTEN_M).toFixed(1)}) * ${FLASH_CLOUD_GAIN.toFixed(3)};
+    if (T < 0.999) rgb += cloudLight(dir, near) + near.x * cloudLight(dir, far);
   }
   if (uBoltGain > 0.0) {
     vec2 px = vUv * uFullSize;
@@ -151,12 +176,22 @@ void main() {
       vec2 ab = b.xy - a.xy;
       float h = clamp(dot(px - a.xy, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
       float r = length(px - a.xy - ab * h);
-      if (r > 24.0) continue;
+      if (r > ${BOLT_MAX_PX.toFixed(1)}) continue;
       float z = mix(a.z, b.z, h);
       if (z > dist) continue;
-      float g = min(${BOLT_MAX.toFixed(1)}, uBoltGain * exp(-r * 0.5));
-      g *= exp(-uHazeExt * z) * (z > cloudDist ? T : 1.0);
-      glow = max(glow, g);
+      // Behind a layer's front: hidden by a layer of transmittance below BOLT_HIDE_T (the flash's light there is
+      // the cloud term), dimmed by a thinner one.
+      float through = 1.0;
+      if (z > near.y + 100.0) {
+        if (near.x < ${BOLT_HIDE_T.toFixed(2)}) continue;
+        through = near.x;
+      }
+      if (z > far.y + 100.0) {
+        if (far.x < ${BOLT_HIDE_T.toFixed(2)}) continue;
+        through *= far.x;
+      }
+      float g = min(${BOLT_MAX.toFixed(1)}, uBoltGain * exp(-r * ${BOLT_FALLOFF_PER_PX.toFixed(2)}));
+      glow = max(glow, g * exp(-uHazeExt * z) * through);
     }
     rgb += glow * vec3(0.86, 0.9, 1.0);
   }
@@ -200,6 +235,8 @@ export class LightningOverlay implements SceneEffect {
   private readonly copyMat: THREE.ShaderMaterial;
   private width = 1;
   private height = 1;
+  /** Whether the lightning material has been drawn once (compiled). */
+  private warmed = false;
 
   private readonly invProj = new THREE.Matrix4();
   private readonly camWorld = new THREE.Matrix4();
@@ -364,12 +401,13 @@ export class LightningOverlay implements SceneEffect {
       }
       fx.energy = bestE;
     }
-    if (count === 0) {
+    if (count === 0 && this.warmed) {
       this.copyMat.uniforms.uScene.value = input;
       this.draw(renderer, this.copyMat, output);
       renderer.setRenderTarget(prevTarget);
       return;
     }
+    this.warmed = true;
     const camera = ctx.camera;
     this.invProj.copy(camera.projectionMatrixInverse);
     this.camWorld.copy(camera.matrixWorld);
@@ -377,7 +415,7 @@ export class LightningOverlay implements SceneEffect {
     u.uScene.value = input;
     u.uDepth.value = depth;
     u.uFlashCount.value = count;
-    u.uAmbient.value = Math.PI * lum(ctx.sky.skyColor) + 1e-3;
+    u.uAmbient.value = Math.PI * lum(ctx.sky.skyColor) + Math.max(ctx.sky.sunDir.y, 0) * lum(ctx.sky.sunColor) + 1e-3;
     u.uHazeExt.value = ctx.sky.hazeExtinction > 0 ? ctx.sky.hazeExtinction : 3.0 / Math.max(ctx.weather.visibilityM, 100);
     const layer = this.clouds?.reprojectionLayer() ?? null;
     u.uHasCu.value = layer ? 1 : 0;

@@ -8,7 +8,7 @@
 // Density (cell-local; r the horizontal distance to the centre, broken up by a world-space noise n):
 //   core   smoothstep(R, 0.6 R, r) from the base to the anvil's underside, (0.6 + 0.4 n), extinction STORM_CORE_SIGMA
 //   anvil  a disc of the anvil radius around the anvil centre (moved downwind), from (top - STORM_ANVIL_DEPTH_M),
-//          thinning toward its edge, up to the top; (0.5 + 0.5 n), extinction STORM_ANVIL_SIGMA
+//          thinning from half its radius to its edge, up to the top; (0.5 + 0.5 n), extinction STORM_ANVIL_SIGMA
 //   shaft  smoothstep(shaftR, 0.3 shaftR, r) below the base, x intensity, extinction STORM_SHAFT_SIGMA
 //   virga  outside the shaft, inside the core's footprint, fading out STORM_VIRGA_DEPTH_M below the base
 // The march covers each cell's bounding cylinder (ground to top), clipped by the scene depth; the cylinders' ray
@@ -47,7 +47,7 @@ export const STORM_DIFFUSE_K = 0.11;
 export const STORM_RAIN_ALBEDO = 0.55;
 /** Noise periods, m (the 32^3 texture tiles), and the turrets' rise speed, m/s. */
 export const STORM_NOISE_PERIOD_M = 5200;
-export const STORM_NOISE_DETAIL_M = 1400;
+export const STORM_NOISE_DETAIL_M = 900;
 export const STORM_RISE_MS = 3;
 
 const f = (v: number): string => (Number.isInteger(v) ? v.toFixed(1) : String(v));
@@ -127,7 +127,7 @@ vec3 cellDensity(int i, vec3 p, float n) {
   float ra = length(p.xz - C.xy) + bill * 0.45 * B.z;
   float e = clamp(ra / max(B.z, 1.0), 0.0, 1.0);
   float bot = anvilBot + 900.0 * e * e;
-  float anvil = smoothstep(B.z, 0.7 * B.z, ra) * smoothstep(bot, bot + 200.0, p.y) * (1.0 - smoothstep(top - 250.0, top, p.y));
+  float anvil = smoothstep(B.z, 0.5 * B.z, ra) * smoothstep(bot, bot + 200.0, p.y) * (1.0 - smoothstep(top - 250.0, top, p.y));
   anvil *= 0.5 + 0.5 * n;
   // Rain: the shaft under the core, and virga at the rest of the core's footprint below the base.
   float below = 1.0 - smoothstep(base - 100.0, base, p.y);
@@ -170,7 +170,7 @@ vec2 stormColumn(vec3 p) {
     float below = clamp(min(p.y, anvilBot) - B.x, 0.0, 1e5);
     float ra = length(p.xz - C.xy);
     float e = clamp(ra / max(B.z, 1.0), 0.0, 1.0);
-    float anvil = smoothstep(B.z, 0.7 * B.z, ra) * 0.75 * ${f(STORM_ANVIL_SIGMA)} * clamp(A.w - max(p.y, anvilBot + 900.0 * e * e), 0.0, 3000.0);
+    float anvil = smoothstep(B.z, 0.5 * B.z, ra) * 0.75 * ${f(STORM_ANVIL_SIGMA)} * clamp(A.w - max(p.y, anvilBot + 900.0 * e * e), 0.0, 3000.0);
     tau += vec2(core * above + anvil, core * below);
   }
   return tau;
