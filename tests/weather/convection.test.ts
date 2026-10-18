@@ -82,22 +82,47 @@ describe('Oseguera-Bowles downdraft and outflow', () => {
     expect(worst).toBeLessThan(1e-3);
   });
 
-  test('peak outflow 10 + 20 intensity m/s within 10 %, through the cell', () => {
-    for (const intensity of [0, 0.5, 1]) {
-      const c = cell({ radiusM: 4000, intensity });
-      const dd = downdraftCentreAt(c, 0, { north: 0, east: 0 });
-      let peak = 0;
-      for (let k = 0; k <= 120; k++) {
-        const r = (k / 120) * 2 * DOWNDRAFT_RADIUS * c.radiusM;
-        for (let agl = 5; agl <= 300; agl += 5) {
-          const cb = sampleAt([c], dd.north + r, dd.east, ELEV + agl);
-          peak = Math.max(peak, Math.hypot(cb.outN, cb.outE));
-        }
+  /** Largest horizontal outflow speed over r = 0..2 Rd and 5..300 m above ground around the downdraft centre. */
+  const peakOutflow = (c: StormCell): number => {
+    const dd = downdraftCentreAt(c, 0, { north: 0, east: 0 });
+    let peak = 0;
+    for (let k = 0; k <= 120; k++) {
+      const r = (k / 120) * 2 * DOWNDRAFT_RADIUS * c.radiusM;
+      for (let agl = 5; agl <= 300; agl += 5) {
+        const cb = sampleAt([c], dd.north + r, dd.east, ELEV + agl);
+        peak = Math.max(peak, Math.hypot(cb.outN, cb.outE));
       }
+    }
+    return peak;
+  };
+
+  test('peak outflow 10 + 20 intensity m/s within 10 % for R = 4000 m, where DOWNDRAFT_MAX does not bind', () => {
+    for (const intensity of [0, 0.5, 1]) {
+      const peak = peakOutflow(cell({ radiusM: 4000, intensity }));
       const want = 10 + 20 * intensity;
-      report('peak outflow', { intensity, peak, want });
+      report('peak outflow', { radiusM: 4000, intensity, peak, want });
       expect(Math.abs(peak - want) / want).toBeLessThan(0.1);
     }
+  });
+
+  test('peak outflow for R = 1000 m, intensity 1, where DOWNDRAFT_MAX binds: 10.3 m/s', () => {
+    const peak = peakOutflow(cell({ radiusM: 1000, intensity: 1 }));
+    report('peak outflow, limit binds', { radiusM: 1000, intensity: 1, peak });
+    expect(peak).toBeGreaterThan(9.8);
+    expect(peak).toBeLessThan(10.8);
+  });
+
+  test('the downdraft ends at the top when the top is less than DOWNDRAFT_TAPER_M above the base', () => {
+    // Base 1500 m (BASE); a raw top of 2500 m is clamped to CELL_TOP_MIN_M = 6000 m, so use a high base instead.
+    const c = cell({ radiusM: 3000, topM: 6000, intensity: 1 });
+    const dd = downdraftCentreAt(c, 0, { north: 0, east: 0 });
+    const highBase = 5500;
+    const at = (alt: number) => cbSample([c], atAlt(alt, dd.north, dd.east), 0, alt - ELEV, ELEV, highBase, emptyCbSample());
+    const below = at(5000).up;
+    const aboveTop = at(6200).up;
+    report('downdraft by the top', { below, aboveTop });
+    expect(below).toBeLessThan(0);
+    expect(aboveTop).toBe(0);
   });
 
   test('the downdraft stays within DOWNDRAFT_MAX for a small, intense cell', () => {

@@ -15,7 +15,7 @@
 //             It is divergence-free and w = 0 at the ground. lambda is set so the peak u_r is 10 + 20 intensity
 //             m/s, limited so the downdraft (lambda (z* - eps) at height) stays within DOWNDRAFT_MAX. The field is
 //             tapered to 0 between 2.5 R and 3 R from its centre and between the cloud base and
-//             DOWNDRAFT_TAPER_M above it (the tapers are not divergence-free).
+//             DOWNDRAFT_TAPER_M above it or the top, whichever is lower (the tapers are not divergence-free).
 //   severity  intensity * smoothstep(2.5 R, R, r) up to the top, tapered to 0 over SEVERITY_TOP_TAPER_M above it;
 //             WindField passes max(weather.turbulence, severity) to the MIL-F-8785C intensities (clamped there at 1).
 // Unconfirmed: wMax, the peak outflow, z*, eps, Rd / R, the downdraft offset and limit, the tapers and the severity
@@ -39,9 +39,13 @@ export const OB_EPSILON_M = 30;
 /** Downdraft radius as a fraction of the core radius, and its centre's offset toward the cell's motion, in R. */
 export const DOWNDRAFT_RADIUS = 0.5;
 export const DOWNDRAFT_OFFSET = 0.6;
-/** Largest downdraft speed lambda (z* - eps) may reach, m/s (unconfirmed; it binds for small, intense cells). */
+/**
+ * Largest downdraft speed lambda (z* - eps) may reach, m/s (unconfirmed). With Rd = 0.5 R it binds, and the peak
+ * outflow falls below OUTFLOW_BASE + OUTFLOW_PER_INTENSITY intensity, for R < 2914 m at intensity 1 and
+ * R < 1457 m at intensity 0.5; at R = 1000 m, intensity 1, the peak outflow is 10.3 m/s.
+ */
 export const DOWNDRAFT_MAX = 25;
-/** The downdraft and outflow fade out over this height above the cloud base, m. */
+/** The downdraft and outflow fade out over this height above the cloud base (ending at the top if lower), m. */
 export const DOWNDRAFT_TAPER_M = 2000;
 /** The turbulence severity fades out over this height above the cell top, m. */
 export const SEVERITY_TOP_TAPER_M = 1000;
@@ -188,7 +192,8 @@ export function cbSample(cells: readonly StormCell[], p: Vec3, t: number, agl: n
     const ddN = dN + DOWNDRAFT_OFFSET * R * Math.cos(a);
     const ddE = dE + DOWNDRAFT_OFFSET * R * Math.sin(a);
     const rd2 = ddN * ddN + ddE * ddE;
-    const taperV = 1 - smoothstep(baseM, baseM + DOWNDRAFT_TAPER_M, alt);
+    const taperEnd = Math.max(baseM + MIN_DEPTH, Math.min(baseM + DOWNDRAFT_TAPER_M, top));
+    const taperV = 1 - smoothstep(baseM, taperEnd, alt);
     if (rd2 < DOWNDRAFT_TAPER_END * DOWNDRAFT_TAPER_END * R * R && taperV > 0) {
       const rd = DOWNDRAFT_RADIUS * R;
       obVelocity(rd2, agl, obLambda(OUTFLOW_BASE + OUTFLOW_PER_INTENSITY * intensity, rd), rd, ob);

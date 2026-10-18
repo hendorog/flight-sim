@@ -126,7 +126,7 @@ export class CockpitRig implements CameraRig {
     const s = ctx.state;
     const surface = s.onGround ? ctx.env.surface(s.position.x, s.position.y) : 'runway';
     // Storm cells raise the local turbulence the head feels (WindField.stormTurbulence; 0 without cells).
-    const storm = (ctx.env as Partial<SimEnvironment>).windField?.stormTurbulence(s.position, ctx.simTime) ?? 0;
+    const storm = (ctx.env as Partial<SimEnvironment>).windField?.stormTurbulence?.(s.position, ctx.simTime) ?? 0;
     const h = this.head.update(dt, s, storm > ctx.weather.turbulence ? storm : ctx.weather.turbulence, surface);
 
     this.applyGlance();
