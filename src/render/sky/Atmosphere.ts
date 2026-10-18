@@ -11,6 +11,7 @@
 
 import * as THREE from 'three';
 import type { SimContext } from '../../core/context';
+import { effectiveVisibilityM } from '../../core/weatherFields';
 import { FullscreenPass, passMaterial } from '../post/FullscreenPass';
 import { Celestial } from './celestial';
 import { CloudSky } from './cloudSky';
@@ -128,7 +129,9 @@ export class Atmosphere {
     this.uniforms.uCamR.value = EARTH_RADIUS_KM + Math.max(this.cameraAltitude / 1000, 0.002);
 
     const prevTarget = this.renderer.getRenderTarget();
-    if (w.visibilityM !== this.visibility) this.rebuildStaticLuts(w.visibilityM);
+    // Precipitation lowers the visibility the aerosol load is fitted to; without it this is w.visibilityM itself.
+    const visibilityM = effectiveVisibilityM(w);
+    if (visibilityM !== this.visibility) this.rebuildStaticLuts(visibilityM);
     this.renderSkyView(this.skyViewSun, this.celestial.sunDir, this.sunIlluminance);
     this.renderSkyView(this.skyViewMoon, this.celestial.moonDir, this.moonIlluminance);
     this.renderer.setRenderTarget(prevTarget);
