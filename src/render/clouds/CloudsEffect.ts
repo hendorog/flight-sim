@@ -15,7 +15,7 @@ import type { QualityLevel, ReprojectionLayer, SceneEffect, SimContext } from '.
 import type { WeatherSettings } from '../../core/types';
 import { CLOUD_TYPE_PROFILES, cloudTypeOf, effectiveVisibilityM, midLayerOf, type MidLayer } from '../../core/weatherFields';
 import { Atmosphere } from '../sky/Atmosphere';
-import { midSheetTransmission } from '../sky/cloudSky';
+import { DECK_CLOSE, midSheetTransmission } from '../sky/cloudSky';
 import { transmittanceToSpace } from '../sky/transmittance';
 import { createBlueNoiseTexture } from './blueNoise';
 import { CloudModel, midSheetTau, SLICE_FRAG } from './cloudModel';
@@ -104,9 +104,6 @@ export function cirrusCover(w: WeatherSettings): number {
 
 const _mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
 const _midT: [number, number] = [1, 1];
-
-/** Cover over which the layer closes into a continuous deck (the gap fill of cloudWeather, cloudModel.ts). */
-const DECK_CLOSE = [0.8, 1.0] as const;
 
 /**
  * How far the haze in front of the low layer is taken as the terrain's (march uDeckHaze), 0..1: the deck's closure

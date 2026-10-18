@@ -498,7 +498,7 @@ void main() {
         // ~240 m of cloud on medium and showed bright white-cream instead of grey.
         if (deckType > 0.0) {
           float colLight = colAbove / max(uLightDir.y, 0.05);
-          if (colLight > lt) tauL = mix(tauL, tauL * colLight / lt, deckType);
+          if (colLight > lt && lt > 0.0) tauL = mix(tauL, tauL * colLight / lt, deckType);
         }
         float hr = relHeight(h, wt);
         // Sunlight: single scattering plus two multiple-scattering octaves (Wrenninge 2013 / Hillaire 2016:
@@ -572,7 +572,9 @@ void main() {
   //
   // Under a closed deck (uDeckHaze) the volume's haze is already lit only by what the deck lets through
   // (Atmosphere uAirLight, render/sky/cloudSky.ts airScale), as the terrain's is: dimming it again made the haze in
-  // front of the deck darker than the terrain's at the same distance, a dark band along the horizon in rain.
+  // front of the deck darker than the terrain's at the same distance, a dark band along the horizon in rain. The
+  // exponential fallback's uHazeColor is dimmed the same way: CloudSky.summarize takes it from radiance(), which
+  // applies airLight (airScale) to the clear horizon.
   float forward = smoothstep(0.9, 0.99, cosTheta);
   float below = 1.0 - smoothstep(uLayer.x - 200.0, uLayer.x, camY);
   if (T < 0.99 && (forward > 0.0 || below > 0.0)) {
