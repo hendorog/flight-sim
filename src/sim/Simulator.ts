@@ -1263,7 +1263,7 @@ export class Simulator {
     this.demoUi?.update(physics.state, ctx.controls, s.ui.menuOpen || !!this.schoolHold);
     this.run('audio', s.audio, subsystemDt);
     try {
-      this.cloudShadows.update(ctx.scene);
+      this.cloudShadows.update(ctx.scene, ctx.weather);
       // A floodlit apron: the eye adapts to the lamps, not to the moonlit landscape (0 by day / aloft).
       this.post.artificialIlluminance = s.airport.artificialIlluminance(ctx.camera.position) * SCENE_UNITS_PER_LUX;
       this.post.render(ctx, subsystemDt);
