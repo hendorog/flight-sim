@@ -12,6 +12,9 @@
 //     clear flash, and nothing blooms by day that would not in reality);
 //   - real three.js lights for what lights the world: spot lights for the landing / taxi pools, point
 //     lights for strobe and beacon flashes on the airframe.
+// In ground fog (render/weather/fogGlsl.ts, the uniform FogEffect publishes per renderer) the glare halo gains a
+// forward-scatter aureole, FOG_AUREOLE * (1 - e^-tau) on top of GLARE, and widens by (1 + tau), tau the fog's optical
+// depth from the lamp to the camera. The landing and taxi beams have no volumetric term in fog.
 // The intensity of each lamp depends on the viewing direction (FAR 23.1387-1401 distributions): the red and
 // green position lights cover 0-110 degrees to their side of dead ahead, the white tail light the rear 140
 // degrees, the landing and taxi lights are narrow forward beams, and every light falls off vertically.
@@ -27,6 +30,7 @@ import * as THREE from 'three';
 import { C172S_VISUAL } from '../../aircraft/c172s/visual';
 import { SCENE_UNITS_PER_LUX, type SkyState } from '../../core/context';
 import type { AircraftState, ControlInputs } from '../../core/types';
+import { FOG_GLSL, fogUniformFor } from '../weather/fogGlsl';
 import type { LampVisualDef } from './airframe/types';
 import { frd } from './geometry';
 
@@ -71,6 +75,10 @@ const HALO_CORE_DEG = 0.3;
 /** Smallest field of view (degrees over the viewport height) the glare halos are sized for (see GLOW_VERT). */
 const NOMINAL_FOV_DEG = 60;
 const HALO_CUTOFF = 0.008;
+/** Fog aureole: halo coefficient added per unit of scattered fraction (1 - e^-tau), in the units of GLARE (unconfirmed tuning value). */
+const FOG_AUREOLE = 4;
+/** Largest halo radius in fog, degrees (MAX_HALO_DEG grows by 1 + tau up to this). */
+const FOG_MAX_HALO_DEG = 8;
 /**
  * Highest exposed (pre-tone-map) value of the halo, at its centre: 0.18 is middle grey and the AgX curve
  * reaches ~240/255 at 2.5 without clipping. Close to a lamp shining at the camera the glare law would push
@@ -156,6 +164,7 @@ uniform float uMaxPx;
 uniform float uMaxRadiance;
 uniform float uProfile;
 uniform float uExposure;
+${FOG_GLSL}
 varying vec3 vColor;
 varying vec2 vShape;      // halo: sprite radius (deg), theta0^2 (deg^2)
 void main() {
@@ -177,8 +186,11 @@ void main() {
   // viewport height.
   float degH = max(degPerPx, ${f(NOMINAL_FOV_DEG)} / uViewportH);
   float theta0 = max(0.5 * px * degH, ${f(HALO_CORE_DEG)});
-  float amp = min(${f(GLARE)}, ${f(HALO_PEAK)} * theta0 * theta0 / max(E * uExposure, 1e-30));
-  float haloDeg = min(sqrt(amp * E * uExposure / ${f(HALO_CUTOFF)}), ${f(MAX_HALO_DEG)});
+  // In fog, the forward-scatter aureole adds to the glare coefficient and widens the halo (header).
+  float fogTau = fogOpticalDepth((modelMatrix * vec4(position, 1.0)).xyz, cameraPosition);
+  float glare = ${f(GLARE)} + ${f(FOG_AUREOLE)} * (1.0 - exp(-fogTau));
+  float amp = min(glare, ${f(HALO_PEAK)} * theta0 * theta0 / max(E * uExposure, 1e-30));
+  float haloDeg = min(min(sqrt(amp * E * uExposure / ${f(HALO_CUTOFF)}), ${f(MAX_HALO_DEG)}) * (1.0 + fogTau), ${f(FOG_MAX_HALO_DEG)});
   vColor = glow / (dist * dist) * amp;
   px = min(2.0 * haloDeg / degH, uMaxPx);
   vShape = vec2(0.5 * px * degH, theta0 * theta0);
@@ -260,7 +272,7 @@ export class AircraftLights {
   private readonly glowCol: THREE.BufferAttribute;
   private readonly glowMat: THREE.ShaderMaterial;
   private readonly haloMat: THREE.ShaderMaterial;
-  private readonly glowUniforms: { uViewportH: THREE.IUniform<number>; uExposure: THREE.IUniform<number> };
+  private readonly glowUniforms: { uViewportH: THREE.IUniform<number>; uExposure: THREE.IUniform<number>; uFog: THREE.IUniform<THREE.Vector4> };
   private readonly tmp = new THREE.Vector3();
   private readonly dir = new THREE.Vector3();
   private readonly lampPos = new THREE.Vector3();
@@ -407,6 +419,7 @@ export class AircraftLights {
       uMaxRadiance: { value: MAX_RADIANCE },
       uProfile: { value: PROFILE_INTEGRAL },
       uExposure: { value: 1 },
+      uFog: { value: new THREE.Vector4() },
     };
     this.glowUniforms = uniforms;
     const material = (halo: boolean): THREE.ShaderMaterial =>
@@ -483,6 +496,7 @@ export class AircraftLights {
     renderer.getDrawingBufferSize(this.size);
     this.glowUniforms.uViewportH.value = this.size.y;
     this.glowUniforms.uExposure.value = sky ? estimateExposure(sky) : 0;
+    this.glowUniforms.uFog.value.copy(fogUniformFor(renderer).value);
 
     const levels: Record<LightId, number> = { navL: nav, navR: enabled('navR') ? power : 0, navTail: enabled('navTail') ? power : 0, strobeL: strobe, strobeR: enabled('strobeR') ? power * Math.max(pulse(ts, 0, 0.05), pulse(ts, 0.14, 0.05)) : 0, beacon, landing, taxi };
     const pos = this.glowPos.array as Float32Array;

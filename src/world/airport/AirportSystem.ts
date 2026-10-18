@@ -13,7 +13,9 @@
 import * as THREE from 'three';
 import { SCENE_UNITS_PER_LUX, type SimContext, type Subsystem } from '../../core/context';
 import { smoothstep } from '../../core/math';
+import { effectiveVisibilityM, type FogLayer } from '../../core/weatherFields';
 import { AIRPORT } from '../../core/world';
+import { fogUniformValue } from '../../render/weather/fogGlsl';
 import { buildStructures } from './buildings';
 import { BatchSet, boxGeo, cylGeo, GeometryBatch, placement } from './geom';
 import { PAPIS } from './layout';
@@ -152,7 +154,11 @@ export class AirportSystem implements Subsystem {
     this.signMaterial.emissiveIntensity = 3.0 * night;
     this.floodPower = smoothstep(0.5, 0.9, night);
     this.lightUniforms.uExposure.value = estimateExposure(ctx, this.artificialIlluminance(ctx.camera.position) * SCENE_UNITS_PER_LUX);
-    this.lightUniforms.uDayStep.value = dayBrightnessStep(ctx.weather.visibilityM);
+    // Runway-class day intensity follows the surface visibility: the prevailing visibility with precipitation, or the
+    // fog's when a ground fog layer covers the field (it lies on the field by definition: fogTopM is above it).
+    const fog = fogUniformValue(ctx.weather, this.lightUniforms.uFog.value, _fog);
+    const visibilityM = effectiveVisibilityM(ctx.weather);
+    this.lightUniforms.uDayStep.value = dayBrightnessStep(fog.w > 0 ? Math.min(visibilityM, _fog.visibilityM) : visibilityM);
     this.lightUniforms.uHaze.value.set(ctx.sky.hazeExtinction ?? 0, ctx.sky.hazeScaleHeight ?? 1200);
     ctx.renderer.getDrawingBufferSize(this.drawSize);
     this.lightUniforms.uViewportH.value = this.drawSize.y;
@@ -201,6 +207,7 @@ export class AirportSystem implements Subsystem {
 
 const CROSS: readonly [number, number][] = [[0, 0], [20, 0], [-20, 0], [0, 20], [0, -20]];
 const _ground = new THREE.Vector3();
+const _fog: FogLayer = { topM: 0, visibilityM: 0 };
 
 const lum = (c: THREE.Color): number => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 
