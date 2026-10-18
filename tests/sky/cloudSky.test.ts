@@ -201,6 +201,18 @@ describe('CloudSky optional inputs', () => {
     expect(c.directGround).toBeLessThan(0.2);
   });
 
+  it('treats a sheet without an altitude as above the camera', () => {
+    const placed = skyInput(40, 0.5, 6000, { midCover: 0.9, midAltM: 1e6, midTau: 6 });
+    const ref = new CloudSky();
+    ref.update(placed.input, placed.bands);
+    const { input, bands } = skyInput(40, 0.5, 6000, { midCover: 0.9, midTau: 6 });
+    const c = new CloudSky();
+    c.update(input, bands);
+    expect(c.directCamera).toBe(ref.directCamera);
+    expect(c.deckDirect).toBe(ref.deckDirect);
+    expect(c.directCamera).toBeLessThan(0.2);
+  });
+
   it('dims the air above the low layer but below the sheet', () => {
     const { input, bands } = skyInput(40, 1, 3500, { midCover: 1, midAltM: 4500, midTau: 6 });
     const c = new CloudSky();

@@ -19,7 +19,7 @@
 import * as THREE from 'three';
 import { KT } from '../../core/math';
 import type { SimContext } from '../../core/context';
-import type { CloudType, MidCloudType } from '../../core/types';
+import type { CloudType, MidCloudType, WeatherSettings } from '../../core/types';
 import { CLOUD_TYPE_PROFILES, cloudTypeOf, midLayerOf, type MidLayer } from '../../core/weatherFields';
 import { COVERAGE_GLSL, coverageParams, evolveWeights } from './coverage';
 import { WEATHER_SIZE, type CloudNoiseTextures } from './noiseTextures';
@@ -35,7 +35,7 @@ const CIRRUS_FIBRE_PERIOD = 10_000;
 const CIRRUS_WIND_FACTOR = 2.5;
 const EARTH_RADIUS = 6_371_000;
 /** Wind at cloud level relative to the surface wind: 1/7 power law from 10 m to ~1.5 km AGL gives ~2x; use 1.8. */
-const CLOUD_WIND_FACTOR = 1.8;
+export const CLOUD_WIND_FACTOR = 1.8;
 /**
  * Where the weather map starts relative to the world, m (three.js x, z). The cloud field has clusters and
  * clearings several km across; this phase puts the home airfield under a representative part of it, where
@@ -86,6 +86,9 @@ export const CLOUD_TYPE_SHAPE: Readonly<Record<CloudType, CloudTypeShape>> = Obj
 /**
  * Optical depth of the mid-level sheet at full cover inside its patches. Unconfirmed tuning values: an
  * altostratus through which the sun shows as through ground glass, a thinner layer of altocumulus elements.
+ * For altocumulus the value is the patch mean that the sky model and the shadow map use (midSheetTau); the view
+ * march puts up to 6 times the mean in the element centres (marchShader.ts), so the visible elements are
+ * thicker than the sheet that dims the ground and the low layer.
  */
 export const MID_TAU_MAX: Readonly<Record<MidCloudType, number>> = Object.freeze({ altostratus: 6, altocumulus: 2 });
 /** Optical depth of the sheet inside its patches at a vanishing cover. Unconfirmed tuning value. */
@@ -102,7 +105,18 @@ export function midSheetTau(cover: number, type: MidCloudType): number {
  * Wind at the mid-level sheet relative to the surface wind. Unconfirmed: between the cloud-level factor
  * (CLOUD_WIND_FACTOR) and the cirrus factor (CIRRUS_WIND_FACTOR).
  */
-const MID_WIND_FACTOR = 2.2;
+export const MID_WIND_FACTOR = 2.2;
+
+/**
+ * Top of the low layer as the view march sees it (uLayer.y): the weather's nominal top extended by the cloud
+ * type's towerExt, m MSL. The mid-level sheet is drawn and lights the scene only above this altitude; the sky
+ * model (render/sky/SkySystem.ts) applies the same test.
+ */
+export function extendedLayerTopM(w: WeatherSettings): number {
+  const base = Math.min(w.cloudBaseM, w.cloudTopM - 100);
+  const nominalTop = Math.max(w.cloudTopM, base + 100);
+  return base + (nominalTop - base) * CLOUD_TYPE_PROFILES[cloudTypeOf(w)].towerExt;
+}
 
 export const CLOUD_MODEL_GLSL = /* glsl */ `
 #define PI 3.14159265
@@ -121,7 +135,7 @@ uniform vec2 uCoverage;       // threshold on the coverage field and gap fill fo
 uniform float uExtinction;    // 1/m at density 1
 uniform float uInvTwoR;       // 1 / (2 * earth radius)
 uniform float uTopFrac;       // the weather's nominal cloud top as a fraction of the (extended) layer
-uniform vec4 uCloudType;      // cloud type (CLOUD_TYPE_PROFILES): deck override, deck weight, extinction scale, shape frequency scale
+uniform vec4 uCloudType;      // cloud type (CLOUD_TYPE_PROFILES): deck override, deck weight, extinction scale (not read: uExtinction carries it), shape frequency scale
 uniform vec4 uCloudShape;     // cloud type (CLOUD_TYPE_SHAPE): deck top scale, base raggedness, erosion scale, type bias
 
 const float WEATHER_FREQ = ${(1 / WEATHER_PERIOD).toExponential(6)};
@@ -439,7 +453,7 @@ float diffuseTransmission(float tau) { return 1.0 / (1.0 + 0.75 * tau * (1.0 - 0
  * render/sky/cloudSky.ts midSheetTransmission (the same two-stream slab, g = 0.85).
  */
 export const MID_SHEET_GLSL = /* glsl */ `
-uniform vec4 uMid;            // mid-level sheet: cover 0..1 (0 = none), altitude m MSL, kind (0 As, 1 Ac), tau at full cover
+uniform vec4 uMid;            // mid-level sheet: cover 0..1 (0 = none, or not above uLayer.y), altitude m MSL, kind (0 As, 1 Ac), tau at full cover
 uniform vec2 uMidOffset;      // drift in the sheet's frame (x along the upper wind), m
 const float MID_TAU_MIN = ${MID_TAU_MIN.toFixed(3)};
 // Mean optical depth of the sheet inside its patches (midSheetTau).
@@ -490,11 +504,11 @@ export interface CloudModelUniforms {
   uExtinction: THREE.IUniform<number>;
   uInvTwoR: THREE.IUniform<number>;
   uTopFrac: THREE.IUniform<number>;
-  /** Cloud type profile (CLOUD_TYPE_PROFILES): deck override, deck weight, extinction scale, shape frequency scale. */
+  /** Cloud type profile (CLOUD_TYPE_PROFILES): deck override, deck weight, extinction scale (not read in GLSL: uExtinction carries it), shape frequency scale. */
   uCloudType: THREE.IUniform<THREE.Vector4>;
   /** Cloud type shape terms (CLOUD_TYPE_SHAPE): deck top scale, base raggedness, erosion scale, type bias. */
   uCloudShape: THREE.IUniform<THREE.Vector4>;
-  /** Mid-level sheet: cover 0..1 (0 = none), altitude m MSL, kind (0 altostratus, 1 altocumulus), MID_TAU_MAX of the kind. */
+  /** Mid-level sheet: cover 0..1 (0 = none, or not above the extended layer top), altitude m MSL, kind (0 altostratus, 1 altocumulus), MID_TAU_MAX of the kind. */
   uMid: THREE.IUniform<THREE.Vector4>;
   /** Drift of the mid-level sheet in its own frame (as cirrusOffset: x along the upper wind), m. */
   uMidOffset: THREE.IUniform<THREE.Vector2>;
@@ -522,6 +536,8 @@ export class CloudModel {
   readonly drift = new THREE.Vector3();
   /** The mid-level sheet of the last update (midLayerOf). */
   readonly mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
+  /** Whether the sheet of the last update has cover and lies above the extended layer top (extendedLayerTopM). */
+  midAboveLayer = false;
 
   constructor() {
     this.uniforms = {
@@ -571,7 +587,9 @@ export class CloudModel {
     this.uniforms.uCloudType.value.set(profile.deckOverride, profile.deckWeight, profile.extinctionScale, profile.shapeFreqScale);
     this.uniforms.uCloudShape.value.set(shape.deckTopScale, shape.baseRagged, shape.erosionScale, shape.typeBias);
     const mid = midLayerOf(w, this.mid);
-    this.uniforms.uMid.value.set(mid.cover, mid.altM, mid.type === 'altocumulus' ? 1 : 0, MID_TAU_MAX[mid.type]);
+    // A sheet at or below the extended top is not drawn (cover 0 in uMid), so the march and the shadow map agree.
+    this.midAboveLayer = mid.cover > 0 && mid.altM > top;
+    this.uniforms.uMid.value.set(this.midAboveLayer ? mid.cover : 0, mid.altM, mid.type === 'altocumulus' ? 1 : 0, MID_TAU_MAX[mid.type]);
 
     // Wind blows FROM windDirectionDeg; the air moves toward the opposite heading. NED (n, e) -> three (x = e, z = -n).
     const speed = w.windSpeedKt * KT * CLOUD_WIND_FACTOR;

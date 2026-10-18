@@ -8,7 +8,17 @@ import * as THREE from 'three';
 import { defaultWeather, type CloudType, type WeatherSettings } from '../../src/core/types';
 import { CLOUD_TYPE_PROFILES } from '../../src/core/weatherFields';
 import { coverageParams } from '../../src/render/clouds/coverage';
-import { CLOUD_TYPE_SHAPE, CloudModel, MID_TAU_MAX, midSheetTau, TOWER_EXTENSION } from '../../src/render/clouds/cloudModel';
+import { KT } from '../../src/core/math';
+import {
+  CLOUD_TYPE_SHAPE,
+  CLOUD_WIND_FACTOR,
+  CloudModel,
+  extendedLayerTopM,
+  MID_TAU_MAX,
+  MID_WIND_FACTOR,
+  midSheetTau,
+  TOWER_EXTENSION,
+} from '../../src/render/clouds/cloudModel';
 import { midSheetTransmission } from '../../src/render/sky/cloudSky';
 import type { SimContext } from '../../src/core/context';
 
@@ -84,8 +94,8 @@ describe('CloudModel mid-level sheet', () => {
     const m = new CloudModel();
     m.update(ctxFor({ ...defaultWeather(), midCover: 0.6, midType: 'altocumulus', midAltM: 5200 }), 0.016);
     expect(m.uniforms.uMid.value.toArray()).toEqual([0.6, 5200, 1, MID_TAU_MAX.altocumulus]);
-    m.update(ctxFor({ ...defaultWeather(), cloudTopM: 4200, midCover: 2 }), 0.016);
-    // Cover clamped to 1, altostratus by default, altitude max(4500, top + 1000).
+    m.update(ctxFor({ ...defaultWeather(), cloudBaseM: 3600, cloudTopM: 4200, midCover: 2 }), 0.016);
+    // Cover clamped to 1, altostratus by default, altitude max(4500, top + 1000), above the extended top 4560 m.
     expect(m.uniforms.uMid.value.toArray()).toEqual([1, 5200, 0, MID_TAU_MAX.altostratus]);
   });
 
@@ -99,10 +109,34 @@ describe('CloudModel mid-level sheet', () => {
       expect(o.y).toBe(0);
       expect(o.x).toBeGreaterThanOrEqual(0);
       expect(o.x).toBeLessThan(30_000);
-      // Each step moves by speed * dt (under 200 m) except at the wrap.
-      const d = Math.abs(o.x - prev);
-      expect(Math.min(d, 30_000 - d)).toBeLessThan(200);
+      // Wind from 270 blows toward +x (the sheet axis is (1, 0)): each step lowers the offset by
+      // speed * MID_WIND_FACTOR * dt, modulo the 30 km wrap.
+      const back = (((prev - o.x) % 30_000) + 30_000) % 30_000;
+      expect(back).toBeCloseTo(20 * KT * CLOUD_WIND_FACTOR * MID_WIND_FACTOR * 0.5, 6);
       prev = o.x;
+    }
+  });
+
+  it('applies the sheet only above the extended layer top, the same test the sky model uses', () => {
+    // Base 1500, top 3500, no midAltM: the sheet defaults to 4500 m, below the 'auto' extended top 4700 m.
+    const w: WeatherSettings = { ...defaultWeather(), cloudCover: 0.5, cloudBaseM: 1500, cloudTopM: 3500, midCover: 0.8 };
+    const m = new CloudModel();
+    m.update(ctxFor(w), 0.016);
+    expect(m.uniforms.uLayer.value.y).toBe(4700);
+    expect(extendedLayerTopM(w)).toBe(m.uniforms.uLayer.value.y);
+    expect(m.mid.altM).toBe(4500);
+    expect(m.midAboveLayer).toBe(false);
+    expect(m.uniforms.uMid.value.x).toBe(0);
+    // Raised to 4800 m the sheet is above the layer.
+    m.update(ctxFor({ ...w, midAltM: 4800 }), 0.016);
+    expect(m.midAboveLayer).toBe(true);
+    expect(m.uniforms.uMid.value.x).toBe(0.8);
+    // The extended top of every type is the march's uLayer.y.
+    for (const cloudType of TYPES) {
+      const wt: WeatherSettings = { ...w, cloudType };
+      m.update(ctxFor(wt), 0.016);
+      expect(extendedLayerTopM(wt)).toBe(m.uniforms.uLayer.value.y);
+      expect(m.midAboveLayer).toBe(4500 > m.uniforms.uLayer.value.y);
     }
   });
 

@@ -458,7 +458,7 @@ export class CloudsEffect implements SceneEffect {
   private updateMidShadow(): void {
     const mid = this.model.mid;
     let t = 1;
-    if (this.compositeShadows && mid.cover > 0 && mid.altM > this.model.uniforms.uLayer.value.y) {
+    if (this.compositeShadows && this.model.midAboveLayer) {
       t = midSheetTransmission(mid.cover, midSheetTau(mid.cover, mid.type), Math.max(this.lightDir.y, 0), _midT)[0];
     }
     this.shadow.midTransmission = t;
@@ -571,7 +571,7 @@ export class CloudsEffect implements SceneEffect {
     else this.haze.set(HAZE_CONTRAST / Math.max(effectiveVisibilityM(w), 100), HAZE_SCALE_HEIGHT);
     const mid = this.model.mid;
     const cirrusAlt = Math.max(CIRRUS_ALTITUDE, layer.y + 2_000);
-    (m.uCirrus.value as THREE.Vector2).set(cirrusCover(w), mid.cover > 0 ? Math.max(cirrusAlt, mid.altM + CIRRUS_ABOVE_MID) : cirrusAlt);
+    (m.uCirrus.value as THREE.Vector2).set(cirrusCover(w), this.model.midAboveLayer ? Math.max(cirrusAlt, mid.altM + CIRRUS_ABOVE_MID) : cirrusAlt);
   }
 
   private createMarchTarget(w: number, h: number): THREE.WebGLRenderTarget {

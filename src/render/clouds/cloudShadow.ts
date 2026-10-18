@@ -8,7 +8,8 @@
 //
 // A mid-level sheet (altostratus / altocumulus) above the layer multiplies the whole map by its mean direct
 // transmission (uMidTrans, a scalar: the sheet is not resolved in the map). CloudsEffect sets it only where the
-// map is the scene's only cloud shadow (see CloudsEffect.updateMidShadow).
+// map is the scene's only cloud shadow (see CloudsEffect.updateMidShadow). The lookup's fades (map edge, points
+// more than 500 m above the cloud base) take the sheet's share toward 1 with the layer's.
 
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';

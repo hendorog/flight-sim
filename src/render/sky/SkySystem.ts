@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { AIRPORT } from '../../core/world';
 import { CLOUD_TYPE_PROFILES, cloudTypeOf, effectiveVisibilityM, midLayerOf, type MidLayer } from '../../core/weatherFields';
-import { midSheetTau } from '../clouds/cloudModel';
+import { extendedLayerTopM, midSheetTau } from '../clouds/cloudModel';
 import { Atmosphere } from './Atmosphere';
 import { EnvironmentProbe } from './EnvironmentProbe';
 import { SkyDome } from './SkyDome';
@@ -160,10 +160,11 @@ export class SkySystem implements Subsystem {
     const layerKm = (0.5 * (w.cloudBaseM + w.cloudTopM)) / 1000;
     directLight(p, layerKm, keyDir, moonLeads ? a.moonIlluminance : a.sunIlluminance, _layerLight).toArray(_lightE);
     const clouds = a.cloudSky;
-    // The mid-level sheet enters the sky model when it lies above the layer (the clouds module draws it there).
+    // The mid-level sheet enters the sky model when it lies above the extended layer top, the test the clouds
+    // module draws it by (CloudModel.midAboveLayer).
     const mid = midLayerOf(w, _mid);
     const topM = Math.max(w.cloudTopM, w.cloudBaseM + 100);
-    const midCover = mid.altM > topM ? mid.cover : 0;
+    const midCover = mid.cover > 0 && mid.altM > extendedLayerTopM(w) ? mid.cover : 0;
     clouds.update(
       {
         cover: w.cloudCover,

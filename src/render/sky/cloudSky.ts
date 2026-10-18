@@ -104,7 +104,10 @@ export interface CloudSkyInput {
   hazeScaleHeight: number;
   /** Multiplier on the layer's mean extinction (cloud type; absent = 1). */
   extinctionScale?: number;
-  /** Mid-level sheet cover 0..1 (absent or 0 = none), altitude m MSL, optical depth inside its patches. */
+  /**
+   * Mid-level sheet cover 0..1 (absent or 0 = none), altitude m MSL (absent = above the camera), optical depth
+   * inside its patches.
+   */
   midCover?: number;
   midAltM?: number;
   midTau?: number;
@@ -175,8 +178,9 @@ export class CloudSky {
     const midTau = Math.max(input.midTau ?? 0, 0);
     const midSun = mc > 0 ? midSheetTransmission(mc, midTau, mu0, _midSun) : ((_midSun[0] = 1), (_midSun[1] = 1), _midSun);
     const midSky = mc > 0 ? midSheetTransmission(mc, midTau, 2 / 3, _midSky) : ((_midSky[0] = 1), (_midSky[1] = 1), _midSky);
-    const midAlt = input.midAltM ?? 0;
-    const belowMid = mc > 0 ? 1 - smoothstep(midAlt - MID_SPAN, midAlt + MID_SPAN, alt) : 0;
+    // A sheet without an altitude counts as above the camera.
+    const midAlt = input.midAltM;
+    const belowMid = mc > 0 ? (midAlt === undefined ? 1 : 1 - smoothstep(midAlt - MID_SPAN, midAlt + MID_SPAN, alt)) : 0;
     this.midDirect = midSun[0];
     // The sunlight the sheet scatters, as an irradiance share of the beam: it falls on the layer as diffuse light.
     const midScatter = midSun[1] - midSun[0];

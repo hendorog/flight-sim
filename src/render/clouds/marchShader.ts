@@ -581,7 +581,9 @@ void main() {
       float wl = max(0.0, log2(footprint / MID_TEXEL)) + (ac ? 0.0 : 1.5);
       vec2 uvm = q * CIRRUS_FREQ + vec2(0.37, 0.61);
       float f = blendFields(textureLod(uWeatherTex, uvm, wl).r, textureLod(uWeatherTex, uvm + vec2(0.23, 0.41), wl).g, uEvolve);
-      // The threshold runs from above the field's range (cover 0) to below it (cover 1, no gaps).
+      // The threshold runs from above the field's range (cover 0) to below it (cover 1, no gaps). The area with
+      // patchy > 0.5 is then about 1.3 * cover - 0.15 of the sky, while the sky model and the lighting pre-step
+      // above take cover itself as the area fraction (unconfirmed tuning; not matched).
       float thr = 1.15 - 1.3 * uMid.x;
       float patchy = smoothstep(thr - 0.15, thr + 0.15, f);
       float tau = 0.0;
@@ -600,8 +602,9 @@ void main() {
           sxz /= max(length(sxz), 1e-4);
           float es = textureLod(uShapeTex, qa + vec3(sxz.x, 0.0, sxz.y) * (40.0 * AC_FREQ), el).r;
           shade = mix(clamp(1.0 - 6.0 * (es - e), 0.45, 1.4), 1.0, smoothstep(1.0, 3.0, el));
-          // Thick, grey centres and thin, bright rims.
-          tau = elem * elem * tauMean * 6.0;
+          // Thick, grey centres and thin, bright rims (up to 6 x the patch mean, see MID_TAU_MAX). The ramp on
+          // patchy takes the elements to 0 at the patch edge, where et alone leaves them at tau ~0.8.
+          tau = elem * elem * tauMean * 6.0 * smoothstep(0.0, 0.25, patchy);
         } else {
           float v = textureLod(uShapeTex, vec3(q.x, 0.61 / AS_FREQ, q.y) * AS_FREQ, max(0.0, log2(footprint / AS_TEXEL))).r;
           tau = patchy * tauMean * mix(0.35, 1.65, v);
