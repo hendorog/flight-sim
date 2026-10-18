@@ -15,8 +15,11 @@
 //   flash=1 | flash=ic              hold a lightning strike at t = FLASH_AT_S in the first cell (1: cloud-to-ground,
 //                                   ic: intracloud), its light held FLASH_HOLD_S after the first stroke, for
 //                                   screenshots; the simulation clock stays at that instant
+//   flasht=0.004                    the hold, s after the first stroke (0.06 and 0.12: the later strokes)
+//   flashid=0                       added to the held strike's id (its channel's shape)
 // Example: dev/weather.html?cb=22,4&cam=0,0,400&look=22000,4000,5000&tod=19.2&flash=1
-// window.__weatherDev.strike(kind) starts a strike in the first cell at the current time.
+// window.__weatherDev.strike(kind) starts a strike in the first cell at the current time; exposure() reads the eye
+// adaptation (log2 scene units: adapted, target) and the lightning overlay's ambient illuminance (scene units).
 
 import * as THREE from 'three';
 import type { QualityLevel } from '../core/context';
@@ -37,7 +40,7 @@ const list = (v: string | null): number[] => (v ?? '').split(',').filter((s) => 
 
 /** Simulation time of the held strike, s, and how long after its first stroke the clock is held, s. */
 const FLASH_AT_S = 1;
-const FLASH_HOLD_S = 0.004;
+const FLASH_HOLD_S = num('flasht', 0.004);
 const FLASH = params.get('flash');
 
 /** A cell from a cb= value, or null when malformed. */
@@ -116,13 +119,19 @@ void runHarness({
       const cell = w.storms?.[0];
       if (!cell || !lightning) return;
       const s = makeStrike();
-      Object.assign(s, { id: 9_000_000 + strikes, cell: 0, kind, tStart: t, north: cell.northM + 0.3 * cell.radiusM, east: cell.eastM, heightFrac: kind === 'cg' ? 0.05 : 0.6, strokes: 3, energy: 1 });
+      Object.assign(s, { id: 9_000_000 + num('flashid', 0) + strikes, cell: 0, kind, tStart: t, north: cell.northM + 0.3 * cell.radiusM, east: cell.eastM, heightFrac: kind === 'cg' ? 0.05 : 0.6, strokes: 3, energy: 1 });
       lightning.inject(s);
     };
     if (FLASH) strike(FLASH === 'ic' ? 'ic' : 'cg', FLASH_AT_S);
     (window as unknown as { __weatherDev: object }).__weatherDev = {
       strike: (kind: StrikeKind = 'cg') => strike(kind, ctx.simTime),
       strikes: () => strikes,
+      exposure: () => {
+        const rt = (post as unknown as { exposure: { adapted: THREE.WebGLRenderTarget[] } }).exposure.adapted[0];
+        const px = new Float32Array(4);
+        r.readRenderTargetPixels(rt, 0, 0, 1, 1, px);
+        return [px[0], px[1], (lightning?.material.uniforms.uAmbient.value as number | undefined) ?? -1];
+      },
     };
   },
   subsystems: [new SkySystem()],
