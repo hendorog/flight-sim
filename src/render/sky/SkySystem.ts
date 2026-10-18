@@ -7,6 +7,8 @@
 import * as THREE from 'three';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { AIRPORT } from '../../core/world';
+import { CLOUD_TYPE_PROFILES, cloudTypeOf, effectiveVisibilityM, midLayerOf, type MidLayer } from '../../core/weatherFields';
+import { midSheetTau } from '../clouds/cloudModel';
 import { Atmosphere } from './Atmosphere';
 import { EnvironmentProbe } from './EnvironmentProbe';
 import { SkyDome } from './SkyDome';
@@ -50,6 +52,7 @@ const _sunE = [0, 0, 0];
 const _moonE = [0, 0, 0];
 const _lightE: [number, number, number] = [0, 0, 0];
 const _size = new THREE.Vector2();
+const _mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
 
 export class SkySystem implements Subsystem {
   private atmosphere!: Atmosphere;
@@ -157,11 +160,15 @@ export class SkySystem implements Subsystem {
     const layerKm = (0.5 * (w.cloudBaseM + w.cloudTopM)) / 1000;
     directLight(p, layerKm, keyDir, moonLeads ? a.moonIlluminance : a.sunIlluminance, _layerLight).toArray(_lightE);
     const clouds = a.cloudSky;
+    // The mid-level sheet enters the sky model when it lies above the layer (the clouds module draws it there).
+    const mid = midLayerOf(w, _mid);
+    const topM = Math.max(w.cloudTopM, w.cloudBaseM + 100);
+    const midCover = mid.altM > topM ? mid.cover : 0;
     clouds.update(
       {
         cover: w.cloudCover,
         baseM: Math.min(w.cloudBaseM, w.cloudTopM - 100),
-        topM: Math.max(w.cloudTopM, w.cloudBaseM + 100),
+        topM,
         cameraAltitudeM: a.cameraAltitude,
         lightMu: keyDir.y,
         lightX: keyDir.x,
@@ -169,6 +176,10 @@ export class SkySystem implements Subsystem {
         lightE: _lightE,
         hazeExtinction: sky.hazeExtinction,
         hazeScaleHeight: sky.hazeScaleHeight,
+        extinctionScale: CLOUD_TYPE_PROFILES[cloudTypeOf(w)].extinctionScale,
+        midCover,
+        midAltM: mid.altM,
+        midTau: midSheetTau(mid.cover, mid.type),
       },
       this.bands,
     );
@@ -256,7 +267,7 @@ export class SkySystem implements Subsystem {
       c.sunDir.angleTo(this.envSun) > ENV_ANGLE_THRESHOLD ||
       (c.moonDir.y > 0 && c.moonDir.angleTo(this.envMoon) > ENV_ANGLE_THRESHOLD) ||
       Math.abs(alt - this.envAltitude) > Math.max(150, ENV_ALTITUDE_FRACTION * Math.abs(this.envAltitude)) ||
-      ctx.weather.visibilityM !== this.envVisibility ||
+      effectiveVisibilityM(ctx.weather) !== this.envVisibility ||
       Math.abs(luminance(ctx.sky.skyColor) - this.envAmbient) > ENV_AMBIENT_FRACTION * this.envAmbient ||
       cloudKey(ctx) !== this.envCloud ||
       // Relative to at least a fifth of the regional ground, so small changes of a patch seen from altitude
@@ -272,7 +283,7 @@ export class SkySystem implements Subsystem {
     this.envSun.copy(c.sunDir);
     this.envMoon.copy(c.moonDir);
     this.envAltitude = this.atmosphere.cameraAltitude;
-    this.envVisibility = ctx.weather.visibilityM;
+    this.envVisibility = effectiveVisibilityM(ctx.weather);
     this.envAmbient = luminance(ctx.sky.skyColor);
     this.envCloud = cloudKey(ctx);
     this.envLocal = this.localKey();
@@ -295,10 +306,11 @@ function directLight(p: AtmosphereParams, km: number, dir: THREE.Vector3, e: THR
   return out.setRGB(out.r * e.x, out.g * e.y, out.b * e.z);
 }
 
-/** Cloud layer state the environment map depends on (refresh when it changes). */
+/** Cloud layer and mid-level sheet state the environment map depends on (refresh when it changes). */
 function cloudKey(ctx: SimContext): string {
   const w = ctx.weather;
-  return `${w.cloudCover.toFixed(3)}|${w.cloudBaseM.toFixed(0)}|${w.cloudTopM.toFixed(0)}`;
+  const mid = midLayerOf(w, _mid);
+  return `${w.cloudCover.toFixed(3)}|${w.cloudBaseM.toFixed(0)}|${w.cloudTopM.toFixed(0)}|${cloudTypeOf(w)}|${mid.cover.toFixed(3)}|${mid.type}|${mid.altM.toFixed(0)}`;
 }
 
 function luminance(c: THREE.Color): number {

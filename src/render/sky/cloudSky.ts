@@ -19,6 +19,16 @@
 // direct sun; under scattered cumulus, a clear blue sky plus bright white clouds, so cloud-shadowed
 // ground is lit by a near-neutral mix of both instead of the blue sky alone.
 //
+// Optional inputs (absent: every output as without them):
+//   - extinctionScale: the cloud type's extinction multiplier (render/clouds CLOUD_TYPE_PROFILES) on the
+//     layer's optical depth.
+//   - midCover / midAltM / midTau: a mid-level sheet (altostratus / altocumulus) above the layer, the same
+//     two-stream slab with optical depth midTau in its patches (cover midCover). The beam it lets through
+//     (midSheetTransmission) lights the layer and the ground; the light it scatters reaches them as diffuse
+//     light. The camera, the shadow-casting light and the air light take the sheet only while the camera is
+//     below it. The environment-map GLSL is unchanged: it sees the sheet through the dimmed air light and
+//     cloud radiances.
+//
 // The GLSL (CLOUD_SKY_GLSL) evaluates the same radiance per direction for the environment map.
 
 import { GROUND_ALBEDO } from './params';
@@ -64,6 +74,20 @@ export function diffuseTransmission(tau: number, mu0: number): number {
   return Math.min(1, (2 + 3 * mu0) / (4 + 3 * (1 - CLOUD_G) * tau));
 }
 
+/**
+ * Transmission of a sheet of cover `cover` and optical depth `tau` (inside its patches) for a beam at cos
+ * zenith mu0, averaged over the patches and the gaps: out[0] = the direct beam, out[1] = direct plus diffusely
+ * transmitted light. GLSL twin: render/clouds/cloudModel.ts MID_SHEET_GLSL midTransmission.
+ */
+export function midSheetTransmission(cover: number, tau: number, mu0: number, out: [number, number]): [number, number] {
+  out[0] = 1 - cover * (1 - Math.exp(-tau / Math.max(mu0, 0.05)));
+  out[1] = 1 - cover * (1 - diffuseTransmission(tau, mu0));
+  return out;
+}
+
+/** Half the altitude band over which the camera passes from below the mid-level sheet to above it, m. */
+const MID_SPAN = 50;
+
 export interface CloudSkyInput {
   cover: number;
   baseM: number;
@@ -78,7 +102,16 @@ export interface CloudSkyInput {
   /** Haze extinction at sea level, 1/m, and scale height, m (ctx.sky.hazeExtinction / hazeScaleHeight). */
   hazeExtinction: number;
   hazeScaleHeight: number;
+  /** Multiplier on the layer's mean extinction (cloud type; absent = 1). */
+  extinctionScale?: number;
+  /** Mid-level sheet cover 0..1 (absent or 0 = none), altitude m MSL, optical depth inside its patches. */
+  midCover?: number;
+  midAltM?: number;
+  midTau?: number;
 }
+
+const _midSun: [number, number] = [1, 1];
+const _midSky: [number, number] = [1, 1];
 
 /** Everything derived from the cloud layer that the sky, the environment map and post need. */
 export class CloudSky {
@@ -92,6 +125,8 @@ export class CloudSky {
   directCamera = 1;
   /** Factor on the shadow-casting light: the closed deck's direct transmission for points below it. */
   deckDirect = 1;
+  /** Mean direct transmission of the mid-level sheet toward the key light (1 without a sheet). */
+  midDirect = 1;
   /** Radiance of the cloud base seen from below, rgb. */
   readonly base = [0, 0, 0];
   /** Radiance of cloud sides seen from below looking toward / away from the key light, rgb. */
@@ -118,7 +153,7 @@ export class CloudSky {
     const c = Math.min(Math.max(input.cover, 0), 1);
     this.cover = c;
     const thickness = Math.max(input.topM - input.baseM, 50);
-    const tau = (this.tau = LAYER_EXTINCTION * thickness);
+    const tau = (this.tau = LAYER_EXTINCTION * thickness * (input.extinctionScale ?? 1));
     const alt = input.cameraAltitudeM;
     this.above = smoothstep(input.baseM, input.topM, alt);
     this.distBase = Math.max(input.baseM - alt, 0);
@@ -132,21 +167,40 @@ export class CloudSky {
     // Skylight on the layer top: the clear sky's cosine-weighted mean radiance (x PI = irradiance).
     const sky = [0, 0, 0];
     for (let i = 0; i < SUMMARY_BANDS; i++) for (let k = 0; k < 3; k++) sky[k] += bands.weight[i] * bands.band[3 * i + k];
+
+    // The mid-level sheet above the layer: [direct, direct + diffuse] for the sun and for the skylight, and how
+    // far the camera is below it. Without a sheet both are [1, 1] and belowMid is 0, which leaves every
+    // expression below as it was (x * 1 and x + 0 are exact).
+    const mc = typeof input.midCover === 'number' && input.midCover > 0 ? Math.min(input.midCover, 1) : 0;
+    const midTau = Math.max(input.midTau ?? 0, 0);
+    const midSun = mc > 0 ? midSheetTransmission(mc, midTau, mu0, _midSun) : ((_midSun[0] = 1), (_midSun[1] = 1), _midSun);
+    const midSky = mc > 0 ? midSheetTransmission(mc, midTau, 2 / 3, _midSky) : ((_midSky[0] = 1), (_midSky[1] = 1), _midSky);
+    const midAlt = input.midAltM ?? 0;
+    const belowMid = mc > 0 ? 1 - smoothstep(midAlt - MID_SPAN, midAlt + MID_SPAN, alt) : 0;
+    this.midDirect = midSun[0];
+    // The sunlight the sheet scatters, as an irradiance share of the beam: it falls on the layer as diffuse light.
+    const midScatter = midSun[1] - midSun[0];
+    const cameraMid = 1 - belowMid * (1 - midSun[0]);
+
     const interReflect = 1 / (1 - GROUND_ALBEDO_Y * (1 - tSky));
     const shade = apparentCover(c, mu0);
-    this.directGround = 1 - shade * (1 - tDirect);
-    this.directCamera = this.directGround + (1 - this.directGround) * this.above;
-    this.deckDirect = 1 - smoothstep(DECK_CLOSE[0], DECK_CLOSE[1], c) * (1 - tDirect) * (1 - this.above);
+    const directLayer = 1 - shade * (1 - tDirect);
+    this.directGround = directLayer * midSun[0];
+    this.directCamera = (directLayer + (1 - directLayer) * this.above) * cameraMid;
+    this.deckDirect = (1 - smoothstep(DECK_CLOSE[0], DECK_CLOSE[1], c) * (1 - tDirect) * (1 - this.above)) * cameraMid;
 
     // Global horizontal illuminance below the layer relative to clear sky, per channel: sets the air light.
+    // eSun: the beam on the layer top; eSky: the diffuse light on it (sky, and sunlight scattered by the sheet).
+    const skyUnderMid = [0, 0, 0];
     for (let k = 0; k < 3; k++) {
-      const eSun = input.lightE[k] * mu0;
-      const eSky = Math.PI * sky[k];
+      const eSun = input.lightE[k] * mu0 * midSun[0];
+      const eSky = Math.PI * sky[k] * midSky[1] + input.lightE[k] * mu0 * midScatter;
+      skyUnderMid[k] = sky[k] * midSky[1] + (input.lightE[k] * mu0 * midScatter) / Math.PI;
       this.base[k] = ((tSun * eSun + tSky * eSky) / Math.PI) * interReflect;
       this.top[k] = ((1 - tSun) * eSun + (1 - tSky) * eSky) / Math.PI;
       const side = (SIDE_SKY * eSky) / (2 * Math.PI);
-      this.sideToward[k] = (SIDE_TOWARD_SUN * input.lightE[k]) / Math.PI + side;
-      this.sideAway[k] = (SIDE_AWAY_FROM_SUN * input.lightE[k]) / Math.PI + side;
+      this.sideToward[k] = (SIDE_TOWARD_SUN * input.lightE[k] * midSun[0]) / Math.PI + side;
+      this.sideAway[k] = (SIDE_AWAY_FROM_SUN * input.lightE[k] * midSun[0]) / Math.PI + side;
     }
     // Air below the layer: lit by the direct sun where the clouds let it through, and by the diffuse light
     // of sky and clouds, which is near neutral. The clear air light keeps its colour in the sunlit share
@@ -154,10 +208,17 @@ export class CloudSky {
     const lum = (v: ArrayLike<number>): number => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
     const clearGlobal = lum(input.lightE) * mu0 + Math.PI * lum(sky);
     const cloudy = apparentCover(c, 0.5);
-    const diffuseUnder = Math.PI * ((1 - cloudy) * lum(sky) + cloudy * lum(this.base));
+    const diffuseUnder = Math.PI * ((1 - cloudy) * lum(skyUnderMid) + cloudy * lum(this.base));
     const ratio = clearGlobal > 0 ? (this.directGround * lum(input.lightE) * mu0 + diffuseUnder) / clearGlobal : 1;
     this.airGrey = 0.7 * (1 - this.directGround) * (1 - this.above);
     this.airScale = 1 + (Math.min(ratio, 1) - 1) * (1 - this.above);
+    if (mc > 0) {
+      // Above the layer but below the sheet the air is still lit only by what the sheet lets through.
+      const ratioMid = clearGlobal > 0 ? (lum(input.lightE) * mu0 * midSun[1] + Math.PI * lum(sky) * midSky[1]) / clearGlobal : 1;
+      const share = this.above * belowMid;
+      this.airScale += (Math.min(ratioMid, 1) - 1) * share;
+      this.airGrey += 0.7 * (1 - midSun[0]) * share;
+    }
   }
 
   /** The air light below the layer for a clear-sky air light (rgb), in place. */

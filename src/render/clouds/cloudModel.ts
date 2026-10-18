@@ -5,10 +5,22 @@
 // Heights use a curved-earth approximation: a point at horizontal distance r from the camera sits
 // r^2 / 2R lower relative to the local tangent plane, so the layer bends away and meets the horizon
 // instead of ending in a flat edge (the world itself is flat; only the clouds are bent).
+//
+// Cloud type: WeatherSettings.cloudType (core/weatherFields cloudTypeOf, CLOUD_TYPE_PROFILES) selects the low
+// layer's character. 'auto' (the default) keeps the cover-driven mapping (cumulus cells closing into a
+// stratocumulus deck as the cover rises); the other types force the deck shape and scale the extinction, the
+// shape-noise frequency and the tower extension (uCloudType, uLayer, uExtinction, uTopFrac), plus the
+// render-only shape terms of CLOUD_TYPE_SHAPE (uCloudShape). With 'auto' every uniform holds the value it had
+// before the types existed, and each GLSL term the types add reduces to the original expression.
+//
+// Mid-level sheet (WeatherSettings.midCover / midType / midAltM, core/weatherFields midLayerOf): uMid and
+// uMidOffset for the single-intersection altostratus / altocumulus sheet of the view march (marchShader.ts).
 
 import * as THREE from 'three';
 import { KT } from '../../core/math';
 import type { SimContext } from '../../core/context';
+import type { CloudType, MidCloudType } from '../../core/types';
+import { CLOUD_TYPE_PROFILES, cloudTypeOf, midLayerOf, type MidLayer } from '../../core/weatherFields';
 import { COVERAGE_GLSL, coverageParams, evolveWeights } from './coverage';
 import { WEATHER_SIZE, type CloudNoiseTextures } from './noiseTextures';
 
@@ -44,6 +56,54 @@ const EXTINCTION = 0.1;
  */
 export const TOWER_EXTENSION = 1.6;
 
+/** Render-only shape terms of one cloud type (uCloudShape), on top of the CLOUD_TYPE_PROFILES uniforms. */
+export interface CloudTypeShape {
+  /** Multiplier on the deck's top height (the stratocumulus top, 30-55 % of the nominal depth). */
+  readonly deckTopScale: number;
+  /** 0..1: ragged deck base (deeper base undulation, the base fraying of cumulus kept under a deck). */
+  readonly baseRagged: number;
+  /** Multiplier on the detail erosion depth. */
+  readonly erosionScale: number;
+  /** Added to the weather map's type field before the deck term (> 0: more cells take the tower shape). */
+  readonly typeBias: number;
+}
+
+/**
+ * Per-type shape terms. Unconfirmed: tuning values chosen on dev/clouds.html (ctype=), not measured. 'auto'
+ * is neutral (each term leaves the GLSL expression it enters unchanged). Stratus and nimbostratus decks fill
+ * most of the layer depth (deckTopScale), stratus with little erosion (a smooth, featureless sheet),
+ * nimbostratus with a ragged base; towering cumulus puts more of the cells into the congestus shape.
+ */
+export const CLOUD_TYPE_SHAPE: Readonly<Record<CloudType, CloudTypeShape>> = Object.freeze({
+  auto: { deckTopScale: 1, baseRagged: 0, erosionScale: 1, typeBias: 0 },
+  stratus: { deckTopScale: 1.7, baseRagged: 0, erosionScale: 0.35, typeBias: 0 },
+  stratocumulus: { deckTopScale: 1, baseRagged: 0, erosionScale: 1, typeBias: 0 },
+  cumulus: { deckTopScale: 1, baseRagged: 0, erosionScale: 1, typeBias: 0 },
+  towering: { deckTopScale: 1, baseRagged: 0, erosionScale: 1, typeBias: 0.6 },
+  nimbostratus: { deckTopScale: 1.7, baseRagged: 1, erosionScale: 0.8, typeBias: 0 },
+});
+
+/**
+ * Optical depth of the mid-level sheet at full cover inside its patches. Unconfirmed tuning values: an
+ * altostratus through which the sun shows as through ground glass, a thinner layer of altocumulus elements.
+ */
+export const MID_TAU_MAX: Readonly<Record<MidCloudType, number>> = Object.freeze({ altostratus: 6, altocumulus: 2 });
+/** Optical depth of the sheet inside its patches at a vanishing cover. Unconfirmed tuning value. */
+const MID_TAU_MIN = 0.5;
+
+/**
+ * Mean optical depth of the mid-level sheet inside its patches: mix(MID_TAU_MIN, MID_TAU_MAX, cover), the
+ * value the view march uses (marchShader.ts) and the sky model takes (render/sky/cloudSky.ts midTau).
+ */
+export function midSheetTau(cover: number, type: MidCloudType): number {
+  return MID_TAU_MIN + (MID_TAU_MAX[type] - MID_TAU_MIN) * cover;
+}
+/**
+ * Wind at the mid-level sheet relative to the surface wind. Unconfirmed: between the cloud-level factor
+ * (CLOUD_WIND_FACTOR) and the cirrus factor (CIRRUS_WIND_FACTOR).
+ */
+const MID_WIND_FACTOR = 2.2;
+
 export const CLOUD_MODEL_GLSL = /* glsl */ `
 #define PI 3.14159265
 ${COVERAGE_GLSL}
@@ -61,6 +121,8 @@ uniform vec2 uCoverage;       // threshold on the coverage field and gap fill fo
 uniform float uExtinction;    // 1/m at density 1
 uniform float uInvTwoR;       // 1 / (2 * earth radius)
 uniform float uTopFrac;       // the weather's nominal cloud top as a fraction of the (extended) layer
+uniform vec4 uCloudType;      // cloud type (CLOUD_TYPE_PROFILES): deck override, deck weight, extinction scale, shape frequency scale
+uniform vec4 uCloudShape;     // cloud type (CLOUD_TYPE_SHAPE): deck top scale, base raggedness, erosion scale, type bias
 
 const float WEATHER_FREQ = ${(1 / WEATHER_PERIOD).toExponential(6)};
 const float SHAPE_FREQ = ${(1 / SHAPE_PERIOD).toExponential(6)};
@@ -112,8 +174,9 @@ float remapClamped(float v, float a, float b, float c, float d) {
 // stratocumulus deck and the gaps fill (uCoverage.y), so overcast reads as a continuous layer.
 // Near a cell's peak the (equalised) field falls off with the square of the distance (the area above u
 // grows as (1 - u)), so this cell strength runs roughly linearly from the cloud's rim (0) to its core (1).
-// How far the cover has closed into a stratocumulus deck (0 scattered cumulus, 1 overcast).
-float deckness() { return smoothstep(0.5, 0.9, uLayer.w); }
+// How far the cover has closed into a stratocumulus deck (0 scattered cumulus, 1 overcast). A cloud type other
+// than 'auto' replaces the cover-driven value by its own (uCloudType.y = 1); 'auto' has weight 0.
+float deckness() { return mix(smoothstep(0.5, 0.9, uLayer.w), uCloudType.x, uCloudType.y); }
 
 float cellStrength(float field, float threshold) {
   return clamp(1.0 - sqrt(max(1.0 - field, 0.0) / max(1.0 - threshold, 1e-3)), 0.0, 1.0);
@@ -136,7 +199,7 @@ vec3 cloudWeather(vec2 xz, float lod) {
   float s = mix(cellS, 1.0, uCoverage.y);
   float sh = mix(min(bigS * 1.6, 1.0), 1.0, uCoverage.y);
   float deck = deckness();
-  float type = clamp(w0.b * 1.3 - 0.15 - 0.9 * deck, 0.0, 1.0);
+  float type = clamp(w0.b * 1.3 - 0.15 + uCloudShape.w - 0.9 * deck, 0.0, 1.0);
   float hn = uTopFrac;
   // Cumulus: body up to 45-100 % of the nominal layer depth by type, a broad tower above it in the core.
   float bodyTop = hn * mix(0.45, 1.0, type);
@@ -145,8 +208,9 @@ vec3 cloudWeather(vec2 xz, float lod) {
   // Steep, billowed sides up to that cap from the sharp outline: the tops are broad and flattish domes that
   // the shape noise heaps into turrets, never cones.
   float cu = min(cap, hn * (0.05 + 3.0 * s));
-  // Stratocumulus deck: 30-55 % of the nominal depth, lumpy with the cell strength.
-  float sc = hn * (0.3 + 0.25 * sh) * smoothstep(0.0, 0.2, s);
+  // Stratocumulus deck: 30-55 % of the nominal depth, lumpy with the cell strength (stratus and nimbostratus
+  // fill more of it: uCloudShape.x).
+  float sc = hn * (0.3 + 0.25 * sh) * smoothstep(0.0, 0.2, s) * uCloudShape.x;
   float top = mix(cu, sc, deck);
   // The lateral mask ramps in from the outline: quickly for small clouds (compact puffs, not the spiky
   // noise peaks a weak coverage would leave), over a wider margin for big ones, whose flanks the shape
@@ -161,12 +225,13 @@ vec3 cloudWeather(vec2 xz, float lod) {
 //
 // z: lift of the local cloud base above the layer base (fraction of the layer). A deck's base is flat but
 // not a plane: it undulates by some tens of metres over a few km (the warp field's third channel, ~1.9 km
-// period); cumulus bases sit on the condensation level and stay within a few metres of it.
+// period); cumulus bases sit on the condensation level and stay within a few metres of it. A ragged deck
+// (nimbostratus, uCloudShape.y) undulates up to three times as deep.
 vec3 cloudWeather(vec3 p, float lod) {
   vec3 warp = textureLod(uWarpTex, (p + uShapeOffset) * (DETAIL_FREQ * 0.25), 0.0).rgb * 2.0 - 1.0;
   float h = clamp((p.y - uLayer.x) * uLayer.z, 0.0, 1.0);
   vec3 wt = cloudWeather(p.xz + warp.xy * (350.0 * mix(0.3, 1.0, smoothstep(0.0, 0.25, h))), lod);
-  wt.z = mix(0.003, 0.022, deckness()) * clamp(warp.z + 0.5, 0.0, 1.5);
+  wt.z = mix(0.003, 0.022, deckness()) * mix(1.0, 3.0, uCloudShape.y) * clamp(warp.z + 0.5, 0.0, 1.5);
   return wt;
 }
 
@@ -190,9 +255,10 @@ float heightProfile(float h, vec3 wt) {
 //
 // A closing deck samples the shape noise at up to a third of its frequency: stratocumulus cells are 1-3 km
 // across (the deck is a few hundred metres thick), and the ~400 m billows of cumulus would quilt its
-// underside like altocumulus.
+// underside like altocumulus. The cloud type scales the frequency further (uCloudType.w: stratus cells tens of
+// km across, a near-uniform sheet).
 float shapeMargin(vec3 p, float cov, float lod) {
-  float f = SHAPE_FREQ * mix(1.0, 0.3, deckness());
+  float f = SHAPE_FREQ * mix(1.0, 0.3, deckness()) * uCloudType.w;
   return mix(0.1, 1.0, textureLod(uShapeTex, (p + uShapeOffset) * f, lod).r) - (1.0 - cov);
 }
 
@@ -255,7 +321,7 @@ float marginDensity(float m, float m0, float band) {
 // such a peak and high next to the cloud body: pull the margin down where it is low.
 float isolation(vec3 p, float cov, float lod) {
   if (cov > 0.75) return 0.0;
-  float mb = mix(0.1, 1.0, textureLod(uShapeTex, (p + uShapeOffset) * (SHAPE_FREQ * mix(1.0, 0.3, deckness())), lod + 3.0).r) - (1.0 - cov);
+  float mb = mix(0.1, 1.0, textureLod(uShapeTex, (p + uShapeOffset) * (SHAPE_FREQ * mix(1.0, 0.3, deckness()) * uCloudType.w), lod + 3.0).r) - (1.0 - cov);
   return 0.5 * (1.0 - smoothstep(-0.12, 0.06, mb));
 }
 
@@ -272,9 +338,9 @@ float coverageDensity(float cov) { return smoothstep(0.0, 0.3, cov); }
 float relHeight(float h, vec3 wt) { return clamp(h / max(wt.y, 0.02), 0.0, 1.0); }
 
 // Erosion depth: deeper high up (turbulent, billowing tops) and where the coverage thins (dissipating
-// margins, small clouds: ragged and wispy).
+// margins, small clouds: ragged and wispy). Scaled by the cloud type (uCloudShape.z: a smooth stratus sheet).
 float erosionDepth(float hr, float cov) {
-  return DETAIL_EROSION * mix(0.85, 1.0, smoothstep(0.1, 0.7, hr)) * mix(1.7, 1.0, smoothstep(0.15, 0.75, cov));
+  return DETAIL_EROSION * mix(0.85, 1.0, smoothstep(0.1, 0.7, hr)) * mix(1.7, 1.0, smoothstep(0.15, 0.75, cov)) * uCloudShape.z;
 }
 
 // A deck keeps its erosion (the cells) on its top: the lower part stays solid, with a flat base, and its
@@ -320,7 +386,8 @@ float cloudDensity(vec3 p, float h, vec3 wt, float lod, float dlod, float detail
   // density no longer depends on the detail: the detail fetches are skipped in the cores.
   float reach = depth + band + (h < 0.08 ? 0.25 + 0.3 * depth : 0.0);
   if (margin < reach && detailWeight > 0.0) {
-    float wispy = (1.0 - smoothstep(0.0, 0.025, h)) * (1.0 - deck);   // the lowest ~40 m
+    // The lowest ~40 m; a ragged deck (uCloudShape.y) keeps the fraying under the deck.
+    float wispy = (1.0 - smoothstep(0.0, 0.025, h)) * max(1.0 - deck, uCloudShape.y);
     // Small clouds (and the low outer margins of big ones) fray into ragged fragments rather than staying
     // smooth pills: real humilis and dissipating edges are wispy, only the growing turrets are cauliflower.
     float ragged = max(wispy, 0.3 * (1.0 - smoothstep(0.06, 0.28, wt.y)));
@@ -367,6 +434,26 @@ float cloudDensity(vec3 p, float h, vec3 wt, float lod, float dlod, float detail
 float diffuseTransmission(float tau) { return 1.0 / (1.0 + 0.75 * tau * (1.0 - 0.85)); }
 `;
 
+/**
+ * The mid-level sheet's uniforms and its mean transmission, for the view march (marchShader.ts). GLSL twin of
+ * render/sky/cloudSky.ts midSheetTransmission (the same two-stream slab, g = 0.85).
+ */
+export const MID_SHEET_GLSL = /* glsl */ `
+uniform vec4 uMid;            // mid-level sheet: cover 0..1 (0 = none), altitude m MSL, kind (0 As, 1 Ac), tau at full cover
+uniform vec2 uMidOffset;      // drift in the sheet's frame (x along the upper wind), m
+const float MID_TAU_MIN = ${MID_TAU_MIN.toFixed(3)};
+// Mean optical depth of the sheet inside its patches (midSheetTau).
+float midTau() { return mix(MID_TAU_MIN, uMid.w, uMid.x); }
+// Transmission of the sheet averaged over its patches for a beam at cos zenith mu0: x = the direct beam, y = direct
+// plus diffusely transmitted light.
+vec2 midTransmission(float mu0) {
+  float tau = midTau();
+  float direct = exp(-tau / max(mu0, 0.05));
+  float total = min(1.0, (2.0 + 3.0 * mu0) / (4.0 + 0.45 * tau));
+  return vec2(1.0 - uMid.x * (1.0 - direct), 1.0 - uMid.x * (1.0 - total));
+}
+`;
+
 /** Vertical density slice for CloudsEffect.renderDensitySlice (development aid). */
 export const SLICE_FRAG = /* glsl */ `
 ${CLOUD_MODEL_GLSL}
@@ -403,6 +490,14 @@ export interface CloudModelUniforms {
   uExtinction: THREE.IUniform<number>;
   uInvTwoR: THREE.IUniform<number>;
   uTopFrac: THREE.IUniform<number>;
+  /** Cloud type profile (CLOUD_TYPE_PROFILES): deck override, deck weight, extinction scale, shape frequency scale. */
+  uCloudType: THREE.IUniform<THREE.Vector4>;
+  /** Cloud type shape terms (CLOUD_TYPE_SHAPE): deck top scale, base raggedness, erosion scale, type bias. */
+  uCloudShape: THREE.IUniform<THREE.Vector4>;
+  /** Mid-level sheet: cover 0..1 (0 = none), altitude m MSL, kind (0 altostratus, 1 altocumulus), MID_TAU_MAX of the kind. */
+  uMid: THREE.IUniform<THREE.Vector4>;
+  /** Drift of the mid-level sheet in its own frame (as cirrusOffset: x along the upper wind), m. */
+  uMidOffset: THREE.IUniform<THREE.Vector2>;
 }
 
 /** Owns the uniforms of the cloud field and advances wind drift and evolution each frame. */
@@ -425,6 +520,8 @@ export class CloudModel {
   readonly cirrusAxis = new THREE.Vector2(1, 0);
   /** How far the wind carried the clouds in the last update, m (three.js world; y = 0): for reprojection. */
   readonly drift = new THREE.Vector3();
+  /** The mid-level sheet of the last update (midLayerOf). */
+  readonly mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
 
   constructor() {
     this.uniforms = {
@@ -442,6 +539,10 @@ export class CloudModel {
       uExtinction: { value: EXTINCTION },
       uInvTwoR: { value: 1 / (2 * EARTH_RADIUS) },
       uTopFrac: { value: 1 / TOWER_EXTENSION },
+      uCloudType: { value: new THREE.Vector4(0, 0, 1, 1) },
+      uCloudShape: { value: new THREE.Vector4(1, 0, 1, 0) },
+      uMid: { value: new THREE.Vector4() },
+      uMidOffset: { value: new THREE.Vector2() },
     };
   }
 
@@ -457,10 +558,20 @@ export class CloudModel {
     const w = ctx.weather;
     const base = Math.min(w.cloudBaseM, w.cloudTopM - 100);
     const nominalTop = Math.max(w.cloudTopM, base + 100);
-    const top = base + (nominalTop - base) * TOWER_EXTENSION;
+    // The 'auto' profile's towerExt is TOWER_EXTENSION and its scales are 1: the uniforms of the cover-driven look.
+    const type = cloudTypeOf(w);
+    const profile = CLOUD_TYPE_PROFILES[type];
+    const shape = CLOUD_TYPE_SHAPE[type];
+    const top = base + (nominalTop - base) * profile.towerExt;
     const cover = THREE.MathUtils.clamp(w.cloudCover, 0, 1);
     this.uniforms.uLayer.value.set(base, top, 1 / (top - base), cover);
     coverageParams(cover, this.uniforms.uCoverage.value);
+    this.uniforms.uTopFrac.value = 1 / profile.towerExt;
+    this.uniforms.uExtinction.value = EXTINCTION * profile.extinctionScale;
+    this.uniforms.uCloudType.value.set(profile.deckOverride, profile.deckWeight, profile.extinctionScale, profile.shapeFreqScale);
+    this.uniforms.uCloudShape.value.set(shape.deckTopScale, shape.baseRagged, shape.erosionScale, shape.typeBias);
+    const mid = midLayerOf(w, this.mid);
+    this.uniforms.uMid.value.set(mid.cover, mid.altM, mid.type === 'altocumulus' ? 1 : 0, MID_TAU_MAX[mid.type]);
 
     // Wind blows FROM windDirectionDeg; the air moves toward the opposite heading. NED (n, e) -> three (x = e, z = -n).
     const speed = w.windSpeedKt * KT * CLOUD_WIND_FACTOR;
@@ -477,6 +588,9 @@ export class CloudModel {
     advect(this.fieldDrift, vx * 0.9 + 0.35, vz * 0.9 - 0.2, dt, WEATHER_PERIOD);
     this.cirrusAxis.set(-Math.sin(from), Math.cos(from));
     this.cirrusOffset.set(wrap(this.cirrusOffset.x - speed * CIRRUS_WIND_FACTOR * dt, CIRRUS_PERIOD), 0);
+    // The mid-level sheet drifts along the same axis (its textures tile with CIRRUS_PERIOD too).
+    const mo = this.uniforms.uMidOffset.value;
+    mo.set(wrap(mo.x - speed * MID_WIND_FACTOR * dt, CIRRUS_PERIOD), 0);
 
     const t = ctx.simTime;
     const u = this.uniforms;

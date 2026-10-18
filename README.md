@@ -547,7 +547,10 @@ src/render/clouds/     volumetric cumulus layer: a multi-scale weather map (cell
                        as a grey overcast base rather than a quilt of puffs; two-scale curl-warped Worley erosion
                        (cauliflower lobes and turrets on growing tops, ragged wisps at bases and on small clouds),
                        mottled bases with darker pockets, ray march with multiple-scattering octaves, blue-noise
-                       jitter, temporal filter, depth-aware upsampling, shadow map, aerial haze
+                       jitter, temporal filter, depth-aware upsampling, shadow map, aerial haze; an optional
+                       cloud type (`cloudType`: stratus, stratocumulus, cumulus, towering, nimbostratus; absent =
+                       the cover-driven look) and a mid-level altostratus / altocumulus sheet (`midCover`,
+                       `midType`, `midAltM`) drawn from below and coupled into the sky light (render/sky/cloudSky.ts)
 src/render/post/       aerial perspective, bloom, eye adaptation, local exposure, AgX tone mapping
 src/render/aircraft/   the C172 model, cockpit, lights, livery bake (worker), contact shadow
 src/render/cameras/    cockpit, chase, orbit, flyby and tower cameras

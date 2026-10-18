@@ -5,6 +5,10 @@
 // The stored value is the direct beam only, exp(-tau): the shadow dims the sun's directional term. The light
 // a cloud scatters diffusely toward the ground is part of the cloud-aware sky ambient (render/sky/cloudSky.ts),
 // so adding it here as well would leave a faint, crisp directional shadow of the aircraft under a cumulus.
+//
+// A mid-level sheet (altostratus / altocumulus) above the layer multiplies the whole map by its mean direct
+// transmission (uMidTrans, a scalar: the sheet is not resolved in the map). CloudsEffect sets it only where the
+// map is the scene's only cloud shadow (see CloudsEffect.updateMidShadow).
 
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -50,6 +54,7 @@ in vec2 vUv;
 uniform vec2 uCenter;
 uniform float uExtent;
 uniform vec3 uLight;
+uniform float uMidTrans;   // mean direct transmission of the mid-level sheet (1 = none)
 layout(location = 0) out vec4 outColor;
 void main() {
   vec2 xz = uCenter + (vUv - 0.5) * uExtent;
@@ -66,7 +71,7 @@ void main() {
     vec3 wt = cloudWeather(p, 0.5);
     tau += cloudShape(p, (p.y - base) * uLayer.z, wt, 2.0) * ds;
   }
-  outColor = vec4(exp(-tau * uExtinction), 0.0, 0.0, 1.0);
+  outColor = vec4(exp(-tau * uExtinction) * uMidTrans, 0.0, 0.0, 1.0);
 }
 `;
 
@@ -90,6 +95,7 @@ export class CloudShadowPass {
         uCenter: { value: new THREE.Vector2() },
         uExtent: { value: SHADOW_EXTENT },
         uLight: { value: this.light },
+        uMidTrans: { value: 1 },
       },
       depthTest: false,
       depthWrite: false,
@@ -100,6 +106,14 @@ export class CloudShadowPass {
       cloudShadowParams: { value: new THREE.Vector4(0, 0, 1 / SHADOW_EXTENT, 0) },
       cloudShadowLight: { value: new THREE.Vector4(0, 1, 0, 0) },
     };
+  }
+
+  /** Mean direct transmission of the mid-level sheet, multiplied into the map from the next refresh (1 = none). */
+  get midTransmission(): number {
+    return this.material.uniforms.uMidTrans.value as number;
+  }
+  set midTransmission(t: number) {
+    this.material.uniforms.uMidTrans.value = t;
   }
 
   setResolution(resolution: number): void {
