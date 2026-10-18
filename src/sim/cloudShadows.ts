@@ -67,8 +67,8 @@ function installChunks(): void {
 		float fsSunY = ( fsViewToWorld * directLight.direction ).y;
 		float fsMu = max( fsSunY, ${FOG_SUN_MIN_MU.toFixed(3)} );
 		float fsRise = max( uFog.z - fsPos.y, 0.0 );
-		// The layer is horizontally uniform: the optical depth depends only on the path length and its altitudes.
-		float fsTau = fogOpticalDepth( fsPos, fsPos + vec3( fsRise * sqrt( 1.0 - fsMu * fsMu ) / fsMu, fsRise, 0.0 ) );
+		// The layer is horizontally uniform: the slant optical depth is the vertical one over mu.
+		float fsTau = fogOpticalDepth( fsPos, fsPos + vec3( 0.0, fsRise, 0.0 ) ) / fsMu;
 		float fsDirect = exp( -fsTau );
 		float fsTotal = 1.0 / ( 1.0 + ${(FOG_DIFFUSE_K * (1 - FOG_SUN_G)).toFixed(4)} * fsTau * fsMu );
 		vec3 fsDiffuse = directLight.color * ( max( fsSunY, 0.0 ) * max( fsTotal - fsDirect, 0.0 ) );
