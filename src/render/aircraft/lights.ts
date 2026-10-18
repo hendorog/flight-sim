@@ -29,8 +29,8 @@
 import * as THREE from 'three';
 import { C172S_VISUAL } from '../../aircraft/c172s/visual';
 import { SCENE_UNITS_PER_LUX, type SkyState } from '../../core/context';
-import type { AircraftState, ControlInputs } from '../../core/types';
-import { FOG_GLSL, fogUniformFor } from '../weather/fogGlsl';
+import type { AircraftState, ControlInputs, WeatherSettings } from '../../core/types';
+import { FOG_GLSL, fogUniformFor, fogUniformValue } from '../weather/fogGlsl';
 import type { LampVisualDef } from './airframe/types';
 import { frd } from './geometry';
 
@@ -459,6 +459,8 @@ export class AircraftLights {
    * @param root   the aircraft model root (model space = this group's parent space)
    * @param camera the rendering camera (for the directional intensity and the sprite size)
    * @param sky    the sky state, for the exposure estimate that sizes the glare halos (none without it)
+   * @param weather the live weather: the fog uniform is computed from it for this frame (fogUniformValue);
+   *                without it the sprites copy the shared uniform FogEffect wrote in the previous frame
    */
   update(
     time: number,
@@ -468,6 +470,7 @@ export class AircraftLights {
     camera: THREE.PerspectiveCamera,
     renderer: THREE.WebGLRenderer,
     sky?: SkyState,
+    weather?: WeatherSettings,
   ): void {
     const v = state.electrical.busVoltage * 28 / this.nominalVoltage;
     const power = Math.min(1, Math.max(0, (v - 18) / 6));
@@ -499,7 +502,8 @@ export class AircraftLights {
     renderer.getDrawingBufferSize(this.size);
     this.glowUniforms.uViewportH.value = this.size.y;
     this.glowUniforms.uExposure.value = sky ? estimateExposure(sky) : 0;
-    this.glowUniforms.uFog.value.copy(fogUniformFor(renderer).value);
+    if (weather) fogUniformValue(weather, this.glowUniforms.uFog.value);
+    else this.glowUniforms.uFog.value.copy(fogUniformFor(renderer).value);
 
     const levels: Record<LightId, number> = { navL: nav, navR: enabled('navR') ? power : 0, navTail: enabled('navTail') ? power : 0, strobeL: strobe, strobeR: enabled('strobeR') ? power * Math.max(pulse(ts, 0, 0.05), pulse(ts, 0.14, 0.05)) : 0, beacon, landing, taxi };
     const pos = this.glowPos.array as Float32Array;

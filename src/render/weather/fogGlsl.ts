@@ -61,8 +61,8 @@ const shared = new WeakMap<THREE.WebGLRenderer, THREE.IUniform<THREE.Vector4>>()
 
 /**
  * The fog uniform of a renderer, shared by the effects and sprites that draw with it (one object per renderer,
- * created at (0, 0, 0, 0)). FogEffect writes it every frame; the aircraft light sprites copy it, so they see the
- * value of the previous frame's post pass.
+ * created at (0, 0, 0, 0)). FogEffect writes it every frame. The aircraft light sprites compute their own value
+ * from the live weather (fogUniformValue) and copy this one only when no weather is passed to them.
  */
 export function fogUniformFor(renderer: THREE.WebGLRenderer): THREE.IUniform<THREE.Vector4> {
   let u = shared.get(renderer);

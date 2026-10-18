@@ -15,7 +15,7 @@
 // looking down) instead of the lamp-to-camera path the sprites' compensation assumes. The ambient term is ctx.sky.hazeColor, which carries the cloud
 // layer's dimming of the air light (cloudSky.ts summarize); the sun term is scaled by cloudSky.directGround.
 //
-// The fog uniform (fogGlsl.ts fogUniformFor) is written here every frame for the aircraft light sprites.
+// The fog uniform (fogGlsl.ts fogUniformFor) is written here every frame, for light sprites drawn without the weather.
 
 import * as THREE from 'three';
 import { CAMERA_FAR, type SceneEffect, type SimContext } from '../../core/context';

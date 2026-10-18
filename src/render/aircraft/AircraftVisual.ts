@@ -368,7 +368,7 @@ export class AircraftVisual implements Subsystem {
       else this.propellers[i].update(0, 0);
     }
     for (const flap of this.nacelles?.cowlFlaps ?? []) flap.hinge.setAngle(flap.angle * (st.engines[flap.engine]?.cowlFlap ?? 0));
-    this.lights.update(ctx.simTime, st, ctx.controls, this.root, ctx.camera, ctx.renderer, ctx.sky);
+    this.lights.update(ctx.simTime, st, ctx.controls, this.root, ctx.camera, ctx.renderer, ctx.sky, ctx.weather);
     this.materials.setSun(ctx.sky.sunDir, ctx.sky.sunColor);
 
     this.contactShadow.update(ctx);

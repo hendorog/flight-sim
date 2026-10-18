@@ -601,7 +601,8 @@ export class Simulator {
     if (!isPresent()) for (const effect of createEraEffects({ ctx, renderer, scene, camera, weather: this.weather })) post.addEffect(effect);
     post.addEffect(clouds);
     // The weather's own effects (render/weather): storm cells and ground fog after the clouds, precipitation and
-    // lightning after the temporal pass. Each factory returns nothing while its weather field is absent.
+    // lightning after the temporal pass. Each effect is created whether or not its weather field is set, and copies
+    // its input while the field is absent.
     const wx = { ctx, renderer, clouds, post, weather: this.weather };
     for (const e of createWeatherEffects(wx)) post.addEffect(e);
     for (const o of createWeatherOverlays(wx)) post.addOverlay(o);
