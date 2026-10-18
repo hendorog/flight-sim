@@ -75,7 +75,7 @@ import { advanceTimeOfDay } from './clock';
 import { showContextLost, showCurtain, type Curtain } from './overlays';
 import { isFixedPanel, type PanelView } from '../instruments/fixedPanel';
 import { AirframeVisibility } from '../render/aircraft/visibility';
-import { parseParams, type SimParams } from './params';
+import { MIN_LAYER_DEPTH_M, parseParams, type SimParams } from './params';
 import {
   browserStore,
   clearSnapshot,
@@ -240,6 +240,8 @@ export class Simulator {
     this.weather = applyEraWeather(defaultWeather(), era().weather);
     const w = this.params.weather;
     deriveCloudTop(w, this.weather);
+    // top= without a base: at least the era or default base plus the minimum layer depth.
+    if (w.cloudTopM !== undefined && w.cloudBaseM === undefined) w.cloudTopM = Math.max(w.cloudTopM, this.weather.cloudBaseM + MIN_LAYER_DEPTH_M);
     Object.assign(this.weather, w);
   }
 
@@ -312,7 +314,7 @@ export class Simulator {
         resumed = decision;
       } catch (e) {
         console.warn('[sim] could not resume the last flight; starting the scenario', e);
-        Object.assign(this.weather, weatherBefore);
+        restoreWeather(this.weather, weatherBefore);
         this.bootDecision = { kind: 'normal', reason: 'restore failed' };
       }
     }

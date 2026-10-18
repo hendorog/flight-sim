@@ -34,6 +34,8 @@ describe('URL weather parameters for the optional fields', () => {
     expect(wx('?mid=cs,0.5')).toEqual({});
     expect(wx('?mid=as')).toEqual({});
     expect(wx('?mid=as,x')).toEqual({});
+    expect(wx('?mid=constructor,0.5')).toEqual({});
+    expect(wx('?mid=toString,0.5')).toEqual({});
   });
 
   it('precip= reads the type and the rate (clamped 0..50 mm/h)', () => {

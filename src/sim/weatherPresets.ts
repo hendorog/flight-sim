@@ -51,7 +51,14 @@ export function stormCell(c: StormCell): StormCell {
   return Object.freeze(cell);
 }
 
-const cells = (list: StormCell[]): readonly StormCell[] => Object.freeze(list.slice(0, MAX_STORMS).map(stormCell));
+/** `c` moved back along its track by `t` s: stormCentreAt(result, t) is c's stored position. */
+const backShift = (c: StormCell, t: number): StormCell => {
+  const d = c.motionKt * KT * t;
+  const a = c.motionDeg * DEG;
+  return { ...c, northM: c.northM + Math.cos(a) * d, eastM: c.eastM + Math.sin(a) * d };
+};
+
+const cells = (list: readonly StormCell[]): readonly StormCell[] => Object.freeze(list.slice(0, MAX_STORMS).map(stormCell));
 
 // ---------------------------------------------------------------------------------------------- presets
 /**
@@ -93,10 +100,15 @@ export function weatherPresetById(id: string | null | undefined): WeatherPreset 
   return WEATHER_PRESETS.find((p) => p.id === id);
 }
 
-/** Apply a preset to the live weather, in place (a base without a top keeps the current layer depth). */
-export function applyWeatherPreset(weather: WeatherSettings, preset: WeatherPreset): WeatherSettings {
+/**
+ * Apply a preset to the live weather, in place (a base without a top keeps the current layer depth). A preset's
+ * storm cells are positions at simulation time 0 (core/weatherFields.stormCentreAt); applied at time `t` (s) each
+ * is moved back along its track by t, so the cells are where the preset places them now.
+ */
+export function applyWeatherPreset(weather: WeatherSettings, preset: WeatherPreset, t = 0): WeatherSettings {
   const values: Partial<WeatherSettings> = { ...preset.settings };
   deriveCloudTop(values, weather);
+  if (t !== 0 && values.storms && values.storms.length > 0) values.storms = cells(values.storms.map((c) => backShift(c, t)));
   return Object.assign(weather, values);
 }
 

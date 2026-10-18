@@ -32,7 +32,15 @@ const preset = (id: string) => weatherPresetById(id)!;
 describe('free-flight weather presets', () => {
   it('keeps the five original menu presets with their values', () => {
     expect(WEATHER_PRESETS.slice(0, 5).map((p) => p.name)).toEqual(['Clear & calm', 'Fair', 'Overcast', 'Gusty crosswind', 'Low IFR']);
-    expect(preset('fair').settings).toMatchObject({ windDirectionDeg: 100, windSpeedKt: 8, gustKt: 0, turbulence: 0.15, cloudCover: 0.35, cloudBaseM: 1500, cloudTopM: 2600, visibilityM: 50000, cirrusCover: 0.15 });
+    // The literals of c0f8711:src/ui/menu.ts:127-131.
+    const old: Record<string, Partial<WeatherSettings>> = {
+      clear: { windSpeedKt: 0, gustKt: 0, turbulence: 0.03, cloudCover: 0.05, visibilityM: 80000, cirrusCover: 0 },
+      fair: { windDirectionDeg: 100, windSpeedKt: 8, gustKt: 0, turbulence: 0.15, cloudCover: 0.35, cloudBaseM: 1500, cloudTopM: 2600, visibilityM: 50000, cirrusCover: 0.15 },
+      overcast: { windDirectionDeg: 230, windSpeedKt: 12, gustKt: 4, turbulence: 0.3, cloudCover: 0.95, cloudBaseM: 700, cloudTopM: 2200, visibilityM: 15000, cirrusCover: 0 },
+      gusty: { windDirectionDeg: 160, windSpeedKt: 15, gustKt: 10, turbulence: 0.5, cloudCover: 0.3, cloudBaseM: 1400, cloudTopM: 2400, visibilityM: 40000, cirrusCover: 0.1 },
+      lowifr: { windDirectionDeg: 60, windSpeedKt: 5, gustKt: 0, turbulence: 0.2, cloudCover: 1, cloudBaseM: 200, cloudTopM: 1500, visibilityM: 1500, cirrusCover: 0 },
+    };
+    for (const [id, v] of Object.entries(old)) expect(preset(id).settings).toEqual({ ...NEUTRAL_EXTRAS, ...v });
     expect('cloudBaseM' in preset('clear').settings).toBe(false);
   });
 
@@ -98,8 +106,9 @@ describe('restoring saved weather', () => {
   });
 
   it('a lesson flies without the player fields, and the end of the lesson clears the fields it set', () => {
-    // As TrainingSystem.applyWeather and its lesson end: playerWeather is a copy, the lesson weather is built on
-    // withoutExtras(playerWeather), and the end restores playerWeather.
+    // Mirrors src/training/TrainingSystem.ts (applyWeather and the lesson-end block that restores playerWeather)
+    // rather than calling it: playerWeather is a copy, the lesson weather is built on withoutExtras(playerWeather),
+    // and the end restores playerWeather. A change there needs a change here.
     const live: WeatherSettings = { ...defaultWeather(), fogTopM: 50 };
     const player = { ...live };
     const lesson = buildWeather({ preset: 'light', override: { storms: preset('thunderstorm').settings.storms } }, withoutExtras(player), mulberry32(7));
@@ -122,6 +131,28 @@ describe('restoring saved weather', () => {
   it('the era preset path keeps the layer depth through deriveCloudTop', () => {
     const w = applyEraWeather({ ...defaultWeather(), cloudBaseM: 1500, cloudTopM: 2600 }, { cloudBaseM: 2600 });
     expect([w.cloudBaseM, w.cloudTopM]).toEqual([2600, 3700]);
+  });
+});
+
+describe('presets applied after simulation time 0', () => {
+  it('puts the Thunderstorm cells where the preset places them at the time of applying', () => {
+    const centre = { north: 0, east: 0 };
+    for (const t of [0, 1800]) {
+      const w = applyWeatherPreset(defaultWeather(), preset('thunderstorm'), t);
+      const [a, b] = stormsOf(w);
+      stormCentreAt(a, t, centre);
+      expect(centre.north).toBeCloseTo(0, 6);
+      expect(centre.east).toBeCloseTo(-12_000, 6);
+      stormCentreAt(b, t, centre);
+      expect(centre.east).toBeCloseTo(-25_000, 6);
+      expect(Object.isFrozen(a)).toBe(true);
+    }
+    // The preset table itself keeps its time-0 positions.
+    expect(preset('thunderstorm').settings.storms![0].eastM).toBe(-12_000);
+  });
+
+  it('leaves a preset without cells unchanged by the time', () => {
+    expect(applyWeatherPreset(defaultWeather(), preset('fair'), 1800)).toEqual(applyWeatherPreset(defaultWeather(), preset('fair')));
   });
 });
 

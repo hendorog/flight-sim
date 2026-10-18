@@ -664,7 +664,7 @@ export class PauseMenu {
     for (const preset of WEATHER_PRESETS) {
       const b = el('button', '', presets, preset.name);
       b.addEventListener('click', () => {
-        applyWeatherPreset(w(), preset);
+        applyWeatherPreset(w(), preset, this.host.ctx.simTime);
         this.host.weatherEdited();
         this.refresh();
         this.host.toast(`Weather: ${preset.name}`);
@@ -776,6 +776,7 @@ export class PauseMenu {
           const rate = precipSliderRate(v);
           x.precipRateMmH = rate;
           if (rate > 0 && precipOf(x, precip).type === 'none') x.precipType = 'rain';
+          else if (rate === 0) x.precipType = 'none';
         }),
       (v) => {
         const r = precipSliderRate(v);

@@ -73,7 +73,7 @@ const CAMERA_MODES: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby
 const CLOUD_TYPES: readonly CloudType[] = ['auto', 'stratus', 'stratocumulus', 'cumulus', 'towering', 'nimbostratus'];
 const MID_KINDS: Readonly<Record<string, MidCloudType>> = { as: 'altostratus', ac: 'altocumulus' };
 /** top= is raised to at least the base plus this, m (a layer needs a depth). */
-const MIN_LAYER_DEPTH_M = 100;
+export const MIN_LAYER_DEPTH_M = 100;
 const QUALITIES: readonly QualityLevel[] = ['low', 'medium', 'high', 'ultra'];
 /**
  * Every scenario a URL may name: SCENARIO_IDS plus the era starts (eraChoice.ts ERA_SCENARIO_IDS: 'safari'),
@@ -202,7 +202,7 @@ export function parseParams(search: string): SimParams {
   const ctype = q.get('ctype');
   if ((CLOUD_TYPES as readonly string[]).includes(ctype ?? '')) weather.cloudType = ctype as CloudType;
   const mid = q.get('mid')?.split(',');
-  if (mid && MID_KINDS[mid[0]] && mid.length >= 2 && mid.slice(1).every((v) => v.trim() !== '' && Number.isFinite(Number(v)))) {
+  if (mid && Object.hasOwn(MID_KINDS, mid[0]) && mid.length >= 2 && mid.slice(1).every((v) => v.trim() !== '' && Number.isFinite(Number(v)))) {
     weather.midType = MID_KINDS[mid[0]];
     weather.midCover = Math.min(1, Math.max(0, Number(mid[1])));
     if (mid.length >= 3) weather.midAltM = Math.min(MID_ALT_MAX_M, Math.max(0, Number(mid[2])));
