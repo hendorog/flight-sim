@@ -80,6 +80,11 @@ export const EXTRA_PARAMS = [
   'tailLoad',
   /** Tail-rotor helical blade-tip Mach number. */
   'tailTipMach',
+  /**
+   * Precipitation on the airframe 0..1 (mapping.ts precipNoise), for every type: the patter of drops on the skin
+   * and the windscreen. 0 without precipitation; the worklet smooths it only once it has been non-zero.
+   */
+  'rain',
 ] as const;
 
 export type SynthParamName = (typeof SYNTH_PARAMS)[number] | (typeof EXTRA_PARAMS)[number];
