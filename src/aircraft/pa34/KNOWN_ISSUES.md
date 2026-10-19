@@ -11,7 +11,7 @@ Close with: installation-aware voltage scaling and powered night-light checks, i
 ## Developed spins — **missing feature**
 
 A full-aft, full-rudder entry produces a spiral; developed spins and recovery are not represented.
-Evidence: [README aircraft limitations](../../../README.md#aircraft).
+Evidence: [aircraft limitations](../../../docs/aircraft.md).
 Close with: a validated post-stall/spin model and aircraft-specific entry/recovery checks.
 
 ## Brief taxi stall-warning chirp — **defect**
