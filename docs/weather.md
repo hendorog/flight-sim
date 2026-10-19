@@ -2,7 +2,8 @@
 
 This file covers the optional fields of `WeatherSettings` (`src/core/types.ts`) added for cloud types, a mid-level
 sheet, precipitation, ground fog and cumulonimbus cells, the accessors that read them (`src/core/weatherFields.ts`),
-and the render slots their effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
+the storm cells derived from the conditions (`src/physics/weather/stormField.ts`), and the render slots their
+effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
 
 ## Status
 
@@ -14,7 +15,9 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
   render whatever the weather, so the shader warm-up (`Simulator.warmUpShaders`), which renders all four, compiles
   their shaders; the fog composite does this from commit 34193ab on (before it, a boot without fog compiled the
   composite on the first frame with fog). Their GPU cost has not been measured (no GPU on the integration machine).
-  - `createStormCellEffect` (`StormCellEffect.ts`): `storms`. A march at `STORM_SCALE` 0.5 resolution with
+  - `createStormCellEffect` (`StormCellEffect.ts`): the cells in effect at the camera (`StormField.select`, see
+    "Storm cells derived from the conditions"). Their core, anvil and rain shares multiply the three densities
+    (uniform `uCellW`). A march at `STORM_SCALE` 0.5 resolution with
     `STORM_STEPS` 48 steps, then a depth-aware composite against the cumulus layer. Skipped when no cell is in the
     view frustum.
   - `createFogEffect` (`FogEffect.ts`): `fogTopM`, `fogVisibilityM`. One full-resolution draw; skipped when
@@ -29,8 +32,10 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
     and vary in brightness, streaked over 1/800 s (`SNOW_STREAK_EXPOSURE_S`): 4 mm parked in a 6 kt wind, 6.4 cm at
     100 kt. The sway and brightness phases use `uTime`, the summed render `dt` in s with no wrap (it wrapped at
     3600 s before commit 34193ab). The audio parameter `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound.
-  - `createLightningOverlay` (`LightningOverlay.ts`): `storms`. Schedules strikes (`src/sim/weather/lightning.ts`
-    `strikesBetween`, `FLASH_PER_MIN` 6 per minute at intensity 1, `CG_FRACTION` 0.3), keeps up to `MAX_FLASHES` 4
+  - `createLightningOverlay` (`LightningOverlay.ts`): the cells in effect at the camera, from its own `StormField`
+    (the same result as the storm effect's). Schedules strikes (`src/sim/weather/lightning.ts` `strikesBetween`,
+    `FLASH_PER_MIN` 6 per minute at intensity 1 times the cell's lightning share, `CG_FRACTION` 0.3; the hashes are
+    keyed by the cell's `id`, so a derived cell keeps its strikes when its place in the list changes), keeps up to `MAX_FLASHES` 4
     lit, emits the `lightning` event and writes `ctx.weatherFx.flash`. Its `active` advances the strike schedule; it
     is skipped while no flash is lit.
     - Cloud-to-ground channel (`boltGeometry.ts` `boltPath`, `boltBranches`): 32 segments from 3000 m above the base
@@ -58,9 +63,11 @@ and the render slots their effects use (`src/render/weather/`, `src/render/post/
   `THUNDER_MAX_DISTANCE_M` 20 km.
 - Physics (`src/physics/weather/convection.ts`, `windField.ts`, `src/physics/environment.ts`): updraft, downdraft
   and outflow of the storm cells, their turbulence severity, and moisture from fog, mid sheet, cells and rain.
-- `defaultWeather()` is unchanged and sets none of the new fields.
+- `defaultWeather()` is unchanged and sets none of the new fields. Its derived convective activity is 0, so it has
+  no storm cells.
 - Presets (`src/sim/weatherPresets.ts`): the five earlier menu presets plus `fog` (Radiation fog), `drizzle` (Low
-  stratus & drizzle), `rain`, `snow` and `thunderstorm`, also selectable with the `wx=` URL parameter.
+  stratus & drizzle), `rain`, `snow` and `thunderstorm`, also selectable with the `wx=` URL parameter. No preset
+  sets `storms`; `thunderstorm` sets conditions whose derived activity is 1 (below).
 
 ## Fields
 
@@ -77,7 +84,7 @@ all read as the default in the last column.
 | `precipRateMmH` | number | mm/h liquid-water equivalent | 0..50 | 0; also 0 whenever `precipType` reads as `'none'` |
 | `fogTopM` | number | m above `AIRPORT.elevation` (120 m) | 0..300 | 0 (no fog) |
 | `fogVisibilityM` | number | m | 50..1000 | 200 |
-| `storms` | `readonly StormCell[]` | | first 4 entries read | `NO_STORMS` (empty, frozen) |
+| `storms` | `readonly StormCell[]` | | first 4 entries read | absent: cells derived from the conditions; an array (also empty) replaces them |
 
 `visibilityM` stays the prevailing visibility; `fogVisibilityM` applies only inside the fog layer.
 
@@ -85,7 +92,8 @@ all read as the default in the last column.
 top, 6000..14000 m MSL; the base is `cloudBaseM`), `intensity` (0..1), `motionDeg` (direction the cell moves from,
 degrees true), `motionKt`, and optional `lightning` (`false` disables flashes; default true). The ranges in this
 paragraph are documented in the type; `stormsOf` does not clamp them. Writers replace the `storms` array and do
-not edit a cell in place.
+not edit a cell in place. `storms` absent or `undefined` means the cells are derived from the conditions; any
+array, the empty one included (`cb=none`), turns the derived cells off.
 
 Clock changes: `SimPhysics.resetTo` (and `reset`, which calls it) restarts the clock at 0 and moves the cells of the
 weather it is given with `weatherPresets.reanchorStorms(w, tOld, tNew)`, so `stormCentreAt(cell, tNew)` after the
@@ -93,7 +101,8 @@ reset equals `stormCentreAt(cell, tOld)` before it. `TrainingSystem` records the
 weather at a lesson start and re-anchors the cells from it when it restores the copy at the lesson end. A snapshot
 restore sets the clock and the weather from the same snapshot and moves no cell. The boot resume restores the
 snapshot weather with `restoreWeather`, so an optional field set by the URL and absent from the snapshot goes back
-to its `NEUTRAL_EXTRAS` value.
+to its `NEUTRAL_EXTRAS` value. Derived cells run on the weather clock (`timeOfDay`, `dayOfYear`), which none of
+these changes, so they do not move.
 
 ## Accessors (`src/core/weatherFields.ts`)
 
@@ -105,7 +114,7 @@ The module does not import three.js. The accessors that take an `out` object wri
 | `midLayerOf(w, out)` | `{cover, type, altM}` |
 | `precipOf(w, out)` | `{type, rateMmH}` |
 | `fogOf(w, out)` | `{topM, visibilityM}` |
-| `stormsOf(w)` | `w.storms` when it is an array of well-formed cells (every number finite, `lightning` boolean or absent); otherwise `NO_STORMS` |
+| `stormsOf(w)` | the explicit cells: `w.storms` when it is an array of well-formed cells (every number finite, `lightning` boolean or absent); otherwise `NO_STORMS` (also when `storms` is absent and the cells are derived) |
 | `isStormCell(c)` | the type check `stormsOf` and `sanitizeExtras` apply to each cell |
 | `stormCentreAt(cell, t, out)` | `{north, east}`: `northM − cos(motionDeg)·v·t`, `eastM − sin(motionDeg)·v·t`, `v = motionKt · 0.514444` m/s |
 | `precipExtinctionPerM(type, rateMmH)` | extinction, 1/m; 0 for `'none'` or rate 0 |
@@ -117,7 +126,8 @@ The module does not import three.js. The accessors that take an `out` object wri
 | `CLOUD_TYPE_PROFILES` | per-type uniform inputs for the clouds module (below) |
 
 `NEUTRAL_EXTRAS`: `cloudType 'auto'`, `midCover 0`, `midType 'altostratus'`, `midAltM 4500`, `precipType 'none'`,
-`precipRateMmH 0`, `fogTopM 0`, `fogVisibilityM 200`, `storms NO_STORMS`. Its `midAltM` is the fixed 4500 m, not
+`precipRateMmH 0`, `fogTopM 0`, `fogVisibilityM 200`, `storms undefined` (the cells are derived from the
+conditions). Its `midAltM` is the fixed 4500 m, not
 the cloud-top rule of the absent default; with `midCover 0` no sheet is drawn.
 
 `precipExtinctionPerM` uses power laws in the rate R, 1/km: rain 0.25·R^0.63, drizzle 1.5·R^0.5, snow 1.3·R^0.8.
@@ -186,19 +196,138 @@ The `auto` row's `towerExt` equals `TOWER_EXTENSION` in `src/render/clouds/cloud
 | --- | --- |
 | `cbSample(cells, p, t, agl, groundM, baseM, out)` (`weather/convection.ts`) | updraft `up`, outflow `outN`/`outE`, `severity` and `inCore` of the cells at a point; writes `out` |
 | `WindField.stormTurbulence(p, t)` (`weather/windField.ts`) | the cells' severity 0..1 at a point, 0 without cells; read-only |
+| `WindField.stormCells(north, east, t)` | the cells in effect at a point (`StormField.select`); `sample`, `stormTurbulence` and `moisture` use the same selection at their own point |
 | `WindBreakdown.convective` | `{up, outN, outE}` from the cells; all 0 without cells |
 | `SimEnvironment.moisture(altitudeMSL, north?, east?, time?)` (`environment.ts`) | `inCloud` also inside the fog layer, within 150 m of a mid sheet with cover 0.3 or more, and inside a cell core; dew point spread 0 below the base in rain or drizzle |
 
-Without cells `WindField.sample` skips the convective branch, so its arithmetic is unchanged. The severity is passed
+Without cells at the sample point `WindField.sample` skips the convective branch, so its arithmetic is unchanged.
+A derived cell's wind share (`ActiveStorm.wind`, its selection weight times its life cycle) multiplies its updraft,
+downdraft, outflow and severity; `inCore` and `inStormCore` need a core share of at least `CORE_SHARE_MIN` 0.5. An
+explicit cell has every share 1. The severity is passed
 to the MIL-F-8785C intensities as max(`turbulence`, severity), clamped there at 1. The cockpit head motion
 (`src/render/cameras/cockpitRig.ts`) uses the same maximum. The physics clamps a cell's radius, top and intensity
 with `cellRadiusM`, `cellTopM` and `cellIntensity`.
 
+## Storm cells derived from the conditions (`src/physics/weather/stormField.ts`)
+
+With `storms` absent, the storm cells come from a lattice of candidate sites, at a rate set by a convective
+activity 0..1 derived from the other weather fields. There is no activity setting. Every constant named below is
+an unconfirmed tuning value except the physical constants and the saturation vapour pressure fit.
+
+### Activity (`convectiveState`)
+
+activity = I x H x D x B x C x Y, each term 0..1:
+
+| Term | Formula | Constants |
+| --- | --- | --- |
+| I instability | smoothstep(`CAPE_MIN`, `CAPE_FULL`, CAPE) | 300, 1500 J/kg |
+| H heating | smoothstep(`HEAT_SUN_MIN`, `HEAT_SUN_FULL`, sLag), sLag = sine of the sun elevation at `timeOfDay` − `HEATING_LAG_H` on `dayOfYear` | 0.25, 0.7; 2 h |
+| D depth | smoothstep(`DEPTH_MIN_M`, `DEPTH_FULL_M`, (`cloudTopM` − `cloudBaseM`) x `towerExt` of the cloud type) | 2000, 4000 m |
+| B moisture | 1 − smoothstep(`BASE_MOIST_M`, `BASE_DRY_M`, `cloudBaseM` − 120 m field elevation) | 800, 2000 m |
+| C cover | smoothstep(`COVER_MIN`, `COVER_FULL`, `cloudCover`) | 0.1, 0.4 |
+| Y cloud type | `TYPE_FACTOR`: towering 1, cumulus 0.8, stratus, stratocumulus and nimbostratus 0; auto 0.8 x (1 − smoothstep(0.6, 0.9, `cloudCover`)) | |
+
+CAPE: a parcel starts at the field elevation at the air temperature plus `HEATING_MAX_K` 4 K x max(0, sLag), rises
+at g / cp to `cloudBaseM` (read as the lifting condensation level, as `environment.ts` reads the base), then at the
+saturated adiabatic lapse rate g (1 + Lv r / (Rd T)) / (cp + Lv² r ε / (Rd T²)), r from the Bolton (1980)
+saturation vapour pressure, in `PARCEL_STEP_M` 200 m steps to `PARCEL_TOP_M` 16 km. The air is the simulator's
+atmosphere (`physics/atmosphere.ts`: ISA with `isaDeviation` and `qnhHpa`, 6.5 K/km to 11 km geopotential,
+isothermal above), whose fixed lapse rate is the only one the weather defines; its pressure is carried up
+hydrostatically from the base. CAPE sums g (Tp − Te) / Te dz over the buoyant steps; the convective inhibition is
+not used. The top of the highest buoyant step is the equilibrium level.
+
+`WeatherSettings` has no humidity field. The cloud base is the only moisture input (term B and the parcel's
+condensation level).
+
+Activity by preset (`tests/weather/stormField.test.ts`, 2026-10-19):
+
+| Weather | Activity | Terms at 0 |
+| --- | --- | --- |
+| `defaultWeather()` (09:30, day 172, ISA, cover 0.35 auto, base 1500 m, top 2600 m) | 0 | I (CAPE 0), D (drawn depth 1760 m) |
+| Clear, Fair, Gusty crosswind | 0 | I, D; Clear also C |
+| Overcast, Low IFR, Low stratus & drizzle, Rain, Snow | 0 | Y (auto at cover 0.95 to 1, stratus, nimbostratus) |
+| Radiation fog | 0 | H, C |
+| Thunderstorm | 1 | none (CAPE 2743 J/kg, equilibrium level 11 500 m) |
+| Every lesson preset (`src/training/content/weatherPresets.ts`), built on the default or the Thunderstorm weather | 0 | D (layer depth 1100 or 1200 m with auto), and `storms` is the empty list |
+| Fair cumulus of `defaultWeather()` at 15:00 and ISA + 10 K | 0 | D (CAPE 1069 J/kg) |
+
+Activity of the Thunderstorm conditions with one field varied (same test):
+
+| Field | Values | Activity |
+| --- | --- | --- |
+| `isaDeviation`, K | −15, −10, −5, −2, 0, 2, 4, 6, 8, 12 | 0, 0, 0, 0.02, 0.18, 0.55, 0.97, 1, 1, 1 |
+| layer depth (cumulus), m | 600, 1000, 1400, 1800, 2200, 2600, 3000 | 0, 0, 0.03, 0.33, 0.68, 0.80, 0.80 |
+| `cloudBaseM` (depth 1700 m), m | 600, 900, 1200, 1500, 1800, 2100 | 1, 1, 0.86, 0.08, 0, 0 |
+| `timeOfDay`, h | 5, 7, 9, 10, 11, 12, 13 | 0, 0, 0.34, 0.84, 1, 1, 1 |
+| `timeOfDay`, h | 15, 17, 18, 19, 20, 21, 23 | 1, 1, 0.84, 0.34, 0, 0, 0 |
+| `dayOfYear` 355 at 15:00 | | 0.048 |
+| `cloudType` at ISA | towering, cumulus, auto, stratus | 0.18, 0.043, 0.043, 0 |
+
+### Sites and life cycle
+
+- Lattice: sites every `SITE_SPACING_M` 15 km in world NED. Each site has a period of `PERIOD_MIN_S` 75 to
+  `PERIOD_MAX_S` 105 min and a phase hashed from the site and the seed (`STORM_SEED` 1). Each period (generation)
+  holds at most one cell, with a lifetime of `LIFE_MIN_S` 30 to `LIFE_MAX_S` 60 min, a birth time inside the
+  period, a birth position jittered by up to `SITE_JITTER` 0.35 of the spacing on each axis, a core radius of
+  `RADIUS_MIN_M` 1800 to `RADIUS_MAX_M` 4000 m, an intensity of `INTENSITY_MIN` 0.5 to 1 times (0.5 + 0.5
+  activity), and a top share, all hashed from the site, the generation and the seed.
+- Existence: e = clamp((`EXIST_MAX` 0.5 x activity − u) / `EXIST_SOFT` 0.1, 0, 1), u hashed per generation. A
+  change of activity fades cells in and out.
+- Tops: base + (ceiling − base) x (0.6 + 0.4 activity) x (0.8 + 0.2 u), ceiling = min(`TOP_CEILING_M` 14 000 m,
+  equilibrium level + `OVERSHOOT_M` 1000 m), at least base + `MIN_CELL_DEPTH_M` 3000 m.
+- Life cycle, a = age / lifetime. Growth to `GROWTH_END` 0.3: the top rises from 0.3 to 1 of its height above the
+  base and the core radius from 0.6 to 1 of its value. Shares, all 0 at a = 0 and a = 1:
+  core smoothstep(0, 0.1, a)(1 − smoothstep(0.7, 0.95, a)); anvil smoothstep(0.2, 0.4, a)(1 − smoothstep(0.85, 1, a));
+  rain smoothstep(0.25, 0.4, a)(1 − smoothstep(0.7, 0.9, a)); lightning smoothstep(0.3, 0.4, a)(1 − smoothstep(0.65, 0.8, a));
+  wind smoothstep(0.05, 0.3, a)(1 − smoothstep(0.75, 0.95, a)).
+- Time base: T = ((`dayOfYear` − 1) x 24 + `timeOfDay`) x 3600 s. The simulation time is not used: a scenario
+  reset (clock to 0) and a resume leave T unchanged. `clock=0` stops T, and the cells stand still. Editing the
+  time of day or the date moves T. The date wraps from day 366 to 1, and T goes back a year.
+- Drift: from the birth position with the steering wind, the direction of `windDirectionDeg` at `windSpeedKt` x
+  `STEERING_FACTOR` 1.8 (the factor the cumulus layer drifts with, `CLOUD_WIND_FACTOR`). The drift is not stored:
+  a change of the wind settings moves each live cell by the change of velocity times its age.
+
+### Selection (`StormField.select`)
+
+At a reference point (render: the camera; physics: the sample point; `weatherLine`: the airport), of the live
+cells within `FADE_END_M` 60 km, at most `MAX_STORMS` 4 by the score s = e x max(core, anvil) x (1 − d / 60 km).
+Each gets weight = e x (1 − smoothstep(`FADE_START_M` 40 km, 60 km, d)) x clamp((s − s5) / `RANK_MARGIN` 0.05,
+0, 1), s5 the fifth-highest score (0 with fewer than five), and every share is multiplied by it. When a cell
+leaves the four, its score equals s5 and its weight is 0. The result is a function of the weather, the simulation
+time and the point: it does not depend on the earlier calls (the live cells are cached within 10 km of the last
+point and rebuilt when the weather clock, the activity inputs or the wind change).
+
+Explicit `storms` (URL `cb=`, `__sim.setWeather`, tests) replace the derived cells with the listed ones, every
+share 1. `cb=none` (an empty list) gives no cells. The pause menu's storm chips are "From conditions" (`storms`
+undefined) and "No storms" (the empty list); a line under them gives the derived activity in percent, or the
+number of placed cells when the weather holds an explicit list. The earlier placement chips (distant cell,
+overhead cell, line of three) and `stormLayout` are removed.
+
+Measured (`tests/weather/stormField.test.ts`, 4-CPU machine, 2026-10-19):
+
+- Thunderstorm preset from 15:00 for 60 minutes, selection at the airport: a cell with a core share above 0.5
+  within 40 km in 60 of 60 minutes, a cell with a lightning share above 0.5 within 40 km in 44; nearest centre
+  5.0 km. Weather line: CB in 60 minutes, TS in 16.
+- 1800 one-second clock steps against one 1800 s step: T differs by 7.5e-9 s; same cells.
+- A reset of `SimPhysics` after 20 s: the cells and the convective updraft at a point (−0.1344 m/s) are unchanged.
+- 250 m/s for 2 h with the clock running: 155 changes of the selected set; the largest change of one cell's
+  weight between samples 0.206 at 1 s steps and 0.021 at 0.1 s steps.
+- 60 m/s at 300 m for 20 min toward the nearest cell, 0.1 s steps: largest step of a convective wind component
+  0.035 m/s, peak 10.8 m/s, 25 changes of the selected set.
+- `StormCellEffect.updateCells` and `WindField.stormCells` at 30 points and times: the same cells, centres and
+  shares (120 cells compared).
+- `env.wind` with the Thunderstorm cells: 8.2 µs per call with the clock fixed, 12.8 µs with the clock advanced
+  every 4 calls (each advance rebuilds the cells); the explicit four-cell test 7.6 µs; the limit is 30 µs.
+
 ## Training weather line
 
 `weatherLine` (`src/training/content/weatherPresets.ts`) appends present-weather groups only when the fields are
-present: `TS` when a cell has lightning, `DZ`, `-RA` / `RA` / `+RA` (below 2.5 / 10 mm/h / above), `-SN` / `SN` /
-`+SN` (below 1 / 2.5 mm/h / above), `FG` for a fog layer, and `CB` after the cloud group when cells exist. The
+present: `TS` (explicit cells: when a cell has lightning; derived cells, selected at the airport: when a cell with
+a core or anvil share of at least 0.1 and a lightning share above 0 lies within `TS_RANGE_M` 18 520 m), `DZ`, `-RA` / `RA` / `+RA` (below 2.5 / 10 mm/h / above), `-SN` / `SN` /
+`+SN` (below 1 / 2.5 mm/h / above), `FG` for a fog layer, and `CB` after the cloud group (explicit cells: when
+any exist; derived cells: when a cell selected at the airport, so within 60 km, has a core or anvil share of at
+least 0.1). Lesson weather is built on `withoutExtras`, which sets `storms` to the empty list, so a lesson has no
+derived cells. The
 visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
 
 ## Recorded gaps
@@ -219,6 +348,10 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
 - Storm cell ranges: render (`cellGeometry`: radius 500..8000 m, top at least base + 2000 m), physics
   (`cellRadiusM`, `cellTopM`) and the lightning scheduler (radius only floored at 0) clamp out-of-range cells
   differently. `stormsOf` and `isStormCell` check types, not ranges.
+- Derived cells: during growth a cell's top can be below 6000 m; the physics clamps it to 6000 m (`cellTopM`), the
+  render to the base + 2000 m. The activity is one value for the whole world (no spatial variation). At most 4
+  cells are drawn, so a fifth cell within 60 km is not drawn. A cell's drift is recomputed from the current wind
+  settings, so editing the wind moves the live cells.
 - Downdraft centre: the physics places it toward the cell's motion; the drawn rain shaft is centred on the core.
   For a cell moving across the wind the two are 0.6 R apart.
 - Landing-light beam: no volumetric term in fog.
@@ -263,3 +396,17 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   `__ready` in 184 to 215 s, with no console errors or warnings and an empty `__sim.errors` on every page.
   `dev/weather.html` at 640x360, `q=medium`, `tod=19.2`, `flash=1`, one cell 10 km north: one cloud-to-ground strike
   logged (3 strokes), no console errors or warnings.
+
+## Integration checks (2026-10-19, derived storm cells)
+
+- `npx tsc --noEmit`: no errors.
+- `npx vitest run tests/weather tests/sim tests/render tests/sky tests/clouds tests/training/syllabus.test.ts
+  tests/aircraft/contract.test.ts`: 50 files, 607 tests passed, 3 skipped. `tests/training/runner.test.ts tests/ui
+  tests/audio`: 24 files, 263 passed.
+- `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: 51 of 53 pass; the 2 failures are the `c172Sim` records
+  `autoflight.runway` and `restore.cruise`, with output identical to the tree before this change.
+- Browser check, Chromium with SwiftShader, 640x360, `quality=medium`: `dev/weather.html?wx=thunderstorm` reached
+  `__ready` in 25 to 27 s, `index.html?wx=thunderstorm&scenario=cruise&cam=chase` in 127 s. No console errors or
+  warnings and an empty `__sim.errors`. At 15:00 on day 196 the page selected four cells 17.1, 23.5, 29.5 and
+  35.6 km from the camera at the airport (activity 1, CAPE 2743 J/kg). From 7000 m MSL, 8 km south of the airport,
+  the nearest cell drew a core column and an anvil above the cumulus layer.
