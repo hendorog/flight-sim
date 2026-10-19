@@ -7,13 +7,13 @@
 // temperature and dew-point lapse rates, (6.5 - 1.8) K per km. Inside the layer (cover >= 0.3) the air is
 // saturated. Under a clear sky (cover < 0.05) there is no layer to infer from: the spread is at least 12 K.
 // The optional weather fields (core/weatherFields.ts) add saturated air where they are present: inside the ground
-// fog layer, inside a storm cell's core, within MID_LAYER_HALF_DEPTH of a mid-level sheet of cover >= 0.3 (all
+// fog layer, inside the core of a storm cell in effect at the point (WindField.stormCells), within MID_LAYER_HALF_DEPTH of a mid-level sheet of cover >= 0.3 (all
 // inCloud), and below the cloud base in rain or drizzle (spread 0). With the fields absent or neutral none of
 // these applies and the result is the one above.
 
 import type { Vec3 } from '../core/math';
 import type { Environment, SurfaceType, WeatherSettings } from '../core/types';
-import { fogOf, midLayerOf, precipOf, stormsOf, type FogLayer, type MidLayer, type Precip } from '../core/weatherFields';
+import { fogOf, midLayerOf, precipOf, type FogLayer, type MidLayer, type Precip } from '../core/weatherFields';
 import { AIRPORT } from '../core/world';
 import { atmosphereAt, type AtmosphereConditions } from './atmosphere';
 import type { MoistureSample } from './interfaces';
@@ -75,7 +75,7 @@ export function createEnvironment({ weather, terrain, seed = 1 }: EnvironmentOpt
       if (!inCloud) {
         const f = fogOf(weather, fog);
         const m = midLayerOf(weather, mid);
-        const cells = stormsOf(weather);
+        const cells = windField.stormCells(north, east, time);
         inCloud =
           (f.topM > 0 && altitudeMSL - AIRPORT.elevation < f.topM) ||
           (m.cover >= IN_CLOUD_COVER && Math.abs(altitudeMSL - m.altM) <= MID_LAYER_HALF_DEPTH) ||

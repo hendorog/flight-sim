@@ -2,9 +2,12 @@
 // render overlay (render/weather/LightningOverlay.ts) asks for the strikes that began in each frame's time window,
 // and the audio schedules the thunder from the 'lightning' event the overlay emits.
 //
-// The schedule is a function of the cells and the simulation time only. Time is cut into 1 s slots; for cell i
-// and slot k a strike happens when hashUnit(seed', i, k, 0) < intensity * FLASH_PER_MIN / 60, so the expected
-// rate is intensity * FLASH_PER_MIN per minute. Further hashes of (i, k) give its kind (cloud-to-ground with
+// The schedule is a function of the cells and the simulation time only. Time is cut into 1 s slots; for a cell of
+// identity i (ActiveStorm.id, physics/weather/stormField.ts; the index for a plain StormCell) and slot k a strike
+// happens when hashUnit(seed', i, k, 0) < intensity * flash * FLASH_PER_MIN / 60 (flash: the cell's lightning
+// share, 1 for a plain StormCell), so the expected rate is intensity * flash * FLASH_PER_MIN per minute. Keyed by
+// the identity, a derived cell keeps its strikes when its place in the selection changes. Further hashes of (i, k)
+// give its kind (cloud-to-ground with
 // probability CG_FRACTION), its start time inside the slot, its position (uniform over the core's disc around the
 // cell centre at that time, stormCentreAt), its height inside the cell, its stroke count and its energy.
 // strikesBetween(t0, t1) returns the strikes whose start lies in [t0, t1): the result depends on the window only,
@@ -15,6 +18,7 @@
 import { hashU32, hashUnit } from '../../physics/weather/random';
 import { MAX_STORMS, stormCentreAt, type NorthEast } from '../../core/weatherFields';
 import type { StormCell } from '../../core/types';
+import { stormShare, type ActiveStorm } from '../../physics/weather/stormField';
 
 /** Flashes per minute of a cell at intensity 1. Unconfirmed: a tuning value, no source checked. */
 export const FLASH_PER_MIN = 6;
@@ -39,9 +43,9 @@ export type StrikeKind = 'cg' | 'ic';
 
 /** One strike. Positions are NED m (as the cells); the altitude is the share of the cell's height. */
 export interface Strike {
-  /** Unique per (slot, cell): slot * MAX_STORMS + cell index. */
+  /** Unique per (slot, cell): slot * MAX_STORMS + index of the cell in the list. */
   id: number;
-  /** Index of the cell in the storms array. */
+  /** Index of the cell in the list given to strikesBetween. */
   cell: number;
   kind: StrikeKind;
   /** Simulation time of the first stroke, s. */
@@ -67,11 +71,11 @@ export function makeStrike(): Strike {
 
 const _centre: NorthEast = { north: 0, east: 0 };
 
-/** Strike probability per slot of a cell (0 for lightning: false). */
+/** Strike probability per slot of a cell (0 for lightning: false), times its lightning share. */
 export function strikeChance(cell: StormCell): number {
   if (cell.lightning === false) return 0;
   const i = Number.isFinite(cell.intensity) ? Math.min(1, Math.max(0, cell.intensity)) : 0;
-  return (i * FLASH_PER_MIN * SLOT_S) / 60;
+  return (i * stormShare(cell, 'flash') * FLASH_PER_MIN * SLOT_S) / 60;
 }
 
 /**
@@ -87,16 +91,18 @@ export function strikesBetween(cells: readonly StormCell[], t0: number, t1: numb
   const k1 = Math.floor(t1 / SLOT_S);
   let count = 0;
   for (let k = k0; k <= k1; k++) {
-    for (let i = 0; i < n; i++) {
-      const cell = cells[i];
+    for (let c = 0; c < n; c++) {
+      const cell = cells[c];
       const p = strikeChance(cell);
+      const id = (cell as Partial<ActiveStorm>).id;
+      const i = id === undefined ? c : id;
       if (p <= 0 || hashUnit(s, i, k, 0) >= p) continue;
       const tStart = (k + hashUnit(s, i, k, 5)) * SLOT_S;
       if (tStart < t0 || tStart >= t1) continue;
       const strike = out[count] ?? (out[count] = makeStrike());
       count++;
-      strike.id = k * MAX_STORMS + i;
-      strike.cell = i;
+      strike.id = k * MAX_STORMS + c;
+      strike.cell = c;
       strike.kind = hashUnit(s, i, k, 1) < CG_FRACTION ? 'cg' : 'ic';
       strike.tStart = tStart;
       stormCentreAt(cell, tStart, _centre);

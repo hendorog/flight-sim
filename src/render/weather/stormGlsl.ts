@@ -5,6 +5,8 @@
 //   uCellB = (base, intensity, anvil radius, rain-shaft radius)
 //   uCellC = (anvil centre x, anvil centre z, bounding-cylinder centre x, z)
 //   uCellR = bounding-cylinder radius
+//   uCellW = (core share, anvil share, rain share, 0): the cell's selection weight times its life cycle
+//            (physics/weather/stormField.ts ActiveStorm; 1 for an explicit cell), multiplying each density
 // Density (cell-local; r the horizontal distance to the centre, broken up by a world-space noise n):
 //   core   smoothstep(R, 0.6 R, r) from the base to the anvil's underside, (0.6 + 0.4 n), extinction STORM_CORE_SIGMA
 //   anvil  a disc of the anvil radius around the anvil centre (moved downwind), from (top - STORM_ANVIL_DEPTH_M),
@@ -83,6 +85,7 @@ uniform vec4 uCellA[${STORM_MAX_CELLS}];
 uniform vec4 uCellB[${STORM_MAX_CELLS}];
 uniform vec4 uCellC[${STORM_MAX_CELLS}];
 uniform float uCellR[${STORM_MAX_CELLS}];
+uniform vec4 uCellW[${STORM_MAX_CELLS}];
 uniform int uCount;
 uniform float uGroundY;
 uniform vec2 uSunSpan;         // altitudes of uSunBase and uSunTop, m MSL
@@ -136,7 +139,7 @@ vec3 cellDensity(int i, vec3 p, float n) {
   float foot = smoothstep(R, 0.6 * R, rc);
   float virga = max(foot - shaft, 0.0) * smoothstep(base - ${f(STORM_VIRGA_DEPTH_M)}, base, p.y);
   float rain = (shaft + virga) * below * B.y * (0.7 + 0.3 * n);
-  return vec3(core, anvil, rain);
+  return vec3(core, anvil, rain) * uCellW[i].xyz;
 }
 
 // Extinction at p, 1/m, and the rain's share of it.
@@ -171,7 +174,8 @@ vec2 stormColumn(vec3 p) {
     float ra = length(p.xz - C.xy);
     float e = clamp(ra / max(B.z, 1.0), 0.0, 1.0);
     float anvil = smoothstep(B.z, 0.5 * B.z, ra) * 0.75 * ${f(STORM_ANVIL_SIGMA)} * clamp(A.w - max(p.y, anvilBot + 900.0 * e * e), 0.0, 3000.0);
-    tau += vec2(core * above + anvil, core * below);
+    vec4 W = uCellW[i];
+    tau += vec2(core * W.x * above + anvil * W.y, core * W.x * below);
   }
   return tau;
 }
