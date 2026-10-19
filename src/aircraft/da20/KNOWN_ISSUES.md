@@ -11,7 +11,7 @@ Close with: passing the installation voltage into the light renderer and verifyi
 ## Developed spins — **missing feature**
 
 A full-aft, full-rudder entry produces a spiral; developed spins and recovery are not represented.
-Evidence: [README aircraft limitations](../../../README.md#aircraft).
+Evidence: [aircraft limitations](../../../docs/aircraft.md).
 Close with: a validated post-stall/spin model and aircraft-specific entry/recovery checks.
 
 ## Priming and alternate fuel-pump installation — **missing feature**
