@@ -22,7 +22,8 @@
 //   fog=60[,200]   ground fog depth above the field, m 0..300[, visibility inside it, m 50..1000]
 //   cb=-12,0[,11[,0.8[,3[,270,15]]]]   a cumulonimbus cell: north km, east km from the airport[, top km MSL
 //                  6..14[, intensity 0..1[, core radius km 1..5[, moving FROM deg, kt]]]]; repeat cb= for up to 4
-//                  cells; cb=none: no cells (over a wx= preset's)
+//                  cells. Without cb= the cells are derived from the conditions (physics/weather/stormField.ts);
+//                  any cb= replaces them with the listed cells, and cb=none gives no cells at all
 //   quality=low|medium|high|ultra (default high)    dpr=1.5      device-pixel-ratio cap (default 1: the 3D
 //                                                                  view renders at CSS-pixel resolution)
 //   scale=0.75     3D render scale 0.5..1 (times the capped pixel ratio; the DOM UI stays at native DPR;

@@ -78,15 +78,17 @@ describe('URL weather parameters for the optional fields', () => {
     expect(wx('?wx=fog&vis=3000').visibilityM).toBe(3000);
     expect(wx('?vis=3000&wx=fog').visibilityM).toBe(3000); // parameter order in the URL does not matter
     expect(wx('?wx=fog&fog=120').fogTopM).toBe(120);
-    expect(wx('?wx=thunderstorm').storms).toHaveLength(2);
+    // Thunderstorm has no explicit cells (derived from its conditions); the key is present and undefined.
+    expect('storms' in wx('?wx=thunderstorm')).toBe(true);
+    expect(wx('?wx=thunderstorm').storms).toBeUndefined();
     expect(wx('?wx=thunderstorm&cb=none').storms).toBe(NO_STORMS);
     expect(wx('?wx=thunderstorm&cb=0,0').storms).toHaveLength(1);
     expect(wx('?wx=nonesuch')).toEqual({});
   });
 
   it('base= over a preset keeps the preset layer depth', () => {
-    // Thunderstorm: base 1400, top 3200.
-    expect(wx('?wx=thunderstorm&base=2000')).toMatchObject({ cloudBaseM: 2000, cloudTopM: 3800 });
+    // Thunderstorm: base 900, top 2600.
+    expect(wx('?wx=thunderstorm&base=2000')).toMatchObject({ cloudBaseM: 2000, cloudTopM: 3700 });
     expect(wx('?wx=thunderstorm&base=2000&top=2500')).toMatchObject({ cloudBaseM: 2000, cloudTopM: 2500 });
   });
 
