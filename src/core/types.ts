@@ -487,6 +487,34 @@ export interface Environment {
   surface(north: number, east: number): SurfaceType;
 }
 
+/** Low cloud layer character. 'auto' keeps the cover-driven cumulus/stratocumulus mapping of render/clouds. */
+export type CloudType = 'auto' | 'stratus' | 'stratocumulus' | 'cumulus' | 'towering' | 'nimbostratus';
+/** Mid-level sheet drawn above the low layer (render/clouds, a single-intersection sheet like the cirrus). */
+export type MidCloudType = 'altostratus' | 'altocumulus';
+/** Stratiform precipitation from the low layer. */
+export type PrecipType = 'none' | 'drizzle' | 'rain' | 'snow';
+
+/**
+ * A cumulonimbus cell. Position is NED metres from the world origin at simTime 0; the cell moves at
+ * motionKt toward (motionDeg + 180) (motionDeg is where it comes FROM, like the wind). Cells are
+ * immutable: writers replace the `storms` array, never edit a cell in place (saved copies are shallow).
+ */
+export interface StormCell {
+  northM: number;
+  eastM: number;
+  /** Updraft core radius, m (1000..5000). */
+  radiusM: number;
+  /** Anvil top, m MSL (6000..14000). The base is the weather's cloudBaseM. */
+  topM: number;
+  /** 0..1: scales updraft, downdraft, outflow, turbulence, rain shaft and flash rate. */
+  intensity: number;
+  /** Direction the cell moves FROM, degrees true, and its speed, kt. */
+  motionDeg: number;
+  motionKt: number;
+  /** false: no lightning from this cell (default true). */
+  lightning?: boolean;
+}
+
 /** User-adjustable weather and time. Shared by physics (wind, density) and rendering (sky, clouds, haze). */
 export interface WeatherSettings {
   /** Direction the wind blows FROM, degrees true. */
@@ -513,6 +541,26 @@ export interface WeatherSettings {
    * 0.1, when absent).
    */
   cirrusCover?: number;
+  // The optional fields below are read only through the accessors in core/weatherFields.ts, which clamp them and
+  // treat absent, non-finite and unknown values as absent. Absent, every module behaves as before they existed.
+  /** Low layer character (optional; absent = 'auto', today's cover-driven look). Read through cloudTypeOf(). */
+  cloudType?: CloudType;
+  /** Mid-level sheet cover 0..1 (optional; absent or 0 = no sheet). */
+  midCover?: number;
+  /** Mid-level sheet kind (optional; absent = 'altostratus'). */
+  midType?: MidCloudType;
+  /** Mid-level sheet altitude, m MSL (optional; absent = max(4500, cloudTopM + 1000)). */
+  midAltM?: number;
+  /** Stratiform precipitation from the low layer (optional; absent = 'none'). */
+  precipType?: PrecipType;
+  /** Precipitation rate, mm/h liquid-water equivalent, 0..50 (optional; absent = 0). */
+  precipRateMmH?: number;
+  /** Ground fog layer depth above the field elevation (AIRPORT.elevation), m, 0..300 (optional; absent or 0 = none). */
+  fogTopM?: number;
+  /** Visibility inside the fog layer, m, 50..1000 (optional; absent = 200). visibilityM stays the prevailing visibility. */
+  fogVisibilityM?: number;
+  /** Cumulonimbus cells, at most 4 (optional; absent = none). Replace the array to change it. */
+  storms?: readonly StormCell[];
 }
 
 // ---------------------------------------------------------------------------------------------- initial conditions

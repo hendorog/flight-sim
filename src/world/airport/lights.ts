@@ -16,7 +16,10 @@
 //   - the core sprite is pulled toward the camera far enough to clear the ground plane in front of the lamp, so a
 //     low lamp seen at a grazing angle is not cut in half by the ground it stands on.
 //   - a veiling-glare halo L = GLARE * E / theta^2 (theta in degrees; Stiles-Holladay form) around it, sized from
-//     an estimate of the post chain's exposure so it is only as wide as it is visible.
+//     an estimate of the post chain's exposure so it is only as wide as it is visible;
+//   - in ground fog (uFog, render/weather/fogGlsl.ts) a forward-scatter aureole: the halo gains
+//     FOG_AUREOLE * (1 - e^-tau) * E on the display and widens by (1 + tau), tau the fog's optical depth from
+//     lamp to camera.
 // Auto exposure, bloom and aerial perspective in the post chain do the rest.
 //
 // Directional behaviour is evaluated per vertex against the camera position:
@@ -33,6 +36,7 @@ import * as THREE from 'three';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import { AIRPORT } from '../../core/world';
 import { nedToThree } from '../../core/frames';
+import { FOG_GLSL } from '../../render/weather/fogGlsl';
 import { BEACON, BUILDINGS, FLOODLIGHTS, localToNed, PAPIS, PAVED_RECTS, pavedSD, RUNWAY_HALF_LENGTH, RUNWAY_HALF_WIDTH, TOWER } from './layout';
 import type { SharedUniforms } from './shared';
 
@@ -154,6 +158,13 @@ const GLARE = 1.5;
 const MAX_HALO_DEG = 1.5;
 /** Displayed value at which the halo is cut off. */
 const HALO_CUTOFF = 0.008;
+/**
+ * Fog aureole: halo coefficient added per unit of scattered fraction (1 - e^-tau) of the lamp's light, in the units
+ * of GLARE (unconfirmed tuning value, not a measured forward-scatter phase function).
+ */
+const FOG_AUREOLE = 4;
+/** Largest halo radius in fog, degrees (the clear-air MAX_HALO_DEG grows by 1 + tau up to this). */
+const FOG_MAX_HALO_DEG = 6;
 
 const f = (x: number): string => x.toExponential(6);
 
@@ -176,6 +187,7 @@ uniform float uExposure;
 uniform float uDayStep;
 uniform vec2 uHaze;       // sea-level haze extinction (1/m), its scale height (m)
 uniform vec3 uRunwayDir;  // world direction of +u
+${FOG_GLSL}
 varying vec3 vCore;
 varying vec3 vHalo;
 varying vec4 vShape;      // sprite radius px, 1 / core sigma^2 (px^-2), degrees per px, core radius^2 (deg^2)
@@ -263,12 +275,18 @@ void main() {
   float y0 = min(position.y, cameraPosition.y), dy = abs(cameraPosition.y - position.y);
   float Hs = max(uHaze.y, 1.0);
   float hazeTau = uHaze.x * exp(-y0 / Hs) * dist * (dy > 1.0 ? Hs / dy * (1.0 - exp(-dy / Hs)) : 1.0);
-  float hueLimit = ${f(CLAMP_OVER_CAP)} * mix(1.0, ${f(NIGHT_CLAMP_GAIN)}, uNight) * cap / max(uExposure, 1e-12) * exp(min(hazeTau, 6.0));
+  // The ground fog (FogEffect in the post chain) attenuates the core the same way.
+  float fogTau = fogOpticalDepth(position, cameraPosition);
+  float hueLimit = ${f(CLAMP_OVER_CAP)} * mix(1.0, ${f(NIGHT_CLAMP_GAIN)}, uNight) * cap / max(uExposure, 1e-12) * exp(min(hazeTau + fogTau, 6.0));
   peak = mix(peak, min(peak, hueLimit), colored);
   vCore = min(col * peak, vec3(3.0e4));
-  // Glare halo, only as wide as it is visible at the current exposure.
-  float haloK = ${f(GLARE)} * E;
-  float haloDeg = min(sqrt(haloK * uExposure / ${f(HALO_CUTOFF)}), ${f(MAX_HALO_DEG)});
+  // Glare halo, only as wide as it is visible at the current exposure; in fog, plus the forward-scatter aureole.
+  // FogEffect attenuates the halo by e^-fogTau as well; the aureole is light the fog scatters toward the eye, so
+  // its attenuation is divided out as for the core, and the radius is sized from the value that reaches the display.
+  float aureole = ${f(FOG_AUREOLE)} * (1.0 - exp(-fogTau));
+  float haloK = (${f(GLARE)} + aureole * exp(min(fogTau, 6.0))) * E;
+  float haloKDisp = (${f(GLARE)} * exp(-fogTau) + aureole) * E;
+  float haloDeg = min(min(sqrt(haloKDisp * uExposure / ${f(HALO_CUTOFF)}), ${f(MAX_HALO_DEG)}) * (1.0 + fogTau), ${f(FOG_MAX_HALO_DEG)});
   vHalo = col * haloK;
   float coreDeg = max(sigma * degPerPx, 0.06);
 #ifdef HALO_PASS
@@ -336,6 +354,8 @@ export interface LightsUniforms {
   uDayStep: THREE.IUniform<number>;
   /** Haze: sea-level extinction (1/m) and scale height (m), from ctx.sky. */
   uHaze: THREE.IUniform<THREE.Vector2>;
+  /** Ground fog: extinction (1/m), ramp start and top (m MSL), 1 = present (render/weather/fogGlsl.ts). */
+  uFog: THREE.IUniform<THREE.Vector4>;
 }
 
 const luminance = (c: THREE.Color): number => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
@@ -368,7 +388,7 @@ export function createLightPoints(specs: LightSpec[], shared: SharedUniforms): {
   g.computeBoundingSphere();
 
   const dir = localToWorld(1, 0, 0).sub(localToWorld(0, 0, 0)).normalize();
-  const uniforms: LightsUniforms = { uViewportH: { value: 900 }, uMinPx: { value: 2.5 }, uMaxPx: { value: 160 }, uIntensity: { value: 1 }, uExposure: { value: 1 }, uDayStep: { value: 1 }, uHaze: { value: new THREE.Vector2(0, 1200) } };
+  const uniforms: LightsUniforms = { uViewportH: { value: 900 }, uMinPx: { value: 2.5 }, uMaxPx: { value: 160 }, uIntensity: { value: 1 }, uExposure: { value: 1 }, uDayStep: { value: 1 }, uHaze: { value: new THREE.Vector2(0, 1200) }, uFog: { value: new THREE.Vector4() } };
   const allUniforms = { uNight: shared.uNight, uTime: shared.uTime, uRunwayDir: { value: dir }, ...uniforms };
   const material = (halo: boolean) =>
     new THREE.ShaderMaterial({

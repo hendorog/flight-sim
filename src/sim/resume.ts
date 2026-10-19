@@ -42,6 +42,7 @@ import { SCENARIO_IDS } from './scenarios';
 import type { StartSpec } from './starts';
 import { ERA_SCENARIO_IDS } from './eraChoice';
 import { isEraId } from '../world/era/registry';
+import { sanitizeExtras } from '../core/weatherFields';
 import type { EraId } from '../world/era/types';
 
 /**
@@ -303,6 +304,10 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   for (const k of ['windDirectionDeg', 'windSpeedKt', 'gustKt', 'turbulence', 'isaDeviation', 'qnhHpa', 'cloudCover', 'cloudBaseM', 'cloudTopM', 'visibilityM', 'timeOfDay', 'dayOfYear']) {
     if (!isNum(w[k])) return null;
   }
+  // The optional weather fields (core/weatherFields.ts): a malformed one is dropped, not the flight. A copy, so
+  // the caller's object is not edited.
+  const weather = { ...w };
+  sanitizeExtras(weather);
   if (!CAMERA_MODES.includes(v.cameraMode as CameraMode) || !QUALITIES.includes(v.quality as QualityLevel)) return null;
   if (v.renderScale !== null && !isNum(v.renderScale)) return null;
   const st = v.status;
@@ -310,7 +315,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   const af = v.autoflight;
   if (af !== null && (!isObj(af) || typeof af.phase !== 'string' || !isObj(af.settings) || !isNum(af.drift))) return null;
   // Schema 2 extras: a malformed one is dropped, not the whole flight (the flight itself is fine).
-  const out = { ...v, schema: SNAPSHOT_SCHEMA } as unknown as FlightSnapshot;
+  const out = { ...v, schema: SNAPSHOT_SCHEMA, weather } as unknown as FlightSnapshot;
   // Schema 1 and 2: a Cessna 172S, its systems in the legacy fields.
   out.aircraft ??= DEFAULT_AIRCRAFT_ID;
   out.systems ??= systemsOfLegacy(out);

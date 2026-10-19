@@ -1,11 +1,15 @@
 // The air-mass velocity field: steady boundary-layer wind + discrete gusts + Dryden continuous turbulence +
-// orographic up/down-draughts + convective thermals. Reads the live WeatherSettings object on every call,
-// and is deterministic for a given seed and settings history.
+// orographic up/down-draughts + convective thermals + cumulonimbus cells (WeatherSettings.storms, convection.ts).
+// Reads the live WeatherSettings object on every call, and is deterministic for a given seed and settings history.
+// Without storm cells (storms absent or empty) the convective branch is skipped and the arithmetic is that of the
+// field before the cells existed.
 
 import { DEG, KT, clamp, smoothstep, type Vec3 } from '../../core/math';
 import type { WeatherSettings } from '../../core/types';
+import { stormsOf } from '../../core/weatherFields';
 import { sunDirectionNED } from '../../core/world';
 import { windSpeedFactor, windVeer } from './boundaryLayer';
+import { cbSample, cbSeverity, emptyCbSample, type CbSample } from './convection';
 import { gustAt, type GustSample } from './gusts';
 import { hashU32 } from './random';
 import { SmoothedTerrain, type TerrainSample } from './terrainSampler';
@@ -61,6 +65,8 @@ export interface WindBreakdown {
   orographic: number;
   /** Thermal vertical velocity, m/s (+ up). */
   thermal: number;
+  /** Storm cells: vertical velocity (m/s, + up) and horizontal outflow (NED m/s); all 0 without cells. */
+  convective: { up: number; outN: number; outE: number };
   /** Height above the smoothed terrain used by the profiles, m. */
   heightAGL: number;
   intensity: TurbulenceIntensity;
@@ -81,12 +87,14 @@ export class WindField {
 
   private readonly ter: TerrainSample = { height: 0, slopeNorth: 0, slopeEast: 0 };
   private readonly gust: GustSample = { speed: 0, angle: 0 };
+  private readonly cb: CbSample = emptyCbSample();
   private readonly parts: WindBreakdown = {
     mean: { x: 0, y: 0, z: 0 },
     gust: { x: 0, y: 0, z: 0 },
     turbulence: { u: 0, v: 0, w: 0 },
     orographic: 0,
     thermal: 0,
+    convective: { up: 0, outN: 0, outE: 0 },
     heightAGL: 0,
     intensity: { sigmaU: 0, sigmaV: 0, sigmaW: 0, lengthU: 0, lengthV: 0, lengthW: 0 },
   };
@@ -136,10 +144,25 @@ export class WindField {
     parts.gust.x = -gs * Math.cos(from + g.angle);
     parts.gust.y = -gs * Math.sin(from + g.angle);
 
+    // Storm cells: their wind is added after the sum below, and they raise the turbulence severity near them.
+    const cells = stormsOf(w);
+    const conv = parts.convective;
+    let cb: CbSample | null = null;
+    let severity = w.turbulence;
+    if (cells.length) {
+      cb = cbSample(cells, p, t, agl, ter.height, w.cloudBaseM, this.cb);
+      if (cb.severity > severity) severity = cb.severity;
+      conv.up = cb.up;
+      conv.outN = cb.outN;
+      conv.outE = cb.outE;
+    } else {
+      conv.up = conv.outN = conv.outE = 0;
+    }
+
     // Continuous turbulence; mechanical turbulence grows with the surface wind and the terrain slope.
     const slope = Math.hypot(ter.slopeNorth, ter.slopeEast);
     const roughness = 1 + Math.min(1, SLOPE_ROUGHNESS * slope);
-    const I = milTurbulenceIntensity(agl, w.turbulence, u10 * windSpeedFactor(W20_HEIGHT) * roughness, parts.intensity);
+    const I = milTurbulenceIntensity(agl, severity, u10 * windSpeedFactor(W20_HEIGHT) * roughness, parts.intensity);
     const tb = parts.turbulence;
     this.turbulence.sample(p.x - this.driftN, p.y - this.driftE, p.z, t, I, tb);
     tb.w *= Math.min(1, agl / W_GROUND_SCALE);
@@ -155,6 +178,11 @@ export class WindField {
     out.x = parts.mean.x + parts.gust.x + tb.u * toN - tb.v * toE;
     out.y = parts.mean.y + parts.gust.y + tb.u * toE + tb.v * toN;
     out.z = -up;
+    if (cb) {
+      out.x += cb.outN;
+      out.y += cb.outE;
+      out.z -= cb.up;
+    }
     return out;
   }
 
@@ -168,6 +196,7 @@ export class WindField {
       turbulence: { ...b.turbulence },
       orographic: b.orographic,
       thermal: b.thermal,
+      convective: { ...b.convective },
       heightAGL: b.heightAGL,
       intensity: { ...b.intensity },
     };
@@ -187,6 +216,15 @@ export class WindField {
     f.cloudBaseM = w.cloudBaseM;
     f.minDepth = MIN_CONVECTIVE_DEPTH;
     return f;
+  }
+
+  /**
+   * Turbulence severity of the storm cells at a point, 0..1 (0 without cells); the field uses
+   * max(weather.turbulence, this). Read-only: it neither advects the field nor changes any state.
+   */
+  stormTurbulence(p: Vec3, t: number): number {
+    const cells = stormsOf(this.weather);
+    return cells.length ? cbSeverity(cells, p, t) : 0;
   }
 
   /** Convective layer depth zi over ground at `groundM` MSL, m (as sample() computes it). */

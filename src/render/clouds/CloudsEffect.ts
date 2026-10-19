@@ -1,7 +1,9 @@
-// Volumetric cloud post effect: ray-marched cumulus/stratocumulus layer plus a cirrus deck, composited over
-// the HDR scene with correct depth occlusion, cloud shadows on the ground, and distance haze.
+// Volumetric cloud post effect: ray-marched low layer (cumulus / stratocumulus by cover, or the cloud type of
+// WeatherSettings.cloudType), an optional mid-level sheet (altostratus / altocumulus) and a cirrus deck,
+// composited over the HDR scene with correct depth occlusion, cloud shadows on the ground, and distance haze.
 //
-// Per frame (skipped entirely, as a plain copy, when cloudCover is 0):
+// Per frame (skipped entirely, as a plain copy, when the low layer, the mid-level sheet and the cirrus are all
+// at cover 0):
 //   1. shadow map   (CloudShadowPass)   sun transmittance through the layer, 256-1024^2
 //   2. ray march    (MARCH_FRAG)        reduced resolution, blue-noise jittered start offset, MRT
 //   3. temporal     (TEMPORAL_FRAG)     reprojection with variance clipping, ping-pong history
@@ -11,10 +13,12 @@ import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import type { QualityLevel, ReprojectionLayer, SceneEffect, SimContext } from '../../core/context';
 import type { WeatherSettings } from '../../core/types';
+import { CLOUD_TYPE_PROFILES, cloudTypeOf, effectiveVisibilityM, midLayerOf, type MidLayer } from '../../core/weatherFields';
 import { Atmosphere } from '../sky/Atmosphere';
+import { DECK_CLOSE, midSheetTransmission } from '../sky/cloudSky';
 import { transmittanceToSpace } from '../sky/transmittance';
 import { createBlueNoiseTexture } from './blueNoise';
-import { CloudModel, SLICE_FRAG } from './cloudModel';
+import { CloudModel, midSheetTau, SLICE_FRAG } from './cloudModel';
 import { coverageControl, coverageParams } from './coverage';
 import { CloudShadowPass, type CloudShadowUniforms } from './cloudShadow';
 import { MARCH_FRAG } from './marchShader';
@@ -59,6 +63,8 @@ const HAZE_SCALE_HEIGHT = 1_200;
 const HAZE_CONTRAST = 3.0;
 /** Cirrus altitude, m MSL, unless the cumulus tops are higher. */
 const CIRRUS_ALTITUDE = 8_500;
+/** With a mid-level sheet, the cirrus stays at least this far above it, m. */
+const CIRRUS_ABOVE_MID = 1_500;
 /** Moonlight colour times intensity, linear HDR. Brighter than physical so night clouds stay readable. */
 const MOONLIGHT = new THREE.Color(0.55, 0.65, 0.85).multiplyScalar(0.04);
 /** Ground albedo for the bounce light under the clouds (mixed farmland / forest). */
@@ -94,6 +100,26 @@ export const DEFAULT_CIRRUS_COVER = 0.1;
 export function cirrusCover(w: WeatherSettings): number {
   const c = (w as WeatherSettings & { cirrusCover?: unknown }).cirrusCover;
   return typeof c === 'number' && Number.isFinite(c) ? THREE.MathUtils.clamp(c, 0, 1) : DEFAULT_CIRRUS_COVER;
+}
+
+const _mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
+const _midT: [number, number] = [1, 1];
+
+/**
+ * How far the haze in front of the low layer is taken as the terrain's (march uDeckHaze), 0..1: the deck's closure
+ * times the larger of the cloud type's deck weight (CLOUD_TYPE_PROFILES deckOverride x deckWeight) and the share of
+ * the visibility loss due to precipitation. Under a closed deck no sky shows around the clouds to blend toward, and
+ * the aerial-perspective volume is already lit by what the deck lets through. 0 for the 'auto' type without
+ * precipitation: the march then runs as it did before the cloud types and precipitation existed.
+ */
+export function deckHaze(w: WeatherSettings): number {
+  const profile = CLOUD_TYPE_PROFILES[cloudTypeOf(w)];
+  const deckType = profile.deckOverride * profile.deckWeight;
+  const vis = effectiveVisibilityM(w);
+  const precipShare = vis < w.visibilityM ? 1 - vis / w.visibilityM : 0;
+  const weight = Math.max(deckType, precipShare);
+  if (weight <= 0) return 0;
+  return THREE.MathUtils.smoothstep(w.cloudCover, DECK_CLOSE[0], DECK_CLOSE[1]) * weight;
 }
 
 /** Radical inverse in the given base: the Halton low-discrepancy sequence used for sub-pixel jitter. */
@@ -231,6 +257,7 @@ export class CloudsEffect implements SceneEffect {
       uGroundRadiance: { value: this.groundRadiance },
       uHazeColor: { value: new THREE.Color() },
       uHaze: { value: this.haze },
+      uDeckHaze: { value: 0 },
       // Step settings are filled in from QUALITY by resizeTargets().
       uMaxSteps: { value: 0 },
       uLightSteps: { value: 0 },
@@ -294,7 +321,7 @@ export class CloudsEffect implements SceneEffect {
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = false;
 
-    if ((ctx.weather.cloudCover <= 0 && cirrusCover(ctx.weather) <= 0) || !this.noise) {
+    if ((ctx.weather.cloudCover <= 0 && cirrusCover(ctx.weather) <= 0 && midLayerOf(ctx.weather, _mid).cover <= 0) || !this.noise) {
       this.historyValid = false;
       this.layer = null;
       this.shadow.uniforms.cloudShadowLight.value.w = 0;
@@ -308,10 +335,12 @@ export class CloudsEffect implements SceneEffect {
       this.syncAerial();
 
       const layer = this.model.uniforms.uLayer.value;
-      // No cumulus (cirrus only): the shadow map is not needed, and a zero strength switches it off.
+      this.updateMidShadow();
+      // No cumulus (cirrus only, or a mid-level sheet the map does not carry): the shadow map is not needed, and
+      // a zero strength switches it off.
       // The shadow map (40 km, ~80 m texels) changes slowly: it is re-rendered every other frame, and at once
       // after a jump of the camera.
-      if (layer.w > 0) this.shadow.render(renderer, this.camPos, this.lightDir, layer.x, this.shadowStrength(ctx), this.frame % 2 === 0 || !this.historyValid);
+      if (layer.w > 0 || this.shadow.midTransmission < 1) this.shadow.render(renderer, this.camPos, this.lightDir, layer.x, this.shadowStrength(ctx), this.frame % 2 === 0 || !this.historyValid);
       else this.shadow.uniforms.cloudShadowLight.value.w = 0;
 
       const m = this.marchMat.uniforms;
@@ -398,6 +427,9 @@ export class CloudsEffect implements SceneEffect {
     const u = this.model.uniforms;
     const saved = u.uCoverage.value.clone();
     const savedCover = u.uLayer.value.w;
+    // The ground fraction under the low layer alone: no mid-level sheet in the map.
+    const savedMid = this.shadow.midTransmission;
+    this.shadow.midTransmission = 1;
     const out: number[] = [];
     for (const [i, v] of values.entries()) {
       if (control) {
@@ -418,6 +450,7 @@ export class CloudsEffect implements SceneEffect {
     }
     u.uCoverage.value.copy(saved);
     u.uLayer.value.w = savedCover;
+    this.shadow.midTransmission = savedMid;
     rt.dispose();
     return out;
   }
@@ -432,6 +465,21 @@ export class CloudsEffect implements SceneEffect {
     this.history.forEach((h) => h.dispose());
     [this.marchMat, this.temporalMat, this.compositeMat, this.copyMat].forEach((m) => m.dispose());
     this.quad.dispose();
+  }
+
+  /**
+   * The mid-level sheet in the shadow map: its mean direct transmission toward the key light when the composite
+   * applies the map to the scene (compositeShadows), 1 otherwise. Without the composite shadows (the simulator)
+   * the scene materials take the sheet's direct-beam loss from the shadow-casting light, which SkySystem scales
+   * by CloudSky.deckDirect (render/sky/cloudSky.ts); in the map as well it would be applied twice.
+   */
+  private updateMidShadow(): void {
+    const mid = this.model.mid;
+    let t = 1;
+    if (this.compositeShadows && this.model.midAboveLayer) {
+      t = midSheetTransmission(mid.cover, midSheetTau(mid.cover, mid.type), Math.max(this.lightDir.y, 0), _midT)[0];
+    }
+    this.shadow.midTransmission = t;
   }
 
   /** Bind this frame's shared aerial-perspective volume (filled by the aerial-perspective effect before us). */
@@ -529,8 +577,13 @@ export class CloudsEffect implements SceneEffect {
     m.uSunByAltitude.value = this.useAtmosphere && sunLum >= moonLum ? 1 : 0;
     (m.uSkyColor.value as THREE.Color).copy(sky.skyColor);
     (m.uHazeColor.value as THREE.Color).copy(sky.hazeColor);
-    // Lambertian ground radiance: albedo * (direct irradiance + pi * sky radiance) / pi.
-    const direct = Math.max(this.lightDir.y, 0) / Math.PI;
+    // Lambertian ground radiance: albedo * (direct irradiance + pi * sky radiance) / pi. Under a stratiform type
+    // the direct share is what reaches the ground through the layer (Atmosphere.cloudSky.directGround): the full
+    // sunlight on the ground bounced more light onto a nimbostratus base than the 2 km of cloud above let through.
+    const profile = CLOUD_TYPE_PROFILES[cloudTypeOf(w)];
+    const deckType = profile.deckOverride * profile.deckWeight;
+    let direct = Math.max(this.lightDir.y, 0) / Math.PI;
+    if (deckType > 0) direct *= 1 - deckType * (1 - this.atmosphere.cloudSky.directGround);
     this.groundRadiance
       .copy(this.lightColor)
       .multiplyScalar(direct)
@@ -538,8 +591,11 @@ export class CloudsEffect implements SceneEffect {
       .multiply(GROUND_ALBEDO);
     // Fade distant clouds like the aerial-perspective pass fades terrain (ctx.sky haze parameters).
     if (sky.hazeExtinction > 0 && sky.hazeScaleHeight > 0) this.haze.set(sky.hazeExtinction, sky.hazeScaleHeight);
-    else this.haze.set(HAZE_CONTRAST / Math.max(w.visibilityM, 100), HAZE_SCALE_HEIGHT);
-    (m.uCirrus.value as THREE.Vector2).set(cirrusCover(w), Math.max(CIRRUS_ALTITUDE, layer.y + 2_000));
+    else this.haze.set(HAZE_CONTRAST / Math.max(effectiveVisibilityM(w), 100), HAZE_SCALE_HEIGHT);
+    m.uDeckHaze.value = deckHaze(w);
+    const mid = this.model.mid;
+    const cirrusAlt = Math.max(CIRRUS_ALTITUDE, layer.y + 2_000);
+    (m.uCirrus.value as THREE.Vector2).set(cirrusCover(w), this.model.midAboveLayer ? Math.max(cirrusAlt, mid.altM + CIRRUS_ABOVE_MID) : cirrusAlt);
   }
 
   private createMarchTarget(w: number, h: number): THREE.WebGLRenderTarget {

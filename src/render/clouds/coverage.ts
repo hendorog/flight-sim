@@ -104,6 +104,8 @@ export function coverageControl<T extends { x: number; y: number }>(x: number, o
  * top. Re-measure whenever the density model changes. The deck closes completely from x ~1.7; the rows above
  * are pinned just below 1 so that cover 1 maps to the full control (the gaps between the cells filled, no thin
  * spots), not to the first control that measures closed.
+ * Measured for cloudType 'auto' only (the cover-driven type); for the other cloud types (cloudModel.ts
+ * uCloudType) the table has not been re-measured.
  */
 export const COVER_CALIBRATION: ReadonlyArray<readonly [number, number]> = [
   [0, 0.0],

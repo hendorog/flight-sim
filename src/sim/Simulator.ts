@@ -61,9 +61,12 @@ import { AirportSystem, TOWER } from '../world/airport';
 import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
+import { restoreWeather } from './weatherPresets';
+import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
 import { era, isPresent, setEra } from '../world/era/eraState';
 import { createEraEffects } from '../render/post/eraEffects';
+import { createWeatherEffects, createWeatherOverlays } from '../render/weather';
 import { bootCameraMode, cameraModeAllowed, safariHeadPitch, startTimeOfDay } from './safariStart';
 import type { EraId } from '../world/era/types';
 import { createFaunaSystem, type FaunaSystem } from '../world/fauna/FaunaSystem';
@@ -72,7 +75,7 @@ import { advanceTimeOfDay } from './clock';
 import { showContextLost, showCurtain, type Curtain } from './overlays';
 import { isFixedPanel, type PanelView } from '../instruments/fixedPanel';
 import { AirframeVisibility } from '../render/aircraft/visibility';
-import { parseParams, type SimParams } from './params';
+import { MIN_LAYER_DEPTH_M, parseParams, type SimParams } from './params';
 import {
   browserStore,
   clearSnapshot,
@@ -236,7 +239,9 @@ export class Simulator {
     setEra(chooseEra(this.params, this.store).id);
     this.weather = applyEraWeather(defaultWeather(), era().weather);
     const w = this.params.weather;
-    if (w.cloudBaseM !== undefined) w.cloudTopM ??= w.cloudBaseM + (this.weather.cloudTopM - this.weather.cloudBaseM);
+    deriveCloudTop(w, this.weather);
+    // top= without a base: at least the era or default base plus the minimum layer depth.
+    if (w.cloudTopM !== undefined && w.cloudBaseM === undefined) w.cloudTopM = Math.max(w.cloudTopM, this.weather.cloudBaseM + MIN_LAYER_DEPTH_M);
     Object.assign(this.weather, w);
   }
 
@@ -293,7 +298,7 @@ export class Simulator {
     const startTod = startTimeOfDay({ scenario: startId, urlTod: p.weather.timeOfDay !== undefined, resumed: false });
     if (startTod !== null) this.weather.timeOfDay = startTod;
     const weatherBefore = { ...this.weather };
-    if (decision.kind === 'resume') Object.assign(this.weather, decision.snapshot.weather);
+    if (decision.kind === 'resume') restoreWeather(this.weather, decision.snapshot.weather);
     const physics = new SimPhysics({ weather: this.weather, events, aircraft: def });
     const carbIcing = loadCarbIcing(this.store);
     physics.carbIcing = carbIcing;
@@ -309,7 +314,7 @@ export class Simulator {
         resumed = decision;
       } catch (e) {
         console.warn('[sim] could not resume the last flight; starting the scenario', e);
-        Object.assign(this.weather, weatherBefore);
+        restoreWeather(this.weather, weatherBefore);
         this.bootDecision = { kind: 'normal', reason: 'restore failed' };
       }
     }
@@ -391,6 +396,7 @@ export class Simulator {
       carbIcing,
       era: era().id,
       moonScale: chooseMoonScale(p, this.store),
+      weatherFx: { flash: { x: 0, y: 0, z: 0, energy: 0 } },
     };
     this.ctx = ctx;
     this.applySize();
@@ -594,6 +600,12 @@ export class Simulator {
     // occludes them. Nothing is called in the present day.
     if (!isPresent()) for (const effect of createEraEffects({ ctx, renderer, scene, camera, weather: this.weather })) post.addEffect(effect);
     post.addEffect(clouds);
+    // The weather's own effects (render/weather): storm cells and ground fog after the clouds, precipitation and
+    // lightning after the temporal pass. Each effect is created whether or not its weather field is set, and copies
+    // its input while the field is absent.
+    const wx = { ctx, renderer, clouds, post, weather: this.weather };
+    for (const e of createWeatherEffects(wx)) post.addEffect(e);
+    for (const o of createWeatherOverlays(wx)) post.addOverlay(o);
     this.post = post;
     post.setAircraftRadius(def.geometry.bounds.radius);
     post.setCabinBox(presentation.visual.cockpit.box);
@@ -671,8 +683,8 @@ export class Simulator {
    * scene (all visible objects, not just those in the frustum) with an HDR render target bound, as the post
    * pipeline renders it (the program key depends on the output colour space), then one real frame through
    * the post chain for the shadow-depth and full-screen programs (the exterior one without frustum culling,
-   * so every caster reaches the shadow cascades). Finally every program is linked now
-   * (three otherwise finishes the link at first use, in the middle of a frame).
+   * so every caster reaches the shadow cascades; every post effect rendered, active or not). Finally every
+   * program is linked now (three otherwise finishes the link at first use, in the middle of a frame).
    */
   private warmUpShaders(): void {
     const { ctx, systems: s } = this;
@@ -711,7 +723,7 @@ export class Simulator {
           });
         }
         try {
-          this.post.render(ctx, 0);
+          this.post.render(ctx, 0, true);
         } finally {
           for (const o of unculled) o.frustumCulled = true;
         }
@@ -775,7 +787,7 @@ export class Simulator {
     this.training?.end();
     const work = (): void => {
       this.clearDemo();
-      Object.assign(this.weather, demoWeather());
+      restoreWeather(this.weather, demoWeather());
       const sc = demoScenario(id, this.physics.env);
       this.physics.resetTo(sc, this.weather);
       this.demo = new R22Flight(id, this.physics.state, this.ctx.controls);
@@ -872,7 +884,7 @@ export class Simulator {
   /** A lesson checkpoint restore ("try again from the start of this phase"), behind the curtain. */
   private async restoreFlightBehindCurtain(snap: FlightSnapshot, opts: { lessonId: string; label: string }): Promise<void> {
     await this.curtained(opts.label, () => {
-      Object.assign(this.weather, snap.weather);
+      restoreWeather(this.weather, snap.weather);
       this.physics.restore(snap);
       this.ctx.simTime = this.physics.time;
       this.ctx.events.emit('reset', { scenario: snap.scenario, lessonId: opts.lessonId });
@@ -1251,7 +1263,7 @@ export class Simulator {
     this.demoUi?.update(physics.state, ctx.controls, s.ui.menuOpen || !!this.schoolHold);
     this.run('audio', s.audio, subsystemDt);
     try {
-      this.cloudShadows.update(ctx.scene);
+      this.cloudShadows.update(ctx.scene, ctx.weather);
       // A floodlit apron: the eye adapts to the lamps, not to the moonlit landscape (0 by day / aloft).
       this.post.artificialIlluminance = s.airport.artificialIlluminance(ctx.camera.position) * SCENE_UNITS_PER_LUX;
       this.post.render(ctx, subsystemDt);
@@ -1480,7 +1492,10 @@ export class Simulator {
         sim.setFixedCamera(pos, look);
       },
       setWeather(w: Partial<WeatherSettings>) {
-        Object.assign(sim.weather, w);
+        // A base without a top keeps the layer depth, as the URL's base= and the era presets do.
+        const values = { ...w };
+        deriveCloudTop(values, sim.weather);
+        Object.assign(sim.weather, values);
         sim.ctx.events.emit('weatherChanged', {});
       },
       /** Resume on reload: what boot did, and save / read / clear the stored snapshot. */

@@ -404,3 +404,50 @@ describe('reset', () => {
   });
 });
 
+
+describe('storm cells absent', () => {
+  // Pre-change capture: WIND_NO_STORMS_HASH is the FNV-1a hash of the float64 bits of env.wind() at 2000 points
+  // (three weathers, sloped terrain, thermals, gusts and turbulence on), taken from the WindField of commit c0f8711,
+  // before the convective term existed. With `storms` absent, or present and empty, the field must reproduce it.
+  const WIND_NO_STORMS_HASH = 'e21787aa';
+  const terrain: TerrainProvider = {
+    height: (n, e) => ELEV + 80 * Math.sin(n / 700) * Math.cos(e / 900),
+    normal: () => ({ x: 0, y: 0, z: -1 }),
+    surface: () => 'grass',
+  };
+  const weathers = (): WeatherSettings[] => [
+    { ...defaultWeather(), windSpeedKt: 12, gustKt: 20, turbulence: 0.5, timeOfDay: 13 },
+    { ...defaultWeather(), windSpeedKt: 4, gustKt: 0, turbulence: 0, timeOfDay: 13.5, dayOfYear: 180, cloudCover: 0.4, cloudBaseM: 1800 },
+    defaultWeather(),
+  ];
+
+  function windHash(extra: Partial<WeatherSettings>): string {
+    const bits = new Float64Array(3);
+    const bytes = new Uint8Array(bits.buffer);
+    let h = 0x811c9dc5;
+    let s = 12345;
+    const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+    for (const base of weathers()) {
+      const env = createEnvironment({ weather: { ...base, ...extra }, terrain, seed: 5 });
+      for (let i = 0; i < 667; i++) {
+        const n = (rnd() - 0.5) * 20000;
+        const e = (rnd() - 0.5) * 20000;
+        const p = { x: n, y: e, z: -(terrain.height(n, e) + 1 + 3000 * rnd() * rnd()) };
+        const v = env.wind(p, i * 0.37);
+        bits[0] = v.x;
+        bits[1] = v.y;
+        bits[2] = v.z;
+        for (let k = 0; k < 24; k++) h = Math.imul(h ^ bytes[k], 0x01000193) >>> 0;
+      }
+    }
+    return h.toString(16).padStart(8, '0');
+  }
+
+  test('the wind equals the pre-change field at 2000 points, with storms absent or empty', () => {
+    const absent = windHash({});
+    const empty = windHash({ storms: [] });
+    report('wind without storms', { hash: absent, hashEmptyList: empty });
+    expect(absent).toBe(WIND_NO_STORMS_HASH);
+    expect(empty).toBe(WIND_NO_STORMS_HASH);
+  });
+});

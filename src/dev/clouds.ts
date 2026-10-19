@@ -6,6 +6,9 @@
 //   wind=100,6         wind from degrees, knots
 //   vis=60000          visibility, m
 //   cirrus=0.1         cirrus cover 0..1 (independent of the cumulus cover)
+//   ctype=auto         low-layer cloud type: auto, stratus, stratocumulus, cumulus, towering, nimbostratus
+//   mid=as,0.8[,5000]  mid-level sheet: as (altostratus) or ac (altocumulus), cover 0..1, altitude m MSL
+//                      (default max(4500, top + 1000))
 //   exp=1              exposure multiplier before tone mapping
 //   time=0             simulation time to start from, s (sets the evolution phase; wind drift integrates dt)
 //   fly=60             move the camera forward at this speed, m/s (tests temporal reprojection)
@@ -24,6 +27,7 @@ import { CloudsEffect } from '../render/clouds';
 import { COVER_CALIBRATION } from '../render/clouds/coverage';
 import { createDevScene, DevPipeline } from './cloudsDevScene';
 import type { QualityLevel } from '../core/context';
+import type { CloudType } from '../core/types';
 import { FullscreenPass } from '../render/post/FullscreenPass';
 import { TemporalAA } from '../render/post/TemporalAA';
 
@@ -133,6 +137,14 @@ void runHarness({
     w.visibilityM = num('vis', w.visibilityM);
     // Cirrus cover (optional weather field read by CloudsEffect; absent = DEFAULT_CIRRUS_COVER).
     if (params.has('cirrus')) (w as typeof w & { cirrusCover?: number }).cirrusCover = num('cirrus', 0);
+    // Cloud type and mid-level sheet (optional weather fields; core/weatherFields clamps and defaults them).
+    if (params.has('ctype')) w.cloudType = params.get('ctype') as CloudType;
+    const mid = (params.get('mid') ?? '').split(',');
+    if (mid.length >= 2) {
+      w.midType = mid[0] === 'ac' ? 'altocumulus' : 'altostratus';
+      w.midCover = Number(mid[1]);
+      if (mid.length >= 3) w.midAltM = Number(mid[2]);
+    }
     const wind = (params.get('wind') ?? '').split(',').map(Number);
     if (wind.length === 2 && wind.every((v) => !Number.isNaN(v))) [w.windDirectionDeg, w.windSpeedKt] = wind;
     ctx.quality = (params.get('q') as QualityLevel) ?? 'high';

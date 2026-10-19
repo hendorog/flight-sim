@@ -17,6 +17,7 @@ import {
   loadSnapshot,
   parseSnapshot,
   saveSnapshot,
+  validateSnapshot,
   type FlightSnapshot,
   type KeyValueStore,
 } from '../../src/sim/resume';
@@ -232,6 +233,50 @@ describe('resume decision and storage', () => {
     expect(saveSnapshot(mem, base())).toBe(true);
     expect(map.get(SNAPSHOT_KEY)!.length).toBeLessThan(6000);
     expect(loadSnapshot(mem)?.scenario).toBe('cruise');
+  });
+});
+
+describe('resume snapshot: the optional weather fields (core/weatherFields.ts)', () => {
+  const cell = { northM: 0, eastM: -12_000, radiusM: 3000, topM: 11_000, intensity: 0.8, motionDeg: 270, motionKt: 15 };
+  const extras: Partial<WeatherSettings> = {
+    cloudType: 'nimbostratus', midCover: 0.9, midType: 'altostratus', midAltM: 4500, precipType: 'rain', precipRateMmH: 4,
+    fogTopM: 60, fogVisibilityM: 200, storms: [cell],
+  };
+
+  it('round-trips the fields through JSON and keeps them on the restored weather', () => {
+    const back = parseSnapshot(JSON.stringify(snap(fly('cruise', 2, extras))));
+    expect(back).not.toBeNull();
+    for (const [k, v] of Object.entries(extras)) expect(back!.weather[k as keyof WeatherSettings]).toEqual(v);
+    const live = { ...defaultWeather() };
+    Object.assign(live, back!.weather);
+    expect(live.storms).toEqual([cell]);
+  });
+
+  it('a schema-3 snapshot without the fields resumes with the weather it had', () => {
+    const s = snap(fly('cruise', 2));
+    expect(s.schema).toBe(3);
+    const back = parseSnapshot(JSON.stringify(s));
+    expect(back).not.toBeNull();
+    expect(back!.weather).toEqual(s.weather);
+    for (const k of ['cloudType', 'midCover', 'precipType', 'fogTopM', 'storms']) expect(k in back!.weather).toBe(false);
+  });
+
+  it('drops a malformed field and keeps the flight', () => {
+    const s = JSON.parse(JSON.stringify(snap(fly('cruise', 2, extras))));
+    s.weather.storms = [{ ...cell, radiusM: 'big' }];
+    s.weather.precipType = 'hail';
+    s.weather.fogTopM = null;
+    const back = parseSnapshot(JSON.stringify(s));
+    expect(back).not.toBeNull();
+    expect('storms' in back!.weather).toBe(false);
+    expect('precipType' in back!.weather).toBe(false);
+    expect('fogTopM' in back!.weather).toBe(false);
+    expect(back!.weather.cloudType).toBe('nimbostratus');
+    expect(back!.weather.precipRateMmH).toBe(4);
+    // validateSnapshot works on a copy of the weather: the object it is given keeps its keys.
+    expect(validateSnapshot(s)).not.toBeNull();
+    expect(s.weather.storms).toHaveLength(1);
+    expect(s.weather.precipType).toBe('hail');
   });
 });
 

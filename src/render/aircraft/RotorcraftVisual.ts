@@ -90,7 +90,7 @@ export class RotorcraftVisual {
         THREE.MathUtils.lerp(d.tail.minPitch, d.tail.maxPitch, (1 - c.rudder * d.rotation) / 2), -v.tail.precone);
     }
     if (ctx.quality !== this.quality) { this.quality = ctx.quality; this.lights.setPointLights(ctx.quality !== 'low'); }
-    this.lights.update(ctx.simTime, ctx.state, c, this.root, ctx.camera, ctx.renderer, ctx.sky);
+    this.lights.update(ctx.simTime, ctx.state, c, this.root, ctx.camera, ctx.renderer, ctx.sky, ctx.weather);
     this.materials.setSun(ctx.sky.sunDir, ctx.sky.sunColor);
     this.root.updateWorldMatrix(true, false); ctx.camera.getWorldPosition(this.camLocal); this.root.worldToLocal(this.camLocal);
     const inside = ctx.cameraMode === 'cockpit';

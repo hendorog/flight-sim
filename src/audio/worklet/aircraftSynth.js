@@ -33,7 +33,10 @@
 //
 // The voices added with the turbine types read the parameters appended at the very end of the block
 // (params.ts EXTRA_PARAMS) and draw from noise sources of their own; a profile without them builds none of them
-// and smooths none of those parameters, so every other type plays sample for sample as before.
+// and smooths none of those parameters, so every other type plays sample for sample as before. The precipitation
+// voice (airframe stem, every type) reads the last of them, 'rain': the appended parameters are smoothed from the
+// first block in which it is non-zero, and the voice draws only from sources of its own, so without precipitation
+// every type plays sample for sample as before.
 //
 // Every parameter is smoothed per sample (one-pole, ~30 ms) so frame-rate parameter updates never zipper,
 // and every transient has an attack ramp so nothing clicks.
@@ -106,6 +109,16 @@ class SVF {
 }
 
 const expCoef = (tau) => Math.exp(-1 / (tau * SR));
+
+// Precipitation voice (AircraftSynth.rainSound). Unconfirmed: tuning values set by ear, not measured: impacts a
+// second at full level, the centres of the tick, thud and hiss bands, Hz, and their gains.
+const RAIN_IMPACTS_PER_S = 1500;
+const RAIN_TICK_HZ = 2600;
+const RAIN_THUD_HZ = 700;
+const RAIN_HISS_HZ = 5200;
+const RAIN_TICK_GAIN = 2.0;
+const RAIN_THUD_GAIN = 1.0;
+const RAIN_HISS_GAIN = 0.18;
 /** Standard normal-ish sample (sum of uniforms). */
 const gauss = (n) => (n.next() + n.next() + n.next()) * 0.577;
 
@@ -749,6 +762,17 @@ class AircraftSynth extends AudioWorkletProcessor {
     // The landing-gear sounds draw from sources of their own: the sequences above are those of an aircraft without them.
     this.gearNoise = new Noise(0x51ed270b);
     this.gearPink = new Pink(4242);
+    // Precipitation on the airframe, likewise: drawn from only while the 'rain' parameter is on. `rainHeard`: it has
+    // been non-zero, so the appended parameters are smoothed (configure, onMessage).
+    this.rainHeard = false;
+    this.rainNoise = new Noise(0x3c6ef372);
+    this.rainPink = new Pink(9091);
+    this.rainTickF = new SVF();
+    this.rainTickF.set(RAIN_TICK_HZ, 1.3);
+    this.rainThudF = new SVF();
+    this.rainThudF.set(RAIN_THUD_HZ, 0.9);
+    this.rainHissF = new SVF();
+    this.rainHissF.set(RAIN_HISS_HZ, 0.7);
 
     // Engine and propeller voices, and what else the profile sets.
     this.configure(DEFAULT_PROFILE);
@@ -856,7 +880,7 @@ class AircraftSynth extends AudioWorkletProcessor {
     if (engines.length > 1) this.paramsUsed = ENGINE_P[engines.length - 1].turbo + 1;
     // The appended parameters (params.ts EXTRA_PARAMS) sit at the end of the block: read only by a profile that uses one.
     const extras = this.tail || this.hasWarnings || engines.some((e) => e.prop.reverse || (e.engine.turbine && e.engine.turbine.ignitor));
-    if (extras) this.paramsUsed = PARAM_COUNT;
+    if (extras || this.rainHeard) this.paramsUsed = PARAM_COUNT;
     // Stall warning: pitch at the threshold and its rise to full strength, Hz. An electric warner is a steady
     // tone at the first.
     this.hornBase = profile.stallWarner.baseHz;
@@ -873,6 +897,11 @@ class AircraftSynth extends AudioWorkletProcessor {
   onMessage(d) {
     if (d instanceof Float32Array) {
       this.target.set(d.subarray(0, PARAM_COUNT));
+      // The first precipitation: smooth the appended parameters from now on (its own included).
+      if (!this.rainHeard && this.target[P.rain] > 0) {
+        this.rainHeard = true;
+        this.paramsUsed = PARAM_COUNT;
+      }
       if (!this.primed) {
         this.value.set(this.target);
         this.primed = true;
@@ -1092,7 +1121,25 @@ class AircraftSynth extends AudioWorkletProcessor {
 
     if (this.crash) out += this.crashSound(this.crash);
 
+    const rain = v[P.rain];
+    if (rain > 1e-4) out += this.rainSound(rain);
+
     return out;
+  }
+
+  /**
+   * Precipitation on the skin and the windscreen, level `r` 0..1 (mapping.ts precipNoise): drop impacts as a random
+   * stream of single-sample impulses (RAIN_IMPACTS_PER_S x r a second, each of random strength) rung through a
+   * bright band (the tick on the skin and the glass) and a low one (the thud), and, as the impacts merge in heavy
+   * rain, a hiss growing with r squared. Draws only from its own sources.
+   */
+  rainSound(r) {
+    const nz = this.rainNoise;
+    const hit = nz.next() * 0.5 + 0.5 < (RAIN_IMPACTS_PER_S * r) / SR ? 0.4 + 0.6 * (nz.next() * 0.5 + 0.5) : 0;
+    const tick = this.rainTickF.process(hit);
+    this.rainThudF.process(hit);
+    const hiss = this.rainHissF.process(this.rainPink.next());
+    return r * (tick * RAIN_TICK_GAIN + this.rainThudF.band * RAIN_THUD_GAIN) + r * r * hiss * RAIN_HISS_GAIN;
   }
 
   crashSound(c) {

@@ -55,6 +55,7 @@ import { loadAirframeVisual as loadAirframeVisualDirect } from '../../src/aircra
 import { C172 } from '../../src/core/c172';
 import { createEventBus, type SimContext } from '../../src/core/context';
 import { DEG } from '../../src/core/math';
+import { NEUTRAL_EXTRAS } from '../../src/core/weatherFields';
 import { CG_HEIGHT_ON_GROUND, makeMockState } from '../../src/core/mockState';
 import {
   AIRCRAFT_IDS,
@@ -476,6 +477,83 @@ describe('moisture', () => {
     }
     weather.cloudBaseM = 3000;
     expect(env.moisture(AIRPORT.elevation).dewPointSpread).toBeCloseTo((3000 - AIRPORT.elevation) / 125, 12);
+  });
+});
+
+describe('moisture with the optional weather fields', () => {
+  // Pre-change capture: MOISTURE_HASH is the FNV-1a hash of moisture() (spread bits and inCloud) over a grid of
+  // altitudes, covers and bases, taken from the environment of commit c0f8711, before the fog, precipitation,
+  // storm and mid-layer branches existed. With the fields absent, or at NEUTRAL_EXTRAS, it must not change.
+  const MOISTURE_HASH = '2d0a8989';
+  function moistureHash(extra: Partial<WeatherSettings>): string {
+    const weather: WeatherSettings = { ...defaultWeather(), ...extra };
+    const env = flatEnvironment(weather);
+    const bits = new Float64Array(1);
+    const bytes = new Uint8Array(bits.buffer);
+    let h = 0x811c9dc5;
+    for (const cover of [0, 0.04, 0.2, 0.3, 0.6, 1]) {
+      for (const base of [150, 400, 1500, 3000]) {
+        Object.assign(weather, { cloudCover: cover, cloudBaseM: base, cloudTopM: base + 1100 });
+        for (let alt = -50; alt <= 6000; alt += 37) {
+          const m = env.moisture(alt);
+          bits[0] = m.dewPointSpread;
+          for (let k = 0; k < 8; k++) h = Math.imul(h ^ bytes[k], 0x01000193) >>> 0;
+          h = Math.imul(h ^ (m.inCloud ? 1 : 0), 0x01000193) >>> 0;
+        }
+      }
+    }
+    return h.toString(16).padStart(8, '0');
+  }
+
+  it('is unchanged with the optional fields absent or neutral', () => {
+    expect(moistureHash({})).toBe(MOISTURE_HASH);
+    expect(moistureHash({ ...NEUTRAL_EXTRAS })).toBe(MOISTURE_HASH);
+  });
+
+  const wet = (extra: Partial<WeatherSettings>) => {
+    const weather: WeatherSettings = { ...defaultWeather(), cloudCover: 0.5, cloudBaseM: 1500, cloudTopM: 2600, ...extra };
+    return { weather, env: flatEnvironment(weather) };
+  };
+
+  it('is in cloud inside the ground fog layer, and not above it', () => {
+    const { env } = wet({ cloudCover: 0, fogTopM: 60 });
+    expect(env.moisture(AIRPORT.elevation + 50).inCloud).toBe(true);
+    expect(env.moisture(AIRPORT.elevation + 50).dewPointSpread).toBe(0);
+    expect(env.moisture(AIRPORT.elevation + 70).inCloud).toBe(false);
+    expect(env.moisture(AIRPORT.elevation + 70).dewPointSpread).toBeGreaterThanOrEqual(12);
+  });
+
+  it('is saturated below the base in rain or drizzle, not in snow or above the layer', () => {
+    for (const precipType of ['rain', 'drizzle'] as const) {
+      const { env } = wet({ precipType, precipRateMmH: 2 });
+      const m = env.moisture(800);
+      expect(m.inCloud).toBe(false);
+      expect(m.dewPointSpread).toBe(0);
+      // Above the base, out of the (thin) layer, the spread is the dry-air value.
+      expect(wet({ precipType, precipRateMmH: 2, cloudCover: 0.2 }).env.moisture(2000).dewPointSpread).toBeCloseTo((1500 - AIRPORT.elevation) / 125 - 4.7 * (2000 - AIRPORT.elevation) / 1000, 12);
+    }
+    expect(wet({ precipType: 'snow', precipRateMmH: 2 }).env.moisture(800).dewPointSpread).toBeGreaterThan(0);
+    expect(wet({ precipType: 'rain', precipRateMmH: 0 }).env.moisture(800).dewPointSpread).toBeGreaterThan(0);
+  });
+
+  it('is in cloud inside a storm core at its position and time, and within 150 m of a mid-level sheet', () => {
+    const cell = { northM: 5000, eastM: 0, radiusM: 2000, topM: 11000, intensity: 0.8, motionDeg: 270, motionKt: 15 };
+    const { env } = wet({ cloudCover: 0.2, storms: [cell] });
+    expect(env.moisture(6000, 5000, 0, 0).inCloud).toBe(true);
+    expect(env.moisture(6000, 0, 0, 0).inCloud).toBe(false);
+    expect(env.moisture(6000).inCloud).toBe(false);
+    // An hour later the cell has moved 15 nm east (from 270 degrees).
+    expect(env.moisture(6000, 5000, 0, 3600).inCloud).toBe(false);
+    expect(env.moisture(6000, 5000, 15 * 1852, 3600).inCloud).toBe(true);
+    const mid = wet({ cloudCover: 0.2, midCover: 0.6, midAltM: 4500 });
+    expect(mid.env.moisture(4600).inCloud).toBe(true);
+    expect(mid.env.moisture(4700).inCloud).toBe(false);
+    expect(wet({ cloudCover: 0.2, midCover: 0.2, midAltM: 4500 }).env.moisture(4500).inCloud).toBe(false);
+  });
+
+  it('keeps the field-elevation rule for fog: fogTopM 0 adds nothing below the field', () => {
+    const { env } = wet({ cloudCover: 0, fogTopM: 0 });
+    expect(env.moisture(AIRPORT.elevation - 40).inCloud).toBe(false);
   });
 });
 

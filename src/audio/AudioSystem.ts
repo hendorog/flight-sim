@@ -6,6 +6,8 @@
 //
 // Flight School speech cues (setDuck, chime) live in the same AudioContext: the duck lowers the engine/air mix
 // under cabin speech; chimes (synthChime) feed the master directly, so they are never ducked.
+// Thunder (thunder.ts) is a one-shot per 'lightning' event, scheduled on the audio clock into the duck; a scenario
+// reset stops every thunder still pending or playing.
 //
 // The interior/exterior crossfade follows ctx.cameraMode ('cockpit' = interior). Web Audio may only start
 // after a user gesture, so the context is created on the first pointer/key event (or by calling start()).
@@ -13,13 +15,14 @@
 
 import * as THREE from 'three';
 import { C172S_AUDIO } from '../aircraft/c172s/audio';
-import type { SimContext, Subsystem } from '../core/context';
+import type { SimContext, SimEvents, Subsystem } from '../core/context';
 import { nedToThree } from '../core/frames';
 import { airAbsorptionCutoff, chirpAmplitude, distanceGain, gearThumpAmplitude, propagationDelay, SoundTracker } from './mapping';
 import { DEFAULT_VOLUME, LIMITER, mixFor, type BiquadSpec, type StemRoute } from './mix';
 import { STEM_COUNT } from './params';
 import type { AudioProfile } from './profile';
 import { SYNTH_PROCESSOR_NAME, SYNTH_SOURCE } from './synthSource';
+import { scheduleThunder, thunderPlan, type ScheduledThunder, type ThunderListener } from './thunder';
 
 const VOLUME_KEY = 'fs.audio.volume';
 /** Events that can carry the user activation an AudioContext needs to start or resume. */
@@ -147,6 +150,9 @@ export class AudioSystem implements Subsystem {
   private readonly toSource = new THREE.Vector3();
   private readonly right = new THREE.Vector3();
   private readonly unsubscribe: (() => void)[] = [];
+  /** Thunder scheduled or playing (pruned once over; stopped on a reset). */
+  private readonly thunders: ScheduledThunder[] = [];
+  private readonly listener: ThunderListener = { north: 0, east: 0, altM: 0, rightNorth: 0, rightEast: 1, rightUp: 0 };
 
   constructor(opts: AudioSystemOptions = {}) {
     this.profile = opts.profile ?? C172S_AUDIO;
@@ -178,7 +184,9 @@ export class AudioSystem implements Subsystem {
       ctx.events.on('reset', () => {
         this.tracker.reset(ctx.state);
         this.lastDistance = -1;
+        this.stopThunder();
       }),
+      ctx.events.on('lightning', (e) => this.thunder(e)),
     );
     // Gyros already spinning if the simulation starts with the engine running.
     this.tracker.reset(ctx.state);
@@ -268,6 +276,45 @@ export class AudioSystem implements Subsystem {
     const g = this.g;
     if (!g || g.ac.state !== 'running') return;
     synthChime(g.ac, g.master, kind, g.ac.currentTime + 0.005);
+  }
+
+  /**
+   * Schedule the thunder of a lightning strike for the current camera (thunder.ts). Silent before the first
+   * gesture and while the context is not running; nothing beyond THUNDER_MAX_DISTANCE_M.
+   */
+  thunder(e: SimEvents['lightning']): void {
+    const g = this.g;
+    if (!g || g.ac.state !== 'running') return;
+    const ctx = this.ctx;
+    const cam = ctx.camera;
+    const l = this.listener;
+    // three.js world (x east, y up, z south) to NED.
+    l.north = -cam.position.z;
+    l.east = cam.position.x;
+    l.altM = cam.position.y;
+    this.right.set(1, 0, 0).applyQuaternion(cam.quaternion);
+    l.rightNorth = -this.right.z;
+    l.rightEast = this.right.x;
+    l.rightUp = this.right.y;
+    const ground = ctx.env.groundElevation(e.north, e.east);
+    const c = ctx.env.atmosphere(0.5 * (l.altM + e.altM)).speedOfSound;
+    const plan = thunderPlan(e, l, Number.isFinite(ground) ? ground : 0, c);
+    if (!plan) return;
+    const now = g.ac.currentTime;
+    for (let i = this.thunders.length - 1; i >= 0; i--) if (this.thunders[i].endAt < now) this.thunders.splice(i, 1);
+    this.thunders.push(scheduleThunder(g.ac, g.duck, plan, now, ctx.cameraMode === 'cockpit'));
+  }
+
+  /** Stop every scheduled or playing thunder. */
+  private stopThunder(): void {
+    for (const t of this.thunders) {
+      try {
+        t.source.stop();
+      } catch {
+        // Already stopped.
+      }
+    }
+    this.thunders.length = 0;
   }
 
   /** Create and start the audio graph. Called automatically on the first user gesture. */

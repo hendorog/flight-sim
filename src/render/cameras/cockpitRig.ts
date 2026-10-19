@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { clamp, DEG, type Vec3 } from '../../core/math';
 import type { SimContext } from '../../core/context';
+import type { SimEnvironment } from '../../physics/environment';
 import { C172S_CAMERA, type CameraAircraft } from './aircraft';
 import { HeadMotion } from './headMotion';
 import { smoothing, zoomFov, type AircraftPose, type CameraPose } from './pose';
@@ -124,7 +125,9 @@ export class CockpitRig implements CameraRig {
   update(dt: number, realDt: number, ctx: SimContext, a: AircraftPose, out: CameraPose): void {
     const s = ctx.state;
     const surface = s.onGround ? ctx.env.surface(s.position.x, s.position.y) : 'runway';
-    const h = this.head.update(dt, s, ctx.weather.turbulence, surface);
+    // Storm cells raise the local turbulence the head feels (WindField.stormTurbulence; 0 without cells).
+    const storm = (ctx.env as Partial<SimEnvironment>).windField?.stormTurbulence?.(s.position, ctx.simTime) ?? 0;
+    const h = this.head.update(dt, s, storm > ctx.weather.turbulence ? storm : ctx.weather.turbulence, surface);
 
     this.applyGlance();
     // A glance turns the head more slowly than a mouse look, so the student can follow where it goes.

@@ -36,6 +36,7 @@ import type { FlightSnapshot } from '../sim/resume';
 import type { Scenario } from '../sim/scenarios';
 import type { SimPhysics } from '../sim/SimPhysics';
 import { buildStart } from '../sim/starts';
+import { reanchorStorms, restoreWeather, withoutExtras } from '../sim/weatherPresets';
 import type { UISystem } from '../ui';
 import type { CrashAction } from '../ui/overlays';
 import type { SchoolAircraft, SchoolCareer, SchoolImportPreview, SchoolVoice } from '../ui/school/models';
@@ -160,6 +161,8 @@ export class TrainingSystem implements Subsystem {
   private session: Session | null = null;
   /** The player's weather before the lesson changed it (restored when the lesson ends). */
   private playerWeather: WeatherSettings | null = null;
+  /** Simulation time when playerWeather was copied, s (its storm cells are re-anchored from it on restore). */
+  private playerWeatherTime = 0;
   private timeCap = Number.POSITIVE_INFINITY;
   private apAllowed = true;
   private hoodOn = false;
@@ -573,9 +576,14 @@ export class TrainingSystem implements Subsystem {
   }
 
   private applyWeather(w: WeatherSpec, seed: number): void {
-    this.playerWeather ??= { ...this.shell.weather };
-    const wx = buildWeather(w, this.playerWeather, mulberry32(seed));
-    Object.assign(this.shell.weather, wx);
+    if (!this.playerWeather) {
+      this.playerWeather = { ...this.shell.weather };
+      this.playerWeatherTime = this.shell.physics.time;
+    }
+    // The lesson's weather is built without the player's optional fields (fog, precipitation, storm cells), so
+    // it is the same whatever the player flew in; restoreWeather clears any the lesson does not set.
+    const wx = buildWeather(w, withoutExtras(this.playerWeather), mulberry32(seed));
+    restoreWeather(this.shell.weather, wx);
     this.ctx.events.emit('weatherChanged', {});
   }
 
@@ -669,7 +677,8 @@ export class TrainingSystem implements Subsystem {
     this.apAllowed = true;
     this.speech.cancel({ priorityAtLeast: Priority.Instruction });
     if (this.playerWeather) {
-      Object.assign(this.shell.weather, this.playerWeather);
+      restoreWeather(this.shell.weather, this.playerWeather);
+      reanchorStorms(this.shell.weather, this.playerWeatherTime, this.shell.physics.time);
       this.playerWeather = null;
       this.ctx.events.emit('weatherChanged', {});
     }

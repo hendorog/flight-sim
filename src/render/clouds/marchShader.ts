@@ -1,4 +1,5 @@
-// Low-resolution ray march of the cloud layer and the cirrus deck.
+// Low-resolution ray march of the cloud layer, the mid-level sheet (altostratus / altocumulus) and the cirrus
+// deck.
 //
 // Outputs (MRT, half float):
 //   0: rgb = in-scattered radiance (already hazed), a = transmittance
@@ -12,17 +13,21 @@
 //     from the sun
 //   - sky ambient from above, ground bounce from below and diffusely transmitted sunlight, each
 //     attenuated by a two-stream estimate of the cloud above/below the sample
+//
+// The mid-level sheet and the cirrus are single intersections with a curved altitude, no march. Both are drawn
+// only from below (camera under the sheet's altitude); a camera above the mid-level sheet does not see it.
 
 import { DEPTH_GLSL } from '../../core/shaderLib';
 import { BLUE_NOISE_SIZE } from './blueNoise';
 import { ATMOSPHERE_GLSL, SKY_SAMPLING_GLSL } from '../sky/glsl/atmosphere';
 import { AERIAL_ATLAS_GLSL } from '../post/AerialPerspectiveEffect';
-import { CLOUD_MODEL_GLSL } from './cloudModel';
+import { CLOUD_MODEL_GLSL, MID_SHEET_GLSL } from './cloudModel';
 import { CLOUD_SHADOW_GLSL } from './cloudShadow';
 
 export const MARCH_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
 ${CLOUD_MODEL_GLSL}
+${MID_SHEET_GLSL}
 ${CLOUD_SHADOW_GLSL}
 ${AERIAL_ATLAS_GLSL}
 #ifdef CLOUDS_ATMOSPHERE
@@ -55,6 +60,7 @@ uniform vec3 uGroundRadiance;
 uniform vec3 uHazeColor;
 uniform vec2 uHaze;             // sea-level extinction 1/m, scale height m
 uniform float uAerialOn;        // 1: haze from the shared aerial-perspective volume (Atmosphere.aerial), 0: exponential haze
+uniform float uDeckHaze;        // 0..1: a closed deck the haze below it treats like the terrain (CloudsEffect deckHaze)
 
 uniform int uMaxSteps;
 uniform int uLightSteps;
@@ -69,6 +75,16 @@ uniform float uDetailScale;     // 1 / (angular size of a low-res pixel at a 60 
 uniform vec2 uCirrus;           // cirrus cover 0..1, altitude m
 uniform vec2 uCirrusOffset;    // drift in the deck frame (x along the wind)
 uniform vec2 uCirrusAxis;      // upper-wind unit vector (world x, z)
+
+// Mid-level sheet texture scales (unconfirmed tuning values). Patches: the weather map's coverage channels at
+// the cirrus period (30 km), offset so they do not line up with the low layer's cells. Altostratus thickness
+// varies over AS_PERIOD, altocumulus elements are the cells of a horizontal slice of the shape volume at
+// AC_PERIOD (elements ~100-300 m across). Both periods divide the 30 km drift wrap of uMidOffset.
+const float MID_TEXEL = ${(30_000 / 1024).toFixed(3)};   // m per weather-map texel at the cirrus period
+const float AS_FREQ = ${(1 / 7_500).toExponential(6)};
+const float AS_TEXEL = ${(7_500 / 128).toFixed(3)};
+const float AC_FREQ = ${(1 / 750).toExponential(6)};
+const float AC_TEXEL = ${(750 / 128).toFixed(3)};
 
 // Diffusely transmitted sunlight reaching a sample through optical depth tau toward the light. The two-stream
 // slab result (diffuseTransmission, g = 0.85) overestimates it for a finite cloud: in a cumulus the diffusing
@@ -124,13 +140,18 @@ float hazeDepth(float dist, float y0, float y1) {
 //
 // Below the 5 % contrast threshold (the visibility distance) the remaining transmittance fades to zero, so a
 // cloud deep in fog leaves no trace at all (it otherwise kept ~3 % of its radiance, visible as faint shapes).
+//
+// Under a closed deck (uDeckHaze) no sky shows around the clouds, and the frame behind them is the clear-sky dome
+// (its sunlit horizon, and in the cockpit the windshield drawn over it): blending toward it turned the haze in front
+// of the deck's far underside orange-brown in rain, where the haze closes up within a few km. There the haze is the
+// volume's own, the value the terrain at the same distance takes.
 float fogCut(float Th) { return Th * smoothstep(0.004, 0.05, Th); }
 vec4 hazeAlong(vec2 uv, float dist, float yEnd, vec3 behind) {
   if (uAerialOn > 0.5) {
     vec4 ap = aerialPerspective(uv, dist);
     float Th = fogCut(ap.a);
     float o = 1.0 - Th;
-    return vec4(mix(ap.rgb, behind * o, o * o), Th);
+    return vec4(mix(ap.rgb, behind * o, o * o * (1.0 - uDeckHaze)), Th);
   }
   float Th = fogCut(exp(-hazeDepth(dist, uCamPos.y, yEnd)));
   return vec4(uHazeColor * (1.0 - Th), Th);
@@ -167,6 +188,8 @@ const float MS2_W = 0.2, MS2_K = 0.1;
 // lobes' self-shading; K = 0.5 with a larger weight keeps their relief. (The earlier 0.2 / (1 + 0.9 tau) left the
 // lit sides grey.)
 const float MS_ISO = 0.3, MS_ISO_K = 0.5;
+// The slab value 0.75 (1 - g), g = 0.85, used for the stratiform cloud types (deckType below).
+const float MS_ISO_K_SLAB = 0.11;
 // Deep inside a finite cloud the diffusing light leaks out through the sides instead of reaching the far side
 // (Davis & Marshak 2010): an exponential cut-off on top of the slab falloff, which keeps the shaded flanks of
 // an isolated cumulus several times darker than its sunlit side.
@@ -256,6 +279,10 @@ void main() {
   // of dark between bright thin spots.
   float deck = deckness();
   float msLeak = MS_LEAK * (1.0 - deck);
+  // A stratiform cloud type (stratus, stratocumulus, nimbostratus: CLOUD_TYPE_PROFILES deckOverride x deckWeight;
+  // 0 for 'auto', cumulus and towering). Such a deck is lit from above through its whole depth, which is several
+  // times the reach of the light march (with a high sun ~240 m on medium, ~1 km on high): see below.
+  float deckType = uCloudType.x * uCloudType.y;
 
   // Light-march step growth: six steps from 16 m cover ~1 km toward a high sun; toward a low sun the path out
   // of a cloud runs sideways through it (km), so the steps stretch to cover ~3.5 km, or the bases and far
@@ -277,6 +304,18 @@ void main() {
     skyAmb += 0.1 * skyViewRadiance(normalize(vec3(cos(a), 0.45, sin(a)))).rgb;
   }
 #endif
+  // The sky light and sunlight above the mid-level sheet (the sheet itself is lit by these).
+  vec3 skyAmbTop = skyAmb;
+  // A mid-level sheet above the layer: the layer's sunlight is the beam the sheet lets through, and the sunlight
+  // it scatters joins the sky light (spread over the upper hemisphere, as the sheet's diffuse transmission).
+  if (uMid.x > 0.0 && uMid.y > uLayer.y) {
+    float mu0 = max(uLightDir.y, 0.0);
+    vec2 tm = midTransmission(mu0);
+    vec2 ts = midTransmission(2.0 / 3.0);
+    skyAmb = skyAmb * ts.y + lightTop * (mu0 / PI) * max(tm.y - tm.x, 0.0);
+    lightBase *= tm.x;
+    lightTop *= tm.x;
+  }
   vec3 L = vec3(0.0);
   float T = 1.0;
   float frontSum = 0.0, frontW = 0.0;
@@ -450,6 +489,17 @@ void main() {
           lds *= lg;
         }
         tauL *= uExtinction;
+        // Sky light arrives through the cloud above the sample, ground bounce through the cloud below. The
+        // column above reaches this cloud's own top (lower toward its edges), so the bases darken under the
+        // thick cores and stay lighter under thin parts (mottled bases), and the lit tops get the full sky.
+        float colAbove = max(uLayer.x + wt.y / uLayer.z - p.y, 0.0);
+        // A stratiform deck: the path to the light runs through the rest of the column above the light march's
+        // reach (lt), at the mean density the march found. Without it a 2 km nimbostratus base was lit through
+        // ~240 m of cloud on medium and showed bright white-cream instead of grey.
+        if (deckType > 0.0) {
+          float colLight = colAbove / max(uLightDir.y, 0.05);
+          if (colLight > lt && lt > 0.0) tauL = mix(tauL, tauL * colLight / lt, deckType);
+        }
         float hr = relHeight(h, wt);
         // Sunlight: single scattering plus two multiple-scattering octaves (Wrenninge 2013 / Hillaire 2016:
         // each octave sees a fraction of the extinction and a flatter phase), which carry light into the
@@ -462,7 +512,7 @@ void main() {
         // ~0.8: the sunlit side shines at ~E / 4 whatever the view), falling off with the optical depth toward
         // the sun as diffusion does (two-stream).
         vec3 sun = sunL * (exp(-tauL) * phase0 + MS1_W * exp(-tauL * MS1_K) * phase1 + MS2_W * exp(-tauL * MS2_K) * phase2
-                           + MS_ISO * exp(-msLeak * tauL) / (1.0 + MS_ISO_K * tauL))
+                           + MS_ISO * exp(-msLeak * tauL) / (1.0 + mix(MS_ISO_K, MS_ISO_K_SLAB, deckType) * tauL))
                  * mix(1.0, powder, powderAmount);
         // A low sun grazes the flat base: the underside presents almost no area to the beam, which reaches it
         // only through kilometres of cloud or by diffusion from the sunlit flank. The ray-marched base is a
@@ -471,15 +521,12 @@ void main() {
         // flanks at sunset. With a high sun the light march already darkens it.
         float grazing = (1.0 - smoothstep(0.05, 0.5, hr)) * (1.0 - smoothstep(0.08, 0.4, uLightDir.y)) * smoothstep(0.4, 0.9, wt.x) * smoothstep(0.0, 1.0, tauL);
         sun *= 1.0 - 0.85 * grazing;
-        // Sky light arrives through the cloud above the sample, ground bounce through the cloud below. The
-        // column above reaches this cloud's own top (lower toward its edges), so the bases darken under the
-        // thick cores and stay lighter under thin parts (mottled bases), and the lit tops get the full sky.
-        float colAbove = max(uLayer.x + wt.y / uLayer.z - p.y, 0.0);
         // The local density sets part of the column's optical depth: denser patches of the base (under the
         // turrets) are darker, the wispy ones between them lighter, which mottles the base.
         float up = diffuseTransmission(mix(uExtinction * 0.5, sigmaT, 0.6) * colAbove);
         float down = diffuseTransmission(uExtinction * 0.6 * max(p.y - uLayer.x, 0.0));
-        vec3 ambient = AMBIENT_SKY * skyAmb * mix(up, 1.0, 0.04 + 0.26 * hr) + AMBIENT_GROUND * uGroundRadiance * down;
+        // A stratiform deck drops the 4 % floor of the sky light at the base, as a closed deck drops MS_LEAK.
+        vec3 ambient = AMBIENT_SKY * skyAmb * mix(up, 1.0, (0.04 + 0.26 * hr) * (1.0 - deckType)) + AMBIENT_GROUND * uGroundRadiance * down;
         // The base is lit by light diffusing down through the cloud above it, whose optical thickness varies
         // from turret to turret: real bases are mottled, darker under the dense cores and lighter under thin
         // parts. The coarse light march is too smooth to show it, so the lower part of each cloud takes a
@@ -522,6 +569,12 @@ void main() {
   // partly in cloud shadow (under an overcast, almost all of it), so its in-scattered sunlight is dimmed by the
   // mean shadow along the path. Beyond the shadow map (40 km) the mean shadow of the cover stands in: without
   // it the far underside of a deck fades into a bright, sunlit-haze band on the horizon.
+  //
+  // Under a closed deck (uDeckHaze) the volume's haze is already lit only by what the deck lets through
+  // (Atmosphere uAirLight, render/sky/cloudSky.ts airScale), as the terrain's is: dimming it again made the haze in
+  // front of the deck darker than the terrain's at the same distance, a dark band along the horizon in rain. The
+  // exponential fallback's uHazeColor is dimmed the same way: CloudSky.summarize takes it from radiance(), which
+  // applies airLight (airScale) to the clear horizon.
   float forward = smoothstep(0.9, 0.99, cosTheta);
   float below = 1.0 - smoothstep(uLayer.x - 200.0, uLayer.x, camY);
   if (T < 0.99 && (forward > 0.0 || below > 0.0)) {
@@ -531,9 +584,80 @@ void main() {
     sh /= 3.0;
     float farShade = 1.0 - min(uLayer.w, 1.0) * 0.9 * cloudShadowLight.w;
     sh = mix(sh, farShade, smoothstep(12000.0, 40000.0, front) * below);
-    hz.rgb *= mix(1.0, sh, max(forward, 0.8 * below));
+    hz.rgb *= mix(1.0, sh, max(forward, 0.8 * below * (1.0 - uDeckHaze)));
   }
   L = L * hz.a + hz.rgb * (1.0 - T);
+
+  // Mid-level sheet (altostratus, altocumulus) on the curved sheet altitude, behind the low layer. Patches from
+  // the coverage field (uniform 0..1) thresholded for the cover. Altostratus: a broad, smooth sheet whose
+  // thickness varies over kilometres. Altocumulus: rounded elements (shape-volume cells) inside the patches,
+  // shaded on the side away from the sun. Light: the droplet phase function on the thin parts (bright near the
+  // sun), the two-stream diffuse transmission of sunlight and sky light on the thick ones (a grey sheet).
+  if (uMid.x > 0.0 && camY < uMid.y && T > 0.01) {
+    vec2 mi = belowInterval(uMid.y, camY, dir.y, k);
+    float tm = mi.y;
+    if (tm > 0.0 && tm < min(sceneDist, uMaxDist * 1.5)) {
+      vec3 p = uCamPos + dir * tm;
+      float mu = max(dir.y + tm * 2.0 * uInvTwoR, 0.03);
+      float footprint = tm * uPixelAngle / sqrt(mu);
+      vec2 axisN = vec2(-uCirrusAxis.y, uCirrusAxis.x);
+      vec2 q = vec2(dot(p.xz, uCirrusAxis), dot(p.xz, axisN)) + uMidOffset;
+      bool ac = uMid.z > 0.5;
+      // Altostratus patches from a blurred mip: broad sheets with soft, ragged edges.
+      float wl = max(0.0, log2(footprint / MID_TEXEL)) + (ac ? 0.0 : 1.5);
+      vec2 uvm = q * CIRRUS_FREQ + vec2(0.37, 0.61);
+      float f = blendFields(textureLod(uWeatherTex, uvm, wl).r, textureLod(uWeatherTex, uvm + vec2(0.23, 0.41), wl).g, uEvolve);
+      // The threshold runs from above the field's range (cover 0) to below it (cover 1, no gaps). The area with
+      // patchy > 0.5 is then about 1.3 * cover - 0.15 of the sky, while the sky model and the lighting pre-step
+      // above take cover itself as the area fraction (unconfirmed tuning; not matched).
+      float thr = 1.15 - 1.3 * uMid.x;
+      float patchy = smoothstep(thr - 0.15, thr + 0.15, f);
+      float tau = 0.0;
+      float shade = 1.0;
+      if (patchy > 0.0) {
+        float tauMean = midTau();
+        if (ac) {
+          float el = max(0.0, log2(footprint / AC_TEXEL));
+          vec3 qa = vec3(q.x, 0.37 / AC_FREQ, q.y) * AC_FREQ;
+          float e = textureLod(uShapeTex, qa, el).r;
+          // Elements thin out toward the edges of a patch.
+          float et = mix(0.8, 0.4, patchy);
+          float elem = smoothstep(et, et + 0.3, e);
+          // The side of an element away from the sun (the cell field rises toward the sun) is shaded.
+          vec2 sxz = vec2(dot(uLightDir.xz, uCirrusAxis), dot(uLightDir.xz, axisN));
+          sxz /= max(length(sxz), 1e-4);
+          float es = textureLod(uShapeTex, qa + vec3(sxz.x, 0.0, sxz.y) * (40.0 * AC_FREQ), el).r;
+          shade = mix(clamp(1.0 - 6.0 * (es - e), 0.45, 1.4), 1.0, smoothstep(1.0, 3.0, el));
+          // Thick, grey centres and thin, bright rims (up to 6 x the patch mean, see MID_TAU_MAX). The ramp on
+          // patchy takes the elements to 0 at the patch edge, where et alone leaves them at tau ~0.8.
+          tau = elem * elem * tauMean * 6.0 * smoothstep(0.0, 0.25, patchy);
+        } else {
+          float v = textureLod(uShapeTex, vec3(q.x, 0.61 / AS_FREQ, q.y) * AS_FREQ, max(0.0, log2(footprint / AS_TEXEL))).r;
+          tau = patchy * tauMean * mix(0.35, 1.65, v);
+        }
+      }
+      if (tau > 0.0) {
+        float fade = smoothstep(-0.02, 0.04, dir.y);
+        float alpha = (1.0 - exp(-tau / mu)) * fade;
+        float mu0 = max(uLightDir.y, 0.0);
+        float direct = exp(-tau / max(mu0, 0.05));
+        float scat = max(min(1.0, (2.0 + 3.0 * mu0) / (4.0 + 0.45 * tau)) - direct, 0.0);
+        float tSky = 1.0 / (1.0 + 0.1125 * tau);
+        float thin = exp(-0.5 * tau);
+        vec3 midLight = uLightColor;
+#ifdef CLOUDS_ATMOSPHERE
+        if (uSunByAltitude > 0.5) midLight = sunAt(uMid.y);
+#endif
+        vec3 Ls = midLight * (phase0 * alpha * thin + (mu0 / PI) * scat * (1.0 - thin) * fade) * shade + skyAmbTop * alpha * tSky;
+        vec4 hm = hazeAlong(rayUv, tm, uMid.y, behind);
+        L += T * (Ls * hm.a + alpha * hm.rgb);
+        // Front distance for reprojection, as for the cirrus below.
+        float wCu = 1.0 - T, wMid = T * alpha + 1e-4;
+        front = (front * wCu + tm * wMid) / (wCu + wMid);
+        T *= 1.0 - alpha;
+      }
+    }
+  }
 
   // Cirrus: a thin ice-crystal sheet (optical depth ~0.02-0.3) on the curved cirrus altitude. Coverage
   // patches come from the weather map, the fibres from the cirrus texture, both in the deck's own frame
@@ -569,7 +693,7 @@ void main() {
 #ifdef CLOUDS_ATMOSPHERE
       if (uSunByAltitude > 0.5) cirrusLight = sunAt(uCirrus.y);
 #endif
-      vec3 lc = cirrusLight * iceP + skyAmb;
+      vec3 lc = cirrusLight * iceP + skyAmbTop;
       vec4 hc = hazeAlong(rayUv, tc, uCirrus.y, behind);
       vec3 Lc = alpha * (lc * hc.a + hc.rgb);
       L += T * Lc;

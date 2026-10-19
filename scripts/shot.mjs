@@ -12,6 +12,8 @@
 //   --mouse           JSON list of Playwright mouse move/click/dblclick actions, before --eval
 //   --eval-file       read the --eval expression from a file (useful for multi-step input checks)
 //   --software        use SwiftShader when the headless host has no usable Vulkan GPU
+//   --chromium        path of a Chromium executable to launch instead of the installed Chrome channel
+//                     (env FS_CHROMIUM does the same; the flag wins), e.g. /opt/pw-browsers/chromium-1194/chrome-linux/chrome
 //   --panel-views     comma-separated subset for --panel-matrix (default 3d,upper,lower,hidden)
 //   --panel-matrix    capture 3D / Upper / Lower / hidden at 1366x768 and 1920x1080; out.png is a prefix
 //   --fps             measure frame time over --frames N (120) frames: drained CPU+GPU throughput, rAF interval
@@ -40,7 +42,7 @@ for (let i = 0; i < argv.length; i++) {
   } else positional.push(argv[i]);
 }
 if (positional.length < 2) {
-  console.error('usage: node scripts/shot.mjs <page-and-query> <out.png> [--w N] [--h N] [--wait ms] [--eval js | --eval-file path] [--keys codes] [--mouse JSON] [--software] [--fps] [--cpu-throttle N]');
+  console.error('usage: node scripts/shot.mjs <page-and-query> <out.png> [--w N] [--h N] [--wait ms] [--eval js | --eval-file path] [--keys codes] [--mouse JSON] [--software] [--chromium path] [--fps] [--cpu-throttle N]');
   process.exit(2);
 }
 const [page, out] = positional;
@@ -73,8 +75,9 @@ const server = await createServer({
 });
 await server.listen();
 
+const chromiumPath = flags.chromium ?? process.env.FS_CHROMIUM;
 const browser = await chromium.launch({
-  channel: 'chrome',
+  ...(chromiumPath ? { executablePath: chromiumPath } : { channel: 'chrome' }),
   headless: true,
   args: [
     '--enable-gpu',

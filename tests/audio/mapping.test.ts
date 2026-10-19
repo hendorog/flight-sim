@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEG, KT } from '../../src/core/math';
 import { makeMockState } from '../../src/core/mockState';
-import { defaultControls } from '../../src/core/types';
+import { defaultControls, defaultWeather } from '../../src/core/types';
+import type { Environment } from '../../src/core/types';
 import {
   airAbsorptionCutoff,
   brakeSqueal,
@@ -12,10 +13,13 @@ import {
   fillSynthParams,
   flapMotorRunning,
   makeParamBlock,
+  precipNoise,
   propagationDelay,
+  RAIN_FULL_IAS,
   REFERENCE_DISTANCE,
   roughness,
   rolling,
+  SoundTracker,
   stallHorn,
   stepGyro,
   surfaceKind,
@@ -149,5 +153,47 @@ describe('parameter block', () => {
     out = fillSynthParams(s, c, ctx, makeParamBlock());
     expect(out[P.brakeSqueal]).toBeGreaterThan(0.5);
     expect(out[P.rolling]).toBeGreaterThan(0);
+  });
+});
+
+describe('precipitation noise', () => {
+  it('is 0 without precipitation, for type none and for a rate of 0', () => {
+    expect(precipNoise('none', 10, 50)).toBe(0);
+    expect(precipNoise('rain', 0, 50)).toBe(0);
+    expect(precipNoise('snow', 0, 0)).toBe(0);
+    expect(precipNoise('rain', Number.NaN, 50)).toBe(0);
+  });
+
+  it('rain and drizzle: rate over 25 mm/h, 0.3 of it parked, full from 80 kt', () => {
+    expect(precipNoise('rain', 25, RAIN_FULL_IAS)).toBe(1);
+    expect(precipNoise('rain', 50, 2 * RAIN_FULL_IAS)).toBe(1);
+    expect(precipNoise('rain', 25, 0)).toBeCloseTo(0.3, 12);
+    expect(precipNoise('rain', 5, RAIN_FULL_IAS)).toBeCloseTo(0.2, 12);
+    expect(precipNoise('drizzle', 5, RAIN_FULL_IAS / 2)).toBeCloseTo(0.2 * 0.65, 12);
+  });
+
+  it('snow: 0.3 at 5 mm/h and above, independent of airspeed', () => {
+    expect(precipNoise('snow', 5, 0)).toBeCloseTo(0.3, 12);
+    expect(precipNoise('snow', 20, 60)).toBeCloseTo(0.3, 12);
+    expect(precipNoise('snow', 2.5, 60)).toBeCloseTo(0.15, 12);
+  });
+
+  it('fillSynthParams writes 0 when the sound context has no rain, and the value when it has', () => {
+    const s = makeMockState({ heightAGL: 900, tas: 110 * KT, rpm: 2400 });
+    const x = { surface: 'grass' as const, speedOfSound: 336, turbulence: 0.2, gyroSpin: 1, flapMotor: 0 };
+    const out = makeParamBlock().fill(7);
+    expect(fillSynthParams(s, defaultControls(), x, out)[P.rain]).toBe(0);
+    expect(fillSynthParams(s, defaultControls(), { ...x, rain: 0.4 }, out)[P.rain]).toBeCloseTo(0.4, 6);
+  });
+
+  it('SoundTracker: rain 0 with the default weather, the mapped level with rain set', () => {
+    const s = makeMockState({ heightAGL: 900, tas: 110 * KT, rpm: 2400 });
+    const env = { surface: () => 'runway', atmosphere: () => ({ speedOfSound: 336 }) } as unknown as Environment;
+    const t = new SoundTracker();
+    const w = defaultWeather();
+    expect(t.update(s, defaultControls(), env, w, 1 / 60)[P.rain]).toBe(0);
+    expect(t.sound.rain).toBe(0);
+    const wet = { ...w, precipType: 'rain' as const, precipRateMmH: 10 };
+    expect(t.update(s, defaultControls(), env, wet, 1 / 60)[P.rain]).toBeCloseTo(precipNoise('rain', 10, s.ias), 6);
   });
 });
