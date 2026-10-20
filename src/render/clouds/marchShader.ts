@@ -19,6 +19,7 @@
 
 import { DEPTH_GLSL } from '../../core/shaderLib';
 import { BLUE_NOISE_SIZE } from './blueNoise';
+import { STORM_STOP_TAU, STORM_TAU_A, STORM_TAU_B } from '../weather/stormGlsl';
 import { ATMOSPHERE_GLSL, SKY_SAMPLING_GLSL } from '../sky/glsl/atmosphere';
 import { AERIAL_ATLAS_GLSL } from '../post/AerialPerspectiveEffect';
 import { CLOUD_MODEL_GLSL, MID_SHEET_GLSL } from './cloudModel';
@@ -72,7 +73,9 @@ uniform float uMaxDist;
 uniform float uDetailDist;      // beyond this distance detail erosion fades out (60 degree field of view)
 uniform float uDetailScale;     // 1 / (angular size of a low-res pixel at a 60 degree field of view)
 
-uniform sampler2D uStormAux;    // the storm cells drawn before the clouds (render/weather StormCellEffect): b = log2(1 + clip distance)
+uniform sampler2D uStormAux;    // the storm cells drawn before the clouds (render/weather StormCellEffect): r = log2(1 + front distance),
+                                // b, a = log2(1 + the distance at which their optical depth reaches STORM_TAU_A, STORM_TAU_B)
+uniform sampler2D uStormTrans;  // a = the storm cells' transmittance along the ray
 uniform float uStormOn;         // 1: the storm layer marched this frame
 
 uniform vec2 uCirrus;           // cirrus cover 0..1, altitude m
@@ -249,6 +252,21 @@ float sceneDistance(vec3 dirView) {
   return isSky(d) ? 1e7 : viewZFromDepth(d) / max(-dirView.z, 1e-4);
 }
 
+// The storm layer at this pixel (main): its front, the distances where its optical depth reaches STORM_TAU_A and
+// STORM_TAU_B (1e8 where it does not), and its total optical depth.
+float gStormFront = 1e8, gStormA = 1e8, gStormB = 1e8, gStormTau = 0.0;
+
+// The storm's optical depth in front of distance t: the line through (gStormA, STORM_TAU_A) and (gStormB,
+// STORM_TAU_B), or, when the depth never reaches STORM_TAU_B, a ramp from gStormA to the total at twice the front's
+// distance beyond it; at most the total, 0 before the line reaches 0.
+float stormTauAt(float t) {
+  if (gStormA >= 1e7) return 0.0;
+  float tau;
+  if (gStormB < 1e7) tau = ${STORM_TAU_A.toFixed(2)} + (${STORM_TAU_B.toFixed(2)} - ${STORM_TAU_A.toFixed(2)}) * (t - gStormA) / max(gStormB - gStormA, 1.0);
+  else tau = ${STORM_TAU_A.toFixed(2)} + (gStormTau - ${STORM_TAU_A.toFixed(2)}) * clamp((t - gStormA) / max(2.0 * (gStormFront - gStormA), 1.0), 0.0, 1.0);
+  return clamp(tau, 0.0, gStormTau);
+}
+
 void main() {
   // The ray is jittered across the pixel footprint every frame, so the temporal filter integrates the
   // whole footprint: without it, distant clouds and cirrus alias into scanlines at grazing angles.
@@ -257,12 +275,19 @@ void main() {
   vec3 dir = normalize(mat3(uCamWorld) * dv);
   float sceneDist = sceneDistance(dv);
   float tEnd = min(sceneDist, uMaxDist);
-  // The storm cells, drawn into the frame before the clouds, end the ray where their transmittance falls below
-  // STORM_CLIP_T: the cumulus in front of a cell covers it, the cumulus behind it is not drawn. The mid-level sheet
-  // and the cirrus stop there too.
+  // The storm cells, drawn into the frame before the clouds: the cumulus behind storm cloud or rain is dimmed by the
+  // storm's optical depth in front of it (stormTauAt, applied once to the result at its front), and the ray ends
+  // where that depth reaches STORM_STOP_TAU. The cumulus in front of a cell covers it. The mid-level sheet and the
+  // cirrus stop there too.
   float stopDist = sceneDist;
   if (uStormOn > 0.5) {
-    stopDist = min(sceneDist, exp2(textureLod(uStormAux, rayUv, 0.0).b) - 1.0);
+    vec4 sa = textureLod(uStormAux, rayUv, 0.0);
+    gStormFront = exp2(sa.r) - 1.0;
+    gStormA = exp2(sa.b) - 1.0;
+    gStormB = exp2(sa.a) - 1.0;
+    gStormTau = -log(max(textureLod(uStormTrans, rayUv, 0.0).a, 1e-4));
+    if (gStormTau > ${STORM_STOP_TAU.toFixed(2)} && gStormB < 1e7)
+      stopDist = min(sceneDist, gStormA + (${STORM_STOP_TAU.toFixed(2)} - ${STORM_TAU_A.toFixed(2)}) / (${STORM_TAU_B.toFixed(2)} - ${STORM_TAU_A.toFixed(2)}) * max(gStormB - gStormA, 1.0));
     tEnd = min(tEnd, stopDist);
   }
 
@@ -730,6 +755,12 @@ void main() {
     }
   }
 
+  // Behind storm cloud or rain the cumulus shows through the storm's transmittance in front of it.
+  if (uStormOn > 0.5 && T < 1.0) {
+    float w = exp(-stormTauAt(front));
+    L *= w;
+    T = 1.0 - (1.0 - T) * w;
+  }
   outColor = vec4(L, T);
   outAux = vec4(log2(1.0 + front), log2(1.0 + sceneDist), hz.a, dot(behind, vec3(0.2126, 0.7152, 0.0722)));
 }

@@ -12,6 +12,7 @@ import { FogEffect } from '../../src/render/weather/FogEffect';
 import { fogUniformFor } from '../../src/render/weather/fogGlsl';
 import { LightningOverlay } from '../../src/render/weather/LightningOverlay';
 import { PrecipOverlay } from '../../src/render/weather/PrecipOverlay';
+import type { CloudsEffect } from '../../src/render/clouds/CloudsEffect';
 import { StormCellEffect } from '../../src/render/weather/StormCellEffect';
 import { strikesBetween, type Strike } from '../../src/sim/weather/lightning';
 
@@ -150,12 +151,16 @@ describe('PrecipOverlay.active', () => {
 describe('StormCellEffect.active', () => {
   it('is true until the first render, then only with a cell in the view frustum, publishing the layer either way', () => {
     const { renderer, draws } = fakeRenderer();
-    const storms = new StormCellEffect();
+    // The cumulus layer's noise volumes, as CloudsEffect publishes them once built.
+    const vol = new THREE.Data3DTexture(new Uint8Array(1), 1, 1, 1);
+    const clouds = { noiseTextures: { shape: vol, detail: vol, warp: vol } } as unknown as CloudsEffect;
+    const storms = new StormCellEffect(clouds);
     storms.setSize(4, 4);
     const none = makeCtx();
     expect(storms.active(none)).toBe(true);
     storms.render(renderer, input, depth, output, none);
-    expect(draws()).toBe(2);
+    // March, temporal pass and composite.
+    expect(draws()).toBe(3);
     expect(storms.active(none)).toBe(false);
     expect(storms.marched).toBe(false);
     expect(storms.count).toBe(0);

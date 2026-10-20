@@ -7,12 +7,19 @@
 // shader compile; with no cell on screen active() is false and PostPipeline skips it (rendered anyway, as by the
 // shader warm-up, it copies its input).
 //
-// Per frame (2 draws; none when no cell is in the view frustum, except on the first render, which draws both passes
+// Per frame (3 draws; none when no cell is in the view frustum, except on the first render, which draws every pass
 // with no cell so that their shaders compile in the Simulator's shader warm-up; the composite then returns its input):
 //   1. march      (STORM_MARCH_FRAG, stormGlsl.ts)      STORM_SCALE resolution, MRT: premultiplied radiance +
 //                                                       transmittance, and the density-weighted front distance
-//                                                       with the scene depth the ray met
-//   2. composite  (STORM_COMPOSITE_FRAG)                full resolution, depth-aware upsample over the scene
+//                                                       with the scene depth the ray met; blue-noise step offsets
+//                                                       and a sub-pixel ray offset that change every frame
+//   2. temporal   (the cumulus layer's TEMPORAL_FRAG,   reprojection of the accumulated result with the march's
+//                  render/clouds/resolveShaders.ts)     front distance, variance clipping, ping-pong history; a
+//                                                       still view (paused, or the camera at rest) converges to the
+//                                                       mean of the jittered samples instead of showing them
+//   3. composite  (STORM_COMPOSITE_FRAG)                full resolution, depth-aware upsample over the scene
+// The cloud reads the cumulus layer's noise volumes (CloudsEffect.noiseTextures); until they are built no cell is
+// drawn.
 // Cell geometry: cellGeometry.ts (re-exported here), at ctx.simTime.
 // The march's result (front distance, transmittance) is also published for the lightning overlay (stormLayerOf),
 // which lights the cell's pixels in a flash.
@@ -26,13 +33,15 @@ import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import type { SceneEffect, SimContext } from '../../core/context';
 import { MAX_STORMS } from '../../core/weatherFields';
-import { mulberry32 } from '../../physics/weather/random';
 import { Atmosphere } from '../sky/Atmosphere';
 import { transmittanceToSpace } from '../sky/transmittance';
-import { FULLSCREEN_VERT } from '../clouds/resolveShaders';
-import { STORM_COMPOSITE_FRAG, STORM_COPY_FRAG, STORM_MARCH_FRAG, STORM_MAX_CELLS } from './stormGlsl';
+import { createBlueNoiseTexture } from '../clouds/blueNoise';
+import type { CloudsEffect } from '../clouds/CloudsEffect';
+import { FULLSCREEN_VERT, TEMPORAL_FRAG } from '../clouds/resolveShaders';
+import { STORM_COMPOSITE_FRAG, STORM_COPY_FRAG, STORM_MARCH_FRAG, STORM_MAX_CELLS, STORM_TOP_MARGIN_M } from './stormGlsl';
 import type { WeatherEffectContext } from './index';
-import { cameraStormsAt } from './stormSelection';
+import { cameraStormsAt, cameraStormsOf } from './stormSelection';
+import { hailSigmaPerMmH } from '../../physics/weather/stormPrecip';
 import { cellGeometry, makeCellGeometry, type CellGeometry } from './cellGeometry';
 
 /** Linear resolution of the march relative to the screen ('low' quality: STORM_SCALE_LOW). */
@@ -47,58 +56,23 @@ const GROUND_ALBEDO = new THREE.Color(0.1, 0.11, 0.08);
 
 export { ANVIL_FULL_DRIFT_KT, ANVIL_MAX_M, ANVIL_PER_RADIUS, SHAFT_PER_RADIUS, cellGeometry, makeCellGeometry, type CellGeometry } from './cellGeometry';
 
-// ------------------------------------------------------------------------------------------------ noise
+/** Camera moves further than this in one frame (teleport, reset): drop the temporal history, m. */
+const HISTORY_RESET_DISTANCE = 1_000;
+/** Weight of the new frame in the temporal pass, and its clip box half-size (the cumulus layer's values). */
+const TEMPORAL_BLEND = 0.1;
+const TEMPORAL_CLIP_GAMMA = 1.25;
 
-const NOISE_N = 32;
-
-/** Tileable Worley distance (nearest feature point) over a `cells`^3 grid, at a point in [0, 1)^3. */
-function worleyField(cells: number, seed: number): (x: number, y: number, z: number) => number {
-  const rnd = mulberry32(seed);
-  const pts = new Float32Array(cells * cells * cells * 3);
-  for (let i = 0; i < pts.length; i++) pts[i] = rnd();
-  const wrap = (v: number): number => ((v % cells) + cells) % cells;
-  return (x, y, z) => {
-    const px = x * cells, py = y * cells, pz = z * cells;
-    const ix = Math.floor(px), iy = Math.floor(py), iz = Math.floor(pz);
-    let best = 9;
-    for (let dz = -1; dz <= 1; dz++)
-      for (let dy = -1; dy <= 1; dy++)
-        for (let dx = -1; dx <= 1; dx++) {
-          const cx = ix + dx, cy = iy + dy, cz = iz + dz;
-          const k = (wrap(cz) * cells * cells + wrap(cy) * cells + wrap(cx)) * 3;
-          const ex = cx + pts[k] - px, ey = cy + pts[k + 1] - py, ez = cz + pts[k + 2] - pz;
-          const d = ex * ex + ey * ey + ez * ez;
-          if (d < best) best = d;
-        }
-    return Math.sqrt(best);
-  };
-}
-
-/**
- * The cells' private 32^3 tileable noise: billowy (inverted Worley at 3 cell counts), 0..1 in R (8 bit). A copy
- * of VolcanoPlumeEffect's builder at an eighth of the voxels, built on the CPU in the constructor.
- */
-export function createStormNoise(): THREE.Data3DTexture {
-  const data = new Uint8Array(NOISE_N * NOISE_N * NOISE_N);
-  const w2 = worleyField(2, 0x5c1);
-  const w4 = worleyField(4, 0x2e7);
-  const w8 = worleyField(8, 0x71b);
-  let i = 0;
-  for (let z = 0; z < NOISE_N; z++)
-    for (let y = 0; y < NOISE_N; y++)
-      for (let x = 0; x < NOISE_N; x++) {
-        const u = (x + 0.5) / NOISE_N, v = (y + 0.5) / NOISE_N, w = (z + 0.5) / NOISE_N;
-        const n = 0.5 * (1 - w2(u, v, w) * 1.15) + 0.32 * (1 - w4(u, v, w) * 1.15) + 0.18 * (1 - w8(u, v, w) * 1.15);
-        data[i++] = Math.max(0, Math.min(255, Math.round(n * 255)));
-      }
-  const tex = new THREE.Data3DTexture(data, NOISE_N, NOISE_N, NOISE_N);
-  tex.format = THREE.RedFormat;
-  tex.type = THREE.UnsignedByteType;
-  tex.wrapS = tex.wrapT = tex.wrapR = THREE.RepeatWrapping;
-  tex.minFilter = tex.magFilter = THREE.LinearFilter;
-  tex.unpackAlignment = 1;
-  tex.needsUpdate = true;
-  return tex;
+/** Halton sequence (sub-pixel ray offsets). */
+function halton(index: number, base: number): number {
+  let f = 1;
+  let r = 0;
+  let i = index;
+  while (i > 0) {
+    f /= base;
+    r += f * (i % base);
+    i = Math.floor(i / base);
+  }
+  return r;
 }
 
 // ------------------------------------------------------------------------------------------------ effect
@@ -139,12 +113,21 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   count = 0;
   readonly cells: CellGeometry[] = Array.from({ length: MAX_STORMS }, makeCellGeometry);
 
-  private readonly noise: THREE.Data3DTexture;
+  private readonly blueNoise: THREE.DataTexture;
+  private readonly clouds: CloudsEffect | null;
   private readonly quad = new FullScreenQuad();
   readonly marchMat: THREE.ShaderMaterial;
   readonly compositeMat: THREE.ShaderMaterial;
   private readonly copyMat: THREE.ShaderMaterial;
   private readonly marchRT: THREE.WebGLRenderTarget;
+  readonly temporalMat: THREE.ShaderMaterial;
+  private readonly history: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
+  private historyIndex = 0;
+  private historyValid = false;
+  private readonly prevViewProj = new THREE.Matrix4();
+  private readonly prevCamPos = new THREE.Vector3();
+  private readonly pixelJitter = new THREE.Vector2();
+  private readonly noDrift = new THREE.Vector3();
   private atmosphere: Atmosphere | null = null;
   private width = 1;
   private height = 1;
@@ -171,23 +154,32 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   private readonly cellC = Array.from({ length: STORM_MAX_CELLS }, () => new THREE.Vector4());
   private readonly cellR = new Float32Array(STORM_MAX_CELLS);
   private readonly cellW = Array.from({ length: STORM_MAX_CELLS }, () => new THREE.Vector4(1, 1, 1, 0));
+  private readonly cellH = Array.from({ length: STORM_MAX_CELLS }, () => new THREE.Vector4());
   private readonly frustum = new THREE.Frustum();
   private readonly viewProj = new THREE.Matrix4();
   private readonly box = new THREE.Box3();
 
-  constructor() {
-    this.noise = createStormNoise();
+  /** `clouds`: the cumulus layer whose noise volumes the cells read (null: no cell is drawn; tests). */
+  constructor(clouds: CloudsEffect | null = null) {
+    this.clouds = clouds;
+    this.blueNoise = createBlueNoiseTexture();
     const camera: Uniforms = { uInvProj: { value: this.invProj }, uCamWorld: { value: this.camWorld }, uCamPos: { value: this.camPos } };
     this.marchMat = fullscreenMaterial(STORM_MARCH_FRAG, {
       ...camera,
       uDepth: { value: null },
-      uNoise: { value: this.noise },
+      uShapeTex: { value: null },
+      uDetailTex: { value: null },
+      uWarpTex: { value: null },
+      uBlueNoise: { value: this.blueNoise },
+      uJitter: { value: 0 },
+      uPixelJitter: { value: this.pixelJitter },
+      uLowSize: { value: this.lowSize },
+      uPixelAngle: { value: 1e-3 },
       uAerialOn: { value: 0 },
       uAerialAtlas: { value: null },
       uAerialMax: { value: 1 },
       uHaze: { value: this.haze },
       uHazeColor: { value: this.hazeColor },
-      uFrame: { value: 0 },
       uTime: { value: 0 },
       uNearClip: { value: 0 },
       uCellA: { value: this.cellA },
@@ -195,6 +187,7 @@ export class StormCellEffect implements SceneEffect, StormLayer {
       uCellC: { value: this.cellC },
       uCellR: { value: this.cellR },
       uCellW: { value: this.cellW },
+      uCellH: { value: this.cellH },
       uCount: { value: 0 },
       uGroundY: { value: GROUND_Y },
       uSunSpan: { value: this.sunSpan },
@@ -216,6 +209,20 @@ export class StormCellEffect implements SceneEffect, StormLayer {
       uLowSize: { value: this.lowSize },
     });
     this.copyMat = fullscreenMaterial(STORM_COPY_FRAG, { uScene: { value: null } });
+    this.temporalMat = fullscreenMaterial(TEMPORAL_FRAG, {
+      ...camera,
+      uCurr: { value: null },
+      uAux: { value: null },
+      uHistory: { value: null },
+      uPrevViewProj: { value: this.prevViewProj },
+      uDrift: { value: this.noDrift },
+      uBlend: { value: TEMPORAL_BLEND },
+      uClipGamma: { value: TEMPORAL_CLIP_GAMMA },
+      uHistoryValid: { value: 0 },
+    });
+    const history = (): THREE.WebGLRenderTarget =>
+      new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping });
+    this.history = [history(), history()];
     this.marchRT = new THREE.WebGLRenderTarget(1, 1, {
       count: 2,
       type: THREE.HalfFloatType,
@@ -231,7 +238,7 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   }
 
   get transmittance(): THREE.Texture {
-    return this.marchRT.textures[0];
+    return this.history[this.historyIndex].texture;
   }
 
   setSize(width: number, height: number): void {
@@ -246,6 +253,8 @@ export class StormCellEffect implements SceneEffect, StormLayer {
     if (lw === this.lowSize.x && lh === this.lowSize.y) return;
     this.lowSize.set(lw, lh);
     this.marchRT.setSize(lw, lh);
+    this.history.forEach((h) => h.setSize(lw, lh));
+    this.historyValid = false;
   }
 
   /** Update the cells in effect at the camera at ctx.simTime and cull them against the view; returns the count on screen. */
@@ -253,19 +262,22 @@ export class StormCellEffect implements SceneEffect, StormLayer {
     const camera = ctx.camera;
     // The frame's selection at the camera, shared with the cumulus layer and the lightning overlay.
     const cells = cameraStormsAt(ctx);
+    // The CAPE of the live weather sizes the hail (cellGeometry); the shared selection's field caches it.
+    const cape = cells.length > 0 ? cameraStormsOf(ctx).field.convective(ctx.weather).capeJkg : 0;
     this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.viewProj);
     let n = 0;
     for (let i = 0; i < Math.min(cells.length, MAX_STORMS); i++) {
-      const g = cellGeometry(cells[i], ctx.weather, ctx.simTime, this.cells[n]);
+      const g = cellGeometry(cells[i], ctx.weather, ctx.simTime, this.cells[n], cape);
       this.box.min.set(g.boundX - g.boundRadius, GROUND_Y, g.boundZ - g.boundRadius);
-      this.box.max.set(g.boundX + g.boundRadius, g.top + 100, g.boundZ + g.boundRadius);
+      this.box.max.set(g.boundX + g.boundRadius, g.top + STORM_TOP_MARGIN_M, g.boundZ + g.boundRadius);
       if (!this.frustum.intersectsBox(this.box)) continue;
       this.cellA[n].set(g.x, g.z, g.radius, g.top);
       this.cellB[n].set(g.base, g.intensity, g.anvilRadius, g.shaftRadius);
       this.cellC[n].set(g.anvilX, g.anvilZ, g.boundX, g.boundZ);
       this.cellR[n] = g.boundRadius;
-      this.cellW[n].set(g.core, g.anvil, g.rain, 0);
+      this.cellW[n].set(g.core, g.anvil, g.rain, g.hail);
+      this.cellH[n].set(g.hailMm, hailSigmaPerMmH(g.hailMm), g.seedX, g.seedZ);
       n++;
     }
     this.count = n;
@@ -278,7 +290,7 @@ export class StormCellEffect implements SceneEffect, StormLayer {
    * the lightning overlay, as render's copy does.
    */
   active(ctx: SimContext): boolean {
-    const on = this.updateCells(ctx) > 0;
+    const on = this.textured() && this.updateCells(ctx) > 0;
     this.marched = on;
     return on || !this.warmed;
   }
@@ -290,7 +302,8 @@ export class StormCellEffect implements SceneEffect, StormLayer {
       this.scale = scale;
       this.resize();
     }
-    this.marched = this.updateCells(ctx) > 0;
+    this.marched = this.textured() && this.updateCells(ctx) > 0;
+    if (!this.marched) this.historyValid = false;
     if (!this.marched && this.warmed) {
       this.copyMat.uniforms.uScene.value = input;
       this.draw(renderer, this.copyMat, output);
@@ -302,28 +315,51 @@ export class StormCellEffect implements SceneEffect, StormLayer {
     this.invProj.copy(camera.projectionMatrixInverse);
     this.camWorld.copy(camera.matrixWorld);
     this.camPos.setFromMatrixPosition(camera.matrixWorld);
+    if (this.camPos.distanceTo(this.prevCamPos) > HISTORY_RESET_DISTANCE) this.historyValid = false;
     // With no cell (the warm-up draw) the march returns before its lighting.
     if (this.count > 0) this.updateLighting(renderer, ctx);
     const m = this.marchMat.uniforms;
+    const noise = this.clouds?.noiseTextures ?? null;
+    m.uShapeTex.value = noise?.shape ?? null;
+    m.uDetailTex.value = noise?.detail ?? null;
+    m.uWarpTex.value = noise?.warp ?? null;
     m.uDepth.value = depth;
-    m.uFrame.value = this.frame++ % 4096;
+    m.uJitter.value = (this.frame * 0.618034) % 1;
+    const j = (this.frame % 16) + 1;
+    this.pixelJitter.set(halton(j, 2) - 0.5, halton(j, 3) - 0.5);
+    this.frame = (this.frame + 1) % 4096;
+    m.uPixelAngle.value = (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)) / camera.zoom / this.lowSize.y;
     m.uTime.value = ctx.simTime;
     m.uCount.value = this.count;
     m.uNearClip.value = ctx.cameraMode === 'cockpit' ? 3 : 0;
     this.draw(renderer, this.marchMat, this.marchRT);
+    // Temporal accumulation at the march's resolution (the cumulus layer's pass, with no wind drift).
+    const src = this.history[this.historyIndex];
+    const dst = this.history[1 - this.historyIndex];
+    const t = this.temporalMat.uniforms;
+    t.uCurr.value = this.marchRT.textures[0];
+    t.uAux.value = this.marchRT.textures[1];
+    t.uHistory.value = src.texture;
+    t.uHistoryValid.value = this.historyValid && this.count > 0 ? 1 : 0;
+    this.draw(renderer, this.temporalMat, dst);
+    this.historyIndex = 1 - this.historyIndex;
+    this.historyValid = this.count > 0;
+    this.prevViewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.prevCamPos.copy(this.camPos);
     const c = this.compositeMat.uniforms;
     c.uScene.value = input;
     c.uDepth.value = depth;
-    c.uStorm.value = this.marchRT.textures[0];
+    c.uStorm.value = dst.texture;
     c.uAux.value = this.marchRT.textures[1];
     this.draw(renderer, this.compositeMat, output);
     renderer.setRenderTarget(prevTarget);
   }
 
   dispose(): void {
-    this.noise.dispose();
+    this.blueNoise.dispose();
     this.marchRT.dispose();
-    [this.marchMat, this.compositeMat, this.copyMat].forEach((mat) => mat.dispose());
+    this.history.forEach((h) => h.dispose());
+    [this.marchMat, this.temporalMat, this.compositeMat, this.copyMat].forEach((mat) => mat.dispose());
     this.quad.dispose();
   }
 
@@ -375,6 +411,11 @@ export class StormCellEffect implements SceneEffect, StormLayer {
     else this.haze.set(3.0 / Math.max(ctx.weather.visibilityM, 100), 1200);
   }
 
+  /** Whether the cumulus layer's noise volumes are built (the cells' density reads them). */
+  private textured(): boolean {
+    return this.clouds?.noiseTextures != null;
+  }
+
   private draw(renderer: THREE.WebGLRenderer, material: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget): void {
     this.quad.material = material;
     renderer.setRenderTarget(target);
@@ -384,7 +425,7 @@ export class StormCellEffect implements SceneEffect, StormLayer {
 
 /** The storm-cell scene effect: always created (skipped while no cell is on screen). */
 export function createStormCellEffect(c: WeatherEffectContext): SceneEffect | null {
-  const effect = new StormCellEffect();
+  const effect = new StormCellEffect(c.clouds);
   LAYERS.set(c.ctx, effect);
   return effect;
 }

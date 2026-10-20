@@ -62,7 +62,8 @@ import { cameraStormsAt } from './stormSelection';
 import { BOLT_MAX_BRANCHES, BOLT_POINTS, BOLT_SEGMENTS, BOLT_TOP_ABOVE_BASE_M, BRANCH_POINTS, BRANCH_SEGMENTS, boltBranches, boltPath } from './boltGeometry';
 import type { WeatherEffectContext } from './index';
 import { cellGeometry, makeCellGeometry, stormLayerOf, type CellGeometry, type StormLayer } from './StormCellEffect';
-import { STORM_ANVIL_DEPTH_M, STORM_ANVIL_SIGMA, STORM_CORE_SIGMA, STORM_RAY_GLSL, STORM_SHAFT_SIGMA, STORM_VIRGA_DEPTH_M } from './stormGlsl';
+import { STORM_ANVIL_DEPTH_M, STORM_ANVIL_SIGMA, STORM_BASE_SOFT_M, STORM_CORE_SIGMA, STORM_DETAIL_M, STORM_EDGE_M, STORM_EROSION_SHARE, STORM_RAY_GLSL } from './stormGlsl';
+import { emptyStormPrecip, stormPrecipAt } from '../../physics/weather/stormPrecip';
 
 /** Flashes lit at once. */
 export const MAX_FLASHES = 4;
@@ -165,13 +166,17 @@ const smoothstep = (e0: number, e1: number, x: number): number => {
   return t * t * (3 - 2 * t);
 };
 
+/** The mean erosion of the core's margin (stormGlsl.ts stormErosion at the detail's mean), m. */
+const MEAN_EROSION_M = 0.5 * STORM_EROSION_SHARE * STORM_DETAIL_M.reduce((a, b) => a + b, 0);
+const _precip = emptyStormPrecip();
+
 /**
  * Extinction of the cells at (x, y, z), 1/m, written as out.cloud (core and anvil) and out.rain: stormGlsl.ts
- * cellDensity with the noise at its mean (n = 0.5: no billow, the noise factors 0.8, 0.75 and 0.85).
+ * cellCloud with the noise at its mean (no lobes, the mean erosion, the anvil's noise factor 0.775) and the rain and
+ * hail of physics/weather/stormPrecip.ts, the field the march draws.
  */
 function stormSigma(cells: readonly CellGeometry[], count: number, x: number, y: number, z: number, out: { cloud: number; rain: number }): void {
   let cloud = 0;
-  let rain = 0;
   for (let i = 0; i < count; i++) {
     const g = cells[i];
     const R = g.radius;
@@ -179,20 +184,17 @@ function stormSigma(cells: readonly CellGeometry[], count: number, x: number, y:
     const anvilBot = g.top - STORM_ANVIL_DEPTH_M;
     const h = Math.min(1, Math.max(0, (y - g.base) / Math.max(anvilBot - g.base, 1)));
     const Rh = R * (0.75 + 0.25 * Math.sin(Math.PI * h)) * (1 + 0.6 * smoothstep(0.7, 1, h));
-    const core = smoothstep(Rh, 0.6 * Rh, r) * smoothstep(g.base, g.base + 60, y) * (1 - smoothstep(anvilBot + 100, anvilBot + 400, y)) * 0.8;
+    const m = Rh - r - MEAN_EROSION_M;
+    const core = smoothstep(0, STORM_EDGE_M, m) * smoothstep(g.base - STORM_BASE_SOFT_M, g.base + STORM_BASE_SOFT_M, y) * (1 - smoothstep(anvilBot + 100, anvilBot + 400, y));
     const ra = Math.hypot(x - g.anvilX, z - g.anvilZ);
     const e = Math.min(1, Math.max(0, ra / Math.max(g.anvilRadius, 1)));
     const bot = anvilBot + 900 * e * e;
-    const anvil = smoothstep(g.anvilRadius, 0.5 * g.anvilRadius, ra) * smoothstep(bot, bot + 200, y) * (1 - smoothstep(g.top - 250, g.top, y)) * 0.75;
-    const below = 1 - smoothstep(g.base - 100, g.base, y);
-    const shaft = smoothstep(g.shaftRadius, 0.3 * g.shaftRadius, r);
-    const foot = smoothstep(R, 0.6 * R, r);
-    const virga = Math.max(foot - shaft, 0) * smoothstep(g.base - STORM_VIRGA_DEPTH_M, g.base, y);
+    const anvil = smoothstep(0, 0.06 * g.anvilRadius, g.anvilRadius - ra) * smoothstep(bot, bot + 150, y) * (1 - smoothstep(g.top - 200, g.top, y)) * 0.775;
     cloud += core * g.core * STORM_CORE_SIGMA + anvil * g.anvil * STORM_ANVIL_SIGMA;
-    rain += (shaft + virga) * below * g.intensity * 0.85 * g.rain * STORM_SHAFT_SIGMA;
   }
+  stormPrecipAt(cells, count, x, y, z, _precip);
   out.cloud = cloud;
-  out.rain = rain;
+  out.rain = _precip.rainSigma + _precip.hailSigma;
 }
 
 const _sigma = { cloud: 0, rain: 0 };
