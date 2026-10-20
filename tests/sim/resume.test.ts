@@ -22,6 +22,9 @@ import {
   type KeyValueStore,
 } from '../../src/sim/resume';
 import { SimPhysics } from '../../src/sim/SimPhysics';
+import { restoreWeather } from '../../src/sim/weatherPresets';
+import { proceduralStorms } from '../../src/physics/weather/stormField';
+import oldFairSnapshot from './data/resume-schema3-fair.json';
 
 const NOW = 1_800_000_000_000;
 
@@ -252,13 +255,35 @@ describe('resume snapshot: the optional weather fields (core/weatherFields.ts)',
     expect(live.storms).toEqual([cell]);
   });
 
-  it('a schema-3 snapshot without the fields resumes with the weather it had', () => {
+  it('a snapshot without the fields resumes with the weather it had', () => {
     const s = snap(fly('cruise', 2));
-    expect(s.schema).toBe(3);
+    expect(s.schema).toBe(SNAPSHOT_SCHEMA);
     const back = parseSnapshot(JSON.stringify(s));
     expect(back).not.toBeNull();
     expect(back!.weather).toEqual(s.weather);
     for (const k of ['cloudType', 'midCover', 'precipType', 'fogTopM', 'storms']) expect(k in back!.weather).toBe(false);
+  });
+
+  it('an empty storms list from schema 3 resumes as derived cells; from schema 4 it stays "no cells"', () => {
+    // Written by commit 0692043 (before the derived cells): the Fair preset in cruise, `storms: []` from the old
+    // NEUTRAL_EXTRAS.
+    const raw = JSON.stringify(oldFairSnapshot);
+    const old = JSON.parse(raw) as FlightSnapshot;
+    expect(old.schema).toBe(3);
+    expect(old.weather.storms).toEqual([]);
+    const back = parseSnapshot(raw);
+    expect(back).not.toBeNull();
+    expect(back!.schema).toBe(SNAPSHOT_SCHEMA);
+    expect('storms' in back!.weather).toBe(false);
+    const live = restoreWeather(defaultWeather(), back!.weather);
+    expect(proceduralStorms(live)).toBe(true);
+    // A schema-3 list with cells is kept.
+    const listed = parseSnapshot(JSON.stringify({ ...old, weather: { ...old.weather, storms: [cell] } }));
+    expect(listed!.weather.storms).toEqual([cell]);
+    // Schema 4: the empty list is the player's "No storms" and is kept.
+    const now = parseSnapshot(JSON.stringify({ ...old, schema: 4 }));
+    expect(now!.weather.storms).toEqual([]);
+    expect(proceduralStorms(restoreWeather(defaultWeather(), now!.weather))).toBe(false);
   });
 
   it('drops a malformed field and keeps the flight', () => {

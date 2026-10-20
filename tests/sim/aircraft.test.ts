@@ -19,6 +19,7 @@ import { Autoflight, centrelineRudder } from '../../src/sim/autoflight';
 import { parseParams } from '../../src/sim/params';
 import {
   SNAPSHOT_KEY,
+  SNAPSHOT_SCHEMA,
   clearSnapshot,
   decideBoot,
   loadSnapshot,
@@ -129,7 +130,9 @@ describe('resume snapshot schema 3', () => {
     p.reset('runway');
     p.step(1);
     const s = capture(p);
-    expect(s.schema).toBe(3);
+    // Schema 4 keeps the schema-3 layout (it changes the meaning of an empty weather.storms only).
+    expect(s.schema).toBe(SNAPSHOT_SCHEMA);
+    expect(SNAPSHOT_SCHEMA).toBe(4);
     expect(s.aircraft).toBe('c172s');
     expect(s.systems.engines).toHaveLength(1);
     expect(s.systems.engines[0].rpm).toBe(s.engine.rpm);
