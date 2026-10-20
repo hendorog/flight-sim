@@ -12,7 +12,7 @@
 //   ev=0                            exposure compensation, EV
 //   cb=north,east[,top[,intensity[,radius[,motionDeg,motionKt]]]]
 //                                   a storm cell: centre km NED, top km MSL (11), intensity 0..1 (0.8), core radius
-//                                   km (3), motion from degrees and knots (0, 0); repeatable, at most 4. Without
+//                                   km (3), motion from degrees and knots (0, 0); repeatable, at most 6 (MAX_STORMS). Without
 //                                   cb= the cells are derived from the conditions (physics/weather/stormField.ts)
 //   fog=top[,vis]                   ground fog depth above the field, m, and its visibility, m
 //   precip=rain|drizzle|snow,rate   precipitation and its rate, mm/h
@@ -31,8 +31,8 @@ import * as THREE from 'three';
 import type { QualityLevel } from '../core/context';
 import { KT } from '../core/math';
 import type { CloudType, PrecipType, StormCell } from '../core/types';
-import { stormCentreAt } from '../core/weatherFields';
-import { StormField } from '../physics/weather/stormField';
+import { MAX_STORMS, stormCentreAt } from '../core/weatherFields';
+import { cameraStormsOf } from '../render/weather/stormSelection';
 import { applyWeatherPreset, weatherPresetById } from '../sim/weatherPresets';
 import { CloudsEffect } from '../render/clouds';
 import { PostPipeline } from '../render/post';
@@ -101,7 +101,7 @@ void runHarness({
       const steady = { x: -Math.cos(from) * wind[1] * KT, y: -Math.sin(from) * wind[1] * KT, z: 0 };
       ctx.env.wind = () => ({ ...steady });
     }
-    const cells = params.getAll('cb').map(parseCell).filter((c): c is StormCell => c !== null).slice(0, 4);
+    const cells = params.getAll('cb').map(parseCell).filter((c): c is StormCell => c !== null).slice(0, MAX_STORMS);
     if (cells.length) w.storms = cells;
     const fog = list(params.get('fog'));
     if (fog.length >= 1) {
@@ -133,8 +133,8 @@ void runHarness({
       strikes++;
       console.info(`[weather] lightning ${e.kind} id ${e.id} at ${(e.north / 1000).toFixed(1)}, ${(e.east / 1000).toFixed(1)} km, ${Math.round(e.altM)} m, ${e.strokes} strokes`);
     });
-    const field = new StormField();
-    const inEffect = () => field.select(w, ctx.simTime, -ctx.camera.position.z, ctx.camera.position.x);
+    const shared = cameraStormsOf(ctx);
+    const inEffect = () => shared.at(ctx);
     const strike = (kind: StrikeKind, t: number): void => {
       const cell = inEffect()[0];
       if (!cell || !lightning) return;
@@ -153,7 +153,7 @@ void runHarness({
           const distance = Math.hypot(p.north + ctx.camera.position.z, p.east - ctx.camera.position.x);
           return { north: p.north, east: p.east, distance, top: c.topM, core: c.core, anvil: c.anvil, rain: c.rain, flash: c.flash };
         }),
-      activity: () => ({ ...field.convective(w) }),
+      activity: () => ({ ...shared.field.convective(w) }),
       exposure: () => {
         const rt = (post as unknown as { exposure: { adapted: THREE.WebGLRenderTarget[] } }).exposure.adapted[0];
         const px = new Float32Array(4);

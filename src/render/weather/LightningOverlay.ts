@@ -1,6 +1,6 @@
 // Lightning flashes and bolts from the storm cells in effect at the camera (physics/weather/stormField.ts
-// StormField.select: the weather's explicit `storms`, or the cells derived from the conditions, each with its
-// lightning share): a post-TAA overlay (PostPipeline
+// StormField.select through the frame's shared selection, stormSelection.ts: the weather's explicit `storms`, or
+// the cells derived from the conditions, each with its lightning share): a post-TAA overlay (PostPipeline
 // addOverlay), so a flash shorter than a frame is not averaged away by the temporal pass. Created at boot whether or
 // not the weather has cells. active() advances the strike schedule and is false while no flash is lit (after the
 // first render), so PostPipeline skips the overlay between flashes; rendered with no flash lit it copies its input.
@@ -57,7 +57,8 @@ import { FULLSCREEN_VERT } from '../clouds/resolveShaders';
 import { EXPOSURE_GLSL } from '../post/AutoExposure';
 import { Atmosphere } from '../sky/Atmosphere';
 import { hashUnit } from '../../physics/weather/random';
-import { StormField, type ActiveStorm } from '../../physics/weather/stormField';
+import type { ActiveStorm } from '../../physics/weather/stormField';
+import { cameraStormsAt } from './stormSelection';
 import { BOLT_MAX_BRANCHES, BOLT_POINTS, BOLT_SEGMENTS, BOLT_TOP_ABOVE_BASE_M, BRANCH_POINTS, BRANCH_SEGMENTS, boltBranches, boltPath } from './boltGeometry';
 import type { WeatherEffectContext } from './index';
 import { cellGeometry, makeCellGeometry, stormLayerOf, type CellGeometry, type StormLayer } from './StormCellEffect';
@@ -413,8 +414,7 @@ export class LightningOverlay implements SceneEffect {
   private readonly found: Strike[] = [];
   private lastTime: number | null = null;
   private readonly geometry = makeCellGeometry();
-  /** The cells in effect at the camera (the same result as StormCellEffect's), and those of the last advance. */
-  private readonly field = new StormField();
+  /** The cells in effect at the camera (the frame's shared selection, stormSelection.ts), as of the last advance. */
   private cells: readonly ActiveStorm[] = [];
   private readonly quad = new FullScreenQuad();
   readonly material: THREE.ShaderMaterial;
@@ -504,7 +504,7 @@ export class LightningOverlay implements SceneEffect {
   advance(ctx: SimContext): void {
     const t = ctx.simTime;
     // three.js world: x east, z south.
-    const cells = (this.cells = this.field.select(ctx.weather, t, -ctx.camera.position.z, ctx.camera.position.x));
+    const cells = (this.cells = cameraStormsAt(ctx));
     if (this.lastTime === null || t < this.lastTime) {
       // First frame, or a reset / restore moved the clock back: nothing carries over.
       this.lit = 0;

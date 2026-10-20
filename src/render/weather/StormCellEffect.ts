@@ -1,5 +1,6 @@
-// Cumulonimbus cells (the cells in effect at the camera, physics/weather/stormField.ts StormField.select: the
-// weather's explicit `storms`, or the cells derived from the conditions): a scene effect after the clouds, built on the
+// Cumulonimbus cells (the cells in effect at the camera, physics/weather/stormField.ts StormField.select through the
+// frame's shared selection, stormSelection.ts, which the clouds read first to clear the cumulus around each cell:
+// the weather's explicit `storms`, or the cells derived from the conditions): a scene effect after the clouds, built on the
 // VolcanoPlumeEffect pattern. Created at boot whether or not the weather has cells, so that cells set later (menu,
 // presets, __sim.setWeather) appear without a shader compile; with no cell on screen active() is false and PostPipeline
 // skips it (rendered anyway, as by the shader warm-up, it copies its input).
@@ -31,13 +32,14 @@ import type { StormCell, WeatherSettings } from '../../core/types';
 import { DEG } from '../../core/math';
 import { MAX_STORMS, stormCentreAt, type NorthEast } from '../../core/weatherFields';
 import { mulberry32 } from '../../physics/weather/random';
-import { StormField, stormShare } from '../../physics/weather/stormField';
+import { stormShare } from '../../physics/weather/stormField';
 import { Atmosphere } from '../sky/Atmosphere';
 import { transmittanceToSpace } from '../sky/transmittance';
 import { FULLSCREEN_VERT } from '../clouds/resolveShaders';
 import type { CloudsEffect } from '../clouds';
 import { STORM_COMPOSITE_FRAG, STORM_COPY_FRAG, STORM_MARCH_FRAG, STORM_MAX_CELLS } from './stormGlsl';
 import type { WeatherEffectContext } from './index';
+import { cameraStormsAt, drawnCoreRadiusM } from './stormSelection';
 
 /** Linear resolution of the march relative to the screen ('low' quality: STORM_SCALE_LOW). */
 export const STORM_SCALE = 0.5;
@@ -88,13 +90,14 @@ const _ne: NorthEast = { north: 0, east: 0 };
 
 /**
  * Geometry of `cell` at simulation time t in weather w (pure; writes `out`). The core radius is clamped to
- * 500..8000 m, the intensity to 0..1, and the top to at least the base + 2000 m (the anvil's depth plus 500 m).
+ * 500..8000 m (drawnCoreRadiusM), the intensity to 0..1, and the top to at least the base + 2000 m (the anvil's
+ * depth plus 500 m; a derived cell's top never lies below it, stormField.ts MIN_GROWING_DEPTH_M).
  */
 export function cellGeometry(cell: StormCell, w: Pick<WeatherSettings, 'cloudBaseM' | 'windDirectionDeg' | 'windSpeedKt'>, t: number, out: CellGeometry): CellGeometry {
   stormCentreAt(cell, t, _ne);
   out.x = _ne.east;
   out.z = -_ne.north;
-  out.radius = Math.min(8000, Math.max(500, cell.radiusM));
+  out.radius = drawnCoreRadiusM(cell);
   out.base = w.cloudBaseM;
   out.top = Math.max(cell.topM, out.base + 2000);
   out.intensity = Math.min(1, Math.max(0, cell.intensity));
@@ -239,8 +242,6 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   private readonly cellC = Array.from({ length: STORM_MAX_CELLS }, () => new THREE.Vector4());
   private readonly cellR = new Float32Array(STORM_MAX_CELLS);
   private readonly cellW = Array.from({ length: STORM_MAX_CELLS }, () => new THREE.Vector4(1, 1, 1, 0));
-  /** The cells in effect at the camera (the lightning overlay owns its own, with the same result). */
-  private readonly field = new StormField();
   private readonly frustum = new THREE.Frustum();
   private readonly viewProj = new THREE.Matrix4();
   private readonly box = new THREE.Box3();
@@ -323,8 +324,8 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   /** Update the cells in effect at the camera at ctx.simTime and cull them against the view; returns the count on screen. */
   updateCells(ctx: SimContext): number {
     const camera = ctx.camera;
-    // three.js world: x east, z south.
-    const cells = this.field.select(ctx.weather, ctx.simTime, -camera.position.z, camera.position.x);
+    // The frame's selection at the camera, shared with the cumulus layer and the lightning overlay.
+    const cells = cameraStormsAt(ctx);
     this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.viewProj);
     let n = 0;
