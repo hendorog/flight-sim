@@ -11,7 +11,8 @@ import { emptyLocalPrecip, type LocalPrecip } from '../../src/physics/weather/st
 import { emptyHailDamage } from '../../src/sim/weather/hailDamage';
 import { Atmosphere } from '../../src/render/sky/Atmosphere';
 import { bounceHeights, COVER_MELT_S, HAIL_RESTITUTION, HailGround } from '../../src/render/weather/hailGround';
-import { HailGroundOverlay } from '../../src/render/weather/HailGroundOverlay';
+import { GROUND_MAX_AGL_M, HailGroundOverlay, hailRmsMm } from '../../src/render/weather/HailGroundOverlay';
+import { hailMeanMm } from '../../src/physics/weather/hail';
 
 const report = (label: string, values: Record<string, number | string>) =>
   console.log(`[hail ground] ${label}: ${Object.entries(values).map(([k, v]) => `${k}=${typeof v === 'number' ? +v.toPrecision(4) : v}`).join('  ')}`);
@@ -84,6 +85,20 @@ describe('HailGroundOverlay active()', () => {
     expect(o.active(dry)).toBe(true);
     dry.camera.position.y = 1000;
     expect(o.active(dry)).toBe(false);
+    // The height that counts is the camera's over the ground under the camera, not over the aircraft's ground.
+    const ground = 950;
+    dry.env = { ...dry.env, groundElevation: () => ground };
+    expect(o.active(dry)).toBe(true);
+    dry.camera.position.y = ground + GROUND_MAX_AGL_M + 1;
+    expect(o.active(dry)).toBe(false);
+    o.render(r, input, depth, output, dry, 0.016);
     o.dispose();
+  });
+
+  it('takes the stones\' area from the rms diameter, above the mean diameter', () => {
+    const rms = hailRmsMm(62), mean = hailMeanMm(62);
+    report('ground stone diameters, largest 62 mm', { meanMm: mean, rmsMm: rms });
+    expect(rms).toBeGreaterThan(mean);
+    expect(rms).toBeLessThan(62);
   });
 });

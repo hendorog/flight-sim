@@ -1,27 +1,33 @@
 // Hailstones landing, bouncing and lying on the ground near the camera: a post-TAA overlay (PostPipeline.addOverlay)
 // of two draws, in every camera mode while the camera is within GROUND_MAX_AGL_M of the ground.
-//   scatter   a full-screen pass: on upward-facing surfaces (the normal of the depth buffer's world position within
-//             SCATTER_MIN_UP of vertical) within SCATTER_RANGE_M, stones on a world-anchored grid of SCATTER_CELL_M
-//             cells, each cell holding a stone while its hash is below the ground cover (hailGround.ts), of a
-//             diameter from the size distribution (hail.ts hailDiameterMm). Where a stone is under a pixel the
-//             pass draws the cover's mean whitening instead. In the cockpit the cabin box (PostPipeline.cabinFromView)
-//             is excluded.
+//   scatter   a full-screen pass on upward-facing surfaces (the normal of the depth buffer's world position within
+//             SCATTER_MIN_UP of vertical) within SCATTER_RANGE_M. The cover's mean whitening everywhere: the share of
+//             the ground under stones (SCATTER_FILL x cover cells holding a stone of the rms diameter's area) plus
+//             the smaller ice between them (SCATTER_FILM x cover^2), times 0.8 + 0.2 x a smooth value noise of 2 m
+//             and 0.7 m wavelength. Within NEAR_FIELD_M of the camera, and where a stone is larger than half the
+//             pixel's footprint, the stones themselves on a world-anchored grid of SCATTER_CELL_M cells (each cell
+//             holding one while its hash is below SCATTER_FILL x the cover, of a diameter from the size
+//             distribution, hail.ts hailDiameterMm): discs brightened toward their far side (0.85 + 0.25 ny, as the
+//             pellets) on a soft contact shadow. Excluded: the aircraft's bounding box (the meshes under
+//             ctx.aircraftRoot, in the aircraft's frame, from AIRCRAFT_FLOOR_M above its lowest point; every
+//             camera mode) and in the cockpit the cabin box (PostPipeline.cabinFromView).
 //   pellets   BOUNCE_CELLS^2 cells of BOUNCE_CELL_M about the camera's ground point (a toroidal window: a cell leaving
 //             it on one side comes back on the other), BOUNCE_PER_CELL stones each: every cycle a stone lands at a
 //             hashed point, rebounds at the restitution times its fall speed, bounces once more and rolls to rest.
 //             Instanced quads facing the camera, depth-tested in the shader against the scene depth. A stone's chance
 //             to land in a cycle follows the impact rate (hailGround.ts).
-// Both read the hail at the camera (stormPrecip.ts localPrecipAt). The ground height is the aircraft's ground
-// (altitudeMSL - altitudeAGL), so the pellets assume flat ground within the window.
-// Cost per frame while active (stated, not measured on a GPU): one full-screen pass (1 depth read, 1 hash per pixel
-// on the surfaces it draws on) and one instanced draw of BOUNCE_CELLS^2 x BOUNCE_PER_CELL quads (768). Without hail
+// Both read the hail at the camera (stormPrecip.ts localPrecipAt). The pellets' ground height is the aircraft's
+// ground (altitudeMSL - altitudeAGL), so they assume flat ground within the window; the overlay runs while the
+// camera is within GROUND_MAX_AGL_M of the ground under the camera itself (ctx.env.groundElevation).
+// Cost per frame while active (stated, not measured on a GPU): one full-screen pass (1 depth read, 8 hashes for the
+// noise and 1 for the stones per pixel on the surfaces it draws on) and one instanced draw of BOUNCE_CELLS^2 x BOUNCE_PER_CELL quads (768). Without hail
 // and without cover, or with the camera higher, active() is false and PostPipeline skips it.
 // Every constant is unconfirmed: look values set by eye.
 
 import * as THREE from 'three';
 import type { SceneEffect, SimContext } from '../../core/context';
 import { DEPTH_GLSL } from '../../core/shaderLib';
-import { hailLowMm, HAIL_SCALE_SHARE } from '../../physics/weather/hail';
+import { hailDiameterMm, hailLowMm, HAIL_SCALE_SHARE } from '../../physics/weather/hail';
 import { emptyLocalPrecip, localPrecipAt, type LocalPrecip } from '../../physics/weather/stormPrecip';
 import { Atmosphere } from '../sky/Atmosphere';
 import { FullscreenPass, passMaterial } from '../post/FullscreenPass';
@@ -38,6 +44,12 @@ export const SCATTER_CELL_M = 0.03;
 export const SCATTER_FILL = 1.5;
 export const SCATTER_FILM = 0.55;
 export const SCATTER_MIN_UP = 0.8;
+/** Range within which the scatter draws single stones, m (fading out over its last third). */
+export const NEAR_FIELD_M = 6;
+/** Height above the aircraft's lowest point from which its bounding box hides the scatter, m. */
+export const AIRCRAFT_FLOOR_M = 0.08;
+/** Seconds between measurements of the aircraft's bounding box. */
+const AIRCRAFT_BOX_S = 2;
 export const BOUNCE_CELLS = 16;
 export const BOUNCE_CELL_M = 1;
 export const BOUNCE_PER_CELL = 3;
@@ -60,10 +72,14 @@ uniform mat4 uInvProj;
 uniform mat4 uCamWorld;
 uniform vec3 uCamPos;
 uniform float uCover;
-uniform vec4 uHailSize;   // smallest stone mm, scale mm, 1 - exp(-span / scale), unused
+uniform vec4 uHailSize;   // smallest stone mm, scale mm, 1 - exp(-span / scale), rms stone diameter mm
 uniform vec3 uRadiance;
 uniform float uCabinOn;
 uniform mat4 uCabinFromView;
+uniform float uPlaneOn;
+uniform mat4 uPlaneFromView;   // view space -> the aircraft's frame
+uniform vec3 uPlaneMin;
+uniform vec3 uPlaneMax;
 
 uvec4 pcg4d(uvec4 v) {
   v = v * 1664525u + 1013904223u;
@@ -71,6 +87,14 @@ uvec4 pcg4d(uvec4 v) {
   v ^= v >> 16u;
   v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
   return v;
+}
+float h1(ivec2 c, uint k) { return float(pcg4d(uvec4(uvec2(c + 1048576), 12u, k)).x >> 16u) * (1.0 / 65536.0); }
+// Smooth value noise, 0..1, on a unit lattice.
+float vnoise(vec2 x, uint k) {
+  ivec2 i = ivec2(floor(x));
+  vec2 f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h1(i, k), h1(i + ivec2(1, 0), k), f.x), mix(h1(i + ivec2(0, 1), k), h1(i + ivec2(1, 1), k), f.x), f.y);
 }
 
 void main() {
@@ -86,30 +110,51 @@ void main() {
     vec3 b = (uCabinFromView * vec4(pv, 1.0)).xyz;
     if (max(max(abs(b.x), abs(b.y)), abs(b.z)) < 1.0) return;
   }
+  if (uPlaneOn > 0.5) {
+    vec3 b = (uPlaneFromView * vec4(pv, 1.0)).xyz;
+    if (all(greaterThan(b, uPlaneMin)) && all(lessThan(b, uPlaneMax))) return;
+  }
   vec3 pw = (uCamWorld * vec4(pv, 1.0)).xyz;
   vec3 n = normalize(cross(dFdx(pw), dFdy(pw)));
   if (abs(n.y) < ${SCATTER_MIN_UP.toFixed(2)}) return;
   float range = length(pw - uCamPos);
   if (range > ${SCATTER_RANGE_M.toFixed(1)}) return;
-  vec2 g = pw.xz / ${SCATTER_CELL_M.toFixed(3)};
+  float cellM = ${SCATTER_CELL_M.toFixed(3)};
+  vec2 g = pw.xz / cellM;
   // Footprint of the pixel on the ground, cells.
   float fp = max(length(fwidth(g)), 1e-4);
-  ivec2 c = ivec2(floor(g));
-  vec2 f = fract(g);
-  vec4 h = vec4(pcg4d(uvec4(uvec2(c + 1048576), 11u, 0u)) >> 16u) * (1.0 / 65536.0);
-  float D = uHailSize.x - uHailSize.y * log(1.0 - h.x * uHailSize.z);
-  float r = min(0.5 * D * 0.001 / ${SCATTER_CELL_M.toFixed(3)}, 0.45);
-  vec2 ctr = vec2(0.5) + (h.zw - 0.5) * (1.0 - 2.0 * r);
-  // A cell holds a stone while its hash is below SCATTER_FILL x the cover; between the stones, smaller ice whitens
-  // the ground by SCATTER_FILM x cover^2, in patches of the cell's hash.
-  float has = step(h.y, ${SCATTER_FILL.toFixed(2)} * uCover);
-  float stone = has * clamp((r - length(f - ctr)) / fp + 0.5, 0.0, 1.0);
-  float film = ${SCATTER_FILM.toFixed(2)} * uCover * uCover * (0.6 + 0.4 * h.w);
-  // Where a stone is smaller than the pixel, the mean of the stones.
-  float mean = min(1.0, ${SCATTER_FILL.toFixed(2)} * uCover) * 3.14159 * r * r;
-  float far = smoothstep(0.5 * r, 2.0 * r, fp);
-  float a = max(mix(stone, mean, far), film) * (1.0 - smoothstep(0.8 * ${SCATTER_RANGE_M.toFixed(1)}, ${SCATTER_RANGE_M.toFixed(1)}, range));
-  gl_FragColor = vec4(mix(scene.rgb, max(uRadiance, ${ICE_OVER_SCENE.toFixed(2)} * scene.rgb), a), scene.a);
+  float fill = min(1.0, ${SCATTER_FILL.toFixed(2)} * uCover);
+  // The mean cover: the stones' share of the ground at the mean diameter, the ice between them, in soft patches.
+  float rMean = min(0.5 * uHailSize.w * 0.001 / cellM, 0.45);
+  float patches = 0.8 + 0.2 * (0.6 * vnoise(pw.xz * 0.5, 1u) + 0.4 * vnoise(pw.xz * 1.43, 2u));
+  float film = ${SCATTER_FILM.toFixed(2)} * uCover * uCover;
+  float mean = min(1.0, (fill * 3.14159 * rMean * rMean + film) * patches);
+  float a = mean;
+  vec3 ice = max(uRadiance, ${ICE_OVER_SCENE.toFixed(2)} * scene.rgb);
+  vec3 ground = scene.rgb;
+  // Near the camera, where a stone covers more than the pixel: the stones one by one.
+  float near = (1.0 - smoothstep(${(NEAR_FIELD_M * 2 / 3).toFixed(1)}, ${NEAR_FIELD_M.toFixed(1)}, range)) * (1.0 - smoothstep(rMean, 4.0 * rMean, fp));
+  if (near > 0.0) {
+    ivec2 c = ivec2(floor(g));
+    vec2 f = fract(g);
+    vec4 h = vec4(pcg4d(uvec4(uvec2(c + 1048576), 11u, 0u)) >> 16u) * (1.0 / 65536.0);
+    float D = uHailSize.x - uHailSize.y * log(1.0 - h.x * uHailSize.z);
+    float r = min(0.5 * D * 0.001 / cellM, 0.4);
+    vec2 ctr = vec2(0.5) + (h.zw - 0.5) * (1.0 - 2.4 * r);
+    float has = step(h.y, fill);
+    vec2 o = f - ctr;
+    float stone = has * clamp((r - length(o)) / fp + 0.5, 0.0, 1.0);
+    // Lit toward its far side, a soft shadow at its foot on the near side.
+    vec2 away = normalize(pw.xz - uCamPos.xz + 1e-4);
+    float ny = clamp(dot(o, away) / max(r, 1e-4), -1.0, 1.0);
+    float foot = has * (1.0 - smoothstep(0.9 * r, 1.5 * r, length(o + 0.25 * r * away))) * (1.0 - stone);
+    ground = mix(scene.rgb, scene.rgb * 0.62, near * foot);
+    float aNear = max(stone, film * patches);
+    a = mix(mean, aNear, near);
+    ice = mix(ice, ice * (0.85 + 0.25 * ny), near * stone);
+  }
+  a *= 1.0 - smoothstep(0.8 * ${SCATTER_RANGE_M.toFixed(1)}, ${SCATTER_RANGE_M.toFixed(1)}, range);
+  gl_FragColor = vec4(mix(ground, ice, a), scene.a);
 }
 `;
 
@@ -224,6 +269,16 @@ export class HailGroundOverlay implements SceneEffect {
   private readonly invProj = new THREE.Matrix4();
   private readonly camWorld = new THREE.Matrix4();
   private readonly cabinFromView = new THREE.Matrix4();
+  private readonly planeFromView = new THREE.Matrix4();
+  private readonly planeMin = new THREE.Vector3();
+  private readonly planeMax = new THREE.Vector3();
+  /** The aircraft's bounding box in its own frame, and when and for which root it was measured. */
+  private readonly planeBox = new THREE.Box3();
+  private readonly meshBox = new THREE.Box3();
+  private readonly meshToRoot = new THREE.Matrix4();
+  private readonly rootInv = new THREE.Matrix4();
+  private planeRoot: THREE.Object3D | null = null;
+  private planeAt = -Infinity;
   private readonly camPos = new THREE.Vector3();
   private readonly hailSize = new THREE.Vector4(1, 1, 0, 0);
   private readonly radiance = new THREE.Vector3();
@@ -248,6 +303,10 @@ export class HailGroundOverlay implements SceneEffect {
         uRadiance: { value: this.radiance },
         uCabinOn: { value: 0 },
         uCabinFromView: { value: this.cabinFromView },
+        uPlaneOn: { value: 0 },
+        uPlaneFromView: { value: this.planeFromView },
+        uPlaneMin: { value: this.planeMin },
+        uPlaneMax: { value: this.planeMax },
       },
     });
     this.pelletMat = new THREE.ShaderMaterial({
@@ -328,10 +387,11 @@ export class HailGroundOverlay implements SceneEffect {
     u.uCover.value = g.cover;
     const lo = hailLowMm(g.maxMm);
     const scale = Math.max(HAIL_SCALE_SHARE * g.maxMm, 1e-3);
-    this.hailSize.set(lo, scale, 1 - Math.exp(-Math.max(0, g.maxMm - lo) / scale), 0);
+    this.hailSize.set(lo, scale, 1 - Math.exp(-Math.max(0, g.maxMm - lo) / scale), hailRmsMm(g.maxMm));
     const cockpit = ctx.cameraMode === 'cockpit' && this.post !== null;
     u.uCabinOn.value = cockpit ? 1 : 0;
     if (cockpit) this.post!.cabinFromView(ctx, this.cabinFromView);
+    u.uPlaneOn.value = this.updatePlaneBox(ctx) ? 1 : 0;
     this.updateLight(renderer, ctx);
     this.pass.render(renderer, this.scatterMat, output);
     if (g.impactsPerM2s > 0) {
@@ -360,10 +420,44 @@ export class HailGroundOverlay implements SceneEffect {
     this.warm?.dispose();
   }
 
+  /** Something to draw: hail falling or lying, and the camera within GROUND_MAX_AGL_M of the ground under it. */
   private wanted(ctx: SimContext): boolean {
     if (this.ground.clear) return false;
     const c = ctx.camera?.position;
-    return !!c && c.y - groundY(ctx) < GROUND_MAX_AGL_M;
+    if (!c) return false;
+    const ground = ctx.env ? ctx.env.groundElevation(-c.z, c.x) : groundY(ctx);
+    return c.y - (Number.isFinite(ground) ? ground : groundY(ctx)) < GROUND_MAX_AGL_M;
+  }
+
+  /**
+   * The view -> aircraft-frame matrix and the aircraft's bounding box (its meshes, measured again every
+   * AIRCRAFT_BOX_S), for the scatter to leave the aircraft out. False without an aircraft.
+   */
+  private updatePlaneBox(ctx: SimContext): boolean {
+    const root = ctx.aircraftRoot;
+    if (!root) return false;
+    const now = performance.now() / 1000;
+    if (root !== this.planeRoot || now - this.planeAt > AIRCRAFT_BOX_S) {
+      this.planeRoot = root;
+      this.planeAt = now;
+      const box = this.planeBox.makeEmpty();
+      root.updateMatrixWorld();
+      this.rootInv.copy(root.matrixWorld).invert();
+      root.traverseVisible((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry) return;
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        this.meshToRoot.multiplyMatrices(this.rootInv, mesh.matrixWorld);
+        box.union(this.meshBox.copy(mesh.geometry.boundingBox!).applyMatrix4(this.meshToRoot));
+      });
+    }
+    if (this.planeBox.isEmpty()) return false;
+    this.planeMin.copy(this.planeBox.min);
+    this.planeMin.y += AIRCRAFT_FLOOR_M;
+    this.planeMax.copy(this.planeBox.max);
+    this.rootInv.copy(root.matrixWorld).invert();
+    this.planeFromView.multiplyMatrices(this.rootInv, ctx.camera.matrixWorld);
+    return true;
   }
 
   private advance(ctx: SimContext): void {
@@ -400,6 +494,13 @@ export class HailGroundOverlay implements SceneEffect {
       sky.skyColor.b * HAIL_SKY_GAIN + sky.sunColor.b * hs,
     );
   }
+}
+
+/** Root-mean-square diameter of the size distribution with largest stone maxMm, mm (16 quantiles): the stones' area. */
+export function hailRmsMm(maxMm: number): number {
+  let sum = 0;
+  for (let j = 0; j < 16; j++) sum += hailDiameterMm((j + 0.5) / 16, maxMm) ** 2;
+  return Math.sqrt(sum / 16);
 }
 
 /** The ground under the aircraft, three.js world y (MSL m). */
