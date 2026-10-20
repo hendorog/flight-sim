@@ -85,6 +85,13 @@ export const EXTRA_PARAMS = [
    * and the windscreen. 0 without precipitation; the worklet smooths it only once it has been non-zero.
    */
   'rain',
+  /**
+   * Hail on the airframe 0..~1 (mapping.ts hailNoise): the stones' impacts, louder and harsher than rain. 0 without
+   * hail; with 'rain', the appended parameters are smoothed once either has been non-zero.
+   */
+  'hail',
+  /** Largest hailstone, mm (the impacts' pitch and weight; read only while 'hail' is above 0). */
+  'hailSize',
 ] as const;
 
 export type SynthParamName = (typeof SYNTH_PARAMS)[number] | (typeof EXTRA_PARAMS)[number];
