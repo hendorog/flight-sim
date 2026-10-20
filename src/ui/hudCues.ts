@@ -7,6 +7,7 @@ import { DEG } from '../core/math';
 import { engineControl, type ControlInputs, type GearState } from '../core/types';
 import type { CueLevel } from './status';
 import { HAIL_LEVEL_RANK, type HailLevel } from '../sim/weather/hailExposure';
+import { SHATTER_LEVEL } from '../sim/weather/hailDamage';
 
 // --- Speed tape --------------------------------------------------------------------------------------
 
@@ -168,5 +169,41 @@ export class HailToasts {
     this.lastS = nowS;
     this.shownRank = rank;
     return text;
+  }
+}
+
+/** Damage level (sim/weather/hailDamage.ts) from which the damage toasts show. */
+export const HAIL_DAMAGE_TOAST_LEVEL = 0.05;
+
+/**
+ * The toasts of the hail damage: one each when the windscreen's crack level first reaches HAIL_DAMAGE_TOAST_LEVEL
+ * ("Windscreen cracked by hail") and SHATTER_LEVEL ("Windscreen shattered by hail"), and when the leading-edge dent
+ * level first reaches HAIL_DAMAGE_TOAST_LEVEL ("Airframe damaged by hail"). Once per flight: the damage only grows
+ * during a flight, and a new flight (both levels back at 0) arms them again.
+ */
+export class HailDamageToasts {
+  private cracked = false;
+  private shattered = false;
+  private dented = false;
+
+  /** The toast for the damage levels now (each 0..1), or null; at most one per call, the most severe first. */
+  next(windscreen: number, leadingEdge: number): string | null {
+    if (windscreen <= 0 && leadingEdge <= 0) {
+      this.cracked = this.shattered = this.dented = false;
+      return null;
+    }
+    if (!this.shattered && windscreen >= SHATTER_LEVEL) {
+      this.shattered = this.cracked = true;
+      return 'Windscreen shattered by hail';
+    }
+    if (!this.cracked && windscreen >= HAIL_DAMAGE_TOAST_LEVEL) {
+      this.cracked = true;
+      return 'Windscreen cracked by hail';
+    }
+    if (!this.dented && leadingEdge >= HAIL_DAMAGE_TOAST_LEVEL) {
+      this.dented = true;
+      return 'Airframe damaged by hail';
+    }
+    return null;
   }
 }

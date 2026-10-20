@@ -1,6 +1,6 @@
 // Hail damage to the airframe (sim/weather/hailDamage.ts) and its path through SimPhysics: nothing from small hail,
 // growth with the stone size and the airspeed, determinism, the reset of a new flight, the resume snapshot (schema 5,
-// and none from an older one). Each test logs its measured numbers.
+// and none from an older one) and the toasts. Each test logs its measured numbers.
 
 import { describe, expect, it } from 'vitest';
 import { quat } from '../../src/core/math';
@@ -19,6 +19,7 @@ import {
   SHATTER_LEVEL,
   type HailDamageRates,
 } from '../../src/sim/weather/hailDamage';
+import { HAIL_DAMAGE_TOAST_LEVEL, HailDamageToasts } from '../../src/ui/hudCues';
 import type { ScenarioId } from '../../src/core/context';
 
 const report = (label: string, values: Record<string, number | string>) =>
@@ -87,6 +88,18 @@ describe('hail damage rates', () => {
     a.reset();
     expect(a.state.leadingEdge).toBe(0);
     expect(a.state.crackCount).toBe(0);
+  });
+
+  it('toast once per threshold and arm again on a new flight', () => {
+    const t = new HailDamageToasts();
+    expect(t.next(0, 0)).toBeNull();
+    expect(t.next(HAIL_DAMAGE_TOAST_LEVEL, 0)).toBe('Windscreen cracked by hail');
+    expect(t.next(0.3, 0)).toBeNull();
+    expect(t.next(0.3, 0.1)).toBe('Airframe damaged by hail');
+    expect(t.next(SHATTER_LEVEL, 0.2)).toBe('Windscreen shattered by hail');
+    expect(t.next(0.9, 0.9)).toBeNull();
+    expect(t.next(0, 0)).toBeNull();
+    expect(t.next(0.1, 0)).toBe('Windscreen cracked by hail');
   });
 });
 

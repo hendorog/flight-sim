@@ -23,7 +23,7 @@
 // and the first-flight hints suppressed once a training profile exists. `crashActions` lets the school
 // replace the crash dialog's buttons during a lesson.
 
-import { HailToasts } from './hudCues';
+import { HailDamageToasts, HailToasts } from './hudCues';
 import type { R22DemoId } from '../sim/rotorcraft/flights';
 import { C172S_UI } from '../aircraft/c172s/ui';
 import type { AircraftDefinition, AircraftPresentation, AircraftSummary, UiProfile } from '../aircraft/types';
@@ -161,6 +161,8 @@ export class UISystem implements Subsystem, MenuHost {
   private lastParkingBrake: boolean | null = null;
   /** The hail warning level of the last frame (a toast when it rises). */
   private readonly hailToasts = new HailToasts();
+  /** The hail damage toasts (windscreen cracked or shattered, airframe damaged). */
+  private readonly damageToasts = new HailDamageToasts();
   /** The flown type's UiProfile (switches, starter advice), and its engine count. */
   private profile: UiProfile = C172S_UI;
   private engineCount = 1;
@@ -319,6 +321,10 @@ export class UISystem implements Subsystem, MenuHost {
     // HAIL_TOAST_MIN_S unless to a higher level.
     const hailText = this.hailToasts.next(ctx.weatherFx?.hail?.level ?? 'none', performance.now() / 1000);
     if (hailText) this.showToast(hailText, 5000);
+    // Hail damage (sim/weather/hailDamage.ts): a toast when the windscreen or the airframe is first damaged.
+    const dmg = ctx.weatherFx?.damage;
+    const damageText = dmg ? this.damageToasts.next(dmg.windscreen, dmg.leadingEdge) : null;
+    if (damageText) this.showToast(damageText, 6000);
     this.announceControls(ctx);
     this.updateStartup(ctx);
 
