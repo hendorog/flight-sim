@@ -82,6 +82,8 @@ export interface HailDamageState {
   windscreenDoseJm2: number;
   leadingEdgeDoseJm2: number;
   rotorDoseJm2: number;
+  /** Restores so far (HailDamage.restore): a change tells the toasts that the levels were set, not grown. */
+  restores: number;
   /** Cracking impacts due and not yet placed (0..1). */
   crackDue: number;
   /** cracks[0 .. crackCount - 1] are in use; the array always holds MAX_CRACKS objects. */
@@ -96,6 +98,7 @@ export const emptyHailDamage = (): HailDamageState => ({
   windscreenDoseJm2: 0,
   leadingEdgeDoseJm2: 0,
   rotorDoseJm2: 0,
+  restores: 0,
   crackDue: 0,
   crackCount: 0,
   cracks: Array.from({ length: MAX_CRACKS }, () => ({ az: 0, el: 0, size: 0, seed: 0 })),
@@ -270,11 +273,12 @@ export class HailDamage {
     };
   }
 
-  /** Restore a snapshot's damage (undefined: none). */
+  /** Restore a snapshot's damage (undefined: none). Counts the restore in state.restores. */
   restore(d: HailDamageSnapshot | undefined): void {
     this.reset();
-    if (!d) return;
     const s = this.state;
+    s.restores++;
+    if (!d) return;
     s.windscreen = d.windscreen;
     s.leadingEdge = d.leadingEdge;
     s.windscreenDoseJm2 = d.windscreenDoseJm2;

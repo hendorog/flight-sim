@@ -179,15 +179,28 @@ export const HAIL_DAMAGE_TOAST_LEVEL = 0.05;
  * The toasts of the hail damage: one each when the windscreen's crack level first reaches HAIL_DAMAGE_TOAST_LEVEL
  * ("Windscreen cracked by hail") and SHATTER_LEVEL ("Windscreen shattered by hail"), and when the leading-edge dent
  * level first reaches HAIL_DAMAGE_TOAST_LEVEL ("Airframe damaged by hail"). Once per flight: the damage only grows
- * during a flight, and a new flight (both levels back at 0) arms them again.
+ * during a flight, and a new flight (both levels back at 0) arms them again. After a restore (a change of
+ * `restores`, HailDamageState.restores) the flags are set from the restored levels and nothing is shown, so a resumed
+ * flight does not repeat the toasts it already showed.
  */
 export class HailDamageToasts {
   private cracked = false;
   private shattered = false;
   private dented = false;
+  private restores = 0;
 
-  /** The toast for the damage levels now (each 0..1), or null; at most one per call, the most severe first. */
-  next(windscreen: number, leadingEdge: number): string | null {
+  /**
+   * The toast for the damage levels now (each 0..1), or null; at most one per call, the most severe first.
+   * `restores`: the damage state's restore count.
+   */
+  next(windscreen: number, leadingEdge: number, restores = 0): string | null {
+    if (restores !== this.restores) {
+      this.restores = restores;
+      this.shattered = windscreen >= SHATTER_LEVEL;
+      this.cracked = windscreen >= HAIL_DAMAGE_TOAST_LEVEL;
+      this.dented = leadingEdge >= HAIL_DAMAGE_TOAST_LEVEL;
+      return null;
+    }
     if (windscreen <= 0 && leadingEdge <= 0) {
       this.cracked = this.shattered = this.dented = false;
       return null;

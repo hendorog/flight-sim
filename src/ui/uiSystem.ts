@@ -321,9 +321,10 @@ export class UISystem implements Subsystem, MenuHost {
     // HAIL_TOAST_MIN_S unless to a higher level.
     const hailText = this.hailToasts.next(ctx.weatherFx?.hail?.level ?? 'none', performance.now() / 1000);
     if (hailText) this.showToast(hailText, 5000);
-    // Hail damage (sim/weather/hailDamage.ts): a toast when the windscreen or the airframe is first damaged.
+    // Hail damage (sim/weather/hailDamage.ts): a toast when the windscreen or the airframe (a helicopter's rotor
+    // blades included) is first damaged; none for the levels a restore brought back.
     const dmg = ctx.weatherFx?.damage;
-    const damageText = dmg ? this.damageToasts.next(dmg.windscreen, dmg.leadingEdge) : null;
+    const damageText = dmg ? this.damageToasts.next(dmg.windscreen, Math.max(dmg.leadingEdge, dmg.rotor), dmg.restores) : null;
     if (damageText) this.showToast(damageText, 6000);
     this.announceControls(ctx);
     this.updateStartup(ctx);

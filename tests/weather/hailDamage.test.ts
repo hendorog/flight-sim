@@ -120,6 +120,28 @@ describe('hail damage rates', () => {
     expect(t.next(0, 0)).toBeNull();
     expect(t.next(0.1, 0)).toBe('Windscreen cracked by hail');
   });
+
+  it('do not toast again after a restore of a damaged flight', () => {
+    const d = new HailDamage();
+    for (let k = 1; k <= 600; k++) d.update(hail(8, 45), 60, 0.05, 0, level, 0.1 * k, 0.1);
+    const snap = d.capture();
+    // A new UI (a page reload with resume) and a restore into the running UI.
+    const fresh = new HailDamageToasts();
+    const back = new HailDamage();
+    back.restore(snap);
+    const s = back.state;
+    expect(fresh.next(s.windscreen, s.leadingEdge, s.restores)).toBeNull();
+    expect(fresh.next(s.windscreen, s.leadingEdge, s.restores)).toBeNull();
+    const running = new HailDamageToasts();
+    expect(running.next(0.1, 0, 0)).toBe('Windscreen cracked by hail');
+    back.restore(snap);
+    expect(running.next(s.windscreen, s.leadingEdge, s.restores)).toBeNull();
+    expect(running.next(s.windscreen, s.leadingEdge, s.restores)).toBeNull();
+    // A restore of a flight without damage arms them all again.
+    back.restore(undefined);
+    expect(running.next(0, 0, s.restores)).toBeNull();
+    expect(running.next(0.1, 0, s.restores)).toBe('Windscreen cracked by hail');
+  });
 });
 
 // ------------------------------------------------------------------------------------------- through SimPhysics
