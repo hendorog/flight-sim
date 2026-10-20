@@ -19,8 +19,22 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
     "Storm cells derived from the conditions"), read from the frame's shared selection (`stormSelection.ts`
     `cameraStormsAt`, below). Their core, anvil and rain shares multiply the three densities
     (uniform `uCellW`). A march at `STORM_SCALE` 0.5 resolution with
-    `STORM_STEPS` 48 steps, then a depth-aware composite against the cumulus layer. Skipped when no cell is in the
-    view frustum.
+    `STORM_STEPS` 48 steps, then a depth-aware composite over the scene. The effect runs before the clouds: the
+    cumulus march ends each ray where the cells' transmittance falls below `STORM_CLIP_T` 0.3 (the storm layer's
+    distance texture, channel b) and composites over the cells, so cumulus in front of a cell covers it and cumulus
+    behind it is not drawn. Skipped when no cell is in the view frustum.
+    - Light per sample (`stormGlsl.ts`): the sun through two density taps and, beyond them, the analytic core
+      columns and anvils of the cells (`STORM_SHADOW_GLSL`: the core as cylinders of `STORM_SHADOW_CORE_R` 0.6 and
+      0.36 R from the base to 250 m above the anvil's underside at 0.8 of its extinction, the anvil as discs of 1 and
+      0.5 of its radius from 300 m above its underside to the top at 0.75 of its extinction); multiple scattering of
+      the cloud as in the cumulus march (`STORM_MS_ISO` 0.3, `STORM_MS_ISO_K` 0.5, `STORM_MS_LEAK` 0.04), of the rain
+      `STORM_MS` 0.6 exp(-0.08 tau) / 4 pi; the sky through the analytic column above; `STORM_SIDE_SKY` 0.25 of the
+      horizon radiance from the sides; ground bounce from ground in the cells' shadow that sees
+      `STORM_GROUND_SKY_UNDER` 0.3 of the sky under their cloud. The haze in front of a cell keeps `1 -
+      STORM_HAZE_SUN_SHARE` (0.2) of its in-scatter plus 0.8 of it times the cells' direct transmission at four
+      points along the path. All unconfirmed look values. Extra work per lit sample: two analytic column and two
+      shadow loops over the cells (four ray-cylinder chords per cell), no texture reads; per pixel, four shadow
+      loops for the haze.
   - `createFogEffect` (`FogEffect.ts`): `fogTopM`, `fogVisibilityM`. One full-resolution draw; skipped when
     `fogOf(w).topM === 0`. It also writes the shared fog uniform (`fogGlsl.ts fogUniformFor`, every frame, from
     `active`); the aircraft light sprites read it only when no weather is passed to `AircraftLights.update`.
@@ -162,9 +176,10 @@ The `auto` row's `towerExt` equals `TOWER_EXTENSION` in `src/render/clouds/cloud
   `ToneMap.ts`). With no overlays the frame takes the same path as before the slot existed.
 - `PostPipeline.cabinFromView(ctx, out)`: view space to the cabin box's [-1, 1]^3, the matrix the tone map's
   outside mask uses.
-- `src/render/weather/index.ts`: `createWeatherEffects` (storm cells, then fog) and `createWeatherOverlays`
-  (precipitation, then lightning), called by `Simulator` after `post.addEffect(clouds)` and before
-  `warmUpShaders()`. Each factory receives `{ctx, renderer, clouds, post, weather}`.
+- `src/render/weather/index.ts`: `createWeatherEffects` (`beforeClouds`: the storm cells; `afterClouds`: the fog)
+  and `createWeatherOverlays` (precipitation, then lightning), called by `Simulator` after the clouds effect is
+  created and before `warmUpShaders()`; the Simulator adds the era effects, `beforeClouds`, the clouds, then
+  `afterClouds`. Each factory receives `{ctx, renderer, clouds, post, weather}`.
 - `SimContext.weatherFx.flash` (`{x, y, z, energy}`, three.js world, energy 0 when none) and the `lightning`
   event in `SimEvents`. The simulator and `src/dev/harness.ts` create `weatherFx` with every value 0;
   `LightningOverlay` writes `flash` (the brightest lit flash) and emits `lightning` once per strike.
@@ -184,13 +199,30 @@ The `auto` row's `towerExt` equals `TOWER_EXTENSION` in `src/render/clouds/cloud
   activity 0 (the default weather and every lesson) both keep the type's value. Measured (`tests/clouds/
   stormClearing.test.ts`, 2026-10-20): the Thunderstorm conditions with `cloudType 'auto'` give activity 0.236 and
   a layer top of 3982 m instead of 3620 m.
-- Cumulus around the storm cells (`stormClearing` in `CLOUD_MODEL_GLSL`, uniforms `uStormClear`,
-  `uStormClearCount`): the lateral coverage of the weather map is multiplied by 1 − Σ core_i x
-  smoothstep(`CLEAR_OUTER` 3 R_i, `CLEAR_INNER` 1.5 R_i, r_i), at least 0, over the selected cells with a core
-  share above 0 (centre at `simTime`, R the drawn core radius `drawnCoreRadiusM`, 500..8000 m, core the core
-  share). The view march and the shadow map read the same uniforms, so the shadows follow the clearing. With no
-  cell the count is 0 and the GLSL term is skipped (`if (uStormClearCount > 0)`). `CLEAR_INNER` and `CLEAR_OUTER`
-  are unconfirmed look values. No raised-coverage ring around the clearing is drawn.
+- Cumulus around the storm cells (`stormCoverage` and `stormSunTau` in `CLOUD_MODEL_GLSL`, uniforms
+  `uStormClear`, `uStormAnvil`, `uStormGust`, `uStormBase`, `uStormClearCount`), over the selected cells with a
+  core or anvil share above 0, with the geometry the storm effect draws (`cellGeometry.ts`, at `simTime`; R the
+  drawn core radius `drawnCoreRadiusM`, 500..8000 m). The view march and the shadow map read the same uniforms.
+  With no cell the count is 0 and every storm term is skipped (`if (uStormClearCount > 0)`). All constants are
+  unconfirmed look values.
+  - Clearing: the lateral coverage of the weather map is multiplied by 1 − Σ (core_i x smoothstep(`CLEAR_OUTER`
+    3 R_i, `CLEAR_INNER` 1.5 R_i, r_i) + rain_i x `SUBSIDE_DEPTH` 0.4 x smoothstep(`SUBSIDE_OUTER` 6 R_i, 3 R_i,
+    r_i)), at least 0 (core and rain the cell's shares). The local cumulus top is multiplied by 1 −
+    `SUBSIDE_TOP_CUT` 0.6 x min(Σ rain_i x smoothstep(6 R_i, 3 R_i, r_i), 1).
+  - Gust front: coverage up to rain_i x `GUST_COVER` 1.4 in a band from `GUST_INNER` 2.5 to `GUST_OUTER` 3.5 R_i
+    (peak at `GUST_PEAK` 3 R_i) around the downdraft centre (`convection.ts` `downdraftCentreAt`, 0.6 R toward the
+    cell's motion), `GUST_BACK` 0.25 of it on the side away from the motion, top at `GUST_TOP` 0.5 of the nominal
+    layer depth; coverage above 1 fills the band's core. Where it exceeds the cumulus coverage it replaces it, and
+    the local top moves toward its top. With 0.75 and 0.3 (measured with the density slice, `renderDensitySlice`,
+    2026-10-20) the band held cloud only 250 m deep over 1.5 km of its width and was not visible from 7000 m.
+  - Shadows: the direct sunlight on each cumulus sample is multiplied by exp(−tau) of the cells' core columns and
+    anvils toward the sun (`STORM_SHADOW_GLSL`); the sky light by 4 / (4 + 0.45 tau_v), and the light's diffuse
+    transmission (2 + 3 mu0) / (4 + 0.45 tau_v) − exp(−tau_v / mu0) is added, tau_v the cells' optical depth
+    straight above the sample (the mid-level sheet's slab). The shadow map multiplies by the cells' direct
+    transmission from the cloud base toward the sun, so the ground under an anvil darkens.
+  - Sky light at the camera (`SkySystem`, `stormShade.ts`): with the camera under a cell's core column or anvil,
+    `ctx.sky.skyColor` is multiplied by 4 / (4 + 0.45 tau_v) and the light's diffuse transmission is added, tau_v
+    the vertical optical depth above the camera (`stormOverheadTau`). 0 above the camera leaves it unchanged.
 - `extendedLayerTopM(w)`: the low layer's top extended by `layerTowerExt`, the value of `uLayer.y`.
   `CloudModel.midAboveLayer` is `mid.cover > 0 && mid.altM > extendedLayerTopM`. The sheet is drawn, shadows the
   ground and enters the sky model only when it is true.
@@ -391,20 +423,22 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   that pixel's path instead of the lamp-to-camera path. Inside the fog the removed sun beam returns as diffuse
   light with no surface-normal dependence and no ground reflection (`FOG_DIFFUSE_K` in `src/sim/cloudShadows.ts`,
   unconfirmed).
-- Storm cells: the composite against the cumulus is an approximation from the cumulus front distance and
-  transmittance; a cell casts no ground shadow; the sky light does not darken under an anvil; the moon does not
-  light a cell; the temporal pass reprojects cell pixels with the depth buffer or the cumulus layer.
+- Storm cells: the cumulus march ends at one storm distance per storm-march pixel (half resolution, no jitter), so
+  cumulus behind storm cloud with a transmittance above 0.3 is drawn over it; the shadow columns are cylinders and
+  discs, not the drawn density; the rain shaft casts no shadow; the moon does not light a cell; the temporal pass
+  reprojects cell pixels with the depth buffer or the cumulus layer, whose front is the storm's clip distance where
+  no cumulus lies in front of it.
 - Storm cell ranges: render (`cellGeometry`: radius 500..8000 m, top at least base + 2000 m), physics
   (`cellRadiusM`, `cellTopM`) and the lightning scheduler (radius only floored at 0) clamp out-of-range cells
   differently. `stormsOf` and `isStormCell` check types, not ranges.
 - Derived cells: at most 6 cells are drawn, so a seventh cell within 60 km is not drawn. A cell's drift is
   recomputed from the current wind settings, so editing the wind moves the live cells. The anvil's downwind
-  offset (`cellGeometry`) uses the surface wind direction, not the steering wind.
-- Cumulus and storm cells from the ground: towering cumulus within a few km of the camera can hide a cell whose
-  surroundings are cleared (screenshots below). Cumulus left at partial cover inside 1.5 to 3 core radii of a
-  cell is lit as if no anvil were above it.
-- Downdraft centre: the physics places it toward the cell's motion; the drawn rain shaft is centred on the core.
-  For a cell moving across the wind the two are 0.6 R apart.
+  offset (`cellGeometry`) follows the steering wind (`stormSteering`), for an explicit cell too, whatever its
+  `motionDeg`; its full offset (half the anvil radius) is reached at `ANVIL_FULL_DRIFT_KT` 36 kt.
+- Cumulus and storm cells from the ground: towering cumulus within a few km of the camera can still hide a cell
+  (visibility measurement below).
+- Downdraft centre: the physics places it toward the cell's motion, and the gust front is centred on it; the drawn
+  rain shaft is centred on the core.
 - Landing-light beam: no volumetric term in fog.
 - Windshield drops and wet pavement: not built.
 - GPU timings: none of the plan's per-effect budgets (clouds +0.2 ms, fog 0.3 ms, precipitation 0.5 ms, storm cells
@@ -491,3 +525,22 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
     `cover=0` (explicit cell 18.9 km east) the tower and the anvil are drawn in full.
 - `index.html?wx=thunderstorm&scenario=runway&cam=cockpit`: `__ready` in 160 s, empty `__sim.errors`; the view
   along the runway (070) shows the cumulus layer and no cell.
+
+## Integration checks (2026-10-20, storm lighting, order and cumulus terms)
+
+- Storm march terms before the change (`dev/weather.html`, `wx=thunderstorm`, 15:00, `q=medium`, 640x360,
+  SwiftShader; values read from the march target in scene units, one frame):
+  - Camera 10 km west of the cell 18.9 km east of the airport, 400 m AGL: at the rain shaft 365 to 434 of 420 to 500
+    from direct sun, 58 from ground bounce, 2 from the sky; the shaft's output equal to the background behind it
+    within 0.87 to 1.13.
+  - Camera at the airport toward the cell 22.5 km west: haze transmittance 0.38 to 0.40 in front of the base; the
+    base's own radiance 165 against a pixel of 450.
+- Visibility of the cells from the ground: cameras at 8 bearings 6 km from the airport, 400 m AGL, 15:00, each
+  selected cell within 25 km with a core share above 0.5 (17 pairs). Per pair, 8 points on the cell's axis from
+  the base + 300 m to 1500 m below the top; a point is visible where (1 − storm transmittance) x the cumulus
+  transmittance in front of the storm exceeds 0.5 (before: the old composite's rule, cumulus front nearer than the
+  storm front; after: the clipped cumulus march), a cell where half its points are. Before (commit a4b067e): 5 of
+  17. After: 7 of 17. The lowest point (under the cumulus base) was visible in 16 and 17 of 17.
+- Default weather, camera 400 m AGL at the airport, `freeze=1`: 292 of 230 400 pixels differ from commit a4b067e,
+  by at most 1 of 255.
+- No console errors or warnings and no shader compile errors on any page above.
