@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { defaultWeather, type StormCell } from '../../src/core/types';
-import { KT } from '../../src/core/math';
+import { DEG, KT } from '../../src/core/math';
 import {
   BOLT_MAX_BRANCHES,
   BOLT_POINTS,
@@ -21,7 +21,8 @@ import {
   boltBranches,
   boltPath,
 } from '../../src/render/weather/boltGeometry';
-import { ANVIL_PER_RADIUS, SHAFT_PER_RADIUS, cellGeometry, makeCellGeometry } from '../../src/render/weather/StormCellEffect';
+import { ANVIL_FULL_DRIFT_KT, ANVIL_PER_RADIUS, SHAFT_PER_RADIUS, cellGeometry, makeCellGeometry } from '../../src/render/weather/StormCellEffect';
+import { stormSteering } from '../../src/physics/weather/stormField';
 import { STORM_MARCH_FRAG, STORM_STEPS } from '../../src/render/weather/stormGlsl';
 import * as THREE from 'three';
 import { createEventBus, type SimContext, type SimEvents } from '../../src/core/context';
@@ -71,12 +72,22 @@ describe('cellGeometry', () => {
     expect(c.top).toBeGreaterThanOrEqual(c.base + 2000);
   });
 
-  it('moves the anvil downwind (wind from 270: toward the east) by half its radius in a strong wind', () => {
+  it('moves the anvil downwind of the steering wind (from 270 veered to 2000 m) by half its radius in a strong wind', () => {
     const g = cellGeometry(cell(), w, 0, makeCellGeometry());
-    expect(g.anvilX - g.x).toBeCloseTo(0.5 * g.anvilRadius, 6);
-    expect(g.anvilZ - g.z).toBeCloseTo(0, 6);
+    const steer = stormSteering(w, { fromDeg: 0, kt: 0 });
+    // 30 kt at the surface: 54 kt steering, above ANVIL_FULL_DRIFT_KT.
+    expect(steer.kt).toBeGreaterThan(ANVIL_FULL_DRIFT_KT);
+    const to = (steer.fromDeg + 180) * DEG;
+    // three.js x = east, z = -north.
+    expect(g.anvilX - g.x).toBeCloseTo(0.5 * g.anvilRadius * Math.sin(to), 6);
+    expect(g.anvilZ - g.z).toBeCloseTo(-0.5 * g.anvilRadius * Math.cos(to), 6);
+    // The veer turns the offset from due east (wind from 270) toward the south-east.
+    expect(steer.fromDeg).toBeGreaterThan(270);
+    expect(g.anvilZ - g.z).toBeGreaterThan(0);
+    // No wind: no offset.
     const calm = cellGeometry(cell(), { ...w, windSpeedKt: 0 }, 0, makeCellGeometry());
     expect(calm.anvilX).toBe(calm.x);
+    expect(calm.anvilZ).toBe(calm.z);
   });
 
   it('bounds the core footprint and the anvil with its cylinder', () => {
