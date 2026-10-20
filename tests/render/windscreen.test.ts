@@ -19,6 +19,7 @@ import {
   type GlassWeather,
 } from '../../src/render/weather/windscreenWater';
 import { WindscreenOverlay } from '../../src/render/weather/WindscreenOverlay';
+import { hailFallSpeed, hailMeanMm } from '../../src/physics/weather/hail';
 
 const report = (label: string, values: Record<string, number | string>) =>
   console.log(`[windscreen] ${label}: ${Object.entries(values).map(([k, v]) => `${k}=${typeof v === 'number' ? +v.toPrecision(4) : v}`).join('  ')}`);
@@ -64,6 +65,24 @@ describe('windscreen water', () => {
     expect(w.hailPerM2s).toBeGreaterThan(parked);
     expect(w.airShare).toBe(1);
     expect(w.runSpeedMs).toBeCloseTo(1, 5);
+    // The two parts of the strike rate: the fall part alone parked, the airspeed part growing with the TAS.
+    expect(Math.hypot(w.hailFallPerM2s, w.hailAirPerM2s) / w.hailPerM2s).toBeCloseTo(1, 9);
+    expect(w.hailAirPerM2s / w.hailFallPerM2s).toBeCloseTo(50 / hailFallSpeed(hailMeanMm(30)), 9);
+  });
+
+  it('leaves a slush line after parked snow that outlasts the flakes, and blows it off at speed', () => {
+    const w = new WindscreenWater();
+    run(w, glass({ type: 'snow', rateMmH: 2 }), 60);
+    const s0 = w.slush;
+    expect(s0).toBeGreaterThan(0.5);
+    run(w, glass(), 60);
+    report('slush after 60 s of snow and 60 s without, parked', { slushStart: s0, slush: w.slush, snow: w.snow });
+    expect(w.snow).toBeLessThan(0.01);
+    expect(w.slush).toBeGreaterThan(0.8 * s0);
+    expect(w.dry).toBe(false);
+    run(w, glass({ tasMs: 50 }), 40);
+    expect(w.slush).toBe(0);
+    expect(w.dry).toBe(true);
   });
 });
 
