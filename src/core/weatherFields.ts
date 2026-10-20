@@ -118,6 +118,17 @@ export function precipExtinctionPerM(type: PrecipType, rateMmH: number): number 
   return (fit[0] * Math.pow(rateMmH, fit[1])) / 1000;
 }
 
+/**
+ * The rate (mm/h) whose extinction (PRECIP_EXTINCTION_FIT) is kPerM (1/m): the inverse of precipExtinctionPerM;
+ * 0 for 'none' or kPerM 0.
+ */
+export function precipRateForExtinction(type: PrecipType, kPerM: number): number {
+  if (type === 'none' || !(kPerM > 0)) return 0;
+  const fit = PRECIP_EXTINCTION_FIT[type];
+  if (!fit) return 0;
+  return Math.pow((kPerM * 1000) / fit[0], 1 / fit[1]);
+}
+
 // ---------------------------------------------------------------------------------------------- accessors
 export interface MidLayer {
   /** 0..1; 0 = no sheet. */
