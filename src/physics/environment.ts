@@ -8,7 +8,8 @@
 // saturated. Under a clear sky (cover < 0.05) there is no layer to infer from: the spread is at least 12 K.
 // The optional weather fields (core/weatherFields.ts) add saturated air where they are present: inside the ground
 // fog layer, inside the core of a storm cell in effect at the point (WindField.stormCells), within MID_LAYER_HALF_DEPTH of a mid-level sheet of cover >= 0.3 (all
-// inCloud), and below the cloud base in rain or drizzle (spread 0). With the fields absent or neutral none of
+// inCloud), below the cloud base in rain or drizzle (spread 0), and in a storm cell's rain shaft (the spread scaled
+// down to 0 as the shaft's rain rate rises to STORM_RAIN_SATURATE_MMH, physics/weather/stormPrecip.ts). With the fields absent or neutral none of
 // these applies and the result is the one above.
 
 import type { Vec3 } from '../core/math';
@@ -18,6 +19,10 @@ import { AIRPORT } from '../core/world';
 import { atmosphereAt, type AtmosphereConditions } from './atmosphere';
 import type { MoistureSample } from './interfaces';
 import { inStormCore } from './weather/convection';
+import { emptyLocalPrecip, localPrecipAt } from './weather/stormPrecip';
+import { smoothstep } from '../core/math';
+import type { StormCell } from '../core/types';
+import { NO_STORMS } from '../core/weatherFields';
 import { WindField } from './weather/windField';
 
 /** Terrain queries supplied by the world modules. */
@@ -46,6 +51,8 @@ const CLEAR_COVER = 0.05;
 const CLEAR_SPREAD = 12;
 /** Cloud cover from which an aircraft between base and top is taken to be in cloud. */
 const IN_CLOUD_COVER = 0.3;
+/** Storm rain rate from which the air under a cell is saturated (the spread closes from 0 to this), mm/h. Unconfirmed. */
+const STORM_RAIN_SATURATE_MMH = 2;
 /** Half the depth of the mid-level sheet for moisture: within this of midAltM is in cloud, m. */
 const MID_LAYER_HALF_DEPTH = 150;
 
@@ -68,14 +75,16 @@ export function createEnvironment({ weather, terrain, seed = 1 }: EnvironmentOpt
   const fog: FogLayer = { topM: 0, visibilityM: 0 };
   const mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
   const precip: Precip = { type: 'none', rateMmH: 0 };
+  const local = emptyLocalPrecip();
   return {
     windField,
     moisture(altitudeMSL, north = 0, east = 0, time = 0) {
       let inCloud = weather.cloudCover >= IN_CLOUD_COVER && altitudeMSL >= weather.cloudBaseM && altitudeMSL <= weather.cloudTopM;
+      let cells: readonly StormCell[] = NO_STORMS;
       if (!inCloud) {
         const f = fogOf(weather, fog);
         const m = midLayerOf(weather, mid);
-        const cells = windField.stormCells(north, east, time);
+        cells = windField.stormCells(north, east, time);
         inCloud =
           (f.topM > 0 && altitudeMSL - AIRPORT.elevation < f.topM) ||
           (m.cover >= IN_CLOUD_COVER && Math.abs(altitudeMSL - m.altM) <= MID_LAYER_HALF_DEPTH) ||
@@ -89,6 +98,12 @@ export function createEnvironment({ weather, terrain, seed = 1 }: EnvironmentOpt
         // Falling rain or drizzle saturates the air below the base.
         const p = precipOf(weather, precip);
         if (p.rateMmH > 0 && (p.type === 'rain' || p.type === 'drizzle') && altitudeMSL < weather.cloudBaseM) spread = 0;
+        // The storm cells' rain shaft saturates the air under it, from STORM_RAIN_SATURATE_MMH on (continuous in the
+        // rate, so the spread closes across the shaft's edge).
+        if (cells.length > 0 && spread > 0) {
+          const rate = localPrecipAt(weather, cells, time, 0, north, east, altitudeMSL, local).stormRainMmH;
+          if (rate > 0) spread *= 1 - smoothstep(0, STORM_RAIN_SATURATE_MMH, rate);
+        }
       }
       moisture.dewPointSpread = spread;
       moisture.inCloud = inCloud;

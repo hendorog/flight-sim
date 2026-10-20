@@ -75,6 +75,7 @@ import { advanceTimeOfDay } from './clock';
 import { showContextLost, showCurtain, type Curtain } from './overlays';
 import { isFixedPanel, type PanelView } from '../instruments/fixedPanel';
 import { AirframeVisibility } from '../render/aircraft/visibility';
+import { AircraftWeather } from './weather/aircraftWeather';
 import { MIN_LAYER_DEPTH_M, parseParams, type SimParams } from './params';
 import {
   browserStore,
@@ -183,6 +184,8 @@ export class Simulator {
 
   private readonly failed = new Set<string>();
   private readonly airframeVisibility = new AirframeVisibility();
+  /** The precipitation and hail at the aircraft (ctx.weatherFx.precip, .hail), before the UI and the audio. */
+  private readonly aircraftWeather = new AircraftWeather();
   private lastFrame = -1;
   private fastForwardLeft = 0;
   private hiddenPaused = false;
@@ -1261,6 +1264,7 @@ export class Simulator {
     // The Flight School: telemetry, runner, coach, safety, speech, UI models (needs the fresh panel readings).
     if (this.training) this.run('training', this.training, subsystemDt);
     s.ui.demoFlying = !!this.demo && this.demo.outcome !== 'taken-over';
+    this.run('aircraftWeather', this.aircraftWeather, subsystemDt);
     this.run('ui', s.ui, subsystemDt);
     this.demoUi?.update(physics.state, ctx.controls, s.ui.menuOpen || !!this.schoolHold);
     this.run('audio', s.audio, subsystemDt);
