@@ -7,7 +7,8 @@
 //   stones        HAIL_QUANTILES diameters D_j at the quantiles (j + 0.5) / HAIL_QUANTILES of the size distribution
 //                 (hail.ts hailDiameterMm), each carrying 1 / HAIL_QUANTILES of the number density n (hailNumberDensity)
 //   velocity      u_j = the air's velocity relative to the aircraft (-TAS along the flight path, body axes) plus the
-//                 stone's fall speed v_t(D_j) (hail.ts) straight down, turned into body axes
+//                 stone's fall speed v_t(D_j) (hail.ts) in the air density at the aircraft straight down, turned into
+//                 body axes
 //   surfaces      leading edges: outward normal +x (forward); windscreen: the normal WINDSCREEN_NORMAL_ELEV above +x.
 //                 Normal impact speed v_n = max(0, -u_j . n); stone energy E_j = 1/2 rho_h (pi/6) D_j^3 v_n^2
 //   dent dose     integral of sum_j (n / Q) v_n E-excess, E-excess = max(0, E_j - DENT_STONE_J), J/m^2
@@ -22,7 +23,7 @@
 // has been checked for hail damage to light-aircraft skins or acrylic windscreens.
 
 import type { Quat } from '../../core/math';
-import { HAIL_DENSITY_KGM3, hailDiameterMm, hailFallSpeed, hailNumberDensity } from '../../physics/weather/hail';
+import { HAIL_DENSITY_KGM3, HAIL_FALL_AIR_DENSITY, hailDiameterMm, hailFallSpeed, hailNumberDensity } from '../../physics/weather/hail';
 import { rainHash, type LocalPrecip } from '../../physics/weather/stormPrecip';
 
 /** Interval of the damage update in simulation time, s. */
@@ -112,12 +113,22 @@ export interface HailDamageRates {
 
 /**
  * The damage rates for the precipitation `p` at an aircraft flying at true airspeed `tas` (m/s) with angle of attack
- * and sideslip `alpha`, `beta` (rad) and attitude `q` (body -> NED). Writes `out`. Zero without hail.
+ * and sideslip `alpha`, `beta` (rad) and attitude `q` (body -> NED), in air of density `rhoAir` (kg/m^3). Writes
+ * `out`. Zero without hail.
  */
-export function hailDamageRates(p: LocalPrecip, tas: number, alpha: number, beta: number, q: Quat, out: HailDamageRates): HailDamageRates {
+export function hailDamageRates(
+  p: LocalPrecip,
+  tas: number,
+  alpha: number,
+  beta: number,
+  q: Quat,
+  out: HailDamageRates,
+  rhoAir = HAIL_FALL_AIR_DENSITY,
+): HailDamageRates {
   out.dentJm2s = out.crackJm2s = out.cracksPerS = out.maxWindscreenJ = 0;
   if (!(p.hailMmH > 0) || !(p.hailMaxMm > 0)) return out;
   const n = hailNumberDensity(p.hailMmH, p.hailMaxMm) / HAIL_QUANTILES;
+  const rho = rhoAir > 0 ? rhoAir : HAIL_FALL_AIR_DENSITY;
   const v = Math.max(0, tas);
   const ca = Math.cos(alpha), cb = Math.cos(beta);
   // Air relative to the aircraft, body axes (from ahead, along the flight path).
@@ -128,7 +139,7 @@ export function hailDamageRates(p: LocalPrecip, tas: number, alpha: number, beta
   const nwx = Math.cos(WINDSCREEN_NORMAL_ELEV), nwz = -Math.sin(WINDSCREEN_NORMAL_ELEV);
   for (let j = 0; j < HAIL_QUANTILES; j++) {
     const dMm = hailDiameterMm((j + 0.5) / HAIL_QUANTILES, p.hailMaxMm);
-    const vt = hailFallSpeed(dMm);
+    const vt = hailFallSpeed(dMm, rho);
     const ux = ax + vt * fx, uz = az + vt * fz;
     const m = HAIL_DENSITY_KGM3 * (Math.PI / 6) * (dMm / 1000) ** 3;
     // Leading edges face +x.
@@ -152,12 +163,12 @@ export class HailDamage {
   private readonly rates: HailDamageRates = { dentJm2s: 0, crackJm2s: 0, cracksPerS: 0, maxWindscreenJ: 0 };
 
   /**
-   * Advance by dt (s) at simulation time t (s) with the precipitation at the aircraft and its air data. Returns
-   * true when a level changed (the flight model's dents must then be set again).
+   * Advance by dt (s) at simulation time t (s) with the precipitation at the aircraft and its air data (`rhoAir` the
+   * air density there, kg/m^3). Returns true when a level changed (the flight model's dents must then be set again).
    */
-  update(p: LocalPrecip, tas: number, alpha: number, beta: number, q: Quat, t: number, dt: number): boolean {
+  update(p: LocalPrecip, tas: number, alpha: number, beta: number, q: Quat, t: number, dt: number, rhoAir = HAIL_FALL_AIR_DENSITY): boolean {
     if (!(p.hailMmH > 0) || !(dt > 0)) return false;
-    const r = hailDamageRates(p, tas, alpha, beta, q, this.rates);
+    const r = hailDamageRates(p, tas, alpha, beta, q, this.rates, rhoAir);
     if (!(r.dentJm2s > 0) && !(r.cracksPerS > 0)) return false;
     const s = this.state;
     s.leadingEdgeDoseJm2 += r.dentJm2s * dt;

@@ -568,7 +568,7 @@ export class SimPhysics {
     const cells = this.damageField.select(w, t, north, east);
     if (cells.length === 0) return;
     const p = localPrecipAt(w, cells, t, this.damageField.convective(w).capeJkg, north, east, s.altitudeMSL, this.damagePrecip);
-    if (this.hailDamage.update(p, s.tas, s.alpha, s.beta, s.orientation, t, dt)) this.fm.setAirframeDamage(this.hailDamage.state.leadingEdge);
+    if (this.hailDamage.update(p, s.tas, s.alpha, s.beta, s.orientation, t, dt, s.airDensity)) this.fm.setAirframeDamage(this.hailDamage.state.leadingEdge);
   }
 
   /** Copy the flight model's state into renderState, interpolating the pose by the accumulator fraction. */

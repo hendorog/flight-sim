@@ -72,6 +72,16 @@ describe('hail damage rates', () => {
     expect(rates(hail(6, 60), 0).crackJm2s).toBeGreaterThan(0);
   });
 
+  it('use the air density at the aircraft for the fall speed', () => {
+    // Parked, the windscreen takes the stones' fall speed only: thinner air, faster stones, more energy.
+    const p = hail(6, 60);
+    const sea = hailDamageRates(p, 0, 0, 0, level, { dentJm2s: 0, crackJm2s: 0, cracksPerS: 0, maxWindscreenJ: 0 }, 1.225);
+    const high = hailDamageRates(p, 0, 0, 0, level, { dentJm2s: 0, crackJm2s: 0, cracksPerS: 0, maxWindscreenJ: 0 }, 0.9);
+    report('parked windscreen rate J/m^2/s, 60 mm stones, 6 mm/h', { rho1225: sea.crackJm2s, rho090: high.crackJm2s, maxJ1225: sea.maxWindscreenJ, maxJ090: high.maxWindscreenJ });
+    expect(high.maxWindscreenJ / sea.maxWindscreenJ).toBeCloseTo(1.225 / 0.9, 6);
+    expect(high.crackJm2s).toBeGreaterThan(sea.crackJm2s);
+  });
+
   it('round the flight model\'s dent level to DENT_LEVEL_STEP', () => {
     expect(quantiseDentLevel(0)).toBe(0);
     expect(quantiseDentLevel(0.3 * DENT_LEVEL_STEP)).toBe(0);
