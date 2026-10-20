@@ -39,7 +39,9 @@ import * as THREE from 'three';
 import type { SceneEffect, SimContext } from '../../core/context';
 import { DEPTH_GLSL } from '../../core/shaderLib';
 import type { PrecipType } from '../../core/types';
-import { precipOf, type Precip } from '../../core/weatherFields';
+import { hailFallSpeed, hailLowMm, hailMeanMm, hailNumberDensity, HAIL_SCALE_SHARE } from '../../physics/weather/hail';
+import { emptyLocalPrecip, localPrecipAt, type LocalPrecip } from '../../physics/weather/stormPrecip';
+import { cameraStormsAt, cameraStormsOf } from './stormSelection';
 import { Atmosphere } from '../sky/Atmosphere';
 import { FullscreenPass, passMaterial } from '../post/FullscreenPass';
 import type { WeatherEffectContext } from './index';
@@ -55,7 +57,12 @@ import {
   dropSlots,
   dropWeight,
   dropsPerCell,
-  fallSpeed,
+  fallSpeedAt,
+  HAIL_SLOTS,
+  hailPerCell,
+  heavyRainShare,
+  RAIN_HEAVY_ALPHA,
+  RAIN_HEAVY_WIDTH,
   psiScale,
   relativeVelocity,
   shellPhase,
@@ -140,6 +147,17 @@ uniform vec3 uRadiance;
 uniform float uOcclusion;
 uniform float uCabinOn;
 uniform mat4 uCabinFromView;
+// Hail (HAIL_SLOTS stones per cell on a grid of its own, aligned with the stones' motion relative to the camera).
+uniform int uHailShells;
+uniform vec3 uHailAxis;
+uniform vec3 uHailAxisU;
+uniform vec3 uHailAxisW;
+uniform vec4 uHailA[${MAX_SHELLS}];  // radius m, psi phase, psi cell length, stone probability
+uniform vec4 uHailB[${MAX_SHELLS}];  // streak length in psi at the grid's speed, stone slots, coverage weight, margin in phi cells
+uniform vec4 uHailSize;               // smallest stone mm, the distribution's scale mm, 1 - exp(-span / scale), unused
+uniform vec4 uHailMotion;             // the grid's relative velocity (xyz, m/s) and the fall speed it assumes (w)
+uniform float uHailFallK;             // a stone of D mm falls at sqrt(uHailFallK D) m/s (hail.ts hailFallSpeed)
+uniform vec3 uHailRadiance;
 
 const float PHI_CELLS = ${PHI_CELLS.toFixed(1)};
 const float CELL_ANGLE = ${CELL_ANGLE.toFixed(4)};
@@ -235,7 +253,65 @@ void main() {
     }
   }
   float a = 1.0 - keep;
-  gl_FragColor = vec4(scene.rgb * (1.0 - a * uOcclusion) + uRadiance * a, scene.a);
+  vec3 col = scene.rgb * (1.0 - a * uOcclusion) + uRadiance * a;
+  if (uHailShells > 0) {
+    float hc = clamp(dot(dir, uHailAxis), -${COS_MAX}, ${COS_MAX});
+    float hs = sqrt(1.0 - hc * hc);
+    float hpsi = 0.5 * log((1.0 - hc) / (1.0 + hc));
+    float hgp = (atan(dot(dir, uHailAxisW), dot(dir, uHailAxisU)) + 3.14159265) * (PHI_CELLS / PRECIP_TAU);
+    float hcellP = floor(hgp);
+    float hfp = hgp - hcellP;
+    uint hiP = uint(mod(hcellP, PHI_CELLS));
+    float gridSpeed = max(length(uHailMotion.xyz), 0.1);
+    float keepH = 1.0;
+    for (int k = 0; k < ${MAX_SHELLS}; k++) {
+      if (k >= uHailShells) break;
+      vec4 A = uHailA[k];
+      vec4 B = uHailB[k];
+      if (A.x > sceneDist) break;
+      if (uCabinOn > 0.5) {
+        vec3 b = (uCabinFromView * vec4(dv * A.x, 1.0)).xyz;
+        if (max(max(abs(b.x), abs(b.y)), abs(b.z)) < 1.0) continue;
+      }
+      float gs = (hpsi + A.y) / A.z + fract(float(hiP) * 0.618034 + float(k) * 0.381966 + 0.5);
+      float cellS = floor(gs);
+      float fs = gs - cellS;
+      uint iS = uint(int(cellS) + ${PSI_TILE * 4}) & ${PSI_TILE - 1}u;
+      float marginP = B.w;
+      float marginS = B.w * (CELL_ANGLE / A.z);
+      float wFit = max(1.0, 2.0 * (marginP * hs * CELL_ANGLE / uPixelAngle - 1.0));
+      for (int j = 0; j < ${HAIL_SLOTS}; j++) {
+        if (float(j) >= B.y) break;
+        uvec4 h = pcg4d(uvec4(hiP, iS, uint(k * 8 + j), 0x7f4a7c15u));
+        vec4 r = vec4(h >> 16u) * (1.0 / 65536.0);
+        vec4 e = vec4(h & 0xffffu) * (1.0 / 65536.0);
+        float exist = smoothstep(r.x, r.x + 0.05, A.w * hs * hs);
+        if (exist <= 0.0) continue;
+        // The stone's diameter from the size distribution (hail.ts hailDiameterMm), and its streak: its own motion
+        // relative to the camera over the grid's.
+        float D = uHailSize.x - uHailSize.y * log(1.0 - e.x * uHailSize.z);
+        float vd = sqrt(uHailFallK * D);
+        float ratio = length(uHailMotion.xyz + vec3(0.0, uHailMotion.w - vd, 0.0)) / gridSpeed;
+        float l = min(B.x * ratio / A.z, max(0.0, 1.0 - 2.0 * marginS));
+        float wPx = D * 0.001 / (A.x * uPixelAngle);
+        float sub = min(1.0, wPx);
+        float w = min(max(wPx, 1.0), wFit);
+        float across = marginP + (1.0 - 2.0 * marginP) * r.y;
+        float head = marginS + r.z * max(0.0, 1.0 - l - 2.0 * marginS);
+        float ex = (hfp - across) * (PRECIP_TAU / PHI_CELLS);
+        float ey = (fs - clamp(fs, head, head + l)) * A.z;
+        float px = hs * length(vec2(ex, ey)) / uPixelAngle;
+        // An opaque white-grey pellet with a soft rim, its light spread along its streak.
+        float lenPx = hs * l * A.z / uPixelAngle;
+        float blur = clamp(sqrt(w / max(lenPx, w)), ${BLUR_FLOOR.toFixed(2)}, 1.0);
+        float cover = 1.0 - smoothstep(0.3 * w - 0.5, 0.5 * w + 0.75, px);
+        keepH *= 1.0 - min(1.0, cover * exist * sub * blur * B.z * mix(0.75, 1.0, e.y));
+      }
+    }
+    float aH = 1.0 - keepH;
+    col = col * (1.0 - aH) + uHailRadiance * aH;
+  }
+  gl_FragColor = vec4(col, scene.a);
 }
 `;
 
@@ -257,7 +333,8 @@ export class PrecipOverlay implements SceneEffect {
   private time = 0;
   private warm: THREE.WebGLRenderTarget | null = null;
 
-  private readonly precip: Precip = { type: 'none', rateMmH: 0 };
+  /** The precipitation at the camera this frame (stormPrecip.ts localPrecipAt: the stratiform fields and the cells). */
+  readonly local: LocalPrecip = emptyLocalPrecip();
   private readonly invProj = new THREE.Matrix4();
   private readonly camWorld = new THREE.Matrix4();
   private readonly cabinFromView = new THREE.Matrix4();
@@ -270,6 +347,19 @@ export class PrecipOverlay implements SceneEffect {
   private readonly phase = new Float64Array(MAX_SHELLS);
   private readonly cellScale = new Float64Array(MAX_SHELLS);
   private readonly radiance = new THREE.Vector3();
+  private readonly hailAxis = new THREE.Vector3(0, -1, 0);
+  private readonly hailAxisU = new THREE.Vector3(1, 0, 0);
+  private readonly hailAxisW = new THREE.Vector3(0, 0, 1);
+  private readonly hailA = Array.from({ length: MAX_SHELLS }, () => new THREE.Vector4());
+  private readonly hailB = Array.from({ length: MAX_SHELLS }, () => new THREE.Vector4());
+  private readonly hailPhase = new Float64Array(MAX_SHELLS);
+  private readonly hailScale = new Float64Array(MAX_SHELLS);
+  private readonly hailSize = new THREE.Vector4();
+  private readonly hailMotion = new THREE.Vector4();
+  private readonly hailRadiance = new THREE.Vector3();
+  /** Smoothed velocity of the hailstones of the mean size relative to the camera, three.js world, m/s. */
+  readonly vRelHail: V3 = { x: 0, y: -1, z: 0 };
+  private readonly hailTarget: V3 = { x: 0, y: 0, z: 0 };
 
   private readonly camPos = new THREE.Vector3();
   private readonly prevCamPos = new THREE.Vector3();
@@ -307,6 +397,16 @@ export class PrecipOverlay implements SceneEffect {
         uOcclusion: { value: 0 },
         uCabinOn: { value: 0 },
         uCabinFromView: { value: this.cabinFromView },
+        uHailShells: { value: 0 },
+        uHailAxis: { value: this.hailAxis },
+        uHailAxisU: { value: this.hailAxisU },
+        uHailAxisW: { value: this.hailAxisW },
+        uHailA: { value: this.hailA },
+        uHailB: { value: this.hailB },
+        uHailSize: { value: this.hailSize },
+        uHailMotion: { value: this.hailMotion },
+        uHailFallK: { value: HAIL_FALL_K },
+        uHailRadiance: { value: this.hailRadiance },
       },
     });
     this.copyMat = passMaterial({ fragmentShader: COPY_FRAG, uniforms: { uScene: { value: null } } });
@@ -322,9 +422,9 @@ export class PrecipOverlay implements SceneEffect {
    */
   active(ctx: SimContext): boolean {
     if (!this.warm) return true;
-    const p = precipOf(ctx.weather, this.precip);
+    const p = this.sample(ctx);
     const radii = SHELL_RADII_M[ctx.quality] ?? SHELL_RADII_M.high;
-    if (p.rateMmH > 0 && radii.length > 0) return true;
+    if ((p.rateMmH > 0 || p.hailMmH > 0) && radii.length > 0) return true;
     this.drawn = false;
     this.forgetMotion();
     return false;
@@ -338,9 +438,9 @@ export class PrecipOverlay implements SceneEffect {
 
   render(renderer: THREE.WebGLRenderer, input: THREE.Texture, depth: THREE.DepthTexture, output: THREE.WebGLRenderTarget, ctx: SimContext, dt: number): void {
     const prevTarget = renderer.getRenderTarget();
-    const p = precipOf(ctx.weather, this.precip);
+    const p = this.sample(ctx);
     const radii = SHELL_RADII_M[ctx.quality] ?? SHELL_RADII_M.high;
-    this.drawn = p.rateMmH > 0 && radii.length > 0;
+    this.drawn = (p.rateMmH > 0 || p.hailMmH > 0) && radii.length > 0;
     if (!this.warm) {
       // Compile the streak shader on the first frame (into a 1x1 target), so the first shower does not stall on it.
       this.warm = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
@@ -370,17 +470,19 @@ export class PrecipOverlay implements SceneEffect {
     const u = this.material.uniforms;
     // Vertical angle of one pixel: 2 tan(fov / 2) / height (projectionMatrix[5] = 1 / tan(fov / 2)).
     u.uPixelAngle.value = 2 / (camera.projectionMatrix.elements[5] * this.height);
-    this.updateMotion(ctx, p.type, dt);
-    this.updateShells(p, radii, dt);
+    this.updateMotion(ctx, p, dt);
+    const rainShells = p.rateMmH > 0 ? this.updateShells(p, radii, dt) : 0;
+    const hailShells = p.hailMmH > 0 ? this.updateHail(p, radii, dt) : 0;
     u.uSnow.value = p.type === 'snow' ? 1 : 0;
-    this.updateLight(renderer, ctx, p.type);
+    this.updateLight(renderer, ctx, p.type === 'none' ? 'rain' : p.type);
     this.time += Math.max(0, dt);
 
     this.invProj.copy(camera.projectionMatrixInverse);
     this.camWorld.copy(camera.matrixWorld);
     u.uScene.value = input;
     u.uDepth.value = depth;
-    u.uShells.value = Math.min(radii.length, MAX_SHELLS);
+    u.uShells.value = rainShells;
+    u.uHailShells.value = hailShells;
     u.uTime.value = this.time;
     const cockpit = ctx.cameraMode === 'cockpit' && this.post !== null;
     u.uCabinOn.value = cockpit ? 1 : 0;
@@ -396,7 +498,7 @@ export class PrecipOverlay implements SceneEffect {
   }
 
   /** Relative velocity of the drops (smoothed) and the grid's axes. */
-  private updateMotion(ctx: SimContext, type: PrecipType, dt: number): void {
+  private updateMotion(ctx: SimContext, p: LocalPrecip, dt: number): void {
     const cam = this.camPos;
     if (dt > 0 && this.hasPrev) {
       const dx = cam.x - this.prevCamPos.x, dy = cam.y - this.prevCamPos.y, dz = cam.z - this.prevCamPos.z;
@@ -426,34 +528,26 @@ export class PrecipOverlay implements SceneEffect {
     } else {
       this.wind.x = this.wind.y = this.wind.z = 0;
     }
-    relativeVelocity(this.wind, this.camVel, fallSpeed(type), this.target);
-    const v = this.vRel;
-    if (!this.primed) {
-      v.x = this.target.x;
-      v.y = this.target.y;
-      v.z = this.target.z;
-      this.primed = true;
-    } else if (dt > 0) {
-      const k = 1 - Math.exp(-dt / VREL_TAU_S);
-      v.x += (this.target.x - v.x) * k;
-      v.y += (this.target.y - v.y) * k;
-      v.z += (this.target.z - v.z) * k;
-    }
-    const speed = Math.hypot(v.x, v.y, v.z);
-    if (speed > AXIS_MIN_SPEED) {
-      this.axis.set(v.x / speed, v.y / speed, v.z / speed);
-      transportReference(this.axis, this.axisU);
-      this.axisW.crossVectors(this.axis, this.axisU);
-    }
+    relativeVelocity(this.wind, this.camVel, fallSpeedAt(p.type, p.rateMmH), this.target);
+    // The hail of the mean size (hail.ts), on its own grid.
+    relativeVelocity(this.wind, this.camVel, p.hailMmH > 0 ? hailFallSpeed(hailMeanMm(p.hailMaxMm)) : 0, this.hailTarget);
+    const k = !this.primed ? 1 : dt > 0 ? 1 - Math.exp(-dt / VREL_TAU_S) : 0;
+    this.primed = true;
+    follow(this.vRel, this.target, k, this.axis, this.axisU, this.axisW);
+    follow(this.vRelHail, this.hailTarget, k, this.hailAxis, this.hailAxisU, this.hailAxisW);
   }
 
   /** Per-shell uniforms: phase, cell length, drop probability, streak length and width, sway. */
-  private updateShells(p: Precip, radii: readonly number[], dt: number): void {
+  private updateShells(p: LocalPrecip, radii: readonly number[], dt: number): number {
     const v = this.vRel;
     const speed = Math.hypot(v.x, v.y, v.z);
     const streak = streakLengthM(speed, p.type);
     const look = PRECIP_LOOK[p.type as Exclude<PrecipType, 'none'>];
     const snow = p.type === 'snow';
+    // Heavy rain: wider, denser streaks (precipOptics heavyRainShare; 1 at the rates of the stratiform presets).
+    const heavy = snow ? 0 : heavyRainShare(p.rateMmH);
+    const streakWidth = STREAK_WIDTH_PX * (1 + RAIN_HEAVY_WIDTH * heavy);
+    const alpha = look.alpha * (1 + RAIN_HEAVY_ALPHA * heavy);
     const pixelAngle = this.material.uniforms.uPixelAngle.value as number;
     const n = Math.min(radii.length, MAX_SHELLS);
     for (let k = 0; k < n; k++) {
@@ -468,13 +562,48 @@ export class PrecipOverlay implements SceneEffect {
       if (dt > 0) this.phase[k] = shellPhase(this.phase[k], speed, R, dt, cell);
       const perCell = dropsPerCell(p.rateMmH, k, scale, p.type);
       this.shellA[k].set(R, this.phase[k], cell, dropProbability(p.rateMmH, k, scale, p.type));
-      const width = snow ? SNOWFLAKE_MAX_M / (R * pixelAngle) : STREAK_WIDTH_PX;
+      const width = snow ? SNOWFLAKE_MAX_M / (R * pixelAngle) : streakWidth;
       const sway = snow ? SNOW_SWAY_CELLS : 0;
       const fade = snow ? 1 : (radii[0] / R) ** RAIN_DEPTH_FADE_EXP;
-      const widest = snow ? width : STREAK_WIDTH_PX * (1 + RAIN_WIDTH_SPREAD / 2);
-      this.shellB[k].set(streak / R, width, sway, look.alpha);
+      const widest = snow ? width : streakWidth * (1 + RAIN_WIDTH_SPREAD / 2);
+      this.shellB[k].set(streak / R, width, sway, alpha);
       this.shellC[k].set(dropSlots(scale, perCell), dropWeight(p.rateMmH, k, scale, p.type), fade, precipMargin(widest, sway, pixelAngle));
     }
+    return n;
+  }
+
+  /** Per-shell hail uniforms (the stones' own grid; hailPerCell from the number density at the camera). */
+  private updateHail(p: LocalPrecip, radii: readonly number[], dt: number): number {
+    const v = this.vRelHail;
+    const speed = Math.hypot(v.x, v.y, v.z);
+    const vMean = hailFallSpeed(hailMeanMm(p.hailMaxMm));
+    // The longest streak, of the largest stone, sets the cells' length.
+    const vMax = Math.hypot(v.x, v.y + vMean - hailFallSpeed(p.hailMaxMm), v.z);
+    const streak = streakLengthM(speed);
+    const streakMax = streakLengthM(vMax);
+    const perM3 = hailNumberDensity(p.hailMmH, p.hailMaxMm);
+    const pixelAngle = this.material.uniforms.uPixelAngle.value as number;
+    const lo = hailLowMm(p.hailMaxMm);
+    const scaleMm = Math.max(HAIL_SCALE_SHARE * p.hailMaxMm, 1e-3);
+    this.hailSize.set(lo, scaleMm, 1 - Math.exp(-Math.max(0, p.hailMaxMm - lo) / scaleMm), 0);
+    this.hailMotion.set(v.x, v.y, v.z, vMean);
+    const n = Math.min(radii.length, MAX_SHELLS);
+    for (let k = 0; k < n; k++) {
+      const R = radii[k];
+      const scale = psiScale(Math.max(streak, streakMax), R);
+      const cell = CELL_ANGLE * scale;
+      if (scale !== this.hailScale[k]) {
+        this.hailScale[k] = scale;
+        this.hailPhase[k] = shellPhase(this.hailPhase[k], 0, R, 0, cell);
+      }
+      if (dt > 0) this.hailPhase[k] = shellPhase(this.hailPhase[k], speed, R, dt, cell);
+      const perCell = hailPerCell(perM3, radii, k, scale);
+      const slots = Math.min(HAIL_SLOTS, Math.max(1, Math.ceil(3 * perCell)));
+      this.hailA[k].set(R, this.hailPhase[k], cell, Math.min(1, perCell / slots));
+      const widest = (p.hailMaxMm / 1000) / (R * pixelAngle);
+      this.hailB[k].set(streak / R, slots, Math.min(4, Math.max(1, perCell / slots)), precipMargin(widest, 0, pixelAngle));
+    }
+    return n;
   }
 
   private updateLight(renderer: THREE.WebGLRenderer, ctx: SimContext, type: PrecipType): void {
@@ -488,6 +617,50 @@ export class PrecipOverlay implements SceneEffect {
       sky.skyColor.b * look.skyGain + sky.sunColor.b * sun,
     );
     this.material.uniforms.uOcclusion.value = look.occlusion;
+    // Hail: white-grey ice, lit like snow but greyer (HAIL_SKY_GAIN, HAIL_SUN_GAIN).
+    const hs = Math.max(0, sky.sunDir.y) * a.cloudSky.directGround * HAIL_SUN_GAIN;
+    this.hailRadiance.set(
+      sky.skyColor.r * HAIL_SKY_GAIN + sky.sunColor.r * hs,
+      sky.skyColor.g * HAIL_SKY_GAIN + sky.sunColor.g * hs,
+      sky.skyColor.b * HAIL_SKY_GAIN + sky.sunColor.b * hs,
+    );
+  }
+
+  /** The precipitation at the camera (local), from the frame's storm selection at the camera. */
+  private sample(ctx: SimContext): LocalPrecip {
+    const p = ctx.camera?.position;
+    const cells = cameraStormsAt(ctx);
+    const cape = cells.length > 0 ? cameraStormsOf(ctx).field.convective(ctx.weather).capeJkg : 0;
+    // three.js world: x east, y up, z south.
+    return localPrecipAt(ctx.weather, cells, ctx.simTime, cape, p ? -p.z : 0, p ? p.x : 0, p ? p.y : 0, this.local);
+  }
+}
+
+/** Radiance of a hailstone: HAIL_SKY_GAIN x the sky ambient + HAIL_SUN_GAIN x the direct sun. Unconfirmed: look values. */
+export const HAIL_SKY_GAIN = 0.65;
+export const HAIL_SUN_GAIN = 0.2;
+/** v_t = sqrt(HAIL_FALL_K D), D in mm (hail.ts hailFallSpeed at its fall air density). */
+export const HAIL_FALL_K = hailFallSpeed(1) ** 2;
+
+/**
+ * Move the smoothed velocity v toward target by the share k (1: at once) and, above AXIS_MIN_SPEED, align the grid's
+ * axis and its phi reference with it (parallel transport).
+ */
+function follow(v: V3, target: V3, k: number, axis: THREE.Vector3, axisU: THREE.Vector3, axisW: THREE.Vector3): void {
+  if (k >= 1) {
+    v.x = target.x;
+    v.y = target.y;
+    v.z = target.z;
+  } else if (k > 0) {
+    v.x += (target.x - v.x) * k;
+    v.y += (target.y - v.y) * k;
+    v.z += (target.z - v.z) * k;
+  }
+  const speed = Math.hypot(v.x, v.y, v.z);
+  if (speed > AXIS_MIN_SPEED) {
+    axis.set(v.x / speed, v.y / speed, v.z / speed);
+    transportReference(axis, axisU);
+    axisW.crossVectors(axis, axisU);
   }
 }
 

@@ -219,3 +219,50 @@ export function psiOf(c: number): number {
   const k = Math.max(-COS_MAX, Math.min(COS_MAX, c));
   return 0.5 * Math.log((1 - k) / (1 + k));
 }
+
+// ---------------------------------------------------------------------------------------------- storm rain and hail
+/**
+ * Fall speed of the rain at a rate, m/s: FALL_SPEED_MS.rain up to RAIN_SPEED_RATE_MMH[0], rising to
+ * RAIN_HEAVY_FALL_MS at RAIN_SPEED_RATE_MMH[1] (heavier rain has larger, faster drops). Unconfirmed: values for the
+ * look, not checked against a drop-size distribution.
+ */
+export const RAIN_HEAVY_FALL_MS = 9;
+export const RAIN_SPEED_RATE_MMH: readonly [number, number] = [15, 100];
+
+/** Fall speed of precipitation of `type` at `rateMmH`, m/s (fallSpeed for every type but heavy rain). */
+export function fallSpeedAt(type: PrecipType, rateMmH: number): number {
+  if (type !== 'rain') return fallSpeed(type);
+  const [a, b] = RAIN_SPEED_RATE_MMH;
+  const t = Math.min(1, Math.max(0, (rateMmH - a) / (b - a)));
+  return FALL_SPEED_MS.rain + (RAIN_HEAVY_FALL_MS - FALL_SPEED_MS.rain) * t * t * (3 - 2 * t);
+}
+
+/**
+ * The streaks' width and coverage factor at a rate (bigger drops, a denser curtain): 1 up to RAIN_LOOK_RATE_MMH[0],
+ * rising to 1 + RAIN_HEAVY_WIDTH and 1 + RAIN_HEAVY_ALPHA at RAIN_LOOK_RATE_MMH[1]. Unconfirmed: look values.
+ */
+export const RAIN_HEAVY_WIDTH = 0.35;
+export const RAIN_HEAVY_ALPHA = 0.4;
+export const RAIN_LOOK_RATE_MMH: readonly [number, number] = [15, 80];
+
+export function heavyRainShare(rateMmH: number): number {
+  const [a, b] = RAIN_LOOK_RATE_MMH;
+  const t = Math.min(1, Math.max(0, (rateMmH - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Hail slots per grid cell the shader reads, at most (one pcg4d hash each). */
+export const HAIL_SLOTS = 2;
+/** Multiplier on the physical number of stones on a shell (hailPerCell). Unconfirmed: a look value. */
+export const HAIL_COUNT_SCALE = 1;
+
+/**
+ * Mean number of stones on shell k (radii: the quality's shell list) in a cell `scale` times CELL_ANGLE long, at a
+ * number density `perM3` (1/m^3): the stones in the shell's slab (from the previous shell's radius, 0 for the
+ * first) per solid angle, N R^2 dR, times the cell's solid angle CELL_ANGLE^2 scale, times HAIL_COUNT_SCALE.
+ */
+export function hailPerCell(perM3: number, radii: readonly number[], shell: number, scale: number): number {
+  const R = radii[shell];
+  const dR = R - (shell > 0 ? radii[shell - 1] : 0);
+  return Math.max(0, perM3) * R * R * dR * CELL_ANGLE * CELL_ANGLE * scale * HAIL_COUNT_SCALE;
+}
