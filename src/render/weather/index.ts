@@ -4,8 +4,8 @@
 //     cumulus march ends its rays at the cells' front and composites over them), the ground fog after the clouds,
 //     so the fog covers a cell's base and the cumulus;
 //   - overlays (PostPipeline.addOverlay), after the temporal pass and before bloom: precipitation streaks, then
-//     lightning. They anti-alias themselves and are not reprojected.
-// Each factory lives in its own module and may return null when it has nothing to add (the four here always return
+//     lightning, then hail on the ground. They anti-alias themselves and are not reprojected.
+// Each factory lives in its own module and may return null when it has nothing to add (the five here always return
 // an effect); an effect it returns creates its materials in its constructor and draws its real material on its first
 // render whatever the weather, so Simulator.warmUpShaders compiles them. Per-frame state (the live weather,
 // ctx.sky) comes through SceneEffect.render's SimContext; an effect whose weather field is absent reports active() false
@@ -17,6 +17,7 @@ import type { WeatherSettings } from '../../core/types';
 import type { CloudsEffect } from '../clouds';
 import type { PostPipeline } from '../post/PostPipeline';
 import { createFogEffect } from './FogEffect';
+import { createHailGroundOverlay } from './HailGroundOverlay';
 import { createLightningOverlay } from './LightningOverlay';
 import { createPrecipOverlay } from './PrecipOverlay';
 import { createStormCellEffect } from './StormCellEffect';
@@ -52,12 +53,14 @@ export function createWeatherEffects(c: WeatherEffectContext): WeatherSceneEffec
   return out;
 }
 
-/** Post-TAA overlays, in order: precipitation, lightning (each when its factory returns one). */
+/** Post-TAA overlays, in order: precipitation, lightning, hail on the ground (each when its factory returns one). */
 export function createWeatherOverlays(c: WeatherEffectContext): SceneEffect[] {
   const overlays: SceneEffect[] = [];
   const precip = createPrecipOverlay(c);
   if (precip) overlays.push(precip);
   const lightning = createLightningOverlay(c);
   if (lightning) overlays.push(lightning);
+  const hailGround = createHailGroundOverlay(c);
+  if (hailGround) overlays.push(hailGround);
   return overlays;
 }
