@@ -9,10 +9,9 @@
 // and the airframe gets a drag area DENT_BODY_CDA_FULL L along the relative wind at the nose (the dented cowl and
 // its cooling inlets). The flight model sets the level with AeroModel.setLeadingEdgeDamage; at 0 nothing here runs.
 //
-// Unconfirmed: the three constants are chosen for this model. They are of the order of the change standard
-// leading-edge roughness gives a 12 % section at R 6e6 in the NACA wing-section reports (a cd,min rise of a few
-// thousandths and a c_l,max loss of a few tenths, Abbott & von Doenhoff 1959 appendix IV); those numbers were not
-// re-read for this file (the reports could not be fetched), and no data for hail dents themselves were found.
+// Unconfirmed: the three constants are values chosen for this model. The standard leading-edge roughness data of the
+// NACA wing-section reports (Abbott & von Doenhoff 1959, appendix IV) could not be fetched to compare them with, and
+// no data for hail dents were found.
 
 import type { SectionCondition } from './airfoil';
 
@@ -23,7 +22,7 @@ export const DENT_STALL_SHIFT_FULL = (3 * Math.PI) / 180;
 /** Drag area added at the nose at full dent level, m^2. Unconfirmed. */
 export const DENT_BODY_CDA_FULL = 0.02;
 
-/** Apply dent level `level` (> 0) to section constants just prepared (prepareSection) for a section with width s1. */
+/** Apply dent level `level` (> 0) to section constants that prepareSection has filled, for a section with width s1. */
 export function applyLeadingEdgeDents(c: SectionCondition, s1: number, level: number): void {
   c.cd0 += DENT_CD0_FULL * level;
   const shift = DENT_STALL_SHIFT_FULL * level;
