@@ -419,8 +419,12 @@ fifth-highest (each 0 when missing), and every share is multiplied by it. The ra
 scoring at least sPrev, so it dims only the sixth cell unless the fifth to seventh scores lie within 0.025. When a
 cell leaves the six, its score equals sOut and its weight is 0; when two selected cells swap places their weights
 are equal. The result is a function of the weather, the simulation
-time and the point: it does not depend on the earlier calls (the live cells are cached within 10 km of the last
-point and rebuilt when the weather clock, the activity inputs or the wind change).
+time and the point: it does not depend on the earlier calls. The live cells are cached within 10 km of the last
+point and rebuilt when the weather clock moves more than `CLOCK_REUSE_S` 10 s from the clock they were built at,
+or the activity inputs or the wind change. The cache holds every cell alive at some clock reading within 10 s of
+its build clock, and the positions, sizes, tops and shares are evaluated at the current clock, so a reused cache
+gives the same cells as a rebuild (`tests/weather/stormField.test.ts`, 2026-10-20: 1500 readings with clock steps
+of -10 to +15 s and a 40 kt wind, 8988 cells, all fields equal).
 
 Explicit `storms` (URL `cb=`, `__sim.setWeather`, tests) replace the derived cells with the listed ones, every
 share 1. `cb=none` (an empty list) gives no cells. The pause menu's storm chips are "From conditions" (`storms`
@@ -448,16 +452,18 @@ Measured (`tests/weather/stormField.test.ts`, 4-CPU machine, 2026-10-20):
   0.035 m/s, peak 10.45 m/s, 60 changes of the selected set.
 - `StormCellEffect.updateCells` and `WindField.stormCells` at 90 points and times: the same cells, centres,
   shares and tops (540 cells compared, 27 of them growing with a top below 6000 m).
-- `env.wind` with the Thunderstorm cells: 8.6 µs per call with the clock fixed, 17.8 µs with the clock advanced
-  every 4 calls (each advance rebuilds the cells; 13.9 µs at commit f10ece8 on the same machine); the explicit
-  four-cell test (`tests/weather/convection.test.ts`) 9.0 µs; the limit is 30 µs.
+- `env.wind` with the Thunderstorm cells, the cost test run alone (2026-10-20, 3 runs each): 13.2 to 13.9 µs per
+  call with the clock fixed and 13.7 to 14.2 µs with the clock advanced every 4 calls; before the clock tolerance
+  (commit 9b13c5b, same machine) 13.7 to 14.4 µs and 24.9 to 32.2 µs. `StormField.select` with the clock advanced
+  by 1/60 s every call: 3.4 to 7.6 µs per call, 44.4 to 54.2 µs before. The explicit four-cell test
+  (`tests/weather/convection.test.ts`) 12.4 to 13.2 µs (16.0 µs in one run at 9b13c5b). The limit is 30 µs.
 
 ## Local precipitation and hail (`src/physics/weather/stormPrecip.ts`, `hail.ts`)
 
 `localPrecipAt(w, cells, t, capeJkg, north, east, altM, out)` gives the precipitation at a point: the stratiform
 fields (`precipOf`) plus the storm cells' rain and hail, with their extinction. Node-safe, no allocation. Without
 cells it is `stratiformPrecip(w)`, the values the consumers read before it existed. Consumers: the precipitation
-overlay at the camera, `sim/weather/aircraftWeather.ts` at the aircraft (`ctx.weatherFx.precip`, read by the
+overlay at the camera, `sim/weather/aircraftWeather.ts` at the aircraft (the cells of the wind field's `StormField`; `ctx.weatherFx.precip`, read by the
 airframe sound, and `ctx.weatherFx.hail`), `SimEnvironment.moisture`, `weatherLine`. The storm march draws the same
 field (`STORM_PRECIP_GLSL`, the same integer hash and value noise), so the rain a camera enters is the rain seen from
 outside. The cell geometry it reads (`physics/weather/cellGeometry.ts`, moved from `render/weather` and re-exported

@@ -2,13 +2,16 @@
 // toast cues, the aircraft sample): no hail without storms, warning levels at their thresholds, the dose, and the
 // groups at the airport. Each test logs its measured numbers.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultWeather, type StormCell, type WeatherSettings } from '../../src/core/types';
 import { hailNoise, HAIL_FULL_MMH, precipNoise, RAIN_FULL_IAS, SoundTracker } from '../../src/audio/mapping';
 import { P } from '../../src/audio/params';
 import { makeMockEnvironment, makeMockState } from '../../src/core/mockState';
 import { defaultControls } from '../../src/core/types';
-import { emptyLocalPrecip, type LocalPrecip } from '../../src/physics/weather/stormPrecip';
+import { stormCentreAt } from '../../src/core/weatherFields';
+import { createEnvironment, type TerrainProvider } from '../../src/physics/environment';
+import { emptyLocalPrecip, localPrecipAt, type LocalPrecip } from '../../src/physics/weather/stormPrecip';
+import { applyWeatherPreset, weatherPresetById } from '../../src/sim/weatherPresets';
 import { AircraftWeather } from '../../src/sim/weather/aircraftWeather';
 import {
   HAIL_MODERATE_DOSE_JM2,
@@ -108,6 +111,41 @@ describe('hail at the aircraft', () => {
     report('under an explicit cell', { hailMmH: ctx.weatherFx!.precip!.hailMmH, maxMm: ctx.weatherFx!.precip!.hailMaxMm, level: ctx.weatherFx!.hail!.level });
     expect(ctx.weatherFx!.precip!.hailMmH).toBeGreaterThan(0);
     expect(ctx.weatherFx!.hail!.level).not.toBe('none');
+  });
+});
+
+describe('hail at the aircraft with the wind field', () => {
+  it('reads the cells of the wind field at the aircraft (the selection the convective wind reads)', () => {
+    const w = applyWeatherPreset(defaultWeather(), weatherPresetById('thunderstorm')!);
+    const env = createEnvironment({ weather: w, terrain: { height: () => 0, normal: () => ({ x: 0, y: 0, z: -1 }), surface: () => 'grass' } as unknown as TerrainProvider });
+    const state = makeMockState();
+    const a = new AircraftWeather();
+    const out = emptyLocalPrecip();
+    const select = vi.spyOn(env.windField.stormField, 'select');
+    let withHail = 0;
+    // Toward the centre of the nearest cell with rain, and 4 km past it.
+    const near = env.windField.stormCells(0, 0, 0).filter((c) => c.rain > 0.5).map((c) => stormCentreAt(c, 0, { north: 0, east: 0 }));
+    near.sort((p, q) => Math.hypot(p.north, p.east) - Math.hypot(q.north, q.east));
+    const goal = near[0];
+    const len = Math.hypot(goal.north, goal.east);
+    for (let k = 0; k < 200; k++) {
+      const f = ((len + 4000) * k) / 199 / len;
+      const north = goal.north * f, east = goal.east * f;
+      state.position = { x: north, y: east, z: -400 };
+      state.altitudeMSL = 400;
+      const ctx = { weather: w, state, simTime: k, env, weatherFx: { flash: { x: 0, y: 0, z: 0, energy: 0 } } } as unknown as SimContext;
+      const before = select.mock.calls.length;
+      a.update(0.1, ctx);
+      expect(select.mock.calls.length).toBe(before + 1);
+      const cells = env.windField.stormCells(north, east, k);
+      const field = env.windField.stormField;
+      localPrecipAt(w, cells, k, cells.length > 0 ? field.convective(w).capeJkg : 0, north, east, 400, out);
+      expect(ctx.weatherFx!.precip).toEqual(out);
+      if (out.hailMmH > 0) withHail++;
+    }
+    report('aircraft sample against the wind field cells, 200 points', { cellKm: len / 1000, withHail });
+    expect(withHail).toBeGreaterThan(0);
+    select.mockRestore();
   });
 });
 

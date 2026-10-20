@@ -238,6 +238,11 @@ export class WindField {
     return this.storms.select(this.weather, t, north, east);
   }
 
+  /** The StormField behind stormCells (shared with the aircraft's weather sample, sim/weather/aircraftWeather.ts). */
+  get stormField(): StormField {
+    return this.storms;
+  }
+
   /** Convective layer depth zi over ground at `groundM` MSL, m (as sample() computes it). */
   convectiveDepth(groundM: number): number {
     return Math.max(MIN_CONVECTIVE_DEPTH, this.weather.cloudBaseM - groundM);

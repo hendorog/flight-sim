@@ -13,6 +13,7 @@ import { defaultWeather, type WeatherSettings } from '../../src/core/types';
 import { NO_STORMS, stormCentreAt } from '../../src/core/weatherFields';
 import { createEnvironment, type TerrainProvider } from '../../src/physics/environment';
 import {
+  CLOCK_REUSE_S,
   FADE_END_M,
   FADE_START_M,
   REGION_MAX,
@@ -265,6 +266,27 @@ describe('lattice', () => {
       expect(Math.abs(b[i].e - a[i].e)).toBeLessThan(1e-3);
       expect(Math.abs(b[i].w - a[i].w)).toBeLessThan(1e-6);
     }
+  });
+
+  test('a field reused across clock steps within CLOCK_REUSE_S gives what a new field gives at each reading', () => {
+    // The live cells are rebuilt only when the clock moves more than CLOCK_REUSE_S (10 s) from their build clock;
+    // in between, positions and life cycles are evaluated at the current clock. Steps of -10 to +15 s, 40 kt wind.
+    const w = { ...thunderstorm(), windSpeedKt: 40 };
+    const f = new StormField();
+    const rnd = mulberry32(7);
+    let compared = 0;
+    let cells = 0;
+    for (let k = 0; k < 1500; k++) {
+      advanceTimeOfDay(w, (rnd() - 0.4) * 25);
+      const n = (rnd() - 0.5) * 30_000;
+      const e = (rnd() - 0.5) * 30_000;
+      const a = f.select(w, k, n, e).map((c) => ({ ...c }));
+      expect(a).toEqual(new StormField().select(w, k, n, e).map((c) => ({ ...c })));
+      compared++;
+      cells += a.length;
+    }
+    report('reused field against a new field at each reading', { readings: compared, cellsCompared: cells, clockReuseS: CLOCK_REUSE_S });
+    expect(cells).toBeGreaterThan(compared);
   });
 
   test('cells move with the steering wind between clock readings', () => {
