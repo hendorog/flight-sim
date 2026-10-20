@@ -480,10 +480,19 @@ there) is the drawn one.
   Occurrence smoothstep(3, 8 mm, D_max); the cell's hail share is min(rain share, lightning share) times it.
   Sizes: a truncated exponential from 0.4 min(D_max, 12.5 mm) with scale 0.25 D_max (unconfirmed). Rate: up to
   `HAIL_RATE_FULL_MMH` 12 mm/h in the core out to `HAIL_SHAFT_EDGE` 1.35 shaft radii (beyond the heaviest rain),
-  and `HAIL_ANVIL_SHARE` 0.15 of it under the anvil downwind of the core's footprint in patches, up to 500 m below
-  the anvil's underside. Extinction 3 rho_w R / (v_t rho_h D) at the mean diameter. Measured
+  and `HAIL_ANVIL_SHARE` 0.15 of it under the anvil outside the core's footprint in patches. The anvil hail reaches
+  the ground only within `HAIL_ANVIL_NEAR_R` 1.6 core radii of the core's centre (falling off from
+  `HAIL_ANVIL_NEAR_IN_R` 1.2), so in a band just downwind of the core and the shaft edge; beyond that it falls as
+  virga from the anvil's underside and is gone `HAIL_ANVIL_DEPTH_M` 2500 m below it (unconfirmed). All hail ends 0
+  to 500 m below the anvil's underside (the top minus `STORM_ANVIL_DEPTH_M` 1500 m). The storm march draws the same
+  field. Extinction 3 rho_w R / (v_t rho_h D) at the mean diameter. Measured
   (`tests/weather/stormPrecip.test.ts`, 2026-10-20): D_max 62 mm at intensity 1 and CAPE 2743 J/kg, 11 mm for an
   explicit cell of intensity 0.8 without CAPE, 2.4 mm at intensity 0.2 (no hail).
+- Anvil hail by distance (same test, 2026-10-20; a cell 5 km north of the airport, R 3 km, intensity 0.9, default
+  weather): 0 mm/h at the airport and on rings 5 to 10 km from the core at 150 and 900 m MSL, no warning level;
+  up to 1.62 mm/h 3.3 to 4.3 km from the core. Before this limit the airport had 0.52 mm/h at 150 m and 0.54 mm/h
+  at 900 m of 12.8 mm stones, level moderate. A cell of intensity 1 (wind from 250 deg at 10 kt): 0 mm/h under the
+  far anvil 6 to 14 km east at 300 m, 0.21 mm/h at 8500 m.
 - Continuity (same test): along straight paths through a cell (R 3 km, intensity 0.9) at 200, 500 and 850 m the
   rate changes by at most 0.50 mm/h per 5 m against a peak of 64 to 68 mm/h; a fixed point under a cell moving at
   20 kt, 0.47 mm/h per 0.5 s.

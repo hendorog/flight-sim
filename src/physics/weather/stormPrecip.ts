@@ -15,9 +15,12 @@
 //   rain extinction rain density x STORM_SHAFT_SIGMA; the rate is the inverse of the rain extinction fit
 //                   (core/weatherFields.ts precipRateForExtinction)
 //   hail            core: smoothstep(HAIL_SHAFT_EDGE shaftR, 0.5 shaftR, rs) (0.6 + 0.4 cn), wider than the rain shaft,
-//                   so its edge has hail under lighter rain; anvil: HAIL_ANVIL_SHARE under the anvil downwind of the
-//                   core's footprint, in patches (cb above 0.55); up to 500 m below the anvil's underside; times
-//                   intensity, the cell's hail share (cellGeometry hail) and HAIL_RATE_FULL_MMH
+//                   so its edge has hail under lighter rain; anvil: HAIL_ANVIL_SHARE under the anvil outside the
+//                   core's footprint, in patches (cb above 0.55); it reaches the ground only within
+//                   HAIL_ANVIL_NEAR_R core radii of the core's centre (falling off from HAIL_ANVIL_NEAR_IN_R), and
+//                   beyond that falls as virga from the anvil's underside, gone HAIL_ANVIL_DEPTH_M below it; all
+//                   hail ends 0 to 500 m below the anvil's underside; times intensity, the cell's hail share
+//                   (cellGeometry hail) and HAIL_RATE_FULL_MMH
 //   hail extinction 3 rho_w R / (v_t rho_h D) at the distribution's mean diameter (extinction efficiency 2), per
 //                   cell (hailSigmaPerMmH; the march reads it as uCellH.y)
 // Unconfirmed: every constant here is a look value chosen for this model; no source has been checked.
@@ -49,6 +52,11 @@ export const RAIN_FADE_DEPTH_M = 1500;
 export const HAIL_SHAFT_EDGE = 1.35;
 /** Hail under the anvil, share of the core's rate. */
 export const HAIL_ANVIL_SHARE = 0.15;
+/** Anvil hail reaches the ground within this many core radii of the core's centre, falling off from the inner value. */
+export const HAIL_ANVIL_NEAR_R = 1.6;
+export const HAIL_ANVIL_NEAR_IN_R = 1.2;
+/** Depth below the anvil's underside within which the anvil hail beyond HAIL_ANVIL_NEAR_R sublimates, m. Unconfirmed. */
+export const HAIL_ANVIL_DEPTH_M = 2500;
 /** Hail rate of a cell at full share and intensity, mm/h liquid-water equivalent. */
 export const HAIL_RATE_FULL_MMH = 12;
 /** Most precipitation the sample reports, mm/h. */
@@ -139,8 +147,12 @@ function cellPrecip(g: CellGeometry, x: number, y: number, z: number, out: { rai
   if (g.hail > 0) {
     const core = smoothstep(HAIL_SHAFT_EDGE * sr, 0.5 * sr, rs) * (0.6 + 0.4 * cn);
     const ra = Math.hypot(px - g.anvilX, pz - g.anvilZ);
-    const anvil = HAIL_ANVIL_SHARE * smoothstep(0.85 * g.anvilRadius, 0.35 * g.anvilRadius, ra) * (1 - foot) * smoothstep(0.55, 0.75, cb);
     const anvilBot = g.top - STORM_ANVIL_DEPTH_M;
+    // Near the core the anvil hail reaches the ground; farther out it sublimates below the anvil.
+    const near = smoothstep(HAIL_ANVIL_NEAR_R * R, HAIL_ANVIL_NEAR_IN_R * R, r);
+    const virgaH = smoothstep(anvilBot - HAIL_ANVIL_DEPTH_M, anvilBot - 500, y);
+    const reach = virgaH + (1 - virgaH) * near;
+    const anvil = HAIL_ANVIL_SHARE * smoothstep(0.85 * g.anvilRadius, 0.35 * g.anvilRadius, ra) * (1 - foot) * smoothstep(0.55, 0.75, cb) * reach;
     const up = 1 - smoothstep(anvilBot - 500, anvilBot, y);
     out.hail = HAIL_RATE_FULL_MMH * (core + anvil) * up * g.intensity * g.hail;
   }
@@ -276,8 +288,11 @@ vec2 stormPrecipCell(int i, vec3 p) {
   float hail = 0.0;
   if (W.w > 0.0) {
     float core = smoothstep(${f(HAIL_SHAFT_EDGE)} * sr, 0.5 * sr, rs) * (0.6 + 0.4 * cn);
-    float anvil = ${f(HAIL_ANVIL_SHARE)} * smoothstep(0.85 * B.z, 0.35 * B.z, length(q - C.xy)) * (1.0 - foot) * smoothstep(0.55, 0.75, cb);
     float anvilBot = A.w - ${f(STORM_ANVIL_DEPTH_M)};
+    float near = smoothstep(${f(HAIL_ANVIL_NEAR_R)} * R, ${f(HAIL_ANVIL_NEAR_IN_R)} * R, r);
+    float virgaH = smoothstep(anvilBot - ${f(HAIL_ANVIL_DEPTH_M)}, anvilBot - 500.0, p.y);
+    float reach = virgaH + (1.0 - virgaH) * near;
+    float anvil = ${f(HAIL_ANVIL_SHARE)} * smoothstep(0.85 * B.z, 0.35 * B.z, length(q - C.xy)) * (1.0 - foot) * smoothstep(0.55, 0.75, cb) * reach;
     hail = ${f(HAIL_RATE_FULL_MMH)} * (core + anvil) * (1.0 - smoothstep(anvilBot - 500.0, anvilBot, p.y)) * B.y * W.w;
   }
   return vec2(rain, hail);

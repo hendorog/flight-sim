@@ -18,6 +18,7 @@ import {
   hailUpdraftMs,
 } from '../../src/physics/weather/hail';
 import { emptyLocalPrecip, localPrecipAt, rainHash, rainValueNoise, stratiformPrecip, type LocalPrecip } from '../../src/physics/weather/stormPrecip';
+import { HailExposure } from '../../src/sim/weather/hailExposure';
 import { applyWeatherPreset, weatherPresetById } from '../../src/sim/weatherPresets';
 
 const report = (label: string, values: Record<string, number | string>) =>
@@ -169,19 +170,57 @@ describe('hail', () => {
     const cells = [cell({ intensity: 1 })];
     const out = emptyLocalPrecip();
     const core = { ...localPrecipAt(w, cells, 0, 2743, 0, 0, 300, out) };
-    // The anvil lies downwind of the steering wind (from about 275 deg): to the east.
-    let anvil = 0;
-    for (let e = 6000; e <= 14_000; e += 250) anvil = Math.max(anvil, localPrecipAt(w, cells, 0, 2743, 0, e, 300, out).hailMmH);
+    // The anvil lies downwind of the steering wind (from about 275 deg): to the east. Its hail reaches the ground
+    // only near the core (HAIL_ANVIL_NEAR_R core radii); farther out it is virga below the anvil's underside.
+    let anvil = 0, farLow = 0, farHigh = 0;
+    for (let e = 3000; e <= 5000; e += 50) for (let n = -2000; n <= 2000; n += 250) anvil = Math.max(anvil, localPrecipAt(w, cells, 0, 2743, n, e, 300, out).hailMmH);
+    for (let e = 6000; e <= 14_000; e += 250) {
+      farLow = Math.max(farLow, localPrecipAt(w, cells, 0, 2743, 0, e, 300, out).hailMmH);
+      farHigh = Math.max(farHigh, localPrecipAt(w, cells, 0, 2743, 0, e, 8500, out).hailMmH);
+    }
     const edge = { ...localPrecipAt(w, cells, 0, 2743, 0, -2200, 300, out) };
-    report('hail', { coreMmH: core.hailMmH, coreMaxMm: core.hailMaxMm, edgeMmH: edge.hailMmH, edgeRainMmH: edge.rateMmH, anvilMmH: anvil });
+    report('hail', { coreMmH: core.hailMmH, coreMaxMm: core.hailMaxMm, edgeMmH: edge.hailMmH, edgeRainMmH: edge.rateMmH, anvilMmH: anvil, farAnvil300m: farLow, farAnvil8500m: farHigh });
     expect(core.hailMmH).toBeGreaterThan(1);
     expect(core.hailMaxMm).toBeGreaterThan(50);
     expect(edge.hailMmH).toBeGreaterThan(0);
     expect(edge.rateMmH).toBeLessThan(core.rateMmH);
     expect(anvil).toBeGreaterThan(0);
+    expect(farLow).toBe(0);
+    expect(farHigh).toBeGreaterThan(0);
     const none = localPrecipAt(defaultWeather(), [], 0, 2743, 0, 0, 300, out);
     expect(none.hailMmH).toBe(0);
     expect(hailNumberDensity(0, 30)).toBe(0);
+  });
+
+  it('reaches the ground under the anvil only near the core: none 5 km from the core at 150 and 900 m, no warning there', () => {
+    // The review case: a cell 5 km north of the airport, R 3 km, intensity 0.9, in the default weather.
+    const w = { ...defaultWeather(), storms: [cell({ northM: 5000 })] };
+    const out = emptyLocalPrecip();
+    const cape = 0;
+    let outside = 0, band = 0, inBandCount = 0;
+    for (const alt of [150, 900]) {
+      const x = new HailExposure();
+      for (let r = 5000; r <= 10_000; r += 250)
+        for (let b = 0; b < 72; b++) {
+          const a = (b * Math.PI) / 36;
+          const p = localPrecipAt(w, w.storms, 0, cape, 5000 + r * Math.cos(a), r * Math.sin(a), alt, out);
+          outside = Math.max(outside, p.hailMmH);
+          expect(x.update(p, 50, 0.1).level).toBe('none');
+        }
+      const airport = localPrecipAt(w, w.storms, 0, cape, 0, 0, alt, out);
+      expect(airport.hailMmH).toBe(0);
+      expect(new HailExposure().update(airport, 50, 0.1).level).toBe('none');
+      for (let r = 3300; r <= 4300; r += 100)
+        for (let b = 0; b < 72; b++) {
+          const a = (b * Math.PI) / 36;
+          const h = localPrecipAt(w, w.storms, 0, cape, 5000 + r * Math.cos(a), r * Math.sin(a), alt, out).hailMmH;
+          if (h > 0) inBandCount++;
+          band = Math.max(band, h);
+        }
+    }
+    report('anvil hail by distance from the core', { outside5to10kmMmH: outside, band3300to4300mMmH: band, bandPointsWithHail: inBandCount });
+    expect(outside).toBe(0);
+    expect(band).toBeGreaterThan(0.05);
   });
 
   it('comes with the Thunderstorm preset: some selected cell has hail somewhere under it', () => {
