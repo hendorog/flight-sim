@@ -308,10 +308,10 @@ export interface AircraftFlightModel extends FlightModel {
   setKinematics(k: { position: Vec3; orientation: Quat; velocity: Vec3; angularVelocity: Vec3 }): void;
   /**
    * Hail dents on the leading edges, 0..1 (sim/weather/hailDamage.ts): the section and nose-drag changes of
-   * aero/hailDents.ts in the flight and the trim aerodynamics. Rotorcraft: no effect (the rotor's blade-element model
-   * has no section roughness term).
+   * aero/hailDents.ts in the flight and the trim aerodynamics; `rotor` (default 0) the dents on a helicopter's
+   * rotor blades (Rotorcraft.setDamage; no effect on other types).
    */
-  setAirframeDamage(leadingEdge: number): void;
+  setAirframeDamage(leadingEdge: number, rotor?: number): void;
   captureSystems(): SystemsSnapshot;
   /** `dynamicPressure`: for setting the surfaces immediately, Pa (today: 0.5 rho |v|^2 of the saved velocity). */
   restoreSystems(s: SystemsSnapshot, controls: ControlInputs, dynamicPressure: number): void;

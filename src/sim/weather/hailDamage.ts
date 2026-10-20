@@ -15,6 +15,12 @@
 //   crack dose    the same with CRACK_STONE_J on the windscreen
 //   levels        leadingEdge = 1 - exp(-dent dose / DENT_DOSE_FULL_JM2), windscreen = 1 - exp(-crack dose /
 //                 CRACK_DOSE_FULL_JM2); both only grow during a flight
+//   rotor         helicopters: the blade leading edges at ROTOR_STATION of the main rotor's radius, normal speed
+//                 v_n = max(0, Omega r + V sin psi) at ROTOR_AZIMUTHS azimuths psi (V the TAS, taken in the disc
+//                 plane), averaged over the azimuths: a blade element meets the stones in the volume it sweeps, n v_n
+//                 per m^2 of its leading edge. Rotor dose: the dent dose's sum with these speeds and DENT_STONE_J;
+//                 rotor = 1 - exp(-rotor dose / DENT_DOSE_FULL_JM2). Both rotors take this level
+//                 (Rotorcraft.setDamage)
 //   cracks        cracking impacts arrive at WINDSCREEN_AREA_M2 sum_j (n / Q) v_n [E_j >= CRACK_STONE_J] per second;
 //                 each whole impact due adds a crack (at most MAX_CRACKS) at a direction from the pilot's eye hashed
 //                 from the clock and the crack's index (rainHash), sized by the largest such stone's energy
@@ -38,6 +44,10 @@ export const CRACK_STONE_J = 5;
 export const DENT_DOSE_FULL_JM2 = 1000;
 /** Excess impact energy per m^2 of windscreen at which the crack level reaches 1 - 1/e, J/m^2. Unconfirmed. */
 export const CRACK_DOSE_FULL_JM2 = 400;
+/** Blade station of the rotor's leading-edge strikes, share of the main rotor's radius. */
+export const ROTOR_STATION = 0.75;
+/** Azimuths the blade's speed through the stones is averaged over. */
+export const ROTOR_AZIMUTHS = 8;
 /** Elevation of the windscreen's outward normal above the nose, rad (55 deg). Unconfirmed. */
 export const WINDSCREEN_NORMAL_ELEV = (55 * Math.PI) / 180;
 /** Windscreen area the cracking impacts are counted on, m^2. Unconfirmed. */
@@ -66,9 +76,12 @@ export interface HailDamageState {
   windscreen: number;
   /** Leading-edge (wing, tail, cowl) dent level 0..1. */
   leadingEdge: number;
+  /** Rotor blade leading-edge dent level 0..1 (helicopters; 0 on every other type). */
+  rotor: number;
   /** Excess impact energy accumulated, J/m^2. */
   windscreenDoseJm2: number;
   leadingEdgeDoseJm2: number;
+  rotorDoseJm2: number;
   /** Cracking impacts due and not yet placed (0..1). */
   crackDue: number;
   /** cracks[0 .. crackCount - 1] are in use; the array always holds MAX_CRACKS objects. */
@@ -79,8 +92,10 @@ export interface HailDamageState {
 export const emptyHailDamage = (): HailDamageState => ({
   windscreen: 0,
   leadingEdge: 0,
+  rotor: 0,
   windscreenDoseJm2: 0,
   leadingEdgeDoseJm2: 0,
+  rotorDoseJm2: 0,
   crackDue: 0,
   crackCount: 0,
   cracks: Array.from({ length: MAX_CRACKS }, () => ({ az: 0, el: 0, size: 0, seed: 0 })),
@@ -94,6 +109,9 @@ export interface HailDamageSnapshot {
   leadingEdgeDoseJm2: number;
   crackDue: number;
   cracks: WindscreenCrack[];
+  /** Present only once a rotor took damage (helicopters). */
+  rotor?: number;
+  rotorDoseJm2?: number;
 }
 
 /** Size 0..1 of a crack from the striking stone's energy: log2(E / CRACK_STONE_J) / 4, 1 at 16 times the threshold. */
@@ -157,6 +175,30 @@ export function hailDamageRates(
   return out;
 }
 
+const ROTOR_SIN = Array.from({ length: ROTOR_AZIMUTHS }, (_, j) => Math.sin((2 * Math.PI * (j + 0.5)) / ROTOR_AZIMUTHS));
+
+/**
+ * Dent rate of the rotor blades' leading edges, J/m^2/s, for the precipitation `p`, the blade speed `bladeMs` at
+ * ROTOR_STATION (Omega r, m/s) and the airspeed in the disc plane `inPlaneMs` (m/s). Zero without hail or with the
+ * rotor stopped.
+ */
+export function rotorDentRate(p: LocalPrecip, bladeMs: number, inPlaneMs: number): number {
+  if (!(p.hailMmH > 0) || !(p.hailMaxMm > 0) || !(bladeMs > 0)) return 0;
+  const n = hailNumberDensity(p.hailMmH, p.hailMaxMm) / (HAIL_QUANTILES * ROTOR_AZIMUTHS);
+  const v = Math.max(0, inPlaneMs);
+  let rate = 0;
+  for (let j = 0; j < HAIL_QUANTILES; j++) {
+    const dMm = hailDiameterMm((j + 0.5) / HAIL_QUANTILES, p.hailMaxMm);
+    const m = HAIL_DENSITY_KGM3 * (Math.PI / 6) * (dMm / 1000) ** 3;
+    for (let k = 0; k < ROTOR_AZIMUTHS; k++) {
+      const vn = Math.max(0, bladeMs + v * ROTOR_SIN[k]);
+      const e = 0.5 * m * vn * vn;
+      if (e > DENT_STONE_J) rate += n * vn * (e - DENT_STONE_J);
+    }
+  }
+  return rate;
+}
+
 /** The hail damage of one flight (one per SimPhysics). */
 export class HailDamage {
   readonly state: HailDamageState = emptyHailDamage();
@@ -164,13 +206,29 @@ export class HailDamage {
 
   /**
    * Advance by dt (s) at simulation time t (s) with the precipitation at the aircraft and its air data (`rhoAir` the
-   * air density there, kg/m^3). Returns true when a level changed (the flight model's dents must then be set again).
+   * air density there, kg/m^3; `rotorBladeMs` a helicopter's main-rotor blade speed at ROTOR_STATION, m/s, 0 on
+   * other types). Returns true when a level changed (the flight model's dents must then be set again).
    */
-  update(p: LocalPrecip, tas: number, alpha: number, beta: number, q: Quat, t: number, dt: number, rhoAir = HAIL_FALL_AIR_DENSITY): boolean {
+  update(
+    p: LocalPrecip,
+    tas: number,
+    alpha: number,
+    beta: number,
+    q: Quat,
+    t: number,
+    dt: number,
+    rhoAir = HAIL_FALL_AIR_DENSITY,
+    rotorBladeMs = 0,
+  ): boolean {
     if (!(p.hailMmH > 0) || !(dt > 0)) return false;
     const r = hailDamageRates(p, tas, alpha, beta, q, this.rates, rhoAir);
-    if (!(r.dentJm2s > 0) && !(r.cracksPerS > 0)) return false;
+    const rotorRate = rotorBladeMs > 0 ? rotorDentRate(p, rotorBladeMs, tas) : 0;
+    if (!(r.dentJm2s > 0) && !(r.cracksPerS > 0) && !(rotorRate > 0)) return false;
     const s = this.state;
+    if (rotorRate > 0) {
+      s.rotorDoseJm2 += rotorRate * dt;
+      s.rotor = 1 - Math.exp(-s.rotorDoseJm2 / DENT_DOSE_FULL_JM2);
+    }
     s.leadingEdgeDoseJm2 += r.dentJm2s * dt;
     s.windscreenDoseJm2 += r.crackJm2s * dt;
     s.leadingEdge = 1 - Math.exp(-s.leadingEdgeDoseJm2 / DENT_DOSE_FULL_JM2);
@@ -195,6 +253,7 @@ export class HailDamage {
   reset(): void {
     const s = this.state;
     s.windscreen = s.leadingEdge = s.windscreenDoseJm2 = s.leadingEdgeDoseJm2 = s.crackDue = 0;
+    s.rotor = s.rotorDoseJm2 = 0;
     s.crackCount = 0;
   }
 
@@ -207,6 +266,7 @@ export class HailDamage {
       leadingEdgeDoseJm2: s.leadingEdgeDoseJm2,
       crackDue: s.crackDue,
       cracks: s.cracks.slice(0, s.crackCount).map((c) => ({ ...c })),
+      ...(s.rotorDoseJm2 > 0 ? { rotor: s.rotor, rotorDoseJm2: s.rotorDoseJm2 } : {}),
     };
   }
 
@@ -220,6 +280,8 @@ export class HailDamage {
     s.windscreenDoseJm2 = d.windscreenDoseJm2;
     s.leadingEdgeDoseJm2 = d.leadingEdgeDoseJm2;
     s.crackDue = d.crackDue;
+    s.rotor = d.rotor ?? 0;
+    s.rotorDoseJm2 = d.rotorDoseJm2 ?? 0;
     const n = Math.min(MAX_CRACKS, d.cracks.length);
     for (let i = 0; i < n; i++) Object.assign(s.cracks[i], d.cracks[i]);
     s.crackCount = n;

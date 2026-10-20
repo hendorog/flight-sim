@@ -54,7 +54,7 @@ import { sunDirectionNED } from '../core/world';
 import { reanchorStorms } from './weatherPresets';
 import { StormField } from '../physics/weather/stormField';
 import { emptyLocalPrecip, localPrecipAt } from '../physics/weather/stormPrecip';
-import { HAIL_DAMAGE_DT_S, HailDamage } from './weather/hailDamage';
+import { HAIL_DAMAGE_DT_S, HailDamage, ROTOR_STATION } from './weather/hailDamage';
 
 /** Most simulated time one advance() call may run per unit of time scale, s. */
 const MAX_FRAME_SIM = 0.1;
@@ -386,7 +386,7 @@ export class SimPhysics {
     if (def.geometry.gear.retractable) ic.gearDown = sys.gear.extension.every((x) => x > 0.5);
     // The hail damage as saved (none in a snapshot before schema 5), before the reset's trim.
     this.hailDamage.restore(snap.damage);
-    fm.setAirframeDamage(this.hailDamage.state.leadingEdge);
+    fm.setAirframeDamage(this.hailDamage.state.leadingEdge, this.hailDamage.state.rotor);
     try {
       fm.reset(ic, this.env);
     } catch {
@@ -568,7 +568,11 @@ export class SimPhysics {
     const cells = this.damageField.select(w, t, north, east);
     if (cells.length === 0) return;
     const p = localPrecipAt(w, cells, t, this.damageField.convective(w).capeJkg, north, east, s.altitudeMSL, this.damagePrecip);
-    if (this.hailDamage.update(p, s.tas, s.alpha, s.beta, s.orientation, t, dt, s.airDensity)) this.fm.setAirframeDamage(this.hailDamage.state.leadingEdge);
+    // A helicopter's main-rotor blade speed at the damage station (0 without a rotor or with it stopped).
+    const rotor = this.definition.rotorcraft;
+    const blade = rotor && s.rotorcraft ? s.rotorcraft.omega * ROTOR_STATION * rotor.main.radius : 0;
+    const d = this.hailDamage;
+    if (d.update(p, s.tas, s.alpha, s.beta, s.orientation, t, dt, s.airDensity, blade)) this.fm.setAirframeDamage(d.state.leadingEdge, d.state.rotor);
   }
 
   /** Copy the flight model's state into renderState, interpolating the pose by the accumulator fraction. */

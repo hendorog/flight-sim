@@ -258,10 +258,13 @@ export function snapshotSystems(snap: FlightSnapshot): SystemsSnapshot {
 
 const unit = (v: unknown): boolean => isNum(v) && v >= 0 && v <= 1;
 
-/** A schema-5 damage block: levels 0..1, doses at least 0, at most MAX_CRACKS cracks of finite numbers. */
+/** A schema-5 damage block: levels 0..1, doses at least 0 (the rotor's optional), at most MAX_CRACKS cracks of finite numbers. */
 function isDamage(v: unknown): v is HailDamageSnapshot {
   if (!isObj(v) || !unit(v.windscreen) || !unit(v.leadingEdge) || !unit(v.crackDue)) return false;
   if (!isNum(v.windscreenDoseJm2) || v.windscreenDoseJm2 < 0 || !isNum(v.leadingEdgeDoseJm2) || v.leadingEdgeDoseJm2 < 0) return false;
+  // The rotor's damage (helicopters), present once a rotor took damage.
+  if (v.rotor !== undefined && !unit(v.rotor)) return false;
+  if (v.rotorDoseJm2 !== undefined && (!isNum(v.rotorDoseJm2) || v.rotorDoseJm2 < 0)) return false;
   return Array.isArray(v.cracks) && v.cracks.length <= MAX_CRACKS &&
     v.cracks.every((c) => isObj(c) && isNum(c.az) && isNum(c.el) && unit(c.size) && unit(c.seed));
 }
