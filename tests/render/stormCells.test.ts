@@ -27,7 +27,7 @@ import { STORM_MARCH_FRAG, STORM_STEPS } from '../../src/render/weather/stormGls
 import * as THREE from 'three';
 import { createEventBus, type SimContext, type SimEvents } from '../../src/core/context';
 import { makeMockEnvironment } from '../../src/core/mockState';
-import { LightningOverlay, MAX_WINDOW_S, stormTau } from '../../src/render/weather/LightningOverlay';
+import { CHANNEL_TAU_MOVE_M, LightningOverlay, MAX_WINDOW_S, RAIN_DIFFRACTION_SHARE, stormTau } from '../../src/render/weather/LightningOverlay';
 import { strikesBetween, type Strike } from '../../src/sim/weather/lightning';
 
 const cell = (o: Partial<StormCell> = {}): StormCell => ({
@@ -279,6 +279,56 @@ describe('LightningOverlay', () => {
     for (const e of got) {
       if (e.kind === 'cg') expect(e.altM).toBe(Math.min(11_000, defaultWeather().cloudBaseM + BOLT_TOP_ABOVE_BASE_M));
     }
+  });
+
+  it('computes the channel transmittance once per strike and again after the camera moves more than 200 m', () => {
+    const ctx = makeCtx();
+    const g = cellGeometry(cells[0], ctx.weather, 1, makeCellGeometry());
+    const tex = new THREE.Texture();
+    const layer = { marched: true, distance: tex, transmittance: tex, cells: [g], count: 1 };
+    const overlay = new LightningOverlay(null, () => layer);
+    overlay.setSize(640, 360);
+    const { renderer } = fakeRenderer();
+    // The camera 12 km south of the cell, 600 m up, looking at it; a cloud-to-ground strike 1 km from its centre.
+    const look = (dx: number) => {
+      ctx.camera.position.set(g.x + dx, 600, g.z + 12_000);
+      ctx.camera.lookAt(g.x, 2000, g.z);
+      ctx.camera.updateMatrixWorld();
+    };
+    look(0);
+    ctx.simTime = 1;
+    overlay.inject({ id: 7, cell: 0, kind: 'cg', tStart: 1, north: -g.z + 1000, east: g.x, heightFrac: 0.05, strokes: 3, energy: 1 });
+    const boltU = (overlay as unknown as { boltU: THREE.Vector4[] }).boltU;
+    const flash = () => (overlay as unknown as { flashes: { bolt: Float32Array }[] }).flashes[0];
+    const direct = (cam: THREE.Vector3, i: number): number => {
+      const b = flash().bolt;
+      const tau = { cloud: 0, rain: 0 };
+      stormTau([g], 1, cam, b[3 * i], b[3 * i + 1], b[3 * i + 2], tau);
+      return Math.exp(-tau.cloud - (1 - RAIN_DIFFRACTION_SHARE) * tau.rain);
+    };
+    const frame = (dt: number) => {
+      ctx.simTime += dt;
+      overlay.render(renderer, tex, new THREE.DepthTexture(4, 4), target(), ctx);
+    };
+    frame(0.001);
+    const cam0 = ctx.camera.position.clone();
+    const first = boltU.map((u) => u.w);
+    for (let i = 0; i < first.length; i++) if (first[i] >= 0) expect(first[i]).toBeCloseTo(direct(cam0, i), 6);
+    expect(first.some((w) => w > 0 && w < 0.99)).toBe(true);
+    // 150 m: the cached values; 250 m from where they were computed: recomputed from the new position.
+    look(150);
+    frame(0.001);
+    for (let i = 0; i < first.length; i++) if (first[i] >= 0) expect(boltU[i].w).toBeCloseTo(direct(cam0, i), 6);
+    look(250);
+    frame(0.001);
+    const cam1 = ctx.camera.position.clone();
+    for (let i = 0; i < first.length; i++) if (boltU[i].w >= 0) expect(boltU[i].w).toBeCloseTo(direct(cam1, i), 6);
+    expect(CHANNEL_TAU_MOVE_M).toBe(200);
+    // Cost of a lit-bolt frame with the camera still.
+    const n = 200;
+    const t0 = performance.now();
+    for (let k = 0; k < n; k++) frame(1e-5);
+    console.log(`[storm] lit-bolt frame: ${(((performance.now() - t0) / n) * 1000).toFixed(1)} us (camera still, ${boltU.length} channel points)`);
   });
 
   it('emits nothing while the clock stands still, and drops the lit flashes when it goes back', () => {

@@ -140,6 +140,16 @@ interface Flash {
   branchCount: number;
   hasBolt: boolean;
   end: number;
+  /**
+   * The storm cells' transmittance from the camera to each channel point (bolt points, then branch points), the
+   * camera position and cell count it was computed for, and whether it is set (channelTransmittance).
+   */
+  trans: Float32Array;
+  transX: number;
+  transY: number;
+  transZ: number;
+  transCount: number;
+  transValid: boolean;
 }
 
 function makeFlash(): Flash {
@@ -153,8 +163,20 @@ function makeFlash(): Flash {
     branchCount: 0,
     hasBolt: false,
     end: 0,
+    trans: new Float32Array(BOLT_POINTS + BOLT_MAX_BRANCHES * BRANCH_POINTS),
+    transX: 0,
+    transY: 0,
+    transZ: 0,
+    transCount: 0,
+    transValid: false,
   };
 }
+
+/**
+ * Camera movement after which a lit channel's transmittance through the storm cells is recomputed, m. The channel
+ * is fixed for the strike; the cells move by their drift during its light (under 1 s), which is not followed.
+ */
+export const CHANNEL_TAU_MOVE_M = 200;
 
 /** Steps of stormTau: over the whole ray, and over its last STORM_TAU_END_M (where a point less than that inside the cloud gathers its optical depth). */
 const STORM_TAU_STEPS = 32;
@@ -556,6 +578,7 @@ export class LightningOverlay implements SceneEffect {
     f.z = z;
     f.end = flashEnd(s);
     f.hasBolt = s.kind === 'cg';
+    f.transValid = false;
     let altM = flashY;
     f.branchCount = 0;
     if (f.hasBolt) {
@@ -682,12 +705,13 @@ export class LightningOverlay implements SceneEffect {
       const cells = stormOn ? storm.cells : [];
       const n = stormOn ? storm.count : 0;
       this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-      for (let i = 0; i < BOLT_POINTS; i++) this.projectPoint(f.bolt, i, 1, cells, n, this.boltU[i]);
+      this.channelTransmittance(f, cells, n);
+      for (let i = 0; i < BOLT_POINTS; i++) this.projectPoint(f.bolt, i, f.trans[i], this.boltU[i]);
       for (let b = 0; b < BOLT_MAX_BRANCHES; b++) {
         for (let j = 0; j < BRANCH_POINTS; j++) {
           const k = b * BRANCH_POINTS + j;
           if (b >= f.branchCount) this.branchU[k].set(0, 0, 0, 0);
-          else this.projectPoint(f.branches, k, 1 - (1 - BRANCH_TIP) * (j / BRANCH_SEGMENTS), cells, n, this.branchU[k]);
+          else this.projectPoint(f.branches, k, (1 - (1 - BRANCH_TIP) * (j / BRANCH_SEGMENTS)) * f.trans[BOLT_POINTS + k], this.branchU[k]);
         }
       }
     }
@@ -696,18 +720,39 @@ export class LightningOverlay implements SceneEffect {
   }
 
   /**
-   * Point i of `points` to its pixel (x, y), its distance from the camera (z) and its weight (w; -1 behind the
-   * camera): `fade` x the storm cells' transmittance from the camera (stormTau). Needs viewProj.
+   * The storm cells' transmittance from the camera to each point of the flash's channel and branches (stormTau),
+   * into f.trans: computed once per strike, again when the camera has moved more than CHANNEL_TAU_MOVE_M or the
+   * number of cells drawn has changed. Needs camPos.
    */
-  private projectPoint(points: Float32Array, i: number, fade: number, cells: readonly CellGeometry[], count: number, out: THREE.Vector4): void {
+  private channelTransmittance(f: Flash, cells: readonly CellGeometry[], count: number): void {
+    const c = this.camPos;
+    if (f.transValid && f.transCount === count && Math.hypot(c.x - f.transX, c.y - f.transY, c.z - f.transZ) <= CHANNEL_TAU_MOVE_M) return;
+    f.transValid = true;
+    f.transCount = count;
+    f.transX = c.x;
+    f.transY = c.y;
+    f.transZ = c.z;
+    const one = (points: Float32Array, i: number): number => {
+      stormTau(cells, count, c, points[3 * i], points[3 * i + 1], points[3 * i + 2], this.tau);
+      return Math.exp(-this.tau.cloud - (1 - RAIN_DIFFRACTION_SHARE) * this.tau.rain);
+    };
+    for (let i = 0; i < BOLT_POINTS; i++) f.trans[i] = one(f.bolt, i);
+    const branchPoints = f.branchCount * BRANCH_POINTS;
+    for (let k = 0; k < branchPoints; k++) f.trans[BOLT_POINTS + k] = one(f.branches, k);
+  }
+
+  /**
+   * Point i of `points` to its pixel (x, y), its distance from the camera (z) and its weight (w; -1 behind the
+   * camera): `weight`, the fade times the storm cells' transmittance (channelTransmittance). Needs viewProj.
+   */
+  private projectPoint(points: Float32Array, i: number, weight: number, out: THREE.Vector4): void {
     const x = points[3 * i], y = points[3 * i + 1], z = points[3 * i + 2];
     this.v.set(x, y, z, 1).applyMatrix4(this.viewProj);
     if (this.v.w <= 1) {
       out.set(0, 0, 0, -1);
       return;
     }
-    stormTau(cells, count, this.camPos, x, y, z, this.tau);
-    const w = fade * Math.exp(-this.tau.cloud - (1 - RAIN_DIFFRACTION_SHARE) * this.tau.rain);
+    const w = weight;
     const dist = this.tmp.set(x, y, z).distanceTo(this.camPos);
     out.set((this.v.x / this.v.w * 0.5 + 0.5) * this.width, (this.v.y / this.v.w * 0.5 + 0.5) * this.height, dist, w);
   }

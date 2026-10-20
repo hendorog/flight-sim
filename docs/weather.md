@@ -119,7 +119,14 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
       0.9); the storm cells by the optical depth from the camera to each channel point, integrated on the CPU over
       the cells' density at mean noise (`stormTau`, which skips a cell whose bounding circle the ray's ground track
       misses). Cloud optical depth dims the channel by exp(-tau), so the part
-      inside the cloud is not drawn. Rain dims it by exp(-0.5 tau) (`RAIN_DIFFRACTION_SHARE`, unconfirmed).
+      inside the cloud is not drawn. Rain dims it by exp(-0.5 tau) (`RAIN_DIFFRACTION_SHARE`, unconfirmed). The
+      transmittance of each channel and branch point is computed when the strike starts and kept with the flash;
+      it is recomputed when the camera has moved more than `CHANNEL_TAU_MOVE_M` 200 m from where it was computed
+      or the number of cells drawn changes. The cells' drift during the light (under 1 s) is not followed. Cost
+      per lit-bolt frame (`LightningOverlay.render` with a fake renderer, one cell, 33 channel points, 2026-10-20):
+      averages over 200 frames, 2.03 to 2.04 ms with the camera still and 1.73 to 1.84 ms with the camera moving
+      5 m per frame before the cache; with it 0.28 ms over the first 200 frames (which include the strike's
+      computation), then 0.04 ms with the camera still, 0.07 to 0.19 ms with it moving.
     - Intracloud strikes draw no channel. They light the storm cloud in full and send `FLASH_IC_OUTSIDE` 0.15 of
       their light to surfaces and the cumulus (unconfirmed).
     - Cloud light of a flash: reduced by the factor 1 / sqrt(1 + L / Lmax), Lmax = `FLASH_CLOUD_MAX` 6 times a
