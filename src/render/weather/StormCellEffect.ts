@@ -287,11 +287,13 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   /**
    * Whether a cell is in the view frustum (updateCells), or the first render (which compiles the march and
    * composite) is still to come. A false result publishes a layer that did not march (marched false, count 0) for
-   * the lightning overlay, as render's copy does.
+   * the lightning overlay, as render's copy does, and drops the history as render's copy does (a later march
+   * starts afresh rather than blending frames from before the skipped ones).
    */
   active(ctx: SimContext): boolean {
     const on = this.textured() && this.updateCells(ctx) > 0;
     this.marched = on;
+    if (!on) this.historyValid = false;
     return on || !this.warmed;
   }
 

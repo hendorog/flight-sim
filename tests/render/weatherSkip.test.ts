@@ -178,6 +178,42 @@ describe('StormCellEffect.active', () => {
     expect(storms.count).toBe(0);
     storms.dispose();
   });
+
+  it('drops the temporal history after skipped frames, as a copy frame does', () => {
+    const vol = new THREE.Data3DTexture(new Uint8Array(1), 1, 1, 1);
+    const clouds = { noiseTextures: { shape: vol, detail: vol, warp: vol } } as unknown as CloudsEffect;
+    const historyValid = (s: StormCellEffect): number =>
+      (s as unknown as { temporalMat: THREE.ShaderMaterial }).temporalMat.uniforms.uHistoryValid.value as number;
+    const run = (skip: boolean): number[] => {
+      const { renderer } = fakeRenderer();
+      const storms = new StormCellEffect(clouds);
+      storms.setSize(4, 4);
+      const ctx = makeCtx({ storms: [cell()] });
+      const look = (z: number) => {
+        ctx.camera.lookAt(0, 100, z);
+        ctx.camera.updateMatrixWorld();
+      };
+      look(-1000);
+      const seen: number[] = [];
+      for (let i = 0; i < 2; i++) {
+        storms.render(renderer, input, depth, output, ctx);
+        seen.push(historyValid(storms));
+      }
+      // The cell leaves the view: the pipeline skips render (active false) or renders the copy.
+      look(1000);
+      if (skip) expect(storms.active(ctx)).toBe(false);
+      else storms.render(renderer, input, depth, output, ctx);
+      look(-1000);
+      expect(storms.active(ctx)).toBe(true);
+      storms.render(renderer, input, depth, output, ctx);
+      seen.push(historyValid(storms));
+      storms.dispose();
+      return seen;
+    };
+    const skipped = run(true);
+    expect(skipped).toEqual([0, 1, 0]);
+    expect(skipped).toEqual(run(false));
+  });
 });
 
 describe('LightningOverlay.active', () => {
