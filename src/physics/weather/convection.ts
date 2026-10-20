@@ -27,7 +27,7 @@
 import { clamp, DEG, smoothstep, type Vec3 } from '../../core/math';
 import type { StormCell } from '../../core/types';
 import { MAX_STORMS, stormCentreAt, type NorthEast } from '../../core/weatherFields';
-import { stormShare } from './stormField';
+import { stormShare, type ActiveStorm } from './stormField';
 
 /** Updraft peak wMax = UPDRAFT_BASE + UPDRAFT_PER_INTENSITY * intensity, m/s (unconfirmed). */
 export const UPDRAFT_BASE = 5;
@@ -58,6 +58,11 @@ export const CELL_RADIUS_MIN_M = 1000;
 export const CELL_RADIUS_MAX_M = 5000;
 export const CELL_TOP_MIN_M = 6000;
 export const CELL_TOP_MAX_M = 14000;
+/**
+ * Lowest top of a derived cell (stormField.ts ActiveStorm.derived), m MSL: a growing cell's top rises from the base
+ * + MIN_GROWING_DEPTH_M (2000 m), the render's floor, so the field and the drawn cell share the top.
+ */
+export const DERIVED_TOP_MIN_M = 2000;
 
 /** Core share from which a point inside the core counts as in cloud (inCore, inStormCore). */
 export const CORE_SHARE_MIN = 0.5;
@@ -117,8 +122,8 @@ export const emptyCbSample = (): CbSample => ({ up: 0, outN: 0, outE: 0, severit
 
 /** The core radius of a cell as the field uses it, m. */
 export const cellRadiusM = (cell: StormCell): number => clamp(cell.radiusM, CELL_RADIUS_MIN_M, CELL_RADIUS_MAX_M);
-/** The anvil top of a cell as the field uses it, m MSL. */
-export const cellTopM = (cell: StormCell): number => clamp(cell.topM, CELL_TOP_MIN_M, CELL_TOP_MAX_M);
+/** The anvil top of a cell as the field uses it, m MSL (a derived cell's floor is DERIVED_TOP_MIN_M). */
+export const cellTopM = (cell: StormCell): number => clamp(cell.topM, (cell as Partial<ActiveStorm>).derived === true ? DERIVED_TOP_MIN_M : CELL_TOP_MIN_M, CELL_TOP_MAX_M);
 /** The intensity of a cell as the field uses it, 0..1. */
 export const cellIntensity = (cell: StormCell): number => clamp(cell.intensity, 0, 1);
 

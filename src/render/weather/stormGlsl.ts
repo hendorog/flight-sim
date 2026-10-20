@@ -27,7 +27,7 @@ import { DEPTH_GLSL } from '../../core/shaderLib';
 import { AERIAL_ATLAS_GLSL } from '../post/AerialPerspectiveEffect';
 
 /** Cells the shader reads. */
-export const STORM_MAX_CELLS = 4;
+export const STORM_MAX_CELLS = 6;
 /** March steps per pixel (the shader's main loop; tests/render/stormCells.test.ts caps it at 56). */
 export const STORM_STEPS = 48;
 /** Share of STORM_STEPS the coarse steps would take to cover every interval (the rest is for fine steps). */

@@ -92,14 +92,14 @@ const PRESETS: WeatherPreset[] = [
   { id: 'rain', name: 'Rain', settings: { ...NEUTRAL_EXTRAS, cloudType: 'nimbostratus', cloudCover: 1, cloudBaseM: 600, cloudTopM: 3000, cirrusCover: 0, precipType: 'rain', precipRateMmH: 4, midType: 'altostratus', midCover: 0.9, midAltM: 4500 } },
   { id: 'snow', name: 'Snow', settings: { ...NEUTRAL_EXTRAS, cloudType: 'nimbostratus', cloudCover: 1, cirrusCover: 0, isaDeviation: -20, precipType: 'snow', precipRateMmH: 2, visibilityM: 4000 } },
   // Conditions the stormField derivation turns into activity 1: a July afternoon (15:00, day 196), ISA + 8 K, a
-  // towering cumulus layer at half cover from a 900 m base to 2600 m (drawn to 5150 m), wind from 240 at 8 kt.
+  // towering cumulus layer at cover 0.3 from a 900 m base to 2600 m (drawn to 5150 m), wind from 240 at 8 kt.
   {
     id: 'thunderstorm',
     name: 'Thunderstorm',
     settings: {
       ...NEUTRAL_EXTRAS,
       cloudType: 'towering',
-      cloudCover: 0.5,
+      cloudCover: 0.3,
       cloudBaseM: 900,
       cloudTopM: 2600,
       isaDeviation: 8,

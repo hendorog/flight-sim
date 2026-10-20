@@ -26,7 +26,7 @@ export const FOG_VIS_MIN_M = 50;
 export const FOG_VIS_MAX_M = 1000;
 export const FOG_VIS_DEFAULT_M = 200;
 /** Most storm cells the consumers read (the first entries of `storms`). */
-export const MAX_STORMS = 4;
+export const MAX_STORMS = 6;
 /** Koschmieder constant: visibility = KOSCHMIEDER / extinction for a 2 % contrast threshold (as Simulator.ts and render/sky/params.ts use). */
 const KOSCHMIEDER = 3.912;
 

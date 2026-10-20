@@ -1,24 +1,34 @@
 // Storm cells derived from the conditions (physics/weather/stormField.ts): the convective activity and its terms,
-// the lattice's determinism and its time base (the weather clock, unaffected by a scenario reset or a resume),
-// the continuity of the up-to-four selection in position and in time, the agreement of the physics and the render
-// selections, the explicit `storms` override, the lightning schedule of derived cells, the training weather line
-// and the cost of env.wind. Each test logs its measured numbers.
+// the lattice's determinism and its time base (the weather clock, unaffected by a scenario reset or a resume), the
+// regional factor, the activity at a cell's birth, the continuity of the up-to-MAX_STORMS selection in position and
+// in time, the rank fade, the agreement of the physics and the render selections (tops included), the explicit
+// `storms` override, the lightning schedule of derived cells, the training weather line and the cost of env.wind.
+// Each test logs its measured numbers.
 
 import * as THREE from 'three';
 import { describe, expect, test } from 'vitest';
-import { KT, type Vec3 } from '../../src/core/math';
+import { DEG, KT, type Vec3 } from '../../src/core/math';
+import { windVeer } from '../../src/physics/weather/boundaryLayer';
 import { defaultWeather, type WeatherSettings } from '../../src/core/types';
 import { NO_STORMS, stormCentreAt } from '../../src/core/weatherFields';
 import { createEnvironment, type TerrainProvider } from '../../src/physics/environment';
 import {
   FADE_END_M,
+  FADE_START_M,
+  REGION_MAX,
+  REGION_MIN,
+  SITE_SPACING_M,
   StormField,
   convectiveState,
   emptyConvectiveState,
   proceduralStorms,
+  regionFactor,
   stormClockS,
+  stormSteering,
   type ActiveStorm,
 } from '../../src/physics/weather/stormField';
+import { CELL_TOP_MIN_M, cellTopM } from '../../src/physics/weather/convection';
+import { MAX_STORMS } from '../../src/core/weatherFields';
 import { StormCellEffect } from '../../src/render/weather/StormCellEffect';
 import { advanceTimeOfDay } from '../../src/sim/clock';
 import { SimPhysics } from '../../src/sim/SimPhysics';
@@ -109,6 +119,126 @@ describe('convective activity', () => {
   });
 });
 
+describe('depth and cover terms', () => {
+  test("'towering' gives D = 1 at any layer depth; auto and cumulus keep the measured depth", () => {
+    const ts = thunderstorm();
+    const depthTerm = (type: WeatherSettings['cloudType'], depth: number) => convectiveState({ ...ts, cloudType: type, cloudTopM: ts.cloudBaseM + depth }, emptyConvectiveState()).depth;
+    for (const depth of [200, 600, 1100, 1700]) expect(depthTerm('towering', depth)).toBe(1);
+    // 1.6 x 1100 m = 1760 m drawn: 0; 1.6 x 2600 m = 4160 m: 1.
+    for (const type of ['auto', 'cumulus'] as const) {
+      expect(depthTerm(type, 1100)).toBe(0);
+      expect(depthTerm(type, 2600)).toBe(1);
+    }
+    // From the pause menu: the default weather (1100 m layer) with towering cumulus, a warm afternoon and a low base.
+    const menu = { ...defaultWeather(), cloudType: 'towering' as const, isaDeviation: 8, timeOfDay: 15, cloudBaseM: 900, cloudTopM: 2000 };
+    const a = activity(menu);
+    report('menu: default layer depth, towering, ISA+8, 15:00, base 900 m', { activity: a });
+    expect(a).toBe(1);
+  });
+
+  test('the cover term is 0 at cover 0.05 and 1 from cover 0.25', () => {
+    const ts = thunderstorm();
+    const c = (cover: number) => convectiveState({ ...ts, cloudCover: cover }, emptyConvectiveState()).cover;
+    report('cover term at 0.05, 0.1, 0.15, 0.2, 0.25, 0.3', { values: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3].map((v) => c(v).toFixed(3)).join(' ') });
+    expect(c(0.05)).toBe(0);
+    expect(c(0.25)).toBe(1);
+    expect(c(0.3)).toBe(1);
+    expect(ts.cloudCover).toBe(0.3);
+  });
+});
+
+describe('regional factor', () => {
+  test('deterministic, within 0.5..1.5, varying over about 60 km', () => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    let low = 0;
+    let high = 0;
+    let n = 0;
+    let near = 0;
+    let far = 0;
+    for (let x = -300_000; x <= 300_000; x += 5000) {
+      for (let y = -300_000; y <= 300_000; y += 5000) {
+        const v = regionFactor(x, y);
+        expect(regionFactor(x, y)).toBe(v);
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+        if (v < 0.8) low++;
+        if (v > 1.2) high++;
+        near += Math.abs(regionFactor(x + 5000, y) - v);
+        far += Math.abs(regionFactor(x + 30_000, y) - v);
+        n++;
+      }
+    }
+    report('regional factor over a 600 km square, 5 km grid', { min: lo, max: hi, shareBelow08: low / n, shareAbove12: high / n, meanStep5km: near / n, meanStep30km: far / n });
+    expect(lo).toBeGreaterThanOrEqual(REGION_MIN);
+    expect(hi).toBeLessThanOrEqual(REGION_MAX);
+    expect(low / n).toBeGreaterThan(0.1);
+    expect(high / n).toBeGreaterThan(0.1);
+    expect(far / n).toBeGreaterThan(3 * (near / n));
+  });
+
+  test('more cells over a high-factor site than over a low-factor one', () => {
+    // The highest and lowest factor among the lattice sites of a 300 km square.
+    let best = { v: -Infinity, n: 0, e: 0 };
+    let worst = { v: Infinity, n: 0, e: 0 };
+    for (let i = -10; i <= 10; i++) {
+      for (let j = -10; j <= 10; j++) {
+        const v = regionFactor(i * SITE_SPACING_M, j * SITE_SPACING_M);
+        if (v > best.v) best = { v, n: i * SITE_SPACING_M, e: j * SITE_SPACING_M };
+        if (v < worst.v) worst = { v, n: i * SITE_SPACING_M, e: j * SITE_SPACING_M };
+      }
+    }
+    const count = (p: { n: number; e: number }) => {
+      const w = { ...thunderstorm(), windSpeedKt: 0 };
+      const f = new StormField();
+      let sum = 0;
+      for (let m = 0; m < 24 * 60; m += 5) {
+        w.dayOfYear = 150 + Math.floor(m / 60);
+        w.timeOfDay = 15 + (m % 60) / 60;
+        for (const c of f.select(w, 0, p.n, p.e)) if (Math.hypot(c.northM - p.n, c.eastM - p.e) < 15_000) sum += c.core;
+      }
+      return sum;
+    };
+    const hiCount = count(best);
+    const loCount = count(worst);
+    report('core share summed within 15 km, 15:00-16:00 on 24 days, calm', { highFactor: best.v, highSum: hiCount, lowFactor: worst.v, lowSum: loCount });
+    expect(hiCount).toBeGreaterThan(1.5 * loCount);
+  });
+});
+
+describe('activity at the birth of a cell', () => {
+  test('evening decay stops births: a cell keeps the intensity of its birth, and cells outlast the activity', () => {
+    const w = { ...thunderstorm(), timeOfDay: 18 };
+    const f = new StormField();
+    const seen = new Map<number, { intensity: number; last: number }>();
+    let afterZero = 0;
+    let firstZero = NaN;
+    for (let m = 0; m <= 240; m++) {
+      const now = activity(w);
+      if (now === 0 && Number.isNaN(firstZero)) firstZero = w.timeOfDay;
+      for (let k = 0; k < 9; k++) {
+        const n = (k - 4) * 40_000;
+        for (const c of f.select(w, 0, n, 0)) {
+          const s = seen.get(c.id);
+          if (!s) seen.set(c.id, { intensity: c.intensity, last: w.timeOfDay });
+          else {
+            expect(c.intensity).toBe(s.intensity);
+            s.last = w.timeOfDay;
+          }
+          if (now === 0 && c.core > 0) afterZero++;
+        }
+      }
+      advanceTimeOfDay(w, 60);
+    }
+    const lastSeen = Math.max(...[...seen.values()].map((s) => s.last));
+    report('evening 18:00-22:00', { cells: seen.size, activityZeroFrom: firstZero, cellSamplesAfterActivity0: afterZero, lastCellSeenH: lastSeen });
+    expect(seen.size).toBeGreaterThan(10);
+    expect(afterZero).toBeGreaterThan(0);
+    // No cell after the activity has been 0 for a whole lifetime (plus a grid step).
+    expect(lastSeen).toBeLessThan(firstZero + 70 / 60);
+  });
+});
+
 describe('lattice', () => {
   test('the same weather and clock give the same cells, whatever was asked before', () => {
     const w = thunderstorm();
@@ -143,8 +273,13 @@ describe('lattice', () => {
     const before = snapshot(f.select(w, 0, 0, 0), 0);
     advanceTimeOfDay(w, 60);
     const after = snapshot(f.select(w, 0, 0, 0), 0);
-    const v = w.windSpeedKt * 1.8 * KT;
-    const from = (w.windDirectionDeg * Math.PI) / 180;
+    // The steering wind: the surface speed x 1.8, the direction veered as at 2000 m AGL (25 deg).
+    const steer = stormSteering(w, { fromDeg: 0, kt: 0 });
+    report('steering wind', { fromDeg: steer.fromDeg, kt: steer.kt, surfaceFromDeg: w.windDirectionDeg });
+    expect(steer.fromDeg).toBeCloseTo(w.windDirectionDeg + windVeer(2000) / DEG, 9);
+    expect(steer.fromDeg - w.windDirectionDeg).toBeCloseTo(25, 0);
+    const v = steer.kt * KT;
+    const from = (steer.fromDeg * Math.PI) / 180;
     let checked = 0;
     for (const c of after) {
       const old = before.find((o) => o.id === c.id);
@@ -152,6 +287,10 @@ describe('lattice', () => {
       expect(c.n - old.n).toBeCloseTo(-Math.cos(from) * v * 60, 3);
       expect(c.e - old.e).toBeCloseTo(-Math.sin(from) * v * 60, 3);
       checked++;
+    }
+    for (const c of f.select(w, 0, 0, 0)) {
+      expect(c.motionDeg).toBeCloseTo(steer.fromDeg, 9);
+      expect(c.motionKt).toBeCloseTo(steer.kt, 9);
     }
     expect(checked).toBeGreaterThan(0);
   });
@@ -226,7 +365,7 @@ describe('selection continuity', () => {
   };
   const weights = (cells: readonly ActiveStorm[]) => new Map(cells.map((c) => [c.id, c.weight]));
 
-  test('weights change by small steps when cells enter and leave the four, along a 2-hour jet flight', () => {
+  test('weights change by small steps when cells enter and leave the selection, along a 2-hour jet flight', () => {
     // 250 m/s north-east with the clock running, sampled every `dt` s: the largest weight step shrinks with dt.
     const run = (dt: number) => {
       const w = thunderstorm();
@@ -254,6 +393,36 @@ describe('selection continuity', () => {
     expect(fine.changes).toBeGreaterThan(50);
     expect(fine.worst).toBeLessThan(0.05);
     expect(fine.worst).toBeLessThan(0.2 * coarse.worst);
+  });
+
+  test('the rank fade dims at most one cell within FADE_START_M in nearly every selection', () => {
+    const w = thunderstorm();
+    const f = new StormField();
+    let selections = 0;
+    let moreThanOne = 0;
+    let dimmed = 0;
+    let full = 0;
+    let cells = 0;
+    for (let m = 0; m < 180; m++) {
+      for (let k = 0; k < 5; k++) {
+        const n = 30_000 * (k - 2);
+        const list = f.select(w, 0, n, 0);
+        let below = 0;
+        for (const c of list) {
+          if (Math.hypot(c.northM - n, c.eastM) >= FADE_START_M) continue;
+          cells++;
+          if (c.weight < 0.99) below++;
+          else full++;
+        }
+        dimmed += below;
+        if (below > 1) moreThanOne++;
+        selections++;
+      }
+      advanceTimeOfDay(w, 60);
+    }
+    report('selections 15:00-18:00 at 5 points', { selections, cellsWithin40km: cells, weightAtLeast099: full, weightBelow099: dimmed, selectionsWithTwoOrMoreDimmed: moreThanOne });
+    expect(cells).toBeGreaterThan(selections * 3);
+    expect(moreThanOne).toBeLessThan(0.05 * selections);
   });
 
   test('the convective wind has no jump along a path through the storms, clock running', () => {
@@ -297,7 +466,8 @@ describe('physics and render agree', () => {
     const camera = new THREE.PerspectiveCamera(170, 1, 1, 400_000);
     const ctx = { weather: w, simTime: 0, camera } as unknown as SimContext;
     let compared = 0;
-    for (let k = 0; k < 30; k++) {
+    let growing = 0;
+    for (let k = 0; k < 90; k++) {
       advanceTimeOfDay(w, 120);
       const t = 10 * k;
       ctx.simTime = t;
@@ -316,11 +486,15 @@ describe('physics and render agree', () => {
         expect(g.x).toBeCloseTo(c.east, 6);
         expect(g.z).toBeCloseTo(-c.north, 6);
         expect([g.core, g.anvil, g.rain]).toEqual([phys[i].core, phys[i].anvil, phys[i].rain]);
+        // The same top, also while a derived cell grows below the explicit cells' 6000 m floor.
+        expect(g.top).toBe(cellTopM(phys[i]));
+        if (g.top < CELL_TOP_MIN_M) growing++;
         compared++;
       }
     }
-    report('cells compared', { count: compared });
-    expect(compared).toBeGreaterThan(30);
+    report('cells compared', { count: compared, topsBelow6000m: growing });
+    expect(compared).toBeGreaterThan(90);
+    expect(growing).toBeGreaterThan(0);
   });
 });
 
@@ -335,6 +509,10 @@ describe('explicit storms override the derived cells', () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({ ...cell, id: 0, weight: 1, core: 1, anvil: 1, rain: 1, flash: 1, wind: 1 });
     expect(f.select({ ...w, storms: NO_STORMS }, 0, 0, 0)).toHaveLength(0);
+    // Up to MAX_STORMS (6) explicit cells are read.
+    const seven = Array.from({ length: 7 }, (_, k) => ({ ...cell, northM: k * 10_000 }));
+    expect(f.select({ ...w, storms: seven }, 0, 0, 0).map((c) => c.northM)).toEqual(seven.slice(0, MAX_STORMS).map((c) => c.northM));
+    expect(MAX_STORMS).toBe(6);
     // Far from the airport too: nothing but the listed cell.
     expect(f.select({ ...w, storms: [cell] }, 0, 200_000, -80_000)).toHaveLength(1);
   });

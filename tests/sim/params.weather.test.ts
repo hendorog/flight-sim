@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { parseParams } from '../../src/sim/params';
-import { NEUTRAL_EXTRAS, NO_STORMS } from '../../src/core/weatherFields';
+import { MAX_STORMS, NEUTRAL_EXTRAS, NO_STORMS } from '../../src/core/weatherFields';
 import { CB_DEFAULT_INTENSITY, CB_DEFAULT_RADIUS_M, CB_DEFAULT_TOP_M, weatherPresetById } from '../../src/sim/weatherPresets';
 
 const wx = (search: string) => parseParams(search).weather;
@@ -55,7 +55,7 @@ describe('URL weather parameters for the optional fields', () => {
     expect(wx('?fog=a')).toEqual({});
   });
 
-  it('cb= builds cells in km with defaults and clamps, repeatable up to 4', () => {
+  it('cb= builds cells in km with defaults and clamps, repeatable up to MAX_STORMS (6)', () => {
     const one = wx('?cb=-12,3').storms!;
     expect(one).toEqual([{ northM: -12_000, eastM: 3000, radiusM: CB_DEFAULT_RADIUS_M, topM: CB_DEFAULT_TOP_M, intensity: CB_DEFAULT_INTENSITY, motionDeg: 0, motionKt: 0 }]);
     const full = wx('?cb=1,2,12,0.5,2,270,15').storms!;
@@ -63,9 +63,9 @@ describe('URL weather parameters for the optional fields', () => {
     const clamped = wx('?cb=0,0,20,3,9,-90,-5').storms![0];
     expect(clamped).toMatchObject({ topM: 14_000, intensity: 1, radiusM: 5000, motionDeg: 270, motionKt: 0 });
     expect(wx('?cb=0,0,4').storms![0].topM).toBe(6000);
-    const many = wx('?cb=0,0&cb=1,1&cb=2,2&cb=3,3&cb=4,4').storms!;
-    expect(many).toHaveLength(4);
-    expect(many.map((c) => c.northM)).toEqual([0, 1000, 2000, 3000]);
+    const many = wx('?cb=0,0&cb=1,1&cb=2,2&cb=3,3&cb=4,4&cb=5,5&cb=6,6').storms!;
+    expect(many).toHaveLength(MAX_STORMS);
+    expect(many.map((c) => c.northM)).toEqual([0, 1000, 2000, 3000, 4000, 5000]);
     // Malformed entries are skipped (a motion needs both values); none left: no storms key.
     expect(wx('?cb=1&cb=0,0,11,0.5,3,270').storms).toBeUndefined();
     expect(wx('?cb=x,1&cb=5,5').storms).toHaveLength(1);

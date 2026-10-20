@@ -1,7 +1,8 @@
 // Cumulonimbus cells from the atmospheric conditions, and the selection of the cells in effect near a point.
-// Node-safe (no three.js, no DOM). Physics (WindField, SimEnvironment.moisture) and render (StormCellEffect,
-// LightningOverlay) each own a StormField and ask it for the cells at their reference point (the sample point,
-// the camera); for the same weather, simulation time and point the result is the same.
+// Node-safe (no three.js, no DOM). Physics (WindField, SimEnvironment.moisture) owns a StormField and asks it for the
+// cells at the sample point; the render (the cumulus clearing, StormCellEffect, LightningOverlay) shares one per
+// simulation context and frame at the camera (render/weather/stormSelection.ts). For the same weather, simulation
+// time and point the result is the same.
 //
 // EXPLICIT AND PROCEDURAL CELLS. When WeatherSettings.storms is present (an array, empty or not: the URL's cb=,
 // cb=none, __sim.setWeather, tests) its first MAX_STORMS cells are the cells, every weight 1, and nothing is
@@ -22,12 +23,14 @@
 //   H  heating       smoothstep(HEAT_SUN_MIN, HEAT_SUN_FULL, sLag), sLag the sine of the sun elevation at
 //                    timeOfDay - HEATING_LAG_H on dayOfYear (core/world sunDirectionNED). Night gives 0, a low
 //                    winter sun close to 0 (0.05 at 15:00 on day 355), a summer afternoon 1.
-//   D  depth         smoothstep(DEPTH_MIN_M, DEPTH_FULL_M, (cloudTopM - cloudBaseM) x towerExt), the cumulus layer
-//                    depth as the clouds module draws it (CLOUD_TYPE_PROFILES towerExt: 1.6 for 'auto', 2.5 for
-//                    'towering'). The fair-weather layer of defaultWeather() (1100 m x 1.6 = 1760 m) gives 0.
+//   D  depth         1 for 'towering' (the type is the depth signal); otherwise smoothstep(DEPTH_MIN_M, DEPTH_FULL_M,
+//                    (cloudTopM - cloudBaseM) x towerExt), the cumulus layer depth as the clouds module draws it for
+//                    the type alone (CLOUD_TYPE_PROFILES towerExt: 1.6 for 'auto' and 'cumulus'; the deepening by
+//                    the activity, render/clouds layerTowerExt, is not fed back). The fair-weather layer of
+//                    defaultWeather() (1100 m x 1.6 = 1760 m) gives 0.
 //   B  moisture      1 - smoothstep(BASE_MOIST_M, BASE_DRY_M, cloudBaseM - field elevation): a low base is a moist
 //                    boundary layer. WeatherSettings has no humidity field; the base is the only moisture input.
-//   C  cumulus cover smoothstep(COVER_MIN, COVER_FULL, cloudCover).
+//   C  cumulus cover smoothstep(COVER_MIN, COVER_FULL, cloudCover): 0 at cover 0.05, 1 from 0.25.
 //   Y  cloud type    TYPE_FACTOR: towering 1, cumulus 0.8, stratus / stratocumulus / nimbostratus 0 (a deck
 //                    suppresses surface-based convection); 'auto' 0.8 x (1 - smoothstep(0.6, 0.9, cloudCover)), the
 //                    cover band where 'auto' turns from cumulus into a deck (as WindField.convectiveVelocity).
@@ -36,13 +39,20 @@
 // period P (PERIOD_MIN_S..PERIOD_MAX_S) and a phase, both hashed from the site and the seed; time is cut into
 // generations of P, and each generation holds at most one cell, with hashed lifetime L (LIFE_MIN_S..LIFE_MAX_S,
 // L < P), birth time inside the generation, jitter of the birth position (up to SITE_JITTER S on each axis), core
-// radius, intensity and top share. A cell's existence e = clamp((EXIST_MAX x activity - u) / EXIST_SOFT, 0, 1),
-// u hashed, so a change of activity fades cells in and out instead of switching them.
+// radius, intensity and top share. A cell's existence e = clamp((EXIST_MAX x a_b x r - u) / EXIST_SOFT, 0, 1), u
+// hashed, a_b the activity at the cell's birth time and r the site's regional factor:
+//   a_b   the activity of the weather at the clock reading of the birth (the other inputs as they are now),
+//         linear between samples BIRTH_GRID_S apart (cached per field); the intensity and the top use it too. A
+//         decaying activity (evening) stops births and leaves the cells already born to end their life cycle.
+//   r     value noise on a lattice of REGION_SPACING_M (REGION_MIN..REGION_MAX, seeded, at the site's lattice point):
+//         the cells cluster into regions and gaps of about 60 km.
+// A change of the weather inputs (not of the clock) changes a_b and fades cells in and out.
 //   Time base: T = ((dayOfYear - 1) x 24 + timeOfDay) x 3600 s, the weather's own clock, not the simulation time.
 //   SimPhysics.resetTo sets the simulation time to 0 and leaves timeOfDay, so a reset or a resume moves no cell.
 //   With the clock frozen (clock=0) T does not advance and the cells stand still. Past day SKY_DAYS_IN_YEAR the
 //   date wraps to 1 and T jumps back a year (every cell changes). Editing the time of day moves T with it.
-//   Drift: a cell moves from its birth position with the steering wind, from windDirectionDeg at windSpeedKt x
+//   Drift: a cell moves from its birth position with the steering wind (stormSteering): from windDirectionDeg veered
+//   by the boundary layer's veer at STEERING_HEIGHT_M (boundaryLayer windVeer, 25 deg) at windSpeedKt x
 //   STEERING_FACTOR (the factor the cumulus layer drifts with, render/clouds CLOUD_WIND_FACTOR). It is not stored:
 //   a change of the wind settings moves every live cell by the change of velocity times its age.
 //   Life cycle, a = age / L, every share 0 at a = 0 and at a = 1:
@@ -53,16 +63,19 @@
 //     rain      smoothstep(0.25, 0.4, a) (1 - smoothstep(0.7, 0.9, a))
 //     lightning smoothstep(0.3, 0.4, a) (1 - smoothstep(0.65, 0.8, a))
 //     wind      smoothstep(0.05, 0.3, a) (1 - smoothstep(0.75, 0.95, a))  (updraft, downdraft, outflow, turbulence)
-//   Tops: base + (ceiling - base) x (0.6 + 0.4 activity) x (0.8 + 0.2 u), ceiling = min(TOP_CEILING_M,
-//   equilibrium level + OVERSHOOT_M), at least base + MIN_CELL_DEPTH_M.
+//   Tops: base + (ceiling - base) x (0.6 + 0.4 a_b) x (0.8 + 0.2 u), ceiling = min(TOP_CEILING_M, equilibrium level
+//   at birth + OVERSHOOT_M), at least base + MIN_CELL_DEPTH_M; during growth at least base + MIN_GROWING_DEPTH_M
+//   (the render's floor; physics/weather/convection.ts cellTopM floors a derived cell at DERIVED_TOP_MIN_M).
 //
-// SELECTION at a reference point: of the live cells within FADE_END_M, at most MAX_STORMS by the score
+// SELECTION at a reference point: of the live cells within FADE_END_M, at most MAX_STORMS (6) by the score
 // s = e x max(core, anvil) x (1 - d / FADE_END_M), d the horizontal distance. Each selected cell gets the weight
-//   weight = e x (1 - smoothstep(FADE_START_M, FADE_END_M, d)) x clamp((s - s5) / RANK_MARGIN, 0, 1),
-// s5 the fifth-highest score (0 with fewer than five), and its shares are multiplied by it. When a fifth cell
-// overtakes the fourth both scores equal s5, so the weight of the cell leaving the set is 0 at that moment: the
-// sum over the selection is continuous in the point and in time. A cell's weight can be below 1 near the edge of
-// the set even close to the point.
+//   weight = e x (1 - smoothstep(FADE_START_M, FADE_END_M, d)) x clamp((s - sOut) / m, 0, 1),
+//   m = clamp(sPrev - sOut, RANK_MARGIN_MIN, RANK_MARGIN),
+// sOut the score of the first cell left out (rank MAX_STORMS + 1) and sPrev that of rank MAX_STORMS - 1 (each 0
+// when missing), and its shares are multiplied by it. The rank fade reaches 1 at sPrev, so it dims only the lowest
+// selected cell unless three scores lie within RANK_MARGIN_MIN. When a cell overtakes the lowest selected one both
+// scores equal sOut, so the weight of the cell leaving the set is 0 at that moment; when two selected cells swap
+// both weights are equal. The weights are continuous in the point and in time.
 //
 // Unconfirmed: every constant below except the physical ones (G, LV, RD, CP, EPS, DRY_LAPSE and the saturation
 // vapour pressure fit) is a tuning value chosen for this model, not taken from observations.
@@ -72,6 +85,7 @@ import type { AtmosphereSample, CloudType, StormCell, WeatherSettings } from '..
 import { CLOUD_TYPE_PROFILES, MAX_STORMS, cloudTypeOf, stormsOf } from '../../core/weatherFields';
 import { AIRPORT, sunDirectionNED } from '../../core/world';
 import { ISA_SEA_LEVEL, R_AIR, atmosphereInto, geopotentialAltitude, type AtmosphereConditions } from '../atmosphere';
+import { windVeer } from './boundaryLayer';
 import { hashU32 } from './random';
 
 // ---------------------------------------------------------------------------------------------- activity constants
@@ -85,15 +99,18 @@ export const HEATING_LAG_H = 2;
 /** Heating term: lagged sun-elevation sine where it starts and where it reaches 1. */
 export const HEAT_SUN_MIN = 0.25;
 export const HEAT_SUN_FULL = 0.7;
-/** Depth term: drawn cumulus depth where it starts and where it reaches 1, m. */
+/** Depth term: drawn cumulus depth where it starts and where it reaches 1, m ('towering' gives D = 1 at any depth). */
 export const DEPTH_MIN_M = 2000;
 export const DEPTH_FULL_M = 4000;
 /** Moisture term: cloud base above the field where it is 1 (moist) and where it reaches 0 (dry), m. */
 export const BASE_MOIST_M = 800;
 export const BASE_DRY_M = 2000;
-/** Cover term: cumulus cover where it starts and where it reaches 1. */
-export const COVER_MIN = 0.1;
-export const COVER_FULL = 0.4;
+/**
+ * Cover term: cumulus cover where it starts and where it reaches 1. The cover is a symptom of the convection, not
+ * its cause, so the band sits low: a few scattered cumulus (cover 0.25) are enough.
+ */
+export const COVER_MIN = 0.05;
+export const COVER_FULL = 0.25;
 /** Cloud type term ('auto' is 0.8 times its cumulus share, see convectiveState). */
 export const TYPE_FACTOR: Readonly<Record<CloudType, number>> = Object.freeze({
   auto: 0.8,
@@ -127,9 +144,18 @@ export const PERIOD_MAX_S = 105 * 60;
 /** Cell lifetime, s (below PERIOD_MIN_S, so a generation holds one whole life). */
 export const LIFE_MIN_S = 30 * 60;
 export const LIFE_MAX_S = 60 * 60;
-/** Existence: probability of a cell per generation at activity 1, and the soft band of the threshold. */
+/** Existence: probability of a cell per generation at activity 1 and regional factor 1, and the soft band of the threshold. */
 export const EXIST_MAX = 0.5;
-export const EXIST_SOFT = 0.1;
+export const EXIST_SOFT = 0.03;
+/**
+ * Regional factor: value noise on a square lattice of REGION_SPACING_M (features about twice that across: storm
+ * regions and gaps of about 60 km), REGION_MIN..REGION_MAX, multiplying the existence probability of every site.
+ */
+export const REGION_SPACING_M = 30_000;
+export const REGION_MIN = 0.5;
+export const REGION_MAX = 1.5;
+/** Clock grid on which the activity at a cell's birth is sampled (linear between grid points), s. */
+export const BIRTH_GRID_S = 600;
 /** Core radius range at maturity, m (the growth phase starts at 0.6 of it). */
 export const RADIUS_MIN_M = 1800;
 export const RADIUS_MAX_M = 4000;
@@ -139,10 +165,14 @@ export const INTENSITY_MIN = 0.5;
 export const TOP_CEILING_M = 14_000;
 export const OVERSHOOT_M = 1000;
 export const MIN_CELL_DEPTH_M = 3000;
+/** Least depth of a growing cell above the base, m (the render's floor, StormCellEffect cellGeometry: base + 2000 m). */
+export const MIN_GROWING_DEPTH_M = 2000;
 /** End of the growth phase, as a share of the life. */
 export const GROWTH_END = 0.3;
-/** Steering wind: the surface wind's direction at its speed times this (render/clouds CLOUD_WIND_FACTOR, 1.8). */
+/** Steering wind: the surface wind's speed times this (render/clouds CLOUD_WIND_FACTOR, 1.8). */
 export const STEERING_FACTOR = 1.8;
+/** Steering wind: the surface direction veered as the boundary layer veers it at this height (boundaryLayer windVeer), m AGL. */
+export const STEERING_HEIGHT_M = 2000;
 /** Default seed of the lattice. */
 export const STORM_SEED = 1;
 
@@ -150,11 +180,16 @@ export const STORM_SEED = 1;
 /** Distance fade of a selected cell: full weight to FADE_START_M, none from FADE_END_M, m. */
 export const FADE_START_M = 40_000;
 export const FADE_END_M = 60_000;
-/** Score margin over the fifth cell at which a selected cell reaches full weight. */
+/**
+ * Rank fade: a selected cell reaches full weight at a score margin m over the first cell left out, m =
+ * clamp(gap, RANK_MARGIN_MIN, RANK_MARGIN), gap the margin of the second-lowest selected cell over it.
+ */
 export const RANK_MARGIN = 0.05;
+export const RANK_MARGIN_MIN = 0.025;
 /** The candidate list is rebuilt when the reference point moves this far from where it was built, m. */
 const REUSE_M = 10_000;
 const SALT = 0x63626c74;
+const REGION_SALT = 0x7267696f;
 
 // ---------------------------------------------------------------------------------------------- types
 /**
@@ -164,6 +199,8 @@ const SALT = 0x63626c74;
 export interface ActiveStorm extends StormCell {
   /** Stable identity (lightning schedule): the index of an explicit cell; a hash of site and generation. */
   id: number;
+  /** True for a cell derived from the conditions, false for an explicit one. */
+  derived: boolean;
   /** Selection weight 0..1 (1 for explicit cells); already multiplied into the shares below. */
   weight: number;
   /** Shares 0..1 of the drawn core cloud, anvil and rain shaft, of the lightning rate and of the wind field. */
@@ -230,7 +267,7 @@ export function convectiveState(w: WeatherSettings, out: ConvectiveState): Conve
   out.sunLagSin = -sunDirectionNED(w.timeOfDay - HEATING_LAG_H, w.dayOfYear).z;
   out.heating = smoothstep(HEAT_SUN_MIN, HEAT_SUN_FULL, out.sunLagSin);
   const drawnDepth = Math.max(0, w.cloudTopM - w.cloudBaseM) * CLOUD_TYPE_PROFILES[type].towerExt;
-  out.depth = smoothstep(DEPTH_MIN_M, DEPTH_FULL_M, drawnDepth);
+  out.depth = type === 'towering' ? 1 : smoothstep(DEPTH_MIN_M, DEPTH_FULL_M, drawnDepth);
   out.moisture = 1 - smoothstep(BASE_MOIST_M, BASE_DRY_M, w.cloudBaseM - field);
   out.cover = smoothstep(COVER_MIN, COVER_FULL, cover);
   out.type = type === 'auto' ? TYPE_FACTOR.auto * (1 - smoothstep(0.6, 0.9, cover)) : TYPE_FACTOR[type];
@@ -285,7 +322,7 @@ interface Candidate {
 
 const makeCandidate = (): Candidate => ({ id: 0, north: 0, east: 0, radius: 0, top: 0, intensity: 0, exist: 0, core: 0, anvil: 0, rain: 0, flash: 0, wind: 0 });
 const makeActive = (): ActiveStorm => ({
-  northM: 0, eastM: 0, radiusM: 0, topM: 0, intensity: 0, motionDeg: 0, motionKt: 0, lightning: undefined, id: 0, weight: 1, core: 1, anvil: 1, rain: 1, flash: 1, wind: 1,
+  northM: 0, eastM: 0, radiusM: 0, topM: 0, intensity: 0, motionDeg: 0, motionKt: 0, lightning: undefined, id: 0, derived: false, weight: 1, core: 1, anvil: 1, rain: 1, flash: 1, wind: 1,
 });
 
 const NONE: readonly ActiveStorm[] = Object.freeze([]);
@@ -296,6 +333,42 @@ const highHalf = (h: number): number => (h >>> 16) / 65536;
 /** The k-th value in [0, 1) drawn from the hash h. */
 const unit = (h: number, k: number): number => hashU32(h + Math.imul(k + 1, 0x632be5ab)) / 4294967296;
 
+/** Ring of the birth-activity grid samples (BIRTH_GRID_S apart; a life spans at most LIFE_MAX_S / BIRTH_GRID_S + 2). */
+const GRID_SLOTS = 16;
+const slotOf = (k: number): number => ((k % GRID_SLOTS) + GRID_SLOTS) % GRID_SLOTS;
+
+/** Value noise 0..1 of the region lattice (REGION_SPACING_M) at NED (north, east), m: smoothstep-weighted bilinear. */
+function regionNoise(seed: number, north: number, east: number): number {
+  const x = north / REGION_SPACING_M;
+  const y = east / REGION_SPACING_M;
+  const i = Math.floor(x);
+  const j = Math.floor(y);
+  const fx = x - i;
+  const fy = y - j;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const v = (a: number, b: number): number => hashU32(hashU32(seed ^ Math.imul(a, 0x2c1b3c6d)) ^ Math.imul(b, 0x297a2d39)) / 4294967296;
+  const v0 = v(i, j) + (v(i, j + 1) - v(i, j)) * sy;
+  const v1 = v(i + 1, j) + (v(i + 1, j + 1) - v(i + 1, j)) * sy;
+  return v0 + (v1 - v0) * sx;
+}
+
+/**
+ * The regional factor REGION_MIN..REGION_MAX of the existence probability at NED (north, east), m, for the lattice
+ * seed `seed` (StormField's constructor argument). Deterministic: every StormField with the same seed reads it.
+ */
+export function regionFactor(north: number, east: number, seed = STORM_SEED): number {
+  return REGION_MIN + (REGION_MAX - REGION_MIN) * regionNoise(hashU32(hashU32(seed ^ SALT) ^ REGION_SALT), north, east);
+}
+
+/** The steering wind of the derived cells: where it blows from, deg in [0, 360), and its speed, kt. */
+export function stormSteering(w: Pick<WeatherSettings, 'windDirectionDeg' | 'windSpeedKt'>, out: { fromDeg: number; kt: number }): { fromDeg: number; kt: number } {
+  const from = w.windDirectionDeg + windVeer(STEERING_HEIGHT_M) / DEG;
+  out.fromDeg = ((from % 360) + 360) % 360;
+  out.kt = Math.max(0, w.windSpeedKt) * STEERING_FACTOR;
+  return out;
+}
+
 /**
  * The cells in effect at a reference point (see the header). One instance per consumer: it caches the derived
  * state and the live cells near the last reference point, and reuses the returned array and its entries.
@@ -303,7 +376,8 @@ const unit = (h: number, k: number): number => hashU32(h + Math.imul(k + 1, 0x63
 export class StormField {
   private readonly state = emptyConvectiveState();
   private readonly seed: number;
-  // Cache keys: the activity inputs, and the candidate list's clock, wind and centre.
+  private readonly regionSeed: number;
+  // Cache keys of convective(): the activity inputs.
   private kIsa = NaN;
   private kQnh = NaN;
   private kCover = NaN;
@@ -312,24 +386,45 @@ export class StormField {
   private kType: CloudType | null = null;
   private kTod = NaN;
   private kDay = NaN;
+  // Cache keys of the selection: the activity inputs other than the clock, the clock, the wind and the centre.
+  private sIsa = NaN;
+  private sQnh = NaN;
+  private sCover = NaN;
+  private sBase = NaN;
+  private sTop = NaN;
+  private sType: CloudType | null = null;
+  private sClock = NaN;
   private kDir = NaN;
   private kSpeed = NaN;
   private kNorth = NaN;
   private kEast = NaN;
+  /** Birth-activity grid: the clock index k (time k BIRTH_GRID_S) held in each slot, its activity and equilibrium level. */
+  private readonly gridK = new Float64Array(GRID_SLOTS).fill(NaN);
+  private readonly gridAct = new Float64Array(GRID_SLOTS);
+  private readonly gridEl = new Float64Array(GRID_SLOTS);
+  private readonly gridState = emptyConvectiveState();
+  private gridWeather: WeatherSettings | null = null;
+  /** Largest activity at a birth time of a cell alive at the clock sClock (0: no cell). */
+  private windowMax = 0;
+  /** Activity and equilibrium level at the birth time of the last birthSample call. */
+  private bAct = 0;
+  private bEl = 0;
+  private readonly steer = { fromDeg: 0, kt: 0 };
   private readonly candidates: Candidate[] = [];
   private count = 0;
   private readonly active: ActiveStorm[] = Array.from({ length: MAX_STORMS }, makeActive);
   private readonly list: ActiveStorm[] = [];
-  /** Top-5 scratch: candidate indices and their scores. */
+  /** Top-(MAX_STORMS + 1) scratch: candidate indices and their scores. */
   private readonly topIdx = new Int32Array(MAX_STORMS + 1);
   private readonly topScore = new Float64Array(MAX_STORMS + 1);
   private readonly topDist = new Float64Array(MAX_STORMS + 1);
 
   constructor(seed = STORM_SEED) {
     this.seed = hashU32(seed ^ SALT);
+    this.regionSeed = hashU32(this.seed ^ REGION_SALT);
   }
 
-  /** The derived convective state of `w` (cached; read-only result). */
+  /** The derived convective state of `w` at its own clock (cached; read-only result). */
   convective(w: WeatherSettings): Readonly<ConvectiveState> {
     const type = cloudTypeOf(w);
     if (
@@ -345,7 +440,6 @@ export class StormField {
       this.kTod = w.timeOfDay;
       this.kDay = w.dayOfYear;
       convectiveState(w, this.state);
-      this.kNorth = NaN; // the candidates depend on the activity and the clock
     }
     return this.state;
   }
@@ -356,15 +450,79 @@ export class StormField {
    */
   select(w: WeatherSettings, t: number, north: number, east: number): readonly ActiveStorm[] {
     if (!proceduralStorms(w)) return this.explicit(w);
-    const activity = this.convective(w).activity;
-    if (!(activity > 0)) return NONE;
+    this.sync(w);
+    if (!(this.windowMax > 0)) return NONE;
+    if (!(Math.abs(north - this.kNorth) <= REUSE_M && Math.abs(east - this.kEast) <= REUSE_M)) this.build(w, north, east);
+    return this.choose(w, t, north, east);
+  }
+
+  /** Invalidate the caches the weather's inputs changed: the birth grid, the live cells. */
+  private sync(w: WeatherSettings): void {
+    const type = cloudTypeOf(w);
+    if (
+      w.isaDeviation !== this.sIsa || w.qnhHpa !== this.sQnh || w.cloudCover !== this.sCover || w.cloudBaseM !== this.sBase ||
+      w.cloudTopM !== this.sTop || type !== this.sType
+    ) {
+      this.sIsa = w.isaDeviation;
+      this.sQnh = w.qnhHpa;
+      this.sCover = w.cloudCover;
+      this.sBase = w.cloudBaseM;
+      this.sTop = w.cloudTopM;
+      this.sType = type;
+      this.gridK.fill(NaN);
+      this.sClock = NaN;
+    }
+    const T = stormClockS(w);
+    if (T !== this.sClock) {
+      this.sClock = T;
+      // A cell alive at T was born in (T - LIFE_MAX_S, T); its birth sample lies between these grid points.
+      let max = 0;
+      const k1 = Math.floor(T / BIRTH_GRID_S) + 1;
+      for (let k = Math.floor((T - LIFE_MAX_S) / BIRTH_GRID_S); k <= k1; k++) max = Math.max(max, this.gridActivity(w, k));
+      this.windowMax = max;
+      this.kNorth = NaN;
+    }
     if (w.windDirectionDeg !== this.kDir || w.windSpeedKt !== this.kSpeed) {
       this.kDir = w.windDirectionDeg;
       this.kSpeed = w.windSpeedKt;
       this.kNorth = NaN;
     }
-    if (!(Math.abs(north - this.kNorth) <= REUSE_M && Math.abs(east - this.kEast) <= REUSE_M)) this.build(w, north, east);
-    return this.choose(w, t, north, east);
+  }
+
+  /** The activity at clock k BIRTH_GRID_S (cached in the grid ring; also fills its equilibrium level). */
+  private gridActivity(w: WeatherSettings, k: number): number {
+    const slot = slotOf(k);
+    if (this.gridK[slot] !== k) {
+      const Tg = k * BIRTH_GRID_S;
+      const day = Math.floor(Tg / 86_400) + 1;
+      const g = (this.gridWeather ??= { ...w });
+      g.isaDeviation = w.isaDeviation;
+      g.qnhHpa = w.qnhHpa;
+      g.cloudCover = w.cloudCover;
+      g.cloudBaseM = w.cloudBaseM;
+      g.cloudTopM = w.cloudTopM;
+      g.cloudType = cloudTypeOf(w);
+      g.dayOfYear = day;
+      g.timeOfDay = (Tg - (day - 1) * 86_400) / 3600;
+      convectiveState(g, this.gridState);
+      this.gridK[slot] = k;
+      this.gridAct[slot] = this.gridState.activity;
+      this.gridEl[slot] = this.gridState.equilibriumM;
+    }
+    return this.gridAct[slot];
+  }
+
+  /** The activity and equilibrium level at birth time b (s, weather clock) into bAct, bEl: linear in the grid. */
+  private birthSample(w: WeatherSettings, b: number): void {
+    const x = b / BIRTH_GRID_S;
+    const k = Math.floor(x);
+    const f = x - k;
+    const a0 = this.gridActivity(w, k);
+    const e0 = this.gridEl[slotOf(k)];
+    const a1 = this.gridActivity(w, k + 1);
+    const e1 = this.gridEl[slotOf(k + 1)];
+    this.bAct = a0 + (a1 - a0) * f;
+    this.bEl = e0 + (e1 - e0) * f;
   }
 
   /** Explicit cells, every share 1 (copies, so the shared entries are never the weather's own objects). */
@@ -385,6 +543,7 @@ export class StormField {
       a.motionKt = c.motionKt;
       a.lightning = c.lightning === false ? false : undefined;
       a.id = i;
+      a.derived = false;
       a.weight = a.core = a.anvil = a.rain = a.flash = a.wind = 1;
       list.push(a);
     }
@@ -396,13 +555,13 @@ export class StormField {
     this.kNorth = north;
     this.kEast = east;
     this.count = 0;
-    const st = this.state;
     const T = stormClockS(w);
     const S = SITE_SPACING_M;
     const reach = FADE_END_M + REUSE_M * Math.SQRT2;
     const jitter = SITE_JITTER * S;
-    const from = w.windDirectionDeg * DEG;
-    const speed = Math.max(0, w.windSpeedKt) * STEERING_FACTOR * KT;
+    const steer = stormSteering(w, this.steer);
+    const from = steer.fromDeg * DEG;
+    const speed = steer.kt * KT;
     const vN = -Math.cos(from) * speed;
     const vE = -Math.sin(from) * speed;
     // A cell born at p0 sits at p0 + v age, age <= LIFE_MAX_S: the birth sites lie up to v LIFE_MAX_S upwind.
@@ -412,9 +571,8 @@ export class StormField {
     const i1 = Math.ceil((north + reach + jitter - Math.min(0, dN)) / S);
     const j0 = Math.floor((east - reach - jitter - Math.max(0, dE)) / S);
     const j1 = Math.ceil((east + reach + jitter - Math.min(0, dE)) / S);
-    const pExist = EXIST_MAX * st.activity;
     const base = w.cloudBaseM;
-    const ceiling = Math.max(base + MIN_CELL_DEPTH_M, Math.min(TOP_CEILING_M, st.equilibriumM + OVERSHOOT_M));
+    const pMax = EXIST_MAX * this.windowMax * REGION_MAX;
     for (let i = i0; i <= i1; i++) {
       const row = hashU32(this.seed ^ Math.imul(i, 0x27d4eb2f));
       for (let j = j0; j <= j1; j++) {
@@ -429,7 +587,14 @@ export class StormField {
         const birth = g * period - phase + (period - life) * highHalf(gen);
         const age = T - birth;
         if (!(age > 0 && age < life)) continue;
-        const exist = clamp((pExist - unit(gen, 2)) / EXIST_SOFT, 0, 1);
+        // The existence threshold u against the largest probability first (most sites stop here).
+        const u = unit(gen, 2);
+        if (u >= pMax) continue;
+        this.birthSample(w, birth);
+        const act = this.bAct;
+        if (u >= EXIST_MAX * act * REGION_MAX) continue;
+        const pExist = EXIST_MAX * act * (REGION_MIN + (REGION_MAX - REGION_MIN) * regionNoise(this.regionSeed, i * S, j * S));
+        const exist = clamp((pExist - u) / EXIST_SOFT, 0, 1);
         if (exist <= 0) continue;
         const pn = i * S + (2 * unit(gen, 3) - 1) * jitter + vN * age;
         const pe = j * S + (2 * unit(gen, 4) - 1) * jitter + vE * age;
@@ -445,9 +610,10 @@ export class StormField {
         c.east = pe;
         c.exist = exist;
         c.radius = (RADIUS_MIN_M + (RADIUS_MAX_M - RADIUS_MIN_M) * unit(gen, 5)) * (0.6 + 0.4 * grow);
-        c.intensity = (INTENSITY_MIN + (1 - INTENSITY_MIN) * unit(gen, 6)) * (0.5 + 0.5 * st.activity);
-        const topMax = base + (ceiling - base) * (0.6 + 0.4 * st.activity) * (0.8 + 0.2 * unit(gen, 7));
-        c.top = base + (Math.max(topMax, base + MIN_CELL_DEPTH_M) - base) * (0.3 + 0.7 * grow);
+        c.intensity = (INTENSITY_MIN + (1 - INTENSITY_MIN) * unit(gen, 6)) * (0.5 + 0.5 * act);
+        const ceiling = Math.max(base + MIN_CELL_DEPTH_M, Math.min(TOP_CEILING_M, this.bEl + OVERSHOOT_M));
+        const topMax = base + (ceiling - base) * (0.6 + 0.4 * act) * (0.8 + 0.2 * unit(gen, 7));
+        c.top = base + Math.max(MIN_GROWING_DEPTH_M, (Math.max(topMax, base + MIN_CELL_DEPTH_M) - base) * (0.3 + 0.7 * grow));
         c.core = smoothstep(0, 0.1, a) * (1 - smoothstep(0.7, 0.95, a));
         c.anvil = smoothstep(0.2, 0.4, a) * (1 - smoothstep(0.85, 1, a));
         c.rain = smoothstep(0.25, 0.4, a) * (1 - smoothstep(0.7, 0.9, a));
@@ -487,15 +653,20 @@ export class StormField {
       dist[pos] = d;
       if (found < K) found++;
     }
-    const s5 = found === K ? sc[K - 1] : 0;
+    // Rank fade against the first cell left out (score sOut, 0 with fewer candidates), over a margin set by the
+    // second-lowest selected cell (0 when missing), so that normally only the lowest selected cell fades.
+    const sOut = found === K ? sc[K - 1] : 0;
+    const sPrev = found >= MAX_STORMS - 1 ? sc[MAX_STORMS - 2] : 0;
+    const margin = clamp(sPrev - sOut, RANK_MARGIN_MIN, RANK_MARGIN);
     const list = this.list;
     list.length = 0;
-    const kt = Math.max(0, w.windSpeedKt) * STEERING_FACTOR;
-    const from = w.windDirectionDeg * DEG;
+    const steer = stormSteering(w, this.steer);
+    const kt = steer.kt;
+    const from = steer.fromDeg * DEG;
     const travel = kt * KT * t;
     for (let m = 0; m < Math.min(found, MAX_STORMS); m++) {
       const c = this.candidates[idx[m]];
-      const weight = c.exist * (1 - smoothstep(FADE_START_M, FADE_END_M, dist[m])) * clamp((sc[m] - s5) / RANK_MARGIN, 0, 1);
+      const weight = c.exist * (1 - smoothstep(FADE_START_M, FADE_END_M, dist[m])) * clamp((sc[m] - sOut) / margin, 0, 1);
       if (!(weight > 0)) continue;
       const a = this.active[list.length];
       // Anchored so that stormCentreAt(a, t) is the candidate's position.
@@ -504,10 +675,11 @@ export class StormField {
       a.radiusM = c.radius;
       a.topM = c.top;
       a.intensity = c.intensity;
-      a.motionDeg = w.windDirectionDeg;
+      a.motionDeg = steer.fromDeg;
       a.motionKt = kt;
       a.lightning = undefined;
       a.id = c.id;
+      a.derived = true;
       a.weight = weight;
       a.core = weight * c.core;
       a.anvil = weight * c.anvil;

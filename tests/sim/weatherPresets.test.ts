@@ -62,7 +62,7 @@ describe('free-flight weather presets', () => {
     expect(preset('rain').settings).toMatchObject({ cloudType: 'nimbostratus', cloudBaseM: 600, cloudTopM: 3000, cloudCover: 1, precipType: 'rain', precipRateMmH: 4, midType: 'altostratus', midCover: 0.9, midAltM: 4500 });
     expect(preset('snow').settings).toMatchObject({ cloudType: 'nimbostratus', isaDeviation: -20, precipType: 'snow', precipRateMmH: 2, visibilityM: 4000 });
     const ts = preset('thunderstorm').settings;
-    expect(ts).toMatchObject({ cloudType: 'towering', cloudCover: 0.5, cloudBaseM: 900, cloudTopM: 2600, isaDeviation: 8, timeOfDay: 15, dayOfYear: 196 });
+    expect(ts).toMatchObject({ cloudType: 'towering', cloudCover: 0.3, cloudBaseM: 900, cloudTopM: 2600, isaDeviation: 8, timeOfDay: 15, dayOfYear: 196 });
     // No explicit cells: they are derived from the conditions, which give activity 1.
     expect(ts.storms).toBeUndefined();
     expect(convectiveState({ ...defaultWeather(), ...ts }, emptyConvectiveState()).activity).toBe(1);
