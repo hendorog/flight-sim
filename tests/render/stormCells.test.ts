@@ -94,8 +94,15 @@ describe('cellGeometry', () => {
     const g = cellGeometry(cell(), w, 0, makeCellGeometry());
     const toCore = Math.hypot(g.x - g.boundX, g.z - g.boundZ);
     const toAnvil = Math.hypot(g.anvilX - g.boundX, g.anvilZ - g.boundZ);
-    // The density's support (stormGlsl cellDensity): the core's flare (1.6 R) plus its billow (0.35 R), the anvil's
-    // radius plus its billow (0.225 of it).
+    // The density's support (stormGlsl cellCloud): the core's flare (1.6 R) plus its lobes (0.22 R + 260 m) and the
+    // warp of their domain (350 m), the anvil's radius plus its lobes (0.15 of it) and the warp, for every drawn radius.
+    for (const radiusM of [500, 1800, 3000, 8000]) {
+      const h = cellGeometry(cell({ radiusM }), w, 0, makeCellGeometry());
+      const dc = Math.hypot(h.x - h.boundX, h.z - h.boundZ);
+      const da = Math.hypot(h.anvilX - h.boundX, h.anvilZ - h.boundZ);
+      expect(dc + 1.82 * h.radius + 610).toBeLessThanOrEqual(h.boundRadius);
+      expect(da + 1.15 * h.anvilRadius + 350).toBeLessThanOrEqual(h.boundRadius);
+    }
     expect(toCore + 1.95 * g.radius).toBeLessThanOrEqual(g.boundRadius);
     expect(toAnvil + 1.225 * g.anvilRadius).toBeLessThanOrEqual(g.boundRadius);
   });

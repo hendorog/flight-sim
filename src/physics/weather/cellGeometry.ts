@@ -31,8 +31,11 @@ export const ANVIL_MAX_M = 18_000;
 export const ANVIL_FULL_DRIFT_KT = 36;
 /** Rain-shaft radius per core radius (section 3.3 of the weather plan). */
 export const SHAFT_PER_RADIUS = 0.6;
-/** Margin of the bounding cylinder beyond the density's support, m. */
-const BOUND_MARGIN_M = 400;
+/**
+ * Margin of the bounding cylinder beyond 1.95 R and 1.225 anvil radii, m: the core's lobes and turrets (0.22 R +
+ * 260 m beyond its 1.6 R flare) and the warp of their domain (350 m), stormGlsl.ts cellCloud.
+ */
+const BOUND_MARGIN_M = 700;
 
 /** One cell's geometry in three.js world (x east, y up MSL, z south). */
 export interface CellGeometry {
@@ -108,8 +111,8 @@ export function cellGeometry(cell: StormCell, w: Pick<WeatherSettings, 'cloudBas
   const toN = -Math.cos(from);
   out.anvilX = out.x + toE * drift;
   out.anvilZ = out.z - toN * drift;
-  // The cylinder around the core's footprint (its flare, 1.6 R, plus its billow, 0.35 R) and the anvil (its radius
-  // plus its billow, 0.225 of it); stormGlsl.ts cellDensity.
+  // The cylinder around the core's footprint (its flare, 1.6 R, plus its lobes, 0.22 R + 260 m, and their warp) and
+  // the anvil (its radius plus its lobes, 0.15 of it, and the warp); stormGlsl.ts cellCloud.
   out.boundX = 0.5 * (out.x + out.anvilX);
   out.boundZ = 0.5 * (out.z + out.anvilZ);
   const half = 0.5 * drift;

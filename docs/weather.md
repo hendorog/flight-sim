@@ -95,7 +95,8 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
     the shell's radius. Snow draws round flakes 3 to 15 mm across (`SNOWFLAKE_MIN_M`, `SNOWFLAKE_MAX_M`) that sway
     and vary in brightness, streaked over 1/800 s (`SNOW_STREAK_EXPOSURE_S`): 4 mm parked in a 6 kt wind, 6.4 cm at
     100 kt. The sway and brightness phases use `uTime`, the summed render `dt` in s with no wrap (it wrapped at
-    3600 s before commit 34193ab). The audio parameter `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound.
+    3600 s before commit 34193ab). The audio parameter `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound, `hail` and
+    `hailSize` (46, 47) the hail on the airframe, from the precipitation at the aircraft (`ctx.weatherFx.precip`).
   - `createLightningOverlay` (`LightningOverlay.ts`): the cells in effect at the camera, from the frame's shared
     selection (`cameraStormsAt`). Schedules strikes (`src/sim/weather/lightning.ts` `strikesBetween`,
     `FLASH_PER_MIN` 6 per minute at intensity 1 times the cell's lightning share, `CG_FRACTION` 0.3; the hashes are
