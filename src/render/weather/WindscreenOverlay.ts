@@ -52,6 +52,8 @@ export const SNOW_LIFE_S = 6;
 export const DROP_REFRACT = 7;
 /** Darkening at a drop's rim, share. */
 export const DROP_RIM = 0.35;
+/** A hail splash's radiance over that of the scene behind the glass, at least the sky-lit white. Unconfirmed. */
+export const SPLASH_OVER_SCENE = 2;
 /** Largest radius of the crazed area, m. */
 export const CRAZE_MAX_M = 0.35;
 /** Seconds between searches of the aircraft for its glazing while none is found. */
@@ -150,13 +152,15 @@ float lineAA(float dM, float wPx, float pxM) {
 }
 
 void main() {
+  // The glass normal from the position's derivatives, before any fragment of the quad is discarded (derivatives
+  // are undefined after a discard).
+  vec3 P = vRoot;
+  vec3 N = normalize(cross(dFdx(P), dFdy(P)));
   if (texture2D(uAlphaMap, vUv).g < 0.5) discard;
   vec2 suv = gl_FragCoord.xy / uResolution;
   float sd = texture2D(uDepth, suv).r;
   float sceneZ = isSky(sd) ? 1e9 : viewZFromDepth(sd);
   if (sceneZ < vViewZ - 0.01) discard;
-  vec3 P = vRoot;
-  vec3 N = normalize(cross(dFdx(P), dFdy(P)));
   if (dot(N, uEye - P) < 0.0) N = -N;
   // Pixels per metre on the glass at this distance.
   float pxM = 1.0 / max(vViewZ * uPixelAngle, 1e-6);
@@ -215,7 +219,10 @@ void main() {
 
   vec3 lit = uAmbient + uSun;
   float white = 0.0;
+  // Ice is brighter than what lies behind the glass under the same light: at least SPLASH_OVER_SCENE times it.
   vec3 whiteCol = lit;
+  vec3 iceCol = max(lit, ${SPLASH_OVER_SCENE.toFixed(2)} * scene.rgb);
+  float ice = 0.0;
 
   if (uSnow > 0.0) {
     float s = 0.007;
@@ -263,7 +270,7 @@ void main() {
       float spike = pow(abs(cos(0.5 * rays * ang + TAU * h.x)), 6.0);
       float reach = r * (0.35 + 0.65 * spike) * (0.5 + 0.5 * smoothstep(0.0, 0.3, age));
       float sp = clamp((reach - dist) * pxM + 0.5, 0.0, 1.0) * (1.0 - smoothstep(0.3, 1.0, age));
-      white = max(white, sp * 0.9);
+      ice = max(ice, sp * 0.9);
     }
   }
 
@@ -352,6 +359,7 @@ void main() {
   col = mix(col, lit * 0.8, milk);
   col = mix(col, lit * 1.1, crack * 0.85);
   col = mix(col, whiteCol, white);
+  col = mix(col, iceCol, ice);
   gl_FragColor = vec4(col, scene.a);
 }
 `;
