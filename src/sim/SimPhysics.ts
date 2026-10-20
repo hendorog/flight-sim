@@ -52,6 +52,9 @@ import type { StartSpec } from './starts';
 import { createWorldEnvironment } from './worldEnvironment';
 import { sunDirectionNED } from '../core/world';
 import { reanchorStorms } from './weatherPresets';
+import { StormField } from '../physics/weather/stormField';
+import { emptyLocalPrecip, localPrecipAt } from '../physics/weather/stormPrecip';
+import { HAIL_DAMAGE_DT_S, HailDamage } from './weather/hailDamage';
 
 /** Most simulated time one advance() call may run per unit of time scale, s. */
 const MAX_FRAME_SIM = 0.1;
@@ -156,7 +159,19 @@ export class SimPhysics {
    * moisture, so no carburettor ice). Default true.
    */
   carbIcing = true;
+  /**
+   * Hail damage of this flight (sim/weather/hailDamage.ts): advanced every HAIL_DAMAGE_DT_S of simulation time from
+   * the storm cells' hail at the aircraft, applied to the flight model's leading edges (setAirframeDamage), reset by
+   * resetTo and restored from the snapshot.
+   */
+  readonly hailDamage = new HailDamage();
 
+  private readonly weather: WeatherSettings;
+  /** The storm cells at the aircraft for the damage (its own selection: nothing else's queries change it). */
+  private readonly damageField = new StormField();
+  private readonly damagePrecip = emptyLocalPrecip();
+  private lastDamageT = 0;
+  private nextDamageT = HAIL_DAMAGE_DT_S;
   private readonly events: EventBus | undefined;
   /** `env` without its moisture: what the flight model steps in while carburettor icing is off. */
   private readonly dryEnv: Environment;
@@ -172,6 +187,7 @@ export class SimPhysics {
 
   constructor(opts: SimPhysicsOptions) {
     this.events = opts.events;
+    this.weather = opts.weather;
     this.controls = opts.controls ?? defaultControls(opts.aircraft);
     this.env = createWorldEnvironment(opts.weather);
     this.dryEnv = Object.assign(Object.create(this.env) as Environment, { moisture: undefined });
@@ -213,6 +229,9 @@ export class SimPhysics {
     const tOld = this.time;
     this.scenario = sc;
     this.applyLoading(sc.payload ?? 'typical');
+    // A new flight: no hail damage (before the reset, whose trim uses the aerodynamics).
+    this.hailDamage.reset();
+    this.fm.setAirframeDamage(0);
     this.fm.reset(sc.ic, this.env);
     if (sc.attitude) this.rotateTo(sc.attitude.pitch, sc.attitude.roll);
     const c = this.controls;
@@ -246,6 +265,7 @@ export class SimPhysics {
     this.lastAdvance = 0;
     this.budgetLimited = false;
     this.setRate(1 / this.stepSize);
+    this.syncDamageClock();
     this.wasCrashed = false;
     this.gearEvents.sync(this.fm.state.gear);
     this.autoflight.disengage();
@@ -315,6 +335,7 @@ export class SimPhysics {
       quality: view.quality,
       renderScale: view.renderScale,
       autoflight: this.autoflight.exportState(),
+      damage: this.hailDamage.capture(),
       status: { onGround: s.onGround, crashed: s.crashed, groundSpeed: s.groundSpeed, altitudeMSL: s.altitudeMSL, heading: s.heading, ias: s.ias },
     };
     // `start` (spec 6.1): the lesson start the last reset came from, when it came from one.
@@ -363,6 +384,9 @@ export class SimPhysics {
       ic.feathered = sys.engines.map((e) => e.featherLatched);
     }
     if (def.geometry.gear.retractable) ic.gearDown = sys.gear.extension.every((x) => x > 0.5);
+    // The hail damage as saved (none in a snapshot before schema 5), before the reset's trim.
+    this.hailDamage.restore(snap.damage);
+    fm.setAirframeDamage(this.hailDamage.state.leadingEdge);
     try {
       fm.reset(ic, this.env);
     } catch {
@@ -404,6 +428,7 @@ export class SimPhysics {
       st.engine.propRpm = st.rotorcraft.rotorRpm;
     }
     st.time = snap.simTime;
+    this.syncDamageClock();
     this.accumulator = 0;
     this.steps = 0;
     this.lastAdvance = 0;
@@ -509,6 +534,7 @@ export class SimPhysics {
     this.fm.rudderFree = !!this.controls.feetOffRudder && !this.autoflight.engaged && !copilot?.flying;
     this.fm.step(this.h, this.controls, this.carbIcing ? this.env : this.dryEnv);
     this.steps++;
+    if (this.fm.state.time >= this.nextDamageT) this.updateHailDamage();
     const s = this.fm.state;
     const ev = this.events;
     if (ev) {
@@ -517,6 +543,32 @@ export class SimPhysics {
       this.gearEvents.update(s.gear, this.emitGear);
     }
     this.wasCrashed = s.crashed;
+  }
+
+  /** The damage clock after a reset or a restore: the next update one interval on from the flight-model clock. */
+  private syncDamageClock(): void {
+    const t = this.fm.state.time;
+    this.lastDamageT = t;
+    this.nextDamageT = (Math.floor(t / HAIL_DAMAGE_DT_S) + 1) * HAIL_DAMAGE_DT_S;
+  }
+
+  /**
+   * The hail damage over the interval since the last update: the storm cells' hail at the aircraft
+   * (stormPrecip.ts localPrecipAt) on the airframe (HailDamage.update), and the dents into the flight model when a
+   * level changed. Without storm cells at the aircraft nothing is sampled (stratiform precipitation has no hail).
+   */
+  private updateHailDamage(): void {
+    const s = this.fm.state;
+    const t = s.time;
+    const dt = t - this.lastDamageT;
+    this.lastDamageT = t;
+    this.nextDamageT = (Math.floor(t / HAIL_DAMAGE_DT_S) + 1) * HAIL_DAMAGE_DT_S;
+    const w = this.weather;
+    const north = s.position.x, east = s.position.y;
+    const cells = this.damageField.select(w, t, north, east);
+    if (cells.length === 0) return;
+    const p = localPrecipAt(w, cells, t, this.damageField.convective(w).capeJkg, north, east, s.altitudeMSL, this.damagePrecip);
+    if (this.hailDamage.update(p, s.tas, s.alpha, s.beta, s.orientation, t, dt)) this.fm.setAirframeDamage(this.hailDamage.state.leadingEdge);
   }
 
   /** Copy the flight model's state into renderState, interpolating the pose by the accumulator fraction. */

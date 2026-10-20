@@ -130,9 +130,11 @@ describe('resume snapshot schema 3', () => {
     p.reset('runway');
     p.step(1);
     const s = capture(p);
-    // Schema 4 keeps the schema-3 layout (it changes the meaning of an empty weather.storms only).
+    // Schema 4 keeps the schema-3 layout (it changes the meaning of an empty weather.storms only); schema 5 adds
+    // the hail damage.
     expect(s.schema).toBe(SNAPSHOT_SCHEMA);
-    expect(SNAPSHOT_SCHEMA).toBe(4);
+    expect(SNAPSHOT_SCHEMA).toBe(5);
+    expect(s.damage).toEqual({ windscreen: 0, leadingEdge: 0, windscreenDoseJm2: 0, leadingEdgeDoseJm2: 0, crackDue: 0, cracks: [] });
     expect(s.aircraft).toBe('c172s');
     expect(s.systems.engines).toHaveLength(1);
     expect(s.systems.engines[0].rpm).toBe(s.engine.rpm);

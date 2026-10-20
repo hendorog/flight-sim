@@ -44,15 +44,16 @@ import { ERA_SCENARIO_IDS } from './eraChoice';
 import { isEraId } from '../world/era/registry';
 import { sanitizeExtras } from '../core/weatherFields';
 import type { EraId } from '../world/era/types';
+import { MAX_CRACKS, type HailDamageSnapshot } from './weather/hailDamage';
 
 /**
  * Bump when the snapshot layout changes. Snapshots from MIN_SNAPSHOT_SCHEMA up are read (migrated to this
  * layout on read); older ones are ignored. Schema 4: `weather.storms` absent means cells derived from the
  * conditions and the empty list means none. Schema 3 snapshots written before the derived cells carry `storms: []`,
  * the neutral value of that time; an empty list read from schema 3 or older is dropped, so the flight resumes with
- * derived cells.
+ * derived cells. Schema 5: `damage`, the hail damage; a snapshot of schema 4 or older is read with no damage.
  */
-export const SNAPSHOT_SCHEMA = 4;
+export const SNAPSHOT_SCHEMA = 5;
 /** Last schema whose empty `weather.storms` list was the neutral value (dropped on read). */
 const LEGACY_EMPTY_STORMS_SCHEMA = 3;
 /**
@@ -131,6 +132,8 @@ export interface FlightSnapshot {
    * validated by the shell with validateTrainingBlock; an invalid block resumes the flight as free flight.
    */
   training?: unknown;
+  /** (schema 5) The hail damage (sim/weather/hailDamage.ts). Absent on read (schema 4 and older): none. */
+  damage?: HailDamageSnapshot;
 }
 
 const START_KINDS: readonly StartSpec['kind'][] = ['scenario', 'ground', 'air', 'final', 'circuit', 'attitude'];
@@ -253,6 +256,19 @@ export function snapshotSystems(snap: FlightSnapshot): SystemsSnapshot {
   return (snap as Partial<FlightSnapshot>).systems ?? systemsOfLegacy(snap);
 }
 
+const unit = (v: unknown): boolean => isNum(v) && v >= 0 && v <= 1;
+
+/** A schema-5 damage block: levels 0..1, doses at least 0, at most MAX_CRACKS cracks of finite numbers. */
+function isDamage(v: unknown): v is HailDamageSnapshot {
+  if (!isObj(v) || !unit(v.windscreen) || !unit(v.leadingEdge) || !unit(v.crackDue)) return false;
+  if (!isNum(v.windscreenDoseJm2) || v.windscreenDoseJm2 < 0 || !isNum(v.leadingEdgeDoseJm2) || v.leadingEdgeDoseJm2 < 0) return false;
+  return Array.isArray(v.cracks) && v.cracks.length <= MAX_CRACKS &&
+    v.cracks.every((c) => isObj(c) && isNum(c.az) && isNum(c.el) && unit(c.size) && unit(c.seed));
+}
+
+/** The damage of a flight that met no hail. */
+export const noDamage = (): HailDamageSnapshot => ({ windscreen: 0, leadingEdge: 0, windscreenDoseJm2: 0, leadingEdgeDoseJm2: 0, crackDue: 0, cracks: [] });
+
 /** Parse and validate a stored snapshot; null when it is corrupt, of another schema or implausible. */
 export function parseSnapshot(raw: string | null | undefined): FlightSnapshot | null {
   if (!raw) return null;
@@ -327,6 +343,9 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   out.systems ??= systemsOfLegacy(out);
   if (out.start !== undefined && !(isObj(out.start) && START_KINDS.includes(out.start.kind))) delete out.start;
   if (out.training === null) delete out.training;
+  // Schema 5: the hail damage. Absent (schema 4 and older) or malformed: none.
+  if (out.damage !== undefined && !isDamage(out.damage)) delete out.damage;
+  if (out.damage === undefined) out.damage = noDamage();
   return out;
 }
 
