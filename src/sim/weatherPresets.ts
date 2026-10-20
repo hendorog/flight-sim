@@ -4,8 +4,11 @@
 //
 // Restores and presets: the shell keeps one live WeatherSettings object and writers Object.assign into it. A saved
 // copy taken before an optional key was set does not hold that key, so assigning the copy back would leave the key
-// set (a lesson's storms surviving the lesson). restoreWeather spreads NEUTRAL_EXTRAS under the copy, and every
-// preset here carries NEUTRAL_EXTRAS under its own values, so applying "Fair" after "Thunderstorm" clears the cells.
+// set (a lesson's fog surviving the lesson). restoreWeather spreads NEUTRAL_EXTRAS under the copy, and every
+// preset here carries NEUTRAL_EXTRAS under its own values, so applying "Fair" after "Rain" clears the rain.
+// NEUTRAL_EXTRAS leaves `storms` undefined: storm cells are then derived from the conditions
+// (physics/weather/stormField.ts), and every preset's cells come from its own conditions; only "Thunderstorm" sets
+// conditions that give cells.
 //
 // The training presets (training/content/weatherPresets.ts, lesson weather) are a separate table.
 
@@ -88,20 +91,22 @@ const PRESETS: WeatherPreset[] = [
   { id: 'drizzle', name: 'Low stratus & drizzle', settings: { ...NEUTRAL_EXTRAS, cloudType: 'stratus', cloudCover: 1, cloudBaseM: 250, cloudTopM: 700, cirrusCover: 0, precipType: 'drizzle', precipRateMmH: 0.5 } },
   { id: 'rain', name: 'Rain', settings: { ...NEUTRAL_EXTRAS, cloudType: 'nimbostratus', cloudCover: 1, cloudBaseM: 600, cloudTopM: 3000, cirrusCover: 0, precipType: 'rain', precipRateMmH: 4, midType: 'altostratus', midCover: 0.9, midAltM: 4500 } },
   { id: 'snow', name: 'Snow', settings: { ...NEUTRAL_EXTRAS, cloudType: 'nimbostratus', cloudCover: 1, cirrusCover: 0, isaDeviation: -20, precipType: 'snow', precipRateMmH: 2, visibilityM: 4000 } },
-  // Two cells west of the field (12 km and 25 km), moving from 270 at 15 kt toward it.
+  // Conditions the stormField derivation turns into activity 1: a July afternoon (15:00, day 196), ISA + 8 K, a
+  // towering cumulus layer at cover 0.3 from a 900 m base to 2600 m (drawn to 5150 m), wind from 240 at 8 kt.
   {
     id: 'thunderstorm',
     name: 'Thunderstorm',
     settings: {
       ...NEUTRAL_EXTRAS,
       cloudType: 'towering',
-      cloudCover: 0.45,
-      cloudBaseM: 1400,
-      cloudTopM: 3200,
-      storms: cells([
-        { northM: 0, eastM: -12_000, radiusM: CB_DEFAULT_RADIUS_M, topM: 11_000, intensity: 0.8, motionDeg: 270, motionKt: 15 },
-        { northM: 0, eastM: -25_000, radiusM: CB_DEFAULT_RADIUS_M, topM: 11_000, intensity: 0.5, motionDeg: 270, motionKt: 15 },
-      ]),
+      cloudCover: 0.3,
+      cloudBaseM: 900,
+      cloudTopM: 2600,
+      isaDeviation: 8,
+      timeOfDay: 15,
+      dayOfYear: 196,
+      windDirectionDeg: 240,
+      windSpeedKt: 8,
     },
   },
 ];
@@ -132,43 +137,11 @@ export function restoreWeather(weather: WeatherSettings, saved: Readonly<Partial
   return Object.assign(weather, { ...NEUTRAL_EXTRAS, ...saved });
 }
 
-/** `w` with every optional field at its NEUTRAL_EXTRAS value (a copy; the base a lesson's weather is built on). */
-export function withoutExtras(w: Readonly<WeatherSettings>): WeatherSettings {
-  return { ...w, ...NEUTRAL_EXTRAS };
-}
-
-// ---------------------------------------------------------------------------------------------- menu storm layouts
-export type StormLayout = 'none' | 'distant' | 'overhead' | 'line';
-
-/** Distance of the 'distant' cell and of the 'line' from the aircraft, m, and the spacing along the line. */
-export const DISTANT_CELL_M = 20_000;
-export const LINE_DISTANCE_M = 15_000;
-export const LINE_SPACING_M = 8000;
-
 /**
- * Cells for a menu storm chip, placed relative to the aircraft at `at` (NED m) at simulation time `t` (s). The
- * cells move with the surface wind (from windDirectionDeg at windSpeedKt), a menu choice, not a model of the
- * steering-level wind. 'distant' is one cell DISTANT_CELL_M upwind; 'overhead' one cell centred on the aircraft;
- * 'line' three cells LINE_DISTANCE_M upwind, LINE_SPACING_M apart across the wind. Positions are stored at
- * simTime 0 (core/weatherFields.stormCentreAt), so each is moved back along its track by t.
+ * `w` with every optional field at its NEUTRAL_EXTRAS value and `storms` empty (a copy; the base a lesson's weather
+ * is built on). The empty list turns the derived storm cells off, so a lesson flies without cells whatever the
+ * conditions; a lesson that wants cells sets them in its override.
  */
-export function stormLayout(layout: StormLayout, at: { x: number; y: number }, t: number, w: Readonly<WeatherSettings>): readonly StormCell[] {
-  if (layout === 'none') return NO_STORMS;
-  const from = w.windDirectionDeg * DEG;
-  // Unit vector toward where the wind comes from, and the one across it.
-  const upN = Math.cos(from);
-  const upE = Math.sin(from);
-  const travel = Math.max(0, w.windSpeedKt) * KT * t;
-  const cell = (alongM: number, acrossM: number): StormCell => ({
-    northM: at.x + upN * alongM - upE * acrossM + upN * travel,
-    eastM: at.y + upE * alongM + upN * acrossM + upE * travel,
-    radiusM: CB_DEFAULT_RADIUS_M,
-    topM: CB_DEFAULT_TOP_M,
-    intensity: CB_DEFAULT_INTENSITY,
-    motionDeg: w.windDirectionDeg,
-    motionKt: Math.max(0, w.windSpeedKt),
-  });
-  if (layout === 'distant') return cells([cell(DISTANT_CELL_M, 0)]);
-  if (layout === 'overhead') return cells([cell(0, 0)]);
-  return cells([cell(LINE_DISTANCE_M, -LINE_SPACING_M), cell(LINE_DISTANCE_M, 0), cell(LINE_DISTANCE_M, LINE_SPACING_M)]);
+export function withoutExtras(w: Readonly<WeatherSettings>): WeatherSettings {
+  return { ...w, ...NEUTRAL_EXTRAS, storms: NO_STORMS };
 }

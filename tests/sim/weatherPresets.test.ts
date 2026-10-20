@@ -1,24 +1,22 @@
 // Free-flight weather presets and the restore helpers (src/sim/weatherPresets.ts): every preset clears the
 // optional fields it does not set, saved copies restored with restoreWeather do not leave a lesson's or preset's
-// fields behind, the lesson weather is built without the player's fields, and the menu's storm layouts sit where
-// they are documented. The pause menu's new weather section is checked on the stand-in DOM (tests/ui/fakeDom.ts).
+// fields behind, the lesson weather is built without the player's fields and with the derived storm cells off, and
+// explicit storm cells keep their place across a clock reset. The pause menu's new weather section is checked on the stand-in DOM (tests/ui/fakeDom.ts).
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { defaultWeather, defaultControls, type WeatherSettings } from '../../src/core/types';
 import { NEUTRAL_EXTRAS, NO_STORMS, WEATHER_EXTRA_KEYS, stormCentreAt, stormsOf } from '../../src/core/weatherFields';
 import {
   CB_DEFAULT_RADIUS_M,
-  DISTANT_CELL_M,
-  LINE_DISTANCE_M,
-  LINE_SPACING_M,
   WEATHER_PRESETS,
   applyWeatherPreset,
   reanchorStorms,
   restoreWeather,
-  stormLayout,
+  stormCell,
   weatherPresetById,
   withoutExtras,
 } from '../../src/sim/weatherPresets';
+import { convectiveState, emptyConvectiveState, proceduralStorms } from '../../src/physics/weather/stormField';
 import { buildWeather } from '../../src/training/content/weatherPresets';
 import { mulberry32 } from '../../src/physics/weather/random';
 import { applyEraWeather } from '../../src/sim/eraChoice';
@@ -30,6 +28,13 @@ import { SimPhysics } from '../../src/sim/SimPhysics';
 import { FakeElement, installFakeDom } from '../ui/fakeDom';
 
 const preset = (id: string) => weatherPresetById(id)!;
+/** Two explicit cells west of the field, moving from 270 at 15 kt (the Thunderstorm preset's before it was derived). */
+const TWO_CELLS = Object.freeze([
+  stormCell({ northM: 0, eastM: -12_000, radiusM: CB_DEFAULT_RADIUS_M, topM: 11_000, intensity: 0.8, motionDeg: 270, motionKt: 15 }),
+  stormCell({ northM: 0, eastM: -25_000, radiusM: CB_DEFAULT_RADIUS_M, topM: 11_000, intensity: 0.5, motionDeg: 270, motionKt: 15 }),
+]);
+/** A weather preset with explicit cells (for the clock tests). */
+const CELLS_PRESET = { id: 'cells', name: 'Cells', settings: { ...NEUTRAL_EXTRAS, storms: TWO_CELLS } };
 
 describe('free-flight weather presets', () => {
   it('keeps the five original menu presets with their values', () => {
@@ -57,27 +62,33 @@ describe('free-flight weather presets', () => {
     expect(preset('rain').settings).toMatchObject({ cloudType: 'nimbostratus', cloudBaseM: 600, cloudTopM: 3000, cloudCover: 1, precipType: 'rain', precipRateMmH: 4, midType: 'altostratus', midCover: 0.9, midAltM: 4500 });
     expect(preset('snow').settings).toMatchObject({ cloudType: 'nimbostratus', isaDeviation: -20, precipType: 'snow', precipRateMmH: 2, visibilityM: 4000 });
     const ts = preset('thunderstorm').settings;
-    expect(ts).toMatchObject({ cloudType: 'towering', cloudCover: 0.45, cloudBaseM: 1400, cloudTopM: 3200 });
-    expect(ts.storms).toEqual([
-      { northM: 0, eastM: -12_000, radiusM: CB_DEFAULT_RADIUS_M, topM: 11_000, intensity: 0.8, motionDeg: 270, motionKt: 15 },
-      { northM: 0, eastM: -25_000, radiusM: CB_DEFAULT_RADIUS_M, topM: 11_000, intensity: 0.5, motionDeg: 270, motionKt: 15 },
-    ]);
-    // Every cell passes the accessor's type check.
-    expect(stormsOf({ ...defaultWeather(), ...ts })).toBe(ts.storms);
+    expect(ts).toMatchObject({ cloudType: 'towering', cloudCover: 0.3, cloudBaseM: 900, cloudTopM: 2600, isaDeviation: 8, timeOfDay: 15, dayOfYear: 196 });
+    // No explicit cells: they are derived from the conditions, which give activity 1.
+    expect(ts.storms).toBeUndefined();
+    expect(convectiveState({ ...defaultWeather(), ...ts }, emptyConvectiveState()).activity).toBe(1);
   });
 
   it('presets are frozen', () => {
     expect(Object.isFrozen(preset('rain').settings)).toBe(true);
-    expect(Object.isFrozen(preset('thunderstorm').settings.storms)).toBe(true);
-    expect(Object.isFrozen(preset('thunderstorm').settings.storms![0])).toBe(true);
+    expect(Object.isFrozen(preset('thunderstorm').settings)).toBe(true);
   });
 
-  it('applying "Fair" after "Thunderstorm" clears the storm cells and the type', () => {
+  it('every preset leaves the storm cells to the conditions, and only "Thunderstorm" gives activity above 0', () => {
+    for (const p of WEATHER_PRESETS) {
+      const w = applyWeatherPreset(defaultWeather(), p);
+      expect(proceduralStorms(w), p.id).toBe(true);
+      expect(convectiveState(w, emptyConvectiveState()).activity > 0, p.id).toBe(p.id === 'thunderstorm');
+    }
+  });
+
+  it('applying "Fair" after explicit cells clears the cells and the type', () => {
     const w = defaultWeather();
-    applyWeatherPreset(w, preset('thunderstorm'));
+    applyWeatherPreset(w, CELLS_PRESET);
+    w.cloudType = 'towering';
     expect(stormsOf(w)).toHaveLength(2);
     applyWeatherPreset(w, preset('fair'));
     expect(stormsOf(w)).toHaveLength(0);
+    expect(proceduralStorms(w)).toBe(true);
     expect(w).toMatchObject(NEUTRAL_EXTRAS);
     expect(w).toMatchObject({ cloudBaseM: 1500, cloudTopM: 2600 });
   });
@@ -93,7 +104,7 @@ describe('restoring saved weather', () => {
   it('a saved copy without the optional keys clears them', () => {
     const w = defaultWeather();
     const saved = { ...w };
-    Object.assign(w, preset('thunderstorm').settings, { fogTopM: 80 });
+    Object.assign(w, preset('thunderstorm').settings, { fogTopM: 80, storms: TWO_CELLS });
     restoreWeather(w, saved);
     expect(w).toEqual({ ...saved, ...NEUTRAL_EXTRAS });
   });
@@ -113,21 +124,26 @@ describe('restoring saved weather', () => {
     // and the end restores playerWeather. A change there needs a change here.
     const live: WeatherSettings = { ...defaultWeather(), fogTopM: 50 };
     const player = { ...live };
-    const lesson = buildWeather({ preset: 'light', override: { storms: preset('thunderstorm').settings.storms } }, withoutExtras(player), mulberry32(7));
+    const lesson = buildWeather({ preset: 'light', override: { storms: TWO_CELLS } }, withoutExtras(player), mulberry32(7));
     restoreWeather(live, lesson);
     expect(live.fogTopM).toBe(0);
     expect(stormsOf(live)).toHaveLength(2);
     restoreWeather(live, player);
     expect(live.fogTopM).toBe(50);
     expect(stormsOf(live)).toHaveLength(0);
-    expect(live.storms).toBe(NO_STORMS);
+    expect(live.storms).toBeUndefined();
+    expect(proceduralStorms(live)).toBe(true);
+    // Without an override the lesson weather has the derived cells off.
+    const plain = buildWeather({ preset: 'light' }, withoutExtras({ ...live, ...preset('thunderstorm').settings }), mulberry32(7));
+    expect(plain.storms).toBe(NO_STORMS);
+    expect(proceduralStorms(plain)).toBe(false);
   });
 
   it('withoutExtras does not change the seeded lesson sampling', () => {
     const base = defaultWeather();
     const a = buildWeather({ preset: 'light' }, base, mulberry32(3));
     const b = buildWeather({ preset: 'light' }, withoutExtras({ ...base, precipType: 'rain', precipRateMmH: 4 }), mulberry32(3));
-    expect(b).toEqual({ ...a, ...NEUTRAL_EXTRAS });
+    expect(b).toEqual({ ...a, ...NEUTRAL_EXTRAS, storms: NO_STORMS });
   });
 
   it('the era preset path keeps the layer depth through deriveCloudTop', () => {
@@ -137,10 +153,10 @@ describe('restoring saved weather', () => {
 });
 
 describe('presets applied after simulation time 0', () => {
-  it('puts the Thunderstorm cells where the preset places them at the time of applying', () => {
+  it('puts explicit cells where the preset places them at the time of applying', () => {
     const centre = { north: 0, east: 0 };
     for (const t of [0, 1800]) {
-      const w = applyWeatherPreset(defaultWeather(), preset('thunderstorm'), t);
+      const w = applyWeatherPreset(defaultWeather(), CELLS_PRESET, t);
       const [a, b] = stormsOf(w);
       stormCentreAt(a, t, centre);
       expect(centre.north).toBeCloseTo(0, 6);
@@ -150,7 +166,7 @@ describe('presets applied after simulation time 0', () => {
       expect(Object.isFrozen(a)).toBe(true);
     }
     // The preset table itself keeps its time-0 positions.
-    expect(preset('thunderstorm').settings.storms![0].eastM).toBe(-12_000);
+    expect(CELLS_PRESET.settings.storms[0].eastM).toBe(-12_000);
   });
 
   it('leaves a preset without cells unchanged by the time', () => {
@@ -166,7 +182,7 @@ describe('storm cells across a clock reset', () => {
     });
 
   it('reanchorStorms keeps every cell where it is from one clock reading to another', () => {
-    const w = applyWeatherPreset(defaultWeather(), preset('thunderstorm'), 600);
+    const w = applyWeatherPreset(defaultWeather(), CELLS_PRESET, 600);
     const before = centres(w, 600);
     reanchorStorms(w, 600, 0);
     const after = centres(w, 0);
@@ -182,7 +198,7 @@ describe('storm cells across a clock reset', () => {
     const w = defaultWeather();
     reanchorStorms(w, 600, 0);
     expect('storms' in w).toBe(false);
-    const t = applyWeatherPreset(defaultWeather(), preset('thunderstorm'), 600);
+    const t = applyWeatherPreset(defaultWeather(), CELLS_PRESET, 600);
     const list = t.storms;
     reanchorStorms(t, 600, 600);
     expect(t.storms).toBe(list);
@@ -195,7 +211,7 @@ describe('storm cells across a clock reset', () => {
     p.step(30);
     const t = p.time;
     expect(t).toBeGreaterThan(29);
-    applyWeatherPreset(w, preset('thunderstorm'), t);
+    applyWeatherPreset(w, CELLS_PRESET, t);
     const before = centres(w, t);
     p.reset('cruise', w);
     expect(p.time).toBe(0);
@@ -204,40 +220,6 @@ describe('storm cells across a clock reset', () => {
       expect(after[i][0]).toBeCloseTo(before[i][0], 6);
       expect(after[i][1]).toBeCloseTo(before[i][1], 6);
     }
-  });
-});
-
-describe('menu storm layouts', () => {
-  const w = { ...defaultWeather(), windDirectionDeg: 270, windSpeedKt: 10 };
-  const at = { x: 1000, y: 2000, z: -500 };
-  const centre = { north: 0, east: 0 };
-
-  it('none is the empty list', () => {
-    expect(stormLayout('none', at, 0, w)).toBe(NO_STORMS);
-  });
-
-  it('places the cells relative to the aircraft at the current time, moving with the wind', () => {
-    for (const t of [0, 1234]) {
-      const [over] = stormLayout('overhead', at, t, w);
-      stormCentreAt(over, t, centre);
-      expect(centre.north).toBeCloseTo(1000, 6);
-      expect(centre.east).toBeCloseTo(2000, 6);
-      expect([over.motionDeg, over.motionKt]).toEqual([270, 10]);
-      // Wind from 270: upwind is west.
-      const [far] = stormLayout('distant', at, t, w);
-      stormCentreAt(far, t, centre);
-      expect(centre.north).toBeCloseTo(1000, 6);
-      expect(centre.east).toBeCloseTo(2000 - DISTANT_CELL_M, 6);
-      const line = stormLayout('line', at, t, w);
-      expect(line).toHaveLength(3);
-      const pts = line.map((c) => ({ ...stormCentreAt(c, t, { north: 0, east: 0 }) }));
-      for (const p of pts) expect(p.east).toBeCloseTo(2000 - LINE_DISTANCE_M, 6);
-      expect(pts.map((p) => Math.round(p.north))).toEqual([1000 - LINE_SPACING_M, 1000, 1000 + LINE_SPACING_M]);
-    }
-  });
-
-  it('every layout cell passes the accessor check', () => {
-    for (const k of ['distant', 'overhead', 'line'] as const) expect(stormsOf({ ...w, storms: stormLayout(k, at, 5, w) })).toHaveLength(k === 'line' ? 3 : 1);
   });
 });
 
@@ -280,9 +262,10 @@ describe('pause menu: the weather page sections for the optional fields', () => 
     const buttons = all(root, 'button');
     const names = buttons.map((b) => b.textContent);
     for (const p of WEATHER_PRESETS) expect(names).toContain(p.name);
-    for (const n of ['Nimbostratus', 'Altostratus', 'Rain', 'No storms', 'Distant cell', 'Overhead cell', 'Line of three']) expect(names).toContain(n);
+    for (const n of ['Nimbostratus', 'Altostratus', 'Rain', 'From conditions', 'No storms']) expect(names).toContain(n);
+    for (const n of ['Distant cell', 'Overhead cell', 'Line of three']) expect(names).not.toContain(n);
     const sel = buttons.filter((b) => b.classList.contains('sel')).map((b) => b.textContent);
-    expect(sel).toEqual(expect.arrayContaining(['Nimbostratus', 'Altostratus', 'Rain', 'No storms']));
+    expect(sel).toEqual(expect.arrayContaining(['Nimbostratus', 'Altostratus', 'Rain', 'From conditions']));
     const labels = all(root, 'label').map((l) => l.textContent);
     for (const l of ['Mid-level cloud', 'Mid-level altitude', 'Precipitation rate', 'Ground fog depth', 'Fog visibility']) expect(labels).toContain(l);
     const outputs = all(root, 'output').map((o) => o.textContent);
@@ -292,7 +275,8 @@ describe('pause menu: the weather page sections for the optional fields', () => 
   it('shows the defaults when the fields are absent', () => {
     const root = build(defaultWeather());
     const sel = all(root, 'button').filter((b) => b.classList.contains('sel')).map((b) => b.textContent);
-    expect(sel).toEqual(expect.arrayContaining(['Auto', 'Altostratus', 'No precipitation', 'No storms']));
+    expect(sel).toEqual(expect.arrayContaining(['Auto', 'Altostratus', 'No precipitation', 'From conditions']));
+    expect(all(root, 'p').map((e) => e.textContent)).toContain('Convective activity from these conditions: 0 %');
     const rows = all(root, 'div').filter((d) => d.className === 'row');
     const value = (label: string) => rows.find((r) => r.children[0].textContent === label)!.children[2].textContent;
     expect(value('Precipitation rate')).toBe('none');

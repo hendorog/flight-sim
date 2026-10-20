@@ -18,12 +18,16 @@
 //             DOWNDRAFT_TAPER_M above it or the top, whichever is lower (the tapers are not divergence-free).
 //   severity  intensity * smoothstep(2.5 R, R, r) up to the top, tapered to 0 over SEVERITY_TOP_TAPER_M above it;
 //             WindField passes max(weather.turbulence, severity) to the MIL-F-8785C intensities (clamped there at 1).
+// A cell's share of the wind field (physics/weather/stormField.ts ActiveStorm.wind: its selection weight times its
+// life cycle; 1 for a plain StormCell) multiplies its updraft, downdraft, outflow and severity; inCore needs a core
+// share (ActiveStorm.core) of at least CORE_SHARE_MIN.
 // Unconfirmed: wMax, the peak outflow, z*, eps, Rd / R, the downdraft offset and limit, the tapers and the severity
 // shape are tuning values chosen for this model; the coefficients of the source have not been checked against it.
 
 import { clamp, DEG, smoothstep, type Vec3 } from '../../core/math';
 import type { StormCell } from '../../core/types';
 import { MAX_STORMS, stormCentreAt, type NorthEast } from '../../core/weatherFields';
+import { stormShare, type ActiveStorm } from './stormField';
 
 /** Updraft peak wMax = UPDRAFT_BASE + UPDRAFT_PER_INTENSITY * intensity, m/s (unconfirmed). */
 export const UPDRAFT_BASE = 5;
@@ -54,6 +58,14 @@ export const CELL_RADIUS_MIN_M = 1000;
 export const CELL_RADIUS_MAX_M = 5000;
 export const CELL_TOP_MIN_M = 6000;
 export const CELL_TOP_MAX_M = 14000;
+/**
+ * Lowest top of a derived cell (stormField.ts ActiveStorm.derived), m MSL: a growing cell's top rises from the base
+ * + MIN_GROWING_DEPTH_M (2000 m), the render's floor, so the field and the drawn cell share the top.
+ */
+export const DERIVED_TOP_MIN_M = 2000;
+
+/** Core share from which a point inside the core counts as in cloud (inCore, inStormCore). */
+export const CORE_SHARE_MIN = 0.5;
 
 /** Updraft radial taper (r / R), downdraft radial taper (r_d / R) and severity reach (r / R). */
 const UPDRAFT_TAPER_START = 1.5;
@@ -110,8 +122,8 @@ export const emptyCbSample = (): CbSample => ({ up: 0, outN: 0, outE: 0, severit
 
 /** The core radius of a cell as the field uses it, m. */
 export const cellRadiusM = (cell: StormCell): number => clamp(cell.radiusM, CELL_RADIUS_MIN_M, CELL_RADIUS_MAX_M);
-/** The anvil top of a cell as the field uses it, m MSL. */
-export const cellTopM = (cell: StormCell): number => clamp(cell.topM, CELL_TOP_MIN_M, CELL_TOP_MAX_M);
+/** The anvil top of a cell as the field uses it, m MSL (a derived cell's floor is DERIVED_TOP_MIN_M). */
+export const cellTopM = (cell: StormCell): number => clamp(cell.topM, (cell as Partial<ActiveStorm>).derived === true ? DERIVED_TOP_MIN_M : CELL_TOP_MIN_M, CELL_TOP_MAX_M);
 /** The intensity of a cell as the field uses it, 0..1. */
 export const cellIntensity = (cell: StormCell): number => clamp(cell.intensity, 0, 1);
 
@@ -172,6 +184,7 @@ export function cbSample(cells: readonly StormCell[], p: Vec3, t: number, agl: n
     const r = Math.sqrt(r2);
     const top = cellTopM(cell);
     const intensity = cellIntensity(cell);
+    const share = stormShare(cell, 'wind');
 
     // Updraft: under and inside the core.
     if (r < UPDRAFT_TAPER_END * R && alt < top) {
@@ -184,7 +197,7 @@ export function cbSample(cells: readonly StormCell[], p: Vec3, t: number, agl: n
       } else {
         profile = SUBCLOUD_FRACTION * Math.min(1, agl / Math.max(MIN_DEPTH, baseM - groundM));
       }
-      out.up += wMax * profile * radial;
+      out.up += wMax * profile * radial * share;
     }
 
     // Downdraft and outflow, centred toward where the cell moves.
@@ -197,16 +210,16 @@ export function cbSample(cells: readonly StormCell[], p: Vec3, t: number, agl: n
     if (rd2 < DOWNDRAFT_TAPER_END * DOWNDRAFT_TAPER_END * R * R && taperV > 0) {
       const rd = DOWNDRAFT_RADIUS * R;
       obVelocity(rd2, agl, obLambda(OUTFLOW_BASE + OUTFLOW_PER_INTENSITY * intensity, rd), rd, ob);
-      const taper = taperV * (1 - smoothstep(DOWNDRAFT_TAPER_START * R, DOWNDRAFT_TAPER_END * R, Math.sqrt(rd2)));
+      const taper = taperV * (1 - smoothstep(DOWNDRAFT_TAPER_START * R, DOWNDRAFT_TAPER_END * R, Math.sqrt(rd2))) * share;
       out.outN += ob.q * ddN * taper;
       out.outE += ob.q * ddE * taper;
       out.up += ob.w * taper;
     }
 
     // Turbulence in and around the cell, up to the top.
-    const severity = intensity * smoothstep(SEVERITY_REACH * R, R, r) * (1 - smoothstep(top, top + SEVERITY_TOP_TAPER_M, alt));
+    const severity = intensity * smoothstep(SEVERITY_REACH * R, R, r) * (1 - smoothstep(top, top + SEVERITY_TOP_TAPER_M, alt)) * share;
     if (severity > out.severity) out.severity = severity;
-    if (r < R && alt >= baseM && alt <= top) out.inCore = true;
+    if (r < R && alt >= baseM && alt <= top && stormShare(cell, 'core') >= CORE_SHARE_MIN) out.inCore = true;
   }
   return out;
 }
@@ -226,19 +239,22 @@ export function cbSeverity(cells: readonly StormCell[], p: Vec3, t: number): num
     const r = Math.hypot(p.x - centre.north, p.y - centre.east);
     if (r >= SEVERITY_REACH * R) continue;
     const top = cellTopM(cell);
-    const severity = cellIntensity(cell) * smoothstep(SEVERITY_REACH * R, R, r) * (1 - smoothstep(top, top + SEVERITY_TOP_TAPER_M, alt));
+    const severity = cellIntensity(cell) * smoothstep(SEVERITY_REACH * R, R, r) * (1 - smoothstep(top, top + SEVERITY_TOP_TAPER_M, alt)) * stormShare(cell, 'wind');
     if (severity > best) best = severity;
   }
   return best;
 }
 
-/** True inside a cell's core at time t: within R of the centre, between the cloud base `baseM` and the top (m MSL). */
+/**
+ * True inside a cell's core at time t: within R of the centre, between the cloud base `baseM` and the top (m MSL),
+ * for a cell whose core share is at least CORE_SHARE_MIN.
+ */
 export function inStormCore(cells: readonly StormCell[], north: number, east: number, altM: number, t: number, baseM: number): boolean {
   if (altM < baseM) return false;
   const n = Math.min(cells.length, MAX_STORMS);
   for (let i = 0; i < n; i++) {
     const cell = cells[i];
-    if (altM > cellTopM(cell)) continue;
+    if (altM > cellTopM(cell) || stormShare(cell, 'core') < CORE_SHARE_MIN) continue;
     const R = cellRadiusM(cell);
     stormCentreAt(cell, t, centre);
     const dN = north - centre.north;

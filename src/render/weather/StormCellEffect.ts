@@ -1,4 +1,6 @@
-// Cumulonimbus cells (WeatherSettings.storms, read through stormsOf): a scene effect after the clouds, built on the
+// Cumulonimbus cells (the cells in effect at the camera, physics/weather/stormField.ts StormField.select through the
+// frame's shared selection, stormSelection.ts, which the clouds read first to clear the cumulus around each cell:
+// the weather's explicit `storms`, or the cells derived from the conditions): a scene effect after the clouds, built on the
 // VolcanoPlumeEffect pattern. Created at boot whether or not the weather has cells, so that cells set later (menu,
 // presets, __sim.setWeather) appear without a shader compile; with no cell on screen active() is false and PostPipeline
 // skips it (rendered anyway, as by the shader warm-up, it copies its input).
@@ -10,7 +12,8 @@
 //                                                       with the scene depth the ray met
 //   2. composite  (STORM_COMPOSITE_FRAG)                full resolution, depth-aware upsample, against the cumulus
 //                                                       layer the clouds published (reprojectionLayer)
-// Cell geometry (cellGeometry, pure): the centre moves with the cell (stormCentreAt at ctx.simTime); the base is
+// Cell geometry (cellGeometry, pure): the centre moves with the cell (stormCentreAt at ctx.simTime); the core, anvil
+// and rain shares of a derived cell (its selection weight and life cycle) scale the three densities; the base is
 // the weather's cloudBaseM, the top the cell's topM; the anvil's radius is ANVIL_PER_RADIUS x the core radius (at
 // most ANVIL_MAX_M) and its centre lies half that radius downwind (the weather's wind, scaled down below
 // ANVIL_FULL_DRIFT_KT); the rain shaft's radius is SHAFT_PER_RADIUS x the core radius.
@@ -27,14 +30,16 @@ import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import type { SceneEffect, SimContext } from '../../core/context';
 import type { StormCell, WeatherSettings } from '../../core/types';
 import { DEG } from '../../core/math';
-import { MAX_STORMS, stormCentreAt, stormsOf, type NorthEast } from '../../core/weatherFields';
+import { MAX_STORMS, stormCentreAt, type NorthEast } from '../../core/weatherFields';
 import { mulberry32 } from '../../physics/weather/random';
+import { stormShare } from '../../physics/weather/stormField';
 import { Atmosphere } from '../sky/Atmosphere';
 import { transmittanceToSpace } from '../sky/transmittance';
 import { FULLSCREEN_VERT } from '../clouds/resolveShaders';
 import type { CloudsEffect } from '../clouds';
 import { STORM_COMPOSITE_FRAG, STORM_COPY_FRAG, STORM_MARCH_FRAG, STORM_MAX_CELLS } from './stormGlsl';
 import type { WeatherEffectContext } from './index';
+import { cameraStormsAt, drawnCoreRadiusM } from './stormSelection';
 
 /** Linear resolution of the march relative to the screen ('low' quality: STORM_SCALE_LOW). */
 export const STORM_SCALE = 0.5;
@@ -63,6 +68,10 @@ export interface CellGeometry {
   base: number;
   top: number;
   intensity: number;
+  /** Density shares 0..1 of the core, anvil and rain (stormField.ts ActiveStorm; 1 for a plain StormCell). */
+  core: number;
+  anvil: number;
+  rain: number;
   anvilRadius: number;
   anvilX: number;
   anvilZ: number;
@@ -74,23 +83,27 @@ export interface CellGeometry {
 }
 
 export function makeCellGeometry(): CellGeometry {
-  return { x: 0, z: 0, radius: 0, base: 0, top: 0, intensity: 0, anvilRadius: 0, anvilX: 0, anvilZ: 0, shaftRadius: 0, boundX: 0, boundZ: 0, boundRadius: 0 };
+  return { x: 0, z: 0, radius: 0, base: 0, top: 0, intensity: 0, core: 1, anvil: 1, rain: 1, anvilRadius: 0, anvilX: 0, anvilZ: 0, shaftRadius: 0, boundX: 0, boundZ: 0, boundRadius: 0 };
 }
 
 const _ne: NorthEast = { north: 0, east: 0 };
 
 /**
  * Geometry of `cell` at simulation time t in weather w (pure; writes `out`). The core radius is clamped to
- * 500..8000 m, the intensity to 0..1, and the top to at least the base + 2000 m (the anvil's depth plus 500 m).
+ * 500..8000 m (drawnCoreRadiusM), the intensity to 0..1, and the top to at least the base + 2000 m (the anvil's
+ * depth plus 500 m; a derived cell's top never lies below it, stormField.ts MIN_GROWING_DEPTH_M).
  */
 export function cellGeometry(cell: StormCell, w: Pick<WeatherSettings, 'cloudBaseM' | 'windDirectionDeg' | 'windSpeedKt'>, t: number, out: CellGeometry): CellGeometry {
   stormCentreAt(cell, t, _ne);
   out.x = _ne.east;
   out.z = -_ne.north;
-  out.radius = Math.min(8000, Math.max(500, cell.radiusM));
+  out.radius = drawnCoreRadiusM(cell);
   out.base = w.cloudBaseM;
   out.top = Math.max(cell.topM, out.base + 2000);
   out.intensity = Math.min(1, Math.max(0, cell.intensity));
+  out.core = stormShare(cell, 'core');
+  out.anvil = stormShare(cell, 'anvil');
+  out.rain = stormShare(cell, 'rain');
   out.anvilRadius = Math.min(ANVIL_MAX_M, ANVIL_PER_RADIUS * out.radius);
   out.shaftRadius = SHAFT_PER_RADIUS * out.radius;
   // Downwind: windDirectionDeg is where the wind blows FROM; three.js x = east, z = -north.
@@ -228,6 +241,7 @@ export class StormCellEffect implements SceneEffect, StormLayer {
   private readonly cellB = Array.from({ length: STORM_MAX_CELLS }, () => new THREE.Vector4());
   private readonly cellC = Array.from({ length: STORM_MAX_CELLS }, () => new THREE.Vector4());
   private readonly cellR = new Float32Array(STORM_MAX_CELLS);
+  private readonly cellW = Array.from({ length: STORM_MAX_CELLS }, () => new THREE.Vector4(1, 1, 1, 0));
   private readonly frustum = new THREE.Frustum();
   private readonly viewProj = new THREE.Matrix4();
   private readonly box = new THREE.Box3();
@@ -252,6 +266,7 @@ export class StormCellEffect implements SceneEffect, StormLayer {
       uCellB: { value: this.cellB },
       uCellC: { value: this.cellC },
       uCellR: { value: this.cellR },
+      uCellW: { value: this.cellW },
       uCount: { value: 0 },
       uGroundY: { value: GROUND_Y },
       uSunSpan: { value: this.sunSpan },
@@ -306,10 +321,11 @@ export class StormCellEffect implements SceneEffect, StormLayer {
     this.marchRT.setSize(lw, lh);
   }
 
-  /** Update the cells from the weather at ctx.simTime and cull them against the view; returns the count on screen. */
+  /** Update the cells in effect at the camera at ctx.simTime and cull them against the view; returns the count on screen. */
   updateCells(ctx: SimContext): number {
-    const cells = stormsOf(ctx.weather);
     const camera = ctx.camera;
+    // The frame's selection at the camera, shared with the cumulus layer and the lightning overlay.
+    const cells = cameraStormsAt(ctx);
     this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.viewProj);
     let n = 0;
@@ -322,6 +338,7 @@ export class StormCellEffect implements SceneEffect, StormLayer {
       this.cellB[n].set(g.base, g.intensity, g.anvilRadius, g.shaftRadius);
       this.cellC[n].set(g.anvilX, g.anvilZ, g.boundX, g.boundZ);
       this.cellR[n] = g.boundRadius;
+      this.cellW[n].set(g.core, g.anvil, g.rain, 0);
       n++;
     }
     this.count = n;

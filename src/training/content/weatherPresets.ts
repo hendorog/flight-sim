@@ -10,6 +10,7 @@
 
 import type { WeatherSettings } from '../../core/types';
 import { fogOf, precipOf, stormsOf, type FogLayer, type Precip } from '../../core/weatherFields';
+import { StormField, proceduralStorms } from '../../physics/weather/stormField';
 import type { Rng, WeatherPresetId, WeatherSpec } from '../types';
 
 /** Each preset is a partial override of the player's weather plus default sampling ranges. */
@@ -133,15 +134,41 @@ function turbulenceWord(t: number): string | null {
 
 const _precip: Precip = { type: 'none', rateMmH: 0 };
 const _fog: FogLayer = { topM: 0, visibilityM: 0 };
+const _storms = new StormField();
+
+/** Distance from the airport within which a derived cell with lightning gives TS, m (10 NM). */
+export const TS_RANGE_M = 18_520;
+/** Core or anvil share from which a derived cell counts for CB and TS. */
+const CB_SHARE_MIN = 0.1;
 
 /**
- * Present-weather groups of the optional fields (core/weatherFields.ts), in METAR order: TS when a storm cell has
- * lightning, then the precipitation (DZ; -RA / RA / +RA below 2.5 / 10 mm/h / above; -SN / SN / +SN below 1 /
+ * Thunderstorm (TS) and cumulonimbus (CB) at the airport (NED origin). Explicit cells: TS when a cell has
+ * lightning, CB when there is a cell, wherever they are. Derived cells (stormField.ts, selected at the airport, so
+ * within FADE_END_M 60 km): CB when a selected cell's core or anvil share is at least CB_SHARE_MIN; TS when such a
+ * cell lies within TS_RANGE_M and has a lightning share above 0.
+ */
+function stormsAtField(w: Readonly<WeatherSettings>): { ts: boolean; cb: boolean } {
+  if (!proceduralStorms(w)) {
+    const cells = stormsOf(w);
+    return { ts: cells.some((c) => c.lightning !== false), cb: cells.length > 0 };
+  }
+  let ts = false;
+  let cb = false;
+  for (const c of _storms.select(w, 0, 0, 0)) {
+    if (Math.max(c.core, c.anvil) < CB_SHARE_MIN) continue;
+    cb = true;
+    if (c.flash > 0 && Math.hypot(c.northM, c.eastM) <= TS_RANGE_M) ts = true;
+  }
+  return { ts, cb };
+}
+
+/**
+ * Present-weather groups of the optional fields (core/weatherFields.ts), in METAR order: TS (stormsAtField), then the precipitation (DZ; -RA / RA / +RA below 2.5 / 10 mm/h / above; -SN / SN / +SN below 1 /
  * 2.5 mm/h / above), then FG for a ground fog layer. Empty when the fields are absent.
  */
-function presentWeather(w: Readonly<WeatherSettings>): string[] {
+function presentWeather(w: Readonly<WeatherSettings>, ts: boolean): string[] {
   const groups: string[] = [];
-  if (stormsOf(w).some((c) => c.lightning !== false)) groups.push('TS');
+  if (ts) groups.push('TS');
   const p = precipOf(w, _precip);
   if (p.rateMmH > 0) {
     if (p.type === 'drizzle') groups.push('DZ');
@@ -155,13 +182,14 @@ function presentWeather(w: Readonly<WeatherSettings>): string[] {
 /**
  * 'Wind 090/7, CAVOK, turbulence light, 09:30' (results, briefing). METAR-like: CAVOK when visibility is
  * at least 10 km, no cloud lies below 5,000 ft (1,524 m) and there is no present weather and no storm cell;
- * otherwise the visibility, the present-weather groups and the cloud layer (CB after it when storm cells exist,
+ * otherwise the visibility, the present-weather groups and the cloud layer (CB after it, stormsAtField,
  * FEW at the base when the cover alone reports no cloud).
  */
 export function weatherLine(w: Readonly<WeatherSettings>): string {
   const parts: string[] = [];
-  const wx = presentWeather(w);
-  const cb = stormsOf(w).length > 0;
+  const storms = stormsAtField(w);
+  const wx = presentWeather(w, storms.ts);
+  const cb = storms.cb;
   const kt = Math.round(w.windSpeedKt);
   if (kt < 1) parts.push('Wind calm');
   else {

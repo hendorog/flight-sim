@@ -205,7 +205,9 @@ export class SimPhysics {
    * start (starts.ts buildStart). Applies the scenario's payload (default 'typical'), fuel and switches, and
    * for an unusual-attitude start rotates the trimmed aircraft to the requested attitude with the airspeed
    * kept along the nose. The copilot, if any, is left to its owner (TrainingSystem). The clock restarts at 0;
-   * `weather`'s storm cells are re-anchored to it (weatherPresets.reanchorStorms) so they stay where they are.
+   * `weather`'s explicit storm cells are re-anchored to it (weatherPresets.reanchorStorms) so they stay where they
+   * are. Derived cells (physics/weather/stormField.ts) run on the weather's timeOfDay and dayOfYear, which a reset
+   * leaves, so they do not move either.
    */
   resetTo(sc: Scenario, weather?: WeatherSettings): Scenario {
     const tOld = this.time;

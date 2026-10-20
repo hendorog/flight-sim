@@ -1,4 +1,6 @@
-// Lightning flashes and bolts from the storm cells (WeatherSettings.storms): a post-TAA overlay (PostPipeline
+// Lightning flashes and bolts from the storm cells in effect at the camera (physics/weather/stormField.ts
+// StormField.select through the frame's shared selection, stormSelection.ts: the weather's explicit `storms`, or
+// the cells derived from the conditions, each with its lightning share): a post-TAA overlay (PostPipeline
 // addOverlay), so a flash shorter than a frame is not averaged away by the temporal pass. Created at boot whether or
 // not the weather has cells. active() advances the strike schedule and is false while no flash is lit (after the
 // first render), so PostPipeline skips the overlay between flashes; rendered with no flash lit it copies its input.
@@ -49,13 +51,14 @@ import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { SCENE_UNITS_PER_LUX, type SceneEffect, type SimContext } from '../../core/context';
 import { DEPTH_GLSL } from '../../core/shaderLib';
-import { stormsOf } from '../../core/weatherFields';
 import { flashEnd, flashEnvelope, makeStrike, strikesBetween, type Strike } from '../../sim/weather/lightning';
 import type { CloudsEffect } from '../clouds';
 import { FULLSCREEN_VERT } from '../clouds/resolveShaders';
 import { EXPOSURE_GLSL } from '../post/AutoExposure';
 import { Atmosphere } from '../sky/Atmosphere';
 import { hashUnit } from '../../physics/weather/random';
+import type { ActiveStorm } from '../../physics/weather/stormField';
+import { cameraStormsAt } from './stormSelection';
 import { BOLT_MAX_BRANCHES, BOLT_POINTS, BOLT_SEGMENTS, BOLT_TOP_ABOVE_BASE_M, BRANCH_POINTS, BRANCH_SEGMENTS, boltBranches, boltPath } from './boltGeometry';
 import type { WeatherEffectContext } from './index';
 import { cellGeometry, makeCellGeometry, stormLayerOf, type CellGeometry, type StormLayer } from './StormCellEffect';
@@ -185,8 +188,8 @@ function stormSigma(cells: readonly CellGeometry[], count: number, x: number, y:
     const shaft = smoothstep(g.shaftRadius, 0.3 * g.shaftRadius, r);
     const foot = smoothstep(R, 0.6 * R, r);
     const virga = Math.max(foot - shaft, 0) * smoothstep(g.base - STORM_VIRGA_DEPTH_M, g.base, y);
-    cloud += core * STORM_CORE_SIGMA + anvil * STORM_ANVIL_SIGMA;
-    rain += (shaft + virga) * below * g.intensity * 0.85 * STORM_SHAFT_SIGMA;
+    cloud += core * g.core * STORM_CORE_SIGMA + anvil * g.anvil * STORM_ANVIL_SIGMA;
+    rain += (shaft + virga) * below * g.intensity * 0.85 * g.rain * STORM_SHAFT_SIGMA;
   }
   out.cloud = cloud;
   out.rain = rain;
@@ -411,6 +414,8 @@ export class LightningOverlay implements SceneEffect {
   private readonly found: Strike[] = [];
   private lastTime: number | null = null;
   private readonly geometry = makeCellGeometry();
+  /** The cells in effect at the camera (the frame's shared selection, stormSelection.ts), as of the last advance. */
+  private cells: readonly ActiveStorm[] = [];
   private readonly quad = new FullScreenQuad();
   readonly material: THREE.ShaderMaterial;
   private readonly copyMat: THREE.ShaderMaterial;
@@ -483,7 +488,7 @@ export class LightningOverlay implements SceneEffect {
 
   /**
    * Start a strike on the next render, in addition to the schedule (dev pages and tools). Its `cell` must index the
-   * weather's storms; its tStart is simulation time.
+   * cells in effect at the camera (the weather's storms when it has them); its tStart is simulation time.
    */
   inject(strike: Strike): void {
     this.injected.push({ ...strike });
@@ -498,7 +503,8 @@ export class LightningOverlay implements SceneEffect {
   /** Advance the schedule to ctx.simTime: start new strikes, drop finished ones (no rendering; for tests too). */
   advance(ctx: SimContext): void {
     const t = ctx.simTime;
-    const cells = stormsOf(ctx.weather);
+    // three.js world: x east, z south.
+    const cells = (this.cells = cameraStormsAt(ctx));
     if (this.lastTime === null || t < this.lastTime) {
       // First frame, or a reset / restore moved the clock back: nothing carries over.
       this.lit = 0;
@@ -526,8 +532,7 @@ export class LightningOverlay implements SceneEffect {
   }
 
   private start(s: Strike, ctx: SimContext): void {
-    const cells = stormsOf(ctx.weather);
-    const cell = cells[s.cell];
+    const cell = this.cells[s.cell];
     if (!cell) return;
     // Reuse a free slot, else the flash that ends first.
     let slot = this.lit;

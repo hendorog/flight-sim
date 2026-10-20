@@ -26,7 +26,7 @@ export const FOG_VIS_MIN_M = 50;
 export const FOG_VIS_MAX_M = 1000;
 export const FOG_VIS_DEFAULT_M = 200;
 /** Most storm cells the consumers read (the first entries of `storms`). */
-export const MAX_STORMS = 4;
+export const MAX_STORMS = 6;
 /** Koschmieder constant: visibility = KOSCHMIEDER / extinction for a 2 % contrast threshold (as Simulator.ts and render/sky/params.ts use). */
 const KOSCHMIEDER = 3.912;
 
@@ -52,11 +52,13 @@ export type WeatherExtraKey = typeof WEATHER_EXTRA_KEYS[number];
 export const NO_STORMS: readonly StormCell[] = Object.freeze([]);
 
 /**
- * Every optional field at its "nothing there" value. Restore sites spread it under a saved weather copy
+ * Every optional field at its absent value. Restore sites spread it under a saved weather copy
  * (`{ ...NEUTRAL_EXTRAS, ...saved }`) so a key the copy lacks does not stay set from a lesson or preset.
  * midAltM is the fixed MID_ALT_MIN_DEFAULT_M, not the cloud-top rule: with midCover 0 no sheet is drawn.
+ * storms is undefined, which reads as absent: the cells are derived from the conditions
+ * (physics/weather/stormField.ts). An empty array instead means no cells at all.
  */
-export const NEUTRAL_EXTRAS: Readonly<Required<Pick<WeatherSettings, WeatherExtraKey>>> = Object.freeze({
+export const NEUTRAL_EXTRAS: Readonly<Required<Pick<WeatherSettings, Exclude<WeatherExtraKey, 'storms'>>> & { storms: undefined }> = Object.freeze({
   cloudType: 'auto',
   midCover: 0,
   midType: 'altostratus',
@@ -65,7 +67,7 @@ export const NEUTRAL_EXTRAS: Readonly<Required<Pick<WeatherSettings, WeatherExtr
   precipRateMmH: 0,
   fogTopM: 0,
   fogVisibilityM: FOG_VIS_DEFAULT_M,
-  storms: NO_STORMS,
+  storms: undefined,
 });
 
 // ---------------------------------------------------------------------------------------------- cloud type profiles
@@ -197,8 +199,10 @@ export function isStormCell(c: unknown): c is StormCell {
 }
 
 /**
- * The storm cells: w.storms when it is an array whose entries are all well-formed cells, else NO_STORMS.
- * Consumers read at most the first MAX_STORMS entries. The cells are returned as stored (not clamped).
+ * The explicit storm cells: w.storms when it is an array whose entries are all well-formed cells, else NO_STORMS.
+ * Consumers read at most the first MAX_STORMS entries. The cells are returned as stored (not clamped). With
+ * `storms` absent the consumers use the cells derived from the conditions instead (physics/weather/stormField.ts
+ * StormField.select); this accessor returns NO_STORMS for that case too.
  */
 export function stormsOf(w: WeatherSettings): readonly StormCell[] {
   const s = (w as Loose).storms;

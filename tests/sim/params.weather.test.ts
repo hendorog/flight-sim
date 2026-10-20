@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { parseParams } from '../../src/sim/params';
-import { NEUTRAL_EXTRAS, NO_STORMS } from '../../src/core/weatherFields';
+import { MAX_STORMS, NEUTRAL_EXTRAS, NO_STORMS } from '../../src/core/weatherFields';
 import { CB_DEFAULT_INTENSITY, CB_DEFAULT_RADIUS_M, CB_DEFAULT_TOP_M, weatherPresetById } from '../../src/sim/weatherPresets';
 
 const wx = (search: string) => parseParams(search).weather;
@@ -55,7 +55,7 @@ describe('URL weather parameters for the optional fields', () => {
     expect(wx('?fog=a')).toEqual({});
   });
 
-  it('cb= builds cells in km with defaults and clamps, repeatable up to 4', () => {
+  it('cb= builds cells in km with defaults and clamps, repeatable up to MAX_STORMS (6)', () => {
     const one = wx('?cb=-12,3').storms!;
     expect(one).toEqual([{ northM: -12_000, eastM: 3000, radiusM: CB_DEFAULT_RADIUS_M, topM: CB_DEFAULT_TOP_M, intensity: CB_DEFAULT_INTENSITY, motionDeg: 0, motionKt: 0 }]);
     const full = wx('?cb=1,2,12,0.5,2,270,15').storms!;
@@ -63,9 +63,9 @@ describe('URL weather parameters for the optional fields', () => {
     const clamped = wx('?cb=0,0,20,3,9,-90,-5').storms![0];
     expect(clamped).toMatchObject({ topM: 14_000, intensity: 1, radiusM: 5000, motionDeg: 270, motionKt: 0 });
     expect(wx('?cb=0,0,4').storms![0].topM).toBe(6000);
-    const many = wx('?cb=0,0&cb=1,1&cb=2,2&cb=3,3&cb=4,4').storms!;
-    expect(many).toHaveLength(4);
-    expect(many.map((c) => c.northM)).toEqual([0, 1000, 2000, 3000]);
+    const many = wx('?cb=0,0&cb=1,1&cb=2,2&cb=3,3&cb=4,4&cb=5,5&cb=6,6').storms!;
+    expect(many).toHaveLength(MAX_STORMS);
+    expect(many.map((c) => c.northM)).toEqual([0, 1000, 2000, 3000, 4000, 5000]);
     // Malformed entries are skipped (a motion needs both values); none left: no storms key.
     expect(wx('?cb=1&cb=0,0,11,0.5,3,270').storms).toBeUndefined();
     expect(wx('?cb=x,1&cb=5,5').storms).toHaveLength(1);
@@ -78,15 +78,17 @@ describe('URL weather parameters for the optional fields', () => {
     expect(wx('?wx=fog&vis=3000').visibilityM).toBe(3000);
     expect(wx('?vis=3000&wx=fog').visibilityM).toBe(3000); // parameter order in the URL does not matter
     expect(wx('?wx=fog&fog=120').fogTopM).toBe(120);
-    expect(wx('?wx=thunderstorm').storms).toHaveLength(2);
+    // Thunderstorm has no explicit cells (derived from its conditions); the key is present and undefined.
+    expect('storms' in wx('?wx=thunderstorm')).toBe(true);
+    expect(wx('?wx=thunderstorm').storms).toBeUndefined();
     expect(wx('?wx=thunderstorm&cb=none').storms).toBe(NO_STORMS);
     expect(wx('?wx=thunderstorm&cb=0,0').storms).toHaveLength(1);
     expect(wx('?wx=nonesuch')).toEqual({});
   });
 
   it('base= over a preset keeps the preset layer depth', () => {
-    // Thunderstorm: base 1400, top 3200.
-    expect(wx('?wx=thunderstorm&base=2000')).toMatchObject({ cloudBaseM: 2000, cloudTopM: 3800 });
+    // Thunderstorm: base 900, top 2600.
+    expect(wx('?wx=thunderstorm&base=2000')).toMatchObject({ cloudBaseM: 2000, cloudTopM: 3700 });
     expect(wx('?wx=thunderstorm&base=2000&top=2500')).toMatchObject({ cloudBaseM: 2000, cloudTopM: 2500 });
   });
 

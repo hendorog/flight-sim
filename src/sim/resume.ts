@@ -47,9 +47,14 @@ import type { EraId } from '../world/era/types';
 
 /**
  * Bump when the snapshot layout changes. Snapshots from MIN_SNAPSHOT_SCHEMA up are read (migrated to this
- * layout on read); older ones are ignored.
+ * layout on read); older ones are ignored. Schema 4: `weather.storms` absent means cells derived from the
+ * conditions and the empty list means none. Schema 3 snapshots written before the derived cells carry `storms: []`,
+ * the neutral value of that time; an empty list read from schema 3 or older is dropped, so the flight resumes with
+ * derived cells.
  */
-export const SNAPSHOT_SCHEMA = 3;
+export const SNAPSHOT_SCHEMA = 4;
+/** Last schema whose empty `weather.storms` list was the neutral value (dropped on read). */
+const LEGACY_EMPTY_STORMS_SCHEMA = 3;
 /**
  * Oldest schema still read: schema 1 is schema 2 without `start` and `training`; schema 2 is schema 3 without
  * `aircraft` (a Cessna 172S) and `systems` (built from its engine, fuel, battery and surfaces on read).
@@ -308,6 +313,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   // the caller's object is not edited.
   const weather = { ...w };
   sanitizeExtras(weather);
+  if (v.schema <= LEGACY_EMPTY_STORMS_SCHEMA && Array.isArray(weather.storms) && weather.storms.length === 0) delete weather.storms;
   if (!CAMERA_MODES.includes(v.cameraMode as CameraMode) || !QUALITIES.includes(v.quality as QualityLevel)) return null;
   if (v.renderScale !== null && !isNum(v.renderScale)) return null;
   const st = v.status;

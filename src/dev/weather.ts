@@ -1,6 +1,9 @@
 // Weather effects dev page: the sim's post pipeline with the sky, the clouds and the weather registry
 // (render/weather: storm cells and fog after the clouds, precipitation and lightning after the temporal pass) over
 // the sky test scene. Extra URL parameters on top of the harness ones (cam, look, tod, freeze, ...):
+//   wx=thunderstorm                 a free-flight weather preset (sim/weatherPresets.ts), applied before the
+//                                   parameters below (tod= given on the URL is applied again after it)
+//   temp=0 day=172 ctype=towering   ISA deviation, K; day of the year; low layer type
 //   cover=0.35 base=1500 top=2600   cumulus cover 0..1 and layer altitudes, m MSL
 //   vis=60000                       visibility, m
 //   wind=270,15                     wind from degrees, knots (also the steady wind env.wind returns)
@@ -9,7 +12,8 @@
 //   ev=0                            exposure compensation, EV
 //   cb=north,east[,top[,intensity[,radius[,motionDeg,motionKt]]]]
 //                                   a storm cell: centre km NED, top km MSL (11), intensity 0..1 (0.8), core radius
-//                                   km (3), motion from degrees and knots (0, 0); repeatable, at most 4
+//                                   km (3), motion from degrees and knots (0, 0); repeatable, at most 6 (MAX_STORMS). Without
+//                                   cb= the cells are derived from the conditions (physics/weather/stormField.ts)
 //   fog=top[,vis]                   ground fog depth above the field, m, and its visibility, m
 //   precip=rain|drizzle|snow,rate   precipitation and its rate, mm/h
 //   flash=1 | flash=ic              hold a lightning strike at t = FLASH_AT_S in the first cell (1: cloud-to-ground,
@@ -19,12 +23,17 @@
 //   flashid=0                       added to the held strike's id (its channel's shape)
 // Example: dev/weather.html?cb=22,4&cam=0,0,400&look=22000,4000,5000&tod=19.2&flash=1
 // window.__weatherDev.strike(kind) starts a strike in the first cell at the current time; exposure() reads the eye
-// adaptation (log2 scene units: adapted, target) and the lightning overlay's ambient illuminance (scene units).
+// adaptation (log2 scene units: adapted, target) and the lightning overlay's ambient illuminance (scene units);
+// cells() lists the cells in effect at the camera ({north, east, distance, top, core, anvil, rain, flash}, m) and
+// activity() the derived convective state.
 
 import * as THREE from 'three';
 import type { QualityLevel } from '../core/context';
 import { KT } from '../core/math';
-import type { PrecipType, StormCell } from '../core/types';
+import type { CloudType, PrecipType, StormCell } from '../core/types';
+import { MAX_STORMS, stormCentreAt } from '../core/weatherFields';
+import { cameraStormsOf } from '../render/weather/stormSelection';
+import { applyWeatherPreset, weatherPresetById } from '../sim/weatherPresets';
 import { CloudsEffect } from '../render/clouds';
 import { PostPipeline } from '../render/post';
 import { SkySystem } from '../render/sky';
@@ -70,6 +79,15 @@ void runHarness({
   basicLighting: false,
   async setup(ctx) {
     const w = ctx.weather;
+    const preset = weatherPresetById(params.get('wx'));
+    if (preset) {
+      applyWeatherPreset(w, preset);
+      w.timeOfDay = num('tod', w.timeOfDay);
+      ctx.events.emit('weatherChanged', {});
+    }
+    w.isaDeviation = num('temp', w.isaDeviation);
+    w.dayOfYear = num('day', w.dayOfYear);
+    if (params.has('ctype')) w.cloudType = params.get('ctype') as CloudType;
     w.cloudCover = num('cover', w.cloudCover);
     w.cloudBaseM = num('base', w.cloudBaseM);
     w.cloudTopM = num('top', w.cloudTopM);
@@ -83,7 +101,7 @@ void runHarness({
       const steady = { x: -Math.cos(from) * wind[1] * KT, y: -Math.sin(from) * wind[1] * KT, z: 0 };
       ctx.env.wind = () => ({ ...steady });
     }
-    const cells = params.getAll('cb').map(parseCell).filter((c): c is StormCell => c !== null).slice(0, 4);
+    const cells = params.getAll('cb').map(parseCell).filter((c): c is StormCell => c !== null).slice(0, MAX_STORMS);
     if (cells.length) w.storms = cells;
     const fog = list(params.get('fog'));
     if (fog.length >= 1) {
@@ -115,17 +133,27 @@ void runHarness({
       strikes++;
       console.info(`[weather] lightning ${e.kind} id ${e.id} at ${(e.north / 1000).toFixed(1)}, ${(e.east / 1000).toFixed(1)} km, ${Math.round(e.altM)} m, ${e.strokes} strokes`);
     });
+    const shared = cameraStormsOf(ctx);
+    const inEffect = () => shared.at(ctx);
     const strike = (kind: StrikeKind, t: number): void => {
-      const cell = w.storms?.[0];
+      const cell = inEffect()[0];
       if (!cell || !lightning) return;
       const s = makeStrike();
-      Object.assign(s, { id: 9_000_000 + num('flashid', 0) + strikes, cell: 0, kind, tStart: t, north: cell.northM + 0.3 * cell.radiusM, east: cell.eastM, heightFrac: kind === 'cg' ? 0.05 : 0.6, strokes: 3, energy: 1 });
+      const at = stormCentreAt(cell, t, { north: 0, east: 0 });
+      Object.assign(s, { id: 9_000_000 + num('flashid', 0) + strikes, cell: 0, kind, tStart: t, north: at.north + 0.3 * cell.radiusM, east: at.east, heightFrac: kind === 'cg' ? 0.05 : 0.6, strokes: 3, energy: 1 });
       lightning.inject(s);
     };
     if (FLASH) strike(FLASH === 'ic' ? 'ic' : 'cg', FLASH_AT_S);
     (window as unknown as { __weatherDev: object }).__weatherDev = {
       strike: (kind: StrikeKind = 'cg') => strike(kind, ctx.simTime),
       strikes: () => strikes,
+      cells: () =>
+        inEffect().map((c) => {
+          const p = stormCentreAt(c, ctx.simTime, { north: 0, east: 0 });
+          const distance = Math.hypot(p.north + ctx.camera.position.z, p.east - ctx.camera.position.x);
+          return { north: p.north, east: p.east, distance, top: c.topM, core: c.core, anvil: c.anvil, rain: c.rain, flash: c.flash };
+        }),
+      activity: () => ({ ...shared.field.convective(w) }),
       exposure: () => {
         const rt = (post as unknown as { exposure: { adapted: THREE.WebGLRenderTarget[] } }).exposure.adapted[0];
         const px = new Float32Array(4);

@@ -8,8 +8,9 @@ import type { AircraftDefinition, AircraftPresentation, AircraftSummary } from '
 import type { CameraMode, QualityLevel, ScenarioId, SimContext } from '../core/context';
 import { DEG } from '../core/math';
 import { DEFAULT_AIRCRAFT_ID, type CloudType, type MidCloudType, type PrecipType, type WeatherSettings } from '../core/types';
-import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, PRECIP_RATE_MAX_MMH, cloudTypeOf, fogOf, midLayerOf, precipOf, stormsOf, type FogLayer, type MidLayer, type Precip } from '../core/weatherFields';
-import { WEATHER_PRESETS, applyWeatherPreset, stormLayout, type StormLayout } from '../sim/weatherPresets';
+import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, NO_STORMS, PRECIP_RATE_MAX_MMH, cloudTypeOf, fogOf, midLayerOf, precipOf, stormsOf, type FogLayer, type MidLayer, type Precip } from '../core/weatherFields';
+import { convectiveState, emptyConvectiveState, proceduralStorms } from '../physics/weather/stormField';
+import { WEATHER_PRESETS, applyWeatherPreset } from '../sim/weatherPresets';
 import type { SchoolCommand } from '../training/types';
 import { AIRPORT, sunDirectionNED } from '../core/world';
 import { el, formatHours } from './dom';
@@ -795,25 +796,27 @@ export class PauseMenu {
       (v) => edit((x) => (x.fogVisibilityM = Math.min(FOG_VIS_MAX_M, Math.max(FOG_VIS_MIN_M, 10 ** v)))),
       (v) => `${Math.round(Math.min(FOG_VIS_MAX_M, Math.max(FOG_VIS_MIN_M, 10 ** v)) / 10) * 10} m`,
     );
-    el('p', 'sub', p, 'Storm cells are placed relative to the aircraft (the distant cell and the line upwind of it) and move with the wind.');
-    // The array each chip last wrote: the chip shows as selected while the weather still holds it.
-    const written = new Map<StormLayout, readonly unknown[]>();
-    chipRow<StormLayout | 'other'>(
-      [['none', 'No storms'], ['distant', 'Distant cell'], ['overhead', 'Overhead cell'], ['line', 'Line of three']],
-      () => {
-        const s = stormsOf(w());
-        if (s.length === 0) return 'none';
-        for (const [k, a] of written) if (a === w().storms) return k;
-        return 'other';
-      },
+    // Storm cells: derived from the conditions above unless the weather holds an explicit list (URL cb=, setWeather).
+    el('p', 'sub', p, 'Storm cells form from the conditions: a warm afternoon, a low cloud base, deep cumulus or towering cumulus. They drift with the wind.');
+    chipRow<'auto' | 'none' | 'other'>(
+      [['auto', 'From conditions'], ['none', 'No storms']],
+      () => (proceduralStorms(w()) ? 'auto' : stormsOf(w()).length === 0 ? 'none' : 'other'),
       (v) => {
         if (v === 'other') return;
-        const c = this.host.ctx;
-        const storms = stormLayout(v, c.state.position, c.simTime, w());
-        written.set(v, storms);
-        edit((x) => (x.storms = storms));
+        edit((x) => (x.storms = v === 'none' ? NO_STORMS : undefined));
       },
     );
+    const activity = el('p', 'sub', p, '');
+    const conv = emptyConvectiveState();
+    this.refreshers.push(() => {
+      const a = convectiveState(w(), conv).activity;
+      const placed = stormsOf(w()).length;
+      activity.textContent = proceduralStorms(w())
+        ? `Convective activity from these conditions: ${Math.round(a * 100)} %`
+        : placed > 0
+          ? `${placed} placed cell${placed > 1 ? 's' : ''} (URL cb= or setWeather); the conditions are not used`
+          : '';
+    });
   }
 
   // ------------------------------------------------------------------------------------------------

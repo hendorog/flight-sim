@@ -1,17 +1,18 @@
 // The air-mass velocity field: steady boundary-layer wind + discrete gusts + Dryden continuous turbulence +
-// orographic up/down-draughts + convective thermals + cumulonimbus cells (WeatherSettings.storms, convection.ts).
+// orographic up/down-draughts + convective thermals + cumulonimbus cells (convection.ts; the cells in effect at the
+// sample point from stormField.ts: WeatherSettings.storms when present, else the cells derived from the conditions).
 // Reads the live WeatherSettings object on every call, and is deterministic for a given seed and settings history.
-// Without storm cells (storms absent or empty) the convective branch is skipped and the arithmetic is that of the
-// field before the cells existed.
+// Without storm cells at the point (storms empty, or no derived cell within its selection range) the convective
+// branch is skipped and the arithmetic is that of the field before the cells existed.
 
 import { DEG, KT, clamp, smoothstep, type Vec3 } from '../../core/math';
 import type { WeatherSettings } from '../../core/types';
-import { stormsOf } from '../../core/weatherFields';
 import { sunDirectionNED } from '../../core/world';
 import { windSpeedFactor, windVeer } from './boundaryLayer';
 import { cbSample, cbSeverity, emptyCbSample, type CbSample } from './convection';
 import { gustAt, type GustSample } from './gusts';
 import { hashU32 } from './random';
+import { StormField, type ActiveStorm } from './stormField';
 import { SmoothedTerrain, type TerrainSample } from './terrainSampler';
 import { thermalUpdraft } from './thermals';
 import { milTurbulenceIntensity, SpectralTurbulence, type TurbulenceIntensity } from './turbulence';
@@ -88,6 +89,8 @@ export class WindField {
   private readonly ter: TerrainSample = { height: 0, slopeNorth: 0, slopeEast: 0 };
   private readonly gust: GustSample = { speed: 0, angle: 0 };
   private readonly cb: CbSample = emptyCbSample();
+  /** The storm cells in effect at a point (explicit or derived); shared by sample, stormTurbulence and stormCells. */
+  private readonly storms = new StormField();
   private readonly parts: WindBreakdown = {
     mean: { x: 0, y: 0, z: 0 },
     gust: { x: 0, y: 0, z: 0 },
@@ -145,7 +148,7 @@ export class WindField {
     parts.gust.y = -gs * Math.sin(from + g.angle);
 
     // Storm cells: their wind is added after the sum below, and they raise the turbulence severity near them.
-    const cells = stormsOf(w);
+    const cells = this.storms.select(w, t, p.x, p.y);
     const conv = parts.convective;
     let cb: CbSample | null = null;
     let severity = w.turbulence;
@@ -223,8 +226,16 @@ export class WindField {
    * max(weather.turbulence, this). Read-only: it neither advects the field nor changes any state.
    */
   stormTurbulence(p: Vec3, t: number): number {
-    const cells = stormsOf(this.weather);
+    const cells = this.storms.select(this.weather, t, p.x, p.y);
     return cells.length ? cbSeverity(cells, p, t) : 0;
+  }
+
+  /**
+   * The storm cells in effect at NED (north, east) at time t (stormField.ts StormField.select; explicit cells or
+   * those derived from the conditions). The array is reused by the next call. Read-only for the wind field.
+   */
+  stormCells(north: number, east: number, t: number): readonly ActiveStorm[] {
+    return this.storms.select(this.weather, t, north, east);
   }
 
   /** Convective layer depth zi over ground at `groundM` MSL, m (as sample() computes it). */
