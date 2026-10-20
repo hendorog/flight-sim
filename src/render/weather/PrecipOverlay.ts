@@ -75,6 +75,8 @@ import {
 
 /** Coverage added to a sub-pixel hailstone's width share (the shader's pellet). Unconfirmed: a look value. */
 export const HAIL_SUBPIXEL_FLOOR = 0.3;
+/** Share of the scene behind a hailstone added to its light (never darker than its surroundings). Unconfirmed. */
+export const HAIL_SCENE_GAIN = 0.9;
 /** Shells the shader reads (the length of its uniform arrays). */
 export const MAX_SHELLS = 4;
 /** Mean full width of a rain or drizzle streak on the screen, px. */
@@ -316,7 +318,8 @@ void main() {
       }
     }
     float aH = 1.0 - keepH;
-    col = col * (1.0 - aH) + uHailRadiance * aH;
+    // Ice reflects its surroundings: a stone carries HAIL_SCENE_GAIN of the scene behind it over its own light.
+    col = col * (1.0 - aH) + (uHailRadiance + ${HAIL_SCENE_GAIN.toFixed(2)} * scene.rgb) * aH;
   }
   gl_FragColor = vec4(col, scene.a);
 }
