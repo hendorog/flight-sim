@@ -14,7 +14,7 @@ C172 chase view, cell about 5-10 km ahead, midday, heading 256.
   flat grey slab with a straight bottom edge.
 
 ## cb-under-base.png
-PA-28-style low wing at 950 ft (595 ft AGL), heading 252, just under and inside
+Low-wing T-tail at 950 ft (595 ft AGL), heading 252, just under and inside
 the base.
 
 - The same hatching, here like a canvas or woven weave, across the whole base.
