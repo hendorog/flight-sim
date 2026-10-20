@@ -10,7 +10,10 @@ import { defaultWeather, type WeatherSettings } from '../../src/core/types';
 import { CLOUD_TYPE_PROFILES, MAX_STORMS, stormCentreAt } from '../../src/core/weatherFields';
 import { stormShare } from '../../src/physics/weather/stormField';
 import { CLOUD_MODEL_GLSL, CLOUD_TYPE_SHAPE, CloudModel, extendedLayerTopM, layerActivity, layerTowerExt, layerTypeBias } from '../../src/render/clouds/cloudModel';
+import { MARCH_FRAG } from '../../src/render/clouds/marchShader';
 import { StormCellEffect } from '../../src/render/weather/StormCellEffect';
+import { STORM_ANVIL_DEPTH_M } from '../../src/render/weather/stormGlsl';
+import { downdraftCentreAt } from '../../src/physics/weather/convection';
 import { cameraStormsAt } from '../../src/render/weather/stormSelection';
 import { applyWeatherPreset, weatherPresetById } from '../../src/sim/weatherPresets';
 
@@ -39,30 +42,38 @@ describe('storm clearing uniforms', () => {
     expect(u.uCloudShape.value.w).toBe(CLOUD_TYPE_SHAPE.auto.typeBias);
   });
 
-  test('the Thunderstorm cells with a core share, as the storm effect draws them', () => {
+  test('the Thunderstorm cells with a core or anvil share, as the storm effect draws them', () => {
     const w = thunderstorm();
     const ctx = ctxAt(w);
     const m = new CloudModel();
     m.update(ctx, 0.016);
-    const effect = new StormCellEffect(null);
+    const effect = new StormCellEffect();
     const drawn = effect.updateCells(ctx);
     // One selection per frame and context: the effect read the array the clouds read.
     const cells = cameraStormsAt(ctx);
     expect(cameraStormsAt(ctx)).toBe(cells);
-    const withCore = cells.filter((c) => stormShare(c, 'core') > 0);
+    const shown = (c: (typeof cells)[number]): boolean => stormShare(c, 'core') > 0 || stormShare(c, 'anvil') > 0;
+    const withCore = cells.filter(shown);
     const u = m.uniforms;
     expect(withCore.length).toBeGreaterThan(0);
     expect(u.uStormClearCount.value).toBe(withCore.length);
     expect(drawn).toBe(cells.length);
     let k = 0;
     for (let i = 0; i < cells.length; i++) {
-      if (!(stormShare(cells[i], 'core') > 0)) continue;
-      const v = u.uStormClear.value[k++];
+      if (!shown(cells[i])) continue;
+      const v = u.uStormClear.value[k];
+      const a = u.uStormAnvil.value[k];
+      const gust = u.uStormGust.value[k++];
       const g = effect.cells[i];
       const p = stormCentreAt(cells[i], 0, { north: 0, east: 0 });
       expect(v.x).toBeCloseTo(p.east, 6);
       expect(v.y).toBeCloseTo(-p.north, 6);
       expect([v.x, v.y, v.z, v.w]).toEqual([g.x, g.z, g.radius, g.core]);
+      expect([a.x, a.y, a.z, a.w]).toEqual([g.anvilX, g.anvilZ, g.anvilRadius, g.anvil]);
+      // The downdraft centre of the physics (toward the motion), the rain share, the anvil's underside.
+      const dd = downdraftCentreAt(cells[i], 0, { north: 0, east: 0 });
+      expect([gust.x, gust.y, gust.z, gust.w]).toEqual([dd.east, -dd.north, g.rain, g.top - STORM_ANVIL_DEPTH_M]);
+      expect(u.uStormBase.value).toBe(g.base);
     }
     console.log(`[stormClearing] Thunderstorm at the airport: ${cells.length} cells, ${withCore.length} with a core share; ${[...u.uStormClear.value].slice(0, k).map((v) => `${(Math.hypot(v.x, v.y) / 1000).toFixed(1)} km R ${Math.round(v.z)} m core ${v.w.toFixed(2)}`).join(', ')}`);
   });
@@ -77,9 +88,12 @@ describe('storm clearing uniforms', () => {
     expect(m.uniforms.uStormClearCount.value).toBe(0);
   });
 
-  test('the GLSL multiplies the lateral coverage only while a cell is set', () => {
-    expect(CLOUD_MODEL_GLSL).toContain('if (uStormClearCount > 0) wt.x *= stormClearing(xz);');
+  test('the GLSL storm terms run only while a cell is set', () => {
+    expect(CLOUD_MODEL_GLSL).toContain('if (uStormClearCount > 0) storm = stormCoverage(xz);');
+    expect(CLOUD_MODEL_GLSL).toContain('  if (uStormClearCount > 0) {\n    wt.x *= storm.x;');
     expect(CLOUD_MODEL_GLSL).toContain(`uniform vec4 uStormClear[${MAX_STORMS}];`);
+    expect(MARCH_FRAG).toContain('if (uStormClearCount > 0 && uLightDir.y > 0.0) {');
+    expect(MARCH_FRAG).toContain('if (uStormOn > 0.5) {');
   });
 });
 

@@ -599,12 +599,14 @@ export class Simulator {
     // The era's scene effects (the volcano's plume, WP5) go before the clouds, so the cumulus in front of them
     // occludes them. Nothing is called in the present day.
     if (!isPresent()) for (const effect of createEraEffects({ ctx, renderer, scene, camera, weather: this.weather })) post.addEffect(effect);
-    post.addEffect(clouds);
-    // The weather's own effects (render/weather): storm cells and ground fog after the clouds, precipitation and
-    // lightning after the temporal pass. Each effect is created whether or not its weather field is set, and copies
-    // its input while the field is absent.
+    // The weather's own effects (render/weather): storm cells before the clouds (the cumulus march ends at their
+    // front), ground fog after them, precipitation and lightning after the temporal pass. Each effect is created
+    // whether or not its weather field is set, and copies its input while the field is absent.
     const wx = { ctx, renderer, clouds, post, weather: this.weather };
-    for (const e of createWeatherEffects(wx)) post.addEffect(e);
+    const weatherEffects = createWeatherEffects(wx);
+    for (const e of weatherEffects.beforeClouds) post.addEffect(e);
+    post.addEffect(clouds);
+    for (const e of weatherEffects.afterClouds) post.addEffect(e);
     for (const o of createWeatherOverlays(wx)) post.addOverlay(o);
     this.post = post;
     post.setAircraftRadius(def.geometry.bounds.radius);

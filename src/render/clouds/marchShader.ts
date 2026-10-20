@@ -72,6 +72,9 @@ uniform float uMaxDist;
 uniform float uDetailDist;      // beyond this distance detail erosion fades out (60 degree field of view)
 uniform float uDetailScale;     // 1 / (angular size of a low-res pixel at a 60 degree field of view)
 
+uniform sampler2D uStormAux;    // the storm cells drawn before the clouds (render/weather StormCellEffect): b = log2(1 + clip distance)
+uniform float uStormOn;         // 1: the storm layer marched this frame
+
 uniform vec2 uCirrus;           // cirrus cover 0..1, altitude m
 uniform vec2 uCirrusOffset;    // drift in the deck frame (x along the wind)
 uniform vec2 uCirrusAxis;      // upper-wind unit vector (world x, z)
@@ -254,6 +257,14 @@ void main() {
   vec3 dir = normalize(mat3(uCamWorld) * dv);
   float sceneDist = sceneDistance(dv);
   float tEnd = min(sceneDist, uMaxDist);
+  // The storm cells, drawn into the frame before the clouds, end the ray where their transmittance falls below
+  // STORM_CLIP_T: the cumulus in front of a cell covers it, the cumulus behind it is not drawn. The mid-level sheet
+  // and the cirrus stop there too.
+  float stopDist = sceneDist;
+  if (uStormOn > 0.5) {
+    stopDist = min(sceneDist, exp2(textureLod(uStormAux, rayUv, 0.0).b) - 1.0);
+    tEnd = min(tEnd, stopDist);
+  }
 
   float camY = uCamPos.y;
   float k = dot(dir.xz, dir.xz) * uInvTwoR;
@@ -508,6 +519,18 @@ void main() {
         // the rims of billows facing away from the sun read darker (Schneider 2015), faded out toward the sun.
         float powder = 1.0 - exp(-tauL * 2.0 - sigmaT * 12.0);
         vec3 sunL = mix(lightBase, lightTop, clamp(h, 0.0, 1.0));
+        // The storm cells (cloudModel.ts stormSunTau): their core columns and anvils take the direct beam, and the
+        // cloud overhead turns sky light and sunlight into the diffuse light it lets through (the two-stream slab of
+        // the mid-level sheet, midTransmission).
+        vec3 skyS = skyAmb;
+        if (uStormClearCount > 0 && uLightDir.y > 0.0) {
+          float over = stormSunTau(p, vec3(0.0, 1.0, 0.0));
+          float mu0 = uLightDir.y;
+          float tSky = min(1.0, 4.0 / (4.0 + 0.45 * over));
+          float tSun = min(1.0, (2.0 + 3.0 * mu0) / (4.0 + 0.45 * over));
+          skyS = skyAmb * tSky + lightTop * (mu0 / PI) * max(tSun - exp(-over / max(mu0, 0.05)), 0.0);
+          sunL *= exp(-stormSunTau(p, uLightDir));
+        }
         // MS_ISO: the high orders of scattering, which make a thick cloud a near-Lambertian reflector (albedo
         // ~0.8: the sunlit side shines at ~E / 4 whatever the view), falling off with the optical depth toward
         // the sun as diffusion does (two-stream).
@@ -526,7 +549,7 @@ void main() {
         float up = diffuseTransmission(mix(uExtinction * 0.5, sigmaT, 0.6) * colAbove);
         float down = diffuseTransmission(uExtinction * 0.6 * max(p.y - uLayer.x, 0.0));
         // A stratiform deck drops the 4 % floor of the sky light at the base, as a closed deck drops MS_LEAK.
-        vec3 ambient = AMBIENT_SKY * skyAmb * mix(up, 1.0, (0.04 + 0.26 * hr) * (1.0 - deckType)) + AMBIENT_GROUND * uGroundRadiance * down;
+        vec3 ambient = AMBIENT_SKY * skyS * mix(up, 1.0, (0.04 + 0.26 * hr) * (1.0 - deckType)) + AMBIENT_GROUND * uGroundRadiance * down;
         // The base is lit by light diffusing down through the cloud above it, whose optical thickness varies
         // from turret to turret: real bases are mottled, darker under the dense cores and lighter under thin
         // parts. The coarse light march is too smooth to show it, so the lower part of each cloud takes a
@@ -596,7 +619,7 @@ void main() {
   if (uMid.x > 0.0 && camY < uMid.y && T > 0.01) {
     vec2 mi = belowInterval(uMid.y, camY, dir.y, k);
     float tm = mi.y;
-    if (tm > 0.0 && tm < min(sceneDist, uMaxDist * 1.5)) {
+    if (tm > 0.0 && tm < min(stopDist, uMaxDist * 1.5)) {
       vec3 p = uCamPos + dir * tm;
       float mu = max(dir.y + tm * 2.0 * uInvTwoR, 0.03);
       float footprint = tm * uPixelAngle / sqrt(mu);
@@ -666,7 +689,7 @@ void main() {
   if (uCirrus.x > 0.0 && camY < uCirrus.y && T > 0.01) {
     vec2 ci = belowInterval(uCirrus.y, camY, dir.y, k);
     float tc = ci.y;
-    if (tc > 0.0 && tc < min(sceneDist, uMaxDist * 1.5)) {
+    if (tc > 0.0 && tc < min(stopDist, uMaxDist * 1.5)) {
       vec3 p = uCamPos + dir * tc;
       // Sine of the local elevation where the ray crosses the (curved) sheet: sets the slant path.
       float mu = max(dir.y + tc * 2.0 * uInvTwoR, 0.03);

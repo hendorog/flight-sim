@@ -9,6 +9,7 @@ import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { AIRPORT } from '../../core/world';
 import { CLOUD_TYPE_PROFILES, cloudTypeOf, effectiveVisibilityM, midLayerOf, type MidLayer } from '../../core/weatherFields';
 import { extendedLayerTopM, midSheetTau } from '../clouds/cloudModel';
+import { overheadSkyFactors, stormOverheadTau } from '../weather/stormShade';
 import { Atmosphere } from './Atmosphere';
 import { EnvironmentProbe } from './EnvironmentProbe';
 import { SkyDome } from './SkyDome';
@@ -51,6 +52,7 @@ const _shadowColor = new THREE.Color();
 const _sunE = [0, 0, 0];
 const _moonE = [0, 0, 0];
 const _lightE: [number, number, number] = [0, 0, 0];
+const _overhead = { sky: 1, light: 0 };
 const _size = new THREE.Vector2();
 const _mid: MidLayer = { cover: 0, type: 'altostratus', altM: 0 };
 
@@ -185,6 +187,16 @@ export class SkySystem implements Subsystem {
       this.bands,
     );
     clouds.summarize(this.bands, sky.skyColor, sky.hazeColor);
+    // Beneath a storm cell's anvil or core column the sky light is what that cloud lets through (render/weather
+    // stormShade.ts); with no cell above the camera the optical depth is 0 and skyColor is left as it is.
+    const overhead = stormOverheadTau(ctx);
+    if (overhead > 0) {
+      overheadSkyFactors(overhead, keyDir.y, _overhead);
+      sky.skyColor.multiplyScalar(_overhead.sky);
+      sky.skyColor.r += _lightE[0] * _overhead.light;
+      sky.skyColor.g += _lightE[1] * _overhead.light;
+      sky.skyColor.b += _lightE[2] * _overhead.light;
+    }
     a.uniforms.uAirLight.value.set(clouds.airScale, clouds.airGrey);
     this.dome.setClouds(clouds, keyDir);
 

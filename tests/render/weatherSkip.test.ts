@@ -150,7 +150,7 @@ describe('PrecipOverlay.active', () => {
 describe('StormCellEffect.active', () => {
   it('is true until the first render, then only with a cell in the view frustum, publishing the layer either way', () => {
     const { renderer, draws } = fakeRenderer();
-    const storms = new StormCellEffect(null);
+    const storms = new StormCellEffect();
     storms.setSize(4, 4);
     const none = makeCtx();
     expect(storms.active(none)).toBe(true);

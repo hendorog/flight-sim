@@ -6,6 +6,9 @@
 // a cloud scatters diffusely toward the ground is part of the cloud-aware sky ambient (render/sky/cloudSky.ts),
 // so adding it here as well would leave a faint, crisp directional shadow of the aircraft under a cumulus.
 //
+// The storm cells' core columns and anvils (cloudModel.ts stormSunTau) multiply the map by their direct
+// transmission, so the ground under an anvil lies in its shadow.
+//
 // A mid-level sheet (altostratus / altocumulus) above the layer multiplies the whole map by its mean direct
 // transmission (uMidTrans, a scalar: the sheet is not resolved in the map). CloudsEffect sets it only where the
 // map is the scene's only cloud shadow (see CloudsEffect.updateMidShadow). The lookup's fades (map edge, points
@@ -72,7 +75,10 @@ void main() {
     vec3 wt = cloudWeather(p, 0.5);
     tau += cloudShape(p, (p.y - base) * uLayer.z, wt, 2.0) * ds;
   }
-  outColor = vec4(exp(-tau * uExtinction) * uMidTrans, 0.0, 0.0, 1.0);
+  float tr = exp(-tau * uExtinction);
+  // The storm cells' core columns and anvils above the base (cloudModel.ts stormSunTau).
+  if (uStormClearCount > 0) tr *= exp(-stormSunTau(vec3(xz.x, base, xz.y), uLight));
+  outColor = vec4(tr * uMidTrans, 0.0, 0.0, 1.0);
 }
 `;
 

@@ -8,6 +8,8 @@
 //   2. ray march    (MARCH_FRAG)        reduced resolution, blue-noise jittered start offset, MRT
 //   3. temporal     (TEMPORAL_FRAG)     reprojection with variance clipping, ping-pong history
 //   4. composite    (COMPOSITE_FRAG)    full resolution depth-aware upsample, shadows, scene * T + L
+// The storm cells (render/weather StormCellEffect) are drawn into the frame before this effect; while they marched
+// this frame, the march ends each ray at their front (uStormOn, uStormAux).
 
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -23,6 +25,7 @@ import { coverageControl, coverageParams } from './coverage';
 import { CloudShadowPass, type CloudShadowUniforms } from './cloudShadow';
 import { MARCH_FRAG } from './marchShader';
 import { createCloudNoiseTextures, type CloudNoiseTextures } from './noiseTextures';
+import { stormLayerOf } from '../weather/StormCellEffect';
 import { COMPOSITE_FRAG, COPY_FRAG, FULLSCREEN_VERT, TEMPORAL_FRAG } from './resolveShaders';
 
 interface QualitySettings {
@@ -268,6 +271,8 @@ export class CloudsEffect implements SceneEffect {
       uMaxDist: { value: MAX_DISTANCE },
       uDetailDist: { value: 0 },
       uDetailScale: { value: 1 },
+      uStormAux: { value: null },
+      uStormOn: { value: 0 },
       uCirrus: { value: new THREE.Vector2() },
       uCirrusOffset: { value: this.model.cirrusOffset },
       uCirrusAxis: { value: this.model.cirrusAxis },
@@ -347,6 +352,11 @@ export class CloudsEffect implements SceneEffect {
       m.uDepth.value = depth;
       m.uScene.value = input;
       m.uNearClip.value = ctx.cameraMode === 'cockpit' ? COCKPIT_NEAR_CLIP : 0;
+      // The storm cells drawn before the clouds this frame end the rays at their front (StormLayer.distance b).
+      const storm = stormLayerOf(ctx);
+      const stormOn = storm !== null && storm.marched;
+      m.uStormOn.value = stormOn ? 1 : 0;
+      m.uStormAux.value = stormOn ? storm.distance : null;
       m.uJitter.value = (this.frame * 0.618034) % 1;
       const j = (this.frame % 16) + 1;
       (m.uPixelJitter.value as THREE.Vector2).set(halton(j, 2) - 0.5, halton(j, 3) - 0.5);

@@ -21,19 +21,29 @@
 // (layerTowerExt, layerTypeBias), so convective conditions draw a deeper layer of more towering cells.
 //
 // Storm cells (render/weather/stormSelection.ts, the frame's selection at the camera, as the storm effect draws
-// them): the lateral coverage around each cell is multiplied by 1 - sum(core_i x smoothstep(CLEAR_OUTER x R_i,
-// CLEAR_INNER x R_i, r_i)), clamped at 0, R the drawn core radius and core the cell's core share (uStormClear,
-// uStormClearCount). The view march and the shadow map read the same uniforms. With no cell the count is 0 and the
-// term is skipped.
+// them; uStormClear, uStormAnvil, uStormGust, uStormBase, uStormClearCount). The view march and the shadow map read
+// the same uniforms. With no cell the count is 0 and every storm term is skipped.
+//   - Clearing: the lateral coverage around each cell is multiplied by 1 - sum(core_i x smoothstep(CLEAR_OUTER x R_i,
+//     CLEAR_INNER x R_i, r_i) + mature_i x SUBSIDE_DEPTH x smoothstep(SUBSIDE_OUTER x R_i, CLEAR_OUTER x R_i, r_i)),
+//     clamped at 0, R the drawn core radius, core the cell's core share and mature its rain share. The same
+//     subsidence term lowers the local cumulus top by up to SUBSIDE_TOP_CUT.
+//   - Gust front: a band of coverage up to mature_i x GUST_COVER at GUST_INNER..GUST_OUTER R_i from the downdraft
+//     centre (physics/weather/convection.ts downdraftCentreAt, toward the cell's motion), GUST_BACK of it on the side
+//     away from the motion, with its top at GUST_TOP of the nominal layer depth.
+//   - Shadows: the sunlight on the cumulus (marchShader.ts) and on the ground (cloudShadow.ts) passes through the
+//     cells' core columns and anvils (render/weather/stormGlsl.ts STORM_SHADOW_GLSL, stormSunTau).
 
 import * as THREE from 'three';
 import { KT } from '../../core/math';
 import type { SimContext } from '../../core/context';
 import type { CloudType, MidCloudType, WeatherSettings } from '../../core/types';
 import { CLOUD_TYPE_PROFILES, cloudTypeOf, midLayerOf, type MidLayer } from '../../core/weatherFields';
-import { MAX_STORMS, stormCentreAt, type NorthEast } from '../../core/weatherFields';
+import { MAX_STORMS, type NorthEast } from '../../core/weatherFields';
+import { downdraftCentreAt } from '../../physics/weather/convection';
 import { StormField, stormShare } from '../../physics/weather/stormField';
-import { cameraStormsAt, drawnCoreRadiusM } from '../weather/stormSelection';
+import { cameraStormsAt } from '../weather/stormSelection';
+import { cellGeometry, makeCellGeometry } from '../weather/cellGeometry';
+import { STORM_ANVIL_DEPTH_M, STORM_ANVIL_SIGMA, STORM_CORE_SIGMA, STORM_SHADOW_GLSL } from '../weather/stormGlsl';
 import { COVERAGE_GLSL, coverageParams, evolveWeights } from './coverage';
 import { WEATHER_SIZE, type CloudNoiseTextures } from './noiseTextures';
 
@@ -126,6 +136,31 @@ export const MID_WIND_FACTOR = 2.2;
  */
 export const CLEAR_INNER = 1.5;
 export const CLEAR_OUTER = 3;
+/**
+ * Weaker suppression of the cumulus beyond the clearing around a mature cell (its rain share): coverage reduced by
+ * up to SUBSIDE_DEPTH from CLEAR_OUTER to SUBSIDE_OUTER core radii (the subsidence around a cumulonimbus).
+ * Unconfirmed: look values.
+ */
+export const SUBSIDE_DEPTH = 0.4;
+export const SUBSIDE_OUTER = 6;
+/**
+ * Share by which the same subsidence lowers the local cumulus tops (the subsiding air caps their growth), so a
+ * mature cell's tower shows above the cumulus between it and a camera on the ground. Unconfirmed: a look value.
+ */
+export const SUBSIDE_TOP_CUT = 0.6;
+/**
+ * Gust-front cloud (shelf or arcus) on the outflow boundary of a mature cell: lateral coverage up to GUST_COVER
+ * times its rain share in a band from GUST_INNER to GUST_OUTER core radii around the downdraft centre, peaking at
+ * GUST_PEAK, GUST_BACK of it on the side away from the cell's motion, top at GUST_TOP of the nominal layer depth
+ * (the outflow of physics/weather/convection.ts tapers out from 2.5 to 3 R about the same centre). Unconfirmed: look
+ * values.
+ */
+export const GUST_INNER = 2.5;
+export const GUST_PEAK = 3;
+export const GUST_OUTER = 3.5;
+export const GUST_COVER = 0.75;
+export const GUST_BACK = 0.25;
+export const GUST_TOP = 0.3;
 
 /** The convective activity of a weather for the drawn layer (one cached evaluation for every caller). */
 const _activity = new StormField();
@@ -159,6 +194,7 @@ export function extendedLayerTopM(w: WeatherSettings): number {
 export const CLOUD_MODEL_GLSL = /* glsl */ `
 #define PI 3.14159265
 ${COVERAGE_GLSL}
+${STORM_SHADOW_GLSL}
 uniform sampler3D uShapeTex;
 uniform sampler3D uDetailTex;
 uniform sampler3D uWarpTex;     // smooth vector field (rgb), same tile period as the detail
@@ -176,6 +212,9 @@ uniform float uTopFrac;       // the weather's nominal cloud top as a fraction o
 uniform vec4 uCloudType;      // cloud type (CLOUD_TYPE_PROFILES): deck override, deck weight, extinction scale (not read: uExtinction carries it), shape frequency scale
 uniform vec4 uCloudShape;     // cloud type (CLOUD_TYPE_SHAPE): deck top scale, base raggedness, erosion scale, type bias
 uniform vec4 uStormClear[${MAX_STORMS}];  // storm cells: centre x, z (three.js world), drawn core radius R, core share
+uniform vec4 uStormAnvil[${MAX_STORMS}];  // anvil centre x, z, anvil radius, anvil share
+uniform vec4 uStormGust[${MAX_STORMS}];   // downdraft centre x, z, rain share, the anvil's underside at its centre (m MSL)
+uniform float uStormBase;                 // the cells' base, m MSL
 uniform int uStormClearCount;
 
 const float WEATHER_FREQ = ${(1 / WEATHER_PERIOD).toExponential(6)};
@@ -232,16 +271,42 @@ float remapClamped(float v, float a, float b, float c, float d) {
 // than 'auto' replaces the cover-driven value by its own (uCloudType.y = 1); 'auto' has weight 0.
 float deckness() { return mix(smoothstep(0.5, 0.9, uLayer.w), uCloudType.x, uCloudType.y); }
 
-// Share of the cumulus coverage left around the storm cells (1 with none): 1 - sum core x smoothstep(CLEAR_OUTER R,
-// CLEAR_INNER R, r), at least 0.
-float stormClearing(vec2 xz) {
-  float s = 0.0;
+// The storm cells' effect on the coverage at xz (see the header): x the share of the cumulus coverage left
+// (clearing and subsidence), y the gust front's coverage, z the factor on the local cumulus top (subsidence).
+vec3 stormCoverage(vec2 xz) {
+  float s = 0.0, gust = 0.0, sub = 0.0;
   for (int i = 0; i < ${MAX_STORMS}; i++) {
     if (i >= uStormClearCount) break;
     vec4 c = uStormClear[i];
-    s += c.w * smoothstep(${CLEAR_OUTER.toFixed(2)} * c.z, ${CLEAR_INNER.toFixed(2)} * c.z, distance(xz, c.xy));
+    vec4 g = uStormGust[i];
+    float r = distance(xz, c.xy);
+    float subside = g.z * smoothstep(${SUBSIDE_OUTER.toFixed(2)} * c.z, ${CLEAR_OUTER.toFixed(2)} * c.z, r);
+    s += c.w * smoothstep(${CLEAR_OUTER.toFixed(2)} * c.z, ${CLEAR_INNER.toFixed(2)} * c.z, r) + ${SUBSIDE_DEPTH.toFixed(2)} * subside;
+    sub += subside;
+    if (g.z > 0.0) {
+      vec2 d = xz - g.xy;
+      float rd = length(d);
+      float band = smoothstep(${GUST_INNER.toFixed(2)} * c.z, ${GUST_PEAK.toFixed(2)} * c.z, rd) * (1.0 - smoothstep(${GUST_PEAK.toFixed(2)} * c.z, ${GUST_OUTER.toFixed(2)} * c.z, rd));
+      // The downdraft centre lies toward the cell's motion: the band is strongest on that side.
+      vec2 fwd = g.xy - c.xy;
+      float side = dot(fwd, fwd) > 1.0 && rd > 1.0 ? dot(d / rd, normalize(fwd)) : 0.0;
+      gust = max(gust, g.z * ${GUST_COVER.toFixed(2)} * band * mix(${GUST_BACK.toFixed(2)}, 1.0, 0.5 + 0.5 * side));
+    }
   }
-  return max(1.0 - s, 0.0);
+  return vec3(max(1.0 - s, 0.0), gust, 1.0 - ${SUBSIDE_TOP_CUT.toFixed(2)} * min(sub, 1.0));
+}
+
+// Optical depth of the storm cells' core columns and anvils from p along the unit vector d (d.y > 0).
+float stormSunTau(vec3 p, vec3 d) {
+  float tau = 0.0;
+  for (int i = 0; i < ${MAX_STORMS}; i++) {
+    if (i >= uStormClearCount) break;
+    vec4 c = uStormClear[i];
+    vec4 a = uStormAnvil[i];
+    vec4 g = uStormGust[i];
+    tau += stormColumnTau(p, d, c.xy, c.z, uStormBase, g.w, a.xy, a.z, c.w * ${STORM_CORE_SIGMA.toFixed(3)}, a.w * ${STORM_ANVIL_SIGMA.toFixed(3)});
+  }
+  return tau;
 }
 
 float cellStrength(float field, float threshold) {
@@ -256,8 +321,12 @@ vec3 cloudWeather(vec2 xz, float lod) {
   // area under cloud matches the requested cover.
   float threshold = uCoverage.x;
   float cellS = cellStrength(blendFields(w0.r, w1.g, uEvolve), threshold);
+  vec3 storm = vec3(1.0, 0.0, 1.0);
+  if (uStormClearCount > 0) storm = stormCoverage(xz);
+  // The gust front's top: GUST_TOP of the nominal layer depth.
+  float gustTop = uTopFrac * ${GUST_TOP.toFixed(2)};
   // Outside every cell (most of the sky at scattered cover) there is no cloud: skip the height lookups.
-  if (cellS <= 0.0 && uCoverage.y <= 0.0) return vec3(0.0);
+  if (cellS <= 0.0 && uCoverage.y <= 0.0) return storm.y > 0.0 ? vec3(storm.y, gustTop, 0.0) : vec3(0.0);
   // The height comes from the field blurred over ~500 m (mip 3): it measures the size of the cell rather
   // than the height of a narrow peak, so small puffs stay low and only broad cells tower (no spires).
   float lodB = max(lod, 3.5);
@@ -282,7 +351,13 @@ vec3 cloudWeather(vec2 xz, float lod) {
   // noise peaks a weak coverage would leave), over a wider margin for big ones, whose flanks the shape
   // noise then carves into bulging towers rather than extruded walls.
   vec3 wt = vec3(smoothstep(0.0, mix(0.35, 0.7, sh), s), max(top, 0.0), 0.0);
-  if (uStormClearCount > 0) wt.x *= stormClearing(xz);
+  if (uStormClearCount > 0) {
+    wt.x *= storm.x;
+    wt.y *= storm.z;
+    // The gust front over the (cleared) cumulus: its coverage where it is the larger, its top in proportion.
+    wt.y = mix(wt.y, gustTop, storm.y / max(storm.y + wt.x, 1e-4));
+    wt.x = max(wt.x, storm.y);
+  }
   return wt;
 }
 
@@ -568,7 +643,13 @@ export interface CloudModelUniforms {
   uMidOffset: THREE.IUniform<THREE.Vector2>;
   /** Storm cells clearing the cumulus: centre x, z (three.js world), drawn core radius, core share; MAX_STORMS entries. */
   uStormClear: THREE.IUniform<THREE.Vector4[]>;
-  /** Number of uStormClear entries in use (0: no clearing). */
+  /** Storm cells' anvils: centre x, z (three.js world), radius, anvil share; MAX_STORMS entries. */
+  uStormAnvil: THREE.IUniform<THREE.Vector4[]>;
+  /** Storm cells: downdraft centre x, z (three.js world), rain share, the anvil's underside at its centre (m MSL). */
+  uStormGust: THREE.IUniform<THREE.Vector4[]>;
+  /** The storm cells' base, m MSL. */
+  uStormBase: THREE.IUniform<number>;
+  /** Number of storm-cell entries in use (0: no storm term). */
   uStormClearCount: THREE.IUniform<number>;
 }
 
@@ -618,6 +699,9 @@ export class CloudModel {
       uMid: { value: new THREE.Vector4() },
       uMidOffset: { value: new THREE.Vector2() },
       uStormClear: { value: Array.from({ length: MAX_STORMS }, () => new THREE.Vector4()) },
+      uStormAnvil: { value: Array.from({ length: MAX_STORMS }, () => new THREE.Vector4()) },
+      uStormGust: { value: Array.from({ length: MAX_STORMS }, () => new THREE.Vector4()) },
+      uStormBase: { value: 0 },
       uStormClearCount: { value: 0 },
     };
   }
@@ -686,22 +770,33 @@ export class CloudModel {
     evolveWeights(0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / EVOLVE_PERIOD), u.uEvolve.value);
   }
 
-  /** The storm cells of the frame (cameraStormsAt) with a core share, at ctx.simTime, into uStormClear. */
+  /**
+   * The storm cells of the frame (cameraStormsAt) with a core or anvil share, at ctx.simTime, as the storm effect
+   * draws them (cellGeometry), into uStormClear, uStormAnvil and uStormGust.
+   */
   private updateStormClearing(ctx: SimContext): void {
     const cells = cameraStormsAt(ctx);
-    const out = this.uniforms.uStormClear.value;
+    const u = this.uniforms;
     let n = 0;
     for (let i = 0; i < Math.min(cells.length, MAX_STORMS); i++) {
-      const core = stormShare(cells[i], 'core');
-      if (!(core > 0)) continue;
-      stormCentreAt(cells[i], ctx.simTime, _ne);
-      out[n++].set(_ne.east, -_ne.north, drawnCoreRadiusM(cells[i]), core);
+      const cell = cells[i];
+      const core = stormShare(cell, 'core');
+      const anvil = stormShare(cell, 'anvil');
+      if (!(core > 0) && !(anvil > 0)) continue;
+      const g = cellGeometry(cell, ctx.weather, ctx.simTime, _geometry);
+      downdraftCentreAt(cell, ctx.simTime, _ne);
+      u.uStormClear.value[n].set(g.x, g.z, g.radius, g.core);
+      u.uStormAnvil.value[n].set(g.anvilX, g.anvilZ, g.anvilRadius, g.anvil);
+      u.uStormGust.value[n].set(_ne.east, -_ne.north, g.rain, g.top - STORM_ANVIL_DEPTH_M);
+      u.uStormBase.value = g.base;
+      n++;
     }
-    this.uniforms.uStormClearCount.value = n;
+    u.uStormClearCount.value = n;
   }
 }
 
 const _ne: NorthEast = { north: 0, east: 0 };
+const _geometry = makeCellGeometry();
 
 /** Move a drift offset by -velocity * dt (see the field comment), wrapped to period. */
 function advect(offset: THREE.Vector2, vx: number, vz: number, dt: number, period: number): void {
