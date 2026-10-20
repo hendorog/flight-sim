@@ -306,6 +306,12 @@ export interface AircraftFlightModel extends FlightModel {
   /** Set the model clock (wind-field time) without changing anything else (replaces the private-field write in restore). */
   setClock(t: number): void;
   setKinematics(k: { position: Vec3; orientation: Quat; velocity: Vec3; angularVelocity: Vec3 }): void;
+  /**
+   * Hail dents on the leading edges, 0..1 (sim/weather/hailDamage.ts): the section and nose-drag changes of
+   * aero/hailDents.ts in the flight and the trim aerodynamics. Rotorcraft: no effect (the rotor's blade-element model
+   * has no section roughness term).
+   */
+  setAirframeDamage(leadingEdge: number): void;
   captureSystems(): SystemsSnapshot;
   /** `dynamicPressure`: for setting the surfaces immediately, Pa (today: 0.5 rho |v|^2 of the saved velocity). */
   restoreSystems(s: SystemsSnapshot, controls: ControlInputs, dynamicPressure: number): void;

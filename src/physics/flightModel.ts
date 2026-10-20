@@ -960,6 +960,12 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     }
   }
 
+  /** Hail dents on the leading edges, 0..1, in both aerodynamic models (AircraftFlightModel.setAirframeDamage). */
+  setAirframeDamage(leadingEdge: number): void {
+    this.aero.setLeadingEdgeDamage(leadingEdge);
+    this.trimAero.setLeadingEdgeDamage(leadingEdge);
+  }
+
   /** What a resume snapshot keeps besides the rigid body and the controls. */
   captureSystems(): SystemsSnapshot {
     const pp = this.propulsion;

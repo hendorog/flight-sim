@@ -38,6 +38,7 @@ import {
 } from './airfoil';
 import { Fuselage, addDragItemLoads, addStrutLoads, strutMidpoint, type FlowSampler, type LoadAccumulator } from './bodies';
 import { createC172AeroDefinition } from './c172Aero';
+import { applyLeadingEdgeDents, DENT_BODY_CDA_FULL } from './hailDents';
 import type { AircraftAeroDefinition, PropellerStation, StallSensor } from './definition';
 import { LiftingLine, WakeCoupling, type GroundPlane, type SectionLift } from './liftingLine';
 import { MAX_PATH, SlipstreamField } from './slipstream';
@@ -485,6 +486,8 @@ export class AeroModel {
   };
   /** Let the lifting-line solves reuse their last Jacobian factorisation (see LiftingLine.solve). */
   private reuseJacobian = false;
+  /** Hail dents on the leading edges, 0..1 (hailDents.ts; setLeadingEdgeDamage). 0: the clean airframe. */
+  private dentLevel = 0;
 
   /**
    * Optional hook called before every tail solve with the tailplane's geometric angle of attack for the
@@ -771,6 +774,22 @@ export class AeroModel {
     }
   }
 
+  /**
+   * Hail dents on the leading edges, 0 (clean) to 1 (hailDents.ts). A change forces every strip's section constants
+   * to be prepared again on the next call. At 0 the model computes exactly as without dents.
+   */
+  setLeadingEdgeDamage(level: number): void {
+    const l = Number.isFinite(level) ? Math.min(Math.max(level, 0), 1) : 0;
+    if (l === this.dentLevel) return;
+    this.dentLevel = l;
+    this.sectionCache.fill(NaN);
+  }
+
+  /** The level set with setLeadingEdgeDamage. */
+  get leadingEdgeDamage(): number {
+    return this.dentLevel;
+  }
+
   /** Copy each controlled strip's current angle of attack into flapAlpha; returns the largest change, rad. */
   private updateFlapAlpha(): number {
     const { strips, nWing, flapAlpha } = this;
@@ -914,6 +933,7 @@ export class AeroModel {
         inc.chordExtension !== c[k + 6]
       ) {
         prepareSection(st.section, re, mach, inc, st.cd90, st.skinFactor, this.conds[i], st.liftSlopeFactor);
+        if (this.dentLevel > 0 && !st.carryover && !st.bodySection) applyLeadingEdgeDents(this.conds[i], st.section.s1, this.dentLevel);
         c[k] = re;
         c[k + 1] = mach;
         c[k + 2] = inc.dAlpha0;
@@ -1433,6 +1453,17 @@ export class AeroModel {
     rb.struts = loads.mx - mx0;
     pb.struts = loads.my - my0;
     yb.struts = loads.mz - mz0;
+    // Dented cowl and inlets (hailDents.ts): a drag area along the relative wind at the nose, in the fuselage group.
+    if (this.dentLevel > 0 && airspeed > 1e-6) {
+      mx0 = loads.mx;
+      my0 = loads.my;
+      mz0 = loads.mz;
+      const f = 0.5 * rho * airspeed * DENT_BODY_CDA_FULL * this.dentLevel;
+      loads.addForce(this.fuselage.points[0], f * air.x, f * air.y, f * air.z);
+      rb.fuselage += loads.mx - mx0;
+      pb.fuselage += loads.my - my0;
+      yb.fuselage += loads.mz - mz0;
+    }
 
     // Aircraft motion relative to the air: alpha, beta and wind-axis lift and drag.
     const u = -air.x, v = -air.y, w = -air.z;
