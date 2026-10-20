@@ -60,7 +60,8 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
       outside every envelope: 1. Before: 2 reads per density evaluation, 6 per lit sample. The temporal pass adds 18
       reads per low-resolution pixel; the rain field adds 12 lattice hashes per cell near a shaft.
     - Light per sample (`stormGlsl.ts`): the sun through two coarse-density taps at 120 and 450 m (eroded by
-      `STORM_TAP_EROSION` 2 means of the detail erosion, so they measure the lobes shading each other) and, beyond
+      `STORM_TAP_EROSION` 2 means of the detail erosion, so they measure the lobes shading each other, read with
+      `STORM_TAP_BAND` 4 times the edge band and at `STORM_TAP_SIGMA` 0.4 of the extinction) and, beyond
       them, the analytic core columns and anvils of the cells (`STORM_SHADOW_GLSL`: columns of the biweight profile
       (1 - (rho / r)^2)^2, the core out to `STORM_SHADOW_CORE_R` 0.7 R from the base to 250 m above the anvil's
       underside at 0.8 of its extinction, the anvil out to `STORM_SHADOW_ANVIL_R` 1 of its radius from 300 m above

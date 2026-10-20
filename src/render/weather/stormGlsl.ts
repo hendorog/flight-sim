@@ -173,6 +173,13 @@ export const STORM_FINE_BAND = 0.15;
 export const STORM_FINE_MIN_M = 8;
 /** Erosion of the coarse density the sun taps read, in means of the detail erosion (gCoarseErosion). */
 export const STORM_TAP_EROSION = 2;
+/**
+ * The sun taps' edge band, in edge bands, and the share of the extinction they count (the light diffusing through
+ * the lobes' skin). With 1 and 1 the lit faces ended in a hard line against flat shaded patches (dev/weather.html,
+ * 2 km from a cell, 2026-10-20). Unconfirmed: look values.
+ */
+export const STORM_TAP_BAND = 4;
+export const STORM_TAP_SIGMA = 0.4;
 /** The sun taps' distances, m. */
 export const STORM_TAP_NEAR_M = 120;
 export const STORM_TAP_FAR_M = 450;
@@ -346,7 +353,9 @@ float stormErosion(vec3 q, float ragged, float scale) {
   return e * ${f(STORM_EROSION_SHARE)} * scale;
 }
 
-float stormBand() { return max(${f(STORM_EDGE_M)}, ${f(STORM_EDGE_PX)} * gFoot); }
+// The sun taps read the cloud with a wider band (gBandScale): a lit face shades off gradually into its crease.
+float gBandScale = 1.0;
+float stormBand() { return max(${f(STORM_EDGE_M)}, ${f(STORM_EDGE_PX)} * gFoot) * gBandScale; }
 
 // Cloud densities of one cell at p (warp: the warp field at p, -1..1): x core (and scud), y anvil. full: the detail
 // erosion, the anvil's fibres and the scud (the view samples); without it the mean erosion (sun taps, bisection).
@@ -626,7 +635,9 @@ void main() {
       vec3 p1 = p + sunL * ${f(STORM_TAP_NEAR_M)};
       vec3 p2 = p + sunL * ${f(STORM_TAP_FAR_M)};
       gCoarseErosion = ${f(STORM_TAP_EROSION)};
-      float tauSun = stormSigmaCoarse(p1, warp) * ${f(STORM_TAP_NEAR_M)} + stormSigmaCoarse(p2, warp) * ${f(STORM_TAP_FAR_M - STORM_TAP_NEAR_M)} + stormShadowTau(p2, sunL);
+      gBandScale = ${f(STORM_TAP_BAND)};
+      float tauSun = ${f(STORM_TAP_SIGMA)} * (stormSigmaCoarse(p1, warp) * ${f(STORM_TAP_NEAR_M)} + stormSigmaCoarse(p2, warp) * ${f(STORM_TAP_FAR_M - STORM_TAP_NEAR_M)}) + stormShadowTau(p2, sunL);
+      gBandScale = 1.0;
       vec2 col = stormColumn(p);
       float hs = clamp((p.y - uSunSpan.x) / max(uSunSpan.y - uSunSpan.x, 1.0), 0.0, 1.0);
       vec3 sun = mix(uSunBase, uSunTop, hs);
