@@ -512,8 +512,13 @@ there) is the drawn one.
 - Hail on the airframe (`sim/weather/hailExposure.ts`): relative speed sqrt(TAS^2 + v_t(D_max)^2) (level flight),
   the largest stone's kinetic energy, the energy flux 1/2 M v^3 and its time integral (the dose, reset with the
   clock). Levels while the rate is at least 0.05 mm/h: severe from 10 J per stone, 300 W/m^2 or 20 kJ/m^2;
-  moderate from 1 J, 30 W/m^2 or 2 kJ/m^2; else light. The HUD shows `HAIL LIGHT` / `MODERATE` / `SEVERE` and a
-  toast "Hail: <level>" appears each time the level rises. All thresholds unconfirmed. The hail does not act on the
+  moderate from 1 J, 30 W/m^2 or 2 kJ/m^2; else light. The level rises at once and drops only when the values
+  fall below `HAIL_DROP_SHARE` 0.7 of the held level's thresholds (`hailLevelHeld`). The HUD shows `HAIL LIGHT` /
+  `MODERATE` / `SEVERE` and a toast "Hail: <level>" appears when the level rises, at most once per
+  `HAIL_TOAST_MIN_S` 20 s unless to a level above the last toast's (`ui/hudCues.ts` `HailToasts`). With the rate
+  swinging between 0.8 and 1.2 times 0.05 mm/h every 0.5 s for 2 min (`tests/weather/hailHazard.test.ts`,
+  2026-10-20): 1 level change and 1 toast; without the hysteresis the level changes 240 times. All thresholds
+  unconfirmed. The hail does not act on the
   flight model: damage effects are an open decision.
 - Airframe sound (`audio/mapping.ts` `hailNoise`, parameters `hail` and `hailSize` appended after `rain`): the rate
   over `HAIL_FULL_MMH` 6 mm/h times a size weight 0.35 to 1 over 5 to 40 mm times the rain's airspeed factor. The

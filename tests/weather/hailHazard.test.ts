@@ -14,6 +14,7 @@ import { emptyLocalPrecip, localPrecipAt, type LocalPrecip } from '../../src/phy
 import { applyWeatherPreset, weatherPresetById } from '../../src/sim/weatherPresets';
 import { AircraftWeather } from '../../src/sim/weather/aircraftWeather';
 import {
+  HAIL_DROP_SHARE,
   HAIL_MODERATE_DOSE_JM2,
   HAIL_MODERATE_FLUX_WM2,
   HAIL_MODERATE_STONE_J,
@@ -23,9 +24,10 @@ import {
   HAIL_WARN_MMH,
   HailExposure,
   hailLevel,
+  hailLevelHeld,
 } from '../../src/sim/weather/hailExposure';
 import { hailAtField, weatherLine } from '../../src/training/content/weatherPresets';
-import { hailCue, hailToast } from '../../src/ui/hudCues';
+import { HAIL_TOAST_MIN_S, HailToasts, hailCue, hailToast } from '../../src/ui/hudCues';
 import type { SimContext } from '../../src/core/context';
 
 const report = (label: string, values: Record<string, number | string>) =>
@@ -83,6 +85,57 @@ describe('hail warning levels', () => {
     expect(hailToast('light', 'severe')).toBe('Hail: severe');
     expect(hailToast('severe', 'moderate')).toBeNull();
     expect(hailToast('none', 'none')).toBeNull();
+  });
+});
+
+describe('hail warning hysteresis and toast interval', () => {
+  it('rises at once and drops only 30 % below the thresholds of the level held', () => {
+    expect(HAIL_DROP_SHARE).toBe(0.7);
+    const F = HAIL_MODERATE_FLUX_WM2;
+    expect(hailLevelHeld('light', 1, 0, 1.01 * F, 0)).toBe('moderate');
+    expect(hailLevelHeld('moderate', 1, 0, 0.8 * F, 0)).toBe('moderate');
+    expect(hailLevelHeld('moderate', 1, 0, 0.69 * F, 0)).toBe('light');
+    expect(hailLevelHeld('severe', 1, 0, 0.8 * HAIL_SEVERE_FLUX_WM2, 0)).toBe('severe');
+    expect(hailLevelHeld('severe', 1, 0, 0.5 * HAIL_SEVERE_FLUX_WM2, 0)).toBe('moderate');
+    expect(hailLevelHeld('severe', 1, 0, 0.5 * F, 0)).toBe('light');
+    expect(hailLevelHeld('light', 0.8 * HAIL_WARN_MMH, 0, 0, 0)).toBe('light');
+    expect(hailLevelHeld('light', 0.6 * HAIL_WARN_MMH, 0, 0, 0)).toBe('none');
+    expect(hailLevelHeld('moderate', 0, 0, 0, 0)).toBe('none');
+    expect(hailLevelHeld('none', 0.8 * HAIL_WARN_MMH, 0, 0, 0)).toBe('none');
+  });
+
+  it('holds the level at a shaft edge where the rate swings 20 % about a threshold, and shows one toast', () => {
+    const x = new HailExposure();
+    const toasts = new HailToasts();
+    let changes = 0;
+    let shown = 0;
+    let prev = x.state.level;
+    // 0.1 s frames for 2 min: the rate swings between 0.8 and 1.2 times HAIL_WARN_MMH every 0.5 s.
+    for (let k = 0; k < 1200; k++) {
+      const rate = HAIL_WARN_MMH * (k % 10 < 5 ? 1.2 : 0.8);
+      const level = x.update(hail(rate, 4), 50, 0.1).level;
+      if (level !== prev) changes++;
+      prev = level;
+      if (toasts.next(level, k * 0.1)) shown++;
+    }
+    report('shaft edge, 2 min', { levelChanges: changes, toasts: shown, level: prev });
+    expect(changes).toBe(1);
+    expect(shown).toBe(1);
+  });
+
+  it('shows at most one toast per HAIL_TOAST_MIN_S for the same or a lower level, and a higher level at once', () => {
+    expect(HAIL_TOAST_MIN_S).toBe(20);
+    const t = new HailToasts();
+    expect(t.next('light', 0)).toBe('Hail: light');
+    expect(t.next('none', 1)).toBeNull();
+    expect(t.next('light', 5)).toBeNull();
+    expect(t.next('none', 6)).toBeNull();
+    expect(t.next('moderate', 7)).toBe('Hail: moderate');
+    expect(t.next('light', 8)).toBeNull();
+    expect(t.next('moderate', 20)).toBeNull();
+    expect(t.next('none', 26)).toBeNull();
+    expect(t.next('light', 27.5)).toBe('Hail: light');
+    expect(t.next('light', 40)).toBeNull();
   });
 });
 

@@ -148,3 +148,25 @@ export function hailToast(prev: HailLevel, level: HailLevel): string | null {
   if (HAIL_LEVEL_RANK[level] <= HAIL_LEVEL_RANK[prev]) return null;
   return `Hail: ${level}`;
 }
+
+/** Shortest time between two hail toasts, s, unless the later one is for a higher level than the earlier. */
+export const HAIL_TOAST_MIN_S = 20;
+
+/** The hail toasts of one UI: hailToast on each rise, at most one per HAIL_TOAST_MIN_S for the same or a lower level. */
+export class HailToasts {
+  private prev: HailLevel = 'none';
+  private lastS = -Infinity;
+  private shownRank = 0;
+
+  /** The toast for the level at time nowS (s, any monotonic clock), or null. */
+  next(level: HailLevel, nowS: number): string | null {
+    const text = hailToast(this.prev, level);
+    this.prev = level;
+    if (!text) return null;
+    const rank = HAIL_LEVEL_RANK[level];
+    if (nowS - this.lastS < HAIL_TOAST_MIN_S && rank <= this.shownRank) return null;
+    this.lastS = nowS;
+    this.shownRank = rank;
+    return text;
+  }
+}

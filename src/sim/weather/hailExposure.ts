@@ -9,6 +9,8 @@
 //   dose             the time integral of F, J/m^2 (reset by reset(), a scenario reset)
 // Level (HailLevel), only while the rate is above HAIL_WARN_MMH: 'severe' when E1 >= HAIL_SEVERE_STONE_J, F >=
 // HAIL_SEVERE_FLUX_WM2 or the dose >= HAIL_SEVERE_DOSE_JM2; else 'moderate' at the MODERATE thresholds; else 'light'.
+// The level rises at once and drops only when the values fall below HAIL_DROP_SHARE (0.7) of the thresholds of the
+// level held (hysteresis: a path along a shaft edge does not toggle the warning).
 // Unconfirmed: every threshold is a value chosen for this model; no source has been checked for airframe damage.
 
 import { hailFallSpeed, hailMeanMm, HAIL_DENSITY_KGM3 } from '../../physics/weather/hail';
@@ -27,6 +29,8 @@ export const HAIL_MODERATE_FLUX_WM2 = 30;
 export const HAIL_SEVERE_FLUX_WM2 = 300;
 export const HAIL_MODERATE_DOSE_JM2 = 2_000;
 export const HAIL_SEVERE_DOSE_JM2 = 20_000;
+/** A held level drops when every value is below this share of its thresholds (30 % below). */
+export const HAIL_DROP_SHARE = 0.7;
 
 /** The hail on the airframe now and its accumulated dose. */
 export interface HailState {
@@ -46,12 +50,20 @@ export interface HailState {
 
 export const emptyHailState = (): HailState => ({ level: 'none', rateMmH: 0, maxMm: 0, relSpeedMs: 0, stoneJ: 0, fluxWm2: 0, doseJm2: 0 });
 
-/** The level for a stone energy (J), flux (W/m^2), dose (J/m^2) and rate (mm/h). */
-export function hailLevel(rateMmH: number, stoneJ: number, fluxWm2: number, doseJm2: number): HailLevel {
-  if (!(rateMmH >= HAIL_WARN_MMH)) return 'none';
-  if (stoneJ >= HAIL_SEVERE_STONE_J || fluxWm2 >= HAIL_SEVERE_FLUX_WM2 || doseJm2 >= HAIL_SEVERE_DOSE_JM2) return 'severe';
-  if (stoneJ >= HAIL_MODERATE_STONE_J || fluxWm2 >= HAIL_MODERATE_FLUX_WM2 || doseJm2 >= HAIL_MODERATE_DOSE_JM2) return 'moderate';
+/** The level for a stone energy (J), flux (W/m^2), dose (J/m^2) and rate (mm/h), every threshold times `share`. */
+export function hailLevel(rateMmH: number, stoneJ: number, fluxWm2: number, doseJm2: number, share = 1): HailLevel {
+  if (!(rateMmH >= share * HAIL_WARN_MMH)) return 'none';
+  if (stoneJ >= share * HAIL_SEVERE_STONE_J || fluxWm2 >= share * HAIL_SEVERE_FLUX_WM2 || doseJm2 >= share * HAIL_SEVERE_DOSE_JM2) return 'severe';
+  if (stoneJ >= share * HAIL_MODERATE_STONE_J || fluxWm2 >= share * HAIL_MODERATE_FLUX_WM2 || doseJm2 >= share * HAIL_MODERATE_DOSE_JM2) return 'moderate';
   return 'light';
+}
+
+/** The level after `prev` for the values given: a rise at once, a drop only below HAIL_DROP_SHARE of the thresholds. */
+export function hailLevelHeld(prev: HailLevel, rateMmH: number, stoneJ: number, fluxWm2: number, doseJm2: number): HailLevel {
+  const raw = hailLevel(rateMmH, stoneJ, fluxWm2, doseJm2);
+  if (HAIL_LEVEL_RANK[raw] >= HAIL_LEVEL_RANK[prev]) return raw;
+  const held = hailLevel(rateMmH, stoneJ, fluxWm2, doseJm2, HAIL_DROP_SHARE);
+  return HAIL_LEVEL_RANK[held] >= HAIL_LEVEL_RANK[prev] ? prev : HAIL_LEVEL_RANK[held] > HAIL_LEVEL_RANK[raw] ? held : raw;
 }
 
 /** Accumulates the hail impact energy on the airframe (one per simulator). */
@@ -77,7 +89,7 @@ export class HailExposure {
       st.stoneJ = 0;
       st.fluxWm2 = 0;
     }
-    st.level = hailLevel(st.rateMmH, st.stoneJ, st.fluxWm2, st.doseJm2);
+    st.level = hailLevelHeld(st.level, st.rateMmH, st.stoneJ, st.fluxWm2, st.doseJm2);
     return st;
   }
 
