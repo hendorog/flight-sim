@@ -15,12 +15,25 @@
 //
 // Mid-level sheet (WeatherSettings.midCover / midType / midAltM, core/weatherFields midLayerOf): uMid and
 // uMidOffset for the single-intersection altostratus / altocumulus sheet of the view march (marchShader.ts).
+//
+// Convective activity (physics/weather/stormField.ts convectiveState, 0 for the default weather): the layer's tower
+// extension and type bias move from the cloud type's values toward those of 'towering' as the activity rises
+// (layerTowerExt, layerTypeBias), so convective conditions draw a deeper layer of more towering cells.
+//
+// Storm cells (render/weather/stormSelection.ts, the frame's selection at the camera, as the storm effect draws
+// them): the lateral coverage around each cell is multiplied by 1 - sum(core_i x smoothstep(CLEAR_OUTER x R_i,
+// CLEAR_INNER x R_i, r_i)), clamped at 0, R the drawn core radius and core the cell's core share (uStormClear,
+// uStormClearCount). The view march and the shadow map read the same uniforms. With no cell the count is 0 and the
+// term is skipped.
 
 import * as THREE from 'three';
 import { KT } from '../../core/math';
 import type { SimContext } from '../../core/context';
 import type { CloudType, MidCloudType, WeatherSettings } from '../../core/types';
 import { CLOUD_TYPE_PROFILES, cloudTypeOf, midLayerOf, type MidLayer } from '../../core/weatherFields';
+import { MAX_STORMS, stormCentreAt, type NorthEast } from '../../core/weatherFields';
+import { StormField, stormShare } from '../../physics/weather/stormField';
+import { cameraStormsAt, drawnCoreRadiusM } from '../weather/stormSelection';
 import { COVERAGE_GLSL, coverageParams, evolveWeights } from './coverage';
 import { WEATHER_SIZE, type CloudNoiseTextures } from './noiseTextures';
 
@@ -108,14 +121,39 @@ export function midSheetTau(cover: number, type: MidCloudType): number {
 export const MID_WIND_FACTOR = 2.2;
 
 /**
- * Top of the low layer as the view march sees it (uLayer.y): the weather's nominal top extended by the cloud
- * type's towerExt, m MSL. The mid-level sheet is drawn and lights the scene only above this altitude; the sky
- * model (render/sky/SkySystem.ts) applies the same test.
+ * Cumulus clearing around a storm cell: full between the centre and CLEAR_INNER core radii, none from CLEAR_OUTER
+ * (the air subsiding around a cumulonimbus suppresses the cumulus near it). Unconfirmed: look values.
+ */
+export const CLEAR_INNER = 1.5;
+export const CLEAR_OUTER = 3;
+
+/** The convective activity of a weather for the drawn layer (one cached evaluation for every caller). */
+const _activity = new StormField();
+export function layerActivity(w: WeatherSettings): number {
+  return _activity.convective(w).activity;
+}
+
+/** Tower extension of the drawn layer: the type's towerExt toward the 'towering' value with the activity. */
+export function layerTowerExt(type: CloudType, activity: number): number {
+  const e = CLOUD_TYPE_PROFILES[type].towerExt;
+  return activity > 0 ? e + (CLOUD_TYPE_PROFILES.towering.towerExt - e) * activity : e;
+}
+
+/** Type bias of the drawn layer (CLOUD_TYPE_SHAPE typeBias): the type's value toward the 'towering' value with the activity. */
+export function layerTypeBias(type: CloudType, activity: number): number {
+  const b = CLOUD_TYPE_SHAPE[type].typeBias;
+  return activity > 0 ? b + (CLOUD_TYPE_SHAPE.towering.typeBias - b) * activity : b;
+}
+
+/**
+ * Top of the low layer as the view march sees it (uLayer.y): the weather's nominal top extended by the layer's
+ * tower extension (layerTowerExt), m MSL. The mid-level sheet is drawn and lights the scene only above this
+ * altitude; the sky model (render/sky/SkySystem.ts) applies the same test.
  */
 export function extendedLayerTopM(w: WeatherSettings): number {
   const base = Math.min(w.cloudBaseM, w.cloudTopM - 100);
   const nominalTop = Math.max(w.cloudTopM, base + 100);
-  return base + (nominalTop - base) * CLOUD_TYPE_PROFILES[cloudTypeOf(w)].towerExt;
+  return base + (nominalTop - base) * layerTowerExt(cloudTypeOf(w), layerActivity(w));
 }
 
 export const CLOUD_MODEL_GLSL = /* glsl */ `
@@ -137,6 +175,8 @@ uniform float uInvTwoR;       // 1 / (2 * earth radius)
 uniform float uTopFrac;       // the weather's nominal cloud top as a fraction of the (extended) layer
 uniform vec4 uCloudType;      // cloud type (CLOUD_TYPE_PROFILES): deck override, deck weight, extinction scale (not read: uExtinction carries it), shape frequency scale
 uniform vec4 uCloudShape;     // cloud type (CLOUD_TYPE_SHAPE): deck top scale, base raggedness, erosion scale, type bias
+uniform vec4 uStormClear[${MAX_STORMS}];  // storm cells: centre x, z (three.js world), drawn core radius R, core share
+uniform int uStormClearCount;
 
 const float WEATHER_FREQ = ${(1 / WEATHER_PERIOD).toExponential(6)};
 const float SHAPE_FREQ = ${(1 / SHAPE_PERIOD).toExponential(6)};
@@ -192,6 +232,18 @@ float remapClamped(float v, float a, float b, float c, float d) {
 // than 'auto' replaces the cover-driven value by its own (uCloudType.y = 1); 'auto' has weight 0.
 float deckness() { return mix(smoothstep(0.5, 0.9, uLayer.w), uCloudType.x, uCloudType.y); }
 
+// Share of the cumulus coverage left around the storm cells (1 with none): 1 - sum core x smoothstep(CLEAR_OUTER R,
+// CLEAR_INNER R, r), at least 0.
+float stormClearing(vec2 xz) {
+  float s = 0.0;
+  for (int i = 0; i < ${MAX_STORMS}; i++) {
+    if (i >= uStormClearCount) break;
+    vec4 c = uStormClear[i];
+    s += c.w * smoothstep(${CLEAR_OUTER.toFixed(2)} * c.z, ${CLEAR_INNER.toFixed(2)} * c.z, distance(xz, c.xy));
+  }
+  return max(1.0 - s, 0.0);
+}
+
 float cellStrength(float field, float threshold) {
   return clamp(1.0 - sqrt(max(1.0 - field, 0.0) / max(1.0 - threshold, 1e-3)), 0.0, 1.0);
 }
@@ -229,7 +281,9 @@ vec3 cloudWeather(vec2 xz, float lod) {
   // The lateral mask ramps in from the outline: quickly for small clouds (compact puffs, not the spiky
   // noise peaks a weak coverage would leave), over a wider margin for big ones, whose flanks the shape
   // noise then carves into bulging towers rather than extruded walls.
-  return vec3(smoothstep(0.0, mix(0.35, 0.7, sh), s), max(top, 0.0), 0.0);
+  vec3 wt = vec3(smoothstep(0.0, mix(0.35, 0.7, sh), s), max(top, 0.0), 0.0);
+  if (uStormClearCount > 0) wt.x *= stormClearing(xz);
+  return wt;
 }
 
 // The weather at a point in 3D: its horizontal position is displaced by a smooth vector field (the detail
@@ -512,6 +566,10 @@ export interface CloudModelUniforms {
   uMid: THREE.IUniform<THREE.Vector4>;
   /** Drift of the mid-level sheet in its own frame (as cirrusOffset: x along the upper wind), m. */
   uMidOffset: THREE.IUniform<THREE.Vector2>;
+  /** Storm cells clearing the cumulus: centre x, z (three.js world), drawn core radius, core share; MAX_STORMS entries. */
+  uStormClear: THREE.IUniform<THREE.Vector4[]>;
+  /** Number of uStormClear entries in use (0: no clearing). */
+  uStormClearCount: THREE.IUniform<number>;
 }
 
 /** Owns the uniforms of the cloud field and advances wind drift and evolution each frame. */
@@ -559,6 +617,8 @@ export class CloudModel {
       uCloudShape: { value: new THREE.Vector4(1, 0, 1, 0) },
       uMid: { value: new THREE.Vector4() },
       uMidOffset: { value: new THREE.Vector2() },
+      uStormClear: { value: Array.from({ length: MAX_STORMS }, () => new THREE.Vector4()) },
+      uStormClearCount: { value: 0 },
     };
   }
 
@@ -578,14 +638,17 @@ export class CloudModel {
     const type = cloudTypeOf(w);
     const profile = CLOUD_TYPE_PROFILES[type];
     const shape = CLOUD_TYPE_SHAPE[type];
-    const top = base + (nominalTop - base) * profile.towerExt;
+    const activity = layerActivity(w);
+    const towerExt = layerTowerExt(type, activity);
+    const top = base + (nominalTop - base) * towerExt;
     const cover = THREE.MathUtils.clamp(w.cloudCover, 0, 1);
     this.uniforms.uLayer.value.set(base, top, 1 / (top - base), cover);
     coverageParams(cover, this.uniforms.uCoverage.value);
-    this.uniforms.uTopFrac.value = 1 / profile.towerExt;
+    this.uniforms.uTopFrac.value = 1 / towerExt;
     this.uniforms.uExtinction.value = EXTINCTION * profile.extinctionScale;
     this.uniforms.uCloudType.value.set(profile.deckOverride, profile.deckWeight, profile.extinctionScale, profile.shapeFreqScale);
-    this.uniforms.uCloudShape.value.set(shape.deckTopScale, shape.baseRagged, shape.erosionScale, shape.typeBias);
+    this.uniforms.uCloudShape.value.set(shape.deckTopScale, shape.baseRagged, shape.erosionScale, layerTypeBias(type, activity));
+    this.updateStormClearing(ctx);
     const mid = midLayerOf(w, this.mid);
     // A sheet at or below the extended top is not drawn (cover 0 in uMid), so the march and the shadow map agree.
     this.midAboveLayer = mid.cover > 0 && mid.altM > top;
@@ -622,7 +685,23 @@ export class CloudModel {
     );
     evolveWeights(0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / EVOLVE_PERIOD), u.uEvolve.value);
   }
+
+  /** The storm cells of the frame (cameraStormsAt) with a core share, at ctx.simTime, into uStormClear. */
+  private updateStormClearing(ctx: SimContext): void {
+    const cells = cameraStormsAt(ctx);
+    const out = this.uniforms.uStormClear.value;
+    let n = 0;
+    for (let i = 0; i < Math.min(cells.length, MAX_STORMS); i++) {
+      const core = stormShare(cells[i], 'core');
+      if (!(core > 0)) continue;
+      stormCentreAt(cells[i], ctx.simTime, _ne);
+      out[n++].set(_ne.east, -_ne.north, drawnCoreRadiusM(cells[i]), core);
+    }
+    this.uniforms.uStormClearCount.value = n;
+  }
 }
+
+const _ne: NorthEast = { north: 0, east: 0 };
 
 /** Move a drift offset by -velocity * dt (see the field comment), wrapped to period. */
 function advect(offset: THREE.Vector2, vx: number, vz: number, dt: number, period: number): void {
