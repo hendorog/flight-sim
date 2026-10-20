@@ -11,7 +11,7 @@
 import type { Quat, Vec3 } from './math';
 
 // ---------------------------------------------------------------------------------------------- identity
-export const ROTORCRAFT_IDS = ['r22', 'r44', 's269', 'md500'] as const;
+export const ROTORCRAFT_IDS = ['r22', 'r44', 's269', 'md500', 'bo105', 'ah56'] as const;
 export type RotorcraftId = typeof ROTORCRAFT_IDS[number];
 export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'c208' | 'pc12' | RotorcraftId;
 export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', 'pc12', ...ROTORCRAFT_IDS];
@@ -72,6 +72,13 @@ export interface ControlInputs {
   reverse?: number;
   /** Turboshaft N2 governor beep switch on the collective, momentary, [-1, 1] (+ = INCREASE). Absent = 0. Never persisted. */
   n2Beep?: number;
+  /** Twin turboshaft ENGINE TRIM left/right (Bo 105), momentary, [-1, 1], + = more torque on engine 2. Absent = 0.
+   *  Zeroed on resume like n2Beep. */
+  n2BeepSplit?: number;
+  /** Pusher propeller twist grip (AH-56A), [0, 1] -> the blade-angle table of RotorcraftDefinition.pusher. Persisted. */
+  propLever?: number;
+  /** Tail-wheel lock (AH-56A), true = locked. Persisted. Read by the gear through gearIn.controls. */
+  tailWheelLock?: boolean;
   /** Stick-pusher interrupt (PUSHER INTR / the trim interrupt switch on the yoke), held. Absent = false. */
   pusherInterrupt?: boolean;
   /**
@@ -589,6 +596,11 @@ export interface InitialConditions {
   feathered?: boolean[];
   /** Default: true on the ground, on fixed gear, or when `flaps` > 0; else false (gear up). */
   gearDown?: boolean;
+  /** Control-gyro rotorcraft (AH-56A): the configuration flown, URL `config=amcs|ics`. Absent: the definition's
+   *  default. A restored snapshot's RotorcraftState.controlGyro.mode wins over it. */
+  rotorcraftConfig?: 'amcs' | 'ics';
+  /** Demo/test hook (URL `halfp=1`): arm the scripted half-P hop on an ICS flight. Absent = false. */
+  forceHalfPHop?: boolean;
 }
 
 export interface FlightModel {

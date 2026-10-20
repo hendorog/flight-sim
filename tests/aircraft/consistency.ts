@@ -17,6 +17,7 @@ import type {
 } from '../../src/aircraft/types';
 import { KT, RAD } from '../../src/core/math';
 import { defaultControls, engineControl } from '../../src/core/types';
+import { hingelessBlade, hingelessSpring } from '../../src/physics/rotorcraft/hingeless';
 
 type Triple = readonly [number, number, number];
 type Point = { x: number; y: number; z: number } | Triple;
@@ -120,6 +121,39 @@ export function definitionInconsistencies(def: AircraftDefinition, pres: Aircraf
         sameNumber('full-open Ng of the twist grip', { 'turboshaft.plaNg.fullOpen': ts.plaNg.fullOpen, 'fcu.maxNg': fcu.maxNg });
       }
       same('ENGINE OUT horn without a collective inhibit', { expected: -1, rotor: rotor.systems.hornCollectiveMin });
+    }
+    // ---- Hingeless / rigid-rotor programme contracts (plan revision 2, section 3.6). Each applies only when declared.
+    const hub = rotor.hubModel;
+    if (hub?.kind === 'hingeless') {
+      // The physical pose's spring and precone are the load solver's (one Kbeta, derived from the flap frequency).
+      if (hub.coning) {
+        sameNumber('hingeless flap spring', { 'hubModel.coning.hingeStiffness': hub.coning.hingeStiffness, 'hingelessSpring(def)': hingelessSpring(rotor) }, 1e-6);
+        sameNumber('hingeless precone', { 'hubModel.coning.precone': hub.coning.precone, 'hubModel.precone': hub.precone });
+      }
+      check(hub.flapFrequency >= 1.0 && hub.flapFrequency <= 1.6, `hingeless flap frequency ${show(hub.flapFrequency)}/rev outside 1.0-1.6`);
+      check(hingelessBlade(rotor).flapInertia > 0, 'hingeless blade flap inertia must be positive');
+      check(!(rotor.controlGyro && hub.controlPhase), 'a control-gyro type has no hubModel.controlPhase (the gyro input rotation is the phase)');
+    }
+    const twin = rotor.systems.twinTurboshaft;
+    if (twin) {
+      sameNumber('twin engine count', { twin: twin.engines, definition: n, powerplant: pp.engines.length, audio: audio.engines.length, input: def.input.engines });
+      check(pp.engines.length === 2 && show(pp.engines[1].engine) === show(pp.engines[0].engine), 'twin turboshaft: both EngineDefs identical (per-installation limits live in the twin data)');
+      check(rotor.systems.turboshaft !== undefined && rotor.systems.drive === 'freewheel', 'twin turboshaft needs systems.turboshaft and the freewheel drive');
+      check(audio.engines[1]?.engine.combustion === 'turbine', 'twin turboshaft: engine 2 sound is a turbine');
+      sameNumber('twin: engine 2 rotor voice blades', { rotor: rotor.main.blades, audio: audio.engines[1]?.prop.blades });
+      sameNumber('twin: engine 2 rotor voice diameter', { rotor: rotor.main.radius * 2, audio: audio.engines[1]?.prop.diameterM });
+      check(def.input.engineLever !== undefined, 'twin turboshaft needs input.engineLever');
+      check(def.input.n2BeepSplit === true, 'twin turboshaft needs input.n2BeepSplit (ENGINE TRIM left/right)');
+    }
+    if (rotor.controlGyro) check(rotor.controlGyro.configs[rotor.controlGyro.default] !== undefined, 'control gyro default configuration is missing');
+    if (rotor.pusher) {
+      sameNumber('pusher blades', { definition: rotor.pusher.propeller.blades, audio: audio.pusher?.blades });
+      sameNumber('pusher diameter', { definition: rotor.pusher.propeller.diameter, audio: audio.pusher?.diameterM });
+      sameNumber('pusher ratio', { definition: rotor.pusher.ratio, audio: audio.pusher?.ratio });
+    }
+    if (rotor.landingGear === 'wheels') {
+      check(g.gear.retractable === true, 'a wheeled rotorcraft here has retractable gear (geometry.gear.retractable)');
+      sameNumber('wheel rest height (skids.z carries the tyre contact)', { skids: rotor.skids.z, mainWheel: g.gear.leftMain.z }, 0.01);
     }
     for (const gauge of gauges) if (gauge.kind === 'asi') sameNumber('airspeed red line', { reference: def.reference.vne, panel: gauge.marks.redLine });
     const fuel = pp.fuel.tanks.reduce((sum, t) => sum + t.capacity, 0);

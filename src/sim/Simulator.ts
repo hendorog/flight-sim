@@ -302,7 +302,8 @@ export class Simulator {
     if (startTod !== null) this.weather.timeOfDay = startTod;
     const weatherBefore = { ...this.weather };
     if (decision.kind === 'resume') restoreWeather(this.weather, decision.snapshot.weather);
-    const physics = new SimPhysics({ weather: this.weather, events, aircraft: def });
+    const physics = new SimPhysics({ weather: this.weather, events, aircraft: def,
+      ...(p.rotorcraftConfig ? { rotorcraftConfig: p.rotorcraftConfig } : {}), ...(p.forceHalfPHop ? { forceHalfPHop: true } : {}) });
     const carbIcing = loadCarbIcing(this.store);
     physics.carbIcing = carbIcing;
     // Every propeller map now, not on first use inside the frame loop (a constant-speed propeller has many).

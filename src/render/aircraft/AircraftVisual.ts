@@ -22,6 +22,8 @@ import { RotorcraftVisual } from './RotorcraftVisual';
 import { s269ExteriorVisualClass } from '../../aircraft/s269/exterior';
 import { r44ExteriorVisualClass } from '../../aircraft/r44/exterior';
 import { md500ExteriorVisualClass } from '../../aircraft/md500/exterior';
+import { bo105ExteriorVisualClass } from '../../aircraft/bo105/exterior';
+import { ah56ExteriorVisualClass } from '../../aircraft/ah56/exterior';
 import { FuselageShape } from './fuselageShape';
 import { sectionHalfWidth } from './fuselage';
 import { C172S_PANEL } from '../../aircraft/c172s/panel';
@@ -100,6 +102,12 @@ const S269ExteriorVisual = s269ExteriorVisualClass(RotorcraftVisual, FuselageSha
 const MD500ExteriorVisual = md500ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth,
   ctx => ctx.state.rotorcraft?.articulated);
 
+// The hingeless / rigid-rotor types read the WHOLE rotorcraft state (blade pose, control gyro, pusher).
+const BO105ExteriorVisual = bo105ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth,
+  ctx => ctx.state.rotorcraft);
+const AH56ExteriorVisual = ah56ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth,
+  ctx => ctx.state.rotorcraft);
+
 export class AircraftVisual implements Subsystem {
   /** Everything of the aircraft; added to ctx.aircraftRoot by init(). */
   readonly root = new THREE.Group();
@@ -157,7 +165,8 @@ export class AircraftVisual implements Subsystem {
     if (def.rotorcraft) {
       const t0 = performance.now();
       const Visual = def.id === 's269' ? S269ExteriorVisual : def.id === 'r44' ? R44ExteriorVisual
-        : def.id === 'md500' ? MD500ExteriorVisual : RotorcraftVisual;
+        : def.id === 'md500' ? MD500ExteriorVisual : def.id === 'bo105' ? BO105ExteriorVisual
+        : def.id === 'ah56' ? AH56ExteriorVisual : RotorcraftVisual;
       this.helicopter = new Visual(def, ctx, this.opts);
       this.root.add(this.helicopter.root); ctx.aircraftRoot.add(this.root);
       if (this.pendingPanel) this.helicopter.setPanelTexture(this.pendingPanel);

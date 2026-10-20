@@ -2,7 +2,7 @@ import { clamp, quat, v3, type Vec3 } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import type { BodyState, ForceMoment } from '../interfaces';
 import type { EngineUnit } from '../propulsion/engineUnit';
-import { cyclicAngles, emptyRotorcraftState, type RotorcraftDefinition } from './definition';
+import { cyclicAngles, drivetrainInertia, emptyRotorcraftState, governedRpm, type RotorcraftDefinition } from './definition';
 import { emptyTurboshaftState, TurboshaftControl } from './turboshaft';
 import { bladeElements, inflowTarget, inflowTimeConstant } from './rotor';
 import { airframeLoads } from './airframe';
@@ -12,6 +12,12 @@ import { pressureAltitude } from '../atmosphere';
 import type { AtmosphereSample } from '../../core/types';
 import { articulatedBladeConing, bladeConing } from './coning';
 import { toBody, toShaft } from './shaftFrame';
+import { ControlGyro, type GyroConfigId } from './controlGyro';
+import { PusherDrive } from './pusher';
+import { HalfPHop } from './halfPHop';
+import { emptyTwinTurboshaftState, jointFreewheelImpulse, publishTwin } from './twinTurboshaft';
+
+const NO_H: Readonly<Vec3> = { x: 0, y: 0, z: 0 };
 
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
@@ -31,15 +37,32 @@ export class Rotorcraft {
   /** Turboshaft fuel control and N2 governor (systems.turboshaft): the flight model calls its stepTurboshaft()
    * in place of throttle(). Null on piston installations. */
   readonly turboshaft: TurboshaftControl | null;
+  /**
+   * Hingeless / rigid-rotor programme seams (plan revision 2, section 2.4; placed at S0, RC keeps them). Each is null
+   * unless the definition declares the feature, so every legacy type runs the old text. controlGyro.ts (AG),
+   * pusher.ts (AC), halfPHop.ts (AH).
+   */
+  readonly gyro: ControlGyro | null;
+  readonly pusher: PusherDrive | null;
+  readonly halfP: HalfPHop | null;
+  /** Compound diagnostics (wing and pusher shaft power, W), separate from the legacy `power` object. */
+  readonly compoundPower = { wings: 0, pusher: 0 };
   constructor(readonly def: RotorcraftDefinition) {
     this.turboshaft = def.systems.turboshaft ? new TurboshaftControl(def, this.state) : null;
+    this.gyro = def.controlGyro ? new ControlGyro(def, this.state) : null;
+    this.pusher = def.pusher ? new PusherDrive(def, this.state) : null;
+    this.halfP = def.halfPHop ? new HalfPHop(def, this.state) : null;
   }
-  reset(running: boolean): void {
+  /** config: the control-gyro configuration (InitialConditions.rotorcraftConfig); forceHalfPHop: the halfp=1 hook. */
+  reset(running: boolean, config?: GyroConfigId, forceHalfPHop?: boolean): void {
+    delete this.state.harmonicInflow; delete this.state.mastMoment; delete this.state.twinTurboshaft;
+    delete this.state.controlGyro; delete this.state.pusher; delete this.state.events;
     delete this.state.turboshaft;
     delete this.state.articulated; delete this.state.contactRotor;
     delete this.state.transmission; delete this.state.springTrim; delete this.state.clutchDisengaged;
     Object.assign(this.state, emptyRotorcraftState());
     this.state.omega = running ? this.def.nominalRpm * Math.PI / 30 : 0;
+    if (running && this.def.controlGyro) this.state.omega = governedRpm(this.def, config) * Math.PI / 30;
     this.state.governorThrottle = this.state.governorIntegral = running ? 0.55 : 0;
     this.state.clutchEngagement = running ? 1 : 0;
     this.state.rotorRpm = this.state.omega * 30 / Math.PI;
@@ -61,6 +84,11 @@ export class Rotorcraft {
           ? bladeConing(this.def.hubModel.coning, this.state.omega, 0).angle : 0,
         lag: 0, pitch: 0 })),
     };
+    // New optional blocks are created here for the types that declare them, never lazily (plan 3.3).
+    if (this.def.systems.twinTurboshaft) this.state.twinTurboshaft = emptyTwinTurboshaftState(this.def, running);
+    this.gyro?.reset(running, config);
+    this.pusher?.reset(running);
+    this.halfP?.reset(forceHalfPHop);
   }
   /** Collective moves the throttle linkage; governor trims the grip above its engagement RPM.
    * A moving grip overrides the servo. Full closed is the overtravel stop, defeating correlation.
@@ -97,8 +125,9 @@ export class Rotorcraft {
    * Called after the engine's free shaft step. The freewheel cannot back-drive a stopped/slow engine.
    */
   drive(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample,
-    clutchCommand?: 'engage' | 'hold' | 'release', busVoltage?: number, onGround = false): void {
-    if (this.def.systems.drive === 'freewheel') { this.driveFreewheel(dt, c, engine, atmosphere, busVoltage, onGround); return; }
+    clutchCommand?: 'engage' | 'hold' | 'release', busVoltage?: number, onGround = false,
+    extraEngines?: readonly EngineUnit[]): void {
+    if (this.def.systems.drive === 'freewheel') { this.driveFreewheel(dt, c, engine, atmosphere, busVoltage, onGround, extraEngines); return; }
     const s = this.state, d = this.def;
     clutchCommand ??= c.rotorClutchCommand;
     const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
@@ -170,20 +199,32 @@ export class Rotorcraft {
    * and at shutdown the rotor overruns and the needles split. Then the turboshaft's gauges and warnings.
    */
   private driveFreewheel(dt: number, c: ControlInputs, engine: EngineUnit, atmosphere?: AtmosphereSample, busVoltage?: number,
-    onGround = false): void {
+    onGround = false, extraEngines?: readonly EngineUnit[]): void {
     const s = this.state, d = this.def;
-    const inertia = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
+    const inertia = d.pusher ? drivetrainInertia(d) : d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
     const oldOmega = s.omega;
     s.omega = Math.max(0, s.omega - s.torque * dt / inertia);
     const freeOmega = s.omega;
     s.clutchEngagement = 1; s.clutchLight = false;
-    const excess = engine.omega - s.omega * d.engineRatio;
-    const impulse = excess > 0
-      ? Math.min(excess / (1 / engine.inertia + d.transmissionEfficiency * d.engineRatio ** 2 / inertia),
-        (d.systems.transmissionTorqueLimit ?? Infinity) * dt) : 0;
-    engine.omega -= impulse / engine.inertia;
-    s.omega += impulse * d.engineRatio * d.transmissionEfficiency / inertia;
-    s.driveTorque = dt > 0 ? impulse * d.engineRatio * d.transmissionEfficiency / dt : 0;
+    const twin = d.systems.twinTurboshaft && extraEngines ? [engine, ...extraEngines] : null;
+    if (twin) {
+      // Twin turboshaft (TW's jointFreewheelImpulse): one joint one-way impulse over every engaged engine.
+      const impulses = jointFreewheelImpulse(s.omega, inertia, twin, d.engineRatio, d.transmissionEfficiency,
+        d.systems.transmissionTorqueLimit ?? Infinity, dt);
+      let total = 0;
+      for (let i = 0; i < twin.length; i++) { twin[i].omega -= impulses[i] / twin[i].inertia; total += impulses[i]; }
+      s.omega += total * d.engineRatio * d.transmissionEfficiency / inertia;
+      s.driveTorque = dt > 0 ? total * d.engineRatio * d.transmissionEfficiency / dt : 0;
+      for (let i = 1; i < twin.length; i++) twin[i].state.rpm = twin[i].rpm;
+    } else {
+      const excess = engine.omega - s.omega * d.engineRatio;
+      const impulse = excess > 0
+        ? Math.min(excess / (1 / engine.inertia + d.transmissionEfficiency * d.engineRatio ** 2 / inertia),
+          (d.systems.transmissionTorqueLimit ?? Infinity) * dt) : 0;
+      engine.omega -= impulse / engine.inertia;
+      s.omega += impulse * d.engineRatio * d.transmissionEfficiency / inertia;
+      s.driveTorque = dt > 0 ? impulse * d.engineRatio * d.transmissionEfficiency / dt : 0;
+    }
     if (dt > 0) {
       this.drivePower.aerodynamic = -s.torque * oldOmega;
       this.drivePower.rotorChange = 0.5 * inertia * (s.omega ** 2 - oldOmega ** 2) / dt;
@@ -211,7 +252,8 @@ export class Rotorcraft {
       t.pitchForce = p.force * (t.pitch - c.elevator);
       t.rollForce = p.force * (t.roll - c.aileron);
     }
-    if (this.turboshaft) this.turboshaft.publish(dt, c, engine, volts, onGround);
+    if (this.turboshaft && twin) publishTwin(this.turboshaft, s, dt, c, twin, volts, onGround);
+    else if (this.turboshaft) this.turboshaft.publish(dt, c, engine, volts, onGround);
     else {
       s.lowRpm = s.rotorRpm < d.referenceRpm * d.systems.lowRpmWarning;
       s.lowRpmLight = s.lowRpm && volts > 18;
@@ -221,7 +263,7 @@ export class Rotorcraft {
   /** The thrust axis follows cyclic with a finite teetering response and aerodynamic blowback.
    * Each RK stage sees its own air velocity. Only stage zero advances flap/inflow states.
    */
-  compute(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, dt: number): ForceMoment {
+  compute(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, dt: number, soundSpeed?: number): ForceMoment {
     const d = this.def, s = this.state;
     const air = v3.sub(b.velocityBody, quat.rotateInv(b.orientation, wind));
     const mainArm = v3.sub(d.main.hub, b.cgOffset);
@@ -230,7 +272,8 @@ export class Rotorcraft {
     const tilt = d.shaftTilt ?? 0;
     const hubAir = tilt ? toShaft(v3.add(air, v3.cross(b.angularVelocity, mainArm)), tilt) : v3.add(air, v3.cross(b.angularVelocity, mainArm));
     const rate = tilt ? toShaft(b.angularVelocity, tilt) : b.angularVelocity;
-    const cyclic = d.cyclicLimits ? cyclicAngles(d, c) : undefined;
+    // Control gyro (AG): the blade cyclic comes from the gyro, not the stick position.
+    const cyclic = this.gyro ? this.gyro.cyclic(c) : d.cyclicLimits ? cyclicAngles(d, c) : undefined;
     const articulated = d.hubModel?.kind === 'articulated'
       ? estimatedArticulatedGeometry(d.main, d.hubModel.flapHingeOffset, d.hubModel.lagHingeOffset) : undefined;
     const mu = Math.hypot(hubAir.x, hubAir.y) / Math.max(s.omega * d.main.radius, 1);
@@ -359,9 +402,21 @@ export class Rotorcraft {
     const tailForce = { x: tailHForce.x, y: tail.thrust * d.rotation, z: tailHForce.z };
     const frame = airframeLoads(d, b, air, density, s.inflow, s.tailInflow);
     Object.assign(this.power, frame.power);
+    if (frame.wings !== undefined) this.compoundPower.wings = frame.wings;
     const f = this.loads.force, m = this.loads.moment;
     Object.assign(f, v3.add(v3.add(mainForce, tailForce), frame.force));
     Object.assign(m, v3.add(v3.add(v3.cross(mainArm, mainForce), v3.cross(tailArm, tailForce)), frame.moment));
+    // Pusher propeller (AC): thrust, thrust-offset moment and the shaft reaction torque; its torque joins the shaft below.
+    const extra = this.pusher ? this.pusher.compute(b, air, s.omega, density, soundSpeed ?? 340.3, c, dt) : null;
+    if (extra) {
+      Object.assign(f, v3.add(f, extra.force)); Object.assign(m, v3.add(m, extra.moment));
+      this.compoundPower.pusher = extra.power;
+    }
+    // Scripted half-P hop (AH): body forcing while the event runs.
+    if (this.halfP) {
+      const e = this.halfP.forcing(b, hubAir, density, c, s.azimuth, dt);
+      Object.assign(f, v3.add(f, e.force)); Object.assign(m, v3.add(m, e.moment));
+    }
     if (tilt) {
       // The drive torque reacts about the tilted shaft.
       m.x -= d.rotation * s.driveTorque * Math.sin(tilt); m.z += d.rotation * s.driveTorque * Math.cos(tilt);
@@ -373,12 +428,16 @@ export class Rotorcraft {
     // Its aerodynamic reorientation moment minus body-frame dH/dt equals w×H. Account for both here;
     // the rigid-body Euler term subtracts w×H. Keeping just the latter would invent rigid-hub control.
     Object.assign(this.angularMomentum, v3.scale(tilt ? toBody(axis, tilt) : axis, d.rotation * d.main.inertia * s.omega));
+    // The pusher's and the control gyro's spin momenta join the rotor's before w x H (body axes).
+    if (this.pusher || this.gyro) Object.assign(this.angularMomentum,
+      v3.add(this.angularMomentum, v3.add(this.pusher?.h ?? NO_H, this.gyro?.h ?? NO_H)));
     Object.assign(m, v3.add(m, v3.cross(b.angularVelocity, this.angularMomentum)));
     s.thrust = thrust; s.tailThrust = tail.thrust; s.torque = main.torque + tail.torque * d.tailRatio;
     // The massless harmonic reduction retains no flap kinetic-energy store. Offset hinge work
     // therefore exchanges with shaft work explicitly. This preserves the reduced work budget;
     // it is not a full transient blade/body energy or angular-momentum solution.
     if (articulated) s.torque += hubTorque;
+    if (extra) s.torque += extra.shaftTorque;
     s.stalledFraction = main.stalledFraction;
     // BEM integrates moment about the shaft. Transfer it to ONE blade's flap hinge.
     const coning = d.hubModel?.kind === 'articulated' ? d.hubModel.coning : undefined;
@@ -400,7 +459,7 @@ export class Rotorcraft {
       b.flap = coning ? articulatedBladeConing(coning, s.omega, s.thrust / d.main.blades,
         harmonic, normalGravity, meanMoment).angle : s.coning + harmonic;
       b.lag = 0; // Coupled lag experiment rejected; see docs/s269-integration.md.
-      const cyclic = d.cyclicLimits ? cyclicAngles(d, c) : undefined;
+      const cyclic = this.gyro ? this.gyro.cyclic(c) : d.cyclicLimits ? cyclicAngles(d, c) : undefined;
       b.pitch = d.main.minPitch + clamp(c.collective ?? 0, 0, 1) * (d.main.maxPitch - d.main.minPitch) +
         (cyclic ? d.rotation * (cyclic.right * Math.cos(psi) - cyclic.aft * Math.sin(psi))
           : d.rotation * d.cyclicLimit * (c.aileron * Math.cos(psi) - c.elevator * Math.sin(psi)));
@@ -426,7 +485,9 @@ export class Rotorcraft {
   settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true): ForceMoment {
     const s = this.state, d = this.def;
     s.driveTorque = 0; s.coning = 0; s.retreatingFlap = 0;
-    if (d.cyclicLimits) { const cyclic = cyclicAngles(d, c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
+    this.gyro?.seed(c);
+    if (this.gyro) { const cyclic = this.gyro.cyclic(c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
+    else if (d.cyclicLimits) { const cyclic = cyclicAngles(d, c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
     else { s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit; }
     s.inflow = s.tailInflow = s.omega > 0 ? 5 : 0;
     for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);

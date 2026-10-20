@@ -91,6 +91,10 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
     blurb: 'Two-seat articulated-rotor trainer, HO-360 180 hp; in development', engineCount: 1, available: true },
   { id: 'md500', name: 'MD Helicopters MD 500E', shortName: 'MD 500E',
     blurb: 'Five-seat turbine helicopter, 250-C20B 375 shp take-off, five-blade articulated rotor (in development)', engineCount: 1, available: true },
+  { id: 'bo105', name: 'MBB Bo 105 CB-4', shortName: 'Bo 105',
+    blurb: 'Twin-turbine light helicopter, 2 x 250-C20B, four-blade hingeless rotor (in development)', engineCount: 2, available: false },
+  { id: 'ah56', name: 'Lockheed AH-56A Cheyenne', shortName: 'AH-56A',
+    blurb: 'Rigid-rotor compound attack helicopter, T64 turboshaft, control gyro, wing and pusher propeller (in development)', engineCount: 1, available: false },
 ];
 
 export function aircraftSummary(id: AircraftId): AircraftSummary {
@@ -113,6 +117,8 @@ const DEFINITION_LOADERS: Readonly<Record<Exclude<AircraftId, 'c172s'>, () => Pr
   r44: () => import('./r44/index'),
   s269: () => import('./s269/index'),
   md500: () => import('./md500/index'),
+  bo105: () => import('./bo105/index'),
+  ah56: () => import('./ah56/index'),
 };
 
 // The C172S presentation is imported statically by the application shell, so there this resolves without a
@@ -130,6 +136,8 @@ const PRESENTATION_LOADERS: Readonly<Record<AircraftId, () => Promise<{ default:
   r44: () => import('./r44/presentation'),
   s269: () => import('./s269/presentation'),
   md500: () => import('./md500/presentation'),
+  bo105: () => import('./bo105/presentation'),
+  ah56: () => import('./ah56/presentation'),
 };
 
 const definitions = new Map<AircraftId, AircraftDefinition>([[C172S_DEFINITION.id, C172S_DEFINITION]]);

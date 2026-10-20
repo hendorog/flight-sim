@@ -119,6 +119,9 @@ export interface AudioProfile {
    * harmonics flattening) that grows with its loading |thrust| / `hoverThrustN`. Absent: none (every type before the MD 500E).
    */
   tailRotor?: { blades: 2 | 3 | 4; diameterM: number; ratio: number; hoverThrustN: number; slap: number; level: number };
+  /** Pusher propeller on the rotor shaft (AH-56A): blade passage = blades x rotor rpm x ratio. Declared at S0 (AU
+   *  implements the channel; consistency: equals RotorcraftDefinition.pusher once AC lands). Absent: none. */
+  pusher?: { blades: number; diameterM: number; ratio: number };
   /** A stick shaker (AircraftState.stickShaker): the rattle of its eccentric motor at `hz` on the control column, `level` strong. Absent: none. */
   stickShaker?: { hz: number; level: number };
   /** Aural overspeed warning: a clacker at `perSecond` strokes a second above `kias` or `mach` (LimitsDef.overspeedWarning), on the bus. Absent: none. */

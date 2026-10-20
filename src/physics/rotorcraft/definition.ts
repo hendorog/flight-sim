@@ -2,6 +2,13 @@ import type { Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import type { ManifoldPlacard, SpeedPlacard, SpeedCorrections } from './limits';
 import type { BladeConingDefinition } from './coning';
+import type { BladeMassMoments } from './articulated';
+import type { ControlGyroDef, ControlGyroState, GyroConfigId } from './controlGyro';
+import type { PusherDef, PusherState } from './pusher';
+import type { WingPanelDef } from './wings';
+import type { RotorSectionDef } from './section';
+import type { HalfPHopDef, HalfPHopState } from './halfPHop';
+import type { TwinTurboshaftDef, TwinTurboshaftState } from './twinTurboshaft';
 
 /** SI units; rotor rotation is +1 about its upward thrust axis (CCW viewed from above). */
 export interface RotorDefinition {
@@ -18,6 +25,20 @@ export interface RotorDefinition {
    * type before the MD 500E; their arithmetic is untouched).
    */
   pittPetersInflow?: boolean;
+  /**
+   * Hingeless / rigid-rotor programme (plan revision 2), main rotor only; each absent = the legacy behaviour and call
+   * text. Declared at S0; RC implements them at stage 1.
+   * - radialStations / azimuthStations: the BEM and flapForcing grids (legacy 12 x 16).
+   * - cm0: section pitching moment about 1/4 chord, attached flow (the gyro's feathering-moment feedback reads it).
+   * - section: the high-advance-ratio section model (section.ts, AH), called by the BEM and the hinge forcing.
+   * - periodicFlapDamping: the azimuth-periodic part of the flap-rate aerodynamic damping in flapForcing (from the
+   *   previous step's harmonics), minus its mean already in the implicit matrix (about 12 % at mu 0.5).
+   */
+  radialStations?: number;
+  azimuthStations?: number;
+  cm0?: number;
+  section?: RotorSectionDef;
+  periodicFlapDamping?: boolean;
 }
 /**
  * Turboshaft fuel control and power-turbine governor (MD 500E / Allison 250-C20B). Declared at the scaffold; the
@@ -59,11 +80,17 @@ export interface TurboshaftControlDef {
     gain: number; integralGain: number;
     /** Rate lead on N2, s. */
     lead: number;
+    /** Ng demand per unit ControlInputs.propLever added to the droop compensator's datum (AH-56A pusher; AC supplies
+     *  the value, ESTIMATE). Absent: the legacy datum text. */
+    propAnticipation?: number;
   };
   /** ENGINE OUT warning (RFM 3-3): N1 below n1Below, or Nr below nrBelow x referenceRpm. No collective inhibit. */
   engineOut: { n1Below: number; nrBelow: number };
   /** Torquemeter: psi per output-shaft N m (gearRatio 1: the power-turbine torque). */
   psiPerNm: number;
+  /** The gauge unit of psiPerNm and limits: 'psi' (absent; MD 500E) or 'percent' (Bo 105: % of 298 kW at 100 % N2;
+   *  AH-56A: % of 3435 shp). TurboshaftState.torquePsi then carries that unit. */
+  torqueGauge?: 'psi' | 'percent';
   /** RFM 2-5 limits that replace the power/MAP-based powerLimitExceeded. */
   limits: {
     mcpPsi: number; mcpPsiAboveTot: { psi: number; totC: number };
@@ -77,13 +104,52 @@ export interface TurboshaftControlDef {
   };
 }
 
+/**
+ * Hingeless hub (Bo 105, AH-56A): the articulated harmonic solver with an equivalent hinge offset and a flap spring.
+ * Declared at S0; RC implements every field at stage 1 (plan revision 2, sections 3.1 and 4).
+ */
+export interface HingelessHub {
+  kind: 'hingeless';
+  /** Equivalent flap hinge offset from the shaft axis, m (Bo 105 0.12 R with zero spring, P BK117-ERF7; AH-56 about 10 % R ESTIMATE). */
+  equivalentHingeOffset: number;
+  /** Rotating first flap frequency at referenceRpm, per rev (Bo 105 1.10-1.12; AH-56 1.10-1.15 ESTIMATE). The spring is
+   *  derived from it: hingelessSpring(def) in hingeless.ts. */
+  flapFrequency: number;
+  /** Zero of the flap spring (built-in coning), rad (Bo 105 2.5 deg; AH-56 2 deg P). */
+  precone: number;
+  /** Measured blade mass moments about the equivalent hinge; absent: the uniform estimate from main.inertia. Lock
+   *  numbers quoted in docs are ABOUT THE SHAFT. */
+  blade?: BladeMassMoments;
+  /** Swashplate control phase, rad, + advances the cyclic in the rotation direction (swashplate.ts). Absent on a
+   *  control-gyro type (consistency). */
+  controlPhase?: number;
+  /** Pitch-flap coupling delta-3, rad (theta -= tan(delta3) * beta), folded exactly into the solver (0 on both types). */
+  delta3?: number;
+  /** 3-state Pitt-Peters first-harmonic inflow (RotorcraftState.harmonicInflow; inflowHarmonic.ts, RC). */
+  harmonicInflow?: boolean;
+  /** mu * beta * cos(psi) radial-flow and coning coupling terms in the hinge forcing. */
+  radialFlow?: boolean;
+  /** Blade-element cyclic from the solved flap harmonics (TPP-relative feathering) instead of the free-hinge
+   *  cancellation formula (rotor.ts:17-18). Default true for hingeless. */
+  bemFromFlap?: boolean;
+  /** Physical pose for display/ground; hingeStiffness === hingelessSpring(def) and precone === precone (consistency). */
+  coning?: BladeConingDefinition;
+  /** Mast-moment indicator: hub moment at the LIMIT mark, N m, and the yellow onset as a fraction of it (Bo 105:
+   *  set from the slope-landing rows, plan 6.2; AGENT/ESTIMATE). Publishes RotorcraftState.mastMoment. */
+  mastMomentLimit?: number;
+  mastMomentYellow?: number;
+}
+export type HubModel =
+  | { kind: 'teetering' }
+  | { kind: 'articulated'; flapHingeOffset: number; lagHingeOffset: number; lagDamper: 'elastomeric' | 'friction';
+    /** Physical blade pose; harmonic load coordinates remain independent of gravity/stops. */
+    coning?: BladeConingDefinition }
+  | HingelessHub;
+
 export interface RotorcraftDefinition {
   /** Installation metadata. Absent retains the legacy teetering hub. Articulated selects the
    * reduced harmonic offset-hinge solver; per-blade transients/ground resonance remain unmodelled. */
-  hubModel?: { kind: 'teetering' } | { kind: 'articulated'; flapHingeOffset: number; lagHingeOffset: number;
-    lagDamper: 'elastomeric' | 'friction';
-    /** Physical blade pose; harmonic load coordinates remain independent of gravity/stops. */
-    coning?: BladeConingDefinition };
+  hubModel?: HubModel;
   main: RotorDefinition;
   tail: RotorDefinition;
   nominalRpm: number;
@@ -153,7 +219,10 @@ export interface RotorcraftDefinition {
      */
     transmissionTorqueLimit?: number;
     /** Turboshaft fuel control and N2 governor (MD 500E). Absent: piston engine with throttle()/correlator. */
-    turboshaft?: TurboshaftControlDef };
+    turboshaft?: TurboshaftControlDef;
+    /** Two turboshafts on one freewheeling transmission (Bo 105); `turboshaft` is then the per-engine control
+     *  (twinTurboshaft.ts, TW). Absent: one engine. */
+    twinTurboshaft?: TwinTurboshaftDef };
   /** Main transmission rotor-driven oil pump and lumped thermal model, SI except psi/rpm. */
   transmission?: { pressurePsi: number; pumpRpm: number; pressureSeconds: number;
     heatCapacity: number; cooling: number };
@@ -200,6 +269,20 @@ export interface RotorcraftDefinition {
       soil: Partial<Record<SurfaceType, { bearing: number; passive: number }>> };
     /** Shoe/terrain contact, distinct from tyre coefficients. Lateral includes soil ploughing by the tube. */
     surfaces?: Partial<Record<SurfaceType, { static: number; sliding: number; lateral: number }>> };
+  /**
+   * 'wheels': the ordinary wheel LandingGear (def.gear()) carries the aircraft, no SkidGear is built, RotorClearance
+   * (wheels.ts) does the strike checks, and `skids` carries wheel-rest data only (z = tyre contact z at rest).
+   * Absent / 'skids': today's skids.
+   */
+  landingGear?: 'skids' | 'wheels';
+  /** Lockheed control gyro with its configurations (controlGyro.ts, AG). Absent: the stick is cyclic position. */
+  controlGyro?: ControlGyroDef;
+  /** Fixed wing panels of a compound (wings.ts, AC). */
+  wings?: readonly WingPanelDef[];
+  /** Pusher propeller on the rotor's shaft (pusher.ts, AC). */
+  pusher?: PusherDef;
+  /** Scripted half-P hop event (halfPHop.ts, AH). */
+  halfPHop?: HalfPHopDef;
 }
 export interface RotorcraftState {
   /** Ground-only physical teeter coordinate. Separate from the unchanged aerodynamic harmonics.
@@ -276,6 +359,22 @@ export interface RotorcraftState {
    * lowRpmLight: powered LOW RPM indication, independent of collective position.
    * lowRpmHorn: audible warning below the type's threshold with collective not fully down. */
   clutchEngagement: number; clutchLight: boolean; governorActive: boolean; lowRpmHorn: boolean; lowRpmLight: boolean;
+  // ---- Hingeless / rigid-rotor programme (plan revision 2, section 3.3). Each block is optional, never in
+  // emptyRotorcraftState(), deleted at the top of Rotorcraft.reset(), CREATED IN reset() for a type that declares the
+  // feature (never lazily, so a restore always overwrites it), deep-copied by cloneRotorcraftState and validated by
+  // sim/resume.ts. Legacy types never carry them, so the legacy digests are unchanged.
+  /** First-harmonic Pitt-Peters inflow states, m/s, shaft axes (RC). */
+  harmonicInflow?: { cos: number; sin: number };
+  /** |hub moment| in the shaft frame, N m, hingeless hubs only (RC; the Bo 105 mast-moment indicator). */
+  mastMoment?: number;
+  /** Second engine and the twin warning unit (TW). */
+  twinTurboshaft?: TwinTurboshaftState;
+  /** Control gyro tilt relative to the shaft, rad, and the configuration in use (AG). */
+  controlGyro?: ControlGyroState;
+  /** Pusher propeller (AC). */
+  pusher?: PusherState;
+  /** Scripted events (AH). */
+  events?: { halfPHop?: HalfPHopState };
 }
 /**
  * Cyclic blade-pitch command of the stick, rad: `aft` (+ = disc aft, ControlInputs.elevator +) and `right`
@@ -298,7 +397,27 @@ export function cloneRotorcraftState(s: RotorcraftState): RotorcraftState {
     ...(s.contactRotor ? { contactRotor: { ...s.contactRotor } } : {}),
     ...(s.springTrim ? { springTrim: { ...s.springTrim } } : {}),
     ...(s.turboshaft ? { turboshaft: { ...s.turboshaft } } : {}),
-    ...(s.articulated ? { articulated: { blades: s.articulated.blades.map(b => ({ ...b })) } } : {}) };
+    ...(s.articulated ? { articulated: { blades: s.articulated.blades.map(b => ({ ...b })) } } : {}),
+    ...(s.harmonicInflow ? { harmonicInflow: { ...s.harmonicInflow } } : {}),
+    ...(s.twinTurboshaft ? { twinTurboshaft: { ...s.twinTurboshaft, second: { ...s.twinTurboshaft.second } } } : {}),
+    ...(s.controlGyro ? { controlGyro: { ...s.controlGyro } } : {}),
+    ...(s.pusher ? { pusher: { ...s.pusher } } : {}),
+    ...(s.events ? { events: { ...(s.events.halfPHop ? { halfPHop: { ...s.events.halfPHop } } : {}) } } : {}) };
+}
+/**
+ * Governed rotor speed, rpm: nominalRpm verbatim on every type without a control gyro; with one, the configuration's
+ * fraction of nominalRpm (AH-56A AMCS 0.975 -> 239.85 rpm, ICS 1.0 -> 246 rpm). Used by Rotorcraft.reset and the
+ * flight model's reset (engine rpm), so the beep set point follows.
+ */
+export function governedRpm(d: RotorcraftDefinition, config?: GyroConfigId): number {
+  if (!d.controlGyro) return d.nominalRpm;
+  return d.nominalRpm * d.controlGyro.configs[config ?? d.controlGyro.default].nominalRpmFraction;
+}
+/** Drivetrain inertia referred to the rotor, kg m^2: main + tail x ratio^2 (+ pusher x ratio^2 when present). Used only
+ *  on the pusher branch; legacy sites keep their own expression text. */
+export function drivetrainInertia(d: RotorcraftDefinition): number {
+  const base = d.main.inertia + d.tail.inertia * d.tailRatio ** 2;
+  return d.pusher ? base + d.pusher.inertia * d.pusher.ratio ** 2 : base;
 }
 export function emptyRotorcraftState(): RotorcraftState {
   return { omega: 0, azimuth: 0, inflow: 0, tailInflow: 0, flapForward: 0, flapRight: 0,

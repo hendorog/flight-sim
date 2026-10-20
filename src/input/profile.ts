@@ -67,6 +67,27 @@ export interface InputProfile {
   conditionDetents?: { groundIdle: number };
   /** Governor beep switch on the collective: the propDecrease / propIncrease keys drive ControlInputs.n2Beep while held. */
   n2Beep?: boolean;
+  // ---- Hingeless / rigid-rotor programme (plan revision 2, section 5). Declared at S0; TW implements them (it owns
+  // src/input/**). Absent: today's behaviour.
+  /** Twin turboshaft levers: 'overheadPowerLevers' (Bo 105: two levers OFF - IDLE - FLIGHT on the per-engine
+   *  ControlInputs.engines[i].throttle with the twistGrip stops; the engine-select keys move the selected lever). */
+  engineLever?: 'twistGrip' | 'overheadPowerLevers';
+  /** ENGINE TRIM left/right keys drive ControlInputs.n2BeepSplit while held (Bo 105). */
+  n2BeepSplit?: boolean;
+  /** Pusher twist grip (AH-56A): the propeller increase/decrease keys move ControlInputs.propLever (the Nf beep, when
+   *  `n2Beep` is also set, moves to a shifted pair); `snaps` are lever positions for the snap keys (hover detent
+   *  -2.2 deg, autorotation +8 deg, full reverse -12 deg), `detent` the hover detent. */
+  propLever?: { detent: number; snaps: readonly number[] };
+  /** Tail-wheel lock toggle key (ControlInputs.tailWheelLock). */
+  tailWheelLock?: boolean;
+  /** Gear lever keys on a rotorcraft with retractable wheels. */
+  gearLever?: boolean;
+  /** Toe brakes and the parking brake on a WHEELED rotorcraft: the brake actions are not hidden for this profile
+   *  (bindings.ts hides them for every rotorcraft today). */
+  wheelBrakes?: boolean;
+  /** Keyboard cyclic re-centres to the spring-trim anchor (at the Numpad-5 recentring rate) when no cyclic key is held,
+   *  and the mouse yoke has a small deadzone: a rate-command control gyro (AH-56A AMCS) holds attitude at stick centre. */
+  centringCyclic?: boolean;
   /** Stick pusher interrupt button on the control wheel (Shift+D, held): ControlInputs.pusherInterrupt. Absent: none. */
   pusherInterrupt?: boolean;
   /**

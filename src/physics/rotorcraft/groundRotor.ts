@@ -42,7 +42,7 @@ export function stepTeeter(angle: number, rate: number, inertia: number, stiffne
  * The ground envelope avoids introducing a new airborne rotor model. */
 export function advanceGroundRotor(d: RotorcraftDefinition, s: RotorcraftState, b: BodyState,
   c: ControlInputs, wind: Vec3, density: number, normalAcceleration: number, dt: number): void {
-  if (!d.groundRotor || d.hubModel?.kind === 'articulated' || dt <= 0) return;
+  if (!d.groundRotor || d.hubModel?.kind === 'articulated' || d.hubModel?.kind === 'hingeless' || dt <= 0) return;
   const p = d.groundRotor, blade = p.blade, rotor = d.main;
   const fraction = s.omega / (d.referenceRpm * Math.PI / 30);
   if (fraction >= 0.5) { delete s.contactRotor; return; }

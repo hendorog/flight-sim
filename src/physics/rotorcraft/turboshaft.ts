@@ -65,8 +65,12 @@ export class TurboshaftControl {
     return engine.omega * engine.gearRatio * 30 / Math.PI / engine.install.engine.ratedRpm;
   }
 
-  /** The droop compensator's datum: datumNg (flat-pitch N1) + anticipation x collective. */
-  datum(collective: number): number {
+  /** The droop compensator's datum: datumNg (flat-pitch N1) + anticipation x collective (+ propAnticipation x the
+   *  pusher lever on a type that declares it, AH-56A; seam placed at S0, TW owns this file). */
+  datum(collective: number, propLever?: number): number {
+    const prop = this.ts.governor.propAnticipation;
+    if (prop) return (this.ts.governor.datumNg ?? this.ts.plaNg.groundIdle) + this.ts.governor.anticipation * clamp(collective, 0, 1) +
+      prop * clamp(propLever ?? 0, 0, 1);
     return (this.ts.governor.datumNg ?? this.ts.plaNg.groundIdle) + this.ts.governor.anticipation * clamp(collective, 0, 1);
   }
 
@@ -108,7 +112,7 @@ export class TurboshaftControl {
     }
     s.grip = gripPosition(ts.grip, grip);
     const pla = plaNg(ts, grip);
-    const set = s.n2SetPct / 100, datum = this.datum(collective);
+    const set = s.n2SetPct / 100, datum = this.datum(collective, c.propLever);
     const ptg = datum + g.gain * (set - n2 - g.lead * n2Rate) + s.ptgIntegral;
     const governing = c.rotorGovernor !== false;
     let demand: number;

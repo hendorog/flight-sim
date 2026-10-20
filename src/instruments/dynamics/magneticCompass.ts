@@ -20,6 +20,7 @@ export const COMPASS_DEVIATION: Record<AircraftId, readonly [number, number, num
   pa34: [0.5, 1.8, -0.9, 0.5], da42: [0.2, -1.0, 0.6, -0.3],
   c208: [-0.3, 1.4, 0.9, -0.3], pc12: [0.5, -1.0, 0.8, 0.3],
   r22: [-0.4, 1.7, 0.8, 0.4], r44: [0.3, -1.5, 1.0, -0.4], s269: [-0.2, 1.9, -0.7, 0.5], md500: [1.0, 0.5, -1.2, 0.4],
+  bo105: [0.8, -0.6, 1.1, 0.3], ah56: [1.4, 0.5, -1.0, 0.6],
 };
 /** Compass indication minus magnetic heading, radians. */
 export function compassDeviation(heading: number, aircraft: AircraftId): number {

@@ -103,6 +103,11 @@ export interface SimPhysicsOptions {
   controls?: ControlInputs;
   /** The type flown. Default: the Cessna 172S. */
   aircraft?: AircraftDefinition;
+  /** Control-gyro configuration (URL config=amcs|ics; AH-56A): added to every reset's initial conditions. A restored
+   *  snapshot's own RotorcraftState.controlGyro.mode wins over it. */
+  rotorcraftConfig?: 'amcs' | 'ics';
+  /** URL halfp=1: arm the scripted half-P hop on every reset (AH-56A ICS demo/test hook). */
+  forceHalfPHop?: boolean;
 }
 
 /** Deep-copy plain data (numbers, booleans, strings, nested objects and arrays) from src into dst. */
@@ -170,7 +175,12 @@ export class SimPhysics {
   /** Current step size, s: stepSize, or 1 / COARSE_RATE during accelerated airborne flight. */
   private h: number;
 
+  /** Control-gyro configuration and the half-P hook, added to every InitialConditions this passes to fm.reset. */
+  private readonly rotorcraftConfig: 'amcs' | 'ics' | undefined;
+  private readonly forceHalfPHop: boolean;
   constructor(opts: SimPhysicsOptions) {
+    this.rotorcraftConfig = opts.rotorcraftConfig;
+    this.forceHalfPHop = opts.forceHalfPHop === true;
     this.events = opts.events;
     this.controls = opts.controls ?? defaultControls(opts.aircraft);
     this.env = createWorldEnvironment(opts.weather);
@@ -185,6 +195,13 @@ export class SimPhysics {
 
   get state(): AircraftState {
     return this.fm.state;
+  }
+
+  /** `ic` with the control-gyro configuration and the half-P hook of this run (unchanged when neither is set). */
+  private withRotorcraftOptions(ic: InitialConditions): InitialConditions {
+    if (!this.rotorcraftConfig && !this.forceHalfPHop) return ic;
+    return { ...ic, ...(this.rotorcraftConfig ? { rotorcraftConfig: this.rotorcraftConfig } : {}),
+      ...(this.forceHalfPHop ? { forceHalfPHop: true } : {}) };
   }
 
   /** Simulation time of the rendered state, s (resets to 0 with the scenario). */
@@ -213,7 +230,7 @@ export class SimPhysics {
     const tOld = this.time;
     this.scenario = sc;
     this.applyLoading(sc.payload ?? 'typical');
-    this.fm.reset(sc.ic, this.env);
+    this.fm.reset(this.withRotorcraftOptions(sc.ic), this.env);
     if (sc.attitude) this.rotateTo(sc.attitude.pitch, sc.attitude.roll);
     const c = this.controls;
     const trim = this.fm.trimControls;
@@ -363,6 +380,9 @@ export class SimPhysics {
       ic.feathered = sys.engines.map((e) => e.featherLatched);
     }
     if (def.geometry.gear.retractable) ic.gearDown = sys.gear.extension.every((x) => x > 0.5);
+    // The saved control-gyro configuration wins over the URL's (the restored state carries it too).
+    const savedConfig = sys.rotorcraft?.controlGyro?.mode;
+    Object.assign(ic, this.withRotorcraftOptions(ic), savedConfig ? { rotorcraftConfig: savedConfig } : {});
     try {
       fm.reset(ic, this.env);
     } catch {

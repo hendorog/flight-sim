@@ -78,8 +78,12 @@ import { Powerplant, PropulsionSystem } from './propulsion';
 import { CUTOFF_BELOW } from './propulsion/turbineEngine';
 import type { SimEnvironment } from './environment';
 import { Rotorcraft } from './rotorcraft/rotorcraft';
-import { cloneRotorcraftState } from './rotorcraft/definition';
+import { cloneRotorcraftState, governedRpm } from './rotorcraft/definition';
 import { SkidGear } from './rotorcraft/skids';
+import { RotorClearance, wheelRestingPose } from './rotorcraft/wheels';
+import type { EngineUnit } from './propulsion/engineUnit';
+import { pusherTrimLever } from './rotorcraft/pusher';
+import { stepTwinTurboshaft, twinResetEngineControls } from './rotorcraft/twinTurboshaft';
 import { solveNewton, trimFlight, type TrimCondition, type TrimPlant, type TrimResult, type TrimSpec } from './trim';
 
 export const DEFAULT_PHYSICS_RATE = 240;
@@ -213,6 +217,10 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   readonly state: AircraftState;
   readonly rotorcraft: Rotorcraft | null;
   private readonly skids: SkidGear | null;
+  /** Wheeled rotorcraft (landingGear 'wheels', AH-56A): the stinger/fin/rotor-strike checks the skids make otherwise. */
+  private readonly rotorClearance: RotorClearance | null;
+  /** Twin turboshaft (Bo 105): the engines after the first, coupled to the rotor through Rotorcraft.drive(). */
+  private readonly extraEngines: readonly EngineUnit[] | undefined;
   private rotorControls: ControlInputs | null = null;
   /**
    * Control positions that match the state produced by the last reset(): trimmed yoke, trim wheel, throttle,
@@ -359,7 +367,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     }
     this.state = makeState(def, gearConfig.retract !== undefined);
     this.rotorcraft = def.rotorcraft ? new Rotorcraft(def.rotorcraft) : null;
-    this.skids = def.rotorcraft ? new SkidGear(def.rotorcraft) : null;
+    this.skids = def.rotorcraft && def.rotorcraft.landingGear !== 'wheels' ? new SkidGear(def.rotorcraft) : null;
+    this.rotorClearance = def.rotorcraft?.landingGear === 'wheels' ? new RotorClearance(def.rotorcraft) : null;
     if (this.rotorcraft) this.state.rotorcraft = this.rotorcraft.state;
     this.trimControls = defaultControls(def);
     this.controlsIn = defaultControls(def);
@@ -434,7 +443,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     // Engines warm, as every in-air reset leaves them: a trim solved before the first reset() runs the engines its
     // controls run (cold-soaked, a FADEC engine does not light and a spark engine is down on power).
     this.propulsion.reset({ running: false, tanks: this.loading.tanks, warm: true });
-    if (this.rotorcraft) this.propulsion.units[0].externalDrive = true;
+    // Every engine of a rotorcraft drives the rotor (externalDrive); a twin's engines after the first go to drive().
+    if (this.rotorcraft) for (const unit of this.propulsion.units) unit.externalDrive = true;
+    this.extraEngines = def.rotorcraft?.systems.twinTurboshaft ? this.propulsion.units.slice(1) : undefined;
     this.prop = this.rotorcraft ? this.propulsion.step(this.propIn) : this.propulsion.settle(this.propIn);
     this.x[6] = 1;
   }
@@ -597,7 +608,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
 
   private resetRotorcraft(ic: InitialConditions, env: Environment, powerplant: Parameters<Powerplant['reset']>[0]): void {
     const r = this.rotorcraft!, d = r.def, c = this.trimControls;
-    r.reset(ic.engineRunning || !ic.onGround);
+    r.reset(ic.engineRunning || !ic.onGround, ic.rotorcraftConfig, ic.forceHalfPHop);
     r.state.takeoffMass = this.mp.mass;
     if (this.definition.input.threePositionClutch) {
       c.rotorClutchCommand = ic.engineRunning || !ic.onGround ? 'engage' : 'release';
@@ -607,7 +618,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     }
     if (r.state.transmission) r.state.transmission.oilTemperatureC = this.atmosphere.temperature - 273.15;
     r.state.rotorRpm = r.state.omega * 30 / Math.PI;
-    this.propulsion.reset({ ...powerplant, rpm: ic.engineRunning ? d.nominalRpm * d.engineRatio : 0, warm: !ic.onGround || ic.engineRunning });
+    this.propulsion.reset({ ...powerplant, rpm: ic.engineRunning ? (d.controlGyro ? governedRpm(d, ic.rotorcraftConfig) * d.engineRatio
+      : d.nominalRpm * d.engineRatio) : 0, warm: !ic.onGround || ic.engineRunning });
     c.throttle = ic.engineRunning ? 1 : 0;
     // A turboshaft: the grip FULL OPEN with fuel on when running (the governor flies the engine), CUTOFF when not;
     // the igniters off (auto-reignition fires them); transmission oil already up when the rotor turns.
@@ -617,6 +629,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
         Math.min(1, r.state.rotorRpm / d.transmission!.pumpRpm);
     }
     c.collective = 0; c.parkingBrake = false; c.elevatorTrim = 0;
+    // Pusher (AC): the trim starts from the scheduled prop lever.
+    if (d.pusher) c.propLever = pusherTrimLever(d, ic.airspeed);
     let orientation = quat.fromEuler(0, 0, ic.heading);
     let position = { ...ic.position };
     const path = ic.flightPathAngle ?? 0;
@@ -627,7 +641,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       // a third of the travel from full aft), not at the stick's centre.
       const l = d.cyclicLimits;
       if (l) { c.elevator = (l.forward - l.aft) / (l.forward + l.aft); c.aileron = (l.left - l.right) / (l.left + l.right); }
-      const pose = this.skids!.restingPose(this.mp.mass, this.mp.cgOffset);
+      const pose = this.skids ? this.skids.restingPose(this.mp.mass, this.mp.cgOffset)
+        : wheelRestingPose(this.definition.geometry.gear, this.mp.mass, this.mp.cgOffset);
       position.z = -this.groundElevation - pose.height;
       orientation = quat.fromEuler(pose.roll, pose.pitch, ic.heading);
       this.lastTrim = null;
@@ -690,6 +705,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       // whose output-shaft torque drives the trimmed rotor at the reset speed.
       unit.steady = true;
       ec.engines = [{}];
+      if (d.systems.twinTurboshaft) ec.engines = twinResetEngineControls();
       for (let i = 0; i < 40; i++) {
         ec.throttle = (lo + hi) / 2;
         this.prop = this.propulsion.step(this.propIn);
@@ -1144,13 +1160,15 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       Object.assign(engineControls, controls);
       const ts = this.rotorcraft.turboshaft;
       // A turboshaft's fuel control and N2 governor replace the piston governor/correlator (throttle(), unchanged).
-      if (ts) ts.stepTurboshaft(h, controls, this.propulsion.units[0], engineControls, this.prop.electrical.busVoltage);
+      if (ts && this.extraEngines) stepTwinTurboshaft(h, controls, this.propulsion.units, engineControls,
+        this.prop.electrical.busVoltage, ts, this.rotorcraft.state);
+      else if (ts) ts.stepTurboshaft(h, controls, this.propulsion.units[0], engineControls, this.prop.electrical.busVoltage);
       else engineControls.throttle = this.rotorcraft.throttle(h, controls, this.propulsion.units[0]);
       this.propIn.controls = engineControls;
     }
     this.prop = this.propulsion.step(this.propIn);
     this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage,
-      this.state.onGround);
+      this.state.onGround, this.extraEngines);
     const scales = this.dragScales;
     if (scales) {
       const units = this.propulsion.units;
@@ -1256,7 +1274,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     ai.heightAGL = -b.position.z - this.groundElevation;
     ai.dt = stage === 0 ? h : 0;
     const rotorLoads = this.rotorcraft?.compute(b, this.wind0, this.atmosphere.density, ai.heightAGL,
-      this.rotorControls ?? this.trimControls, ai.dt);
+      this.rotorControls ?? this.trimControls, ai.dt, this.atmosphere.speedOfSound);
     const a = rotorLoads ? { ...rotorLoads, lift: -rotorLoads.force.z, drag: 0, stallWarning: false,
       stallFraction: 0 } as AeroOutput : this.aero.compute(ai);
     // Skid contact history, like rotor inflow, advances only at stage zero. Advancing it at
@@ -1274,6 +1292,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     }
     if (g.crash && !this.crashReason) this.crashReason = g.crash;
     if (this.rotorcraft?.state.mastBump && !this.crashReason) this.crashReason = 'Main rotor teeter stop contact (mast bump)';
+    // Wheeled rotorcraft strike checks (AG) and the scripted half-P hop's rotor strike (AH).
+    if (this.rotorClearance && !this.crashReason) this.crashReason = this.rotorClearance.check(b, this.rotorcraft!.state, ai.heightAGL) ?? '';
+    if (this.rotorcraft?.state.events?.halfPHop?.strike && !this.crashReason) this.crashReason = 'Main rotor struck the fuselage (half-P hop)';
 
     const p = this.prop;
     const fx = a.force.x + p.force.x + g.force.x;

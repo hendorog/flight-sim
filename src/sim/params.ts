@@ -106,6 +106,10 @@ export interface SimParams {
   ui: boolean;
   autoflight: boolean;
   helicopterHover: boolean;
+  /** config=amcs|ics: the control-gyro configuration of a type that has one (AH-56A); null when absent or unknown. */
+  rotorcraftConfig: 'amcs' | 'ics' | null;
+  /** halfp=1: arm the scripted half-P hop (AH-56A ICS demo/test hook). */
+  forceHalfPHop: boolean;
   /** Explicit R22 scripted flight (ignored for other aircraft). */
   demo: R22DemoId | null;
   demoTrace: boolean;
@@ -262,6 +266,8 @@ export function parseParams(search: string): SimParams {
     ui: q.get('ui') !== '0',
     autoflight: q.get('ap') === '1',
     helicopterHover: q.get('hover') === '1',
+    rotorcraftConfig: q.get('config') === 'amcs' || q.get('config') === 'ics' ? q.get('config') as 'amcs' | 'ics' : null,
+    forceHalfPHop: q.get('halfp') === '1',
     demo: isR22Demo(q.get('demo')) ? q.get('demo') as R22DemoId : null,
     demoTrace: q.get('trace') === '1',
     run: Math.max(0, num('run') ?? 0),
