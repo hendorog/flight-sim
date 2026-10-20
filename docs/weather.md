@@ -653,3 +653,35 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
 - Default weather, camera 400 m AGL at the airport, `freeze=1`: 292 of 230 400 pixels differ from commit a4b067e,
   by at most 1 of 255.
 - No console errors or warnings and no shader compile errors on any page above.
+
+## Integration checks (2026-10-20, cumulus noise for the cells, local precipitation, hail)
+
+- `npx tsc --noEmit`: no errors.
+- `npx vitest run tests/weather tests/sim tests/render tests/sky tests/clouds tests/audio tests/ui
+  tests/aircraft/contract.test.ts tests/training/syllabus.test.ts`: 78 files, 867 passed, 3 skipped, 1 failed (a
+  5 s time-out in `tests/sim/weatherPresets.test.ts`, which passes run alone).
+- `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: 51 of 53 pass; the 2 failures are the `c172Sim` records
+  `autoflight.runway` and `restore.cruise`.
+- `npx vitest run` (with browser screenshot jobs running beside it): 4318 passed, 30 failed, 318 skipped, in
+  2468 s. 23 of the failures are in the baseline list. The other 7 (time-outs in `s269Setup`, `firstMinuteTrace`,
+  `weatherPresets`, two in `stormField`, one in `weather`, and the `env.wind` cost tests at 34.1 and 39.8 µs) pass
+  when run alone with no browser running; `env.wind` then measures 11.8 µs with the clock fixed and 24.2 µs with the
+  clock advanced every 4 calls (derived cells), 11.2 µs for the four explicit cells.
+- Browser checks, Chromium with SwiftShader, 640x360, `quality=medium`, no console errors or warnings and no shader
+  compile errors on any page below:
+  - Default weather, `dev/weather.html`, camera 400 m AGL at the airport, `freeze=1`: 479 of 230 400 pixels differ
+    from commit 9269cf4, by at most 1 of 255. Two runs of 9269cf4 differ by 1979 pixels (at most 1 of 255); two runs
+    of this tree by 1491 pixels (at most 1 of 255) and, in one further run, by 24 570 pixels (at most 10 of 255).
+  - Commit 9269cf4, same page, a cell 1.5 km north, camera 303 m MSL under a 420 m base: diagonal hatching over the
+    murk, the pattern the owner's screenshots show.
+  - Camera flown north through a cell (R 3 km, intensity 0.9, base 700 m) at 300 m MSL in 750 m steps, `mode=cockpit`
+    (the march's near clip only): the precipitation at the camera rose 0, 15.6, 31.6, 49.9, 58.2 mm/h to the core and
+    fell 54.4, 27.3, 7.0, 0 mm/h beyond it; no frame shows a straight edge or an arc of the shaft.
+  - `index.html?scenario=cruise&cam=cockpit`, a cell of intensity 0.9 at the start of the cruise: within 25 s of
+    simulated flight the C172 lost 500 m and broke up at 181 KCAS (the cells' downdraft and turbulence, physics
+    unchanged); with intensity 0.6, 55 s and the same end. The exit and entry sequences were therefore taken with the
+    simulation paused and the fixed camera moved 300 m per frame at 1250 m MSL (12 frames each, 3.3 km): the murk
+    thins over frames 5 to 9 of the exit, the cumulus at the horizon appears without a cut edge, and no frame shows
+    a straight edge or an arc. The HUD showed `HAIL MODERATE` with the aircraft in the core.
+  - The storm march converges in about 40 frames on SwiftShader; shots taken after 16 to 20 frames still show the
+    jitter's noise on lit lobes.
