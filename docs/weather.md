@@ -86,8 +86,9 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
     (`fallSpeedAt`); a storm-rain drop also carries `STORM_STREAK_SCENE_GAIN` 0.7 of the scene behind it. The direct
     sun on the drops is dimmed by the storm cells' cloud above the camera (`stormOverheadTau`). Hail: a second grid
     aligned with the motion of the mean stone relative to the camera, `HAIL_SLOTS` 2 hashes per shell, stones per
-    cell from the number density (`hailNumberDensity`) times `HAIL_COUNT_SCALE` 0.35, each an opaque white-grey
-    pellet (`HAIL_SKY_GAIN` 0.65, `HAIL_SUN_GAIN` 0.2) of a diameter from the size distribution, streaked by its own
+    cell from the number density (`hailNumberDensity`) times `HAIL_COUNT_SCALE` 2, each an opaque white-grey
+    pellet (`HAIL_SKY_GAIN` 0.65, `HAIL_SUN_GAIN` 0.2; under 1 px its coverage is its width plus `HAIL_SUBPIXEL_FLOOR`
+    0.3) of a diameter from the size distribution, streaked by its own
     fall speed. All unconfirmed look values. The streaks have no fade-out. Streaks on shells of 2, 5, 12 and 30 m about the camera on `high` and `ultra`, and
     2, 6 and 20 m on `medium`, up to `MAX_DROPS_PER_CELL` 4 drops per grid cell (`SLOTS_PER_DROP` 3 slots per mean
     drop; at most 16 pcg4d hashes per pixel on `high` and `ultra`, 12 on `medium`). Rain and drizzle streaks span

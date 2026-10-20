@@ -254,7 +254,7 @@ export function heavyRainShare(rateMmH: number): number {
 /** Hail slots per grid cell the shader reads, at most (one pcg4d hash each). */
 export const HAIL_SLOTS = 2;
 /** Multiplier on the physical number of stones on a shell (hailPerCell). Unconfirmed: a look value. */
-export const HAIL_COUNT_SCALE = 0.35;
+export const HAIL_COUNT_SCALE = 2;
 
 /**
  * Mean number of stones on shell k (radii: the quality's shell list) in a cell `scale` times CELL_ANGLE long, at a

@@ -73,6 +73,8 @@ import {
   type V3,
 } from './precipOptics';
 
+/** Coverage added to a sub-pixel hailstone's width share (the shader's pellet). Unconfirmed: a look value. */
+export const HAIL_SUBPIXEL_FLOOR = 0.3;
 /** Shells the shader reads (the length of its uniform arrays). */
 export const MAX_SHELLS = 4;
 /** Mean full width of a rain or drizzle streak on the screen, px. */
@@ -297,7 +299,9 @@ void main() {
         float ratio = length(uHailMotion.xyz + vec3(0.0, uHailMotion.w - vd, 0.0)) / gridSpeed;
         float l = min(B.x * ratio / A.z, max(0.0, 1.0 - 2.0 * marginS));
         float wPx = D * 0.001 / (A.x * uPixelAngle);
-        float sub = min(1.0, wPx);
+        // A stone under 1 px is drawn 1 px across with its coverage scaled by its width plus HAIL_SUBPIXEL_FLOOR
+        // (an opaque white stone shows above its share of the pixel). Unconfirmed: a look value.
+        float sub = min(1.0, wPx + ${HAIL_SUBPIXEL_FLOOR.toFixed(2)});
         float w = min(max(wPx, 1.0), wFit);
         float across = marginP + (1.0 - 2.0 * marginP) * r.y;
         float head = marginS + r.z * max(0.0, 1.0 - l - 2.0 * marginS);
