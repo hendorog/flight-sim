@@ -15,7 +15,7 @@ import type { SimContext } from '../core/context';
 import { FT, FPM, KT, RAD, wrapTwoPi } from '../core/math';
 import { lagStep } from '../instruments/dynamics/filters';
 import { el, hiDpiCanvas, setText } from './dom';
-import { carbHeatOn, flapLimitCas, gearCue, gearLimitCas, OverspeedTimer, speedBands, speedLines, type SpeedBand, type SpeedLine } from './hudCues';
+import { carbHeatOn, flapLimitCas, gearCue, hailCue, gearLimitCas, OverspeedTimer, speedBands, speedLines, type SpeedBand, type SpeedLine } from './hudCues';
 import { applyParkingCue, CRASHED_CUE, parkingBrakeCue } from './status';
 
 /** What the HUD needs to know about the type flown. */
@@ -67,7 +67,7 @@ export class Hud {
   private readonly vs: HTMLElement;
   private readonly g: HTMLElement;
   private readonly annunc: HTMLElement;
-  private readonly chips: Record<'stall' | 'park' | 'brake' | 'crash' | 'gear' | 'carb' | 'flapSpeed' | 'gearSpeed', HTMLElement>;
+  private readonly chips: Record<'stall' | 'park' | 'brake' | 'crash' | 'gear' | 'carb' | 'flapSpeed' | 'gearSpeed' | 'hail', HTMLElement>;
   private readonly controls: HTMLElement;
   private levers: { def: HudLever; fill: HTMLElement; value: HTMLElement }[] = [];
   private readouts: { def: HudReadout; value: HTMLElement }[] = [];
@@ -109,6 +109,7 @@ export class Hud {
       carb: el('div', 'chip info hidden', this.annunc, 'CARB HEAT'),
       flapSpeed: el('div', 'chip warn hidden', this.annunc, 'FLAP SPEED'),
       gearSpeed: el('div', 'chip warn hidden', this.annunc, 'GEAR SPEED'),
+      hail: el('div', 'chip hidden', this.annunc),
     };
 
     this.controls = el('div', 'controls', root);
@@ -216,6 +217,12 @@ export class Hud {
     this.chips.flapSpeed.classList.toggle('hidden', !flapSpeed);
     const gearSpeed = this.gearOverspeed.step(dt, s.ias, gearLimitCas(a.limits, s.gear));
     this.chips.gearSpeed.classList.toggle('hidden', !gearSpeed);
+    const hail = hailCue(ctx.weatherFx?.hail?.level);
+    this.chips.hail.classList.toggle('hidden', !hail);
+    if (hail) {
+      setText(this.chips.hail, hail.text);
+      for (const level of ['warn', 'alert'] as const) this.chips.hail.classList.toggle(level, hail.level === level);
+    }
 
     for (const l of this.levers) {
       const v = l.def.read(c, s);

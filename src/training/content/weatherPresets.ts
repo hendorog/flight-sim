@@ -11,6 +11,9 @@
 import type { WeatherSettings } from '../../core/types';
 import { fogOf, precipOf, stormsOf, type FogLayer, type Precip } from '../../core/weatherFields';
 import { StormField, proceduralStorms } from '../../physics/weather/stormField';
+import { AIRPORT } from '../../core/world';
+import { HAIL_GR_MM } from '../../physics/weather/hail';
+import { emptyLocalPrecip, localPrecipAt } from '../../physics/weather/stormPrecip';
 import type { Rng, WeatherPresetId, WeatherSpec } from '../types';
 
 /** Each preset is a partial override of the player's weather plus default sampling ranges. */
@@ -162,9 +165,40 @@ function stormsAtField(w: Readonly<WeatherSettings>): { ts: boolean; cb: boolean
   return { ts, cb };
 }
 
+/** Distance from the airport within which hail counts as at the airport, m (the four points of hailAtField). */
+export const HAIL_NEAR_M = 3000;
+/** Hail rate from which GR or GS is reported, mm/h. */
+export const HAIL_REPORT_MMH = 0.05;
+
+const _local = emptyLocalPrecip();
+
+/**
+ * The storm cells' hail at the airport (physics/weather/stormPrecip.ts localPrecipAt at simulation time 0, 2 m above
+ * the field elevation, at the NED origin and at HAIL_NEAR_M north, east, south and west of it): the largest rate and
+ * the largest stone where it is largest. Explicit cells as listed; derived cells selected at the airport. 0 without
+ * cells.
+ */
+export function hailAtField(w: Readonly<WeatherSettings>): { rateMmH: number; maxMm: number } {
+  const ww = w as WeatherSettings;
+  const cells = proceduralStorms(ww) ? _storms.select(ww, 0, 0, 0) : stormsOf(ww);
+  let rate = 0, max = 0;
+  if (cells.length === 0) return { rateMmH: 0, maxMm: 0 };
+  const cape = _storms.convective(ww).capeJkg;
+  for (const [n, e] of [[0, 0], [HAIL_NEAR_M, 0], [0, HAIL_NEAR_M], [-HAIL_NEAR_M, 0], [0, -HAIL_NEAR_M]]) {
+    const p = localPrecipAt(ww, cells, 0, cape, n, e, AIRPORT.elevation + 2, _local);
+    if (p.hailMmH > rate) {
+      rate = p.hailMmH;
+      max = p.hailMaxMm;
+    }
+  }
+  return { rateMmH: rate, maxMm: max };
+}
+
 /**
  * Present-weather groups of the optional fields (core/weatherFields.ts), in METAR order: TS (stormsAtField), then the precipitation (DZ; -RA / RA / +RA below 2.5 / 10 mm/h / above; -SN / SN / +SN below 1 /
- * 2.5 mm/h / above), then FG for a ground fog layer. Empty when the fields are absent.
+ * 2.5 mm/h / above), then GR (hail, the largest stone HAIL_GR_MM or more) or GS (small hail) when the storm cells'
+ * hail at the airport (hailAtField) reaches HAIL_REPORT_MMH, then FG for a ground fog layer. Empty when the fields
+ * are absent.
  */
 function presentWeather(w: Readonly<WeatherSettings>, ts: boolean): string[] {
   const groups: string[] = [];
@@ -175,6 +209,8 @@ function presentWeather(w: Readonly<WeatherSettings>, ts: boolean): string[] {
     else if (p.type === 'rain') groups.push(p.rateMmH < 2.5 ? '-RA' : p.rateMmH < 10 ? 'RA' : '+RA');
     else if (p.type === 'snow') groups.push(p.rateMmH < 1 ? '-SN' : p.rateMmH < 2.5 ? 'SN' : '+SN');
   }
+  const hail = hailAtField(w);
+  if (hail.rateMmH >= HAIL_REPORT_MMH) groups.push(hail.maxMm >= HAIL_GR_MM ? 'GR' : 'GS');
   if (fogOf(w, _fog).topM > 0) groups.push('FG');
   return groups;
 }

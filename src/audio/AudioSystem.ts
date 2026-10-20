@@ -558,7 +558,7 @@ export class AudioSystem implements Subsystem {
 
   private pushParams(dt: number): void {
     const ctx = this.ctx;
-    const params = this.tracker.update(ctx.state, ctx.controls, ctx.env, ctx.weather, dt);
+    const params = this.tracker.update(ctx.state, ctx.controls, ctx.env, ctx.weather, dt, ctx.weatherFx?.precip);
     this.g?.synth.port.postMessage(params);
   }
 

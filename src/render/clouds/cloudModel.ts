@@ -152,15 +152,16 @@ export const SUBSIDE_TOP_CUT = 0.6;
  * Gust-front cloud (shelf or arcus) on the outflow boundary of a mature cell: lateral coverage up to GUST_COVER
  * times its rain share in a band from GUST_INNER to GUST_OUTER core radii around the downdraft centre, peaking at
  * GUST_PEAK, GUST_BACK of it on the side away from the cell's motion, top at GUST_TOP of the nominal layer depth
- * (the outflow of physics/weather/convection.ts tapers out from 2.5 to 3 R about the same centre). Unconfirmed: look
- * values.
+ * (the outflow of physics/weather/convection.ts tapers out from 2.5 to 3 R about the same centre). A coverage above 1
+ * fills the band's core; at 0.75 and a top of 0.3 the band held cloud 250 m deep over 1.5 km of its width.
+ * Unconfirmed: look values.
  */
 export const GUST_INNER = 2.5;
 export const GUST_PEAK = 3;
 export const GUST_OUTER = 3.5;
-export const GUST_COVER = 0.75;
+export const GUST_COVER = 1.4;
 export const GUST_BACK = 0.25;
-export const GUST_TOP = 0.3;
+export const GUST_TOP = 0.5;
 
 /** The convective activity of a weather for the drawn layer (one cached evaluation for every caller). */
 const _activity = new StormField();

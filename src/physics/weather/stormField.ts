@@ -76,6 +76,9 @@
 // selected cell unless three scores lie within RANK_MARGIN_MIN. When a cell overtakes the lowest selected one both
 // scores equal sOut, so the weight of the cell leaving the set is 0 at that moment; when two selected cells swap
 // both weights are equal. The weights are continuous in the point and in time.
+//   Cache: the live cells are kept for points within REUSE_M of the point they were built for and clock readings
+//   within CLOCK_REUSE_S of their build clock. They hold every cell alive at some reading in that window, and
+//   choose() evaluates positions and life cycles at the current clock, so a reused cache gives what a rebuild gives.
 //
 // Unconfirmed: every constant below except the physical ones (G, LV, RD, CP, EPS, DRY_LAPSE and the saturation
 // vapour pressure fit) is a tuning value chosen for this model, not taken from observations.
@@ -188,6 +191,11 @@ export const RANK_MARGIN = 0.05;
 export const RANK_MARGIN_MIN = 0.025;
 /** The candidate list is rebuilt when the reference point moves this far from where it was built, m. */
 const REUSE_M = 10_000;
+/**
+ * ... or when the weather clock moves this far from the clock it was built at, s. The list holds every cell alive
+ * at some clock reading within it, so the selection does not depend on when the list was built.
+ */
+export const CLOCK_REUSE_S = 10;
 const SALT = 0x63626c74;
 const REGION_SALT = 0x7267696f;
 
@@ -304,23 +312,31 @@ export function convectiveState(w: WeatherSettings, out: ConvectiveState): Conve
 }
 
 // ---------------------------------------------------------------------------------------------- the field
-/** A live cell of the lattice at the field's clock T (positions NED m at T). */
+/**
+ * A cell of the lattice alive at some clock reading within CLOCK_REUSE_S of the build clock: what does not depend
+ * on the clock (birth position NED m, birth time and lifetime on the weather clock, s, the values hashed or taken
+ * from the birth activity); choose() evaluates its position and life cycle at the current clock.
+ */
 interface Candidate {
   id: number;
-  north: number;
-  east: number;
-  radius: number;
-  top: number;
+  north0: number;
+  east0: number;
+  birth: number;
+  life: number;
+  /** Full core radius, m; top above the base at full growth, m. */
+  radiusFull: number;
+  topSpan: number;
   intensity: number;
   exist: number;
+  /** At the clock StormField.evalClock (choose()): position, age (s; NaN when not alive), core and anvil shares. */
+  north: number;
+  east: number;
+  age: number;
   core: number;
   anvil: number;
-  rain: number;
-  flash: number;
-  wind: number;
 }
 
-const makeCandidate = (): Candidate => ({ id: 0, north: 0, east: 0, radius: 0, top: 0, intensity: 0, exist: 0, core: 0, anvil: 0, rain: 0, flash: 0, wind: 0 });
+const makeCandidate = (): Candidate => ({ id: 0, north0: 0, east0: 0, birth: 0, life: 1, radiusFull: 0, topSpan: 0, intensity: 0, exist: 0, north: 0, east: 0, age: NaN, core: 0, anvil: 0 });
 const makeActive = (): ActiveStorm => ({
   northM: 0, eastM: 0, radiusM: 0, topM: 0, intensity: 0, motionDeg: 0, motionKt: 0, lightning: undefined, id: 0, derived: false, weight: 1, core: 1, anvil: 1, rain: 1, flash: 1, wind: 1,
 });
@@ -404,7 +420,10 @@ export class StormField {
   private readonly gridEl = new Float64Array(GRID_SLOTS);
   private readonly gridState = emptyConvectiveState();
   private gridWeather: WeatherSettings | null = null;
-  /** Largest activity at a birth time of a cell alive at the clock sClock (0: no cell). */
+  /** The weather clock of the last select, s, and the clock the candidates were last evaluated at (choose()). */
+  private clock = NaN;
+  private evalClock = NaN;
+  /** Largest activity at a birth time of a cell alive within CLOCK_REUSE_S of the clock sClock (0: no cell). */
   private windowMax = 0;
   /** Activity and equilibrium level at the birth time of the last birthSample call. */
   private bAct = 0;
@@ -473,12 +492,14 @@ export class StormField {
       this.sClock = NaN;
     }
     const T = stormClockS(w);
-    if (T !== this.sClock) {
+    this.clock = T;
+    if (!(Math.abs(T - this.sClock) <= CLOCK_REUSE_S)) {
       this.sClock = T;
-      // A cell alive at T was born in (T - LIFE_MAX_S, T); its birth sample lies between these grid points.
+      // A cell alive within CLOCK_REUSE_S of T was born in (T - CLOCK_REUSE_S - LIFE_MAX_S, T + CLOCK_REUSE_S); its
+      // birth sample lies between these grid points.
       let max = 0;
-      const k1 = Math.floor(T / BIRTH_GRID_S) + 1;
-      for (let k = Math.floor((T - LIFE_MAX_S) / BIRTH_GRID_S); k <= k1; k++) max = Math.max(max, this.gridActivity(w, k));
+      const k1 = Math.floor((T + CLOCK_REUSE_S) / BIRTH_GRID_S) + 1;
+      for (let k = Math.floor((T - CLOCK_REUSE_S - LIFE_MAX_S) / BIRTH_GRID_S); k <= k1; k++) max = Math.max(max, this.gridActivity(w, k));
       this.windowMax = max;
       this.kNorth = NaN;
     }
@@ -550,20 +571,27 @@ export class StormField {
     return list;
   }
 
-  /** Rebuild the live cells within FADE_END_M + REUSE_M (diagonal included) of (north, east) at the weather's clock. */
+  /**
+   * Rebuild the cells alive within CLOCK_REUSE_S of the clock sClock that lie within FADE_END_M + REUSE_M (diagonal
+   * included) of (north, east) at some clock reading in that window.
+   */
   private build(w: WeatherSettings, north: number, east: number): void {
     this.kNorth = north;
     this.kEast = east;
     this.count = 0;
-    const T = stormClockS(w);
+    this.evalClock = NaN;
+    const T = this.sClock;
+    const T0 = T - CLOCK_REUSE_S;
+    const T1 = T + CLOCK_REUSE_S;
     const S = SITE_SPACING_M;
-    const reach = FADE_END_M + REUSE_M * Math.SQRT2;
-    const jitter = SITE_JITTER * S;
     const steer = stormSteering(w, this.steer);
     const from = steer.fromDeg * DEG;
     const speed = steer.kt * KT;
     const vN = -Math.cos(from) * speed;
     const vE = -Math.sin(from) * speed;
+    // A cell moves up to speed CLOCK_REUSE_S between T and the clock it is read at.
+    const reach = FADE_END_M + REUSE_M * Math.SQRT2 + speed * CLOCK_REUSE_S;
+    const jitter = SITE_JITTER * S;
     // A cell born at p0 sits at p0 + v age, age <= LIFE_MAX_S: the birth sites lie up to v LIFE_MAX_S upwind.
     const dN = vN * LIFE_MAX_S;
     const dE = vE * LIFE_MAX_S;
@@ -581,44 +609,41 @@ export class StormField {
         const key = hashU32(row ^ Math.imul(j, 0x165667b1));
         const period = PERIOD_MIN_S + (PERIOD_MAX_S - PERIOD_MIN_S) * lowHalf(key);
         const phase = period * highHalf(key);
-        const g = Math.floor((T + phase) / period);
-        const gen = hashU32(key ^ Math.imul(g, 0x9e3779b1));
-        const life = LIFE_MIN_S + (LIFE_MAX_S - LIFE_MIN_S) * lowHalf(gen);
-        const birth = g * period - phase + (period - life) * highHalf(gen);
-        const age = T - birth;
-        if (!(age > 0 && age < life)) continue;
-        // The existence threshold u against the largest probability first (most sites stop here).
-        const u = unit(gen, 2);
-        if (u >= pMax) continue;
-        this.birthSample(w, birth);
-        const act = this.bAct;
-        if (u >= EXIST_MAX * act * REGION_MAX) continue;
-        const pExist = EXIST_MAX * act * (REGION_MIN + (REGION_MAX - REGION_MIN) * regionNoise(this.regionSeed, i * S, j * S));
-        const exist = clamp((pExist - u) / EXIST_SOFT, 0, 1);
-        if (exist <= 0) continue;
-        const pn = i * S + (2 * unit(gen, 3) - 1) * jitter + vN * age;
-        const pe = j * S + (2 * unit(gen, 4) - 1) * jitter + vE * age;
-        const dn = pn - north;
-        const de = pe - east;
-        if (dn * dn + de * de >= reach * reach) continue;
-        const a = age / life;
-        const grow = smoothstep(0, GROWTH_END, a);
-        const c = this.candidates[this.count] ?? (this.candidates[this.count] = makeCandidate());
-        this.count++;
-        c.id = gen & 0x3fffffff;
-        c.north = pn;
-        c.east = pe;
-        c.exist = exist;
-        c.radius = (RADIUS_MIN_M + (RADIUS_MAX_M - RADIUS_MIN_M) * unit(gen, 5)) * (0.6 + 0.4 * grow);
-        c.intensity = (INTENSITY_MIN + (1 - INTENSITY_MIN) * unit(gen, 6)) * (0.5 + 0.5 * act);
-        const ceiling = Math.max(base + MIN_CELL_DEPTH_M, Math.min(TOP_CEILING_M, this.bEl + OVERSHOOT_M));
-        const topMax = base + (ceiling - base) * (0.6 + 0.4 * act) * (0.8 + 0.2 * unit(gen, 7));
-        c.top = base + Math.max(MIN_GROWING_DEPTH_M, (Math.max(topMax, base + MIN_CELL_DEPTH_M) - base) * (0.3 + 0.7 * grow));
-        c.core = smoothstep(0, 0.1, a) * (1 - smoothstep(0.7, 0.95, a));
-        c.anvil = smoothstep(0.2, 0.4, a) * (1 - smoothstep(0.85, 1, a));
-        c.rain = smoothstep(0.25, 0.4, a) * (1 - smoothstep(0.7, 0.9, a));
-        c.flash = smoothstep(0.3, 0.4, a) * (1 - smoothstep(0.65, 0.8, a));
-        c.wind = smoothstep(0.05, 0.3, a) * (1 - smoothstep(0.75, 0.95, a));
+        // The generations covering the window (two when it spans a generation's end; PERIOD_MIN_S >> the window).
+        const g1 = Math.floor((T1 + phase) / period);
+        for (let g = Math.floor((T0 + phase) / period); g <= g1; g++) {
+          const gen = hashU32(key ^ Math.imul(g, 0x9e3779b1));
+          const life = LIFE_MIN_S + (LIFE_MAX_S - LIFE_MIN_S) * lowHalf(gen);
+          const birth = g * period - phase + (period - life) * highHalf(gen);
+          if (!(birth < T1 && birth + life > T0)) continue;
+          // The existence threshold u against the largest probability first (most sites stop here).
+          const u = unit(gen, 2);
+          if (u >= pMax) continue;
+          this.birthSample(w, birth);
+          const act = this.bAct;
+          if (u >= EXIST_MAX * act * REGION_MAX) continue;
+          const pExist = EXIST_MAX * act * (REGION_MIN + (REGION_MAX - REGION_MIN) * regionNoise(this.regionSeed, i * S, j * S));
+          const exist = clamp((pExist - u) / EXIST_SOFT, 0, 1);
+          if (exist <= 0) continue;
+          const n0 = i * S + (2 * unit(gen, 3) - 1) * jitter;
+          const e0 = j * S + (2 * unit(gen, 4) - 1) * jitter;
+          const dn = n0 + vN * (T - birth) - north;
+          const de = e0 + vE * (T - birth) - east;
+          if (dn * dn + de * de >= reach * reach) continue;
+          const c = this.candidates[this.count] ?? (this.candidates[this.count] = makeCandidate());
+          this.count++;
+          c.id = gen & 0x3fffffff;
+          c.north0 = n0;
+          c.east0 = e0;
+          c.birth = birth;
+          c.life = life;
+          c.exist = exist;
+          c.radiusFull = RADIUS_MIN_M + (RADIUS_MAX_M - RADIUS_MIN_M) * unit(gen, 5);
+          c.intensity = (INTENSITY_MIN + (1 - INTENSITY_MIN) * unit(gen, 6)) * (0.5 + 0.5 * act);
+          const ceiling = Math.max(base + MIN_CELL_DEPTH_M, Math.min(TOP_CEILING_M, this.bEl + OVERSHOOT_M));
+          const topMax = base + (ceiling - base) * (0.6 + 0.4 * act) * (0.8 + 0.2 * unit(gen, 7));
+          c.topSpan = Math.max(topMax, base + MIN_CELL_DEPTH_M) - base;
+        }
       }
     }
   }
@@ -630,8 +655,34 @@ export class StormField {
     const sc = this.topScore;
     const dist = this.topDist;
     let found = 0;
+    const T = this.clock;
+    const steer = stormSteering(w, this.steer);
+    const kt = steer.kt;
+    const from = steer.fromDeg * DEG;
+    if (T !== this.evalClock) {
+      // The candidates at the current clock (the wind is a key of the list: build() follows its change).
+      this.evalClock = T;
+      const speed = kt * KT;
+      const vN = -Math.cos(from) * speed;
+      const vE = -Math.sin(from) * speed;
+      for (let k = 0; k < this.count; k++) {
+        const c = this.candidates[k];
+        const age = T - c.birth;
+        if (!(age > 0 && age < c.life)) {
+          c.age = NaN;
+          continue;
+        }
+        c.age = age;
+        c.north = c.north0 + vN * age;
+        c.east = c.east0 + vE * age;
+        const a = age / c.life;
+        c.core = smoothstep(0, 0.1, a) * (1 - smoothstep(0.7, 0.95, a));
+        c.anvil = smoothstep(0.2, 0.4, a) * (1 - smoothstep(0.85, 1, a));
+      }
+    }
     for (let k = 0; k < this.count; k++) {
       const c = this.candidates[k];
+      if (!(c.age > 0)) continue;
       const dn = c.north - north;
       const de = c.east - east;
       const d2 = dn * dn + de * de;
@@ -660,20 +711,20 @@ export class StormField {
     const margin = clamp(sPrev - sOut, RANK_MARGIN_MIN, RANK_MARGIN);
     const list = this.list;
     list.length = 0;
-    const steer = stormSteering(w, this.steer);
-    const kt = steer.kt;
-    const from = steer.fromDeg * DEG;
     const travel = kt * KT * t;
+    const base = w.cloudBaseM;
     for (let m = 0; m < Math.min(found, MAX_STORMS); m++) {
       const c = this.candidates[idx[m]];
       const weight = c.exist * (1 - smoothstep(FADE_START_M, FADE_END_M, dist[m])) * clamp((sc[m] - sOut) / margin, 0, 1);
       if (!(weight > 0)) continue;
       const a = this.active[list.length];
-      // Anchored so that stormCentreAt(a, t) is the candidate's position.
+      const f = c.age / c.life;
+      const grow = smoothstep(0, GROWTH_END, f);
+      // Anchored so that stormCentreAt(a, t) is the candidate's position at the current clock.
       a.northM = c.north + Math.cos(from) * travel;
       a.eastM = c.east + Math.sin(from) * travel;
-      a.radiusM = c.radius;
-      a.topM = c.top;
+      a.radiusM = c.radiusFull * (0.6 + 0.4 * grow);
+      a.topM = base + Math.max(MIN_GROWING_DEPTH_M, c.topSpan * (0.3 + 0.7 * grow));
       a.intensity = c.intensity;
       a.motionDeg = steer.fromDeg;
       a.motionKt = kt;
@@ -683,9 +734,9 @@ export class StormField {
       a.weight = weight;
       a.core = weight * c.core;
       a.anvil = weight * c.anvil;
-      a.rain = weight * c.rain;
-      a.flash = weight * c.flash;
-      a.wind = weight * c.wind;
+      a.rain = weight * (smoothstep(0.25, 0.4, f) * (1 - smoothstep(0.7, 0.9, f)));
+      a.flash = weight * (smoothstep(0.3, 0.4, f) * (1 - smoothstep(0.65, 0.8, f)));
+      a.wind = weight * (smoothstep(0.05, 0.3, f) * (1 - smoothstep(0.75, 0.95, f)));
       list.push(a);
     }
     return list;

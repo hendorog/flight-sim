@@ -6,6 +6,7 @@ import type { LimitsDef, OverspeedRule, ReferenceSpeeds } from '../aircraft/type
 import { DEG } from '../core/math';
 import { engineControl, type ControlInputs, type GearState } from '../core/types';
 import type { CueLevel } from './status';
+import { HAIL_LEVEL_RANK, type HailLevel } from '../sim/weather/hailExposure';
 
 // --- Speed tape --------------------------------------------------------------------------------------
 
@@ -132,4 +133,40 @@ export function carbHeatOn(c: ControlInputs, engines: number): boolean {
 /** The control-position widget's mark of the engine(s) the engine keys act on. */
 export function engineSelectionLabel(sel: 'all' | 0 | 1 | undefined): 'L' | 'R' | 'BOTH' {
   return sel === 0 ? 'L' : sel === 1 ? 'R' : 'BOTH';
+}
+
+// --- Hail ----------------------------------------------------------------------------------------------
+
+/** HUD chip and toast of the hail on the airframe (sim/weather/hailExposure.ts), or null without hail. */
+export function hailCue(level: HailLevel | undefined): { text: string; level: CueLevel } | null {
+  if (!level || level === 'none') return null;
+  return { text: `HAIL ${level.toUpperCase()}`, level: level === 'light' ? 'warn' : 'alert' };
+}
+
+/** The toast when the hail warning rises to `level` from `prev` (null when it does not rise). */
+export function hailToast(prev: HailLevel, level: HailLevel): string | null {
+  if (HAIL_LEVEL_RANK[level] <= HAIL_LEVEL_RANK[prev]) return null;
+  return `Hail: ${level}`;
+}
+
+/** Shortest time between two hail toasts, s, unless the later one is for a higher level than the earlier. */
+export const HAIL_TOAST_MIN_S = 20;
+
+/** The hail toasts of one UI: hailToast on each rise, at most one per HAIL_TOAST_MIN_S for the same or a lower level. */
+export class HailToasts {
+  private prev: HailLevel = 'none';
+  private lastS = -Infinity;
+  private shownRank = 0;
+
+  /** The toast for the level at time nowS (s, any monotonic clock), or null. */
+  next(level: HailLevel, nowS: number): string | null {
+    const text = hailToast(this.prev, level);
+    this.prev = level;
+    if (!text) return null;
+    const rank = HAIL_LEVEL_RANK[level];
+    if (nowS - this.lastS < HAIL_TOAST_MIN_S && rank <= this.shownRank) return null;
+    this.lastS = nowS;
+    this.shownRank = rank;
+    return text;
+  }
 }

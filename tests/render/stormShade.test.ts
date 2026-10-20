@@ -22,7 +22,8 @@ describe('cellOverheadTau', () => {
 
   it('under the anvil beyond the core only the anvil, beyond the anvil nothing, above the top nothing', () => {
     const x = g.x + 0.8 * g.anvilRadius;
-    const anvil = 0.5 * STORM_ANVIL_SIGMA * STORM_SHADOW_ANVIL_FILL * (g.top - anvilBot - STORM_SHADOW_ANVIL_LIFT_M);
+    // The biweight profile at 0.8 of the anvil's radius: (1 - 0.8^2)^2.
+    const anvil = 0.1296 * STORM_ANVIL_SIGMA * STORM_SHADOW_ANVIL_FILL * (g.top - anvilBot - STORM_SHADOW_ANVIL_LIFT_M);
     expect(cellOverheadTau(g, x, 200, g.z)).toBeCloseTo(anvil, 9);
     expect(cellOverheadTau(g, g.x + 1.01 * g.anvilRadius, 200, g.z)).toBe(0);
     expect(cellOverheadTau(g, g.x, g.top + 10, g.z)).toBe(0);

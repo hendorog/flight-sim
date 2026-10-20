@@ -34,9 +34,9 @@
 // The voices added with the turbine types read the parameters appended at the very end of the block
 // (params.ts EXTRA_PARAMS) and draw from noise sources of their own; a profile without them builds none of them
 // and smooths none of those parameters, so every other type plays sample for sample as before. The precipitation
-// voice (airframe stem, every type) reads the last of them, 'rain': the appended parameters are smoothed from the
-// first block in which it is non-zero, and the voice draws only from sources of its own, so without precipitation
-// every type plays sample for sample as before.
+// voice (airframe stem, every type) reads 'rain' and the hail voice 'hail' and 'hailSize': the appended parameters
+// are smoothed from the first block in which 'rain' or 'hail' is non-zero, and each voice draws only from sources of
+// its own, so without precipitation and hail every type plays sample for sample as before.
 //
 // Every parameter is smoothed per sample (one-pole, ~30 ms) so frame-rate parameter updates never zipper,
 // and every transient has an attack ramp so nothing clicks.
@@ -119,6 +119,18 @@ const RAIN_HISS_HZ = 5200;
 const RAIN_TICK_GAIN = 2.0;
 const RAIN_THUD_GAIN = 1.0;
 const RAIN_HISS_GAIN = 0.18;
+// Hail voice (AircraftSynth.hailSound). Unconfirmed: tuning values set by ear, not measured: impacts a second at full
+// level, the pitch of the body ring for a 5 mm and a 50 mm stone, Hz, the bright click's centre, Hz, and the gains.
+const HAIL_IMPACTS_PER_S = 260;
+const HAIL_BODY_SMALL_HZ = 2400;
+const HAIL_BODY_LARGE_HZ = 520;
+const HAIL_CLICK_HZ = 4200;
+const HAIL_CLICK_GAIN = 3.2;
+const HAIL_BODY_GAIN = 2.6;
+const HAIL_RATTLE_GAIN = 0.5;
+/** Decay of an impact's noise burst, s. */
+const HAIL_BURST_S = 0.004;
+
 /** Standard normal-ish sample (sum of uniforms). */
 const gauss = (n) => (n.next() + n.next() + n.next()) * 0.577;
 
@@ -773,6 +785,16 @@ class AircraftSynth extends AudioWorkletProcessor {
     this.rainThudF.set(RAIN_THUD_HZ, 0.9);
     this.rainHissF = new SVF();
     this.rainHissF.set(RAIN_HISS_HZ, 0.7);
+    // Hail, likewise: drawn from only while the 'hail' parameter is on.
+    this.hailNoise = new Noise(0x6a09e667);
+    this.hailClickF = new SVF();
+    this.hailClickF.set(HAIL_CLICK_HZ, 2.5);
+    this.hailBodyF = new SVF();
+    this.hailBodyF.set(HAIL_BODY_SMALL_HZ, 6);
+    this.hailBodyHz = HAIL_BODY_SMALL_HZ;
+    this.hailBurst = 0;
+    this.hailHit = 0;
+    this.hailBurstK = Math.exp(-1 / (HAIL_BURST_S * SR));
 
     // Engine and propeller voices, and what else the profile sets.
     this.configure(DEFAULT_PROFILE);
@@ -898,7 +920,7 @@ class AircraftSynth extends AudioWorkletProcessor {
     if (d instanceof Float32Array) {
       this.target.set(d.subarray(0, PARAM_COUNT));
       // The first precipitation: smooth the appended parameters from now on (its own included).
-      if (!this.rainHeard && this.target[P.rain] > 0) {
+      if (!this.rainHeard && (this.target[P.rain] > 0 || this.target[P.hail] > 0)) {
         this.rainHeard = true;
         this.paramsUsed = PARAM_COUNT;
       }
@@ -1123,6 +1145,8 @@ class AircraftSynth extends AudioWorkletProcessor {
 
     const rain = v[P.rain];
     if (rain > 1e-4) out += this.rainSound(rain);
+    const hail = v[P.hail];
+    if (hail > 1e-4) out += this.hailSound(hail, v[P.hailSize]);
 
     return out;
   }
@@ -1140,6 +1164,33 @@ class AircraftSynth extends AudioWorkletProcessor {
     this.rainThudF.process(hit);
     const hiss = this.rainHissF.process(this.rainPink.next());
     return r * (tick * RAIN_TICK_GAIN + this.rainThudF.band * RAIN_THUD_GAIN) + r * r * hiss * RAIN_HISS_GAIN;
+  }
+
+  /**
+   * Hail on the skin and the windscreen, level `h` 0..1 (mapping.ts hailNoise), largest stone `sizeMm`: impacts as a
+   * random stream (HAIL_IMPACTS_PER_S x h a second), each a short noise burst of random strength rung through a bright
+   * click band and a resonant body band whose pitch falls from HAIL_BODY_SMALL_HZ to HAIL_BODY_LARGE_HZ as the stones
+   * grow (larger stones thud on the skin), and a rattle of the bursts themselves. Draws only from its own source.
+   */
+  hailSound(h, sizeMm) {
+    const nz = this.hailNoise;
+    const big = Math.min(1, Math.max(0, (sizeMm - 5) / 45));
+    const hz = HAIL_BODY_SMALL_HZ + (HAIL_BODY_LARGE_HZ - HAIL_BODY_SMALL_HZ) * big;
+    if (Math.abs(hz - this.hailBodyHz) > 5) {
+      this.hailBodyHz = hz;
+      this.hailBodyF.set(hz, 6);
+    }
+    if (nz.next() * 0.5 + 0.5 < (HAIL_IMPACTS_PER_S * h) / SR) {
+      // The stones vary in size: most impacts are of the smaller ones.
+      const u = nz.next() * 0.5 + 0.5;
+      this.hailHit = (0.3 + 0.7 * u * u) * (0.6 + 0.4 * big);
+      this.hailBurst = 1;
+    }
+    this.hailBurst *= this.hailBurstK;
+    const e = this.hailBurst * this.hailHit * nz.next();
+    const click = this.hailClickF.process(e);
+    this.hailBodyF.process(e);
+    return h * (click * HAIL_CLICK_GAIN + this.hailBodyF.band * HAIL_BODY_GAIN * (0.6 + 0.8 * big) + e * HAIL_RATTLE_GAIN);
   }
 
   crashSound(c) {

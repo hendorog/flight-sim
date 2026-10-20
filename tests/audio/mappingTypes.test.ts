@@ -57,11 +57,11 @@ describe('parameter block layout', () => {
     expect(ENGINE_PARAMS.map((n) => ENGINE_P[1][n])).toEqual([28, 29, 30, 31, 32, 33, 34, 35, 36, 37]);
     // The voices of the turbine types (PC-12, MD 500E) appended at the very end, after the second engine's block,
     // so every index above keeps its value (the frozen golden rigs send them as 0).
-    // Then the precipitation noise (render/weather, every type).
-    expect(EXTRA_PARAMS).toEqual(['reverse', 'shaker', 'overspeed', 'ignitor', 'tailRpm', 'tailLoad', 'tailTipMach', 'rain']);
-    expect(EXTRA_PARAMS.map((n) => P[n])).toEqual([38, 39, 40, 41, 42, 43, 44, 45]);
+    // Then the precipitation noise and the hail (every type).
+    expect(EXTRA_PARAMS).toEqual(['reverse', 'shaker', 'overspeed', 'ignitor', 'tailRpm', 'tailLoad', 'tailTipMach', 'rain', 'hail', 'hailSize']);
+    expect(EXTRA_PARAMS.map((n) => P[n])).toEqual([38, 39, 40, 41, 42, 43, 44, 45, 46, 47]);
     expect(PARAM_COUNT).toBe(38 + EXTRA_PARAMS.length);
-    expect(makeParamBlock()).toHaveLength(46);
+    expect(makeParamBlock()).toHaveLength(48);
     // No index is used twice.
     const all = [...Object.values(P), ...Object.values(ENGINE_P[1])];
     expect(new Set(all).size).toBe(PARAM_COUNT);

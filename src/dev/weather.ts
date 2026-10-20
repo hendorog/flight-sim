@@ -21,11 +21,15 @@
 //                                   screenshots; the simulation clock stays at that instant
 //   flasht=0.004                    the hold, s after the first stroke (0.06 and 0.12: the later strokes)
 //   flashid=0                       added to the held strike's id (its channel's shape)
+//   cshadow=0                       no cloud shadows applied in the clouds' composite (as the simulator runs)
+//   mode=cockpit                    the camera mode in the context (the storm march's near clip, the overlays' cabin test)
 // Example: dev/weather.html?cb=22,4&cam=0,0,400&look=22000,4000,5000&tod=19.2&flash=1
 // window.__weatherDev.strike(kind) starts a strike in the first cell at the current time; exposure() reads the eye
 // adaptation (log2 scene units: adapted, target) and the lightning overlay's ambient illuminance (scene units);
 // cells() lists the cells in effect at the camera ({north, east, distance, top, core, anvil, rain, flash}, m) and
-// activity() the derived convective state; post is the page's PostPipeline.
+// activity() the derived convective state; post is the page's PostPipeline. setCamera(n, e, alt, ln, le, lalt) moves
+// the camera (NED m, MSL) to look at a point; info() gives the precipitation at the camera (PrecipOverlay.local) and
+// the frames rendered.
 
 import * as THREE from 'three';
 import type { QualityLevel } from '../core/context';
@@ -39,6 +43,8 @@ import { PostPipeline } from '../render/post';
 import { SkySystem } from '../render/sky';
 import { createWeatherEffects, createWeatherOverlays } from '../render/weather';
 import type { LightningOverlay } from '../render/weather/LightningOverlay';
+import type { PrecipOverlay } from '../render/weather/PrecipOverlay';
+import type { CameraMode } from '../core/context';
 import { makeStrike, type StrikeKind } from '../sim/weather/lightning';
 import { runHarness } from './harness';
 import { buildSkyTestScene } from './skyScene';
@@ -73,6 +79,8 @@ const flyDir = new THREE.Vector3();
 
 let post: PostPipeline;
 let lightning: LightningOverlay | null = null;
+let precipOverlay: PrecipOverlay | null = null;
+let frames = 0;
 let strikes = 0;
 
 void runHarness({
@@ -114,6 +122,7 @@ void runHarness({
       w.precipRateMmH = Number(precip[1] ?? 2);
     }
     if (params.has('q')) ctx.quality = params.get('q') as QualityLevel;
+    if (params.has('mode')) ctx.cameraMode = params.get('mode') as CameraMode;
     if (FLASH) ctx.simTime = FLASH_AT_S + FLASH_HOLD_S;
 
     buildSkyTestScene(ctx.scene, ctx.aircraftRoot);
@@ -121,6 +130,7 @@ void runHarness({
     post = new PostPipeline(r, ctx.scene, ctx.camera);
     post.exposureBias = num('ev', 0);
     const clouds = new CloudsEffect(r);
+    if (params.get('cshadow') === '0') clouds.compositeShadows = false;
     await clouds.ready;
     const wx = { ctx, renderer: r, clouds, post, weather: w };
     const weatherEffects = createWeatherEffects(wx);
@@ -130,6 +140,7 @@ void runHarness({
     for (const o of createWeatherOverlays(wx)) {
       post.addOverlay(o);
       if (o.name === 'lightning') lightning = o as LightningOverlay;
+      if (o.name === 'precipitation') precipOverlay = o as PrecipOverlay;
     }
     ctx.events.on('lightning', (e) => {
       strikes++;
@@ -157,6 +168,12 @@ void runHarness({
           return { north: p.north, east: p.east, distance, top: c.topM, core: c.core, anvil: c.anvil, rain: c.rain, flash: c.flash };
         }),
       activity: () => ({ ...shared.field.convective(w) }),
+      setCamera: (n: number, e: number, alt: number, ln: number, le: number, lalt: number) => {
+        ctx.camera.position.set(e, alt, -n);
+        ctx.camera.lookAt(le, lalt, -ln);
+        ctx.camera.updateMatrixWorld();
+      },
+      info: () => ({ frames, simTime: ctx.simTime, precip: precipOverlay ? { ...precipOverlay.local } : null }),
       exposure: () => {
         const rt = (post as unknown as { exposure: { adapted: THREE.WebGLRenderTarget[] } }).exposure.adapted[0];
         const px = new Float32Array(4);
@@ -176,6 +193,7 @@ void runHarness({
     }
   },
   render(dt, ctx) {
+    frames++;
     post.render(ctx, dt);
   },
 });

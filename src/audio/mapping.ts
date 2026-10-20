@@ -5,6 +5,7 @@ import { C172S_AUDIO } from '../aircraft/c172s/audio';
 import { clamp, DEG, KT, smoothstep } from '../core/math';
 import { engineControl, type AircraftState, type ControlInputs, type Environment, type PrecipType, type SurfaceType, type WeatherSettings } from '../core/types';
 import { precipOf, type Precip } from '../core/weatherFields';
+import type { LocalPrecip } from '../physics/weather/stormPrecip';
 import { ENGINE_P, ENGINE_PARAMS, P, PARAM_COUNT } from './params';
 import type { AudioProfile, EngineSoundProfile, PropSoundProfile, TurbineSoundProfile } from './profile';
 
@@ -279,6 +280,25 @@ export function precipNoise(type: PrecipType, rateMmH: number, ias: number): num
   return clamp(rateMmH / RAIN_FULL_MMH, 0, 1) * (RAIN_PARKED_SHARE + (1 - RAIN_PARKED_SHARE) * Math.min(1, Math.max(ias, 0) / RAIN_FULL_IAS));
 }
 
+/**
+ * Hail noise: the rate at which it reaches full level, mm/h, and the stone sizes over which its weight rises from
+ * HAIL_SMALL_SHARE to 1, mm. Unconfirmed: tuning values set by ear, not measured.
+ */
+export const HAIL_FULL_MMH = 6;
+export const HAIL_SIZE_RANGE_MM: readonly [number, number] = [5, 40];
+export const HAIL_SMALL_SHARE = 0.35;
+
+/**
+ * Hail noise on the airframe, 0..1 (params.ts 'hail'): the rate over HAIL_FULL_MMH (at most 1), times the weight of
+ * the largest stone (HAIL_SMALL_SHARE at HAIL_SIZE_RANGE_MM[0] rising to 1 at [1]), times the airspeed factor of the
+ * rain (precipNoise). 0 at a rate or size of 0. `ias`: m/s.
+ */
+export function hailNoise(rateMmH: number, maxMm: number, ias: number): number {
+  if (!(rateMmH > 0) || !(maxMm > 0)) return 0;
+  const size = HAIL_SMALL_SHARE + (1 - HAIL_SMALL_SHARE) * smoothstep(HAIL_SIZE_RANGE_MM[0], HAIL_SIZE_RANGE_MM[1], maxMm);
+  return clamp(rateMmH / HAIL_FULL_MMH, 0, 1) * size * (RAIN_PARKED_SHARE + (1 - RAIN_PARKED_SHARE) * Math.min(1, Math.max(ias, 0) / RAIN_FULL_IAS));
+}
+
 /** Everything the parameter block needs beyond AircraftState / ControlInputs. */
 export interface SoundContext {
   surface: SurfaceType;
@@ -288,6 +308,9 @@ export interface SoundContext {
   flapMotor: number;
   /** Precipitation noise 0..1 (precipNoise); absent = 0. */
   rain?: number;
+  /** Hail noise 0..1 (hailNoise) and the largest stone, mm; absent = 0. */
+  hail?: number;
+  hailSize?: number;
 }
 
 /**
@@ -393,6 +416,8 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
   out[P.tailLoad] = tail.load;
   out[P.tailTipMach] = tail.tipMach;
   out[P.rain] = x.rain ?? 0;
+  out[P.hail] = x.hail ?? 0;
+  out[P.hailSize] = x.hail ? (x.hailSize ?? 0) : 0;
   return out;
 }
 
@@ -410,7 +435,7 @@ function fastestEngineRpm(s: AircraftState): number {
  * flap-motor detection and the surface under the wheels. Used by AudioSystem and by the offline analysis.
  */
 export class SoundTracker {
-  readonly sound: SoundContext = { surface: 'runway', speedOfSound: SPEED_OF_SOUND, turbulence: 0, gyroSpin: 0, flapMotor: 0, rain: 0 };
+  readonly sound: SoundContext = { surface: 'runway', speedOfSound: SPEED_OF_SOUND, turbulence: 0, gyroSpin: 0, flapMotor: 0, rain: 0, hail: 0, hailSize: 0 };
   private readonly precip: Precip = { type: 'none', rateMmH: 0 };
   readonly params = makeParamBlock();
   private prevFlaps = Number.NaN;
@@ -428,14 +453,26 @@ export class SoundTracker {
     this.prevFlaps = Number.NaN;
   }
 
-  update(s: AircraftState, c: ControlInputs, env: Environment, weather: WeatherSettings, dt: number): Float32Array {
+  /**
+   * `local`: the precipitation at the aircraft (physics/weather/stormPrecip.ts localPrecipAt, the stratiform fields
+   * and the storm cells; SimContext.weatherFx.precip); absent, the stratiform fields of `weather` alone and no hail.
+   */
+  update(s: AircraftState, c: ControlInputs, env: Environment, weather: WeatherSettings, dt: number, local?: LocalPrecip | null): Float32Array {
     const x = this.sound;
     // The surface only matters for tyre noise: skip the (polygon) lookup while flying.
     if (s.onGround || s.altitudeAGL < 5) x.surface = env.surface(s.position.x, s.position.y);
     x.speedOfSound = env.atmosphere(s.altitudeMSL).speedOfSound;
     x.turbulence = weather.turbulence;
-    const p = precipOf(weather, this.precip);
-    x.rain = precipNoise(p.type, p.rateMmH, s.ias);
+    if (local) {
+      x.rain = precipNoise(local.type, local.rateMmH, s.ias);
+      x.hail = hailNoise(local.hailMmH, local.hailMaxMm, s.ias);
+      x.hailSize = local.hailMaxMm;
+    } else {
+      const p = precipOf(weather, this.precip);
+      x.rain = precipNoise(p.type, p.rateMmH, s.ias);
+      x.hail = 0;
+      x.hailSize = 0;
+    }
     x.gyroSpin = stepGyro(x.gyroSpin, fastestEngineRpm(s), s.electrical.busVoltage, dt, this.profile);
     const flaps = s.surfaces.flaps;
     if (dt > 0) {

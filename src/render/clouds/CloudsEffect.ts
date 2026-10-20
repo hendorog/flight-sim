@@ -174,6 +174,11 @@ export class CloudsEffect implements SceneEffect {
   readonly ready: Promise<void>;
 
   private noise: CloudNoiseTextures | null = null;
+
+  /** The noise volumes once built (null before `ready`): the storm cells read the same shape, detail and warp. */
+  get noiseTextures(): CloudNoiseTextures | null {
+    return this.noise;
+  }
   private disposed = false;
   private readonly blueNoise: THREE.DataTexture;
   private readonly model: CloudModel;
@@ -272,6 +277,7 @@ export class CloudsEffect implements SceneEffect {
       uDetailDist: { value: 0 },
       uDetailScale: { value: 1 },
       uStormAux: { value: null },
+      uStormTrans: { value: null },
       uStormOn: { value: 0 },
       uCirrus: { value: new THREE.Vector2() },
       uCirrusOffset: { value: this.model.cirrusOffset },
@@ -357,6 +363,7 @@ export class CloudsEffect implements SceneEffect {
       const stormOn = storm !== null && storm.marched;
       m.uStormOn.value = stormOn ? 1 : 0;
       m.uStormAux.value = stormOn ? storm.distance : null;
+      m.uStormTrans.value = stormOn ? storm.transmittance : null;
       m.uJitter.value = (this.frame * 0.618034) % 1;
       const j = (this.frame % 16) + 1;
       (m.uPixelJitter.value as THREE.Vector2).set(halton(j, 2) - 0.5, halton(j, 3) - 0.5);

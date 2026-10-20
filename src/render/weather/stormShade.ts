@@ -12,10 +12,17 @@ import {
   STORM_CORE_SIGMA,
   STORM_SHADOW_ANVIL_FILL,
   STORM_SHADOW_ANVIL_LIFT_M,
+  STORM_SHADOW_ANVIL_R,
   STORM_SHADOW_CORE_FILL,
   STORM_SHADOW_CORE_R,
   STORM_SHADOW_CORE_TOP_M,
 } from './stormGlsl';
+
+/** The shadow columns' radial profile at a distance x (in column radii): (1 - x^2)^2, 0 beyond 1. */
+export function biweight(x: number): number {
+  const v = 1 - x * x;
+  return v > 0 ? v * v : 0;
+}
 
 /** Vertical optical depth of one cell's core column and anvil above (x, y, z), three.js world (STORM_SHADOW_GLSL). */
 export function cellOverheadTau(g: CellGeometry, x: number, y: number, z: number): number {
@@ -23,11 +30,10 @@ export function cellOverheadTau(g: CellGeometry, x: number, y: number, z: number
   let tau = 0;
   const rc = Math.hypot(x - g.x, z - g.z);
   const coreLen = Math.max(anvilBot + STORM_SHADOW_CORE_TOP_M - Math.max(y, g.base), 0);
-  const R = STORM_SHADOW_CORE_R * g.radius;
-  if (g.core > 0 && coreLen > 0) tau += g.core * STORM_CORE_SIGMA * STORM_SHADOW_CORE_FILL * 0.5 * ((rc < R ? 1 : 0) + (rc < 0.6 * R ? 1 : 0)) * coreLen;
+  if (g.core > 0 && coreLen > 0) tau += g.core * STORM_CORE_SIGMA * STORM_SHADOW_CORE_FILL * biweight(rc / (STORM_SHADOW_CORE_R * g.radius)) * coreLen;
   const ra = Math.hypot(x - g.anvilX, z - g.anvilZ);
   const anvilLen = Math.max(g.top - Math.max(y, anvilBot + STORM_SHADOW_ANVIL_LIFT_M), 0);
-  if (g.anvil > 0 && anvilLen > 0) tau += g.anvil * STORM_ANVIL_SIGMA * STORM_SHADOW_ANVIL_FILL * 0.5 * ((ra < g.anvilRadius ? 1 : 0) + (ra < 0.5 * g.anvilRadius ? 1 : 0)) * anvilLen;
+  if (g.anvil > 0 && anvilLen > 0) tau += g.anvil * STORM_ANVIL_SIGMA * STORM_SHADOW_ANVIL_FILL * biweight(ra / (STORM_SHADOW_ANVIL_R * g.anvilRadius)) * anvilLen;
   return tau;
 }
 

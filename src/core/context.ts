@@ -29,6 +29,8 @@ import type { AircraftDefinition, AircraftPresentation } from '../aircraft/types
 import type { AircraftId, AircraftState, ControlInputs, Environment, WeatherSettings } from './types';
 import type { EraId } from '../world/era/types';
 import type { FaunaSpeciesId } from '../world/fauna/types';
+import type { LocalPrecip } from '../physics/weather/stormPrecip';
+import type { HailState } from '../sim/weather/hailExposure';
 
 export const CAMERA_NEAR = 0.1;
 export const CAMERA_FAR = 400_000;
@@ -215,6 +217,13 @@ export interface SimContext {
 export interface WeatherFx {
   /** Current flash: three.js world position and luminous energy (scene units); energy 0 when none. */
   flash: { x: number; y: number; z: number; energy: number };
+  /**
+   * The precipitation at the aircraft this frame (physics/weather/stormPrecip.ts localPrecipAt: the stratiform fields
+   * and the storm cells), written by sim/weather/aircraftWeather.ts; absent on dev pages and test fakes.
+   */
+  precip?: LocalPrecip;
+  /** The hail on the airframe (sim/weather/hailExposure.ts), written with `precip`. */
+  hail?: HailState;
 }
 
 /** A per-frame subsystem. update() runs once per rendered frame with the real frame dt (0 when paused). */

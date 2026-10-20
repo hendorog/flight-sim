@@ -23,6 +23,7 @@
 // and the first-flight hints suppressed once a training profile exists. `crashActions` lets the school
 // replace the crash dialog's buttons during a lesson.
 
+import { HailToasts } from './hudCues';
 import type { R22DemoId } from '../sim/rotorcraft/flights';
 import { C172S_UI } from '../aircraft/c172s/ui';
 import type { AircraftDefinition, AircraftPresentation, AircraftSummary, UiProfile } from '../aircraft/types';
@@ -158,6 +159,8 @@ export class UISystem implements Subsystem, MenuHost {
   private pausedBeforeMenu = false;
   private lastScenario: ScenarioId;
   private lastParkingBrake: boolean | null = null;
+  /** The hail warning level of the last frame (a toast when it rises). */
+  private readonly hailToasts = new HailToasts();
   /** The flown type's UiProfile (switches, starter advice), and its engine count. */
   private profile: UiProfile = C172S_UI;
   private engineCount = 1;
@@ -312,6 +315,10 @@ export class UISystem implements Subsystem, MenuHost {
       this.showToast(pb ? 'Parking brake set' : 'Parking brake released');
     }
     this.lastParkingBrake = pb;
+    // Hail on the airframe (sim/weather/hailExposure.ts): a toast when the warning rises, at most one per
+    // HAIL_TOAST_MIN_S unless to a higher level.
+    const hailText = this.hailToasts.next(ctx.weatherFx?.hail?.level ?? 'none', performance.now() / 1000);
+    if (hailText) this.showToast(hailText, 5000);
     this.announceControls(ctx);
     this.updateStartup(ctx);
 

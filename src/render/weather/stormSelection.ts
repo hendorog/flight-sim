@@ -8,12 +8,7 @@ import type { SimContext } from '../../core/context';
 import type { StormCell, WeatherSettings } from '../../core/types';
 import { StormField, type ActiveStorm } from '../../physics/weather/stormField';
 
-/** Range of the drawn core radius, m (StormCellEffect cellGeometry; the cumulus clearing uses the same radius). */
-export const DRAWN_RADIUS_MIN_M = 500;
-export const DRAWN_RADIUS_MAX_M = 8000;
-
-/** The core radius of `cell` as the render draws it, m. */
-export const drawnCoreRadiusM = (cell: StormCell): number => Math.min(DRAWN_RADIUS_MAX_M, Math.max(DRAWN_RADIUS_MIN_M, cell.radiusM));
+export { DRAWN_RADIUS_MAX_M, DRAWN_RADIUS_MIN_M, drawnCoreRadiusM } from '../../physics/weather/cellGeometry';
 
 /** The weather fields the selection reads (besides `storms`, compared by reference). */
 const KEYS = ['isaDeviation', 'qnhHpa', 'cloudCover', 'cloudBaseM', 'cloudTopM', 'timeOfDay', 'dayOfYear', 'windDirectionDeg', 'windSpeedKt'] as const;
