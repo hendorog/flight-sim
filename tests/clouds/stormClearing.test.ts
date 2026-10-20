@@ -44,7 +44,7 @@ describe('storm clearing uniforms', () => {
     const ctx = ctxAt(w);
     const m = new CloudModel();
     m.update(ctx, 0.016);
-    const effect = new StormCellEffect(null);
+    const effect = new StormCellEffect();
     const drawn = effect.updateCells(ctx);
     // One selection per frame and context: the effect read the array the clouds read.
     const cells = cameraStormsAt(ctx);

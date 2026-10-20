@@ -1,5 +1,5 @@
 // Weather effects dev page: the sim's post pipeline with the sky, the clouds and the weather registry
-// (render/weather: storm cells and fog after the clouds, precipitation and lightning after the temporal pass) over
+// (render/weather: storm cells before the clouds, fog after them, precipitation and lightning after the temporal pass) over
 // the sky test scene. Extra URL parameters on top of the harness ones (cam, look, tod, freeze, ...):
 //   wx=thunderstorm                 a free-flight weather preset (sim/weatherPresets.ts), applied before the
 //                                   parameters below (tod= given on the URL is applied again after it)
@@ -25,7 +25,7 @@
 // window.__weatherDev.strike(kind) starts a strike in the first cell at the current time; exposure() reads the eye
 // adaptation (log2 scene units: adapted, target) and the lightning overlay's ambient illuminance (scene units);
 // cells() lists the cells in effect at the camera ({north, east, distance, top, core, anvil, rain, flash}, m) and
-// activity() the derived convective state.
+// activity() the derived convective state; post is the page's PostPipeline.
 
 import * as THREE from 'three';
 import type { QualityLevel } from '../core/context';
@@ -122,9 +122,11 @@ void runHarness({
     post.exposureBias = num('ev', 0);
     const clouds = new CloudsEffect(r);
     await clouds.ready;
-    post.addEffect(clouds);
     const wx = { ctx, renderer: r, clouds, post, weather: w };
-    for (const e of createWeatherEffects(wx)) post.addEffect(e);
+    const weatherEffects = createWeatherEffects(wx);
+    for (const e of weatherEffects.beforeClouds) post.addEffect(e);
+    post.addEffect(clouds);
+    for (const e of weatherEffects.afterClouds) post.addEffect(e);
     for (const o of createWeatherOverlays(wx)) {
       post.addOverlay(o);
       if (o.name === 'lightning') lightning = o as LightningOverlay;
@@ -145,6 +147,7 @@ void runHarness({
     };
     if (FLASH) strike(FLASH === 'ic' ? 'ic' : 'cg', FLASH_AT_S);
     (window as unknown as { __weatherDev: object }).__weatherDev = {
+      post,
       strike: (kind: StrikeKind = 'cg') => strike(kind, ctx.simTime),
       strikes: () => strikes,
       cells: () =>

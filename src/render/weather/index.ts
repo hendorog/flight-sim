@@ -1,7 +1,8 @@
-// The weather's full-screen effects, created once at boot by the Simulator after the clouds (core/weatherFields.ts
-// holds the fields they read). Two groups:
-//   - scene effects (PostPipeline.addEffect), after the clouds and before the temporal pass: storm cells, then the
-//     ground fog, so the fog covers a cell's base and the cell composites against the cumulus;
+// The weather's full-screen effects, created once at boot by the Simulator after the clouds effect
+// (core/weatherFields.ts holds the fields they read). Two groups:
+//   - scene effects (PostPipeline.addEffect), before the temporal pass: the storm cells before the clouds (the
+//     cumulus march ends its rays at the cells' front and composites over them), the ground fog after the clouds,
+//     so the fog covers a cell's base and the cumulus;
 //   - overlays (PostPipeline.addOverlay), after the temporal pass and before bloom: precipitation streaks, then
 //     lightning. They anti-alias themselves and are not reprojected.
 // Each factory lives in its own module and may return null when it has nothing to add (the four here always return
@@ -25,7 +26,7 @@ export interface WeatherEffectContext {
   /** The simulation context (quality, events, weatherFx). */
   ctx: SimContext;
   renderer: THREE.WebGLRenderer;
-  /** The cumulus layer: reprojectionLayer() gives its front distance and transmittance for compositing. */
+  /** The cumulus layer: reprojectionLayer() gives its front distance and transmittance (the lightning's occlusion). */
   clouds: CloudsEffect;
   /** The pipeline the effects are added to (cabinFromView for the cabin mask). */
   post: PostPipeline;
@@ -33,14 +34,22 @@ export interface WeatherEffectContext {
   weather: WeatherSettings;
 }
 
-/** Scene effects after the clouds, in order: storm cells, ground fog (each when its factory returns one). */
-export function createWeatherEffects(c: WeatherEffectContext): SceneEffect[] {
-  const effects: SceneEffect[] = [];
+/** The weather's scene effects around the clouds (each when its factory returns one). */
+export interface WeatherSceneEffects {
+  /** Added before the clouds: the storm cells. */
+  beforeClouds: SceneEffect[];
+  /** Added after the clouds: the ground fog. */
+  afterClouds: SceneEffect[];
+}
+
+/** Scene effects, in order: storm cells (before the clouds), ground fog (after them). */
+export function createWeatherEffects(c: WeatherEffectContext): WeatherSceneEffects {
+  const out: WeatherSceneEffects = { beforeClouds: [], afterClouds: [] };
   const storms = createStormCellEffect(c);
-  if (storms) effects.push(storms);
+  if (storms) out.beforeClouds.push(storms);
   const fog = createFogEffect(c);
-  if (fog) effects.push(fog);
-  return effects;
+  if (fog) out.afterClouds.push(fog);
+  return out;
 }
 
 /** Post-TAA overlays, in order: precipitation, lightning (each when its factory returns one). */

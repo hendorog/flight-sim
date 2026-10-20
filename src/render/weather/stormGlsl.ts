@@ -17,11 +17,17 @@
 // intervals are sorted and merged, and the ray skips the gaps between them. It takes coarse steps until the
 // optical depth of one step exceeds 0.3, then backs up one step and continues with quarter-length steps (back to
 // coarse after three empty fine steps). Light per sample: the sun at the sample's altitude (uSunBase .. uSunTop
-// interpolated, from the shared Atmosphere on the CPU) through two density taps toward the sun, single-scattered
-// with the clouds' dual-lobe Henyey-Greenstein phase plus a multiple-scattering term exp(-STORM_MS_K tau); the sky
-// ambient through the analytic column above the sample (the dark base), and ground bounce through the column
-// below. Albedo 0.99 for cloud and STORM_RAIN_ALBEDO for rain. Haze between the camera and the storm's front: the
-// shared aerial-perspective volume, or an exponential haze without it (as VolcanoPlumeEffect).
+// interpolated, from the shared Atmosphere on the CPU) through two density taps toward the sun and, beyond them,
+// the analytic core columns and anvils (STORM_SHADOW_GLSL), single-scattered with the clouds' dual-lobe
+// Henyey-Greenstein phase plus a multiple-scattering term (the cumulus march's STORM_MS_ISO terms for the cloud,
+// exp(-STORM_MS_K tau) for the rain); the sky ambient through the analytic column above the sample (the dark base),
+// STORM_SIDE_SKY of the horizon radiance from the sides, and ground bounce through the column below, from ground
+// that lies in the cells' shadow and, under their cloud, sees STORM_GROUND_SKY_UNDER of the sky. Albedo 0.99 for
+// cloud and STORM_RAIN_ALBEDO for rain. Haze between the camera and the storm's front: the shared
+// aerial-perspective volume, or an exponential haze without it (as VolcanoPlumeEffect).
+// The sunlit share of that haze (STORM_HAZE_SUN_SHARE) is dimmed by the cells' shadow at four points along the path.
+// Extra work per lit sample over the taps: two stormColumn and two stormShadowTau loops over the cells (each cell
+// four ray-cylinder chords), no texture reads; per pixel, four more stormShadowTau loops for the haze.
 
 import { DEPTH_GLSL } from '../../core/shaderLib';
 import { AERIAL_ATLAS_GLSL } from '../post/AerialPerspectiveEffect';
@@ -43,6 +49,44 @@ export const STORM_VIRGA_DEPTH_M = 800;
 /** Multiple-scattering share and its optical-depth scale. Unconfirmed: look values. */
 export const STORM_MS = 0.6;
 export const STORM_MS_K = 0.08;
+/**
+ * The high orders of scattering in the cloud (not the rain): STORM_MS_ISO exp(-STORM_MS_LEAK tau) / (1 + STORM_MS_ISO_K
+ * tau) of the sunlight, the values of the cumulus march (render/clouds/marchShader.ts MS_ISO, MS_ISO_K, MS_LEAK), so a
+ * sunlit tower is as white as a sunlit cumulus beside it. Unconfirmed: look values taken over from the cumulus.
+ */
+export const STORM_MS_ISO = 0.3;
+export const STORM_MS_ISO_K = 0.5;
+export const STORM_MS_LEAK = 0.04;
+/**
+ * Share of the horizon radiance (ctx.sky.hazeColor) that lights a sample from the sides, where the analytic column
+ * above it hides the sky: the shaded flanks, the base and the rain shaft under the core. Unconfirmed: a look value.
+ */
+export const STORM_SIDE_SKY = 0.25;
+/** Share of the sky light that reaches the ground under a cell's core or anvil (lateral sky). Unconfirmed: a look value. */
+export const STORM_GROUND_SKY_UNDER = 0.3;
+/**
+ * Shadow columns (STORM_SHADOW_GLSL): the core as two vertical cylinders of STORM_SHADOW_CORE_R and 0.6 of it times
+ * R, from the base to STORM_SHADOW_CORE_TOP_M above the anvil's underside, at STORM_SHADOW_CORE_FILL of the core's
+ * extinction (its mean noise factor 0.6 + 0.4 x 0.5). The core's visible surface lies at 0.7 to 1 R (stormGlsl
+ * cellDensity), so the cylinders stay inside it: a larger radius shadowed the sunlit flanks from within (measured
+ * with 1 R: the tower's sunlit side at 216 instead of 813 scene units, dev/weather.html, 2026-10-20). The anvil as two discs of
+ * 1 and 0.5 times its radius from STORM_SHADOW_ANVIL_LIFT_M above its underside at the centre (the underside rises
+ * 900 m toward the edge) to the top, at STORM_SHADOW_ANVIL_FILL of its extinction. Unconfirmed: fits to the density.
+ */
+export const STORM_SHADOW_CORE_R = 0.6;
+export const STORM_SHADOW_CORE_TOP_M = 250;
+export const STORM_SHADOW_CORE_FILL = 0.8;
+export const STORM_SHADOW_ANVIL_LIFT_M = 300;
+export const STORM_SHADOW_ANVIL_FILL = 0.75;
+/**
+ * Share of the haze's in-scatter in front of a cell that is direct sunlight, dimmed where the path lies in the cells'
+ * shadow (the rest, sky light scattered by the air, is left). Measured before it (dev/weather.html, Thunderstorm at
+ * 15:00, the cell 22 km west, 2026-10-20): the haze transmittance in front of the base 0.38 to 0.40 and the haze 85 %
+ * of the base pixel's radiance. Unconfirmed: a look value.
+ */
+export const STORM_HAZE_SUN_SHARE = 0.8;
+/** The cumulus march ends where the storm's transmittance falls below this (the storm layer's aux b). Unconfirmed. */
+export const STORM_CLIP_T = 0.3;
 /** Diffuse transmission of a column of optical depth tau: 1 / (1 + STORM_DIFFUSE_K tau). Unconfirmed: a look value. */
 export const STORM_DIFFUSE_K = 0.11;
 /** Albedo of the rain shaft (darker grey than the cloud). Unconfirmed: a look value. */
@@ -53,6 +97,44 @@ export const STORM_NOISE_DETAIL_M = 900;
 export const STORM_RISE_MS = 3;
 
 const f = (v: number): string => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+
+/**
+ * Optical depth of the cells' core columns and anvils along a ray, for the shadows the cells cast on themselves,
+ * on the ground below them (StormCellEffect) and on the cumulus (render/clouds/cloudModel.ts). stormColumnTau
+ * integrates o + s d, s >= 0, d upward (d.y > 0), through one cell: centre c, core radius R, base, the anvil's
+ * underside at its centre (anvilBot), the anvil's centre ac and radius aR, top = anvilBot + STORM_ANVIL_DEPTH_M,
+ * and the extinctions sc (core) and sa (anvil) of the full-density cloud times the cell's shares.
+ */
+export const STORM_SHADOW_GLSL = /* glsl */ `
+// Length of o + s d inside the vertical cylinder of radius r about c between altitudes y0 and y1, s >= 0.
+float stormChord(vec3 o, vec3 d, vec2 c, float r, float y0, float y1) {
+  float dy = max(d.y, 1e-3);
+  float s0 = max((y0 - o.y) / dy, 0.0), s1 = (y1 - o.y) / dy;
+  if (s1 <= s0) return 0.0;
+  vec2 oc = o.xz - c;
+  float a = dot(d.xz, d.xz);
+  float k = dot(oc, oc) - r * r;
+  if (a < 1e-8) return k < 0.0 ? s1 - s0 : 0.0;
+  float b = dot(oc, d.xz);
+  float disc = b * b - a * k;
+  if (disc <= 0.0) return 0.0;
+  float q = sqrt(disc);
+  return max(min(s1, (-b + q) / a) - max(s0, (-b - q) / a), 0.0);
+}
+float stormColumnTau(vec3 o, vec3 d, vec2 c, float R, float base, float anvilBot, vec2 ac, float aR, float sc, float sa) {
+  float tau = 0.0;
+  if (sc > 0.0) {
+    float y1 = anvilBot + ${f(STORM_SHADOW_CORE_TOP_M)};
+    float rc = ${f(STORM_SHADOW_CORE_R)} * R;
+    tau += sc * ${f(STORM_SHADOW_CORE_FILL)} * 0.5 * (stormChord(o, d, c, rc, base, y1) + stormChord(o, d, c, 0.6 * rc, base, y1));
+  }
+  if (sa > 0.0) {
+    float y0 = anvilBot + ${f(STORM_SHADOW_ANVIL_LIFT_M)}, y1 = anvilBot + ${f(STORM_ANVIL_DEPTH_M)};
+    tau += sa * ${f(STORM_SHADOW_ANVIL_FILL)} * 0.5 * (stormChord(o, d, ac, aR, y0, y1) + stormChord(o, d, ac, 0.5 * aR, y0, y1));
+  }
+  return tau;
+}
+`;
 
 export const STORM_RAY_GLSL = /* glsl */ `
 uniform mat4 uInvProj;
@@ -67,6 +149,7 @@ vec3 rayDirView(vec2 uv) {
 export const STORM_MARCH_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
 ${STORM_RAY_GLSL}
+${STORM_SHADOW_GLSL}
 ${AERIAL_ATLAS_GLSL}
 in vec2 vUv;
 layout(location = 0) out vec4 outColor;
@@ -94,7 +177,9 @@ uniform vec3 uSunDir;
 uniform vec3 uSunBase;
 uniform vec3 uSunTop;
 uniform vec3 uSkyColor;
-uniform vec3 uGroundRadiance;
+uniform vec3 uGroundSun;       // ground radiance from the direct sun on open ground (albedo x E mu0 / pi)
+uniform vec3 uGroundSky;       // ground radiance from the sky light on open ground (albedo x sky radiance)
+uniform float uGroundAlt;      // ground altitude under the camera, m MSL
 uniform float uMaxRadiance;
 
 const float STORM_PI = 3.14159265;
@@ -180,6 +265,19 @@ vec2 stormColumn(vec3 p) {
   return tau;
 }
 
+// Optical depth of the cells' core columns and anvils along o + s d, s >= 0 (STORM_SHADOW_GLSL).
+float stormShadowTau(vec3 o, vec3 d) {
+  float tau = 0.0;
+  for (int i = 0; i < ${STORM_MAX_CELLS}; i++) {
+    if (i >= uCount) break;
+    vec4 A = uCellA[i];
+    vec4 B = uCellB[i];
+    vec4 W = uCellW[i];
+    tau += stormColumnTau(o, d, A.xy, A.z, B.x, A.w - ${f(STORM_ANVIL_DEPTH_M)}, uCellC[i].xy, B.z, W.x * ${f(STORM_CORE_SIGMA)}, W.y * ${f(STORM_ANVIL_SIGMA)});
+  }
+  return tau;
+}
+
 // Ray interval through a cell's bounding cylinder (x entry, y exit; x >= y when missed).
 vec2 cellHit(int i, vec3 o, vec3 d) {
   vec2 c = uCellC[i].zw;
@@ -212,7 +310,7 @@ void main() {
   vec3 dir = normalize(mat3(uCamWorld) * dv);
   float dd = texture(uDepth, vUv).r;
   float sceneDist = isSky(dd) ? 1e8 : viewZFromDepth(dd) / max(-dv.z, 1e-4);
-  outAux = vec4(log2(1.0 + 1e8), log2(1.0 + sceneDist), 0.0, 0.0);
+  outAux = vec4(log2(1.0 + 1e8), log2(1.0 + sceneDist), log2(1.0 + 1e8), 0.0);
   outColor = vec4(0.0, 0.0, 0.0, 1.0);
 
   // The cylinders' intervals, clipped, sorted by entry and merged.
@@ -256,6 +354,7 @@ void main() {
   vec3 sunL = normalize(uSunDir);
   vec3 L = vec3(0.0);
   float T = 1.0;
+  float clip = 1e8;
   float dsum = 0.0, wsum = 0.0;
   int k = 0;
   float t = iv[0].x + jitter * coarse;
@@ -283,19 +382,30 @@ void main() {
       if (empty >= 3) fine = false;
     }
     if (sigma > 1e-6) {
-      float tauSun = (stormSigma(p + sunL * 150.0) * 150.0 + stormSigma(p + sunL * 600.0) * 450.0);
+      // Toward the sun: two density taps (the turrets shading each other), then the analytic core columns and
+      // anvils beyond them, so the rain under the core and the base lie in the shadow of the cloud above them.
+      float tauSun = stormSigma(p + sunL * 150.0) * 150.0 + stormSigma(p + sunL * 600.0) * 450.0 + stormShadowTau(p + sunL * 600.0, sunL);
       vec2 col = stormColumn(p);
       float hs = clamp((p.y - uSunSpan.x) / max(uSunSpan.y - uSunSpan.x, 1.0), 0.0, 1.0);
       vec3 sun = mix(uSunBase, uSunTop, hs);
       float ph = mix(phase, rainPhase, rainShare);
-      vec3 S = sun * (ph * exp(-tauSun) + ${f(STORM_MS)} * exp(-${f(STORM_MS_K)} * tauSun) / (4.0 * STORM_PI))
-             + uSkyColor * (0.85 * stormDiffuse(col.x)) + uGroundRadiance * (0.35 * stormDiffuse(col.y));
+      // Multiple scattering: the cloud's high orders (as the cumulus), the rain's single forward-peaked term.
+      float msCloud = ${f(STORM_MS_ISO)} * exp(-${f(STORM_MS_LEAK)} * tauSun) / (1.0 + ${f(STORM_MS_ISO_K)} * tauSun);
+      float msRain = ${f(STORM_MS)} * exp(-${f(STORM_MS_K)} * tauSun) / (4.0 * STORM_PI);
+      // The ground below the sample: in the cells' shadow, and under their cloud lit by the lateral sky only.
+      vec3 gp = vec3(p.x, uGroundAlt, p.z);
+      float under = 1.0 - exp(-0.2 * stormColumn(gp).x);
+      vec3 ground = uGroundSun * exp(-stormShadowTau(gp, sunL)) + uGroundSky * mix(1.0, ${f(STORM_GROUND_SKY_UNDER)}, under);
+      vec3 S = sun * (ph * exp(-tauSun) + mix(msCloud, msRain, rainShare))
+             + uSkyColor * (0.85 * stormDiffuse(col.x)) + uHazeColor * ${f(STORM_SIDE_SKY)} + ground * (0.35 * stormDiffuse(col.y));
       S *= mix(0.99, ${f(STORM_RAIN_ALBEDO)}, rainShare);
       float Ts = exp(-sigma * dt);
       float a = T * (1.0 - Ts);
       L += S * a;
       dsum += t * a;
       wsum += a;
+      // Where the transmittance crosses STORM_CLIP_T (the cumulus march ends there).
+      if (T >= ${f(STORM_CLIP_T)} && T * Ts < ${f(STORM_CLIP_T)}) clip = t + log(T / ${f(STORM_CLIP_T)}) / sigma;
       T *= Ts;
       if (T < 0.01) break;
     }
@@ -315,17 +425,29 @@ void main() {
     Th = exp(-uHaze.x * front * avg);
     inscatter = uHazeColor * (1.0 - Th);
   }
+  // The air in front of the cells lies partly in their shadow (the tower and the anvil toward the sun): the sunlit
+  // share of its in-scatter is dimmed by the cells' direct transmission at four points along the path, each
+  // weighted by the haze transmittance in front of it.
+  if (sunL.y > 0.0) {
+    float sh = 0.0, wh = 0.0;
+    for (int j = 0; j < 4; j++) {
+      float fj = (float(j) + 0.5) * 0.25;
+      float w = pow(max(Th, 1e-3), fj);
+      sh += w * exp(-stormShadowTau(uCamPos + dir * (front * fj), sunL));
+      wh += w;
+    }
+    inscatter *= mix(1.0, sh / wh, ${f(STORM_HAZE_SUN_SHARE)});
+  }
   L = min(L, vec3(uMaxRadiance));
   outColor = vec4(L * Th + inscatter * (1.0 - T), T);
-  outAux = vec4(log2(1.0 + front), log2(1.0 + sceneDist), 0.0, 0.0);
+  outAux = vec4(log2(1.0 + front), log2(1.0 + sceneDist), log2(1.0 + clip), 0.0);
 }
 `;
 
 /**
- * Depth-aware upsample of the march (as VolcanoPlumeEffect) and the composite against the cumulus layer the clouds
- * drew before this effect (their reprojection layer: front distance and transmittance T_cu). With the storm's
- * front nearer than the cumulus front, out = in T_cb + L_cb; behind it, the cumulus already in `in` covers the
- * storm: out = in (1 - (1 - T_cb) T_cu) + L_cb T_cu. An approximation: one front per layer and pixel.
+ * Depth-aware upsample of the march (as VolcanoPlumeEffect) over the scene: out = in T_cb + L_cb. The storm pass
+ * runs before the cumulus (render/weather/index.ts), whose march ends at the storm's front (the aux b distance,
+ * STORM_CLIP_T) and composites over this result.
  */
 export const STORM_COMPOSITE_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
@@ -336,9 +458,6 @@ uniform sampler2D uScene;
 uniform sampler2D uDepth;
 uniform sampler2D uStorm;
 uniform sampler2D uAux;
-uniform sampler2D uCuDist;
-uniform sampler2D uCuTrans;
-uniform float uHasCu;
 uniform vec2 uLowSize;
 
 void main() {
@@ -353,7 +472,6 @@ void main() {
   ivec2 maxPx = ivec2(uLowSize) - 1;
   vec4 acc = vec4(0.0);
   float wsum = 0.0;
-  float fsum = 0.0, fw = 0.0;
   for (int k = 0; k < 4; k++) {
     ivec2 o = ivec2(k & 1, k >> 1);
     ivec2 q = clamp(i0 + o, ivec2(0), maxPx);
@@ -363,26 +481,14 @@ void main() {
     float dw = max(exp(-max(abs(aux.g - logD) - 0.25, 0.0) * 8.0), 1e-3);
     acc += c * (bw * dw);
     wsum += bw * dw;
-    float ow = (1.0 - c.a) * bw * dw;
-    fsum += aux.r * ow;
-    fw += ow;
   }
   vec4 p = acc / max(wsum, 1e-6);
   if (p.a > 0.9999) { outColor = scene; return; }
-  float logFront = fw > 1e-6 ? fsum / fw : logD;
-  float Tcu = 1.0;
-  if (uHasCu > 0.5) {
-    float cuFront = texture(uCuDist, vUv).r;
-    float cuT = clamp(texture(uCuTrans, vUv).a, 0.0, 1.0);
-    // The cumulus covers the storm only where its front is nearer (and in front of the surface).
-    Tcu = cuFront < logFront && cuFront < logD ? cuT : 1.0;
-  }
-  float through = 1.0 - (1.0 - p.a) * Tcu;
-  vec3 rgb = scene.rgb * through + p.rgb * Tcu;
+  vec3 rgb = scene.rgb * p.a + p.rgb;
   float flag = scene.a;
   if (scene.a < 0.0) {
-    float tl = dot(scene.rgb, vec3(0.2126, 0.7152, 0.0722)) * through;
-    flag = scene.a * tl / max(tl + dot(p.rgb * Tcu, vec3(0.2126, 0.7152, 0.0722)), 1e-30);
+    float tl = dot(scene.rgb, vec3(0.2126, 0.7152, 0.0722)) * p.a;
+    flag = scene.a * tl / max(tl + dot(p.rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-30);
   }
   outColor = vec4(rgb, flag);
 }
