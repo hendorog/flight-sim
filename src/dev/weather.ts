@@ -21,6 +21,7 @@
 //                                   screenshots; the simulation clock stays at that instant
 //   flasht=0.004                    the hold, s after the first stroke (0.06 and 0.12: the later strokes)
 //   flashid=0                       added to the held strike's id (its channel's shape)
+//   cshadow=0                       no cloud shadows applied in the clouds' composite (as the simulator runs)
 //   mode=cockpit                    the camera mode in the context (the storm march's near clip, the overlays' cabin test)
 // Example: dev/weather.html?cb=22,4&cam=0,0,400&look=22000,4000,5000&tod=19.2&flash=1
 // window.__weatherDev.strike(kind) starts a strike in the first cell at the current time; exposure() reads the eye
@@ -129,6 +130,7 @@ void runHarness({
     post = new PostPipeline(r, ctx.scene, ctx.camera);
     post.exposureBias = num('ev', 0);
     const clouds = new CloudsEffect(r);
+    if (params.get('cshadow') === '0') clouds.compositeShadows = false;
     await clouds.ready;
     const wx = { ctx, renderer: r, clouds, post, weather: w };
     const weatherEffects = createWeatherEffects(wx);

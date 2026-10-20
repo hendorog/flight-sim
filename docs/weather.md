@@ -17,16 +17,55 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
   composite on the first frame with fog). Their GPU cost has not been measured (no GPU on the integration machine).
   - `createStormCellEffect` (`StormCellEffect.ts`): the cells in effect at the camera (`StormField.select`, see
     "Storm cells derived from the conditions"), read from the frame's shared selection (`stormSelection.ts`
-    `cameraStormsAt`, below). Their core, anvil and rain shares multiply the three densities
+    `cameraStormsAt`, below). Their core, anvil, rain and hail shares multiply the densities
     (uniform `uCellW`). A march at `STORM_SCALE` 0.5 resolution with
-    `STORM_STEPS` 48 steps, then a depth-aware composite over the scene. The effect runs before the clouds: the
-    cumulus march ends each ray where the cells' transmittance falls below `STORM_CLIP_T` 0.3 (the storm layer's
-    distance texture, channel b) and composites over the cells, so cumulus in front of a cell covers it and cumulus
-    behind it is not drawn. Skipped when no cell is in the view frustum.
-    - Light per sample (`stormGlsl.ts`): the sun through two density taps and, beyond them, the analytic core
-      columns and anvils of the cells (`STORM_SHADOW_GLSL`: the core as cylinders of `STORM_SHADOW_CORE_R` 0.6 and
-      0.36 R from the base to 250 m above the anvil's underside at 0.8 of its extinction, the anvil as discs of 1 and
-      0.5 of its radius from 300 m above its underside to the top at 0.75 of its extinction); multiple scattering of
+    `STORM_STEPS` 48 steps, a temporal pass at that resolution (the cumulus layer's `TEMPORAL_FRAG`), then a
+    depth-aware composite over the scene. The effect runs before the clouds. The march records the distances at
+    which the cells' optical depth from the camera reaches `STORM_TAU_A` 0.1 and `STORM_TAU_B` 1 (the storm layer's
+    distance texture, channels b and a); the cumulus march models the storm's optical depth in front of a distance
+    as the line through those two points (at most the ray's total), multiplies its result by exp(-tau) at its own
+    front, and ends where tau reaches `STORM_STOP_TAU` 4.6. Cumulus in front of a cell covers it; cumulus behind
+    storm cloud or rain shows through it. Before 2026-10-20 the cumulus march ended at the distance where the storm's
+    transmittance fell below 0.3, which cut the cumulus off along a hard edge when the camera flew out of a shaft.
+    Skipped when no cell is in the view frustum, and until the cumulus layer's noise volumes are built.
+    - Density (`stormGlsl.ts` header): the cumulus layer's noise volumes (`CloudsEffect.noiseTextures`: the 128^3
+      Perlin-Worley shape, the 64^3 Worley detail, the 32^3 warp field), each octave in its own rotated frame, in
+      cell-local coordinates offset per cell id. The core and the anvil are a signed margin in metres inside an
+      envelope, moved by lobes (shape volume at `STORM_LOBE_M` 5200 m, amplitude `STORM_LOBE_SHARE` 0.22 R) and
+      turrets (`STORM_TURRET_M` 1700 m, `STORM_TURRET_AMP_M` 260 m), the domain warped by `STORM_WARP_AMP_M` 350 m,
+      and carved by the detail volume at 880, 230 and 61 m (`STORM_DETAIL_M`) to a depth of `STORM_EROSION_SHARE`
+      0.12 of each period: inverted (lobes) above the base, plain (wisps) in its lowest `STORM_RAGGED_M` 160 m. An
+      octave fades to its mean between 1.5 and 4 of its texels per pixel footprint (`STORM_OCTAVE_FADE`), so the
+      mean surface does not move with distance. The density ramps over an edge band of max(`STORM_EDGE_M` 50 m,
+      `STORM_EDGE_PX` 2.5 low-resolution pixel footprints). The base is lumped by `STORM_BASE_LUMP_M` 90 m, curves
+      up over the outer `STORM_BASE_ROUND_M` 500 m of margin and ramps over `STORM_BASE_SOFT_M` 70 m; scud hangs up
+      to `STORM_SCUD_DEPTH_M` 380 m below it within 0.85 R. The anvil has flattened lobes, a lumped underside,
+      fibres from a stretched detail octave and an overshooting top of `STORM_OVERSHOOT_M` 700 m over the updraft.
+      The rain and hail are the field of `physics/weather/stormPrecip.ts` (below). Core extinction
+      `STORM_CORE_SIGMA` 0.08 1/m (0.2 before 2026-10-20). All unconfirmed look values. Before 2026-10-20 the cells
+      read two octaves of one private 32^3 Worley texture at 5200 m and 900 m.
+    - Sampling: each step's sample lies at a fraction of the step from a 64x64 blue-noise texture
+      (`render/clouds/blueNoise.ts`) plus a golden-ratio offset per frame, and the ray moves by a Halton sub-pixel
+      offset per frame; the temporal pass (blend 0.1, clip box 1.25 sigma) averages them, and a still view converges.
+      Before 2026-10-20 the offset was interleaved gradient noise (Jimenez 2014) with no accumulation of its own,
+      which showed as diagonal hatching. Steps end at the interval's end and, in rain, at an optical depth of
+      `STORM_RAIN_STEP_TAU` 0.5 at the last sample's rain extinction (the rain at the ray's start sets the first
+      step). A coarse step whose cloud optical depth exceeds 0.3 is bisected (`STORM_BISECT` 4) on the coarse density
+      and continued with fine steps of `STORM_FINE_BAND` 0.15 of the edge band (at least `STORM_FINE_MIN_M` 8 m),
+      lengthened by 1.6 per empty fine step.
+    - Cost (stated, not measured on a GPU): per low-resolution pixel at most 48 steps plus 4 bisection samples per
+      entry and one start sample. Texture reads per cell a sample touches: 1 warp read per sample, 2 shape and up to
+      3 detail reads for the core (1 more for the scud), 1 shape and up to 2 detail reads for the anvil, 2 shape reads
+      per core and 1 per anvil for each of the two sun taps. A lit sample in one cell's core: 10 reads; a sample
+      outside every envelope: 1. Before: 2 reads per density evaluation, 6 per lit sample. The temporal pass adds 18
+      reads per low-resolution pixel; the rain field adds 12 lattice hashes per cell near a shaft.
+    - Light per sample (`stormGlsl.ts`): the sun through two coarse-density taps at 120 and 450 m (eroded by
+      `STORM_TAP_EROSION` 2 means of the detail erosion, so they measure the lobes shading each other) and, beyond
+      them, the analytic core columns and anvils of the cells (`STORM_SHADOW_GLSL`: columns of the biweight profile
+      (1 - (rho / r)^2)^2, the core out to `STORM_SHADOW_CORE_R` 0.7 R from the base to 250 m above the anvil's
+      underside at 0.8 of its extinction, the anvil out to `STORM_SHADOW_ANVIL_R` 1 of its radius from 300 m above
+      its underside to the top at 0.75 of its extinction; two nested cylinders before 2026-10-20, whose rims showed
+      as arcs in the haze from inside a cell); the side light on rain greyed by `STORM_RAIN_SIDE_GREY` 0.7; multiple scattering of
       the cloud as in the cumulus march (`STORM_MS_ISO` 0.3, `STORM_MS_ISO_K` 0.5, `STORM_MS_LEAK` 0.04), of the rain
       `STORM_MS` 0.6 exp(-0.08 tau) / 4 pi; the sky through the analytic column above; `STORM_SIDE_SKY` 0.25 of the
       horizon radiance from the sides; ground bounce from ground in the cells' shadow that sees
@@ -38,8 +77,18 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
   - `createFogEffect` (`FogEffect.ts`): `fogTopM`, `fogVisibilityM`. One full-resolution draw; skipped when
     `fogOf(w).topM === 0`. It also writes the shared fog uniform (`fogGlsl.ts fogUniformFor`, every frame, from
     `active`); the aircraft light sprites read it only when no weather is passed to `AircraftLights.update`.
-  - `createPrecipOverlay` (`PrecipOverlay.ts`): `precipType`, `precipRateMmH`. Skipped at rate 0 and on `low`; the
-    streaks have no fade-out. Streaks on shells of 2, 5, 12 and 30 m about the camera on `high` and `ultra`, and
+  - `createPrecipOverlay` (`PrecipOverlay.ts`): the precipitation at the camera each frame
+    (`physics/weather/stormPrecip.ts` `localPrecipAt`: `precipType`, `precipRateMmH` and the storm cells' rain and
+    hail, below), so the streaks thicken from the edge of a rain shaft to its core. Skipped at rate 0 without hail
+    and on `low`. Storm rain and heavy rain: the streaks are drawn for `streakRateMmH` (the rate up to 10 mm/h, then
+    rising toward 25 mm/h), and from 15 mm/h on they widen by up to `RAIN_HEAVY_WIDTH` 0.35, their coverage rises by
+    up to `RAIN_HEAVY_ALPHA` 0.4 (both at 80 mm/h) and the fall speed rises from 7 to 9 m/s at 100 mm/h
+    (`fallSpeedAt`); a storm-rain drop also carries `STORM_STREAK_SCENE_GAIN` 0.7 of the scene behind it. The direct
+    sun on the drops is dimmed by the storm cells' cloud above the camera (`stormOverheadTau`). Hail: a second grid
+    aligned with the motion of the mean stone relative to the camera, `HAIL_SLOTS` 2 hashes per shell, stones per
+    cell from the number density (`hailNumberDensity`) times `HAIL_COUNT_SCALE` 0.35, each an opaque white-grey
+    pellet (`HAIL_SKY_GAIN` 0.65, `HAIL_SUN_GAIN` 0.2) of a diameter from the size distribution, streaked by its own
+    fall speed. All unconfirmed look values. The streaks have no fade-out. Streaks on shells of 2, 5, 12 and 30 m about the camera on `high` and `ultra`, and
     2, 6 and 20 m on `medium`, up to `MAX_DROPS_PER_CELL` 4 drops per grid cell (`SLOTS_PER_DROP` 3 slots per mean
     drop; at most 16 pcg4d hashes per pixel on `high` and `ultra`, 12 on `medium`). Rain and drizzle streaks span
     the drop's motion in 1/60 s (`STREAK_EXPOSURE_S`), with a width, length and brightness per drop and a fade with
@@ -216,7 +265,7 @@ The `auto` row's `towerExt` equals `TOWER_EXTENSION` in `src/render/clouds/cloud
     the local top moves toward its top. With 0.75 and 0.3 (measured with the density slice, `renderDensitySlice`,
     2026-10-20) the band held cloud only 250 m deep over 1.5 km of its width and was not visible from 7000 m.
   - Shadows: the direct sunlight on each cumulus sample is multiplied by exp(−tau) of the cells' core columns and
-    anvils toward the sun (`STORM_SHADOW_GLSL`); the sky light by 4 / (4 + 0.45 tau_v), and the light's diffuse
+    anvils toward the sun (`STORM_SHADOW_GLSL`, biweight columns); the sky light by 4 / (4 + 0.45 tau_v), and the light's diffuse
     transmission (2 + 3 mu0) / (4 + 0.45 tau_v) − exp(−tau_v / mu0) is added, tau_v the cells' optical depth
     straight above the sample (the mid-level sheet's slab). The shadow map multiplies by the cells' direct
     transmission from the cloud base toward the sun, so the ground under an anvil darkens.
@@ -250,7 +299,7 @@ The `auto` row's `towerExt` equals `TOWER_EXTENSION` in `src/render/clouds/cloud
 | `WindField.stormTurbulence(p, t)` (`weather/windField.ts`) | the cells' severity 0..1 at a point, 0 without cells; read-only |
 | `WindField.stormCells(north, east, t)` | the cells in effect at a point (`StormField.select`); `sample`, `stormTurbulence` and `moisture` use the same selection at their own point |
 | `WindBreakdown.convective` | `{up, outN, outE}` from the cells; all 0 without cells |
-| `SimEnvironment.moisture(altitudeMSL, north?, east?, time?)` (`environment.ts`) | `inCloud` also inside the fog layer, within 150 m of a mid sheet with cover 0.3 or more, and inside a cell core; dew point spread 0 below the base in rain or drizzle |
+| `SimEnvironment.moisture(altitudeMSL, north?, east?, time?)` (`environment.ts`) | `inCloud` also inside the fog layer, within 150 m of a mid sheet with cover 0.3 or more, and inside a cell core; dew point spread 0 below the base in rain or drizzle; in a storm cell's rain shaft the spread times 1 − smoothstep(0, 2 mm/h, storm rain rate) (`stormPrecip.ts`) |
 
 Without cells at the sample point `WindField.sample` skips the convective branch, so its arithmetic is unchanged.
 A derived cell's wind share (`ActiveStorm.wind`, its selection weight times its life cycle) multiplies its updraft,
@@ -400,12 +449,60 @@ Measured (`tests/weather/stormField.test.ts`, 4-CPU machine, 2026-10-20):
   every 4 calls (each advance rebuilds the cells; 13.9 µs at commit f10ece8 on the same machine); the explicit
   four-cell test (`tests/weather/convection.test.ts`) 9.0 µs; the limit is 30 µs.
 
+## Local precipitation and hail (`src/physics/weather/stormPrecip.ts`, `hail.ts`)
+
+`localPrecipAt(w, cells, t, capeJkg, north, east, altM, out)` gives the precipitation at a point: the stratiform
+fields (`precipOf`) plus the storm cells' rain and hail, with their extinction. Node-safe, no allocation. Without
+cells it is `stratiformPrecip(w)`, the values the consumers read before it existed. Consumers: the precipitation
+overlay at the camera, `sim/weather/aircraftWeather.ts` at the aircraft (`ctx.weatherFx.precip`, read by the
+airframe sound, and `ctx.weatherFx.hail`), `SimEnvironment.moisture`, `weatherLine`. The storm march draws the same
+field (`STORM_PRECIP_GLSL`, the same integer hash and value noise), so the rain a camera enters is the rain seen from
+outside. The cell geometry it reads (`physics/weather/cellGeometry.ts`, moved from `render/weather` and re-exported
+there) is the drawn one.
+
+- Rain (per cell, at the point moved upwind by the curtain's slant, `RAIN_SLANT` 0.25 m per m below the base along
+  the anvil's offset): curtain noise cn (value noise at `RAIN_NOISE_M` 1100 and `RAIN_NOISE_FINE_M` 370 m) moves the
+  shaft's edge by ± `SHAFT_RAGGED` 0.3 of its radius; the shaft profile smoothstep(shaftR, 0.3 shaftR) times
+  0.65 + 0.35 cb (cb at `RAIN_BODY_NOISE_M` 620 m); virga at the rest of the core's footprint, fading out
+  `STORM_VIRGA_DEPTH_M` 800 m x (0.5 + cn) below the base; rain inside the cloud up to 50 to 400 m above the base;
+  a fade toward the ground of up to `RAIN_GROUND_FADE` 0.45 by `RAIN_FADE_DEPTH_M` 1500 m below the base; times the
+  intensity and the rain share. Extinction: that density times `STORM_SHAFT_SIGMA` 0.004 1/m; the rate is the
+  inverse of the rain extinction fit (`precipRateForExtinction`), at most `LOCAL_RATE_MAX_MMH` 200 mm/h. All
+  unconfirmed look values.
+- Hail: the largest stone D_max = 3 C_d rho_a w^2 / (4 g rho_h), the stone whose terminal velocity equals the
+  updraft w at the growth level; w = max(the field's wMax, intensity x `HAIL_CAPE_UPDRAFT_SHARE` 0.55 x sqrt(2
+  CAPE)), CAPE of the live weather (`StormField.convective`); C_d `HAIL_DRAG_COEFF` 0.6, rho_h `HAIL_DENSITY_KGM3`
+  900 kg/m^3, rho_a 0.736 kg/m^3 (ISA at 5000 m); at most 150 mm. Fall speed v_t = sqrt(4 g D rho_h / (3 C_d
+  rho_a)) at rho_a 1.1 kg/m^3: 9.4 m/s at 5 mm, 29.9 m/s at 50 mm. C_d, rho_h and the CAPE share are unconfirmed.
+  Occurrence smoothstep(3, 8 mm, D_max); the cell's hail share is min(rain share, lightning share) times it.
+  Sizes: a truncated exponential from 0.4 min(D_max, 12.5 mm) with scale 0.25 D_max (unconfirmed). Rate: up to
+  `HAIL_RATE_FULL_MMH` 12 mm/h in the core out to `HAIL_SHAFT_EDGE` 1.35 shaft radii (beyond the heaviest rain),
+  and `HAIL_ANVIL_SHARE` 0.15 of it under the anvil downwind of the core's footprint in patches, up to 500 m below
+  the anvil's underside. Extinction 3 rho_w R / (v_t rho_h D) at the mean diameter. Measured
+  (`tests/weather/stormPrecip.test.ts`, 2026-10-20): D_max 62 mm at intensity 1 and CAPE 2743 J/kg, 11 mm for an
+  explicit cell of intensity 0.8 without CAPE, 2.4 mm at intensity 0.2 (no hail).
+- Continuity (same test): along straight paths through a cell (R 3 km, intensity 0.9) at 200, 500 and 850 m the
+  rate changes by at most 0.50 mm/h per 5 m against a peak of 64 to 68 mm/h; a fixed point under a cell moving at
+  20 kt, 0.47 mm/h per 0.5 s.
+- Hail on the airframe (`sim/weather/hailExposure.ts`): relative speed sqrt(TAS^2 + v_t(D_max)^2) (level flight),
+  the largest stone's kinetic energy, the energy flux 1/2 M v^3 and its time integral (the dose, reset with the
+  clock). Levels while the rate is at least 0.05 mm/h: severe from 10 J per stone, 300 W/m^2 or 20 kJ/m^2;
+  moderate from 1 J, 30 W/m^2 or 2 kJ/m^2; else light. The HUD shows `HAIL LIGHT` / `MODERATE` / `SEVERE` and a
+  toast "Hail: <level>" appears each time the level rises. All thresholds unconfirmed. The hail does not act on the
+  flight model: damage effects are an open decision.
+- Airframe sound (`audio/mapping.ts` `hailNoise`, parameters `hail` and `hailSize` appended after `rain`): the rate
+  over `HAIL_FULL_MMH` 6 mm/h times a size weight 0.35 to 1 over 5 to 40 mm times the rain's airspeed factor. The
+  worklet voice (`hailSound`) draws impacts from its own noise source, rings each through a click band and a body
+  band whose pitch falls from 2400 to 520 Hz with the size, and is silent at 0. Tuning values set by ear.
+
 ## Training weather line
 
 `weatherLine` (`src/training/content/weatherPresets.ts`) appends present-weather groups only when the fields are
 present: `TS` (explicit cells: when a cell has lightning; derived cells, selected at the airport: when a cell with
 a core or anvil share of at least 0.1 and a lightning share above 0 lies within `TS_RANGE_M` 18 520 m), `DZ`, `-RA` / `RA` / `+RA` (below 2.5 / 10 mm/h / above), `-SN` / `SN` /
-`+SN` (below 1 / 2.5 mm/h / above), `FG` for a fog layer, and `CB` after the cloud group (explicit cells: when
+`+SN` (below 1 / 2.5 mm/h / above), `GR` (largest stone 5 mm or more) or `GS` (smaller) when the storm cells' hail
+(`hailAtField`: `localPrecipAt` at simulation time 0, 2 m above the field, at the airport and 3 km (`HAIL_NEAR_M`)
+north, east, south and west of it) reaches `HAIL_REPORT_MMH` 0.05 mm/h, `FG` for a fog layer, and `CB` after the cloud group (explicit cells: when
 any exist; derived cells: when a cell selected at the airport, so within 60 km, has a core or anvil share of at
 least 0.1). Lesson weather is built on `withoutExtras`, which sets `storms` to the empty list, so a lesson has no
 derived cells. The
@@ -423,8 +520,9 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   that pixel's path instead of the lamp-to-camera path. Inside the fog the removed sun beam returns as diffuse
   light with no surface-normal dependence and no ground reflection (`FOG_DIFFUSE_K` in `src/sim/cloudShadows.ts`,
   unconfirmed).
-- Storm cells: the cumulus march ends at one storm distance per storm-march pixel (half resolution, no jitter), so
-  cumulus behind storm cloud with a transmittance above 0.3 is drawn over it; the shadow columns are cylinders and
+- Storm cells: the cumulus behind storm cloud or rain is dimmed by one storm optical depth per cumulus pixel (at
+  the cumulus front, from a two-point model of the storm's depth along the ray), and is still drawn over the storm's
+  in-scatter in front of it; the shadow columns are cylinders and
   discs, not the drawn density; the rain shaft casts no shadow; the moon does not light a cell; the temporal pass
   reprojects cell pixels with the depth buffer or the cumulus layer, whose front is the storm's clip distance where
   no cumulus lies in front of it.
@@ -439,8 +537,16 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   (visibility measurement below).
 - Downdraft centre: the physics places it toward the cell's motion, and the gust front is centred on it; the drawn
   rain shaft is centred on the core.
+- Hail damage: the impact energy is accumulated and warned of; no effect on the flight model, the airframe or the
+  windscreen. Whether hail damages the aircraft, and how, is open for decision.
+- Storm precipitation: the storm rain is reported as `rain` whatever the temperature (no snow or graupel aloft); the
+  weather line reports no storm rain at the airport (only GR / GS); the hail extinction uses one mean diameter; the
+  precipitation overlay draws storm rain and hail on the camera's grid, so the streak pattern does not follow the
+  shaft's curtain noise inside a few metres.
+- Storm march noise: on SwiftShader the temporal pass needs about 40 frames to converge (frames rendered in
+  `dev/weather.html` at 640x360); a GPU frame rate has not been measured.
 - Landing-light beam: no volumetric term in fog.
-- Windshield drops and wet pavement: not built.
+- Windshield drops and wet pavement: not built (no windscreen effect for rain or hail).
 - GPU timings: none of the plan's per-effect budgets (clouds +0.2 ms, fog 0.3 ms, precipitation 0.5 ms, storm cells
   1.5 ms with two cells and under 0.05 ms with none, on `high`) has been measured. The test machine renders with
   SwiftShader only.

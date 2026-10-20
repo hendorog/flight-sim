@@ -42,6 +42,7 @@ import type { PrecipType } from '../../core/types';
 import { hailFallSpeed, hailLowMm, hailMeanMm, hailNumberDensity, HAIL_SCALE_SHARE } from '../../physics/weather/hail';
 import { emptyLocalPrecip, localPrecipAt, type LocalPrecip } from '../../physics/weather/stormPrecip';
 import { cameraStormsAt, cameraStormsOf } from './stormSelection';
+import { stormOverheadTau } from './stormShade';
 import { Atmosphere } from '../sky/Atmosphere';
 import { FullscreenPass, passMaterial } from '../post/FullscreenPass';
 import type { WeatherEffectContext } from './index';
@@ -61,6 +62,7 @@ import {
   HAIL_SLOTS,
   hailPerCell,
   heavyRainShare,
+  streakRateMmH,
   RAIN_HEAVY_ALPHA,
   RAIN_HEAVY_WIDTH,
   psiScale,
@@ -145,6 +147,7 @@ uniform float uPixelAngle;   // rad per pixel
 uniform float uTime;         // s
 uniform vec3 uRadiance;
 uniform float uOcclusion;
+uniform float uSceneGain;    // share of the scene behind a drop added to its light (storm rain: STORM_STREAK_SCENE_GAIN)
 uniform float uCabinOn;
 uniform mat4 uCabinFromView;
 // Hail (HAIL_SLOTS stones per cell on a grid of its own, aligned with the stones' motion relative to the camera).
@@ -253,7 +256,7 @@ void main() {
     }
   }
   float a = 1.0 - keep;
-  vec3 col = scene.rgb * (1.0 - a * uOcclusion) + uRadiance * a;
+  vec3 col = scene.rgb * (1.0 - a * uOcclusion) + (uRadiance + uSceneGain * scene.rgb) * a;
   if (uHailShells > 0) {
     float hc = clamp(dot(dir, uHailAxis), -${COS_MAX}, ${COS_MAX});
     float hs = sqrt(1.0 - hc * hc);
@@ -395,6 +398,7 @@ export class PrecipOverlay implements SceneEffect {
         uTime: { value: 0 },
         uRadiance: { value: this.radiance },
         uOcclusion: { value: 0 },
+        uSceneGain: { value: 0 },
         uCabinOn: { value: 0 },
         uCabinFromView: { value: this.cabinFromView },
         uHailShells: { value: 0 },
@@ -548,6 +552,7 @@ export class PrecipOverlay implements SceneEffect {
     const heavy = snow ? 0 : heavyRainShare(p.rateMmH);
     const streakWidth = STREAK_WIDTH_PX * (1 + RAIN_HEAVY_WIDTH * heavy);
     const alpha = look.alpha * (1 + RAIN_HEAVY_ALPHA * heavy);
+    const rate = streakRateMmH(p.rateMmH);
     const pixelAngle = this.material.uniforms.uPixelAngle.value as number;
     const n = Math.min(radii.length, MAX_SHELLS);
     for (let k = 0; k < n; k++) {
@@ -560,14 +565,14 @@ export class PrecipOverlay implements SceneEffect {
         this.phase[k] = shellPhase(this.phase[k], 0, R, 0, cell);
       }
       if (dt > 0) this.phase[k] = shellPhase(this.phase[k], speed, R, dt, cell);
-      const perCell = dropsPerCell(p.rateMmH, k, scale, p.type);
-      this.shellA[k].set(R, this.phase[k], cell, dropProbability(p.rateMmH, k, scale, p.type));
+      const perCell = dropsPerCell(rate, k, scale, p.type);
+      this.shellA[k].set(R, this.phase[k], cell, dropProbability(rate, k, scale, p.type));
       const width = snow ? SNOWFLAKE_MAX_M / (R * pixelAngle) : streakWidth;
       const sway = snow ? SNOW_SWAY_CELLS : 0;
       const fade = snow ? 1 : (radii[0] / R) ** RAIN_DEPTH_FADE_EXP;
       const widest = snow ? width : streakWidth * (1 + RAIN_WIDTH_SPREAD / 2);
       this.shellB[k].set(streak / R, width, sway, alpha);
-      this.shellC[k].set(dropSlots(scale, perCell), dropWeight(p.rateMmH, k, scale, p.type), fade, precipMargin(widest, sway, pixelAngle));
+      this.shellC[k].set(dropSlots(scale, perCell), dropWeight(rate, k, scale, p.type), fade, precipMargin(widest, sway, pixelAngle));
     }
     return n;
   }
@@ -601,7 +606,7 @@ export class PrecipOverlay implements SceneEffect {
       const slots = Math.min(HAIL_SLOTS, Math.max(1, Math.ceil(3 * perCell)));
       this.hailA[k].set(R, this.hailPhase[k], cell, Math.min(1, perCell / slots));
       const widest = (p.hailMaxMm / 1000) / (R * pixelAngle);
-      this.hailB[k].set(streak / R, slots, Math.min(4, Math.max(1, perCell / slots)), precipMargin(widest, 0, pixelAngle));
+      this.hailB[k].set(streak / R, slots, Math.min(HAIL_MAX_WEIGHT, Math.max(1, perCell / slots)), precipMargin(widest, 0, pixelAngle));
     }
     return n;
   }
@@ -610,15 +615,23 @@ export class PrecipOverlay implements SceneEffect {
     const sky = ctx.sky;
     const look = PRECIP_LOOK[type as Exclude<PrecipType, 'none'>];
     const a = (this.atmosphere ??= Atmosphere.for(renderer));
-    const sun = Math.max(0, sky.sunDir.y) * a.cloudSky.directGround * look.sunGain;
+    // The direct sun on the drops: under the cumulus layer (cloudSky.directGround) and the storm cells' cloud above
+    // the camera (stormOverheadTau along the slant path to the sun).
+    const mu0 = Math.max(0, sky.sunDir.y);
+    const overhead = stormOverheadTau(ctx);
+    const stormSun = overhead > 0 ? Math.exp(-overhead / Math.max(mu0, 0.1)) : 1;
+    const sun = mu0 * a.cloudSky.directGround * stormSun * look.sunGain;
     this.radiance.set(
       sky.skyColor.r * look.skyGain + sky.sunColor.r * sun,
       sky.skyColor.g * look.skyGain + sky.sunColor.g * sun,
       sky.skyColor.b * look.skyGain + sky.sunColor.b * sun,
     );
     this.material.uniforms.uOcclusion.value = look.occlusion;
+    // Storm rain: the drops also carry the light of the scene behind them, so they show against the grey of a shaft.
+    const p = this.local;
+    this.material.uniforms.uSceneGain.value = p.rateMmH > 0 ? STORM_STREAK_SCENE_GAIN * (p.stormRainMmH / p.rateMmH) : 0;
     // Hail: white-grey ice, lit like snow but greyer (HAIL_SKY_GAIN, HAIL_SUN_GAIN).
-    const hs = Math.max(0, sky.sunDir.y) * a.cloudSky.directGround * HAIL_SUN_GAIN;
+    const hs = mu0 * a.cloudSky.directGround * stormSun * HAIL_SUN_GAIN;
     this.hailRadiance.set(
       sky.skyColor.r * HAIL_SKY_GAIN + sky.sunColor.r * hs,
       sky.skyColor.g * HAIL_SKY_GAIN + sky.sunColor.g * hs,
@@ -639,6 +652,13 @@ export class PrecipOverlay implements SceneEffect {
 /** Radiance of a hailstone: HAIL_SKY_GAIN x the sky ambient + HAIL_SUN_GAIN x the direct sun. Unconfirmed: look values. */
 export const HAIL_SKY_GAIN = 0.65;
 export const HAIL_SUN_GAIN = 0.2;
+/**
+ * Share of the scene behind a storm-rain drop added to its light (the drop refracts the bright surroundings toward
+ * the eye); 0 for stratiform precipitation. Unconfirmed: a look value.
+ */
+export const STORM_STREAK_SCENE_GAIN = 0.7;
+/** Largest factor on a hailstone's coverage when a cell holds more stones than its slots. Unconfirmed: a look value. */
+export const HAIL_MAX_WEIGHT = 1.5;
 /** v_t = sqrt(HAIL_FALL_K D), D in mm (hail.ts hailFallSpeed at its fall air density). */
 export const HAIL_FALL_K = hailFallSpeed(1) ** 2;
 

@@ -254,7 +254,7 @@ export function heavyRainShare(rateMmH: number): number {
 /** Hail slots per grid cell the shader reads, at most (one pcg4d hash each). */
 export const HAIL_SLOTS = 2;
 /** Multiplier on the physical number of stones on a shell (hailPerCell). Unconfirmed: a look value. */
-export const HAIL_COUNT_SCALE = 1;
+export const HAIL_COUNT_SCALE = 0.35;
 
 /**
  * Mean number of stones on shell k (radii: the quality's shell list) in a cell `scale` times CELL_ANGLE long, at a
@@ -265,4 +265,18 @@ export function hailPerCell(perM3: number, radii: readonly number[], shell: numb
   const R = radii[shell];
   const dR = R - (shell > 0 ? radii[shell - 1] : 0);
   return Math.max(0, perM3) * R * R * dR * CELL_ANGLE * CELL_ANGLE * scale * HAIL_COUNT_SCALE;
+}
+
+/**
+ * The rate the streaks are drawn for, mm/h: the rate itself up to STREAK_RATE_KNEE_MMH, above it rising toward
+ * STREAK_RATE_KNEE_MMH + STREAK_RATE_SPAN_MMH (1 - exp). In heavy rain the view is set by the rain's extinction (the
+ * storm march, the haze); drawn at their full count the streaks covered the screen like static (dev/weather.html,
+ * 58 mm/h, 2026-10-20). Unconfirmed: look values.
+ */
+export const STREAK_RATE_KNEE_MMH = 10;
+export const STREAK_RATE_SPAN_MMH = 15;
+
+export function streakRateMmH(rateMmH: number): number {
+  if (!(rateMmH > STREAK_RATE_KNEE_MMH)) return Math.max(0, rateMmH);
+  return STREAK_RATE_KNEE_MMH + STREAK_RATE_SPAN_MMH * (1 - Math.exp(-(rateMmH - STREAK_RATE_KNEE_MMH) / STREAK_RATE_SPAN_MMH));
 }

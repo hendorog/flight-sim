@@ -128,6 +128,14 @@ export const STORM_TAU_B = 1;
 export const STORM_STOP_TAU = 4.6;
 /** Diffuse transmission of a column of optical depth tau: 1 / (1 + STORM_DIFFUSE_K tau). Unconfirmed: a look value. */
 export const STORM_DIFFUSE_K = 0.11;
+/**
+ * Radii of the ambient terms' columns (stormColumn: the sky light from above and the ground light from below), in
+ * core and anvil radii, of a biweight profile. Unconfirmed: fits to the density.
+ */
+export const STORM_COLUMN_CORE_R = 1.25;
+export const STORM_COLUMN_ANVIL_R = 1.1;
+/** Share of the side light's colour the rain removes (toward its grey). Unconfirmed: a look value. */
+export const STORM_RAIN_SIDE_GREY = 0.7;
 /** Albedo of the rain shaft (darker grey than the cloud). Unconfirmed: a look value. */
 export const STORM_RAIN_ALBEDO = 0.55;
 /** The turrets' rise speed through the cell, m/s. Unconfirmed: a look value. */
@@ -445,12 +453,16 @@ vec2 stormColumn(vec3 p) {
     vec4 B = uCellB[i];
     vec4 C = uCellC[i];
     float anvilBot = A.w - ${f(STORM_ANVIL_DEPTH_M)};
-    float core = smoothstep(A.z, 0.6 * A.z, length(p.xz - A.xy)) * 0.8 * ${f(STORM_CORE_SIGMA)};
+    // Biweight profiles (smooth everywhere, 0 at their edge): a camera in the rain sees the ambient terms of the
+    // samples around it, and a profile with a flat top and a shoulder showed as a ring in the rain's in-scatter.
+    float xc = length(p.xz - A.xy) / (${f(STORM_COLUMN_CORE_R)} * A.z);
+    float core = pow(max(1.0 - xc * xc, 0.0), 2.0) * 0.8 * ${f(STORM_CORE_SIGMA)};
     float above = clamp(anvilBot - max(p.y, B.x), 0.0, 1e5);
     float below = clamp(min(p.y, anvilBot) - B.x, 0.0, 1e5);
     float ra = length(p.xz - C.xy);
     float e = clamp(ra / max(B.z, 1.0), 0.0, 1.0);
-    float anvil = smoothstep(B.z, 0.5 * B.z, ra) * 0.75 * ${f(STORM_ANVIL_SIGMA)} * clamp(A.w - max(p.y, anvilBot + 900.0 * e * e), 0.0, 3000.0);
+    float xa = ra / max(${f(STORM_COLUMN_ANVIL_R)} * B.z, 1.0);
+    float anvil = pow(max(1.0 - xa * xa, 0.0), 2.0) * 0.75 * ${f(STORM_ANVIL_SIGMA)} * clamp(A.w - max(p.y, anvilBot + 900.0 * e * e), 0.0, 3000.0);
     vec4 W = uCellW[i];
     tau += vec2(core * W.x * above + anvil * W.y, core * W.x * below);
   }
@@ -626,8 +638,11 @@ void main() {
       vec3 gp = vec3(p.x, uGroundAlt, p.z);
       float under = 1.0 - exp(-0.2 * stormColumn(gp).x);
       vec3 ground = uGroundSun * exp(-stormShadowTau(gp, sunL)) + uGroundSky * mix(1.0, ${f(STORM_GROUND_SKY_UNDER)}, under);
+      // The side light reaches the rain through the rain around it: greyer than the horizon (STORM_RAIN_SIDE_GREY).
+      vec3 sideSky = uHazeColor * ${f(STORM_SIDE_SKY)};
+      sideSky = mix(sideSky, vec3(dot(sideSky, vec3(0.2126, 0.7152, 0.0722))), ${f(STORM_RAIN_SIDE_GREY)} * rainShare);
       vec3 S = sun * (ph * exp(-tauSun) + mix(msCloud, msRain, rainShare))
-             + uSkyColor * (0.85 * stormDiffuse(col.x)) + uHazeColor * ${f(STORM_SIDE_SKY)} + ground * (0.35 * stormDiffuse(col.y));
+             + uSkyColor * (0.85 * stormDiffuse(col.x)) + sideSky + ground * (0.35 * stormDiffuse(col.y));
       S *= mix(0.99, ${f(STORM_RAIN_ALBEDO)}, rainShare);
       float Ts = exp(-sigma * dt);
       float a = T * (1.0 - Ts);
