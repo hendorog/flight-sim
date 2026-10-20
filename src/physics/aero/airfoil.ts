@@ -74,6 +74,11 @@ export interface AirfoilSection {
    */
   collapseAfter?: number;
   collapseWidth?: number;
+  /**
+   * How much more a leading-edge dent costs this section than a section with turbulent flow over its nose
+   * (hailDents.ts): 1 if absent, DENT_LAMINAR_FACTOR on a laminar section. Unconfirmed.
+   */
+  dentFactor?: number;
 }
 
 /** Normal-force coefficient of an infinitely long flat plate broadside to the flow (Hoerner). */

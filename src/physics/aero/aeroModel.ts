@@ -38,7 +38,7 @@ import {
 } from './airfoil';
 import { Fuselage, addDragItemLoads, addStrutLoads, strutMidpoint, type FlowSampler, type LoadAccumulator } from './bodies';
 import { createC172AeroDefinition } from './c172Aero';
-import { applyLeadingEdgeDents, DENT_BODY_CDA_FULL } from './hailDents';
+import { applyLeadingEdgeDents, DENT_BODY_CDA_FULL, quantiseDentLevel } from './hailDents';
 import type { AircraftAeroDefinition, PropellerStation, StallSensor } from './definition';
 import { LiftingLine, WakeCoupling, type GroundPlane, type SectionLift } from './liftingLine';
 import { MAX_PATH, SlipstreamField } from './slipstream';
@@ -775,17 +775,18 @@ export class AeroModel {
   }
 
   /**
-   * Hail dents on the leading edges, 0 (clean) to 1 (hailDents.ts). A change forces every strip's section constants
-   * to be prepared again on the next call. At 0 the model computes exactly as without dents.
+   * Hail dents on the leading edges, 0 (clean) to 1 (hailDents.ts), rounded to DENT_LEVEL_STEP. A change of the
+   * rounded level forces every strip's section constants to be prepared again on the next call. At 0 the model
+   * computes exactly as without dents.
    */
   setLeadingEdgeDamage(level: number): void {
-    const l = Number.isFinite(level) ? Math.min(Math.max(level, 0), 1) : 0;
+    const l = quantiseDentLevel(level);
     if (l === this.dentLevel) return;
     this.dentLevel = l;
     this.sectionCache.fill(NaN);
   }
 
-  /** The level set with setLeadingEdgeDamage. */
+  /** The level set with setLeadingEdgeDamage, after rounding. */
   get leadingEdgeDamage(): number {
     return this.dentLevel;
   }
@@ -933,7 +934,7 @@ export class AeroModel {
         inc.chordExtension !== c[k + 6]
       ) {
         prepareSection(st.section, re, mach, inc, st.cd90, st.skinFactor, this.conds[i], st.liftSlopeFactor);
-        if (this.dentLevel > 0 && !st.carryover && !st.bodySection) applyLeadingEdgeDents(this.conds[i], st.section.s1, this.dentLevel);
+        if (this.dentLevel > 0 && !st.carryover && !st.bodySection) applyLeadingEdgeDents(this.conds[i], st.section.s1, this.dentLevel, st.section.dentFactor);
         c[k] = re;
         c[k + 1] = mach;
         c[k + 2] = inc.dAlpha0;

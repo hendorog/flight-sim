@@ -17,6 +17,7 @@
 
 import { DEG } from '../../core/math';
 import type { AirfoilSection } from './airfoil';
+import { DENT_LAMINAR_FACTOR } from './hailDents';
 
 /**
  * NACA 2412: wing. R = 5.7e6: a = 0.105/deg, alpha0 = -2.1 deg, cl,max = 1.67 at 16 deg, cd,min = 0.0060, cm = -0.047.
@@ -197,6 +198,7 @@ export const NACA_65_2_415: AirfoilSection = {
  *  - Drag: cd,min 0.0087 at cl 0.63, within 0.0008 from cl 0.5 to 1.67; 0.002-0.005 low below cl 0.4, where the
  *    lower surface is about to separate.
  *  - Moment: -0.20 at low angles, -0.147 at 10 deg, -0.125 at 14-16 deg (rms 0.004).
+ *  - Hail dents: a laminar section, dentFactor DENT_LAMINAR_FACTOR (hailDents.ts; unconfirmed).
  */
 export const FX_63_137: AirfoilSection = {
   name: 'Wortmann FX 63-137',
@@ -218,4 +220,5 @@ export const FX_63_137: AirfoilSection = {
   momentK2: 0.025,
   collapseAfter: 8.7 * DEG,
   collapseWidth: 3 * DEG,
+  dentFactor: DENT_LAMINAR_FACTOR,
 };

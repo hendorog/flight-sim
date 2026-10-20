@@ -20,6 +20,7 @@ import {
   type HailDamageRates,
 } from '../../src/sim/weather/hailDamage';
 import { HAIL_DAMAGE_TOAST_LEVEL, HailDamageToasts } from '../../src/ui/hudCues';
+import { DENT_LEVEL_STEP, quantiseDentLevel } from '../../src/physics/aero/hailDents';
 import type { ScenarioId } from '../../src/core/context';
 
 const report = (label: string, values: Record<string, number | string>) =>
@@ -69,6 +70,14 @@ describe('hail damage rates', () => {
     expect(rates(hail(6, 60), 0).dentJm2s).toBe(0);
     expect(rates(hail(6, 30), 0).crackJm2s).toBe(0);
     expect(rates(hail(6, 60), 0).crackJm2s).toBeGreaterThan(0);
+  });
+
+  it('round the flight model\'s dent level to DENT_LEVEL_STEP', () => {
+    expect(quantiseDentLevel(0)).toBe(0);
+    expect(quantiseDentLevel(0.3 * DENT_LEVEL_STEP)).toBe(0);
+    expect(quantiseDentLevel(0.37)).toBe(47 / 128);
+    expect(quantiseDentLevel(1.2)).toBe(1);
+    expect(quantiseDentLevel(Number.NaN)).toBe(0);
   });
 
   it('accumulate monotonically, keep at most MAX_CRACKS cracks and are deterministic', () => {
@@ -143,7 +152,7 @@ describe('hail damage in SimPhysics', () => {
     const dc = c.p.hailDamage.state;
     report('downwind 10 s under the core', { windscreen: dc.windscreen, leadingEdge: dc.leadingEdge, cracks: dc.crackCount, aero: dents(c.p), crashed: String(c.p.state.crashed) });
     expect(dc.leadingEdge).toBeGreaterThan(0);
-    expect(dents(c.p)).toBe(dc.leadingEdge);
+    expect(dents(c.p)).toBe(quantiseDentLevel(dc.leadingEdge));
     c.p.reset('downwind', c.w);
     expect(c.p.hailDamage.state.leadingEdge).toBe(0);
     expect(c.p.hailDamage.state.crackCount).toBe(0);
@@ -159,7 +168,7 @@ describe('hail damage in SimPhysics', () => {
     const q = new SimPhysics({ weather: { ...back.weather } });
     q.restore(back);
     expect(q.hailDamage.capture()).toEqual(p.hailDamage.capture());
-    expect(dents(q)).toBe(p.hailDamage.state.leadingEdge);
+    expect(dents(q)).toBe(quantiseDentLevel(p.hailDamage.state.leadingEdge));
     // Schema 4: no damage block.
     const old = JSON.parse(JSON.stringify(snap));
     delete old.damage;
