@@ -177,11 +177,13 @@ export function environment(ft = 0) {
 }
 export type FixtureEnv = ReturnType<typeof environment>;
 
-export interface FixtureRigOptions extends FixtureOptions { kt?: number; ft?: number; height?: number; pathDeg?: number }
+export interface FixtureRigOptions extends FixtureOptions { kt?: number; ft?: number; height?: number; pathDeg?: number;
+  /** Physics sub-step rate, Hz (default 240). */
+  physicsRate?: number }
 /** The fixture trimmed in level flight at `kt` TRUE airspeed (default hover), `ft` (default 0), 1500 m up. */
 export function fixtureRig(o: FixtureRigOptions = {}) {
   const def = fixtureDefinition(o), env = environment(o.ft ?? 0);
-  const fm = createFlightModelFor(def) as BladeElementFlightModel;
+  const fm = createFlightModelFor(def, o.physicsRate ? { physicsRate: o.physicsRate } : undefined) as BladeElementFlightModel;
   fm.setLoading(def.mass.loadings.typical);
   fm.reset({ position: { x: 0, y: 0, z: -(o.height ?? 1500) }, heading: 0, airspeed: (o.kt ?? 0) * KT,
     flightPathAngle: (o.pathDeg ?? 0) * DEG, onGround: false, engineRunning: true, fuelFraction: 1 }, env);
