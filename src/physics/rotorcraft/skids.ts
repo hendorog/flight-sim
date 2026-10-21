@@ -14,6 +14,59 @@ export function stingerClearance(d: RotorcraftDefinition, b: Pick<GearInput['bod
   }));
 }
 
+/**
+ * The airframe and rotor points no gear must let touch the ground (cabin, lower fin, tail rotor ring, main-rotor tip ring
+ * with the flap harmonics), in the order SkidGear checks them. Extracted unchanged from SkidGear.compute (plan revision
+ * 2, section 7.2) so the wheeled rotorcraft's RotorClearance (wheels.ts) runs the same checks; the contactAirborne and
+ * legacy digests prove the skid path unchanged.
+ */
+export function clearanceContacts(definition: RotorcraftDefinition, rotor?: RotorcraftState,
+  cabin: Vec3 = { x: 0, y: 0, z: 0.5 }): { point: Vec3; name: string }[] {
+  const protection = definition.tailProtection;
+  const contacts = [
+    { point: cabin, name: 'Cabin impact' },
+    ...(protection?.fin.map(point => ({ point, name: 'Lower tail fin strike' })) ?? []),
+    { point: definition.tail.hub, name: 'Tail rotor strike' },
+  ];
+  const tail = definition.tail;
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    contacts.push({ point: { x: tail.hub.x + tail.radius * Math.cos(a), y: tail.hub.y,
+      z: tail.hub.z + tail.radius * Math.sin(a) }, name: 'Tail rotor strike' });
+  }
+  const main = definition.main, tilt = definition.shaftTilt ?? 0;
+  for (let i = 0; i < 8; i++) {
+    const angle = i * Math.PI / 4;
+    // The flap coordinates are in the shaft frame: a tilted mast (MD 500E) rotates the tip ring to the body.
+    contacts.push({ point: tilt ? hubPointToBody(main.hub, { x: main.radius * Math.cos(angle), y: main.radius * Math.sin(angle),
+      z: main.radius * ((rotor?.flapForward ?? 0) * Math.cos(angle) + (rotor?.flapRight ?? 0) * Math.sin(angle) -
+        (rotor?.coning ?? 0)) }, tilt)
+      : { x: main.hub.x + main.radius * Math.cos(angle),
+        y: main.hub.y + main.radius * Math.sin(angle), z: main.hub.z + main.radius * ((rotor?.flapForward ?? 0) * Math.cos(angle) +
+          (rotor?.flapRight ?? 0) * Math.sin(angle) - (rotor?.coning ?? 0)) }, name: 'Main rotor strike' });
+  }
+  return contacts;
+}
+
+/**
+ * The last clearance point below the ground (the crash reason), or '' when none is; `report` hears each fin and tail
+ * rotor strike in order. groundElevation: terrain height at a world (north, east) point, m.
+ */
+export function clearanceStrike(definition: RotorcraftDefinition, b: Pick<GearInput['body'], 'position' | 'orientation'>,
+  rotor: RotorcraftState | undefined, groundElevation: (x: number, y: number) => number,
+  report?: (kind: RotorcraftState['tailContact']) => void, cabin?: Vec3): string {
+  let crash = '';
+  for (const { point, name } of clearanceContacts(definition, rotor, cabin)) {
+    const world = v3.add(b.position, quat.rotate(b.orientation, point));
+    if (world.z + groundElevation(world.x, world.y) >= 0) {
+      crash = name;
+      if (name === 'Lower tail fin strike') report?.('fin-strike');
+      if (name === 'Tail rotor strike') report?.('rotor-strike');
+    }
+  }
+  return crash;
+}
+
 /** Four compliant skid contacts with elastic static grip and surface-dependent sliding. */
 export class SkidGear {
   private grounded = false;
@@ -174,36 +227,8 @@ export class SkidGear {
         reportTail(hard ? 'stinger-impact' : 'stinger-touch');
       }
     }
-    const contacts = [
-      { point: { x: 0, y: 0, z: 0.5 }, name: 'Cabin impact' },
-      ...(protection?.fin.map(point => ({ point, name: 'Lower tail fin strike' })) ?? []),
-      { point: this.definition.tail.hub, name: 'Tail rotor strike' },
-    ];
-    const tail = this.definition.tail;
-    for (let i = 0; i < 8; i++) {
-      const a = i * Math.PI / 4;
-      contacts.push({ point: { x: tail.hub.x + tail.radius * Math.cos(a), y: tail.hub.y,
-        z: tail.hub.z + tail.radius * Math.sin(a) }, name: 'Tail rotor strike' });
-    }
-    const main = this.definition.main, tilt = this.definition.shaftTilt ?? 0;
-    for (let i = 0; i < 8; i++) {
-      const angle = i * Math.PI / 4;
-      // The flap coordinates are in the shaft frame: a tilted mast (MD 500E) rotates the tip ring to the body.
-      contacts.push({ point: tilt ? hubPointToBody(main.hub, { x: main.radius * Math.cos(angle), y: main.radius * Math.sin(angle),
-        z: main.radius * ((rotor?.flapForward ?? 0) * Math.cos(angle) + (rotor?.flapRight ?? 0) * Math.sin(angle) -
-          (rotor?.coning ?? 0)) }, tilt)
-        : { x: main.hub.x + main.radius * Math.cos(angle),
-          y: main.hub.y + main.radius * Math.sin(angle), z: main.hub.z + main.radius * ((rotor?.flapForward ?? 0) * Math.cos(angle) +
-            (rotor?.flapRight ?? 0) * Math.sin(angle) - (rotor?.coning ?? 0)) }, name: 'Main rotor strike' });
-    }
-    for (const { point, name } of contacts) {
-      const world = v3.add(b.position, quat.rotate(b.orientation, point));
-      if (world.z + env.groundElevation(world.x, world.y) >= 0) {
-        crash = name;
-        if (name === 'Lower tail fin strike') reportTail('fin-strike');
-        if (name === 'Tail rotor strike') reportTail('rotor-strike');
-      }
-    }
+    const strike = clearanceStrike(this.definition, b, rotor, (x, y) => env.groundElevation(x, y), reportTail);
+    if (strike) crash = strike;
     // Ground-only physical pose/contact extension. Airborne loads and rotor states retain their
     // original arithmetic; snapshots deep-copy the optional slow-rotor coordinate.
     const nearGround = -b.position.z - env.groundElevation(b.position.x, b.position.y) < d.z + this.definition.main.radius;

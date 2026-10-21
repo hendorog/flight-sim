@@ -85,10 +85,17 @@ export const BELLY_TURRET = { x: x(190), clearanceM: 21 * IN } as const;
 
 // ---------------------------------------------------------------------------------------------- gear
 /** Retractable tail-wheel gear. Mains: track about 62 in (D from the "landing gear 5 ft 2 in" pivot radius, P ASTA-72
- *  p 37), FS 280-290 (3V ESTIMATE: legs under the wing-root leading edge), retracting into the sponsons. Tail wheel under
- *  the ventral fin, about FS 640 (P location, station ESTIMATE), retracting into the fin; 5.00x4 tyre at 100 psi (P). */
-export const MAIN_GEAR = { x: x(285), halfTrack: 31 * IN } as const;
+ *  p 37), retracting into the sponsons. Main axles at FS 268 (3V, AG stage 2: the Fort Campbell left and Rucker right
+ *  side photos put the main wheels 30-35 in ahead of the mast at FS 300; the scaffold's FS 285 left the mains only 13 in
+ *  ahead of the CG, where braking above 0.17 g tips the aircraft onto its nose). Tail wheel under the ventral fin,
+ *  about FS 640 (P location, station 3V), retracting into the fin; 5.00x4 tyre at 100 psi (P). */
+export const MAIN_GEAR = { x: x(268), halfTrack: 31 * IN } as const;
 export const TAIL_WHEEL = { x: x(640) } as const;
+/** Tyre rolling radii, m: main 11 in (3V; the exterior's MAIN_TYRE), tail 6.75 in (a 5.00x4 tyre, P size). */
+export const MAIN_TYRE_RADIUS = 11 * IN;
+export const TAIL_TYRE_RADIUS = 6.75 * IN;
+/** Main wheel half-track, m (D, 62 in track). */
+export const MAIN_GEAR_HALF_TRACK = 31 * IN;
 
 // ---------------------------------------------------------------------------------------------- crew
 /** Pilot in the REAR seat. Vibration pickups / floor points: front FS 124 (FS 130.5 BL 1 R WL 80.5 AMCS), rear FS 170

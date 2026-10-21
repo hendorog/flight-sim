@@ -74,6 +74,9 @@ export interface WheelConfig {
   brake: 'left' | 'right' | null; maxBrakeTorque: number; limitLoad: number;
   /** Contact point with the leg stowed (for partial-extension contact tests and the render). Retractable legs only. */
   stowed?: Vec3;
+  /** The leg's name in crash messages ("<label> gear collapsed"). Absent: Nose / Left main / Right main by the slot (a
+   *  tail wheel in the "nose" slot, AH-56A, says "Tail"). */
+  label?: string;
 }
 
 export interface GearConfig {

@@ -31,9 +31,11 @@ export function demoScenario(id: R22DemoId, env: Environment, d: Pick<Rotorcraft
   };
 }
 
-/** Opt-in airborne start for trying helicopter hold; no demonstration pilot. */
-export function hoverScenario(env: Environment, d: Pick<RotorcraftDefinition, 'skids'>): Scenario {
+/** Opt-in airborne start for trying helicopter hold; no demonstration pilot. A wheeled rotorcraft (AH-56A: retractable
+ *  gear) hovers with its gear down; `skids.z` is its tyre contact at rest, so the 15 m is to the wheels. */
+export function hoverScenario(env: Environment, d: Pick<RotorcraftDefinition, 'skids' | 'landingGear'>): Scenario {
   const sc = demoScenario('hover', env, d);
   return { ...sc, title: 'Helicopter hold test · 15 m hover',
-    ic: { ...sc.ic, position: { ...sc.ic.position, z: sc.ic.position.z - 12 } } };
+    ic: { ...sc.ic, position: { ...sc.ic.position, z: sc.ic.position.z - 12 },
+      ...(d.landingGear === 'wheels' ? { gearDown: true } : {}) } };
 }
