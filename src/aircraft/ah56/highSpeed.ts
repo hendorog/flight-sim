@@ -26,12 +26,14 @@ const LB = 0.45359237;
  *   value held to M 0.3 (-3 %), the fall concentrated between M 0.4 and 0.5 (where the leading-edge suction peak of a 12 % section
  *   goes supersonic at the stall); not fitted to H4 (the moment break carries that fit). M 0.5-0.7 set so the hover tip (M 0.56)
  *   keeps 2 deg of stall margin at 18,300 lb SL and the C2 / C3 ceilings stay unstalled. Negative stall at 0.8 of it (ESTIMATE).
- * - Past the stall, lift fades to the flat plate over 15 deg and drag rises to it over 3 deg: FITTED to P Report 530 Table IV
- *   (Cl 1.26 -> 1.1 / 1.0 / 0.9 at +3.2 / +6.5 / +10 deg past Cl max; section drag 0.127 / 0.195 / 0.275 there).
+ * - Past the stall, lift fades to the flat plate over 15 deg and drag rises to it over 3 deg: the lift FITTED to P Report 530
+ *   Table IV (Cl 1.26 -> 1.1 / 1.0 / 0.9 at +3.2 / +6.5 / +10 deg past Cl max; the shape gives 1.17 / 1.00 / 0.85). The drag is
+ *   NOT fitted: it reads 0.156 / 0.221 / 0.302 there against Report 530's 0.127 / 0.195 / 0.275 (+23 / +13 / +10 %; docs 5.2, C12).
  * - MOMENT STALL. Flown: past the stall the centre of pressure moves 0.4 c aft of the quarter chord within 1.5 deg (ESTIMATE,
  *   FITTED to H4: the retreating blade's dynamic moment stall at reduced frequency about 0.1, a sudden break of about -0.45 in cm at
- *   cn 1.1; no primary dynamic-stall data for this section were downloaded), faded out between M 0.45 and 0.6 (the
- *   advancing side's separation is shock-induced; the drag rise and the tuck carry it). The static P shape, 0.14 c over 12 deg (D
+ *   cn 1.1; no primary dynamic-stall data for this section were downloaded), relaxing to the flat plate over the next 15 deg,
+ *   faded out between M 0.4 and 0.55 (AGENT: the advancing side's separation is shock-induced, the drag rise and the tuck carry
+ *   it; with the fade at 0.45-0.6 the 20,500 lb IGE hover trims, 0.1-0.6 deg from the tip stall, did not converge). The static P shape, 0.14 c over 12 deg (D
  *   from P Report 530 Table IV, cm_c/4 -0.012 at Cl max, -0.056 / -0.086 / -0.107 / -0.118 at +3.2 / +6.5 / +10 / +11.6 deg),
  *   gives under 1 deg of uncommanded roll at 1.7 g (docs section 2): too small for HQRS 10.
  * - The separated flat plate: normal force 2.0 sin(alpha) (P NACA TN 3361, the 0012 through 180 deg: 2.08 at 90 deg, Re 1.8e6),
