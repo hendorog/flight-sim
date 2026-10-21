@@ -200,8 +200,8 @@ describe('H6: AMCS, the same manoeuvres (P AMCS-73 para 37: positive and linear 
   }, 1_800_000);
   // KNOWN GAP (docs section 3 H6; AG handover in section 8.1): in a steady turn the AMCS needs 4-5 in of aft stick per g (AG's
   // first-peak rate calibration against the steady state: the P rate command implies about 1.8 in/g), so full aft stick (the
-  // 4.95 in stop) reaches only 2.27-2.28 g at 155 and 2.44-2.45 g at 180 KCAS: "to 2.5 g" is shown only to those load factors.
-  for (const kcas of [155, 180]) it.fails(`PLAN H6 BAND: ${kcas} KCAS reaches 2.5 g inside the stick travel (measured: the stop at 2.27 / 2.44 g)`, () => {
+  // 4.95 in stop) holds only 2.29 g at 155 and 2.48 g at 180 KCAS (peaks 2.34 / 2.49): "to 2.5 g" is shown only to those.
+  for (const kcas of [155, 180]) it.fails(`PLAN H6 BAND: ${kcas} KCAS reaches 2.5 g inside the stick travel (measured at the 4.95 in stop: 2.29 / 2.48 g)`, () => {
     expect(h6[kcas]).toBeDefined();
     expect(h6[kcas].nMax).toBeGreaterThanOrEqual(2.5);
     expect(h6[kcas].atStop).toBe(false);
