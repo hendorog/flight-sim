@@ -56,11 +56,24 @@ export const AH56_ICS_CONFIG: ControlGyroConfig = {
 };
 
 /**
+ * The two AMCS numbers fitted on the flown aircraft (the compound with the stage-5 section): the flapping feedback gain K_R,
+ * N m/rad, and the full longitudinal stick moment, N m. FITTED to G5 / C18 (P AMCS-73 paras 33-34; Hoh-74) with the wing, the
+ * pusher, the stores and the blade section on: the fitting condition is the whole aircraft, not the stage-2 helicopter.
+ * History (docs/control-gyro-model.md section 6): stage 2 (no compound) 7,500 / 811; stage 4 (AC, wing and pusher) 3,000 / 590;
+ * stage 5 (AH, Prandtl-Glauert lift slope) 3,200 / 566. Flown: pitch 5.77 / 4.93 / 4.57 deg/s/in at 0 / 100 / 150 KCAS, hover
+ * sensitivity 11.54 deg/s^2/in (<= 11.7), C18 4.26 deg/s/in at 180 KCAS; 0.4-1.9 % margins. These used to live in compound.ts
+ * as an override of the stage-2 pair (AH56_COMPOUND_GYRO); the no-compound rig (G10) now flies them too.
+ */
+export const AMCS_FLAP_FEEDBACK = 3200;
+export const AMCS_LONGITUDINAL_STICK_MOMENT = 566;
+
+/**
  * AMCS 1973 (P AMCS-73 App C pp 29-30 unless tagged): the 1.5 slug-ft^2, 26 in gyro below the transmission, its momentum
  * fixed at the ICS value (ESTIMATE, plan 7.2: geared to about 7,400 rpm); labelled tilt stops up 10.11, down 18.05, right
  * 12.27, left 18.08 deg read as blade cyclic (SSL gain 1, plan G5a); 9.9 x 5.8 in of stick; irreversible servos (no
  * feathering-moment path) and first-harmonic flapping fed back through springs. FITTED to the measured 6 / 9 deg/s/in
- * pitch and 16 deg/s/in roll (P AMCS-73 paras 33-34; Hoh-74): the stick moments and K_R only (docs: "AMCS fit"). The
+ * pitch and 16 deg/s/in roll (P AMCS-73 paras 33-34; Hoh-74): the stick moments and K_R only (docs: "AMCS fit"; the
+ * longitudinal moment and K_R above, fitted on the compound). The
  * positive spring, the negative spring that partly cancels it and the rotating damping (Hohenemser's slow alignment) are
  * ESTIMATES.
  */
@@ -70,14 +83,14 @@ export const AH56_AMCS_CONFIG: ControlGyroConfig = {
   maxTilt: { up: AH56_AMCS_GYRO.stopsDeg.up * DEG, down: AH56_AMCS_GYRO.stopsDeg.down * DEG,
     left: AH56_AMCS_GYRO.stopsDeg.left * DEG, right: AH56_AMCS_GYRO.stopsDeg.right * DEG },
   stickTravel: { longitudinal: AH56_STICK_IN.amcs.longitudinal / 2 * IN, lateral: AH56_STICK_IN.amcs.lateral / 2 * IN },
-  stickMoment: { longitudinal: 811, lateral: 907 },
+  stickMoment: { longitudinal: AMCS_LONGITUDINAL_STICK_MOMENT, lateral: 907 },
   spring: AH56_ICS_GYRO.spring, negativeSpring: 4500,
   damping: AH56_ICS_GYRO.dampingPerAxis, rotatingDamping: 0.4,
   // No AMCS angles are published: the feedback at the model's best-damped auto-trim phase, 20 deg advanced (ESTIMATE, docs
   // "Senses"); the input FITTED to G8 (pure longitudinal stick, roll within 20 % of pitch).
   inputRotation: AMCS_INPUT_ROTATION_DEG * DEG, feedbackRotation: 20 * DEG,
   cyclicPerTilt: 1,
-  feedback: { mode: 'flapping', gain: 7500 },
+  feedback: { mode: 'flapping', gain: AMCS_FLAP_FEEDBACK },
   augmentation: {
     // P sense (trim aft as speed rises); ESTIMATE amounts: 0.3 in forward at the hover to 0.3 in aft at 180 KCAS.
     trimSchedule: { offsetByKcas: { x: [0, 180], y: [-0.3 * IN, 0.3 * IN] } },

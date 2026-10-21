@@ -158,8 +158,10 @@ Numbers as AC measured them on the stage-4 aircraft; the stage-5 section moved s
   tip-loss terms plus wave drag at tip Mach 0.84 (`src/physics/propulsion/**`). The fuselage flat plate (1.0 m², 1.53 m² with stores at
   194 KTAS) stands for what this prop map can push, not a physical estimate; at 0.80 it would be about 1.2 m².
 - **Stores drag on by default** (4 XM159 pods, P ΔFe 2 → 6 ft²; AGENT): clean AMCS reaches 213 KTAS, with stores about 199.
-- **The AMCS gyro pair lives in compound.ts** (`AH56_COMPOUND_GYRO`: K_R and the longitudinal stick moment override gyro.ts's 7,500 /
-  811 N m; AC's refit, then AH's). gyro.ts keeps the stage-2 fit for reference.
+- **Resolved (final fix round): the AMCS gyro pair lives in gyro.ts.** K_R 3,200 N m/rad and the longitudinal stick moment 566 N m
+  (AC's refit, then AH's) used to override gyro.ts's stage-2 7,500 / 811 N m from compound.ts (`AH56_COMPOUND_GYRO`); they are now
+  gyro.ts's own numbers with the compound named as the fitting condition (docs/control-gyro-model.md section 6). The flown aircraft is
+  unchanged; the no-compound rig (G10) now flies them too.
 - **ICS hands-off hover** pitches up on the compound (AC: +17.6° in 20 s calm, headless; in the sim with the 8 kt default wind +29°,
   22 kt). On the integrated tree (air data wired) the ah56Ground readout reads ICS −5.3 → −3.4° roll, +8.8° pitch, 5.2 kt; AMCS −5.4 →
   −6.4° roll, +2.3° pitch, 3.3 kt after 20 s (calm).

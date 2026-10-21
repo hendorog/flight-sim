@@ -394,7 +394,8 @@ Everything here is an AGENT finding or request; none of it is an owner decision.
      as a KNOWN GAP. AC caused this red.
 3. **The AMCS gyro numbers live in compound.ts:** K_R 3,000 N m/rad and the full longitudinal stick moment 590 N m override AG's gyro.ts
    (7,500 / 811) through `AH56_COMPOUND_GYRO`. Move the pair into gyro.ts with the compound as the fitting condition, or add a comment in
-   gyro.ts pointing at the override. The margins are fragile (section 5): G5 hover sensitivity 2.8 %, G5 150 KCAS rate 3.3 %, G5 roll
+   gyro.ts pointing at the override. **Done in the final fix round:** the flown pair (3,200 / 566 after AH's refit) is in gyro.ts with
+   the compound named as its fitting condition, and compound.ts no longer overrides the gyro. The margins are fragile (section 5): G5 hover sensitivity 2.8 %, G5 150 KCAS rate 3.3 %, G5 roll
    sensitivity at 150 KCAS 2.9 %, G8 AMCS p/q at 100 KCAS 0.165 of 0.2, C9 at 190 KCAS 0.03 in.
 4. **Plan C22's sign** (owner to see): +4° re-trimmed over the spot is nose UP by about T/W, not 3–6° nose down (section 6, C22 note).
 5. **The rotor Mach placeholder is not flown** (plan 7.3 flies it): C4 196.9 KTAS with it / 198.7 as flown; C5 211.7 with it (1.7 KTAS of

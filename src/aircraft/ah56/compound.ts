@@ -8,13 +8,11 @@
 // named). AGENT choices are not owner decisions.
 import { DEG, KT } from '../../core/math';
 import type { PropellerDef } from '../../physics/propulsion/defs';
-import type { ControlGyroDef } from '../../physics/rotorcraft/controlGyro';
 import type { PusherDef } from '../../physics/rotorcraft/pusher';
 import type { RotorSectionDef } from '../../physics/rotorcraft/section';
 import type { WingPanelDef } from '../../physics/rotorcraft/wings';
 import { AH56_BASE } from './base';
 import * as D from './dimensions';
-import { AH56_GYRO } from './gyro';
 import { AH56_PROP_BETA_DEG, AH56_PROP_INERTIA, AH56_PROP_RATIO, ah56PropLever } from './facts';
 import type { AH56Patch } from './patch';
 
@@ -232,32 +230,8 @@ export const AH56_PUSHER: PusherDef = {
  * 19, P) and the hover 1 deg past the 21.5 deg stop (AMCS-73 App C, P). AG's reading keeps all three; the price is a rotor
  * that carries more of the weight at speed than the ESTIMATE lift-share band (C6).
  */
-/**
- * The AMCS refit on the compound (stage 4; AG's docs/control-gyro-model.md section 6 calls it mandatory: the wing, the
- * pusher and the unloaded rotor take the 150 KCAS pitch response from 4.27 to 3.81 deg/s/in with AG's 7,500 N m/rad and
- * 811 N m). Only the two numbers AG fitted move: the flapping feedback gain K_R 7,500 -> 3,000 N m/rad and the full
- * longitudinal stick moment 811 -> 590 N m (FITTED to G5 / C18 on the compound; the grid is in docs/ah56-compound.md
- * section 5): pitch 5.94 / 4.85 / 4.34 / 3.93 deg/s/in at 0 / 100 / 150 / 180 KCAS, sensitivity 11.4 / 10.2 deg/s^2/in at
- * 0 / 100; roll 15.6 / 16.7 / 16.7 / 16.6 deg/s/in, 65.2 / 66.9 / 65.4 deg/s^2/in at 0 / 150 / 180. The model's
- * sensitivity per unit response stays about 1.9 /s (AMCS-73's 9 / 6 is 1.5 /s); a lower K_R lowers the hover sensitivity
- * per unit of 150 KCAS rate (2.82 at 5,000, 2.60 at 3,000), so 3,000 holds both G5 edges with 2.6 % / 3.3 % margins (hover
- * sensitivity under 11.7, 150 KCAS rate over 4.2). No pair reaches 4.2 deg/s/in at 180 KCAS with the hover sensitivity under
- * 11.7 (C18's KNOWN GAP). AGENT fit: these AMCS numbers override AG's gyro.ts (integrator: move them there with the compound
- * as the fitting condition, or point gyro.ts at this override).
- */
-// Stage 5 (AH handover, docs/ah56-high-speed.md section 5.1): the section's Prandtl-Glauert lift slope raises the hub moment per
-// cyclic about 6 % at the hover tip (M 0.56); refitted with AG's gyro.ts lateral moment (975 -> 907 N m) and input rotation (9 -> 5
-// deg): K_R 3,000 -> 3,200 N m/rad, longitudinal 590 -> 566 N m. G5 pitch 5.77 / 4.93 / 4.57 deg/s/in at 0 / 100 / 150 KCAS, hover
-// sensitivity 11.54 (<= 11.7), C18 4.26 deg/s/in at 180 KCAS, C9 0.498 in at 190 KCAS: thin margins (0.4-1.9 %).
-export const AMCS_FLAP_FEEDBACK = 3200;
-export const AMCS_LONGITUDINAL_STICK_MOMENT = 566;
-
-const gyro = AH56_GYRO!;
-export const AH56_COMPOUND_GYRO: ControlGyroDef = { ...gyro, configs: {
-  amcs: { ...gyro.configs.amcs, feedback: { mode: 'flapping', gain: AMCS_FLAP_FEEDBACK },
-    stickMoment: { ...gyro.configs.amcs.stickMoment, longitudinal: AMCS_LONGITUDINAL_STICK_MOMENT } },
-  ics: gyro.configs.ics,
-} };
+// The AMCS refit on the compound (stages 4 and 5: K_R 3,200 N m/rad, longitudinal stick moment 566 N m) lives in gyro.ts with
+// the compound named as its fitting condition (docs/control-gyro-model.md section 6); this file no longer overrides the gyro.
 
 // ------------------------------------------------------------------------------------------------- rotor Mach drag
 /**
@@ -302,5 +276,4 @@ export const AH56_COMPOUND: AH56Patch = {
   dragArea: { ...AH56_BASE.dragArea, x: FUSELAGE_DRAG_X },
   wings: AH56_WINGS,
   pusher: AH56_PUSHER,
-  controlGyro: AH56_COMPOUND_GYRO,
 };

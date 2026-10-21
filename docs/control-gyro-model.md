@@ -208,17 +208,37 @@ The grid (811 / 975 N m held, K_R varied; first-peak rates, °/s/in, and sensiti
 - Hoh-74's hover band (9 ± 30 %: ≥ 6.3) with the 9 °/s²/in sensitivity band (≤ 11.7) needs ≤ 11.7 / 6.3 = 1.86 /s. **No (M, K_R) meets
   both**: that row is an expected failure (`ah56Handling.test.ts` G5 KNOWN GAP), not a fitting miss. AMCS-73's own hover number (6, P) is met.
 - K_R sets how much of the rate survives at speed (150 KCAS / hover 0.73 at 6, 0.71 at 7, 0.70 at 7.5) against the stabiliser.
-- **No refit**: 811 N m / K_R 7500 kept. The margins: hover pitch 6.08 (AMCS-73 band 4.2–7.8: 45 % / 22 %), 150 KCAS 4.27 (1.7 % above 4.2),
-  sensitivity 11.57 (1.1 % under 11.7), roll sensitivity at 150 KCAS 65.1 (5.5 % under 68.9). The model's sensitivity per unit response
-  (1.9 /s) is above AMCS-73's (9 / 6 = 1.5 /s), which is what leaves no margin. **The stage-4 refit is mandatory** (the pusher and the drag
-  recalibration change the pitch damping and stability).
+- **Stage 2 kept 811 N m / K_R 7,500** (the grid above, on the helicopter without wing or pusher). The margins then: hover pitch 6.08,
+  150 KCAS 4.27 (1.7 % above 4.2), sensitivity 11.57 (1.1 % under 11.7), roll sensitivity at 150 KCAS 65.1 (5.5 % under 68.9). The model's
+  sensitivity per unit response (1.9 /s) is above AMCS-73's (9 / 6 = 1.5 /s), which is what leaves no margin.
 
-| Fitted (AMCS, ESTIMATE) | Value | What fixed it |
+**The flown AMCS numbers (gyro.ts).** The fitting condition is the whole aircraft: the wing, the pusher on the shared shaft, the stores and
+the stage-5 blade section. Only K_R and the longitudinal stick moment were refitted after stage 2 (the wing, the pusher and the unloaded
+rotor took the 150 KCAS pitch response from 4.27 to 3.81 °/s/in with 7,500 / 811):
+- stage 4 (AC, docs/ah56-compound.md section 5): K_R 3,000 N m/rad, longitudinal 590 N m;
+- stage 5 (AH, docs/ah56-high-speed.md section 5.1; the Prandtl-Glauert lift slope raises the hub moment per cyclic about 6 % at the hover
+  tip): **K_R 3,200 N m/rad, longitudinal 566 N m**, with the lateral moment 975 → 907 N m and the input rotation 9 → 5°.
+Until the final fix round these two lived in compound.ts as an override of the stage-2 pair (`AH56_COMPOUND_GYRO`); they are now
+`AMCS_FLAP_FEEDBACK` and `AMCS_LONGITUDINAL_STICK_MOMENT` in gyro.ts, so the no-compound rig (G10) flies them too. The flown aircraft is
+unchanged by the move (a whole-flight-model digest of both configurations is identical before and after).
+
+What they give on the flown aircraft (`docs/ah56-integration.md` section 4; 18,300 lb, SL ISA, stores on; first peaks of a held 1 in step):
+
+| Row | Flown (3,200 / 566 / 907 N m, input 5°) | Target (tag) |
 |---|---|---|
-| Stick moment at full longitudinal stick (4.95 in) | 811 N m (164 N m/in) | pitch response (first peak) 6.08 °/s/in at the hover, 4.79 at 100 and 4.27 at 150 KCAS |
-| Stick moment at full lateral stick (2.9 in) | 975 N m (336 N m/in) | roll response 14.3 / 14.8 / 15.0 °/s/in; sensitivity 58.8 (hover) / 65.1 (150 KCAS) °/s²/in |
-| K_R | 7,500 N m/rad | the 150 KCAS / hover ratio and the pitch sensitivity 11.57 (hover) / 11.09 (100 KCAS) °/s²/in (grid above) |
-| Input rotation | 9° advanced | G8 |
+| G5 pitch, 0 / 100 / 150 KCAS | 5.78 / 4.93 / 4.57 °/s/in | 6 ± 30 % = 4.2-7.8 (P AMCS-73 para 33) |
+| G5 pitch sensitivity, hover | 11.54 °/s²/in (1.4 % under the edge) | 9 ± 30 % = 6.3-11.7 (P) |
+| G5 roll, 0 / 100 / 150 KCAS | 14.6 / 15.6 / 15.6 °/s/in | 13-16 ± 30 % (P) |
+| G5 roll sensitivity, hover / 150 KCAS | 63.5 / 67.6 °/s²/in | 60 / 53 ± 30 % (P) |
+| C18 pitch / roll at 180 KCAS | 4.26 / 15.6 °/s/in; roll sensitivity 66.6 | 6 / 16 ± 30 %; 53 ± 30 % (P) |
+| C19 pull-up from 180 KCAS | 2.43 g at 1.78 s | 2.43 g in about 2.1 s (P AMCS-73 para 39) |
+
+| Fitted (AMCS, ESTIMATE) | Flown value | What fixed it |
+|---|---|---|
+| Stick moment at full longitudinal stick (4.95 in) | 566 N m (114 N m/in); stage 2: 811 | G5 pitch response and hover sensitivity, C18 at 180 KCAS, on the compound |
+| Stick moment at full lateral stick (2.9 in) | 907 N m (313 N m/in); stage 2: 975 | G5 roll response and sensitivity, C9 lateral trim |
+| K_R | 3,200 N m/rad; stage 2: 7,500 | the 150 KCAS / hover pitch ratio against the hover sensitivity, on the compound |
+| Input rotation | 5° advanced; stage 2: 9° | G8 |
 | Feedback rotation | 20° advanced | the best-damped auto-trim |
 | Spring / negative spring / C_R | 5559 / 4500 N m/rad / 0.4 N m s/rad | ESTIMATE (net spring small: Hohenemser's negative spring) |
 | SSL gain G | 1 | the stops read as cyclic (G5a) |

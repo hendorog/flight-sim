@@ -314,8 +314,8 @@ with AG's step-response method and then in AG's and AC's own tests:
 
 | Number | File | Now | Refit |
 |---|---|---|---|
-| `AMCS_FLAP_FEEDBACK` (K_R) | compound.ts | 3,000 N m/rad | **3,200** |
-| `AMCS_LONGITUDINAL_STICK_MOMENT` | compound.ts | 590 N m | **566** |
+| `AMCS_FLAP_FEEDBACK` (K_R) | compound.ts (gyro.ts since the final fix round) | 3,000 N m/rad | **3,200** |
+| `AMCS_LONGITUDINAL_STICK_MOMENT` | compound.ts (gyro.ts since the final fix round) | 590 N m | **566** |
 | AMCS `stickMoment.lateral` | gyro.ts | 975 N m | **907** |
 | `AMCS_INPUT_ROTATION_DEG` | gyro.ts | 9° | **5°** |
 
