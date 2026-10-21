@@ -13,6 +13,10 @@ import type { BladeElementFlightModel } from '../../src/physics/flightModel';
 import type { Rotorcraft } from '../../src/physics/rotorcraft/rotorcraft';
 import type { GyroConfigId } from '../../src/physics/rotorcraft/controlGyro';
 import { environment, gyroDef, report, writeTrace } from './ah56Rig';
+import { parseSnapshot } from '../../src/sim/resume';
+import { hoverScenario } from '../../src/sim/rotorcraft/starts';
+import { SimPhysics } from '../../src/sim/SimPhysics';
+import { calmWeather } from '../fdm/helpers';
 
 const trace: Record<string, unknown> = {};
 afterAll(() => writeTrace('ah56HalfP', trace));
@@ -187,13 +191,56 @@ describe('H7: the half-P hop (ICS only; P frequency and stir limit, ESTIMATE amp
     trace.restore = { saved, worstPhase, a: ea.amplitude, b: eb.amplitude };
     expect(saved.active).toBe(true);
     // The restored flight's first step is on the flight clock (setClock) and takes the rotor's turn: no step of the phase (0.054 rad)
-    // is lost. What remains is the two flights' own drift: B's private onset fade restarts, so its body motion and rotor speed
-    // differ slightly from A's.
+    // is lost. The onset age is saved too, so the fade continues and the two flights stay together (2e-9 rad after 1 s; 0.0065 rad
+    // when B's private onset fade restarted, before the age was saved).
     expect(worstPhase).toBeLessThan(0.02);
     // Decaying from the saved amplitude (hands off), not restarted at 1.
     expect(eb.amplitude).toBeLessThan(saved.amplitude);
     expect(Math.abs(eb.amplitude - ea.amplitude)).toBeLessThan(0.05);
   });
+  it('save and restore mid-onset: the forcing continues (the onset age is saved); an older save without it restores at full forcing', () => {
+    // A save 0.4 s into the 1 s onset fade. Before the age was saved the restored flight restarted the fade and the cue clock: the
+    // roll moment fell from about 60 kN m to almost nothing on the first restored step (codex's probe: 168 kN m -> 9 N m).
+    const moment = (r: Rig) => (r.rotor.halfP as unknown as { out: { moment: { x: number } } }).out.moment.x;
+    const restoreFrom = (a: Rig, edit?: (sys: ReturnType<Rig['fm']['captureSystems']>) => void) => {
+      const sys = a.fm.captureSystems(), st = a.fm.state;
+      edit?.(sys);
+      const b = rigAt({ force: true });
+      b.fm.restoreSystems(sys, b.c, 0.5 * st.airDensity * st.tas * st.tas);
+      b.fm.setClock(st.time);
+      b.fm.setKinematics({ position: { ...st.position }, orientation: { ...st.orientation }, velocity: { ...st.velocity }, angularVelocity: { ...st.angularVelocity } });
+      return b;
+    };
+    const a = rigAt({ force: true });
+    for (let i = 0; i < 96; i++) a.fm.step(DT, a.c, a.env);
+    const age = a.fm.state.rotorcraft!.events!.halfPHop!.age!;
+    const b = restoreFrom(a);
+    const legacy = restoreFrom(a, (sys) => { delete (sys as unknown as { rotorcraft: { events: { halfPHop: { age?: number } } } }).rotorcraft.events.halfPHop.age; });
+    a.fm.step(DT, a.c, a.env); b.fm.step(DT, b.c, b.env); legacy.fm.step(DT, legacy.c, legacy.env);
+    const ma = moment(a), mb = moment(b), ml = moment(legacy);
+    report('H7 restore mid-onset', { ageS: age, momentA: ma, momentRestored: mb, momentOldSave: ml, fullForcing: H.rollMomentPerUnit });
+    trace.restoreOnset = { age, ma, mb, ml };
+    expect(age).toBeGreaterThan(0.35); expect(age).toBeLessThan(0.45);
+    expect(Math.abs(ma)).toBeGreaterThan(1000);
+    // The restored step forces as the original does (the same fade point), not from zero.
+    expect(Math.abs(mb - ma)).toBeLessThan(0.02 * Math.abs(ma));
+    // A save without the age restores with the fade complete: at least the original's forcing, never a restart from zero.
+    expect(Math.abs(ml)).toBeGreaterThanOrEqual(Math.abs(ma));
+  });
+  it('the saved onset age passes the resume validator; a negative one is rejected and an older save without it still loads', () => {
+    const w = calmWeather(), sim = new SimPhysics({ aircraft: AH56_DEFINITION, weather: w });
+    sim.resetTo({ ...hoverScenario(sim.env, def), payload: 'typical' });
+    sim.step(0.1);
+    const snap = sim.captureSnapshot({ weather: w, cameraMode: 'chase', quality: 'high', renderScale: null, resume: true, now: 1_800_000_000_000 });
+    const hop = () => (snap.systems.rotorcraft as unknown as { events: { halfPHop: { age?: number } } }).events.halfPHop;
+    expect(hop().age).toBe(0);
+    hop().age = 0.4;
+    expect((parseSnapshot(JSON.stringify(snap))!.systems.rotorcraft as unknown as { events: { halfPHop: { age?: number } } }).events.halfPHop.age).toBe(0.4);
+    hop().age = -1;
+    expect(parseSnapshot(JSON.stringify(snap))).toBeNull();
+    delete hop().age;
+    expect(parseSnapshot(JSON.stringify(snap))).not.toBeNull();
+  }, 120_000);
   it('halfp=1 (InitialConditions.forceHalfPHop) starts the event at the first clocked step, ICS only, and leaves the trim unchanged', () => {
     const plain = rigAt(), forced = rigAt({ force: true }), amcs = rigAt({ cfg: 'amcs', force: true });
     expect(forced.fm.lastTrim!.pitch).toBe(plain.fm.lastTrim!.pitch);

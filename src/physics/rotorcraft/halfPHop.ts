@@ -27,9 +27,10 @@
 //     BodyState.time > 0), so the trim's settle() relaxation (time 0, dt 0.05 s) neither advances nor feels it (as pusher.ts);
 //     RK stages (dt = 0) see the phase at their own stage time.
 // The detector's history (the trim point, the turn accumulated, the reversals) is private and restarts after a reset or a
-// restore; the event's own state (active, amplitude, phase, stirs, strike) is RotorcraftState and persists: after a restore the
-// phase continues and the amplitude keeps decaying or growing from its saved value, the 1 s onset fade and the 3 s cue clock
-// restart (the private onset time is not saved), and halfp=1 does not re-arm a restored flight.
+// restore; the event's own state (active, amplitude, phase, stirs, strike, and `age`, the time since the onset) is
+// RotorcraftState and persists: after a restore the phase continues, the amplitude keeps decaying or growing from its saved
+// value, and the onset fade and the cue clock continue from the saved age (a save from before `age` existed restores with
+// both complete, so the forcing never restarts from zero); halfp=1 does not re-arm a restored flight.
 import { v3, type Vec3 } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import type { BodyState } from '../interfaces';
@@ -64,7 +65,11 @@ export interface HalfPHopDef {
 /** RotorcraftState.events.halfPHop (created in reset for a type with `halfPHop`, never lazily). `phase` is the
  *  continuous (unwrapped) forcing phase, rad: azimuth/2 is 4 pi periodic, so the wrapped azimuth cannot drive it.
  *  `stirs`: qualifying stir cycles in the current sequence (diagnostic). */
-export interface HalfPHopState { active: boolean; amplitude: number; phase: number; stirs: number; strike: boolean }
+export interface HalfPHopState {
+  active: boolean; amplitude: number; phase: number; stirs: number; strike: boolean;
+  /** Seconds since the onset while active (0 otherwise): restores the onset fade and the cue clock. Absent in older saves. */
+  age?: number;
+}
 
 const KT = 1852 / 3600;
 const SEA_LEVEL_DENSITY = 1.225;
@@ -94,7 +99,8 @@ export class HalfPHop {
   private lastCycle = -Infinity;
   private lastQualifying = -Infinity;
   private readonly axes = [{ sign: 0, last: -Infinity, half: 0 }, { sign: 0, last: -Infinity, half: 0 }];
-  private onset = -1;
+  /** The onset time on the private clock; null while no event runs (a restored onset may lie before the clock's zero). */
+  private onset: number | null = null;
   private forced = false;
   /** The first clocked step after a reset has looked at the event's saved phase (halfp=1 arms only a fresh flight). */
   private forceChecked = false;
@@ -105,8 +111,8 @@ export class HalfPHop {
 
   /** force: InitialConditions.forceHalfPHop (URL halfp=1), the demo/test hook: the event starts at the first clocked step. */
   reset(force = false): void {
-    this.state.events = { ...this.state.events, halfPHop: { active: false, amplitude: 0, phase: 0, stirs: 0, strike: false } };
-    this.synced = false; this.time = 0; this.onset = -1; this.forced = force; this.forceChecked = false; this.doublets = 0;
+    this.state.events = { ...this.state.events, halfPHop: { active: false, amplitude: 0, phase: 0, stirs: 0, strike: false, age: 0 } };
+    this.synced = false; this.time = 0; this.onset = null; this.forced = force; this.forceChecked = false; this.doublets = 0;
   }
 
   /** Body loads about the CG at this RK stage; advances the detector, the event and the phase only on real clocked steps. */
@@ -130,7 +136,7 @@ export class HalfPHop {
     const phase = e.phase + d.perRev * Math.max(0, this.state.omega) * Math.max(0, b.time - this.lastBodyTime);
     // The onset fades in over ONSET_SECONDS: a sine moment switched on at full amplitude leaves the body a roll-rate offset of
     // M cos(phase) / (Ixx w), up to 40 deg/s, which the roll damping turns into a steady bank of up to 20 deg.
-    const a = e.amplitude * (this.onset < 0 ? 1 : smoothstep((this.time - this.onset) / ONSET_SECONDS)) * Math.sin(phase);
+    const a = e.amplitude * (this.onset === null ? 1 : smoothstep((this.time - this.onset) / ONSET_SECONDS)) * Math.sin(phase);
     o.moment.x = a * d.rollMomentPerUnit;
     o.force.z = -a * d.plungeForcePerUnit;
     return o;
@@ -150,7 +156,9 @@ export class HalfPHop {
       this.synced = true; this.lastAzimuth = azimuth - Math.max(0, this.state.omega) * dt; this.trimLat = this.prevLat = lat; this.trimLon = this.prevLon = lon;
       this.activity = 0; this.inCircle = false; this.turn = 0; this.back = 0; this.lastQualifying = -Infinity; this.lastCycle = -Infinity;
       for (const a of this.axes) { a.sign = 0; a.last = -Infinity; a.half = 0; }
-      if (e.active && this.onset < 0) this.onset = this.time;
+      // A restored active event: its saved age puts the onset back (fade and cue continue); a save without it restores with both
+      // complete (never a restart of the forcing from zero).
+      if (e.active && this.onset === null) this.onset = this.time - (e.age ?? Math.max(ONSET_SECONDS, this.def.halfPHop!.cueSeconds));
     }
     this.time += dt; this.lastBodyTime = b.time;
     const t = this.time;
@@ -215,14 +223,15 @@ export class HalfPHop {
     if (!e.active && !e.strike && ((this.forced && flying) || (condition && (e.stirs >= tr.cycles || this.doublets >= tr.doubletCycles)))) {
       e.active = true; e.amplitude = 1; this.onset = t; this.forced = false;
     }
-    if (!e.active) return;
-    if (this.onset < 0) this.onset = t;
+    if (!e.active) { e.age = 0; return; }
+    if (this.onset === null) this.onset = t;
+    e.age = t - this.onset;
     // Growth and decay per forcing cycle.
     const cycles = d.perRev * Math.max(0, this.state.omega) * dt / (2 * Math.PI);
     const stirring = condition && t - this.lastQualifying <= period;
     if (this.activity < d.stillRate) e.amplitude *= d.decayPerCycle ** cycles;
     else if (stirring && t - this.onset >= d.cueSeconds) e.amplitude *= d.growthPerCycle ** cycles;
     if (e.amplitude >= d.strikeAmplitude) e.strike = true;
-    if (e.amplitude < d.endAmplitude) { e.active = false; e.amplitude = 0; e.stirs = 0; this.onset = -1; }
+    if (e.amplitude < d.endAmplitude) { e.active = false; e.amplitude = 0; e.stirs = 0; this.onset = null; e.age = 0; }
   }
 }

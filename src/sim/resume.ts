@@ -203,7 +203,9 @@ function isEvents(e: unknown): boolean {
   if (!isObj(e)) return false;
   const h = e.halfPHop;
   return h === undefined || (isObj(h) && isBools(h, ['active', 'strike']) && isNums(h, ['amplitude', 'phase', 'stirs']) &&
-    (h.amplitude as number) >= 0 && (h.stirs as number) >= 0);
+    (h.amplitude as number) >= 0 && (h.stirs as number) >= 0 &&
+    // The time since the onset (newer saves): finite and non-negative; absent in older saves.
+    (h.age === undefined || (isNum(h.age) && (h.age as number) >= 0)));
 }
 
 function isEngineSnapshot(v: unknown): v is EngineSnapshot {
