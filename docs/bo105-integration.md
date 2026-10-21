@@ -30,7 +30,7 @@ diff against its base.
 | 2. `definitionInconsistencies(bo105)` empty | **Empty.** GA `consistency.test.ts` passes for bo105 and ah56. It was red after BO alone: eye point 1.53/0.36/0.24 against the stub visual's MD 500E eye, and Vne 145 against the stub panel's 152. BX and PN cleared it, as BO said they would. |
 | 3. KNOWN_ISSUES and `docs/known-issues.md` rows | Done. `src/aircraft/bo105/KNOWN_ISSUES.md` has BO's 21 items plus 23 rows handed over by TW, RC, AU, BX and PN. `docs/known-issues.md` has the Bo 105 and AH-56A table rows, the hingeless-core and multi-engine-resume entries, and the AH-56A rows that wait for the AG merge. |
 | 4. This record | This file. |
-| 5. Section 10 in-sim flights and section 11 shots | **Not run by the integrator.** See section 6. |
+| 5. Section 10 in-sim flights and section 11 shots | Partly: the hover readout with `&ap=1` (section 6). The hands-off readout, `sim-record` and the section 11 shots were not run (section 6a). |
 | 6. `npx tsc --noEmit` | Clean after every merge. |
 | 7. `npm run build` and `check-build` | **Not run.** |
 | 8. Codex review | **Not run.** |
@@ -114,10 +114,23 @@ branch numbers, which is expected: AU, BX and PN change no physics.
 - Per-merge guard outputs are in `W/guards/integ/<n>-<package>/`. `W/integ/merge-log.md` has the merge log.
 - Final run: see section 7.
 
-## 6. Not run, and why
+## 6. In-sim readout on the integrated branch
 
-- **Section 10 in-sim readouts** (`bo105-hover.png` and the `sim-record` hover) and **section 11 shots**. Neither was
-  run on the integrated branch. BO ran the readout on its own branch (MD 500E stub exterior). Hands-off as written, the
+`node scripts/shot.mjs 'index.html?aircraft=bo105&hover=1&ap=1&cam=chase&resume=0&run=20&freeze=1&quality=low' ...`
+(plan section 10 readout with `&ap=1`; `W/shots/integ/bo105-hover-ap.png`). After 20 s: NR 424.7 rpm (100.0 %),
+N1 99.6 / 99.6 %, N2 100.0 / 100.0 %, torque 80.6 / 80.6 %, TOT 738 / 738 °C, mast moment 1.70 kN m, pitch +3.5°,
+roll 3.0° left, no crash. This matches BO's branch readout to the digit. In this first browser run with all six
+packages together, BX's exterior, PN's HUD block (PWR 1/2 FLIGHT, N2 SET 100.1 %, SPLIT -1.3 %, TQ, TOT, N1, N2/NR)
+and the twin drivetrain all show. The chase view looks from behind at about 25 m. At that distance the stabiliser
+endplates, the fin and the skids read correctly against the reference photos (`ext-flyingbulls-cb-01.jpg`), but it
+cannot judge detail. The flight-cue box shows the fixed-wing cue "Yoke held back: trim nose up (End)" during the
+hover hold. That was observed and not investigated; it is probably the shared cue logic reading the hold's aft
+cyclic.
+
+## 6a. Not run, and why
+
+- **Section 10 hands-off readout** (`bo105-hover.png`, without `&ap=1`), the `sim-record` hover and the **section 11
+  shots** were not run on the integrated branch. BO ran the readout on its own branch (MD 500E stub exterior). Hands-off as written, the
   plan command ends in a rotor strike at about 20 s. With `&ap=1` (the app's own hover URL) it holds: NR 424.7 rpm,
   N1 99.6/99.6 %, torque 80.6/80.6 %, TOT 738 °C, mast moment 1.7 kN m, pitch +3.5°, roll 3.0° left. BX's shots were
   taken before BO raised the tail-rotor hub to 2.80 m, so `bo105-side` and `bo105-tail` need re-rendering before the
