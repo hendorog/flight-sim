@@ -110,11 +110,11 @@ ${FLIGHT_CUES_CSS}
 #fsui .ctlw-vbar.dim { opacity: .35; }
 #fsui .ctlw-text { margin-top: 7px; }
 #fsui .ctlw-text b { color: var(--fg); font-weight: 600; font-size: 12px; margin-left: 2px; }
-#fsui .ctlw-ring { position: absolute; left: 26px; top: 26px; width: 12px; height: 12px; border-radius: 50%; border: 1px solid #6ff0a0;
+#fsui .ctlw-ring { position: absolute; left: 24px; top: 24px; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid #6ff0a0;
   box-sizing: border-box; }
 #fsui .ctlw-coll { height: 64px; width: 8px; }
 #fsui .ctlw-coll i { background: #6ff0a0; }
-#fsui .ctlw-idle { position: absolute; left: -2px; right: -2px; height: 1px; background: rgba(255,255,255,.7); z-index: 1; }
+#fsui .ctlw-idle { position: absolute; left: 0; right: 0; height: 2px; margin-bottom: -1px; background: rgba(8,12,18,.9); z-index: 1; }
 #fsui .ctlw-words { display: flex; gap: 4px; font-size: 9.5px; color: var(--fg); }
 #fsui .ctlw-nr.warn { color: var(--warn); }
 #fsui .ctlw-chip { margin-top: 6px; display: inline-block; padding: 2px 6px; border-radius: 5px; border: 1px solid rgba(111,240,160,.6);
