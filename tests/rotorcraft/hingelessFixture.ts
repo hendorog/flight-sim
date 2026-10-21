@@ -1,15 +1,18 @@
 // The hingeless rotor core's TEST-LOCAL Bo 105 (plan revision 2, section 4, "Validation"). Owner: RC. It is NOT the
-// bo105 aircraft (BO owns src/aircraft/bo105/**): it spreads the S0 bo105 definition and overrides what the rotor-core
-// validation needs with research data, so R2-R23 can be measured before BO lands. BO adopts the hub set this file
-// records (docs/rotor-hingeless-model.md), not the airframe estimates.
+// bo105 aircraft (BO owns src/aircraft/bo105/**): it is the S0 bo105 stub, FROZEN here as a snapshot (below), with what
+// the rotor-core validation needs overridden from research data, so R2-R23 can be measured before BO lands. BO adopts
+// the hub set this file records (docs/rotor-hingeless-model.md), not the airframe estimates.
+//
+// The snapshot: nothing here imports src/aircraft/bo105/** (BO rewrites those files). Every number the S0 stub supplied
+// (its dimensions.ts and facts.ts values, and the MD 500E fields its rotorcraft.ts and index.ts spread) is copied or
+// rebuilt from the frozen MD 500E definition, so BO's merge cannot move a measured RC row. The integrator re-runs the RC
+// list after BO lands only to compare the fixture with BO's real Bo 105, never to re-baseline these rows.
 //
 // Tags: P primary, D derived (arithmetic shown), F family, 3V measured on a three-view or photo, ESTIMATE judged. Every
 // airframe coefficient below was SET FROM GEOMETRY BEFORE MEASURING and is not a knob (the R18-R20 fitting rule leaves
 // only controlPhase and the polar inertia inside 850-950 kg m^2).
-import { BO105_DEFINITION } from '../../src/aircraft/bo105';
 import { MD500_DEFINITION } from '../../src/aircraft/md500';
 import { ALLISON_250_C20B, MD500_POWERPLANT } from '../../src/aircraft/md500/powerplant';
-import * as D from '../../src/aircraft/bo105/dimensions';
 import type { AircraftDefinition, MassDef } from '../../src/aircraft/types';
 import type { HingelessHub, RotorcraftDefinition } from '../../src/physics/rotorcraft/definition';
 import type { BladeConingDefinition } from '../../src/physics/rotorcraft/coning';
@@ -22,6 +25,48 @@ import { cloneControls, type ControlInputs } from '../../src/core/types';
 import type { BodyState } from '../../src/physics/interfaces';
 import { DEG, FT, KT, quat, v3 } from '../../src/core/math';
 import { flatEnvironment } from '../fdm/helpers';
+
+// ------------------------------------------------------------------------------------------------ S0 snapshot
+/** The S0 stub's src/aircraft/bo105/dimensions.ts values the fixture uses (scaffold 0c3211f; tags as there: rotor P,
+ *  stations and heights 3V). Body axes x forward, z down, from the main-rotor axis at the CG height. */
+const REF_STATION_M = 3.150, HUB_HEIGHT = 2.90, CG_BELOW_HUB = 0.96, SKID_Z = HUB_HEIGHT - CG_BELOW_HUB;
+const D = {
+  x: (staM: number): number => REF_STATION_M - staM,
+  z: (h: number): number => SKID_Z - h,
+  MAIN_ROTOR_BLADES: 4, MAIN_ROTOR_RADIUS: 9.84 / 2, MAIN_ROTOR_CHORD: 0.27, MAIN_ROTOR_ROOT_CUTOUT: 1.10,
+  MAIN_ROTOR_TWIST_DEG: -6.2, MAIN_ROTOR_PRECONE_DEG: 2.5, SHAFT_TILT: 3 * DEG,
+  MAIN_HUB: { x: REF_STATION_M - 3.150, y: 0, z: SKID_Z - HUB_HEIGHT },
+  TAIL_ROTOR_BLADES: 2, TAIL_ROTOR_RADIUS: 1.90 / 2, TAIL_ROTOR_CHORD: 0.18, TAIL_ROTOR_TWIST_DEG: 0,
+  TAIL_HUB: { x: REF_STATION_M - 9.14, y: -0.26, z: SKID_Z - 2.30 },
+  HORIZONTAL_STABILIZER: { area: 0.8, incidenceDeg: 0, quarterChord: { x: REF_STATION_M - 7.55, z: SKID_Z - 1.62 },
+    endplates: { height: 0.45, chord: 0.42 } },
+  FIN_OUTLINE: [[8.55, 1.30], [9.05, 2.30], [9.35, 2.35], [9.30, 1.25]] as readonly (readonly [number, number])[],
+  SKID_HALF_TRACK: 2.53 / 2, SKID_FRONT_X: REF_STATION_M - 1.75, SKID_REAR_X: REF_STATION_M - 4.45, SKID_Z,
+} as const;
+/** The S0 stub's facts.ts rotor numbers: 424.5 rpm = 100 % Nr (P TCDS), N2 6016 rpm at 100 % (P TCDS), tail ratio 5.25
+ *  (F METU), N2 beep 98-102 % (P5 FM). */
+const S0_NR_100 = 424.5, S0_ENGINE_RATIO = 6016 / S0_NR_100, S0_TAIL_RATIO = 5.25, S0_N2_BEEP = { range: [0.98, 1.02], setDefault: 1.0 } as const;
+/** The S0 stub's BO105_ROTORCRAFT: the MD 500E's rotorcraft flying the Bo 105 rotor geometry, speed and ratios, polar
+ *  inertia 900 kg m^2 (the twin drivetrain block is dropped: the fixture flies one doubled engine). */
+const S0_ROTORCRAFT: RotorcraftDefinition = (() => {
+  const md = MD500_DEFINITION.rotorcraft!, ts = md.systems.turboshaft!;
+  return { ...md, nominalRpm: S0_NR_100, referenceRpm: S0_NR_100, engineRatio: S0_ENGINE_RATIO, tailRatio: S0_TAIL_RATIO,
+    systems: { ...md.systems,
+      turboshaft: { ...ts, governor: { ...ts.governor, setRange: S0_N2_BEEP.range, setDefault: S0_N2_BEEP.setDefault } } },
+    main: { ...md.main, radius: D.MAIN_ROTOR_RADIUS, rootCutout: D.MAIN_ROTOR_ROOT_CUTOUT, chord: D.MAIN_ROTOR_CHORD,
+      blades: D.MAIN_ROTOR_BLADES, twist: D.MAIN_ROTOR_TWIST_DEG * DEG, inertia: 900 },
+    tail: { ...md.tail, radius: D.TAIL_ROTOR_RADIUS, chord: D.TAIL_ROTOR_CHORD, blades: D.TAIL_ROTOR_BLADES,
+      twist: D.TAIL_ROTOR_TWIST_DEG * DEG } };
+})();
+/** The S0 stub's BO105_DEFINITION fields the fixture keeps: the MD 500E's (sim profile included) under the bo105
+ *  identity, its wing reference set to the rotor disc. */
+const S0_DEFINITION: AircraftDefinition = {
+  ...MD500_DEFINITION, id: 'bo105', name: 'MBB Bo 105 CB-4', shortName: 'Bo 105',
+  variant: 'Bo 105 CB-4 (2 x Allison 250-C20B, ZF FS 72B, 2500 kg)', icaoType: 'B105',
+  notModelled: ['RC test fixture: the hingeless rotor core on the frozen S0 Bo 105 stub (tests/rotorcraft/hingelessFixture.ts).'],
+  geometry: { ...MD500_DEFINITION.geometry, wing: { ...MD500_DEFINITION.geometry.wing, span: 2 * D.MAIN_ROTOR_RADIUS,
+    area: Math.PI * D.MAIN_ROTOR_RADIUS ** 2 } },
+};
 
 export const DT = 1 / 240;
 const R = D.MAIN_ROTOR_RADIUS;
@@ -87,7 +132,7 @@ function finFromOutline(): { area: number; x: number; z: number } {
 
 /** The fixture's RotorcraftDefinition. */
 export function fixtureRotorcraft(o: FixtureOptions = {}): RotorcraftDefinition {
-  const base = BO105_DEFINITION.rotorcraft!, md = MD500_DEFINITION.rotorcraft!;
+  const base = S0_ROTORCRAFT, md = MD500_DEFINITION.rotorcraft!;
   const inertia = o.inertia ?? FIXTURE_INERTIA;
   const main: RotorcraftDefinition['main'] = { ...base.main, inertia, liftSlope: FIXTURE_LIFT_SLOPE, hub: { ...D.MAIN_HUB },
     // ESTIMATE: Bo 105 NACA 23012 profile drag and induced-drag factor of the analytic polar (the S0 stub's MD 500E
@@ -163,7 +208,7 @@ function fixtureMass(): MassDef {
 export function fixtureDefinition(o: FixtureOptions = {}): AircraftDefinition {
   const md = MD500_POWERPLANT, rotor = fixtureRotorcraft(o);
   return {
-    ...BO105_DEFINITION,
+    ...S0_DEFINITION,
     engineCount: 1,
     aero: MD500_DEFINITION.aero,
     input: MD500_DEFINITION.input,
@@ -172,7 +217,7 @@ export function fixtureDefinition(o: FixtureOptions = {}): AircraftDefinition {
     powerplant: { ...md, engines: [{ ...md.engines[0], engine: TWIN_EQUIVALENT_ENGINE }],
       // The single tank at the reference point, so the CG is there at every fuel state.
       fuel: { ...md.fuel, tanks: [{ ...md.fuel.tanks[0], position: { x: 0, y: 0, z: 0 } }] } },
-    geometry: { ...BO105_DEFINITION.geometry,
+    geometry: { ...S0_DEFINITION.geometry,
       propellers: [{ hub: rotor.main.hub, diameter: 2 * R, blades: rotor.main.blades, rotation: rotor.rotation }] },
   };
 }

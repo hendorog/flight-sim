@@ -13,6 +13,7 @@ import type { RotorcraftDefinition } from '../../src/physics/rotorcraft/definiti
 import { MD500_DEFINITION } from '../../src/aircraft/md500';
 import { DT, FIXTURE_NU, FIXTURE_OFFSET, fixtureDefinition, fixtureRig, fixtureRotorcraft, lockNumber, run, traceReport,
   trimBody } from './hingelessFixture';
+import fixtureSource from './hingelessFixture.ts?raw';
 
 const report: Record<string, unknown> = {};
 afterAll(() => traceReport('hingelessHub', report));
@@ -31,6 +32,18 @@ function hub(def: RotorcraftDefinition) {
   return { p: { flapOffset: h.equivalentHingeOffset, lagOffset: h.equivalentHingeOffset, blade },
     spring: { stiffness: hingelessSpring(def), precone: h.precone }, omega: def.referenceRpm * Math.PI / 30 };
 }
+
+describe('the fixture is a frozen S0 snapshot', () => {
+  it('imports nothing BO owns (src/aircraft/bo105/**), so BO\'s merge cannot move a measured RC row', () => {
+    expect(fixtureSource).not.toMatch(/from '[^']*aircraft\/bo105/);
+    // The S0 numbers the rows rest on (scaffold 0c3211f): rotor geometry and speed, the MD 500E's polar and stops.
+    const d = fixtureRotorcraft(), md = MD500_DEFINITION.rotorcraft!;
+    expect([d.main.radius, d.main.rootCutout, d.main.chord, d.main.blades, d.main.twist / DEG, d.referenceRpm, d.tailRatio])
+      .toEqual([4.92, 1.10, 0.27, 4, -6.2, 424.5, 5.25]);
+    for (const k of ['minPitch', 'maxPitch', 'profileCd', 'inducedDrag', 'maxCl'] as const) expect(d.main[k]).toBe(md.main[k]);
+    expect([d.tail.radius, d.tail.chord, d.tail.blades]).toEqual([0.95, 0.18, 2]);
+  });
+});
 
 describe('R2, R3: the spring in the solver gives the flap frequency it was derived from', () => {
   const rows: Record<string, unknown>[] = [];
