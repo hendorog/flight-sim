@@ -6,6 +6,7 @@
 import { BO105_DEFINITION } from '../../src/aircraft/bo105';
 import { BO105_INSTALLED_C20B, BO105_TURBOSHAFT_INDICATION } from '../../src/aircraft/bo105/twin';
 import { BO105_INERTIA } from '../../src/aircraft/bo105/facts';
+import { ALLISON_250_C20B } from '../../src/aircraft/md500/powerplant';
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import { createFlightModelFor } from '../../src/physics';
 import type { BladeElementFlightModel } from '../../src/physics/flightModel';
@@ -29,8 +30,10 @@ export const TWIN_DEF: AircraftDefinition = {
     engines: BO105_DEFINITION.powerplant.engines.map((e) => ({ ...e, engine: BO105_INSTALLED_C20B })) },
   mass: { ...BO105_DEFINITION.mass, inertia: { about: 'cg', ...BO105_INERTIA } },
 };
-/** The same with the MD 500E's engine map (the shared ALLISON_250_C20B), for the comparison rows. */
-export const TWIN_DEF_MD500_ENGINE: AircraftDefinition = { ...TWIN_DEF, powerplant: BO105_DEFINITION.powerplant };
+/** The same with the MD 500E's engine map (the shared ALLISON_250_C20B, whatever the Bo 105 powerplant carries), for
+ *  the comparison rows. */
+export const TWIN_DEF_MD500_ENGINE: AircraftDefinition = { ...TWIN_DEF, powerplant: { ...TWIN_DEF.powerplant,
+  engines: TWIN_DEF.powerplant.engines.map((e) => ({ ...e, engine: ALLISON_250_C20B })) } };
 export const d = TWIN_DEF.rotorcraft!;
 export const ts = d.systems.turboshaft!;
 export const twin = d.systems.twinTurboshaft!;
