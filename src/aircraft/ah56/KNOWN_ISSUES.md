@@ -7,15 +7,17 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
 1. **The gyro's speed-scheduled augmentation is dormant in the sim.** The ICS pitch desensitizer, pitch/roll decoupler and roll compensator,
    and the AMCS trim augmentor and sideslip SAS, need the hub air velocity, which `Rotorcraft.compute` does not pass to
    `ControlGyro.advanceCoupled` yet. A one-line contract request to RC / the integrator is in docs/control-gyro-model.md section 5. The
-   tests set the same air data from the flight state (ah56Rig.ts). Evidence: ah56Gyro.test.ts "augmentation tables" (the desensitizer at
+   tests set the same air data before the trim and from the flight state on every step (ah56Rig.ts); with the requested call applied
+   (work/rigid/ag-integrator-requests.patch) the AMCS pitch rates agree with the rig's to 0.02 °/s/in. Evidence: ah56Gyro.test.ts "augmentation tables" (the desensitizer at
    0.857 X at 120 KCAS and 0.50 X at 170, dormant without air data).
 2. **ICS pitch/roll cross-coupling.** A pure longitudinal stick gives a roll rate of +0.24 (hover) and −0.14 (100 KCAS) times the pitch rate.
    This is with the input rotation fitted to 13° advanced (P: 36°, which gives about 1.6 times in this model); G8 asks 0.2 with the angle
    within 15° of 36°. The model lacks the ICS's swashplate feedback to the roll servo and the feathering inertia. The AMCS is decoupled
-   (−0.005 / +0.07), as AMCS-73 para 35 reports. Evidence: ah56Handling.test.ts G8.
-3. **ICS response slower and lower than the derived bands.** Pitch τ63 is 0.84 s at the hover against 1.5–3.5 s, and 0.33 s at 150 KCAS
-   against 0.8–2.0 s. The maximum pitch rate is 5.7 °/s/in against 9–14; the maximum roll rate 9.5–10.3 °/s/in against 11–16. The
-   desensitizer ratios at speed are 0.66 / 0.81 X against 0.8–1.0 / 0.6–0.8. The accelerations agree (6.4 pitch, 30.9 roll °/s²/in). The
+   (+0.02 / +0.08 with the input at 9° advanced), as AMCS-73 para 35 reports. Evidence: ah56Handling.test.ts G8.
+3. **ICS response slower and lower than the derived bands.** Pitch τ63 is 0.84 s at the hover against 1.5–3.5 s, and 0.32 s at 150 KCAS
+   against 0.8–2.0 s. The maximum pitch rate is 5.7 °/s/in at the hover (2.6 at 150 KCAS) against 9–14; the maximum roll rate 9.5–10.5
+   °/s/in against 11–16. The desensitizer ratios at speed are 0.47 / 0.45 X on the maximum rate (0.65 / 0.60 on the plan's rate at 1 s)
+   against 0.8–1.0 / 0.6–0.8. The accelerations agree (6.4 pitch, 30.9 roll °/s²/in). The
    physical gyro spring precesses the gyro sideways, and the hover attitude change cuts the rise. The plan's G7 and G7b give opposite trends
    for the ICS time constant. Evidence: ah56Handling.test.ts G7 / G7b (it.fails rows).
 4. **ICS gust alleviation is weak.** A 3 m/s vertical gust at 100 KTAS leaves 69 % of the locked-gyro hub moment. The droop × in-plane and Cm0
@@ -25,9 +27,12 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
    condition). The left yaw is there: 79°/s within 2 s, collective held. Evidence: ah56Systems.test.ts G11.
 6. **No gear-overspeed flag.** `flightModel.checkOverspeed` does not run for a rotorcraft, so extending or flying the gear above 130 KCAS
    (P) raises nothing. Contract request to TW: run its gear rule for a rotorcraft. Evidence: ah56Ground.test.ts G13 (it.fails).
-7. **The AMCS pitch sensitivity grows with speed:** 8.3 °/s²/in at the hover, 11.7 at 100 KCAS, 14.1 at 150, where AMCS-73 measured about 9
-   throughout. The pitch response falls 7.5 → 4.3 °/s/in where AMCS-73 has 6 throughout (inside ±30 %). Evidence: ah56Handling.test.ts G5 /
-   G7b.
+7. **The AMCS pitch fit has no margin.** With H fixed at the ICS value only the stick moment and K_R are free. The model's pitch response
+   falls with speed (6.4 °/s/in at the hover, 4.8 at 100 KCAS, 4.3 at 150) where AMCS-73 para 33 measured about 6 throughout. Its
+   sensitivity runs high (11.6 °/s²/in at the hover against 9). The ±30 % bands leave a window of a few per cent (K_R 7.25–8 kN m/rad,
+   798–824 N m of stick moment at 7.5): the hover rate, the 150 KCAS rate and the sensitivity each sit 1–2 % inside an edge. Any change to
+   the airframe's pitch damping or stability (the pusher, the drag recalibration) needs a refit (docs/control-gyro-model.md section 6).
+   Evidence: ah56Handling.test.ts G5 / G7b.
 8. **The auto-trim loop gain does not scale with rotor speed** (G2 (i)): half of the hingeless hub moment per rad of flap is the spring,
    which does not grow with Ω. Every mode stays stable from 70 % Nr up. Evidence: ah56GyroModes.test.ts.
 9. **On the ground, rotor running and the pedals centred, it leans about 3° onto the right main.** The tail rotor's side force acts against a

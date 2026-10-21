@@ -12,7 +12,7 @@ const OMEGA_100 = AH56_NR_100 * Math.PI / 30;
 /** The ICS input rotation the model flies, deg advanced (fitted to G8; P 36). */
 export const ICS_INPUT_ROTATION_DEG = 13;
 /** The AMCS input rotation, deg advanced (fitted to G8). */
-export const AMCS_INPUT_ROTATION_DEG = 15;
+export const AMCS_INPUT_ROTATION_DEG = 9;
 
 /**
  * ICS 1972 (P ASTA-72 App C pp 57-60 unless tagged): the 45 slug-ft^2 gyro X turning with the rotor (INF: a "main rotor
@@ -68,14 +68,14 @@ export const AH56_AMCS_CONFIG: ControlGyroConfig = {
   maxTilt: { up: AH56_AMCS_GYRO.stopsDeg.up * DEG, down: AH56_AMCS_GYRO.stopsDeg.down * DEG,
     left: AH56_AMCS_GYRO.stopsDeg.left * DEG, right: AH56_AMCS_GYRO.stopsDeg.right * DEG },
   stickTravel: { longitudinal: AH56_STICK_IN.amcs.longitudinal / 2 * IN, lateral: AH56_STICK_IN.amcs.lateral / 2 * IN },
-  stickMoment: { longitudinal: 1290, lateral: 1080 },
+  stickMoment: { longitudinal: 811, lateral: 975 },
   spring: AH56_ICS_GYRO.spring, negativeSpring: 4500,
   damping: AH56_ICS_GYRO.dampingPerAxis, rotatingDamping: 0.4,
   // No AMCS angles are published: the feedback at the model's best-damped auto-trim phase, 20 deg advanced (ESTIMATE, docs
   // "Senses"); the input FITTED to G8 (pure longitudinal stick, roll within 20 % of pitch).
   inputRotation: AMCS_INPUT_ROTATION_DEG * DEG, feedbackRotation: 20 * DEG,
   cyclicPerTilt: 1,
-  feedback: { mode: 'flapping', gain: 18_000 },
+  feedback: { mode: 'flapping', gain: 7500 },
   augmentation: {
     // P sense (trim aft as speed rises); ESTIMATE amounts: 0.3 in forward at the hover to 0.3 in aft at 180 KCAS.
     trimSchedule: { offsetByKcas: { x: [0, 180], y: [-0.3 * IN, 0.3 * IN] } },

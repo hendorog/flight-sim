@@ -190,7 +190,8 @@ export class ControlGyro {
   /** Create RotorcraftState.controlGyro (config: ICS/AMCS selector from InitialConditions.rotorcraftConfig). */
   reset(_running: boolean, config?: GyroConfigId): void {
     this.state.controlGyro = { mode: config ?? this.def.controlGyro!.default, pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
-    this.air = null;
+    // The air data is an input, not state: kept across a reset so the trim that follows sees the augmentation the flight
+    // will. With the requested wiring (advanceCoupled's `air` on every compute) it is replaced on the first compute.
     this.updateMomentum();
   }
 

@@ -133,13 +133,16 @@ describe('G7b: the pitch desensitizer (ICS) and the constant AMCS response', () 
   it('ICS: the measured ratios (logged; the desensitizer itself is checked at the gyro block, ah56Gyro.test.ts)', () => {
     const x = rows.ics0.max;
     report('G7b ICS', { hoverMax: x, ratio120: rows.ics120.max / x, target120: '0.8-1.0', ratio150: rows.ics150.max / x, target150: '0.6-0.8',
-      at1Ratio150: rows.ics150.at1 / rows.ics0.at1, tau63Hover: rows.ics0.tau63, tau63At150: rows.ics150.tau63 });
+      at1Ratio120: rows.ics120.at1 / rows.ics0.at1, at1Ratio150: rows.ics150.at1 / rows.ics0.at1, tau63Hover: rows.ics0.tau63,
+      tau63At150: rows.ics150.tau63 });
     expect(rows.ics150.max).toBeLessThan(x);
   });
 
   it.fails('G7b KNOWN GAP: the ICS maximum pitch rate per inch at 0.8-1.0 X (120 KCAS) and 0.6-0.8 X (150 KCAS)', () => {
-    // Measured 0.66 X at 120 and 0.81 X at 150 KCAS: the airframe's pitch response at speed and the ICS feedback's speed
-    // terms (the droop x in-plane and Cm0 paths) shape it more than the 2:1 desensitizer does (docs: "ICS response").
+    // Measured 0.47 X at 120 and 0.45 X at 150 KCAS on the maximum rate (ASTA-72 para 59's "control response"); the plan's
+    // rate at 1 s gives the at1Ratio rows logged above. The airframe's pitch damping at speed (the rate peaks within
+    // 0.5 s and decays) and the ICS feedback's speed terms (the droop x in-plane and Cm0 paths) cut it more than the 2:1
+    // desensitizer does (docs: "ICS response").
     const x = rows.ics0.max;
     expect(rows.ics120.max / x).toBeGreaterThan(0.8 * 0.9); expect(rows.ics120.max / x).toBeLessThan(1.0 * 1.1);
     expect(rows.ics150.max / x).toBeGreaterThan(0.6 * 0.9); expect(rows.ics150.max / x).toBeLessThan(0.8 * 1.1);
@@ -151,7 +154,7 @@ describe('G7b: the pitch desensitizer (ICS) and the constant AMCS response', () 
     expect(rows.ics150.tau63).toBeGreaterThan(rows.ics0.tau63);
   });
 
-  it('AMCS: about constant 6 deg/s/in (+/-30 %) hover to 150 KCAS (AMCS-73 para 33)', () => {
+  it('AMCS: about constant 6 deg/s/in (+/-30 %) hover to 150 KCAS (AMCS-73 para 33: maximum rate per inch, tested at 0, 60, 150, 180 KCAS)', () => {
     report('G7b AMCS', { hoverMax: rows.amcs0.max, at100Max: rows.amcs100.max, at150Max: rows.amcs150.max, target: '4.2-7.8',
       at150Sensitivity: rows.amcs150.maxAcc, P: 9 });
     for (const k of ['amcs0', 'amcs100', 'amcs150'] as const) expect(within(rows[k].max, 6, 0.3)).toBe(true);

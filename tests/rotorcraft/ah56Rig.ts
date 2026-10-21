@@ -4,10 +4,10 @@
 // maximum rate), and an optional trace (AH56_TRACE=<directory> writes each file's report there as JSON).
 //
 // AIR DATA. The gyro's speed-scheduled augmentation reads the hub air velocity, which Rotorcraft.compute does not yet
-// pass to ControlGyro.advanceCoupled (contract request to RC/the integrator: the one-line call in rotorcraft.ts). Until
-// then the rig hands the same data to the gyro once per step from the flight state (ControlGyro.setAirData), which is
-// exactly what the requested call does one step earlier; `airData: false` flies the production wiring of today
-// (augmentation dormant).
+// pass to ControlGyro.advanceCoupled (contract request to RC/the integrator: the one-line call in rotorcraft.ts,
+// work/rigid/ag-integrator-requests.patch). Until then the rig hands the same data to the gyro before the trim (so the
+// trim includes the augmentation, as it will with the wiring) and once per step from the flight state; `airData: false`
+// flies the production wiring of today (augmentation dormant).
 import { AH56_DEFINITION as def } from '../../src/aircraft/ah56';
 import { createFlightModelFor } from '../../src/physics';
 import type { BladeElementFlightModel } from '../../src/physics/flightModel';
@@ -42,6 +42,9 @@ export interface RigOptions {
 export function rig(o: RigOptions = {}) {
   const fm = createFlightModelFor(def) as BladeElementFlightModel, env = environment(o.ft ?? 0, o.isaDev ?? 0);
   fm.setLoading(ah56Loading(o.lb ?? 18_300, undefined, o.fuelFraction ?? 1));
+  // The air data the trim's settle sees (the stand-in for RC's wiring, which passes it on every compute).
+  const rotor = (fm as unknown as { rotorcraft: Rotorcraft }).rotorcraft;
+  if (o.airData ?? true) rotor.gyro!.setAirData({ hub: { x: (o.kt ?? 0) * KT, y: 0, z: 0 }, density: env.atmosphere().density });
   fm.reset({ position: { x: 0, y: 0, z: -(o.onGround ? 0 : o.height ?? 1500 * FT) }, heading: 0, airspeed: (o.kt ?? 0) * KT,
     flightPathAngle: (o.pathDeg ?? 0) * DEG, onGround: o.onGround ?? false, engineRunning: o.running ?? true,
     fuelFraction: o.fuelFraction ?? 1, rotorcraftConfig: o.cfg, ...(o.gearDown !== undefined ? { gearDown: o.gearDown } : {}) }, env);
