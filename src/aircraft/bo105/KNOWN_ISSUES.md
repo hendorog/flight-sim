@@ -136,6 +136,18 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 - **twinOei T7b / twinGovernor T6** (item 7): resolved at the integration by moving TW's rig onto the definition's
   governor (BO's refit), holding attitude in T6 (N2 101.93 / 98.12 % at the 102 / 98 % stops) and recording T7b's NR
   band as an `it.fails` KNOWN GAP row. See `docs/bo105-integration.md`.
+- **Verifier gate 0** (`docs/bo105-integration.md` section 9): item 17 re-measured on the integrated branch.
+  - Hands off, the plan readout crashes at about 19 s with a main rotor strike at 53.5 deg of roll. The hover drifts
+    downwind at 4.6 m/s from the start: the scenario trims at airspeed 0 in the default 8 kt wind.
+  - With `&ap=1`, a 31 s recording stays 5.4 m from the start position and holds within 2 m after 11 s.
+  - The plan's `sim-record ... 12 30` covers only 6.9 s.
+- **Fixed-wing trim cue under the hold** (legacy `src/ui/status.ts`, every type): "Yoke held back: trim nose up (End)" can
+  show while the hold autopilot flies. The hold moves the stick away from the keyboard neutral, and `othersFlying` counts
+  only the demo and the instructor. It is intermittent: seen once on a Bo 105 `hover=1&ap=1` frame. It was not seen in a
+  later run or on the MD 500E.
+- **`summary().engines[1].propRpm`** reads engine 2's output-shaft rpm (6156) rather than the rotor's 425. It has two
+  readers: the muted engine-2 prop voice, and the propeller visual, which the Bo 105 does not have. No visible or
+  audible effect.
 
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 

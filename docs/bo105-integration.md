@@ -30,9 +30,9 @@ diff against its base.
 | 2. `definitionInconsistencies(bo105)` empty | **Empty.** GA `consistency.test.ts` passes for bo105 and ah56. It was red after BO alone: eye point 1.53/0.36/0.24 against the stub visual's MD 500E eye, and Vne 145 against the stub panel's 152. BX and PN cleared it, as BO said they would. |
 | 3. KNOWN_ISSUES and `docs/known-issues.md` rows | Done. `src/aircraft/bo105/KNOWN_ISSUES.md` has BO's 21 items plus 23 rows handed over by TW, RC, AU, BX and PN. `docs/known-issues.md` has the Bo 105 and AH-56A table rows, the hingeless-core and multi-engine-resume entries, and the AH-56A rows that wait for the AG merge. |
 | 4. This record | This file. |
-| 5. Section 10 in-sim flights and section 11 shots | Partly: the hover readout with `&ap=1` (section 6). The hands-off readout, `sim-record` and the section 11 shots were not run (section 6a). |
+| 5. Section 10 in-sim flights and section 11 shots | **Run at verifier gate 0 (section 9).** The hands-off readout crashes at about 19 s (KNOWN_ISSUES 17); with `&ap=1` every readout row passes. All 13 section 11 shot commands ran and were compared with the reference photos. |
 | 6. `npx tsc --noEmit` | Clean after every merge. |
-| 7. `npm run build` and `check-build` | **Not run.** |
+| 7. `npm run build` and `check-build` | **Done at gate 0:** the build succeeds; `check-build` loads bo105 and ah56 on the runway with no console errors. |
 | 8. Codex review | **Not run.** |
 | 9. Fable look and pilot gates | **Not run.** |
 | 10. `available: false`; ask the owner | Bo 105 and AH-56A both `available: false`. |
@@ -130,7 +130,7 @@ cannot judge detail. The flight-cue box shows the fixed-wing cue "Yoke held back
 hover hold. That was observed and not investigated, and it was not checked whether the MD 500E
 shows the same cue under the hold.
 
-## 6a. Not run, and why
+## 6a. Not run, and why (at the integration; section 9 closes the readout, recording, shots and build)
 
 - **Section 10 hands-off readout** (`bo105-hover.png`, without `&ap=1`), the `sim-record` hover and the **section 11
   shots** were not run on the integrated branch. BO ran the readout on its own branch (MD 500E stub exterior). Hands-off as written, the
@@ -179,3 +179,38 @@ shows the same cue under the hold.
   reference replaces it. Move the AH-56A rows in `docs/known-issues.md` into `src/aircraft/ah56/KNOWN_ISSUES.md`.
 - **Commit trailers:** PN's commits carry `Co-Authored-By: Claude Sonnet 5.5`, because that model ran them. History
   was not rewritten. The integrator's commits carry the Opus trailer.
+
+## 9. Verifier gate 0 (2026-10-21, on `3fc70dc`)
+
+Every Bo 105 row of the plan-final `flights` array was run, along with plan section 10 and every Bo 105 shot of section 11.
+No code was changed. The measured-against-target table is `W/flight-numbers.md` (Bo 105 gate 0). The guard logs are in
+`W/guards/gate0/run1/`, the shots and contact sheets in `W/shots/bo105-gate-0/`, and the recordings in
+`W/rec/bo105-gate0/`.
+
+- **Guards.**
+  - G0 is clean, GR has 35/35 exact digests, GA 250/250 and GS 98/98.
+  - GF has the two c172Sim baseline exceptions only.
+  - RC, TW (with check-keys), BO, AU, exteriors and panels all pass, apart from their recorded `it.fails` rows.
+  - The BO trace is byte-identical to the integration trace.
+- **Hover readout as written (hands off).** The aircraft crashes at about 19 s with a main rotor strike, at 53.5 deg of
+  roll (NR 424.7 rpm, N1 101.2/101.2 %, torque 84.2/84.2 %). It drifts downwind at 4.6 m/s from the start: the scenario
+  trims at airspeed 0 in the default 8 kt wind. This is KNOWN_ISSUES 17.
+- **With `&ap=1`.**
+  - NR is 424.67 rpm, N1 99.6/99.6 %, N2 100.04/100.04 %, torque 80.65/80.65 %, TOT 738/738 C and mast moment
+    1.70 kN m. No crash.
+  - A 31 s recording (`60 30`) stays 5.4 m from the start position. The initial drift is caught by 6 s, and from 11 s
+    on the hover holds within 2 m.
+  - The plan's `12 30` recording covers only 6.9 s.
+- **Build.** `npm run build` succeeds. `check-build` passes for bo105 and ah56 on the runway with no errors.
+- **Shots.** No obvious Bo 105 defect against the reference photos. Two plan views are framed too wide or too short to
+  judge, and zoomed extras were taken:
+  - `rotorside` is 18 m from the head;
+  - `panel-day` at 1000 px height cuts off the lower rows.
+- **Recorded, not fixed.**
+  - The fixed-wing "Yoke held back: trim nose up (End)" cue can show while the hold flies. This is legacy
+    `src/ui/status.ts` behaviour for every type: the autopilot is not counted among `othersFlying`.
+  - `engines[1].propRpm` reads engine 2's output-shaft rpm (6156). Its only readers are the muted engine-2 prop voice
+    and the propeller visual, which the Bo 105 does not have.
+- **Not run at gate 0:**
+  - the Codex review and the Fable look and pilot gates (plan section 9 steps 8-9);
+  - the AH-56A flights and shots (AG has not merged).
