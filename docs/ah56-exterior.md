@@ -78,12 +78,20 @@ and reaches WL 141 by FS 143; the test checks all four face corners inside the c
 
 ## Acceptance (measured on the built model, `ah56Exterior.test.ts`)
 
+Every row but the height checks `dimensions.ts` constants (P/S/D) on the built model. The **height row is not an
+independent measurement**: the top of the ICS model is the gyro X, whose height above the blade plane
+(`GYRO.rise` = 0.32 m in `exteriorRotor.ts`) has no source (no dimensioned drawing of the gyro post was found and no
+photo ratio was measured). It is an AGENT choice **set to land the published 13 ft 8.5 in**: the hub flange sits at
+WL 165.3, the X's top is 0.32 m + 0.068 m (the tip mass's half height) = 0.388 m (15.3 in) above it at WL 180.6, and the
+tyre contact plane is WL 18.0 (`GROUND_WL`), so the model stands 180.6 − 18.0 = 162.6 in (−1.2 %). The row confirms the
+choice stays inside the 2 % band; it does not validate it.
+
 | Target | Model | Error |
 | --- | --- | --- |
 | Main rotor Ø 15.62 m (P) | 15.616 m | −0.03 % |
 | Fuselage, nose to spinner tip, 54 ft 8 in ± 1 % (S) | 54.667 ft | 0.0 % |
 | Span 26.7 ft ± 1 % (P), tip fairings included | 26.88 ft | +0.69 % |
-| Height 13 ft 8.5 in ± 2 % (S), ICS head (gyro X) | 162.6 in | −1.2 % |
+| Height 13 ft 8.5 in ± 2 % (S), ICS head (gyro X): **set** through `GYRO.rise` (see above) | 162.6 in | −1.2 % |
 | (AMCS head, no gyro: not a published figure) | 154.2 in | — |
 | ICS gyro X over the tip masses 9.7 ft (P) | 9.70 ft | 0.0 % |
 | Tail-rotor Ø 10 ft at FS 658.5 / WL 114.5 / BL 72 L ± 1 in (P) | 10.02 ft, hub on the station | +0.2 % / 0 in |
@@ -99,12 +107,17 @@ and reaches WL 141 by FS 143; the test checks all four face corners inside the c
   (published by the solver for an articulated or hingeless hub), else a fallback: −0.9° droop at rest (3V) blending to
   the 2° precone at 1 g of rotor thrust, plus the first harmonic from `flapForward/flapRight`, and pitch from the
   collective plus `swashplateCyclic()`. The exposure disc and the blade trail use the same coning and tilt.
+- **Blade section**: the generic NACA 0012 blade is re-thickened to a linear 12 % → 6 % t/c taper (P (4.6)3012 →
+  (0.6)3006 mod). The generic renderer rewrites every blade vertex from its untapered construction-time copy whenever
+  its `tipBend` changes, so `exterior.ts` hands it the coning **without `bending`** (`withoutBladeBending`); the head
+  poses the blades itself and never used the generic cone or sag. Tested with a coning that carries `bending`.
 - **AMCS** (default): hub drum, the cruciform arms with bearing housings, long blade-root cuffs with leading-edge pitch
   horns, pitch links from the rotating swashplate ring, the swashplate tilted by `swashplateCyclic(def, controls,
   state)` (the gyro's cyclic once AG's gyro exists), scissors. No gyro (Rucker 66-8832).
-- **ICS**: the gyro X on a post 0.32 m above the blade plane, four arms with tip masses, 33° ahead of the blades (P cant),
+- **ICS**: the gyro X on a post 0.32 m above the blade plane (AGENT choice set to the published height, see Acceptance), four arms with tip masses, 33° ahead of the blades (P cant),
   tilted relative to the shaft by `state.controlGyro` (pitch + = aft, roll + = right: the `gyroBladeCyclic` convention);
-  the pitch links run from the gyro arms to the horns. The X fades into a ring of its tip masses with the same
+  the pitch links run from the gyro arms to the horns. The drawn tilt is clamped to the configuration's largest stop
+  (`maxTilt`, else ±45°) before `tan()`, so any dev-page `gyropitch=`/`gyroroll=` stays finite. The X fades into a ring of its tip masses with the same
   perceptual blur as the blades.
 - **Tail rotor**: two crossed teetering yokes and four grips on the shared blade/blur renderer; blade angle −7.4° to
   +24.2° (P) with the pedals.
@@ -157,8 +170,8 @@ blades olive with a yellow tip square, tail and pusher blades dark with yellow t
   stage 2 the stub's `nominalRpm` is the MD 500E's 492, so the AH-56A shots at 240–246 rpm pass `thrust=81400`
   (18,300 lb) explicitly until AG lands the real rotor.
 - A rotorcraft longer than 11 m (fuselage or rotor) gets the fixed exterior presets scaled with its size (k = 16.7 / 11
-  for the AH-56A); smaller types keep their framing exactly. `view=gear` on a wheeled rotorcraft looks at the left main
-  wheel. New: `view=head` (a close three-quarter of the main head) and `eye=x,y,z&at=x,y,z` (a free camera in body FRD
+  for the AH-56A); smaller types keep their framing exactly. `view=gear` on a rotorcraft with more than one visual
+  gear entry looks at the left main wheel (a large skid type, `gear: []`, keeps the fixed preset). New: `view=head` (a close three-quarter of the main head) and `eye=x,y,z&at=x,y,z` (a free camera in body FRD
   metres, for matching a reference photograph's viewpoint).
 
 ## Photographs consulted (modelling references only; never textures, never committed)
@@ -186,3 +199,10 @@ tip paint; the 1969 airfield, Anefo 1971 in-flight and the XM51 / XM52 armament 
 5. The wing's incidence is drawn to the waterline (the published datum is unstated, research §7): 12° makes the root
    trailing edge hang about 16 in below the quarter chord, as the photographs show.
 6. The stage-2 pusher is drawn feathered at 88°, a position the real hub (−17.2° to +40.8°) could not reach.
+7. The ICS height row is set, not measured: the gyro post height `GYRO.rise` = 0.32 m is an AGENT choice that lands
+   162.6 in against the published 13 ft 8.5 in (−1.2 %); a photo-ratio derivation (Fort Campbell 66-8831) is open.
+8. No blade sag is drawn: the generic `tipBend` is not fed to the AH-56A blades (it would undo the 12 % → 6 % taper). If
+   static droop with bending is wanted later, `TeeteringRotor`'s cached blade copy (integrator, `rotor.ts`) must take
+   the taper, or the head must apply the sag itself.
+
+These items are repeated in the AX commit body (the PR text) for the integrator to lift into `docs/known-issues.md`.

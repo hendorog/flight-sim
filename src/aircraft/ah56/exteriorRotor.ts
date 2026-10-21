@@ -35,7 +35,10 @@ export const DEFAULT_HINGE_FRACTION = 0.10;
 /** Swashplate centre below the blade plane, m (3V: just above the transmission fairing top WL 156). */
 export const SWASHPLATE_DROP = 0.15;
 /** ICS gyro X: the 9.7 ft (P) span is taken over the tip masses: arm length to the mass centre = span / 2 - mass radius;
- *  height of its plane above the blade plane (3V), tip-mass radius (3V), lead ahead of the blades (P cant 33 deg). */
+ *  tip-mass radius (3V), lead ahead of the blades (P cant 33 deg). `rise` (the X's plane above the blade plane) is an
+ *  AGENT choice: no dimensioned drawing of the gyro post was found and no photo ratio was measured, so 0.32 m is SET to
+ *  land the published ICS height 13 ft 8.5 in (S) within its 2 % row (the built model reads 162.6 in, -1.2 %). The
+ *  height row therefore checks this choice, it does not measure it (docs/ah56-exterior.md). */
 const GYRO_MASS_RADIUS = 0.085;
 export const GYRO = { armLength: D.ICS_GYRO_SPAN / 2 - GYRO_MASS_RADIUS, rise: 0.32, massRadius: GYRO_MASS_RADIUS, leadDeg: D.ICS_GYRO_CANT_DEG } as const;
 /** Static droop of the blade at rest, rad (3V: the museum blades hang a little). */
@@ -46,6 +49,27 @@ export const TAIL_PITCH = { min: -7.4 * DEG, max: 24.2 * DEG } as const;
 export const PUSHER_BLADE = { chord: 0.277, root: 0.16, twistDeg: 30, tc: { root: 0.10, tip: 0.04 } } as const;
 /** Blade angle (at 0.7 R) the prop is drawn at when there is no pusher (stage 2: stopped and feathered, plan 7.5). */
 export const PUSHER_FEATHER = 88 * DEG;
+
+/** Gyro tilt drawn when the definition has no control gyro: +/-45 deg (a guard against tan(90 deg), not a stop). */
+export const GYRO_DRAW_LIMIT = 45 * DEG;
+
+/** Largest tilt stop of the configuration `mode` (the gyro is drawn clamped to it), else GYRO_DRAW_LIMIT. The AMCS stops
+ *  are asymmetric (up/down/left/right); the drawing clamps symmetrically to the largest, which is all the guard needs. */
+export function gyroDrawLimit(def: RotorcraftDefinition, mode: 'amcs' | 'ics'): number {
+  const t = def.controlGyro?.configs[mode]?.maxTilt;
+  const stop = t ? Math.max(t.up, t.down, t.left, t.right) : NaN;
+  return Number.isFinite(stop) && stop > 0 ? Math.min(stop, GYRO_DRAW_LIMIT) : GYRO_DRAW_LIMIT;
+}
+
+/** The visual description handed to the generic renderer: the main coning WITHOUT its `bending` block. TeeteringRotor
+ *  rewrites every blade vertex from its construction-time (untapered, 12 % t/c) copy whenever the generic tipBend
+ *  changes, which would undo taperBladeThickness(); AH56MainRotor poses the blades from the rotor state and ignores the
+ *  generic cone/tipBend, so the generic sag is dropped instead. */
+export function withoutBladeBending<T extends { rotorcraftVisual?: RotorcraftVisualDef }>(def: T): T {
+  const rv = def.rotorcraftVisual, coning = rv?.main.coning;
+  if (!rv || !coning?.bending) return def;
+  return { ...def, rotorcraftVisual: { ...rv, main: { ...rv.main, coning: { ...coning, bending: undefined } } } };
+}
 
 /** Equivalent hinge offset of the definition, m. */
 export function hingeOffset(def: RotorcraftDefinition): number {
@@ -78,10 +102,15 @@ export class AH56MainRotor {
   readonly gyroMassMaterial = new THREE.MeshStandardMaterial({ name: 'ah56GyroMass', color: 0x45472f, roughness: 0.66, transparent: true });
   readonly gyroRingMaterial = new THREE.MeshStandardMaterial({ name: 'ah56GyroBlur', color: 0x45472f, roughness: 0.7, transparent: true, opacity: 0, depthWrite: false });
   private gyroRing!: THREE.Mesh;
+  private gyroPost!: THREE.Object3D;
   readonly hinge: number;
   private readonly links: THREE.Mesh[] = [];
   private readonly matrix = new THREE.Matrix4();
   private readonly pitchM = new THREE.Matrix4();
+  private readonly flapM = new THREE.Matrix4();
+  /** Translations to and from the equivalent hinge (constant: the hinge offset is fixed at construction). */
+  private readonly toHinge = new THREE.Matrix4();
+  private readonly fromHinge = new THREE.Matrix4();
   private readonly inverse = new THREE.Matrix4();
   private readonly inverseSpin = new THREE.Quaternion();
   private readonly a = new THREE.Vector3();
@@ -98,6 +127,7 @@ export class AH56MainRotor {
     rotor.swashplate.visible = false;
     this.group.name = 'ah56MainHead'; rotor.spin.add(this.group);
     this.hinge = hingeOffset(definition);
+    this.toHinge.makeTranslation(this.hinge, 0, 0); this.fromHinge.makeTranslation(-this.hinge, 0, 0);
     taperBladeThickness(rotor.blades.geometry, spec, MAIN_SECTION.root, MAIN_SECTION.tip);
     const n = D.MAIN_ROTOR_BLADES;
     // Rotating hub: the drum on the shaft, the cruciform arms to the root fittings and the cap.
@@ -171,7 +201,7 @@ export class AH56MainRotor {
     const ring = new THREE.TorusGeometry(GYRO.armLength, GYRO.massRadius * 0.8, 10, 72).rotateX(Math.PI / 2);
     this.gyroRing = new THREE.Mesh(ring, this.gyroRingMaterial); this.gyroRing.name = 'ah56GyroBlur'; this.gyroTilt.add(this.gyroRing);
     const post = new MeshBatch(); post.add(m.metal, tube([0, 0, -0.10], [0, 0, -GYRO.rise + 0.02], 0.045, 0.06, 18));
-    this.group.add(post.build('ah56GyroPost'));
+    this.gyroPost = post.build('ah56GyroPost'); this.group.add(this.gyroPost);
   }
 
   dispose(): void { for (const x of [this.gyroArmMaterial, this.gyroMassMaterial, this.gyroRingMaterial]) x.dispose(); }
@@ -193,9 +223,13 @@ export class AH56MainRotor {
     this.tilt.set(cyclic.right, 1, cyclic.aft).normalize();
     this.swashplate.quaternion.setFromUnitVectors(this.up, this.tilt);
     this.swashplate.position.y = -SWASHPLATE_DROP + (ctx.controls.collective ?? 0) * 0.04;
-    this.gyroTilt.visible = ics; this.group.getObjectByName('ah56GyroPost')!.visible = ics;
+    this.gyroTilt.visible = ics; this.gyroPost.visible = ics;
     if (ics) {
-      this.tilt.set(Math.tan(state.controlGyro!.roll), 1, Math.tan(state.controlGyro!.pitch)).normalize();
+      // Clamped to the stops before tan(): a +/-90 deg pose (the dev page takes any gyropitch=/gyroroll=) would give
+      // Infinity and a NaN quaternion. A non-finite angle draws level.
+      const limit = gyroDrawLimit(def, 'ics'), g = state.controlGyro!;
+      const clampTilt = (x: number) => Number.isFinite(x) ? THREE.MathUtils.clamp(x, -limit, limit) : 0;
+      this.tilt.set(Math.tan(clampTilt(g.roll)), 1, Math.tan(clampTilt(g.pitch))).normalize();
       this.gyroTilt.quaternion.setFromUnitVectors(this.up, this.tilt);
       this.gyroSpin.rotation.y = this.rotor.spin.rotation.y + GYRO.leadDeg * DEG * D.MAIN_ROTOR_ROTATION;
       const blur = bladeBlur(state.rotorRpm, n);
@@ -217,9 +251,9 @@ export class AH56MainRotor {
       meanFlap += flap / n; forwardFlap += 2 * flap * Math.sin(a) / n; rightFlap += 2 * flap * Math.cos(a) / n; meanPitch += pitch / n;
       // Blade frame: azimuth, the equivalent hinge, flap about it, feathering about the blade axis.
       this.matrix.makeRotationY(i * 2 * Math.PI / n)
-        .multiply(new THREE.Matrix4().makeTranslation(e, 0, 0))
-        .multiply(new THREE.Matrix4().makeRotationZ(flap))
-        .multiply(new THREE.Matrix4().makeTranslation(-e, 0, 0))
+        .multiply(this.toHinge)
+        .multiply(this.flapM.makeRotationZ(flap))
+        .multiply(this.fromHinge)
         .multiply(this.pitchM.makeRotationX(pitch));
       this.rotor.blades.setMatrixAt(i, this.matrix);
       this.cuffs[i].matrix.copy(this.matrix); this.cuffs[i].matrixWorldNeedsUpdate = true;

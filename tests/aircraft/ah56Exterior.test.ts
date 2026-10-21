@@ -11,7 +11,8 @@ import { AH56_ROTORCRAFT } from '../../src/aircraft/ah56/rotorcraft';
 import { AH56_PANEL } from '../../src/aircraft/ah56/panel';
 import { AH56_DEFINITION } from '../../src/aircraft/ah56';
 import { ah56ExteriorVisualClass } from '../../src/aircraft/ah56/exterior';
-import { AH56MainRotor, AH56Pusher, GYRO, PUSHER_FEATHER, hingeOffset } from '../../src/aircraft/ah56/exteriorRotor';
+import { AH56MainRotor, AH56Pusher, GYRO, GYRO_DRAW_LIMIT, MAIN_SECTION, PUSHER_FEATHER, gyroDrawLimit, hingeOffset }
+  from '../../src/aircraft/ah56/exteriorRotor';
 import { AH56Gear, MAIN_RETRACT } from '../../src/aircraft/ah56/exteriorGear';
 import { BELLY_TURRET } from '../../src/aircraft/ah56/exteriorWeapons';
 import { finChordAt, stabChord, wingChord } from '../../src/aircraft/ah56/exteriorDetails';
@@ -37,13 +38,14 @@ type V = InstanceType<typeof Visual> & { head: AH56MainRotor; pusher: AH56Pusher
 const toFrd = (v: THREE.Vector3): [number, number, number] => [-v.z, v.x, -v.y];
 
 /** Build the complete visual parked, rotors stopped, run `fn`, dispose. */
-function withVisual(fn: (visual: V, ctx: ReturnType<typeof fakeContext>) => void, setup?: (s: RotorcraftState) => void): void {
+function withVisual(fn: (visual: V, ctx: ReturnType<typeof fakeContext>) => void, setup?: (s: RotorcraftState) => void,
+  visualDef: typeof def = def): void {
   vi.stubGlobal('document', blankDocument());
   const ctx = fakeContext(); ctx.state.rotorcraft = emptyRotorcraftState(); ctx.state.electrical.busVoltage = 28;
   // Free (uncompressed) struts: the contacts of the gear contract are the free tyre contacts.
   for (const w of ctx.state.wheels) w.compression = 0;
   setup?.(ctx.state.rotorcraft);
-  const visual = new Visual(def, ctx, { lightScale: 1, panelEmissiveScale: 1, interiorLodDistance: 50, panelDef: AH56_PANEL }) as V;
+  const visual = new Visual(visualDef, ctx, { lightScale: 1, panelEmissiveScale: 1, interiorLodDistance: 50, panelDef: AH56_PANEL }) as V;
   try { visual.update(ctx); visual.root.updateMatrixWorld(true); fn(visual, ctx); }
   finally { visual.dispose(); vi.unstubAllGlobals(); }
 }
@@ -360,6 +362,61 @@ describe('AH-56A exterior', () => {
     expect(head.pose[0].flap).toBeLessThan(head.pose[2].flap); // the forward blade (azimuth 90 deg) lower with the disc forward
     rotor.group.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
     rotor.dispose(); Object.values(m).forEach(x => x.dispose());
+  });
+
+  it('keeps the 12 % -> 6 % blade taper when the coning carries `bending` (the generic tipBend rewrite is not fed)', () => {
+    // A coning with a cantilever sag block (rigidity set for about 0.25 m of tip sag at rest, the R22 pattern): fed to
+    // the generic renderer, its tipBend rewrite would restore the untapered 12 % section on the first update.
+    const rv = def.rotorcraftVisual!, spec = rv.main;
+    const bent = { ...def, rotorcraftVisual: { ...rv, main: { ...spec, coning: { ...spec.coning!,
+      bending: { rootRadius: spec.root, radius: spec.radius, rigidity: 2.2e4 } } } } };
+    /** t/c of the blade row nearest the fraction f of the blade span, in the taper's chord frame. */
+    const rowTc = (g: THREE.BufferGeometry, f: number): { f: number; tc: number } => {
+      const p = g.getAttribute('position'), target = spec.root + f * (spec.radius - spec.root);
+      let x = NaN;
+      for (let i = 0; i < p.count; i++) if (!(Math.abs(p.getX(i) - target) >= Math.abs(x - target))) x = p.getX(i);
+      const fx = (x - spec.root) / (spec.radius - spec.root), beta = spec.twist * (fx - 0.75), sn = Math.sin(beta), cs = Math.cos(beta);
+      const along: number[] = [], thick: number[] = [];
+      for (let i = 0; i < p.count; i++) if (Math.abs(p.getX(i) - x) < 1e-5) {
+        along.push(p.getY(i) * sn - p.getZ(i) * cs); thick.push(p.getY(i) * cs + p.getZ(i) * sn);
+      }
+      return { f: fx, tc: (maxOf(thick) - minOf(thick)) / (maxOf(along) - minOf(along)) };
+    };
+    withVisual((visual, ctx) => {
+      const g = visual.main.blades.geometry, before = Float32Array.from(g.getAttribute('position').array as Float32Array);
+      for (const [rpm, thrust] of [[0, 0], [120, 20000], [246, 81400]] as const) {
+        Object.assign(ctx.state.rotorcraft!, { rotorRpm: rpm, thrust, azimuth: rpm / 100 });
+        ctx.controls.collective = rpm / 492;
+        visual.update(ctx);
+        for (const f of [0.5, 0.9]) {
+          const row = rowTc(g, f);
+          expect(row.tc).toBeCloseTo(THREE.MathUtils.lerp(MAIN_SECTION.root, MAIN_SECTION.tip, row.f), 3);
+        }
+        expect(g.getAttribute('position').array).toEqual(before);
+      }
+      // The tip row itself: 6 % (P (0.6)3006 mod), not the generic 12 %.
+      const tip = rowTc(g, 1);
+      expect(tip.tc).toBeCloseTo(MAIN_SECTION.tip, 3);
+      expect(nonFinite(visual.main.group)).toBe(0);
+      console.log(JSON.stringify({ tipTc: tip.tc, tipRowFraction: tip.f }));
+    }, undefined, bent);
+  });
+
+  it('clamps the drawn gyro tilt before tan(): a +/-90 deg pose stays finite', () => {
+    const limit = gyroDrawLimit(def.rotorcraft!, 'ics');
+    expect(limit).toBeGreaterThan(0); expect(limit).toBeLessThanOrEqual(GYRO_DRAW_LIMIT);
+    withVisual((visual, ctx) => {
+      const gyro = named(visual.root, 'ah56GyroTilt'), g = ctx.state.rotorcraft!.controlGyro!;
+      for (const [pitch, roll] of [[90 * DEG, 0], [-90 * DEG, 90 * DEG], [0, -90 * DEG], [Infinity, NaN]] as const) {
+        Object.assign(g, { pitch, roll }); visual.update(ctx);
+        expect([gyro.quaternion.x, gyro.quaternion.y, gyro.quaternion.z, gyro.quaternion.w].every(Number.isFinite)).toBe(true);
+        expect(nonFinite(visual.main.group)).toBe(0);
+      }
+      // At the clamp the plane normal leans by the limit.
+      Object.assign(g, { pitch: 90 * DEG, roll: 0 }); visual.update(ctx);
+      const n = new THREE.Vector3(0, 1, 0).applyQuaternion(gyro.quaternion);
+      expect(n.distanceTo(new THREE.Vector3(0, 1, Math.tan(limit)).normalize())).toBeLessThan(1e-9);
+    }, s => { s.controlGyro = { mode: 'ics', pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }; });
   });
 
   it('draws the pusher at state.pusher.beta turning at rotor rpm x 6.98, else stopped and feathered', () => {

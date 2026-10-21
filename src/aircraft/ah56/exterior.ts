@@ -19,7 +19,7 @@ import { buildAH56Exterior } from './exteriorDetails';
 import { buildAH56Weapons } from './exteriorWeapons';
 import { AH56Gear } from './exteriorGear';
 import { ah56Materials } from './exteriorGeometry';
-import { AH56MainRotor, AH56Pusher, AH56TailRotor } from './exteriorRotor';
+import { AH56MainRotor, AH56Pusher, AH56TailRotor, withoutBladeBending } from './exteriorRotor';
 
 export type Ah56RotorcraftReader = (ctx: SimContext) => RotorcraftState | undefined;
 
@@ -37,7 +37,9 @@ export function ah56ExteriorVisualClass(Base: typeof RotorcraftVisual, Shape: ty
 
     constructor(def: AirframeVisualDef, ctx: SimContext,
       options: { lightScale: number; panelEmissiveScale: number; interiorLodDistance: number; panelDef?: PanelDef }) {
-      super(def, ctx, options);
+      // The generic renderer gets the main coning without `bending`: its tipBend rewrite would undo the blade taper
+      // (withoutBladeBending); the AH-56A head poses the blades itself.
+      super(withoutBladeBending(def), ctx, options);
       this.rotorDef = def.rotorcraft!;
       // Hide the generic fittings (boom, mast cowl, skids) AND the static shadow they baked; they stay attached for the
       // shared disposer. The generic tail rotor has the stub definition's blade count: the Cheyenne's is drawn instead.

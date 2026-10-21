@@ -385,10 +385,12 @@ if (airframe?.rotorcraftVisual) {
       const [pos, target] = PRESETS[v];
       PRESETS[v] = [pos.clone().multiplyScalar(k), target.clone().multiplyScalar(k)];
     }
-    // The gear close-up on the left main wheel of a wheeled rotorcraft.
-    const left = airframe.gear[1].contact;
-    const wheel = new THREE.Vector3(left[1], -left[2] + 0.55, -left[0]);
-    PRESETS.gear = [wheel.clone().add(new THREE.Vector3(-3.1, 0.35, -2.6)), wheel.clone().add(new THREE.Vector3(0.4, 0, 0.6))];
+    // The gear close-up on the left main wheel of a wheeled rotorcraft (a large skid type, gear: [], keeps the preset).
+    if (airframe.gear.length > 1) {
+      const left = airframe.gear[1].contact;
+      const wheel = new THREE.Vector3(left[1], -left[2] + 0.55, -left[0]);
+      PRESETS.gear = [wheel.clone().add(new THREE.Vector3(-3.1, 0.35, -2.6)), wheel.clone().add(new THREE.Vector3(0.4, 0, 0.6))];
+    }
   }
 }
 let camPreset: [THREE.Vector3, THREE.Vector3] | null = null;
