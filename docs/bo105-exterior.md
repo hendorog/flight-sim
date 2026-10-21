@@ -99,9 +99,9 @@ flaps by bending its glass-fibre root:
 | --- | --- | --- |
 | Axes | x = 3.150 − STA, z = SKID_Z − height above the soles (dimensions.ts) | BO's contract |
 | Nose / pod end | STA 0.70 / 5.00: hull **4.30 m** | P TCDS p8 / dimensions.ts |
-| Pod | widest **1.58 m** at 1.15 m; belly 0.40 m; roof **2.055 m outside** (2.03 m lining) | P / 3V (D-HILF, D-HADO, Flying Bulls) |
+| Pod | widest **1.58 m** at 1.15 m; belly 0.40 m; roof **2.055 m outside** (2.03 m lining); section exponents 3.2–3.4 over the cabin (STA 1.65–3.80: near-vertical door sides from the cheat line to the window tops, half width 0.74 m at the 1.70 m eye height); bluff clamshell rear face closing over STA 4.60–5.00 (half widths 0.74 / 0.66 / 0.50 / 0.34 / 0.10 m at 4.60 / 4.82 / 4.95 / 4.985 / 5.00) | P / 3V (D-HILF `ext-munich-4/-9`, D-HADO, Flying Bulls) |
 | Doors | hinged crew door STA 1.14–1.78; **sliding** door 1.82–2.80 (rails to 3.78); **clamshells** aft of 4.33; nose-compartment cover under the chin windows | P TM 00-6, P5 FM Fig 7-1 / 3V (D-HADO window stations scaled by the hull and checked on the mast at 3.15) |
-| Glazing | windscreen to the nose bow at 1.05 m, roof glazing over the crew to STA 1.92, chin windows to the nose, crew-door upper and lower windows, two sliding-door windows | 3V |
+| Glazing | windscreen to the nose bow at 1.05 m, roof glazing over the crew to STA 1.92, chin windows to the nose, crew-door upper and lower windows, two sliding-door windows. The windscreen's aft edge and the crew-door window's front edge run 4 mm either side of the straight A-post (`visual.ts` `A_POST`, STA 1.235 at 1.31 m to 1.395 at 1.955 m), corner radius 0.02 m; the post is the 24 mm painted tube over that seam | 3V |
 | Deck fairing | STA 2.69–5.50, top 2.41 m, half width 0.52 m; intakes at STA 3.62, louvres, exhausts on top at STA 4.42, ±0.30 m | P5 FM 7-16 / 3V |
 | Boom | centre 1.86 → 1.58 m, radius 0.22 → 0.10 m, STA 5.10–8.95; driveshaft fairing on top | 3V ESTIMATE |
 | Main hub | STA 3.15, 2.90 m; head top **3.00 m** | dimensions.ts (P TCDS p8) |
@@ -200,8 +200,14 @@ the 0570b rotor head for the hub; Christoph 7, Policía CB and schoschie for the
    free hinge on a −2° droop stop, not the hingeless root's precone and bending.
 4. The drawn virtual hinge is e + L/2 ≈ 0.17 R, above the 12–15.2 % band (the physics hinge stays at e; the drawn
    tip is ≤ 2.1 cm lower than a rigid blade hinged at e at 5° coning).
-8. From the right seat the A-post / crew-door front frame subtends about 12° of the view to the right (geometry as
-   built from the photographs); owner judgement on the sightline.
+8. From the right seat the A-post, its lining trim and the door window's rubber cover **about 5°** of the view to
+   the right at eye height (look gate 1; it was 10–12° at gate 0). Measured two ways: rays from `PILOT_EYE` against
+   the built model (opaque azimuths 42.5–48° level, 40.5–46.25° at +10°, 37–43.75° at +20°, 41.75–46° at −30°;
+   gate 0: 32.75–44°, 28.75–43°, 22.75–41.5°, 36–47.75°), and the `bo105-viewout.png` row-470 luminance scan
+   (blocked 35.3–40.3° right; gate 0: 28.0–38.4°). Cause at gate 0: both glazing outlines had a vertex at exactly
+   1.70 m between nearly collinear edges, and the rounded intersection at r 0.05 pulled each edge about 1.5 cm in,
+   leaving a 6 cm opaque post plus the lining's 8 mm trim either side, seen at grazing incidence. The lining trim
+   inset is shared code (`livery.ts`) and was kept; owner judgement on the remaining sightline.
 5. Hub hardware proportions, the endplates' vertical split, the pitot position, the deck intakes and louvres and the
    cockpit furniture are photographic ESTIMATES; no dimensioned drawing was found.
 6. The outer roof is 2.055 m (dimensions.ts CABIN_ROOF_HEIGHT 2.02 m is read as the lining) so the frozen overhead

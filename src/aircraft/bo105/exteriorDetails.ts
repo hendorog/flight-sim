@@ -11,7 +11,7 @@ import type { AirframeVisualDef, FRD } from '../../render/aircraft/airframe/type
 import { frd, MeshBatch } from '../../render/aircraft/geometry';
 import { boom, box, pathTube, tube } from '../../render/aircraft/rotorcraft/geometry';
 import * as D from './dimensions';
-import { BOOM_ROOT_FAIRING, CLAMSHELL_STA, CROSS_TUBE_RADIUS, CROSS_TUBE_STA, DECK_FAIRING, ENDPLATE, FIN, H, NOSE_BOW,
+import { A_POST, BOOM_ROOT_FAIRING, CLAMSHELL_STA, CROSS_TUBE_RADIUS, CROSS_TUBE_STA, DECK_FAIRING, ENDPLATE, FIN, H, NOSE_BOW,
   S, SKID_TUBE_RADIUS, SLIDING_RAIL_END_STA, STAB, TAIL_END_STA, TAIL_SKID, boomHeight, boomRadius } from './visual';
 import { aerofoilPanel, centreStrip, ellipsoid, fairingLoft, ringPoint, roundedLoop, skinPath,
   type Bo105Materials, type Bo105Section, type Bo105SkinWidth } from './exteriorGeometry';
@@ -213,8 +213,9 @@ export function buildBo105Exterior(def: AirframeVisualDef, m: Bo105Materials, sk
     // Rubber surrounds on the door windows (glazing.windows 3+; 0 windscreen, 1 roof glazing, 2 chin windows).
     for (const w of def.glazing.windows.slice(3)) add(m.frame, pathTube(skinPath(skin, side, roundedLoop(w.pts, w.r), 0.003, 3), 0.011, 160));
     // A-post: the windscreen's aft frame from the nose bow up to the roof, then the roof window's side frame aft.
-    const aPost: [number, number][] = [[S(1.16), H(1.06)], [S(1.22), H(1.31)], [S(1.30), H(1.70)], [S(1.38), H(1.955)], [S(1.93), H(1.985)]];
-    add(m.paint, pathTube(skinPath(skin, side, aPost, 0.003, 10), 0.017, 80));
+    // It covers the 8 mm seam between the windscreen's aft edge and the door window's front edge (visual.ts A_POST).
+    const aPost: [number, number][] = A_POST.map(([s, h]) => [S(s), H(h)]);
+    add(m.paint, pathTube(skinPath(skin, side, aPost, 0.003, 10), 0.012, 80));
     // Crew-door hinges on its front edge.
     for (const [s, h] of [[1.17, 0.86], [1.23, 1.36]]) add(m.grey, box(skinPath(skin, side, [[S(s), H(h)]], 0.008)[0], [0.025, 0.014, 0.06], 0.004));
     // Sliding-door rails: the top rail under the roof edge and the bottom rail along the sill, running aft over the

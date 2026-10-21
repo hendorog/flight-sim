@@ -31,7 +31,9 @@ export const TAIL_END_STA = D.REF_STATION_M - D.TAIL_END_X;
 /**
  * Pod loft: [STA, top h, bottom h, widest-section h, half width, nTop, nBot] (m). The blunt round nose with the
  * windscreen rising steeply to a high flat roof, the flat belly 0.40 m above the soles (dimensions.ts BELLY_HEIGHT),
- * the widest section 1.58 m (P), and the rounded rear end (the aft clamshell doors) closing at the hull's 4.30 m.
+ * the widest section 1.58 m (P), near-vertical sides from the cheat line to the window tops (superellipse exponents
+ * 3.2-3.4 over the cabin), and the bluff rear face of the aft clamshell doors closing within about 0.7 m at the hull's
+ * 4.30 m (ext-munich-4 / -9, Flying Bulls CB).
  * The roof is 2.055 m outside (the lining 2.03 m) so the frozen overhead console (centre 1.98 m) and the power-lever
  * pivots (2.00 m) of panelLayout.ts hang inside it; dimensions.ts's CABIN_ROOF_HEIGHT 2.02 m (3V) is read as the
  * lining. 3V ESTIMATE (D-HILF, D-HADO, Flying Bulls CB).
@@ -42,17 +44,18 @@ const LOFT: readonly (readonly [number, number, number, number, number, number, 
   [0.770, 1.400, 0.680, 1.010, 0.370, 2.1, 2.1],
   [0.860, 1.600, 0.580, 1.040, 0.510, 2.2, 2.2],
   [0.990, 1.780, 0.500, 1.070, 0.615, 2.3, 2.3],
-  [1.160, 1.920, 0.445, 1.100, 0.695, 2.4, 2.5],
-  [1.380, 2.010, 0.410, 1.120, 0.748, 2.5, 2.7],
-  [1.650, 2.050, 0.400, 1.140, 0.777, 2.6, 2.9],
-  [2.000, 2.055, 0.400, 1.150, 0.790, 2.6, 3.0],
-  [3.000, 2.055, 0.400, 1.150, 0.790, 2.6, 3.0],
-  [3.800, 2.050, 0.410, 1.160, 0.785, 2.6, 3.0],
-  [4.250, 2.020, 0.470, 1.180, 0.760, 2.5, 2.8],
-  [4.600, 1.960, 0.600, 1.220, 0.680, 2.4, 2.5],
-  [4.820, 1.860, 0.760, 1.260, 0.560, 2.3, 2.3],
-  [4.950, 1.700, 0.930, 1.290, 0.380, 2.2, 2.2],
-  [5.000, 1.420, 1.160, 1.300, 0.080, 2.0, 2.0],
+  [1.160, 1.920, 0.445, 1.100, 0.695, 2.6, 2.6],
+  [1.380, 2.010, 0.410, 1.120, 0.748, 3.0, 3.0],
+  [1.650, 2.050, 0.400, 1.140, 0.777, 3.3, 3.2],
+  [2.000, 2.055, 0.400, 1.150, 0.790, 3.4, 3.2],
+  [3.000, 2.055, 0.400, 1.150, 0.790, 3.4, 3.2],
+  [3.800, 2.050, 0.410, 1.160, 0.785, 3.4, 3.2],
+  [4.250, 2.030, 0.460, 1.180, 0.765, 3.3, 3.1],
+  [4.600, 1.995, 0.530, 1.210, 0.740, 3.1, 3.0],
+  [4.820, 1.930, 0.630, 1.240, 0.660, 2.9, 2.8],
+  [4.950, 1.810, 0.790, 1.270, 0.500, 2.6, 2.5],
+  [4.985, 1.680, 0.960, 1.290, 0.340, 2.3, 2.3],
+  [5.000, 1.460, 1.150, 1.300, 0.100, 2.0, 2.0],
 ];
 
 /**
@@ -63,18 +66,30 @@ const LOFT: readonly (readonly [number, number, number, number, number, number, 
  * below the horizontal nose bow, the crew-door windows (a large upper one and the lower "kick" window) and the two
  * sliding-door windows.
  */
-export const WINDSCREEN = sh([[0.705, 1.045], [1.16, 1.07], [1.22, 1.30], [1.30, 1.70], [1.38, 1.95], [1.40, 2.30], [0.705, 2.30]]);
+/**
+ * A-post (side projection, [STA, h]): the windscreen's aft frame and the crew door's front edge, from the nose bow up to
+ * the roof, then the roof window's side frame aft. Straight from h 1.31 to the roof. The windscreen's aft edge and the
+ * crew-door window's front edge run parallel to it only 4 mm either side, so the glazing and the lining are open up to
+ * the post and the post itself is the painted tube over the seam (24 mm, exteriorDetails.ts): from the right seat at
+ * eye height it and the lining's trim cover about 5 deg (the Policia CB and Flying Bulls photographs show a slim door
+ * post between the curved windscreen and the door window). 3V ESTIMATE.
+ */
+export const A_POST: readonly (readonly [number, number])[] = [[1.16, 1.06], [1.235, 1.31], [1.395, 1.955], [1.93, 1.985]];
+/** The A-post's station at height h (m above the soles) on its straight run, h 1.31-1.955. */
+const aPostSta = (h: number): number => 1.235 + (h - 1.31) * (1.395 - 1.235) / (1.955 - 1.31);
+export const WINDSCREEN = sh([[0.705, 1.045], [1.15, 1.07], [aPostSta(1.31) - 0.004, 1.31], [aPostSta(1.955) - 0.004, 1.955], [1.42, 2.30],
+  [0.705, 2.30]]);
 export const ROOF_GLASS = sh([[1.30, 1.965], [1.92, 1.995], [1.92, 2.30], [1.30, 2.30]]);
 export const CHIN_GLASS = sh([[0.70, 1.00], [0.70, 0.80], [0.74, 0.715], [0.85, 0.635], [1.06, 0.60], [1.13, 0.62], [1.15, 1.03]]);
 /** The horizontal nose bow between the windscreen and the chin windows (side projection; drawn as a frame). */
 export const NOSE_BOW = sh([[0.718, 1.025], [1.16, 1.055]]);
-export const CREW_WINDOW = sh([[1.27, 1.14], [1.72, 1.14], [1.72, 1.86], [1.42, 1.89], [1.33, 1.70], [1.27, 1.30]]);
+export const CREW_WINDOW = sh([[1.27, 1.14], [1.72, 1.14], [1.72, 1.86], [aPostSta(1.90) + 0.004, 1.90], [aPostSta(1.40) + 0.004, 1.40]]);
 export const CREW_LOWER_WINDOW = sh([[1.23, 0.75], [1.64, 0.75], [1.64, 1.01], [1.27, 1.01]]);
 export const SLIDING_WINDOW = sh([[1.90, 1.22], [2.30, 1.22], [2.30, 1.85], [1.90, 1.86]]);
 export const SLIDING_REAR_WINDOW = sh([[2.40, 1.30], [2.62, 1.30], [2.62, 1.84], [2.40, 1.84]]);
 /** Doors (panel lines): the hinged crew door (hinges on its front edge at the windscreen frame), the sliding passenger
  *  door, the aft clamshell door outline seen from the side, and the nose compartment cover below the chin windows. */
-export const CREW_DOOR = sh([[1.14, 0.66], [1.78, 0.66], [1.78, 1.95], [1.40, 1.965], [1.31, 1.80], [1.21, 1.30], [1.15, 1.00]]);
+export const CREW_DOOR = sh([[1.14, 0.66], [1.78, 0.66], [1.78, 1.95], [aPostSta(1.965), 1.965], [aPostSta(1.31), 1.31], [1.146, 1.00]]);
 export const SLIDING_DOOR = sh([[1.82, 0.64], [2.80, 0.64], [2.80, 1.95], [1.82, 1.95]]);
 export const CLAMSHELL = sh([[4.33, 0.70], [5.10, 0.70], [5.10, 1.74], [4.33, 1.74]]);
 export const NOSE_COMPARTMENT = sh([[0.98, 0.535], [1.42, 0.45], [1.44, 0.52], [1.42, 0.56], [1.00, 0.58]]);
@@ -194,10 +209,12 @@ export const BO105_VISUAL: AirframeVisualDef = {
   glazing: { cabinFrontX: D.NOSE_X - 0.003, cabinRearX: S(CABIN_REAR_STA), firewallX: S(CABIN_REAR_STA),
     tRange: [0.035, 0.965], liningRoofLimit: -1e9,
     windows: [
-      { pts: WINDSCREEN, r: 0.05, sides: 'both' },
+      // r 0.02 on the windscreen and crew-door window: at r 0.05 the rounded intersection of their nearly collinear
+      // aft / front edges pulled each edge about 1.5 cm in and widened the post to 6 cm at eye height.
+      { pts: WINDSCREEN, r: 0.02, sides: 'both' },
       { pts: ROOF_GLASS, r: 0.05, sides: 'both' },
       { pts: CHIN_GLASS, r: 0.04, sides: 'both' },
-      { pts: CREW_WINDOW, r: 0.05, sides: 'both' },
+      { pts: CREW_WINDOW, r: 0.02, sides: 'both' },
       { pts: CREW_LOWER_WINDOW, r: 0.04, sides: 'both' },
       { pts: SLIDING_WINDOW, r: 0.05, sides: 'both' },
       { pts: SLIDING_REAR_WINDOW, r: 0.04, sides: 'both' },
