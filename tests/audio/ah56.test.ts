@@ -81,8 +81,10 @@ describe('AH56_AUDIO: the import rule', () => {
     // wheels). Integrator, at the AG merge: this row asserted the S0 skids (no gear voice) until then.
     expect(stub.landingGear).toBe('wheels');
     expect(AH56_AUDIO.gear).not.toBeNull();
-    // The pusher channel is present while def.pusher is absent: the published propeller (3 blades, 10 ft, 1717 / 246).
-    expect(stub.pusher).toBeUndefined();
+    // The pusher channel follows def.pusher since the AC merge (stage 4; integrator: this row asserted the S0 stub's absent
+    // pusher until then): the published propeller (3 blades, 10 ft, 1717 / 246).
+    expect(stub.pusher).toBeDefined();
+    expect([AH56_AUDIO.pusher!.blades, AH56_AUDIO.pusher!.diameterM, AH56_AUDIO.pusher!.ratio]).toEqual([stub.pusher!.propeller.blades, stub.pusher!.propeller.diameter, stub.pusher!.ratio]);
     expect(AH56_AUDIO.pusher).toMatchObject({ blades: 3, ratio: AH56_PROP_RATIO });
     expect(AH56_AUDIO.pusher!.diameterM).toBeCloseTo(3.048, 6);
     // The FLAWS ROTOR RPM and the hum count the rotor's percent from the definition's 100 %.

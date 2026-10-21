@@ -105,3 +105,42 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
   speed; only the ICS gyro X fades. Shared renderer: the tail rotor's blur disc reads heavy (solidity alpha near the 0.25 cap) and the
   main disc faint in chase views. Integrator, at the AX merge: the main-gear trunnion moved from FS 281 to FS 264 with AG's axles (FS 285
   → 268), and the head draws a non-finite gyro cyclic as zero (the gyro definition routes the dev page's tilt into the swashplate).
+
+## Stages 3-4: the wing and the pusher (AC, handed over; [ah56-compound.md](../../../docs/ah56-compound.md) section 9)
+
+Numbers as AC measured them on the stage-4 aircraft; the stage-5 section moved some (the stage-5 list below and
+[ah56-integration.md](../../../docs/ah56-integration.md) have the integrated values).
+
+- **C6 rotor lift share** 71 / 47 / 26 % at 120 / 160 / 190 KCAS on 13° indicated (ESTIMATE 40–60 / 20–35 / 10–25 %): AG's collective
+  reading (13° AMCS indicated = 6° at 0.75 R) kept for the AMCS's own operation; the rotor-centre reading gave 54 / 30 / 11 % but broke
+  AMCS-73's lift-off on 13° and the hover inside the travel. it.fails.
+- **C9 / C26 the AMCS lateral trim**: 0.19 in left shift 125–190 KCAS (P about 0.5 in); symmetric-wing trim 0.69 in at 190 (D 0.8–1.5):
+  the AMCS's lateral stick per kN m of hub moment is small (about 0.02 in), so the 12.5 kN m prop reaction is 0.26 in of stick.
+- **C10** 0 → 165 KTAS in 61.9 s passes (P 53 s ± 20 %); 165 → 188 KTAS takes 20 s against P 54 s (too much thrust margin at high speed;
+  the prop map's efficiency and the flat plate fitted to it).
+- **C11** below about 150 KTAS full reverse decelerates at 0.15–0.2 g (P 0.31 g average); 196 KTAS to the hover not reached in 90 s.
+  196 → 165 KTAS passes (5.9 s, P 5.4 s).
+- **C16** reverse thrust on the ground yaws the nose about 2° LEFT (P right): the prop's slipstream reaches no surface. The rolling
+  take-off lifts off on 15° indicated at 62 KIAS, not 13° (the rotor wants about 2° more collective than the aircraft, as in the
+  18.8° indicated hover).
+- **C17** ICS full stick 40 R / 34 L °/s at 122 KCAS and 43 R / 31 L at 152 against 77 R / 42–49 L (P): AG's ICS steady rates (G7 gaps)
+  with the wing's roll damping.
+- **C22** sizes: cyclic held at −6° gives 1.1° nose up and 4.9 kt rearward (ESTIMATE 2–4°, 10–15 kt); +10° re-trimmed 5.3° nose down
+  (ESTIMATE 2–5°). **The plan's +4° row has the force balance backwards** (AGENT finding, for the owner): forward thrust held over a spot
+  tilts the disc aft and the nose goes UP by about T/W (measured +2.7°, predicted 2.8°); the test asserts the physical sense.
+- **C23** the ICS lateral trim shift hover → 100 KCAS is about 0.8 in RIGHT (P 1.1 in left); the AMCS shift 0.12–0.15 in (P 0.4–0.7 in).
+- **The delta-beta sensor** is the model's (engine torque at the rotor below half the prop's, 1,600 N m arming floor, ESTIMATE); it
+  ignores load factor, and a collective dump at speed that splits the needles can latch it. One reverse target (AMCS −8.5°).
+- **The grip does not creep in the sim's controls**: a touch of the grip re-seats the blades on it (C25 passes on the pusher alone).
+- **Prop efficiency** 0.753 at J 1.15 / C_P 0.34 against about 0.80 (ESTIMATE, Hamilton Standard charts): the BEMT's induced, swirl and
+  tip-loss terms plus wave drag at tip Mach 0.84 (`src/physics/propulsion/**`). The fuselage flat plate (1.0 m², 1.53 m² with stores at
+  194 KTAS) stands for what this prop map can push, not a physical estimate; at 0.80 it would be about 1.2 m².
+- **Stores drag on by default** (4 XM159 pods, P ΔFe 2 → 6 ft²; AGENT): clean AMCS reaches 213 KTAS, with stores about 199.
+- **The AMCS gyro pair lives in compound.ts** (`AH56_COMPOUND_GYRO`: K_R and the longitudinal stick moment override gyro.ts's 7,500 /
+  811 N m; AC's refit, then AH's). gyro.ts keeps the stage-2 fit for reference.
+- **ICS hands-off hover** pitches up on the compound (AC: +17.6° in 20 s calm, headless; in the sim with the 8 kt default wind +29°,
+  22 kt). On the integrated tree (air data wired) the ah56Ground readout reads ICS −5.3 → −3.4° roll, +8.8° pitch, 5.2 kt; AMCS −5.4 →
+  −6.4° roll, +2.3° pitch, 3.3 kt after 20 s (calm).
+- **Resolved at the AC merge (integrator):** an ICS reset trimmed on the AMCS's blade-angle schedule (4.84° indicated at 160 KCAS);
+  `flightModel.ts` now passes `ic.rotorcraftConfig` to `pusherTrimLever` (AC's request). The default definition in ICS trims 5.97 /
+  5.95 / 5.98° at 120 / 140 / 160 KCAS (P 5–7°); the C7 it.fails row is a passing row.

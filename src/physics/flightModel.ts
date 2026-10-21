@@ -640,7 +640,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     }
     c.collective = 0; c.parkingBrake = false; c.elevatorTrim = 0;
     // Pusher (AC): the trim starts from the scheduled prop lever.
-    if (d.pusher) c.propLever = pusherTrimLever(d, ic.airspeed);
+    if (d.pusher) c.propLever = pusherTrimLever(d, ic.airspeed, ic.rotorcraftConfig);
     let orientation = quat.fromEuler(0, 0, ic.heading);
     let position = { ...ic.position };
     const path = ic.flightPathAngle ?? 0;
