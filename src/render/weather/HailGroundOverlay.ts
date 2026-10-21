@@ -12,7 +12,8 @@
 //             also draws its stones on a world-anchored grid of SCATTER_CELL_M cells (each cell holding one while
 //             its hash is below SCATTER_FILL x the hail cover, of a diameter from the size distribution, hail.ts
 //             hailDiameterMm): discs brightened toward their far side (0.85 + 0.25 ny, as the pellets) on a soft
-//             contact shadow. Excluded: the aircraft's bounding box (the meshes under ctx.aircraftRoot, in the
+//             contact shadow. Pixels 1.5 to 3 times brighter than the layer before its cap (the runway and
+//             approach lights) keep the scene. Excluded: the aircraft's bounding box (the meshes under ctx.aircraftRoot, in the
 //             aircraft's frame, from AIRCRAFT_FLOOR_M above its lowest point; every camera mode) and in the cockpit
 //             the cabin box (PostPipeline.cabinFromView).
 //   pellets   BOUNCE_CELLS^2 cells of BOUNCE_CELL_M about the camera's ground point (a toroidal window: a cell leaving
@@ -65,7 +66,7 @@ export const SCATTER_FILL = 1.5;
  */
 export const LAYER_OVER_SCENE = 6;
 export const SNOW_OVER_SCENE = 8;
-export const LAYER_GAIN = 6;
+export const LAYER_GAIN = 14;
 export const LAYER_TAP_PX = 6;
 /** Darkening of the ground at wetness 1 (a look value). */
 export const WET_DARK = 0.3;
@@ -207,7 +208,8 @@ void main() {
     min(dot(texture2D(uScene, vUv + o2).rgb, LUM), dot(texture2D(uScene, vUv - o2).rgb, LUM)));
   float rl = max(dot(uRadiance, LUM), 1e-6);
   float snowShare = aS / max(a, 1e-4);
-  float ll = min(sl * mix(${LAYER_OVER_SCENE.toFixed(2)}, ${SNOW_OVER_SCENE.toFixed(2)}, snowShare), ${LAYER_GAIN.toFixed(2)} * rl);
+  float lu = sl * mix(${LAYER_OVER_SCENE.toFixed(2)}, ${SNOW_OVER_SCENE.toFixed(2)}, snowShare);
+  float ll = min(lu, ${LAYER_GAIN.toFixed(2)} * rl);
   float shade = mix(0.94 + 0.12 * nh, 0.95 + 0.1 * ns, snowShare);
   vec3 layer = (uRadiance / rl) * ll * shade;
   vec3 ice = max(uRadiance, ${ICE_OVER_SCENE.toFixed(2)} * scene.rgb);
@@ -237,7 +239,9 @@ void main() {
     vec3 stoneCol = ice * (0.85 + 0.25 * ny);
     col = mix(col, mix(under, stoneCol, stone), near);
   }
-  gl_FragColor = vec4(mix(ground, col, fade), scene.a);
+  // Lights on the ground (runway and approach lights) stay: where the scene is much brighter than the layer would be.
+  float glow = smoothstep(1.5, 3.0, dot(scene.rgb, LUM) / max(lu, 1e-6));
+  gl_FragColor = vec4(mix(mix(ground, col, fade), scene.rgb, glow), scene.a);
 }
 `;
 
