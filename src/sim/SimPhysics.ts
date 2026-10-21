@@ -46,6 +46,7 @@ import { createFlightModel, createFlightModelFor, type SimEnvironment } from '..
 import type { AircraftFlightModel } from '../physics/interfaces';
 import type { StepController } from '../training/types';
 import { Autoflight } from './autoflight';
+import { StabilityAssist } from './rotorcraft/stabilityAssist';
 import { SNAPSHOT_SCHEMA, snapshotSystems, type FlightSnapshot } from './resume';
 import { buildScenario, type Scenario } from './scenarios';
 import type { StartSpec } from './starts';
@@ -161,6 +162,14 @@ export class SimPhysics {
    * moisture, so no carburettor ice). Default true.
    */
   carbIcing = true;
+  /**
+   * The STAB ASSIST sim aid (src/sim/rotorcraft/stabilityAssist.ts) of a type whose input profile has one (the Bo 105),
+   * else null: no other type runs any of it. It acts in the physics step, after the autoflight and the copilot.
+   */
+  readonly stabilityAssist: StabilityAssist | null;
+  /** Whether the STAB ASSIST is switched on. The Simulator links it to the input module's Shift+A toggle; headless runs
+   *  get the type's default. */
+  stabilityAssistOn: () => boolean;
 
   private readonly events: EventBus | undefined;
   /** `env` without its moisture: what the flight model steps in while carburettor icing is off. */
@@ -191,6 +200,9 @@ export class SimPhysics {
     this.stepSize = 1 / this.fm.physicsRate;
     this.h = this.stepSize;
     this.renderState = copyInto({} as AircraftState, this.fm.state);
+    const assist = def.input.stabilityAssist;
+    this.stabilityAssist = assist ? new StabilityAssist(assist) : null;
+    this.stabilityAssistOn = () => assist?.default === true;
   }
 
   get state(): AircraftState {
@@ -267,6 +279,7 @@ export class SimPhysics {
     this.gearEvents.sync(this.fm.state.gear);
     this.autoflight.disengage();
     if (this.autoflightOnReset || sc.engageAutoflight) this.autoflight.engage(sc.autoflight, this.fm.state, c);
+    this.stabilityAssist?.reset();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -432,6 +445,7 @@ export class SimPhysics {
     this.wasCrashed = false;
     this.gearEvents.sync(st.gear);
     if (!def.rotorcraft) this.autoflight.importState(snap.autoflight);
+    this.stabilityAssist?.reset();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -527,7 +541,11 @@ export class SimPhysics {
     // Feet off the pedals: the rudder floats and the nosewheel follows it (the input module decides; the
     // autoflight and the copilot always have their feet on the pedals).
     this.fm.rudderFree = !!this.controls.feetOffRudder && !this.autoflight.engaged && !copilot?.flying;
+    // The STAB ASSIST's series term rides on the controls for this step only (after() restores the pilot's).
+    const assist = this.stabilityAssist;
+    assist?.before(this.h, this.fm.state, this.controls, this.stabilityAssistOn() && !this.autoflight.engaged && !copilot?.flying);
     this.fm.step(this.h, this.controls, this.carbIcing ? this.env : this.dryEnv);
+    assist?.after(this.controls);
     this.steps++;
     const s = this.fm.state;
     const ev = this.events;

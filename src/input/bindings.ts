@@ -8,8 +8,8 @@
 // Shift+arrow looks around, so the yoke arrows are bound to the bare keys. A key keeps the action it had
 // when it went down, so releasing Shift mid-press does not switch a held yoke key to a look key.
 //
-// Keys owned by other modules and deliberately left unbound here: Escape, F8, F9 (UI); P (pause), A
-// (autopilot), T / Shift+T (autopilot altitude), H (dome light), Shift+R (restart), Shift+[ / Shift+] (time
+// Keys owned by other modules and deliberately left unbound here: Escape, F8, F9 (UI); P (pause), bare A
+// (autopilot; Shift+A is the STAB ASSIST toggle on a type that has one), T / Shift+T (autopilot altitude), H (dome light), Shift+R (restart), Shift+[ / Shift+] (time
 // rate) (the shell, src/sim/Simulator.ts); F11 is kept free; F is the checklist (Shift+F feathers).
 // Shift+V toggles the fixed cockpit panel; bare ] cycles its sections.
 // Owned by the Flight School during a lesson (src/training/TrainingSystem.ts, spec section 5.9; TRAINING_KEY_MAP
@@ -109,7 +109,11 @@ export type InputAction =
   | 'lookRight'
   | 'lookUp'
   | 'lookDown'
-  | 'pause';
+  | 'pause'
+  | 'stabilityAssist' // STAB ASSIST sim aid on / off (InputProfile.stabilityAssist)
+  | 'collectiveFastDown' // the hand-rate collective pair (InputProfile.collectiveFastRate), held
+  | 'collectiveFastUp'
+  | 'setTrimHere'; // the keyboard's centre to the stick as it is (InputProfile.setTrimHere)
 
 export interface KeyMapping {
   code: string;
@@ -149,10 +153,19 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'F4', action: 'throttleFull' },
   { code: 'Numpad5', action: 'centreControls' },
   { code: 'Digit5', action: 'centreControls' },
+  // Types with a keyboard "set trim here" (InputProfile.setTrimHere): Shift+5 / Shift+Numpad 5. Elsewhere they centre.
+  { code: 'Digit5', shift: true, action: 'setTrimHere' },
+  { code: 'Numpad5', shift: true, action: 'setTrimHere' },
+  // Types with the STAB ASSIST sim aid: Shift+A (bare A is the shell's autopilot / hover hold).
+  { code: 'KeyA', shift: true, action: 'stabilityAssist' },
   { code: 'Insert', action: 'rotorClutch' },
   { code: 'Delete', action: 'rotorGovernor' },
   { code: 'F5', action: 'flapsUp' },
   { code: 'F6', action: 'flapsDown' },
+  // Types with a hand-rate collective pair (the Bo 105's autorotation entry): Shift+F5 / Shift+F6. Elsewhere Shift+F5 / F6
+  // stay the fine pair (actionForKey's fallback to the shift-agnostic binding).
+  { code: 'F5', shift: true, action: 'collectiveFastDown' },
+  { code: 'F6', shift: true, action: 'collectiveFastUp' },
   // Explicit lever positions, not a toggle: a slip from F6 on final can only select the gear DOWN.
   { code: 'F7', shift: false, action: 'gearDown' },
   { code: 'F7', shift: true, action: 'gearUp' },
@@ -322,6 +335,10 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   lookUp: { label: 'Look up (hold)', category: 'View' },
   lookDown: { label: 'Look down (hold)', category: 'View' },
   pause: { label: 'Pause', category: 'Simulation' },
+  stabilityAssist: { label: 'STAB ASSIST on / off (a sim aid that holds the attitude at hover and low speed; the aircraft has no SAS)', category: 'Flight controls' },
+  collectiveFastDown: { label: 'Lower the collective at hand speed (hold): engine failure', category: 'Flight controls' },
+  collectiveFastUp: { label: 'Raise the collective at hand speed (hold): the autorotation cushion', category: 'Flight controls' },
+  setTrimHere: { label: 'Keyboard trim here: 5 then returns the stick to where it is now (sim convenience)', category: 'Flight controls' },
 };
 
 const KEY_NAMES: Record<string, string> = {
@@ -391,6 +408,9 @@ export function profileHasAction(profile: InputProfile, action: InputAction): bo
   if (action === 'propLeverSnap') return !!profile.propLever && profile.propLever.snaps.length > 0;
   if (action === 'engineTrimLeft' || action === 'engineTrimRight') return !!profile.n2BeepSplit || (!!profile.n2Beep && !!profile.propLever);
   if (action === 'tailWheelLock') return !!profile.tailWheelLock;
+  if (action === 'stabilityAssist') return !!profile.stabilityAssist;
+  if (action === 'collectiveFastDown' || action === 'collectiveFastUp') return !!profile.rotorcraft && !!profile.collectiveFastRate;
+  if (action === 'setTrimHere') return !!profile.setTrimHere;
   if (profile.gearLever && (action === 'gearDown' || action === 'gearUp')) return true;
   if (action === 'rotorClutch') return !!profile.rotorcraft;
   if (action === 'rotorGovernor') return !!profile.rotorcraft && profile.rotorGovernor !== false;

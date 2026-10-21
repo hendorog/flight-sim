@@ -27,6 +27,25 @@ export const BO105_INPUT: InputProfile = {
   n2BeepSplit: true,
   springTrim: true,
   mouseYoke: { expo: 0.9, deadzone: 0.02 },
+  // STAB ASSIST (flyability pass, 2026-10-22; W/bofly/fix-plan.md F1): a sim aid, not a CB-4 system (the CB-4 has no
+  // SAS; the optional IFR-kit SAS is not modelled). The real Bo 105 hover is unstable (ERF 1995 VII-7, P), and the sim
+  // matches it; this series term (at most 10 % of travel) holds the attitude below 30 KIAS (faded out by 50) and damps
+  // the yaw rate, so a keyboard pilot can hover. Gains from the hands-off probe (W/bofly/probes sas2.log: 0.7 deg calm,
+  // 2.3 deg in 8 kt wind with 5 kt gusts, 0.8 / 2.4 % of travel used); stickAttitude from the keyboard tap probe
+  // (W/bofly/probes-fix assist.log). ON by default (the owner's flip: `default: false`); Shift+A toggles it.
+  stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13, fadeKias: [30, 50] },
+  // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
+  // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
+  // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine
+  // F5 / F6 (the MD 500E's 0.12 per second) take 2.9-3.7 s to reach full down; bare F5 / F6 stay the fine hover keys.
+  // ESTIMATES (down: the hand rate of W/bofly/probes-controls auto.log; up: arithmetic).
+  collectiveFastRate: { down: 1.0, up: 0.5 },
+  // The keyboard re-centring (5 / Numpad 5) at 1 travel per second instead of 4 (flyability pass F3): the keyboard centre
+  // is the spring-trim anchor (the hover stick at a reset), so an untrimmed pilot at 120 KIAS pressing 5 would get 0.44 of
+  // the travel aft in 0.22 s, about 230 deg/s^2 of pitch acceleration on this hub; at 1 per second it takes 0.9 s.
+  // Shift+5 sets the keyboard centre to the stick as it is (a sim convenience: the CB-4 has beep trim only).
+  centreRate: 1,
+  setTrimHere: true,
   assists: { ...md.assists, axes: {
     elevator: { ...mdAxes.elevator, baseRate: 0.04 },
     aileron: { ...mdAxes.aileron, baseRate: 0.07, maxRate: 0.35, accelTime: 1.5 },
@@ -37,5 +56,9 @@ export const BO105_INPUT: InputProfile = {
     rudderLeft: 'Left pedal', rudderRight: 'Right pedal', flapsUp: 'Lower collective (hold)', flapsDown: 'Raise collective (hold)',
     trimNoseUp: 'Cyclic trim aft (hold)', trimNoseDown: 'Cyclic trim forward (hold)',
     rudderTrimLeft: 'Cyclic trim left (hold)', rudderTrimRight: 'Cyclic trim right (hold)',
-    fuelPump: 'Fuel pumps', starter: 'STARTER/GENERATOR to START (hold)' },
+    fuelPump: 'Fuel pumps', starter: 'STARTER/GENERATOR to START (hold)',
+    collectiveFastDown: 'Lower the collective at hand speed (hold): engine failure, autorotation entry',
+    collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
+    stabilityAssist: 'STAB ASSIST on / off: holds the attitude below 30 KIAS (a sim aid: the CB-4 has no SAS)',
+    setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

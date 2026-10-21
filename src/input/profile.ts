@@ -26,6 +26,27 @@ export interface KeyboardAssistTuning {
   handoverSpeed: number;
 }
 
+/**
+ * STAB ASSIST tuning (a laptop sim aid, not a modelled aircraft system; src/sim/rotorcraft/stabilityAssist.ts has the
+ * law). Gains in units of the -1..1 control axis: per rad/s for the rates, per rad for the attitude error.
+ */
+export interface StabilityAssistTuning {
+  /** On when the type loads (Shift+A toggles it for the session; the URL's stab=0 / stab=1 overrides it). */
+  default: boolean;
+  /** Roll, pitch and yaw rate gains. */
+  kp: number; kq: number; kr: number;
+  /** Attitude-error gain (roll and pitch). */
+  katt: number;
+  /** The datum's attitude per unit of stick moved from where it was captured (attitude command), rad. */
+  stickAttitude: number;
+  /** Series authority of the cyclic terms, +/- axis units (0.2 = 10 % of the full travel). */
+  authority: number;
+  /** Series authority of the yaw-rate term on the pedals, +/- axis units. */
+  yawAuthority: number;
+  /** Full gain below [0], none above [1], KIAS. */
+  fadeKias: readonly [number, number];
+}
+
 export interface InputProfile {
   /** Mouse response: cubic blend (0 = linear, 1 = cubic) and dead zone as fractions of travel. */
   mouseYoke?: { expo: number; deadzone: number };
@@ -37,6 +58,21 @@ export interface InputProfile {
   springTrim?: boolean;
   /** Keyboard collective travel per second. Hardware axes remain absolute position inputs. */
   collectiveRate?: number;
+  /**
+   * A second, hand-rate pair of collective keys (Shift+F5 lower, Shift+F6 raise), travel per second while held: for the
+   * autorotation entry, where the fine F5 / F6 rate is too slow. Absent: no such keys (Shift+F5 / F6 stay the fine
+   * pair).
+   */
+  collectiveFastRate?: { down: number; up: number };
+  /** Keyboard re-centring rate (5 / Numpad 5), travel per second. Absent: virtualYoke CENTRE_RATE (4). */
+  centreRate?: number;
+  /**
+   * Shift+5 / Shift+Numpad 5 set the keyboard's centre to where the stick is now (a sim convenience on a spring-trim type
+   * whose real trim is a beep switch only); the physics' spring anchor is left alone. Absent: no such key.
+   */
+  setTrimHere?: boolean;
+  /** STAB ASSIST (a sim aid; Shift+A toggles it). Absent: none, and the key does nothing. */
+  stabilityAssist?: StabilityAssistTuning;
   engines: 1 | 2;
   /** Flap lever values of the detents, ascending from 0. */
   flapDetents: readonly number[];
