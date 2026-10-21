@@ -115,8 +115,9 @@ const PROP_NODES_DEG = [-12, -9, -6, -3, 0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30,
  *   = -3.75 deg to the chord of an a = 1.0 mean line put the zero at -3.8 deg;
  * - maximum lift 1.45 at low speed, losing 0.4 per unit Mach above 0.3: ESTIMATE for the thin (4-7 %) high-speed sections,
  *   FITTED so the blade does not stall short of the 40.8 deg stop at V_H (C4): at 190 KTAS and 1674 rpm the prop gives
- *   18.2 kN for 3,190 shp (efficiency 0.75; Hamilton Standard's charts give about 0.8 for a 3-blade AF 140 prop at that
- *   J 1.15, C_P 0.34) and 21.4 kN at the stop. The McCauley Clark-Y's 1.45 and 1.6 / Mach stalled it at 10 kN.
+ *   18.3 kN for 3,190 shp (efficiency 0.753; about 0.8 is the ESTIMATE for a 3-blade AF 140 prop at that J 1.15, C_P 0.34,
+ *   which no section knob reaches: FUSELAGE_DRAG_X) and 22.1 kN at the stop. The McCauley Clark-Y's 1.45 and 1.6 / Mach
+ *   stalled it at 10 kN.
  * The pitch-control fields other than the stops and the slices are not read (the blade angle is the grip's, pusher.ts).
  */
 export const AH56_PROPELLER: PropellerDef = {
@@ -266,6 +267,9 @@ export const AH56_COMPOUND_GYRO: ControlGyroDef = { ...gyro, configs: {
  * (G3) goes from 4 % to 30 % of the locked-gyro gust moment (the locked moment itself 9.9 -> 1.9 kN m). So the fuselage
  * drag is FITTED to V_H with this section on (the tests' C4 "with the Mach placeholder" row), and the aircraft flies the
  * base polar until AH's section (highSpeed.ts) lands with its own Mach drag: V_H reads about 2 KTAS higher until then.
+ * C4 196.9 KTAS with it, 198.7 as flown (184.3-203.7); C5 211.7 KTAS with it, 212.8 as flown (210-225): with the placeholder C5
+ * keeps only 1.7 KTAS of margin, which AH's section and any integrator re-fit of C4 / C5 (plan 7.3) start from. AGENT deviation
+ * from plan 7.3 (which flies the placeholder).
  */
 export const PROVISIONAL_SECTION: RotorSectionDef = { liftSlope: AH56_BASE.main.liftSlope, maxCl: AH56_BASE.main.maxCl,
   cd0: AH56_BASE.main.profileCd, cd2: AH56_BASE.main.inducedDrag, cm0: AH56_BASE.main.cm0 ?? 0,
@@ -273,9 +277,14 @@ export const PROVISIONAL_SECTION: RotorSectionDef = { liftSlope: AH56_BASE.main.
 
 /** Fuselage, turrets, hub and gyro equivalent flat plate along x, m^2 (10.8 ft^2): FITTED to V_H (C4: 194 KTAS +/- 5 %) with the
  *  stores (above) and the provisional Mach drag rise, and to C5 (AMCS clean, 210-225 KTAS), which the prop's 40.8 deg stop at
- *  1674 rpm caps near 212 KTAS. Plan 7.3's budget expected about 2.2 m^2 in all at 194 KTAS with a prop efficiency of 0.8; this
- *  prop map gives 0.72-0.75 at that loading (Hamilton Standard's charts: about 0.80), and 0.08 of efficiency is about 2 kN of
- *  thrust = 0.33 m^2 at 194 KTAS (D). With the stores, 1.53 m^2 in all at 194 KTAS. */
+ *  1674 rpm caps near 212 KTAS. Plan 7.3's budget expected about 2.2 m^2 in all at 194 KTAS with a prop efficiency of 0.8 (an
+ *  ESTIMATE from general Hamilton Standard chart knowledge; not in the research). This prop map gives 0.753 at J 1.15, C_P 0.34
+ *  (190 KTAS, 1674 rpm), and the section knobs cannot raise it: clMinDrag 0.4 -> 0.8, dragDueToLift 0.01 -> 0 and cdMax move it
+ *  by under 0.006, the helix twist (P/D 1.0-2.2), the chord taper and 30 % thinner sections by under 0.008; with the Mach terms
+ *  removed it is 0.784 (the BEMT's induced, swirl and tip losses at this loading; the actuator disc's ideal is 0.91). So the
+ *  flat plate stays fitted to the prop the model has: 0.05 of efficiency is about 1.2 kN = 0.2 m^2 at 194 KTAS (D). With the
+ *  stores, 1.53 m^2 in all at 194 KTAS. Torque on the AMCS schedule (18,300 lb SL, stores): 36.4 / 36.1 / 39.6 / 60.8 / 96.5 %
+ *  at 80 / 100 / 120 / 160 / 190 KTAS (docs/ah56-compound.md section 4). */
 export const FUSELAGE_DRAG_X = 1.0;
 
 /** The Nf governor's anticipation of the prop (TurboshaftControlDef.governor.propAnticipation): Ng demand per unit of the prop

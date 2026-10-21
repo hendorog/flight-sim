@@ -202,8 +202,9 @@ describe('the trims along the SoF schedule (AMCS default, 18,300 lb, SL ISA, the
   });
 
   it.fails('C9 KNOWN GAP: the left shift 125-190 KCAS is about 0.5 in (P; tolerance +/- 0.25 in AGENT)', () => {
-    // 0.19 in: the AMCS's lateral stick per hub moment is small (K_R / K_hub over 336 N m/in: about 0.02 in per kN m of roll
-    // moment), so the right-rolling prop reaction growing with speed moves the stick little (C26).
+    // 0.13 in (0.19 with K_R 5,000): the AMCS's lateral stick per hub moment is small (K_R / K_hub over the stick moment per
+    // inch: about 0.01 in per kN m of roll moment at K_R 3,000), so the right-rolling prop reaction growing with speed moves
+    // the stick little (C26).
     expect(c9shift!).toBeGreaterThanOrEqual(0.25); expect(c9shift!).toBeLessThanOrEqual(0.75);
   });
 
@@ -228,8 +229,9 @@ describe('the trims along the SoF schedule (AMCS default, 18,300 lb, SL ISA, the
   });
 
   it.fails('C26 KNOWN GAP: symmetric wing 0.8-1.5 in left, as built 0 +/- 0.5 in (D)', () => {
-    // The D band assumes about 0.1 in per kN m; the AMCS (AG's 975 N m full lateral moment, K_R 5000 on the compound) needs about
-    // 0.02 in per kN m of steady roll moment, so the 12.5 kN m reaction is 0.26 in of stick and the asymmetry 0.14 in.
+    // The D band assumes about 0.1 in per kN m; the AMCS (AG's 975 N m full lateral moment, K_R 3,000 on the compound) needs
+    // about 0.01-0.02 in per kN m of steady roll moment: as built 0.47 in left, symmetric wing 0.55 in left, the reaction
+    // reversed 0.21 in left (K_R 5,000: 0.56 / 0.69 / 0.12).
     expect(c26!.sym).toBeLessThanOrEqual(-0.8); expect(c26!.sym).toBeGreaterThanOrEqual(-1.5);
     expect(Math.abs(c26!.asBuilt)).toBeLessThanOrEqual(0.5);
   });
