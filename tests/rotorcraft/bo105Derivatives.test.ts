@@ -3,7 +3,7 @@
 // LS-178 (P), under the section 4 fitting rule (harmonic inflow ON, nu 1.10-1.12, polar inertia 850-950 kg m^2; the knobs
 // are controlPhase and the inertia; known misses are reported as it.fails, never fitted). Control derivatives are per %
 // of FULL travel (an assumption, docs/bo105-flight-model.md). The hover handling rows are ESTIMATE (no Bo 105 hover
-// derivatives in the sources used: DLR's hover identification of the Bo 105 exists and was not obtained); owner
+// derivatives in the sources used: Fu & Kaletka JAHS 1993 and DTIC ADA216828 exist and were not obtained); owner
 // judgement overrides. BO105_TRACE=<dir> writes bo105Derivatives.json.
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, FT, KT, v3 } from '../../src/core/math';
@@ -185,7 +185,7 @@ describe('hover handling, 2200 kg IGE (3 ft skids), SL (ESTIMATE bands, plan 6.2
   /**
    * KNOWN HOVER-DAMPING GAP (ESTIMATE band): with the harmonic inflow ON the hover roll damping is about 25 % above the
    * band's edge (RC docs section 8: in the hover the inflow gradient raises the hub's share of Lp by about 1/1.51 of the
-   * Lock number, as the quasi-steady theory predicts; at 80 kt it does not). No Bo 105 hover derivatives were obtained (DLR's exist), so the
+   * Lock number, as the quasi-steady theory predicts; at 80 kt it does not). No Bo 105 hover derivatives were obtained (Fu & Kaletka 1993 not obtained), so the
    * band itself is an ESTIMATE; the 80 kt Lp and roll mode sit inside their AR-280 bands. One assertion, as it.fails.
    */
   it.fails('KNOWN HOVER-DAMPING GAP — Lp -6 to -10 1/s, i.e. a roll time constant 0.1-0.2 s (-1/Lp)', () => {

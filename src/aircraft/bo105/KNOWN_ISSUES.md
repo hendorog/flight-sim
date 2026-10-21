@@ -27,9 +27,10 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 3. **Hover roll damping above the ESTIMATE band** (`bo105Derivatives` KNOWN HOVER-DAMPING GAP): hover Lp about -12.1 1/s
    (roll time constant 0.083 s) against -6..-10. With the harmonic inflow on, the hover roll damping rises by about the
    quasi-steady theory's 1/1.51 (RC docs section 8); at 80 kt Lp (-10.7) and the roll mode (10.9 1/s) are inside their
-   AR-280 bands. **No Bo 105 hover derivatives in the sources used**: DLR's hover identification of the Bo 105 (Kaletka /
-   von Grünhagen; Fu & Kaletka JAHS 1993) exists and was not obtained, so every hover handling number is unvalidated until
-   it is. Note for the architect: plan section 4 says the hover inflow gradient "cuts" roll damping; measured on this
+   AR-280 bands. **No Bo 105 hover derivatives in the sources used**: Bo 105 hover identification results exist and were not
+   obtained (research-bo105 section 18 gap 3: Fu & Kaletka JAHS 1993 and the DLR/AFDD ERF 1989 paper, DTIC ADA216828; the
+   assessor also points to Kaletka / von Grünhagen, unverified), so every hover handling number is unvalidated until one
+   is. Note for the architect: plan section 4 says the hover inflow gradient "cuts" roll damping; measured on this
    definition it raises it (2200 kg IGE: Lp -8.8 with the harmonic inflow off, -12.1 with it on), as RC's docs say.
 4. **Rotor/inflow limits carried from the rotor core** (RC docs section 10): Zw -0.68 1/s against the envelope's -0.70
    edge (a climb-rate settling time of about 1.5 s against DLR's 1.0 s after a collective step); the rate cross-coupling

@@ -146,7 +146,8 @@ an unstable oscillation zeta -0.52 at 0.60 rad/s (period 12 s, doubling in 2.3 s
 stable one zeta 0.47 at 0.64 rad/s; roll subsidence 12.0 1/s, pitch 3.55 1/s, subsidences 0.23 and 0.48 1/s. With the harmonic inflow OFF: zeta -0.095 at 0.43 rad/s (doubling in 17 s; Mu +0.046,
 Lv -0.187, Lp -8.8, Mq -2.39): the inflow gradient raises the hover roll damping (-8.8 -> -12.1, against plan section 4's
 "cuts") and roughly doubles Mu and Lv. At the hover scenario's 2500 kg / 16 m: zeta -0.49 at 0.62 rad/s (inflow off
--0.096 at 0.47). Trace key `hoverModes`. No Bo 105 hover source was used; DLR's hover identification exists.
+-0.096 at 0.47). Trace key `hoverModes`. No Bo 105 hover source was used; hover identification results exist and were not obtained (Fu & Kaletka JAHS
+1993, DTIC ADA216828).
 
 ## 6. Engines, governor and fuel (powerplant.ts, rotorcraft.ts)
 
