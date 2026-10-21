@@ -236,6 +236,10 @@ void main() {
   vec2 qdx = vec2(dot(dPx, gx), dot(dPx, gy)), qdy = vec2(dot(dPy, gx), dot(dPy, gy));
   float det = qdx.x * qdy.y - qdx.y * qdy.x;
   bool haveUv = abs(det) > 1e-14;
+  // Pixels per metre on the glass in its most foreshortened direction: lines drawn with it stay at least their width
+  // in pixels where the glass is seen at a grazing angle.
+  float jj = dot(qdx, qdx) + dot(qdy, qdy);
+  float pxL = haveUv ? min(pxM, inversesqrt(max(0.5 * (jj + sqrt(max(jj * jj - 4.0 * det * det, 0.0))), 1e-14))) : pxM;
   vec2 dUp = haveUv ? vec2(-qdy.x, qdx.x) / det : vec2(0.0);
   vec2 dRight = haveUv ? vec2(qdy.y, -qdx.y) / det : vec2(0.0);
   vec2 uvUp = dUp.x * dUx + dUp.y * dUy;
@@ -453,8 +457,8 @@ void main() {
         // Grows out of the centre (no wander at the impact) and fades over its last 30 %.
         float dLat = abs(lat - wander * smoothstep(0.0, 0.05, sAlong));
         float fade = 1.0 - smoothstep(0.7 * L, L, sAlong);
-        crack = max(crack, lineAA(dLat, 1.0, pxM) * fade);
-        milk = max(milk, 0.2 * lineAA(dLat, 5.0, pxM) * fade);
+        crack = max(crack, lineAA(dLat, 1.0, pxL) * fade);
+        milk = max(milk, 0.2 * lineAA(dLat, 5.0, pxL) * fade);
       }
     }
     if (rho > R) continue;
@@ -467,14 +471,14 @@ void main() {
     float wig = 0.04 * sin(rho * 120.0 + TAU * hr.y) + 0.015 * sin(rho * 400.0 + TAU * hr.z);
     float rayAng = (si + 0.5 + 0.7 * (hr.x - 0.5) + wig - sector) * (TAU / n);
     float len = R * (0.25 + 0.75 * hr.w);
-    float ray = lineAA(abs(rayAng) * rho, 1.0, pxM) * (1.0 - smoothstep(0.7 * len, len, rho));
+    float ray = lineAA(abs(rayAng) * rho, 1.0, pxL) * (1.0 - smoothstep(0.7 * len, len, rho));
     // Laminated glass: arcs between the rays at two radii.
     float arc = 0.0;
     if (uLaminated > 0.5) {
       for (int j = 0; j < 2; j++) {
         float rr = R * (0.22 + 0.25 * float(j) + 0.1 * hr.y);
         float on = step(0.45, fract(hr.z * 7.0 + float(j) * 0.37));
-        arc = max(arc, on * lineAA(abs(rho - rr), 1.0, pxM));
+        arc = max(arc, on * lineAA(abs(rho - rr), 1.0, pxL));
       }
     }
     // The crushed centre and the stress-whitened zone about it.
@@ -494,7 +498,7 @@ void main() {
       float q4 = (ang / TAU + 0.5) * 4.0 + hh.x;
       float shortAng = (fract(q4) - 0.5) * (TAU / 4.0);
       float shortLen = rh * (1.3 + 0.5 * hh.w);
-      float shortRay = lineAA(abs(shortAng) * rho, 1.0, pxM) * step(rh, rho) * (1.0 - smoothstep(0.8 * shortLen, shortLen, rho));
+      float shortRay = lineAA(abs(shortAng) * rho, 1.0, pxL) * step(rh, rho) * (1.0 - smoothstep(0.8 * shortLen, shortLen, rho));
       c = max(c * (1.0 - inside), max(rim, shortRay));
       milk *= 1.0 - inside;
       hole = max(hole, inside);
