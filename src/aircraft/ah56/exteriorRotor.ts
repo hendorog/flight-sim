@@ -73,6 +73,11 @@ export class AH56MainRotor {
   /** ICS gyro X: tilt (non-rotating frame) and spin (rotating, 33 deg ahead of the blades). */
   readonly gyroTilt = new THREE.Group();
   readonly gyroSpin = new THREE.Group();
+  /** The gyro's own materials (they fade with the rotor speed) and its blur ring. */
+  readonly gyroArmMaterial = new THREE.MeshStandardMaterial({ name: 'ah56GyroArm', color: 0x5d6152, roughness: 0.5, metalness: 0.35, transparent: true });
+  readonly gyroMassMaterial = new THREE.MeshStandardMaterial({ name: 'ah56GyroMass', color: 0x45472f, roughness: 0.66, transparent: true });
+  readonly gyroRingMaterial = new THREE.MeshStandardMaterial({ name: 'ah56GyroBlur', color: 0x45472f, roughness: 0.7, transparent: true, opacity: 0, depthWrite: false });
+  private gyroRing!: THREE.Mesh;
   readonly hinge: number;
   private readonly links: THREE.Mesh[] = [];
   private readonly matrix = new THREE.Matrix4();
@@ -158,14 +163,18 @@ export class AH56MainRotor {
     gx.add(m.cast, tube([0, 0, -0.06], [0, 0, 0.06], 0.13, 0.13, 32));
     for (let k = 0; k < n; k++) {
       const az = k * 2 * Math.PI / n, s = Math.sin(az), c = Math.cos(az), L = GYRO.armLength;
-      gx.add(m.cast, tube([0.10 * s, 0.10 * c, 0], [L * s, L * c, 0], 0.036, 0.02, 14));
-      gx.add(m.paintDark, ellipsoid([L * s, L * c, 0], [GYRO.massRadius, GYRO.massRadius, GYRO.massRadius * 0.8], 20, 12));
-      gx.add(m.yellow, tube([(L - GYRO.massRadius * 0.6) * s, (L - GYRO.massRadius * 0.6) * c, 0], [(L - GYRO.massRadius) * s, (L - GYRO.massRadius) * c, 0], 0.024, 0.024, 12));
+      gx.add(this.gyroArmMaterial, tube([0.10 * s, 0.10 * c, 0], [L * s, L * c, 0], 0.036, 0.02, 14));
+      gx.add(this.gyroMassMaterial, ellipsoid([L * s, L * c, 0], [GYRO.massRadius, GYRO.massRadius, GYRO.massRadius * 0.8], 20, 12));
     }
     this.gyroSpin.add(gx.build('ah56GyroArms'));
+    // The turning X reads as a faint ring of its tip masses (the same perceptual blur as the blades).
+    const ring = new THREE.TorusGeometry(GYRO.armLength, GYRO.massRadius * 0.8, 10, 72).rotateX(Math.PI / 2);
+    this.gyroRing = new THREE.Mesh(ring, this.gyroRingMaterial); this.gyroRing.name = 'ah56GyroBlur'; this.gyroTilt.add(this.gyroRing);
     const post = new MeshBatch(); post.add(m.metal, tube([0, 0, -0.10], [0, 0, -GYRO.rise + 0.02], 0.045, 0.06, 18));
     this.group.add(post.build('ah56GyroPost'));
   }
+
+  dispose(): void { for (const x of [this.gyroArmMaterial, this.gyroMassMaterial, this.gyroRingMaterial]) x.dispose(); }
 
   /** Pose the head from the rotor state; `pose` is the solver's per-blade output (state.articulated) when published. */
   update(ctx: SimContext, state = ctx.state.rotorcraft): void {
@@ -189,6 +198,12 @@ export class AH56MainRotor {
       this.tilt.set(Math.tan(state.controlGyro!.roll), 1, Math.tan(state.controlGyro!.pitch)).normalize();
       this.gyroTilt.quaternion.setFromUnitVectors(this.up, this.tilt);
       this.gyroSpin.rotation.y = this.rotor.spin.rotation.y + GYRO.leadDeg * DEG * D.MAIN_ROTOR_ROTATION;
+      const blur = bladeBlur(state.rotorRpm, n);
+      this.gyroArmMaterial.opacity = this.gyroMassMaterial.opacity = blur.solid;
+      this.gyroArmMaterial.depthWrite = this.gyroMassMaterial.depthWrite = blur.solid === 1;
+      this.gyroSpin.visible = blur.solid > 0;
+      this.gyroRingMaterial.opacity = 0.45 * (1 - blur.solid);
+      this.gyroRing.visible = blur.solid < 1;
     }
     this.rotor.group.updateWorldMatrix(true, true);
     this.inverse.copy(this.group.matrixWorld).invert();

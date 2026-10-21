@@ -77,7 +77,7 @@ export function ah56ExteriorVisualClass(Base: typeof RotorcraftVisual, Shape: ty
 
     override dispose(): void {
       super.dispose();
-      this.tailRotor.dispose(); this.pusher.dispose();
+      this.tailRotor.dispose(); this.pusher.dispose(); this.head.dispose();
       for (const mat of [...Object.values(this.detailMaterials), ...this.details.materials, ...(this.cabinDetails.gunner?.materials ?? [])]) mat.dispose();
       for (const t of this.details.textures) t.dispose();
     }
