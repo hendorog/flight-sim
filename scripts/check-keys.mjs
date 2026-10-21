@@ -6,8 +6,11 @@
 // power lever's lift-over idle gate with real key events (Shift+F2 held from forward of the gate stops on it; let go
 // and held again it goes aft into beta and reverse; F3 brings it back to the gate and stops; F1 idle on the gate;
 // Shift+F2 then F4 full forward) and its condition lever's detents (M / Shift+M a detent a press, CUT-OFF by a fresh M
-// held 1 s at LOW IDLE), and that Shift+F2 does nothing on the Cessna 172S. Prints and writes keycheck.json; exits 1
-// if a check of the Caravan's gate or condition lever fails.
+// held 1 s at LOW IDLE), and that Shift+F2 does nothing on the Cessna 172S. Then the Bo 105 on the runway (engines
+// running): the engine-select keys move the chosen overhead power lever between its stops (9 F1 IDLE, Shift+F1 OFF on
+// the ground, F4 FLIGHT; 0 both), ENGINE TRIM left/right on Shift+, / Shift+. and fore/aft on ; / Shift+; (held), and
+// that Shift+, stays the Cessna's left toe brake. Prints and writes keycheck.json; exits 1 if a check of the Caravan's
+// gate or condition lever, or of the Bo 105's levers and ENGINE TRIM, fails.
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import net from 'node:net';
@@ -89,6 +92,12 @@ try {
   res.c172ShiftF2 = { before: thr172, after: (await c()).thr, reverse: await p.evaluate(() => __sim.ctx.controls.reverse ?? null) };
   check('C172S: Shift+F2 leaves the throttle and has no reverse', res.c172ShiftF2.after === thr172 && res.c172ShiftF2.reverse === null, res.c172ShiftF2);
 
+  // Shift+, on the Cessna 172S is still the left toe brake (the Bo 105's ENGINE TRIM key falls back on a type without it).
+  await p.keyboard.down('Shift'); await p.keyboard.down('Comma'); await sleep(400);
+  res.c172ShiftComma = await p.evaluate(() => ({ brakeLeft: +__sim.ctx.controls.brakeLeft.toFixed(3), split: __sim.ctx.controls.n2BeepSplit ?? null }));
+  await p.keyboard.up('Comma'); await p.keyboard.up('Shift'); await sleep(200);
+  check('C172S: Shift+, is the left toe brake', res.c172ShiftComma.brakeLeft > 0 && res.c172ShiftComma.split === null, res.c172ShiftComma);
+
   // The Caravan on the runway, engine running.
   const q = await ctx.newPage();
   q.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
@@ -143,6 +152,42 @@ try {
   check('Caravan: Shift+M from LOW IDLE is HIGH IDLE (again)', m.shiftMTap === 1, m);
   check('Caravan: a fresh M held 1 s at LOW IDLE is CUT-OFF', m.mHeldAtLow === 0, m);
   check('Caravan: Shift+M from CUT-OFF is LOW IDLE', m.shiftMFromCutoff === 0.1, m);
+
+  // The Bo 105 on the runway, both engines running: the overhead power levers on the engine-select keys and ENGINE TRIM.
+  const h = await ctx.newPage();
+  h.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+  h.on('pageerror', (e) => errs.push(String(e)));
+  await h.goto(`http://127.0.0.1:${port}/index.html?aircraft=bo105&scenario=runway&cam=cockpit&mute=1`, { waitUntil: 'load' });
+  await h.waitForFunction(() => window.__ready === true, null, { timeout: 90000 });
+  await h.mouse.click(640, 100).catch(() => {});
+  await sleep(300);
+  const levers = () => h.evaluate(() => { const k = __sim.ctx.controls; const t = (i) => +((k.engines[i] && k.engines[i].throttle !== undefined ? k.engines[i].throttle : k.throttle)).toFixed(3);
+    return { e1: t(0), e2: t(1), beep: k.n2Beep ?? 0, split: k.n2BeepSplit ?? 0 }; });
+  const hhold = async (code, ms, shift = false) => { if (shift) await h.keyboard.down('Shift'); await h.keyboard.down(code); await sleep(ms); await h.keyboard.up(code); if (shift) await h.keyboard.up('Shift'); await sleep(150); };
+  const held = async (code, shift) => { if (shift) await h.keyboard.down('Shift'); await h.keyboard.down(code); await sleep(300); const v = await levers(); await h.keyboard.up(code); if (shift) await h.keyboard.up('Shift'); await sleep(150); return v; };
+  const bo = { start: await levers() };
+  const idle = await h.evaluate(() => __sim.physics?.definition?.input?.twistGrip?.groundIdle ?? null);
+  await hhold('Digit9', 80); await hhold('F1', 80); bo.nineF1 = await levers();
+  await hhold('F1', 80, true); bo.shiftF1 = await levers();
+  await hhold('F4', 80); bo.f4 = await levers();
+  await hhold('Digit8', 80); await hhold('F1', 80); bo.eightF1 = await levers();
+  await hhold('Digit0', 80); await hhold('F4', 80); bo.zeroF4 = await levers();
+  bo.trimLeft = await held('Comma', true); bo.trimRight = await held('Period', true);
+  bo.beepDown = await held('Semicolon', false); bo.beepUp = await held('Semicolon', true);
+  bo.released = await levers();
+  bo.help = await h.evaluate(() => document.body.innerText.includes('ENGINE TRIM'));
+  res.bo105 = { ...bo, idle };
+  const at = (v, x) => Math.abs(v - x) < 0.011;
+  check('Bo 105: 9 F1 puts engine 2 at IDLE, engine 1 stays at FLIGHT', idle !== null ? at(bo.nineF1.e2, idle) && bo.nineF1.e1 === 1 : bo.nineF1.e2 < 0.5 && bo.nineF1.e1 === 1, bo.nineF1);
+  check('Bo 105: Shift+F1 (engine 2 selected, on the ground) is OFF', bo.shiftF1.e2 === 0 && bo.shiftF1.e1 === 1, bo.shiftF1);
+  check('Bo 105: F4 is FLIGHT', bo.f4.e2 === 1, bo.f4);
+  check('Bo 105: 8 F1 puts engine 1 at IDLE', bo.eightF1.e1 < 0.5 && bo.eightF1.e2 === 1, bo.eightF1);
+  check('Bo 105: 0 F4 both at FLIGHT', bo.zeroF4.e1 === 1 && bo.zeroF4.e2 === 1, bo.zeroF4);
+  check('Bo 105: Shift+, held is ENGINE TRIM left', bo.trimLeft.split === -1, bo.trimLeft);
+  check('Bo 105: Shift+. held is ENGINE TRIM right', bo.trimRight.split === 1, bo.trimRight);
+  check('Bo 105: ; / Shift+; held are ENGINE TRIM aft / fore', bo.beepDown.beep === -1 && bo.beepUp.beep === 1, { down: bo.beepDown, up: bo.beepUp });
+  check('Bo 105: let go, ENGINE TRIM is centred', bo.released.split === 0 && bo.released.beep === 0, bo.released);
+  await h.screenshot({ path: `${out}/keycheck_bo105.png` });
 } catch (e) {
   res.error = String(e.stack ?? e);
 } finally {

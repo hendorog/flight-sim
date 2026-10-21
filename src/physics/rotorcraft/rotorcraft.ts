@@ -4,10 +4,14 @@ import type { BodyState, ForceMoment } from '../interfaces';
 import type { EngineUnit } from '../propulsion/engineUnit';
 import { cyclicAngles, drivetrainInertia, emptyRotorcraftState, governedRpm, type RotorcraftDefinition } from './definition';
 import { emptyTurboshaftState, TurboshaftControl } from './turboshaft';
-import { bladeElements, inflowTarget, inflowTimeConstant } from './rotor';
+import { bladeElements, inflowTarget, inflowTimeConstant, tppPitchHarmonic, type RotorLoads } from './rotor';
 import { airframeLoads } from './airframe';
 import { placardMap } from './limits';
-import { estimatedArticulatedGeometry, flapForcing, advanceFlap, hingeMoment } from './articulated';
+import { estimatedArticulatedGeometry, flapForcing, advanceFlap, harmonicFlap, hingeMoment, hubForcing, flapSystem, aerodynamicHubMoment,
+  type ArticulatedGeometry, type FlapHarmonics, type FlapSpring } from './articulated';
+import { hingelessBlade, hingelessSpring } from './hingeless';
+import { swashplateCyclic } from './swashplate';
+import { advanceHarmonicInflow } from './inflowHarmonic';
 import { pressureAltitude } from '../atmosphere';
 import type { AtmosphereSample } from '../../core/types';
 import { articulatedBladeConing, bladeConing } from './coning';
@@ -18,6 +22,15 @@ import { HalfPHop } from './halfPHop';
 import { emptyTwinTurboshaftState, jointFreewheelImpulse, publishTwin } from './twinTurboshaft';
 
 const NO_H: Readonly<Vec3> = { x: 0, y: 0, z: 0 };
+
+/** Hingeless hub constants (plan revision 2, section 4; RC), fixed by the definition. */
+interface HingelessConstants {
+  /** Equivalent hinge and the blade moments about it (hingelessBlade: the hub's set, else the uniform estimate). */
+  geometry: ArticulatedGeometry;
+  /** Kbeta (hingelessSpring) and precone. */
+  spring: FlapSpring;
+  tanDelta3: number; harmonicInflow: boolean; radialFlow: boolean; bemFromFlap: boolean;
+}
 
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
@@ -47,11 +60,26 @@ export class Rotorcraft {
   readonly halfP: HalfPHop | null;
   /** Compound diagnostics (wing and pusher shaft power, W), separate from the legacy `power` object. */
   readonly compoundPower = { wings: 0, pusher: 0 };
+  /** Hingeless hub constants; null on every other hub, whose arithmetic is the legacy text. */
+  private readonly hingeless: HingelessConstants | null;
+  /**
+   * The rotor core's extended path (hubForcing, the BEM options): a hingeless hub, a control gyro or any of the main
+   * rotor's grid/section/periodic-damping/cm0 options. False on every legacy type.
+   */
+  private readonly extended: boolean;
   constructor(readonly def: RotorcraftDefinition) {
     this.turboshaft = def.systems.turboshaft ? new TurboshaftControl(def, this.state) : null;
     this.gyro = def.controlGyro ? new ControlGyro(def, this.state) : null;
     this.pusher = def.pusher ? new PusherDrive(def, this.state) : null;
     this.halfP = def.halfPHop ? new HalfPHop(def, this.state) : null;
+    const hub = def.hubModel?.kind === 'hingeless' ? def.hubModel : undefined, m = def.main;
+    this.hingeless = hub ? {
+      geometry: { flapOffset: hub.equivalentHingeOffset, lagOffset: hub.equivalentHingeOffset, blade: hingelessBlade(def) },
+      spring: { stiffness: hingelessSpring(def), precone: hub.precone }, tanDelta3: Math.tan(hub.delta3 ?? 0),
+      harmonicInflow: !!hub.harmonicInflow, radialFlow: !!hub.radialFlow, bemFromFlap: hub.bemFromFlap ?? true,
+    } : null;
+    this.extended = !!(hub || def.controlGyro || m.radialStations !== undefined || m.azimuthStations !== undefined ||
+      m.section || m.periodicFlapDamping || m.cm0 !== undefined);
   }
   /** config: the control-gyro configuration (InitialConditions.rotorcraftConfig); forceHalfPHop: the halfp=1 hook. */
   reset(running: boolean, config?: GyroConfigId, forceHalfPHop?: boolean): void {
@@ -84,6 +112,16 @@ export class Rotorcraft {
           ? bladeConing(this.def.hubModel.coning, this.state.omega, 0).angle : 0,
         lag: 0, pitch: 0 })),
     };
+    // Hingeless hub (RC): the per-blade pose block (exterior, resume ARTICULATED_BLADES), the harmonic inflow states
+    // and the mast-moment reading, created here and never lazily (plan 3.3).
+    const hub = this.def.hubModel;
+    if (hub?.kind === 'hingeless') {
+      const flap = hub.coning ? bladeConing(hub.coning, this.state.omega, 0).angle : hub.precone;
+      this.state.articulated = { blades: Array.from({ length: this.def.main.blades }, () => ({ flap, lag: 0, pitch: 0 })) };
+      if (hub.harmonicInflow) this.state.harmonicInflow = { cos: 0, sin: 0 };
+      this.state.mastMoment = 0;
+      this.state.coning = hub.precone;
+    }
     // New optional blocks are created here for the types that declare them, never lazily (plan 3.3).
     if (this.def.systems.twinTurboshaft) this.state.twinTurboshaft = emptyTwinTurboshaftState(this.def, running);
     this.gyro?.reset(running, config);
@@ -273,9 +311,12 @@ export class Rotorcraft {
     const hubAir = tilt ? toShaft(v3.add(air, v3.cross(b.angularVelocity, mainArm)), tilt) : v3.add(air, v3.cross(b.angularVelocity, mainArm));
     const rate = tilt ? toShaft(b.angularVelocity, tilt) : b.angularVelocity;
     // Control gyro (AG): the blade cyclic comes from the gyro, not the stick position.
-    const cyclic = this.gyro ? this.gyro.cyclic(c) : d.cyclicLimits ? cyclicAngles(d, c) : undefined;
+    // Hingeless hub (RC): the one swashplate law (swashplate.ts), with the control phase.
+    const cyclic = this.gyro ? this.gyro.cyclic(c) : this.hingeless ? swashplateCyclic(d, c, s)
+      : d.cyclicLimits ? cyclicAngles(d, c) : undefined;
+    const hl = this.hingeless;
     const articulated = d.hubModel?.kind === 'articulated'
-      ? estimatedArticulatedGeometry(d.main, d.hubModel.flapHingeOffset, d.hubModel.lagHingeOffset) : undefined;
+      ? estimatedArticulatedGeometry(d.main, d.hubModel.flapHingeOffset, d.hubModel.lagHingeOffset) : hl?.geometry;
     const mu = Math.hypot(hubAir.x, hubAir.y) / Math.max(s.omega * d.main.radius, 1);
     const collective = d.main.minPitch + clamp(c.collective ?? 0, 0, 1) * (d.main.maxPitch - d.main.minPitch);
     const tip = Math.max(s.omega * d.main.radius, 1);
@@ -297,7 +338,38 @@ export class Rotorcraft {
     // preserves its stopped pose; it has separate flap pins and no centre teeter stop.
     const tau = s.omega > 0 ? 16 / (lock * s.omega) : Infinity;
     const lag = 1 - Math.exp(-dt / tau);
-    if (articulated) {
+    // Extended path (hingeless hub, control gyro, main-rotor options): the blade cyclic in flapForcing's convention,
+    // the spring, and the previous harmonics for the explicit terms and the inflow forcing's flap rates.
+    let spring: FlapSpring | undefined, previousFlap: FlapHarmonics | undefined, stoppedFlap: FlapHarmonics | undefined;
+    const pitchCos = cyclic ? d.rotation * cyclic.right : d.rotation * c.aileron * d.cyclicLimit;
+    const pitchSin = cyclic ? -d.rotation * cyclic.aft : -d.rotation * c.elevator * d.cyclicLimit;
+    if (articulated && this.extended) {
+      const previous = { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight };
+      const forcing = hubForcing(d.main, articulated, s.omega, density, collective, pitchCos, pitchSin, hubAir, s.inflow,
+        rate, d.rotation, { harmonicInflow: s.harmonicInflow, flap: previous, radialFlow: hl?.radialFlow,
+          periodicDamping: d.main.periodicFlapDamping, tanDelta3: hl?.tanDelta3, section: d.main.section, soundSpeed,
+          cm0: d.main.cm0, jacobian: !!this.gyro, gyro: !!this.gyro });
+      spring = hl ? { ...hl.spring, aerodynamic: forcing.stiffness } : undefined;
+      // A stopped spring hub carries only its static deflection, also on dt = 0 queries (a resumed save's stale
+      // harmonics never reach the hub moment).
+      if (spring && !(s.omega > 0)) stoppedFlap = harmonicFlap(articulated, 0, forcing, d.rotation, spring);
+      let flap = advanceFlap(articulated, s.omega, forcing, previous, d.rotation, dt, rate.z, spring);
+      // Control gyro (AG implements advanceCoupled): gyro tilt and the flap harmonics advance as ONE coupled step in
+      // place of advanceFlap's harmonics (never a sequential explicit gyro step: loop gain about 49 rad/s); the cone
+      // keeps advanceFlap's pole. A singular reduction (stopped rotor) keeps advanceFlap's static solution.
+      if (this.gyro && dt > 0) {
+        const system = flapSystem(articulated, s.omega, forcing, d.rotation, rate.z, [pitchCos, pitchSin], d.main.blades, spring);
+        if (system) {
+          const coupled = this.gyro.advanceCoupled(dt, c, rate, system, { cosine: previous.cosine, sine: previous.sine }, forcing.blade);
+          flap = { cone: flap.cone, cosine: coupled.cosine, sine: coupled.sine };
+        }
+      }
+      if (dt > 0) {
+        s.flapForward = -flap.cosine; s.flapRight = flap.sine; s.coning = flap.cone;
+        s.teeterAngle = 0; s.retreatingFlap = 0;
+        previousFlap = previous;
+      }
+    } else if (articulated) {
       // Small-angle, attached-flow harmonic articulated hub. The physical 90-degree pitch-link
       // mapping is an installation estimate; centrifugal detuning produces the actual flap phase.
       // This deliberately does not claim per-blade transient lag or blade-stop/ground resonance.
@@ -337,12 +409,15 @@ export class Rotorcraft {
     const inPlane = v3.sub(hubAir, v3.scale(axis, axial));
     const horizontal = v3.len(inPlane);
     const shaftHubMoment = articulated ? hingeMoment(articulated, d.main.blades, s.omega,
-      { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight }) : v3.zero();
+      stoppedFlap ?? { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight }, spring) : v3.zero();
+    // Mast-moment indicator (hingeless): |hub moment| in the shaft frame, published on real steps only.
+    if (hl && dt > 0) s.mastMoment = Math.hypot(shaftHubMoment.x, shaftHubMoment.y);
     const hubMoment = tilt ? toBody(shaftHubMoment, tilt) : shaftHubMoment;
     this.articulatedPower.hub = v3.dot(shaftHubMoment, rate);
     this.articulatedPower.shaft = -this.articulatedPower.hub;
     const hubTorque = s.omega > 0 ? this.articulatedPower.hub / s.omega : 0;
-    const main = bladeElements(d.main, d.yawInRotorSpeed ? Math.max(0, s.omega - d.rotation * rate.z) : s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true);
+    const main = this.extended ? this.mainLoads(rate, collective, axial, inPlane, horizontal, density, pitchCos, pitchSin, soundSpeed)
+      : bladeElements(d.main, d.yawInRotorSpeed ? Math.max(0, s.omega - d.rotation * rate.z) : s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true);
     const h = Math.max(0.3 * d.main.radius, height - quat.rotate(b.orientation, d.main.hub).z);
     // NDARC TP-2015-218751 §12-4.1.2: constant-thrust induced-velocity factor (exponent 3/2).
     // Use the wake's angle to the ground normal; an upward autorotative wake gets no image correction.
@@ -384,6 +459,19 @@ export class Rotorcraft {
       axial, horizontal, inflow: s.inflow, groundEffect: ge, inflowTau,
     });
     if (dt > 0) {
+      // First-harmonic inflow (RC, inflowHarmonic.ts): forced by the aerodynamic hub moment with this step's flap and
+      // flap rates, and the thrust; before the uniform update, which is unchanged.
+      if (s.harmonicInflow && articulated) {
+        const now = { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight };
+        const was = previousFlap ?? now;
+        const flapRate = { cone: (now.cone - was.cone) / dt, cosine: (now.cosine - was.cosine) / dt, sine: (now.sine - was.sine) / dt };
+        const moment = aerodynamicHubMoment(d.main, articulated, s.omega, density, collective, pitchCos, pitchSin, hubAir,
+          s.inflow, rate, d.rotation, d.main.blades, now, flapRate, { harmonicInflow: s.harmonicInflow, radialFlow: hl?.radialFlow,
+            tanDelta3: hl?.tanDelta3, section: d.main.section, soundSpeed });
+        Object.assign(s.harmonicInflow, advanceHarmonicInflow(s.harmonicInflow, dt, { omega: s.omega, radius: d.main.radius,
+          density, inPlane: { x: hubAir.x, y: hubAir.y }, through: targetInflow - hubAir.z, induced: targetInflow,
+          thrust: main.thrust, moment }));
+      }
       if (!articulated) {
         const coneTarget = main.coningMoment / Math.max(d.main.inertia * s.omega * s.omega, 1);
         s.coning += (clamp(coneTarget, -0.15, 0.3) - s.coning) * lag;
@@ -440,26 +528,46 @@ export class Rotorcraft {
     if (extra) s.torque += extra.shaftTorque;
     s.stalledFraction = main.stalledFraction;
     // BEM integrates moment about the shaft. Transfer it to ONE blade's flap hinge.
-    const coning = d.hubModel?.kind === 'articulated' ? d.hubModel.coning : undefined;
+    const coning = d.hubModel?.kind === 'articulated' || d.hubModel?.kind === 'hingeless' ? d.hubModel.coning : undefined;
     // Like the harmonic coordinates, poses advance only on a real step. RK force queries
     // and snapshot restoration must not replace the published pose with a different stage.
     if (dt > 0) this.publishBlades(c, quat.rotateInv(b.orientation, { x: 0, y: 0, z: 9.80665 }).z,
       coning ? (main.coningMoment - coning.hingeRadius * main.thrust) / d.main.blades : undefined);
     return this.loads;
   }
+  /**
+   * Main-rotor blade elements on the extended path: the definition's grid (legacy 12 x 16) and section; on a hingeless
+   * hub with bemFromFlap (the default) the first-harmonic pitch RELATIVE TO THE TIP-PATH PLANE from the swashplate
+   * cyclic and the solved flap harmonics (theta_TPP(psi) = theta_shaft(psi) - rotation d beta / d psi, so a free hinge
+   * gets the cancellation of rotor.ts's teetering formula and a stiff hub its real lift moment), turned into the BEM's
+   * wind-axis azimuth: psi_BEM = rotation (psi + alpha) + pi with alpha the direction of the tip-path-plane flow; plus
+   * the coning's radial-flow term with radialFlow. Other hubs keep the free-hinge cancellation (teetering = true).
+   */
+  private mainLoads(rate: Vec3, collective: number, axial: number, inPlane: Vec3, horizontal: number, density: number,
+    pitchCos: number, pitchSin: number, soundSpeed: number | undefined): RotorLoads {
+    const s = this.state, d = this.def, h = this.hingeless, rot = d.rotation;
+    const omega = d.yawInRotorSpeed ? Math.max(0, s.omega - d.rotation * rate.z) : s.omega;
+    const radial = d.main.radialStations ?? 12, azimuthal = d.main.azimuthStations ?? 16;
+    if (!h || !h.bemFromFlap) return bladeElements(d.main, omega, collective, axial, horizontal, s.inflow, density, radial,
+      azimuthal, true, { section: d.main.section, soundSpeed });
+    return bladeElements(d.main, omega, collective, axial, horizontal, s.inflow, density, radial, azimuthal, false, {
+      harmonicPitch: tppPitchHarmonic(rot, pitchCos, pitchSin, -s.flapForward, s.flapRight, inPlane.x, inPlane.y),
+      coning: h.radialFlow ? s.coning : 0, section: d.main.section, soundSpeed });
+  }
   /** Physical poses around the load solver's harmonic flap, without changing its load coordinates.
    * Explicit mean moment is per blade, about the flap hinge. Fixtures without BEM use thrust at .75R. */
   publishBlades(c: ControlInputs, normalGravity = 9.80665, meanMoment?: number): void {
     const s = this.state, d = this.def, a = s.articulated;
     if (!a) return;
-    const coning = d.hubModel?.kind === 'articulated' ? d.hubModel.coning : undefined;
+    const coning = d.hubModel?.kind === 'articulated' || d.hubModel?.kind === 'hingeless' ? d.hubModel.coning : undefined;
     a.blades.forEach((b, i) => {
       const phase = i * 2 * Math.PI / d.main.blades, psi = s.azimuth + phase - Math.PI / 2;
       const harmonic = -s.flapForward * Math.cos(psi) + s.flapRight * Math.sin(psi);
       b.flap = coning ? articulatedBladeConing(coning, s.omega, s.thrust / d.main.blades,
         harmonic, normalGravity, meanMoment).angle : s.coning + harmonic;
       b.lag = 0; // Coupled lag experiment rejected; see docs/s269-integration.md.
-      const cyclic = this.gyro ? this.gyro.cyclic(c) : d.cyclicLimits ? cyclicAngles(d, c) : undefined;
+      const cyclic = this.gyro ? this.gyro.cyclic(c) : this.hingeless ? swashplateCyclic(d, c, s)
+        : d.cyclicLimits ? cyclicAngles(d, c) : undefined;
       b.pitch = d.main.minPitch + clamp(c.collective ?? 0, 0, 1) * (d.main.maxPitch - d.main.minPitch) +
         (cyclic ? d.rotation * (cyclic.right * Math.cos(psi) - cyclic.aft * Math.sin(psi))
           : d.rotation * d.cyclicLimit * (c.aileron * Math.cos(psi) - c.elevator * Math.sin(psi)));
@@ -487,8 +595,16 @@ export class Rotorcraft {
     s.driveTorque = 0; s.coning = 0; s.retreatingFlap = 0;
     this.gyro?.seed(c);
     if (this.gyro) { const cyclic = this.gyro.cyclic(c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
-    else if (d.cyclicLimits) { const cyclic = cyclicAngles(d, c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
+    else if (this.hingeless) {
+      // Hingeless: the control phase through the one swashplate law.
+      const cyclic = swashplateCyclic(d, c, s); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right;
+    } else if (d.cyclicLimits) { const cyclic = cyclicAngles(d, c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
     else { s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit; }
+    // Hingeless (with or without a gyro): the cone from its precone, the harmonic inflow re-seeded.
+    if (this.hingeless) {
+      s.coning = this.hingeless.spring.precone;
+      if (s.harmonicInflow) { s.harmonicInflow.cos = 0; s.harmonicInflow.sin = 0; }
+    }
     s.inflow = s.tailInflow = s.omega > 0 ? 5 : 0;
     for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);
     if (d.tail.pittPetersInflow) this.solveTailInflow(b, wind, density, height, c);
