@@ -232,8 +232,8 @@ export const AH56_PUSHER: PusherDef = {
  * pusher and the unloaded rotor take the 150 KCAS pitch response from 4.27 to 3.81 deg/s/in with AG's 7,500 N m/rad and
  * 811 N m). Only the two numbers AG fitted move: the flapping feedback gain K_R 7,500 -> 5,000 N m/rad and the full
  * longitudinal stick moment 811 -> 715 N m (FITTED to G5 / C18 on the compound; the grid is in docs/ah56-compound.md):
- * pitch 6.09 / 4.78 / 4.22 / 3.78 deg/s/in at 0 / 100 / 150 / 180 KCAS, sensitivity 11.6 / 10.5 deg/s^2/in at 0 / 100;
- * roll 14.8 / 15.5 / 15.4 / 15.2 deg/s/in, 61.8 / 62.3 / 60.4 deg/s^2/in at 0 / 150 / 180. The model's sensitivity per unit
+ * pitch 6.09 / 4.90 / 4.26 / 3.80 deg/s/in at 0 / 100 / 150 / 180 KCAS, sensitivity 11.6 / 10.8 deg/s^2/in at 0 / 100;
+ * roll 14.8 / 15.5 / 15.3 / 15.3 deg/s/in, 61.8 / 63.0 / 61.4 deg/s^2/in at 0 / 150 / 180. The model's sensitivity per unit
  * response stays 1.9 /s (AMCS-73's 9 / 6 is 1.5 /s), so no pair reaches 4.2 deg/s/in at 180 KCAS with the hover
  * sensitivity under 11.7 (C18's KNOWN GAP).
  */
@@ -271,7 +271,14 @@ export const PROVISIONAL_SECTION: RotorSectionDef = { liftSlope: AH56_BASE.main.
  *  thrust = 0.33 m^2 at 194 KTAS (D). With the stores, 1.53 m^2 in all at 194 KTAS. */
 export const FUSELAGE_DRAG_X = 1.0;
 
+/** The Nf governor's anticipation of the prop (TurboshaftControlDef.governor.propAnticipation): Ng demand per unit of the prop
+ *  lever added to the droop compensator's datum. ESTIMATE, FITTED: 0.15 holds the reset's beep set point within 0.42 % from the
+ *  hover to 190 KTAS on the trim schedule (0.65 % without) and trims the Nr dip after a +0.1 lever step at 150 KTAS from 1.38 to
+ *  1.17 %; a constant cannot follow the U-shaped power curve further. */
+export const PROP_ANTICIPATION = 0.15;
+
 export const AH56_COMPOUND: AH56Patch = {
+  systems: { turboshaft: { governor: { propAnticipation: PROP_ANTICIPATION } } },
   dragArea: { ...AH56_BASE.dragArea, x: FUSELAGE_DRAG_X },
   wings: AH56_WINGS,
   pusher: AH56_PUSHER,

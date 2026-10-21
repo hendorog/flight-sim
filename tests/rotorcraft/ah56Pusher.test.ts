@@ -10,7 +10,7 @@ import type { AircraftDefinition } from '../../src/aircraft/types';
 import { AH56_DEFINITION } from '../../src/aircraft/ah56';
 import { AH56_INPUT } from '../../src/aircraft/ah56/input';
 import { AH56_DRIVETRAIN_INERTIA, AH56_PROP_BETA_DEG, AH56_PROP_RATIO } from '../../src/aircraft/ah56/facts';
-import { AH56_PROPELLER, PROP_GRIP_TABLE } from '../../src/aircraft/ah56/compound';
+import { AH56_PROPELLER, PROP_ANTICIPATION, PROP_GRIP_TABLE } from '../../src/aircraft/ah56/compound';
 import { ah56Loading } from '../../src/aircraft/ah56/mass';
 import { createFlightModelFor } from '../../src/physics';
 import type { BladeElementFlightModel } from '../../src/physics/flightModel';
@@ -100,6 +100,20 @@ describe('the Hamilton Standard pusher and its drive (P ASTA-72 pp 51-52, AMCS-7
       expect(PROP_GRIP_TABLE.betaDeg[i]).toBeGreaterThan(PROP_GRIP_TABLE.betaDeg[i - 1]);
     }
     expect(pusherTrimLever(def, 0)).toBeCloseTo(AH56_INPUT.propLever!.detent, 9);
+  });
+});
+
+describe('the Nf governor carries the prop (TurboshaftControlDef.governor.propAnticipation, ESTIMATE)', () => {
+  it('the anticipation joins AG\'s governor (deep merge) and holds the reset\'s beep set point within 0.5 % from the hover to 190 KTAS', () => {
+    const gov = def.systems.turboshaft!.governor;
+    expect(gov.propAnticipation).toBeCloseTo(PROP_ANTICIPATION, 9);
+    // AG's law is untouched (base.ts): droop 5 %, collective anticipation 0.3, datum Ng 0.72.
+    expect([gov.droop, gov.anticipation, gov.datumNg]).toEqual([0.05, 0.3, 0.72]);
+    const sets = [0, 60, 120, 160, 190].map((kt) => rigOn(AH56_DEFINITION, { kt }).fm.state.rotorcraft!.turboshaft!.n2SetPct);
+    report('beep set point on the schedule', { hover: sets[0], at60: sets[1], at120: sets[2], at160: sets[3], at190: sets[4],
+      spread: Math.max(...sets) - Math.min(...sets), target: '<= 0.5 %' });
+    trace.governor = sets;
+    expect(Math.max(...sets) - Math.min(...sets)).toBeLessThanOrEqual(0.5);
   });
 });
 
