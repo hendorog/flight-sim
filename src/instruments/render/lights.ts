@@ -533,6 +533,7 @@ export class IgnitionSwitches implements PanelComponent {
   constructor(
     private readonly kind: Exclude<IgnitionPanelDef['kind'], 'key'>,
     private readonly layout: IgnitionLayout,
+    private readonly sides: readonly [string, string] = ['L', 'R'],
   ) {
     this.bounds = layout.rect;
     this.latch = new Latch(layout.toggles.length + 1);
@@ -575,10 +576,10 @@ export class IgnitionSwitches implements PanelComponent {
       g.roundRect(t.x - w / 2 - 3, t.y - 21 - 3, w + 6, 42 + 6, 3);
       g.fill();
       if (t.kind === 'engineMaster') {
-        label(g, twin ? `ENG MASTER ${t.engine === 0 ? 'L' : 'R'}` : 'ENG MASTER', t.x, b.y + 14, 6.5);
+        label(g, twin ? `ENG MASTER ${this.sides[t.engine === 0 ? 0 : 1]}` : 'ENG MASTER', t.x, b.y + 14, 6.5);
       } else if (t.kind === 'ignition') {
         // A turbine's IGNITION switch: ON (continuous) up, NORM (igniters with the starter) down.
-        label(g, twin ? `IGNITION ${t.engine === 0 ? 'L' : 'R'}` : 'IGNITION', t.x, b.y + 9, 6.5);
+        label(g, twin ? `IGNITION ${this.sides[t.engine === 0 ? 0 : 1]}` : 'IGNITION', t.x, b.y + 9, 6.5);
         label(g, 'ON', t.x, t.y - 31, 6.5);
         label(g, 'NORM', t.x, t.y + 33, 6.5);
       } else {
@@ -596,8 +597,8 @@ export class IgnitionSwitches implements PanelComponent {
     }
     label(g, turbine ? 'STARTER' : 'START', L.starter.x, b.y + (this.kind === 'toggles' ? 12 : 14), 7);
     if (twin) {
-      label(g, 'L', L.starter.x - 24, L.starter.y + 30, 7);
-      label(g, 'R', L.starter.x + 24, L.starter.y + 30, 7);
+      label(g, this.sides[0], L.starter.x - 24, L.starter.y + 30, 7);
+      label(g, this.sides[1], L.starter.x + 24, L.starter.y + 30, 7);
     }
   }
 

@@ -309,10 +309,10 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
     if (g.kind === 'gearLights' && g.lever) into.push(new GearSelector(leverId(g.id), g.lever));
     if (g.kind === 'flapLights' && g.lever) into.push(new FlapSwitch(leverId(g.id), g.lever, g));
   }
-  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns, def.annunciator.cells, def.annunciator.lensLegend));
+  if (def.annunciator) dials.push(new AnnunciatorPanel(def.annunciator.bounds, def.annunciator.lamps, def.annunciator.columns, def.annunciator.cells, def.annunciator.lensLegend, def.annunciator.clipGlow));
   dials.push(new SwitchPanel(def.switchRow, def.ignition));
   const ignition = ignitionLayout(def.ignition);
-  if (ignition && def.ignition.kind !== 'key') dials.push(new IgnitionSwitches(def.ignition.kind, ignition));
+  if (ignition && def.ignition.kind !== 'key') dials.push(new IgnitionSwitches(def.ignition.kind, ignition, def.ignition.kind === 'toggles' ? def.ignition.sides : undefined));
   return [...dials, ...rest];
 }
 
@@ -322,6 +322,8 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
   switch (g.kind) {
     case 'customRound':
       return g.create(g.id, g.at[0], g.at[1], r);
+    case 'customRect':
+      return g.create(g.id, g.bounds);
     case 'blank':
       return new BlankGauge(g.id, g.at[0], g.at[1], r);
     case 'rotorTach':
@@ -365,7 +367,7 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
     case 'single':
       return new SingleGauge(g.id, g.at[0], g.at[1], r, g.seed, g, g.scale, g.size);
     case 'twinNeedle':
-      return new TwinNeedleGauge(g.id, g.at[0], g.at[1], r, g.seed, g, g.scale, g.left, g.right, g.size);
+      return new TwinNeedleGauge(g.id, g.at[0], g.at[1], r, g.seed, g, g.scale, g.left, g.right, g.size, g.letters);
     case 'flapLever':
       return new FlapIndicator(g.id, g.bounds, g.maxDeg, g.legends, paintLevers);
     case 'gearLights':
