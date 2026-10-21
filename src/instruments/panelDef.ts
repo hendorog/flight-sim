@@ -81,6 +81,8 @@ export type GaugeDef =
   /** Aircraft-specific dial using the shared sizing, recess, lighting and redraw contract. */
   | { kind: 'customRound'; id: string; at: At; size: 'large' | 'small';
       create(id: string, x: number, y: number, aperture: number): PanelComponent }
+  /** Aircraft-specific rectangular instrument (a vertical-tape gauge, an indicator window) owning `bounds` of the canvas. */
+  | { kind: 'customRect'; id: string; bounds: Rect; create(id: string, bounds: Rect): PanelComponent }
   /**
    * `scale` of a flight instrument: its size against the 3-1/8" case (a 2" standby instrument is 0.64), drawn,
    * recessed and hit-tested at that size. Absent: 1 (the panel's instrumentScale still applies on top).
@@ -116,10 +118,14 @@ export type GaugeDef =
       labels: readonly number[]; scale: ScaleDef }
   /** Two needles (L, R) on one dial: twin tachometer, manifold pressure, fuel flow. */
   | { kind: 'twinNeedle'; id: string; at: At; seed: number; size: 'large' | 'small'; a0: number; a1: number; title: string; units: string;
-      labels: readonly number[]; scale: Omit<ScaleDef, 'read'>; left(r: InstrumentReadings): number; right(r: InstrumentReadings): number }
+      labels: readonly number[]; scale: Omit<ScaleDef, 'read'>; left(r: InstrumentReadings): number; right(r: InstrumentReadings): number;
+      /** The letters of the two needles (default L, R; a helicopter's engines are numbered 1, 2). */
+      letters?: readonly [string, string] }
   | { kind: 'suction' | 'ammeter'; id: string; at: At; scale?: ScaleDef }
   /** Three greens and the red unsafe light; with `lever`, also the gear selector drawn there, clickable as a 'select' hotspot. */
-  | { kind: 'gearLights'; id: string; bounds: Rect; lever?: At }
+  | { kind: 'gearLights'; id: string; bounds: Rect; lever?: At;
+      /** Legend of the first green lamp (default NOSE): TAIL on a tail-wheel type (the AH-56A's gear state keeps its tail wheel in the nose slot). */
+      noseLegend?: string }
   | { kind: 'flapLever'; id: string; bounds: Rect; maxDeg: number; legends: readonly string[] }
   /**
    * One lamp per flap position. colors: lamp colour per position (DA42: green, white, white; DA20: green, yellow,
@@ -166,7 +172,9 @@ export type IgnitionPanelDef =
        * 'ignition': ONE IGNITION toggle per engine instead of the two magneto toggles, and the rocker lettered
        * STARTER (a turbine's igniters: off = magnetos 0, on = both bits). Absent: 'magnetos'.
        */
-      switches?: 'magnetos' | 'ignition' }
+      switches?: 'magnetos' | 'ignition';
+      /** The two engines' names on the legends of a twin: ['L', 'R'] by default ('1', '2' on a helicopter whose engines are numbered). */
+      sides?: readonly [string, string] }
   | { kind: 'engineMaster'; at: At; engines: number }; // ENGINE MASTER per engine + START (DA42)
 
 export interface PanelDef {
@@ -177,7 +185,9 @@ export interface PanelDef {
     /** Canvas crops shown whole in the Upper view after the flight rows (an engine display whose windows must stay together); gauges inside one are not placed again. */
     crops?: readonly Rect[];
     /** Put the annunciator beside the engine instruments instead of below them (a tall engine display and a large warning grid). */
-    lampsBeside?: boolean };
+    lampsBeside?: boolean;
+    /** Gauges (by id) that belong in the Lower view whatever their kind (the second-rank engine monitoring of a twin). */
+    lower?: readonly string[] };
   /** Dial lighting interlock; self-lit radios and warning lenses remain independent. */
   lightingRequiresNav?: boolean;
   /** Optional dimmer curve: emissive alpha tags dimmed circuits (0.5) versus warning lamps (1).
@@ -193,7 +203,9 @@ export interface PanelDef {
    * `lensLegend` (with `cells`): each cell is a rectangular press-to-test lens with the legend on the lens cap itself
    * (MD 500E), instead of a round lens under a painted legend.
    */
-  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[]; lensLegend?: boolean };
+  annunciator?: { bounds: Rect; lamps?: readonly LampDef[]; columns?: number; cells?: readonly Rect[]; lensLegend?: boolean;
+    /** Keep a lit lens's glow inside its own cell (a lens that flashes would otherwise pile its glow onto the lenses beside it). */
+    clipGlow?: boolean };
   switchRow: { bounds: Rect; rockerTop: number; rockerW: number; rockerH: number; switches: readonly SwitchDef[]; ink?: string; distributed?: boolean;
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
@@ -273,6 +285,11 @@ export interface InstrumentSystemsDef {
   hourmeterRunning?(s: AircraftState, c: ControlInputs): boolean;
   /** Cabin altitude / differential display (dynamics/cabinDisplay.ts), stepped with the instruments: readings.cabinAltFt, cabinDiffPsi. */
   cabin?: CabinSchedule;
+  /**
+   * Bespoke readings evaluated every step from the whole state (readings.extra[id]): what a type's custom gauges and lamps
+   * need that the common readings do not carry. Pure functions of the state and the controls.
+   */
+  extra?: Readonly<Record<string, (s: AircraftState, c: ControlInputs) => number>>;
   /**
    * `chime`: a caution and warning panel lens (PC-12 CAWS) whose lighting strikes the master chime: InstrumentSet
    * reports the edge (takeChime), the panel emits the 'caws' sim event. Not on the lamp test, not at a reset.

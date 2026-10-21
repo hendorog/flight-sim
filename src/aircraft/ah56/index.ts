@@ -5,6 +5,7 @@
 // rotor with four blades (base.ts, through the frozen assembly rotorcraft.ts). It is NOT a placeholder: the catalogue
 // row's `available: false` is the only gate.
 import type { AircraftDefinition } from '../types';
+import { AH56_REFERENCE } from './reference';
 import { MD500_DEFINITION as md } from '../md500';
 import { AH56_ROTORCRAFT as rotor } from './rotorcraft';
 import { AH56_POWERPLANT } from './powerplant';
@@ -20,6 +21,7 @@ export const AH56_DEFINITION: AircraftDefinition = {
   shortName: 'AH-56A',
   variant: 'AH-56A AMCS (ship 7, 66-8832, T64-GE-716); ICS 1972 configuration selectable',
   icaoType: 'ZZZZ',
+  reference: { ...md.reference, vne: AH56_REFERENCE.vne },
   engineCount: 1,
   rotorcraft: rotor, powerplant: AH56_POWERPLANT, input: AH56_INPUT, sim: AH56_SIM, mass: AH56_MASS, gear: ah56Gear,
   notModelled: [
