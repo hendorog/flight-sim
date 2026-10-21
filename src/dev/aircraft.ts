@@ -18,8 +18,17 @@
 //   rpm=2300 comp=0.06 steer=deg                  propeller rpm, strut compression (m), nosewheel steering
 //   lights=nav,beacon,strobe,landing,taxi | all | none      panel=0..1 panel light level
 //   rotorcraft: rpm=530 azimuth=25 flapforward=deg flapright=deg thrust=N collective=0..1 throttle=0..1 spinrotor=1
+//                          (without thrust= the type's maximum weight is the rotor thrust when rpm > 0.6 x nominalRpm)
 //   view=rotorside         side camera at the main hinge height, for judging coning without parallax.
 //                          The generic side preset is below the hub; a far drooping blade can look raised.
+//   view=head              rotorcraft: a close three-quarter view of the main rotor head
+//   rotorcraft with a control gyro or a pusher (AH-56A):
+//     config=amcs|ics        the gyro configuration drawn (ics: the 9.7 ft gyro X on the head)
+//     gyropitch=deg gyroroll=deg   gyro tilt relative to the shaft (+ = aft / right, the gyroBladeCyclic convention)
+//     pitch=deg              also the pusher blade angle at 0.7 R (rotorcraft.pusher.beta); absent and no pusher in the
+//                            definition: the pusher is drawn stopped and feathered
+//     gear=0..1              also the retractable wheels of a wheeled rotorcraft (tail wheel, mains)
+//   A rotorcraft longer than 11 m (rotor or fuselage) gets the fixed presets scaled with its size.
 //   paneltex=1             show a test instrument-panel texture (checks the setPanelTexture mapping)
 //   t=seconds              simulation time offset (strobe/beacon phase; use with freeze=1)
 //   exposure=1             exposure multiplier over the harness's daylight exposure (dusk defaults higher)
@@ -62,6 +71,8 @@ if (hashMode) {
 let airframe: AirframeVisualDef | undefined;
 let panelDef: PanelDef | undefined;
 let rotorRpm = 530, rotorThrust = 5500;
+/** The rotorcraft definition of type= (its nominal rpm, control gyro and pusher); absent for an aeroplane. */
+let rotorDef: import('../physics/rotorcraft/definition').RotorcraftDefinition | undefined;
 const type = params.get('type');
 if (type) {
   const { SYNTHETIC_AIRFRAMES } = await import('../render/aircraft/airframe/testbed');
@@ -72,6 +83,7 @@ if (type) {
     const [presentation, definition] = await Promise.all([loadPresentation(type), loadAircraft(type)]);
     airframe = presentation.visual;
     panelDef = presentation.panel;
+    rotorDef = definition.rotorcraft;
     if (definition.rotorcraft && type !== 'r22') {
       // Keep the existing R22 screenshot fixture; new types use their own normal RPM and gross weight.
       rotorRpm = definition.rotorcraft.nominalRpm;
@@ -357,9 +369,26 @@ async function publishHash(): Promise<void> {
   (window as unknown as { __hash: unknown }).__hash = { hash, ...parts };
 }
 
-if (airframe?.rotorcraftVisual) PRESETS.rotorside = [
-  new THREE.Vector3(-18, -airframe.rotorcraftVisual.main.hub[2], 0.8), new THREE.Vector3(0, 0.5, 0.8),
-];
+if (airframe?.rotorcraftVisual) {
+  const rv = airframe.rotorcraftVisual, hub = new THREE.Vector3(rv.main.hub[1], -rv.main.hub[2], -rv.main.hub[0]);
+  PRESETS.rotorside = [new THREE.Vector3(-18, -rv.main.hub[2], 0.8), new THREE.Vector3(0, 0.5, 0.8)];
+  PRESETS.head = [hub.clone().add(new THREE.Vector3(-3.4, 0.9, -1.6)), hub.clone().add(new THREE.Vector3(0, 0.05, 0))];
+  // A large rotorcraft (the AH-56A: 16.7 m long, 15.6 m rotor) scales the fixed exterior presets, which were set for
+  // types under 11 m; smaller types keep their framing exactly.
+  const ends = airframe.fuselage.frontX - airframe.fuselage.endX;
+  const size = Math.max(ends, 2 * rv.main.radius);
+  if (size > 11) {
+    const k = size / 11;
+    for (const v of ['front', 'side', 'sidefar', 'sidefarright', 'rear', 'top', 'low', 'tail'] as const) {
+      const [pos, target] = PRESETS[v];
+      PRESETS[v] = [pos.clone().multiplyScalar(k), target.clone().multiplyScalar(k)];
+    }
+    // The gear close-up on the left main wheel of a wheeled rotorcraft.
+    const left = airframe.gear[1].contact;
+    const wheel = new THREE.Vector3(left[1], -left[2] + 0.55, -left[0]);
+    PRESETS.gear = [wheel.clone().add(new THREE.Vector3(-3.1, 0.35, -2.6)), wheel.clone().add(new THREE.Vector3(0.4, 0, 0.6))];
+  }
+}
 let camPreset: [THREE.Vector3, THREE.Vector3] | null = null;
 let initStart = 0;
 const tmpA = new THREE.Vector3();
@@ -405,6 +434,18 @@ void runHarness({
     if (type && isAircraftId(type)) s.aircraft = type;
     if (airframe?.rotorcraft) {
       s.rotorcraft = emptyRotorcraftState();
+      // The control gyro (config=, gyropitch=, gyroroll=) and the pusher (pitch=) state blocks the AH-56A visual reads.
+      const config = params.get('config');
+      const gyro = rotorDef?.controlGyro ?? airframe.rotorcraft.controlGyro;
+      if (gyro || config === 'ics' || config === 'amcs' || params.has('gyropitch') || params.has('gyroroll')) {
+        const mode = config === 'ics' || config === 'amcs' ? config : gyro?.default ?? 'amcs';
+        s.rotorcraft.controlGyro = { mode, pitch: num('gyropitch', 0) * DEG, roll: num('gyroroll', 0) * DEG, pitchRate: 0, rollRate: 0 };
+      }
+      const pusher = rotorDef?.pusher ?? airframe.rotorcraft.pusher;
+      if (pusher || params.has('pitch')) {
+        const beta = params.has('pitch') ? num('pitch', 0) * DEG : pusher!.beta.hoverDetent;
+        s.rotorcraft.pusher = { lever: 0, beta, betaCommand: beta, deltaBeta: false, rpm: 0, thrust: 0, torque: 0 };
+      }
       // The generic harness starts at the C172 rest height; the rotorcraft stands on its shared skid datum.
       const delta = s.onGround ? (airframe.shadow.restHeight ?? 0.9) - 1.25 : 0;
       s.position.z -= delta; s.altitudeMSL += delta;
@@ -458,7 +499,8 @@ function applyStatic(ctx: SimContext): void {
   const gear = clamp(num('gear', 1), 0, 1);
   s.gear.extension = [gear, gear, gear];
   ctx.controls.gearLever = s.gear.lever = gear < 0.5 ? 'up' : 'down';
-  const comp = num('comp', s.wheels[0].compression);
+  // Rotorcraft wheels are drawn free (uncompressed) unless comp= says otherwise; the aeroplanes keep the mock's.
+  const comp = num('comp', airframe?.rotorcraft ? 0 : s.wheels[0].compression);
   for (const w of s.wheels) {
     w.compression = comp;
     w.rotation = num('spin', 0);
@@ -480,7 +522,10 @@ function applyStatic(ctx: SimContext): void {
     s.rotorcraft.azimuth = num('azimuth', 25) * DEG;
     s.rotorcraft.flapForward = num('flapforward', 0) * DEG;
     s.rotorcraft.flapRight = num('flapright', 0) * DEG;
-    s.rotorcraft.thrust = num('thrust', s.rotorcraft.rotorRpm > 300 ? rotorThrust : 0);
+    // The default thrust (the type's maximum weight) applies once the rotor is near its own speed: 0.6 x nominalRpm
+    // (the old fixed 300 rpm left a 240-250 rpm rotor unconed).
+    const nominal = rotorDef?.nominalRpm ?? airframe?.rotorcraft?.nominalRpm ?? 500;
+    s.rotorcraft.thrust = num('thrust', s.rotorcraft.rotorRpm > 0.6 * nominal ? rotorThrust : 0);
     c.collective = num('collective', 0); c.throttle = num('throttle', 0);
   }
 }
