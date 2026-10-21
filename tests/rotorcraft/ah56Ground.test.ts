@@ -10,7 +10,8 @@ import { RotorClearance, wheelRestingPose } from '../../src/physics/rotorcraft/w
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { AH56_DEFINITION } from '../../src/aircraft/ah56';
 import { AH56_REFERENCE } from '../../src/aircraft/ah56/reference';
-import { d, gauges, pilot, report, rig, run } from './ah56Rig';
+import { hoverScenario } from '../../src/sim/rotorcraft/starts';
+import { d, gauges, gyroDef, pilot, report, rig, run } from './ah56Rig';
 
 describe('G13: on the wheels', () => {
   it('a running ground reset rests on three wheels about level and stays there', () => {
@@ -120,6 +121,44 @@ describe('G13: on the wheels', () => {
     report('G13 parking brake at ground idle', { driftM: drift, ngPct: gauges(r).ng, nrPct: gauges(r).nr });
     expect(drift).toBeLessThan(0.2);
   });
+});
+
+describe('the hover readout (plan flights "AH-56 hover readout"): 20 s hands-off from the 15 m hover spawn, calm air', () => {
+  const hover = (config: 'amcs' | 'ics') => {
+    const weather = { ...defaultWeather(), windSpeedKt: 0, turbulence: 0, gustKt: 0 };
+    const p = new SimPhysics({ aircraft: AH56_DEFINITION, weather, rotorcraftConfig: config });
+    p.resetTo(hoverScenario(p.env, d), weather);
+    const roll0 = p.state.roll;
+    p.step(20);
+    const s = p.state;
+    report(`hover readout ${config} after 20 s hands-off`, { rollStartDeg: roll0 / DEG, rollDeg: s.roll / DEG, pitchDeg: s.pitch / DEG,
+      groundSpeedKt: s.groundSpeed / KT, nrRpm: s.rotorcraft!.rotorRpm, target: 'roll -7..-2 (G9), Nr 239.85 / 246 +/- 2' });
+    return s;
+  };
+  it('Nr and the gyro mode hold (AMCS 239.85, ICS 246 rpm +/- 2) and nothing crashes', () => {
+    for (const config of ['amcs', 'ics'] as const) {
+      const s = hover(config);
+      expect(s.crashed).toBe(false);
+      expect(s.rotorcraft!.controlGyro!.mode).toBe(config);
+      expect(Math.abs(s.rotorcraft!.rotorRpm - (config === 'amcs' ? 239.85 : 246))).toBeLessThanOrEqual(2);
+      const g = s.rotorcraft!.controlGyro!, t = gyroDef.configs[config].maxTilt;
+      expect(g.pitch).toBeLessThanOrEqual(t.up); expect(g.pitch).toBeGreaterThanOrEqual(-t.down);
+      expect(g.roll).toBeLessThanOrEqual(t.right); expect(g.roll).toBeGreaterThanOrEqual(-t.left);
+    }
+  }, 60000);
+  it.fails('KNOWN GAP (RC contract request): the hands-off hover stays 2-7 deg left wing low for 20 s', () => {
+    // The trim balances the rotor at exactly zero airspeed, where Rotorcraft.compute applies no main-rotor in-plane force
+    // (`if (horizontal > 0)`, rotorcraft.ts). The first step's 1e-7 m/s of body velocity turns on the hingeless rotor's
+    // hover in-plane force (about 330 N) along that arbitrary direction: 625 N m of roll and 236 N m of pitch the trim
+    // never saw. The AMCS rate command then rolls the aircraft right at 0.2 deg/s and it diverges (+7.6 deg at 20 s; ICS
+    // -21 deg). With the in-plane force faded in over the first 0.3 m/s (an experiment, not committed) the AMCS holds
+    // -5.2 -> -5.5 deg and the ICS -5.1 -> -4.4 deg over the 20 s.
+    for (const config of ['amcs', 'ics'] as const) {
+      const s = hover(config);
+      expect(s.roll).toBeLessThanOrEqual(-2 * DEG);
+      expect(s.roll).toBeGreaterThanOrEqual(-7 * DEG);
+    }
+  }, 60000);
 });
 
 describe('G15: every scenario spawns on the wheels and survives 5 s, in both configurations', () => {

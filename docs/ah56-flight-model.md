@@ -134,12 +134,22 @@ Nr holds 239.85 rpm (AMCS) and 246.0 rpm (ICS).
 | G13 wheels | three-wheel reset; taxi turns ≤ 10 m unlocked; locked ±2° over 200 m; vertical take-off and landing; gear cycle 3–8 s; overspeed flag above 130 KCAS; run-on stop ≤ 300 m from 60 KCAS; parking brake at ground idle (P limits / ESTIMATE) | rests level (3.2° lean, pedals centred); turn radius 1.1 m unlocked (189 m locked); locked 0.30° after a brake tap at 15 kt (unlocked 28.6°); up to 6.1 m and down at 0.9 m/s; gear 6.3 s each way; run-on stop 164 m (brakes alone; the −12° reverse pitch is stage 4); parking brake drift 0.05 m | pass, except the overspeed flag: **KNOWN GAP** (flightModel's overspeed check does not run for a rotorcraft; contract request to TW) |
 | G14 configuration | Nr 246 / 239.85 rpm; persisted through reset and resume; trims 0/60/120 both (AGENT) | 246.0 / 239.9 rpm after 10 s; ICS kept through `SimPhysics.reset` and a JSON snapshot restored without the URL config | pass |
 | G15 spawns | every scenario survives 5 s in both configurations | runway, apron, final, cruise, downwind × AMCS / ICS | pass |
+| Hover readout (plan flights) | 20 s hands-off from the 15 m hover spawn: no crash, Nr 239.85 / 246 ± 2 rpm, the gyro mode, roll 2–7° left (G9), tilt inside the stops | calm: AMCS 239.9 rpm, roll −5.2° → **+7.6°** (22.8 kt drift); ICS 245.8 rpm, roll −5.1° → **−21.1°**. In the sim with the default 7 kt wind: AMCS roll −0.3°, ICS −19.7° (shots) | Nr, mode, stops pass; the roll **KNOWN GAP**: an RC hover discontinuity (below) |
+
+**Why the hands-off hover drifts.** The trim balances the rotor at exactly zero airspeed, where `Rotorcraft.compute` applies no
+main-rotor in-plane force (`if (horizontal > 0)` in rotorcraft.ts). The first step's 1e-7 m/s of body velocity switches on the hingeless
+rotor's hover in-plane force, about 330 N, along that arbitrary direction: 625 N m of roll and 236 N m of pitch that the trim never saw. The
+AMCS's rate command turns that into a steady 0.2 °/s roll and the hover diverges. With the in-plane force faded in over the first 0.3 m/s
+(an uncommitted experiment) the AMCS holds −5.2 → −5.5° and the ICS −5.1 → −4.4° over 20 s, and every handling row still passes (the
+hover pitch sensitivity reads 11.3 instead of 11.6 °/s²/in). Contract request to RC. The legacy rotors are not affected: without the
+harmonic pitch their hover in-plane force is zero.
 
 **The helicopter hold** (`scripts/probes/heliHold.test.ts`, AC=ah56, informational) flies the AH-56 on the generic scripted-pilot gains
 without a disconnect:
-- calm hover: position RMS 0.06 m (maximum 0.17 m);
-- windy hover (8 kt, gusts 3 kt): 2.4 m RMS (maximum 11 m), against the MD 500E's 2.2 m RMS (maximum 10.4 m) in the same probe;
-- the speed / heading / altitude sequence: altitude RMS 2.0 m.
+- calm hover: position RMS 0.03 m (maximum 0.10 m);
+- windy hover (8 kt, gusts 3 kt; three seeds, typical and maximum gross): 1.9–2.6 m RMS (maximum 8.7–11.7 m), against the MD 500E's
+  2.2 m RMS (maximum 10.4 m) in the same probe;
+- the speed / heading / altitude sequence: altitude RMS 1.95–2.09 m, speed overshoot 13.1–13.9 kt, Nr 97.0–98.0 %.
 
 The rate command needs no per-definition gain scaling at stage 2 (AGENT); `scriptedPilot.ts` is unchanged, and the R22 demos are untouched.
 
@@ -153,5 +163,6 @@ The rate command needs no per-definition gain scaling at stage 2 (AGENT); `scrip
 - **Integrator.**
   - The gyro's air data (control-gyro-model.md section 5).
   - The gear-overspeed rule for a rotorcraft.
+  - RC: the main rotor's in-plane force at zero airspeed (above), which makes the hands-off hover drift.
   - The other packages' copies of the AH-56A facts (AU's audio rated power, AX's pilot eye, PN's red line), which disagree with the
     stage-2 definition until they merge (the consistency check).
