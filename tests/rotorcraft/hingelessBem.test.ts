@@ -64,14 +64,22 @@ describe('R8: bemFromFlap in the free-hinge limit (e 0, Kbeta 0, precone 0) repr
     });
   }
   it('the rotor itself flies the TPP-relative pitch on a hingeless hub and the cancellation on a legacy hub', () => {
-    // bemFromFlap false falls back to the free-hinge formula: thrust then equals the legacy call exactly.
-    const off = settled(fixtureRotorcraft({ hub: { bemFromFlap: false, harmonicInflow: false } }), 0.2);
-    expect(Number.isFinite(off.s.thrust)).toBe(true);
-    const stiff = settled(fixtureRotorcraft({ hub: { harmonicInflow: false } }), 0.2), s = stiff.s;
-    const h = tppPitchHarmonic(1, 0, 0, -s.flapForward, s.flapRight, stiff.inPlane.x, stiff.inPlane.y);
-    report.R8stiff = { sinDeg: h.sin / DEG, cosDeg: h.cos / DEG };
-    // A stiff hub flaps less than a free hinge: its TPP-relative feathering is NOT the cancellation value.
-    expect(Math.abs(h.sin)).toBeGreaterThan(0);
+    // Held body, collective 0.45, harmonic inflow off; the two definitions differ in bemFromFlap only.
+    const rows: Record<string, number>[] = [];
+    for (const [mu, lo, hi] of [[0.2, 0.97, 0.995], [0.35, 0.85, 0.95]] as const) {
+      const off = settled(fixtureRotorcraft({ hub: { bemFromFlap: false, harmonicInflow: false } }), mu);
+      const on = settled(fixtureRotorcraft({ hub: { harmonicInflow: false } }), mu);
+      // bemFromFlap false falls back to the free-hinge formula: the settled thrust IS the legacy call on that state.
+      const m = off.rotor.def.main, collective = m.minPitch + 0.45 * (m.maxPitch - m.minPitch);
+      const legacy = bladeElements(m, off.s.omega, collective, off.axial, off.horizontal, off.s.inflow, 1.225, 12, 16, true);
+      expect(off.s.thrust).toBe(legacy.thrust);
+      // bemFromFlap on: the stiff hub's real lift moment costs thrust as mu rises (measured 0.982 at 0.2, 0.899 at 0.35).
+      const s = on.s, h = tppPitchHarmonic(1, 0, 0, -s.flapForward, s.flapRight, on.inPlane.x, on.inPlane.y);
+      rows.push({ mu, thrustOnN: s.thrust, thrustOffN: off.s.thrust, thrustRatio: s.thrust / off.s.thrust,
+        shaftTorqueOnNm: s.torque, shaftTorqueOffNm: off.s.torque, sinDeg: h.sin / DEG, cosDeg: h.cos / DEG });
+      expect(s.thrust / off.s.thrust).toBeGreaterThan(lo); expect(s.thrust / off.s.thrust).toBeLessThan(hi);
+    }
+    report.R8stiff = rows;
   });
 });
 

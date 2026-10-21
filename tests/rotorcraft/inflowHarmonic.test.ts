@@ -131,7 +131,12 @@ describe('R11: transverse-flow roll', () => {
     }
     const peak = rows.reduce((a, b) => (b.extraLeftDeg > a.extraLeftDeg ? b : a));
     report.R11 = { rows, peakKt: peak.kt, peakDeg: peak.extraLeftDeg };
-    expect(peak.extraLeftDeg).toBeGreaterThan(0.5); expect(peak.extraLeftDeg).toBeLessThan(3.0);
-    expect(peak.kt).toBeGreaterThanOrEqual(10); expect(peak.kt).toBeLessThanOrEqual(30);
+    // The plan's physical content, not the grid argmax (measured 1.66 deg at 30 KIAS, 1.54 at 40: the argmax sits on the
+    // band's upper edge, so a small airframe or tail-rotor change could move it to 35 KIAS for a non-rotor reason): an
+    // extra left excursion of 0.5-3.0 deg somewhere in 10-30 KIAS, never more than 3.0 deg, falling off by 40 KIAS.
+    const band = rows.filter((r) => r.kt >= 10 && r.kt <= 30), inBand = Math.max(...band.map((r) => r.extraLeftDeg));
+    const at40 = rows.find((r) => r.kt === 40)!.extraLeftDeg;
+    expect(inBand).toBeGreaterThan(0.5); expect(peak.extraLeftDeg).toBeLessThan(3.0);
+    expect(at40).toBeLessThan(inBand);
   }, 60_000);
 });
