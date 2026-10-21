@@ -11,6 +11,7 @@ import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { AH56_DEFINITION } from '../../src/aircraft/ah56';
 import { AH56_REFERENCE } from '../../src/aircraft/ah56/reference';
 import { hoverScenario } from '../../src/sim/rotorcraft/starts';
+import { pusherBetaLever } from '../../src/physics/rotorcraft/pusher';
 import { d, gauges, gyroDef, pilot, report, rig, run } from './ah56Rig';
 
 describe('G13: on the wheels', () => {
@@ -67,6 +68,55 @@ describe('G13: on the wheels', () => {
     report('G13 full left pedal, ground idle, no brakes', m);
     expect(m.crashed).toBe(false);
   });
+
+  /** Prop taxi at about `kt` (condition RUN, collective down, no brakes): accelerate on +8 deg of blade angle with the pedals
+   *  holding the heading, then +3 deg (holds about 20 kt) and 6 s more of heading hold so the pedal settles on its trim; then
+   *  `pulseIn` of left pedal for `pulseS` s and the trim pedal again, hands off, for 10 s. The worst yaw rate and roll after the
+   *  pulse, the heading change, and the crash text. */
+  const taxiPulse = (locked: boolean, kt: number, pulseIn: number, pulseS: number) => {
+    const r = rig({ onGround: true });
+    r.c.collective = 0; r.c.tailWheelLock = locked; r.c.parkingBrake = false;
+    const h0 = r.fm.state.heading, p0 = r.c.rudder, pedalPerIn = 1 / 3.2;
+    let yi = 0;
+    const hold = () => { const s = r.fm.state, e = Math.atan2(Math.sin(s.heading - h0), Math.cos(s.heading - h0)); yi -= e * 0.5 / 240;
+      r.c.rudder = Math.max(-1, Math.min(1, p0 - 3 * e - 1.0 * s.angularVelocity.z + yi)); };
+    r.c.propLever = pusherBetaLever(d.pusher!, 8 * DEG);
+    for (let t = 0; t < 40 && r.fm.state.groundSpeed < kt * KT; t += 0.25) run(r, 0.25, hold);
+    r.c.propLever = pusherBetaLever(d.pusher!, 3 * DEG);
+    run(r, 6, hold);
+    const trim = r.c.rudder, hs = r.fm.state.heading, speedKt = r.fm.state.groundSpeed / KT;
+    let t = 0, yaw = 0, roll = 0;
+    run(r, 10, () => { t += 1 / 240; r.c.rudder = t <= pulseS ? Math.max(-1, trim - pulseIn * pedalPerIn) : trim;
+      const s = r.fm.state; yaw = Math.max(yaw, Math.abs(s.angularVelocity.z)); roll = Math.max(roll, Math.abs(s.roll)); });
+    const s = r.fm.state;
+    return { speedKt, maxYawDegS: yaw / DEG, maxRollDeg: roll / DEG, headingChangeDeg: Math.abs(Math.atan2(Math.sin(s.heading - hs), Math.cos(s.heading - hs))) / DEG,
+      crashed: s.crashed, crash: (r.fm as unknown as { crashReason?: string }).crashReason ?? '' };
+  };
+
+  it('tail wheel LOCKED, prop taxi at 20 kt: a 1 in left pedal pulse for 1 s, then the trim pedal, hands off: under 10 deg/s, heading within 10 deg (P ASTA-72 para 79: locked above 20 kt)', () => {
+    const m = taxiPulse(true, 20, 1, 1);
+    report('G13 taxi 20 kt, tail wheel locked, 1 in pulse 1 s', m);
+    expect(m.crashed).toBe(false);
+    expect(m.maxYawDegS).toBeLessThan(10);
+    expect(m.headingChangeDeg).toBeLessThan(10);
+  }, 120_000);
+
+  it.fails('G13 KNOWN GAP: tail wheel UNLOCKED, prop taxi at 20 kt: a 1 in left pedal pulse for 1 s, then the trim pedal, hands off: stays upright, under 20 deg/s', () => {
+    // P ASTA-72 para 79 and the SoF: unlocked taxi is permitted to 20 kt and the ground taxi characteristics were "excellent"
+    // (directional control by tail-rotor thrust). The model ground-loops: the mains sit 30 in ahead of the CG (P CG FS 298, 3V
+    // axles FS 268), so a turn's side force at the mains turns the nose further, and at the straight-taxi trim the tail rotor
+    // carries only about 1 kN (the drive reaction at flat pitch, about 19 % torque, less the pusher's share), where its yaw
+    // damping is about 12 kN m s (17.5 in the hover) against m a V = 68 kN m s at 20 kt (D). Measured: unlocked straight
+    // taxi at 10 kt with no input diverges (0.4 -> 40 deg/s in 15 s); this pulse at 20 kt tips onto the right wingtip in
+    // about 4 s; a pilot answering
+    // within 0.3 s (0.6 s at full gain) with up to 2.7 in of opposite pedal catches it, at 1.0 s it is lost. The tyre
+    // cornering stiffness and relaxation (ESTIMATE) do not move the divergence; castor damping or swivel friction only trade it
+    // for stick-slip that stalls walking-pace turns (W/probes/tune-ah). KNOWN_ISSUES #10 and R1.
+    const m = taxiPulse(false, 20, 1, 1);
+    report('G13 taxi 20 kt, tail wheel unlocked, 1 in pulse 1 s', m);
+    expect(m.crashed).toBe(false);
+    expect(m.maxYawDegS).toBeLessThan(20);
+  }, 120_000);
 
   it('vertical take-off to a hover and a vertical landing on the wheels', () => {
     const r = rig({ onGround: true });

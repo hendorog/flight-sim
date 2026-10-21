@@ -73,6 +73,11 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
    idle** spins it to 108 °/s and trips it over the left main onto the wingtip in under 4 s (it.fails). Real Cheyenne ground-handling data
    not found; the tyre friction, gear and CG height are ESTIMATES. A per-configuration collective floor needs a definition seam (contract
    request). Evidence: ah56Ground.test.ts G13 rest and tip-over margin.
+   **Unlocked taxi ground-loops** (pilot-review round, 2026-10-22; "Pilot review round" below, item R1): with the tail wheel
+   unlocked the prop taxi is directionally divergent from about 5-10 kt hands off, and a 1 in pedal pulse at 20 kt tips the
+   aircraft onto the right wingtip in about 4 s; locked, the same pulse gives under 5 °/s. **Full pedal while rolling** at
+   5-10 kt with the tail wheel unlocked and no brakes spins the aircraft at 140-160 °/s and collapses the left main gear (140 kN
+   limit) within 10 s (not a G13 row, which is at ground idle).
 11. **Estimates** (docs/ah56-flight-model.md): the airframe inertias; ν_β 1.12 and the 10 % equivalent hinge; the blade set (88 % of the polar
     inertia); the T64 running line, losses, start and the gas-generator speed (18,000 rpm); the gear stations (3V), struts, tyres and brakes;
     the fuel capacity (2,500 lb); the V_NE placard (195 KCAS) and the power-off limit; the AMCS gyro momentum, springs, rotating damping
@@ -214,3 +219,82 @@ Numbers as AC measured them on the stage-4 aircraft; the stage-5 section moved s
   longer converges. The numbers equal AH's (total −1.6 %, profile +9.8 %).
 - **The hands-off hover readout** (ah56Ground, it.fails): AMCS −5.4 → −1.9° roll, +10.7° pitch, 14.3 kt; ICS −5.3 → −10.5° roll, −2.4°
   pitch, 6.6 kt after 20 s in calm air on the integrated stage-5 aircraft. On the stage-4 merge it held (AMCS −6.4°, ICS −3.4°).
+
+## Pilot review round (2026-10-22: measured and routed on integ; [ah56-integration.md](../../../docs/ah56-integration.md) section 10)
+
+Seven pilot-review items were measured with probes in `work/rigid/probes/tune-ah/` (outputs in `out/`). No flight-model number
+changed: for each item the knob the review proposed either does not move the defect or has no source behind the value it would
+need. Three test rows were added (ah56Ground: a passing locked-tail-wheel taxi row and an `it.fails` unlocked one; ah56Handling: an
+`it.fails` ICS static-stability row). Every target below carries its tag; AGENT = not an owner decision.
+
+- **R1. Unlocked taxi ground loop (must; AG).** P ASTA-72 para 79 and the SoF permit unlocked taxi to 20 kt and rate the ground taxi
+  "excellent". The model (prop taxi on +3° after accelerating on +8°, the pedal settled on its trim): unlocked straight taxi at 10 kt
+  with no input diverges, 0.4 → 6.8 → 39.8 °/s at 0.5 / 6 / 15 s; a 1 in left pulse for 1 s then the trim pedal leaves a steady
+  18-32 °/s turn at 8-10 kt, peaks of 54-62 °/s with the aircraft slowing at 12-15 kt, and at 20 kt 53 °/s with the right wingtip on the
+  ground at about 4 s (ah56Ground `it.fails` row). Locked: the same pulse gives at most 2.4 / 4.6 / 6.4 °/s and 1.5 / 3.5 / 4.6° of heading at
+  10 / 20 / 30 kt (passing row). A pilot answering within 0.3 s (or 0.6 s at full gain) with up to 2.0-2.7 in of opposite pedal
+  catches the 20 kt pulse; at 1.0 s it is lost. Mechanism (D): the mains sit 30 in ahead of the CG (P CG FS 298, 3V axles FS 268), so a turn's
+  centripetal force at the mains turns the nose further (m a V = 68 kN m s at 20 kt), while at the straight-taxi trim the tail
+  rotor carries only about 1 kN (drive reaction 18.1 kN m at 18.7 % torque, less the pusher's 5.2 and the tail wheel's 2.1), where
+  its yaw damping is about 12-16 kN m s (momentum theory and the measured 0.47 kN at 20 °/s; 17.5 in the hover, R5).
+  Sweeps (none applied): main-tyre cornering stiffness 4 / 12 per rad and relaxation 1.0 m do not move it (20 kt still tips at
+  4 s); a castor damper of 300-3000 N m s/rad or swivel friction of 60-300 N m slows or holds small disturbances but gives
+  stick-slip: the straight-taxi pedal trim wanders 0.05-1.8 in and walking-pace turns stall (3000 N m s/rad: 1 in at 5 kt turns at
+  0.2-1.2 °/s) or reverse. The geometry is P/3V and the tail rotor P, so no ESTIMATE knob is left; owner / AG choice. **Handover
+  to PN:** a HUD / instructor cue "tail wheel: LOCK for straight taxi, take-off and landing; unlock only to turn" (P para 79
+  practice; the SoF's 20 kt unlocked limit is above the model's onset).
+- **R2. Reverse-thrust deceleration (must; AC).** C11 196 → 165 KTAS passes (5.9 s, P 5.4 s ± 20 %). Flown the P way (para 15:
+  collective held at the trim value, cyclic holding height, β to −12° in 4 s, gear at 120 KCAS), 19,200 lb, 1,500 ft: 165 / 120 /
+  80 / 50 / 20 KTAS at 5.9 / 15.7 / 27.3 / 35.1 / 50.4 s (AMCS) and 5.0 / 17.4 / 27.2 / 33.6 / 40.5 s (ICS), against P's uniform
+  0.31 g (196 → 0 in 33 s; 50 KTAS at about 24 s). The deficit is the 165-80 KTAS band: 0.20 g against 0.31 g, where the −12° prop
+  gives 8.2-11.2 kN (80-120 KTAS) and the rotor carries the weight at a near-level attitude (+0.2 to +6° of pitch), so holding height
+  with the cyclic never flares it. The pusher map at −12° (1,674 rpm, 1,500 ft): −6.7 kN / 1,212 shp static, −7.4 / 1,262 at 40 KTAS,
+  −9.0 / 1,078 at 100, −20.8 / 2,576 at 196. Section sweeps (none applied): clMin −1.2 adds 1.5-3.4 kN at 20-120 KTAS and reaches
+  50 KTAS 3.5 s sooner, but −0.8 is already generous for a thin cambered section in reversed flow and −1.2 changes the β +8° windmilling
+  drag at 160-196 KTAS (−14.8 → −16.6 kN, −16.6 → −22.5 kN; C13 / C20); cdMax 2.0 adds under 0.5 kN below 100 KTAS (Viterna gives about
+  1.2 for this blade's aspect ratio, so 1.6 is already above it); a lower helix twist (P/D 0.8-1.0) cuts the static −12° power 15-23 %
+  without more thrust. Flown at 50 ft the scripted pilot cannot hold height; the 165-50 KTAS deficit is the same. The reviewer's
+  "stuck at 23-35 kt" was the probe's flare law (it commanded −2.5 to −1.9° of pitch there) with the reverse prop absorbing
+  1,270 shp (37 % torque) against the rotor's near-hover power. Owner-visible cause: the C6 lift share (rotor 71 % at 120 KCAS
+  against the ESTIMATE 40-60 %); a wing-heavier aircraft has to flare to move lift back to the rotor.
+- **R3. ICS longitudinal trim and static stability (must; AC, AG).** At ASTA-72 para 44's conditions (P: ICS, aft CG FS 299.8, stores,
+  4,000 ft; 18,300 lb) with the collective and the blade angle held at the trim settings: the trim stick is 2.89 / 4.80 in forward at
+  120 / 150 KCAS and the gradient about trim 0.10 in/kt at both (P para 45: 0.015 / 0.012 in/kt), and no level trim exists at 190 KCAS
+  (the 5.5 in stop; P used a 190 KCAS trim point, and para 37-38 trimmed to 186 KCAS with "only small" changes above 170). ah56Handling
+  `it.fails` row. (The review's 0.07 in/kt was the schedule gradient, stick across trims with the collective and prop rescheduled,
+  not the P measurement; AH's 1.0 / 1.2 / 5.0 in at 122 / 154 / 190 KCAS were fixed-collective 7 / 5 / 5° trims, a third kind.)
+  Decomposition of the steady gyro balance (SL 18,300 lb, ICS schedule, 100 / 120 / 140 / 160 KCAS; the stick that alone cancels each
+  term): sweep × hub moment +0.11 / −0.73 / −1.70 / −2.97 in; blade Cm −0.55 / −0.67 / −0.85 / −1.06 (its own gradient 0.0085 in/kt is
+  P-sized); droop × in-plane −0.90 / −0.70 / −0.50 / −0.33; spring +0.24 … −0.01; the desensitizer piston a fixed −0.76 once saturated.
+  The hub moment the rotor must make, +0.2 / −4.5 / −10.1 / −17.6 kN m, is the airframe's: at 160 KCAS the wing's downwash on the
+  stabiliser gives +30.5 kN m nose up (TAIL_DOWNWASH, ESTIMATE 0.139 per unit wing Cl; DATCOM gives about 0.118), the stabiliser's own
+  load +6.1, the wing −16.8, the pusher −0.8. G4 (D from P) reads it at 5.39 kN m per inch. Without the downwash on the tail the para
+  44 trims are 0.31 / 0.37 in forward and the gradients 0.037 / 0.076 in/kt. Also missing: the wing section's pitching moment
+  (`WingPanelDef` has none); thin-airfoil theory ties the −2° zero-lift ESTIMATE to Cm ≈ −0.05 (D), about −8.7 kN m at 160 KCAS SL.
+  A refit of the wing / tail balance against this P row moves C6, C8, C9, C23, H4 / H5 and the AMCS schedule: AC (TAIL_DOWNWASH, a wing
+  Cm in wings.ts and compound.ts) and AG (stabiliser lift slope and wash in base.ts, then the ICS fit), not applied here.
+- **R4. Hands-off hover wander (should; RC / owner).** Unchanged (the reviewer's hover.log numbers stand): the zero-airspeed in-plane
+  force of item 2; the fade patch stays unapplied (integration section 3 item 7).
+- **R5. Hover pedal power and the yaw after release (should; AG / RC).** AMCS, 30 ft: 1 in of right pedal gives 16.5 / 36.5 °/s at
+  0.5 / 1.5 s (tail rotor 8.02 → 4.78 kN); after release 27 / 21.5 / 16.4 / 16.9 / 28.3 °/s at +0.5 / 1 / 2 / 4 / 6 s with the
+  aircraft sliding right 0.1 / 0.9 / 3.1 / 9.0 / 17.2 kt. The damping is as momentum theory gives it: the tail rotor adds 0.21 kN per
+  m/s of tail side velocity (D: 0.185 at 8 kN, −(σa/8) / (1 + σa/16λ)), so N_r ≈ 17.5 kN m s from the tail rotor plus 7 from the drive
+  reaction, τ ≈ 2 s and about 53 °/s per inch steady. The persistence is the control system: a body-axis yaw with the 5° left-roll
+  trim turns into pitch at r sin φ (+0.8 → +7.5° nose up), the rotor's thrust tilt keeps its direction in space while the tail rotor's
+  thrust turns with the body, so the aircraft slides, and the tail rotor weathercocks into the slide (7.65 kN at +4 s, below the
+  8.02 kN trim, with the yaw to the right). A pilot holds position with the cyclic in a pedal turn. Full pedal's 163 °/s at 3 s with
+  0.3-1.3 kN of tail-rotor thrust is the tail rotor at its −7.4° stop moving 15-26 m/s against its thrust
+  (the windmill-brake state; momentum theory gives about 2 kN at 26 m/s, D): RC's tail-rotor inflow model. Not changed.
+- **R6. ICS autorotation below 2° of collective (should; AG, AC).** 95 KCAS, 19,700 lb, 2,700 ft, β +8°, engine off, collective 0.5°,
+  the rig pilot: the aft stick 0.43 / 2.11 / 3.25 in at 2 / 4 / 6 s is the sweep × hub term (hub +8.3 / +16.0 / +22.0 kN m nose up,
+  the airframe's moment in the descent); at 8 s the gyro is on its 15° aft stop, the blade pitching moments jump to about 2,200 N m
+  (moment stall) and Nr falls 96.7 → 80.7 → 72.2 % at 8 / 10 / 12 s. At 2° the same pilot holds 2.1-2.2 in aft with the hub at
+  +17-21 kN m and Nr 96-97 %. Same root as R3. **Handover to PN:** the ICS training text should give 1.5-2° for the autorotation
+  (the 2° trim holds Nr 95-97 %).
+- **R7. Nr decay after an engine failure at 63 KCAS (should; AC / AH).** AMCS, 19,700 lb, 2,700 ft: the trim takes 46.1 % torque
+  (main rotor 1,077 shp, tail rotor 70, prop 369 shp at its 13.3° schedule angle). Trimmed with the prop at +8° or +10° the total is
+  47.3 / 46.5 % (the rotor takes over the prop's share) and the Nr minimum with a 2 s delay is 77.0 / 77.4 % against 77.6 % on the
+  schedule: the decay is set by the total power at 63 KCAS and the P drivetrain inertia, not by the prop's share (P ASTA-72 para 68:
+  about 82 %). The schedule at 60 KTAS is the AGENT "2-3° nose up" fit. Autorotation collective: 4.5° indicated overspeeds Nr to
+  117-119 % within 12 s of a 63 KCAS entry, 7° holds 107 %; the 95 KCAS autorotation trims 100 % at 7.8° indicated (SoF 4.5-7°) — the
+  C12 item (post-stall drag, +10-23 % against Report 530).

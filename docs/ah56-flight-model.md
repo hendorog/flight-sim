@@ -119,6 +119,12 @@ is engineRatio 55.28 (D), and the torque gauge reads % of 3435 shp at 100 % Nf (
   **Brakes off, full left pedal** spins it to 108 °/s and trips it over the left main onto the wingtip in under 4 s (0.40 g of side force
   tips it: 31 in half-track over the CG's 77 in). A ground spin is plausible; the trip-over rests on ESTIMATE tyre friction and CG height
   (KNOWN_ISSUES #10).
+- **Prop taxi with the tail wheel unlocked** (pilot-review round, KNOWN_ISSUES R1) is directionally divergent from about 5-10 kt hands
+  off: the mains 30 in ahead of the CG put a turn's centripetal force ahead of it (m a V = 68 kN m s at 20 kt), and at the taxi trim
+  the tail rotor carries about 1 kN, where its yaw damping is about 12-16 kN m s (D, momentum theory; 17.5 in the hover). A
+  1 in pedal pulse for 1 s at 20 kt tips it onto the right wingtip in about 4 s; locked, the same pulse gives 4.6 °/s. The tyre and
+  castor ESTIMATES do not change the onset (sweeps in KNOWN_ISSUES R1), so taxi straight with the tail wheel locked and unlock it to
+  turn, as ASTA-72 para 79 describes.
 
 ## 6. Results (stage 2, measured)
 

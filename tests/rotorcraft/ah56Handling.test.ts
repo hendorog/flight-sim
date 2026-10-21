@@ -6,12 +6,15 @@
 // when the window closes (peaked false) is not a maximum and fails. Each row logs the measured number next
 // to its target ([ah56] lines) and AH56_TRACE=<dir> writes the report. AMCS is the default configuration (AGENT).
 import { afterAll, describe, expect, it } from 'vitest';
-import { DEG, KT } from '../../src/core/math';
+import { DEG, FT, KT } from '../../src/core/math';
 import { stepCentre, stepKeyAxis } from '../../src/input/virtualYoke';
 import { AH56_INPUT } from '../../src/aircraft/ah56/input';
 import { AH56_REST_CONTACTS } from '../../src/aircraft/ah56/gear';
 import { hingelessBlade, hingelessSpring } from '../../src/physics/rotorcraft/hingeless';
-import { d, gyroDef, margins, report, rig, rotorOf, run, stepResponse, stick, writeTrace, type StepResponse } from './ah56Rig';
+import { d, def, environment, gyroDef, margins, report, rig, rotorOf, run, stepResponse, stick, writeTrace, type StepResponse } from './ah56Rig';
+import { createFlightModelFor } from '../../src/physics';
+import type { BladeElementFlightModel } from '../../src/physics/flightModel';
+import { ah56Loading } from '../../src/aircraft/ah56/mass';
 
 const trace: Record<string, unknown> = {};
 afterAll(() => writeTrace('ah56Handling', trace));
@@ -286,4 +289,49 @@ describe('G9: hover attitude, 18,300 lb, in ground effect', () => {
       expect(out[`${cfg}Pitch`]).toBeGreaterThanOrEqual(-1); expect(out[`${cfg}Pitch`]).toBeLessThanOrEqual(4);
     }
   });
+});
+
+describe('ICS collective-fixed static longitudinal stability (P ASTA-72 paras 37-38, 44-45)', () => {
+  // ASTA-72 para 44 (P): aft CG, stores, about 4,000 ft DA; trimmed level, then the collective and the prop blade angle held at
+  // the trim settings and the airspeed changed in 5 kt steps with the longitudinal cyclic (the flight path free). Para 45: the
+  // stick-position gradient about trim was 0.015 in/kt at 120 KCAS and 0.012 in/kt at 150 KCAS, neutral to negative above the
+  // 190 KCAS trim point. Para 37-38: trims were obtained from 100 to 186 KCAS (5,000-10,000 ft, collective 3/5/7 deg), "only
+  // small longitudinal control position trim changes" above 170 KCAS. The model: the test loading at the aft limit (FS 299.8),
+  // 18,300 lb, 4,000 ft ISA.
+  const loading = () => ah56Loading(18_300, 261, 1);
+  const trimAt = (defn: typeof def, kcas: number, pathRad: number) => {
+    const fm = createFlightModelFor(defn) as BladeElementFlightModel, env = environment(4000);
+    fm.setLoading(loading());
+    fm.reset({ position: { x: 0, y: 0, z: -7000 * FT }, heading: 0, airspeed: kcas * KT / Math.sqrt(env.atmosphere().density / 1.225),
+      flightPathAngle: pathRad, onGround: false, engineRunning: true, fuelFraction: 1, rotorcraftConfig: 'ics', gearDown: false }, env);
+    return fm;
+  };
+  const lonIn = (fm: BladeElementFlightModel) => fm.trimControls.elevator * gyroDef.configs.ics.stickTravel.longitudinal / 0.0254;
+  const fixedBeta = (beta: number): typeof def => ({ ...def, rotorcraft: { ...def.rotorcraft!, pusher: { ...def.rotorcraft!.pusher!,
+    trimSchedule: { x: [0, 1], y: [beta, beta] }, trimScheduleByConfig: undefined } } });
+
+  it.fails('KNOWN GAP: at 150 KCAS the gradient about trim is stable and at most 0.024 in/kt (P 0.012, x2 AGENT tolerance), and a level trim at 190 KCAS sits inside the 5.5 in forward stop', () => {
+    const ref = trimAt(def, 150, 0), coll = ref.trimControls.collective ?? 0, beta = ref.state.rotorcraft!.pusher!.beta, fixed = fixedBeta(beta);
+    // Secant on the path angle until the trimmed collective equals the 150 KCAS value (about 1 deg of path per 5 kt).
+    const atSpeed = (kcas: number) => {
+      let g0 = 0, f0 = (trimAt(fixed, kcas, g0).trimControls.collective ?? 0) - coll, g1 = -(kcas - 150) / 5 * DEG;
+      let fm = trimAt(fixed, kcas, g1), f1 = (fm.trimControls.collective ?? 0) - coll;
+      for (let k = 0; k < 8 && Math.abs(f1) > 1e-5; k++) {
+        const g2 = g1 - f1 * (g1 - g0) / (f1 - f0 || 1e-9); g0 = g1; f0 = f1; g1 = g2;
+        fm = trimAt(fixed, kcas, g1); f1 = (fm.trimControls.collective ?? 0) - coll;
+      }
+      return { lonIn: lonIn(fm), pathDeg: g1 / DEG, converged: fm.lastTrim?.converged === true && Math.abs(f1) < 1e-4 };
+    };
+    const lo = atSpeed(145), hi = atSpeed(155), at190 = trimAt(def, 190, 0);
+    const gradient = (hi.lonIn - lo.lonIn) / 10;
+    report('ICS static stability (P ASTA-72 para 44-45)', { trimLonIn: lonIn(ref), lonIn145: lo.lonIn, lonIn155: hi.lonIn, path145Deg: lo.pathDeg,
+      path155Deg: hi.pathDeg, gradientInPerKt: gradient, P: '0.012 in/kt forward per kt at 150 KCAS', lonIn190: lonIn(at190),
+      converged190: at190.lastTrim?.converged === true });
+    trace.icsStaticStability = { trimLonIn: lonIn(ref), lo, hi, gradient, lonIn190: lonIn(at190), converged190: at190.lastTrim?.converged };
+    expect(lo.converged && hi.converged).toBe(true);
+    expect(gradient).toBeLessThan(0);
+    expect(Math.abs(gradient)).toBeLessThanOrEqual(0.024);
+    expect(at190.lastTrim?.converged).toBe(true);
+    expect(lonIn(at190)).toBeGreaterThan(-5.5);
+  }, 900_000);
 });

@@ -17,7 +17,7 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Schweizer 269C-1 / 300CB | [12 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
 | MD Helicopters MD 500E (in development) | [14 entries](../src/aircraft/md500/KNOWN_ISSUES.md) |
 | MBB Bo 105 CB-4 (in development, `available: false`) | [45 entries](../src/aircraft/bo105/KNOWN_ISSUES.md) (22 from the flight model, 23 handed over) |
-| Lockheed AH-56A Cheyenne (in development, `available: false`) | [53 entries](../src/aircraft/ah56/KNOWN_ISSUES.md) (15 from the stage-2 flight model, 33 handed over from TW, AU, PN, AX, AC and AH, 5 integration dispositions; see [ah56-integration.md](ah56-integration.md)) |
+| Lockheed AH-56A Cheyenne (in development, `available: false`) | [60 entries](../src/aircraft/ah56/KNOWN_ISSUES.md) (15 from the stage-2 flight model, 33 handed over from TW, AU, PN, AX, AC and AH, 5 integration dispositions, 7 from the pilot-review round; see [ah56-integration.md](ah56-integration.md)) |
 
 Kinds: **defect** = demonstrated wrong behavior; **unvalidated** = evidence or acceptance still missing;
 **estimate** = a parameter without a measured/published value; **missing feature** = behavior not implemented.

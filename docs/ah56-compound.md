@@ -461,3 +461,18 @@ Commands of plan §10 for AC, on 4eeb206 plus the doc and test-comment edits (W/
 - heliHold (AC=ah56): no disconnects; calm hover 0.03 m RMS (`W/traces/ah56-hold-ac2.jsonl`).
 - Shots (one at a time, looked at): `W/shots/AC2/ah56-hover.png`, `W/shots/AC2/ah56-ics-hover.png` (the visual is the stub, AX's
   exterior is not on this branch).
+
+## 10. Pilot-review round on the integrated aircraft (2026-10-22, integrator; KNOWN_ISSUES R2, R3)
+
+Measured, not changed (AGENT routing to the compound's owner; numbers in KNOWN_ISSUES R2 / R3 and `work/rigid/flight-numbers.md`):
+- **Pitch balance at speed (R3).** At 160 KCAS SL on the ICS schedule the wing's downwash on the stabiliser (`TAIL_DOWNWASH`,
+  0.139 per unit wing Cl, ESTIMATE; DATCOM gives about 0.118 for this tail position) is +30.5 kN m nose up, the stabiliser's own load
+  +6.1, the wing −16.8, the pusher −0.8: the rotor carries −17.6 kN m of hub moment, which the ICS feels through the sweep (G4: 5.39
+  kN m per inch) as about 3 in of forward stick. At ASTA-72 para 44's conditions the ICS gradient about trim is 0.10 in/kt against
+  P 0.015 / 0.012 in/kt and there is no 190 KCAS trim; without the downwash on the tail the trims move 2.6-4.4 in aft and the gradient
+  falls to 0.037 / 0.076 in/kt at 120 / 150 KCAS. `WingPanelDef` carries no section pitching moment: thin-airfoil theory ties the −2°
+  zero-lift ESTIMATE to Cm ≈ −0.05 (D), about −8.7 kN m at 160 KCAS SL. A refit against para 44 moves C6, C8, C9, C23, H4 / H5 and
+  the AMCS schedule.
+- **Reverse deceleration (R2).** 165-80 KTAS at 0.20 g against P 0.31 g; the reverse map is within thin-section data (clMin −0.8,
+  cdMax 1.6 above Viterna's 1.2), and the rotor holds the weight at a near-level attitude (the C6 lift share), so holding height with
+  the cyclic never flares the aircraft.

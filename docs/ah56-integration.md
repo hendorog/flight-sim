@@ -251,3 +251,25 @@ Every choice here is an AGENT choice.
   to the panel tile, so the ICS sheet shows the AMCS placard (the ICS panel was shot separately).
 - **Build:** `npm run build` succeeds; `check-build` ah56 (AMCS and ICS) on the runway, `errors: []`.
 - **Not run:** the Codex review and the Fable look and pilot gates.
+
+## 10. Pilot-review round (2026-10-22): measured, decomposed and routed
+
+Seven items from the AH-56 pilot review (three "must", four "should") were measured on this branch with probes in
+`work/rigid/probes/tune-ah/` (outputs in `out/`); the numbers and the routing are KNOWN_ISSUES R1-R7 and
+`work/rigid/flight-numbers.md` ("AH-56A Cheyenne: pilot-review round"). **No flight-model number changed**: for each item the
+knob the review proposed either does not move the defect or would need a value no source supports. Every choice here is an
+AGENT choice.
+
+| Item | What decides it (measured) | Why not changed | Route |
+|---|---|---|---|
+| R1 unlocked taxi ground loop | mains 30 in ahead of the CG (P/3V); the tail rotor at about 1 kN at the taxi trim, yaw damping about 12-16 kN m s against m a V = 68 kN m s at 20 kt | tyre stiffness and relaxation do not move it; castor damping or friction give stick-slip and stall walking-pace turns | owner / AG; HUD cue to PN |
+| R2 reverse deceleration | 165-80 KTAS at 0.20 g (P 0.31 g): the −12° prop gives 8-11 kN, the rotor holds the weight at a near-level attitude | the prop section values that would add thrust are outside thin-section data and move C13 / C20 | AC (C6 lift share) |
+| R3 ICS trim and static stability | para 44 gradient 0.10 in/kt (P 0.015 / 0.012); the hub moment the airframe needs, mostly the wing's downwash on the stabiliser, read through G4 | a wing / tail refit against para 44 moves C6, C8, C9, C23, H4 / H5 and the AMCS schedule | AC (TAIL_DOWNWASH, wing Cm), AG (stabiliser, ICS fit) |
+| R4 hover wander | the zero-airspeed in-plane force (item 2) | RC / owner choice (section 3 item 7) | RC / owner |
+| R5 hover pedal | tail-rotor damping as momentum theory gives it; persistence from the space-held disc tilt and the weathercock | physical for this control system | AG / RC (tail rotor in its own descent at full pedal) |
+| R6 ICS autorotation | the sweep × hub term (+22 kN m nose up at 6 s), then moment stall at the 15° gyro stop | same root as R3 | AG, AC; training text to PN |
+| R7 63 KCAS failure | total power 46 % torque; the prop's share does not change the Nr minimum (77.0-77.6 % against P 82 %) | the 60 KTAS prop schedule is the AGENT nose-up fit; no P power-required row | AC / AH (C12) |
+
+Test rows added (no row loosened): ah56Ground "tail wheel LOCKED, prop taxi at 20 kt … under 10 deg/s" (passes: 4.6 °/s,
+3.8° of heading) and its `it.fails` unlocked twin (53.4 °/s, right wingtip); ah56Handling "ICS collective-fixed static
+longitudinal stability" `it.fails` (0.101 in/kt at 150 KCAS; no 190 KCAS trim). Guards for the round: `W/guards/integ/13-pilot/`.
