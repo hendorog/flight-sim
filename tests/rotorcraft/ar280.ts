@@ -84,10 +84,10 @@ export function envelope(name: DerivativeName): [number, number] {
 
 /**
  * The 8-state linear model x = [u w q theta v p r phi] of a derivative set (oh6a.ts's form): the trim's U0/W0 and the
- * gravity terms added to the aerodynamic derivatives. Row-major 8x8.
+ * gravity terms added to the aerodynamic derivatives. Row-major 8x8. W0 defaults to level flight, U0 tan(theta0).
  */
-export function linearModel(k: Pick<Ar280Set, 'u0' | 'theta0' | 'X' | 'Y' | 'Z' | 'L' | 'M' | 'N'>): number[][] {
-  const g = 9.80665, ct = Math.cos(k.theta0), st = Math.sin(k.theta0), tt = Math.tan(k.theta0), w0 = k.u0 * tt;
+export function linearModel(k: Pick<Ar280Set, 'u0' | 'theta0' | 'X' | 'Y' | 'Z' | 'L' | 'M' | 'N'> & { w0?: number }): number[][] {
+  const g = 9.80665, ct = Math.cos(k.theta0), st = Math.sin(k.theta0), tt = Math.tan(k.theta0), w0 = k.w0 ?? k.u0 * tt;
   const at = (R: number[]) => ({ u: R[0], w: R[1], q: R[2], v: R[3], p: R[4], r: R[5] });
   const X = at(k.X), Y = at(k.Y), Z = at(k.Z), L = at(k.L), M = at(k.M), N = at(k.N);
   return [
