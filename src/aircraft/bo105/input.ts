@@ -33,13 +33,23 @@ export const BO105_INPUT: InputProfile = {
   // the yaw rate, so a keyboard pilot can hover. Gains from the hands-off probe (W/bofly/probes sas2.log: 0.7 deg calm,
   // 2.3 deg in 8 kt wind with 5 kt gusts, 0.8 / 2.4 % of travel used); stickAttitude from the keyboard tap probe
   // (W/bofly/probes-fix assist.log). ON by default (the owner's flip: `default: false`); Shift+A toggles it.
-  stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13, fadeKias: [30, 50] },
+  // Round 2 (W/bofly/r2, the pilot gate's follow-ups): the pedal term holds the heading once the pedal keys rest (kpsi
+  // 1.0 per rad, kpsiI 0.3 per rad s, inside the same 6.5 % of pedal travel: yaw.log); the cyclic datum tracks the trim
+  // while the pilot flies a deceleration (one e-fold per 2 kt of slowing: decel.log); the pedal term works on the ground
+  // once the skids carry less than half the weight (liftoff.log).
+  stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
+    kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundYawLoad: 0.5, fadeKias: [30, 50] },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
   // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine
   // F5 / F6 (the MD 500E's 0.12 per second) take 2.9-3.7 s to reach full down; bare F5 / F6 stay the fine hover keys.
   // ESTIMATES (down: the hand rate of W/bofly/probes-controls auto.log; up: arithmetic).
-  collectiveFastRate: { down: 1.0, up: 0.5 },
+  // Entry stop (round 2, W/bofly/r2 autoSteady / auto): Shift+F5 stops at 0.08 of the travel, the autorotation entry
+  // position, and never takes the collective below it (bare F5 does, at the fine rate). Run to the floor and held, it
+  // overspun the rotor to 118 % (100 KIAS) / 126 % (120 KIAS) with the pilot slowing to 70 KIAS, past the power-off
+  // limit (85-110 %, P5 FM 2-8). Steady 75 KIAS autorotation at 0.08: about 97 % NR at 2200 kg and 102 % at 2500 kg
+  // (full down: 110 / 117 %). The FM's "collective fully down" is the pilot's, with bare F5, watching NR.
+  collectiveFastRate: { down: 1.0, up: 0.5, downStop: 0.08 },
   // The keyboard re-centring (5 / Numpad 5) at 1 travel per second instead of 4 (flyability pass F3): the keyboard centre
   // is the spring-trim anchor (the hover stick at a reset), so an untrimmed pilot at 120 KIAS pressing 5 would get 0.44 of
   // the travel aft in 0.22 s, about 230 deg/s^2 of pitch acceleration on this hub; at 1 per second it takes 0.9 s.
@@ -57,8 +67,8 @@ export const BO105_INPUT: InputProfile = {
     trimNoseUp: 'Cyclic trim aft (hold)', trimNoseDown: 'Cyclic trim forward (hold)',
     rudderTrimLeft: 'Cyclic trim left (hold)', rudderTrimRight: 'Cyclic trim right (hold)',
     fuelPump: 'Fuel pumps', starter: 'STARTER/GENERATOR to START (hold)',
-    collectiveFastDown: 'Lower the collective at hand speed (hold): engine failure, autorotation entry',
+    collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
-    stabilityAssist: 'STAB ASSIST on / off: holds the attitude below 30 KIAS (a sim aid: the CB-4 has no SAS)',
+    stabilityAssist: 'STAB ASSIST on / off: holds the attitude below 30 KIAS and the heading when the pedals rest (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

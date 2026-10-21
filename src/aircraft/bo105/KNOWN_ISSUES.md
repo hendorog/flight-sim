@@ -267,7 +267,11 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    (2200 kg) peaks at 165 deg/s right and 129 deg/s left (90 deg/s reached in 0.93 / 1.46 s) against the FM's 90 deg/s
    turn-rate limit; the test asserts only >= 90 deg/s within 3 s. Per keyboard tap the Bo 105 is already the gentlest
    of the five helicopters (a 0.5 s tap: 7.0 deg/s at 3 s against 13.8-35.4 on the others), so the pedal keys are not
-   slowed.
+   slowed. **Round 2 (2026-10-22, the round-1 pilot gate):** with the non-centring pedal keys the rate damping alone left
+   a steady turn after every pedal tap and a swing on every collective tap (a 0.3 s F6 tap: 84 deg in 8 s). The STAB
+   ASSIST now holds the heading once the pedal keys rest (docs section 9; 0.3 s collective taps +/-1.3 deg, a 0.5 s
+   pedal tap settles 2.3 deg round), inside the same 6.5 % of pedal travel, so the physics' Nr miss above is unchanged
+   and a 0.6 s collective tap (0.26 of the pedal axis) still swings the nose.
 21. **The mass envelope's 1140 kg minimum is unreachable**: the TCDS minimum (P, facts.ts) sits 136 kg below this
    airframe's empty mass (1276 kg, S Jane's CB), so the CG envelope's 1140 kg point is data only; the lightest rig case is
    1400 kg. A CB-4 weighing record would settle it.
@@ -290,6 +294,17 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    bare F5 at 2 s" was set against an estimated 63 % for bare F5; measured, bare F5 gives 67.2 %. The physics and the
    inertia are unchanged; the double-engine-failure checklist note and the hints carry the technique (Shift+F5 at once,
    75 KIAS, flare at 6-10 ft and Shift+F6 to cushion). No automatic collective (the FM's checklist is the pilot's).
+   **Round 2 (2026-10-22, the round-1 pilot gate): the entry stop.** Held to the floor, Shift+F5 overspun the rotor past
+   the power-off limit (110 %, P5 FM 2-8): 118 % at 100 KIAS, 126 % at 120 KIAS. The sim's steady 75 KIAS autorotation
+   with the collective full down runs at 110 % NR at 2200 kg and 117 % at 2500 kg (W/bofly/r2 `autoSteady`): the FM's
+   "collective fully down, keep NR within limits" asks for some collective at the heavy end. Shift+F5 now stops at 0.08
+   of the travel (about 97 / 102 % NR steady); bare F5 goes on down. Held after the failure at 100 KIAS the NR peak is
+   108.6 % (15 deg flare to 70 KIAS); from 120 KIAS a 10-15 deg flare still reaches 112-117 % (2500 kg: up to 126 %), the
+   flare's energy, which the pilot meets with the collective. **Cost, recorded:** the round-1 NR minimum at 120 KIAS with
+   the entry attitude held falls from 78.1 to 72.6 % (bare F5 58.9 %; 100 KIAS 75.1 -> 74.2 %): with the nose held the
+   speed runs to 130 KIAS, where 0.08 holds the rotor back. A dip to the floor and back up to the stop keeps 78.1 % but
+   overspeeds again in the flare (114-125 %); no fixed stop does both, and an NR-following collective would be an
+   autopilot. The powerFailure checklist's collective item ticks at 0.1 or below with NR in the limits.
 
 ## Integration (feat/rigid-rotor, Bo 105 stage 1)
 
@@ -344,6 +359,27 @@ only, each labelled:
 - Not done, recorded: the L31 inflow gradient x 0.5 (Mu inside the ERF band, doubling 3.6 s) is a shared-core note for
   RC; the AEO climb band is the architect's (item 2); nudge-to-reposition under the hover hold is a shared Simulator /
   autopilot change for every helicopter (owner decision).
+
+#### Round 2 (the round-1 pilot gate's follow-ups; probes W/bofly/r2, logs `out/`)
+
+- **Heading hold** in the STAB ASSIST (item 20; docs section 9): the heading is captured when the pedal keys rest and held
+  through collective taps and gusts, inside the round-1 yaw authority (6.5 % of pedal travel); full below 20 KIAS, gone
+  at 30. Limit: a 0.6 s collective tap needs twice that authority. The 1 s roll-tap row changed meaning: round 1's
+  "bank held" came from the nose weathercocking 84 deg into the sideward drift; with the heading held the drift's airflow
+  rolls the bank back (9.4 deg at 3 s, 2.5 at 8 s; the row now asserts the 3 s bank, no reversal, and the yaw under 50
+  deg). The hover hint was reworded.
+- **Datum on a decelerating approach** (docs section 9): the cyclic datum relaxes toward the flown attitude while the
+  airspeed falls and the pilot is flying the stick (one e-fold per 2 kt); hands off or speeding up it does not. In the
+  hover after a 45 KIAS deceleration the series term is 2.5 % of travel and the stick at the hover trim within 0.05
+  (round 1: 10 %, 0.2 forward).
+- **Pedal term on unloading skids** (`groundYawLoad` 0.5): simple and safe (it only damps / holds the yaw, no integral on
+  the ground), but small: the hover wants 21 % of pedal travel left of the runway start's centred pedal, three times the
+  authority (lift-off yaw 9.0 deg/s against 10.6). The hint says pedal with the collective.
+- **Shift+F5 entry stop** 0.08 (item 22), with the NR-minimum cost at 120 KIAS recorded there.
+- **Shared files touched:** `src/core/types.ts` (`ControlInputs.pedalWorked`, optional, set only for a profile with a STAB
+  ASSIST; the flight model ignores it), `src/input/profile.ts` (optional `kpsi`, `kpsiI`, `datumRelaxKt`,
+  `groundYawLoad`, `collectiveFastRate.downStop`), `src/input/InputSystem.ts` (the stop; the flag). Every other type
+  leaves them absent.
 
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 

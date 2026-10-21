@@ -233,3 +233,7 @@ and Shift+5 keyboard trim here, and the helicopter control box. Shared files tou
 {profile,bindings,InputSystem,virtualYoke}.ts`, `src/sim/{SimPhysics,Simulator,params}.ts`, `src/aircraft/types.ts`,
 `src/ui/{status,styles,uiSystem}.ts`; every new field is optional and absent on the other types (legacy digests 35/35).
 KNOWN_ISSUES "Flyability pass" lists the details and the owner decisions.
+Round 2 (the round-1 pilot gate's follow-ups, W/bofly/r2): the STAB ASSIST holds the heading once the pedal keys rest and
+its cyclic datum tracks the trim through a deceleration, its pedal term works on unloading skids, and Shift+F5 stops at
+the autorotation entry position (0.08); `ControlInputs.pedalWorked` (optional, Bo 105 only) is the one new shared field
+(KNOWN_ISSUES "Round 2").

@@ -27,8 +27,27 @@ describe('hand-rate collective (InputProfile.collectiveFastRate: Bo 105 Shift+F5
     hold(r, 'F5', 1);
     expect(r.c.collective).toBeCloseTo(0.6 - BO105_INPUT.collectiveRate!, 2);
     expect(BO105_INPUT.collectiveRate).toBe(0.12);
+  });
+  /**
+   * Round 2 (the pilot gate's follow-up; W/bofly/r2 auto.log, autoSteady.log): held to the floor after a double engine
+   * failure, Shift+F5 overspun the rotor to 118 % (100 KIAS) / 126 % (120 KIAS), past the power-off limit of 110 % (P5
+   * FM 2-8). Its entry stop, 0.08 of the travel, gives about 97 % NR in a steady 75 KIAS autorotation at 2200 kg and 102 %
+   * at 2500 kg; bare F5 takes the collective on down.
+   */
+  it('Shift+F5 stops at the autorotation entry position (0.08 of the travel), held or pressed again; bare F5 goes on to the floor', () => {
+    expect(BO105_INPUT.collectiveFastRate?.downStop).toBe(0.08);
+    const r = makeInputRig(BO105_INPUT, { collective: 0.45 });
     hold(r, 'F5', 2, true);
-    expect(r.c.collective).toBe(0);
+    expect(r.c.collective).toBeCloseTo(0.08, 6);
+    hold(r, 'F5', 0.5, true);
+    expect(r.c.collective).toBeCloseTo(0.08, 6);
+    hold(r, 'F5', 0.5);
+    expect(r.c.collective).toBeCloseTo(0.08 - 0.5 * BO105_INPUT.collectiveRate!, 2);
+    const below = r.c.collective!;
+    hold(r, 'F5', 0.5, true);
+    expect(r.c.collective).toBe(below);
+    hold(r, 'F6', 0.2, true);
+    expect(r.c.collective).toBeCloseTo(below + 0.1, 2);
   });
   it('the fast keys count as flying (they take the hover hold back, as F5 / F6 do)', () => {
     const r = makeInputRig(BO105_INPUT, { collective: 0.5 });
@@ -92,6 +111,31 @@ describe('5-key centring rate (InputProfile.centreRate) and Shift+5 keyboard tri
     r.tap('Digit5', true);
     r.run(1);
     expect(r.c.elevator).toBeCloseTo(e0, 6);
+  });
+});
+
+describe('the pedals worked (ControlInputs.pedalWorked: the STAB ASSIST heading hold waits for it to clear)', () => {
+  it('on the Bo 105 it is set while a pedal key is held and cleared when the keys rest', () => {
+    const r = makeInputRig(BO105_INPUT);
+    r.setAirborne(true);
+    r.run(FRAME);
+    expect(r.c.pedalWorked).toBe(false);
+    r.input.keyDown('KeyX');
+    r.run(0.2);
+    expect(r.c.pedalWorked).toBe(true);
+    r.input.keyUp('KeyX');
+    r.run(FRAME);
+    expect(r.c.pedalWorked).toBe(false);
+  });
+  it('types without a STAB ASSIST never set it (MD 500E, R22)', () => {
+    for (const p of [MD500_INPUT, R22_INPUT]) {
+      const r = makeInputRig(p);
+      r.setAirborne(true);
+      r.input.keyDown('KeyX');
+      r.run(0.2);
+      expect(r.c.pedalWorked).toBeUndefined();
+      r.input.keyUp('KeyX');
+    }
   });
 });
 

@@ -25,6 +25,7 @@ Known gaps are `it.fails` rows; none is fitted.
 | Ground stance / lift-off | fuselage +1.35 deg on level ground; hover +3.0 (jump 1.6 deg) | within 1.5 deg of level; jump <= 2 deg |
 | Hover turn, full pedal (IGE) | 90 deg/s at 0.9 s (right), 1.5 s (left); peaks 165 / 129 deg/s (implied steady about 260 deg/s: N_ped 0.049 per %, hover Nr -0.54); with the STAB ASSIST about 0.9 / 2.8 s | >= 90 deg/s within 3 s (ESTIMATE; FM limit 90 deg/s) |
 | Hover yaw, 10 % pedal step (attitude held) | 36.3 deg/s at 3 s, still rising (70 at 8 s); with the STAB ASSIST 20.5 deg/s at 3 s, 90 % settled | the identified hover Nr -0.97 / -1.10 with N_ped 0.042: about 23 deg/s, settled by 3 s (P ERF 1995) - **hover Nr gap**, KNOWN_ISSUES 20 |
+| Hover heading, pedals untouched, 0.3 s collective tap (2200 kg) | with the STAB ASSIST +1.3 deg at 8 s (round 1's rate damping only: 84 deg and turning at 12 deg/s); a 0.5 s pedal tap settles 2.3 deg round | ESTIMATE (sim aid; ADS-33E rate command / direction hold) |
 | Hover hands off (hover scenario, 2500 kg, 16 m) | raw: doubling 2.3 s, crash at 22.4 s calm; STAB ASSIST: 0.7 deg calm, 2.3 deg in 8 kt + 5 kt gusts over 60 s | the real hover is unstable (ERF 1995: doubling about 1.7-7 s, P); the aid is ADS-33E's attitude-hold route |
 | Low g (100 KIAS) | roll acceleration to a 10 % step: 87.8 % of the 1 g value at 0.2 g, 84.8 % at 0.01 g | >= 80 % (D) |
 | Hover torque per engine, SL | 2500 kg OGE 82.7 %, IGE 72.0 %; 2200 kg OGE 70.6 %, IGE 61.8 % | 79-83, 72-78, 67-74, 61-69 % (D from the ceiling row) |
@@ -383,18 +384,64 @@ are in the control path, labelled, and absent on every other type:
   as the way to meet the hover requirement of a Level 3 hover. Measured (`tests/rotorcraft/bo105Assist.test.ts`,
   W/bofly/probes-fix): hands off in the hover scenario for 60 s, 0.7 deg of attitude change calm and 2.3 deg in 8 kt of
   wind with 5 kt gusts, at most 2.4 % of travel used (it holds attitude, not position: in that wind it drifts with the
-  air); the raw aircraft crashes at 22.4 s calm, 16.4 s in the wind. A 1 s roll key tap banks 9.4 deg at 3 s and holds
-  it (raw 8.9 deg and diverging); a 1 s forward tap pitches 11.3 deg at 3 s. A 10 % pedal step in the hover reaches 20.5
-  deg/s at 3 s, 90 % of its 8 s value (raw 36.3 and still rising: the identified Nr with N_ped 0.042 gives about 23); a
+  air); the raw aircraft crashes at 22.4 s calm, 16.4 s in the wind. A 1 s roll key tap banks 9.4 deg at 3 s (raw 8.9 deg
+  and diverging; what follows changed in round 2, below); a 1 s forward tap pitches 11.3 deg at 3 s. A 10 % pedal
+  step in the hover reaches 20.5 deg/s at 3 s, 90 % of its 8 s value (raw 36.3 and still rising: the identified Nr with
+  N_ped 0.042 gives about 23); a
   full pedal step still turns the IGE hover at 90 deg/s within 3 s (at 16 m, OGE, the left turn takes 3.6 s against 2.0
   s raw: the pedal term's authority is the knob between the two rows). The delayed test pilot (2200 kg IGE, calm 15 s
   then an 8 kt side gust): at half gain with 0.5 s of delay, not lost, drift 3.8 m (raw: lost at 27 s); at full gain with
   0.6 s, not lost, 3.9 m (raw: lost at 23 s); both lost from 0.8 s of delay.
+  **Round 2 (the round-1 pilot gate's follow-ups, W/bofly/r2):**
+  - *Heading hold* (`kpsi` 1.0 per rad, `kpsiI` 0.3 per rad s, ADS-33E's rate command / direction hold): while the pilot
+    works the pedals (a pedal key held or a hardware pedal in use: `ControlInputs.pedalWorked`, set by the input module
+    on this type only; or the pedal moving) the heading datum follows and only the rate is damped; 0.25 s after the
+    pedal rests the heading is captured, leading by 0.8 s of the yaw rate (the coasting turn under the assist's rate
+    damping, about 1/1.2 s), and held. All inside the same 6.5 % of pedal travel, so a full pedal still turns the IGE
+    hover at 90 deg/s in 0.90 s right / 2.77 s left (round 1: 0.92 / 2.85). Full below 20 KIAS, gone at 30 (above
+    that a bank is a turn); the rate damping stays to 50. Measured (2200 kg, `yaw.log`): a 0.3 s F6 / F5 tap with the
+    pedals untouched leaves the heading +1.3 / -1.2 deg at 8 s (round 1: +84 / -79 deg and turning at 12 deg/s); a 0.5 s
+    pedal tap turns the nose 4.9 deg at 3 s and settles at 2.3 deg (round 1: 29 deg at 8 s, still turning at 3.8
+    deg/s); hands off through an 8 kt side gust the heading stays within 4 deg (round 1: 42); the tapping keyboard pilot
+    in calm air holds the heading within 3.3 deg with no pedal taps (round 1: 22.6 deg, 10 pedal taps). Its limit: a
+    0.6 s collective tap (+16 % torque) needs about 0.26 of the pedal axis, twice the authority, and still swings the nose
+    (144 deg at 8 s against 163): the pedal with the collective stays the pilot's. The 10 % pedal step row is now flown
+    with the pilot's foot on the pedal (the hold waits; 20.7 deg/s at 3 s, as before). A 1 s roll tap's bank is no
+    longer "held" at 8 s (9.4 deg at 3 s, 2.5 at 8 s): round 1's 9.0 deg came with the nose weathercocking 84 deg into
+    the 15 kt sideward drift, and a 0.3 / 0.5 s tap's bank was back to level by 8 s with or without the hold; holding the
+    heading keeps the drift sideward (40 deg of yaw at 8 s), whose airflow rolls the bank back against the assist's 10 %.
+  - *Datum on a decelerating approach* (`datumRelaxKt` 2): the trim stick moves with speed far more than the trim
+    attitude (0 -> 30 KIAS: 0.26 of the axis forward against 0.8 deg of pitch), so round 1's datum captured on the way
+    down left the series term at its 10 % limit in the hover and the stick 0.2 of the axis forward of the hover trim.
+    While the low-passed air velocity (2 s) falls and the pilot has moved the cyclic within the last 2 s, the datum
+    relaxes toward the flown attitude by one e-fold per 2 kt; hands off (the raw hover diverges) and while speeding up
+    (a roll or pitch tap from the hover) nothing relaxes. A hand pilot slowing from 45 KIAS at 1.5 kt/s (`decel.log`):
+    series term in the hover 2.5 % of travel, stick 0.46 / -0.14 against the raw hover trim 0.51 / -0.13 (round 1: 10 %
+    and 0.31 / -0.28), and let go it holds within 0.3 deg; captured at 30 KIAS then flown to the hover: 0.2 % (round 1:
+    7.3 %). The delayed test pilot's round-1 rows hold (not lost at half gain tau 0.5 / full gain tau 0.6; in the gust the
+    full-gain tau 0.6 drift grows from 3.9 to 8.6 m, `pilot.log`).
+  - *Pedal term on unloading skids* (`groundYawLoad` 0.5): on the ground the pedal term (not the cyclic) works once the
+    skids carry less than half the weight. The runway start's pedal is at its centre and the hover wants 21 % of the
+    travel of left pedal, three times the authority, so a lift-off with the pedal untouched still yaws (`liftoff.log`:
+    9.0 deg/s at lift-off against 10.6, 43 deg/s at most against 68). The lesson is the pedal with the collective.
 - **Hand-rate collective** (`collectiveFastRate`): Shift+F5 lowers at 1.0 of the travel per second, Shift+F6 raises at
   0.5; bare F5 / F6 stay the fine 0.12 per second for the hover. Both levers OFF at 100 KIAS (2200 kg, 3000 ft), attitude
   held, the key held after the delay, through the InputSystem: 1 s of delay NR minimum 75.1 % (bare F5 69.0 %), 2 s 68.0
   % (bare F5 67.2 %), 0.5 s 80.7 % (71.3 %); at 120 KIAS 1 s 78.1 % (bare F5 58.9 %). The NR LOW tone starts at 0.30 s
   (100 KIAS) / 0.23 s (120). The decay itself (about 19 %/s) is the rotor's energy (KNOWN_ISSUES 22), not the keys.
+  **Round 2: the entry stop** (`downStop` 0.08). Held to the floor, Shift+F5 overspun the rotor past the power-off limit
+  (85-110 %, P5 FM 2-8): 118 % at 100 KIAS and 126 % at 120 KIAS with the pilot slowing to 70 KIAS. Steady
+  autorotation NR against a fixed collective (75 KIAS, levers OFF, `autoSteady.log`): full down 110 % at 2200 kg and
+  117 % at 2500 kg; 0.06: 99.7 / 105.7 %; 0.09: 95.2 / 101.0 %. Shift+F5 now stops at 0.08 (about 97 / 102 %) held or
+  pressed again; bare F5 takes it on down. Held after the failure (2200 kg, `auto.log`): 100 KIAS NR at most 108.6 %
+  with a 15 deg flare to 70 KIAS (101.4 % with 5 deg), settling at 93-98 %; 120 KIAS 108.6 % with a 5 deg flare, but
+  112.4 / 117 % with 10 / 15 deg (the flare's energy: the pilot raises the collective, as the FM's "keep NR within
+  limits" asks); 2500 kg 100 KIAS 108 / 111.6 / 115.5 % for 5 / 10 / 15 deg. The NR minimum on the round-1 rig (the
+  entry attitude held): 100 KIAS 1 s 74.2 % (75.1 to the floor; bare F5 69.0), 0.5 s 78.9 % (80.7), 2 s 68.8 % (68.0);
+  120 KIAS 1 s 72.6 % (78.1 to the floor; bare F5 58.9): at 120 KIAS with the nose held the speed runs to 130 KIAS, where
+  0.08 is too much pitch for a quick recovery. A dip to the floor and back to the stop keeps the 120 KIAS minimum (78.1 %)
+  but overspeeds again in the flare (114-125 %); no fixed stop does both. The checklist's "collective full down" item
+  ticks at the stop or below with NR in the limits.
 - **5-key centring at 1 travel per second** (`centreRate`; every other type 4): the keyboard centre is the spring-trim
   anchor, so an untrimmed pilot at 120 KIAS pressing 5 gets 0.44 of the travel aft in 0.9 s instead of 0.22 s. **Shift+5**
   sets the keyboard centre to the stick as it is (`setTrimHere`; a sim convenience: the CB-4 has beep trim only; the

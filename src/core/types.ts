@@ -99,6 +99,12 @@ export interface ControlInputs {
    * autoflight flies). Absent = false.
    */
   feetOffRudder?: boolean;
+  /**
+   * Optional: the pilot is working the pedals (a pedal key held, or a hardware pedal axis in use). Set by the input
+   * module on a type with a STAB ASSIST (InputProfile.stabilityAssist), whose heading hold waits for it to clear; the
+   * flight model ignores it. Absent = false (the assist then goes by the pedal's movement alone).
+   */
+  pedalWorked?: boolean;
   /** [0, 1]. ALL ENGINES. On a FADEC type this is the power lever (load demand). */
   throttle: number;
   /** [0, 1]. 1 = full rich, 0 = idle cut-off. ALL ENGINES. Ignored by FADEC types (kept at 1). */

@@ -41,8 +41,22 @@ export interface StabilityAssistTuning {
   stickAttitude: number;
   /** Series authority of the cyclic terms, +/- axis units (0.2 = 10 % of the full travel). */
   authority: number;
-  /** Series authority of the yaw-rate term on the pedals, +/- axis units. */
+  /** Series authority of the pedal term (rate damping, heading hold and its integral together), +/- axis units. */
   yawAuthority: number;
+  /**
+   * Heading hold (rate command / direction hold): the heading captured when the pilot's pedal rests is held with this
+   * gain, axis units per rad of heading error, and `kpsiI` per rad s of its integral (airborne only). Absent: the pedal
+   * term damps the yaw rate only.
+   */
+  kpsi?: number;
+  kpsiI?: number;
+  /**
+   * The cyclic datum relaxes toward the flown attitude by one e-fold per this much fall of the (low-passed) airspeed while
+   * the pilot is flying the cyclic, kt: a deceleration to the hover arrives at the hover trim. Absent: no such tracking.
+   */
+  datumRelaxKt?: number;
+  /** The pedal term also works on the ground once the skids carry less than this fraction of the weight. Absent: no. */
+  groundYawLoad?: number;
   /** Full gain below [0], none above [1], KIAS. */
   fadeKias: readonly [number, number];
 }
@@ -61,9 +75,10 @@ export interface InputProfile {
   /**
    * A second, hand-rate pair of collective keys (Shift+F5 lower, Shift+F6 raise), travel per second while held: for the
    * autorotation entry, where the fine F5 / F6 rate is too slow. Absent: no such keys (Shift+F5 / F6 stay the fine
-   * pair).
+   * pair). `downStop`: the lowering key stops there (the autorotation entry position, travel 0..1) and never takes the
+   * collective below it, held or pressed again; bare F5 goes on to the floor. Absent: the lowering key runs to the floor.
    */
-  collectiveFastRate?: { down: number; up: number };
+  collectiveFastRate?: { down: number; up: number; downStop?: number };
   /** Keyboard re-centring rate (5 / Numpad 5), travel per second. Absent: virtualYoke CENTRE_RATE (4). */
   centreRate?: number;
   /**

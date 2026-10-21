@@ -783,11 +783,17 @@ export class InputSystem implements Subsystem {
       const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
       // The hand-rate pair (InputProfile.collectiveFastRate: Shift+F5 / Shift+F6), travel per second; 0 on every other type.
       const fast = this.profile.collectiveFastRate;
-      const fastChange = fast ? (this.held.has('collectiveFastUp') ? fast.up : 0) - (this.held.has('collectiveFastDown') ? fast.down : 0) : 0;
+      const fastDown = !!fast && this.held.has('collectiveFastDown'), fastUp = !!fast && this.held.has('collectiveFastUp');
+      const fastChange = fast ? (fastUp ? fast.up : 0) - (fastDown ? fast.down : 0) : 0;
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
       if (this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
-      else if (fastChange !== 0) c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt + fastChange * dt, 0, 1);
-      else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
+      else if (fastChange !== 0) {
+        const was = c.collective ?? 0;
+        let v = was + change * (this.profile.collectiveRate ?? 0.15) * dt + fastChange * dt;
+        // The lowering key's entry stop (Bo 105: the autorotation entry position): never below it, nor below where it was.
+        if (fastDown && !fastUp && fast!.downStop !== undefined) v = Math.max(v, Math.min(was, fast!.downStop));
+        c.collective = clamp(v, 0, 1);
+      } else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
     }
 
     // Mouse yoke: armed until the pointer passes through the centre, then in control.
@@ -934,6 +940,8 @@ export class InputSystem implements Subsystem {
     c.aileron = mixCentring(n.aileron + this.kbAileron + rollBias, mouse?.aileron ?? null, hwAil);
     c.elevator = mixCentring(n.elevator + this.kbElevator, mouse?.elevator ?? null, hwEle);
     c.rudder = mixCentring(n.rudder + this.kbRudder + assist, null, hwRud);
+    // The STAB ASSIST's heading hold waits while the pilot works the pedals (a pedal key held, a hardware pedal in use).
+    if (this.profile.stabilityAssist) c.pedalWorked = yaw !== 0 || hwRud !== null;
     this.written.aileron = kbAil ? c.aileron : null;
     this.written.elevator = kbEle ? c.elevator : null;
     this.written.rudder = kbRud ? c.rudder : null;
