@@ -62,7 +62,9 @@ const ROWS: DerivativeName[] = ['Lp', 'Mq', 'Nr', 'Mw', 'Zw', 'Lv', 'Nv', 'Xu', 
  *  - FIXTURE AIRFRAME: the fixture's stabiliser/fin/fuselage ESTIMATES set these (rotor alone: Mw +0.063, inside the
  *    envelope; Nv +0.099 without the fins, inside); BO's airframe decides them.
  *  - ROTOR/INFLOW: the rotor and the Pitt-Peters gains set these (Zw 2 % short of 0.7 x DLR; Lq/|Lp| 0.24 against 0.25;
- *    Lv -0.134 with no fins).
+ *    Lv -0.134 with no fins). Zw is STRUCTURAL: uniform momentum with blade elements gives D Zw = -(rho pi R^2 Omega R / m)
+ *    (a sigma / 4) / (1 + a sigma / (8 mu)) = -0.70 here (DLR's -1.00 would need a lift slope of about 9.6), a climb-rate
+ *    settling time of about 1.46 s against DLR's 1.0 s. No airframe data closes it (docs section 10).
  */
 const KNOWN_MISS: Partial<Record<DerivativeName, string>> = { Mw: 'FIXTURE AIRFRAME', Nv: 'FIXTURE AIRFRAME', Lv: 'ROTOR/AIRFRAME',
   Zw: 'ROTOR/INFLOW' };

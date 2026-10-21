@@ -33,8 +33,10 @@ there is no new solver.
   stiffness is aerodynamic and never enters the hub moment.
 - **Stopped rotor.** At Ω ≤ 0 the slow-amplitude reduction is singular. A spring hub then takes the **static spring
   solution** M/δ for the harmonics and (M0 + Kβ·precone)/Kβ for the cone, also on zero-dt queries: a stopped rotor
-  with no air carries no hub moment, and a save resumed at Ω = 0 with stale harmonics applies none (R16). Above zero
-  the exact exponential step already converges to the static solution (its decay rate grows as 1/Ω).
+  with no air carries no hub moment, and a save resumed at Ω = 0 with stale harmonics applies none (R16). A hub with
+  no static stiffness at Ω = 0 (Kβ = 0 and no δ3, e.g. R2's (0.152 R, 1.126) and (0, 1.117) sets, which sit near
+  Kβ 0) holds the precone and zero harmonics, so the cone does not jump from the precone reset seeds. Above zero the
+  exact exponential step already converges to the static solution (its decay rate grows as 1/Ω).
 - **Mast moment.** `state.mastMoment` = |hub moment| in the shaft frame, N m, on real steps (the Bo 105 indicator;
   BO sets `mastMomentLimit`/`mastMomentYellow`).
 - **Hingeless decisions** at every site the codemap listed: `reset` creates `state.articulated` (the per-blade pose
@@ -81,6 +83,11 @@ does not cancel its lift moment, so a hingeless hub with `bemFromFlap` (default 
 In the free-hinge limit this is the cancellation formula (R8: 0.3 %, 1.5 %, 3.9 % at μ 0.1, 0.2, 0.35 for a blade from
 5 % R; the closed form integrates from the shaft. With the Bo 105's 22 % root cutout the quadrature sits 0.9 %, 2.4 %
 and 5.1 % from it). The retreating-stall moment gate stays teetering-only.
+
+On the fixture (held body, collective 0.45, harmonic inflow off) `bemFromFlap` costs thrust as μ rises: the settled
+thrust with it on over off is 0.996 at μ 0.1, 0.982 at μ 0.2 and 0.899 at μ 0.35 (27.94/28.04, 33.07/33.67 and
+32.84/36.53 kN); `bemFromFlap: false` reproduces rotor.ts's teetering call on the same settled state exactly. The test
+asserts [0.97, 0.995] at μ 0.2 and [0.85, 0.95] at μ 0.35.
 
 ## 4. First-harmonic (Pitt-Peters) inflow
 
@@ -141,6 +148,21 @@ crosswind gradient resists it and the disc has to flap further, so **Lq rises fr
 −4.09**, while Lp barely moves. R18's cross-derivatives therefore measure the Pitt-Peters crosswind gain more than the
 hub, which is the dependence the fitting rule was written to expose.
 
+**What the hub alone gives (D, hover, quasi-steady).** With both the aerodynamic rate term and the gyroscopic term
+kept, the flap response to a body rate has a cross/direct ratio
+
+```
+Lq/|Lp| ≈ (S − γ/16) / (1 + S·γ/16),     S = 8(ν² − 1)/γ
+```
+
+It is a near-cancellation that changes sign at S = γ/16. For the fixture at SL (ν 1.11, γ 5.17: S 0.359, γ/16 0.323)
+it is **0.032**; the fixture measures 0.028 in the hover with the inflow off (Lq +0.26, Lp −9.36 1/s) and 0.072 at
+80 kt (inflow off, 3000 ft, where γ is 4.73 and the same formula gives 0.087). The plan's D "(ν² − 1)/(γ/8) = 0.34"
+is S alone (the stiffness term without the aerodynamic cross term) and is superseded. Consequence for BO: ν does not
+buy Lq without the inflow. The hover inflow-off ratio moves about 0.03 per 0.01 of ν, so reaching DLR's 0.36 from the
+hub would take ν ≈ 1.2, far outside the 1.10-1.12 band. The measured 80 kt Lq/|Lp| of 0.24 is mostly the Pitt-Peters
+crosswind gain (above).
+
 The settle relaxation (0.05 s steps) with the flap and inflow coupled explicitly did not two-cycle: every trim
 converged with a Newton residual below 1e-4 with the inflow on (R16).
 
@@ -158,7 +180,9 @@ converged with a Newton residual below 1e-4 with the inflow on (R16).
   blade). It reaches the harmonics only through the cone: at μ 0.35 the hub moment per unit lateral cyclic changes by
   −2.1 % (longitudinal −1.1 %), not the plan's 3-9 % (D from about μ²/2). The plan row is kept as an `it.fails` row
   (`hingelessBem.test.ts`). The μ² first-harmonic coupling of the classical equations is the radial-flow stiffness
-  (μ² sin 2ψ), which `radialFlow` already carries. AH's H9 (8-15 % at μ 0.5) should expect the same.
+  (μ² sin 2ψ), which `radialFlow` already carries. **The R23 row should read "a cone-coupled effect of about −2 % at
+  μ 0.35"**, and AH's H9 (8-15 % at μ 0.5), which rests on the same plan estimate, must be re-derived from the
+  radial-flow stiffness, not from the periodic damping.
 
 ## 6. Contracts for the other packages
 
@@ -183,7 +207,10 @@ converged with a Newton residual below 1e-4 with the inflow on (R16).
 
 ## 7. Validation on the test-local Bo 105 (hingelessFixture.ts)
 
-The fixture spreads the S0 bo105 definition and overrides it with research data; it is not the bo105 aircraft (BO's).
+The fixture is the S0 bo105 stub frozen as a snapshot (its dimensions, rotor speed and ratios, and the MD 500E fields
+it spread: pitch stops, polar, tail, systems, skids, sim) and overridden with research data. It is not the bo105
+aircraft (BO's) and imports nothing under `src/aircraft/bo105`, so BO's merge does not move a row below (a
+hingelessHub test pins this).
 
 | Item | Value | Tag |
 |---|---|---|
@@ -216,7 +243,7 @@ model's own Ixz-coupled Euler equations, ω×h removed as in flight.
 | R8 | free-hinge BEM pitch vs cancellation formula | ±3/3/5 % at μ 0.1/0.2/0.35 | 0.3 / 1.5 / 3.9 % (5 % R root) | pass |
 | R9 | λ1c/λ0, rear > front | (15π/32) tan(χ/2) ±5 % | exact; fixture at 80 KCAS: rear +3.68, front −3.68 m/s at the tips | pass |
 | R10 | hover τ to an imposed moment | 16/(45π)/(v0Ω) = 0.0509 s ±5 % | 0.0510 s | pass |
-| R11 | transverse-flow left cyclic 0-40 KIAS | 0.5-3.0°, peak 10-30 KIAS | 1.66° at 30 KIAS | pass (peak at the band's edge) |
+| R11 | transverse-flow left cyclic 0-40 KIAS | 0.5-3.0° somewhere in 10-30 KIAS, falling off by 40 | 0.90 / 1.26 / 1.50 / 1.64 / 1.66 / 1.62 / 1.54° at 10-40 KIAS (5-kt grid) | pass (the grid maximum sits on the 30 KIAS edge, so the test asserts the excursion in 10-30 and the fall to 40, not the argmax) |
 | R12 | lateral flap from coning, free hinge | (4/3)μβ0/(1+μ²/2) ±20 % | −0.7 / −0.7 / −0.6 % | pass |
 | R13 | control phase turns the hover hub moment | φ ±0.5° | 15.01°, 30.03° (inflow off and on) | pass |
 | R14 | δ3 20°, 37.5°: Δν² | (γ/8) tan δ3 ±10 % | −0.5 %, −0.5 % | pass |
@@ -228,7 +255,7 @@ model's own Ixz-coupled Euler equations, ω×h removed as in flight.
 | R20 | coupled roll/flap mode, matrix pencil, 0.1 s pulse at 78 KIAS | 13.7 rad/s ±30 %, ζ 0.3-0.7 (P LS-178) | 12.4 rad/s, ζ 0.60 | pass |
 | R21 | gyro coupling wiring | 1e-12 | 3e-15 | pass |
 | R22 | seams | exact | pass on the fixture and the MD 500E | pass |
-| R23 | periodic flap damping | off identical; hover 1e-9; μ 0.35: 3-9 % | identical; < 1e-9; −2.1 % | band missed (section 5) |
+| R23 | periodic flap damping | off identical; hover 1e-9; μ 0.35: 3-9 % (plan; amend to a cone-coupled ≈ −2 %) | identical; < 1e-9; −2.1 % lateral, −1.1 % longitudinal | plan band missed, kept as `it.fails` (section 5) |
 
 **R18 at 80 KCAS, 3000 ft, 2200 kg** (quasi-static central differences, rotor states re-settled; 1/s, rad/(s m)):
 
@@ -292,6 +319,16 @@ own expectation) clears Lq/|Lp| and makes the phugoid unstable, at the cost of a
 band edge is 11.04). The inertia above 930 kg m² is outside the Lock-number band with a = 6.0. **BO chooses with the
 real airframe**: the stabiliser, fin and fuselage moment move Mw, Nv and the phugoid more than anything in this grid.
 
+**The roll mode sits at the top of its band.** With the recorded set the roll mode is 10.79 1/s (τ 0.093 s) against
+the band's upper edge 11.04 (8.49 × 1.3; DLR τ 0.118 s), and Lp −10.68 is 26 % above DLR's −8.50 (AFDD −8.78). Lp is
+all rotor: with the stabiliser, fins and fuselage moment removed it is −10.67. Of that, the hub moment is −8.55 1/s
+(the spring's moment per roll rate over Ixx at 80 kt) and the thrust-vector tilt the rest. The harmonic inflow does not
+move Lp at 80 kt (−10.64 off, −10.68 on): a roll rate needs an aerodynamic pitch moment, and the downwind gain is
+small there. In the hover it does: Lp −9.36 off, −12.55 on at SL (−13.10 on at 3000 ft), the hub part −8.16 to −10.94
+(+34 %), as the quasi-steady Lock-number reduction γ/1.51 predicts (D: the direct flap response (16/γ + S)/(1 + S²)
+grows 1.32× from γ 5.17 to 3.42). The model is self-consistent; BO should know the set is at the edge. Its levers
+inside the bands move the roll mode down to 9.4-10.2 (ν 1.10 or inertia 850 kg m², grid above), at a cost in Lq/|Lp|.
+
 ## 9. Owner-facing numbers from the fixture (pilot units, not the Bo 105 yet)
 
 - Roll: hover roll rate 19 °/s 0.5 s after a 10 % lateral step; at 100 KIAS a 10 % lateral step gives 112 °/s² of
@@ -305,6 +342,23 @@ real airframe**: the stabiliser, fin and fuselage moment move Mw, Nv and the phu
   derivatives.
 
 ## 10. Not modelled (known issues for the integrator's list)
+
+- **Heave damping is a rotor-model limit (R18 Zw).** The fixture's Zw is −0.683 1/s against DLR −1.00 and AFDD −1.19
+  (envelope edge −0.70). Uniform momentum inflow with blade elements cannot reach DLR's value: D, Zw ≈
+  −(ρπR²ΩR/m)·(aσ/4)/(1 + aσ/(8μ)) = −8.47 × 0.105/1.27 = **−0.70** at 3000 ft, μ 0.197, a 6.0, σ 0.0699, 2200 kg.
+  DLR's −1.00 would need aσ ≈ 0.67, a lift slope of 9.6. In the cockpit this is a **climb-rate settling time of about
+  1.46 s against 1.0 s** (DLR) to a collective step. No airframe data closes it. BO measures Zcol (AR-280: −0.349 DLR
+  and −0.388 AFDD m/s² per % collective) and the climb-rate settling time, and the integrator decides whether the 2 %
+  edge miss is accepted.
+- **Lq/|Lp| 0.240 against the 0.25 band edge (R18) is a rotor/inflow limit** (4 % under the edge; DLR 0.36). The hub
+  gives almost none of it (section 4, closed form). The Pitt-Peters crosswind gain gives most of the rest, so it is not
+  something BO can fit. The integrator decides on the edge miss.
+- **Per-step cost of the extended path.** `hubForcing` runs on every RK stage (4 per substep), and
+  `aerodynamicHubMoment` (the harmonic inflow's forcing) adds a second full radial × azimuth quadrature on the real
+  step. With a section model and a gyro, each element evaluates atan2, hypot and `sectionCoefficients` twice. Measured
+  on the fixture at 100 KTAS: 0.24 ms per 240 Hz step for the whole flight model, against 0.17 ms for the MD 500E
+  (+39 %; 58 ms per simulated second). For AG/AH (AH-56 at 240 Hz with a section and a gyro): accumulate the
+  aerodynamic hub moment inside `hubForcing`'s loop on the dt > 0 stage (same ut, up, θ) instead of the second pass.
 
 - The lag degree of freedom is absent (soft in-plane 0.66-0.73/rev on the Bo 105): no air or ground resonance, no
   lead-lag damper loads.

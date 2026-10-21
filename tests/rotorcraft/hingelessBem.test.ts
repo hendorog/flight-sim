@@ -152,8 +152,9 @@ describe('R23: the periodic flap damping option', () => {
     r23Lateral = Math.abs(lateral.change as number);
   });
   // PLAN MISMATCH, reported (PR text, docs): the plan's 3-9 % (D, about mu^2/2) assumed a first-harmonic periodic
-  // damping; the linear-in-ut damping is 1/rev and acts through the cone. One assertion, so a model that reaches the
-  // band turns this red.
+  // damping; the linear-in-ut damping is 1/rev and acts through the cone (about -2 % at mu 0.35, the amended row). AH's
+  // H9 (8-15 % at mu 0.5) rests on the same estimate and must be re-derived from the radial-flow stiffness. One
+  // assertion, so a model that reaches the band turns this red.
   it.fails('PLAN R23 BAND — on, mu 0.35: the hub moment per unit lateral cyclic changes by 3-9 %', () => {
     expect(r23Lateral).toBeGreaterThan(0.03);
   });
