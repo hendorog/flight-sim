@@ -58,7 +58,7 @@ export const AH56_SECTION: RotorSectionDef = {
     clMax: { mach: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7], value: [AH56_BASE.main.maxCl, 1.26, 1.14, 0.95, 0.88, 0.8], negativeFraction: 0.8 },
     liftFade: 15 * DEG, dragFade: 3 * DEG,
     cn90: 2.0,
-    momentStall: { shift: 0.4, over: 1.5 * DEG, machFade: [0.45, 0.6] },
+    momentStall: { shift: 0.4, over: 1.5 * DEG, machFade: [0.4, 0.55] },
     dragDivergence: { mach0: 0.83, perCl: 0.1, offset: 0.1, rise: 20 },
     machTuck: { slope: 0.1, max: 0.03 },
     reverse: { liftSlope: AH56_BASE.main.liftSlope, clMax: 0.77, dragFactor: 2 },
