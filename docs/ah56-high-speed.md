@@ -169,7 +169,7 @@ diverged at 1.2 g). Above M 0.45-0.6 the separation is shock-induced, and the dr
 | H4 ICS moment stall, 154 KCAS | onset 1.6 g: right roll 2.4° and pitch-up +0.046 g (q +0.41, p +1.1 °/s); 1.65 g: 3.8°, +0.08 g; 1.7 g: 21.9°, +0.67 g (n_z to 2.37, q +13, p +27 °/s, the runaway); 1.5 g: 1.1°, +0.02 g | 1.5 ± 0.2 g, pitch-up and RIGHT roll | P ASTA-72 para 65 | pass (0.1 g late) |
 | H4 ICS moment stall, 122 KCAS | onset 1.5 g: right roll 2.3°, pitch-up +0.042 g (n_z to 1.54), q +0.48, p +1.2 °/s; 1.6 g: 8.5°, +0.58 g (n_z to 2.18, p +19 °/s); 1.4 g: 0.7°, +0.013 g | 1.4 ± 0.2 g | P | pass (0.1 g late) |
 | H4 190 KCAS, 1.43 g | 0.11° and +0.001 g | none | P | pass |
-| H4 on the plan's 16 × 36 grid | onsets 1.6 g (154: 2.35°, +0.043 g) and 1.5 g (122: 2.39°, +0.041 g); 190 KCAS 0.08°, +0.001 g | as above | — | the 12 × 18 deviation does not move H4 |
+| H4 on the plan's 16 × 36 grid | onsets 1.6 g (154: 2.35°, +0.043 g) and 1.5 g (122: 2.27°, +0.039 g); 190 KCAS 0.08°, +0.001 g | as above | — | the 12 × 18 deviation does not move H4 |
 | H5 ICS stick per g above 1.3 g, 122 KCAS | 6.0 in/g (6.6 with no stall) | ≤ 0.1 in/g | P | **gap** (it.fails; AG/AC) |
 | H6 AMCS 155 / 180 KCAS, no uncommanded motion | < 0.01° and < 0.001 g at every g reached | none to 2.5 g | P AMCS-73 para 37 | pass (to the g the stick reaches) |
 | H6 stick per g, 1.5 → 2 g | 4.3 (155) and 3.9 (180) in/g, positive; from 2 g the stick reaches its 4.95 in stop (4.9 and 4.7 in/g to the stop, not a gradient) | positive and linear; D from the P 6 °/s/in rate command: q = (g / V)(n − 1/n) is 1.8 (155) / 1.5 (180) in/g | P / D | measured row passes; **the steady-turn gradient is 2.4-2.6 × the rate command's** (AG handover, section 8.1) |
@@ -203,8 +203,8 @@ only through the cone and the reverse-flow region (1-3 % at μ 0.35, RC). At μ 
 **H10 and the grid (AGENT deviation from plan 7.4).** The plan's ≥ 36 azimuth × 16 radial stations cost 590-620 µs per step,
 3.7-4.0 × the MD 500E (150-160 µs), on this machine. Across grids from 12 × 16 to 16 × 36 the 190 KCAS ICS trim moved less than 0.01
 in of stick and H3's torque less than 0.1 %. The flown grid is 12 radial × 18 azimuth (20° steps), the largest inside 2 ×
-(12 × 20: 300-333 µs). H4 on 16 × 36 gives the same onsets (1.6 / 1.5 g; rows within 0.15° and 0.005 g of 12 × 18, probe
-`h4scan.test.ts` with GRID, log `probes-ah/out/grid-*.txt`), so the deviation is validated for the stall rows as well as for the 190 KCAS
+(12 × 20: 300-333 µs). H4 on 16 × 36 gives the same onsets (1.6 / 1.5 g; rows within 0.1° and 0.003 g of 12 × 18, probe
+`h4scan.test.ts` with GRID, log `probes-ah/out/grid-final.txt`), so the deviation is validated for the stall rows as well as for the 190 KCAS
 trim. The fine grid only above μ 0.3 would need RC's `rotorcraft.ts` to choose the grid by advance ratio (it reads
 `radialStations` / `azimuthStations` as constants): a contract request, not done here. The section itself costs about 35 % over the
 legacy polar at the same grid (RC's section path adds `Math.hypot`, `cos φ`, `sin φ` per element; the attached branch of
@@ -296,7 +296,7 @@ worktree (`/home/roger/github/fs-rigid/ah-refit`, detached at this branch's HEAD
 **`work/rigid/guards/AH/r2/handover.patch`** (`git apply` from the repository root; it touches only `src/aircraft/ah56/compound.ts`,
 `src/aircraft/ah56/gyro.ts` and four AG / AC test files).
 
-**On this branch's HEAD (without the patch)** the AG list reads HEADAG and the AC list HEADAC (logs `AG-list-head.txt`,
+**On this branch's HEAD (without the patch)** the AG list reads 9 failed, 63 passed, 11 expected fail and the AC list 7 failed, 42 passed, 13 expected fail (logs `AG-list-head.txt`,
 `AC-list-head.txt`): the red rows are the ones the table below closes.
 
 **With the patch** (logs `AG-list-refit3.txt`, `AC-list-refit3.txt`, `AC-compound-refit3.txt`):
