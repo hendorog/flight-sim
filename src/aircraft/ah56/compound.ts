@@ -15,7 +15,6 @@ import type { WingPanelDef } from '../../physics/rotorcraft/wings';
 import { AH56_BASE } from './base';
 import * as D from './dimensions';
 import { AH56_GYRO } from './gyro';
-import { AH56_ROTOR_HIGH_SPEED } from './highSpeed';
 import { AH56_PROP_BETA_DEG, AH56_PROP_INERTIA, AH56_PROP_RATIO, ah56PropLever } from './facts';
 import type { AH56Patch } from './patch';
 
@@ -96,8 +95,8 @@ export const AH56_WINGS: readonly WingPanelDef[] = [panel(-1), panel(1)];
 
 // ---------------------------------------------------------------------------------------------------------- pusher
 /** Activity factor 142 per blade (P ASTA-72 p 51): AF = (1e5 / 16) integral (c / D) x^3 dx; a near-constant chord of c / D
- *  0.091 (c / R 0.182) gives it (D; the tabulated planform below gives 142 within 1 %, tests). */
-const PROP_CHORD_OVER_R = [0.172, 0.180, 0.184, 0.186, 0.184, 0.178, 0.160, 0.110];
+ *  0.095 (c / R 0.19) with a rounded tip gives it (D; the BEMT's elements give 142 within 1 %, ah56Pusher.test.ts). */
+const PROP_CHORD_OVER_R = [0.172, 0.180, 0.184, 0.186, 0.184, 0.178, 0.160, 0.110].map((c) => c * 1.0472);
 /** Helix twist of a P/D 1.3 blade (ESTIMATE: a high-speed design for J about 1.1 at 194 KTAS), relative to 0.7 R. */
 const PROP_PD = 1.3;
 const PROP_TWIST_X = [0.2, 0.3, 0.45, 0.6, 0.7, 0.8, 0.9, 1.0];
@@ -163,25 +162,27 @@ export const PROP_GRIP_TABLE = {
 } as const;
 
 /**
- * Trim schedule of the prop's blade angle against true airspeed (pusherTrimLever), FITTED at 18,300 lb, SL ISA, AMCS, stores
- * on (the trims of docs/ah56-compound.md):
- * - 100 KTAS and above: the angle that puts the trimmed collective on the SoF value, 13 deg indicated (AMCS-73 SoF, P) =
- *   2.25 deg at 0.75 R (C7; ICS 5-7 deg indicated, P APE-I SoF, is 1.25-3.25 deg);
+ * Trim schedule of the prop's blade angle against true airspeed (pusherTrimLever), FITTED at 18,300 lb, SL ISA, the stores on
+ * (the trims of docs/ah56-compound.md):
+ * - 80 KTAS and above: the angle that puts the trimmed collective on the SoF value, AMCS 13 deg indicated (AMCS-73 test
+ *   condition f and SoF, P: "13 degrees indicated ... at 80 KCAS and above") = 6 deg at 0.75 R (C7);
  * - the hover: the -2.2 deg detent (P);
- * - 20-80 KTAS: the angle that holds the fuselage about 2 deg nose up (ASTA-72 para 32: 2-3 deg nose up at low speed,
- *   "varied as desired through use of propeller pitch", P), the collective as required.
- * Above 200 KTAS the stop (40.8 deg) is reached on the AMCS with the stores.
+ * - 20-60 KTAS ("as required below 80 KCAS", P): the angle that holds the fuselage about 2 deg nose up (ASTA-72 para 32: 2-3
+ *   deg nose up at low speed, "varied as desired through use of propeller pitch", P), the collective as required.
+ * At 210 KTAS the 40.8 deg stop is reached.
  */
 export const PROP_TRIM_SCHEDULE = {
   kt: [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 190, 200, 210],
-  betaDeg: [-2.2, 5, 7.5, 13, 17, 23.6, 24.8, 27.4, 30.7, 34.8, 37.1, 39.9, 40.8],
+  betaDeg: [-2.2, 5, 7.5, 13, 15.0, 16.9, 20.1, 23.9, 28.2, 32.9, 35.5, 38.3, 40.8],
 } as const;
-/** The ICS's schedule (246 rpm): the same targets, 6 deg indicated (2.25 deg at 0.75 R, the middle of the P 5-7 deg) from 100
- *  KTAS; the low-speed part is the AMCS's (the attitude differs by under 0.5 deg). FITTED. pusherTrimLever reads it when the
- *  flight model passes the configuration (contract request: flightModel.ts reset). */
+/** The ICS's schedule (246 rpm): 6 deg indicated (the middle of the P 5-7 deg, APE-I SoF) = 6 deg at 0.75 R from 80 KTAS, about
+ *  1 deg of blade angle below the AMCS's (the faster rotor and prop); below 80 KTAS the AMCS's. FITTED with the AMCS gyro's
+ *  mechanics at 246 rpm (the blade angle is the rotor's and the prop's, not the gyro's; AG's ICS gyro trim runs out of forward
+ *  stick above about 170 KCAS at this collective, KNOWN_ISSUES). pusherTrimLever reads it when the flight model passes the
+ *  configuration (contract request: flightModel.ts reset). */
 export const PROP_TRIM_SCHEDULE_ICS = {
   kt: [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 190, 200, 210],
-  betaDeg: [-2.2, 5, 7.5, 13, 17, 22.5, 23.9, 26.4, 29.75, 33.7, 36.1, 38.7, 40.8],
+  betaDeg: [-2.2, 5, 7.5, 12, 13.7, 15.8, 19.1, 23.0, 27.2, 31.8, 34.3, 37.0, 39.9],
 } as const;
 const table = (t: { kt: readonly number[]; betaDeg: readonly number[] }) => ({ x: t.kt.map((kt) => kt * KT), y: t.betaDeg.map((deg) => deg * DEG) });
 
@@ -217,19 +218,33 @@ export const AH56_PUSHER: PusherDef = {
 
 // ------------------------------------------------------------------------------------------------- collective gauge
 /**
- * The collective the reports quote is the blade pitch at the CENTRE OF ROTATION: ASTA-72's rotor table (p 48, P) gives
- * "Geometric twist, theta_1, from center of rotation to rotor station 302.4: -5 deg" and "Collective pitch range, theta_0:
- * 0 deg 30 min to 18 deg 30 min", the theta(r) = theta_0 + theta_1 r / R notation. The model's collective is the pitch at
- * 0.75 R (definition.ts), so the gauge reads it plus -0.75 x twist = +3.75 deg (D) on top of the AMCS's +7 deg rigging
- * offset ("13 deg AMCS = 6 deg ICS", D): AMCS 13 deg indicated (the SoF cruise setting) is 2.25 deg at 0.75 R, ICS 5 deg is
- * 1.25 deg. Without it the SoF collective puts about 6 deg at 0.75 R on a mu 0.5 rotor and the rotor, not the wing,
- * carries the aircraft at 190 KTAS (docs/ah56-compound.md "Collective reference").
+ * The collective reference is AG's: the gauge reads the model's 0.75 R pitch plus the AMCS's +7 deg (gyro.ts). ASTA-72's
+ * rotor table (p 48, P) writes "Geometric twist, theta_1, from center of rotation to rotor station 302.4: -5 deg" and
+ * "Collective pitch range, theta_0", the theta(r) = theta_0 + theta_1 r / R notation, which would put the quoted collective
+ * at the CENTRE of rotation, 3.75 deg above the 0.75 R pitch. That reading was flown (docs/ah56-compound.md "Collective
+ * reference") and rejected: in this rotor model it leaves the AMCS's 13 deg indicated (AMCS-73 test condition f, P, flown
+ * from 80 KCAS) 5-8 deg nose up at 80-100 KCAS, the rolling take-off unable to lift off on 13 deg at 60 KIAS (AMCS-73 para
+ * 19, P) and the hover 1 deg past the 21.5 deg stop (AMCS-73 App C, P). AG's reading keeps all three; the price is a rotor
+ * that carries more of the weight at speed than the ESTIMATE lift-share band (C6).
  */
-export const COLLECTIVE_CENTRE_OFFSET = -0.75 * AH56_BASE.main.twist;
+/**
+ * The AMCS refit on the compound (stage 4; AG's docs/control-gyro-model.md section 6 calls it mandatory: the wing, the
+ * pusher and the unloaded rotor take the 150 KCAS pitch response from 4.27 to 3.81 deg/s/in with AG's 7,500 N m/rad and
+ * 811 N m). Only the two numbers AG fitted move: the flapping feedback gain K_R 7,500 -> 5,000 N m/rad and the full
+ * longitudinal stick moment 811 -> 715 N m (FITTED to G5 / C18 on the compound; the grid is in docs/ah56-compound.md):
+ * pitch 6.09 / 4.78 / 4.22 / 3.78 deg/s/in at 0 / 100 / 150 / 180 KCAS, sensitivity 11.6 / 10.5 deg/s^2/in at 0 / 100;
+ * roll 14.8 / 15.5 / 15.4 / 15.2 deg/s/in, 61.8 / 62.3 / 60.4 deg/s^2/in at 0 / 150 / 180. The model's sensitivity per unit
+ * response stays 1.9 /s (AMCS-73's 9 / 6 is 1.5 /s), so no pair reaches 4.2 deg/s/in at 180 KCAS with the hover
+ * sensitivity under 11.7 (C18's KNOWN GAP).
+ */
+export const AMCS_FLAP_FEEDBACK = 5000;
+export const AMCS_LONGITUDINAL_STICK_MOMENT = 715;
+
 const gyro = AH56_GYRO!;
 export const AH56_COMPOUND_GYRO: ControlGyroDef = { ...gyro, configs: {
-  amcs: { ...gyro.configs.amcs, collectiveIndicatedOffset: gyro.configs.amcs.collectiveIndicatedOffset + COLLECTIVE_CENTRE_OFFSET },
-  ics: { ...gyro.configs.ics, collectiveIndicatedOffset: gyro.configs.ics.collectiveIndicatedOffset + COLLECTIVE_CENTRE_OFFSET },
+  amcs: { ...gyro.configs.amcs, feedback: { mode: 'flapping', gain: AMCS_FLAP_FEEDBACK },
+    stickMoment: { ...gyro.configs.amcs.stickMoment, longitudinal: AMCS_LONGITUDINAL_STICK_MOMENT } },
+  ics: gyro.configs.ics,
 } };
 
 // ------------------------------------------------------------------------------------------------- rotor Mach drag
@@ -238,18 +253,25 @@ export const AH56_COMPOUND_GYRO: ControlGyroDef = { ...gyro, configs: {
  * Cl^2, Cm0 -0.012; base.ts) through section.ts with a drag rise past the drag-divergence Mach number, so V_H (C4) is fitted
  * with the advancing tip's compressibility and stage 5 need not re-fit it. M_dd 0.78 ESTIMATE (plan 7.4: the (4.6)3012 root
  * and (0.6)3006 tip mods); rise 3 (M - M_dd)^2: ESTIMATE, Korn's 20 (M - M_crit)^4 with M_crit = M_dd - 0.1 at the 194 KTAS
- * advancing tip, M 0.886 (D). Used only while highSpeed.ts (AH) declares no section of its own; AH's section replaces it.
+ * advancing tip, M 0.886 (D).
+ *
+ * NOT FLOWN: the S0 section stub also replaces RC's hinge forcing polar, and with it the ICS auto-trim on a fixed shaft
+ * (G3) goes from 4 % to 30 % of the locked-gyro gust moment (the locked moment itself 9.9 -> 1.9 kN m). So the fuselage
+ * drag is FITTED to V_H with this section on (the tests' C4 "with the Mach placeholder" row), and the aircraft flies the
+ * base polar until AH's section (highSpeed.ts) lands with its own Mach drag: V_H reads about 2 KTAS higher until then.
  */
 export const PROVISIONAL_SECTION: RotorSectionDef = { liftSlope: AH56_BASE.main.liftSlope, maxCl: AH56_BASE.main.maxCl,
   cd0: AH56_BASE.main.profileCd, cd2: AH56_BASE.main.inducedDrag, cm0: AH56_BASE.main.cm0 ?? 0,
   machDragRise: { divergence: 0.78, rise: 3 } };
 
-/** Fuselage, turrets, hub and gyro equivalent flat plate along x, m^2: FITTED to V_H (C4) with the stores (above) and the
- *  provisional Mach drag rise; plan 7.3's budget expects about 2.2 m^2 in all at 194 KTAS. */
-export const FUSELAGE_DRAG_X = 0.8;
+/** Fuselage, turrets, hub and gyro equivalent flat plate along x, m^2 (10.8 ft^2): FITTED to V_H (C4: 194 KTAS +/- 5 %) with the
+ *  stores (above) and the provisional Mach drag rise, and to C5 (AMCS clean, 210-225 KTAS), which the prop's 40.8 deg stop at
+ *  1674 rpm caps near 212 KTAS. Plan 7.3's budget expected about 2.2 m^2 in all at 194 KTAS with a prop efficiency of 0.8; this
+ *  prop map gives 0.72-0.75 at that loading (Hamilton Standard's charts: about 0.80), and 0.08 of efficiency is about 2 kN of
+ *  thrust = 0.33 m^2 at 194 KTAS (D). With the stores, 1.53 m^2 in all at 194 KTAS. */
+export const FUSELAGE_DRAG_X = 1.0;
 
 export const AH56_COMPOUND: AH56Patch = {
-  main: { section: AH56_ROTOR_HIGH_SPEED.section ?? PROVISIONAL_SECTION },
   dragArea: { ...AH56_BASE.dragArea, x: FUSELAGE_DRAG_X },
   wings: AH56_WINGS,
   pusher: AH56_PUSHER,
