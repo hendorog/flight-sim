@@ -3,12 +3,11 @@
 // are defined by (maximum rate and maximum acceleration per inch; ASTA-72's pitch time constant = time to 63 % of the
 // maximum rate), and an optional trace (AH56_TRACE=<directory> writes each file's report there as JSON).
 //
-// AIR DATA. The gyro's speed-scheduled augmentation reads the hub air velocity, which Rotorcraft.compute does not yet
-// pass to ControlGyro.advanceCoupled (contract request to RC/the integrator: the one-line call in rotorcraft.ts,
-// work/rigid/ag-integrator-requests.patch). Until then the rig hands the same data to the gyro before the trim (so the
-// trim includes the augmentation, as it will with the wiring) and once per step from the flight state; `airData: false`
-// flies the production wiring of today (augmentation dormant). The stand-in retires itself: PRODUCTION_AIR_WIRED detects
-// the wiring (one compute, does advanceCoupled receive `air`?) and then the rig flies the production path by default.
+// AIR DATA. The gyro's speed-scheduled augmentation reads the hub air velocity, which Rotorcraft.compute passes to
+// ControlGyro.advanceCoupled since the AG merge (integrator; work/rigid/ag-integrator-requests.patch). Before that the rig
+// handed the same data to the gyro before the trim and once per step from the flight state. The stand-in retires itself:
+// PRODUCTION_AIR_WIRED detects the wiring (one compute, does advanceCoupled receive `air`?), so on the integrated tree the
+// rig flies the production path.
 // AH56_AIRDATA=off forces the production path (the rig-vs-sim comparison, docs/control-gyro-model.md section 5).
 import { AH56_DEFINITION as def } from '../../src/aircraft/ah56';
 import { createFlightModelFor } from '../../src/physics';

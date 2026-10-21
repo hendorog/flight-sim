@@ -103,7 +103,7 @@ turns 83 % of the excess shaft power into climb against the 60-72 % the Bo 105 s
 Close with: a lag degree of freedom, Bo 105 hover identification data (Fu & Kaletka 1993, not obtained; the ERF 1989
 DLR/AFDD paper, obtained, covers 80 kt only), a manoeuvre-wake inflow model.
 
-### Hingeless rotor in-plane force at zero airspeed (AH-56A, Bo 105) — **defect**
+### Hingeless rotor in-plane force at zero airspeed (AH-56A; the Bo 105 not checked) — **defect**
 
 `Rotorcraft.compute` applies the main rotor's in-plane force only when the hub airspeed is above zero, along the
 airspeed direction, and drops its side component. A trim at exactly zero airspeed sees none; the first step's 1e-7 m/s

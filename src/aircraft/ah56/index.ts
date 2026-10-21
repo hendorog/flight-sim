@@ -31,9 +31,9 @@ export const AH56_DEFINITION: AircraftDefinition = {
   // A turbine starts with the igniters off; the condition grip OFF; the gear down; no clutch or governor switch.
   controlDefaults: { ...md.controlDefaults, gearLever: 'down', tailWheelLock: true },
   notModelled: [
-    'Stage 2 of the build: the wing (stage 3), the pusher propeller (stage 4) and the high-advance-ratio aerodynamics, moment stall and half-P hop (stage 5) are not in this build; the pusher is drawn stopped and feathered.',
+    'The half-P hop is a scripted event (a 0.5P roll and plunge forcing triggered by cyclic stirring in the ICS), not emergent from blade lag and plunge dynamics; one blade section serves the whole span (the tip\'s Mach terms), and dynamic stall is only its moment break.',
     'Control gyro: precession only (no nutation); the gyro\'s gimbal and spring reactions on the airframe are neglected (its spin momentum is in the gyroscopic moments). The AMCS gyro\'s momentum, springs and flapping-feedback gain are estimates fitted to the measured responses.',
-    'The ICS roll compensator, pitch desensitizer and decoupler and the AMCS trim and sideslip augmentation need the rotor core to pass the air data to the gyro (pending): until then they are dormant.',
+    'The pusher propeller\'s slipstream (reverse thrust included) reaches no surface (fin, tail rotor); the propeller is the generic blade-element model, not a Hamilton Standard performance map.',
     'Per-blade flap and lag transients (the in-plane modes behind the half-P hop and the 1P x 2P instability), the blade torsion and the feathering inertia.',
     'Weapons, the turrets\' motion and the directional trim switch; the APU (the engine start is the generic starter).',
     'Inertias, the flap frequency, the gear and the gas-generator speed are estimates; see KNOWN_ISSUES.md.',
