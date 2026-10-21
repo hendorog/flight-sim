@@ -171,14 +171,26 @@ export interface CoupledSystem { m: Float64Array; c: Float64Array }
  * Rotorcraft.compute (RC wires advanceCoupled in place of advanceFlap's harmonics, plan 4 item 1).
  */
 export class ControlGyro {
-  /** Gyro spin momentum, body axes, N m s (added to the rotor's H before w x H; plan 3.5). */
+  /** Gyro spin momentum, body axes, N m s (added to the rotor's H before w x H; plan 3.5). Updated in place. */
   readonly h: Vec3 = v3.zero();
   /** The last air data the augmentation used: from advanceCoupled's `air`, else setAirData; null = dormant. */
   private air: { kcas: number; sideslip: number } | null = null;
+  private readonly airBuf = { kcas: 0, sideslip: 0 };
   private readonly sys: CoupledSystem = { m: new Float64Array(16), c: new Float64Array(4) };
   private readonly aug = new Float64Array(25);
   private readonly expo = new Float64Array(25);
   private readonly scratch = [new Float64Array(25), new Float64Array(25), new Float64Array(25)];
+  // Per-step scratch (one 240 Hz step allocates nothing): 2x2 matrices, the step's state in and out, the stick moment,
+  // the clamped tilt, and advanceCoupled's result (reused: read it before the next call).
+  private readonly m2 = { fb: new Float64Array(4), inp: new Float64Array(4), jr: new Float64Array(4), jrf: new Float64Array(4),
+    di: new Float64Array(4), rp: new Float64Array(4), rx: new Float64Array(4), f: new Float64Array(4), sgj: new Float64Array(4),
+    dp: new Float64Array(4), dx: new Float64Array(4) };
+  private readonly z0 = new Float64Array(4);
+  private readonly z = new Float64Array(4);
+  private readonly flapC = new Float64Array(2);
+  private readonly stick = { roll: 0, pitch: 0 };
+  private readonly tilt = { roll: 0, pitch: 0 };
+  private readonly flapOut = { cosine: 0, sine: 0 };
   constructor(readonly def: RotorcraftDefinition, readonly state: RotorcraftState) {}
 
   /** The active configuration, read from state on every call. */
@@ -201,7 +213,7 @@ export class ControlGyro {
    * the flight state. null: dormant.
    */
   setAirData(air: GyroAir | null): void {
-    this.air = air ? airData(air) : null;
+    this.air = air ? airData(air, this.airBuf) : null;
   }
 
   /**
@@ -218,7 +230,8 @@ export class ControlGyro {
     // Feedback per rad of tilt in tilt-space moments (flap = G x tilt, disc axes = tilt axes).
     const f = cfg.feedback.mode === 'featheringMoment'
       ? Math.tan(cfg.feedback.sweep) * this.staticHubStiffness(omega) * G : cfg.feedback.gain * G;
-    const fb = rotation(FEEDBACK_SENSE * rot * cfg.feedbackRotation), inp = rotation(INPUT_SENSE * rot * cfg.inputRotation);
+    const fb = rotation(FEEDBACK_SENSE * rot * cfg.feedbackRotation, this.m2.fb);
+    const inp = rotation(INPUT_SENSE * rot * cfg.inputRotation, this.m2.inp);
     const stick = this.stickMoment(c, cfg, null);
     // sg J R_in m = (K_net I + q J + sg f J R_fb) phi, q = C_R rotation Omega_g; J R_fb = [[-fb2, -fb3], [fb0, fb1]].
     const kNet = cfg.spring - (cfg.negativeSpring ?? 0), q = (cfg.rotatingDamping ?? 0) * rot * cfg.spinRatio * omega;
@@ -228,7 +241,7 @@ export class ControlGyro {
     const r0 = -sg * m1, r1 = sg * m0;
     const det = a00 * a11 - a01 * a10;
     if (!(Math.abs(det) > 1e-9)) return;
-    const cl = clampTilt(cfg, (a11 * r0 - a01 * r1) / det, (a00 * r1 - a10 * r0) / det);
+    const cl = clampTilt(cfg, (a11 * r0 - a01 * r1) / det, (a00 * r1 - a10 * r0) / det, this.tilt);
     g.roll = cl.roll; g.pitch = cl.pitch; g.rollRate = 0; g.pitchRate = 0;
     this.updateMomentum();
   }
@@ -244,26 +257,29 @@ export class ControlGyro {
    * with dz/dt = m z + c. The same arithmetic advanceCoupled exponentiates.
    */
   linearize(c: ControlInputs, rateShaft: Vec3, system: FlapSystem, blade?: GyroBladeMoments, air?: GyroAir): CoupledSystem {
-    if (air) this.air = airData(air);
+    if (air) this.air = airData(air, this.airBuf);
     this.assemble(c, rateShaft, system, blade);
     return { m: Float64Array.from(this.sys.m), c: Float64Array.from(this.sys.c) };
   }
 
   /**
    * Advance gyro tilt and the flap harmonics together over dt > 0 (one 4x4 exact step) and return the new flap
-   * harmonics. rateShaft: body rates in shaft axes, rad/s. blade: the feathering-moment inputs (ICS). air: the hub air
-   * velocity and density for the augmentation (absent: the last setAirData, else dormant).
+   * harmonics (a reused object: read it before the next call). rateShaft: body rates in shaft axes, rad/s. blade: the
+   * feathering-moment inputs (ICS). air: the hub air velocity and density for the augmentation (absent: the last
+   * setAirData, else dormant).
    */
   advanceCoupled(dt: number, c: ControlInputs, rateShaft: Vec3, system: FlapSystem,
     flap: { cosine: number; sine: number }, blade?: GyroBladeMoments, air?: GyroAir): { cosine: number; sine: number } {
-    const g = this.state.controlGyro;
-    if (!g || !(dt > 0)) return { cosine: flap.cosine, sine: flap.sine };
-    if (air) this.air = airData(air);
+    const g = this.state.controlGyro, out = this.flapOut;
+    if (!g || !(dt > 0)) { out.cosine = flap.cosine; out.sine = flap.sine; return out; }
+    if (air) this.air = airData(air, this.airBuf);
     const cfg = this.config();
     this.assemble(c, rateShaft, system, blade);
-    const z = this.step(this.sys.m, this.sys.c, 4, [g.roll, g.pitch, flap.cosine, flap.sine], dt);
+    const z0 = this.z0;
+    z0[0] = g.roll; z0[1] = g.pitch; z0[2] = flap.cosine; z0[3] = flap.sine;
+    const z = this.step(this.sys.m, this.sys.c, 4, z0, dt, this.z);
     let roll = z[0], pitch = z[1], cosine = z[2], sine = z[3];
-    const cl = clampTilt(cfg, roll, pitch);
+    const cl = clampTilt(cfg, roll, pitch, this.tilt);
     if (cl.roll !== roll || cl.pitch !== pitch) {
       // At a stop: the tilt holds there (no wind-up) and the flap is re-stepped with the cyclic frozen at the stop.
       roll = cl.roll; pitch = cl.pitch;
@@ -273,7 +289,8 @@ export class ControlGyro {
     g.rollRate = (roll - g.roll) / dt; g.pitchRate = (pitch - g.pitch) / dt;
     g.roll = roll; g.pitch = pitch;
     this.updateMomentum();
-    return { cosine, sine };
+    out.cosine = cosine; out.sine = sine;
+    return out;
   }
 
   // ------------------------------------------------------------------------------------------------- internals
@@ -286,7 +303,7 @@ export class ControlGyro {
     return d.main.blades / 2 * (e * b.flapFirst * omega * omega + hingelessSpring(d));
   }
 
-  /** The stick's moment command in tilt-rate space (before the linkages' 90 deg turn), N m: roll, pitch. */
+  /** The stick's moment command in tilt-rate space (before the linkages' 90 deg turn), N m: roll, pitch (this.stick). */
   private stickMoment(c: ControlInputs, cfg: ControlGyroConfig, rate: Vec3 | null): { roll: number; pitch: number } {
     const t = cfg.stickTravel;
     let lon = clampUnit(c.elevator) * t.longitudinal, lat = clampUnit(c.aileron) * t.lateral;
@@ -311,43 +328,48 @@ export class ControlGyro {
         lat += clampAbs(-lookup(p.gainByKcas, kcas) * p.stickPerRad * air.sideslip, p.authority);
       }
     }
-    return { roll: cfg.stickMoment.lateral * lat / t.lateral, pitch: cfg.stickMoment.longitudinal * lon / t.longitudinal };
+    const s = this.stick;
+    s.roll = cfg.stickMoment.lateral * lat / t.lateral; s.pitch = cfg.stickMoment.longitudinal * lon / t.longitudinal;
+    return s;
   }
 
   /** Build sys.m / sys.c for this step (see the file header for the equation). */
   private assemble(c: ControlInputs, rateShaft: Vec3, system: FlapSystem, blade?: GyroBladeMoments): void {
-    const cfg = this.config(), d = this.def, rot = d.rotation;
+    const cfg = this.config(), d = this.def, rot = d.rotation, w = this.m2;
     const spin = cfg.spinRatio * this.state.omega;
     const hs = rot * cfg.inertia * spin, sg = hs >= 0 ? 1 : -1;
     const cr = cfg.rotatingDamping ?? 0, ct = Math.max(cfg.damping + cr, 1e-6);
     const kNet = cfg.spring - (cfg.negativeSpring ?? 0);
     // D = hs J + ct I = [[ct, -hs], [hs, ct]]; D^-1 = [[ct, hs], [-hs, ct]] / (ct^2 + hs^2).
     const det = ct * ct + hs * hs;
-    const di = [ct / det, hs / det, -hs / det, ct / det];
+    const di = w.di;
+    di[0] = ct / det; di[1] = hs / det; di[2] = -hs / det; di[3] = ct / det;
     // Tilt stiffness in physical moments: -K_net I - C_R rotation Omega_g J.
     const q = cr * rot * spin;
-    const rp = [-kNet, q, -q, -kNet];
+    const rp = w.rp;
+    rp[0] = -kNet; rp[1] = q; rp[2] = -q; rp[3] = -kNet;
     // Feedback map F: flap x -> tilt-space moment (roll, pitch); the gyro sees sg J R_fb F x.
-    const fb = rotation(FEEDBACK_SENSE * rot * cfg.feedbackRotation);
-    let f: [number, number, number, number];
+    const fb = rotation(FEEDBACK_SENSE * rot * cfg.feedbackRotation, w.fb);
+    const f = w.f;
     if (cfg.feedback.mode === 'featheringMoment') {
       const lam = Math.tan(cfg.feedback.sweep), h = system.hub;
-      f = [lam * h[0], lam * h[1], lam * h[2], lam * h[3]];
+      f[0] = lam * h[0]; f[1] = lam * h[1]; f[2] = lam * h[2]; f[3] = lam * h[3];
     } else {
       // The flap in tilt order (right, aft) = (sine, cosine).
       const k = cfg.feedback.gain;
-      f = [0, k, k, 0];
+      f[0] = 0; f[1] = k; f[2] = k; f[3] = 0;
     }
-    const jr = mul2(sgJ(sg), fb);
-    const jrf = mul2(jr, f);
-    const rx = [-jrf[0], -jrf[1], -jrf[2], -jrf[3]];
+    const jr = mul2(sgJ(sg, w.sgj), fb, w.jr);
+    const jrf = mul2(jr, f, w.jrf);
+    const rx = w.rx;
+    rx[0] = -jrf[0]; rx[1] = -jrf[1]; rx[2] = -jrf[2]; rx[3] = -jrf[3];
     // Constant moments: pilot, the precession the body rate demands and the ICS extra feathering moments.
     const stick = this.stickMoment(c, cfg, rateShaft);
-    const inp = rotation(INPUT_SENSE * rot * cfg.inputRotation);
-    const mIn = [inp[0] * stick.roll + inp[1] * stick.pitch, inp[2] * stick.roll + inp[3] * stick.pitch];
-    const pilot = [-sg * mIn[1], sg * mIn[0]];
+    const inp = rotation(INPUT_SENSE * rot * cfg.inputRotation, w.inp);
+    const mIn0 = inp[0] * stick.roll + inp[1] * stick.pitch, mIn1 = inp[2] * stick.roll + inp[3] * stick.pitch;
+    const pilot0 = -sg * mIn1, pilot1 = sg * mIn0;
     // -hs J w with J (p, q) = (-q, p).
-    const precession = [hs * rateShaft.y, -hs * rateShaft.x];
+    const precession0 = hs * rateShaft.y, precession1 = -hs * rateShaft.x;
     let extra0 = 0, extra1 = 0;
     if (cfg.feedback.mode === 'featheringMoment') {
       const fbk = cfg.feedback, half = d.main.blades / 2;
@@ -358,13 +380,13 @@ export class ControlGyro {
         extra0 += jr[0] * e0 + jr[1] * e1; extra1 += jr[2] * e0 + jr[3] * e1;
       }
     }
-    const r0 = [pilot[0] + precession[0] - extra0, pilot[1] + precession[1] - extra1];
+    const r00 = pilot0 + precession0 - extra0, r01 = pilot1 + precession1 - extra1;
     const m = this.sys.m, cv = this.sys.c;
     // Gyro rows: phi' = D^-1 (r0 + rp phi + rx x).
-    const dp = mul2(di, rp), dx = mul2(di, rx);
+    const dp = mul2(di, rp, w.dp), dx = mul2(di, rx, w.dx);
     m[0] = dp[0]; m[1] = dp[1]; m[2] = dx[0]; m[3] = dx[1];
     m[4] = dp[2]; m[5] = dp[3]; m[6] = dx[2]; m[7] = dx[3];
-    cv[0] = di[0] * r0[0] + di[1] * r0[1]; cv[1] = di[2] * r0[0] + di[3] * r0[1];
+    cv[0] = di[0] * r00 + di[1] * r01; cv[1] = di[2] * r00 + di[3] * r01;
     // Flap rows: x' = a x + (f - b theta0) + b G P phi, P = diag(rot, -rot) (theta = [rot right, -rot aft]).
     const a = system.a, b = system.b, G = cfg.cyclicPerTilt;
     m[8] = b[0] * G * rot; m[9] = -b[1] * G * rot; m[10] = a[0]; m[11] = a[1];
@@ -374,8 +396,8 @@ export class ControlGyro {
     cv[3] = system.f[1] - (b[2] * t0[0] + b[3] * t0[1]);
   }
 
-  /** Exact step of dz/dt = m z + c over dt (the augmented exponential), n = 2 or 4. */
-  private step(m: ArrayLike<number>, c: ArrayLike<number>, n: number, z0: readonly number[], dt: number): number[] {
+  /** Exact step of dz/dt = m z + c over dt (the augmented exponential), n = 2 or 4, into `out` (not aliasing z0). */
+  private step(m: ArrayLike<number>, c: ArrayLike<number>, n: number, z0: ArrayLike<number>, dt: number, out: Float64Array): Float64Array {
     const N = n + 1, aug = this.aug;
     aug.fill(0, 0, N * N);
     for (let i = 0; i < n; i++) {
@@ -383,32 +405,36 @@ export class ControlGyro {
       aug[i * N + n] = c[i] * dt;
     }
     expm(aug, N, this.expo, this.scratch);
-    const out: number[] = [];
     for (let i = 0; i < n; i++) {
       let s = this.expo[i * N + n];
       for (let j = 0; j < n; j++) s += this.expo[i * N + j] * z0[j];
-      out.push(s);
+      out[i] = s;
     }
     return out;
   }
 
-  /** The flap harmonics alone over dt with the cyclic held at the gyro tilt (roll, pitch). */
-  private flapOnly(system: FlapSystem, roll: number, pitch: number, flap: { cosine: number; sine: number }, dt: number): number[] {
+  /** The flap harmonics alone over dt with the cyclic held at the gyro tilt (roll, pitch), into this.z. */
+  private flapOnly(system: FlapSystem, roll: number, pitch: number, flap: { cosine: number; sine: number }, dt: number): Float64Array {
     const cfg = this.config(), rot = this.def.rotation, G = cfg.cyclicPerTilt;
-    const theta = [rot * G * roll, -rot * G * pitch], t0 = system.theta0, b = system.b;
-    const c = [system.f[0] + b[0] * (theta[0] - t0[0]) + b[1] * (theta[1] - t0[1]),
-      system.f[1] + b[2] * (theta[0] - t0[0]) + b[3] * (theta[1] - t0[1])];
-    return this.step(system.a, c, 2, [flap.cosine, flap.sine], dt);
+    const theta0 = rot * G * roll, theta1 = -rot * G * pitch, t0 = system.theta0, b = system.b;
+    const c = this.flapC, z0 = this.z0;
+    c[0] = system.f[0] + b[0] * (theta0 - t0[0]) + b[1] * (theta1 - t0[1]);
+    c[1] = system.f[1] + b[2] * (theta0 - t0[0]) + b[3] * (theta1 - t0[1]);
+    z0[0] = flap.cosine; z0[1] = flap.sine;
+    return this.step(system.a, c, 2, z0, dt, this.z);
   }
 
-  /** The gyro's spin momentum in body axes: h along its tilted spin axis (the rotor's sign convention). */
+  /** The gyro's spin momentum in body axes: h along its tilted spin axis (the rotor's sign convention), in place. */
   private updateMomentum(): void {
-    const g = this.state.controlGyro;
-    if (!g) { this.h.x = this.h.y = this.h.z = 0; return; }
+    const g = this.state.controlGyro, h = this.h;
+    if (!g) { h.x = h.y = h.z = 0; return; }
     const cfg = this.config(), hs = this.def.rotation * cfg.inertia * cfg.spinRatio * this.state.omega;
-    const axis = v3.normalize({ x: -g.pitch, y: g.roll, z: -1 });
+    // v3.normalize of (-pitch, roll, -1), then toBody (shaftFrame.ts) when the shaft is tilted, then the scale, inline.
+    const ax = -g.pitch, ay = g.roll, az = -1, l = Math.hypot(ax, ay, az);
+    let x = ax / l, y = ay / l, z = az / l;
     const tilt = this.def.shaftTilt ?? 0;
-    Object.assign(this.h, v3.scale(tilt ? toBody(axis, tilt) : axis, hs));
+    if (tilt) { const ct = Math.cos(tilt), st = Math.sin(tilt), bx = x * ct - z * st, bz = x * st + z * ct; x = bx; z = bz; }
+    h.x = x * hs; h.y = y * hs; h.z = z * hs;
   }
 }
 
@@ -417,28 +443,34 @@ export class ControlGyro {
 function clampUnit(x: number): number { return x < -1 ? -1 : x > 1 ? 1 : x; }
 function clampAbs(x: number, limit: number): number { return x < -limit ? -limit : x > limit ? limit : x; }
 
-function airData(a: GyroAir): { kcas: number; sideslip: number } {
+function airData(a: GyroAir, out: { kcas: number; sideslip: number }): { kcas: number; sideslip: number } {
   const tas = Math.hypot(a.hub.x, a.hub.y, a.hub.z);
-  return { kcas: tas * Math.sqrt(Math.max(a.density, 0) / SEA_LEVEL_DENSITY) / KT,
-    sideslip: tas > 1 ? Math.asin(Math.max(-1, Math.min(1, a.hub.y / tas))) : 0 };
+  out.kcas = tas * Math.sqrt(Math.max(a.density, 0) / SEA_LEVEL_DENSITY) / KT;
+  out.sideslip = tas > 1 ? Math.asin(Math.max(-1, Math.min(1, a.hub.y / tas))) : 0;
+  return out;
 }
 
-/** Tilt clamped to the configuration's stops. */
-function clampTilt(cfg: ControlGyroConfig, roll: number, pitch: number): { roll: number; pitch: number } {
+/** Tilt clamped to the configuration's stops, into `out`. */
+function clampTilt(cfg: ControlGyroConfig, roll: number, pitch: number, out: { roll: number; pitch: number }): { roll: number; pitch: number } {
   const t = cfg.maxTilt;
-  return { roll: roll < -t.left ? -t.left : roll > t.right ? t.right : roll,
-    pitch: pitch < -t.down ? -t.down : pitch > t.up ? t.up : pitch };
+  out.roll = roll < -t.left ? -t.left : roll > t.right ? t.right : roll;
+  out.pitch = pitch < -t.down ? -t.down : pitch > t.up ? t.up : pitch;
+  return out;
 }
 
-/** Rotation matrix by angle a in the (roll, pitch) tilt plane, row-major. */
-function rotation(a: number): [number, number, number, number] {
+/** Rotation matrix by angle a in the (roll, pitch) tilt plane, row-major, into `out`. */
+function rotation(a: number, out: Float64Array): Float64Array {
   const c = Math.cos(a), s = Math.sin(a);
-  return [c, -s, s, c];
+  out[0] = c; out[1] = -s; out[2] = s; out[3] = c;
+  return out;
 }
-/** sgn(h) J with J = [[0, -1], [1, 0]]. */
-function sgJ(sg: number): [number, number, number, number] { return [0, -sg, sg, 0]; }
-function mul2(a: ArrayLike<number>, b: ArrayLike<number>): [number, number, number, number] {
-  return [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3]];
+/** sgn(h) J with J = [[0, -1], [1, 0]], into `out`. */
+function sgJ(sg: number, out: Float64Array): Float64Array { out[0] = 0; out[1] = -sg; out[2] = sg; out[3] = 0; return out; }
+/** a b (2x2, row-major) into `out`, which must alias neither. */
+function mul2(a: ArrayLike<number>, b: ArrayLike<number>, out: Float64Array): Float64Array {
+  const o0 = a[0] * b[0] + a[1] * b[2], o1 = a[0] * b[1] + a[1] * b[3], o2 = a[2] * b[0] + a[3] * b[2], o3 = a[2] * b[1] + a[3] * b[3];
+  out[0] = o0; out[1] = o1; out[2] = o2; out[3] = o3;
+  return out;
 }
 
 /**
