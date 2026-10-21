@@ -22,6 +22,8 @@
 //   view=rotorside         side camera at the main hinge height, for judging coning without parallax.
 //                          The generic side preset is below the hub; a far drooping blade can look raised.
 //   view=head              rotorcraft: a close three-quarter view of the main rotor head
+//   eye=x,y,z at=x,y,z     a free camera in body FRD metres (x forward, y right, z down) looking at `at` (instead of
+//                          view=): for matching a reference photograph's viewpoint
 //   rotorcraft with a control gyro or a pusher (AH-56A):
 //     config=amcs|ics        the gyro configuration drawn (ics: the 9.7 ft gyro X on the head)
 //     gyropitch=deg gyroroll=deg   gyro tilt relative to the shaft (+ = aft / right, the gyroBladeCyclic convention)
@@ -424,6 +426,12 @@ void runHarness({
     ctx.controls.lights.panel = num('panel', ctx.controls.lights.panel);
     const view = params.get('view');
     if (view && PRESETS[view]) camPreset = PRESETS[view];
+    const frdParam = (k: string): THREE.Vector3 | null => {
+      const v = params.get(k)?.split(',').map(Number);
+      return v && v.length === 3 && v.every(Number.isFinite) ? new THREE.Vector3(v[1], -v[2], -v[0]) : null;
+    };
+    const eyeAt = frdParam('eye'), lookAt = frdParam('at');
+    if (eyeAt && lookAt) camPreset = [eyeAt, lookAt];
     if (view?.startsWith('cockpit')) {
       ctx.cameraMode = 'cockpit';
       if (!params.has('fov') && airframe?.cockpit.defaultFovDeg) { ctx.camera.fov = airframe.cockpit.defaultFovDeg; ctx.camera.updateProjectionMatrix(); }

@@ -386,6 +386,12 @@ describe('AH-56A exterior', () => {
         expect(p.z - lining.section(p.x).zTop).toBeGreaterThan(0.12);
         expect(sectionHalfWidth(lining, p.x, p.z)).toBeGreaterThan(0.2);
       }
+      // The frozen panel face (panelLayout.ts) stands inside the cabin lining at all four corners, under the rear windshield.
+      const f = AH56_PANEL_FACE, tilt = f.tiltBackDeg * DEG;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const x = f.centre.x + sz * f.height / 2 * Math.sin(tilt), z = f.centre.z + sz * f.height / 2 * Math.cos(tilt);
+        expect(sectionHalfWidth(lining, x, z), `panel corner ${sx} ${sz}`).toBeGreaterThan(f.width / 2 + 0.01);
+      }
       const [origin, du, dv] = panelUvBasis(visual.panel.geometry)!;
       const centre = origin.clone().addScaledVector(du, 0.5).addScaledVector(dv, 0.5);
       expect(visual.panel.localToWorld(centre).distanceTo(frd(AH56_PANEL_FACE.centre.x, AH56_PANEL_FACE.centre.y, AH56_PANEL_FACE.centre.z))).toBeLessThan(1e-6);

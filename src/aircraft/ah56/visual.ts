@@ -49,10 +49,11 @@ export const LOFT: readonly (readonly [number, number, number, number, number, n
   [84.0, 106.0, 45.5, 70.0, 19.1, 2.3, 2.8],
   [98.0, 116.0, 46.5, 72.0, 19.5, 2.2, 2.8],
   [114.0, 122.5, 47.5, 73.0, 19.8, 2.1, 2.8],
-  [130.0, 125.0, 48.5, 74.0, 20.1, 2.1, 2.8],
-  [138.0, 126.5, 49.0, 75.0, 20.2, 2.2, 2.8],
-  [146.0, 134.0, 49.5, 76.0, 20.2, 2.3, 2.8],
-  [156.0, 140.0, 50.5, 77.0, 20.2, 2.3, 2.8],
+  [128.0, 125.0, 48.5, 74.0, 20.1, 2.1, 2.8],
+  [133.0, 128.5, 48.8, 74.5, 20.2, 2.2, 2.8],
+  [138.0, 137.0, 49.0, 75.0, 20.4, 2.3, 2.8],
+  [143.0, 141.0, 49.5, 75.5, 20.4, 2.3, 2.8],
+  [152.0, 142.0, 50.2, 76.5, 20.2, 2.3, 2.8],
   [170.0, 143.0, 52.0, 78.0, 20.2, 2.3, 2.8],
   [188.0, 143.5, 54.0, 79.0, 20.2, 2.3, 2.8],
   [205.0, 141.5, 55.5, 80.0, 20.2, 2.4, 2.8],
@@ -81,17 +82,18 @@ export const SPINNER = { baseFs: LOFT_END_FS, tipFs: D.NOSE_FS + 656, radiusIn: 
 const sw = (pts: readonly (readonly [number, number])[]): [number, number][] => pts.map(([s, w]) => [fs(s), wl(w)]);
 /**
  * Front (gunner) canopy: windshield from the nose deck (FS 66, WL 89) back to its aft bow at FS 138, sill about WL 95;
- * the outline runs over the top (WL 200) so both halves and the roof are glass. Rear (pilot) canopy: from the step at
- * FS 140 (WL 125) back to FS 207, sill about WL 108. 3V (Rucker front/side, Fort Campbell). Butterfly halves hinged on
+ * the outline runs over the top (WL 200) so both halves and the roof are glass. Rear (pilot) canopy: its steep windshield
+ * rises from the front canopy's aft bow (FS 129-131) so that the frozen panel face (FS 138.6-141.4, up to WL 125.8, 24.4 in
+ * wide) stands inside the section behind it; back to FS 206, sill about WL 108. 3V (Rucker front/side, Fort Campbell). Butterfly halves hinged on
  * the centreline (P SoF "butterfly canopy (forward and/or aft)").
  */
-export const FRONT_CANOPY = sw([[65.5, 89.5], [72, 89.5], [137.5, 98], [137.5, 200], [65.5, 200]]);
-export const REAR_CANOPY = sw([[140.5, 122], [146, 108], [206, 109], [206, 200], [140.5, 200]]);
+export const FRONT_CANOPY = sw([[65.5, 89.5], [72, 89.5], [129, 97.5], [129, 200], [65.5, 200]]);
+export const REAR_CANOPY = sw([[131, 125], [137, 108], [206, 109], [206, 200], [131, 200]]);
 /** Canopy frame stations (FS), drawn as bows over the glass. 3V. */
-export const CANOPY_BOWS = { front: [66.5, 80, 104, 137.5], rear: [141, 157, 182, 206] } as const;
+export const CANOPY_BOWS = { front: [66.5, 80, 104, 129.5], rear: [131.5, 160, 184, 206] } as const;
 /** Sill lines (FS, WL) of both canopies, as frames. 3V. */
-export const FRONT_SILL = [[66, 89.5], [72, 89.5], [137.5, 98]] as const;
-export const REAR_SILL = [[140.5, 122], [146, 108], [206, 109]] as const;
+export const FRONT_SILL = [[66, 89.5], [72, 89.5], [129.5, 97.5]] as const;
+export const REAR_SILL = [[131.5, 124], [137, 108], [206, 109]] as const;
 
 // ------------------------------------------------------------------------------------------------ sponsons, wing
 /**

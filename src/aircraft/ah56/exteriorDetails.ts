@@ -151,16 +151,16 @@ export function buildAH56Exterior(def: AirframeVisualDef, m: AH56Materials, skin
         return THREE.MathUtils.lerp(pts[i][1], pts[i + 1][1], (s - pts[i][0]) / (pts[i + 1][0] - pts[i][0] || 1));
       return pts[pts.length - 1][1];
     };
-    for (const s of CANOPY_BOWS.front) bow(s, sillAt(FRONT_SILL, s), s === CANOPY_BOWS.front[0] || s === 137.5 ? 0.016 : 0.010);
-    for (const s of CANOPY_BOWS.rear) bow(s, sillAt(REAR_SILL, s), s === CANOPY_BOWS.rear[0] || s === 206 ? 0.016 : 0.010);
+    for (const s of CANOPY_BOWS.front) bow(s, sillAt(FRONT_SILL, s), s === CANOPY_BOWS.front[0] || s === 129.5 ? 0.014 : 0.009);
+    for (const s of CANOPY_BOWS.rear) bow(s, sillAt(REAR_SILL, s), s === CANOPY_BOWS.rear[0] || s === 206 ? 0.014 : 0.009);
     for (const side of [-1, 1]) for (const sill of [FRONT_SILL, REAR_SILL]) {
       const pts = sill.map(([s, w]) => [fs(s), wl(w)] as const);
       add(m.frame, pathTube(skinPath(skin, side, pts, 0.004, 10), 0.016, 60));
     }
     // Centreline frame over both canopies: the butterfly hinge line, with the hinge blocks.
     const top: FRD[] = [];
-    for (let s = 66; s <= 206; s += 2) top.push([fs(s), 0, section(fs(s)).zTop - 0.006]);
-    add(m.frame, pathTube(top, 0.011, 140));
+    for (let s = 66; s <= 206; s += 2) top.push([fs(s), 0, section(fs(s)).zTop - 0.005]);
+    add(m.frame, pathTube(top, 0.009, 140));
     for (const s of [90, 120, 160, 196]) add(m.cast, box([fs(s), 0, section(fs(s)).zTop - 0.02], [0.07, 0.05, 0.03], 0.006));
     // Canopy jettison/handle fittings below the sills (yellow rescue markings on the photographs are not drawn).
     for (const s of [100, 175]) {
