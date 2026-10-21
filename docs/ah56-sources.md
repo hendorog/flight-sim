@@ -1,4 +1,8 @@
-# Lockheed AH-56A Cheyenne: source and setup record (DRAFT)
+# Lockheed AH-56A Cheyenne: source and setup record
+
+Stage 2 (AG, 21 October 2026): the control gyro on the non-compound aircraft, the T64, the hingeless hub and the wheels are built
+on the sources below; what each number is and how it was used is in `docs/ah56-flight-model.md` and `docs/control-gyro-model.md`.
+The section "Stage 2: how the sources were used" at the end lists the additions and the readings taken.
 
 The aircraft is the **Lockheed AH-56A Cheyenne compound helicopter**. It has a four-blade hingeless ("rigid") main rotor driven through a control gyro, a 195 ft² low
 wing, a 10 ft three-blade reversible pusher propeller and a four-blade teetering tail rotor on the left stabiliser tip. All three rotors are driven by one GE T64 on one
@@ -40,6 +44,8 @@ Copy them to worker worktrees. Do not commit PDFs or photographs. The full numbe
 | `secondary-wikipedia/` | Wikipedia AH-56 (Jane's 1969–70 spec box, Landis & Jenkins history, survivors) and T64 pages; **secondary** | [WP](https://en.wikipedia.org/wiki/Lockheed_AH-56_Cheyenne) |
 | `commons-photos/` | Wikimedia Commons reference photos, licences in research-ah56.md §14. NASA Ames tunnel views (PD); Fort Campbell 66-8831 profile (CC0); Army Aviation Museum 66-8832 AMCS (CC BY 2.0, James Emery); turret drawings (PD) | [Commons](https://commons.wikimedia.org/wiki/Category:AH-56_Cheyenne) |
 | (other session) `…/work/pcmd/sources/md500/nasa-cr-3144/` | Heffley CR-3144, AH-1G loading summary (p 120), used to scale the inertia ESTIMATES | already cached |
+| `lockheed/ntrs-19710028118/` | **NASA CR-114362** (Watts, London & Snoddy, Lockheed, May 1971), *Trim, Control, and Stability of a Gyro-Stabilized Hingeless Rotor at High Advance Ratio and Low Rotor Speed*: Appendix A (the eight-DOF rotor-gyroscope-body equations: the gyroscope's stationary-axis terms, swashplate springs and dampers, rotating feathering damping), Appendix C (the gyro precessive "control mode" and the effect of swashplate springs and dampers). Downloaded for stage 2 (AG) | [NTRS](https://ntrs.nasa.gov/citations/19710028118) |
+| `lockheed/AD0675445.clean` | Lentine et al., XH-51A compound maneuverability (USAAVLABS TR 68-23): the XH-51A gyro (7.5 slug-ft²) and response times 0.15 s roll / 0.25 s pitch, the check of tau = Lambda I / H | [archive.org](https://archive.org/details/DTIC_AD0675445) |
 
 ## Resolved installation facts
 
@@ -110,7 +116,7 @@ precedence. A future `src/aircraft/ah56/dimensions.ts` should cite each group.
 | Horizontal stabiliser | 31.83 ft² (L 16.25 bobtailed / R 15.58), span 10.83 ft, ¼-MAC FS 637.2, incidence 2°, 0012–0018 sections; right TE 2.8° down | **P** |
 | Ventral fin | 24.6 ft², WL 37.6–114.5 (span 6.41 ft), ¼-MAC FS 620.3 WL 79.4, NACA 0018; root 4.84 / tip 2.84 ft (**D**); no dorsal fin | **P** |
 | Envelope | fuselage 54 ft 8 in; height 13 ft 8.5 in | **S** (Jane's); nose ≈ FS 20–40 and ground ≈ WL 15–20 **3V/ESTIMATE** |
-| Gear | tail-wheel, retractable; track ≈ 5 ft 2 in (pivot-radius reading, **D**); mains ≈ FS 280–290, forward of the CG (**3V ESTIMATE**); tail wheel in the fin tip | **P** layout; positions **3V** |
+| Gear | tail-wheel, retractable; track ≈ 5 ft 2 in (pivot-radius reading, **D**); mains at FS 268 (stage 2: the Fort Campbell left and Rucker right side photos put the main wheels 30–35 in ahead of the mast; **3V**), tail wheel ≈ FS 640 in the fin tip; tyres 11 in / 6.75 in rolling radius (**3V**, 5.00×4 tail **P**) | **P** layout; positions **3V** |
 | Turrets | nose turret (XM51 40 mm / XM53 7.62 mm); belly turret XM52 30 mm at FS 190, 21 in ground clearance | **P**; shapes from PD Army line drawings **3V** |
 | Stores | 4 wing pylons at BL 70 / 117; 2 fuselage (tank) pylons; stores ΔFe 2 ft² at 110 KTAS → 6 ft² at 200 KTAS | **P** |
 | Occupants | pilot (aft) ≈ FS 170 floor; CP/G ≈ FS 124–130 | **P** sensor stations; eye points **ESTIMATE** |
@@ -163,11 +169,29 @@ Shapes of the nose, canopy frames, sponsons, engine intake/exhaust, tail cone an
 - 8/rev vertical vibration at the pilot seat floor reached ≈ 0.4 g.
 - FLAWS tones and a voice warning system.
 
+## Stage 2: how the sources were used (AG)
+
+- **The gyro equation** is CR-114362 App A's stationary-axis gyroscope reduced to precession (the antisymmetric 2 Omega_G I_G term; the swashplate springs
+  and dampers diagonal in the stationary axes, App A pp 211-231; rotating "feathering" damping C_R in the rotating axes, App A p 211). App C's finding that a
+  swashplate spring makes the gyro's precessive mode PRECESS (its frequency falls through zero as rpm falls) is why G1 is read as a precession rate K/H and
+  a circle centre M/K, not a first-order lag (docs/control-gyro-model.md).
+- **AMCS-73 paras 33-34 define the response numbers**: "control response (maximum angular velocity per inch of control displacement) and sensitivity
+  (maximum angular acceleration per inch)". Longitudinal 6 deg/s/in and 9 deg/s^2/in, "approximately constant throughout the airspeed range"; lateral 16
+  deg/s/in, 60 deg/s^2/in at the hover to 53 at 180 KCAS. Para 35: pitch-roll cross-coupling "encountered during ICS testing ... virtually eliminated with
+  the AMCS". The AMCS stick moments and K_R were fitted to these (and to Hohenemser's 9 deg/s/in at the hover).
+- **The AMCS tilt stops** (App C p 29) are read as blade cyclic (SSL gain 1): forward 18.05 > aft 10.11 and left 18.08 > right 12.27 is a cyclic rigging
+  pattern, and a gain of 10 would give 100-180 deg of cyclic (plan G5a).
+- **The 28 ft-lb feather-bearing friction** (ASTA-72 App C) is flown as CR-114362's rotating damping (its describing-function equivalent at a 5 deg cyclic
+  amplitude), not as a Coulomb dead band.
+- **The main gear station** moved from the scaffold's FS 285 to FS 268 (3V, the two side photos): at FS 285 the mains were 13 in ahead of the CG and
+  braking above 0.17 g would tip the aircraft onto its nose.
+- **The Lock number 6.4** (Hoh-74, AMCS) is matched about the shaft with the blades' own share of the P rotor polar inertia (88 %; the hubs are the rest).
+
 ## Scaffold boundaries
 
 Nothing here implies a calibrated Cheyenne rotor or gyro:
-- **The AMCS gyro's drive speed and gains** (rotor feedback gain, negative spring, lag τ) are not published in anything found. Tune the stage-2 gyro block to the
-  measured AMCS responses above, not to a physical H.
+- **The AMCS gyro's drive speed and gains** (rotor feedback gain, negative spring, lag τ) are not published in anything found. The stage-2 gyro block is
+  tuned to the measured AMCS responses above (the stick moments and K_R; docs/control-gyro-model.md "AMCS fit"); its momentum is fixed at the ICS value.
 - The ICS gyro numbers are complete enough for a physical model of the switchable variant.
 - **Estimates and gaps (research-ah56.md §16):**
   - Estimates: airframe inertias, flap and lag frequencies.

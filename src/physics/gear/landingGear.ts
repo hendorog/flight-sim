@@ -127,7 +127,7 @@ export class LandingGear {
   private readonly sp: SeriesSpringPoint = { force: 0, strut: 0, strutRatio: 0 };
   private readonly tf: TyreForce = { fa: 0, fb: 0, skid: 0 };
   private readonly und = { height: 0, dNorth: 0, dEast: 0 };
-  private readonly contact: WheelContact = { va: 0, vb: 0, load: 0, surface: SURFACES.runway, brakeTorque: 0, steerCommand: 0 };
+  private readonly contact: WheelContact = { va: 0, vb: 0, load: 0, surface: SURFACES.runway, brakeTorque: 0, steerCommand: 0, locked: false };
   private readonly t0: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly t1: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly t2: Vec3 = { x: 0, y: 0, z: 0 };
@@ -265,7 +265,7 @@ export class LandingGear {
       if (-X.z - env.groundElevation(X.x, X.y) - und.height < 0) {
         w.failed = true;
         if (surfaceType === 'water') this.latchCrash('Ditched: the landing gear touched water', 'ditching');
-        else this.latchCrash(`${LABELS[w.cfg.name]} gear collapsed (not locked down)`, 'gearCollapse');
+        else this.latchCrash(`${w.cfg.label ?? LABELS[w.cfg.name]} gear collapsed (not locked down)`, 'gearCollapse');
       }
     }
     return this.airborneWheel(w, input, dt);
@@ -332,6 +332,7 @@ export class LandingGear {
     c.surface = surface;
     c.brakeTorque = this.brakeTorque(cfg, input);
     c.steerCommand = controls.rudder * (cfg.steering?.maxCommand ?? 0);
+    c.locked = cfg.steering?.lock !== undefined && controls.tailWheelLock === true;
     if (dt > 0) w.dyn.advance(c, dt);
     const tf = w.dyn.force(c, this.tf);
     w.fa = tf.fa;
@@ -348,7 +349,7 @@ export class LandingGear {
     if (axial > cfg.limitLoad) {
       w.failed = true;
       const quoted = axial <= QUOTED_LOAD_LIMIT * cfg.limitLoad ? ` (${(axial / 1000).toFixed(0)} kN)` : ' (overloaded)';
-      this.latchCrash(`${LABELS[cfg.name]} gear collapsed${quoted}`, 'gearCollapse');
+      this.latchCrash(`${cfg.label ?? LABELS[cfg.name]} gear collapsed${quoted}`, 'gearCollapse');
     }
     if (surfaceType === 'water') this.latchCrash('Ditched: the landing gear touched water', 'ditching');
     if (w.airborneTime >= TOUCHDOWN_AIRBORNE_TIME) {
