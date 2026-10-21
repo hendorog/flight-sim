@@ -10,6 +10,17 @@ import { AH56_DEFINITION } from '../../src/aircraft/ah56';
 import { AH56_AMCS_NR_FRACTION, AH56_N2_BEEP, AH56_NR_100, AH56_TIT_C } from '../../src/aircraft/ah56/facts';
 import { governedRpm } from '../../src/physics/rotorcraft/definition';
 import { collectiveServo, d, gauges, pilot, report, rig, run, writeTrace } from './ah56Rig';
+import { AH56_BASE } from '../../src/aircraft/ah56/base';
+import { AH56_GYRO } from '../../src/aircraft/ah56/gyro';
+import { AH56_HALF_P, AH56_ROTOR_HIGH_SPEED } from '../../src/aircraft/ah56/highSpeed';
+import { mergeDefinition } from '../../src/aircraft/ah56/patch';
+
+/** The AH-56A without the compound (no wing, no pusher, no compound airframe patch): AH56_ROTORCRAFT's assembly without
+ *  AH56_COMPOUND (integrator, at the AH merge: AC's request (b), so G10 keeps its "no wing, no pusher" meaning; the stage-5
+ *  rotor section is in). */
+const HELICOPTER = { ...AH56_DEFINITION, rotorcraft: mergeDefinition(AH56_BASE,
+  { ...(AH56_GYRO ? { controlGyro: AH56_GYRO } : {}), ...(AH56_HALF_P ? { halfPHop: AH56_HALF_P } : {}) },
+  { main: AH56_ROTOR_HIGH_SPEED }) };
 
 const trace: Record<string, unknown> = {};
 afterAll(() => writeTrace('ah56Systems', trace));
@@ -19,7 +30,7 @@ describe('G10: hover ceiling out of ground effect, 18,750 lb, standard day, no w
    *  ceiling is set at the engine's 10-minute (take-off) rating, TIT 780 C (P; 740 C is the continuous rating), the
    *  transmission's 114 % torque and Ng 101.5 % (P), as a hover-ceiling chart uses the maximum rating. */
   function hover(ft: number) {
-    const r = rig({ lb: 18_750, ft, height: ft * FT + 300, cfg: 'ics' });
+    const r = rig({ lb: 18_750, ft, height: ft * FT + 300, cfg: 'ics', definition: HELICOPTER });
     const g = gauges(r), throttle = r.fm.state.rotorcraft!.governorThrottle;
     const limits = { trim: !r.fm.lastTrim!.converged, torque: g.torque > 114, throttle: throttle >= 0.999, ng: g.ng > 101.5,
       tit10min: g.tit > AH56_TIT_C.yellow10min };

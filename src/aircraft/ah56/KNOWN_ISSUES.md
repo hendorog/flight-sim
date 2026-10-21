@@ -144,3 +144,60 @@ Numbers as AC measured them on the stage-4 aircraft; the stage-5 section moved s
 - **Resolved at the AC merge (integrator):** an ICS reset trimmed on the AMCS's blade-angle schedule (4.84° indicated at 160 KCAS);
   `flightModel.ts` now passes `ic.rotorcraftConfig` to `pusherTrimLever` (AC's request). The default definition in ICS trims 5.97 /
   5.95 / 5.98° at 120 / 140 / 160 KCAS (P 5–7°); the C7 it.fails row is a passing row.
+
+## Stage 5: high advance ratio, moment stall, half-P hop (AH, handed over; [ah56-high-speed.md](../../../docs/ah56-high-speed.md) section 8.2)
+
+- **H3 profile-power rise** at 200 KTAS: the rotor's profile power rises 9.9 % with the Mach terms (629 against 573 shp), but total power
+  required falls 1.6 % (torque 114.9 against 116.9 %), against ≥ 10 % (D, the plan's row rested on the M_dd 0.78 ESTIMATE). The tip's
+  drag divergence is M 0.83 (P Ferri), so the 200 KTAS tip (M 0.89) is only 0.06 past it, and the prop carries most of the power. it.fails.
+- **H5 ICS manoeuvre stability**: stick per g above 1.3 g at 122 KCAS is 6.9 in/g (6.6 without stall) against neutral, ≤ 0.1 in/g (P):
+  the airframe pitch stiffness and the gyro's steady stick moment (AG/AC); the moment stall reverses the gradient only past its onset.
+- **H9 periodic flap damping** changes the hub moment per cyclic by +2.2 % at μ 0.5 against 8–15 % (D); RC's R23 found the same cause
+  (the damping is 1/rev and reaches the harmonics only through the cone and the reverse-flow region).
+- **H4 moment-stall onsets** sit 0.10–0.15 g above ASTA-72's (1.65 g at 154 KCAS, 1.5 g at 122 KCAS, against 1.5 ± 0.2 and 1.4 ± 0.2;
+  pass). The flown moment break is a FITTED ESTIMATE of dynamic stall; no primary dynamic-stall data for this section were found. In the
+  first seconds the roll is about twice the pitch-up (ASTA-72: the pitch-up was the loss of control). Past the onset, with the scripted
+  pilot still asking for g, the pitch-up runs away to 2.1–2.4 g with 17–27 °/s of right roll (for the owner: too violent?).
+- **H6 AMCS steady turns**: full aft stick holds 2.28 g at 155 KCAS and 2.45 g at 180 KCAS (4.3–5.1 in/g; AMCS-73 para 37: to 2.5 g);
+  the rate-command calibration fits the first peak, not the steady state (AG).
+- **The AMCS refit margins are thin** (AH's handover, applied at the AH merge: K_R 3,200 N m/rad and the longitudinal stick moment
+  566 N m in compound.ts; the lateral stick moment 907 N m and the input rotation 5° in gyro.ts): hover pitch sensitivity, 150 KCAS roll
+  sensitivity, C18 pitch at 180 KCAS and C9 at 190 KCAS each within 0.4–1.9 % of a band edge. A refit with margin needs AG's model of the
+  sensitivity per unit response (1.9 /s against AMCS-73's 1.5 /s).
+- **The ICS longitudinal trim moved forward** with the section: 1.0 / 1.2 / 5.0 in at 122 / 154 / 190 KCAS (20,000 lb, 4,600 ft),
+  against 0.5 / 0.5 / 3.7 in at stage 4 (Prandtl-Glauert 0.8 in and the tuck 0.3 in of it at 190 KCAS); 190 KCAS sits 0.5 in from the
+  5.5 in forward stop. AC reported the stage-2 ICS needing 5.37 of 5.5 in at 150 KCAS and saturating at 170 (unlisted until now).
+- **C12 autorotation** (19,700 lb, 2,700 ft DA, 95 KCAS, prop +8°): 2,508 ft/min against 2,200 ± 300 (P ASTA-72 para 69), 8 ft/min
+  outside; stage 4 read 2,492. One candidate: the section's post-stall drag reads 0.156 / 0.221 / 0.302 against Report 530's 0.127 /
+  0.195 / 0.275 (+23 / +13 / +10 %) with the disc root stalled. Owner options (AGENT, not decided): fit the post-stall drag (AH), re-fit
+  the autorotation drag (AC), or keep the KNOWN GAP row (it.fails at the AH merge).
+- **Rows moved by the stage-5 section, re-tested on a section without stall** (AH's handover proposals for AG's tests, applied by the
+  integrator): G3 auto-trim reads 2.4 % at 0.5 s without stall, 25–28 % on the stalling section (AG's level fixed shaft at 10.5° and
+  100 KTAS stalls the front of the disc); G5a full aft AMCS stick reaches the gyro stop on the stalling section (flap 8.1°).
+- **The half-droop stability row** decays to 0.125° 6 s after the kick (bound 0.1°; it.fails, the bound kept): Prandtl-Glauert slows
+  the decay.
+- **The half-P hop is a scripted event** (owner note O1): trigger thresholds (0.75 in stirs, 0.5 in doublets, 7.5° collective, 0.5 in/s
+  "still"), growth 1.216 / decay 0.82 per forcing cycle, 1 s onset fade, roll moment 100 kN m per unit (94 kN m D × 1.06 FITTED), plunge
+  12.2 kN (D) are ESTIMATES. The amplitude HOLDS while the stick moves without stirring (AGENT reading; the alternative "decays whenever
+  the stirring stops" is one line in halfPHop.ts, for the owner). The sound clamps the thump at amplitude 2 (AU's mapping) while the
+  event grows to 3.33 at the strike.
+- **The section**: one for the whole span with the tip's Mach terms; Cl max against Mach and the flown moment break (0.2 c within 4°,
+  faded between M 0.45 and 0.6) are ESTIMATES fitted to H4. Not modelled: lift divergence past M_dd, reversed-flow camber and Mach
+  effects, dynamic-stall lift overshoot and hysteresis, the buffet before moment stall.
+- **Cost**: 1.9 × the MD 500E per step on the 12 × 18 grid (H10 ≤ 2 ×); the plan's ≥ 36 × 16 grid would be 3.7–4.0 × (above μ 0.3
+  only needs RC's rotorcraft.ts to choose the grid by advance ratio).
+- **The 1-g retreating-tip stall margin** is about 0.4° at 122 KCAS / 20,000 lb / 4,600 ft (1.7° on the fine map), consistent with
+  ASTA-72 para 88. Heavier or higher 1-g trims were not checked.
+
+## Integration dispositions (integrator, at the AH merge; [ah56-integration.md](../../../docs/ah56-integration.md))
+
+- **G7a ICS full lateral stick** (ah56Handling, it.fails KNOWN GAP): 39.7 R / 35.2 L °/s, ratio 1.13, at 120 KCAS on the integrated
+  aircraft (band 40–65, ratio 1.5–1.9; stage 2 read 50.0 / 31.1). The wing's roll damping and the compound's ICS lateral trim; no ICS
+  refit (G4 pins the stick moments). C17 is the compound's P row.
+- **G8 ICS off-axis** (it.fails KNOWN GAP at the 0.3 bound): p/q +0.28 at the hover, −0.33 at 100 KCAS (stage 2: +0.24 / −0.14).
+- **G10** keeps its meaning: it flies the AH-56A without the compound patch (no wing, no pusher; the stage-5 rotor section in) and
+  reads 11,410 ft (9,000–11,500, ESTIMATE). C2 (8,625–8,750 ft, P 8,500 ± 1,000) is the compound's row.
+- **H3**'s trim bracket is 32–39° of prop blade angle (was 32–40°): with the gyro air data wired the Mach-off variant's 40° trim no
+  longer converges. The numbers equal AH's (total −1.6 %, profile +9.8 %).
+- **The hands-off hover readout** (ah56Ground, it.fails): AMCS −5.4 → −1.9° roll, +10.7° pitch, 14.3 kt; ICS −5.3 → −10.5° roll, −2.4°
+  pitch, 6.6 kt after 20 s in calm air on the integrated stage-5 aircraft. On the stage-4 merge it held (AMCS −6.4°, ICS −3.4°).

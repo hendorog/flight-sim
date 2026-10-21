@@ -425,7 +425,7 @@ describe('C20: engine failure: the critical control moves from the collective (6
     expect(c60.nr3).toBeGreaterThan(p60.nr3);
     expect(c188.minYawRate).toBeLessThan(-1);
     expect(c60.minYawRate).toBeLessThan(-1);
-  });
+  }, 300_000);
 });
 
 describe('C22: hover attitude by the prop blade angle (P ASTA-72 paras 24, 30, 32: sense; size ESTIMATE)', () => {

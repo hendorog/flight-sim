@@ -52,10 +52,12 @@ export type Env = ReturnType<typeof environment>;
 export interface RigOptions {
   cfg?: GyroConfigId; kt?: number; height?: number; running?: boolean; onGround?: boolean; ft?: number; isaDev?: number;
   pathDeg?: number; fuelFraction?: number; lb?: number; airData?: boolean; gearDown?: boolean;
+  /** Another AH-56A definition (default the full AH56_DEFINITION), e.g. the helicopter without the compound (G10). */
+  definition?: typeof def;
 }
 /** The AH-56A at `lb` total (18,300 lb test loading by default) in the `cfg` configuration. */
 export function rig(o: RigOptions = {}) {
-  const fm = createFlightModelFor(def) as BladeElementFlightModel, env = environment(o.ft ?? 0, o.isaDev ?? 0);
+  const fm = createFlightModelFor(o.definition ?? def) as BladeElementFlightModel, env = environment(o.ft ?? 0, o.isaDev ?? 0);
   fm.setLoading(ah56Loading(o.lb ?? 18_300, undefined, o.fuelFraction ?? 1));
   // The air data the trim's settle sees (the stand-in for RC's wiring, which passes it on every compute).
   const rotor = (fm as unknown as { rotorcraft: Rotorcraft }).rotorcraft;

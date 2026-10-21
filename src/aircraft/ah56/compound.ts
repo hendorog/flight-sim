@@ -245,8 +245,12 @@ export const AH56_PUSHER: PusherDef = {
  * 11.7 (C18's KNOWN GAP). AGENT fit: these AMCS numbers override AG's gyro.ts (integrator: move them there with the compound
  * as the fitting condition, or point gyro.ts at this override).
  */
-export const AMCS_FLAP_FEEDBACK = 3000;
-export const AMCS_LONGITUDINAL_STICK_MOMENT = 590;
+// Stage 5 (AH handover, docs/ah56-high-speed.md section 5.1): the section's Prandtl-Glauert lift slope raises the hub moment per
+// cyclic about 6 % at the hover tip (M 0.56); refitted with AG's gyro.ts lateral moment (975 -> 907 N m) and input rotation (9 -> 5
+// deg): K_R 3,000 -> 3,200 N m/rad, longitudinal 590 -> 566 N m. G5 pitch 5.77 / 4.93 / 4.57 deg/s/in at 0 / 100 / 150 KCAS, hover
+// sensitivity 11.54 (<= 11.7), C18 4.26 deg/s/in at 180 KCAS, C9 0.498 in at 190 KCAS: thin margins (0.4-1.9 %).
+export const AMCS_FLAP_FEEDBACK = 3200;
+export const AMCS_LONGITUDINAL_STICK_MOMENT = 566;
 
 const gyro = AH56_GYRO!;
 export const AH56_COMPOUND_GYRO: ControlGyroDef = { ...gyro, configs: {

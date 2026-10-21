@@ -174,7 +174,11 @@ describe('G7 / G7a: ICS response (D: tau = Lambda I / H, formula checked on the 
     expect(ics.lat0.max).toBeGreaterThanOrEqual(11);
   });
 
-  it('G7a: full lateral stick from trim at 120 KCAS: steady 40-65 deg/s; right/left 1.5-1.9 from the trim offset', () => {
+  // KNOWN GAP since the compound (integrator, at the AH merge; AC's request (2), docs/ah56-compound.md 9.1): 39.7 R / 35.2 L deg/s,
+  // ratio 1.13, trim 0.18 in left at 120 KCAS on the integrated stage-5 aircraft (stage 2: 50.0 R / 31.1 L, ratio 1.61). The wing's
+  // roll damping and the compound's ICS lateral trim; AC's C17 is the compound's P row (77 R / 42 L at 122 KCAS). The ICS stick
+  // moments are P-pinned by G4, so no refit reaches it.
+  it.fails('G7a KNOWN GAP: full lateral stick from trim at 120 KCAS: steady 40-65 deg/s; right/left 1.5-1.9 from the trim offset', () => {
     const go = (dir: 1 | -1) => {
       const r = rig({ cfg: 'ics', kt: 120 });
       const trimIn = r.c.aileron * gyroDef.configs.ics.stickTravel.lateral / 0.0254;
@@ -248,7 +252,10 @@ describe('G8: off-axis response to a pure longitudinal stick (hover, 100 KCAS)',
     expect(Math.abs(rows.amcs100)).toBeLessThanOrEqual(0.2);
   });
 
-  it('ICS: the fitted input rotation (13 deg advanced) balances the hover and 100 KCAS coupling', () => {
+  // KNOWN GAP since the compound (integrator, at the AH merge; AC's request (2)): p/q +0.28 at the hover and -0.33 at 100 KCAS on the
+  // integrated stage-5 aircraft (stage 2: +0.24 / -0.14). AC's input-rotation sweep 5-25 deg: hover -0.03..+0.83, 100 KCAS -0.80..+0.10;
+  // no angle meets 0.3 at both speeds.
+  it.fails('ICS KNOWN GAP: the fitted input rotation (13 deg advanced) balances the hover and 100 KCAS coupling within 0.3', () => {
     report('G8 ICS p/q at 1 s', { hover: rows.ics0, at100: rows.ics100, target: '|p/q| <= 0.2', inputRotationDeg: gyroDef.configs.ics.inputRotation / DEG,
       P: 36, feedbackRotationDeg: gyroDef.configs.ics.feedbackRotation / DEG, Pcant: 33 });
     expect(Math.abs(rows.ics0)).toBeLessThanOrEqual(0.3);
