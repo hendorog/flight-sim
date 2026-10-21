@@ -32,6 +32,25 @@ interface HingelessConstants {
   tanDelta3: number; harmonicInflow: boolean; radialFlow: boolean; bemFromFlap: boolean;
 }
 
+/**
+ * Add the BEM's in-plane force to `force` (shaft axes): H along the hub's flow through the disc (bladeElements' psi = 0 downwind
+ * axis) and the side component along the advancing blade's side. u is the in-plane flow direction (the TPP-plane part of the
+ * hub's air velocity; with its (x, y) below 1e-9 m/s the TPP-plane forward direction, as tppPitchHarmonic), s = rotation u x
+ * axis (the advancing side: right of the flow for a counter-clockwise rotor); force -= u H + s side.
+ */
+function inPlaneForce(force: Vec3, axis: Vec3, inPlane: Vec3, h: number, side: number, rotation: 1 | -1): void {
+  let ux: number, uy: number, uz: number;
+  if (Math.hypot(inPlane.x, inPlane.y) > 1e-9) {
+    const n = v3.len(inPlane); ux = inPlane.x / n; uy = inPlane.y / n; uz = inPlane.z / n;
+  } else {
+    // Forward (shaft x) projected on the tip-path plane.
+    const k = axis.x; ux = 1 - k * axis.x; uy = -k * axis.y; uz = -k * axis.z;
+    const n = Math.hypot(ux, uy, uz); ux /= n; uy /= n; uz /= n;
+  }
+  const sx = rotation * (uy * axis.z - uz * axis.y), sy = rotation * (uz * axis.x - ux * axis.z), sz = rotation * (ux * axis.y - uy * axis.x);
+  force.x -= ux * h + sx * side; force.y -= uy * h + sy * side; force.z -= uz * h + sz * side;
+}
+
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
   readonly angularMomentum = v3.zero();
@@ -520,7 +539,12 @@ export class Rotorcraft {
       s.tailInflow += (tailTarget - s.tailInflow) * (1 - Math.exp(-dt / tailTau));
     }
     const shaftForce = v3.scale(axis, thrust);
-    if (horizontal > 0) Object.assign(shaftForce, v3.sub(shaftForce, v3.scale(inPlane, main.inPlane / horizontal)));
+    if (this.hingeless?.bemFromFlap && main.side !== undefined) {
+      // Hingeless BEM from the solved flap (RC): the whole in-plane force vector, in the same wind frame the harmonic pitch was
+      // turned into (tppPitchHarmonic's direction; forward below 1e-9 m/s). A hingeless rotor has a real in-plane force in the
+      // hover (its disc tilt against the shaft); the scalar form below pointed it along whatever the first tiny drift was.
+      inPlaneForce(shaftForce, axis, inPlane, main.inPlane, main.side, d.rotation);
+    } else if (horizontal > 0) Object.assign(shaftForce, v3.sub(shaftForce, v3.scale(inPlane, main.inPlane / horizontal)));
     const mainForce = tilt ? toBody(shaftForce, tilt) : shaftForce;
     const tailForce = { x: tailHForce.x, y: tail.thrust * d.rotation, z: tailHForce.z };
     const frame = airframeLoads(d, b, air, density, s.inflow, s.tailInflow);

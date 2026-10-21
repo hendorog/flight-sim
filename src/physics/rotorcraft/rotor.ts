@@ -35,7 +35,11 @@ export function tppPitchHarmonic(rotation: 1 | -1, pitchCos: number, pitchSin: n
   return { cos: -pc * ca + ps * sa, sin: -rotation * (pc * sa + ps * ca) };
 }
 export interface RotorLoads { thrust: number; torque: number; inPlane: number; stalledFraction: number;
-  coningMoment: number; stallMoment: number; profilePower: number }
+  coningMoment: number; stallMoment: number; profilePower: number;
+  /** With BladeElementOptions only: the in-plane force's other component, sum of the tangential force x cos psi (N; this
+   *  function's azimuth, psi = 0 downwind): with `inPlane` (= sum x sin psi, the H-force along the flow) it is the whole
+   *  in-plane force vector, which a hingeless rotor has even in the hover (rotorcraft.ts turns it back to shaft axes). */
+  side?: number }
 /** Azimuth-averaged blade elements, including reverse flow and signed aerodynamic shaft torque.
  * axial is aircraft velocity along thrust axis, positive climbing; inflow is wake velocity opposite thrust.
  * A driving region in descent has negative torque: autorotation draws energy from the air, never an RPM servo.
@@ -44,7 +48,7 @@ export interface RotorLoads { thrust: number; torque: number; inPlane: number; s
 export function bladeElements(d: RotorDefinition, omega: number, pitch: number, axial: number,
   inPlaneSpeed: number, inflow: number, density: number, radial = 12, azimuthal = 16, teetering = false,
   options?: BladeElementOptions): RotorLoads {
-  let thrust = 0, torque = 0, inPlane = 0, stalled = 0, coningMoment = 0, stallMoment = 0, profilePower = 0;
+  let thrust = 0, torque = 0, inPlane = 0, side = 0, stalled = 0, coningMoment = 0, stallMoment = 0, profilePower = 0;
   const tip = Math.max(omega * d.radius, 1), mu = inPlaneSpeed / tip;
   // Free first-harmonic flapping unloads the advancing side. Equivalent feathering in disc axes
   // cancels the first lift moment in linear theory; section stall then breaks that balance naturally.
@@ -84,9 +88,11 @@ export function bladeElements(d: RotorDefinition, omega: number, pitch: number, 
       const tangential = lift * Math.sin(phi) + drag * Math.cos(phi);
       torque += tangential * r;
       inPlane += tangential * sin;
+      if (o) side += tangential * cos;
       if (stall) stalled++;
     }
   }
+  if (o) return { thrust, torque, inPlane, side, stalledFraction: stalled / (radial * azimuthal), coningMoment, stallMoment, profilePower };
   return { thrust, torque, inPlane, stalledFraction: stalled / (radial * azimuthal), coningMoment, stallMoment, profilePower };
 }
 

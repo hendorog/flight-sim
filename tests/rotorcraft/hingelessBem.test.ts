@@ -159,3 +159,32 @@ describe('R23: the periodic flap damping option', () => {
     expect(r23Lateral).toBeGreaterThan(0.03);
   });
 });
+
+describe('the hingeless in-plane force is a vector (final review: no direction switch at zero airspeed)', () => {
+  // A hingeless rotor has a real in-plane force in the hover (its tip-path plane tilted against the shaft by cyclic and the
+  // hub moment). The scalar H-force along the hub's air velocity pointed it wherever the first 1e-7 m/s of drift happened to
+  // point. bladeElements now returns both in-plane components and Rotorcraft turns them back with tppPitchHarmonic's direction.
+  it('fixture hover with lateral and longitudinal cyclic: the loads at 1e-7 m/s in +-x / +-y equal those at rest', () => {
+    const def = fixtureRotorcraft(), c = controls({ aileron: 0.15, elevator: -0.1 });
+    const rotor = new Rotorcraft(def);
+    rotor.reset(true);
+    const rest = body(0);
+    rotor.settle(rest, v3.zero(), 1.225, 1500, c);
+    const at = (v: Vec3) => {
+      const l = rotor.compute({ ...rest, velocityBody: v }, v3.zero(), 1.225, 1500, c, 0);
+      return { force: { ...l.force }, moment: { ...l.moment } };
+    };
+    const ref = at(v3.zero());
+    const inPlane = Math.hypot(ref.force.x, ref.force.y);
+    let worst = 0;
+    for (const v of [{ x: 1e-7, y: 0, z: 0 }, { x: -1e-7, y: 0, z: 0 }, { x: 0, y: 1e-7, z: 0 }, { x: 0, y: -1e-7, z: 0 }]) {
+      const l = at(v);
+      worst = Math.max(worst, v3.len(v3.sub(l.force, ref.force)), v3.len(v3.sub(l.moment, ref.moment)) / R);
+    }
+    report.inPlaneVector = { inPlaneN: inPlane, worstChange: worst };
+    // The fixture's hover in-plane force (with the cyclic held off-centre) is about 2 kN; it no longer turns with the drift (the
+    // scalar form moved the loads by hundreds of newtons; what is left, 0.1 N, is the airframe's own flow-direction switches).
+    expect(inPlane).toBeGreaterThan(100);
+    expect(worst).toBeLessThan(1e-3 * inPlane);
+  });
+});
