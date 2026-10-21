@@ -142,7 +142,7 @@ swashplate (5.2 % of travel left at each end; the plan's 10 % for rearward fligh
 +/-4.125 (25 kt sideward from the left at 2500 kg needs 2.42 deg left: 21.9 % left); tail rotor -1.89 to +14.85 deg (25 kt
 sideward from the right at 2500 kg needs 13.18 deg, 10.9 % pedal left; a 75 KIAS autorotation about 0.2 deg). These
 travels are the strongest assumption in the model: they set the 120 KIAS stick position (0.44 of travel forward of the
-hover, plan 0.20-0.35), the slope-landing hub moment (section 7) and the autorotation collective (0.08 of travel at
+hover; CR-3144 0.549 at its rig, below), the slope-landing hub moment (section 7) and the autorotation collective (0.08 of travel at
 2500 kg for 100 % NR, plan 0.15-0.35).
 
 Quick stops (pilot review, 2026-10-21; 2200 kg mid-CG, height held within 11 ft): from 80 KIAS with a 20 deg flare 22.8 %
@@ -152,6 +152,34 @@ Hover IGE trims sit 0.757 (2200 kg) / 0.773 (2500 kg) of the travel from the for
 room: at 925 kg m^2 (a 9 % stiffer equivalent hinge) the 145 KIAS aft-CG trim needs 9.27 deg instead of 9.41, but M_lon
 per % rises 6 %, so the M_lon fit would shorten the travel to about 12.7 deg (section 2). Where the stops sit and the
 blade cyclic per % of travel stay unsourced; nothing was changed.
+
+**The one rig source: NASA CR-3144** (F; Heffley et al. 1979, section III "BO-105C", the Boeing Vertol Y-92 analytical
+model of the same Type 1 hingeless rotor at 2096 kg; read at the flyability pass, 2026-10-22: Fig III-2 pp 70-71, Fig
+III-3 p 72, Table III-3 pp 74-81, Table III-5 p 95). Its control system (Fig III-2, "% full travel"): collective 14 deg
+over 22.86 cm, **longitudinal 10 deg over 30.78 cm**, lateral printed ".28 deg/%" over 21.97 cm (0.28 makes its roll hub
+moment per deg a quarter of its pitch value; .08 makes them agree, so probably a misprint of .08, which is the model's
+0.0825: D, unverified), pedal 16 deg over 11.02 cm (the model's fitted 16.74). Its longitudinal trim schedule against
+the model's (2200 kg mid CG SL; deg forward of the hover trim; + = forward):
+
+| KIAS | -20 | -10 | 0 | 20 | 40 | 60 | 80 | 100 | 120 | 145 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| model | -1.48 | -0.80 | 0 | +1.39 | +1.97 | +2.46 | +3.20 | +4.30 | +5.88 | +8.66 |
+| CR-3144 (2096 kg) | -0.94 | -0.54 | 0 | +0.75 | +1.50 | +2.39 | +3.11 | +4.11 | +5.49 | +8.17 |
+| model stick from the forward stop | 0.864 | 0.813 | 0.754 | 0.650 | 0.607 | 0.571 | 0.516 | 0.433 | 0.315 | 0.109 |
+| pitch, model / CR-3144 deg | 3.0 / 2.3 | 2.9 / 2.4 | 3.1 / 2.6 | 2.6 / 2.1 | 1.7 / 1.6 | 0.4 / 0.6 | -1.4 / -0.9 | -3.5 / -2.8 | -5.8 / -5.3 | -8.8 / -8.8 |
+
+The pitch attitudes agree within 0.7 deg. CR-3144's mid-CG trims span 9.1 of its 10 deg (20 kt rearward -1.36 deg to
+145 kt +7.75), so its rig can only place the BO-105C hover **at least 0.82 of the travel from the forward stop** (D):
+further aft than the sim's 0.754. The reviewer's expectation of a centred hover stick has no source; a centring re-rig
+would need about 17 deg of travel (M_lon 0.118 per %: +27 % on the AR-280 P fit) and contradict the only rig source.
+**CR-3144 also supports "% = % of full travel"**: its 80 kt control derivatives per % of its own full travels agree with
+AR-280 (P) on all four controls: M_lon 0.126 against 0.093 / 0.098, L_lat 0.226 against 0.185 / 0.179, N_ped 0.069
+against 0.049 / 0.057, **Z_col -0.349 against -0.349**: the first external support for the assumption (F/D). The
+120 KIAS row was re-sourced to **0.40-0.60 of the travel (F/D)**: CR-3144 0.549 at its 10 deg rig, and its 5.49 deg over
+the model's 13.43 deg is 0.409; the model sits at 0.44 (the row passes; it was the ESTIMATE 0.20-0.35 KNOWN TRAVEL GAP).
+The rearward 20 kt >= 10 % margin row stays `it.fails` (5.2-5.7 % left): the source's rig is at least as tight (0.45-0.9
+deg spare at its mid-CG trim extremes). In the cockpit the keyboard and the mouse act about the spring-trim anchor (the
+hover trim at a reset), so "aft" shows only on the stick indicator; the control box shows the anchor and the stick.
 
 ## 5. R18-R20 on the real definition (80 KCAS, 3000 ft, 2200 kg; quasi-static, rotor states re-settled)
 
@@ -347,9 +375,9 @@ m in 8 kt gusts; the sequence's 40 kt step overshoots by 12 kt (the hold's tunin
 
 ## 11. Known gaps (it.fails rows; `src/aircraft/bo105/KNOWN_ISSUES.md` has the list)
 
-Zw (rotor/inflow, structural); Lq/|Lp| 0.19; hover Mq -3.27, Mu +0.088, Mp -0.762 (edge), Mw -0.005, Nv 0.0003 against
-ERF 1995 (section 5; the hover Lp row now passes its sourced band); pedal-step sideslip 4 deg; 120 KIAS stick 0.44 of travel;
-rearward margin 5.2 %; AEO climb +34 % at 2200 kg (+11 / +19 % on the CB-5 chart; section 8); autorotation collective 0.08 of travel; descent weight effect +0.5 %; T7b NR 96.1 %
+Zw (rotor/inflow, structural); Lq/|Lp| 0.19; hover Mq -3.27, Mu +0.088, Mp -0.762 (edge), Mw -0.005, Nv 0.0003, Nr -0.54
+against ERF 1995 (section 5; the hover Lp row now passes its sourced band); pedal-step sideslip 4 deg; rearward margin
+5.2 % (the 120 KIAS stick row now passes its CR-3144 band, section 4); AEO climb +34 % at 2200 kg (+11 / +19 % on the CB-5 chart; section 8); autorotation collective 0.08 of travel; descent weight effect +0.5 %; T7b NR 96.1 %
 with the light out; T15 98 % NR in 4.35 s (plan 10-20 s); OEI IGE cushion torque 114 %. Guards red at BO HEAD and not
 fixable in BO's files: GA consistency bo105 row (BX/PN stubs; resolved by merging BX and PN with or before BO) and TW's
 twinOei T7b (KNOWN_ISSUES "Integration").

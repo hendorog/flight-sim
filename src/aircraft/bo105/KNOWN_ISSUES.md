@@ -9,11 +9,19 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 1. **Control travels are fitted, not rigged.** No rigging data was found (MM ch 103 not obtained). The travels are fitted
    to AGARD AR-280's control derivatives taking "%" as % of FULL travel (an assumption): longitudinal 13.4 deg of blade
    cyclic, lateral 8.25 deg, pedal 16.7 deg of tail-rotor pitch, collective 19.2 deg. Consequences a pilot sees:
-   - the 120 KIAS trim sits 0.44 of the longitudinal travel forward of the hover's (plan 0.20-0.35;
-     `bo105Handling` KNOWN TRAVEL GAP);
+   - the 120 KIAS trim sits 0.44 of the longitudinal travel forward of the hover's. The row was re-sourced at the
+     flyability pass (2026-10-22) from the plan's ESTIMATE 0.20-0.35 (then a KNOWN TRAVEL GAP) to 0.40-0.60 (F/D) and
+     passes: NASA CR-3144 (F: Heffley 1979, the analytical BO-105C, section III) trims 5.49 deg forward of its hover at
+     120 kt against its own 10 deg rig, 0.549 (0.409 on the model's 13.43 deg). CR-3144's rig is the only one found:
+     longitudinal 10 deg, collective 14, pedal 16 (the model's fitted 16.74), lateral printed ".28 deg/%" (probably .08,
+     the model's 0.0825); its mid-CG trims span 9.1 of the 10 deg, so its hover sits at least 0.82 of the travel from
+     the forward stop, further aft than the sim's 0.754: the hover stick is not moved toward centre (a centring re-rig
+     would need about 17 deg and +27 % on the AR-280 M_lon fit). Its 80 kt control derivatives per % of its own full
+     travels agree with AR-280 on all four controls (M_lon 0.126 / 0.093, L_lat 0.226 / 0.185, N_ped 0.069 / 0.049,
+     Z_col -0.349 / -0.349): the first external support for "% = % of full travel" (docs section 4);
    - the envelope needs 12.0 of the 13.4 deg (9.4 forward at 145 KIAS aft CG, 2.6 aft in 20 kt rearward flight at forward
      CG): the stops are placed (AGENT) to leave 5.2 % at each end, not the plan's 10 % for rearward flight (KNOWN TRAVEL
-     GAP); the hover stick sits about 0.25 of the travel aft of centre (0.757 of the travel from the forward stop at
+     GAP; CR-3144's rig is at least as tight, 0.45-0.9 deg spare at its mid-CG trim extremes); the hover stick sits about 0.25 of the travel aft of centre (0.757 of the travel from the forward stop at
      2200 kg IGE, 0.773 at 2500 kg);
    - quick stops (pilot review, 2026-10-21; 2200 kg mid-CG, height held within 11 ft): from 80 KIAS with a 20 deg flare
      the stick reaches +0.544 on the -1..1 axis (0.772 of the travel from the forward stop), leaving **22.8 %** of the
