@@ -11,13 +11,17 @@
 //     on one axis, alternating, each reversal within 1 / (2 stirHz) s of the last; `doubletCycles` full cycles trigger. Only
 //     at >= minKcas, collective (0.75 R, rad) <= maxCollective, and a gyro configuration in `configs` (read from
 //     state.controlGyro.mode on every call, never cached: a restore overwrites it). InitialConditions.forceHalfPHop (URL
-//     halfp=1) starts the event at the first clocked step.
+//     halfp=1, a DEV / DEMO HOOK, not a pilot-reachable trigger) arms the event on a fresh flight; it starts at the first clocked
+//     step with the rotor turning (omega >= 0.6 of the governed speed) in translational flight (>= FORCED_MIN_KCAS from the hub's
+//     air), so a hover or ground spawn with halfp=1 does not take the 100 kN m forcing until it is flying.
 //   - EVENT. Roll moment A rollMomentPerUnit sin(phase) and vertical force A plungeForcePerUnit sin(phase) at the CG, where
 //     phase = perRev x the rotor's own unwrapped azimuth (state.azimuth wraps at 2 pi and azimuth / 2 is 4 pi periodic, so the
 //     event keeps the unwrapped phase in events.halfPHop.phase; continuous across revolutions and across a save). A starts at
 //     1 (the onset cue: about +/-3 deg of roll and +/-0.15 g). For the first cueSeconds it cannot grow. Per forcing cycle it
 //     then grows by growthPerCycle while the stirring goes on, decays by decayPerCycle while the stick is held still (stick
-//     speed below stillRate), and holds otherwise. At strikeAmplitude, events.halfPHop.strike latches and the flight model
+//     speed below stillRate), and holds otherwise (AGENT reading of the plan's "decays when the stick is held still": stick
+//     motion that is not a qualifying stir neither feeds nor relieves it; the literal alternative, decay whenever the stirring
+//     has stopped, is in docs/ah56-high-speed.md section 6 for the owner). At strikeAmplitude, events.halfPHop.strike latches and the flight model
 //     crashes ("Main rotor struck the fuselage (half-P hop)"). Below endAmplitude it is over.
 //   - CLOCK. The detector, the growth and the phase advance only on real steps on the flight's clock (dt > 0 and
 //     BodyState.time > 0), so the trim's settle() relaxation (time 0, dt 0.05 s) neither advances nor feels it (as pusher.ts);
@@ -29,7 +33,7 @@
 import { v3, type Vec3 } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import type { BodyState } from '../interfaces';
-import type { RotorcraftDefinition, RotorcraftState } from './definition';
+import { governedRpm, type RotorcraftDefinition, type RotorcraftState } from './definition';
 import type { GyroConfigId } from './controlGyro';
 
 export interface HalfPHopDef {
@@ -67,6 +71,9 @@ const SEA_LEVEL_DENSITY = 1.225;
 const TRIM_SECONDS = 4;
 const ACTIVITY_SECONDS = 0.3;
 const ONSET_SECONDS = 1;
+/** halfp=1 (the dev hook) waits for flight: rotor speed fraction of the governed speed, and KCAS from the hub's air. */
+const FORCED_MIN_OMEGA = 0.6;
+const FORCED_MIN_KCAS = 60;
 
 function smoothstep(x: number): number { return x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x); }
 
@@ -89,6 +96,8 @@ export class HalfPHop {
   private readonly axes = [{ sign: 0, last: -Infinity, half: 0 }, { sign: 0, last: -Infinity, half: 0 }];
   private onset = -1;
   private forced = false;
+  /** The first clocked step after a reset has looked at the event's saved phase (halfp=1 arms only a fresh flight). */
+  private forceChecked = false;
   /** Doublet cycles counted in the current sequence (diagnostic, tests). */
   doublets = 0;
 
@@ -97,7 +106,7 @@ export class HalfPHop {
   /** force: InitialConditions.forceHalfPHop (URL halfp=1), the demo/test hook: the event starts at the first clocked step. */
   reset(force = false): void {
     this.state.events = { ...this.state.events, halfPHop: { active: false, amplitude: 0, phase: 0, stirs: 0, strike: false } };
-    this.synced = false; this.time = 0; this.onset = -1; this.forced = force; this.doublets = 0;
+    this.synced = false; this.time = 0; this.onset = -1; this.forced = force; this.forceChecked = false; this.doublets = 0;
   }
 
   /** Body loads about the CG at this RK stage; advances the detector, the event and the phase only on real clocked steps. */
@@ -130,9 +139,9 @@ export class HalfPHop {
   /** One real step of the clock, the detector and the event. */
   private advance(b: BodyState, hubAir: Vec3, density: number, c: ControlInputs, azimuth: number, dt: number, d: HalfPHopDef,
     e: HalfPHopState, mode: GyroConfigId): void {
-    // halfp=1 arms only a fresh flight (phase still 0): a restored save's own event state wins (SimPhysics resets with the URL's
-    // options before it restores the snapshot).
-    if (this.forced && e.phase !== 0) this.forced = false;
+    // halfp=1 arms only a fresh flight (phase still 0 at the first clocked step after the reset): a restored save's own event
+    // state wins (SimPhysics resets with the URL's options before it restores the snapshot).
+    if (!this.forceChecked) { this.forceChecked = true; if (e.phase !== 0) this.forced = false; }
     const travel = this.def.controlGyro?.configs[mode].stickTravel;
     const lat = (c.aileron ?? 0) * (travel?.lateral ?? 0.1), lon = (c.elevator ?? 0) * (travel?.longitudinal ?? 0.1);
     // The first step after a reset or a restore has no previous azimuth: the rotor's turn over the previous step stands in, so a
@@ -184,9 +193,8 @@ export class HalfPHop {
     if (t - this.cycleStart > period) { this.turn = 0; this.back = 0; this.cycleStart = t; }
     if (t - this.lastCycle > period && !e.active) e.stirs = 0;
     // DOUBLETS: single-axis excursions beyond +/- doubletRadius alternating within half a period, the other axis quiet.
-    const devs = [dLat, dLon];
     for (let i = 0; i < 2; i++) {
-      const a = this.axes[i], dev = devs[i], other = Math.abs(devs[1 - i]);
+      const a = this.axes[i], dev = i === 0 ? dLat : dLon, other = Math.abs(i === 0 ? dLon : dLat);
       if (Math.abs(dev) >= tr.doubletRadius && other < tr.doubletRadius) {
         const sign = Math.sign(dev);
         if (sign !== a.sign) {
@@ -202,8 +210,9 @@ export class HalfPHop {
     const kcas = Math.hypot(hubAir.x, hubAir.y, hubAir.z) * Math.sqrt(Math.max(density, 0) / SEA_LEVEL_DENSITY) / KT;
     const collective = m.minPitch + Math.min(1, Math.max(0, c.collective ?? 0)) * (m.maxPitch - m.minPitch);
     const condition = kcas >= tr.minKcas && collective <= tr.maxCollective;
+    const flying = kcas >= FORCED_MIN_KCAS && this.state.omega >= FORCED_MIN_OMEGA * governedRpm(this.def, mode) * Math.PI / 30;
     // Trigger.
-    if (!e.active && !e.strike && (this.forced || (condition && (e.stirs >= tr.cycles || this.doublets >= tr.doubletCycles)))) {
+    if (!e.active && !e.strike && ((this.forced && flying) || (condition && (e.stirs >= tr.cycles || this.doublets >= tr.doubletCycles)))) {
       e.active = true; e.amplitude = 1; this.onset = t; this.forced = false;
     }
     if (!e.active) return;

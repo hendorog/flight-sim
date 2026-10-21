@@ -39,7 +39,8 @@ export interface SectionPolar {
   /** Separated flat plate: normal-force coefficient at 90 deg. */
   cn90: number;
   /** Moment stall: past the stall angle the centre of pressure moves aft of the quarter chord by `shift` (fraction of chord)
-   *  over `over` rad; further on, the flat plate's 0.5 |alpha| / pi where larger. The shift is the low-speed (leading-edge)
+   *  over `over` rad, then relaxes towards the separated flat plate (0.5 |alpha| / pi) over the next `liftFade` rad, as the lift
+   *  does; the plate's where larger (so 0.5 c at 90 deg whatever the shift). The shift is the low-speed (leading-edge)
    *  stall's: it fades out between machFade[0] and machFade[1], where the separation is shock-induced and the drag rise and the
    *  tuck carry the Mach effects. */
   momentStall: { shift: number; over: number; machFade: readonly [number, number] };
@@ -149,7 +150,8 @@ export function sectionCoefficients(s: RotorSectionDef, alpha: number, mach: num
   const fade = smoothstep(past / p.liftFade), fadeD = smoothstep(past / p.dragFade);
   const cl = (1 - fade) * sign * clMaxSide + fade * p.cn90 * sinA * cosA;
   const ms = p.momentStall, lowSpeed = 1 - smoothstep((m - ms.machFade[0]) / (ms.machFade[1] - ms.machFade[0]));
-  const shift = Math.max(lowSpeed * ms.shift * Math.min(1, past / ms.over), fade * 0.5 * a / Math.PI);
+  const relax = smoothstep((past - ms.over) / p.liftFade);
+  const shift = Math.max(lowSpeed * ms.shift * Math.min(1, past / ms.over) * (1 - relax), fade * 0.5 * a / Math.PI);
   const over = m - (dd.mach0 - dd.perCl * Math.abs(cl) - dd.offset);
   const o2 = over * over;
   const cd = (1 - fadeD) * (s.cd0 + s.cd2 * cl * cl + (over > 0 ? dd.rise * o2 * o2 : 0)) + fadeD * (s.cd0 + p.cn90 * sinA * sinA);
