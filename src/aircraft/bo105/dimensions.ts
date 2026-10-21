@@ -24,7 +24,9 @@ export const x = (staM: number): number => REF_STATION_M - staM;
 
 /** Hub centre height above the skid soles, m: 3.00 m to the top of the head (P TCDS p8) less about 0.10 m. 3V/ESTIMATE */
 export const HUB_HEIGHT = 2.90;
-/** CG (reference point) below the hub, m. F (METU: 3.15 ft) */
+/** Body REFERENCE point below the hub, m: the Theodore model's CG height (F METU: 3.15 ft). The mass model's CG of a
+ *  loading sits lower (mass.ts: about 1.53 m below the hub at 2200 kg; the METU height cannot hold with the AR-280 inertia
+ *  and the underfloor tanks, docs/bo105-flight-model.md section 3). Kept as the axes' origin (every consumer's z). */
 export const CG_BELOW_HUB = 0.96;
 /** Body z of the skid soles (ground contact at rest), m: HUB_HEIGHT - CG_BELOW_HUB. D */
 export const SKID_Z = HUB_HEIGHT - CG_BELOW_HUB;
