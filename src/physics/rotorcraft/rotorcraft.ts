@@ -43,7 +43,8 @@ function inPlaneForce(force: Vec3, axis: Vec3, inPlane: Vec3, h: number, side: n
   if (Math.hypot(inPlane.x, inPlane.y) > 1e-9) {
     const n = v3.len(inPlane); ux = inPlane.x / n; uy = inPlane.y / n; uz = inPlane.z / n;
   } else {
-    // Forward (shaft x) projected on the tip-path plane.
+    // Forward (shaft x) projected on the tip-path plane. (tppPitchHarmonic takes plain shaft forward, ca 1 / sa 0, here: the two
+    // frames differ by the disc tilt's projection, about 0.1 deg at rest; both are continuous through zero airspeed.)
     const k = axis.x; ux = 1 - k * axis.x; uy = -k * axis.y; uz = -k * axis.z;
     const n = Math.hypot(ux, uy, uz); ux /= n; uy /= n; uz /= n;
   }
