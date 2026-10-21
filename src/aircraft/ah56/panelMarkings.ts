@@ -12,7 +12,6 @@ import { AH56_REFERENCE as V } from './reference';
 /** Jet A-1, 0.8 kg/l: kg per US gallon, and lb per US gallon. D */
 export const AH56_KG_PER_GAL = 0.8 * 3.785411784;
 export const AH56_LB_PER_KG = 2.2046226218;
-const dot = (at: number, half: number, color: 'red' | 'blue') => ({ from: at - half, to: at + half, color });
 const scale = (label: string, min: number, max: number, majors: readonly number[], minorStep: number,
   read: ScaleDef['read'], extra: Partial<ScaleDef> = {}): ScaleDef => ({ label, min, max, majors, minorStep, numbers: true, read, ...extra });
 
@@ -64,7 +63,7 @@ export const AH56_NG_TAPE: TapeSpec = { title: 'Ng', unit: '%', min: 0, max: 110
  * para 5, 1972; APE 1.2 98 minimum). Nr: green 95-105 power on, red radials at the power-off limits 85 and 110 (P ASTA-72 / AMCS-73).
  * 100 % Nr = 246 rpm even on the AMCS aircraft, which flies 97.5 %.
  */
-export const AH56_NF_NR_TAPE: TapeSpec = { title: 'Nf  Nr', unit: '%', min: 70, max: 120, majors: [70, 80, 90, 100, 110, 120], minorStep: 5,
+export const AH56_NF_NR_TAPE: TapeSpec = { title: 'Nf  Nr', unit: '%', min: 40, max: 120, majors: [40, 60, 80, 100, 120], minorStep: 5,
   bands: [{ from: 95, to: 98, color: 'yellow' }, { from: 98, to: AH56_NR_PCT.powerOn[1], color: 'green' }],
   marks: [{ at: 85, color: 'red' }, { at: 95, color: 'red' }, { at: AH56_NR_PCT.powerOn[1], color: 'red' }, { at: AH56_NR_PCT.powerOff[1], color: 'red' }], decimals: 0 };
 
@@ -108,4 +107,3 @@ export const AH56_XMSN_OIL = {
 export const AH56_HYDRAULIC = { min: 0, max: 4000, normal: [2800, 3400] as const, majors: [0, 1000, 2000, 3000, 4000] } as const;
 
 export const AH56_DIAL_SWEEP = { a0: -125 * DEG, a1: 125 * DEG } as const;
-export { dot as ah56Dot };

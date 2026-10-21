@@ -35,6 +35,9 @@ const plate = (g: Ctx2D, b: Rect, color = BODY): void => {
 export type TapeReader = (r: InstrumentReadings) => number;
 
 const TAPE = { top: 34, bottom: 56, bar: 14, gap: 3 };
+/** Latched in place of a missing reading (NaN would redraw every frame): far below any scale. */
+const NO_SIGNAL = -1e9;
+const hasSignal = (v: number): boolean => v > NO_SIGNAL / 2;
 
 /**
  * One vertical-tape gauge: a dark window with a rule down the left, the bar (one, or two side by side for Nf / Nr), tick marks with
@@ -54,7 +57,7 @@ export class Ah56TapeGauge implements PanelComponent {
   sample(r: InstrumentReadings): boolean {
     const live = !this.electric || r.busPowered;
     const q = (this.spec.max - this.spec.min) / this.span;
-    this.readers.forEach((read, i) => { const v = live ? read(r) : NaN; this.latch.track(i, Number.isFinite(v) ? v : this.spec.min - 1, q); });
+    this.readers.forEach((read, i) => { const v = live ? read(r) : NaN; this.latch.track(i, Number.isFinite(v) ? v : NO_SIGNAL, q); });
     this.latch.set(this.readers.length, live ? 1 : 0, 1);
     return this.latch.take();
   }
@@ -91,7 +94,7 @@ export class Ah56TapeGauge implements PanelComponent {
     const live = this.latch.get(this.readers.length) === 1;
     this.readers.forEach((_, i) => {
       const v = this.latch.get(i), x = this.barX(i);
-      const valid = v >= s.min;
+      const valid = hasSignal(v);
       if (valid) {
         const top = this.y(v);
         g.fillStyle = BAR; g.fillRect(x, top, TAPE.bar, b.y + TAPE.top + this.span - top);
@@ -101,7 +104,7 @@ export class Ah56TapeGauge implements PanelComponent {
     if (!live) return;
     const n = this.readers.length;
     this.readers.forEach((_, i) => {
-      const v = this.latch.get(i), valid = v >= s.min;
+      const v = this.latch.get(i), valid = hasSignal(v);
       const str = valid ? v.toFixed(s.decimals) : '--';
       const h = n === 2 ? 11 : 17, y = b.y + b.h - 38 + (n === 2 ? i * 15 + 3 : 8);
       drawSegments(g, str, b.x + b.w - 10, y, { height: h, on: AMBER, off: 'rgba(255,186,53,0.08)' });
@@ -129,7 +132,7 @@ export class Ah56AngleIndicator implements PanelComponent {
   }
   sample(r: InstrumentReadings): boolean {
     const v = this.read(r);
-    this.latch.track(0, Number.isFinite(v) ? v : this.spec.min - 100, 0.05);
+    this.latch.track(0, Number.isFinite(v) ? v : NO_SIGNAL, 0.05);
     return this.latch.take();
   }
   drawStatic(g: Ctx2D): void {
@@ -151,7 +154,7 @@ export class Ah56AngleIndicator implements PanelComponent {
     g.fillStyle = '#050505'; g.fillRect(b.x + 6, b.y + b.h - 44, b.w - 12, 36);
   }
   draw(g: Ctx2D): void {
-    const b = this.bounds, v = this.latch.get(0), valid = v >= this.spec.min - 50;
+    const b = this.bounds, v = this.latch.get(0), valid = hasSignal(v);
     const rail = b.x + 34;
     if (valid) {
       const y = this.y(v);

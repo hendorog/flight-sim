@@ -187,7 +187,7 @@ describe('Bo 105 warning lenses (FM 3-2..3-19, TM 00-44)', () => {
       BO105_ANNUNCIATOR_LAMPS.find(l => l.id === id)!.press!(false, c);
     }
     expect(c.lampTestId).toBeUndefined();
-    const press = BO105_PANEL.gauges.find(g => g.id === 'mmTest') as unknown as { press(down: boolean, c: typeof c): void };
+    const press = BO105_PANEL.gauges.find(g => g.id === 'mmTest') as unknown as { press(down: boolean, c: import('../../src/core/types').ControlInputs): void };
     press.press(true, c); r = step(); expect(r.lamps.mmTest).toBe(true); press.press(false, c); expect(c.lampTestId).toBeUndefined();
   });
 });

@@ -63,7 +63,6 @@ export const AH56_UI: UiProfile = {
     { label: 'CONTROL', text: s => s.rotorcraft?.controlGyro ? (s.rotorcraft.controlGyro.mode === 'ics' ? 'ICS' : 'AMCS') : '—' },
     { label: 'G', text: s => s.gLoad.toFixed(2) },
     { label: 'VNE', text: s => s.rotorcraft ? (s.rotorcraft.vneKias === 0 ? 'NO FLIGHT' : `${s.rotorcraft.vneKias.toFixed(0)} KCAS${s.rotorcraft.airspeedLimitExceeded ? ' EXCEEDED' : ''}`) : '—' },
-    { label: 'BUS', text: s => `${s.electrical.busVoltage.toFixed(1)} V` },
   ] },
   hints: [
     ['Prop blade angle', `Hover detent ${AH56_PROP_BETA_DEG.hoverDetent}° / autorotation +${AH56_PROP_BETA_DEG.autorotation}° / full reverse ${AH56_PROP_BETA_DEG.flightMin}° (snap keys, see Controls); ; and Shift+; turn the prop grip. The blade angle above +28° is touchy: small grip, big power change`],

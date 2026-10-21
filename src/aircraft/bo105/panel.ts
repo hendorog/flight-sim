@@ -170,6 +170,10 @@ export const BO105_PANEL: PanelDef = {
     { kind: 'customRound', id: 'oilTemp', at: [COL[0], ROW[4]], size: 'large', create: (id, x, y, aperture) => new Bo105TripleGauge(id, x, y, aperture, OIL_TEMP_SPEC) },
     totGauge('tot1', [COL[1], ROW[4]], 1057, 0),
     totGauge('tot2', [COL[2], ROW[4]], 1058, 1),
+    // The overhead power levers (OFF - IDLE - FLIGHT), drawn on the pedestal canvas as the console twins the fixed 2-D view needs.
+    powerLever(0), powerLever(1),
+    { kind: 'pushButton', id: 'mmTest', bounds: { x: 44, y: 1124, w: 184, h: 70 }, label: 'MM TEST', read: c => c.lampTestId === 'mmTest',
+      press: (down, c) => { c.lampTestId = down ? 'mmTest' : undefined; } },
     { kind: 'single', id: 'n1a', at: [COL[1], ROW[5]], seed: 1059, size: 'large', ...N1_DIAL, scale: engineScale(BO105_N1_SCALE, 0) },
     { kind: 'single', id: 'n1b', at: [COL[2], ROW[5]], seed: 1060, size: 'large', ...N1_DIAL, scale: engineScale(BO105_N1_SCALE, 1) },
     { kind: 'customRound', id: 'oilPressure', at: [COL[0], ROW[6]], size: 'large', create: (id, x, y, aperture) => new Bo105TripleGauge(id, x, y, aperture, OIL_PRESSURE_SPEC) },
@@ -179,10 +183,6 @@ export const BO105_PANEL: PanelDef = {
     { kind: 'twinNeedle', id: 'fuelPressure', at: [COL[2], ROW[6]], seed: 1062, size: 'small', ...FUEL_PRESSURE, letters: ['1', '2'],
       scale: { label: '', min: 0, max: BO105_FUEL_PRESSURE.max, majors: BO105_FUEL_PRESSURE.majors, minorStep: 0.1, numbers: true, arcs: BO105_FUEL_PRESSURE.arcs, redLines: BO105_FUEL_PRESSURE.redLines },
       left: r => r.engines[0].fuelPressurePsi * KPCM2_PER_PSI, right: r => r.engines[1].fuelPressurePsi * KPCM2_PER_PSI },
-    // The overhead power levers (OFF - IDLE - FLIGHT), drawn on the pedestal canvas as the console twins the fixed 2-D view needs.
-    powerLever(0), powerLever(1),
-    { kind: 'pushButton', id: 'mmTest', bounds: { x: 44, y: 1124, w: 184, h: 70 }, label: 'MM TEST', read: c => c.lampTestId === 'mmTest',
-      press: (down, c) => { c.lampTestId = down ? 'mmTest' : undefined; } },
   ],
   annunciator: { bounds: { x: 10, y: 42, w: 796, h: 336 }, lamps: BO105_ANNUNCIATOR_LAMPS, cells: CELLS, lensLegend: true, clipGlow: true },
   switchRow: { bounds: SWITCH_ROW_BOUNDS, rockerTop: 36, rockerW: 28, rockerH: 38,

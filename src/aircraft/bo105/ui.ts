@@ -79,8 +79,6 @@ export const BO105_UI: UiProfile = {
     { label: 'MAST MOM', text: s => { const m = bo105MastMomentPct(s); return m === null ? '—' : `${m.toFixed(0)}%${m >= 100 ? ' LIMIT' : ''}`; } },
     { label: 'VNE', text: s => s.rotorcraft ? (s.rotorcraft.vneKias === 0 ? 'NO FLIGHT' :
       `${s.rotorcraft.vneKias.toFixed(0)} KIAS${s.rotorcraft.airspeedLimitExceeded ? ' EXCEEDED' : ''}`) : '—' },
-    { label: 'BUS', text: s => `${s.electrical.busVoltage.toFixed(1)} V` },
-    { label: 'OAT', text: s => `${(s.oat - 273.15).toFixed(0)} °C` },
   ] },
   hints: [
     ['Cyclic / pedals', 'Arrow keys / Z, X; 5 centres. The keyboard cyclic holds its position (no spring centring). Trim: Home / End and 6 / 7 (spring trim)'],
