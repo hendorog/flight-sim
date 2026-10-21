@@ -335,7 +335,10 @@ describe('ICS collective-fixed static longitudinal stability (P ASTA-72 paras 37
   const fixedBeta = (beta: number): typeof def => ({ ...def, rotorcraft: { ...def.rotorcraft!, pusher: { ...def.rotorcraft!.pusher!,
     trimSchedule: { x: [0, 1], y: [beta, beta] }, trimScheduleByConfig: undefined } } });
 
-  it.fails('KNOWN GAP: at 150 KCAS the gradient about trim is stable and at most 0.024 in/kt (P 0.012, x2 AGENT tolerance), and a level trim at 190 KCAS sits inside the 5.5 in forward stop', () => {
+  // Final fix round (wing section Cm and the DATCOM downwash, compound.ts): the 190 KCAS trim now exists (4.50 in forward); the
+  // gradient about trim falls from 0.10 to 0.07 in/kt and stays the KNOWN GAP row below (docs/ah56-compound.md section 10).
+  let p1: { gradient: number; converged: boolean } | undefined;
+  it('at 150 KCAS: the gradient about trim (reported) and a level trim at 190 KCAS inside the 5.5 in forward stop', () => {
     const ref = trimAt(def, 150, 0), coll = ref.trimControls.collective ?? 0, beta = ref.state.rotorcraft!.pusher!.beta, fixed = fixedBeta(beta);
     // Secant on the path angle until the trimmed collective equals the 150 KCAS value (about 1 deg of path per 5 kt).
     const atSpeed = (kcas: number) => {
@@ -353,10 +356,13 @@ describe('ICS collective-fixed static longitudinal stability (P ASTA-72 paras 37
       path155Deg: hi.pathDeg, gradientInPerKt: gradient, P: '0.012 in/kt forward per kt at 150 KCAS', lonIn190: lonIn(at190),
       converged190: at190.lastTrim?.converged === true });
     trace.icsStaticStability = { trimLonIn: lonIn(ref), lo, hi, gradient, lonIn190: lonIn(at190), converged190: at190.lastTrim?.converged };
-    expect(lo.converged && hi.converged).toBe(true);
-    expect(gradient).toBeLessThan(0);
-    expect(Math.abs(gradient)).toBeLessThanOrEqual(0.024);
+    p1 = { gradient, converged: lo.converged && hi.converged };
     expect(at190.lastTrim?.converged).toBe(true);
     expect(lonIn(at190)).toBeGreaterThan(-5.5);
   }, 900_000);
+  it.fails('KNOWN GAP: at 150 KCAS the gradient about trim is stable and at most 0.024 in/kt (P 0.012, x2 AGENT tolerance)', () => {
+    expect(p1!.converged).toBe(true);
+    expect(p1!.gradient).toBeLessThan(0);
+    expect(Math.abs(p1!.gradient)).toBeLessThanOrEqual(0.024);
+  });
 });

@@ -68,7 +68,7 @@ export const AH56_UI: UiProfile = {
     ['Prop blade angle', `Hover detent ${AH56_PROP_BETA_DEG.hoverDetent}° / autorotation +${AH56_PROP_BETA_DEG.autorotation}° / full reverse ${AH56_PROP_BETA_DEG.flightMin}° (snap keys, see Controls); ; and Shift+; turn the prop grip. The blade angle above +28° is touchy: small grip, big power change`],
     ['Cyclic', 'Arrow keys / Z, X. The keyboard cyclic re-centres when you let go (AMCS: stick released = attitude held)'],
     ['Cyclic stirs', 'Avoid cyclic stirs above 0.5 Hz on the ICS aircraft (prohibited); single 2 cycles/s inputs are permitted'],
-    ['ICS pitch trim', 'The ICS configuration\'s pitch trim is unrepresentative above 120 KCAS: the model trims about 0.1 in of forward stick per knot (the 1972 test aircraft 0.015) and runs out of forward stick near 190 KCAS with the CG aft. The AMCS default is not affected'],
+    ['ICS pitch trim', 'The ICS configuration\'s pitch trim is unrepresentative above 120 KCAS: with the collective and prop held the model needs about 0.07 in of forward stick per knot (the 1972 test aircraft 0.015), and 4.5 in forward at 190 KCAS with the CG aft. The AMCS default is not affected'],
     ['Collective', 'F5 / F6 down / up. The panel and HUD show the collective as the cockpit indicator does: the AMCS reads 7° more than the ICS (13° AMCS = 6° ICS in cruise)'],
     ['Condition grip', 'F1 / F2 / F3 / F4 move the engine condition grip (OFF, IDLE, RUN); Shift+F1 reaches OFF through the idle release. The prop grip is the one in front of it'],
     ['Landing', 'Tail wheel LOCKED for take-off and landing. Run-on landings at 60 – 70 KCAS or less; reverse prop and main-gear brakes only. Gear down by 130 KCAS (lowered at about 120 on the deceleration)'],

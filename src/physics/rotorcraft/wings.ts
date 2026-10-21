@@ -38,6 +38,12 @@ export interface WingPanelDef {
   /** Normal-force coefficient of the panel broadside to the flow (finite flat plate). Absent: 1.2 (AR about 4). */
   flatPlate?: number;
   /**
+   * Section pitching moment about the quarter chord (nose up +; a cambered section's is negative) and the mean aerodynamic chord
+   * it acts over, m: M = q S c cm0 in attached flow (faded out with the stall blend), about the panel's spanwise axis. Absent: none.
+   */
+  cm0?: number;
+  chord?: number;
+  /**
    * External stores on the panel (pylons and pods): an equivalent flat-plate drag area against the panel's forward
    * airspeed, m^2 against m/s, acting on the forward flow at `centre` (body FRD m). Absent: a clean panel.
    */
@@ -61,7 +67,7 @@ export function panelCoefficients(w: WingPanelDef, alpha: number): { cl: number;
   return sectionInto({ cl: 0, cd: 0 }, w, alpha);
 }
 /** panelCoefficients written into `out` (the frame loop's scratch: no allocation per call). */
-function sectionInto(out: { cl: number; cd: number }, w: WingPanelDef, alpha: number): { cl: number; cd: number } {
+function sectionInto(out: { cl: number; cd: number; attached?: number }, w: WingPanelDef, alpha: number): { cl: number; cd: number } {
   const linear = w.liftSlope * (alpha - w.zeroLiftAlpha);
   const attachedLimit = w.maxCl / w.liftSlope;
   const blend = clamp((Math.abs(alpha - w.zeroLiftAlpha) - attachedLimit) / STALL_FADE, 0, 1);
@@ -69,11 +75,14 @@ function sectionInto(out: { cl: number; cd: number }, w: WingPanelDef, alpha: nu
   const cn = w.flatPlate ?? FLAT_PLATE;
   out.cl = (1 - blend) * attached + blend * cn * Math.sin(alpha) * Math.cos(alpha);
   out.cd = (1 - blend) * (w.cd0 + w.inducedK * attached * attached) + blend * Math.max(w.cd0, cn * Math.sin(alpha) ** 2);
+  out.attached = 1 - blend;
   return out;
 }
 
 /** Scratch for wingLoads (module-level: the frame loop allocates nothing; add() reads the force and keeps no reference). */
-const FLOW = v3.zero(), FORCE = v3.zero(), COEFFS = { cl: 0, cd: 0 };
+const FLOW = v3.zero(), FORCE = v3.zero(), COEFFS = { cl: 0, cd: 0, attached: 1 }, ARM = v3.zero();
+/** Half-height of the force couple that carries the section pitching moment, m (any value gives the same moment and power). */
+const COUPLE_ARM = 1;
 
 /**
  * The wing panels' loads through the airframe accumulator. `air` is the body's velocity relative to the air (body axes),
@@ -105,6 +114,18 @@ export function wingLoads(wings: readonly WingPanelDef[], b: BodyState, air: Vec
     const fn = q * (-p.cl * flow.x - p.cd * normal) / speed;
     f.x = q * (p.cl * normal - p.cd * flow.x) / speed; f.y = fn * sn; f.z = fn * cs;
     power += add(w.centre, f);
+    if (w.cm0 && w.chord) {
+      // The section pitching moment M = q S c cm0 (attached flow) about the spanwise axis e = (0, cos G, -side sin G), as a couple
+      // of chordwise forces F x at centre +/- h n (n the panel's downward normal): (h n) x (F x) twice = 2 h F e. Its power on the
+      // local flow is M e . omega, a pure moment's.
+      const m = q * w.chord * w.cm0 * COEFFS.attached, force = m / (2 * COUPLE_ARM);
+      f.x = force; f.y = 0; f.z = 0;
+      ARM.x = w.centre.x; ARM.y = w.centre.y + COUPLE_ARM * sn; ARM.z = w.centre.z + COUPLE_ARM * cs;
+      power += add(ARM, f);
+      f.x = -force; f.y = 0; f.z = 0;
+      ARM.y = w.centre.y - COUPLE_ARM * sn; ARM.z = w.centre.z - COUPLE_ARM * cs;
+      power += add(ARM, f);
+    }
     if (w.tail && flow.x > 0) {
       const t = w.tail, u = flow.x, fade = u * u / (u * u + t.fadeSpeed * t.fadeSpeed);
       f.x = 0; f.y = 0; f.z = 0.5 * density * u * u * t.area * t.liftSlope * t.gradient * p.cl / 2 * fade;

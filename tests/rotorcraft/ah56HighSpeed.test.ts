@@ -240,11 +240,19 @@ describe('H1: advancing-tip Mach number at 194 KTAS and 246 rpm (D: 0.885)', () 
 
 // ------------------------------------------------------------------------------------------------------------- H2
 describe('H2: V_H re-checked with the section\'s Mach terms (plan C4 / C5, P)', () => {
-  it('C4: TOW configuration (stores), 18,750 lb, SL, collective 5 deg, 114 % torque: 194 KTAS +/- 5 % (P ASTA-72 para 14)', () => {
-    const v = speedAtTorque(icsRpm(AH56_DEFINITION), { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 204);
-    const stage4 = speedAtTorque(icsRpm(withSection(undefined)), { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 204);
-    report('H2 C4 V_H', { stage5Ktas: v.kt, stage4Ktas: stage4.kt, target: '194 +/- 5 % (184.3-203.7)' });
-    trace.H2C4 = { v, stage4 };
+  // C4 on the ICS configuration itself. Until the final fix round the ICS gyro ran out of forward stick before 194 KTAS and the row flew
+  // the AMCS gyro's mechanics at 246 rpm instead (icsRpm, kept as a reported reference); with the wing section Cm and the DATCOM
+  // downwash (compound.ts) the ICS trims there (4.3 in forward at 194 KTAS, 5.1 in at 202).
+  it('C4: the ICS configuration, TOW (stores), 18,750 lb, SL, collective 5 deg, 114 % torque: 194 KTAS +/- 5 % inside the stick travel (P ASTA-72 para 14)', () => {
+    const v = speedAtTorque(AH56_DEFINITION, { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 204);
+    const amcsMechanics = speedAtTorque(icsRpm(AH56_DEFINITION), { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 204);
+    const at = trimOnCollective(AH56_DEFINITION, { cfg: 'ics', lb: 18_750, kt: v.kt }, 5), t = at.r.fm.lastTrim!;
+    const lon = def.controlGyro!.configs.ics.stickTravel.longitudinal / 0.0254;
+    report('H2 C4 V_H', { icsKtas: v.kt, icsLonInAtVh: t.elevator * lon, convergedAtVh: String(t.converged), amcsMechanicsAt246RpmKtas: amcsMechanics.kt,
+      target: '194 +/- 5 % (184.3-203.7)' });
+    trace.H2C4 = { v, amcsMechanics, lonIn: t.elevator * lon };
+    expect(t.converged).toBe(true);
+    expect(Math.abs(t.elevator)).toBeLessThan(0.999);
     expect(Math.abs(v.kt / AH56_REFERENCE.vh - 1)).toBeLessThanOrEqual(0.05);
   }, 1_800_000);
   it('C5: AMCS clean, 18,300 lb, 13 deg indicated (6 deg at 0.75 R), 114 %: 210-225 KTAS (P Hoh-74 220; S 215)', () => {
@@ -321,6 +329,9 @@ describe('H9: periodic flap damping at mu 0.5 (RC\'s option, on for the AH-56)',
     trace.H9 = { on, off, change: h9Change };
     expect(Number.isFinite(h9Change)).toBe(true);
     expect(Math.abs(h9Change)).toBeGreaterThan(0.005);
+    // Plan amendment A2 (plan section 15): the periodic damping reaches the first harmonics only through the cone and the
+    // reverse-flow region, so the change is second order: |change| <= 5 % (D). The 8-15 % stays as the PLAN BAND row below.
+    expect(Math.abs(h9Change)).toBeLessThanOrEqual(0.05);
   });
   // KNOWN GAP shared with RC's R23 (docs/rotor-hingeless-model.md): the plan's 8-15 % assumed a first-harmonic periodic damping;
   // the linear-in-ut damping is 1/rev and reaches the harmonics through the cone and the reverse-flow region only.

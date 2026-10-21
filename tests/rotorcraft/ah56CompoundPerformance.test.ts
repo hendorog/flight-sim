@@ -4,9 +4,10 @@
 // next to the target ([ah56] lines); AH56_TRACE=<dir> writes ah56CompoundPerformance.json.
 //
 // Two stand-ins, both recorded in docs/ah56-compound.md:
-// - C4 and C24 (ASTA-72's ICS aircraft) are trimmed with the AMCS gyro's mechanics at the ICS's 246 rpm: AG's ICS gyro trim runs
-//   out of forward stick above about 170 KCAS at these collectives (also on AG's stage-2 aircraft at 150-170 KCAS; KNOWN_ISSUES).
-//   The gyro does not enter the trim's power (the rotor, the prop and the drag do).
+// - C24 (ASTA-72's ICS aircraft) and C4's Mach-placeholder reference are trimmed with the AMCS gyro's mechanics at the ICS's 246
+//   rpm (the gyro does not enter the trim's power: the rotor, the prop and the drag do). C4 as flown is the ICS configuration
+//   itself since the final fix round (wing section Cm and DATCOM downwash, compound.ts); before it the ICS gyro trim ran out of
+//   forward stick above about 170-190 KCAS.
 // - C4 is fitted with the provisional Mach drag rise (compound.ts PROVISIONAL_SECTION, not flown): the row runs both.
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, FT, KT } from '../../src/core/math';
@@ -113,10 +114,12 @@ describe('C2-C3: hover ceilings, standard day, prop at the -2.2 deg detent (P AS
 
 // ---------------------------------------------------------------------------------------------------------- C4 C5
 describe('C4-C5: maximum level speed at the transmission limit (114 % = 3925 shp, P)', () => {
+  // C4 on the ICS configuration itself (it trims at V_H since the final fix round's wing section Cm and DATCOM downwash); the
+  // provisional Mach placeholder is still flown on the AMCS gyro's mechanics at 246 rpm (icsRpm above), its stage-4 reference.
   it('C4: V_H 194 KTAS +/- 5 %: TOW configuration (stores), 18,750 lb, SL, collective 5 deg (P ASTA-72 para 14)', () => {
     const o = { cfg: 'ics' as const, lb: 18_750 };
     const mach = speedAtTorque(icsRpm(withMach(AH56_DEFINITION)), o, 5, 114, 186, 200);
-    const flown = speedAtTorque(icsRpm(AH56_DEFINITION), o, 5, 114, 186, 204);
+    const flown = speedAtTorque(AH56_DEFINITION, o, 5, 114, 186, 204);
     report('C4 V_H', { withMachPlaceholderKtas: mach.kt, asFlownKtas: flown.kt, fuselageFlatPlateM2: FUSELAGE_DRAG_X, target: '194 +/- 5 % (184.3-203.7)' });
     trace.C4 = { mach, flown };
     expect(Math.abs(mach.kt / AH56_REFERENCE.vh - 1)).toBeLessThanOrEqual(0.05);

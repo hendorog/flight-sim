@@ -44,6 +44,10 @@ export const WING_INCIDENCE_DEG = {
 /** Zero-lift angle of the section with the trailing-edge extension that "defies aerodynamic description" (P ASTA-72 p 53),
  *  rad. ESTIMATE, fitted to the high-speed attitude (C8) and the lift share (C6). */
 export const WING_ZERO_LIFT_DEG = -2;
+/** Section pitching moment about the quarter chord that goes with that zero-lift angle: thin-airfoil theory for a parabolic camber
+ *  line, alpha_0 = -2 f / c and cm_c/4 = -pi f / c, so cm = (pi / 2) alpha_0 = -0.055 (D from the -2 deg ESTIMATE), acting over the
+ *  MAC 2.316 m (P). */
+export const WING_CM0 = Math.PI / 2 * WING_ZERO_LIFT_DEG * DEG;
 
 /**
  * Rotor wash on the wing against wake skew (ESTIMATE). Hover: the actuator disc's wake 2.40 m below the disc (hub WL 165.3,
@@ -66,13 +70,22 @@ const storesPanel = (side: 1 | -1): NonNullable<WingPanelDef['stores']> => ({
 });
 
 /**
- * The wing's downwash at the horizontal stabiliser (ESTIMATE): the stabiliser (FS 637, P) sits 27 ft behind the wing's
- * quarter chord, about one span (26.7 ft, P), and 44 in above it, where the downwash of an AR 3.66 wing is close to its
- * far-field 2 C_L / (pi A): gradient 0.8 x 2 / (pi A) = 0.139 rad per unit C_L (D with the 0.8 vertical-offset and
- * distance factor an ESTIMATE). Fades in by about 30 kt (the hover wake falls clear of the tail).
+ * The wing's downwash at the horizontal stabiliser: DATCOM's subsonic downwash gradient (D, DATCOM 4.4.1), with the stabiliser
+ * (FS 637, P) 27 ft behind the wing's quarter chord and 44 in above it (h / b 0.137, 2 l / b 2.02; span 26.7 ft, AR 3.66, taper
+ * 0.5, no sweep): K_A = 1 / A - 1 / (1 + A^1.7) = 0.174, K_lambda = (10 - 3 lambda) / 7 = 1.214, K_H = (1 - h / b) / (2 l / b)^(1/3)
+ * = 0.683, d eps / d alpha = 4.44 (K_A K_lambda K_H)^1.19 = 0.443 rad / rad, divided by the wing's lift slope 3.73: 0.119 rad per
+ * unit wing C_L. Fades in by about 30 kt (the hover wake falls clear of the tail). The stage-4 value was the far-field ESTIMATE
+ * 0.8 x 2 / (pi A) = 0.139; with it and the wing's section pitching moment, ASTA-72 para 44's 190 KCAS ICS trim (aft CG, stores)
+ * had no level solution inside the 5.5 in forward stop (docs/ah56-compound.md section 10).
  */
+const datcomDownwash = (() => {
+  const A = D.WING.span ** 2 / D.WING.areaM2, lambda = TAPER, hOverB = 44 / (26.7 * 12), twoLOverB = 2 * 27 / 26.7;
+  const kA = 1 / A - 1 / (1 + A ** 1.7), kL = (10 - 3 * lambda) / 7, kH = (1 - hOverB) / twoLOverB ** (1 / 3);
+  return 4.44 * (kA * kL * kH) ** 1.19 / WING_LIFT_SLOPE;
+})();
 const TAIL_DOWNWASH = { centre: AH56_BASE.stabilizer.centre, area: AH56_BASE.stabilizer.area, liftSlope: AH56_BASE.stabilizer.liftSlope,
-  gradient: 0.8 * 2 / (Math.PI * D.WING.span ** 2 / D.WING.areaM2), fadeSpeed: 15 };
+  gradient: datcomDownwash, fadeSpeed: 15 };
+export const TAIL_DOWNWASH_GRADIENT = datcomDownwash;
 
 const panel = (side: 1 | -1): WingPanelDef => ({
   side,
@@ -84,6 +97,7 @@ const panel = (side: 1 | -1): WingPanelDef => ({
   maxCl: 1.2, cd0: 0.009, inducedK: 1 / (Math.PI * AR * 0.85),
   incidence: (side > 0 ? WING_INCIDENCE_DEG.right : WING_INCIDENCE_DEG.left) * DEG,
   zeroLiftAlpha: WING_ZERO_LIFT_DEG * DEG,
+  cm0: WING_CM0, chord: D.WING.macM,
   dihedral: D.WING.dihedralDeg * DEG,
   washBySkew: WING_WASH,
   stores: storesPanel(side),
