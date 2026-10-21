@@ -203,7 +203,7 @@ describe('H7: the half-P hop (ICS only; P frequency and stir limit, ESTIMATE amp
     expect(forced.fm.state.rotorcraft!.events!.halfPHop!.active).toBe(true);
     expect(amcs.fm.state.rotorcraft!.events!.halfPHop!.active).toBe(false);
   });
-  it('halfp=1 waits for flight: no forcing in an ICS hover (rotor at speed, below 60 KCAS); armed until then, not cleared', () => {
+  it('halfp=1 waits for flight: no forcing in an ICS hover (rotor at speed, below 60 KCAS)', () => {
     const hover = rigAt({ kt: 0, force: true }), e = hover.fm.state.rotorcraft!.events!.halfPHop!;
     let worstRoll = 0;
     for (let i = 0; i < 480; i++) { hover.fm.step(DT, hover.c, hover.env); worstRoll = Math.max(worstRoll, Math.abs(hover.fm.state.roll / DEG)); }
