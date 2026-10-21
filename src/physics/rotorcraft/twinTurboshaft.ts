@@ -40,8 +40,9 @@ export interface TwinTurboshaftDef {
    *  (P TCDS p9, P5 FM 2-9). The torque values are compared only on a 'percent' torque gauge. */
   oei: { mcpPct: number; mcpTotC: number; emergencyPct: number; emergencyTotC: number; emergencySeconds: number };
   /** Warning unit (P TM 00-44, P5 FM 3-16): N1 split >= 12 %; NR <= 95 % (light + 650 Hz 5/s); NR >= 103 % (light);
-   *  NR >= 108 % (2600 Hz steady). Percent. `nrLowFloorPct`: the low-rotor band's lower end (TM 00-44: 75-95 %), so
-   *  the unit is quiet at ground idle; absent: no floor. */
+   *  NR >= 108 % (2600 Hz steady). Percent. `nrLowFloorPct`: the low-rotor band's lower end (TM 00-44: 75-95 %),
+   *  applied on the ground only, so the unit is quiet at ground idle but stays on in flight at any low NR; absent: no
+   *  floor. */
   warnings: { n1SplitPct: number; nrLowPct: number; nrHighPct: number; nrHighTonePct: number; nrLowFloorPct?: number };
 }
 
@@ -53,7 +54,7 @@ export interface TwinTurboshaftState {
   /** ENGINE TRIM split, % N1 of the governors' datums (+ raises engine 2, lowers engine 1, half each). */
   splitPct: number;
   /** The warning unit (bus powered). n1SplitLight: N1 differ by >= n1SplitPct (the unit beeps with it); nrLowLight /
-   *  nrLowTone: NR in [nrLowFloorPct, nrLowPct] (650 Hz, 5 per s); nrHighLight: NR >= nrHighPct; nrHighTone: NR >=
+   *  nrLowTone: NR <= nrLowPct (on the ground, NR in [nrLowFloorPct, nrLowPct]) (650 Hz, 5 per s); nrHighLight: NR >= nrHighPct; nrHighTone: NR >=
    *  nrHighTonePct (2600 Hz steady). All of them flash the one RPM warning light (RotorcraftState.lowRpmLight). */
   n1SplitLight: boolean; nrLowLight: boolean; nrLowTone: boolean; nrHighLight: boolean; nrHighTone: boolean;
   /** One engine out (N1 below the turboshaft's engineOut.n1Below) with the other running; seconds above the OEI MCP. */
@@ -85,39 +86,55 @@ export function secondEngineControl(ts: TurboshaftControl, state: RotorcraftStat
  * engines' shaft speeds (rad/s) and inertias (kg m^2), the engine-to-rotor ratio r, the transmission efficiency eta and
  * the coupling cap (N m at each engine shaft: at most capNm x dt per engine and step).
  *
- * A joint inelastic impulse over the engaged set S, the engines whose shaft overruns the rotor (omega_i > r omega):
- * the rotor gains eta r sum J / I, and every free engine of S ends at the common shaft speed v = r omega', so with
- * a = eta r^2 / I and C the capped engines (J = capNm dt)
- *   v (1 + a sum_free I_i) = r omega + a sum_free I_i omega_i + a sum_C capNm dt,   J_i = I_i (omega_i - v).
- * An engine whose J would be negative leaves S, one whose J exceeds the cap joins C, and the set is solved again. The
- * sums run in a canonical order (by shaft speed, then inertia), so the result does not depend on the engines' order
- * (T2). One engine, no cap: the legacy impulse excess / (1/I_e + eta r^2 / I).
+ * A joint inelastic one-way impulse. With a = eta r^2 / I and v = r omega' the shaft speed the rotor ends at, each engine
+ * gives J_i = clamp(I_i (omega_i - v), 0, capNm dt): nothing if it would end below the rotor (its freewheel overruns),
+ * the cap if even the capped impulse leaves it above the rotor, otherwise exactly what brings it to v. The rotor's gain
+ * closes the loop:
+ *   f(v) = v - r omega - a sum_i J_i(v) = 0,
+ * f is continuous and strictly increasing in v, so the root is unique; it lies between r omega and the fastest engine.
+ * f is linear between the breakpoints omega_i (an engine leaves) and omega_i - capNm dt / I_i (an engine reaches the
+ * cap), so the root is found by walking the breakpoints upward and solved in closed form on its segment:
+ *   v (1 + a sum_free I_i) = r omega + a sum_free I_i omega_i + a sum_capped capNm dt.
+ * Every sum runs in a canonical order (by shaft speed, then inertia), so the result does not depend on the engines'
+ * order (T2). One engine, no cap: the legacy impulse excess / (1/I_e + eta r^2 / I).
  */
 export function jointFreewheelImpulse(omega: number, inertia: number, engines: readonly { omega: number; inertia: number }[],
   ratio: number, efficiency: number, capNm: number, dt: number): number[] {
   const n = engines.length, out = new Array<number>(n).fill(0);
-  const a = efficiency * ratio * ratio / inertia, cap = capNm * dt;
+  const a = efficiency * ratio * ratio / inertia, cap = capNm * dt, base = omega * ratio;
   const order = engines.map((_, i) => i).sort((i, k) => engines[i].omega - engines[k].omega || engines[i].inertia - engines[k].inertia);
-  const free = engines.map((e) => e.omega > omega * ratio);
-  const capped = engines.map(() => false);
-  for (let pass = 0; pass <= n; pass++) {
-    let sumIw = 0, sumI = 0, sumCap = 0;
-    for (const i of order) {
-      if (free[i]) { sumIw += engines[i].inertia * engines[i].omega; sumI += engines[i].inertia; } else if (capped[i]) sumCap += cap;
-    }
-    const v = (omega * ratio + a * sumIw + a * sumCap) / (1 + a * sumI);
-    let changed = false;
-    for (let i = 0; i < n; i++) {
-      if (!free[i]) continue;
-      const j = engines[i].inertia * (engines[i].omega - v);
-      if (j < 0) { free[i] = false; changed = true; } else if (j > cap) { free[i] = false; capped[i] = true; changed = true; }
-    }
-    if (!changed) {
-      for (let i = 0; i < n; i++) out[i] = free[i] ? engines[i].inertia * (engines[i].omega - v) : capped[i] ? cap : 0;
-      return out;
-    }
+  /** Engine i's impulse if the rotor ends at shaft speed v. */
+  const impulse = (i: number, v: number): number => clamp(engines[i].inertia * (engines[i].omega - v), 0, cap);
+  const f = (v: number): number => {
+    let sum = 0;
+    for (const i of order) sum += impulse(i, v);
+    return v - base - a * sum;
+  };
+  // The breakpoints above r omega, ascending; the root lies in the first segment whose upper end has f >= 0.
+  const points: number[] = [];
+  for (const e of engines) {
+    if (e.omega > base) points.push(e.omega);
+    const full = e.omega - cap / e.inertia;
+    if (full > base) points.push(full);
   }
-  // Every pass that does not return takes an engine out of the free set, so n + 1 passes always end above.
+  if (points.length === 0) return out;
+  points.sort((x, y) => x - y);
+  let lo = base, hi = points[points.length - 1];
+  for (const p of points) {
+    if (f(p) >= 0) { hi = p; break; }
+    lo = p;
+  }
+  // Each engine's branch on (lo, hi), from its midpoint; then the closed form on that segment.
+  const mid = 0.5 * (lo + hi);
+  let sumIw = 0, sumI = 0, sumCap = 0;
+  for (const i of order) {
+    const e = engines[i];
+    if (mid >= e.omega) continue;
+    if (mid <= e.omega - cap / e.inertia) sumCap += cap;
+    else { sumIw += e.inertia * e.omega; sumI += e.inertia; }
+  }
+  const v = (base + a * sumIw + a * sumCap) / (1 + a * sumI);
+  for (let i = 0; i < n; i++) out[i] = impulse(i, v);
   return out;
 }
 
@@ -151,7 +168,8 @@ export function publishTwin(ts: TurboshaftControl, state: RotorcraftState, dt: n
   const powered = volts > TURBOSHAFT_BUS_VOLTS;
   // Warning unit K-DW02/01 (needs the bus).
   tw.n1SplitLight = powered && 100 * Math.abs(e1.n1 - e2.n1) >= w.n1SplitPct;
-  tw.nrLowLight = tw.nrLowTone = powered && nr <= w.nrLowPct && nr >= (w.nrLowFloorPct ?? -Infinity);
+  // The band's floor (TM 00-44: 75-95 %) keeps the unit quiet at ground idle; in flight it stays on however low NR falls.
+  tw.nrLowLight = tw.nrLowTone = powered && nr <= w.nrLowPct && (!onGround || nr >= (w.nrLowFloorPct ?? -Infinity));
   tw.nrHighLight = powered && nr >= w.nrHighPct;
   tw.nrHighTone = powered && nr >= w.nrHighTonePct;
   state.lowRpm = nr <= w.nrLowPct;
@@ -196,7 +214,8 @@ export function stepTwinTurboshaft(dt: number, c: Readonly<ControlInputs>, units
   const half = tw.splitPct / 200;
   const e1 = ts.stepEngine(dt, c, 0, units[0], busVolts, 0, -half);
   const e2 = secondEngineControl(ts, state).stepEngine(dt, c, 1, units[1], busVolts, 0, half + def.rigMismatch);
-  state.governorThrottle = state.governorIntegral = e1.throttle!;
+  // The rotor-level governor opening: the larger engine's demand (engine 1's alone would read 0 with engine 1 out).
+  state.governorThrottle = state.governorIntegral = Math.max(e1.throttle!, e2.throttle!);
   state.governorActive = state.turboshaft!.governorMode === 'governed' || tw.second.governorMode === 'governed';
   state.previousThrottle = engineControl(c, 0, 'throttle'); state.previousCollective = clamp(c.collective ?? 0, 0, 1);
   out.throttle = e1.throttle!;

@@ -89,6 +89,33 @@ describe('the joint freewheel impulse (closed form)', () => {
     const capped = jointFreewheelImpulse(omega, inertia, engines, ratio, eta, 100, DT);
     expect(capped[0]).toBeLessThanOrEqual(100 * DT + 1e-15); expect(capped[1]).toBeLessThanOrEqual(100 * DT + 1e-15);
   });
+
+  it('the fixed point over a sweep of caps: v = r omega + a sum J and every J_i = clamp(I_i (omega_i - v), 0, cap), including a capped engine that must come off the cap when a marginal engine drops out', () => {
+    const inertia = 909, ratio = d.engineRatio, eta = d.transmissionEfficiency, omega = 44, a = eta * ratio ** 2 / inertia;
+    const base = omega * ratio;
+    // A: far above the rotor (reaches the cap at the low caps); B: just above it with a large inertia, so it pulls the
+    // joint speed down while it is counted and then drops out; C: below the rotor.
+    const sets = [
+      [{ omega: base + 100, inertia: 0.11 }, { omega: base + 0.2, inertia: 5 }],
+      [{ omega: base + 0.2, inertia: 5 }, { omega: base + 100, inertia: 0.11 }, { omega: base - 3, inertia: 0.11 }],
+      [{ omega: base + 40, inertia: 0.11 }, { omega: base + 30, inertia: 0.12 }],
+    ];
+    let worst = 0, checked = 0;
+    for (const engines of sets) {
+      for (let k = 0; k <= 400; k++) {
+        const capNm = k === 400 ? Infinity : 50 + 15 * k, cap = capNm * DT;
+        const j = jointFreewheelImpulse(omega, inertia, engines, ratio, eta, capNm, DT);
+        const v = base + a * j.reduce((sum, x) => sum + x, 0);
+        engines.forEach((e, i) => {
+          worst = Math.max(worst, Math.abs(j[i] - Math.min(cap, Math.max(0, e.inertia * (e.omega - v)))));
+          checked++;
+        });
+      }
+    }
+    report.fixedPoint = { checked, worstNms: worst };
+    // Rounding only (impulses up to about 3000 N m s on the 5 kg m^2 shaft); the active-set solver it replaced was 0.46 off.
+    expect(worst).toBeLessThan(1e-9);
+  });
 });
 
 describe('twin drivetrain (T2-T4)', () => {

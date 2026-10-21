@@ -4,7 +4,7 @@
 // unit): numbers in pilot units, independent of the Bo 105 rotor. A trace (TWIN_TRACE=<directory>) writes each file's
 // report there as JSON.
 import { BO105_DEFINITION } from '../../src/aircraft/bo105';
-import { BO105_INSTALLED_C20B, BO105_TURBOSHAFT_INDICATION } from '../../src/aircraft/bo105/twin';
+import { BO105_INSTALLED_C20B, BO105_TRANSMISSION_TORQUE_LIMIT_NM, BO105_TURBOSHAFT_INDICATION } from '../../src/aircraft/bo105/twin';
 import { BO105_INERTIA } from '../../src/aircraft/bo105/facts';
 import { ALLISON_250_C20B } from '../../src/aircraft/md500/powerplant';
 import type { AircraftDefinition } from '../../src/aircraft/types';
@@ -18,13 +18,14 @@ export const DT = 1 / 240;
 const base = BO105_DEFINITION.rotorcraft!;
 
 /**
- * The rig's definition: the Bo 105 with the Bo 105 engine indication on its turboshaft control, both engines the
+ * The rig's definition: the Bo 105 with the Bo 105 engine indication and twin governor rigging on its turboshaft
+ * control, the Bo 105 freewheel cap (BO105_TRANSMISSION_TORQUE_LIMIT_NM), both engines the
  * installed 250-C20B (BO105_INSTALLED_C20B) and the airframe inertia of the Bo 105 at 2200 kg (P AR-280, facts.ts),
  * so yaw rates are the Bo 105's whatever airframe the definition carries.
  */
 export const TWIN_DEF: AircraftDefinition = {
   ...BO105_DEFINITION,
-  rotorcraft: { ...base, systems: { ...base.systems,
+  rotorcraft: { ...base, systems: { ...base.systems, transmissionTorqueLimit: BO105_TRANSMISSION_TORQUE_LIMIT_NM,
     turboshaft: { ...base.systems.turboshaft!, ...BO105_TURBOSHAFT_INDICATION } } },
   powerplant: { ...BO105_DEFINITION.powerplant,
     engines: BO105_DEFINITION.powerplant.engines.map((e) => ({ ...e, engine: BO105_INSTALLED_C20B })) },

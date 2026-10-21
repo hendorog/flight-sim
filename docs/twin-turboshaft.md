@@ -47,10 +47,20 @@ engine whose output shaft overruns the rotor (omega_i > r omega). All engines of
     J_i = I_i (omega_i - v)
 
 An engine whose J would be negative leaves S (it would have to be driven by the rotor), one above the cap
-(`transmissionTorqueLimit` x dt, twice the transient torque, never binding in use) is held at it, and the set is
-solved again. The sums run in a canonical order (by shaft speed, then inertia), so the result does not depend on
-which engine is "engine 1" (T2: identical to the last bit over 10 s). With one engine and no cap it reduces to the
-legacy impulse `excess / (1/I_e + eta r^2 / I)` (checked to 1e-12).
+(`transmissionTorqueLimit` x dt) is held at it, and an engine whose capped impulse would leave it below the rotor
+comes off the cap. Written as one equation: every J_i = clamp(I_i (omega_i - v), 0, cap) and v = r omega + a sum J_i.
+The right-hand side falls as v rises, so the root is unique; it is found by walking the breakpoints (omega_i, where an
+engine leaves, and omega_i - cap / I_i, where it reaches the cap) upward from r omega and solved in closed form on its
+segment. A unit test sweeps 400 caps over three engine sets (one with a marginal heavy shaft that drops out and lets a
+capped engine come off the cap) and checks the identity to 1.7e-12 N m s; the active-set iteration it replaced was
+0.46 N m s off on that case (it never re-checked a capped engine). The sums run in a canonical order (by shaft speed,
+then inertia), so the result does not depend on which engine is "engine 1" (T2: identical to the last bit over 10 s).
+With one engine and no cap it reduces to the legacy impulse `excess / (1/I_e + eta r^2 / I)` (checked to 1e-12).
+
+The cap: `BO105_TRANSMISSION_TORQUE_LIMIT_NM` (twin.ts) = 2 x the 95 % OEI rating = 899 N m at each engine shaft
+(plan 5, D from P TCDS p9), which the twin rig flies. The S0 stub carries the MD 500E's 965 N m (204 % of 298 kW)
+through its spread of the MD 500E's systems until BO adopts the constant. Neither binds: the survivor tops at about
+106 % (502 N m).
 
 Energy (T3): over a 20 s manoeuvre with an engine cut and relit, engine shaft work less the (1 - eta) transmission
 loss equals the rotor's energy gain plus the aerodynamic work to -0.075 %. The work is taken at the shaft speed each
@@ -73,6 +83,15 @@ own override (`out.engines[i]` keeps the pilot's own per-engine overrides, e.g. 
 With both freewheels engaged the two output shafts turn at one speed, so the load splits by the droop: equal datums,
 equal N1, equal torque.
 
+- **Droop compensator for two engines** (`BO105_TURBOSHAFT_INDICATION.governor`, twin.ts; ESTIMATE). The MD 500E's
+  compensator (datum 78.4 % N1 + 0.65 x collective) is sized for one engine carrying the whole torque: at the 2200 kg
+  hover its datum sat about 11 % N1 above each twin engine's governed 96.5 %, so N2 ran 0.6-0.9 % above the set point
+  (a fresh hover reset read N2 SET 99.3 % with N2 100 %, and the 102 % beep stop gave N2 102.6 %, above the 102 %
+  continuous limit, P). The twin's datum meets the governed N1 at two rig points: flat pitch on the ground at 100 % NR,
+  77.3 % N1 per engine (`datumNg` 0.773), and the 2200 kg hover, collective 0.490 of travel at 96.5 % N1
+  (`anticipation` 0.39). Gains, droop, lead and beep rate stay the MD 500E's (same engine and fuel control). Linear in
+  the collective, it fits these two points only: in forward flight the collective is lower for the power, and N2 sits
+  +0.29 % (60 KIAS) / +0.32 % (120 KIAS) above the set point (MD 500E rigging: +0.76 / +0.91 %).
 - **ENGINE TRIM fore/aft** moves both set points together (`n2SetPct`, kept equal; range 98-102 %, 1 %/s; P5 FM 4-16
   normal band, rate ESTIMATE).
 - **ENGINE TRIM left/right** moves `splitPct` (% N1) at 0.7 %/s within +/- 6 % (ESTIMATE): engine 2's compensator datum
@@ -93,7 +112,7 @@ equal N1, equal torque.
 | Flag | Condition |
 |---|---|
 | `n1SplitLight` | N1 differ by 12 % or more (the unit beeps with it) |
-| `nrLowLight`, `nrLowTone` (650 Hz, 5/s) | NR 75-95 % (TM: the band's floor keeps the unit quiet at ground idle) |
+| `nrLowLight`, `nrLowTone` (650 Hz, 5/s) | NR 95 % or less (P5 FM 3-16); on the ground only down to 75 % (TM 00-44's 75-95 % band, table partly garbled; AGENT: the floor applies on the ground, so the unit is quiet at ground idle but stays on in flight however low NR falls) |
 | `nrHighLight` | NR 103 % or more |
 | `nrHighTone` (2600 Hz steady) | NR 108 % or more |
 | `RotorcraftState.lowRpmLight` | the one RPM warning light: any of the three lights |
@@ -133,31 +152,54 @@ of 298 kW), `BO105_INSTALLED_C20B`, Bo 105 inertia at 2200 kg; the S0 stub's rot
 | T5 | matched rigging, hover 2200 kg | split <= 1 % (AGENT) | 0.0 % (73.4 / 73.4 %) |
 | T5 | rig mismatch, unsynchronised | 4 +/- 2 % | 3.6 % (71.6 / 75.2 %) |
 | T5 | ENGINE TRIM left held | crosses zero at 1.5-3 %/s; synchronised <= 1 % (ESTIMATE) | 1.8 %/s at 2.2 s; let go there: -0.7 % |
-| T6 | ENGINE TRIM fore/aft | both N2 together, 98-102 % at about 1 %/s (ESTIMATE / P5) | 1.00 %/s; set points 98 / 102 %; N2 98.8 / 102.6 % in the hover (the compensator over-compensates by 0.6-0.8 % at 2200 kg: BO's governor data) |
+| T6 | ENGINE TRIM fore/aft | both N2 together, 98-102 % at about 1 %/s (ESTIMATE / P5); added: N2 within 0.2 % of the set point at both stops (the compensator rigging) | 1.00 %/s; set points 98 / 102 %; N2 98.13 / 101.92 % at the 2200 kg hover (before the twin compensator: 98.80 / 102.57 %) |
 | T7a | OEI from 2 x 45 % (60 KIAS, 2539 kg), collective held, pedals fixed | NR >= 92 %, >= 97 % in 4 s; survivor <= 95 %, N1 <= 105 %; light + 650 Hz while NR <= 95 %; oei; LEFT yaw <= 10 deg/s (ESTIMATE / P sense) | NR min 97.6 % (never below 97); survivor settles 87.7 %, peak 94.0 %; N1 max 101.8 %; TOT max 762 C; oei at 1.3 s; nose LEFT first, 7.4 deg/s, then 10.8 deg/s right as the survivor re-accelerates the rotor |
-| T7b | OEI from 2 x 55 % (hover, 1720 kg), collective held | NR 93-96 % within 5 s and stays; light + 650 Hz on; survivor at the N1 stop 105-106 %, <= 105 % torque; TOT 810 C; collective down at 2 %/s: NR >= 97 %, light off (ESTIMATE / P5 FM 3-21) | NR 96.0 % at 5 s, 95.5 % at 12 s; N1 104.8 % (the fuel control's 0.2 % droop below the 105 % stop); torque max 104.6 %; TOT 810 C; recovery in 2.5 s to 98.6 %, low-NR light out. **Gap:** NR settles above 95 %, so the light and tone stay off (95.6 % with heading held by the pedals, 96.1-96.6 % with them fixed); at 60 KIAS NR settles at 97.4-97.6 % (the descent makes up the power) |
-| T7c | survivor over every OEI run | <= 106 % N1, <= 105 % torque | 104.8 %, 104.6 % |
+| T7b | OEI from 2 x 55 % (hover, 1720 kg), collective held 25 s, pedals holding the heading | NR 93-96 % within 5 s and stays; light + 650 Hz on; survivor at the N1 stop 105-106 %, <= 105 % torque; TOT 810 C; collective down at 2 %/s: NR >= 97 %, light off (ESTIMATE / P5 FM 3-21) | NR 96.04 % at 4 s, 95.95 % at 5 s, then a slow decay (0.08 %/s at 10 s, 0.06 %/s at 25 s; not settled): 95 % crossed at 18.3 s, 94.64 % at 24 s; light and 650 Hz on at every sample with NR <= 95 % (and at the end); N1 104.80 % (**tolerance named**: the test asks >= 104.5 %, the plan 105-106 %; the fuel control holds 0.2 % below the 105 % stop); TOT 810.3 C; torque **105.50 % at the 95 % crossing, 106.39 % at 94.57 % NR: fails the row's <= 105 % (BLOCKING, section 7)**; recovery in 3.3 s to 98.9 %, low-NR light out |
+| T7c | survivor over every OEI run | <= 106 % N1, <= 105 % torque | N1 104.80 %; torque **106.39 % (T7b at 25 s): fails** (section 7). On the earlier 12 s window it passed at 104.6 %, a 0.4 % margin that came from stopping the run before NR reached 95 % |
 | T7b on the MD 500E map | report | - | survivor 117 % torque peak, 112 % settled, N1 102.3 %, TOT 805 C, NR 99.3 %: why the installed map |
-| T8 | in-flight start of engine 2 (60 KIAS, 2200 kg) | engages at N2 = NR, transient <= 0.5 % (ESTIMATE) | engages as the lever leaves IDLE (unloaded N2 at IDLE 95.6 %); excursion 0.09 %; NR then settles 0.55 % higher (less droop with the load shared; the pilot beeps it back) |
+| T8 | in-flight start of engine 2 (60 KIAS, 2200 kg) | engages at N2 = NR, transient <= 0.5 % (ESTIMATE). **Reinterpreted** (AGENT): the transient is NR's excursion beyond its levels before and after (<= 0.5 %), the settled shift is bounded separately (<= 1 %); engagement is checked physically: engine 2's N2 locks to NR (N2 % = NR %, i.e. shaft = NR x ratio) after the needles join and stays locked within 0.05 % | engages as the lever leaves IDLE (unloaded N2 at IDLE 95.6 %); needles join at 32.16 s, locked at 32.39 s, slip after lock 0.0008 %; excursion 0.09 %; NR then settles 0.55 % higher (less droop with the load shared; the pilot beeps it back) |
 | T9 | warning unit | exact (P TM 00-44) | every threshold to 0.01 % as in section 4 |
-| T10 | airborne resets 0 / 60 / 120 KIAS | torques +/- 1 %, no step > 0.3 % over 2 s | equal to 1e-9; worst 0.011 %; `[true, false]` and `[false, true]` give the cut engine split, OEI, worst 0.004 % |
+| T10 | airborne resets 0 / 60 / 120 KIAS | torques +/- 1 %, no step > 0.3 % over 2 s; added at 0 KIAS: N2 set point 100 +/- 0.2 % | equal to 1e-9; worst 0.011 %; N2 SET 99.97 / 99.71 / 99.68 % with N2 100 % (MD 500E rigging: 99.28 / 99.24 / 99.09 %); `[true, false]` and `[false, true]` give the cut engine split, OEI, worst 0.004 % |
 | T11 | resume mid-OEI through JSON | no NR or N1 step > 0.2 % | NR 0 at restore; 3e-6 % over 0.5 s (the published N1 gauge is stale until the first step: a SimPhysics restore detail) |
 | T12 | inputs | check-keys, tests/input | check-keys passes (Bo 105 lever stops and ENGINE TRIM with real key events, Shift+, braking on the C172S); tests/input 247 pass |
 | T13 | autopilot with engine 1 shut down | engages | engages and holds 10 s at 60 KIAS (altitude error 0.001 m) |
 | T14 | ground start of engine 2, engine 1 at IDLE | NR dip <= 1 %; no N1-split light 10 s after (ESTIMATE) | NR 49.5 % (one engine at IDLE) dips 0.93 % (the starter's load on engine 1's generator); engages at 16.2 s; light out |
-| T15 | both levers IDLE -> FLIGHT over 5 s | NR 60 -> 98 % in 10-20 s; no overshoot > 102 %; split <= 5 %; TOT < 779 C (ESTIMATE) | NR 59.0 -> 98 % in 4.4 s (**gap**); peak 101.4 %; split 0; TOT max 611 C |
+| T15 | both levers IDLE -> FLIGHT, split unsynchronised (cold-start `splitPct` 0, rig mismatch showing) | NR 60 -> 98 % in 10-20 s (an unsourced ESTIMATE of the pilot's lever rate: FM 4-16 says only "power levers smoothly to FLIGHT"); no overshoot > 102 %; split <= 5 %; TOT < 779 C (ESTIMATE). Test: the time recorded with a soft bound (98 % no later than 10 s after the levers reach FLIGHT) | 5 s ramp: NR 59.0 -> 98 % in 4.4 s, peak 101.4 %, split max 2.9 %, TOT max 611 C. 12 s ramp: 98 % in 7.3 s (before the levers reach FLIGHT: governed NR comes at about 60 % of lever travel), peak 100.8 %, split max 2.9 %, TOT max 554 C |
 | T16 | one lever at IDLE in flight | split, torque 0, the other carries | 0.00001 % / 74.9 % (total before 76.7 %); NR 99.4 % |
 
 In-sim (`index.html?aircraft=bo105&hover=1`, 20 s, the stub's MD 500E gauges in psi): NR 424.5 rpm (100.0 %), N1
 86.2 / 86.2 %, N2 100.0 / 100.0 %, torque 40.9 / 40.9 psi (42.7 % each), split synchronised (-1.3 % N1), no crash.
+The in-sim aircraft flies the S0 stub's turboshaft block (the MD 500E governor), so its HUD keeps N2 SET 99.3 % at a
+hover spawn until BO spreads `BO105_TURBOSHAFT_INDICATION` (with its governor) over `systems.turboshaft`; the rig rows
+above fly the twin rigging.
 
 ## 7. Known gaps and issues (for the KNOWN_ISSUES files)
 
-- T7b: from 2 x 55 % NR settles at 95.5-96.6 %, just above the 95 % warning threshold, so the RPM light and 650 Hz
-  stay off; at 60 KIAS it settles at 97.4-97.6 %. The descent with the collective held makes up most of the deficit.
-  Depends on the real rotor and tail rotor (BO): re-measure with `tests/rotorcraft/twinOei.test.ts`.
-- T15: NR follows the levers through the PLA schedule; IDLE -> FLIGHT over 5 s gives 98 % in 4.4 s, not 10-20 s. The
-  10-20 s ESTIMATE implies acceleration limiting in the fuel control (`accelFuel`, BO's engine data).
+- **BLOCKING: T7b's torque bound and its warning row cannot both hold (T7c fails).** With the survivor at its N1 stop
+  the torque gauge follows the inherited 250-C20B power-turbine law, torque = T100 x (3 - 2 NR/100)
+  (`stallTorqueRatio` 3, md500/powerplant.ts, a legacy propulsion trait; the C208 and PC-12 use 2), with T100 about
+  95.8 % from the 283 kW anchor (drawn at 100 % N2). 105 % torque needs NR >= 95.2 %; the RPM light and 650 Hz need
+  NR <= 95 %. On a 25 s hold (collective held, from 2 x 55 %) NR crosses 95 % at 18.3 s with the survivor at 105.50 %
+  and reads 106.39 % at 94.57 % NR; the shaft power at the stop is 297 kW at 95.6 % NR, 5 % above the anchor, by the
+  same law. This holds on any rotor that lets NR reach 95 %. The two resolutions are not TW's to pick: re-bound T7c /
+  T7b's torque (integrator, plan) or re-tag the Bo 105 installation's power-turbine law (BO's engine data; needs a
+  source or an owner decision). TW's earlier 12 s window hid the conflict (NR 95.4 % at 12 s, still falling 0.08 %/s);
+  the light "gap" recorded earlier was that window, not the drivetrain. `tests/rotorcraft/twinOei.test.ts` T7b and T7c
+  fail with the arithmetic in the message.
+- T7b: NR does not settle within 25 s with the collective held: it decays at 0.06-0.08 %/s from 5 s (95.95 %) to 25 s
+  (94.64 %). At 60 KIAS it settles at 97.4-97.6 % (the descent makes up the power). Depends on the real rotor and tail
+  rotor (BO): re-measure with `tests/rotorcraft/twinOei.test.ts`. The survivor's N1 tops at 104.8 % (0.2 % below the
+  105 % stop, the fuel control's droop), so the test asks >= 104.5 % against the plan's 105-106 %.
+- T7c's margin depends on BO's rotor: how far NR droops at a given collective sets the survivor's torque.
+- T15: the plan's NR 60 -> 98 % in 10-20 s is an unsourced ESTIMATE of the pilot's lever-advance rate, not a
+  fuel-control gap: NR follows the levers through the PLA schedule (5 s ramp: 4.4 s; 12 s ramp: 7.3 s; TOT max 611 /
+  554 C). The run-up puts 539 kJ into the rotor in 4.4 s (122 kW plus flat-pitch drag, about 30 % torque per engine at
+  80-90 % N1), well inside the C20B's acceleration schedule. No source for the run-up time was found
+  (research-bo105.md, FM 4-16: "power levers smoothly to FLIGHT").
+- The twin compensator (`BO105_TURBOSHAFT_INDICATION.governor`) is fitted on the S0 stub's rotor at two points (flat
+  pitch on the ground, 2200 kg hover); in forward flight N2 sits about 0.3 % above the set point. BO re-fits it on
+  the real rotor (section 8). Until BO adopts it, the in-sim Bo 105 flies the MD 500E governor (N2 SET 99.3 % at a
+  hover spawn).
 - The N1-split warning is not resettable (TM 00-44: "resettable"): in OEI flight the RPM light and the N1-split beeping
   stay on. A reset needs a control and a persisted latch (state block frozen at S0).
 - Auto-reignition (the MD 500E's RE-IGN, `TurboshaftControlDef`) also runs per engine on the twin: a cut engine's
@@ -167,12 +209,23 @@ In-sim (`index.html?aircraft=bo105&hover=1`, 20 s, the stub's MD 500E gauges in 
   power (the pilot re-beeps); a real hydromechanical twin does the same.
 - The OEI flag waits for N1 below 55 % (about 1.4 s after a cut); in between the survivor is judged on AEO limits.
 - After a resume, the published N1 gauges are those of the reset until the first physics step (SimPhysics restore).
+- Profiling note (not fixed): the twin path allocates per substep (jointFreewheelImpulse's arrays and sort, the
+  per-engine override objects in stepTwinTurboshaft, RC's `[engine, ...extraEngines]`), twin types only, 2 engines;
+  if it ever shows in a profile: module-level scratch arrays sized to the engine count and a reused override pair.
+- `governorThrottle` / `governorIntegral` (rotor level) carry the larger of the two engines' demands, so they read the
+  running engine's with either engine out.
 
 ## 8. Changes for other owners (requests)
 
 - BO, `src/aircraft/bo105/rotorcraft.ts`: spread `BO105_TURBOSHAFT_INDICATION` over `systems.turboshaft` (torque in %,
-  Bo 105 limits, engine-out 55 % N1 / 95 % NR); re-check T6 (N2 at the beep stops sits 0.6-0.8 % above the set point:
-  `governor.datumNg` / `anticipation` for two engines).
+  Bo 105 limits, engine-out 55 % N1 / 95 % NR, and the twin governor: beep range 98-102 %, compensator datum 77.3 % N1
+  + 0.39 x collective). Re-fit the compensator on the real rotor by the same two readings: `datumNg` = the per-engine N1
+  at flat pitch on the ground at 100 % NR (split synchronised), `anticipation` = (hover N1 - datumNg) / hover collective
+  at 2200 kg; then re-run T6 and T10 (N2 within 0.2 % of the set point at the stops; N2 SET 100 +/- 0.2 % at a hover
+  reset). Set `systems.transmissionTorqueLimit: BO105_TRANSMISSION_TORQUE_LIMIT_NM` (899 N m, twin.ts) in place of the
+  MD 500E's inherited 965 N m.
+- BO / integrator: the T7b/T7c conflict of section 7 (the power-turbine law of the Bo 105 installation, or the plan's
+  torque bound).
 - BO, `src/aircraft/bo105/powerplant.ts`: `engine: BO105_INSTALLED_C20B` for both engines (or its own map meeting the
   same two anchors); re-run `tests/rotorcraft/twinOei.test.ts`.
 - BO, `src/aircraft/bo105/input.ts`: drop the MD 500E's twist-grip `labels` (throttleDown/Up/Idle/Full) so the help

@@ -62,7 +62,7 @@ describe('load sharing and ENGINE TRIM (T5, T6)', () => {
     expect(Math.abs(settled)).toBeLessThanOrEqual(1);
   }, 30_000);
 
-  it('T6 ENGINE TRIM fore/aft: both N2 move together, 98-102 % at about 1 %/s (ESTIMATE; FM normal band P5)', () => {
+  it('T6 ENGINE TRIM fore/aft: both N2 move together, 98-102 % at about 1 %/s (ESTIMATE; FM normal band P5); at the 2200 kg hover N2 within 0.2 % of the set point at both stops (the twin compensator rigging)', () => {
     const r = rig({ kg: 2200 });
     run(r, 2);
     const set0 = gauges(r).set[0];
@@ -82,6 +82,7 @@ describe('load sharing and ENGINE TRIM (T5, T6)', () => {
     expect(rate).toBeGreaterThanOrEqual(0.8); expect(rate).toBeLessThanOrEqual(1.2);
     expect(high.set).toEqual([102, 102]); expect(low.set).toEqual([98, 98]);
     for (const g of [high, low]) expect(Math.abs(g.n2[0] - g.n2[1])).toBeLessThan(0.05);
+    for (const g of [high, low]) for (const k of [0, 1]) expect(Math.abs(g.n2[k] - g.set[k])).toBeLessThanOrEqual(0.2);
     expect(high.nr).toBeGreaterThanOrEqual(101); expect(high.nr).toBeLessThanOrEqual(103);
     expect(low.nr).toBeGreaterThanOrEqual(97); expect(low.nr).toBeLessThanOrEqual(99);
   }, 30_000);
@@ -92,13 +93,13 @@ describe('warning unit K-DW02/01 (T9, P TM 00-44 / P5 FM 3-16)', () => {
   const turbine = (n1: number) => Object.create(TurbineEngine.prototype, { ng: { value: n1 }, ittC: { value: 600 }, firing: { value: n1 > 0.5 } }) as TurbineEngine;
   const unit = (n1: number, n2Omega: number) => ({ omega: n2Omega, inertia: 0.11, gearRatio: 1, engine: turbine(n1),
     install: { engine: { ratedRpm: 6016 } }, state: { rpm: 0, torque: 100 } }) as unknown as EngineUnit;
-  const at = (nrPct: number, n1: [number, number], volts = 28) => {
+  const at = (nrPct: number, n1: [number, number], volts = 28, onGround = false) => {
     const rotor = new Rotorcraft(d);
     rotor.reset(true);
     rotor.state.rotorRpm = nrPct / 100 * d.referenceRpm;
     rotor.state.omega = rotor.state.rotorRpm * Math.PI / 30;
     const n2 = rotor.state.omega * d.engineRatio;
-    publishTwin(rotor.turboshaft!, rotor.state, DT, defaultControls(TWIN_DEF), [unit(n1[0], n2), unit(n1[1], n2)], volts, false);
+    publishTwin(rotor.turboshaft!, rotor.state, DT, defaultControls(TWIN_DEF), [unit(n1[0], n2), unit(n1[1], n2)], volts, onGround);
     return { tw: rotor.state.twinTurboshaft!, s: rotor.state };
   };
 
@@ -108,15 +109,21 @@ describe('warning unit K-DW02/01 (T9, P TM 00-44 / P5 FM 3-16)', () => {
     expect(off.tw.n1SplitLight).toBe(false); expect(off.s.lowRpmLight).toBe(false);
   });
 
-  it('NR <= 95 % -> light + 650 Hz tone (nrLowTone, lowRpmHorn) down to the 75 % floor; NR >= 103 % -> light; >= 108 % -> 2600 Hz tone', () => {
-    const rows = [94.99, 95, 95.01, 75, 74.99, 60, 102.99, 103, 107.99, 108].map((nr) => {
-      const { tw, s } = at(nr, [0.9, 0.9]);
-      return { nr, low: tw.nrLowLight, tone: tw.nrLowTone, horn: s.lowRpmHorn, high: tw.nrHighLight, highTone: tw.nrHighTone, light: s.lowRpmLight };
+  it('NR <= 95 % -> light + 650 Hz tone (nrLowTone, lowRpmHorn), on the ground down to the 75 % floor, in flight at any NR; NR >= 103 % -> light; >= 108 % -> 2600 Hz tone', () => {
+    const cases: [number, boolean][] = [[94.99, false], [95, false], [95.01, false], [75, true], [74.99, true], [60, true], [60, false],
+      [74.99, false], [102.99, false], [103, false], [107.99, false], [108, false]];
+    const rows = cases.map(([nr, onGround]) => {
+      const { tw, s } = at(nr, [0.9, 0.9], 28, onGround);
+      return { nr, onGround, low: tw.nrLowLight, tone: tw.nrLowTone, horn: s.lowRpmHorn, high: tw.nrHighLight, highTone: tw.nrHighTone, light: s.lowRpmLight };
     });
     report.T9 = rows;
-    const row = (nr: number) => rows.find((x) => x.nr === nr)!;
-    for (const nr of [94.99, 95, 75]) expect(row(nr)).toMatchObject({ low: true, tone: true, horn: true, light: true });
-    for (const nr of [95.01, 74.99, 60, 102.99]) expect(row(nr)).toMatchObject({ low: false, tone: false, light: false, high: false });
+    const row = (nr: number, onGround = false) => rows.find((x) => x.nr === nr && x.onGround === onGround)!;
+    for (const [nr, g] of [[94.99, false], [95, false], [75, true], [74.99, false], [60, false]] as const) {
+      expect(row(nr, g), `${nr} % ${g ? 'on the ground' : 'airborne'}`).toMatchObject({ low: true, tone: true, horn: true, light: true });
+    }
+    for (const [nr, g] of [[95.01, false], [74.99, true], [60, true], [102.99, false]] as const) {
+      expect(row(nr, g), `${nr} % ${g ? 'on the ground' : 'airborne'}`).toMatchObject({ low: false, tone: false, light: false, high: false });
+    }
     expect(row(103)).toMatchObject({ high: true, highTone: false, light: true, tone: false });
     expect(row(107.99).highTone).toBe(false);
     expect(row(108)).toMatchObject({ high: true, highTone: true, light: true });
@@ -148,14 +155,15 @@ describe('autopilot hold on one engine (T13)', () => {
 
 describe('reset, resume and one lever at IDLE (T10, T11, T16)', () => {
   for (const kt of [0, 60, 120]) {
-    it(`T10 airborne reset at ${kt} KIAS: torques equal +/- 1 %, N2 steady, no Nr or N2 transient > 0.3 % over 2 s`, () => {
+    it(`T10 airborne reset at ${kt} KIAS: torques equal +/- 1 %, N2 steady, no Nr or N2 transient > 0.3 % over 2 s${kt === 0 ? '; the N2 set point reads 100 +/- 0.2 % (the compensator rigging point)' : ''}`, () => {
       const r = rig({ kg: 2200, kt });
       const g0 = gauges(r);
       let worst = 0;
       run(r, 2, () => { const g = gauges(r); worst = Math.max(worst, Math.abs(g.nr - g0.nr), Math.abs(g.n2[0] - g0.n2[0]), Math.abs(g.n2[1] - g0.n2[1])); });
       const g = gauges(r);
       (report.T10 ??= {} as Record<string, unknown>) as Record<string, unknown>;
-      (report.T10 as Record<string, unknown>)[kt] = { tq: g0.tq, n2: g0.n2, nr: g0.nr, worstStepPct: worst, after: { tq: g.tq, n2: g.n2 } };
+      (report.T10 as Record<string, unknown>)[kt] = { tq: g0.tq, n1: g0.n1, n2: g0.n2, set: g0.set, nr: g0.nr, collective: g0.collective, worstStepPct: worst, after: { tq: g.tq, n2: g.n2 } };
+      if (kt === 0) expect(Math.abs(g0.set[0] - 100)).toBeLessThanOrEqual(0.2);
       expect(Math.abs(g0.tq[0] - g0.tq[1])).toBeLessThanOrEqual(1);
       expect(Math.abs(g.tq[0] - g.tq[1])).toBeLessThanOrEqual(1);
       expect(worst).toBeLessThanOrEqual(0.3);

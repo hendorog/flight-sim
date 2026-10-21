@@ -6,7 +6,7 @@ import type { EngineDef } from '../../physics/propulsion/defs';
 import type { TurboshaftControlDef } from '../../physics/rotorcraft/definition';
 import { ALLISON_250_C20B } from '../md500/powerplant';
 import type { TwinTurboshaftDef } from '../../physics/rotorcraft/twinTurboshaft';
-import { BO105_N1_PCT, BO105_PCT_PER_NM, BO105_TORQUE_PCT, BO105_TOT_C, BO105_WARNINGS } from './facts';
+import { BO105_N1_PCT, BO105_N2_BEEP, BO105_PCT_PER_NM, BO105_TORQUE_PCT, BO105_TOT_C, BO105_WARNINGS } from './facts';
 
 export const BO105_TWIN: TwinTurboshaftDef = {
   engines: 2,
@@ -27,8 +27,9 @@ export const BO105_TWIN: TwinTurboshaftDef = {
     emergencyTotC: BO105_TOT_C.takeoff, emergencySeconds: BO105_TORQUE_PCT.oeiEmergencySeconds },
   warnings: { n1SplitPct: BO105_WARNINGS.n1SplitPct, nrLowPct: BO105_WARNINGS.nrLowPct, nrHighPct: BO105_WARNINGS.nrHighPct,
     nrHighTonePct: BO105_WARNINGS.nrHighTonePct,
-    /** P TM 00-44 (warning box K-DW02/01): the low-rotor light and 650 Hz tone cover NR 75-95 %, so the unit is quiet at
-     *  ground idle (about 60 % NR). */
+    /** P TM 00-44 (warning box K-DW02/01; the table is partly garbled): the low-rotor light and 650 Hz tone cover NR
+     *  75-95 %. The floor applies on the ground only (AGENT reading), so the unit is quiet at ground idle (about 60 %
+     *  NR) but stays on in flight however low NR falls (P5 FM 3-16: "NR 95 % or less"). */
     nrLowFloorPct: 75 },
 };
 
@@ -38,8 +39,24 @@ export const BO105_TWIN: TwinTurboshaftDef = {
  * that unit, and the ENGINE OUT test that the twin's OEI flag uses. BO adopts it in rotorcraft.ts; the twin test rig
  * (tests/rotorcraft/twinRig.ts) flies it.
  */
-export const BO105_TURBOSHAFT_INDICATION: Pick<TurboshaftControlDef, 'torqueGauge' | 'psiPerNm' | 'limits' | 'engineOut'> = {
+export const BO105_TURBOSHAFT_INDICATION: Pick<TurboshaftControlDef, 'torqueGauge' | 'psiPerNm' | 'limits' | 'engineOut' | 'governor'> = {
   torqueGauge: 'percent',
+  /**
+   * Each engine's N2 governor and droop compensator. The law, gains, droop and beep rate are the MD 500E's 250-C20B
+   * calibration (md500/rotorcraft.ts, F: the same engine and fuel control; docs/turboshaft-model.md); the beep range is
+   * the Bo 105's (P5 FM 4-16). The compensator is re-rigged for two engines: on the MD 500E one engine carries the whole
+   * torque, so its anticipation (0.65 N1 per unit collective) put the datum about 11 % N1 above each twin engine's
+   * governed N1 at the hover and N2 sat 0.6-0.8 % above the set point. Here the datum meets the governed N1 at two
+   * points on the twin rig (tests/rotorcraft/twinRig.ts, the S0 stub's rotor, sea level ISA, split synchronised):
+   *   - flat pitch on the ground at 100 % NR: N1 77.3 % per engine (datumNg);
+   *   - the 2200 kg hover: collective 0.490 of travel, N1 96.5 % per engine (anticipation = (0.965 - 0.773) / 0.490).
+   * ESTIMATE (the Bo 105's compensator rigging is not published). BO re-fits both numbers on the real rotor by the same
+   * two readings (docs/twin-turboshaft.md section 8).
+   */
+  governor: {
+    setRange: BO105_N2_BEEP.range, setDefault: BO105_N2_BEEP.setDefault,
+    beepRate: 0.01, droop: 0.05, anticipation: 0.39, datumNg: 0.773, gain: 4, integralGain: 1.5, lead: 0.15,
+  },
   psiPerNm: BO105_PCT_PER_NM,
   limits: {
     // AEO: 86 % per engine for take-off (5 min, TOT to 810 C) and as MCP (TOT to 779 C) (P TCDS p9, P5 FM 2-9).
@@ -56,6 +73,14 @@ export const BO105_TURBOSHAFT_INDICATION: Pick<TurboshaftControlDef, 'torqueGaug
   // FM 2-10); the per-engine low-rotor half follows the warning unit's 95 % NR (P5 FM 3-16).
   engineOut: { n1Below: 0.55, nrBelow: BO105_WARNINGS.nrLowPct / 100 },
 };
+
+/**
+ * The freewheel coupling cap for systems.transmissionTorqueLimit, N m at each engine's output shaft: twice the OEI
+ * rating, 2 x 95 % of 473 N m = 899 N m (plan 5: "2 x the 95 % torque, never binding"; D from P TCDS p9). A numerical
+ * guard, not a pilot limit: the survivor tops at about 105 % (497 N m) at its N1 stop. Proposed for bo105/rotorcraft.ts
+ * (BO); the S0 stub inherits the MD 500E's 965 N m (204 % of 298 kW) through its spread of the MD 500E's systems.
+ */
+export const BO105_TRANSMISSION_TORQUE_LIMIT_NM = 2 * BO105_TORQUE_PCT.oei / BO105_PCT_PER_NM;
 
 const C20B_GG = ALLISON_250_C20B.turbine!.gasGenerator;
 
