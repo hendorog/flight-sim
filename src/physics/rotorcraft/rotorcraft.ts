@@ -612,9 +612,9 @@ export class Rotorcraft {
    * step a 2-cycle (tail thrust alternating -659/+1102 N about a 100 N trim, MD 500E hover, pedal 0.3).
    * With the body, RPM and main inflow held, the tail's inflow is the root of target(inflow) - inflow;
    * bisect for it. The time constant does not move that root, so the fixed point is the time-stepped one. */
-  private solveTailInflow(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs): void {
+  private solveTailInflow(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, soundSpeed?: number): void {
     const s = this.state;
-    const residual = (x: number) => { s.tailInflow = x; this.compute(b, wind, density, height, c, 0); return this.tailInflowTarget - x; };
+    const residual = (x: number) => { s.tailInflow = x; this.compute(b, wind, density, height, c, 0, soundSpeed); return this.tailInflowTarget - x; };
     const start = s.tailInflow;
     let lo = -60, hi = 60;
     if (!(residual(lo) > 0 && residual(hi) < 0)) { s.tailInflow = start; return; }
@@ -624,8 +624,9 @@ export class Rotorcraft {
     }
     s.tailInflow = 0.5 * (lo + hi);
   }
-  /** Converge the slow aerodynamic states at a held pose/RPM for the numerical trim solver. */
-  settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true): ForceMoment {
+  /** Converge the slow aerodynamic states at a held pose/RPM for the numerical trim solver. soundSpeed: the atmosphere's, m/s, as
+   *  compute() takes it (the section model's and the pusher's Mach numbers); absent, their 340.3 default. */
+  settle(b: BodyState, wind: Vec3, density: number, height: number, c: ControlInputs, powered = true, soundSpeed?: number): ForceMoment {
     const s = this.state, d = this.def;
     s.driveTorque = 0; s.coning = 0; s.retreatingFlap = 0;
     this.gyro?.seed(c);
@@ -641,10 +642,10 @@ export class Rotorcraft {
       if (s.harmonicInflow) { s.harmonicInflow.cos = 0; s.harmonicInflow.sin = 0; }
     }
     s.inflow = s.tailInflow = s.omega > 0 ? 5 : 0;
-    for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);
-    if (d.tail.pittPetersInflow) this.solveTailInflow(b, wind, density, height, c);
+    for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05, soundSpeed);
+    if (d.tail.pittPetersInflow) this.solveTailInflow(b, wind, density, height, c, soundSpeed);
     s.mastBump = false;
     s.driveTorque = powered ? s.torque : 0;
-    return this.compute(b, wind, density, height, c, 0);
+    return this.compute(b, wind, density, height, c, 0, soundSpeed);
   }
 }

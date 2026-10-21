@@ -197,6 +197,34 @@ const icsRpm = (base: AircraftDefinition) => variantOf(base, (r) => ({ ...r, con
   ics: { ...r.controlGyro!.configs.amcs, nominalRpmFraction: 1, collectiveIndicatedOffset: 0 } } } }));
 
 // ------------------------------------------------------------------------------------------------------------- H1
+describe('the trim sees the atmosphere\'s speed of sound (settle takes it, as compute does)', () => {
+  // The section's Mach terms and the pusher read the speed of sound. Rotorcraft.settle (the trim's relaxation) used its 340.3 m/s
+  // default while flight used the atmosphere's (328 m/s at 9,000 ft): the converged trim then started off balance.
+  it('AMCS at 9,000 ft and 180 KTAS: the trimmed state balances with 328 m/s and not with 340.3', () => {
+    const r = rigOn(AH56_DEFINITION, { cfg: 'amcs', kt: 180, ft: 9000 });
+    const atm = r.env.atmosphere(), t = r.fm.lastTrim!, mp = (r.fm as unknown as { mp: { cgOffset: { x: number; y: number; z: number }; mass: number;
+      inertia: { Ixx: number; Iyy: number; Izz: number } } }).mp;
+    const c = cloneControls(r.fm.trimControls);
+    c.collective = r.fm.trimControls.collective; c.elevator = t.elevator; c.aileron = t.aileron; c.rudder = t.rudder;
+    const residual = (sound?: number) => {
+      const b = { time: 0, position: { ...r.fm.state.position }, orientation: t.orientation, velocityBody: t.velocityBody,
+        angularVelocity: v3.zero(), cgOffset: mp.cgOffset, mass: mp.mass };
+      const f = r.rotor.settle(b, v3.zero(), atm.density, -r.fm.state.position.z, c, true, sound);
+      const g = quat.rotateInv(t.orientation, { x: 0, y: 0, z: 9.80665 });
+      return { ax: f.force.x / mp.mass + g.x, ay: f.force.y / mp.mass + g.y, az: f.force.z / mp.mass + g.z,
+        p: f.moment.x / mp.inertia.Ixx, q: f.moment.y / mp.inertia.Iyy, r: f.moment.z / mp.inertia.Izz };
+    };
+    const real = residual(atm.speedOfSound), sea = residual(undefined);
+    const worst = (o: Record<string, number>) => Math.max(...Object.values(o).map(Math.abs));
+    report('trim speed of sound, 9,000 ft 180 KTAS AMCS', { soundSpeed: atm.speedOfSound, converged: String(t.converged),
+      residualReal: worst(real), residualDefault: worst(sea), azDefault: sea.az, rDefault: sea.r });
+    expect(t.converged).toBe(true);
+    expect(worst(real)).toBeLessThan(1e-3);
+    // The default's residual is what the old trim left: tens of times larger (vertical about 0.06 m/s^2, 489 N, codex's probe).
+    expect(worst(sea)).toBeGreaterThan(20 * worst(real));
+  }, 300_000);
+});
+
 describe('H1: advancing-tip Mach number at 194 KTAS and 246 rpm (D: 0.885)', () => {
   it('0.885 +/- 0.01 at sea level (ICS, 18,750 lb)', () => {
     const r = rigOn(AH56_DEFINITION, { cfg: 'ics', kt: 194, lb: 18_750 });

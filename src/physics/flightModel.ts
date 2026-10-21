@@ -663,7 +663,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
         c.collective = x[2]; c.elevator = x[3]; c.aileron = x[4]; c.rudder = x[5];
         const b: BodyState = { time: 0, position, orientation: q, velocityBody: quat.rotateInv(q, trimVelocity),
           angularVelocity: v3.zero(), cgOffset: this.mp.cgOffset, mass: this.mp.mass };
-        const f = r.settle(b, v3.zero(), this.atmosphere.density, -position.z - this.groundElevation, c);
+        const f = r.settle(b, v3.zero(), this.atmosphere.density, -position.z - this.groundElevation, c, true, this.atmosphere.speedOfSound);
         const g = quat.rotateInv(q, { x: 0, y: 0, z: G0 });
         out[0] = f.force.x / b.mass + g.x; out[1] = f.force.y / b.mass + g.y; out[2] = f.force.z / b.mass + g.z;
         out[3] = f.moment.x / this.mp.inertia.Ixx; out[4] = f.moment.y / this.mp.inertia.Iyy; out[5] = f.moment.z / this.mp.inertia.Izz;
@@ -700,7 +700,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.controlsIn = cloneControls(c); this.rotorControls = this.controlsIn;
     this.gearIn.controls = this.controlsIn; this.propIn.controls = this.controlsIn;
     this.sampleWind(env); this.loadBody(this.x, 0, 0);
-    if (ic.onGround) r.settle(this.body, this.wind0, this.atmosphere.density, -position.z - this.groundElevation, c);
+    if (ic.onGround) r.settle(this.body, this.wind0, this.atmosphere.density, -position.z - this.groundElevation, c, true,
+      this.atmosphere.speedOfSound);
     // Settle induction at held engine speed, then find the throttle that supplies the trimmed rotor torque.
     const unit = this.propulsion.units[0];
     unit.shaftHeld = true;
