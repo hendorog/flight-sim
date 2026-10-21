@@ -596,12 +596,15 @@ export class Rotorcraft {
     this.gyro?.seed(c);
     if (this.gyro) { const cyclic = this.gyro.cyclic(c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
     else if (this.hingeless) {
-      // Hingeless: the control phase through the one swashplate law; the cone from its precone; harmonic inflow re-seeded.
+      // Hingeless: the control phase through the one swashplate law.
       const cyclic = swashplateCyclic(d, c, s); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right;
-      s.coning = this.hingeless.spring.precone;
-      if (s.harmonicInflow) { s.harmonicInflow.cos = 0; s.harmonicInflow.sin = 0; }
     } else if (d.cyclicLimits) { const cyclic = cyclicAngles(d, c); s.flapForward = -cyclic.aft; s.flapRight = cyclic.right; }
     else { s.flapForward = -c.elevator * d.cyclicLimit; s.flapRight = c.aileron * d.cyclicLimit; }
+    // Hingeless (with or without a gyro): the cone from its precone, the harmonic inflow re-seeded.
+    if (this.hingeless) {
+      s.coning = this.hingeless.spring.precone;
+      if (s.harmonicInflow) { s.harmonicInflow.cos = 0; s.harmonicInflow.sin = 0; }
+    }
     s.inflow = s.tailInflow = s.omega > 0 ? 5 : 0;
     for (let i = 0; i < 160; i++) this.compute(b, wind, density, height, c, 0.05);
     if (d.tail.pittPetersInflow) this.solveTailInflow(b, wind, density, height, c);
