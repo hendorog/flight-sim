@@ -120,6 +120,13 @@ describe('one engine inoperative (T7a-c)', () => {
     for (const nr of t7bNrAt.slice(5)) { expect(nr).toBeGreaterThanOrEqual(93); expect(nr).toBeLessThanOrEqual(96); }
   });
 
+  // Plan amendment A4 (plan section 15): with the survivor on its N1 stop the installed power-turbine law holds NR at 96 +/- 0.5 % at
+  // 5 s (ESTIMATE); the slow decay after it is recorded, and the warning row above asserts the light and tone whenever NR <= 95 %.
+  it('T7b amended (plan A4): NR 96 +/- 0.5 % 5 s after the failure', () => {
+    expect(t7bNrAt.length).toBeGreaterThan(5);
+    expect(t7bNrAt[5]).toBeGreaterThanOrEqual(95.5); expect(t7bNrAt[5]).toBeLessThanOrEqual(96.5);
+  });
+
   it('T7c summary: over the OEI runs above, the surviving engine never exceeds 106 % N1 or 105 % torque (each run asserts it)', () => {
     expect(survivor.n1Max).toBeGreaterThan(0);
     expectSurvivor({ ...survivor, tqAt95: survivorAt95.tq, nrAtTqMax: survivorAt95.nrAtTqMax });
