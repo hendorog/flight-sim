@@ -1,7 +1,8 @@
 // First-harmonic (Pitt-Peters) inflow (plan revision 2, section 4 item 3; NASA TM-102219 eqs 13b, 14, 18, P): R9-R11
 // and the sign check that the inflow gradient opposes the lift moment. RC_TRACE=<dir>/inflowHarmonic.json.
 import { afterAll, describe, expect, it } from 'vitest';
-import { DEG, KT, v3 } from '../../src/core/math';
+import { DEG, v3 } from '../../src/core/math';
+import { swashplateCyclic } from '../../src/physics/rotorcraft/swashplate';
 import { advanceHarmonicInflow, HARMONIC_APPARENT_MASS, harmonicInflowGains, harmonicInflowTarget } from '../../src/physics/rotorcraft/inflowHarmonic';
 import { fixtureRig, traceReport, trimBody } from './hingelessFixture';
 
@@ -101,13 +102,14 @@ describe('the inflow gradient opposes the lift moment (sign check)', () => {
 
 describe('R11: transverse-flow roll', () => {
   it('lateral cyclic trim 0-40 KIAS: the harmonic inflow adds a LEFT excursion of 0.5-3.0 deg peaking at 10-30 KIAS', () => {
-    const rows: { kt: number; on: number; off: number; extraLeftDeg: number }[] = [];
+    // The swashplate's lateral cyclic (blade degrees, after the control phase): the trim with the harmonic inflow minus
+    // the trim without it isolates the transverse-flow effect from the tail rotor and attitude terms.
+    const rows: { kt: number; onDeg: number; offDeg: number; extraLeftDeg: number }[] = [];
     for (let kt = 0; kt <= 40; kt += 5) {
       const on = fixtureRig({ kt }), off = fixtureRig({ kt, hub: { harmonicInflow: false } });
-      const limit = on.def.rotorcraft!.cyclicLimit;
-      rows.push({ kt, on: on.c.aileron, off: off.c.aileron, extraLeftDeg: -(on.c.aileron - off.c.aileron) * limit / DEG });
+      const lateral = (r: typeof on) => swashplateCyclic(r.def.rotorcraft!, r.c).right / DEG;
+      rows.push({ kt, onDeg: lateral(on), offDeg: lateral(off), extraLeftDeg: lateral(off) - lateral(on) });
       expect(on.fm.lastTrim!.converged && off.fm.lastTrim!.converged).toBe(true);
-      void KT;
     }
     const peak = rows.reduce((a, b) => (b.extraLeftDeg > a.extraLeftDeg ? b : a));
     report.R11 = { rows, peakKt: peak.kt, peakDeg: peak.extraLeftDeg };

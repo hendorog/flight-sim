@@ -59,8 +59,12 @@ export const FIXTURE_OFFSET = 0.12 * R;
  *  calculated at 425 rpm; P TM-103867: 1.12). TM-85990 gives no non-rotating frequency, so e stays 0.12 R and the
  *  spring makes up the rest (Kbeta about 13 % of (nu^2 - 1) I Omega^2). */
 export const FIXTURE_NU = 1.11;
-/** Control phase, rad: calibrated (R13/R18 knob) so a hover lateral cyclic step gives a pure rolling hub moment. */
-export const FIXTURE_CONTROL_PHASE = 0;
+/** Control phase, rad (positive advances the swashplate cyclic in the rotation sense, swashplate.ts): 30 deg, the knob of
+ *  R18 calibrated at 80 KCAS / 3000 ft so the settled off-axis moment ratios of lateral and longitudinal cyclic steps
+ *  (M/L = -0.07, L/M = +0.18) best fit the DLR/AFDD means (-0.085, +0.145; AR-280 Tables 6.2.11, P), least squares on a
+ *  1 deg grid (hingelessAr280.test.ts). D check: Ward (NASA) "control phasing retarded to about 60 deg" is a 30 deg lead
+ *  on the articulated 90 deg. */
+export const FIXTURE_CONTROL_PHASE = 30 * DEG;
 
 /** Lock number about the shaft at SL ISA, for the docs and R4: rho a c R^4 / (I_polar / B). D */
 export function lockNumber(inertia = FIXTURE_INERTIA, liftSlope = FIXTURE_LIFT_SLOPE): number {
