@@ -116,7 +116,7 @@ The other outputs:
 
 The ICS (246 rpm) needs about 1° less from 80 KTAS for 6° indicated (the middle of its 5–7°, P): `trimScheduleByConfig.ics`. The flight
 model does not pass the configuration to `pusherTrimLever` yet (contract request). Until it does, an ICS reset uses the AMCS angles and
-trims 0.5–1° of collective low.
+trims 0.6–1.2° of collective low: 5.3 / 5.2 / 4.8° indicated at 120 / 140 / 160 KCAS, against 6.0 / 5.95 / 6.0° on its own schedule.
 
 **The Nf governor's anticipation** (`governor.propAnticipation` 0.15, ESTIMATE, FITTED):
 - the reset's beep set point stays within 0.42 % from the hover to 190 KTAS on the schedule (0.65 % without);
@@ -195,7 +195,7 @@ The grid (compound, first-peak rates °/s/in, sensitivity °/s²/in):
 | C4 V_H, stores, 18,750 lb, 5° | 194 KTAS ± 5 % (P para 14) | 196.9 with the Mach placeholder; 198.7 as flown | pass |
 | C5 AMCS clean, 13° | 210–225 KTAS (P Hoh-74 220; S 215) | 213.1 as flown; 210.9 with the placeholder; 199 with the stores | pass |
 | C6 rotor lift share | 40–60 / 20–35 / 10–25 % at 120 / 160 / 190 (ESTIMATE) | 71 / 47 / 26 %; the sense (falling with speed; the wing 76 % at 190) holds | **gap** (section 3) |
-| C7 collective on the schedule | AMCS 13° ± 2 (P); ICS 5–7° (P) | 12.99–13.05° at 80–190 KCAS; the ICS on its own schedule 6° | pass (ICS: through the contract request) |
+| C7 collective on the schedule | AMCS 13° ± 2 (P); ICS 5–7° (P) | AMCS 12.99–13.05° at 80–190 KCAS; ICS on its own schedule 5.95–5.98° at 120–160 (the real ICS gyro); the default definition in ICS today 5.3 / 5.2 / 4.8° | pass; default-ICS at 160 **gap** until the flight model passes the configuration |
 | C8 pitch at 190 KTAS | −1 … −5° (ESTIMATE) | −2.9° | pass |
 | C9 lateral trim (AMCS, 5,000 ft, 18,500 lb, P test condition) | very small 85–125, about 0.5 in left 125–190, no pedal shift, forward with speed (P AMCS-73 para 22) | 85→125: 0.09 in; 125→190: 0.19 in left; pedal span 0.39 in; longitudinal +0.47 → −1.30 in | sense pass; the 0.5 in **gap** |
 | C9 (plan wording) | within 0.5 in at 125–190 | 0.27 / 0.40 / 0.56 in left at 120 / 160 / 190 | 190 **gap** by 0.06 in |
@@ -243,6 +243,18 @@ AG's list on this definition: 69 pass, 11 expected-fail, 3 fail. The changed row
 - G11 now runs on the 14,573 kg m² drivetrain: Nr to 90 % in 0.54 s.
 
 All digests are unchanged (legacyDigest, s269Legacy, contactAirborne: 35 cases).
+
+**Hands-off hover** (20 s from the 15 m hover spawn, 18,300 lb):
+
+| Case | Pitch | Roll | Drift | Note |
+|---|---|---|---|---|
+| ICS, compound, calm (headless) | +17.6° | | 11.6 kt | stage 2: −6.2° pitch, 11.1 kt |
+| ICS, compound, sim, default 8 kt wind (`ah56-ics-hover.png`) | +29° | | 22 kt | descending 280 ft/min at 37 ft |
+| AMCS, compound, calm (headless) | +2.4° | −5.2° | 6.6 kt | G9's band |
+| AMCS, AG's hover-readout row (rig air data) | +4.8° | +0.5° | 7.8 kt | AG's `it.fails`; K_R 7,500 before the refit gave −2.2°, inside the band, so the refit costs it |
+
+The ICS's pitch-up is not separated. The prop's windmilling drag above the reference point once the aircraft drifts (about −1.25 kN,
++0.6 kN m nose up) acting on the ICS's weak attitude retention is the likely term. KNOWN ISSUE.
 
 ## 8. What is not modelled
 

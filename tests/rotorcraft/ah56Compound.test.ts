@@ -144,6 +144,26 @@ describe('the trims along the SoF schedule (AMCS default, 18,300 lb, SL ISA, the
     for (const kt of [120, 160, 190]) { expect(at[kt].converged).toBe(true); expect(Math.abs(at[kt].indicated - AH56_COLLECTIVE_DEG.amcsCruise)).toBeLessThanOrEqual(2); }
   });
 
+  // The ICS (246 rpm) on its own schedule (what pusherTrimLever reads once the flight model passes the configuration), and on the
+  // default definition today (the AMCS's angles).
+  const ics: Record<number, ReturnType<typeof trimRead>> = {}, icsDefault: Record<number, ReturnType<typeof trimRead>> = {};
+  for (const kt of [120, 140, 160]) { ics[kt] = trimRead(rigOn(icsSchedule, { kt, cfg: 'ics' })); icsDefault[kt] = trimRead(rigOn(AH56_DEFINITION, { kt, cfg: 'ics' })); }
+  trace.icsTrims = { ics, icsDefault };
+
+  it('C7 (ICS): on its own schedule the ICS trims on 5-7 deg indicated (P APE-I SoF), 120-160 KCAS', () => {
+    report('C7 ICS collective', { ...Object.fromEntries([120, 140, 160].map((k) => [`${k}kt`, `${ics[k].indicated.toFixed(2)}${ics[k].converged ? '' : ' (not converged)'}`])),
+      ...Object.fromEntries([120, 140, 160].map((k) => [`default${k}kt`, `${icsDefault[k].indicated.toFixed(2)}${icsDefault[k].converged ? '' : ' (not converged)'}`])),
+      target: '5-7' });
+    for (const kt of [120, 140, 160]) {
+      expect(ics[kt].converged).toBe(true);
+      expect(ics[kt].indicated).toBeGreaterThanOrEqual(5); expect(ics[kt].indicated).toBeLessThanOrEqual(7);
+    }
+  });
+
+  it.fails('C7 KNOWN GAP (contract request): an ICS reset of the default definition trims on 5-7 deg (flightModel.ts must pass the configuration to pusherTrimLever)', () => {
+    for (const kt of [120, 140, 160]) { expect(icsDefault[kt].indicated).toBeGreaterThanOrEqual(5); expect(icsDefault[kt].indicated).toBeLessThanOrEqual(7); }
+  });
+
   it('C8: fuselage pitch at 190 KTAS level -1 ... -5 deg (ESTIMATE, research section 7: about 3 deg nose down with the wing carrying 80 %)', () => {
     report('C8 pitch', { ...Object.fromEntries([80, 100, 120, 160, 190].map((k) => [`${k}kt`, +at[k].pitch.toFixed(2)])), wingShare190: at[190].wingShare,
       target: '-1 ... -5 at 190' });
