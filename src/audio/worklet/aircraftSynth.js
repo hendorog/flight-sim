@@ -944,7 +944,7 @@ class RotorcraftCabinVoice {
       const c = 0.5 + 0.5 * Math.sin(TAU * this.halfPh);
       const env = 0.15 + 0.85 * c * c * c;
       const a = Math.min(hop, 2);
-      out += this.halfLevel * a * env * (this.rumbleF.band * 1.6 + this.rumbleF.low * 0.8 + Math.sin(TAU * this.rumblePh) * 0.5);
+      out += this.halfLevel * a * env * (this.rumbleF.band * 1.2 + Math.sin(TAU * this.rumblePh) * 0.6);
     }
     return out;
   }

@@ -216,6 +216,19 @@ describe('AH-56A mix', () => {
     }
   }, 90_000);
 
+  it('the half-P thump at 1.2 x its onset amplitude in the 190 KTAS cruise: a 2.05 Hz beat in the low band, no clipping', () => {
+    const hop = interiorMix(new SynthHost(LANDED_AUDIO).set({ ...CRUISE, halfP: 1.2, halfPHz: AH56_TARGET_HZ.halfP }).render(6), LANDED_AUDIO).subarray(SR);
+    const cruise = interiorMix(new SynthHost(LANDED_AUDIO).set(CRUISE).render(6), LANDED_AUDIO).subarray(SR);
+    // The 20-60 Hz band (below the 82-86 Hz tail rotor and pusher, full of the rotor's harmonics in cruise) gains a
+    // thumping rhythm: its loudness beats at 2.05 Hz ten times more than without the event. "Felt, not heard"
+    // (research-ah56 section 15): a rhythm, not a loud new sound (about +1.3 dB in that band).
+    const beat = (x: Float32Array): number => toneMagnitude(envelope(band(x, 20, 60), 0.02), AH56_TARGET_HZ.halfP, 50);
+    expect(beat(hop)).toBeGreaterThan(10 * beat(cruise));
+    expect(db(rms(band(hop, 20, 60)), rms(band(cruise, 20, 60)))).toBeGreaterThan(1);
+    // An emergency may be loud: its peaks reach the browser's master limiter (-6 dB threshold) but stay below full scale.
+    expect(dbfs(peak(hop))).toBeLessThan(-0.3);
+  }, 60_000);
+
   it('the reverse roar on the landing roll stays inside the window too', () => {
     const roll = { ...HOVER, propLoad: 0.3, ...pusher(0.8, 0, 1.2), rolling: 0.5, rollSpeed: 15 };
     const inside = interiorMix(new SynthHost(LANDED_AUDIO).set(roll).render(4), LANDED_AUDIO);

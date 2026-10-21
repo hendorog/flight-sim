@@ -181,7 +181,7 @@ export function ah56Audio(rotor: RotorcraftDefinition, pp: PowerplantDef): Audio
     // The 8P hum at the pilot station (P: 0.4 g in level flight, AMCS): strongest at speed.
     vibration: { perRev: 8, level: 0.05, fullKias: 180, hoverShare: 0.35, rpm100: rotor.referenceRpm },
     // The half-P hop (ICS; AH's event): 0.5 per rev unless AH's definition says otherwise.
-    halfP: { perRev: rotor.halfPHop?.perRev ?? 0.5, rumbleHz: 45, level: 0.35 },
+    halfP: { perRev: rotor.halfPHop?.perRev ?? 0.5, rumbleHz: 45, level: 0.22 },
     voiceWarnings: {
       messages: [
         { text: 'Engine fire', when: { kind: 'engineFire' } },

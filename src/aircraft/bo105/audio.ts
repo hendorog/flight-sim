@@ -100,8 +100,9 @@ export const BO105_AUDIO: AudioProfile = {
       { type: 'peaking', hz: Math.round(10 * bladePassageHz(rotor.main.blades, BO105_NR_100)) / 10, gainDb: 4, q: 1.0 },
       { type: 'peaking', hz: Math.round(10 * bladePassageHz(rotor.tail.blades, BO105_NR_100 * rotor.tailRatio)) / 10, gainDb: 2.5, q: 1.4 },
     ],
-    // Hover inside the C172S's full-power window (-17 .. -9 dBFS RMS at volume 1, tests/audio/bo105.test.ts).
-    level: 0.75,
+    // Hover inside the C172S's full-power window (-17 .. -9 dBFS RMS at volume 1, tests/audio/bo105.test.ts), and level
+    // with the MD 500E's cabin in a hover flown end to end (flight model, mapping, worklet).
+    level: 0.85,
   },
   // Exterior: the rotors loudest (a Bo 105 is known by its beat), then the two engines' whine.
   exterior: {
