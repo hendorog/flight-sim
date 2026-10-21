@@ -1,6 +1,7 @@
 import { v3, type Vec3 } from '../../core/math';
 import { sectionCoefficients, type RotorSectionDef } from './section';
 import type { RotorDefinition } from './definition';
+import type { FlapSystem, GyroBladeMoments } from './controlGyro';
 
 /** Per-blade mass integrals about distinct flap/lag pins, SI. Polar inertia is about the mast.
  * These must come from a blade mass survey; uniformBladeMoments is an explicitly estimated fallback. */
@@ -238,9 +239,10 @@ export interface HubForcing extends HingeForcing {
   /** Mean delta-3 aerodynamic flap stiffness, N m/rad (0 without delta-3). */
   stiffness: number;
   jacobian?: Matrix2;
-  /** Per-blade first harmonics, N m, this module's azimuth: pitching moment about the feathering axis (+ nose up)
-   *  and the in-plane (lag) moment of the tangential force about the shaft (+ opposing rotation). */
-  blade?: { pitching: { cos: number; sin: number }; inPlane: { cos: number; sin: number } };
+  /** Per-blade first harmonics, N m, this module's azimuth (controlGyro.ts GyroBladeMoments): pitching moment about
+   *  the feathering axis (+ nose up) and the in-plane (lag) moment of the tangential force about the shaft (+ opposing
+   *  rotation). */
+  blade?: GyroBladeMoments;
 }
 
 /** Wrap an angle to (-pi, pi]. */
@@ -370,8 +372,7 @@ export function aerodynamicHubMoment(d: RotorDefinition, p: ArticulatedGeometry,
  * damping and no rotation; the caller then takes advanceFlap's harmonics (the static spring solution) for that step.
  */
 export function flapSystem(p: ArticulatedGeometry, omega: number, forcing: HubForcing, rotation: 1 | -1,
-  bodyYawRate: number, theta0: readonly [number, number], blades: number, spring?: FlapSpring): {
-    a: Matrix2; f: readonly [number, number]; b: Matrix2; theta0: readonly [number, number]; hub: Matrix2 } | null {
+  bodyYawRate: number, theta0: readonly [number, number], blades: number, spring?: FlapSpring): FlapSystem | null {
   if (!(omega > 0)) return null;
   const inertia = p.blade.flapInertia, c = forcing.damping;
   const delta = spring ? p.flapOffset * p.blade.flapFirst * omega ** 2 + spring.stiffness + (spring.aerodynamic ?? 0)

@@ -122,7 +122,8 @@ describe('R23: the periodic flap damping option', () => {
   });
   it('on, mu 0.35: the hub moment per unit lateral cyclic changes by the measured 1-3 % (reported against the plan\'s 3-9 %)', () => {
     const per = (periodic: boolean, harmonicInflow: boolean, input: 'aileron' | 'elevator') => {
-      const def = fixtureRotorcraft({ hub: { harmonicInflow }, main: { periodicFlapDamping: periodic } });
+      // No control phase: the stick's lateral input is then the blade's theta1c exactly.
+      const def = fixtureRotorcraft({ hub: { harmonicInflow, controlPhase: 0 }, main: { periodicFlapDamping: periodic } });
       const k = { p: { flapOffset: 0.12 * R, lagOffset: 0.12 * R, blade: hingelessBlade(def) },
         spring: { stiffness: hingelessSpring(def), precone: 2.5 * DEG } };
       const at = (sign: number) => {
