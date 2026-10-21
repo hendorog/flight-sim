@@ -99,29 +99,38 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
     100 kt. The sway and brightness phases use `uTime`, the summed render `dt` in s with no wrap (it wrapped at
     3600 s before commit 34193ab). The audio parameter `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound, `hail` and
     `hailSize` (46, 47) the hail on the airframe, from the precipitation at the aircraft (`ctx.weatherFx.precip`).
-  - `createHailGroundOverlay` (`HailGroundOverlay.ts`, state in `hailGround.ts`): hailstones landing, bouncing and
-    lying near the camera, in every camera mode while the camera is less than `GROUND_MAX_AGL_M` 120 m above the
-    ground under the camera (`ctx.env.groundElevation` at the camera's position). Two draws. A full-screen pass on
-    upward-facing surfaces (normal within `SCATTER_MIN_UP` 0.8 of vertical) within `SCATTER_RANGE_M` 80 m draws the
-    cover's mean whitening: the share of the ground under stones (`SCATTER_FILL` 1.5 x the cover, at most 1, times
-    the area of a stone of the mean diameter on a `SCATTER_CELL_M` 3 cm cell) plus `SCATTER_FILM` 0.55 x cover^2 for
-    the smaller ice, times 0.8 + 0.2 x a smooth value noise of 2 m and 0.7 m wavelength. Within `NEAR_FIELD_M` 6 m of
-    the camera (fading from 4 m), and only where a stone is larger than about a quarter of the pixel's footprint,
-    the pass draws the stones one by one on the world-anchored 3 cm grid instead (a cell holds a stone while its
-    hash is below 1.5 x the cover, of a diameter from the size distribution): discs brightened toward their far side
-    by 0.85 + 0.25 ny, as the pellets, with a contact shadow (the scene times 0.62) at the foot on the near side.
+  - `createHailGroundOverlay` (`HailGroundOverlay.ts`, state in `hailGround.ts` and `groundCover.ts`): hailstones
+    landing and bouncing near the camera, and hail and snow lying on the ground, in every camera mode while the
+    camera is less than `GROUND_MAX_AGL_M` 120 m above the ground under the camera (`ctx.env.groundElevation` at the
+    camera's position). Two draws. A full-screen pass on upward-facing surfaces (normal within `SCATTER_MIN_UP` 0.8
+    of vertical) within `SCATTER_RANGE_M` 1500 m (fading from 1200 m) takes each pixel's surface class: pavement
+    inside the runway, taxiways and apron (the signed distance of `layout.ts`'s `PAVED_RECTS` joined with fillets of
+    `FILLET_RADIUS`, and the runway rectangle, in the airport's frame, softened over the pixel's footprint; only
+    with the modern airport), soil elsewhere. It reads that class's state (below, "Hail and snow on the ground"):
+    the drawn wetness darkens the ground by `WET_DARK` 0.3 x wetness; the hail and snow covers c become a matte
+    layer drawn at 1 - (1 - c)^k with k = 0.4 + 1.2 x a value noise (drifts of 23 m and 8 m; for hail also 2 m and
+    0.7 m where the pixel's footprint is under 1 m, for snow 3 m), combined as 1 - (1 - hail)(1 - snow). The layer's
+    luminance is the darkest scene luminance of the pixel and the pixels `LAYER_TAP_PX` 6 px left, right, above and
+    below it, times `LAYER_OVER_SCENE` 6 (hail) or `SNOW_OVER_SCENE` 8 (snow), at most `LAYER_GAIN` 14 x the
+    precipitation overlay's hail radiance, in that radiance's hue, times 0.94..1.06 (hail) or 0.95..1.05 (snow) from
+    the noise; the darkest tap keeps the runway paint and the grass texture out of it and the aircraft's shadow in
+    it (6 px wider). A pixel whose scene luminance is 1.5 to 3 times the layer's before the cap (the runway and
+    approach lights) keeps the scene. Within `NEAR_FIELD_M` 6 m of the camera (fading from 4 m), and only where a
+    stone is larger than about a quarter of the pixel's footprint, the pass also draws the lying hailstones one by
+    one on a world-anchored `SCATTER_CELL_M` 3 cm grid (a cell holds a stone while its hash is below `SCATTER_FILL`
+    1.5 x the hail cover, of a diameter from the size distribution): discs brightened toward their far side by 0.85
+    + 0.25 ny, as the pellets, with a contact shadow (0.62) at the foot on the near side. The snow draws no stones.
     Excluded: the aircraft's bounding box (the visible meshes under `ctx.aircraftRoot` in the aircraft's frame,
-    measured every 2 s, from `AIRCRAFT_FLOOR_M` 0.08 m above its lowest point, in every camera mode) and in the
-    cockpit the cabin box. The second draw is 768 instanced quads
-    (`BOUNCE_CELLS` 16 x 16 cells of `BOUNCE_CELL_M` 1 m about the camera, `BOUNCE_PER_CELL` 3), each a stone that
-    lands at a hashed point once per cycle of about `BOUNCE_CYCLE_S` 1.6 s with a chance set by the impact rate,
-    rebounds at `HAIL_RESTITUTION` 0.4 (+- `HAIL_RESTITUTION_SPREAD` 0.1) of its fall speed, bounces a second time and
-    rests, depth-tested in its shader against the scene depth. A stone's colour is `ICE_OVER_SCENE` 2.5 times the scene
-    behind it, at least the precipitation overlay's hail radiance. The ground cover moves toward hail / (hail +
-    `COVER_HALF_MMH` 4 mm/h) with `COVER_RISE_S` 40 s and melts with `COVER_MELT_S` 240 s once the hail is lighter.
+    measured every 2 s, from `AIRCRAFT_FLOOR_M` 0.2 m above its lowest point, in every camera mode; at 0.08 m the
+    runway under the box was left out in the 2026-10-21 chase screenshots) and in the cockpit the cabin box. The
+    second draw is 768 instanced quads (`BOUNCE_CELLS` 16 x 16 cells of `BOUNCE_CELL_M` 1 m about the camera,
+    `BOUNCE_PER_CELL` 3), each a stone that lands at a hashed point once per cycle of about `BOUNCE_CYCLE_S` 1.6 s
+    with a chance set by the impact rate, rebounds at `HAIL_RESTITUTION` 0.4 (+- `HAIL_RESTITUTION_SPREAD` 0.1) of
+    its fall speed, bounces a second time and rests, depth-tested in its shader against the scene depth. A stone's
+    colour is `ICE_OVER_SCENE` 2.5 times the scene behind it, at least the precipitation overlay's hail radiance.
     The pellets assume flat ground at the aircraft's ground height. The restitution follows the owner's brief (0.3
-    to 0.5) and is unconfirmed; every other constant is a look value. Skipped (`active` false) without falling or
-    lying hail.
+    to 0.5) and is unconfirmed; every other drawing constant is a look value. Skipped (`active` false) without
+    falling hail, lying hail or snow, and wetness left by them.
   - `createWindscreenOverlay` (`WindscreenOverlay.ts`, state in `windscreenWater.ts`): water, snow, hail and cracks
     on the glass, in the cockpit view only. It copies its input and draws the aircraft's glazing meshes (every mesh
     named `glazing` under `ctx.aircraftRoot`, built by `render/aircraft/fuselage.ts` for every fixed-wing type and
@@ -667,6 +676,65 @@ there) is the drawn one.
   worklet voice (`hailSound`) draws impacts from its own noise source, rings each through a click band and a body
   band whose pitch falls from 2400 to 520 Hz with the size, and is silent at 0. Tuning values set by ear.
 
+## Hail and snow on the ground (`src/render/weather/groundCover.ts`)
+
+The state the hail-ground overlay draws (`HailGround.surfaces`, a `GroundCover`), advanced with the simulated time
+between frames at the camera's ground point. Node-safe, no allocation per update. Two surface classes with the same
+precipitation and air: soil (grass and every unpaved surface) and pavement (runway, taxiways and apron). Inputs: the
+hail at the camera (`localPrecipAt`), the stratiform snow (`precipOf`, type `snow`; the storm rain is rain whatever
+the temperature), the rest of the precipitation as rain, and the surface air temperature T_a under the camera
+(`surfaceAirC`: ISA plus `isaDeviation` at `ctx.env.groundElevation`; no solar term, the code has none). Rates in
+mm/h liquid equivalent give kg/m^2/s as rate / 3600.
+
+- Skin temperature T_g per class, heat capacity C, conduction K from a deep ground at T_a + `deepWarmC`, exchange
+  `AIR_H` 6 W/m^2/K with the air; it starts at the balance of the two, (K T_d + AIR_H T_a) / (K + AIR_H). Soil
+  (`SOIL`): C 2000 J/m^2/K, K 4 W/m^2/K, deep 2 K over the air. Pavement (`PAVEMENT`): C 3500 J/m^2/K, K 14 W/m^2/K,
+  deep 4 K over the air. Cooling: each kg of hail that melts on landing takes `L_FUSION` 334 kJ/kg plus `C_ICE` 2100
+  J/kg/K from the stone's `HAIL_STONE_C` -2 deg C to 0 plus `C_WATER` 4186 J/kg/K up to T_g; a kg that lies takes the
+  ice's warming to min(T_g, 0). Snow likewise, from min(T_a, 0); its frozen share on arrival is 1 - smoothstep(0.5, 3
+  deg C, T_a) (`SNOW_WET_C0`, `SNOW_WET_C1`), the rest arrives as water at 0 deg C.
+- Lying share s = 1 - smoothstep(0, `HAIL_SETTLE_C` 1 deg C, T_g) for hail and 1 - smoothstep(0, `SNOW_SETTLE_C` 0.3
+  deg C, T_g) for snow (1 at or below 0 deg C). The lying ice and snow (kg/m^2) take `MELT_U` 1500 W/m^2/K x
+  max(T_g, 0) from the skin and melt by their mass shares. Depth: ice at `ICE_DENSITY` 917 kg/m^3, snow at
+  `SNOW_DENSITY` 100 kg/m^3. Visible cover: 1 - exp(-depth / `HAIL_COVER_MM` 0.5 mm) for hail, 1 - exp(-depth /
+  `SNOW_COVER_MM` 8 mm) for snow, combined as 1 - (1 - hail)(1 - snow).
+- Water (kg/m^2): melted hail and snow, the wet snow's water and the rain, at most `WET_HOLD_KGM2` 0.3 (the rest runs
+  off), drying with `WET_DRY_S` 1800 s; `wetness` is water / 0.3. The overlay draws the wetness only while
+  `frozenWet` is set (hail or snow has fallen since the surfaces were last dry), so rain alone draws nothing.
+- Integration: explicit steps of at most `SUBSTEP_S` 0.1 s; a frame advances at most `MAX_ADVANCE_S` 60 s
+  (`HailGroundOverlay.ts`). The state is kept while paused (no simulated time passes) and reset when the clock goes
+  back (a scenario reset).
+- Not modelled: the rain's heat, sunshine, evaporation, the insulation of a lying layer, compaction, the deep
+  ground cooling. Unconfirmed: every constant except the latent and specific heats; the thermal constants were
+  chosen so that the times match the owner's description (hail lies after one to two minutes of moderate to heavy
+  hail; grass before pavement); none has been compared with measurements.
+- Hail rates the storm cells give at 120 m (node, 2026-10-21): at most 9.14 mm/h (largest stone 51.6 mm) on a 250 m
+  grid over 60 x 60 km under the Thunderstorm preset's derived cells at simulation time 0 (554 of 728 points with
+  hail below 3 mm/h); 8.35 mm/h at the centre and 9.13 mm/h 500 m from it under an explicit cell of intensity 1
+  (largest stone 62.3 mm).
+- Measured (`tests/render/groundCover.test.ts`, 2026-10-21, 0.5 s steps; freezing is T_g at 0.5 deg C; the
+  Thunderstorm preset gives T_a 22.2 deg C at the field):
+
+  | case | soil: freezing, cover 0.2, cover 0.5 (s) | pavement: freezing, cover 0.2, cover 0.5 (s) |
+  | --- | --- | --- |
+  | hail 9.1 mm/h, T_a 22 | 53, 108.5, 223 | 125.5, 222, 419.5 |
+  | hail 9.1 mm/h, T_a 15 | 36, 86, 189.5 | 81.5, 151.5, 294.5 |
+  | hail 20 mm/h, T_a 22 | 22.5, 43.5, 87 | 45.5, 71, 122.5 |
+  | hail 36.7 mm/h, T_a 22 | 12, 23, 45 | 23.5, 35, 59.5 |
+  | hail 36.7 mm/h, T_a 10 | 6, 16.5, 38 | 12.5, 23.5, 46 |
+  | hail 5 mm/h, T_a 22 | 111.5, 255, 551.5 | not in 1800 s |
+  | hail 3 mm/h, T_a 10 | 85, 285.5, 698 | 323, 1540, not in 1800 s |
+
+  No hail lies on either class in 1 h of 2 mm/h at 22 deg C, 1 mm/h at 15 deg C or 1 mm/h at 10 deg C; the
+  pavement's wetness reaches 1. Melting after 180 s of 36.7 mm/h (cover under 0.05): at 22 deg C soil 2356 s,
+  pavement 931 s (1.77 and 1.51 mm of ice at the stop); at 15 deg C 3546 s and 1414 s; at 10 deg C 5347 s and 2089 s.
+  Snow, cover 0.5: 1.5 mm/h at 0.5 deg C soil 1487 s, pavement 2613 s; 2 mm/h at 1 deg C 1271 s and 2135 s; 5 mm/h at
+  0 deg C 410 s and 475.5 s. Hail against snow at the same rate, soil cover 0.5: 5 mm/h at 1 deg C 243 s and
+  474.5 s; 9.1 mm/h at 0.5 deg C 129.5 s and 226 s; 2 mm/h at 0 deg C 599 s and 1052 s. No snow lies in 1 h of 1
+  mm/h at 3.2 deg C, 2 mm/h at 4 deg C or 0.5 mm/h at 3.5 deg C. Largest change in one 1/60 s frame while the hail
+  rises to 36.7 mm/h over 10 s, falls until 240 s and stops (600 s in all): 0.020 K and cover 0.00033. Frames of
+  1/60, 0.5 and 30 s give the pavement the same ice to 1e-3 kg/m^2 after 300 s of 20 mm/h and 600 s without.
+
 ## Training weather line
 
 `weatherLine` (`src/training/content/weatherPresets.ts`) appends present-weather groups only when the fields are
@@ -714,6 +782,11 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   striking the upper surfaces of a parked aircraft dent nothing (only the forward-facing leading edges are counted).
 - Hail bounce: drawn on the ground only, not off the airframe's surfaces (the windscreen shows splashes); the pellets
   assume flat ground at the aircraft's ground height.
+- Hail and snow on the ground: one state for the ground around the camera (the hail and air temperature at the
+  camera's ground point apply out to 1500 m); two surface classes only (no difference between asphalt and
+  concrete, or grass and bare soil); no hail or snow on the airframe, buildings or trees; the storm cells give at
+  most about 9 mm/h of hail at the ground (measured in "Hail and snow on the ground"), at which the pavement's
+  cover reaches 0.5 after 419.5 s at 22 deg C.
 - Storm precipitation: the storm rain is reported as `rain` whatever the temperature (no snow or graupel aloft); the
   weather line reports no storm rain at the airport (only GR / GS); the hail extinction uses one mean diameter; the
   precipitation overlay draws storm rain and hail on the camera's grid, so the streak pattern does not follow the
@@ -721,7 +794,9 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
 - Storm march noise: on SwiftShader the temporal pass needs about 40 frames to converge (frames rendered in
   `dev/weather.html` at 640x360); a GPU frame rate has not been measured.
 - Landing-light beam: no volumetric term in fog.
-- Wet pavement: not built. The windscreen drops are drawn in the cockpit view only, not on the exterior glass.
+- Wet pavement: only the hail-ground overlay's darkening after hail or snow; rain alone draws no wet ground (its
+  water is in `GroundCover`'s wetness, unused). The windscreen drops are drawn in the cockpit view only, not on the
+  exterior glass.
 - GPU timings: none of the plan's per-effect budgets (clouds +0.2 ms, fog 0.3 ms, precipitation 0.5 ms, storm cells
   1.5 ms with two cells and under 0.05 ms with none, on `high`) has been measured. The test machine renders with
   SwiftShader only.
@@ -931,3 +1006,42 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
     runway): ground cover 0.6: an even grey-white whitening of the runway and the stripes without per-pixel speckle;
     no single stones are resolved at 640x360 beyond about 2 m.
   - `r22-rain-cockpit.png`: R22, 6 mm/h, wetness 0.75, parked: drops over the bubble canopy.
+
+## Integration checks (2026-10-21, ground temperature, lying hail and snow)
+
+- `npx tsc --noEmit`: no errors.
+- `npx vitest run tests/weather tests/render tests/sim tests/ui`: 44 files, 461 tests, 460 passed; the failure, a 5 s
+  time-out in `tests/sim/weatherPresets.test.ts`, passes run alone (19 of 19). `tests/render` after the last shader
+  change: 16 files, 125 passed.
+- `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: 51 of 53 pass; the 2 failures are the `c172Sim` records
+  `autoflight.runway` and `restore.cruise`.
+- Browser checks, Chromium with SwiftShader, 640x360, `quality=medium`, `index.html?scenario=runway`, no console
+  errors or warnings and an empty `__sim.errors` on every page. SwiftShader takes about 30 s per screenshot, so the
+  simulation was paused and the ground state advanced through `__sim.post` (`HailGround.update` in 0.5 s steps) with
+  the hail, its largest stone and the rain the overlay sampled at the camera and the surface air temperature it
+  computed; to stop the hail the cell was moved 90 km north (`__sim.setWeather`). Screenshots in `shots/procedural8/`
+  (not committed), chase and cockpit views:
+  - `default-chase.png`: default weather; the hail-ground overlay reported no draw.
+  - `cell-*`: the Thunderstorm preset with an explicit cell of intensity 1 over the airport (`cb=0,0,11,1`): 8.75
+    mm/h of hail, largest stone 62.3 mm, 28.7 mm/h of storm rain, T_a 22.2 deg C. t0: green grass, dry runway,
+    pellets. t30, t60: the grass and the runway darker (wetness 1), no cover (soil cover 0.012 at t60). t90, t120:
+    the grass greyer in large patches (soil cover 0.12, 0.22), the runway wet. t180: the grass grey-white in patches
+    (0.38), the runway wet with no visible cover (0.087). t600: the grass a continuous light grey (0.88), the runway
+    grey with the threshold stripes faint (0.63). 5 min after the hail stops: the sky clears; the grass white
+    (0.81), the runway wet and bare (0.023). 15 min: the grass white with lighter and darker patches (0.53), the
+    runway wet (0.72).
+  - `heavy40-*`: the same page with the hail rate forced to 36.7 mm/h (40 mm/h of ice). t30: the grass grey in
+    patches (soil cover 0.31), the runway wet (0.12). t60: the grass light grey (0.64), the runway lighter between
+    the stripes (0.50). t90 to t180: a continuous light grey layer over grass and runway (0.81 to 0.97 and 0.72 to
+    0.95), the stripes and the centreline faint, the aircraft's shadow on it; the red runway-end lights seen at t0
+    and t30 are not visible from t120. In the cockpit view at t180 single stones and their dark contact shadows
+    show next to the fuselage. 5 min after: grass and runway still white (0.95, 0.87). 15 min after, under a clear
+    sky: the grass white (0.89), the runway bare and wet (0.11).
+  - `snow-*`: 1.5 mm/h of stratiform snow, nimbostratus at 600 m, `temp=-13.7` (T_a 0.52 deg C). t0: green grass.
+    t300, t600: the grass grey-green in patches (soil cover 0.12, 0.24), the runway wet (pavement 0.05, 0.13).
+    t1200: the grass light grey (0.43), the runway darker grey with white stripes (0.26). t1800, t2700: the grass
+    lighter (0.57, 0.72) than the runway (0.37, 0.51) in the same frame; the runway edge and end lights stay bright.
+    Cockpit views at t1200 and t2700: the grass left of the runway white, the runway grey with its stripes.
+  - `probe-a-clear.png`, `probe-b-clear.png`: default weather with the state set directly (soil 1 kg/m^2 of hail
+    and pavement 0.3 kg/m^2; soil 3 kg/m^2 of snow and pavement 0.5 kg/m^2): the grass white in sunlight, the runway
+    partly covered with its stripes showing, the aircraft's shadow drawn on the layer.

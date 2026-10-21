@@ -16,7 +16,7 @@
 //   particle's temperature (HAIL_STONE_C for hail, min(T_a, 0) for snow); m in kg/m^2/s from the rate in mm/h liquid
 //   equivalent (1 mm/h = 1/3600 kg/m^2/s).
 //   s = 1 - smoothstep(0, SETTLE_C, T_g), the share of the arriving particles that lies: HAIL_SETTLE_C for hail,
-//   SNOW_SETTLE_C for snow (flakes melt on a surface just above 0 deg C where a stone survives).
+//   SNOW_SETTLE_C for snow (the lower of the two, so snow needs a skin nearer 0 deg C).
 //   phi = MELT_U max(T_g, 0) while ice or snow lies (at most what lies); it melts hail and snow by their mass shares.
 //   The snow's frozen share on arrival: 1 - smoothstep(SNOW_WET_C0, SNOW_WET_C1, T_a); the rest arrives as water.
 //   Water on the surface (kg/m^2): melted hail and snow, the wet snow's water and the rain; at most WET_HOLD_KGM2
