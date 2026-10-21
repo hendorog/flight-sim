@@ -82,6 +82,14 @@ export interface PropSoundProfile {
    * the propeller's reference station, deg (negative; PC-12 -17.5). Read behind a reduction gear only, on engine 0.
    */
   reverse?: { growl: number; fullPitchDeg: number };
+  /**
+   * A helicopter main rotor's high-speed impulsive noise (HSI): as the ADVANCING tip nears Mach 1 its thickness noise
+   * steepens into a sharp, mostly negative pressure crack once per blade passage, heard ahead of the aircraft and as a
+   * hard edge on the beat inside. It sets in at the advancing-tip Mach `onsetMach` and is at its full strength `level`
+   * (relative to the blade-passage tone) from `fullMach` (the `advTipMach` parameter). Read behind a reduction gear
+   * only, on engine 0 (the rotor voice). Absent: none.
+   */
+  impulsive?: { onsetMach: number; fullMach: number; level: number };
 }
 export interface StemRoute {
   stem: number;
@@ -119,9 +127,47 @@ export interface AudioProfile {
    * harmonics flattening) that grows with its loading |thrust| / `hoverThrustN`. Absent: none (every type before the MD 500E).
    */
   tailRotor?: { blades: 2 | 3 | 4; diameterM: number; ratio: number; hoverThrustN: number; slap: number; level: number };
-  /** Pusher propeller on the rotor shaft (AH-56A): blade passage = blades x rotor rpm x ratio. Declared at S0 (AU
-   *  implements the channel; consistency: equals RotorcraftDefinition.pusher once AC lands). Absent: none. */
-  pusher?: { blades: number; diameterM: number; ratio: number };
+  /**
+   * Pusher propeller on the rotor shaft (AH-56A), in the propeller stem beside the rotors: blade passage = blades x
+   * rotor rpm x ratio, its harmonics and tip noise growing with |thrust| and the blade angle, and a roar in reverse
+   * pitch. Declared at S0; consistency: `blades`, `diameterM`, `ratio` equal RotorcraftDefinition.pusher (propeller.blades,
+   * propeller.diameter, ratio) once that exists. The voice members after them are optional (defaults in the worklet):
+   *   cruiseThrustN  |thrust| giving the `pusherLoad` parameter 1 (absent: 10 kN);
+   *   zeroThrustDeg  blade angle of zero thrust at the reference station, deg (absent: 0): the `pusherPitch` and
+   *                  `pusherReverse` parameters count from it;
+   *   topPitchDeg    blade angle at the top of the forward range, deg (pusherPitch 1; absent: 40);
+   *   reverseDeg     blade angle of full reverse, deg (pusherReverse 1 at full reverse thrust; absent: -17);
+   *   growl          strength of the reverse roar at pusherReverse 1 (absent: 0.6); level: stem gain (absent: 1).
+   * Silent (its parameters 0) while the state has no pusher (RotorcraftState.pusher). Absent: none.
+   */
+  pusher?: { blades: number; diameterM: number; ratio: number; cruiseThrustN?: number; zeroThrustDeg?: number;
+    topPitchDeg?: number; reverseDeg?: number; growl?: number; level?: number };
+  /**
+   * A twin turboshaft's warning unit (RotorcraftState.twinTurboshaft; the Bo 105's K-DW02/01): an intermittent tone at
+   * `lowHz`, `lowPerSecond` beeps a second while NR is low (nrLowTone) and while the N1s split (n1SplitLight), a
+   * steady tone at `highHz` while NR is high (nrHighTone), each `level` strong in the cabin, on the bus. Absent: none.
+   */
+  rotorWarnings?: { lowHz: number; lowPerSecond: number; highHz: number; level: number };
+  /**
+   * The rotor's n-per-rev vibration felt and heard in the cabin as a hum: a tone at `perRev` x the rotor's rev/s,
+   * `level` strong at `fullKias` and above (growing with the square of the airspeed from `hoverShare` of it in the
+   * hover; the transition hump is not modelled), and with the square of the rotor speed relative to `rpm100`
+   * (a rotor running down shakes less). Interior only (the cabin stem). Absent: none.
+   */
+  vibration?: { perRev: number; level: number; fullKias: number; hoverShare: number; rpm100: number };
+  /**
+   * The half-P hop (RotorcraftState.events.halfPHop): a low rumble (a noise band at `rumbleHz`) thumping at `perRev` x
+   * the rotor's rev/s, its depth and loudness with the event's amplitude (1 = the onset cue), `level` strong at 1.
+   * Interior only (the cabin stem). Absent: none.
+   */
+  halfP?: { perRev: number; rumbleHz: number; level: number };
+  /**
+   * Spoken warnings (the AH-56A's FLAWS, fault locator aural warning system): each message is spoken while its
+   * condition holds (audio/voiceWarnings.ts flawsConditions), again every `repeatSeconds`, the highest priority (the
+   * first in the list) first; `caution` is spoken once per new caution/warning chime event (AudioSystem.caws). Through
+   * the browser's speech synthesis where it exists (silent otherwise). Absent: none.
+   */
+  voiceWarnings?: { messages: readonly VoiceMessage[]; repeatSeconds: number; volume: number };
   /** A stick shaker (AircraftState.stickShaker): the rattle of its eccentric motor at `hz` on the control column, `level` strong. Absent: none. */
   stickShaker?: { hz: number; level: number };
   /** Aural overspeed warning: a clacker at `perSecond` strokes a second above `kias` or `mach` (LimitsDef.overspeedWarning), on the bus. Absent: none. */
@@ -131,4 +177,14 @@ export interface AudioProfile {
    * a warning is a triple chime, a caution a single one, at `hz`. Absent: the message is ignored.
    */
   caws?: { hz: number; level: number };
+}
+/** One spoken warning: its words and what sounds it (audio/voiceWarnings.ts). */
+export interface VoiceMessage {
+  text: string;
+  /**
+   * 'rotorRpm': the rotor outside [low, high] % of its 100 % rpm (`rpm100`) once it has reached `low` (powered, rotor
+   * turning); 'engineFire': an engine fire (no state reports one yet: never sounds); 'caution': a new master caution
+   * (the 'caws' event).
+   */
+  when: { kind: 'rotorRpm'; low: number; high: number; rpm100: number } | { kind: 'engineFire' } | { kind: 'caution' };
 }
