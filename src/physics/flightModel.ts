@@ -83,7 +83,7 @@ import { SkidGear } from './rotorcraft/skids';
 import { RotorClearance, wheelRestingPose } from './rotorcraft/wheels';
 import type { EngineUnit } from './propulsion/engineUnit';
 import { pusherTrimLever } from './rotorcraft/pusher';
-import { stepTwinTurboshaft, twinResetEngineControls } from './rotorcraft/twinTurboshaft';
+import { resetTwinTurboshaft, stepTwinTurboshaft, twinResetEngineControls, publishTwin } from './rotorcraft/twinTurboshaft';
 import { solveNewton, trimFlight, type TrimCondition, type TrimPlant, type TrimResult, type TrimSpec } from './trim';
 
 export const DEFAULT_PHYSICS_RATE = 240;
@@ -618,9 +618,19 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     }
     if (r.state.transmission) r.state.transmission.oilTemperatureC = this.atmosphere.temperature - 273.15;
     r.state.rotorRpm = r.state.omega * 30 / Math.PI;
+    // Twin turboshaft: which engines run (InitialConditions.enginesRunning, else engineRunning for both). A stopped
+    // engine's power turbine is wound down (its needles split from the rotor's) and its lever is OFF.
+    const twin = d.systems.twinTurboshaft !== undefined && this.extraEngines !== undefined;
+    const runs = twin ? this.propulsion.units.map((_, i) => ic.enginesRunning?.[i] ?? ic.engineRunning) : null;
+    if (runs) {
+      const rpm = governedRpm(d, ic.rotorcraftConfig) * d.engineRatio;
+      this.propulsion.reset({ ...powerplant, rpm: runs.map((on) => (on && ic.engineRunning ? rpm : 0)), warm: !ic.onGround || ic.engineRunning });
+    } else
     this.propulsion.reset({ ...powerplant, rpm: ic.engineRunning ? (d.controlGyro ? governedRpm(d, ic.rotorcraftConfig) * d.engineRatio
       : d.nominalRpm * d.engineRatio) : 0, warm: !ic.onGround || ic.engineRunning });
     c.throttle = ic.engineRunning ? 1 : 0;
+    // A stopped engine of a twin: its lever OFF (cut-off), the rest of its controls as the pilot left them.
+    if (runs) runs.forEach((on, i) => { c.engines[i] = on ? {} : { throttle: 0 }; });
     // A turboshaft: the grip FULL OPEN with fuel on when running (the governor flies the engine), CUTOFF when not;
     // the igniters off (auto-reignition fires them); transmission oil already up when the rotor turns.
     if (r.turboshaft) {
@@ -699,13 +709,28 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     let lo = 0, hi = 1;
     const target = r.state.torque / (d.engineRatio * d.transmissionEfficiency);
     const ts = r.turboshaft;
-    if (ts) {
+    if (ts && runs) {
+      // Twin: every running engine quasi-steady on its held shaft at the same PLA-equivalent demand, so they share the
+      // trimmed torque equally (the governors are then seeded with the split synchronised: resetTwinTurboshaft).
+      const units = this.propulsion.units;
+      for (const u of units) { u.shaftHeld = true; u.steady = true; }
+      ec.engines = twinResetEngineControls(runs);
+      const delivered = (): number => units.reduce((sum, u, i) => (runs[i] ? sum + u.shaftTorque : sum), 0);
+      for (let i = 0; i < 40; i++) {
+        ec.throttle = (lo + hi) / 2;
+        this.prop = this.propulsion.step(this.propIn);
+        if (delivered() > target) hi = ec.throttle; else lo = ec.throttle;
+      }
+      ec.throttle = (lo + hi) / 2;
+      this.prop = this.propulsion.step(this.propIn);
+      for (const u of units) { u.steady = false; u.shaftHeld = false; }
+      unit.shaftHeld = true;
+    } else if (ts) {
       // A gas turbine: the quasi-steady engine (gas producer at the governed N1, TOT settled) instead of 0.4 s
       // probes that would catch the spool mid-acceleration. The bisection finds the PLA-equivalent N1 demand
       // whose output-shaft torque drives the trimmed rotor at the reset speed.
       unit.steady = true;
       ec.engines = [{}];
-      if (d.systems.twinTurboshaft) ec.engines = twinResetEngineControls();
       for (let i = 0; i < 40; i++) {
         ec.throttle = (lo + hi) / 2;
         this.prop = this.propulsion.step(this.propIn);
@@ -722,14 +747,20 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       }
     }
     r.state.governorThrottle = r.state.governorIntegral = ic.engineRunning ? ec.throttle : 0;
-    if (ts) {
+    if (ts && runs) {
+      const tsd = ts.ts, units = this.propulsion.units;
+      const ng = tsd.plaNg.groundIdle + (tsd.plaNg.fullOpen - tsd.plaNg.groundIdle) * ec.throttle;
+      if (ic.engineRunning) resetTwinTurboshaft(ts, r.state, units, runs, ng, c.collective ?? 0, c.propLever);
+      stepTwinTurboshaft(0, c, units, cloneControls(c), this.prop.electrical.busVoltage, ts, r.state);
+      publishTwin(ts, r.state, 0, c, units, this.prop.electrical.busVoltage, ic.onGround);
+    } else if (ts) {
       // The grip stays where the pilot left it; the governor holds the N1 the trim needs at this N2 (the beep set
       // where a pilot would have beeped it: N2 on the reset speed, no transient at release).
       const tsd = ts.ts, s = r.state.turboshaft!;
       const n2 = ts.n2(unit), ng = tsd.plaNg.groundIdle + (tsd.plaNg.fullOpen - tsd.plaNg.groundIdle) * ec.throttle;
       if (ic.engineRunning) {
-        s.n2SetPct = clamp(ts.steadySetPct(ng, n2, c.collective ?? 0), 100 * tsd.governor.setRange[0], 100 * tsd.governor.setRange[1]);
-        s.ptgIntegral = ts.steadyIntegral(ng, n2, s.n2SetPct, c.collective ?? 0);
+        s.n2SetPct = clamp(ts.steadySetPct(ng, n2, c.collective ?? 0, c.propLever), 100 * tsd.governor.setRange[0], 100 * tsd.governor.setRange[1]);
+        s.ptgIntegral = ts.steadyIntegral(ng, n2, s.n2SetPct, c.collective ?? 0, c.propLever);
       }
       ts.stepTurboshaft(0, c, unit, cloneControls(c), this.prop.electrical.busVoltage);
       ts.publish(0, c, unit, this.prop.electrical.busVoltage, ic.onGround);

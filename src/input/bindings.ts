@@ -2,7 +2,9 @@
 //
 // Keys are KeyboardEvent.code values (physical key positions, independent of keyboard layout).
 // `shift: true` binds only Shift+key, `shift: false` only the bare key, and an omitted `shift` matches
-// both (continuous controls keep working if Shift happens to be held). The arrows are the exception:
+// both (continuous controls keep working if Shift happens to be held), except on a type that has the action of an
+// explicit Shift+ entry of the same key (Shift+, ENGINE TRIM on the Bo 105): actionForKey(code, shift, profile) gives
+// that type the Shift+ action and every other type the shift-agnostic one. The arrows are the exception:
 // Shift+arrow looks around, so the yoke arrows are bound to the bare keys. A key keeps the action it had
 // when it went down, so releasing Shift mid-press does not switch a held yoke key to a look key.
 //
@@ -56,6 +58,10 @@ export type InputAction =
   | 'propDecrease'
   | 'propIncrease'
   | 'propFeather'
+  | 'propLeverSnap' // pusher twist grip (InputProfile.propLever): to the next snap position
+  | 'engineTrimLeft' // ENGINE TRIM left/right (n2BeepSplit), or the Nf beep on a type whose propeller keys move propLever
+  | 'engineTrimRight'
+  | 'tailWheelLock'
   | 'carbHeat'
   | 'cowlFlapsOpen'
   | 'cowlFlapsClose'
@@ -123,6 +129,10 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'KeyE', action: 'rudderRight' },
   { code: 'Comma', action: 'brakeLeft' },
   { code: 'Period', action: 'brakeRight' },
+  // Types with ENGINE TRIM left/right (Bo 105), or the Nf beep moved off the propeller keys (AH-56A): Shift+, / Shift+.
+  // (< and >). A type without them keeps the toe brakes on Shift as well (actionForKey's fallback).
+  { code: 'Comma', shift: true, action: 'engineTrimLeft' },
+  { code: 'Period', shift: true, action: 'engineTrimRight' },
   { code: 'KeyB', shift: false, action: 'brakes' },
   { code: 'KeyB', shift: true, action: 'parkingBrake' },
   { code: 'F2', shift: false, action: 'throttleDown' },
@@ -159,6 +169,8 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'Semicolon', shift: true, action: 'propIncrease' },
   { code: 'KeyF', shift: true, action: 'propFeather' },
   { code: 'Slash', action: 'carbHeat' },
+  // Types with a pusher twist grip: Shift+/ steps it to the next snap position (hover detent, autorotation, reverse).
+  { code: 'Slash', shift: true, action: 'propLeverSnap' },
   { code: 'Backslash', shift: false, action: 'cowlFlapsOpen' },
   { code: 'Backslash', shift: true, action: 'cowlFlapsClose' },
   { code: 'Digit8', action: 'engineSelect1' },
@@ -183,6 +195,8 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'KeyJ', shift: false, action: 'fuelPump' },
   { code: 'KeyJ', shift: true, action: 'fuelSelector' },
   { code: 'Quote', action: 'panelLights' },
+  // Types with a lockable tail wheel: Shift+' (elsewhere it stays the panel lights).
+  { code: 'Quote', shift: true, action: 'tailWheelLock' },
   { code: 'KeyG', shift: false, action: 'headingBugRight' },
   { code: 'KeyG', shift: true, action: 'headingBugLeft' },
   { code: 'KeyK', shift: false, action: 'kollsmanUp' },
@@ -273,6 +287,10 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   propDecrease: { label: 'Propeller lever back (lower rpm), as far as the feather gate', category: 'Engine' },
   propIncrease: { label: 'Propeller lever forward (higher rpm); out of feather', category: 'Engine' },
   propFeather: { label: 'Feather the propeller of the selected engine', category: 'Engine' },
+  propLeverSnap: { label: 'Propeller grip to the next snap position', category: 'Engine' },
+  engineTrimLeft: { label: 'ENGINE TRIM left: left engine torque up, right engine down (hold)', category: 'Engine' },
+  engineTrimRight: { label: 'ENGINE TRIM right: right engine torque up, left engine down (hold)', category: 'Engine' },
+  tailWheelLock: { label: 'Tail-wheel lock on / off', category: 'Brakes' },
   carbHeat: { label: 'Carburettor heat cold / hot', category: 'Engine' },
   cowlFlapsOpen: { label: 'Cowl flaps open one step', category: 'Engine' },
   cowlFlapsClose: { label: 'Cowl flaps close one step', category: 'Engine' },
@@ -367,11 +385,18 @@ export function profileHasAction(profile: InputProfile, action: InputAction): bo
   if (action === 'gripCutoff') return !!profile.twistGrip;
   if (action === 'pusherInterrupt') return !!profile.pusherInterrupt;
   if (action === 'starterInterrupt') return !!profile.starterInterrupt;
-  // The collective's governor beep switch is worked with the propeller keys.
-  if (profile.n2Beep && (action === 'propDecrease' || action === 'propIncrease')) return true;
+  // The collective's governor beep switch is worked with the propeller keys; on a type whose propeller keys move the
+  // pusher grip (propLever) the beep moves to the ENGINE TRIM pair.
+  if ((profile.n2Beep || profile.propLever) && (action === 'propDecrease' || action === 'propIncrease')) return true;
+  if (action === 'propLeverSnap') return !!profile.propLever && profile.propLever.snaps.length > 0;
+  if (action === 'engineTrimLeft' || action === 'engineTrimRight') return !!profile.n2BeepSplit || (!!profile.n2Beep && !!profile.propLever);
+  if (action === 'tailWheelLock') return !!profile.tailWheelLock;
+  if (profile.gearLever && (action === 'gearDown' || action === 'gearUp')) return true;
   if (action === 'rotorClutch') return !!profile.rotorcraft;
   if (action === 'rotorGovernor') return !!profile.rotorcraft && profile.rotorGovernor !== false;
-  if (profile.rotorcraft && ['trimNoseUp', 'trimNoseDown', 'parkingBrake', 'brakes', 'brakeLeft', 'brakeRight'].includes(action)) return false;
+  if (profile.rotorcraft && ['trimNoseUp', 'trimNoseDown'].includes(action)) return false;
+  // Toe brakes and the parking brake: hidden on a helicopter on skids, kept on a wheeled one (InputProfile.wheelBrakes).
+  if (profile.rotorcraft && !profile.wheelBrakes && ['parkingBrake', 'brakes', 'brakeLeft', 'brakeRight'].includes(action)) return false;
   // ENGINE MASTER switches have no single-magneto positions.
   if (profile.ignition === 'engineMaster' && (action === 'magnetoRight' || action === 'magnetoLeft')) return false;
   // One key for the induction heat of the type: carburettor heat, or alternate air where there is no carburettor.
@@ -384,8 +409,25 @@ export function profileHasAction(profile: InputProfile, action: InputAction): bo
 /** The standard text of an action on a type (before InputProfile.labels). */
 function actionLabel(profile: InputProfile, action: InputAction): string {
   if (action === 'carbHeat' && !profile.has.carbHeat) return 'Alternate air off / on';
-  if (profile.n2Beep && action === 'propDecrease') return 'Governor beep DECR (hold)';
-  if (profile.n2Beep && action === 'propIncrease') return 'Governor beep INCR (hold)';
+  if (profile.propLever) {
+    if (action === 'propDecrease') return 'Propeller grip back: blade angle down, toward reverse';
+    if (action === 'propIncrease') return 'Propeller grip forward: blade angle up, more thrust';
+    if (action === 'propLeverSnap') return 'Propeller grip to the next snap: hover detent, autorotation, full reverse';
+    if (profile.n2Beep && action === 'engineTrimLeft') return 'Governor beep (RPM SET) DECR (hold)';
+    if (profile.n2Beep && action === 'engineTrimRight') return 'Governor beep (RPM SET) INCR (hold)';
+  }
+  if (profile.n2Beep && action === 'propDecrease') return profile.n2BeepSplit ? 'ENGINE TRIM aft: both engines\' N2 DECR (hold)' : 'Governor beep DECR (hold)';
+  if (profile.n2Beep && action === 'propIncrease') return profile.n2BeepSplit ? 'ENGINE TRIM fore: both engines\' N2 INCR (hold)' : 'Governor beep INCR (hold)';
+  if (profile.engineLever === 'overheadPowerLevers') {
+    if (action === 'throttleIdle') return 'Power lever to IDLE (the IDLE lock); 8 / 9 / 0 choose the lever';
+    if (action === 'throttleDown') return 'Power lever back (stops at IDLE)';
+    if (action === 'throttleUp') return 'Power lever forward';
+    if (action === 'throttleFull') return 'Power lever to FLIGHT';
+    if (action === 'gripCutoff') return 'Power lever to OFF (through the IDLE lock)';
+    if (action === 'engineSelect1') return 'Engine keys act on the LEFT power lever (engine 1)';
+    if (action === 'engineSelect2') return 'Engine keys act on the RIGHT power lever (engine 2)';
+    if (action === 'engineSelectAll') return 'Engine keys act on both power levers';
+  }
   if (profile.twistGrip) {
     if (action === 'throttleIdle') return 'Twist grip to GROUND IDLE (the idle stop)';
     if (action === 'throttleDown') return 'Twist grip closed (to the idle stop)';
@@ -427,14 +469,19 @@ export function keyBindingsFor(profile: InputProfile): { keys: string; action: s
 /** The help-screen listing of the Cessna 172S. */
 export const KEY_BINDINGS: { keys: string; action: string; category: string }[] = keyBindingsFor(C172S_INPUT);
 
-/** Look up the action for a key event; exact Shift matches win over shift-agnostic bindings. */
-export function actionForKey(code: string, shift: boolean): InputAction | null {
-  let loose: InputAction | null = null;
+/**
+ * Look up the action for a key event; exact Shift matches win over shift-agnostic bindings. With `profile`, an exact
+ * match whose action the type does not have gives way to the shift-agnostic binding of the key (Shift+, is ENGINE TRIM
+ * on the Bo 105 and stays the left toe brake on an aeroplane).
+ */
+export function actionForKey(code: string, shift: boolean, profile?: InputProfile): InputAction | null {
+  let loose: InputAction | null = null, exact: InputAction | null = null;
   for (const m of KEY_MAP) {
     if (m.code !== code) continue;
-    if (m.shift === shift) return m.action;
+    if (m.shift === shift && exact === null) exact = m.action;
     if (m.shift === undefined) loose = m.action;
   }
+  if (exact !== null && (!profile || loose === null || profileHasAction(profile, exact))) return exact;
   return loose;
 }
 
