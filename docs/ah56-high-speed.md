@@ -134,19 +134,19 @@ AC's provisional placeholder (compound.ts `PROVISIONAL_SECTION`, the C4 "with th
 | Moment stall (static, P, not flown) | 0.14 c over 12° | D from P Report 530 Table IV: cm_c/4 −0.056 / −0.086 / −0.107 / −0.118 at +3.2 / +6.5 / +10 / +11.6° past Cl max = centre of pressure 0.30 / 0.335 / 0.364 / 0.386 c from cm / cn. The shape reproduces −0.054 / −0.085 / −0.108 (ah56HighSpeed.test.ts) |
 | Reversed flow | lift slope 5.73 /rad about 180° to ±0.77; drag twice the minimum; the lift at 0.75 c (cm = +0.5 Cl, nose up for a positive reversed lift) | P TN 3361 Fig 4(a): 0.10 per deg from 174° to 186°, peaks ±0.77 at 8° past 180°; "about twice" the drag. With the forward slope it reproduces the linear hub forcing's reverse-flow lift (within 10 %, ah56HighSpeed.test.ts) |
 
-**Why the flown break is not the static one.** With the P static shape (0.14 c over 12°) the wind-ups to 1.8 g at 122 and 154 KCAS
-showed less than 0.3 °/s and 0.3° of uncommanded motion: the retreating tip goes only 1-3° past the stall before the pilot's
-stabilisation, and there the static break is −0.02 to −0.05 in Cm. The ICS gyro needs about 300 N m of first-harmonic pitching moment
+**Why the flown break is not the static one.** With the P static shape (0.14 c over 12°) the stabilised turns at 1.6-1.7 g at
+122 and 154 KCAS show at most 0.7° of uncommanded roll and 0.003 g of pitch-up (table below): the retreating tip goes only 1-3° past
+the stall, and there the static break is −0.02 to −0.05 in Cm. The ICS gyro needs about 300 N m of first-harmonic pitching moment
 per blade to produce a 13 °/s roll (section 1). The flown break, 0.2 c within 4°, gives −0.2 in Cm 4° past the stall, the size of
 the dynamic-stall moment peaks of 12 % sections at k ≈ 0.1 (ESTIMATE). Probe rows (stabilised wind-ups, differences from the no-stall
 flight; probe `h4v.test.ts`):
 
-| Section | 154 KCAS, 1.7 g | 122 KCAS, 1.6 g |
-|---|---|---|
-| static P break (0.14 c over 12°) | roll −0.8°, pitch-up −0.07 g, stick +0.62 in aft | roll +0.4° right, pitch −0.04 g, stick +0.8 in aft |
-| flown break (0.2 c over 4°) | roll +6.1° right, pitch-up +0.18 g | roll +9.7° right, pitch-up +0.26 g |
+| Section (final Cl max table) | 154 KCAS, 1.7 g | 122 KCAS, 1.6 g | 122 KCAS, 1.7 g |
+|---|---|---|---|
+| static P break (0.14 c over 12°) | right roll 0.06°, pitch-up +0.003 g | 0.66°, +0.000 g | 0.71°, +0.002 g |
+| flown break (0.2 c within 4°) | right roll 5.9°, pitch-up +0.16 g (q +2.0 °/s) | 10.7°, +0.25 g (q +6.1 °/s) | 8.3°, +0.23 g |
 
-(The flown-break row is the final section; the static row is from the probe before the Cl max table's high-Mach entries were raised.)
+(probe `h4s.test.ts`, log `work/rigid/guards/AH/final-static-vs-flown.txt`).
 
 **The Mach fade of the moment break** keeps the break off the advancing tip: a sharp Cm break at M 0.8 (q about 43 kPa) through the
 ICS feathering-moment feedback is a loop the explicit blade-moment term cannot hold (a probe with the break at all Mach numbers
@@ -159,23 +159,24 @@ diverged at 1.2 g). Above M 0.45-0.6 the separation is shock-induced, and the dr
 | H1 advancing tip, 194 KTAS, 246 rpm, SL | M 0.884 | 0.885 ± 0.01 | D | pass |
 | H2 C4 V_H (TOW, 18,750 lb, 5°, 114 %) | 199.1 KTAS (stage 4: 198.6) | 194 ± 5 % (184.3-203.7) | P | pass |
 | H2 C5 AMCS clean (18,300 lb, 13° ind.) | 212.2 KTAS | 210-225 | P | pass |
-| H3 rotor profile power, 200 KTAS (AMCS, 18,300 lb, SL, stores, 13° ind.), Mach terms on vs off | +9.9 % (629 vs 573 shp); total torque −1.6 % (114.9 vs 116.8 %); the drag rise alone +1.2 % of torque | ≥ 10 % | D | **gap** (it.fails) |
-| H4 ICS moment stall, 154 KCAS | onset 1.65 g: right roll 2.1° and pitch-up +0.03 g; at 1.7 g 6.1° and +0.18 g (q +2.6 °/s, p +3.2 °/s) | 1.5 ± 0.2 g, pitch-up and RIGHT roll | P ASTA-72 para 65 | pass |
-| H4 ICS moment stall, 122 KCAS | onset 1.5 g: right roll 11.9°, pitch-up +0.23 g (n_z to 1.73), q +3.8 °/s, p +4.5 °/s; 1.4 g: 0.7°, +0.004 g | 1.4 ± 0.2 g | P | pass |
+| H3 power required, 200 KTAS (AMCS, 18,300 lb, SL, stores, 13° ind.), Mach terms on vs off | total torque −1.6 % (114.9 vs 116.9 %); the drag rise alone +1.2 % of torque; the rotor's profile power +9.9 % (629 vs 573 shp) | ≥ 10 % | D | **gap** (it.fails, read as total power) |
+| H4 ICS moment stall, 154 KCAS | onset 1.65 g: right roll 2.5° and pitch-up +0.05 g (q +0.6, p +1.3 °/s); at 1.7 g 5.9° and +0.16 g (n_z to 1.85, q +2.0, p +2.8 °/s); 1.6 g: 1.2°, +0.02 g | 1.5 ± 0.2 g, pitch-up and RIGHT roll | P ASTA-72 para 65 | pass |
+| H4 ICS moment stall, 122 KCAS | onset 1.5 g: right roll 11.6°, pitch-up +0.19 g (n_z to 1.69), q +3.4 °/s, p +4.4 °/s; 1.4 g: 0.9°, +0.005 g | 1.4 ± 0.2 g | P | pass |
 | H4 190 KCAS, 1.43 g | 0.09° and +0.001 g | none | P | pass |
-| H5 ICS stick per g above 1.3 g, 122 KCAS | 7.0 in/g (6.6 with no stall) | ≤ 0.1 in/g | P | **gap** (it.fails; AG/AC) |
-| H6 AMCS 155 / 180 KCAS | no uncommanded motion (< 0.14°, < 0.003 g); stick per g 4.3 → 5.1 and 3.9 → 5.0 in/g, positive and near linear; full aft stick (4.95 in) reaches 2.27 g at 155 and 2.46 g at 180 KCAS | none to 2.5 g; positive and linear | P AMCS-73 para 37 | pass (to the g the stick reaches) |
+| H5 ICS stick per g above 1.3 g, 122 KCAS | 6.9 in/g (6.6 with no stall) | ≤ 0.1 in/g | P | **gap** (it.fails; AG/AC) |
+| H6 AMCS 155 / 180 KCAS | no uncommanded motion (< 0.1°, < 0.003 g); stick per g 4.3 → 5.1 and 3.9 → 5.1 in/g, positive and near linear; full aft stick (4.95 in) reaches 2.28 g at 155 and 2.45 g at 180 KCAS | none to 2.5 g; positive and linear | P AMCS-73 para 37 | pass (to the g the stick reaches) |
 | H7 | section 4 | | | pass |
 | H9 periodic flap damping at μ 0.5 | hub moment per unit θ1c +2.2 % with it on | 8-15 % | D | **gap** (it.fails; shared with RC's R23) |
 | H9 rate convergence, 200 KTAS | roll rate 9.07 / 9.08 / 9.09 °/s at 240 / 480 / 960 Hz | within 2 % | — | pass |
-| H10 cost, 200 KTAS | 294.7 µs per step vs MD 500E 154.9 (1.90 ×), 12 × 18 grid | ≤ 2 × | AGENT | pass (load-sensitive: 12 × 20 read 2.03 × under a concurrent test run, 1.8-1.9 × idle for 12 × 18) |
+| H10 cost, 200 KTAS | 290.8 µs per step vs MD 500E 153.3 (1.90 ×), 12 × 18 grid | ≤ 2 × | AGENT | pass (load-sensitive: 12 × 20 read 2.03 × under a concurrent test run, 1.8-1.9 × idle for 12 × 18) |
 | H11 | section 1 | | | done |
 
 **H3.** The primary data put the thin tip's divergence at M 0.82-0.85 (Ferri); at 200 KTAS the tip is at M 0.89, 0.06 past it.
-The rise there (Cd +0.014 at the very tip) adds about 9.9 % of rotor profile power, but the rotor carries only 13 % of the
-aircraft's power at 200 KTAS (540 of 3,900 shp) and the prop the rest, so the total rises 1.2 % from the drag rise. The
-Prandtl-Glauert lift slope then lowers the total by 2.9 %: the advancing blade's larger lift slope tilts the trim 0.7° further
-nose-down, and the rotor propels more of the aircraft. The plan's 10 % (D) rested on the 0.78 ESTIMATE.
+The rise there (Cd +0.014 at the very tip) and the tuck add 9.9 % to the rotor's profile power, but the rotor carries only about
+14 % of the aircraft's power at 200 KTAS (540 of 3,950 shp) and the prop the rest, so the drag rise adds 1.2 % to the total. The
+Prandtl-Glauert lift slope then lowers the total by 2.8 %: the advancing blade's larger lift slope tilts the trim about 0.6° further
+nose-down, and the rotor propels more of the aircraft. Read as the aircraft's power required (the torque gauge), H3 is −1.6 %; read
+as the rotor's profile power, 9.9 %. The plan's 10 % (D) rested on the 0.78 ESTIMATE.
 
 **H5.** Before the stall the ICS needs 6.6-7.0 in of aft stick per g at 122 KCAS in this model: the gyro's steady stick moment
 sets the hub moment (G4: 5.4 kN m per inch), and the airframe's pitch stiffness asks for about 35 kN m per g (the stabiliser at
@@ -243,3 +244,118 @@ H7 measured (ah56HalfP.test.ts; ICS, 160 KCAS, 18,300 lb, SL, collective 4.4° a
 In the sim (`index.html?aircraft=ah56&config=ics&halfp=1&scenario=cruise&run=2&freeze=1`): at 2.0 s the event is active, amplitude
 0.44 (hands off: decaying), phase 25.65 rad (0.5 × 2 s × 25.76 rad/s), roll rate −8.7 °/s, n_z 1.06. With hands off a forced event
 dies in about 8 s; stirring keeps it growing.
+
+## 5. H8: AG's and AC's rows re-run on the stage-5 rotor
+
+Run on this branch with the stage-5 section, and against a baseline: the same test files with `highSpeed.ts` replaced by its S0 stub
+(the stage-4 aircraft, through a vitest alias: `work/rigid/probes-ah/vitest.stage4.config.mjs`). Logs: `work/rigid/guards/AH/`.
+Legacy digests (GR) and the existing helicopters are untouched: every new term sits behind `main.section.polar` or `halfPHop`, which
+only the AH-56 declares.
+
+**AG list** (ah56Gyro, GyroModes, Handling, Systems, Ground, ah56Physics): stage 4: 4 failed, 68 passed, 11 expected fail; stage 5:
+9 failed, 63 passed, 11 expected fail.
+
+| Row | Stage 4 | Stage 5 | Cause |
+|---|---|---|---|
+| G10 hover ceiling, no wing / pusher | fails (8,594 ft) | fails | pre-existing (AC: superseded by C2) |
+| G7a ICS full lateral | fails | fails | pre-existing (AG) |
+| G8 ICS p/q | fails | fails | pre-existing (AG) |
+| G6 variant (informational) | fails | **passes** | |
+| G3 ICS auto-trim, fixed shaft, 100 KTAS, 3 m/s gust | 4 % at 0.5 s | **28 %** (needs < 10 %) | **the stall**: on AG's level fixed shaft at collective 0.62 (10.5° at 0.75 R) the front half of the disc is past the stall angle before the gust; the gust pushes the rest of the front-left over it, and stalled elements do not answer the cyclic. With no stall (Cl max 9) the same rotor trims to 2.4 % at 0.5 s; at collective 0.45 (7°) the gust alone stalls ψ 190-310° |
+| G5a AMCS authority | full aft gyro pitch 9.88° (stop 10.11°) | **at the stop** | the stall (also with Prandtl-Glauert off): at full aft stick the flapping K_R feeds back is smaller |
+| G5 AMCS pitch | hover sensitivity 11.37 °/s²/in | **12.23** (≤ 11.7) | **Prandtl-Glauert**: the hover tip runs at M 0.56, lift slope × 1.21 there; the hub moment per cyclic rises about 6 % |
+| G5 AMCS roll | 150 KCAS sensitivity 66.9 | **73.7** (≤ 68.9) | Prandtl-Glauert |
+| G8 AMCS p/q | 0.13 / 0.17 | **0.18 / 0.28** (≤ 0.2) | Prandtl-Glauert |
+| droop sense "why" (AG's explanatory row) | half-droop 0.002° | **0.125°** (≤ 0.1) | Prandtl-Glauert |
+
+With Prandtl-Glauert off (`machCap` 1, everything else stage 5) G5, G8 AMCS and the droop row are back to their stage-4 values; G3
+and G5a stay (the stall).
+
+**AMCS refit candidate** (Prandtl-Glauert on; measured with AG's step-response method, probe `refit.test.ts`): longitudinal stick
+moment 590 → 555 N m (× 0.94), lateral 975 → 897 N m (× 0.92), input rotation 9° → 3° advanced, K_R 3,000 → 3,200 N m/rad:
+pitch 5.65 / 4.83 / 4.46 °/s/in at 0 / 100 / 150 KCAS (4.2-7.8), hover sensitivity 11.26 (≤ 11.7), roll 14.3 / 15.4 °/s/in,
+roll sensitivity 62.1 / 66.4 at 0 / 150 KCAS (42-78 / 37-69), G8 p/q 0.057 / 0.143 (≤ 0.2). Not applied: the numbers are AC's
+(compound.ts `AMCS_FLAP_FEEDBACK`, `AMCS_LONGITUDINAL_STICK_MOMENT`) and AG's (gyro.ts lateral moment, input rotation); C18 and
+C19 must be re-run with it.
+
+**AC list** (ah56Compound, CompoundPerformance, Pusher): stage 4: 47 passed, 15 expected fail; stage 5: 7 failed, 42 passed,
+13 expected fail.
+
+| Row | Stage 4 | Stage 5 | Note |
+|---|---|---|---|
+| C23 KNOWN GAP: frozen-controls RIGHT roll 30-70 KCAS (ICS) | rolls left 3.3 °/s (expected fail) | **rolls right 4.3 °/s** (the it.fails row now passes) | P sense reached; the row should become a passing row |
+| C23 frozen controls (ICS): nose up, nose left | nose up 10.7, left 6.4 °/s | nose up 10.3 °/s, **nose right 4.4 °/s** (roll right 4.7 °/s) | the yaw follows the roll (a right-rolling aircraft turns right); with an earlier Cl max table the yaw was left 1.2 °/s and the roll right 6.1 |
+| C23 ICS transition trim shift | lateral 0.82 in RIGHT (AC) | **0.88 in left** (P 1.1 left ± 0.4) | passes; pedal 2.34 in right, longitudinal 0.57 in forward |
+| C18 KNOWN GAP: AMCS pitch at 180 KCAS | 3.93 °/s/in (expected fail) | **4.58** (≥ 4.2: passes) | Prandtl-Glauert; the row should become a passing row |
+| C18 AMCS roll sensitivity at 180 KCAS | 65.4 °/s²/in | **72.4** (≤ 68.9) | Prandtl-Glauert; the refit above |
+| C12 autorotation, 19,700 lb, 2,700 ft DA, 95 KCAS | 2,492 ft/min | zero shaft torque at −15.1° of path: **2,506** (2,200 ± 300); the test's bisection reads **2,621** | 6 ft/min outside; the stage-4 fit had 8 ft/min of margin. The root (r < 0.45 R, M < 0.16) is stalled in the autorotation and drags. The 2,621: at −15.75° the trim finds a second solution (collective −1.2°, torque +660 N m) and the bisection keeps it (scan: torque +286 / −430 / −1,140 / **+663** / −2,019 N m at −15 / −15.25 / −15.5 / −15.75 / −15.81°) |
+| C11 deceleration from 196 KTAS | no crash, height +1 ft | **crash** after the script pulls full collective (18.5°) at 35-45 KTAS | the scripted pilot's collective servo goes to full collective when the aircraft sinks 90 ft at 45 KTAS; the rotor then stalls, Nr droops to 87 % and it descends. With the stage-4 polar (no stall in the hinge forcing) full collective gave 148 kN (1.7 g). A pilot does not over-pitch like this; the script needs a collective limit |
+| C20 engine failure (prop vs collective) | passes | **times out at 5 s** | every assertion holds (load split 30 / 45 / 83 %; Nr at 3 s 65.5 % collective vs 83.0 % prop at 188 KCAS); the stage-5 rotor is 1.5 × slower and the test has no timeout |
+| C2 HOGE 18,750 lb | 8,750 ft (AC) | 8,625 ft | passes (8,500 ± 1,000) |
+| C3 20,500 lb OGE / IGE | 6,125 / 9,000 ft | 6,000 / 8,875 ft | passes |
+| C4 V_H as flown | 198.6 KTAS | 199.1 | passes |
+| C5 AMCS clean | 213.1 KTAS (AC) | 212.7 | passes |
+| C9 AMCS lateral at 190 KCAS | 0.47 in left | 0.42 in left | passes |
+| C22 cyclic held, +10° / −6° | 3.8° nose down / 1.9° up | 3.6° down / 2.0° up | +10° in the ESTIMATE band; −6° reaches its 2-4° band |
+
+## 6. AGENT choices and deviations (for the owner; none is an owner decision)
+
+- **The grid**: 12 radial × 18 azimuth stations instead of the plan's ≥ 36 × 16 (section 3, H10).
+- **Prandtl-Glauert on** (plan 7.4) raises the AMCS control sensitivities about 6 % against AG's and AC's fits (section 5). The refit
+  is theirs; the candidate is in section 5. Until it lands the AMCS hover pitch sensitivity reads 12.2 °/s²/in (AMCS-73: 9 ± 30 %).
+- **The moment break that flies is an ESTIMATE of the dynamic one** (0.2 c within 4°), FITTED to H4; the P static shape is kept in
+  the code and tests as data (section 2).
+- **Cl max against Mach** is an ESTIMATE whose M 0.3-0.4 part is FITTED to H4. At the worst 1 g condition flown (122 KCAS,
+  20,000 lb, 4,600 ft, collective 7°) the retreating tip keeps about 0.4° of stall margin, consistent with ASTA-72 para 88 ("limited
+  by blade moment stall at airspeeds from 120 to 150 KCAS ... especially true in light-to-moderate turbulence"). Heavier or higher
+  1 g trims were not checked for stall at 1 g.
+- **One section for the whole span**, with the TIP's Mach terms (section 2).
+- **The H4 measurement**: stabilised wind-ups against the same flight on a section without stall; onset = ≥ 2° of right roll and
+  ≥ 0.03 g of pitch-up (section 3 and ah56MomentStall.test.ts).
+- **Half-P**: the trigger thresholds (0.75 in stirs, 0.5 in doublets, 7.5° collective, 0.5 in/s "still"), the growth and decay per
+  cycle, the 1 s onset fade, `halfp=1` decaying with hands off (section 4).
+- The ICS longitudinal trim moved forward with the section: 1.0 / 1.2 / 5.0 in at 122 / 154 / 190 KCAS (stage 4: 0.5 / 0.5 / 3.7 in;
+  20,000 lb, 4,600 ft, collective 7 / 5 / 5°): Prandtl-Glauert 0.8 in and the tuck 0.3 in of it at 190 KCAS. 190 KCAS now needs 5.0
+  of the 5.5 in of forward stick, which compounds AG's known ICS forward-stick issue (AG KNOWN_ISSUES). ASTA-72 para 38: "only small
+  longitudinal control position trim changes" above 170 KCAS; para 45: 0.012-0.015 in/kt at 120-150 KCAS, neutral to negative above 190.
+
+## 7. Not modelled
+
+- A section that varies along the span (the (4.6)3012 root to the (0.6)3006 tip): the contract has no radius.
+- Lift divergence past M_dd (only the Prandtl-Glauert cap), a reversed-flow camber moment, Mach effects in reversed flow.
+- Dynamic stall as such (lift overshoot, hysteresis, the vortex): only its moment break, as a static function of incidence.
+- The buffet and vibration that preceded the moment stall (ASTA-72 para 65): the vibration channel is the deferred C2.17.
+- The half-P hop's own physics (lag, plunge and body-roll coalescence): scripted (owner note O1). Its thump is AU's to voice from
+  `events.halfPHop` (active, amplitude, phase).
+- The fine rotor grid above μ 0.3 only (RC's rotorcraft.ts reads the grid as constants).
+
+## 8. Handover (plan 8.1: contract requests, KNOWN_ISSUES rows and guards go in PR text; repeated here)
+
+### 8.1 Contract requests
+- (a) AC (compound.ts) and AG (gyro.ts): the AMCS refit for Prandtl-Glauert (section 5), then re-run G5, G5a, G8, C18, C19.
+- (b) AG, tests/rotorcraft/ah56Gyro.test.ts G3: run the fixed-shaft auto-trim on the section without stall (`main.section` with Cl
+  max 9: 2.4 % at 0.5 s) or at a trimmed condition; G3 tests the gyro loop, and AG's level shaft at 10.5° collective puts half the
+  disc past the stall.
+- (c) AG: G5a "full stick commands flap, not the stop" and the droop-sense explanatory row: re-check after (a).
+- (d) AC: convert the two `it.fails` rows that now pass (C23 frozen-controls right roll; C18 AMCS pitch at 180 KCAS) into passing
+  rows; the C23 frozen-controls yaw now reads right 4.4 °/s.
+- (e) AC, ah56CompoundPerformance.test.ts C11: limit the scripted pilot's collective (it over-pitches to 18.5° at 35-45 KTAS).
+- (f) AC, ah56Pusher.test.ts C20: a timeout (the test runs about 5 s; the stage-5 rotor is 1.5 × slower per step).
+- (g) AC, ah56CompoundPerformance.test.ts C12: the bisection on the path angle should reject a trim on a second branch (collective
+  continuity or `lastTrim` residual); the zero-torque path gives 2,506 ft/min against 2,500 (re-fit the autorotation or accept).
+- (h) RC: if the owner wants the ≥ 36 × 16 grid above μ 0.3, rotorcraft.ts must choose the grid by advance ratio.
+- (i) AU: the half-P thump from `events.halfPHop` (2.05 Hz, amplitude 1 at onset, growing to 3.3 at the strike).
+
+### 8.2 KNOWN_ISSUES entries (AG owns the file)
+- H3: the profile power at 200 KTAS rises 9.9 % with the Mach terms (target ≥ 10 %, D); total power falls 1.6 % (Prandtl-Glauert
+  tilts the trim and the rotor propels more). The tip's drag divergence (0.83, P Ferri) leaves the 200 KTAS tip 0.06 past it.
+- H5: ICS stick per g at 122 KCAS above 1.3 g is 6.9 in/g (P: neutral). AG/AC's airframe pitch stiffness and the gyro's
+  steady stick moment; the moment stall reverses it only past its onset.
+- H9: periodic flap damping changes the hub moment per cyclic by 2.2 % at μ 0.5 (plan 8-15 %); RC's R23 found the same cause.
+- H4: the onsets sit 0.1-0.15 g above ASTA-72's (1.65 g at 154 KCAS, 1.5 g at 122 KCAS against 1.5 and 1.4); the flown moment
+  break is a fitted ESTIMATE of the dynamic one, and the roll is about twice the pitch-up in the first seconds (ASTA-72: the pitch-up
+  was the loss of control, the roll "easily corrected").
+- H6: the AMCS reaches 2.28 g at 155 KCAS and 2.45 g at 180 KCAS at full aft stick in a steady turn (4.3-5.1 in/g); "to 2.5 g" is
+  shown to those load factors.
+- AMCS control sensitivities about 6 % high until the refit (section 5).
+- The cost: 1.9 × the MD 500E per step on a 12 × 18 grid (the plan's ≥ 36 × 16 would be 3.7-4.0 ×).

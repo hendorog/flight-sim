@@ -160,9 +160,9 @@ const collective075 = (r: Rig) => (def.main.minPitch + (r.c.collective ?? 0) * (
 const fixedBeta = (deg: number, base: AircraftDefinition) => variantOf(base, (r) => ({ ...r, pusher: { ...r.pusher!,
   trimSchedule: { x: [0, 1], y: [deg * DEG, deg * DEG] }, trimScheduleByConfig: undefined } }));
 /** The level trim at `kt` with the prop set so the collective is `coll` deg at 0.75 R (AC's C4/C5 procedure). */
-function trimOnCollective(base: AircraftDefinition, o: RigOptions, coll: number) {
+function trimOnCollective(base: AircraftDefinition, o: RigOptions, coll: number, lo = 15, hi = 40.8) {
   const at = (b: number) => { const r = rigOn(fixedBeta(b, base), o); return { b, r, e: collective075(r) - coll }; };
-  let a = at(15), c = at(40.8);
+  let a = at(lo), c = at(hi);
   if (a.e * c.e > 0) return Math.abs(a.e) < Math.abs(c.e) ? a : c;
   for (let i = 0; i < 12; i++) {
     const s = c.b - c.e * (c.b - a.b) / (c.e - a.e);
@@ -221,7 +221,9 @@ describe('H2: V_H re-checked with the section\'s Mach terms (plan C4 / C5, P)', 
 // ------------------------------------------------------------------------------------------------------------- H3
 /** Level trim on 6 deg at 0.75 R (13 deg AMCS indicated) at `kt` with a section: torque and the rotor's profile power. */
 function powerAt(section: RotorSectionDef, kt: number) {
-  const t = trimOnCollective(withSection(section), { cfg: 'amcs', kt, lb: 18_300 }, 6);
+  // Bracketed inside the prop's travel: at the 40.8 deg stop some variants' trims do not converge (a 200 KTAS level trim on 6 deg
+  // needs about 38 deg).
+  const t = trimOnCollective(withSection(section), { cfg: 'amcs', kt, lb: 18_300 }, 6, 32, 40);
   return { beta: t.b, collective: collective075(t.r), torque: gauges(t.r as never).torque, profileShp: -t.r.rotor.power.mainProfile / 745.7,
     mainShp: -t.r.rotor.power.mainShaft / 745.7, converged: t.r.fm.lastTrim!.converged };
 }
@@ -241,10 +243,11 @@ describe('H3: the profile power rise with the Mach terms, 200 KTAS (AMCS, 18,300
     expect(on.torque).toBeGreaterThan(h3.noRise.torque);
     expect(on.profileShp).toBeGreaterThan(off.profileShp);
   }, 1_800_000);
-  // KNOWN GAP (docs section 3, PR text): the P-anchored tip divergence (M_dd 0.83, Ferri Fig 75(a)) leaves the 200 KTAS tip
-  // (M 0.89) 0.06 past it; the drag rise adds about 1 % of power and 5 % of profile power, not the 10 % the 0.78 ESTIMATE gave.
+  // KNOWN GAP (docs section 3, PR text): "power required" read as the aircraft's (the torque gauge): -1.6 %. The rotor's own profile
+  // power rises 9.9 % (reported above). The P-anchored tip divergence (M_dd 0.83, Ferri Fig 75(a)) leaves the 200 KTAS tip (M 0.89)
+  // 0.06 past it, and at 200 KTAS the prop, not the rotor, carries most of the power; the plan's 10 % rested on the 0.78 ESTIMATE.
   it.fails('PLAN H3 BAND: power required at 200 KTAS rises >= 10 % with the Mach law on vs off', () => {
-    expect(h3!.on.profileShp / h3!.off.profileShp - 1).toBeGreaterThanOrEqual(0.10);
+    expect(h3!.on.torque / h3!.off.torque - 1).toBeGreaterThanOrEqual(0.10);
   });
 });
 
