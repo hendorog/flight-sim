@@ -288,7 +288,13 @@ describe(`mast-moment indicator (AGENT/ESTIMATE marks set from these rows: LIMIT
     mastReport().reversal80 = peak;
     expect(peak).toBeGreaterThanOrEqual(YELLOW); expect(peak).toBeLessThan(LIMIT);
   });
-  it('in flight: a 2.5 g pull at 100 KIAS reaches yellow, never LIMIT', () => {
+  /**
+   * Restated at the pilot review (2026-10-21, AGENT): the plan's ESTIMATE row read "a 2.5 g pull at 100 KIAS reaches
+   * yellow". The needle reads the hub moment (TPP-to-shaft tilt), not g: the pull peaks at 3.1 kN m, below the 3.4 kN m
+   * of ordinary 130 KIAS mid-CG cruise, so a yellow onset low enough for the pull put cruise in yellow. With the yellow at
+   * the plan's 0.5 of LIMIT the pull reads green (docs/bo105-flight-model.md section 7).
+   */
+  it('in flight: a 2.5 g pull at 100 KIAS stays green (the needle reads the hub moment, not g), never LIMIT', () => {
     const r = rig(2200, { kt: 100 }), e0 = r.c.elevator;
     let peak = 0, gmax = 0, ei = 0;
     run(r, 4, (t) => {
@@ -300,8 +306,18 @@ describe(`mast-moment indicator (AGENT/ESTIMATE marks set from these rows: LIMIT
     });
     mastReport().pull25 = peak; mastReport().pull25gMax = gmax;
     expect(gmax).toBeGreaterThanOrEqual(2.4); expect(gmax).toBeLessThanOrEqual(3.0);
-    expect(peak).toBeGreaterThanOrEqual(YELLOW); expect(peak).toBeLessThan(LIMIT);
+    expect(peak).toBeLessThan(YELLOW); expect(peak).toBeLessThan(LIMIT);
   });
+  it('steady trims in the legal envelope read green: level flight at the CG limits and mid CG to 130 KIAS (about the maximum level speed at MCP) and at Vne (145 KIAS at <= 2400 kg, 130 KIAS above), and the forward-CG hover', () => {
+    const cases = [[2200, 'forward', 145], [2200, 'mid', 130], [2200, 'mid', 145], [2200, 'aft', 130], [2200, 'aft', 145],
+      [2400, 'aft', 145], [2500, 'aft', 130], [2200, 'forward', 0], [2500, 'forward', 0]] as const;
+    const rows = cases.map(([kg, cg, kt]) => {
+      const g = gauges(rig(kg, { kt, cg, height: kt === 0 ? IGE : 1500 }));
+      return { kg, cg, kt, mastMomentNm: g.mastMoment };
+    });
+    report.mastSteady = { rows, yellow: YELLOW };
+    for (const row of rows) expect(row.mastMomentNm, `${row.kg} kg ${row.cg} ${row.kt} KIAS`).toBeLessThan(YELLOW);
+  }, 60_000);
   it('in flight: a steady 60 deg turn at 100 KIAS (2 g; level, or descending where the power runs out at 86 % torque) stays green', () => {
     const r = rig(2200, { kt: 100 }), s0 = r.fm.state, a0 = r.c.aileron, e0 = r.c.elevator, p0 = s0.pitch, r0 = r.c.rudder;
     let pi = 0, bi = 0, ri = 0, peak = 0, g2 = 0, bank2 = 0, n = 0;

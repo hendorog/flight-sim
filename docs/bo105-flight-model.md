@@ -69,6 +69,23 @@ band that keeps both inside at ν 1.11. Lq/|Lp| then misses (0.194), as it did o
 almost none of it (RC docs section 4). Calibration: inertia 900 -> 850 kg m^2 (Lp -11.59 -> -10.67, roll mode 11.67 ->
 10.85 1/s, Lq/|Lp| 0.238 -> 0.194).
 
+**Inertia and the autorotation entry (pilot review, 2026-10-21; `W/probes/pilot-bo/tune-inertia`).** The reviewer found
+the entry harsh (both levers OFF at 100 KIAS, 2200 kg: NR 84.4 % with the collective lowered at once over 1 s, 73.1 % with
+a 1 s delay) and proposed 925-950 kg m^2 after Padfield's I_beta 231 kg m^2 (the reviewer's own unverified recollection;
+plan section 0 item 3 keeps the Padfield set out of the inputs). The sweep, at 80 KCAS / 3000 ft and the entry at 100
+KIAS:
+
+| polar inertia kg m^2 | Lp 1/s (edge -11.41) | roll mode 1/s (edge 11.04) | M_lon per % (0.093 +/-5 %) | NR min, lowered at once / 0.5 s / 1 s delay | 120 KIAS 1 s | double failure 95 / 85 % |
+|---|---|---|---|---|---|---|
+| **850** (as built) | -10.67 | 10.85 | 0.0933 | 84.4 / 78.1 / 73.1 % | 74.6 % | 0.22 / 0.73 s |
+| 925 | -12.04 | 12.06 | 0.0990 | 85.4 / 79.5 / 74.7 % | 76.2 % | 0.24 / 0.79 s |
+| 950 | -12.50 | 12.45 | 0.1008 | 85.7 / 80.0 / 75.2 % | 76.7 % | 0.25 / 0.81 s |
+| 1000 | -13.42 | 13.20 | 0.1044 | 86.2 / 80.8 / 76.1 % | 77.6 % | 0.26 / 0.86 s |
+
+Kept at 850: each step up buys 1-3 % of NR at the entry minimum and puts two P rows (Lp, roll mode) and the M_lon fit
+outside their bands, while the sourced Lock number (F METU Table 9, 5.54: about 840 kg m^2 at a = 6.0) supports 850. The
+rest is technique (lower the collective within about 0.5 s); KNOWN_ISSUES 22.
+
 **Control phase** (sole knob of the off-axis control ratios): RC's least-squares method (settled off-axis moment ratios
 of +/-0.02 cyclic steps against the means of the DLR and AFDD control derivatives, -0.084 and +0.145, 1 deg grid) on
 this airframe: best **28 deg** (RC's fixture: 30). Before/after: lateral-step M/L -0.106 -> -0.065, longitudinal-step
@@ -128,6 +145,14 @@ travels are the strongest assumption in the model: they set the 120 KIAS stick p
 hover, plan 0.20-0.35), the slope-landing hub moment (section 7) and the autorotation collective (0.08 of travel at
 2500 kg for 100 % NR, plan 0.15-0.35).
 
+Quick stops (pilot review, 2026-10-21; 2200 kg mid-CG, height held within 11 ft): from 80 KIAS with a 20 deg flare 22.8 %
+of the travel is left to the aft stop (stick +0.544 of the -1..1 axis; mast moment 2.1 kN m, NR 101.0 %); from 100 KIAS with
+25 deg 13.7 % (NR 106.5 % with the collective dumped); a 30 deg flare from 80 KIAS meets the stop near zero ground speed.
+Hover IGE trims sit 0.757 (2200 kg) / 0.773 (2500 kg) of the travel from the forward stop. A stiffer hub does not buy aft
+room: at 925 kg m^2 (a 9 % stiffer equivalent hinge) the 145 KIAS aft-CG trim needs 9.27 deg instead of 9.41, but M_lon
+per % rises 6 %, so the M_lon fit would shorten the travel to about 12.7 deg (section 2). Where the stops sit and the
+blade cyclic per % of travel stay unsourced; nothing was changed.
+
 ## 5. R18-R20 on the real definition (80 KCAS, 3000 ft, 2200 kg; quasi-static, rotor states re-settled)
 
 | | Lp | Mq | Nr | Mw | Zw | Lv | Nv | Xu | Lq | Mp |
@@ -146,8 +171,9 @@ an unstable oscillation zeta -0.52 at 0.60 rad/s (period 12 s, doubling in 2.3 s
 stable one zeta 0.47 at 0.64 rad/s; roll subsidence 12.0 1/s, pitch 3.55 1/s, subsidences 0.23 and 0.48 1/s. With the harmonic inflow OFF: zeta -0.095 at 0.43 rad/s (doubling in 17 s; Mu +0.046,
 Lv -0.187, Lp -8.8, Mq -2.39): the inflow gradient raises the hover roll damping (-8.8 -> -12.1, against plan section 4's
 "cuts") and roughly doubles Mu and Lv. At the hover scenario's 2500 kg / 16 m: zeta -0.49 at 0.62 rad/s (inflow off
--0.096 at 0.47). Trace key `hoverModes`. No Bo 105 hover source was used; hover identification results exist and were not obtained (Fu & Kaletka JAHS
-1993, DTIC ADA216828).
+-0.096 at 0.47). Trace key `hoverModes`. No Bo 105 hover source was used. The DLR/AFDD ERF 1989 paper (ERF 1989 paper
+66, obtained at the pilot review; research-bo105 lists it as DTIC ADA216828) identifies the 80 kt / 3000 ft condition
+only; Fu & Kaletka (JAHS 1993) was not obtained.
 
 ## 6. Engines, governor and fuel (powerplant.ts, rotorcraft.ts)
 
@@ -189,15 +215,40 @@ contact the collective down at 0.12 of its travel per second, the lateral cyclic
 need be) peaks at **14.4 kN m on a 15 deg left-down slope and 14.3 on an 8 deg right-down slope** (both with the lateral
 cyclic at its stop), and **16.7 kN m on 20 deg left-down** (and the aircraft then slides). In flight: a full lateral stick
 reversal at 80 KIAS 13.3 kN m, a smooth 2.5 g pull at 100 KIAS 3.1 kN m, a steady 60 deg turn at 100 KIAS (2.15 g, level
-within 30 ft/min) 1.8 kN m; level flight 1.4 (hover) / 1.6 (100 KIAS) / 4.8 kN m (145 KIAS). Hence **LIMIT 15.5 kN m** (the
-15 and 8 deg landings below it, the 20 deg above) and **yellow from 0.17 of it, 2.6 kN m** (the pull in yellow, the turn
-green; the slope landings in the top third of yellow, above 11.2 kN m); before: a 24 kN m / 0.5 placeholder. The plan's
+within 30 ft/min) 1.8 kN m. Hence **LIMIT 15.5 kN m** (the 15 and 8 deg landings below it, the 20 deg above). The plan's
 "LIMIT at about 16-17 deg of TPP-to-shaft tilt" (about 40 kN m) assumed the disc held level on a 15 deg slope; the fitted
 lateral travel caps the TPP tilt near 4 deg, so the slope peaks are set by the stop. In flap terms (D): (B/2)(e M_beta
 Omega^2 + K_beta) = 2 x (0.590 x 50.03 x 1976 + 8,685) = 134 kN m/rad = 2.34 kN m/deg, so LIMIT is **6.6 deg** of
-equivalent TPP-to-shaft flap (yellow from 1.1 deg), against the plan's 16-17 deg. The lever is the "% = % of full travel"
-assumption (section 4): twice the lateral travel would roughly double the slope peaks and the LIMIT. PN's panel reads
-these two numbers.
+equivalent TPP-to-shaft flap, against the plan's 16-17 deg. The lever is the "% = % of full travel" assumption (section
+4): twice the lateral travel would roughly double the slope peaks and the LIMIT. PN's panel reads these two numbers.
+
+**Yellow onset (pilot review, 2026-10-21): 0.17 -> 0.5 of LIMIT (2.6 -> 7.75 kN m, 1.1 -> 3.3 deg of equivalent flap).**
+The needle reads the hub moment, which follows the TPP-to-shaft tilt (the CG offset, the fuselage's pitching moment at
+speed), not g. With yellow at 2.6 kN m the needle sat in yellow in ordinary cruise (mid CG from about 119 KIAS, aft CG
+from 60 KIAS) while the 2.5 g pull, which had set it, read less than 130 KIAS level flight. Steady readings (kN m, SL ISA,
+trimmed level flight; `W/probes/pilot-bo/tune-mast`):
+
+| kg / CG | hover IGE | 60 | 100 | 110 | 120 | 130 | 140 | 145 KIAS |
+|---|---|---|---|---|---|---|---|---|
+| 2200 forward (STA 3.06) | 2.88 | 2.49 | 1.57 | 1.35 | 1.35 | 1.73 | 2.42 | 2.86 |
+| 2200 mid (3.20) | 1.20 | 0.80 | 1.59 | 2.07 | 2.68 | 3.42 | 4.29 | 4.78 |
+| 2200 aft (3.35) | 2.56 | 2.65 | 3.72 | 4.22 | 4.84 | 5.58 | 6.45 | 6.92 |
+| 2400 aft (3.29) | 1.98 | - | 2.93 | - | 3.98 | 4.68 | 5.49 | 5.95 |
+| 2500 forward / mid / aft | 2.86 / 1.55 / 1.73 | - | 1.64 / 1.24 / 2.52 | - | 1.42 / 2.09 / 3.53 | 1.70 / 2.73 / 4.21 | - | - |
+| 1400 (pilot only, STA 3.29) | 1.37 | - | 2.73 | - | - | 5.08 | - | 6.72 |
+
+Level flight above about 130 KTAS needs more than the AEO 86 % (the trims at 140-145 KIAS read the 95 % N1-stop torque):
+in service those speeds are flown descending, at about the same hub moment. The highest steady reading in the legal
+envelope is 6.9 kN m (145 KIAS, 2200 kg, aft CG), so the plan's 0.5 (6.2 "about 0.5"; section 0 item 5 "yellow from
+about 8-9 deg with LIMIT at 16-17") keeps every steady trim green with 0.8 kN m to spare; the reviewer's 0.30-0.35 would
+have left aft-CG cruise at 130 KIAS (5.58) in yellow. Manoeuvres then read: lateral steps of 10 / 20 / 50 % of travel at
+80 KIAS 1.2-2.1 / 1.8-3.2 / 5.2-6.1 kN m (green), quick stops 2.0-2.9 (green), the 2.5 g pull 3.1 (green), a full
+lateral reversal at 80 KIAS 13.3 (yellow), the slope landings 14.3 / 14.4 (top third of yellow, above 12.9), 20 deg
+left-down 16.7 (LIMIT). The plan's ESTIMATE row "a 2.5 g pull at 100 KIAS reaches yellow" is restated as "stays green"
+(AGENT) and a steady-trim row was added (`bo105Handling` mast-moment rows: 2200 kg forward / mid / aft at 130 and 145
+KIAS, 2400 kg aft at 145, 2500 kg aft at 130, forward-CG hovers at 2200 and 2500 kg, all below yellow). On the panel
+PN's dial paints its arcs at its 0.5 display fallback and marked the old 0.17 onset with a lone yellow tick inside the
+green arc; with 0.5 the painted arcs are the hub's (green 0-50 % of LIMIT, yellow 50-100 %, red above).
 
 ## 8. Performance calibrations
 
@@ -209,8 +260,41 @@ these two numbers.
 | `profileCd` | 0.0095 | unchanged | - |
 
 The ceiling is set by the 105 % N1 stop above about 2,500 ft (TOT 790-800 C there), not by the 86 % torque. Vy 59.5 KIAS
-from the power curve. The climb rows are the known gap: the power required at the bucket (42 % per engine at 60 KIAS) is
-below what the CB-5 chart's AEO climb implies, while the OEI climb, which shares the same bucket, sits inside its band.
+from the power curve.
+
+**The AEO climb gap, re-examined at the pilot review (2026-10-21; `W/probes/pilot-bo/tune-climb`).** At 2 x 86 %, 60
+KIAS, SL: 2,107 ft/min at 2200 kg, 1,637 at 2500 kg (plan 1,575 +/-20 %, S; 1,150-1,400, ESTIMATE with the CB-5 chart's
+1,380 as the upper bound). The reviewer's reading, "the power required in the bucket is too low", does not hold against
+the one Bo 105 power-required curve in the sources (S: Kerler et al., ERF 2012, Fig 1 after Kessler's TUM lecture; read
+as shaft power, digitised from the PDF):
+
+| 2300 kg, SL | hover OGE | 60 KIAS | 80 | 100 | 120 | 130 KTAS |
+|---|---|---|---|---|---|---|
+| Kessler (S), kW | 426 | 232 | 266 | 344 | 449 | 508 |
+| this model, both engines, kW | 444 | 256 | 275 | 333 | 433 | 500 |
+
+The model's bucket sits 10 % above the source; elsewhere it is within 4 %. What differs is how much of the excess power
+becomes climb: the model gives 45 ft/min per % torque per engine at 2200 kg (7.6 ft/min per kW of shaft power, 83 % of
+the ideal W x dh/dt = P; the tail rotor and the transmission take most of the rest). The CB-5 chart (F: 1,900 ft/min at
+2200 kg, 1,380 at 2500 kg, read +/-150) and Jane's (S: 1,575 ft/min; the Bo 105 CB data block that quotes it gives the
+maximum mass as 2,500 kg; Jane's entries usually give performance at maximum mass, not verified for this figure), set
+over the source's power curve, imply 60-72 %. Two consequences:
+- at 2200 kg the plan's two climb rows cannot both pass by moving the power required: the AEO band's top (1,890 ft/min)
+  needs +4.8 % torque per engine at the bucket, the OEI band's floor (+300 ft/min; +315 now) allows +0.3 %, because the
+  same bucket shift moves both climbs by the same 45 ft/min per %;
+- the listed knobs cannot close it either (2500 kg OGE torque held at 82.7 % by refitting `inducedFactor`):
+
+| Set | bucket % / engine | AEO 2200 / 2500 ft/min | OEI 2200 / 2500 | max cruise KTAS | NR down, 75 KIAS, 2200 / 2500 kg | descent 60 KIAS, 100 % NR |
+|---|---|---|---|---|---|---|
+| profileCd 0.0095, inducedFactor 1.11 (as built) | 41.1 | 2,107 / 1,637 | +315 / +31 | 129.9 | 107.5 / 114.7 % | 2,039 ft/min |
+| profileCd 0.011, inducedFactor 1.067 | 42.9 | 2,022 / 1,569 | **+225** / -41 | 127.8 | 104.8 / 111.8 % | 2,132 |
+| profileCd 0.012, inducedFactor 1.039 | 44.1 | 1,965 / 1,524 | **+165** / -89 | 126.4 | **103.2** / 110.1 % | 2,194 |
+| dragArea.z x 1.5 (the download) | 41.1 | (hover +1.7 %, bucket unchanged) | | | | |
+
+So `profileCd` stays 0.0095. Closing the gap needs either restated bands (the architect: Jane's 1,575 ft/min plausibly
+belongs to 2,500 kg, where the model is +4 % from it; the CB-5 chart is an upper bound for the CB-4) or a climb-efficiency
+mechanism in the rotor core (RC: the share of excess shaft power that becomes climb at 60 KIAS, 83 % here against 60-72 %
+implied by the sources). Recorded as KNOWN_ISSUES 2; the `it.fails` CLIMB GAP row stays.
 
 ## 9. Owner keyboard and the sim profile (input.ts, sim.ts)
 
@@ -236,7 +320,7 @@ m in 8 kt gusts; the sequence's 40 kt step overshoots by 12 kt (the hold's tunin
 ## 11. Known gaps (it.fails rows; `src/aircraft/bo105/KNOWN_ISSUES.md` has the list)
 
 Zw (rotor/inflow, structural); Lq/|Lp| 0.19; hover Lp -12.1; pedal-step sideslip 4 deg; 120 KIAS stick 0.44 of travel;
-rearward margin 5.2 %; AEO climb +34 %; autorotation collective 0.08 of travel; descent weight effect +0.5 %; T7b NR 96.1 %
+rearward margin 5.2 %; AEO climb +34 % at 2200 kg (+11 / +19 % on the CB-5 chart; section 8); autorotation collective 0.08 of travel; descent weight effect +0.5 %; T7b NR 96.1 %
 with the light out; T15 98 % NR in 4.35 s (plan 10-20 s); OEI IGE cushion torque 114 %. Guards red at BO HEAD and not
 fixable in BO's files: GA consistency bo105 row (BX/PN stubs; resolved by merging BX and PN with or before BO) and TW's
 twinOei T7b (KNOWN_ISSUES "Integration").

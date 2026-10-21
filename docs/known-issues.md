@@ -16,7 +16,7 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Robinson R44 Raven II | [12 entries](../src/aircraft/r44/KNOWN_ISSUES.md) |
 | Schweizer 269C-1 / 300CB | [12 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
 | MD Helicopters MD 500E (in development) | [14 entries](../src/aircraft/md500/KNOWN_ISSUES.md) |
-| MBB Bo 105 CB-4 (in development, `available: false`) | [44 entries](../src/aircraft/bo105/KNOWN_ISSUES.md) (21 from the flight model, 23 handed over) |
+| MBB Bo 105 CB-4 (in development, `available: false`) | [45 entries](../src/aircraft/bo105/KNOWN_ISSUES.md) (22 from the flight model, 23 handed over) |
 | Lockheed AH-56A Cheyenne (scaffold, `available: false`) | [1 entry](../src/aircraft/ah56/KNOWN_ISSUES.md); entries waiting for its flight model are listed below |
 
 Kinds: **defect** = demonstrated wrong behavior; **unvalidated** = evidence or acceptance still missing;
@@ -97,8 +97,11 @@ Periodic flap damping reaches the flap harmonics only through the cone (about -2
 against the plan's 3-9 %; the AH-56A's 8-15 % row at mu 0.5 rests on the same estimate). Two AR-280 rows miss at
 their band edges on the Bo 105: Zw -0.68 1/s (edge -0.70) and Lq/|Lp| 0.19 (band 0.25-0.50).
 Evidence: `tests/rotorcraft/hingelessAr280.test.ts` and `bo105Derivatives.test.ts` (it.fails rows).
-Close with: a lag degree of freedom, Bo 105 hover identification data (Fu & Kaletka 1993; DTIC ADA216828), a
-manoeuvre-wake inflow model.
+On the Bo 105 the one-way harmonic inflow raises the hover roll damping (Lp -8.8 -> -12.1 1/s) and doubles Mu and Lv,
+so the hover diverges in 2.3 s instead of 17 s and a gentle pilot loses it (Bo 105 KNOWN_ISSUES 17). The AEO climb
+turns 83 % of the excess shaft power into climb against the 60-72 % the Bo 105 sources imply (Bo 105 KNOWN_ISSUES 2).
+Close with: a lag degree of freedom, Bo 105 hover identification data (Fu & Kaletka 1993, not obtained; the ERF 1989
+DLR/AFDD paper, obtained, covers 80 kt only), a manoeuvre-wake inflow model.
 
 ### Multi-engine resume: one-frame gauge glitch — **defect (cosmetic)**
 

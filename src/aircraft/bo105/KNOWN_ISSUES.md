@@ -13,24 +13,53 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
      `bo105Handling` KNOWN TRAVEL GAP);
    - the envelope needs 12.0 of the 13.4 deg (9.4 forward at 145 KIAS aft CG, 2.6 aft in 20 kt rearward flight at forward
      CG): the stops are placed (AGENT) to leave 5.2 % at each end, not the plan's 10 % for rearward flight (KNOWN TRAVEL
-     GAP); the hover stick sits about 0.25 of the travel aft of centre;
+     GAP); the hover stick sits about 0.25 of the travel aft of centre (0.757 of the travel from the forward stop at
+     2200 kg IGE, 0.773 at 2500 kg);
+   - quick stops (pilot review, 2026-10-21; 2200 kg mid-CG, height held within 11 ft): from 80 KIAS with a 20 deg flare
+     the stick reaches +0.544 on the -1..1 axis (0.772 of the travel from the forward stop), leaving **22.8 %** of the
+     travel to the aft stop (mast moment 2.1 kN m, NR 101.0 %); from 100 KIAS with a 25 deg flare **13.7 %** is left (NR
+     106.5 % with the collective dumped); a 30 deg flare from 80 KIAS meets the aft stop near zero ground speed with the
+     nose high. Holding a 30 deg flare at 80 KIAS at speed needs only +0.30 (35 % margin): the stop is met as the speed
+     bleeds off (W/probes/pilot-bo handling and extra probes);
+   - the lever is not the hub stiffness alone: raising it (the polar inertia, which scales the equivalent-hinge moment)
+     cuts the cyclic needed for the CG offset (145 KIAS aft CG 9.41 -> 9.27 deg at 925 kg m^2) but raises M_lon per % by
+     6 % (0.0933 -> 0.0990), so the M_lon fit would shorten the travel to about 12.7 deg and leave less room, not more
+     (item 19, docs/bo105-flight-model.md section 4). What is unsourced is where the stops sit and the blade cyclic per %
+     of travel;
    - the lateral stop (about 4.1 deg each way) caps the hub moment a pilot can make on a slope, which set the mast-moment
      marks (item 6);
    - 100 % NR in autorotation at 2500 kg / 75 KIAS takes 0.08 of the collective's travel (plan 0.15-0.35;
      `bo105Performance` KNOWN COLLECTIVE-RANGE GAP).
    If the owner's "%" is another unit, the travels scale with it and these rows move.
-2. **AEO climb is about a third too strong** (`bo105Performance` KNOWN CLIMB GAP): 2,110 ft/min at 2200 kg and 1,640 at
-   2500 kg at 2 x 86 %, 60 KIAS, SL (plan 1,575 +/-20 % and 1,150-1,400). The OEI climb (+30 / +315 ft/min at 2500 / 2200
-   kg), hover torque, Vy (59.5 KIAS) and maximum cruise (130 KTAS) sit inside their bands: the power required at the bottom
-   of the bucket (about 42 % per engine at 60 KIAS, 2200 kg) is about 18 % below what the CB-5 chart's AEO climb implies,
-   and no listed knob moves it without moving the hover torque.
+2. **AEO climb is too strong** (`bo105Performance` KNOWN CLIMB GAP): 2,107 ft/min at 2200 kg and 1,637 at 2500 kg at
+   2 x 86 %, 60 KIAS, SL (plan 1,575 +/-20 % and 1,150-1,400). The OEI climb (+31 / +315 ft/min at 2500 / 2200 kg), hover
+   torque, Vy (60 KIAS) and maximum cruise (130 KTAS) sit inside their bands. Re-examined at the pilot review
+   (2026-10-21; docs/bo105-flight-model.md section 8), **no Bo 105 parameter closes it, and the power required is not the
+   cause**:
+   - the power required matches the one Bo 105 power-required curve in the sources (S: Kerler et al. ERF 2012 Fig 1,
+     after Kessler's TUM lecture; digitised): at 2300 kg the model needs 444 kW in the OGE hover (source 426), 256 kW at
+     60 KIAS (232), 275 / 333 / 433 / 500 kW at 80 / 100 / 120 / 130 KTAS (266 / 344 / 449 / 508). The bucket is 10 %
+     ABOVE the source, not below it;
+   - the model turns 83 % of the excess shaft power into climb (7.6 ft/min per kW at 2200 kg: 45 ft/min per % torque per
+     engine). The CB-5 chart (F: 1,900 ft/min at 2200 kg, 1,380 at 2500 kg) and Jane's (S: 1,575 ft/min, quoted beside
+     the 2,500 kg maximum mass in the Bo 105 CB data block) over the source's power curve imply 60-72 %;
+   - the plan's 2200 kg rows cannot both pass by moving the power required: the AEO band's top (1,890 ft/min) needs +4.8 %
+     per engine at the bucket, the OEI band's floor (+300 ft/min, now +315) allows +0.3 %;
+   - sweep (2500 kg OGE torque held at 82.7 % by refitting inducedFactor): profileCd 0.011 (inducedFactor 1.067) gives
+     a bucket of +1.8 % per engine, AEO 2,022 / 1,569, OEI +225 / -41 ft/min (2200 kg OEI out of band), 127.8 KTAS,
+     autorotation NR 104.8 %; profileCd 0.012 (1.039): +3.0 %, AEO 1,965 / 1,524, OEI +165 / -89, 126.4 KTAS, NR 103.2 %
+     (out of band). dragArea.z x 1.5 (the download): hover +1.7 %, bucket 0.
+   Closing it needs a climb-efficiency mechanism in the rotor core (RC) or restated bands (architect): Jane's 1,575 ft/min
+   plausibly belongs to 2,500 kg, where the model is +4 % from it.
 3. **Hover roll damping above the ESTIMATE band** (`bo105Derivatives` KNOWN HOVER-DAMPING GAP): hover Lp about -12.1 1/s
    (roll time constant 0.083 s) against -6..-10. With the harmonic inflow on, the hover roll damping rises by about the
    quasi-steady theory's 1/1.51 (RC docs section 8); at 80 kt Lp (-10.7) and the roll mode (10.9 1/s) are inside their
-   AR-280 bands. **No Bo 105 hover derivatives in the sources used**: Bo 105 hover identification results exist and were not
-   obtained (research-bo105 section 18 gap 3: Fu & Kaletka JAHS 1993 and the DLR/AFDD ERF 1989 paper, DTIC ADA216828; the
-   assessor also points to Kaletka / von Grünhagen, unverified), so every hover handling number is unvalidated until one
-   is. Note for the architect: plan section 4 says the hover inflow gradient "cuts" roll damping; measured on this
+   AR-280 bands. **No Bo 105 hover derivatives in the sources used.** The DLR/AFDD ERF 1989 paper (Kaletka, von
+   Grünhagen, Tischler, Fletcher, ERF 1989 paper 66; research-bo105 section 18 gap 3 lists it as DTIC ADA216828) was
+   obtained at the pilot review from the ERF repository (`W/sources/bo105/erf-1989-66/`): it identifies the 80 kt / 3000 ft
+   condition only (p 2), the AR-280 data already used. DTIC still refuses scripted downloads (HTTP 403). Fu & Kaletka
+   (JAHS 38-1, 1993) was not obtained (DLR elib holds no full text) and may cover the same 80 kt data. Every hover handling
+   number is unvalidated until a hover identification is found. Note for the architect: plan section 4 says the hover inflow gradient "cuts" roll damping; measured on this
    definition it raises it (2200 kg IGE: Lp -8.8 with the harmonic inflow off, -12.1 with it on), as RC's docs say.
 4. **Rotor/inflow limits carried from the rotor core** (RC docs section 10): Zw -0.68 1/s against the envelope's -0.70
    edge (a climb-rate settling time of about 1.5 s against DLR's 1.0 s after a collective step); the rate cross-coupling
@@ -39,13 +68,18 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 5. **Pedal step sideslip** (`bo105Handling` KNOWN SIDESLIP GAP): a 10 % pedal step at 80 KIAS peaks at 8.3 deg/s in 0.5 s
    and the yaw rate is under 3 deg/s by 2 s, as the plan asks, but the sideslip settles near 4 deg, not 5-8 (Nv 0.136
    1/(s m), inside the AR-280 envelope but above DLR's 0.117; the fins are not a knob).
-6. **Mast-moment marks are AGENT/ESTIMATE**: LIMIT 15.5 kN m, yellow from 0.17 of it (2.6 kN m), set from the plan's rows
-   as measured: slope landings at 2200 kg peak at 14.4 kN m (15 deg left-down) and 14.3 (8 deg right-down) with LIMIT
-   off, 16.7 (20 deg left-down) with LIMIT on; a smooth 2.5 g pull at 100 KIAS 3.1 kN m (yellow), a steady 60 deg turn at
-   100 KIAS 1.8 kN m (green), a full lateral reversal at 80 KIAS 13.3 kN m (yellow). Level flight reads 1.6 kN m at 100
-   KIAS and 4.8 kN m (yellow) at 145 KIAS. In flap terms (D): the hub moment per radian of TPP-to-shaft flap is
+6. **Mast-moment marks are AGENT/ESTIMATE**: LIMIT 15.5 kN m, yellow from 0.5 of it (7.75 kN m; the plan's 6.2 ratio),
+   set from the plan's rows as measured: slope landings at 2200 kg peak at 14.4 kN m (15 deg left-down) and 14.3 (8 deg
+   right-down) with LIMIT off (top third of yellow, above 12.9), 16.7 (20 deg left-down) with LIMIT on; a full lateral
+   reversal at 80 KIAS 13.3 kN m (yellow). Every steady trim in the legal envelope reads green: level flight 3.4 / 4.8 kN m
+   at 130 / 145 KIAS mid CG, 5.6 / 6.9 kN m at the 2200 kg aft CG limit (6.0 at 2400 kg aft, 145 KIAS), 2.9 kN m in a
+   forward-CG hover; a smooth 2.5 g pull at 100 KIAS 3.1 kN m and a steady 60 deg turn 1.8 kN m (green). **Pilot review
+   (2026-10-21)**: the yellow had been at 0.17 (2.6 kN m), which put ordinary cruise in yellow (mid CG from about 119
+   KIAS, aft CG from 60 KIAS) while the 2.5 g pull read less than 130 KIAS level flight; the needle follows the
+   TPP-to-shaft tilt (hub moment), not g. The plan's ESTIMATE row "a 2.5 g pull reaches yellow" was restated to "stays
+   green" (AGENT; `bo105Handling` mast-moment rows). In flap terms (D): the hub moment per radian of TPP-to-shaft flap is
    (B/2)(e M_beta Omega^2 + K_beta) = 2 x (0.590 x 50.03 x 1976 + 8,685) = 134 kN m/rad, 2.34 kN m/deg, so **LIMIT is
-   6.6 deg of equivalent flap** and yellow starts at 1.1 deg; the plan's estimate was LIMIT at about 16-17 deg (about 40 kN
+   6.6 deg of equivalent flap** and yellow starts at 3.3 deg; the plan's estimate was LIMIT at about 16-17 deg (about 40 kN
    m), which assumed a disc held level on a 15 deg slope. The fitted lateral travel (+/-4.125 deg of blade cyclic, item 1)
    caps the slope-landing hub moment near 14.4 kN m, so it set the LIMIT: **the "% = % of full travel" assumption is the
    lever** (twice the lateral travel would roughly double the slope peaks and the LIMIT with them). The hub stiffness is
@@ -110,6 +144,17 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    left, torque 80.6 / 80.6 %, TOT 738 C (W/shots/BO/bo105-hover-ap.png); heliHold position RMS 0.07 m calm, 2.3-2.5 m in
    8 kt gusts, no disconnect. A hingeless hover doubling in 2-4 s is the right order for the class, but nothing is tuned
    until DLR's hover derivatives are sourced; how fast the Bo 105 diverges is the owner's judgement.
+   **Pilot review (2026-10-21)**: a delayed test pilot (attitude gains 1.2 per rad and 0.6 per rad/s, the state read tau s
+   late; 2200 kg IGE, calm 15 s then an 8 kt side gust; W/probes/pilot-bo `hover`, `extra2`, `tune-inflow`) holds the
+   hover up to tau 0.5 s and loses it at 0.6 s (23 s); at half the attitude gain it is lost at every tau, in calm air too
+   (tau 0: 43 s; 0.75 x gain holds within 0.3-1.1 m). The MD 500E on the same pilot holds at half gain to tau 0.4 s. With
+   the harmonic inflow OFF (the sensitivity switch `BO105_HUB_SET.harmonicInflow`) the half-gain pilot holds at tau 0 and
+   0.3 s (drift 3.8-4.0 m) and is lost from 0.5 s; the full-gain pilot then holds only to 0.3 s (lost at 0.5 s, 39 s):
+   the inflow's extra roll damping helps a firm pilot, its doubled Mu / Lv defeat a gentle one. Not a Bo 105 parameter:
+   the term is RC's one-way harmonic inflow (`inflowHarmonic.ts`: no wake-curvature or pitch-moment feedback into the
+   inflow, RC docs section 10), which plan section 4 expected to cut hover damping and here raises it (item 3); switching
+   it off loses the 80 kt Lq / Mp rows (Lq +2.07 -> +0.37, below its +1.5 floor). Kept ON (the binding fitting rule);
+   the app's hover hold (`&ap=1`) remains the way to fly the hover scenario hands off.
 18. **Hold autopilot on the Bo 105** (TW's `sim/rotorcraft/autopilot.ts`, tuned on the other types): the heliHold
    sequence overshoots its 40 kt speed step by 12 kt and settles in 28-30 s; heading steps overshoot 6.6-9.5 deg.
 19. **Rows that pass at their band edges** (no slack; owner judgement on each): 80 kt Lp -10.67 (edge -11.41), roll mode
@@ -120,7 +165,12 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    fixture, not on this set) and an 80 kt phugoid that doubles in 8.7 s (zeta -0.20 at 0.39 rad/s) against DLR's 14 s
    (zeta -0.15 at 0.33, P AR-280 Table 6.2.13). Ground effect sits at the strong edge too: HIGE - HOGE 3,100 ft at 2500 kg
    against the CB-5 chart's 2,350. The CG 1.53 m below the hub (item 9; METU/Theodore 0.96 m) is the first thing to
-   cross-check against Padfield's Bo 105 data before the inertia is touched again.
+   cross-check against Padfield's Bo 105 data before the inertia is touched again. Inertia sweep at the pilot review
+   (2026-10-21; Lp / roll mode / M_lon per % / autorotation-entry NR minimum with a 1 s delay at 100 KIAS):
+   850 kg m^2 -10.67 / 10.85 / 0.0933 / 73.1 %; 925 -12.04 / 12.06 / 0.0990 / 74.7 %; 950 -12.50 / 12.45 / 0.1008 /
+   75.2 %; 1000 -13.42 / 13.20 / 0.1044 / 76.1 %. Every step above 850 puts Lp and the roll mode outside their AR-280
+   envelopes (-11.41, 11.04) and M_lon outside its +/-5 % fit; the sourced Lock number (F METU Table 9: 5.54, about 840
+   kg m^2 at a = 6.0) supports 850. Kept (item 22).
 20. **Hover pedal authority is unvalidated and strong**: a full pedal step in the IGE hover (2200 kg) peaks at **165 deg/s
    right and 129 deg/s left** (90 deg/s reached in 0.93 / 1.46 s) against the FM's 90 deg/s turn-rate limit; the test
    asserts only >= 90 deg/s within 3 s. With N_ped fitted at 80 kt (0.049 rad/s^2 per %) and hover Nr -0.54 1/s the
@@ -128,6 +178,17 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 21. **The mass envelope's 1140 kg minimum is unreachable**: the TCDS minimum (P, facts.ts) sits 136 kg below this
    airframe's empty mass (1276 kg, S Jane's CB), so the CG envelope's 1140 kg point is data only; the lightest rig case is
    1400 kg. A CB-4 weighing record would settle it.
+22. **Autorotation entry leaves little NR margin for a slow hand** (pilot review, 2026-10-21; W/probes/pilot-bo
+   `tune-inertia`). Both levers OFF at 100 KIAS, 2200 kg (2 x 54.6 %), the pilot holding speed: collective lowered at once
+   over 1 s: NR minimum 84.4 % at 2.9 s (over 0.5 s: 87.4 %); 0.3 s reaction then 0.7 s: 82.2 %; held 0.5 s then lowered
+   over 1 s: 78.1 %; held 1.0 s: 73.1 % (below 90 % at 0.6 s, 85 % at 1.0 s; 100 % again at 5.6 s, overshoot 110.9 %);
+   1.5 s: 69.3 %; 2.0 s: 66.7 %. At 120 KIAS: 82.3 / 74.6 / 69.1 % after 0.5 / 1.0 / 1.5 s; at 60 KIAS with 1 s: 81.1 %;
+   2500 kg within 1 % of these. The double-engine-failure decay row (collective held at 120 KIAS: 95 % at 0.22 s, 85 % at
+   0.73 s) is inside its D bands. The energy is consistent (840 kJ in the rotor at 850 kg m^2 against 325 kW, a decay
+   of about 19 %/s), so the polar inertia is the only parameter, and it is held at 850 by the sourced Lock number and
+   the AR-280 rows (item 19: 925 kg m^2 would lift the 1 s case by 1.6 % NR). The rest is technique: lower the collective
+   within about 0.5 s (training text: a request to PN, which owns `bo105/training.ts` and `checklists.ts`; the double
+   engine failure checklist already reads "Full down at once"). Owner judgement on the rotor's feel.
 
 ## Integration (feat/rigid-rotor, Bo 105 stage 1)
 
@@ -212,7 +273,8 @@ From PN (panel, `docs/bo105-panel.md` "Compromises"):
 - The hub set: e 0.12 R, nu 1.11, polar inertia 850 kg m^2 (inside the fitting rule's band, at its lower edge; 900 put Lp
   and the roll mode outside their AR-280 bands on this airframe; costs in item 19), control phase 28 deg (least squares to
   AR-280's off-axis ratios).
-- The mast-moment marks (item 6) and the stabiliser slope 3.0 (item 15, chosen to bring Mw to its band edge).
+- The mast-moment marks (item 6: LIMIT 15.5 kN m, yellow from 0.5 of it since the pilot review, so that steady flight in
+  the legal envelope reads green) and the stabiliser slope 3.0 (item 15, chosen to bring Mw to its band edge).
 - The control-travel rigging offsets (item 1), the ground attitude 1.25 deg nose-up (P5 FM Fig 1-1's 1.5 deg dimension
   read as nose-up), the keyboard aileron key (baseRate 0.07, maxRate 0.35, accelTime 1.5: a 1 s tap at 80 KIAS gives
   about 11 deg of bank 2 s after the release).

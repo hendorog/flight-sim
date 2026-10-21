@@ -90,10 +90,16 @@ export const BO105_HUB_SET = {
  *    20 deg left-down at 16.7 kN m (LIMIT on). The slope peaks are set by the lateral cyclic stop (about 4.1 deg each way,
  *    fitted to AR-280): the plan's "LIMIT at about 16-17 deg of TPP-to-shaft tilt" (about 40 kN m) assumed a disc held
  *    level on a 15 deg slope, which the fitted travel cannot do;
- *  - yellow from 0.17 of it (2.6 kN m): a smooth 2.5 g pull at 100 KIAS peaks at 3.1 kN m (yellow), a steady 60 deg turn at
- *    100 KIAS (2.15 g) at 1.8 kN m (green), a full lateral stick reversal at 80 KIAS at 13.3 kN m (yellow, not LIMIT); the
- *    slope landings then sit in the top third of yellow (above 11.2 kN m). Level flight reads 1.6 kN m at 100 KIAS
- *    and 4.8 kN m (yellow) at 145 KIAS, 2200 kg mid-CG.
+ *  - yellow from 0.5 of it (7.75 kN m; plan 6.2 "yellow from the ratio about 0.5", section 0 item 5): every steady
+ *    trim in the legal envelope reads green. The highest steady reading is level flight at the aft CG limit: 2200 kg
+ *    5.6 kN m at 130 KIAS (about the maximum level speed at MCP) and 6.9 kN m at 145 KIAS (Vne); 2400 kg aft 6.0 kN m at
+ *    145 KIAS; mid CG 3.4 / 4.8 kN m at 130 / 145 KIAS; a forward-CG hover 2.9 kN m. Manoeuvres: a smooth 2.5 g pull at
+ *    100 KIAS peaks at 3.1 kN m and a steady 60 deg turn at 100 KIAS (2.15 g) at 1.8 kN m (both green), lateral steps of
+ *    10-50 % of travel at 80 KIAS 1.2-6.1 kN m (green), a full lateral stick reversal at 80 KIAS 13.3 kN m (yellow, not
+ *    LIMIT); the slope landings sit in the top third of yellow (above 12.9 kN m). Before (pilot review, 2026-10-21):
+ *    yellow from 0.17 (2.6 kN m) put ordinary mid-CG cruise in yellow from about 119 KIAS (2.68 kN m at 120 KIAS) and the
+ *    aft-CG trims from 60 KIAS (2.65 kN m), while the 2.5 g pull read less than 130 KIAS level flight: the needle follows
+ *    the TPP-to-shaft tilt (the hub moment), not g.
  * docs/bo105-flight-model.md "Mast moment".
  */
-export const BO105_MAST_MOMENT = { limit: 15_500, yellow: 0.17 } as const;
+export const BO105_MAST_MOMENT = { limit: 15_500, yellow: 0.5 } as const;
