@@ -65,9 +65,10 @@ flaps by bending its glass-fibre root:
   position and root twist, and every vertex outboard of the bend lands exactly on the rigid blade transform (tested to
   2e-6 m), so there is no step at the root.
 - **Drawn virtual hinge.** The straight outboard blade, extended inboard, crosses the hub plane at
-  `e + (L/β) tan(β/2)` ≈ `e + L/2` = 0.836 m (0.17 R), inside the top of the literature's 12–15 % band once the hub's
-  own `e` replaces 0.12 R. Against a rigid blade hinged at `e` the drawn tip sits (L/2) sin β lower: 1.3 cm at 3° of
-  coning, 2.1 cm at 5°. The disc and the blade trail use the same virtual hinge.
+  `e + (L/β) tan(β/2)` ≈ `e + L/2` = 0.836 m (0.17 R). That is ABOVE the literature's 12–15.2 % band: the physics
+  hinge stays at `e`; only the drawing's virtual hinge is outboard of it (the plan's "bent over 0.1 R past the
+  equivalent-offset station" read literally). Against a rigid blade hinged at `e` the drawn tip sits (L/2) sin β lower:
+  1.3 cm at 3° of coning, 2.1 cm at 5°. The disc and the blade trail use the same virtual hinge.
 - **Swashplate.** Its tilt is `swashplateCyclic(def, controls, state)` (the one swashplate law: the stick law rotated
   by the hingeless `controlPhase`, or the gyro's cyclic), never the stick alone; the test builds a hingeless
   definition with a 0.3 rad control phase and checks that the plate follows the law and not the raw stick. The plate
@@ -141,7 +142,8 @@ controls; the Policía CB photograph shows them):
 ## Shots (`work/rigid/shots/BX/`)
 
 `bo105-sheet`, `-side`, `-front`, `-rear`, `-34`, `-top`, `-tail`, `-head`, `-head-turning`, `-cockpit`,
-`-viewout` (plan §11), plus `-head-close`, `-head-turning-close` (fov 12), `-head-bend` (100 rpm, so the bent roots
+`-viewout` (plan §11; at 424 rpm `-head-turning` is a blurred disc by the renderer's perceptual blur, blades solid
+only below about 107 rpm), plus `-head-close`, `-head-turning-close` (fov 12), `-head-bend` (100 rpm, so the bent roots
 show before the blades blur), `-cockpit-levers` (the overhead power levers) and `proposal-tail-*` (the requested
 tail-rotor height, rendered from an uncommitted local edit of dimensions.ts).
 
@@ -180,7 +182,10 @@ the 0570b rotor head for the hub; Christoph 7, Policía CB and schoschie for the
 2. The S0 definition's pilot eye is the MD 500E's (request 1); the cockpit camera uses the Bo 105's.
 3. Blade droop at rest uses the provisional MD 500E coning data under the Bo 105 name (`BO105_BLADE_CONING`, BO): a
    free hinge on a −2° droop stop, not the hingeless root's precone and bending.
-4. The drawn virtual hinge is e + L/2 ≈ 0.17 R (tip ≤ 2 cm lower than a rigid blade at e at 5° coning).
+4. The drawn virtual hinge is e + L/2 ≈ 0.17 R, above the 12–15.2 % band (the physics hinge stays at e; the drawn
+   tip is ≤ 2.1 cm lower than a rigid blade hinged at e at 5° coning).
+8. From the right seat the A-post / crew-door front frame subtends about 12° of the view to the right (geometry as
+   built from the photographs); owner judgement on the sightline.
 5. Hub hardware proportions, the endplates' vertical split, the pitot position, the deck intakes and louvres and the
    cockpit furniture are photographic ESTIMATES; no dimensioned drawing was found.
 6. The outer roof is 2.055 m (dimensions.ts CABIN_ROOF_HEIGHT 2.02 m is read as the lining) so the frozen overhead
