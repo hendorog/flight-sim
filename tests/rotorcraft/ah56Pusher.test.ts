@@ -250,6 +250,9 @@ describe('C13: delta-beta (P ASTA-72 paras 66-67)', () => {
   it('engine chop at 150 KCAS with the blades at 25 deg: +18 deg within 1.5 s', () => {
     const r = rigOn(fixedBeta(25), { kt: 150 });
     expect(pusherOf(r).beta / DEG).toBeCloseTo(25, 6);
+    // Armed: the prop draws far more than the sensor's floor.
+    const propTorque = pusherOf(r).torque;
+    expect(propTorque).toBeGreaterThan(p.deltaBeta.armTorque!);
     r.c.throttle = 0;
     let t18 = NaN, t = 0, latched = NaN;
     run(r, 3, () => {
@@ -257,7 +260,8 @@ describe('C13: delta-beta (P ASTA-72 paras 66-67)', () => {
       if (Number.isNaN(latched) && pusherOf(r).deltaBeta) latched = t;
       if (Number.isNaN(t18) && pusherOf(r).beta <= 18.05 * DEG) t18 = t;
     });
-    report('C13 delta-beta 150 KCAS', { latchedS: latched, at18S: t18, betaAt3sDeg: pusherOf(r).beta / DEG, target: '<= 1.5 s' });
+    report('C13 delta-beta 150 KCAS', { latchedS: latched, at18S: t18, betaAt3sDeg: pusherOf(r).beta / DEG, propTorqueAtChopNm: propTorque,
+      target: '<= 1.5 s' });
     trace.C13a = { latched, t18 };
     expect(t18).toBeLessThanOrEqual(1.5);
     expect(pusherOf(r).beta / DEG).toBeCloseTo(18, 1);
@@ -276,6 +280,23 @@ describe('C13: delta-beta (P ASTA-72 paras 66-67)', () => {
       betaAt5sDeg: pusherOf(r).beta / DEG, target: '60-75 % (P 68 %)' });
     trace.C13b = { nr5: g.nr, minNr };
     expect(g.nr).toBeGreaterThanOrEqual(60); expect(g.nr).toBeLessThanOrEqual(75);
+  });
+
+  it('an engine shutdown at the hover detent does not latch it (the sensor arms above 1,600 N m of prop torque): on the ground and in the hover', () => {
+    const out: Record<string, number | boolean> = {};
+    for (const where of ['ground', 'hover'] as const) {
+      const r = rigOn(AH56_DEFINITION, where === 'ground' ? { onGround: true } : { kt: 0 });
+      const torque0 = pusherOf(r).torque;
+      r.c.throttle = 0;
+      let latched = false, minDrive = Infinity;
+      run(r, 5, () => { latched ||= pusherOf(r).deltaBeta; minDrive = Math.min(minDrive, r.fm.state.rotorcraft!.driveTorque); });
+      out[`${where}PropTorqueNm`] = torque0; out[`${where}MinDriveTorqueNm`] = minDrive; out[`${where}Latched`] = latched;
+      expect(torque0).toBeGreaterThan(0);
+      expect(torque0).toBeLessThan(p.deltaBeta.armTorque!);
+      expect(latched).toBe(false);
+    }
+    report('C13 shutdown at the detent', { ...out, armTorqueNm: p.deltaBeta.armTorque! });
+    trace.C13detent = out;
   });
 
   it('it does not latch in steady powered flight: 30 s at 190 KTAS on the schedule, the pilot holding speed and attitude', () => {
@@ -422,10 +443,21 @@ describe('C22: hover attitude by the prop blade angle (P ASTA-72 paras 24, 30, 3
       minus6PitchChangeDeg: dm6.pitch - d0.pitch };
     report('C22 hover over the spot by blade angle', { ...rows, planRow: 'plan C22 states 3-6 deg nose DOWN for +4 deg (sign conflict: ASTA-72 para 30 holds rearward flight level with REVERSE thrust)' });
     trace.C22spot = rows;
+    spot = rows;
     expect(d4.pitch - d0.pitch).toBeGreaterThan(0.5 * rows.predictedDeg);
     expect(d10.pitch).toBeGreaterThan(d4.pitch);
     expect(dm6.pitch).toBeLessThan(d0.pitch);
   });
+
+  // AGENT deviation from plan C22 (recorded in docs/ah56-compound.md, deviations): the plan's "3-6 deg nose DOWN" for +4 deg
+  // re-trimmed over the spot has the force balance backwards (the sense rows above assert the physics). The plan's stick size
+  // is kept as written.
+  it.fails('C22 KNOWN GAP (ESTIMATE size): +4 deg re-trimmed over the spot takes 0.3-0.8 in of aft stick', () => {
+    // 0.07 in: the AMCS stick commands a rate; the steady stick is the moment balance, and the 2.6 deg of attitude costs little.
+    expect(spot!.plus4StickIn).toBeGreaterThanOrEqual(0.3); expect(spot!.plus4StickIn).toBeLessThanOrEqual(0.8);
+  });
+  let spot: { plus4StickIn: number } | undefined;
+  let held: { up: { pitchChange: number; groundKt: number }; down: { pitchChange: number; groundKt: number } } | undefined;
 
   it('cyclic held: +10 deg pitches the nose down from the 0.5 m thrust-line arm (2-5 deg in 5 s); -6 deg nose up and a rearward drift', () => {
     const go = (deg: number) => {
@@ -440,8 +472,21 @@ describe('C22: hover attitude by the prop blade angle (P ASTA-72 paras 24, 30, 3
     report('C22 cyclic held', { plus10PitchChangeDeg: up.pitchChange, plus10GroundKt: up.groundKt, minus6PitchChangeDeg: down.pitchChange,
       minus6GroundKt: down.groundKt, target: '+10: nose down 2-5 deg; -6: nose up 2-4 deg, drifting rearward' });
     trace.C22held = { up, down };
+    held = { up, down };
     expect(up.pitchChange).toBeLessThan(0);
     expect(down.pitchChange).toBeGreaterThan(0);
     expect(down.groundKt).toBeLessThan(0);
+  });
+
+  it('cyclic held, +10 deg: the nose down 2-5 deg in 5 s (ESTIMATE size)', () => {
+    expect(-held!.up.pitchChange).toBeGreaterThanOrEqual(2); expect(-held!.up.pitchChange).toBeLessThanOrEqual(5);
+  });
+
+  it.fails('C22 KNOWN GAP (ESTIMATE size): cyclic held, -6 deg: nose up 2-4 deg and a rearward drift of 10-15 kt in 5 s', () => {
+    // 1.9 deg nose up and 4.5 kt rearward (the hover-wake sign fix of the wing took the drift from 4.9 to 4.5 kt): the reverse
+    // thrust (-2.9 kN static) is 3.6 % of the weight, which accelerates the aircraft by about 0.035 g, about 3.4 kt in 5 s
+    // before drag: 10-15 kt in 5 s needs about 0.1-0.15 g (D), three to four times the prop's static reverse thrust.
+    expect(held!.down.pitchChange).toBeGreaterThanOrEqual(2); expect(held!.down.pitchChange).toBeLessThanOrEqual(4);
+    expect(-held!.down.groundKt).toBeGreaterThanOrEqual(10); expect(-held!.down.groundKt).toBeLessThanOrEqual(15);
   });
 });

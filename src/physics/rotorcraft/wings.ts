@@ -83,11 +83,15 @@ export function wingLoads(wings: readonly WingPanelDef[], b: BodyState, air: Vec
     // The panel's downward normal tilts inboard with dihedral: (0, side sin G, cos G).
     const sn = w.side * Math.sin(w.dihedral), cs = Math.cos(w.dihedral);
     const normal = flow.y * sn + flow.z * cs, speed = Math.max(Math.hypot(flow.x, normal), 1e-6);
-    const p = panelCoefficients(w, Math.atan2(normal, Math.abs(flow.x)) + w.incidence);
+    // The full-range geometric angle: in the hover wake (flow.x about 0) and in rearward flight the panel meets the flow at
+    // -78 .. -110 deg and lands on the flat plate (the attached branch is blended out), whose cn sin(alpha) cos(alpha) is
+    // periodic in 180 deg, so a reversed flow sees the incidence with its own sign. No |flow.x| or sign(flow.x): the
+    // download's chordwise part (+x for this leading-edge-up panel) must not follow the sign of a small airspeed.
+    const p = panelCoefficients(w, Math.atan2(normal, flow.x) + w.incidence);
     const q = 0.5 * density * speed * speed * w.area;
-    // Lift normal to the flow in the chord-normal plane, drag along it (the stabiliser's resolution, airframe.ts).
-    const fn = q * (-p.cl * Math.abs(flow.x) - p.cd * normal) / speed;
-    power += add(w.centre, { x: q * (p.cl * Math.sign(flow.x) * normal - p.cd * flow.x) / speed, y: fn * sn, z: fn * cs });
+    // Lift normal to the flow in the chord-normal plane, (normal, -flow.x) / speed, drag along -flow.
+    const fn = q * (-p.cl * flow.x - p.cd * normal) / speed;
+    power += add(w.centre, { x: q * (p.cl * normal - p.cd * flow.x) / speed, y: fn * sn, z: fn * cs });
     if (w.tail && flow.x > 0) {
       const t = w.tail, u = flow.x, fade = u * u / (u * u + t.fadeSpeed * t.fadeSpeed);
       const lost = 0.5 * density * u * u * t.area * t.liftSlope * t.gradient * p.cl / 2 * fade;

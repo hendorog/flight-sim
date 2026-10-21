@@ -52,8 +52,12 @@ export interface PusherDef {
    * The model's sensor: the engine's torque at the rotor (RotorcraftState.driveTorque) below `torqueDropFraction` x the
    * prop's rotor-referred torque latches it (the prop would be drawing the rotor down); it releases once the engine
    * carries the prop again (driveTorque above it). It runs on the flight's clock only (the trim holds it off).
+   * `armTorque` (prop shaft N m): the sensor arms only while the prop draws more than this, so an engine shutdown with the
+   * blades at the hover detent (the prop absorbing about 1,060 N m, 252 shp, static) does not latch it; absent: always armed.
+   * The P system senses main-rotor shaft torque AND load factor (ASTA-72 paras 66-67); the load-factor channel is not
+   * modelled (docs/ah56-compound.md section 8).
    */
-  deltaBeta: { torqueDropFraction: number; forwardTarget: number; reverseTarget: number; rate: number };
+  deltaBeta: { torqueDropFraction: number; forwardTarget: number; reverseTarget: number; rate: number; armTorque?: number };
   /** Main-rotor wake at the prop disc, fraction of the rotor's mean inflow, faded with speed as the tail rotor's
    *  (ESTIMATE). */
   wake: number;
@@ -129,7 +133,8 @@ export class PusherDrive {
         s.betaCommand = Math.max(p.beta.creep.above, s.betaCommand - p.beta.creep.rate * dt);
       if (clock) {
         const propShaft = s.torque * p.ratio;
-        if (!s.deltaBeta && propShaft > 0 && rs.driveTorque < p.deltaBeta.torqueDropFraction * propShaft) s.deltaBeta = true;
+        const armed = s.torque > (p.deltaBeta.armTorque ?? 0);
+        if (!s.deltaBeta && armed && propShaft > 0 && rs.driveTorque < p.deltaBeta.torqueDropFraction * propShaft) s.deltaBeta = true;
         else if (s.deltaBeta && rs.driveTorque > 0 && rs.driveTorque >= Math.abs(propShaft)) s.deltaBeta = false;
       }
       const limited = s.deltaBeta ? clamp(s.betaCommand, p.deltaBeta.reverseTarget, p.deltaBeta.forwardTarget) : s.betaCommand;
@@ -142,7 +147,9 @@ export class PusherDrive {
     const arm = v3.sub(p.hub, b.cgOffset), w = b.angularVelocity, hub = this.air;
     hub.x = air.x + w.y * arm.z - w.z * arm.y;
     hub.y = air.y + w.z * arm.x - w.x * arm.z;
-    hub.z = air.z + w.x * arm.y - w.y * arm.x + p.wake * rs.inflow / (1 + (air.x / 18) ** 2);
+    // The wake moves the air DOWN past the disc, so the hub moves UP through it: -wake in z (as wings.ts and the tail
+    // rotor's tailAir.z - wakeAtTail).
+    hub.z = air.z + w.x * arm.y - w.y * arm.x - p.wake * rs.inflow / (1 + (air.x / 18) ** 2);
     const propOmega = Math.max(0, omega) * p.ratio;
     // Propeller.evaluate takes the AIR's velocity relative to the hub.
     hub.x = -hub.x; hub.y = -hub.y; hub.z = -hub.z;

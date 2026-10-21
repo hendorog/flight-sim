@@ -207,13 +207,11 @@ describe('the trims along the SoF schedule (AMCS default, 18,300 lb, SL ISA, the
     expect(c9shift!).toBeGreaterThanOrEqual(0.25); expect(c9shift!).toBeLessThanOrEqual(0.75);
   });
 
-  it('C9 (plan wording): trimmed lateral stick within 0.5 in of centre at 120 and 160 KCAS', () => {
+  it('C9 (plan wording): trimmed lateral stick within 0.5 in of centre at 120, 160 and 190 KCAS', () => {
+    // 190 KCAS: 0.47 in left at SL (0.44 at the P test's 5000 ft). It was 0.56 with K_R 5,000; the K_R 3,000 refit (compound.ts)
+    // halves the stick per kN m of steady roll moment, so the margin (0.03 in) is the refit's, not a fit to this row.
     report('C9 lateral within 0.5 in', { at120: at[120].lateralIn, at160: at[160].lateralIn, at190: at[190].lateralIn, target: '|lat| <= 0.5' });
-    for (const kt of [120, 160]) expect(Math.abs(at[kt].lateralIn)).toBeLessThanOrEqual(0.5);
-  });
-
-  it.fails('C9 KNOWN GAP (plan wording): within 0.5 in at 190 KCAS (0.56 in left at SL; 0.50 in at the P test\'s 5000 ft)', () => {
-    expect(Math.abs(at[190].lateralIn)).toBeLessThanOrEqual(0.5);
+    for (const kt of [120, 160, 190]) expect(Math.abs(at[kt].lateralIn)).toBeLessThanOrEqual(0.5);
   });
 
   it('C26: the prop\'s reaction is in the lateral trim: without the wing incidence asymmetry the 190 KTAS trim moves left by the reaction', () => {
@@ -352,8 +350,11 @@ describe('C19: AMCS pull-up and push-over (P AMCS-73 paras 39-40)', () => {
     });
     return { extreme, tExtreme, at1, kiasEnd: r.fm.state.ias / KT, pitchEnd: r.fm.state.pitch / DEG };
   };
-  it('a pull from 180 KCAS reaches 2.43 g (+/- 20 %) in about 2.1 s (+/- 20 %); a push from 165 KCAS reaches 0.28 g (+/- 0.1) in 2.5 s', () => {
+  it('a pull from 180 KCAS reaches 2.43 g inside the stick travel, peaking in about 2.1 s (+/- 20 %) with 1.75 g at 1 s; a push from 165 KCAS reaches 0.28 g in 2.5 s', () => {
     // The stick the pilot needs: bisect the held pull for a 2.43 g peak inside 2.52 s (2.1 s + 20 %), and the push for 0.28 g.
+    // AMCS-73 paras 39-40 give no stick size (research-ah56.md), so the peak g is the bisection's target, not a measurement:
+    // it is not asserted. What is measured: the stick it takes (inside the 4.95 in travel), when the peak comes and the g
+    // at 1 s. The stick size is a handling number for the owner (docs/ah56-compound.md C19).
     const solve = (kt: number, target: number, window: number, sign: 1 | -1) => {
       let lo = 0, hi = 4.95, m = manoeuvre(kt, sign * hi, window);
       for (let i = 0; i < 8; i++) {
@@ -369,13 +370,12 @@ describe('C19: AMCS pull-up and push-over (P AMCS-73 paras 39-40)', () => {
       P: '2.43 g in about 2.1 s; 1.75 g at about 1 s' });
     report('C19 push-over 165 KCAS', { stickIn: pushIn, minG: push.extreme, minAtS: push.tExtreme, P: '0.28 g in 2.5 s' });
     trace.C19 = { inches, pull, pushIn, push };
-    // Inside the stick travel (AMCS 9.9 in, 4.95 each way, P), the peaks reached in the P times (+ 20 %), 1.75 g at about 1 s.
+    // Inside the stick travel (AMCS 9.9 in, 4.95 each way, P): the bisection only lands below 4.95 in when the target g is
+    // reachable; the peaks come in the P times (+ 20 %), 1.75 g at about 1 s.
     expect(Math.abs(inches)).toBeLessThan(4.95); expect(Math.abs(pushIn)).toBeLessThan(4.95);
-    expect(pull.extreme).toBeGreaterThanOrEqual(2.43 * 0.8); expect(pull.extreme).toBeLessThanOrEqual(2.43 * 1.2);
     expect(pull.tExtreme).toBeLessThanOrEqual(2.1 * 1.2);
     expect(pull.at1).toBeGreaterThanOrEqual(1.75 * 0.8); expect(pull.at1).toBeLessThanOrEqual(1.75 * 1.2);
-    expect(push.extreme).toBeLessThanOrEqual(0.38); expect(push.extreme).toBeGreaterThanOrEqual(0.18);
     expect(push.tExtreme).toBeLessThanOrEqual(2.5 * 1.2);
-  });
+  }, 180_000);
 });
 

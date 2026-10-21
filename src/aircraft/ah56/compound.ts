@@ -209,6 +209,10 @@ export const AH56_PUSHER: PusherDef = {
     forwardTarget: AH56_PROP_BETA_DEG.deltaBetaForward * DEG, reverseTarget: AH56_PROP_BETA_DEG.deltaBetaReverse.amcs * DEG,
     // ESTIMATE: 15 deg/s (C13: 25 -> 18 deg within 1.5 s, P).
     rate: 15 * DEG,
+    // ESTIMATE: armed above 1,600 N m of prop shaft torque (about 390 shp at 1717 rpm, 1.5 x the static hover detent's 1,060 N m,
+    // under half C13's 3,420 N m at 25 deg and 150 KCAS), so an engine shutdown at the detent (on the ground or in the hover)
+    // does not latch it.
+    armTorque: 1600,
   },
   // ESTIMATE: the tail rotor's wake factor (base.ts / rotorcraft.ts, 0.35 of the mean inflow, faded with speed).
   wake: 0.35,
@@ -230,15 +234,18 @@ export const AH56_PUSHER: PusherDef = {
 /**
  * The AMCS refit on the compound (stage 4; AG's docs/control-gyro-model.md section 6 calls it mandatory: the wing, the
  * pusher and the unloaded rotor take the 150 KCAS pitch response from 4.27 to 3.81 deg/s/in with AG's 7,500 N m/rad and
- * 811 N m). Only the two numbers AG fitted move: the flapping feedback gain K_R 7,500 -> 5,000 N m/rad and the full
- * longitudinal stick moment 811 -> 715 N m (FITTED to G5 / C18 on the compound; the grid is in docs/ah56-compound.md):
- * pitch 6.09 / 4.90 / 4.26 / 3.80 deg/s/in at 0 / 100 / 150 / 180 KCAS, sensitivity 11.6 / 10.8 deg/s^2/in at 0 / 100;
- * roll 14.8 / 15.5 / 15.3 / 15.3 deg/s/in, 61.8 / 63.0 / 61.4 deg/s^2/in at 0 / 150 / 180. The model's sensitivity per unit
- * response stays 1.9 /s (AMCS-73's 9 / 6 is 1.5 /s), so no pair reaches 4.2 deg/s/in at 180 KCAS with the hover
- * sensitivity under 11.7 (C18's KNOWN GAP).
+ * 811 N m). Only the two numbers AG fitted move: the flapping feedback gain K_R 7,500 -> 3,000 N m/rad and the full
+ * longitudinal stick moment 811 -> 590 N m (FITTED to G5 / C18 on the compound; the grid is in docs/ah56-compound.md
+ * section 5): pitch 5.94 / 4.85 / 4.34 / 3.93 deg/s/in at 0 / 100 / 150 / 180 KCAS, sensitivity 11.4 / 10.2 deg/s^2/in at
+ * 0 / 100; roll 15.6 / 16.7 / 16.7 / 16.6 deg/s/in, 65.2 / 66.9 / 65.4 deg/s^2/in at 0 / 150 / 180. The model's
+ * sensitivity per unit response stays about 1.9 /s (AMCS-73's 9 / 6 is 1.5 /s); a lower K_R lowers the hover sensitivity
+ * per unit of 150 KCAS rate (2.82 at 5,000, 2.60 at 3,000), so 3,000 holds both G5 edges with 2.6 % / 3.3 % margins (hover
+ * sensitivity under 11.7, 150 KCAS rate over 4.2). No pair reaches 4.2 deg/s/in at 180 KCAS with the hover sensitivity under
+ * 11.7 (C18's KNOWN GAP). AGENT fit: these AMCS numbers override AG's gyro.ts (integrator: move them there with the compound
+ * as the fitting condition, or point gyro.ts at this override).
  */
-export const AMCS_FLAP_FEEDBACK = 5000;
-export const AMCS_LONGITUDINAL_STICK_MOMENT = 715;
+export const AMCS_FLAP_FEEDBACK = 3000;
+export const AMCS_LONGITUDINAL_STICK_MOMENT = 590;
 
 const gyro = AH56_GYRO!;
 export const AH56_COMPOUND_GYRO: ControlGyroDef = { ...gyro, configs: {
