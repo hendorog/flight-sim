@@ -5,7 +5,7 @@
 // ESTIMATE rows are the plan's (no source gives these transients); P = sense from the FM. TWIN_TRACE=<dir> writes the
 // report. BO runs this file on the real Bo 105 definition once it lands (plan 10, BO guard list).
 import { afterAll, describe, expect, it } from 'vitest';
-import { DT, TWIN_DEF_MD500_ENGINE, attitudePilot, gauges, lever, LEVER, massForTorque, rig, run, writeTrace, type TwinRig } from './twinRig';
+import { DT, TWIN_DEF_MD500_ENGINE, attitudePilot, gauges, lever, LEVER, massForTorque, rig, run, twin, writeTrace, type TwinRig } from './twinRig';
 
 const report: Record<string, unknown> = {};
 /** T7c: the surviving engine over every OEI run in this file (each run also asserts it: expectSurvivor). */
@@ -236,7 +236,8 @@ describe('engine starts and the run-up (T8, T14, T15)', () => {
       expect(o.t98).toBeGreaterThan(0); expect(o.t98).toBeLessThanOrEqual(ramp + 10);
       expect(o.peak).toBeLessThanOrEqual(102);
       expect(o.totMax).toBeLessThan(779);
-      expect(o.splitMax).toBeGreaterThan(0);
+      // The rig mismatch (an AGENT choice; 0 removes it) is what shows a split before synchronising.
+      if (twin.rigMismatch !== 0) expect(o.splitMax).toBeGreaterThan(0);
       expect(o.splitMax).toBeLessThanOrEqual(5);
     }, 60_000);
   }
