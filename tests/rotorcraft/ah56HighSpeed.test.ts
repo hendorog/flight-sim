@@ -348,19 +348,26 @@ describe('H10: physics cost at 200 KTAS <= 2 x MD 500E (same machine, headless)'
   // the sample least disturbed by other processes). On a loaded machine (1-min load average above half the cores) the two models
   // do not slow down equally, so the row is SKIPPED there with the numbers reported, never passed on a looser bound.
   it('mean step time, best of seven interleaved samples each', (ctx) => {
-    const ah = rigOn(AH56_DEFINITION, { cfg: 'amcs', kt: 200 });
+    const ah = rigOn(AH56_DEFINITION, { cfg: 'amcs', kt: 200 }), ics = rigOn(AH56_DEFINITION, { cfg: 'ics', kt: 160 });
     const md = createFlightModelFor(MD500_DEFINITION) as BladeElementFlightModel, env = environment();
     md.reset({ position: { x: 0, y: 0, z: -500 }, heading: 0, airspeed: 120 * KT, flightPathAngle: 0, onGround: false, engineRunning: true, fuelFraction: 1 }, env);
     const mdc = cloneControls(md.trimControls);
     const time = (f: () => void, n: number) => { const t0 = performance.now(); for (let i = 0; i < n; i++) f(); return (performance.now() - t0) / n * 1000; };
-    for (let i = 0; i < 240; i++) { ah.fm.step(1 / 240, ah.c, ah.env); md.step(1 / 240, mdc, env); }
-    const a: number[] = [], m: number[] = [];
-    for (let k = 0; k < 7; k++) { a.push(time(() => ah.fm.step(1 / 240, ah.c, ah.env), 600)); m.push(time(() => md.step(1 / 240, mdc, env), 600)); }
-    const ahUs = Math.min(...a), mdUs = Math.min(...m);
+    for (let i = 0; i < 240; i++) { ah.fm.step(1 / 240, ah.c, ah.env); ics.fm.step(1 / 240, ics.c, ics.env); md.step(1 / 240, mdc, env); }
+    const a: number[] = [], m: number[] = [], i: number[] = [];
+    for (let k = 0; k < 7; k++) {
+      a.push(time(() => ah.fm.step(1 / 240, ah.c, ah.env), 600)); m.push(time(() => md.step(1 / 240, mdc, env), 600));
+      i.push(time(() => ics.fm.step(1 / 240, ics.c, ics.env), 600));
+    }
+    const ahUs = Math.min(...a), mdUs = Math.min(...m), icsUs = Math.min(...i);
     const load = os.loadavg()[0], cpus = os.cpus().length, loaded = load > 0.5 * cpus;
-    report('H10 cost', { ah56Us: ahUs, md500Us: mdUs, ratio: ahUs / mdUs, withinPlanTarget: ahUs / mdUs <= 2, loadAverage1m: load, cpus,
+    // The ICS configuration at 160 KTAS (it does not trim at 200; reported, not the plan's row, which flies the default): its
+    // feathering-moment feedback reads the blade moments with the blade's flap-rate incidence, a second section evaluation per
+    // element (about 2.15 x the MD 500E, against 1.85 x before that term).
+    report('H10 cost', { ah56Us: ahUs, md500Us: mdUs, ratio: ahUs / mdUs, withinPlanTarget: ahUs / mdUs <= 2, icsUs, icsRatio: icsUs / mdUs,
+      loadAverage1m: load, cpus,
       skippedUnderLoad: loaded, grid: `${def.main.radialStations} x ${def.main.azimuthStations}`, target: '<= 2 (AGENT, plan H10)' });
-    trace.H10 = { ahUs, mdUs, load, cpus };
+    trace.H10 = { ahUs, mdUs, icsUs, load, cpus };
     if (loaded) { ctx.skip(); return; }
     expect(ahUs / mdUs).toBeLessThanOrEqual(2);
   }, 300_000);

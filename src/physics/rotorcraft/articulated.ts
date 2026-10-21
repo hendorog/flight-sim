@@ -283,19 +283,29 @@ export function hubForcing(d: RotorDefinition, p: ArticulatedGeometry, omega: nu
       if (section || o.gyro) {
         phi = Math.atan2(up, ut);
         const alpha = wrap(theta - phi);
+        let cm = cm0;
         if (section) {
           const coefficients = sectionCoefficients(section, alpha, Math.hypot(ut, up) / sound, Math.abs(alpha) > Math.PI / 2);
-          cl = coefficients.cl; cd = coefficients.cd;
-          if (o.gyro) { const q = 0.5 * density * (ut * ut + up * up) * d.chord * dr / azimuths;
-            const pm = q * d.chord * coefficients.cm; pc += 2 * pm * cs; ps += 2 * pm * sn; }
+          cl = coefficients.cl; cd = coefficients.cd; cm = coefficients.cm;
         } else {
           cl = clampValue(d.liftSlope * alpha, -d.maxCl, d.maxCl); cd = d.profileCd + d.inducedDrag * cl * cl;
-          const pm = 0.5 * density * (ut * ut + up * up) * d.chord * d.chord * dr / azimuths * cm0;
-          pc += 2 * pm * cs; ps += 2 * pm * sn;
         }
         if (o.gyro) {
-          const tangential = 0.5 * density * (ut * ut + up * up) * d.chord * dr / azimuths *
-            (cl * Math.sin(phi) + cd * Math.cos(phi)) * r;
+          // The gyro's blade moments see the blade's own flap rate (arm x beta-dot, from the previous harmonics, as
+          // aerodynamicHubMoment): its incidence, Mach number, pitching moment and tangential force. The lift above keeps the
+          // rate-free incidence: its flap damping is the linear one (the implicit matrix's mean C, the explicit periodic part).
+          let gu = up, gphi = phi, gcl = cl, gcd = cd, gcm = cm;
+          if (b && betaDot !== 0) {
+            gu = up + arm * betaDot; gphi = Math.atan2(gu, ut);
+            const galpha = wrap(theta - gphi);
+            if (section) {
+              const g = sectionCoefficients(section, galpha, Math.hypot(ut, gu) / sound, Math.abs(galpha) > Math.PI / 2);
+              gcl = g.cl; gcd = g.cd; gcm = g.cm;
+            } else { gcl = clampValue(d.liftSlope * galpha, -d.maxCl, d.maxCl); gcd = d.profileCd + d.inducedDrag * gcl * gcl; }
+          }
+          const q = 0.5 * density * (ut * ut + gu * gu) * d.chord * dr / azimuths;
+          const pm = q * d.chord * gcm; pc += 2 * pm * cs; ps += 2 * pm * sn;
+          const tangential = q * (gcl * Math.sin(gphi) + gcd * Math.cos(gphi)) * r;
           ic += 2 * tangential * cs; is += 2 * tangential * sn;
         }
       }
