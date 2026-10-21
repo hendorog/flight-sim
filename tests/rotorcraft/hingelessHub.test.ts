@@ -197,6 +197,7 @@ describe('R16: zero-dt purity, settle, trims, and a stopped rotor', () => {
       expect(s.crashed).toBe(false);
       expect(Math.abs(s.pitch - start.pitch) / DEG).toBeLessThan(3); expect(Math.abs(s.roll - start.roll) / DEG).toBeLessThan(3);
     }
+    // Hands-off: the hover drifts slowly (its unstable hover modes, 0.35 deg of pitch in 5 s); 40-145 KIAS hold within 0.05 deg.
     report.R16trims = rows;
   }, 60_000);
   it('after a shutdown to Omega = 0 the hub moment is below 50 N m within 5 s; a save resumed at Omega = 0 applies none', () => {

@@ -221,9 +221,9 @@ model's own Ixz-coupled Euler equations, ω×h removed as in flight.
 | R13 | control phase turns the hover hub moment | φ ±0.5° | 15.01°, 30.03° (inflow off and on) | pass |
 | R14 | δ3 20°, 37.5°: Δν² | (γ/8) tan δ3 ±10 % | −0.5 %, −0.5 % | pass |
 | R15 | hover roll rate 0.5 s after a 0.2 step, 240/480/960 Hz | < 2 % | 18.96 / 19.00 / 19.02 °/s | pass |
-| R16 | dt = 0 purity; trims 0-145 KIAS; stop; resume at Ω = 0 | residual < 1e-4; < 50 N m within 5 s; none | residuals ≤ 8e-5; 0 N m; 0 N m | pass |
+| R16 | dt = 0 purity; trims 0-145 KIAS; stop; resume at Ω = 0 | residual < 1e-4; < 50 N m within 5 s; none | residuals ≤ 8e-5 (attitude drift over 5 s hands-off: 0.35° in the hover, the hover's slow unstable modes; ≤ 0.05° at 40-145 KIAS); 0 N m; 0 N m | pass |
 | R17 | roll acceleration to a 10 % lateral step at 0.2 g vs 1 g, 100 KIAS | ≥ 80 % | 101.5 vs 111.5 °/s² = 91 % (at 0.20 g) | pass |
-| R18 | 80 kt derivatives (table below) | DLR/AFDD envelope ×0.7/×1.3 | Lp, Mq, Nr, Xu, Lq, Mp inside; Mw sign +; Mw, Zw, Lv, Nv, Lq/\|Lp\| outside | see below |
+| R18 | 80 kt derivatives (table below) | DLR/AFDD envelope ×0.7/×1.3 | Lp, Mq, Nr, Xu, Lq, Mp inside; Mw sign + only by +0.007 over the fixture's stabiliser (rotor alone +0.064); Mw magnitude, Zw, Lv, Nv, Lq/\|Lp\| outside | see below |
 | R19 | modes | roll 8.49 ±30 %; DR 2.5 ±30 %, ζ 0.05-0.30; phugoid unstable 12-30 s | roll 10.79; DR 2.78 rad/s ζ 0.19; phugoid 20.7 s ζ +0.004 (stable) | phugoid stability misses |
 | R20 | coupled roll/flap mode, matrix pencil, 0.1 s pulse at 78 KIAS | 13.7 rad/s ±30 %, ζ 0.3-0.7 (P LS-178) | 12.4 rad/s, ζ 0.60 | pass |
 | R21 | gyro coupling wiring | 1e-12 | 3e-15 | pass |
