@@ -10,7 +10,8 @@ import { DEG, KT } from '../../src/core/math';
 import { stepCentre, stepKeyAxis } from '../../src/input/virtualYoke';
 import { AH56_INPUT } from '../../src/aircraft/ah56/input';
 import { AH56_REST_CONTACTS } from '../../src/aircraft/ah56/gear';
-import { gyroDef, margins, report, rig, run, stepResponse, stick, writeTrace, type StepResponse } from './ah56Rig';
+import { hingelessBlade, hingelessSpring } from '../../src/physics/rotorcraft/hingeless';
+import { d, gyroDef, margins, report, rig, rotorOf, run, stepResponse, stick, writeTrace, type StepResponse } from './ah56Rig';
 
 const trace: Record<string, unknown> = {};
 afterAll(() => writeTrace('ah56Handling', trace));
@@ -97,6 +98,46 @@ describe('G6: AMCS attitude retention, no SAS (P Hoh-74: "no SAS was used")', ()
     report('G6 AMCS keyboard tap', { peakKeyStick: kb, bankAfterTapDeg: bank0 / DEG, worstChangeDeg: worst / DEG, target: '<= 3' });
     trace.G6keyboard = { bankAfterTapDeg: r2(bank0 / DEG), worstChangeDeg: r2(worst / DEG) };
     expect(worst / DEG).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('G6 variant: what the AMCS holds against a STEADY disturbance moment (AG; informational, no plan band)', () => {
+  it('a steady 625 N m roll moment (the hover in-plane force\'s, KNOWN_ISSUES #2): the bank precesses at about K_R beta / H, it is not held', () => {
+    // The AMCS feedback is K_R x first-harmonic flap, which nulls the HUB moment, not the attitude error: a steady external
+    // moment M needs a steady hub moment -M, i.e. a flap beta = M / K_hub, and K_R beta precesses the gyro (and the aircraft
+    // following it) at K_R beta / H. So the G6 attitude retention holds only with zero residual moment (G6's disturbance is
+    // a stick-induced bank, which leaves none). Recorded at the hover and at G6's 80 KCAS (sideslip SAS and weathercock on).
+    const g = gyroDef.configs.amcs, fb = g.feedback;
+    if (fb.mode !== 'flapping') throw new Error('AMCS flapping feedback expected');
+    // K_hub = (B/2)(e M_beta Omega^2 + K_beta) at the AMCS's governed 97.5 % (ah56GyroModes G2 (i)), H = I_g x spin.
+    const omega = d.nominalRpm * Math.PI / 30 * g.nominalRpmFraction, hub = d.hubModel;
+    if (hub?.kind !== 'hingeless') throw new Error('hingeless hub expected');
+    const kHub = d.main.blades / 2 * (hub.equivalentHingeOffset * hingelessBlade(d).flapFirst * omega ** 2 + hingelessSpring(d));
+    const h = g.inertia * g.spinRatio * omega;
+    const out: Record<string, number> = {};
+    for (const kt of [0, 80]) {
+      const r = rig({ cfg: 'amcs', kt }), rotor = rotorOf(r), orig = rotor.compute.bind(rotor);
+      (rotor as unknown as { compute: typeof orig }).compute = (...a: Parameters<typeof orig>) => { const f = orig(...a); f.moment.x += 625; return f; };
+      const roll0 = r.fm.state.roll;
+      let rollAt2 = 0, rollAt3 = 0, rollAt10 = 0, t = 0;
+      run(r, 20, () => {
+        t += 1 / 240;
+        if (Math.abs(t - 2) < 1 / 480) rollAt2 = r.fm.state.roll;
+        if (Math.abs(t - 3) < 1 / 480) rollAt3 = r.fm.state.roll;
+        if (Math.abs(t - 10) < 1 / 480) rollAt10 = r.fm.state.roll;
+      });
+      out[`kt${kt}Rate2to3DegPerSec`] = (rollAt3 - rollAt2) / DEG;
+      out[`kt${kt}BankChange10sDeg`] = (rollAt10 - roll0) / DEG;
+      out[`kt${kt}BankChange20sDeg`] = (r.fm.state.roll - roll0) / DEG;
+      out[`kt${kt}RollRate20sDegPerSec`] = r.fm.state.angularVelocity.x / DEG;
+    }
+    const predicted = fb.gain * (625 / kHub) / h / DEG;
+    report('G6 variant: steady 625 N m roll moment, AMCS', { ...out, kHubKNmPerRad: kHub / 1e3, predictedDegPerSec: predicted, perKNm: out.kt0Rate2to3DegPerSec / 0.625 });
+    trace.G6steadyMoment = { ...out, predictedDegPerSec: predicted };
+    // Self-consistency only: the early precession is of the K_R beta / H order (the attitude change and the translation
+    // follow). Not an attitude-hold pass.
+    expect(out.kt0Rate2to3DegPerSec / predicted).toBeGreaterThan(0.5);
+    expect(out.kt0Rate2to3DegPerSec / predicted).toBeLessThan(1.5);
   });
 });
 

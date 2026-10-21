@@ -15,12 +15,16 @@ const trace: Record<string, unknown> = {};
 afterAll(() => writeTrace('ah56Systems', trace));
 
 describe('G10: hover ceiling out of ground effect, 18,750 lb, standard day, no wing and no pusher', () => {
-  /** Hover OGE trimmed at `ft`: the torque, Ng and TIT, and whether the engine or the transmission limits it. */
+  /** Hover OGE trimmed at `ft`: the torque, Ng and TIT, whether it is within the ratings and which limit binds. The
+   *  ceiling is set at the engine's 10-minute (take-off) rating, TIT 780 C (P; 740 C is the continuous rating), the
+   *  transmission's 114 % torque and Ng 101.5 % (P), as a hover-ceiling chart uses the maximum rating. */
   function hover(ft: number) {
     const r = rig({ lb: 18_750, ft, height: ft * FT + 300, cfg: 'ics' });
     const g = gauges(r), throttle = r.fm.state.rotorcraft!.governorThrottle;
-    const ok = r.fm.lastTrim!.converged && g.torque <= 114 && throttle < 0.999 && g.ng <= 101.5 && g.tit <= AH56_TIT_C.inspection;
-    return { ft, torque: g.torque, ng: g.ng, tit: g.tit, throttle, ok };
+    const limits = { trim: !r.fm.lastTrim!.converged, torque: g.torque > 114, throttle: throttle >= 0.999, ng: g.ng > 101.5,
+      tit10min: g.tit > AH56_TIT_C.yellow10min };
+    const binding = Object.entries(limits).filter(([, v]) => v).map(([k]) => k).join('+') || 'none';
+    return { ft, torque: g.torque, ng: g.ng, tit: g.tit, throttle, ok: binding === 'none', binding };
   }
   it('9,000-11,500 ft (ESTIMATE: the compound\'s 8,500 ft P plus no wing download)', () => {
     let lo = 0, hi = 20_000;
@@ -28,7 +32,8 @@ describe('G10: hover ceiling out of ground effect, 18,750 lb, standard day, no w
     for (let i = 0; i < 7; i++) { const mid = (lo + hi) / 2; if (hover(mid).ok) lo = mid; else hi = mid; }
     const at = hover(lo), above = hover(hi);
     report('G10 HOGE 18,750 lb std', { ceilingFt: lo, torque: at.torque, ng: at.ng, titC: at.tit, aboveFt: hi, aboveTorque: above.torque,
-      aboveNg: above.ng, aboveThrottle: above.throttle, target: '9,000-11,500 ft' });
+      aboveNg: above.ng, aboveTitC: above.tit, aboveThrottle: above.throttle, limitedBy: above.binding,
+      rating: 'engine 10-min (TIT 780 C), transmission 114 %', target: '9,000-11,500 ft' });
     trace.G10 = { ceilingFt: Math.round(lo), at, above };
     expect(lo).toBeGreaterThanOrEqual(9_000);
     expect(lo).toBeLessThanOrEqual(11_500);

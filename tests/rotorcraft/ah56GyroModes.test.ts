@@ -11,6 +11,7 @@ import type { RotorcraftDefinition } from '../../src/physics/rotorcraft/definiti
 import { cloneControls, defaultControls } from '../../src/core/types';
 import { DEG, KT, quat, v3 } from '../../src/core/math';
 import { DT, report } from './ah56Rig';
+import { hingelessBlade, hingelessSpring } from '../../src/physics/rotorcraft/hingeless';
 
 type C = [number, number];
 /** Eigenvalues of a real 4x4 (row-major): Faddeev-LeVerrier polynomial, Durand-Kerner roots. */
@@ -78,11 +79,22 @@ describe('G2: mode structure against rotor speed (ICS, fixed shaft, hover)', () 
     }
   });
 
-  it.fails('G2 (i) KNOWN GAP: the auto-trim loop gain Lambda K_hub / H scales as Omega within 10 % (70-110 % Nr)', () => {
-    // The hingeless hub's moment per rad of flap is (B/2)(e M_beta Omega^2 + K_beta): the spring half of it does not grow
-    // with Omega, so Lambda K_hub / H (H proportional to Omega) is nearly flat instead of proportional to Omega.
-    const at100 = rows.find((r) => r.f === 1)!;
-    for (const r of rows) expect((r.loop / r.omega) / (at100.loop / at100.omega)).toBeCloseTo(1, 1);
+  it('G2 (i): the auto-trim loop gain is tan(sweep) (B/2)(e M_beta Omega^2 + K_beta) / H at 70 / 100 / 110 % Nr (D), +/-1 %', () => {
+    // The plan row assumed Lambda K_hub / H proportional to Omega (a purely centrifugal hub). The hingeless hub's moment per
+    // rad of flap is (B/2)(e M_beta Omega^2 + K_beta): the spring K_beta (125 of the 358 kN m/rad per blade-half at 100 %)
+    // does not grow with Omega, so loop / Omega legitimately falls from 1.69 (70 %) to 1.16 (110 %). The row asserts that
+    // formula, against the coupled system's own hub map (RC's FlapSystem.hub).
+    const cfg = AH56_ROTORCRAFT.controlGyro!.configs.ics, fb = cfg.feedback;
+    if (fb.mode !== 'featheringMoment' || AH56_ROTORCRAFT.hubModel?.kind !== 'hingeless') throw new Error('ICS feathering-moment feedback expected');
+    const b = hingelessBlade(AH56_ROTORCRAFT), e = AH56_ROTORCRAFT.hubModel.equivalentHingeOffset, k = hingelessSpring(AH56_ROTORCRAFT);
+    for (const f of [0.7, 1.0, 1.1]) {
+      const r = rows.find((x) => x.f === f)!;
+      const h = cfg.inertia * cfg.spinRatio * r.omega;
+      const formula = Math.tan(fb.sweep) * AH56_ROTORCRAFT.main.blades / 2 * (e * b.flapFirst * r.omega ** 2 + k) / h;
+      report(`G2 (i) loop gain ${(f * 100).toFixed(0)} % Nr`, { measuredPerSec: r.loop, formulaPerSec: formula, loopOverOmega: r.loop / r.omega,
+        springShare: k / (e * b.flapFirst * r.omega ** 2 + k) });
+      expect(r.loop / formula).toBeGreaterThan(0.99); expect(r.loop / formula).toBeLessThan(1.01);
+    }
   });
 
   it('the loop gain is of the plan\'s order (tens of rad/s): no sequential coupling could step it at 240 Hz', () => {
