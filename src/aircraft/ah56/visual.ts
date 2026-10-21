@@ -113,7 +113,7 @@ export const SPONSON = { innerBl: 12, outerBl: 48, wl: 72, topWl: 85, bottomWl: 
     [330, 1], [358, 0.95], [380, 0.75], [396, 0.45], [404, 0.15], [405, 0]] as readonly (readonly [number, number])[] } as const;
 
 /** Sponson section at station `s` (in): centre BL and half width, centre WL and the top and bottom half heights (in). */
-export function sponsonSection(s: number): { yc: number; a: number; zc: number; top: number; bottom: number; rise: number } {
+export function sponsonSection(s: number): { yc: number; a: number; zc: number; top: number; bottom: number; rise: number; nTop: number; nBot: number } {
   const p = SPONSON.profile;
   let f = 0;
   for (let i = 0; i < p.length - 1; i++) if (s >= p[i][0] && s <= p[i + 1][0]) {
@@ -122,7 +122,9 @@ export function sponsonSection(s: number): { yc: number; a: number; zc: number; 
   // Heights and the outer half width scale together: the nose and tail round off like the former body of revolution.
   const h = f, a = (SPONSON.outerBl - SPONSON.innerBl) / 2 * f;
   return { yc: SPONSON.innerBl + a, a, zc: SPONSON.wl, top: (SPONSON.topWl - SPONSON.wl) * h, bottom: (SPONSON.wl - SPONSON.bottomWl) * h,
-    rise: SPONSON.fillet.riseIn * h };
+    rise: SPONSON.fillet.riseIn * h,
+    // The exponents ease from an ellipse (2) at the nose and tail to the full shelf section: a rounded bullet nose (Rucker front).
+    nTop: 2 + (SPONSON.nTop - 2) * f, nBot: 2 + (SPONSON.nBot - 2) * f };
 }
 
 /**
@@ -131,7 +133,7 @@ export function sponsonSection(s: number): { yc: number; a: number; zc: number; 
  */
 export function sponsonPoint(s: number, a: number): [number, number] {
   const k = sponsonSection(s), c = Math.cos(a), sn = Math.sin(a), up = sn >= 0;
-  const n = up ? SPONSON.nTop : SPONSON.nBot, e = 2 / n;
+  const n = up ? k.nTop : k.nBot, e = 2 / n;
   const y = k.yc + k.a * Math.sign(c) * Math.abs(c) ** e;
   let w = up ? k.zc + k.top * Math.abs(sn) ** e : k.zc - k.bottom * Math.abs(sn) ** e;
   if (up) { const t = Math.min(1, Math.max(0, (SPONSON.fillet.fromBl - y) / SPONSON.fillet.widthIn)); w += k.rise * t * t * Math.abs(sn) ** e; }
@@ -145,7 +147,7 @@ export function sponsonPoint(s: number, a: number): [number, number] {
 export function sponsonExcessIn(s: number, y: number, w: number): number {
   const k = sponsonSection(s);
   if (k.a <= 0) return Infinity;
-  const dy = y - k.yc, dz = w - k.zc, up = dz >= 0, n = up ? SPONSON.nTop : SPONSON.nBot, h = up ? k.top : k.bottom;
+  const dy = y - k.yc, dz = w - k.zc, up = dz >= 0, n = up ? k.nTop : k.nBot, h = up ? k.top : k.bottom;
   const q = (Math.abs(dy) / k.a) ** n + (Math.abs(dz) / h) ** n, scale = q ** (1 / n);
   return Math.hypot(dy, dz) * (1 - 1 / scale);
 }

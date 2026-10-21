@@ -122,7 +122,8 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
   waterline (published datum unstated). No gear doors are drawn (none found on the mains; the fin housing is open). Until the solver
   publishes a hingeless blade pose the head droops its blades by its own −0.9° fallback (ESTIMATE). The hub hardware stays solid at rotor
   speed; only the ICS gyro X fades. Shared renderer: the main disc reads faint in chase views. The tail rotor's blur disc (solidity alpha on
-  the shared 0.25 cap) is halved for this type by `rotorcraftVisual.tail.blurAlpha` 0.5 (gate-1; legacy types default 1). Integrator, at the AX merge: the main-gear trunnion moved from FS 281 to FS 264 with AG's axles (FS 285
+  the shared 0.25 cap) is halved for this type by `rotorcraftVisual.tail.blurAlpha` 0.5 (gate-1; legacy types default 1); the pusher's own
+  uniform disc peaks at 0.18 opacity (was 0.35, which covered the tail cone in the hover chase view). Integrator, at the AX merge: the main-gear trunnion moved from FS 281 to FS 264 with AG's axles (FS 285
   → 268), and the head draws a non-finite gyro cyclic as zero (the gyro definition routes the dev page's tilt into the swashplate).
 
 ## Stages 3-4: the wing and the pusher (AC, handed over; [ah56-compound.md](../../../docs/ah56-compound.md) section 9)

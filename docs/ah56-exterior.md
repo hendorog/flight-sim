@@ -28,7 +28,7 @@ wheels and the gyro from the contract files, so nothing here changes when AG, AC
   stub's blade count) and adds the parts below. It reads the whole rotorcraft state through `readRotorcraft`.
 - `exteriorDetails.ts`: transmission fairing and T64 cowl with louvres, static mast, the two bell-mouth intakes and the
   exhaust nozzle, the sponsons (flat-topped shelves faired into the body side by a fillet, one closed super-elliptic
-  shell each, `sponsonGeometry`), the wing (NACA 4-digit, 12 % → 8 %, light camber for the trailing-edge
+  shell each, `sponsonGeometry`, easing to an ellipse at the nose and tail), the wing (NACA 4-digit, 12 % → 8 %, light camber for the trailing-edge
   extension, tip fairings), the walkway over the right sponson, the ventral fin with the tail-wheel housing at its lower
   end, the stabiliser (plain right panel, **bobtailed left** panel) and the tail-rotor gearbox at the left tip, the canopy
   frames as flat painted strips (`frameStrip`: windscreen arch, end bows and sills 3 in wide, intermediate bows, the raked

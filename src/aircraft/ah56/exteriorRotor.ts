@@ -47,6 +47,12 @@ export const REST_DROOP = -0.9 * DEG;
 export const TAIL_PITCH = { min: -7.4 * DEG, max: 24.2 * DEG } as const;
 /** Pusher: blade chord from the activity factor AF 142 (P): c/D = 142 / 1562 = 0.091 -> 0.277 m (D, constant chord). */
 export const PUSHER_BLADE = { chord: 0.277, root: 0.16, twistDeg: 30, tc: { root: 0.10, tip: 0.04 } } as const;
+/**
+ * Peak opacity of the pusher's uniform dark blur disc. 0.35 covered the tail cone in the hover chase view (seen from behind the prop
+ * disc is face-on, 10 ft across, filling the lower screen: gate-0 look review, ah56-hover.png); 0.18 sits under the shared rotor
+ * renderer's 0.25 cap, near the prop's own mean solidity 3 x 0.277 / (pi x 1.524) = 0.17 (D). AGENT visual choice.
+ */
+export const PUSHER_DISC_OPACITY = 0.18;
 /** Blade angle (at 0.7 R) the prop is drawn at when there is no pusher (stage 2: stopped and feathered, plan 7.5). */
 export const PUSHER_FEATHER = 88 * DEG;
 
@@ -400,7 +406,7 @@ export class AH56Pusher {
     this.bladeMaterial.opacity = this.tipMaterial.opacity = blur.solid;
     this.bladeMaterial.depthWrite = this.tipMaterial.depthWrite = blur.solid === 1;
     for (const b of this.blades) b.visible = blur.solid > 0;
-    this.disc.material.opacity = 0.35 * Math.max(blur.disc, blur.trail * 0.6);
+    this.disc.material.opacity = PUSHER_DISC_OPACITY * Math.max(blur.disc, blur.trail * 0.6);
     this.disc.visible = this.disc.material.opacity > 0;
   }
 
