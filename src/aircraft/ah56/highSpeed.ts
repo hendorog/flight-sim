@@ -21,14 +21,17 @@ const LB = 0.45359237;
  * Mach terms are the TIP's, where the Mach numbers are (the advancing tip reaches M 0.84-0.92 at 154-194 KTAS):
  * - Cm0 -0.012: P NACA Report 530 Table IV (the 23012 in the full-scale tunnel: -0.011 to -0.014 from zero lift to Cl max),
  *   unchanged at subcritical Mach (P NACA WR L-357, Becker 1941: "negligibly small" variation for these low-moment airfoils).
- * - Maximum lift 1.3 at low Mach (base.ts, ESTIMATE; P Report 530 Table IV: 1.26 at Re 1.7 million), falling by 1.0 per unit
- *   Mach above M 0.25 (ESTIMATE, the trend of 12 % sections; no 23012 data above M 0.3 through the stall were found), floor 0.6.
- *   Negative stall at 0.8 of it (ESTIMATE).
+ * - Maximum lift 1.3 at low Mach (base.ts, ESTIMATE; P Report 530 Table IV: 1.26 at Re 1.7 million), 1.02 / 0.99 / 0.95 / 0.88 /
+ *   0.80 at M 0.3 / 0.4 / 0.5 / 0.6 / 0.7 (ESTIMATE: no 23012 or 23006 data through the stall above M 0.3 were found). M 0.3-0.4,
+ *   the retreating tip in the HQRS-10 turns, FITTED to H4 (docs section 3); M 0.5-0.7 set so the hover tip (M 0.56) keeps 2 deg of
+ *   stall margin at 18,300 lb SL and the C2 / C3 ceilings stay unstalled. Negative stall at 0.8 of it (ESTIMATE).
  * - Past the stall, lift fades to the flat plate over 15 deg and drag rises to it over 3 deg: FITTED to P Report 530 Table IV
  *   (Cl 1.26 -> 1.1 / 1.0 / 0.9 at +3.2 / +6.5 / +10 deg past Cl max; section drag 0.127 / 0.195 / 0.275 there).
- * - MOMENT STALL: past Cl max the centre of pressure moves 0.14 c aft of the quarter chord over 12 deg: D from P Report 530
- *   Table IV, cm_c/4 -0.012 at Cl max, -0.056 / -0.086 / -0.107 / -0.118 at +3.2 / +6.5 / +10 / +11.6 deg (centre of pressure
- *   0.30 / 0.335 / 0.364 / 0.386 c from cm / cn).
+ * - MOMENT STALL. Flown: past the stall the centre of pressure moves 0.2 c aft of the quarter chord within 4 deg (ESTIMATE, FITTED
+ *   to H4: the retreating blade's dynamic moment stall at reduced frequency about 0.1), faded out between M 0.45 and 0.6 (the
+ *   advancing side's separation is shock-induced; the drag rise and the tuck carry it). The static P shape, 0.14 c over 12 deg (D
+ *   from P Report 530 Table IV, cm_c/4 -0.012 at Cl max, -0.056 / -0.086 / -0.107 / -0.118 at +3.2 / +6.5 / +10 / +11.6 deg),
+ *   gives under 1 deg of uncommanded roll at 1.7 g (docs section 2): too small for HQRS 10.
  * - The separated flat plate: normal force 2.0 sin(alpha) (P NACA TN 3361, the 0012 through 180 deg: 2.08 at 90 deg, Re 1.8e6),
  *   centre of pressure 0.5 c at 90 deg (P TN 3361 Fig 1: cm about -0.5).
  * - Reversed flow: lift slope 5.73 /rad about 180 deg up to Cl 0.77 (P TN 3361 Fig 4(a): 0.10 per deg from 174 to 186 deg, peak
@@ -50,7 +53,7 @@ export const AH56_SECTION: RotorSectionDef = {
   cd0: AH56_BASE.main.profileCd, cd2: AH56_BASE.main.inducedDrag, cm0: -0.012,
   polar: {
     machCap: 1 / Math.sqrt(1 - 0.83 * 0.83),
-    clMax: { mach: [0.2, 0.3, 0.4, 0.5, 0.6], value: [AH56_BASE.main.maxCl, 1.05, 1.0, 0.88, 0.75], negativeFraction: 0.8 },
+    clMax: { mach: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7], value: [AH56_BASE.main.maxCl, 1.02, 0.99, 0.95, 0.88, 0.8], negativeFraction: 0.8 },
     liftFade: 15 * DEG, dragFade: 3 * DEG,
     cn90: 2.0,
     momentStall: { shift: 0.2, over: 4 * DEG, machFade: [0.45, 0.6] },

@@ -96,12 +96,12 @@ describe('section.ts: the blade section model (docs section 2)', () => {
     const at = sectionLimits(S, 0.35).stall / DEG;
     const below = coeff(S, at - 1e-6, 0.35), above = coeff(S, at + 1e-6, 0.35), past4 = coeff(S, at + 4, 0.35);
     expect(Math.abs(above.cm - below.cm)).toBeLessThan(1e-4); expect(Math.abs(above.cl - below.cl)).toBeLessThan(1e-4);
-    expect(past4.cm).toBeLessThan(-0.2); expect(past4.cm).toBeGreaterThan(-0.3);
+    expect(past4.cm).toBeLessThan(-0.17); expect(past4.cm).toBeGreaterThan(-0.3);
     const fast = sectionLimits(S, 0.7).stall / DEG, beyond = coeff(S, fast + 4, 0.7);
     expect(beyond.cm).toBeGreaterThan(-0.06);
     report('section moment stall, flown', { stallDegM035: at, cmPast4M035: past4.cm, cmPast4M070: beyond.cm });
   });
-  it('maximum lift against Mach (ESTIMATE, FITTED to H4): 1.30 / 1.12 / 1.02 / 0.88 / 0.75 at M 0.2 / 0.3 / 0.4 / 0.5 / 0.6', () => {
+  it('maximum lift against Mach (ESTIMATE; M 0.3-0.4 FITTED to H4): 1.30 / 1.02 / 0.99 / 0.95 / 0.88 / 0.80 at M 0.2 / 0.3 / 0.4 / 0.5 / 0.6 / 0.7', () => {
     const rows = [0.1, 0.2, 0.3, 0.35, 0.4, 0.5, 0.6, 0.9].map((m) => ({ m, ...sectionLimits(S, m) }));
     trace.clMax = rows;
     report('section maximum lift', Object.fromEntries(rows.map((r) => [`M${r.m}`, `${r.clMax.toFixed(3)} @ ${(r.stall / DEG).toFixed(2)} deg`])));
@@ -236,7 +236,8 @@ describe('H3: the profile power rise with the Mach terms, 200 KTAS (AMCS, 18,300
       profileRisePct: (on.profileShp / off.profileShp - 1) * 100, dragRiseTorquePct: (on.torque / h3.noRise.torque - 1) * 100,
       target: '>= 10 % (D, plan; from the 0.78 ESTIMATE)' });
     trace.H3 = h3;
-    expect(on.converged && off.converged && h3.noRise.converged).toBe(true);
+    // The comparison is at the same collective: every variant trimmed on 6 deg (the secant on the prop blade angle converged).
+    for (const v of [on, off, h3.noRise]) { expect(v.converged).toBe(true); expect(Math.abs(v.collective - 6)).toBeLessThan(0.1); }
     expect(on.torque).toBeGreaterThan(h3.noRise.torque);
     expect(on.profileShp).toBeGreaterThan(off.profileShp);
   }, 1_800_000);
