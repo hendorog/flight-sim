@@ -175,6 +175,14 @@ above fly the twin rigging.
 
 ## 7. Known gaps and issues (for the KNOWN_ISSUES files)
 
+**At the Bo 105 integration (feat/rigid-rotor, after BO merged).** The rig now flies the real hingeless Bo 105 rotor and
+the definition's own governor rigging (`twinRig.ts` keeps BO's refitted datumNg 0.774 / anticipation 0.469 instead of
+re-spreading 0.773 / 0.39). On that rotor the BLOCKING item below does not arise: T7b's survivor peaks at 103.85 %
+torque, 104.80 % N1, 810.3 C, and T7c passes. NR reads 96.12 % at 5 s after the failure and 95.81 % at 25 s, never at or
+below 95 %, so the RPM light stays out: the 93-96 % band row is an `it.fails` KNOWN GAP in `twinOei.test.ts` (BO's OEI
+droop gap). T6 holds attitude with the cyclic (the hingeless hover is not hands-off stable): N2 101.93 / 98.12 % at the
+102 / 98 % stops. T7a: NR min 97.53 %, survivor settles 88.1 % torque, LEFT yaw 6.6 deg/s first.
+
 - **BLOCKING: T7b's torque bound and its warning row cannot both hold (T7c fails).** With the survivor at its N1 stop
   the torque gauge follows the inherited 250-C20B power-turbine law, torque = T100 x (3 - 2 NR/100)
   (`stallTorqueRatio` 3, md500/powerplant.ts, a legacy propulsion trait; the C208 and PC-12 use 2), with T100 about

@@ -17,7 +17,7 @@ import { calmWeather } from '../fdm/helpers';
 import { HelicopterAutopilot } from '../../src/sim/rotorcraft/autopilot';
 import { defaultAutopilotSettings } from '../../src/physics/autopilot';
 import { KT } from '../../src/core/math';
-import { DT, TWIN_DEF, d, gauges, lever, LEVER, rig, run, ts, twin, writeTrace } from './twinRig';
+import { DT, TWIN_DEF, attitudePilot, d, gauges, lever, LEVER, rig, run, ts, twin, writeTrace } from './twinRig';
 
 const report: Record<string, unknown> = {};
 afterAll(() => writeTrace('twinGovernor', report));
@@ -64,19 +64,23 @@ describe('load sharing and ENGINE TRIM (T5, T6)', () => {
 
   it('T6 ENGINE TRIM fore/aft: both N2 move together, 98-102 % at about 1 %/s (ESTIMATE; FM normal band P5); at the 2200 kg hover N2 within 0.2 % of the set point at both stops (the twin compensator rigging)', () => {
     const r = rig({ kg: 2200 });
-    run(r, 2);
+    // Attitude held with the cyclic (collective fixed): the hingeless Bo 105 hover is not hands-off stable (an
+    // unstable 0.53 rad/s oscillation, BO's KNOWN_ISSUES), and this row is about the governors, not the hover.
+    // Applied at the Bo 105 integration from BO's contract request; the bounds are unchanged.
+    const hold = attitudePilot(r), held = (seconds: number) => run(r, seconds, () => hold(DT));
+    held(2);
     const set0 = gauges(r).set[0];
     r.c.n2Beep = 1;
-    run(r, 1);
+    held(1);
     const rate = gauges(r).set[0] - set0;
-    run(r, 6);
-    run(r, 0); r.c.n2Beep = 0;
-    run(r, 8);
+    held(6);
+    r.c.n2Beep = 0;
+    held(8);
     const high = gauges(r);
     r.c.n2Beep = -1;
-    run(r, 8);
+    held(8);
     r.c.n2Beep = 0;
-    run(r, 8);
+    held(8);
     const low = gauges(r);
     report.T6 = { ratePctPerS: rate, high: { set: high.set, n2: high.n2, nr: high.nr }, low: { set: low.set, n2: low.n2, nr: low.nr } };
     expect(rate).toBeGreaterThanOrEqual(0.8); expect(rate).toBeLessThanOrEqual(1.2);

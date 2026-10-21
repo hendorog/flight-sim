@@ -18,15 +18,15 @@ export const DT = 1 / 240;
 const base = BO105_DEFINITION.rotorcraft!;
 
 /**
- * The rig's definition: the Bo 105 with the Bo 105 engine indication and twin governor rigging on its turboshaft
- * control, the Bo 105 freewheel cap (BO105_TRANSMISSION_TORQUE_LIMIT_NM), both engines the
+ * The rig's definition: the Bo 105 with the Bo 105 engine indication on its turboshaft control and the definition's
+ * own governor rigging (BO's refit, kept at the Bo 105 integration), the Bo 105 freewheel cap (BO105_TRANSMISSION_TORQUE_LIMIT_NM), both engines the
  * installed 250-C20B (BO105_INSTALLED_C20B) and the airframe inertia of the Bo 105 at 2200 kg (P AR-280, facts.ts),
  * so yaw rates are the Bo 105's whatever airframe the definition carries.
  */
 export const TWIN_DEF: AircraftDefinition = {
   ...BO105_DEFINITION,
   rotorcraft: { ...base, systems: { ...base.systems, transmissionTorqueLimit: BO105_TRANSMISSION_TORQUE_LIMIT_NM,
-    turboshaft: { ...base.systems.turboshaft!, ...BO105_TURBOSHAFT_INDICATION } } },
+    turboshaft: { ...base.systems.turboshaft!, ...BO105_TURBOSHAFT_INDICATION, governor: base.systems.turboshaft!.governor } } },
   powerplant: { ...BO105_DEFINITION.powerplant,
     engines: BO105_DEFINITION.powerplant.engines.map((e) => ({ ...e, engine: BO105_INSTALLED_C20B })) },
   mass: { ...BO105_DEFINITION.mass, inertia: { about: 'cg', ...BO105_INERTIA } },
