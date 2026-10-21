@@ -160,6 +160,28 @@ export function gyroBladeCyclic(d: RotorcraftDefinition, g: ControlGyroState): {
 export const INPUT_SENSE = -1;
 export const FEEDBACK_SENSE = -1;
 
+/**
+ * Sense of the ICS droop x in-plane feathering-moment term. The blade geometry gives -1: with the blade drooped below the
+ * feathering axis (INF: the sources give "droop 3 deg 10 min" without the direction; tip-down is the usual meaning), the
+ * in-plane drag force (opposing rotation) acts below the axis and twists the blade nose DOWN. The model flies +1: at the
+ * P droop the derived -1 is a loop instability in this model (a limit cycle between the gyro stops in the hover, the
+ * same at 1/240 and 1/960 s; stable below about half the droop), which a model without the lag and feathering-inertia
+ * degrees of freedom cannot settle. Pinned by ah56Gyro.test.ts ("feathering-moment signs"); docs/control-gyro-model.md
+ * section 3.
+ */
+export const DROOP_SENSE = 1;
+
+/**
+ * Per-blade feathering moment, N m, nose up + (ICS feedback): tan(sweep) x the flap moment (+ flap up; forward sweep puts
+ * the lift ahead of the feathering axis: nose up, CR-114362) + pitchingMomentGain x the section pitching moment (+ nose
+ * up) + DROOP_SENSE x droop x the in-plane moment (+ opposing rotation). Linear, so it holds harmonic by harmonic; the
+ * sweep term reaches the gyro through the hub map in the coupled matrix (assemble), the other two as constants.
+ */
+export function featheringMoment(fb: Extract<GyroFeedback, { mode: 'featheringMoment' }>, flapMoment: number, pitching: number,
+  inPlane: number): number {
+  return Math.tan(fb.sweep) * flapMoment + fb.pitchingMomentGain * pitching + DROOP_SENSE * fb.droop * inPlane;
+}
+
 const KT = 1852 / 3600;
 const SEA_LEVEL_DENSITY = 1.225;
 
@@ -374,9 +396,10 @@ export class ControlGyro {
     if (cfg.feedback.mode === 'featheringMoment') {
       const fbk = cfg.feedback, half = d.main.blades / 2;
       if (blade) {
-        // Per-blade feathering-moment harmonics (nose up +) in tilt order (sin, cos), like the hub moment.
-        const e0 = half * (fbk.pitchingMomentGain * blade.pitching.sin + fbk.droop * blade.inPlane.sin);
-        const e1 = half * (fbk.pitchingMomentGain * blade.pitching.cos + fbk.droop * blade.inPlane.cos);
+        // Per-blade feathering-moment harmonics (nose up +) in tilt order (sin, cos), like the hub moment; the sweep part is
+        // in the matrix (f above), so the flap moment passed here is 0.
+        const e0 = half * featheringMoment(fbk, 0, blade.pitching.sin, blade.inPlane.sin);
+        const e1 = half * featheringMoment(fbk, 0, blade.pitching.cos, blade.inPlane.cos);
         extra0 += jr[0] * e0 + jr[1] * e1; extra1 += jr[2] * e0 + jr[3] * e1;
       }
     }

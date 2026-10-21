@@ -5,8 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import { AH56_ROTORCRAFT } from '../../src/aircraft/ah56/rotorcraft';
 import { AH56_DEFINITION } from '../../src/aircraft/ah56';
-import { ControlGyro, expm, gyroBladeCyclic, lookup, type ControlGyroConfig, type FlapSystem, type GyroBladeMoments,
-  type GyroConfigId } from '../../src/physics/rotorcraft/controlGyro';
+import { ControlGyro, DROOP_SENSE, expm, featheringMoment, gyroBladeCyclic, lookup, type ControlGyroConfig, type FlapSystem,
+  type GyroBladeMoments, type GyroConfigId } from '../../src/physics/rotorcraft/controlGyro';
 import { swashplateCyclic } from '../../src/physics/rotorcraft/swashplate';
 import { Rotorcraft } from '../../src/physics/rotorcraft/rotorcraft';
 import type { RotorcraftDefinition, RotorcraftState } from '../../src/physics/rotorcraft/definition';
@@ -315,5 +315,51 @@ describe('contracts', () => {
     const sa = { omega: 25.11 } as RotorcraftState, ga = new ControlGyro(AH56_ROTORCRAFT, sa);
     ga.reset(true, 'amcs');
     expect(Array.from(ga.linearize(controls(), v3.zero(), sys, blade).c)).toEqual(Array.from(ga.linearize(controls(), v3.zero(), sys).c));
+  });
+});
+
+describe('feathering-moment signs (ICS): one blade element against the geometry', () => {
+  // Blade frame: r outboard along the feathering axis, t the direction of motion (leading edge), n = r x t up. A rotation
+  // about +r turns t toward n: the leading edge up, NOSE UP. The feathering moment is the r component of P x F.
+  const fb = ics.feedback as Extract<ControlGyroConfig['feedback'], { mode: 'featheringMoment' }>;
+  const cross = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const r = 5;
+
+  it('forward sweep: lift ahead of the feathering axis is nose up, tan(sweep) per unit flap moment (CR-114362)', () => {
+    const lift = 1000, P = [r, r * Math.tan(fb.sweep), 0], F = [0, 0, lift];
+    const geometric = cross(P, F)[0], flapMoment = lift * r;
+    expect(geometric).toBeGreaterThan(0);
+    expect(featheringMoment({ ...fb, pitchingMomentGain: 0, droop: 0 }, flapMoment, 0, 0)).toBeCloseTo(geometric, 9);
+  });
+
+  it('the section pitching moment (cm0, + nose up) enters nose up at gain 1 (INF Hoh-74: "the entire blade feathering moments")', () => {
+    expect(fb.pitchingMomentGain).toBe(1);
+    expect(featheringMoment({ ...fb, droop: 0 }, 0, 37, 0)).toBe(37);
+  });
+
+  it('droop: the geometry gives nose DOWN for drag below the axis; the model flies the opposite sense (DROOP_SENSE +1, documented)', () => {
+    const drag = 100, P = [r, 0, -r * Math.tan(fb.droop)], F = [0, -drag, 0];
+    const geometric = cross(P, F)[0], inPlane = drag * r, model = featheringMoment({ ...fb, pitchingMomentGain: 0 }, 0, 0, inPlane);
+    report('droop sense', { geometricNm: geometric, modelNm: model, droopDeg: fb.droop / DEG, DROOP_SENSE });
+    expect(geometric).toBeLessThan(0);
+    expect(Math.abs(model / geometric)).toBeCloseTo(fb.droop / Math.tan(fb.droop), 6);
+    // The inversion, visible: the model's sign is opposite to the geometry's.
+    expect(Math.sign(model)).toBe(-Math.sign(geometric));
+    expect(DROOP_SENSE).toBe(1);
+  });
+
+  it('why: the derived (nose-down) droop sense at the P droop is a limit cycle in the hover on a fixed shaft; half of it is stable', () => {
+    const settleAndKick = (droop: number) => {
+      const def = patched('ics', { feedback: { ...fb, droop } });
+      const { rc, c, b } = fixedShaft(def, 'ics', 0);
+      rc.state.controlGyro!.pitch += 0.5 * DEG;
+      for (let i = 0; i < 240 * 6; i++) rc.compute(b, v3.zero(), 1.225, 1000, c, DT);
+      return Math.hypot(rc.state.controlGyro!.pitch, rc.state.controlGyro!.roll) / DEG;
+    };
+    const flown = settleAndKick(fb.droop), derived = settleAndKick(-fb.droop), half = settleAndKick(-fb.droop / 2);
+    report('droop sense stability (gyro tilt 6 s after a 0.5 deg kick, hover, fixed shaft)', { flownDeg: flown, derivedDeg: derived, derivedHalfDeg: half });
+    expect(flown).toBeLessThan(0.1);
+    expect(derived).toBeGreaterThan(5);
+    expect(half).toBeLessThan(0.1);
   });
 });
