@@ -85,6 +85,8 @@ export interface WidgetAircraft {
   /** Lever kinds with a lever per engine (shown on twins), in quadrant order. */
   levers: readonly ('throttle' | 'propeller' | 'mixture')[];
   rudderTrim: boolean;
+  /** A helicopter: the trim suggestion speaks of the cyclic and its trim, not the yoke and nose-up trim. */
+  rotorcraft?: boolean;
 }
 
 /** The Cessna 172S: nothing beyond yoke, rudder and elevator trim. */
@@ -112,7 +114,8 @@ export interface YokeSource {
   keyboardOffCentre?: boolean;
   /** Keyboard elevator relative to its centre (+ = held back). */
   keyboardElevator?: number;
-  /** Someone else is flying (the flight school's instructor): the trim suggestion is not the pilot's to act on. */
+  /** Someone else is flying (the demo, the flight school's instructor, or an engaged autopilot / hover hold): the trim
+   *  suggestion is not the pilot's to act on. */
   othersFlying?: boolean;
 }
 
@@ -130,6 +133,7 @@ export class ControlsWidget {
   /** Keys of the type that also bring the widget up, Shift allowed (twin engine keys, rudder trim). */
   private readonly typeKeys = new Set<string>();
   private rudderTrimMark: HTMLElement | null = null;
+  private rotorcraft = false;
   private engineBlock: HTMLElement | null = null;
   private selection: HTMLElement | null = null;
   private engineBars: { kind: WidgetAircraft['levers'][number]; engine: number; bar: HTMLElement; fill: HTMLElement }[] = [];
@@ -170,6 +174,7 @@ export class ControlsWidget {
     this.engineBlock = this.selection = null;
     this.engineBars = [];
     this.typeKeys.clear();
+    this.rotorcraft = !!a.rotorcraft;
     const keysOf = (actions: readonly InputAction[]): void => {
       for (const action of actions) for (const k of keysForAction(action)) this.typeKeys.add(k.code);
     };
@@ -230,9 +235,16 @@ export class ControlsWidget {
     const airborne = !ctx.state.wheels.some((w) => w.onGround);
     if (!pitchHeld || !airborne) this.pitchHeldSince = -1;
     else if (this.pitchHeldSince < 0) this.pitchHeldSince = now;
-    const suggest = this.pitchHeldSince >= 0 && now - this.pitchHeldSince > TRIM_SUGGEST_S && Math.abs(c.elevator) > 0.04 && !y?.othersFlying;
+    // How far the stick is held off its neutral: the keyboard yoke's offset from its centre when the keyboard wrote it
+    // (a helicopter's neutral is its spring-trim anchor, not zero), else the control itself.
+    const held = y?.keyboardElevator ? y.keyboardElevator : c.elevator;
+    const suggest = this.pitchHeldSince >= 0 && now - this.pitchHeldSince > TRIM_SUGGEST_S && Math.abs(held) > 0.04 && !y?.othersFlying;
     this.hint.classList.toggle('hidden', !suggest);
-    if (suggest) setText(this.hint, c.elevator > 0 ? 'Yoke held back: trim nose up (End)' : 'Yoke held forward: trim nose down (Home)');
+    if (suggest) {
+      setText(this.hint, this.rotorcraft
+        ? (held > 0 ? 'Cyclic held aft: trim aft (End)' : 'Cyclic held forward: trim forward (Home)')
+        : (held > 0 ? 'Yoke held back: trim nose up (End)' : 'Yoke held forward: trim nose down (Home)'));
+    }
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {

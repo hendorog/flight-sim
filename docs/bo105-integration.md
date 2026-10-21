@@ -213,6 +213,7 @@ No code was changed. The measured-against-target table is `W/flight-numbers.md` 
     - the cue's direction reads the absolute elevator.
     The hold leaves the Bo 105 stick 0.126 forward of its spring-trim anchor (0.333 against 0.459, wind trim), yet the
     cue says "back". The MD 500E sits 0.025 from its anchor, under the 0.04 threshold. See KNOWN_ISSUES.
+    Fixed at look gate 1 (KNOWN_ISSUES "Fixed-wing trim cue under the hold").
   - `engines[1].propRpm` reads engine 2's output-shaft rpm (6156). Its only readers are the muted engine-2 prop voice
     and the propeller visual, which the Bo 105 does not have.
 - **Not run at gate 0:**

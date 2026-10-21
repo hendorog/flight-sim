@@ -211,7 +211,11 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
   The hold flies the Bo 105 at elevator 0.333 against a spring-trim anchor of 0.459. The 8 kt wind trims the stick
   forward of the zero-wind reset trim, so the stick sits 0.126 forward of the neutral. The cue still says "held back",
   because the elevator is positive. The MD 500E sits 0.025 from its anchor (0.398 against 0.423), under the 0.04 threshold.
-  Recorded, not fixed (plan section 2.5 item 5: legacy rules for every type).
+  **Fixed at look gate 1** (a look-review item, against plan section 2.5 item 5, which kept legacy rules out of scope;
+  the change is UI only, no physics): `src/ui/uiSystem.ts` counts an engaged autopilot or hover hold among
+  `othersFlying`, and `src/ui/status.ts` reads the direction (and the 0.04 threshold) from the keyboard yoke's offset
+  to its neutral and words the cue for the cyclic on every helicopter ("Cyclic held aft: trim aft (End)"). The Bo 105
+  under `hover=1&ap=1` shows no cue at 20 s (`W/shots/bo105-gate-1/bo105-hover-ap.png`); `tests/ui/trimCue.test.ts`.
 - **`summary().engines[1].propRpm`** reads engine 2's output-shaft rpm (6156) rather than the rotor's 425. It has two
   readers: the muted engine-2 prop voice, and the propeller visual, which the Bo 105 does not have. No visible or
   audible effect.
@@ -253,7 +257,8 @@ From BX (exterior and cockpit, `docs/bo105-exterior.md`):
   tip is up to 2.1 cm lower than a rigid blade hinged at e at 5 deg coning.
 - Hub hardware proportions, endplate split, pitot, deck intakes, louvres, exhaust stubs and cockpit furniture are
   photographic ESTIMATEs (no dimensioned drawing). The outer roof is 2.055 m (dimensions' 2.02 m read as the lining).
-- From the right seat the A-post and door frame cover about 12 deg of the view to the right (owner's judgement).
+- From the right seat the A-post, its lining trim and the door-window rubber cover about 5 deg of the view to the right
+  at eye height (look gate 1; 10-12 deg at gate 0; docs/bo105-exterior.md known issue 8). Owner's judgement.
 - Dual controls are not fitted; the livery is generic (white, dark blue cheat line, D-HBOX) (AGENT choices).
 - The tail-rotor hub (2.80 m) and fin outline follow BO's revised `dimensions.ts`; `bo105-side` / `bo105-tail` shots
   were taken by BX before that change and have not been re-rendered.
