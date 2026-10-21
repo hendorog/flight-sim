@@ -127,8 +127,8 @@ packages together, BX's exterior, PN's HUD block (PWR 1/2 FLIGHT, N2 SET 100.1 %
 and the twin drivetrain all show. The chase view looks from behind at about 25 m. At that distance the stabiliser
 endplates, the fin and the skids read correctly against the reference photos (`ext-flyingbulls-cb-01.jpg`), but it
 cannot judge detail. The flight-cue box shows the fixed-wing cue "Yoke held back: trim nose up (End)" during the
-hover hold. That was observed and not investigated; it is probably the shared cue logic reading the hold's aft
-cyclic.
+hover hold. That was observed and not investigated, and it was not checked whether the MD 500E
+shows the same cue under the hold.
 
 ## 6a. Not run, and why
 
