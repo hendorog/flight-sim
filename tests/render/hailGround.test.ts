@@ -10,7 +10,7 @@ import { defaultWeather, type WeatherSettings } from '../../src/core/types';
 import { emptyLocalPrecip, type LocalPrecip } from '../../src/physics/weather/stormPrecip';
 import { emptyHailDamage } from '../../src/sim/weather/hailDamage';
 import { Atmosphere } from '../../src/render/sky/Atmosphere';
-import { bounceHeights, COVER_MELT_S, HAIL_RESTITUTION, HailGround } from '../../src/render/weather/hailGround';
+import { bounceHeights, HAIL_RESTITUTION, HailGround } from '../../src/render/weather/hailGround';
 import { GROUND_MAX_AGL_M, HailGroundOverlay, hailRmsMm } from '../../src/render/weather/HailGroundOverlay';
 import { hailMeanMm } from '../../src/physics/weather/hail';
 
@@ -18,19 +18,20 @@ const report = (label: string, values: Record<string, number | string>) =>
   console.log(`[hail ground] ${label}: ${Object.entries(values).map(([k, v]) => `${k}=${typeof v === 'number' ? +v.toPrecision(4) : v}`).join('  ')}`);
 
 describe('hail on the ground', () => {
-  it('bounces at the restitution, covers the ground under heavy hail and melts after it', () => {
+  it('bounces at the restitution, counts the impacts while it hails and lays hail under heavy hail', () => {
     const [h1, h2] = bounceHeights(20);
     report('bounce of a 20 mm stone', { e: HAIL_RESTITUTION, firstM: h1, secondM: h2 });
     expect(h2 / h1).toBeCloseTo(HAIL_RESTITUTION ** 2, 6);
     const g = new HailGround();
-    for (let t = 0; t < 120; t += 0.5) g.update(10, 30, 0.5);
-    const cover = g.cover;
-    expect(cover).toBeGreaterThan(0.5);
+    for (let t = 0; t < 300; t += 0.5) g.update(10, 30, 0, 0, 15, 0.5);
     expect(g.impactsPerM2s).toBeGreaterThan(0);
-    for (let t = 0; t < COVER_MELT_S; t += 0.5) g.update(0, 0, 0.5);
-    expect(g.cover).toBeCloseTo(cover / Math.E, 2);
+    expect(g.surfaces.soil.cover).toBeGreaterThan(0.3);
+    g.update(0, 0, 0, 0, 15, 0.5);
     expect(g.impactsPerM2s).toBe(0);
-    report('ground cover', { after2minAt10mmH: cover, oneMeltTimeLater: g.cover });
+    expect(g.clear).toBe(false);
+    g.reset();
+    expect(g.clear).toBe(true);
+    expect(g.surfaces.soil.hailKg).toBe(0);
   });
 });
 
@@ -81,7 +82,7 @@ describe('HailGroundOverlay active()', () => {
     expect(o.active(dry)).toBe(true);
     o.render(r, input, depth, output, dry, 0.016);
     expect(o.active(dry)).toBe(false);
-    o.ground.cover = 0.3;
+    o.ground.surfaces.pavement.hailKg = 0.3;
     expect(o.active(dry)).toBe(true);
     dry.camera.position.y = 1000;
     expect(o.active(dry)).toBe(false);
@@ -93,6 +94,37 @@ describe('HailGroundOverlay active()', () => {
     expect(o.active(dry)).toBe(false);
     o.render(r, input, depth, output, dry, 0.016);
     o.dispose();
+  });
+
+  it('lays the stratiform snow in cold air through simulated time, and nothing in the default weather', () => {
+    const r = fakeRenderer();
+    const o = new HailGroundOverlay();
+    const dry = makeCtx();
+    o.render(r, input, depth, output, dry, 0.016);
+    for (let t = 0; t <= 600; t += 10) {
+      dry.simTime = t;
+      expect(o.active(dry)).toBe(false);
+    }
+    expect(o.ground.clear).toBe(true);
+    expect(o.ground.surfaces.soil.groundC).toBeCloseTo(o.ground.surfaces.airC + 0.8, 6);
+    const snowy = new HailGroundOverlay();
+    const cold = makeCtx({ precipType: 'snow', precipRateMmH: 2, isaDeviation: -20 });
+    snowy.render(r, input, depth, output, cold, 0.016);
+    for (let t = 0; t <= 600; t += 10) {
+      cold.simTime = t;
+      snowy.active(cold);
+    }
+    const s = snowy.ground.surfaces;
+    report('overlay, 2 mm/h snow at ISA - 20, 600 s', { airC: s.airC, soilSnowMm: s.soil.snowMm, paveSnowMm: s.pavement.snowMm, soilCover: s.soil.cover });
+    expect(s.soil.snowMm).toBeCloseTo(((2 * 600) / 3600) * 10, 1);
+    expect(snowy.active(cold)).toBe(true);
+    // A scenario reset (the clock going back) clears it.
+    cold.simTime = 0;
+    cold.weather.precipType = 'none';
+    snowy.active(cold);
+    expect(snowy.ground.clear).toBe(true);
+    o.dispose();
+    snowy.dispose();
   });
 
   it('takes the stones\' area from the rms diameter, above the mean diameter', () => {
