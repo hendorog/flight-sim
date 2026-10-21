@@ -8,7 +8,7 @@ import { bladeElements, inflowTarget, inflowTimeConstant, tppPitchHarmonic, type
 import { airframeLoads } from './airframe';
 import { placardMap } from './limits';
 import { estimatedArticulatedGeometry, flapForcing, advanceFlap, harmonicFlap, hingeMoment, hubForcing, flapSystem, aerodynamicHubMoment,
-  type ArticulatedGeometry, type FlapHarmonics, type FlapSpring } from './articulated';
+  type ArticulatedGeometry, type FlapHarmonics, type FlapSpring, type HubForcing, type HubForcingOptions } from './articulated';
 import { hingelessBlade, hingelessSpring } from './hingeless';
 import { swashplateCyclic } from './swashplate';
 import { advanceHarmonicInflow } from './inflowHarmonic';
@@ -16,7 +16,7 @@ import { pressureAltitude } from '../atmosphere';
 import type { AtmosphereSample } from '../../core/types';
 import { articulatedBladeConing, bladeConing } from './coning';
 import { toBody, toShaft } from './shaftFrame';
-import { ControlGyro, type GyroConfigId } from './controlGyro';
+import { ControlGyro, type FlapSystem, type GyroAir, type GyroConfigId } from './controlGyro';
 import { PusherDrive } from './pusher';
 import { HalfPHop } from './halfPHop';
 import { emptyTwinTurboshaftState, jointFreewheelImpulse, publishTwin } from './twinTurboshaft';
@@ -244,11 +244,12 @@ export class Rotorcraft {
     s.omega = Math.max(0, s.omega - s.torque * dt / inertia);
     const freeOmega = s.omega;
     s.clutchEngagement = 1; s.clutchLight = false;
-    const twin = d.systems.twinTurboshaft && extraEngines ? [engine, ...extraEngines] : null;
+    // The twin's engine list and impulses live in instance scratch (no allocation per step).
+    const twin = d.systems.twinTurboshaft && extraEngines ? this.twinEngines(engine, extraEngines) : null;
     if (twin) {
       // Twin turboshaft (TW's jointFreewheelImpulse): one joint one-way impulse over every engaged engine.
       const impulses = jointFreewheelImpulse(s.omega, inertia, twin, d.engineRatio, d.transmissionEfficiency,
-        d.systems.transmissionTorqueLimit ?? Infinity, dt);
+        d.systems.transmissionTorqueLimit ?? Infinity, dt, this.twinImpulses);
       let total = 0;
       for (let i = 0; i < twin.length; i++) { twin[i].omega -= impulses[i] / twin[i].inertia; total += impulses[i]; }
       s.omega += total * d.engineRatio * d.transmissionEfficiency / inertia;
@@ -298,6 +299,30 @@ export class Rotorcraft {
       s.lowRpmHorn = s.lowRpmLight && (c.collective ?? 0) > d.systems.hornCollectiveMin;
     }
   }
+  /** [engine, ...extraEngines] in a retained array (written by index: no allocation after the first step). */
+  private twinEngines(engine: EngineUnit, extraEngines: readonly EngineUnit[]): EngineUnit[] {
+    const list = this.twinList;
+    list[0] = engine;
+    for (let i = 0; i < extraEngines.length; i++) list[i + 1] = extraEngines[i];
+    if (list.length !== extraEngines.length + 1) list.length = extraEngines.length + 1;
+    return list;
+  }
+  private readonly twinList: EngineUnit[] = [];
+  /** The extended path's per-step objects, reused (each is read only inside one compute call). */
+  private readonly scratch = {
+    previous: { cone: 0, cosine: 0, sine: 0 } as FlapHarmonics,
+    now: { cone: 0, cosine: 0, sine: 0 } as FlapHarmonics,
+    flapRate: { cone: 0, cosine: 0, sine: 0 } as FlapHarmonics,
+    options: {} as HubForcingOptions,
+    momentOptions: {} as HubForcingOptions,
+    forcing: { cone: 0, cosine: 0, sine: 0, damping: 0, stiffness: 0 } as HubForcing,
+    spring: { stiffness: 0, precone: 0, aerodynamic: 0 } as FlapSpring,
+    theta0: [0, 0] as readonly [number, number],
+    system: { a: [0, 0, 0, 0], f: [0, 0], b: [0, 0, 0, 0], theta0: [0, 0], hub: [0, 0, 0, 0] } as FlapSystem,
+    air: { hub: NO_H, density: 0 } as GyroAir,
+    moment: { x: 0, y: 0 },
+  };
+  private readonly twinImpulses: number[] = [];
   /** The thrust axis follows cyclic with a finite teetering response and aerodynamic blowback.
    * Each RK stage sees its own air velocity. Only stage zero advances flap/inflow states.
    */
@@ -344,12 +369,16 @@ export class Rotorcraft {
     const pitchCos = cyclic ? d.rotation * cyclic.right : d.rotation * c.aileron * d.cyclicLimit;
     const pitchSin = cyclic ? -d.rotation * cyclic.aft : -d.rotation * c.elevator * d.cyclicLimit;
     if (articulated && this.extended) {
-      const previous = { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight };
+      // Per-instance scratch (no allocation per step; each is read only inside this call).
+      const x = this.scratch, previous = x.previous, o = x.options;
+      previous.cone = s.coning; previous.cosine = -s.flapForward; previous.sine = s.flapRight;
+      o.harmonicInflow = s.harmonicInflow; o.flap = previous; o.radialFlow = hl?.radialFlow; o.periodicDamping = d.main.periodicFlapDamping;
+      o.tanDelta3 = hl?.tanDelta3; o.section = d.main.section; o.soundSpeed = soundSpeed; o.cm0 = d.main.cm0;
+      o.jacobian = !!this.gyro; o.gyro = !!this.gyro;
       const forcing = hubForcing(d.main, articulated, s.omega, density, collective, pitchCos, pitchSin, hubAir, s.inflow,
-        rate, d.rotation, { harmonicInflow: s.harmonicInflow, flap: previous, radialFlow: hl?.radialFlow,
-          periodicDamping: d.main.periodicFlapDamping, tanDelta3: hl?.tanDelta3, section: d.main.section, soundSpeed,
-          cm0: d.main.cm0, jacobian: !!this.gyro, gyro: !!this.gyro });
-      spring = hl ? { ...hl.spring, aerodynamic: forcing.stiffness } : undefined;
+        rate, d.rotation, o, x.forcing);
+      if (hl) { x.spring.stiffness = hl.spring.stiffness; x.spring.precone = hl.spring.precone; x.spring.aerodynamic = forcing.stiffness; }
+      spring = hl ? x.spring : undefined;
       // A stopped spring hub carries only its static deflection, also on dt = 0 queries (a resumed save's stale
       // harmonics never reach the hub moment).
       if (spring && !(s.omega > 0)) stoppedFlap = harmonicFlap(articulated, 0, forcing, d.rotation, spring);
@@ -358,11 +387,14 @@ export class Rotorcraft {
       // place of advanceFlap's harmonics (never a sequential explicit gyro step: loop gain about 49 rad/s); the cone
       // keeps advanceFlap's pole. A singular reduction (stopped rotor) keeps advanceFlap's static solution.
       if (this.gyro && dt > 0) {
-        const system = flapSystem(articulated, s.omega, forcing, d.rotation, rate.z, [pitchCos, pitchSin], d.main.blades, spring);
+        const theta0 = x.theta0 as [number, number];
+        theta0[0] = pitchCos; theta0[1] = pitchSin;
+        const system = flapSystem(articulated, s.omega, forcing, d.rotation, rate.z, theta0, d.main.blades, spring, x.system);
         if (system) {
-          const coupled = this.gyro.advanceCoupled(dt, c, rate, system, { cosine: previous.cosine, sine: previous.sine }, forcing.blade,
-            { hub: hubAir, density });
-          flap = { cone: flap.cone, cosine: coupled.cosine, sine: coupled.sine };
+          x.air.hub = hubAir; x.air.density = density;
+          const coupled = this.gyro.advanceCoupled(dt, c, rate, system, previous, forcing.blade, x.air);
+          // advanceFlap's result is this call's own object: its harmonics are replaced, its cone kept.
+          flap.cosine = coupled.cosine; flap.sine = coupled.sine;
         }
       }
       if (dt > 0) {
@@ -463,12 +495,14 @@ export class Rotorcraft {
       // First-harmonic inflow (RC, inflowHarmonic.ts): forced by the aerodynamic hub moment with this step's flap and
       // flap rates, and the thrust; before the uniform update, which is unchanged.
       if (s.harmonicInflow && articulated) {
-        const now = { cone: s.coning, cosine: -s.flapForward, sine: s.flapRight };
+        const x = this.scratch, now = x.now, flapRate = x.flapRate, o = x.momentOptions;
+        now.cone = s.coning; now.cosine = -s.flapForward; now.sine = s.flapRight;
         const was = previousFlap ?? now;
-        const flapRate = { cone: (now.cone - was.cone) / dt, cosine: (now.cosine - was.cosine) / dt, sine: (now.sine - was.sine) / dt };
+        flapRate.cone = (now.cone - was.cone) / dt; flapRate.cosine = (now.cosine - was.cosine) / dt; flapRate.sine = (now.sine - was.sine) / dt;
+        o.harmonicInflow = s.harmonicInflow; o.radialFlow = hl?.radialFlow; o.tanDelta3 = hl?.tanDelta3; o.section = d.main.section;
+        o.soundSpeed = soundSpeed;
         const moment = aerodynamicHubMoment(d.main, articulated, s.omega, density, collective, pitchCos, pitchSin, hubAir,
-          s.inflow, rate, d.rotation, d.main.blades, now, flapRate, { harmonicInflow: s.harmonicInflow, radialFlow: hl?.radialFlow,
-            tanDelta3: hl?.tanDelta3, section: d.main.section, soundSpeed });
+          s.inflow, rate, d.rotation, d.main.blades, now, flapRate, o, x.moment);
         Object.assign(s.harmonicInflow, advanceHarmonicInflow(s.harmonicInflow, dt, { omega: s.omega, radius: d.main.radius,
           density, inPlane: { x: hubAir.x, y: hubAir.y }, through: targetInflow - hubAir.z, induced: targetInflow,
           thrust: main.thrust, moment }));

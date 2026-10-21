@@ -99,49 +99,85 @@ export function secondEngineControl(ts: TurboshaftControl, state: RotorcraftStat
  * order (T2). One engine, no cap: the legacy impulse excess / (1/I_e + eta r^2 / I).
  */
 export function jointFreewheelImpulse(omega: number, inertia: number, engines: readonly { omega: number; inertia: number }[],
-  ratio: number, efficiency: number, capNm: number, dt: number): number[] {
-  const n = engines.length, out = new Array<number>(n).fill(0);
+  ratio: number, efficiency: number, capNm: number, dt: number, out?: number[]): number[] {
+  // Allocation-free on the physics path: the caller's `out` (Rotorcraft keeps one), the canonical order and the breakpoints
+  // in module scratch, insertion sorts (stable, as Array.prototype.sort) and no closures. Same arithmetic, same order.
+  const n = engines.length;
+  if (!out) out = new Array<number>(n);
+  out.length = n;
+  for (let i = 0; i < n; i++) out[i] = 0;
   const a = efficiency * ratio * ratio / inertia, cap = capNm * dt, base = omega * ratio;
-  const order = engines.map((_, i) => i).sort((i, k) => engines[i].omega - engines[k].omega || engines[i].inertia - engines[k].inertia);
-  /** Engine i's impulse if the rotor ends at shaft speed v. */
-  const impulse = (i: number, v: number): number => clamp(engines[i].inertia * (engines[i].omega - v), 0, cap);
-  const f = (v: number): number => {
-    let sum = 0;
-    for (const i of order) sum += impulse(i, v);
-    return v - base - a * sum;
-  };
-  // The breakpoints above r omega, ascending; the root lies in the first segment whose upper end has f >= 0.
-  const points: number[] = [];
-  for (const e of engines) {
-    if (e.omega > base) points.push(e.omega);
-    const full = e.omega - cap / e.inertia;
-    if (full > base) points.push(full);
+  const order = ORDER;
+  order.length = n;
+  for (let i = 0; i < n; i++) {
+    let k = i;
+    while (k > 0 && engineBefore(engines, i, order[k - 1])) { order[k] = order[k - 1]; k--; }
+    order[k] = i;
   }
-  if (points.length === 0) return out;
-  points.sort((x, y) => x - y);
-  let lo = base, hi = points[points.length - 1];
-  for (const p of points) {
-    if (f(p) >= 0) { hi = p; break; }
+  // The breakpoints above r omega, ascending; the root lies in the first segment whose upper end has f >= 0.
+  const points = POINTS;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    const e = engines[i];
+    if (e.omega > base) count = insertAscending(points, count, e.omega);
+    const full = e.omega - cap / e.inertia;
+    if (full > base) count = insertAscending(points, count, full);
+  }
+  if (count === 0) return out;
+  let lo = base, hi = points[count - 1];
+  for (let j = 0; j < count; j++) {
+    const p = points[j];
+    if (rootResidual(engines, order, n, p, base, a, cap) >= 0) { hi = p; break; }
     lo = p;
   }
   // Each engine's branch on (lo, hi), from its midpoint; then the closed form on that segment.
   const mid = 0.5 * (lo + hi);
   let sumIw = 0, sumI = 0, sumCap = 0;
-  for (const i of order) {
-    const e = engines[i];
+  for (let j = 0; j < n; j++) {
+    const e = engines[order[j]];
     if (mid >= e.omega) continue;
     if (mid <= e.omega - cap / e.inertia) sumCap += cap;
     else { sumIw += e.inertia * e.omega; sumI += e.inertia; }
   }
   const v = (base + a * sumIw + a * sumCap) / (1 + a * sumI);
-  for (let i = 0; i < n; i++) out[i] = impulse(i, v);
+  for (let i = 0; i < n; i++) out[i] = engineImpulse(engines[i], v, cap);
   return out;
 }
 
+/** jointFreewheelImpulse's scratch: the canonical engine order and the ascending breakpoints (grown once, then reused). */
+const ORDER: number[] = [];
+const POINTS: number[] = [];
+/** Canonical order: by shaft speed, then inertia (a strict "before": equal engines keep their index order). */
+function engineBefore(engines: readonly { omega: number; inertia: number }[], i: number, k: number): boolean {
+  return (engines[i].omega - engines[k].omega || engines[i].inertia - engines[k].inertia) < 0;
+}
+/** Insert x into the first `count` ascending entries of `list`; returns the new count. */
+function insertAscending(list: number[], count: number, x: number): number {
+  let k = count;
+  while (k > 0 && list[k - 1] > x) { list[k] = list[k - 1]; k--; }
+  list[k] = x;
+  return count + 1;
+}
+/** One engine's impulse if the rotor ends at shaft speed v. */
+function engineImpulse(e: { omega: number; inertia: number }, v: number, cap: number): number {
+  return clamp(e.inertia * (e.omega - v), 0, cap);
+}
+/** f(v) = v - r omega - a sum_i J_i(v), summed in the canonical order. */
+function rootResidual(engines: readonly { omega: number; inertia: number }[], order: readonly number[], n: number, v: number,
+  base: number, a: number, cap: number): number {
+  let sum = 0;
+  for (let j = 0; j < n; j++) sum += engineImpulse(engines[order[j]], v, cap);
+  return v - base - a * sum;
+}
+
 /** The ENGINE OUT N1 test of one engine, its N1 (fraction), TOT (C) and whether it is alight. */
-function gasProducer(unit: EngineUnit): { n1: number; tot: number; firing: boolean } {
+interface GasProducer { n1: number; tot: number; firing: boolean }
+/** publishTwin's two gas-producer readings (module scratch: no allocation per step). */
+const GAS: readonly [GasProducer, GasProducer] = [{ n1: 0, tot: 15, firing: false }, { n1: 0, tot: 15, firing: false }];
+function gasProducer(unit: EngineUnit, out: GasProducer): GasProducer {
   const t = unit.engine instanceof TurbineEngine ? unit.engine : undefined;
-  return { n1: t ? t.ng : 0, tot: t ? t.ittC : 15, firing: t?.firing === true };
+  out.n1 = t ? t.ng : 0; out.tot = t ? t.ittC : 15; out.firing = t?.firing === true;
+  return out;
 }
 
 /**
@@ -163,7 +199,7 @@ export function publishTwin(ts: TurboshaftControl, state: RotorcraftState, dt: n
   secondEngineControl(ts, state).publish(dt, c, units[1], volts, onGround, false);
   if (!tw || !def || !s1) return;
   const s2 = tw.second, l = ts.ts.limits, w = def.warnings;
-  const e1 = gasProducer(units[0]), e2 = gasProducer(units[1]);
+  const e1 = gasProducer(units[0], GAS[0]), e2 = gasProducer(units[1], GAS[1]);
   const nr = 100 * state.rotorRpm / ts.def.referenceRpm;
   const powered = volts > TURBOSHAFT_BUS_VOLTS;
   // Warning unit K-DW02/01 (needs the bus).
@@ -189,12 +225,15 @@ export function publishTwin(ts: TurboshaftControl, state: RotorcraftState, dt: n
       100 * e.n1 > l.n1Pct.continuous || tw.oeiSeconds > def.oei.emergencySeconds;
   } else {
     tw.oeiSeconds = 0;
-    const aboveMcp = (s: Block, e: ReturnType<typeof gasProducer>): boolean =>
-      s.torquePsi > (e.tot > l.mcpPsiAboveTot.totC ? l.mcpPsiAboveTot.psi : l.mcpPsi) || (e.firing && e.tot > l.totC.mcp);
-    state.takeoffPowerSeconds = aboveMcp(s1, e1) || aboveMcp(s2, e2) ? state.takeoffPowerSeconds + dt : 0;
+    state.takeoffPowerSeconds = aboveMcp(s1, e1, l) || aboveMcp(s2, e2, l) ? state.takeoffPowerSeconds + dt : 0;
     state.powerLimitExceeded = s1.overTorque || s2.overTorque || s1.overTemp || s2.overTemp ||
       100 * Math.max(e1.n1, e2.n1) > l.n1Pct.continuous || state.takeoffPowerSeconds > l.takeoffSeconds;
   }
+}
+
+/** An engine above its MCP (torque against the TOT-dependent MCP line, or TOT above the MCP temperature). */
+function aboveMcp(s: Block, e: GasProducer, l: TurboshaftControl['ts']['limits']): boolean {
+  return s.torquePsi > (e.tot > l.mcpPsiAboveTot.totC ? l.mcpPsiAboveTot.psi : l.mcpPsi) || (e.firing && e.tot > l.totC.mcp);
 }
 
 /**

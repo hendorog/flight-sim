@@ -257,7 +257,7 @@ function wrap(a: number): number { return Math.atan2(Math.sin(a), Math.cos(a)); 
  */
 export function hubForcing(d: RotorDefinition, p: ArticulatedGeometry, omega: number, density: number,
   collective: number, pitchCos: number, pitchSin: number, air: Vec3, inflow: number, bodyRate: Vec3,
-  rotation: 1 | -1, o: HubForcingOptions = {}): HubForcing {
+  rotation: 1 | -1, o: HubForcingOptions = {}, into?: HubForcing): HubForcing {
   let cone = 0, cosine = 0, sine = 0, damping = 0, stiffness = 0;
   let jcc = 0, jcs = 0, jss = 0, pc = 0, ps = 0, ic = 0, is = 0;
   const n = d.radialStations ?? 12, azimuths = d.azimuthStations ?? 16, dr = (d.radius - d.rootCutout) / n;
@@ -318,10 +318,23 @@ export function hubForcing(d: RotorDefinition, p: ArticulatedGeometry, omega: nu
   const transport = 2 * rotation * omega * (p.blade.flapInertia + p.flapOffset * p.blade.flapFirst);
   cosine -= transport * bodyRate.x;
   sine += transport * bodyRate.y;
-  const out: HubForcing = { cone, cosine, sine, damping, stiffness };
-  if (o.jacobian) out.jacobian = [jcc, jcs, jcs, jss];
-  if (o.gyro) out.blade = { pitching: { cos: pc, sin: ps }, inPlane: { cos: ic, sin: is } };
-  return out;
+  if (!into) {
+    const out: HubForcing = { cone, cosine, sine, damping, stiffness };
+    if (o.jacobian) out.jacobian = [jcc, jcs, jcs, jss];
+    if (o.gyro) out.blade = { pitching: { cos: pc, sin: ps }, inPlane: { cos: ic, sin: is } };
+    return out;
+  }
+  // The caller's object (Rotorcraft's per-instance scratch): the same numbers, no allocation once its arrays exist.
+  into.cone = cone; into.cosine = cosine; into.sine = sine; into.damping = damping; into.stiffness = stiffness;
+  if (o.jacobian) {
+    const j = (into.jacobian ?? (into.jacobian = [0, 0, 0, 0])) as [number, number, number, number];
+    j[0] = jcc; j[1] = jcs; j[2] = jcs; j[3] = jss;
+  } else into.jacobian = undefined;
+  if (o.gyro) {
+    const g = into.blade ?? (into.blade = { pitching: { cos: 0, sin: 0 }, inPlane: { cos: 0, sin: 0 } });
+    g.pitching.cos = pc; g.pitching.sin = ps; g.inPlane.cos = ic; g.inPlane.sin = is;
+  } else into.blade = undefined;
+  return into;
 }
 
 function clampValue(x: number, lo: number, hi: number): number { return x < lo ? lo : x > hi ? hi : x; }
@@ -335,7 +348,8 @@ function clampValue(x: number, lo: number, hi: number): number { return x < lo ?
  */
 export function aerodynamicHubMoment(d: RotorDefinition, p: ArticulatedGeometry, omega: number, density: number,
   collective: number, pitchCos: number, pitchSin: number, air: Vec3, inflow: number, bodyRate: Vec3,
-  rotation: 1 | -1, blades: number, flap: FlapHarmonics, rate: FlapHarmonics, o: HubForcingOptions = {}): { x: number; y: number } {
+  rotation: 1 | -1, blades: number, flap: FlapHarmonics, rate: FlapHarmonics, o: HubForcingOptions = {},
+  into?: { x: number; y: number }): { x: number; y: number } {
   let cosine = 0, sine = 0;
   const n = d.radialStations ?? 12, azimuths = d.azimuthStations ?? 16, dr = (d.radius - d.rootCutout) / n;
   const hi = o.harmonicInflow, t3 = o.tanDelta3 ?? 0, section = o.section, sound = o.soundSpeed ?? 340.3;
@@ -361,7 +375,9 @@ export function aerodynamicHubMoment(d: RotorDefinition, p: ArticulatedGeometry,
     }
   }
   // e_r = (cos psi, -sin psi): roll x = sum L r sin psi, pitch y = sum L r cos psi; B blades average B/2 per harmonic.
-  return { x: blades / 2 * sine, y: blades / 2 * cosine };
+  if (!into) return { x: blades / 2 * sine, y: blades / 2 * cosine };
+  into.x = blades / 2 * sine; into.y = blades / 2 * cosine;
+  return into;
 }
 
 /**
@@ -374,7 +390,7 @@ export function aerodynamicHubMoment(d: RotorDefinition, p: ArticulatedGeometry,
  * damping and no rotation; the caller then takes advanceFlap's harmonics (the static spring solution) for that step.
  */
 export function flapSystem(p: ArticulatedGeometry, omega: number, forcing: HubForcing, rotation: 1 | -1,
-  bodyYawRate: number, theta0: readonly [number, number], blades: number, spring?: FlapSpring): FlapSystem | null {
+  bodyYawRate: number, theta0: readonly [number, number], blades: number, spring?: FlapSpring, into?: FlapSystem): FlapSystem | null {
   if (!(omega > 0)) return null;
   const inertia = p.blade.flapInertia, c = forcing.damping;
   const delta = spring ? p.flapOffset * p.blade.flapFirst * omega ** 2 + spring.stiffness + (spring.aerodynamic ?? 0)
@@ -384,10 +400,18 @@ export function flapSystem(p: ArticulatedGeometry, omega: number, forcing: HubFo
   const decay = (c * delta + transport * rotation * c * omega) / determinant;
   const spin = (rotation * c * c * omega - transport * delta) / determinant + bodyYawRate;
   // P^-1 with P = [C, T; -T, C]: [C, -T; T, C] / (C^2 + T^2).
-  const pinv = (x: number, y: number): [number, number] => [(c * x - transport * y) / determinant, (transport * x + c * y) / determinant];
-  const f = pinv(forcing.cosine, forcing.sine);
-  const J = forcing.jacobian ?? [0, 0, 0, 0];
-  const b0 = pinv(J[0], J[2]), b1 = pinv(J[1], J[3]);
   const k = blades / 2 * (p.flapOffset * p.blade.flapFirst * omega * omega + (spring ? spring.stiffness : 0));
-  return { a: [-decay, -spin, spin, -decay], f, b: [b0[0], b1[0], b0[1], b1[1]], theta0, hub: [0, k, k, 0] };
+  const J = forcing.jacobian, j0 = J ? J[0] : 0, j1 = J ? J[1] : 0, j2 = J ? J[2] : 0, j3 = J ? J[3] : 0;
+  const f0 = (c * forcing.cosine - transport * forcing.sine) / determinant, f1 = (transport * forcing.cosine + c * forcing.sine) / determinant;
+  const b00 = (c * j0 - transport * j2) / determinant, b10 = (transport * j0 + c * j2) / determinant;
+  const b01 = (c * j1 - transport * j3) / determinant, b11 = (transport * j1 + c * j3) / determinant;
+  if (!into) return { a: [-decay, -spin, spin, -decay], f: [f0, f1], b: [b00, b01, b10, b11], theta0, hub: [0, k, k, 0] };
+  // The caller's object (Rotorcraft's per-instance scratch, mutable arrays): the same numbers, no allocation.
+  const a = into.a as unknown as number[], f = into.f as unknown as number[], b = into.b as unknown as number[], hub = into.hub as unknown as number[];
+  a[0] = -decay; a[1] = -spin; a[2] = spin; a[3] = -decay;
+  f[0] = f0; f[1] = f1;
+  b[0] = b00; b[1] = b01; b[2] = b10; b[3] = b11;
+  hub[0] = 0; hub[1] = k; hub[2] = k; hub[3] = 0;
+  into.theta0 = theta0;
+  return into;
 }
