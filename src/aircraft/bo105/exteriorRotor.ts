@@ -190,7 +190,11 @@ export class Bo105MainRotor {
       meanFlap += flap / n; forwardFlap += 2 * flap * Math.sin(psi) / n; rightFlap += 2 * flap * Math.cos(psi) / n;
       meanPitch += pitch / n;
       arm.pitch.rotation.x = pitch;
-      this.necks[i].pose(flap, pitch, this.bend);
+      // The roots blur with the blades: once the renderer hides the instanced blades (blur.solid = 0, set by the base
+      // update this frame) the necks hide too and skip their per-vertex re-pose; the pitch links stay fitted to the
+      // still-drawn horns.
+      arm.neck.visible = this.rotor.blades.visible;
+      if (arm.neck.visible) this.necks[i].pose(flap, pitch, this.bend);
       outboardBladeMatrix(flap, pitch, this.bend, this.matrix);
       this.rotor.blades.setMatrixAt(i, this.matrix.premultiply(this.arm.makeRotationY(i * 2 * Math.PI / n)));
       // Pitch link: rotating swashplate ring (at the horn's azimuth) to the pitch-horn ball.
@@ -203,7 +207,10 @@ export class Bo105MainRotor {
     this.rotor.blades.instanceMatrix.needsUpdate = true;
     // The exposure disc and the trail use the same bent-blade solution (mean flap, first-harmonic tilt).
     const bend = this.bend, p = this.rotor.blur.geometry.getAttribute('position');
-    if (meanFlap !== this.blurCone) {
+    // The base TeeteringRotor.update (run first) rewrites the disc whenever its own cone changes: re-pose it then too,
+    // checked on vertex 0 (the root ring at azimuth 0), as the MD 500E adapter does.
+    const firstY = bentAxis(Math.hypot(this.rotor.discPositions[0], this.rotor.discPositions[2]), meanFlap, bend, this.axis)[1];
+    if (meanFlap !== this.blurCone || Math.abs(p.getY(0) - firstY) > 1e-7) {
       for (let i = 0; i < p.count; i++) {
         const x = this.rotor.discPositions[3 * i], z = this.rotor.discPositions[3 * i + 2], radius = Math.hypot(x, z);
         bentAxis(radius, meanFlap, bend, this.axis);
@@ -222,7 +229,12 @@ export class Bo105MainRotor {
     this.rotor.trail.update(bladeBlur(s.rotorRpm, n), meanPitch, meanFlap, virtualHinge(meanFlap, bend));
   }
 
-  dispose(): void { for (const neck of this.necks) neck.geometry.dispose(); }
+  /** Disposes the neck and pitch-link geometries (idempotent; RotorcraftVisual.dispose also disposes every mesh it
+   *  finds under root, these included). Bo105ExteriorVisual.dispose calls it. */
+  dispose(): void {
+    for (const neck of this.necks) neck.geometry.dispose();
+    for (const link of this.pitchLinks) link.geometry.dispose();
+  }
 }
 
 /** Two-blade teetering tail rotor on the LEFT of the fin top: yoke on its teeter bolt, the pitch-change crosshead

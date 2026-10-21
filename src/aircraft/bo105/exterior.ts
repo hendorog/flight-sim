@@ -53,7 +53,7 @@ export function bo105ExteriorVisualClass(Base: typeof RotorcraftVisual, Shape: t
       this.hingelessHead.update(ctx, readRotorcraft ? readRotorcraft(ctx) : ctx.state.rotorcraft); this.updateTailHead();
     }
     override dispose(): void {
-      super.dispose();
+      super.dispose(); this.hingelessHead.dispose();
       for (const m of [...Object.values(this.detailMaterials), ...this.details.materials]) m.dispose();
       for (const t of this.details.textures) t.dispose();
     }

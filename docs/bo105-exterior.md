@@ -68,7 +68,20 @@ flaps by bending its glass-fibre root:
   `e + (L/β) tan(β/2)` ≈ `e + L/2` = 0.836 m (0.17 R). That is ABOVE the literature's 12–15.2 % band: the physics
   hinge stays at `e`; only the drawing's virtual hinge is outboard of it (the plan's "bent over 0.1 R past the
   equivalent-offset station" read literally). Against a rigid blade hinged at `e` the drawn tip sits (L/2) sin β lower:
-  1.3 cm at 3° of coning, 2.1 cm at 5°. The disc and the blade trail use the same virtual hinge.
+  1.3 cm at 3° of coning, 2.1 cm at 5°. The disc and the blade trail use the same virtual hinge. Kept as an **agent
+  choice** after review: centring the 0.492 m bend on `e` would start it at 0.344 m, inside the fork (0.38–0.54 m) and
+  the housing; shortening it so it starts at the fork end (L ≈ 0.10 m) would turn the root through 5° over 10 cm, a
+  visible kink. Either would put the drawn virtual hinge on `e`.
+- **At flight rpm** the renderer's perceptual blur hides the instanced blades (solid only below about 107 rpm); the
+  bending roots hide with them and are not re-posed while hidden (4 × 650 vertices and their normals per frame at
+  424 rpm → none). The pitch links stay fitted to the horns, which stay drawn. The exposure disc is re-posed on the
+  bent-blade law whenever the mean flap changes OR the base rotor has rewritten it for its own cone (checked on the
+  disc's first vertex, as the MD 500E adapter does).
+- **When BO adds `bending` to `BO105_BLADE_CONING`** (coning.ts plans a 0.2–0.3 m tip sag), the base renderer will
+  sag the shared blade geometry counter-rotated by the base's collective pitch, and the per-blade outboard transform
+  is applied on top, so the sag plane will not follow each blade's own feathering (a small plane error; the sag is
+  about zero at the root, so the neck still meets the blade). BX re-checks the root-step test then and either
+  counter-rotates per blade or records the error.
 - **Swashplate.** Its tilt is `swashplateCyclic(def, controls, state)` (the one swashplate law: the stick law rotated
   by the hingeless `controlPhase`, or the gyro's cyclic), never the stick alone; the test builds a hingeless
   definition with a 0.3 rad control phase and checks that the plate follows the law and not the raw stick. The plate
@@ -114,7 +127,7 @@ flaps by bending its glass-fibre root:
 | Stabiliser span 2.0 m ± 3 % (P AR-280) | 2.008 m | +0.4 % |
 | Shaft tilt 3° | 3.000° | 0 |
 | Nothing below the skid sole | lowest visible vertex ≤ sole + 2 mm | pass |
-| Pilot's eye within 3 cm of `geometry.fuselage.pilotEye` | `cockpit.pilotEye` = `dimensions.ts` PILOT_EYE exactly; 0.32 m under the lining | 0 (but see the request: the S0 definition still carries the MD 500E's eye) |
+| Pilot's eye within 3 cm of `geometry.fuselage.pilotEye` | `cockpit.pilotEye` = `dimensions.ts` PILOT_EYE (0.32 m under the lining); `BO105_DEFINITION.geometry.fuselage.pilotEye` is still the MD 500E's | **RED until BO request 1**: 1.295 m apart (0.78 / 0.69 / 0.77 m in x / y / z); the test measures the definition, as `consistency.test.ts` does |
 
 ## Cockpit (pilot RIGHT)
 
@@ -179,7 +192,8 @@ the 0570b rotor head for the hub; Christoph 7, Policía CB and schoschie for the
 
 1. Tail-rotor hub height and fin outline: built to `dimensions.ts` (2.30 m), which the photographs and the MM height
    put about 0.5 m too low (request 2).
-2. The S0 definition's pilot eye is the MD 500E's (request 1); the cockpit camera uses the Bo 105's.
+2. The S0 definition's pilot eye is the MD 500E's (request 1), 1.295 m from the cockpit's; the plan's eye row and
+   GA's consistency row are red until BO lands it.
 3. Blade droop at rest uses the provisional MD 500E coning data under the Bo 105 name (`BO105_BLADE_CONING`, BO): a
    free hinge on a −2° droop stop, not the hingeless root's precone and bending.
 4. The drawn virtual hinge is e + L/2 ≈ 0.17 R, above the 12–15.2 % band (the physics hinge stays at e; the drawn

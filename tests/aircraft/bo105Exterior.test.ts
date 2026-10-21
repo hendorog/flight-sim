@@ -241,6 +241,46 @@ describe('Bo 105 CB-4 exterior', () => {
     rotor.dispose(); Object.values(mat).forEach(m => m.dispose());
   });
 
+  it('hides the bending roots with the blades at flight rpm and keeps the exposure disc on the bent-blade law', () => {
+    const d = def.rotorcraftVisual!, mat = bo105Materials();
+    const rotor = new TeeteringRotor({ ...d.main, blades: 4, hubType: 'hingeless' }, fakeMaterials());
+    const head = new Bo105MainRotor(rotor, d.main, rotorcraft, mat), ctx = fakeContext(2);
+    ctx.state.rotorcraft = emptyRotorcraftState();
+    const blades = [0.05, 0.04, 0.06, 0.03].map(flap => ({ flap, lag: 0, pitch: 0.12 }));
+    ctx.state.rotorcraft.articulated = { blades };
+    const poses = head.necks.map(n => vi.spyOn(n, 'pose'));
+    const frame = (rpm: number, cone: number) => {
+      Object.assign(ctx.state.rotorcraft!, { rotorRpm: rpm });
+      rotor.update(0.4, rpm, 0.12, cone); head.update(ctx);
+    };
+    // Slow (blades solid): roots drawn and posed.
+    expect(bladeBlur(60, 4).solid).toBeGreaterThan(0); expect(bladeBlur(424, 4).solid).toBe(0);
+    frame(60, 0.02);
+    head.arms.forEach(a => expect(a.neck.visible).toBe(true)); poses.forEach(p => expect(p).toHaveBeenCalledTimes(1));
+    // Flight rpm (blades blurred away): roots hidden and not re-posed although every flap changes.
+    blades.forEach(b => { b.flap += 0.01; });
+    frame(424, 0.02);
+    expect(rotor.blades.visible).toBe(false);
+    head.arms.forEach(a => expect(a.neck.visible).toBe(false)); poses.forEach(p => expect(p).toHaveBeenCalledTimes(1));
+    // The disc: vertex 0 is the root ring at azimuth 0, on the bent axis at the mean flap.
+    const disc = rotor.blur.geometry.getAttribute('position'), meanFlap = blades.reduce((s, b) => s + b.flap / 4, 0);
+    const bentY = bentAxis(Math.hypot(rotor.discPositions[0], rotor.discPositions[2]), meanFlap, head.bend, [0, 0, 0])[1];
+    expect(disc.getY(0)).toBeCloseTo(bentY, 6);
+    // The base rewrites the disc for its own cone change; with the published flaps unchanged the head re-poses it.
+    rotor.update(0.4, 424, 0.12, 0.08);
+    expect(Math.abs(disc.getY(0) - bentY)).toBeGreaterThan(1e-3);
+    head.update(ctx);
+    expect(disc.getY(0)).toBeCloseTo(bentY, 6);
+    // Slowing again: the roots reappear posed at the current flaps.
+    frame(60, 0.02);
+    head.arms.forEach((a, i) => {
+      expect(a.neck.visible).toBe(true); expect(poses[i]).toHaveBeenLastCalledWith(blades[i].flap, 0.12, head.bend);
+    });
+    head.dispose();
+    rotor.group.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    rotor.dispose(); Object.values(mat).forEach(m => m.dispose());
+  });
+
   it('takes the swashplate from swashplateCyclic (the hingeless control phase), and the head stands on the 3 deg shaft', () => {
     const d = def.rotorcraftVisual!, mat = bo105Materials(), phased = hingeless({ controlPhase: 0.3 });
     const rotor = new TeeteringRotor({ ...d.main, blades: 4, hubType: 'hingeless' }, fakeMaterials());
@@ -359,9 +399,8 @@ describe('Bo 105 CB-4 exterior', () => {
   it('seats the pilot RIGHT with one cyclic, one collective on his left, two pedals, the power levers and a scaled panel', () => {
     withVisual((visual, ctx) => {
       const lining = new FuselageShape(0.026, -Infinity, def.fuselage), eye = D.PILOT_EYE;
-      // The eye: on the contract within 3 cm, under the roof and inside the side walls.
-      const e = def.cockpit.pilotEye;
-      expect(Math.hypot(e[0] - eye.x, e[1] - eye.y, e[2] - eye.z)).toBeLessThan(0.03);
+      // The visual's eye (dimensions.ts PILOT_EYE; the definition row is its own case below): under the roof and
+      // inside the side walls.
       expect(eye.z - lining.section(eye.x).zTop).toBeGreaterThan(0.15);
       expect(sectionHalfWidth(lining, eye.x, eye.z)).toBeGreaterThan(Math.abs(eye.y) + 0.2);
       // The frozen overhead console and the power-lever pivots hang inside the cabin lining.
@@ -390,6 +429,15 @@ describe('Bo 105 CB-4 exterior', () => {
       ctx.controls.n2Beep = 1; ctx.controls.n2BeepSplit = -1;
       visual.update(ctx);
       expect(levers[0].rotation.x).toBeCloseTo(powerLeverAngle(0), 12); expect(levers[1].rotation.x).toBeCloseTo(powerLeverAngle(1), 12);
+      // Sense in the world: the knob (FRD [0, 0, length - 0.01] in the lever frame) swings FORWARD (+x FRD) at FLIGHT
+      // and AFT at OFF, by length sin(travel / 2) either side of the hanging position.
+      const knob = () => toFrd(levers[0].localToWorld(frd(0, 0, BO105_POWER_LEVERS.length - 0.01)));
+      visual.root.updateMatrixWorld(true); const off = knob();
+      ctx.controls.engines = [{ throttle: 1 }, { throttle: 1 }]; visual.update(ctx); visual.root.updateMatrixWorld(true);
+      const flight = knob(), swing = (BO105_POWER_LEVERS.length - 0.01) * Math.sin(BO105_POWER_LEVERS.travelDeg * Math.PI / 360);
+      expect(flight[0]).toBeGreaterThan(off[0]);
+      expect(flight[0] - BO105_POWER_LEVERS.pivot.x).toBeCloseTo(swing, 6); expect(off[0] - BO105_POWER_LEVERS.pivot.x).toBeCloseTo(-swing, 6);
+      ctx.controls.engines = [{ throttle: 0 }, { throttle: 1 }]; visual.update(ctx);
       expect(powerLeverAngle(1) - powerLeverAngle(0)).toBeCloseTo(BO105_POWER_LEVERS.travelDeg * Math.PI / 180, 12);
       expect(stick.rotation.x).toBeGreaterThan(0); expect(stick.rotation.z).toBeGreaterThan(0);
       const trim = visual.root.getObjectByName('bo105EngineTrimSwitch')!;
@@ -404,6 +452,14 @@ describe('Bo 105 CB-4 exterior', () => {
     });
   }, HEAVY);
 
+  // Plan section 6.3 row "eye within 3 cm of geometry.fuselage.pilotEye", measured against the DEFINITION (the camera
+  // and consistency.test.ts read it). RED until BO's index.ts sets geometry.fuselage.pilotEye from dimensions.ts
+  // PILOT_EYE (BX request 1): the S0 stub still carries the MD 500E's eye, 0.78 / 0.69 / 0.77 m away.
+  it("puts the cockpit's eye within 3 cm of the definition's geometry.fuselage.pilotEye", () => {
+    const e = def.cockpit.pilotEye, g = BO105_DEFINITION.geometry.fuselage.pilotEye;
+    expect(Math.hypot(e[0] - g.x, e[1] - g.y, e[2] - g.z)).toBeLessThan(0.03);
+  });
+
   it('faces every aerofoil panel, fairing loft and bending root outward (FrontSide)', () => {
     const shells: [string, THREE.BufferGeometry][] = [];
     shells.push(['fin', aerofoilPanel(FIN[0], FIN[3], FIN[1], FIN[2], [0, 1, 0], 0.14)]);
@@ -414,7 +470,7 @@ describe('Bo 105 CB-4 exterior', () => {
       const top = STAB.z - ENDPLATE.height * ENDPLATE.above, bottom = STAB.z + ENDPLATE.height * (1 - ENDPLATE.above);
       shells.push([`endplate ${side}`, aerofoilPanel([mid + c, y, top], [mid - c, y, top], [mid + c - 0.02, y, bottom], [mid - c, y, bottom], [0, side, 0], 0.08, 4)]);
     }
-    shells.push(['deck fairing', fairingLoft(DECK_FAIRING.map(([s, t, b, hw]) => [S(s), H(t), H(b), hw] as const), DECK_N)]);
+    shells.push(['deck fairing', fairingLoft(DECK_FAIRING.map(([s, t, b, hw]) => [S(s), H(t), H(b), hw] as const), DECK_N, true)]);
     shells.push(['boom-root fairing', fairingLoft(BOOM_ROOT_FAIRING.map(([s, t, b, hw]) => [S(s), H(t), H(b), hw] as const), 2.6, true)]);
     const neck = new BendingNeck(0.40, 1.12, { chord: 0.27, thickness: 0.0324, twist: 0.08 });
     shells.push(['blade root, straight', neck.geometry.clone()]);
