@@ -100,6 +100,24 @@ describe('the inflow gradient opposes the lift moment (sign check)', () => {
   });
 });
 
+describe('the inflow gradient opposes the lift moment at 80 KCAS too (wind axes)', () => {
+  it('a right lateral cyclic step: more downwash on the LEFT (the lifted side) and a smaller on-axis roll moment than with the inflow off', () => {
+    const ktas = 80 * Math.sqrt(1.225 / 1.12094);
+    const step = (inflow: boolean) => {
+      const r = fixtureRig({ kt: ktas, ft: 3000, hub: { harmonicInflow: inflow, controlPhase: 0 } }), b = trimBody(r), rc = r.fm.rotorcraft!;
+      const rho = r.env.atmosphere().density;
+      const at = (sign: number) => { const f = rc.settle(b, v3.zero(), rho, 1500, { ...r.c, aileron: r.c.aileron + sign * 0.02 });
+        return { mx: f.moment.x, my: f.moment.y, sin: rc.state.harmonicInflow?.sin ?? 0 }; };
+      const p = at(1), m = at(-1);
+      return { mx: p.mx - m.mx, my: p.my - m.my, sin: p.sin - m.sin };
+    };
+    const off = step(false), on = step(true);
+    report.signCheck80 = { off, on, onAxisRatio: on.mx / off.mx, magnitudeRatio: Math.hypot(on.mx, on.my) / Math.hypot(off.mx, off.my) };
+    expect(on.sin).toBeGreaterThan(0);
+    expect(on.mx).toBeLessThan(off.mx);
+  });
+});
+
 describe('R11: transverse-flow roll', () => {
   it('lateral cyclic trim 0-40 KIAS: the harmonic inflow adds a LEFT excursion of 0.5-3.0 deg peaking at 10-30 KIAS', () => {
     // The swashplate's lateral cyclic (blade degrees, after the control phase): the trim with the harmonic inflow minus

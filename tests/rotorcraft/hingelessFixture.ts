@@ -46,6 +46,8 @@ export interface FixtureOptions {
   inertia?: number;
   /** Main-rotor fields over the fixture's (periodicFlapDamping, stations, ...). */
   main?: Partial<RotorcraftDefinition['main']>;
+  /** Airframe fields over the fixture's (decompositions only: stabilizer, fins, fuselageMoment). */
+  airframe?: Partial<Pick<RotorcraftDefinition, 'stabilizer' | 'fins' | 'fuselageMoment'>>;
 }
 
 /** Polar inertia of the fixture, kg m^2: ESTIMATE 900 (plan 2.3; gamma about the shaft 5.0-5.5 with a = 6.0). */
@@ -133,6 +135,7 @@ export function fixtureRotorcraft(o: FixtureOptions = {}): RotorcraftDefinition 
     // Airborne fixture: no stinger, no ground-rotor pose (the stub's are the MD 500E's), skids at the Bo 105 stance.
     tailProtection: undefined, groundRotor: undefined,
     skids: { ...base.skids, halfTrack: D.SKID_HALF_TRACK, front: D.SKID_FRONT_X, rear: D.SKID_REAR_X, z: D.SKID_Z, frontZ: undefined },
+    ...o.airframe,
   };
   const coning: BladeConingDefinition = {
     // Uniform blade (the solver's own estimate): polar inertia / blades over the 1.10-4.92 m span.
