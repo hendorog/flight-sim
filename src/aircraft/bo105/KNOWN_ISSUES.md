@@ -141,10 +141,16 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
     downwind at 4.6 m/s from the start: the scenario trims at airspeed 0 in the default 8 kt wind.
   - With `&ap=1`, a 31 s recording stays 5.4 m from the start position and holds within 2 m after 11 s.
   - The plan's `sim-record ... 12 30` covers only 6.9 s.
-- **Fixed-wing trim cue under the hold** (legacy `src/ui/status.ts`, every type): "Yoke held back: trim nose up (End)" can
-  show while the hold autopilot flies. The hold moves the stick away from the keyboard neutral, and `othersFlying` counts
-  only the demo and the instructor. It is intermittent: seen once on a Bo 105 `hover=1&ap=1` frame. It was not seen in a
-  later run or on the MD 500E.
+- **Fixed-wing trim cue under the hold** (legacy `src/ui/status.ts:226-235`; the Bo 105 exposes it): with `hover=1&ap=1`
+  the HUD control box shows "Yoke held back: trim nose up (End)" in both Bo 105 runs at 20 s. The MD 500E does not show
+  it on the same URL. Two legacy rules combine:
+  - the cue counts the hold autopilot as the pilot (`othersFlying` covers only the demo and the instructor);
+  - the cue's direction reads the absolute elevator, not the offset from the keyboard neutral.
+
+  The hold flies the Bo 105 at elevator 0.333 against a spring-trim anchor of 0.459. The 8 kt wind trims the stick
+  forward of the zero-wind reset trim, so the stick sits 0.126 forward of the neutral. The cue still says "held back",
+  because the elevator is positive. The MD 500E sits 0.025 from its anchor (0.398 against 0.423), under the 0.04 threshold.
+  Recorded, not fixed (plan section 2.5 item 5: legacy rules for every type).
 - **`summary().engines[1].propRpm`** reads engine 2's output-shaft rpm (6156) rather than the rotor's 425. It has two
   readers: the muted engine-2 prop voice, and the propeller visual, which the Bo 105 does not have. No visible or
   audible effect.

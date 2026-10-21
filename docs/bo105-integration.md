@@ -207,8 +207,12 @@ No code was changed. The measured-against-target table is `W/flight-numbers.md` 
   - `rotorside` is 18 m from the head;
   - `panel-day` at 1000 px height cuts off the lower rows.
 - **Recorded, not fixed.**
-  - The fixed-wing "Yoke held back: trim nose up (End)" cue can show while the hold flies. This is legacy
-    `src/ui/status.ts` behaviour for every type: the autopilot is not counted among `othersFlying`.
+  - The fixed-wing "Yoke held back: trim nose up (End)" cue shows on the Bo 105 while the hold flies (both runs at
+    20 s), and not on the MD 500E. It comes from two legacy `src/ui/status.ts` rules:
+    - an engaged autopilot is not counted among `othersFlying`;
+    - the cue's direction reads the absolute elevator.
+    The hold leaves the Bo 105 stick 0.126 forward of its spring-trim anchor (0.333 against 0.459, wind trim), yet the
+    cue says "back". The MD 500E sits 0.025 from its anchor, under the 0.04 threshold. See KNOWN_ISSUES.
   - `engines[1].propRpm` reads engine 2's output-shaft rpm (6156). Its only readers are the muted engine-2 prop voice
     and the propeller visual, which the Bo 105 does not have.
 - **Not run at gate 0:**
