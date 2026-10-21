@@ -153,10 +153,10 @@ describe('the hover readout (plan flights "AH-56 hover readout"): 20 s hands-off
     // never saw. The AMCS rate command then rolls the aircraft right at 0.2 deg/s and it diverges (+7.6 deg at 20 s; ICS
     // -21 deg). With the in-plane force faded in over the first 0.3 m/s (an experiment, not committed) the AMCS holds
     // -5.2 -> -5.5 deg and the ICS -5.1 -> -4.4 deg over the 20 s.
-    for (const config of ['amcs', 'ics'] as const) {
-      const s = hover(config);
-      expect(s.roll).toBeLessThanOrEqual(-2 * DEG);
-      expect(s.roll).toBeGreaterThanOrEqual(-7 * DEG);
+    const rolls = (['amcs', 'ics'] as const).map((config) => hover(config).roll);
+    for (const roll of rolls) {
+      expect(roll).toBeLessThanOrEqual(-2 * DEG);
+      expect(roll).toBeGreaterThanOrEqual(-7 * DEG);
     }
   }, 60000);
 });
