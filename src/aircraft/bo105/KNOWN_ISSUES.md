@@ -207,10 +207,44 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    75.2 %; 1000 -13.42 / 13.20 / 0.1044 / 76.1 %. Every step above 850 puts Lp and the roll mode outside their AR-280
    envelopes (-11.41, 11.04) and M_lon outside its +/-5 % fit; the sourced Lock number (F METU Table 9: 5.54, about 840
    kg m^2 at a = 6.0) supports 850. Kept (item 22).
-20. **Hover pedal authority is unvalidated and strong**: a full pedal step in the IGE hover (2200 kg) peaks at **165 deg/s
-   right and 129 deg/s left** (90 deg/s reached in 0.93 / 1.46 s) against the FM's 90 deg/s turn-rate limit; the test
-   asserts only >= 90 deg/s within 3 s. With N_ped fitted at 80 kt (0.049 rad/s^2 per %) and hover Nr -0.54 1/s the
-   implied steady rate is about 260 deg/s. No hover source; owner judgement.
+20. **Hover yaw damping is half the identified value; hover pedal turns are strong** (`bo105Derivatives` KNOWN HOVER MISS
+   Nr; re-examined at the flyability pass, 2026-10-22). Hover Nr -0.537 1/s (2200 kg IGE) against the flight-identified
+   -0.974 (DLR) / -1.10 (CERT) (P ERF 1995 Table 1; band -1.43..-0.68); N_ped 0.042 per % is inside (0.0477 / 0.0474).
+   So the pilot reviewer's "pedals 3x too sensitive" is wrong on control power and right on feel: a 10 % pedal step
+   (attitude held) reaches 36.4 deg/s at 3 s and is still rising (50.9 at 8 s, tau 1.86 s); with Nr about -1.0 it would
+   settle near 23 deg/s by 3 s. Where the model's hover Nr comes from (W/bofly/probes-fix `yaw`, quasi-static,
+   rotor states re-settled): tail rotor alone -0.43, the main rotor's yaw-rate coupling (`yawInRotorSpeed`) -0.08, the fin
+   -0.03 (its tail-rotor blockage `tailRotorFlow` +0.03), the fuselage 0, the tail rotor's Pitt-Peters inflow 0 (it
+   settles in milliseconds). **Momentum theory does not support more from the tail rotor** (D): with the hover tail
+   thrust 1,335 N, lambda_i 0.0625, a sigma 0.688, Omega R 222 m/s, the settled-inflow derivative dT/dVa =
+   rho A Omega R (a sigma / 8) / (1 + a sigma / (16 lambda_i)) = 39 N per m/s (Padfield's hover Zw form), Nr_tail = -39 x
+   5.94^2 / 4099 = **-0.34 1/s**: the model's -0.43 is already 27 % above it. (The judge's plan R2 used a sigma / 4, which
+   doubles it to 78 N per m/s and -0.68; with the inflow frozen, a sigma / 4 without the inflow factor, it would be 132
+   N per m/s and -1.14, close to the identified value; the tail inflow time constant is about 10 ms, so the frozen case
+   does not apply.) Heffley's analytical BO-105C (NASA CR-3144, F) has hover N'r -0.33 and 80 kt -0.53 against the
+   flight's -0.86 / -1.07 at 80 kt: the analytical models sit at about half the identified yaw damping at both speeds.
+   One-probe sweep of the per-definition knobs (80 kt at 3000 ft, the AR-280 condition; constraints: 80 kt Nr in
+   -1.39..-0.60, Nv 0.057..0.152, N_ped 0.049 +/-30 %, Dutch roll 2.5 rad/s +/-30 % zeta 0.05-0.30, hover N_ped
+   0.033..0.062):
+
+   | Variant | hover Nr | hover N_ped | 80 kt Nr | 80 kt Nv | 80 kt N_ped | Dutch roll rad/s, zeta |
+   |---|---|---|---|---|---|---|
+   | as built | -0.537 | 0.042 | -1.241 | 0.136 | 0.049 | 2.70, 0.18 |
+   | tail lift slope 6.3 (2D NACA 0012) | -0.554 | 0.045 | -1.285 | 0.144 | 0.053 | 2.76, 0.19 |
+   | tail root cut-out 0.10 | -0.539 | 0.042 | -1.255 | 0.139 | 0.049 | 2.72, 0.18 |
+   | fin lift slope 1.5 | -0.537 | 0.042 | -1.130 | 0.116 | 0.050 | 2.55, 0.17 |
+   | tail lift slope x 2 (11.4, unphysical) | -0.656 | 0.060 | **-1.577** | **0.193** | **0.076** | 3.12, 0.22 |
+   | the same, pedal range / 2, fin slope 1.0 | -0.656 | 0.030 | **-1.421** | 0.164 | 0.039 | 2.93, 0.20 |
+
+   No per-definition set reaches the band: even a doubled tail-rotor lift slope moves the hover only to -0.66 (the
+   settled inflow absorbs most of it) and breaks the 80 kt Nr / Nv / N_ped rows. **Kept as built (the plan's fallback);
+   the row stays a KNOWN HOVER MISS.** The keyboard pilot gets the identified damping through the STAB ASSIST's yaw-rate
+   term (0.3 of the pedal axis per rad/s: about -0.63 1/s more, D: N_ped 0.042 per % x 50 % per unit x 0.3; Nr about
+   -1.17 with it on, inside the ERF band; flyability pass section in "Integration"). A full pedal step in the IGE hover
+   (2200 kg) peaks at 165 deg/s right and 129 deg/s left (90 deg/s reached in 0.93 / 1.46 s) against the FM's 90 deg/s
+   turn-rate limit; the test asserts only >= 90 deg/s within 3 s. Per keyboard tap the Bo 105 is already the gentlest
+   of the five helicopters (a 0.5 s tap: 7.0 deg/s at 3 s against 13.8-35.4 on the others), so the pedal keys are not
+   slowed.
 21. **The mass envelope's 1140 kg minimum is unreachable**: the TCDS minimum (P, facts.ts) sits 136 kg below this
    airframe's empty mass (1276 kg, S Jane's CB), so the CG envelope's 1140 kg point is data only; the lightest rig case is
    1400 kg. A CB-4 weighing record would settle it.
