@@ -166,6 +166,34 @@ describe('H7: the half-P hop (ICS only; P frequency and stir limit, ESTIMATE amp
     // 0.5 x 25.76 rad/s / 240 Hz = 0.054 rad per step: no step of sin(phase) larger than that.
     expect(jump).toBeLessThan(0.06);
   });
+  it('save and restore: the phase continues, the amplitude keeps its saved value and decays, halfp=1 does not re-arm it', () => {
+    // A: a forced event, 1 s hands off. B: a new flight with halfp=1 restored from A's snapshot the way SimPhysics does it.
+    const a = rigAt({ force: true });
+    for (let i = 0; i < 240; i++) a.fm.step(DT, a.c, a.env);
+    const sys = a.fm.captureSystems(), st = a.fm.state, saved = { ...st.rotorcraft!.events!.halfPHop! };
+    const b = rigAt({ force: true });
+    b.fm.restoreSystems(sys, b.c, 0.5 * st.airDensity * st.tas * st.tas);
+    b.fm.setClock(st.time);
+    b.fm.setKinematics({ position: { ...st.position }, orientation: { ...st.orientation }, velocity: { ...st.velocity }, angularVelocity: { ...st.angularVelocity } });
+    const ea = a.fm.state.rotorcraft!.events!.halfPHop!, eb = b.fm.state.rotorcraft!.events!.halfPHop!;
+    expect(eb.phase).toBe(saved.phase); expect(eb.amplitude).toBe(saved.amplitude);
+    let worstPhase = 0;
+    for (let i = 0; i < 240; i++) {
+      a.fm.step(DT, a.c, a.env); b.fm.step(DT, b.c, b.env);
+      worstPhase = Math.max(worstPhase, Math.abs(ea.phase - eb.phase));
+    }
+    report('H7 restore', { savedPhase: saved.phase, savedAmplitude: saved.amplitude, phaseGapAfter1s: worstPhase, amplitudeA: ea.amplitude,
+      amplitudeB: eb.amplitude, activeB: eb.active });
+    trace.restore = { saved, worstPhase, a: ea.amplitude, b: eb.amplitude };
+    expect(saved.active).toBe(true);
+    // The restored flight's first step is on the flight clock (setClock) and takes the rotor's turn: no step of the phase (0.054 rad)
+    // is lost. What remains is the two flights' own drift: B's private onset fade restarts, so its body motion and rotor speed
+    // differ slightly from A's.
+    expect(worstPhase).toBeLessThan(0.02);
+    // Decaying from the saved amplitude (hands off), not restarted at 1.
+    expect(eb.amplitude).toBeLessThan(saved.amplitude);
+    expect(Math.abs(eb.amplitude - ea.amplitude)).toBeLessThan(0.05);
+  });
   it('halfp=1 (InitialConditions.forceHalfPHop) starts the event at the first clocked step, ICS only, and leaves the trim unchanged', () => {
     const plain = rigAt(), forced = rigAt({ force: true }), amcs = rigAt({ cfg: 'amcs', force: true });
     expect(forced.fm.lastTrim!.pitch).toBe(plain.fm.lastTrim!.pitch);

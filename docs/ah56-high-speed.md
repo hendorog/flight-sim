@@ -241,16 +241,31 @@ H7 measured (ah56HalfP.test.ts; ICS, 160 KCAS, 18,300 lb, SL, collective 4.4° a
 | Phase over 10 revolutions | = 0.5 × the unwrapped azimuth to 1e-9; sin φ steps ≤ 0.054 per step | continuous |
 | halfp=1 | trim identical to the unforced one; active at the first clocked step; never in AMCS | |
 
-In the sim (`index.html?aircraft=ah56&config=ics&halfp=1&scenario=cruise&run=2&freeze=1`): at 2.0 s the event is active, amplitude
-0.44 (hands off: decaying), phase 25.65 rad (0.5 × 2 s × 25.76 rad/s), roll rate −8.7 °/s, n_z 1.06. With hands off a forced event
-dies in about 8 s; stirring keeps it growing.
+**Save and restore.** The event's state (active, amplitude, phase, stirs, strike) is saved; the detector's history is not. Restored
+the way SimPhysics restores (reset, `restoreSystems`, `setClock`, `setKinematics`), a forced event 1 s old continues: the phase
+from its saved 12.83 rad without losing a step (the first step takes the rotor's turn for the missing previous azimuth; 0.005 rad of
+drift after 1 s from the two flights' slightly different motion), the amplitude from its saved 0.667 decaying to 0.444 (the
+unrestored flight: 0.444). The 1 s onset fade and the 3 s cue clock restart after a restore, and `halfp=1` in the URL does not re-arm
+a restored flight (it arms only a phase of 0).
+
+**In the sim** (shots under `work/rigid/shots/AH/`, headless Chrome on the GPU, `quality=low`). This branch has AX's S0 stub exterior
+(the MD 500E body), so the pictures show the AH-56 physics under the stub and cannot be compared with the reference photos (the
+look gate needs AX's exterior):
+- `ah56-cruise.png` (`index.html?aircraft=ah56&scenario=cruise&cam=chase&ui=0&resume=0&quality=low`): AMCS, 120 KIAS, Nr 239.85 rpm,
+  pitch −1.7°, roll −1.6°, the event idle (phase 0: AMCS).
+- `ah56-ics-halfp.png` (`...&config=ics&halfp=1&run=2&freeze=1`): at 2.0 s the event is active, amplitude 0.44 (hands off: decaying),
+  phase 25.65 rad (0.5 × 2 s × 25.76 rad/s), roll −2.2°, roll rate −8.7 °/s, n_z 1.06, Nr 245.9 rpm. With hands off a forced event
+  dies in about 8 s; stirring keeps it growing.
 
 ## 5. H8: AG's and AC's rows re-run on the stage-5 rotor
 
 Run on this branch with the stage-5 section, and against a baseline: the same test files with `highSpeed.ts` replaced by its S0 stub
 (the stage-4 aircraft, through a vitest alias: `work/rigid/probes-ah/vitest.stage4.config.mjs`). Logs: `work/rigid/guards/AH/`.
 Legacy digests (GR) and the existing helicopters are untouched: every new term sits behind `main.section.polar` or `halfPHop`, which
-only the AH-56 declares.
+only the AH-56 declares. Guards on a6f57da (`work/rigid/guards/AH/`): G0 tsc clean; GR 35 + 64 + 57 (3 expected fail) + 83 (6
+expected fail) passed, no failure; GS 98 passed; GA 249 passed, 1 failed: the ah56 consistency row with the same five items as
+before this package (pilot's eye x / y / z, rated power against the audio, the airspeed red line against the panel), all from the
+AX / PN / AU stubs on this branch (also failing on the stage-4 tree, `git stash` check).
 
 **AG list** (ah56Gyro, GyroModes, Handling, Systems, Ground, ah56Physics): stage 4: 4 failed, 68 passed, 11 expected fail; stage 5:
 9 failed, 63 passed, 11 expected fail.
@@ -276,7 +291,9 @@ moment 590 → 555 N m (× 0.94), lateral 975 → 897 N m (× 0.92), input rotat
 pitch 5.65 / 4.83 / 4.46 °/s/in at 0 / 100 / 150 KCAS (4.2-7.8), hover sensitivity 11.26 (≤ 11.7), roll 14.3 / 15.4 °/s/in,
 roll sensitivity 62.1 / 66.4 at 0 / 150 KCAS (42-78 / 37-69), G8 p/q 0.057 / 0.143 (≤ 0.2). Not applied: the numbers are AC's
 (compound.ts `AMCS_FLAP_FEEDBACK`, `AMCS_LONGITUDINAL_STICK_MOMENT`) and AG's (gyro.ts lateral moment, input rotation); C18 and
-C19 must be re-run with it.
+C19 must be re-run with it. **What the scan covered**: G5's pitch and roll rates and sensitivities at 0 / 100 / 150 KCAS and G8's
+AMCS p/q at 0 and 100 KCAS, measured as AG's tests measure them. **Not covered**: G5a (the stop), the droop-sense row, G6, C18 at
+180 KCAS, C19, the C23 AMCS shift, C9. A candidate, not a verified refit.
 
 **AC list** (ah56Compound, CompoundPerformance, Pusher): stage 4: 47 passed, 15 expected fail; stage 5: 7 failed, 42 passed,
 13 expected fail.

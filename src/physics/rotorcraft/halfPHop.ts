@@ -23,7 +23,9 @@
 //     BodyState.time > 0), so the trim's settle() relaxation (time 0, dt 0.05 s) neither advances nor feels it (as pusher.ts);
 //     RK stages (dt = 0) see the phase at their own stage time.
 // The detector's history (the trim point, the turn accumulated, the reversals) is private and restarts after a reset or a
-// restore; the event's own state (active, amplitude, phase, stirs, strike) is RotorcraftState and persists.
+// restore; the event's own state (active, amplitude, phase, stirs, strike) is RotorcraftState and persists: after a restore the
+// phase continues and the amplitude keeps decaying or growing from its saved value, the 1 s onset fade and the 3 s cue clock
+// restart (the private onset time is not saved), and halfp=1 does not re-arm a restored flight.
 import { v3, type Vec3 } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import type { BodyState } from '../interfaces';
@@ -128,10 +130,15 @@ export class HalfPHop {
   /** One real step of the clock, the detector and the event. */
   private advance(b: BodyState, hubAir: Vec3, density: number, c: ControlInputs, azimuth: number, dt: number, d: HalfPHopDef,
     e: HalfPHopState, mode: GyroConfigId): void {
+    // halfp=1 arms only a fresh flight (phase still 0): a restored save's own event state wins (SimPhysics resets with the URL's
+    // options before it restores the snapshot).
+    if (this.forced && e.phase !== 0) this.forced = false;
     const travel = this.def.controlGyro?.configs[mode].stickTravel;
     const lat = (c.aileron ?? 0) * (travel?.lateral ?? 0.1), lon = (c.elevator ?? 0) * (travel?.longitudinal ?? 0.1);
+    // The first step after a reset or a restore has no previous azimuth: the rotor's turn over the previous step stands in, so a
+    // restored phase loses no step.
     if (!this.synced) {
-      this.synced = true; this.lastAzimuth = azimuth; this.trimLat = this.prevLat = lat; this.trimLon = this.prevLon = lon;
+      this.synced = true; this.lastAzimuth = azimuth - Math.max(0, this.state.omega) * dt; this.trimLat = this.prevLat = lat; this.trimLon = this.prevLon = lon;
       this.activity = 0; this.inCircle = false; this.turn = 0; this.back = 0; this.lastQualifying = -Infinity; this.lastCycle = -Infinity;
       for (const a of this.axes) { a.sign = 0; a.last = -Infinity; a.half = 0; }
       if (e.active && this.onset < 0) this.onset = this.time;
