@@ -166,8 +166,9 @@ describe('G7 / G7a: ICS response (D: tau = Lambda I / H, formula checked on the 
 
   it.fails('G7 KNOWN GAP: pitch time constant 1.5-3.5 s at the hover and the steady rates 9-14 / 11-16 deg/s/in', () => {
     // The derived steady rate (M_stick - K_s theta_rel)/H is not reached: with the ICS's physical 4100 ft-lb/rad spring the
-    // gyro precesses sideways under the spring (CR-114362 App C) and the hover attitude change cuts the rise off; the
-    // maximum comes early (docs/control-gyro-model.md, "ICS response").
+    // gyro precesses sideways under the spring (CR-114362 App C), and the droop x in-plane feedback term (flown in the
+    // sense opposite to the blade geometry's, KNOWN_ISSUES #5) slows and lowers it: without that term the hover pitch tau63
+    // is 2.28 s (docs/control-gyro-model.md section 3).
     expect(ics.lon0.tau63).toBeGreaterThanOrEqual(1.5);
     expect(ics.lon0.max).toBeGreaterThanOrEqual(9);
     expect(ics.lat0.max).toBeGreaterThanOrEqual(11);
@@ -210,10 +211,10 @@ describe('G7b: the pitch desensitizer (ICS) and the constant AMCS response', () 
   });
 
   it.fails('G7b KNOWN GAP: the ICS maximum pitch rate per inch at 0.8-1.0 X (120 KCAS) and 0.6-0.8 X (150 KCAS)', () => {
-    // Measured 0.47 X at 120 and 0.45 X at 150 KCAS on the maximum rate (ASTA-72 para 59's "control response"); the plan's
-    // rate at 1 s gives the at1Ratio rows logged above. The airframe's pitch damping at speed (the rate peaks within
-    // 0.5 s and decays) and the ICS feedback's speed terms (the droop x in-plane and Cm0 paths) cut it more than the 2:1
-    // desensitizer does (docs: "ICS response").
+    // Measured 0.47 X at 120 and 0.45 X at 150 KCAS on the maximum (first-peak) rate (ASTA-72 para 59's "control response");
+    // the plan's rate at 1 s gives the at1Ratio rows logged above (0.65 / 0.60). The airframe's pitch damping at speed (the
+    // rate peaks within 1 s and decays) cuts it more than the 2:1 desensitizer does. Not the droop x in-plane term: without
+    // it the ratios fall to 0.15 / 0.15 (docs/control-gyro-model.md section 3).
     const x = rows.ics0.max;
     expect(rows.ics120.max / x).toBeGreaterThan(0.8 * 0.9); expect(rows.ics120.max / x).toBeLessThan(1.0 * 1.1);
     expect(rows.ics150.max / x).toBeGreaterThan(0.6 * 0.9); expect(rows.ics150.max / x).toBeLessThan(0.8 * 1.1);
