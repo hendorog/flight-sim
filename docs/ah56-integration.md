@@ -1,0 +1,231 @@
+# Lockheed AH-56A Cheyenne: stages 2-5 integration record
+
+Branch `feat/rigid-rotor` in `/home/roger/github/fs-rigid/integ`, after the Bo 105 stage-1 record
+([bo105-integration.md](bo105-integration.md)). Stages 2-5 merge AG, AX, AC and AH in the plan's order (plan section 8:
+RC → TW → BO → AU → BX → PN → **AG → AX → AC → AH**). The AH-56A stays **`available: false`**: it is not in the chooser
+and flies only at `index.html?aircraft=ah56` (`&config=ics` for the 1972 ICS aircraft). The owner decides whether it
+ships. Nothing here was merged to main.
+
+Every choice not in the owner notes is an AGENT choice: AMCS as the default with the ICS selectable, the fitted gyro
+numbers, the collective reading, the stores-on default, the section fit, the half-P thresholds and the integration
+decisions below. None is an owner decision.
+
+## 1. Merges
+
+| Merge | Package head | What it brings | Integrator action at the merge |
+|---|---|---|---|
+| `66d9025` | AG `eecfa01` | The control gyro (AMCS default, ICS), the T64-GE-716, the wheel gear, the stage-2 aircraft data | `index.ts`: the auto-merge kept integ's PN-era `reference:` line beside AG's (TS1117); AG's kept. AG's two requests applied (gyro air data in `Rotorcraft.compute`; the gear-overspeed rule for a retractable rotorcraft); the G13 overspeed `it.fails` row is a passing row. The audio test's S0-stub rows (skids) and PN's collective gauge tests follow AG's definition; PN's dev mock sets its levers on the definition's range. |
+| `9b80ffc` | AX `8f5f97e` | Exterior: AMCS head, ICS gyro X, wheels, sponsons, pusher, weapons, both cockpits | AX was cut from the scaffold: the main-gear trunnion moved with AG's axles (FS 281 → 264; AG moved the axles FS 285 → 268); the head draws a non-finite gyro cyclic as zero (AG's definition routes the dev page's tilt into the swashplate). |
+| `7af2f73` | AC `ba630ff` | The wing panels, the pusher on the shared shaft, the compound calibration, the AMCS refit | AC's request (a): `flightModel.ts` passes the configuration to `pusherTrimLever`; the C7 `it.fails` row is a passing row. The audio test's pusher row checks against `def.pusher`. |
+| `ace8c98` | AH `38b6d3d` | The blade section (Prandtl-Glauert, drag rise, stall, moment stall), the scripted half-P hop, finer grid, periodic flap damping on | AH's handover patch (the AMCS refit for Prandtl-Glauert and seven test diffs), except one bound widening (section 3). The dispositions of section 3. H3's trim bracket. |
+
+Every package changed only files on its list in `package-files.json`, checked mechanically on each branch's own commits
+(AG 31 files, AX 11, AC 7, AH 7; none outside its list). The integrator's edits in other owners' files are the ones
+listed here and in the merge commits.
+
+## 2. Gate status (plan section 9)
+
+| Gate step | Status |
+|---|---|
+| 1. Merge in order | Done: AG, AX, AC, AH. |
+| 2. `definitionInconsistencies(ah56)` empty | **Empty** since the AX merge (GA `consistency.test.ts` 250/250). After AG alone one row was red: the pilot's eye, 3.302 / 0 / −0.889 m in the definition against the stub visual's 0.7531 / −0.3302 / −0.53218; AX's visual reads `PILOT_EYE`. AU's rated power and PN's red line already read the facts. |
+| 3. KNOWN_ISSUES and `docs/known-issues.md` rows | Done. `src/aircraft/ah56/KNOWN_ISSUES.md`: AG's 15 numbered items (1 and 7 resolved at the merge, 14 and 15 updated / added by the integrator), the TW, AU, PN and AX hand-overs, AC's stages 3-4 entries, AH's stage-5 entries and the integration dispositions. `docs/known-issues.md`: the AH-56A table row; the "waiting for its flight model" block moved into the type's file. |
+| 4. This record | This file. |
+| 5. Section 10 in-sim readouts and section 11 shots | **Not run** (section 6). |
+| 6. `npx tsc --noEmit` | Clean after every merge. |
+| 7. `npm run build` and `check-build` | **Not run** at this integration (section 6). |
+| 8. Codex review | **Not run.** |
+| 9. Fable look and pilot gates | **Not run.** |
+| 10. `available: false`; ask the owner | `available: false` (registry). `docs/aircraft.md` has the `ah56` row. |
+
+## 3. Integration decisions (AGENT)
+
+Plan section 2.4 lets the integrator apply a package's contract request in a file the package does not own, at the
+merge. Each item names the requester.
+
+1. **The gyro's air data is wired** (AG; `rotorcraft.ts`, RC's file): `advanceCoupled(..., { hub: hubAir, density })`.
+   The ICS desensitizer, decoupler and roll compensator and the AMCS trim and sideslip augmentation are live in the
+   sim. The test rig's stand-in retired itself (`PRODUCTION_AIR_WIRED`). Two consequences found on the integrated tree:
+   - AC reported the G6 variant red at stage 4; with the air data wired it passes at the AC slot and after.
+   - AH's H3 trims the Mach-off variant at 200 KTAS between 32 and 40° of prop blade angle. With the air data wired the
+     40° trim no longer converges (collective at its stop), so the secant kept the 32° end and reported a false +17.8 %
+     (14° of collective). The bracket is now 32-39° (the roots are at 38.0-38.4°): −1.6 % total, +9.8 % profile, AH's
+     numbers. Shown by removing the wiring for one run (the rows return to AH's numbers), then restoring it.
+2. **Gear overspeed for a rotorcraft** (AG; `flightModel.ts`, TW's file): `checkStructure` runs the gear rule when the
+   type is retractable and `gearOverspeed.consequence === 'warn'`. Fixed-wing goldens are unchanged (GF).
+3. **The ICS trims on its own prop schedule** (AC; `flightModel.ts`): `pusherTrimLever(d, ic.airspeed,
+   ic.rotorcraftConfig)`. An ICS reset of the default definition went 5.33 / 5.17 / 4.84° indicated at 120 / 140 /
+   160 KCAS to 5.97 / 5.95 / 5.98° at the AC slot and 5.56 / 5.51 / 5.50° at stage 5 (P 5-7°).
+4. **AH's handover patch** (`W/guards/AH/r2/handover.patch`, `git apply --check` clean on AH's head): the AMCS refit for
+   Prandtl-Glauert (compound.ts K_R 3,000 → 3,200 N m/rad, longitudinal stick moment 590 → 566 N m; gyro.ts lateral 975
+   → 907 N m, input rotation 9 → 5°), G3 and G5a on a no-stall section with the stalling numbers reported beside them,
+   C11's scripted pilot capped at 114 % torque, C12's bisection rejecting non-converged trims, C20's timeout, C23's
+   frozen-controls window (the first 3 s after 30 KCAS; over the whole 30-70 KCAS band the bank passes 20°), and two
+   `it.fails` → `it` flips (C23 right roll, C18 pitch at 180 KCAS). AG and AC should read the G3, G5a, C11, C12 and C23
+   diffs as proposals for their files.
+   **Not applied:** the patch widened the droop-sense "half the droop is stable" bound from 0.1 to 0.25°. The bound is
+   kept and the stage-5 value (0.125° 6 s after the kick, still decaying: 0.074° at 9 s, 0.044° at 12 s) is its own
+   `it.fails` KNOWN GAP row.
+5. **Rows the compound and stage 5 left red** (AC's request (2); AH's (b)). AC asked not to merge with them red:
+   - **G10** flies the AH-56A without the compound patch (`AH56_BASE` + gyro + stage-5 rotor; new rig option
+     `definition`), so "no wing, no pusher" keeps its meaning: **11,410 ft**, band 9,000-11,500 (ESTIMATE). On the
+     compound it read 8,594 ft; C2 is the compound's row (8,625 ft, P 8,500 ± 1,000).
+   - **G7a** ICS full lateral stick at 120 KCAS → `it.fails` KNOWN GAP: 39.7 R / 35.2 L °/s, ratio 1.13 (band 40-65,
+     1.5-1.9). The ICS stick moments are P-pinned by G4; C17 is the compound's P row.
+   - **G8 ICS** at the 0.3 bound → `it.fails` KNOWN GAP: p/q +0.28 hover, −0.33 at 100 KCAS.
+   - **C12** split: the converged zero-torque trim inside the collective travel is a passing row; the 2,200 ± 300 ft/min
+     band is an `it.fails` KNOWN GAP at **2,508 ft/min** (8 ft/min outside; the owner's options are in section 8).
+   No band was widened; each `it.fails` row carries its numbers.
+6. **PN's collective gauge** reads AG's physical range (−2.5…18.5° + 7° AMCS): 4.5-25.5° indicated, mid lever 15°, ICS
+   8°. PN's tests had pinned the S0 stub's mapping of the published AMCS range 4.5-21.5°. KNOWN_ISSUES 15 records the
+   difference; a per-configuration collective top needs the same definition seam as the floor.
+7. **The zero-airspeed in-plane force (AG's request to RC) is NOT applied.** Measured, gated on the control gyro so the
+   Bo 105 and the legacy rotors keep the verbatim expression (legacy digests 35/35 with it):
+
+   | Row | Without the fade (as merged) | With the fade |
+   |---|---|---|
+   | Hands-off hover, AMCS, 20 s calm | −5.4 → −1.9° roll, +10.7° pitch, 14.3 kt | −5.4 → −5.4° roll, +2.2° pitch, 2.1 kt |
+   | Hands-off hover, ICS, 20 s calm | −5.3 → −10.5° roll, −2.4° pitch, 6.6 kt | −5.3 → −8.0° roll, +3.1° pitch, 4.1 kt |
+   | G7 ICS roll τ63 (hover step) | 0.277 s (KNOWN GAP, band 0.3-0.7) | 0.31 s (the `it.fails` row would pass) |
+   | G5 AMCS hover pitch / roll sensitivity | 11.54 / 63.5 °/s²/in | 11.30 / 69.6 |
+   | C1, C2, C3, C22, G9, G13 rest | unchanged | unchanged |
+
+   It fixes the AMCS hands-off hover, but it also changes the hover step responses the gyro was fitted on (the in-plane
+   force is real below 0.3 m/s too), and the ICS hover still leaves the G9 band. That is a rotor-physics choice for RC
+   (carry the in-plane side component instead of a fade) or the owner, not an integration fix. The hover-readout row
+   stays `it.fails`.
+
+## 4. Measured on the integrated branch (`ace8c98`)
+
+From the AG, AC and AH lists on the integrated tree (`W/guards/integ/10-ah/`). 18,300 lb, SL ISA, stores on, unless
+stated. "P" = primary, "D" = derived, "ESTIMATE" as in the plan.
+
+**Gyro and handling, AMCS (default)**
+
+| Row | Measured | Target (tag) |
+|---|---|---|
+| G5 pitch, 0 / 100 / 150 KCAS | 5.78 / 4.93 / 4.57 °/s/in | 6 ± 30 % = 4.2-7.8 (P AMCS-73 para 33) |
+| G5 pitch sensitivity, hover | 11.54 °/s²/in (1.4 % under the edge) | 9 ± 30 % = 6.3-11.7 (P) |
+| G5 roll, 0 / 100 / 150 KCAS | 14.6 / 15.6 / 15.6 °/s/in | 13-16 ± 30 % (P) |
+| G5 roll sensitivity, hover / 150 KCAS | 63.5 / 67.6 °/s²/in | 60 / 53 ± 30 % (P) |
+| C18 pitch / roll at 180 KCAS | 4.26 / 15.6 °/s/in; roll sensitivity 66.6 | 6 / 16 ± 30 %; 53 ± 30 % (P) |
+| C19 pull-up from 180 KCAS | 2.43 g at 1.78 s, 1.84 g at 1 s, 4.89 in of stick | 2.43 g in about 2.1 s, 1.75 g at 1 s (P) |
+| C19 push-over from 165 KCAS | 0.28 g at 1.90 s | 0.28 g in 2.5 s (P) |
+| G6 bank hold at 80 KCAS, no SAS | 0.44° over 10 s; keyboard tap 0.02° | ≤ 2° (P Hoh-74) / ≤ 3° (ESTIMATE) |
+| G8 p/q, hover / 100 KCAS | 0.09 / 0.19 | ≤ 0.2 (AGENT) |
+| G5a stops (up / down / left / right) | 10.11 / 18.05 / 18.08 / 12.27°; 150 KCAS trim −4.3° pitch | ≥ 8°; trims inside (D / P) |
+| H6 steady turn, full aft stick | 2.29 g at 155 KCAS, 2.47 g at 180 KCAS; 4.1-5.0 in/g | to 2.5 g, positive and linear (P AMCS-73 para 37) |
+| C9 lateral trim 120 / 160 / 190 KCAS | 0.27 / 0.38 / 0.50 in left | ≤ 0.5 in (P) |
+
+**Gyro and handling, ICS (`config=ics`)**
+
+| Row | Measured | Target (tag) |
+|---|---|---|
+| G1 initial precession, lon / lat | 13.74 / 16.65 °/s/in | 13.74 / 16.66 ± 5 % (D ASTA-72 App C) |
+| G4 hub moment per inch, lon / lat | 4.55 / 5.51 kN m/in | 5.39 / 6.54 ± 20 % (D) |
+| G7 roll τ63 / acceleration / maximum rate | 0.28 s / 31.4 °/s²/in / 9.1 °/s/in | 0.3-0.7 / 20-48 / 11-16 (D): τ and rate gaps |
+| G7 pitch τ63 hover / 150 KCAS; maximum rate | 0.79 / 0.30 s; 5.6 / 2.1 °/s/in | 1.5-3.5 / 0.8-2.0; 9-14 (D): gaps |
+| G7a / C17 full lateral stick, 120 / 152 KCAS | 39.7 R / 35.2 L, 39.8 R / 35.2 L °/s | 40-65, ratio 1.5-1.9 (D) / 77 R, 42-49 L (P ASTA-72 para 60): gaps |
+| G8 p/q, hover / 100 KCAS | +0.28 / −0.33 | ≤ 0.2 (AGENT): gap |
+| H4 moment stall, onset at 154 / 122 KCAS | 1.6 g / 1.5 g, right roll and pitch-up | 1.5 ± 0.2 / 1.4 ± 0.2 g (P ASTA-72 paras 63-65) |
+| H4 at 190 KCAS, 1.43 g | 0.11° right roll, +0.001 g | none (P) |
+| H5 stick per g above 1.3 g, 122 KCAS | 5.95 in/g | ≤ 0.1 in/g (P): gap |
+| H7 half-P | 2.05 Hz; cue ±3.0° roll, ±0.21 g; strike 6.0 s after onset; halves 2.5 s after the hands go still; no trigger from one stir, AMCS, 135 KCAS or 60 s of mouse corrections; lateral reversals 4.16 s | 2.05 Hz ± 2 % (P); ±3°, ±0.15 g (ESTIMATE); 4-10 s; ≤ 3 s |
+
+**Hover, ground and systems**
+
+| Row | Measured | Target (tag) |
+|---|---|---|
+| G9 hover attitude IGE, AMCS / ICS | 4.7° / 4.7° left, +0.6° pitch | 2-7° left, −1…+4° (P APE-I / ESTIMATE) |
+| C1 hover (18,300 lb) | 86.1 % torque at 18.2° indicated; wing download 4.9 % | 4-8 % (ESTIMATE) |
+| C2 HOGE 18,750 lb | 8,625 ft (Ng 101.4 %, TIT 768 °C) | 8,500 ± 1,000 (P ASTA-72 para 12) |
+| C3 20,500 lb OGE / IGE | 6,000 / 8,875 ft | 6,000 / 9,300 ± 1,000 (P) |
+| G10 HOGE 18,750 lb, no compound | 11,410 ft | 9,000-11,500 (ESTIMATE) |
+| G11 engine failure in the hover (ICS) | Nr 100 → 90 % in 0.54 s; 87 °/s left yaw; 4.7° LEFT roll at 1 s | 0.4-1.0 s (ESTIMATE); left yaw, slight right roll (P): roll gap |
+| G12 T64 | idle Ng 64.95 %; TIT 711 °C at 114 % torque; idle at 29.0 s, TIT peak 561 °C | 58-72 %; ≤ 740 °C (P ASTA-72 para 78) |
+| G13 ground rest, rotor running | 2.6° lean onto the right main (6.6 / 27.8 / 55.3 kN tail / left / right) | three wheels (ESTIMATE) |
+| G13 run-on stop from 60 KCAS | 252 m (stage 2: 158 m) | ≤ 300 m (ESTIMATE) |
+| G13 gear cycle; vertical take-off | 6.3 s each way; 6.3 m up, 0.67 m/s touchdown | 3-8 s |
+| Hands-off hover from the 15 m spawn, 20 s calm | AMCS −5.4 → −1.9° roll, +10.7° pitch, 14.3 kt; ICS −5.3 → −10.5°, −2.4°, 6.6 kt; Nr 239.9 / 246.0 rpm | roll 2-7° left (G9): **gap** (`it.fails`) |
+
+**Compound and high speed**
+
+| Row | Measured | Target (tag) |
+|---|---|---|
+| C4 / H2 V_H (ICS collective 5°, 18,750 lb, 114 %) | 199.1 KTAS | 194 ± 5 % (P ASTA-72 para 14) |
+| C5 / H2 AMCS clean, 114 % | 212.3-212.5 KTAS (with stores 199.6) | 210-225 (P Hoh-74; S 215) |
+| C6 rotor lift share 120 / 160 / 190 KCAS | 71 / 48 / 30 % | 40-60 / 20-35 / 10-25 % (ESTIMATE): gap |
+| C7 collective on the schedule, AMCS / ICS | 12.5-12.6° / 5.5-5.6° indicated | 13 ± 2 / 5-7° (P) |
+| C8 fuselage pitch at 190 KTAS | −3.3° | −1…−5° (ESTIMATE) |
+| C10 acceleration | 0 → 165 KTAS 59.6 s, 0 → 188 KTAS 78.5 s | 53 s ± 20 % pass; 107 s ± 20 % gap (P Table 3) |
+| C11 deceleration | 196 → 165 KTAS 5.9 s, height −1.8 ft; hover not reached in 90 s | 5.4 s ± 20 % pass; 33 s gap (P) |
+| C12 autorotation, 19,700 lb, 2,700 ft, 95 KCAS, prop +8° | 2,508 ft/min at 100 % Nr | 2,200 ± 300 (P para 69): **gap by 8 ft/min** |
+| C13 delta-beta | 25 → 18° in 0.48 s; stop at 24°: Nr 73.3 % at 5 s | ≤ 1.5 s; 60-75 % (P paras 66-67) |
+| C20 prop share 60 / 120 / 188 KCAS; Nr at 3 s (188 KCAS) | 26 / 37 / 76 %; prop action 82.9 % vs collective 62.1 % | prop critical at 188 (P para 68) |
+| C22 +4° prop re-trimmed over the spot | 2.6° nose UP (T/W predicts 2.8°) | plan: 3-6° nose down (sign conflict, section 8) |
+| C26 lateral trim at 190 KTAS: as built / symmetric wing | 0.50 / 0.59 in left | 0 ± 0.5 / 0.8-1.5 (D): symmetric gap |
+| H1 advancing tip at 194 KTAS, 246 rpm | M 0.884 | 0.885 ± 0.01 (D) |
+| H3 power rise at 200 KTAS, Mach law on / off | total −1.6 %; profile +9.8 % | ≥ 10 % (D): gap |
+| H9 periodic flap damping at μ 0.5 | +1.6 % hub moment per cyclic | 8-15 % (D): gap |
+| H10 cost per step | 288 µs vs MD 500E 150 µs (1.92 ×), 12 × 18 grid | ≤ 2 × (AGENT) |
+
+## 5. Regression evidence
+
+- **Existing helicopters are bit-identical.** `legacyDigest` with `s269Legacy` and `contactAirborne` gave 35/35 exact
+  after every merge (AG, AX, AC, AH) and in the final run. GR sets 2-4 (R22/R44/S269/MD 500E pins) are green.
+- **The Bo 105** (not in the digest) was re-run after the AG merge, which changed `rotorcraft.ts` and `flightModel.ts`,
+  and after the AH merge: BO, twin and OEI lists 113 passed, 13 expected fail, 0 failed, the same as stage 1.
+- **Fixed-wing** goldens under `FS_GOLDEN_EXACT=1`: only the two recorded `c172Sim` baseline exceptions; GF2 and the
+  gear/test-bed lists green after each `flightModel.ts` change.
+- Per-merge guard outputs: `W/guards/integ/6-ag`, `7-ax`, `8-ac`, `9-ah-pre`, `10-ah`; the fade experiment `11-fade`;
+  the final run `12-final`. The guard runner is `W/guards/integ/run.sh`.
+
+## 6. Not run, and why
+
+- **Section 10 in-sim readouts** (`ah56-hover.png`, `ah56-ics-hover.png`) and **every section 11 AH-56A shot** were not
+  run at this integration. No AH-56A exterior shot has yet been compared with the reference photos on a branch that has
+  both the physics and the exterior (AX compared its dev-page views; AG, AC and AH saw the stub exterior). The main-gear
+  trunnion moved at the AX merge (section 1) and has been checked only by AX's geometry test, not looked at.
+- `npm run build` / `check-build` for ah56, the Codex review, and the Fable look and pilot gates.
+- heliHold (`AC=ah56`) and the `AH56_TRACE` re-runs on the integrated tree.
+
+## 7. Final test run on the integrated tree
+
+On `ace8c98` (all four merges; the in-plane fade reverted):
+- `npx vitest run tests/aircraft tests/propulsion tests/rotorcraft tests/input tests/audio tests/instruments
+  --maxWorkers=6`: **161 files, 2084 passed, 60 expected-fail (`it.fails` known-gap rows), 0 failed.** This includes
+  `legacyDigest`, `s269Legacy` and `contactAirborne`, the MD 500E pins, every Bo 105, twin and rotor-core file, and every
+  AH-56A file (gyro, handling, systems, ground, compound, pusher, high speed, moment stall, half-P, exterior, setup,
+  panel, audio). The `md500Exterior` and R22 slope baseline exceptions passed in this run.
+- `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: **51 passed, 2 failed**, exactly the recorded `c172Sim.golden`
+  baseline exceptions ("runway: 40 s flown by the autoflight", "cruise: 20 s ... restored through JSON").
+- Raw output: `W/guards/integ/12-final/{suite,golden}.txt`.
+
+## 8. For the owner and the package owners (not applied)
+
+**Owner questions** (AGENT findings; none decided):
+- **C12** (2,508 ft/min against 2,200 ± 300): fit the section's post-stall drag to Report 530 (AH; it reads 10-23 %
+  high past Cl max), re-fit the autorotation drag (AC), or keep the KNOWN GAP row.
+- **The AMCS refit margins** are 0.4-1.9 % on four rows (hover pitch sensitivity, 150 KCAS roll sensitivity, C18 pitch
+  at 180 KCAS, C9 at 190 KCAS). Accept, or hold Prandtl-Glauert until AG models the sensitivity per unit response
+  (1.9 /s against AMCS-73's 1.5 /s).
+- **Plan C22's sign**: +4° of prop re-trimmed over the spot is nose UP by about T/W (2.6°), not 3-6° nose down.
+- **Half-P hold rule**: the amplitude holds while the stick moves without stirring; the alternative (decay whenever
+  stirring stops) is one line.
+- **Moment-stall violence**: past the H4 onset the scripted pilot's pitch-up runs to 2.1-2.4 g with 17-27 °/s of right
+  roll.
+- **Stores on by default** (AC): clean AMCS reaches 213 KTAS, with stores about 199.
+
+**Package owners:**
+- **RC:** the hingeless rotor's in-plane force at zero airspeed (section 3 item 7); the fine grid above μ 0.3 (H10).
+- **AG:** the ICS rows (G7, G7a, G8, H5) and the AMCS steady-turn stick per g (H6) need the gyro's steady state fitted,
+  not only the first peak; a per-configuration collective floor/top and `maxTakeoff` (AMCS 19,200 / ICS 20,500 lb) need
+  definition seams; G11's roll sense; review the G3/G5a no-stall diffs; the gyro.ts AMCS numbers point at the
+  compound.ts override.
+- **AC:** C6, C9/C26, C10, C11, C16, C17, C22 sizes, C23 (KNOWN_ISSUES); review the C11/C12/C23 test diffs.
+- **AU:** the half-P thump clamps at amplitude 2 while the event grows to 3.33 at the strike (AH's request (i)).
+- **TW (propulsion):** the BEMT prop's 0.753 efficiency at the V_H loading against about 0.80 (ESTIMATE); the fuselage
+  flat plate (1.0 m²) is fitted to it.
+- **Plan amendments (architect):** G1 as a precession (K/H, M/K circle centre), G2 (i) for a hingeless spring
+  (tan(sweep)(B/2)(e M_β Ω² + K_β)/H), G5's two AMCS hover rates (AMCS-73 6 vs Hoh-74 9 °/s/in), G7/G7b's opposite ICS
+  τ trends, H3's 10 % (rested on the M_dd 0.78 ESTIMATE; P gives 0.83), H9's 8-15 %.

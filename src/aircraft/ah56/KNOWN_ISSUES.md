@@ -16,6 +16,11 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
    error; ah56Handling.test.ts "G6 variant"). Contract request to RC: work/rigid/ag-rc-inplane-fade.patch fades the force in over the
    first 0.3 m/s (legacy digests unchanged); with it AMCS −5.1 → −6.2° and ICS −5.0 → −7.2° (0.2° past the G9 band), 3.1 kt each, in 20 s.
    Evidence: ah56Ground.test.ts "hover readout" (it.fails), docs/ah56-flight-model.md section 6.
+   **Integrated stage-5 aircraft** (integrator): AMCS −5.4 → −1.9° roll, +10.7° pitch, 14.3 kt; ICS −5.3 → −10.5°, −2.4°, 6.6 kt in
+   20 s calm. The fade, gated on the control gyro and measured on the integrated tree: AMCS −5.4 → −5.4°, +2.2°, 2.1 kt; ICS −5.3 →
+   −8.0°, +3.1°, 4.1 kt; but it also moves the hover step responses the gyro is fitted on (G7 ICS roll τ63 0.28 → 0.31 s, AMCS hover
+   roll sensitivity 63.5 → 69.6 °/s²/in), so it was NOT applied: a rotor-physics choice for RC (carry the in-plane side component) or
+   the owner (docs/ah56-integration.md section 3 item 7).
 3. **ICS pitch/roll cross-coupling.** A pure longitudinal stick gives a roll rate of +0.24 (hover) and −0.14 (100 KCAS) times the pitch rate.
    This is with the input rotation fitted to 13° advanced (P: 36°, which gives about 1.6 times in this model); G8 asks 0.2 with the angle
    within 15° of 36°. The model lacks the ICS's swashplate feedback to the roll servo and the feathering inertia. The AMCS is decoupled

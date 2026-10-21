@@ -17,7 +17,7 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Schweizer 269C-1 / 300CB | [12 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
 | MD Helicopters MD 500E (in development) | [14 entries](../src/aircraft/md500/KNOWN_ISSUES.md) |
 | MBB Bo 105 CB-4 (in development, `available: false`) | [45 entries](../src/aircraft/bo105/KNOWN_ISSUES.md) (22 from the flight model, 23 handed over) |
-| Lockheed AH-56A Cheyenne (in development, `available: false`) | [15 entries](../src/aircraft/ah56/KNOWN_ISSUES.md) plus 3 handed over (stage 2, the control gyro on the pure helicopter) |
+| Lockheed AH-56A Cheyenne (in development, `available: false`) | [53 entries](../src/aircraft/ah56/KNOWN_ISSUES.md) (15 from the stage-2 flight model, 33 handed over from TW, AU, PN, AX, AC and AH, 5 integration dispositions; see [ah56-integration.md](ah56-integration.md)) |
 
 Kinds: **defect** = demonstrated wrong behavior; **unvalidated** = evidence or acceptance still missing;
 **estimate** = a parameter without a measured/published value; **missing feature** = behavior not implemented.
@@ -94,7 +94,7 @@ The hingeless hub is an equivalent hinge plus a spring inside the existing harmo
 ground resonance, no lag loads), blade bending beyond the equivalent hinge and blade torsion, the in-plane side force
 from the first-harmonic pitch, Pitt-Peters feedback from the pitch moment into the mean inflow and wake-curvature terms.
 Periodic flap damping reaches the flap harmonics only through the cone (about -2 % hub moment per cyclic at mu 0.35,
-against the plan's 3-9 %; the AH-56A's 8-15 % row at mu 0.5 rests on the same estimate). Two AR-280 rows miss at
+against the plan's 3-9 %; on the AH-56A +1.6 % at mu 0.5 against the plan's 8-15 %, H9). Two AR-280 rows miss at
 their band edges on the Bo 105: Zw -0.68 1/s (edge -0.70) and Lq/|Lp| 0.19 (band 0.25-0.50).
 Evidence: `tests/rotorcraft/hingelessAr280.test.ts` and `bo105Derivatives.test.ts` (it.fails rows).
 On the Bo 105 the one-way harmonic inflow raises the hover roll damping (Lp -8.8 -> -12.1 1/s) and doubles Mu and Lv,
@@ -102,6 +102,18 @@ so the hover diverges in 2.3 s instead of 17 s and a gentle pilot loses it (Bo 1
 turns 83 % of the excess shaft power into climb against the 60-72 % the Bo 105 sources imply (Bo 105 KNOWN_ISSUES 2).
 Close with: a lag degree of freedom, Bo 105 hover identification data (Fu & Kaletka 1993, not obtained; the ERF 1989
 DLR/AFDD paper, obtained, covers 80 kt only), a manoeuvre-wake inflow model.
+
+### Hingeless rotor in-plane force at zero airspeed (AH-56A, Bo 105) — **defect**
+
+`Rotorcraft.compute` applies the main rotor's in-plane force only when the hub airspeed is above zero, along the
+airspeed direction, and drops its side component. A trim at exactly zero airspeed sees none; the first step's 1e-7 m/s
+switches on the full hover value (about 330 N on the AH-56A, which flies harmonic cyclic pitch) along an arbitrary
+direction: 625 N m of roll and 236 N m of pitch the trim never saw. The AH-56A's hands-off hover leaves its trimmed
+attitude in 20 s (AMCS −5.4 → −1.9° roll, ICS −5.3 → −10.5°). A fade over the first 0.3 m/s, gated on the control
+gyro, fixes the AMCS hover but moves the hover step responses the gyro was fitted on, so it was not applied
+([ah56-integration.md](ah56-integration.md) section 3 item 7). Whether the Bo 105's hover divergence (its KNOWN_ISSUES 17)
+shares the cause was not checked.
+Close with: the in-plane side component carried through `rotor.ts` / `rotorcraft.ts` (RC), then the AH-56A gyro refit.
 
 ### Multi-engine resume: one-frame gauge glitch — **defect (cosmetic)**
 
