@@ -16,15 +16,19 @@ Canvas 1488 x 960 (frozen `AH56_PANEL_*`; the tape stack of the frozen `AH56_TAP
 
 | Zone | Content | Tag |
 | --- | --- | --- |
-| Left, top | basic T: ASI (green 40-195 ESTIMATE, red radial at the INF Vne 195, mark at the 130 gear limit) | ASI marks ESTIMATE |
+| Left, top | basic T: ASI (green 40-195 ESTIMATE, red radial at the INF Vne 195, mark at the 130 gear limit; numbers every 40 kt, ticks every 10) | ASI marks and spacing ESTIMATE |
 | | ADI (with slip ball), altimeter; HSI under the ADI, clock, VSI under the arms | AGENT |
 | Left, middle | collective blade-angle indicator (digital + scale, AMCS 4.5-21.5, cruise 13) and prop blade-angle indicator (scale -20..45, marks REV -12, HOVER -2.2, AUTO +8, green -17.2..+40.8) | P AMCS-73 SoF 2b; P ASTA-72 paras 66-67 |
 | | g-meter (green 0.25-2.5), fuel quantity lb x100 (red 0-390 lb), engine oil T / P (T green 0-107, yellow to 150; P green 10-83), transmission oil T / P (T green 0-113, yellow to 140; P green 70-110) | P AMCS-73 paras 38-41; P APE-I / ASTA-72 SoF |
 | | triple hydraulic bars 1, 1A, 2 (normal 2800-3400 psi) | P APE-I SoF 1.1 |
 | Centre top | MASTER CAUTION and seven lenses: LOW FUEL, XMSN OIL PRESS, ENG OIL PRESS, TIT HIGH, NR LOW, GEAR UNSAFE, TORQUE HIGH, LAMP TEST | AGENT legends |
-| Centre | four tapes: **torque** (green 0-114 %, red above; 100 % = 3435 shp = 1799 N m at 13,600 rpm), **TIT** (green 300-740, yellow 740-780, red from 785, radial 740, blue 720 "record time above"), **Ng** (radial 58, green 63-100, yellow to 101.5, red above), **Nf / Nr** (two bars: Nf yellow 95-98, green 98-105; Nr radials 85, 95, 105, 110) | P ASTA-72 SoF para 5; AMCS-73; APE-I SoF 1.1 |
+| Centre | four tapes: **torque** (green 0-114 %, red above; 100 % = 3435 shp = 1799 N m at 13,600 rpm), **TIT** (green 300-740, yellow 740-780, red from 785, radial 740, blue 720 "record time above"), **Ng** (radial 58, green 63-100, yellow to 101.5, red above), **Nf / Nr** (two bars; the Nf strip left of the F bar follows the configuration: ICS yellow 95-98, green 98-105 (P ASTA-72 SoF para 5, 1972); AMCS green 95-105 (ESTIMATE: the AMCS-73 power-on band, so the AMCS normal 97.5 % reads green); the Nr strip right of the R bar green 95-105, radials 85, 95, 105, 110) | P ASTA-72 SoF para 5; AMCS-73; APE-I SoF 1.1; AMCS Nf band ESTIMATE |
 | Centre bottom | control-system placard: AMCS (default) or ICS from `controlGyro.mode`; in the ICS the two augmentation buttons ROLL COMP and PITCH DESENS are drawn engaged and "STIRS > 0.5 Hz PROHIBITED" is placarded; in the AMCS "STICK RELEASED = ATTITUDE HELD" | P ASTA-72 paras 71-72, SoF 4h(2); AGENT |
 | Right | gear handle with its lights (the tail wheel in the first lamp, legend TAIL), tail-wheel lock lever (LOCKED / UNLOCKED on `tailWheelLock`), ignition + START group, switches BAT, GEN, BOOST PUMP, ANTI-COLL, POS LT, LDG LT, PNL LT | P APE-I 134a; order ESTIMATE |
+
+Power: the tape BARS are self-powered (torque transducer, thermocouple, tach generators) and stay live without the bus; every seven-segment
+READOUT (the four tapes, COLL and PROP β) is electronic and shows only its unlit segments with the bus dead; the blade-angle pointers and the
+hydraulic bars need the bus too (ESTIMATE / AGENT).
 
 Readings: torque `EngineState.torque / 1799 x 100` through `InstrumentSystemsDef.extra` (so the engine's `torque` must be the power-turbine shaft torque in N m);
 TIT `ittC`, Ng `ngPct`; Nf `engines[0].rpm / 13,600` (the power turbine, 13,600 rpm = 100 %, S); Nr `rotorRpmPct` (of 246 rpm: the AMCS aircraft shows 97.5 %).
@@ -32,7 +36,7 @@ Collective as the cockpit indicator reads it (`ah56CollectiveIndicatedDeg`): wit
 `collectiveIndicatedOffset` (AMCS +7 deg, ICS 0, D from "13 deg AMCS = 6 deg ICS"); until AG lands the gyro, the AMCS indicated range 4.5-21.5 deg mapped on the lever,
 less 7 deg for the ICS. Prop beta: `rotorcraft.pusher.beta` in degrees; blank ("--.-") until the pusher exists.
 
-### Lenses (all need bus power; LAMP TEST lights them all; MASTER CAUTION follows the others, it is not latched)
+### Lenses (all need bus power; LAMP TEST lights them all; MASTER CAUTION follows the others, it is not latched and has no press)
 
 LOW FUEL at 390 lb (P); XMSN OIL PRESS under 70 psi with the rotor turning (ESTIMATE threshold; the 1972 minimum is the marking, P); ENG OIL PRESS under 10 psi while running (P minimum);
 TIT HIGH over 740 C (P); NR LOW under 95 % with Ng over 90 % (the power-on minimum, P; the Ng gate is ESTIMATE); GEAR UNSAFE while the gear is in transit; TORQUE HIGH over 114 % (P).
@@ -54,11 +58,18 @@ Lower: gear handle and lights, tail-wheel lever, hydraulics, the control-system 
 8. **Dots / marks** are radials and thin bands; the shared renderers have no dot primitive.
 9. **`training.vspeeds.Vy` is 80** only because the generic rotorcraft check needs a positive value: it is the collective-schedule break speed, not a best-climb speed (no lesson reads it).
 10. **The emergency lists for the prop system control failure, the stick-centring malfunction and the engine control failure are AGENT condensations** (the sources name them, they give no steps) and say UNVERIFIED.
+11. **MASTER CAUTION is not latched and pressing it does nothing.** On the aircraft pressing either cockpit's MASTER CAUTION cancels both (APE-I para 134j);
+    the sim keeps no latched master state to cancel (the lens follows the caution lenses), so the lens has no press and is not a lamp test. The lamp test is LAMP TEST only (AGENT choice).
+12. **The AMCS Nf band (green 95-105) is ESTIMATE**: the 1972 ICS release marks Nf yellow 95-98, which would put the AMCS normal 97.5 % in yellow for every flight;
+    the AMCS-73 release gives the 95-105 power-on band and no separate Nf band, so the AMCS strip carries that (AGENT choice). The ICS keeps the 1972 marking.
 
 ## Contract requests
 
-* AG: `index.ts` must set `reference` from `AH56_REFERENCE` (the consistency test reads `reference.vne` 195 against the ASI red radial; it fails at 152 until then);
-  `EngineState.torque` = power-turbine shaft N m (100 % = 1799 N m), `ng`, `itt`; `transmission` state; `gear.retractable` with the tail wheel in slot 0; a default
+* **Integrator, at the PN merge** (plan section 2.4 mechanism, so GA stays green on `feat/rigid-rotor`): in `src/aircraft/ah56/index.ts` set
+  `reference: { ...md.reference, vne: AH56_REFERENCE.vne }` (import `AH56_REFERENCE` from `./reference`; the frozen `AH56_REFERENCE` is not a full
+  `ReferenceSpeeds`, so it cannot be assigned whole). Without it `consistency.test.ts` "ah56: airspeed red line: reference 152, panel 195" fails:
+  the stub carries the MD 500E's Vne 152 while the panel reads the frozen 195. Tested in the PN worktree: tsc clean, GA consistency green. AG then replaces it with the full reference.
+* AG: `EngineState.torque` = power-turbine shaft N m (100 % = 1799 N m), `ng`, `itt`; `transmission` state; `gear.retractable` with the tail wheel in slot 0; a default
   for `tailWheelLock`; `controlGyro` default and `collectiveIndicatedOffset` as in `controlGyro.ts`; the blade pitch range `main.minPitch / maxPitch` as the ICS-referenced collective angle.
 * AC: `rotorcraft.pusher.beta` (rad, at 0.7 R) and `deltaBeta`.
 * Integrator: if the ICS roll compensator and pitch desensitizer should be switchable, add `ControlInputs` fields; the panel buttons then bind to them.
@@ -72,8 +83,10 @@ after start, run-up, before take-off with the tail wheel locked and the prop at 
 after landing, shutdown with the rotor brake below 40 % Nr, engine off and TIT under 320 C); emergencies (engine failure, prop system control failure, stick-centring malfunction, engine control failure,
 blade moment stall (ICS), half-P hop (ICS)).
 
-`devMock` (`dev/instruments.html?type=ah56&freeze=1&t=90`, `&config=ics`): start, hover at -2.2 deg, acceleration with beta 8 to 22 deg and collective 13 deg, an engine failure with the delta-beta cut at 200 s.
+`devMock` (`dev/instruments.html?type=ah56&freeze=1&t=90`, `&config=ics`): start, hover at -2.2 deg, acceleration with beta 8 to 22 deg and collective 13 deg, the gear
+retracted at 70 s (in transit to 78 s: GEAR UNSAFE and MASTER CAUTION lit, `t=74`) and extended at 185 s (down and locked from 193 s), an engine failure with the delta-beta cut at 200 s.
 
 ## Tests
 
-`tests/aircraft/ah56Setup.test.ts` and `tests/instruments/ah56Panel.test.ts`. Known failing guard until AG lands: `consistency.test.ts` "ah56: airspeed red line: reference 152, panel 195".
+`tests/aircraft/ah56Setup.test.ts` and `tests/instruments/ah56Panel.test.ts`. In the PN worktree alone `consistency.test.ts` "ah56: airspeed red line: reference 152,
+panel 195" fails (the stub's MD 500E reference); the integrator's one-line `reference` change above at the PN merge makes it pass.

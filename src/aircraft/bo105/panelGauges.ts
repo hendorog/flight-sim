@@ -120,12 +120,13 @@ export interface TripleScale {
   /** Text divisor of the printed numbers (scale x100). */
   divisor?: number;
 }
+export type TripleReader = (r: InstrumentReadings) => number;
 export interface TripleDialSpec {
   outer: TripleScale; inner: TripleScale;
   /** Legend lines inside the dial. */
   legend: readonly string[];
-  /** The three pointer values for the readings: the two engine pointers on the outer scale, R on the inner one. */
-  read(r: InstrumentReadings): readonly [number, number, number];
+  /** The three pointer readers: the two engine pointers (1, 2) on the outer scale, R on the inner one (scalar readers: no per-frame tuple). */
+  reads: readonly [TripleReader, TripleReader, TripleReader];
   /** Whether the dial needs bus power (an electric indicator); the tach generators are self-powered. */
   electric: boolean;
   seed: number;
@@ -148,11 +149,10 @@ export class Bo105TripleGauge extends RoundGauge {
     };
   }
   sample(r: InstrumentReadings): boolean {
-    const [a, b, c] = this.spec.read(r);
-    const live = !this.spec.electric || r.busPowered;
-    this.latch.track(0, angleOn(this.spec.outer, live ? a : this.spec.outer.min), 0.002);
-    this.latch.track(1, angleOn(this.spec.outer, live ? b : this.spec.outer.min), 0.002);
-    this.latch.track(2, angleOn(this.spec.inner, live ? c : this.spec.inner.min), 0.002);
+    const live = !this.spec.electric || r.busPowered, [a, b, c] = this.spec.reads, { outer, inner } = this.spec;
+    this.latch.track(0, angleOn(outer, live ? a(r) : outer.min), 0.002);
+    this.latch.track(1, angleOn(outer, live ? b(r) : outer.min), 0.002);
+    this.latch.track(2, angleOn(inner, live ? c(r) : inner.min), 0.002);
     return this.latch.take();
   }
   private paintScale(g: Ctx2D, s: TripleScale, textSize: number): void {

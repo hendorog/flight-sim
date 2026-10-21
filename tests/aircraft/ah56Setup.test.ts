@@ -99,6 +99,19 @@ describe('AH-56A rear panel (AGENT reconstruction, plan 7.6)', () => {
     r = at(210); expect(r.extra!.propBetaDeg).toBeCloseTo(8, 6); expect(r.extra!.torquePct).toBeLessThan(2); expect(s.rotorcraft!.pusher!.deltaBeta).toBe(false);
     devMock(s, c, 201.5, undefined); expect(s.rotorcraft!.pusher!.deltaBeta).toBe(true); expect(s.rotorcraft!.pusher!.beta / DEG).toBeLessThan(22);
   });
+
+  it('plays the gear in the dev mock: down and locked, retraction with GEAR UNSAFE lit, up and locked, extension, down again before the failure', () => {
+    const s = makeMockState(); s.rotorcraft = emptyRotorcraftState(); const c = defaultControls();
+    const set = new InstrumentSet({ systems: AH56_INSTRUMENT_SYSTEMS });
+    const at = (t: number) => { devMock(s, c, t, undefined); run(set, 0.5, s, c); return set.readings; };
+    const gear = () => [s.gear.lever, c.gearLever, s.gear.inTransit, s.gear.locked.every(Boolean), s.gear.extension[0]];
+    let r = at(50); expect(s.gear.retractable).toBe(true); expect(gear()).toEqual(['down', 'down', false, true, 1]); expect(r.lamps.gear).toBe(false);
+    r = at(74); expect(gear().slice(0, 4)).toEqual(['up', 'up', true, false]); expect(r.lamps.gear).toBe(true); expect(r.lamps.master).toBe(true);
+    r = at(150); expect(gear()).toEqual(['up', 'up', false, false, 0]); expect(r.lamps.gear).toBe(false);
+    r = at(189); expect(gear().slice(0, 4)).toEqual(['down', 'down', true, false]); expect(r.lamps.gear).toBe(true);
+    r = at(196); expect(gear()).toEqual(['down', 'down', false, true, 1]); expect(r.lamps.gear).toBe(false);
+    r = at(210); expect(gear()).toEqual(['down', 'down', false, true, 1]);
+  });
 });
 
 describe('AH-56A UI, checklists and training', () => {

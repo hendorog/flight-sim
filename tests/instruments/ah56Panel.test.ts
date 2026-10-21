@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AH56_ANNUNCIATOR_LAMPS, AH56_INSTRUMENT_SYSTEMS, AH56_LAMP_IDS, AH56_PANEL, ah56CollectiveIndicatedDeg } from '../../src/aircraft/ah56/panel';
 import { AH56_ASI_MARKS, AH56_BETA_INDICATOR, AH56_COLLECTIVE_INDICATOR, AH56_ENGINE_OIL, AH56_FUEL_SCALE, AH56_G_SCALE, AH56_HYDRAULIC, AH56_NF_NR_TAPE,
-  AH56_NG_TAPE, AH56_TIT_TAPE, AH56_TORQUE_100_NM, AH56_TORQUE_TAPE, AH56_XMSN_OIL, ah56TorquePct } from '../../src/aircraft/ah56/panelMarkings';
+  AH56_NF_BANDS, AH56_NG_TAPE, AH56_TIT_TAPE, AH56_TORQUE_100_NM, AH56_TORQUE_TAPE, AH56_XMSN_OIL, ah56TorquePct } from '../../src/aircraft/ah56/panelMarkings';
 import { Ah56AngleIndicator, Ah56GyroPlacard, Ah56HydraulicsGauge, Ah56TapeGauge } from '../../src/aircraft/ah56/panelGauges';
 import { AH56_NF_100_RPM, AH56_NR_100, AH56_AMCS_NR_FRACTION, AH56_TORQUE_100_SHP } from '../../src/aircraft/ah56/facts';
 import { AH56_REFERENCE as V } from '../../src/aircraft/ah56/reference';
@@ -14,9 +14,14 @@ import { defaultControls } from '../../src/core/types';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
 import { InstrumentSet } from '../../src/instruments/dynamics/instrumentSet';
 import { stubCanvas } from './stubCanvas';
+import { ARC_COLORS } from '../../src/instruments/render/art';
+import { buildHotspots } from '../../src/instruments/hotspots';
 import { run } from './testbed';
 
 afterEach(() => vi.unstubAllGlobals());
+
+/** The lit seven-segment colour of the readouts (panelGauges.ts AMBER). */
+const AMBER_SEGMENT = '#ffba35';
 
 /** The AMCS aircraft in cruise: torque 80 %, TIT 650, Ng 92, Nf = Nr 97.5 %, the bus up, 18,300 lb. */
 function fixture() {
@@ -48,9 +53,18 @@ describe('AH-56A markings (ASTA-72 SoF para 5, AMCS-73, APE-I SoF 1.1)', () => {
     expect(AH56_NG_TAPE.marks.map(m => m.at)).toEqual([58, 101.5]);
   });
 
-  it('Nf / Nr: Nf yellow 95-98, green 98-105; Nr radials 85 and 110 (power-off) with 95-105 power on', () => {
-    expect(AH56_NF_NR_TAPE.bands).toEqual([{ from: 95, to: 98, color: 'yellow' }, { from: 98, to: 105, color: 'green' }]);
+  it('Nf / Nr: the Nf band per configuration (ICS yellow 95-98 / green 98-105; AMCS green 95-105), Nr green 95-105 with radials 85 / 95 / 105 / 110', () => {
+    expect(AH56_NF_NR_TAPE.firstBarBands!.ics).toEqual([{ from: 95, to: 98, color: 'yellow' }, { from: 98, to: 105, color: 'green' }]); // P ASTA-72 SoF para 5
+    expect(AH56_NF_NR_TAPE.firstBarBands!.amcs).toEqual([{ from: 95, to: 105, color: 'green' }]); // ESTIMATE: the AMCS-73 power-on band
+    expect(AH56_NF_NR_TAPE.firstBarBands).toBe(AH56_NF_BANDS);
+    expect(AH56_NF_NR_TAPE.bands).toEqual([{ from: 95, to: 105, color: 'green' }]); // Nr, beside the R bar
     expect(AH56_NF_NR_TAPE.marks.map(m => m.at)).toEqual([85, 95, 105, 110]);
+    // The normal points: AMCS 97.5 % Nf / Nr (AMCS-73 p 2) and ICS 100 % sit in green; the ICS 1972 yellow still covers 97.5.
+    const colourAt = (bands: readonly { from: number; to: number; color: string }[], v: number) => bands.find(b => v >= b.from && v < b.to)?.color;
+    expect(colourAt(AH56_NF_BANDS.amcs, AH56_AMCS_NR_FRACTION * 100)).toBe('green');
+    expect(colourAt(AH56_NF_NR_TAPE.bands, AH56_AMCS_NR_FRACTION * 100)).toBe('green');
+    expect(colourAt(AH56_NF_BANDS.ics, 100)).toBe('green');
+    expect(colourAt(AH56_NF_BANDS.ics, 97.5)).toBe('yellow');
   });
 
   it('oil, hydraulics, fuel and g: the published bands', () => {
@@ -63,8 +77,9 @@ describe('AH-56A markings (ASTA-72 SoF para 5, AMCS-73, APE-I SoF 1.1)', () => {
     expect(AH56_G_SCALE.arcs).toEqual([{ from: 0.25, to: 2.5, color: 'green' }]);
   });
 
-  it('ASI: ESTIMATE green to the INF Vne 195 with the red radial there; the gear limit 130 is marked', () => {
+  it('ASI: ESTIMATE green to the INF Vne 195 with the red radial there; the gear limit 130 is marked; numbers every 40 kt, ticks every 10', () => {
     expect(AH56_ASI_MARKS.redLine).toBe(V.vne); expect(V.vne).toBe(195); expect(AH56_ASI_MARKS.blueLine).toBe(130);
+    expect(AH56_ASI_MARKS.numberStep).toBe(40); expect(AH56_ASI_MARKS.minorStep).toBe(10);
   });
 
   it('angle indicators carry the blade-angle detents: prop -12 / -2.2 / +8, collective cruise 13 (AMCS) and minimum 4.5', () => {
@@ -122,6 +137,36 @@ describe('AH-56A readings through the instrument set', () => {
     expect(Ah56TapeGauge).toBeDefined(); expect(Ah56AngleIndicator).toBeDefined(); expect(Ah56HydraulicsGauge).toBeDefined(); expect(Ah56GyroPlacard).toBeDefined();
   });
 
+  it('paints the Nf strip of the configuration in use: no yellow on the AMCS aircraft at 97.5 %, the 1972 yellow band on the ICS', () => {
+    const { s, c, step } = fixture();
+    const spec = AH56_PANEL.gauges.find(g => g.id === 'nfNrTape') as unknown as { bounds: { x: number; y: number; w: number; h: number }; create(id: string, b: unknown): { sample(r: unknown, c: unknown, t: number): boolean; draw(g: unknown): void; drawStatic(g: unknown): void } };
+    const tape = spec.create('nfNrTape', spec.bounds);
+    const stat = stubCanvas(); tape.drawStatic(stat.g); expect(stat.fills).not.toContain(ARC_COLORS.yellow); // the static strip is Nr's (green only)
+    let r = step(); tape.sample(r, c, 0); const amcs = stubCanvas(); tape.draw(amcs.g);
+    expect(amcs.fills).toContain(ARC_COLORS.green); expect(amcs.fills).not.toContain(ARC_COLORS.yellow);
+    s.rotorcraft!.controlGyro = { mode: 'ics', pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }; r = step();
+    expect(tape.sample(r, c, 0)).toBe(true); // a configuration change redraws the tape
+    const ics = stubCanvas(); tape.draw(ics.g); expect(ics.fills).toContain(ARC_COLORS.yellow);
+  });
+
+  it('dark readouts without bus power: the tapes keep their self-powered bars, no digit of a tape or a blade-angle indicator is lit', () => {
+    const { s, c, step } = fixture();
+    s.electrical.busVoltage = 0; c.masterBattery = false;
+    const r = step();
+    expect(r.busPowered).toBe(false);
+    for (const id of ['torqueTape', 'titTape', 'ngTape', 'nfNrTape', 'collective', 'propBeta']) {
+      const spec = AH56_PANEL.gauges.find(g => g.id === id) as unknown as { bounds: { x: number; y: number; w: number; h: number }; create(id: string, b: unknown): { sample(r: unknown, c: unknown, t: number): boolean; draw(g: unknown): void } };
+      const part = spec.create(id, spec.bounds), stub = stubCanvas();
+      part.sample(r, c, 0); part.draw(stub.g);
+      expect(stub.fills, id).not.toContain(AMBER_SEGMENT);
+      if (id.endsWith('Tape')) expect(stub.fills, id).toContain('#d9d7cc'); // the bar itself (self-powered) is still drawn
+    }
+    // Power back: the digits light.
+    s.electrical.busVoltage = 28.2; c.masterBattery = true;
+    const spec = AH56_PANEL.gauges.find(g => g.id === 'torqueTape') as unknown as { bounds: { x: number; y: number; w: number; h: number }; create(id: string, b: unknown): { sample(r: unknown, c: unknown, t: number): boolean; draw(g: unknown): void } };
+    const part = spec.create('torqueTape', spec.bounds), stub = stubCanvas(); part.sample(step(), c, 0); part.draw(stub.g); expect(stub.fills).toContain(AMBER_SEGMENT);
+  });
+
   it('hydraulics: 3000 psi in the normal band with the rotor turning, zero with it stopped; dark without bus power', () => {
     const { s, step } = fixture();
     let r = step(); expect(r.extra!.hydPsi).toBe(3000); expect(3000).toBeGreaterThan(AH56_HYDRAULIC.normal[0]); expect(3000).toBeLessThan(AH56_HYDRAULIC.normal[1]);
@@ -143,6 +188,14 @@ describe('AH-56A caution lenses', () => {
     s.rotorcraft!.rotorRpm = AH56_AMCS_NR_FRACTION * AH56_NR_100; r = step(); expect(r.lamps.nr).toBe(false);
     s.engine.oilPressure = 5; r = step(); expect(r.lamps.engOil).toBe(true); s.engine.oilPressure = 60;
     s.gear = { retractable: true, lever: 'up', extension: [0.5, 0.5, 0.5], locked: [false, false, false], inTransit: true, warning: false }; r = step(); expect(r.lamps.gear).toBe(true);
+  });
+
+  it('MASTER CAUTION has no press (on the aircraft it cancels, it is no lamp test); LAMP TEST and the lens presses still work', () => {
+    const lamp = (id: string) => AH56_ANNUNCIATOR_LAMPS.find(l => l.id === id)!;
+    expect(lamp('master').press).toBeUndefined();
+    const c = defaultControls(); lamp('pressTest').press!(true, c); expect(c.annunciatorTest).toBe(true); lamp('pressTest').press!(false, c);
+    lamp('nr').press!(true, c); expect(c.lampTestId).toBe('nr');
+    expect(buildHotspots(AH56_PANEL).some(h => h.id === 'masterTest')).toBe(false);
   });
 
   it('lamp test lights every lens; a dead bus lights none', () => {

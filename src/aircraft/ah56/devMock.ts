@@ -1,11 +1,13 @@
 // Lockheed AH-56A Cheyenne: extra mock readings for the dev instruments page (src/dev/instruments.ts). Scripts one start and a
-// compound flight so the tapes, indicators, lamps, gyro placard and the propeller angle can be inspected without the physics
+// compound flight so the tapes, indicators, lamps, gyro placard, gear and the propeller angle can be inspected without the physics
 // (AG, AC own those). `?config=ics` shows the 1972 ICS aircraft (placard, ICS buttons, collective indication 7 deg lower, Nr 100 %).
 //   t <  6 s    battery off: dead panel
 //   6 - 26 s    start: Ng 0 -> 64 %, TIT light-off peak
 //  26 - 40 s    ground idle: Ng 64 %, Nf 60 %, torque 6 %
 //  40 - 60 s    hover: collective 11 deg indicated (AMCS), prop beta at the -2.2 deg detent
 //  60 - 200 s   acceleration: beta 8 -> 22 deg, collective 13 deg (AMCS), torque 70 -> 98 %, TIT 640 -> 710, Nr 97.5 % (ICS 100 %), g 1.0 - 1.3
+//               gear: lever UP at 70 s, in transit 70 - 78 s (GEAR UNSAFE lit), up and locked 78 - 185 s; lever DOWN at 185 s, in transit
+//               185 - 193 s, down and locked from 193 s (ahead of the 130 KCAS gear limit in the real procedure; the mock has no airspeed)
 //  > 200 s      engine failure: torque to 0, the delta-beta cut to +18 deg, Nr to 90 %, then autorotation at beta +8
 import type { DevMock } from '../../dev/devMock';
 import { DEG } from '../../core/math';
@@ -13,6 +15,8 @@ import { AH56_AMCS_NR_FRACTION, AH56_NF_100_RPM, AH56_NR_100 } from './facts';
 import { AH56_TORQUE_100_NM } from './panelMarkings';
 
 const mix = (a: number, b: number, f: number): number => a + (b - a) * Math.min(1, Math.max(0, f));
+/** Gear script, s: retraction and extension each take TRANSIT seconds (ESTIMATE). */
+const GEAR = { up: 70, down: 185, transit: 8 } as const;
 
 export const devMock: DevMock = (s, c, t) => {
   const ics = typeof location !== 'undefined' && new URLSearchParams(location.search).get('config') === 'ics';
@@ -47,6 +51,12 @@ export const devMock: DevMock = (s, c, t) => {
   c.collective = t < 40 ? 0 : t < 60 ? 0.38 : failed ? 0 : 0.5;
   s.fuel.left = 520; s.fuel.right = 480 - t * 0.05;
   s.gLoad = t < 60 || failed ? 1 : 1 + 0.3 * (0.5 - 0.5 * Math.cos(t / 9));
+  // Retractable gear (tail wheel in slot 0): retract after take-off, extend again before the engine-failure phase.
+  const lever = t >= GEAR.up && t < GEAR.down ? 'up' : 'down';
+  const ext = lever === 'up' ? 1 - Math.min(1, (t - GEAR.up) / GEAR.transit) : t >= GEAR.down ? Math.min(1, (t - GEAR.down) / GEAR.transit) : 1;
+  const down = ext >= 1, inTransit = ext > 0 && ext < 1;
+  c.gearLever = lever;
+  s.gear = { retractable: true, lever, extension: [ext, ext, ext], locked: [down, down, down], inTransit, warning: false };
   const r = s.rotorcraft;
   if (!r) return;
   r.rotorRpm = nr / 100 * AH56_NR_100;

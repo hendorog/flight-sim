@@ -51,6 +51,10 @@ describe('Bo 105 panel (FM Fig 7-3 pedestal, plan 6.4)', () => {
     expect(BO105_INSTRUMENT_SYSTEMS.engines).toBe(2); expect(BO105_PANEL.ignition.kind === 'toggles' && BO105_PANEL.ignition.engines).toBe(2);
   });
 
+  it('flies a definition that publishes the transmission state the T OIL lens and the R oil pointers read (the lens is fail-dark without it)', () => {
+    expect(BO105_DEFINITION.rotorcraft?.transmission).toBeDefined();
+  });
+
   it('puts the seven rows of Fig 7-3 on the frozen grid: ASI | altimeter, clock | VSI, MM | torque | tach, oil T | TOT | TOT, N1 | N1, oil P | fuel | fuel P', () => {
     const at = (id: string) => (BO105_PANEL.gauges.find(g => g.id === id) as unknown as { at: [number, number] }).at;
     const [c0, c1, c2] = BO105_COLS, [, r1, r2, r3, r4, r5, r6] = BO105_ROWS;
@@ -59,6 +63,8 @@ describe('Bo 105 panel (FM Fig 7-3 pedestal, plan 6.4)', () => {
     expect([at('mm'), at('torque'), at('tach')]).toEqual([[c0, r3], [c1, r3], [c2, r3]]);
     expect([at('oilTemp'), at('tot1'), at('tot2')]).toEqual([[c0, r4], [c1, r4], [c2, r4]]);
     expect([at('n1a'), at('n1b')]).toEqual([[c1, r5], [c2, r5]]);
+    const title = (id: string) => (BO105_PANEL.gauges.find(g => g.id === id) as unknown as { title: string }).title;
+    expect([title('n1a'), title('n1b'), title('tot1'), title('tot2')]).toEqual(['N1 1', 'N1 2', 'TOT 1', 'TOT 2']); // plan 6.4 row 6
     expect([at('oilPressure'), at('fuel'), at('fuelPressure')]).toEqual([[c0, r6], [c1, r6], [c2, r6]]);
     // The AGENT attitude indicator and DG sit above the engine block, beside the caution block (TM 00-26), clear of the instrument rows.
     expect(at('attitude')[1]).toBeLessThan(r1); expect(at('heading')[1]).toBeLessThan(r1);

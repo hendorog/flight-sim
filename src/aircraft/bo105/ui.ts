@@ -1,7 +1,7 @@
 // MBB Bo 105 CB-4: HUD levers, readouts and hints. Simulator control reference, not a checklist (those are on F). Facts: FM
 // Sections 2-4 and 7 (BO 105 CB-5/CBS-5 FM used for the CB-4, P5): start 4-9..4-14, limits 2-8..2-10, ENGINE TRIM 7-12,
 // warnings 3-16. Keys: 8 / 9 / 0 select engine 1 / engine 2 / both; F1 / F2 / F3 / F4 move the selected power lever(s)
-// (IDLE gate, down, up, FLIGHT); F5 / F6 collective; ; and Shift+; are ENGINE TRIM fore / aft (n2Beep, both engines);
+// (IDLE gate, down, up, FLIGHT); F5 / F6 collective; Shift+; is ENGINE TRIM fore (N2 INCR) and ; is aft (N2 DECR) (n2Beep, both engines);
 // ENGINE TRIM left / right is the n2BeepSplit pair listed under Controls. The state blocks of the twin (twinTurboshaft,
 // mastMoment) are read defensively: absent, a readout shows a dash.
 import { engineControl, type AircraftState, type ControlInputs, type EngineControlKey } from '../../core/types';
@@ -84,9 +84,9 @@ export const BO105_UI: UiProfile = {
     ['Cyclic / pedals', 'Arrow keys / Z, X; 5 centres. The keyboard cyclic holds its position (no spring centring). Trim: Home / End and 6 / 7 (spring trim)'],
     ['Collective', 'F5 / F6 down / up. ENGINE TRIM is the 4-way switch on the collective head'],
     ['Power levers', '8 / 9 / 0 select engine 1 / 2 / both. F1 IDLE, F2 / F3 lever down / up, F4 FLIGHT. In flight both levers sit at FLIGHT; the N2 governors do the rest'],
-    ['ENGINE TRIM', '; / Shift+; fore / aft: both engines (N2 / NR 98 – 102 %, 100 % recommended). Left / right (see Controls) trades torque between the engines'],
+    ['ENGINE TRIM', 'Shift+; fore (N2 INCR) / ; aft (N2 DECR): both engines (N2 / NR 98 – 102 %, 100 % recommended). Left / right (see Controls) trades torque between the engines'],
     ['Torque sharing', 'Synchronise the two torque needles before take-off (FM 4-16). The engines may sit a few percent apart until you do'],
-    ['Warnings', 'RPM flashes for N1 split 12 % or more, NR 95 % or less, NR 103 % or more (with a tone; 108 % steady). T OIL: transmission oil over 105 °C or under 0.5 kp/cm²'],
+    ['Warnings', 'RPM flashes (FM 3-16; the 2 Hz rate is an estimate) for N1 split 12 % or more, NR 95 % or less, NR 103 % or more (with a tone; 108 % steady). T OIL: transmission oil over 105 °C or under 0.5 kp/cm²'],
     ['Mast moment', 'The indicator reads the rotor hub moment against its LIMIT: use the controls smoothly, and keep slope landings gentle. MM LIMIT is not a failure but a call to reduce the control input'],
     ['Engine failure', 'Collective down, hold 98 – 102 % NR and the autorotation speed of 75 KIAS (FM 3-34); OEI power is 95 % torque'],
     ['Limits', 'Torque 86 % each (95 % one engine inoperative), TOT 779 / 810 °C (843 for 6 s), N1 105 %, N2 102 %, Vne 145 KIAS to 2400 kg, 130 above'],

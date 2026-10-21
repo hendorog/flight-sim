@@ -162,6 +162,8 @@ describe('Bo 105 warning lenses (FM 3-2..3-19, TM 00-44)', () => {
     s.rotorcraft!.transmission!.oilPressurePsi = 0.4 / KPCM2_PER_PSI; r = step(); expect(r.lamps.tOil).toBe(true);
     s.rotorcraft!.transmission!.oilPressurePsi = 1.2 / KPCM2_PER_PSI; s.rotorcraft!.transmission!.oilTemperatureC = 106; r = step(); expect(r.lamps.tOil).toBe(true);
     s.rotorcraft!.transmission!.oilTemperatureC = 70; r = step(); expect(r.lamps.tOil).toBe(false);
+    // Fail-dark: without a transmission state the lens stays out (it must not burn for a whole flight on a missing block).
+    const xmsn = s.rotorcraft!.transmission; delete s.rotorcraft!.transmission; r = step(); expect(r.lamps.tOil).toBe(false); s.rotorcraft!.transmission = xmsn;
     s.rotorcraft!.rotorRpm = 0.1 * BO105_NR_100; r = step(); expect(r.lamps.oilCool).toBe(true);
   });
 

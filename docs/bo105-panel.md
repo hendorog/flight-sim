@@ -35,7 +35,7 @@ Markings (all band boundaries are published limits; the spacing of the numbers i
 | Oil pressure, kp/cm2 | engines radial 3.5, yellow 3.5-6.3, green 6.3-9.1, radial 9.1; transmission radial 0.5, yellow 0.5-0.8, green 0.8-2.0 | P5 FM 2-20, 2-10 |
 | Fuel pressure | yellow 0-0.6, green 0.6-1.7, radial 1.7 kp/cm2 | P5 FM 2-21 |
 | Fuel S / M | S 0-100 kg with the red LOW FUEL dot at 60 kg, M 0-400 kg (usable 74 + 382 kg) | P TCDS p9; P5 FM 3-13 |
-| Mast moment | green / yellow / red, LIMIT lamp, CAL, TEST. **No numbers are published**: LIMIT = hub `mastMomentLimit`, yellow from `mastMomentYellow`; the fallback until BO sets them is 32 kN m with yellow at 50 % (ESTIMATE: 16.5 deg of TPP-to-shaft tilt x the UNVERIFIED K_beta 113,000 N m/rad) | P5 FM 2-16, 7-13; ESTIMATE |
+| Mast moment | green / yellow / red, LIMIT lamp, CAL, TEST. **No numbers are published**: LIMIT = hub `mastMomentLimit`, yellow from `mastMomentYellow`; the fallback until BO sets them is 32 kN m with yellow at 50 % (ESTIMATE: 16.5 deg of TPP-to-shaft tilt x the UNVERIFIED K_beta 113,000 N m/rad); **display fallback only, never a rotor-model input** (it scales the needle; plan section 0 item 3 keeps K_beta out of the flight model) | P5 FM 2-16, 7-13; ESTIMATE |
 
 Torque is `EngineState.torque x 100 / 473.0` per engine (`engines[i].torqueNm`); N2 % is `engines[i].rpm / 6016` (the tach lag of 0.15 s
 applies); NR is `rotorRpmPct` (`RotorcraftState.rotorRpm / 424.5`); TOT and N1 are `engines[i].ittC / ngPct`; the third pointers of the
@@ -46,9 +46,9 @@ triple oil gauges read `rotorcraft.transmission`; the mast moment reads `rotorcr
 
 | Lens | Rule | Source |
 | --- | --- | --- |
-| RPM (flashes at 2 Hz) | the twin warning unit's flags `twinTurboshaft.n1SplitLight / nrLowLight / nrHighLight` (N1 split 12 %, NR 95 % or less, NR 103 % or more) | P5 FM 3-16, P TM 00-44 |
+| RPM (flashing; the 2 Hz rate is ESTIMATE) | the twin warning unit's flags `twinTurboshaft.n1SplitLight / nrLowLight / nrHighLight` (N1 split 12 %, NR 95 % or less, NR 103 % or more); the tones (650 Hz at 5 per second, steady 2600 Hz at 108 %) are AU's | P5 FM 3-16 ("RPM warning light (flashing)"), P TM 00-44 |
 | GEN 1 / GEN 2 | that engine's generator switch off, or the engine not running | P5 FM 3-7 |
-| T OIL | transmission oil under 0.5 kp/cm2 or over 105 C (or no transmission state) | P5 FM 3-17 |
+| T OIL | transmission oil under 0.5 kp/cm2 or over 105 C; fail-dark: out when the state has no `rotorcraft.transmission` (`bo105Setup.test.ts` checks the definition declares one) | P5 FM 3-17 |
 | LOW FUEL | supply tank (`fuel.left`) under 60 kg | P5 FM 3-13 |
 | OIL COOL | NR under 20 % (the fan stops with the rotor) | P5 FM 3-9 shutdown |
 | F 1 / F 2, HY BLOCK, FILT, HYD, MAG PLUG, BAT 60 / 70 | test only: no flight-model state | |
@@ -81,8 +81,11 @@ controls on `ControlInputs.engines[i].throttle` with the FM stops (OFF below 0.0
 
 ## Contract requests
 
-* BO: set `reference` in `index.ts` from `BO105_REFERENCE` (the consistency test reads `reference.vne` 145 against the ASI red radial; it fails at 152 until then);
-  publish `rotorcraft.transmission` (`oilPressurePsi`, `oilTemperatureC`); put the supply tank in `fuel.left` and the main tank in `fuel.right`; set
+* **Integrator, at the PN merge** (plan section 2.4 mechanism, so GA stays green on `feat/rigid-rotor`): in `src/aircraft/bo105/index.ts` set
+  `reference: { ...md.reference, vne: BO105_REFERENCE.vne }` (import `BO105_REFERENCE` from `./reference`; the frozen `BO105_REFERENCE` is not a full
+  `ReferenceSpeeds`, so it cannot be assigned whole). Without it `consistency.test.ts` "bo105: airspeed red line: reference 152, panel 145" fails:
+  the stub carries the MD 500E's Vne 152 while the panel reads the frozen 145. Tested in the PN worktree: tsc clean, GA consistency green. BO then replaces it with the full reference.
+* BO: publish `rotorcraft.transmission` (`oilPressurePsi`, `oilTemperatureC`; the T OIL lens is fail-dark without it, KNOWN_ISSUES row handed to BO / the integrator); put the supply tank in `fuel.left` and the main tank in `fuel.right`; set
   `hubModel.mastMomentLimit` / `mastMomentYellow`; per-engine `oilPressure`, `oilTemp`, `fuelPressure` on `state.engines[i]`.
 * TW: `state.engines[1].rpm` is the N2 shaft speed in rpm, `torque` the output-shaft N m (100 % = 473.0 N m), `running` true while the generator can be on line;
   the `twinTurboshaft` warning flags are what the RPM lens flashes on.
@@ -110,11 +113,11 @@ about 4 % torque, a mast-moment spike into LIMIT at 150-156 s, then engine 2 fai
 ## Seams added to the shared instrument code (all additive; absent = the old behaviour)
 
 `InstrumentSystemsDef.extra` / `InstrumentReadings.extra` (bespoke readings from the state), `GaugeDef 'customRect'`, `twinNeedle.letters`,
-`gearLights.noseLegend`, `ignition.sides`, `annunciator.clipGlow`, `PanelDef.fixed.lower`, three checklist-frame signals (`checklist.tailWheelLock`,
-`propLever`, `propBeta`, `gyroIcs`). The other types do not use them; their tests are unchanged.
+`gearLights.noseLegend`, `ignition.sides`, `annunciator.clipGlow`, `PanelDef.fixed.lower`, one checklist-frame signal (`checklist.tailWheelLock`, read by the
+AH-56A before-take-off and landing items; prop blade-angle and gyro-mode signals wait for an item that needs them). The other types do not use them; their tests are unchanged.
 
 ## Tests
 
 `tests/aircraft/bo105Setup.test.ts` (face, rows, levers, switches, fixed view, dev mock, UI, training, checklists per engine) and
-`tests/instruments/bo105Panel.test.ts` (markings, gauges, readings, lenses). Known failing guard until BO lands: `consistency.test.ts` "bo105:
-airspeed red line: reference 152, panel 145".
+`tests/instruments/bo105Panel.test.ts` (markings, gauges, readings, lenses). In the PN worktree alone `consistency.test.ts` "bo105: airspeed red line:
+reference 152, panel 145" fails (the stub's MD 500E reference); the integrator's one-line `reference` change above at the PN merge makes it pass.

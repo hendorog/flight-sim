@@ -47,10 +47,18 @@ const CELLS: readonly Rect[] = [
   { x: TAPES.x, y: 80, w: TAPES.w, h: 48 },
   ...Array.from({ length: 8 }, (_, i) => ({ x: TAPES.x + (i % 2) * 127, y: 134 + Math.floor(i / 2) * 44, w: 121, h: 40 })),
 ];
-const lampPress = (id: string) => id === 'pressTest' || id === 'master'
+/**
+ * Presses: LAMP TEST lights every lens; each caution lens is press-to-test on its own. MASTER CAUTION has NO press: on the aircraft
+ * pressing it cancels (resets) the master light in both cockpits (APE-I para 134j), and the sim keeps no latched master state to
+ * cancel (it follows the caution lenses), so a press would have nothing to do; it is not a lamp test (AGENT choice, docs/ah56-panel.md).
+ */
+const lampPress = (id: string): LampDef['press'] => id === 'master' ? undefined : id === 'pressTest'
   ? (down: boolean, c: ControlInputs) => { c.annunciatorTest = down; }
   : (down: boolean, c: ControlInputs) => { c.lampTestId = down ? id : undefined; };
-export const AH56_ANNUNCIATOR_LAMPS: readonly LampDef[] = LAMP_ROWS.map(([id, text, color]) => ({ id, text, color, lit: r => r.lamps[id] ?? false, press: lampPress(id) }));
+export const AH56_ANNUNCIATOR_LAMPS: readonly LampDef[] = LAMP_ROWS.map(([id, text, color]) => {
+  const press = lampPress(id);
+  return press ? { id, text, color, lit: r => r.lamps[id] ?? false, press } : { id, text, color, lit: r => r.lamps[id] ?? false };
+});
 
 const powered = (i: LampInputs): boolean => i.state.electrical.busVoltage > AH56_POWERPLANT.electrical.busDeadVolts;
 const fuelLb = (s: AircraftState): number => (s.fuel.left + s.fuel.right) * AH56_LB_PER_KG;
@@ -77,6 +85,8 @@ export const AH56_LAMP_IDS: readonly string[] = LAMP_ROWS.map(l => l[0]);
 const DIAL = { a0: SWEEP.a0, a1: SWEEP.a1 };
 const extra = (r: InstrumentReadings, id: string): number => r.extra?.[id] ?? NaN;
 const nfPct = (r: InstrumentReadings): number => r.engines[0].rpm / AH56_NF_100_RPM * 100;
+/** The three hydraulic systems read the one modelled pressure (no hydraulic model; see AH56_INSTRUMENT_SYSTEMS.extra.hydPsi). */
+const hydPsi = (r: InstrumentReadings, _system: number): number => extra(r, 'hydPsi');
 const switchDef = (id: string, label: string, i: number, on: SwitchDef['on'], toggle: SwitchDef['toggle'], red = false): SwitchDef =>
   ({ id, label, name: label, x: 44 + i * 80, on, toggle, red });
 
@@ -120,7 +130,7 @@ export const AH56_PANEL: PanelDef = {
     { kind: 'dual', id: 'xmsnOil', at: [548, 660], seed: 2004, title: ['XMSN OIL', '°C  PSI'],
       left: { label: 'T', min: 0, max: 150, majors: [0, 50, 100, 150], minorStep: 10, numbers: true, arcs: AH56_XMSN_OIL.temp.arcs, redLines: AH56_XMSN_OIL.temp.redLines, read: r => extra(r, 'xmsnOilTempC') },
       right: { label: 'P', min: 0, max: 150, majors: [0, 50, 100, 150], minorStep: 10, numbers: true, arcs: AH56_XMSN_OIL.pressure.arcs, redLines: AH56_XMSN_OIL.pressure.redLines, read: r => extra(r, 'xmsnOilPsi') } },
-    { kind: 'customRect', id: 'hydraulics', bounds: { x: 24, y: 740, w: 150, h: 190 }, create: (id, b) => new Ah56HydraulicsGauge(id, b, r => [extra(r, 'hydPsi'), extra(r, 'hydPsi'), extra(r, 'hydPsi')]) },
+    { kind: 'customRect', id: 'hydraulics', bounds: { x: 24, y: 740, w: 150, h: 190 }, create: (id, b) => new Ah56HydraulicsGauge(id, b, hydPsi) },
     // The control system in use and the ICS buttons.
     { kind: 'customRect', id: 'gyroPlacard', bounds: { x: TAPES.x, y: 736, w: TAPES.w, h: 196 }, create: (id, b) => new Ah56GyroPlacard(id, b) },
     // Gear handle and lights (the tail wheel on the first lamp), the tail-wheel lock lever.

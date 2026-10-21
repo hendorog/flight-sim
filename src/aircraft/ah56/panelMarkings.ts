@@ -22,11 +22,12 @@ export const ah56TorquePct = (nm: number): number => nm / AH56_TORQUE_100_NM * 1
 /**
  * Airspeed, KCAS. The sources give NO ASI marking: green 40 - 195 and the red radial at Vne 195 are ESTIMATE (Vne itself is INF,
  * research-ah56 section 10; pushovers began at 165 "to preclude exceeding Vne"). A white tick at the 130 KCAS gear limit (P ASTA-72 SoF
- * 4a(2)) is drawn as the blue radial slot. Dial map ESTIMATE (linear, 0 - 250 kt over 0 - 330 deg).
+ * 4a(2)) is drawn as the blue radial slot. Dial map ESTIMATE (linear, 0 - 250 kt over 0 - 330 deg); ticks every 10 kt, long every 20, numbers every
+ * 40 kt (40 - 240) so they do not crowd the lower half (artwork ESTIMATE).
  */
 export const AH56_ASI_MARKS: AsiMarkings = {
   scaleKt: [0, 250], scaleDeg: [0, 330],
-  tickFrom: 40, tickTo: 240, minorStep: 10, numberStep: 20,
+  tickFrom: 40, tickTo: 240, minorStep: 10, numberStep: 40,
   arcs: [{ from: 40, to: V.vne, color: 'green' }], redLine: V.vne, blueLine: 130,
 };
 
@@ -35,7 +36,13 @@ export interface TapeBand { from: number; to: number; color: 'green' | 'yellow' 
 export interface TapeSpec {
   title: string; unit: string;
   min: number; max: number; majors: readonly number[]; minorStep: number;
+  /** The band strip beside the LAST bar (the only bar of a one-bar tape; Nr on the Nf / Nr tape). */
   bands: readonly TapeBand[];
+  /**
+   * Two-bar tapes: the strip LEFT of the first bar (Nf), per control-system configuration (`extra.gyroMode` 0 = AMCS, 1 = ICS), so
+   * a band that belongs to one bar is never drawn beside the other.
+   */
+  firstBarBands?: { amcs: readonly TapeBand[]; ics: readonly TapeBand[] };
   /** Radial marks across the bar: red = limit, blue = "record" mark. */
   marks: readonly { at: number; color: 'red' | 'blue' }[];
   /** Digits after the point of the readout. */
@@ -59,13 +66,24 @@ export const AH56_NG_TAPE: TapeSpec = { title: 'Ng', unit: '%', min: 0, max: 110
   bands: [{ from: 63, to: AH56_NG_PCT.continuous, color: 'green' }, { from: AH56_NG_PCT.continuous, to: AH56_NG_PCT.red, color: 'yellow' }, { from: AH56_NG_PCT.red, to: 110, color: 'red' }],
   marks: [{ at: AH56_NG_PCT.idle[0], color: 'red' }, { at: AH56_NG_PCT.red, color: 'red' }], decimals: 0 };
 /**
- * Nf (power turbine) and Nr (rotor): two bars on one tape. Nf band: yellow 95-98, green 98-105, red radials 95 and 105 (P ASTA-72 SoF
- * para 5, 1972; APE 1.2 98 minimum). Nr: green 95-105 power on, red radials at the power-off limits 85 and 110 (P ASTA-72 / AMCS-73).
+ * Nf (power turbine) band per configuration. ICS (1972): yellow 95-98 (0-10 kt and above 50 kt), green 98-105 (P ASTA-72 SoF para 5;
+ * APE 1.2 98 minimum). AMCS (1973): the aircraft flies 97.5 % Nf / Nr (P AMCS-73 p 2), so the 1972 yellow band would sit under the normal
+ * point in every flight; the AMCS-73 SoF gives the power-on band 95-105 and no separate Nf band, so the AMCS Nf strip is green 95-105
+ * (ESTIMATE for Nf: the AMCS-73 power-on band carried over; AGENT choice).
+ */
+export const AH56_NF_BANDS = {
+  ics: [{ from: 95, to: 98, color: 'yellow' }, { from: 98, to: 105, color: 'green' }],
+  amcs: [{ from: 95, to: 105, color: 'green' }],
+} as const satisfies { amcs: readonly TapeBand[]; ics: readonly TapeBand[] };
+/**
+ * Nf (power turbine) and Nr (rotor): two bars on one tape. Nf strip left of the F bar, per configuration (AH56_NF_BANDS). Nr strip right
+ * of the R bar: green 95-105 power on, red radials at the power-on limits 95 / 105 and the power-off limits 85 / 110 (P ASTA-72 / AMCS-73).
  * 100 % Nr = 246 rpm even on the AMCS aircraft, which flies 97.5 %.
  */
 export const AH56_NF_NR_TAPE: TapeSpec = { title: 'Nf  Nr', unit: '%', min: 40, max: 120, majors: [40, 60, 80, 100, 120], minorStep: 5,
-  bands: [{ from: 95, to: 98, color: 'yellow' }, { from: 98, to: AH56_NR_PCT.powerOn[1], color: 'green' }],
-  marks: [{ at: 85, color: 'red' }, { at: 95, color: 'red' }, { at: AH56_NR_PCT.powerOn[1], color: 'red' }, { at: AH56_NR_PCT.powerOff[1], color: 'red' }], decimals: 0 };
+  bands: [{ from: AH56_NR_PCT.powerOn[0], to: AH56_NR_PCT.powerOn[1], color: 'green' }],
+  firstBarBands: AH56_NF_BANDS,
+  marks: [{ at: AH56_NR_PCT.powerOff[0], color: 'red' }, { at: AH56_NR_PCT.powerOn[0], color: 'red' }, { at: AH56_NR_PCT.powerOn[1], color: 'red' }, { at: AH56_NR_PCT.powerOff[1], color: 'red' }], decimals: 0 };
 
 // ---------------------------------------------------------------------------------------------------- angle indicators
 export interface AngleSpec {

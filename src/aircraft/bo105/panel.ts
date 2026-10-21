@@ -60,6 +60,7 @@ export const BO105_ANNUNCIATOR_LAMPS: readonly LampDef[] = LAMP_ROWS.map(([id, t
     : (down: boolean, c: ControlInputs) => { c.lampTestId = down ? id : undefined; } }));
 
 const powered = (i: LampInputs): boolean => i.state.electrical.busVoltage > BO105_BUS_DEAD_VOLTS;
+/** The RPM light flashes (P5 FM 3-16: "RPM warning light (flashing)", research-bo105 section 4); the 2 Hz rate is ESTIMATE. The tones are AU's. */
 const flashing = (i: LampInputs): boolean => Math.floor(i.state.time * 2) % 2 === 0;
 const twin = (i: LampInputs) => i.state.rotorcraft?.twinTurboshaft;
 /** The generator of engine e is on line: its switch ON and the engine running (the reverse-current relay closes, FM 7-31). ESTIMATE threshold. */
@@ -68,10 +69,11 @@ const genOut = (i: LampInputs, e: number): boolean => !engineControl(i.controls,
 const RULES: Record<string, (i: LampInputs) => boolean> = {
   // Supply tank below 60 kg (P5 FM 3-13); fuel.left is the supply tank (contract request to BO).
   lowFuel: i => i.state.fuel.left < BO105_FUEL.lowFuelKg,
-  // N1 split >= 12 %, NR <= 95 %, NR >= 103 % (P5 FM 3-16, TM 00-44); flashes (the warning unit pulses the lamp). TW evaluates the flags.
+  // N1 split >= 12 %, NR <= 95 %, NR >= 103 % (P5 FM 3-16, TM 00-44); flashing per FM 3-16 (2 Hz ESTIMATE). TW evaluates the flags.
   rpm: i => flashing(i) && (twin(i)?.n1SplitLight === true || twin(i)?.nrLowLight === true || twin(i)?.nrHighLight === true),
-  // Transmission oil above 105 C or below 0.5 kp/cm2 (P5 FM 3-18 / TM 00-44).
-  tOil: i => { const t = i.state.rotorcraft?.transmission; return t === undefined || t.oilPressurePsi < 0.5 / KPCM2_PER_PSI || t.oilTemperatureC > 105; },
+  // Transmission oil above 105 C or below 0.5 kp/cm2 (P5 FM 3-18 / TM 00-44). Fail-dark: no `rotorcraft.transmission` state, no light
+  // (BO publishes it; contract request in docs/bo105-panel.md, and bo105Setup.test.ts checks the definition declares a transmission).
+  tOil: i => { const t = i.state.rotorcraft?.transmission; return t !== undefined && (t.oilPressurePsi < 0.5 / KPCM2_PER_PSI || t.oilTemperatureC > 105); },
   gen1: i => genOut(i, 0), gen2: i => genOut(i, 1),
   // The oil-cooler fan stops with the rotor: lit below 20 % NR (P5 FM 3-9 shutdown).
   oilCool: i => (i.state.rotorcraft?.rotorRpm ?? 0) < 0.2 * BO105_NR_100,
@@ -90,7 +92,7 @@ const TACH_SPEC: TripleDialSpec = {
     arcs: [{ from: BO105_TACH.n2.green[0], to: BO105_TACH.n2.green[1], color: 'green' }], redLines: BO105_TACH.n2.redLines, redDots: BO105_TACH.n2.redDots },
   inner: { min: 0, max: BO105_TACH.max, ...SPAN, majors: BO105_TACH.majors, minorStep: 10, radius: 0.62, width: 4,
     arcs: [{ from: BO105_TACH.nr.green[0], to: BO105_TACH.nr.green[1], color: 'green' }], redLines: BO105_TACH.nr.redLines },
-  read: r => [bo105N2Pct(r.engines[0].rpm), bo105N2Pct(r.engines[1].rpm), r.rotorRpmPct],
+  reads: [r => bo105N2Pct(r.engines[0].rpm), r => bo105N2Pct(r.engines[1].rpm), r => r.rotorRpmPct],
 };
 const OIL_TEMP_SPEC: TripleDialSpec = {
   seed: 1054, electric: true, legend: ['OIL TEMP', '°C'],
@@ -98,7 +100,7 @@ const OIL_TEMP_SPEC: TripleDialSpec = {
     arcs: bandArcs(BO105_OIL_TEMP.engine.arcs), redLines: BO105_OIL_TEMP.engine.redLines },
   inner: { min: BO105_OIL_TEMP.min, max: BO105_OIL_TEMP.max, majors: BO105_OIL_TEMP.majors, ...SPAN, minorStep: 10, radius: 0.62, width: 4,
     arcs: bandArcs(BO105_OIL_TEMP.transmission.arcs), redLines: BO105_OIL_TEMP.transmission.redLines },
-  read: r => [C(r.engines[0].oilTempF), C(r.engines[1].oilTempF), r.extra?.xmsnOilTempC ?? BO105_OIL_TEMP.min],
+  reads: [r => C(r.engines[0].oilTempF), r => C(r.engines[1].oilTempF), r => r.extra?.xmsnOilTempC ?? BO105_OIL_TEMP.min],
 };
 const OIL_PRESSURE_SPEC: TripleDialSpec = {
   seed: 1055, electric: true, legend: ['OIL PRESS', 'kp/cm²'],
@@ -106,13 +108,14 @@ const OIL_PRESSURE_SPEC: TripleDialSpec = {
     arcs: bandArcs(BO105_OIL_PRESSURE.engine.arcs), redLines: BO105_OIL_PRESSURE.engine.redLines },
   inner: { min: 0, max: BO105_OIL_PRESSURE.transmission.max, ...SPAN, majors: BO105_OIL_PRESSURE.transmission.majors, minorStep: 0.25, radius: 0.62, width: 4,
     arcs: bandArcs(BO105_OIL_PRESSURE.transmission.arcs), redLines: BO105_OIL_PRESSURE.transmission.redLines },
-  read: r => [r.engines[0].oilPressurePsi * KPCM2_PER_PSI, r.engines[1].oilPressurePsi * KPCM2_PER_PSI, r.extra?.xmsnOilKp ?? 0],
+  reads: [r => r.engines[0].oilPressurePsi * KPCM2_PER_PSI, r => r.engines[1].oilPressurePsi * KPCM2_PER_PSI, r => r.extra?.xmsnOilKp ?? 0],
 };
 
 const totGauge = (id: string, at: [number, number], seed: number, engine: number) =>
   ({ kind: 'single' as const, id, at, seed, title: `TOT ${engine + 1}`, units: '°C ×100', size: 'large' as const, ...DIAL, labels: BO105_TOT_SCALE.majors,
     scale: engineScale(BO105_TOT_SCALE, engine) });
-const N1_DIAL = { ...DIAL, labels: BO105_N1_SCALE.majors, title: 'N1', units: '%' };
+/** N1 dial of engine e (0 or 1), titled N1 1 / N1 2 as the TOT dials are (plan 6.4 row 6). */
+const n1Dial = (e: number) => ({ ...DIAL, labels: BO105_N1_SCALE.majors, title: `N1 ${e + 1}`, units: '%' });
 const FUEL_PRESSURE = { ...DIAL, labels: BO105_FUEL_PRESSURE.majors, title: 'FUEL PRESS', units: 'kp/cm²' };
 
 const kg = (gal: number): number => gal * BO105_KG_PER_GAL;
@@ -174,8 +177,8 @@ export const BO105_PANEL: PanelDef = {
     powerLever(0), powerLever(1),
     { kind: 'pushButton', id: 'mmTest', bounds: { x: 44, y: 1124, w: 184, h: 70 }, label: 'MM TEST', read: c => c.lampTestId === 'mmTest',
       press: (down, c) => { c.lampTestId = down ? 'mmTest' : undefined; } },
-    { kind: 'single', id: 'n1a', at: [COL[1], ROW[5]], seed: 1059, size: 'large', ...N1_DIAL, scale: engineScale(BO105_N1_SCALE, 0) },
-    { kind: 'single', id: 'n1b', at: [COL[2], ROW[5]], seed: 1060, size: 'large', ...N1_DIAL, scale: engineScale(BO105_N1_SCALE, 1) },
+    { kind: 'single', id: 'n1a', at: [COL[1], ROW[5]], seed: 1059, size: 'large', ...n1Dial(0), scale: engineScale(BO105_N1_SCALE, 0) },
+    { kind: 'single', id: 'n1b', at: [COL[2], ROW[5]], seed: 1060, size: 'large', ...n1Dial(1), scale: engineScale(BO105_N1_SCALE, 1) },
     { kind: 'customRound', id: 'oilPressure', at: [COL[0], ROW[6]], size: 'large', create: (id, x, y, aperture) => new Bo105TripleGauge(id, x, y, aperture, OIL_PRESSURE_SPEC) },
     { kind: 'dual', id: 'fuel', at: [COL[1], ROW[6]], seed: 1061, title: ['S', 'M'],
       left: { label: 'S', min: 0, max: 100, majors: [0, 50, 100], minorStep: 10, numbers: true, arcs: BO105_FUEL_SCALES.supply.arcs, read: r => kg(r.fuelGal[0]) },

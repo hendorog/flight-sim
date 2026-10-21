@@ -85,7 +85,8 @@ export const BO105_FUEL_SCALES = {
 /** Mast-moment indicator (P5 FM 7-13 text: green / yellow / red bands, CAL, TEST and LIMIT; no numbers are published).
  *  The needle reads percent of the LIMIT moment; yellow starts at the hub's `mastMomentYellow` fraction. The fallbacks apply
  *  only until the flight model publishes its hub values: ESTIMATE (16.5 deg of TPP-to-shaft tilt x the UNVERIFIED
- *  K_beta 113,000 N m/rad = 32 kN m; yellow at 0.5, about 8 deg). */
+ *  K_beta 113,000 N m/rad = 32 kN m; yellow at 0.5, about 8 deg). DISPLAY FALLBACK ONLY, never a rotor-model input: it scales
+ *  the needle and nothing else, and plan section 0 item 3 keeps the Padfield K_beta out of the flight model. */
 export const BO105_MAST_MOMENT = { max: 120, limitFallbackNm: 32_000, yellowFallback: 0.5 } as const;
 
 /** Rounded-off dial sweep shared by the single-pointer engine dials, rad. */
@@ -95,12 +96,16 @@ export const BO105_DIAL_SWEEP = { a0: -125 * DEG, a1: 125 * DEG } as const;
 export const bo105N2Pct = (rpm: number): number => rpm / BO105_N2_100_RPM * 100;
 export const bo105NrPct = (rpm: number): number => rpm / BO105_NR_100 * 100;
 
-/** The hub's LIMIT moment (N m) and where yellow starts (fraction of it): the flight model's hingeless hub when it declares them, else the fallback. */
-export function bo105MastMomentLimit(): { limit: number; yellow: number } {
+/** The definition is static, so the LIMIT is resolved once at load (the instrument step reads it every frame without allocating). */
+const MAST_MOMENT_LIMIT: Readonly<{ limit: number; yellow: number }> = Object.freeze((() => {
   const hub = BO105_ROTORCRAFT.hubModel;
   return hub?.kind === 'hingeless' && hub.mastMomentLimit !== undefined
     ? { limit: hub.mastMomentLimit, yellow: hub.mastMomentYellow ?? BO105_MAST_MOMENT.yellowFallback }
     : { limit: BO105_MAST_MOMENT.limitFallbackNm, yellow: BO105_MAST_MOMENT.yellowFallback };
+})());
+/** The hub's LIMIT moment (N m) and where yellow starts (fraction of it): the flight model's hingeless hub when it declares them, else the display fallback. */
+export function bo105MastMomentLimit(): Readonly<{ limit: number; yellow: number }> {
+  return MAST_MOMENT_LIMIT;
 }
 /** Mast moment as percent of the LIMIT mark; null when the flight model does not publish it. */
 export function bo105MastMomentPct(s: AircraftState): number | null {
