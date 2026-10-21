@@ -20,25 +20,43 @@ export const ROTOR_RPM_DISARM_PCT = 50;
 export const speechSeconds = (text: string): number => 0.4 + 0.07 * text.length;
 
 type Profile = NonNullable<AudioProfile['voiceWarnings']>;
+type RotorRpmWhen = Extract<VoiceMessage['when'], { kind: 'rotorRpm' }>;
 
 /**
- * Which messages of `profile` the state calls for now, by index. 'rotorRpm': the rotor outside [low, high] % once it
- * has been armed (`armed[i]`, updated here: armed on reaching `low`, disarmed below ROTOR_RPM_DISARM_PCT). 'engineFire':
- * no state reports an engine fire (EngineState has no fire member), so never. 'caution': `caution` (a new master
- * caution, latched by the caller). Nothing without bus power (`powered`).
+ * The engine is not driving the rotor: it is not running, or its freewheel is open (the rotor's needle above the
+ * power turbine's, RotorcraftState.turboshaft.needlesSplit: an autorotation, a flare, a collective dump).
  */
-export function activeMessages(s: AircraftState, powered: boolean, profile: Profile, armed: boolean[], caution: boolean): boolean[] {
-  return profile.messages.map((m: VoiceMessage, i) => {
-    const w = m.when;
-    if (w.kind === 'rotorRpm') {
-      const pct = s.rotorcraft ? (100 * Math.max(0, s.rotorcraft.rotorRpm)) / w.rpm100 : 0;
-      if (pct >= w.low) armed[i] = true;
-      else if (pct < ROTOR_RPM_DISARM_PCT) armed[i] = false;
-      return powered && armed[i] === true && (pct < w.low || pct > w.high);
-    }
-    if (w.kind === 'caution') return powered && caution;
-    return false;
-  });
+export function rotorUnpowered(s: AircraftState): boolean {
+  return s.engines[0]?.running !== true || s.rotorcraft?.turboshaft?.needlesSplit === true;
+}
+
+/** Whether a 'rotorRpm' message is due (and its arming, `armed[i]`, updated). */
+function rotorRpmDue(s: AircraftState, w: RotorRpmWhen, powered: boolean, armed: boolean[], i: number): boolean {
+  const pct = s.rotorcraft ? (100 * Math.max(0, s.rotorcraft.rotorRpm)) / w.rpm100 : 0;
+  const [low, high] = rotorUnpowered(s) ? w.powerOff : w.powerOn;
+  // Armed once the rotor has reached the power-on floor (the governed speed after a start). Disarmed below
+  // ROTOR_RPM_DISARM_PCT, or on the ground below that floor: a shutdown or ground idle is not a warning, and the
+  // engine-out tone (stallWarner) still sounds on its own logic.
+  if (pct >= w.powerOn[0]) armed[i] = true;
+  else if (pct < ROTOR_RPM_DISARM_PCT || s.onGround) armed[i] = false;
+  return powered && armed[i] === true && (pct < low || pct > high);
+}
+
+/**
+ * Which messages of `profile` the state calls for now, by index, into `out` (reused; returned). 'rotorRpm': the rotor
+ * outside its power-on band, or its power-off band while the engine does not drive it (rotorUnpowered), once armed
+ * (`armed[i]`, updated here: see rotorRpmDue). 'engineFire': no state reports an engine fire (EngineState has no fire
+ * member), so never. 'caution': `caution` (a new master caution, latched by the caller). Nothing without bus power
+ * (`powered`).
+ */
+export function activeMessages(s: AircraftState, powered: boolean, profile: Profile, armed: boolean[], caution: boolean, out: boolean[] = []): boolean[] {
+  const messages = profile.messages;
+  out.length = messages.length;
+  for (let i = 0; i < messages.length; i++) {
+    const w = messages[i].when;
+    out[i] = w.kind === 'rotorRpm' ? rotorRpmDue(s, w, powered, armed, i) : w.kind === 'caution' ? powered && caution : false;
+  }
+  return out;
 }
 
 /**
@@ -51,6 +69,7 @@ export class VoiceWarner {
   private busyUntil = 0;
   private readonly nextAt: number[];
   private readonly armed: boolean[];
+  private readonly active: boolean[];
   private caution = false;
   /** The messages spoken, in order (for tests and the debug readout). */
   readonly said: string[] = [];
@@ -58,6 +77,7 @@ export class VoiceWarner {
   constructor(private readonly profile: Profile, private readonly speaker: Speaker | null) {
     this.nextAt = profile.messages.map(() => 0);
     this.armed = profile.messages.map(() => false);
+    this.active = profile.messages.map(() => false);
   }
 
   /** A new master caution (the 'caws' event): spoken once. */
@@ -68,7 +88,7 @@ export class VoiceWarner {
   /** `volume`: the master volume 0..1 (0 while muted: nothing is spoken, the timers still run). */
   update(s: AircraftState, powered: boolean, dt: number, volume: number): void {
     this.t += Math.max(0, dt);
-    const active = activeMessages(s, powered, this.profile, this.armed, this.caution);
+    const active = activeMessages(s, powered, this.profile, this.armed, this.caution, this.active);
     if (!powered) this.caution = false;
     for (let i = 0; i < active.length; i++) if (!active[i]) this.nextAt[i] = 0;
     if (this.t < this.busyUntil) return;

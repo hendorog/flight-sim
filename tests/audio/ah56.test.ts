@@ -28,9 +28,10 @@ import { DEG, G0, KT, LB } from '../../src/core/math';
 import { makeMockState } from '../../src/core/mockState';
 import { defaultControls, defaultWeather, type AircraftState } from '../../src/core/types';
 import { emptyRotorcraftState, type RotorcraftDefinition, type RotorcraftState } from '../../src/physics/rotorcraft/definition';
+import { emptyTurboshaftState } from '../../src/physics/rotorcraft/turboshaft';
 import type { PusherDef } from '../../src/physics/rotorcraft/pusher';
 import { biquad, dbfs, exteriorMix, interiorMix } from './mixModel';
-import { envelope, peak, rms, SR, SynthHost, toneMagnitude } from './workletHost';
+import { BLOCK, envelope, peak, rms, SR, SynthHost, toneMagnitude } from './workletHost';
 
 /** AG's rotor and wheels and AC's pusher as the published facts give them (test-local; the real ones arrive with AG/AC). */
 const LANDED: RotorcraftDefinition = {
@@ -86,7 +87,8 @@ describe('AH56_AUDIO: the import rule', () => {
     // The FLAWS ROTOR RPM and the hum count the rotor's percent from the definition's 100 %.
     expect(AH56_AUDIO.vibration!.rpm100).toBe(stub.referenceRpm);
     const rpmMessage = AH56_AUDIO.voiceWarnings!.messages.find((m) => m.when.kind === 'rotorRpm')!;
-    expect(rpmMessage.when).toEqual({ kind: 'rotorRpm', low: AH56_NR_PCT.powerOn[0], high: AH56_NR_PCT.powerOn[1], rpm100: stub.referenceRpm });
+    expect(rpmMessage.when).toEqual({ kind: 'rotorRpm', powerOn: AH56_NR_PCT.powerOn, powerOff: AH56_NR_PCT.powerOff, rpm100: stub.referenceRpm });
+    expect([AH56_NR_PCT.powerOn, AH56_NR_PCT.powerOff]).toEqual([[95, 105], [85, 110]]);
   });
 
   it('follows AG and AC without an edit: the landed definition gives the AH-56A\'s rotor, tail rotor, pusher and gear', () => {
@@ -190,6 +192,43 @@ describe('AH-56A voices (the landed profile)', () => {
     expect(toneMagnitude(env, 2.05, 50)).toBeGreaterThan(5 * toneMagnitude(env, 3.3, 50));
     expect(db(rms(run(1.5)), rms(run(0.5)))).toBeGreaterThan(6);
     expect(peak(run(0))).toBe(0);
+  }, 60_000);
+
+  it('the half-P thump follows the physics\' forcing phase (halfPPhase), not its own clock', () => {
+    // The frame loop sends the hop's phase at 60 Hz, advancing at 2.05 Hz, while the beat rate sent is 15 % fast
+    // (2.36 Hz): a thump on its own clock would drift a whole cycle in 3 s. Locked, the envelope beats at 2.05 Hz and
+    // peaks where sin(phase) does.
+    const run = (lock: boolean): Float32Array => {
+      const host = new SynthHost(LANDED_AUDIO);
+      const seconds = 8;
+      const blocks = Math.ceil((seconds * SR) / BLOCK);
+      const out = new Float32Array(blocks * BLOCK);
+      const perFrame = Math.round(SR / 60 / BLOCK);
+      for (let b = 0; b < blocks; b++) {
+        const t = (b * BLOCK) / SR;
+        if (b % perFrame === 0) host.set({ halfP: 1, halfPHz: AH56_TARGET_HZ.halfP * 1.15, halfPPhase: lock ? (t * AH56_TARGET_HZ.halfP) % 1 : 0 });
+        out.set(host.block()[STEM.cabin], b * BLOCK);
+      }
+      return out;
+    };
+    const rate = 50;
+    const env = envelope(band(run(true), 20, 120), 1 / rate).subarray(rate);
+    const pinned = envelope(band(run(false), 20, 120), 1 / rate).subarray(rate);
+    expect(toneMagnitude(env, AH56_TARGET_HZ.halfP, rate)).toBeGreaterThan(4 * toneMagnitude(env, AH56_TARGET_HZ.halfP * 1.15, rate));
+    // (A host sending a phase that never moves pins the thump instead: no 2.05 Hz beat at all.)
+    expect(toneMagnitude(pinned, AH56_TARGET_HZ.halfP, rate)).toBeLessThan(0.25 * toneMagnitude(env, AH56_TARGET_HZ.halfP, rate));
+    // Where in the cycle: the phase of the envelope's 2.05 Hz line, from the start of the analysed second (t = 1 s),
+    // against the sin(2 pi f t) the thump follows (sin peaks a quarter cycle in). Within 0.1 cycle (filters, windows).
+    let re = 0;
+    let im = 0;
+    for (let i = 0; i < env.length; i++) {
+      const w = 2 * Math.PI * AH56_TARGET_HZ.halfP * (1 + (i + 0.5) / rate);
+      re += env[i] * Math.cos(w);
+      im += env[i] * Math.sin(w);
+    }
+    // env ~ a + b sin(w): the line's phase is atan2(im, re) = pi / 2 (all sine): a quarter cycle.
+    const cyc = Math.atan2(im, re) / (2 * Math.PI);
+    expect(Math.abs(cyc - 0.25)).toBeLessThan(0.1);
   }, 60_000);
 
   it('the gear motor runs while a leg is in transit (wheels only), and the lock thumps', () => {
@@ -309,16 +348,34 @@ describe('AH-56A mapping', () => {
     expect(out[P.halfPHz]).toBeCloseTo(2.05, 2);
     expect(fill(flying((r) => Object.assign(r.events!.halfPHop!, { amplitude: 9 })))[P.halfP]).toBe(2);
   });
+
+  it('the half-P forcing phase as a fraction of its cycle, wrapped from the unwrapped phase in rad', () => {
+    const phaseOf = (rad: number): number => fill(flying((r) => Object.assign(r.events!.halfPHop!, { active: true, amplitude: 1, phase: rad })))[P.halfPPhase];
+    expect(phaseOf(0)).toBe(0);
+    expect(phaseOf(Math.PI / 2)).toBeCloseTo(0.25, 6);
+    // 40 cycles and a quarter on (about 20 s of hop at 2.05 Hz): still a quarter.
+    expect(phaseOf(2 * Math.PI * 40.25)).toBeCloseTo(0.25, 5);
+    expect(phaseOf(-Math.PI / 2)).toBeCloseTo(0.75, 6);
+    // No hop state: 0.
+    expect(fill(flying((r) => { r.events = {}; }))[P.halfPPhase]).toBe(0);
+  });
 });
 
 describe('FLAWS voice warnings', () => {
   const VOICE = LANDED_AUDIO.voiceWarnings!;
-  const at = (pct: number, volts = 28): AircraftState => {
+  /**
+   * An AH-56A with the rotor at `pct` %, airborne with the engine driving the rotor unless `how` says otherwise:
+   * `freewheel` (the needles split: an autorotation), `engineOut` (the engine not running), `onGround`.
+   */
+  const at = (pct: number, volts = 28, how: { freewheel?: boolean; engineOut?: boolean; onGround?: boolean } = {}): AircraftState => {
     const s = makeMockState();
     s.electrical.busVoltage = volts;
     const r = emptyRotorcraftState();
     r.rotorRpm = (pct / 100) * AH56_NR_100;
+    r.turboshaft = { ...emptyTurboshaftState(stub.systems.turboshaft!, true), needlesSplit: how.freewheel === true };
     s.rotorcraft = r;
+    s.engines[0].running = how.engineOut !== true;
+    s.onGround = how.onGround === true;
     return s;
   };
   class Recorder implements Speaker {
@@ -351,6 +408,34 @@ describe('FLAWS voice warnings', () => {
     expect(active(70)).toBe(false);
     // ENGINE FIRE never (no state reports a fire).
     expect(activeMessages(at(100), true, VOICE, armed, true)).toEqual([false, false, true]);
+  });
+
+  it('ROTOR RPM in an autorotation or after an engine failure: the power-off band, 85-110 %', () => {
+    const armed = [false, false, false];
+    const active = (pct: number, how: Parameters<typeof at>[2]): boolean => activeMessages(at(pct, 28, how), true, VOICE, armed, false)[1];
+    expect(active(100, {})).toBe(false);
+    // Freewheel open (the needles split): a normal autorotation at 108 % and 88 % is quiet; past 110 % or under 85 % it calls.
+    for (const how of [{ freewheel: true }, { engineOut: true }]) {
+      expect([108, 88, 100].map((p) => active(p, how)), JSON.stringify(how)).toEqual([false, false, false]);
+      expect([111, 84].map((p) => active(p, how)), JSON.stringify(how)).toEqual([true, true]);
+    }
+    // Power on again (needles joined): the 95-105 % band.
+    expect([106, 93].map((p) => active(p, {}))).toEqual([true, true]);
+  });
+
+  it('ROTOR RPM is quiet through a shutdown on the ground, engine running to idle then cut, battery on', () => {
+    const rec = new Recorder();
+    const w = new VoiceWarner(VOICE, rec);
+    // Running on the ground at 100 %, then the throttle to idle (the rotor runs down to 70 %), then the engine cut and
+    // the rotor run down to rest over a minute: not one callout.
+    for (let t = 0; t < 2; t += 0.1) w.update(at(100, 28, { onGround: true }), true, 0.1, 1);
+    for (let t = 0; t < 30; t += 0.1) w.update(at(100 - t, 28, { onGround: true }), true, 0.1, 1);
+    for (let t = 0; t < 60; t += 0.1) w.update(at(70 * (1 - t / 60), 28, { onGround: true, engineOut: true }), true, 0.1, 1);
+    expect(rec.spoken).toEqual([]);
+    // Airborne the rotor still warns (an engine failure in the hover: 80 % is under the power-off band).
+    for (let t = 0; t < 1; t += 0.1) w.update(at(100), true, 0.1, 1);
+    w.update(at(80, 28, { engineOut: true }), true, 0.1, 1);
+    expect(rec.spoken.map((x) => x.text)).toEqual(['Rotor RPM']);
   });
 
   it('speaks at once, repeats every 3 s while the condition holds, one message at a time, the higher priority first', () => {
@@ -440,7 +525,7 @@ describe('AudioSystem with the AH-56A', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  async function started(speaker: Speaker): Promise<{ audio: AudioSystem; ctx: SimContext }> {
+  async function started(speaker: Speaker, extra: Record<string, unknown> = {}): Promise<{ audio: AudioSystem; ctx: SimContext }> {
     const state = makeMockState();
     state.electrical.busVoltage = 28;
     const r = emptyRotorcraftState();
@@ -455,6 +540,7 @@ describe('AudioSystem with the AH-56A', () => {
       weather: defaultWeather(),
       camera: new THREE.PerspectiveCamera(),
       cameraMode: 'cockpit',
+      ...extra,
     } as unknown as SimContext;
     const audio = new AudioSystem({ profile: LANDED_AUDIO, speaker });
     audio.init(ctx);
@@ -475,9 +561,44 @@ describe('AudioSystem with the AH-56A', () => {
     audio.caws('caution');
     for (let i = 0; i < 20; i++) audio.update(0.1, ctx);
     expect(spoken).toEqual(['Rotor RPM', 'Master caution']);
+    // A warning strikes its chimes only: no words.
+    audio.caws('warning');
+    for (let i = 0; i < 20; i++) audio.update(0.1, ctx);
+    expect(spoken).toEqual(['Rotor RPM', 'Master caution']);
     ctx.events.emit('paused', { paused: true });
     expect(cancels).toBe(1);
     audio.dispose();
+  });
+
+  it('says nothing while the tab is hidden or the GL context is lost (the synth is muted then too)', async () => {
+    const doc = { hidden: true, listeners: [] as (() => void)[], addEventListener(_t: string, f: () => void) { this.listeners.push(f); }, removeEventListener: () => undefined };
+    vi.stubGlobal('document', doc);
+    const spoken: string[] = [];
+    const { audio, ctx } = await started({ speak: (t) => void spoken.push(t), cancel: () => undefined });
+    audio.update(0.1, ctx);
+    ctx.state.rotorcraft!.rotorRpm = 0.9 * LANDED.referenceRpm;
+    // Hidden (a frame can still run, e.g. a background tab's last ticks): no words.
+    for (let i = 0; i < 40; i++) audio.update(0.1, ctx);
+    expect(spoken).toEqual([]);
+    doc.hidden = false;
+    doc.listeners.forEach((f) => f());
+    audio.update(0.1, ctx);
+    expect(spoken).toEqual(['Rotor RPM']);
+    audio.dispose();
+    // The GL context lost: likewise.
+    doc.listeners.length = 0;
+    const gl: Record<string, () => void> = {};
+    const canvas = { addEventListener: (t: string, f: () => void) => void (gl[t] = f), removeEventListener: () => undefined };
+    const lost = await started({ speak: (t) => void spoken.push(t), cancel: () => undefined }, { renderer: { domElement: canvas } });
+    lost.audio.update(0.1, lost.ctx);
+    gl.webglcontextlost();
+    lost.ctx.state.rotorcraft!.rotorRpm = 0.9 * LANDED.referenceRpm;
+    for (let i = 0; i < 40; i++) lost.audio.update(0.1, lost.ctx);
+    expect(spoken).toEqual(['Rotor RPM']);
+    gl.webglcontextrestored();
+    lost.audio.update(0.1, lost.ctx);
+    expect(spoken).toEqual(['Rotor RPM', 'Rotor RPM']);
+    lost.audio.dispose();
   });
 
   it('the tail-wheel lock clunks when it changes (not at the first frame)', async () => {

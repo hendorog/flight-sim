@@ -169,7 +169,10 @@ describe('warning unit K-DW02/01', () => {
   it('N1 SPLIT: the same intermittent tone', () => {
     const x = stems({ ...HOVER, n1SplitTone: 1 })[STEM.cabin];
     expect(toneMagnitude(x, 650)).toBeGreaterThan(20 * toneMagnitude(x, 720));
-    expect(lowBeat(x)).toBeGreaterThan(0);
+    // The loudness envelope beats at 5 Hz, as NR LOW's.
+    const env = envelope(band(x, 500, 900), 0.01);
+    expect(toneMagnitude(env, 5, 100)).toBeGreaterThan(5 * toneMagnitude(env, 3.5, 100));
+    expect(lowBeat(x)).toBeCloseTo(lowBeat(stems({ ...HOVER, nrLowTone: 1 })[STEM.cabin]), 6);
   }, 60_000);
 
   it('NR HIGH: a steady 2600 Hz tone', () => {

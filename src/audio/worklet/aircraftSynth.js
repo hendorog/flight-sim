@@ -874,13 +874,18 @@ class PusherVoice {
   }
 }
 
+/** Time constant over which the half-P thump works off its phase error to the physics, s, and the per-sample share. */
+const HALF_P_LOCK_S = 0.03;
+const HALF_P_LOCK = 1 / (HALF_P_LOCK_S * SR);
+
 /**
  * The cabin sounds of the hingeless-rotor types (cabin stem), each built only when the profile declares it:
  *   - a twin warning unit (AudioProfile.rotorWarnings; the Bo 105's K-DW02/01): an intermittent tone while NR is low or
  *     the N1s split (on for half of every beat, 5 ms edges), a steady higher tone while NR is high;
  *   - the rotor's n-per-rev vibration hum (AudioProfile.vibration): a tone at `vibrationHz` with the buzz of the
  *     structure (its second and third multiples), so a small speaker that cannot play 33 Hz still carries it;
- *   - the half-P hop (AudioProfile.halfP): a low rumble thumping at `halfPHz`.
+ *   - the half-P hop (AudioProfile.halfP): a low rumble thumping at `halfPHz`, its cycle locked to the physics'
+ *     forcing phase ('halfPPhase', sync()): the thump peaks where sin(phase) does, a quarter cycle after the phase wraps.
  * Noise from a source of its own.
  */
 class RotorcraftCabinVoice {
@@ -898,11 +903,36 @@ class RotorcraftCabinVoice {
     const h = profile.halfP;
     this.halfLevel = h ? h.level : 0;
     this.halfPh = 0;
+    /** Phase error to the last 'halfPPhase' received, cycles, worked off over about HALF_P_LOCK_S. */
+    this.halfErr = 0;
+    this.halfSynced = false;
     this.rumblePh = 0;
     this.rumbleHz = h ? h.rumbleHz : 50;
     this.noise = new Noise(0x3243f6a8);
     this.rumbleF = new SVF();
     this.rumbleF.set(this.rumbleHz, 0.9);
+  }
+
+  /**
+   * A parameter block has arrived (`t`: the unsmoothed targets): lock the half-P cycle to the hop's forcing phase. The
+   * first block of an event sets it; later ones leave the remaining error to be worked off sample by sample, so a
+   * frame's jitter never clicks.
+   */
+  sync(t) {
+    if (this.halfLevel <= 0) return;
+    if (!(t[P.halfP] > 1e-4)) {
+      this.halfSynced = false;
+      return;
+    }
+    const phase = t[P.halfPPhase];
+    if (!this.halfSynced) {
+      this.halfPh = phase - Math.floor(phase);
+      this.halfErr = 0;
+      this.halfSynced = true;
+    } else {
+      const e = phase - this.halfPh;
+      this.halfErr = e - Math.round(e);
+    }
   }
 
   sample(v) {
@@ -938,7 +968,10 @@ class RotorcraftCabinVoice {
     const w = this.noise.next();
     this.rumbleF.process(w);
     if (hop > 1e-4) {
-      this.halfPh = (this.halfPh + v[P.halfPHz] / SR) % 1;
+      const corr = this.halfErr * HALF_P_LOCK;
+      this.halfErr -= corr;
+      this.halfPh += v[P.halfPHz] / SR + corr;
+      this.halfPh -= Math.floor(this.halfPh);
       this.rumblePh = (this.rumblePh + (0.85 * this.rumbleHz) / SR) % 1;
       // One thump a cycle: the envelope peaks sharply once a cycle and never quite empties.
       const c = 0.5 + 0.5 * Math.sin(TAU * this.halfPh);
@@ -1117,6 +1150,7 @@ class AircraftSynth extends AudioWorkletProcessor {
   onMessage(d) {
     if (d instanceof Float32Array) {
       this.target.set(d.subarray(0, PARAM_COUNT));
+      if (this.rcCabin) this.rcCabin.sync(this.target);
       // The first precipitation: smooth the appended parameters from now on (its own included).
       if (!this.rainHeard && (this.target[P.rain] > 0 || this.target[P.hail] > 0)) {
         this.rainHeard = true;

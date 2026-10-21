@@ -122,6 +122,12 @@ export const EXTRA_PARAMS = [
   'halfP',
   /** Its beat, Hz (perRev x the rotor's rev/s: 2.05 Hz at 246 rpm). */
   'halfPHz',
+  /**
+   * The hop's forcing phase as a fraction of its cycle 0..1 (RotorcraftState.events.halfPHop.phase / 2 pi, wrapped):
+   * the worklet locks the thump to it on every block it receives, so the sound stays on the physics' roll and plunge.
+   * Read unsmoothed (a wrapping phase cannot be smoothed).
+   */
+  'halfPPhase',
 ] as const;
 
 export type SynthParamName = (typeof SYNTH_PARAMS)[number] | (typeof EXTRA_PARAMS)[number];

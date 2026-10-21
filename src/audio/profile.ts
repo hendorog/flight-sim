@@ -163,9 +163,10 @@ export interface AudioProfile {
   halfP?: { perRev: number; rumbleHz: number; level: number };
   /**
    * Spoken warnings (the AH-56A's FLAWS, fault locator aural warning system): each message is spoken while its
-   * condition holds (audio/voiceWarnings.ts flawsConditions), again every `repeatSeconds`, the highest priority (the
-   * first in the list) first; `caution` is spoken once per new caution/warning chime event (AudioSystem.caws). Through
-   * the browser's speech synthesis where it exists (silent otherwise). Absent: none.
+   * condition holds (audio/voiceWarnings.ts activeMessages), again every `repeatSeconds`, the highest priority (the
+   * first in the list) first; `caution` is spoken once per new caution chime event (AudioSystem.caws at the 'caution'
+   * level; a 'warning' strikes only the chimes). Through the browser's speech synthesis where it exists (silent
+   * otherwise). Absent: none.
    */
   voiceWarnings?: { messages: readonly VoiceMessage[]; repeatSeconds: number; volume: number };
   /** A stick shaker (AircraftState.stickShaker): the rattle of its eccentric motor at `hz` on the control column, `level` strong. Absent: none. */
@@ -182,9 +183,15 @@ export interface AudioProfile {
 export interface VoiceMessage {
   text: string;
   /**
-   * 'rotorRpm': the rotor outside [low, high] % of its 100 % rpm (`rpm100`) once it has reached `low` (powered, rotor
-   * turning); 'engineFire': an engine fire (no state reports one yet: never sounds); 'caution': a new master caution
-   * (the 'caws' event).
+   * 'rotorRpm': the rotor outside its band, % of its 100 % rpm (`rpm100`), once it has reached the power-on band's
+   * floor: `powerOn` while the engine drives the rotor, `powerOff` when it does not (engine not running, or the
+   * freewheel open: RotorcraftState.turboshaft.needlesSplit), so an autorotation at 108 % is quiet; on the ground a
+   * rotor below the power-on floor disarms it (a shutdown or ground idle is not a warning). 'engineFire': an engine
+   * fire (no state reports one yet: never sounds); 'caution': a new master caution (the 'caws' event at the caution
+   * level).
    */
-  when: { kind: 'rotorRpm'; low: number; high: number; rpm100: number } | { kind: 'engineFire' } | { kind: 'caution' };
+  when:
+    | { kind: 'rotorRpm'; powerOn: readonly [number, number]; powerOff: readonly [number, number]; rpm100: number }
+    | { kind: 'engineFire' }
+    | { kind: 'caution' };
 }

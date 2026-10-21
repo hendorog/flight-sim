@@ -292,8 +292,9 @@ export class AudioSystem implements Subsystem {
    */
   caws(level: 'warning' | 'caution'): void {
     this.g?.synth.port.postMessage({ type: 'caws', level });
-    // A type with spoken warnings says "MASTER CAUTION" (AudioProfile.voiceWarnings, a 'caution' message).
-    this.voice?.noteCaution();
+    // A type with spoken warnings says "MASTER CAUTION" on a caution (AudioProfile.voiceWarnings, a 'caution'
+    // message); a warning strikes only its chimes (no "MASTER WARNING" words are known for the FLAWS).
+    if (level === 'caution') this.voice?.noteCaution();
   }
 
   /** Play a speech cue (intercom click, captions-only chime, radio squelch). Silent before the first gesture. */
@@ -422,7 +423,8 @@ export class AudioSystem implements Subsystem {
     if (reason === 'pause') this.pausedMute = on;
     else if (reason === 'hidden') this.hidden = on;
     else this.contextLost = on;
-    if (on) this.voice?.silence();
+    // Spoken warnings stop with the sound and start over with it (a warning still due is said at once on return).
+    this.voice?.silence();
     this.applyMaster();
     this.applyRunState();
   }
@@ -567,8 +569,12 @@ export class AudioSystem implements Subsystem {
   private applyMaster(): void {
     const g = this.g;
     if (!g) return;
-    const target = this.muted || this.silenced ? 0 : this.volume;
-    g.master.gain.setTargetAtTime(target, g.ac.currentTime, 0.08);
+    g.master.gain.setTargetAtTime(this.audibleVolume, g.ac.currentTime, 0.08);
+  }
+
+  /** The master volume the listener hears: 0 while muted, paused, hidden or without a GL context. */
+  private get audibleVolume(): number {
+    return this.muted || this.silenced ? 0 : this.volume;
   }
 
   update(dt: number, ctx: SimContext): void {
@@ -594,7 +600,8 @@ export class AudioSystem implements Subsystem {
     this.lastTailWheelLock = lock;
     if (this.voice) {
       const powered = ctx.state.electrical.busVoltage > this.profile.busPoweredV;
-      this.voice.update(ctx.state, powered, dt, this.muted ? 0 : this.volume);
+      // Spoken warnings bypass the synth graph (speech synthesis): they follow the same silencing as its master gain.
+      this.voice.update(ctx.state, powered, dt, this.audibleVolume);
     }
   }
 

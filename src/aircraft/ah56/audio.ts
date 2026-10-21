@@ -185,7 +185,7 @@ export function ah56Audio(rotor: RotorcraftDefinition, pp: PowerplantDef): Audio
     voiceWarnings: {
       messages: [
         { text: 'Engine fire', when: { kind: 'engineFire' } },
-        { text: 'Rotor RPM', when: { kind: 'rotorRpm', low: AH56_NR_PCT.powerOn[0], high: AH56_NR_PCT.powerOn[1], rpm100: rotor.referenceRpm } },
+        { text: 'Rotor RPM', when: { kind: 'rotorRpm', powerOn: AH56_NR_PCT.powerOn, powerOff: AH56_NR_PCT.powerOff, rpm100: rotor.referenceRpm } },
         { text: 'Master caution', when: { kind: 'caution' } },
       ],
       repeatSeconds: 3,
