@@ -77,9 +77,10 @@ describe('AH56_AUDIO: the import rule', () => {
     expect([tr.blades, tr.diameterM, tr.ratio]).toEqual([stub.tail.blades, stub.tail.radius * 2, stub.tailRatio]);
     expect(tr.hoverThrustN).toBe(tailHoverThrustN(stub, AH56_MASS_LB.test * LB * G0));
     expect(AH56_AUDIO.busPoweredV).toBe(AH56_POWERPLANT.electrical.busDeadVolts);
-    // Skids today: no gear voice (consistency: a rotorcraft's gear voice exists exactly with wheels).
-    expect(stub.landingGear).not.toBe('wheels');
-    expect(AH56_AUDIO.gear).toBeNull();
+    // Wheels since the AG merge (stage 2): the gear voice exists (consistency: a rotorcraft's gear voice exists exactly with
+    // wheels). Integrator, at the AG merge: this row asserted the S0 skids (no gear voice) until then.
+    expect(stub.landingGear).toBe('wheels');
+    expect(AH56_AUDIO.gear).not.toBeNull();
     // The pusher channel is present while def.pusher is absent: the published propeller (3 blades, 10 ft, 1717 / 246).
     expect(stub.pusher).toBeUndefined();
     expect(AH56_AUDIO.pusher).toMatchObject({ blades: 3, ratio: AH56_PROP_RATIO });
@@ -234,8 +235,8 @@ describe('AH-56A voices (the landed profile)', () => {
   it('the gear motor runs while a leg is in transit (wheels only), and the lock thumps', () => {
     const motor = stems({ gearPump: 1 })[STEM.cabin];
     expect(toneMagnitude(motor, 240)).toBeGreaterThan(10 * toneMagnitude(motor, 270));
-    // On skids (the stub) there is no gear voice: the same parameter is silent.
-    expect(peak(stems({ gearPump: 1 }, 2, AH56_AUDIO)[STEM.cabin])).toBe(0);
+    // On skids there is no gear voice: the same parameter is silent (the S0 stub's skids; the AH-56A has wheels since the AG merge).
+    expect(peak(stems({ gearPump: 1 }, 2, ah56Audio({ ...stub, landingGear: 'skids' }, AH56_POWERPLANT))[STEM.cabin])).toBe(0);
     const host = new SynthHost(LANDED_AUDIO).set({});
     host.message({ type: 'thump', amp: TAIL_WHEEL_LOCK_THUMP });
     expect(peak(host.render(0.5)[STEM.airframe])).toBeGreaterThan(0.01);

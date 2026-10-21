@@ -17,7 +17,7 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Schweizer 269C-1 / 300CB | [12 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
 | MD Helicopters MD 500E (in development) | [14 entries](../src/aircraft/md500/KNOWN_ISSUES.md) |
 | MBB Bo 105 CB-4 (in development, `available: false`) | [45 entries](../src/aircraft/bo105/KNOWN_ISSUES.md) (22 from the flight model, 23 handed over) |
-| Lockheed AH-56A Cheyenne (scaffold, `available: false`) | [1 entry](../src/aircraft/ah56/KNOWN_ISSUES.md); entries waiting for its flight model are listed below |
+| Lockheed AH-56A Cheyenne (in development, `available: false`) | [15 entries](../src/aircraft/ah56/KNOWN_ISSUES.md) plus 3 handed over (stage 2, the control gyro on the pure helicopter) |
 
 Kinds: **defect** = demonstrated wrong behavior; **unvalidated** = evidence or acceptance still missing;
 **estimate** = a parameter without a measured/published value; **missing feature** = behavior not implemented.
@@ -109,22 +109,6 @@ After a resume the published N1 and TOT of a multi-engine type stay at the reset
 (T11 probe: 93.1 against 91.8 % N1 for one frame). `SimPhysics.ts` republishes rotor rpm from the snapshot but not
 `engines[i].ng` / `itt`.
 Close with: republish them from the snapshot in the restore path.
-
-### AH-56A entries waiting for its flight model (move to its KNOWN_ISSUES at the AG merge)
-
-- Controls (TW): the pusher grip moves at 0.25 of travel per second when held; the re-centring keyboard cyclic returns
-  at the Numpad 5 rate (4/s). Both are AGENT choices. The prop-schedule assist has no menu toggle yet.
-- Sound (AU): ENGINE FIRE is declared but never sounds (no state reports a fire). The FLAWS voice uses the browser's
-  speech synthesis, shared with the Flight School instructor, silent where it does not exist. Many levels and orders are
-  ESTIMATE (T64 Ng 100 % = 18,000 rpm, mesh order 330, impulsive-noise onset at advancing-tip Mach 0.82, the pusher's
-  15 kN cruise thrust, the hum and half-P levels, gear motor 240 Hz, the FLAWS words). The cabin-level margins are
-  tight (hover -16.4 dBFS against a -17 floor; 190 KTAS peaks -2.2 against -2); the half-P thump peaks at -0.5 dBFS.
-  Under the scaffold the AH-56A sounds like the MD 500E rotor with four blades and the 250-C20B; the pusher is silent.
-- Panel (PN, [ah56-panel.md](ah56-panel.md) "Compromises"): the rear-seat panel is an UNVERIFIED reconstruction; ASI
-  marks are ESTIMATE (Vne 195 KCAS INF); no hydraulic model (3000 psi while the rotor turns); the ICS buttons are not
-  switches; APU, abort-stop, rotor brake, directional trim and Nf ALTERNATE are not drawn; MASTER CAUTION does not latch;
-  the AMCS Nf band (95-105 green) is ESTIMATE; the tail wheel uses gear lamp 1 (lettered TAIL). Until AG lands,
-  XMSN OIL PRESS and MASTER CAUTION light in flight (scaffold transmission pressure below 70 psi).
 
 ## Test evidence
 

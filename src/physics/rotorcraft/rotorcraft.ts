@@ -360,7 +360,8 @@ export class Rotorcraft {
       if (this.gyro && dt > 0) {
         const system = flapSystem(articulated, s.omega, forcing, d.rotation, rate.z, [pitchCos, pitchSin], d.main.blades, spring);
         if (system) {
-          const coupled = this.gyro.advanceCoupled(dt, c, rate, system, { cosine: previous.cosine, sine: previous.sine }, forcing.blade);
+          const coupled = this.gyro.advanceCoupled(dt, c, rate, system, { cosine: previous.cosine, sine: previous.sine }, forcing.blade,
+            { hub: hubAir, density });
           flap = { cone: flap.cone, cosine: coupled.cosine, sine: coupled.sine };
         }
       }

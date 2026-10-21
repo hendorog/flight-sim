@@ -100,14 +100,16 @@ describe('AH-56A readings through the instrument set', () => {
     expect(r.extra!.gLoad).toBe(1.2);
   });
 
-  it('indicates the collective per configuration: AMCS 4.5-21.5, 13 at the middle; the ICS 7 deg less', () => {
+  it('indicates the collective per configuration: physical -2.5..18.5 deg plus 7 (AMCS 4.5-25.5, 15 at the middle); the ICS 7 deg less', () => {
+    // Integrator, at the AG merge: the gauge follows AG's definition (physical range -2.5..18.5 deg, plan 7.1; the AMCS offset +7 from
+    // "13 deg AMCS = 6 deg ICS"). The S0 stub mapped the published AMCS indicated range 4.5-21.5 instead (KNOWN_ISSUES: the range).
     const { s, c } = fixture();
     c.collective = 0; expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(4.5, 9);
-    c.collective = 1; expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(21.5, 9);
-    c.collective = 0.5; expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(13, 9);
+    c.collective = 1; expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(25.5, 9);
+    c.collective = 0.5; expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(15, 9);
     s.rotorcraft!.controlGyro = { mode: 'ics', pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 };
-    expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(6, 9); // "13 deg AMCS = 6 deg ICS"
-    s.rotorcraft!.controlGyro.mode = 'amcs'; expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(13, 9);
+    expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(8, 9); // "13 deg AMCS = 6 deg ICS": 7 deg apart
+    s.rotorcraft!.controlGyro.mode = 'amcs'; expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(15, 9);
   });
 
   it('shows the prop blade angle in degrees, blank without the pusher, and the gyro mode', () => {

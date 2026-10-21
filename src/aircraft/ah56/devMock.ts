@@ -13,7 +13,13 @@ import type { DevMock } from '../../dev/devMock';
 import { DEG } from '../../core/math';
 import { AH56_AMCS_NR_FRACTION, AH56_NF_100_RPM, AH56_NR_100 } from './facts';
 import { AH56_TORQUE_100_NM } from './panelMarkings';
+import { AH56_ROTORCRAFT } from './rotorcraft';
 
+/** The collective lever for an AMCS-indicated angle on the definition's physical range (the panel reads physical + 7 deg, AMCS). */
+const leverFor = (amcsIndicatedDeg: number): number => {
+  const m = AH56_ROTORCRAFT.main;
+  return ((amcsIndicatedDeg - 7) * DEG - m.minPitch) / (m.maxPitch - m.minPitch);
+};
 const mix = (a: number, b: number, f: number): number => a + (b - a) * Math.min(1, Math.max(0, f));
 /** Gear script, s: retraction and extension each take TRANSIT seconds (ESTIMATE). */
 const GEAR = { up: 70, down: 185, transit: 8 } as const;
@@ -47,8 +53,9 @@ export const devMock: DevMock = (s, c, t) => {
   s.electrical.alternators[0] = s.electrical.alternatorAmps;
   c.masterBattery = on; c.alternator = t >= 30; c.fuelPump = t >= 3; c.fuelSelector = 'both';
   c.lights.panel = 1;
-  // Collective: hover 11 deg indicated on the AMCS scale (lever 0.38), cruise 13 deg (lever 0.5); the panel maps the lever.
-  c.collective = t < 40 ? 0 : t < 60 ? 0.38 : failed ? 0 : 0.5;
+  // Collective: hover 11 deg indicated on the AMCS scale, cruise 13 deg; the panel maps the lever on the definition's range
+  // (integrator, at the AG merge: the fixed levers 0.38 / 0.5 assumed the stub's 4.5-21.5 deg indicated range).
+  c.collective = t < 40 ? 0 : t < 60 ? leverFor(11) : failed ? 0 : leverFor(13);
   s.fuel.left = 520; s.fuel.right = 480 - t * 0.05;
   s.gLoad = t < 60 || failed ? 1 : 1 + 0.3 * (0.5 - 0.5 * Math.cos(t / 9));
   // Retractable gear (tail wheel in slot 0): retract after take-off, extend again before the engine-failure phase.

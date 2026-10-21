@@ -1426,7 +1426,12 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
    * applied for a few milliseconds).
    */
   private checkStructure(h: number): void {
-    if (this.rotorcraft) return; // Helicopter structural failure needs its own validated limits, not wing load factors.
+    if (this.rotorcraft) {
+      // Helicopter structural failure needs its own validated limits, not wing load factors; a retractable rotorcraft
+      // (AH-56A) still gets the gear-overspeed warning.
+      if (this.retract && this.definition.limits.gearOverspeed.consequence === 'warn') this.checkOverspeed(h);
+      return;
+    }
     let mean = 0;
     for (let i = 0; i < 4; i++) mean += STAGE_WEIGHT[i] * this.stageAeroZ[i];
     if (Number.isFinite(mean)) this.wingLoad += (1 - Math.exp(-h / this.definition.limits.structureTime)) * (mean - this.wingLoad);

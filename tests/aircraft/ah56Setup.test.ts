@@ -93,7 +93,7 @@ describe('AH-56A rear panel (AGENT reconstruction, plan 7.6)', () => {
     const at = (t: number) => { devMock(s, c, t, undefined); run(set, 3, s, c); return set.readings; };
     let r = at(3); expect(Object.values(r.lamps).some(Boolean)).toBe(false);
     r = at(15); expect(r.engines[0].ngPct).toBeGreaterThan(20);
-    r = at(50); expect(r.extra!.propBetaDeg).toBeCloseTo(-2.2, 6); expect(r.extra!.collectiveDeg).toBeCloseTo(4.5 + 0.38 * 17, 6);
+    r = at(50); expect(r.extra!.propBetaDeg).toBeCloseTo(-2.2, 6); expect(r.extra!.collectiveDeg).toBeCloseTo(11, 6);
     r = at(150); expect(r.extra!.propBetaDeg).toBeCloseTo(22, 6); expect(r.extra!.collectiveDeg).toBeCloseTo(13, 6); expect(r.extra!.torquePct).toBeGreaterThan(90);
     expect(r.rotorRpmPct).toBeCloseTo(97.5, 0);
     r = at(210); expect(r.extra!.propBetaDeg).toBeCloseTo(8, 6); expect(r.extra!.torquePct).toBeLessThan(2); expect(s.rotorcraft!.pusher!.deltaBeta).toBe(false);
@@ -119,8 +119,9 @@ describe('AH-56A UI, checklists and training', () => {
     const s = state(), c = defaultControls(); c.collective = 0.5;
     const lever = (l: string) => AH56_UI.hud.levers.find(x => x.label === l)!;
     expect(AH56_UI.hud.levers.map(l => l.label)).toEqual(['COLL', 'PROP β', 'GRIP', 'Nf SET', 'GEAR', 'TAIL WHL']);
-    expect(lever('COLL').text!(c, s)).toBe('13.0°');
-    s.rotorcraft!.controlGyro = { mode: 'ics', pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }; expect(lever('COLL').text!(c, s)).toBe('6.0°');
+    // Mid lever on AG's physical range -2.5..18.5 deg (integrator, at the AG merge; the S0 stub read 13.0 / 6.0).
+    expect(lever('COLL').text!(c, s)).toBe('15.0°');
+    s.rotorcraft!.controlGyro = { mode: 'ics', pitch: 0, roll: 0, pitchRate: 0, rollRate: 0 }; expect(lever('COLL').text!(c, s)).toBe('8.0°');
     expect(lever('PROP β').text!(c, s)).toBe('—');
     s.rotorcraft!.pusher = { lever: 0.4, beta: 8 * DEG, betaCommand: 8 * DEG, deltaBeta: false, rpm: 1600, thrust: 0, torque: 0 }; expect(lever('PROP β').text!(c, s)).toBe('8.0°');
     expect(lever('GRIP').text!(c, s)).toBe('RUN'); s.rotorcraft!.turboshaft!.grip = 'groundIdle'; expect(lever('GRIP').text!(c, s)).toBe('IDLE');
@@ -130,7 +131,7 @@ describe('AH-56A UI, checklists and training', () => {
     const reading = (l: string) => AH56_UI.hud.readouts.find(x => x.label === l)!.text(s);
     expect(reading('TQ')).toBe('80%'); expect(reading('TIT')).toBe('650 °C'); expect(reading('Ng')).toBe('92.0%'); expect(reading('Nf/Nr')).toBe('98 / 98%'); expect(reading('CONTROL')).toBe('ICS'); expect(reading('G')).toBe('1.25');
     s.engine.torque = 115 / 100 * AH56_TORQUE_100_NM; expect(reading('TQ')).toContain('LIMIT'); s.engine.itt = 745; expect(reading('TIT')).toContain('LIMIT');
-    expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(6, 9);
+    expect(ah56CollectiveIndicatedDeg(s, c)).toBeCloseTo(8, 9); // ICS, mid lever (S0 stub: 6)
     c.masterBattery = true; c.collective = 0; expect(AH56_UI.starterAdvice(c, 0)).toContain('20 % Ng'); c.masterBattery = false; expect(AH56_UI.starterAdvice(c, 0)).toContain('BAT');
   });
 
