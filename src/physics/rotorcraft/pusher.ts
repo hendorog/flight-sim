@@ -103,6 +103,7 @@ export class PusherDrive {
   private readonly out: ExtraLoads = { force: v3.zero(), moment: v3.zero(), shaftTorque: 0, power: 0 };
   private readonly prop: Propeller;
   private readonly air = v3.zero();
+  private readonly arm = v3.zero();
   private readonly detentLever: number;
   constructor(readonly def: RotorcraftDefinition, readonly state: RotorcraftState) {
     const p = def.pusher!;
@@ -144,7 +145,8 @@ export class PusherDrive {
       } else s.beta = limited;
     }
     // The hub's velocity through the air (body axes), with the main rotor's wake moving the air down through the disc.
-    const arm = v3.sub(p.hub, b.cgOffset), w = b.angularVelocity, hub = this.air;
+    const arm = this.arm, w = b.angularVelocity, hub = this.air;
+    arm.x = p.hub.x - b.cgOffset.x; arm.y = p.hub.y - b.cgOffset.y; arm.z = p.hub.z - b.cgOffset.z;
     hub.x = air.x + w.y * arm.z - w.z * arm.y;
     hub.y = air.y + w.z * arm.x - w.x * arm.z;
     // The wake moves the air DOWN past the disc, so the hub moves UP through it: -wake in z (as wings.ts and the tail
