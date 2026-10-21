@@ -60,7 +60,10 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    assertion (survivor torque 106.39 % at NR 94.57 %, and T7c), which this rotor and engine map fix. twinOei's rig
    (TW's `twinRig.ts`) re-spreads TW's `BO105_TURBOSHAFT_INDICATION` (datum 0.773, anticipation 0.39) over BO's refit
    (0.774 / 0.469, rotorcraft.ts), so it does not fly BO's governor rigging. The band is TW's (BO may not edit the file):
-   an architect/TW decision to restate it (measured 96 +/-0.5, ESTIMATE) or record the red row as a TW exception. In a 3 ft IGE
+   an architect/TW decision to restate it (measured 96 +/-0.5, ESTIMATE) or record the red row as a TW exception.
+   **At the integration** the rig was moved onto the definition's own governor and the 93-96 % band became an `it.fails`
+   KNOWN GAP row in `twinOei.test.ts` (NR 96.12 % at 5 s, 95.81 % at 25 s; survivor 103.85 % torque, 104.80 % N1,
+   810 C); the band itself is still the architect's to restate. In a 3 ft IGE
    hover at 2200 kg with a cushion, NR falls to about 91 % and the survivor reads about 114 % (the power-turbine law,
    torque = T100 x (3 - 2 N2)); touchdown is gentle (0.6 m/s at 2.1 s).
 8. **The lead-lag degree of freedom is absent** (soft in-plane 0.66-0.73/rev): no air or ground resonance, no lag damper
@@ -126,16 +129,65 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    airframe's empty mass (1276 kg, S Jane's CB), so the CG envelope's 1140 kg point is data only; the lightest rig case is
    1400 kg. A CB-4 weighing record would settle it.
 
-## Integration (guards this package cannot turn green alone)
+## Integration (feat/rigid-rotor, Bo 105 stage 1)
 
-- **GA `tests/aircraft/consistency.test.ts` bo105 row is red in the BO worktree** (green at the merge base eb5919f):
-  BO moved `geometry.fuselage.pilotEye` to `D.PILOT_EYE` (index.ts) and `reference.vne` to 145 KIAS, while the S0 stub
-  `visual.ts` (BX) and the panel (PN) still carry the MD 500E's eye point and 152 kt red line: "pilot's eye (x): geometry
-  1.53, visual 0.7531; (y) 0.36 vs -0.3302; (z) 0.24 vs -0.53218; airspeed red line: reference 145, panel 152". BX's
-  `visual.ts` (`pilotEye: point(D.PILOT_EYE)`) and PN's `panelMarkings.ts` (`redLine: V.vne`) resolve both: the
-  integrator merges BX and PN with or before BO (a BO-only merge turns integ's GA red; plan section 10 forbids adding it
-  to the baseline exceptions).
-- **twinOei T7b** (item 7): TW's row, red at BO HEAD by 0.12 % NR; TW/architect decision.
+- **GA consistency is green on the integration branch** after the BX and PN merges (the visual's eye point and the panel's
+  145 kt red line now match the definition); it was red on the BO branch alone.
+- **twinOei T7b / twinGovernor T6** (item 7): resolved at the integration by moving TW's rig onto the definition's
+  governor (BO's refit), holding attitude in T6 (N2 101.93 / 98.12 % at the 102 / 98 % stops) and recording T7b's NR
+  band as an `it.fails` KNOWN GAP row. See `docs/bo105-integration.md`.
+
+## Handed over by other packages (added by the integrator; numbers as each package measured them)
+
+From TW (twin drivetrain, `docs/twin-turboshaft.md`):
+- The N1-split warning cannot be reset (TM 00-44 says it is resettable), so in OEI flight the RPM light and the N1-split
+  beeping stay on.
+- The MD 500E auto-reignition logic runs per engine: a cut engine's igniters fire while its N1 is below 55 % with
+  transmission pressure. Harmless with the lever OFF, but the Bo 105 has no such system.
+- With two engines sharing, each N2 governor droops less, so NR settles about 0.5 % higher than on one engine at the same
+  power (T8); the pilot re-beeps.
+- The OEI flag needs N1 below 55 %, about 1.4 s after a fuel cut; in between the survivor is judged on AEO limits and
+  the power-limit warning can flash.
+- ENGINE TRIM rate and authority (0.7 % N1/s, +/-6 %) and the 1.3 % N1 rig mismatch (a 3.6 % torque split until
+  synchronised) are ESTIMATE / AGENT values; the FM gives neither.
+
+From RC (rotor core, `docs/rotor-hingeless-model.md` section 10):
+- Periodic flap damping acts once per rev and reaches the flap harmonics only through the cone: about -2 % hub moment per
+  lateral cyclic at mu 0.35, not the plan's 3-9 %.
+- The harmonic (Pitt-Peters) inflow is driven one way from the uniform mode: no pitch-moment feedback into the mean
+  inflow, no wake-curvature (manoeuvre) terms; the blade-element thrust stays on the uniform inflow.
+- The rotor's in-plane side force from the first-harmonic pitch is not resolved (H acts along the in-plane flow only).
+- The non-rotating flap frequency of the Bo 105 was not found, so e = 0.12 R with the spring making up nu 1.11.
+
+From AU (sound, `src/aircraft/bo105/audio.ts`):
+- The two engines are not panned apart: the worklet's engine output is one mono channel (AGENT choice).
+- No ENGINE OUT horn (AGENT choice): the warning unit replaces it.
+- N1 SPLIT reuses the NR LOW tone (650 Hz at 5 beeps/s): the TM says "intermittent tone" without pitch or rate. The
+  cyclic-grip RPM-warning cut-off is not modelled.
+- Flown end to end the cabin sits 3-4 dB below the scripted mix window (hover -18.9 dBFS against the MD 500E's -18.1 on
+  the same path; measured by AU on the S0 stub, not re-measured on the integrated rotor).
+
+From BX (exterior and cockpit, `docs/bo105-exterior.md`):
+- The skid tubes are drawn level; the physics rests the fuselage 1.25-1.35 deg nose-up (`dimensions.ts`
+  `SKID_FRONT_Z`), so the drawn front toes float about 5 cm (BO's request to BX, not done).
+- The drawn virtual hinge is e + L/2 = about 0.17 R, above the 12-15.2 % band; the physics hinge stays at e. The drawn
+  tip is up to 2.1 cm lower than a rigid blade hinged at e at 5 deg coning.
+- Hub hardware proportions, endplate split, pitot, deck intakes, louvres, exhaust stubs and cockpit furniture are
+  photographic ESTIMATEs (no dimensioned drawing). The outer roof is 2.055 m (dimensions' 2.02 m read as the lining).
+- From the right seat the A-post and door frame cover about 12 deg of the view to the right (owner's judgement).
+- Dual controls are not fitted; the livery is generic (white, dark blue cheat line, D-HBOX) (AGENT choices).
+- The tail-rotor hub (2.80 m) and fin outline follow BO's revised `dimensions.ts`; `bo105-side` / `bo105-tail` shots
+  were taken by BX before that change and have not been re-rendered.
+
+From PN (panel, `docs/bo105-panel.md` "Compromises"):
+- The overhead power levers and the console / overhead switches are painted on the pedestal canvas; BX's 3D levers and
+  consoles are visual only, clicks reach the controls through the canvas.
+- Only the generators, supply-tank pumps, emergency valves and lights are switches; main-tank pumps, GEN TRIP / RES,
+  HYDR TEST, anti-ice, pitot heat, voltmeter / ammeter and circuit breakers are not drawn (no state). HY BLOCK, FILT,
+  HYD, MAG PLUG, BAT 60 / 70 light only on the lamp test.
+- Dial spacing is artwork (no scale drawing); TOT and fuel dots are thin arcs; both INSTR / CONSOLE dimmers set one
+  panel-light level; the STARTER / GENERATOR switch is drawn as a STARTER rocker plus separate generator switches.
+- The HUD readout block (11 rows) is partly hidden by the flight-cue panel at 900 px window height.
 
 ## Owner-facing AGENT choices in this package (not owner decisions)
 

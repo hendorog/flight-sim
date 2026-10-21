@@ -15,8 +15,11 @@ The types the simulator flies, how to choose one, and the keys and handling note
 | `r44` | Robinson R44 Raven II: four-seat helicopter, IO-540 fuel injected, 245 hp take-off |
 | `s269` | Schweizer 269C-1 / 300CB: two-seat articulated-rotor trainer, HO-360 180 hp (in development) |
 | `md500` | MD Helicopters MD 500E: five-seat turbine helicopter, 250-C20B 375 shp take-off (in development; see [md500-flight-model.md](md500-flight-model.md)) |
+| `bo105` | MBB Bo 105 CB-4: five-seat twin-turbine helicopter with a hingeless rotor, 2 x Allison 250-C20B, 2500 kg (in development, `available: false`: not in the chooser, flown only at `index.html?aircraft=bo105`; see [bo105-flight-model.md](bo105-flight-model.md) and [bo105-integration.md](bo105-integration.md)) |
 
-The Diamond DA42 NG (`da42`) is defined but not yet offered in the chooser.
+The Diamond DA42 NG (`da42`) is defined but not yet offered in the chooser. The Bo 105 (`bo105`) and the Lockheed
+AH-56A Cheyenne (`ah56`, still a scaffold flying MD 500E dynamics) are registered with `available: false` until the
+owner approves them.
 
 Choose the type at the top of the menu's Flight page (Escape). The choice is remembered per browser and the page
 reloads into it; airborne or moving it asks first. Each type keeps its own resumed flight, so switching to another

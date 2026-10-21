@@ -16,6 +16,8 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Robinson R44 Raven II | [12 entries](../src/aircraft/r44/KNOWN_ISSUES.md) |
 | Schweizer 269C-1 / 300CB | [12 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
 | MD Helicopters MD 500E (in development) | [14 entries](../src/aircraft/md500/KNOWN_ISSUES.md) |
+| MBB Bo 105 CB-4 (in development, `available: false`) | [44 entries](../src/aircraft/bo105/KNOWN_ISSUES.md) (21 from the flight model, 23 handed over) |
+| Lockheed AH-56A Cheyenne (scaffold, `available: false`) | [1 entry](../src/aircraft/ah56/KNOWN_ISSUES.md); entries waiting for its flight model are listed below |
 
 Kinds: **defect** = demonstrated wrong behavior; **unvalidated** = evidence or acceptance still missing;
 **estimate** = a parameter without a measured/published value; **missing feature** = behavior not implemented.
@@ -84,6 +86,42 @@ Close with: measured structural, collision, friction and oleo/damper data; coupl
 Flight School is C172S-only; R44/269 have no demonstrations, and helicopter audio is synthesized without measured type-specific recordings/spectra.
 Evidence: [aircraft scope](aircraft.md), [R44 definition](../src/aircraft/r44/index.ts), [269 exterior/audio limits](s269-exterior.md), [R22 definition](../src/aircraft/r22/index.ts).
 Close with: validated type-specific training/demo content and acoustic references for each helicopter.
+
+### Hingeless rotor core (Bo 105, AH-56A) — **estimate / missing feature**
+
+The hingeless hub is an equivalent hinge plus a spring inside the existing harmonic flap solver
+([model and limits](rotor-hingeless-model.md), section 10). Not modelled: the lead-lag degree of freedom (no air or
+ground resonance, no lag loads), blade bending beyond the equivalent hinge and blade torsion, the in-plane side force
+from the first-harmonic pitch, Pitt-Peters feedback from the pitch moment into the mean inflow and wake-curvature terms.
+Periodic flap damping reaches the flap harmonics only through the cone (about -2 % hub moment per cyclic at mu 0.35,
+against the plan's 3-9 %; the AH-56A's 8-15 % row at mu 0.5 rests on the same estimate). Two AR-280 rows miss at
+their band edges on the Bo 105: Zw -0.68 1/s (edge -0.70) and Lq/|Lp| 0.19 (band 0.25-0.50).
+Evidence: `tests/rotorcraft/hingelessAr280.test.ts` and `bo105Derivatives.test.ts` (it.fails rows).
+Close with: a lag degree of freedom, Bo 105 hover identification data (Fu & Kaletka 1993; DTIC ADA216828), a
+manoeuvre-wake inflow model.
+
+### Multi-engine resume: one-frame gauge glitch — **defect (cosmetic)**
+
+After a resume the published N1 and TOT of a multi-engine type stay at the reset values until the first physics step
+(T11 probe: 93.1 against 91.8 % N1 for one frame). `SimPhysics.ts` republishes rotor rpm from the snapshot but not
+`engines[i].ng` / `itt`.
+Close with: republish them from the snapshot in the restore path.
+
+### AH-56A entries waiting for its flight model (move to its KNOWN_ISSUES at the AG merge)
+
+- Controls (TW): the pusher grip moves at 0.25 of travel per second when held; the re-centring keyboard cyclic returns
+  at the Numpad 5 rate (4/s). Both are AGENT choices. The prop-schedule assist has no menu toggle yet.
+- Sound (AU): ENGINE FIRE is declared but never sounds (no state reports a fire). The FLAWS voice uses the browser's
+  speech synthesis, shared with the Flight School instructor, silent where it does not exist. Many levels and orders are
+  ESTIMATE (T64 Ng 100 % = 18,000 rpm, mesh order 330, impulsive-noise onset at advancing-tip Mach 0.82, the pusher's
+  15 kN cruise thrust, the hum and half-P levels, gear motor 240 Hz, the FLAWS words). The cabin-level margins are
+  tight (hover -16.4 dBFS against a -17 floor; 190 KTAS peaks -2.2 against -2); the half-P thump peaks at -0.5 dBFS.
+  Under the scaffold the AH-56A sounds like the MD 500E rotor with four blades and the 250-C20B; the pusher is silent.
+- Panel (PN, [ah56-panel.md](ah56-panel.md) "Compromises"): the rear-seat panel is an UNVERIFIED reconstruction; ASI
+  marks are ESTIMATE (Vne 195 KCAS INF); no hydraulic model (3000 psi while the rotor turns); the ICS buttons are not
+  switches; APU, abort-stop, rotor brake, directional trim and Nf ALTERNATE are not drawn; MASTER CAUTION does not latch;
+  the AMCS Nf band (95-105 green) is ESTIMATE; the tail wheel uses gear lamp 1 (lettered TAIL). Until AG lands,
+  XMSN OIL PRESS and MASTER CAUTION light in flight (scaffold transmission pressure below 70 psi).
 
 ## Test evidence
 
