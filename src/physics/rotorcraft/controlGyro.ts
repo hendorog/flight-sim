@@ -80,8 +80,11 @@ export interface GyroAugmentation {
 
 export type GyroFeedback =
   /** ICS: the blade feathering moments reach the gyro through the pitch links (CR-114362: about tan(sweep) x the hub
-   *  flap moment), plus the blade in-plane moments through the droop, the blade pitching moments (x pitchingMomentGain;
-   *  Cm0 now, moment stall with stage 5's section) and Coulomb friction (28 ft-lb = 38 N m, P). Angles rad. */
+   *  flap moment), plus the blade in-plane moments through the droop and the blade pitching moments (x
+   *  pitchingMomentGain; Cm0 now, moment stall with stage 5's section). Angles rad. frictionMoment: the feather-bearing
+   *  friction, N m (28 ft-lb = 38 N m, P), recorded as data and flown as its describing-function equivalent rotating
+   *  damping (ControlGyroConfig.rotatingDamping; CR-114362 App A treats feathering friction as rotating damping C_R): a
+   *  Coulomb dead band would make the trimmed tilt non-unique. */
   | { mode: 'featheringMoment'; sweep: number; droop: number; pitchingMomentGain: number; frictionMoment: number }
   /** AMCS: N m on the gyro per rad of first-harmonic flap (K_R), through springs. ESTIMATE, fitted (plan 7.2). */
   | { mode: 'flapping'; gain: number };
@@ -121,7 +124,7 @@ export interface ControlGyroDef { default: GyroConfigId; configs: { amcs: Contro
 
 /** RotorcraftState.controlGyro: gyro tilt relative to the shaft, rad, and its rates, rad/s. Created in reset for a type
  *  with `controlGyro`, never lazily. `mode` is read on every call (never cached: a restore overwrites it). The rates
- *  are those of the last real step (they carry the Coulomb friction's direction to the next step). */
+ *  are those of the last real step (diagnostics). */
 export interface ControlGyroState { mode: GyroConfigId; pitch: number; roll: number; pitchRate: number; rollRate: number }
 
 /** Row-major 2x2 [m00, m01, m10, m11]. */
@@ -312,7 +315,7 @@ export class ControlGyro {
 
   /** Build sys.m / sys.c for this step (see the file header for the equation). */
   private assemble(c: ControlInputs, rateShaft: Vec3, system: FlapSystem, blade?: GyroBladeMoments): void {
-    const g = this.state.controlGyro!, cfg = this.config(), d = this.def, rot = d.rotation;
+    const cfg = this.config(), d = this.def, rot = d.rotation;
     const spin = cfg.spinRatio * this.state.omega;
     const hs = rot * cfg.inertia * spin, sg = hs >= 0 ? 1 : -1;
     const cr = cfg.rotatingDamping ?? 0, ct = Math.max(cfg.damping + cr, 1e-6);
@@ -337,7 +340,7 @@ export class ControlGyro {
     const jr = mul2(sgJ(sg), fb);
     const jrf = mul2(jr, f);
     const rx = [-jrf[0], -jrf[1], -jrf[2], -jrf[3]];
-    // Constant moments: pilot, the precession the body rate demands, the ICS extra feathering moments and friction.
+    // Constant moments: pilot, the precession the body rate demands and the ICS extra feathering moments.
     const stick = this.stickMoment(c, cfg, rateShaft);
     const inp = rotation(INPUT_SENSE * rot * cfg.inputRotation);
     const mIn = [inp[0] * stick.roll + inp[1] * stick.pitch, inp[2] * stick.roll + inp[3] * stick.pitch];
@@ -352,11 +355,6 @@ export class ControlGyro {
         const e0 = half * (fbk.pitchingMomentGain * blade.pitching.sin + fbk.droop * blade.inPlane.sin);
         const e1 = half * (fbk.pitchingMomentGain * blade.pitching.cos + fbk.droop * blade.inPlane.cos);
         extra0 += jr[0] * e0 + jr[1] * e1; extra1 += jr[2] * e0 + jr[3] * e1;
-      }
-      if (fbk.frictionMoment > 0) {
-        // Coulomb friction against the last step's relative tilt rate, smoothed below 0.02 rad/s.
-        const vr = g.rollRate, vp = g.pitchRate, scale = fbk.frictionMoment / Math.max(Math.hypot(vr, vp), 0.02);
-        extra0 += scale * vr; extra1 += scale * vp;
       }
     }
     const r0 = [pilot[0] + precession[0] - extra0, pilot[1] + precession[1] - extra1];

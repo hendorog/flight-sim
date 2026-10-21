@@ -64,10 +64,11 @@ export const T64_GE_716: EngineDef = {
   // A running reset turns the output shaft at the rotor's 100 % (the flight model resets it on governedRpm).
   airStartRpm: AH56_NR_100 * AH56_ENGINE_RATIO,
   groundStartRpm: AH56_NR_100 * AH56_ENGINE_RATIO,
-  // The APU-air start (P ASTA-72 para 78: condition grip to IDLE at 20 % Ng, automatic thereafter) as the generic
-  // starter on the gas generator, sized so the spool passes 20 % Ng in about 10 s and the engine is self-sustaining well
-  // before the starter cuts out. ESTIMATE.
-  starter: { k: 3.2e-4, r: 0.012 },
+  // The APU's air-turbine start (P ASTA-72 para 78: the APU on its spring-loaded switch, the start button, the condition
+  // grip to IDLE at 20 % Ng, automatic thereafter) as the generic series starter on the gas generator, fed by the APU-
+  // backed bus (the battery's low source resistance below): about 50 kW near 20 % Ng, where the 14-stage compressor
+  // absorbs about 35 kW. ESTIMATE (no starter data; a 24 V battery alone could not turn a T64).
+  starter: { k: 2.4e-5, r: 0.001 },
   turbine: {
     kind: 'freeTurbine',
     gasGenerator: {
@@ -82,8 +83,11 @@ export const T64_GE_716: EngineDef = {
         itt: [440, 430, 440, 455, 480, 515, 560, 625, 690, 760, 785, 840, 900],
         power: [10, 40, 300, 560, 900, 1340, 1890, 2520, 2960, 3229, 3400, 3700, 3900].map((kw) => kw * 1e3),
       },
-      lightOffNg: 0.14,
-      selfSustainingNg: 0.42,
+      // Light-off at 12 % Ng, self-sustaining from 28 % (ESTIMATE, set with the start schedule below so a start with the
+      // grip to IDLE at 20 % Ng reaches idle in about 30 s within the P start limits: TIT <= 566 C to 50 % Ng, <= 649 C to
+      // idle, APE-I SoF 1.1).
+      lightOffNg: 0.12,
+      selfSustainingNg: 0.28,
       minFuelNg: 0.08,
       fcu: {
         // P: Ng idle 58 % minimum (red) to 72 %; 100 % maximum continuous, 101.5 % red. The grip's RUN schedule tops at
@@ -91,9 +95,11 @@ export const T64_GE_716: EngineDef = {
         lowIdleNg: 0.65,
         highIdleNg: 0.65,
         maxNg: 1.015,
+        // The 250-C20B's proportions: the start schedule about 0.6 of the first steady flow at 20 % Ng, and about 1.35 x the
+        // steady flow from idle up. ESTIMATE.
         accelFuel: {
           ng: [0, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.05, 1.1],
-          fuelFlow: [180, 190, 220, 250, 310, 385, 480, 610, 830, 1180, 1700, 2450, 2900, 3200].map((lbh) => lbh * LB_PER_H),
+          fuelFlow: [100, 105, 120, 135, 170, 210, 270, 390, 635, 1070, 1700, 2770, 3240, 3440].map((lbh) => lbh * LB_PER_H),
         },
         decelFraction: 0.62,
         gain: 2,
@@ -102,9 +108,10 @@ export const T64_GE_716: EngineDef = {
       ittLag: 1.5,
       warmItt: 420,
     },
-    // Power turbine: the stalled-torque law (turbineEngine.ts); windage and gearing about 2 % of the rating at 100 % Nf;
-    // fuel topping at 105 % Nf (P: 105 % maximum power-on). ESTIMATE values.
-    powerTurbine: { stallTorqueRatio: 3, friction: [2, 48], topping: { np: 1.05, gain: 5 } },
+    // Power turbine: the stalled-torque law (turbineEngine.ts); windage, the front-drive gearing and the accessories at
+    // the output shaft: 5 + 6 N m per 1000 rpm, 87 N m (about 4 % of the rated torque, 124 kW) at 100 % Nf, the MD 500E's
+    // proportion less its runaway allowance; fuel topping at 105 % Nf (P: 105 % maximum power-on). ESTIMATE values.
+    powerTurbine: { stallTorqueRatio: 3, friction: [5, 6], topping: { np: 1.05, gain: 5 } },
   },
 };
 
@@ -141,8 +148,9 @@ export const AH56_POWERPLANT: PowerplantDef = {
     ...C172_POWERPLANT.electrical,
     nominalVolts: 28,
     regulatorVolts: 28.5,
-    // 24 V battery, ESTIMATE 34 Ah (the APU start draws from it).
-    battery: { ...C172_POWERPLANT.electrical.battery, capacityAh: 34, rDischarge: 0.012 },
+    // 24 V battery, ESTIMATE 34 Ah, with the APU's generator behind it during a start: one low-resistance source
+    // (ESTIMATE; the APU itself is not modelled).
+    battery: { ...C172_POWERPLANT.electrical.battery, capacityAh: 34, rDischarge: 0.0015 },
     alternators: [{ engine: 0, maxAmps: AH56_GENERATOR_AMPS, cutInRpm: 0.55 * AH56_NG_100_RPM,
       fullRpm: 0.62 * AH56_NG_100_RPM, efficiency: 0.6 }],
     loads: { master: 6.0, avionics: 20.0, nav: 3.0, beacon: 3.0, strobe: 4.0, landing: 12.0, taxi: 0, panelFull: 4.0,

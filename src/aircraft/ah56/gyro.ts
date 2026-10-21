@@ -11,6 +11,8 @@ const IN = 0.0254;
 const OMEGA_100 = AH56_NR_100 * Math.PI / 30;
 /** The ICS input rotation the model flies, deg advanced (fitted to G8; P 36). */
 export const ICS_INPUT_ROTATION_DEG = 13;
+/** The AMCS input rotation, deg advanced (fitted to G8). */
+export const AMCS_INPUT_ROTATION_DEG = 15;
 
 /**
  * ICS 1972 (P ASTA-72 App C pp 57-60 unless tagged): the 45 slug-ft^2 gyro X turning with the rotor (INF: a "main rotor
@@ -29,6 +31,9 @@ export const AH56_ICS_CONFIG: ControlGyroConfig = {
     lateral: AH56_ICS_GYRO.momentPerInch.lateral * AH56_STICK_IN.ics.lateral / 2 },
   spring: AH56_ICS_GYRO.spring,
   damping: AH56_ICS_GYRO.dampingPerAxis,
+  // The 28 ft-lb feather-bearing friction (P) as rotating damping (CR-114362 App A's C_R), its describing-function
+  // equivalent 4 F / (pi Omega A) at a 5 deg cyclic amplitude: 4 x 38.0 / (pi x 25.76 x 0.0873) = 21.5 N m s/rad (D).
+  rotatingDamping: 4 * AH56_ICS_GYRO.frictionMoment / (Math.PI * OMEGA_100 * 5 * DEG),
   // Feedback: the P cant, 33 deg advanced (the best-damped auto-trim phase of the model, docs "Senses"). Input: FITTED to
   // G8 (pure longitudinal stick, roll rate within 20 % of pitch rate): 13 deg advanced; the P 36 deg gives about 1.6 deg/s
   // of roll per deg/s of pitch in this model (docs: "Input rotation").
@@ -63,11 +68,12 @@ export const AH56_AMCS_CONFIG: ControlGyroConfig = {
   maxTilt: { up: AH56_AMCS_GYRO.stopsDeg.up * DEG, down: AH56_AMCS_GYRO.stopsDeg.down * DEG,
     left: AH56_AMCS_GYRO.stopsDeg.left * DEG, right: AH56_AMCS_GYRO.stopsDeg.right * DEG },
   stickTravel: { longitudinal: AH56_STICK_IN.amcs.longitudinal / 2 * IN, lateral: AH56_STICK_IN.amcs.lateral / 2 * IN },
-  stickMoment: { longitudinal: 1222, lateral: 1080 },
+  stickMoment: { longitudinal: 1290, lateral: 1080 },
   spring: AH56_ICS_GYRO.spring, negativeSpring: 4500,
   damping: AH56_ICS_GYRO.dampingPerAxis, rotatingDamping: 0.4,
-  // Input FITTED to G8 (22.5 deg advanced); feedback as the ICS cant (ESTIMATE: no AMCS angle published).
-  inputRotation: 22.5 * DEG, feedbackRotation: AH56_ICS_GYRO.cantDeg * DEG,
+  // No AMCS angles are published: the feedback at the model's best-damped auto-trim phase, 20 deg advanced (ESTIMATE, docs
+  // "Senses"); the input FITTED to G8 (pure longitudinal stick, roll within 20 % of pitch).
+  inputRotation: AMCS_INPUT_ROTATION_DEG * DEG, feedbackRotation: 20 * DEG,
   cyclicPerTilt: 1,
   feedback: { mode: 'flapping', gain: 18_000 },
   augmentation: {

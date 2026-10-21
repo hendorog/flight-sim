@@ -34,7 +34,8 @@ describe('the gyro block alone (G1: ICS, feedback off, rotor locked)', () => {
     g.reset(true, 'ics');
     return { g, state };
   }
-  const noFriction: ControlGyroConfig = { ...ics, feedback: { ...ics.feedback as Extract<ControlGyroConfig['feedback'], { mode: 'featheringMoment' }>, frictionMoment: 0 }, augmentation: undefined };
+  // Rotor locked: no feathering motion, so no feathering friction (the rotating damping); no augmentation.
+  const noFriction: ControlGyroConfig = { ...ics, rotatingDamping: 0, augmentation: undefined };
   const H = ics.inertia * 246 * Math.PI / 30;
 
   for (const axis of ['lon', 'lat'] as const) it(`${axis}: initial precession M/H, precession rate K/H about the centre M/K`, () => {
