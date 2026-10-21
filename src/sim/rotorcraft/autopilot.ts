@@ -25,7 +25,7 @@ export class HelicopterAutopilot {
   reset(): void { this.pilot = null; this.reason = ''; this.rollModel.reset(); this.pitchModel.reset(); }
   engage(s: AircraftState, c: ControlInputs): boolean {
     this.reset();
-    if (s.onGround || s.crashed || !s.engine.running || !s.rotorcraft ||
+    if (s.onGround || s.crashed || !anyEngineRunning(s) || !s.rotorcraft ||
         s.rotorcraft.rotorRpm / this.definition.referenceRpm < 0.9 || s.altitudeAGL < 2) {
       this.reason = 'Hold requires airborne flight, running engine and normal rotor RPM';
       return false;
@@ -41,7 +41,7 @@ export class HelicopterAutopilot {
   update(dt: number, s: AircraftState, c: ControlInputs, st: AutopilotSettings): boolean {
     if (!this.pilot || !Number.isFinite(dt) || dt <= 0) return false;
     const o = observePilot(s, this.definition);
-    if (s.crashed || s.onGround || !s.engine.running || o.rotorPercent < 85 || o.rotorPercent > 115 ||
+    if (s.crashed || s.onGround || !anyEngineRunning(s) || o.rotorPercent < 85 || o.rotorPercent > 115 ||
         Math.abs(s.roll) > 45*DEG || Math.abs(s.pitch) > 40*DEG ||
         ![s.roll, s.pitch, s.heading, s.altitudeMSL, s.verticalSpeed].every(Number.isFinite)) {
       this.reason = 'Helicopter hold disconnected: flight envelope or rotor RPM'; return false;
@@ -75,4 +75,9 @@ export class HelicopterAutopilot {
     c.feetOffRudder = false;
     return true;
   }
+}
+
+/** Any engine running (a twin flies the hold on either engine: plan revision 2 section 5, T13). One engine: engine 0. */
+function anyEngineRunning(s: AircraftState): boolean {
+  return s.engine.running || s.engines.some((e) => e.running);
 }
