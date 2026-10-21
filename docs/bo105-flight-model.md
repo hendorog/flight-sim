@@ -133,7 +133,9 @@ Control derivatives as section 4. Modes (8-state model of these derivatives): ro
 Dutch roll 2.70 rad/s zeta 0.18 (2.5 +/-30 %, 0.05-0.30), phugoid zeta -0.20 at 0.39 rad/s (period 16.3 s, doubles in
 8.7 s; DLR -0.15 / 0.33 rad/s). R20 (matrix pencil, 0.1 s lateral pulse at 78 KIAS): 12.6 rad/s, zeta 0.63 (P LS-178
 13.7 rad/s +/-30 %, 0.3-0.7). Hover (IGE, SL; ESTIMATE bands): L_lat 0.189 and M_lon 0.082 per % (inside), **Lp -12.1 1/s,
-tau 0.083 s** (band -6..-10, 0.1-0.2 s: miss; the hover inflow gradient, RC docs section 8).
+tau 0.083 s** (band -6..-10, 0.1-0.2 s: miss; the hover inflow gradient, RC docs section 8). The hover's 8-state model:
+roll subsidence 12.1 1/s, pitch 3.56 1/s, an unstable oscillation 0.31 +/- 0.53i (period 12 s, doubling in 2.3 s; Mu
++0.094), a stable one -0.29 +/- 0.58i, subsidences 0.24 and 0.50 1/s.
 
 ## 6. Engines, governor and fuel (powerplant.ts, rotorcraft.ts)
 
@@ -201,7 +203,16 @@ accelTime 1.5) gave 5.7 deg of bank 2 s after a 1 s tap at 80 KCAS (0.058 of the
 every running state with both levers at FLIGHT, fuel pumps on, ignition off; N2 held at 100 % by the reset (the
 pre-take-off "trim to 98 %" is the pilot's beep).
 
-## 10. Known gaps (it.fails rows; `src/aircraft/bo105/KNOWN_ISSUES.md` has the list)
+## 10. In the sim
+
+`index.html?aircraft=bo105&hover=1&ap=1` (the app's hover test, 2500 kg, 16 m, 8 kt of wind, hold engaged), after 20 s:
+NR 424.7 rpm (100.0 %), N1 99.6 / 99.6 %, N2 100.0 / 100.0 %, torque 80.6 / 80.6 %, TOT 738 C, mast moment 1.7 kN m,
+pitch +3.5 deg, roll 3.0 deg left, split synchronised (-1.3 % N1). Without the hold (`hover=1` alone) the hover diverges
+after about 8 s and the rotor strikes the ground near 20 s (the unstable hover oscillation, section 5's hover model: 0.53
+rad/s, doubling in 2.3 s). heliHold probe (`AC=bo105`, 32 flights): no disconnect; hover position RMS 0.07 m calm, 2.3-2.5
+m in 8 kt gusts; the sequence's 40 kt step overshoots by 12 kt (the hold's tuning, TW's).
+
+## 11. Known gaps (it.fails rows; `src/aircraft/bo105/KNOWN_ISSUES.md` has the list)
 
 Zw (rotor/inflow, structural); Lq/|Lp| 0.19; hover Lp -12.1; pedal-step sideslip 4 deg; 120 KIAS stick 0.44 of travel;
 rearward margin 5.2 %; AEO climb +34 %; autorotation collective 0.08 of travel; descent weight effect +0.5 %; T7b NR 96 %

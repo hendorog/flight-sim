@@ -72,6 +72,14 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    knob: Mw +0.040 at 80 KCAS, phugoid time to double 8.7 s) and the fuselage moment derivatives (a Munk estimate x 0.6)
    carry no measured data; AR-280's "NACA 0010/C020" profile is read as symmetric.
 16. **Airspeed limits**: the OEI 100 KIAS Vne (P5 FM 2-4) is not read by the limit reader (it knows power-off only).
+17. **The hover is unstable hands-off** (no source gives the Bo 105's hover modes): the 8-state hover model has an
+   oscillation of 0.53 rad/s (period 12 s) that doubles in 2.3 s (driven by Mu +0.094 1/(s m)). Left alone at the 15 m
+   hover scenario's trim the aircraft holds within 1 deg for about 8 s, then diverges and rolls into the ground by 20 s
+   (`index.html?aircraft=bo105&hover=1`, 2500 kg; the MD 500E stays put for 20 s). With the hold engaged (`&ap=1`, the
+   app's own hover URL) it hovers: position RMS 0.07 m calm, 2.3-2.5 m in 8 kt gusts, no disconnect (heliHold probe).
+   Real helicopters are unstable hands-off in the hover; how fast the Bo 105 diverges is the owner's judgement.
+18. **Hold autopilot on the Bo 105** (TW's `sim/rotorcraft/autopilot.ts`, tuned on the other types): the heliHold
+   sequence overshoots its 40 kt speed step by 12 kt and settles in 28-30 s; heading steps overshoot 6.6-9.5 deg.
 
 ## Owner-facing AGENT choices in this package (not owner decisions)
 
