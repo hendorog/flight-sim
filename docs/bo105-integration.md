@@ -110,7 +110,10 @@ branch numbers, which is expected: AU, BX and PN change no physics.
 
 - **Existing helicopters are bit-identical.** `legacyDigest` with `s269Legacy` and `contactAirborne` gave 35/35 exact
   after the RC+TW merges, again after BO, and again in the final run. The MD 500E, R22, R44 and S269 tolerance pins (GR
-  sets 2-4) are green, and the only failures in them are the recorded baseline exceptions.
+  sets 2-4) are green with no failures. The plan's two R22 six-degree slope baseline exceptions (`skids.test.ts`)
+  were 5 s **timeouts under full-directory load** in the baseline output (`W/baseline/vitest-arp.txt`,
+  `s0b-final-arp.txt`: "Test timed out in 5000ms"), not creep failures. The same file passes 10/10 alone on the
+  scaffold `0c3211f` (a temporary detached worktree, since removed), so their passing here is not a legacy change.
 - Per-merge guard outputs are in `W/guards/integ/<n>-<package>/`. `W/integ/merge-log.md` has the merge log.
 - Final run: see section 7.
 
