@@ -124,7 +124,7 @@ export const BO105_CHECKLISTS = {
     i('shutdown', 'Double engine emergency shutdown', 'Both levers OFF; both emergency fuel valves closed; both supply pumps OFF'),
     i('flare', 'Flare', 'At about 100 ft AGL: nose up 15 – 25° controlling NR; at 6 – 10 ft reduce to about 5°'),
     i('touch', 'Touch-down', 'Hold heading, raise the collective to cushion; battery OFF when stopped'),
-  ], 'Hover: right pedal against the left yaw, landing attitude, lower the collective then raise it to cushion.'),
+  ], 'Hover: right pedal against the left yaw, landing attitude, lower the collective then raise it to cushion. Sim keys: the NR LOW beeping starts within 0.4 s; Shift+F5 lowers the collective at hand speed (bare F5 is the fine hover key and too slow here): every second of hesitation costs about 10 % NR. At 6 – 10 ft flare to about 5° and Shift+F6 to cushion.'),
   lowRpm: emergency('lowRpm', 'RPM warning light', '3-16', [
     i('split', 'N1 SPLIT (12 % or more)', 'Collective to the OEI limits or below; analyse. If residual torque remains leave the engine running, otherwise do the single-engine shutdown. The light can come on during beep trim: match N1'),
     i('low', 'NR LOW (95 % or less, beeping tone)', 'Adjust the collective to bring NR back into the normal range', ge('checklist.rotorPercent', BO105_NR_PCT.transientMin)),
