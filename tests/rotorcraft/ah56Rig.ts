@@ -7,7 +7,9 @@
 // pass to ControlGyro.advanceCoupled (contract request to RC/the integrator: the one-line call in rotorcraft.ts,
 // work/rigid/ag-integrator-requests.patch). Until then the rig hands the same data to the gyro before the trim (so the
 // trim includes the augmentation, as it will with the wiring) and once per step from the flight state; `airData: false`
-// flies the production wiring of today (augmentation dormant).
+// flies the production wiring of today (augmentation dormant). The stand-in retires itself: PRODUCTION_AIR_WIRED detects
+// the wiring (one compute, does advanceCoupled receive `air`?) and then the rig flies the production path by default.
+// AH56_AIRDATA=off forces the production path (the rig-vs-sim comparison, docs/control-gyro-model.md section 5).
 import { AH56_DEFINITION as def } from '../../src/aircraft/ah56';
 import { createFlightModelFor } from '../../src/physics';
 import type { BladeElementFlightModel } from '../../src/physics/flightModel';
@@ -24,6 +26,19 @@ export const IN = 0.0254;
 export const d = def.rotorcraft!;
 export const gyroDef = d.controlGyro!;
 export { def };
+
+/** Whether Rotorcraft.compute passes the hub air data to the gyro (RC's wiring; the stand-in below is then off). */
+export const PRODUCTION_AIR_WIRED: boolean = (() => {
+  const fm = createFlightModelFor(def) as BladeElementFlightModel, rotor = (fm as unknown as { rotorcraft: Rotorcraft }).rotorcraft;
+  const g = rotor.gyro!, orig = g.advanceCoupled.bind(g);
+  let wired = false;
+  (g as unknown as { advanceCoupled: typeof orig }).advanceCoupled = (...a: Parameters<typeof orig>) => { if (a[6]) wired = true; return orig(...a); };
+  fm.reset({ position: { x: 0, y: 0, z: -500 }, heading: 0, airspeed: 50 * KT, flightPathAngle: 0, onGround: false, engineRunning: true,
+    fuelFraction: 1 }, environment());
+  fm.step(DT, cloneControls(fm.trimControls), environment());
+  return wired;
+})();
+const STAND_IN = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.AH56_AIRDATA !== 'off' && !PRODUCTION_AIR_WIRED;
 
 /** A flat world whose atmosphere is held at `ft` pressure altitude and ISA + `isaDev` K, whatever the height flown. */
 export function environment(ft = 0, isaDev = 0) {
@@ -44,11 +59,11 @@ export function rig(o: RigOptions = {}) {
   fm.setLoading(ah56Loading(o.lb ?? 18_300, undefined, o.fuelFraction ?? 1));
   // The air data the trim's settle sees (the stand-in for RC's wiring, which passes it on every compute).
   const rotor = (fm as unknown as { rotorcraft: Rotorcraft }).rotorcraft;
-  if (o.airData ?? true) rotor.gyro!.setAirData({ hub: { x: (o.kt ?? 0) * KT, y: 0, z: 0 }, density: env.atmosphere().density });
+  if (o.airData ?? STAND_IN) rotor.gyro!.setAirData({ hub: { x: (o.kt ?? 0) * KT, y: 0, z: 0 }, density: env.atmosphere().density });
   fm.reset({ position: { x: 0, y: 0, z: -(o.onGround ? 0 : o.height ?? 1500 * FT) }, heading: 0, airspeed: (o.kt ?? 0) * KT,
     flightPathAngle: (o.pathDeg ?? 0) * DEG, onGround: o.onGround ?? false, engineRunning: o.running ?? true,
     fuelFraction: o.fuelFraction ?? 1, rotorcraftConfig: o.cfg, ...(o.gearDown !== undefined ? { gearDown: o.gearDown } : {}) }, env);
-  return { fm, c: cloneControls(fm.trimControls), env, cfg: o.cfg ?? gyroDef.default, airData: o.airData ?? true };
+  return { fm, c: cloneControls(fm.trimControls), env, cfg: o.cfg ?? gyroDef.default, airData: o.airData ?? STAND_IN };
 }
 export type Ah56Rig = ReturnType<typeof rig>;
 
