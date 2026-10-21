@@ -158,7 +158,9 @@ controls; the Policía CB photograph shows them):
 `-viewout` (plan §11; at 424 rpm `-head-turning` is a blurred disc by the renderer's perceptual blur, blades solid
 only below about 107 rpm), plus `-head-close`, `-head-turning-close` (fov 12), `-head-bend` (100 rpm, so the bent roots
 show before the blades blur), `-cockpit-levers` (the overhead power levers) and `proposal-tail-*` (the requested
-tail-rotor height, rendered from an uncommitted local edit of dimensions.ts).
+tail-rotor height, rendered from an uncommitted local edit of dimensions.ts). `-head-turning` and
+`-head-turning-close` were re-rendered after the roots were hidden at speed: the hub, housings and forks, then the
+disc from 1.10 m, no frozen solid shanks (the in-flight D-HADO photograph shows the head and a near-invisible disc).
 
 ## Photographs consulted (modelling references only; never textures, never committed)
 
