@@ -23,13 +23,15 @@
 //   1 prop     - blade-passage harmonics (phase-locked to the crank on a direct-drive engine, on the
 //                propeller's own shaft angle behind a reduction gear) plus broadband tip noise rising with
 //                tip Mach, amplitude-modulated at blade passage; a turboprop's growl at the shaft rate and its
-//                reverse growl; a helicopter's main rotor (as the propeller) and its tail rotor (TailRotorVoice)
+//                reverse growl; a helicopter's main rotor (as the propeller, with its high-speed impulsive crack),
+//                its tail rotor (TailRotorVoice) and a pusher propeller on the rotor shaft (PusherVoice)
 //   2 airframe - wind, sideslip whistle, flap flow noise, stall buffet, tyre rolling by surface, brake
 //                squeal, tyre skid, touchdown chirps, crash, the flow over an extended landing gear and the
 //                thump of its locks
 //   3 cabin    - stall warning (a reed horn or an electric tone; a helicopter's low-rotor / ENGINE OUT horn),
 //                flap motor, instrument gyros, avionics fan, landing-gear pump and gear warning (a beeping horn
-//                or a repeating chime), stick shaker, overspeed clacker, caution / warning chimes
+//                or a repeating chime), stick shaker, overspeed clacker, caution / warning chimes; a twin
+//                turboshaft's warning unit, the rotor's n-per-rev hum and the half-P hop (RotorcraftCabinVoice)
 //
 // The voices added with the turbine types read the parameters appended at the very end of the block
 // (params.ts EXTRA_PARAMS) and draw from noise sources of their own; a profile without them builds none of them
@@ -407,12 +409,15 @@ class TurbineVoice {
     // The output speed from which the gearbox mesh is at full strength, rev/s (a helicopter's transmission: low).
     this.meshFullRps = t.gearMeshFullRps ?? 30;
     this.lightOffLevel = t.lightOff;
-    // The igniters on a start (engine 0 only; a source of its own, so the shared sequences are untouched).
-    const ign = ix === ENGINE_P[0] ? t.ignitor : undefined;
+    // The igniters on a start (engines 0 and 1, each keyed on its own parameter, 'ignitor' and 'ignitor2'; a source of
+    // its own, so the shared sequences are untouched).
+    const first = ix === ENGINE_P[0];
+    const ign = first || ix === ENGINE_P[1] ? t.ignitor : undefined;
+    this.iIgn = first ? P.ignitor : P.ignitor2;
     this.ignLevel = ign ? ign.level : 0;
     this.ignRate = ign ? ign.perSecond : 0;
     if (this.ignLevel > 0) {
-      this.ignNoise = new Noise(0x1f123bb5);
+      this.ignNoise = new Noise(first ? 0x1f123bb5 : 0x2b7e1516);
       this.ignF = new SVF();
       this.ignF.set(3400, 1.4);
       this.ignPh = 0;
@@ -535,7 +540,7 @@ class TurbineVoice {
 
     // Igniters: the exciter discharges across the plugs a few times a second while the starter runs, a dry crack each.
     if (this.ignLevel > 0) {
-      const ign = v[P.ignitor];
+      const ign = v[this.iIgn];
       if (ign > 0.01) {
         this.ignPh += this.ignRate / SR;
         if (this.ignPh >= 1) {
@@ -582,6 +587,14 @@ class PropVoice {
       this.revLowF = new SVF();
       this.revMidF = new SVF();
     }
+    // Geared, engine 0 only: a helicopter main rotor's high-speed impulsive noise (PropSoundProfile.impulsive). No
+    // noise source: the crack is a deterministic pulse locked to the blade passage.
+    const hsi = this.geared && ix === ENGINE_P[0] ? profile.impulsive : undefined;
+    this.hsiOnset = hsi ? hsi.onsetMach : 0;
+    this.hsiFull = hsi ? hsi.fullMach : 1;
+    this.hsiLevel = hsi ? hsi.level : 0;
+    this.hsiAmp = 0;
+    this.hsiWidth = 0.1;
     this.tipF = new SVF();
     // Block-rate path: the eight harmonic amplitudes and the broadband level, ramped across the render quantum.
     this.w = new Float64Array(9);
@@ -604,6 +617,15 @@ class PropVoice {
   /** Block-rate filter setup from the current smoothed tip Mach number (and, reversing, the smoothed parameters `v`). */
   tune(tip, v) {
     this.tipF.set(500 + 5200 * tip * tip, 0.8);
+    if (this.hsiLevel > 0) {
+      // The crack sets in at the onset Mach and grows steeply on the way to full (smoothstep, to the 1.5th power),
+      // narrowing as it strengthens (the shock delocalising off the advancing tip): 9 % of the blade passage at onset,
+      // 3 % at full.
+      const x = Math.max(0, Math.min(1, (v[P.advTipMach] - this.hsiOnset) / (this.hsiFull - this.hsiOnset)));
+      const s = x * x * (3 - 2 * x);
+      this.hsiAmp = this.hsiLevel * s * Math.sqrt(s);
+      this.hsiWidth = 0.09 - 0.06 * s;
+    }
     if (this.revGrowl > 0) {
       const rev = Math.min(1.5, v[P.reverse]);
       this.revLowF.set(150 + 140 * rev, 0.9);
@@ -663,6 +685,7 @@ class PropVoice {
       const broad = this.tipF.process(this.pink.next()) * (this.broad += this.broadStep) * (1 + 0.45 * Math.sin(bp));
       if (this.growl > 0) tone *= this.growlAt(load);
       const rv = this.revGrowl > 0 ? this.reverseAt(v, bp) : 0;
+      if (this.hsiAmp > 1e-5) tone += this.impulseAt();
       return (tone + broad * 0.5 + rv) * 0.7 * this.level;
     }
     // Harmonic roll-off flattens as tip Mach rises (thickness noise sharpens toward a sawtooth).
@@ -676,7 +699,27 @@ class PropVoice {
     const broad = this.tipF.process(this.pink.next()) * Math.pow(tip / 0.8, 5) * (0.5 + 0.35 * load) * (1 + 0.45 * Math.sin(bp));
     if (this.growl > 0) tone *= this.growlAt(load);
     const rv = this.revGrowl > 0 ? this.reverseAt(v, bp) : 0;
+    if (this.hsiAmp > 1e-5) return (tone * toneLevel + this.impulseAt() + broad * 0.5 + rv) * 0.7 * this.level;
     return (tone * toneLevel + broad * 0.5 + rv) * 0.7 * this.level;
+  }
+
+  /**
+   * High-speed impulsive noise: once per blade passage (as the blade crosses the advancing side) a sharp negative
+   * pressure pulse of width `hsiWidth` of the passage, then a positive recovery lobe half as deep over twice the width,
+   * so the pulse has no mean. Geared only: `this.phase` is the shaft angle.
+   */
+  impulseAt() {
+    const w = this.hsiWidth;
+    const f = (this.blades * this.phase) % 1;
+    if (f < w) {
+      const s = Math.sin((Math.PI * f) / w);
+      return -this.hsiAmp * s * s;
+    }
+    if (f < 3 * w) {
+      const s = Math.sin((Math.PI * (f - w)) / (2 * w));
+      return 0.5 * this.hsiAmp * s * s;
+    }
+    return 0;
   }
 
   /**
@@ -754,6 +797,189 @@ class TailRotorVoice {
       if (f < 0.12) slap = Math.sin((TAU * f) / 0.12) * this.slapAmp;
     }
     return (tone + broad * 0.5 + slap) * 0.7 * this.level;
+  }
+}
+
+/**
+ * A pusher propeller on the rotor shaft (AudioProfile.pusher; the AH-56A's three-blade Hamilton Standard, 3 x 1717 rpm =
+ * 85.9 Hz), in the propeller stem beside the rotors: blade passage at `blades` x its shaft rate, the harmonics rolling
+ * off less steeply with loading and blade angle; broadband tip noise rising steeply with the tip Mach number (0.81
+ * static) and with the blade angle; and in reverse pitch a roar of the disc churning its own wake, beaten at the blade
+ * passage and the shaft rate. Parameters `pusherRpm`, `pusherLoad`, `pusherTipMach`, `pusherPitch`, `pusherReverse`
+ * (params.ts EXTRA_PARAMS); noise sources of its own. Weights per render quantum (tune).
+ */
+class PusherVoice {
+  constructor(profile) {
+    this.blades = profile.blades;
+    this.level = profile.level ?? 1;
+    this.growl = profile.growl ?? 0.6;
+    this.pink = new Pink(52361);
+    this.revPink = new Pink(60493);
+    this.tipF = new SVF();
+    this.revLowF = new SVF();
+    this.revMidF = new SVF();
+    this.phase = 0;
+    this.w = new Float64Array(9);
+    this.broad = 0;
+    this.rev = 0;
+  }
+
+  /** Block-rate setup from the smoothed parameters `v`. */
+  tune(v) {
+    const tip = v[P.pusherTipMach];
+    const load = Math.min(2, v[P.pusherLoad]);
+    const pitch = Math.min(1.5, Math.max(0, v[P.pusherPitch]));
+    this.tipF.set(600 + 5400 * tip * tip, 0.8);
+    // Loading sharpens the blade's passage: the harmonics roll off less steeply. At these tip speeds (Mach 0.81
+    // static) the thickness noise is strong without any thrust: a large share of the tone does not need loading.
+    const slope = 1.8 - 0.7 * Math.min(1, load / 1.5);
+    const toneLevel = (0.2 + 0.3 * load + 0.15 * pitch) * Math.pow(tip / 0.8, 3);
+    for (let k = 1; k <= 8; k++) this.w[k] = Math.pow(k, -slope) * toneLevel;
+    // A blade at a steep angle sheds more profile-drag and separated-flow noise.
+    this.broad = Math.pow(tip / 0.8, 5) * (0.3 + 0.25 * load + 0.5 * pitch);
+    this.rev = Math.min(1.5, v[P.pusherReverse]);
+    this.revLowF.set(140 + 120 * this.rev, 0.9);
+    this.revMidF.set(480 + 420 * this.rev, 1.3);
+  }
+
+  sample(v) {
+    const n = this.pink.next();
+    const r = this.revPink.next();
+    this.revLowF.process(r);
+    this.revMidF.process(r);
+    const rpm = v[P.pusherRpm];
+    if (rpm < 1) return 0;
+    this.phase += rpm / (60 * SR);
+    if (this.phase >= 1) this.phase -= 1;
+    const bp = TAU * this.blades * this.phase;
+    let tone = 0;
+    const x = bp + 0.9;
+    const twoCos = 2 * Math.cos(x);
+    let s0 = 0;
+    let s1 = Math.sin(x);
+    for (let k = 1; k <= 8; k++) {
+      tone += s1 * this.w[k];
+      const s2 = twoCos * s1 - s0;
+      s0 = s1;
+      s1 = s2;
+    }
+    const broad = this.tipF.process(n) * this.broad * (1 + 0.45 * Math.sin(bp));
+    let roar = 0;
+    if (this.rev > 1e-4) {
+      const a = TAU * this.phase;
+      const beat = (1 + 0.5 * Math.sin(bp + 0.3)) * (1 + 0.3 * Math.sin(a + 0.4) + 0.15 * Math.sin(2 * a + 1.9));
+      roar = this.growl * this.rev * beat * (Math.tanh(1.6 * (this.revLowF.band * 0.9 + this.revMidF.band * 0.45 * Math.min(1, this.rev))) / 1.6);
+    }
+    return (tone + broad * 0.5 + roar) * 0.7 * this.level;
+  }
+}
+
+/** Time constant over which the half-P thump works off its phase error to the physics, s, and the per-sample share. */
+const HALF_P_LOCK_S = 0.03;
+const HALF_P_LOCK = 1 / (HALF_P_LOCK_S * SR);
+
+/**
+ * The cabin sounds of the hingeless-rotor types (cabin stem), each built only when the profile declares it:
+ *   - a twin warning unit (AudioProfile.rotorWarnings; the Bo 105's K-DW02/01): an intermittent tone while NR is low or
+ *     the N1s split (on for half of every beat, 5 ms edges), a steady higher tone while NR is high;
+ *   - the rotor's n-per-rev vibration hum (AudioProfile.vibration): a tone at `vibrationHz` with the buzz of the
+ *     structure (its second and third multiples), so a small speaker that cannot play 33 Hz still carries it;
+ *   - the half-P hop (AudioProfile.halfP): a low rumble thumping at `halfPHz`, its cycle locked to the physics'
+ *     forcing phase ('halfPPhase', sync()): the thump peaks where sin(phase) does, a quarter cycle after the phase wraps.
+ * Noise from a source of its own.
+ */
+class RotorcraftCabinVoice {
+  constructor(profile) {
+    const w = profile.rotorWarnings;
+    this.warnLevel = w ? w.level : 0;
+    this.lowHz = w ? w.lowHz : 0;
+    this.lowRate = w ? w.lowPerSecond : 1;
+    this.highHz = w ? w.highHz : 0;
+    this.lowPh = 0;
+    this.lowBeat = 0;
+    this.highPh = 0;
+    this.vibLevel = profile.vibration ? profile.vibration.level : 0;
+    this.vibPh = 0;
+    const h = profile.halfP;
+    this.halfLevel = h ? h.level : 0;
+    this.halfPh = 0;
+    /** Phase error to the last 'halfPPhase' received, cycles, worked off over about HALF_P_LOCK_S. */
+    this.halfErr = 0;
+    this.halfSynced = false;
+    this.rumblePh = 0;
+    this.rumbleHz = h ? h.rumbleHz : 50;
+    this.noise = new Noise(0x3243f6a8);
+    this.rumbleF = new SVF();
+    this.rumbleF.set(this.rumbleHz, 0.9);
+  }
+
+  /**
+   * A parameter block has arrived (`t`: the unsmoothed targets): lock the half-P cycle to the hop's forcing phase. The
+   * first block of an event sets it; later ones leave the remaining error to be worked off sample by sample, so a
+   * frame's jitter never clicks.
+   */
+  sync(t) {
+    if (this.halfLevel <= 0) return;
+    if (!(t[P.halfP] > 1e-4)) {
+      this.halfSynced = false;
+      return;
+    }
+    const phase = t[P.halfPPhase];
+    if (!this.halfSynced) {
+      this.halfPh = phase - Math.floor(phase);
+      this.halfErr = 0;
+      this.halfSynced = true;
+    } else {
+      const e = phase - this.halfPh;
+      this.halfErr = e - Math.round(e);
+    }
+  }
+
+  sample(v) {
+    let out = 0;
+    if (this.warnLevel > 0) {
+      // The intermittent tone: NR LOW or N1 SPLIT (one oscillator, one rate).
+      const low = Math.max(v[P.nrLowTone], v[P.n1SplitTone]);
+      if (low > 1e-3) {
+        const t = this.lowBeat / this.lowRate;
+        this.lowBeat += this.lowRate / SR;
+        if (this.lowBeat >= 1) this.lowBeat -= 1;
+        this.lowPh = (this.lowPh + this.lowHz / SR) % 1;
+        const ph = TAU * this.lowPh;
+        const on = Math.max(0, Math.min(1, Math.min(t, 0.5 / this.lowRate - t) / 0.005));
+        out += low * on * (Math.sin(ph) + 0.3 * Math.sin(3 * ph) + 0.12 * Math.sin(5 * ph)) * this.warnLevel;
+      } else {
+        this.lowBeat = 0;
+      }
+      const high = v[P.nrHighTone];
+      if (high > 1e-3) {
+        this.highPh = (this.highPh + this.highHz / SR) % 1;
+        const ph = TAU * this.highPh;
+        out += high * (Math.sin(ph) + 0.2 * Math.sin(3 * ph)) * this.warnLevel * 0.8;
+      }
+    }
+    const vib = this.vibLevel > 0 ? v[P.vibration] : 0;
+    if (vib > 1e-4) {
+      this.vibPh = (this.vibPh + v[P.vibrationHz] / SR) % 1;
+      const ph = TAU * this.vibPh;
+      out += vib * this.vibLevel * (Math.sin(ph) + 0.45 * Math.sin(2 * ph + 0.6) + 0.3 * Math.sin(3 * ph + 1.4));
+    }
+    const hop = this.halfLevel > 0 ? v[P.halfP] : 0;
+    const w = this.noise.next();
+    this.rumbleF.process(w);
+    if (hop > 1e-4) {
+      const corr = this.halfErr * HALF_P_LOCK;
+      this.halfErr -= corr;
+      this.halfPh += v[P.halfPHz] / SR + corr;
+      this.halfPh -= Math.floor(this.halfPh);
+      this.rumblePh = (this.rumblePh + (0.85 * this.rumbleHz) / SR) % 1;
+      // One thump a cycle: the envelope peaks sharply once a cycle and never quite empties.
+      const c = 0.5 + 0.5 * Math.sin(TAU * this.halfPh);
+      const env = 0.15 + 0.85 * c * c * c;
+      const a = Math.min(hop, 2);
+      out += this.halfLevel * a * env * (this.rumbleF.band * 1.2 + Math.sin(TAU * this.rumblePh) * 0.6);
+    }
+    return out;
   }
 }
 
@@ -875,6 +1101,10 @@ class AircraftSynth extends AudioWorkletProcessor {
     // A helicopter's tail rotor, the stick shaker, the overspeed clacker and the caution/warning chimes: voices of
     // their own, each with its own noise source, built only for a profile that has them.
     this.tail = profile.tailRotor ? new TailRotorVoice(profile.tailRotor) : null;
+    // The hingeless-rotor types: a pusher on the rotor shaft (propeller stem) and the cabin's warning unit, vibration hum
+    // and half-P rumble.
+    this.pusher = profile.pusher ? new PusherVoice(profile.pusher) : null;
+    this.rcCabin = profile.rotorWarnings || profile.vibration || profile.halfP ? new RotorcraftCabinVoice(profile) : null;
     this.shakerHz = profile.stickShaker ? profile.stickShaker.hz : 0;
     this.shakerLevel = profile.stickShaker ? profile.stickShaker.level : 0;
     this.clackRate = profile.overspeedWarning ? profile.overspeedWarning.perSecond : 0;
@@ -901,7 +1131,8 @@ class AircraftSynth extends AudioWorkletProcessor {
     if (engines.some((e) => e.engine.gearRatio !== 1 || e.engine.turbo)) this.paramsUsed = P.turbo + 1;
     if (engines.length > 1) this.paramsUsed = ENGINE_P[engines.length - 1].turbo + 1;
     // The appended parameters (params.ts EXTRA_PARAMS) sit at the end of the block: read only by a profile that uses one.
-    const extras = this.tail || this.hasWarnings || engines.some((e) => e.prop.reverse || (e.engine.turbine && e.engine.turbine.ignitor));
+    const extras = this.tail || this.pusher || this.rcCabin || this.hasWarnings ||
+      engines.some((e) => e.prop.reverse || e.prop.impulsive || (e.engine.turbine && e.engine.turbine.ignitor));
     if (extras || this.rainHeard) this.paramsUsed = PARAM_COUNT;
     // Stall warning: pitch at the threshold and its rise to full strength, Hz. An electric warner is a steady
     // tone at the first.
@@ -919,6 +1150,7 @@ class AircraftSynth extends AudioWorkletProcessor {
   onMessage(d) {
     if (d instanceof Float32Array) {
       this.target.set(d.subarray(0, PARAM_COUNT));
+      if (this.rcCabin) this.rcCabin.sync(this.target);
       // The first precipitation: smooth the appended parameters from now on (its own included).
       if (!this.rainHeard && (this.target[P.rain] > 0 || this.target[P.hail] > 0)) {
         this.rainHeard = true;
@@ -996,6 +1228,8 @@ class AircraftSynth extends AudioWorkletProcessor {
     }
     const tail = this.tail;
     if (tail) tail.tune(val);
+    const pusher = this.pusher;
+    if (pusher) pusher.tune(val);
     const wf = val[P.windFreq];
     this.windF.set(wf, 0.55);
     this.windLowF.set(110, 0.7);
@@ -1023,7 +1257,10 @@ class AircraftSynth extends AudioWorkletProcessor {
       for (let i = 0; i < n; i++) {
         for (let k = 0; k < count; k++) val[k] = tgt[k] + (val[k] - tgt[k]) * a;
         outE[i] = eng.sample(val);
-        outP[i] = tail ? prop.sample(val, eng.phase) + tail.sample(val) : prop.sample(val, eng.phase);
+        let p = prop.sample(val, eng.phase);
+        if (tail) p += tail.sample(val);
+        if (pusher) p += pusher.sample(val);
+        outP[i] = p;
         outA[i] = this.airframe(val, surf);
         outC[i] = this.cabin(val);
       }
@@ -1038,7 +1275,9 @@ class AircraftSynth extends AudioWorkletProcessor {
           p += voices[k].prop.sample(val, eng.phase);
         }
         outE[i] = e;
-        outP[i] = tail ? p + tail.sample(val) : p;
+        if (tail) p += tail.sample(val);
+        if (pusher) p += pusher.sample(val);
+        outP[i] = p;
         outA[i] = this.airframe(val, surf);
         outC[i] = this.cabin(val);
       }
@@ -1251,6 +1490,7 @@ class AircraftSynth extends AudioWorkletProcessor {
 
     if (this.hasGear) out += this.gearSounds(v);
     if (this.hasWarnings) out += this.warningSounds(v);
+    if (this.rcCabin) out += this.rcCabin.sample(v);
 
     // Vacuum and electric gyros: faint high whine with their spin.
     const gy = v[P.gyro];
