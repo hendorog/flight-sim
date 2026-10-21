@@ -60,14 +60,16 @@ export const BO105_TURBOSHAFT_INDICATION: Pick<TurboshaftControlDef, 'torqueGaug
 const C20B_GG = ALLISON_250_C20B.turbine!.gasGenerator;
 
 /**
- * The Allison 250-C20B as installed in the Bo 105 (proposed for bo105/powerplant.ts; BO owns the powerplant). The MD 500E
- * map (md500/powerplant.ts) puts 82 % Bo 105 torque at about 715 C and 95 % at about 745 C, and reaches 120 % torque at
- * its 105 % N1 stop; the Bo 105's own sources pin its installed running line lower:
+ * The Allison 250-C20B as installed in the Bo 105 (proposed for bo105/powerplant.ts; BO owns the powerplant). On the MD
+ * 500E map (md500/powerplant.ts) the twin rig reads 82 % Bo 105 torque at 95.8 % N1 / 657 C and 95 % at 98.5 % N1 /
+ * 724 C, and one engine tops above 115 % torque at its 105 % N1 stop; the Bo 105's own sources pin its installed running
+ * line lower:
  *   - P5 FM 4-17: the recommended cruise maximum is 82 % torque at 738 C TOT;
  *   - P TCDS p9: the OEI emergency rating is 283 kW (95 %) with N1 104 % and TOT 810 C (taken here as one running-line
  *     point at the 105 % N1 stop, FM red line, at sea level ISA and 100 % N2).
- * The map above 85 % N1 is re-drawn through those two anchors (gas power = shaft power + the 18.6 kW the power turbine's
- * friction takes at 100 % N2, measured on the rig); TOT is linear in gas power between them (1.86 C/kW). The fuel flow
+ * The map above 85 % N1 is re-drawn through those two anchors (gas power = shaft power + 18.6 kW, the power turbine's
+ * friction and the accessories at 100 % N2, measured on the twin rig at 45 % torque); TOT is linear in gas power between
+ * them (1.86 C/kW). On this map the rig reads 82 % at 99.6 % N1 / 737 C and 95 % at 104.9 % N1 / 809 C. The fuel flow
  * keeps the MD 500E map's specific consumption at each N1 (the consumption class, research-md500). Everything at and below
  * 85 % N1 (idle 64.5 %, light-off, the start, the snap deceleration) and the fuel control are the MD 500E's. ESTIMATE
  * (the interpolation; the two anchors are P5 and P). Consequence: the engine's 313 kW type rating (EASA IM.E.052) is not

@@ -158,6 +158,19 @@ describe('reset, resume and one lever at IDLE (T10, T11, T16)', () => {
     expect(worst).toBeLessThanOrEqual(0.3);
   }, 30_000);
 
+  it('T10 enginesRunning [false, true]: engine 1 cut, engine 2 carries the trim, no transient > 0.3 % over 2 s', () => {
+    const r = rig({ kg: 2200, kt: 60, enginesRunning: [false, true] });
+    const g0 = gauges(r);
+    let worst = 0;
+    run(r, 2, () => { const g = gauges(r); worst = Math.max(worst, Math.abs(g.nr - g0.nr), Math.abs(g.n2[1] - g0.n2[1])); });
+    const g = gauges(r);
+    report.T10engine1out = { tq: g.tq, n1: g.n1, split: g.split, oei: g.oei, lever: r.c.engines[0], worstPct: worst };
+    expect(r.c.engines[0].throttle).toBe(0);
+    expect(g.split).toEqual([true, false]); expect(g.oei).toBe(true);
+    expect(g.tq[1]).toBeGreaterThan(60); expect(Math.abs(g.tq[0])).toBeLessThan(1);
+    expect(worst).toBeLessThanOrEqual(0.3);
+  }, 30_000);
+
   it('T11 resume: a snapshot mid-OEI through JSON restores with no Nr or N1 step > 0.2 %', () => {
     const w = calmWeather();
     const a = new SimPhysics({ aircraft: TWIN_DEF, weather: w });

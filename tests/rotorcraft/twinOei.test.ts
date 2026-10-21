@@ -8,8 +8,13 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { DT, TWIN_DEF_MD500_ENGINE, attitudePilot, gauges, lever, LEVER, massForTorque, rig, run, writeTrace, type TwinRig } from './twinRig';
 
 const report: Record<string, unknown> = {};
-/** T7c: the surviving engine over every OEI run in this file. */
+/** T7c: the surviving engine over every OEI run in this file (each run also asserts it: expectSurvivor). */
 const survivor = { n1Max: 0, tqMax: 0 };
+/** T7c on one run: the surviving engine never above 106 % N1 or 105 % torque (exact). */
+function expectSurvivor(o: { n1Max: number; tqMax: number }): void {
+  expect(o.n1Max).toBeLessThanOrEqual(106);
+  expect(o.tqMax).toBeLessThanOrEqual(105);
+}
 afterAll(() => writeTrace('twinOei', { ...report, T7c: survivor }));
 
 /**
@@ -50,6 +55,7 @@ describe('one engine inoperative (T7a-c)', () => {
     const o = failEngine2(r, 15);
     report.T7a = { kg, start: { tq: start.tq, n1: start.n1, tot: start.tot }, ...o };
     expect(start.tq[0]).toBeCloseTo(45, 0); expect(start.tq[1]).toBeCloseTo(45, 0);
+    expectSurvivor(o);
     expect(o.nrMin).toBeGreaterThanOrEqual(92);
     if (o.nrMin < 97) expect(o.t97).toBeLessThanOrEqual(4);
     expect(o.settled.tq).toBeLessThanOrEqual(95);
@@ -77,25 +83,24 @@ describe('one engine inoperative (T7a-c)', () => {
     report.T7b = { kg, ...o, recovery: { seconds: back, nr: after.nr, nrLowLight: after.nrLowLight, tone: after.nrLowTone, tq: after.tq[0], collective: after.collective } };
     // From 5 s after the failure: inside the band.
     for (const nr of o.nrAt.slice(5)) { expect(nr).toBeGreaterThanOrEqual(93); expect(nr).toBeLessThanOrEqual(96); }
-    expect(o.n1Max).toBeGreaterThanOrEqual(104.5); expect(o.n1Max).toBeLessThanOrEqual(106);
-    expect(o.tqMax).toBeLessThanOrEqual(105);
+    expect(o.n1Max).toBeGreaterThanOrEqual(104.5);
+    expectSurvivor(o);
     expect(o.totMax).toBeGreaterThanOrEqual(805);
     expect(back).toBeGreaterThan(0);
     expect(after.nr).toBeGreaterThanOrEqual(97);
     expect(after.nrLowLight).toBe(false); expect(after.nrLowTone).toBe(false);
   }, 60_000);
 
-  it.fails('T7b KNOWN GAP: the RPM light and 650 Hz are on while NR is settled (NR settles at about 95.6 %, just above the unit\'s 95 % threshold)', () => {
+  it.fails('T7b KNOWN GAP: the RPM light and 650 Hz are on while NR is settled (NR settles at 95.6 % with the pedals holding the heading, 96.1-96.6 % with them fixed: just above the unit\'s 95 % threshold; the tail rotor\'s share decides it)', () => {
     const r = rig({ kg: massForTorque(55, 0), kt: 0 });
     failEngine2(r, 12, true, false);
     const g = gauges(r);
     expect(g.nrLowLight && g.nrLowTone).toBe(true);
   }, 60_000);
 
-  it('T7c: over every OEI run above, the surviving engine never exceeds 106 % N1 or 105 % torque (exact)', () => {
+  it('T7c summary: over the OEI runs above, the surviving engine never exceeds 106 % N1 or 105 % torque (each run asserts it)', () => {
     expect(survivor.n1Max).toBeGreaterThan(0);
-    expect(survivor.n1Max).toBeLessThanOrEqual(106);
-    expect(survivor.tqMax).toBeLessThanOrEqual(105);
+    expectSurvivor(survivor);
   });
 
   it('report: the same hover OEI on the MD 500E engine map (the shared ALLISON_250_C20B) tops above 105 % torque, below 810 C, without the NR droop: why the Bo 105 needs its installed map', () => {
@@ -129,27 +134,31 @@ describe('engine starts and the run-up (T8, T14, T15)', () => {
     const nr0 = gauges(r).nr;
     let flight = -1, n2AtEngage = 0, nrAtEngage = 0;
     const nr: [number, number][] = [];
+    const ramp = 10;
+    // At IDLE the unloaded power turbine runs below NR in flight (needles split); the freewheel engages as the lever goes
+    // toward FLIGHT, 10 s after the starter is off, over 10 s.
     const phase = start(r, 1, 70, (t, g, p) => {
       hold(DT);
-      // 10 s at IDLE after the starter is off, then the lever to FLIGHT over 10 s.
       if (p.released > 0 && flight < 0 && t > p.released + 10) flight = t;
-      if (flight > 0) lever(r.c, 1, Math.min(1, LEVER.idle + (1 - LEVER.idle) * (t - flight) / 10));
+      if (flight > 0) lever(r.c, 1, Math.min(1, LEVER.idle + (1 - LEVER.idle) * (t - flight) / ramp));
       if (p.engaged > 0 && nrAtEngage === 0) { n2AtEngage = g.n2[1]; nrAtEngage = g.nr; }
       nr.push([t, g.nr]);
     });
     const g = gauges(r);
-    // The engagement: NR from 2 s before to 2 s after, against NR before the start.
-    const window = nr.filter(([t]) => Math.abs(t - phase.engaged) <= 2).map(([, v]) => v);
-    const transient = Math.max(...window.map((v) => Math.abs(v - nr0)));
-    // The whole run: with two engines sharing the load each governor droops less, so NR settles higher (the pilot beeps
-    // it back, FM 4-16); reported, not part of the engagement row.
+    // The transient: NR's excursion beyond its level before the start (below it) and its settled level 10 s after the
+    // lever reaches FLIGHT (above it). With two engines sharing the load each governor droops less, so NR settles a
+    // little higher: that shift is reported and bounded separately (the pilot beeps it back, FM 4-16).
+    const win = nr.filter(([t]) => t <= flight + ramp + 10);
+    const v1 = win[win.length - 1][1];
     const all = nr.map(([, v]) => v);
-    report.T8 = { nr0, transientPct: transient, nrRange: [Math.min(...all), Math.max(...all)], ...phase, flight, n2AtEngage, nrAtEngage,
-      end: { tq: g.tq, n1: g.n1, nr: g.nr, split: g.split, n1SplitLight: g.n1SplitLight } };
-    expect(phase.engaged).toBeGreaterThan(phase.released);
+    const transient = Math.max(Math.max(...win.map(([, v]) => v)) - Math.max(v1, nr0), Math.min(v1, nr0) - Math.min(...win.map(([, v]) => v)));
+    const v0 = nr0;
+    report.T8 = { nr0, transientPct: transient, settledShiftPct: v1 - v0, nrRange: [Math.min(...all), Math.max(...all)], ...phase,
+      flight, n2AtEngage, nrAtEngage, end: { tq: g.tq, n1: g.n1, nr: g.nr, split: g.split, n1SplitLight: g.n1SplitLight } };
+    expect(phase.engaged).toBeGreaterThan(flight);
     expect(Math.abs(n2AtEngage - nrAtEngage)).toBeLessThanOrEqual(1);
     expect(transient).toBeLessThanOrEqual(0.5);
-    expect(Math.max(...all) - nr0).toBeLessThanOrEqual(1); expect(nr0 - Math.min(...all)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(v1 - v0)).toBeLessThanOrEqual(1);
     expect(g.split).toEqual([false, false]);
     expect(Math.abs(g.tq[0] - g.tq[1])).toBeLessThanOrEqual(5);
   }, 60_000);
@@ -198,7 +207,7 @@ describe('engine starts and the run-up (T8, T14, T15)', () => {
     expect(splitMax).toBeLessThanOrEqual(5);
   }, 60_000);
 
-  it.fails('T15 KNOWN GAP: NR 60 -> 98 % takes 10-20 s (NR follows the levers: 98 % about 4.4 s after they start to move)', () => {
+  it.fails('T15 KNOWN GAP: NR 60 -> 98 % takes 10-20 s. NR follows the levers through the PLA schedule (N1 tracks the lever): a 5 s ramp gives 98 % at 4.4 s, a 12 s ramp about 12 s; the 10-20 s ESTIMATE implies acceleration limiting in the fuel control (accelFuel, BO\'s engine data)', () => {
     const r = bothIdle();
     let t98 = -1;
     run(r, 30, (t) => {
