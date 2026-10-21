@@ -2,16 +2,16 @@
 // roll/flap mode of the REAL definition against AGARD AR-280 (Tables 6.2.8-6.2.13, P; tests/rotorcraft/ar280.ts) and
 // LS-178 (P), under the section 4 fitting rule (harmonic inflow ON, nu 1.10-1.12, polar inertia 850-950 kg m^2; the knobs
 // are controlPhase and the inertia; known misses are reported as it.fails, never fitted). Control derivatives are per %
-// of FULL travel (an assumption, docs/bo105-flight-model.md). The hover handling rows are ESTIMATE (no Bo 105 hover
-// derivatives in the sources used: Fu & Kaletka JAHS 1993 and DTIC ADA216828 exist and were not obtained); owner
-// judgement overrides. BO105_TRACE=<dir> writes bo105Derivatives.json.
+// of FULL travel (an assumption, docs/bo105-flight-model.md). The hover rows are against the flight-identified Bo 105
+// hover (P: Kaletka & Gimonet, ERF 1995 VII-7, Table 1 and Fig 13; ar280.ts ERF1995_HOVER) under the same envelope rule;
+// owner judgement overrides. BO105_TRACE=<dir> writes bo105Derivatives.json.
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, FT, KT, v3 } from '../../src/core/math';
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import type { HingelessHub } from '../../src/physics/rotorcraft/definition';
 import { matrixPencil } from '../../src/physics/identification/matrixPencil';
-import { AR280_AFDD, AR280_DLR, AR280_MODES, COLUMN, LS178_ROLL_FLAP, derivative, eigenvalues, envelope, linearModel, modes,
-  type DerivativeName } from './ar280';
+import { AR280_AFDD, AR280_DLR, AR280_MODES, COLUMN, ERF1995_HOVER, ERF1995_HOVER_PHUGOID, LS178_ROLL_FLAP, derivative, eigenvalues,
+  envelope, hoverEnvelope, linearModel, modes, type DerivativeName, type Erf1995HoverName } from './ar280';
 import { AR280_INERTIA, DT, d, def, quasiStaticDerivatives, rig, trimBody, writeTrace, type Derivatives } from './bo105Rig';
 
 const report: Record<string, unknown> = {};
@@ -173,32 +173,63 @@ describe('R20 on the real Bo 105: the coupled body-roll / rotor-flap mode (P AGA
   });
 });
 
-describe('hover handling, 2200 kg IGE (3 ft skids), SL (ESTIMATE bands, plan 6.2: hingeless control power and damping "constant throughout the flight speed range", P BK117-ERF7; owner judgement overrides)', () => {
+/**
+ * The hover rows against the FLIGHT-IDENTIFIED Bo 105 hover (P: Kaletka & Gimonet, ERF 1995 VII-7 Table 1, the DLR and
+ * CERT 6 DOF columns; tests/rotorcraft/ar280.ts ERF1995_HOVER) with the AR-280 envelope rule [min x 0.7, max x 1.3]. These
+ * replace the plan 6.2 ESTIMATE bands (L_lat 0.13-0.24, M_lon 0.065-0.12, Lp -6..-10): re-sourced, not loosened; each row
+ * title carries the old band where there was one. Known misses are it.fails rows (docs/bo105-flight-model.md section 5,
+ * KNOWN_ISSUES 3 / 17 / 20). The control derivatives are per % of full travel, as at 80 kt.
+ */
+describe('hover handling, 2200 kg IGE (3 ft skids), SL, against the flight-identified hover (P ERF 1995 VII-7 Table 1, DLR / CERT 6 DOF, x0.7 / x1.3)', () => {
   const hoverRig = () => quasiStaticDerivatives(rig(2200, { kt: 0, height: d.skids.z + 3 * FT }));
   const ige = (() => { let x: Derivatives | undefined; return () => (x ??= hoverRig()); })();
-  it('L_lat 0.13-0.24 rad/s^2 per % and M_lon 0.065-0.12 per %', () => {
+  const hoverValue = (name: Erf1995HoverName): number => {
+    const r = ige().rows;
+    const at: Record<Erf1995HoverName, number> = { Lp: r.L[COLUMN.p], Lq: r.L[COLUMN.q], Mq: r.M[COLUMN.q], Mu: r.M[COLUMN.u],
+      Mp: r.M[COLUMN.p], Mw: r.M[COLUMN.w], Nv: r.N[COLUMN.v], Nr: r.N[COLUMN.r], Zw: r.Z[COLUMN.w], Llat: r.L[COLUMN.lat],
+      Mlon: r.M[COLUMN.lon], Nped: r.N[COLUMN.ped], Zcol: r.Z[COLUMN.col] };
+    return at[name];
+  };
+  /**
+   * KNOWN HOVER MISSES (reported, not fitted; docs section 5):
+   *  - Mq, Mu (ROTOR/INFLOW): the harmonic inflow's moment feedback (L22 / L33) raises Mq and the L31 wake-skew gradient
+   *    doubles Mu on the stiff hub; inertia, nu and the control phase are pinned by the 80 kt fit (no per-definition
+   *    knob). The excess puts the sim on the fast side of the identified hover phugoid band.
+   *  - Mp (ROTOR/INFLOW, at the edge): -0.76 against the -0.774 edge, 1.5 % outside.
+   *  - Mw (sign; the stabiliser / fuselage ESTIMATEs): about 0 in the hover against +0.051 / +0.059.
+   *  - Nv (hover weathercock; the tail-rotor / fin ESTIMATEs): about 0 against +0.096 / +0.066.
+   *  - Nr: see the yaw-damping row (KNOWN_ISSUES 20).
+   */
+  const HOVER_MISS: Partial<Record<Erf1995HoverName, string>> = { Mq: 'ROTOR/INFLOW', Mu: 'ROTOR/INFLOW', Mp: 'ROTOR/INFLOW, at the edge',
+    Mw: 'sign; stabiliser / fuselage ESTIMATEs', Nv: 'hover weathercock; tail rotor / fin ESTIMATEs', Nr: 'hover yaw damping' };
+  const OLD_BAND: Partial<Record<Erf1995HoverName, string>> = { Lp: 'was ESTIMATE -6..-10 (it.fails KNOWN HOVER-DAMPING GAP)',
+    Llat: 'was ESTIMATE 0.13-0.24', Mlon: 'was ESTIMATE 0.065-0.12' };
+  const UNIT: Record<Erf1995HoverName, string> = { Lp: '1/s', Lq: '1/s', Mq: '1/s', Mu: '1/(s m)', Mp: '1/s', Mw: '1/(s m)', Nv: '1/(s m)',
+    Nr: '1/s', Zw: '1/s', Llat: 'rad/s^2 per %', Mlon: 'rad/s^2 per %', Nped: 'rad/s^2 per %', Zcol: 'm/s^2 per %' };
+  it('prints the hover derivatives beside ERF 1995 Table 1', () => {
     const r = ige().rows;
     report.hover = { Lp: r.L[COLUMN.p], Mq: r.M[COLUMN.q], Llat: r.L[COLUMN.lat], Mlon: r.M[COLUMN.lon], rollTau: -1 / r.L[COLUMN.p] };
-    expect(r.L[COLUMN.lat]).toBeGreaterThanOrEqual(0.13); expect(r.L[COLUMN.lat]).toBeLessThanOrEqual(0.24);
-    expect(r.M[COLUMN.lon]).toBeGreaterThanOrEqual(0.065); expect(r.M[COLUMN.lon]).toBeLessThanOrEqual(0.12);
+    report.hoverErf1995 = Object.fromEntries((Object.keys(ERF1995_HOVER) as Erf1995HoverName[]).map((n) => [n,
+      { sim: hoverValue(n), band: hoverEnvelope(n), ...ERF1995_HOVER[n] }]));
+    expect(Number.isFinite(r.L[COLUMN.p])).toBe(true);
   }, 30_000);
+  for (const name of Object.keys(ERF1995_HOVER) as Erf1995HoverName[]) {
+    const [lo, hi] = hoverEnvelope(name), miss = HOVER_MISS[name], { DLR, CERT } = ERF1995_HOVER[name];
+    const title = `hover ${name} inside [${lo.toFixed(3)}, ${hi.toFixed(3)}] ${UNIT[name]} (ERF 1995 DLR ${DLR}, CERT ${CERT})${OLD_BAND[name] ? `; ${OLD_BAND[name]}` : ''}`;
+    const check = () => { const v = hoverValue(name); expect(v >= lo && v <= hi, `${name} = ${v}`).toBe(true); };
+    if (miss) it.fails(`KNOWN HOVER MISS (${miss}) — ${title}`, check, 30_000);
+    else it(title, check, 30_000);
+  }
   /**
-   * KNOWN HOVER-DAMPING GAP (ESTIMATE band): with the harmonic inflow ON the hover roll damping is about 25 % above the
-   * band's edge (RC docs section 8: in the hover the inflow gradient raises the hub's share of Lp by about 1/1.51 of the
-   * Lock number, as the quasi-steady theory predicts; at 80 kt it does not). No Bo 105 hover derivatives were obtained (Fu & Kaletka 1993 not obtained), so the
-   * band itself is an ESTIMATE; the 80 kt Lp and roll mode sit inside their AR-280 bands. One assertion, as it.fails.
+   * The hands-off hover (KNOWN_ISSUES 17, docs section 5): the 8-state hover modes with the harmonic inflow on and off,
+   * at 2200 kg IGE (3 ft) and at the in-sim hover scenario's 2500 kg, 16 m. The real Bo 105 hover is "highly unstable"
+   * (ERF 1995 flight: 45 deg of roll about 14 s after a lateral input, pilot stabilising inputs throughout); its Figure 13
+   * puts the 6 DOF phugoid in the right half-plane (ar280.ts ERF1995_HOVER_PHUGOID: sigma +0.05..+0.45, omega_d
+   * 0.3..0.8 rad/s, read off a small printed plot). The row asserts that sourced state (it was "zeta < 0" only); the sim
+   * sits on the band's fast side (doubling 2.3 s against about 2.8-3.5 s at the plot's marker centres). ADS-33E-PRF
+   * Fig 7 places both at Level 3 (sigma > 0.139 rad/s, doubling under 5 s).
    */
-  it.fails('KNOWN HOVER-DAMPING GAP — Lp -6 to -10 1/s, i.e. a roll time constant 0.1-0.2 s (-1/Lp)', () => {
-    const lp = ige().rows.L[COLUMN.p];
-    expect(lp >= -10 && lp <= -6, `Lp ${lp}, tau ${-1 / lp} s`).toBe(true);
-  }, 30_000);
-  /**
-   * The hands-off hover (KNOWN_ISSUES 17, docs section 10): the 8-state hover modes with the harmonic inflow on and off,
-   * at 2200 kg IGE (3 ft) and at the in-sim hover scenario's 2500 kg, 16 m. Reported for the owner, not fitted: no Bo 105
-   * hover source was used (a DLR hover identification exists and was not obtained). The one assertion pins the documented
-   * state (an unstable hover oscillation with the inflow on), so a change that stabilises it has to update the docs.
-   */
-  it('records the hover modes, harmonic inflow on and off (reported; the hover oscillation is unstable with the inflow on)', () => {
+  it(`records the hover modes (harmonic inflow on and off) and the unstable hover phugoid inside the identified band: sigma ${ERF1995_HOVER_PHUGOID.sigma.join('..')} rad/s, omega_d ${ERF1995_HOVER_PHUGOID.omegaD.join('..')} rad/s (P ERF 1995 Fig 13, read)`, () => {
     const off = withHub({ harmonicInflow: false });
     const at = (kg: number, height: number, dd: AircraftDefinition = def) => {
       const x = quasiStaticDerivatives(rig(kg, { kt: 0, height, def: dd }));
@@ -209,7 +240,11 @@ describe('hover handling, 2200 kg IGE (3 ft skids), SL (ESTIMATE bands, plan 6.2
     const igeHeight = d.skids.z + 3 * FT, scenarioHeight = d.skids.z + 16;
     const ige2200 = { inflowOn: at(2200, igeHeight), inflowOff: at(2200, igeHeight, off) };
     report.hoverModes = { ige2200, scenario2500at16m: { inflowOn: at(2500, scenarioHeight), inflowOff: at(2500, scenarioHeight, off) } };
-    expect(Number.isFinite(ige2200.inflowOn.Mu) && Number.isFinite(ige2200.inflowOn.Lv)).toBe(true);
-    expect(ige2200.inflowOn.hoverOscillation.zeta).toBeLessThan(0);
+    const o = ige2200.inflowOn.hoverOscillation, sigma = -o.zeta * o.omega, omegaD = o.omega * Math.sqrt(1 - o.zeta ** 2);
+    report.hoverPhugoid = { sigma, omegaD, timeToDouble: Math.LN2 / sigma, period: 2 * Math.PI / omegaD, band: ERF1995_HOVER_PHUGOID,
+      adsLevel3: sigma > 0.139 };
+    expect(o.zeta).toBeLessThan(0);
+    expect(sigma).toBeGreaterThanOrEqual(ERF1995_HOVER_PHUGOID.sigma[0]); expect(sigma).toBeLessThanOrEqual(ERF1995_HOVER_PHUGOID.sigma[1]);
+    expect(omegaD).toBeGreaterThanOrEqual(ERF1995_HOVER_PHUGOID.omegaD[0]); expect(omegaD).toBeLessThanOrEqual(ERF1995_HOVER_PHUGOID.omegaD[1]);
   }, 120_000);
 });

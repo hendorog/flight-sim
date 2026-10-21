@@ -272,3 +272,33 @@ export function respond(k: Ar280Set, control: 'col' | 'lon' | 'lat' | 'ped', per
   }
   return { pDot: accel[5], qDot: accel[2], rDot: accel[6], at: out };
 }
+
+// ---- Bo 105 HOVER (P): Kaletka, J., Gimonet, B., "Identification of extended models from BO 105 flight test data for
+// hover flight condition", 21st European Rotorcraft Forum, St Petersburg 1995, paper VII-7, Table 1 ("major derivatives
+// for BO 105 in hover"), the 6 DOF columns of DLR (time domain) and CERT/ONERA (frequency domain). Same form and units as
+// the AR-280 sets above: speed derivatives per m/s, rate derivatives per rad/s, the controls per % of travel (the same
+// "% of full travel" reading, docs/bo105-flight-model.md). The flight: "In hover and low speed flight condition the
+// BO 105 helicopter has stronger coupled DOF and is highly unstable"; "all hover flight tests were flown with additional
+// stabilizing pilot inputs" (pp 2-3). The identified Xu / Yv (-0.345 / -0.131) are an order above any model's and carry
+// the paper's own caveat on the hover velocity reconstruction: not used.
+export type Erf1995HoverName = 'Lp' | 'Lq' | 'Mq' | 'Mu' | 'Mp' | 'Mw' | 'Nv' | 'Nr' | 'Zw' | 'Llat' | 'Mlon' | 'Nped' | 'Zcol';
+export const ERF1995_HOVER: Record<Erf1995HoverName, { DLR: number; CERT: number }> = {
+  Lp: { DLR: -8.54, CERT: -10.89 }, Lq: { DLR: 2.42, CERT: 2.38 }, Mq: { DLR: -2.32, CERT: -1.79 },
+  Mu: { DLR: 0.0431, CERT: 0.0583 }, Mp: { DLR: -1.105, CERT: -1.9 }, Mw: { DLR: 0.051, CERT: 0.059 },
+  Nv: { DLR: 0.096, CERT: 0.066 }, Nr: { DLR: -0.974, CERT: -1.10 }, Zw: { DLR: -0.295, CERT: -0.251 },
+  Llat: { DLR: 0.171, CERT: 0.196 }, Mlon: { DLR: 0.0719, CERT: 0.0724 }, Nped: { DLR: 0.0477, CERT: 0.0474 },
+  Zcol: { DLR: -0.238, CERT: -0.23 },
+};
+/** The AR-280 envelope rule applied to the ERF 1995 hover pair: [min x 0.7, max x 1.3] in magnitude. */
+export function hoverEnvelope(name: Erf1995HoverName): [number, number] {
+  const { DLR: a, CERT: b } = ERF1995_HOVER[name];
+  const lo = Math.min(Math.abs(a), Math.abs(b)) * 0.7, hi = Math.max(Math.abs(a), Math.abs(b)) * 1.3;
+  return a > 0 ? [lo, hi] : [-hi, -lo];
+}
+/**
+ * The hover phugoid of ERF 1995 Figure 13 (6 DOF panel, DLR and CERT both in the right half-plane), read off the printed
+ * plot (72 px per rad/s in the zoomed scan): the markers' centres at sigma about +0.20..+0.25 rad/s, omega_d 0.50..0.55
+ * (doubling 2.8-3.5 s, period 11-13 s); the markers' width spans sigma +0.1..+0.4, omega_d 0.4..0.7. The row's band is
+ * that span widened by one marker width: a READ value, not a printed number.
+ */
+export const ERF1995_HOVER_PHUGOID = { sigma: [0.05, 0.45], omegaD: [0.3, 0.8] } as const;
