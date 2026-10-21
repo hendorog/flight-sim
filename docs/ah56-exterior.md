@@ -27,12 +27,14 @@ wheels and the gyro from the contract files, so nothing here changes when AG, AC
   helicopter fittings (boom, mast cowl, **skids**) and their static shadow, hides the generic tail rotor (it has the
   stub's blade count) and adds the parts below. It reads the whole rotorcraft state through `readRotorcraft`.
 - `exteriorDetails.ts`: transmission fairing and T64 cowl with louvres, static mast, the two bell-mouth intakes and the
-  exhaust nozzle, sponsons with their fillets, the wing (NACA 4-digit, 12 % → 8 %, light camber for the trailing-edge
+  exhaust nozzle, the sponsons (flat-topped shelves faired into the body side by a fillet, one closed super-elliptic
+  shell each, `sponsonGeometry`), the wing (NACA 4-digit, 12 % → 8 %, light camber for the trailing-edge
   extension, tip fairings), the walkway over the right sponson, the ventral fin with the tail-wheel housing at its lower
-  end, the stabiliser (plain right panel, **bobtailed left** panel) and the tail-rotor gearbox at the left tip, canopy
-  bows, sills and the centreline **butterfly hinge line** with hinge blocks, the gunner's sight head, boarding step,
+  end, the stabiliser (plain right panel, **bobtailed left** panel) and the tail-rotor gearbox at the left tip, the canopy
+  frames as flat painted strips (`frameStrip`: windscreen arch, end bows and sills 3 in wide, intermediate bows, the raked
+  windscreen posts and the centreline **butterfly hinge line** 2.5 in, 1/2 in proud of the glass) with hinge blocks, the gunner's sight head, boarding step,
   antennas, pitots, and the **markings** (decals).
-- `exteriorWeapons.ts`: XM51 nose turret (40 mm XM129), XM52 belly turret (30 mm XM140) at FS 190, four wing pylons at
+- `exteriorWeapons.ts`: XM51 nose turret (40 mm XM129; the launcher's muzzle 0.14 m proud of the ball, XM51 drawing), XM52 belly turret (30 mm XM140) at FS 190, four wing pylons at
   BL 70 / 117, one TOW launcher on each inboard pylon (the default "TOW pair").
 - `exteriorGear.ts`: the retractable tail-wheel gear, posed from `state.gear.extension`, `wheels[i].compression`,
   `.rotation` and `.steerAngle` (castering). Its own meshes: the fixed-wing wheel and leg renderers are not used.
@@ -129,7 +131,8 @@ choice stays inside the 2 % band; it does not validate it.
 ## Gear
 
 Mains: a trunnion inside each sponson (FS 281, WL 69), the oleo inboard of its wheel, torque links, drag brace; the
-leg swings forward and up through 98°; the stowed tyre lies within 1.5 in of the sponson envelope (test). Tail wheel: a
+leg swings forward and up through 98°; the stowed tyre lies within 1.5 in of the sponson envelope (the shelf's
+super-ellipse without its fillet, `sponsonExcessIn`; test). Tail wheel: a
 strut from a pivot in the fin's lower-end housing (FS 637, WL 44), a castering yoke with a trailing fork and the lock-pin
 housing; it swings aft and up into the housing. Compression raises each wheel along its leg; the contacts in
 `visual.ts` are the free tyre contacts of the gear contract (`dimensions.ts`). No gear doors are drawn (photographs show

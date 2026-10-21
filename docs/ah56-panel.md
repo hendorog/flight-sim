@@ -1,7 +1,8 @@
 # Lockheed AH-56A Cheyenne rear-seat panel, UI, checklists, training (package PN)
 
 **The panel is an AGENT reconstruction and UNVERIFIED.** No photograph or drawing of the rear (pilot) panel is in the sources
-(research-ah56.md section 12, gap section 16). The panel says so on its face. What the reports state is used: rectangular vertical-tape
+(research-ah56.md section 12, gap section 16). The hints say so ("Rear panel"); the panel face carries no such note (gate-0 look review: a
+developer note does not belong on a simulated placard). What the reports state is used: rectangular vertical-tape
 gauges for torque, TIT, Ng, Nf and Nr that the Army found small and hard to read (ASTA-72 para 73e); the collective blade angle and the prop
 blade angle read out in degrees (SoF; ASTA-72 App H p 87); an accelerometer recommended (APE-I para 134f); MASTER CAUTION in both cockpits
 with a small caution panel (APE-I para 134j); triple hydraulics (1, 1A, 2); the gear handle, the tail-wheel lock lever and the ICS "roll
@@ -24,6 +25,7 @@ Canvas 1488 x 960 (frozen `AH56_PANEL_*`; the tape stack of the frozen `AH56_TAP
 | Centre top | MASTER CAUTION and seven lenses: LOW FUEL, XMSN OIL PRESS, ENG OIL PRESS, TIT HIGH, NR LOW, GEAR UNSAFE, TORQUE HIGH, LAMP TEST | AGENT legends |
 | Centre | four tapes: **torque** (green 0-114 %, red above; 100 % = 3435 shp = 1799 N m at 13,600 rpm), **TIT** (green 300-740, yellow 740-780, red from 785, radial 740, blue 720 "record time above"), **Ng** (radial 58, green 63-100, yellow to 101.5, red above), **Nf / Nr** (two bars; the Nf strip left of the F bar follows the configuration: ICS yellow 95-98, green 98-105 (P ASTA-72 SoF para 5, 1972); AMCS green 95-105 (ESTIMATE: the AMCS-73 power-on band, so the AMCS normal 97.5 % reads green); the Nr strip right of the R bar green 95-105, radials 85, 95, 105, 110) | P ASTA-72 SoF para 5; AMCS-73; APE-I SoF 1.1; AMCS Nf band ESTIMATE |
 | Centre bottom | control-system placard: AMCS (default) or ICS from `controlGyro.mode`; in the ICS the two augmentation buttons ROLL COMP and PITCH DESENS are drawn engaged and "STIRS > 0.5 Hz PROHIBITED" is placarded; in the AMCS "STICK RELEASED = ATTITUDE HELD" | P ASTA-72 paras 71-72, SoF 4h(2); AGENT |
+| Right, middle | ENGINE (APU RUN / OFF / START at OFF, NF GOV NORM / ALTERNATE at NORM, ABORT STOP red button under a closed guard), ROTOR (ROTOR BRAKE pull handle at OFF, DIR TRIM L / OFF / R at OFF), HYDRAULIC 1, 1A, 2 at ON: drawn inert in their normal positions, no hotspot (`Ah56InertControls`) | named in ASTA-72 App B / SoF, APE-I SoF 1.1; legends and positions AGENT |
 | Right | gear handle with its lights (the tail wheel in the first lamp, legend TAIL), tail-wheel lock lever (LOCKED / UNLOCKED on `tailWheelLock`), ignition + START group, switches BAT, GEN, BOOST PUMP, ANTI-COLL, POS LT, LDG LT, PNL LT | P APE-I 134a; order ESTIMATE |
 
 Power: the tape BARS are self-powered (torque transducer, thermocouple, tach generators) and stay live without the bus; every seven-segment
@@ -44,7 +46,7 @@ TIT HIGH over 740 C (P); NR LOW under 95 % with Ng over 90 % (the power-on minim
 ## Fixed 2-D view
 
 Upper: the basic T, the clock, the two blade-angle indicators, the whole tape stack as one crop, the g-meter, fuel and the two oil gauges, and the lenses in a column.
-Lower: gear handle and lights, tail-wheel lever, hydraulics, the control-system placard, the starter group and the switches. Every hotspot is reachable at the five window sizes.
+Lower: gear handle and lights, tail-wheel lever, hydraulics, the control-system placard, the starter group, the switches and the inert ENGINE / ROTOR / HYDRAULIC group. Every hotspot is reachable at the five window sizes.
 
 ## Compromises (KNOWN_ISSUES rows for the integrator)
 
@@ -52,7 +54,7 @@ Lower: gear handle and lights, tail-wheel lever, hydraulics, the control-system 
 2. **ASI markings are ESTIMATE**: the sources give no ASI marking; Vne 195 KCAS is INF.
 3. **No hydraulic model**: the three bars indicate 3000 psi while the rotor turns and zero when it is stopped (ESTIMATE).
 4. **The ICS buttons are drawn engaged and are not switches**: the sim has no `ControlInputs` field for the roll compensator or the pitch desensitizer (they run whenever the ICS flies). Contract request below.
-5. **The APU, the abort-stop button, the rotor brake, the directional trim switch and the Nf ALTERNATE switch are not drawn** (no controls modelled).
+5. **The APU, the abort-stop button, the rotor brake, the directional trim switch, the Nf ALTERNATE switch and the hydraulic 1 / 1A / 2 switches are drawn but not modelled**: static art in their normal in-flight positions, no hotspot (no `ControlInputs` behind them). AGENT choice, said in the "Rear panel" hint.
 6. **Transmission oil temperature / pressure and engine oil** read the shared `transmission` block and the engine's oil model; until AG publishes them the gauges and the lenses read what the scaffold gives.
 7. **The tail wheel is gear lamp 1** (the shared `GearState` keeps the "nose" slot): the lamp is lettered TAIL.
 8. **Dots / marks** are radials and thin bands; the shared renderers have no dot primitive.

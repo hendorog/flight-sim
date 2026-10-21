@@ -25,7 +25,7 @@ import { frd, gridGeometry, MeshBatch } from '../../render/aircraft/geometry';
 import { box, tube } from '../../render/aircraft/rotorcraft/geometry';
 import * as D from './dimensions';
 import { AH56_MASS_LB, AH56_NR_100, AH56_PROP_RATIO, AH56_TAIL_RATIO } from './facts';
-import { SPINNER, TAIL_PAINT, fs, wl } from './visual';
+import { SPINNER, TAIL_BLUR_ALPHA, TAIL_PAINT, fs, wl } from './visual';
 import { ellipsoid, fitRod, nacaThickness, revolve, type AH56Materials } from './exteriorGeometry';
 
 /** Blade section t/c: (4.6)3012 mod at the root to (0.6)3006 mod at the tip (P research-ah56 section 5). */
@@ -306,7 +306,8 @@ export class AH56TailRotor {
   constructor(m: AH56Materials) {
     // The 'articulated' branch of TeeteringRotor builds only its own placeholder hub; no aircraft materials are read.
     this.rotor = new TeeteringRotor({ radius: D.TAIL_ROTOR_RADIUS, root: 0.20, chord: [D.TAIL_ROTOR_CHORD, D.TAIL_ROTOR_CHORD], twist: 0, tail: true,
-      blades: D.TAIL_ROTOR_BLADES, rotation: -1, hubType: 'articulated', paint: TAIL_PAINT }, {} as AircraftMaterials);
+      blades: D.TAIL_ROTOR_BLADES, rotation: -1, hubType: 'articulated', paint: TAIL_PAINT, blurAlpha: TAIL_BLUR_ALPHA },
+      {} as AircraftMaterials);
     const r = this.rotor;
     r.group.name = 'ah56TailRotor';
     for (const child of r.spin.children) if (child !== r.blades && child !== r.trail.mesh) child.visible = false;

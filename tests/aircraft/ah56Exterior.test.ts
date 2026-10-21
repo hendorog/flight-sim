@@ -5,7 +5,7 @@
 // (D), and no mesh below the tyre contact plane except the tyres.
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { AH56_VISUAL as def, CANOPY_BOWS, LOFT, LOFT_END_FS, SPINNER, SPONSON, STABILISER, VENTRAL_FIN, WING_PLAN, fs, fsOf, wl }
+import { AH56_VISUAL as def, CANOPY_BOWS, LOFT, LOFT_END_FS, SPINNER, STABILISER, VENTRAL_FIN, WING_PLAN, fs, fsOf, sponsonExcessIn, wl }
   from '../../src/aircraft/ah56/visual';
 import { AH56_ROTORCRAFT } from '../../src/aircraft/ah56/rotorcraft';
 import { AH56_PANEL } from '../../src/aircraft/ah56/panel';
@@ -15,8 +15,8 @@ import { AH56MainRotor, AH56Pusher, GYRO, GYRO_DRAW_LIMIT, MAIN_SECTION, PUSHER_
   from '../../src/aircraft/ah56/exteriorRotor';
 import { AH56Gear, MAIN_RETRACT } from '../../src/aircraft/ah56/exteriorGear';
 import { BELLY_TURRET } from '../../src/aircraft/ah56/exteriorWeapons';
-import { finChordAt, stabChord, wingChord } from '../../src/aircraft/ah56/exteriorDetails';
-import { aerofoilPanel, ah56Materials, revolve } from '../../src/aircraft/ah56/exteriorGeometry';
+import { finChordAt, sponsonGeometry, stabChord, wingChord } from '../../src/aircraft/ah56/exteriorDetails';
+import { aerofoilPanel, ah56Materials } from '../../src/aircraft/ah56/exteriorGeometry';
 import * as D from '../../src/aircraft/ah56/dimensions';
 import { AH56_PANEL_CANVAS, AH56_PANEL_FACE } from '../../src/aircraft/ah56/panelLayout';
 import { AH56_PROP_RATIO } from '../../src/aircraft/ah56/facts';
@@ -32,6 +32,8 @@ import { panelUvBasis } from '../../src/instruments/panelProjection';
 import { blankDocument, fakeContext, fakeMaterials, nonFinite } from './meshChecks';
 
 const IN = 0.0254, FT = 0.3048, DEG = Math.PI / 180;
+/** Body z (m) back to the water line, in. */
+const wlOf = (z: number): number => D.WL_CG - z / IN;
 const Visual = ah56ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth, ctx => ctx.state.rotorcraft);
 type V = InstanceType<typeof Visual> & { head: AH56MainRotor; pusher: AH56Pusher; gear: AH56Gear; tailRotor: { rotor: TeeteringRotor } };
 /** FRD point of a three.js model-space vector. */
@@ -305,11 +307,11 @@ describe('AH-56A exterior', () => {
     const state = { gear: { extension: [0, 0, 0] as [number, number, number] },
       wheels: [0, 1, 2].map(() => ({ compression: 0, rotation: 0, steerAngle: 0 })) } as never as Parameters<AH56Gear['update']>[0];
     gear.update(state); root.updateMatrixWorld(true);
-    // Mains: every tyre vertex inside the sponson envelope (its axis BL 35, WL 70, radius 12.5 in) within 1.5 in.
+    // Mains: every tyre vertex inside the sponson envelope (the shelf's super-ellipse, fillet ignored) within 1.5 in.
     for (const leg of gear.legs.slice(1)) {
       for (const p of vertices(leg.wheel, [], x => x.name === 'ah56Tyre', root)) {
-        const out = Math.hypot(Math.abs(p[1]) - SPONSON.bl * IN, p[2] - wl(SPONSON.wl)) - 12.5 * IN;
-        expect(out).toBeLessThan(1.5 * IN);
+        const out = sponsonExcessIn(fsOf(p[0]), Math.abs(p[1]) / IN, wlOf(p[2]));
+        expect(out).toBeLessThan(1.5);
         expect(fsOf(p[0])).toBeGreaterThan(195); expect(fsOf(p[0])).toBeLessThan(330);
       }
       expect(leg.pivot.rotation.x).toBeCloseTo(MAIN_RETRACT, 12);
@@ -489,7 +491,7 @@ describe('AH-56A exterior', () => {
     shells.push(['fin', aerofoilPanel([fs(rl[0]), 0, wl(rl[1])], [fs(rt[0]), 0, wl(rt[1])], [fs(tl[0]), 0, wl(tl[1])], [fs(tt[0]), 0, wl(tt[1])], [0, 1, 0], 0.18, 0.15)]);
     const s0 = stabChord(0), s1 = stabChord(STABILISER.right.tipBl);
     shells.push(['stabiliser', aerofoilPanel(s0.le, s0.te, s1.le, s1.te, [0.035, 0, -1], 0.18, 0.12)]);
-    shells.push(['sponson', revolve(SPONSON.profile.map(([s, r]) => [fs(s), r * IN] as const), 0.9, wl(70), 40)]);
+    for (const side of [-1, 1]) shells.push([`sponson ${side}`, sponsonGeometry(side)]);
     for (const [name, g] of shells) {
       const f = outwardFraction(g);
       expect(f.winding, `${name} winding`).toBeGreaterThan(0.95);

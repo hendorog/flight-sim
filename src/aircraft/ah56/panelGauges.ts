@@ -12,7 +12,7 @@ import { LABEL_FONT, type Ctx2D } from '../../instruments/render/canvas';
 import { Latch, LIGHT_DIAL, LIGHT_DISPLAY, type PanelComponent, type Rect } from '../../instruments/render/component';
 import { drawSegments } from '../../instruments/render/sevenSegment';
 import type { AngleSpec, TapeBand, TapeSpec } from './panelMarkings';
-import { AH56_HYDRAULIC as HYD } from './panelMarkings';
+import { AH56_HYDRAULIC as HYD, AH56_INERT_CONTROLS, type Ah56InertControl } from './panelMarkings';
 
 const BODY = '#0d0e0f';
 const BAR = '#d9d7cc';
@@ -274,4 +274,79 @@ export class Ah56GyroPlacard implements PanelComponent {
     g.fillStyle = LIGHT_DIAL; g.fillRect(b.x + 3, b.y + 3, b.w - 6, b.h - 6);
     g.fillStyle = LIGHT_DISPLAY; g.fillRect(b.x + 10, b.y + 24, b.w - 20, 40);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Engine, rotor and hydraulic controls drawn without a model behind them
+
+/**
+ * The APU, Nf ALTERNATE, abort-stop, rotor brake, directional trim and hydraulic 1 / 1A / 2 controls (panelMarkings.ts
+ * AH56_INERT_CONTROLS), painted once as static art in their normal in-flight positions. No hotspot: the sim models none of them.
+ */
+export class Ah56InertControls implements PanelComponent {
+  constructor(readonly id: string, readonly bounds: Rect) {}
+  sample(): boolean { return false; }
+  draw(): void { /* static art only */ }
+  /** Column centres of the groups, in panel px: each group gets a share of the width by its item count. */
+  private layout(): { title: string; x0: number; x1: number; items: { item: Ah56InertControl; cx: number }[] }[] {
+    const b = this.bounds, total = AH56_INERT_CONTROLS.reduce((n, gr) => n + gr.items.length, 0), pitch = (b.w - 24) / total;
+    let x = b.x + 12;
+    return AH56_INERT_CONTROLS.map(gr => {
+      const x0 = x, items = gr.items.map((item, i) => ({ item, cx: x0 + pitch * (i + 0.5) }));
+      x += pitch * gr.items.length;
+      return { title: gr.title, x0, x1: x, items };
+    });
+  }
+  drawStatic(g: Ctx2D): void {
+    const b = this.bounds, cy = b.y + 118;
+    plate(g, b);
+    for (const [k, gr] of this.layout().entries()) {
+      text(g, gr.title, (gr.x0 + gr.x1) / 2, b.y + 14, 9);
+      g.strokeStyle = 'rgba(241,240,232,0.45)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(gr.x0 + 6, b.y + 24); g.lineTo(gr.x1 - 6, b.y + 24); g.stroke();
+      if (k > 0) { g.beginPath(); g.moveTo(gr.x0, b.y + 10); g.lineTo(gr.x0, b.y + b.h - 10); g.stroke(); }
+      for (const { item, cx } of gr.items) this.control(g, item, cx, cy);
+    }
+  }
+  private control(g: Ctx2D, c: Ah56InertControl, cx: number, cy: number): void {
+    const b = this.bounds;
+    text(g, c.label, cx, b.y + 42, 8.5);
+    if (c.kind === 'toggle') {
+      // Legends from top to bottom; the bat points at the shown one (up, centre or down).
+      // A centre position is drawn as the bat seen end-on (a larger knob on the nut).
+      const n = c.positions.length, span = 46;
+      c.positions.forEach((pos, i) => {
+        const y = cy - span + (n === 1 ? 0 : i * 2 * span / (n - 1));
+        // A middle legend sits beside the nut, clear of the bat.
+        if (Math.abs(y - cy) < 1) text(g, pos, cx + 17, cy, 7.5, 'left', INK, 500); else text(g, pos, cx, y, 7.5, 'center', INK, 500);
+      });
+      const dir = n === 1 ? 0 : (c.shown / (n - 1)) * 2 - 1, centre = Math.abs(dir) < 0.01;
+      g.fillStyle = '#9a9c98'; g.beginPath(); g.arc(cx, cy, 12, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#3a3c3d'; g.beginPath(); g.arc(cx, cy, 8, 0, Math.PI * 2); g.fill();
+      if (centre) { g.fillStyle = '#e4e5e0'; g.beginPath(); g.arc(cx, cy, 6.5, 0, Math.PI * 2); g.fill(); }
+      else {
+        const tip = cy + dir * 28;
+        g.strokeStyle = '#d8d9d4'; g.lineWidth = 7; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, tip); g.stroke();
+        g.fillStyle = '#eeeeea'; g.beginPath(); g.arc(cx, tip, 5.5, 0, Math.PI * 2); g.fill();
+      }
+    } else if (c.kind === 'guarded') {
+      // A red button under a closed yellow-and-black striped guard.
+      g.fillStyle = '#7a1d18'; g.beginPath(); g.arc(cx, cy, 13, 0, Math.PI * 2); g.fill();
+      g.save(); g.beginPath(); g.roundRect(cx - 19, cy - 19, 38, 38, 5); g.clip();
+      for (let k = -4; k <= 4; k++) { g.fillStyle = k % 2 === 0 ? '#d9b52a' : '#151515'; g.beginPath();
+        g.moveTo(cx - 19 + k * 9, cy - 19); g.lineTo(cx - 10 + k * 9, cy - 19); g.lineTo(cx - 10 + k * 9 + 38, cy + 19); g.lineTo(cx - 19 + k * 9 + 38, cy + 19); g.fill(); }
+      g.restore();
+      g.fillStyle = 'rgba(160,40,30,0.55)'; g.beginPath(); g.arc(cx, cy, 10, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#0b0b0b'; g.lineWidth = 2; g.strokeRect(cx - 19, cy - 19, 38, 38);
+      text(g, 'GUARD', cx, cy + 34, 7.5, 'center', INK, 500);
+    } else {
+      // Pull T-handle in its stowed (OFF) position, its legends beside it.
+      g.fillStyle = '#141516'; g.fillRect(cx - 3, cy - 6, 6, 18);
+      g.fillStyle = '#d9b52a'; g.beginPath(); g.roundRect(cx - 22, cy - 14, 44, 12, 4); g.fill();
+      g.fillStyle = '#151515'; g.font = font(7, 700); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('PULL', cx, cy - 8);
+      text(g, c.positions.join(' — '), cx, cy + 30, 7.5, 'center', INK, 500);
+    }
+  }
+  paintLightMask(g: Ctx2D): void { g.fillStyle = LIGHT_DIAL; g.fillRect(this.bounds.x + 3, this.bounds.y + 3, this.bounds.w - 6, this.bounds.h - 6); }
 }

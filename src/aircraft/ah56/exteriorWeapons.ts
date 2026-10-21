@@ -42,8 +42,10 @@ export function buildAH56Weapons(m: AH56Materials, section: AH56Section) {
     const c: FRD = [fs(NOSE_TURRET.fs), 0, wl(NOSE_TURRET.wl)], r = NOSE_TURRET.radiusIn * IN;
     add(m.paintDark, ellipsoid(c, [r, r * 0.96, r * 0.92], 32, 20));
     add(m.dark, box([c[0] + r * 0.82, 0, c[2] + 0.01], [0.05, 0.07, 0.15], 0.01));
-    add(m.dark, tube([c[0] + r * 0.6, 0, c[2] + 0.015], [c[0] + r + 0.30, 0, c[2] + 0.015], 0.032, 0.03, 16));
-    add(m.black, tube([c[0] + r + 0.30, 0, c[2] + 0.015], [c[0] + r + 0.36, 0, c[2] + 0.015], 0.036, 0.036, 16));
+    // The XM129 launcher is short: the XM51 drawing and the Rucker front view show its muzzle just proud of the ball
+    // (gate-0 look review: the earlier 0.36 m projection read as a lance ahead of the nose).
+    add(m.dark, tube([c[0] + r * 0.6, 0, c[2] + 0.015], [c[0] + r + 0.10, 0, c[2] + 0.015], 0.032, 0.03, 16));
+    add(m.black, tube([c[0] + r + 0.10, 0, c[2] + 0.015], [c[0] + r + 0.14, 0, c[2] + 0.015], 0.036, 0.036, 16));
     add(m.metal, tube([c[0] + r * 0.4, -0.05, c[2] + 0.05], [c[0] + r * 0.4, 0.05, c[2] + 0.05], 0.022, 0.022, 12));
   }
 

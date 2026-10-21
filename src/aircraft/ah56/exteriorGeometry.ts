@@ -194,3 +194,38 @@ export function decalMaterial(name: string, map: THREE.Texture): THREE.MeshStand
   return new THREE.MeshStandardMaterial({ name: `ah56${name}`, map, transparent: true, alphaTest: 0.05, roughness: 0.6,
     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
 }
+
+/**
+ * A flat frame strip along `path` (FRD points on the skin): `width` across the path in the skin's tangent plane, standing
+ * `thickness` off the skin along the outward normal, which is taken from the loft axis (body x, centreline, `axisZ(x)`)
+ * through each point. A closed rectangular section, open at the two ends; faces outward.
+ */
+export function frameStrip(path: readonly FRD[], axisZ: (x: number) => number, width: number, thickness: number): THREE.BufferGeometry {
+  const n = path.length, pos: number[] = [], index: number[] = [];
+  const p = (i: number) => frd(...path[i]);
+  const t = new THREE.Vector3(), out = new THREE.Vector3(), w = new THREE.Vector3(), axis = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    t.subVectors(p(Math.min(n - 1, i + 1)), p(Math.max(0, i - 1))).normalize();
+    const [x] = path[i];
+    out.subVectors(p(i), frd(x, 0, axisZ(x), axis));
+    out.addScaledVector(t, -out.dot(t)).normalize();
+    w.crossVectors(t, out).normalize().multiplyScalar(width / 2);
+    const base = p(i);
+    for (const [a, b] of [[-1, 0], [-1, 1], [1, 1], [1, 0]] as const)
+      pos.push(...base.clone().addScaledVector(w, a).addScaledVector(out, b * thickness).toArray());
+  }
+  for (let i = 0; i < n - 1; i++) for (let k = 0; k < 4; k++) {
+    const a = i * 4 + k, b = i * 4 + (k + 1) % 4, c = a + 4, d = b + 4;
+    index.push(a, c, b, b, c, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(index);
+  // Face the first top quad outward (along the skin normal); flip every triangle when it points inward.
+  const v = (i: number) => new THREE.Vector3(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]);
+  const tri = new THREE.Vector3().subVectors(v(index[7]), v(index[6])).cross(new THREE.Vector3().subVectors(v(index[8]), v(index[6])));
+  const n0 = new THREE.Vector3().subVectors(v(1), v(0));
+  if (tri.dot(n0) < 0) { for (let k = 0; k < index.length; k += 3) [index[k + 1], index[k + 2]] = [index[k + 2], index[k + 1]]; g.setIndex(index); }
+  const flat = g.toNonIndexed(); flat.computeVertexNormals(); g.dispose();
+  return flat;
+}

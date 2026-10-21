@@ -6,12 +6,12 @@
 // (docs/ah56-exterior.md). Decoration never supplies contact or aerodynamic geometry.
 import * as THREE from 'three';
 import type { AirframeVisualDef, FRD } from '../../render/aircraft/airframe/types';
-import { frd, MeshBatch } from '../../render/aircraft/geometry';
+import { frd, gridGeometry, MeshBatch } from '../../render/aircraft/geometry';
 import { box, pathTube, tube } from '../../render/aircraft/rotorcraft/geometry';
 import * as D from './dimensions';
 import { CANOPY_BOWS, EXHAUST, FRONT_SILL, INTAKE, REAR_SILL, SPONSON, STABILISER, TRANSMISSION_FAIRING, VENTRAL_FIN, WING_PLAN,
-  bl, fs, wingChordIn, wingQuarterWl, wl } from './visual';
-import { aerofoilPanel, canvasTexture, decalMaterial, ellipsoid, fairingLoft, loftBand, loftDecal, nacaThickness, revolve, ringPoint,
+  bl, fs, sponsonPoint, wingChordIn, wingQuarterWl, wl } from './visual';
+import { aerofoilPanel, canvasTexture, decalMaterial, ellipsoid, fairingLoft, frameStrip, loftBand, loftDecal, nacaThickness, revolve, ringPoint,
   skinPath, type AH56Materials, type AH56Section, type AH56SkinWidth } from './exteriorGeometry';
 
 const IN = 0.0254;
@@ -44,6 +44,21 @@ export function stabChord(b: number): { le: FRD; te: FRD } {
   const te = fs(STABILISER.teFs), le = te + c, inc = STABILISER.incidenceDeg * DEG, qc = le - c / 4, z = wl(STABILISER.wl);
   return { le: [qc + c / 4 * Math.cos(inc), bl(b), z - c / 4 * Math.sin(inc)],
     te: [qc - (0.75 * c - cut) * Math.cos(inc), bl(b), z + (0.75 * c - cut) * Math.sin(inc)] };
+}
+
+/**
+ * One sponson (side +1 right) as a closed shell: rows from the nose (FS 185) to the tail (FS 405), each the super-elliptic
+ * shelf section of visual.ts sponsonPoint (outer edge, over the filleted top, round the inner edge, under the bottom).
+ */
+export function sponsonGeometry(side: number, rows = 56, cols = 49): THREE.BufferGeometry {
+  const p = SPONSON.profile, s0 = p[0][0], s1 = p[p.length - 1][0];
+  // Rows bunched towards both ends (the nose and tail round off quickly).
+  const sAt = (i: number) => s0 + (s1 - s0) * (1 - Math.cos(Math.PI * i / (rows - 1))) / 2;
+  return gridGeometry({ rows, cols, wrap: true, flip: side < 0,
+    position(i, j, out) {
+      const [y, w] = sponsonPoint(sAt(i), -j / (cols - 1) * Math.PI * 2);
+      frd(fs(sAt(i)), side * bl(y), wl(w), out);
+    } });
 }
 
 export function buildAH56Exterior(def: AirframeVisualDef, m: AH56Materials, skin: AH56SkinWidth, section: AH56Section) {
@@ -83,10 +98,7 @@ export function buildAH56Exterior(def: AirframeVisualDef, m: AH56Materials, skin
 
   // ---------------------------------------------------------------- sponsons and the wing
   for (const side of [-1, 1]) {
-    add(m.paint, revolve(SPONSON.profile.map(([s, r]) => [fs(s), r * IN] as const), side * bl(SPONSON.bl), wl(SPONSON.wl), 40));
-    // Fillet between the sponson and the body side.
-    add(m.paint, revolve([[fs(200), 0], [fs(206), 6 * IN], [fs(225), 9 * IN], [fs(345), 9 * IN], [fs(375), 6 * IN], [fs(392), 0]],
-      side * bl(26), wl(73), 24, 1.1));
+    add(m.paint, sponsonGeometry(side));
     // The wing: NACA 4-digit (P "originally a 4-digit") at 12 % root to 8 % tip, a light camber standing in for the
     // trailing-edge extension (ESTIMATE). Tip fairing a rounded cap.
     const root = wingChord(WING_PLAN.rootBl, side), tip = wingChord(WING_PLAN.tipBl, side);
@@ -98,7 +110,7 @@ export function buildAH56Exterior(def: AirframeVisualDef, m: AH56Materials, skin
     // The walkway over the RIGHT sponson (P: entry by a walkway over the right sponson) as a dark anti-slip strip.
     if (side > 0) {
       const walk: FRD[] = [];
-      for (let s = 200; s <= 300; s += 10) walk.push([fs(s), side * bl(SPONSON.bl), wl(SPONSON.wl + 13.4)]);
+      for (let s = 210; s <= 300; s += 10) { const [y, w] = sponsonPoint(s, Math.PI / 2); walk.push([fs(s), side * bl(y), wl(w + 0.6)]); }
       add(m.dark, pathTube(walk, 0.035, 20));
     }
   }
@@ -134,33 +146,53 @@ export function buildAH56Exterior(def: AirframeVisualDef, m: AH56Materials, skin
   }
 
   // ---------------------------------------------------------------- canopy bows, sills, the butterfly hinge line
+  // Flat painted frames, not tubes (gate-0 look review against the Rucker front and Fort Campbell photographs): the windscreen
+  // arch, the bows at each canopy's ends and the sills about 3 in wide, the intermediate bows and the hinge line 2.5 in
+  // (3V ESTIMATE), standing 1/2 in proud of the glass.
   {
-    const bow = (s: number, sillWl: number, rad: number) => {
+    const axisZ = (x: number) => section(x).zMid, T = 0.012, MAIN = 3 * IN, MINOR = 2.5 * IN;
+    const strip = (path: FRD[], width: number) => { if (path.length >= 2) add(m.frame, frameStrip(path, axisZ, width, T)); };
+    const bow = (s: number, sillWl: number, width: number) => {
       const x = fs(s), zSill = wl(sillWl), right: FRD[] = [];
-      for (let k = 0; k <= 32; k++) {
-        const p = ringPoint(section, x, Math.PI - k / 32 * Math.PI * 0.62, 0.004);
+      for (let k = 0; k <= 48; k++) {
+        const p = ringPoint(section, x, Math.PI - k / 48 * Math.PI * 0.62, 0.001);
         if (p[2] > zSill + 0.005) break;
         right.push(p);
       }
-      if (right.length < 2) return;
-      const path = [...right.slice(1).reverse().map(p => [p[0], -p[1], p[2]] as FRD), ...right];
-      add(m.frame, pathTube(path, rad, 60));
+      strip([...right.slice(1).reverse().map(p => [p[0], -p[1], p[2]] as FRD), ...right], width);
     };
     const sillAt = (pts: readonly (readonly [number, number])[], s: number) => {
       for (let i = 0; i < pts.length - 1; i++) if (s >= pts[i][0] - 1e-6 && s <= pts[i + 1][0] + 1e-6)
         return THREE.MathUtils.lerp(pts[i][1], pts[i + 1][1], (s - pts[i][0]) / (pts[i + 1][0] - pts[i][0] || 1));
       return pts[pts.length - 1][1];
     };
-    for (const s of CANOPY_BOWS.front) bow(s, sillAt(FRONT_SILL, s), s === CANOPY_BOWS.front[0] || s === 129.5 ? 0.014 : 0.009);
-    for (const s of CANOPY_BOWS.rear) bow(s, sillAt(REAR_SILL, s), s === CANOPY_BOWS.rear[0] || s === 206 ? 0.014 : 0.009);
+    const ends = new Set<number>([CANOPY_BOWS.front[0], CANOPY_BOWS.front[CANOPY_BOWS.front.length - 1], CANOPY_BOWS.rear[0],
+      CANOPY_BOWS.rear[CANOPY_BOWS.rear.length - 1]]);
+    for (const s of CANOPY_BOWS.front) bow(s, sillAt(FRONT_SILL, s), ends.has(s) ? MAIN : MINOR);
+    for (const s of CANOPY_BOWS.rear) bow(s, sillAt(REAR_SILL, s), ends.has(s) ? MAIN : MINOR);
     for (const side of [-1, 1]) for (const sill of [FRONT_SILL, REAR_SILL]) {
       const pts = sill.map(([s, w]) => [fs(s), wl(w)] as const);
-      add(m.frame, pathTube(skinPath(skin, side, pts, 0.004, 10), 0.016, 60));
+      strip(skinPath(skin, side, pts, 0.001, 12), MAIN);
+    }
+    // The raked windscreen posts (Rucker front: the flat front pane framed off from the side glass), from the sill at FS 67
+    // up and aft to the second bow (FS 80) high on its arch. The ring angle at the sill is found on the loft.
+    const sillAngle = (x: number, z: number) => {
+      let lo = 0, hi = Math.PI;
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (ringPoint(section, x, mid)[2] > z) lo = mid; else hi = mid; }
+      return (lo + hi) / 2;
+    };
+    for (const side of [-1, 1]) {
+      const post: FRD[] = [], a0 = sillAngle(fs(67), wl(sillAt(FRONT_SILL, 67) + 0.8)), a1 = Math.PI * 0.8;
+      for (let k = 0; k <= 24; k++) {
+        const t = k / 24, p = ringPoint(section, fs(THREE.MathUtils.lerp(67, CANOPY_BOWS.front[1], t)), THREE.MathUtils.lerp(a0, a1, t), 0.001);
+        post.push([p[0], side * p[1], p[2]]);
+      }
+      strip(post, MINOR);
     }
     // Centreline frame over both canopies: the butterfly hinge line, with the hinge blocks.
     const top: FRD[] = [];
-    for (let s = 66; s <= 206; s += 2) top.push([fs(s), 0, section(fs(s)).zTop - 0.005]);
-    add(m.frame, pathTube(top, 0.009, 140));
+    for (let s = 66; s <= 206; s += 2) top.push([fs(s), 0, section(fs(s)).zTop - 0.001]);
+    strip(top, MINOR);
     for (const s of [90, 120, 160, 196]) add(m.cast, box([fs(s), 0, section(fs(s)).zTop - 0.02], [0.07, 0.05, 0.03], 0.006));
     // Canopy jettison/handle fittings below the sills (yellow rescue markings on the photographs are not drawn).
     for (const s of [100, 175]) {
@@ -177,7 +209,7 @@ export function buildAH56Exterior(def: AirframeVisualDef, m: AH56Materials, skin
   {
     const p = skinPath(skin, 1, [[fs(150), wl(84)]], 0)[0];
     add(m.metal, box([p[0], p[1] + 0.03, p[2]], [0.16, 0.06, 0.012], 0.004));
-    add(m.dark, box([fs(345), bl(SPONSON.bl + 13.2), wl(SPONSON.wl)], [0.12, 0.012, 0.05], 0.004));
+    add(m.dark, box([fs(345), bl(sponsonPoint(345, 0)[0] + 0.2), wl(SPONSON.wl)], [0.12, 0.012, 0.05], 0.004));
   }
   add(m.dark, box([fs(250), 0, section(fs(250)).zBot + 0.05], [0.18, 0.006, 0.10], 0.003));
   add(m.dark, box([fs(395), 0, wl(150.5)], [0.16, 0.006, 0.09], 0.003));

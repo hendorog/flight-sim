@@ -73,5 +73,6 @@ export const AH56_UI: UiProfile = {
     ['Landing', 'Tail wheel LOCKED for take-off and landing. Run-on landings at 60 – 70 KCAS or less; reverse prop and main-gear brakes only. Gear down by 130 KCAS (lowered at about 120 on the deceleration)'],
     ['Autorotation', 'Collective down, prop to +8°, 85 – 95 KCAS; recover above 500 ft AGL. Autorotation landings are prohibited'],
     ['Limits', 'Torque 114 % (3925 shp), TIT 740 °C continuous, Ng 100 %, Nr 95 – 105 % power on, 85 – 110 % off'],
+    ['Rear panel', 'The pilot panel is reconstructed from report text: no photograph of it is known, so its layout is UNVERIFIED. The APU, Nf ALTERNATE, ABORT STOP, ROTOR BRAKE, DIR TRIM and HYDRAULIC 1 / 1A / 2 controls are drawn in their normal positions but not modelled (they do not operate)'],
   ],
 };

@@ -60,7 +60,12 @@ describe('AH-56A rear panel (AGENT reconstruction, plan 7.6)', () => {
     const kinds = new Map(AH56_PANEL.gauges.map(g => [g.id, g.kind]));
     expect(kinds.get('torqueTape')).toBe('customRect'); expect(kinds.get('gear')).toBe('gearLights'); expect(kinds.get('tailWheel')).toBe('positionSwitch');
     expect(kinds.get('collective')).toBe('customRect'); expect(kinds.get('propBeta')).toBe('customRect'); expect(kinds.get('hydraulics')).toBe('customRect');
-    expect(JSON.stringify(AH56_PANEL.background.placards)).toContain('UNVERIFIED');
+    // The UNVERIFIED notice is told to the pilot in the hints, not printed on the simulated panel face (gate-0 look review).
+    expect(JSON.stringify(AH56_PANEL.background.placards)).not.toContain('UNVERIFIED');
+    expect(JSON.stringify(AH56_UI.hints)).toContain('UNVERIFIED');
+    // The unmodelled engine, rotor and hydraulic controls are drawn, with no hotspot (nothing to operate).
+    expect(kinds.get('inertControls')).toBe('customRect');
+    expect(buildHotspots(AH56_PANEL).some(h => h.id === 'inertControls')).toBe(false);
   });
 
   it('operates the gear lever, the tail-wheel lock lever, the switches and the starter by hotspot', () => {

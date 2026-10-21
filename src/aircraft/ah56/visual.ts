@@ -36,6 +36,8 @@ const point = (p: { x: number; y: number; z: number }): FRD => [p.x, p.y, p.z];
  * the raised rear canopy (top about WL 143 over the pilot, eye WL 130), the upper deck under the transmission (WL 150)
  * and the long tail cone whose centreline meets the prop and tail-rotor hub line WL 114.5 (P) at the gearbox, FS 668.
  * The belly passes WL 55 at FS 190 so the XM52 turret hangs to WL 39, 21 in above the ground (P ASTA-72 para 91).
+ * nBot rises to 3.8 from the gunner's station to FS 330 (gate-0 look review): the Rucker front photograph shows flat,
+ * near-vertical sides under the sills with a tight turn onto the belly, not a round tube.
  */
 export const LOFT: readonly (readonly [number, number, number, number, number, number, number])[] = [
   [30.0, 67.0, 57.0, 62.0, 1.5, 2.0, 2.0],
@@ -46,24 +48,24 @@ export const LOFT: readonly (readonly [number, number, number, number, number, n
   [54.0, 86.5, 44.0, 64.0, 17.0, 2.3, 2.4],
   [64.0, 89.0, 44.5, 66.0, 17.9, 2.4, 2.6],
   [72.0, 95.0, 45.0, 68.0, 18.6, 2.4, 2.7],
-  [84.0, 106.0, 45.5, 70.0, 19.1, 2.3, 2.8],
-  [98.0, 116.0, 46.5, 72.0, 19.5, 2.2, 2.8],
-  [114.0, 122.5, 47.5, 73.0, 19.8, 2.1, 2.8],
-  [128.0, 125.0, 48.5, 74.0, 20.1, 2.1, 2.8],
-  [133.0, 128.5, 48.8, 74.5, 20.2, 2.2, 2.8],
-  [138.0, 137.0, 49.0, 75.0, 20.4, 2.3, 2.8],
-  [143.0, 141.0, 49.5, 75.5, 20.4, 2.3, 2.8],
-  [152.0, 142.0, 50.2, 76.5, 20.2, 2.3, 2.8],
-  [170.0, 143.0, 52.0, 78.0, 20.2, 2.3, 2.8],
-  [188.0, 143.5, 54.0, 79.0, 20.2, 2.3, 2.8],
-  [205.0, 141.5, 55.5, 80.0, 20.2, 2.4, 2.8],
-  [218.0, 138.0, 56.0, 81.0, 20.2, 2.5, 2.8],
-  [240.0, 139.5, 56.5, 83.0, 20.3, 2.7, 2.8],
-  [262.0, 146.0, 57.0, 84.5, 20.6, 2.8, 2.8],
-  [290.0, 150.0, 57.5, 86.0, 20.8, 2.8, 2.8],
-  [330.0, 150.0, 58.5, 88.0, 20.6, 2.8, 2.8],
-  [370.0, 147.5, 61.0, 90.0, 19.9, 2.7, 2.7],
-  [410.0, 143.0, 67.0, 95.0, 18.8, 2.6, 2.6],
+  [84.0, 106.0, 45.5, 70.0, 19.1, 2.3, 3.1],
+  [98.0, 116.0, 46.5, 72.0, 19.5, 2.2, 3.5],
+  [114.0, 122.5, 47.5, 73.0, 19.8, 2.1, 3.8],
+  [128.0, 125.0, 48.5, 74.0, 20.1, 2.1, 3.8],
+  [133.0, 128.5, 48.8, 74.5, 20.2, 2.2, 3.8],
+  [138.0, 137.0, 49.0, 75.0, 20.4, 2.3, 3.8],
+  [143.0, 141.0, 49.5, 75.5, 20.4, 2.3, 3.8],
+  [152.0, 142.0, 50.2, 76.5, 20.2, 2.3, 3.8],
+  [170.0, 143.0, 52.0, 78.0, 20.2, 2.3, 3.8],
+  [188.0, 143.5, 54.0, 79.0, 20.2, 2.3, 3.8],
+  [205.0, 141.5, 55.5, 80.0, 20.2, 2.4, 3.8],
+  [218.0, 138.0, 56.0, 81.0, 20.2, 2.5, 3.8],
+  [240.0, 139.5, 56.5, 83.0, 20.3, 2.7, 3.8],
+  [262.0, 146.0, 57.0, 84.5, 20.6, 2.8, 3.8],
+  [290.0, 150.0, 57.5, 86.0, 20.8, 2.8, 3.8],
+  [330.0, 150.0, 58.5, 88.0, 20.6, 2.8, 3.8],
+  [370.0, 147.5, 61.0, 90.0, 19.9, 2.7, 3.4],
+  [410.0, 143.0, 67.0, 95.0, 18.8, 2.6, 2.9],
   [445.0, 138.0, 76.0, 102.0, 17.5, 2.4, 2.4],
   [480.0, 133.5, 89.0, 110.0, 15.5, 2.2, 2.2],
   [520.0, 129.5, 99.0, 114.0, 13.5, 2.1, 2.1],
@@ -97,12 +99,56 @@ export const REAR_SILL = [[131.5, 124], [137, 108], [206, 109]] as const;
 
 // ------------------------------------------------------------------------------------------------ sponsons, wing
 /**
- * Sponsons (fuel, retracted mains, APU): bodies of revolution along x, centre BL 35, WL 70, radius 12.5 in, from FS 185
- * to FS 405. 3V ESTIMATE (Rucker front: the pod a third of the fuselage height; side: from under the rear canopy to
- * past the wing trailing edge); the main wheels (track 62 in D) retract into them (P). Profile: [FS, radius in].
+ * Sponsons (fuel, retracted mains, APU): a flat-topped shelf faired into the body side, not a separate pod (gate-0 look review
+ * against the Rucker front and Fort Campbell / Rucker side photographs). Section at full size: inner edge BL 12 (inside the
+ * body), outer edge BL 48, centre WL 72, bottom WL 60, top WL 85 at the shoulder with a squarer super-ellipse above (nTop)
+ * than below (nBot), and a fillet that lifts the top surface by up to 7 in as it runs in to the body side (about WL 92). FS 185
+ * to FS 405: the `profile` scales the outer half width and the heights from the nose to the tail (the former body of
+ * revolution's radius over 12.5 in), the inner edge stays inside the body so the shell closes there. 3V ESTIMATE; the main
+ * wheels (track 62 in D) retract into them (P). Profile: [FS, scale 0..1].
  */
-export const SPONSON = { bl: 35, wl: 70, profile: [[185, 0], [186, 3.7], [189, 6.9], [195, 9.6], [204, 11.5], [216, 12.3], [232, 12.5],
-  [330, 12.5], [358, 11.9], [380, 9.4], [396, 5.6], [404, 1.9], [405, 0]] as readonly (readonly [number, number])[] } as const;
+export const SPONSON = { innerBl: 12, outerBl: 48, wl: 72, topWl: 85, bottomWl: 60, nTop: 4.0, nBot: 2.6,
+  fillet: { riseIn: 7, fromBl: 38, widthIn: 18 },
+  profile: [[185, 0], [186, 0.30], [189, 0.55], [195, 0.77], [204, 0.92], [216, 0.98], [232, 1],
+    [330, 1], [358, 0.95], [380, 0.75], [396, 0.45], [404, 0.15], [405, 0]] as readonly (readonly [number, number])[] } as const;
+
+/** Sponson section at station `s` (in): centre BL and half width, centre WL and the top and bottom half heights (in). */
+export function sponsonSection(s: number): { yc: number; a: number; zc: number; top: number; bottom: number; rise: number } {
+  const p = SPONSON.profile;
+  let f = 0;
+  for (let i = 0; i < p.length - 1; i++) if (s >= p[i][0] && s <= p[i + 1][0]) {
+    const t = (s - p[i][0]) / (p[i + 1][0] - p[i][0]); f = p[i][1] + (p[i + 1][1] - p[i][1]) * t; break;
+  }
+  // Heights and the outer half width scale together: the nose and tail round off like the former body of revolution.
+  const h = f, a = (SPONSON.outerBl - SPONSON.innerBl) / 2 * f;
+  return { yc: SPONSON.innerBl + a, a, zc: SPONSON.wl, top: (SPONSON.topWl - SPONSON.wl) * h, bottom: (SPONSON.wl - SPONSON.bottomWl) * h,
+    rise: SPONSON.fillet.riseIn * h };
+}
+
+/**
+ * A point of the sponson section at station `s` and ring angle `a` (0 = outer edge, +pi/2 = top, -pi/2 = bottom, pi = inner
+ * edge), as [|BL|, WL] in inches. The fillet lifts the top half inboard of `fillet.fromBl`.
+ */
+export function sponsonPoint(s: number, a: number): [number, number] {
+  const k = sponsonSection(s), c = Math.cos(a), sn = Math.sin(a), up = sn >= 0;
+  const n = up ? SPONSON.nTop : SPONSON.nBot, e = 2 / n;
+  const y = k.yc + k.a * Math.sign(c) * Math.abs(c) ** e;
+  let w = up ? k.zc + k.top * Math.abs(sn) ** e : k.zc - k.bottom * Math.abs(sn) ** e;
+  if (up) { const t = Math.min(1, Math.max(0, (SPONSON.fillet.fromBl - y) / SPONSON.fillet.widthIn)); w += k.rise * t * t * Math.abs(sn) ** e; }
+  return [y, w];
+}
+
+/**
+ * How far (in) the point (|BL| `y`, WL `w`) at station `s` lies outside the sponson's super-ellipse, fillet ignored (so the
+ * envelope is the smaller one); 0 or less inside.
+ */
+export function sponsonExcessIn(s: number, y: number, w: number): number {
+  const k = sponsonSection(s);
+  if (k.a <= 0) return Infinity;
+  const dy = y - k.yc, dz = w - k.zc, up = dz >= 0, n = up ? SPONSON.nTop : SPONSON.nBot, h = up ? k.top : k.bottom;
+  const q = (Math.abs(dy) / k.a) ** n + (Math.abs(dz) / h) ** n, scale = q ** (1 / n);
+  return Math.hypot(dy, dz) * (1 - 1 / scale);
+}
 
 /**
  * Wing (P ASTA-72 p 53): 195 ft^2, span 26.7 ft (tip BL 160.2), root chord 9.74 ft at BL 0, tip 4.87 ft (D from S, b and
@@ -217,6 +263,12 @@ const MAIN_PAINT = { rootUpper: 0x40432f, rootLower: 0x34372a, capLength: 0.012,
   bands: [{ tipDistance: 0.012, upper: 0x8f9396, lower: 0x8f9396 }, { tipDistance: 0.32, upper: 0xd9b52a, lower: 0xd9b52a }] };
 export const TAIL_PAINT = { rootUpper: 0x3a3d2c, rootLower: 0x3a3d2c, capLength: 0.006,
   bands: [{ tipDistance: 0.006, upper: 0x8f9396, lower: 0x8f9396 }, { tipDistance: 0.16, upper: 0xd9b52a, lower: 0xd9b52a }] };
+/**
+ * Tail-rotor blur alpha scale. Four 14 in blades on a 5 ft radius give a solidity over 0.4 inboard, so the shared disc sits on
+ * its 0.25 alpha cap from hub to tip and reads as a solid grey plate beside the tail (gate-0 look review, against the MD 500
+ * and S269 discs in the same sheet view). Halved for this type only (AGENT visual choice); the legacy types keep 1.
+ */
+export const TAIL_BLUR_ALPHA = 0.5;
 
 const pilotEye = point(D.PILOT_EYE);
 const panelTop = AH56_PANEL_FACE.centre.z - AH56_PANEL_FACE.height / 2 * Math.cos(AH56_PANEL_FACE.tiltBackDeg * DEG);
@@ -228,7 +280,8 @@ const rotorcraftVisual: RotorcraftVisualDef = {
   // Blades from dimensions.ts (P), hub at the flange point (P); root cut-out ESTIMATE.
   main: { hub: point(D.MAIN_HUB), radius: D.MAIN_ROTOR_RADIUS, root: D.MAIN_ROTOR_ROOT_CUTOUT,
     chord: [D.MAIN_ROTOR_CHORD, D.MAIN_ROTOR_CHORD], twist: D.MAIN_ROTOR_TWIST_DEG * DEG, coning: AH56_BLADE_CONING, paint: MAIN_PAINT },
-  tail: { hub: point(D.TAIL_HUB), radius: D.TAIL_ROTOR_RADIUS, root: 0.20, chord: D.TAIL_ROTOR_CHORD, twist: 0, precone: 0, paint: TAIL_PAINT },
+  tail: { hub: point(D.TAIL_HUB), radius: D.TAIL_ROTOR_RADIUS, root: 0.20, chord: D.TAIL_ROTOR_CHORD, twist: 0, precone: 0, paint: TAIL_PAINT,
+    blurAlpha: TAIL_BLUR_ALPHA },
   // The generic boom, mast, fins, guard and skids are hidden by exterior.ts (the generic builder still needs the data).
   boom: { front: [fs(470), 0, wl(114.5)], rear: [fs(LOFT_END_FS), 0, wl(114.5)], radii: [0.2, 0.15] },
   mast: { bottom: [fs(300), 0, wl(150)], top: [fs(300), 0, wl(158)], bottomWidth: 0.4, topWidth: 0.3 },

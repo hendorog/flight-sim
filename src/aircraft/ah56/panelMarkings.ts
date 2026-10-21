@@ -1,5 +1,5 @@
 // Lockheed AH-56A Cheyenne: markings of the reconstructed rear-seat pilot panel. NO PHOTOGRAPH OR DRAWING of this panel exists
-// in the sources (research-ah56 section 12): the arrangement is an AGENT reconstruction, marked UNVERIFIED on the panel. The BAND
+// in the sources (research-ah56 section 12): the arrangement is an AGENT reconstruction, UNVERIFIED (said in the hints and the doc). The BAND
 // BOUNDARIES are published limits: ASTA-72 = USAASTA 72-08 safety-of-flight release (SoF para 5; 1972 ICS aircraft) and AMCS-73 =
 // USAASTA 72-44 SoF (AMCS ship 7); APE-I = USAASTA 70-02 SoF 1.1 (page / paragraph tags in docs/ah56-panel.md). The scale SPACING
 // (how far apart the numbers sit) is artwork ESTIMATE. Dots are drawn as thin arcs.
@@ -125,3 +125,29 @@ export const AH56_XMSN_OIL = {
 export const AH56_HYDRAULIC = { min: 0, max: 4000, normal: [2800, 3400] as const, majors: [0, 1000, 2000, 3000, 4000] } as const;
 
 export const AH56_DIAL_SWEEP = { a0: -125 * DEG, a1: 125 * DEG } as const;
+
+// ---------------------------------------------------------------------------------------------------- unmodelled controls
+/**
+ * Engine, rotor and hydraulic controls the report text names but the sim does not model (docs/ah56-panel.md): the APU (P ASTA-72
+ * App B; "START: APU" in the SoF start), the Nf governor ALTERNATE switch, the abort-stop button, the rotor brake (SoF shutdown below
+ * 40 % Nr), the hydraulic system switches 1, 1A, 2 (APE-I SoF 1.1) and the directional trim switch. They are DRAWN, in their
+ * normal in-flight positions, with no hotspot: nothing behind them to operate. Legends and positions are AGENT; `shown` is the index
+ * of the drawn position. `kind`: toggle (bat lever), guarded (red push button under a closed guard), handle (pull T-handle).
+ */
+export interface Ah56InertControl { label: string; kind: 'toggle' | 'guarded' | 'handle'; positions: readonly string[]; shown: number }
+export const AH56_INERT_CONTROLS: readonly { title: string; items: readonly Ah56InertControl[] }[] = [
+  { title: 'ENGINE', items: [
+    { label: 'APU', kind: 'toggle', positions: ['RUN', 'OFF', 'START'], shown: 1 },
+    { label: 'NF GOV', kind: 'toggle', positions: ['NORM', 'ALTERNATE'], shown: 0 },
+    { label: 'ABORT STOP', kind: 'guarded', positions: ['PRESS'], shown: 0 },
+  ] },
+  { title: 'ROTOR', items: [
+    { label: 'ROTOR BRAKE', kind: 'handle', positions: ['OFF', 'ON'], shown: 0 },
+    { label: 'DIR TRIM', kind: 'toggle', positions: ['L', 'OFF', 'R'], shown: 1 },
+  ] },
+  { title: 'HYDRAULIC', items: [
+    { label: '1', kind: 'toggle', positions: ['ON', 'OFF'], shown: 0 },
+    { label: '1A', kind: 'toggle', positions: ['ON', 'OFF'], shown: 0 },
+    { label: '2', kind: 'toggle', positions: ['ON', 'OFF'], shown: 0 },
+  ] },
+];

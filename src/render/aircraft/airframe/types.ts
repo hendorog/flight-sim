@@ -465,7 +465,9 @@ export interface RotorcraftVisualDef {
     paint?: RotorBladePaint;
     /** Per-blade hinge/weight/bending balance; shares the flight model's inertia and live thrust. */
     coning: BladeConingDefinition };
-  tail: { hub: FRD; radius: number; root: number; chord: number; precone: number; twist?: number; paint?: RotorBladePaint };
+  tail: { hub: FRD; radius: number; root: number; chord: number; precone: number; twist?: number; paint?: RotorBladePaint;
+    /** Scale on the tail-rotor blur disc's alpha (a high-solidity rotor whose disc saturates the shared cap); absent = 1. */
+    blurAlpha?: number };
   skids: { halfTrack: number; z: number; front: number; rear: number; crossTubes: readonly number[];
     tubeRadius?: number; bellyHalfWidth?: number; bellyZ?: number; crossCentreZ?: number;
     /** Optional static oleo geometry; no simulated suspension stroke yet. */

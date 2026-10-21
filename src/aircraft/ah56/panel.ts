@@ -4,15 +4,16 @@
 // blade-angle indicators in degrees (SoF, ASTA-72 App H), fuel (low 390 lb), a g-meter (APE-I para 134f), engine and transmission
 // oil, triple hydraulic pressure (systems 1, 1A, 2), MASTER CAUTION with a small caution panel (APE-I para 134j), the gear handle
 // and lights, the tail-wheel lock lever, and a placard of the control system in use with the ICS roll-compensator and
-// pitch-desensitizer buttons. See docs/ah56-panel.md for what is a compromise. Frozen contract: panelLayout.ts (AH56_PANEL_CANVAS,
-// AH56_TAPE_STACK).
+// pitch-desensitizer buttons, and the APU / Nf ALTERNATE / abort-stop / rotor brake / directional trim / hydraulic switches drawn
+// inert (not modelled). The UNVERIFIED notice is in the hints and docs/ah56-panel.md, not on the panel face. See the doc for what
+// is a compromise. Frozen contract: panelLayout.ts (AH56_PANEL_CANVAS, AH56_TAPE_STACK).
 import { clamp, DEG } from '../../core/math';
 import type { AircraftState, ControlInputs } from '../../core/types';
 import type { InstrumentSystemsDef, LampDef, LampInputs, PanelDef, Rect, SwitchDef } from '../types';
 import type { InstrumentReadings } from '../../instruments/dynamics/instrumentSet';
 import { ignitionLayout } from '../../instruments/panelParts';
 import { AH56_COLLECTIVE_DEG, AH56_MASS_LB, AH56_NF_100_RPM, AH56_NR_100, AH56_TIT_C, AH56_TORQUE_LIMIT_PCT } from './facts';
-import { Ah56AngleIndicator, Ah56GyroPlacard, Ah56HydraulicsGauge, Ah56TapeGauge } from './panelGauges';
+import { Ah56AngleIndicator, Ah56GyroPlacard, Ah56HydraulicsGauge, Ah56InertControls, Ah56TapeGauge } from './panelGauges';
 import { AH56_PANEL_CANVAS, AH56_PANEL_OUTLINE, AH56_TAPE_STACK as STACK } from './panelLayout';
 import { AH56_ASI_MARKS, AH56_BETA_INDICATOR, AH56_COLLECTIVE_INDICATOR, AH56_DIAL_SWEEP as SWEEP, AH56_ENGINE_OIL, AH56_FUEL_SCALE, AH56_G_SCALE,
   AH56_KG_PER_GAL, AH56_LB_PER_KG, AH56_NF_NR_TAPE, AH56_NG_TAPE, AH56_TIT_TAPE, AH56_TORQUE_TAPE, AH56_XMSN_OIL, ah56TorquePct } from './panelMarkings';
@@ -31,6 +32,8 @@ const TAPES = { x: STACK.x, y: 318, w: STACK.w, h: 400, each: 58, pitch: 62 } as
 const tapeRect = (i: number): Rect => ({ x: TAPES.x + i * TAPES.pitch, y: TAPES.y, w: TAPES.each, h: TAPES.h });
 const INDICATORS = { collective: { x: 24, y: 452, w: 130, h: 178 }, beta: { x: 162, y: 452, w: 130, h: 178 } } as const;
 const SWITCHES: Rect = { x: 896, y: 800, w: 576, h: 130 };
+/** The engine, rotor and hydraulic controls the sim does not model, drawn inert (panelGauges.ts Ah56InertControls). */
+const INERT: Rect = { x: 896, y: 290, w: 576, h: 200 };
 const IGNITION: PanelDef['ignition'] = { kind: 'toggles', at: [1380, 190], engines: 1, switches: 'ignition' };
 
 // ---------------------------------------------------------------------------------------------------- lamps
@@ -100,7 +103,7 @@ export const AH56_PANEL: PanelDef = {
   // gauges and the lenses. Lower: gear, tail wheel, hydraulics, the control-system placard and every switch.
   fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'collective'], ['clock', 'hsi', 'vsi', 'propBeta']],
     crops: [{ x: TAPES.x - 2, y: TAPES.y - 2, w: TAPES.w + 4, h: TAPES.h + 4 }],
-    controls: [SWITCHES, ignitionLayout(IGNITION)!.rect], lampsBeside: true },
+    controls: [SWITCHES, ignitionLayout(IGNITION)!.rect, INERT], lampsBeside: true },
   size: AH56_PANEL_CANVAS, instrumentScale: SCALE, instrumentBezel: 'square', lightingDimmerExponent: 2.2,
   apertures: { large: 74 * SCALE.large, small: 51 * SCALE.small },
   gauges: [
@@ -136,6 +139,8 @@ export const AH56_PANEL: PanelDef = {
     // Gear handle and lights (the tail wheel on the first lamp), the tail-wheel lock lever.
     { kind: 'gearLights', id: 'gear', bounds: { x: 896, y: 84, w: 150, h: 176 }, lever: [1096, 170], noseLegend: 'TAIL' },
     tailWheel,
+    // APU, Nf ALTERNATE, abort-stop, rotor brake, directional trim, hydraulic 1 / 1A / 2: drawn, not modelled (no hotspot).
+    { kind: 'customRect', id: 'inertControls', bounds: INERT, create: (id, b) => new Ah56InertControls(id, b) },
   ],
   annunciator: { bounds: { x: TAPES.x, y: 80, w: TAPES.w, h: 262 }, lamps: AH56_ANNUNCIATOR_LAMPS, cells: CELLS, lensLegend: true, clipGlow: true },
   switchRow: { bounds: SWITCHES, rockerTop: 54, rockerW: 28, rockerH: 38,
@@ -159,9 +164,8 @@ export const AH56_PANEL: PanelDef = {
     ],
     placards: [
       { x: 744, y: 12, size: 8, lines: ['AH-56A  PILOT (REAR) PANEL'] },
-      { x: 1180, y: 400, size: 9, lines: ['RECONSTRUCTED FROM REPORT TEXT', 'NO PHOTOGRAPH OF THE REAR PANEL IS KNOWN', 'LAYOUT UNVERIFIED'] },
-      { x: 1180, y: 520, size: 7.5, lines: ['PROP BLADE ANGLE: HOVER DETENT -2.2', 'AUTOROTATION +8   FULL REVERSE -12'] },
-      { x: 1180, y: 600, size: 7.5, lines: ['START: APU, START, CONDITION GRIP TO IDLE AT 20 % Ng', 'LANDING ROLL: REVERSE PROP AND MAIN GEAR BRAKES ONLY'] },
+      { x: 1180, y: 560, size: 7.5, lines: ['PROP BLADE ANGLE: HOVER DETENT -2.2', 'AUTOROTATION +8   FULL REVERSE -12'] },
+      { x: 1180, y: 640, size: 7.5, lines: ['START: APU, START, CONDITION GRIP TO IDLE AT 20 % Ng', 'LANDING ROLL: REVERSE PROP AND MAIN GEAR BRAKES ONLY'] },
     ] },
   keepOut: [],
   regions: { sixpack: { x: 4, y: 76, w: 600, h: 370 }, engine: { x: 604, y: 76, w: 280, h: 880 }, stack: { x: 880, y: 74, w: 600, h: 880 } },

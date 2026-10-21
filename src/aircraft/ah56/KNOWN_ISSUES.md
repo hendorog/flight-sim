@@ -114,14 +114,15 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
   the wheels at the AG merge.
 - **Panel (PN, [ah56-panel.md](../../../docs/ah56-panel.md) "Compromises"):** the rear-seat panel is an UNVERIFIED reconstruction; ASI
   marks are ESTIMATE (Vne 195 KCAS INF); no hydraulic model (3000 psi while the rotor turns); the ICS buttons are not switches; APU,
-  abort-stop, rotor brake, directional trim and Nf ALTERNATE are not drawn; MASTER CAUTION does not latch; the AMCS Nf band (95–105
+  abort-stop, rotor brake, directional trim, Nf ALTERNATE and the hydraulic 1 / 1A / 2 switches are drawn inert (static, no
+  hotspot, not modelled; the UNVERIFIED notice is in the "Rear panel" hint, not on the face); MASTER CAUTION does not latch; the AMCS Nf band (95–105
   green) is ESTIMATE; the tail wheel uses gear lamp 1 (lettered TAIL).
 - **Exterior (AX, [ah56-exterior.md](../../../docs/ah56-exterior.md)):** head hardware, gyro post height, gear legs, sponsons, intakes,
   exhaust and the 32° fin sweep are photographic ESTIMATES (no dimensioned three-view found). The wing incidence is drawn to the
   waterline (published datum unstated). No gear doors are drawn (none found on the mains; the fin housing is open). Until the solver
   publishes a hingeless blade pose the head droops its blades by its own −0.9° fallback (ESTIMATE). The hub hardware stays solid at rotor
-  speed; only the ICS gyro X fades. Shared renderer: the tail rotor's blur disc reads heavy (solidity alpha near the 0.25 cap) and the
-  main disc faint in chase views. Integrator, at the AX merge: the main-gear trunnion moved from FS 281 to FS 264 with AG's axles (FS 285
+  speed; only the ICS gyro X fades. Shared renderer: the main disc reads faint in chase views. The tail rotor's blur disc (solidity alpha on
+  the shared 0.25 cap) is halved for this type by `rotorcraftVisual.tail.blurAlpha` 0.5 (gate-1; legacy types default 1). Integrator, at the AX merge: the main-gear trunnion moved from FS 281 to FS 264 with AG's axles (FS 285
   → 268), and the head draws a non-finite gyro cyclic as zero (the gyro definition routes the dev page's tilt into the swashplate).
 
 ## Stages 3-4: the wing and the pusher (AC, handed over; [ah56-compound.md](../../../docs/ah56-compound.md) section 9)
