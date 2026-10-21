@@ -222,16 +222,19 @@ Until the final fix round these two lived in compound.ts as an override of the s
 `AMCS_FLAP_FEEDBACK` and `AMCS_LONGITUDINAL_STICK_MOMENT` in gyro.ts, so the no-compound rig (G10) flies them too. The flown aircraft is
 unchanged by the move (a whole-flight-model digest of both configurations is identical before and after).
 
-What they give on the flown aircraft (`docs/ah56-integration.md` section 4; 18,300 lb, SL ISA, stores on; first peaks of a held 1 in step):
+What they give on the flown aircraft (18,300 lb, SL ISA, stores on; first peaks of a held 1 in step). The left column is the
+aircraft as merged (`9d70cad`, docs/ah56-integration.md section 4); the right column after the final fix round (the rotor's in-plane
+force as a vector, the pusher's gyroscopic reaction, the trim's speed of sound, the wing section Cm and the DATCOM downwash;
+docs/ah56-integration.md section 11). The gyro numbers did not move.
 
-| Row | Flown (3,200 / 566 / 907 N m, input 5°) | Target (tag) |
-|---|---|---|
-| G5 pitch, 0 / 100 / 150 KCAS | 5.78 / 4.93 / 4.57 °/s/in | 6 ± 30 % = 4.2-7.8 (P AMCS-73 para 33) |
-| G5 pitch sensitivity, hover | 11.54 °/s²/in (1.4 % under the edge) | 9 ± 30 % = 6.3-11.7 (P) |
-| G5 roll, 0 / 100 / 150 KCAS | 14.6 / 15.6 / 15.6 °/s/in | 13-16 ± 30 % (P) |
-| G5 roll sensitivity, hover / 150 KCAS | 63.5 / 67.6 °/s²/in | 60 / 53 ± 30 % (P) |
-| C18 pitch / roll at 180 KCAS | 4.26 / 15.6 °/s/in; roll sensitivity 66.6 | 6 / 16 ± 30 %; 53 ± 30 % (P) |
-| C19 pull-up from 180 KCAS | 2.43 g at 1.78 s | 2.43 g in about 2.1 s (P AMCS-73 para 39) |
+| Row | As merged | Final fix round | Target (tag) |
+|---|---|---|---|
+| G5 pitch, 0 / 100 / 150 KCAS | 5.78 / 4.93 / 4.57 °/s/in | 5.54 / 4.94 / 4.61 | 6 ± 30 % = 4.2-7.8 (P AMCS-73 para 33) |
+| G5 pitch sensitivity, hover | 11.54 °/s²/in (1.4 % under the edge) | 10.82 (7.5 % under) | 9 ± 30 % = 6.3-11.7 (P) |
+| G5 roll, 0 / 100 / 150 KCAS | 14.6 / 15.6 / 15.6 °/s/in | 14.7 / 15.7 / 15.7 | 13-16 ± 30 % (P) |
+| G5 roll sensitivity, hover / 150 KCAS | 63.5 / 67.6 °/s²/in | 63.6 / 67.3 | 60 / 53 ± 30 % (P) |
+| C18 pitch / roll at 180 KCAS | 4.26 / 15.6 °/s/in; roll sensitivity 66.6 | 4.32 / 15.7; 66.3 | 6 / 16 ± 30 %; 53 ± 30 % (P) |
+| C19 pull-up from 180 KCAS | 2.43 g at 1.78 s | 2.43 g at 1.75 s | 2.43 g in about 2.1 s (P AMCS-73 para 39) |
 
 | Fitted (AMCS, ESTIMATE) | Flown value | What fixed it |
 |---|---|---|

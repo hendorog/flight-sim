@@ -8,7 +8,7 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
    passes `{ hub: hubAir, density }` to `ControlGyro.advanceCoupled` (AG's request, work/rigid/ag-integrator-requests.patch, applied in
    the merge commit). The rig's stand-in retired itself (PRODUCTION_AIR_WIRED); the AG list on the merged tree: 73 passed, 10 expected
    fail, 0 failed. Kept here so the numbers in item 8 and docs/control-gyro-model.md section 5 read in context.
-2. **The hands-off hover drifts away from the spawn.** From the 15 m hover spawn (18,300 lb, the test loading) in calm air the AMCS rolls
+2. **Resolved in the final fix round (the in-plane force is a vector; section "Final fix round" below). Was: the hands-off hover drifts away from the spawn.** From the 15 m hover spawn (18,300 lb, the test loading) in calm air the AMCS rolls
    from 5.1° to 1.3° left in 20 s with the nose 6.4° down and 11 kt of drift; the ICS from 5.0° to 1.4° left, nose 10.3° up, 7 kt. The trim
    balances the rotor at exactly zero airspeed, where `Rotorcraft.compute` applies no main-rotor in-plane force; the first step's 1e-7 m/s
    switches on the hingeless rotor's hover in-plane force (about 330 N) along an arbitrary direction, a 625 N m rolling moment the trim
@@ -263,7 +263,7 @@ need. Three test rows were added (ah56Ground: a passing locked-tail-wheel taxi r
   "stuck at 23-35 kt" was the probe's flare law (it commanded −2.5 to −1.9° of pitch there) with the reverse prop absorbing
   1,270 shp (37 % torque) against the rotor's near-hover power. Owner-visible cause: the C6 lift share (rotor 71 % at 120 KCAS
   against the ESTIMATE 40-60 %); a wing-heavier aircraft has to flare to move lift back to the rotor.
-- **R3. ICS longitudinal trim and static stability (must; AC, AG).** At ASTA-72 para 44's conditions (P: ICS, aft CG FS 299.8, stores,
+- **R3. ICS longitudinal trim and static stability (must; AC, AG). Partly resolved in the final fix round (below): the 190 KCAS trim exists; the gradient is 0.07 in/kt.** At ASTA-72 para 44's conditions (P: ICS, aft CG FS 299.8, stores,
   4,000 ft; 18,300 lb) with the collective and the blade angle held at the trim settings: the trim stick is 2.89 / 4.80 in forward at
   120 / 150 KCAS and the gradient about trim 0.10 in/kt at both (P para 45: 0.015 / 0.012 in/kt), and no level trim exists at 190 KCAS
   (the 5.5 in stop; P used a 190 KCAS trim point, and para 37-38 trimmed to 186 KCAS with "only small" changes above 170). ah56Handling
@@ -279,7 +279,7 @@ need. Three test rows were added (ah56Ground: a passing locked-tail-wheel taxi r
   (`WingPanelDef` has none); thin-airfoil theory ties the −2° zero-lift ESTIMATE to Cm ≈ −0.05 (D), about −8.7 kN m at 160 KCAS SL.
   A refit of the wing / tail balance against this P row moves C6, C8, C9, C23, H4 / H5 and the AMCS schedule: AC (TAIL_DOWNWASH, a wing
   Cm in wings.ts and compound.ts) and AG (stabiliser lift slope and wash in base.ts, then the ICS fit), not applied here.
-- **R4. Hands-off hover wander (should; RC / owner).** Unchanged (the reviewer's hover.log numbers stand): the zero-airspeed in-plane
+- **R4. Resolved in the final fix round (the in-plane force is a vector). Was: hands-off hover wander (should; RC / owner).** Unchanged (the reviewer's hover.log numbers stand): the zero-airspeed in-plane
   force of item 2; the fade patch stays unapplied (integration section 3 item 7).
 - **R5. Hover pedal power and the yaw after release (should; AG / RC).** AMCS, 30 ft: 1 in of right pedal gives 16.5 / 36.5 °/s at
   0.5 / 1.5 s (tail rotor 8.02 → 4.78 kN); after release 27 / 21.5 / 16.4 / 16.9 / 28.3 °/s at +0.5 / 1 / 2 / 4 / 6 s with the
@@ -304,3 +304,59 @@ need. Three test rows were added (ah56Ground: a passing locked-tail-wheel taxi r
   about 82 %). The schedule at 60 KTAS is the AGENT "2-3° nose up" fit. Autorotation collective: 4.5° indicated overspeeds Nr to
   117-119 % within 12 s of a 63 KCAS entry, 7° holds 107 %; the 95 KCAS autorotation trims 100 % at 7.8° indicated (SoF 4.5-7°) — the
   C12 item (post-stall drag, +10-23 % against Report 530).
+
+## Final fix round (2026-10-22, after the final assessment; AGENT choices, not owner decisions)
+
+Commits on `feat/rigid-rotor` after `9d70cad`; numbers from `W/guards/integ/14-fix` (rotor fixes) and `15-p1` / `16-final`
+(the wing balance), 18,300 lb SL ISA stores unless stated. The integration record section 11 has the before/after table.
+
+- **Fixed: the hingeless in-plane force is a vector** (`rotor.ts`, `rotorcraft.ts inPlaneForce`). Hands-off hover 20 s calm:
+  AMCS −5.35 → −5.49° roll, +0.76° pitch, 0.41 kt; ICS −5.25 → −5.13°, +0.53°, 0.31 kt (was 14.3 / 6.6 kt). The side component
+  also acts in forward flight: the ICS lateral trim at 122 / 152 KCAS moved 0.18 / 0.13 in left → 0.06 right / 0.06 left (then
+  0.36 / 0.50 in right with the wing balance below; P ASTA-72 para 38: 1 in left at 100 KCAS). **New KNOWN GAP rows:** C17 sense
+  (full left stick now rolls faster: 37 R / 44 L °/s at 122 KCAS; P 77 R / 42 L) and the C23 frozen-controls roll through
+  translation (+1.41 → −1.61 °/s, P right). The C23 ICS lateral shift had the wrong sign before any of this (0.89 in right against
+  P 1.1 in left); it is now 1.31 in right.
+- **Fixed: the pusher's gyroscopic reaction acts on the airframe** (`rotorcraft.ts`; its h joins angularMomentum after the free
+  rotor's w x H compensation): about 1 kN m of pitch-to-yaw coupling at 0.3 rad/s. Plan seam amended (plan section 15 A6).
+- **Fixed: trims and ground settles use the atmosphere's speed of sound** (`settle(..., soundSpeed)`). At 9,000 ft 180 KTAS the old
+  trim started flight 0.065 m/s² and 0.008 rad/s² off balance (about 540 N).
+- **Fixed: the ICS gyro's blade moments see the blade's flap rate** (`articulated.ts hubForcing`). Half the derived droop now decays
+  to 0.009° in 6 s (was 0.125°, a KNOWN GAP row, now passing); G3 full-ICS gust residue 0.53 → 0.45 of the locked moment; G7 ICS
+  pitch τ63 0.79 → 0.65 s (band 1.5-3.5), roll τ63 0.28 → 0.26 s (0.3-0.7); G8 ICS p/q hover 0.28 → 0.41. **For the owner: the
+  moment stall is now a departure.** The H4 onsets still pass (1.3 g at 122 KCAS, 1.4 g at 154; P 1.4 / 1.5 ± 0.2), but held
+  at 1.4 g at 122 KCAS the turn rolls 134° right against the no-stall flight (0.7° before) and reaches 1.84 g; at 1.5 g / 154 KCAS
+  29° (1.1° before). H5's "stick per g" is then a departure, not a gradient (−18 in/g). The section's moment break is a FITTED
+  ESTIMATE made without the flap-rate incidence. Options: keep (physically the more complete incidence), refit the moment-stall
+  break (AH), or revert this one term and document its omission as an approximation (the final review's alternative).
+- **Fixed: a save during a half-P hop keeps its forcing** (`HalfPHopState.age`; resume.ts validates it).
+- **Partly fixed: R3, the ICS pitch trim.** The wing has a section pitching moment (cm0 −0.055, D) and the downwash at the tail is
+  DATCOM's 0.119 per unit C_L (D; was the ESTIMATE 0.139). At para 44 (FS 299.8, stores, 4,000 ft): trims 1.74 / 3.04 / 4.50 in
+  forward at 120 / 150 / 190 KCAS (the 190 KCAS trim now exists inside the 5.5 in stop); gradient about trim 0.073 / 0.071 in/kt
+  against P 0.015 / 0.012 (was 0.106 / 0.098): KNOWN GAP row and the "ICS pitch trim" hint (ui.ts hints). The downwash grid with the
+  Cm (scale 1 / 0.85 / 0.5 / 0.25 / 0 of 0.139) gives 0.084/0.079, 0.073/0.071, 0.049/0.093, 0.032/0.064, 0.017/0.031 in/kt: no
+  physical value reaches para 45. Costs: **C23 ICS longitudinal shift hover → 100 KCAS 0.69 → −0.03 in forward (P 0.7 ± 0.3)**,
+  of which the Cm takes 0.52 in and the downwash 0.20 (KNOWN GAP row: para 44-45 and para 25 pull the same knobs opposite ways);
+  **H4 at 190 KCAS / 1.43 g: 0.27 → 0.69° of right roll** against the row's 0.5° reading of "none" (KNOWN GAP row). Gains: the ICS
+  configuration itself now trims at V_H (C4 flies it: 201.2 KTAS at 114 %, 5.1 in forward; was flown on the AMCS gyro's
+  mechanics), C5 clean 212.7 → 216.7 KTAS, C9 at 190 KCAS 0.48 → 0.34 in, C18 at 180 KCAS 4.23 → 4.32 °/s/in.
+- **New KNOWN GAP: AMCS hands-fixed symmetric pull rolls left.** Full aft stick from 155 / 180 KCAS with the lateral stick, pedals,
+  collective and prop at trim: −14.0 / −14.4° of roll in 3 s at 2.56 / 2.79 g (ESTIMATE bound 5°; P AMCS-73 para 37: "no
+  uncommanded aircraft motions", "negligible lateral control position change with load factor"). With the wing incidences equalised
+  −14.7 / −15.0°: the wing asymmetry is not the cause; the remainder is the rotor's pitch-rate-to-roll coupling, which the AMCS's
+  flapping feedback (it nulls hub moment, not attitude) leaves to the pilot during the pitch-up. In the steady wind-up turns the
+  lateral stick hardly moves with load factor (−0.03 / +0.02 in/g from 1.5 to 2 g at 155 / 180 KCAS), which is what para 37
+  reports: the coupling is a transient of the pitch rate, not a roll due to lift.
+- **C10 / C11 (prop map and flat plate) not refitted.** The fix asked for a Hamilton Standard efficiency datum at the V_H advance
+  ratio and blade angle, or a measured static reverse thrust: neither is in the sources (searched ASTA-72, AMCS-73, APE-I, the
+  Lockheed NTRS set). The prop efficiency stays the BEMT's 0.753 (ESTIMATE about 0.80) and the flat plate fitted to it; C10 (0 →
+  188 KTAS 77.5 s, P 107 s ± 20 %) and C11 (hover not reached in 90 s; 165-80 KTAS at about 0.20 g, P 0.31 g) stay red. A P
+  cross-check of the prop's low-blade-angle thrust exists but was not used: APE-I para 118 (ICS, 120 KCAS, collective 5°): prop
+  16° → 9° dive, 12° → 12° dive at 2,400 ft/min, 8° → 16° dive at 3,500 ft/min.
+- **Test rows made real:** G3 and G5a assert on the flown section at a collective where its stall takes no part (G3 0.26: clean
+  auto-trim 2.9 % at 0.5 s; G5a 0.34: full aft 8.1° of gyro tilt inside the 10.1° stop); the G6 keyboard row holds the key until the
+  stick reaches 0.5 in (1.18 s), the bank moves 2.6° and then holds within 0.43° for 10 s, and the plan's 0.3 s tap (0.05 in,
+  0.1°) is a KNOWN GAP row; H10 asserts the plan's 2.0 x on the best of seven samples (1.82 x; the ICS 2.15 x at 160 KTAS,
+  reported); the C4 row flies the ICS.
+- **The AMCS gyro numbers live in gyro.ts** (above, "Resolved").
+

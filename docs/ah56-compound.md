@@ -477,3 +477,37 @@ Measured, not changed (AGENT routing to the compound's owner; numbers in KNOWN_I
 - **Reverse deceleration (R2).** 165-80 KTAS at 0.20 g against P 0.31 g; the reverse map is within thin-section data (clMin −0.8,
   cdMax 1.6 above Viterna's 1.2), and the rotor holds the weight at a near-level attitude (the C6 lift share), so holding height with
   the cyclic never flares the aircraft.
+
+## 11. Final fix round: the wing section Cm and the DATCOM downwash (2026-10-22, AGENT; KNOWN_ISSUES "Final fix round")
+
+`WingPanelDef` gains `cm0` and `chord`: the section pitching moment q S c cm0 about the panel's spanwise axis in attached flow,
+applied as a chordwise force couple (no net force; its power is the pure moment's; `ah56Compound` "the wing section pitching
+moment"). The wing flies cm0 = (π/2) α0 = −0.055 (D from the −2° zero-lift ESTIMATE; thin-airfoil parabolic camber) over the
+2.316 m MAC (P). The downwash at the stabiliser is DATCOM's for this tail position (D: K_A 0.174, K_λ 1.214, K_H 0.683 with the
+stabiliser 27 ft aft and 44 in above the wing; dε/dα 0.443, / 3.73 = 0.119 per unit wing C_L), replacing section 10's ESTIMATE
+0.139.
+
+ASTA-72 para 44-45 (ICS, aft CG FS 299.8, stores, 4,000 ft, 18,300 lb; the collective and the prop blade angle held at the V0 trim,
+± 5 kt with the cyclic, the path free; `W/probes/fix-final/icsstab.test.ts`):
+
+| Variant | 120 KCAS trim / gradient | 150 KCAS trim / gradient | 190 KCAS trim |
+|---|---|---|---|
+| as merged (0.139, no Cm) | 3.01 in fwd / 0.106 in/kt | 4.83 / 0.098 | none (5.5 in stop) |
+| Cm −0.055, downwash × 1 (0.139) | 2.13 / 0.084 | 3.60 / 0.079 | none |
+| Cm, × 0.85 (0.118) | 1.73 / 0.073 | 3.02 / 0.071 | 4.47 |
+| **flown: Cm, DATCOM 0.119** | **1.74 / 0.073** | **3.04 / 0.071** | **4.50** (gradient 0.126) |
+| Cm, × 0.5 | 0.82 / 0.049 | 1.52 / 0.093 | 1.77 |
+| Cm, × 0.25 | 0.20 / 0.032 | 0.15 / 0.064 | 1.53 aft |
+| Cm, no downwash | 0.41 aft / 0.017 | 1.15 aft / 0.031 | 3.21 aft |
+| P (ASTA-72 para 45) | 0.015 ± 0.010 in/kt (AGENT tolerance) | 0.012 ± 0.010 | a trim point |
+
+No physical downwash reaches para 45 at both speeds; only none at all reaches the 120 KCAS band. The flown pair takes the D values
+and keeps the gradient row a KNOWN GAP with the "ICS pitch trim" hint. Before / after on the rows the review named: C4 now flies the
+ICS configuration itself (201.2 KTAS at 114 %, 5.1 in forward; was the AMCS gyro's mechanics at 246 rpm); C5 clean 212.7 → 216.7
+KTAS; C6 71 / 48 / 30 → 71 / 49 / 29 %; C8 −3.28 → −3.25° at 190 KTAS; C9 0.25 / 0.36 / 0.48 → 0.21 / 0.29 / 0.34 in left at 120 /
+160 / 190 KCAS; C18 pitch at 180 KCAS 4.23 → 4.32 °/s/in; C19 2.43 g at 1.79 → 1.75 s; G4 4.60 / 5.58 kN m/in (unchanged); H4 onsets
+1.4 → 1.3 g (122 KCAS), 1.5 → 1.4 g (154), and at 190 KCAS / 1.43 g 0.27 → 0.69° of right roll (KNOWN GAP against the row's 0.5°);
+C23 ICS longitudinal shift hover → 100 KCAS 0.69 → −0.03 in forward (P 0.7 ± 0.3; the Cm alone 0.17, the downwash alone 0.49:
+KNOWN GAP). (The "before" column of these rows already includes the final round's rotor fixes; the stage-5 merge numbers are in
+docs/ah56-integration.md section 4.)
+

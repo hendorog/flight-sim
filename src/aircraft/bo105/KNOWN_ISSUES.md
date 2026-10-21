@@ -184,8 +184,12 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    wind, hands off) at `03ec6e1`: after 20 s roll 53.5 deg, crashed (main rotor strike) (W/shots/BO/bo105-hover.png): the
    sourced behaviour, kept. Two ways to fly the hover scenario: the hover hold `&ap=1` hands off (after 20 s pitch +3.5,
    roll 3.0 left, torque 80.6 / 80.6 %, TOT 738 C; heliHold position RMS 0.07 m calm, 2.3-2.5 m in 8 kt gusts, no
-   disconnect), and the STAB ASSIST sim aid on the keys (default ON on the Bo 105, Shift+A for the raw aircraft; section
-   "Flyability pass").
+   disconnect), and the STAB ASSIST sim aid on the keys (built on branch `rigid/bofly`, not merged into `feat/rigid-rotor`;
+   this commit was cherry-picked from it on its own in the final fix round).
+   **Final fix round (feat/rigid-rotor):** with the hingeless rotor's in-plane force applied as a vector (it had been pointed
+   along the first tiny drift in the hover, and its side component was missing in forward flight) the 2200 kg IGE hover phugoid
+   reads sigma +0.278, omega_d 0.504 rad/s (**doubling 2.5 s, period 12.5 s**), still inside the ERF 1995 band on its fast side
+   (was +0.308 / 0.51, 2.3 s); hover Lp / Mq / Mu / Lv unchanged (-12.09 / -3.27 / +0.088 / -0.349).
    **Pilot review (2026-10-21)**: a delayed test pilot (attitude gains 1.2 per rad and 0.6 per rad/s, the state read tau s
    late; 2200 kg IGE, calm 15 s then an 8 kt side gust; W/probes/pilot-bo `hover`, `extra2`, `tune-inflow`) holds the raw
    hover up to tau 0.5 s and loses it at 0.6 s (23 s); at half the attitude gain it is lost at every tau, in calm air too
@@ -193,8 +197,9 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    is where a first-time keyboard pilot sits, hence the assist.
 18. **Hold autopilot on the Bo 105** (TW's `sim/rotorcraft/autopilot.ts`, tuned on the other types): the heliHold
    sequence overshoots its 40 kt speed step by 12 kt and settles in 28-30 s; heading steps overshoot 6.6-9.5 deg.
-19. **Rows that pass at their band edges** (no slack; owner judgement on each): 80 kt Lp -10.67 (edge -11.41), roll mode
-   10.85 1/s (edge 11.04), Mw +0.040 (edge +0.037); hover IGE roll 2.97 deg left (band 1-3 left); 145 KIAS pitch -8.8 deg
+19. **Rows that pass at their band edges** (no slack; owner judgement on each; final fix round values after "->", with the rotor's
+   in-plane force as a vector): 80 kt Lp -10.67 -> -9.96 (edge -11.41), roll mode 10.85 1/s (edge 11.04), Mw +0.040 (edge +0.037);
+   hover IGE roll 2.97 deg left (band 1-3 left) -> **3.01 deg left, 0.01 past the band: a KNOWN GAP row in bo105Handling**; 145 KIAS pitch -8.8 deg
    (band -6..-9); hover torque per engine 2500 kg OGE 82.7 % (79-83), 2500 kg IGE 72.0 % (72-78), 2200 kg IGE 61.8 %
    (61-69). The polar inertia 850 kg m^2 (lower edge of the fitting band) and the stabiliser slope 3.0 were chosen to reach
    these; the costs are a hub stiffness of 134 kN m/rad against DLR's 183.7 (-27 %; RC's R6 was run on its 900 kg m^2

@@ -342,7 +342,7 @@ gate shot** (`hover=1` without the hold, hands off) after 20 s: roll 53.5 deg, c
 N1 101.2 / 101.2 %, torque 84.2 / 84.2 % (W/shots/BO/bo105-hover.png): the hover diverges after about 8 s (section 5's
 hover model: zeta -0.49 at 0.62 rad/s at 2500 kg / 16 m, doubling in 2.3 s; inflow off 15 s). The MD 500E on the same
 URL is upright after 20 s (roll -5.8 deg, 2.7 m/s drift). That divergence is the real Bo 105's (section 5: ERF 1995,
-P); the physics stays, and the aids for flying it are the hold (`&ap=1`) and the STAB ASSIST (section 9). heliHold probe (`AC=bo105`, 32 flights): no disconnect; hover position RMS 0.07 m calm, 2.3-2.5
+P); the physics stays, and the aids for flying it are the hold (`&ap=1`) and the STAB ASSIST (section 9; built on branch `rigid/bofly`, not yet on `feat/rigid-rotor`). heliHold probe (`AC=bo105`, 32 flights): no disconnect; hover position RMS 0.07 m calm, 2.3-2.5
 m in 8 kt gusts; the sequence's 40 kt step overshoots by 12 kt (the hold's tuning, TW's).
 
 ## 11. Known gaps (it.fails rows; `src/aircraft/bo105/KNOWN_ISSUES.md` has the list)

@@ -93,7 +93,8 @@ merge. Each item names the requester.
    It fixes the AMCS hands-off hover, but it also changes the hover step responses the gyro was fitted on (the in-plane
    force is real below 0.3 m/s too), and the ICS hover still leaves the G9 band. That is a rotor-physics choice for RC
    (carry the in-plane side component instead of a fade) or the owner, not an integration fix. The hover-readout row
-   stays `it.fails`.
+   stays `it.fails`. **Final fix round (section 11): RC's alternative was taken (the in-plane force as a vector), the
+   fade was not; the hover-readout row passes.**
 
 ## 4. Measured on the integrated branch (`ace8c98`)
 
@@ -273,3 +274,73 @@ AGENT choice.
 Test rows added (no row loosened): ah56Ground "tail wheel LOCKED, prop taxi at 20 kt … under 10 deg/s" (passes: 4.6 °/s,
 3.8° of heading) and its `it.fails` unlocked twin (53.4 °/s, right wingtip); ah56Handling "ICS collective-fixed static
 longitudinal stability" `it.fails` (0.101 in/kt at 150 KCAS; no 190 KCAS trim). Guards for the round: `W/guards/integ/13-pilot/`.
+
+## 11. Final fix round (2026-10-22): the final assessment's 17 accepted findings
+
+Commits after `9d70cad`, each with its numbers in the message; every choice here is an AGENT choice, not an owner decision.
+Guards: `W/guards/integ/14-fix` (the rotor fixes), `15-p1` (the wing balance), `16-final` (the full plan section 10 set:
+G0, GR, GA, GS, GF, RC, TW, AG, AC, AH, BO, check-keys). Probes: `W/probes/fix-final/` (digest, in-plane, side-force sign,
+ICS static stability, C4 on the ICS, C23 split). Plan amendments A1-A11: plan section 15.
+
+| Commit | Finding | What |
+|---|---|---|
+| `d71a47a` | allocation (2 findings) | twin freewheel impulse and the extended rotor path stop allocating per step; Bo 105 / AH-56A digests identical |
+| `934c820` | H10 bound | the plan's 2.0 x asserted on the best of seven samples, skipped under load (1.82 x idle) |
+| `9032eb1` | AMCS numbers in two places | K_R 3,200 / 566 N m moved into gyro.ts; compound.ts no longer overrides the gyro; flown aircraft unchanged |
+| `9ff2722` | settle sound speed | trims and ground settles use the atmosphere's speed of sound (9,000 ft trim was 540 N off) |
+| `e335537` | pusher gyroscopic reaction | the prop's h acts on the airframe (its h after the free rotor's w x H compensation) |
+| `9ba4532` | half-P resume | `HalfPHopState.age`: a mid-onset save restores the same forcing (−25.9 kN m both; was 0) |
+| `e977509` | hover in-plane force | the hingeless BEM's in-plane force applied as a vector (side component included) |
+| `168e071` | hubForcing flap rate | the ICS gyro's blade moments see arm x beta-dot; formed only for the feathering-moment gyro |
+| `57d3b7f` | G3/G5a, G6 keyboard | asserted on the flown section / on a real key tap; two KNOWN GAP rows now pass |
+| `b0f2d60` | Bo 105 hover | cherry-pick of `rigid/bofly` `a1a31ba` (hover rows on ERF 1995 VII-7, P) |
+| `9fd5541`, `3c4ca71` | ICS pitch trim (P1) | hint; wing section Cm (D) and DATCOM downwash (D); C4 on the ICS itself; rows moved recorded |
+| `165ce64` | plan bands | T7b amended row (A4); H9 amended bound (A2) in `3c4ca71` |
+
+**Before (`13-pilot`, 9d70cad physics) and after (`15-p1` / `16-final`)**, 18,300 lb SL ISA stores unless stated:
+
+| Row | Before | After | Target (tag) |
+|---|---|---|---|
+| Hands-off hover 20 s calm, AMCS / ICS | −5.4 → −1.9° roll, +10.7° pitch, 14.3 kt / −5.3 → −10.5°, 6.6 kt | −5.35 → −5.49°, +0.76°, 0.41 kt / −5.25 → −5.13°, +0.53°, 0.31 kt | G9 2-7° left (P / ESTIMATE): **passes now** |
+| Half droop 6 s after a 0.5° kick | 0.125° | 0.009° | < 0.1° (AGENT): **passes now** |
+| G3 full ICS gust residue at 0.5 s (flown section) | 0.53 | 0.45 (clean auto-trim 0.029 at collective 0.26) | < 0.10 (P CR-114362 / D) |
+| G5 AMCS pitch 0 / 100 / 150 KCAS; hover sensitivity | 5.78 / 4.93 / 4.57; 11.54 | 5.54 / 4.94 / 4.61; 10.82 | 4.2-7.8; 6.3-11.7 (P) |
+| G7 ICS pitch τ63 hover / 150; roll τ63 | 0.79 / 0.30 s; 0.28 s | 0.65 / 0.31 s; 0.26 s | 1.5-3.5 / 0.8-2.0; 0.3-0.7 (D): gaps |
+| G7a / C17 ICS full lateral 120 / 122 KCAS R / L | 39.7 / 35.2 °/s, trim 0.18 in left | 37.4 / 44.0 °/s, trim 0.34 in right | 40-65, ratio 1.5-1.9 (D); 77 R / 42 L (P): **C17 sense now KNOWN GAP** |
+| G8 ICS p/q hover / 100 KCAS | +0.28 / −0.33 | +0.41 / −0.17 | ≤ 0.2 (AGENT): gap |
+| C2 / C3 HOGE | 8,625 / 6,000 ft | 8,375 / 5,750 ft | 8,500 / 6,000 ± 1,000 (P) |
+| C4 V_H (ICS collective 5°, 114 %) | 199.1 KTAS on the AMCS gyro mechanics | **201.2 KTAS on the ICS itself, 5.1 in fwd** | 194 ± 5 % (P) |
+| C5 AMCS clean | 212.5 KTAS | 216.7 | 210-225 (P/S) |
+| C6 rotor lift share 120 / 160 / 190 | 71 / 48 / 30 % | 71 / 49 / 29 % | 40-60 / 20-35 / 10-25 (ESTIMATE): gap |
+| C8 pitch at 190 KTAS | −3.3° | −3.25° | −1…−5 (ESTIMATE) |
+| C9 lateral 120 / 160 / 190 KCAS | 0.27 / 0.38 / 0.50 in left | 0.21 / 0.29 / 0.34 | ≤ 0.5 (P) |
+| C10 0 → 188 KTAS | 78.5 s | 77.5 s | 107 s ± 20 % (P): gap (prop map not refitted: no HS datum) |
+| C11 to the hover | not reached in 90 s | not reached | 33 s (P): gap |
+| C12 autorotation | 2,508 ft/min | 2,509 | 2,200 ± 300 (P): gap |
+| C18 pitch / roll at 180 KCAS | 4.26 / 15.6 °/s/in | 4.32 / 15.7 | 6 / 16 ± 30 % (P) |
+| C19 pull-up from 180 KCAS | 2.43 g at 1.78 s | 2.43 g at 1.75 s | 2.43 g in about 2.1 s (P) |
+| C23 ICS shift lateral / longitudinal / pedal | 0.89 R / 0.58 fwd / 2.34 R in | 1.31 R / −0.03 fwd / 2.34 R | 1.1 L / 0.7 fwd / 2.3 R (P): **longitudinal now KNOWN GAP** |
+| C23 frozen-controls roll, 30-70 KCAS | +1.41 °/s (right) | −1.61 °/s | right (P): **KNOWN GAP** |
+| ICS para 44-45 gradient 120 / 150; 190 KCAS trim | 0.106 / 0.098 in/kt; none | 0.073 / 0.071; 4.50 in fwd | 0.015 / 0.012 (P): gap; trim exists |
+| H4 onset 122 / 154 KCAS | 1.5 / 1.6 g | 1.3 / 1.4 g | 1.4 / 1.5 ± 0.2 (P) |
+| H4 at 1.4 g / 122 KCAS, held | 0.7° roll, 1.41 g | 134° roll, 1.84 g | (departure: owner item) |
+| H4 190 KCAS / 1.43 g roll | 0.11° | 0.69° | none (P; row 0.5°): **KNOWN GAP** |
+| H5 stick per g above 1.3 g, 122 KCAS | 5.95 in/g | −18 (a departure) | ≤ 0.1 (P): gap |
+| H6 hands-fixed full-aft pull 155 / 180 KCAS | (no row) | −14.0 / −14.4° roll in 3 s | ≤ 5° (ESTIMATE): KNOWN GAP |
+| H9 periodic damping, μ 0.5 | +1.6 % | +1.6 % | ≤ 5 % (amended A2) |
+| H10 cost AMCS / ICS | 1.92 x (asserted 2.2) | 1.82 x / 2.15 x (ICS reported) | ≤ 2.0 (AGENT) |
+| Bo 105 hover phugoid (2200 kg IGE) | σ +0.31, ω_d 0.51: 2.3 s doubling | σ +0.28, ω_d 0.50: 2.5 s | ERF 1995 band σ +0.05..0.45, ω_d 0.3..0.8 (P) |
+| Bo 105 80 kt Lp / hover IGE roll | −10.67 / 2.97° left | −9.96 / 3.01° left | AR-280 envelope / 1-3° (ESTIMATE): roll KNOWN GAP |
+
+**For the owner** (decisions, not made here):
+1. **The ICS moment stall is now a departure** (the flap-rate incidence in the gyro's blade moments): held at 1.4 g / 122 KCAS
+   the turn rolls 134° right and reaches 1.84 g (was 0.7°, 1.41 g); the onset g still matches ASTA-72. Keep, refit AH's moment
+   break, or revert that one term as a documented approximation.
+2. **ICS pitch trim against the transition shift**: the wing section Cm and the DATCOM downwash bring the para 44 trims inside the
+   stick (190 KCAS now trims) and the gradient from 0.10 to 0.07 in/kt, and cost C23's longitudinal shift (0.69 → −0.03 in, P 0.7).
+   No physical downwash reaches para 45's 0.015 in/kt.
+3. **The ICS lateral trim** moved further right (0.34 in right at 120 KCAS against P's 1 in left at 100) with the rotor's side force
+   (verified) and the wing balance; C17's right/left ratio and C23's frozen-controls roll turned.
+4. **The AMCS hands-fixed pull rolls left 14° in 3 s**: the rotor's pitch-rate coupling, which AMCS-73 para 37 does not report.
+5. **The Bo 105 STAB ASSIST** and the rest of `rigid/bofly` are not on this branch; only its hover-row commit was cherry-picked.
+

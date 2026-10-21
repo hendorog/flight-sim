@@ -89,6 +89,23 @@ thrust with it on over off is 0.996 at μ 0.1, 0.982 at μ 0.2 and 0.899 at μ 0
 32.84/36.53 kN); `bemFromFlap: false` reproduces rotor.ts's teetering call on the same settled state exactly. The test
 asserts [0.97, 0.995] at μ 0.2 and [0.85, 0.95] at μ 0.35.
 
+**The in-plane force is a vector (final fix round).** With options set, `bladeElements` also returns the second in-plane
+component, `side` = Σ tangential·cos ψ_BEM (with `inPlane` = Σ tangential·sin ψ_BEM, the H-force along the flow). On the hingeless
+`bemFromFlap` path `Rotorcraft` turns both back to shaft axes in the same wind frame (`inPlaneForce`: force −= u·H + s·side, u the
+in-plane flow direction, s = rotation·u × axis the advancing side; below 1e-9 m/s the plane's forward direction). The scalar form it
+replaced (`horizontal > 0`: H along the flow, no side component) is right for the teetering BEM, whose H-force vanishes with μ, but a
+hingeless rotor has a real in-plane force in the hover, which that form pointed along the first tiny drift. Checked against a direct
+per-element sum in the flap solver's frame (u_t, blade velocity w = rotation·(−sin ψ, −cos ψ)) for both rotation senses and four flow
+directions: equal to the newton (`W/probes/fix-final/sideforce.test.ts`); `hingelessBem` "the hingeless in-plane force is a vector":
+the fixture's 2.0 kN hover in-plane force moves 0.1 N for 1e-7 m/s in any direction (173 N before). The legacy call is unchanged.
+
+**The control gyro's blade moments see the flap rate (final fix round).** On the section path `hubForcing` formed the incidence,
+Mach number, section pitching moment and tangential force of the gyro's blade-moment sums from an inflow without the blade's own
+flap-rate velocity arm·β̇ (β̇ from the previous harmonics, as `aerodynamicHubMoment`). The gyro sums now take up + arm·β̇ with their
+own section evaluation; the lift keeps the rate-free incidence, so its flap damping stays the linear one (the implicit matrix's mean
+C plus the explicit periodic part) and is not counted twice. The sums are formed only for a feathering-moment gyro (the ICS); the
+AMCS ignores them.
+
 ## 4. First-harmonic (Pitt-Peters) inflow
 
 **Source correction.** The plan pointed at NASA TM-88327 (Chen & Hindson 1986, NTRS 19870015049, downloaded to
