@@ -115,6 +115,11 @@ export function checklistFrame(ctx: Pick<SimContext, 'state' | 'controls' | 'wea
     f['checklist.clutchEngagement'] = rotor.clutchEngagement; f['checklist.clutchLight'] = rotor.clutchLight;
     f['checklist.governorActive'] = rotor.governorActive; f['checklist.rotorPercent'] = rotor.rotorRpm / d.referenceRpm * 100;
     if (e) f['checklist.enginePercent'] = e.rpm / (d.referenceRpm * d.engineRatio) * 100;
+    // Controls and state of the rigid-rotor types (AH-56A): the tail-wheel lock, the prop lever and blade angle, the control gyro mode.
+    f['checklist.tailWheelLock'] = c.tailWheelLock ?? false;
+    f['checklist.propLever'] = c.propLever ?? 0;
+    f['checklist.propBeta'] = rotor.pusher ? rotor.pusher.beta * RAD : 0;
+    f['checklist.gyroIcs'] = rotor.controlGyro?.mode === 'ics';
   }
   return f;
 }

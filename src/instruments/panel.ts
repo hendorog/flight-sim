@@ -371,7 +371,7 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
     case 'flapLever':
       return new FlapIndicator(g.id, g.bounds, g.maxDeg, g.legends, paintLevers);
     case 'gearLights':
-      return new GearLights(g.id, g.bounds);
+      return new GearLights(g.id, g.bounds, g.noseLegend);
     case 'flapLights':
       return new FlapLights(g);
     case 'trimBar':

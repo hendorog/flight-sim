@@ -100,11 +100,15 @@ export class GearLights implements PanelComponent {
   private readonly latch = new Latch(4);
   private readonly lamps: { x: number; y: number; r: number }[];
 
+  private readonly legends: readonly string[];
+
   constructor(
     readonly id: string,
     readonly bounds: Rect,
+    noseLegend?: string,
   ) {
     this.lamps = gearLampPlaces(bounds);
+    this.legends = noseLegend === undefined ? GEAR_LEGENDS : [GEAR_LEGENDS[0], noseLegend, GEAR_LEGENDS[2], GEAR_LEGENDS[3]];
   }
 
   sample(r: InstrumentReadings): boolean {
@@ -123,7 +127,7 @@ export class GearLights implements PanelComponent {
 
   drawStatic(g: Ctx2D): void {
     plate(g, this.bounds, 411);
-    this.lamps.forEach((l, i) => label(g, GEAR_LEGENDS[i], l.x, l.y + l.r + 8, 6.5));
+    this.lamps.forEach((l, i) => label(g, this.legends[i], l.x, l.y + l.r + 8, 6.5));
   }
 
   paintLightMask(g: Ctx2D): void {

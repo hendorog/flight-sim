@@ -123,7 +123,9 @@ export type GaugeDef =
       letters?: readonly [string, string] }
   | { kind: 'suction' | 'ammeter'; id: string; at: At; scale?: ScaleDef }
   /** Three greens and the red unsafe light; with `lever`, also the gear selector drawn there, clickable as a 'select' hotspot. */
-  | { kind: 'gearLights'; id: string; bounds: Rect; lever?: At }
+  | { kind: 'gearLights'; id: string; bounds: Rect; lever?: At;
+      /** Legend of the first green lamp (default NOSE): TAIL on a tail-wheel type (the AH-56A's gear state keeps its tail wheel in the nose slot). */
+      noseLegend?: string }
   | { kind: 'flapLever'; id: string; bounds: Rect; maxDeg: number; legends: readonly string[] }
   /**
    * One lamp per flap position. colors: lamp colour per position (DA42: green, white, white; DA20: green, yellow,
