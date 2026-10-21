@@ -249,7 +249,7 @@ Measured after the assessment round's fixes (wing and pusher wake signs, AMCS K_
 submission. The two sign fixes act in the hover and at low speed (C1–C3, C22 attitudes, C23, the hands-off hover); the K_R refit acts on
 the AMCS's stick per moment and its rates (C9, C18, C19, C22 held-cyclic sizes, C26). Separated by a run with the sign fixes at the old
 K_R 5,000 / 715: C9 190 KCAS 0.56 in, C26 0.56 / 0.69 / 0.12 in, C19 4.60 in, C22 held +10° −5.6° / −6° +2.9°, 5.3 kt — the K_R's;
-C1, C22 over the spot and C23 the same as with K_R 3,000 — the sign fixes'.
+C1, C22 over the spot and C23-ICS the same as with K_R 3,000 — the sign fixes'; C23-AMCS lateral 0.11 → 0.15 in is the K_R's.
 
 | Row | Target (tag) | Measured | |
 |---|---|---|---|
