@@ -19,6 +19,21 @@ export interface BladeElementOptions {
   /** Speed of sound for the section's Mach number, m/s (default 340.3). */
   soundSpeed?: number;
 }
+/**
+ * The first-harmonic blade pitch RELATIVE TO THE TIP-PATH PLANE in bladeElements' azimuth (psi = 0 downwind,
+ * ut = Omega r + V sin psi), from the blade cyclic and flap harmonics in the articulated solver's azimuth (psi = 0
+ * forward, e_r = (cos psi, -sin psi); pitchCos/pitchSin as flapForcing, betaC/betaS = cosine/sine harmonics). A tilt of
+ * the reference plane changes the section pitch by the plane's slope along the blade's motion,
+ * theta_TPP = theta_shaft - rotation d beta / d psi; then psi_BEM = rotation (psi + alpha) + pi, alpha the direction of the
+ * hub's motion through the air in the plane (inPlaneX, inPlaneY; absent: forward). The free-hinge limit is the
+ * cancellation formula of bladeElements' `teetering` branch (plan R8).
+ */
+export function tppPitchHarmonic(rotation: 1 | -1, pitchCos: number, pitchSin: number, betaC: number, betaS: number,
+  inPlaneX: number, inPlaneY: number): { cos: number; sin: number } {
+  const pc = pitchCos - rotation * betaS, ps = pitchSin + rotation * betaC, speed = Math.hypot(inPlaneX, inPlaneY);
+  const ca = speed > 1e-9 ? inPlaneX / speed : 1, sa = speed > 1e-9 ? inPlaneY / speed : 0;
+  return { cos: -pc * ca + ps * sa, sin: -rotation * (pc * sa + ps * ca) };
+}
 export interface RotorLoads { thrust: number; torque: number; inPlane: number; stalledFraction: number;
   coningMoment: number; stallMoment: number; profilePower: number }
 /** Azimuth-averaged blade elements, including reverse flow and signed aerodynamic shaft torque.

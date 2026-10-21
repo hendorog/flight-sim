@@ -4,7 +4,7 @@ import type { BodyState, ForceMoment } from '../interfaces';
 import type { EngineUnit } from '../propulsion/engineUnit';
 import { cyclicAngles, drivetrainInertia, emptyRotorcraftState, governedRpm, type RotorcraftDefinition } from './definition';
 import { emptyTurboshaftState, TurboshaftControl } from './turboshaft';
-import { bladeElements, inflowTarget, inflowTimeConstant } from './rotor';
+import { bladeElements, inflowTarget, inflowTimeConstant, tppPitchHarmonic, type RotorLoads } from './rotor';
 import { airframeLoads } from './airframe';
 import { placardMap } from './limits';
 import { estimatedArticulatedGeometry, flapForcing, advanceFlap, harmonicFlap, hingeMoment, hubForcing, flapSystem, aerodynamicHubMoment,
@@ -544,17 +544,14 @@ export class Rotorcraft {
    * the coning's radial-flow term with radialFlow. Other hubs keep the free-hinge cancellation (teetering = true).
    */
   private mainLoads(rate: Vec3, collective: number, axial: number, inPlane: Vec3, horizontal: number, density: number,
-    pitchCos: number, pitchSin: number, soundSpeed: number | undefined) {
+    pitchCos: number, pitchSin: number, soundSpeed: number | undefined): RotorLoads {
     const s = this.state, d = this.def, h = this.hingeless, rot = d.rotation;
     const omega = d.yawInRotorSpeed ? Math.max(0, s.omega - d.rotation * rate.z) : s.omega;
     const radial = d.main.radialStations ?? 12, azimuthal = d.main.azimuthStations ?? 16;
     if (!h || !h.bemFromFlap) return bladeElements(d.main, omega, collective, axial, horizontal, s.inflow, density, radial,
       azimuthal, true, { section: d.main.section, soundSpeed });
-    const betaC = -s.flapForward, betaS = s.flapRight;
-    const pc = pitchCos - rot * betaS, ps = pitchSin + rot * betaC;
-    const ca = horizontal > 1e-9 ? inPlane.x / horizontal : 1, sa = horizontal > 1e-9 ? inPlane.y / horizontal : 0;
     return bladeElements(d.main, omega, collective, axial, horizontal, s.inflow, density, radial, azimuthal, false, {
-      harmonicPitch: { cos: -pc * ca + ps * sa, sin: -rot * (pc * sa + ps * ca) },
+      harmonicPitch: tppPitchHarmonic(rot, pitchCos, pitchSin, -s.flapForward, s.flapRight, inPlane.x, inPlane.y),
       coning: h.radialFlow ? s.coning : 0, section: d.main.section, soundSpeed });
   }
   /** Physical poses around the load solver's harmonic flap, without changing its load coordinates.
