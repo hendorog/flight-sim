@@ -15,7 +15,7 @@
 // selected with 8 / 9 / 0; engineControls.ts has the rules for the levers of two engines. In the air the keys
 // that can shut an engine down want ONE engine selected (guard()).
 
-import { clamp } from '../core/math';
+import { clamp, interp1, KT } from '../core/math';
 import type { CameraMode, SimContext, Subsystem } from '../core/context';
 import { PROP_FEATHER_GATE, clearEngineControl, cloneControls, copyControls, engineControl, setEngineControl } from '../core/types';
 import type { AircraftState, ControlInputs, EngineControlKey, FuelSelector, MagnetoPosition } from '../core/types';
@@ -117,6 +117,12 @@ export interface InputAssists {
    * yoke owns the ailerons. Default true.
    */
   rollTrim: boolean;
+  /**
+   * Laptop assist for a pusher grip (InputProfile.propLever with a `schedule`): the grip follows the trim schedule
+   * against indicated airspeed until the pilot touches it (a propeller key or the snap key) after a reset. Default
+   * false (plan revision 2 section 0 item 7). Absent: false.
+   */
+  propSchedule?: boolean;
 }
 
 /** What the UI needs to draw a small yoke-position indicator. Values are the commanded controls. */
@@ -471,6 +477,7 @@ export class InputSystem implements Subsystem {
     this.rollTrim.reset();
     this.rotation.reset();
     this.selection = 'all';
+    this.gripTouched = false;
     this.gateLifted = this.forwardToGate = false;
     // An armed condition-lever cut-off belongs to the previous flight: holding the key through the reset must not stop
     // the new flight's engine.
@@ -721,6 +728,9 @@ export class InputSystem implements Subsystem {
     act.sample(active, this.time);
     return act.isActive(this.time) ? best : null;
   }
+
+  /** The pilot has moved the pusher grip since the last reset (the propSchedule assist lets go of it then). */
+  private gripTouched = false;
 
   /** The mouse yoke's tuning: the profile's, or on a re-centring cyclic without one a small deadzone. */
   private get mouseTuning(): InputProfile['mouseYoke'] {
@@ -1128,7 +1138,8 @@ export class InputSystem implements Subsystem {
     if (this.profile.n2BeepSplit) c.n2BeepSplit = this.dir('engineTrimLeft', 'engineTrimRight');
     if (propGrip) {
       const grip = this.dir('propDecrease', 'propIncrease');
-      if (grip !== 0) c.propLever = clamp((c.propLever ?? propGrip.detent) + grip * PROP_GRIP_RATE * dt, 0, 1);
+      if (grip !== 0) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? propGrip.detent) + grip * PROP_GRIP_RATE * dt, 0, 1); }
+      else if (this.assists.propSchedule && propGrip.schedule && !this.gripTouched) c.propLever = clamp(interp1(propGrip.schedule.kias, propGrip.schedule.lever, s.ias / KT), 0, 1);
     }
     if (this.profile.has.propeller) {
       // Propeller lever: down to the feather gate and no further (Shift+F feathers); up from feather starts at the gate.
@@ -1361,14 +1372,15 @@ export class InputSystem implements Subsystem {
         break;
       }
       case 'propDecrease':
-        if (this.profile.propLever) c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) - LEVER_TAP, 0, 1);
+        if (this.profile.propLever) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) - LEVER_TAP, 0, 1); }
         else this.moveLever(c, 'propeller', -LEVER_TAP, this.target('propeller', engine), PROP_FEATHER_GATE, true);
         break;
       case 'propIncrease':
-        if (this.profile.propLever) c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) + LEVER_TAP, 0, 1);
+        if (this.profile.propLever) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) + LEVER_TAP, 0, 1); }
         else this.moveLever(c, 'propeller', LEVER_TAP, this.target('propeller', engine), PROP_FEATHER_GATE, true);
         break;
       case 'propLeverSnap':
+        this.gripTouched = true;
         c.propLever = nextSnap(c.propLever ?? this.profile.propLever!.detent, this.profile.propLever!.snaps);
         break;
       case 'tailWheelLock':

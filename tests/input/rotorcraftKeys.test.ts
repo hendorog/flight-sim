@@ -197,6 +197,30 @@ describe('a wheeled pusher helicopter (propLever, tailWheelLock, gearLever, whee
   });
 });
 
+describe('the pusher grip trim-schedule assist (InputAssists.propSchedule, off by default)', () => {
+  const SCHEDULED: InputProfile = { ...PUSHER_HELI_INPUT, propLever: { ...PUSHER_HELI_INPUT.propLever!, schedule: { kias: [0, 100, 200], lever: [0.35, 0.6, 0.9] } } };
+  it('off by default: the grip stays where it is; on: it follows the schedule with airspeed until a propeller key is touched', () => {
+    const off = makeInputRig(SCHEDULED);
+    off.c.propLever = 0.35; off.s.ias = 150 * 0.514444;
+    off.run(0.2);
+    expect(off.c.propLever).toBe(0.35);
+    const r = makeInputRig(SCHEDULED);
+    r.input.assists.propSchedule = true;
+    r.c.propLever = 0.35; r.s.ias = 150 * 0.514444;
+    r.run(0.2);
+    expect(r.c.propLever).toBeCloseTo(0.75, 3);
+    r.tap('Semicolon');
+    const touched = r.c.propLever!;
+    r.s.ias = 50 * 0.514444;
+    r.run(0.5);
+    expect(r.c.propLever).toBe(touched);
+    // A reset hands the grip back to the assist.
+    r.ctx.events.emit('reset', { scenario: 'runway' });
+    r.run(0.2);
+    expect(r.c.propLever).toBeCloseTo(0.475, 3);
+  });
+});
+
 describe('re-centring keyboard cyclic (InputProfile.centringCyclic)', () => {
   it('a 0.3 s cyclic tap returns to the trim anchor at the Numpad 5 rate once the key is let go; the anchor follows the spring trim', () => {
     const r = makeInputRig(PUSHER_HELI_INPUT, { aileron: 0, elevator: 0 });
