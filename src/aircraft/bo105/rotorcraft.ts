@@ -162,7 +162,7 @@ export const BO105_ROTORCRAFT: RotorcraftDefinition = {
     // The cabin pod: nose STA 0.70 to 5.0, belly 0.40 to roof 2.05 m (P hull 4.30 x 1.58 m; 3V heights).
     cabin: { centre: { x: D.x(2.85), y: 0, z: D.z(1.225) }, radii: { x: 2.15, y: D.HULL_WIDTH / 2, z: 0.825 } } },
   skids: {
-    halfTrack: D.SKID_HALF_TRACK, front: D.SKID_CONTACT_FRONT_X, rear: D.SKID_CONTACT_REAR_X, z: D.SKID_Z,
+    halfTrack: D.SKID_HALF_TRACK, front: D.SKID_CONTACT_FRONT_X, rear: D.SKID_CONTACT_REAR_X, z: D.SKID_Z, frontZ: D.SKID_FRONT_Z,
     // Two bending cross tubes (P TM 00-7): the R44's cross-tube gear scaled to 2500 kg (x 2.2): elastic per contact,
     // a bilinear yield at about 3 g at maximum mass (2500 x 9.81 x 3 / 4 = 18 kN). ESTIMATES (no gear data).
     stiffness: 240_000, damping: 7900, friction: 0.5, maxSink: 3.5,

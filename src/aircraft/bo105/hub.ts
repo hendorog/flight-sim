@@ -23,13 +23,14 @@ export const BO105_MAIN_ROTOR: RotorDefinition = {
   rootCutout: D.MAIN_ROTOR_ROOT_CUTOUT,
   /** Equivalent-linear twist -6.2 deg (P AR-280; AGENT choice over the -8 deg hardware value, plan section 0 item 3). */
   twist: D.MAIN_ROTOR_TWIST_DEG * DEG,
-  /** Blade pitch at 0.75 R with the collective fully down: the sole knob of the autorotation NR law (plan 6.2), calibrated
-   *  to 107 % NR at 2200 kg / 75 KIAS / SL with both engines off and the collective full down (the 104-110 % row; 1.0 deg
-   *  gave 110.9 %, 1.8 deg 103.3 %). ESTIMATE. */
-  minPitch: 1.4 * DEG,
+  /** Blade pitch at 0.75 R with the collective fully down: the sole knob of the autorotation NR law (plan 6.2: 104-110 %
+   *  at 2200 kg / 75 KIAS, 83-88 % at 1400 kg, 111-117 % at 2500 kg, and NR >= 85 % with the collective down at 1400 kg /
+   *  60 KIAS), engines off, SL ISA: 1.35 deg gives 107.4 / 85.4 / 114.6 % and 85.4 % (1.0 deg: 110.9 % at 2200 kg; 1.4 deg:
+   *  84.97 % at 1400 kg / 60 KIAS). ESTIMATE. */
+  minPitch: 1.35 * DEG,
   /** ... and fully up: the collective range 19.23 deg, the sole knob of Z_col (AR-280 DLR -0.349 m/s^2 per % of travel,
    *  at 80 KCAS, 3000 ft, 2200 kg). ESTIMATE (the rigging was not found). */
-  maxPitch: (1.4 + 19.23) * DEG,
+  maxPitch: (1.35 + 19.23) * DEG,
   /** Lift slope of the NACA 23012 at the blade Mach numbers (0.3-0.65), 1/rad: 6.0 (2 pi x 0.95; F Padfield a0 6.113,
    *  UNVERIFIED recollection). The value RC's validation flew (fixed once, not a knob). ESTIMATE. */
   liftSlope: 6.0,
@@ -60,9 +61,11 @@ export const BO105_MAIN_ROTOR: RotorDefinition = {
  *   calculated at 425 rpm; P NASA TM-103867: 1.12); with e = 0.12 R the spring makes up the rest (K_beta about 13 % of
  *   (nu^2 - 1) I_beta Omega^2, hingelessSpring);
  * - precone 2.5 deg (P NASA TM-85990; METU);
- * - control phase 30 deg (calibrated: the sole knob of the off-axis control ratios, plan 6.2; RC's least-squares fit
- *   to the AR-280 DLR/AFDD means, re-checked on this definition in tests/rotorcraft/bo105Derivatives.test.ts. D check:
- *   Ward's "control phasing retarded to about 60 deg" is a 30 deg lead on the articulated 90 deg);
+ * - control phase 28 deg (calibrated: the sole knob of the off-axis control ratios, plan 6.2): the settled off-axis
+ *   moment ratios of +/-0.02 cyclic steps at 80 KCAS / 3000 ft / 2200 kg fitted by least squares on a 1 deg grid to the
+ *   means of the DLR and AFDD control derivatives (AR-280 Table 6.2.11: lateral-step M/L -0.084, longitudinal-step L/M
+ *   +0.145), RC's method on this airframe (RC's fixture fitted 30 deg; tests/rotorcraft/bo105Derivatives.test.ts). D
+ *   check: Ward's "control phasing retarded to about 60 deg" is a 30 deg lead on the articulated 90 deg;
  * - delta-3 0 (no droop or sweep outboard of the feathering bearing);
  * - the 3-state Pitt-Peters inflow, the radial-flow terms and the hub-aware blade elements ON (plan 6.2, the fitting
  *   rule: R18-R20 are met with them on).
@@ -72,7 +75,7 @@ export const BO105_HUB_SET = {
   equivalentHingeOffset: 0.12 * D.MAIN_ROTOR_RADIUS,
   flapFrequency: 1.11,
   precone: D.MAIN_ROTOR_PRECONE_DEG * DEG,
-  controlPhase: 30 * DEG,
+  controlPhase: 28 * DEG,
   delta3: 0,
   harmonicInflow: true,
   radialFlow: true,
@@ -81,9 +84,16 @@ export const BO105_HUB_SET = {
 
 /**
  * Mast-moment indicator (P5 FM 2-16, 7-18..7-20: four strain gauges in the mast; colour bands and a LIMIT light, no
- * number published). AGENT/ESTIMATE, set from the slope-landing rows (plan 6.2): a standard-technique landing at 2200 kg
- * on the FM's 15 deg left-down and 8 deg right-down slopes reads in the top third of the yellow band with LIMIT off;
- * 20 deg left-down lights LIMIT. limit: |hub moment| at the LIMIT mark, N m; yellow: the yellow onset as a fraction of
- * it. The measured slope-landing moments and the derivation: docs/bo105-flight-model.md "Mast moment".
+ * number published). AGENT/ESTIMATE, set from the plan's rows (6.2) as measured on this definition (tests/rotorcraft/
+ * bo105Handling.test.ts, standard-technique landings at 2200 kg mid-CG, the lateral cyclic keeping the disc level):
+ *  - LIMIT 15.5 kN m: the 15 deg left-down and 8 deg right-down landings peak at 14.4 and 14.2 kN m (LIMIT off), the
+ *    20 deg left-down at 16.8 kN m (LIMIT on). The slope peaks are set by the lateral cyclic stop (about 4.1 deg each way,
+ *    fitted to AR-280): the plan's "LIMIT at about 16-17 deg of TPP-to-shaft tilt" (about 40 kN m) assumed a disc held
+ *    level on a 15 deg slope, which the fitted travel cannot do;
+ *  - yellow from 0.17 of it (2.6 kN m): a smooth 2.5 g pull at 100 KIAS peaks at 3.1 kN m (yellow), a steady 60 deg turn at
+ *    100 KIAS (2.2 g) at 2.0 kN m (green), a full lateral stick reversal at 80 KIAS at 13.3 kN m (yellow, not LIMIT); the
+ *    slope landings then sit in the top third of yellow (above 11.2 kN m). Level flight reads 1.6 kN m at 100 KIAS
+ *    and 4.8 kN m (yellow) at 145 KIAS, 2200 kg mid-CG.
+ * docs/bo105-flight-model.md "Mast moment".
  */
-export const BO105_MAST_MOMENT = { limit: 24_000, yellow: 0.5 } as const;
+export const BO105_MAST_MOMENT = { limit: 15_500, yellow: 0.17 } as const;

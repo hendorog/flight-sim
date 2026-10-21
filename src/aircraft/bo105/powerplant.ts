@@ -13,26 +13,17 @@ import { BO105_BUS_DEAD_VOLTS, BO105_FUEL, BO105_GENERATOR_AMPS, BO105_N1_100_RP
 import { x, z } from './dimensions';
 
 const md = MD500_POWERPLANT;
-const turbine = BO105_INSTALLED_C20B.turbine!;
 
 /**
- * The 250-C20B as installed in the Bo 105: TW's installed map (BO105_INSTALLED_C20B, twin.ts: the MD 500E's 250-C20B
- * re-drawn above 85 % N1 through the Bo 105's two anchors, 82 % torque at 738 C, P5 FM 4-17, and 95 % (283 kW) at the
- * 105 % N1 stop and 810 C, P TCDS p9) with one change of the power-turbine law (ESTIMATE, AGENT choice):
- *
- * stallTorqueRatio 2 (the MD 500E's 250-C20B carries 3). The power turbine's torque at a given gas power falls linearly
- * with its speed from stallTorqueRatio x the design-speed torque at rest (turbineEngine.ts), so its shaft power is
- * P(n) = P_design (a - (a - 1) n) n: with a = 2 the power is flat at 100 % N2 (dP/dn = 0, the design point of a free
- * turbine run at its best efficiency, D); with a = 3 it rises 1 % per 1 % of N2 lost, so a survivor at its N1 stop
- * reads 95.8 x (3 - 2 NR) = 105.4 % torque at 95 % NR. With that law the plan's OEI rows (T7b: NR settles 93-96 % with
- * the 95 % RPM warning on and the survivor at <= 105 % torque) cannot all hold (docs/twin-turboshaft.md section 7,
- * "BLOCKING"); with a = 2 the survivor reads 100.6 % at 95 % NR. The repo's other free turbines (PT6A on the C208 and
- * PC-12) use 2 (F). The 100 % N2 anchors are unchanged (the law is 1 at the design speed).
+ * The 250-C20B as installed in the Bo 105: TW's installed map (BO105_INSTALLED_C20B, twin.ts), the MD 500E's 250-C20B
+ * re-drawn above 85 % N1 through the Bo 105's two anchors, 82 % torque at 738 C (P5 FM 4-17) and 95 % (283 kW) at the
+ * 105 % N1 stop and 810 C (P TCDS p9); its power-turbine law is the MD 500E's (stallTorqueRatio 3, ESTIMATE). A law of 2
+ * was tried (the repo's PT6A types) and rejected: it cut the engines' torque at low N2 so that both levers at IDLE held
+ * the rotor at 52 % NR on the ground against the FM's "about 60 %" (P5 FM 4-11; 3 gives 59 %), while on this rotor the
+ * law of 3 no longer breaks the OEI torque bound TW found on the scaffold's rotor (a survivor at its N1 stop reads 103 %
+ * at 96.5 % NR here, docs/bo105-flight-model.md "Engines").
  */
-export const BO105_ENGINE: EngineDef = {
-  ...BO105_INSTALLED_C20B,
-  turbine: { ...turbine, powerTurbine: { ...turbine.powerTurbine, stallTorqueRatio: 2 } },
-};
+export const BO105_ENGINE: EngineDef = BO105_INSTALLED_C20B;
 
 /**
  * Transfer: the main tank's two pumps keep the supply tank full until the main tank is empty (P5 FM 7-14; LOW FUEL at

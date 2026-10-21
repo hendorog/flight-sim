@@ -83,8 +83,10 @@ const EMPTY_CG: Vec3 = (() => {
   return { x: (x(3.2025) * total - mx) / EMPTY, y: 0, z: z(BO105_EMPTY_CG_HEIGHT) };
 })();
 
-/** Maximum mass, 2500 kg, full fuel: five 90 kg occupants and 318 kg of cargo (payload 768 kg). */
-export const BO105_MAX_GROSS = bo105Payload([90, 90, 90, 90, 90, BO105_MASS_KG.max - EMPTY - FUEL - 450]);
+/** Maximum mass, 2500 kg, full fuel: two 100 kg crew, three 110 kg rear passengers and 238 kg of cargo (payload 768 kg):
+ *  CG STA 3.247 m, inside 3.082-3.270 at 2500 kg (P TCDS p11; five 90 kg occupants with 318 kg of cargo sit at 3.303,
+ *  aft of the limit). */
+export const BO105_MAX_GROSS = bo105Payload([100, 100, 110, 110, 110, BO105_MASS_KG.max - EMPTY - FUEL - 530]);
 
 export const BO105_MASS: MassDef = {
   empty: EMPTY, maxTakeoff: BO105_MASS_KG.max, maxLanding: BO105_MASS_KG.max,
@@ -96,7 +98,8 @@ export const BO105_MASS: MassDef = {
   inertiaLoading: BO105_TYPICAL,
   loadings: {
     typical: BO105_TYPICAL,
-    // Pilot and front passenger (100 kg each), full fuel: 1932 kg, the forward side of the envelope.
+    // Pilot and front passenger (100 kg each), full fuel: 1932 kg at STA 3.236, the most forward of these loadings (the
+    // empty CG sits aft, about STA 3.43: the envelope's forward limit, 3.04 at 1900 kg, needs ballast in the nose).
     forward: bo105Payload([100, 100, 0, 0, 0, 0]),
     // Pilot (80 kg), three 100 kg rear passengers and 120 kg of cargo, full fuel: 2232 kg, near the aft limit.
     aft: bo105Payload([80, 0, 100, 100, 100, 120]),

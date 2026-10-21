@@ -6,12 +6,12 @@
 // collective head (P5 FM 7-12). Electric cyclic trim with feel springs (P5 FM 7-24). The keyboard cyclic is a
 // position command (non-centring), as on the other helicopters; no mixture, carburettor heat or primer: turboshafts.
 //
-// Keyboard axes (plan 6.2, input only; the dynamics stay as calibrated): the Bo 105 rolls about 1.25 deg/s per % of
-// lateral travel with a 0.12 s roll time constant at 80 KIAS (AR-280, D), about 1.5-2 x the MD 500E's, so the aileron
-// key moves the stick more slowly (baseRate 0.03, maxRate 0.22, accelTime 1.5 against the MD 500E's 0.05 / 0.35 / 1.2)
-// and the elevator key at baseRate 0.04; the mouse yoke's expo 0.9 and a 0.02 dead zone. ESTIMATE starting values,
-// checked by the tap-to-bank row (a 1 s lateral key tap at 80 KIAS gives 8-14 deg of bank, tests/rotorcraft/
-// bo105Handling.test.ts).
+// Keyboard axes (plan 6.2, input only; the dynamics stay as calibrated). The plan's starting values (aileron baseRate
+// 0.03, maxRate 0.22, accelTime 1.5; elevator 0.04) left a 1 s lateral key tap at 80 KIAS at 0.058 of the axis (2.9 % of
+// travel) and 5.7 deg of bank 3 s after the key went down, below the tap-to-bank row's 8-14 deg (tests/rotorcraft/
+// bo105Handling.test.ts: the bank 2 s after a 1 s tap, the plan's "first 1-2 s" roll window). The aileron key is the
+// row's knob: baseRate 0.07, maxRate 0.35, accelTime 1.5 put a 1 s tap at 0.11 of the axis (5.6 % of travel). The
+// elevator key baseRate 0.04 and the mouse yoke's expo 0.9 and 0.02 dead zone are the plan's. ESTIMATES.
 import type { InputProfile } from '../../input/profile';
 import { MD500_INPUT } from '../md500/input';
 import { BO105_POWER_LEVER } from './facts';
@@ -29,7 +29,7 @@ export const BO105_INPUT: InputProfile = {
   mouseYoke: { expo: 0.9, deadzone: 0.02 },
   assists: { ...md.assists, axes: {
     elevator: { ...mdAxes.elevator, baseRate: 0.04 },
-    aileron: { ...mdAxes.aileron, baseRate: 0.03, maxRate: 0.22, accelTime: 1.5 },
+    aileron: { ...mdAxes.aileron, baseRate: 0.07, maxRate: 0.35, accelTime: 1.5 },
     rudder: mdAxes.rudder,
   } },
   // The power levers' texts come from the engineLever profile (bindings.ts); the MD 500E's twist-grip labels are dropped.

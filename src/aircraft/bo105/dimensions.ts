@@ -11,8 +11,9 @@
 // about 0.1 m either side of the hub; the exact mast station was not found), and 0.96 m below the hub (F METU: CG
 // 3.15 ft below the hub). x = (3.150 - sta_m), y = right, z = (SKID_Z - height above the skid soles).
 //
-// NOTE (S0): the S0 physics STUB still flies the MD 500E's hub point, skids and airframe (bo105/rotorcraft.ts); the
-// exterior (BX) builds to THESE numbers, and BO moves the physics onto them.
+// The flight model (bo105/rotorcraft.ts) flies these numbers: hub, tail rotor, stabiliser, fin, skids and their contacts.
+// The body REFERENCE point (origin) is 0.96 m below the hub (F METU); the CG of a loading is the mass model's
+// (bo105/mass.ts: about 1.5 m below the hub at 2200 kg).
 
 const DEG = Math.PI / 180;
 
@@ -128,6 +129,16 @@ export const SKID_ANGLE_DEG = 1.5;
  *  0.25 m inside each end (the toe curls up; the heel ends at the rear cross-tube bend). 3V ESTIMATE. */
 export const SKID_CONTACT_FRONT_X = x(2.00);
 export const SKID_CONTACT_REAR_X = x(4.25);
+/**
+ * Body z of the FRONT ground contacts, m: the skids set 1.25 deg nose-up to the fuselage reference, so the fuselage rests
+ * about 1.3 deg nose-up on level ground (with the skids' static compression) and the IGE hover attitude (about +3 deg at
+ * 2200 kg mid-CG) is within 2 deg of it: the plan's ground-stance row (fuselage within 1.5 deg of level, no lift-off
+ * pitch jump above 2 deg). AGENT/3V: P5 FM Fig 1-1 draws a 1.5 deg angle between the skid tube and the reference line at
+ * the aft end whose sense is not resolved (research-bo105 section 14). D: the contacts 2.25 m apart, 2.25 x tan(1.25
+ * deg) = 0.049 m.
+ */
+export const SKID_GROUND_ATTITUDE_DEG = 1.25;
+export const SKID_FRONT_Z = SKID_Z + (SKID_CONTACT_FRONT_X - SKID_CONTACT_REAR_X) * Math.tan(SKID_GROUND_ATTITUDE_DEG * DEG);
 /** Skid tube radius, m (3V ESTIMATE: about 80 mm tube). */
 export const SKID_TUBE_RADIUS = 0.04;
 
