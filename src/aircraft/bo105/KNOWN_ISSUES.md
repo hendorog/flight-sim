@@ -58,7 +58,13 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
      autorotation NR 104.8 %; profileCd 0.012 (1.039): +3.0 %, AEO 1,965 / 1,524, OEI +165 / -89, 126.4 KTAS, NR 103.2 %
      (out of band). dragArea.z x 1.5 (the download): hover +1.7 %, bucket 0.
    Closing it needs a climb-efficiency mechanism in the rotor core (RC) or restated bands (architect): Jane's 1,575 ft/min
-   plausibly belongs to 2,500 kg, where the model is +4 % from it.
+   plausibly belongs to 2,500 kg, where the model is +4 % from it. **Flyability pass (2026-10-22; gate finding 5, the
+   pilot reviewer's "about 10 % strong at 2200 kg", rated nice):** against the CB-5 chart (F, Type 2 blades, itself
+   optimistic for a CB-4) the model is +11 % at 2200 kg (2,107 against 1,900 ft/min) and +19 % at 2500 kg (1,637 against
+   1,380); it turns 83 % of the excess shaft power into climb against the 60-72 % the sources imply over Kessler's power
+   curve. Restating the band to the CB-5 chart +/-15 % (1,615-2,185 ft/min at 2200 kg) would pass it, but the model
+   exceeds even the optimistic chart and the tolerance would swallow that: **not taken; the row stays `it.fails` and the
+   band is the architect's call.** No Bo 105 parameter closes it (the OEI floor allows +0.3 % of bucket shift).
 3. **Hover derivatives against the flight-identified hover** (`bo105Derivatives` hover rows, re-sourced at the
    flyability pass, 2026-10-22). The hover rows are now against Kaletka & Gimonet, ERF 1995 paper VII-7, Table 1 (P: the
    DLR and CERT 6 DOF identifications of the DLR S-123 in the hover; `W/sources/bo105/erf-1995-vii07/`), with the AR-280
@@ -127,7 +133,16 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    KNOWN GAP row in `twinOei.test.ts` (NR 96.12 % at 5 s, 95.81 % at 25 s; survivor 103.85 % torque, 104.80 % N1,
    810 C); the band itself is still the architect's to restate. In a 3 ft IGE
    hover at 2200 kg with a cushion, NR falls to about 91 % and the survivor reads about 114 % (the power-turbine law,
-   torque = T100 x (3 - 2 N2)); touchdown is gentle (0.6 m/s at 2.1 s).
+   torque = T100 x (3 - 2 N2)); touchdown is gentle (0.6 m/s at 2.1 s). **Flyability pass (2026-10-22; gate finding 7,
+   rated nice):** the pilot reviewer's second pass (W/probes/pilot-bo2 `oei.log`; engine 2 failing in a 3-10 ft IGE
+   hover, with a cushion) read the survivor at **114.6-139.9 % torque at NR 78.5-90.7 %**, at its 104.8 % N1 stop and
+   810 C. That is free-turbine behaviour: the gas generator at its stop and the power turbine's torque rising as N2
+   droops, T = T100 x (a - (a - 1) N2) with a = `stallTorqueRatio` 3 (ESTIMATE, the MD 500E's value): x1.10 at 95 % NR,
+   x1.20 at 90 %, x1.30 at 85 % (a ratio of 2: x1.05 / 1.10 / 1.15, but ground idle then falls to 51.8 % NR against
+   P5's "about 60 %", so 3 is kept). The CB-4's limit is 95 % OEI with no transient allowance in the pages read (P5 FM
+   2-9); the 105 % / 110 % OEI ratings belong to the FS 72E retrofit only (P TCDS footnote d). No change; pilot note
+   (the single-engine-failure checklist): "an OEI cushion overtorques the survivor as NR droops: cushion late and only
+   as much as needed".
 8. **The lead-lag degree of freedom is absent** (soft in-plane 0.66-0.73/rev): no air or ground resonance, no lag damper
    loads; blade elastic modes beyond the equivalent hinge and blade torsion are not modelled.
 9. **CG height**: the body reference point is 0.96 m below the hub (F METU, the Theodore model), but the mass model puts

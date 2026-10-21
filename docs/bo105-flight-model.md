@@ -237,7 +237,11 @@ Both engines are **TW's installed 250-C20B** (`BO105_INSTALLED_C20B`: 82 % at 73
 power-turbine law of 2 (the repo's PT6A types) was tried to remove TW's "BLOCKING" OEI torque conflict and **rejected**:
 it lowered the engines' torque at low N2 so far that both levers at IDLE held 51.8 % NR on the ground (P5: about 60 %;
 the law of 3 gives 58.9 %), and on this rotor the law of 3 no longer breaks the bound: the T7b survivor tops at 103.7 %
-with NR at 95.9-96.8 % (the scaffold's rotor drooped to 94.6 % and read 106.4 %).
+with NR at 95.9-96.8 % (the scaffold's rotor drooped to 94.6 % and read 106.4 %). Through an OEI IGE cushion the
+survivor overtorques as NR droops (pilot second pass: 114.6-139.9 % at NR 78.5-90.7 %, W/probes/pilot-bo2 `oei.log`): the
+law of 3 gives x1.20 of torque at 90 % NR (the law of 2 x1.10). The CB-4 limit is 95 % OEI with no transient allowance in
+the pages read (P5 FM 2-9; the 105 / 110 % ratings are the FS 72E's, P TCDS footnote d). Recorded at the flyability pass
+(KNOWN_ISSUES 7) with a pilot note in the single-engine-failure checklist; no change.
 
 Indication and limits: `BO105_TURBOSHAFT_INDICATION` (TW): torque in % of 298 kW, AEO 86 %, OEI 95 %, TOT 779 / 810 C,
 N1 105 %. Freewheel cap 899 N m (TW). The droop compensator re-fitted on this rotor by TW's two readings (docs/
@@ -350,7 +354,9 @@ over the source's power curve, imply 60-72 %. Two consequences:
 So `profileCd` stays 0.0095. Closing the gap needs either restated bands (the architect: Jane's 1,575 ft/min plausibly
 belongs to 2,500 kg, where the model is +4 % from it; the CB-5 chart is an upper bound for the CB-4) or a climb-efficiency
 mechanism in the rotor core (RC: the share of excess shaft power that becomes climb at 60 KIAS, 83 % here against 60-72 %
-implied by the sources). Recorded as KNOWN_ISSUES 2; the `it.fails` CLIMB GAP row stays.
+implied by the sources). Recorded as KNOWN_ISSUES 2; the `it.fails` CLIMB GAP row stays. The flyability pass
+(2026-10-22) re-read it against the CB-5 chart: +11 % at 2200 kg, +19 % at 2500 kg; a +/-15 % chart band would pass the
+row while the model exceeds even that optimistic chart, so the band is left to the architect and the row stays red.
 
 ## 9. Owner keyboard and the sim profile (input.ts, sim.ts)
 

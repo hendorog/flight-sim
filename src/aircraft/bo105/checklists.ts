@@ -115,7 +115,7 @@ export const BO105_CHECKLISTS = {
     i('speed', 'Flight', 'Transition to OEI flight at Vy 60 KIAS'),
     i('shutdown', 'Single-engine emergency shutdown', 'Affected lever IDLE then OFF; emergency fuel valve closed; supply pump OFF'),
     i('land', 'Landing', 'As soon as practicable: shallow approach at 60 KIAS, on final about 40 KIAS and 300 ft/min, reduce speed as power allows and cushion'),
-  ], 'OEI emergency power (95 % torque, TOT 810 °C, 30 min) is for an actual failure only; training is limited to OEI maximum continuous.'),
+  ], 'OEI emergency power (95 % torque, TOT 810 °C, 30 min) is for an actual failure only; training is limited to OEI maximum continuous. An OEI cushion overtorques the surviving engine as NR droops: cushion late and only as much as needed.'),
   powerFailure: emergency('powerFailure', 'Double engine failure and autorotation', '3-33–3-37 (3.3.15–3.3.18)', [
     i('indications', 'Indications', 'Left yaw, N1 and both N2 falling, NR LOW warning, both GEN lights'),
     i('lower', 'Collective', 'Full down at once; keep NR within the limits 85 – 110 %', all(le('checklist.collective', 0.02), nrPowerOff)),
