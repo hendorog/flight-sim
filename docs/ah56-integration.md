@@ -31,9 +31,9 @@ listed here and in the merge commits.
 | 2. `definitionInconsistencies(ah56)` empty | **Empty** since the AX merge (GA `consistency.test.ts` 250/250). After AG alone one row was red: the pilot's eye, 3.302 / 0 / −0.889 m in the definition against the stub visual's 0.7531 / −0.3302 / −0.53218; AX's visual reads `PILOT_EYE`. AU's rated power and PN's red line already read the facts. |
 | 3. KNOWN_ISSUES and `docs/known-issues.md` rows | Done. `src/aircraft/ah56/KNOWN_ISSUES.md`: AG's 15 numbered items (1 and 7 resolved at the merge, 14 and 15 updated / added by the integrator), the TW, AU, PN and AX hand-overs, AC's stages 3-4 entries, AH's stage-5 entries and the integration dispositions. `docs/known-issues.md`: the AH-56A table row; the "waiting for its flight model" block moved into the type's file. |
 | 4. This record | This file. |
-| 5. Section 10 in-sim readouts and section 11 shots | **Not run** (section 6). |
+| 5. Section 10 in-sim readouts and section 11 shots | **Run at the AH-56 verifier gate 0** on `03ec6e1` (section 9): every readout and shot taken and looked at against the reference photos. The AMCS readout misses G9's roll (KNOWN_ISSUES 2); no exterior defect found. |
 | 6. `npx tsc --noEmit` | Clean after every merge. |
-| 7. `npm run build` and `check-build` | **Not run** at this integration (section 6). |
+| 7. `npm run build` and `check-build` | **Run at gate 0**: the build succeeds; `check-build` ah56 on the runway (AMCS and `config=ics`) loads with `errors: []`. |
 | 8. Codex review | **Not run.** |
 | 9. Fable look and pilot gates | **Not run.** |
 | 10. `available: false`; ask the owner | `available: false` (registry). `docs/aircraft.md` has the `ah56` row. |
@@ -182,12 +182,9 @@ stated. "P" = primary, "D" = derived, "ESTIMATE" as in the plan.
 
 ## 6. Not run, and why
 
-- **Section 10 in-sim readouts** (`ah56-hover.png`, `ah56-ics-hover.png`) and **every section 11 AH-56A shot** were not
-  run at this integration. No AH-56A exterior shot has yet been compared with the reference photos on a branch that has
-  both the physics and the exterior (AX compared its dev-page views; AG, AC and AH saw the stub exterior). The main-gear
-  trunnion moved at the AX merge (section 1) and has been checked only by AX's geometry test, not looked at.
-- `npm run build` / `check-build` for ah56, the Codex review, and the Fable look and pilot gates.
-- heliHold (`AC=ah56`) and the `AH56_TRACE` re-runs on the integrated tree.
+At the integration (`ace8c98`) the section 10 readouts, the section 11 shots, the build check, heliHold and the
+`AH56_TRACE` re-runs were not run. The AH-56 verifier gate 0 ran all of them on `03ec6e1` (section 9). Still not run:
+the Codex review and the Fable look and pilot gates.
 
 ## 7. Final test run on the integrated tree
 
@@ -229,3 +226,28 @@ On `ace8c98` (all four merges; the in-plane fade reverted):
 - **Plan amendments (architect):** G1 as a precession (K/H, M/K circle centre), G2 (i) for a hingeless spring
   (tan(sweep)(B/2)(e M_β Ω² + K_β)/H), G5's two AMCS hover rates (AMCS-73 6 vs Hoh-74 9 °/s/in), G7/G7b's opposite ICS
   τ trends, H3's 10 % (rested on the M_dd 0.78 ESTIMATE; P gives 0.83), H9's 8-15 %.
+
+## 9. Verifier gate 0 (`03ec6e1`)
+
+Run by the AH-56 gate-0 verifier; full tables in `work/rigid/flight-numbers.md` ("AH-56A Cheyenne: verifier gate 0"),
+raw logs in `work/rigid/guards/integ/ah56-gate0/` and `work/rigid/gate-ah56/`, shots in `work/rigid/shots/ah56-gate-0/`.
+Every choice here is an AGENT choice.
+
+- **Guards:** G0 clean; GR 35/35 exact digests and the R22/R44/S269/MD 500E pins green; GA 250/250; GS 98/98; GF only the
+  two recorded `c172Sim` baseline exceptions; AG 71 + 13 expected-fail; AC 50 + 13; AH 31 + 5; exteriors 166/166;
+  panels 342/342; audio 228/228 and the `c172Audio` golden exact; `ah56TailWheel` 6/6. No unexpected failure. Every
+  measured number equals section 4's at `ace8c98`, except H10, which is load-dependent (1.88 x alone, 2.05 x during the
+  guard run; the test asserts 2.2 x).
+- **Traces and probes:** `AH56_TRACE` re-runs (handling, compound performance) and heliHold `AC=ah56` written; the hold
+  keeps the calm hover within 0.12 m and the windy one within 11.7 m, Nr 96.9-98.0 %.
+- **In-sim readouts:** no crash; Nr 239.86 rpm AMCS / 246.04 ICS; gyro inside its stops; beta at −2.2°. After 20 s hands
+  off in the default 8 kt wind the AMCS sits at 0.8° right roll (G9: 2-7° left) and the ICS at +9.4° pitch, which is
+  the KNOWN_ISSUES 2 gap; in calm air the drift direction differs between the sim and headless runs (the in-plane force
+  switches on along whatever the first velocity is), so no separate integration defect.
+- **Shots:** every section 11 shot, compared with the Rucker, Fort Campbell and Ames photos. No exterior defect found:
+  3-blade pusher and 4-blade TR on the left as defined; the ICS X on its post; gear transit and gear up correct. Recorded
+  for AX: the nose and canopy are slimmer than Rucker front; the mast and main-gear group sits at 37 % of the length from
+  the nose against 41-45 % in the photos (the gear-to-mast spacing matches); `shot-aircraft.mjs` passes no `--params`
+  to the panel tile, so the ICS sheet shows the AMCS placard (the ICS panel was shot separately).
+- **Build:** `npm run build` succeeds; `check-build` ah56 (AMCS and ICS) on the runway, `errors: []`.
+- **Not run:** the Codex review and the Fable look and pilot gates.

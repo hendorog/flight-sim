@@ -21,6 +21,14 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
    −8.0°, +3.1°, 4.1 kt; but it also moves the hover step responses the gyro is fitted on (G7 ICS roll τ63 0.28 → 0.31 s, AMCS hover
    roll sensitivity 63.5 → 69.6 °/s²/in), so it was NOT applied: a rotor-physics choice for RC (carry the in-plane side component) or
    the owner (docs/ah56-integration.md section 3 item 7).
+   **In the sim** (AH-56 verifier gate 0, `index.html?aircraft=ah56&hover=1&run=20`, 20 s hands off): in the default 8 kt
+   wind the AMCS ends at 0.8° RIGHT roll, −2.2° pitch, 7 kt (headless with the same wind +1.3°, −2.3°, 6.8 kt: the two
+   agree); the ICS at 4.9° left, +9.4° pitch, 10 kt. In calm air (`&wind=0,0`) the AMCS ends at 1.4° left, −7.3° pitch,
+   12 kt with the heading 80° left of the spawn, and the ICS at 6.9° RIGHT, −1.1°, 17 kt. The calm runs leave in
+   different directions from the headless ones (AMCS pitch −7.3° in the sim, +10.7° headless) because the force switches
+   on along whatever the first tiny velocity is; headless is deterministic and independent of the step split. Nr holds
+   (239.86 / 246.04 rpm), the gyro stays inside its stops and nothing crashes. The hands-off heading wander (40-80° in
+   20 s in calm air) has no plan row.
 3. **ICS pitch/roll cross-coupling.** A pure longitudinal stick gives a roll rate of +0.24 (hover) and −0.14 (100 KCAS) times the pitch rate.
    This is with the input rotation fitted to 13° advanced (P: 36°, which gives about 1.6 times in this model); G8 asks 0.2 with the angle
    within 15° of 36°. The model lacks the ICS's swashplate feedback to the roll servo and the feathering inertia. The AMCS is decoupled
