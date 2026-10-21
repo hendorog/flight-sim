@@ -173,7 +173,7 @@ diverged at 1.2 g). Above M 0.4-0.55 the separation is shock-induced, and the dr
 | H5 ICS stick per g above 1.3 g, 122 KCAS | 6.0 in/g (6.6 with no stall) | ≤ 0.1 in/g | P | **gap** (it.fails; AG/AC) |
 | H6 AMCS 155 / 180 KCAS, no uncommanded motion | < 0.01° and < 0.001 g at every g reached | none to 2.5 g | P AMCS-73 para 37 | pass (to the g the stick reaches) |
 | H6 stick per g, 1.5 → 2 g | 4.3 (155) and 3.9 (180) in/g, positive; from 2 g the stick reaches its 4.95 in stop (4.9 and 4.7 in/g to the stop, not a gradient) | positive and linear; D from the P 6 °/s/in rate command: q = (g / V)(n − 1/n) is 1.8 (155) / 1.5 (180) in/g | P / D | measured row passes; **the steady-turn gradient is 2.4-2.6 × the rate command's** (AG handover, section 8.1) |
-| H6 the 2.5 g band | full aft stick holds 2.29 g at 155 and 2.48 g at 180 KCAS (peaks 2.34 / 2.49) | 2.5 g inside the travel | P | **gap** (it.fails) |
+| H6 the 2.5 g band | full aft stick holds 2.29 g at 155 and 2.48 g at 180 KCAS (peaks 2.34 / 2.49); with the AMCS refit (section 5.1) 2.26 / 2.42 g (peaks 2.29 / 2.47), 4.5 / 4.1 in/g from 1.5 to 2 g | 2.5 g inside the travel | P | **gap** (it.fails) |
 | H7 | section 4 | | | pass |
 | H9 periodic flap damping at μ 0.5 | hub moment per unit θ1c +1.6 % with it on | 8-15 % | D | **gap** (it.fails; shared with RC's R23) |
 | H9 rate convergence, 200 KTAS | roll rate 9.07 / 9.08 / 9.09 °/s at 240 / 480 / 960 Hz | within 2 % | — | pass |
@@ -228,7 +228,7 @@ forces the body directly:
   - `halfp=1` (InitialConditions.forceHalfPHop) is a **dev / demo hook**, not a pilot trigger: it arms the event on a fresh flight
     (ICS only), and the event starts at the first clocked step with the rotor turning (≥ 0.6 of the governed speed) in translational
     flight (≥ 60 KCAS from the hub's air), so a hover or ground spawn with `halfp=1` does not take the 100 kN m forcing (measured:
-    2 s of ICS hover with `halfp=1` at 246 rpm, the event does not start, ah56HalfP.test.ts; the cruise scenario at 120 KIAS starts it at the first step).
+    2 s of ICS hover with `halfp=1` at 246 rpm, the event does not start, ah56HalfP.test.ts; at 160 KCAS it starts at the first clocked step; the cruise scenario's 120 KIAS is above the gate, not shot this round).
   - **Keyboard reach** (AH56_INPUT's aileron keys, MD 500E tuning: 0.05 → 0.35 of travel/s over a 1.2 s hold, quadratic; the ICS
     half-travel 3.75 in): a 0.1 / 0.2 / 0.3 / 0.5 / 0.8 / 1.0 s key hold moves the stick 0.02 / 0.04 / 0.06 / 0.13 / 0.28 / 0.45 in
     (the same at 150-190 KCAS: no airspeed authority schedule). The 0.5 in doublet radius needs a hold of about 1.05 s per side, so
@@ -304,6 +304,8 @@ worktree (`/home/roger/github/fs-rigid/ah-refit`, detached at this branch's HEAD
   ceiling 8,594 ft against 9,000-11,500; G7a ICS full lateral 38.7 °/s against 40-65; G8 ICS p/q 0.28 / −0.40 against 0.2 / 0.3;
   `work/rigid/guards/AH/AG-list-stage4.txt`). G6 variant, red at stage 4, passes.
 - **AC list: 1 failed, 48 passed, 13 expected fail.** The one is C12 (below): 2,508 ft/min against 2,200 ± 300, 8 ft/min outside.
+- **AH's own files** (ah56HighSpeed, MomentStall, HalfP): 31 passed, 5 expected fail, as on HEAD; H4 unchanged (the ICS has no AMCS
+  numbers); H6 2.26 / 2.42 g at the stop (`AH-own-refit.txt`). **GA**: the same one pre-existing ah56 consistency row (`GA-refit.txt`).
 
 ### 5.1 The AMCS refit (AG's gyro.ts, AC's compound.ts)
 
