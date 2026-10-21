@@ -11,7 +11,7 @@ import type { AirframeVisualDef, FRD } from '../../render/aircraft/airframe/type
 import { frd, MeshBatch } from '../../render/aircraft/geometry';
 import { boom, box, pathTube, tube } from '../../render/aircraft/rotorcraft/geometry';
 import * as D from './dimensions';
-import { BOOM_ROOT_FAIRING, CLAMSHELL, CLAMSHELL_STA, CROSS_TUBE_RADIUS, CROSS_TUBE_STA, DECK_FAIRING, ENDPLATE, FIN, H, NOSE_BOW,
+import { BOOM_ROOT_FAIRING, CLAMSHELL_STA, CROSS_TUBE_RADIUS, CROSS_TUBE_STA, DECK_FAIRING, ENDPLATE, FIN, H, NOSE_BOW,
   S, SKID_TUBE_RADIUS, SLIDING_RAIL_END_STA, STAB, TAIL_END_STA, TAIL_SKID, boomHeight, boomRadius } from './visual';
 import { aerofoilPanel, centreStrip, ellipsoid, fairingLoft, ringPoint, roundedLoop, skinPath,
   type Bo105Materials, type Bo105Section, type Bo105SkinWidth } from './exteriorGeometry';
@@ -25,6 +25,9 @@ export const INTAKE = { sta: 3.62, h: 2.23, halfLength: 0.11, halfHeight: 0.07 }
 export const ENDPLATE_HALF_THICKNESS = 0.08 * 0.42 / 2;
 /** Skid toe: the front of each skid tube curls up this high over its last 0.35 m (photographs). ESTIMATE */
 export const SKID_TOE_RISE = 0.17;
+
+/** The clamshell outline among the glazing doors: the one starting at the clamshell station (it runs past the pod's end). */
+const isClamshell = (pts: readonly (readonly [number, number])[]): boolean => Math.abs(pts[0][0] - S(CLAMSHELL_STA)) < 1e-9;
 
 /** A deck-fairing key [STA, top h, bottom h, half width] interpolated at a station. */
 export function deckKey(sta: number): [number, number, number] {
@@ -113,10 +116,11 @@ export function buildBo105Exterior(def: AirframeVisualDef, m: Bo105Materials, sk
   // Swept fin (NACA 00xx-like section along the outline), its trailing edge on the 8.56 m fuselage end.
   add(m.paint, aerofoilPanel(FIN[0], FIN[3], FIN[1], FIN[2], [0, 1, 0], 0.14));
   // Intermediate gearbox at the fin base (the shaft turns up the fin leading edge, P5 FM 7-20) and its fairing.
-  add(m.paint, ellipsoid([S(8.62), 0, H(boomHeight(8.62) + boomRadius(8.62) + 0.04)], [0.17, 0.085, 0.09], 20, 12));
+  const igbSta = D.REF_STATION_M - FIN[0][0] + 0.02;
+  add(m.paint, ellipsoid([S(igbSta), 0, H(boomHeight(igbSta) + boomRadius(igbSta) + 0.01)], [0.14, 0.07, 0.065], 20, 12));
   // Tail-rotor gearbox on the LEFT at the fin top with its output shaft to the hub, under a fin-top cover.
   const th = D.TAIL_HUB;
-  add(m.paint, ellipsoid([th.x + 0.02, -0.02, th.z - 0.02], [0.17, 0.07, 0.075], 20, 12));
+  add(m.paint, ellipsoid([th.x + 0.045, -0.02, th.z - 0.02], [0.15, 0.07, 0.075], 20, 12));
   add(m.cast, ellipsoid([th.x + 0.01, -0.085, th.z], [0.12, 0.075, 0.10], 20, 12));
   add(m.cast, tube([th.x, -0.12, th.z], [th.x, th.y + 0.07, th.z], 0.05, 0.04, 20));
   add(m.metal, tube([th.x, th.y + 0.075, th.z], [th.x, th.y + 0.02, th.z], 0.022, 0.022, 14));
@@ -184,7 +188,8 @@ export function buildBo105Exterior(def: AirframeVisualDef, m: Bo105Materials, sk
   add(m.paint, pathTube(topPost, 0.016, 80));
   const roofFrame: FRD[] = [];
   for (let k = 0; k <= 24; k++) {
-    const a = THREE.MathUtils.lerp(Math.PI * 0.60, Math.PI * 1.40, k / 24), x = S(1.93);
+    // Across the roof only (the aft edge of the roof glazing), ending at the roof's shoulders above the doors.
+    const a = THREE.MathUtils.lerp(Math.PI * 0.80, Math.PI * 1.20, k / 24), x = S(1.93);
     const p = ringPoint(section, x, a <= Math.PI ? a : 2 * Math.PI - a, 0.003);
     roofFrame.push([p[0], a <= Math.PI ? p[1] : -p[1], p[2]]);
   }
@@ -197,7 +202,7 @@ export function buildBo105Exterior(def: AirframeVisualDef, m: Bo105Materials, sk
   for (const side of [-1, 1]) {
     for (const door of def.glazing.doors) {
       // The clamshell outline runs past the pod's end (its doors face aft): only its edges on the side are sealed.
-      const loop = door.pts === CLAMSHELL ? clamshellEdge : roundedLoop(door.pts, door.r);
+      const loop = isClamshell(door.pts) ? clamshellEdge : roundedLoop(door.pts, door.r);
       add(m.rubber, pathTube(skinPath(skin, side, loop, 0.002, 3), 0.004, 160));
       if (door.handle) {
         const p = skinPath(skin, side, [[door.handle.x, door.handle.z]], 0.012)[0];

@@ -65,10 +65,10 @@ const LOFT: readonly (readonly [number, number, number, number, number, number, 
  */
 export const WINDSCREEN = sh([[0.705, 1.045], [1.16, 1.07], [1.22, 1.30], [1.30, 1.70], [1.38, 1.95], [1.40, 2.30], [0.705, 2.30]]);
 export const ROOF_GLASS = sh([[1.30, 1.965], [1.92, 1.995], [1.92, 2.30], [1.30, 2.30]]);
-export const CHIN_GLASS = sh([[0.70, 1.00], [0.70, 0.88], [0.77, 0.75], [0.90, 0.66], [1.06, 0.62], [1.13, 0.64], [1.15, 1.03]]);
+export const CHIN_GLASS = sh([[0.70, 1.00], [0.70, 0.80], [0.74, 0.715], [0.85, 0.635], [1.06, 0.60], [1.13, 0.62], [1.15, 1.03]]);
 /** The horizontal nose bow between the windscreen and the chin windows (side projection; drawn as a frame). */
 export const NOSE_BOW = sh([[0.718, 1.025], [1.16, 1.055]]);
-export const CREW_WINDOW = sh([[1.29, 1.14], [1.72, 1.14], [1.72, 1.86], [1.42, 1.89], [1.35, 1.70], [1.28, 1.30]]);
+export const CREW_WINDOW = sh([[1.27, 1.14], [1.72, 1.14], [1.72, 1.86], [1.42, 1.89], [1.33, 1.70], [1.27, 1.30]]);
 export const CREW_LOWER_WINDOW = sh([[1.23, 0.75], [1.64, 0.75], [1.64, 1.01], [1.27, 1.01]]);
 export const SLIDING_WINDOW = sh([[1.90, 1.22], [2.30, 1.22], [2.30, 1.85], [1.90, 1.86]]);
 export const SLIDING_REAR_WINDOW = sh([[2.40, 1.30], [2.62, 1.30], [2.62, 1.84], [2.40, 1.84]]);
@@ -77,7 +77,7 @@ export const SLIDING_REAR_WINDOW = sh([[2.40, 1.30], [2.62, 1.30], [2.62, 1.84],
 export const CREW_DOOR = sh([[1.14, 0.66], [1.78, 0.66], [1.78, 1.95], [1.40, 1.965], [1.31, 1.80], [1.21, 1.30], [1.15, 1.00]]);
 export const SLIDING_DOOR = sh([[1.82, 0.64], [2.80, 0.64], [2.80, 1.95], [1.82, 1.95]]);
 export const CLAMSHELL = sh([[4.33, 0.70], [5.10, 0.70], [5.10, 1.74], [4.33, 1.74]]);
-export const NOSE_COMPARTMENT = sh([[0.80, 0.70], [0.93, 0.56], [1.42, 0.50], [1.44, 0.58], [1.42, 0.60], [0.92, 0.66]]);
+export const NOSE_COMPARTMENT = sh([[0.98, 0.535], [1.42, 0.45], [1.44, 0.52], [1.42, 0.56], [1.00, 0.58]]);
 /** Station where the clamshell doors begin (their seams and hinges are geometry: they face aft). */
 export const CLAMSHELL_STA = 4.33;
 /** Sliding-door travel: its rails run aft over the fixed panel to here. */
@@ -90,12 +90,12 @@ export const SLIDING_RAIL_END_STA = 3.78;
  */
 export const DECK_FAIRING: readonly (readonly [number, number, number, number])[] = [
   [2.690, 2.050, 1.86, 0.22], [2.750, 2.230, 1.86, 0.40], [2.850, 2.340, 1.86, 0.48], [3.000, 2.390, 1.86, 0.51],
-  [3.800, 2.405, 1.86, 0.52], [4.300, 2.395, 1.84, 0.52], [4.700, 2.340, 1.70, 0.44], [5.050, 2.230, 1.64, 0.34],
-  [5.250, 2.150, 1.70, 0.28]];
+  [3.800, 2.405, 1.86, 0.52], [4.300, 2.395, 1.84, 0.52], [4.700, 2.340, 1.70, 0.44], [5.050, 2.220, 1.66, 0.33],
+  [5.300, 2.100, 1.74, 0.22], [5.500, 2.025, 1.80, 0.15]];
 /** Boom-root fairing under the deck's tail, blending the pod's rear end into the boom (closed). [STA, top, bottom, hw]. */
 export const BOOM_ROOT_FAIRING: readonly (readonly [number, number, number, number])[] = [
-  [4.70, 2.10, 1.40, 0.46], [4.90, 2.08, 1.48, 0.38], [5.10, 2.06, 1.60, 0.29], [5.30, 2.05, 1.66, 0.23],
-  [5.55, 2.04, 1.68, 0.20]];
+  [4.70, 2.10, 1.40, 0.46], [4.90, 2.08, 1.48, 0.38], [5.10, 2.06, 1.60, 0.29], [5.30, 2.04, 1.66, 0.225],
+  [5.55, 2.015, 1.70, 0.19]];
 
 /** Tail boom: a tapered tube from inside the deck fairing to the fin, centre heights and radii 3V ESTIMATE; it passes the
  *  stabiliser quarter chord (dimensions.ts, STA 7.55, 1.62 m) 6 cm below its centreline. */
@@ -114,8 +114,12 @@ export const STABILISER: FRD[] = [[STAB.leadingX, -HS.span / 2, STAB.z], [STAB.l
   [STAB.leadingX - HS.chord, HS.span / 2, STAB.z], [STAB.leadingX, HS.span / 2, STAB.z]];
 /** Endplates: dimensions.ts height and chord, half above and half below the stabiliser (photographs). ESTIMATE */
 export const ENDPLATE = { chord: HS.endplates.chord, height: HS.endplates.height, above: 0.5 } as const;
-/** Tail skid: a bent tube from under the boom ahead of the fin, down and aft under the fin (photographs). ESTIMATE */
-export const TAIL_SKID: FRD[] = [[S(8.55), 0, H(1.50)], [S(8.70), 0, H(1.30)], [S(8.88), 0, H(1.12)], [S(9.05), 0, H(1.05)], [S(9.14), 0, H(1.06)]];
+/** Tail skid: a bent tube from the fin's lower edge, down and aft under the fin, about 0.4 m below it (photographs);
+ *  placed on the fin outline so it follows any change of dimensions.ts FIN_OUTLINE. ESTIMATE */
+const finEdge = (t: number): FRD => [FIN[0][0] + (FIN[3][0] - FIN[0][0]) * t, 0, FIN[0][2] + (FIN[3][2] - FIN[0][2]) * t];
+const skidStart = finEdge(0.55), skidEndX = Math.max(skidStart[0] - 0.45, S(TAIL_END_STA) + 0.06);
+export const TAIL_SKID: FRD[] = [skidStart, [skidStart[0] - 0.08, 0, skidStart[2] + 0.17], [skidStart[0] - 0.22, 0, skidStart[2] + 0.33],
+  [skidEndX + 0.08, 0, skidStart[2] + 0.40], [skidEndX, 0, skidStart[2] + 0.38]];
 
 /** Seats. The pilot sits RIGHT (P TCDS p11), co-pilot left; the rear bench for three against the cabin's aft bulkhead.
  *  Cushion front, depth and height are placed round dimensions.ts PILOT_EYE (3V): the eye 0.78 m above the cushion
@@ -220,7 +224,7 @@ export const BO105_VISUAL: AirframeVisualDef = {
     // the red anti-collision beacon on the deck aft of the exhausts, the landing light under the nose. ESTIMATES.
     { id: 'navL', pos: [STAB.leadingX - HS.chord / 2, -HS.span / 2 - 0.035, STAB.z], radius: 0.02, glowOffset: [0, -0.02, 0] },
     { id: 'navR', pos: [STAB.leadingX - HS.chord / 2, HS.span / 2 + 0.035, STAB.z], radius: 0.02, glowOffset: [0, 0.02, 0] },
-    { id: 'navTail', pos: [S(TAIL_END_STA) + 0.01, 0, H(1.72)], radius: 0.016, glowOffset: [-0.02, 0, 0] },
+    { id: 'navTail', pos: [FIN[2][0] + (FIN[3][0] - FIN[2][0]) * 0.3 + 0.01, 0, FIN[2][2] + (FIN[3][2] - FIN[2][2]) * 0.3], radius: 0.016, glowOffset: [-0.02, 0, 0] },
     { id: 'beacon', pos: [S(4.78), 0, H(2.34)], radius: 0.035, glowOffset: [0, 0, -0.03] },
     { id: 'landing', pos: [S(1.30), 0, H(0.43)], radius: 0.05, glowOffset: [0, 0, 0.03], aim: { downDeg: 12, outDeg: 0, halfAngleDeg: 13 } },
   ],

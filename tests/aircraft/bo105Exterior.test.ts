@@ -143,7 +143,7 @@ describe('Bo 105 CB-4 exterior', () => {
       expect(side(1.45, 0.88, y)).toBeLessThan(-0.02);  // crew-door lower window
       expect(side(2.10, 1.50, y)).toBeLessThan(-0.02);  // sliding-door window
       expect(side(2.50, 1.55, y)).toBeLessThan(-0.02);  // sliding-door rear window
-      expect(side(1.25, 1.50, y)).toBeGreaterThan(0);    // A-post between the windscreen and the crew door
+      expect(side(1.28, 1.50, y)).toBeGreaterThan(0);    // A-post between the windscreen and the crew-door window
       expect(side(1.80, 1.50, y)).toBeGreaterThan(0.02); // door post between the crew and sliding doors
       expect(side(3.60, 1.50, y)).toBeGreaterThan(0.05); // the cabin side under the deck (lettering panel)
       expect(side(1.16, 1.06, y)).toBeGreaterThan(-0.03); // the nose bow line between windscreen and chin windows

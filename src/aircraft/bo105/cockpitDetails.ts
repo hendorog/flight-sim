@@ -14,7 +14,7 @@ import { frd, MeshBatch } from '../../render/aircraft/geometry';
 import { box, tube, pathTube } from '../../render/aircraft/rotorcraft/geometry';
 import { BO105_CENTRE_CONSOLE, BO105_OVERHEAD_CONSOLE, BO105_PANEL_CANVAS, BO105_PANEL_FACE, BO105_PANEL_OUTLINE,
   BO105_POWER_LEVERS } from './panelLayout';
-import { BENCH, CABIN_REAR_STA, FLOOR_Z, H, PILOT_SEAT_Y, S, SEAT } from './visual';
+import { CABIN_REAR_STA, FLOOR_Z, H, PILOT_SEAT_Y, S } from './visual';
 import { ellipsoid, type Bo105Materials, type Bo105SkinWidth } from './exteriorGeometry';
 
 /** Cyclic travel shown on the stick, deg (visual estimate). */
@@ -111,7 +111,7 @@ export function buildBo105Cockpit(def: AirframeVisualDef, cockpit: RotorcraftCoc
     lever.position.copy(frd(pl.pivot.x, y, pl.pivot.z));
     const parts = new MeshBatch();
     parts.add(m.metal, tube([0, 0, 0], [0, 0, pl.length - 0.03], 0.006));
-    parts.add(i === 0 ? m.switchBlack : m.switchBlack, ellipsoid([0, 0, pl.length - 0.01], [0.022, 0.016, 0.03], 14, 10));
+    parts.add(m.switchBlack, ellipsoid([0, 0, pl.length - 0.01], [0.022, 0.016, 0.03], 14, 10));
     parts.add(m.metal, tube([0, -0.012, 0], [0, 0.012, 0], 0.012, 0.012, 10));
     lever.add(parts.build(`bo105PowerLever${i + 1}Parts`));
     return lever;
@@ -119,8 +119,8 @@ export function buildBo105Cockpit(def: AirframeVisualDef, cockpit: RotorcraftCoc
 
   // ---------------------------------------------------------------- floor details
   for (const y of def.cockpit.pedals.ys) b.add(m.dark, box([def.cockpit.pedals.x - 0.17, y, FLOOR_Z - 0.008], [0.22, 0.10, 0.014], 0.005));
-  b.add(m.red, tube([S(2.15), -PILOT_SEAT_Y - 0.26, FLOOR_Z - 0.06], [S(2.15), -PILOT_SEAT_Y - 0.26, FLOOR_Z - 0.36], 0.04, 0.04, 16));
-  void BENCH; void SEAT;
+  // Fire extinguisher on the floor by the co-pilot's door post. ESTIMATE
+  b.add(m.red, tube([S(1.95), -PILOT_SEAT_Y - 0.24, FLOOR_Z - 0.06], [S(1.95), -PILOT_SEAT_Y - 0.24, FLOOR_Z - 0.36], 0.04, 0.04, 16));
   const group = b.build('bo105CabinDetails', { cast: false, receive: true });
   group.add(pod, slant, ...levers);
 
