@@ -2,7 +2,6 @@
 // power rise (H3), periodic flap damping (H9) and the cost of the finer rotor (H10). Plan revision 2 section 7.4; docs
 // docs/ah56-high-speed.md sections 2-3. Each row logs its numbers next to the target ([ah56] lines); AH56_TRACE=<dir> writes
 // ah56HighSpeed.json. Known gaps against the plan are `it.fails` rows with the measured numbers in the logs and the docs.
-import { availableParallelism, loadavg } from 'node:os';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, FT, KT, quat, v3 } from '../../src/core/math';
 import { cloneControls } from '../../src/core/types';
@@ -25,6 +24,8 @@ import { PRODUCTION_AIR_WIRED, environment, gauges, report, writeTrace } from '.
 
 const trace: Record<string, unknown> = {};
 afterAll(() => writeTrace('ah56HighSpeed', trace));
+/** The machine's load for H10's report (node:os, imported the way ah56Rig imports node:fs: no Node types in the build). */
+const os = await import(/* @vite-ignore */ 'node:os' as string) as { loadavg(): number[]; cpus(): unknown[] };
 
 const S = AH56_SECTION, P = S.polar!;
 const def = AH56_DEFINITION.rotorcraft!;
@@ -323,7 +324,7 @@ describe('H10: physics cost at 200 KTAS <= 2 x MD 500E (same machine, headless)'
     const a: number[] = [], m: number[] = [];
     for (let k = 0; k < 3; k++) { a.push(time(() => ah.fm.step(1 / 240, ah.c, ah.env), 1200)); m.push(time(() => md.step(1 / 240, mdc, env), 1200)); }
     const ahUs = Math.min(...a), mdUs = Math.min(...m);
-    const load = loadavg()[0], cpus = availableParallelism();
+    const load = os.loadavg()[0], cpus = os.cpus().length;
     report('H10 cost', { ah56Us: ahUs, md500Us: mdUs, ratio: ahUs / mdUs, withinPlanTarget: ahUs / mdUs <= 2, loadAverage1m: load, cpus,
       grid: `${def.main.radialStations} x ${def.main.azimuthStations}`, target: '<= 2 (AGENT, plan H10); asserted <= 2.2 (the shared machine)' });
     trace.H10 = { ahUs, mdUs, load, cpus };
