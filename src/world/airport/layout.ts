@@ -178,7 +178,7 @@ export function pavedSD(u: number, v: number): number {
 }
 
 /** Bounding box of everything paved (runway included), for quick rejection. */
-const PAVED_BOUNDS: LocalRect = PAVED_RECTS.reduce(
+export const PAVED_BOUNDS: LocalRect = PAVED_RECTS.reduce(
   (b, r) => ({ u0: Math.min(b.u0, r.u0), u1: Math.max(b.u1, r.u1), v0: Math.min(b.v0, r.v0), v1: Math.max(b.v1, r.v1) }),
   { ...RUNWAY_RECT },
 );

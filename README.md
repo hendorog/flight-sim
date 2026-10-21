@@ -60,7 +60,9 @@ browsers only play sound on a secure page.
   clouds of several types, ground fog, rain, snow, thunderstorms with lightning, atmospheric scattering, an
   accurate sun, moon and night sky, wind, gusts and turbulence. Thunderstorm cells form on a procedural lattice
   wherever you fly, at a rate derived from the temperature, time of day, date, cloud base, cloud depth, cover and
-  cloud type. See [weather](docs/weather.md). A **Deep
+  cloud type. Rain, snow and hail show on the windscreen in the cockpit view, hail bounces and lies on the
+  ground, and large hail cracks the windscreen and dents the leading edges (more drag, higher stall speed). See
+  [weather](docs/weather.md). A **Deep
   Time** mode lets you fly over a Cretaceous landscape with its fauna.
 - **Flight School:** an instructor-led course from the first lesson to the PPL skill test. The instructor
   demonstrates, coaches you, takes control when needed, and grades each exercise against EASA or FAA

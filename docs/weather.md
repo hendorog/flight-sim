@@ -8,11 +8,11 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
 ## Status
 
 - The fields, accessors, the post-TAA overlay slot and the effect registry exist.
-- All four effect factories return an effect on every quality tier, created at boot whether or not the weather
+- All six effect factories return an effect on every quality tier, created at boot whether or not the weather
   sets their fields. Each implements `SceneEffect.active` (`src/core/context.ts`); `PostPipeline` skips an effect or
   overlay whose `active(ctx)` returns false without a draw (`renderEffects`), so a frame in `defaultWeather()` draws
-  no full-screen pass for them after their first render. Each of the four draws its real material on its first
-  render whatever the weather, so the shader warm-up (`Simulator.warmUpShaders`), which renders all four, compiles
+  no full-screen pass for them after their first render. Each of the six draws its real material on its first
+  render whatever the weather, so the shader warm-up (`Simulator.warmUpShaders`), which renders all six, compiles
   their shaders; the fog composite does this from commit 34193ab on (before it, a boot without fog compiled the
   composite on the first frame with fog). Their GPU cost has not been measured (no GPU on the integration machine).
   - `createStormCellEffect` (`StormCellEffect.ts`): the cells in effect at the camera (`StormField.select`, see
@@ -99,6 +99,85 @@ effects use (`src/render/weather/`, `src/render/post/PostPipeline.ts`).
     100 kt. The sway and brightness phases use `uTime`, the summed render `dt` in s with no wrap (it wrapped at
     3600 s before commit 34193ab). The audio parameter `rain` (`src/audio/params.ts`, index 45) carries the precipitation sound, `hail` and
     `hailSize` (46, 47) the hail on the airframe, from the precipitation at the aircraft (`ctx.weatherFx.precip`).
+  - `createHailGroundOverlay` (`HailGroundOverlay.ts`, state in `hailGround.ts` and `groundCover.ts`): hailstones
+    landing and bouncing near the camera, and hail and snow lying on the ground, in every camera mode while the
+    camera is less than `GROUND_MAX_AGL_M` 120 m above the ground under the camera (`ctx.env.groundElevation` at the
+    camera's position). Two draws. A full-screen pass on upward-facing surfaces (normal within `SCATTER_MIN_UP` 0.8
+    of vertical) within `SCATTER_RANGE_M` 1500 m (fading from 1200 m) takes each pixel's surface class: pavement
+    inside the runway, taxiways and apron (the signed distance of `layout.ts`'s `PAVED_RECTS` joined with fillets of
+    `FILLET_RADIUS`, and the runway rectangle, in the airport's frame, softened over the pixel's footprint; only
+    with the modern airport), soil elsewhere. It reads that class's state (below, "Hail and snow on the ground"):
+    the drawn wetness darkens the ground by `WET_DARK` 0.3 x wetness; the hail and snow covers c become a matte
+    layer drawn at 1 - (1 - c)^k with k = 0.4 + 1.2 x a value noise (drifts of 23 m and 8 m; for hail also 2 m and
+    0.7 m where the pixel's footprint is under 1 m, for snow 3 m), combined as 1 - (1 - hail)(1 - snow). The layer's
+    luminance is the darkest scene luminance of the pixel and the pixels `LAYER_TAP_PX` 6 px left, right, above and
+    below it, times `LAYER_OVER_SCENE` 6 (hail) or `SNOW_OVER_SCENE` 8 (snow), at most `LAYER_GAIN` 14 x the
+    precipitation overlay's hail radiance, in that radiance's hue, times 0.94..1.06 (hail) or 0.95..1.05 (snow) from
+    the noise; the darkest tap keeps the runway paint and the grass texture out of it and the aircraft's shadow in
+    it (6 px wider). A pixel whose scene luminance is 1.5 to 3 times the layer's before the cap (the runway and
+    approach lights) keeps the scene. Within `NEAR_FIELD_M` 6 m of the camera (fading from 4 m), and only where a
+    stone is larger than about a quarter of the pixel's footprint, the pass also draws the lying hailstones one by
+    one on a world-anchored `SCATTER_CELL_M` 3 cm grid (a cell holds a stone while its hash is below `SCATTER_FILL`
+    1.5 x the hail cover, of a diameter from the size distribution): discs brightened toward their far side by 0.85
+    + 0.25 ny, as the pellets, with a contact shadow (0.62) at the foot on the near side. The snow draws no stones.
+    Excluded: the aircraft's bounding box (the visible meshes under `ctx.aircraftRoot` in the aircraft's frame,
+    measured every 2 s, from `AIRCRAFT_FLOOR_M` 0.2 m above its lowest point, in every camera mode; at 0.08 m the
+    runway under the box was left out in the 2026-10-21 chase screenshots) and in the cockpit the cabin box. The
+    second draw is 768 instanced quads (`BOUNCE_CELLS` 16 x 16 cells of `BOUNCE_CELL_M` 1 m about the camera,
+    `BOUNCE_PER_CELL` 3), each a stone that lands at a hashed point once per cycle of about `BOUNCE_CYCLE_S` 1.6 s
+    with a chance set by the impact rate, rebounds at `HAIL_RESTITUTION` 0.4 (+- `HAIL_RESTITUTION_SPREAD` 0.1) of
+    its fall speed, bounces a second time and rests, depth-tested in its shader against the scene depth. A stone's
+    colour is `ICE_OVER_SCENE` 2.5 times the scene behind it, at least the precipitation overlay's hail radiance.
+    The pellets assume flat ground at the aircraft's ground height. The restitution follows the owner's brief (0.3
+    to 0.5) and is unconfirmed; every other drawing constant is a look value. Skipped (`active` false) without
+    falling hail, lying hail or snow, and wetness left by them.
+  - `createWindscreenOverlay` (`WindscreenOverlay.ts`, state in `windscreenWater.ts`): water, snow, hail and cracks
+    on the glass, in the cockpit view only. It copies its input and draws the aircraft's glazing meshes (every mesh
+    named `glazing` under `ctx.aircraftRoot`, built by `render/aircraft/fuselage.ts` for every fixed-wing type and
+    every helicopter) a second time with its own shader, which keeps the glazing's window coverage (its alpha map),
+    discards fragments behind the scene depth (the cabin, the panel and the airframe in front of the glass) and
+    places everything at the glass's position in the aircraft frame. A hidden airframe (the fixed-panel view) has no
+    visible glazing, and the overlay then draws nothing. State, from the precipitation at the aircraft
+    (`ctx.weatherFx.precip`; at the camera where it is absent) and the true airspeed: the airflow share
+    smoothstep(`AIR_SHARE_LO_MS` 8, `AIR_SHARE_HI_MS` 30 m/s, TAS); the wetness, which moves toward rate / (rate +
+    `WET_HALF_MMH` 1.5 mm/h) with `WET_TAU_S` 4 s in rain or drizzle and dries with a time constant of
+    `DRY_TAU_PARKED_S` 600 s parked (unconfirmed) to `DRY_TAU_FLYING_S` 6 s at speed; snow toward rate / (rate +
+    `SNOW_HALF_MMH` 0.6 mm/h) with `SNOW_TAU_S` 5 s, melting or blowing off with 8 s parked to 1.5 s at speed; slush,
+    which follows the snow level up with `SLUSH_RISE_S` 20 s and melts with `SLUSH_MELT_PARKED_S` 400 s parked to
+    `SLUSH_BLOW_FLYING_S` 4 s at speed; hail strikes per m^2 and s as two parts, the number density times the mean
+    stone's fall speed and times the airspeed. Layers on hashed grids on the glass:
+    - sitting drops on 5 and 11 mm grids (each living about `DROP_LIFE_S` 22 s), blown off as the airflow share rises
+      except in the aerodynamic shadow: where the window ends within `SHADOW_SILL_M` 25 mm below the pixel or
+      `SHADOW_POST_M` 12 mm to either side (the window's coverage ends, or the scene depth shows the coaming, a post
+      or the cabin more than 3 cm in front of the glass); at speed a 5 % layer (`BEAD_FLYING_SHARE`) of small drops
+      on a 4 mm grid over all of the glass;
+    - running drops on an 8 x 16 mm grid along the drops' motion (down the glass under gravity, with a wet trail),
+      at a density of 0.18 x wetness x (1 - airflow share);
+    - streams at speed: rivulets in columns of `STREAM_COL_M` 30 mm across the motion, one in a cell of 0.455 m
+      along it with a chance of `STREAM_SHARE` 0.35 x wetness x airflow share, each 0.1 to 0.4 m long and
+      `STREAM_WIDTH_M` 1.5 mm wide (0.75 mm over its tail), its centreline offset by 0.006 sin(40 y) + 0.002 sin(130 y)
+      m (y along the glass, the path fixed on the glass) and the stream moved along it at `RUN_PER_TAS` 0.02 x TAS,
+      with a 2 mm bead at its head and a soft tail, drawn as a drop (refracting the scene) and darkened to
+      `STREAM_DARK` 0.55 of the scene plus `STREAM_SKY` 0.1 of the sky light, at least 1 px wide. The motion at speed is the airflow on the glass plus
+      `STREAM_OUTWARD` 0.4 times the direction away from the glazing's centre line (full beyond 8 cm of it) on glass
+      facing the airflow, so on a raked windscreen the streams run up and out toward the side posts. The densities of
+      the sitting drops, the running drops and the streams change with the airflow share alone, so the pattern goes
+      from parked to in-flight continuously with the airspeed;
+    - snowflakes on a 7 mm grid that melt into drops over the last 40 % of `SNOW_LIFE_S` 6 s, and slush: white where
+      the window ends within 10 to 25 mm (hashed per 12 mm across) times the slush level below the pixel;
+    - hail: one strike per 40 mm cell and cycle of `HAIL_WET_S` 1.2 s (0.35 of it at speed), the cell (1 + 3 x airflow
+      share) times longer along the motion, at the pixel's strike rate (the fall part times how far the glass faces
+      up, the airspeed part times how far it faces the airflow): a white star-shaped splash for `HAIL_SPLASH_S`
+      0.08 s, stretched downstream by the same factor, at least `SPLASH_OVER_SCENE` 2 times the scene behind the glass
+      in brightness, then a wet spot (a drop of 0.7 times the splash radius) that fades out over the cycle.
+
+    A drop shows the scene from its centre outward by `DROP_REFRACT` 7 times the pixel's offset (inverted), darkened
+    at its rim by up to `DROP_RIM` 0.35, with a sky highlight on its upper side; over the sky its centre is darkened
+    by up to `DROP_SKY_DARK` 0.15. At speed a water film blurs the view over 2 px. Cracks: see the hail damage below.
+    Cost per frame while active (not measured on a GPU): one full-screen copy and one draw of the glazing meshes; per
+    window pixel 2 texture reads, 6 to 9 hashes, up to 12 crack loops (each with up to 3 runners), 1 scene read per
+    drop and 4 for the film, and up to 3 alpha-map and 3 depth reads for the shadow and the slush. Skipped (`active`
+    false) outside the cockpit view and with a dry glass and no cracks. Every constant is a look value.
   - `createLightningOverlay` (`LightningOverlay.ts`): the cells in effect at the camera, from the frame's shared
     selection (`cameraStormsAt`). Schedules strikes (`src/sim/weather/lightning.ts` `strikesBetween`,
     `FLASH_PER_MIN` 6 per minute at intensity 1 times the cell's lightning share, `CG_FRACTION` 0.3; the hashes are
@@ -179,7 +258,8 @@ reset equals `stormCentreAt(cell, tOld)` before it. `TrainingSystem` records the
 weather at a lesson start and re-anchors the cells from it when it restores the copy at the lesson end. A snapshot
 restore sets the clock and the weather from the same snapshot and moves no cell. The boot resume restores the
 snapshot weather with `restoreWeather`, so an optional field set by the URL and absent from the snapshot goes back
-to its `NEUTRAL_EXTRAS` value. Resume snapshots are schema 4 (`src/sim/resume.ts` `SNAPSHOT_SCHEMA`); a schema 3 or
+to its `NEUTRAL_EXTRAS` value. Resume snapshots are schema 5 (`src/sim/resume.ts` `SNAPSHOT_SCHEMA`; schema 5 adds the hail damage, with the
+rotor's level and dose present only once a rotor took damage, and a schema 4 or older snapshot is read with none); a schema 3 or
 older snapshot with `storms: []`, the neutral value before the derived cells, is read with `storms` removed, so it
 resumes with derived cells (`tests/sim/resume.test.ts`, with a snapshot written by commit 0692043). Derived cells run on the weather clock (`timeOfDay`, `dayOfYear`), which none of
 these changes, so they do not move.
@@ -518,12 +598,142 @@ there) is the drawn one.
   `HAIL_TOAST_MIN_S` 20 s unless to a level above the last toast's (`ui/hudCues.ts` `HailToasts`). With the rate
   swinging between 0.8 and 1.2 times 0.05 mm/h every 0.5 s for 2 min (`tests/weather/hailHazard.test.ts`,
   2026-10-20): 1 level change and 1 toast; without the hysteresis the level changes 240 times. All thresholds
-  unconfirmed. The hail does not act on the
-  flight model: damage effects are an open decision.
+  unconfirmed.
+- Hail damage (`sim/weather/hailDamage.ts`, advanced by `SimPhysics` every `HAIL_DAMAGE_DT_S` 0.1 s of simulation
+  time from its own storm selection at the aircraft): the size distribution at 8 quantiles, each stone's velocity
+  relative to the airframe (the relative air from the TAS, angle of attack and sideslip plus its fall speed straight
+  down in the air density at the aircraft, in body axes) and its normal speed into two surfaces, the leading edges (normal forward) and the windscreen
+  (normal `WINDSCREEN_NORMAL_ELEV` 55 deg above the nose). Stone energy 1/2 m v_n^2; the dent dose sums the energy
+  above `DENT_STONE_J` 1 J per stone on the leading edges, the crack dose the energy above `CRACK_STONE_J` 5 J on the
+  windscreen, both per m^2. Levels 1 - exp(-dose / `DENT_DOSE_FULL_JM2` 1000 J/m^2) and 1 - exp(-dose /
+  `CRACK_DOSE_FULL_JM2` 400 J/m^2), 0..1, growing only. Cracking impacts arrive at `WINDSCREEN_AREA_M2` 0.6 m^2
+  times the flux of stones above 5 J; each places a crack (at most `MAX_CRACKS` 12) at a direction from the eye
+  hashed from the clock and the crack's index. Helicopters also take a rotor dose: the main rotor's blade leading
+  edges at `ROTOR_STATION` 0.75 of the radius, normal speed max(0, Omega r + TAS sin psi) at `ROTOR_AZIMUTHS` 8
+  azimuths, averaged, with the same 1 J stone threshold, and a rotor level 1 - exp(-dose / 1000 J/m^2). No `Math.random`: two runs of the same flight give the same damage
+  (`tests/weather/hailDamage.test.ts`). A scenario reset or a new flight sets it to 0; the resume snapshot carries
+  it (schema 5, below). Every threshold, dose, the normal and the area are unconfirmed.
+  - Measured (`tests/weather/hailDamage.test.ts`, 2026-10-20): a 6 mm stone at 60 m/s carries 0.18 J and does no
+    damage. Dent rate at 55 m/s and 6 mm/h: 0, 2.5, 8.3, 18.6, 25.6 and 33.1 J/m^2/s for largest stones of 10, 15, 20,
+    30, 40 and 60 mm. For 30 mm stones the dent rate is 0 parked, 0.06, 5.4, 25.4 and 69.1 J/m^2/s at 20, 40, 60 and
+    80 m/s, and the windscreen rate 0 up to 40 m/s, 2.2 at 60 and 8.9 at 80 m/s. In SimPhysics with an explicit
+    cell of intensity 1 over the aircraft in the Thunderstorm conditions: parked on the runway for 20 s, crack level
+    0.067 with 4 cracks; on the downwind leg for 10 s, crack level 0.53, dent level 0.35, 7 cracks.
+  - Aerodynamics (`physics/aero/hailDents.ts`, `AeroModel.setLeadingEdgeDamage`, set by the flight model's
+    `setAirframeDamage` on its flight and trim models): the level is rounded to `DENT_LEVEL_STEP` 1/128, so the
+    section constants are prepared again at most 128 times in a flight. At dent level L every lifting strip with a
+    section of its own (the wing's, the tailplane's and the fin's) gets `DENT_CD0_FULL` 0.002 k L of profile drag and
+    its break angles moved toward zero by `DENT_STALL_SHIFT_FULL` 2 deg x k L (not past 2 s1), with k the section's
+    `dentFactor`: `DENT_LAMINAR_FACTOR` 1.5 on the Wortmann FX 63-137 (DA20), 1 on every other section (the PC-12's
+    NASA LS(1)-0417 is not a laminar section; the PA-34's NACA 65(2)-415 is modelled without its laminar bucket,
+    `sections.ts`). The nose gets a drag area `DENT_BODY_CDA_FULL` 0.02 m^2 x L along the relative wind. At L = 0
+    none of this runs and the model is bit-identical (`tests/aero/hailDents.test.ts`; `FS_GOLDEN_EXACT=1` goldens
+    unchanged). The four constants are values chosen for this model; the standard leading-edge roughness data of the
+    NACA section reports could not be fetched to compare them with, and no data for hail dents were found:
+    unconfirmed.
+  - Measured at full damage (`tests/aero/hailDents.test.ts`, 2026-10-20; drag coefficient at 2 deg and 60 m/s;
+    level speed at 65 % of rated power at 1500 m; stall speed from the trimmed CLmax, power off, maximum take-off
+    mass, sea level, KTAS):
+
+    | Type | CD | KTAS at 65 % power | CLmax | Stall speed, KTAS |
+    | --- | --- | --- | --- | --- |
+    | c172s | 0.0431 -> 0.0466 | 110.4 -> 106.1 | 1.514 -> 1.363 | 53.5 -> 56.3 |
+    | c152 | 0.0416 -> 0.0453 | 95.9 -> 92.1 | 1.350 -> 1.200 | 47.9 -> 50.8 |
+    | pa38 | 0.0626 -> 0.0663 | 94.3 -> 90.8 | 1.393 -> 1.250 | 53.3 -> 56.2 |
+    | da20 | 0.0415 -> 0.0460 | 118.8 -> 112.3 | 1.537 -> 1.351 | 52.1 -> 55.6 |
+    | pa34 | 0.0756 -> 0.0783 | 144.4 -> 139.4 | 1.431 -> 1.274 | 64.4 -> 68.3 |
+    | c208 | 0.0433 -> 0.0466 | 148.0 -> 142.9 | 1.524 -> 1.356 | 74.5 -> 79.0 |
+    | pc12 | 0.0480 -> 0.0510 | 219.6 -> 209.3 | 1.250 -> 1.104 | 94.3 -> 100.3 |
+
+    The da42 is a placeholder with the C172S flight model (`src/aircraft/da42/index.ts`) and measures as the c172s.
+  - Rotor (`physics/rotorcraft/rotor.ts` `bladeElements` dent, `Rotorcraft.setDamage`, set by `setAirframeDamage`'s
+    second argument and rounded to 1/128): at rotor level L the blade sections of the main and the tail rotor get
+    profile drag + `DENT_CD0_FULL` L and maxCl - liftSlope x `DENT_STALL_SHIFT_FULL` L. At L = 0 the arithmetic is
+    the undamaged rotor's (`tests/rotorcraft/hailDents.test.ts`). Measured (same test, 2026-10-20): R22 blade speed
+    159.0 m/s at 0.75 R; in 6 mm/h of hail with 20 mm largest stones the rotor dent rate is 475.1 J/m^2/s in the
+    hover and 528.9 J/m^2/s at 40 m/s, and 5 s of hover take the rotor level to 0.907 with the airframe level at 0.
+    Trimmed hover out of ground effect at maximum gross weight, sea level, full rotor damage: R22 127.1 -> 134.1 shaft
+    hp (+5.5 %; rotor profile power 33.7 -> 39.7 hp), R44 226.0 -> 238.9 shaft hp (+5.7 %; profile power 62.2 -> 73.4
+    hp); collective 0.522 and 0.503, unchanged to three decimals. Unconfirmed, as the constants it uses.
+  - Windscreen in the cockpit view (`WindscreenOverlay.ts`): each crack is drawn where its direction from the eye
+    meets the glazing (one ray cast when the crack first shows), over a radius of 0.05 + 0.13 x its size m, lit by
+    the sky ambient and the direct sun, in cast acrylic: 4 to 8 radial cracks of lengths 0.25 to 1 times the radius
+    at unequal angles, a crushed white centre of `CRACK_CORE_M` 3 mm (size 0) to 6 mm (size 1) and a whitened zone of
+    2.5 times that radius. A crack larger than `RUNNER_SIZE` 0.6 sends 1 to 3 runners: 1 px lines from its centre at
+    hashed angles, 0.3 to 0.8 m long (fading over their last 30 %), wandering sideways by 0.01 sin(9 s) + 0.004
+    sin(31 s) m (s along the runner) with a 5 px halo of whitening 0.2; where the frame is nearer they end at it. A
+    crack larger than `HOLE_SIZE` 0.85 is a hole of 0.3 times its radius (ragged by 12 % and 6 %), where the scene is
+    shown without drops, film, snow or splashes, with a white chipped rim of up to 3 mm and 4 short rays. Above
+    `SHATTER_LEVEL` 0.7 every crack's size is raised by up to 0.3 at level 1, so more cracks have runners and holes.
+    Laminated glass (`GlazingDef.laminated`, set on the PC-12 only) also draws two broken arcs between the radial
+    cracks; which types have laminated windscreens is unconfirmed.
+  - Toasts (`ui/hudCues.ts` `HailDamageToasts`): "Windscreen cracked by hail" and "Airframe damaged by hail" when the
+    crack level, or the larger of the dent and rotor levels, first reaches `HAIL_DAMAGE_TOAST_LEVEL` 0.05, "Windscreen
+    shattered by hail" at 0.7, each once per flight. After a restore (`HailDamageState.restores` changes) the flags
+    are set from the restored levels without a toast, so a resumed flight does not show them again.
 - Airframe sound (`audio/mapping.ts` `hailNoise`, parameters `hail` and `hailSize` appended after `rain`): the rate
   over `HAIL_FULL_MMH` 6 mm/h times a size weight 0.35 to 1 over 5 to 40 mm times the rain's airspeed factor. The
   worklet voice (`hailSound`) draws impacts from its own noise source, rings each through a click band and a body
   band whose pitch falls from 2400 to 520 Hz with the size, and is silent at 0. Tuning values set by ear.
+
+## Hail and snow on the ground (`src/render/weather/groundCover.ts`)
+
+The state the hail-ground overlay draws (`HailGround.surfaces`, a `GroundCover`), advanced with the simulated time
+between frames at the camera's ground point. Node-safe, no allocation per update. Two surface classes with the same
+precipitation and air: soil (grass and every unpaved surface) and pavement (runway, taxiways and apron). Inputs: the
+hail at the camera (`localPrecipAt`), the stratiform snow (`precipOf`, type `snow`; the storm rain is rain whatever
+the temperature), the rest of the precipitation as rain, and the surface air temperature T_a under the camera
+(`surfaceAirC`: ISA plus `isaDeviation` at `ctx.env.groundElevation`; no solar term, the code has none). Rates in
+mm/h liquid equivalent give kg/m^2/s as rate / 3600.
+
+- Skin temperature T_g per class, heat capacity C, conduction K from a deep ground at T_a + `deepWarmC`, exchange
+  `AIR_H` 6 W/m^2/K with the air; it starts at the balance of the two, (K T_d + AIR_H T_a) / (K + AIR_H). Soil
+  (`SOIL`): C 2000 J/m^2/K, K 4 W/m^2/K, deep 2 K over the air. Pavement (`PAVEMENT`): C 3500 J/m^2/K, K 14 W/m^2/K,
+  deep 4 K over the air. Cooling: each kg of hail that melts on landing takes `L_FUSION` 334 kJ/kg plus `C_ICE` 2100
+  J/kg/K from the stone's `HAIL_STONE_C` -2 deg C to 0 plus `C_WATER` 4186 J/kg/K up to T_g; a kg that lies takes the
+  ice's warming to min(T_g, 0). Snow likewise, from min(T_a, 0); its frozen share on arrival is 1 - smoothstep(0.5, 3
+  deg C, T_a) (`SNOW_WET_C0`, `SNOW_WET_C1`), the rest arrives as water at 0 deg C.
+- Lying share s = 1 - smoothstep(0, `HAIL_SETTLE_C` 1 deg C, T_g) for hail and 1 - smoothstep(0, `SNOW_SETTLE_C` 0.3
+  deg C, T_g) for snow (1 at or below 0 deg C). The lying ice and snow (kg/m^2) take `MELT_U` 1500 W/m^2/K x
+  max(T_g, 0) from the skin and melt by their mass shares. Depth: ice at `ICE_DENSITY` 917 kg/m^3, snow at
+  `SNOW_DENSITY` 100 kg/m^3. Visible cover: 1 - exp(-depth / `HAIL_COVER_MM` 0.5 mm) for hail, 1 - exp(-depth /
+  `SNOW_COVER_MM` 8 mm) for snow, combined as 1 - (1 - hail)(1 - snow).
+- Water (kg/m^2): melted hail and snow, the wet snow's water and the rain, at most `WET_HOLD_KGM2` 0.3 (the rest runs
+  off), drying with `WET_DRY_S` 1800 s; `wetness` is water / 0.3. The overlay draws the wetness only while
+  `frozenWet` is set (hail or snow has fallen since the surfaces were last dry), so rain alone draws nothing.
+- Integration: explicit steps of at most `SUBSTEP_S` 0.1 s; a frame advances at most `MAX_ADVANCE_S` 60 s
+  (`HailGroundOverlay.ts`). The state is kept while paused (no simulated time passes) and reset when the clock goes
+  back (a scenario reset).
+- Not modelled: the rain's heat, sunshine, evaporation, the insulation of a lying layer, compaction, the deep
+  ground cooling. Unconfirmed: every constant except the latent and specific heats; the thermal constants were
+  chosen so that the times match the owner's description (hail lies after one to two minutes of moderate to heavy
+  hail; grass before pavement); none has been compared with measurements.
+- Hail rates the storm cells give at 120 m (node, 2026-10-21): at most 9.14 mm/h (largest stone 51.6 mm) on a 250 m
+  grid over 60 x 60 km under the Thunderstorm preset's derived cells at simulation time 0 (554 of 728 points with
+  hail below 3 mm/h); 8.35 mm/h at the centre and 9.13 mm/h 500 m from it under an explicit cell of intensity 1
+  (largest stone 62.3 mm).
+- Measured (`tests/render/groundCover.test.ts`, 2026-10-21, 0.5 s steps; freezing is T_g at 0.5 deg C; the
+  Thunderstorm preset gives T_a 22.2 deg C at the field):
+
+  | case | soil: freezing, cover 0.2, cover 0.5 (s) | pavement: freezing, cover 0.2, cover 0.5 (s) |
+  | --- | --- | --- |
+  | hail 9.1 mm/h, T_a 22 | 53, 108.5, 223 | 125.5, 222, 419.5 |
+  | hail 9.1 mm/h, T_a 15 | 36, 86, 189.5 | 81.5, 151.5, 294.5 |
+  | hail 20 mm/h, T_a 22 | 22.5, 43.5, 87 | 45.5, 71, 122.5 |
+  | hail 36.7 mm/h, T_a 22 | 12, 23, 45 | 23.5, 35, 59.5 |
+  | hail 36.7 mm/h, T_a 10 | 6, 16.5, 38 | 12.5, 23.5, 46 |
+  | hail 5 mm/h, T_a 22 | 111.5, 255, 551.5 | not in 1800 s |
+  | hail 3 mm/h, T_a 10 | 85, 285.5, 698 | 323, 1540, not in 1800 s |
+
+  No hail lies on either class in 1 h of 2 mm/h at 22 deg C, 1 mm/h at 15 deg C or 1 mm/h at 10 deg C; the
+  pavement's wetness reaches 1. Melting after 180 s of 36.7 mm/h (cover under 0.05): at 22 deg C soil 2356 s,
+  pavement 931 s (1.77 and 1.51 mm of ice at the stop); at 15 deg C 3546 s and 1414 s; at 10 deg C 5347 s and 2089 s.
+  Snow, cover 0.5: 1.5 mm/h at 0.5 deg C soil 1487 s, pavement 2613 s; 2 mm/h at 1 deg C 1271 s and 2135 s; 5 mm/h at
+  0 deg C 410 s and 475.5 s. Hail against snow at the same rate, soil cover 0.5: 5 mm/h at 1 deg C 243 s and
+  474.5 s; 9.1 mm/h at 0.5 deg C 129.5 s and 226 s; 2 mm/h at 0 deg C 599 s and 1052 s. No snow lies in 1 h of 1
+  mm/h at 3.2 deg C, 2 mm/h at 4 deg C or 0.5 mm/h at 3.5 deg C. Largest change in one 1/60 s frame while the hail
+  rises to 36.7 mm/h over 10 s, falls until 240 s and stops (600 s in all): 0.020 K and cover 0.00033. Frames of
+  1/60, 0.5 and 30 s give the pavement the same ice to 1e-3 kg/m^2 after 300 s of 20 mm/h and 600 s without.
 
 ## Training weather line
 
@@ -567,8 +777,16 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
   (visibility measurement below).
 - Downdraft centre: the physics places it toward the cell's motion, and the gust front is centred on it; the drawn
   rain shaft is centred on the core.
-- Hail damage: the impact energy is accumulated and warned of; no effect on the flight model, the airframe or the
-  windscreen. Whether hail damages the aircraft, and how, is open for decision.
+- Hail damage: one rotor level for the main and the tail rotor (the dose is the main rotor's); the
+  cracks are not drawn on the exterior model; one dent level for the whole airframe (no per-surface damage); stones
+  striking the upper surfaces of a parked aircraft dent nothing (only the forward-facing leading edges are counted).
+- Hail bounce: drawn on the ground only, not off the airframe's surfaces (the windscreen shows splashes); the pellets
+  assume flat ground at the aircraft's ground height.
+- Hail and snow on the ground: one state for the ground around the camera (the hail and air temperature at the
+  camera's ground point apply out to 1500 m); two surface classes only (no difference between asphalt and
+  concrete, or grass and bare soil); no hail or snow on the airframe, buildings or trees; the storm cells give at
+  most about 9 mm/h of hail at the ground (measured in "Hail and snow on the ground"), at which the pavement's
+  cover reaches 0.5 after 419.5 s at 22 deg C.
 - Storm precipitation: the storm rain is reported as `rain` whatever the temperature (no snow or graupel aloft); the
   weather line reports no storm rain at the airport (only GR / GS); the hail extinction uses one mean diameter; the
   precipitation overlay draws storm rain and hail on the camera's grid, so the streak pattern does not follow the
@@ -576,7 +794,9 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
 - Storm march noise: on SwiftShader the temporal pass needs about 40 frames to converge (frames rendered in
   `dev/weather.html` at 640x360); a GPU frame rate has not been measured.
 - Landing-light beam: no volumetric term in fog.
-- Windshield drops and wet pavement: not built (no windscreen effect for rain or hail).
+- Wet pavement: only the hail-ground overlay's darkening after hail or snow; rain alone draws no wet ground (its
+  water is in `GroundCover`'s wetness, unused). The windscreen drops are drawn in the cockpit view only, not on the
+  exterior glass.
 - GPU timings: none of the plan's per-effect budgets (clouds +0.2 ms, fog 0.3 ms, precipitation 0.5 ms, storm cells
   1.5 ms with two cells and under 0.05 ms with none, on `high`) has been measured. The test machine renders with
   SwiftShader only.
@@ -712,3 +932,116 @@ visibility group still prints `visibilityM`, not `effectiveVisibilityM`.
     a straight edge or an arc. The HUD showed `HAIL MODERATE` with the aircraft in the core.
   - The storm march converges in about 40 frames on SwiftShader; shots taken after 16 to 20 frames still show the
     jitter's noise on lit lobes.
+
+## Integration checks (2026-10-20, windscreen, hail on the ground, hail damage)
+
+- `npx tsc --noEmit`: no errors.
+- `npx vitest run tests/weather tests/ui tests/audio`: 32 files, 335 passed. `tests/sim tests/render`: 275 tests, 274
+  passed; the failure, a 5 s time-out in `tests/sim/weatherPresets.test.ts`, passes run alone (19 of 19).
+  `tests/aero tests/fdm tests/aircraft` (with a browser running beside it): 682 passed, 9 failed, all time-outs; run
+  alone, `r44Setup`, `s269Exterior` and `s269Setup` pass, and the remaining `md500Exterior` (3), `r44Exterior` (1) and
+  `importOrder` (2) time-outs are in the baseline list.
+- `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: 51 of 53 pass; the 2 failures are the `c172Sim` records
+  `autoflight.runway` (124 of 1044 values) and `restore.cruise` (444 of 817), the same counts and worst values as at
+  commit c893d97; `c172Audio/script` 0 of 570 values differ.
+- `npx vitest run`: 4695 tests, 4364 passed, 13 failed, 318 skipped, in 1603 s on a 4-CPU machine. The 13 failures are
+  in the baseline list (time-outs and the 2 `c172Sim` golden records).
+- Damage update cost (node, 20 000 updates, 2026-10-20): 0.7 µs per update in the default weather, 11.2 µs with the
+  Thunderstorm conditions' derived cells and no hail at the point, 8.3 µs under an explicit cell with hail. One update
+  runs every 0.1 s of simulation time (every 24 steps at 240 Hz), against about 120 to 150 µs per physics step.
+- Browser checks, Chromium with SwiftShader, 640x360, `quality=medium`, `index.html`, no console errors or warnings and
+  an empty `__sim.errors` on every page. SwiftShader advances `simTime` too slowly to let the glass wet or dry, so the
+  water and snow states and the ground cover were set through `__sim.post` with the simulation paused; the hail at the
+  aircraft, the cracks' placement and the pellets came from the running code. Screenshots in `shots/procedural6/`
+  (not committed). In the default weather the precipitation, hail-ground and windscreen overlays reported no draw.
+  - `dry-cockpit-parked.png`, `dry-cockpit-a2.png`: runway, default weather; the overlays reported no draw.
+  - `rain-cockpit-parked.png`: 6 mm/h, wetness 0.75, parked: drops of 1 to 4 px on the windscreen and the left side
+    window, the larger ones as rings with the scene inside, and short wet trails below some drops.
+  - `rain-cockpit-cruise.png`: cruise at 112.9 KIAS, wetness 0.75: short streaks along the airflow (horizontal on the
+    side window), fewer sitting drops, and the water film's blur over the windscreen.
+  - `snow-cockpit-parked.png`: 2 mm/h, snow 0.85: white flakes 2 to 6 px across over the windscreen and side window.
+  - `hail-cockpit-parked.png`: an explicit cell of intensity 1 over the aircraft in the Thunderstorm conditions: 8.8
+    mm/h of hail at the aircraft, largest stone 62 mm, 1.43 strikes per m^2 and s on the glass; no splash is in the
+    frame at that rate. `hail-splashes-cockpit.png`: the strike rate forced to 120 per m^2 and s: two white star
+    splashes.
+  - `cracks-low-cockpit.png`: crack level 0.15, 3 cracks: radial cracks, arcs and white centres; the toast
+    "Windscreen cracked by hail". `cracks-severe-cockpit.png`: level 0.95, 12 cracks: a crazed, whitened area over
+    the left half of the windscreen; the toast "Windscreen shattered by hail".
+  - `hail-bounce-runway.png`: a fixed camera 1.6 m over the runway 10 m ahead of the aircraft, the simulation
+    running under the cell: light pellets spread over the runway ahead. `hail-scatter-runway.png`,
+    `hail-runway-chase.png`, `hail-runway-cockpit.png`: ground cover 0.6: the runway and the grass speckled white.
+    In `hail-runway-cockpit.png` one crack from the running hail damage shows on the lower left glass.
+
+## Integration checks (2026-10-21, acrylic cracks, rivulets, hail cover, rotor dents)
+
+- `npx tsc --noEmit`: no errors.
+- `npx vitest run tests/weather tests/render tests/ui tests/audio`: 47 files, 449 passed. `tests/sim`: 165 tests, 164
+  passed; the failure, a 5 s time-out in `tests/sim/weatherPresets.test.ts`, passes run alone (19 of 19).
+  `tests/aero tests/fdm`: 244 passed, 1 skipped.
+- `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: 51 of 53 pass; the 2 failures are the `c172Sim` records
+  `autoflight.runway` (124 of 1044 values) and `restore.cruise` (444 of 817), the same counts as at commit a3bebe1;
+  `c172Audio/script` passes.
+- `npx vitest run`: 4704 tests, 4374 passed, 12 failed, 318 skipped, in 1531 s on a 4-CPU machine. The 12 failures are
+  in the baseline list (time-outs and the 2 `c172Sim` golden records).
+- Browser checks, Chromium with SwiftShader, 640x360, `quality=medium`, `index.html`, no console errors or warnings and
+  an empty `__sim.errors` on every page. As in the previous round, the water, snow and slush states, the ground
+  cover and the cracks were set through `__sim.post` and `__sim.physics` with the simulation paused; the hail at the
+  aircraft (8.8 mm/h, largest stone 62 mm, 1.42 strikes per m^2 and s from the fall part and 0.17 from the airspeed
+  part, parked) came from the running code. Screenshots in `shots/procedural7/` (not committed):
+  - `dry-cockpit-parked.png`: default weather; the precipitation, hail-ground and windscreen overlays reported no
+    draw.
+  - `rain-cockpit-parked.png`: 6 mm/h, wetness 0.75, parked: sitting drops and short wet trails as before.
+  - `rain-cockpit-cruise.png`: 112.9 KIAS, wetness 0.75: thin dark wandering streams running up and outward on the
+    windscreen (up-left left of the centre line, up-right right of it), small beads, the film's blur.
+    `rain-cockpit-35kt.png`: the airflow share at 18 m/s TAS: sitting drops and streams together.
+  - `snow-cockpit-parked.png`: snow 0.85: white flakes. `slush-cockpit-parked.png`: snow 0, slush 0.7: a broken white
+    band a few px high along the windscreen's lower edge at the glareshield; none is visible on the left side window.
+  - `hail-cockpit-parked.png`, `hail-splashes-cockpit.png` (strike rate forced to 120 per m^2 and s),
+    `hail-wetspots-cockpit.png` (0.5 s later): small white splashes, then drops where the stones struck.
+  - `cracks-low-cockpit.png`: level 0.15, 3 cracks of size 0.3 to 0.7: radial cracks of unequal lengths, one runner
+    from the size-0.7 crack across the side window. `cracks-severe-cockpit.png`: level 0.95, 12 cracks: runners over
+    most of the windscreen and the left side window, no crazed net. `crack-hole-cockpit.png`: a size-0.95 crack in
+    rain at wetness 0.6: a ragged hole with a white rim and no drops inside it, short rays and runners.
+  - `hail-runway-chase.png`, `hail-runway-cockpit.png`, `hail-scatter-runway.png` (fixed camera 1.6 m over the
+    runway): ground cover 0.6: an even grey-white whitening of the runway and the stripes without per-pixel speckle;
+    no single stones are resolved at 640x360 beyond about 2 m.
+  - `r22-rain-cockpit.png`: R22, 6 mm/h, wetness 0.75, parked: drops over the bubble canopy.
+
+## Integration checks (2026-10-21, ground temperature, lying hail and snow)
+
+- `npx tsc --noEmit`: no errors.
+- `npx vitest run tests/weather tests/render tests/sim tests/ui`: 44 files, 461 tests, 460 passed; the failure, a 5 s
+  time-out in `tests/sim/weatherPresets.test.ts`, passes run alone (19 of 19). `tests/render` after the last shader
+  change: 16 files, 125 passed.
+- `FS_GOLDEN_EXACT=1 npx vitest run tests/golden`: 51 of 53 pass; the 2 failures are the `c172Sim` records
+  `autoflight.runway` and `restore.cruise`.
+- Browser checks, Chromium with SwiftShader, 640x360, `quality=medium`, `index.html?scenario=runway`, no console
+  errors or warnings and an empty `__sim.errors` on every page. SwiftShader takes about 30 s per screenshot, so the
+  simulation was paused and the ground state advanced through `__sim.post` (`HailGround.update` in 0.5 s steps) with
+  the hail, its largest stone and the rain the overlay sampled at the camera and the surface air temperature it
+  computed; to stop the hail the cell was moved 90 km north (`__sim.setWeather`). Screenshots in `shots/procedural8/`
+  (not committed), chase and cockpit views:
+  - `default-chase.png`: default weather; the hail-ground overlay reported no draw.
+  - `cell-*`: the Thunderstorm preset with an explicit cell of intensity 1 over the airport (`cb=0,0,11,1`): 8.75
+    mm/h of hail, largest stone 62.3 mm, 28.7 mm/h of storm rain, T_a 22.2 deg C. t0: green grass, dry runway,
+    pellets. t30, t60: the grass and the runway darker (wetness 1), no cover (soil cover 0.012 at t60). t90, t120:
+    the grass greyer in large patches (soil cover 0.12, 0.22), the runway wet. t180: the grass grey-white in patches
+    (0.38), the runway wet with no visible cover (0.087). t600: the grass a continuous light grey (0.88), the runway
+    grey with the threshold stripes faint (0.63). 5 min after the hail stops: the sky clears; the grass white
+    (0.81), the runway wet and bare (0.023). 15 min: the grass white with lighter and darker patches (0.53), the
+    runway wet (0.72).
+  - `heavy40-*`: the same page with the hail rate forced to 36.7 mm/h (40 mm/h of ice). t30: the grass grey in
+    patches (soil cover 0.31), the runway wet (0.12). t60: the grass light grey (0.64), the runway lighter between
+    the stripes (0.50). t90 to t180: a continuous light grey layer over grass and runway (0.81 to 0.97 and 0.72 to
+    0.95), the stripes and the centreline faint, the aircraft's shadow on it; the red runway-end lights seen at t0
+    and t30 are not visible from t120. In the cockpit view at t180 single stones and their dark contact shadows
+    show next to the fuselage. 5 min after: grass and runway still white (0.95, 0.87). 15 min after, under a clear
+    sky: the grass white (0.89), the runway bare and wet (0.11).
+  - `snow-*`: 1.5 mm/h of stratiform snow, nimbostratus at 600 m, `temp=-13.7` (T_a 0.52 deg C). t0: green grass.
+    t300, t600: the grass grey-green in patches (soil cover 0.12, 0.24), the runway wet (pavement 0.05, 0.13).
+    t1200: the grass light grey (0.43), the runway darker grey with white stripes (0.26). t1800, t2700: the grass
+    lighter (0.57, 0.72) than the runway (0.37, 0.51) in the same frame; the runway edge and end lights stay bright.
+    Cockpit views at t1200 and t2700: the grass left of the runway white, the runway grey with its stripes.
+  - `probe-a-clear.png`, `probe-b-clear.png`: default weather with the state set directly (soil 1 kg/m^2 of hail
+    and pavement 0.3 kg/m^2; soil 3 kg/m^2 of snow and pavement 0.5 kg/m^2): the grass white in sunlight, the runway
+    partly covered with its stripes showing, the aircraft's shadow drawn on the layer.

@@ -63,6 +63,11 @@ export interface GlazingDef {
    * across the roof every `pitch` metres. Absent: none.
    */
   headliner?: { x0: number; x1: number; z0: number; z1: number; pitch: number };
+  /**
+   * The windscreen is laminated glass: hail cracks are drawn with arcs between the radial cracks
+   * (render/weather/WindscreenOverlay.ts). Absent: cast acrylic. Unconfirmed for every type that sets it.
+   */
+  laminated?: boolean;
 }
 
 export interface SurfaceBayDef { kind: 'fixed' | 'flap' | 'aileron'; from: number; to: number; chordFraction?: number }

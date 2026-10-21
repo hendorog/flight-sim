@@ -31,6 +31,7 @@ import type { EraId } from '../world/era/types';
 import type { FaunaSpeciesId } from '../world/fauna/types';
 import type { LocalPrecip } from '../physics/weather/stormPrecip';
 import type { HailState } from '../sim/weather/hailExposure';
+import type { HailDamageState } from '../sim/weather/hailDamage';
 
 export const CAMERA_NEAR = 0.1;
 export const CAMERA_FAR = 400_000;
@@ -224,6 +225,11 @@ export interface WeatherFx {
   precip?: LocalPrecip;
   /** The hail on the airframe (sim/weather/hailExposure.ts), written with `precip`. */
   hail?: HailState;
+  /**
+   * The hail damage of the flight (sim/weather/hailDamage.ts, SimPhysics.hailDamage.state; the same object for the
+   * whole session). Absent on dev pages and test fakes: no damage.
+   */
+  damage?: HailDamageState;
 }
 
 /** A per-frame subsystem. update() runs once per rendered frame with the real frame dt (0 when paused). */

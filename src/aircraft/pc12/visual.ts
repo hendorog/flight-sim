@@ -337,6 +337,8 @@ const rect = (s0: number, s1: number, top: number, sill: number): [number, numbe
 ];
 
 const GLAZING: GlazingDef = {
+  // Laminated glass windscreen panes: unconfirmed (no handbook page on the windscreen's construction was checked).
+  laminated: true,
   cabinFrontX: SCREEN_SILL[0],
   cabinRearX: CABIN_REAR_X,
   firewallX: FIREWALL_X,

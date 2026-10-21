@@ -12,6 +12,7 @@ import { pressureAltitude } from '../atmosphere';
 import type { AtmosphereSample } from '../../core/types';
 import { articulatedBladeConing, bladeConing } from './coning';
 import { toBody, toShaft } from './shaftFrame';
+import { quantiseDentLevel } from '../aero/hailDents';
 
 export class Rotorcraft {
   readonly state = emptyRotorcraftState();
@@ -28,11 +29,24 @@ export class Rotorcraft {
   private readonly loads: ForceMoment = { force: v3.zero(), moment: v3.zero() };
   /** Momentum-theory tail inflow for the last compute()'s tail thrust, m/s (settle() solves tailInflow = this). */
   private tailInflowTarget = 0;
+  /** Hail dents on both rotors' blade leading edges, 0..1 (setDamage). */
+  private bladeDent = 0;
   /** Turboshaft fuel control and N2 governor (systems.turboshaft): the flight model calls its stepTurboshaft()
    * in place of throttle(). Null on piston installations. */
   readonly turboshaft: TurboshaftControl | null;
   constructor(readonly def: RotorcraftDefinition) {
     this.turboshaft = def.systems.turboshaft ? new TurboshaftControl(def, this.state) : null;
+  }
+  /**
+   * Hail dents on the blade leading edges of both rotors, 0..1 (sim/weather/hailDamage.ts rotor), rounded to
+   * DENT_LEVEL_STEP; kept through reset() (the simulation shell sets it for each flight).
+   */
+  setDamage(level: number): void {
+    this.bladeDent = quantiseDentLevel(level);
+  }
+  /** The level set with setDamage, after rounding. */
+  get damage(): number {
+    return this.bladeDent;
   }
   reset(running: boolean): void {
     delete this.state.turboshaft;
@@ -299,7 +313,7 @@ export class Rotorcraft {
     this.articulatedPower.hub = v3.dot(shaftHubMoment, rate);
     this.articulatedPower.shaft = -this.articulatedPower.hub;
     const hubTorque = s.omega > 0 ? this.articulatedPower.hub / s.omega : 0;
-    const main = bladeElements(d.main, d.yawInRotorSpeed ? Math.max(0, s.omega - d.rotation * rate.z) : s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true);
+    const main = bladeElements(d.main, d.yawInRotorSpeed ? Math.max(0, s.omega - d.rotation * rate.z) : s.omega, collective, axial, horizontal, s.inflow, density, 12, 16, true, this.bladeDent);
     const h = Math.max(0.3 * d.main.radius, height - quat.rotate(b.orientation, d.main.hub).z);
     // NDARC TP-2015-218751 §12-4.1.2: constant-thrust induced-velocity factor (exponent 3/2).
     // Use the wake's angle to the ground normal; an upward autorotative wake gets no image correction.
@@ -323,7 +337,7 @@ export class Rotorcraft {
     const wakeAtTail = 0.35 * s.inflow / (1 + (air.x / 18) ** 2);
     const tailHorizontal = Math.hypot(tailAir.x, tailAir.z - wakeAtTail);
     const tail = bladeElements(d.tail, s.omega * d.tailRatio, tailPitch,
-      tailAir.y * d.rotation, tailHorizontal, s.tailInflow, density);
+      tailAir.y * d.rotation, tailHorizontal, s.tailInflow, density, 12, 16, false, this.bladeDent);
     const targetInflow = inflowTarget(main.thrust, density, d.main.radius, axial, horizontal);
     const tailTarget = inflowTarget(tail.thrust, density, d.tail.radius, tailAir.y * d.rotation, tailHorizontal);
     this.tailInflowTarget = tailTarget;

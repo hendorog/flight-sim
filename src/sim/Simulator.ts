@@ -399,7 +399,7 @@ export class Simulator {
       carbIcing,
       era: era().id,
       moonScale: chooseMoonScale(p, this.store),
-      weatherFx: { flash: { x: 0, y: 0, z: 0, energy: 0 } },
+      weatherFx: { flash: { x: 0, y: 0, z: 0, energy: 0 }, damage: physics.hailDamage.state },
     };
     this.ctx = ctx;
     this.applySize();
