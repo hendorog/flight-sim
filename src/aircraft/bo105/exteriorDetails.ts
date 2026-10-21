@@ -217,7 +217,7 @@ export function buildBo105Exterior(def: AirframeVisualDef, m: Bo105Materials, sk
     const aPost: [number, number][] = A_POST.map(([s, h]) => [S(s), H(h)]);
     add(m.paint, pathTube(skinPath(skin, side, aPost, 0.003, 10), 0.012, 80));
     // Crew-door hinges on its front edge.
-    for (const [s, h] of [[1.17, 0.86], [1.23, 1.36]]) add(m.grey, box(skinPath(skin, side, [[S(s), H(h)]], 0.008)[0], [0.025, 0.014, 0.06], 0.004));
+    for (const [s, h] of [[1.17, 0.86], [1.255, 1.36]]) add(m.grey, box(skinPath(skin, side, [[S(s), H(h)]], 0.008)[0], [0.025, 0.014, 0.06], 0.004));
     // Sliding-door rails: the top rail under the roof edge and the bottom rail along the sill, running aft over the
     // fixed panel the door slides across.
     const rail = (h: number, offset: number): FRD[] => skinPath(skin, side, [[S(1.84), H(h)], [S(SLIDING_RAIL_END_STA), H(h)]], offset, 24);

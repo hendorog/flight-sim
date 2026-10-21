@@ -89,7 +89,9 @@ export const SLIDING_WINDOW = sh([[1.90, 1.22], [2.30, 1.22], [2.30, 1.85], [1.9
 export const SLIDING_REAR_WINDOW = sh([[2.40, 1.30], [2.62, 1.30], [2.62, 1.84], [2.40, 1.84]]);
 /** Doors (panel lines): the hinged crew door (hinges on its front edge at the windscreen frame), the sliding passenger
  *  door, the aft clamshell door outline seen from the side, and the nose compartment cover below the chin windows. */
-export const CREW_DOOR = sh([[1.14, 0.66], [1.78, 0.66], [1.78, 1.95], [aPostSta(1.965), 1.965], [aPostSta(1.31), 1.31], [1.146, 1.00]]);
+// The door's front edge is the A-post's straight run extended down to the lower window (one edge: the outline stays
+// convex, and no mid-edge vertex for the rounded intersection to pull in).
+export const CREW_DOOR = sh([[1.14, 0.66], [1.78, 0.66], [1.78, 1.95], [aPostSta(1.965), 1.965], [aPostSta(1.00), 1.00]]);
 export const SLIDING_DOOR = sh([[1.82, 0.64], [2.80, 0.64], [2.80, 1.95], [1.82, 1.95]]);
 export const CLAMSHELL = sh([[4.33, 0.70], [5.10, 0.70], [5.10, 1.74], [4.33, 1.74]]);
 export const NOSE_COMPARTMENT = sh([[0.98, 0.535], [1.42, 0.45], [1.44, 0.52], [1.42, 0.56], [1.00, 0.58]]);
