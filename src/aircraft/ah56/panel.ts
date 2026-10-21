@@ -103,7 +103,7 @@ export const AH56_PANEL: PanelDef = {
   // gauges and the lenses. Lower: gear, tail wheel, hydraulics, the control-system placard and every switch.
   fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'collective'], ['clock', 'hsi', 'vsi', 'propBeta']],
     crops: [{ x: TAPES.x - 2, y: TAPES.y - 2, w: TAPES.w + 4, h: TAPES.h + 4 }],
-    controls: [SWITCHES, ignitionLayout(IGNITION)!.rect, INERT], lampsBeside: true },
+    controls: [SWITCHES, ignitionLayout(IGNITION)!.rect], lampsBeside: true },
   size: AH56_PANEL_CANVAS, instrumentScale: SCALE, instrumentBezel: 'square', lightingDimmerExponent: 2.2,
   apertures: { large: 74 * SCALE.large, small: 51 * SCALE.small },
   gauges: [
