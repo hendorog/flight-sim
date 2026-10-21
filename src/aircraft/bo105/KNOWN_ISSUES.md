@@ -51,16 +51,36 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
      (out of band). dragArea.z x 1.5 (the download): hover +1.7 %, bucket 0.
    Closing it needs a climb-efficiency mechanism in the rotor core (RC) or restated bands (architect): Jane's 1,575 ft/min
    plausibly belongs to 2,500 kg, where the model is +4 % from it.
-3. **Hover roll damping above the ESTIMATE band** (`bo105Derivatives` KNOWN HOVER-DAMPING GAP): hover Lp about -12.1 1/s
-   (roll time constant 0.083 s) against -6..-10. With the harmonic inflow on, the hover roll damping rises by about the
-   quasi-steady theory's 1/1.51 (RC docs section 8); at 80 kt Lp (-10.7) and the roll mode (10.9 1/s) are inside their
-   AR-280 bands. **No Bo 105 hover derivatives in the sources used.** The DLR/AFDD ERF 1989 paper (Kaletka, von
-   Grünhagen, Tischler, Fletcher, ERF 1989 paper 66; research-bo105 section 18 gap 3 lists it as DTIC ADA216828) was
-   obtained at the pilot review from the ERF repository (`W/sources/bo105/erf-1989-66/`): it identifies the 80 kt / 3000 ft
-   condition only (p 2), the AR-280 data already used. DTIC still refuses scripted downloads (HTTP 403). Fu & Kaletka
-   (JAHS 38-1, 1993) was not obtained (DLR elib holds no full text) and may cover the same 80 kt data. Every hover handling
-   number is unvalidated until a hover identification is found. Note for the architect: plan section 4 says the hover inflow gradient "cuts" roll damping; measured on this
-   definition it raises it (2200 kg IGE: Lp -8.8 with the harmonic inflow off, -12.1 with it on), as RC's docs say.
+3. **Hover derivatives against the flight-identified hover** (`bo105Derivatives` hover rows, re-sourced at the
+   flyability pass, 2026-10-22). The hover rows are now against Kaletka & Gimonet, ERF 1995 paper VII-7, Table 1 (P: the
+   DLR and CERT 6 DOF identifications of the DLR S-123 in the hover; `W/sources/bo105/erf-1995-vii07/`), with the AR-280
+   envelope rule [min x 0.7, max x 1.3]. 2200 kg IGE 3 ft, SL:
+   | Row | sim | ERF 1995 DLR / CERT | band | status |
+   |---|---|---|---|---|
+   | Lp 1/s | -12.09 | -8.54 / -10.89 | -14.16..-5.98 | pass (was the ESTIMATE -6..-10 KNOWN HOVER-DAMPING GAP: re-sourced, not loosened) |
+   | Lq 1/s | +2.86 | +2.42 / +2.38 | +1.67..+3.15 | pass |
+   | Mq 1/s | -3.27 | -2.32 / -1.79 | -3.02..-1.25 | KNOWN HOVER MISS (ROTOR/INFLOW) |
+   | Mu 1/(s m) | +0.088 | +0.043 / +0.058 | +0.030..+0.076 | KNOWN HOVER MISS (ROTOR/INFLOW) |
+   | Mp 1/s | -0.762 | -1.105 / -1.9 | -2.47..-0.774 | KNOWN HOVER MISS (at the edge, 1.5 %) |
+   | Mw 1/(s m) | -0.005 | +0.051 / +0.059 | +0.036..+0.077 | KNOWN HOVER MISS (sign; stabiliser / fuselage ESTIMATEs, item 15) |
+   | Nv 1/(s m) | +0.0003 | +0.096 / +0.066 | +0.046..+0.125 | KNOWN HOVER MISS (no hover weathercock; tail rotor / fin ESTIMATEs) |
+   | Nr 1/s | -0.54 | -0.974 / -1.10 | -1.43..-0.68 | item 20 |
+   | Zw 1/s | -0.275 | -0.295 / -0.251 | -0.38..-0.18 | pass |
+   | L_lat rad/s^2 per % | 0.189 | 0.171 / 0.196 | 0.120..0.255 | pass (was ESTIMATE 0.13-0.24) |
+   | M_lon | 0.0815 | 0.0719 / 0.0724 | 0.050..0.094 | pass (was ESTIMATE 0.065-0.12) |
+   | N_ped | 0.042 | 0.0477 / 0.0474 | 0.033..0.062 | pass |
+   | Z_col m/s^2 per % | -0.287 | -0.238 / -0.23 | -0.31..-0.16 | pass |
+
+   The excess on-axis Mu, Mq and Lp (and Lv -0.35 against -0.21 in Heffley's analytical BO-105C, NASA CR-3144, S) is RC's
+   harmonic inflow on this stiff hub: the moment feedback (L22 / L33) is a damper that supplies the identified rate
+   cross-coupling (Lq / Mp: with the inflow off -0.13 / +0.03) and raises Lp / Mq; the L31 wake-skew gradient's flap
+   response gives Lu +0.35 and Mv +0.09 1/(s m) (the Helisim-type model's pattern too, S) and doubles Mu. No Bo 105 knob
+   reaches them: inertia, nu and the control phase are pinned by the 80 kt fit (item 19). The one measured variant that
+   brings Mu inside the band is the L31 gradient x 0.5 (Mu 0.065, doubling 3.6 s): a shared-core parameter with no
+   classical coefficient behind it, **a note for RC, not done**. The identified hover Xu / Yv (-0.345 / -0.131) are an
+   order above any model's (the paper's own caveat on the hover velocity reconstruction) and are not used. Plan section
+   4's "the hover inflow gradient cuts roll damping" was the control response (hub moment per cyclic -7..-13 %), not the
+   rate damping: measured, the gradient raises Lp (-8.8 with the harmonic inflow off, -12.1 on), as RC's docs say.
 4. **Rotor/inflow limits carried from the rotor core** (RC docs section 10): Zw -0.68 1/s against the envelope's -0.70
    edge (a climb-rate settling time of about 1.5 s against DLR's 1.0 s after a collective step); the rate cross-coupling
    ratio Lq/|Lp| 0.19 against 0.25-0.50 (Lq +2.1 and Mp -0.52 1/s are inside their own bands). `bo105Derivatives` KNOWN
@@ -130,31 +150,47 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    knob: Mw +0.040 at 80 KCAS, phugoid time to double 8.7 s) and the fuselage moment derivatives (a Munk estimate x 0.6)
    carry no measured data; AR-280's "NACA 0010/C020" profile is read as symmetric.
 16. **Airspeed limits**: the OEI 100 KIAS Vne (P5 FM 2-4) is not read by the limit reader (it knows power-off only).
-17. **The hover is unstable hands-off, and the plan's own gate shot crashes** (no Bo 105 hover source was used; DLR's
-   hover identification exists, item 3). The 8-state hover model (`bo105Derivatives` hover-modes row, trace key
-   `hoverModes`), harmonic inflow ON as flown: 2200 kg IGE 3 ft, an oscillation zeta -0.52 at 0.60 rad/s (period 12 s,
-   doubles in 2.3 s), Mu +0.088 1/(s m), Lv -0.349, Lp -12.1, Mq -3.27; 2500 kg at 16 m (the hover scenario) zeta -0.49
-   at 0.62 rad/s (doubles in 2.3 s), Mu +0.099, Lv -0.384. With the inflow OFF the same airframe gives zeta -0.095 at
-   0.43 rad/s (doubles in 17 s; Mu 0.046, Lv -0.187, Lp -8.8) and 2500 kg / 16 m zeta -0.096 at 0.47 (15 s): the harmonic
-   inflow roughly doubles Mu and Lv and makes the hover divergence about seven times faster. At 80 kt Mu is 0.046 (DLR
-   0.029, AFDD 0). **Plan section 10 gate shot** (`index.html?aircraft=bo105&hover=1&cam=chase&resume=0&run=20`, 2500 kg,
-   16 m, 8 kt of wind, hands off): after 20 s roll 53.5 deg, crashed (main rotor strike), NR 424.7 rpm, torque 84.2 /
-   84.2 %, N1 101.2 % (W/shots/BO/bo105-hover.png); the MD 500E on the same URL is upright after 20 s (roll -5.8 deg,
-   2.7 m/s drift). With the hold engaged (`&ap=1`, the app's own hover URL) it hovers: after 20 s pitch +3.5, roll 3.0
-   left, torque 80.6 / 80.6 %, TOT 738 C (W/shots/BO/bo105-hover-ap.png); heliHold position RMS 0.07 m calm, 2.3-2.5 m in
-   8 kt gusts, no disconnect. A hingeless hover doubling in 2-4 s is the right order for the class, but nothing is tuned
-   until DLR's hover derivatives are sourced; how fast the Bo 105 diverges is the owner's judgement.
+17. **The hover is unstable hands-off, as the real Bo 105's is; the plan's own gate shot crashes without the aids**
+   (re-sourced at the flyability pass, 2026-10-22). The real aircraft: in the DLR hover identification flight "a few
+   seconds after the input signal was started a diverging response in the lateral directional motion (roll and pitch)
+   was seen ... he had to retrim the helicopter after about 14 seconds as the roll attitude had reached about 45 degrees
+   and the yaw rate was more than 20 degrees/second"; "all hover flight tests were flown with additional stabilizing
+   pilot inputs" (P ERF 1995 VII-7, pp 2-3). Its Figure 13 (6 DOF, DLR and CERT) puts the hover phugoid in the right
+   half-plane at about sigma +0.20..+0.25 rad/s, omega_d 0.50..0.55 rad/s (doubling about 2.8-3.5 s, period 11-13 s),
+   with the markers spanning sigma +0.1..+0.4, omega_d 0.4..0.7 (doubling 1.7-7 s, period 9-16 s): read off a small
+   printed plot. The sim (`bo105Derivatives` hover-modes row, trace keys `hoverModes`, `hoverPhugoid`), 2200 kg IGE 3 ft:
+   sigma +0.308, omega_d 0.51 rad/s (**doubling 2.3 s, period 12.3 s**), inside the band on its fast side; 2500 kg at
+   16 m (the hover scenario) doubling 2.3 s, period 11.6 s. ADS-33E-PRF Fig 7 (P) places both the sim and the identified
+   aircraft at Level 3 (sigma > 0.139 rad/s, doubling under 5 s). The same lateral 3211 (5 % of travel) then hands off
+   reaches 45 deg of roll at 11.4 s with the yaw rate above 20 deg/s from 8 s (W/bofly/probes `hoverDlr`): the flight's
+   order, on the fast side. Mechanism: the L31 wake-skew gradient's flap response on the stiff hub gives Lu +0.35 and Mv
+   +0.09 1/(s m), which split the two coincident 0.51 rad/s pendulum modes (longitudinal and lateral) into one strongly
+   unstable pair and one strongly stable one; the L22 / L33 moment feedback is a damper and supplies Lq / Mp.
+   Comparison (2200 kg IGE; Lv, Lu, Mv are not in ERF Table 1):
+
+   | | sim (inflow ON) | sim (inflow OFF) | ERF 1995 DLR / CERT (P) | Heffley CR-3144 (S) | Helisim-type (S) |
+   |---|---|---|---|---|---|
+   | Lp / Mq 1/s | -12.1 / -3.27 | -8.8 / -2.39 | -8.54 / -2.32, -10.89 / -1.79 | -9.24 / -3.40 | -14 / -4 |
+   | Mu / Lv 1/(s m) | 0.088 / -0.349 | 0.046 / -0.187 | 0.043, 0.058 / - | 0.066 / -0.208 | 0.01 / -0.20 |
+   | Lu / Mv 1/(s m) | +0.353 / +0.094 | -0.017 / -0.004 | - | -0.037 / -0.013 | +0.35 / +0.08 |
+   | Lq / Mp 1/s | +2.86 / -0.76 | -0.13 / +0.03 | +2.42 / -1.1, +2.38 / -1.9 | +2.30 / -0.84 | - / -0.1 |
+   | hover phugoid sigma / omega_d rad/s | +0.31 / 0.51 | +0.04 / 0.43 | about +0.1..0.4 / 0.4..0.7 | +0.02 / 0.42 | decoupled only |
+   | doubling | 2.3 s | 17 s | about 1.7-7 s; 45 deg of roll in about 14 s | 31 s | - |
+
+   The roll / flap mode in the hover (matrix pencil): -4.4 +/- 10.2j against the identified 9 DOF about -6 +/- 10j (DLR) /
+   -7 +/- 9j (CERT). Heffley's 31 s and the inflow-off 17 s are what the flight test contradicts (no 45 deg of roll in
+   30 s); `harmonicInflow: false` is therefore not a fix (it would also lose the hover Lq / Mp and the 80 kt Lq row).
+   **Plan section 10 gate shot** (`index.html?aircraft=bo105&hover=1&cam=chase&resume=0&run=20`, 2500 kg, 16 m, 8 kt of
+   wind, hands off) at `03ec6e1`: after 20 s roll 53.5 deg, crashed (main rotor strike) (W/shots/BO/bo105-hover.png): the
+   sourced behaviour, kept. Two ways to fly the hover scenario: the hover hold `&ap=1` hands off (after 20 s pitch +3.5,
+   roll 3.0 left, torque 80.6 / 80.6 %, TOT 738 C; heliHold position RMS 0.07 m calm, 2.3-2.5 m in 8 kt gusts, no
+   disconnect), and the STAB ASSIST sim aid on the keys (default ON on the Bo 105, Shift+A for the raw aircraft; section
+   "Flyability pass").
    **Pilot review (2026-10-21)**: a delayed test pilot (attitude gains 1.2 per rad and 0.6 per rad/s, the state read tau s
-   late; 2200 kg IGE, calm 15 s then an 8 kt side gust; W/probes/pilot-bo `hover`, `extra2`, `tune-inflow`) holds the
+   late; 2200 kg IGE, calm 15 s then an 8 kt side gust; W/probes/pilot-bo `hover`, `extra2`, `tune-inflow`) holds the raw
    hover up to tau 0.5 s and loses it at 0.6 s (23 s); at half the attitude gain it is lost at every tau, in calm air too
-   (tau 0: 43 s; 0.75 x gain holds within 0.3-1.1 m). The MD 500E on the same pilot holds at half gain to tau 0.4 s. With
-   the harmonic inflow OFF (the sensitivity switch `BO105_HUB_SET.harmonicInflow`) the half-gain pilot holds at tau 0 and
-   0.3 s (drift 3.8-4.0 m) and is lost from 0.5 s; the full-gain pilot then holds only to 0.3 s (lost at 0.5 s, 39 s):
-   the inflow's extra roll damping helps a firm pilot, its doubled Mu / Lv defeat a gentle one. Not a Bo 105 parameter:
-   the term is RC's one-way harmonic inflow (`inflowHarmonic.ts`: no wake-curvature or pitch-moment feedback into the
-   inflow, RC docs section 10), which plan section 4 expected to cut hover damping and here raises it (item 3); switching
-   it off loses the 80 kt Lq / Mp rows (Lq +2.07 -> +0.37, below its +1.5 floor). Kept ON (the binding fitting rule);
-   the app's hover hold (`&ap=1`) remains the way to fly the hover scenario hands off.
+   (tau 0: 43 s; 0.75 x gain holds within 0.3-1.1 m). The MD 500E on the same pilot holds at half gain to tau 0.4 s. That
+   is where a first-time keyboard pilot sits, hence the assist.
 18. **Hold autopilot on the Bo 105** (TW's `sim/rotorcraft/autopilot.ts`, tuned on the other types): the heliHold
    sequence overshoots its 40 kt speed step by 12 kt and settles in 28-30 s; heading steps overshoot 6.6-9.5 deg.
 19. **Rows that pass at their band edges** (no slack; owner judgement on each): 80 kt Lp -10.67 (edge -11.41), roll mode

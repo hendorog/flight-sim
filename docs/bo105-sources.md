@@ -40,6 +40,10 @@ photographs are not GPLv3-compatible, so use them only as modelling references.
 | `metu-12613643/metu.pdf` | METU thesis Table 9 (Theodore model): TR 233 rad/s, R 3.18 ft, shaft -4.2 deg; CG 3.15 ft below hub (F/S) | [PDF](https://etd.lib.metu.edu.tr/upload/12613643/index.pdf) |
 | `erf-kerler/kerler.pdf` | Kerler et al. ERF 2012: Simulink Bo 105 tail-surface and skid modelling choices; Fig 1 power required over speed at 1500 / 2000 / 2300 kg SL after Kessler's TUM lecture (S; digitised at the pilot review: 2300 kg hover 426 kW, 232 kW at 60 KIAS, 508 kW at 130 KTAS) | [PDF](https://dspace-erf.nlr.nl/bitstreams/3c4157b6-9b2f-41c4-95dd-479b168ea48b/download) |
 | `erf-1989-66/erf-1989-66.pdf` | Kaletka, von Grünhagen, Tischler, Fletcher, "Time and frequency-domain identification and verification of BO 105 dynamic models", ERF 1989 paper 66 (P): the DLR/AFDD identification behind AR-280; 80 kt at about 3000 ft only (p 2), no hover derivatives. Fetched 2026-10-21 (DTIC ADA216828 refuses scripted downloads) | [PDF](https://dspace-erf.nlr.nl/bitstreams/938ea20b-994b-4820-b216-62e74e1e6663/download) |
+| `erf-1995-vii07/erf1995-vii7.pdf` | Kaletka, J., Gimonet, B., "Identification of extended models from BO 105 flight test data for hover flight condition", 21st ERF, St Petersburg 1995, paper VII-7 (P): the DLR / CERT flight-identified Bo 105 HOVER 6 DOF and 9 DOF models. Table 1 (major derivatives, text lines 536-566 of the extract), Figure 13 (poles; read off the plot, `fig13zoom-18.png` 72 px per rad/s), the hover flight description pp 2-3 ("highly unstable", 45 deg of roll in about 14 s, "all hover flight tests were flown with additional stabilizing pilot inputs"). Read at the flyability pass, 2026-10-22 | ERF repository (dspace-erf.nlr.nl), paper VII-7 |
+| `heffley-cr3144/cr3144.pdf` | Heffley, R. K. et al., "A Compilation and Analysis of Helicopter Handling Qualities Data", NASA CR-3144 (1979), section III "BO-105C" (F: the Boeing Vertol Y-92 analytical model of the same Type 1 hingeless rotor, 2096 kg; not flight data). Pages read: Fig III-2 pp 70-71 (control system and travels: collective 14 deg, longitudinal 10 deg, pedal 16 deg; lateral printed ".28 deg/%", probably .08), Fig III-3 p 72 (inertias), Table III-3 pp 74-81 (derivatives and trims; case 29 hover, case 34 80 kt), Table III-5 p 95 (hover denominator: doubling 31 s) | [NTRS 19800002851](https://ntrs.nasa.gov/api/citations/19800002851/downloads/19800002851.pdf) |
+| `pfc-gavilan-helisim/` | Gavilán Jiménez, Seville PFC (student project): Bo-105 stability derivatives from a Helisim-type model (Padfield's structure with the 3-state Pitt-Peters inflow), hover to 140 kt, plots (S/ESTIMATE: used only for the pattern of the hover coupling derivatives Lu +0.35, Mv +0.08, read by eye) | Universidad de Sevilla repository |
+| `../ads33/ads33e.pdf` | ADS-33E-PRF (2000), 3.3.2.3 and Figure 7 "Limits on pitch (roll) oscillations, hover and low speed" (P specification, not Bo 105 data): Level 2 / 3 boundary at sigma 0.139 rad/s (doubling 5.0 s); 3.3.2.3 makes an attitude-hold response type the compliance route | US Army AMCOM |
 | `commons-photos/` | Wikimedia Commons photographs (licences in research-bo105.md section 16): D-HILF left side, Christoph 7 and Policía CB cockpits, rotor head, CB in flight | [Commons](https://commons.wikimedia.org/wiki/Category:Bo_105) |
 
 ## Resolved installation facts
@@ -117,9 +121,14 @@ cruise maxima 82 % torque and 738 C TOT. Engine anti-ice adds about 15 C TOT.
   lat 0.06, ped 0.04 s; phugoid zeta -0.15 at 0.33 rad/s (divergent), Dutch roll zeta 0.14 at 2.50 rad/s, roll
   subsidence 1/T 8.49 1/s. The AFDD column is listed beside it in research-bo105.md section 9.2; use the spread between
   the two as the tolerance band. These belong in a `tests/rotorcraft/bo105.ts` harness on the oh6a.ts pattern.
-- **No hover derivatives** were obtained (Padfield App 4B, Fu & Kaletka not available). The Padfield centre-spring
-  Kbeta about 113,000 N m/rad (lambda_beta^2 1.248, gamma 5.087) is a recollection that is self-consistent with
-  the AR-280 geometry but **unverified**.
+- **Hover derivatives** (flyability pass, 2026-10-22): ERF 1995 VII-7 Table 1 (P; above) gives the flight-identified
+  hover set, DLR / CERT 6 DOF: Lp -8.54 / -10.89, Lq +2.42 / +2.38, Mu +0.0431 / +0.0583, Mw +0.051 / +0.059, Mp -1.105 /
+  -1.9, Mq -2.32 / -1.79, Nv +0.096 / +0.066, Nr -0.974 / -1.10, Zw -0.295 / -0.251; per %: Z_col -0.238 / -0.23, M_lon
+  +0.0719 / +0.0724, L_lat +0.171 / +0.196, N_ped +0.0477 / +0.0474. Xu / Yv (-0.345 / -0.131) carry the paper's caveat on
+  the hover velocity reconstruction and are not used. Figure 13: the hover phugoid unstable, sigma about +0.1..+0.4,
+  omega_d 0.4..0.7 rad/s (read). Padfield App 4B and Fu & Kaletka (JAHS 1993) were still not obtained; they may print
+  the hover eigenvalues as numbers. The Padfield centre-spring Kbeta about 113,000 N m/rad (lambda_beta^2 1.248, gamma
+  5.087) is a recollection that is self-consistent with the AR-280 geometry but **unverified**.
 
 ## Scaffold boundaries
 
