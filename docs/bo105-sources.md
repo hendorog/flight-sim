@@ -68,8 +68,8 @@ photographs are not GPLv3-compatible, so use them only as modelling references.
 
 ## Geometry contract
 
-Stations are from the datum **3000 mm forward of the levelling point at frame 7** (TCDS, FM 2-3). A future
-`src/aircraft/bo105/dimensions.ts` should cite each group.
+Stations are from the datum **3000 mm forward of the levelling point at frame 7** (TCDS, FM 2-3).
+`src/aircraft/bo105/dimensions.ts` cites each group.
 
 | Quantity | Source value | Source / treatment |
 | --- | --- | --- |
@@ -128,3 +128,23 @@ mast-moment limit in N m and the autorotation descent rate are estimates or gaps
 hingeless hub, twin-engine combining gearbox with two freewheels, the overhead power levers, the 4-way engine trim and the
 mast-moment indicator are new behaviour for this sim. Do not express them through the MD 500 twist grip or the
 piston/clutch fields of the R22, R44 and S269.
+
+## Readings and decisions of the flight model (package BO)
+
+The flight model's calibration record is `docs/bo105-flight-model.md`; every number there carries its tag. The readings
+it added to the records above:
+
+- **Hub** (RC's set, adopted): equivalent hinge 0.12 R (BK117-ERF7, P: "an effective flap hinge offset of 12 percent
+  (zero spring), and a corresponding flap frequency ratio of 1.10"); rotating flap frequency 1.10/rev (NASA TM-85990
+  Table 1, calculated at 425 rpm, P) and 1.12/rev (NASA TM-103867, P), 1.11 chosen; no non-rotating flap frequency in
+  TM-85990. Root cut-out 1.10 m (METU Table 9: 3.61 ft, F/S).
+- **CG height conflict**: METU's "CG 3.15 ft below hub" (F, the Theodore model) is the body reference point; it cannot be
+  the CG with the AR-280 inertia and the underfloor tanks (the fuel alone would carry two thirds of Ixx). The mass model's
+  CG comes from an ESTIMATE component breakdown (FS 72B 152 kg, P MM ch 11 p5; the rest ESTIMATE): 1.53 m below the hub
+  at 2200 kg. Empty mass 1276 kg (S Jane's).
+- **Control travels**: fitted to AR-280 per % of full travel (an assumption: AR-280 does not define "%"; the MM rigging
+  chapter 103 was not obtained).
+- **Mast-moment marks, ground attitude, power-lever stops, fuel-transfer approximation, keyboard axes**: AGENT/ESTIMATE,
+  derivations in the flight-model record.
+- **Tail-rotor hub height** 2.80 m: the MM's "about 3.80 m with a tail-rotor blade vertical" (OCR, UNVERIFIED) less the
+  0.95 m radius, and the D-HADO near-profile (3V).
