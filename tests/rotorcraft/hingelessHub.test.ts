@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, KT, quat, v3 } from '../../src/core/math';
 import { defaultControls, type ControlInputs } from '../../src/core/types';
 import { Rotorcraft } from '../../src/physics/rotorcraft/rotorcraft';
-import { estimatedArticulatedGeometry, hingeMoment, hubForcing } from '../../src/physics/rotorcraft/articulated';
+import { advanceFlap, estimatedArticulatedGeometry, harmonicFlap, hingeMoment, hubForcing } from '../../src/physics/rotorcraft/articulated';
 import { hingelessBlade, hingelessSpring } from '../../src/physics/rotorcraft/hingeless';
 import { swashplateCyclic } from '../../src/physics/rotorcraft/swashplate';
 import type { BodyState } from '../../src/physics/interfaces';
@@ -226,6 +226,18 @@ describe('R16: zero-dt purity, settle, trims, and a stopped rotor', () => {
     expect(Math.abs(query.moment.x - reference.moment.x)).toBeLessThan(1e-9);
     expect(Math.abs(query.moment.y - reference.moment.y)).toBeLessThan(1e-9);
     expect(resumed.state.mastMoment!).toBeLessThan(1e-9);
+  });
+  it('a stopped spring hub with Kbeta = 0 and no delta-3 holds the precone and no harmonics (no cone jump at Omega = 0)', () => {
+    // R2's (0.152 R, 1.126) and (0, 1.117) hubs sit near Kbeta 0: the static spring solution has no stiffness to divide by.
+    const def = fixtureRotorcraft(), p = { flapOffset: 0.6, lagOffset: 0.6, blade: hingelessBlade(def) };
+    const precone = 2.5 * DEG, forcing = { cone: 0, cosine: 0, sine: 0, damping: 0 };
+    const previous = { cone: 0.03, cosine: 0.01, sine: -0.02 };
+    for (const spring of [{ stiffness: 0, precone }, { stiffness: 0, precone, aerodynamic: 0 }]) {
+      expect(harmonicFlap(p, 0, forcing, 1, spring)).toEqual({ cone: precone, cosine: 0, sine: 0 });
+      expect(advanceFlap(p, 0, forcing, previous, 1, DT, 0, spring)).toEqual({ cone: precone, cosine: 0, sine: 0 });
+    }
+    // With a spring the stopped cone is the spring's static solution, the precone with no air load.
+    expect(harmonicFlap(p, 0, forcing, 1, { stiffness: 9196, precone }).cone).toBeCloseTo(precone, 15);
   });
   it('reset creates the hingeless blocks (blades, harmonic inflow, mast moment) and none on a legacy type', () => {
     const rotor = new Rotorcraft(fixtureRotorcraft());

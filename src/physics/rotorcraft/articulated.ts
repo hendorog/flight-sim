@@ -73,7 +73,9 @@ export function harmonicFlap(p: ArticulatedGeometry, omega: number, forcing: Hin
     const stiffness = omega * omega * (p.blade.flapInertia + p.flapOffset * p.blade.flapFirst) + extra;
     const delta = p.flapOffset * p.blade.flapFirst * omega * omega + extra;
     const cross = rotation * forcing.damping * omega, determinant = delta * delta + cross * cross;
-    return { cone: stiffness > 0 ? (forcing.cone + spring.stiffness * spring.precone) / stiffness : 0,
+    // A stopped hub with no spring and no delta-3 has no static cone solution: it holds the precone (the pose reset
+    // seeds), so the solver's cone does not jump to 0 at Omega = 0.
+    return { cone: stiffness > 0 ? (forcing.cone + spring.stiffness * spring.precone) / stiffness : spring.precone,
       cosine: determinant > 0 ? (delta * forcing.cosine - cross * forcing.sine) / determinant : 0,
       sine: determinant > 0 ? (cross * forcing.cosine + delta * forcing.sine) / determinant : 0 };
   }
