@@ -75,8 +75,43 @@ changes it takes effect.
 
   The flap part is tan 4° × the hub moment (`FlapSystem.hub`). The other two are the first harmonics RC returns
   (`GyroBladeMoments`: Cm0 now, the moment-stall section at stage 5), with pitchingMomentGain 1 (INF: "the entire blade feathering moments
-  were transmitted", Hoh-74). Sweep 4°00′ and droop 3°10′ (P ASTA-72 p 49). The droop term's sign is the one that is stable: the opposite
-  sign diverges in the hover (probe, `work/rigid/probes-ag/inplane.test.ts`).
+  were transmitted", Hoh-74). Sweep 4°00′ and droop 3°10′ (P ASTA-72 p 49). `featheringMoment()` in controlGyro.ts composes it.
+
+**The three signs, from the blade geometry** (blade frame: r outboard along the feathering axis, t the direction of motion, n = r × t up; a
+positive moment about r lifts the leading edge, nose up). `ah56Gyro.test.ts` "feathering-moment signs" computes r × F for one element and
+pins each:
+- **Sweep (D, confirmed).** Forward sweep puts the lift ahead of the feathering axis: L n at a t gives a L about r, nose up, tan(sweep) per
+  unit flap moment. The model's sign.
+- **Pitching moment (confirmed).** The section moment about the quarter chord acts about the feathering axis directly, nose up + (Cm0
+  −0.012, nose down, so the term is nose down).
+- **Droop (INF direction; NOT the model's sign).** The sources give "droop 3°10′" without the direction; with the usual meaning (the blade
+  below the feathering axis) the in-plane drag (opposing rotation) acts below the axis: (−d n) × (−D t) = −d D r, **nose down**. The model
+  flies the opposite sense (`DROOP_SENSE = +1`). The derived sense at the P droop is a loop instability in this model: on a fixed shaft in
+  the hover a 0.5° gyro kick grows to a limit cycle between the stops (15.4° of tilt after 6 s; 11.8° at 1/960 s steps against 14.1° at
+  1/240 s, so it is the loop, not the step), while half the droop in the derived sense is stable (0.002° after 6 s). A model without the lag
+  and feathering-inertia degrees of freedom cannot settle it; the earlier "the stable sign" probe ran with the feedback rotation in the sense
+  the model no longer flies, so it is not the evidence. Open question for the plan (contract request): the droop sense the ICS really had.
+
+**Which term causes which ICS miss** (probe `work/rigid/probes-ag2/signs.test.ts`, the droop and the pitching-moment gain each × {+1, 0, −1};
+G3 = the gust hub moment left at 0.5 s, 100 KTAS, against 9.9 kN m locked):
+
+| droop / Cm0 gain | G3 residual | G7 pitch hover: first peak, τ63 | G7 roll hover: peak, τ63 | G7b first-peak ratio 120 / 150 KCAS (rate at 1 s) |
+|---|---|---|---|---|
+| +1 / +1 (flown) | 6.83 kN m (69 %) | 5.68 °/s/in at 2.48 s, 0.84 s | 9.47 °/s/in, 0.295 s | 0.47 / 0.45 (0.65 / 0.60) |
+| +1 / 0 | 7.05 kN m | 5.82 at 2.69 s, 0.86 s | 9.50, 0.297 s | 0.46 / 0.44 |
+| +1 / −1 | 7.25 kN m | 6.00 at 3.08 s, 0.90 s | 9.53, 0.299 s | 0.44 / 0.51 |
+| 0 / +1 | 0.40 kN m (4 %) | 15.8, still rising at 4 s, 2.28 s | 35.3, 1.84 s | 0.15 / 0.15 (0.46 / 0.41) |
+| 0 / 0 | 0.40 kN m | 14.9, rising at 4 s, 2.18 s | 36.8, 2.09 s | 0.16 / 0.12 |
+| −1 / any (the derived droop sense) | — | unstable: the gyro limit-cycles between its stops | | |
+
+- **G3 (69 % residual): the droop term, entirely.** Without it the auto-trim leaves 4 %; the Cm0 gain moves it by ±0.2 kN m only.
+- **G7 pitch (5.7 °/s/in, τ 0.84 s against 9–14 and 1.5–3.5 s): the droop term.** Without it τ63 is 2.28 s (inside the band) and the rate
+  passes 14 °/s/in still rising at 4 s.
+- **G7 roll: the droop term is what brings it into range.** Without it the roll rate is 35–38 °/s/in (band 11–16, above M/H = 16.7, an open
+  question on the sweep-only model) with τ63 2.1 s (band 0.3–0.7).
+- **G7b (0.47 / 0.45 X against 0.8–1.0 / 0.6–0.8): not the droop term.** Without it the ratios fall to 0.15 / 0.15: a model limit of the
+  speed terms whatever the droop.
+- **Cm0: second order on every row**; its sign is confirmed, no gap is attributed to it.
 - **AMCS** (`flapping`): K_R × the first-harmonic flap through springs, FITTED (section 6).
 - The 28 ft-lb **feather-bearing friction** (P) is flown as CR-114362's rotating damping. Its describing-function equivalent at a 5° cyclic
   amplitude is 4F / (π Ω A) = 4 × 38.0 / (π × 25.76 × 0.0873) = 21.5 N m s/rad (D). A Coulomb dead band made the trimmed tilt non-unique, and
@@ -125,8 +160,11 @@ needs the hub air velocity. `Rotorcraft.compute` does not pass it yet. The metho
 `setAirData()`, and without either the augmentation is **dormant**. **Contract request (RC / integrator)**: pass `{ hub: hubAir, density }`
 as the last argument of the `this.gyro.advanceCoupled(...)` call in rotorcraft.ts (work/rigid/ag-integrator-requests.patch). The test
 rig stands in for it: it sets the air data before the trim (`reset()` keeps it, so the trim's settle includes the augmentation) and once per
-step from the flight state. With the patch applied the AMCS pitch rates agree with the rig's to 0.02 °/s/in. The desensitizer is checked at
-the block: 0.857 at 120 KCAS and 0.50 at 170 KCAS of the hover's tilt rate per inch.
+step from the flight state. With the patch applied (then reverted; AH56_AIRDATA=off forces the production path, and the rig retires the
+stand-in by itself once `PRODUCTION_AIR_WIRED` sees the wiring) the sim agrees with the stand-in rig: pitch 4.78 / 4.26 against 4.79 / 4.27
+°/s/in at 100 / 150 KCAS, roll within 0.09 °/s/in, the 150 KCAS roll sensitivity 65.8 against 65.1 °/s²/in (4.5 % under the 68.9 edge),
+G8 AMCS p/q 0.09 against 0.08 at 100 KCAS, the keyboard tap 0.02° against 0.36°; every row passes or fails as before. The desensitizer is
+checked at the block: 0.857 at 120 KCAS and 0.50 at 170 KCAS of the hover's tilt rate per inch.
 
 An earlier rig set the air data only from the first step, after a trim without it. The augmentation then switched on with the stick step:
 the AMCS trim schedule's −0.3 in at the hover and +0.2 in at 150 KCAS rode on the 1 in step and turned the measured responses into 0.7 and
@@ -145,24 +183,41 @@ the AMCS trim schedule's −0.3 in at the hover and +0.2 in at 150 KCAS rode on 
 - **AH-56 ICS** (H = 45 × 25.76 = 1,159 slug-ft²/s; Ixx 8,000, Iyy 42,000 slug-ft² ESTIMATE): τ_roll 0.48 s and τ_pitch 2.5 s in the hover.
 
 **AMCS fit.** The plan fixes H at the ICS value (ESTIMATE: 2.03 kg m² geared to about 7,380 rpm) and fits only the stick moments and K_R.
-Only M/H and M/K are observable. The fit was a grid on K_R (0, 6, 7, 7.5, 8, 8.5, 9, 9.5, 10.5, 12.5, 18, 36 kN m/rad) with the moments
-rescaled each time, to AMCS-73 paras 33–34 (maximum rate and acceleration per inch, "approximately constant throughout the airspeed range",
-tested at 0, 60, 150 and 180 KCAS) and Hohenemser's 9 °/s/in hover pitch:
-- The hover's maximum pitch rate hardly depends on K_R (10.2–10.6 °/s/in at 1290 N m from 6 to 18 kN m/rad): it is about M/H, the rate at
-  which the gyro, and the aircraft following it, precesses.
-- K_R sets how much of that survives at speed, where the hub moment that holds the rate against the stabiliser grows and K_R × flap eats the
-  stick moment: 150 KCAS / hover 0.74 at 6 kN m/rad, 0.67 at 7.5, 0.33 at 18.
-- K_R also sets the sensitivity per unit response (maximum acceleration / maximum rate at the hover): 1.92 at 6, 1.79 at 7.5, 1.10 at 18.
-- The bands (hover ≥ 6.3 °/s/in, 150 KCAS ≥ 4.2, sensitivity ≤ 11.7 °/s²/in) leave one narrow window: K_R 7.25–8 kN m/rad. At 7.5 the
-  pitch moment must lie in 798–824 N m. The fit takes 811 N m, so three rows sit within 1–2 % of a band edge (section 7). The model's
-  sensitivity per unit response (1.8) is above AMCS-73's (9 / 6 = 1.5), which is what leaves no margin. **Refit whenever the airframe's
-  pitch damping or stability changes** (the pusher and the drag recalibration, stage 4).
+Only M/H and M/K are observable. AMCS-73 paras 33–34 (P) define the responses for a held 1 in step: the maximum rate per inch ("control
+response") and the maximum acceleration per inch ("sensitivity"), "approximately constant throughout the airspeed range", tested at 0, 60,
+150 and 180 KCAS: 6 °/s/in pitch, 9 °/s²/in. Hohenemser (Hoh-74 §6.1) gives 9 °/s/in at the hover.
+
+**The maximum rate is the first peak** (`ah56Rig.firstPeak`: the first sample no later one exceeds for 0.5 s; a row whose rate is still rising
+when the window closes fails). After the first peak the attitude change carries the aircraft into another condition: the hover pitch rate
+peaks at 6.07 °/s/in at 0.96 s, dips to 5.95, then creeps to 6.39 at 3 s and 7.5 at 7 s with the nose 30° up. The earlier fit read the
+end of the 3 s window (6.39) as the maximum.
+
+The grid (811 / 975 N m held, K_R varied; first-peak rates, °/s/in, and sensitivities, °/s²/in; `work/rigid/probes-ag2/fitgrid.test.ts`):
+
+| K_R, kN m/rad | hover pitch (peak time) | 100 / 150 KCAS | sensitivity hover / 100 / 150 | sensitivity / hover rate | roll hover / 150, sensitivity 150 |
+|---|---|---|---|---|---|
+| 6 | 6.61 (0.91 s) | 5.35 / 4.83 | 12.6 / 12.1 / 12.6 | 1.91 /s | 14.6 / 15.7, 67.7 |
+| 7 | 6.24 (0.94 s) | 4.96 / 4.44 | 11.9 / 11.4 / 11.8 | 1.91 /s | 14.3 / 15.2, 66.0 |
+| 7.5 (flown) | 6.08 (0.96 s) | 4.79 / 4.27 | 11.6 / 11.1 / 11.5 | 1.91 /s | 14.3 / 15.0, 65.1 |
+| 8 | no peak in 3 s | 4.62 / 4.10 | 11.3 / 10.8 / 11.2 | — | 14.3 / 14.7, 64.3 |
+| 9 | no peak in 3 s | 4.32 / 3.81 | 10.7 / 10.2 / 10.6 | — | 14.4 / 14.2, 62.6 |
+| 12 | no peak in 3 s | 3.62 / 3.11 | 9.3 / 8.9 / 9.1 | — | 14.5 / 12.9, 58.0 |
+
+- The responses scale with the stick moment; the ratios do not. **The sensitivity per unit hover response is 1.91 /s at every K_R from 6 to
+  7.5**, and from 8 up the hover rate has no first peak inside 3 s.
+- Hoh-74's hover band (9 ± 30 %: ≥ 6.3) with the 9 °/s²/in sensitivity band (≤ 11.7) needs ≤ 11.7 / 6.3 = 1.86 /s. **No (M, K_R) meets
+  both**: that row is an expected failure (`ah56Handling.test.ts` G5 KNOWN GAP), not a fitting miss. AMCS-73's own hover number (6, P) is met.
+- K_R sets how much of the rate survives at speed (150 KCAS / hover 0.73 at 6, 0.71 at 7, 0.70 at 7.5) against the stabiliser.
+- **No refit**: 811 N m / K_R 7500 kept. The margins: hover pitch 6.08 (AMCS-73 band 4.2–7.8: 45 % / 22 %), 150 KCAS 4.27 (1.7 % above 4.2),
+  sensitivity 11.57 (1.1 % under 11.7), roll sensitivity at 150 KCAS 65.1 (5.5 % under 68.9). The model's sensitivity per unit response
+  (1.9 /s) is above AMCS-73's (9 / 6 = 1.5 /s), which is what leaves no margin. **The stage-4 refit is mandatory** (the pusher and the drag
+  recalibration change the pitch damping and stability).
 
 | Fitted (AMCS, ESTIMATE) | Value | What fixed it |
 |---|---|---|
-| Stick moment at full longitudinal stick (4.95 in) | 811 N m (164 N m/in) | pitch response 6.39 °/s/in at the hover, 4.79 at 100 and 4.27 at 150 KCAS |
+| Stick moment at full longitudinal stick (4.95 in) | 811 N m (164 N m/in) | pitch response (first peak) 6.08 °/s/in at the hover, 4.79 at 100 and 4.27 at 150 KCAS |
 | Stick moment at full lateral stick (2.9 in) | 975 N m (336 N m/in) | roll response 14.3 / 14.8 / 15.0 °/s/in; sensitivity 58.8 (hover) / 65.1 (150 KCAS) °/s²/in |
-| K_R | 7,500 N m/rad | the 150 KCAS / hover ratio and the pitch sensitivity 11.57 (hover) / 11.09 (100 KCAS) °/s²/in |
+| K_R | 7,500 N m/rad | the 150 KCAS / hover ratio and the pitch sensitivity 11.57 (hover) / 11.09 (100 KCAS) °/s²/in (grid above) |
 | Input rotation | 9° advanced | G8 |
 | Feedback rotation | 20° advanced | the best-damped auto-trim |
 | Spring / negative spring / C_R | 5559 / 4500 N m/rad / 0.4 N m s/rad | ESTIMATE (net spring small: Hohenemser's negative spring) |
@@ -177,18 +232,19 @@ Measured on the stage-2 aircraft (18,300 lb at FS 298, SL ISA, no wing and no pu
 |---|---|---|---|
 | G1 ICS block, feedback off, rotor locked | initial precession 13.7 / 16.7 °/s/in ±5 %; H/K 0.283 s; steady tilt 3.9 / 4.7 °/in; clamp ±15° (D ASTA-72 App C) | 13.74 / 16.65 °/s/in; precession rate 3.58 rad/s (K/H 3.54, i.e. **H/K = 0.283 s is the precession time scale**); circle centre 3.89 / 4.71 °/in; clamps at 15.00° and leaves the stop at once | pass, read as a precession (section 2) |
 | G2 (ii) every mode stable ≥ 83 % Nr (P) | Re < 0 | 70 %: −1.75, −5.73; 83 %: −2.18, −6.47; 100 %: −2.75…−3.11, −7.48; 110 %: −3.08, −8.08 /s (ICS hover) | pass |
-| G2 (i) the loop gain ∝ Ω, ±10 % (P/D) | Λ K_hub / H ∝ Ω | loop/Ω falls from 1.69 (70 %) to 1.16 (110 %): nearly flat, because half of K_hub is the hingeless spring, which does not grow with Ω | **KNOWN GAP** (`it.fails`) |
-| G3 auto-trim, 3 m/s gust at 100 KTAS | < 10 % of the locked value within 0.5 s (P CR-114362 / D) | the feathering-moment auto-trim: 4.7 % at 0.2 s, 4.1 % at 0.5 s. The full ICS (with the droop × in-plane and Cm0 terms): 69 % at 0.5 s | clean pass; full ICS **KNOWN GAP** (the "corrupted" feedback, Hoh-74) |
+| G2 (i) the loop gain (D; the plan row's "∝ Ω" assumed a purely centrifugal hub) | tan(sweep)(B/2)(e M_β Ω² + K_β)/H at 70 / 100 / 110 % Nr, ±1 % | 30.40 / 31.88 / 32.94 /s, equal to the formula; loop/Ω 1.69 / 1.24 / 1.16 (the spring is 52 / 35 / 31 % of K_hub) | pass (plan amendment requested) |
+| G3 auto-trim, 3 m/s gust at 100 KTAS | < 10 % of the locked value within 0.5 s (P CR-114362 / D) | the feathering-moment auto-trim: 4.7 % at 0.2 s, 4.1 % at 0.5 s. The full ICS: 69 % at 0.5 s, all of it the droop × in-plane term (section 3) | clean pass; full ICS **KNOWN GAP** (the "corrupted" feedback, Hoh-74) |
 | G4 steady hub moment per inch, ICS hover | 5.39 / 6.54 kN m/in ±20 %; flap-frozen ≥ 5× (D) | 4.53 / 5.50 kN m/in; flap-frozen 49.8 / 60.3 kN m/in (11×) | pass |
-| G5 AMCS response / sensitivity | pitch 9 → 6 °/s/in, ±30 % (Hoh-74, AMCS-73); 9 °/s²/in; roll 13–16 °/s/in; 60 °/s²/in hover, 53 at 180 KCAS | pitch 6.39 (hover) / 4.79 (100) / 4.27 (150) °/s/in; 11.57 / 11.09 °/s²/in; roll 14.3 / 14.8 / 15.0 °/s/in; 58.8 (hover) / 65.1 (150) °/s²/in | pass (fitted), within 1–2 % of the band edges on the hover rate (6.3), the 150 KCAS rate (4.2) and the sensitivity (11.7) |
+| G5 AMCS response / sensitivity | pitch 6 °/s/in hover–150 KCAS ±30 % (P AMCS-73), 9 at the hover (Hoh-74); 9 °/s²/in; roll 13–16 °/s/in; 60 °/s²/in hover, 53 at 180 KCAS | first peaks: pitch 6.08 (0.96 s) / 4.79 (0.75 s) / 4.27 (0.64 s) °/s/in at 0 / 100 / 150 KCAS; 11.57 / 11.09 °/s²/in; roll 14.3 / 14.8 / 15.0 °/s/in (0.94 / 0.40 / 0.40 s); 58.8 (hover) / 65.1 (150) °/s²/in | AMCS-73 pass (fitted; 1.7 % above the 4.2 edge at 150 KCAS, 1.1 % under the 11.7 sensitivity edge); Hoh-74's hover 9 (≥ 6.3) **KNOWN GAP** (section 6: no (M, K_R) meets it with the sensitivity) |
 | G5a cyclic authority | ≥ ±8° (D) | stops 10.11 aft / 18.05 fwd / 12.27 R / 18.08 L at G = 1; full stick on a fixed shaft settles at 5.8° of tilt with 6.0° of flap (72.6 kN m), inside the stops; the 150 KCAS trims inside the stops | pass |
 | G6 AMCS attitude retention, no SAS | bank within 2° for 10 s after a 10° disturbance at 80 KCAS (P Hoh-74) | 11.8° bank held within 1.23° (SAS off, as "no SAS was used"); with the sideslip SAS on, the uncoordinated turn rolls level (≈ 7° in 10 s) | pass |
-| G6 keyboard tap | ≤ 3° over 10 s (ESTIMATE) | 0.36° | pass |
-| G7 ICS roll | τ 0.3–0.7 s; ≈ 34 °/s²/in ±40 %; 11–16 °/s/in (D) | τ63 0.30 s; 30.9 °/s²/in; maximum 9.5 (hover, roll compensator on) / 10.5 °/s/in (150 KCAS) | τ, acceleration pass |
-| G7 ICS pitch | τ 1.5–3.5 s hover, 0.8–2.0 s at 150 KCAS; ≈ 5.4 °/s²/in ±40 %; 9–14 °/s/in (D) | τ63 0.84 s (hover) / 0.32 s (150 KCAS); 6.38 °/s²/in; maximum 5.7 / 2.6 °/s/in | acceleration pass; τ and the steady rates **KNOWN GAP** |
-| G7a ICS full lateral stick, 120 KCAS | 40–65 °/s; right/left 1.5–1.9 (D / P ASTA-72 para 60) | 50.0 R / 31.1 L °/s, ratio 1.61 (trim stick 0.76 in left) | pass |
-| G7b ICS desensitizer | 0.8–1.0 X at 120 KCAS, 0.6–0.8 X at 150; τ63 grows with speed (ESTIMATE) | maximum-rate ratios 0.47 (120) / 0.45 (150); the plan's rate at 1 s 0.65 / 0.60; τ63 falls 0.84 → 0.32 s | **KNOWN GAP**; the plan's G7 (τ falls with Mq) and G7b (τ grows) disagree |
-| G7b AMCS | 6 °/s/in ±30 % hover to 150 KCAS (P AMCS-73 para 33) | 6.32 (2.5 s window) / 4.79 / 4.27 | pass, 1.6 % above the 4.2 edge at 150 KCAS |
+| G6 keyboard tap | ≤ 3° over 10 s (ESTIMATE) | 0.36° (0.02° with the production air wiring) | pass |
+| G6 variant: a steady 625 N m roll moment (AG, no plan band) | what the AMCS holds | the bank precesses: 0.16 °/s at 2–3 s at the hover (K_R β / H = 7500 × (625 / 693 kN m/rad) / 1572 predicts 0.25 °/s), +2.1° at 10 s, +16.6° at 20 s; at 80 KCAS 0.14 °/s, then the weathercock and the sideslip SAS hold it to +2.1° at 20 s | recorded: **attitude retention holds only with no residual moment** (below) |
+| G7 ICS roll | τ 0.3–0.7 s; ≈ 34 °/s²/in ±40 %; 11–16 °/s/in (D) | τ63 0.295 s (interpolated between samples; it read 0.30 quantised); 30.9 °/s²/in; first peak 9.5 (hover, roll compensator on) / 10.2 °/s/in (150 KCAS) | acceleration pass; τ **KNOWN GAP** (1.7 % under the edge) |
+| G7 ICS pitch | τ 1.5–3.5 s hover, 0.8–2.0 s at 150 KCAS; ≈ 5.4 °/s²/in ±40 %; 9–14 °/s/in (D) | τ63 0.84 s (hover) / 0.32 s (150 KCAS); 6.38 °/s²/in; first peak 5.7 (2.48 s) / 2.6 °/s/in | acceleration pass; τ and the steady rates **KNOWN GAP** (the droop term, section 3) |
+| G7a ICS full lateral stick, 120 KCAS | 40–65 °/s; right/left 1.5–1.9 (D / P ASTA-72 para 60) | 50.0 R / 31.1 L °/s, ratio 1.61 (trim stick 0.76 in left); asserted: the right rate in 40–65 (25 % / 23 % margins) and the ratio in 1.5–1.9 (7 % / 15 %) | pass |
+| G7b ICS desensitizer | 0.8–1.0 X at 120 KCAS, 0.6–0.8 X at 150; τ63 grows with speed (ESTIMATE) | first-peak ratios 0.47 (120) / 0.45 (150) (4 s window); the plan's rate at 1 s 0.65 / 0.60; τ63 falls 0.84 → 0.32 s | **KNOWN GAP** (not the droop term: without it 0.15 / 0.15); the plan's G7 (τ falls with Mq) and G7b (τ grows) disagree |
+| G7b AMCS | 6 °/s/in ±30 % hover to 150 KCAS (P AMCS-73 para 33) | first peaks 6.08 (0.96 s) / 4.79 (0.75 s) / 4.27 (0.64 s), each asserted to peak inside the 4 s window | pass, 1.6 % above the 4.2 edge at 150 KCAS |
 | G8 off-axis, pure longitudinal stick | roll ≤ 20 % of pitch (hover, 100 KCAS); angles within ±15° of 36° / 33° (P angles / AGENT) | AMCS +0.02 / +0.08. ICS +0.24 / −0.14 with the input at 13° (P 36°) and the feedback at 33° (P) | AMCS pass; ICS **KNOWN GAP** (section 4) |
 | G9 hover attitude IGE | roll 2–7° left; pitch −1…+4° (P APE-I / ESTIMATE) | AMCS 4.58° left, +0.08°; ICS 4.51° left, +0.08° | pass |
 
@@ -197,14 +253,28 @@ Measured on the stage-2 aircraft (18,300 lb at FS 298, SL ISA, no wing and no pu
 - the hover attitude change (the pitch rate reaches 6°/s within 2.5 s) carries the aircraft away from the hover condition.
 
 So the maximum rate comes early and lower: the hover pitch maximum is 5.7 °/s/in against the 13.7 the moment alone would give. The initial
-accelerations (M/(Λ I)) agree with the derivation. Plan G7's "steady rate ≈ (M_stick − K_s θ_rel)/H" acknowledges the spring term.
+accelerations (M/(Λ I)) agree with the derivation. Plan G7's "steady rate ≈ (M_stick − K_s θ_rel)/H" acknowledges the spring term. The term
+sweep in section 3 shows the droop × in-plane term is what slows and lowers it: without it the hover pitch τ63 is 2.28 s.
+
+**What the AMCS attitude retention holds and what it does not.** The AMCS feedback is K_R × the first-harmonic flap, which nulls the **hub
+moment**, not the attitude error. G6's disturbance is a stick-induced bank that leaves no residual moment, so the bank holds (1.23°). A
+**steady external moment** M needs a steady hub moment −M, i.e. a flap β = M / K_hub, and K_R β precesses the gyro, and the aircraft
+following it, at K_R β / H: about 0.26 °/s per kN m at the hover (G6 variant above). So attitude retention holds only with zero residual
+moment; a trim change, a CG shift or the hover in-plane force step (KNOWN_ISSUES #2) becomes a slow steady rate the pilot trims out.
 
 ## 8. Contract requests from this model
 
 - **RC / integrator, rotorcraft.ts:** pass `{ hub: hubAir, density }` to `gyro.advanceCoupled` (section 5); until then the augmentation is
-  dormant in the sim.
+  dormant in the sim. The rig's stand-in then retires itself.
+- **RC, rotorcraft.ts:** fade the hingeless rotor's in-plane force in over the first 0.3 m/s (`work/rigid/ag-rc-inplane-fade.patch`;
+  legacy digests unchanged). With it, from the 15 m hover spawn at 18,300 lb, 20 s hands-off: AMCS −5.1 → −6.2°, 3.1 kt; ICS −5.0 →
+  −7.2°, 3.1 kt (without it: −1.3° / −1.4°, 11 / 7 kt). What is left is the steady-moment precession above.
 - **Plan (integrator):**
   - G1 assumes a first-order lag. The physical gyro precesses (CR-114362 App C), so the measured G1 numbers are the precession rate and the
     circle centre.
-  - G2 (i) assumes K_hub ∝ Ω², which a hingeless spring breaks.
+  - G2 (i) assumes K_hub ∝ Ω², which a hingeless spring breaks: amend to "loop gain = tan(sweep)(B/2)(e M_β Ω² + K_β)/H, checked at
+    70 / 100 / 110 %" (the test asserts that now).
+  - G5's hover pitch: AMCS-73 (P) gives 6 °/s/in about constant from the hover; Hoh-74 gives 9 at the hover. The model meets the first
+    (6.08) and cannot meet the second with the 9 °/s²/in sensitivity (section 6).
+  - The ICS droop sense (section 3): the derived nose-down sense is unflyable at the P droop in this model.
   - G7 and G7b give opposite trends for the ICS pitch time constant.

@@ -78,6 +78,8 @@ is engineRatio 55.28 (D), and the torque gauge reads % of 3435 shp at 100 % Nf (
 ## 4. Mass, CG, inertia
 
 - **Weights.** 18,300 lb at FS 298 (P, the AMCS test); empty 12,874 lb (P); maximum 20,500 lb (P, the ICS release; AMCS 19,200).
+  `MassDef.maxTakeoff` is one number for both configurations, so it is the ICS's 20,500 lb; a per-configuration maximum (and collective
+  floor: ICS 0.5°, the shared −2.5° here) needs a definition seam (contract request). The hover spawn and every handling row use 18,300 lb.
 - **Fuel.** 2,500 lb (ESTIMATE; capacity not found) at FS 300 in the sponsons.
 - **Payload.** 2,926 lb at FS 250 (ESTIMATE), which puts the empty CG at FS 308.5 (D).
 - **Loadings:**
@@ -107,9 +109,16 @@ is engineRatio 55.28 (D), and the torque gauge reads % of 3435 shp at 100 % Nf (
   the canopy and the engine fairing; the pusher disc.
 - **RotorClearance** runs the skids' cabin / fin / tail-rotor / main-rotor-tip checks, extracted unchanged from `skids.ts`
   (`clearanceContacts` / `clearanceStrike`; the legacy digests are equal), over level ground at the reference point's height.
-- **On the ground with the rotor running and the pedals centred** the aircraft leans about 3° toward the right main. The tail rotor's side force
-  is reacted at the tyres about 2 m below the CG, and the gravity overturning term (W h ≈ 160 kN m/rad) is a large part of the narrow gear's
-  roll stiffness.
+- **On the ground with the rotor running and the pedals centred** the aircraft leans 2.3° toward the right main after 5 s (1.9° at 10 s;
+  loads tail 6.8 / left 30.6 / right 51.9 kN). The tail rotor's 3.6 kN of side force at the centred pedal (8.4° of pitch) is reacted at the
+  tyres about 2 m below the CG, the main rotor at the bottom of the collective (−2.5°) presses the gear with −8.1 kN, and the gravity
+  overturning term (W h ≈ 160 kN m/rad) is a large part of the narrow gear's roll stiffness. The main oleos' gas column is 0.16 m (ESTIMATE,
+  was 0.22 m and a 3.0° lean): a worst-case 9.5 ft/s drop with the collective full down peaks at 93 kN on one main, against the 140 kN limit.
+- **Full pedal on the ground** (G13 tip-over margin): at ground idle with the parking brake, full left pedal (7.4 kN of tail-rotor thrust
+  at 100 %, 4.6 kN as Nr sags) pivots the aircraft about the braked mains at up to 86 °/s with the roll within 2.8°, full right pedal 0.9°.
+  **Brakes off, full left pedal** spins it to 108 °/s and trips it over the left main onto the wingtip in under 4 s (0.40 g of side force
+  tips it: 31 in half-track over the CG's 77 in). A ground spin is plausible; the trip-over rests on ESTIMATE tyre friction and CG height
+  (KNOWN_ISSUES #10).
 
 ## 6. Results (stage 2, measured)
 
@@ -128,20 +137,21 @@ Nr holds 239.85 rpm (AMCS) and 246.0 rpm (ICS).
 | Row | Target (tag) | Measured | |
 |---|---|---|---|
 | G9 hover attitude IGE | roll 2–7° left, pitch −1…+4° (P APE-I / ESTIMATE) | 4.58° / 4.51° left; +0.08° | pass |
-| G10 HOGE 18,750 lb std, no wing, no pusher | 9,000–11,500 ft (ESTIMATE) | 11,410 ft: engine-limited (Ng 101.1 % at 85.8 % torque, 757 °C; above it Ng meets 101.5 %) | pass |
+| G10 HOGE 18,750 lb std, no wing, no pusher | 9,000–11,500 ft (ESTIMATE), at the maximum ratings | 11,410 ft: engine-limited at the 10-min rating; the fuel control tops out (throttle 1.0, Ng 101.5 %) just above it, at TIT 760 °C (under the 780 °C 10-min limit) and 85.6 % torque | pass |
 | G11 engine failure, hover, collective held | Nr 100 → 90 % in 0.4–1.0 s (ESTIMATE); left yaw, slight right roll (P sense) | 0.59 s; peak yaw 79°/s left in 2 s; roll 3.5° LEFT at 1 s | Nr and yaw pass; roll **KNOWN GAP** |
 | G12 T64 | idle Ng 58–72 %; TIT ≤ 740 °C at 114 %; the start (P) | idle 64.95 %; 709.8 °C at 113.9 % (Ng 98.6 %, climbing 2,200 ft/min at 20,500 lb); grip to IDLE at 6.0 s, idle at 29.0 s, TIT peak 561 °C | pass |
-| G13 wheels | three-wheel reset; taxi turns ≤ 10 m unlocked; locked ±2° over 200 m; vertical take-off and landing; gear cycle 3–8 s; overspeed flag above 130 KCAS; run-on stop ≤ 300 m from 60 KCAS; parking brake at ground idle (P limits / ESTIMATE) | rests level (3.2° lean, pedals centred); turn radius 1.1 m unlocked (189 m locked); locked 0.30° after a brake tap at 15 kt (unlocked 28.6°); up to 6.1 m and down at 0.9 m/s; gear 6.3 s each way; run-on stop 164 m (brakes alone; the −12° reverse pitch is stage 4); parking brake drift 0.05 m | pass, except the overspeed flag: **KNOWN GAP** (flightModel's overspeed check does not run for a rotorcraft; contract request to TW) |
+| G13 wheels | three-wheel reset; taxi turns ≤ 10 m unlocked; locked ±2° over 200 m; vertical take-off and landing; gear cycle 3–8 s; overspeed flag above 130 KCAS; run-on stop ≤ 300 m from 60 KCAS; parking brake at ground idle (P limits / ESTIMATE) | rests level (2.3° lean at 5 s, pedals centred); full pedal at ground idle with the parking brake: roll ≤ 2.8°, three wheels loaded; turn radius 1.2 m unlocked (189 m locked); locked 0.30° after a brake tap at 15 kt (unlocked 28.8°); up to 6.1 m and down at 0.9 m/s; gear 6.3 s each way; run-on stop 158 m (brakes alone; the −12° reverse pitch is stage 4); parking brake drift 0.04 m | pass, except the overspeed flag and the brakes-off full-left-pedal trip-over (both **KNOWN GAP**); the overspeed flag: **KNOWN GAP** (flightModel's overspeed check does not run for a rotorcraft; contract request to TW) |
 | G14 configuration | Nr 246 / 239.85 rpm; persisted through reset and resume; trims 0/60/120 both (AGENT) | 246.0 / 239.9 rpm after 10 s; ICS kept through `SimPhysics.reset` and a JSON snapshot restored without the URL config | pass |
 | G15 spawns | every scenario survives 5 s in both configurations | runway, apron, final, cruise, downwind × AMCS / ICS | pass |
-| Hover readout (plan flights) | 20 s hands-off from the 15 m hover spawn: no crash, Nr 239.85 / 246 ± 2 rpm, the gyro mode, roll 2–7° left (G9), tilt inside the stops | calm: AMCS 239.9 rpm, roll −5.2° → **+7.6°** (22.8 kt drift); ICS 245.8 rpm, roll −5.1° → **−21.1°**. In the sim with the default 7 kt wind: AMCS roll −0.3°, ICS −19.7° (shots) | Nr, mode, stops pass; the roll **KNOWN GAP**: an RC hover discontinuity (below) |
+| Hover readout (plan flights) | 20 s hands-off from the 15 m hover spawn: no crash, Nr 239.85 / 246 ± 2 rpm, the gyro mode, roll 2–7° left (G9), tilt inside the stops | the spawn is at the 18,300 lb test loading (`hoverScenario` gives a control-gyro type its 'typical' loading; it was the ICS release's 20,500 lb, over the AMCS's 19,200). Calm: AMCS 239.8 rpm, roll −5.1° → **−1.3°**, pitch −6.4°, 11.2 kt; ICS 246.0 rpm, roll −5.0° → **−1.4°**, pitch +10.3°, 7.0 kt | Nr, mode, stops pass; the roll **KNOWN GAP**: an RC hover discontinuity (below) |
 
 **Why the hands-off hover drifts.** The trim balances the rotor at exactly zero airspeed, where `Rotorcraft.compute` applies no
 main-rotor in-plane force (`if (horizontal > 0)` in rotorcraft.ts). The first step's 1e-7 m/s of body velocity switches on the hingeless
 rotor's hover in-plane force, about 330 N, along that arbitrary direction: 625 N m of roll and 236 N m of pitch that the trim never saw. The
-AMCS's rate command turns that into a steady 0.2 °/s roll and the hover diverges. With the in-plane force faded in over the first 0.3 m/s
-(an uncommitted experiment) the AMCS holds −5.2 → −5.5° and the ICS −5.1 → −4.4° over 20 s, and every handling row still passes (the
-hover pitch sensitivity reads 11.3 instead of 11.6 °/s²/in). Contract request to RC. The legacy rotors are not affected: without the
+AMCS's rate command turns that into a steady roll (the AMCS nulls the hub moment, so a steady moment is a steady precession, about 0.26 °/s
+per kN m: control-gyro-model.md section 7) and the hover wanders. With the in-plane force faded in over the first 0.3 m/s
+(`work/rigid/ag-rc-inplane-fade.patch`, applied and reverted; the legacy digests are unchanged with it) the 18,300 lb hover goes AMCS
+−5.1 → −6.2°, 3.1 kt and ICS −5.0 → −7.2°, 3.1 kt in 20 s. Contract request to RC. The legacy rotors are not affected: without the
 harmonic pitch their hover in-plane force is zero.
 
 **The helicopter hold** (`scripts/probes/heliHold.test.ts`, AC=ah56, informational) flies the AH-56 on the generic scripted-pilot gains
@@ -161,7 +171,8 @@ The rate command needs no per-definition gain scaling at stage 2 (AGENT); `scrip
     13,650 kg m², against the P 14,564.
 - **AH (highSpeed.ts).** The ICS pitching-moment path is live: `pitchingMomentGain` 1 times the section's Cm harmonics reaches the gyro.
 - **Integrator.**
-  - The gyro's air data (control-gyro-model.md section 5).
+  - The gyro's air data (control-gyro-model.md section 5); the rig's stand-in retires itself once it is wired, and ah56Ground's G13
+    overspeed `it.fails` row flips with the gear-overspeed line of the same patch (convert it to a passing row then).
   - The gear-overspeed rule for a rotorcraft.
   - RC: the main rotor's in-plane force at zero airspeed (above), which makes the hands-off hover drift.
   - The other packages' copies of the AH-56A facts (AU's audio rated power, AX's pilot eye, PN's red line), which disagree with the
