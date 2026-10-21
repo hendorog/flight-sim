@@ -7,7 +7,7 @@
 // parking brake (P: "reverse prop and main-gear brakes"; the AMCS ship's parking brake). Gear limit 130 KCAS (P).
 //
 // Design point: the test loading, 18,300 lb at FS 298 (P): the tail wheel carries 8 % (6.6 kN), each main 37.4 kN. The
-// springs below compress the mains 0.034 m of oleo and 0.019 m of tyre and the tail wheel 0.09 m and 0.017 m; the
+// springs below compress the mains 0.025 m of oleo and 0.019 m of tyre and the tail wheel 0.09 m and 0.017 m; the
 // extended contacts are the rest contacts (geometry.gear, at the ground line WL 18) plus those deflections, so the
 // aircraft rests level at the design loading (wheelRestingPose). Every spring, damper and tyre number is an ESTIMATE
 // sized for the P touchdown sink limit (9.5 ft/s at 18,300 lb) with margin. The main oleos are stiff (a short gas column):
@@ -28,7 +28,10 @@ const W = AH56_MASS_LB.test * LB * G0;
 const TAIL_LOAD = W * D.MAIN_GEAR.x / (D.MAIN_GEAR.x - D.TAIL_WHEEL.x);
 const MAIN_LOAD = (W - TAIL_LOAD) / 2;
 
-const MAIN_STRUT: StrutSpring = new OleoPneumaticSpring(30e3, 0.22, 1.3, 0.20);
+// Gas column 0.16 m (was 0.22): 37 % stiffer in roll at the static load, so the running ground lean at centred pedals
+// (the tail rotor's 3.6 kN at flat pitch) is 1.9 deg instead of 3.0, with the worst-case 9.5 ft/s drop (collective full
+// down) peaking at 93 kN on one main against the 140 kN limit (79 kN before). ESTIMATE (ah56Ground.test.ts G13).
+const MAIN_STRUT: StrutSpring = new OleoPneumaticSpring(30e3, 0.16, 1.3, 0.20);
 const MAIN_TYRE_SPRING: TyreSpring = { stiffness: 2.0e6, hardening: 0.09 };
 const TAIL_STRUT: StrutSpring = new OleoPneumaticSpring(3e3, 0.2, 1.3, 0.15);
 const TAIL_TYRE_SPRING: TyreSpring = { stiffness: 4.0e5, hardening: 0.05 };

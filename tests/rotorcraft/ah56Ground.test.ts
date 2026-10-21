@@ -21,12 +21,51 @@ describe('G13: on the wheels', () => {
     run(r, 5);
     const s = r.fm.state;
     report('G13 ground rest (running, flat pitch, pedals centred)', { tailKN: s.wheels[0].load / 1e3, leftKN: s.wheels[1].load / 1e3,
-      rightKN: s.wheels[2].load / 1e3, pitchDeg: s.pitch / DEG, rollDeg: s.roll / DEG, nrPct: gauges(r).nr, crashed: s.crashed });
+      rightKN: s.wheels[2].load / 1e3, pitchDeg: s.pitch / DEG, rollDeg: s.roll / DEG, nrPct: gauges(r).nr, tailRotorThrustKN: s.rotorcraft!.tailThrust / 1e3,
+      mainRotorThrustKN: s.rotorcraft!.thrust / 1e3, crashed: s.crashed });
     expect(s.crashed).toBe(false);
     expect(s.wheels.every((w) => w.onGround && w.load > 0)).toBe(true);
     expect(Math.abs(s.pitch)).toBeLessThan(1 * DEG);
     // The tail rotor's side force at flat pitch leans it toward the right main (the tyres react it below the CG).
     expect(Math.abs(s.roll)).toBeLessThan(5 * DEG);
+  });
+
+  /** Ground idle (or flat pitch at 100 % with `running`), full pedal `pedal`, brakes as given, 10 s: the worst roll, the yaw
+   *  rate and the wheel loads (G13's tip-over margin). */
+  const fullPedal = (pedal: 1 | -1, brakes: boolean, idle = true) => {
+    const r = rig({ onGround: true });
+    if (idle) r.c.throttle = d.systems.turboshaft!.grip.groundIdle;
+    r.c.rudder = pedal; r.c.parkingBrake = brakes;
+    let worstRoll = 0, maxYaw = 0, minLoad = Infinity;
+    run(r, 10, () => {
+      const s = r.fm.state;
+      worstRoll = Math.max(worstRoll, Math.abs(s.roll)); maxYaw = Math.max(maxYaw, Math.abs(s.angularVelocity.z));
+      if (!s.crashed) minLoad = Math.min(minLoad, ...s.wheels.map((w) => w.load));
+    });
+    const s = r.fm.state;
+    return { worstRollDeg: worstRoll / DEG, maxYawRateDegPerSec: maxYaw / DEG, minWheelLoadKN: minLoad / 1e3, tailRotorThrustKN: s.rotorcraft!.tailThrust / 1e3,
+      nrPct: gauges(r).nr, crashed: s.crashed, crash: (r.fm as unknown as { crashReason?: string }).crashReason ?? '' };
+  };
+
+  it('tip-over margin: full pedal either way at ground idle with the parking brake set stays on three wheels, roll within 5 deg', () => {
+    for (const pedal of [-1, 1] as const) {
+      const m = fullPedal(pedal, true);
+      report(`G13 full ${pedal < 0 ? 'left' : 'right'} pedal, ground idle, parking brake`, m);
+      expect(m.crashed).toBe(false);
+      expect(m.minWheelLoadKN).toBeGreaterThan(0);
+      expect(m.worstRollDeg).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it.fails('G13 KNOWN GAP: full left pedal at ground idle, brakes off: the aircraft stays upright', () => {
+    // The tail rotor's 7.4 kN at ground idle (13.6 kN at 100 % Nr) outruns the locked tail wheel's and the free mains'
+    // friction: the aircraft pivots up to about 100 deg/s, slides sideways and trips over the left main onto the wingtip in
+    // under 4 s. With the brakes on it pivots about the mains (about 80 deg/s) but stays upright (row above). A real
+    // ground spin at full pedal is plausible; the trip-over depends on the ESTIMATE tyre friction and CG height (77 in
+    // above the ground over a 62 in track: 0.40 g of side force tips it). KNOWN_ISSUES #10.
+    const m = fullPedal(-1, false);
+    report('G13 full left pedal, ground idle, no brakes', m);
+    expect(m.crashed).toBe(false);
   });
 
   it('vertical take-off to a hover and a vertical landing on the wheels', () => {
