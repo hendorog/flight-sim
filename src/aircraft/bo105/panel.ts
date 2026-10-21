@@ -53,7 +53,7 @@ const FIRE_CELLS: readonly Rect[] = [{ x: 10, y: 62, w: 76, h: 58 }, { x: 730, y
 const CELLS: readonly Rect[] = [FIRE_CELLS[0], ...BLOCK_ROWS.flatMap((_, row) => [blockCell(row, 0), blockCell(row, 1)]), FIRE_CELLS[1]];
 
 /** Press-to-test: the FM 4-9 lamp test lights every segment except the F lights, MM LIMIT and LOW FUEL (they have their own tests). */
-const OWN_TEST = new Set(['fire1', 'fire2', 'lowFuel', 'mmTest', 'pressTest']);
+const OWN_TEST = new Set(['fire1', 'fire2', 'lowFuel', 'mmTest']);
 export const BO105_ANNUNCIATOR_LAMPS: readonly LampDef[] = LAMP_ROWS.map(([id, text, color]) => ({ id, text, color,
   lit: r => r.lamps[id] ?? false,
   press: id === 'pressTest' ? (down: boolean, c: ControlInputs) => { c.annunciatorTest = down; }
