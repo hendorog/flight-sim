@@ -12,6 +12,14 @@ export const BO105_REFERENCE = {
   autorotationKias: 75, minDescentKias: 60, maxGlideKias: 100,
   /** OEI maximum, KIAS (P5 FM). */
   oeiMaxKias: 100,
+  /** Autorotation (power-off) maximum, KIAS: 100 or the Fig 2-2 chart, whichever is less (P5 FM 2-4; the ASI's blue
+   *  radial, P5 FM 2-18). */
+  autorotationVne: 100,
+  /** Normal approach and the OEI approach (P5 FM 3-24: shallow at 60 KIAS, on final 40 KIAS / 300 ft/min); cruise for the
+   *  scenario starts: the best-range 90 KCAS of the FM range example (F) rounded to 100 KIAS for a cruise start, ESTIMATE. */
+  approachKias: 60, cruiseKias: 100, downwindKias: 80,
+  /** Take-off: hover IGE at 3 ft, 50 ft at 50 KIAS, then 60 KIAS (P5 FM Section 5). */
+  takeoffKias: 50,
   /** Sideward / rearward flight limits, kt (P5 FM 2). */
   sidewardKt: 25, rearwardKt: 20,
   /** Hover turn rate limit, deg/s (P5 FM 2). */
@@ -27,4 +35,6 @@ export const BO105_REFERENCE = {
   maxCruiseKtas: 131,
   /** Fuel flow 90 KCAS SL 2500 kg, kg/h (D from the CB-5 F 286 NM range example). */
   fuelFlow90KcasKgH: 143,
+  /** Empty mass, kg: 1276 (S Jane's 1988-89, Bo 105 CB; the CB-4 empty mass of a given airframe is its weighing record). */
+  emptyKg: 1276,
 } as const;

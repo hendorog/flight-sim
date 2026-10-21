@@ -11,8 +11,9 @@
 // about 0.1 m either side of the hub; the exact mast station was not found), and 0.96 m below the hub (F METU: CG
 // 3.15 ft below the hub). x = (3.150 - sta_m), y = right, z = (SKID_Z - height above the skid soles).
 //
-// NOTE (S0): the S0 physics STUB still flies the MD 500E's hub point, skids and airframe (bo105/rotorcraft.ts); the
-// exterior (BX) builds to THESE numbers, and BO moves the physics onto them.
+// The flight model (bo105/rotorcraft.ts) flies these numbers: hub, tail rotor, stabiliser, fin, skids and their contacts.
+// The body REFERENCE point (origin) is 0.96 m below the hub (F METU); the CG of a loading is the mass model's
+// (bo105/mass.ts: about 1.5 m below the hub at 2200 kg).
 
 const DEG = Math.PI / 180;
 
@@ -23,7 +24,9 @@ export const x = (staM: number): number => REF_STATION_M - staM;
 
 /** Hub centre height above the skid soles, m: 3.00 m to the top of the head (P TCDS p8) less about 0.10 m. 3V/ESTIMATE */
 export const HUB_HEIGHT = 2.90;
-/** CG (reference point) below the hub, m. F (METU: 3.15 ft) */
+/** Body REFERENCE point below the hub, m: the Theodore model's CG height (F METU: 3.15 ft). The mass model's CG of a
+ *  loading sits lower (mass.ts: about 1.53 m below the hub at 2200 kg; the METU height cannot hold with the AR-280 inertia
+ *  and the underfloor tanks, docs/bo105-flight-model.md section 3). Kept as the axes' origin (every consumer's z). */
 export const CG_BELOW_HUB = 0.96;
 /** Body z of the skid soles (ground contact at rest), m: HUB_HEIGHT - CG_BELOW_HUB. D */
 export const SKID_Z = HUB_HEIGHT - CG_BELOW_HUB;
@@ -73,10 +76,13 @@ export const TAIL_ROTOR_ROTATION = -1;
 /**
  * Tail-rotor hub: on the LEFT of the fin at the fin top (P5 FM Fig 1-1 / 7-1, photo D-HILF; 3V). Station D: the
  * 11.86 m overall length (P5) taken from the main-rotor front tip (STA 3.15 - 4.92 = -1.77) to the tail-rotor rear tip
- * puts the TR hub at about STA 9.14 m. Height 3V ESTIMATE (fin top, a little below the main-rotor hub). Lateral offset
+ * puts the TR hub at about STA 9.14 m. Height 2.80 m above the skid soles, near the main hub's 2.90 m (3V/D: the MM's
+ * "about 3.80 m with a tail-rotor blade vertical" less R 0.95 m gives 2.85 m (OCR-garbled, UNVERIFIED); the D-HADO
+ * near-profile puts the hub a few tenths below the main hub; plan 6.2 "the Bo 105 TR sits at the fin top near hub
+ * height"). Raised from the scaffold's 2.30 m at BX's request (docs/bo105-exterior.md, request 2). Lateral offset
  * ESTIMATE.
  */
-export const TAIL_HUB = { x: x(9.14), y: -0.26, z: z(2.30) } as const;
+export const TAIL_HUB = { x: x(9.14), y: -0.26, z: z(2.80) } as const;
 /** Tail-rotor shaft cant, deg (F METU / Theodore model -4.2). */
 export const TAIL_SHAFT_CANT_DEG = -4.2;
 
@@ -104,8 +110,11 @@ export const BELLY_HEIGHT = 0.40;
  *  p8; area and outline 3V/ESTIMATE). Station and height 3V ESTIMATE. */
 export const HORIZONTAL_STABILIZER = { span: 2.0, chord: 0.4, area: 0.8, incidenceDeg: 0,
   quarterChord: { x: x(7.55), z: z(1.62) }, endplates: { height: 0.45, chord: 0.42 } } as const;
-/** Swept vertical fin carrying the TR gearbox at its top; tail skid under it. 3V ESTIMATE outline (station m, height m). */
-export const FIN_OUTLINE: readonly (readonly [number, number])[] = [[8.55, 1.30], [9.05, 2.30], [9.35, 2.35], [9.30, 1.25]];
+/** Swept vertical fin carrying the TR gearbox at its top; tail skid under it. 3V ESTIMATE outline (station m, height m):
+ *  the root leading edge near STA 8.1 and the top at the tail-rotor hub (BX's request 2, D-HADO near-profile). */
+export const FIN_OUTLINE: readonly (readonly [number, number])[] = [[8.10, 1.70], [8.98, 2.80], [9.26, 2.86], [8.72, 1.38]];
+/** Tail skid under the fin: its lowest point (station m, height m). 3V ESTIMATE (D-HILF, D-HADO). */
+export const TAIL_SKID = { sta: 8.85, height: 1.02 } as const;
 
 // ---------------------------------------------------------------------------------------------- skids
 /** Skid track (tube centre to tube centre), m (P5 FM Fig 1-1: 2.53 unloaded). */
@@ -118,6 +127,22 @@ export const SKID_REAR_X = x(4.45);
 /** Skid angle to the drawn reference line at the aft end, deg (3V FM Fig 1-1; sense unresolved). Ground stance target:
  *  skids level +/-1.5 deg (plan 6.2). */
 export const SKID_ANGLE_DEG = 1.5;
+/** Ground contacts of the skid tubes (the flight model's four points), stations m: the straight run of the tube, about
+ *  0.25 m inside each end (the toe curls up; the heel ends at the rear cross-tube bend). 3V ESTIMATE. */
+export const SKID_CONTACT_FRONT_X = x(2.00);
+export const SKID_CONTACT_REAR_X = x(4.25);
+/**
+ * Body z of the FRONT ground contacts, m: the skids set 1.25 deg nose-up to the fuselage reference, so the fuselage rests
+ * about 1.3 deg nose-up on level ground (with the skids' static compression) and the IGE hover attitude (about +3 deg at
+ * 2200 kg mid-CG) is within 2 deg of it: the plan's ground-stance row (fuselage within 1.5 deg of level, no lift-off
+ * pitch jump above 2 deg). AGENT/3V: P5 FM Fig 1-1 draws a 1.5 deg angle between the skid tube and the reference line at
+ * the aft end whose sense is not resolved (research-bo105 section 14). D: the contacts 2.25 m apart, 2.25 x tan(1.25
+ * deg) = 0.049 m.
+ */
+export const SKID_GROUND_ATTITUDE_DEG = 1.25;
+export const SKID_FRONT_Z = SKID_Z + (SKID_CONTACT_FRONT_X - SKID_CONTACT_REAR_X) * Math.tan(SKID_GROUND_ATTITUDE_DEG * DEG);
+/** Skid tube radius, m (3V ESTIMATE: about 80 mm tube). */
+export const SKID_TUBE_RADIUS = 0.04;
 
 // ---------------------------------------------------------------------------------------------- crew
 /** Pilot in the RIGHT seat (the certificated minimum-crew position, P TCDS p11). Eye point 3V ESTIMATE. */
