@@ -280,8 +280,16 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    0.73 s) is inside its D bands. The energy is consistent (840 kJ in the rotor at 850 kg m^2 against 325 kW, a decay
    of about 19 %/s), so the polar inertia is the only parameter, and it is held at 850 by the sourced Lock number and
    the AR-280 rows (item 19: 925 kg m^2 would lift the 1 s case by 1.6 % NR). The rest is technique: lower the collective
-   within about 0.5 s (training text: a request to PN, which owns `bo105/training.ts` and `checklists.ts`; the double
-   engine failure checklist already reads "Full down at once"). Owner judgement on the rotor's feel.
+   within about 0.5 s. Owner judgement on the rotor's feel. **Flyability pass (2026-10-22; gate finding 4):** the
+   laptop-specific loss was the keyboard collective (0.12 of the travel per second: 2.9-3.7 s to full down from 100-120
+   KIAS, 6-23 % of NR against a hand). Shift+F5 / Shift+F6 now lower / raise it at 1.0 / 0.5 per second
+   (`collectiveFastRate`); bare F5 / F6 stay the fine hover keys. Through the InputSystem, both levers OFF at 100 KIAS,
+   attitude held, the key held after the delay: 0.5 s 80.7 % (bare F5 71.3 %), 1 s **75.1 %** (69.0 %), 2 s 68.0 % (67.2
+   %); at 120 KIAS 1 s **78.1 %** (58.9 %). The tone starts at 0.30 s (100 KIAS) / 0.23 s (120). After a 2 s delay the key
+   rate hardly matters (the NR has already fallen to about 75 % when the pilot reacts): the judge's "4 points above
+   bare F5 at 2 s" was set against an estimated 63 % for bare F5; measured, bare F5 gives 67.2 %. The physics and the
+   inertia are unchanged; the double-engine-failure checklist note and the hints carry the technique (Shift+F5 at once,
+   75 KIAS, flare at 6-10 ft and Shift+F6 to cushion). No automatic collective (the FM's checklist is the pilot's).
 
 ## Integration (feat/rigid-rotor, Bo 105 stage 1)
 
@@ -312,6 +320,30 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 - **`summary().engines[1].propRpm`** reads engine 2's output-shaft rpm (6156) rather than the rotor's 425. It has two
   readers: the muted engine-2 prop voice, and the propeller visual, which the Bo 105 does not have. No visible or
   audible effect.
+
+### Flyability pass (2026-10-22, branch `rigid/bofly`; W/bofly/fix-plan.md, report W/bofly/fix-report.md)
+
+The owner has no helicopter experience, flies a laptop and asked us to go with the recommendations on flyability and
+control sensitivity. Physics first: the hover rows were re-sourced to the flight-identified hover (ERF 1995, P; items 3,
+17, 20), which shows the sim's hover divergence is the real Bo 105's; no physics changed (nothing under
+`src/physics/rotorcraft/`, and `bo105/rotorcraft.ts` only in a comment). Flyability through the control path, Bo 105
+only, each labelled:
+- **STAB ASSIST** (`src/sim/rotorcraft/stabilityAssist.ts`): a sim aid (the CB-4 has no SAS), default ON, Shift+A for the
+  raw aircraft, `stab=0` / `stab=1` in the URL; docs section 9 has the law and the numbers. **Owner decision flagged:**
+  the default is one line in `bo105/input.ts` (`stabilityAssist.default`).
+- Shift+F5 / Shift+F6 hand-rate collective (item 22); the 5-key centring at 1 travel per second and Shift+5 keyboard trim
+  here (item 1); the helicopter control box (`BO105_UI.controlBox`; gate finding 6).
+- **Shared files touched** (owners: TW for `src/input/**`, the sim for `src/sim/**`, UI for `src/ui/**`): `input/profile.ts`
+  (optional fields `stabilityAssist`, `collectiveFastRate`, `centreRate`, `setTrimHere`), `input/bindings.ts` (Shift+A,
+  Shift+F5 / F6, Shift+5 / Shift+Num 5, profile-gated through `actionForKey`'s fallback), `input/InputSystem.ts`,
+  `input/virtualYoke.ts` (`stepCentre`'s rate argument, default 4), `sim/SimPhysics.ts` (the assist around the flight
+  model's step, built only when the profile has one), `sim/Simulator.ts`, `sim/params.ts`, `aircraft/types.ts`
+  (`UiProfile.controlBox`), `ui/status.ts`, `ui/styles.ts`, `ui/uiSystem.ts`. The R22 / R44 / S269 / MD 500E legacy digests
+  are bit-identical (35/35) and their control box is unchanged; their TRIM 0 % and missing F5 / F6 in the box are an
+  owner call, not fixed here.
+- Not done, recorded: the L31 inflow gradient x 0.5 (Mu inside the ERF band, doubling 3.6 s) is a shared-core note for
+  RC; the AEO climb band is the architect's (item 2); nudge-to-reposition under the hover hold is a shared Simulator /
+  autopilot change for every helicopter (owner decision).
 
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 

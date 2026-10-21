@@ -219,3 +219,17 @@ No code was changed. The measured-against-target table is `W/flight-numbers.md` 
 - **Not run at gate 0:**
   - the Codex review and the Fable look and pilot gates (plan section 9 steps 8-9);
   - the AH-56A flights and shots (AG has not merged).
+
+## 10. Flyability pass (2026-10-22, branch `rigid/bofly` from `03ec6e1`)
+
+The second-pass pilot gate's findings, handled per the judge's plan (W/bofly/fix-plan.md; report W/bofly/fix-report.md).
+The owner has no helicopter experience and flies a laptop. Realism first: the hover rows were re-sourced to the
+flight-identified Bo 105 hover (Kaletka & Gimonet, ERF 1995 VII-7, P), which shows the 2.3 s hover divergence is the real
+aircraft's (its Fig 13 phugoid doubles in about 1.7-7 s; the sim sits on the fast side), so no physics changed; the
+hover yaw damping (Nr -0.54 against -0.97 / -1.10) has no per-definition fix (a one-probe sweep, KNOWN_ISSUES 20); the
+120 KIAS stick row was re-sourced to NASA CR-3144's rig (F). Flyability went into the control path, Bo 105 only: the
+STAB ASSIST sim aid (default ON, Shift+A), Shift+F5 / Shift+F6 hand-rate collective, 5-key centring at 1 travel per second
+and Shift+5 keyboard trim here, and the helicopter control box. Shared files touched (owners TW, sim, UI): `src/input/
+{profile,bindings,InputSystem,virtualYoke}.ts`, `src/sim/{SimPhysics,Simulator,params}.ts`, `src/aircraft/types.ts`,
+`src/ui/{status,styles,uiSystem}.ts`; every new field is optional and absent on the other types (legacy digests 35/35).
+KNOWN_ISSUES "Flyability pass" lists the details and the owner decisions.

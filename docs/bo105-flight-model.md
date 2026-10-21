@@ -23,7 +23,9 @@ Known gaps are `it.fails` rows; none is fitted.
 | Hover IGE attitude | pitch +3.0 deg, roll 3.0 deg left | +1..+4; 1-3 left (ESTIMATE) |
 | Pitch in level flight | +0.4 (60 KIAS), -3.5 (100), -5.8 (120), -8.8 deg (145) | -1..+2, -2..-5, -4..-7, -6..-9 (ESTIMATE) |
 | Ground stance / lift-off | fuselage +1.35 deg on level ground; hover +3.0 (jump 1.6 deg) | within 1.5 deg of level; jump <= 2 deg |
-| Hover turn, full pedal (IGE) | 90 deg/s at 0.9 s (right), 1.5 s (left); peaks 165 / 129 deg/s (implied steady about 260 deg/s: N_ped 0.049 per %, hover Nr -0.54) | >= 90 deg/s within 3 s (ESTIMATE; FM limit 90 deg/s; no hover source, the peaks are not bounded) |
+| Hover turn, full pedal (IGE) | 90 deg/s at 0.9 s (right), 1.5 s (left); peaks 165 / 129 deg/s (implied steady about 260 deg/s: N_ped 0.049 per %, hover Nr -0.54); with the STAB ASSIST about 0.9 / 2.8 s | >= 90 deg/s within 3 s (ESTIMATE; FM limit 90 deg/s) |
+| Hover yaw, 10 % pedal step (attitude held) | 36.3 deg/s at 3 s, still rising (70 at 8 s); with the STAB ASSIST 20.5 deg/s at 3 s, 90 % settled | the identified hover Nr -0.97 / -1.10 with N_ped 0.042: about 23 deg/s, settled by 3 s (P ERF 1995) - **hover Nr gap**, KNOWN_ISSUES 20 |
+| Hover hands off (hover scenario, 2500 kg, 16 m) | raw: doubling 2.3 s, crash at 22.4 s calm; STAB ASSIST: 0.7 deg calm, 2.3 deg in 8 kt + 5 kt gusts over 60 s | the real hover is unstable (ERF 1995: doubling about 1.7-7 s, P); the aid is ADS-33E's attitude-hold route |
 | Low g (100 KIAS) | roll acceleration to a 10 % step: 87.8 % of the 1 g value at 0.2 g, 84.8 % at 0.01 g | >= 80 % (D) |
 | Hover torque per engine, SL | 2500 kg OGE 82.7 %, IGE 72.0 %; 2200 kg OGE 70.6 %, IGE 61.8 % | 79-83, 72-78, 67-74, 61-69 % (D from the ceiling row) |
 | Hover ceilings, 2500 kg ISA | HOGE 3,130 ft, HIGE 6,235 ft; HIGE 8,510 ft at 2300 kg | 3,850 / 6,200 / 8,900 ft +/-1,500 (ESTIMATE / S) |
@@ -367,6 +369,40 @@ accelTime 1.5) gave 5.7 deg of bank 2 s after a 1 s tap at 80 KCAS (0.058 of the
 every running state with both levers at FLIGHT, fuel pumps on, ignition off; N2 held at 100 % by the reset (the
 pre-take-off "trim to 98 %" is the pilot's beep).
 
+**Flyability aids (the flyability pass, 2026-10-22; the owner has no helicopter experience, flies a laptop, and asked us
+to go with the recommendations).** The physics stays as sourced (section 5: the real Bo 105 hover is unstable); the aids
+are in the control path, labelled, and absent on every other type:
+- **STAB ASSIST** (`src/sim/rotorcraft/stabilityAssist.ts`, `BO105_INPUT.stabilityAssist`; default ON, Shift+A toggles it,
+  `stab=0` / `stab=1` in the URL): a sim aid, not a CB-4 system (the CB-4 has no SAS; the optional IFR-kit SAS, FMS 11-2,
+  is not modelled). A series attitude-command / attitude-hold term on the cyclic and yaw-rate damping on the pedals,
+  added to the pilot's controls for the flight model's step only (the stick does not move): kp 0.15, kq 0.3 per rad/s,
+  katt 1.2 per rad (2.1 % of travel per degree of attitude error), the stick commanding 1.3 rad of attitude per unit of
+  the axis (1.5 deg per % of travel), +/-10 % of the cyclic travel; kr 0.3 per rad/s, +/-6.5 % of the pedal travel; full
+  gain below 30 KIAS, none above 50 (in between the datum relaxes toward the flown attitude); off on the ground, when
+  crashed and while the hover hold or an instructor flies. ADS-33E-PRF 3.3.2.3 (P) names an attitude-hold response type
+  as the way to meet the hover requirement of a Level 3 hover. Measured (`tests/rotorcraft/bo105Assist.test.ts`,
+  W/bofly/probes-fix): hands off in the hover scenario for 60 s, 0.7 deg of attitude change calm and 2.3 deg in 8 kt of
+  wind with 5 kt gusts, at most 2.4 % of travel used (it holds attitude, not position: in that wind it drifts with the
+  air); the raw aircraft crashes at 22.4 s calm, 16.4 s in the wind. A 1 s roll key tap banks 9.4 deg at 3 s and holds
+  it (raw 8.9 deg and diverging); a 1 s forward tap pitches 11.3 deg at 3 s. A 10 % pedal step in the hover reaches 20.5
+  deg/s at 3 s, 90 % of its 8 s value (raw 36.3 and still rising: the identified Nr with N_ped 0.042 gives about 23); a
+  full pedal step still turns the IGE hover at 90 deg/s within 3 s (at 16 m, OGE, the left turn takes 3.6 s against 2.0
+  s raw: the pedal term's authority is the knob between the two rows). The delayed test pilot (2200 kg IGE, calm 15 s
+  then an 8 kt side gust): at half gain with 0.5 s of delay, not lost, drift 3.8 m (raw: lost at 27 s); at full gain with
+  0.6 s, not lost, 3.9 m (raw: lost at 23 s); both lost from 0.8 s of delay.
+- **Hand-rate collective** (`collectiveFastRate`): Shift+F5 lowers at 1.0 of the travel per second, Shift+F6 raises at
+  0.5; bare F5 / F6 stay the fine 0.12 per second for the hover. Both levers OFF at 100 KIAS (2200 kg, 3000 ft), attitude
+  held, the key held after the delay, through the InputSystem: 1 s of delay NR minimum 75.1 % (bare F5 69.0 %), 2 s 68.0
+  % (bare F5 67.2 %), 0.5 s 80.7 % (71.3 %); at 120 KIAS 1 s 78.1 % (bare F5 58.9 %). The NR LOW tone starts at 0.30 s
+  (100 KIAS) / 0.23 s (120). The decay itself (about 19 %/s) is the rotor's energy (KNOWN_ISSUES 22), not the keys.
+- **5-key centring at 1 travel per second** (`centreRate`; every other type 4): the keyboard centre is the spring-trim
+  anchor, so an untrimmed pilot at 120 KIAS pressing 5 gets 0.44 of the travel aft in 0.9 s instead of 0.22 s. **Shift+5**
+  sets the keyboard centre to the stick as it is (`setTrimHere`; a sim convenience: the CB-4 has beep trim only; the
+  physics' anchor is left alone, it carries no aerodynamic effect).
+- **The control box** (`BO105_UI.controlBox`): the keyboard centre ring and TRIM, COLL, NR with LOW / HIGH, ENG 1 / 2 /
+  BOTH, PWR 1 / 2 with the IDLE stop and OFF / IDLE / FLT, and the STAB ASSIST chip; the cockpit screenshot is
+  `W/bofly/shots/cockpit-box.png`.
+
 ## 10. In the sim
 
 `index.html?aircraft=bo105&hover=1&ap=1` (the app's hover test, 2500 kg, 16 m, 8 kt of wind, hold engaged), after 20 s:
@@ -377,7 +413,11 @@ N1 101.2 / 101.2 %, torque 84.2 / 84.2 % (W/shots/BO/bo105-hover.png): the hover
 hover model: zeta -0.49 at 0.62 rad/s at 2500 kg / 16 m, doubling in 2.3 s; inflow off 15 s). The MD 500E on the same
 URL is upright after 20 s (roll -5.8 deg, 2.7 m/s drift). That divergence is the real Bo 105's (section 5: ERF 1995,
 P); the physics stays, and the aids for flying it are the hold (`&ap=1`) and the STAB ASSIST (section 9). heliHold probe (`AC=bo105`, 32 flights): no disconnect; hover position RMS 0.07 m calm, 2.3-2.5
-m in 8 kt gusts; the sequence's 40 kt step overshoots by 12 kt (the hold's tuning, TW's).
+m in 8 kt gusts; the sequence's 40 kt step overshoots by 12 kt (the hold's tuning, TW's). **Flyability pass
+(2026-10-22, production build, `check-build`):** the gate URL with the STAB ASSIST on (its default) after 20 s: not
+crashed, pitch +4.0 deg, roll 3.7 deg left (the hold flies the same hover at +3.5 / 3.1 left), 0.5 KIAS, drifting with the
+8 kt wind at 3.6 m/s (it holds attitude, not position) (W/bofly/shots/hover-assist.png); `&stab=0` reproduces the
+crash (roll 53.5 deg, main rotor strike, W/bofly/shots/hover-raw.png); `&ap=1` hovers (pitch +3.5, roll 3.1 left).
 
 ## 11. Known gaps (it.fails rows; `src/aircraft/bo105/KNOWN_ISSUES.md` has the list)
 
