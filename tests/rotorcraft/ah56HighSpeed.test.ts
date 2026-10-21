@@ -316,7 +316,10 @@ describe('H9: periodic flap damping at mu 0.5 (RC\'s option, on for the AH-56)',
 
 // ------------------------------------------------------------------------------------------------------------- H10
 describe('H10: physics cost at 200 KTAS <= 2 x MD 500E (same machine, headless)', () => {
-  it('mean step time, best of three interleaved samples each', () => {
+  // The plan's bound (2.0, AGENT) is asserted as it stands, on the best of seven interleaved samples of each model (the minimum is
+  // the sample least disturbed by other processes). On a loaded machine (1-min load average above half the cores) the two models
+  // do not slow down equally, so the row is SKIPPED there with the numbers reported, never passed on a looser bound.
+  it('mean step time, best of seven interleaved samples each', (ctx) => {
     const ah = rigOn(AH56_DEFINITION, { cfg: 'amcs', kt: 200 });
     const md = createFlightModelFor(MD500_DEFINITION) as BladeElementFlightModel, env = environment();
     md.reset({ position: { x: 0, y: 0, z: -500 }, heading: 0, airspeed: 120 * KT, flightPathAngle: 0, onGround: false, engineRunning: true, fuelFraction: 1 }, env);
@@ -324,14 +327,13 @@ describe('H10: physics cost at 200 KTAS <= 2 x MD 500E (same machine, headless)'
     const time = (f: () => void, n: number) => { const t0 = performance.now(); for (let i = 0; i < n; i++) f(); return (performance.now() - t0) / n * 1000; };
     for (let i = 0; i < 240; i++) { ah.fm.step(1 / 240, ah.c, ah.env); md.step(1 / 240, mdc, env); }
     const a: number[] = [], m: number[] = [];
-    for (let k = 0; k < 3; k++) { a.push(time(() => ah.fm.step(1 / 240, ah.c, ah.env), 1200)); m.push(time(() => md.step(1 / 240, mdc, env), 1200)); }
+    for (let k = 0; k < 7; k++) { a.push(time(() => ah.fm.step(1 / 240, ah.c, ah.env), 600)); m.push(time(() => md.step(1 / 240, mdc, env), 600)); }
     const ahUs = Math.min(...a), mdUs = Math.min(...m);
-    const load = os.loadavg()[0], cpus = os.cpus().length;
+    const load = os.loadavg()[0], cpus = os.cpus().length, loaded = load > 0.5 * cpus;
     report('H10 cost', { ah56Us: ahUs, md500Us: mdUs, ratio: ahUs / mdUs, withinPlanTarget: ahUs / mdUs <= 2, loadAverage1m: load, cpus,
-      grid: `${def.main.radialStations} x ${def.main.azimuthStations}`, target: '<= 2 (AGENT, plan H10); asserted <= 2.2 (the shared machine)' });
+      skippedUnderLoad: loaded, grid: `${def.main.radialStations} x ${def.main.azimuthStations}`, target: '<= 2 (AGENT, plan H10)' });
     trace.H10 = { ahUs, mdUs, load, cpus };
-    // The plan's 2.0 is the target (reported above). The assertion allows the measured noise on the shared machine (docs section 3:
-    // 1.8-1.9 x idle, 2.03 x for a 12 x 20 grid under a concurrent test run): the two models do not slow down equally under load.
-    expect(ahUs / mdUs).toBeLessThanOrEqual(2.2);
+    if (loaded) { ctx.skip(); return; }
+    expect(ahUs / mdUs).toBeLessThanOrEqual(2);
   }, 300_000);
 });
