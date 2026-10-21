@@ -77,7 +77,7 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
     unchanged because the exact fixed-wing goldens read it.
 14. **Other packages' copies of the facts** (integrator, at the AG merge): AU's audio reads the T64 rated power from the powerplant and
     PN's ASI the red line from `AH56_REFERENCE.vne` (`definitionInconsistencies(ah56)` has no audio or ASI row on integ). The pilot's-eye
-    row waits for AX's visual (the merge after AG): geometry 3.302 / 0 / −0.889 m against the stub visual's 0.7531 / −0.3302 / −0.53218.
+    row cleared at the AX merge (AX's visual reads `PILOT_EYE`, AG's geometry the same): `definitionInconsistencies(ah56)` is empty.
 15. **The collective gauge range** (integrator, at the AG merge): the panel and HUD read AG's physical range −2.5…18.5° plus the
     configuration offset, so the AMCS gauge spans 4.5–25.5° indicated (mid lever 15°, ICS 8°). AMCS-73 SoF 2b gives 4.5–21.5° indicated
     for the AMCS ship (P, facts.ts `AH56_COLLECTIVE_DEG`); the physical top of 18.5° is the ICS's (P), shared by both configurations
@@ -98,3 +98,10 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
   marks are ESTIMATE (Vne 195 KCAS INF); no hydraulic model (3000 psi while the rotor turns); the ICS buttons are not switches; APU,
   abort-stop, rotor brake, directional trim and Nf ALTERNATE are not drawn; MASTER CAUTION does not latch; the AMCS Nf band (95–105
   green) is ESTIMATE; the tail wheel uses gear lamp 1 (lettered TAIL).
+- **Exterior (AX, [ah56-exterior.md](../../../docs/ah56-exterior.md)):** head hardware, gyro post height, gear legs, sponsons, intakes,
+  exhaust and the 32° fin sweep are photographic ESTIMATES (no dimensioned three-view found). The wing incidence is drawn to the
+  waterline (published datum unstated). No gear doors are drawn (none found on the mains; the fin housing is open). Until the solver
+  publishes a hingeless blade pose the head droops its blades by its own −0.9° fallback (ESTIMATE). The hub hardware stays solid at rotor
+  speed; only the ICS gyro X fades. Shared renderer: the tail rotor's blur disc reads heavy (solidity alpha near the 0.25 cap) and the
+  main disc faint in chase views. Integrator, at the AX merge: the main-gear trunnion moved from FS 281 to FS 264 with AG's axles (FS 285
+  → 268), and the head draws a non-finite gyro cyclic as zero (the gyro definition routes the dev page's tilt into the swashplate).
