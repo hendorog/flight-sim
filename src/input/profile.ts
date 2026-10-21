@@ -77,7 +77,11 @@ export interface InputProfile {
   /** Pusher twist grip (AH-56A): the propeller increase/decrease keys move ControlInputs.propLever (the Nf beep, when
    *  `n2Beep` is also set, moves to a shifted pair); `snaps` are lever positions for the snap keys (hover detent
    *  -2.2 deg, autorotation +8 deg, full reverse -12 deg), `detent` the hover detent. */
-  propLever?: { detent: number; snaps: readonly number[] };
+  propLever?: { detent: number; snaps: readonly number[];
+    /** The trim schedule the optional laptop assist (InputAssists.propSchedule, off by default) follows until the pilot
+     *  touches the grip: lever position against indicated airspeed, kt (plain tables; AC fills them from the pusher's
+     *  trim schedule). Absent: no assist. */
+    schedule?: { kias: readonly number[]; lever: readonly number[] } };
   /** Tail-wheel lock toggle key (ControlInputs.tailWheelLock). */
   tailWheelLock?: boolean;
   /** Gear lever keys on a rotorcraft with retractable wheels. */

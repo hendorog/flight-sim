@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { C172S_INPUT } from '../../src/aircraft/c172s/input';
 import { PROP_FEATHER_GATE, cloneControls, defaultControls, engineControl, setEngineControl, type ControlInputs } from '../../src/core/types';
-import { KEY_MAP, keyBindingsFor, profileHasAction, type InputAction } from '../../src/input/bindings';
+import { KEY_MAP, actionForKey, keyBindingsFor, profileHasAction, type InputAction } from '../../src/input/bindings';
 import { LEVER_REJOIN, MIXTURE_GUARD, moveSplitLevers, rejoinLevers, scalarShared, stepLever, stepThird, writeEngineControl } from '../../src/input/engineControls';
 import { keyAuthority } from '../../src/input/virtualYoke';
 import { IDLE_CUTOFF } from '../../src/physics/propulsion/combustion';
@@ -591,7 +591,9 @@ describe('gear lever and rudder trim', () => {
 
 describe('the Cessna 172S: none of the new keys does anything', () => {
   it('pressing and holding every new key leaves every control as it was', () => {
-    const fresh = KEY_MAP.filter((m) => !profileHasAction(C172S_INPUT, m.action));
+    // (A Shift+ entry whose action the type lacks on a key that also has a shift-agnostic action falls back to that:
+    // Shift+, is still the left toe brake here, actionForKey's profile fallback; input.test.ts checks those.)
+    const fresh = KEY_MAP.filter((m) => !profileHasAction(C172S_INPUT, m.action) && actionForKey(m.code, m.shift === true, C172S_INPUT) === m.action);
     // The sixteen key entries of the levers and switches this type has not, the five turbine keys (reverse, grip
     // CUTOFF, STARTER INTERRUPT, pusher interrupt), and nothing it had before.
     expect(fresh.map((m) => `${m.shift === true ? 'Shift+' : ''}${m.code}`)).toEqual([
