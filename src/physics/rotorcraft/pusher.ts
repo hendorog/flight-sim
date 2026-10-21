@@ -4,7 +4,9 @@
 // Seams placed at S0 in rotorcraft.ts (RC keeps them): compute()'s force and moment are added to the rotor loads
 // (between the airframe sum and the drive-torque reaction), `shaftTorque` is added to the rotor shaft torque after the
 // hub torque (so the drivetrain and the Nf governor carry the prop), and `h` is added to Rotorcraft.angularMomentum
-// before w x H. The prop's inertia enters drivetrainInertia() (definition.ts). flightModel's reset sets
+// AFTER the free rotor's w x H compensation (the rigidly mounted prop's gyroscopic reaction -w x h reaches the airframe
+// through the rigid-body equation; the S0 seam added it before and so cancelled it). The prop's inertia enters
+// drivetrainInertia() (definition.ts). flightModel's reset sets
 // ControlInputs.propLever = pusherTrimLever(d, airspeed) before the trim Newton.
 //
 // THE SHAFT REACTION. The engine's torque reaches the airframe in rotorcraft.ts as ONE reaction about the main-rotor shaft

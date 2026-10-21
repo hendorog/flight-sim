@@ -551,10 +551,15 @@ export class Rotorcraft {
     // Its aerodynamic reorientation moment minus body-frame dH/dt equals w×H. Account for both here;
     // the rigid-body Euler term subtracts w×H. Keeping just the latter would invent rigid-hub control.
     Object.assign(this.angularMomentum, v3.scale(tilt ? toBody(axis, tilt) : axis, d.rotation * d.main.inertia * s.omega));
-    // The pusher's and the control gyro's spin momenta join the rotor's before w x H (body axes).
-    if (this.pusher || this.gyro) Object.assign(this.angularMomentum,
-      v3.add(this.angularMomentum, v3.add(this.pusher?.h ?? NO_H, this.gyro?.h ?? NO_H)));
+    // The control gyro's spin momentum joins the rotor's before the w x H compensation: it is gimballed, so (like the free
+    // rotor) it puts no gyroscopic moment on the airframe; its own precession equation carries the body rate, and its gimbal
+    // reactions are neglected (docs/control-gyro-model.md).
+    if (this.gyro) Object.assign(this.angularMomentum, v3.add(this.angularMomentum, this.gyro.h));
     Object.assign(m, v3.add(m, v3.cross(b.angularVelocity, this.angularMomentum)));
+    // The pusher is rigidly mounted: its spin momentum joins the angular momentum the rigid-body equation turns (-w x H) AFTER
+    // the compensation, so the airframe feels its gyroscopic reaction -w x h_prop (3,400 N m s at 1,717 rpm: about 1 kN m of
+    // yaw-pitch coupling at 0.3 rad/s).
+    if (this.pusher) Object.assign(this.angularMomentum, v3.add(this.angularMomentum, this.pusher.h));
     s.thrust = thrust; s.tailThrust = tail.thrust; s.torque = main.torque + tail.torque * d.tailRatio;
     // The massless harmonic reduction retains no flap kinetic-energy store. Offset hinge work
     // therefore exchanges with shaft work explicitly. This preserves the reduced work budget;

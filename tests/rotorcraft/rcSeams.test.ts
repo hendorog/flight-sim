@@ -41,13 +41,16 @@ for (const [name, def] of [['hingeless fixture', fixtureRotorcraft()], ['MD 500E
       const { la, lb } = pair(def, (r) => { r.halfP = { reset() {}, forcing: () => e }; });
       close(lb.force, v3.add(la.force, e.force)); close(lb.moment, v3.add(la.moment, e.moment));
     });
-    it('extra angular momentum (the pusher\'s; the gyro\'s takes the same sum) joins angularMomentum before w x H', () => {
+    it('the pusher\'s angular momentum joins angularMomentum AFTER the free rotor\'s w x H compensation (its reaction acts)', () => {
+      // A rigidly mounted prop: the rigid-body equation subtracts w x H with H including h_prop, and the rotor's loads add back only
+      // the free rotor's (and the gimballed gyro's) w x H, so the airframe feels -w x h_prop. The S0 seam added it before the
+      // compensation, which cancelled the prop's gyroscopic reaction (final review finding; this row asserted that form).
       const hp = { x: 0, y: 0, z: 300 };
-      const { a, b, la, lb, w } = pair(def, (r) => {
+      const { a, b, la, lb } = pair(def, (r) => {
         r.pusher = { h: hp, reset() {}, compute: () => ({ force: zero(), moment: zero(), shaftTorque: 0, power: 0 }) };
       });
       close(b.angularMomentum, v3.add(a.angularMomentum, hp));
-      close(lb.moment, v3.add(la.moment, v3.cross(w, hp)));
+      close(lb.moment, la.moment);
     });
   });
 }
