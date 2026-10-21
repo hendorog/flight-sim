@@ -14,6 +14,9 @@ import { hoverScenario } from '../../src/sim/rotorcraft/starts';
 import { SimPhysics } from '../../src/sim/SimPhysics';
 import { parseSnapshot } from '../../src/sim/resume';
 import { calmWeather } from '../fdm/helpers';
+import { HelicopterAutopilot } from '../../src/sim/rotorcraft/autopilot';
+import { defaultAutopilotSettings } from '../../src/physics/autopilot';
+import { KT } from '../../src/core/math';
 import { DT, TWIN_DEF, d, gauges, lever, LEVER, rig, run, ts, twin, writeTrace } from './twinRig';
 
 const report: Record<string, unknown> = {};
@@ -125,6 +128,22 @@ describe('warning unit K-DW02/01 (T9, P TM 00-44 / P5 FM 3-16)', () => {
     expect([tw.n1SplitLight, tw.nrLowLight, tw.nrLowTone, s.lowRpmLight, s.lowRpmHorn]).toEqual([false, false, false, false, false]);
     expect(s.lowRpm).toBe(true);
   });
+});
+
+describe('autopilot hold on one engine (T13)', () => {
+  it('T13 the helicopter hold engages and flies with engine 1 shut down and engine 2 running (and refuses with both out)', () => {
+    const r = rig({ kg: 2200, kt: 60, enginesRunning: [false, true] });
+    const ap = new HelicopterAutopilot(d);
+    const st = { ...defaultAutopilotSettings(), altitude: r.fm.state.altitudeMSL, heading: r.fm.state.heading, airspeed: 60 * KT };
+    expect(r.fm.state.engine.running).toBe(false);
+    expect(ap.engage(r.fm.state, r.c), ap.reason).toBe(true);
+    let held = true;
+    run(r, 10, () => { held = held && ap.update(DT, r.fm.state, r.c, st); });
+    report.T13 = { engaged: true, heldFor10s: held, altitudeErrorM: r.fm.state.altitudeMSL - st.altitude, reason: ap.reason };
+    expect(held, ap.reason).toBe(true);
+    const out = rig({ kg: 2200, kt: 60, enginesRunning: [false, false], running: false });
+    expect(new HelicopterAutopilot(d).engage(out.fm.state, out.c)).toBe(false);
+  }, 30_000);
 });
 
 describe('reset, resume and one lever at IDLE (T10, T11, T16)', () => {

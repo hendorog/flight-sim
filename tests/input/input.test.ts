@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { actionForKey, KEY_BINDINGS, KEY_MAP } from '../../src/input/bindings';
+import { C172S_INPUT } from '../../src/aircraft/c172s/input';
 import {
   applyDeadzone,
   defaultCalibration,
@@ -126,16 +127,18 @@ describe('key bindings', () => {
       'Semicolon/true/propIncrease',
       'KeyF/true/propFeather',
       'Slash/undefined/carbHeat',
+      'Slash/true/propLeverSnap',
       'Backslash/false/cowlFlapsOpen',
       'Backslash/true/cowlFlapsClose',
       'Digit8/undefined/engineSelect1',
       'Digit9/undefined/engineSelect2',
       'Digit0/undefined/engineSelectAll',
     ]);
-    // 71 originals, fourteen aircraft controls, two rotorcraft controls, two panel view keys, and the turbine keys:
-    // the power lever aft of the gate (Shift+F2, Shift+Page Down), the twist grip's CUTOFF (Shift+F1), STARTER
-    // INTERRUPT (Shift+N) and the stick pusher's interrupt (Shift+D).
-    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5);
+    // 71 originals, fourteen aircraft controls, two rotorcraft controls, two panel view keys, the turbine keys (the
+    // power lever aft of the gate (Shift+F2, Shift+Page Down), the twist grip's CUTOFF (Shift+F1), STARTER INTERRUPT
+    // (Shift+N) and the stick pusher's interrupt (Shift+D)), and the rigid-rotor programme's: ENGINE TRIM left/right
+    // or the moved beep (Shift+, / Shift+.), the pusher grip's snap (Shift+/) and the tail-wheel lock (Shift+').
+    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5 + 4);
     expect(KEY_MAP.filter((m) => ['F1', 'F2', 'PageDown', 'KeyN', 'KeyD'].includes(m.code)).map((m) => `${m.code}/${m.shift}/${m.action}`)).toEqual([
       'F2/false/throttleDown',
       'PageDown/false/throttleDown',
@@ -148,10 +151,17 @@ describe('key bindings', () => {
       'KeyD/false/dgAlign',
       'KeyD/true/pusherInterrupt',
     ]);
-    // A code is bound either once for both shift states or with explicit flags, never both ways (one would shadow the other).
+    // A code is bound either once for both shift states or with explicit flags; bound both ways only as a shift-agnostic
+    // entry plus one Shift+ entry whose action few types have: there the Shift+ entry wins only on a type that has its
+    // action (actionForKey's profile fallback), so on the Cessna 172S Shift+ still gives the shift-agnostic action.
+    const both = ['Comma', 'Period', 'Slash', 'Quote'];
     for (const code of new Set(KEY_MAP.map((m) => m.code))) {
       const entries = KEY_MAP.filter((m) => m.code === code);
-      if (entries.some((m) => m.shift === undefined)) expect(entries.length, code).toBe(1);
+      if (!entries.some((m) => m.shift === undefined)) continue;
+      if (!both.includes(code)) { expect(entries.length, code).toBe(1); continue; }
+      expect(entries.map((m) => m.shift), code).toEqual([undefined, true]);
+      expect(actionForKey(code, true, C172S_INPUT), code).toBe(entries[0].action);
+      expect(actionForKey(code, false, C172S_INPUT), code).toBe(entries[0].action);
     }
     // Nothing with a modifier other than Shift, and Space stays reserved.
     expect(KEY_MAP.some((m) => m.code === 'Space' || /^(Control|Alt|Meta)/.test(m.code))).toBe(false);
