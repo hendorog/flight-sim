@@ -271,7 +271,9 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    a steady turn after every pedal tap and a swing on every collective tap (a 0.3 s F6 tap: 84 deg in 8 s). The STAB
    ASSIST now holds the heading once the pedal keys rest (docs section 9; 0.3 s collective taps +/-1.3 deg, a 0.5 s
    pedal tap settles 2.3 deg round), inside the same 6.5 % of pedal travel, so the physics' Nr miss above is unchanged
-   and a 0.6 s collective tap (0.26 of the pedal axis) still swings the nose.
+   and a 0.6 s collective tap (0.26 of the pedal axis) still swings the nose. **Round 3 (the round-2 gate):** the hold
+   has its own 15 % of pedal travel (the rate damping keeps 6.5 %, so full-pedal turns are unchanged) and the keyboard
+   pedals are walked to the trim: 0.5 / 0.6 / 1.0 s collective taps are back within 1.3 deg by 15 s (flyability round 3).
 21. **The mass envelope's 1140 kg minimum is unreachable**: the TCDS minimum (P, facts.ts) sits 136 kg below this
    airframe's empty mass (1276 kg, S Jane's CB), so the CG envelope's 1140 kg point is data only; the lightest rig case is
    1400 kg. A CB-4 weighing record would settle it.
@@ -372,14 +374,53 @@ only, each labelled:
   airspeed falls and the pilot is flying the stick (one e-fold per 2 kt); hands off or speeding up it does not. In the
   hover after a 45 KIAS deceleration the series term is 2.5 % of travel and the stick at the hover trim within 0.05
   (round 1: 10 %, 0.2 forward).
-- **Pedal term on unloading skids** (`groundYawLoad` 0.5): simple and safe (it only damps / holds the yaw, no integral on
-  the ground), but small: the hover wants 21 % of pedal travel left of the runway start's centred pedal, three times the
-  authority (lift-off yaw 9.0 deg/s against 10.6). The hint says pedal with the collective.
+- **Pedal term on unloading skids** (`groundYawLoad` 0.5; round 3: `groundLoad`, the cyclic too): simple and safe (it
+  only damps / holds the yaw, no integral on the ground), but small: the hover wants 21 % of pedal travel left of the
+  runway start's centred pedal, three times the authority (lift-off yaw 9.0 deg/s against 10.6). The hint says pedal with
+  the collective.
 - **Shift+F5 entry stop** 0.08 (item 22), with the NR-minimum cost at 120 KIAS recorded there.
 - **Shared files touched:** `src/core/types.ts` (`ControlInputs.pedalWorked`, optional, set only for a profile with a STAB
   ASSIST; the flight model ignores it), `src/input/profile.ts` (optional `kpsi`, `kpsiI`, `datumRelaxKt`,
   `groundYawLoad`, `collectiveFastRate.downStop`), `src/input/InputSystem.ts` (the stop; the flag). Every other type
   leaves them absent.
+
+#### Round 3 (the round-2 pilot gate's must items; probes W/bofly/pilot-r3, logs `out/final`)
+
+The gate flew the keys through the InputSystem with its tapping beginner: the 3 ft hover after a runway lift-off was
+lost at 18-25 s with every pedal technique, a keyboard deceleration from 45 / 30 KIAS crashed 2-10 s after the stop,
+and a 0.5 s F6 tap with the pedals untouched spun the nose 180 deg. Docs section 9 has the law and the numbers; the rows
+are `tests/rotorcraft/bo105KeyTransitions.test.ts` (the gate's beginner in `bo105KeyPilot.ts`) and
+`bo105Assist.test.ts`.
+- **Fixed:** collective taps (the hold's own authority, `holdAuthority` 0.3, and the keyboard pedals' trim follow-up:
+  0.5 / 0.6 / 1.0 s F6 back within 1.3 deg by 15 s; round 2: 180 deg); the lift-off (not lost in 30 s with the pedals
+  untouched or 2 s of left pedal; the cause was the skids touching in the low hover, which switched the cyclic term off:
+  it now works on light skids, `groundLoad`); 5 once after a lift-off keeps the followed pedal (18 deg/s; round 2 42).
+- **Still open: the keyboard deceleration to the hover.** Better (the stick 0.33-0.45 at the stop against round 2's
+  0.18, the hover 0.51; the stop reached more often) but lost: below 20 kt the beginner's F5 / F6 taps swing the
+  collective and it lets go in an 8-12 m/s sink with the collective at 0.13-0.31 (hover 0.39). The assist never touches
+  the collective. Recorded as an `it.fails` row. A below 25 kt is a way out (the hold flies on at that speed, heading and
+  height without a loss; it hovers only when engaged under 3 m/s), not a way into the hover. Candidates, owner / shared
+  decisions: a keyboard collective aid (a height hold on the keys below 20 kt), or a hold that decelerates to a hover
+  when engaged moving (shared HelicopterAutopilot, every helicopter).
+- **The gate's deceleration numbers are partly a rig artefact.** Its probes (pilot-r2 `decel`, `decelTrace`, `decel2`)
+  reset the physics after attaching the input module without the `reset` event the Simulator sends, so the keyboard
+  pedal stayed at the hover's -0.42 against the 45 KIAS trim's +0.18: a 30 deg/s yaw and 40 deg of heading at the start
+  of every run (pilot-r3 reproduces the gate's numbers exactly that way, `b_decel.gaterig.log`). With the event, the
+  round-2 law still crashed (stop 13.7 s, crash 20.1 s). Its "stop" was the body-forward ground speed, which a spin
+  crosses; pilot-r3 uses the ground-speed magnitude. The lift-off and off-trim probes were not affected.
+- **Recorded limits:** a pedal set with the keys (KeyZ 2 s at lift-off) is thrown away by 5 (62 deg/s, 136 deg; 5
+  centres the keys on the followed trim, not on the pilot's pedal). The gate's 1 s ArrowUp knock in the 3 ft hover is
+  still lost at about 38 s: not the trim (the stick at the hover trim, the series term inside its limit) but the probe's
+  own tap loop, a growing pitch / roll oscillation (-5 to +14 deg, about 4 s) that ends in the yaw. Longer F6 from the
+  hover (1.5 s and more) runs past the torque limit and the left pedal stop with or without the aid. The gate's
+  "energetic tapper" (0.5 s, roll taps to 1 s) crashes the deceleration at 8 s on every law, the raw aircraft too.
+- **Measured, not adopted:** a collective-to-pedal crossfeed (2.5 of the pedal axis per unit of collective; the trim
+  slope is about -3) held every F6 tap within 5 deg but double-compensated a pilot who pedals (2 s of left pedal at
+  lift-off: -39 deg/s, the heading round). A pedal follow-up gain of 2 rang the heading +/-12 deg after a collective tap.
+- **Shared files touched:** `src/core/types.ts` (`ControlInputs.keyboardCyclic`, `keyboardPedals`, `pedalFollowUp`,
+  optional, set only for a profile with a STAB ASSIST; the flight model ignores them), `src/input/profile.ts`
+  (`holdAuthority`, `followUp`; `groundYawLoad` renamed `groundLoad`), `src/input/InputSystem.ts` (the flags; the pedal
+  centre follows `pedalFollowUp`). Every other type leaves them absent; the legacy digests are unchanged.
 
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 

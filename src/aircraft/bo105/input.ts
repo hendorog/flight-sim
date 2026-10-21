@@ -37,8 +37,17 @@ export const BO105_INPUT: InputProfile = {
   // 1.0 per rad, kpsiI 0.3 per rad s, inside the same 6.5 % of pedal travel: yaw.log); the cyclic datum tracks the trim
   // while the pilot flies a deceleration (one e-fold per 2 kt of slowing: decel.log); the pedal term works on the ground
   // once the skids carry less than half the weight (liftoff.log).
+  // Round 3 (W/bofly/pilot-r3, the round-2 gate's must items): the heading hold gets its own 15 % of pedal travel
+  // (holdAuthority 0.3; the rate damping keeps 6.5 %, so full-pedal turns are unchanged): a 0.5 / 0.6 s collective tap no
+  // longer spins the nose (out/final/d_yaw.log). The trim follow-up walks the KEYBOARD stick and pedals to the trim
+  // (followUp): the cyclic at 0.3 per second per unit of the low-passed series term beyond 20 % of its authority, at most
+  // 0.1 of the axis per second (5 % of travel); the pedals at 1 per second, at most 0.2 (2 rang the heading +/-12 deg
+  // after a collective tap, 1.4 still rang: out/n_ytrace.log, out/d_yaw.g.log; out/final/a_liftoff.log). The assist also
+  // works on light skids, the cyclic too (groundLoad; round 2's groundYawLoad was the pedal term only). ESTIMATES tuned
+  // on the probes.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
-    kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundYawLoad: 0.5, fadeKias: [30, 50] },
+    holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
+    followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
   // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine
@@ -69,6 +78,6 @@ export const BO105_INPUT: InputProfile = {
     fuelPump: 'Fuel pumps', starter: 'STARTER/GENERATOR to START (hold)',
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
-    stabilityAssist: 'STAB ASSIST on / off: holds the attitude below 30 KIAS and the heading when the pedals rest (a sim aid: the CB-4 has no SAS)',
+    stabilityAssist: 'STAB ASSIST on / off: holds the attitude below 30 KIAS and the heading when the pedals rest, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

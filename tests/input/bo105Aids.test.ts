@@ -139,6 +139,41 @@ describe('the pedals worked (ControlInputs.pedalWorked: the STAB ASSIST heading 
   });
 });
 
+/**
+ * Round 3 (W/bofly/pilot-r3): the STAB ASSIST's trim follow-up moves only what the keyboard holds
+ * (ControlInputs.keyboardCyclic / keyboardPedals), and hands its pedal movement to the input module
+ * (ControlInputs.pedalFollowUp), which moves its pedal centre: 5 then returns the pedals to the followed trim, not to the
+ * reset's pedal (round 2's "5 once after lift-off" trap threw the whole lift-off pedal away).
+ */
+describe('the keyboard controls the trim follow-up may move (keyboardCyclic, keyboardPedals, pedalFollowUp)', () => {
+  it('on the Bo 105 the keyboard flags are set; other types never set them', () => {
+    const r = makeInputRig(BO105_INPUT);
+    r.run(FRAME);
+    expect(r.c.keyboardCyclic).toBe(true); expect(r.c.keyboardPedals).toBe(true);
+    for (const p of [MD500_INPUT, R22_INPUT]) {
+      const o = makeInputRig(p);
+      o.run(FRAME);
+      expect(o.c.keyboardCyclic).toBeUndefined(); expect(o.c.keyboardPedals).toBeUndefined();
+    }
+  });
+  it('a follow-up of the pedals moves the keyboard pedal centre with them, and 5 returns there; a pedal key still moves from it', () => {
+    const r = makeInputRig(BO105_INPUT);
+    r.setAirborne(true);
+    r.run(FRAME);
+    const p0 = r.c.rudder;
+    // As the assist leaves it after a physics step: the pedal moved, and the movement handed over.
+    r.c.rudder = p0 - 0.1; r.c.pedalFollowUp = -0.1;
+    r.run(FRAME);
+    expect(r.c.rudder).toBeCloseTo(p0 - 0.1, 9);
+    expect(r.c.pedalFollowUp).toBe(0);
+    hold(r, 'KeyX', 0.5);
+    expect(r.c.rudder).toBeGreaterThan(p0 - 0.1);
+    r.tap('Digit5');
+    r.run(1);
+    expect(r.c.rudder).toBeCloseTo(p0 - 0.1, 6);
+  });
+});
+
 describe('STAB ASSIST toggle (InputProfile.stabilityAssist; the physics side is tests/rotorcraft/bo105Assist.test.ts)', () => {
   it('on by default on the Bo 105; Shift+A switches it off and on, with a toast that calls it a sim aid; the yoke indicator carries it', () => {
     const r = makeInputRig(BO105_INPUT);

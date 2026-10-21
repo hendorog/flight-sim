@@ -77,16 +77,29 @@ describe('STAB ASSIST, hands off in the hover scenario (2500 kg, about 16 m; gai
     report.handsOffWind = { ...on, driftM: Math.hypot(s.position.x - x0, s.position.y - y0), groundSpeedKt: s.groundSpeed / KT };
     expect(on.crash).toBeNull(); expect(on.maxAttDeg).toBeLessThanOrEqual(5); expect(on.seriesPctTravel).toBeLessThanOrEqual(10);
   }, 120_000);
-  it('the series term never reaches the pilot\'s controls: hands off, the keyboard stick and pedals stay exactly at the trim while the assist works', () => {
-    const r = rig({ wind: true, assist: true }), c0 = { a: r.c.aileron, e: r.c.elevator, r: r.c.rudder };
-    let worked = 0;
+  /**
+   * Round 3: the trim follow-up (followUp) walks the keyboard controls when the low-passed series term leaves its dead
+   * band (20 % of the authority); hands off in this wind it hardly does. What reaches the controls is that walk (the
+   * assist's `followed` readout; the stick follows the spring anchor at the input module's next frame), never the series
+   * term itself.
+   */
+  it('the series term never reaches the pilot\'s controls: hands off in gusts the keyboard stick and pedals move only by the trim follow-up, and that stays small', () => {
+    const r = rig({ wind: true, assist: true }), c0 = { a: r.c.aileron, e: r.c.elevator, r: r.c.rudder }, a = r.physics.stabilityAssist!;
+    const f0 = { ...a.followed };
+    let worked = 0, leak = 0;
     for (let i = 0; i < 300; i++) {
       frame(r);
-      const o = r.physics.stabilityAssist!.output;
+      const o = a.output, f = a.followed;
       worked = Math.max(worked, Math.abs(o.aileron), Math.abs(o.elevator), Math.abs(o.rudder));
-      expect([r.c.aileron, r.c.elevator, r.c.rudder]).toEqual([c0.a, c0.e, c0.r]);
+      // One frame of the cyclic follow-up (at most cyclicRate / 60) may not have reached the stick yet.
+      leak = Math.max(leak, Math.abs(r.c.aileron - c0.a - (f.aileron - f0.aileron)), Math.abs(r.c.elevator - c0.e - (f.elevator - f0.elevator)),
+        Math.abs(r.c.rudder - c0.r - (f.rudder - f0.rudder)));
     }
+    const moved = Math.max(Math.abs(a.followed.aileron - f0.aileron), Math.abs(a.followed.elevator - f0.elevator), Math.abs(a.followed.rudder - f0.rudder));
+    report.seriesNeverReaches = { worked, leak, moved };
     expect(worked).toBeGreaterThan(0);
+    expect(leak).toBeLessThanOrEqual(0.1 / 60 + 1e-9);
+    expect(moved).toBeLessThanOrEqual(0.02);
     expect(r.input.pilotFlying(1e6)).toBe(false);
   }, 60_000);
 });
@@ -185,28 +198,48 @@ function sideGust(r: Rig, at: number, eastMs: number): void {
  */
 describe('STAB ASSIST heading hold (rate command / direction hold below 30 KIAS)', () => {
   /** Heading change (deg) and yaw rate (deg/s) `k` s after a key tap at 1 s, against an untapped twin (2200 kg). */
-  function tapAgainstTwin(code: string, hold: number, dd?: AircraftDefinition) {
+  function tapAgainstTwin(code: string, hold: number, dd?: AircraftDefinition, T = 9) {
     const a = rig({ assist: true, payload: 'typical', dd }), b = rig({ assist: true, payload: 'typical', dd }), out: Record<string, number> = {};
-    for (let i = 0; i < 9 / FRAME; i++) {
+    let maxHdg = 0;
+    for (let i = 0; i < T / FRAME; i++) {
       const t = i * FRAME;
       if (Math.abs(t - 1) < FRAME / 2) a.input.keyDown(code);
       if (Math.abs(t - 1 - hold) < FRAME / 2) a.input.keyUp(code);
       frame(a); frame(b);
-      for (const k of [3, 8]) if (Math.abs(t + FRAME - 1 - k) < FRAME / 2) {
+      maxHdg = Math.max(maxHdg, Math.abs(wrapDeg((a.physics.state.heading - b.physics.state.heading) / DEG)));
+      for (const k of [3, 8, 15]) if (Math.abs(t + FRAME - 1 - k) < FRAME / 2) {
         out[`hdg${k}`] = wrapDeg((a.physics.state.heading - b.physics.state.heading) / DEG);
         out[`r${k}`] = (a.physics.state.angularVelocity.z - b.physics.state.angularVelocity.z) / DEG;
       }
     }
-    return out;
+    return { ...out, maxHdg } as Record<string, number>;
   }
   it('a 0.3 s collective tap (F6 up, F5 down) with the pedals untouched leaves the heading within 3 deg at 8 s (round 1: +84 / -79 deg and turning)', () => {
     const up = tapAgainstTwin('F6', 0.3), down = tapAgainstTwin('F5', 0.3), r1 = tapAgainstTwin('F6', 0.3, withoutTuning('kpsi', 'kpsiI'));
-    // A 0.6 s tap (0.07 of the collective, +16 % torque) needs about 0.26 of the pedal axis: twice the authority. Recorded.
-    const big = tapAgainstTwin('F6', 0.6);
-    report.headingHoldCollectiveTap = { up, down, roundOneUp: r1, up06: big };
+    report.headingHoldCollectiveTap = { up, down, roundOneUp: r1 };
     expect(Math.abs(up.hdg8)).toBeLessThanOrEqual(3); expect(Math.abs(down.hdg8)).toBeLessThanOrEqual(3);
     expect(Math.abs(r1.hdg8)).toBeGreaterThan(30);
   }, 60_000);
+  /**
+   * Round 3 (the round-2 gate: a 0.5 s F6 tap spun the nose 180 deg, still turning at 22 deg/s at 15 s; W/bofly/pilot-r3
+   * yaw.log): a 0.6 s tap (0.07 of the collective, +16 % torque) needs about 0.26 of the pedal axis, twice round 2's 6.5 %
+   * of travel. The hold's own authority (holdAuthority, 15 %) holds the 0.5 / 0.6 s taps on its own (the hand-held pedal,
+   * whose integral stays: withoutTuning('followUp')); the keyboard pedals' trim follow-up takes the trim off the series
+   * term and holds the 1 s tap too. Round 2's law (no hold authority, no follow-up) recorded beside them.
+   */
+  it('0.5, 0.6 and 1.0 s collective taps (F6) with the pedals untouched: the heading back within 4 deg and the turn stopped by 15 s (round 2: 0.5 s spun 180 deg)', () => {
+    const now: Record<string, Record<string, number>> = {}, held: Record<string, Record<string, number>> = {};
+    for (const hold of [0.5, 0.6, 1.0]) now[hold] = tapAgainstTwin('F6', hold, undefined, 17);
+    for (const hold of [0.5, 0.6]) held[hold] = tapAgainstTwin('F6', hold, withoutTuning('followUp'), 17);
+    const r2 = tapAgainstTwin('F6', 0.5, withoutTuning('followUp', 'holdAuthority'), 17);
+    report.headingHoldCollectiveTapRound3 = { now, handPedalsHoldAuthorityOnly: held, roundTwoLaw05: r2 };
+    for (const hold of [0.5, 0.6, 1.0]) {
+      expect(Math.abs(now[hold].hdg15)).toBeLessThanOrEqual(4); expect(Math.abs(now[hold].r15)).toBeLessThan(1);
+      expect(now[hold].maxHdg).toBeLessThanOrEqual(25);
+    }
+    for (const hold of [0.5, 0.6]) { expect(Math.abs(held[hold].hdg8)).toBeLessThanOrEqual(3); expect(Math.abs(held[hold].r15)).toBeLessThan(1); }
+    expect(r2.maxHdg).toBeGreaterThan(90);
+  }, 120_000);
   it('a 0.5 s pedal key tap turns the nose 1-6 deg and stops there (yaw rate under 0.5 deg/s at 8 s; round 1: 29 deg and still turning at 3.8 deg/s)', () => {
     const right = tapAgainstTwin('KeyX', 0.5), left = tapAgainstTwin('KeyZ', 0.5);
     report.headingHoldPedalTap = { right, left };
@@ -264,6 +297,9 @@ describe('STAB ASSIST datum on a decelerating approach', () => {
       const acc = { n: 0, ser: 0, e: 0, a: 0 };
       while (t < 120) {
         r.input.update(FRAME, r.ctx);
+        // A hand pilot: the stick and pedals are where the hand and feet put them (as a joystick and pedals set it), so
+        // the keyboard trim follow-up leaves them alone and the datum tracks the slowing (round 3).
+        r.c.keyboardCyclic = false; r.c.keyboardPedals = false;
         const s = r.physics.state, ch = Math.cos(s.heading), sh = Math.sin(s.heading);
         const vf = s.velocity.x * ch + s.velocity.y * sh, vr = -s.velocity.x * sh + s.velocity.y * ch;
         const vCmd = Math.max(0, 45 - 1.5 * t) * KT;
@@ -304,27 +340,30 @@ describe('STAB ASSIST datum on a decelerating approach', () => {
 /**
  * Round 2 (W/bofly/r2 liftoff.log): the pedal term works on the ground once the skids carry less than half the weight, so
  * the heading is held from before lift-off. The runway start's pedal is at its centre and the hover wants 21 % of the
- * travel of left pedal, three times the assist's 6.5 %: lifting off with the pedal untouched still yaws (the lesson is
- * the pedal with the collective), but less (about 9 deg/s at lift-off against 10.6, 43 deg/s at most against 68).
+ * travel of left pedal, three times round 2's 6.5 %: lifting off with the pedal untouched still yawed (about 9 deg/s at
+ * lift-off against 10.6, 43 deg/s at most against 68). Round 3 (W/bofly/pilot-r3 liftoff.log): the cyclic works there
+ * too, its datum kept through a skid touch (groundLoad; the keyboard beginner's 3 ft hover after a runway lift-off ran
+ * with the skids touching at 1-17 % of the weight, pitched to 16 deg and rolled to 23 with the cyclic term off, and was
+ * lost at 20.7 s). On the ground the skids hold the yaw, so the keyboard pedal follow-up starts at lift-off.
  */
-describe('STAB ASSIST pedal term on unloading skids', () => {
+describe('STAB ASSIST on light skids', () => {
   function liftOff(dd: AircraftDefinition) {
     const r = rig({ assist: true, runway: true, dd });
-    let t = 0, onGroundActive = false, loadedActive = false, rateAtLift = NaN;
+    let t = 0, onGroundActive = false, loadedActive = false, rateAtLift = NaN, pedalAtLift = NaN;
     r.input.keyDown('F6');
     while (t < 20) {
       frame(r); t += FRAME;
       const s = r.physics.state, o = r.physics.stabilityAssist!.output, load = (s.wheels[0].load + s.wheels[1].load + s.wheels[2].load) / (s.mass * G0);
-      if (s.onGround && load < 0.45 && o.gain > 0 && o.rudder !== 0 && o.aileron === 0 && o.elevator === 0) onGroundActive = true;
+      if (s.onGround && load < 0.45 && o.gain > 0 && o.rudder !== 0 && (o.aileron !== 0 || o.elevator !== 0)) onGroundActive = true;
       if (s.onGround && load > 0.55 && o.gain > 0) loadedActive = true;
-      if (!s.onGround && s.altitudeAGL > 0.9) { rateAtLift = Math.abs(s.angularVelocity.z) / DEG; break; }
+      if (!s.onGround && s.altitudeAGL > 0.9) { rateAtLift = Math.abs(s.angularVelocity.z) / DEG; pedalAtLift = r.c.rudder; break; }
     }
     r.input.keyUp('F6');
-    return { onGroundActive, loadedActive, rateAtLift };
+    return { onGroundActive, loadedActive, rateAtLift, pedalAtLift };
   }
-  it('active below half the weight on the skids (pedal term only), off above; the yaw rate at lift-off lower than with it off on the ground', () => {
-    const now = liftOff(def), r1 = liftOff(withoutTuning('groundYawLoad'));
-    report.groundYaw = { now, offOnTheGround: r1 };
+  it('active below half the weight on the skids (cyclic and pedal terms), off above; the yaw rate at lift-off lower than with it off on the ground', () => {
+    const now = liftOff(def), r1 = liftOff(withoutTuning('groundLoad'));
+    report.groundLoad = { now, offOnTheGround: r1 };
     expect(now.onGroundActive).toBe(true); expect(now.loadedActive).toBe(false);
     expect(r1.onGroundActive).toBe(false);
     expect(now.rateAtLift).toBeLessThan(r1.rateAtLift - 1);

@@ -826,6 +826,14 @@ export class InputSystem implements Subsystem {
     const kbEle = hwEle === null && mouse === null;
     const kbRud = hwRud === null;
     this.rudderHardware = !kbRud;
+    // The STAB ASSIST's trim follow-up moved the keyboard pedals (ControlInputs.pedalFollowUp): the pedal centre, what 5
+    // returns to, moves with them, as the cyclic's centre moves with the spring-trim anchor it walks.
+    const pedalFollowUp = c.pedalFollowUp ?? 0;
+    if (pedalFollowUp !== 0) {
+      n.rudder = clamp(n.rudder + pedalFollowUp, -1, 1);
+      if (this.written.rudder !== null) this.written.rudder += pedalFollowUp;
+      c.pedalFollowUp = 0;
+    }
 
     // Someone else (the autopilot) moved a control the keyboard alone was holding: the keyboard yoke follows
     // it, as the pilot's hand resting on a yoke the autopilot moves, so nothing jumps when it disconnects.
@@ -940,8 +948,9 @@ export class InputSystem implements Subsystem {
     c.aileron = mixCentring(n.aileron + this.kbAileron + rollBias, mouse?.aileron ?? null, hwAil);
     c.elevator = mixCentring(n.elevator + this.kbElevator, mouse?.elevator ?? null, hwEle);
     c.rudder = mixCentring(n.rudder + this.kbRudder + assist, null, hwRud);
-    // The STAB ASSIST's heading hold waits while the pilot works the pedals (a pedal key held, a hardware pedal in use).
-    if (this.profile.stabilityAssist) c.pedalWorked = yaw !== 0 || hwRud !== null;
+    // The STAB ASSIST's heading hold waits while the pilot works the pedals (a pedal key held, a hardware pedal in use);
+    // its trim follow-up moves only what the keyboard holds.
+    if (this.profile.stabilityAssist) { c.pedalWorked = yaw !== 0 || hwRud !== null; c.keyboardCyclic = kbAil && kbEle; c.keyboardPedals = kbRud; }
     this.written.aileron = kbAil ? c.aileron : null;
     this.written.elevator = kbEle ? c.elevator : null;
     this.written.rudder = kbRud ? c.rudder : null;

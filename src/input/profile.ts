@@ -41,8 +41,18 @@ export interface StabilityAssistTuning {
   stickAttitude: number;
   /** Series authority of the cyclic terms, +/- axis units (0.2 = 10 % of the full travel). */
   authority: number;
-  /** Series authority of the pedal term (rate damping, heading hold and its integral together), +/- axis units. */
+  /**
+   * Series authority of the pedal term's rate damping, +/- axis units; without `holdAuthority`, of the whole pedal term
+   * (rate damping, heading hold and its integral together).
+   */
   yawAuthority: number;
+  /**
+   * Series authority of the heading-hold part of the pedal term (the held heading's proportional and integral terms), and
+   * of the whole pedal term, +/- axis units; the rate damping stays within `yawAuthority`. While the pilot works the
+   * pedals the hold part is the integral alone, so a full-pedal turn meets the rate damping's authority only. Absent:
+   * `yawAuthority` for everything.
+   */
+  holdAuthority?: number;
   /**
    * Heading hold (rate command / direction hold): the heading captured when the pilot's pedal rests is held with this
    * gain, axis units per rad of heading error, and `kpsiI` per rad s of its integral (airborne only). Absent: the pedal
@@ -53,12 +63,27 @@ export interface StabilityAssistTuning {
   /**
    * The cyclic datum relaxes toward the flown attitude by one e-fold per this much fall of the (low-passed) airspeed while
    * the pilot is flying the cyclic, kt: a deceleration to the hover arrives at the hover trim. Absent: no such tracking.
+   * Not for a keyboard cyclic when `followUp` is set (the follow-up walks that stick to the trim instead).
    */
   datumRelaxKt?: number;
-  /** The pedal term also works on the ground once the skids carry less than this fraction of the weight. Absent: no. */
-  groundYawLoad?: number;
+  /**
+   * The assist also works on the ground once the skids carry less than this fraction of the weight (a lift-off, a skid
+   * touching in a low hover), the cyclic datum kept through the touch. Absent: airborne only.
+   */
+  groundLoad?: number;
   /** Full gain below [0], none above [1], KIAS. */
   fadeKias: readonly [number, number];
+  /**
+   * Trim follow-up of the KEYBOARD controls (ControlInputs.keyboardCyclic / keyboardPedals; a mouse yoke or hardware axis
+   * is the pilot's hand and is never moved): the series term, low-passed over `filterS`, beyond `deadBand` of its
+   * authority, walks the keyboard stick and pedals toward it at `cyclicGain` / `pedalGain` per second of the excess,
+   * capped at `cyclicRate` / `pedalRate` of the axis per second, so the term washes out and the keys rest at the trim.
+   * The cyclic moves through the spring-trim anchor (the keyboard centre follows it, so 5 returns to the followed trim)
+   * with the attitude datum moved along (the commanded attitude stays); the pedals through
+   * ControlInputs.pedalFollowUp into the keyboard's pedal centre, only while no pedal key is held. For keyboard pedals the
+   * follow-up replaces the heading hold's integral (it is the integral, with the pedal's whole travel). Absent: none.
+   */
+  followUp?: { filterS: number; deadBand: number; cyclicGain: number; cyclicRate: number; pedalGain: number; pedalRate: number };
 }
 
 export interface InputProfile {
