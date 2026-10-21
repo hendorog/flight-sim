@@ -23,11 +23,13 @@ const e = BO105_HUB_SET.equivalentHingeOffset, R = BO105_MAIN_ROTOR.radius, root
 /**
  * Bending rigidity of the parked blade, N m^2, over the flexible span from the equivalent hinge to the tip (4.33 m): set
  * so that a parked tip sits about 0.25 m below the hub plane (3V: parked Bo 105 blades in the reference photos sag
- * 0.2-0.3 m at the tip; plan 4). At rest the spring holds the rigid blade about 0.7 deg below the hinge plane (moment
- * balance: m g (r_cg - e) = 21.9 x 9.81 x 2.42 = 520 N m against K_beta x precone = 9.2e3 x 0.0436 = 401 N m), about
- * 0.06 m at the tip; the uniform-cantilever sag m g L^3 / (8 EI) makes up about 0.19 m: EI = 21.9 x 9.81 x 4.33^3 /
- * (8 x 0.19) = 1.1e4. D check: a uniform cantilever with this EI has a non-rotating first flap frequency of about 1.4 Hz
- * (the plan's "about 1 Hz"; no measured value was found). ESTIMATE.
+ * 0.2-0.3 m at the tip; plan 4). At rest the spring holds the rigid blade about 0.74 deg below the hinge plane (moment
+ * balance, on the solver's uniform blade of the 850 kg m^2 polar inertia, 20.68 kg, and hingelessSpring's 8,685 N m/rad:
+ * m g (r_cg - e) = 20.7 x 9.81 x 2.42 = 491 N m against K_beta x precone = 8.7e3 x 0.0436 = 379 N m), about 0.06 m at
+ * the tip; the uniform-cantilever sag m g L^3 / (8 EI) makes up about 0.19 m: EI = 20.7 x 9.81 x 4.33^3 / (8 x 0.19) =
+ * 1.08e4, rounded to 1.1e4 (sag 0.187 m; the tip 0.24 m below the hub plane in all). D check: a uniform cantilever with
+ * this EI and the blade's 5.41 kg/m has a non-rotating first flap frequency of about 1.35 Hz (the plan's "about 1 Hz";
+ * no measured value was found). ESTIMATE.
  */
 export const BO105_BLADE_BENDING_RIGIDITY = 1.1e4;
 

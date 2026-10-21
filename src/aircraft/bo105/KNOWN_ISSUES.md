@@ -27,7 +27,10 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 3. **Hover roll damping above the ESTIMATE band** (`bo105Derivatives` KNOWN HOVER-DAMPING GAP): hover Lp about -12.1 1/s
    (roll time constant 0.083 s) against -6..-10. With the harmonic inflow on, the hover roll damping rises by about the
    quasi-steady theory's 1/1.51 (RC docs section 8); at 80 kt Lp (-10.7) and the roll mode (10.9 1/s) are inside their
-   AR-280 bands. **No Bo 105 hover derivatives exist in the sources**: every hover handling number is unvalidated.
+   AR-280 bands. **No Bo 105 hover derivatives in the sources used**: DLR's hover identification of the Bo 105 (Kaletka /
+   von Grünhagen; Fu & Kaletka JAHS 1993) exists and was not obtained, so every hover handling number is unvalidated until
+   it is. Note for the architect: plan section 4 says the hover inflow gradient "cuts" roll damping; measured on this
+   definition it raises it (2200 kg IGE: Lp -8.8 with the harmonic inflow off, -12.1 with it on), as RC's docs say.
 4. **Rotor/inflow limits carried from the rotor core** (RC docs section 10): Zw -0.68 1/s against the envelope's -0.70
    edge (a climb-rate settling time of about 1.5 s against DLR's 1.0 s after a collective step); the rate cross-coupling
    ratio Lq/|Lp| 0.19 against 0.25-0.50 (Lq +2.1 and Mp -0.52 1/s are inside their own bands). `bo105Derivatives` KNOWN
@@ -39,12 +42,24 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    as measured: slope landings at 2200 kg peak at 14.4 kN m (15 deg left-down) and 14.3 (8 deg right-down) with LIMIT
    off, 16.7 (20 deg left-down) with LIMIT on; a smooth 2.5 g pull at 100 KIAS 3.1 kN m (yellow), a steady 60 deg turn at
    100 KIAS 1.8 kN m (green), a full lateral reversal at 80 KIAS 13.3 kN m (yellow). Level flight reads 1.6 kN m at 100
-   KIAS and 4.8 kN m (yellow) at 145 KIAS. The plan's estimate (LIMIT at about 16-17 deg of TPP tilt, about 40 kN m)
-   assumed a disc held level on a 15 deg slope, which the fitted lateral travel cannot do. The real indicator's
-   calibration is not published.
+   KIAS and 4.8 kN m (yellow) at 145 KIAS. In flap terms (D): the hub moment per radian of TPP-to-shaft flap is
+   (B/2)(e M_beta Omega^2 + K_beta) = 2 x (0.590 x 50.03 x 1976 + 8,685) = 134 kN m/rad, 2.34 kN m/deg, so **LIMIT is
+   6.6 deg of equivalent flap** and yellow starts at 1.1 deg; the plan's estimate was LIMIT at about 16-17 deg (about 40 kN
+   m), which assumed a disc held level on a 15 deg slope. The fitted lateral travel (+/-4.125 deg of blade cyclic, item 1)
+   caps the slope-landing hub moment near 14.4 kN m, so it set the LIMIT: **the "% = % of full travel" assumption is the
+   lever** (twice the lateral travel would roughly double the slope peaks and the LIMIT with them). The hub stiffness is
+   27 % below DLR's 183.7 kN m/rad (plan section 4, from AR-280; item 19). The real indicator's calibration is not
+   published.
 7. **OEI droop and torque** (`bo105Systems` KNOWN OEI-DROOP GAP, `bo105Performance` KNOWN OEI-TORQUE GAP): from 2 x 55 %
-   in the hover with the collective held the survivor at its N1 stop holds NR about 96.5 %, half a percent above the plan's
-   93-96 %, so the RPM light and the 650 Hz tone stay out; its torque peaks at about 103 % (inside 105 %). In a 3 ft IGE
+   in the hover with the collective held the survivor at its N1 stop (104.8 %, TOT 810 C) holds NR 96.8 % at 1 s, 96.14 %
+   at 5 s, through 96 % at 16 s and 95.87 % at 24 s: up to 0.14 % above the plan's 93-96 % from 5 s to 16 s, and never
+   down to 95 %, so the RPM light and the 650 Hz tone stay out; its torque peaks at 103.7 % (inside 105 %).
+   **TW's `tests/rotorcraft/twinOei.test.ts` is in BO's plan section 10 guard list and its T7b row is red at BO HEAD**
+   ("expected 96.12 to be less than or equal to 96"); at the merge base eb5919f it was already red on a different
+   assertion (survivor torque 106.39 % at NR 94.57 %, and T7c), which this rotor and engine map fix. twinOei's rig
+   (TW's `twinRig.ts`) re-spreads TW's `BO105_TURBOSHAFT_INDICATION` (datum 0.773, anticipation 0.39) over BO's refit
+   (0.774 / 0.469, rotorcraft.ts), so it does not fly BO's governor rigging. The band is TW's (BO may not edit the file):
+   an architect/TW decision to restate it (measured 96 +/-0.5, ESTIMATE) or record the red row as a TW exception. In a 3 ft IGE
    hover at 2200 kg with a cushion, NR falls to about 91 % and the survivor reads about 114 % (the power-turbine law,
    torque = T100 x (3 - 2 N2)); touchdown is gentle (0.6 m/s at 2.1 s).
 8. **The lead-lag degree of freedom is absent** (soft in-plane 0.66-0.73/rev): no air or ground resonance, no lag damper
@@ -68,23 +83,65 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    owner).
 14. **Ground idle and starts**: both levers at IDLE hold about 59 % NR on the ground (P5 FM "about 60 %"); one engine at IDLE
    about 49 %. The start, idle (64 % N1) and snap deceleration below 85 % N1 are the MD 500E's 250-C20B calibration.
+   T15 (both levers IDLE -> FLIGHT over 5 s): NR 58.9 -> 98 % in **4.35 s**, inside the lever ramp, against the plan's
+   10-20 s (ESTIMATE; `bo105Systems` KNOWN T15 TIME GAP); peak 101.3 %, split 2.9 %, TOT max 609 C. The T15 row asserts
+   98 % within 15 s with no lower bound, mirroring TW's assessed twinOei T15; the band is an architect/TW question (at flat
+   pitch the rotor needs about 240 kW to gain 9 %/s against about 513 kW available, so NR following the levers is
+   plausible).
 15. **Stabiliser and fuselage aerodynamics are ESTIMATES**: the stabiliser's effective lift slope (3.0 per rad, the Mw
    knob: Mw +0.040 at 80 KCAS, phugoid time to double 8.7 s) and the fuselage moment derivatives (a Munk estimate x 0.6)
    carry no measured data; AR-280's "NACA 0010/C020" profile is read as symmetric.
 16. **Airspeed limits**: the OEI 100 KIAS Vne (P5 FM 2-4) is not read by the limit reader (it knows power-off only).
-17. **The hover is unstable hands-off** (no source gives the Bo 105's hover modes): the 8-state hover model has an
-   oscillation of 0.53 rad/s (period 12 s) that doubles in 2.3 s (driven by Mu +0.094 1/(s m)). Left alone at the 15 m
-   hover scenario's trim the aircraft holds within 1 deg for about 8 s, then diverges and rolls into the ground by 20 s
-   (`index.html?aircraft=bo105&hover=1`, 2500 kg; the MD 500E stays put for 20 s). With the hold engaged (`&ap=1`, the
-   app's own hover URL) it hovers: position RMS 0.07 m calm, 2.3-2.5 m in 8 kt gusts, no disconnect (heliHold probe).
-   Real helicopters are unstable hands-off in the hover; how fast the Bo 105 diverges is the owner's judgement.
+17. **The hover is unstable hands-off, and the plan's own gate shot crashes** (no Bo 105 hover source was used; DLR's
+   hover identification exists, item 3). The 8-state hover model (`bo105Derivatives` hover-modes row, trace key
+   `hoverModes`), harmonic inflow ON as flown: 2200 kg IGE 3 ft, an oscillation zeta -0.52 at 0.60 rad/s (period 12 s,
+   doubles in 2.3 s), Mu +0.088 1/(s m), Lv -0.349, Lp -12.1, Mq -3.27; 2500 kg at 16 m (the hover scenario) zeta -0.49
+   at 0.62 rad/s (doubles in 2.3 s), Mu +0.099, Lv -0.384. With the inflow OFF the same airframe gives zeta -0.095 at
+   0.43 rad/s (doubles in 17 s; Mu 0.046, Lv -0.187, Lp -8.8) and 2500 kg / 16 m zeta -0.096 at 0.47 (15 s): the harmonic
+   inflow roughly doubles Mu and Lv and makes the hover divergence about seven times faster. At 80 kt Mu is 0.046 (DLR
+   0.029, AFDD 0). **Plan section 10 gate shot** (`index.html?aircraft=bo105&hover=1&cam=chase&resume=0&run=20`, 2500 kg,
+   16 m, 8 kt of wind, hands off): after 20 s roll 53.5 deg, crashed (main rotor strike), NR 424.7 rpm, torque 84.2 /
+   84.2 %, N1 101.2 % (W/shots/BO/bo105-hover.png); the MD 500E on the same URL is upright after 20 s (roll -5.8 deg,
+   2.7 m/s drift). With the hold engaged (`&ap=1`, the app's own hover URL) it hovers: after 20 s pitch +3.5, roll 3.0
+   left, torque 80.6 / 80.6 %, TOT 738 C (W/shots/BO/bo105-hover-ap.png); heliHold position RMS 0.07 m calm, 2.3-2.5 m in
+   8 kt gusts, no disconnect. A hingeless hover doubling in 2-4 s is the right order for the class, but nothing is tuned
+   until DLR's hover derivatives are sourced; how fast the Bo 105 diverges is the owner's judgement.
 18. **Hold autopilot on the Bo 105** (TW's `sim/rotorcraft/autopilot.ts`, tuned on the other types): the heliHold
    sequence overshoots its 40 kt speed step by 12 kt and settles in 28-30 s; heading steps overshoot 6.6-9.5 deg.
+19. **Rows that pass at their band edges** (no slack; owner judgement on each): 80 kt Lp -10.67 (edge -11.41), roll mode
+   10.85 1/s (edge 11.04), Mw +0.040 (edge +0.037); hover IGE roll 2.97 deg left (band 1-3 left); 145 KIAS pitch -8.8 deg
+   (band -6..-9); hover torque per engine 2500 kg OGE 82.7 % (79-83), 2500 kg IGE 72.0 % (72-78), 2200 kg IGE 61.8 %
+   (61-69). The polar inertia 850 kg m^2 (lower edge of the fitting band) and the stabiliser slope 3.0 were chosen to reach
+   these; the costs are a hub stiffness of 134 kN m/rad against DLR's 183.7 (-27 %; RC's R6 was run on its 900 kg m^2
+   fixture, not on this set) and an 80 kt phugoid that doubles in 8.7 s (zeta -0.20 at 0.39 rad/s) against DLR's 14 s
+   (zeta -0.15 at 0.33, P AR-280 Table 6.2.13). Ground effect sits at the strong edge too: HIGE - HOGE 3,100 ft at 2500 kg
+   against the CB-5 chart's 2,350. The CG 1.53 m below the hub (item 9; METU/Theodore 0.96 m) is the first thing to
+   cross-check against Padfield's Bo 105 data before the inertia is touched again.
+20. **Hover pedal authority is unvalidated and strong**: a full pedal step in the IGE hover (2200 kg) peaks at **165 deg/s
+   right and 129 deg/s left** (90 deg/s reached in 0.93 / 1.46 s) against the FM's 90 deg/s turn-rate limit; the test
+   asserts only >= 90 deg/s within 3 s. With N_ped fitted at 80 kt (0.049 rad/s^2 per %) and hover Nr -0.54 1/s the
+   implied steady rate is about 260 deg/s. No hover source; owner judgement.
+21. **The mass envelope's 1140 kg minimum is unreachable**: the TCDS minimum (P, facts.ts) sits 136 kg below this
+   airframe's empty mass (1276 kg, S Jane's CB), so the CG envelope's 1140 kg point is data only; the lightest rig case is
+   1400 kg. A CB-4 weighing record would settle it.
+
+## Integration (guards this package cannot turn green alone)
+
+- **GA `tests/aircraft/consistency.test.ts` bo105 row is red in the BO worktree** (green at the merge base eb5919f):
+  BO moved `geometry.fuselage.pilotEye` to `D.PILOT_EYE` (index.ts) and `reference.vne` to 145 KIAS, while the S0 stub
+  `visual.ts` (BX) and the panel (PN) still carry the MD 500E's eye point and 152 kt red line: "pilot's eye (x): geometry
+  1.53, visual 0.7531; (y) 0.36 vs -0.3302; (z) 0.24 vs -0.53218; airspeed red line: reference 145, panel 152". BX's
+  `visual.ts` (`pilotEye: point(D.PILOT_EYE)`) and PN's `panelMarkings.ts` (`redLine: V.vne`) resolve both: the
+  integrator merges BX and PN with or before BO (a BO-only merge turns integ's GA red; plan section 10 forbids adding it
+  to the baseline exceptions).
+- **twinOei T7b** (item 7): TW's row, red at BO HEAD by 0.12 % NR; TW/architect decision.
 
 ## Owner-facing AGENT choices in this package (not owner decisions)
 
-- The hub set: e 0.12 R, nu 1.11, polar inertia 850 kg m^2 (inside the fitting rule's band; 900 put Lp and the roll mode
-  outside their AR-280 bands on this airframe), control phase 28 deg (least squares to AR-280's off-axis ratios).
+- The hub set: e 0.12 R, nu 1.11, polar inertia 850 kg m^2 (inside the fitting rule's band, at its lower edge; 900 put Lp
+  and the roll mode outside their AR-280 bands on this airframe; costs in item 19), control phase 28 deg (least squares to
+  AR-280's off-axis ratios).
+- The mast-moment marks (item 6) and the stabiliser slope 3.0 (item 15, chosen to bring Mw to its band edge).
 - The control-travel rigging offsets (item 1), the ground attitude 1.25 deg nose-up (P5 FM Fig 1-1's 1.5 deg dimension
   read as nose-up), the keyboard aileron key (baseRate 0.07, maxRate 0.35, accelTime 1.5: a 1 s tap at 80 KIAS gives
   about 11 deg of bank 2 s after the release).

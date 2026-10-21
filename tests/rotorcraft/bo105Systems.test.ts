@@ -47,6 +47,27 @@ function massForTorque(pct: number, kt: number): number {
 /** T7c: the surviving engine over every OEI run in this file; T7b's NR samples (for its known-gap row). */
 const survivor = { n1Max: 0, tqMax: 0 };
 const t7b = { nrAt: [] as number[] };
+/** T15 (plan 5): both levers IDLE -> FLIGHT over 5 s from a 60 s ground idle, split unsynchronised; run once, shared by
+ *  the T15 row and its KNOWN T15 TIME GAP row. t98: s from the levers starting to NR 98 % (-1: never). */
+const t15 = (() => {
+  let x: { nr0: number; t98: number; peak: number; totMax: number; splitMax: number } | undefined;
+  return () => x ??= (() => {
+    const r = rig(2200, { onGround: true });
+    r.fm.state.rotorcraft!.twinTurboshaft!.splitPct = 0;
+    lever(r.c, 0, LEVER.idle); lever(r.c, 1, LEVER.idle);
+    run(r, 60);
+    const nr0 = gauges(r).nr;
+    let t98 = -1, peak = 0, totMax = 0, splitMax = 0;
+    run(r, 30, (t) => {
+      const v = LEVER.idle + (LEVER.flight - LEVER.idle) * Math.min(1, t / 5);
+      lever(r.c, 0, v); lever(r.c, 1, v);
+      const g = gauges(r);
+      if (t98 < 0 && g.nr >= 98) t98 = t;
+      peak = Math.max(peak, g.nr); totMax = Math.max(totMax, ...g.tot); splitMax = Math.max(splitMax, Math.abs(g.tq[0] - g.tq[1]));
+    });
+    return { nr0, t98, peak, totMax, splitMax };
+  })();
+})();
 /** Engine 2 fails (its lever to OFF) 1 s into the run; `seconds` with the collective held and the attitude held. */
 function failEngine2(r: Bo105Rig, seconds: number, heading = false) {
   const hold = attitudePilot(r, heading);
@@ -199,23 +220,19 @@ describe('starts and the twin ground sequence (P5 FM 4-9..4-14, 4-16, 4-18; plan
   }, 90_000);
 
   it('T15: both levers IDLE -> FLIGHT over 5 s (split unsynchronised): NR about 60 % at IDLE, no overshoot above 102 %, split <= 5 %, TOT < 779 C throughout; NR 98 % within 10 s of the levers reaching FLIGHT', () => {
-    const r = rig(2200, { onGround: true });
-    r.fm.state.rotorcraft!.twinTurboshaft!.splitPct = 0;
-    lever(r.c, 0, LEVER.idle); lever(r.c, 1, LEVER.idle);
-    run(r, 60);
-    const nr0 = gauges(r).nr;
-    let t98 = -1, peak = 0, totMax = 0, splitMax = 0;
-    run(r, 30, (t) => {
-      const v = LEVER.idle + (LEVER.flight - LEVER.idle) * Math.min(1, t / 5);
-      lever(r.c, 0, v); lever(r.c, 1, v);
-      const g = gauges(r);
-      if (t98 < 0 && g.nr >= 98) t98 = t;
-      peak = Math.max(peak, g.nr); totMax = Math.max(totMax, ...g.tot); splitMax = Math.max(splitMax, Math.abs(g.tq[0] - g.tq[1]));
-    });
-    report.T15 = { nr0, t98, peak, totMax, splitMax };
+    const { nr0, t98, peak, totMax, splitMax } = report.T15 = t15();
     expect(nr0).toBeGreaterThanOrEqual(55); expect(nr0).toBeLessThanOrEqual(65);
     expect(t98).toBeGreaterThan(0); expect(t98).toBeLessThanOrEqual(15);
     expect(peak).toBeLessThanOrEqual(102); expect(totMax).toBeLessThan(779); expect(splitMax).toBeLessThanOrEqual(5);
+  }, 120_000);
+  /**
+   * KNOWN T15 TIME GAP (ESTIMATE band, plan 5 T15 "NR 60 -> 98 % in 10-20 s"): NR follows the 5 s lever ramp and reaches
+   * 98 % in about 4.4 s, before the levers reach FLIGHT. The row above mirrors TW's assessed twinOei T15 (an upper bound
+   * only); this row keeps the plan's lower bound visible until the band is restated (an architect/TW question: at flat
+   * pitch the rotor needs about 240 kW to accelerate 9 %/s against about 513 kW available).
+   */
+  it.fails('KNOWN T15 TIME GAP — T15: NR reaches 98 % no sooner than 10 s after the levers start (plan 10-20 s)', () => {
+    expect(t15().t98).toBeGreaterThanOrEqual(10);
   }, 120_000);
 
   it('T16: one lever at IDLE in flight (OEI training): that engine reads needles split and torque 0, the other carries the load', () => {

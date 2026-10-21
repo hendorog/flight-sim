@@ -23,7 +23,7 @@ Known gaps are `it.fails` rows; none is fitted.
 | Hover IGE attitude | pitch +3.0 deg, roll 3.0 deg left | +1..+4; 1-3 left (ESTIMATE) |
 | Pitch in level flight | +0.4 (60 KIAS), -3.5 (100), -5.8 (120), -8.8 deg (145) | -1..+2, -2..-5, -4..-7, -6..-9 (ESTIMATE) |
 | Ground stance / lift-off | fuselage +1.35 deg on level ground; hover +3.0 (jump 1.6 deg) | within 1.5 deg of level; jump <= 2 deg |
-| Hover turn, full pedal (IGE) | 90 deg/s at 0.9 s (right), 1.5 s (left); peaks 165 / 129 deg/s | >= 90 deg/s within 3 s (ESTIMATE; FM limit 90 deg/s) |
+| Hover turn, full pedal (IGE) | 90 deg/s at 0.9 s (right), 1.5 s (left); peaks 165 / 129 deg/s (implied steady about 260 deg/s: N_ped 0.049 per %, hover Nr -0.54) | >= 90 deg/s within 3 s (ESTIMATE; FM limit 90 deg/s; no hover source, the peaks are not bounded) |
 | Low g (100 KIAS) | roll acceleration to a 10 % step: 87.8 % of the 1 g value at 0.2 g, 84.8 % at 0.01 g | >= 80 % (D) |
 | Hover torque per engine, SL | 2500 kg OGE 82.7 %, IGE 72.0 %; 2200 kg OGE 70.6 %, IGE 61.8 % | 79-83, 72-78, 67-74, 61-69 % (D from the ceiling row) |
 | Hover ceilings, 2500 kg ISA | HOGE 3,130 ft, HIGE 6,235 ft; HIGE 8,510 ft at 2300 kg | 3,850 / 6,200 / 8,900 ft +/-1,500 (ESTIMATE / S) |
@@ -34,6 +34,12 @@ Known gaps are `it.fails` rows; none is fitted.
 | Double engine failure at 120 KIAS | nose LEFT; NR 95 % at 0.22 s, 85 % at 0.73 s | LEFT; 0.15-0.35 s; 0.6-1.1 s (P sense / D) |
 | One engine out (T7a, 60 KIAS, 2 x 45 %) | NR min 97.5 %; survivor 88.1 % settled; nose LEFT first at 6.7 deg/s | >= 92 %; <= 95 %; LEFT <= 10 deg/s |
 | Ground idle, both levers IDLE | 58.9 % NR at 64 % N1 | about 60 % (P5 FM 4-11) |
+
+**Rows at their band edges** (little or no slack; KNOWN_ISSUES 19): 80 kt Lp -10.67 (edge -11.41), roll mode 10.85 1/s
+(edge 11.04), Mw +0.040 (edge +0.037); hover roll 2.97 deg left (1-3); 145 KIAS pitch -8.8 deg (-6..-9); hover torque
+2500 kg OGE 82.7 % (79-83), 2500 kg IGE 72.0 % (72-78), 2200 kg IGE 61.8 % (61-69). The inertia 850 kg m^2 and the
+stabiliser slope 3.0 reach these at a cost: hub stiffness 134 kN m/rad against DLR's 183.7 (-27 %), an 80 kt phugoid
+doubling in 8.7 s against DLR's 14 s, and a HIGE - HOGE gap of 3,100 ft against the CB-5 chart's 2,350.
 
 ## 2. The hub and the rotor (hub.ts, coning.ts)
 
@@ -68,9 +74,10 @@ of +/-0.02 cyclic steps against the means of the DLR and AFDD control derivative
 this airframe: best **28 deg** (RC's fixture: 30). Before/after: lateral-step M/L -0.106 -> -0.065, longitudinal-step
 L/M +0.203 -> +0.172 (bands 0.25 / 0.3). Lq and Mp are identical with the phase and without it (1e-6).
 
-**Parked blades** (coning.ts): the solver's uniform blade (21.9 kg), the derived spring, a droop stop -1.5 deg (ESTIMATE)
-and a bending rigidity 1.1e4 N m^2 (3V: parked tip about 0.25 m below the hub plane in the photos; D non-rotating first
-flap about 1.4 Hz). The exterior draws the blades from this definition (BX imports `BO105_BLADE_CONING`).
+**Parked blades** (coning.ts): the solver's uniform blade (20.7 kg of the 850 kg m^2 polar inertia; M_beta 50.0 kg m,
+I_beta 146 kg m^2 about the hinge), the derived spring (8,685 N m/rad), a droop stop -1.5 deg (ESTIMATE) and a bending
+rigidity 1.1e4 N m^2 (3V: parked tip about 0.25 m below the hub plane in the photos; D rest angle 0.74 deg below the
+hinge plane, 0.06 m at the tip, plus 0.19 m of sag; non-rotating first flap about 1.35 Hz). The exterior draws the blades from this definition (BX imports `BO105_BLADE_CONING`).
 
 ## 3. Airframe, mass and CG (rotorcraft.ts, dimensions.ts, mass.ts)
 
@@ -89,7 +96,8 @@ stabiliser's effective lift slope is the **Mw knob** (plan 6.2): 3.5 -> **3.0** 
 KCAS (envelope from +0.037), phugoid time to double 12.3 -> 8.7 s (7-30 s). Slopes 2.5 and below give Mw +0.048..0.065
 but a phugoid doubling in 6.6 s or less.
 
-**Mass.** Empty 1276 kg (S Jane's); seats and cargo 3V (pilot RIGHT front, P TCDS p11); tanks under the floor; the AR-280
+**Mass.** Empty 1276 kg (S Jane's; 136 kg above the TCDS minimum of 1140 kg, so that envelope point is never flown, the
+lightest rig case being 1400 kg); seats and cargo 3V (pilot RIGHT front, P TCDS p11); tanks under the floor; the AR-280
 inertia (P) about the CG of the 2200 kg typical loading. The empty CG is not a weighing: longitudinally it is placed so
 the typical loading sits at mid-envelope for 2200 kg (STA 3.202 m, D from the TCDS p11 lines), vertically it comes from
 an ESTIMATE component breakdown (blades and hub high, the FS 72B 152 kg (P MM), engines, deck, boom, cabin, interior,
@@ -134,8 +142,11 @@ Dutch roll 2.70 rad/s zeta 0.18 (2.5 +/-30 %, 0.05-0.30), phugoid zeta -0.20 at 
 8.7 s; DLR -0.15 / 0.33 rad/s). R20 (matrix pencil, 0.1 s lateral pulse at 78 KIAS): 12.6 rad/s, zeta 0.63 (P LS-178
 13.7 rad/s +/-30 %, 0.3-0.7). Hover (IGE, SL; ESTIMATE bands): L_lat 0.189 and M_lon 0.082 per % (inside), **Lp -12.1 1/s,
 tau 0.083 s** (band -6..-10, 0.1-0.2 s: miss; the hover inflow gradient, RC docs section 8). The hover's 8-state model:
-roll subsidence 12.1 1/s, pitch 3.56 1/s, an unstable oscillation 0.31 +/- 0.53i (period 12 s, doubling in 2.3 s; Mu
-+0.094), a stable one -0.29 +/- 0.58i, subsidences 0.24 and 0.50 1/s.
+an unstable oscillation zeta -0.52 at 0.60 rad/s (period 12 s, doubling in 2.3 s; Mu +0.088 1/(s m), Lv -0.349) and a
+stable one zeta 0.47 at 0.64 rad/s; roll subsidence 12.0 1/s, pitch 3.55 1/s, subsidences 0.23 and 0.48 1/s. With the harmonic inflow OFF: zeta -0.095 at 0.43 rad/s (doubling in 17 s; Mu +0.046,
+Lv -0.187, Lp -8.8, Mq -2.39): the inflow gradient raises the hover roll damping (-8.8 -> -12.1, against plan section 4's
+"cuts") and roughly doubles Mu and Lv. At the hover scenario's 2500 kg / 16 m: zeta -0.49 at 0.62 rad/s (inflow off
+-0.096 at 0.47). Trace key `hoverModes`. No Bo 105 hover source was used; DLR's hover identification exists.
 
 ## 6. Engines, governor and fuel (powerplant.ts, rotorcraft.ts)
 
@@ -160,11 +171,13 @@ draw is requested from the fuel system's owner.
 Starts (one engine, OAT 15 C): light-off at 13 % N1 (1.7 s), TOT peak 795 C (never above 810), the rotor turning by 25 % N1,
 starter off at 58 % N1 (28.8 s), idle 64.2 % N1. T14: engine 2's start with engine 1 at IDLE dips NR 0.75 % (49.1 % NR on one
 engine), engages at 16.0 s, no N1-split light 10 s later. T15: both levers IDLE -> FLIGHT over 5 s: NR 58.9 -> 98 % in 4.4 s,
-peak 101.3 %, split 2.9 %, TOT max 609 C. T16: one lever at IDLE in flight: that engine 0.0002 %, needles split, the other
+peak 101.3 %, split 2.9 %, TOT max 609 C (plan 10-20 s: below it, KNOWN T15 TIME GAP; the row asserts <= 15 s as TW's
+twinOei T15 does). T16: one lever at IDLE in flight: that engine 0.0002 %, needles split, the other
 80.4 % (82.2 % before), NR 99.4 %. Snap deceleration: N1 77.4 -> 65 % in 2.34 s, never below 64.4 % (P5: >= 2 s, >= 59 %).
 OEI: T7a NR min 97.5 %, survivor 88.1 % settled, 93.8 % peak, N1 101.9 %, nose LEFT 6.7 deg/s; T7b survivor at 104.8 % N1,
-103.7 % torque, 810 C, NR 96.8 -> 95.9 % over 25 s (band 93-96: **0.5 % above for the first 15 s, so the RPM light stays
-out**, known gap), collective down at 2 %/s restores 97 %; level flight on one engine at 2200 kg: 82.2 / 84.1 / 89.2 %
+103.7 % torque, 810 C, NR 96.8 % at 1 s, 96.14 % at 5 s, 96.0 % at 16 s, 95.87 % at 24 s (band 93-96 from 5 s: **up to
+0.14 % above until 16 s, and never down to 95 %, so the RPM light stays out**, known gap; TW's twinOei T7b, in this
+package's guard list, fails on the same 0.12 %: KNOWN_ISSUES 7), collective down at 2 %/s restores 97 %; level flight on one engine at 2200 kg: 82.2 / 84.1 / 89.2 %
 at 60 / 70 / 80 KIAS. Double engine failure at 120 KIAS: NR 95 % at 0.22 s, 85 % at 0.73 s, nose LEFT.
 
 ## 7. Mast-moment indicator (hub.ts BO105_MAST_MOMENT)
@@ -179,7 +192,11 @@ within 30 ft/min) 1.8 kN m; level flight 1.4 (hover) / 1.6 (100 KIAS) / 4.8 kN m
 15 and 8 deg landings below it, the 20 deg above) and **yellow from 0.17 of it, 2.6 kN m** (the pull in yellow, the turn
 green; the slope landings in the top third of yellow, above 11.2 kN m); before: a 24 kN m / 0.5 placeholder. The plan's
 "LIMIT at about 16-17 deg of TPP-to-shaft tilt" (about 40 kN m) assumed the disc held level on a 15 deg slope; the fitted
-lateral travel caps the TPP tilt near 4 deg, so the slope peaks are set by the stop. PN's panel reads these two numbers.
+lateral travel caps the TPP tilt near 4 deg, so the slope peaks are set by the stop. In flap terms (D): (B/2)(e M_beta
+Omega^2 + K_beta) = 2 x (0.590 x 50.03 x 1976 + 8,685) = 134 kN m/rad = 2.34 kN m/deg, so LIMIT is **6.6 deg** of
+equivalent TPP-to-shaft flap (yellow from 1.1 deg), against the plan's 16-17 deg. The lever is the "% = % of full travel"
+assumption (section 4): twice the lateral travel would roughly double the slope peaks and the LIMIT. PN's panel reads
+these two numbers.
 
 ## 8. Performance calibrations
 
@@ -207,13 +224,18 @@ pre-take-off "trim to 98 %" is the pilot's beep).
 
 `index.html?aircraft=bo105&hover=1&ap=1` (the app's hover test, 2500 kg, 16 m, 8 kt of wind, hold engaged), after 20 s:
 NR 424.7 rpm (100.0 %), N1 99.6 / 99.6 %, N2 100.0 / 100.0 %, torque 80.6 / 80.6 %, TOT 738 C, mast moment 1.7 kN m,
-pitch +3.5 deg, roll 3.0 deg left, split synchronised (-1.3 % N1). Without the hold (`hover=1` alone) the hover diverges
-after about 8 s and the rotor strikes the ground near 20 s (the unstable hover oscillation, section 5's hover model: 0.53
-rad/s, doubling in 2.3 s). heliHold probe (`AC=bo105`, 32 flights): no disconnect; hover position RMS 0.07 m calm, 2.3-2.5
+pitch +3.5 deg, roll 3.0 deg left, split synchronised (-1.3 % N1) (W/shots/BO/bo105-hover-ap.png). **The plan section 10
+gate shot** (`hover=1` without the hold, hands off) after 20 s: roll 53.5 deg, crashed (main rotor strike), NR 424.7 rpm,
+N1 101.2 / 101.2 %, torque 84.2 / 84.2 % (W/shots/BO/bo105-hover.png): the hover diverges after about 8 s (section 5's
+hover model: zeta -0.49 at 0.62 rad/s at 2500 kg / 16 m, doubling in 2.3 s; inflow off 15 s). The MD 500E on the same
+URL is upright after 20 s (roll -5.8 deg, 2.7 m/s drift). Owner judgement; nothing is tuned before DLR's hover
+derivatives are sourced. heliHold probe (`AC=bo105`, 32 flights): no disconnect; hover position RMS 0.07 m calm, 2.3-2.5
 m in 8 kt gusts; the sequence's 40 kt step overshoots by 12 kt (the hold's tuning, TW's).
 
 ## 11. Known gaps (it.fails rows; `src/aircraft/bo105/KNOWN_ISSUES.md` has the list)
 
 Zw (rotor/inflow, structural); Lq/|Lp| 0.19; hover Lp -12.1; pedal-step sideslip 4 deg; 120 KIAS stick 0.44 of travel;
-rearward margin 5.2 %; AEO climb +34 %; autorotation collective 0.08 of travel; descent weight effect +0.5 %; T7b NR 96 %
-with the light out; OEI IGE cushion torque 114 %.
+rearward margin 5.2 %; AEO climb +34 %; autorotation collective 0.08 of travel; descent weight effect +0.5 %; T7b NR 96.1 %
+with the light out; T15 98 % NR in 4.35 s (plan 10-20 s); OEI IGE cushion torque 114 %. Guards red at BO HEAD and not
+fixable in BO's files: GA consistency bo105 row (BX/PN stubs; resolved by merging BX and PN with or before BO) and TW's
+twinOei T7b (KNOWN_ISSUES "Integration").

@@ -52,7 +52,8 @@ export const BO105_TYPICAL = bo105Payload([90, 90, 80, 80, 80, BO105_MASS_KG.typ
 
 /**
  * Empty-airframe component breakdown, kg at height above the skid soles, m (ESTIMATE; no weighing record or mass
- * statement was found): the four 21.9 kg blades of the solver's uniform blade (hub.ts) at the hub, 2.95 m; hub,
+ * statement was found): four blades, 88 kg, at the hub, 2.95 m (22 kg each, ESTIMATE: the 900 kg m^2 uniform blade; the
+ * solver's blade of the adopted 850 kg m^2 is 20.7 kg, a 5 kg difference left inside this ESTIMATE breakdown); hub,
  * swashplate and controls 110 kg at 2.85 m; the FS 72B, 152 kg (P MM ch 11 p5) at 2.35 m; two 250-C20B with their
  * accessories and exhausts 160 kg at 2.30 m; deck, cowlings, oil and hydraulic systems 60 kg at 2.20 m; tail boom, fin,
  * stabiliser, tail rotor, gearboxes and shafts 90 kg at 1.85 m; the cabin structure 372 kg at 1.20 m; interior, seats,

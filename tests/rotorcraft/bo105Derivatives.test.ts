@@ -3,7 +3,8 @@
 // LS-178 (P), under the section 4 fitting rule (harmonic inflow ON, nu 1.10-1.12, polar inertia 850-950 kg m^2; the knobs
 // are controlPhase and the inertia; known misses are reported as it.fails, never fitted). Control derivatives are per %
 // of FULL travel (an assumption, docs/bo105-flight-model.md). The hover handling rows are ESTIMATE (no Bo 105 hover
-// derivatives were found); owner judgement overrides. BO105_TRACE=<dir> writes bo105Derivatives.json.
+// derivatives in the sources used: DLR's hover identification of the Bo 105 exists and was not obtained); owner
+// judgement overrides. BO105_TRACE=<dir> writes bo105Derivatives.json.
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, FT, KT, v3 } from '../../src/core/math';
 import type { AircraftDefinition } from '../../src/aircraft/types';
@@ -184,11 +185,31 @@ describe('hover handling, 2200 kg IGE (3 ft skids), SL (ESTIMATE bands, plan 6.2
   /**
    * KNOWN HOVER-DAMPING GAP (ESTIMATE band): with the harmonic inflow ON the hover roll damping is about 25 % above the
    * band's edge (RC docs section 8: in the hover the inflow gradient raises the hub's share of Lp by about 1/1.51 of the
-   * Lock number, as the quasi-steady theory predicts; at 80 kt it does not). No Bo 105 hover derivatives were found, so the
+   * Lock number, as the quasi-steady theory predicts; at 80 kt it does not). No Bo 105 hover derivatives were obtained (DLR's exist), so the
    * band itself is an ESTIMATE; the 80 kt Lp and roll mode sit inside their AR-280 bands. One assertion, as it.fails.
    */
   it.fails('KNOWN HOVER-DAMPING GAP — Lp -6 to -10 1/s, i.e. a roll time constant 0.1-0.2 s (-1/Lp)', () => {
     const lp = ige().rows.L[COLUMN.p];
     expect(lp >= -10 && lp <= -6, `Lp ${lp}, tau ${-1 / lp} s`).toBe(true);
   }, 30_000);
+  /**
+   * The hands-off hover (KNOWN_ISSUES 17, docs section 10): the 8-state hover modes with the harmonic inflow on and off,
+   * at 2200 kg IGE (3 ft) and at the in-sim hover scenario's 2500 kg, 16 m. Reported for the owner, not fitted: no Bo 105
+   * hover source was used (a DLR hover identification exists and was not obtained). The one assertion pins the documented
+   * state (an unstable hover oscillation with the inflow on), so a change that stabilises it has to update the docs.
+   */
+  it('records the hover modes, harmonic inflow on and off (reported; the hover oscillation is unstable with the inflow on)', () => {
+    const off = withHub({ harmonicInflow: false });
+    const at = (kg: number, height: number, dd: AircraftDefinition = def) => {
+      const x = quasiStaticDerivatives(rig(kg, { kt: 0, height, def: dd }));
+      const m = linear(x), osc = m.oscillations.find((o) => o.omega < 1.5 && o.zeta < 0) ?? m.oscillations[0];
+      return { Mu: x.rows.M[COLUMN.u], Lv: x.rows.L[COLUMN.v], Lp: x.rows.L[COLUMN.p], Mq: x.rows.M[COLUMN.q], Nr: x.rows.N[COLUMN.r],
+        hoverOscillation: { ...osc, timeToDouble: osc.zeta < 0 ? Math.LN2 / (-osc.zeta * osc.omega) : Infinity }, modes: m };
+    };
+    const igeHeight = d.skids.z + 3 * FT, scenarioHeight = d.skids.z + 16;
+    const ige2200 = { inflowOn: at(2200, igeHeight), inflowOff: at(2200, igeHeight, off) };
+    report.hoverModes = { ige2200, scenario2500at16m: { inflowOn: at(2500, scenarioHeight), inflowOff: at(2500, scenarioHeight, off) } };
+    expect(Number.isFinite(ige2200.inflowOn.Mu) && Number.isFinite(ige2200.inflowOn.Lv)).toBe(true);
+    expect(ige2200.inflowOn.hoverOscillation.zeta).toBeLessThan(0);
+  }, 120_000);
 });

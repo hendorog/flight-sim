@@ -60,7 +60,10 @@ export const BO105_BUS_DEAD_VOLTS = 18;
  *  tank. */
 export const BO105_FUEL = { supplyKg: 74, mainKg: 382, lowFuelKg: 60 } as const;
 
-/** Masses, kg (P TCDS p10; P5 FM 2-2): max 2500, min 1140; typical 2200 (AR-280 flight-test). */
+/** Masses, kg (P TCDS p10; P5 FM 2-2): max 2500, min 1140; typical 2200 (AR-280 flight-test). `min` is the TCDS
+ *  structural minimum flying mass, kept as envelope data: this airframe's empty mass (reference.emptyKg 1276, S Jane's
+ *  Bo 105 CB) plus a pilot sits above it, so no loading reaches 1140 kg and the CG envelope's 1140 kg point is never
+ *  flown (the lightest rig case is 1400 kg). A CB-4 weighing record below 1276 kg would make it reachable. */
 export const BO105_MASS_KG = { max: 2500, min: 1140, typical: 2200 } as const;
 /** CG limits, mm aft of the datum (P TCDS p11): fwd 3081 at 1140 kg, 3038 at 1900 kg, 3082 at 2500 kg; aft 3395 at <= 2000
  *  kg, 3270 at 2500 kg; lateral +/-100 mm to 2400 kg, +/-80 above. */
