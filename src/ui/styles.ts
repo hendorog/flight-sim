@@ -110,6 +110,16 @@ ${FLIGHT_CUES_CSS}
 #fsui .ctlw-vbar.dim { opacity: .35; }
 #fsui .ctlw-text { margin-top: 7px; }
 #fsui .ctlw-text b { color: var(--fg); font-weight: 600; font-size: 12px; margin-left: 2px; }
+#fsui .ctlw-ring { position: absolute; left: 26px; top: 26px; width: 12px; height: 12px; border-radius: 50%; border: 1px solid #6ff0a0;
+  box-sizing: border-box; }
+#fsui .ctlw-coll { height: 64px; width: 8px; }
+#fsui .ctlw-coll i { background: #6ff0a0; }
+#fsui .ctlw-idle { position: absolute; left: -2px; right: -2px; height: 1px; background: rgba(255,255,255,.7); z-index: 1; }
+#fsui .ctlw-words { display: flex; gap: 4px; font-size: 9.5px; color: var(--fg); }
+#fsui .ctlw-nr.warn { color: var(--warn); }
+#fsui .ctlw-chip { margin-top: 6px; display: inline-block; padding: 2px 6px; border-radius: 5px; border: 1px solid rgba(111,240,160,.6);
+  color: #6ff0a0; font-weight: 700; font-size: 10.5px; letter-spacing: .08em; }
+#fsui .ctlw-chip.dim { opacity: .45; }
 #fsui .ctlw-hint { margin-top: 5px; color: var(--warn); font-size: 11.5px; letter-spacing: .02em; white-space: nowrap; }
 
 /* ---------------- Cockpit panel tooltip ---------------- */

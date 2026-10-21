@@ -157,6 +157,8 @@ export interface YokeIndicator {
   mouseArmed?: boolean;
   /** STAB ASSIST switched on (true) or off (false) on a type that has it; absent on the others. */
   stabilityAssist?: boolean;
+  /** The keyboard's centre (what 5 returns to) on a type with "keyboard trim here" (InputProfile.setTrimHere). */
+  keyboardCentre?: { aileron: number; elevator: number };
 }
 
 const CAMERA_CYCLE: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
@@ -947,6 +949,10 @@ export class InputSystem implements Subsystem {
       (kbAil && Math.abs(this.kbAileron) > OFF_CENTRE) || (kbEle && Math.abs(this.kbElevator) > OFF_CENTRE) || (kbRud && Math.abs(this.kbRudder) > OFF_CENTRE);
     i.keyboardElevator = kbEle ? this.kbElevator : 0;
     if (this.profile.stabilityAssist) i.stabilityAssist = !!this.assists.stabilityAssist;
+    if (this.profile.setTrimHere) {
+      const k = (i.keyboardCentre ??= { aileron: 0, elevator: 0 });
+      k.aileron = n.aileron; k.elevator = n.elevator;
+    }
   }
 
   /** The control differs from what the keyboard wrote to it last frame (another writer moved it). */

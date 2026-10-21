@@ -6,7 +6,8 @@
 // mastMoment) are read defensively: absent, a readout shows a dash.
 import { engineControl, type AircraftState, type ControlInputs, type EngineControlKey } from '../../core/types';
 import type { UiProfile } from '../types';
-import { BO105_N2_BEEP, BO105_POWER_LEVER, BO105_TORQUE_PCT } from './facts';
+import { BO105_N2_BEEP, BO105_POWER_LEVER, BO105_TORQUE_PCT, BO105_WARNINGS } from './facts';
+import { BO105_INPUT } from './input';
 import { bo105MastMomentPct, bo105TorquePct } from './panelMarkings';
 import { BO105_TWIN } from './twin';
 
@@ -30,6 +31,17 @@ const splitFraction = (s: AircraftState): number => {
 
 export const BO105_UI: UiProfile = {
   controlName: 'stick',
+  // The control box (flyability pass F4): in the cockpit view it is the keyboard pilot's only readout (the HUD is for the
+  // external views). The collective, NR against the warning unit's 95 / 103 % (P5 FM 3-16), the engine keys' selection
+  // as 1 / 2 / BOTH, the two power levers with the IDLE stop and OFF / IDLE / FLT, the keyboard centre (the spring-trim
+  // anchor) and the STAB ASSIST chip.
+  controlBox: {
+    engineNames: SIDES,
+    lever: { label: 'PWR', idle: BO105_POWER_LEVER.groundIdle, word: (v) => { const w = leverWord(v); return w === 'FLIGHT' ? 'FLT' : w; } },
+    nr: { low: BO105_WARNINGS.nrLowPct, high: BO105_WARNINGS.nrHighPct, read: (s) => s.rotorcraft?.turboshaft?.nrPct ?? null },
+    stabilityAssist: { title: 'STAB ASSIST (Shift+A): a sim aid that holds the attitude below 30 KIAS. The CB-4 has no SAS; the optional IFR-kit SAS (FMS 11-2) is not modelled',
+      fadeKias: BO105_INPUT.stabilityAssist!.fadeKias },
+  },
   startupSteps: [
     ['Before start', 'Collective full down (F5), cyclic centred (5), both power levers OFF, BAT ON (24 V minimum). Press LAMP TEST: every lens lights except the two F lights, MM LIMIT and LOW FUEL, which have their own test'],
     ['Checks', 'Press each F lens (fire test) and hold MM TEST (needle to LIMIT, lamp on). Fuel PUMP 1 / PUMP 2 ON, EMERG FUEL VALVE 1 / 2 open, ANTI-COLL ON'],
@@ -81,14 +93,19 @@ export const BO105_UI: UiProfile = {
       `${s.rotorcraft.vneKias.toFixed(0)} KIAS${s.rotorcraft.airspeedLimitExceeded ? ' EXCEEDED' : ''}`) : '—' },
   ] },
   hints: [
-    ['Cyclic / pedals', 'Arrow keys / Z, X; 5 centres. The keyboard cyclic holds its position (no spring centring). Trim: Home / End and 6 / 7 (spring trim)'],
-    ['Collective', 'F5 / F6 down / up. ENGINE TRIM is the 4-way switch on the collective head'],
+    ['Cyclic / pedals', 'Arrow keys / Z, X; 5 glides the stick back to the trim. The keyboard cyclic holds its position (no spring centring). Trim: Home / End and 6 / 7 (spring trim); Shift+5 sets the keyboard trim where the stick is (sim convenience: the CB-4 has beep trim only)'],
+    ['Collective', 'F5 / F6 down / up, fine (the hover keys). Shift+F5 / Shift+F6 at hand speed (engine failure, cushion). ENGINE TRIM is the 4-way switch on the collective head'],
+    ['Hover', 'The real Bo 105 is unstable in the hover. STAB ASSIST (on; Shift+A for the raw aircraft) is a sim aid that holds the attitude you set below 30 KIAS: a tap banks or pitches and stays there, so tap back to stop a drift. The mouse yoke (Y) is finer than the arrow keys'],
+    ['Hover hold', 'A when airborne at 2 m or more holds position, heading and height. Any cyclic, pedal or collective key takes it back; G heading bug, T / Shift+T height. With the mouse yoke (Y) take over slowly'],
+    ['Pedals in the hover', 'The yaw keeps building for a second or two after a pedal tap: tap, wait, then tap the other pedal before the heading arrives. The hover hold holds heading'],
+    ['Stick and flares', 'The Bo 105 hovers with the stick well aft and uses the forward travel for speed: flare moderately (15 – 20°). A big flare below 30 kt can run out of aft stick; the control box shows the stick and its trim'],
     ['Power levers', '8 / 9 / 0 select engine 1 / 2 / both. F1 IDLE, F2 / F3 lever down / up, F4 FLIGHT. In flight both levers sit at FLIGHT; the N2 governors do the rest'],
     ['ENGINE TRIM', 'Shift+; fore (N2 INCR) / ; aft (N2 DECR): both engines (N2 / NR 98 – 102 %, 100 % recommended). Left / right (see Controls) trades torque between the engines'],
     ['Torque sharing', 'Synchronise the two torque needles before take-off (FM 4-16). The engines may sit a few percent apart until you do'],
     ['Warnings', 'RPM flashes (FM 3-16; the 2 Hz rate is an estimate) for N1 split 12 % or more, NR 95 % or less, NR 103 % or more (with a tone; 108 % steady). T OIL: transmission oil over 105 °C or under 0.5 kp/cm²'],
     ['Mast moment', 'The indicator reads the rotor hub moment against its LIMIT: use the controls smoothly, and keep slope landings gentle. MM LIMIT is not a failure but a call to reduce the control input'],
-    ['Engine failure', 'Collective down, hold 98 – 102 % NR and the autorotation speed of 75 KIAS (FM 3-34); OEI power is 95 % torque'],
+    ['Engine failure', 'Both engines: the NR LOW beeping starts within 0.4 s. Shift+F5 at once (collective full down at hand speed; bare F5 is too slow), ease the nose up a few degrees, settle at 75 KIAS (FM 3-34). Every second of hesitation costs about 10 % NR. At 6 – 10 ft flare to about 5° and Shift+F6 to cushion'],
+    ['One engine out', 'OEI power is 95 % torque. An OEI cushion overtorques the surviving engine as NR droops: cushion late and only as much as needed'],
     ['Limits', 'Torque 86 % each (95 % one engine inoperative), TOT 779 / 810 °C (843 for 6 s), N1 105 %, N2 102 %, Vne 145 KIAS to 2400 kg, 130 above'],
   ],
 };
