@@ -85,13 +85,16 @@ export function stick(r: Ah56Rig, axis: 'lon' | 'lat', inches: number): number {
 
 export interface StepResponse {
   t: number[]; on: number[]; off: number[];
-  /** Maximum rate of the commanded axis, deg/s, its time, s, and the off-axis rate then. */
-  max: number; tMax: number; offAtMax: number;
+  /** Maximum rate of the commanded axis, deg/s, its time, s, and the off-axis rate then: the first peak of the response,
+   *  the first sample no later sample exceeds for PEAK_HOLD s (the rate the stick commands, before the attitude change
+   *  carries the aircraft into another condition). `peaked` false: the rate was still rising when the window closed
+   *  (max is then the last value and tMax the window), and the row cannot be read as a maximum. */
+  max: number; tMax: number; offAtMax: number; peaked: boolean; window: number;
   /** Maximum angular acceleration of the commanded axis, deg/s^2 (over 25 ms). */
   maxAcc: number;
   /** Rates at 1 s, deg/s. */
   at1: number; offAt1: number;
-  /** Time to 63 % of the maximum rate, s (ASTA-72's time constant). */
+  /** Time to 63 % of the maximum rate, s (ASTA-72's time constant), interpolated between the 1/240 s samples. */
   tau63: number;
 }
 /**
@@ -111,11 +114,33 @@ export function stepResponse(r: Ah56Rig, axis: 'lon' | 'lat', inches: number, se
     const i = on.length - 1;
     if (i % 6 === 0 && i > 0) { const acc = (a - prev) / (6 * DT); if (Math.abs(acc) > Math.abs(maxAcc)) maxAcc = acc; prev = a; }
   });
-  let k = 0;
-  for (let i = 1; i < on.length; i++) if (Math.abs(on[i]) > Math.abs(on[k])) k = i;
+  const k = firstPeak(on), peaked = k >= 0, kk = peaked ? k : on.length - 1;
   const i1 = Math.min(on.length - 1, Math.round(1 / DT));
-  const tau = t[on.findIndex((v) => Math.abs(v) >= 0.632 * Math.abs(on[k]))];
-  return { t, on, off, max: on[k], tMax: t[k], offAtMax: off[k], maxAcc, at1: on[i1], offAt1: off[i1], tau63: tau };
+  const level = 0.632 * Math.abs(on[kk]), j = on.findIndex((v) => Math.abs(v) >= level);
+  const tau = j > 0 ? t[j - 1] + (level - Math.abs(on[j - 1])) / (Math.abs(on[j]) - Math.abs(on[j - 1])) * (t[j] - t[j - 1]) : t[Math.max(j, 0)];
+  return { t, on, off, max: on[kk], tMax: peaked ? t[kk] : seconds, offAtMax: off[kk], peaked, window: seconds, maxAcc, at1: on[i1],
+    offAt1: off[i1], tau63: tau };
+}
+
+/** How long the first peak of a step response must stay unexceeded, s. */
+export const PEAK_HOLD = 0.5;
+/** Index of the first sample of |x| that no sample in the following PEAK_HOLD s exceeds; -1 if there is none whose hold
+ *  fits inside the record (still rising when the window closed). */
+export function firstPeak(x: readonly number[]): number {
+  const hold = Math.round(PEAK_HOLD / DT);
+  for (let k = 1; k + hold < x.length; k++) {
+    const v = Math.abs(x[k]);
+    if (v <= Math.abs(x[k - 1])) continue;
+    let ok = true;
+    for (let i = k + 1; i <= k + hold; i++) if (Math.abs(x[i]) > v) { ok = false; break; }
+    if (ok) return k;
+  }
+  return -1;
+}
+
+/** Margins of a value to the edges of a band [lo, hi], in % of the edge (negative: outside), for the reports. */
+export function margins(x: number, lo: number, hi: number): string {
+  return `${((x / lo - 1) * 100).toFixed(1)} % above ${lo}, ${((1 - x / hi) * 100).toFixed(1)} % below ${hi}`;
 }
 
 /**
