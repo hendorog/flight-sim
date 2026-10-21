@@ -11,7 +11,7 @@ import { stepCentre, stepKeyAxis } from '../../src/input/virtualYoke';
 import { AH56_INPUT } from '../../src/aircraft/ah56/input';
 import { AH56_REST_CONTACTS } from '../../src/aircraft/ah56/gear';
 import { hingelessBlade, hingelessSpring } from '../../src/physics/rotorcraft/hingeless';
-import { d, def, environment, gyroDef, margins, report, rig, rotorOf, run, stepResponse, stick, writeTrace, type StepResponse } from './ah56Rig';
+import { IN, d, def, environment, gyroDef, margins, report, rig, rotorOf, run, stepResponse, stick, writeTrace, type StepResponse } from './ah56Rig';
 import { createFlightModelFor } from '../../src/physics';
 import type { BladeElementFlightModel } from '../../src/physics/flightModel';
 import { ah56Loading } from '../../src/aircraft/ah56/mass';
@@ -89,18 +89,43 @@ describe('G6: AMCS attitude retention, no SAS (P Hoh-74: "no SAS was used")', ()
     expect(worst / DEG).toBeLessThanOrEqual(2);
   });
 
-  it('keyboard: a 0.3 s cyclic tap then hands off (the re-centring cyclic): the bank changes no more than 3 deg in the next 10 s', () => {
+  // The keyboard variant (plan G6, ESTIMATE). A tap must actually move the stick and the aircraft, or "the bank is held" is vacuous: the
+  // row asserts the peak keyboard stick and the bank the tap reached, then the retention. The key rate law (input.ts, the MD 500E's
+  // axis: 0.05 of travel per second rising to 0.35 over 1.2 s) moves the stick 0.05 in in 0.3 s, so the plan's 0.3 s tap is recorded
+  // as a KNOWN GAP and the passing row holds the key until the stick reaches 0.5 in.
+  const tap = (holdUntil: (kbIn: number, t: number) => boolean) => {
     const r = rig({ cfg: 'amcs', kt: 80 });
-    const a0 = r.c.aileron, tuning = AH56_INPUT.assists.axes.aileron;
-    let kb = 0, t = 0;
-    run(r, 0.3, () => { t += 1 / 240; kb = stepKeyAxis(kb, 1, r.fm.state.ias, 1 / 240, tuning, t); r.c.aileron = a0 + kb; });
-    run(r, 0.5, () => { kb = stepCentre(kb, 1 / 240); r.c.aileron = a0 + kb; });
+    const a0 = r.c.aileron, tuning = AH56_INPUT.assists.axes.aileron, half = gyroDef.configs.amcs.stickTravel.lateral / IN;
+    const roll0 = r.fm.state.roll;
+    let kb = 0, t = 0, peak = 0, bankMax = 0;
+    const track = () => { peak = Math.max(peak, Math.abs(kb) * half); bankMax = Math.max(bankMax, Math.abs(r.fm.state.roll - roll0)); };
+    while (!holdUntil(Math.abs(kb) * half, t) && t < 3) {
+      run(r, 1 / 240, () => { t += 1 / 240; kb = stepKeyAxis(kb, 1, r.fm.state.ias, 1 / 240, tuning, t); r.c.aileron = a0 + kb; });
+      track();
+    }
+    const held = t;
+    run(r, 0.5, () => { kb = stepCentre(kb, 1 / 240); r.c.aileron = a0 + kb; track(); });
     const bank0 = r.fm.state.roll;
     let worst = 0;
     run(r, 10, () => { worst = Math.max(worst, Math.abs(r.fm.state.roll - bank0)); });
-    report('G6 AMCS keyboard tap', { peakKeyStick: kb, bankAfterTapDeg: bank0 / DEG, worstChangeDeg: worst / DEG, target: '<= 3' });
-    trace.G6keyboard = { bankAfterTapDeg: r2(bank0 / DEG), worstChangeDeg: r2(worst / DEG) };
-    expect(worst / DEG).toBeLessThanOrEqual(3);
+    return { held, peakIn: peak, bankReachedDeg: bankMax / DEG, bankAfterDeg: (bank0 - roll0) / DEG, worstChangeDeg: worst / DEG };
+  };
+  let plan03: ReturnType<typeof tap> | undefined;
+  it('keyboard: the key held until the stick reaches 0.5 in, then hands off (re-centring cyclic): the bank moves >= 2 deg, then holds within 3 deg for 10 s', () => {
+    const k = tap((kbIn) => kbIn >= 0.5);
+    plan03 = tap((_kbIn, t) => t >= 0.3);
+    report('G6 AMCS keyboard tap', { heldS: k.held, peakKeyStickIn: k.peakIn, bankReachedDeg: k.bankReachedDeg, bankAfterTapDeg: k.bankAfterDeg,
+      worstChangeDeg: k.worstChangeDeg, plan03sPeakIn: plan03.peakIn, plan03sBankDeg: plan03.bankReachedDeg, plan03sWorstDeg: plan03.worstChangeDeg,
+      target: 'stick >= 0.5 in, bank >= 2 deg, then <= 3 deg over 10 s' });
+    trace.G6keyboard = { tap: k, plan03 };
+    expect(k.peakIn).toBeGreaterThanOrEqual(0.5);
+    expect(k.bankReachedDeg).toBeGreaterThanOrEqual(2);
+    expect(k.worstChangeDeg).toBeLessThanOrEqual(3);
+  });
+  it.fails('KNOWN GAP (plan G6 keyboard variant as written): a 0.3 s tap moves the stick >= 0.5 in and the bank >= 2 deg', () => {
+    expect(plan03).toBeDefined();
+    expect(plan03!.peakIn).toBeGreaterThanOrEqual(0.5);
+    expect(plan03!.bankReachedDeg).toBeGreaterThanOrEqual(2);
   });
 });
 

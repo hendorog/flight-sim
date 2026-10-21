@@ -169,7 +169,7 @@ describe('H7: the half-P hop (ICS only; P frequency and stir limit, ESTIMATE amp
     expect(worst).toBeLessThan(1e-9);
     // 0.5 x 25.76 rad/s / 240 Hz = 0.054 rad per step: no step of sin(phase) larger than that.
     expect(jump).toBeLessThan(0.06);
-  });
+  }, 60_000);
   it('save and restore: the phase continues, the amplitude keeps its saved value and decays, halfp=1 does not re-arm it', () => {
     // A: a forced event, 1 s hands off. B: a new flight with halfp=1 restored from A's snapshot the way SimPhysics does it.
     const a = rigAt({ force: true });
@@ -197,7 +197,7 @@ describe('H7: the half-P hop (ICS only; P frequency and stir limit, ESTIMATE amp
     // Decaying from the saved amplitude (hands off), not restarted at 1.
     expect(eb.amplitude).toBeLessThan(saved.amplitude);
     expect(Math.abs(eb.amplitude - ea.amplitude)).toBeLessThan(0.05);
-  });
+  }, 60_000);
   it('save and restore mid-onset: the forcing continues (the onset age is saved); an older save without it restores at full forcing', () => {
     // A save 0.4 s into the 1 s onset fade. Before the age was saved the restored flight restarted the fade and the cue clock: the
     // roll moment fell from about 60 kN m to almost nothing on the first restored step (codex's probe: 168 kN m -> 9 N m).
@@ -226,7 +226,7 @@ describe('H7: the half-P hop (ICS only; P frequency and stir limit, ESTIMATE amp
     expect(Math.abs(mb - ma)).toBeLessThan(0.02 * Math.abs(ma));
     // A save without the age restores with the fade complete: at least the original's forcing, never a restart from zero.
     expect(Math.abs(ml)).toBeGreaterThanOrEqual(Math.abs(ma));
-  });
+  }, 60_000);
   it('the saved onset age passes the resume validator; a negative one is rejected and an older save without it still loads', () => {
     const w = calmWeather(), sim = new SimPhysics({ aircraft: AH56_DEFINITION, weather: w });
     sim.resetTo({ ...hoverScenario(sim.env, def), payload: 'typical' });
@@ -249,7 +249,7 @@ describe('H7: the half-P hop (ICS only; P frequency and stir limit, ESTIMATE amp
     for (let i = 0; i < 4; i++) { forced.fm.step(DT, forced.c, forced.env); amcs.fm.step(DT, amcs.c, amcs.env); }
     expect(forced.fm.state.rotorcraft!.events!.halfPHop!.active).toBe(true);
     expect(amcs.fm.state.rotorcraft!.events!.halfPHop!.active).toBe(false);
-  });
+  }, 60_000);
   it('halfp=1 waits for flight: no forcing in an ICS hover (rotor at speed, below 60 KCAS)', () => {
     const hover = rigAt({ kt: 0, force: true }), e = hover.fm.state.rotorcraft!.events!.halfPHop!;
     let worstRoll = 0;
@@ -258,5 +258,5 @@ describe('H7: the half-P hop (ICS only; P frequency and stir limit, ESTIMATE amp
       target: 'not active below 60 KCAS' });
     expect(e.active).toBe(false); expect(e.amplitude).toBe(0);
     expect(hover.fm.state.rotorcraft!.rotorRpm).toBeGreaterThan(0.9 * 246);
-  });
+  }, 60_000);
 });

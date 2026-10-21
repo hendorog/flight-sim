@@ -236,13 +236,12 @@ describe('the hover readout (plan flights "AH-56 hover readout"): 20 s hands-off
       expect(g.roll).toBeLessThanOrEqual(t.right); expect(g.roll).toBeGreaterThanOrEqual(-t.left);
     }
   }, 60000);
-  it.fails('KNOWN GAP (RC contract request): the hands-off hover stays 2-7 deg left wing low for 20 s', () => {
-    // The trim balances the rotor at exactly zero airspeed, where Rotorcraft.compute applies no main-rotor in-plane force
-    // (`if (horizontal > 0)`, rotorcraft.ts). The first step's 1e-7 m/s of body velocity turns on the hingeless rotor's
-    // hover in-plane force (about 330 N) along that arbitrary direction: 625 N m of roll and 236 N m of pitch the trim
-    // never saw. The AMCS rate command then rolls the aircraft right at 0.2 deg/s and it diverges (+7.6 deg at 20 s; ICS
-    // -21 deg). With the in-plane force faded in over the first 0.3 m/s (an experiment, not committed) the AMCS holds
-    // -5.2 -> -5.5 deg and the ICS -5.1 -> -4.4 deg over the 20 s.
+  it('the hands-off hover stays 2-7 deg left wing low for 20 s (G9 band; was KNOWN GAP until the in-plane force became a vector)', () => {
+    // Until the final fix round the trim balanced the rotor at exactly zero airspeed, where Rotorcraft.compute applied the hingeless
+    // rotor's hover in-plane force (about 330 N) along the first step's 1e-7 m/s of drift: the AMCS rolled -5.4 -> -1.9 deg with
+    // +10.7 deg of pitch and 14.3 kt in 20 s, the ICS -5.3 -> -10.5 deg, 6.6 kt. The force is now applied as a vector in the BEM's
+    // own wind frame (rotorcraft.ts inPlaneForce): AMCS -5.35 -> -5.49 deg, +0.76 deg pitch, 0.41 kt; ICS -5.25 -> -5.13 deg, +0.53
+    // deg, 0.31 kt.
     const rolls = (['amcs', 'ics'] as const).map((config) => hover(config).roll);
     for (const roll of rolls) {
       expect(roll).toBeLessThanOrEqual(-2 * DEG);
