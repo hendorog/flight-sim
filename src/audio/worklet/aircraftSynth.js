@@ -618,11 +618,12 @@ class PropVoice {
   tune(tip, v) {
     this.tipF.set(500 + 5200 * tip * tip, 0.8);
     if (this.hsiLevel > 0) {
-      // The crack sets in at the onset Mach and grows with the square of the way to full (smoothstep), narrowing as it
-      // strengthens (the shock delocalising off the advancing tip): 9 % of the blade passage at onset, 3 % at full.
+      // The crack sets in at the onset Mach and grows steeply on the way to full (smoothstep, to the 1.5th power),
+      // narrowing as it strengthens (the shock delocalising off the advancing tip): 9 % of the blade passage at onset,
+      // 3 % at full.
       const x = Math.max(0, Math.min(1, (v[P.advTipMach] - this.hsiOnset) / (this.hsiFull - this.hsiOnset)));
       const s = x * x * (3 - 2 * x);
-      this.hsiAmp = this.hsiLevel * s * s;
+      this.hsiAmp = this.hsiLevel * s * Math.sqrt(s);
       this.hsiWidth = 0.09 - 0.06 * s;
     }
     if (this.revGrowl > 0) {
@@ -698,6 +699,7 @@ class PropVoice {
     const broad = this.tipF.process(this.pink.next()) * Math.pow(tip / 0.8, 5) * (0.5 + 0.35 * load) * (1 + 0.45 * Math.sin(bp));
     if (this.growl > 0) tone *= this.growlAt(load);
     const rv = this.revGrowl > 0 ? this.reverseAt(v, bp) : 0;
+    if (this.hsiAmp > 1e-5) return (tone * toneLevel + this.impulseAt() + broad * 0.5 + rv) * 0.7 * this.level;
     return (tone * toneLevel + broad * 0.5 + rv) * 0.7 * this.level;
   }
 
@@ -828,12 +830,13 @@ class PusherVoice {
     const load = Math.min(2, v[P.pusherLoad]);
     const pitch = Math.min(1.5, Math.max(0, v[P.pusherPitch]));
     this.tipF.set(600 + 5400 * tip * tip, 0.8);
-    // Loading sharpens the blade's passage: the harmonics roll off less steeply.
+    // Loading sharpens the blade's passage: the harmonics roll off less steeply. At these tip speeds (Mach 0.81
+    // static) the thickness noise is strong without any thrust: a large share of the tone does not need loading.
     const slope = 1.8 - 0.7 * Math.min(1, load / 1.5);
-    const toneLevel = (0.1 + 0.3 * load + 0.08 * pitch) * Math.pow(tip / 0.8, 3);
+    const toneLevel = (0.2 + 0.3 * load + 0.15 * pitch) * Math.pow(tip / 0.8, 3);
     for (let k = 1; k <= 8; k++) this.w[k] = Math.pow(k, -slope) * toneLevel;
     // A blade at a steep angle sheds more profile-drag and separated-flow noise.
-    this.broad = Math.pow(tip / 0.8, 5) * (0.3 + 0.25 * load + 0.25 * pitch);
+    this.broad = Math.pow(tip / 0.8, 5) * (0.3 + 0.25 * load + 0.5 * pitch);
     this.rev = Math.min(1.5, v[P.pusherReverse]);
     this.revLowF.set(140 + 120 * this.rev, 0.9);
     this.revMidF.set(480 + 420 * this.rev, 1.3);
