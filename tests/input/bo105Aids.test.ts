@@ -193,6 +193,46 @@ describe('the keyboard controls the trim follow-up may move (keyboardCyclic, key
   });
 });
 
+/**
+ * The tune pass (W/tune/bo105, item 1): the STAB ASSIST's height hold walks only a keyboard collective
+ * (ControlInputs.keyboardCollective) and waits while a collective key is held (collectiveWorked); the input module sets
+ * both on a type with a STAB ASSIST.
+ */
+describe('the keyboard collective the height hold may walk (keyboardCollective, collectiveWorked)', () => {
+  it('on the Bo 105: keyboardCollective set; collectiveWorked while F5 / F6 or Shift+F5 / Shift+F6 is held, cleared when they rest', () => {
+    const r = makeInputRig(BO105_INPUT, { collective: 0.4 });
+    r.setAirborne(true);
+    r.run(FRAME);
+    expect(r.c.keyboardCollective).toBe(true); expect(r.c.collectiveWorked).toBe(false);
+    for (const [code, shift] of [['F6', false], ['F5', false], ['F6', true], ['F5', true]] as const) {
+      r.input.keyDown(code, shift);
+      r.run(0.1);
+      expect(r.c.collectiveWorked, `${shift ? 'Shift+' : ''}${code}`).toBe(true);
+      r.input.keyUp(code);
+      r.run(FRAME);
+      expect(r.c.collectiveWorked).toBe(false);
+    }
+  });
+  it('a hardware collective lever in use: keyboardCollective false (the pilot\'s hand is never walked)', () => {
+    const r = makeInputRig(BO105_INPUT, { collective: 0.4 });
+    const g = r.input.gamepads;
+    g.poll = () => {};
+    g.readings.push({ control: 'collective', value: 0.4, moved: true, takeover: false } as never);
+    r.run(FRAME * 2);
+    expect(r.c.collective).toBeCloseTo(0.4, 6);
+    expect(r.c.keyboardCollective).toBe(false);
+  });
+  it('types without a STAB ASSIST never set them (MD 500E, R22)', () => {
+    for (const p of [MD500_INPUT, R22_INPUT]) {
+      const r = makeInputRig(p, { collective: 0.4 });
+      r.input.keyDown('F6');
+      r.run(0.2);
+      expect(r.c.keyboardCollective).toBeUndefined(); expect(r.c.collectiveWorked).toBeUndefined();
+      r.input.keyUp('F6');
+    }
+  });
+});
+
 describe('STAB ASSIST toggle (InputProfile.stabilityAssist; the physics side is tests/rotorcraft/bo105Assist.test.ts)', () => {
   it('on by default on the Bo 105; Shift+A switches it off and on, with a toast that calls it a sim aid; the yoke indicator carries it', () => {
     const r = makeInputRig(BO105_INPUT);

@@ -234,8 +234,11 @@ describe('STAB ASSIST heading hold (rate command / direction hold below 30 KIAS)
    * of travel. The hold's own authority (holdAuthority, 15 %) holds the 0.5 / 0.6 s taps on its own (the hand-held pedal,
    * whose integral stays: withoutTuning('followUp')); the keyboard pedals' trim follow-up takes the trim off the series
    * term and holds the 1 s tap too. Round 2's law (no hold authority, no follow-up) recorded beside them.
+   * The tune pass (W/tune/bo105 h_rows_final): the height hold takes the tap's climb back and the crossfeed pedals the
+   * collective change while the pedal keys rest, so the 0.5 / 0.6 / 1.0 s taps peak at 2.0 / 2.4 / 4.1 deg (round 3:
+   * 11.4 / 13.5 / 20.2); the peak band tightened from 25 to 6 deg.
    */
-  it('0.5, 0.6 and 1.0 s collective taps (F6) with the pedals untouched: the heading back within 4 deg and the turn stopped by 15 s (round 2: 0.5 s spun 180 deg)', () => {
+  it('0.5, 0.6 and 1.0 s collective taps (F6) with the pedals untouched: the heading within 6 deg, back within 4 deg and the turn stopped by 15 s (round 2: 0.5 s spun 180 deg; round 3: 20 deg peak)', () => {
     const now: Record<string, Record<string, number>> = {}, held: Record<string, Record<string, number>> = {};
     for (const hold of [0.5, 0.6, 1.0]) now[hold] = tapAgainstTwin('F6', hold, undefined, 17);
     for (const hold of [0.5, 0.6]) held[hold] = tapAgainstTwin('F6', hold, withoutTuning('followUp'), 17);
@@ -244,7 +247,7 @@ describe('STAB ASSIST heading hold (rate command / direction hold below 30 KIAS)
     report.headingHoldCollectiveTapRound3 = { now, handPedalsHoldAuthorityOnly: held, roundTwoLaw05: r2 };
     for (const hold of [0.5, 0.6, 1.0]) {
       expect(Math.abs(now[hold].hdg15)).toBeLessThanOrEqual(4); expect(Math.abs(now[hold].r15)).toBeLessThan(1);
-      expect(now[hold].maxHdg).toBeLessThanOrEqual(25);
+      expect(now[hold].maxHdg).toBeLessThanOrEqual(6);
     }
     for (const hold of [0.5, 0.6]) { expect(Math.abs(held[hold].hdg8)).toBeLessThanOrEqual(3); expect(Math.abs(held[hold].r15)).toBeLessThan(1); }
     expect(r2.maxHdg).toBeGreaterThan(90);
@@ -411,6 +414,137 @@ describe('STAB ASSIST is silent where it should be', () => {
       expect(p.stabilityAssistOn()).toBe(false);
     }
   });
+});
+
+/**
+ * The tune pass (W/tune/bo105, item 1; the law and its measured tuning in src/aircraft/bo105/input.ts): the STAB ASSIST's
+ * height hold on the keyboard collective (ADS-33E's rate command / height hold, full below 30 KIAS, gone at 40) and the
+ * washed-out collective-to-pedal crossfeed on the keyboard pedals. The keyboard deceleration it was built for is in
+ * bo105KeyTransitions.test.ts; here what it does in the hover and where it stays out.
+ */
+describe('STAB ASSIST height hold and collective crossfeed (the keyboard collective and pedals)', () => {
+  const noHeight = (): AircraftDefinition => withoutTuning('heightHold', 'pedalCrossfeed');
+  /** Hands off for `seconds` from the hover scenario; the largest height change (m) and the collective walked. */
+  function heightHandsOff(o: { wind: boolean; dd?: AircraftDefinition }, seconds: number) {
+    const r = rig({ assist: true, wind: o.wind, dd: o.dd }), z0 = r.physics.state.position.z, c0 = r.c.collective ?? 0;
+    let dh = 0;
+    for (let i = 0; i < seconds / FRAME; i++) { frame(r); dh = Math.max(dh, Math.abs(r.physics.state.position.z - z0)); }
+    return { dhM: dh, collectiveWalk: (r.c.collective ?? 0) - c0, crashed: r.physics.state.crashed, mode: r.physics.stabilityAssist!.heightMode };
+  }
+  it('hands off in the hover scenario the height is held: within 0.5 m calm and 3 m in 8 kt of wind with 5 kt gusts over 60 s (without it: measured beside)', () => {
+    const calm = heightHandsOff({ wind: false }, 60), gusty = heightHandsOff({ wind: true }, 60);
+    const calmWithout = heightHandsOff({ wind: false, dd: noHeight() }, 60), gustyWithout = heightHandsOff({ wind: true, dd: noHeight() }, 60);
+    report.heightHandsOff = { calm, gusty, calmWithout, gustyWithout };
+    expect(calm.crashed).toBe(false); expect(gusty.crashed).toBe(false);
+    expect(calm.dhM).toBeLessThanOrEqual(0.5); expect(gusty.dhM).toBeLessThanOrEqual(3);
+    expect(calm.mode).toBe('hold');
+  }, 120_000);
+  /**
+   * F6 held 2 s in the 2200 kg hover, then let go: the key moves the lever (the hold damps it by 0.03 of the travel per
+   * second per m/s while held), the climb stops after the release and the new height is held. Without the hold the lever
+   * stays up and the climb goes on.
+   */
+  it('F6 held 2 s then let go: it climbs while held, levels off within 4 s of the release and holds that height within 0.5 m (without the hold it keeps climbing)', () => {
+    const fly = (dd?: AircraftDefinition) => {
+      const r = rig({ assist: true, payload: 'typical', dd }), z0 = r.physics.state.position.z;
+      let climbHeld = 0, levelS: number | null = null, hAt: number | null = null, dhAfter = 0;
+      for (let i = 0; i < 16 / FRAME; i++) {
+        const t = i * FRAME;
+        if (Math.abs(t - 1) < FRAME / 2) r.input.keyDown('F6');
+        if (Math.abs(t - 3) < FRAME / 2) r.input.keyUp('F6');
+        frame(r);
+        const s = r.physics.state, climb = -s.velocity.z;
+        if (t < 3) climbHeld = Math.max(climbHeld, climb);
+        else if (levelS === null && Math.abs(climb) < 0.3) { levelS = t - 3; hAt = z0 - s.position.z; }
+        else if (hAt !== null && t > 3 + (levelS ?? 0) + 2) dhAfter = Math.max(dhAfter, Math.abs(z0 - s.position.z - hAt));
+      }
+      return { climbHeld, levelS, heightStep: hAt, dhAfter, climbEnd: -r.physics.state.velocity.z, collective: r.c.collective };
+    };
+    const held = fly(), without = fly(noHeight());
+    report.heightF6Held = { held, without };
+    expect(held.climbHeld).toBeGreaterThan(0.5);
+    expect(held.levelS).not.toBeNull(); expect(held.levelS!).toBeLessThanOrEqual(4);
+    expect(held.dhAfter).toBeLessThanOrEqual(0.5);
+    expect(without.climbEnd).toBeGreaterThan(0.5);
+  }, 60_000);
+  /**
+   * Where it stays out: without an input module (physics alone, as bo105Rig flies) nothing is walked; above 40 KIAS and on
+   * the ground (the runway, the skids loaded) it is off; a double engine failure in the hover (both levers OFF) switches
+   * it off within a frame (the engines stop running and the needles split) and the NR decay is the same as without it
+   * (W/tune/bo105 i_dualfail.log: 55.9 % at 10 s, 2200 kg).
+   */
+  it('off without a keyboard collective, above 40 KIAS, on the ground and after a double engine failure (NR as without it)', () => {
+    const w = { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0 };
+    const bare = new SimPhysics({ aircraft: def, weather: w, events: createEventBus() });
+    bare.resetTo(hoverScenario(bare.env, def.rotorcraft!), w);
+    bare.controls.collective! += 0.03; bare.step(5);
+    expect(bare.stabilityAssist!.followed.collective).toBe(0);
+    const fast = rig({ assist: true, level: { kias: 45, heightM: 30 } });
+    const c0 = fast.c.collective;
+    for (let i = 0; i < 300; i++) frame(fast);
+    expect(fast.physics.stabilityAssist!.heightMode).toBe('off'); expect(fast.c.collective).toBe(c0);
+    const ground = rig({ assist: true, runway: true });
+    for (let i = 0; i < 120; i++) frame(ground);
+    expect(ground.physics.state.onGround).toBe(true); expect(ground.physics.stabilityAssist!.heightMode).toBe('off');
+    const dual = (dd?: AircraftDefinition) => {
+      const r = rig({ assist: true, payload: 'typical', dd });
+      for (let i = 0; i < 120; i++) frame(r);
+      for (const e of r.c.engines) e.throttle = 0;
+      r.c.throttle = 0;
+      let offAfter: number | null = null, nrMin = Infinity;
+      const c1 = r.c.collective;
+      for (let i = 0; i < 60; i++) {
+        frame(r);
+        if (offAfter === null && r.physics.stabilityAssist!.heightMode === 'off') offAfter = (i + 1) * FRAME;
+        nrMin = Math.min(nrMin, r.physics.state.rotorcraft!.turboshaft!.nrPct);
+      }
+      return { offAfter, nrMin, collectiveRise: (r.c.collective ?? 0) - (c1 ?? 0) };
+    };
+    const withIt = dual(), without = dual(noHeight());
+    report.heightGuards = { dual: { withIt, without } };
+    expect(withIt.offAfter).not.toBeNull(); expect(withIt.offAfter!).toBeLessThanOrEqual(2 * FRAME);
+    expect(withIt.collectiveRise).toBeLessThanOrEqual(1e-6);
+    expect(Math.abs(withIt.nrMin - without.nrMin)).toBeLessThanOrEqual(0.1);
+  }, 60_000);
+  /**
+   * The law's limits on one step (StabilityAssist.before on a live hover state, the flight model not stepped): in a sink
+   * it raises the lever, but not while above the maximum continuous power (takeoffPowerSeconds > 0) or the power limit;
+   * climbing it lowers the lever, but never below its floor (0.1 of the travel); at most `rate` x dt.
+   */
+  it('one step: raises in a sink at most rate x dt, never above the maximum continuous power, never lowers below the floor', () => {
+    const r = rig({ assist: true, payload: 'typical' });
+    for (let i = 0; i < 60; i++) frame(r);
+    const hh = def.input.stabilityAssist!.heightHold!;
+    const step = (vz: number, collective: number, mcp: boolean): number => {
+      const a = new StabilityAssist(def.input.stabilityAssist!), s = structuredClone(r.physics.state);
+      s.velocity.z = vz; if (mcp) s.rotorcraft!.takeoffPowerSeconds = 1;
+      const c = { ...r.c, collective, keyboardCollective: true, collectiveWorked: false };
+      a.before(DT, s, c, true); a.after(c);
+      return c.collective! - collective;
+    };
+    const sink = step(3, 0.4, false), sinkMcp = step(3, 0.4, true), climbAtFloor = step(-3, hh.floor, false), climb = step(-3, 0.4, false);
+    report.heightStep = { sink, sinkMcp, climbAtFloor, climb, rateDt: hh.rate * DT };
+    expect(sink).toBeGreaterThan(0); expect(sink).toBeLessThanOrEqual(hh.rate * DT + 1e-12);
+    expect(sinkMcp).toBe(0);
+    expect(climb).toBeLessThan(0); expect(climbAtFloor).toBe(0);
+  });
+  /** The crossfeed is airborne and keyboard-pedal only; a pedal key held makes the collective change the pilot's. */
+  it('the crossfeed pedals a collective change while the pedal keys rest (airborne), not while a pedal key is held', () => {
+    const r = rig({ assist: true, payload: 'typical' });
+    for (let i = 0; i < 60; i++) frame(r);
+    const a = r.physics.stabilityAssist!, f0 = a.followed.rudder;
+    r.c.collective! += 0.05; frame(r);
+    const resting = a.followed.rudder - f0;
+    const xf = def.input.stabilityAssist!.pedalCrossfeed!;
+    r.input.keyDown('KeyX'); frame(r);
+    const f1 = a.followed.rudder;
+    r.c.collective! += 0.05; frame(r);
+    const keyed = a.followed.rudder - f1;
+    r.input.keyUp('KeyX');
+    report.crossfeed = { resting, expected: xf.perCollective * 0.05, keyed };
+    expect(resting).toBeCloseTo(xf.perCollective * 0.05, 1);
+    expect(Math.abs(keyed)).toBeLessThan(0.01);
+  }, 60_000);
 });
 
 describe('STAB ASSIST through a resume (src/sim/resume.ts: the snapshot carries its datums)', () => {

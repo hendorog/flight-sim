@@ -159,3 +159,39 @@ export function decelKeys(r: KeyRig, keys: Keys, o: { interval: number; noseUpDe
   }
   return null;
 }
+
+/**
+ * decelKeys until a HOVER rather than a ground-speed crossing (the tune pass, W/tune/bo105: round 3's "stop" at 3 kt was
+ * crossed by a tumbling aircraft, 40 deg nose down in a 12 m/s sink): ground speed under 3 kt, |vz| under 1.5 m/s and
+ * the attitude within 15 deg, for 2 s together. Returns the time the hover was reached (the end of the 2 s), or the time
+ * it was lost (crashed or more than 30 deg of attitude), or neither by `maxS`.
+ */
+export function decelToHoverKeys(r: KeyRig, keys: Keys, o: { interval: number; noseUpDeg: number; maxS?: number }): { hoverS: number | null; lostS: number | null; maxAttDeg: number } {
+  const s0 = snap(r), buf: Snap[] = [], nLag = Math.round(0.3 / FRAME);
+  let next = r.t + 1, good = 0, maxAttDeg = 0;
+  while (r.t < (o.maxS ?? 60)) {
+    buf.push(snap(r));
+    const st = r.physics.state, att = Math.max(Math.abs(st.roll), Math.abs(st.pitch)) / DEG;
+    maxAttDeg = Math.max(maxAttDeg, att);
+    if (att > 30) return { hoverS: null, lostS: r.t, maxAttDeg };
+    if (r.t > 3 && st.groundSpeed / KT < 3 && Math.abs(st.velocity.z) < 1.5 && att < 15) good += FRAME; else good = 0;
+    if (good >= 2) return { hoverS: r.t, lostS: null, maxAttDeg };
+    if (r.t >= next) {
+      next += o.interval;
+      const s = buf.length > nLag ? buf[buf.length - 1 - nLag] : buf[0];
+      const gs = (s.vx * Math.cos(s.hdg) + s.vy * Math.sin(s.hdg)) / KT;
+      const dPitch = (s0.pitch + (gs > 8 ? o.noseUpDeg : 2) * DEG - s.pitch - 0.4 * s.q) / DEG;
+      if (Math.abs(dPitch) > 1) keys.tap(dPitch > 0 ? 'ArrowDown' : 'ArrowUp', clamp(Math.abs(dPitch) / 9, 0.1, 0.6));
+      const dRoll = (-s.roll - 0.3 * s.p) / DEG;
+      if (Math.abs(dRoll) > 1.5) keys.tap(dRoll > 0 ? 'ArrowRight' : 'ArrowLeft', clamp(Math.abs(dRoll) / 9, 0.1, 0.4));
+      const e = wrap(s.hdg - s0.hdg) / DEG + 0.7 * s.r / DEG;
+      if (Math.abs(e) > 3) keys.tap(e > 0 ? 'KeyZ' : 'KeyX', clamp(Math.abs(e) / 60, 0.1, 0.5));
+      const hold = clamp(-(0.1 * (s0.z - s.z) - 0.2 * s.vz), -0.5, 0.5);
+      if (Math.abs(hold) > 0.08) keys.tap(hold > 0 ? 'F6' : 'F5', Math.abs(hold));
+    }
+    keys.update(); frame(r);
+    if (r.physics.state.crashed) return { hoverS: null, lostS: r.t, maxAttDeg };
+  }
+  return { hoverS: null, lostS: null, maxAttDeg };
+}
+

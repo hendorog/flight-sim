@@ -13,7 +13,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, KT } from '../../src/core/math';
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import { BO105_DEFINITION as def } from '../../src/aircraft/bo105';
-import { Keys, decelKeys, flyHover, frame, hoverBeginner, keyRig, liftOffKeys } from './bo105KeyPilot';
+import { Keys, decelKeys, decelToHoverKeys, flyHover, frame, hoverBeginner, keyRig, liftOffKeys } from './bo105KeyPilot';
 import { writeTrace } from './bo105Rig';
 
 const report: Record<string, unknown> = {};
@@ -88,19 +88,44 @@ describe('keyboard lift-off from the runway into the 3 ft hover (the round-2 gat
 
 describe('keyboard deceleration from 45 KIAS to the hover (the round-2 gate: crashed 2-10 s after the stop)', () => {
   /**
-   * The gate's beginner: nose up 8 deg, taps every 1 s, lets go of every key when the ground speed is under 3 kt, then
-   * 20 s hands off. Measured (pilot-r3 out/final b_decel.log, ground speed as the stop): stop 21.2 s, lost at 23.1 s in
-   * a 12 m/s sink, the collective 0.13 (the hover's is 0.39), the stick 0.38 (gate rig: 0.18). Expected to fail until
-   * the keyboard collective is part of the answer; it fails as long as the hover is lost.
+   * The gate's beginner (nose up 8 deg while over 8 kt, taps every 1 / 2 / 3 s, 0.3 s late), now to a HOVER (ground speed
+   * under 3 kt, |vz| under 1.5 m/s, attitude within 15 deg, for 2 s: decelToHoverKeys), then flying on with the hover
+   * beginner for 20 s. Round 3 (pilot-r3 b_decel, and W/tune/bo105 d_hh 'none'): lost before the hover in every variant
+   * (crashed or past 30 deg at 20-35 s; the "stop" it recorded was a tumble crossing 3 kt). The tune pass (STAB ASSIST
+   * height hold and collective crossfeed; d_hh_final): reached in 9 of 10 variants and held flying on in all 9. The tenth,
+   * 60 KIAS with 1 s taps, is lost at 12.6 s with or without the new aids (above their 40 KIAS band: the beginner's
+   * own flare), recorded in KNOWN_ISSUES.
    */
-  it.fails('the tapping beginner who lets go at the stop holds the hover for 20 s (recorded: lost in a sink with the collective low)', () => {
+  it('the tapping beginner reaches a hover from 45 KIAS (taps every 1 / 2 / 3 s, nose 8 or 12) and from 30 KIAS, and flying on holds it 20 s', () => {
+    const rows: Record<string, unknown> = {};
+    for (const [kias, interval, nose] of [[45, 1, 8], [45, 2, 8], [45, 3, 8], [45, 1, 12], [30, 1, 8]] as const) {
+      const r = keyRig({ start: 'level', kias, heightM: 30 }), keys = new Keys(r);
+      const d = decelToHoverKeys(r, keys, { interval, noseUpDeg: nose });
+      keys.releaseAll();
+      const after = d.hoverS !== null ? flyHover(r, keys, 20, hoverBeginner(r, keys)) : null;
+      rows[`${kias}/${interval}/${nose}`] = { ...d, collective: r.c.collective, after };
+      expect(d.hoverS, `${kias} KIAS, ${interval} s, nose ${nose}`).not.toBeNull();
+      expect(after!.lostS).toBeNull(); expect(after!.crashed).toBe(false); expect(after!.maxAttDeg).toBeLessThanOrEqual(20);
+    }
+    report.decelFlyOn = rows;
+  }, 300_000);
+  /**
+   * The same beginner letting go of every key at the hover, then 20 s hands off: not crashed and the attitude held (the
+   * STAB ASSIST holds attitude, heading and height), but it drifts: the attitude datum at the moment of letting go is a
+   * decelerating attitude, and an attitude hold does not hold position (ADS-33E's attitude command / attitude hold, not
+   * translational rate command), so the 30 m drift limit is passed (d_hh_final: 8-16 s, attitude within 8 deg). Position
+   * is the hover hold's (A: tests below). Round 3: lost in a 12 m/s sink with the collective at 0.13 (gate rig) before any
+   * hover. Expected to fail while the STAB ASSIST holds attitude rather than position (KNOWN_ISSUES).
+   */
+  it.fails('KNOWN DRIFT GAP: the beginner who lets go at the hover holds it 20 s hands off (drifts past 30 m: the assist holds attitude, not position)', () => {
     const r = keyRig({ start: 'level', kias: 45, heightM: 30 }), keys = new Keys(r);
-    const stop = decelKeys(r, keys, { interval: 1, noseUpDeg: 8, stopKt: 3 });
+    const d = decelToHoverKeys(r, keys, { interval: 1, noseUpDeg: 8 });
     keys.releaseAll();
-    report.decelLetGo = { stop, collective: r.c.collective, elevator: r.c.elevator };
-    expect(stop).not.toBeNull();
+    report.decelLetGo = { ...d, collective: r.c.collective, elevator: r.c.elevator };
+    expect(d.hoverS).not.toBeNull();
     const after = flyHover(r, keys, 20);
     report.decelLetGo = { ...(report.decelLetGo as object), after };
+    expect(after.crashed).toBe(false); expect(after.maxAttDeg).toBeLessThanOrEqual(15);
     expect(after.lostS).toBeNull();
   }, 60_000);
   /**
