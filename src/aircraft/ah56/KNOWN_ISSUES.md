@@ -440,3 +440,26 @@ The eight open items of the pilot reviews and the final fix round, measured firs
   Shift+A toggles it; the controls list and the HUD hints say it is a sim aid. Off on the wheels (taxi unchanged, T1), faded out
   between 30 and 50 KIAS. Not measured: the ICS with the assist (the key rig spawns the default AMCS); the assist's cyclic term on
   the ICS's slower, coupled gyro is the owner's to try (config=ics).
+- **T6 (R6, should). ICS autorotation at 1 deg of collective or less: the gyro-to-stop and Nr collapse no longer occur; the aft
+  stick margin is small.** Re-measured on this tree (the final fix round's flap-rate term in the gyro's blade moments, kept as the
+  recommendation said) with the reviewer's own probe (`out/disc-r1.log`) and the decomposition probe (`out/icsauto-r1.log`), 95 KCAS,
+  19,700 lb, 2,700 ft, prop +8 deg, engine off: full-gain pilot at 0.5 deg, aft stick 1.08 / 3.04 / 4.25 / 4.83 in at 2 / 4 / 6 / 8
+  s, the gyro within 0.5 deg of centre, Nr 94.5 / 92.7 / 96.3 / 101.4 / 103.5 % at 2-10 s, 2,630 ft/min at 10 s (was: the gyro on
+  its 15 deg stop at 8 s, moment stall, Nr 72 % at 12 s); at 2 deg 3.3 in aft and Nr 97.7 %. The half-gain pilot holds Nr 96 % but
+  lets the speed run to 117 KIAS. Frozen at the entry trim it still rolls off left (43 deg at 4 s) and dives: the stick must hold
+  the hub's nose-up 30 kN m (the airframe's nose-down moment in the descent flow, the same balance as T3). The moment-stall break
+  (FITTED, highSpeed.ts) was not refitted: with the gyro off its stop it is not reached in this flight (H4's departure at 1.4 g
+  is the remaining moment-stall item, owner's). PN's ICS training text can keep the P 0.5 deg floor; 4.8 of the 5.5 in of aft
+  stick is used at it.
+- **T7 (R7, should). Engine failure at 63 KCAS: on the ICS (the P aircraft) the minimum is 80.7 % against about 82 %; the SoF
+  autorotation collective stays the C12 item.** ASTA-72 para 67 (P, read this round): the 63 KCAS level entry went 3 % below the 85 %
+  minimum transient after a 2 s delay of the collective, on the ICS aircraft (100 % = 246 rpm). The reviews compared the AMCS (from
+  97.5 %) with it: 77.6 %. The ICS (`out/fail63-ics*.log`; ah56Systems G11b, a passing sense row and an `it.fails` 82 +/- 1 % row):
+  82.6 % at the end of the 2 s delay, minimum 80.7 % with the collective dumped to 0.5 deg in 0.3 s (79.2-79.6 % over 1 s), back to
+  103 % at 12 s. The decay is the P drivetrain inertia (10,742 slug-ft^2 referred to the rotor; facts.ts tags it P, not ESTIMATE)
+  against the 46.5 % torque the trim needs at 63 KCAS: 10 %/s in the first second, which the power and inertia set (D). Not
+  changed. The SoF autorotation collective (AMCS 4.5-7 deg indicated = -2.5..0 deg at 0.75 R) overspeeds the rotor: from 63 KCAS
+  118 % at 4.5 deg, 107 % at 7 deg, 97.5 % at 9 deg after 12 s (`out/fail63-amcs*.log`); the 95 KCAS autorotation trims 100 % at
+  7.8 deg indicated. Lowering the autorotation collective needs more rotor drag, which raises C12's rate of descent (2,508 ft/min,
+  already 8 ft/min over P 2,200 +/- 300): the two pull opposite ways on the section's drag and the AMCS collective reference
+  (compound.ts "collective gauge"); recorded, owner / AH.
