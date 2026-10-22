@@ -466,11 +466,12 @@ sensitivity"). Docs section 9 ("Tune pass") has the laws and every number; the r
   collective taps run without the new aids (with them even those laws hold the heading); the series-term row flies both
   hover starts (into the wind the walk is 0.034 of the axis in 5 s; with the air 0.0002, inside round 3's 0.02); the
   collective-tap peak band tightened from 25 to 6 deg (measured 2.0-4.1).
-- **Open: KNOWN DRIFT GAP** (`bo105KeyTransitions` it.fails): the beginner letting go at the hover drifts past 30 m in
+- **Open (closed in tune round 2, below): KNOWN DRIFT GAP** (`bo105KeyTransitions` it.fails): the beginner letting go at the hover drifts past 30 m in
   10.5 s (attitude 5.9 deg, not crashed): the STAB ASSIST holds attitude, not position (ACAH, not ADS-33E's
   translational rate command); the hold (A) holds position. A position-holding sim aid on the keys is the next step if
   the owner wants let-go hovering without A.
-- **Recorded limits:** the deceleration from 60 KIAS with 1 s taps is lost at 12.6 s with or without the aids (above
+- **Recorded limits (tune round 2 below closed the held F5, the F6 torque and the side gust, and the 60 KIAS case is no
+  longer lost):** the deceleration from 60 KIAS with 1 s taps is lost at 12.6 s with or without the aids (above
   their 40 KIAS band: the beginner's own flare). The tapped hover through an 8 kt side gust (calm 15 s then the gust;
   round-2 gate "nice" item) is lost later (by drift at 53.6-55.8 s, not crashed; one of four not lost) than without the
   new aids (34.9-44.7 s, two crashed): the heading goes round in the side wind (`n_gust.log`). F5 held down from 16 m
@@ -492,6 +493,71 @@ sensitivity"). Docs section 9 ("Tune pass") has the laws and every number; the r
   on a type with a STAB ASSIST), `src/core/types.ts` (`ControlInputs.keyboardCollective`, `collectiveWorked`, optional),
   `src/aircraft/types.ts` (`SimProfile.heliHoldSlowToHover`, `hoverIntoWind`, optional), `tests/rotorcraft/twinGovernor.test.ts`
   (T11 without its workaround). Every other type leaves them absent: the legacy digests are unchanged (17/17).
+
+#### Tune round 2 (2026-10-22, branch `tune/bo105`; probes W/tune/bo105 `r2/`, logs `r2/out`)
+
+The round-1 pilot gate (5/10, W/tune/bo105 `gate1/`) found three flows in which the keyboard beginner still crashed.
+Docs section 9 ("Tune round 2") has the laws and every number; section 10 the production-build flights. No physics
+changed.
+- **Fixed: letting go at the hover** (gate issue 1, must). The STAB ASSIST held the attitude it was let go at; the
+  deceleration's left a sideways slide that crashed 41 s later. A **translational rate command** on the keyboard cyclic
+  (ADS-33E TRC; `translationalRate`) leans the datums against the ground speed and walks them to the zero-ground-speed
+  trim once the keyboard stick rests: let go after the deceleration, 60 s within 10.6 m (round 1: past 30 m in 10.5 s,
+  crashed at 41 s); a 1 s / 0.3 s ArrowUp knock back to a hover within 27.7 / 3.4 m (490 / 65 m). The KNOWN DRIFT GAP row
+  is a passing 60 s row. A mouse yoke or hardware stick keeps the attitude command.
+- **Fixed: holding F5 to descend** (gate issue 2, must): a bare F5 / F6 held airborne is a **climb-rate command**
+  (`heightHold.held`: the key's move taken back, the lever walked to 2 m/s, the sink slowing to 0.7 m/s near the ground,
+  the lever stopped at the power limit and backed off while F6 stays held). F5 held from 16 m and from 3 ft touches down
+  at 0.44 m/s (crashed at 5.9 m/s; 2.2 m/s); F5 held 4 s then released is caught at 7.9 m (crashed); F6 held 5 s peaks
+  at 86.2 % torque against the 86 % AEO limit (118.6 %). Shift+F5 / Shift+F6 stay raw (no longer damped either).
+- **Fixed: cruise on the keys** (gate issue 3: the hints, must; "either owner" should): the hints route the beginner
+  through A ("press A between 30 and 45 kt", G, T, back below 30 kt with A to the hover) and a **cruise attitude hold** on
+  the keyboard cyclic (`cruiseHold`) keeps the attitude command / attitude hold above the 30-50 KIAS fade. The gate's
+  tapping beginner at 60 / 80 / 100 KIAS: 0 of 15 cases crashed in 60 s (10 of 15 at 14-52 s without it). The A route is
+  a row (lift-off, by hand to 35 kt, A, a heading-bug turn, A off, A to the hover, land with F5 held; calm and 6 kt).
+- **Fixed: the let-go row** (gate issue 4): now 60 s and passing, as above.
+- **Wind deceleration rows** (gate issue 5): a beginner who looks at the ground below 8 kt reaches the hover from 45 KIAS
+  with 6 kt from ahead and behind (10 of 10 of the gate's wind variants); the gate's own wings-level beginner reaches it
+  into the 6 kt wind (7 of 10 variants, round 1: 3). **Open: KNOWN TAILWIND GAP** (`bo105KeyTransitions` it.fails): the
+  wings-level beginner in a 10 kt tailwind with 1 s taps pirouettes (up to 73 deg/s) and reaches no hover by 60 s (15.7
+  kt at the end); with 2 s taps it does (33.7 s). Its 1 s pedal taps keep the heading hold from capturing while the fin
+  weathercocks it; the hints say to hover into the wind. A counter-pedal variant of the heading hold (a pedal key
+  against a swing keeps the held heading) was measured and not adopted (4-5 of 10 against 6, `p5b_c*`).
+- **Fixed: the crossfeed on light skids** (gate issue 6, should): it pedals the lift-off's collective unless a pedal
+  key was worked on the skids: the untouched lift-off's first 6 s 38.2 deg (59.7 airborne only), the 2 s left-pedal
+  lift-off unchanged at 24.1. Over the whole 30 s with the skids brushing the ground (the row's beginner holds the
+  lift-off height) the heading scatters 40-140 deg across 12 beginner variants with or without the round-2 parts (the
+  row's 83.6 / 30.9 deg; tune pass 76.4 / 25.2): a recorded limit of the skid-brushing hover, not of the lift-off.
+- **Engine-failure hint** (gate issue 8, nice): Shift+F5 within about a second; the height hold stops with an engine.
+- **No change needed: hoverIntoWind's wind time** (gate issue 10, nice): a reset restarts the clock at 0 and fm.reset
+  samples the wind at 0, so a later hover start faces the wind it is trimmed in (the comment says so; a row resets a
+  second time after 60 s of gusts: ground speed 0).
+- **Recorded limits:** the 1 s tapper above about 110 KIAS still loses control with the cruise hold (120 KIAS: the
+  attitude through 180 deg, not crashed in 60 s; 140: crashed at 38.9 s); the 2 and 3 s tappers hold 120 KIAS, at 140
+  only the 3 s one; by-hand accelerations out of the hover (the gate's
+  g1, 12 cases) 6 not lost (round 1: 0): the rest fly into the ground accelerating at 3 ft or over-torque climbing at
+  1.5 m/s (the held-key command fades out with the height hold above 40 KIAS); the deceleration from 60 KIAS with 1 s taps
+  is no longer lost but reaches no hover in 60 s; a 1 s ArrowUp knock in the app's default 8 kt wind (production build)
+  comes back to a hover 37 m from the start (calm 27.7); A let go the moment it reaches the hover (still 9 deg nose up
+  from its stop) moves the attitude 7.7 deg in 2 s, 1.5 deg after 5 s of settling (the hint says let it settle).
+- **For the physics owner (pre-existing, measured here):** trimmed at 60 KIAS with the assist off and the stick frozen, a
+  -0.05 collective step gives pitch -11 / roll -17 deg at 5 s (gate1 g11), and hands off at 120 / 140 KIAS the raw
+  aircraft diverges (crashed at 51 / 16 s, `p12_ch1hi`): check the collective-to-pitch / roll coupling and the high-speed
+  pitch stability against DLR / ERF 1995 (L_dcol, M_dcol, M_w). One engine out in the hover with the beginner tapping F6:
+  the survivor reaches 168-172 % torque at 62-64 % NR and lands (gate1 g4): no torque / TOT limit response on the
+  survivor (bo105/limits.ts has the OEI limits).
+- **For the hold's owner:** engaged at 35 kt the hover hold settles at 28-31 kt (engaged at 42 kt: 31 kt, gate1 g10).
+  autopilot.ts is shared: tightening the speed loop would change every helicopter's hold, so it is left.
+- **Owner-facing choices (AGENT, on the owner's delegation; each one line in `bo105/input.ts`):** (a) the arrow keys at
+  rest below 30 kt now bring the helicopter back to a hover over the ground (to move slowly keep tapping; the mouse yoke
+  keeps the attitude command); (b) below 30 KIAS a held F6 climbs at up to 2 m/s and stops raising the lever at the
+  torque limit: for take-off power in the hover use Shift+F6; a held F5 descends at up to 2 m/s, 0.7 near the ground;
+  (c) on the keys the STAB ASSIST holds the attitude at every speed (Shift+A for the raw aircraft); (d) the crossfeed
+  pedals the untouched lift-off.
+- **Shared files touched:** `src/sim/rotorcraft/stabilityAssist.ts` (the four parts, export / import of the new state),
+  `src/input/profile.ts` (`translationalRate`, `heightHold.held`, `pedalCrossfeed.onLightSkids`, `cruiseHold`, optional),
+  `src/input/InputSystem.ts` and `src/core/types.ts` (`ControlInputs.collectiveFastWorked`, set only on a type with a STAB
+  ASSIST), `src/sim/SimPhysics.ts` (a comment). No other type has a STAB ASSIST: the legacy digests are unchanged.
 
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 
