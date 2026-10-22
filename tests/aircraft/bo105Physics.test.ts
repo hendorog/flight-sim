@@ -22,10 +22,10 @@ import { cgLimits } from '../rotorcraft/bo105Rig';
 const r = def.rotorcraft!, hub = r.hubModel!, ts = r.systems.turboshaft!;
 
 describe('Bo 105 CB-4 definition', () => {
-  it('identity: id bo105, two engines, unavailable until the owner approves (AGENT choice: the CB-4)', () => {
+  it('identity: id bo105, two engines, available (owner approved 2026-10-22) (AGENT choice: the CB-4)', () => {
     expect(def.id).toBe('bo105'); expect(def.engineCount).toBe(2); expect(def.icaoType).toBe('B105');
     expect(def.name).toBe('MBB Bo 105 CB-4');
-    expect(AIRCRAFT_CATALOGUE.find((row) => row.id === 'bo105')?.available).toBe(false);
+    expect(AIRCRAFT_CATALOGUE.find((row) => row.id === 'bo105')?.available).toBe(true);
     expect(def.placeholder).toBeUndefined();
   });
 

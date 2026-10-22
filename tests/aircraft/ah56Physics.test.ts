@@ -20,9 +20,9 @@ const r = def.rotorcraft!, g = r.controlGyro!;
 const SLUG_FT2 = 1.3558179483314004, FT_LB = 1.3558179483314004, HP = 745.6998715822702;
 
 describe('identity and the catalogue', () => {
-  it('ah56, available false, one engine; the facts the other packages own agree once they land', () => {
+  it('ah56, available (owner approved 2026-10-22), one engine; the facts the other packages own agree once they land', () => {
     expect(def.id).toBe('ah56');
-    expect(aircraftSummary('ah56').available).toBe(false);
+    expect(aircraftSummary('ah56').available).toBe(true);
     expect(def.engineCount).toBe(1);
     // In this worktree the visual, the panel and the sound are still their packages' scaffold stubs (AX, PN, AU): only
     // their copies of a fact may disagree.

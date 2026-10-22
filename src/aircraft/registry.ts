@@ -92,9 +92,9 @@ export const AIRCRAFT_CATALOGUE: readonly AircraftSummary[] = [
   { id: 'md500', name: 'MD Helicopters MD 500E', shortName: 'MD 500E',
     blurb: 'Five-seat turbine helicopter, 250-C20B 375 shp take-off, five-blade articulated rotor (in development)', engineCount: 1, available: true },
   { id: 'bo105', name: 'MBB Bo 105 CB-4', shortName: 'Bo 105',
-    blurb: 'Twin-turbine light helicopter, 2 x 250-C20B, four-blade hingeless rotor (in development)', engineCount: 2, available: false },
+    blurb: 'Twin-turbine light helicopter, 2 x 250-C20B, four-blade hingeless rotor (in development)', engineCount: 2, available: true },
   { id: 'ah56', name: 'Lockheed AH-56A Cheyenne', shortName: 'AH-56A',
-    blurb: 'Rigid-rotor compound attack helicopter, T64 turboshaft, control gyro, wing and pusher propeller (in development)', engineCount: 1, available: false },
+    blurb: 'Rigid-rotor compound attack helicopter, T64 turboshaft, control gyro, wing and pusher propeller (in development)', engineCount: 1, available: true },
 ];
 
 export function aircraftSummary(id: AircraftId): AircraftSummary {
