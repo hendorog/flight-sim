@@ -270,6 +270,8 @@ describe('the hover readout (plan flights "AH-56 hover readout"): 20 s hands-off
   const hover = (config: 'amcs' | 'ics') => {
     const weather = { ...defaultWeather(), windSpeedKt: 0, turbulence: 0, gustKt: 0 };
     const p = new SimPhysics({ aircraft: AH56_DEFINITION, weather, rotorcraftConfig: config });
+    // The raw aircraft: the profile's STAB ASSIST sim aid (ON by default since the tuning round, KNOWN_ISSUES T8) is off here.
+    p.stabilityAssistOn = () => false;
     p.resetTo(hoverScenario(p.env, d), weather);
     const roll0 = p.state.roll, heading0 = p.state.heading;
     p.step(20);
