@@ -511,3 +511,20 @@ C23 ICS longitudinal shift hover → 100 KCAS 0.69 → −0.03 in forward (P 0.7
 KNOWN GAP). (The "before" column of these rows already includes the final round's rotor fixes; the stage-5 merge numbers are in
 docs/ah56-integration.md section 4.)
 
+## 12. Tuning round (2026-10-22, AGENT; KNOWN_ISSUES T2, T3)
+
+- **The reverse branch of the prop section (T2), FITTED to C11 / ASTA-72 para 15:** clMin -0.8 -> -1.2, cdMax 1.6 -> 2.0. What it
+  stands for: the shared BEMT has no high-induction (turbulent-wake) correction, and the reverse prop at -12 deg and 60-120 KTAS
+  works at T / (q A) 0.8-1.9, where simple momentum halves the blade elements' thrust (-8.2 / -9.0 / -11.2 kN against -16.1 / -17.7
+  / -19.6 kN without induction at 80 / 100 / 120 KTAS). The branch adds 2-3 kN; the P-technique deceleration from 165 to 80 KTAS
+  goes 0.22 -> 0.25 g (AMCS) and 0.21 -> 0.23 g (ICS) against P 0.31 g; the forward branch (C4, C5, C10) is untouched; C13, C16,
+  C20 move by under 1.6 % Nr / 0.4 kN. The induction correction itself is a contract request to TW. The lift share (C6) is not the
+  lever: a wing-heavier aircraft trims nose down and flares less in the deceleration (zero-lift -6 deg: 0.16 g).
+- **ICS static stability (T3), measured term by term, not refitted.** The table of section 11 plus the per-kt decomposition at
+  para 44's condition: stabiliser with downwash +0.49, wing -0.30, pusher +0.16 kN m/kt at 150 KCAS; the ICS reads the hub moment
+  at 0.19 in per kN m through the 4 deg sweep (G4); the pitch desensitizer amplifies the stick gradient 1 / 0.64 below a 2.1 in trim
+  (so the 150 KCAS point is non-monotonic in every airframe knob). The pair wing Cm -0.10 with a quarter of DATCOM's downwash reaches
+  0.013 / 0.022 in/kt but moves the trims aft (0.6 / 1.4 / 3.4 in at 120 / 150 / 190 KCAS), loses H4's 154 KCAS onset inside the
+  aft stick, puts C4 at 204.6 KTAS and C19's peak at 1.61 s: staged in compound.ts (WING_CM0_THIN_AIRFOIL, TAIL_DOWNWASH_SCALE) and
+  not flown, an owner decision.
+

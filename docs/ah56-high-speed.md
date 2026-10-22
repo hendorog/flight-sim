@@ -134,7 +134,7 @@ AC's provisional placeholder (compound.ts `PROVISIONAL_SECTION`, the C4 "with th
 | Maximum lift | 1.30 / 1.26 / 1.14 / 0.95 / 0.88 / 0.80 at M 0.2 / 0.3 / 0.4 / 0.5 / 0.6 / 0.7; negative stall at 0.8 of it | 1.30 at low Mach: base.ts (ESTIMATE; P Report 530: 1.26 at Re 1.7 × 10⁶), held to 1.26 at M 0.3. The fall with Mach: ESTIMATE, concentrated between M 0.4 and 0.5 (where the leading-edge suction peak of a 12 % section goes supersonic at the stall), at most 10 % per 0.1 M below M 0.4 (a test guards it); **not** fitted to H4 (the moment break carries that fit). M 0.5-0.7 set so the hover tip (M 0.56) keeps 2.0° of stall margin at 18,300 lb SL and the C2/C3 ceilings stay unstalled (section 5). No 23012 or 23006 data through the stall above M 0.3 were found (the cached NACA Reports 492 and 530, WR L-357 and TN 3361 have none) |
 | Lift past the stall | fades to the flat plate over 15°; drag rises to it over 3° | lift FITTED to P Report 530 Table IV: Cl 1.26 → 1.1 / 1.0 / 0.9 at +3.2 / +6.5 / +10° past Cl max (the shape on a 1.26 section reproduces Cl 1.17 / 1.00 / 0.85). The drag is not: 0.156 / 0.221 / 0.302 there against the P 0.127 / 0.195 / 0.275 (+23 / +13 / +10 %; the plate's 2.0 sin² α arrives too early; section 5.2, C12) |
 | Flat plate | normal force 2.0 sin α; centre of pressure 0.25 + 0.5 \|α\|/π of the chord | P NACA TN 3361 (the 0012 through 180°, Re 1.8 × 10⁶): Cd 2.08 at 90°, cm about −0.5 there, antisymmetric about 180° |
-| **Moment stall (flown)** | centre of pressure 0.4 c aft of the quarter chord within 1.5° past the stall (cm about −0.45 at cn 1.1), relaxing to the flat plate over the next 15° (the lift fade); faded out between M 0.4 and 0.55 | **ESTIMATE, FITTED to H4** (section 3): the dynamic moment break of the retreating blade (reduced frequency k = ωc / 2U ≈ 0.1 at the retreating tip); −0.45 is at the deep end of the dynamic-stall moment peaks of 12 % sections (ESTIMATE). No primary dynamic-stall data for this section were downloaded. The Mach fade (M 0.4-0.55, AGENT): with the fade at 0.45-0.6 the 20,500 lb IGE hover trims at 6,000-9,000 ft (ICS, tip margin 0.1-0.6°) did not converge (C3 IGE 5,375 ft); H4 is the same with either |
+| **Moment stall (flown)** | centre of pressure 0.2 c aft of the quarter chord within 1.5° past the stall (cm about −0.24 at cn 1.1; stage 5 flew 0.4 c, about −0.45, refitted in the tuning round, section 9), relaxing to the flat plate over the next 15° (the lift fade); faded out between M 0.4 and 0.55 | **ESTIMATE, FITTED to H4** (section 3): the dynamic moment break of the retreating blade (reduced frequency k = ωc / 2U ≈ 0.1 at the retreating tip); −0.45 is at the deep end of the dynamic-stall moment peaks of 12 % sections (ESTIMATE). No primary dynamic-stall data for this section were downloaded. The Mach fade (M 0.4-0.55, AGENT): with the fade at 0.45-0.6 the 20,500 lb IGE hover trims at 6,000-9,000 ft (ICS, tip margin 0.1-0.6°) did not converge (C3 IGE 5,375 ft); H4 is the same with either |
 | Moment stall (static, P, not flown) | 0.14 c over 12° | D from P Report 530 Table IV: cm_c/4 −0.056 / −0.086 / −0.107 / −0.118 at +3.2 / +6.5 / +10 / +11.6° past Cl max = centre of pressure 0.30 / 0.335 / 0.364 / 0.386 c from cm / cn. The shape reproduces −0.054 / −0.085 / −0.108 (ah56HighSpeed.test.ts) |
 | Reversed flow | lift slope 5.73 /rad about 180° to ±0.77; drag twice the minimum; the lift at 0.75 c (cm = +0.5 Cl, nose up for a positive reversed lift) | P TN 3361 Fig 4(a): 0.10 per deg from 174° to 186°, peaks ±0.77 at 8° past 180°; "about twice" the drag. With the forward slope it reproduces the linear hub forcing's reverse-flow lift (within 10 %, ah56HighSpeed.test.ts) |
 
@@ -435,3 +435,26 @@ KNOWN GAP at 2,508. Not done here: each moves fitted rows and the choice is the 
   is shown to those load factors.
 - Post-stall drag 10-23 % above Report 530 at +3 to +10° past Cl max (section 5.2, C12).
 - The cost: 1.9 × the MD 500E per step on a 12 × 18 grid (the plan's ≥ 36 × 16 would be 3.7-4.0 ×).
+
+## 9. Tuning round (2026-10-22, AGENT; KNOWN_ISSUES T6)
+
+The moment break was FITTED to H4 at stage 5, before the final fix round let the ICS gyro's blade moments see the flap rate
+(`articulated.ts hubForcing`). With that incidence the 0.4 c break turned the stall into a departure: stabilising at 1.4 g / 122
+KCAS the turn rolled 141° right with the test pilot's lateral stick on its 3.75 in stop and 0.44 g of pitch-up (`W/tune/ah56/probes
+mstall.test.ts`, `out/mstall-*.log`), where ASTA-72 para 65 (P) has a pitch-up with "momentary loss of aircraft control (HQRS 10)" and
+a right roll "easily corrected by the appropriate application of lateral control". The flap-rate term is kept (the recommendation);
+the break is refitted (shift against H4, the same excursion measure as the test: right roll and pitch-up against the no-stall
+flight):
+
+| shift | 122 KCAS onset; at 1.4 g roll / pitch-up / lateral stick | 154 KCAS onset; at 1.5 g | 190 KCAS / 1.43 g roll |
+|---|---|---|---|
+| 0.4 (stage 5) | 1.3 g; 141° / 0.44 g / stop | 1.4 g | 0.69° |
+| 0.3 | 1.3 g; 113° / 0.36 g / stop | 1.5 g; 27° / 0.33 g | 0.51° |
+| **0.2 (flown)** | **1.4 g; 24° / 0.22 g / 0.19 in left of trim** | **1.5 g; 17° / 0.15 g** | **0.35°** |
+| 0.12 | 1.4 g; 8° / 0.05 g | 1.6 g; 6° / 0.06 g | 0.22° |
+| P (ASTA-72 paras 63-65) | 1.4 ± 0.2 g, pitch-up and right roll | 1.5 ± 0.2 g | none |
+
+At 0.2 c the onsets sit on P's values, the pitch-up dominates and the roll is held inside the stick; held to 1.6 g at 122 KCAS it
+still departs (54°, the stick on its stop). The flown break is now about −0.24 in cm 1.5° past the stall, between the static
+Report 530 shape (−0.06 to −0.11, P) and the deep dynamic peaks of 12 % sections (ESTIMATE).
+

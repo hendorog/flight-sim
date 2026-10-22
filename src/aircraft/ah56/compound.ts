@@ -46,8 +46,16 @@ export const WING_INCIDENCE_DEG = {
 export const WING_ZERO_LIFT_DEG = -2;
 /** Section pitching moment about the quarter chord that goes with that zero-lift angle: thin-airfoil theory for a parabolic camber
  *  line, alpha_0 = -2 f / c and cm_c/4 = -pi f / c, so cm = (pi / 2) alpha_0 = -0.055 (D from the -2 deg ESTIMATE), acting over the
- *  MAC 2.316 m (P). */
-export const WING_CM0 = Math.PI / 2 * WING_ZERO_LIFT_DEG * DEG;
+ *  MAC 2.316 m (P). The reference value; the flown one is WING_CM0. */
+export const WING_CM0_THIN_AIRFOIL = Math.PI / 2 * WING_ZERO_LIFT_DEG * DEG;
+/**
+ * The flown section pitching moment: the thin-airfoil value (D). Tuning round 2026-10-22 (KNOWN_ISSUES T3): a FITTED -0.10 with the
+ * downwash at a quarter of DATCOM's (TAIL_DOWNWASH_SCALE 0.25) reaches ASTA-72 para 45's ICS static stability (0.013 / 0.022 in/kt at
+ * 120 / 150 KCAS, P 0.015 / 0.012) but moves the ICS trims aft (0.6 / 1.4 / 3.4 in at 120 / 150 / 190 KCAS), takes the 154 KCAS
+ * moment-stall onset (H4, P) out of reach of the aft stick, puts V_H 0.9 kt over C4's band and C19's pull-up peak 0.07 s early:
+ * not flown (an owner decision, contract request). The per-term gradients are in W/tune/ah56/probes stab44.test.ts.
+ */
+export const WING_CM0 = WING_CM0_THIN_AIRFOIL;
 
 /**
  * Rotor wash on the wing against wake skew (ESTIMATE). Hover: the actuator disc's wake 2.40 m below the disc (hub WL 165.3,
@@ -83,9 +91,15 @@ const datcomDownwash = (() => {
   const kA = 1 / A - 1 / (1 + A ** 1.7), kL = (10 - 3 * lambda) / 7, kH = (1 - hOverB) / twoLOverB ** (1 / 3);
   return 4.44 * (kA * kL * kH) ** 1.19 / WING_LIFT_SLOPE;
 })();
+/** The flown downwash at the stabiliser as a fraction of DATCOM's: 1 (D). The tuning round's para 45 fit used 0.25 with WING_CM0
+ *  -0.10 and was not flown (WING_CM0, KNOWN_ISSUES T3). */
+export const TAIL_DOWNWASH_SCALE = 1;
 const TAIL_DOWNWASH = { centre: AH56_BASE.stabilizer.centre, area: AH56_BASE.stabilizer.area, liftSlope: AH56_BASE.stabilizer.liftSlope,
-  gradient: datcomDownwash, fadeSpeed: 15 };
-export const TAIL_DOWNWASH_GRADIENT = datcomDownwash;
+  gradient: TAIL_DOWNWASH_SCALE * datcomDownwash, fadeSpeed: 15 };
+/** DATCOM's gradient (D), the reference value. */
+export const TAIL_DOWNWASH_DATCOM = datcomDownwash;
+/** The flown gradient, rad per unit wing C_L. */
+export const TAIL_DOWNWASH_GRADIENT = TAIL_DOWNWASH_SCALE * datcomDownwash;
 
 const panel = (side: 1 | -1): WingPanelDef => ({
   side,
@@ -142,8 +156,16 @@ export const AH56_PROPELLER: PropellerDef = {
   thickness: [0.30, 0.20, 0.11, 0.07, 0.05, 0.04],
   twist: { kind: 'table', x: PROP_TWIST_X, angle: PROP_TWIST_X.map((x) => helix(x) - helix(0.7)) },
   referenceStation: 0.7,
-  section: { alpha0: -2.2 * DEG, liftSlope: 2 * Math.PI * 0.9, clMaxLowSpeed: 1.45, clMaxMachLoss: 0.4, clMin: -0.8,
-    cdMax: 1.6, clMinDrag: 0.4, dragDueToLift: 0.01, clIdeal: 0.411 },
+  // The negative-incidence branch (clMin, cdMax) is FITTED to the reverse-thrust deceleration (P ASTA-72 para 15 / Table 3: 196 KTAS
+  // to the hover in 33 s, 0.31 g; C11): -1.2 and 2.0 (were the thin-section ESTIMATES -0.8 and 1.6). It stands in for what the
+  // shared BEMT (src/physics/propulsion/bemt.ts) leaves out: at -12 deg and 60-120 KTAS the reverse prop works at a disc thrust
+  // coefficient T / (q A) of 0.8-1.9, the propeller-brake / turbulent-wake state where simple annulus momentum over-predicts the
+  // induction (real rotors follow Glauert's empirical branch), and the BEMT gives -7.7 / -8.2 / -9.0 / -11.2 kN at 60 / 80 / 100 /
+  // 120 KTAS where the blade elements without induction give -14.9 / -16.1 / -17.7 / -19.6 (W/tune/ah56/probes propbe.test.ts).
+  // The fitted branch adds 2-3 kN there (contract request to TW for the high-induction correction itself). The forward branch
+  // (C4, C5, C10) is untouched; the +8 deg windmilling drag above 150 KTAS rises (C13 / C20 re-checked, KNOWN_ISSUES T2).
+  section: { alpha0: -2.2 * DEG, liftSlope: 2 * Math.PI * 0.9, clMaxLowSpeed: 1.45, clMaxMachLoss: 0.4, clMin: -1.2,
+    cdMax: 2.0, clMinDrag: 0.4, dragDueToLift: 0.01, clIdeal: 0.411 },
   inertia: AH56_PROP_INERTIA,
   pitchControl: {
     kind: 'constantSpeed',

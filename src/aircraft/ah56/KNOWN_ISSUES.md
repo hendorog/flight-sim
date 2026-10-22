@@ -364,3 +364,213 @@ Commits on `feat/rigid-rotor` after `9d70cad`; numbers from `W/guards/integ/14-f
   reported); the C4 row flies the ICS.
 - **The AMCS gyro numbers live in gyro.ts** (above, "Resolved").
 
+
+## Tuning round (2026-10-22, branch tune/ah56; AGENT choices, not owner decisions)
+
+The eight open items of the pilot reviews and the final fix round, measured first with the probes in
+`W/tune/ah56/probes/` (outputs in `out/`), then fixed at the source where a sourced or derived mechanism allowed it.
+
+- **T1 (R1, must). Unlocked tail-wheel taxi: the divergence is the physics of a free castor; the P rating is pilot-in-the-loop.**
+  Mechanism (D): with the main tyres much stiffer than the inertia terms the ground yaw mode is s = (m x U - N_r) / (Izz + m x^2),
+  x = 0.76 m (mains ahead of the CG: P CG FS 298, 3V axles FS 268, re-checked on the Fort Campbell side photo), m x U = 31 / 63
+  kN m s at 10 / 20 kt, N_r about 12.5 kN m s (the tail rotor at its 1 kN taxi trim, momentum theory in edgewise flow, D, and
+  measured 0.47 kN at 20 deg/s): s = 0.34 / 0.9 per s (doubling 2 / 0.8 s); stable only below about 5 kt. The tyre ESTIMATES drop
+  out of that limit (why the earlier cornering-stiffness sweeps did nothing). Swept and rejected (`out/ground2-*`, `ground3-*`,
+  `ground4-*`, `relock*.log`): swivel friction 100-600 N m makes the castor a deadband with a breakout (the tyre's aligning moment
+  saturates at mu N trail = 450 N m, so 150-300 N m is a third to two thirds of it: below 1-1.5 in of pedal no turn, above it 80-150
+  deg/s), leaves path-dependent stuck angles (11-88 deg after a turn, so the lock pin cannot drop in) and turns both
+  `tests/gear/ah56TailWheel` rows red from 100 N m; a swivel damper of 500-2000 N m s/rad lags the castor about 6 % at a 1 /s
+  divergence while slowing walking-pace turns; trail 0.05 m changes nothing. gear.ts is unchanged. What P says (ASTA-72 para 79,
+  APE-I para 133, read in the scans this round): "directional control during taxi was excellent", by tail-rotor thrust, the tail
+  wheel unlocked "for all taxi turns", locked for take-off, landing and "high-speed taxi (above 20 knots)". New passing rows
+  (ah56Ground): the 20 kt pulse with a pilot answering 0.3 s late holds the heading within 0.7 deg at 10 s on 2.2 in of pedal; at 10
+  kt 0.5 s late within 1.8 deg on 2.4 in. Measured beyond the rows (`out/catch1.log`): at 20 kt 0.5 s late rings +/-15 deg but stays
+  upright, 0.7 s and slower is lost; at 10 kt 1.0 s late spins it. The hands-off row stays `it.fails` (55.7 deg/s, right wingtip at
+  about 4 s). Owner judgement (fixed-wing tail-dragger experience applies directly): accept the free-castor ground loop. The
+  default LOCKED tail wheel (index.ts controlDefaults) keeps the beginner out of it; the HUD / instructor cue is PN's (contract
+  request).
+- **T3 (R3, must). ICS collective-fixed static stability: measured term by term; the wing / tail fit that reaches para 45 costs P
+  rows beyond C23, so it is not flown (owner decision).** At ASTA-72 para 44's condition (aft CG FS 299.8, stores, 4,000 ft,
+  18,300 lb, collective and blade angle held, path free) the stick gradient about trim is 0.0735 / 0.0708 in/kt at 120 / 150 KCAS
+  (P para 45: 0.015 / 0.012). Per kt at 150 KCAS (`W/tune/ah56/probes stab44.test.ts`, `out/stab44-base.log`): the airframe's
+  pitching moment grows +0.35 kN m nose up (stabiliser with the wing's downwash +0.49, of which the downwash term +0.31; the wing
+  itself -0.30; the pusher +0.16, its falling thrust 0.5 m above the CG and its normal force 9.9 m aft), the hub must answer -0.35
+  kN m, and the ICS reads it through the sweep feedback at 0.19 in per kN m (-0.067 in/kt); blade Cm -0.013, droop x in-plane
+  +0.015 and spring -0.006 nearly cancel. The body angle of attack hardly changes (-0.02 deg/kt): the speed comes from the flight
+  path, and the trim loads scale with q. The pitch desensitizer (P) is a gain on the stick while its 0.757 in piston is inside its
+  authority, so below about 2.1 in of trim stick at 150 KCAS the stick gradient is the moment gradient / 0.64: smaller trims
+  amplify it, which makes the 150 KCAS point non-monotonic in every airframe knob. Single-knob grid (`out/stab44-*.log`, 120 /
+  150 KCAS): no downwash 0.017 / 0.031; downwash x 0.5 0.044 / 0.088; wing Cm -0.10 0.055 / 0.081, -0.15 0.035 / 0.067, 0 0.096 /
+  0.089; stabiliser lift slope 2.5 0.050 / 0.081; rotor wash on the stabiliser 0, fuselage moment 0, blade Cm gain 0 change it by
+  under 0.013. The pair wing Cm -0.10 with a quarter of DATCOM's downwash reaches 0.013 / 0.022 (the row's 0.024 bound) and the
+  AMCS stays stable (0.009 / 0.011 against 0.018 / 0.021), but the suites on it (`W/tune/ah56/logs-item3-suites.txt`) show the
+  price: the ICS trims go aft (0.6 / 1.4 / 3.4 in at 120 / 150 / 190 KCAS against 1.7 / 3.0 / 4.5 forward), so the 154 KCAS moment
+  stall (H4, P 1.5 +/- 0.2 g) is no longer reached inside the aft stick (nMax 1.2 g; the stick per g is H5's 6 in/g), V_H 204.6
+  KTAS (C4 band to 203.7; refittable by the flat plate), the AMCS pull-up from 180 KCAS peaks at 1.61 s on the full 4.95 in stop
+  (C19, P 2.1 s +/- 20 %), and C9's high-speed left shift reverses (-0.02 in). The recommendation traded C23 only, so the flown
+  values stay D (WING_CM0 = the thin-airfoil -0.055, TAIL_DOWNWASH_SCALE 1; both scaffolded in compound.ts so the fit is one
+  line). Para 45 is not reachable with the wing / tail knobs without crossing H4; the decision is the owner's (contract request).
+  The ah56Handling row stays `it.fails` at 0.071 in/kt.
+- **T4 (R4 / item 2, should). Hover heading and position wander: closed by the final fix round's vector in-plane force;
+  re-measured.** The raw aircraft (STAB ASSIST off; T8 turns it on by default). Hands off 20 s from the trimmed hover in calm air: from the 15 m spawn (SimPhysics) AMCS -5.35 -> -5.49 deg of
+  roll, 0.41 kt, 0.61 deg of heading; ICS -5.25 -> -5.13 deg, 0.31 kt, 0.63 deg (ah56Ground, a new regression row: heading under 5
+  deg, drift under 2 kt); from the 10 ft IGE trim (`out/hover-r1.log`) AMCS 0.3 kt and -0.6 deg, ICS 0.3 kt and -0.6 deg (the
+  reviews: 44 deg / 5.6 kt and 17.5 deg / 4.7 kt). The delayed pilot with the 8 kt side gust (same log): AMCS full gain holds at
+  every delay (5.8 / 10.5 / 18 m at 0 / 0.3 / 0.5 s), half gain lost at 51 / 46 / 43 s (was 49 / 41 / 40); ICS full gain lost at 42 /
+  35 / 38 s (was 36 / 34 / 30), half gain 34 / 32 / 30 s (was 25 / 24 / 23). The slow-pilot hover is item 8's (T8).
+- **T5 (R5, should). Hover pedal: the damping is momentum theory; the keyboard gearing is the laptop lever (changed); the stop's
+  windmill-brake thrust is RC's.** The tail rotor's yaw damping re-derived: dT/dw = rho A Omega R (sigma a / 8) / (1 + sigma a /
+  (16 lambda_i)) with sigma 0.297 (P) gives 0.185 kN per m/s at the 8 kN hover thrust (D; the pilot-review round's formula is right),
+  measured 0.21; N_r about 25 kN m s with the drive reaction, tau about 2 s, about 53 deg/s per inch steady. Neither report gives
+  the AH-56A a yaw damper (AMCS: trim schedule and sideslip SAS; ICS: desensitizer, decoupler, roll compensator), so nothing is
+  added to the physics. Full pedal 3 s (`out/hover-r1.log`): AMCS 163 deg/s right / 113 left, 90 deg in 1.45 / 1.76 s; ICS 156 /
+  125 (APE 1.1's hover limit 45 deg/s is a pilot limit). Changed: the keyboard pedal ramp (input.ts, AGENT): 0.03 -> 0.2 of the axis
+  per second over 1.5 s (was the MD 500E's 0.06 -> 0.35 over 1.2 s), so a 1 s key tap is 0.15 in (was 0.35 in) and a 2 s hold 0.7
+  in (was 1.4): without the STAB ASSIST the 1 s tap peaks at 17 deg/s (43 before) and the 2 s hold at 60 (95); with it 5 and 23
+  deg/s, the heading settling within 3-12 deg (`out/keypedal-*.log`; ah56Assist row). The keyboard pedal does not re-centre when the
+  key is let go (the profile's pedal, as on the other helicopters), so without the assist a tap leaves a steady turn (the reviews'
+  "persistence"); the assist's heading hold and pedal follow-up remove it. Not changed: the tail rotor at its -7.4 deg stop yawing
+  15-26 m/s against its thrust (windmill-brake state) makes 0.3-1.3 kN where momentum theory gives about 2 kN (rotor.ts
+  inflowTarget, shared: contract request to RC).
+- **T8 (item 8, beginner). STAB ASSIST on the AH-56A through its own input profile, ON by default (a labelled sim aid).** The
+  keyboard beginner of `tests/rotorcraft/bo105KeyPilot.ts` on the AMCS hover, 60 s: without it 27-30 m of drift (lost at 58-60 s in
+  three of six runs) and the heading wandering 72-180 deg on the old pedal ramp (58 deg and 15 m on the new); with it 1.9-2.8 m,
+  under 5.5 deg of attitude and 0.1 deg of heading at every tap rate and delay tried (`out/key-off.log`, `key-profile.log`;
+  ah56Assist rows). The shared law and the Bo 105's gains, unchanged (src/sim/rotorcraft/stabilityAssist.ts is the Bo 105 lane's);
+  Shift+A toggles it; the controls list and the HUD hints say it is a sim aid. Off on the wheels (taxi unchanged, T1), faded out
+  between 30 and 50 KIAS (round 2, T9: retuned, faded out between 30 and 60). Not measured: the ICS with the assist (the key rig spawns the default AMCS); the assist's cyclic term on
+  the ICS's slower, coupled gyro is the owner's to try (config=ics).
+- **T6 (R6, should). ICS autorotation at 1 deg of collective or less: the gyro-to-stop and Nr collapse no longer occur; the aft
+  stick margin is small.** Re-measured on this tree (the final fix round's flap-rate term in the gyro's blade moments, kept as the
+  recommendation said) with the reviewer's own probe (`out/disc-r1.log`) and the decomposition probe (`out/icsauto-r1.log`), 95 KCAS,
+  19,700 lb, 2,700 ft, prop +8 deg, engine off: full-gain pilot at 0.5 deg, aft stick 1.08 / 3.04 / 4.25 / 4.83 in at 2 / 4 / 6 / 8
+  s, the gyro within 0.5 deg of centre, Nr 94.5 / 92.7 / 96.3 / 101.4 / 103.5 % at 2-10 s, 2,630 ft/min at 10 s (was: the gyro on
+  its 15 deg stop at 8 s, moment stall, Nr 72 % at 12 s); at 2 deg 3.3 in aft and Nr 97.7 %. The half-gain pilot holds Nr 96 % but
+  lets the speed run to 117 KIAS. Frozen at the entry trim it still rolls off left (43 deg at 4 s) and dives: the stick must hold
+  the hub's nose-up 30 kN m (the airframe's nose-down moment in the descent flow, the same balance as T3). PN's ICS training text
+  can keep the P 0.5 deg floor; 4.8 of the 5.5 in of aft stick is used at it.
+  **The moment-stall break is refitted** (the recommendation: keep the flap-rate term, refit the FITTED break; highSpeed.ts, docs/
+  ah56-high-speed.md section 9): the centre-of-pressure shift 0.4 c -> 0.2 c within 1.5 deg past the stall. Stabilising at 1.4 g /
+  122 KCAS the stall now pitches up 0.22 g with 24 deg of right roll that the test pilot holds 0.19 in inside the stick (was 141 deg
+  with the lateral stick on its stop and 0.44 g: a departure); onsets 1.4 g at 122 KCAS and 1.5 g at 154 (P 1.4 / 1.5 +/- 0.2; were
+  1.3 / 1.4); 190 KCAS / 1.43 g 0.35 deg of right roll (the row's 0.5 deg: the KNOWN GAP row at 0.69 now passes). Held to 1.6 g at
+  122 KCAS it still departs (54 deg, the stick on its stop). Unchanged: H5 (a departure past 1.3 g, not a gradient), H6, C2 / C3
+  (8,375 / 5,750 / 8,625 ft), C4 201.1 KTAS, C12 2,509 ft/min; G3 / G5a / half-P / H3 / H10 rows green (`W/tune/ah56/
+  logs-item6-suites.txt`).
+- **T7 (R7, should). Engine failure at 63 KCAS: on the ICS (the P aircraft) the minimum is 80.7 % against about 82 %; the SoF
+  autorotation collective stays the C12 item.** ASTA-72 para 67 (P, read this round): the 63 KCAS level entry went 3 % below the 85 %
+  minimum transient after a 2 s delay of the collective, on the ICS aircraft (100 % = 246 rpm). The reviews compared the AMCS (from
+  97.5 %) with it: 77.6 %. The ICS (`out/fail63-ics*.log`; ah56Systems G11b, a passing sense row and an `it.fails` 82 +/- 1 % row):
+  82.6 % at the end of the 2 s delay, minimum 80.7 % with the collective dumped to 0.5 deg in 0.3 s (79.2-79.6 % over 1 s), back to
+  103 % at 12 s. The decay is the P drivetrain inertia (10,742 slug-ft^2 referred to the rotor; facts.ts tags it P, not ESTIMATE)
+  against the 46.5 % torque the trim needs at 63 KCAS: 10 %/s in the first second, which the power and inertia set (D). Not
+  changed. The SoF autorotation collective (AMCS 4.5-7 deg indicated = -2.5..0 deg at 0.75 R) overspeeds the rotor: from 63 KCAS
+  118 % at 4.5 deg, 107 % at 7 deg, 97.5 % at 9 deg after 12 s (`out/fail63-amcs*.log`); the 95 KCAS autorotation trims 100 % at
+  7.8 deg indicated. Lowering the autorotation collective needs more rotor drag, which raises C12's rate of descent (2,508 ft/min,
+  already 8 ft/min over P 2,200 +/- 300): the two pull opposite ways on the section's drag and the AMCS collective reference
+  (compound.ts "collective gauge"); recorded, owner / AH.
+- **T2 (R2, must). Reverse-thrust deceleration: the mechanism is the BEMT's momentum model in the propeller-brake state; the
+  reverse branch is refitted (FITTED), the rest is a contract request.** At -12 deg and 60-120 KTAS the reverse prop works at a disc
+  thrust coefficient T / (q A) of 0.8-1.9 (`out/propbe.log`), the turbulent-wake regime where simple annulus momentum over-predicts
+  the induction (real rotors follow Glauert's empirical branch): the BEMT gives -7.7 / -8.2 / -9.0 / -11.2 kN at 60 / 80 / 100 / 120
+  KTAS where the blade elements without induction give -14.9 / -16.1 / -17.7 / -19.6 kN (static -6.7 against -9.0). The fix
+  belongs in the shared src/physics/propulsion/bemt.ts (a high-induction correction; contract request to TW: it touches every
+  reversing or windmilling prop). The lift-share story of R2 was checked and is the wrong way round: a wing that lifts more at a
+  given attitude (zero-lift -4 / -6 deg, `out/ld-*.log`) trims more nose down, and the decel gets WORSE (0.21 / 0.16 g from 165 to
+  80 KTAS), because the rotor then has to flare less. Changed (compound.ts, FITTED to ASTA-72 para 15 / Table 3, C11): the prop
+  section's negative branch clMin -0.8 -> -1.2, cdMax 1.6 -> 2.0, standing in for the missing induction correction (+2-3 kN at
+  60-120 KTAS). The P-technique decel (`out/ld2-*.log`: collective held, -12 deg in 4 s, cyclic holding height, 19,200 lb, 1,500
+  ft), before -> after: AMCS 165 -> 80 KTAS 0.22 -> 0.25 g, 50 KTAS at 33.1 -> 29.7 s, 20 KTAS at 42.3 -> 36.8 s; ICS 0.21 -> 0.23
+  g, 33.9 -> 30.6 s, 41.0 -> 36.5 s; with a tighter height hold 0.26 / 0.25 g and the ICS to the hover (3 KTAS) in 39.1 s (P 33 s
+  +/- 20 % = 26.4-39.6, 0.31 g). C11's own row: 196 -> 165 KTAS 5.43 s (P 5.4), its scripted pilot still does not reach 3 KTAS in
+  90 s (`it.fails` kept). Re-checked: C13 25 -> 18 deg in 0.48 s, the 24 deg stop 72.7 % Nr at 5 s (was 73.3; P 68, band 60-75);
+  C20 at 188 KCAS prop action 84.1 % (82.9) against the collective 60.4 % (62.1), still the prop critical; C16 ground reverse -7.1
+  kN (-6.7); C12 2,509 ft/min (unchanged, the +8 deg drag at 95 KTAS is on the attached branch); C10 59.0 s to 165 KTAS, 77.5 s to
+  188 (the forward branch untouched; C10's 188 KTAS row stays `it.fails`).
+
+## Tuning round 2 (2026-10-22, branch tune/ah56; the Fable pilot gate's beginner side; AGENT choices, not owner decisions)
+
+The gate re-ran round 1's numbers exactly and flew the aircraft as the owner will (keyboard, no helicopter experience): the hover
+held, nothing beyond it did. Probes and logs `W/tune/ah56/r2/` (`out/bat-*.log`: the gate's battery per profile variant;
+`out/wbat-*.log`: the watching beginner; `out/p*.log`: the single probes). The physics is untouched this round: input choices, sim
+presets, cues and rows only.
+
+- **T9 (the gate's musts 1-2 and shoulds 3-5, 8). The keyboard beginner beyond the hover.** New test pilot:
+  `tests/rotorcraft/ah56KeyPilot.ts`, a WATCHING beginner (presses every 0.8 s seen 0.3 s late, or every 1.2 s seen 0.5 s late,
+  holds a key until the seen error, led by the seen rate, is inside a band, at most 2 s; 1 s on the collective). The Bo 105 helper's
+  0.1-0.6 s taps do not move this aircraft's re-centring, rate-command keyboard cyclic, so beyond the hover they measure the aid
+  alone. Calibrated: on round 1's profile it holds the hover (2.3-2.6 m) and fails the transition and the lift-off, as the gate did.
+  - *Transition (must 1).* Cause: the shared law's cyclic datum is attitude COMMAND (the captured attitude + stickAttitude x the
+    stick); a re-centring stick puts it back to the captured hover attitude at every key release, and the hold (katt 1.2, full to
+    30 KIAS) pulled each push back within about 4 s. The gate's fadeKias [15, 30] (measured: hover fine, transition possible) loses
+    the rate damping and the pedal follow-up above 30 KIAS, where this aircraft's trims are still moving (0.10 of the stick aft and
+    0.62 of the pedal right between the hover and 45-60 KIAS, `out/p5_speedtrim.log`). Shipped (input.ts): a light hold, katt 0.3
+    and stickAttitude 0.6, over [30, 60] KIAS. The gate's pushes (1.5 s ArrowUp every 4 s, collective written) reach 60 KIAS in 42
+    s (round 1: never, 46.9 at most); the watching beginner reaches 40 KIAS in 22 / 24 s with the heading 30 / 27 deg off (round
+    1's profile, the same pilot: 44 / 34 s, 95 / 50 deg off). Swept and measured (`out/wbat-*.log`): katt 0.6-1.2 at [15-30, 45-60] slower out of the hover and
+    no better on the way back; no cyclic term at all (the AMCS's own attitude hold) loses the hover (13-45 m); the follow-up
+    deadband at 0.05 fights every push. KNOWN GAP (ah56Assist, `it.fails`): hover -> 40 KIAS -> hover. The way back crashed (68 s,
+    0.8 s pace) or was not stopped in 90 s (1.2 s), the heading 68 / 164 deg off: in the 25-60 KIAS band the keyboard pedal stays
+    where the hover left it while the trim moves 0.4-0.6 to the right, the beginner flies 20-30 kt of sideslip with the yaw
+    swinging 10-20 deg/s, and the stick's anchor stays at the hover trim, 0.08 forward of the 40 KIAS trim, so every released key
+    lets the nose drop (rate command). Even from a trimmed 40 KIAS start (`out/wdecel-*.log`) the beginner, with or without the
+    aid, does not stop in 90 s. What would fix it is in the shared law (contract requests): the datum re-captured when a
+    re-centring stick returns to its anchor (attitude hold at the attitude the pilot left, as the gyro itself holds), and a pedal
+    follow-up from sideslip (turn coordination) in the fade band.
+  - *Lift-off (must 2).* Causes: (1) the ground trim leaves the cyclic at 0, 0.06 forward of the hover's, and the re-centring
+    keyboard stick returns there: the aircraft left the ground nose 2-2.5 deg low and ran forward at 1-2 kt/s (`out/
+    p3_lifttrace.log`); (2) the datum is captured at the ground attitude once the wheels carry under half the weight (about 1 deg
+    nose low of the IGE hover); (3) the hover pedal is 0.38 left of the ground trim. Shipped: the ground starts (cold, running,
+    lined up) hold the cyclic at the IGE hover trim (sim.ts, D: 0.058 / -0.028; 20 s on the wheels hands off, brakes off: 0 m, 0.2
+    deg); the heading hold's authority 0.5 (was 0.3), the pedal follow-up 0.5 per s (was 0.2). Rejected with its number: the pedal
+    preset at the hover trim, which turned the aircraft 36 deg on its locked tail wheel in 20 s with the collective down
+    (`out/p1_trim.log`). Passing rows: F6 held to the first unload, then the watching beginner (feet off the pedals) 3 m up for 30
+    s: 10.0 / 11.5 m of drift, 21 / 9 deg of heading, no crash (round 1's profile: crashed at 17 / 22 s, the heading 110 / 97
+    deg off; `out/wbat-R1.log`). KNOWN GAP: the same with the Bo 105
+    tapper (85 m, 38 deg). Not a row: F6 held until 2.6 m up (the collective overshoots to 0.67) then the tapper crashes on a main
+    gear at 7.5 s in every profile tried. Feet off: with the beginner's own pedal keys the heading went 90-180 deg in every
+    lift-off; the STAB ASSIST hint now says to leave Z / X alone in the hover and the lift-off.
+  - *Collective (should 3).* collectiveRate 0.12 -> 0.06 (F5 held 1 s from the 15 m hover: the wheels at 645 fpm at most, no
+    crash; round 1: the ground at 1,057 fpm, a crash; a 0.5 s tap sinks at 369 fpm and stays up; 0.05 measured 560 fpm and a
+    slower lift-off). It still reaches the wheels: hands off after the 1 s press nothing stops the descent until the ground
+    cushion (the "stays airborne" of the gate is not met, recorded). The hand-rate pair (Shift+F5 1.0 / Shift+F6 0.5 per second,
+    the Bo 105's ESTIMATES) with Shift+F5 stopping at 0.15 (7.7 deg indicated): this model's steady autorotation holds 98.6 % Nr at
+    90 KIAS and 101.4 % at 75 KIAS there (`out/p7_auto.log`; 0.10: 103.4 / 106.9 %; the floor 108 / 112.5 %). The engine-failure
+    dump at 60 KIAS / 150 m, 1 s after the cut (`out/p10_dump.log`): Shift+F5 reaches the stop in 0.3 s, Nr minimum 83.1 %;
+    the fine F5 took 5.7 s and 75.5 % (written 1 s dump 81.5 %).
+  - *Cyclic keys (should 4).* A constant 0.1 of the axis per second (was the MD 500E's 0.05 -> 0.35 squared over 1.2 s): held 1 / 2
+    / 3 s, 1.3 / 4.6 / 9.7 deg of pitch and roll 1.9 / 6.9 / 14.6 deg with the aid (round 1: 2.3 / 13.6 / 33.7 and 3.2 / 20.5 / 51.7,
+    a 3 s roll hold reached the ground). The gate's 0.1 and stickAttitude 0.6 taken as recommended.
+  - *Heading hold (should 5).* The gate recommended kpsi 0.5 / kr 0.5; measured, the rate term was what saturated (kr x r at the
+    15-22 deg/s ringing over the 0.13 yawAuthority), and kpsi 0.5 weakened the lift-off. Shipped kpsi 1.0, kr 0.5 within
+    yawAuthority 0.25, holdAuthority 0.5, pedal follow-up 0.5/s: a 0.5 s F6 tap 3.0 deg/s and 2.3 deg (round 1 8.7 deg/s); a 2 s
+    right pedal hold peaks 19 deg/s and from 6 s on rings at 4.2 deg/s at most, 3.2 deg from the datum the hold took (round 1:
+    14.3 deg/s). Rows in ah56Assist.
+  - *Cost of the light hold:* a released 2 s push drifts further hands off (2 s ArrowRight from the hover: 148 m in 22 s, round 1
+    118 m; 2 s ArrowUp 99 m, round 1 82 m). The hover itself holds (rows).
+  - *The ICS on keys (T8's open item, measured, not tuned; `out/p11_ics.log`):* with the aid the hover holds (the Bo 105 tapper 1.2-1.3
+    m, the watching beginner 1.3 m; without it lost at 52-54 s); the keyboard lift-off rolls right onto the wingtip within 2 s of the
+    first unload with every cyclic preset tried (round 1's 0 / 0 and this round's AMCS 0.06 / -0.03; the ICS's own IGE trim, -0.07 /
+    -0.24 of lateral stick, puts it off at 6-10 s), and the push out of the hover reaches 40 KIAS in 39-41 s through 48-64 deg of
+    attitude. The ICS's lateral hover trim (0.24 of the travel left) is far from the AMCS's; the presets and the aid are the AMCS's.
+    The keyboard beginner flies the AMCS (the default); the ICS on keys is the owner's to try.
+- **T7 addendum (the gate's should 7). The power-off envelope of the model, for the beginner.** From the 15 m hover no technique
+  tried survives (the gate: Nr 97 -> 45 % in 4.8 s, 1,800-2,000 fpm, consistent with the P inertia and the P 63 KCAS decay scaled by
+  the hover torque); from 60 KIAS / 150 m the autorotation sinks 3,300 fpm and the touchdowns were 960-2,050 fpm. Autorotation
+  landings are prohibited (P, the hints). The beginner's engine-failure lesson is the low hover: ah56Systems G11c (new, passing),
+  wheels 3 m up, the written pilot levels the wings and raises the collective at 1.0 per second from 1.5 m: 282 fpm, no damage. On
+  keys hands off (the aid holds the hover's 4.2 deg of left roll), Shift+F6 from 2 m touches at 320 fpm on the LEFT main alone and
+  collapses it (140 kN; ah56Assist KNOWN GAP); the hint card says to level the wings. The gear check asked for (`out/p9_land*.log`):
+  a vertical landing in the hover attitude (5 deg left wing low) collapses the left main from about 375 fpm (one-wheel peaks 107 kN
+  at 298 fpm, 204 kN at 463, 321 kN at 560 with the limit removed; wings level 90 kN at 386 fpm, 218 kN at 550). The main leg's
+  140 kN limit and the stiff gas column (gear.ts, ESTIMATES sized for a level 9.5 ft/s drop) do not cover a one-wheel touchdown at
+  the P 9.5 ft/s sink limit, which a landing from this aircraft's left-wing-low hover is. The tail wheel's 45 kN limit (about 6.8
+  times its 6.6 kN static share, untagged, ESTIMATE by gear.ts's header) collapsed at 55 kN in the gate's autorotation touchdowns,
+  tail first at 15-17 deg nose up and 3.3 m/s, above the P 2.9 m/s. Not changed this round (a crash threshold of AG's gear, no
+  handling effect; the one-wheel and tail-down landing conditions at the P sink limit would set them): owner / AG.
+- **T1 addendum (the gate's should 6). Taxi cues.** The unlock toast reads "Tail wheel UNLOCKED: turns below 5 kt only; lock it
+  (Shift+') above 10 kt" (ui.ts switches) and a Taxi hint row says to taxi LOCKED with the feet off the pedal keys above 10 kt
+  (sim advice; the test pilots taxied unlocked to 20 kt). New passing row (ah56Ground): LOCKED at 20 kt, the 1 in pulse, a pilot 0.3
+  s late within 1 in of the trim: back within 0.35 deg (the gate's keyboard tapper wound the non-centring pedal to 3 in and struck
+  a wingtip at 28 kt). Contract requests: a speed-conditional cue (the toast when unlocking above 5 kt; ui), a re-centring
+  pedal-key option on the wheels (input).

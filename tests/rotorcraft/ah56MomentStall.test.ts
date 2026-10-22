@@ -153,11 +153,11 @@ describe('H4: ICS moment stall, pitch-up and RIGHT roll (P ASTA-72 paras 63-65)'
     expect(r.pitchUp).toBeLessThan(0.01);
     h4at190 = r.rollRight;
   }, 1_800_000);
-  // KNOWN GAP (final fix round): with the wing section Cm and the DATCOM downwash (compound.ts) the 190 KCAS turn at 1.43 g shows
-  // 0.69 deg of right roll against the no-stall flight (0.27 before; the flap-rate gyro moments alone gave 0.27, stage 5 0.11),
-  // past this row's 0.5 deg reading of "none" (P ASTA-72 para 65; the 0.5 is an AGENT threshold, kept).
+  // Was a KNOWN GAP (final fix round: 0.69 deg with the wing section Cm and the DATCOM downwash). With the moment break refitted to
+  // 0.2 c (highSpeed.ts, tuning round, KNOWN_ISSUES T6) the 190 KCAS turn at 1.43 g shows 0.35 deg of right roll against the no-stall
+  // flight, inside this row's 0.5 deg reading of "none" (P ASTA-72 para 65; the 0.5 is an AGENT threshold, kept).
   let h4at190 = NaN;
-  it.fails('KNOWN GAP: 190 KCAS at 1.43 g, the right roll stays under 0.5 deg (measured 0.69)', () => {
+  it('190 KCAS at 1.43 g, the right roll stays under 0.5 deg (was KNOWN GAP at 0.69)', () => {
     expect(h4at190).toBeLessThan(0.5);
   });
 });
