@@ -129,6 +129,12 @@ export interface StabilityAssistTuning {
    * hover hold letting go) and is at most `trimMaxDegS` per second. Full below fadeKt[0] of ground speed, none above
    * fadeKt[1]. Absent: attitude command / attitude hold only.
    */
+  /**
+   * Cruise attitude hold on the KEYBOARD cyclic (with `followUp`): above the speed fade the cyclic terms (rate damping,
+   * attitude hold, the keyboard stick's attitude command and its trim follow-up) keep this gain instead of fading out;
+   * the pedal term and the height hold keep their own fades. Absent: everything fades out by fadeKias[1].
+   */
+  cruiseHold?: { gain: number };
   translationalRate?: { degPerKt: number; limitDeg: number; trimDegPerSPerKt: number; restS: number; trimMaxDegS?: number;
     fadeKt: readonly [number, number] };
 }

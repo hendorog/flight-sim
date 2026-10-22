@@ -52,6 +52,10 @@
 // through ControlInputs.pedalFollowUp into the keyboard's pedal centre, from the unclamped rate damping and hold terms
 // (no integral: the follow-up is the integral, with the pedal's whole travel), while no pedal key is held, so it keeps
 // trimming between the beginner's pedal taps. A mouse yoke or hardware axis is the pilot's hand and is never moved.
+// Cruise attitude hold (cruiseHold; keyboard cyclic only, tune round 2): above the speed fade the cyclic terms keep the
+// cruise gain instead of fading out, so the keys stay attitude command / attitude hold through cruise (the round-1 gate:
+// by hand above 50 KIAS the raw aircraft departed on a careless collective or cyclic input); the pedal term and the
+// height hold keep their fades. A mouse yoke or hardware stick flies the raw aircraft above the fade, as before.
 // Translational rate command (translationalRate; keyboard cyclic only, tune round 2): the attitude datums lean against
 // the ground velocity (heading axes) and, once the keyboard stick has rested restS (and restS after a capture), walk to
 // the zero-ground-speed trim, so a stick left anywhere at hover and low speed comes back to a hover over the ground
@@ -120,8 +124,11 @@ function followSpeed(x: number, authority: number, deadBand: number, gain: numbe
 }
 
 export class StabilityAssist {
-  /** The series command of the last step (axis units) and the speed-fade gain applied; all 0 while inactive. */
-  readonly output = { aileron: 0, elevator: 0, rudder: 0, gain: 0 };
+  /**
+   * The series command of the last step (axis units), the speed-fade gain applied (the pedal term's) and the cyclic
+   * terms' gain (the fade, or the cruise attitude hold's on a keyboard cyclic); all 0 while inactive.
+   */
+  readonly output = { aileron: 0, elevator: 0, rudder: 0, gain: 0, cyclicGain: 0 };
   /**
    * How far the trim follow-up has moved the keyboard aileron, elevator and pedals since the assist was built, axis units;
    * and the height hold the keyboard collective, travel.
@@ -230,7 +237,7 @@ export class StabilityAssist {
     this.pedalStep = 0;
     this.heightMode = 'off'; this.climbWas = NaN;
     this.xfeed = 0; this.collWas = NaN; this.collLeft = NaN; this.keyDir = 0;
-    this.output.aileron = this.output.elevator = this.output.rudder = this.output.gain = 0;
+    this.output.aileron = this.output.elevator = this.output.rudder = this.output.gain = this.output.cyclicGain = 0;
   }
 
   /**
@@ -243,11 +250,13 @@ export class StabilityAssist {
     this.applied = false;
     this.pedalStep = 0;
     const fade = clamp((t.fadeKias[1] - s.ias / KT) / (t.fadeKias[1] - t.fadeKias[0]), 0, 1);
+    // The cyclic terms' gain: the speed fade, or on a keyboard cyclic the cruise attitude hold's (cruiseHold).
+    const cyc = Math.max(fade, t.cruiseHold && fu && c.keyboardCyclic === true ? t.cruiseHold.gain : 0);
     const lightSkids = s.onGround && t.groundLoad !== undefined && groundLoadFraction(s) < t.groundLoad;
     // A pedal key worked on the skids makes the lift-off's yaw the pilot's (kept through the reset below).
     if (!s.onGround) this.pedalOnSkids = false;
     else if (c.pedalWorked === true) this.pedalOnSkids = true;
-    if (!active || s.crashed || !(fade > 0) || (s.onGround && !lightSkids)) {
+    if (!active || s.crashed || !(cyc > 0) || (s.onGround && !lightSkids)) {
       this.reset();
       return;
     }
@@ -272,7 +281,7 @@ export class StabilityAssist {
     } else this.stickQuietFor += dt;
     // Datum relaxation toward the flown attitude: the fade band's (time) and the airspeed change's (datumRelaxKt; a
     // hand-held stick only when the keyboard stick is followed up instead).
-    const kFade = fade < 1 ? Math.min(1, (1 - fade) * dt / RELAX_S) : 0;
+    const kFade = cyc < 1 ? Math.min(1, (1 - cyc) * dt / RELAX_S) : 0;
     let kSpeed = 0;
     if (t.datumRelaxKt !== undefined) {
       const a = Math.min(1, dt / AIR_FILTER_S), was = Math.hypot(this.airU, this.airV);
@@ -308,8 +317,8 @@ export class StabilityAssist {
       this.rollRef += dr; this.pitchRef += dp; roll0 += dr; pitch0 += dp;
     }
     const a = t.authority;
-    o.aileron = fade * clamp(-t.kp * w.x - t.katt * wrap(s.roll - roll0), -a, a);
-    o.elevator = fade * clamp(-t.kq * w.y - t.katt * (s.pitch - pitch0), -a, a);
+    o.aileron = cyc * clamp(-t.kp * w.x - t.katt * wrap(s.roll - roll0), -a, a);
+    o.elevator = cyc * clamp(-t.kq * w.y - t.katt * (s.pitch - pitch0), -a, a);
     // Cyclic follow-up through the spring-trim anchor: the keyboard stick follows the anchor at the input module's next
     // frame, and the stick reference moves with it now, so the commanded attitude stays.
     const spring = s.rotorcraft?.springTrim;
@@ -364,7 +373,7 @@ export class StabilityAssist {
       if (Math.abs(law(next)) < ha || Math.abs(next) < Math.abs(this.yawI)) this.yawI = next;
     }
     o.rudder = fade * law(this.yawI);
-    o.gain = fade;
+    o.gain = fade; o.cyclicGain = cyc;
     // Pedal follow-up: from the unclamped terms, while no pedal key is held (the filter keeps its value through a tap);
     // with it the collective crossfeed (pedalCrossfeed), washed out.
     if (kbPedals) {

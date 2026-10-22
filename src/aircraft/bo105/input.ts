@@ -73,13 +73,22 @@ export const BO105_INPUT: InputProfile = {
   //   it. F5 held from 16 m and from 3 ft touches down at 0.44 m/s (round 1: crashed in a 5.9 m/s sink; 2.2 m/s); F6 held
   //   5 s peaks at 86.2 % torque against the 86 % AEO limit (round 1: 118.6 %). Shift+F5 / Shift+F6 stay raw (p4_*).
   // - The crossfeed on light skids too, unless a pedal key was worked on the skids: the untouched lift-off's swing in its
-  //   first 6 s 38.9 deg (59.6 airborne only); the 2 s left-pedal lift-off unchanged at 24.2 (p3, p7). ESTIMATES.
+  //   first 6 s 38.9 deg (59.6 airborne only); the 2 s left-pedal lift-off unchanged at 24.2 (p3, p7).
+  // - CRUISE ATTITUDE HOLD on the keyboard cyclic (the gate's "either owner" should): the cyclic terms keep full gain
+  //   above the 30-50 KIAS fade instead of fading out (the pedal term and the height hold still fade), so the keys stay
+  //   attitude command / attitude hold in cruise. The gate's tapping beginners at 60 / 80 / 100 KIAS (taps every 1 / 2 /
+  //   3 s, plus no collective): 0 of 15 crashed in 60 s (without it 9 of 15, at 14-52 s); the hands-off aircraft at 120 /
+  //   140 KIAS held (raw: diverged and crashed at 51 / 16 s); a 0.5 gain crashed 9 of 15 at 80-140 KIAS. By-hand
+  //   accelerations out of the hover: 6 of 12 not lost (0 of 12; the rest fly into the ground from 3 ft or over-torque
+  //   climbing). Above about 110 KIAS the 1 s tapper still loses it (p12_ch1hi). A mouse yoke or hardware stick flies the
+  //   raw aircraft above the fade, as before (r2 p11 / p12). ESTIMATES.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
     heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1, minNrPct: 95,
       held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.7, landAglM: 4, landBandM: 4, rate: 0.2, limitBackRate: 0.05 } },
     pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
+    cruiseHold: { gain: 1 },
     translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 2, fadeKt: [15, 30] } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
@@ -116,6 +125,6 @@ export const BO105_INPUT: InputProfile = {
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
     centreControls: 'Cyclic back to the keyboard trim (the pedals stay where they are)',
-    stabilityAssist: 'STAB ASSIST on / off: below 30 KIAS holds the attitude (with the arrow keys at rest below 30 kt it comes back to a hover over the ground), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
+    stabilityAssist: 'STAB ASSIST on / off: holds the attitude (on the arrow keys at every speed, the mouse yoke below 30 KIAS; with the arrow keys at rest below 30 kt it comes back to a hover over the ground), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

@@ -229,15 +229,15 @@ describe('the hover scenario in wind starts into the wind, still over the ground
 
 /**
  * Tune round 2 (the round-1 gate's g7_winddecel, W/tune/bo105 r2 p5b): the keyboard deceleration in the app's default
- * 6 kt wind. With the translational rate command the gate's beginner reaches the hover in 6 of its 10 wind variants
- * (round 1: 3); the four misses are its wings-level roll law (decelToHoverKeys keeps the roll at 0 every tap): at the
- * hover the trim needs about 3.4 deg of left roll, so held wings level by 1 s taps the helicopter slides sideways at 15-20
- * kt (the TRC leans the datum, the taps take it back), and in a 10 kt tailwind with 1 s pedal taps it pirouettes. A
- * beginner who also looks at the ground below 8 kt (driftAware: the hover beginner's 0.03 rad per m/s against the drift)
- * reaches the hover in all 10 and holds it flying on in 9 (the 10 kt gusty headwind with 1 s taps drifts 30 m 8.9 s
- * into the 20 s).
+ * 6 kt wind and in 10 kt. The gate's beginner (decelToHoverKeys: wings level at every tap) reaches and holds the hover in
+ * 7 of its 10 wind variants (round 1: 3; with the translational rate command alone 6, the cruise attitude hold keeps its
+ * deceleration from 45 KIAS steadier, p5b_ch1). Its misses: wings level is not the hover trim (about 3.4 deg of left
+ * roll), so in 10 kt with 1 s taps it slides sideways at 15-24 kt (the TRC leans the datum, the taps take it back), and in
+ * a 6 / 10 kt tailwind with 1 s pedal taps it pirouettes (40-73 deg/s). A beginner who also looks at the ground below 8 kt
+ * (driftAware: the hover beginner's 0.03 rad per m/s against the drift) reaches and holds the hover in all 10
+ * (p5b_ch1da).
  */
-describe('keyboard deceleration to the hover in the app\'s default 6 kt wind (taps every 1 s, nose 8)', () => {
+describe('keyboard deceleration to the hover in the app\'s default 6 kt wind and a 10 kt tailwind (taps every 1 s, nose 8)', () => {
   it('a beginner who looks at the ground below 8 kt reaches the hover from 45 KIAS with the wind from ahead and from behind, and holds it 20 s flying on', () => {
     const rows: Record<string, unknown> = {};
     for (const [name, wind] of [['ahead', { fromDeg: 70, kt: 6 }], ['behind', { fromDeg: 250, kt: 6 }]] as const) {
@@ -251,16 +251,25 @@ describe('keyboard deceleration to the hover in the app\'s default 6 kt wind (ta
     }
     report.decelWind = rows;
   }, 300_000);
-  /**
-   * The gate's own beginner (wings level at every tap) into the 6 kt wind with 1 s taps: no hover by 60 s, sliding
-   * sideways at about 18 kt at the end (r2 p6_head6.trace.log; not lost, not crashed). The STAB ASSIST does not overrule
-   * the pilot's roll taps; the hints say to look at the ground and lean against the drift (or let go: hands off, the TRC
-   * stops it). Expected to fail (KNOWN_ISSUES).
-   */
-  it.fails('KNOWN WIND GAP: the wings-level beginner reaches the hover into a 6 kt wind with 1 s taps (slides sideways at about 18 kt: its taps hold the wings level against the hover trim)', () => {
+  /** The gate's own beginner (wings level at every tap) into the 6 kt wind with 1 s taps (round 1 and r2 p6_head6 with the
+   *  TRC alone: no hover by 60 s, sliding sideways at about 18 kt at the end). */
+  it('the gate\'s wings-level beginner reaches the hover from 45 KIAS into a 6 kt wind with 1 s taps (round 1: still at 27 kt after 60 s)', () => {
     const r = keyRig({ start: 'level', kias: 45, heightM: 30, wind: { fromDeg: 70, kt: 6 } }), keys = new Keys(r);
     const d = decelToHoverKeys(r, keys, { interval: 1, noseUpDeg: 8 });
     report.decelWindWingsLevel = { ...d, endKt: r.physics.state.groundSpeed / KT };
+    expect(d.lostS).toBeNull();
+    expect(d.hoverS).not.toBeNull();
+  }, 120_000);
+  /**
+   * The same beginner in a 10 kt tailwind with 1 s taps: the nose goes round (73 deg/s at most) and there is no hover by
+   * 60 s, 15.7 kt at the end (p5b_ch1; not lost, not crashed). Its 1 s pedal taps keep the heading hold from capturing
+   * while the fin weathercocks it toward the wind; with 2 s taps it reaches the hover (33.7 s). The hints: hover into
+   * the wind. Expected to fail (KNOWN_ISSUES).
+   */
+  it.fails('KNOWN TAILWIND GAP: the wings-level beginner reaches the hover in a 10 kt tailwind with 1 s taps (pirouettes, 15.7 kt at 60 s)', () => {
+    const r = keyRig({ start: 'level', kias: 45, heightM: 30, wind: { fromDeg: 250, kt: 10 } }), keys = new Keys(r);
+    const d = decelToHoverKeys(r, keys, { interval: 1, noseUpDeg: 8 });
+    report.decelTailwind10 = { ...d, endKt: r.physics.state.groundSpeed / KT };
     expect(d.lostS).toBeNull();
     expect(d.hoverS).not.toBeNull();
   }, 120_000);
@@ -351,5 +360,43 @@ describe('the A route: lift-off, by hand to 35 kt, A, a heading-bug turn, A off,
       expect((st.hover as { lostS: number | null }).lostS, name).toBeNull();
       expect(st.touchVz as number, name).toBeLessThan(1.5);
     }
+  }, 600_000);
+});
+
+/**
+ * Tune round 2 (the round-1 gate's g6_cruise, issue 3's "either owner" should; StabilityAssistTuning.cruiseHold): the
+ * keyboard cyclic keeps the STAB ASSIST's attitude hold through cruise. The gate's tapping beginner (looks 0.3 s late
+ * every 1 / 2 / 3 s, taps toward the trimmed attitude, wings level, the heading and the height) at 60 / 80 / 100 KIAS:
+ * without it 9 of 15 crashed at 14-52 s (the raw aircraft departs on the taps' collective and cyclic couplings, gate1
+ * g11); with it none in 60 s (W/tune/bo105 r2 p12_ch1). Above about 110 KIAS the 1 s tapper still loses it (KNOWN_ISSUES).
+ */
+describe('cruise on the keys (the keyboard cyclic\'s cruise attitude hold)', () => {
+  function cruise(kias: number, interval: number, dd?: AircraftDefinition) {
+    const r = keyRig({ start: 'level', kias, heightM: 100, dd }), keys = new Keys(r);
+    for (let i = 0; i < 60; i++) frame(r);
+    const s0 = { pitch: r.physics.state.pitch, hdg: r.physics.state.heading, z: r.physics.state.position.z };
+    const step = targetBeginner(r, keys, interval, () => ({ pitch: s0.pitch, roll: 0, hdg: s0.hdg, z: s0.z }));
+    let maxAtt = 0, crashedS: number | null = null;
+    const t0 = r.t;
+    while (r.t - t0 < 60) {
+      step(); keys.update(); frame(r);
+      const s = r.physics.state;
+      maxAtt = Math.max(maxAtt, Math.abs(s.roll) / DEG, Math.abs(s.pitch - s0.pitch) / DEG);
+      if (s.crashed) { crashedS = r.t - t0; break; }
+    }
+    keys.releaseAll();
+    return { crashedS, maxAtt, endKias: r.physics.state.ias / KT };
+  }
+  it('the tapping beginner holds 60 / 80 / 100 KIAS for 60 s with taps every 1 / 2 / 3 s, the attitude within 20 deg (without the cruise hold the 1 s tapper at 80 KIAS crashes)', () => {
+    const rows: Record<string, unknown> = {};
+    for (const kias of [60, 80, 100]) for (const interval of [1, 2, 3]) {
+      const c = cruise(kias, interval);
+      rows[`${kias}/${interval}`] = c;
+      expect(c.crashedS, `${kias} KIAS, ${interval} s`).toBeNull(); expect(c.maxAtt, `${kias} KIAS, ${interval} s`).toBeLessThanOrEqual(20);
+    }
+    const without = cruise(80, 1, withTuning({ cruiseHold: undefined }));
+    rows.withoutCruiseHold80 = without;
+    report.cruiseKeys = rows;
+    expect(without.crashedS).not.toBeNull();
   }, 600_000);
 });
