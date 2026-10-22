@@ -34,7 +34,8 @@
 // roll through the deceleration (the round-2 gate); with followUp the keyboard stick is walked to the trim instead and
 // its datum holds.
 // Speed fade: full gain below fadeKias[0], none above fadeKias[1]; in between the datum also relaxes toward the flown
-// attitude (RELAX_S). Attitude, not position: drift is the pilot's (or the hover hold's, A).
+// attitude (RELAX_S). For a hand-held stick: attitude, not position (drift is the pilot's, or the hover hold's, A); a
+// keyboard cyclic gets the translational rate command and the cruise attitude hold below.
 // The pedal term is rate command / direction hold (ADS-33E's RCDH): while the pilot works the pedal (a pedal key held or
 // a hardware pedal in use, ControlInputs.pedalWorked, or the pedal moving) the heading datum follows the heading and
 // only the rate is damped; PEDAL_REST_S after that stops (the keyboard pedal stays where the keys left it) the heading
