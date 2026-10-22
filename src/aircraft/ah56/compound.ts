@@ -46,8 +46,16 @@ export const WING_INCIDENCE_DEG = {
 export const WING_ZERO_LIFT_DEG = -2;
 /** Section pitching moment about the quarter chord that goes with that zero-lift angle: thin-airfoil theory for a parabolic camber
  *  line, alpha_0 = -2 f / c and cm_c/4 = -pi f / c, so cm = (pi / 2) alpha_0 = -0.055 (D from the -2 deg ESTIMATE), acting over the
- *  MAC 2.316 m (P). */
-export const WING_CM0 = Math.PI / 2 * WING_ZERO_LIFT_DEG * DEG;
+ *  MAC 2.316 m (P). The reference value; the flown one is WING_CM0. */
+export const WING_CM0_THIN_AIRFOIL = Math.PI / 2 * WING_ZERO_LIFT_DEG * DEG;
+/**
+ * The flown section pitching moment: the thin-airfoil value (D). Tuning round 2026-10-22 (KNOWN_ISSUES T3): a FITTED -0.10 with the
+ * downwash at a quarter of DATCOM's (TAIL_DOWNWASH_SCALE 0.25) reaches ASTA-72 para 45's ICS static stability (0.013 / 0.022 in/kt at
+ * 120 / 150 KCAS, P 0.015 / 0.012) but moves the ICS trims aft (0.6 / 1.4 / 3.4 in at 120 / 150 / 190 KCAS), takes the 154 KCAS
+ * moment-stall onset (H4, P) out of reach of the aft stick, puts V_H 0.9 kt over C4's band and C19's pull-up peak 0.07 s early:
+ * not flown (an owner decision, contract request). The per-term gradients are in W/tune/ah56/probes stab44.test.ts.
+ */
+export const WING_CM0 = WING_CM0_THIN_AIRFOIL;
 
 /**
  * Rotor wash on the wing against wake skew (ESTIMATE). Hover: the actuator disc's wake 2.40 m below the disc (hub WL 165.3,
@@ -83,9 +91,15 @@ const datcomDownwash = (() => {
   const kA = 1 / A - 1 / (1 + A ** 1.7), kL = (10 - 3 * lambda) / 7, kH = (1 - hOverB) / twoLOverB ** (1 / 3);
   return 4.44 * (kA * kL * kH) ** 1.19 / WING_LIFT_SLOPE;
 })();
+/** The flown downwash at the stabiliser as a fraction of DATCOM's: 1 (D). The tuning round's para 45 fit used 0.25 with WING_CM0
+ *  -0.10 and was not flown (WING_CM0, KNOWN_ISSUES T3). */
+export const TAIL_DOWNWASH_SCALE = 1;
 const TAIL_DOWNWASH = { centre: AH56_BASE.stabilizer.centre, area: AH56_BASE.stabilizer.area, liftSlope: AH56_BASE.stabilizer.liftSlope,
-  gradient: datcomDownwash, fadeSpeed: 15 };
-export const TAIL_DOWNWASH_GRADIENT = datcomDownwash;
+  gradient: TAIL_DOWNWASH_SCALE * datcomDownwash, fadeSpeed: 15 };
+/** DATCOM's gradient (D), the reference value. */
+export const TAIL_DOWNWASH_DATCOM = datcomDownwash;
+/** The flown gradient, rad per unit wing C_L. */
+export const TAIL_DOWNWASH_GRADIENT = TAIL_DOWNWASH_SCALE * datcomDownwash;
 
 const panel = (side: 1 | -1): WingPanelDef => ({
   side,

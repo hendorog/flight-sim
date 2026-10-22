@@ -389,3 +389,25 @@ The eight open items of the pilot reviews and the final fix round, measured firs
   about 4 s). Owner judgement (fixed-wing tail-dragger experience applies directly): accept the free-castor ground loop. The
   default LOCKED tail wheel (index.ts controlDefaults) keeps the beginner out of it; the HUD / instructor cue is PN's (contract
   request).
+- **T3 (R3, must). ICS collective-fixed static stability: measured term by term; the wing / tail fit that reaches para 45 costs P
+  rows beyond C23, so it is not flown (owner decision).** At ASTA-72 para 44's condition (aft CG FS 299.8, stores, 4,000 ft,
+  18,300 lb, collective and blade angle held, path free) the stick gradient about trim is 0.0735 / 0.0708 in/kt at 120 / 150 KCAS
+  (P para 45: 0.015 / 0.012). Per kt at 150 KCAS (`W/tune/ah56/probes stab44.test.ts`, `out/stab44-base.log`): the airframe's
+  pitching moment grows +0.35 kN m nose up (stabiliser with the wing's downwash +0.49, of which the downwash term +0.31; the wing
+  itself -0.30; the pusher +0.16, its falling thrust 0.5 m above the CG and its normal force 9.9 m aft), the hub must answer -0.35
+  kN m, and the ICS reads it through the sweep feedback at 0.19 in per kN m (-0.067 in/kt); blade Cm -0.013, droop x in-plane
+  +0.015 and spring -0.006 nearly cancel. The body angle of attack hardly changes (-0.02 deg/kt): the speed comes from the flight
+  path, and the trim loads scale with q. The pitch desensitizer (P) is a gain on the stick while its 0.757 in piston is inside its
+  authority, so below about 2.1 in of trim stick at 150 KCAS the stick gradient is the moment gradient / 0.64: smaller trims
+  amplify it, which makes the 150 KCAS point non-monotonic in every airframe knob. Single-knob grid (`out/stab44-*.log`, 120 /
+  150 KCAS): no downwash 0.017 / 0.031; downwash x 0.5 0.044 / 0.088; wing Cm -0.10 0.055 / 0.081, -0.15 0.035 / 0.067, 0 0.096 /
+  0.089; stabiliser lift slope 2.5 0.050 / 0.081; rotor wash on the stabiliser 0, fuselage moment 0, blade Cm gain 0 change it by
+  under 0.013. The pair wing Cm -0.10 with a quarter of DATCOM's downwash reaches 0.013 / 0.022 (the row's 0.024 bound) and the
+  AMCS stays stable (0.009 / 0.011 against 0.018 / 0.021), but the suites on it (`W/tune/ah56/logs-item3-suites.txt`) show the
+  price: the ICS trims go aft (0.6 / 1.4 / 3.4 in at 120 / 150 / 190 KCAS against 1.7 / 3.0 / 4.5 forward), so the 154 KCAS moment
+  stall (H4, P 1.5 +/- 0.2 g) is no longer reached inside the aft stick (nMax 1.2 g; the stick per g is H5's 6 in/g), V_H 204.6
+  KTAS (C4 band to 203.7; refittable by the flat plate), the AMCS pull-up from 180 KCAS peaks at 1.61 s on the full 4.95 in stop
+  (C19, P 2.1 s +/- 20 %), and C9's high-speed left shift reverses (-0.02 in). The recommendation traded C23 only, so the flown
+  values stay D (WING_CM0 = the thin-airfoil -0.055, TAIL_DOWNWASH_SCALE 1; both scaffolded in compound.ts so the fit is one
+  line). Para 45 is not reachable with the wing / tail knobs without crossing H4; the decision is the owner's (contract request).
+  The ah56Handling row stays `it.fails` at 0.071 in/kt.
