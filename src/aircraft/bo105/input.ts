@@ -62,11 +62,13 @@ export const BO105_INPUT: InputProfile = {
   // - TRANSLATIONAL RATE COMMAND on the keyboard cyclic (ADS-33E's TRC response type at hover and low speed): the
   //   attitude datums lean 1 deg per kt of ground speed against the drift (at most 6 deg), and once the keyboard stick
   //   has rested 2.5 s they walk to the zero-ground-speed trim at 0.3 deg per second per kt (at most 2 deg per second),
-  //   full below 15 kt of ground speed, gone at 30. Hands off it comes back to a hover over the ground: let go after the
-  //   45 KIAS deceleration it held within 5 m for 60 s (round 1: slid sideways past 30 m in 10.5 s and crashed at 41 s); a
-  //   1 s ArrowUp knock in the hover 25.5 m (round 1: 490 m, 35 KIAS); 9 of 10 keyboard decelerations held as before
-  //   (r2 p1_all1). Swept 0.5-1.0 deg per kt, 0.1-0.3 deg/s per kt, rest 1-3.5 s: a shorter rest or a stronger walk fought
-  //   the tapping beginner (lost after the hover in 2 of 10), a weaker one left the knock past 30 m (p1_a..h, m0..m05).
+  //   full below 15 kt of ground speed, gone at 30; the walk also waits 2.5 s after a capture (the hold letting go at 27
+  //   kt pitched up 5.3 deg in 2 s without it). Hands off it comes back to a hover over the ground: let go after the 45
+  //   KIAS deceleration it held within 10.6 m for 60 s (round 1: slid sideways past 30 m in 10.5 s and crashed at 41 s); a
+  //   1 s ArrowUp knock in the hover 27.7 m (round 1: 490 m, 35 KIAS); 9 of 10 keyboard decelerations held as before
+  //   (r2 p1_m2). Swept 0.5-1.0 deg per kt, 0.1-0.3 deg/s per kt, rest 1-3.5 s, walk limit 0.5-2 deg/s: a shorter rest or a
+  //   stronger walk fought the tapping beginner (lost after the hover in 2 of 10), a weaker one or a 1 deg/s limit left the
+  //   knock past 30 m (p1_a..h, m0..m05).
   // - CLIMB-RATE COMMAND on a held bare F5 / F6 (airborne, below the height hold's band): the key's own move is taken back
   //   and the lever walked to 2 m/s up or down, the sink falling to 0.7 m/s over the 4 m above 4 m of CG height (the CG
   //   sits 1.4 m up on the skids), stopping at the power limit and backing off at 0.05 per second while F6 stays held past
@@ -77,7 +79,7 @@ export const BO105_INPUT: InputProfile = {
   // - CRUISE ATTITUDE HOLD on the keyboard cyclic (the gate's "either owner" should): the cyclic terms keep full gain
   //   above the 30-50 KIAS fade instead of fading out (the pedal term and the height hold still fade), so the keys stay
   //   attitude command / attitude hold in cruise. The gate's tapping beginners at 60 / 80 / 100 KIAS (taps every 1 / 2 /
-  //   3 s, plus no collective): 0 of 15 crashed in 60 s (without it 9 of 15, at 14-52 s); the hands-off aircraft at 120 /
+  //   3 s, plus no collective): 0 of 15 crashed in 60 s (without it 10 of 15, at 14-52 s); the hands-off aircraft at 120 /
   //   140 KIAS held (raw: diverged and crashed at 51 / 16 s); a 0.5 gain crashed 9 of 15 at 80-140 KIAS. By-hand
   //   accelerations out of the hover: 6 of 12 not lost (0 of 12; the rest fly into the ground from 3 ft or over-torque
   //   climbing). Above about 110 KIAS the 1 s tapper still loses it (p12_ch1hi). A mouse yoke or hardware stick flies the

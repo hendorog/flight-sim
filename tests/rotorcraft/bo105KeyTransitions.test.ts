@@ -135,7 +135,7 @@ describe('keyboard deceleration from 45 KIAS to the hover (the round-2 gate: cra
    * left the assist's band and crashed 41 s after the let-go. Tune round 2: the keyboard cyclic's translational rate
    * command (StabilityAssistTuning.translationalRate, ADS-33E TRC) leans the datums against the ground speed and walks
    * them to the zero-ground-speed trim once the stick rests, so it comes back to a hover over the ground (W/tune/bo105 r2
-   * p1_all1: 5.1 m in 60 s; the 2 s taps 8.6 m, from 30 KIAS 10.7 m).
+   * p1_ch1: 10.6 m in 60 s, 0.0 kt at the end; the 2 s taps 10.9 m, from 30 KIAS 10.7 m).
    */
   it('the beginner who lets go of every key at the hover holds it 60 s hands off: within 30 m, attitude within 15 deg (round 1: past 30 m in 10.5 s, crashed at 41 s)', () => {
     const r = keyRig({ start: 'level', kias: 45, heightM: 30 }), keys = new Keys(r);
@@ -367,7 +367,7 @@ describe('the A route: lift-off, by hand to 35 kt, A, a heading-bug turn, A off,
  * Tune round 2 (the round-1 gate's g6_cruise, issue 3's "either owner" should; StabilityAssistTuning.cruiseHold): the
  * keyboard cyclic keeps the STAB ASSIST's attitude hold through cruise. The gate's tapping beginner (looks 0.3 s late
  * every 1 / 2 / 3 s, taps toward the trimmed attitude, wings level, the heading and the height) at 60 / 80 / 100 KIAS:
- * without it 9 of 15 crashed at 14-52 s (the raw aircraft departs on the taps' collective and cyclic couplings, gate1
+ * without it 10 of 15 of the gate's cases crashed at 14-52 s (the raw aircraft departs on the taps' couplings, gate1
  * g11); with it none in 60 s (W/tune/bo105 r2 p12_ch1). Above about 110 KIAS the 1 s tapper still loses it (KNOWN_ISSUES).
  */
 describe('cruise on the keys (the keyboard cyclic\'s cruise attitude hold)', () => {

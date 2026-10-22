@@ -97,10 +97,9 @@ describe('STAB ASSIST, hands off in the hover scenario (2500 kg, about 16 m; gai
    * (BO105_SIM.hoverIntoWind), trimmed at the start's wind, whose turbulence then varies the headwind: there the stick
    * and pedals are walked 0.034 of the axis in 5 s (measured). Drifting with the air mass (round 3's start, the
    * definition without hoverIntoWind) they stayed within round 3's 0.02.
-   * Tune round 2: drifting with the air mass is now what the keyboard cyclic's translational rate command stops, so there
-   * the walk is the TRC taking the stick toward the zero-ground-speed trim (0.067 of the axis in 5 s; before 0.012), and
-   * the row checks that it does stop the drift (the ground speed falls) rather than that the stick stays. The leak
-   * check (the series term never reaches the controls) is unchanged.
+   * Tune round 2: drifting with the air mass is now what the keyboard cyclic's translational rate command stops; its walk
+   * of the datum is limited to 2 deg/s, so the stick walk stays inside round 3's 0.02 (0.013 in 5 s) while the ground
+   * speed falls from 14.0 to 3.7 kt, which the row now checks too. The leak check is unchanged.
    */
   it('the series term never reaches the pilot\'s controls: hands off in gusts the keyboard stick and pedals move only by the trim follow-up and the crossfeed, and that stays small', () => {
     const drifting: AircraftDefinition = { ...def, sim: { ...def.sim, hoverIntoWind: undefined } };
@@ -124,6 +123,7 @@ describe('STAB ASSIST, hands off in the hover scenario (2500 kg, about 16 m; gai
     const intoWind = fly(), withTheAir = fly(drifting);
     report.seriesNeverReaches = { intoWind, withTheAir };
     for (const x of [intoWind, withTheAir]) { expect(x.worked).toBeGreaterThan(0); expect(x.leak).toBeLessThanOrEqual(0.1 / 60 + 1e-9); }
+    expect(withTheAir.moved).toBeLessThanOrEqual(0.02);
     expect(intoWind.moved).toBeLessThanOrEqual(0.05);
     expect(withTheAir.gsKt).toBeLessThan(withTheAir.gs0Kt - 2);
   }, 60_000);
@@ -159,8 +159,8 @@ describe('STAB ASSIST with the keys (attitude command, attitude hold; the pedal 
    * level by more than 1 deg", with the heading band tightened from 50 to 10 deg.
    * Tune round 2 (the translational rate command, TRC; W/tune/bo105 r2): the keyboard stick left after the tap now leans
    * the datum against the sideward drift and, once it has rested 2.5 s, walks it to the zero-ground-speed trim, so the bank
-   * goes PAST level to stop the drift (9.6 / 5.9 / -0.01 deg at 3 / 5 / 8 s before; now 7.1 / -0.1 / -4.7) and the
-   * helicopter comes back to a hover over the ground. "Not past level by more than 1 deg" described the attitude hold's
+   * goes PAST level to stop the drift (9.6 / 5.9 / -0.01 deg at 3 / 5 / 8 s before; now 7.1 / -0.0 / -4.6) and the
+   * helicopter comes back to a hover over the ground (25.1 m at most, 0.05 kt at 40 s). "Not past level by more than 1 deg" described the attitude hold's
    * drift; restated as the TRC's: the drift stopped (ground speed under 1 kt) within 40 s and within 30 m (the gate's
    * position criterion), the bank at 3 s and the nose band kept.
    */
@@ -416,7 +416,12 @@ describe('STAB ASSIST on light skids', () => {
 });
 
 describe('STAB ASSIST is silent where it should be', () => {
-  it('off while the hover hold flies, on the ground, above 50 KIAS (full gain below 30), and when switched off', () => {
+  /**
+   * Tune round 2: above 50 KIAS this holds for a hand-held stick or the physics alone (no keyboard cyclic, as here); the
+   * keyboard cyclic keeps its attitude hold through cruise (cruiseHold: the row in the cruise describe), with the pedal
+   * term and the height hold still silent above their fades.
+   */
+  it('off while the hover hold flies, on the ground, above 50 KIAS without a keyboard cyclic (full gain below 30), and when switched off', () => {
     const held = rig({ assist: true });
     held.physics.setAutoflight(true);
     for (let i = 0; i < 60; i++) frame(held);
@@ -433,7 +438,7 @@ describe('STAB ASSIST is silent where it should be', () => {
     cruise.reset('cruise', w);
     expect(cruise.state.ias / KT).toBeGreaterThan(50);
     cruise.step(1);
-    expect(cruise.stabilityAssist!.output.gain).toBe(0);
+    expect(cruise.stabilityAssist!.output.gain).toBe(0); expect(cruise.stabilityAssist!.output.cyclicGain).toBe(0);
     const ground = new SimPhysics({ aircraft: def, weather: w, events: createEventBus() });
     ground.reset('runway', w);
     ground.step(1);
@@ -722,9 +727,10 @@ describe('STAB ASSIST translational rate command on the keyboard cyclic (tune ro
    * The round-1 gate (gate1 g5_letgo): a 1 s ArrowUp knock in the hover, hands off, reached 35 KIAS and 490 m in 60 s and a
    * 0.3 s knock 65 m (the attitude hold kept the knocked attitude). The TRC leans the datum against the ground speed (1 deg
    * per kt, at most 6) and walks it to the zero-ground-speed trim once the keyboard stick has rested 2.5 s (0.3 deg per
-   * s per kt): back to a hover within the gate's 30 m (W/tune/bo105 r2 p1_f: 25.5 / 3.4 m).
+   * s per kt, at most 2 deg/s): back to a hover within the gate's 30 m (W/tune/bo105 r2 p1_m2: 27.7 / 3.4 m). Without the
+   * TRC (the cruise attitude hold on) the 1 s knock now runs away to 69 kt and 1,040 m.
    */
-  it('hands off after a 1 s or 0.3 s ArrowUp knock in the hover it comes back to a hover over the ground within 30 m (without the TRC: 490 / 65 m)', () => {
+  it('hands off after a 1 s or 0.3 s ArrowUp knock in the hover it comes back to a hover over the ground within 30 m (round 1: 490 / 65 m)', () => {
     const one = knock('ArrowUp', 1), short = knock('ArrowUp', 0.3), without = knock('ArrowUp', 1, withoutTuning('translationalRate'));
     report.trcKnock = { one, short, without };
     for (const k of [one, short]) { expect(k.crashed).toBe(false); expect(k.driftM).toBeLessThanOrEqual(30); expect(k.endKt).toBeLessThan(1); }

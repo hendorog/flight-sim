@@ -214,6 +214,7 @@ export class StabilityAssist {
     this.stickRestA = num('stickRestA', 0); this.stickRestE = num('stickRestE', 0);
     const quiet = num('stickQuietFor', STICK_QUIET_MAX);
     this.stickQuietFor = quiet >= STICK_QUIET_MAX ? Infinity : quiet;
+    // An older snapshot has none: counted as long since the capture, so the TRC's trim walk goes on at once (as it was).
     this.sinceCapture = num('sinceCapture', STICK_QUIET_MAX);
     this.yawActive = flag('yawActive'); this.holdingHeading = flag('holdingHeading');
     this.headingRef = num('headingRef', 0); this.pedalRest = num('pedalRest', 0); this.pedalRestFor = num('pedalRestFor', 0);
