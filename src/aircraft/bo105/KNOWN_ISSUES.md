@@ -455,8 +455,9 @@ sensitivity"). Docs section 9 ("Tune pass") has the laws and every number; the r
   the fixed-wing keyboard circuit (take-off roll, rotation, flaps; conformance targets only for the fixed-wing types):
   it has no helicopter pilot, and its id parser reads only the `AIRCRAFT_IDS` literal, so `fly-keyboard bo105` took
   `bo105` for the output directory and flew the Cessna 172S (stopped; the stray directory removed). With
-  `aircraft=bo105` as a URL parameter it starts the Bo 105 on the runway with the fixed-wing pilot (W/tune/bo105
-  `out/browser/fly-keyboard-bo105.log`). Not a Bo 105 gate; recorded for the script's owner, not changed here.
+  `aircraft=bo105` as a URL parameter it loads the Bo 105 on the runway and its fixed-wing pilot never raises the
+  collective (0 %, 18 % torque, 0 kt): no lift-off, timed out at 420 s (W/tune/bo105 `out/browser/flykb-bo105`). Not a
+  Bo 105 gate; recorded for the script's owner (a helicopter pilot for it would be new work), not changed here.
 - **Item 6, AEO climb** (item 2 above): unchanged; nothing in this pass touches the physics and no sourced parameter
   closes it.
 - **Restated rows** (behaviour descriptions the new aids changed, not sourced bands): the 1 s roll tap's bank is back to
