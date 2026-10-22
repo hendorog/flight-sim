@@ -345,3 +345,25 @@ ICS static stability, C4 on the ICS, C23 split). Plan amendments A1-A11: plan se
 4. **The AMCS hands-fixed pull rolls left 14° in 3 s**: the rotor's pitch-rate coupling, which AMCS-73 para 37 does not report.
 5. **The Bo 105 STAB ASSIST** and the rest of `rigid/bofly` are not on this branch; only its hover-row commit was cherry-picked.
 
+
+## 12. Tuning round (2026-10-22, branch `tune/ah56`): the eight open items
+
+Every choice here is an AGENT choice (the owner delegated items 3 and 6 with a recommendation); the numbers, probes and logs are in
+KNOWN_ISSUES T1-T8 and `W/tune/ah56/` (probes in `probes/`, outputs in `probes/out/`, suite logs `logs-item*.txt`).
+
+| Item | Measured before | Mechanism | Change | After (target, tag) |
+|---|---|---|---|---|
+| 1 unlocked taxi (must) | 1 in / 1 s pulse at 20 kt: 55.7 °/s, right wingtip; 10 kt hands off diverges | free castor behind mains 0.76 m ahead of the CG: s = (m x U − N_r) / (Izz + m x²), 0.9 /s at 20 kt (D) | none in gear.ts (friction / damper sweeps give a breakout deadband and stuck castors); two pilot-in-the-loop rows | a pilot 0.3 s late at 20 kt holds the heading within 0.7° on 2.2 in (P para 79 / APE-I 133: directional control "excellent"); hands-off row stays KNOWN GAP |
+| 2 reverse decel (must) | 165-80 KTAS 0.22 g (AMCS, this tree) | the reverse prop in the propeller-brake state (T / qA 0.8-1.9), where the shared BEMT's momentum halves the blade-element thrust | prop section clMin −1.2, cdMax 2.0 (FITTED to para 15 / C11) | 0.25 g; 50 KTAS at 29.7 s (33.1); ICS to the hover 39.1 s with a tight height hold (P 33 s ± 20 %, 0.31 g); C11 row still KNOWN GAP |
+| 3 ICS static stability (must) | 0.0735 / 0.0708 in/kt at 120 / 150 KCAS (P 0.015 / 0.012) | per kt at 150 KCAS: tail +0.49, wing −0.30, pusher +0.16 kN m, read at 0.19 in per kN m; the desensitizer × 1 / 0.64 below a 2.1 in trim | none flown; the fit (wing Cm −0.10, downwash × 0.25: 0.013 / 0.022) is staged in compound.ts | it costs H4 (154 KCAS onset out of the aft stick), C4 (204.6 KTAS), C19 (1.61 s): owner decision; KNOWN GAP 0.071 kept |
+| 4 hover wander (should) | (reviews: 44° / 5.6 kt) | closed by the final fix round's vector in-plane force | regression row | 0.61 / 0.63° of heading, 0.41 / 0.31 kt in 20 s (AMCS / ICS) |
+| 5 hover pedal (should) | 1 s key tap 0.35 in, 43 °/s peak; full pedal 163 °/s | damping = momentum theory (D, σ 0.297 P); the keyboard pedal stays put after a tap | keyboard pedal ramp 0.03 → 0.2 /s over 1.5 s (AGENT input) | 1 s tap 0.15 in: 17 °/s (5 with the assist); windmill-brake thrust at the stop: RC |
+| 6 ICS autorotation (should) | (reviews: gyro to the stop, Nr 72 %) | gone since the flap-rate term; the moment break (FITTED at 0.4 c without it) made the stall a departure | break 0.4 c → 0.2 c (FITTED to H4) | autorotation at 0.5°: Nr 101-104 %, 4.8 in aft; H4 onsets 1.4 / 1.5 g (P), roll held in the stick, 190 KCAS 0.35° (row passes) |
+| 7 63 KCAS failure (should) | AMCS 77.6 % (reviews) | the P point is the ICS: 80.7 % with a 0.3 s dump; P drivetrain inertia, 46.5 % torque | rows only | G11b 80.7 % against about 82 % (KNOWN GAP 82 ± 1 %); SoF autorotation collective vs C12: owner / AH |
+| 8 keyboard beginner | 27-30 m drift, heading 72-180° in 60 s | the raw AMCS on keys | STAB ASSIST through AH56_INPUT (Bo 105 tuning, ON, labelled sim aid) | 1.9-2.8 m, 0.1° of heading (ah56Assist rows) |
+
+Rows added: ah56Ground (two unlocked-taxi pilot rows, the hover heading / drift row), ah56Assist (seven rows), ah56Systems G11b
+(a sense row and a KNOWN GAP row). Rows changed: ah56HighSpeed's flown-break bounds follow the refit (−0.2 to −0.3, was −0.4 to
+−0.55); ah56MomentStall's 190 KCAS KNOWN GAP row is a passing row (0.35°). No band was loosened. Contract requests: TW (the
+BEMT's high-induction correction), RC (the tail rotor's windmill-brake thrust at the pedal stop), PN (the tail-wheel lock cue), the
+owner (T3's para 45 trade; T7's autorotation collective against C12).
