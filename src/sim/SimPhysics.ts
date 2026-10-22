@@ -65,6 +65,8 @@ export const COARSE_TIME_SCALE = 4;
 export const COARSE_RATE = 120;
 /** Height above ground (and no wheel contact) required for the coarse rate, m. */
 const COARSE_MIN_AGL = 60;
+/** An airborne start at or below this true airspeed counts as a hover start (SimProfile.hoverIntoWind), m/s. */
+const HOVER_START_TAS = 0.5;
 
 /**
  * Emits the 'gear' events of a retractable gear (sound and UI) by comparing state.gear after each step with the
@@ -213,6 +215,8 @@ export class SimPhysics {
     this.fm = opts.aircraft ? createFlightModelFor(opts.aircraft) : createFlightModel();
     const def = (this.definition = this.fm.definition);
     this.autoflight = new Autoflight(def.sim.autoflight, def.reference, def.geometry.restHeight, { gains: def.autopilot, flaps: def.controls.flaps, rotorcraft: def.rotorcraft });
+    // The helicopter hold slows to a hover when engaged at low speed on a type that asks for it (the Bo 105).
+    if (this.autoflight.helicopter && def.sim.heliHoldSlowToHover) this.autoflight.helicopter.slowToHover = { ...def.sim.heliHoldSlowToHover };
     this.stepSize = 1 / this.fm.physicsRate;
     this.h = this.stepSize;
     this.renderState = copyInto({} as AircraftState, this.fm.state);
@@ -226,6 +230,24 @@ export class SimPhysics {
   }
 
   /** `ic` with the control-gyro configuration and the half-P hook of this run (unchanged when neither is set). */
+  /**
+   * SimProfile.hoverIntoWind (the Bo 105): an airborne start at zero airspeed is turned into the wind at its start point
+   * and time (the air mass's horizontal velocity there, the boundary layer, gust and turbulence included, which fm.reset
+   * adds to the trimmed air velocity) and trimmed at that airspeed, so its ground speed starts at zero. The time is 0: a
+   * reset restarts the clock at 0 and fm.reset samples the wind at 0 too, so a hover start made late in a session faces
+   * the wind its trim is made in (tests/rotorcraft/bo105KeyTransitions: a second start after 60 s of gusts). Any other start,
+   * calm air or another type: unchanged. resetTo only: a restore (restore()) keeps the saved heading and velocity. On the
+   * Bo 105 the app's only airborne zero-airspeed start is the hover scenario (hover=1; the demonstrations are the R22's,
+   * no Flight School lesson flies the Bo 105).
+   */
+  private hoverIntoWind(ic: InitialConditions): InitialConditions {
+    if (!this.definition.sim.hoverIntoWind || ic.onGround || ic.airspeed > HOVER_START_TAS) return ic;
+    const w = this.env.wind(ic.position, 0), speed = Math.hypot(w.x, w.y);
+    if (!(speed > HOVER_START_TAS)) return ic;
+    // The air passes the aircraft at -wind: the nose points where the wind comes from.
+    return { ...ic, heading: Math.atan2(-w.y, -w.x), airspeed: speed };
+  }
+
   private withRotorcraftOptions(ic: InitialConditions): InitialConditions {
     if (!this.rotorcraftConfig && !this.forceHalfPHop) return ic;
     return { ...ic, ...(this.rotorcraftConfig ? { rotorcraftConfig: this.rotorcraftConfig } : {}),
@@ -261,7 +283,7 @@ export class SimPhysics {
     // A new flight: no hail damage (before the reset, whose trim uses the aerodynamics).
     this.hailDamage.reset();
     this.fm.setAirframeDamage(0);
-    this.fm.reset(this.withRotorcraftOptions(sc.ic), this.env);
+    this.fm.reset(this.withRotorcraftOptions(this.hoverIntoWind(sc.ic)), this.env);
     if (sc.attitude) this.rotateTo(sc.attitude.pitch, sc.attitude.roll);
     const c = this.controls;
     const trim = this.fm.trimControls;
@@ -299,7 +321,7 @@ export class SimPhysics {
     this.gearEvents.sync(this.fm.state.gear);
     this.autoflight.disengage();
     if (this.autoflightOnReset || sc.engageAutoflight) this.autoflight.engage(sc.autoflight, this.fm.state, c);
-    this.stabilityAssist?.reset();
+    this.stabilityAssist?.newFlight();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -370,6 +392,8 @@ export class SimPhysics {
     };
     // `start` (spec 6.1): the lesson start the last reset came from, when it came from one.
     if (this.scenario.start) snap.start = JSON.parse(JSON.stringify(this.scenario.start)) as StartSpec;
+    // The STAB ASSIST's datums (a type with one), so a restore goes on with the same series term.
+    if (this.stabilityAssist) snap.assist = this.stabilityAssist.exportState();
     return snap;
   }
 
@@ -431,6 +455,9 @@ export class SimPhysics {
     copyControls(c, defaultControls(def));
     applyControls(c, snap.controls);
     c.starter = false;
+    // The STAB ASSIST's pedal follow-up of the saved frame was handed over before the save (the input module's pedal
+    // centre); a snapshot taken between the physics step and the input frame must not move the centre again.
+    if (c.pedalFollowUp !== undefined) c.pedalFollowUp = 0;
     if (def.input.threePositionClutch) {
       c.rotorClutchCommand = snap.controls.rotorClutchCommand ?? (snap.controls.rotorClutch ? 'engage' : 'release');
       c.rotorClutchGuardOpen = snap.controls.rotorClutchGuardOpen ?? c.rotorClutchCommand !== 'engage';
@@ -470,7 +497,9 @@ export class SimPhysics {
     this.wasCrashed = false;
     this.gearEvents.sync(st.gear);
     if (!def.rotorcraft) this.autoflight.importState(snap.autoflight);
-    this.stabilityAssist?.reset();
+    // The STAB ASSIST goes on from the saved datums; without them (an older snapshot) it captures afresh.
+    if (snap.assist) this.stabilityAssist?.importState(snap.assist);
+    else this.stabilityAssist?.newFlight();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();

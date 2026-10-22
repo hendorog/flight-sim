@@ -786,7 +786,12 @@ export class InputSystem implements Subsystem {
       const fastDown = !!fast && this.held.has('collectiveFastDown'), fastUp = !!fast && this.held.has('collectiveFastUp');
       const fastChange = fast ? (fastUp ? fast.up : 0) - (fastDown ? fast.down : 0) : 0;
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
-      if (this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
+      const hardwareCollective = this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && !!hardware;
+      // The STAB ASSIST's height hold walks only a keyboard collective, and waits while a collective key is held.
+      if (this.profile.stabilityAssist) {
+        c.keyboardCollective = !hardwareCollective; c.collectiveWorked = change !== 0 || fastChange !== 0; c.collectiveFastWorked = fastChange !== 0;
+      }
+      if (hardwareCollective) c.collective = hardware!.value;
       else if (fastChange !== 0) {
         const was = c.collective ?? 0;
         let v = was + change * (this.profile.collectiveRate ?? 0.15) * dt + fastChange * dt;
@@ -963,7 +968,7 @@ export class InputSystem implements Subsystem {
     i.rudder = c.rudder;
     i.source = hwAil !== null || hwEle !== null ? 'hardware' : mouse ? 'mouse' : 'keyboard';
     i.keyboardOffCentre =
-      (kbAil && Math.abs(this.kbAileron) > OFF_CENTRE) || (kbEle && Math.abs(this.kbElevator) > OFF_CENTRE) || (kbRud && Math.abs(this.kbRudder) > OFF_CENTRE);
+      (kbAil && Math.abs(this.kbAileron) > OFF_CENTRE) || (kbEle && Math.abs(this.kbElevator) > OFF_CENTRE) || (kbRud && !this.profile.centreKeepsPedals && Math.abs(this.kbRudder) > OFF_CENTRE);
     i.keyboardElevator = kbEle ? this.kbElevator : 0;
     if (this.profile.stabilityAssist) i.stabilityAssist = !!this.assists.stabilityAssist;
     if (this.profile.setTrimHere) {
@@ -979,12 +984,15 @@ export class InputSystem implements Subsystem {
   }
 
   /**
-   * Numpad 5 / 5: centre the keyboard aileron, elevator and rudder (they glide back in at most 0.25 s). On
-   * the take-off or landing roll with the auto-rudder on, the held rudder is handed to the auto-rudder instead
-   * (it holds the present heading, starting from that rudder), so centring does not swerve the aircraft.
+   * Numpad 5 / 5: centre the keyboard aileron, elevator and rudder (they glide back in at most 0.25 s; the rudder
+   * stays on a type with centreKeepsPedals). On the take-off or landing roll with the auto-rudder on, the held rudder
+   * is handed to the auto-rudder instead (it holds the present heading, starting from that rudder), so centring does
+   * not swerve the aircraft.
    */
   centreControls(ctx: SimContext = this.ctx): void {
     this.centring.aileron = this.centring.elevator = true;
+    // The pedal trim stays (InputProfile.centreKeepsPedals: the Bo 105).
+    if (this.profile.centreKeepsPedals) return;
     const s = ctx.state;
     const onGround = s.wheels[0].onGround || s.wheels[1].onGround || s.wheels[2].onGround;
     const handover = this.assists.groundSteering && onGround && s.groundSpeed > this.profile.assists.handoverSpeed && !this.rudderHardware;

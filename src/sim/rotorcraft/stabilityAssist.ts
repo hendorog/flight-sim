@@ -34,7 +34,8 @@
 // roll through the deceleration (the round-2 gate); with followUp the keyboard stick is walked to the trim instead and
 // its datum holds.
 // Speed fade: full gain below fadeKias[0], none above fadeKias[1]; in between the datum also relaxes toward the flown
-// attitude (RELAX_S). Attitude, not position: drift is the pilot's (or the hover hold's, A).
+// attitude (RELAX_S). For a hand-held stick: attitude, not position (drift is the pilot's, or the hover hold's, A); a
+// keyboard cyclic gets the translational rate command and the cruise attitude hold below.
 // The pedal term is rate command / direction hold (ADS-33E's RCDH): while the pilot works the pedal (a pedal key held or
 // a hardware pedal in use, ControlInputs.pedalWorked, or the pedal moving) the heading datum follows the heading and
 // only the rate is damped; PEDAL_REST_S after that stops (the keyboard pedal stays where the keys left it) the heading
@@ -52,11 +53,25 @@
 // through ControlInputs.pedalFollowUp into the keyboard's pedal centre, from the unclamped rate damping and hold terms
 // (no integral: the follow-up is the integral, with the pedal's whole travel), while no pedal key is held, so it keeps
 // trimming between the beginner's pedal taps. A mouse yoke or hardware axis is the pilot's hand and is never moved.
+// Cruise attitude hold (cruiseHold; keyboard cyclic only, tune round 2): above the speed fade the cyclic terms keep the
+// cruise gain instead of fading out, so the keys stay attitude command / attitude hold through cruise (the round-1 gate:
+// by hand above 50 KIAS the raw aircraft departed on a careless collective or cyclic input); the pedal term and the
+// height hold keep their fades. A mouse yoke or hardware stick flies the raw aircraft above the fade, as before.
+// Translational rate command (translationalRate; keyboard cyclic only, tune round 2): the attitude datums lean against
+// the ground velocity (heading axes) and, once the keyboard stick has rested restS (and restS after a capture), walk to
+// the zero-ground-speed trim, so a stick left anywhere at hover and low speed comes back to a hover over the ground
+// (ADS-33E's TRC; the attitude hold alone kept a decelerating or knocked attitude and slid away: the round-1 gate's
+// let-go crash). A mouse yoke or hardware stick keeps the attitude command.
+// Height hold (heightHold): a keyboard collective at rest holds the height; a bare F5 / F6 held airborne is a climb-rate
+// command (heightHold.held: the key's move taken back, the lever walked to the commanded rate, the sink slowing near the
+// ground, stopped and backed off at the power limit); Shift+F5 / Shift+F6 stay the pilot's.
+// The collective-to-pedal crossfeed also works on light skids unless a pedal key was worked on the skids
+// (pedalCrossfeed.onLightSkids: the untouched lift-off's yaw).
 // Off on the ground (but working once the skids carry less than groundLoad of the weight, the cyclic datum kept through
 // a skid touch in a low hover, the heading held from before lift-off), when crashed, and while the hover hold or an
 // instructor flies (the caller's `active`).
 
-import { G0, KT, clamp } from '../../core/math';
+import { DEG, G0, KT, clamp } from '../../core/math';
 import type { AircraftState, ControlInputs } from '../../core/types';
 import type { StabilityAssistTuning } from '../../input/profile';
 
@@ -86,6 +101,15 @@ const HOLD_FADE_KT = 10;
 /** A heading error beyond this drags the heading datum along (a held pedal overpowering the hold), rad. */
 const HOLD_SLIP = Math.PI / 4;
 
+/** A stick quiet this long counts as quiet since the capture (Infinity in the assist; JSON has none), s. */
+const STICK_QUIET_MAX = 1e6;
+
+/** The height hold's modes, by index in a snapshot. */
+const HEIGHT_MODES = ['off', 'damp', 'hold'] as const;
+
+/** The assist's state in a snapshot (StabilityAssist.exportState): numbers and flags by name. */
+export type StabilityAssistSnapshot = Record<string, number | boolean>;
+
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** Fraction of the weight the skids (or wheels) carry. */
@@ -101,10 +125,18 @@ function followSpeed(x: number, authority: number, deadBand: number, gain: numbe
 }
 
 export class StabilityAssist {
-  /** The series command of the last step (axis units) and the speed-fade gain applied; all 0 while inactive. */
-  readonly output = { aileron: 0, elevator: 0, rudder: 0, gain: 0 };
-  /** How far the trim follow-up has moved the keyboard aileron, elevator and pedals since the assist was built, axis units. */
-  readonly followed = { aileron: 0, elevator: 0, rudder: 0 };
+  /**
+   * The series command of the last step (axis units), the speed-fade gain applied (the pedal term's) and the cyclic
+   * terms' gain (the fade, or the cruise attitude hold's on a keyboard cyclic); all 0 while inactive.
+   */
+  readonly output = { aileron: 0, elevator: 0, rudder: 0, gain: 0, cyclicGain: 0 };
+  /**
+   * How far the trim follow-up has moved the keyboard aileron, elevator and pedals since the assist was built, axis units;
+   * and the height hold the keyboard collective, travel.
+   */
+  readonly followed = { aileron: 0, elevator: 0, rudder: 0, collective: 0 };
+  /** The height hold's state: off, stopping the climb or sink ('damp'), or holding `heightRef` ('hold'). */
+  heightMode: 'off' | 'damp' | 'hold' = 'off';
   /** The heading datum is held (the pedal at rest) rather than following the heading (the pedal being worked). */
   holdingHeading = false;
   private captured = false;
@@ -117,6 +149,8 @@ export class StabilityAssist {
   private stickRestA = 0;
   private stickRestE = 0;
   private stickQuietFor = Infinity;
+  /** Time since the cyclic datum was captured, s (the TRC's trim walk waits restS after a capture too). */
+  private sinceCapture = 0;
   private yawActive = false;
   private headingRef = 0;
   private pedalRest = 0;
@@ -130,10 +164,79 @@ export class StabilityAssist {
   private lpR = 0;
   /** The pedal follow-up of this step, applied in after(). */
   private pedalStep = 0;
+  /** The height hold's datum, m MSL. */
+  private heightRef = 0;
+  /** The pedal the height hold's crossfeed holds now (washed out), axis units. */
+  private xfeed = 0;
+  private collWas = NaN;
+  /** The collective as this hold left it (the keys' move is measured from it), travel; NaN: not known. */
+  private collLeft = NaN;
+  /** The direction of the collective key held (+1 F6, -1 F5, 0 none or not yet seen). */
+  private keyDir = 0;
+  /** A pedal key was worked since the skids last left the ground (the crossfeed then leaves the lift-off to the pilot). */
+  private pedalOnSkids = false;
+  /** The climb rate of the last step (the height hold's proportional term reads its change), m/s. */
+  private climbWas = NaN;
   private applied = false;
   private readonly pilot = { aileron: 0, elevator: 0, rudder: 0 };
 
   constructor(readonly tuning: StabilityAssistTuning) {}
+
+  /**
+   * The datums, filters and follow-up totals for a snapshot (src/sim/resume.ts), so a restored flight goes on with the
+   * same series term instead of capturing a new datum (a step in the controls at the restore).
+   */
+  exportState(): StabilityAssistSnapshot {
+    return {
+      captured: this.captured, rollRef: this.rollRef, pitchRef: this.pitchRef, aileronRef: this.aileronRef, elevatorRef: this.elevatorRef,
+      airU: this.airU, airV: this.airV, stickRestA: this.stickRestA, stickRestE: this.stickRestE,
+      // JSON has no Infinity (a stick at rest since the capture).
+      stickQuietFor: Math.min(this.stickQuietFor, STICK_QUIET_MAX), sinceCapture: Math.min(this.sinceCapture, STICK_QUIET_MAX),
+      yawActive: this.yawActive, holdingHeading: this.holdingHeading, headingRef: this.headingRef, pedalRest: this.pedalRest,
+      pedalRestFor: this.pedalRestFor, pedalDir: this.pedalDir, yawI: this.yawI, lpA: this.lpA, lpE: this.lpE, lpR: this.lpR,
+      followedAileron: this.followed.aileron, followedElevator: this.followed.elevator, followedRudder: this.followed.rudder,
+      followedCollective: this.followed.collective,
+      heightMode: HEIGHT_MODES.indexOf(this.heightMode), heightRef: this.heightRef,
+      ...(Number.isFinite(this.climbWas) ? { climbWas: this.climbWas } : {}), xfeed: this.xfeed,
+      ...(Number.isFinite(this.collWas) ? { collWas: this.collWas } : {}),
+      ...(Number.isFinite(this.collLeft) ? { collLeft: this.collLeft } : {}), keyDir: this.keyDir, pedalOnSkids: this.pedalOnSkids,
+    };
+  }
+
+  /** Go on from a snapshot's state (exportState); a field missing or of the wrong kind keeps reset()'s value. */
+  importState(v: StabilityAssistSnapshot): void {
+    this.reset();
+    const num = (k: string, d: number): number => (typeof v[k] === 'number' && Number.isFinite(v[k]) ? v[k] as number : d);
+    const flag = (k: string): boolean => v[k] === true;
+    this.captured = flag('captured');
+    this.rollRef = num('rollRef', 0); this.pitchRef = num('pitchRef', 0);
+    this.aileronRef = num('aileronRef', 0); this.elevatorRef = num('elevatorRef', 0);
+    this.airU = num('airU', 0); this.airV = num('airV', 0);
+    this.stickRestA = num('stickRestA', 0); this.stickRestE = num('stickRestE', 0);
+    const quiet = num('stickQuietFor', STICK_QUIET_MAX);
+    this.stickQuietFor = quiet >= STICK_QUIET_MAX ? Infinity : quiet;
+    // An older snapshot has none: counted as long since the capture, so the TRC's trim walk goes on at once (as it was).
+    this.sinceCapture = num('sinceCapture', STICK_QUIET_MAX);
+    this.yawActive = flag('yawActive'); this.holdingHeading = flag('holdingHeading');
+    this.headingRef = num('headingRef', 0); this.pedalRest = num('pedalRest', 0); this.pedalRestFor = num('pedalRestFor', 0);
+    this.pedalDir = num('pedalDir', 0); this.yawI = num('yawI', 0);
+    this.lpA = num('lpA', 0); this.lpE = num('lpE', 0); this.lpR = num('lpR', 0);
+    this.followed.aileron = num('followedAileron', 0); this.followed.elevator = num('followedElevator', 0);
+    this.followed.rudder = num('followedRudder', 0); this.followed.collective = num('followedCollective', 0);
+    this.heightMode = HEIGHT_MODES[num('heightMode', 0)] ?? 'off';
+    this.heightRef = num('heightRef', 0); this.climbWas = num('climbWas', NaN);
+    this.xfeed = num('xfeed', 0); this.collWas = num('collWas', NaN);
+    this.collLeft = num('collLeft', NaN); this.keyDir = Math.sign(num('keyDir', 0)); this.pedalOnSkids = flag('pedalOnSkids');
+  }
+
+  /**
+   * A new flight (a scenario reset, or a restore without the assist's state): reset() and forget a pedal key worked on
+   * the skids, which reset() keeps (it runs every step on loaded skids, where that record is made).
+   */
+  newFlight(): void {
+    this.reset();
+    this.pedalOnSkids = false;
+  }
 
   /** Forget the datums (a reset or a restore): the next active step captures the attitude, stick and heading it finds. */
   reset(): void {
@@ -143,7 +246,9 @@ export class StabilityAssist {
     this.yawI = 0;
     this.lpA = this.lpE = this.lpR = 0;
     this.pedalStep = 0;
-    this.output.aileron = this.output.elevator = this.output.rudder = this.output.gain = 0;
+    this.heightMode = 'off'; this.climbWas = NaN;
+    this.xfeed = 0; this.collWas = NaN; this.collLeft = NaN; this.keyDir = 0;
+    this.output.aileron = this.output.elevator = this.output.rudder = this.output.gain = this.output.cyclicGain = 0;
   }
 
   /**
@@ -156,8 +261,13 @@ export class StabilityAssist {
     this.applied = false;
     this.pedalStep = 0;
     const fade = clamp((t.fadeKias[1] - s.ias / KT) / (t.fadeKias[1] - t.fadeKias[0]), 0, 1);
+    // The cyclic terms' gain: the speed fade, or on a keyboard cyclic the cruise attitude hold's (cruiseHold).
+    const cyc = Math.max(fade, t.cruiseHold && fu && c.keyboardCyclic === true ? t.cruiseHold.gain : 0);
     const lightSkids = s.onGround && t.groundLoad !== undefined && groundLoadFraction(s) < t.groundLoad;
-    if (!active || s.crashed || !(fade > 0) || (s.onGround && !lightSkids)) {
+    // A pedal key worked on the skids makes the lift-off's yaw the pilot's (kept through the reset below).
+    if (!s.onGround) this.pedalOnSkids = false;
+    else if (c.pedalWorked === true) this.pedalOnSkids = true;
+    if (!active || s.crashed || !(cyc > 0) || (s.onGround && !lightSkids)) {
       this.reset();
       return;
     }
@@ -174,13 +284,15 @@ export class StabilityAssist {
       this.aileronRef = c.aileron; this.elevatorRef = c.elevator;
       this.airU = air.x; this.airV = air.y;
       this.stickRestA = c.aileron; this.stickRestE = c.elevator; this.stickQuietFor = Infinity;
+      this.sinceCapture = 0;
     }
+    this.sinceCapture += dt;
     if (Math.abs(c.aileron - this.stickRestA) > STICK_EPS || Math.abs(c.elevator - this.stickRestE) > STICK_EPS) {
       this.stickRestA = c.aileron; this.stickRestE = c.elevator; this.stickQuietFor = 0;
     } else this.stickQuietFor += dt;
     // Datum relaxation toward the flown attitude: the fade band's (time) and the airspeed change's (datumRelaxKt; a
     // hand-held stick only when the keyboard stick is followed up instead).
-    const kFade = fade < 1 ? Math.min(1, (1 - fade) * dt / RELAX_S) : 0;
+    const kFade = cyc < 1 ? Math.min(1, (1 - cyc) * dt / RELAX_S) : 0;
     let kSpeed = 0;
     if (t.datumRelaxKt !== undefined) {
       const a = Math.min(1, dt / AIR_FILTER_S), was = Math.hypot(this.airU, this.airV);
@@ -190,14 +302,34 @@ export class StabilityAssist {
     }
     let roll0 = this.rollRef + t.stickAttitude * (c.aileron - this.aileronRef);
     let pitch0 = this.pitchRef + t.stickAttitude * (c.elevator - this.elevatorRef);
+    // Translational rate command (keyboard cyclic): the datums lean against the ground velocity, and walk to the
+    // zero-ground-speed trim while the stick rests.
+    const tr = t.translationalRate;
+    if (tr && kbCyclic) {
+      const vx = s.velocity.x, vy = s.velocity.y, gs = Math.hypot(vx, vy);
+      const ft = clamp((tr.fadeKt[1] * KT - gs) / ((tr.fadeKt[1] - tr.fadeKt[0]) * KT), 0, 1);
+      if (ft > 0) {
+        const ch = Math.cos(s.heading), sh = Math.sin(s.heading);
+        const vf = vx * ch + vy * sh, vr = -vx * sh + vy * ch;
+        const kv = tr.degPerKt * DEG / KT, lim = tr.limitDeg * DEG;
+        pitch0 += ft * clamp(kv * vf, -lim, lim);
+        roll0 -= ft * clamp(kv * vr, -lim, lim);
+        if (Math.min(this.stickQuietFor, this.sinceCapture) >= tr.restS) {
+          const ki = fade * ft * tr.trimDegPerSPerKt * DEG / KT, cap = (tr.trimMaxDegS ?? Infinity) * DEG * dt;
+          const dp = clamp(ki * vf * dt, -cap, cap), dr = clamp(ki * vr * dt, -cap, cap);
+          this.pitchRef += dp; pitch0 += dp;
+          this.rollRef -= dr; roll0 -= dr;
+        }
+      }
+    }
     const k = 1 - (1 - kFade) * (1 - kSpeed);
     if (k > 0) {
       const dr = wrap(s.roll - roll0) * k, dp = (s.pitch - pitch0) * k;
       this.rollRef += dr; this.pitchRef += dp; roll0 += dr; pitch0 += dp;
     }
     const a = t.authority;
-    o.aileron = fade * clamp(-t.kp * w.x - t.katt * wrap(s.roll - roll0), -a, a);
-    o.elevator = fade * clamp(-t.kq * w.y - t.katt * (s.pitch - pitch0), -a, a);
+    o.aileron = cyc * clamp(-t.kp * w.x - t.katt * wrap(s.roll - roll0), -a, a);
+    o.elevator = cyc * clamp(-t.kq * w.y - t.katt * (s.pitch - pitch0), -a, a);
     // Cyclic follow-up through the spring-trim anchor: the keyboard stick follows the anchor at the input module's next
     // frame, and the stick reference moves with it now, so the commanded attitude stays.
     const spring = s.rotorcraft?.springTrim;
@@ -210,6 +342,9 @@ export class StabilityAssist {
       this.aileronRef += dA; this.elevatorRef += dE; this.stickRestA += dA; this.stickRestE += dE;
       this.followed.aileron += dA; this.followed.elevator += dE;
     } else this.lpA = this.lpE = 0;
+
+    // The height hold walks the keyboard collective (before the pedals: the crossfeed reads the collective it leaves).
+    this.heightHold(dt, s, c);
 
     // Pedals: rate damping while the pilot works them, and the heading held once they rest.
     if (!this.yawActive) {
@@ -249,21 +384,89 @@ export class StabilityAssist {
       if (Math.abs(law(next)) < ha || Math.abs(next) < Math.abs(this.yawI)) this.yawI = next;
     }
     o.rudder = fade * law(this.yawI);
-    o.gain = fade;
-    // Pedal follow-up: from the unclamped terms, while no pedal key is held (the filter keeps its value through a tap).
+    o.gain = fade; o.cyclicGain = cyc;
+    // Pedal follow-up: from the unclamped terms, while no pedal key is held (the filter keeps its value through a tap);
+    // with it the collective crossfeed (pedalCrossfeed), washed out.
     if (kbPedals) {
+      const was = this.xfeed, xf = t.pedalCrossfeed, coll = c.collective ?? 0;
+      if (xf) {
+        // A collective change while a pedal key is held, or on the skids (the lift-off, where the pilot sets the pedal
+        // before raising the collective), is the pilot's to pedal; what the crossfeed holds washes out either way (a pedal
+        // key moves the pedals from where they are).
+        if (c.pedalWorked !== true && (!s.onGround || (xf.onLightSkids === true && !this.pedalOnSkids)) && Number.isFinite(this.collWas)) this.xfeed += xf.perCollective * fade * (coll - this.collWas);
+        this.xfeed -= this.xfeed * Math.min(1, dt / xf.washS);
+      }
+      this.collWas = coll;
+      let step = this.xfeed - was;
       if (c.pedalWorked !== true) {
         this.lpR += (fade * (rd + hp) - this.lpR) * Math.min(1, dt / fu!.filterS);
-        this.pedalStep = clamp(c.rudder + followSpeed(this.lpR, ya, fu!.deadBand, fu!.pedalGain, fu!.pedalRate) * dt, -1, 1) - c.rudder;
-        this.pedalRest += this.pedalStep;
-        this.followed.rudder += this.pedalStep;
+        step += followSpeed(this.lpR, ya, fu!.deadBand, fu!.pedalGain, fu!.pedalRate) * dt;
       }
-    } else this.lpR = 0;
+      this.pedalStep = clamp(c.rudder + step, -1, 1) - c.rudder;
+      this.pedalRest += this.pedalStep;
+      this.followed.rudder += this.pedalStep;
+    } else { this.lpR = 0; this.xfeed = 0; this.collWas = NaN; }
 
     c.aileron = clamp(c.aileron + o.aileron, -1, 1);
     c.elevator = clamp(c.elevator + o.elevator, -1, 1);
     c.rudder = clamp(c.rudder + o.rudder, -1, 1);
     this.applied = true;
+  }
+
+  /**
+   * The height hold (heightHold; a keyboard collective only): walks ControlInputs.collective itself, as the keys do (the
+   * input module adds its keys to it next frame), so nothing is put back in after().
+   */
+  private heightHold(dt: number, s: AircraftState, c: ControlInputs): void {
+    const hh = this.tuning.heightHold, rc = s.rotorcraft;
+    const hf = hh ? clamp((hh.fadeKias[1] - s.ias / KT) / (hh.fadeKias[1] - hh.fadeKias[0]), 0, 1) : 0;
+    const ts = rc?.turboshaft, tw = rc?.twinTurboshaft;
+    const powered = !!rc && s.engines.every((e) => e.running) && !tw?.oei && !ts?.needlesSplit && (ts?.nrPct ?? 100) >= (hh?.minNrPct ?? 0);
+    if (!hh || c.keyboardCollective !== true || !(hf > 0) || !powered || c.collective === undefined) {
+      this.heightMode = 'off'; this.climbWas = NaN; this.keyDir = 0;
+      this.collLeft = c.collective ?? NaN;
+      return;
+    }
+    const w = -s.velocity.z;
+    // The proportional term (on the climb rate's change, so a new command does not kick the lever).
+    const dw = Number.isFinite(this.climbWas) && dt > 0 ? (w - this.climbWas) / dt : 0;
+    this.climbWas = w;
+    // What the keys moved the lever by since this hold's last step (the input module adds them between steps).
+    const key = Number.isFinite(this.collLeft) ? c.collective - this.collLeft : 0;
+    let rate: number, back = 0;
+    const held = hh.held;
+    if (c.collectiveWorked === true && held && c.collectiveFastWorked !== true && !s.onGround) {
+      // A bare F5 / F6 held airborne: a climb-rate command. The key's own move is taken back and the lever is walked to
+      // the commanded climb or sink, the sink slowing near the ground.
+      this.heightMode = 'off';
+      if (key !== 0) this.keyDir = Math.sign(key);
+      back = hf * key;
+      const sink = clamp(held.landSinkMps + (s.altitudeAGL - held.landAglM) * (held.sinkMps - held.landSinkMps) / held.landBandM,
+        held.landSinkMps, held.sinkMps);
+      const vsCmd = this.keyDir > 0 ? held.climbMps : this.keyDir < 0 ? -sink : 0;
+      rate = clamp(hh.kv * (vsCmd - w) - hh.kp * dw, -held.rate, held.rate);
+    } else if (c.collectiveWorked === true) {
+      // The pilot moves the lever: the hand-rate keys (Shift+F5 / Shift+F6) raw, a bare key on the skids (or without the
+      // climb-rate command) damped; the datum waits for the keys to rest.
+      this.heightMode = 'off'; this.keyDir = 0;
+      rate = c.collectiveFastWorked === true ? 0 : clamp(-hh.kvHeld * w - hh.kp * dw, -hh.rate, hh.rate);
+    } else {
+      this.keyDir = 0;
+      if (this.heightMode === 'off') this.heightMode = 'damp';
+      if (this.heightMode === 'damp' && Math.abs(w) < hh.captureMps) { this.heightMode = 'hold'; this.heightRef = s.altitudeMSL; }
+      const vsCmd = this.heightMode === 'hold' ? clamp(hh.kh * (this.heightRef - s.altitudeMSL), -hh.vsMax, hh.vsMax) : 0;
+      rate = clamp(hh.kv * (vsCmd - w) - hh.kp * dw, -hh.rate, hh.rate);
+    }
+    rate *= hf;
+    // Never into the power limit (above the maximum continuous power), never below the floor; a held F6 that has
+    // carried the lever past the limit (the torque lags the lever) is backed off.
+    const overLimit = rc!.powerLimitExceeded || rc!.takeoffPowerSeconds > 0;
+    if (rate > 0 && overLimit) rate = 0;
+    if (overLimit && this.keyDir > 0 && held?.limitBackRate) rate = -hf * held.limitBackRate;
+    const was = c.collective;
+    c.collective = clamp(was - back + rate * dt, Math.min(was, hh.floor), 1);
+    this.followed.collective += c.collective - was;
+    this.collLeft = c.collective;
   }
 
   /**
