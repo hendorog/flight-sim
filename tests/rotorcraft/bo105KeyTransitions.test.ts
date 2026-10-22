@@ -206,8 +206,11 @@ describe('the hover scenario in wind starts into the wind, still over the ground
       const r = keyRig({ start: 'hover15', wind }), keys = new Keys(r), s = r.physics.state;
       const gs0Kt = s.groundSpeed / KT, iasKt = s.ias / KT, hdgDeg = s.heading / DEG;
       const h = flyHover(r, keys, 60, hoverBeginner(r, keys));
-      rows[`${wind.fromDeg}/${wind.kt}${wind.gustKt ? 'G' + wind.gustKt : ''}`] = { gs0Kt, iasKt, hdgDeg, ...h };
-      expect(gs0Kt).toBeLessThan(0.1);
+      // A second hover start later in the session (the clock and fm.reset's wind both restart at 0): still over the ground.
+      r.physics.resetTo(hoverScenario(r.physics.env, def.rotorcraft!), r.ctx.weather);
+      const gsAgainKt = r.physics.state.groundSpeed / KT;
+      rows[`${wind.fromDeg}/${wind.kt}${wind.gustKt ? 'G' + wind.gustKt : ''}`] = { gs0Kt, iasKt, hdgDeg, gsAgainKt, ...h };
+      expect(gs0Kt).toBeLessThan(0.1); expect(gsAgainKt).toBeLessThan(0.1);
       expect(Math.abs(((hdgDeg - wind.fromDeg + 540) % 360) - 180)).toBeLessThanOrEqual(30);
       expect(h.lostS).toBeNull(); expect(h.driftM).toBeLessThanOrEqual(10);
     }

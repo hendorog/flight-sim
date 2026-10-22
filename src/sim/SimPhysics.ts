@@ -233,7 +233,9 @@ export class SimPhysics {
   /**
    * SimProfile.hoverIntoWind (the Bo 105): an airborne start at zero airspeed is turned into the wind at its start point
    * and time (the air mass's horizontal velocity there, the boundary layer, gust and turbulence included, which fm.reset
-   * adds to the trimmed air velocity) and trimmed at that airspeed, so its ground speed starts at zero. Any other start,
+   * adds to the trimmed air velocity) and trimmed at that airspeed, so its ground speed starts at zero. The time is 0: a
+   * reset restarts the clock at 0 and fm.reset samples the wind at 0 too, so a hover start made late in a session faces
+   * the wind its trim is made in (tests/rotorcraft/bo105KeyTransitions: a second start after 60 s of gusts). Any other start,
    * calm air or another type: unchanged. resetTo only: a restore (restore()) keeps the saved heading and velocity. On the
    * Bo 105 the app's only airborne zero-airspeed start is the hover scenario (hover=1; the demonstrations are the R22's,
    * no Flight School lesson flies the Bo 105).
