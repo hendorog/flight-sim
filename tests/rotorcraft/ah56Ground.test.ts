@@ -102,20 +102,73 @@ describe('G13: on the wheels', () => {
   }, 120_000);
 
   it.fails('G13 KNOWN GAP: tail wheel UNLOCKED, prop taxi at 20 kt: a 1 in left pedal pulse for 1 s, then the trim pedal, hands off: stays upright, under 20 deg/s', () => {
-    // P ASTA-72 para 79 and the SoF: unlocked taxi is permitted to 20 kt and the ground taxi characteristics were "excellent"
-    // (directional control by tail-rotor thrust). The model ground-loops: the mains sit 30 in ahead of the CG (P CG FS 298, 3V
-    // axles FS 268), so a turn's side force at the mains turns the nose further, and at the straight-taxi trim the tail rotor
-    // carries only about 1 kN (the drive reaction at flat pitch, about 19 % torque, less the pusher's share), where its yaw
-    // damping is about 12 kN m s (17.5 in the hover) against m a V = 68 kN m s at 20 kt (D). Measured: unlocked straight
-    // taxi at 10 kt with no input diverges (0.4 -> 40 deg/s in 15 s); this pulse at 20 kt tips onto the right wingtip in
-    // about 4 s; a pilot answering
-    // within 0.3 s (0.6 s at full gain) with up to 2.7 in of opposite pedal catches it, at 1.0 s it is lost. The tyre
-    // cornering stiffness and relaxation (ESTIMATE) do not move the divergence; castor damping or swivel friction only trade it
-    // for stick-slip that stalls walking-pace turns (W/probes/tune-ah). KNOWN_ISSUES #10 and R1.
+    // P ASTA-72 para 79 and APE-I para 133: unlocked taxi is permitted to 20 kt, "directional control during taxi was excellent"
+    // (by tail-rotor thrust; the tail wheel unlocked for all taxi turns, locked for take-off, landing and above 20 kt). Hands off,
+    // a free castor behind mains that sit 0.76 m ahead of the CG (P CG FS 298, 3V axles FS 268) is directionally divergent on
+    // the ground: with stiff main tyres the yaw mode is s = (m x U - N_r) / (Izz + m x^2) (D, the large-cornering-stiffness
+    // limit of the two-degree-of-freedom ground model, so the tyre ESTIMATES drop out), m x U = 63 kN m s at 20 kt against the
+    // tail rotor's N_r of about 12.5 kN m s at the 1 kN taxi trim (momentum theory, D: 0.14 kN per m/s at 20 kt edgewise), so
+    // s = 0.9 /s (doubling 0.8 s) at 20 kt and 0.34 /s at 10 kt; stable only below about 5 kt. Measured: this pulse reaches
+    // 27 deg/s at 1 s (0.48 g of turn, above the 0.40 g static tip-over of a 62 in track under a CG 77 in up) and the right
+    // wingtip strikes at about 4 s. Tuning-round sweeps (W/tune/ah56/probes, KNOWN_ISSUES R1): swivel friction 100-600 N m
+    // turns the castor into a deadband with a breakout (below 1-1.5 in no turn, above it 80-150 deg/s), path-dependent stuck
+    // angles (11-88 deg after a turn) and both tests/gear/ah56TailWheel rows red at >= 100 N m; a swivel damper of 500-2000
+    // N m s/rad lags the castor by only about 6 % at a 1 /s divergence while slowing walking-pace turns; trail 0.05 m and the
+    // tyre ESTIMATES leave it. The row stays red with its measured number; the pilot-in-the-loop rows below are the P sense.
     const m = taxiPulse(false, 20, 1, 1);
     report('G13 taxi 20 kt, tail wheel unlocked, 1 in pulse 1 s', m);
     expect(m.crashed).toBe(false);
     expect(m.maxYawDegS).toBeLessThan(20);
+  }, 120_000);
+
+  /** The taxi pulse with a pilot on the pedals: `pulseIn` of left pedal for `pulseS` s, then a pilot who sees the heading and the
+   *  yaw rate `delay` s late and answers with pedal (gain 2: 6.4 in of pedal per radian of heading error and per rad/s of yaw
+   *  rate, about a third of the travel for 10 deg), inside the travel. The worst yaw rate and roll, the heading change after
+   *  10 s, the peak pedal from the trim. */
+  const taxiCatch = (kt: number, pulseIn: number, pulseS: number, delay: number) => {
+    const r = rig({ onGround: true });
+    r.c.collective = 0; r.c.tailWheelLock = false; r.c.parkingBrake = false;
+    const h0 = r.fm.state.heading, p0 = r.c.rudder, pedalPerIn = 1 / 3.2;
+    let yi = 0;
+    const hold = () => { const s = r.fm.state, e = Math.atan2(Math.sin(s.heading - h0), Math.cos(s.heading - h0)); yi -= e * 0.5 / 240;
+      r.c.rudder = Math.max(-1, Math.min(1, p0 - 3 * e - 1.0 * s.angularVelocity.z + yi)); };
+    r.c.propLever = pusherBetaLever(d.pusher!, 8 * DEG);
+    for (let t = 0; t < 40 && r.fm.state.groundSpeed < kt * KT; t += 0.25) run(r, 0.25, hold);
+    r.c.propLever = pusherBetaLever(d.pusher!, 3 * DEG);
+    run(r, 6, hold);
+    const trim = r.c.rudder, hs = r.fm.state.heading, seen: { e: number; r: number }[] = [], lag = Math.round(delay * 240);
+    let t = 0, yaw = 0, roll = 0, pedal = 0;
+    run(r, 10, () => {
+      t += 1 / 240;
+      const s = r.fm.state;
+      seen.push({ e: Math.atan2(Math.sin(s.heading - hs), Math.cos(s.heading - hs)), r: s.angularVelocity.z });
+      const late = seen.length > lag ? seen.shift()! : undefined;
+      r.c.rudder = t <= pulseS ? Math.max(-1, trim - pulseIn * pedalPerIn) : late ? Math.max(-1, Math.min(1, trim + 2 * (-late.e - late.r))) : trim;
+      yaw = Math.max(yaw, Math.abs(s.angularVelocity.z)); roll = Math.max(roll, Math.abs(s.roll)); pedal = Math.max(pedal, Math.abs(r.c.rudder - trim) / pedalPerIn);
+    });
+    const s = r.fm.state;
+    return { maxYawDegS: yaw / DEG, maxRollDeg: roll / DEG, headingChangeDeg: Math.abs(Math.atan2(Math.sin(s.heading - hs), Math.cos(s.heading - hs))) / DEG,
+      peakPedalIn: pedal, crashed: s.crashed, crash: (r.fm as unknown as { crashReason?: string }).crashReason ?? '' };
+  };
+
+  // The P sense of para 79 ("directional control by tail rotor thrust ... excellent", unlocked to 20 kt): with the pilot on the pedals
+  // the divergent free castor is caught. Tuning round (2026-10-22, W/tune/ah56/probes catch1.log): at 20 kt a 0.3 s reaction holds the
+  // heading within 1.5 deg by 4 s on 2.2 in of pedal, 0.5 s within 15 deg (an oscillation), 0.7 s and slower is lost (wingtip); at
+  // 10 kt 0.3 / 0.5 s hold, 0.7 s rings, 1.0 s spins it. Lock it for straight taxi above walking pace (para 79).
+  it('tail wheel UNLOCKED, prop taxi at 20 kt: the same 1 in pulse with a pilot answering 0.3 s late: upright, heading back within 5 deg by 10 s, inside the pedal travel (P ASTA-72 para 79: directional control by the tail rotor)', () => {
+    const m = taxiCatch(20, 1, 1, 0.3);
+    report('G13 taxi 20 kt unlocked, 1 in pulse, pilot 0.3 s late', m);
+    expect(m.crashed).toBe(false);
+    expect(m.headingChangeDeg).toBeLessThan(5);
+    expect(m.peakPedalIn).toBeLessThan(3.2);
+  }, 120_000);
+
+  it('tail wheel UNLOCKED, prop taxi at 10 kt: the 1 in pulse with a pilot answering 0.5 s late: upright, heading back within 5 deg by 10 s, inside the pedal travel', () => {
+    const m = taxiCatch(10, 1, 1, 0.5);
+    report('G13 taxi 10 kt unlocked, 1 in pulse, pilot 0.5 s late', m);
+    expect(m.crashed).toBe(false);
+    expect(m.headingChangeDeg).toBeLessThan(5);
+    expect(m.peakPedalIn).toBeLessThan(3.2);
   }, 120_000);
 
   it('vertical take-off to a hover and a vertical landing on the wheels', () => {

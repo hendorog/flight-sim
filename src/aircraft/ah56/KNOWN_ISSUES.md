@@ -364,3 +364,28 @@ Commits on `feat/rigid-rotor` after `9d70cad`; numbers from `W/guards/integ/14-f
   reported); the C4 row flies the ICS.
 - **The AMCS gyro numbers live in gyro.ts** (above, "Resolved").
 
+
+## Tuning round (2026-10-22, branch tune/ah56; AGENT choices, not owner decisions)
+
+The eight open items of the pilot reviews and the final fix round, measured first with the probes in
+`W/tune/ah56/probes/` (outputs in `out/`), then fixed at the source where a sourced or derived mechanism allowed it.
+
+- **T1 (R1, must). Unlocked tail-wheel taxi: the divergence is the physics of a free castor; the P rating is pilot-in-the-loop.**
+  Mechanism (D): with the main tyres much stiffer than the inertia terms the ground yaw mode is s = (m x U - N_r) / (Izz + m x^2),
+  x = 0.76 m (mains ahead of the CG: P CG FS 298, 3V axles FS 268, re-checked on the Fort Campbell side photo), m x U = 31 / 63
+  kN m s at 10 / 20 kt, N_r about 12.5 kN m s (the tail rotor at its 1 kN taxi trim, momentum theory in edgewise flow, D, and
+  measured 0.47 kN at 20 deg/s): s = 0.34 / 0.9 per s (doubling 2 / 0.8 s); stable only below about 5 kt. The tyre ESTIMATES drop
+  out of that limit (why the earlier cornering-stiffness sweeps did nothing). Swept and rejected (`out/ground2-*`, `ground3-*`,
+  `ground4-*`, `relock*.log`): swivel friction 100-600 N m makes the castor a deadband with a breakout (the tyre's aligning moment
+  saturates at mu N trail = 450 N m, so 150-300 N m is a third to two thirds of it: below 1-1.5 in of pedal no turn, above it 80-150
+  deg/s), leaves path-dependent stuck angles (11-88 deg after a turn, so the lock pin cannot drop in) and turns both
+  `tests/gear/ah56TailWheel` rows red from 100 N m; a swivel damper of 500-2000 N m s/rad lags the castor about 6 % at a 1 /s
+  divergence while slowing walking-pace turns; trail 0.05 m changes nothing. gear.ts is unchanged. What P says (ASTA-72 para 79,
+  APE-I para 133, read in the scans this round): "directional control during taxi was excellent", by tail-rotor thrust, the tail
+  wheel unlocked "for all taxi turns", locked for take-off, landing and "high-speed taxi (above 20 knots)". New passing rows
+  (ah56Ground): the 20 kt pulse with a pilot answering 0.3 s late holds the heading within 0.7 deg at 10 s on 2.2 in of pedal; at 10
+  kt 0.5 s late within 1.8 deg on 2.4 in. Measured beyond the rows (`out/catch1.log`): at 20 kt 0.5 s late rings +/-15 deg but stays
+  upright, 0.7 s and slower is lost; at 10 kt 1.0 s late spins it. The hands-off row stays `it.fails` (55.7 deg/s, right wingtip at
+  about 4 s). Owner judgement (fixed-wing tail-dragger experience applies directly): accept the free-castor ground loop. The
+  default LOCKED tail wheel (index.ts controlDefaults) keeps the beginner out of it; the HUD / instructor cue is PN's (contract
+  request).
