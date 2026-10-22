@@ -111,6 +111,11 @@ export interface InputProfile {
    * whose real trim is a beep switch only); the physics' spring anchor is left alone. Absent: no such key.
    */
   setTrimHere?: boolean;
+  /**
+   * 5 / Numpad 5 glide the keyboard cyclic back to its centre and leave the keyboard pedals where they are (the pedal
+   * trim the keys and the STAB ASSIST's follow-up set). Absent: 5 centres the pedals too.
+   */
+  centreKeepsPedals?: boolean;
   /** STAB ASSIST (a sim aid; Shift+A toggles it). Absent: none, and the key does nothing. */
   stabilityAssist?: StabilityAssistTuning;
   engines: 1 | 2;

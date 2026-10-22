@@ -65,6 +65,10 @@ export const BO105_INPUT: InputProfile = {
   // Shift+5 sets the keyboard centre to the stick as it is (a sim convenience: the CB-4 has beep trim only).
   centreRate: 1,
   setTrimHere: true,
+  // 5 leaves the pedals where they are (the tune pass, item 3; W/tune/bo105): the keys and the STAB ASSIST's pedal
+  // follow-up set the pedal trim, and round 3's 5 threw a pedal set with the keys away (KeyZ 2 s at lift-off, then 5:
+  // 62 deg/s of yaw, the nose 136 deg round). The cyclic still glides back to the keyboard trim.
+  centreKeepsPedals: true,
   assists: { ...md.assists, axes: {
     elevator: { ...mdAxes.elevator, baseRate: 0.04 },
     aileron: { ...mdAxes.aileron, baseRate: 0.07, maxRate: 0.35, accelTime: 1.5 },
@@ -78,6 +82,7 @@ export const BO105_INPUT: InputProfile = {
     fuelPump: 'Fuel pumps', starter: 'STARTER/GENERATOR to START (hold)',
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
+    centreControls: 'Cyclic back to the keyboard trim (the pedals stay where they are)',
     stabilityAssist: 'STAB ASSIST on / off: holds the attitude below 30 KIAS and the heading when the pedals rest, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

@@ -53,25 +53,36 @@ describe('keyboard lift-off from the runway into the 3 ft hover (the round-2 gat
   }, 120_000);
   /**
    * Round 2's trap: 5 once, 2 s after a lift-off with the pedals untouched, threw the lift-off pedal away (42 deg/s,
-   * the heading round 180 deg). The follow-up's pedal is the keyboard's pedal centre now, so 5 keeps it. A pedal set
-   * with the keys (KeyZ 2 s) is still thrown away by 5 (recorded: 62 deg/s at most, 136 deg).
+   * the heading round 180 deg); round 3 kept the followed pedal (18 deg/s) but still threw a pedal set with the keys
+   * away (KeyZ 2 s: 62 deg/s at most, 136 deg). The tune pass (item 3): 5 leaves the pedals where they are on the Bo 105
+   * (InputProfile.centreKeepsPedals), so both are kept; the stick still glides back to the keyboard trim.
    */
-  it('5 once after a lift-off with the pedals untouched keeps the followed pedal: yaw under 25 deg/s, no crash', () => {
-    const r = keyRig({ start: 'runway' }), keys = new Keys(r);
-    const liftS = liftOffKeys(r, keys, 0), h0 = r.physics.state.heading;
-    let maxRate = 0, maxHdg = 0, before = NaN;
-    while (r.t < liftS + 12) {
-      if (Math.abs(r.t - liftS - 2) < 1 / 120) { before = r.c.rudder; keys.tap('Digit5', 0.05); }
-      keys.update(); frame(r);
-      const s = r.physics.state;
-      maxRate = Math.max(maxRate, Math.abs(s.angularVelocity.z) / DEG);
-      maxHdg = Math.max(maxHdg, Math.abs(Math.atan2(Math.sin(s.heading - h0), Math.cos(s.heading - h0))) / DEG);
-      if (s.crashed) break;
+  it('5 once after a lift-off keeps the pedal, untouched (followed) or set with the keys (KeyZ 2 s): yaw under 25 deg/s, the pedal unmoved by 5, no crash', () => {
+    const run = (pedalS: number) => {
+      const r = keyRig({ start: 'runway' }), keys = new Keys(r);
+      const liftS = liftOffKeys(r, keys, pedalS), h0 = r.physics.state.heading;
+      let maxRate = 0, maxHdg = 0, before = NaN, after = NaN;
+      while (r.t < liftS + 12) {
+        if (Math.abs(r.t - liftS - 2) < 1 / 120) { before = r.c.rudder; keys.tap('Digit5', 0.05); }
+        keys.update(); frame(r);
+        if (Number.isNaN(after) && !Number.isNaN(before)) after = r.c.rudder;
+        const s = r.physics.state;
+        maxRate = Math.max(maxRate, Math.abs(s.angularVelocity.z) / DEG);
+        maxHdg = Math.max(maxHdg, Math.abs(Math.atan2(Math.sin(s.heading - h0), Math.cos(s.heading - h0))) / DEG);
+        if (s.crashed) break;
+      }
+      return { liftS, maxRate, maxHdg, pedalBefore5: before, pedalAfter5: after, pedalEnd: r.c.rudder, crashed: r.physics.state.crashed };
+    };
+    const untouched = run(0), keyed = run(2);
+    report.fiveAfterLiftOff = { untouched, keyed };
+    for (const h of [untouched, keyed]) {
+      expect(h.crashed).toBe(false);
+      expect(h.maxRate).toBeLessThanOrEqual(25);
+      // 5 moved nothing on the pedals (the follow-up's own step of that frame aside).
+      expect(Math.abs(h.pedalAfter5 - h.pedalBefore5)).toBeLessThanOrEqual(0.005);
     }
-    report.fiveAfterLiftOff = { liftS, maxRate, maxHdg, pedalBefore5: before, pedalEnd: r.c.rudder };
-    expect(r.physics.state.crashed).toBe(false);
-    expect(maxRate).toBeLessThanOrEqual(25);
-    expect(before).toBeLessThan(-0.15);
+    expect(untouched.pedalBefore5).toBeLessThan(-0.15);
+    expect(keyed.pedalBefore5).toBeLessThan(-0.2);
   }, 60_000);
 });
 

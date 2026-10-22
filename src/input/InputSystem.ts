@@ -963,7 +963,7 @@ export class InputSystem implements Subsystem {
     i.rudder = c.rudder;
     i.source = hwAil !== null || hwEle !== null ? 'hardware' : mouse ? 'mouse' : 'keyboard';
     i.keyboardOffCentre =
-      (kbAil && Math.abs(this.kbAileron) > OFF_CENTRE) || (kbEle && Math.abs(this.kbElevator) > OFF_CENTRE) || (kbRud && Math.abs(this.kbRudder) > OFF_CENTRE);
+      (kbAil && Math.abs(this.kbAileron) > OFF_CENTRE) || (kbEle && Math.abs(this.kbElevator) > OFF_CENTRE) || (kbRud && !this.profile.centreKeepsPedals && Math.abs(this.kbRudder) > OFF_CENTRE);
     i.keyboardElevator = kbEle ? this.kbElevator : 0;
     if (this.profile.stabilityAssist) i.stabilityAssist = !!this.assists.stabilityAssist;
     if (this.profile.setTrimHere) {
@@ -979,12 +979,15 @@ export class InputSystem implements Subsystem {
   }
 
   /**
-   * Numpad 5 / 5: centre the keyboard aileron, elevator and rudder (they glide back in at most 0.25 s). On
-   * the take-off or landing roll with the auto-rudder on, the held rudder is handed to the auto-rudder instead
-   * (it holds the present heading, starting from that rudder), so centring does not swerve the aircraft.
+   * Numpad 5 / 5: centre the keyboard aileron, elevator and rudder (they glide back in at most 0.25 s; the rudder
+   * stays on a type with centreKeepsPedals). On the take-off or landing roll with the auto-rudder on, the held rudder
+   * is handed to the auto-rudder instead (it holds the present heading, starting from that rudder), so centring does
+   * not swerve the aircraft.
    */
   centreControls(ctx: SimContext = this.ctx): void {
     this.centring.aileron = this.centring.elevator = true;
+    // The pedal trim stays (InputProfile.centreKeepsPedals: the Bo 105).
+    if (this.profile.centreKeepsPedals) return;
     const s = ctx.state;
     const onGround = s.wheels[0].onGround || s.wheels[1].onGround || s.wheels[2].onGround;
     const handover = this.assists.groundSteering && onGround && s.groundSpeed > this.profile.assists.handoverSpeed && !this.rudderHardware;
