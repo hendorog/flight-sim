@@ -94,13 +94,15 @@ describe('section.ts: the blade section model (docs section 2)', () => {
     trace.momentStallStatic = rows;
     for (const [i, cm] of [-0.056, -0.086, -0.107].entries()) expect(Math.abs(rows[i].cm - cm)).toBeLessThan(0.015);
     for (const [i, cl] of [1.1, 1.0, 0.9].entries()) expect(Math.abs(rows[i].cl - cl)).toBeLessThan(0.08);
-    // The flown (dynamic) break, FITTED to H4: continuous at the stall, -0.4 c x cn within 1.5 deg (about -0.45, the size of the
-    // dynamic-stall moment peaks of 12 % sections at k about 0.1, ESTIMATE); none above M 0.6 (shock stall).
+    // The flown (dynamic) break, FITTED to H4: continuous at the stall, -0.2 c x cn within 1.5 deg (about -0.24; refitted in the tuning
+    // round with the flap-rate incidence in the ICS gyro's blade moments, KNOWN_ISSUES T6: the stage-5 0.4 c, about -0.45, the deep
+    // end of the dynamic-stall moment peaks of 12 % sections at k about 0.1, made the stall a departure); none above M 0.6 (shock
+    // stall).
     const at = sectionLimits(S, 0.35).stall / DEG;
     const below = coeff(S, at - 1e-6, 0.35), above = coeff(S, at + 1e-6, 0.35), past15 = coeff(S, at + 1.5, 0.35), past4 = coeff(S, at + 4, 0.35);
     expect(Math.abs(above.cm - below.cm)).toBeLessThan(1e-4); expect(Math.abs(above.cl - below.cl)).toBeLessThan(1e-4);
-    expect(past15.cm).toBeLessThan(-0.4); expect(past15.cm).toBeGreaterThan(-0.55);
-    expect(past4.cm).toBeLessThan(-0.35); expect(past4.cm).toBeGreaterThan(-0.55);
+    expect(past15.cm).toBeLessThan(-0.2); expect(past15.cm).toBeGreaterThan(-0.3);
+    expect(past4.cm).toBeLessThan(-0.15); expect(past4.cm).toBeGreaterThan(-0.3);
     const fast = sectionLimits(S, 0.7).stall / DEG, beyond = coeff(S, fast + 4, 0.7);
     expect(beyond.cm).toBeGreaterThan(-0.06);
     report('section moment stall, flown', { stallDegM035: at, cmPast15M035: past15.cm, cmPast4M035: past4.cm, cmPast4M070: beyond.cm });

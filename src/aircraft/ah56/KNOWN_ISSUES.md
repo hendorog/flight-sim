@@ -447,10 +447,16 @@ The eight open items of the pilot reviews and the final fix round, measured firs
   s, the gyro within 0.5 deg of centre, Nr 94.5 / 92.7 / 96.3 / 101.4 / 103.5 % at 2-10 s, 2,630 ft/min at 10 s (was: the gyro on
   its 15 deg stop at 8 s, moment stall, Nr 72 % at 12 s); at 2 deg 3.3 in aft and Nr 97.7 %. The half-gain pilot holds Nr 96 % but
   lets the speed run to 117 KIAS. Frozen at the entry trim it still rolls off left (43 deg at 4 s) and dives: the stick must hold
-  the hub's nose-up 30 kN m (the airframe's nose-down moment in the descent flow, the same balance as T3). The moment-stall break
-  (FITTED, highSpeed.ts) was not refitted: with the gyro off its stop it is not reached in this flight (H4's departure at 1.4 g
-  is the remaining moment-stall item, owner's). PN's ICS training text can keep the P 0.5 deg floor; 4.8 of the 5.5 in of aft
-  stick is used at it.
+  the hub's nose-up 30 kN m (the airframe's nose-down moment in the descent flow, the same balance as T3). PN's ICS training text
+  can keep the P 0.5 deg floor; 4.8 of the 5.5 in of aft stick is used at it.
+  **The moment-stall break is refitted** (the recommendation: keep the flap-rate term, refit the FITTED break; highSpeed.ts, docs/
+  ah56-high-speed.md section 9): the centre-of-pressure shift 0.4 c -> 0.2 c within 1.5 deg past the stall. Stabilising at 1.4 g /
+  122 KCAS the stall now pitches up 0.22 g with 24 deg of right roll that the test pilot holds 0.19 in inside the stick (was 141 deg
+  with the lateral stick on its stop and 0.44 g: a departure); onsets 1.4 g at 122 KCAS and 1.5 g at 154 (P 1.4 / 1.5 +/- 0.2; were
+  1.3 / 1.4); 190 KCAS / 1.43 g 0.35 deg of right roll (the row's 0.5 deg: the KNOWN GAP row at 0.69 now passes). Held to 1.6 g at
+  122 KCAS it still departs (54 deg, the stick on its stop). Unchanged: H5 (a departure past 1.3 g, not a gradient), H6, C2 / C3
+  (8,375 / 5,750 / 8,625 ft), C4 201.1 KTAS, C12 2,509 ft/min; G3 / G5a / half-P / H3 / H10 rows green (`W/tune/ah56/
+  logs-item6-suites.txt`).
 - **T7 (R7, should). Engine failure at 63 KCAS: on the ICS (the P aircraft) the minimum is 80.7 % against about 82 %; the SoF
   autorotation collective stays the C12 item.** ASTA-72 para 67 (P, read this round): the 63 KCAS level entry went 3 % below the 85 %
   minimum transient after a 2 s delay of the collective, on the ICS aircraft (100 % = 246 rpm). The reviews compared the AMCS (from
