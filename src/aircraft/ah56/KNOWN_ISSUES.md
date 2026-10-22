@@ -21,7 +21,11 @@ aerodynamics with the half-P hop (stage 5) are not in this build, so neither is 
    −8.0°, +3.1°, 4.1 kt; but it also moves the hover step responses the gyro is fitted on (G7 ICS roll τ63 0.28 → 0.31 s, AMCS hover
    roll sensitivity 63.5 → 69.6 °/s²/in), so it was NOT applied: a rotor-physics choice for RC (carry the in-plane side component) or
    the owner (docs/ah56-integration.md section 3 item 7).
-   **In the sim** (AH-56 verifier gate 0, `index.html?aircraft=ah56&hover=1&run=20`, 20 s hands off): in the default 8 kt
+   **In the sim after the final fix round** (`index.html?aircraft=ah56&hover=1&cam=chase&resume=0&run=20`, 20 s hands off;
+   W/shots/final/ah56-*hover*.png): calm (`&wind=0,0`, 1 kt residual) AMCS −5.5° roll, −2.3° pitch, 3.1 kt; ICS −5.3°, +3.8°,
+   3.5 kt; in the default 8 kt wind AMCS −1.6°, −3.5°, 10.8 kt over the ground (drifting with the wind), ICS −11.5°, +1.9°,
+   13.2 kt; Nr 239.8 / 246.0 rpm, nothing crashes. The sim's calm hover holds the G9 band; with the wind it drifts with it.
+   **Superseded, at gate 0** (AH-56 verifier gate 0, `index.html?aircraft=ah56&hover=1&run=20`, 20 s hands off): in the default 8 kt
    wind the AMCS ends at 0.8° RIGHT roll, −2.2° pitch, 7 kt (headless with the same wind +1.3°, −2.3°, 6.8 kt: the two
    agree); the ICS at 4.9° left, +9.4° pitch, 10 kt. In calm air (`&wind=0,0`) the AMCS ends at 1.4° left, −7.3° pitch,
    12 kt with the heading 80° left of the spawn, and the ICS at 6.9° RIGHT, −1.1°, 17 kt. The calm runs leave in

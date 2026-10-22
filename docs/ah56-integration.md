@@ -302,6 +302,7 @@ ICS static stability, C4 on the ICS, C23 split). Plan amendments A1-A11: plan se
 | Row | Before | After | Target (tag) |
 |---|---|---|---|
 | Hands-off hover 20 s calm, AMCS / ICS | −5.4 → −1.9° roll, +10.7° pitch, 14.3 kt / −5.3 → −10.5°, 6.6 kt | −5.35 → −5.49°, +0.76°, 0.41 kt / −5.25 → −5.13°, +0.53°, 0.31 kt | G9 2-7° left (P / ESTIMATE): **passes now** |
+| In the sim, 20 s hands off (`hover=1`), calm / 8 kt wind | gate 0: AMCS 1.4° L, −7.3°, 12 kt, heading 80° off / 0.8° R, 7 kt; ICS 6.9° R, 17 kt / 4.9° L, 10 kt | AMCS −5.5°, −2.3°, 3.1 kt / −1.6°, −3.5°, 10.8 kt; ICS −5.3°, +3.8°, 3.5 kt / −11.5°, +1.9°, 13.2 kt | (shots `W/shots/final/`) |
 | Half droop 6 s after a 0.5° kick | 0.125° | 0.009° | < 0.1° (AGENT): **passes now** |
 | G3 full ICS gust residue at 0.5 s (flown section) | 0.53 | 0.45 (clean auto-trim 0.029 at collective 0.26) | < 0.10 (P CR-114362 / D) |
 | G5 AMCS pitch 0 / 100 / 150 KCAS; hover sensitivity | 5.78 / 4.93 / 4.57; 11.54 | 5.54 / 4.94 / 4.61; 10.82 | 4.2-7.8; 6.3-11.7 (P) |
@@ -319,7 +320,7 @@ ICS static stability, C4 on the ICS, C23 split). Plan amendments A1-A11: plan se
 | C12 autorotation | 2,508 ft/min | 2,509 | 2,200 ± 300 (P): gap |
 | C18 pitch / roll at 180 KCAS | 4.26 / 15.6 °/s/in | 4.32 / 15.7 | 6 / 16 ± 30 % (P) |
 | C19 pull-up from 180 KCAS | 2.43 g at 1.78 s | 2.43 g at 1.75 s | 2.43 g in about 2.1 s (P) |
-| C23 ICS shift lateral / longitudinal / pedal | 0.89 R / 0.58 fwd / 2.34 R in | 1.31 R / −0.03 fwd / 2.34 R | 1.1 L / 0.7 fwd / 2.3 R (P): **longitudinal now KNOWN GAP** |
+| C23 ICS shift lateral / longitudinal / pedal | 0.89 R / 0.58 fwd / 2.34 R in | 1.31 R / −0.03 fwd / 2.34 R | 1.1 L / 0.7 fwd / 2.3 R (P): **lateral and longitudinal KNOWN GAP rows** |
 | C23 frozen-controls roll, 30-70 KCAS | +1.41 °/s (right) | −1.61 °/s | right (P): **KNOWN GAP** |
 | ICS para 44-45 gradient 120 / 150; 190 KCAS trim | 0.106 / 0.098 in/kt; none | 0.073 / 0.071; 4.50 in fwd | 0.015 / 0.012 (P): gap; trim exists |
 | H4 onset 122 / 154 KCAS | 1.5 / 1.6 g | 1.3 / 1.4 g | 1.4 / 1.5 ± 0.2 (P) |

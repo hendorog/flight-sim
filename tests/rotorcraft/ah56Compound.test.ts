@@ -294,6 +294,11 @@ describe('C23: transition trim shift, hover to 100 KCAS (P ASTA-72 para 25, ICS 
   // KNOWN GAP (final fix round): the ICS longitudinal shift hover -> 100 KCAS was 0.69 in forward (P 0.7); the wing section Cm
   // (-0.52 in) and the DATCOM downwash (-0.20 in) both take forward stick out at speed, which ASTA-72 para 44-45 asks for and
   // para 25 asks against: -0.03 in now.
+  // KNOWN GAP (stage 4 on): the ICS lateral shift hover -> 100 KCAS has had the wrong sense since AC (0.89 in RIGHT at the stage-5
+  // merge against P 1.1 in left); 1.31 in right after the final fix round's side force and wing balance.
+  it.fails('KNOWN GAP C23: the ICS lateral shift is 1.1 in LEFT +/- 0.4 (measured 1.31 in right)', () => {
+    expect(Math.abs(c23!.ics.lateralLeft - 1.1)).toBeLessThanOrEqual(0.4);
+  });
   it.fails('KNOWN GAP C23: the ICS longitudinal shift is 0.7 in forward +/- 0.3 (measured -0.03)', () => {
     expect(Math.abs(c23!.ics.longitudinalForward - 0.7)).toBeLessThanOrEqual(0.3);
   });
