@@ -14,6 +14,7 @@ import { AH56_BASE } from '../../src/aircraft/ah56/base';
 import { AH56_GYRO } from '../../src/aircraft/ah56/gyro';
 import { AH56_HALF_P, AH56_ROTOR_HIGH_SPEED } from '../../src/aircraft/ah56/highSpeed';
 import { mergeDefinition } from '../../src/aircraft/ah56/patch';
+import { FRAME, keyRig } from './bo105KeyPilot';
 
 /** The AH-56A without the compound (no wing, no pusher, no compound airframe patch): AH56_ROTORCRAFT's assembly without
  *  AH56_COMPOUND (integrator, at the AH merge: AC's request (b), so G10 keeps its "no wing, no pusher" meaning; the stage-5
@@ -117,6 +118,40 @@ describe('G11b: engine failure at 63 KCAS level flight (ICS, P ASTA-72 para 67: 
   });
   it.fails('KNOWN GAP: the Nr minimum is 82 +/- 1 % (P; measured 80.7 %)', () => {
     expect(f.nrMin).toBeGreaterThanOrEqual(81); expect(f.nrMin).toBeLessThanOrEqual(83);
+  });
+});
+
+describe('G11c: engine failure in the IGE hover (AMCS, wheels 3 m up), the written pilot: wings level, yaw damped, the collective held then raised at the hand rate from 1.5 m', () => {
+  // Tuning round 2 (the pilot gate's should 7, KNOWN_ISSUES T7): the H-V envelope's low corner. From the 15 m hover no technique
+  // tried survives (Nr 97 -> 45 % in 4.8 s, 1,800-2,000 fpm: the P inertia against the hover torque), so the engine-failure lesson
+  // starts here. The pilot: the condition grip OFF, the attitude held with the wings levelled (the hover's 4.8 deg of left roll would
+  // put the touchdown on the left main), the pedal damping the yaw, the collective held until the wheels are 1.5 m up and then raised
+  // at 1.0 of the travel per second (the hand rate, Shift+F6 is 0.5). W/tune/ah56/r2 out/p8_igefail2.log: 282 fpm, no damage; from 1 m
+  // at 0.5 per second, or with the wings left at the hover roll, the left main collapses (140 kN) at 450-660 fpm.
+  function igeFail() {
+    const r = keyRig({ start: 'ige3', dd: AH56_DEFINITION, assist: false }), c = r.c, s = r.physics.state;
+    const pitch0 = s.pitch, e0 = c.elevator, a0 = c.aileron, r0 = c.rudder, wheels0 = s.altitudeAGL - 1.9;
+    let pulled = false, touchFpm = NaN, nrMin = Infinity;
+    for (let t = 0; t < 8; t += FRAME) {
+      r.input.update(FRAME, r.ctx);
+      c.throttle = 0;
+      c.elevator = Math.max(-1, Math.min(1, e0 + 1.5 * (pitch0 - s.pitch) - 0.6 * s.angularVelocity.y));
+      c.aileron = Math.max(-1, Math.min(1, a0 + 1.2 * (0 - s.roll) - 0.3 * s.angularVelocity.x));
+      c.rudder = Math.max(-1, Math.min(1, r0 - 0.3 * s.angularVelocity.z)); c.pedalWorked = true;
+      if (s.altitudeAGL - 1.9 < 1.5) pulled = true;
+      if (pulled) c.collective = Math.min(1, (c.collective ?? 0) + 1.0 * FRAME);
+      r.physics.advance(FRAME); r.t += FRAME;
+      if (s.rotorcraft) nrMin = Math.min(nrMin, s.rotorcraft.turboshaft?.nrPct ?? Infinity);
+      if (Number.isNaN(touchFpm) && s.onGround) touchFpm = s.velocity.z * 196.85;
+    }
+    return { wheelHeightM: wheels0, touchdownFpm: touchFpm, nrMinPctAfterTouch: nrMin, crashed: s.crashed };
+  }
+  const f = igeFail();
+  trace.G11c = f;
+  it('touchdown under 800 fpm and no damage', () => {
+    report('G11c engine failure IGE hover', { ...f, target: '< 800 fpm, no crash' });
+    expect(f.crashed).toBe(false);
+    expect(f.touchdownFpm).toBeLessThan(800);
   });
 });
 
