@@ -16,6 +16,7 @@ import { SimPhysics } from '../../src/sim/SimPhysics';
 import { demoScenario, hoverScenario } from '../../src/sim/rotorcraft/starts';
 import { DT, gauges as gaugesOf, positionHold, rig as rotorRig, writeTrace } from './bo105Rig';
 import { StabilityAssist } from '../../src/sim/rotorcraft/stabilityAssist';
+import { parseSnapshot } from '../../src/sim/resume';
 import { afterAll } from 'vitest';
 
 const FRAME = 1 / 60;
@@ -402,4 +403,51 @@ describe('STAB ASSIST is silent where it should be', () => {
       expect(p.stabilityAssistOn()).toBe(false);
     }
   });
+});
+
+describe('STAB ASSIST through a resume (src/sim/resume.ts: the snapshot carries its datums)', () => {
+  /**
+   * The hover scenario (2500 kg, 16 m), the stick held 0.1 of the axis right from 1 s (an attitude command, so the datum
+   * and the stick reference matter), saved at 4 s through JSON and restored into a fresh SimPhysics. Imported, the
+   * assist's state is the saved one and its first series command after the restore is the unbroken flight's; without
+   * the block (an older snapshot) it re-captures the datum at the restore and its command steps (the old T11
+   * workaround's 0.25 % Nr step: tests/rotorcraft/twinGovernor.test.ts T11 now runs with the assist on). The attitude
+   * itself is not compared: the restore's own transient (inflow and lags from rest) moves the unstable hover 1.8 deg in 5
+   * s with or without the assist (raw aircraft: 7.7 deg). A malformed block is dropped; a type without the assist writes
+   * none; ControlInputs.pedalFollowUp is zeroed.
+   */
+  it('a restore goes on with the saved datums: the state round-trips and the first series command matches the unbroken flight (re-captured: steps)', () => {
+    const w = { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0 };
+    const fly = (keep: 'import' | 'recapture') => {
+      const a = new SimPhysics({ aircraft: def, weather: w, events: createEventBus() });
+      a.resetTo(hoverScenario(a.env, def.rotorcraft!), w);
+      a.step(1); a.controls.aileron += 0.1; a.step(3);
+      const snap = a.captureSnapshot({ weather: w, cameraMode: 'chase', quality: 'high', renderScale: null, resume: true, now: 1_800_000_000_000 });
+      snap.controls.pedalFollowUp = 0.01;
+      const back = parseSnapshot(JSON.stringify(snap))!;
+      expect(back.assist?.captured).toBe(true);
+      if (keep === 'recapture') delete back.assist;
+      const b = new SimPhysics({ aircraft: def, weather: { ...back.weather }, events: createEventBus() });
+      b.restore(back);
+      const same = JSON.stringify(a.stabilityAssist!.exportState()) === JSON.stringify(b.stabilityAssist!.exportState());
+      a.step(DT); b.step(DT);
+      const oa = a.stabilityAssist!.output, ob = b.stabilityAssist!.output;
+      return { same, step: Math.max(Math.abs(oa.aileron - ob.aileron), Math.abs(oa.elevator - ob.elevator), Math.abs(oa.rudder - ob.rudder)),
+        series: { a: oa.aileron, b: ob.aileron }, pedalFollowUp: b.controls.pedalFollowUp };
+    };
+    const imported = fly('import'), recaptured = fly('recapture');
+    report.resume = { imported, recaptured };
+    expect(imported.same).toBe(true); expect(recaptured.same).toBe(false);
+    expect(imported.step).toBeLessThanOrEqual(0.002);
+    expect(recaptured.step).toBeGreaterThan(0.01);
+    expect(imported.pedalFollowUp).toBe(0);
+    // A malformed block is dropped (the assist captures afresh); a type without the assist writes none.
+    const s0 = new SimPhysics({ aircraft: def, weather: w, events: createEventBus() });
+    s0.resetTo(hoverScenario(s0.env, def.rotorcraft!), w); s0.step(0.5);
+    const raw = s0.captureSnapshot({ weather: w, cameraMode: 'chase', quality: 'high', renderScale: null, resume: true, now: 1_800_000_000_000 });
+    expect(parseSnapshot(JSON.stringify({ ...raw, assist: { captured: 'yes' } }))!.assist).toBeUndefined();
+    const md = new SimPhysics({ aircraft: MD500_DEFINITION, weather: w, events: createEventBus() });
+    md.resetTo(hoverScenario(md.env, MD500_DEFINITION.rotorcraft!), w); md.step(0.5);
+    expect(md.captureSnapshot({ weather: w, cameraMode: 'chase', quality: 'high', renderScale: null, resume: true, now: 1_800_000_000_000 }).assist).toBeUndefined();
+  }, 60_000);
 });

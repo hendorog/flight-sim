@@ -86,6 +86,12 @@ const HOLD_FADE_KT = 10;
 /** A heading error beyond this drags the heading datum along (a held pedal overpowering the hold), rad. */
 const HOLD_SLIP = Math.PI / 4;
 
+/** A stick quiet this long counts as quiet since the capture (Infinity in the assist; JSON has none), s. */
+const STICK_QUIET_MAX = 1e6;
+
+/** The assist's state in a snapshot (StabilityAssist.exportState): numbers and flags by name. */
+export type StabilityAssistSnapshot = Record<string, number | boolean>;
+
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** Fraction of the weight the skids (or wheels) carry. */
@@ -134,6 +140,42 @@ export class StabilityAssist {
   private readonly pilot = { aileron: 0, elevator: 0, rudder: 0 };
 
   constructor(readonly tuning: StabilityAssistTuning) {}
+
+  /**
+   * The datums, filters and follow-up totals for a snapshot (src/sim/resume.ts), so a restored flight goes on with the
+   * same series term instead of capturing a new datum (a step in the controls at the restore).
+   */
+  exportState(): StabilityAssistSnapshot {
+    return {
+      captured: this.captured, rollRef: this.rollRef, pitchRef: this.pitchRef, aileronRef: this.aileronRef, elevatorRef: this.elevatorRef,
+      airU: this.airU, airV: this.airV, stickRestA: this.stickRestA, stickRestE: this.stickRestE,
+      // JSON has no Infinity (a stick at rest since the capture).
+      stickQuietFor: Math.min(this.stickQuietFor, STICK_QUIET_MAX),
+      yawActive: this.yawActive, holdingHeading: this.holdingHeading, headingRef: this.headingRef, pedalRest: this.pedalRest,
+      pedalRestFor: this.pedalRestFor, pedalDir: this.pedalDir, yawI: this.yawI, lpA: this.lpA, lpE: this.lpE, lpR: this.lpR,
+      followedAileron: this.followed.aileron, followedElevator: this.followed.elevator, followedRudder: this.followed.rudder,
+    };
+  }
+
+  /** Go on from a snapshot's state (exportState); a field missing or of the wrong kind keeps reset()'s value. */
+  importState(v: StabilityAssistSnapshot): void {
+    this.reset();
+    const num = (k: string, d: number): number => (typeof v[k] === 'number' && Number.isFinite(v[k]) ? v[k] as number : d);
+    const flag = (k: string): boolean => v[k] === true;
+    this.captured = flag('captured');
+    this.rollRef = num('rollRef', 0); this.pitchRef = num('pitchRef', 0);
+    this.aileronRef = num('aileronRef', 0); this.elevatorRef = num('elevatorRef', 0);
+    this.airU = num('airU', 0); this.airV = num('airV', 0);
+    this.stickRestA = num('stickRestA', 0); this.stickRestE = num('stickRestE', 0);
+    const quiet = num('stickQuietFor', STICK_QUIET_MAX);
+    this.stickQuietFor = quiet >= STICK_QUIET_MAX ? Infinity : quiet;
+    this.yawActive = flag('yawActive'); this.holdingHeading = flag('holdingHeading');
+    this.headingRef = num('headingRef', 0); this.pedalRest = num('pedalRest', 0); this.pedalRestFor = num('pedalRestFor', 0);
+    this.pedalDir = num('pedalDir', 0); this.yawI = num('yawI', 0);
+    this.lpA = num('lpA', 0); this.lpE = num('lpE', 0); this.lpR = num('lpR', 0);
+    this.followed.aileron = num('followedAileron', 0); this.followed.elevator = num('followedElevator', 0);
+    this.followed.rudder = num('followedRudder', 0);
+  }
 
   /** Forget the datums (a reset or a restore): the next active step captures the attitude, stick and heading it finds. */
   reset(): void {

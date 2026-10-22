@@ -370,6 +370,8 @@ export class SimPhysics {
     };
     // `start` (spec 6.1): the lesson start the last reset came from, when it came from one.
     if (this.scenario.start) snap.start = JSON.parse(JSON.stringify(this.scenario.start)) as StartSpec;
+    // The STAB ASSIST's datums (a type with one), so a restore goes on with the same series term.
+    if (this.stabilityAssist) snap.assist = this.stabilityAssist.exportState();
     return snap;
   }
 
@@ -431,6 +433,9 @@ export class SimPhysics {
     copyControls(c, defaultControls(def));
     applyControls(c, snap.controls);
     c.starter = false;
+    // The STAB ASSIST's pedal follow-up of the saved frame was handed over before the save (the input module's pedal
+    // centre); a snapshot taken between the physics step and the input frame must not move the centre again.
+    if (c.pedalFollowUp !== undefined) c.pedalFollowUp = 0;
     if (def.input.threePositionClutch) {
       c.rotorClutchCommand = snap.controls.rotorClutchCommand ?? (snap.controls.rotorClutch ? 'engage' : 'release');
       c.rotorClutchGuardOpen = snap.controls.rotorClutchGuardOpen ?? c.rotorClutchCommand !== 'engage';
@@ -470,7 +475,9 @@ export class SimPhysics {
     this.wasCrashed = false;
     this.gearEvents.sync(st.gear);
     if (!def.rotorcraft) this.autoflight.importState(snap.autoflight);
-    this.stabilityAssist?.reset();
+    // The STAB ASSIST goes on from the saved datums; without them (an older snapshot) it captures afresh.
+    if (snap.assist) this.stabilityAssist?.importState(snap.assist);
+    else this.stabilityAssist?.reset();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
