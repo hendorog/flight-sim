@@ -309,7 +309,7 @@ ICS static stability, C4 on the ICS, C23 split). Plan amendments A1-A11: plan se
 | G7a / C17 ICS full lateral 120 / 122 KCAS R / L | 39.7 / 35.2 °/s, trim 0.18 in left | 37.4 / 44.0 °/s, trim 0.34 in right | 40-65, ratio 1.5-1.9 (D); 77 R / 42 L (P): **C17 sense now KNOWN GAP** |
 | G8 ICS p/q hover / 100 KCAS | +0.28 / −0.33 | +0.41 / −0.17 | ≤ 0.2 (AGENT): gap |
 | C2 / C3 HOGE | 8,625 / 6,000 ft | 8,375 / 5,750 ft | 8,500 / 6,000 ± 1,000 (P) |
-| C4 V_H (ICS collective 5°, 114 %) | 199.1 KTAS on the AMCS gyro mechanics | **201.2 KTAS on the ICS itself, 5.1 in fwd** | 194 ± 5 % (P) |
+| C4 V_H (ICS collective 5°, 114 %) | 199.1 KTAS on the AMCS gyro mechanics | **201.1 KTAS on the ICS itself, 4.7-5.0 in fwd** | 194 ± 5 % (P) |
 | C5 AMCS clean | 212.5 KTAS | 216.7 | 210-225 (P/S) |
 | C6 rotor lift share 120 / 160 / 190 | 71 / 48 / 30 % | 71 / 49 / 29 % | 40-60 / 20-35 / 10-25 (ESTIMATE): gap |
 | C8 pitch at 190 KTAS | −3.3° | −3.25° | −1…−5 (ESTIMATE) |

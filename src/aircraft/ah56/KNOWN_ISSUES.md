@@ -338,7 +338,7 @@ Commits on `feat/rigid-rotor` after `9d70cad`; numbers from `W/guards/integ/14-f
   physical value reaches para 45. Costs: **C23 ICS longitudinal shift hover → 100 KCAS 0.69 → −0.03 in forward (P 0.7 ± 0.3)**,
   of which the Cm takes 0.52 in and the downwash 0.20 (KNOWN GAP row: para 44-45 and para 25 pull the same knobs opposite ways);
   **H4 at 190 KCAS / 1.43 g: 0.27 → 0.69° of right roll** against the row's 0.5° reading of "none" (KNOWN GAP row). Gains: the ICS
-  configuration itself now trims at V_H (C4 flies it: 201.2 KTAS at 114 %, 5.1 in forward; was flown on the AMCS gyro's
+  configuration itself now trims at V_H (C4 flies it: 201.1 KTAS at 114 %, 4.7-5.0 in forward; was flown on the AMCS gyro's
   mechanics), C5 clean 212.7 → 216.7 KTAS, C9 at 190 KCAS 0.48 → 0.34 in, C18 at 180 KCAS 4.23 → 4.32 °/s/in.
 - **New KNOWN GAP: AMCS hands-fixed symmetric pull rolls left.** Full aft stick from 155 / 180 KCAS with the lateral stick, pedals,
   collective and prop at trim: −14.0 / −14.4° of roll in 3 s at 2.56 / 2.79 g (ESTIMATE bound 5°; P AMCS-73 para 37: "no

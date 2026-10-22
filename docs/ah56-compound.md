@@ -503,7 +503,7 @@ ASTA-72 para 44-45 (ICS, aft CG FS 299.8, stores, 4,000 ft, 18,300 lb; the colle
 
 No physical downwash reaches para 45 at both speeds; only none at all reaches the 120 KCAS band. The flown pair takes the D values
 and keeps the gradient row a KNOWN GAP with the "ICS pitch trim" hint. Before / after on the rows the review named: C4 now flies the
-ICS configuration itself (201.2 KTAS at 114 %, 5.1 in forward; was the AMCS gyro's mechanics at 246 rpm); C5 clean 212.7 → 216.7
+ICS configuration itself (201.1 KTAS at 114 %, 4.7-5.0 in forward; was the AMCS gyro's mechanics at 246 rpm); C5 clean 212.7 → 216.7
 KTAS; C6 71 / 48 / 30 → 71 / 49 / 29 %; C8 −3.28 → −3.25° at 190 KTAS; C9 0.25 / 0.36 / 0.48 → 0.21 / 0.29 / 0.34 in left at 120 /
 160 / 190 KCAS; C18 pitch at 180 KCAS 4.23 → 4.32 °/s/in; C19 2.43 g at 1.79 → 1.75 s; G4 4.60 / 5.58 kN m/in (unchanged); H4 onsets
 1.4 → 1.3 g (122 KCAS), 1.5 → 1.4 g (154), and at 190 KCAS / 1.43 g 0.27 → 0.69° of right roll (KNOWN GAP against the row's 0.5°);
