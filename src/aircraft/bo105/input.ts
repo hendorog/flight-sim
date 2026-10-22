@@ -58,11 +58,29 @@ export const BO105_INPUT: InputProfile = {
   // Measured (d_hh_final, h_rows_final): the tapping beginner's deceleration reaches the hover in 9 of 10 variants and,
   // flying on, holds it 20 s (round 3: 0 of 10, all lost); collective taps 0.3 / 0.5 / 0.6 / 1.0 s with the pedals untouched
   // peak 1.2 / 2.0 / 2.4 / 4.1 deg (round 3: 7.1 / 11.4 / 13.5 / 20.2). ESTIMATES tuned on the probes.
+  // Tune round 2 (W/tune/bo105 r2, the round-1 pilot gate's must items):
+  // - TRANSLATIONAL RATE COMMAND on the keyboard cyclic (ADS-33E's TRC response type at hover and low speed): the
+  //   attitude datums lean 1 deg per kt of ground speed against the drift (at most 6 deg), and once the keyboard stick
+  //   has rested 2.5 s they walk to the zero-ground-speed trim at 0.3 deg per second per kt (at most 2 deg per second),
+  //   full below 15 kt of ground speed, gone at 30. Hands off it comes back to a hover over the ground: let go after the
+  //   45 KIAS deceleration it held within 5 m for 60 s (round 1: slid sideways past 30 m in 10.5 s and crashed at 41 s); a
+  //   1 s ArrowUp knock in the hover 25.5 m (round 1: 490 m, 35 KIAS); 9 of 10 keyboard decelerations held as before
+  //   (r2 p1_all1). Swept 0.5-1.0 deg per kt, 0.1-0.3 deg/s per kt, rest 1-3.5 s: a shorter rest or a stronger walk fought
+  //   the tapping beginner (lost after the hover in 2 of 10), a weaker one left the knock past 30 m (p1_a..h, m0..m05).
+  // - CLIMB-RATE COMMAND on a held bare F5 / F6 (airborne, below the height hold's band): the key's own move is taken back
+  //   and the lever walked to 2 m/s up or down, the sink falling to 0.7 m/s over the 4 m above 4 m of CG height (the CG
+  //   sits 1.4 m up on the skids), stopping at the power limit and backing off at 0.05 per second while F6 stays held past
+  //   it. F5 held from 16 m and from 3 ft touches down at 0.44 m/s (round 1: crashed in a 5.9 m/s sink; 2.2 m/s); F6 held
+  //   5 s peaks at 86.2 % torque against the 86 % AEO limit (round 1: 118.6 %). Shift+F5 / Shift+F6 stay raw (p4_*).
+  // - The crossfeed on light skids too, unless a pedal key was worked on the skids: the untouched lift-off's swing in its
+  //   first 6 s 38.9 deg (59.6 airborne only); the 2 s left-pedal lift-off unchanged at 24.2 (p3, p7). ESTIMATES.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
-    heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1, minNrPct: 95 },
-    pedalCrossfeed: { perCollective: -3, washS: 3 } },
+    heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1, minNrPct: 95,
+      held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.7, landAglM: 4, landBandM: 4, rate: 0.2, limitBackRate: 0.05 } },
+    pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
+    translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 2, fadeKt: [15, 30] } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
   // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine

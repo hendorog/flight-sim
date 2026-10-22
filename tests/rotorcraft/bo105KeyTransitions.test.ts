@@ -15,11 +15,17 @@ import type { AircraftDefinition } from '../../src/aircraft/types';
 import { BO105_DEFINITION as def } from '../../src/aircraft/bo105';
 import { MD500_DEFINITION } from '../../src/aircraft/md500';
 import { hoverScenario } from '../../src/sim/rotorcraft/starts';
-import { Keys, decelKeys, decelToHoverKeys, flyHover, frame, hoverBeginner, keyRig, liftOffKeys } from './bo105KeyPilot';
+import { Keys, decelKeys, decelToHoverKeys, flyHover, frame, hoverBeginner, keyRig, liftOffKeys, targetBeginner, type KeyRig } from './bo105KeyPilot';
 import { writeTrace } from './bo105Rig';
 
 const report: Record<string, unknown> = {};
 afterAll(() => writeTrace('bo105KeyTransitions', report));
+
+/** The tuning with some fields replaced (a definition copy). */
+function withTuning(patch: Partial<NonNullable<typeof def.input.stabilityAssist>>): AircraftDefinition {
+  return { ...def, input: { ...def.input, stabilityAssist: { ...def.input.stabilityAssist!, ...patch } } };
+}
+const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** The tuning with some fields removed (a definition copy). */
 function withoutTuning(...keys: (keyof NonNullable<typeof def.input.stabilityAssist>)[]): AircraftDefinition {
@@ -30,10 +36,11 @@ function withoutTuning(...keys: (keyof NonNullable<typeof def.input.stabilityAss
 
 describe('keyboard lift-off from the runway into the 3 ft hover (the round-2 gate: lost at 18-25 s with every pedal technique)', () => {
   function liftOffHover(pedalS: number, dd?: AircraftDefinition) {
-    const r = keyRig({ start: 'runway', dd }), keys = new Keys(r);
-    const liftS = liftOffKeys(r, keys, pedalS);
-    const hover = flyHover(r, keys, 30, hoverBeginner(r, keys));
-    return { liftS, ...hover, pedalEnd: r.c.rudder, followed: { ...r.physics.stabilityAssist!.followed } };
+    const r = keyRig({ start: 'runway', dd }), keys = new Keys(r), h0 = r.physics.state.heading;
+    const liftS = liftOffKeys(r, keys, pedalS), step = hoverBeginner(r, keys);
+    let swing6 = 0;
+    const hover = flyHover(r, keys, 30, () => { step(); if (r.t - liftS < 6) swing6 = Math.max(swing6, Math.abs(wrap(r.physics.state.heading - h0)) / DEG); });
+    return { liftS, ...hover, swing6, pedalEnd: r.c.rudder, followed: { ...r.physics.stabilityAssist!.followed } };
   }
   /**
    * F6 held until the skids lift (about 2.9 s), the pedals untouched or KeyZ held for the first 2 s, then the tapping
@@ -41,10 +48,20 @@ describe('keyboard lift-off from the runway into the 3 ft hover (the round-2 gat
    * a_liftoff.v1.log): lost at 20.7 s (crashed, the heading round 180 deg, the skids dragging with the cyclic term off)
    * and 18.8 s (drifted 30 m). Without the follow-up and the hold's own authority the heading still goes round (180 /
    * 137 deg).
+   * Tune round 2 (W/tune/bo105 r2 p3 / p7): the crossfeed now also pedals the lift-off's collective on light skids
+   * (pedalCrossfeed.onLightSkids) unless a pedal key was worked on the skids: the swing in the first 6 s after the
+   * lift-off with the pedals untouched is 38.9 deg against 59.6 with the crossfeed airborne only; with 2 s of left pedal
+   * it is unchanged (24.2). The largest heading over the whole 30 s comes from the hover with the skids brushing the
+   * ground (the beginner holds the lift-off height, 0.1 m of skid clearance), whose skid friction swings the nose: it
+   * scatters 40-140 deg over 12 beginner variants (intervals 0.6-1.2 s, lags 0.2-0.4 s) with or without the round-2 parts
+   * (median 77 / 70 deg now, 93 / 68 before), so it keeps round 1's band (102.3 / 59.7 deg here; round 1 76.4 / 25.2).
    */
-  it('the tapping beginner holds the hover 30 s after a lift-off with no pedal and with 2 s of left pedal', () => {
+  it('the tapping beginner holds the hover 30 s after a lift-off with no pedal and with 2 s of left pedal; the crossfeed on light skids cuts the untouched lift-off swing (first 6 s) by more than 10 deg', () => {
     const none = liftOffHover(0), left = liftOffHover(2), r2 = liftOffHover(0, withoutTuning('followUp', 'holdAuthority'));
-    report.liftOff = { none, left, withoutFollowUpAndHoldAuthority: r2 };
+    const xfAir = liftOffHover(0, withTuning({ pedalCrossfeed: { ...def.input.stabilityAssist!.pedalCrossfeed!, onLightSkids: undefined } }));
+    report.liftOff = { none, left, withoutFollowUpAndHoldAuthority: r2, crossfeedAirborneOnly: xfAir };
+    expect(none.swing6).toBeLessThan(xfAir.swing6 - 10);
+    expect(left.swing6).toBeLessThanOrEqual(30);
     for (const h of [none, left]) {
       expect(h.liftS).toBeGreaterThan(0);
       expect(h.lostS).toBeNull(); expect(h.crashed).toBe(false);
@@ -112,23 +129,24 @@ describe('keyboard deceleration from 45 KIAS to the hover (the round-2 gate: cra
     report.decelFlyOn = rows;
   }, 300_000);
   /**
-   * The same beginner letting go of every key at the hover, then 20 s hands off: not crashed and the attitude held (the
-   * STAB ASSIST holds attitude, heading and height), but it drifts: the attitude datum at the moment of letting go is a
-   * decelerating attitude, and an attitude hold does not hold position (ADS-33E's attitude command / attitude hold, not
-   * translational rate command), so the 30 m drift limit is passed (d_hh_final: 8-16 s, attitude within 8 deg). Position
-   * is the hover hold's (A: tests below). Round 3: lost in a 12 m/s sink with the collective at 0.13 (gate rig) before any
-   * hover. Expected to fail while the STAB ASSIST holds attitude rather than position (KNOWN_ISSUES).
+   * The same beginner letting go of every key at the hover, then 60 s hands off. Tune round 1 (the KNOWN DRIFT GAP row,
+   * judged at 20 s): the attitude hold kept the decelerating attitude it was let go at, so it slid sideways past 30 m in
+   * 10.5 s; flown on (the round-1 gate, gate1 g5_letgo) it reached 47 kt sideways 38 s after the let-go, weathercocked,
+   * left the assist's band and crashed 41 s after the let-go. Tune round 2: the keyboard cyclic's translational rate
+   * command (StabilityAssistTuning.translationalRate, ADS-33E TRC) leans the datums against the ground speed and walks
+   * them to the zero-ground-speed trim once the stick rests, so it comes back to a hover over the ground (W/tune/bo105 r2
+   * p1_all1: 5.1 m in 60 s; the 2 s taps 8.6 m, from 30 KIAS 10.7 m).
    */
-  it.fails('KNOWN DRIFT GAP: the beginner who lets go at the hover holds it 20 s hands off (drifts past 30 m: the assist holds attitude, not position)', () => {
+  it('the beginner who lets go of every key at the hover holds it 60 s hands off: within 30 m, attitude within 15 deg (round 1: past 30 m in 10.5 s, crashed at 41 s)', () => {
     const r = keyRig({ start: 'level', kias: 45, heightM: 30 }), keys = new Keys(r);
     const d = decelToHoverKeys(r, keys, { interval: 1, noseUpDeg: 8 });
     keys.releaseAll();
     report.decelLetGo = { ...d, collective: r.c.collective, elevator: r.c.elevator };
     expect(d.hoverS).not.toBeNull();
-    const after = flyHover(r, keys, 20);
-    report.decelLetGo = { ...(report.decelLetGo as object), after };
+    const after = flyHover(r, keys, 60);
+    report.decelLetGo = { ...(report.decelLetGo as object), after, endKt: r.physics.state.groundSpeed / KT };
     expect(after.crashed).toBe(false); expect(after.maxAttDeg).toBeLessThanOrEqual(15);
-    expect(after.lostS).toBeNull();
+    expect(after.lostS).toBeNull(); expect(after.driftM).toBeLessThanOrEqual(30);
   }, 60_000);
   /**
    * What A does there (docs section 9, the hints): pressed (Simulator.toggleAutoflight's physics.setAutoflight) when
@@ -205,3 +223,130 @@ describe('the hover scenario in wind starts into the wind, still over the ground
   });
 });
 
+
+/**
+ * Tune round 2 (the round-1 gate's g7_winddecel, W/tune/bo105 r2 p5b): the keyboard deceleration in the app's default
+ * 6 kt wind. With the translational rate command the gate's beginner reaches the hover in 6 of its 10 wind variants
+ * (round 1: 3); the four misses are its wings-level roll law (decelToHoverKeys keeps the roll at 0 every tap): at the
+ * hover the trim needs about 3.4 deg of left roll, so held wings level by 1 s taps the helicopter slides sideways at 15-20
+ * kt (the TRC leans the datum, the taps take it back), and in a 10 kt tailwind with 1 s pedal taps it pirouettes. A
+ * beginner who also looks at the ground below 8 kt (driftAware: the hover beginner's 0.03 rad per m/s against the drift)
+ * reaches the hover in all 10 and holds it flying on in 9 (the 10 kt gusty headwind with 1 s taps drifts 30 m 8.9 s
+ * into the 20 s).
+ */
+describe('keyboard deceleration to the hover in the app\'s default 6 kt wind (taps every 1 s, nose 8)', () => {
+  it('a beginner who looks at the ground below 8 kt reaches the hover from 45 KIAS with the wind from ahead and from behind, and holds it 20 s flying on', () => {
+    const rows: Record<string, unknown> = {};
+    for (const [name, wind] of [['ahead', { fromDeg: 70, kt: 6 }], ['behind', { fromDeg: 250, kt: 6 }]] as const) {
+      const r = keyRig({ start: 'level', kias: 45, heightM: 30, wind }), keys = new Keys(r);
+      const d = decelToHoverKeys(r, keys, { interval: 1, noseUpDeg: 8, driftAware: true });
+      keys.releaseAll();
+      const after = d.hoverS !== null ? flyHover(r, keys, 20, hoverBeginner(r, keys)) : null;
+      rows[name] = { ...d, after };
+      expect(d.hoverS, name).not.toBeNull();
+      expect(after!.lostS, name).toBeNull(); expect(after!.maxAttDeg).toBeLessThanOrEqual(20);
+    }
+    report.decelWind = rows;
+  }, 300_000);
+  /**
+   * The gate's own beginner (wings level at every tap) into the 6 kt wind with 1 s taps: no hover by 60 s, sliding
+   * sideways at about 18 kt at the end (r2 p6_head6.trace.log; not lost, not crashed). The STAB ASSIST does not overrule
+   * the pilot's roll taps; the hints say to look at the ground and lean against the drift (or let go: hands off, the TRC
+   * stops it). Expected to fail (KNOWN_ISSUES).
+   */
+  it.fails('KNOWN WIND GAP: the wings-level beginner reaches the hover into a 6 kt wind with 1 s taps (slides sideways at about 18 kt: its taps hold the wings level against the hover trim)', () => {
+    const r = keyRig({ start: 'level', kias: 45, heightM: 30, wind: { fromDeg: 70, kt: 6 } }), keys = new Keys(r);
+    const d = decelToHoverKeys(r, keys, { interval: 1, noseUpDeg: 8 });
+    report.decelWindWingsLevel = { ...d, endKt: r.physics.state.groundSpeed / KT };
+    expect(d.lostS).toBeNull();
+    expect(d.hoverS).not.toBeNull();
+  }, 120_000);
+});
+
+/**
+ * Tune round 2 (the round-1 gate's issue 3 and its g10_aroute): the route for the keyboard beginner into cruise and back
+ * is the hover hold, A. By hand above the STAB ASSIST's band the raw aircraft departs on a collective or cyclic step
+ * (gate1 g6 / g11: pre-existing, KNOWN_ISSUES); the hints send the beginner through A. Lift-off from the runway, a 3 s
+ * hover, nose 8 deg down by hand to 35 kt of ground speed climbing (above 30 so A holds the speed rather than slowing to a
+ * hover, and short of the fade band's top where by hand the 6 kt wind run departed at 43 KIAS going on to 42 kt, r2
+ * p9_aturn), A (it holds about the speed it was engaged at), a 180 deg turn on the
+ * heading bug (G held) and a 10 s leg, A off (no control step: the attitude moves under 3 deg in the next 2 s; let go
+ * the moment the turn ends, while the hold still rolls out, 5.8 deg), by hand down to 28 kt,
+ * A again (below 30 kt it slows to a hover: BO105_SIM.heliHoldSlowToHover), A off 5 s after it reaches the hover (it
+ * arrives with the nose still 9 deg up from its stop: let go at once, the attitude moves 7.7 deg in 2 s, W/tune/bo105 r2
+ * p8_aoff), a 5 s hover and the landing with F5 held (the height hold's climb-rate command). Calm and in the app's 6 kt
+ * wind.
+ */
+describe('the A route: lift-off, by hand to 35 kt, A, a heading-bug turn, A off, by hand to 28 kt, A to the hover, land with F5 held', () => {
+  function aRoute(wind?: { fromDeg: number; kt: number }) {
+    const r = keyRig({ start: 'runway', wind }), keys = new Keys(r), st: Record<string, unknown> = {};
+    let crashed = false;
+    const fly = (maxS: number, step: (() => void) | null, until: () => boolean): boolean => {
+      const t0 = r.t;
+      while (r.t - t0 < maxS) {
+        step?.(); keys.update(); frame(r);
+        if (r.physics.state.crashed) { crashed = true; return false; }
+        if (until()) return true;
+      }
+      return false;
+    };
+    const handover = (label: string): number => {
+      const s0 = { pitch: r.physics.state.pitch, roll: r.physics.state.roll };
+      let dAtt = 0;
+      for (let i = 0; i < 120; i++) { frame(r); const s = r.physics.state; dAtt = Math.max(dAtt, Math.abs(s.pitch - s0.pitch) / DEG, Math.abs(s.roll - s0.roll) / DEG); }
+      st[label] = { dAtt };
+      return dAtt;
+    };
+    const gs = (): number => r.physics.state.groundSpeed / KT;
+    st.liftS = liftOffKeys(r, keys, 0);
+    flyHover(r, keys, 3, hoverBeginner(r, keys));
+    const s1 = { ...r.physics.state, z: r.physics.state.position.z }, tA = r.t;
+    const accel = targetBeginner(r, keys, 1, () => ({ pitch: s1.pitch - 8 * DEG, roll: 0, hdg: s1.heading, z: Math.max(s1.z - 60, s1.z - 1.5 * (r.t - tA)) }));
+    st.accel = fly(60, accel, () => gs() > 35);
+    keys.releaseAll();
+    if (st.accel !== true) return { st, crashed };
+    r.physics.setAutoflight(true);
+    fly(15, null, () => false);
+    st.engagedKt = gs();
+    const target = wrap(r.physics.state.heading + Math.PI), targetDeg = ((target / DEG) + 360) % 360;
+    st.turn = fly(120, () => { const d = ((targetDeg - r.c.headingBugDeg + 540) % 360) - 180; if (Math.abs(d) > 3) keys.tap('KeyG', 2 / 60); },
+      () => Math.abs(wrap(r.physics.state.heading - target)) < 5 * DEG && Math.abs(r.physics.state.angularVelocity.z) < DEG);
+    keys.releaseAll();
+    fly(10, null, () => false);
+    st.engagedAfterTurn = r.physics.autoflight.engaged;
+    r.physics.setAutoflight(false);
+    handover('offAtCruise');
+    st.decel = decelKeys(r, keys, { interval: 1, noseUpDeg: 5, stopKt: 28, maxS: r.t + 60 }) !== null;
+    keys.releaseAll();
+    if (st.decel !== true || r.physics.state.crashed) return { st, crashed: r.physics.state.crashed };
+    r.physics.setAutoflight(true);
+    st.slowToHover = fly(45, null, () => gs() < 1 && Math.abs(r.physics.state.velocity.z) < 0.3);
+    // The hold arrives with the nose still up from its stop (9 deg); the beginner lets it settle a few seconds first.
+    fly(5, null, () => false);
+    r.physics.setAutoflight(false);
+    handover('offAtHover');
+    const h2 = flyHover(r, keys, 5, hoverBeginner(r, keys));
+    st.hover = { lostS: h2.lostS, driftM: h2.driftM };
+    const sL = { pitch: r.physics.state.pitch, roll: r.physics.state.roll, hdg: r.physics.state.heading };
+    const att = targetBeginner(r, keys, 1, () => ({ pitch: sL.pitch, roll: sL.roll, hdg: sL.hdg, z: null }));
+    let touchVz: number | null = null;
+    st.landed = fly(120, () => { att(); keys.tap('F5', 2 / 60); }, () => { if (r.physics.state.onGround) touchVz = r.physics.state.velocity.z; return touchVz !== null; });
+    keys.releaseAll();
+    st.touchVz = touchVz;
+    return { st, crashed: crashed || r.physics.state.crashed };
+  }
+  it('calm and in a 6 kt wind: every stage done, no crash, A off moves the attitude under 3 deg in 2 s, touchdown under 1.5 m/s', () => {
+    const rows: Record<string, unknown> = {};
+    for (const [name, wind] of [['calm', undefined], ['wind6', { fromDeg: 100, kt: 6 }]] as const) {
+      const { st, crashed } = aRoute(wind);
+      rows[name] = { ...st, crashed };
+      report.aRoute = rows;
+      expect(crashed, name).toBe(false);
+      expect(st.accel, name).toBe(true); expect(st.turn, name).toBe(true); expect(st.engagedAfterTurn, name).toBe(true);
+      expect(st.decel, name).toBe(true); expect(st.slowToHover, name).toBe(true); expect(st.landed, name).toBe(true);
+      expect((st.offAtCruise as { dAtt: number }).dAtt, name).toBeLessThan(3); expect((st.offAtHover as { dAtt: number }).dAtt, name).toBeLessThan(3);
+      expect((st.hover as { lostS: number | null }).lostS, name).toBeNull();
+      expect(st.touchVz as number, name).toBeLessThan(1.5);
+    }
+  }, 600_000);
+});

@@ -788,7 +788,9 @@ export class InputSystem implements Subsystem {
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
       const hardwareCollective = this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && !!hardware;
       // The STAB ASSIST's height hold walks only a keyboard collective, and waits while a collective key is held.
-      if (this.profile.stabilityAssist) { c.keyboardCollective = !hardwareCollective; c.collectiveWorked = change !== 0 || fastChange !== 0; }
+      if (this.profile.stabilityAssist) {
+        c.keyboardCollective = !hardwareCollective; c.collectiveWorked = change !== 0 || fastChange !== 0; c.collectiveFastWorked = fastChange !== 0;
+      }
       if (hardwareCollective) c.collective = hardware!.value;
       else if (fastChange !== 0) {
         const was = c.collective ?? 0;

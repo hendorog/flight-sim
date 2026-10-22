@@ -72,11 +72,18 @@ describe('STAB ASSIST, hands off in the hover scenario (2500 kg, about 16 m; gai
     expect(on.crash).toBeNull(); expect(on.maxAttDeg).toBeLessThanOrEqual(2); expect(on.seriesPctTravel).toBeLessThanOrEqual(10);
     expect(off.crash).not.toBeNull(); expect(off.crash!).toBeLessThan(50); // 41.7 s after the final fix round's in-plane force vector (was under 40)
   }, 120_000);
-  it('8 kt wind with 5 kt gusts and turbulence 0.3, 60 s: attitude within 5 deg, no crash (it holds attitude, not position: it drifts with the wind)', () => {
+  /**
+   * Tune round 2: the keyboard cyclic's translational rate command (TRC) also holds the position over the ground hands off
+   * in this wind (2.9 m after 60 s; round 1 drifted with the gusts). Without the input module (bo105Rig's physics alone)
+   * there is no keyboard stick and no TRC.
+   */
+  it('8 kt wind with 5 kt gusts and turbulence 0.3, 60 s: attitude within 5 deg, no crash, and (the TRC) within 10 m of the start', () => {
     const r = rig({ wind: true, assist: true }), x0 = r.physics.state.position.x, y0 = r.physics.state.position.y;
     const on = handsOff(r, 60), s = r.physics.state;
-    report.handsOffWind = { ...on, driftM: Math.hypot(s.position.x - x0, s.position.y - y0), groundSpeedKt: s.groundSpeed / KT };
+    const driftM = Math.hypot(s.position.x - x0, s.position.y - y0);
+    report.handsOffWind = { ...on, driftM, groundSpeedKt: s.groundSpeed / KT };
     expect(on.crash).toBeNull(); expect(on.maxAttDeg).toBeLessThanOrEqual(5); expect(on.seriesPctTravel).toBeLessThanOrEqual(10);
+    expect(driftM).toBeLessThanOrEqual(10);
   }, 120_000);
   /**
    * Round 3: the trim follow-up (followUp) walks the keyboard controls when the low-passed series term leaves its dead
@@ -89,12 +96,17 @@ describe('STAB ASSIST, hands off in the hover scenario (2500 kg, about 16 m; gai
    * (the walk) now carries those too; the series term still never leaks. The hover scenario now starts into the wind
    * (BO105_SIM.hoverIntoWind), trimmed at the start's wind, whose turbulence then varies the headwind: there the stick
    * and pedals are walked 0.034 of the axis in 5 s (measured). Drifting with the air mass (round 3's start, the
-   * definition without hoverIntoWind) they stay within round 3's 0.02.
+   * definition without hoverIntoWind) they stayed within round 3's 0.02.
+   * Tune round 2: drifting with the air mass is now what the keyboard cyclic's translational rate command stops, so there
+   * the walk is the TRC taking the stick toward the zero-ground-speed trim (0.067 of the axis in 5 s; before 0.012), and
+   * the row checks that it does stop the drift (the ground speed falls) rather than that the stick stays. The leak
+   * check (the series term never reaches the controls) is unchanged.
    */
   it('the series term never reaches the pilot\'s controls: hands off in gusts the keyboard stick and pedals move only by the trim follow-up and the crossfeed, and that stays small', () => {
     const drifting: AircraftDefinition = { ...def, sim: { ...def.sim, hoverIntoWind: undefined } };
     const fly = (dd?: AircraftDefinition) => {
       const r = rig({ wind: true, assist: true, dd }), c0 = { a: r.c.aileron, e: r.c.elevator, r: r.c.rudder }, a = r.physics.stabilityAssist!;
+      const gs0Kt = r.physics.state.groundSpeed / KT;
       const f0 = { ...a.followed };
       let worked = 0, leak = 0;
       for (let i = 0; i < 300; i++) {
@@ -107,13 +119,13 @@ describe('STAB ASSIST, hands off in the hover scenario (2500 kg, about 16 m; gai
       }
       const moved = Math.max(Math.abs(a.followed.aileron - f0.aileron), Math.abs(a.followed.elevator - f0.elevator), Math.abs(a.followed.rudder - f0.rudder));
       expect(r.input.pilotFlying(1e6)).toBe(false);
-      return { worked, leak, moved };
+      return { worked, leak, moved, gs0Kt, gsKt: r.physics.state.groundSpeed / KT };
     };
     const intoWind = fly(), withTheAir = fly(drifting);
     report.seriesNeverReaches = { intoWind, withTheAir };
     for (const x of [intoWind, withTheAir]) { expect(x.worked).toBeGreaterThan(0); expect(x.leak).toBeLessThanOrEqual(0.1 / 60 + 1e-9); }
-    expect(withTheAir.moved).toBeLessThanOrEqual(0.02);
     expect(intoWind.moved).toBeLessThanOrEqual(0.05);
+    expect(withTheAir.gsKt).toBeLessThan(withTheAir.gs0Kt - 2);
   }, 60_000);
 });
 
@@ -122,14 +134,14 @@ const wrapDeg = (a: number): number => ((a + 540) % 360) - 180;
 describe('STAB ASSIST with the keys (attitude command, attitude hold; the pedal term damps the yaw rate and holds the heading)', () => {
   /** Fly with an optional key held from `at` for `hold` s; samples every frame. */
   function fly(T: number, assist: boolean, key?: { code: string; hold: number; at: number; shift?: boolean }, payload?: 'typical') {
-    const r = rig({ assist, payload }), out: { roll: number; pitch: number; r: number; hdg: number }[] = [];
+    const r = rig({ assist, payload }), out: { roll: number; pitch: number; r: number; hdg: number; x: number; y: number; gsKt: number }[] = [];
     for (let i = 0, n = Math.round(T / FRAME); i < n; i++) {
       const t = i * FRAME;
       if (key && Math.abs(t - key.at) < FRAME / 2) r.input.keyDown(key.code, key.shift);
       if (key && Math.abs(t - (key.at + key.hold)) < FRAME / 2) r.input.keyUp(key.code);
       frame(r);
       const s = r.physics.state;
-      out.push({ roll: s.roll / DEG, pitch: s.pitch / DEG, r: s.angularVelocity.z / DEG, hdg: s.heading / DEG });
+      out.push({ roll: s.roll / DEG, pitch: s.pitch / DEG, r: s.angularVelocity.z / DEG, hdg: s.heading / DEG, x: s.position.x, y: s.position.y, gsKt: s.groundSpeed / KT });
     }
     return out;
   }
@@ -145,15 +157,24 @@ describe('STAB ASSIST with the keys (attitude command, attitude hold; the pedal 
    * stays purely sideward: its airflow rolls the bank back to level by 8 s (9.6 deg at 3 s, 5.9 at 5 s, -0.01 at 8 s).
    * Round 2's "stays on the tapped side" (bank at 8 s >= 0) was a description, not a source; restated as "not past
    * level by more than 1 deg", with the heading band tightened from 50 to 10 deg.
+   * Tune round 2 (the translational rate command, TRC; W/tune/bo105 r2): the keyboard stick left after the tap now leans
+   * the datum against the sideward drift and, once it has rested 2.5 s, walks it to the zero-ground-speed trim, so the bank
+   * goes PAST level to stop the drift (9.6 / 5.9 / -0.01 deg at 3 / 5 / 8 s before; now 7.1 / -0.1 / -4.7) and the
+   * helicopter comes back to a hover over the ground. "Not past level by more than 1 deg" described the attitude hold's
+   * drift; restated as the TRC's: the drift stopped (ground speed under 1 kt) within 40 s and within 30 m (the gate's
+   * position criterion), the bank at 3 s and the nose band kept.
    */
-  it('a 1 s roll key tap banks 7-11 deg by 3 s; the sideward drift rolls it back to level by 8 s without going past it, and the nose stays within 10 deg (round 1: 84 deg at 8 s, round 2: 40)', () => {
-    const base = fly(9, true), tap = fly(9, true, { code: 'ArrowRight', hold: 1, at: 1 });
+  it('a 1 s roll key tap banks 7-11 deg by 3 s; hands off the TRC rolls it back past level and stops the drift: ground speed under 1 kt by 40 s, within 30 m, the nose within 10 deg (round 1: 84 deg at 8 s, round 2: 40)', () => {
+    const base = fly(41, true), tap = fly(41, true, { code: 'ArrowRight', hold: 1, at: 1 });
     const bank = (t: number) => at(tap, t).roll - at(base, t).roll;
     const hdg8 = Math.abs(wrapDeg(at(tap, 9).hdg - at(base, 9).hdg));
-    report.rollTap = { at3: bank(4), at5: bank(6), at8: bank(9), hdg8 };
+    const driftM = Math.max(...tap.map((p, i) => Math.hypot(p.x - base[i].x, p.y - base[i].y)));
+    const peakKt = Math.max(...tap.map((p) => p.gsKt)), endKt = at(tap, 41).gsKt;
+    report.rollTap = { at3: bank(4), at5: bank(6), at8: bank(9), hdg8, driftM, peakKt, endKt };
     expect(bank(4)).toBeGreaterThanOrEqual(7); expect(bank(4)).toBeLessThanOrEqual(11);
-    expect(bank(9)).toBeGreaterThanOrEqual(-1); expect(bank(9)).toBeLessThan(bank(4));
+    expect(bank(9)).toBeLessThan(0);
     expect(hdg8).toBeLessThanOrEqual(10);
+    expect(endKt).toBeLessThan(1); expect(driftM).toBeLessThanOrEqual(30);
   }, 60_000);
   it('a 10 % pedal step held by the pilot in the hover (2200 kg) reaches 16-31 deg/s at 3 s and is at least 85 % settled (ERF 1995 Nr -0.97 / -1.10 with N_ped 0.042: about 23 deg/s); the raw aircraft is still rising', () => {
     // The pilot's foot on the pedal (ControlInputs.pedalWorked, as the input module sets it for a held key or a hardware
@@ -557,6 +578,157 @@ describe('STAB ASSIST height hold and collective crossfeed (the keyboard collect
     expect(resting).toBeCloseTo(xf.perCollective * 0.05, 1);
     expect(Math.abs(keyed)).toBeLessThan(0.01);
   }, 60_000);
+  /**
+   * Tune round 2 (pedalCrossfeed.onLightSkids; the round-1 gate's lift-off item): on light skids the crossfeed pedals the
+   * lift-off's collective too, unless a pedal key was worked since the skids last left the ground (the pilot who set the
+   * pedal before raising the collective pedals the lift-off; crossfeeding it as well pushed the 2 s left-pedal lift-off's
+   * first 6 s from 24 to 54 deg, W/tune/bo105 r2 p3_trcx.log). Runway start, the collective raised until the skids carry
+   * under half the weight, then 0.03 more.
+   */
+  it('on light skids the crossfeed pedals a collective rise, unless a pedal key was worked on the skids', () => {
+    const lift = (pedalFirst: boolean) => {
+      const r = rig({ assist: true, runway: true, payload: 'typical' }), a = r.physics.stabilityAssist!;
+      for (let i = 0; i < 30; i++) frame(r);
+      if (pedalFirst) { r.input.keyDown('KeyZ'); for (let i = 0; i < 6; i++) frame(r); r.input.keyUp('KeyZ'); }
+      const load = (): number => { const w = r.physics.state.wheels; return (w[0].load + w[1].load + w[2].load) / (r.physics.state.mass * G0); };
+      while (load() > 0.4 && r.c.collective! < 0.5) { r.c.collective! += 0.005; frame(r); }
+      for (let i = 0; i < 30; i++) frame(r);
+      const f0 = a.followed.rudder;
+      r.c.collective! += 0.03; frame(r);
+      return { onGround: r.physics.state.onGround, load: load(), crossfed: a.followed.rudder - f0 };
+    };
+    const untouched = lift(false), pedalled = lift(true);
+    report.crossfeedLightSkids = { untouched, pedalled, expected: def.input.stabilityAssist!.pedalCrossfeed!.perCollective * 0.03 };
+    expect(untouched.onGround).toBe(true); expect(pedalled.onGround).toBe(true);
+    expect(untouched.crossfed).toBeCloseTo(def.input.stabilityAssist!.pedalCrossfeed!.perCollective * 0.03, 1);
+    expect(Math.abs(pedalled.crossfed)).toBeLessThan(0.01);
+  }, 60_000);
+  /**
+   * Tune round 2 (heightHold.held; the round-1 gate's must item): a bare F5 / F6 held airborne below 30 KIAS is a
+   * climb-rate command (2 m/s), the key's own move of the lever taken back and the lever walked by the hold; the sink
+   * falls to 0.7 m/s over the 4 m above 4 m of AGL. Round 1 only damped a held key (0.03 of the travel per second per m/s
+   * against the key's 0.12 per second): held from the 16 m hover F5 crashed in a 5.9 m/s sink, from 3 ft it touched at
+   * 2.2 m/s, and F5 held 4 s then released was not caught (W/tune/bo105 gate1 g3_land; now r2 p4_lb05).
+   */
+  it('F5 held from the 16 m hover and from 3 ft lands softly (touchdown under 1.5 m/s, not crashed); F5 held 4 s then released is caught (round 1: crashed, 2.2 m/s, crashed)', () => {
+    const land = (o: { ige: boolean; heldS: number }) => {
+      const r = rig({ assist: true, ige: o.ige });
+      for (let i = 0; i < 60; i++) frame(r);
+      let t = 0, touchVz: number | null = null, caught: number | null = null, maxSink = 0;
+      r.input.keyDown('F5');
+      while (t < 60) {
+        if (t >= o.heldS && touchVz === null) r.input.keyUp('F5');
+        frame(r); t += FRAME;
+        const s = r.physics.state;
+        maxSink = Math.max(maxSink, s.velocity.z);
+        if (touchVz === null && s.onGround) { touchVz = s.velocity.z; break; }
+        if (s.crashed) break;
+        if (t > o.heldS + 0.5 && caught === null && s.velocity.z < 0.05) { caught = s.altitudeAGL; break; }
+      }
+      r.input.keyUp('F5');
+      return { touchVz, caught, maxSink, crashed: r.physics.state.crashed };
+    };
+    const hover = land({ ige: false, heldS: 60 }), ige = land({ ige: true, heldS: 60 }), held4 = land({ ige: false, heldS: 4 });
+    report.heightF5Held = { hover, ige, held4 };
+    for (const x of [hover, ige]) { expect(x.crashed).toBe(false); expect(x.touchVz).not.toBeNull(); expect(x.touchVz!).toBeLessThan(1.5); }
+    expect(held4.crashed).toBe(false); expect(held4.caught).not.toBeNull(); expect(held4.maxSink).toBeLessThan(3);
+  }, 120_000);
+  /**
+   * F6 held 5 s in the 16 m hover (2500 kg): the climb-rate command stops raising the lever at the power limit and backs
+   * it off while F6 stays held past it (limitBackRate: the torque lags the lever), so the torque peaks at the 86 % AEO
+   * limit (P5 FM 2-10) rather than past it (round 1, the key moving the lever: 118.6 % and a 122 m climb; without the back
+   * off 88.7 %). Released, the climb stops. Shift+F6 stays the pilot's hand-rate key (below).
+   */
+  it('F6 held 5 s climbs at the torque limit, not past it (peak within 0.5 % of 86 %; round 1: 118.6 %), and levels off within 4 s of the release', () => {
+    const r = rig({ assist: true });
+    for (let i = 0; i < 60; i++) frame(r);
+    let t = 0, maxTq = 0, climbMax = 0, levelS: number | null = null;
+    r.input.keyDown('F6');
+    while (t < 12) {
+      if (Math.abs(t - 5) < FRAME / 2) r.input.keyUp('F6');
+      frame(r); t += FRAME;
+      const s = r.physics.state, rc = s.rotorcraft!;
+      maxTq = Math.max(maxTq, rc.turboshaft!.torquePsi, rc.twinTurboshaft?.second.torquePsi ?? 0);
+      climbMax = Math.max(climbMax, -s.velocity.z);
+      if (t > 5 && levelS === null && Math.abs(s.velocity.z) < 0.3) levelS = t - 5;
+    }
+    report.heightF6Held5 = { maxTq, climbMax, levelS };
+    expect(maxTq).toBeLessThanOrEqual(86.5);
+    expect(climbMax).toBeGreaterThan(0.5);
+    expect(levelS).not.toBeNull(); expect(levelS!).toBeLessThanOrEqual(4);
+  }, 60_000);
+  /** The hand-rate keys stay raw with the assist on: Shift+F5 for 0.2 s lowers the lever 0.2 (1.0 per second), as off. */
+  it('Shift+F5 stays the pilot\'s: the lever moves at the hand rate with the assist on, as with it off', () => {
+    const lower = (assist: boolean) => {
+      const r = rig({ assist });
+      for (let i = 0; i < 60; i++) frame(r);
+      const c0 = r.c.collective!;
+      r.input.keyDown('F5', true);
+      for (let i = 0; i < 12; i++) frame(r);
+      r.input.keyUp('F5');
+      return r.c.collective! - c0;
+    };
+    const on = lower(true), off = lower(false);
+    report.shiftF5 = { on, off };
+    expect(off).toBeCloseTo(-0.2, 2);
+    expect(Math.abs(on - off)).toBeLessThanOrEqual(0.005);
+  }, 60_000);
+});
+
+describe('STAB ASSIST translational rate command on the keyboard cyclic (tune round 2: ADS-33E TRC at hover and low speed)', () => {
+  /** Hands off 60 s after a key knock at 2 s in the hover scenario: the largest distance from the start, the ground speed at the end. */
+  function knock(code: string, hold: number, dd?: AircraftDefinition) {
+    const r = rig({ assist: true, dd }), s0 = r.physics.state, x0 = s0.position.x, y0 = s0.position.y;
+    let t = 0, driftM = 0, maxKias = 0;
+    while (t < 62) {
+      if (Math.abs(t - 2) < FRAME / 2) r.input.keyDown(code);
+      if (Math.abs(t - 2 - hold) < FRAME / 2) r.input.keyUp(code);
+      frame(r); t += FRAME;
+      const s = r.physics.state;
+      driftM = Math.max(driftM, Math.hypot(s.position.x - x0, s.position.y - y0)); maxKias = Math.max(maxKias, s.ias / KT);
+      if (s.crashed) break;
+    }
+    return { driftM, maxKias, endKt: r.physics.state.groundSpeed / KT, crashed: r.physics.state.crashed };
+  }
+  /**
+   * The round-1 gate (gate1 g5_letgo): a 1 s ArrowUp knock in the hover, hands off, reached 35 KIAS and 490 m in 60 s and a
+   * 0.3 s knock 65 m (the attitude hold kept the knocked attitude). The TRC leans the datum against the ground speed (1 deg
+   * per kt, at most 6) and walks it to the zero-ground-speed trim once the keyboard stick has rested 2.5 s (0.3 deg per
+   * s per kt): back to a hover within the gate's 30 m (W/tune/bo105 r2 p1_f: 25.5 / 3.4 m).
+   */
+  it('hands off after a 1 s or 0.3 s ArrowUp knock in the hover it comes back to a hover over the ground within 30 m (without the TRC: 490 / 65 m)', () => {
+    const one = knock('ArrowUp', 1), short = knock('ArrowUp', 0.3), without = knock('ArrowUp', 1, withoutTuning('translationalRate'));
+    report.trcKnock = { one, short, without };
+    for (const k of [one, short]) { expect(k.crashed).toBe(false); expect(k.driftM).toBeLessThanOrEqual(30); expect(k.endKt).toBeLessThan(1); }
+    expect(without.driftM).toBeGreaterThan(100);
+  }, 120_000);
+  /**
+   * One step on a live hover state with the ground velocity set (StabilityAssist.before, the flight model not stepped): 5 kt
+   * forward leans the datum 5 deg nose up, so the series elevator is katt x 5 deg aft on the keyboard stick; a hand-held
+   * stick (keyboardCyclic false: a mouse yoke or hardware stick) keeps the attitude command alone; at 35 kt of ground
+   * speed (above fadeKt) there is none; 5 kt to the right leans the roll datum left.
+   */
+  it('keyboard stick and low speed only: 5 kt forward gives katt x 5 deg of aft series elevator; none for a hand-held stick or at 35 kt; 5 kt right rolls the datum left', () => {
+    const r = rig({ assist: true, payload: 'typical' });
+    for (let i = 0; i < 60; i++) frame(r);
+    const t = def.input.stabilityAssist!;
+    const step = (fwdKt: number, rightKt: number, keyboard: boolean) => {
+      const a = new StabilityAssist(t), s = structuredClone(r.physics.state), h = s.heading;
+      s.velocity.x = (fwdKt * Math.cos(h) - rightKt * Math.sin(h)) * KT; s.velocity.y = (fwdKt * Math.sin(h) + rightKt * Math.cos(h)) * KT;
+      s.angularVelocity.x = s.angularVelocity.y = s.angularVelocity.z = 0;
+      const c = { ...r.c, keyboardCyclic: keyboard, keyboardPedals: keyboard, keyboardCollective: false };
+      a.before(DT, s, c, true);
+      const out = { e: a.output.elevator, a: a.output.aileron };
+      a.after(c);
+      return out;
+    };
+    const kb = step(5, 0, true), hand = step(5, 0, false), fast = step(35, 0, true), right = step(0, 5, true);
+    const expected = t.katt * 5 * t.translationalRate!.degPerKt * DEG;
+    report.trcStep = { kb, hand, fast, right, expected };
+    expect(kb.e).toBeCloseTo(expected, 2);
+    expect(Math.abs(hand.e)).toBeLessThan(1e-9); expect(Math.abs(fast.e)).toBeLessThan(1e-9);
+    expect(right.a).toBeCloseTo(-expected, 2);
+  });
 });
 
 describe('STAB ASSIST through a resume (src/sim/resume.ts: the snapshot carries its datums)', () => {

@@ -119,6 +119,9 @@ export interface ControlInputs {
    */
   keyboardCollective?: boolean;
   collectiveWorked?: boolean;
+  /** Optional: of the collective keys held, a hand-rate one (Shift+F5 / Shift+F6, InputProfile.collectiveFastRate). Set
+   *  with collectiveWorked; the STAB ASSIST's height hold leaves those keys raw. Absent = false. */
+  collectiveFastWorked?: boolean;
   /**
    * Optional: how far the STAB ASSIST's trim follow-up has moved the keyboard pedals since the input module last took it
    * (axis units). The assist adds to it as it moves `rudder`; the input module moves its pedal centre (what 5 returns to)

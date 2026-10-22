@@ -196,10 +196,11 @@ describe('the keyboard controls the trim follow-up may move (keyboardCyclic, key
 /**
  * The tune pass (W/tune/bo105, item 1): the STAB ASSIST's height hold walks only a keyboard collective
  * (ControlInputs.keyboardCollective) and waits while a collective key is held (collectiveWorked); the input module sets
- * both on a type with a STAB ASSIST.
+ * both on a type with a STAB ASSIST. Tune round 2: collectiveFastWorked marks the hand-rate keys (Shift+F5 / Shift+F6),
+ * which the hold leaves raw while a bare F5 / F6 held airborne is its climb-rate command.
  */
-describe('the keyboard collective the height hold may walk (keyboardCollective, collectiveWorked)', () => {
-  it('on the Bo 105: keyboardCollective set; collectiveWorked while F5 / F6 or Shift+F5 / Shift+F6 is held, cleared when they rest', () => {
+describe('the keyboard collective the height hold may walk (keyboardCollective, collectiveWorked, collectiveFastWorked)', () => {
+  it('on the Bo 105: keyboardCollective set; collectiveWorked while F5 / F6 or Shift+F5 / Shift+F6 is held, collectiveFastWorked for the Shift pair only, cleared when they rest', () => {
     const r = makeInputRig(BO105_INPUT, { collective: 0.4 });
     r.setAirborne(true);
     r.run(FRAME);
@@ -208,9 +209,10 @@ describe('the keyboard collective the height hold may walk (keyboardCollective, 
       r.input.keyDown(code, shift);
       r.run(0.1);
       expect(r.c.collectiveWorked, `${shift ? 'Shift+' : ''}${code}`).toBe(true);
+      expect(r.c.collectiveFastWorked, `${shift ? 'Shift+' : ''}${code}`).toBe(shift);
       r.input.keyUp(code);
       r.run(FRAME);
-      expect(r.c.collectiveWorked).toBe(false);
+      expect(r.c.collectiveWorked).toBe(false); expect(r.c.collectiveFastWorked).toBe(false);
     }
   });
   it('a hardware collective lever in use: keyboardCollective false (the pilot\'s hand is never walked)', () => {
@@ -227,7 +229,7 @@ describe('the keyboard collective the height hold may walk (keyboardCollective, 
       const r = makeInputRig(p, { collective: 0.4 });
       r.input.keyDown('F6');
       r.run(0.2);
-      expect(r.c.keyboardCollective).toBeUndefined(); expect(r.c.collectiveWorked).toBeUndefined();
+      expect(r.c.keyboardCollective).toBeUndefined(); expect(r.c.collectiveWorked).toBeUndefined(); expect(r.c.collectiveFastWorked).toBeUndefined();
       r.input.keyUp('F6');
     }
   });

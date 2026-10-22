@@ -96,7 +96,17 @@ export interface StabilityAssistTuning {
    * above the maximum continuous power nor lowers it below `floor` of the travel. Absent: the collective is the pilot's.
    */
   heightHold?: { fadeKias: readonly [number, number]; kv: number; kp: number; kvHeld: number; rate: number; captureMps: number;
-    kh: number; vsMax: number; floor: number; minNrPct: number };
+    kh: number; vsMax: number; floor: number; minNrPct: number;
+    /**
+     * A bare collective key held AIRBORNE (not Shift+F5 / Shift+F6, ControlInputs.collectiveFastWorked) is a climb-rate
+     * command: the key's own move of the lever is taken back and the hold walks the lever (the same PI, at most `rate`
+     * per second) to `climbMps` up (F6) or `sinkMps` down (F5), the sink falling linearly to `landSinkMps` over the
+     * `landBandM` above `landAglM` (the reference point's height above the ground; the Bo 105's sits about 1.4 m up on the
+     * skids), so a held F5 lands softly. On the skids the keys move the lever as before. Absent: a held key only damped.
+     */
+    held?: { climbMps: number; sinkMps: number; landSinkMps: number; landAglM: number; landBandM: number; rate: number;
+      /** While F6 is held above the maximum continuous power the lever is lowered at this rate, travel per second. */
+      limitBackRate?: number } };
   /**
    * Collective-to-pedal crossfeed on the KEYBOARD pedals (with `followUp`, through its pedal channel), airborne: while no
    * pedal key is held, every change of the collective (the pilot's keys or lever, the height hold's walk) moves the
@@ -108,7 +118,19 @@ export interface StabilityAssistTuning {
    * let it pile up through the keyboard deceleration (9 of 10 decelerations reached the hover against 3-4; W/tune/bo105
    * d_hh_g7 / g8). Absent: none.
    */
-  pedalCrossfeed?: { perCollective: number; washS: number };
+  pedalCrossfeed?: { perCollective: number; washS: number; onLightSkids?: boolean };
+  /**
+   * Translational rate command on the KEYBOARD cyclic (ControlInputs.keyboardCyclic; a mouse yoke or hardware stick is
+   * the pilot's hand and keeps the attitude command): ADS-33E's TRC response type at hover and low speed. The attitude
+   * datums get `degPerKt` of pitch up per kt of forward GROUND speed and of roll left per kt to the right (heading axes),
+   * at most `limitDeg`, and while the keyboard stick has rested `restS` the datums themselves walk `trimDegPerSPerKt` per
+   * second per kt the same way (the trim that holds zero ground speed: the pilot's last attitude command is washed out),
+   * so a stick left anywhere comes back to a hover over the ground; that walk waits `restS` after a capture too (the
+   * hover hold letting go) and is at most `trimMaxDegS` per second. Full below fadeKt[0] of ground speed, none above
+   * fadeKt[1]. Absent: attitude command / attitude hold only.
+   */
+  translationalRate?: { degPerKt: number; limitDeg: number; trimDegPerSPerKt: number; restS: number; trimMaxDegS?: number;
+    fadeKt: readonly [number, number] };
 }
 
 export interface InputProfile {
