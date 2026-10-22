@@ -9,11 +9,19 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 1. **Control travels are fitted, not rigged.** No rigging data was found (MM ch 103 not obtained). The travels are fitted
    to AGARD AR-280's control derivatives taking "%" as % of FULL travel (an assumption): longitudinal 13.4 deg of blade
    cyclic, lateral 8.25 deg, pedal 16.7 deg of tail-rotor pitch, collective 19.2 deg. Consequences a pilot sees:
-   - the 120 KIAS trim sits 0.44 of the longitudinal travel forward of the hover's (plan 0.20-0.35;
-     `bo105Handling` KNOWN TRAVEL GAP);
+   - the 120 KIAS trim sits 0.44 of the longitudinal travel forward of the hover's. The row was re-sourced at the
+     flyability pass (2026-10-22) from the plan's ESTIMATE 0.20-0.35 (then a KNOWN TRAVEL GAP) to 0.40-0.60 (F/D) and
+     passes: NASA CR-3144 (F: Heffley 1979, the analytical BO-105C, section III) trims 5.49 deg forward of its hover at
+     120 kt against its own 10 deg rig, 0.549 (0.409 on the model's 13.43 deg). CR-3144's rig is the only one found:
+     longitudinal 10 deg, collective 14, pedal 16 (the model's fitted 16.74), lateral printed ".28 deg/%" (probably .08,
+     the model's 0.0825); its mid-CG trims span 9.1 of the 10 deg, so its hover sits at least 0.82 of the travel from
+     the forward stop, further aft than the sim's 0.754: the hover stick is not moved toward centre (a centring re-rig
+     would need about 17 deg and +27 % on the AR-280 M_lon fit). Its 80 kt control derivatives per % of its own full
+     travels agree with AR-280 on all four controls (M_lon 0.126 / 0.093, L_lat 0.226 / 0.185, N_ped 0.069 / 0.049,
+     Z_col -0.349 / -0.349): the first external support for "% = % of full travel" (docs section 4);
    - the envelope needs 12.0 of the 13.4 deg (9.4 forward at 145 KIAS aft CG, 2.6 aft in 20 kt rearward flight at forward
      CG): the stops are placed (AGENT) to leave 5.2 % at each end, not the plan's 10 % for rearward flight (KNOWN TRAVEL
-     GAP); the hover stick sits about 0.25 of the travel aft of centre (0.757 of the travel from the forward stop at
+     GAP; CR-3144's rig is at least as tight, 0.45-0.9 deg spare at its mid-CG trim extremes); the hover stick sits about 0.25 of the travel aft of centre (0.757 of the travel from the forward stop at
      2200 kg IGE, 0.773 at 2500 kg);
    - quick stops (pilot review, 2026-10-21; 2200 kg mid-CG, height held within 11 ft): from 80 KIAS with a 20 deg flare
      the stick reaches +0.544 on the -1..1 axis (0.772 of the travel from the forward stop), leaving **22.8 %** of the
@@ -50,7 +58,13 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
      autorotation NR 104.8 %; profileCd 0.012 (1.039): +3.0 %, AEO 1,965 / 1,524, OEI +165 / -89, 126.4 KTAS, NR 103.2 %
      (out of band). dragArea.z x 1.5 (the download): hover +1.7 %, bucket 0.
    Closing it needs a climb-efficiency mechanism in the rotor core (RC) or restated bands (architect): Jane's 1,575 ft/min
-   plausibly belongs to 2,500 kg, where the model is +4 % from it.
+   plausibly belongs to 2,500 kg, where the model is +4 % from it. **Flyability pass (2026-10-22; gate finding 5, the
+   pilot reviewer's "about 10 % strong at 2200 kg", rated nice):** against the CB-5 chart (F, Type 2 blades, itself
+   optimistic for a CB-4) the model is +11 % at 2200 kg (2,107 against 1,900 ft/min) and +19 % at 2500 kg (1,637 against
+   1,380); it turns 83 % of the excess shaft power into climb against the 60-72 % the sources imply over Kessler's power
+   curve. Restating the band to the CB-5 chart +/-15 % (1,615-2,185 ft/min at 2200 kg) would pass it, but the model
+   exceeds even the optimistic chart and the tolerance would swallow that: **not taken; the row stays `it.fails` and the
+   band is the architect's call.** No Bo 105 parameter closes it (the OEI floor allows +0.3 % of bucket shift).
 3. **Hover derivatives against the flight-identified hover** (`bo105Derivatives` hover rows, re-sourced at the
    flyability pass, 2026-10-22). The hover rows are now against Kaletka & Gimonet, ERF 1995 paper VII-7, Table 1 (P: the
    DLR and CERT 6 DOF identifications of the DLR S-123 in the hover; `W/sources/bo105/erf-1995-vii07/`), with the AR-280
@@ -119,7 +133,16 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    KNOWN GAP row in `twinOei.test.ts` (NR 96.12 % at 5 s, 95.81 % at 25 s; survivor 103.85 % torque, 104.80 % N1,
    810 C); the band itself is still the architect's to restate. In a 3 ft IGE
    hover at 2200 kg with a cushion, NR falls to about 91 % and the survivor reads about 114 % (the power-turbine law,
-   torque = T100 x (3 - 2 N2)); touchdown is gentle (0.6 m/s at 2.1 s).
+   torque = T100 x (3 - 2 N2)); touchdown is gentle (0.6 m/s at 2.1 s). **Flyability pass (2026-10-22; gate finding 7,
+   rated nice):** the pilot reviewer's second pass (W/probes/pilot-bo2 `oei.log`; engine 2 failing in a 3-10 ft IGE
+   hover, with a cushion) read the survivor at **114.6-139.9 % torque at NR 78.5-90.7 %**, at its 104.8 % N1 stop and
+   810 C. That is free-turbine behaviour: the gas generator at its stop and the power turbine's torque rising as N2
+   droops, T = T100 x (a - (a - 1) N2) with a = `stallTorqueRatio` 3 (ESTIMATE, the MD 500E's value): x1.10 at 95 % NR,
+   x1.20 at 90 %, x1.30 at 85 % (a ratio of 2: x1.05 / 1.10 / 1.15, but ground idle then falls to 51.8 % NR against
+   P5's "about 60 %", so 3 is kept). The CB-4's limit is 95 % OEI with no transient allowance in the pages read (P5 FM
+   2-9); the 105 % / 110 % OEI ratings belong to the FS 72E retrofit only (P TCDS footnote d). No change; pilot note
+   (the single-engine-failure checklist): "an OEI cushion overtorques the survivor as NR droops: cushion late and only
+   as much as needed".
 8. **The lead-lag degree of freedom is absent** (soft in-plane 0.66-0.73/rev): no air or ground resonance, no lag damper
    loads; blade elastic modes beyond the equivalent hinge and blade torsion are not modelled.
 9. **CG height**: the body reference point is 0.96 m below the hub (F METU, the Theodore model), but the mass model puts
@@ -184,8 +207,8 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    wind, hands off) at `03ec6e1`: after 20 s roll 53.5 deg, crashed (main rotor strike) (W/shots/BO/bo105-hover.png): the
    sourced behaviour, kept. Two ways to fly the hover scenario: the hover hold `&ap=1` hands off (after 20 s pitch +3.5,
    roll 3.0 left, torque 80.6 / 80.6 %, TOT 738 C; heliHold position RMS 0.07 m calm, 2.3-2.5 m in 8 kt gusts, no
-   disconnect), and the STAB ASSIST sim aid on the keys (built on branch `rigid/bofly`, not merged into `feat/rigid-rotor`;
-   this commit was cherry-picked from it on its own in the final fix round).
+   disconnect), and the STAB ASSIST sim aid on the keys (default ON on the Bo 105, Shift+A for the raw aircraft; section
+   "Flyability pass").
    **Final fix round (feat/rigid-rotor):** with the hingeless rotor's in-plane force applied as a vector (it had been pointed
    along the first tiny drift in the hover, and its side component was missing in forward flight) the 2200 kg IGE hover phugoid
    reads sigma +0.278, omega_d 0.504 rad/s (**doubling 2.5 s, period 12.5 s**), still inside the ERF 1995 band on its fast side
@@ -212,10 +235,50 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    75.2 %; 1000 -13.42 / 13.20 / 0.1044 / 76.1 %. Every step above 850 puts Lp and the roll mode outside their AR-280
    envelopes (-11.41, 11.04) and M_lon outside its +/-5 % fit; the sourced Lock number (F METU Table 9: 5.54, about 840
    kg m^2 at a = 6.0) supports 850. Kept (item 22).
-20. **Hover pedal authority is unvalidated and strong**: a full pedal step in the IGE hover (2200 kg) peaks at **165 deg/s
-   right and 129 deg/s left** (90 deg/s reached in 0.93 / 1.46 s) against the FM's 90 deg/s turn-rate limit; the test
-   asserts only >= 90 deg/s within 3 s. With N_ped fitted at 80 kt (0.049 rad/s^2 per %) and hover Nr -0.54 1/s the
-   implied steady rate is about 260 deg/s. No hover source; owner judgement.
+20. **Hover yaw damping is half the identified value; hover pedal turns are strong** (`bo105Derivatives` KNOWN HOVER MISS
+   Nr; re-examined at the flyability pass, 2026-10-22). Hover Nr -0.537 1/s (2200 kg IGE) against the flight-identified
+   -0.974 (DLR) / -1.10 (CERT) (P ERF 1995 Table 1; band -1.43..-0.68); N_ped 0.042 per % is inside (0.0477 / 0.0474).
+   So the pilot reviewer's "pedals 3x too sensitive" is wrong on control power and right on feel: a 10 % pedal step
+   (attitude held) reaches 36.4 deg/s at 3 s and is still rising (50.9 at 8 s, tau 1.86 s); with Nr about -1.0 it would
+   settle near 23 deg/s by 3 s. Where the model's hover Nr comes from (W/bofly/probes-fix `yaw`, quasi-static,
+   rotor states re-settled): tail rotor alone -0.43, the main rotor's yaw-rate coupling (`yawInRotorSpeed`) -0.08, the fin
+   -0.03 (its tail-rotor blockage `tailRotorFlow` +0.03), the fuselage 0, the tail rotor's Pitt-Peters inflow 0 (it
+   settles in milliseconds). **Momentum theory does not support more from the tail rotor** (D): with the hover tail
+   thrust 1,335 N, lambda_i 0.0625, a sigma 0.688, Omega R 222 m/s, the settled-inflow derivative dT/dVa =
+   rho A Omega R (a sigma / 8) / (1 + a sigma / (16 lambda_i)) = 39 N per m/s (Padfield's hover Zw form), Nr_tail = -39 x
+   5.94^2 / 4099 = **-0.34 1/s**: the model's -0.43 is already 27 % above it. (The judge's plan R2 used a sigma / 4, which
+   doubles it to 78 N per m/s and -0.68; with the inflow frozen, a sigma / 4 without the inflow factor, it would be 132
+   N per m/s and -1.14, close to the identified value; the tail inflow time constant is about 10 ms, so the frozen case
+   does not apply.) Heffley's analytical BO-105C (NASA CR-3144, F) has hover N'r -0.33 and 80 kt -0.53 against the
+   flight's -0.86 / -1.07 at 80 kt: the analytical models sit at about half the identified yaw damping at both speeds.
+   One-probe sweep of the per-definition knobs (80 kt at 3000 ft, the AR-280 condition; constraints: 80 kt Nr in
+   -1.39..-0.60, Nv 0.057..0.152, N_ped 0.049 +/-30 %, Dutch roll 2.5 rad/s +/-30 % zeta 0.05-0.30, hover N_ped
+   0.033..0.062):
+
+   | Variant | hover Nr | hover N_ped | 80 kt Nr | 80 kt Nv | 80 kt N_ped | Dutch roll rad/s, zeta |
+   |---|---|---|---|---|---|---|
+   | as built | -0.537 | 0.042 | -1.241 | 0.136 | 0.049 | 2.70, 0.18 |
+   | tail lift slope 6.3 (2D NACA 0012) | -0.554 | 0.045 | -1.285 | 0.144 | 0.053 | 2.76, 0.19 |
+   | tail root cut-out 0.10 | -0.539 | 0.042 | -1.255 | 0.139 | 0.049 | 2.72, 0.18 |
+   | fin lift slope 1.5 | -0.537 | 0.042 | -1.130 | 0.116 | 0.050 | 2.55, 0.17 |
+   | tail lift slope x 2 (11.4, unphysical) | -0.656 | 0.060 | **-1.577** | **0.193** | **0.076** | 3.12, 0.22 |
+   | the same, pedal range / 2, fin slope 1.0 | -0.656 | 0.030 | **-1.421** | 0.164 | 0.039 | 2.93, 0.20 |
+
+   No per-definition set reaches the band: even a doubled tail-rotor lift slope moves the hover only to -0.66 (the
+   settled inflow absorbs most of it) and breaks the 80 kt Nr / Nv / N_ped rows. **Kept as built (the plan's fallback);
+   the row stays a KNOWN HOVER MISS.** The keyboard pilot gets the identified damping through the STAB ASSIST's yaw-rate
+   term (0.3 of the pedal axis per rad/s: about -0.63 1/s more, D: N_ped 0.042 per % x 50 % per unit x 0.3; Nr about
+   -1.17 with it on, inside the ERF band; flyability pass section in "Integration"). A full pedal step in the IGE hover
+   (2200 kg) peaks at 165 deg/s right and 129 deg/s left (90 deg/s reached in 0.93 / 1.46 s) against the FM's 90 deg/s
+   turn-rate limit; the test asserts only >= 90 deg/s within 3 s. Per keyboard tap the Bo 105 is already the gentlest
+   of the five helicopters (a 0.5 s tap: 7.0 deg/s at 3 s against 13.8-35.4 on the others), so the pedal keys are not
+   slowed. **Round 2 (2026-10-22, the round-1 pilot gate):** with the non-centring pedal keys the rate damping alone left
+   a steady turn after every pedal tap and a swing on every collective tap (a 0.3 s F6 tap: 84 deg in 8 s). The STAB
+   ASSIST now holds the heading once the pedal keys rest (docs section 9; 0.3 s collective taps +/-1.3 deg, a 0.5 s
+   pedal tap settles 2.3 deg round), inside the same 6.5 % of pedal travel, so the physics' Nr miss above is unchanged
+   and a 0.6 s collective tap (0.26 of the pedal axis) still swings the nose. **Round 3 (the round-2 gate):** the hold
+   has its own 15 % of pedal travel (the rate damping keeps 6.5 %, so full-pedal turns are unchanged) and the keyboard
+   pedals are walked to the trim: 0.5 / 0.6 / 1.0 s collective taps are back within 1.3 deg by 15 s (flyability round 3).
 21. **The mass envelope's 1140 kg minimum is unreachable**: the TCDS minimum (P, facts.ts) sits 136 kg below this
    airframe's empty mass (1276 kg, S Jane's CB), so the CG envelope's 1140 kg point is data only; the lightest rig case is
    1400 kg. A CB-4 weighing record would settle it.
@@ -228,8 +291,27 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    0.73 s) is inside its D bands. The energy is consistent (840 kJ in the rotor at 850 kg m^2 against 325 kW, a decay
    of about 19 %/s), so the polar inertia is the only parameter, and it is held at 850 by the sourced Lock number and
    the AR-280 rows (item 19: 925 kg m^2 would lift the 1 s case by 1.6 % NR). The rest is technique: lower the collective
-   within about 0.5 s (training text: a request to PN, which owns `bo105/training.ts` and `checklists.ts`; the double
-   engine failure checklist already reads "Full down at once"). Owner judgement on the rotor's feel.
+   within about 0.5 s. Owner judgement on the rotor's feel. **Flyability pass (2026-10-22; gate finding 4):** the
+   laptop-specific loss was the keyboard collective (0.12 of the travel per second: 2.9-3.7 s to full down from 100-120
+   KIAS, 6-23 % of NR against a hand). Shift+F5 / Shift+F6 now lower / raise it at 1.0 / 0.5 per second
+   (`collectiveFastRate`); bare F5 / F6 stay the fine hover keys. Through the InputSystem, both levers OFF at 100 KIAS,
+   attitude held, the key held after the delay: 0.5 s 80.7 % (bare F5 71.3 %), 1 s **75.1 %** (69.0 %), 2 s 68.0 % (67.2
+   %); at 120 KIAS 1 s **78.1 %** (58.9 %). The tone starts at 0.30 s (100 KIAS) / 0.23 s (120). After a 2 s delay the key
+   rate hardly matters (the NR has already fallen to about 75 % when the pilot reacts): the judge's "4 points above
+   bare F5 at 2 s" was set against an estimated 63 % for bare F5; measured, bare F5 gives 67.2 %. The physics and the
+   inertia are unchanged; the double-engine-failure checklist note and the hints carry the technique (Shift+F5 at once,
+   75 KIAS, flare at 6-10 ft and Shift+F6 to cushion). No automatic collective (the FM's checklist is the pilot's).
+   **Round 2 (2026-10-22, the round-1 pilot gate): the entry stop.** Held to the floor, Shift+F5 overspun the rotor past
+   the power-off limit (110 %, P5 FM 2-8): 118 % at 100 KIAS, 126 % at 120 KIAS. The sim's steady 75 KIAS autorotation
+   with the collective full down runs at 110 % NR at 2200 kg and 117 % at 2500 kg (W/bofly/r2 `autoSteady`): the FM's
+   "collective fully down, keep NR within limits" asks for some collective at the heavy end. Shift+F5 now stops at 0.08
+   of the travel (about 97 / 102 % NR steady); bare F5 goes on down. Held after the failure at 100 KIAS the NR peak is
+   108.6 % (15 deg flare to 70 KIAS); from 120 KIAS a 10-15 deg flare still reaches 112-117 % (2500 kg: up to 126 %), the
+   flare's energy, which the pilot meets with the collective. **Cost, recorded:** the round-1 NR minimum at 120 KIAS with
+   the entry attitude held falls from 78.1 to 72.6 % (bare F5 58.9 %; 100 KIAS 75.1 -> 74.2 %): with the nose held the
+   speed runs to 130 KIAS, where 0.08 holds the rotor back. A dip to the floor and back up to the stop keeps 78.1 % but
+   overspeeds again in the flare (114-125 %); no fixed stop does both, and an NR-following collective would be an
+   autopilot. The powerFailure checklist's collective item ticks at 0.1 or below with NR in the limits.
 
 ## Integration (feat/rigid-rotor, Bo 105 stage 1)
 
@@ -260,6 +342,90 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
 - **`summary().engines[1].propRpm`** reads engine 2's output-shaft rpm (6156) rather than the rotor's 425. It has two
   readers: the muted engine-2 prop voice, and the propeller visual, which the Bo 105 does not have. No visible or
   audible effect.
+
+### Flyability pass (2026-10-22, branch `rigid/bofly`; W/bofly/fix-plan.md, report W/bofly/fix-report.md)
+
+The owner has no helicopter experience, flies a laptop and asked us to go with the recommendations on flyability and
+control sensitivity. Physics first: the hover rows were re-sourced to the flight-identified hover (ERF 1995, P; items 3,
+17, 20), which shows the sim's hover divergence is the real Bo 105's; no physics changed (nothing under
+`src/physics/rotorcraft/`, and `bo105/rotorcraft.ts` only in a comment). Flyability through the control path, Bo 105
+only, each labelled:
+- **STAB ASSIST** (`src/sim/rotorcraft/stabilityAssist.ts`): a sim aid (the CB-4 has no SAS), default ON, Shift+A for the
+  raw aircraft, `stab=0` / `stab=1` in the URL; docs section 9 has the law and the numbers. **Owner decision flagged:**
+  the default is one line in `bo105/input.ts` (`stabilityAssist.default`).
+- Shift+F5 / Shift+F6 hand-rate collective (item 22); the 5-key centring at 1 travel per second and Shift+5 keyboard trim
+  here (item 1); the helicopter control box (`BO105_UI.controlBox`; gate finding 6).
+- **Shared files touched** (owners: TW for `src/input/**`, the sim for `src/sim/**`, UI for `src/ui/**`): `input/profile.ts`
+  (optional fields `stabilityAssist`, `collectiveFastRate`, `centreRate`, `setTrimHere`), `input/bindings.ts` (Shift+A,
+  Shift+F5 / F6, Shift+5 / Shift+Num 5, profile-gated through `actionForKey`'s fallback), `input/InputSystem.ts`,
+  `input/virtualYoke.ts` (`stepCentre`'s rate argument, default 4), `sim/SimPhysics.ts` (the assist around the flight
+  model's step, built only when the profile has one), `sim/Simulator.ts`, `sim/params.ts`, `aircraft/types.ts`
+  (`UiProfile.controlBox`), `ui/status.ts`, `ui/styles.ts`, `ui/uiSystem.ts`. The R22 / R44 / S269 / MD 500E legacy digests
+  are bit-identical (35/35) and their control box is unchanged; their TRIM 0 % and missing F5 / F6 in the box are an
+  owner call, not fixed here.
+- Not done, recorded: the L31 inflow gradient x 0.5 (Mu inside the ERF band, doubling 3.6 s) is a shared-core note for
+  RC; the AEO climb band is the architect's (item 2); nudge-to-reposition under the hover hold is a shared Simulator /
+  autopilot change for every helicopter (owner decision).
+
+#### Round 2 (the round-1 pilot gate's follow-ups; probes W/bofly/r2, logs `out/`)
+
+- **Heading hold** in the STAB ASSIST (item 20; docs section 9): the heading is captured when the pedal keys rest and held
+  through collective taps and gusts, inside the round-1 yaw authority (6.5 % of pedal travel); full below 20 KIAS, gone
+  at 30. Limit: a 0.6 s collective tap needs twice that authority. The 1 s roll-tap row changed meaning: round 1's
+  "bank held" came from the nose weathercocking 84 deg into the sideward drift; with the heading held the drift's airflow
+  rolls the bank back (9.4 deg at 3 s, 2.5 at 8 s; the row now asserts the 3 s bank, no reversal, and the yaw under 50
+  deg). The hover hint was reworded.
+- **Datum on a decelerating approach** (docs section 9): the cyclic datum relaxes toward the flown attitude while the
+  airspeed falls and the pilot is flying the stick (one e-fold per 2 kt); hands off or speeding up it does not. In the
+  hover after a 45 KIAS deceleration the series term is 2.5 % of travel and the stick at the hover trim within 0.05
+  (round 1: 10 %, 0.2 forward).
+- **Pedal term on unloading skids** (`groundYawLoad` 0.5; round 3: `groundLoad`, the cyclic too): simple and safe (it
+  only damps / holds the yaw, no integral on the ground), but small: the hover wants 21 % of pedal travel left of the
+  runway start's centred pedal, three times the authority (lift-off yaw 9.0 deg/s against 10.6). The hint says pedal with
+  the collective.
+- **Shift+F5 entry stop** 0.08 (item 22), with the NR-minimum cost at 120 KIAS recorded there.
+- **Shared files touched:** `src/core/types.ts` (`ControlInputs.pedalWorked`, optional, set only for a profile with a STAB
+  ASSIST; the flight model ignores it), `src/input/profile.ts` (optional `kpsi`, `kpsiI`, `datumRelaxKt`,
+  `groundYawLoad`, `collectiveFastRate.downStop`), `src/input/InputSystem.ts` (the stop; the flag). Every other type
+  leaves them absent.
+
+#### Round 3 (the round-2 pilot gate's must items; probes W/bofly/pilot-r3, logs `out/final`)
+
+The gate flew the keys through the InputSystem with its tapping beginner: the 3 ft hover after a runway lift-off was
+lost at 18-25 s with every pedal technique, a keyboard deceleration from 45 / 30 KIAS crashed 2-10 s after the stop,
+and a 0.5 s F6 tap with the pedals untouched spun the nose 180 deg. Docs section 9 has the law and the numbers; the rows
+are `tests/rotorcraft/bo105KeyTransitions.test.ts` (the gate's beginner in `bo105KeyPilot.ts`) and
+`bo105Assist.test.ts`.
+- **Fixed:** collective taps (the hold's own authority, `holdAuthority` 0.3, and the keyboard pedals' trim follow-up:
+  0.5 / 0.6 / 1.0 s F6 back within 1.3 deg by 15 s; round 2: 180 deg); the lift-off (not lost in 30 s with the pedals
+  untouched or 2 s of left pedal; the cause was the skids touching in the low hover, which switched the cyclic term off:
+  it now works on light skids, `groundLoad`); 5 once after a lift-off keeps the followed pedal (18 deg/s; round 2 42).
+- **Still open: the keyboard deceleration to the hover.** Better (the stick 0.33-0.45 at the stop against round 2's
+  0.18, the hover 0.51; the stop reached more often) but lost: below 20 kt the beginner's F5 / F6 taps swing the
+  collective and it lets go in an 8-12 m/s sink with the collective at 0.13-0.31 (hover 0.39). The assist never touches
+  the collective. Recorded as an `it.fails` row. A below 25 kt is a way out (the hold flies on at that speed, heading and
+  height without a loss; it hovers only when engaged under 3 m/s), not a way into the hover. Candidates, owner / shared
+  decisions: a keyboard collective aid (a height hold on the keys below 20 kt), or a hold that decelerates to a hover
+  when engaged moving (shared HelicopterAutopilot, every helicopter).
+- **The gate's deceleration numbers are partly a rig artefact.** Its probes (pilot-r2 `decel`, `decelTrace`, `decel2`)
+  reset the physics after attaching the input module without the `reset` event the Simulator sends, so the keyboard
+  pedal stayed at the hover's -0.42 against the 45 KIAS trim's +0.18: a 30 deg/s yaw and 40 deg of heading at the start
+  of every run (pilot-r3 reproduces the gate's numbers exactly that way, `b_decel.gaterig.log`). With the event, the
+  round-2 law still crashed (stop 13.7 s, crash 20.1 s). Its "stop" was the body-forward ground speed, which a spin
+  crosses; pilot-r3 uses the ground-speed magnitude. The lift-off and off-trim probes were not affected.
+- **Recorded limits:** a pedal set with the keys (KeyZ 2 s at lift-off) is thrown away by 5 (62 deg/s, 136 deg; 5
+  centres the keys on the followed trim, not on the pilot's pedal). The gate's 1 s ArrowUp knock in the 3 ft hover is
+  still lost at about 38 s: not the trim (the stick at the hover trim, the series term inside its limit) but the probe's
+  own tap loop, a growing pitch / roll oscillation (-5 to +14 deg, about 4 s) that ends in the yaw. Longer F6 from the
+  hover (1.5 s and more) runs past the torque limit and the left pedal stop with or without the aid. The gate's
+  "energetic tapper" (0.5 s, roll taps to 1 s) crashes the deceleration at 8 s on every law, the raw aircraft too.
+- **Measured, not adopted:** a collective-to-pedal crossfeed (2.5 of the pedal axis per unit of collective; the trim
+  slope is about -3) held every F6 tap within 5 deg but double-compensated a pilot who pedals (2 s of left pedal at
+  lift-off: -39 deg/s, the heading round). A pedal follow-up gain of 2 rang the heading +/-12 deg after a collective tap.
+- **Shared files touched:** `src/core/types.ts` (`ControlInputs.keyboardCyclic`, `keyboardPedals`, `pedalFollowUp`,
+  optional, set only for a profile with a STAB ASSIST; the flight model ignores them), `src/input/profile.ts`
+  (`holdAuthority`, `followUp`; `groundYawLoad` renamed `groundLoad`), `src/input/InputSystem.ts` (the flags; the pedal
+  centre follows `pedalFollowUp`). Every other type leaves them absent; the legacy digests are unchanged.
 
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 

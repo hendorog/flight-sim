@@ -44,8 +44,13 @@ const FIN = outlineArea(D.FIN_OUTLINE);
  * ESTIMATE rigging): the envelope needs 9.41 deg forward at 145 KIAS (2200 kg, aft CG) and 2.63 deg aft in 20 kt rearward
  * flight (2500 kg, forward CG), 12.04 of the 13.43 deg, so the stops leave the same 0.70 deg (5.2 % of travel) beyond
  * both: forward 10.10, aft 3.33 (the plan's 10 % rearward margin cannot be had with the fitted travel: KNOWN_ISSUES).
- * The hover stick sits about 0.25 of the travel aft of its centre. Lateral symmetric (needs: 2.42 deg left in 25 kt
- * sideward flight from the left at 2500 kg, 1.92 right at 145 KIAS). Calibrated, ESTIMATE.
+ * The hover stick sits about 0.25 of the travel aft of its centre (0.754 from the forward stop at 2200 kg IGE). The one
+ * rig source found, NASA CR-3144 section III (F: Heffley 1979, the analytical BO-105C, Fig III-2), gives 10 deg of
+ * longitudinal travel and a mid-CG trim schedule spanning 9.1 of it (20 kt rearward to 145 kt), which puts its hover at
+ * least 0.82 of the travel from the forward stop: further aft than this rig, so the hover stick is not moved toward
+ * centre. Its schedule matches the model's in degrees (hover to 145 KIAS: CR-3144 8.17, the model 8.66). Lateral
+ * symmetric (needs: 2.42 deg left in 25 kt sideward flight from the left at 2500 kg, 1.92 right at 145 KIAS).
+ * Calibrated, ESTIMATE.
  */
 export const BO105_CYCLIC_DEG = { forward: 10.10, aft: 3.33, left: 4.125, right: 4.125 } as const;
 /** Tail-rotor blade pitch, deg, full right (min) to full left pedal (max): the RANGE fitted to N_ped 0.049 rad/s^2 per

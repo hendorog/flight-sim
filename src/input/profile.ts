@@ -26,6 +26,66 @@ export interface KeyboardAssistTuning {
   handoverSpeed: number;
 }
 
+/**
+ * STAB ASSIST tuning (a laptop sim aid, not a modelled aircraft system; src/sim/rotorcraft/stabilityAssist.ts has the
+ * law). Gains in units of the -1..1 control axis: per rad/s for the rates, per rad for the attitude error.
+ */
+export interface StabilityAssistTuning {
+  /** On when the type loads (Shift+A toggles it for the session; the URL's stab=0 / stab=1 overrides it). */
+  default: boolean;
+  /** Roll, pitch and yaw rate gains. */
+  kp: number; kq: number; kr: number;
+  /** Attitude-error gain (roll and pitch). */
+  katt: number;
+  /** The datum's attitude per unit of stick moved from where it was captured (attitude command), rad. */
+  stickAttitude: number;
+  /** Series authority of the cyclic terms, +/- axis units (0.2 = 10 % of the full travel). */
+  authority: number;
+  /**
+   * Series authority of the pedal term's rate damping, +/- axis units; without `holdAuthority`, of the whole pedal term
+   * (rate damping, heading hold and its integral together).
+   */
+  yawAuthority: number;
+  /**
+   * Series authority of the heading-hold part of the pedal term (the held heading's proportional and integral terms), and
+   * of the whole pedal term, +/- axis units; the rate damping stays within `yawAuthority`. While the pilot works the
+   * pedals the hold part is the integral alone, so a full-pedal turn meets the rate damping's authority only. Absent:
+   * `yawAuthority` for everything.
+   */
+  holdAuthority?: number;
+  /**
+   * Heading hold (rate command / direction hold): the heading captured when the pilot's pedal rests is held with this
+   * gain, axis units per rad of heading error, and `kpsiI` per rad s of its integral (airborne only). Absent: the pedal
+   * term damps the yaw rate only.
+   */
+  kpsi?: number;
+  kpsiI?: number;
+  /**
+   * The cyclic datum relaxes toward the flown attitude by one e-fold per this much fall of the (low-passed) airspeed while
+   * the pilot is flying the cyclic, kt: a deceleration to the hover arrives at the hover trim. Absent: no such tracking.
+   * Not for a keyboard cyclic when `followUp` is set (the follow-up walks that stick to the trim instead).
+   */
+  datumRelaxKt?: number;
+  /**
+   * The assist also works on the ground once the skids carry less than this fraction of the weight (a lift-off, a skid
+   * touching in a low hover), the cyclic datum kept through the touch. Absent: airborne only.
+   */
+  groundLoad?: number;
+  /** Full gain below [0], none above [1], KIAS. */
+  fadeKias: readonly [number, number];
+  /**
+   * Trim follow-up of the KEYBOARD controls (ControlInputs.keyboardCyclic / keyboardPedals; a mouse yoke or hardware axis
+   * is the pilot's hand and is never moved): the series term, low-passed over `filterS`, beyond `deadBand` of its
+   * authority, walks the keyboard stick and pedals toward it at `cyclicGain` / `pedalGain` per second of the excess,
+   * capped at `cyclicRate` / `pedalRate` of the axis per second, so the term washes out and the keys rest at the trim.
+   * The cyclic moves through the spring-trim anchor (the keyboard centre follows it, so 5 returns to the followed trim)
+   * with the attitude datum moved along (the commanded attitude stays); the pedals through
+   * ControlInputs.pedalFollowUp into the keyboard's pedal centre, only while no pedal key is held. For keyboard pedals the
+   * follow-up replaces the heading hold's integral (it is the integral, with the pedal's whole travel). Absent: none.
+   */
+  followUp?: { filterS: number; deadBand: number; cyclicGain: number; cyclicRate: number; pedalGain: number; pedalRate: number };
+}
+
 export interface InputProfile {
   /** Mouse response: cubic blend (0 = linear, 1 = cubic) and dead zone as fractions of travel. */
   mouseYoke?: { expo: number; deadzone: number };
@@ -37,6 +97,22 @@ export interface InputProfile {
   springTrim?: boolean;
   /** Keyboard collective travel per second. Hardware axes remain absolute position inputs. */
   collectiveRate?: number;
+  /**
+   * A second, hand-rate pair of collective keys (Shift+F5 lower, Shift+F6 raise), travel per second while held: for the
+   * autorotation entry, where the fine F5 / F6 rate is too slow. Absent: no such keys (Shift+F5 / F6 stay the fine
+   * pair). `downStop`: the lowering key stops there (the autorotation entry position, travel 0..1) and never takes the
+   * collective below it, held or pressed again; bare F5 goes on to the floor. Absent: the lowering key runs to the floor.
+   */
+  collectiveFastRate?: { down: number; up: number; downStop?: number };
+  /** Keyboard re-centring rate (5 / Numpad 5), travel per second. Absent: virtualYoke CENTRE_RATE (4). */
+  centreRate?: number;
+  /**
+   * Shift+5 / Shift+Numpad 5 set the keyboard's centre to where the stick is now (a sim convenience on a spring-trim type
+   * whose real trim is a beep switch only); the physics' spring anchor is left alone. Absent: no such key.
+   */
+  setTrimHere?: boolean;
+  /** STAB ASSIST (a sim aid; Shift+A toggles it). Absent: none, and the key does nothing. */
+  stabilityAssist?: StabilityAssistTuning;
   engines: 1 | 2;
   /** Flap lever values of the detents, ascending from 0. */
   flapDetents: readonly number[];

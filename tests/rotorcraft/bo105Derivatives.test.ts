@@ -198,10 +198,12 @@ describe('hover handling, 2200 kg IGE (3 ft skids), SL, against the flight-ident
    *  - Mp (ROTOR/INFLOW, at the edge): -0.76 against the -0.774 edge, 1.5 % outside.
    *  - Mw (sign; the stabiliser / fuselage ESTIMATEs): about 0 in the hover against +0.051 / +0.059.
    *  - Nv (hover weathercock; the tail-rotor / fin ESTIMATEs): about 0 against +0.096 / +0.066.
-   *  - Nr: see the yaw-damping row (KNOWN_ISSUES 20).
+   *  - Nr (KNOWN_ISSUES 20): -0.54 against -0.974 / -1.10; settled-inflow momentum theory gives the tail rotor -0.34 (the
+   *    model's tail -0.43 is above it) and no per-definition knob reaches the band without breaking the 80 kt Nr / Nv /
+   *    N_ped rows (the flyability pass's sweep). The keyboard pilot gets the damping from the STAB ASSIST's yaw-rate term.
    */
   const HOVER_MISS: Partial<Record<Erf1995HoverName, string>> = { Mq: 'ROTOR/INFLOW', Mu: 'ROTOR/INFLOW', Mp: 'ROTOR/INFLOW, at the edge',
-    Mw: 'sign; stabiliser / fuselage ESTIMATEs', Nv: 'hover weathercock; tail rotor / fin ESTIMATEs', Nr: 'hover yaw damping' };
+    Mw: 'sign; stabiliser / fuselage ESTIMATEs', Nv: 'hover weathercock; tail rotor / fin ESTIMATEs', Nr: 'hover yaw damping, KNOWN_ISSUES 20' };
   const OLD_BAND: Partial<Record<Erf1995HoverName, string>> = { Lp: 'was ESTIMATE -6..-10 (it.fails KNOWN HOVER-DAMPING GAP)',
     Llat: 'was ESTIMATE 0.13-0.24', Mlon: 'was ESTIMATE 0.065-0.12' };
   const UNIT: Record<Erf1995HoverName, string> = { Lp: '1/s', Lq: '1/s', Mq: '1/s', Mu: '1/(s m)', Mp: '1/s', Mw: '1/(s m)', Nv: '1/(s m)',

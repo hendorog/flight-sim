@@ -499,6 +499,11 @@ export class Simulator {
     ui.fpsExtra = () => audio.status();
     if (p.mute) audio.setMuted(true);
     input.autopilotFlying = () => !!physics.autoflight.helicopter && physics.autoflight.engaged;
+    // The STAB ASSIST sim aid (a type whose profile has one): Shift+A in the input module switches it; stab= sets it at load.
+    if (physics.stabilityAssist) {
+      if (p.stabilityAssist !== null) input.assists.stabilityAssist = p.stabilityAssist;
+      physics.stabilityAssistOn = () => input.assists.stabilityAssist === true;
+    }
     ui.autopilot = {
       helicopter: def.rotorcraft ? {
         hoverUrl: `?aircraft=${id}&hover=1&ap=1&resume=0`,

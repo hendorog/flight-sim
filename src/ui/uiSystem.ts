@@ -485,7 +485,8 @@ export class UISystem implements Subsystem, MenuHost {
     const levers: WidgetAircraft['levers'][number][] = ['throttle'];
     if (def.input.has.propeller) levers.push('propeller');
     if (def.input.has.mixture) levers.push('mixture');
-    this.controlsWidget.setAircraft({ engines: def.engineCount, levers, rudderTrim: def.input.has.rudderTrim, rotorcraft: !!def.rotorcraft });
+    this.controlsWidget.setAircraft({ engines: def.engineCount, levers, rudderTrim: def.input.has.rudderTrim, rotorcraft: !!def.rotorcraft,
+      ...(ui.controlBox ? { controlBox: ui.controlBox } : {}) });
   }
 
   /** Switch / mixture toasts for keyboard pilots, and why a start cannot work while the starter is held. */

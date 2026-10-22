@@ -55,6 +55,7 @@ import {
   nextFlapDetent,
   stepBrake,
   stepCentre,
+  CENTRE_RATE,
   stepKeyAxis,
   wrapDegrees,
   type KeyAxisTuning,
@@ -123,6 +124,12 @@ export interface InputAssists {
    * false (plan revision 2 section 0 item 7). Absent: false.
    */
   propSchedule?: boolean;
+  /**
+   * STAB ASSIST, the hover attitude-hold sim aid of a type whose profile has one (InputProfile.stabilityAssist; the
+   * physics applies it, src/sim/rotorcraft/stabilityAssist.ts). Starts at the profile's default; Shift+A toggles it.
+   * Absent on every other type.
+   */
+  stabilityAssist?: boolean;
 }
 
 /** What the UI needs to draw a small yoke-position indicator. Values are the commanded controls. */
@@ -148,6 +155,10 @@ export interface YokeIndicator {
    * centre mark (so switching it on never slams the yoke to wherever the pointer happened to be).
    */
   mouseArmed?: boolean;
+  /** STAB ASSIST switched on (true) or off (false) on a type that has it; absent on the others. */
+  stabilityAssist?: boolean;
+  /** The keyboard's centre (what 5 returns to) on a type with "keyboard trim here" (InputProfile.setTrimHere). */
+  keyboardCentre?: { aileron: number; elevator: number };
 }
 
 const CAMERA_CYCLE: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
@@ -419,6 +430,7 @@ export class InputSystem implements Subsystem {
     this.steering = new GroundSteeringAssist(assists.steering);
     this.rollTrim = new RollTrimAssist(assists.rollTrim);
     this.rotation = new RotationGuard(assists.rotation);
+    if (this.profile.stabilityAssist) this.assists.stabilityAssist = this.profile.stabilityAssist.default;
   }
 
   /** Which engine(s) the engine keys act on (0 = left). One engine: always 'all'. After every reset: 'all'. */
@@ -666,7 +678,8 @@ export class InputSystem implements Subsystem {
     if ((lx !== 0 || ly !== 0) && wallDt > 0) this.view?.lookBy?.(lx * LOOK_RATE * wallDt, ly * LOOK_RATE * wallDt);
 
     const yokeKeys = ['pitchUp', 'pitchDown', 'rollLeft', 'rollRight', 'rudderLeft', 'rudderRight'] as const;
-    if (yokeKeys.some((a) => this.held.has(a)) || (this.profile.rotorcraft && (this.held.has('flapsUp') || this.held.has('flapsDown'))) || this.hardwareTakeover() || this.mouseTakingOver) this.lastPilotInput = now;
+    if (yokeKeys.some((a) => this.held.has(a)) || (this.profile.rotorcraft && (this.held.has('flapsUp') || this.held.has('flapsDown') ||
+        this.held.has('collectiveFastDown') || this.held.has('collectiveFastUp'))) || this.hardwareTakeover() || this.mouseTakingOver) this.lastPilotInput = now;
 
     if (heldControls && !this.pilotFlying()) {
       for (const k of ['elevator', 'aileron', 'rudder', 'collective'] as const) ctx.controls[k] = heldControls[k]!;
@@ -732,6 +745,11 @@ export class InputSystem implements Subsystem {
   /** The pilot has moved the pusher grip since the last reset (the propSchedule assist lets go of it then). */
   private gripTouched = false;
 
+  /** The keyboard's re-centring rate (5 / Numpad 5 and a centring cyclic), travel per second. */
+  private get centreRate(): number {
+    return this.profile.centreRate ?? CENTRE_RATE;
+  }
+
   /** The mouse yoke's tuning: the profile's, or on a re-centring cyclic without one a small deadzone. */
   private get mouseTuning(): InputProfile['mouseYoke'] {
     return this.profile.mouseYoke ?? (this.profile.centringCyclic ? { expo: 0.3, deadzone: CENTRING_MOUSE_DEADZONE } : undefined);
@@ -763,9 +781,19 @@ export class InputSystem implements Subsystem {
     this.updateSpringTrim(s);
     if (this.profile.rotorcraft) {
       const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
+      // The hand-rate pair (InputProfile.collectiveFastRate: Shift+F5 / Shift+F6), travel per second; 0 on every other type.
+      const fast = this.profile.collectiveFastRate;
+      const fastDown = !!fast && this.held.has('collectiveFastDown'), fastUp = !!fast && this.held.has('collectiveFastUp');
+      const fastChange = fast ? (fastUp ? fast.up : 0) - (fastDown ? fast.down : 0) : 0;
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
-      if (this.collectiveOwner.update(change !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
-      else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
+      if (this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
+      else if (fastChange !== 0) {
+        const was = c.collective ?? 0;
+        let v = was + change * (this.profile.collectiveRate ?? 0.15) * dt + fastChange * dt;
+        // The lowering key's entry stop (Bo 105: the autorotation entry position): never below it, nor below where it was.
+        if (fastDown && !fastUp && fast!.downStop !== undefined) v = Math.max(v, Math.min(was, fast!.downStop));
+        c.collective = clamp(v, 0, 1);
+      } else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
     }
 
     // Mouse yoke: armed until the pointer passes through the centre, then in control.
@@ -798,6 +826,14 @@ export class InputSystem implements Subsystem {
     const kbEle = hwEle === null && mouse === null;
     const kbRud = hwRud === null;
     this.rudderHardware = !kbRud;
+    // The STAB ASSIST's trim follow-up moved the keyboard pedals (ControlInputs.pedalFollowUp): the pedal centre, what 5
+    // returns to, moves with them, as the cyclic's centre moves with the spring-trim anchor it walks.
+    const pedalFollowUp = c.pedalFollowUp ?? 0;
+    if (pedalFollowUp !== 0) {
+      n.rudder = clamp(n.rudder + pedalFollowUp, -1, 1);
+      if (this.written.rudder !== null) this.written.rudder += pedalFollowUp;
+      c.pedalFollowUp = 0;
+    }
 
     // Someone else (the autopilot) moved a control the keyboard alone was holding: the keyboard yoke follows
     // it, as the pilot's hand resting on a yoke the autopilot moves, so nothing jumps when it disconnects.
@@ -836,7 +872,7 @@ export class InputSystem implements Subsystem {
       this.centring.aileron = false;
       this.kbAileron = stepKeyAxis(this.kbAileron, roll, ias, dt, tuning.axes.aileron, this.heldFor(roll > 0 ? 'rollRight' : 'rollLeft'));
     } else if (this.centring.aileron) {
-      this.kbAileron = stepCentre(this.kbAileron, dt);
+      this.kbAileron = stepCentre(this.kbAileron, dt, this.centreRate);
       if (this.kbAileron === 0) {
         this.centring.aileron = false;
         this.ailCentred = true;
@@ -851,7 +887,7 @@ export class InputSystem implements Subsystem {
       const elevator = onMains && !this.profile.rotorcraft ? this.groundElevator : tuning.axes.elevator;
       this.kbElevator = stepKeyAxis(this.kbElevator, pitch, ias, dt, elevator, this.heldFor(pitch > 0 ? 'pitchUp' : 'pitchDown'));
     } else if (this.centring.elevator) {
-      this.kbElevator = stepCentre(this.kbElevator, dt);
+      this.kbElevator = stepCentre(this.kbElevator, dt, this.centreRate);
       if (this.kbElevator === 0) this.centring.elevator = false;
     }
     if (!this.profile.rotorcraft) this.kbElevator = this.rotation.step(this.kbElevator, kbElevatorBefore, s.angularVelocity.y, s.pitch, onMains, dt, this.held.has('pitchUp'));
@@ -873,7 +909,7 @@ export class InputSystem implements Subsystem {
       this.centring.rudder = false;
       this.kbRudder = stepKeyAxis(this.kbRudder, yaw, ias, dt, tuning.axes.rudder, this.heldFor(yaw > 0 ? 'rudderRight' : 'rudderLeft'));
     } else if (this.centring.rudder) {
-      this.kbRudder = stepCentre(this.kbRudder, dt);
+      this.kbRudder = stepCentre(this.kbRudder, dt, this.centreRate);
       if (this.kbRudder === 0) {
         this.centring.rudder = false;
         this.rudCentred = true;
@@ -912,6 +948,9 @@ export class InputSystem implements Subsystem {
     c.aileron = mixCentring(n.aileron + this.kbAileron + rollBias, mouse?.aileron ?? null, hwAil);
     c.elevator = mixCentring(n.elevator + this.kbElevator, mouse?.elevator ?? null, hwEle);
     c.rudder = mixCentring(n.rudder + this.kbRudder + assist, null, hwRud);
+    // The STAB ASSIST's heading hold waits while the pilot works the pedals (a pedal key held, a hardware pedal in use);
+    // its trim follow-up moves only what the keyboard holds.
+    if (this.profile.stabilityAssist) { c.pedalWorked = yaw !== 0 || hwRud !== null; c.keyboardCyclic = kbAil && kbEle; c.keyboardPedals = kbRud; }
     this.written.aileron = kbAil ? c.aileron : null;
     this.written.elevator = kbEle ? c.elevator : null;
     this.written.rudder = kbRud ? c.rudder : null;
@@ -926,6 +965,11 @@ export class InputSystem implements Subsystem {
     i.keyboardOffCentre =
       (kbAil && Math.abs(this.kbAileron) > OFF_CENTRE) || (kbEle && Math.abs(this.kbElevator) > OFF_CENTRE) || (kbRud && Math.abs(this.kbRudder) > OFF_CENTRE);
     i.keyboardElevator = kbEle ? this.kbElevator : 0;
+    if (this.profile.stabilityAssist) i.stabilityAssist = !!this.assists.stabilityAssist;
+    if (this.profile.setTrimHere) {
+      const k = (i.keyboardCentre ??= { aileron: 0, elevator: 0 });
+      k.aileron = n.aileron; k.elevator = n.elevator;
+    }
   }
 
   /** The control differs from what the keyboard wrote to it last frame (another writer moved it). */
@@ -1548,6 +1592,12 @@ export class InputSystem implements Subsystem {
       case 'mouseYoke':
         this.setMouseYoke(!this.mouseYoke);
         break;
+      case 'stabilityAssist':
+        this.assists.stabilityAssist = !this.assists.stabilityAssist;
+        this.shell.toast?.(this.assists.stabilityAssist
+          ? 'STAB ASSIST on: holds the attitude at hover and low speed (a sim aid: the aircraft has no SAS). Shift+A for the raw aircraft'
+          : 'STAB ASSIST off: the raw aircraft (unstable in the hover, as the real one). Shift+A to switch it back on');
+        break;
       case 'panelToggle':
         if (ctx.cameraMode === 'cockpit' && ctx.panelView && ctx.panelView !== '3d') {
           this.lastPanelSection = ctx.panelView;
@@ -1567,6 +1617,16 @@ export class InputSystem implements Subsystem {
         break;
       case 'centreControls':
         this.centreControls(ctx);
+        break;
+      case 'setTrimHere':
+        // The keyboard's centre (what 5 returns to) becomes the keyboard stick as it is: nothing moves now. The physics'
+        // spring anchor is left alone (it carries no aerodynamic effect); beep trim keeps moving both together.
+        this.neutral.aileron = clamp(this.neutral.aileron + this.kbAileron, -1, 1);
+        this.neutral.elevator = clamp(this.neutral.elevator + this.kbElevator, -1, 1);
+        this.kbAileron = this.kbElevator = 0;
+        this.centring.aileron = this.centring.elevator = false;
+        this.ailCentred = true;
+        this.shell.toast?.('Keyboard trim set here: 5 now returns the stick to this position');
         break;
       case 'zoomIn':
         this.view?.zoom(1);

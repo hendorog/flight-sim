@@ -34,6 +34,7 @@
 //                  nosewheel float) and no roll trim
 //   hud=0|1        external-view HUD                ui=0         hide every DOM overlay (clean screenshots)
 //   ap=1           autoflight: fly the scenario by itself (see src/sim/autoflight.ts)
+//   stab=0|1       the STAB ASSIST sim aid off / on at load on a type that has it (Bo 105; default the type's: on)
 //   demo=startup|hover|approach|autorotation|circuit   R22 scripted flights; trace=1 opens the live graph
 //   run=30         after loading, advance the simulation this many seconds as fast as possible
 //   freeze=1       pause once loading (and run=) is done; the PAUSED badge is hidden
@@ -105,6 +106,8 @@ export interface SimParams {
   hud: boolean;
   ui: boolean;
   autoflight: boolean;
+  /** stab=0 / stab=1: the STAB ASSIST off / on at load (a type that has one); null: the type's default. */
+  stabilityAssist: boolean | null;
   helicopterHover: boolean;
   /** config=amcs|ics: the control-gyro configuration of a type that has one (AH-56A); null when absent or unknown. */
   rotorcraftConfig: 'amcs' | 'ics' | null;
@@ -265,6 +268,7 @@ export function parseParams(search: string): SimParams {
     hud: q.get('hud') !== '0',
     ui: q.get('ui') !== '0',
     autoflight: q.get('ap') === '1',
+    stabilityAssist: q.get('stab') === '0' ? false : q.get('stab') === '1' ? true : null,
     helicopterHover: q.get('hover') === '1',
     rotorcraftConfig: q.get('config') === 'amcs' || q.get('config') === 'ics' ? q.get('config') as 'amcs' | 'ics' : null,
     forceHalfPHop: q.get('halfp') === '1',

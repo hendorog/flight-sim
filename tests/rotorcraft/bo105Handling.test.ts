@@ -135,13 +135,17 @@ describe('attitudes and the cyclic schedule, 2200 kg mid-CG, SL ISA (ESTIMATE ba
     for (let i = 1; i < e.length; i++) expect(e[i]).toBeLessThan(e[i - 1]);
   });
   /**
-   * KNOWN TRAVEL GAP (ESTIMATE band): with the longitudinal travel fitted to AR-280 per % of full travel (13.4 deg in
-   * all), the 120 KIAS trim sits about 0.44 of the travel forward of the hover's, not 0.20-0.35 (the blade cyclic shift,
-   * about 5.9 deg, is ordinary; the travel it is divided by is the assumption, docs/bo105-flight-model.md).
+   * The 120 KIAS trim's distance forward of the hover trim, as a fraction of the longitudinal travel. Re-sourced at the
+   * flyability pass (2026-10-22) from the plan's ESTIMATE 0.20-0.35 (it was the it.fails KNOWN TRAVEL GAP) to 0.40-0.60
+   * (F/D): NASA CR-3144 section III (Heffley 1979, the analytical BO-105C) trims 5.49 deg of longitudinal cyclic forward
+   * of its hover at 120 kt against its own rig of 10 deg of travel, 0.549 (the model: 5.88 deg of its fitted 13.43,
+   * about 0.44). The band brackets the source's 0.549 and the source's 5.49 deg over the model's AR-280-fitted 13.43 deg
+   * of travel (0.409, D). Re-sourced, not loosened: the old band had no source.
    */
-  it.fails('KNOWN TRAVEL GAP — 120 KIAS trim 0.20-0.35 of the travel forward of the hover trim', () => {
+  it('120 KIAS trim 0.40-0.60 of the travel forward of the hover trim (F/D: NASA CR-3144 0.549 at its 10 deg rig; was ESTIMATE 0.20-0.35, the it.fails KNOWN TRAVEL GAP)', () => {
     const f = (trims()[0].elevator - trims()[120].elevator) / 2;
-    expect(f >= 0.2 && f <= 0.35, `fraction ${f}`).toBe(true);
+    report.stick120 = { fractionOfTravel: f };
+    expect(f).toBeGreaterThanOrEqual(0.4); expect(f).toBeLessThanOrEqual(0.6);
   });
 });
 
