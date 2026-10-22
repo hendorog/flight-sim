@@ -271,12 +271,12 @@ describe('the hover readout (plan flights "AH-56 hover readout"): 20 s hands-off
     const weather = { ...defaultWeather(), windSpeedKt: 0, turbulence: 0, gustKt: 0 };
     const p = new SimPhysics({ aircraft: AH56_DEFINITION, weather, rotorcraftConfig: config });
     p.resetTo(hoverScenario(p.env, d), weather);
-    const roll0 = p.state.roll;
+    const roll0 = p.state.roll, heading0 = p.state.heading;
     p.step(20);
-    const s = p.state;
+    const s = p.state, headingChangeDeg = Math.abs(Math.atan2(Math.sin(s.heading - heading0), Math.cos(s.heading - heading0))) / DEG;
     report(`hover readout ${config} after 20 s hands-off`, { rollStartDeg: roll0 / DEG, rollDeg: s.roll / DEG, pitchDeg: s.pitch / DEG,
-      groundSpeedKt: s.groundSpeed / KT, nrRpm: s.rotorcraft!.rotorRpm, target: 'roll -7..-2 (G9), Nr 239.85 / 246 +/- 2' });
-    return s;
+      groundSpeedKt: s.groundSpeed / KT, headingChangeDeg, nrRpm: s.rotorcraft!.rotorRpm, target: 'roll -7..-2 (G9), Nr 239.85 / 246 +/- 2' });
+    return Object.assign(s, { headingChangeDeg });
   };
   it('Nr and the gyro mode hold (AMCS 239.85, ICS 246 rpm +/- 2) and nothing crashes', () => {
     for (const config of ['amcs', 'ics'] as const) {
@@ -299,6 +299,16 @@ describe('the hover readout (plan flights "AH-56 hover readout"): 20 s hands-off
     for (const roll of rolls) {
       expect(roll).toBeLessThanOrEqual(-2 * DEG);
       expect(roll).toBeGreaterThanOrEqual(-7 * DEG);
+    }
+  }, 60000);
+  it('the hands-off hover holds its heading within 5 deg and drifts under 2 kt in 20 s (pilot reviews 1-2: 44 deg and 5.6 kt before the vector in-plane force)', () => {
+    // Tuning round (2026-10-22, KNOWN_ISSUES T4): the reviews' 44 deg of heading and 5.6 kt (AMCS), 17.5 deg and 4.7 kt (ICS) were the
+    // zero-airspeed in-plane force; re-measured after the final fix round (W/tune/ah56/probes out/hover-r1.log, the 10 ft IGE trim):
+    // AMCS -0.6 deg and 0.3 kt, ICS -0.6 deg and 0.3 kt. No plan band: a regression row.
+    for (const config of ['amcs', 'ics'] as const) {
+      const s = hover(config);
+      expect(s.headingChangeDeg).toBeLessThan(5);
+      expect(s.groundSpeed / KT).toBeLessThan(2);
     }
   }, 60000);
 });

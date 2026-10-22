@@ -411,3 +411,10 @@ The eight open items of the pilot reviews and the final fix round, measured firs
   values stay D (WING_CM0 = the thin-airfoil -0.055, TAIL_DOWNWASH_SCALE 1; both scaffolded in compound.ts so the fit is one
   line). Para 45 is not reachable with the wing / tail knobs without crossing H4; the decision is the owner's (contract request).
   The ah56Handling row stays `it.fails` at 0.071 in/kt.
+- **T4 (R4 / item 2, should). Hover heading and position wander: closed by the final fix round's vector in-plane force;
+  re-measured.** Hands off 20 s from the trimmed hover in calm air: from the 15 m spawn (SimPhysics) AMCS -5.35 -> -5.49 deg of
+  roll, 0.41 kt, 0.61 deg of heading; ICS -5.25 -> -5.13 deg, 0.31 kt, 0.63 deg (ah56Ground, a new regression row: heading under 5
+  deg, drift under 2 kt); from the 10 ft IGE trim (`out/hover-r1.log`) AMCS 0.3 kt and -0.6 deg, ICS 0.3 kt and -0.6 deg (the
+  reviews: 44 deg / 5.6 kt and 17.5 deg / 4.7 kt). The delayed pilot with the 8 kt side gust (same log): AMCS full gain holds at
+  every delay (5.8 / 10.5 / 18 m at 0 / 0.3 / 0.5 s), half gain lost at 51 / 46 / 43 s (was 49 / 41 / 40); ICS full gain lost at 42 /
+  35 / 38 s (was 36 / 34 / 30), half gain 34 / 32 / 30 s (was 25 / 24 / 23). The slow-pilot hover is item 8's (T8).
