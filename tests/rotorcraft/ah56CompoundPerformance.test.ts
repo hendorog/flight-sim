@@ -119,7 +119,8 @@ describe('C4-C5: maximum level speed at the transmission limit (114 % = 3925 shp
   it('C4: V_H 194 KTAS +/- 5 %: TOW configuration (stores), 18,750 lb, SL, collective 5 deg (P ASTA-72 para 14)', () => {
     const o = { cfg: 'ics' as const, lb: 18_750 };
     const mach = speedAtTorque(icsRpm(withMach(AH56_DEFINITION)), o, 5, 114, 186, 200);
-    const flown = speedAtTorque(AH56_DEFINITION, o, 5, 114, 186, 204);
+    // Bracket to 202 KTAS: the ICS trims there with 5.1 in of forward stick; at 206 it is on the 5.5 in stop and does not converge.
+    const flown = speedAtTorque(AH56_DEFINITION, o, 5, 114, 186, 202);
     report('C4 V_H', { withMachPlaceholderKtas: mach.kt, asFlownKtas: flown.kt, fuselageFlatPlateM2: FUSELAGE_DRAG_X, target: '194 +/- 5 % (184.3-203.7)' });
     trace.C4 = { mach, flown };
     expect(Math.abs(mach.kt / AH56_REFERENCE.vh - 1)).toBeLessThanOrEqual(0.05);

@@ -396,7 +396,7 @@ export class Rotorcraft {
       o.tanDelta3 = hl?.tanDelta3; o.section = d.main.section; o.soundSpeed = soundSpeed; o.cm0 = d.main.cm0;
       // The blade feathering moments only where the gyro reads them (the ICS feathering-moment feedback; the AMCS's flapping
       // feedback ignores them): they cost a second section evaluation per element (the flap-rate incidence).
-      o.jacobian = !!this.gyro; o.gyro = !!this.gyro && this.gyro.config().feedback.mode === 'featheringMoment';
+      o.jacobian = !!this.gyro; o.gyro = !!this.gyro && this.gyro.config()?.feedback?.mode === 'featheringMoment';
       const forcing = hubForcing(d.main, articulated, s.omega, density, collective, pitchCos, pitchSin, hubAir, s.inflow,
         rate, d.rotation, o, x.forcing);
       if (hl) { x.spring.stiffness = hl.spring.stiffness; x.spring.precone = hl.spring.precone; x.spring.aerodynamic = forcing.stiffness; }

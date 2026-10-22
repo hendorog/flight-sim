@@ -244,7 +244,8 @@ describe('H2: V_H re-checked with the section\'s Mach terms (plan C4 / C5, P)', 
   // the AMCS gyro's mechanics at 246 rpm instead (icsRpm, kept as a reported reference); with the wing section Cm and the DATCOM
   // downwash (compound.ts) the ICS trims there (4.3 in forward at 194 KTAS, 5.1 in at 202).
   it('C4: the ICS configuration, TOW (stores), 18,750 lb, SL, collective 5 deg, 114 % torque: 194 KTAS +/- 5 % inside the stick travel (P ASTA-72 para 14)', () => {
-    const v = speedAtTorque(AH56_DEFINITION, { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 204);
+    // Bracket to 202 KTAS: the ICS trims there with 5.1 in of forward stick; at 206 it is on the 5.5 in stop and does not converge.
+    const v = speedAtTorque(AH56_DEFINITION, { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 202);
     const amcsMechanics = speedAtTorque(icsRpm(AH56_DEFINITION), { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 204);
     const at = trimOnCollective(AH56_DEFINITION, { cfg: 'ics', lb: 18_750, kt: v.kt }, 5), t = at.r.fm.lastTrim!;
     const lon = def.controlGyro!.configs.ics.stickTravel.longitudinal / 0.0254;
