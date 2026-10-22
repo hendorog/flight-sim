@@ -418,3 +418,25 @@ The eight open items of the pilot reviews and the final fix round, measured firs
   reviews: 44 deg / 5.6 kt and 17.5 deg / 4.7 kt). The delayed pilot with the 8 kt side gust (same log): AMCS full gain holds at
   every delay (5.8 / 10.5 / 18 m at 0 / 0.3 / 0.5 s), half gain lost at 51 / 46 / 43 s (was 49 / 41 / 40); ICS full gain lost at 42 /
   35 / 38 s (was 36 / 34 / 30), half gain 34 / 32 / 30 s (was 25 / 24 / 23). The slow-pilot hover is item 8's (T8).
+- **T5 (R5, should). Hover pedal: the damping is momentum theory; the keyboard gearing is the laptop lever (changed); the stop's
+  windmill-brake thrust is RC's.** The tail rotor's yaw damping re-derived: dT/dw = rho A Omega R (sigma a / 8) / (1 + sigma a /
+  (16 lambda_i)) with sigma 0.297 (P) gives 0.185 kN per m/s at the 8 kN hover thrust (D; the pilot-review round's formula is right),
+  measured 0.21; N_r about 25 kN m s with the drive reaction, tau about 2 s, about 53 deg/s per inch steady. Neither report gives
+  the AH-56A a yaw damper (AMCS: trim schedule and sideslip SAS; ICS: desensitizer, decoupler, roll compensator), so nothing is
+  added to the physics. Full pedal 3 s (`out/hover-r1.log`): AMCS 163 deg/s right / 113 left, 90 deg in 1.45 / 1.76 s; ICS 156 /
+  125 (APE 1.1's hover limit 45 deg/s is a pilot limit). Changed: the keyboard pedal ramp (input.ts, AGENT): 0.03 -> 0.2 of the axis
+  per second over 1.5 s (was the MD 500E's 0.06 -> 0.35 over 1.2 s), so a 1 s key tap is 0.15 in (was 0.35 in) and a 2 s hold 0.7
+  in (was 1.4): without the STAB ASSIST the 1 s tap peaks at 17 deg/s (43 before) and the 2 s hold at 60 (95); with it 5 and 23
+  deg/s, the heading settling within 3-12 deg (`out/keypedal-*.log`; ah56Assist row). The keyboard pedal does not re-centre when the
+  key is let go (the profile's pedal, as on the other helicopters), so without the assist a tap leaves a steady turn (the reviews'
+  "persistence"); the assist's heading hold and pedal follow-up remove it. Not changed: the tail rotor at its -7.4 deg stop yawing
+  15-26 m/s against its thrust (windmill-brake state) makes 0.3-1.3 kN where momentum theory gives about 2 kN (rotor.ts
+  inflowTarget, shared: contract request to RC).
+- **T8 (item 8, beginner). STAB ASSIST on the AH-56A through its own input profile, ON by default (a labelled sim aid).** The
+  keyboard beginner of `tests/rotorcraft/bo105KeyPilot.ts` on the AMCS hover, 60 s: without it 27-30 m of drift (lost at 58-60 s in
+  three of six runs) and the heading wandering 72-180 deg on the old pedal ramp (58 deg and 15 m on the new); with it 1.9-2.8 m,
+  under 5.5 deg of attitude and 0.1 deg of heading at every tap rate and delay tried (`out/key-off.log`, `key-profile.log`;
+  ah56Assist rows). The shared law and the Bo 105's gains, unchanged (src/sim/rotorcraft/stabilityAssist.ts is the Bo 105 lane's);
+  Shift+A toggles it; the controls list and the HUD hints say it is a sim aid. Off on the wheels (taxi unchanged, T1), faded out
+  between 30 and 50 KIAS. Not measured: the ICS with the assist (the key rig spawns the default AMCS); the assist's cyclic term on
+  the ICS's slower, coupled gyro is the owner's to try (config=ics).
