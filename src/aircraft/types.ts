@@ -437,6 +437,13 @@ export interface SimProfile {
    * speed it was engaged at (every helicopter but the Bo 105).
    */
   heliHoldSlowToHover?: { belowKt: number; ktPerS: number };
+  /**
+   * An airborne start at zero airspeed (the hover scenario, hover=1) is turned into the mean wind at the start point and
+   * trimmed at that airspeed, so the helicopter starts still over the ground instead of drifting off with the air mass
+   * (src/sim/SimPhysics.ts resetTo). Calm air changes nothing. Absent: the start keeps its heading and drifts with the
+   * wind (every type but the Bo 105).
+   */
+  hoverIntoWind?: boolean;
 }
 
 /** CLOSURES. */

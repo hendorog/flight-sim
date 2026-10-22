@@ -84,24 +84,36 @@ describe('STAB ASSIST, hands off in the hover scenario (2500 kg, about 16 m; gai
    * assist's `followed` readout; the stick follows the spring anchor at the input module's next frame), never the series
    * term itself.
    */
-  it('the series term never reaches the pilot\'s controls: hands off in gusts the keyboard stick and pedals move only by the trim follow-up, and that stays small', () => {
-    const r = rig({ wind: true, assist: true }), c0 = { a: r.c.aileron, e: r.c.elevator, r: r.c.rudder }, a = r.physics.stabilityAssist!;
-    const f0 = { ...a.followed };
-    let worked = 0, leak = 0;
-    for (let i = 0; i < 300; i++) {
-      frame(r);
-      const o = a.output, f = a.followed;
-      worked = Math.max(worked, Math.abs(o.aileron), Math.abs(o.elevator), Math.abs(o.rudder));
-      // One frame of the cyclic follow-up (at most cyclicRate / 60) may not have reached the stick yet.
-      leak = Math.max(leak, Math.abs(r.c.aileron - c0.a - (f.aileron - f0.aileron)), Math.abs(r.c.elevator - c0.e - (f.elevator - f0.elevator)),
-        Math.abs(r.c.rudder - c0.r - (f.rudder - f0.rudder)));
-    }
-    const moved = Math.max(Math.abs(a.followed.aileron - f0.aileron), Math.abs(a.followed.elevator - f0.elevator), Math.abs(a.followed.rudder - f0.rudder));
-    report.seriesNeverReaches = { worked, leak, moved };
-    expect(worked).toBeGreaterThan(0);
-    expect(leak).toBeLessThanOrEqual(0.1 / 60 + 1e-9);
-    expect(moved).toBeLessThanOrEqual(0.02);
-    expect(r.input.pilotFlying(1e6)).toBe(false);
+  /**
+   * The tune pass: the height hold walks the keyboard collective and the crossfeed moves the pedals with it, so `followed`
+   * (the walk) now carries those too; the series term still never leaks. The hover scenario now starts into the wind
+   * (BO105_SIM.hoverIntoWind), trimmed at the start's wind, whose turbulence then varies the headwind: there the stick
+   * and pedals are walked 0.034 of the axis in 5 s (measured). Drifting with the air mass (round 3's start, the
+   * definition without hoverIntoWind) they stay within round 3's 0.02.
+   */
+  it('the series term never reaches the pilot\'s controls: hands off in gusts the keyboard stick and pedals move only by the trim follow-up and the crossfeed, and that stays small', () => {
+    const drifting: AircraftDefinition = { ...def, sim: { ...def.sim, hoverIntoWind: undefined } };
+    const fly = (dd?: AircraftDefinition) => {
+      const r = rig({ wind: true, assist: true, dd }), c0 = { a: r.c.aileron, e: r.c.elevator, r: r.c.rudder }, a = r.physics.stabilityAssist!;
+      const f0 = { ...a.followed };
+      let worked = 0, leak = 0;
+      for (let i = 0; i < 300; i++) {
+        frame(r);
+        const o = a.output, f = a.followed;
+        worked = Math.max(worked, Math.abs(o.aileron), Math.abs(o.elevator), Math.abs(o.rudder));
+        // One frame of the cyclic follow-up (at most cyclicRate / 60) may not have reached the stick yet.
+        leak = Math.max(leak, Math.abs(r.c.aileron - c0.a - (f.aileron - f0.aileron)), Math.abs(r.c.elevator - c0.e - (f.elevator - f0.elevator)),
+          Math.abs(r.c.rudder - c0.r - (f.rudder - f0.rudder)));
+      }
+      const moved = Math.max(Math.abs(a.followed.aileron - f0.aileron), Math.abs(a.followed.elevator - f0.elevator), Math.abs(a.followed.rudder - f0.rudder));
+      expect(r.input.pilotFlying(1e6)).toBe(false);
+      return { worked, leak, moved };
+    };
+    const intoWind = fly(), withTheAir = fly(drifting);
+    report.seriesNeverReaches = { intoWind, withTheAir };
+    for (const x of [intoWind, withTheAir]) { expect(x.worked).toBeGreaterThan(0); expect(x.leak).toBeLessThanOrEqual(0.1 / 60 + 1e-9); }
+    expect(withTheAir.moved).toBeLessThanOrEqual(0.02);
+    expect(intoWind.moved).toBeLessThanOrEqual(0.05);
   }, 60_000);
 });
 

@@ -65,6 +65,8 @@ export const COARSE_TIME_SCALE = 4;
 export const COARSE_RATE = 120;
 /** Height above ground (and no wheel contact) required for the coarse rate, m. */
 const COARSE_MIN_AGL = 60;
+/** An airborne start at or below this true airspeed counts as a hover start (SimProfile.hoverIntoWind), m/s. */
+const HOVER_START_TAS = 0.5;
 
 /**
  * Emits the 'gear' events of a retractable gear (sound and UI) by comparing state.gear after each step with the
@@ -228,6 +230,20 @@ export class SimPhysics {
   }
 
   /** `ic` with the control-gyro configuration and the half-P hook of this run (unchanged when neither is set). */
+  /**
+   * SimProfile.hoverIntoWind (the Bo 105): an airborne start at zero airspeed is turned into the wind at its start point
+   * and time (the air mass's horizontal velocity there, the boundary layer, gust and turbulence included, which fm.reset
+   * adds to the trimmed air velocity) and trimmed at that airspeed, so its ground speed starts at zero. Any other start,
+   * calm air or another type: unchanged.
+   */
+  private hoverIntoWind(ic: InitialConditions): InitialConditions {
+    if (!this.definition.sim.hoverIntoWind || ic.onGround || ic.airspeed > HOVER_START_TAS) return ic;
+    const w = this.env.wind(ic.position, 0), speed = Math.hypot(w.x, w.y);
+    if (!(speed > HOVER_START_TAS)) return ic;
+    // The air passes the aircraft at -wind: the nose points where the wind comes from.
+    return { ...ic, heading: Math.atan2(-w.y, -w.x), airspeed: speed };
+  }
+
   private withRotorcraftOptions(ic: InitialConditions): InitialConditions {
     if (!this.rotorcraftConfig && !this.forceHalfPHop) return ic;
     return { ...ic, ...(this.rotorcraftConfig ? { rotorcraftConfig: this.rotorcraftConfig } : {}),
@@ -263,7 +279,7 @@ export class SimPhysics {
     // A new flight: no hail damage (before the reset, whose trim uses the aerodynamics).
     this.hailDamage.reset();
     this.fm.setAirframeDamage(0);
-    this.fm.reset(this.withRotorcraftOptions(sc.ic), this.env);
+    this.fm.reset(this.withRotorcraftOptions(this.hoverIntoWind(sc.ic)), this.env);
     if (sc.attitude) this.rotateTo(sc.attitude.pitch, sc.attitude.roll);
     const c = this.controls;
     const trim = this.fm.trimControls;

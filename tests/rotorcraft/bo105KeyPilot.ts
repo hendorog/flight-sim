@@ -21,9 +21,12 @@ const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
  * the reset after it, as the Simulator does (the pilot-r2 rig reset the physics after attaching it and kept the hover's
  * keyboard pedal, -0.42 against the 45 KIAS trim's +0.18).
  */
-export function keyRig(o: { start: 'hover15' | 'ige3' | 'runway' | 'level'; kias?: number; heightM?: number; dd?: AircraftDefinition; assist?: boolean }) {
+export function keyRig(o: { start: 'hover15' | 'ige3' | 'runway' | 'level'; kias?: number; heightM?: number; dd?: AircraftDefinition; assist?: boolean;
+  /** The weather's wind (FROM deg true, kt, gusts kt, turbulence 0..1); absent: calm. */
+  wind?: { fromDeg: number; kt: number; gustKt?: number; turbulence?: number } }) {
   const dd = o.dd ?? BO105_DEFINITION;
-  const w: WeatherSettings = { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0, isaDeviation: 0, cloudCover: 0 };
+  const w: WeatherSettings = { ...defaultWeather(), windSpeedKt: o.wind?.kt ?? 0, windDirectionDeg: o.wind?.fromDeg ?? 100, gustKt: o.wind?.gustKt ?? 0,
+    turbulence: o.wind?.turbulence ?? 0, isaDeviation: 0, cloudCover: 0 };
   const events = createEventBus(), physics = new SimPhysics({ aircraft: dd, weather: w, events });
   if (o.start === 'runway') physics.reset('runway', w);
   else {

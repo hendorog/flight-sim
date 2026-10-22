@@ -13,6 +13,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, KT } from '../../src/core/math';
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import { BO105_DEFINITION as def } from '../../src/aircraft/bo105';
+import { MD500_DEFINITION } from '../../src/aircraft/md500';
+import { hoverScenario } from '../../src/sim/rotorcraft/starts';
 import { Keys, decelKeys, decelToHoverKeys, flyHover, frame, hoverBeginner, keyRig, liftOffKeys } from './bo105KeyPilot';
 import { writeTrace } from './bo105Rig';
 
@@ -171,3 +173,35 @@ describe('keyboard deceleration from 45 KIAS to the hover (the round-2 gate: cra
     expect(Math.abs(r.physics.state.groundSpeed / KT - engagedKt)).toBeLessThanOrEqual(3);
   }, 60_000);
 });
+
+/**
+ * The tune pass, item 2 (BO105_SIM.hoverIntoWind; W/tune/bo105 j_wind_before / j_wind_after): the hover scenario
+ * (hover=1) trimmed at zero airspeed in the default 8 kt wind started drifting with the air mass at 11.1 kt of ground
+ * speed (the 16 m wind with its mechanical turbulence), and the round-2 gate's beginner crashed at 14-15 s; with the
+ * round-3 aids and the height hold it drifted 19-24 m (and 30 m by 2.9 s with a 15 kt tailwind). Now it starts nose
+ * into the wind at the start point, trimmed at that airspeed: still over the ground.
+ */
+describe('the hover scenario in wind starts into the wind, still over the ground (hover=1)', () => {
+  it('8 kt wind: ground speed 0 at the start, the nose into the wind, and the tapping beginner holds it 60 s within 10 m (also with gusts, and a 15 kt wind from behind the runway heading)', () => {
+    const rows: Record<string, unknown> = {};
+    for (const wind of [{ fromDeg: 100, kt: 8 }, { fromDeg: 100, kt: 8, gustKt: 13, turbulence: 0.3 }, { fromDeg: 250, kt: 15 }]) {
+      const r = keyRig({ start: 'hover15', wind }), keys = new Keys(r), s = r.physics.state;
+      const gs0Kt = s.groundSpeed / KT, iasKt = s.ias / KT, hdgDeg = s.heading / DEG;
+      const h = flyHover(r, keys, 60, hoverBeginner(r, keys));
+      rows[`${wind.fromDeg}/${wind.kt}${wind.gustKt ? 'G' + wind.gustKt : ''}`] = { gs0Kt, iasKt, hdgDeg, ...h };
+      expect(gs0Kt).toBeLessThan(0.1);
+      expect(Math.abs(((hdgDeg - wind.fromDeg + 540) % 360) - 180)).toBeLessThanOrEqual(30);
+      expect(h.lostS).toBeNull(); expect(h.driftM).toBeLessThanOrEqual(10);
+    }
+    report.hoverIntoWind = rows;
+  }, 300_000);
+  it('calm air: the start is unchanged (the runway heading, zero airspeed); the MD 500E\'s hover scenario still drifts with the air', () => {
+    const calm = keyRig({ start: 'hover15' });
+    expect(calm.physics.state.heading / DEG).toBeCloseTo(hoverScenario(calm.physics.env, def.rotorcraft!).ic.heading / DEG, 6);
+    expect(calm.physics.state.ias).toBeLessThan(0.1);
+    const md = keyRig({ start: 'hover15', dd: MD500_DEFINITION, assist: false, wind: { fromDeg: 100, kt: 8 } });
+    expect(md.physics.state.ias).toBeLessThan(0.1);
+    expect(md.physics.state.groundSpeed / KT).toBeGreaterThan(5);
+  });
+});
+
