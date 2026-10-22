@@ -213,6 +213,8 @@ export class SimPhysics {
     this.fm = opts.aircraft ? createFlightModelFor(opts.aircraft) : createFlightModel();
     const def = (this.definition = this.fm.definition);
     this.autoflight = new Autoflight(def.sim.autoflight, def.reference, def.geometry.restHeight, { gains: def.autopilot, flaps: def.controls.flaps, rotorcraft: def.rotorcraft });
+    // The helicopter hold slows to a hover when engaged at low speed on a type that asks for it (the Bo 105).
+    if (this.autoflight.helicopter && def.sim.heliHoldSlowToHover) this.autoflight.helicopter.slowToHover = { ...def.sim.heliHoldSlowToHover };
     this.stepSize = 1 / this.fm.physicsRate;
     this.h = this.stepSize;
     this.renderState = copyInto({} as AircraftState, this.fm.state);

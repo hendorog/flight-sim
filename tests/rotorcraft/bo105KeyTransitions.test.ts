@@ -105,26 +105,44 @@ describe('keyboard deceleration from 45 KIAS to the hover (the round-2 gate: cra
   }, 60_000);
   /**
    * What A does there (docs section 9, the hints): pressed (Simulator.toggleAutoflight's physics.setAutoflight) when
-   * the same beginner has slowed under 25 kt of ground speed, the hold engages and flies 25 s without a loss, attitude
-   * within 20 deg. It holds the speed it was engaged at, the heading and the height
-   * (HelicopterAutopilot.engagementSpeed); it slows to a hover only when engaged under 3 m/s of ground speed (about 6
-   * kt), which this beginner does not reach (pilot-r3 h_aroute: engaged at 35 / 25 / 15 kt, none lost, all still moving
-   * at the end). So A is a way out of the deceleration, not a way into the hover.
+   * the same beginner has slowed under 25 kt of ground speed. Round 3: the hold engaged and flew on at that speed
+   * (HelicopterAutopilot.engagementSpeed; pilot-r3 h_aroute: engaged at 35 / 25 / 15 kt, none lost, all still moving at
+   * the end, 18 kt here). The tune pass (item 1, BO105_SIM.heliHoldSlowToHover): engaged below 30 kt it slows to a hover
+   * at 1.5 kt/s and holds the position (W/tune/bo105 c_aslow.log: 25 kt, 1 s taps, the hover 11.3 s after A, attitude
+   * within 14.5 deg). Above 30 kt the hold keeps the engagement speed, as on every helicopter.
    */
-  it('the same beginner pressing A below 25 kt: the hold engages and flies 25 s without a loss, attitude within 20 deg, still moving (it holds the speed)', () => {
+  it('the same beginner pressing A below 25 kt: the hold engages, slows to a hover within 25 s and holds it, attitude within 20 deg, not lost', () => {
     const r = keyRig({ start: 'level', kias: 45, heightM: 30 }), keys = new Keys(r);
     const at = decelKeys(r, keys, { interval: 1, noseUpDeg: 5, stopKt: 25 });
     keys.releaseAll();
     expect(at).not.toBeNull();
     const engagedKt = r.physics.state.groundSpeed / KT;
     r.physics.setAutoflight(true);
-    // The hold keeps flying at its engagement speed: no drift limit here.
-    const after = flyHover(r, keys, 25, undefined, Infinity);
+    const t0 = r.t;
+    let hoverS: number | null = null, maxAtt = 0, lost = false;
+    while (r.t - t0 < 40) {
+      frame(r);
+      const s = r.physics.state;
+      maxAtt = Math.max(maxAtt, Math.abs(s.roll) / DEG, Math.abs(s.pitch) / DEG);
+      if (hoverS === null && s.groundSpeed < KT) hoverS = r.t - t0;
+      if (s.crashed || !r.physics.autoflight.engaged) { lost = true; break; }
+    }
     const endKt = r.physics.state.groundSpeed / KT;
-    report.decelHoverHold = { pressedAtS: at, engagedKt, engaged: r.physics.autoflight.engaged, after, endKt };
+    report.decelHoverHold = { pressedAtS: at, engagedKt, hoverS, maxAtt, endKt, lost };
+    expect(lost).toBe(false);
+    expect(maxAtt).toBeLessThanOrEqual(20);
+    expect(hoverS).not.toBeNull(); expect(hoverS!).toBeLessThanOrEqual(25);
+    expect(endKt).toBeLessThan(1.5);
+  }, 60_000);
+  it('engaged above 30 kt the hold keeps the engagement speed (as on every helicopter)', () => {
+    const r = keyRig({ start: 'level', kias: 45, heightM: 30 });
+    for (let i = 0; i < 60; i++) frame(r);
+    const engagedKt = r.physics.state.groundSpeed / KT;
+    expect(engagedKt).toBeGreaterThan(40);
+    r.physics.setAutoflight(true);
+    for (let i = 0; i < 20 * 60; i++) frame(r);
+    report.holdAbove30 = { engagedKt, endKt: r.physics.state.groundSpeed / KT };
     expect(r.physics.autoflight.engaged).toBe(true);
-    expect(after.lostS).toBeNull(); expect(after.flownS).toBeGreaterThan(24.9);
-    expect(after.crashed).toBe(false); expect(after.maxAttDeg).toBeLessThanOrEqual(20);
-    expect(endKt).toBeGreaterThan(10);
+    expect(Math.abs(r.physics.state.groundSpeed / KT - engagedKt)).toBeLessThanOrEqual(3);
   }, 60_000);
 });

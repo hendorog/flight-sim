@@ -42,4 +42,10 @@ export const BO105_SIM: SimProfile = {
     airborne: RUNNING,
     approach: { ...RUNNING, lights: { ...LIGHTS_ON, landing: true } },
   },
+  // The hover hold (A) engaged below 30 kt of ground speed slows to a hover at 1.5 kt/s and holds the position there (the
+  // tune pass, item 1; a sim aid for the keyboard beginner's deceleration, W/tune/bo105 c_aslow.log): engaged by the
+  // tapping beginner at 30 / 25 / 15 kt it reached the hover 9-19 s later with the attitude within 15 deg, not lost
+  // (1 kt/s: 11-28 s; 3 kt/s: up to 16 deg). Above 30 kt it holds the speed it was engaged at, as every helicopter's.
+  // ESTIMATE (the rate is gentler than ADS-33E's deceleration MTE; the band is the STAB ASSIST's full-gain band).
+  heliHoldSlowToHover: { belowKt: 30, ktPerS: 1.5 },
 };

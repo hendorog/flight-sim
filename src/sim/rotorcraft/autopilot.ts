@@ -20,6 +20,15 @@ export class HelicopterAutopilot {
   readonly pitchModel = new OnlinePencil();
   adaptive = false;
   engagementSpeed = 0;
+  /**
+   * Engaged slower than `belowKt` of ground speed, the held speed runs down to a hover at `ktPerS` (the hold then
+   * captures the position as it does when engaged nearly stopped). Null: the engagement speed is held. Set by the shell
+   * from SimProfile.heliHoldSlowToHover (the Bo 105); null on every other type.
+   */
+  slowToHover: { belowKt: number; ktPerS: number } | null = null;
+  /** The held speed is running down to the hover (slowToHover), and the value it last wrote, m/s. */
+  private slowing = false;
+  private slowedTo = 0;
   get status(): string { return `roll: ${this.rollModel.status} (${this.rollModel.scale.toFixed(2)}×), pitch: ${this.pitchModel.status} (${this.pitchModel.scale.toFixed(2)}×)`; }
   constructor(readonly definition: RotorcraftDefinition) {}
   reset(): void { this.pilot = null; this.reason = ''; this.rollModel.reset(); this.pitchModel.reset(); }
@@ -36,6 +45,8 @@ export class HelicopterAutopilot {
     this.pilot.heading = s.heading;
     this.north = s.position.x; this.east = s.position.y;
     this.hovering = s.groundSpeed < 3;
+    this.slowing = !!this.slowToHover && !this.hovering && s.groundSpeed < this.slowToHover.belowKt * KT;
+    this.slowedTo = Infinity;
     return true;
   }
   update(dt: number, s: AircraftState, c: ControlInputs, st: AutopilotSettings): boolean {
@@ -45,6 +56,11 @@ export class HelicopterAutopilot {
         Math.abs(s.roll) > 45*DEG || Math.abs(s.pitch) > 40*DEG ||
         ![s.roll, s.pitch, s.heading, s.altitudeMSL, s.verticalSpeed].every(Number.isFinite)) {
       this.reason = 'Helicopter hold disconnected: flight envelope or rotor RPM'; return false;
+    }
+    // Slowing to the hover: the held speed runs down (a speed set from elsewhere, e.g. the dev panel, ends it).
+    if (this.slowing) {
+      if (st.airspeed > this.slowedTo + 1e-9) this.slowing = false;
+      else st.airspeed = this.slowedTo = Math.max(0, st.airspeed - this.slowToHover!.ktPerS * KT * dt);
     }
     const hover = st.airspeed < 3*KT;
     if (hover && !this.hovering) { this.north = s.position.x; this.east = s.position.y; }
