@@ -16,7 +16,7 @@ const report = (label: string, values: Record<string, number | string | boolean 
 describe('STAB ASSIST on the AH-56A (a sim aid; AMCS default)', () => {
   it('the profile carries it, ON by default, with a label', () => {
     expect(AH56_INPUT.stabilityAssist?.default).toBe(true);
-    expect(AH56_INPUT.labels.stabilityAssist).toMatch(/sim aid/);
+    expect(AH56_INPUT.labels?.stabilityAssist).toMatch(/sim aid/);
   });
 
   for (const [interval, lag] of [[0.8, 0.3], [1.6, 0.6]] as const) for (const start of ['hover15', 'ige3'] as const) {
