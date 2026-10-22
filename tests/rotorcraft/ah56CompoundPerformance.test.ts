@@ -58,9 +58,9 @@ type CompoundRig = ReturnType<typeof rigOn>;
 const collective075 = (r: CompoundRig) => (def.main.minPitch + (r.c.collective ?? 0) * (def.main.maxPitch - def.main.minPitch)) / DEG;
 
 /** The level trim at `kt` with the prop set so the collective is `coll` deg at 0.75 R (secant on the blade angle, bracketed). */
-function trimOnCollective(base: AircraftDefinition, o: RigOptions & { kt: number }, coll: number) {
+function trimOnCollective(base: AircraftDefinition, o: RigOptions & { kt: number }, coll: number, betaHi = 40.8, betaLo = 15) {
   const at = (b: number) => { const r = rigOn(fixedBeta(b, base), o); return { b, r, e: collective075(r) - coll }; };
-  let a = at(15), c = at(40.8);
+  let a = at(betaLo), c = at(betaHi);
   if (a.e * c.e > 0) return Math.abs(a.e) < Math.abs(c.e) ? a : c;
   for (let i = 0; i < 12; i++) {
     const s = c.b - c.e * (c.b - a.b) / (c.e - a.e);
@@ -71,8 +71,8 @@ function trimOnCollective(base: AircraftDefinition, o: RigOptions & { kt: number
   return Math.abs(a.e) < Math.abs(c.e) ? a : c;
 }
 /** The speed (KTAS) at which the trim on `coll` needs `torque` %: bisection between `lo` and `hi`. */
-function speedAtTorque(base: AircraftDefinition, o: RigOptions, coll: number, torque: number, lo: number, hi: number) {
-  const tq = (kt: number) => gauges(trimOnCollective(base, { ...o, kt }, coll).r).torque;
+function speedAtTorque(base: AircraftDefinition, o: RigOptions, coll: number, torque: number, lo: number, hi: number, betaHi = 40.8, betaLo = 15) {
+  const tq = (kt: number) => gauges(trimOnCollective(base, { ...o, kt }, coll, betaHi, betaLo).r).torque;
   let tlo = tq(lo), thi = tq(hi);
   for (let i = 0; i < 6 && tlo < torque && thi > torque; i++) {
     const mid = (lo + hi) / 2, t = tq(mid);
@@ -119,8 +119,9 @@ describe('C4-C5: maximum level speed at the transmission limit (114 % = 3925 shp
   it('C4: V_H 194 KTAS +/- 5 %: TOW configuration (stores), 18,750 lb, SL, collective 5 deg (P ASTA-72 para 14)', () => {
     const o = { cfg: 'ics' as const, lb: 18_750 };
     const mach = speedAtTorque(icsRpm(withMach(AH56_DEFINITION)), o, 5, 114, 186, 200);
-    // Bracket to 202 KTAS: the ICS trims there with 5.1 in of forward stick; at 206 it is on the 5.5 in stop and does not converge.
-    const flown = speedAtTorque(AH56_DEFINITION, o, 5, 114, 186, 202);
+    // Bracket 190-202 KTAS and the prop to 25-39 deg: the ICS trims at 202 with 5.1 in of forward stick; at 206, or with the prop at
+    // 15 deg or on its 40.8 deg stop, it needs more than the forward stick and the trim does not converge (the roots sit at 33-37 deg).
+    const flown = speedAtTorque(AH56_DEFINITION, o, 5, 114, 190, 202, 39, 25);
     report('C4 V_H', { withMachPlaceholderKtas: mach.kt, asFlownKtas: flown.kt, fuselageFlatPlateM2: FUSELAGE_DRAG_X, target: '194 +/- 5 % (184.3-203.7)' });
     trace.C4 = { mach, flown };
     expect(Math.abs(mach.kt / AH56_REFERENCE.vh - 1)).toBeLessThanOrEqual(0.05);

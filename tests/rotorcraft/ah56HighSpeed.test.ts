@@ -182,8 +182,9 @@ function trimOnCollective(base: AircraftDefinition, o: RigOptions, coll: number,
   return Math.abs(a.e) < Math.abs(c.e) ? a : c;
 }
 /** The speed (KTAS) at which the trim on `coll` needs `torque` %: bisection between `lo` and `hi`. */
-function speedAtTorque(base: AircraftDefinition, o: Omit<RigOptions, 'kt'>, coll: number, torque: number, lo: number, hi: number) {
-  const tq = (kt: number) => gauges(trimOnCollective(base, { ...o, kt }, coll).r as never).torque;
+function speedAtTorque(base: AircraftDefinition, o: Omit<RigOptions, 'kt'>, coll: number, torque: number, lo: number, hi: number, betaHi = 40.8,
+  betaLo = 15) {
+  const tq = (kt: number) => gauges(trimOnCollective(base, { ...o, kt }, coll, betaLo, betaHi).r as never).torque;
   let tlo = tq(lo), thi = tq(hi);
   for (let i = 0; i < 5 && tlo < torque && thi > torque; i++) {
     const mid = (lo + hi) / 2, t = tq(mid);
@@ -245,9 +246,11 @@ describe('H2: V_H re-checked with the section\'s Mach terms (plan C4 / C5, P)', 
   // downwash (compound.ts) the ICS trims there (4.3 in forward at 194 KTAS, 5.1 in at 202).
   it('C4: the ICS configuration, TOW (stores), 18,750 lb, SL, collective 5 deg, 114 % torque: 194 KTAS +/- 5 % inside the stick travel (P ASTA-72 para 14)', () => {
     // Bracket to 202 KTAS: the ICS trims there with 5.1 in of forward stick; at 206 it is on the 5.5 in stop and does not converge.
-    const v = speedAtTorque(AH56_DEFINITION, { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 202);
+    // The prop bracket is 25-39 deg: at either end (15 or 40.8 deg) the ICS's trim at these speeds needs more than the forward stick
+    // and does not converge, which the bracket's sign check would read as a root outside it (the roots sit at 34-37 deg).
+    const v = speedAtTorque(AH56_DEFINITION, { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 202, 39, 25);
     const amcsMechanics = speedAtTorque(icsRpm(AH56_DEFINITION), { cfg: 'ics', lb: 18_750 }, 5, 114, 190, 204);
-    const at = trimOnCollective(AH56_DEFINITION, { cfg: 'ics', lb: 18_750, kt: v.kt }, 5), t = at.r.fm.lastTrim!;
+    const at = trimOnCollective(AH56_DEFINITION, { cfg: 'ics', lb: 18_750, kt: v.kt }, 5, 25, 39), t = at.r.fm.lastTrim!;
     const lon = def.controlGyro!.configs.ics.stickTravel.longitudinal / 0.0254;
     report('H2 C4 V_H', { icsKtas: v.kt, icsLonInAtVh: t.elevator * lon, convergedAtVh: String(t.converged), amcsMechanicsAt246RpmKtas: amcsMechanics.kt,
       target: '194 +/- 5 % (184.3-203.7)' });
