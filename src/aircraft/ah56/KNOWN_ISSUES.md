@@ -463,3 +463,21 @@ The eight open items of the pilot reviews and the final fix round, measured firs
   7.8 deg indicated. Lowering the autorotation collective needs more rotor drag, which raises C12's rate of descent (2,508 ft/min,
   already 8 ft/min over P 2,200 +/- 300): the two pull opposite ways on the section's drag and the AMCS collective reference
   (compound.ts "collective gauge"); recorded, owner / AH.
+- **T2 (R2, must). Reverse-thrust deceleration: the mechanism is the BEMT's momentum model in the propeller-brake state; the
+  reverse branch is refitted (FITTED), the rest is a contract request.** At -12 deg and 60-120 KTAS the reverse prop works at a disc
+  thrust coefficient T / (q A) of 0.8-1.9 (`out/propbe.log`), the turbulent-wake regime where simple annulus momentum over-predicts
+  the induction (real rotors follow Glauert's empirical branch): the BEMT gives -7.7 / -8.2 / -9.0 / -11.2 kN at 60 / 80 / 100 / 120
+  KTAS where the blade elements without induction give -14.9 / -16.1 / -17.7 / -19.6 kN (static -6.7 against -9.0). The fix
+  belongs in the shared src/physics/propulsion/bemt.ts (a high-induction correction; contract request to TW: it touches every
+  reversing or windmilling prop). The lift-share story of R2 was checked and is the wrong way round: a wing that lifts more at a
+  given attitude (zero-lift -4 / -6 deg, `out/ld-*.log`) trims more nose down, and the decel gets WORSE (0.21 / 0.16 g from 165 to
+  80 KTAS), because the rotor then has to flare less. Changed (compound.ts, FITTED to ASTA-72 para 15 / Table 3, C11): the prop
+  section's negative branch clMin -0.8 -> -1.2, cdMax 1.6 -> 2.0, standing in for the missing induction correction (+2-3 kN at
+  60-120 KTAS). The P-technique decel (`out/ld2-*.log`: collective held, -12 deg in 4 s, cyclic holding height, 19,200 lb, 1,500
+  ft), before -> after: AMCS 165 -> 80 KTAS 0.22 -> 0.25 g, 50 KTAS at 33.1 -> 29.7 s, 20 KTAS at 42.3 -> 36.8 s; ICS 0.21 -> 0.23
+  g, 33.9 -> 30.6 s, 41.0 -> 36.5 s; with a tighter height hold 0.26 / 0.25 g and the ICS to the hover (3 KTAS) in 39.1 s (P 33 s
+  +/- 20 % = 26.4-39.6, 0.31 g). C11's own row: 196 -> 165 KTAS 5.43 s (P 5.4), its scripted pilot still does not reach 3 KTAS in
+  90 s (`it.fails` kept). Re-checked: C13 25 -> 18 deg in 0.48 s, the 24 deg stop 72.7 % Nr at 5 s (was 73.3; P 68, band 60-75);
+  C20 at 188 KCAS prop action 84.1 % (82.9) against the collective 60.4 % (62.1), still the prop critical; C16 ground reverse -7.1
+  kN (-6.7); C12 2,509 ft/min (unchanged, the +8 deg drag at 95 KTAS is on the attached branch); C10 59.0 s to 165 KTAS, 77.5 s to
+  188 (the forward branch untouched; C10's 188 KTAS row stays `it.fails`).

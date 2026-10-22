@@ -156,8 +156,16 @@ export const AH56_PROPELLER: PropellerDef = {
   thickness: [0.30, 0.20, 0.11, 0.07, 0.05, 0.04],
   twist: { kind: 'table', x: PROP_TWIST_X, angle: PROP_TWIST_X.map((x) => helix(x) - helix(0.7)) },
   referenceStation: 0.7,
-  section: { alpha0: -2.2 * DEG, liftSlope: 2 * Math.PI * 0.9, clMaxLowSpeed: 1.45, clMaxMachLoss: 0.4, clMin: -0.8,
-    cdMax: 1.6, clMinDrag: 0.4, dragDueToLift: 0.01, clIdeal: 0.411 },
+  // The negative-incidence branch (clMin, cdMax) is FITTED to the reverse-thrust deceleration (P ASTA-72 para 15 / Table 3: 196 KTAS
+  // to the hover in 33 s, 0.31 g; C11): -1.2 and 2.0 (were the thin-section ESTIMATES -0.8 and 1.6). It stands in for what the
+  // shared BEMT (src/physics/propulsion/bemt.ts) leaves out: at -12 deg and 60-120 KTAS the reverse prop works at a disc thrust
+  // coefficient T / (q A) of 0.8-1.9, the propeller-brake / turbulent-wake state where simple annulus momentum over-predicts the
+  // induction (real rotors follow Glauert's empirical branch), and the BEMT gives -7.7 / -8.2 / -9.0 / -11.2 kN at 60 / 80 / 100 /
+  // 120 KTAS where the blade elements without induction give -14.9 / -16.1 / -17.7 / -19.6 (W/tune/ah56/probes propbe.test.ts).
+  // The fitted branch adds 2-3 kN there (contract request to TW for the high-induction correction itself). The forward branch
+  // (C4, C5, C10) is untouched; the +8 deg windmilling drag above 150 KTAS rises (C13 / C20 re-checked, KNOWN_ISSUES T2).
+  section: { alpha0: -2.2 * DEG, liftSlope: 2 * Math.PI * 0.9, clMaxLowSpeed: 1.45, clMaxMachLoss: 0.4, clMin: -1.2,
+    cdMax: 2.0, clMinDrag: 0.4, dragDueToLift: 0.01, clIdeal: 0.411 },
   inertia: AH56_PROP_INERTIA,
   pitchControl: {
     kind: 'constantSpeed',

@@ -125,6 +125,14 @@ is engineRatio 55.28 (D), and the torque gauge reads % of 3435 shp at 100 % Nf (
   1 in pedal pulse for 1 s at 20 kt tips it onto the right wingtip in about 4 s; locked, the same pulse gives 4.6 °/s. The tyre and
   castor ESTIMATES do not change the onset (sweeps in KNOWN_ISSUES R1), so taxi straight with the tail wheel locked and unlock it to
   turn, as ASTA-72 para 79 describes.
+  **Tuning round (KNOWN_ISSUES T1):** the mode is s = (m x U - N_r) / (Izz + m x^2) once the main tyres are stiff (D; x = 0.76 m,
+  N_r about 12.5 kN m s at the taxi trim): 0.34 /s at 10 kt, 0.9 /s at 20 kt, stable below about 5 kt, independent of the tyre
+  ESTIMATES. Swivel friction 100-600 N m (the tyre's aligning moment saturates at mu N trail = 450 N m) makes a deadband with a
+  breakout and leaves the castor stuck 11-88 deg after a turn; a swivel damper of 500-2000 N m s/rad lags it about 6 % at 1 /s;
+  gear.ts is unchanged. ASTA-72 para 79 and APE-I para 133 (read in the scans) rate the directional control by tail-rotor thrust
+  "excellent" with the pilot on the pedals, unlocked "for all taxi turns", locked for take-off, landing and above 20 kt: a pilot
+  answering 0.3 s late catches the 20 kt pulse within 0.7 deg on 2.2 in of pedal, 0.5 s late at 10 kt within 1.8 deg (ah56Ground
+  rows); 0.7 s late at 20 kt it is lost.
 
 ## 6. Results (stage 2, measured)
 
