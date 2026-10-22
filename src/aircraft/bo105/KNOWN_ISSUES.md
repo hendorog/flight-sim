@@ -400,7 +400,7 @@ are `tests/rotorcraft/bo105KeyTransitions.test.ts` (the gate's beginner in `bo10
   0.5 / 0.6 / 1.0 s F6 back within 1.3 deg by 15 s; round 2: 180 deg); the lift-off (not lost in 30 s with the pedals
   untouched or 2 s of left pedal; the cause was the skids touching in the low hover, which switched the cyclic term off:
   it now works on light skids, `groundLoad`); 5 once after a lift-off keeps the followed pedal (18 deg/s; round 2 42).
-- **Still open: the keyboard deceleration to the hover.** Better (the stick 0.33-0.45 at the stop against round 2's
+- **Still open (round 3; the tune pass closed it, below): the keyboard deceleration to the hover.** Better (the stick 0.33-0.45 at the stop against round 2's
   0.18, the hover 0.51; the stop reached more often) but lost: below 20 kt the beginner's F5 / F6 taps swing the
   collective and it lets go in an 8-12 m/s sink with the collective at 0.13-0.31 (hover 0.39). The assist never touches
   the collective. Recorded as an `it.fails` row. A below 25 kt is a way out (the hold flies on at that speed, heading and
@@ -414,18 +414,83 @@ are `tests/rotorcraft/bo105KeyTransitions.test.ts` (the gate's beginner in `bo10
   round-2 law still crashed (stop 13.7 s, crash 20.1 s). Its "stop" was the body-forward ground speed, which a spin
   crosses; pilot-r3 uses the ground-speed magnitude. The lift-off and off-trim probes were not affected.
 - **Recorded limits:** a pedal set with the keys (KeyZ 2 s at lift-off) is thrown away by 5 (62 deg/s, 136 deg; 5
-  centres the keys on the followed trim, not on the pilot's pedal). The gate's 1 s ArrowUp knock in the 3 ft hover is
+  centres the keys on the followed trim, not on the pilot's pedal; the tune pass: 5 keeps the pedals, 12 deg/s). The gate's 1 s ArrowUp knock in the 3 ft hover is
   still lost at about 38 s: not the trim (the stick at the hover trim, the series term inside its limit) but the probe's
   own tap loop, a growing pitch / roll oscillation (-5 to +14 deg, about 4 s) that ends in the yaw. Longer F6 from the
   hover (1.5 s and more) runs past the torque limit and the left pedal stop with or without the aid. The gate's
   "energetic tapper" (0.5 s, roll taps to 1 s) crashes the deceleration at 8 s on every law, the raw aircraft too.
 - **Measured, not adopted:** a collective-to-pedal crossfeed (2.5 of the pedal axis per unit of collective; the trim
   slope is about -3) held every F6 tap within 5 deg but double-compensated a pilot who pedals (2 s of left pedal at
-  lift-off: -39 deg/s, the heading round). A pedal follow-up gain of 2 rang the heading +/-12 deg after a collective tap.
+  lift-off: -39 deg/s, the heading round). (The tune pass adopted a washed-out, airborne-only crossfeed, below.) A pedal follow-up gain of 2 rang the heading +/-12 deg after a collective tap.
 - **Shared files touched:** `src/core/types.ts` (`ControlInputs.keyboardCyclic`, `keyboardPedals`, `pedalFollowUp`,
   optional, set only for a profile with a STAB ASSIST; the flight model ignores them), `src/input/profile.ts`
   (`holdAuthority`, `followUp`; `groundYawLoad` renamed `groundLoad`), `src/input/InputSystem.ts` (the flags; the pedal
   centre follows `pedalFollowUp`). Every other type leaves them absent; the legacy digests are unchanged.
+
+#### Tune pass (2026-10-22, branch `tune/bo105`; probes W/tune/bo105, logs `out/`)
+
+The round-3 open items, with the owner's delegation ("go with recommendations on the flyability and control
+sensitivity"). Docs section 9 ("Tune pass") has the laws and every number; the rows are in `bo105KeyTransitions`,
+`bo105Assist`, `tests/input/bo105Aids` and `twinGovernor` T11. No physics changed.
+- **Fixed: the keyboard deceleration to the hover** (item 1). The mechanism was the beginner's collective (lagged F5 / F6
+  taps: 0.14 -> 0.50 -> 0.10, torque 24 -> 94 %, the nose round at up to 66 deg/s), not the cyclic. Two STAB ASSIST
+  parts on the keys: a **height hold** on the keyboard collective (ADS-33E rate command / height hold, full below 30
+  KIAS, gone at 40) and a **washed-out collective-to-pedal crossfeed** on the keyboard pedals. Judged at a hover (under
+  3 kt, |vz| under 1.5 m/s, within 15 deg for 2 s), the tapping beginner reaches it from 45 KIAS (taps every 1 / 2 / 3 s,
+  nose 8 or 12) and 30 KIAS and, flying on, holds it 20 s; 9 of 10 probe variants (round 3: 0 of 10). And the **hover
+  hold slows to a hover** when A is pressed below 30 kt (1.5 kt/s; 15.8 s from 25 kt), the Bo 105 only.
+- **Fixed: the hover scenario in wind** (item 2): it starts into the wind, trimmed at the start's wind, still over the
+  ground (`hoverIntoWind`); the beginner holds it 60 s within 2.9-4.0 m in 8 kt (with gusts too) and 3.2 m in 15 kt
+  from behind the runway heading (before: 11.1 kt of ground speed at the start; round 2 crashed at 14-15 s).
+- **Fixed: 5 keeps the pedals** (item 3; `centreKeepsPedals`): KeyZ 2 s at lift-off then 5: 12 deg/s, 11.7 deg (round 3:
+  62 deg/s, 136 deg). The hint and the key label say so. In the production build the pedals are the same with and
+  without the 5 (-0.540 / -0.541).
+- **Fixed: resume** (item 4): the snapshot carries the assist's state (optional `assist`, like `era`: older snapshots
+  restore with a fresh capture; a malformed block is dropped); `ControlInputs.pedalFollowUp` is zeroed on restore. The
+  restored series command is the unbroken flight's to 2e-16 (re-captured: 0.082 of the axis); T11 runs with the assist
+  on (Nr step 0.002 %, re-captured 0.25 %).
+- **In-browser gates** (item 5): `check-build "aircraft=bo105&hover=1&cam=cockpit"` passes (no console errors, audio
+  running); a real-key flight script (W/tune/bo105 `browser-bo105.mjs`, production build, docs section 10) flew the
+  hands-off hover, `&ap=1`, `&stab=0`, an F6 tap in 8 kt and the 5 key: as in the rig. `scripts/fly-keyboard.mjs` is
+  the fixed-wing keyboard circuit (take-off roll, rotation, flaps; conformance targets only for the fixed-wing types):
+  it has no helicopter pilot, and its id parser reads only the `AIRCRAFT_IDS` literal, so `fly-keyboard bo105` took
+  `bo105` for the output directory and flew the Cessna 172S (stopped; the stray directory removed). With
+  `aircraft=bo105` as a URL parameter it starts the Bo 105 on the runway with the fixed-wing pilot (W/tune/bo105
+  `out/browser/fly-keyboard-bo105.log`). Not a Bo 105 gate; recorded for the script's owner, not changed here.
+- **Item 6, AEO climb** (item 2 above): unchanged; nothing in this pass touches the physics and no sourced parameter
+  closes it.
+- **Restated rows** (behaviour descriptions the new aids changed, not sourced bands): the 1 s roll tap's bank is back to
+  level at 8 s (-0.01 deg; round 2-3: 2.5, "stays on the tapped side"), restated as "not past level by more than 1 deg"
+  with the heading band tightened from 50 to 10 deg (measured 3.0); the round-1 / round-2 contrast rows of the
+  collective taps run without the new aids (with them even those laws hold the heading); the series-term row flies both
+  hover starts (into the wind the walk is 0.034 of the axis in 5 s; with the air 0.0002, inside round 3's 0.02); the
+  collective-tap peak band tightened from 25 to 6 deg (measured 2.0-4.1).
+- **Open: KNOWN DRIFT GAP** (`bo105KeyTransitions` it.fails): the beginner letting go at the hover drifts past 30 m in
+  10.5 s (attitude 5.9 deg, not crashed): the STAB ASSIST holds attitude, not position (ACAH, not ADS-33E's
+  translational rate command); the hold (A) holds position. A position-holding sim aid on the keys is the next step if
+  the owner wants let-go hovering without A.
+- **Recorded limits:** the deceleration from 60 KIAS with 1 s taps is lost at 12.6 s with or without the aids (above
+  their 40 KIAS band: the beginner's own flare). The tapped hover through an 8 kt side gust (calm 15 s then the gust;
+  round-2 gate "nice" item) is lost later (by drift at 53.6-55.8 s, not crashed; one of four not lost) than without the
+  new aids (34.9-44.7 s, two crashed): the heading goes round in the side wind (`n_gust.log`). F5 held down from 16 m
+  still lands hard (5.9 m/s); the hint says land in F5 taps (0.48 m/s at touchdown). Holding F6 for seconds from the
+  hover still passes the maximum continuous torque (the pilot's key; the hold never raises above it): 87 / 90 / 94 / 99 %
+  for 1.5 / 2 / 3 / 5 s (round 3: 107 / 113 / 125 / 144 %), the nose within 8-19 deg (round 3: round from 2 s).
+- **Owner-facing choices (AGENT, on the owner's delegation):** the height hold's band is [30, 40] KIAS, not the plan's
+  "below about 20 kt" ([20, 30] reached the hover in 2-4 of 10 decelerations, [30, 40] in 6-9); below 30 KIAS a held
+  collective key behaves close to a climb-rate command and a released one holds the height (a tap is a height step, a
+  descent to land is F5 taps); the crossfeed reverses round 3's "measured, not adopted" on new evidence (washed out over
+  3 s, airborne only, off while a pedal key is held: the round-3 case, 2 s of left pedal at lift-off, now 25 deg against
+  round 3's 21, where the always-on crossfeed gave -39 deg/s); the hold slows to a hover below 30 kt (above, it holds the
+  speed); the hover start faces the wind; 5 leaves the pedals. Each is one line in `bo105/input.ts` or `bo105/sim.ts`.
+- **Shared files touched:** `src/sim/rotorcraft/stabilityAssist.ts` (the height hold, the crossfeed, export / import),
+  `src/sim/rotorcraft/autopilot.ts` (`slowToHover`, null unless set), `src/sim/SimPhysics.ts` (the snapshot's
+  `assist`, `hoverIntoWind`, `slowToHover` from the profile, `pedalFollowUp` zeroed on restore), `src/sim/resume.ts`
+  (optional `assist`), `src/input/profile.ts` (`centreKeepsPedals`, `heightHold`, `pedalCrossfeed`),
+  `src/input/InputSystem.ts` (5 leaves the pedals with `centreKeepsPedals`; `keyboardCollective` / `collectiveWorked`
+  on a type with a STAB ASSIST), `src/core/types.ts` (`ControlInputs.keyboardCollective`, `collectiveWorked`, optional),
+  `src/aircraft/types.ts` (`SimProfile.heliHoldSlowToHover`, `hoverIntoWind`, optional), `tests/rotorcraft/twinGovernor.test.ts`
+  (T11 without its workaround). Every other type leaves them absent: the legacy digests are unchanged (17/17).
 
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 
