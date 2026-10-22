@@ -458,4 +458,23 @@ export interface UiProfile {
   };
   /** Hints card rows that depend on the type: [what, keys]. */
   hints: readonly (readonly [string, string])[];
+  /**
+   * The control box (src/ui/status.ts ControlsWidget) of a helicopter that reads its own levers in it (the Bo 105): the
+   * collective, NR, the engine selection with the type's engine names and the per-engine power levers with their IDLE
+   * stop and position word; the cyclic box gets a ring at the keyboard centre (the spring-trim anchor) and the TRIM text
+   * reads it. Absent: the generic box (every other type, unchanged).
+   */
+  controlBox?: RotorcraftControlBox;
+}
+
+/** UiProfile.controlBox: what a helicopter's control box shows beyond the stick and the pedals. */
+export interface RotorcraftControlBox {
+  /** Names of the engines on the selection readout (ENG 1 / 2 / BOTH). */
+  engineNames: readonly [string, string];
+  /** The per-engine power-lever bars: label, the IDLE stop as a fraction of the travel, and the word for a position. */
+  lever: { label: string; idle: number; word(value: number): string };
+  /** NR in %, and the warning unit's LOW / HIGH thresholds, %. */
+  nr: { low: number; high: number; read(s: AircraftState): number | null };
+  /** The STAB ASSIST chip's tooltip, and the speed band where the assist fades out (KIAS): the chip dims above it. */
+  stabilityAssist?: { title: string; fadeKias: readonly [number, number] };
 }

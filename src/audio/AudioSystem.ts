@@ -23,6 +23,7 @@ import { STEM_COUNT } from './params';
 import type { AudioProfile } from './profile';
 import { SYNTH_PROCESSOR_NAME, SYNTH_SOURCE } from './synthSource';
 import { scheduleThunder, thunderPlan, type ScheduledThunder, type ThunderListener } from './thunder';
+import { browserSpeaker, VoiceWarner, type Speaker } from './voiceWarnings';
 
 const VOLUME_KEY = 'fs.audio.volume';
 /** Events that can carry the user activation an AudioContext needs to start or resume. */
@@ -49,6 +50,9 @@ interface Graph {
   /** The nodes of the profile's mix (stem routes, the two sums, the cabin resonances), kept so that another profile can replace them. */
   mix: AudioNode[];
 }
+
+/** Strength of the clunk of a tail-wheel lock pin engaging or releasing (a gear 'thump'; a leg locking down is 1). ESTIMATE */
+export const TAIL_WHEEL_LOCK_THUMP = 0.3;
 
 /** Deepest duck of the engine/air mix under cabin speech, dB (section 3.7.2). */
 export const MAX_DUCK_DB = 6;
@@ -123,6 +127,8 @@ export class AudioUnavailableError extends Error {}
 export interface AudioSystemOptions {
   /** Sound profile of the aircraft type flown. Default: the Cessna 172S. */
   profile?: AudioProfile;
+  /** What speaks a profile's voice warnings (AudioProfile.voiceWarnings). Default: the browser's speech synthesis, where it exists. */
+  speaker?: Speaker | null;
 }
 
 export class AudioSystem implements Subsystem {
@@ -154,9 +160,21 @@ export class AudioSystem implements Subsystem {
   private readonly thunders: ScheduledThunder[] = [];
   private readonly listener: ThunderListener = { north: 0, east: 0, altM: 0, rightNorth: 0, rightEast: 1, rightUp: 0 };
 
+  /** Spoken warnings of the profile (AH-56A FLAWS), or null. */
+  private voice: VoiceWarner | null = null;
+  private readonly speaker: Speaker | null;
+  /** The tail-wheel lock last seen (its clunk on a change); undefined until the first frame after a reset. */
+  private lastTailWheelLock: boolean | undefined = undefined;
+
   constructor(opts: AudioSystemOptions = {}) {
     this.profile = opts.profile ?? C172S_AUDIO;
     this.tracker = new SoundTracker(this.profile);
+    this.speaker = opts.speaker !== undefined ? opts.speaker : browserSpeaker();
+    this.voice = this.voiceFor(this.profile);
+  }
+
+  private voiceFor(profile: AudioProfile): VoiceWarner | null {
+    return profile.voiceWarnings ? new VoiceWarner(profile.voiceWarnings, this.speaker) : null;
   }
 
   init(ctx: SimContext): void {
@@ -185,6 +203,8 @@ export class AudioSystem implements Subsystem {
         this.tracker.reset(ctx.state);
         this.lastDistance = -1;
         this.stopThunder();
+        this.voice?.silence();
+        this.lastTailWheelLock = undefined;
       }),
       ctx.events.on('lightning', (e) => this.thunder(e)),
     );
@@ -198,6 +218,7 @@ export class AudioSystem implements Subsystem {
     this.ctx?.renderer?.domElement?.removeEventListener('webglcontextlost', this.onContextLost);
     this.ctx?.renderer?.domElement?.removeEventListener('webglcontextrestored', this.onContextRestored);
     if (this.suspendTimer !== null) clearTimeout(this.suspendTimer);
+    this.voice?.silence();
     this.unsubscribe.forEach((u) => u());
     void this.g?.ac.close();
     this.g = null;
@@ -255,6 +276,8 @@ export class AudioSystem implements Subsystem {
     if (profile === this.profile) return;
     this.profile = profile;
     this.tracker = new SoundTracker(profile);
+    this.voice?.silence();
+    this.voice = this.voiceFor(profile);
     if (this.ctx) this.tracker.reset(this.ctx.state);
     const g = this.g;
     if (!g) return;
@@ -269,6 +292,9 @@ export class AudioSystem implements Subsystem {
    */
   caws(level: 'warning' | 'caution'): void {
     this.g?.synth.port.postMessage({ type: 'caws', level });
+    // A type with spoken warnings says "MASTER CAUTION" on a caution (AudioProfile.voiceWarnings, a 'caution'
+    // message); a warning strikes only its chimes (no "MASTER WARNING" words are known for the FLAWS).
+    if (level === 'caution') this.voice?.noteCaution();
   }
 
   /** Play a speech cue (intercom click, captions-only chime, radio squelch). Silent before the first gesture. */
@@ -397,6 +423,8 @@ export class AudioSystem implements Subsystem {
     if (reason === 'pause') this.pausedMute = on;
     else if (reason === 'hidden') this.hidden = on;
     else this.contextLost = on;
+    // Spoken warnings stop with the sound and start over with it (a warning still due is said at once on return).
+    this.voice?.silence();
     this.applyMaster();
     this.applyRunState();
   }
@@ -541,8 +569,12 @@ export class AudioSystem implements Subsystem {
   private applyMaster(): void {
     const g = this.g;
     if (!g) return;
-    const target = this.muted || this.silenced ? 0 : this.volume;
-    g.master.gain.setTargetAtTime(target, g.ac.currentTime, 0.08);
+    g.master.gain.setTargetAtTime(this.audibleVolume, g.ac.currentTime, 0.08);
+  }
+
+  /** The master volume the listener hears: 0 while muted, paused, hidden or without a GL context. */
+  private get audibleVolume(): number {
+    return this.muted || this.silenced ? 0 : this.volume;
   }
 
   update(dt: number, ctx: SimContext): void {
@@ -560,6 +592,17 @@ export class AudioSystem implements Subsystem {
     const ctx = this.ctx;
     const params = this.tracker.update(ctx.state, ctx.controls, ctx.env, ctx.weather, dt, ctx.weatherFx?.precip);
     this.g?.synth.port.postMessage(params);
+    // A tail-wheel lock (AH-56A) engaging or releasing: a short clunk (the worklet plays it on a type with landing gear).
+    const lock = ctx.controls.tailWheelLock;
+    if (this.lastTailWheelLock !== undefined && lock !== undefined && lock !== this.lastTailWheelLock) {
+      this.g?.synth.port.postMessage({ type: 'thump', amp: TAIL_WHEEL_LOCK_THUMP });
+    }
+    this.lastTailWheelLock = lock;
+    if (this.voice) {
+      const powered = ctx.state.electrical.busVoltage > this.profile.busPoweredV;
+      // Spoken warnings bypass the synth graph (speech synthesis): they follow the same silencing as its master gain.
+      this.voice.update(ctx.state, powered, dt, this.audibleVolume);
+    }
   }
 
   private spatialise(g: Graph, ctx: SimContext): void {

@@ -19,7 +19,7 @@
 // throttle inverts exactly. The fuel topping governor (powerTurbine.topping) stays in the core.
 
 import { clamp } from '../../core/math';
-import type { ControlInputs } from '../../core/types';
+import { engineControl, type ControlInputs, type EngineControls } from '../../core/types';
 import type { EngineUnit } from '../propulsion/engineUnit';
 import { TurbineEngine } from '../propulsion/turbineEngine';
 import type { RotorcraftDefinition, RotorcraftState, TurboshaftControlDef } from './definition';
@@ -51,13 +51,27 @@ export function plaNg(ts: TurboshaftControlDef, throttle: number): number {
   return g <= idle ? ts.plaNg.groundIdle : ts.plaNg.groundIdle + (ts.plaNg.fullOpen - ts.plaNg.groundIdle) * (g - idle) / (1 - idle);
 }
 
-/** The turboshaft's fuel control and N2 governor. Its persistent state is RotorcraftState.turboshaft (snapshots). */
+/** Where one engine's persistent turboshaft block lives in the rotorcraft state. Evaluated on every call, never
+ *  cached: a resume replaces the blocks (Object.assign of a cloned state). */
+export type TurboshaftSlot = (s: RotorcraftState) => RotorcraftState['turboshaft'];
+const ENGINE_1_SLOT: TurboshaftSlot = (s) => s.turboshaft;
+
+/**
+ * The turboshaft's fuel control and N2 governor. Its persistent state is RotorcraftState.turboshaft (snapshots), or
+ * the block `slot` names: a twin (twinTurboshaft.ts) runs a second control on RotorcraftState.twinTurboshaft.second.
+ */
 export class TurboshaftControl {
   readonly ts: TurboshaftControlDef;
 
-  constructor(readonly def: RotorcraftDefinition, private readonly state: RotorcraftState) {
+  constructor(readonly def: RotorcraftDefinition, private readonly state: RotorcraftState,
+    private readonly slot: TurboshaftSlot = ENGINE_1_SLOT) {
     if (!def.systems.turboshaft) throw new Error('TurboshaftControl: the definition has no systems.turboshaft');
     this.ts = def.systems.turboshaft;
+  }
+
+  /** This control's persistent block (engine 1: RotorcraftState.turboshaft). */
+  block(): RotorcraftState['turboshaft'] {
+    return this.slot(this.state);
   }
 
   /** Engine output shaft (N2) speed, fraction of ratedRpm. */
@@ -65,8 +79,12 @@ export class TurboshaftControl {
     return engine.omega * engine.gearRatio * 30 / Math.PI / engine.install.engine.ratedRpm;
   }
 
-  /** The droop compensator's datum: datumNg (flat-pitch N1) + anticipation x collective. */
-  datum(collective: number): number {
+  /** The droop compensator's datum: datumNg (flat-pitch N1) + anticipation x collective (+ propAnticipation x the
+   *  pusher lever on a type that declares it, AH-56A; seam placed at S0, TW owns this file). */
+  datum(collective: number, propLever?: number): number {
+    const prop = this.ts.governor.propAnticipation;
+    if (prop) return (this.ts.governor.datumNg ?? this.ts.plaNg.groundIdle) + this.ts.governor.anticipation * clamp(collective, 0, 1) +
+      prop * clamp(propLever ?? 0, 0, 1);
     return (this.ts.governor.datumNg ?? this.ts.plaNg.groundIdle) + this.ts.governor.anticipation * clamp(collective, 0, 1);
   }
 
@@ -74,14 +92,17 @@ export class TurboshaftControl {
    * The governor integral that holds N1 demand `ng` at N2 `n2` with the beep at `setPct` (%), collective
    * `collective`: a quasi-steady state for resets (no transient at release).
    */
-  steadyIntegral(ng: number, n2: number, setPct: number, collective: number): number {
+  steadyIntegral(ng: number, n2: number, setPct: number, collective: number, propLever?: number, datumOffset = 0): number {
     const g = this.ts.governor;
-    return ng - this.datum(collective) - g.gain * (setPct / 100 - n2);
+    const datum = datumOffset ? this.datum(collective, propLever) + datumOffset : this.datum(collective, propLever);
+    return ng - datum - g.gain * (setPct / 100 - n2);
   }
 
-  /** The beep set point (%) at which the governor holds N2 `n2` steady while demanding N1 `ng`. */
-  steadySetPct(ng: number, n2: number, collective: number): number {
-    return 100 * (n2 + this.ts.governor.droop * (ng - this.datum(collective)));
+  /** The beep set point (%) at which the governor holds N2 `n2` steady while demanding N1 `ng`. `datumOffset`: an
+   *  engine's droop-compensator datum offset, N1 fraction (twin rig mismatch). */
+  steadySetPct(ng: number, n2: number, collective: number, propLever?: number, datumOffset = 0): number {
+    const datum = datumOffset ? this.datum(collective, propLever) + datumOffset : this.datum(collective, propLever);
+    return 100 * (n2 + this.ts.governor.droop * (ng - datum));
   }
 
   /**
@@ -90,10 +111,44 @@ export class TurboshaftControl {
    * fresh per-engine override list into `out`, and fills state.turboshaft.
    */
   stepTurboshaft(dt: number, c: Readonly<ControlInputs>, engine: EngineUnit, out: ControlInputs, busVolts: number): void {
-    const ts = this.ts, g = ts.governor, r = this.state, s = r.turboshaft;
+    const ts = this.ts, r = this.state, s = this.slot(r);
     if (!s) throw new Error('TurboshaftControl: state.turboshaft is missing (reset the rotorcraft first)');
     const gi = ts.plaNg.groundIdle, fo = ts.plaNg.fullOpen;
-    const grip = clamp(c.throttle, 0, 1), collective = clamp(c.collective ?? 0, 0, 1);
+    const collective = clamp(c.collective ?? 0, 0, 1);
+    const demand = this.govern(s, dt, c, clamp(c.throttle, 0, 1), engine, busVolts, 0, 0);
+    r.governorThrottle = r.governorIntegral = clamp((demand - gi) / (fo - gi), 0, 1);
+    r.governorActive = s.governorMode === 'governed';
+    r.previousThrottle = c.throttle; r.previousCollective = collective;
+    out.throttle = r.governorThrottle;
+    out.mixture = s.grip === 'cutoff' ? 0 : 1;
+    // Auto-reignition fires the exciter while RE IGN P RST is lit (generic harness: until the pilot resets it).
+    out.magnetos = s.reignitionLight ? 3 : c.magnetos;
+    out.engines = [{}];
+  }
+
+  /**
+   * One engine of a multi-engine installation (twinTurboshaft.ts): engine `i`'s lever is engineControl(c, i,
+   * 'throttle') and its own block (this control's slot) carries the governor. `setOffset` (N2 fraction, the ENGINE TRIM
+   * split) is added to the beep set point and `datumOffset` (N1 fraction, a rig mismatch) to the compensator datum.
+   * Returns the engine's override (the pilot's own per-engine overrides kept, then throttle, mixture, magnetos);
+   * writes no rotor-level field.
+   */
+  stepEngine(dt: number, c: Readonly<ControlInputs>, i: number, engine: EngineUnit, busVolts: number, setOffset: number,
+    datumOffset: number): EngineControls {
+    const ts = this.ts, s = this.slot(this.state);
+    if (!s) throw new Error('TurboshaftControl: the engine block is missing (reset the rotorcraft first)');
+    const gi = ts.plaNg.groundIdle, fo = ts.plaNg.fullOpen;
+    const demand = this.govern(s, dt, c, clamp(engineControl(c, i, 'throttle'), 0, 1), engine, busVolts, setOffset, datumOffset);
+    return { ...c.engines[i], throttle: clamp((demand - gi) / (fo - gi), 0, 1), mixture: s.grip === 'cutoff' ? 0 : 1,
+      magnetos: s.reignitionLight ? 3 : engineControl(c, i, 'magnetos') };
+  }
+
+  /** The fuel control and governor of one engine block for one step; returns the N1 demand (fraction). */
+  private govern(s: NonNullable<RotorcraftState['turboshaft']>, dt: number, c: Readonly<ControlInputs>, grip: number,
+    engine: EngineUnit, busVolts: number, setOffset: number, datumOffset: number): number {
+    const ts = this.ts, g = ts.governor;
+    const gi = ts.plaNg.groundIdle;
+    const collective = clamp(c.collective ?? 0, 0, 1);
     const n2 = this.n2(engine);
     // N2 of the last step and its filtered rate live in the state (snapshots: a resume mid-transient keeps the
     // governor's rate term); absent after a reset, they are seeded from the shaft with no rate.
@@ -108,7 +163,8 @@ export class TurboshaftControl {
     }
     s.grip = gripPosition(ts.grip, grip);
     const pla = plaNg(ts, grip);
-    const set = s.n2SetPct / 100, datum = this.datum(collective);
+    const set = setOffset ? s.n2SetPct / 100 + setOffset : s.n2SetPct / 100;
+    const datum = datumOffset ? this.datum(collective, c.propLever) + datumOffset : this.datum(collective, c.propLever);
     const ptg = datum + g.gain * (set - n2 - g.lead * n2Rate) + s.ptgIntegral;
     const governing = c.rotorGovernor !== false;
     let demand: number;
@@ -127,22 +183,15 @@ export class TurboshaftControl {
     }
     s.ptgIntegral = clamp(s.ptgIntegral, -1, 1);
     s.governorMode = governing && s.grip === 'fullOpen' ? 'governed' : 'manual';
-    r.governorThrottle = r.governorIntegral = clamp((demand - gi) / (fo - gi), 0, 1);
-    r.governorActive = s.governorMode === 'governed';
-    r.previousThrottle = c.throttle; r.previousCollective = collective;
-    out.throttle = r.governorThrottle;
-    out.mixture = s.grip === 'cutoff' ? 0 : 1;
-    // Auto-reignition fires the exciter while RE IGN P RST is lit (generic harness: until the pilot resets it).
-    out.magnetos = s.reignitionLight ? 3 : c.magnetos;
-    out.engines = [{}];
+    return demand;
   }
 
   /**
    * After the coupling (Rotorcraft.drive): the gauges and warnings of the turboshaft installation, from the engine's
    * N1, TOT and output-shaft torque. `onGround` (skids loaded) lets the low-rotor warning disarm at ground idle.
    */
-  publish(dt: number, c: Readonly<ControlInputs>, engine: EngineUnit, busVolts: number, onGround = false): void {
-    const ts = this.ts, d = this.def, r = this.state, s = r.turboshaft;
+  publish(dt: number, c: Readonly<ControlInputs>, engine: EngineUnit, busVolts: number, onGround = false, rotorLevel = true): void {
+    const ts = this.ts, d = this.def, r = this.state, s = this.slot(r);
     if (!s) return;
     const turbine = engine.engine instanceof TurbineEngine ? engine.engine : undefined;
     const n1 = turbine ? turbine.ng : 0, tot = turbine ? turbine.ittC : 15;
@@ -165,6 +214,8 @@ export class TurboshaftControl {
     s.overTorque = s.torquePsi > l.takeoffPsi;
     s.overTemp = turbine !== undefined && turbine.firing && tot > l.totC.takeoff;
     s.avoidRange = s.n2Pct > l.n2AvoidPct[0] && s.n2Pct < l.n2AvoidPct[1];
+    // One engine of a twin: the rotor-level fields are the twin's (twinTurboshaft.ts publishTwin).
+    if (!rotorLevel) return;
     const mcp = tot > l.mcpPsiAboveTot.totC ? l.mcpPsiAboveTot.psi : l.mcpPsi;
     r.takeoffPowerSeconds = s.torquePsi > mcp || (turbine?.firing === true && tot > l.totC.mcp) ? r.takeoffPowerSeconds + dt : 0;
     r.powerLimitExceeded = s.overTorque || s.overTemp || 100 * n1 > l.n1Pct.continuous || r.takeoffPowerSeconds > l.takeoffSeconds;

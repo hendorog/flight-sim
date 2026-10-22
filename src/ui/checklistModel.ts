@@ -115,6 +115,9 @@ export function checklistFrame(ctx: Pick<SimContext, 'state' | 'controls' | 'wea
     f['checklist.clutchEngagement'] = rotor.clutchEngagement; f['checklist.clutchLight'] = rotor.clutchLight;
     f['checklist.governorActive'] = rotor.governorActive; f['checklist.rotorPercent'] = rotor.rotorRpm / d.referenceRpm * 100;
     if (e) f['checklist.enginePercent'] = e.rpm / (d.referenceRpm * d.engineRatio) * 100;
+    // The AH-56A tail-wheel lock (its before-take-off and landing items check it). Prop blade angle and gyro-mode signals wait for an
+    // item that reads them (the prop-detent items can go live on the pusher's beta once it exists).
+    f['checklist.tailWheelLock'] = c.tailWheelLock ?? false;
   }
   return f;
 }

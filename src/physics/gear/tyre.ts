@@ -80,6 +80,12 @@ export interface SteeringParams {
   mode?: 'linked' | 'castering';
   /** Coulomb friction of the swivel, N m (castering). Default 0. */
   friction?: number;
+  /**
+   * Castering only: a lock pin (AH-56A tail wheel, P ASTA-72: "full-swivelling, lockable"). With WheelContact.locked the
+   * pin drops in once the wheel swings within engageAngle (rad) of centre and then holds it straight, as an unsteered
+   * wheel; unlocked (or not yet aligned) it casters freely. Absent: no lock (every type before the AH-56A).
+   */
+  lock?: { engageAngle: number };
 }
 
 /** Kinematics and loads at the contact patch, produced by the landing-gear assembly. */
@@ -95,6 +101,8 @@ export interface WheelContact {
   brakeTorque: number;
   /** Pedal steering command, rad (ignored by unsteerable and by castering wheels). */
   steerCommand: number;
+  /** The lock pin is selected (SteeringParams.lock; ControlInputs.tailWheelLock). Read only by a lockable wheel. */
+  locked?: boolean;
 }
 
 /** Tyre force in the ground plane, resolved on the unsteered wheel axes (a forward, b right), N. */
@@ -232,7 +240,11 @@ export class WheelDynamics {
       const brush1 = (mu * N * (1 - t1 * t1 * t1)) / Math.max(theta1 * 3 * mu, 1e-12);
       let fy = brush1 * p.corneringStiffness * this.alpha - cd * vy;
       fy = Math.max(-mu * N, Math.min(mu * N, fy));
-      if (st.mode === 'castering') {
+      if (st.mode === 'castering' && st.lock && c.locked && Math.abs(this.steer) <= st.lock.engageAngle) {
+        // Locked: the pin holds the wheel straight (an unsteered wheel).
+        this.steer = 0;
+        this.steerRate = 0;
+      } else if (st.mode === 'castering') {
         // Free swivel: the aligning moment alone, against the Coulomb friction of the pivot. The rate r moves
         // the patch sideways by -trail r, which adds g trail r to the slip just relaxed (g = d alpha / d u of the
         // step) and (B g + cd) trail r to the side force: c r = align - friction - trail^2 (B g + cd) r, solved

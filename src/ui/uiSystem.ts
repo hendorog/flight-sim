@@ -213,7 +213,8 @@ export class UISystem implements Subsystem, MenuHost {
     // instructor flies (a "mouse yoke" reading shows it and keeps it updating).
     this.controlsWidget.yoke = () => {
       const y = this.yokeSource?.();
-      const othersFlying = this.demoFlying || this.schoolUi?.instructorFlying === true;
+      // An engaged autopilot or hover hold flies the stick too: no trim suggestion for the pilot then.
+      const othersFlying = this.demoFlying || this.schoolUi?.instructorFlying === true || !!this.autopilotLink?.engaged();
       if (!this.demoFlying && !this.schoolUi?.followMeThrough) return { ...(y ?? { mouseYoke: false, source: 'keyboard' as const }), othersFlying };
       return { ...(y ?? { source: 'keyboard' as const }), mouseYoke: true, othersFlying };
     };
@@ -491,7 +492,8 @@ export class UISystem implements Subsystem, MenuHost {
     const levers: WidgetAircraft['levers'][number][] = ['throttle'];
     if (def.input.has.propeller) levers.push('propeller');
     if (def.input.has.mixture) levers.push('mixture');
-    this.controlsWidget.setAircraft({ engines: def.engineCount, levers, rudderTrim: def.input.has.rudderTrim });
+    this.controlsWidget.setAircraft({ engines: def.engineCount, levers, rudderTrim: def.input.has.rudderTrim, rotorcraft: !!def.rotorcraft,
+      ...(ui.controlBox ? { controlBox: ui.controlBox } : {}) });
   }
 
   /** Switch / mixture toasts for keyboard pilots, and why a start cannot work while the starter is held. */

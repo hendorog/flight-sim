@@ -363,9 +363,18 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
       const melt = e.roughness;
       out[ix.roughness] = melt ? Math.min(1, rough + melt * MELT_WATER_ROUGHNESS) : rough;
     }
-    out[ix.propLoad] = propLoad(prop.thrust, voice.prop);
-    out[ix.tipMach] = tipMach(prop.rpm, s.tas, x.speedOfSound, voice.prop);
-    out[ix.propRpm] = prop.rpm;
+    if (i > 0 && s.rotorcraft) {
+      // A twin rotorcraft must not double the rotor: both engines drive ONE rotor, which engine 0's voice plays. Every
+      // further engine's propeller voice is silent (no loading, no tip Mach), and its gearbox meshes at the rotor's
+      // speed (its own PropellerState is not the rotor: the Bo 105 stub's reads 2790 rpm).
+      out[ix.propLoad] = 0;
+      out[ix.tipMach] = 0;
+      out[ix.propRpm] = s.propeller.rpm;
+    } else {
+      out[ix.propLoad] = propLoad(prop.thrust, voice.prop);
+      out[ix.tipMach] = tipMach(prop.rpm, s.tas, x.speedOfSound, voice.prop);
+      out[ix.propRpm] = prop.rpm;
+    }
     out[ix.turbo] = !turbine && voice.engine.turbo ? turboSpool(load, e.running) : 0;
   }
   const w = windNoise(s.ias, s.beta, s.surfaces.flaps, profile);
@@ -409,8 +418,11 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
   out[P.reverse] = voice0?.prop.reverse && voice0.engine.gearRatio !== 1 ? reverseGrowl(s.propeller.bladePitch, s.propeller.thrust, voice0.prop) : 0;
   out[P.shaker] = profile.stickShaker && powered && s.stickShaker === true ? 1 : 0;
   out[P.overspeed] = profile.overspeedWarning && powered && overspeedWarning(s.ias, s.mach, profile.overspeedWarning) ? 1 : 0;
-  // The exciters fire while the starter turns the gas generator (the PT6's and the 250's start ignition).
+  // The exciters fire while the starter turns the gas generator (the PT6's and the 250's start ignition); a twin's
+  // second engine on its own starter.
   out[P.ignitor] = voice0?.engine.turbine?.ignitor && (s.engines[0]?.starter ?? engineControl(c, 0, 'starter')) && powered ? 1 : 0;
+  const voice1 = profile.engines[1];
+  out[P.ignitor2] = voice1?.engine.turbine?.ignitor && s.engines[1] !== undefined && (s.engines[1].starter ?? engineControl(c, 1, 'starter')) && powered ? 1 : 0;
   const tail = tailRotorSound(s, x.speedOfSound, profile);
   out[P.tailRpm] = tail.rpm;
   out[P.tailLoad] = tail.load;
@@ -418,7 +430,94 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
   out[P.rain] = x.rain ?? 0;
   out[P.hail] = x.hail ?? 0;
   out[P.hailSize] = x.hail ? (x.hailSize ?? 0) : 0;
+  fillRotorcraftParams(s, x.speedOfSound, powered, profile, out);
   return out;
+}
+
+/** Advancing blade-tip Mach number of a rotor (or propeller) of `diameterM` at `rpm` in forward flight at `tas` (m/s): (Omega R + V) / a. */
+export function advancingTipMach(rpm: number, tas: number, speedOfSound: number, diameterM: number): number {
+  return ((Math.PI * diameterM * Math.max(rpm, 0)) / 60 + Math.max(tas, 0)) / speedOfSound;
+}
+
+/** The parameters of a pusher propeller on the rotor shaft (AudioProfile.pusher). */
+export interface PusherSound { rpm: number; load: number; tipMach: number; pitch: number; reverse: number }
+const emptyPusher = (): PusherSound => ({ rpm: 0, load: 0, tipMach: 0, pitch: 0, reverse: 0 });
+
+/**
+ * A pusher on the rotor's shaft: it turns at `ratio` x the rotor speed (the shaft is shared, so the rotor speed is
+ * exact whatever the pusher state reports); its loading is |thrust| / cruiseThrustN; its helical tip Mach number; its
+ * blade angle above zero thrust as a fraction of the way to the top of the forward range; and, below zero thrust,
+ * the reverse roar (the reverseGrowl law of a turboprop: the angle toward full reverse times 0.2 + the reverse
+ * thrust over cruiseThrustN). Silent (zeros) without the profile member or without RotorcraftState.pusher. Written
+ * into `out` (a fresh object unless given: the frame loop passes one it reuses) and returned.
+ */
+export function pusherSound(s: AircraftState, speedOfSound: number, profile: AudioProfile, out: PusherSound = emptyPusher()): PusherSound {
+  const def = profile.pusher;
+  const p = s.rotorcraft?.pusher;
+  if (!def || !p) {
+    out.rpm = out.load = out.tipMach = out.pitch = out.reverse = 0;
+    return out;
+  }
+  const rpm = Math.max(0, s.rotorcraft!.rotorRpm) * def.ratio;
+  const cruise = def.cruiseThrustN ?? 10_000;
+  const vt = (Math.PI * def.diameterM * rpm) / 60;
+  const zero = def.zeroThrustDeg ?? 0;
+  const top = def.topPitchDeg ?? 40;
+  const full = def.reverseDeg ?? -17;
+  const beta = p.beta / DEG;
+  const angle = full < zero ? clamp((beta - zero) / (full - zero), 0, 1) : 0;
+  out.rpm = rpm;
+  out.load = clamp(Math.abs(p.thrust) / cruise, 0, 2);
+  out.tipMach = Math.sqrt(vt * vt + s.tas * s.tas) / speedOfSound;
+  out.pitch = top > zero ? clamp((beta - zero) / (top - zero), 0, 1.5) : 0;
+  out.reverse = angle > 0 ? angle * clamp(0.2 + Math.max(0, -p.thrust) / cruise, 0, 1.5) : 0;
+  return out;
+}
+
+/** The frame loop's pusher result, reused (fillRotorcraftParams copies it into the parameter block at once). */
+const pusherScratch = emptyPusher();
+
+/**
+ * The rotorcraft voices of plan revision 2 (sections 6.5 and 7.7), written straight into the parameter block `out`
+ * (each 0 unless its profile member and its state exist): the main rotor's advancing-tip Mach number (for
+ * PropSoundProfile.impulsive), the pusher, a twin's warning unit (on the bus), the n-per-rev hum and the half-P hop
+ * (its amplitude, beat and forcing phase). `powered`: the bus is above profile.busPoweredV. Allocates nothing.
+ */
+export function fillRotorcraftParams(s: AircraftState, speedOfSound: number, powered: boolean, profile: AudioProfile, out: Float32Array): void {
+  const r = s.rotorcraft;
+  const rotorVoice = profile.engines[0]?.prop;
+  const rotorRpm = r ? Math.max(0, r.rotorRpm) : 0;
+  out[P.advTipMach] = r && rotorVoice?.impulsive ? advancingTipMach(rotorRpm, s.tas, speedOfSound, rotorVoice.diameterM) : 0;
+  const pusher = pusherSound(s, speedOfSound, profile, pusherScratch);
+  out[P.pusherRpm] = pusher.rpm;
+  out[P.pusherLoad] = pusher.load;
+  out[P.pusherTipMach] = pusher.tipMach;
+  out[P.pusherPitch] = pusher.pitch;
+  out[P.pusherReverse] = pusher.reverse;
+  const tw = r?.twinTurboshaft;
+  const warn = profile.rotorWarnings && powered && tw;
+  out[P.nrLowTone] = warn && tw.nrLowTone ? 1 : 0;
+  out[P.nrHighTone] = warn && tw.nrHighTone ? 1 : 0;
+  out[P.n1SplitTone] = warn && tw.n1SplitLight ? 1 : 0;
+  const vib = profile.vibration;
+  if (vib && r && rotorRpm > 0) {
+    const kt = Math.max(s.ias, 0) / KT;
+    const speed = vib.hoverShare + (1 - vib.hoverShare) * Math.min(1, (kt / vib.fullKias) ** 2);
+    out[P.vibration] = speed * Math.min(1, (rotorRpm / vib.rpm100) ** 2);
+    out[P.vibrationHz] = (vib.perRev * rotorRpm) / 60;
+  } else {
+    out[P.vibration] = out[P.vibrationHz] = 0;
+  }
+  const hop = profile.halfP && r?.events?.halfPHop;
+  if (hop) {
+    out[P.halfP] = clamp(hop.amplitude, 0, 2);
+    out[P.halfPHz] = (profile.halfP!.perRev * rotorRpm) / 60;
+    // The unwrapped phase (rad) wrapped to a fraction of the cycle here, in double precision.
+    const cycles = hop.phase / (2 * Math.PI);
+    out[P.halfPPhase] = cycles - Math.floor(cycles);
+  } else {
+    out[P.halfP] = out[P.halfPHz] = out[P.halfPPhase] = 0;
+  }
 }
 
 export const makeParamBlock = (): Float32Array => new Float32Array(PARAM_COUNT);

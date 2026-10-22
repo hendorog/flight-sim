@@ -128,6 +128,12 @@ export interface InstrumentReadings {
   /** Cabin altitude, ft, and differential, psi, of InstrumentSystemsDef.cabin (0 without one). */
   cabinAltFt: number;
   cabinDiffPsi: number;
+  /**
+   * Values of InstrumentSystemsDef.extra by id (a type's bespoke gauges read state the common readings do not carry: the
+   * Bo 105's mast moment and second-engine figures, the AH-56A's collective angle and prop beta). Absent without a
+   * definition that declares any.
+   */
+  extra?: Record<string, number>;
 }
 
 /** A rise of the gauged total above this, US gal, is a refuel (FUEL USED re-bases). */
@@ -506,6 +512,10 @@ export class InstrumentSet {
     ils07(s.position, r.ils);
     gpsToAirport(s.position, s.track, s.groundSpeed, r.gps);
     r.pressureAltitudeFt = pressureAltitudeFt(s.staticPressure);
+    if (sys.extra) {
+      const extra = (r.extra ??= {});
+      for (const id in sys.extra) extra[id] = sys.extra[id](s, c);
+    }
     if (this.cabin) {
       this.cabin.step(dt, r.pressureAltitudeFt);
       r.cabinAltFt = this.cabin.cabinAltFt;

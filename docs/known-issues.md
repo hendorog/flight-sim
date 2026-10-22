@@ -16,6 +16,8 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Robinson R44 Raven II | [12 entries](../src/aircraft/r44/KNOWN_ISSUES.md) |
 | Schweizer 269C-1 / 300CB | [12 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
 | MD Helicopters MD 500E (in development) | [14 entries](../src/aircraft/md500/KNOWN_ISSUES.md) |
+| MBB Bo 105 CB-4 (in development, `available: false`) | [45 entries](../src/aircraft/bo105/KNOWN_ISSUES.md) (22 from the flight model, 23 handed over) |
+| Lockheed AH-56A Cheyenne (in development, `available: false`) | [60 entries](../src/aircraft/ah56/KNOWN_ISSUES.md) (15 from the stage-2 flight model, 33 handed over from TW, AU, PN, AX, AC and AH, 5 integration dispositions, 7 from the pilot-review round, and the final fix round section (3 items resolved, 6 new KNOWN GAP rows recorded); see [ah56-integration.md](ah56-integration.md) section 11) |
 
 Kinds: **defect** = demonstrated wrong behavior; **unvalidated** = evidence or acceptance still missing;
 **estimate** = a parameter without a measured/published value; **missing feature** = behavior not implemented.
@@ -84,6 +86,42 @@ Close with: measured structural, collision, friction and oleo/damper data; coupl
 Flight School is C172S-only; R44/269 have no demonstrations, and helicopter audio is synthesized without measured type-specific recordings/spectra.
 Evidence: [aircraft scope](aircraft.md), [R44 definition](../src/aircraft/r44/index.ts), [269 exterior/audio limits](s269-exterior.md), [R22 definition](../src/aircraft/r22/index.ts).
 Close with: validated type-specific training/demo content and acoustic references for each helicopter.
+
+### Hingeless rotor core (Bo 105, AH-56A) — **estimate / missing feature**
+
+The hingeless hub is an equivalent hinge plus a spring inside the existing harmonic flap solver
+([model and limits](rotor-hingeless-model.md), section 10). Not modelled: the lead-lag degree of freedom (no air or
+ground resonance, no lag loads), blade bending beyond the equivalent hinge and blade torsion, the in-plane side force
+from the first-harmonic pitch until the final fix round (now applied), Pitt-Peters feedback from the pitch moment into the mean
+inflow and wake-curvature terms.
+Periodic flap damping reaches the flap harmonics only through the cone (about -2 % hub moment per cyclic at mu 0.35,
+against the plan's 3-9 %; on the AH-56A +1.6 % at mu 0.5 against the plan's 8-15 %, H9). Two AR-280 rows miss at
+their band edges on the Bo 105: Zw -0.68 1/s (edge -0.70) and Lq/|Lp| 0.19 (band 0.25-0.50).
+Evidence: `tests/rotorcraft/hingelessAr280.test.ts` and `bo105Derivatives.test.ts` (it.fails rows).
+On the Bo 105 the one-way harmonic inflow raises the hover roll damping (Lp -8.8 -> -12.1 1/s) and doubles Mu and Lv,
+so the hover diverges in 2.5 s instead of 17 s and a gentle pilot loses it (Bo 105 KNOWN_ISSUES 17); the DLR / CERT hover
+identification (ERF 1995 VII-7, P) puts the real Bo 105 at 1.7-7 s, so this is kept as the sourced behaviour. The AEO climb
+turns 83 % of the excess shaft power into climb against the 60-72 % the Bo 105 sources imply (Bo 105 KNOWN_ISSUES 2).
+Close with: a lag degree of freedom, a manoeuvre-wake inflow model (the Bo 105 hover identification is now in the sources:
+ERF 1995 VII-7).
+
+### Hingeless rotor in-plane force at zero airspeed (AH-56A, Bo 105) — **resolved in the final fix round**
+
+`Rotorcraft.compute` applied the hingeless rotor's in-plane force as a scalar along the hub's air velocity (the teetering
+expression) and dropped its side component, so a zero-airspeed trim met the full hover value (about 330 N on the AH-56A)
+along the first step's 1e-7 m/s of drift. `bladeElements` now returns both in-plane components and `Rotorcraft` turns them
+back in the BEM's own wind frame (`inPlaneForce`; checked against a direct per-element sum in the articulated frame for
+both rotation senses). The AH-56A's hands-off hover now holds (AMCS −5.35 → −5.49° roll, 0.4 kt; ICS −5.25 → −5.13°,
+0.3 kt in 20 s calm; was 14.3 / 6.6 kt); the Bo 105's hover phugoid moves from doubling 2.3 s to 2.5 s (still inside the
+ERF 1995 flight-identified band). The side component also acts in forward flight, which moved the AH-56A ICS lateral trim
+and two sense rows (C17, C23 frozen-controls roll; [ah56-integration.md](ah56-integration.md) section 11).
+
+### Multi-engine resume: one-frame gauge glitch — **defect (cosmetic)**
+
+After a resume the published N1 and TOT of a multi-engine type stay at the reset values until the first physics step
+(T11 probe: 93.1 against 91.8 % N1 for one frame). `SimPhysics.ts` republishes rotor rpm from the snapshot but not
+`engines[i].ng` / `itt`.
+Close with: republish them from the snapshot in the restore path.
 
 ## Test evidence
 

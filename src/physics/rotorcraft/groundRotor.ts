@@ -4,6 +4,7 @@ import type { BodyState } from '../interfaces';
 import { bladeBendShape, bladeConing } from './coning';
 import { cyclicAngles, type RotorcraftDefinition, type RotorcraftState } from './definition';
 import { hubPointToBody } from './shaftFrame';
+import { swashplateCyclic } from './swashplate';
 
 /** Implicit midpoint oscillator with a Coulomb impulse (including exact stiction).
  * Friction opposes midpoint velocity; stops remove outward kinetic energy. No speed floor. */
@@ -42,7 +43,8 @@ export function stepTeeter(angle: number, rate: number, inertia: number, stiffne
  * The ground envelope avoids introducing a new airborne rotor model. */
 export function advanceGroundRotor(d: RotorcraftDefinition, s: RotorcraftState, b: BodyState,
   c: ControlInputs, wind: Vec3, density: number, normalAcceleration: number, dt: number): void {
-  if (!d.groundRotor || d.hubModel?.kind === 'articulated' || dt <= 0) return;
+  // A hingeless hub (RC) has no teeter: the 2-blade sailing model never runs on it (its pose is publishBlades').
+  if (!d.groundRotor || d.hubModel?.kind === 'articulated' || d.hubModel?.kind === 'hingeless' || dt <= 0) return;
   const p = d.groundRotor, blade = p.blade, rotor = d.main;
   const fraction = s.omega / (d.referenceRpm * Math.PI / 30);
   if (fraction >= 0.5) { delete s.contactRotor; return; }
@@ -105,9 +107,12 @@ export function bladePath(d: RotorcraftDefinition, s: RotorcraftState, c: Contro
     const blend = low ? clamp((0.5 - fraction) / 0.2, 0, 1) : 0;
     const teeter = harmonic * (1 - blend) + (low ? s.contactRotor!.angle * (i % 2 === 0 ? 1 : -1) : 0) * blend;
     const flap = cone.angle + teeter;
+    // Hingeless hub (RC): the one swashplate law, with the control phase (swashplate.ts); the legacy text otherwise.
+    const swash = d.hubModel?.kind === 'hingeless' ? swashplateCyclic(d, c, s) : undefined;
     const pitch = r.minPitch + clamp(c.collective ?? 0, 0, 1) * (r.maxPitch - r.minPitch) +
-      (d.cyclicLimits ? d.rotation * (cyclicAngles(d, c).right * ex + cyclicAngles(d, c).aft * ey)
-        : d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey));
+      (swash ? d.rotation * (swash.right * ex + swash.aft * ey)
+        : d.cyclicLimits ? d.rotation * (cyclicAngles(d, c).right * ex + cyclicAngles(d, c).aft * ey)
+          : d.rotation * d.cyclicLimit * (c.aileron * ex + c.elevator * ey));
     for (let j = 0; j <= 32; j++) {
       const radius = r.rootCutout + (r.radius - r.rootCutout) * j / 32;
       const bend = cone.tipBend * bladeBendShape((radius - r.rootCutout) / (r.radius - r.rootCutout));

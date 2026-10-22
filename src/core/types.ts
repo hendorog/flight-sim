@@ -11,7 +11,7 @@
 import type { Quat, Vec3 } from './math';
 
 // ---------------------------------------------------------------------------------------------- identity
-export const ROTORCRAFT_IDS = ['r22', 'r44', 's269', 'md500'] as const;
+export const ROTORCRAFT_IDS = ['r22', 'r44', 's269', 'md500', 'bo105', 'ah56'] as const;
 export type RotorcraftId = typeof ROTORCRAFT_IDS[number];
 export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'c208' | 'pc12' | RotorcraftId;
 export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', 'pc12', ...ROTORCRAFT_IDS];
@@ -72,6 +72,13 @@ export interface ControlInputs {
   reverse?: number;
   /** Turboshaft N2 governor beep switch on the collective, momentary, [-1, 1] (+ = INCREASE). Absent = 0. Never persisted. */
   n2Beep?: number;
+  /** Twin turboshaft ENGINE TRIM left/right (Bo 105), momentary, [-1, 1], + = more torque on engine 2. Absent = 0.
+   *  Zeroed on resume like n2Beep. */
+  n2BeepSplit?: number;
+  /** Pusher propeller twist grip (AH-56A), [0, 1] -> the blade-angle table of RotorcraftDefinition.pusher. Persisted. */
+  propLever?: number;
+  /** Tail-wheel lock (AH-56A), true = locked. Persisted. Read by the gear through gearIn.controls. */
+  tailWheelLock?: boolean;
   /** Stick-pusher interrupt (PUSHER INTR / the trim interrupt switch on the yoke), held. Absent = false. */
   pusherInterrupt?: boolean;
   /**
@@ -92,6 +99,25 @@ export interface ControlInputs {
    * autoflight flies). Absent = false.
    */
   feetOffRudder?: boolean;
+  /**
+   * Optional: the pilot is working the pedals (a pedal key held, or a hardware pedal axis in use). Set by the input
+   * module on a type with a STAB ASSIST (InputProfile.stabilityAssist), whose heading hold waits for it to clear; the
+   * flight model ignores it. Absent = false (the assist then goes by the pedal's movement alone).
+   */
+  pedalWorked?: boolean;
+  /**
+   * Optional: the keyboard holds the cyclic (no mouse yoke, no hardware stick axis) / the pedals (no hardware pedal
+   * axis). Set by the input module on a type with a STAB ASSIST, whose trim follow-up moves only keyboard controls
+   * (StabilityAssistTuning.followUp); the flight model ignores them. Absent = false (no follow-up).
+   */
+  keyboardCyclic?: boolean;
+  keyboardPedals?: boolean;
+  /**
+   * Optional: how far the STAB ASSIST's trim follow-up has moved the keyboard pedals since the input module last took it
+   * (axis units). The assist adds to it as it moves `rudder`; the input module moves its pedal centre (what 5 returns to)
+   * by it and zeroes it. Absent = 0.
+   */
+  pedalFollowUp?: number;
   /** [0, 1]. ALL ENGINES. On a FADEC type this is the power lever (load demand). */
   throttle: number;
   /** [0, 1]. 1 = full rich, 0 = idle cut-off. ALL ENGINES. Ignored by FADEC types (kept at 1). */
@@ -589,6 +615,11 @@ export interface InitialConditions {
   feathered?: boolean[];
   /** Default: true on the ground, on fixed gear, or when `flaps` > 0; else false (gear up). */
   gearDown?: boolean;
+  /** Control-gyro rotorcraft (AH-56A): the configuration flown, URL `config=amcs|ics`. Absent: the definition's
+   *  default. A restored snapshot's RotorcraftState.controlGyro.mode wins over it. */
+  rotorcraftConfig?: 'amcs' | 'ics';
+  /** Demo/test hook (URL `halfp=1`): arm the scripted half-P hop on an ICS flight. Absent = false. */
+  forceHalfPHop?: boolean;
 }
 
 export interface FlightModel {

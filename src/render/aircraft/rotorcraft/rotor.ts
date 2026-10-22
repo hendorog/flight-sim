@@ -16,7 +16,9 @@ import { BladeTrail, bladeShadowMaterial } from '../bladeTrail';
 import { bladeBendShape, bladeConing, type BladeConingDefinition } from '../../../physics/rotorcraft/coning';
 
 export interface RotorSpec { radius: number; root: number; chord: readonly [number, number]; twist: number; tail?: boolean; paint?: RotorBladePaint;
-  coning?: BladeConingDefinition; blades?: number; rotation?: 1 | -1; hubType?: 'teetering' | 'articulated' }
+  coning?: BladeConingDefinition; blades?: number; rotation?: 1 | -1; hubType?: 'teetering' | 'articulated' | 'hingeless';
+  /** Scale on the blur disc's alpha (after the shared 0.25 cap); absent = 1, the legacy disc. */
+  blurAlpha?: number }
 
 const smooth = THREE.MathUtils.smoothstep;
 
@@ -145,7 +147,7 @@ export class TeeteringRotor {
     // Twin cheeks of the teetering yoke, coning bolts, grip barrels and elastomeric pitch-change boots.
     // Proportions estimated from R22 MM chapter 26 and preflight photographs; no fastener CAD is claimed.
     const grey = this.hardwareMat;
-    if (d.hubType === 'articulated') {
+    if (d.hubType === 'articulated' || d.hubType === 'hingeless') {
       // Deliberately simple hub with one arm per blade, pending the aircraft exterior worker.
       head.add(grey, box([0, 0, 0], [0.16, 0.16, 0.12], 0.03));
       for (let i = 0; i < (d.blades ?? 3); i++) {
@@ -227,7 +229,7 @@ export class TeeteringRotor {
       const tip = smooth(r, d.radius - (d.tail ? 0.08 : 0.10), d.radius - 0.01);
       const rim = smooth(d.radius - r, 0, 0.022);
       const v = 70 + 135 * tip;
-      data.set([v, v, v, 255 * Math.min(0.25, 0.035 + sigma + tip * 0.04) * rim], i * 4);
+      data.set([v, v, v, 255 * Math.min(0.25, 0.035 + sigma + tip * 0.04) * rim * (d.blurAlpha ?? 1)], i * 4);
     }
     this.texture = new THREE.DataTexture(data, 256, 1); this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.minFilter = this.texture.magFilter = THREE.LinearFilter; this.texture.needsUpdate = true;

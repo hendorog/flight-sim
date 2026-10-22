@@ -62,7 +62,7 @@ export const SYNTH_PARAMS = [
 
 /**
  * Shared parameters appended AFTER the blocks of the further engines (the end of the parameter block), for the
- * voices added with the turbine types (PC-12, MD 500E). Each is 0 = off: a sound profile without the member that
+ * voices added with the turbine types (PC-12, MD 500E, Bo 105, AH-56A). Each is 0 = off: a sound profile without the member that
  * uses it never reads it, and a host that predates it (tests/golden: the frozen Cessna 172S rigs) sends it as 0.
  */
 export const EXTRA_PARAMS = [
@@ -92,6 +92,42 @@ export const EXTRA_PARAMS = [
   'hail',
   /** Largest hailstone, mm (the impacts' pitch and weight; read only while 'hail' is above 0). */
   'hailSize',
+  // ---- Hingeless / rigid-rotor programme (Bo 105 CB-4, AH-56A; plan revision 2, sections 6.5 and 7.7). Each 0 unless
+  // the profile has the member that uses it.
+  /** Turbine igniters of engine 2 firing 0..1 (a twin turboshaft's second start; 'ignitor' is engine 1's). */
+  'ignitor2',
+  /** Main rotor's ADVANCING-tip Mach number (Omega R + V) / a: its high-speed impulsive noise (PropSoundProfile.impulsive). */
+  'advTipMach',
+  /** Pusher propeller on the rotor shaft (AudioProfile.pusher): shaft speed, rev/min (0: none, or not installed). */
+  'pusherRpm',
+  /** Pusher loading 0..~2: |thrust| relative to AudioProfile.pusher.cruiseThrustN. */
+  'pusherLoad',
+  /** Pusher helical blade-tip Mach number. */
+  'pusherTipMach',
+  /** Pusher blade angle above its zero-thrust angle, as a fraction of the way to its top-speed angle 0..~1.5 (blade profile drag). */
+  'pusherPitch',
+  /** Pusher reverse roar 0..~1.5: the blades below their zero-thrust angle, the disc driven against its own wake. */
+  'pusherReverse',
+  /** Twin warning unit (RotorcraftState.twinTurboshaft): NR LOW intermittent tone 0/1. */
+  'nrLowTone',
+  /** NR HIGH steady tone 0/1 (the two-stage unit's top stage). */
+  'nrHighTone',
+  /** N1 SPLIT intermittent tone 0/1. */
+  'n1SplitTone',
+  /** Rotor n-per-rev vibration hum in the cabin 0..~1.5 (AudioProfile.vibration). */
+  'vibration',
+  /** Its frequency, Hz (perRev x the rotor's rev/s). */
+  'vibrationHz',
+  /** Half-P hop rumble 0..~2 (RotorcraftState.events.halfPHop.amplitude; AudioProfile.halfP). */
+  'halfP',
+  /** Its beat, Hz (perRev x the rotor's rev/s: 2.05 Hz at 246 rpm). */
+  'halfPHz',
+  /**
+   * The hop's forcing phase as a fraction of its cycle 0..1 (RotorcraftState.events.halfPHop.phase / 2 pi, wrapped):
+   * the worklet locks the thump to it on every block it receives, so the sound stays on the physics' roll and plunge.
+   * Read unsmoothed (a wrapping phase cannot be smoothed).
+   */
+  'halfPPhase',
 ] as const;
 
 export type SynthParamName = (typeof SYNTH_PARAMS)[number] | (typeof EXTRA_PARAMS)[number];

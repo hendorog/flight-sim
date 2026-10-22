@@ -316,7 +316,7 @@ export class SingleGauge extends RoundGauge {
 }
 
 /** A pointer that carries its engine's letter in a disc on the shaft, as the needles of a twin's gauges do. */
-function letteredPointer(large: boolean, letter: string): NeedleSprite {
+export function letteredPointer(large: boolean, letter: string): NeedleSprite {
   const length = large ? 64 : 44;
   return new NeedleSprite(length + 4, (g) => {
     paintPointer(g, length, large ? 5.5 : 4, large ? 14 : 9);
@@ -356,10 +356,11 @@ export class TwinNeedleGauge extends RoundGauge {
     private readonly left: (r: InstrumentReadings) => number,
     private readonly right: (r: InstrumentReadings) => number,
     size: 'large' | 'small' = 'large',
+    letters: readonly [string, string] = ['L', 'R'],
   ) {
     super(id, cx, cy, { ...(size === 'large' ? LARGE : SMALL), aperture, values: 2, seed });
     this.large = size === 'large';
-    this.needles = [letteredPointer(this.large, 'L'), letteredPointer(this.large, 'R')];
+    this.needles = [letteredPointer(this.large, letters[0]), letteredPointer(this.large, letters[1])];
   }
 
   /** Needle angle of a value, rad clockwise from 12 o'clock. */

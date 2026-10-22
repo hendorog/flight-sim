@@ -103,9 +103,9 @@ export function stepKeyAxis(value: number, direction: number, ias: number, dt: n
 /** Recentring rate of the keyboard yoke (Numpad 5 / 5), travel per second: centre from full travel in 0.25 s. */
 export const CENTRE_RATE = 4;
 
-/** Move a keyboard deflection toward zero at the recentring rate. */
-export function stepCentre(value: number, dt: number): number {
-  const step = CENTRE_RATE * dt;
+/** Move a keyboard deflection toward zero at the recentring rate (`rate`: a type's InputProfile.centreRate). */
+export function stepCentre(value: number, dt: number, rate: number = CENTRE_RATE): number {
+  const step = rate * dt;
   return Math.abs(value) <= step ? 0 : value - Math.sign(value) * step;
 }
 

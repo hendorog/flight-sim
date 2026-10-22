@@ -15,7 +15,7 @@
 // selected with 8 / 9 / 0; engineControls.ts has the rules for the levers of two engines. In the air the keys
 // that can shut an engine down want ONE engine selected (guard()).
 
-import { clamp } from '../core/math';
+import { clamp, interp1, KT } from '../core/math';
 import type { CameraMode, SimContext, Subsystem } from '../core/context';
 import { PROP_FEATHER_GATE, clearEngineControl, cloneControls, copyControls, engineControl, setEngineControl } from '../core/types';
 import type { AircraftState, ControlInputs, EngineControlKey, FuelSelector, MagnetoPosition } from '../core/types';
@@ -55,6 +55,7 @@ import {
   nextFlapDetent,
   stepBrake,
   stepCentre,
+  CENTRE_RATE,
   stepKeyAxis,
   wrapDegrees,
   type KeyAxisTuning,
@@ -117,6 +118,18 @@ export interface InputAssists {
    * yoke owns the ailerons. Default true.
    */
   rollTrim: boolean;
+  /**
+   * Laptop assist for a pusher grip (InputProfile.propLever with a `schedule`): the grip follows the trim schedule
+   * against indicated airspeed until the pilot touches it (a propeller key or the snap key) after a reset. Default
+   * false (plan revision 2 section 0 item 7). Absent: false.
+   */
+  propSchedule?: boolean;
+  /**
+   * STAB ASSIST, the hover attitude-hold sim aid of a type whose profile has one (InputProfile.stabilityAssist; the
+   * physics applies it, src/sim/rotorcraft/stabilityAssist.ts). Starts at the profile's default; Shift+A toggles it.
+   * Absent on every other type.
+   */
+  stabilityAssist?: boolean;
 }
 
 /** What the UI needs to draw a small yoke-position indicator. Values are the commanded controls. */
@@ -142,6 +155,10 @@ export interface YokeIndicator {
    * centre mark (so switching it on never slams the yoke to wherever the pointer happened to be).
    */
   mouseArmed?: boolean;
+  /** STAB ASSIST switched on (true) or off (false) on a type that has it; absent on the others. */
+  stabilityAssist?: boolean;
+  /** The keyboard's centre (what 5 returns to) on a type with "keyboard trim here" (InputProfile.setTrimHere). */
+  keyboardCentre?: { aileron: number; elevator: number };
 }
 
 const CAMERA_CYCLE: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
@@ -173,6 +190,14 @@ export const CONDITION_CUTOFF_HOLD = 1;
 /** A condition lever within this of a detent is on it (a hardware axis left it a hair off). */
 const DETENT_EPS = 0.005;
 const PROPELLER_RATE = 0.35;
+/**
+ * A pusher twist grip (InputProfile.propLever) held on the propeller keys, travel per second: about 4 s from full
+ * reverse to full forward pitch, as a hand turns a grip. AGENT choice.
+ */
+export const PROP_GRIP_RATE = 0.25;
+/** Mouse yoke deadzone on a re-centring cyclic (InputProfile.centringCyclic) whose profile sets none: about 0.17 in of
+ *  the AH-56A's 5.8 in stick travel, so a resting hand holds attitude on a rate-command gyro. AGENT choice. */
+export const CENTRING_MOUSE_DEADZONE = 0.03;
 const TRIM_RATE = 0.25;
 /** Knob rates at full speed (after a second of holding), per second; a tap turns one detent. */
 const BUG_RATE = 60; // degrees
@@ -405,6 +430,7 @@ export class InputSystem implements Subsystem {
     this.steering = new GroundSteeringAssist(assists.steering);
     this.rollTrim = new RollTrimAssist(assists.rollTrim);
     this.rotation = new RotationGuard(assists.rotation);
+    if (this.profile.stabilityAssist) this.assists.stabilityAssist = this.profile.stabilityAssist.default;
   }
 
   /** Which engine(s) the engine keys act on (0 = left). One engine: always 'all'. After every reset: 'all'. */
@@ -463,6 +489,7 @@ export class InputSystem implements Subsystem {
     this.rollTrim.reset();
     this.rotation.reset();
     this.selection = 'all';
+    this.gripTouched = false;
     this.gateLifted = this.forwardToGate = false;
     // An armed condition-lever cut-off belongs to the previous flight: holding the key through the reset must not stop
     // the new flight's engine.
@@ -479,7 +506,7 @@ export class InputSystem implements Subsystem {
 
   /** Press a key (KeyboardEvent.code) as if it came from the keyboard; returns the bound action or null. */
   keyDown(code: string, shift = false): InputAction | null {
-    const action = actionForKey(code, shift);
+    const action = actionForKey(code, shift, this.profile);
     if (!demoViewKey(code, shift)) this.takeControl();
     if (!action || this.absent.has(action) || this.keysDown.has(code)) return action;
     this.keysDown.set(code, action);
@@ -576,7 +603,7 @@ export class InputSystem implements Subsystem {
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.altKey || e.metaKey || isTextEntry(e.target)) return;
     if (!e.repeat && !demoViewKey(e.code, e.shiftKey)) this.takeControl();
-    const action = actionForKey(e.code, e.shiftKey);
+    const action = actionForKey(e.code, e.shiftKey, this.profile);
     if (!action || this.absent.has(action)) return;
     e.preventDefault();
     if (e.repeat) return;
@@ -651,7 +678,8 @@ export class InputSystem implements Subsystem {
     if ((lx !== 0 || ly !== 0) && wallDt > 0) this.view?.lookBy?.(lx * LOOK_RATE * wallDt, ly * LOOK_RATE * wallDt);
 
     const yokeKeys = ['pitchUp', 'pitchDown', 'rollLeft', 'rollRight', 'rudderLeft', 'rudderRight'] as const;
-    if (yokeKeys.some((a) => this.held.has(a)) || (this.profile.rotorcraft && (this.held.has('flapsUp') || this.held.has('flapsDown'))) || this.hardwareTakeover() || this.mouseTakingOver) this.lastPilotInput = now;
+    if (yokeKeys.some((a) => this.held.has(a)) || (this.profile.rotorcraft && (this.held.has('flapsUp') || this.held.has('flapsDown') ||
+        this.held.has('collectiveFastDown') || this.held.has('collectiveFastUp'))) || this.hardwareTakeover() || this.mouseTakingOver) this.lastPilotInput = now;
 
     if (heldControls && !this.pilotFlying()) {
       for (const k of ['elevator', 'aileron', 'rudder', 'collective'] as const) ctx.controls[k] = heldControls[k]!;
@@ -714,6 +742,19 @@ export class InputSystem implements Subsystem {
     return act.isActive(this.time) ? best : null;
   }
 
+  /** The pilot has moved the pusher grip since the last reset (the propSchedule assist lets go of it then). */
+  private gripTouched = false;
+
+  /** The keyboard's re-centring rate (5 / Numpad 5 and a centring cyclic), travel per second. */
+  private get centreRate(): number {
+    return this.profile.centreRate ?? CENTRE_RATE;
+  }
+
+  /** The mouse yoke's tuning: the profile's, or on a re-centring cyclic without one a small deadzone. */
+  private get mouseTuning(): InputProfile['mouseYoke'] {
+    return this.profile.mouseYoke ?? (this.profile.centringCyclic ? { expo: 0.3, deadzone: CENTRING_MOUSE_DEADZONE } : undefined);
+  }
+
   private updateSpringTrim(s: AircraftState): void {
     const n = this.neutral;
     const spring = s.rotorcraft?.springTrim;
@@ -740,9 +781,19 @@ export class InputSystem implements Subsystem {
     this.updateSpringTrim(s);
     if (this.profile.rotorcraft) {
       const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
+      // The hand-rate pair (InputProfile.collectiveFastRate: Shift+F5 / Shift+F6), travel per second; 0 on every other type.
+      const fast = this.profile.collectiveFastRate;
+      const fastDown = !!fast && this.held.has('collectiveFastDown'), fastUp = !!fast && this.held.has('collectiveFastUp');
+      const fastChange = fast ? (fastUp ? fast.up : 0) - (fastDown ? fast.down : 0) : 0;
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
-      if (this.collectiveOwner.update(change !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
-      else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
+      if (this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && hardware) c.collective = hardware.value;
+      else if (fastChange !== 0) {
+        const was = c.collective ?? 0;
+        let v = was + change * (this.profile.collectiveRate ?? 0.15) * dt + fastChange * dt;
+        // The lowering key's entry stop (Bo 105: the autorotation entry position): never below it, nor below where it was.
+        if (fastDown && !fastUp && fast!.downStop !== undefined) v = Math.max(v, Math.min(was, fast!.downStop));
+        c.collective = clamp(v, 0, 1);
+      } else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
     }
 
     // Mouse yoke: armed until the pointer passes through the centre, then in control.
@@ -751,13 +802,13 @@ export class InputSystem implements Subsystem {
     if (this.mouseYoke) {
       if (this.mouseArmed && this.mouseMoves > this.mouseMovesAtArm && mouseYokeNearCentre(this.mouseNx, this.mouseNy)) {
         this.holdYoke();
-        this.mousePickup = mouseYokeDeflection(this.mouseNx, this.mouseNy, this.profile.mouseYoke);
+        this.mousePickup = mouseYokeDeflection(this.mouseNx, this.mouseNy, this.mouseTuning);
         this.mouseBase = { aileron: c.aileron, elevator: c.elevator };
         this.mouseArmed = false;
         this.overlay?.pickedUp();
       }
       if (!this.mouseArmed) {
-        const raw = mouseYokeDeflection(this.mouseNx, this.mouseNy, this.profile.mouseYoke);
+        const raw = mouseYokeDeflection(this.mouseNx, this.mouseNy, this.mouseTuning);
         // The keyboard retains its pickup position. Add only the mouse's displacement from it.
         mouse = {
           aileron: mouseAxisFromPickup(raw.aileron, this.mousePickup.aileron, this.mouseBase.aileron) - this.mouseBase.aileron,
@@ -775,6 +826,14 @@ export class InputSystem implements Subsystem {
     const kbEle = hwEle === null && mouse === null;
     const kbRud = hwRud === null;
     this.rudderHardware = !kbRud;
+    // The STAB ASSIST's trim follow-up moved the keyboard pedals (ControlInputs.pedalFollowUp): the pedal centre, what 5
+    // returns to, moves with them, as the cyclic's centre moves with the spring-trim anchor it walks.
+    const pedalFollowUp = c.pedalFollowUp ?? 0;
+    if (pedalFollowUp !== 0) {
+      n.rudder = clamp(n.rudder + pedalFollowUp, -1, 1);
+      if (this.written.rudder !== null) this.written.rudder += pedalFollowUp;
+      c.pedalFollowUp = 0;
+    }
 
     // Someone else (the autopilot) moved a control the keyboard alone was holding: the keyboard yoke follows
     // it, as the pilot's hand resting on a yoke the autopilot moves, so nothing jumps when it disconnects.
@@ -795,8 +854,14 @@ export class InputSystem implements Subsystem {
       this.centring.rudder = false;
     }
 
-    // Keys: move the held position; with no key down it stays (or glides to centre after Numpad 5 / 5).
+    // Keys: move the held position; with no key down it stays (or glides to centre after Numpad 5 / 5). A re-centring
+    // cyclic (InputProfile.centringCyclic: a rate-command control gyro) glides back to the spring-trim anchor at the
+    // Numpad 5 rate as soon as no cyclic key is held.
     const roll = this.dir('rollLeft', 'rollRight');
+    if (this.profile.centringCyclic) {
+      if (roll === 0 && kbAil && this.kbAileron !== 0) this.centring.aileron = true;
+      if (this.dir('pitchDown', 'pitchUp') === 0 && kbEle && this.kbElevator !== 0) this.centring.elevator = true;
+    }
     if (roll !== 0) {
       if (this.ailCentred) {
         // The pilot's hand takes the yoke from the roll trim without a bump.
@@ -807,7 +872,7 @@ export class InputSystem implements Subsystem {
       this.centring.aileron = false;
       this.kbAileron = stepKeyAxis(this.kbAileron, roll, ias, dt, tuning.axes.aileron, this.heldFor(roll > 0 ? 'rollRight' : 'rollLeft'));
     } else if (this.centring.aileron) {
-      this.kbAileron = stepCentre(this.kbAileron, dt);
+      this.kbAileron = stepCentre(this.kbAileron, dt, this.centreRate);
       if (this.kbAileron === 0) {
         this.centring.aileron = false;
         this.ailCentred = true;
@@ -822,7 +887,7 @@ export class InputSystem implements Subsystem {
       const elevator = onMains && !this.profile.rotorcraft ? this.groundElevator : tuning.axes.elevator;
       this.kbElevator = stepKeyAxis(this.kbElevator, pitch, ias, dt, elevator, this.heldFor(pitch > 0 ? 'pitchUp' : 'pitchDown'));
     } else if (this.centring.elevator) {
-      this.kbElevator = stepCentre(this.kbElevator, dt);
+      this.kbElevator = stepCentre(this.kbElevator, dt, this.centreRate);
       if (this.kbElevator === 0) this.centring.elevator = false;
     }
     if (!this.profile.rotorcraft) this.kbElevator = this.rotation.step(this.kbElevator, kbElevatorBefore, s.angularVelocity.y, s.pitch, onMains, dt, this.held.has('pitchUp'));
@@ -844,7 +909,7 @@ export class InputSystem implements Subsystem {
       this.centring.rudder = false;
       this.kbRudder = stepKeyAxis(this.kbRudder, yaw, ias, dt, tuning.axes.rudder, this.heldFor(yaw > 0 ? 'rudderRight' : 'rudderLeft'));
     } else if (this.centring.rudder) {
-      this.kbRudder = stepCentre(this.kbRudder, dt);
+      this.kbRudder = stepCentre(this.kbRudder, dt, this.centreRate);
       if (this.kbRudder === 0) {
         this.centring.rudder = false;
         this.rudCentred = true;
@@ -883,6 +948,9 @@ export class InputSystem implements Subsystem {
     c.aileron = mixCentring(n.aileron + this.kbAileron + rollBias, mouse?.aileron ?? null, hwAil);
     c.elevator = mixCentring(n.elevator + this.kbElevator, mouse?.elevator ?? null, hwEle);
     c.rudder = mixCentring(n.rudder + this.kbRudder + assist, null, hwRud);
+    // The STAB ASSIST's heading hold waits while the pilot works the pedals (a pedal key held, a hardware pedal in use);
+    // its trim follow-up moves only what the keyboard holds.
+    if (this.profile.stabilityAssist) { c.pedalWorked = yaw !== 0 || hwRud !== null; c.keyboardCyclic = kbAil && kbEle; c.keyboardPedals = kbRud; }
     this.written.aileron = kbAil ? c.aileron : null;
     this.written.elevator = kbEle ? c.elevator : null;
     this.written.rudder = kbRud ? c.rudder : null;
@@ -897,6 +965,11 @@ export class InputSystem implements Subsystem {
     i.keyboardOffCentre =
       (kbAil && Math.abs(this.kbAileron) > OFF_CENTRE) || (kbEle && Math.abs(this.kbElevator) > OFF_CENTRE) || (kbRud && Math.abs(this.kbRudder) > OFF_CENTRE);
     i.keyboardElevator = kbEle ? this.kbElevator : 0;
+    if (this.profile.stabilityAssist) i.stabilityAssist = !!this.assists.stabilityAssist;
+    if (this.profile.setTrimHere) {
+      const k = (i.keyboardCentre ??= { aileron: 0, elevator: 0 });
+      k.aileron = n.aileron; k.elevator = n.elevator;
+    }
   }
 
   /** The control differs from what the keyboard wrote to it last frame (another writer moved it). */
@@ -1101,8 +1174,17 @@ export class InputSystem implements Subsystem {
       this.leverHeld(c, 'mixture', kbMixture !== 0 && dt > 0);
     }
 
-    // The collective's governor beep switch (turboshaft types) on the propeller keys: held, not a lever.
-    if (this.profile.n2Beep) c.n2Beep = this.dir('propDecrease', 'propIncrease');
+    // The collective's governor beep switch (turboshaft types) on the propeller keys: held, not a lever. A pusher grip
+    // (propLever) takes the propeller keys and the beep moves to the ENGINE TRIM pair; ENGINE TRIM left/right of a twin
+    // (n2BeepSplit) is held on that pair.
+    const propGrip = this.profile.propLever;
+    if (this.profile.n2Beep) c.n2Beep = propGrip ? this.dir('engineTrimLeft', 'engineTrimRight') : this.dir('propDecrease', 'propIncrease');
+    if (this.profile.n2BeepSplit) c.n2BeepSplit = this.dir('engineTrimLeft', 'engineTrimRight');
+    if (propGrip) {
+      const grip = this.dir('propDecrease', 'propIncrease');
+      if (grip !== 0) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? propGrip.detent) + grip * PROP_GRIP_RATE * dt, 0, 1); }
+      else if (this.assists.propSchedule && propGrip.schedule && !this.gripTouched) c.propLever = clamp(interp1(propGrip.schedule.kias, propGrip.schedule.lever, s.ias / KT), 0, 1);
+    }
     if (this.profile.has.propeller) {
       // Propeller lever: down to the feather gate and no further (Shift+F feathers); up from feather starts at the gate.
       const kbPropeller = rate('propIncrease', PROPELLER_RATE) - rate('propDecrease', PROPELLER_RATE);
@@ -1306,6 +1388,8 @@ export class InputSystem implements Subsystem {
       }
       case 'gripCutoff': {
         const target = this.target('throttle', engine);
+        // Twin power levers in the air: OFF wants ONE lever selected (the twin guard, as for the mixture keys).
+        if (this.profile.engineLever === 'overheadPowerLevers' && this.guard(ctx.state, 'throttle', engine)) break;
         if (!this.ownLever(c, 'throttle', target)) this.throttleOwner.owner = 'keyboard';
         writeEngineControl(c, target, 'throttle', 0);
         break;
@@ -1332,10 +1416,20 @@ export class InputSystem implements Subsystem {
         break;
       }
       case 'propDecrease':
-        this.moveLever(c, 'propeller', -LEVER_TAP, this.target('propeller', engine), PROP_FEATHER_GATE, true);
+        if (this.profile.propLever) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) - LEVER_TAP, 0, 1); }
+        else this.moveLever(c, 'propeller', -LEVER_TAP, this.target('propeller', engine), PROP_FEATHER_GATE, true);
         break;
       case 'propIncrease':
-        this.moveLever(c, 'propeller', LEVER_TAP, this.target('propeller', engine), PROP_FEATHER_GATE, true);
+        if (this.profile.propLever) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) + LEVER_TAP, 0, 1); }
+        else this.moveLever(c, 'propeller', LEVER_TAP, this.target('propeller', engine), PROP_FEATHER_GATE, true);
+        break;
+      case 'propLeverSnap':
+        this.gripTouched = true;
+        c.propLever = nextSnap(c.propLever ?? this.profile.propLever!.detent, this.profile.propLever!.snaps);
+        break;
+      case 'tailWheelLock':
+        c.tailWheelLock = !c.tailWheelLock;
+        this.shell.toast?.(c.tailWheelLock ? 'Tail wheel locked' : 'Tail wheel unlocked (castering)');
         break;
       case 'propFeather':
         // Through the gate to feather. Not a toggle: the way back is the propeller lever forward.
@@ -1498,6 +1592,12 @@ export class InputSystem implements Subsystem {
       case 'mouseYoke':
         this.setMouseYoke(!this.mouseYoke);
         break;
+      case 'stabilityAssist':
+        this.assists.stabilityAssist = !this.assists.stabilityAssist;
+        this.shell.toast?.(this.assists.stabilityAssist
+          ? 'STAB ASSIST on: holds the attitude at hover and low speed (a sim aid: the aircraft has no SAS). Shift+A for the raw aircraft'
+          : 'STAB ASSIST off: the raw aircraft (unstable in the hover, as the real one). Shift+A to switch it back on');
+        break;
       case 'panelToggle':
         if (ctx.cameraMode === 'cockpit' && ctx.panelView && ctx.panelView !== '3d') {
           this.lastPanelSection = ctx.panelView;
@@ -1517,6 +1617,16 @@ export class InputSystem implements Subsystem {
         break;
       case 'centreControls':
         this.centreControls(ctx);
+        break;
+      case 'setTrimHere':
+        // The keyboard's centre (what 5 returns to) becomes the keyboard stick as it is: nothing moves now. The physics'
+        // spring anchor is left alone (it carries no aerodynamic effect); beep trim keeps moving both together.
+        this.neutral.aileron = clamp(this.neutral.aileron + this.kbAileron, -1, 1);
+        this.neutral.elevator = clamp(this.neutral.elevator + this.kbElevator, -1, 1);
+        this.kbAileron = this.kbElevator = 0;
+        this.centring.aileron = this.centring.elevator = false;
+        this.ailCentred = true;
+        this.shell.toast?.('Keyboard trim set here: 5 now returns the stick to this position');
         break;
       case 'zoomIn':
         this.view?.zoom(1);
@@ -1558,4 +1668,13 @@ export function demoViewKey(code: string, shift: boolean): boolean {
   return !!action && /^(look|camera|zoom|view|panelToggle|panelSection|mouseLook|pause)/.test(action) ||
     code === 'Escape' || code === 'KeyP' || code === 'ShiftLeft' || code === 'ShiftRight' ||
     code === 'F8' || code === 'F9' || shift && (code === 'BracketLeft' || code === 'BracketRight');
+}
+
+/**
+ * The next snap position of a pusher grip (InputProfile.propLever.snaps), in the order listed: from a snap the one after
+ * it (the last goes round to the first); from anywhere else the first.
+ */
+export function nextSnap(value: number, snaps: readonly number[]): number {
+  const at = snaps.findIndex((v) => Math.abs(v - value) < 1e-9);
+  return at < 0 ? snaps[0] : snaps[(at + 1) % snaps.length];
 }

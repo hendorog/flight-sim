@@ -46,6 +46,7 @@ import { createFlightModel, createFlightModelFor, type SimEnvironment } from '..
 import type { AircraftFlightModel } from '../physics/interfaces';
 import type { StepController } from '../training/types';
 import { Autoflight } from './autoflight';
+import { StabilityAssist } from './rotorcraft/stabilityAssist';
 import { SNAPSHOT_SCHEMA, snapshotSystems, type FlightSnapshot } from './resume';
 import { buildScenario, type Scenario } from './scenarios';
 import type { StartSpec } from './starts';
@@ -106,6 +107,11 @@ export interface SimPhysicsOptions {
   controls?: ControlInputs;
   /** The type flown. Default: the Cessna 172S. */
   aircraft?: AircraftDefinition;
+  /** Control-gyro configuration (URL config=amcs|ics; AH-56A): added to every reset's initial conditions. A restored
+   *  snapshot's own RotorcraftState.controlGyro.mode wins over it. */
+  rotorcraftConfig?: 'amcs' | 'ics';
+  /** URL halfp=1: arm the scripted half-P hop on every reset (AH-56A ICS demo/test hook). */
+  forceHalfPHop?: boolean;
 }
 
 /** Deep-copy plain data (numbers, booleans, strings, nested objects and arrays) from src into dst. */
@@ -165,6 +171,14 @@ export class SimPhysics {
    * resetTo and restored from the snapshot.
    */
   readonly hailDamage = new HailDamage();
+  /**
+   * The STAB ASSIST sim aid (src/sim/rotorcraft/stabilityAssist.ts) of a type whose input profile has one (the Bo 105),
+   * else null: no other type runs any of it. It acts in the physics step, after the autoflight and the copilot.
+   */
+  readonly stabilityAssist: StabilityAssist | null;
+  /** Whether the STAB ASSIST is switched on. The Simulator links it to the input module's Shift+A toggle; headless runs
+   *  get the type's default. */
+  stabilityAssistOn: () => boolean;
 
   private readonly weather: WeatherSettings;
   /** The storm cells at the aircraft for the damage (its own selection: nothing else's queries change it). */
@@ -185,7 +199,12 @@ export class SimPhysics {
   /** Current step size, s: stepSize, or 1 / COARSE_RATE during accelerated airborne flight. */
   private h: number;
 
+  /** Control-gyro configuration and the half-P hook, added to every InitialConditions this passes to fm.reset. */
+  private readonly rotorcraftConfig: 'amcs' | 'ics' | undefined;
+  private readonly forceHalfPHop: boolean;
   constructor(opts: SimPhysicsOptions) {
+    this.rotorcraftConfig = opts.rotorcraftConfig;
+    this.forceHalfPHop = opts.forceHalfPHop === true;
     this.events = opts.events;
     this.weather = opts.weather;
     this.controls = opts.controls ?? defaultControls(opts.aircraft);
@@ -197,10 +216,20 @@ export class SimPhysics {
     this.stepSize = 1 / this.fm.physicsRate;
     this.h = this.stepSize;
     this.renderState = copyInto({} as AircraftState, this.fm.state);
+    const assist = def.input.stabilityAssist;
+    this.stabilityAssist = assist ? new StabilityAssist(assist) : null;
+    this.stabilityAssistOn = () => assist?.default === true;
   }
 
   get state(): AircraftState {
     return this.fm.state;
+  }
+
+  /** `ic` with the control-gyro configuration and the half-P hook of this run (unchanged when neither is set). */
+  private withRotorcraftOptions(ic: InitialConditions): InitialConditions {
+    if (!this.rotorcraftConfig && !this.forceHalfPHop) return ic;
+    return { ...ic, ...(this.rotorcraftConfig ? { rotorcraftConfig: this.rotorcraftConfig } : {}),
+      ...(this.forceHalfPHop ? { forceHalfPHop: true } : {}) };
   }
 
   /** Simulation time of the rendered state, s (resets to 0 with the scenario). */
@@ -232,7 +261,7 @@ export class SimPhysics {
     // A new flight: no hail damage (before the reset, whose trim uses the aerodynamics).
     this.hailDamage.reset();
     this.fm.setAirframeDamage(0);
-    this.fm.reset(sc.ic, this.env);
+    this.fm.reset(this.withRotorcraftOptions(sc.ic), this.env);
     if (sc.attitude) this.rotateTo(sc.attitude.pitch, sc.attitude.roll);
     const c = this.controls;
     const trim = this.fm.trimControls;
@@ -270,6 +299,7 @@ export class SimPhysics {
     this.gearEvents.sync(this.fm.state.gear);
     this.autoflight.disengage();
     if (this.autoflightOnReset || sc.engageAutoflight) this.autoflight.engage(sc.autoflight, this.fm.state, c);
+    this.stabilityAssist?.reset();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -387,6 +417,9 @@ export class SimPhysics {
     // The hail damage as saved (none in a snapshot before schema 5), before the reset's trim.
     this.hailDamage.restore(snap.damage);
     fm.setAirframeDamage(this.hailDamage.state.leadingEdge, this.hailDamage.state.rotor);
+    // The saved control-gyro configuration wins over the URL's (the restored state carries it too).
+    const savedConfig = sys.rotorcraft?.controlGyro?.mode;
+    Object.assign(ic, this.withRotorcraftOptions(ic), savedConfig ? { rotorcraftConfig: savedConfig } : {});
     try {
       fm.reset(ic, this.env);
     } catch {
@@ -437,6 +470,7 @@ export class SimPhysics {
     this.wasCrashed = false;
     this.gearEvents.sync(st.gear);
     if (!def.rotorcraft) this.autoflight.importState(snap.autoflight);
+    this.stabilityAssist?.reset();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -532,7 +566,11 @@ export class SimPhysics {
     // Feet off the pedals: the rudder floats and the nosewheel follows it (the input module decides; the
     // autoflight and the copilot always have their feet on the pedals).
     this.fm.rudderFree = !!this.controls.feetOffRudder && !this.autoflight.engaged && !copilot?.flying;
+    // The STAB ASSIST's series term rides on the controls for this step only (after() restores the pilot's).
+    const assist = this.stabilityAssist;
+    assist?.before(this.h, this.fm.state, this.controls, this.stabilityAssistOn() && !this.autoflight.engaged && !copilot?.flying);
     this.fm.step(this.h, this.controls, this.carbIcing ? this.env : this.dryEnv);
+    assist?.after(this.controls);
     this.steps++;
     if (this.fm.state.time >= this.nextDamageT) this.updateHailDamage();
     const s = this.fm.state;

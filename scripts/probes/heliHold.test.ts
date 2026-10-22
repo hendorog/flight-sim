@@ -12,6 +12,8 @@ import { R22_DEFINITION } from '../../src/aircraft/r22';
 import { R44_DEFINITION } from '../../src/aircraft/r44';
 import { S269_DEFINITION } from '../../src/aircraft/s269';
 import { MD500_DEFINITION } from '../../src/aircraft/md500';
+import { BO105_DEFINITION } from '../../src/aircraft/bo105';
+import { AH56_DEFINITION } from '../../src/aircraft/ah56';
 import { DEG, KT, wrapPi } from '../../src/core/math';
 import { SimPhysics } from '../../src/sim/SimPhysics';
 import { hoverScenario } from '../../src/sim/rotorcraft/starts';
@@ -20,7 +22,8 @@ import { DT } from '../../tests/rotorcraft/helpers';
 
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 const fs = (await import('node:fs' as string)) as { appendFileSync(p: string, d: string): void };
-const DEFS = { r22: R22_DEFINITION, r44: R44_DEFINITION, s269: S269_DEFINITION, md500: MD500_DEFINITION };
+const DEFS = { r22: R22_DEFINITION, r44: R44_DEFINITION, s269: S269_DEFINITION, md500: MD500_DEFINITION,
+  bo105: BO105_DEFINITION, ah56: AH56_DEFINITION };
 const def = DEFS[(env.AC ?? 'r22') as keyof typeof DEFS];
 const SEEDS = (env.SEEDS ?? '1,2,3').split(',').map(Number);
 const LOADS = (env.LOADS ?? 'typical,maxGross').split(',') as ('typical' | 'maxGross')[];

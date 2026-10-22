@@ -38,6 +38,7 @@ export class AnnunciatorPanel implements PanelComponent {
     private readonly columns?: number,
     private readonly cells?: readonly Rect[],
     private readonly lensLegend = false,
+    private readonly clipGlow = false,
   ) {
     this.latch = new Latch(lamps.length);
   }
@@ -69,6 +70,7 @@ export class AnnunciatorPanel implements PanelComponent {
   private drawLens(g: Ctx2D, lamp: LampDef, b: Rect, on: boolean): void {
     const { x, y, w, h } = b;
     g.save();
+    if (this.clipGlow) { g.beginPath(); g.rect(x, y, w, h); g.clip(); }
     // Bezel, then the coloured cap: dark tinted while out, full colour with a glow when lit.
     g.fillStyle = '#101011';
     g.fillRect(x, y, w, h);

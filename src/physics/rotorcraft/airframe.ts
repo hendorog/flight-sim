@@ -1,12 +1,15 @@
 import { clamp, v3, type Vec3 } from '../../core/math';
 import type { BodyState, ForceMoment } from '../interfaces';
 import type { RotorcraftDefinition } from './definition';
+import { wingLoads } from './wings';
 
 /** Local flow at each fixed surface includes body rotation and a bounded main-rotor wake estimate.
  * Lift is normal to the local flow, including in a descent; no attitude/rate servo is hidden here.
  */
 export function airframeLoads(d: RotorcraftDefinition, b: BodyState, air: Vec3, rho: number, inflow: number, tailInflow = 0): ForceMoment & {
   power: { fuselage: number; stabilizer: number; fins: number; moments: number };
+  /** Compound wing power, W: present only when `d.wings` exists (never part of the legacy `power` object). */
+  wings?: number;
 } {
   const force = v3.zero(), moment = v3.zero();
   const power = { fuselage: 0, stabilizer: 0, fins: 0, moments: 0 };
@@ -68,10 +71,13 @@ export function airframeLoads(d: RotorcraftDefinition, b: BodyState, air: Vec3, 
     power.fins += finLoad(fin.centre, fin.area * (1 - tr.areaFraction), fin, 0) +
       finLoad(fin.centre, fin.area * tr.areaFraction, fin, tr.velocityRatio * tailInflow * d.rotation);
   }
+  // Compound wing (wings.ts, AC): each panel's own local flow and the wake-skew wash; seam placed at S0.
+  const wings = d.wings ? wingLoads(d.wings, b, air, rho, meanInflow,
+    Math.atan2(Math.hypot(air.x, air.y), Math.max(meanInflow - air.z, 0.1)), add) : undefined;
   const q = 0.5 * rho * v3.dot(air, air);
   const pitchMoment = q * d.fuselageMoment.pitch * Math.atan2(air.z, Math.max(Math.abs(air.x), 1));
   const yawMoment = -q * d.fuselageMoment.yaw * Math.atan2(air.y, Math.max(Math.abs(air.x), 1));
   moment.y += pitchMoment; moment.z += yawMoment;
   power.moments = pitchMoment * b.angularVelocity.y + yawMoment * b.angularVelocity.z;
-  return { force, moment, power };
+  return wings === undefined ? { force, moment, power } : { force, moment, power, wings };
 }

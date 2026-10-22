@@ -137,7 +137,8 @@ describe('aircraft type data, every type (generic)', () => {
   it('plain JSON; MEP iff two engines; only school types say the syllabus may be flown', { timeout: 30_000 }, async () => {
     for (const { id, engines, rotorcraft, type } of await loadAll()) {
       expect(JSON.parse(JSON.stringify(type)), id).toEqual(type);
-      expect(type.classRating === 'MEP', id).toBe(engines === 2);
+      // MEP is an aeroplane class rating: a twin-engine helicopter (Bo 105) has none (classRating null, below).
+      expect(type.classRating === 'MEP', id).toBe(engines === 2 && !rotorcraft);
       expect(type.classRating === null, id).toBe(rotorcraft);
       if (type.systems) expect(type.systems.engines, id).toBe(engines);
       if (type.school?.syllabus) expect(SCHOOL_AIRCRAFT, id).toContain(type.id);

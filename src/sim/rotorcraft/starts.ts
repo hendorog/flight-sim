@@ -31,9 +31,13 @@ export function demoScenario(id: R22DemoId, env: Environment, d: Pick<Rotorcraft
   };
 }
 
-/** Opt-in airborne start for trying helicopter hold; no demonstration pilot. */
-export function hoverScenario(env: Environment, d: Pick<RotorcraftDefinition, 'skids'>): Scenario {
+/** Opt-in airborne start for trying helicopter hold; no demonstration pilot. A wheeled rotorcraft (AH-56A: retractable
+ *  gear) hovers with its gear down; `skids.z` is its tyre contact at rest, so the 15 m is to the wheels. A control-gyro
+ *  type (AH-56A) hovers at its 'typical' loading (18,300 lb, the AMCS test weight its gyro and hover rows are measured
+ *  at; 'maxGross' is the ICS release's 20,500 lb, above the AMCS's 19,200 lb); the others keep 'maxGross'. */
+export function hoverScenario(env: Environment, d: Pick<RotorcraftDefinition, 'skids' | 'landingGear' | 'controlGyro'>): Scenario {
   const sc = demoScenario('hover', env, d);
-  return { ...sc, title: 'Helicopter hold test · 15 m hover',
-    ic: { ...sc.ic, position: { ...sc.ic.position, z: sc.ic.position.z - 12 } } };
+  return { ...sc, title: 'Helicopter hold test · 15 m hover', ...(d.controlGyro ? { payload: 'typical' as const } : {}),
+    ic: { ...sc.ic, position: { ...sc.ic.position, z: sc.ic.position.z - 12 },
+      ...(d.landingGear === 'wheels' ? { gearDown: true } : {}) } };
 }
