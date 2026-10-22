@@ -548,6 +548,12 @@ presets, cues and rows only.
     14.3 deg/s). Rows in ah56Assist.
   - *Cost of the light hold:* a released 2 s push drifts further hands off (2 s ArrowRight from the hover: 148 m in 22 s, round 1
     118 m; 2 s ArrowUp 99 m, round 1 82 m). The hover itself holds (rows).
+  - *The ICS on keys (T8's open item, measured, not tuned; `out/p11_ics.log`):* with the aid the hover holds (the Bo 105 tapper 1.2-1.3
+    m, the watching beginner 1.3 m; without it lost at 52-54 s); the keyboard lift-off rolls right onto the wingtip within 2 s of the
+    first unload with every cyclic preset tried (round 1's 0 / 0 and this round's AMCS 0.06 / -0.03; the ICS's own IGE trim, -0.07 /
+    -0.24 of lateral stick, puts it off at 6-10 s), and the push out of the hover reaches 40 KIAS in 39-41 s through 48-64 deg of
+    attitude. The ICS's lateral hover trim (0.24 of the travel left) is far from the AMCS's; the presets and the aid are the AMCS's.
+    The keyboard beginner flies the AMCS (the default); the ICS on keys is the owner's to try.
 - **T7 addendum (the gate's should 7). The power-off envelope of the model, for the beginner.** From the 15 m hover no technique
   tried survives (the gate: Nr 97 -> 45 % in 4.8 s, 1,800-2,000 fpm, consistent with the P inertia and the P 63 KCAS decay scaled by
   the hover torque); from 60 KIAS / 150 m the autorotation sinks 3,300 fpm and the touchdowns were 960-2,050 fpm. Autorotation
