@@ -321,7 +321,7 @@ export class SimPhysics {
     this.gearEvents.sync(this.fm.state.gear);
     this.autoflight.disengage();
     if (this.autoflightOnReset || sc.engageAutoflight) this.autoflight.engage(sc.autoflight, this.fm.state, c);
-    this.stabilityAssist?.reset();
+    this.stabilityAssist?.newFlight();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();
@@ -499,7 +499,7 @@ export class SimPhysics {
     if (!def.rotorcraft) this.autoflight.importState(snap.autoflight);
     // The STAB ASSIST goes on from the saved datums; without them (an older snapshot) it captures afresh.
     if (snap.assist) this.stabilityAssist?.importState(snap.assist);
-    else this.stabilityAssist?.reset();
+    else this.stabilityAssist?.newFlight();
     this.snapshot();
     this.alpha = 1;
     this.publishRenderState();

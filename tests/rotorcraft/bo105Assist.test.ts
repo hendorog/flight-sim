@@ -590,11 +590,13 @@ describe('STAB ASSIST height hold and collective crossfeed (the keyboard collect
    * first 6 s from 24 to 54 deg, W/tune/bo105 r2 p3_trcx.log). Runway start, the collective raised until the skids carry
    * under half the weight, then 0.03 more.
    */
-  it('on light skids the crossfeed pedals a collective rise, unless a pedal key was worked on the skids', () => {
-    const lift = (pedalFirst: boolean) => {
+  it('on light skids the crossfeed pedals a collective rise, unless a pedal key was worked on the skids (forgotten at a new flight)', () => {
+    const lift = (pedalFirst: boolean, resetAfterPedal = false) => {
       const r = rig({ assist: true, runway: true, payload: 'typical' }), a = r.physics.stabilityAssist!;
       for (let i = 0; i < 30; i++) frame(r);
       if (pedalFirst) { r.input.keyDown('KeyZ'); for (let i = 0; i < 6; i++) frame(r); r.input.keyUp('KeyZ'); }
+      // A new flight on the runway (as the Simulator resets: the physics, then the input module told).
+      if (resetAfterPedal) { r.physics.resetTo(r.physics.scenario, r.ctx.weather); r.ctx.events.emit('reset', { scenario: 'runway' }); for (let i = 0; i < 30; i++) frame(r); }
       const load = (): number => { const w = r.physics.state.wheels; return (w[0].load + w[1].load + w[2].load) / (r.physics.state.mass * G0); };
       while (load() > 0.4 && r.c.collective! < 0.5) { r.c.collective! += 0.005; frame(r); }
       for (let i = 0; i < 30; i++) frame(r);
@@ -602,10 +604,11 @@ describe('STAB ASSIST height hold and collective crossfeed (the keyboard collect
       r.c.collective! += 0.03; frame(r);
       return { onGround: r.physics.state.onGround, load: load(), crossfed: a.followed.rudder - f0 };
     };
-    const untouched = lift(false), pedalled = lift(true);
-    report.crossfeedLightSkids = { untouched, pedalled, expected: def.input.stabilityAssist!.pedalCrossfeed!.perCollective * 0.03 };
-    expect(untouched.onGround).toBe(true); expect(pedalled.onGround).toBe(true);
+    const untouched = lift(false), pedalled = lift(true), newFlight = lift(true, true);
+    report.crossfeedLightSkids = { untouched, pedalled, newFlight, expected: def.input.stabilityAssist!.pedalCrossfeed!.perCollective * 0.03 };
+    expect(untouched.onGround).toBe(true); expect(pedalled.onGround).toBe(true); expect(newFlight.onGround).toBe(true);
     expect(untouched.crossfed).toBeCloseTo(def.input.stabilityAssist!.pedalCrossfeed!.perCollective * 0.03, 1);
+    expect(newFlight.crossfed).toBeCloseTo(def.input.stabilityAssist!.pedalCrossfeed!.perCollective * 0.03, 1);
     expect(Math.abs(pedalled.crossfed)).toBeLessThan(0.01);
   }, 60_000);
   /**

@@ -229,6 +229,15 @@ export class StabilityAssist {
     this.collLeft = num('collLeft', NaN); this.keyDir = Math.sign(num('keyDir', 0)); this.pedalOnSkids = flag('pedalOnSkids');
   }
 
+  /**
+   * A new flight (a scenario reset, or a restore without the assist's state): reset() and forget a pedal key worked on
+   * the skids, which reset() keeps (it runs every step on loaded skids, where that record is made).
+   */
+  newFlight(): void {
+    this.reset();
+    this.pedalOnSkids = false;
+  }
+
   /** Forget the datums (a reset or a restore): the next active step captures the attitude, stick and heading it finds. */
   reset(): void {
     this.captured = false;
