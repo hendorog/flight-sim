@@ -136,7 +136,7 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
   };
   const transitions = PACES.map(([iv, lag]) => ({ iv, f: transition(iv, lag) }));
   for (const { iv, f } of transitions) {
-    it(`the watching beginner (every ${iv} s, feet off) leaves the hover: 38 KIAS within 40 s, no crash (round 1: 39-44 s with the heading lost)`, () => {
+    it(`the watching beginner (every ${iv} s, feet off) leaves the hover: 38 KIAS within 40 s, no crash (round 1's profile: 34-44 s, the heading 50-95 deg off)`, () => {
       report(`hover to 40 KIAS, every ${iv} s`, f);
       expect(f.accelWhy).toBe('done');
       expect(f.accelS).toBeLessThan(40);

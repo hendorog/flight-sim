@@ -367,3 +367,22 @@ Rows added: ah56Ground (two unlocked-taxi pilot rows, the hover heading / drift 
 −0.55); ah56MomentStall's 190 KCAS KNOWN GAP row is a passing row (0.35°). No band was loosened. Contract requests: TW (the
 BEMT's high-induction correction), RC (the tail rotor's windmill-brake thrust at the pedal stop), PN (the tail-wheel lock cue), the
 owner (T3's para 45 trade; T7's autorotation collective against C12).
+
+## 13. Tuning round 2 (2026-10-22, branch `tune/ah56`): the pilot gate's beginner side
+
+The Fable pilot gate reproduced section 12's numbers exactly and then flew the aircraft as the owner will (keyboard, no
+helicopter experience): the hover held, nothing beyond it did (5/10). This round changes input choices, sim presets, cues and
+rows only; the physics is untouched. Numbers, probes and logs: KNOWN_ISSUES T9 and the T1 / T7 addenda, `W/tune/ah56/r2/`.
+The yardstick is a new watching keyboard beginner (`tests/rotorcraft/ah56KeyPilot.ts`), because the Bo 105 helper's short taps do
+not move this aircraft's re-centring, rate-command keyboard cyclic; on round 1's profile it reproduces the gate's findings.
+
+| Gate item | Round 1's profile | Cause | Change | Round 2 |
+|---|---|---|---|---|
+| transition (must) | pushes never reach 60 KIAS (46.9 max); the beginner 34-44 s to 40 KIAS, heading 50-95° off | the attitude-COMMAND datum returns to the captured hover attitude at every key release | STAB ASSIST katt 1.2 → 0.3, stickAttitude 1.3 → 0.6, band [30, 50] → [30, 60] KIAS | pushes 60 KIAS in 42 s; the beginner 40 KIAS in 22 / 24 s (heading 30 / 27°); back to the hover still KNOWN GAP (sideslip and the untrimmed anchor in 25-60 KIAS; contract requests) |
+| lift-off (must) | the beginner crashed at 17 / 22 s, heading 110 / 97° off | the ground trim's cyclic 0.06 forward of the hover's; the datum captured at the ground attitude; the hover pedal 0.38 left | ground starts hold the cyclic at the IGE hover trim (D); heading hold authority 0.3 → 0.5, pedal follow-up 0.2 → 0.5 /s | F6 to the first unload, then 30 s at 3 m: 10.0 / 11.5 m, 21 / 9°, no crash; the Bo 105 tapper KNOWN GAP (85 m) |
+| collective keys (should) | F5 1 s from 15 m: the ground at 1,057 fpm, crash | 0.12 /s is 2.5°/s on a 21° collective | 0.06 /s; Shift+F5 / Shift+F6 1.0 / 0.5 /s, the stop at 0.15 (98.6 % Nr at 90 KIAS) | 645 fpm, no crash; the 60 KIAS failure dump 0.3 s, Nr 83.1 % (F5: 5.7 s, 75.5 %) |
+| cyclic keys (should) | held 1 / 2 / 3 s: 2.3 / 13.6 / 33.7° pitch, 3 s roll 51.7° | a squared ramp to 0.35 /s on a rate command | constant 0.1 /s | 1.3 / 4.6 / 9.7°, 3 s roll 14.6° |
+| heading hunting (should) | 2 s pedal hold rings 14.3 °/s at 6 s; F6 tap 8.7 °/s | the rate term saturated at yawAuthority 0.13 | kr 0.5 within 0.25 (kpsi kept 1.0: 0.5 weakened the lift-off) | 4.2 °/s, 3.2° from the hold's datum; F6 tap 3.0 °/s |
+| taxi (should) | locked 20 kt: the tapping pilot winds 3 in of pedal, wingtip | non-centring pedal keys | unlock toast and Taxi hint (sim advice); a locked pilot row | locked 20 kt, pilot 0.3 s late within 1 in: 0.35° |
+| engine failure (should) | (the gate: 15 m hover unsurvivable; IGE "survivable" read at first contact) | P inertia; one-wheel touchdown in the 5° left-wing-low hover | G11c row; hint row; gear finding recorded (not changed) | IGE written 282 fpm, no damage; on keys hands off the left main collapses (KNOWN GAP); main leg 140 kN covers a one-wheel touchdown only to about 375 fpm |
+| test gap (should) | the hover rows only | | 9 new ah56Assist rows (6 passing, 3 KNOWN GAP), G11c, the locked-taxi row | |

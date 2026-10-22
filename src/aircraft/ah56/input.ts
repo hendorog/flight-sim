@@ -40,7 +40,7 @@ export const AH56_INPUT: InputProfile = {
   // reached 60 KIAS in 60 s, 46.9 at most). Here the cyclic hold is a light one, katt 0.3 (was 1.2) and stickAttitude 0.6 (was 1.3):
   // the hover still holds (the Bo 105 helper's tapper 4.8-8.2 m in 60 s, the row's bound 10 m; the watching beginner of
   // tests/rotorcraft/ah56KeyPilot.ts 2.0-2.7 m) while a released push keeps most of its attitude (the same pushes reach 60 KIAS in
-  // 41.9 s; the watching beginner 40 KIAS in 22-24 s, against 39-44 s with the heading lost on the way). The band runs to 60 KIAS
+  // 41.9 s; the watching beginner 40 KIAS in 22-24 s, against 34-44 s with the heading 50-95 deg off). The band runs to 60 KIAS
   // (fadeKias [30, 60], was [30, 50]): the trims move 0.10 of the stick aft and 0.62 of the pedal right between the hover and 45-60
   // KIAS (r2 out/p5_speedtrim.log), and the rate damping and the pedal follow-up now carry through the transition. The heading hold
   // gets the authority the lift-off needs (holdAuthority 0.5, 25 % of travel; the hover pedal is 0.38 left of the ground trim) and
