@@ -123,11 +123,11 @@ describe('G13: on the wheels', () => {
 
   /** The taxi pulse with a pilot on the pedals: `pulseIn` of left pedal for `pulseS` s, then a pilot who sees the heading and the
    *  yaw rate `delay` s late and answers with pedal (gain 2: 6.4 in of pedal per radian of heading error and per rad/s of yaw
-   *  rate, about a third of the travel for 10 deg), inside the travel. The worst yaw rate and roll, the heading change after
-   *  10 s, the peak pedal from the trim. */
-  const taxiCatch = (kt: number, pulseIn: number, pulseS: number, delay: number) => {
+   *  rate, about a third of the travel for 10 deg), inside the travel (or within `capIn` of the trim). The worst yaw rate and roll,
+   *  the heading change after 10 s, the peak pedal from the trim. */
+  const taxiCatch = (kt: number, pulseIn: number, pulseS: number, delay: number, locked = false, capIn = Infinity) => {
     const r = rig({ onGround: true });
-    r.c.collective = 0; r.c.tailWheelLock = false; r.c.parkingBrake = false;
+    r.c.collective = 0; r.c.tailWheelLock = locked; r.c.parkingBrake = false;
     const h0 = r.fm.state.heading, p0 = r.c.rudder, pedalPerIn = 1 / 3.2;
     let yi = 0;
     const hold = () => { const s = r.fm.state, e = Math.atan2(Math.sin(s.heading - h0), Math.cos(s.heading - h0)); yi -= e * 0.5 / 240;
@@ -143,7 +143,8 @@ describe('G13: on the wheels', () => {
       const s = r.fm.state;
       seen.push({ e: Math.atan2(Math.sin(s.heading - hs), Math.cos(s.heading - hs)), r: s.angularVelocity.z });
       const late = seen.length > lag ? seen.shift()! : undefined;
-      r.c.rudder = t <= pulseS ? Math.max(-1, trim - pulseIn * pedalPerIn) : late ? Math.max(-1, Math.min(1, trim + 2 * (-late.e - late.r))) : trim;
+      const cap = capIn * pedalPerIn, answer = late ? trim + Math.max(-cap, Math.min(cap, 2 * (-late.e - late.r))) : trim;
+      r.c.rudder = t <= pulseS ? Math.max(-1, trim - pulseIn * pedalPerIn) : Math.max(-1, Math.min(1, answer));
       yaw = Math.max(yaw, Math.abs(s.angularVelocity.z)); roll = Math.max(roll, Math.abs(s.roll)); pedal = Math.max(pedal, Math.abs(r.c.rudder - trim) / pedalPerIn);
     });
     const s = r.fm.state;
@@ -169,6 +170,17 @@ describe('G13: on the wheels', () => {
     expect(m.crashed).toBe(false);
     expect(m.headingChangeDeg).toBeLessThan(5);
     expect(m.peakPedalIn).toBeLessThan(3.2);
+  }, 120_000);
+
+  // Tuning round 2 (the pilot gate's should 6, KNOWN_ISSUES T1): LOCKED at 20 kt with a pilot on the pedals. On the keyboard the
+  // gate's tapping pilot wound the non-centring pedal to 3 in and struck a wingtip at 28 kt (W/tune/ah56/gate1 out/taxi.log); a pilot
+  // who keeps within 1 in of the trim holds it. The HUD hint and the unlock toast say so (feet off above 10 kt; unlock to turn below 5).
+  it('tail wheel LOCKED, prop taxi at 20 kt: the 1 in pulse with a pilot answering 0.3 s late inside 1 in of the trim: upright, heading back within 5 deg by 10 s', () => {
+    const m = taxiCatch(20, 1, 1, 0.3, true, 1);
+    report('G13 taxi 20 kt locked, 1 in pulse, pilot 0.3 s late within 1 in', m);
+    expect(m.crashed).toBe(false);
+    expect(m.headingChangeDeg).toBeLessThan(5);
+    expect(m.peakPedalIn).toBeLessThanOrEqual(1.0001);
   }, 120_000);
 
   it('vertical take-off to a hover and a vertical landing on the wheels', () => {
