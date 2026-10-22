@@ -84,6 +84,31 @@ export interface StabilityAssistTuning {
    * follow-up replaces the heading hold's integral (it is the integral, with the pedal's whole travel). Absent: none.
    */
   followUp?: { filterS: number; deadBand: number; cyclicGain: number; cyclicRate: number; pedalGain: number; pedalRate: number };
+  /**
+   * Height hold on the KEYBOARD collective (ControlInputs.keyboardCollective; a hardware lever is the pilot's hand), at
+   * hover and low speed: ADS-33E's rate command / height hold. The keys move the lever as before. Once they rest the
+   * assist walks the lever to stop the climb or sink (a PI on the climb rate: `kv` of the travel per second per m/s of
+   * climb-rate error and `kp` of the travel per m/s of its change, at most `rate` per second) and, once the climb rate is
+   * under `captureMps`, holds that height (a climb-rate command of `kh` per m of height error, at most `vsMax`). While a
+   * key is held the lever is damped by `kvHeld` and `kp` alone, so a held key is close to a climb-rate command. Full below
+   * fadeKias[0], none above fadeKias[1]. Off on the ground (on light skids, groundLoad, it keeps working), with an
+   * engine not running, one engine out or the needles split, and with NR under `minNrPct`; it never raises the lever
+   * above the maximum continuous power nor lowers it below `floor` of the travel. Absent: the collective is the pilot's.
+   */
+  heightHold?: { fadeKias: readonly [number, number]; kv: number; kp: number; kvHeld: number; rate: number; captureMps: number;
+    kh: number; vsMax: number; floor: number; minNrPct: number };
+  /**
+   * Collective-to-pedal crossfeed on the KEYBOARD pedals (with `followUp`, through its pedal channel), airborne: while no
+   * pedal key is held, every change of the collective (the pilot's keys or lever, the height hold's walk) moves the
+   * pedals by `perCollective` of the axis per unit of the collective (the trim slope), scaled by the speed fade, and that
+   * pedal washes out with `washS` (a high-pass: the quick torque change is the crossfeed's, the slow trim the
+   * follow-up's). A collective change made while a pedal key is held, or on the skids (a lift-off, where the pilot sets
+   * the pedal first), is the pilot's to pedal. The washout goes on while a pedal key is held (the key moves the pedals
+   * from where they are): this is load-bearing, freezing it or handing the crossfed pedal to the pilot at a key press
+   * let it pile up through the keyboard deceleration (9 of 10 decelerations reached the hover against 3-4; W/tune/bo105
+   * d_hh_g7 / g8). Absent: none.
+   */
+  pedalCrossfeed?: { perCollective: number; washS: number };
 }
 
 export interface InputProfile {

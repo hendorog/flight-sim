@@ -89,6 +89,9 @@ const HOLD_SLIP = Math.PI / 4;
 /** A stick quiet this long counts as quiet since the capture (Infinity in the assist; JSON has none), s. */
 const STICK_QUIET_MAX = 1e6;
 
+/** The height hold's modes, by index in a snapshot. */
+const HEIGHT_MODES = ['off', 'damp', 'hold'] as const;
+
 /** The assist's state in a snapshot (StabilityAssist.exportState): numbers and flags by name. */
 export type StabilityAssistSnapshot = Record<string, number | boolean>;
 
@@ -109,8 +112,13 @@ function followSpeed(x: number, authority: number, deadBand: number, gain: numbe
 export class StabilityAssist {
   /** The series command of the last step (axis units) and the speed-fade gain applied; all 0 while inactive. */
   readonly output = { aileron: 0, elevator: 0, rudder: 0, gain: 0 };
-  /** How far the trim follow-up has moved the keyboard aileron, elevator and pedals since the assist was built, axis units. */
-  readonly followed = { aileron: 0, elevator: 0, rudder: 0 };
+  /**
+   * How far the trim follow-up has moved the keyboard aileron, elevator and pedals since the assist was built, axis units;
+   * and the height hold the keyboard collective, travel.
+   */
+  readonly followed = { aileron: 0, elevator: 0, rudder: 0, collective: 0 };
+  /** The height hold's state: off, stopping the climb or sink ('damp'), or holding `heightRef` ('hold'). */
+  heightMode: 'off' | 'damp' | 'hold' = 'off';
   /** The heading datum is held (the pedal at rest) rather than following the heading (the pedal being worked). */
   holdingHeading = false;
   private captured = false;
@@ -136,6 +144,13 @@ export class StabilityAssist {
   private lpR = 0;
   /** The pedal follow-up of this step, applied in after(). */
   private pedalStep = 0;
+  /** The height hold's datum, m MSL. */
+  private heightRef = 0;
+  /** The pedal the height hold's crossfeed holds now (washed out), axis units. */
+  private xfeed = 0;
+  private collWas = NaN;
+  /** The climb rate of the last step (the height hold's proportional term reads its change), m/s. */
+  private climbWas = NaN;
   private applied = false;
   private readonly pilot = { aileron: 0, elevator: 0, rudder: 0 };
 
@@ -154,6 +169,10 @@ export class StabilityAssist {
       yawActive: this.yawActive, holdingHeading: this.holdingHeading, headingRef: this.headingRef, pedalRest: this.pedalRest,
       pedalRestFor: this.pedalRestFor, pedalDir: this.pedalDir, yawI: this.yawI, lpA: this.lpA, lpE: this.lpE, lpR: this.lpR,
       followedAileron: this.followed.aileron, followedElevator: this.followed.elevator, followedRudder: this.followed.rudder,
+      followedCollective: this.followed.collective,
+      heightMode: HEIGHT_MODES.indexOf(this.heightMode), heightRef: this.heightRef,
+      ...(Number.isFinite(this.climbWas) ? { climbWas: this.climbWas } : {}), xfeed: this.xfeed,
+      ...(Number.isFinite(this.collWas) ? { collWas: this.collWas } : {}),
     };
   }
 
@@ -174,7 +193,10 @@ export class StabilityAssist {
     this.pedalDir = num('pedalDir', 0); this.yawI = num('yawI', 0);
     this.lpA = num('lpA', 0); this.lpE = num('lpE', 0); this.lpR = num('lpR', 0);
     this.followed.aileron = num('followedAileron', 0); this.followed.elevator = num('followedElevator', 0);
-    this.followed.rudder = num('followedRudder', 0);
+    this.followed.rudder = num('followedRudder', 0); this.followed.collective = num('followedCollective', 0);
+    this.heightMode = HEIGHT_MODES[num('heightMode', 0)] ?? 'off';
+    this.heightRef = num('heightRef', 0); this.climbWas = num('climbWas', NaN);
+    this.xfeed = num('xfeed', 0); this.collWas = num('collWas', NaN);
   }
 
   /** Forget the datums (a reset or a restore): the next active step captures the attitude, stick and heading it finds. */
@@ -185,6 +207,8 @@ export class StabilityAssist {
     this.yawI = 0;
     this.lpA = this.lpE = this.lpR = 0;
     this.pedalStep = 0;
+    this.heightMode = 'off'; this.climbWas = NaN;
+    this.xfeed = 0; this.collWas = NaN;
     this.output.aileron = this.output.elevator = this.output.rudder = this.output.gain = 0;
   }
 
@@ -253,6 +277,9 @@ export class StabilityAssist {
       this.followed.aileron += dA; this.followed.elevator += dE;
     } else this.lpA = this.lpE = 0;
 
+    // The height hold walks the keyboard collective (before the pedals: the crossfeed reads the collective it leaves).
+    this.heightHold(dt, s, c);
+
     // Pedals: rate damping while the pilot works them, and the heading held once they rest.
     if (!this.yawActive) {
       this.yawActive = true;
@@ -292,20 +319,68 @@ export class StabilityAssist {
     }
     o.rudder = fade * law(this.yawI);
     o.gain = fade;
-    // Pedal follow-up: from the unclamped terms, while no pedal key is held (the filter keeps its value through a tap).
+    // Pedal follow-up: from the unclamped terms, while no pedal key is held (the filter keeps its value through a tap);
+    // with it the collective crossfeed (pedalCrossfeed), washed out.
     if (kbPedals) {
+      const was = this.xfeed, xf = t.pedalCrossfeed, coll = c.collective ?? 0;
+      if (xf) {
+        // A collective change while a pedal key is held, or on the skids (the lift-off, where the pilot sets the pedal
+        // before raising the collective), is the pilot's to pedal; what the crossfeed holds washes out either way (a pedal
+        // key moves the pedals from where they are).
+        if (c.pedalWorked !== true && !s.onGround && Number.isFinite(this.collWas)) this.xfeed += xf.perCollective * fade * (coll - this.collWas);
+        this.xfeed -= this.xfeed * Math.min(1, dt / xf.washS);
+      }
+      this.collWas = coll;
+      let step = this.xfeed - was;
       if (c.pedalWorked !== true) {
         this.lpR += (fade * (rd + hp) - this.lpR) * Math.min(1, dt / fu!.filterS);
-        this.pedalStep = clamp(c.rudder + followSpeed(this.lpR, ya, fu!.deadBand, fu!.pedalGain, fu!.pedalRate) * dt, -1, 1) - c.rudder;
-        this.pedalRest += this.pedalStep;
-        this.followed.rudder += this.pedalStep;
+        step += followSpeed(this.lpR, ya, fu!.deadBand, fu!.pedalGain, fu!.pedalRate) * dt;
       }
-    } else this.lpR = 0;
+      this.pedalStep = clamp(c.rudder + step, -1, 1) - c.rudder;
+      this.pedalRest += this.pedalStep;
+      this.followed.rudder += this.pedalStep;
+    } else { this.lpR = 0; this.xfeed = 0; this.collWas = NaN; }
 
     c.aileron = clamp(c.aileron + o.aileron, -1, 1);
     c.elevator = clamp(c.elevator + o.elevator, -1, 1);
     c.rudder = clamp(c.rudder + o.rudder, -1, 1);
     this.applied = true;
+  }
+
+  /**
+   * The height hold (heightHold; a keyboard collective only): walks ControlInputs.collective itself, as the keys do (the
+   * input module adds its keys to it next frame), so nothing is put back in after().
+   */
+  private heightHold(dt: number, s: AircraftState, c: ControlInputs): void {
+    const hh = this.tuning.heightHold, rc = s.rotorcraft;
+    const hf = hh ? clamp((hh.fadeKias[1] - s.ias / KT) / (hh.fadeKias[1] - hh.fadeKias[0]), 0, 1) : 0;
+    const ts = rc?.turboshaft, tw = rc?.twinTurboshaft;
+    const powered = !!rc && s.engines.every((e) => e.running) && !tw?.oei && !ts?.needlesSplit && (ts?.nrPct ?? 100) >= (hh?.minNrPct ?? 0);
+    if (!hh || c.keyboardCollective !== true || !(hf > 0) || !powered || c.collective === undefined) {
+      this.heightMode = 'off'; this.climbWas = NaN;
+      return;
+    }
+    const w = -s.velocity.z;
+    // The proportional term (on the climb rate's change, so a new command does not kick the lever).
+    const dw = Number.isFinite(this.climbWas) && dt > 0 ? (w - this.climbWas) / dt : 0;
+    this.climbWas = w;
+    let rate: number;
+    if (c.collectiveWorked === true) {
+      // The pilot moves the lever: only the damping while held, and the datum waits for the keys to rest.
+      this.heightMode = 'off';
+      rate = -hh.kvHeld * w - hh.kp * dw;
+    } else {
+      if (this.heightMode === 'off') this.heightMode = 'damp';
+      if (this.heightMode === 'damp' && Math.abs(w) < hh.captureMps) { this.heightMode = 'hold'; this.heightRef = s.altitudeMSL; }
+      const vsCmd = this.heightMode === 'hold' ? clamp(hh.kh * (this.heightRef - s.altitudeMSL), -hh.vsMax, hh.vsMax) : 0;
+      rate = hh.kv * (vsCmd - w) - hh.kp * dw;
+    }
+    rate = hf * clamp(rate, -hh.rate, hh.rate);
+    // Never into the power limit (above the maximum continuous power), never below the floor.
+    if (rate > 0 && (rc!.powerLimitExceeded || rc!.takeoffPowerSeconds > 0)) rate = 0;
+    const was = c.collective;
+    c.collective = clamp(was + rate * dt, Math.min(was, hh.floor), 1);
+    this.followed.collective += c.collective - was;
   }
 
   /**

@@ -45,9 +45,24 @@ export const BO105_INPUT: InputProfile = {
   // after a collective tap, 1.4 still rang: out/n_ytrace.log, out/d_yaw.g.log; out/final/a_liftoff.log). The assist also
   // works on light skids, the cyclic too (groundLoad; round 2's groundYawLoad was the pedal term only). ESTIMATES tuned
   // on the probes.
+  // Tune pass (W/tune/bo105, item 1: the keyboard deceleration to the hover was lost by the collective): a HEIGHT HOLD on
+  // the keyboard collective (ADS-33E's rate command / height hold): full below 30 KIAS, gone at 40 (the trouble starts at
+  // 30-35 kt; a [20, 30] band reached the hover in 2-4 of 10 decelerations, [30, 40] in 6-7), a PI on the climb rate
+  // (kv 0.06 of the travel per second per m/s, kp 0.06 per m/s; without kp the height loop rang at 0.05-0.15 of the travel,
+  // g_loop.log), the height captured once the climb is under 0.3 m/s and held at 0.3 m/s per m, at most 0.1 of the travel
+  // per second, damping 0.03 per m/s while a collective key is held, never above the maximum continuous power, never
+  // below 0.1, off with an engine out, the needles split or NR under 95 %. With it a COLLECTIVE-TO-PEDAL CROSSFEED on the
+  // keyboard pedals (-3 of the pedal axis per unit of collective, round 3's trim slope, j_slope.log; washed out over 3 s;
+  // airborne, pedal keys at rest): the height hold's quick collective moves rang the heading (a 1 s F6 tap: 5.6 deg/s
+  // still at 15 s) and an unwashed crossfeed of its own moves piled up through the deceleration (0-1 of 10).
+  // Measured (d_hh_final, h_rows_final): the tapping beginner's deceleration reaches the hover in 9 of 10 variants and,
+  // flying on, holds it 20 s (round 3: 0 of 10, all lost); collective taps 0.3 / 0.5 / 0.6 / 1.0 s with the pedals untouched
+  // peak 1.2 / 2.0 / 2.4 / 4.1 deg (round 3: 7.1 / 11.4 / 13.5 / 20.2). ESTIMATES tuned on the probes.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
-    followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 } },
+    followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
+    heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1, minNrPct: 95 },
+    pedalCrossfeed: { perCollective: -3, washS: 3 } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
   // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine
@@ -83,6 +98,6 @@ export const BO105_INPUT: InputProfile = {
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
     centreControls: 'Cyclic back to the keyboard trim (the pedals stay where they are)',
-    stabilityAssist: 'STAB ASSIST on / off: holds the attitude below 30 KIAS and the heading when the pedals rest, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
+    stabilityAssist: 'STAB ASSIST on / off: below 30 KIAS holds the attitude, the heading when the pedals rest and the height when the collective keys rest, pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

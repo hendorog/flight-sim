@@ -128,15 +128,20 @@ describe('STAB ASSIST with the keys (attitude command, attitude hold; the pedal 
    * (14.8 kt by 8 s), and a 0.3 / 0.5 s tap's bank was back to level by 8 s with or without the hold. Holding the heading
    * keeps the drift sideward, and its airflow (the rotor's dihedral, Lv) rolls the bank back toward level against the
    * assist's 10 % of travel: 9.4 deg at 3 s, 5.6 at 5 s, 2.5 at 8 s, the nose 40 deg round instead of 84.
+   * The tune pass (W/tune/bo105): the drift's translational lift no longer becomes a climb and a torque swing (the height
+   * hold takes it back, the crossfeed pedals it), so the nose stays within 3.0 deg at 8 s (round 2: 40) and the drift
+   * stays purely sideward: its airflow rolls the bank back to level by 8 s (9.6 deg at 3 s, 5.9 at 5 s, -0.01 at 8 s).
+   * Round 2's "stays on the tapped side" (bank at 8 s >= 0) was a description, not a source; restated as "not past
+   * level by more than 1 deg", with the heading band tightened from 50 to 10 deg.
    */
-  it('a 1 s roll key tap banks 7-11 deg by 3 s; the bank stays on the tapped side while the sideward drift rolls it back, and the heading hold keeps the nose from weathercocking round (round 1: 84 deg at 8 s)', () => {
+  it('a 1 s roll key tap banks 7-11 deg by 3 s; the sideward drift rolls it back to level by 8 s without going past it, and the nose stays within 10 deg (round 1: 84 deg at 8 s, round 2: 40)', () => {
     const base = fly(9, true), tap = fly(9, true, { code: 'ArrowRight', hold: 1, at: 1 });
     const bank = (t: number) => at(tap, t).roll - at(base, t).roll;
     const hdg8 = Math.abs(wrapDeg(at(tap, 9).hdg - at(base, 9).hdg));
     report.rollTap = { at3: bank(4), at5: bank(6), at8: bank(9), hdg8 };
     expect(bank(4)).toBeGreaterThanOrEqual(7); expect(bank(4)).toBeLessThanOrEqual(11);
-    expect(bank(9)).toBeGreaterThanOrEqual(0); expect(bank(9)).toBeLessThan(bank(4));
-    expect(hdg8).toBeLessThanOrEqual(50);
+    expect(bank(9)).toBeGreaterThanOrEqual(-1); expect(bank(9)).toBeLessThan(bank(4));
+    expect(hdg8).toBeLessThanOrEqual(10);
   }, 60_000);
   it('a 10 % pedal step held by the pilot in the hover (2200 kg) reaches 16-31 deg/s at 3 s and is at least 85 % settled (ERF 1995 Nr -0.97 / -1.10 with N_ped 0.042: about 23 deg/s); the raw aircraft is still rising', () => {
     // The pilot's foot on the pedal (ControlInputs.pedalWorked, as the input module sets it for a held key or a hardware
@@ -216,7 +221,9 @@ describe('STAB ASSIST heading hold (rate command / direction hold below 30 KIAS)
     return { ...out, maxHdg } as Record<string, number>;
   }
   it('a 0.3 s collective tap (F6 up, F5 down) with the pedals untouched leaves the heading within 3 deg at 8 s (round 1: +84 / -79 deg and turning)', () => {
-    const up = tapAgainstTwin('F6', 0.3), down = tapAgainstTwin('F5', 0.3), r1 = tapAgainstTwin('F6', 0.3, withoutTuning('kpsi', 'kpsiI'));
+    // Round 1's law for the contrast: no heading hold, and none of the tune pass's height hold and crossfeed (with them the
+    // tap's torque is taken back and pedalled, so even round 1's law would not spin).
+    const up = tapAgainstTwin('F6', 0.3), down = tapAgainstTwin('F5', 0.3), r1 = tapAgainstTwin('F6', 0.3, withoutTuning('kpsi', 'kpsiI', 'heightHold', 'pedalCrossfeed'));
     report.headingHoldCollectiveTap = { up, down, roundOneUp: r1 };
     expect(Math.abs(up.hdg8)).toBeLessThanOrEqual(3); expect(Math.abs(down.hdg8)).toBeLessThanOrEqual(3);
     expect(Math.abs(r1.hdg8)).toBeGreaterThan(30);
@@ -232,7 +239,8 @@ describe('STAB ASSIST heading hold (rate command / direction hold below 30 KIAS)
     const now: Record<string, Record<string, number>> = {}, held: Record<string, Record<string, number>> = {};
     for (const hold of [0.5, 0.6, 1.0]) now[hold] = tapAgainstTwin('F6', hold, undefined, 17);
     for (const hold of [0.5, 0.6]) held[hold] = tapAgainstTwin('F6', hold, withoutTuning('followUp'), 17);
-    const r2 = tapAgainstTwin('F6', 0.5, withoutTuning('followUp', 'holdAuthority'), 17);
+    // Round 2's law for the contrast, without the tune pass's height hold and crossfeed too.
+    const r2 = tapAgainstTwin('F6', 0.5, withoutTuning('followUp', 'holdAuthority', 'heightHold', 'pedalCrossfeed'), 17);
     report.headingHoldCollectiveTapRound3 = { now, handPedalsHoldAuthorityOnly: held, roundTwoLaw05: r2 };
     for (const hold of [0.5, 0.6, 1.0]) {
       expect(Math.abs(now[hold].hdg15)).toBeLessThanOrEqual(4); expect(Math.abs(now[hold].r15)).toBeLessThan(1);

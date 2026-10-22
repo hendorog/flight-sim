@@ -113,6 +113,13 @@ export interface ControlInputs {
   keyboardCyclic?: boolean;
   keyboardPedals?: boolean;
   /**
+   * Optional: the keyboard holds the collective (no hardware lever in use) / a collective key is held. Set by the input
+   * module on a type with a STAB ASSIST, whose height hold walks only a keyboard collective and waits while a key is
+   * held (StabilityAssistTuning.heightHold); the flight model ignores them. Absent = false.
+   */
+  keyboardCollective?: boolean;
+  collectiveWorked?: boolean;
+  /**
    * Optional: how far the STAB ASSIST's trim follow-up has moved the keyboard pedals since the input module last took it
    * (axis units). The assist adds to it as it moves `rudder`; the input module moves its pedal centre (what 5 returns to)
    * by it and zeroes it. Absent = 0.
