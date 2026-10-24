@@ -142,8 +142,10 @@ describe('the pedals worked (ControlInputs.pedalWorked: the STAB ASSIST heading 
 /**
  * Round 3 (W/bofly/pilot-r3): the STAB ASSIST's trim follow-up moves only what the keyboard holds
  * (ControlInputs.keyboardCyclic / keyboardPedals), and hands its pedal movement to the input module
- * (ControlInputs.pedalFollowUp), which moves its pedal centre: 5 then returns the pedals to the followed trim, not to the
- * reset's pedal (round 2's "5 once after lift-off" trap threw the whole lift-off pedal away).
+ * (ControlInputs.pedalFollowUp), which moves its pedal centre with the pedals (round 2's "5 once after lift-off" trap
+ * threw the whole lift-off pedal away). The tune pass (W/tune/bo105, item 3): on the Bo 105 5 leaves the pedals where they
+ * are (InputProfile.centreKeepsPedals), so a pedal set with the keys is kept too (round 3: KeyZ 2 s at lift-off then 5,
+ * 62 deg/s of yaw); the MD 500E's 5 still centres them.
  */
 describe('the keyboard controls the trim follow-up may move (keyboardCyclic, keyboardPedals, pedalFollowUp)', () => {
   it('on the Bo 105 the keyboard flags are set; other types never set them', () => {
@@ -156,21 +158,80 @@ describe('the keyboard controls the trim follow-up may move (keyboardCyclic, key
       expect(o.c.keyboardCyclic).toBeUndefined(); expect(o.c.keyboardPedals).toBeUndefined();
     }
   });
-  it('a follow-up of the pedals moves the keyboard pedal centre with them, and 5 returns there; a pedal key still moves from it', () => {
+  it('a follow-up of the pedals moves the keyboard pedal centre with them; a pedal key still moves from it; 5 leaves the pedals where they are and centres the cyclic', () => {
     const r = makeInputRig(BO105_INPUT);
     r.setAirborne(true);
     r.run(FRAME);
-    const p0 = r.c.rudder;
+    const p0 = r.c.rudder, e0 = r.c.elevator;
     // As the assist leaves it after a physics step: the pedal moved, and the movement handed over.
     r.c.rudder = p0 - 0.1; r.c.pedalFollowUp = -0.1;
     r.run(FRAME);
     expect(r.c.rudder).toBeCloseTo(p0 - 0.1, 9);
     expect(r.c.pedalFollowUp).toBe(0);
     hold(r, 'KeyX', 0.5);
-    expect(r.c.rudder).toBeGreaterThan(p0 - 0.1);
+    const keyed = r.c.rudder;
+    expect(keyed).toBeGreaterThan(p0 - 0.1);
+    hold(r, 'ArrowUp', 1);
+    expect(r.c.elevator).toBeLessThan(e0 - 0.05);
+    r.tap('Digit5');
+    r.run(2);
+    expect(r.c.rudder).toBe(keyed);
+    expect(r.c.elevator).toBeCloseTo(e0, 6);
+    expect(r.input.getYokeIndicator().keyboardOffCentre).toBe(false);
+  });
+  it('the MD 500E\'s 5 still centres the pedals (centreKeepsPedals is the Bo 105\'s alone)', () => {
+    expect(MD500_INPUT.centreKeepsPedals).toBeUndefined();
+    const r = makeInputRig(MD500_INPUT);
+    r.setAirborne(true);
+    r.run(FRAME);
+    const p0 = r.c.rudder;
+    hold(r, 'KeyX', 0.5);
+    expect(r.c.rudder).toBeGreaterThan(p0 + 0.02);
     r.tap('Digit5');
     r.run(1);
-    expect(r.c.rudder).toBeCloseTo(p0 - 0.1, 6);
+    expect(r.c.rudder).toBeCloseTo(p0, 6);
+  });
+});
+
+/**
+ * The tune pass (W/tune/bo105, item 1): the STAB ASSIST's height hold walks only a keyboard collective
+ * (ControlInputs.keyboardCollective) and waits while a collective key is held (collectiveWorked); the input module sets
+ * both on a type with a STAB ASSIST. Tune round 2: collectiveFastWorked marks the hand-rate keys (Shift+F5 / Shift+F6),
+ * which the hold leaves raw while a bare F5 / F6 held airborne is its climb-rate command.
+ */
+describe('the keyboard collective the height hold may walk (keyboardCollective, collectiveWorked, collectiveFastWorked)', () => {
+  it('on the Bo 105: keyboardCollective set; collectiveWorked while F5 / F6 or Shift+F5 / Shift+F6 is held, collectiveFastWorked for the Shift pair only, cleared when they rest', () => {
+    const r = makeInputRig(BO105_INPUT, { collective: 0.4 });
+    r.setAirborne(true);
+    r.run(FRAME);
+    expect(r.c.keyboardCollective).toBe(true); expect(r.c.collectiveWorked).toBe(false);
+    for (const [code, shift] of [['F6', false], ['F5', false], ['F6', true], ['F5', true]] as const) {
+      r.input.keyDown(code, shift);
+      r.run(0.1);
+      expect(r.c.collectiveWorked, `${shift ? 'Shift+' : ''}${code}`).toBe(true);
+      expect(r.c.collectiveFastWorked, `${shift ? 'Shift+' : ''}${code}`).toBe(shift);
+      r.input.keyUp(code);
+      r.run(FRAME);
+      expect(r.c.collectiveWorked).toBe(false); expect(r.c.collectiveFastWorked).toBe(false);
+    }
+  });
+  it('a hardware collective lever in use: keyboardCollective false (the pilot\'s hand is never walked)', () => {
+    const r = makeInputRig(BO105_INPUT, { collective: 0.4 });
+    const g = r.input.gamepads;
+    g.poll = () => {};
+    g.readings.push({ control: 'collective', value: 0.4, moved: true, takeover: false } as never);
+    r.run(FRAME * 2);
+    expect(r.c.collective).toBeCloseTo(0.4, 6);
+    expect(r.c.keyboardCollective).toBe(false);
+  });
+  it('types without a STAB ASSIST never set them (MD 500E, R22)', () => {
+    for (const p of [MD500_INPUT, R22_INPUT]) {
+      const r = makeInputRig(p, { collective: 0.4 });
+      r.input.keyDown('F6');
+      r.run(0.2);
+      expect(r.c.keyboardCollective).toBeUndefined(); expect(r.c.collectiveWorked).toBeUndefined(); expect(r.c.collectiveFastWorked).toBeUndefined();
+      r.input.keyUp('F6');
+    }
   });
 });
 

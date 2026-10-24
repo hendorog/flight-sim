@@ -21,9 +21,12 @@ const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
  * the reset after it, as the Simulator does (the pilot-r2 rig reset the physics after attaching it and kept the hover's
  * keyboard pedal, -0.42 against the 45 KIAS trim's +0.18).
  */
-export function keyRig(o: { start: 'hover15' | 'ige3' | 'runway' | 'level'; kias?: number; heightM?: number; dd?: AircraftDefinition; assist?: boolean }) {
+export function keyRig(o: { start: 'hover15' | 'ige3' | 'runway' | 'level'; kias?: number; heightM?: number; dd?: AircraftDefinition; assist?: boolean;
+  /** The weather's wind (FROM deg true, kt, gusts kt, turbulence 0..1); absent: calm. */
+  wind?: { fromDeg: number; kt: number; gustKt?: number; turbulence?: number } }) {
   const dd = o.dd ?? BO105_DEFINITION;
-  const w: WeatherSettings = { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0, isaDeviation: 0, cloudCover: 0 };
+  const w: WeatherSettings = { ...defaultWeather(), windSpeedKt: o.wind?.kt ?? 0, windDirectionDeg: o.wind?.fromDeg ?? 100, gustKt: o.wind?.gustKt ?? 0,
+    turbulence: o.wind?.turbulence ?? 0, isaDeviation: 0, cloudCover: 0 };
   const events = createEventBus(), physics = new SimPhysics({ aircraft: dd, weather: w, events });
   if (o.start === 'runway') physics.reset('runway', w);
   else {
@@ -96,6 +99,40 @@ export function hoverBeginner(r: KeyRig, keys: Keys, interval = 0.8, lag = 0.3) 
   };
 }
 
+/** The state the beginners look at (0.3 s late). */
+export interface BeginnerView { pitch: number; roll: number; hdg: number; p: number; q: number; r: number; vx: number; vy: number; vz: number; x: number; y: number; z: number }
+
+/**
+ * The see-tap-wait beginner toward targets the caller sets each look (the round-1 gate's generalised beginner, gate1
+ * grig.ts): every `interval` s it looks 0.3 s back and taps toward pitch and roll (rad), heading (rad, or null: the
+ * pedals left alone) and height (z NED m, or null: the collective left alone), with bo105KeyPilot's tap laws.
+ */
+export function targetBeginner(r: KeyRig, keys: Keys, interval: number,
+  targets: (s: BeginnerView) => { pitch: number; roll: number; hdg: number | null; z: number | null }) {
+  const buf: Snap[] = [], nLag = Math.round(0.3 / FRAME);
+  let next = r.t + 1;
+  return (): void => {
+    buf.push(snap(r));
+    if (buf.length > 100) buf.splice(0, buf.length - 100);
+    if (r.t < next) return;
+    next += interval;
+    const s = buf.length > nLag ? buf[buf.length - 1 - nLag] : buf[0];
+    const t = targets(s);
+    const dPitch = (t.pitch - s.pitch - 0.4 * s.q) / DEG;
+    if (Math.abs(dPitch) > 1) keys.tap(dPitch > 0 ? 'ArrowDown' : 'ArrowUp', clamp(Math.abs(dPitch) / 9, 0.1, 0.6));
+    const dRoll = (t.roll - s.roll - 0.3 * s.p) / DEG;
+    if (Math.abs(dRoll) > 1.5) keys.tap(dRoll > 0 ? 'ArrowRight' : 'ArrowLeft', clamp(Math.abs(dRoll) / 9, 0.1, 0.4));
+    if (t.hdg !== null) {
+      const e = wrap(s.hdg - t.hdg) / DEG + 0.7 * s.r / DEG;
+      if (Math.abs(e) > 3) keys.tap(e > 0 ? 'KeyZ' : 'KeyX', clamp(Math.abs(e) / 60, 0.1, 0.5));
+    }
+    if (t.z !== null) {
+      const hold = clamp(-(0.1 * (t.z - s.z) - 0.2 * s.vz), -0.5, 0.5);
+      if (Math.abs(hold) > 0.08) keys.tap(hold > 0 ? 'F6' : 'F5', Math.abs(hold));
+    }
+  };
+}
+
 /** Lost: crashed, more than `driftLimitM` (30 m) from where it started, or more than 30 deg of attitude. */
 export interface HoverResult { lostS: number | null; crashed: boolean; flownS: number; driftM: number; maxAttDeg: number; maxHdgDeg: number }
 
@@ -159,3 +196,44 @@ export function decelKeys(r: KeyRig, keys: Keys, o: { interval: number; noseUpDe
   }
   return null;
 }
+
+/**
+ * decelKeys until a HOVER rather than a ground-speed crossing (the tune pass, W/tune/bo105: round 3's "stop" at 3 kt was
+ * crossed by a tumbling aircraft, 40 deg nose down in a 12 m/s sink): ground speed under 3 kt, |vz| under 1.5 m/s and
+ * the attitude within 15 deg, for 2 s together. Returns the time the hover was reached (the end of the 2 s), or the time
+ * it was lost (crashed or more than 30 deg of attitude), or neither by `maxS`.
+ */
+export function decelToHoverKeys(r: KeyRig, keys: Keys, o: { interval: number; noseUpDeg: number; maxS?: number;
+  /** Below 8 kt the beginner also looks at the ground: the roll (and pitch) targets lean against the drift as the hover
+   *  beginner's do (0.03 rad per m/s), instead of wings level (round 2, W/tune/bo105 r2: the wind rows). */
+  driftAware?: boolean }): { hoverS: number | null; lostS: number | null; maxAttDeg: number } {
+  const s0 = snap(r), buf: Snap[] = [], nLag = Math.round(0.3 / FRAME);
+  let next = r.t + 1, good = 0, maxAttDeg = 0;
+  while (r.t < (o.maxS ?? 60)) {
+    buf.push(snap(r));
+    const st = r.physics.state, att = Math.max(Math.abs(st.roll), Math.abs(st.pitch)) / DEG;
+    maxAttDeg = Math.max(maxAttDeg, att);
+    if (att > 30) return { hoverS: null, lostS: r.t, maxAttDeg };
+    if (r.t > 3 && st.groundSpeed / KT < 3 && Math.abs(st.velocity.z) < 1.5 && att < 15) good += FRAME; else good = 0;
+    if (good >= 2) return { hoverS: r.t, lostS: null, maxAttDeg };
+    if (r.t >= next) {
+      next += o.interval;
+      const s = buf.length > nLag ? buf[buf.length - 1 - nLag] : buf[0];
+      const gs = (s.vx * Math.cos(s.hdg) + s.vy * Math.sin(s.hdg)) / KT;
+      const vr = -s.vx * Math.sin(s.hdg) + s.vy * Math.cos(s.hdg), slow = o.driftAware === true && gs <= 8;
+      const pitchT = s0.pitch + (gs > 8 ? o.noseUpDeg : 2) * DEG + (slow ? clamp(0.03 * gs * KT, -5 * DEG, 5 * DEG) : 0);
+      const dPitch = (pitchT - s.pitch - 0.4 * s.q) / DEG;
+      if (Math.abs(dPitch) > 1) keys.tap(dPitch > 0 ? 'ArrowDown' : 'ArrowUp', clamp(Math.abs(dPitch) / 9, 0.1, 0.6));
+      const dRoll = ((slow ? clamp(-0.03 * vr, -10 * DEG, 10 * DEG) : 0) - s.roll - 0.3 * s.p) / DEG;
+      if (Math.abs(dRoll) > 1.5) keys.tap(dRoll > 0 ? 'ArrowRight' : 'ArrowLeft', clamp(Math.abs(dRoll) / 9, 0.1, 0.4));
+      const e = wrap(s.hdg - s0.hdg) / DEG + 0.7 * s.r / DEG;
+      if (Math.abs(e) > 3) keys.tap(e > 0 ? 'KeyZ' : 'KeyX', clamp(Math.abs(e) / 60, 0.1, 0.5));
+      const hold = clamp(-(0.1 * (s0.z - s.z) - 0.2 * s.vz), -0.5, 0.5);
+      if (Math.abs(hold) > 0.08) keys.tap(hold > 0 ? 'F6' : 'F5', Math.abs(hold));
+    }
+    keys.update(); frame(r);
+    if (r.physics.state.crashed) return { hoverS: null, lostS: r.t, maxAttDeg };
+  }
+  return { hoverS: null, lostS: null, maxAttDeg };
+}
+

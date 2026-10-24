@@ -45,9 +45,53 @@ export const BO105_INPUT: InputProfile = {
   // after a collective tap, 1.4 still rang: out/n_ytrace.log, out/d_yaw.g.log; out/final/a_liftoff.log). The assist also
   // works on light skids, the cyclic too (groundLoad; round 2's groundYawLoad was the pedal term only). ESTIMATES tuned
   // on the probes.
+  // Tune pass (W/tune/bo105, item 1: the keyboard deceleration to the hover was lost by the collective): a HEIGHT HOLD on
+  // the keyboard collective (ADS-33E's rate command / height hold): full below 30 KIAS, gone at 40 (the trouble starts at
+  // 30-35 kt; a [20, 30] band reached the hover in 2-4 of 10 decelerations, [30, 40] in 6-7), a PI on the climb rate
+  // (kv 0.06 of the travel per second per m/s, kp 0.06 per m/s; without kp the height loop rang at 0.05-0.15 of the travel,
+  // g_loop.log), the height captured once the climb is under 0.3 m/s and held at 0.3 m/s per m, at most 0.1 of the travel
+  // per second, damping 0.03 per m/s while a collective key is held, never above the maximum continuous power, never
+  // below 0.1, off with an engine out, the needles split or NR under 95 %. With it a COLLECTIVE-TO-PEDAL CROSSFEED on the
+  // keyboard pedals (-3 of the pedal axis per unit of collective, round 3's trim slope, j_slope.log; washed out over 3 s;
+  // airborne, pedal keys at rest): the height hold's quick collective moves rang the heading (a 1 s F6 tap: 5.6 deg/s
+  // still at 15 s) and an unwashed crossfeed of its own moves piled up through the deceleration (0-1 of 10).
+  // Measured (d_hh_final, h_rows_final): the tapping beginner's deceleration reaches the hover in 9 of 10 variants and,
+  // flying on, holds it 20 s (round 3: 0 of 10, all lost); collective taps 0.3 / 0.5 / 0.6 / 1.0 s with the pedals untouched
+  // peak 1.2 / 2.0 / 2.4 / 4.1 deg (round 3: 7.1 / 11.4 / 13.5 / 20.2). ESTIMATES tuned on the probes.
+  // Tune round 2 (W/tune/bo105 r2, the round-1 pilot gate's must items):
+  // - TRANSLATIONAL RATE COMMAND on the keyboard cyclic (ADS-33E's TRC response type at hover and low speed): the
+  //   attitude datums lean 1 deg per kt of ground speed against the drift (at most 6 deg), and once the keyboard stick
+  //   has rested 2.5 s they walk to the zero-ground-speed trim at 0.3 deg per second per kt (at most 2 deg per second),
+  //   full below 15 kt of ground speed, gone at 30; the walk also waits 2.5 s after a capture (the hold letting go at 27
+  //   kt pitched up 5.3 deg in 2 s without it). Hands off it comes back to a hover over the ground: let go after the 45
+  //   KIAS deceleration it held within 10.6 m for 60 s (round 1: slid sideways past 30 m in 10.5 s and crashed at 41 s); a
+  //   1 s ArrowUp knock in the hover 27.7 m (round 1: 490 m, 35 KIAS); 9 of 10 keyboard decelerations held as before
+  //   (r2 p1_m2). Swept 0.5-1.0 deg per kt, 0.1-0.3 deg/s per kt, rest 1-3.5 s, walk limit 0.5-2 deg/s: a shorter rest or a
+  //   stronger walk fought the tapping beginner (lost after the hover in 2 of 10), a weaker one or a 1 deg/s limit left the
+  //   knock past 30 m (p1_a..h, m0..m05).
+  // - CLIMB-RATE COMMAND on a held bare F5 / F6 (airborne, below the height hold's band): the key's own move is taken back
+  //   and the lever walked to 2 m/s up or down, the sink falling to 0.7 m/s over the 4 m above 4 m of CG height (the CG
+  //   sits 1.4 m up on the skids), stopping at the power limit and backing off at 0.05 per second while F6 stays held past
+  //   it. F5 held from 16 m and from 3 ft touches down at 0.44 m/s (round 1: crashed in a 5.9 m/s sink; 2.2 m/s); F6 held
+  //   5 s peaks at 86.2 % torque against the 86 % AEO limit (round 1: 118.6 %). Shift+F5 / Shift+F6 stay raw (p4_*).
+  // - The crossfeed on light skids too, unless a pedal key was worked on the skids: the untouched lift-off's swing in its
+  //   first 6 s 38.9 deg (59.6 airborne only); the 2 s left-pedal lift-off unchanged at 24.2 (p3, p7).
+  // - CRUISE ATTITUDE HOLD on the keyboard cyclic (the gate's "either owner" should): the cyclic terms keep full gain
+  //   above the 30-50 KIAS fade instead of fading out (the pedal term and the height hold still fade), so the keys stay
+  //   attitude command / attitude hold in cruise. The gate's tapping beginners at 60 / 80 / 100 KIAS (taps every 1 / 2 /
+  //   3 s, plus no collective): 0 of 15 crashed in 60 s (without it 10 of 15, at 14-52 s); the hands-off aircraft at 120 /
+  //   140 KIAS held (raw: diverged and crashed at 51 / 16 s); a 0.5 gain crashed 9 of 15 at 80-140 KIAS. By-hand
+  //   accelerations out of the hover: 6 of 12 not lost (0 of 12; the rest fly into the ground from 3 ft or over-torque
+  //   climbing). Above about 110 KIAS the 1 s tapper still loses it (p12_ch1hi). A mouse yoke or hardware stick flies the
+  //   raw aircraft above the fade, as before (r2 p11 / p12). ESTIMATES.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
-    followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 } },
+    followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
+    heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1, minNrPct: 95,
+      held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.7, landAglM: 4, landBandM: 4, rate: 0.2, limitBackRate: 0.05 } },
+    pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
+    cruiseHold: { gain: 1 },
+    translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 2, fadeKt: [15, 30] } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
   // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine
@@ -65,6 +109,10 @@ export const BO105_INPUT: InputProfile = {
   // Shift+5 sets the keyboard centre to the stick as it is (a sim convenience: the CB-4 has beep trim only).
   centreRate: 1,
   setTrimHere: true,
+  // 5 leaves the pedals where they are (the tune pass, item 3; W/tune/bo105): the keys and the STAB ASSIST's pedal
+  // follow-up set the pedal trim, and round 3's 5 threw a pedal set with the keys away (KeyZ 2 s at lift-off, then 5:
+  // 62 deg/s of yaw, the nose 136 deg round). The cyclic still glides back to the keyboard trim.
+  centreKeepsPedals: true,
   assists: { ...md.assists, axes: {
     elevator: { ...mdAxes.elevator, baseRate: 0.04 },
     aileron: { ...mdAxes.aileron, baseRate: 0.07, maxRate: 0.35, accelTime: 1.5 },
@@ -78,6 +126,7 @@ export const BO105_INPUT: InputProfile = {
     fuelPump: 'Fuel pumps', starter: 'STARTER/GENERATOR to START (hold)',
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
-    stabilityAssist: 'STAB ASSIST on / off: holds the attitude below 30 KIAS and the heading when the pedals rest, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
+    centreControls: 'Cyclic back to the keyboard trim (the pedals stay where they are)',
+    stabilityAssist: 'STAB ASSIST on / off: holds the attitude (on the arrow keys at every speed, the mouse yoke below 30 KIAS; with the arrow keys at rest below 30 kt it comes back to a hover over the ground), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

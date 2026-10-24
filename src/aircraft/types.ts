@@ -431,6 +431,19 @@ export interface SimProfile {
   autoflight: AutoflightProfile;
   /** Trim used for the take-off trim setting: Vy climb at full power (C172S: vy, flaps 0). */
   takeoffTrim: { kias: number; flapsDeg: number };
+  /**
+   * The helicopter hold (A; src/sim/rotorcraft/autopilot.ts) engaged while moving slower than `belowKt` (ground speed)
+   * slows to a hover at `ktPerS` and holds position there, instead of holding the engagement speed. Absent: it holds the
+   * speed it was engaged at (every helicopter but the Bo 105).
+   */
+  heliHoldSlowToHover?: { belowKt: number; ktPerS: number };
+  /**
+   * An airborne start at zero airspeed (the hover scenario, hover=1) is turned into the mean wind at the start point and
+   * trimmed at that airspeed, so the helicopter starts still over the ground instead of drifting off with the air mass
+   * (src/sim/SimPhysics.ts resetTo). Calm air changes nothing. Absent: the start keeps its heading and drifts with the
+   * wind (every type but the Bo 105).
+   */
+  hoverIntoWind?: boolean;
 }
 
 /** CLOSURES. */

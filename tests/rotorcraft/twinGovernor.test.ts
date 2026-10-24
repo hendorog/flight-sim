@@ -204,9 +204,9 @@ describe('reset, resume and one lever at IDLE (T10, T11, T16)', () => {
 
   it('T11 resume: a snapshot mid-OEI through JSON restores with no Nr or N1 step > 0.2 %', () => {
     const w = calmWeather();
+    // With the STAB ASSIST on (the type's default): its datums are in the snapshot, so the restored flight goes on with
+    // the same series term (before they were, a restore re-captured them: a 0.25 % Nr step).
     const a = new SimPhysics({ aircraft: TWIN_DEF, weather: w });
-    // The drivetrain's resume only: the STAB ASSIST's datum is not in the snapshot (a restore re-captures it; tuning list).
-    a.stabilityAssistOn = () => false;
     a.resetTo({ ...hoverScenario(a.env, d), payload: 'typical' });
     a.step(2);
     lever(a.controls, 1, LEVER.off);
@@ -218,7 +218,7 @@ describe('reset, resume and one lever at IDLE (T10, T11, T16)', () => {
     expect(back).not.toBeNull();
     expect(back!.controls.n2BeepSplit).toBe(0);
     const b = new SimPhysics({ aircraft: TWIN_DEF, weather: { ...back!.weather } });
-    b.stabilityAssistOn = () => false;
+    expect(a.stabilityAssistOn()).toBe(true); expect(back!.assist?.captured).toBe(true);
     b.restore(back!);
     // Nr is restored as saved; the gauges' N1 is republished by the first step.
     const nrStep = 100 * Math.abs(b.state.rotorcraft!.rotorRpm / a.state.rotorcraft!.rotorRpm - 1);

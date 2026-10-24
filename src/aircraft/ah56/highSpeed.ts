@@ -29,8 +29,11 @@ const LB = 0.45359237;
  * - Past the stall, lift fades to the flat plate over 15 deg and drag rises to it over 3 deg: the lift FITTED to P Report 530
  *   Table IV (Cl 1.26 -> 1.1 / 1.0 / 0.9 at +3.2 / +6.5 / +10 deg past Cl max; the shape gives 1.17 / 1.00 / 0.85). The drag is
  *   NOT fitted: it reads 0.156 / 0.221 / 0.302 there against Report 530's 0.127 / 0.195 / 0.275 (+23 / +13 / +10 %; docs 5.2, C12).
- * - MOMENT STALL. Flown: past the stall the centre of pressure moves 0.4 c aft of the quarter chord within 1.5 deg (ESTIMATE,
- *   FITTED to H4: the retreating blade's dynamic moment stall at reduced frequency about 0.1, a sudden break of about -0.45 in cm at
+ * - MOMENT STALL. Flown: past the stall the centre of pressure moves 0.2 c aft of the quarter chord within 1.5 deg (ESTIMATE,
+ *   REFITTED in the tuning round 2026-10-22, KNOWN_ISSUES T6: 0.4 c was fitted before the ICS gyro's blade moments saw the flap rate;
+ *   with that incidence 0.4 c made the stall a departure, 141 deg of right roll with the lateral stick on its stop when stabilising
+ *   at 1.4 g / 122 KCAS; at 0.2 c the onsets are P's 1.4 / 1.5 g with a 0.22 / 0.15 g pitch-up and a 24 / 17 deg roll the test
+ *   pilot holds inside the stick, none at 190 KCAS. First FITTED to H4: the retreating blade's dynamic moment stall at reduced frequency about 0.1, a sudden break of about -0.45 in cm at
  *   cn 1.1; no primary dynamic-stall data for this section were downloaded), relaxing to the flat plate over the next 15 deg,
  *   faded out between M 0.4 and 0.55 (AGENT: the advancing side's separation is shock-induced, the drag rise and the tuck carry
  *   it; with the fade at 0.45-0.6 the 20,500 lb IGE hover trims, 0.1-0.6 deg from the tip stall, did not converge). The static P shape, 0.14 c over 12 deg (D
@@ -60,7 +63,7 @@ export const AH56_SECTION: RotorSectionDef = {
     clMax: { mach: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7], value: [AH56_BASE.main.maxCl, 1.26, 1.14, 0.95, 0.88, 0.8], negativeFraction: 0.8 },
     liftFade: 15 * DEG, dragFade: 3 * DEG,
     cn90: 2.0,
-    momentStall: { shift: 0.4, over: 1.5 * DEG, machFade: [0.4, 0.55] },
+    momentStall: { shift: 0.2, over: 1.5 * DEG, machFade: [0.4, 0.55] },
     dragDivergence: { mach0: 0.83, perCl: 0.1, offset: 0.1, rise: 20 },
     machTuck: { slope: 0.1, max: 0.03 },
     reverse: { liftSlope: AH56_BASE.main.liftSlope, clMax: 0.77, dragFactor: 2 },
