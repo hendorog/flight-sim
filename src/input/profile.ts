@@ -106,7 +106,18 @@ export interface StabilityAssistTuning {
      */
     held?: { climbMps: number; sinkMps: number; landSinkMps: number; landAglM: number; landBandM: number; rate: number;
       /** While F6 is held above the maximum continuous power the lever is lowered at this rate, travel per second. */
-      limitBackRate?: number } };
+      limitBackRate?: number;
+      /**
+       * Touchdown guard: below `landAglM` a held (or tapped) bare F5 holds the height instead of sinking while the ground
+       * speed is above this, kt, so the skids do not touch down sliding (the TRC stops the slide first). Absent: none.
+       */
+      touchdownGuardKt?: number;
+      /**
+       * The climb-rate command works at every speed (the keyboard collective's protection in cruise: a held F5 / F6 walks
+       * the lever to the commanded rate, never into the power limit), not only inside the height hold's fadeKias; the
+       * capture and the hold once the keys rest keep that fade. Absent: the command fades with the height hold.
+       */
+      everySpeed?: boolean } };
   /**
    * Collective-to-pedal crossfeed on the KEYBOARD pedals (with `followUp`, through its pedal channel), airborne: while no
    * pedal key is held, every change of the collective (the pilot's keys or lever, the height hold's walk) moves the
@@ -136,7 +147,32 @@ export interface StabilityAssistTuning {
    */
   cruiseHold?: { gain: number };
   translationalRate?: { degPerKt: number; limitDeg: number; trimDegPerSPerKt: number; restS: number; trimMaxDegS?: number;
-    fadeKt: readonly [number, number] };
+    fadeKt: readonly [number, number];
+    /**
+     * The rest is the arrow keys' (ControlInputs.cyclicWorked, set by the input module when this is set): the trim walk
+     * waits `restS` after an arrow key was last held, whatever moves the stick meanwhile (a key held against the
+     * keyboardLimit leaves the stick still but is the pilot's command; the limit's re-centring after the rest, or 5, is
+     * not). Absent: the stick's movement.
+     */
+    keyRest?: boolean };
+  /**
+   * Keyboard cyclic limit at hover and low speed (tune pass 2; the input module applies it, src/input/InputSystem.ts):
+   * with the STAB ASSIST on and the cyclic on the keys, below fadeKt[0] of ground speed the arrow keys cannot move the
+   * keyboard stick more than `travel` of the axis from where it last rested (the trim the follow-up keeps; where the hover
+   * hold or a reset left it), so a held key commands at most `travel` x stickAttitude of attitude and stays inside the
+   * series authority; the limit opens linearly to the whole travel at fadeKt[1]. It only stops a key driving the stick
+   * further out (a key back toward the rest moves as before). Absent: the keys reach the whole travel.
+   */
+  keyboardLimit?: { travel: number; fadeKt: readonly [number, number];
+    /**
+     * Once the arrow keys have rested `restS`, the keyboard stick glides back to where it last rested at `rate` of the
+     * axis per second (faded out with the limit over fadeKt): the attitude the keys commanded is taken back and the TRC
+     * stops the helicopter, and a key held to the limit and let go has the full limit again. `landing`: with the reference point under `aglM` above the
+     * ground and a bare F5 held within the last `f5S` s or a sink over `sinkMps` m/s, it waits only `restS` of its own
+     * (0: as soon as no arrow key is held), so the attitude taps of a pilot letting down cannot add up to a slide.
+     * Absent: the keyboard stick stays where the keys leave it.
+     */
+    recentre?: { rate: number; restS: number; landing?: { aglM: number; restS: number; f5S: number; sinkMps: number } } };
 }
 
 export interface InputProfile {

@@ -74,6 +74,9 @@ describe('5-key centring rate (InputProfile.centreRate) and Shift+5 keyboard tri
     for (const [p, rate] of [[BO105_INPUT, 1], [MD500_INPUT, CENTRE_RATE]] as const) {
       const r = makeInputRig(p);
       r.setAirborne(true);
+      // At cruise (the untrimmed 120 KIAS pilot this rate is for): the Bo 105's keyboard cyclic limit is a hover and
+      // low-speed aid (StabilityAssistTuning.keyboardLimit, open above 30 kt of ground speed).
+      r.s.groundSpeed = 120 * 0.514444;
       const e0 = r.c.elevator;
       hold(r, 'ArrowUp', 3);
       const pushed = e0 - r.c.elevator;
