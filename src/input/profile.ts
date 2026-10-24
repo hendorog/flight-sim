@@ -108,11 +108,6 @@ export interface StabilityAssistTuning {
       /** While F6 is held above the maximum continuous power the lever is lowered at this rate, travel per second. */
       limitBackRate?: number;
       /**
-       * Touchdown guard: below `landAglM` a held (or tapped) bare F5 holds the height instead of sinking while the ground
-       * speed is above this, kt, so the skids do not touch down sliding (the TRC stops the slide first). Absent: none.
-       */
-      touchdownGuardKt?: number;
-      /**
        * The climb-rate command works at every speed (the keyboard collective's protection in cruise: a held F5 / F6 walks
        * the lever to the commanded rate, never into the power limit), not only inside the height hold's fadeKias; the
        * capture and the hold once the keys rest keep that fade. Absent: the command fades with the height hold.
@@ -154,7 +149,13 @@ export interface StabilityAssistTuning {
      * keyboardLimit leaves the stick still but is the pilot's command; the limit's re-centring after the rest, or 5, is
      * not). Absent: the stick's movement.
      */
-    keyRest?: boolean };
+    keyRest?: boolean;
+    /**
+     * While the input module reports the keyboardLimit's landing condition (ControlInputs.cyclicLanding) the trim walk
+     * waits only this (0: whenever no arrow key is held), so a pilot tapping the attitude while letting down cannot keep
+     * a datum off the zero-ground-speed trim. Absent: restS always.
+     */
+    landingRestS?: number };
   /**
    * Keyboard cyclic limit at hover and low speed (tune pass 2; the input module applies it, src/input/InputSystem.ts):
    * with the STAB ASSIST on and the cyclic on the keys, below fadeKt[0] of ground speed the arrow keys cannot move the

@@ -934,6 +934,7 @@ export class InputSystem implements Subsystem {
         this.lowerKeyAgo = this.held.has('flapsUp') ? 0 : this.lowerKeyAgo + dt;
         const ld = rc.landing;
         const landing = !!ld && s.altitudeAGL < ld.aglM && (this.lowerKeyAgo < ld.f5S || s.velocity.z > ld.sinkMps);
+        if (ld) c.cyclicLanding = landing;
         if (this.cyclicKeysQuiet > 0 && this.cyclicKeysQuiet >= (landing ? ld!.restS : rc.restS)) {
           const step = rc.rate * (1 - f) * dt;
           const da = Math.sign(k.aileron) * Math.min(step, Math.abs(k.aileron)), de = Math.sign(k.elevator) * Math.min(step, Math.abs(k.elevator));

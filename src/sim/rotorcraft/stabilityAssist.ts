@@ -323,8 +323,11 @@ export class StabilityAssist {
         pitch0 += ft * clamp(kv * vf, -lim, lim);
         roll0 -= ft * clamp(kv * vr, -lim, lim);
         // keyRest (opt-in, tune pass 2): the rest is the arrow keys' (a key held against the keyboardLimit, the stick not
-        // moving, is still the pilot's command; the keyboard stick's re-centring after the rest is not the pilot's).
-        if (Math.min(tr.keyRest ? this.keyQuietFor : this.stickQuietFor, this.sinceCapture) >= tr.restS) {
+        // moving, is still the pilot's command; the keyboard stick's re-centring after the rest is not the pilot's);
+        // landingRestS (opt-in): letting down, a shorter rest (ControlInputs.cyclicLanding).
+        const quiet = tr.keyRest ? this.keyQuietFor : this.stickQuietFor;
+        const restS = c.cyclicLanding === true && tr.landingRestS !== undefined ? tr.landingRestS : tr.restS;
+        if (quiet > 0 && quiet >= restS && this.sinceCapture >= tr.restS) {
           const ki = fade * ft * tr.trimDegPerSPerKt * DEG / KT, cap = (tr.trimMaxDegS ?? Infinity) * DEG * dt;
           const dp = clamp(ki * vf * dt, -cap, cap), dr = clamp(ki * vr * dt, -cap, cap);
           this.pitchRef += dp; pitch0 += dp;
@@ -457,9 +460,7 @@ export class StabilityAssist {
       back = hfHeld * key;
       const sink = clamp(held.landSinkMps + (s.altitudeAGL - held.landAglM) * (held.sinkMps - held.landSinkMps) / held.landBandM,
         held.landSinkMps, held.sinkMps);
-      // Touchdown guard (held.touchdownGuardKt, opt-in): below landAglM the sink waits while the ground speed is above it.
-      const guard = held.touchdownGuardKt !== undefined && s.altitudeAGL < held.landAglM && s.groundSpeed / KT > held.touchdownGuardKt;
-      const vsCmd = this.keyDir > 0 ? held.climbMps : this.keyDir < 0 ? (guard ? 0 : -sink) : 0;
+      const vsCmd = this.keyDir > 0 ? held.climbMps : this.keyDir < 0 ? -sink : 0;
       rate = clamp(hh.kv * (vsCmd - w) - hh.kp * dw, -held.rate, held.rate);
     } else if (c.collectiveWorked === true) {
       // The pilot moves the lever: the hand-rate keys (Shift+F5 / Shift+F6) raw, a bare key on the skids (or without the
