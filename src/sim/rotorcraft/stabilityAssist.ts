@@ -107,6 +107,14 @@ const HOLD_FADE_KT = 10;
 /** A heading error beyond this drags the heading datum along (a held pedal overpowering the hold), rad. */
 const HOLD_SLIP = Math.PI / 4;
 
+/**
+ * keyAttitude (opt-in): the commanded rate's low-pass, s. The input module moves the keyboard stick once a frame and the law
+ * runs every physics step, so the raw change comes as one spike a frame.
+ */
+const KA_RATE_FILTER_S = 0.1;
+/** keyPedal (opt-in): the longest the turn is braked after a pedal key comes up, s. */
+const BRAKE_MAX_S = 2;
+
 /** A stick quiet this long counts as quiet since the capture (Infinity in the assist; JSON has none), s. */
 const STICK_QUIET_MAX = 1e6;
 
@@ -203,6 +211,24 @@ export class StabilityAssist {
   private rollEngaged = false;
   private rollHeadingRef = 0;
   private lpRoll = 0;
+  // AH-56A tune3 (the opt-in keyAttitude / keyPedal; unused without them).
+  /** The keyboard attitude command flies (its datum and trims taken), and its internal zero-rate trims, axis units. */
+  private kaOn = false;
+  private kaTrimA = 0;
+  private kaTrimE = 0;
+  /** The commanded attitude of the last step (its change is the commanded rate the feedforward flies), rad; NaN: none yet. */
+  private kaRollWas = NaN;
+  private kaPitchWas = NaN;
+  /** The commanded roll and pitch rates, low-passed over KA_RATE_FILTER_S (the keys move the stick once a frame), rad/s. */
+  private kaP = 0;
+  private kaQ = 0;
+  /** The offset kept under the keyboard pedal (the flight model sees the pedal less this), axis units. */
+  private pedalOff = 0;
+  /** Time since the pedal key came up while the turn is braked, s; -1: not braking. */
+  private pedalBrake = -1;
+  /** The keyboard pedal where the keys last left it, and whether a pedal key was held at the last step. */
+  private pedalKeyRest = NaN;
+  private pedalKeyWas = false;
 
   constructor(readonly tuning: StabilityAssistTuning) {}
 
@@ -233,6 +259,11 @@ export class StabilityAssist {
       ...(this.tuning.translationalRate?.keyRest ? { keyQuietFor: Math.min(this.keyQuietFor, STICK_QUIET_MAX) } : {}),
       // heightHold.held.everySpeed (opt-in): the collective at the press.
       ...(this.tuning.heightHold?.held?.everySpeed && Number.isFinite(this.collAtPress) ? { collAtPress: this.collAtPress } : {}),
+      // The opt-in tune3 states, only for a type that has them.
+      ...(this.tuning.keyAttitude ? { kaOn: this.kaOn, kaTrimA: this.kaTrimA, kaTrimE: this.kaTrimE,
+        ...(Number.isFinite(this.kaRollWas) ? { kaRollWas: this.kaRollWas, kaPitchWas: this.kaPitchWas } : {}), kaP: this.kaP, kaQ: this.kaQ } : {}),
+      ...(this.tuning.keyPedal ? { pedalOff: this.pedalOff, pedalBrake: this.pedalBrake, pedalKeyWas: this.pedalKeyWas,
+        ...(Number.isFinite(this.pedalKeyRest) ? { pedalKeyRest: this.pedalKeyRest } : {}) } : {}),
     };
   }
 
@@ -266,6 +297,10 @@ export class StabilityAssist {
     const keyQuiet = num('keyQuietFor', STICK_QUIET_MAX);
     this.collAtPress = num('collAtPress', NaN);
     this.keyQuietFor = keyQuiet >= STICK_QUIET_MAX ? Infinity : keyQuiet;
+    this.kaOn = flag('kaOn'); this.kaTrimA = num('kaTrimA', 0); this.kaTrimE = num('kaTrimE', 0);
+    this.kaRollWas = num('kaRollWas', NaN); this.kaPitchWas = num('kaPitchWas', NaN); this.kaP = num('kaP', 0); this.kaQ = num('kaQ', 0);
+    this.pedalOff = num('pedalOff', 0); this.pedalBrake = num('pedalBrake', -1); this.pedalKeyWas = flag('pedalKeyWas');
+    this.pedalKeyRest = num('pedalKeyRest', NaN);
   }
 
   /**
@@ -277,6 +312,7 @@ export class StabilityAssist {
     this.pedalOnSkids = false;
     this.lpBeta = 0; this.stickMoved = false;
     this.rollEngaged = false; this.lpRoll = 0;
+    this.pedalOff = 0; this.pedalBrake = -1; this.pedalKeyRest = NaN; this.pedalKeyWas = false;
   }
 
   /** Forget the datums (a reset or a restore): the next active step captures the attitude, stick and heading it finds. */
@@ -291,6 +327,7 @@ export class StabilityAssist {
     this.xfeed = 0; this.collWas = NaN; this.collLeft = NaN; this.keyDir = 0;
     this.output.aileron = this.output.elevator = this.output.rudder = this.output.gain = this.output.cyclicGain = 0;
     this.airQuietFor = 0;
+    this.kaOn = false;
   }
 
   /**
@@ -299,6 +336,75 @@ export class StabilityAssist {
    * follow the step.
    */
   before(dt: number, s: AircraftState, c: ControlInputs, active: boolean): void {
+    // keyPedal (opt-in): while the turn is braked after a pedal key came up, the law sees the pedal as worked (the heading hold
+    // takes the heading once the turn has stopped).
+    const kp = this.tuning.keyPedal, worked = c.pedalWorked;
+    if (kp && this.pedalBrake >= 0 && active) c.pedalWorked = true;
+    this.beforeLaw(dt, s, c, active);
+    if (kp) { c.pedalWorked = worked; this.keyPedal(dt, s, c, active); }
+  }
+
+  /**
+   * keyPedal (opt-in, tune3), after the law: inside the heading hold's band (airborne, the pedal term working; weighted by the
+   * hold's fade) a pedal key is a yaw-rate command. While a key is held the flight model sees the pedal rest (the keyboard pedal
+   * where the key found it) plus a yaw-rate loop toward turnPerUnit x the key's move (at most turnDegS) instead of the key's move
+   * and the law's rate damping; when it comes up the key's move is kept under the keyboard pedal (an offset: the flight model
+   * sees the pedal less it) and the loop brakes the turn (rate command 0) until the yaw rate is under brakeDegS (at most
+   * BRAKE_MAX_S), the law seeing the pedal as worked, so the heading hold then takes the heading where the turn stopped. After the
+   * brake the offset is handed back to the keyboard pedal at returnRate (the keyboard pedal moves, the flight model's does not):
+   * the keyboard pedal settles to the pedal that holds the heading, as the trim follow-up walks it, and a same-way turn never
+   * leaves it against its stop. Off (the assist switched off, someone else flying, crashed, a hardware pedal), the offset is
+   * handed back at once. after() puts the pedal back.
+   */
+  private keyPedal(dt: number, s: AircraftState, c: ControlInputs, active: boolean): void {
+    const kp = this.tuning.keyPedal!, kb = !!this.tuning.followUp && c.keyboardPedals === true;
+    if (!this.applied) {
+      const p = this.pilot;
+      p.aileron = c.aileron; p.elevator = c.elevator; p.rudder = c.rudder;
+      this.pedalStep = 0;
+      this.applied = true;
+    }
+    const pedal = this.pilot.rudder;
+    if (!kb || !active || s.crashed) {
+      // Handed back: the keyboard pedal moves by the offset, so the pedal the flight model sees stays.
+      if (kb && this.pedalOff !== 0) this.pedalStep = clamp(pedal + this.pedalStep - this.pedalOff, -1, 1) - pedal;
+      this.pedalOff = 0; this.pedalKeyRest = NaN; this.pedalKeyWas = false; this.pedalBrake = -1;
+      return;
+    }
+    const t = this.tuning, kpsi = t.kpsi ?? 0;
+    const h = this.output.gain > 0 && kpsi > 0 ? clamp((t.fadeKias[0] - s.ias / KT) / HOLD_FADE_KT, 0, 1) : 0;
+    const worked = c.pedalWorked === true, r = s.angularVelocity.z;
+    if (worked && !this.pedalKeyWas) this.pedalBrake = -1;
+    const moved = Number.isFinite(this.pedalKeyRest) ? pedal - this.pedalKeyRest : 0;
+    if (!worked && this.pedalKeyWas) {
+      // The key came up: its move goes under the pedal (the flight model never saw it inside the band) and the turn is braked.
+      this.pedalOff += h * moved;
+      this.pedalBrake = h > 0 ? 0 : -1;
+    }
+    this.pedalKeyWas = worked;
+    this.pedalOff = clamp(this.pedalOff, pedal - 1, pedal + 1);
+    // After the brake, with no key held: the offset back to the keyboard pedal (the law's own walk of it this step included).
+    if (!worked && this.pedalBrake < 0 && this.pedalOff !== 0) {
+      const d = Math.sign(this.pedalOff) * Math.min(Math.abs(this.pedalOff), kp.returnRate * dt);
+      // The law's pedal rest moves with it (its own walk, not the pilot's: the heading hold keeps its datum).
+      this.pedalOff -= d; this.pedalStep -= d; this.pedalRest -= d;
+    }
+    if (!worked) this.pedalKeyRest = pedal + this.pedalStep;
+    const law = this.output.rudder;
+    let phys = c.rudder - this.pedalOff;
+    if (worked && h > 0) {
+      const rc = clamp(kp.turnPerUnit * moved, -kp.turnDegS, kp.turnDegS) * DEG;
+      const loop = clamp(kp.ff * rc + kp.kr * (rc - r), -kp.authority, kp.authority);
+      phys = pedal - this.pedalOff - h * moved + (1 - h) * law + h * loop;
+    } else if (this.pedalBrake >= 0) {
+      this.pedalBrake += dt;
+      if (Math.abs(r) < kp.brakeDegS * DEG || this.pedalBrake > BRAKE_MAX_S || !(h > 0)) this.pedalBrake = -1;
+      else phys = pedal - this.pedalOff + (1 - h) * law + h * clamp(-kp.kr * r, -kp.authority, kp.authority);
+    }
+    c.rudder = clamp(phys, -1, 1);
+  }
+
+  private beforeLaw(dt: number, s: AircraftState, c: ControlInputs, active: boolean): void {
     const t = this.tuning, o = this.output, fu = t.followUp;
     this.applied = false;
     this.pedalStep = 0;
@@ -307,12 +413,20 @@ export class StabilityAssist {
     // cruiseHold.handHeld (opt-in, tune pass 2 fix): a hand-held stick (the input module's keyboardCyclic false) keeps
     // the cruise gain too.
     const hand = t.cruiseHold?.handHeld === true && c.keyboardCyclic === false ? t.cruiseHold.gain : 0;
-    const cyc = Math.max(fade, t.cruiseHold && fu && c.keyboardCyclic === true ? t.cruiseHold.gain : 0, hand);
+    // keyAttitude (opt-in, tune3): the keyboard attitude command flies at every speed.
+    const cyc = Math.max(fade, t.cruiseHold && fu && c.keyboardCyclic === true ? t.cruiseHold.gain : 0, hand,
+      t.keyAttitude && fu && c.keyboardCyclic === true ? 1 : 0);
     const lightSkids = s.onGround && t.groundLoad !== undefined && groundLoadFraction(s) < t.groundLoad;
     // A pedal key worked on the skids makes the lift-off's yaw the pilot's (kept through the reset below).
     if (!s.onGround) this.pedalOnSkids = false;
     else if (c.pedalWorked === true) this.pedalOnSkids = true;
     if (!active || s.crashed || !(cyc > 0) || (s.onGround && !lightSkids)) {
+      // The keyboard attitude command stops flying (on the wheels, switched off): its last term goes to the spring-trim anchor,
+      // which the keyboard stick follows, so the cyclic the flight model sees does not jump (keyAttitude, opt-in).
+      const sp = s.rotorcraft?.springTrim;
+      if (this.kaOn && c.keyboardCyclic === true && sp && !s.crashed) {
+        sp.roll = clamp(sp.roll + o.aileron, -1, 1); sp.pitch = clamp(sp.pitch + o.elevator, -1, 1);
+      }
       this.reset();
       // Above the fade the sideslip pedal follow-up (opt-in) still trims the keyboard pedals.
       if (t.sideslipPedal && fu && active && !s.crashed && !s.onGround && c.keyboardPedals === true) this.sideslipOnly(dt, s, c);
@@ -352,8 +466,18 @@ export class StabilityAssist {
       this.airU = air.x; this.airV = air.y;
       this.stickRestA = c.aileron; this.stickRestE = c.elevator; this.stickQuietFor = Infinity;
       this.sinceCapture = 0;
+      this.kaOn = false;
     }
     this.sinceCapture += dt;
+    // The keyboard attitude command (keyAttitude, opt-in) takes its datum and trims where it starts flying (the capture, or
+    // the keyboard taking the stick back from the mouse yoke or a hardware stick).
+    const ka = t.keyAttitude && kbCyclic && this.captured && cyclicOn ? t.keyAttitude : undefined;
+    if (ka && !this.kaOn) {
+      this.kaOn = true;
+      this.rollRef = s.roll; this.pitchRef = s.pitch; this.aileronRef = c.aileron; this.elevatorRef = c.elevator;
+      this.kaTrimA = c.aileron; this.kaTrimE = c.elevator;
+      this.kaRollWas = NaN; this.kaPitchWas = NaN; this.kaP = 0; this.kaQ = 0;
+    } else if (!ka) this.kaOn = false;
     if (Math.abs(c.aileron - this.stickRestA) > STICK_EPS || Math.abs(c.elevator - this.stickRestE) > STICK_EPS) {
       this.stickRestA = c.aileron; this.stickRestE = c.elevator; this.stickQuietFor = 0;
     } else this.stickQuietFor += dt;
@@ -416,11 +540,33 @@ export class StabilityAssist {
     const a = t.authority;
     o.aileron = cyc * clamp(-t.kp * w.x - t.katt * wrap(s.roll - roll0), -a, a);
     o.elevator = cyc * clamp(-t.kq * w.y - t.katt * (s.pitch - pitch0), -a, a);
+    if (ka) {
+      // The keyboard attitude command: the stick's offset is the attitude datum (within the limits), and the flight model sees
+      // the zero-rate trim plus the attitude loop, never the stick's own offset.
+      const rl = ka.rollDeg * DEG, pl = ka.pitchDeg * DEG;
+      roll0 = this.rollRef + clamp(rl / ka.travel * (c.aileron - this.aileronRef), -rl, rl);
+      pitch0 = this.pitchRef + clamp(pl / ka.travel * (c.elevator - this.elevatorRef), -pl, pl);
+      // The commanded rate (the datum's change): fed forward (ffRoll / ffPitch) and the rate damping on the rate error.
+      const f = Math.min(1, dt / KA_RATE_FILTER_S);
+      this.kaP += ((Number.isFinite(this.kaRollWas) && dt > 0 ? wrap(roll0 - this.kaRollWas) / dt : 0) - this.kaP) * f;
+      this.kaQ += ((Number.isFinite(this.kaPitchWas) && dt > 0 ? (pitch0 - this.kaPitchWas) / dt : 0) - this.kaQ) * f;
+      this.kaRollWas = roll0; this.kaPitchWas = pitch0;
+      const pc = this.kaP, qc = this.kaQ;
+      const ia = clamp((ka.ffRoll ?? 0) * pc - ka.kp * (w.x - pc) - ka.kattRoll * wrap(s.roll - roll0), -ka.authority, ka.authority);
+      const ie = clamp((ka.ffPitch ?? 0) * qc - ka.kq * (w.y - qc) - ka.kattPitch * (s.pitch - pitch0), -ka.authority, ka.authority);
+      // The trims integrate the loop's term out, airborne (not on light wheels, where the ground holds the attitude).
+      if (!s.onGround) {
+        this.kaTrimA = clamp(this.kaTrimA + ka.trimRate * ia * dt, -1, 1);
+        this.kaTrimE = clamp(this.kaTrimE + ka.trimRate * ie * dt, -1, 1);
+      }
+      o.aileron = this.kaTrimA + ia - c.aileron;
+      o.elevator = this.kaTrimE + ie - c.elevator;
+    }
     if (!cyclicOn) { o.aileron = 0; o.elevator = 0; }
     // Cyclic follow-up through the spring-trim anchor: the keyboard stick follows the anchor at the input module's next
     // frame, and the stick reference moves with it now, so the commanded attitude stays.
     const spring = s.rotorcraft?.springTrim;
-    if (kbCyclic && spring) {
+    if (kbCyclic && spring && !ka) {
       const f = Math.min(1, dt / fu!.filterS);
       this.lpA += (o.aileron - this.lpA) * f; this.lpE += (o.elevator - this.lpE) * f;
       const dA = clamp(spring.roll + followSpeed(this.lpA, a, fu!.deadBand, fu!.cyclicGain, fu!.cyclicRate) * dt, -1, 1) - spring.roll;

@@ -235,6 +235,34 @@ export interface StabilityAssistTuning {
    */
   groundRollHeading?: { gsKt: readonly [number, number, number, number]; kpsi: number; kr: number; authority: number; gain: number;
     rate: number; filterS: number };
+  // ---- AH-56A tune3, the keyboard feel (opt-in; absent = the law as before).
+  /**
+   * Attitude command / attitude hold on a KEYBOARD cyclic that stays where the keys leave it (with `followUp`), at every
+   * speed: the keyboard stick's offset from where the datum was taken commands a held bank and pitch (`rollDeg` / `pitchDeg`
+   * at `travel` of the axis, linear, about the captured attitude and never beyond those), and the assist flies that
+   * attitude itself: the control the flight model sees is an internal zero-rate trim plus clamp(-k(att) (attitude error) -
+   * k(rate) rate, +/-authority) (`kattRoll` / `kattPitch` per rad, `kp` / `kq` per rad/s), the trim walking at `trimRate`
+   * per second per unit of that term (the attitude error is integrated out). The stick's own offset never reaches the flight
+   * model while this flies (it is the command, not a rate demand on a rate-command gyro), and the cyclic follow-up does not
+   * walk the keyboard stick. The commanded attitude's rate (the keys moving the stick) is fed forward, `ffRoll` / `ffPitch`
+   * axis units per rad/s (absent: 0), and the rate terms act on the rate error. With the STAB ASSIST on, the input module keeps
+   * the keyboard stick within `travel` of the spring-trim anchor. Absent: the law above (a hand-held stick keeps it either way).
+   */
+  keyAttitude?: { travel: number; rollDeg: number; pitchDeg: number; kattRoll: number; kattPitch: number; kp: number; kq: number;
+    authority: number; trimRate: number; ffRoll?: number; ffPitch?: number };
+  /**
+   * KEYBOARD pedals as a yaw-rate command inside the heading hold's band (with `followUp`): airborne below the heading hold's
+   * fade, while a pedal key is held, the flight model sees the pedal where the key found it plus clamp(`ff` x r(cmd) + `kr` x
+   * (r(cmd) - r), +/-`authority`), r(cmd) `turnPerUnit` deg/s per unit of the key's move, at most `turnDegS`; when the key comes
+   * up its move is kept under the keyboard pedal and the turn is braked to under `brakeDegS` before the heading hold takes the
+   * heading (rate command / direction hold: no pull-back). The keyboard pedal is not re-centred: after the brake what is kept
+   * under it is handed back at `returnRate` of the axis per second, so it settles to the pedal that holds the heading (the trim
+   * follow-up walks it as before). With the assist off, or anyone else flying, it is handed back at once. With the STAB ASSIST
+   * on, the input module keeps a pedal key's move within `travel` of where the key found the keyboard pedal, and the follow-up
+   * (ControlInputs.pedalFollowUp) moves the keyboard pedal itself rather than its centre. Absent: a key's move is the pedal's.
+   */
+  keyPedal?: { turnPerUnit: number; turnDegS: number; ff: number; kr: number; authority: number; brakeDegS: number; returnRate: number;
+    travel: number };
 }
 
 export interface InputProfile {
