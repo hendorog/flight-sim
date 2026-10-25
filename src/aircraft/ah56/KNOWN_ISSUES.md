@@ -629,7 +629,23 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     airborne (captureAirborne), 4 of 4, the hover 5-24 m. katt 0.15 or authority 0.1 completed 3 of 4 (4 samples: noise around
     "with it"). Shipped: katt 0.3, stickAttitude 0.6, authority 0.2, both re-capture fields. The price: the knock, 2 s ArrowRight
     then hands off, 168 m in 22 s (round 2 148 m; katt 0: 162 m), ArrowUp 114 m (99; 103). katt 0 is
-    one line in input.ts (the numbers above are for the owner's choice). Shift+A switches the STAB ASSIST off; the prop schedule lets go when the prop grip is touched.
+    one line in input.ts (the numbers above are for the owner's choice).
+  - Round 4, the knock over 60 s (the pass-2 gate's should; an OWNER DECISION). From the 15 m hover, aids on, a cyclic tap then
+    hands off 60 s (W/tune2/ah56/r4/out/arm-1.log): a 1 s tap leaves at 8-28 KIAS, 200-440 m away (ArrowDown backwards at 8 kt); a 2 s
+    tap became a climb-out at 47-67 KIAS to 44-273 m AGL, 957-1,179 m away, because the PROP SCHEDULE came in from 30 KIAS and the
+    height hold fades at 30-40. Nothing crashes, but the watching beginner after a 2 s push never regains the spot in 60 s (ends
+    92-346 m off at 7-33 kt; arm-3.log). Neither option is shipped; both were flown for the owner.
+    Option (ii), keeping the gyro's behaviour (the propLever.schedule.arm hunks of W/tune2/ah56/r4/arm-and-groundroll-shared.patch,
+    ~15 lines in the shared input files): the PROP SCHEDULE holds the hover detent until the nose-down key is held at 15 KIAS or more (and again below 10).
+    The 2 s tap then stays at 26-45 KIAS and 17-58 m AGL (no climb-out) but still drifts 600-824 m; the 1 s tap, the beginner's
+    recovery (7 of 8 the same), the pushes row and the whole flight are unchanged; but the deliberate transition gets worse at all
+    four paces (out/trans-1.log): hover to 38 KIAS 33.7-39.5 s (27.1-29.7) with the heading 18-54 deg off (14-37), and back to the
+    hover in 60 s / not in 90 s at two of the three paces that made it (35-37 s) - a cost on the core manoeuvre for a mis-input.
+    Option (i), the owner said they would rather not have a pitch/roll aid: the shared law's translationalRate (the Bo 105 lane's
+    TRC, fadeKt 10-20 kt) on the keyboard cyclic. With this profile's light katt 0.3 it makes the 2 s tap WORSE (60-96 KIAS, 110-156
+    m AGL); with katt 1.0 within 0.3 of the travel the 1 s tap drifts 5-6 m and the 2 s tap 17-19 m, back to 1 kt or less by 60 s,
+    and the whole flight's stop takes 8-12 s (shipped 78 s / over 90 s), but at the 1.2 s pace the landing heading spun 142 deg
+    (shipped 43; out/trc-1.log). Option (i) is two lines in input.ts; the hint's "bring it back yourself" is the defence today. Shift+A switches the STAB ASSIST off; the prop schedule lets go when the prop grip is touched.
   - C, the "one gate" (above 25 KIAS the keyboard pedal stayed at the hover's): sideslipPedal walks the keyboard pedal to zero
     sideslip from 20 to 160 kt of forward air speed, above the assist's fade too. The circuit's four turns and legs complete at every
     pace (before: the heading 140-171 deg off on leg 1, 20-30 kt of slip); at 80 / 100 KIAS a pedal knocked 0.13 off is back in 5 s
@@ -644,7 +660,8 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     38 KIAS in 27-30 s (was 50 s / not in 60), 60 KIAS by the pushes in 30.1 s, the circuit at 62-77 KIAS.
   - The whole flight (ah56KeyMission, two paces; four in W/tune2/ah56 out/fin_c1_*.log): every flight lands, no crash; at 0.8 s the
     stop takes 71.8 s, the hover 8.0 m, the touchdown 51 fpm at 1.0 kt. KNOWN GAP at 1.2 s (0.5 s late): not stopped in 90 s, the
-    hover 18.8 m, 40 fpm at 9.5 kt (still no crash). The way back from 40 KIAS (ah56Assist): 36.7 s at 0.8 s, not stopped in 90 s at
+    hover 18.8 m, 40 fpm at 9.5 kt (still no crash; the 1.2 s touchdown varies 10-20 kt between rigs: 9.5 kt in ah56KeyMission,
+    18.8 kt in the probe mission of W/tune2/ah56/clib.ts). The way back from 40 KIAS (ah56Assist): 36.7 s at 0.8 s, not stopped in 90 s at
     1.2 s, and feet off the heading ends 44-57 deg from the start (the hold takes the nose where it is at 20 KIAS) (KNOWN GAP).
   - D, the collective (heightHold, the Bo 105 lane's law with landAglM 4.5; collectiveFastRate.upStop 0.8 with the engine running):
     F6 held 1 / 2 s past the first unload: no crash, 15-67 fpm (round 2: crashes, left main at 420-699 fpm); F5 held 2 s in the 15 m
@@ -661,6 +678,20 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     wheels: 127 deg at 21 deg of roll; feet on from the approach: 145 deg, at the slow pace a right wingtip strike). The Landing hint
     now LEADS with the hover landing on a held F5 (6 of 6 at both paces, 8-68 fpm: the gate's p6) and says the run-on is not yet
     beginner-safe on keys (the roll-out swings 120-145 deg with the tail rotor as the collective comes down); the Z / X cue is gone.
+  - Round 4, a ground-roll heading hold (the gate's should; StabilityAssistTuning.groundRollHeading, opt-in, AH-56A only, a sim aid):
+    on the wheels with the tail wheel locked and no pedal key held, the touchdown heading is held on the keyboard pedals between 6
+    and 50 kt of ground speed (faded in from 3, out by 60; kpsi 1.5, kr 0.5, within 0.5 of the axis, the pedal centre walked along).
+    The swing came from the main term being off on heavy wheels and the tail rotor's thrust outliving the collective. 40 / 45 / 50
+    KIAS approaches at 0.8 / 1.0 / 1.2 s, feet off (W/tune2/ah56/r4/out/runon-5.log, runon-6.log; the touchdowns that collapse a main
+    at the slow pace left out): with the brakes held below 20 kt 7 of 7 roll-outs end intact (without the hold 1 of 7: wingtip
+    strikes, main and tail legs collapsed, 49-145 deg off the approach heading); with the brakes held from the touchdown 5 of 7 (2 nose-overs onto the
+    turret, pitch -8.9 deg: a straight roll-out takes the full braking, which the swing used to hide; without the hold 6 of 7 intact,
+    swinging 38-150 deg). New ah56Assist rows (45 KIAS, 0.8 / 1.0 s, brakes below 20 kt): 16.6 / 32.3 deg from the touchdown heading,
+    no crash. Still not beginner-safe, so the Landing hint keeps the hover landing first: at the 1.2 s pace the beginner's approach
+    touches down at 547-565 fpm and collapses a main (no ground-roll term can help), and full brakes above 20 kt can nose over; the
+    hint says brakes below 20 kt and feet off the pedal keys (the beginner's own Z / X on the wheels crashed 10 of 16 at 45 / 55 KIAS in
+    runon-5, 3 of 4 with this hold). The KNOWN GAP row (both paces, from the approach heading) stays: 55 deg at 0.8 s (35 of it before the
+    touchdown), the collapse at 1.2 s. kpsi 2 crashed 3 of 14 (1.5: 2 of 14); kpsi 3 nosed over in the 45 KIAS full-brake case (runon-2).
   - D, the main gear (gear.ts limitLoad, the collapse load, ESTIMATE): 140 -> 180 kN, D from the P 9.5 ft/s touchdown sink with FAR
     27: the level landing at the P sink gives 103 kN a main (this strut, the hover collective), FAR 27.483 puts the level-landing load
     on one wheel, 1.5 x ultimate = 155 kN; a vertical landing from this aircraft's 4.7 deg left-wing-low hover is a one-wheel

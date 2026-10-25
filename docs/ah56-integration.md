@@ -409,3 +409,26 @@ Shared files (both lanes): every addition is an opt-in field, default off — St
 recaptureOnCentre / captureAirborne, InputProfile.centringPedals, collectiveFastRate.upStop, propLever.schedule.default and the
 propSchedule's engine-running gate; tests/rotorcraft/bo105*, tests/input, tests/ui and legacyDigest pass unchanged. No shared rotor
 file was touched.
+
+## 15. Tuning round 4 (2026-10-25, branch `tune2/ah56`): the pass-2 gate's fix round
+
+The Fable pilot gate scored round 3 at 7 ("good enough to hand to the owner once the two text musts are applied"). Probes and logs:
+`W/tune2/ah56/r4/` (notes.md, round 4); the gate's own rigs and traces in `W/tune2/ah56/gate1/`. Details: KNOWN_ISSUES T10 and T11.
+
+| Gate issue | Before | Change | After |
+|---|---|---|---|
+| Engine-failure hint (must) | "Shift+F6 from about 1.5 m": its level-wings technique collapses a main at one lag of two | hint: about 2 m of wheel height, 6-7 ft on the HUD AGL (1.75-2.25 m) | the window, both lags: 361-406 / 309-323 / 315-335 fpm, 96 / 70 / 93 kN; three passing ah56Assist rows |
+| Landing hint (must) | led with the run-on and a Z / X cue that does not work (127-145° roll-outs) | leads with the hover landing on a held F5; the run-on "not yet beginner-safe"; no Z / X cue | the hover landing 6 of 6 at both paces (the gate's p6) |
+| Shift+F5 in the hover (should) | 2,640 fpm into the ground | `collectiveFastRate.downGate` (opt-in): as bare F5 with the engine running below 30 kt | 1 s 14.8 m min, 194 fpm; 2 s 12.7 m, 337 fpm; hand speed kept at 90 KIAS and with the engine out |
+| The knock (should; owner decision) | a 1 s tap 200-440 m in 60 s; a 2 s tap climbs out to 44-273 m at 47-67 KIAS | none shipped: (ii) a prop-schedule arm and (i) the TRC flown for the owner | (ii) no climb-out but the deliberate transition worse at four paces; (i) 5-19 m but a pitch/roll aid; numbers in T11 |
+| ICS disclosures (should) | T10 "29°"; no hint | T10: a ground contact from 3 m at 52 s; "ICS on keys" hint | — |
+| Step-load disclosure (should) | stopped at 10 s | T10, control-gyro-model 7b, an informational A4 30 s row | bounded attitude (11.9° at 30 s), 17 / 46 kt at 15 / 30 s |
+| Main leg 180 kN (should) | a strength change in a flyability round | put to the owner in the hand-over | — |
+| Ground-roll heading (should) | the roll-out swings 105-150° | `StabilityAssistTuning.groundRollHeading` (opt-in): the touchdown heading on the keyboard pedals, tail wheel locked, 6-50 kt | brakes below 20 kt: 7 of 7 roll-outs intact (without: 1 of 7); two passing rows (16.6 / 32.3°); the 1.2 s touchdown still collapses a main |
+
+Shared files (both lanes): every addition is opt-in and default off — `collectiveFastRate.downGate` (profile.ts / InputSystem.ts)
+and `StabilityAssistTuning.groundRollHeading` (stabilityAssist.ts, its own block in the on-the-ground
+branch, its snapshot fields only for a type that sets it). No shared rotor file was touched.
+
+Suite command (vitest here hides the rows' console values unless `--silent=false` is passed):
+`npx vitest run tests/rotorcraft/ah56 tests/aircraft/ah56 tests/gear/ah56 tests/rotorcraft/bo105 tests/rotorcraft/legacyDigest.test.ts tests/input tests/ui --maxWorkers=4 --silent=false`.
