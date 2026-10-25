@@ -782,10 +782,14 @@ export class InputSystem implements Subsystem {
     const tuning = this.profile.assists;
     this.updateSpringTrim(s);
     if (this.profile.rotorcraft) {
-      const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
+      // The lowering hand-rate key gated to the bare key (collectiveFastRate.downGate, opt-in; absent: never): every engine
+      // running, below the gate's forward air speed (the powered hover, where the hand-speed drop is not wanted).
+      const downGate = this.profile.collectiveFastRate?.downGate;
+      const downAsBare = !!downGate && this.held.has('collectiveFastDown') && s.engines.every((e) => e.running) && Math.max(0, s.airVelocityBody.x) / KT < downGate.minKias;
+      const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp') || downAsBare);
       // The hand-rate pair (InputProfile.collectiveFastRate: Shift+F5 / Shift+F6), travel per second; 0 on every other type.
       const fast = this.profile.collectiveFastRate;
-      const fastDown = !!fast && this.held.has('collectiveFastDown'), fastUp = !!fast && this.held.has('collectiveFastUp');
+      const fastDown = !!fast && this.held.has('collectiveFastDown') && !downAsBare, fastUp = !!fast && this.held.has('collectiveFastUp');
       const fastChange = fast ? (fastUp ? fast.up : 0) - (fastDown ? fast.down : 0) : 0;
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
       const hardwareCollective = this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && !!hardware;

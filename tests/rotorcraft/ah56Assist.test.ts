@@ -352,14 +352,40 @@ describe('STAB ASSIST round 3: the collective presses', () => {
       expect(f.maxHdgDeg).toBeLessThan(45);
     }, 120_000);
   }
-  it.fails('KNOWN GAP (on the record): Shift+F5 for 1 s in the 15 m hover, hands off: no crash (measured: about 2,640 fpm into the ground in 2 s; it is the autorotation entry, and the hint and the key label say never in the hover)', () => {
-    const r = ah56('hover15'), s0 = see(r), e = new Extremes(r, s0.hdg);
-    r.input.keyDown('F5', true);
-    while (r.t < 1 - FRAME / 2) { frame(r); e.see(); }
-    r.input.keyUp('F5');
-    const res = fly(r, 12, null, e);
-    report('Shift+F5 1 s in the hover', { why: res.why, maxSinkFpm: e.maxSinkFpm });
-    expect(res.why).not.toBe('crash');
+  // Round 4 (the pass-2 gate's should; collectiveFastRate.downGate): with the engine running below 30 kt of forward air speed Shift+F5
+  // acts as bare F5, the height hold's sink command. Before (round 3, a KNOWN GAP row): 1 s in the 15 m hover hit the ground at about
+  // 2,640 fpm every time. Now (W/tune2/ah56/r4/out/shiftf5.log): 1 s 14.8 m minimum, 194 fpm; 2 s 12.7 m, 337 fpm; held 6 s 5.4 m,
+  // 408 fpm; from the 3 m IGE hover 58-91 fpm. In forward flight and with the engine stopped it keeps the hand speed (rows below).
+  for (const holdS of [1, 2]) {
+    it(`Shift+F5 for ${holdS} s in the 15 m hover, engine running, hands off: acts as F5, no crash, above 10 m, the sink under 500 fpm (round 3: about 2,640 fpm into the ground)`, () => {
+      const r = ah56('hover15'), s0 = see(r), e = new Extremes(r, s0.hdg);
+      r.input.keyDown('F5', true);
+      while (r.t < holdS - FRAME / 2) { frame(r); e.see(); }
+      r.input.keyUp('F5');
+      const res = fly(r, 12, null, e);
+      report(`Shift+F5 ${holdS} s in the hover`, { why: res.why, minAglM: e.minAgl, maxSinkFpm: e.maxSinkFpm });
+      expect(res.why).not.toBe('crash');
+      expect(e.minAgl).toBeGreaterThan(10);
+      expect(e.maxSinkFpm).toBeLessThan(500);
+    }, 60_000);
+  }
+  it('Shift+F5 keeps the hand speed where it is the autorotation entry: at 90 KIAS (to the 15 % stop in 0.5 s) and in the hover with the engine stopped', () => {
+    const fwd = keyRig({ start: 'level', kias: 90, heightM: 300, dd: AH56_DEFINITION, assist: true });
+    for (let i = 0; i < 60; i++) frame(fwd);
+    fwd.input.keyDown('F5', true);
+    for (let t = 0; t < 0.5 - FRAME / 2; t += FRAME) frame(fwd);
+    fwd.input.keyUp('F5');
+    const cutoff = ah56('hover15');
+    cutoff.input.keyDown('F1', true); for (let i = 0; i < 12; i++) frame(cutoff); cutoff.input.keyUp('F1');
+    for (let i = 0; i < 30; i++) frame(cutoff);
+    const c0 = cutoff.c.collective ?? 0;
+    cutoff.input.keyDown('F5', true);
+    for (let t = 0; t < 0.3 - FRAME / 2; t += FRAME) frame(cutoff);
+    cutoff.input.keyUp('F5');
+    report('Shift+F5 at hand speed', { at90KiasAfter05s: fwd.c.collective ?? NaN, engineOutDrop03s: c0 - (cutoff.c.collective ?? 0) });
+    expect(fwd.c.collective).toBeCloseTo(AH56_INPUT.collectiveFastRate!.downStop!, 2);
+    expect(cutoff.physics.state.engines.every((x) => x.running)).toBe(false);
+    expect(c0 - (cutoff.c.collective ?? 0)).toBeGreaterThan(0.2);
   }, 60_000);
   it.fails('KNOWN GAP: the run-on landing from a trimmed 45 KIAS approach, feet off, F5 and the brakes on the wheels (both paces): no crash and the roll-out heading within 30 deg (measured: 289 fpm, the roll-out turning 140 deg; 547 fpm, the right main collapsed at 181 kN)', () => {
     for (const [iv, lag] of PACES) {

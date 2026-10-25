@@ -182,7 +182,12 @@ export interface InputProfile {
   collectiveFastRate?: { down: number; up: number; downStop?: number;
     /** The raising key stops there (travel 0..1) and never takes the collective above it while every engine runs (an engine
      *  failure's cushion takes the whole travel); bare F6 goes on up. Absent: to the top. */
-    upStop?: number };
+    upStop?: number;
+    /** The lowering key acts as the bare key (F5: collectiveRate, and the STAB ASSIST's held-key sink command) while every
+     *  engine runs below `minKias` of forward air speed (body x, kt): the hand-speed drop is the autorotation entry, for forward
+     *  flight or an engine failure, not for the powered hover (the AH-56A's tune round 4: Shift+F5 for 1 s in the 15 m hover
+     *  hit the ground at 2,640 fpm). Absent: always at hand speed. */
+    downGate?: { minKias: number } };
   /** Keyboard re-centring rate (5 / Numpad 5), travel per second. Absent: virtualYoke CENTRE_RATE (4). */
   centreRate?: number;
   /**

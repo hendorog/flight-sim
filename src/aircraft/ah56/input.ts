@@ -102,7 +102,11 @@ export const AH56_INPUT: InputProfile = {
   collectiveRate: 0.06,
   // Round 3: Shift+F6 stops at 0.8 of the travel (the hover's 0.53-0.65 plus the cushion; collectiveFastRate.upStop): held to stop a
   // hover sink it ran the collective to 1.0, climbed to 160-200 m and spun the heading 180 deg (the round-2 gate); bare F6 goes on up.
-  collectiveFastRate: { down: 1.0, up: 0.5, downStop: 0.15, upStop: 0.8 },
+  // Round 4 (the pass-2 gate; collectiveFastRate.downGate, a sim guard): with the engine running below 30 kt of forward air speed
+  // Shift+F5 acts as bare F5 (with the STAB ASSIST, a held F5 is the 2 m/s sink command slowing near the ground): for 1 s in the 15
+  // m hover it hit the ground at 2,640 fpm every time, the key label and the hint its only protection. In forward flight and with
+  // the engine stopped it keeps the hand speed (the autorotation entry, the IGE engine failure's own collective).
+  collectiveFastRate: { down: 1.0, up: 0.5, downStop: 0.15, upStop: 0.8, downGate: { minKias: 30 } },
   // Round 3: the keyboard pedals re-centre (to the centre the STAB ASSIST's follow-up walks to the trim) when no pedal key is held,
   // as the cyclic does: a pedal key is a turn while held, not a new pedal position (InputProfile.centringPedals).
   centringPedals: true,
@@ -123,7 +127,7 @@ export const AH56_INPUT: InputProfile = {
     throttleIdle: 'Condition grip to IDLE', throttleFull: 'Condition grip RUN',
     trimNoseUp: 'Cyclic trim aft (hold)', trimNoseDown: 'Cyclic trim forward (hold)',
     fuelPump: 'Boost pump', starter: 'START button (hold)',
-    collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (15 %): an engine failure in forward flight, never in the hover (it puts the aircraft on the ground at about 2,700 fpm); bare F5 goes on down',
+    collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (15 %): an engine failure in forward flight or with the engine stopped; with the engine running below 30 KIAS it acts as F5 (a sim guard: in the hover the hand-speed drop puts the aircraft on the ground at about 2,700 fpm); bare F5 goes on down',
     stabilityAssist: 'STAB ASSIST on / off: a light hold of the attitude where you leave it (as the gyro does; nothing pulls it back to the hover attitude), the heading held while the pedal keys rest, the yaw damped to 60 KIAS, the pedals walked to zero sideslip in forward flight, the height held while the collective keys rest (F5 / F6 held: descend / climb), and the keyboard stick and pedals walked to the trim (a sim aid: the AH-56A had no such system)',
     collectiveFastUp: 'Raise the collective at hand speed (hold), up to 80 %: the landing cushion; bare F6 goes on up' },
 };

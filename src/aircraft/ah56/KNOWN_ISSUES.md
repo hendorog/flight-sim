@@ -636,7 +636,11 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     F6 held 1 / 2 s past the first unload: no crash, 15-67 fpm (round 2: crashes, left main at 420-699 fpm); F5 held 2 s in the 15 m
     hover: 13 m minimum, 337 fpm (960 fpm, a crash); Shift+F6 held to stop a sink: 19.6-21 m, the heading 25-29 deg (200 m, 180 deg).
     Shift+F5 for 1 s in the hover still hits the ground at 2,640 fpm: it is the autorotation entry; the key label and the hint say
-    never in the hover (KNOWN GAP row on the record).
+    never in the hover (KNOWN GAP row on the record). Round 4 (the pass-2 gate's should): a sim guard, collectiveFastRate.downGate
+    (opt-in, AH-56A only): with the engine running below 30 kt of forward air speed Shift+F5 acts as bare F5, the height hold's
+    sink command. 1 s in the 15 m hover: 14.8 m minimum, 194 fpm; 2 s: 12.7 m, 337 fpm; held 6 s: 5.4 m, 408 fpm; from the 3 m IGE
+    hover 58-91 fpm (W/tune2/ah56/r4/out/shiftf5.log). At 90 KIAS it still reaches the 15 % entry stop in 0.5 s, and with the
+    engine stopped it keeps the hand speed (the KNOWN GAP row is now three passing rows).
   - D, the run-on landing from a trimmed 45 KIAS approach, feet off (KNOWN GAP): 289 fpm, then the roll-out turns 140 deg as the
     collective comes down (no crash); at the slower pace 547 fpm and the right main collapses (181 kN). Round 4 (the pass-2 gate):
     the Landing hint's "hold the heading with Z / X on the wheels" was flown and does not work (the beginner's pedal keys on the
