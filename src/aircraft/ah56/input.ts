@@ -10,7 +10,9 @@
 // beep moves to the shifted pair. The tail-wheel lock, the gear lever and the toe and parking brakes have keys.
 import type { InputProfile } from '../../input/profile';
 import { MD500_INPUT } from '../md500/input';
+import { interp1 } from '../../core/math';
 import { AH56_CONDITION_GRIP, AH56_PROP_BETA_DEG, ah56PropLever } from './facts';
+import { PROP_GRIP_TABLE, PROP_TRIM_SCHEDULE } from './compound';
 
 const lever = (beta: number): number => ah56PropLever(beta);
 const mdAxes = MD500_INPUT.assists.axes!;
@@ -23,7 +25,21 @@ export const AH56_INPUT: InputProfile = {
   mouseYoke: undefined,
   centringCyclic: true,
   propLever: { detent: lever(AH56_PROP_BETA_DEG.hoverDetent),
-    snaps: [lever(AH56_PROP_BETA_DEG.hoverDetent), lever(AH56_PROP_BETA_DEG.autorotation), lever(AH56_PROP_BETA_DEG.flightMin)] },
+    snaps: [lever(AH56_PROP_BETA_DEG.hoverDetent), lever(AH56_PROP_BETA_DEG.autorotation), lever(AH56_PROP_BETA_DEG.flightMin)],
+    // PROP SCHEDULE (round 3; a laptop sim aid, the existing InputAssists.propSchedule, ON for this type; no toggle key: a propeller
+    // key or a snap hands the grip back to the pilot until the next reset; it lets go with the engine stopped): the grip follows a
+    // schedule against IAS. The P technique is the propeller: "Transition to forward flight from a hover was initiated by slowly
+    // increasing propeller thrust while maintaining attitude" (APE-I para 97), and two power controls were the workload (para 112).
+    // From 40 KIAS up it is the AMCS trim schedule (compound.ts PROP_TRIM_SCHEDULE, read as IAS: the sea-level table; the ICS's is
+    // about 1 deg lower) through the grip's table; below 30 KIAS it holds the -2.2 deg hover detent (AGENT choice, off the table's 5
+    // deg at 20 kt, a level-flight trim): with the table's low-speed angles the beginner's stop pushed against prop thrust and 0-1 of 4
+    // decelerations reached the hover, with the detent 3 of 4. With the rotor speed-stable since T10 the beginner tilting the nose
+    // alone settled at 42-50 KIAS (the pushes row never reached 60); with this schedule the watching beginner reaches 38 KIAS in
+    // 27-30 s (the full table: 19-20 s) and the circuit runs at 62-69 KIAS (W/tune2/ah56 out/c8_*.log, c1i_*.log, c1j_*.log).
+    schedule: { kias: [0, 30, ...PROP_TRIM_SCHEDULE.kt.filter((k) => k >= 40)],
+      lever: [lever(AH56_PROP_BETA_DEG.hoverDetent), lever(AH56_PROP_BETA_DEG.hoverDetent),
+        ...PROP_TRIM_SCHEDULE.betaDeg.filter((_b, i) => PROP_TRIM_SCHEDULE.kt[i] >= 40).map((b) => interp1(PROP_GRIP_TABLE.betaDeg, PROP_GRIP_TABLE.lever, b))],
+      default: true } },
   tailWheelLock: true, gearLever: true, wheelBrakes: true,
   // STAB ASSIST (tuning round 2026-10-22, KNOWN_ISSUES T8 / T9): a SIM AID for the laptop pilot, not a modelled AH-56A system (the
   // AMCS's only augmentation is the speed-scheduled trim and the sideslip SAS; the ICS's the desensitizer, decoupler and roll
@@ -49,9 +65,34 @@ export const AH56_INPUT: InputProfile = {
   // on (was 14.3); a 0.5 s F6 tap swings the nose 3.0 deg/s (was 8.7). The price of the light hold: a released 2 s roll push drifts
   // further hands off (2 s ArrowRight from the hover: 148 m in 22 s, was 118 m). The shared law's re-capture on a centring stick's
   // return (attitude hold at the attitude the pilot left, as the gyro itself does) is the Bo 105 lane's to add (contract request).
+  // Round 3 (tune2, KNOWN_ISSUES T10 / T11; AGENT choices for the owner). The owner prefers the attitude stability to come from the
+  // gyro, not from a pitch/roll STAB ASSIST. With the AMCS net-spring refit (gyro.ts AMCS_NET_SPRING) the gyro alone holds the
+  // trimmed hover hands off (ah56GyroHover), and the keyboard beginner holds the hover with the cyclic attitude term OFF (the Bo 105
+  // helper's tapper 3.7-5.0 m in 60 s against the row's 10 m; the watching beginner 2.2-15.4 m). It is kept ON, light, for the WAY
+  // BACK: with it off, the full mission (lift-off, circuit, back to a hover, landing) completed 2 of 4 paces, the hover after the
+  // deceleration drifting 80-900 m; with it 4 of 4, 5-24 m (W/tune2/ah56 out/c1h-c1j). It is no longer round 2's attitude COMMAND
+  // back to a captured hover attitude: recaptureOnCentre takes the datum where the re-centring keyboard stick comes back to rest (the
+  // attitude the pilot left, held as the gyro holds it, firmer), and captureAirborne takes the first datum fully airborne with the
+  // stick quiet (the integrator's contract requests 2 and 3). katt 0.3 within authority 0.2 (10 % of the travel); katt 0.15 or
+  // authority 0.1 completed 3 of 4. The price is the knock: a 2 s ArrowRight push let go drifts 168 m in 22 s (round 2 148 m; katt 0
+  // 162 m), ArrowUp 114 m (99; 103), because the push's attitude is held. Shift+A removes all of it. The rate terms kp / kq stay:
+  // their follow-up walks the keyboard stick's anchor to the zero-rate stick, which a rate-command gyro needs from the keys.
+  // New opt-in fields of the shared law, set here:
+  // - sideslipPedal: the keyboard pedal walks toward zero sideslip from 20 to 160 kt of forward air speed (the round-2 gate's "one
+  //   gate": above 25 KIAS the keyboard pedal stayed at the hover's -0.38 against a trim of +0.02 at 40 and +0.26 at 60 KIAS, 15-40
+  //   kt of sideslip, the heading 60-120 deg off). The circuit's legs and turns now complete at every pace; hands off at 80 / 100
+  //   KIAS with the pedal knocked 0.13 off, the pedal is back in 5 s and the slip at 0 (without it the roll spiralled to -30 deg).
+  // - heightHold (the Bo 105 lane's law; landAglM 4.5 for this reference point 1.96 m above the wheels): the keyboard collective at
+  //   rest holds the height, a held F5 / F6 airborne is a 2 m/s sink / climb command slowing to 0.5 m/s near the ground. F6 held 1-2
+  //   s past the first unload: no crash (without: 2 crashes of 4, left main 143-146 kN); F5 held 2 s in the 15 m hover: 13 m
+  //   minimum (without: 885-960 fpm and a crash); Shift+F6 used to stop a sink: 20-31 m (without: 164-199 m, heading 180 deg off).
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.5, katt: 0.3, stickAttitude: 0.6, authority: 0.2, yawAuthority: 0.25,
     holdAuthority: 0.5, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 60],
-    followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.5 } },
+    followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.5 },
+    recaptureOnCentre: { quietS: 0.5 }, captureAirborne: { quietS: 0.5 },
+    sideslipPedal: { kias: [20, 30, 140, 160], gain: 1, rate: 0.2, filterS: 1 },
+    heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1,
+      minNrPct: 95, held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.5, landAglM: 4.5, landBandM: 4, rate: 0.2, limitBackRate: 0.05 } } },
   // Collective keys (round 2; AGENT input choices): the MD 500E's 0.12 of the travel per second is 2.5 deg/s on this collective's 21
   // deg: F5 held 1 s from the 15 m hover reached the ground at 1,057 fpm (a crash); at 0.06 it settles onto the wheels (645 fpm at
   // most), and a 0.5 s tap sinks at 369 fpm and stays up. The hand-rate pair of the Bo 105 (Shift+F5 1.0 / Shift+F6 0.5 of the travel
@@ -59,7 +100,12 @@ export const AH56_INPUT: InputProfile = {
   // autorotation entry this model holds at 98.6 % Nr at 90 KIAS and 101.4 % at 75 KIAS (2,450 / 2,444 ft/min; 0.10 gives 103.4 /
   // 106.9 %, the floor 108 / 112.5 %: r2 out/p7_auto.log). Bare F5 goes on down.
   collectiveRate: 0.06,
-  collectiveFastRate: { down: 1.0, up: 0.5, downStop: 0.15 },
+  // Round 3: Shift+F6 stops at 0.8 of the travel (the hover's 0.53-0.65 plus the cushion; collectiveFastRate.upStop): held to stop a
+  // hover sink it ran the collective to 1.0, climbed to 160-200 m and spun the heading 180 deg (the round-2 gate); bare F6 goes on up.
+  collectiveFastRate: { down: 1.0, up: 0.5, downStop: 0.15, upStop: 0.8 },
+  // Round 3: the keyboard pedals re-centre (to the centre the STAB ASSIST's follow-up walks to the trim) when no pedal key is held,
+  // as the cyclic does: a pedal key is a turn while held, not a new pedal position (InputProfile.centringPedals).
+  centringPedals: true,
   // Keyboard gearing (tuning round, KNOWN_ISSUES T5 / T9; AGENT input choices, the stick- and pedal-to-blade gearings are P and
   // untouched). Pedal: about 53 deg/s per inch in the hover (momentum-theory damping, D), so the MD 500E's key ramp (0.06 -> 0.35 of
   // the axis per second over 1.2 s) put 0.35 in on the pedal in a 1 s tap and 1.4 in in 2 s (95 deg/s). 0.03 -> 0.2 over 1.5 s: a 1 s
@@ -77,7 +123,7 @@ export const AH56_INPUT: InputProfile = {
     throttleIdle: 'Condition grip to IDLE', throttleFull: 'Condition grip RUN',
     trimNoseUp: 'Cyclic trim aft (hold)', trimNoseDown: 'Cyclic trim forward (hold)',
     fuelPump: 'Boost pump', starter: 'START button (hold)',
-    collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (15 %): engine failure; bare F5 goes on down',
-    collectiveFastUp: 'Raise the collective at hand speed (hold): the cushion',
-    stabilityAssist: 'STAB ASSIST on / off: a gentle attitude hold below 30 KIAS, the heading held while the pedals rest, the yaw damped to 60 KIAS, and the keyboard stick and pedals walked to the trim (a sim aid: the AH-56A had no such system)' },
+    collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (15 %): an engine failure in forward flight, never in the hover (it puts the aircraft on the ground at about 2,700 fpm); bare F5 goes on down',
+    stabilityAssist: 'STAB ASSIST on / off: a light hold of the attitude where you leave it (as the gyro does; nothing pulls it back to the hover attitude), the heading held while the pedal keys rest, the yaw damped to 60 KIAS, the pedals walked to zero sideslip in forward flight, the height held while the collective keys rest (F5 / F6 held: descend / climb), and the keyboard stick and pedals walked to the trim (a sim aid: the AH-56A had no such system)',
+    collectiveFastUp: 'Raise the collective at hand speed (hold), up to 80 %: the landing cushion; bare F6 goes on up' },
 };

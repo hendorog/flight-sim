@@ -34,7 +34,9 @@ export interface Targets {
   pitch?: number; roll?: number;
   /** Hold this indicated airspeed by the pitch, kt (from the hover attitude, 0.25 deg per kt, +/- 10 deg). */
   kias?: number;
-  /** Slow to a hover: the nose `stopDeg` (6) above the hover attitude while the ground speed is over 10 kt, 2 deg under it. */
+  /** Slow to a hover: the nose `stopDeg` (6) above the hover attitude while the ground speed is over 10 kt, 2 deg under it; below
+   *  the bank-for-heading speed the sideways drift is stopped too (the wings from the hover roll by the seen sideways speed, the
+   *  holdPos law without the position: tune round 3; before it nothing held the sideways drift in the stop). */
   stop?: boolean;
   /** Hold the position where the pilot was built (the Bo 105 helper's law: ground velocity and offset to an attitude). */
   holdPos?: boolean;
@@ -59,6 +61,8 @@ export class WatchingBeginner {
   readonly presses = { pitch: 0, roll: 0, yaw: 0, coll: 0 };
   /** The hover attitude the speed law works from, deg. */
   pitchRef: number;
+  /** The hover roll the stop's sideways law works from, deg (default: the roll when the pilot was built). */
+  rollRef: number;
   /** Below this ground speed the heading is held by the pedals, kt. */
   pedalKt = 25;
   /** The deceleration attitude above the hover attitude, deg (Targets.stop). */
@@ -70,6 +74,7 @@ export class WatchingBeginner {
     this.next = r.t + interval;
     this.s0 = see(r);
     this.pitchRef = this.s0.pitch;
+    this.rollRef = this.s0.roll;
     const ax = (plus: string, minus: string, on: number, off: number, maxHold: number): Axis => ({ plus, minus, on, off, maxHold, down: null, since: 0, lastUp: -1e9 });
     this.axes = {
       // + = nose up (ArrowDown), roll right, nose right, collective up.
@@ -85,7 +90,10 @@ export class WatchingBeginner {
     const c = this.cmd, e: Partial<Record<keyof WatchingBeginner['axes'], number>> = {};
     let pitch = c.pitch, roll = c.roll;
     if (c.kias !== undefined) pitch = clamp(this.pitchRef - 0.25 * (c.kias - s.kias), this.pitchRef - 10, this.pitchRef + 10);
-    if (c.stop) pitch = this.pitchRef + (s.gs > 10 ? this.stopDeg : 2);
+    if (c.stop) {
+      pitch = this.pitchRef + (s.gs > 10 ? this.stopDeg : 2);
+      if (s.gs <= this.pedalKt) roll = clamp(this.rollRef - 0.03 * s.vr * KT / DEG, this.rollRef - 10, this.rollRef + 10);
+    }
     if (c.holdPos) {
       const s0 = this.s0, ch = Math.cos(s.hdg * DEG), sh = Math.sin(s.hdg * DEG);
       const xf = (s.north - s0.north) * ch + (s.east - s0.east) * sh, xr = -(s.north - s0.north) * sh + (s.east - s0.east) * ch;

@@ -33,12 +33,17 @@ describe('STAB ASSIST on the AH-56A (a sim aid; AMCS default)', () => {
     }, 120_000);
   }
 
-  it('without it the same beginner loses the heading (the raw aircraft; the assist is what the row above adds)', () => {
+  // Round 3 (KNOWN_ISSUES T11): this row's premise was "without the assist the beginner loses the heading" (round 2: 72.6 deg in
+  // 60 s with the non-centring pedal keys). With the re-centring pedal keys (InputProfile.centringPedals) a tap is a turn while held,
+  // not a new pedal position, and the raw aircraft keeps the tapper's heading by itself: the row now states that.
+  it('without it (the raw aircraft) the same beginner on the re-centring pedal keys holds the heading within 20 deg and the hover within 10 m (round 2, non-centring keys: the heading 72.6 deg off)', () => {
     const r = keyRig({ start: 'hover15', dd: AH56_DEFINITION, assist: false });
     const keys = new Keys(r);
     const res = flyHover(r, keys, 60, hoverBeginner(r, keys, 0.8, 0.3));
     report('keyboard beginner hover, assist off, hover15', { lostS: res.lostS, driftM: res.driftM, maxAttDeg: res.maxAttDeg, maxHdgDeg: res.maxHdgDeg });
-    expect(res.maxHdgDeg).toBeGreaterThan(45);
+    expect(res.lostS).toBeNull();
+    expect(res.maxHdgDeg).toBeLessThan(20);
+    expect(res.driftM).toBeLessThan(10);
   }, 120_000);
 
   it('keyboard pedal: a 1 s tap of right pedal turns the hover under 15 deg/s and the heading settles within 15 deg', () => {
@@ -91,7 +96,7 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
       expect(f.driftM).toBeLessThan(15);
     }, 120_000);
   }
-  it.fails('KNOWN GAP: the same lift-off with the Bo 105 helper\'s tapper (its 0.1-0.6 s taps cannot hold this aircraft): no crash, the heading within 30 deg, under 15 m of drift (measured: no crash, 38 deg, 85 m)', () => {
+  it.fails('KNOWN GAP: the same lift-off with the Bo 105 helper\'s tapper (its 0.1-0.6 s taps cannot hold this aircraft): no crash, the heading within 30 deg, under 15 m of drift (measured: round 2 no crash, 38 deg, 85 m; round 3 no crash, 180 deg, 35 m: its pedal taps are timed for the Bo 105)', () => {
     const f = liftOff('tapper');
     report('lift-off then the Bo 105 tapper', f);
     expect(f.crashed).toBe(false);
@@ -127,7 +132,7 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
       fly(r, 10, p, accel);
       p.releaseAll();
       p = new WatchingBeginner(r, { stop: true, hdg: s0.hdg, agl: 30, feetOff: true }, iv, lag);
-      p.pitchRef = s0.pitch;
+      p.pitchRef = s0.pitch; p.rollRef = s0.roll;
       const back = new Extremes(r, s0.hdg);
       const b = fly(r, 90, p, back, (s) => s.gs < 3);
       Object.assign(out, { backWhy: b.why, backS: b.t, hdgDeg: Math.max(accel.maxHdgErr, back.maxHdgErr), minAgl: Math.min(accel.minAgl, back.minAgl) });
@@ -142,7 +147,10 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
       expect(f.accelS).toBeLessThan(40);
     });
   }
-  it.fails('KNOWN GAP: hover -> 40 KIAS -> hover on keys, no crash, the heading within 30 deg (measured: out in 22 / 24 s with the heading 30 / 27 deg off; the way back crashed at 68 s / was not stopped in 90 s, the heading 68 / 164 deg off; KNOWN_ISSUES T9)', () => {
+  // Round 3: the way back works at 0.8 s (stopped in 36.7 s) but feet off the heading wanders 44 deg (the hold takes whatever heading
+  // the nose has when the speed falls through 20 KIAS), and at 1.2 s the stop takes longer than 90 s; the whole flight with the circuit
+  // and the landing is tests/rotorcraft/ah56KeyMission.test.ts.
+  it.fails('KNOWN GAP: hover -> 40 KIAS -> hover on keys, no crash, the heading within 30 deg (round 3 measured: out in 27.6 / 29.7 s; back in 36.7 s / not stopped in 90 s, the heading 44 / 57 deg off; round 2: crashed at 68 s / not stopped, 68 / 164 deg; KNOWN_ISSUES T9, T11)', () => {
     for (const { f } of transitions) {
       expect(f.backWhy).toBe('done');
       expect(f.hdgDeg).toBeLessThan(30);
@@ -213,8 +221,10 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
     expect(maxSink).toBeLessThan(800);
   }, 60_000);
 
-  // Tune round 3: a passing row since the AMCS net-spring refit (gyro.ts AMCS_NET_SPRING; KNOWN_ISSUES T10). Before it (round 2):
-  // 320 fpm, the hover's 4.2 deg of left roll on the left main alone, 140 kN, collapsed.
+  // Tune round 3: a passing row (KNOWN_ISSUES T10, T11). Before (round 2): 320 fpm, the hover's 4.2 deg of left roll on the left main
+  // alone, 140 kN, collapsed. Now 451 fpm and 145 kN against the main leg's 180 kN (gear.ts, the one-wheel touchdown at the P sink)
+  // with Shift+F6 taking the whole travel (its 80 % stop is off with the engine out). Sensitive to the height of the pull: from 1.6 m
+  // or 2.5 m the left main still collapses (542 / 481 fpm, 184 / 183 kN; W/tune2/ah56 out/fin_d4c7.log).
   it('the IGE engine failure on keys, hands off (Shift+F1, Shift+F6 held from 2 m of wheel height): the gear holds (round 2: 320 fpm on the left main, 140 kN, collapsed; KNOWN_ISSUES T7, T10)', () => {
     const r = ah56('ige3'), wheels0 = see(r).agl - 1.9;
     r.input.keyDown('F1', true);
@@ -231,4 +241,99 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
     report('IGE engine failure on keys', { wheelHeightM: wheels0, crashed: r.physics.state.crashed, sinkFpm: sink, peakWheelKN: peak / 1000, rollAtTouchDeg: rollTouch });
     expect(r.physics.state.crashed).toBe(false);
   }, 60_000);
+});
+
+// Round 3 (the round-2 gate's other issues, KNOWN_ISSUES T11): the presses a first-day pilot makes on the collective, flown on the
+// shipped profile (the STAB ASSIST's height hold: a held F5 / F6 airborne is a sink / climb command, the keys at rest hold the
+// height; Shift+F6 stops at 80 % with the engine running). Before round 3 in brackets (the gate's out/a_lift.log, b_dump.log).
+describe('STAB ASSIST round 3: the collective presses', () => {
+  /** Runway start, F6 held to the first unload and `extraS` more, then the watching beginner 30 s at 3 m, feet off. */
+  const liftPast = (extraS: number, iv: number, lag: number) => {
+    const r = ah56('runway'), s0 = see(r);
+    liftToUnload(r);
+    r.input.keyDown('F6');
+    const t1 = r.t;
+    while (r.t - t1 < extraS - FRAME / 2) frame(r);
+    r.input.keyUp('F6');
+    const e = new Extremes(r, s0.hdg);
+    const res = fly(r, 30, new WatchingBeginner(r, { holdPos: true, hdg: s0.hdg, agl: s0.agl + 3, feetOff: true }, iv, lag), e);
+    return { crashed: res.why === 'crash', maxSinkFpm: e.maxSinkFpm, maxAglM: e.maxAgl, driftM: e.drift, maxHdgDeg: e.maxHdgErr };
+  };
+  for (const extraS of [1, 2]) for (const [iv, lag] of PACES) {
+    it(`F6 held ${extraS} s past the first unload, then the watching beginner (every ${iv} s): no crash, the sink under 200 fpm (round 2: ${extraS === 1 ? 'the slow pace crashed, left main at 420 fpm' : 'both paces crashed, 549 / 699 fpm'})`, () => {
+      const f = liftPast(extraS, iv, lag);
+      report(`F6 held ${extraS} s past the unload, every ${iv} s`, f);
+      expect(f.crashed).toBe(false);
+      expect(f.maxSinkFpm).toBeLessThan(200);
+    }, 120_000);
+  }
+  /** F5 held 2 s in the 15 m hover, then `after` 20 s. */
+  const dump = (after: 'beginner' | 'shiftF6', iv: number, lag: number) => {
+    const r = ah56('hover15'), s0 = see(r);
+    r.input.keyDown('F5');
+    while (r.t < 2 - FRAME / 2) frame(r);
+    r.input.keyUp('F5');
+    const e = new Extremes(r, s0.hdg);
+    let res;
+    if (after === 'beginner') res = fly(r, 20, new WatchingBeginner(r, { holdPos: true, hdg: s0.hdg, agl: s0.agl, feetOff: true }, iv, lag), e);
+    else {
+      // Sees the sink `lag` s late, decides every `iv` s: Shift+F6 held while the seen sink is over 1 m/s (the gate's balloon case).
+      const buf: number[] = [], nLag = Math.round(lag / FRAME);
+      let next = r.t + iv, down = false;
+      const p = new WatchingBeginner(r, { holdPos: true, hdg: s0.hdg, feetOff: true }, iv, lag);
+      res = fly(r, 20, { step: () => {
+        buf.push(see(r).climb);
+        const seen = buf.length > nLag ? buf[buf.length - 1 - nLag] : buf[0];
+        if (r.t >= next - FRAME / 2) { next += iv; if (!down && seen < -1) { r.input.keyDown('F6', true); down = true; } }
+        if (down && seen > -0.3) { r.input.keyUp('F6'); down = false; }
+        p.step();
+      } } as unknown as WatchingBeginner, e);
+      if (down) r.input.keyUp('F6');
+    }
+    return { crashed: res.why === 'crash', minAglM: e.minAgl, maxAglM: e.maxAgl, maxSinkFpm: e.maxSinkFpm, maxHdgDeg: e.maxHdgErr };
+  };
+  for (const [iv, lag] of PACES) {
+    it(`F5 held 2 s in the 15 m hover, then the watching beginner (every ${iv} s): no crash, above 10 m, the sink under 500 fpm (round 2: 960 fpm, a crash at the slow pace)`, () => {
+      const f = dump('beginner', iv, lag);
+      report(`F5 2 s in the hover, every ${iv} s`, f);
+      expect(f.crashed).toBe(false);
+      expect(f.minAglM).toBeGreaterThan(10);
+      expect(f.maxSinkFpm).toBeLessThan(500);
+    }, 120_000);
+    it(`F5 held 2 s, then Shift+F6 held until the sink stops (every ${iv} s): the balloon under 40 m, the heading within 45 deg (round 2: 200 m, the heading 180 deg off)`, () => {
+      const f = dump('shiftF6', iv, lag);
+      report(`Shift+F6 sink recovery, every ${iv} s`, f);
+      expect(f.crashed).toBe(false);
+      expect(f.maxAglM).toBeLessThan(40);
+      expect(f.maxHdgDeg).toBeLessThan(45);
+    }, 120_000);
+  }
+  it.fails('KNOWN GAP (on the record): Shift+F5 for 1 s in the 15 m hover, hands off: no crash (measured: about 2,640 fpm into the ground in 2 s; it is the autorotation entry, and the hint and the key label say never in the hover)', () => {
+    const r = ah56('hover15'), s0 = see(r), e = new Extremes(r, s0.hdg);
+    r.input.keyDown('F5', true);
+    while (r.t < 1 - FRAME / 2) { frame(r); e.see(); }
+    r.input.keyUp('F5');
+    const res = fly(r, 12, null, e);
+    report('Shift+F5 1 s in the hover', { why: res.why, maxSinkFpm: e.maxSinkFpm });
+    expect(res.why).not.toBe('crash');
+  }, 60_000);
+  it.fails('KNOWN GAP: the run-on landing from a trimmed 45 KIAS approach, feet off, F5 and the brakes on the wheels (both paces): no crash and the roll-out heading within 30 deg (measured: 289 fpm, the roll-out turning 140 deg; 547 fpm, the right main collapsed at 181 kN)', () => {
+    for (const [iv, lag] of PACES) {
+      const r = keyRig({ start: 'level', kias: 45, heightM: 45, dd: AH56_DEFINITION, assist: true });
+      for (let i = 0; i < 120; i++) frame(r);
+      r.c.tailWheelLock = true; r.c.gearLever = 'down';
+      const s0 = see(r), p = new WatchingBeginner(r, { kias: 45, hdg: s0.hdg, climb: -2, feetOff: true }, iv, lag);
+      fly(r, 60, p, undefined, (s) => s.agl <= 12);
+      p.cmd = { kias: 40, hdg: s0.hdg, climb: -1, feetOff: true };
+      const touch = fly(r, 60, p, undefined, (s) => s.onGround);
+      const fpm = -see(r).climb * 196.85;
+      p.releaseAll(); r.input.keyDown('F5'); r.input.keyDown('KeyB');
+      let maxHdg = 0;
+      for (let t = 0; t < 30 && !r.physics.state.crashed; t += FRAME) { frame(r); maxHdg = Math.max(maxHdg, Math.abs(wrapDeg(see(r).hdg - s0.hdg))); if (see(r).gs < 0.5 && t > 3) break; }
+      r.input.keyUp('F5'); r.input.keyUp('KeyB');
+      report(`run-on landing every ${iv} s`, { touch: touch.why, touchFpm: fpm, rollOutHdgDeg: maxHdg, crashed: r.physics.state.crashed });
+      expect(r.physics.state.crashed).toBe(false);
+      expect(maxHdg).toBeLessThan(30);
+    }
+  }, 180_000);
 });

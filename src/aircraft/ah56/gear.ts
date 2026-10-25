@@ -30,7 +30,7 @@ const MAIN_LOAD = (W - TAIL_LOAD) / 2;
 
 // Gas column 0.16 m (was 0.22): 37 % stiffer in roll at the static load, so the running ground lean at centred pedals
 // (the tail rotor's 3.6 kN at flat pitch) is 1.9 deg instead of 3.0, with the worst-case 9.5 ft/s drop (collective full
-// down) peaking at 93 kN on one main against the 140 kN limit (79 kN before). ESTIMATE (ah56Ground.test.ts G13).
+// down) peaking at 93 kN on one main against the 140 kN limit then (79 kN before; the limit is 180 kN since tune round 3, below). ESTIMATE (ah56Ground.test.ts G13).
 const MAIN_STRUT: StrutSpring = new OleoPneumaticSpring(30e3, 0.16, 1.3, 0.20);
 const MAIN_TYRE_SPRING: TyreSpring = { stiffness: 2.0e6, hardening: 0.09 };
 const TAIL_STRUT: StrutSpring = new OleoPneumaticSpring(3e3, 0.2, 1.3, 0.15);
@@ -91,8 +91,14 @@ function main(name: 'left' | 'right'): WheelConfig {
     // <= 300 m), below the 0.39 g at which the aircraft would tip onto its nose about the mains (0.76 m ahead of the CG,
     // the CG 1.96 m up). ESTIMATE.
     maxBrakeTorque: 3000,
-    // About 3.5 g on one leg's static share.
-    limitLoad: 140e3,
+    // The leg's collapse load (the model's limitLoad is where it breaks, so the ULTIMATE). Tune round 3 (KNOWN_ISSUES T11, D from
+    // P with FAR 27): the P 9.5 ft/s touchdown sink limit, flown with this strut at the hover collective (W/tune2/ah56 out/d3_gear.log),
+    // gives 103 kN on a main in a level landing; FAR 27.483 puts the level-landing load on ONE wheel for the one-wheel condition, and
+    // the ultimate is 1.5 x the limit: 155 kN. This aircraft hovers 4.7 deg left wing low (P APE-I para 96), so a vertical landing
+    // from the hover IS a one-wheel touchdown: 173 kN at 9.5 ft/s. 180 kN covers both (was 140 kN, about 3.5 g on the static share,
+    // which collapsed the left main from about 375 fpm in the hover attitude); the one-wheel touchdown at the 1.2 x reserve-energy
+    // sink (11.4 ft/s, FAR 27.725) still collapses it (279 kN). ESTIMATE.
+    limitLoad: 180e3,
     // Stowed in the sponson, forward and up (3V: the leg swings forward).
     stowed: { x: x(250), y: side * D.MAIN_GEAR_HALF_TRACK, z: z(58) },
   };
