@@ -111,14 +111,17 @@ describe('G6: AMCS attitude retention, no SAS (P Hoh-74: "no SAS was used")', ()
     return { held, peakIn: peak, bankReachedDeg: bankMax / DEG, bankAfterDeg: (bank0 - roll0) / DEG, worstChangeDeg: worst / DEG };
   };
   let plan03: ReturnType<typeof tap> | undefined;
-  it('keyboard: the key held until the stick reaches 0.5 in, then hands off (re-centring cyclic): the bank moves >= 2 deg, then holds within 3 deg for 10 s', () => {
-    const k = tap((kbIn) => kbIn >= 0.5);
+  // Tune3 (KNOWN_ISSUES T12): the AH-56A's keyboard roll keys are 0.45 of the axis per second now (0.1 before), so 0.5 in comes in
+  // 0.38 s and the bank reached was 1.5 deg (the row's own non-vacuity check, >= 2); the key is held to 1.0 in instead (the stick then
+  // released to centre, as the AMCS stick's spring returns it; the raw aircraft, no STAB ASSIST). The 3 deg retention band is unchanged.
+  it('keyboard: the key held until the stick reaches 1.0 in, then released to centre (the AMCS stick): the bank moves >= 2 deg, then holds within 3 deg for 10 s (round 3: 0.5 in)', () => {
+    const k = tap((kbIn) => kbIn >= 1.0);
     plan03 = tap((_kbIn, t) => t >= 0.3);
     report('G6 AMCS keyboard tap', { heldS: k.held, peakKeyStickIn: k.peakIn, bankReachedDeg: k.bankReachedDeg, bankAfterTapDeg: k.bankAfterDeg,
       worstChangeDeg: k.worstChangeDeg, plan03sPeakIn: plan03.peakIn, plan03sBankDeg: plan03.bankReachedDeg, plan03sWorstDeg: plan03.worstChangeDeg,
-      target: 'stick >= 0.5 in, bank >= 2 deg, then <= 3 deg over 10 s' });
+      target: 'stick >= 1.0 in, bank >= 2 deg, then <= 3 deg over 10 s' });
     trace.G6keyboard = { tap: k, plan03 };
-    expect(k.peakIn).toBeGreaterThanOrEqual(0.5);
+    expect(k.peakIn).toBeGreaterThanOrEqual(1.0);
     expect(k.bankReachedDeg).toBeGreaterThanOrEqual(2);
     expect(k.worstChangeDeg).toBeLessThanOrEqual(3);
   });

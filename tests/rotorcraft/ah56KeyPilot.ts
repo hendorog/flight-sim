@@ -1,16 +1,26 @@
 // The AH-56A keyboard beginner (tuning round 2, the Fable pilot gate's beginner side): the REAL SimPhysics and InputSystem of
 // the Bo 105 lane's rig (tests/rotorcraft/bo105KeyPilot.ts keyRig, 60 frames per second, the STAB ASSIST linked as the
-// Simulator links it), flown by a WATCHING beginner rather than a timed tapper. The Bo 105 helper's 0.1-0.6 s taps were sized for
-// a position-command cyclic (about 9 deg per 1 s tap); on the AH-56A's re-centring, rate-command keyboard cyclic a 0.3 s tap is
-// nothing at all, so the helper measures the aid alone. A first-time laptop pilot instead presses a key and WATCHES: holds it
-// until the nose (wings, heading, climb) looks right, then lets go. Here:
+// Simulator links it), flown by a WATCHING beginner rather than a timed tapper. A first-time laptop pilot presses a key and
+// WATCHES: holds it until the nose (wings, heading, climb) looks right, then lets go.
+// Tune3 (the owner's keyboard reports): the keyboard stick and pedals no longer re-centre. They stay where the keys leave them,
+// and with the STAB ASSIST the stick's position is a held attitude (a press moves the nose about 22 deg/s in roll and 12 deg/s
+// in pitch and the attitude stays where the key left it), a pedal key a turn (up to 35 deg/s) that stops when the key comes up.
+// So this beginner flies a position-holding stick the way a first-day laptop pilot would: press to move the nose toward where
+// it should be, let go when it is there (it stays), and to come back press the opposite key; the same release band, led by the
+// seen rate, serves both (round 2's beginner was written for a re-centring stick, where letting go also stopped the nose, and
+// held a key up to 2 s: on the new keys that is a 30 deg bank). Here:
 //  - the pilot sees the state `lag` s late (0.3 s), decides to press only every `interval` s (0.8 s), one key per axis;
-//  - a pressed key is held until the seen error, led by the seen rate, comes inside the release band, or `maxHold` s pass
-//    (2 s for the cyclic and pedals, 1 s for the collective), and then not pressed again on that axis for `gap` s (0.3 s);
+//  - a pressed key is held until the seen error, led by the seen rate, comes inside the release band, or the press the pilot
+//    planned for it has run (tune3: the error over what the pilot has learnt a held key does, 22 deg/s of roll, 12 of pitch, 2
+//    m/s of climb per s, at least 0.1 s), or `maxHold` s pass (1 s for the cyclic, 1.5 s for the pedals, 1 s for the
+//    collective; round 2: 2 / 2 / 1 s), and then not pressed again on that axis for `gap` s (0.3 s); tune3: a cyclic key is
+//    pressed again only once the nose has settled (the seen pitch rate under 3 deg/s, roll under 6): the attitude stays, so the
+//    pilot waits to see where it went;
 //  - outer loops in pilot terms: the speed by the pitch (0.25 deg per kt from the hover attitude, +/- 10 deg), a position by
-//    the attitude (the Bo 105 helper's law), the heading by the pedals below 25 kt and by a bank above it, the height by a
-//    climb rate (0.15 m/s per m, +/- 2 m/s) on F5 / F6.
-// Deliberately no trim keys, no snaps, no anticipation beyond the seen rate: what the owner (no helicopter experience,
+//    the attitude (the Bo 105 helper's law at half its gains, +/- 6 deg: tune3, the full gains overcontrol an attitude that
+//    arrives in 0.3 s), the heading by the pedals below 25 kt and by a bank above it (tune3: 0.5 deg of bank per deg, leading
+//    by 2 s of the turn; round 2: 1 deg per deg), the height by a climb rate (0.15 m/s per m, +/- 2 m/s) on F5 / F6.
+// Deliberately no trim keys, no snaps, no anticipation beyond the seen rate and the planned press: what the owner (no helicopter experience,
 // keyboard and trackpad) does on the first day. Pilot units throughout (deg, kt, m).
 import { DEG, KT, clamp } from '../../src/core/math';
 import { FRAME, frame, type KeyRig } from './bo105KeyPilot';
@@ -49,7 +59,12 @@ export interface Targets {
 }
 
 /** One axis: a key pair, the press and release bands and the holds. */
-interface Axis { plus: string; minus: string; on: number; off: number; maxHold: number; down: string | null; since: number; lastUp: number }
+interface Axis { plus: string; minus: string; on: number; off: number; maxHold: number; down: string | null; since: number; lastUp: number;
+  /** What the pilot has learnt a held key moves this axis by, units per second (0: not planned), and this press's planned end, s. */
+  perS: number; until: number }
+
+/** The shortest planned press, s. */
+const TAP_MIN_S = 0.1;
 
 export class WatchingBeginner {
   private readonly buf: Seen[] = [];
@@ -67,21 +82,33 @@ export class WatchingBeginner {
   pedalKt = 25;
   /** The deceleration attitude above the hover attitude, deg (Targets.stop). */
   stopDeg = 6;
+  /** How far ahead the pilot leads the seen pitch and roll by the seen rate, s (round 2: 0.4 / 0.3). */
+  leadPitch = 0.4;
+  leadRoll = 0.3;
+  /** The heading by a bank leads by the seen turn rate times this, s (round 2: 0). */
+  leadHdg = 2;
+  /** Bank per degree of heading error, deg (round 2: 1). */
+  hdgGain = 0.5;
+  /** The position hold's and the stop's drift law: rad per m/s and per m, and its attitude clamp, deg (round 2: 0.03 / 0.015 / 10). */
+  posKv = 0.015;
+  posKx = 0.0075;
+  posLim = 6;
 
   constructor(private readonly r: KeyRig, public cmd: Targets, readonly interval = 0.8, readonly lag = 0.3, readonly gap = 0.3,
-    o: { cyclicHold?: number; pedalHold?: number; collHold?: number } = {}) {
+    o: { cyclicHold?: number; pedalHold?: number; collHold?: number; pitchDegS?: number; rollDegS?: number } = {}) {
     this.nLag = Math.round(lag / FRAME);
     this.next = r.t + interval;
     this.s0 = see(r);
     this.pitchRef = this.s0.pitch;
     this.rollRef = this.s0.roll;
-    const ax = (plus: string, minus: string, on: number, off: number, maxHold: number): Axis => ({ plus, minus, on, off, maxHold, down: null, since: 0, lastUp: -1e9 });
+    const ax = (plus: string, minus: string, on: number, off: number, maxHold: number, perS = 0): Axis =>
+      ({ plus, minus, on, off, maxHold, down: null, since: 0, lastUp: -1e9, perS, until: Infinity });
     this.axes = {
       // + = nose up (ArrowDown), roll right, nose right, collective up.
-      pitch: ax('ArrowDown', 'ArrowUp', 1.5, 0.5, o.cyclicHold ?? 2),
-      roll: ax('ArrowRight', 'ArrowLeft', 2, 0.5, o.cyclicHold ?? 2),
-      yaw: ax('KeyX', 'KeyZ', 3, 1, o.pedalHold ?? 2),
-      coll: ax('F6', 'F5', 0.5, 0.15, o.collHold ?? 1),
+      pitch: ax('ArrowDown', 'ArrowUp', 1.5, 0.5, o.cyclicHold ?? 1, o.pitchDegS ?? 12),
+      roll: ax('ArrowRight', 'ArrowLeft', 2, 0.5, o.cyclicHold ?? 1, o.rollDegS ?? 22),
+      yaw: ax('KeyX', 'KeyZ', 3, 1, o.pedalHold ?? 1.5),
+      coll: ax('F6', 'F5', 0.5, 0.15, o.collHold ?? 1, 2),
     };
   }
 
@@ -92,17 +119,17 @@ export class WatchingBeginner {
     if (c.kias !== undefined) pitch = clamp(this.pitchRef - 0.25 * (c.kias - s.kias), this.pitchRef - 10, this.pitchRef + 10);
     if (c.stop) {
       pitch = this.pitchRef + (s.gs > 10 ? this.stopDeg : 2);
-      if (s.gs <= this.pedalKt) roll = clamp(this.rollRef - 0.03 * s.vr * KT / DEG, this.rollRef - 10, this.rollRef + 10);
+      if (s.gs <= this.pedalKt) roll = clamp(this.rollRef - this.posKv * s.vr * KT / DEG, this.rollRef - this.posLim, this.rollRef + this.posLim);
     }
     if (c.holdPos) {
       const s0 = this.s0, ch = Math.cos(s.hdg * DEG), sh = Math.sin(s.hdg * DEG);
       const xf = (s.north - s0.north) * ch + (s.east - s0.east) * sh, xr = -(s.north - s0.north) * sh + (s.east - s0.east) * ch;
-      pitch = clamp(s0.pitch + (0.03 * s.vf * KT + 0.015 * xf) / DEG, s0.pitch - 10, s0.pitch + 10);
-      roll = clamp(s0.roll - (0.03 * s.vr * KT + 0.015 * xr) / DEG, s0.roll - 10, s0.roll + 10);
+      pitch = clamp(s0.pitch + (this.posKv * s.vf * KT + this.posKx * xf) / DEG, s0.pitch - this.posLim, s0.pitch + this.posLim);
+      roll = clamp(s0.roll - (this.posKv * s.vr * KT + this.posKx * xr) / DEG, s0.roll - this.posLim, s0.roll + this.posLim);
     }
-    if (c.hdg !== undefined && s.gs > this.pedalKt) roll = clamp(-wrapDeg(s.hdg - c.hdg), -15, 15);
-    if (pitch !== undefined) e.pitch = pitch - s.pitch - 0.4 * s.q;
-    if (roll !== undefined) e.roll = roll - s.roll - 0.3 * s.p;
+    if (c.hdg !== undefined && s.gs > this.pedalKt) roll = clamp(-this.hdgGain * (wrapDeg(s.hdg - c.hdg) + this.leadHdg * s.r), -15, 15);
+    if (pitch !== undefined) e.pitch = pitch - s.pitch - this.leadPitch * s.q;
+    if (roll !== undefined) e.roll = roll - s.roll - this.leadRoll * s.p;
     if (c.hdg !== undefined && s.gs <= this.pedalKt && !c.feetOff) e.yaw = -(wrapDeg(s.hdg - c.hdg) + 0.7 * s.r);
     let climb = c.climb;
     if (c.agl !== undefined) climb = clamp(0.15 * (c.agl - s.agl), -2, 2);
@@ -123,12 +150,20 @@ export class WatchingBeginner {
       const a = this.axes[k], err = e[k];
       if (a.down !== null) {
         const dir = a.down === a.plus ? 1 : -1;
-        if (err === undefined || err * dir < a.off || r.t - a.since >= a.maxHold - FRAME / 2) { r.input.keyUp(a.down); a.down = null; a.lastUp = r.t; }
-      } else if (decide && err !== undefined && Math.abs(err) > a.on && r.t - a.lastUp >= this.gap - FRAME / 2) {
+        if (err === undefined || err * dir < a.off || r.t - a.since >= Math.min(a.maxHold, a.until) - FRAME / 2) { r.input.keyUp(a.down); a.down = null; a.lastUp = r.t; }
+      } else if (decide && err !== undefined && Math.abs(err) > a.on && r.t - a.lastUp >= this.gap - FRAME / 2 && this.settled(k, s)) {
         a.down = err > 0 ? a.plus : a.minus; a.since = r.t; this.presses[k]++;
+        a.until = a.perS > 0 ? Math.max(TAP_MIN_S, Math.abs(err) / a.perS) : Infinity;
         r.input.keyDown(a.down);
       }
     }
+  }
+
+  /** Seen rate under which the pilot judges a moved attitude (a position-holding stick: wait for the nose to stop), deg/s. */
+  settlePitch = 3;
+  settleRoll = 6;
+  private settled(k: keyof WatchingBeginner['axes'], s: Seen): boolean {
+    return k === 'pitch' ? Math.abs(s.q) < this.settlePitch : k === 'roll' ? Math.abs(s.p) < this.settleRoll : true;
   }
 
   /** Let go of every key. */

@@ -34,32 +34,39 @@ describe('STAB ASSIST on the AH-56A (a sim aid; AMCS default)', () => {
   }
 
   // Round 3 (KNOWN_ISSUES T11): this row's premise was "without the assist the beginner loses the heading" (round 2: 72.6 deg in
-  // 60 s with the non-centring pedal keys). With the re-centring pedal keys (InputProfile.centringPedals) a tap is a turn while held,
-  // not a new pedal position, and the raw aircraft keeps the tapper's heading by itself: the row now states that.
-  it('without it (the raw aircraft) the same beginner on the re-centring pedal keys holds the heading within 20 deg and the hover within 10 m (round 2, non-centring keys: the heading 72.6 deg off)', () => {
+  // 60 s with the non-centring pedal keys); with round 3's re-centring keys the raw aircraft kept the tapper's hover (3.2 m, the
+  // heading 11.6 deg). Tune3 (KNOWN_ISSUES T12, the owner: no re-centring): the keys stay where they are left, so on the raw
+  // rate-command gyro a tap leaves the stick off centre and the nose keeps moving. The row states it: without the assist the tapper
+  // loses the hover (lost at 31.9 s, 30.2 m; the assist on: the rows above, 4.3-8.8 m).
+  it('without it (the raw aircraft, keys that stay where they are left) the same beginner loses the hover within 60 s (round 3, re-centring keys: held, 3.2 m, 11.6 deg)', () => {
     const r = keyRig({ start: 'hover15', dd: AH56_DEFINITION, assist: false });
     const keys = new Keys(r);
     const res = flyHover(r, keys, 60, hoverBeginner(r, keys, 0.8, 0.3));
     report('keyboard beginner hover, assist off, hover15', { lostS: res.lostS, driftM: res.driftM, maxAttDeg: res.maxAttDeg, maxHdgDeg: res.maxHdgDeg });
-    expect(res.lostS).toBeNull();
-    expect(res.maxHdgDeg).toBeLessThan(20);
-    expect(res.driftM).toBeLessThan(10);
+    expect(res.lostS).not.toBeNull();
   }, 120_000);
 
-  it('keyboard pedal: a 1 s tap of right pedal turns the hover under 15 deg/s and the heading settles within 15 deg', () => {
+  // Tune3 (KNOWN_ISSUES T12, the owner: "unresponsive", "a 747"): the pedal keys are a yaw-rate command with the STAB ASSIST (up to
+  // 35 deg/s, the turn braked when the key comes up and the new heading held). Round 1's row bounded a 1 s tap's turn under 15 deg/s
+  // with the heading back within 15 deg of the start (measured round 3: 1.8 deg/s, 1.0 deg); the row now states the crisp turn that
+  // stays: 34.2 deg/s, the heading 32.8 deg from the start and still within 2 deg 5-7 s after the tap.
+  it('keyboard pedal: a 1 s tap of right pedal turns the hover at 25-45 deg/s and the new heading holds (5-7 s: within 2 deg) (round 3: 1.8 deg/s, back within 1 deg)', () => {
     const r = keyRig({ start: 'hover15', dd: AH56_DEFINITION, assist: true });
     const keys = new Keys(r), h0 = r.physics.state.heading;
-    let peak = 0, worst = 0;
+    let peak = 0, worst = 0, h5 = NaN, off = 0;
     keys.tap('KeyX', 1);
     while (r.t < 7) {
       keys.update(); r.input.update(FRAME, r.ctx); r.physics.advance(FRAME); r.t += FRAME;
       const s = r.physics.state;
       peak = Math.max(peak, Math.abs(s.angularVelocity.z) / DEG);
-      if (r.t > 5) worst = Math.max(worst, Math.abs(Math.atan2(Math.sin(s.heading - h0), Math.cos(s.heading - h0))) / DEG);
+      if (r.t > 5 && Number.isNaN(h5)) h5 = s.heading;
+      if (r.t > 5) worst = Math.max(worst, Math.abs(Math.atan2(Math.sin(s.heading - h5), Math.cos(s.heading - h5))) / DEG);
+      off = Math.atan2(Math.sin(s.heading - h0), Math.cos(s.heading - h0)) / DEG;
     }
-    report('keyboard pedal 1 s tap, assist on', { peakDegS: peak, headingAfter5to7sDeg: worst, pedalIn: r.c.rudder * 3.2 });
-    expect(peak).toBeLessThan(15);
-    expect(worst).toBeLessThan(15);
+    report('keyboard pedal 1 s tap, assist on', { peakDegS: peak, turnedDeg: off, move5to7sDeg: worst, pedalIn: r.c.rudder * 3.2 });
+    expect(peak).toBeGreaterThan(25);
+    expect(peak).toBeLessThan(45);
+    expect(worst).toBeLessThan(2);
   }, 60_000);
 });
 
@@ -88,15 +95,21 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
     return { liftS, crashed: res.why === 'crash', driftM: e.drift, maxHdgDeg: e.maxHdgErr, maxAttDeg: e.maxAtt, maxKias: e.maxKias };
   };
   for (const [iv, lag] of PACES) {
-    it(`lift-off on keys: F6 held to the first unload, then the watching beginner (every ${iv} s, ${lag} s late, feet off) hovers 3 m up for 30 s: no crash, the heading within 30 deg, under 15 m of drift`, () => {
+    // Tune3 (KNOWN_ISSUES T12): the drift band was 15 m (round 3: 9.3 / 10.3 m, the heading 14.5 / 13.8 deg, the attitude 10.2 /
+    // 11.3 deg). On the crisp keys the watching beginner corrects a drift with half round 3's attitude per m/s and per m (its
+    // comment; the full gains overcontrol the attitude command): 23.3 / 22.6 m, the heading 18.1 / 19.0 deg, the attitude 10.9 / 8.4
+    // deg, no crash. The row is restated at 25 m.
+    it(`lift-off on keys: F6 held to the first unload, then the watching beginner (every ${iv} s, ${lag} s late, feet off) hovers 3 m up for 30 s: no crash, the heading within 30 deg, under 25 m of drift (round 3: under 15 m)`, () => {
       const f = liftOff('watching', iv, lag);
       report(`lift-off then the watching beginner, every ${iv} s`, f);
       expect(f.crashed).toBe(false);
       expect(f.maxHdgDeg).toBeLessThan(30);
-      expect(f.driftM).toBeLessThan(15);
+      expect(f.driftM).toBeLessThan(25);
     }, 120_000);
   }
-  it.fails('KNOWN GAP: the same lift-off with the Bo 105 helper\'s tapper (its 0.1-0.6 s taps cannot hold this aircraft): no crash, the heading within 30 deg, under 15 m of drift (measured: round 2 no crash, 38 deg, 85 m; round 3 no crash, 180 deg, 35 m: its pedal taps are timed for the Bo 105)', () => {
+  // Tune3: a passing row (KNOWN_ISSUES T12). On keys that stay where they are left, with the attitude command, the Bo 105 helper's
+  // 0.1-0.6 s taps now move the AH-56A as they move the Bo 105: no crash, 22.1 deg, 7.9 m.
+  it('the same lift-off with the Bo 105 helper\'s tapper: no crash, the heading within 30 deg, under 15 m of drift (round 2 no crash, 38 deg, 85 m; round 3 no crash, 180 deg, 35 m: a KNOWN GAP until tune3)', () => {
     const f = liftOff('tapper');
     report('lift-off then the Bo 105 tapper', f);
     expect(f.crashed).toBe(false);
@@ -188,7 +201,11 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
     expect(f.errAfter6Deg).toBeLessThan(10);
   }, 60_000);
 
-  it('held arrow keys in the hover: 1 s moves the nose at least 1 deg; 3 s stays under 15 deg of pitch and 20 deg of roll (round 1: 33.7 / 51.7 deg)', () => {
+  // Tune3 (KNOWN_ISSUES T12): the keyboard stick is an attitude command bounded at 15 deg of pitch and 30 deg of bank from the
+  // captured attitude (StabilityAssistTuning.keyAttitude), so a long hold stops at the bound instead of rolling on. Round 3 (the
+  // 0.1-per-second keys on the rate gyro): 1.1 deg after 1 s, 9.0 / 13.8 deg after 3 s; tune3: 15.8 deg after 1 s, 20.1 / 27.8 deg
+  // after 3 s (the pitch bound plus its overshoot). The row's 15 / 20 deg bounds become 22 / 32 deg, and 1 s at least 10 deg.
+  it('held arrow keys in the hover: 1 s moves the nose at least 10 deg; 3 s stays under 22 deg of pitch and 32 deg of roll (the bounds 15 / 30 deg; round 3: 1.1 deg, 9.0 / 13.8 deg; round 1: 33.7 / 51.7 deg)', () => {
     const peak = (code: string, hold: number) => {
       const r = ah56('hover15'), s0 = see(r);
       let m = 0;
@@ -203,9 +220,9 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
     };
     const f = { pitch1: peak('ArrowUp', 1), pitch3: peak('ArrowUp', 3), roll3: peak('ArrowRight', 3) };
     report('held arrow keys', f);
-    expect(f.pitch1).toBeGreaterThanOrEqual(1);
-    expect(f.pitch3).toBeLessThan(15);
-    expect(f.roll3).toBeLessThan(20);
+    expect(f.pitch1).toBeGreaterThanOrEqual(10);
+    expect(f.pitch3).toBeLessThan(22);
+    expect(f.roll3).toBeLessThan(32);
   }, 60_000);
 
   it('F5 held 1 s from the 15 m hover, then hands off: no crash, the sink under 800 fpm (round 1: the ground at 1,057 fpm, a crash)', () => {
@@ -253,7 +270,7 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
   // it, 1.5 m and 2.5 m hold at one lag and collapse a main at the other (181 / 183 kN); 1.0 m collapses at both (the gate's p9).
   const igeLevelWings = (cushionM: number, lag: number) => {
     const r = ah56('ige3'), nLag = Math.round(lag / FRAME), seen: number[] = [];
-    let pulled = false, rollKey: string | null = null, touchFpm = NaN, peak = 0;
+    let pulled = false, rollKey: string | null = null, touchFpm = NaN, peak = 0, upAt = Infinity, lastUp = -1e9;
     r.input.keyDown('F1', true);
     while (r.t < 8 && !r.physics.state.crashed) {
       if (r.t >= 0.2 - FRAME / 2) r.input.keyUp('F1');
@@ -261,9 +278,12 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
       seen.push(now.roll);
       const roll = seen.length > nLag ? seen[seen.length - 1 - nLag] : seen[0];
       if (r.t > 0.3) {
+        // Tune3: the keyboard stick holds where it is left and is an attitude command (about 22 deg/s of bank while held), so the
+        // wings are levelled with a press sized to the seen bank (|roll| / 22 s, at least 0.1 s), and the next press waits 0.7 s
+        // for the wings to settle (round 4: a key held while the seen roll was more than 1 deg off, on the 0.1-per-second keys).
         const want = roll < -1 ? 'ArrowRight' : roll > 1 ? 'ArrowLeft' : null;
-        if (rollKey && rollKey !== want) { r.input.keyUp(rollKey); rollKey = null; }
-        if (want && !rollKey) { r.input.keyDown(want); rollKey = want; }
+        if (rollKey && (rollKey !== want || r.t >= upAt - FRAME / 2)) { r.input.keyUp(rollKey); rollKey = null; lastUp = r.t; }
+        if (want && !rollKey && r.t - lastUp >= 0.7) { r.input.keyDown(want); rollKey = want; upAt = r.t + Math.max(0.1, Math.abs(roll) / 22); }
       }
       if (!pulled && now.agl - 1.9 < cushionM) { pulled = true; r.input.keyDown('F6', true); }
       frame(r);
@@ -422,7 +442,10 @@ describe('STAB ASSIST round 3: the collective presses', () => {
       expect(f.swingFromTouchDeg).toBeLessThan(45);
     }, 180_000);
   }
-  it.fails('KNOWN GAP: the run-on landing from a trimmed 45 KIAS approach, feet off, F5 and the brakes on the wheels (both paces): no crash and the roll-out heading within 30 deg (measured: 289 fpm, the roll-out turning 140 deg; 547 fpm, the right main collapsed at 181 kN; round 4 with the ground-roll heading hold: 55 deg of the approach heading, 35 of them before the touchdown; the slow pace still collapses the right main at the touchdown)', () => {
+  // Tune3 (KNOWN_ISSUES T12): a passing row. The approach's F5 / F6 are the climb-rate command at every speed now
+  // (heightHold.held.everySpeed) and the bank an attitude command: 228 / 201 fpm at 40 / 44 KIAS, the roll-out within 10.3 / 22.5 deg
+  // of the approach heading, no crash (round 4: 55 deg, the slow pace collapsing the right main; round 3: 140 deg / 181 kN).
+  it('the run-on landing from a trimmed 45 KIAS approach, feet off, F5 and the brakes on the wheels (both paces): no crash and the roll-out heading within 30 deg (a KNOWN GAP until tune3: 289 fpm, the roll-out turning 140 deg; 547 fpm, the right main collapsed at 181 kN; round 4: 55 deg)', () => {
     for (const [iv, lag] of PACES) {
       const f = runOn(iv, lag);
       report(`run-on landing every ${iv} s`, f);

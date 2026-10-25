@@ -303,6 +303,9 @@ export class InputSystem implements Subsystem {
   private kbAileron = 0;
   private kbElevator = 0;
   private kbRudder = 0;
+  /** STAB ASSIST keyboard pedal yaw-rate command (StabilityAssistTuning.keyPedal, opt-in): the keyboard pedal where the key found it. */
+  private kbRudderAtPress = 0;
+  private yawKeyWas = 0;
   /**
    * STAB ASSIST keyboard cyclic re-centring (StabilityAssistTuning.keyboardLimit.recentre, opt-in; the Bo 105): time since
    * an arrow key was last held, and since a bare F5 was last held, s.
@@ -855,7 +858,14 @@ export class InputSystem implements Subsystem {
     // The STAB ASSIST's trim follow-up moved the keyboard pedals (ControlInputs.pedalFollowUp): the pedal centre, what 5
     // returns to, moves with them, as the cyclic's centre moves with the spring-trim anchor it walks.
     const pedalFollowUp = c.pedalFollowUp ?? 0;
-    if (pedalFollowUp !== 0) {
+    // StabilityAssistTuning.keyPedal (opt-in; the AH-56A): the follow-up hands back a pedal key's move, so it moves the keyboard
+    // pedal itself, not the centre (a centre walked by every turn would reach its stop).
+    const keyPedal = this.profile.stabilityAssist?.keyPedal;
+    if (pedalFollowUp !== 0 && keyPedal) {
+      this.kbRudder = clamp(this.kbRudder + pedalFollowUp, -1 - n.rudder, 1 - n.rudder);
+      if (this.written.rudder !== null) this.written.rudder += pedalFollowUp;
+      c.pedalFollowUp = 0;
+    } else if (pedalFollowUp !== 0) {
       n.rudder = clamp(n.rudder + pedalFollowUp, -1, 1);
       if (this.written.rudder !== null) this.written.rudder += pedalFollowUp;
       c.pedalFollowUp = 0;
@@ -959,6 +969,13 @@ export class InputSystem implements Subsystem {
       }
       this.kbLeft.aileron = this.kbAileron; this.kbLeft.elevator = this.kbElevator;
     }
+    // STAB ASSIST keyboard attitude command (StabilityAssistTuning.keyAttitude, opt-in; the AH-56A): the keyboard stick
+    // stays within `travel` of the spring-trim anchor, the attitude command's full bank and pitch.
+    const kbAtt = this.profile.stabilityAssist?.keyAttitude;
+    if (kbAtt && this.assists.stabilityAssist && kbAil && kbEle) {
+      this.kbAileron = clamp(this.kbAileron, -kbAtt.travel, kbAtt.travel);
+      this.kbElevator = clamp(this.kbElevator, -kbAtt.travel, kbAtt.travel);
+    }
     if (!this.profile.rotorcraft) this.kbElevator = this.rotation.step(this.kbElevator, kbElevatorBefore, s.angularVelocity.y, s.pitch, onMains, dt, this.held.has('pitchUp'));
     if (dt > 0 && !this.profile.rotorcraft) {
       // Soft load-factor stops: ease the held keyboard elevator back while beyond them.
@@ -978,7 +995,13 @@ export class InputSystem implements Subsystem {
         this.rudCentred = false;
       }
       this.centring.rudder = false;
+      if (this.yawKeyWas === 0) this.kbRudderAtPress = this.kbRudder;
       this.kbRudder = stepKeyAxis(this.kbRudder, yaw, ias, dt, tuning.axes.rudder, this.heldFor(yaw > 0 ? 'rudderRight' : 'rudderLeft'));
+      // StabilityAssistTuning.keyPedal (opt-in): with the STAB ASSIST on, a pedal key moves the keyboard pedal at most `travel`
+      // from where it found it (the yaw-rate command's full turn).
+      if (keyPedal && this.assists.stabilityAssist && kbRud) {
+        this.kbRudder = clamp(this.kbRudder, this.kbRudderAtPress - keyPedal.travel, this.kbRudderAtPress + keyPedal.travel);
+      }
     } else if (this.centring.rudder) {
       this.kbRudder = stepCentre(this.kbRudder, dt, this.centreRate);
       if (this.kbRudder === 0) {
@@ -986,6 +1009,7 @@ export class InputSystem implements Subsystem {
         this.rudCentred = true;
       }
     }
+    this.yawKeyWas = yaw;
     // The flight model's travel is [-1, 1] about zero, not about the trimmed centre.
     this.kbAileron = clamp(this.kbAileron, -1 - n.aileron, 1 - n.aileron);
     this.kbElevator = clamp(this.kbElevator, -1 - n.elevator, 1 - n.elevator);

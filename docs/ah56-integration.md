@@ -432,3 +432,34 @@ branch, its snapshot fields only for a type that sets it). No shared rotor file 
 
 Suite command (vitest here hides the rows' console values unless `--silent=false` is passed):
 `npx vitest run tests/rotorcraft/ah56 tests/aircraft/ah56 tests/gear/ah56 tests/rotorcraft/bo105 tests/rotorcraft/legacyDigest.test.ts tests/input tests/ui --maxWorkers=4 --silent=false`.
+
+## 16. Tuning round 5 (2026-10-25, branch `tune3/ah56keys`): the keyboard feel
+
+Owner reports on the AH-56A keys: "spring loaded and unresponsive", "feels like a 747, not a military helo", "the auto centre
+action of the controls is also a big issue". Owner decisions: no auto-centring of the keyboard controls, a crisp military-helicopter
+feel; the control laws and numbers are AGENT choices. Probes, logs and the per-key before/after table: `W/rigid/tune3/` (notes.md,
+table_before_after.md). Details: KNOWN_ISSUES T12.
+
+| Key (15 m hover, STAB ASSIST on) | Before (main) | After |
+|---|---|---|
+| Arrow left / right, 1 s | first 1 deg/s at 0.4 s; 3 deg/s; 1.3 deg at release, the stick springs back | 0.1 s; 30 deg/s; 19 deg at release, 22-24 deg held (the attitude command), bounded at 30 deg (8 deg near the ground) |
+| Arrow up / down, 1 s | 0.75 s; 1.9 deg/s; 0.6 deg | 0.25 s; 15 deg/s; 7 deg at release, 12.5 deg held, bounded at 15 deg |
+| Z / X, 1 s | 1.8 deg/s; 0.6 deg; re-centring pedal | 0.1 s; 34 deg/s (35-39 at most); the turn braked on release, the new heading held (2 s key: 0.1 deg/s, 1.1 deg 6 s later) |
+| F6 / F5, 1 s | 0.5 s to 0.3 m/s; 1 m/s; height held | 0.3 / 0.45 s; 2.3 / 1.3 m/s (4.5 / 2.5 m/s held); height held; the climb-rate command at every speed |
+
+What changed (input.ts; the shared law, `src/sim/rotorcraft/stabilityAssist.ts`, and `src/input/{profile,InputSystem}.ts` only as
+new opt-in fields, default off): `StabilityAssistTuning.keyAttitude` (the keyboard stick as an attitude command flown by the assist
+with its own zero-rate trim; the input module keeps the keyboard stick within its travel; the term handed to the spring-trim anchor
+when it stops flying, so the cyclic does not jump on the wheels or at Shift+A), `keyAttitude.groundRoll` (the bank bound near the
+ground), `StabilityAssistTuning.keyPedal` (the yaw-rate pedal keys, the brake, the hand-back to the keyboard pedal, the forward-flight
+yaw damper `cruiseDamp`; the input module limits a pedal key's move and moves the keyboard pedal itself with the follow-up). Dropped
+from the AH-56A: `centringCyclic`, `centringPedals`, `recaptureOnCentre`. Set: `pedalCrossfeed` -2, the sideslip pedal gain 0.5,
+`heightHold.held` 4.5 / 2.5 m/s, lever 0.4 per s, `everySpeed`; the keys 0.45 / 0.5 / 0.5 per s (roll / pitch / pedal), collective
+0.1. Physics and the stick- and pedal-to-blade gearings are untouched; the R22 / R44 / S269 / MD 500 digest, the Bo 105 rows, the
+input and UI suites pass unchanged.
+
+The watching beginner (`tests/rotorcraft/ah56KeyPilot.ts`) was written for a re-centring stick; it now flies a position-holding one:
+presses sized to the error at the rate it has learnt a key moves the nose (22 deg/s roll, 12 pitch, 2 m/s climb per s), waits for
+the nose to settle before pressing again, corrects a drift with half round 3's attitude, banks half a degree per degree of heading
+error leading by 2 s of the turn. The whole flight's rows (ah56KeyMission): both paces still land without a crash; the 0.8 s pace's
+stop within 90 s is now a KNOWN GAP (KNOWN_ISSUES T12 has the six-pace counts and the roll key rate that trades it).
