@@ -704,4 +704,11 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     passing ah56Assist rows; W/tune2/ah56/r4/out/ige.log): 1.75 m 361-406 fpm, 96 kN a main; 2.0 m 309-323 fpm, 70 kN; 2.25 m 315-335
     fpm, 93 kN. Outside it 1.5 and 2.5 m hold at one lag and collapse a main at the other (181 / 183 kN), 1.0 m at both. Hands off
     (the older row, a different technique) only 2.0-2.25 m holds (317 / 315 fpm, 145 / 175 kN); 1.75 m collapses (416 fpm, 181 kN).
+  - Integration (tune/rigid-r2, the round-4 gate's must): the hint's cue was the true height, but the pilot reads the HUD AGL
+    (rounded, 2.5-3 m/s of sink) late. Flown off the seen HUD reading (W/tune2/ah56/gate2/out/q_edges.txt qD, q_hud8.txt): first
+    reads 7 ft holds at 0.3 s (1.8 m, 389 fpm, 90 kN) but collapses the left main at 0.5 s (1.3 m, 514 fpm, 183 kN); 6 ft collapses
+    at 0.5 s (184 kN); 8 ft holds at 0.2-0.5 s (2.4-1.9 m, 315-411 fpm, 67-106 kN) and collapses only at a 0.1 s read (180 kN).
+    The hint now says: hold Shift+F6 when the HUD AGL first reads 8 ft (arriving at about 2 m). The window in true height above
+    (1.75-2.25 m) is unchanged. Open: the ah56Assist igeLevelWings rows still pull on the true height with no lag; they should
+    trigger on the lagged, HUD-rounded reading (the gate's nice).
   - Not done: item E (an XH-51A-sized gyro rig): not cheap (a definition of its own), not attempted. The ICS on keys: not re-flown.
