@@ -431,6 +431,8 @@ export class InputSystem implements Subsystem {
     this.rollTrim = new RollTrimAssist(assists.rollTrim);
     this.rotation = new RotationGuard(assists.rotation);
     if (this.profile.stabilityAssist) this.assists.stabilityAssist = this.profile.stabilityAssist.default;
+    // A type whose pusher-grip schedule says so starts with the propSchedule assist on (opt-in; absent: off as before).
+    if (this.profile.propLever?.schedule?.default) this.assists.propSchedule = true;
   }
 
   /** Which engine(s) the engine keys act on (0 = left). One engine: always 'all'. After every reset: 'all'. */
@@ -780,10 +782,14 @@ export class InputSystem implements Subsystem {
     const tuning = this.profile.assists;
     this.updateSpringTrim(s);
     if (this.profile.rotorcraft) {
-      const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
+      // The lowering hand-rate key gated to the bare key (collectiveFastRate.downGate, opt-in; absent: never): every engine
+      // running, below the gate's forward air speed (the powered hover, where the hand-speed drop is not wanted).
+      const downGate = this.profile.collectiveFastRate?.downGate;
+      const downAsBare = !!downGate && this.held.has('collectiveFastDown') && s.engines.every((e) => e.running) && Math.max(0, s.airVelocityBody.x) / KT < downGate.minKias;
+      const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp') || downAsBare);
       // The hand-rate pair (InputProfile.collectiveFastRate: Shift+F5 / Shift+F6), travel per second; 0 on every other type.
       const fast = this.profile.collectiveFastRate;
-      const fastDown = !!fast && this.held.has('collectiveFastDown'), fastUp = !!fast && this.held.has('collectiveFastUp');
+      const fastDown = !!fast && this.held.has('collectiveFastDown') && !downAsBare, fastUp = !!fast && this.held.has('collectiveFastUp');
       const fastChange = fast ? (fastUp ? fast.up : 0) - (fastDown ? fast.down : 0) : 0;
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
       const hardwareCollective = this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && !!hardware;
@@ -797,6 +803,9 @@ export class InputSystem implements Subsystem {
         let v = was + change * (this.profile.collectiveRate ?? 0.15) * dt + fastChange * dt;
         // The lowering key's entry stop (Bo 105: the autorotation entry position): never below it, nor below where it was.
         if (fastDown && !fastUp && fast!.downStop !== undefined) v = Math.max(v, Math.min(was, fast!.downStop));
+        // The raising key's stop (AH-56A: the powered cushion, not a climb): never above it, nor above where it was; with an engine
+        // stopped it is off (an engine failure's cushion takes the whole travel).
+        if (fastUp && !fastDown && fast!.upStop !== undefined && s.engines.every((e) => e.running)) v = Math.min(v, Math.max(was, fast!.upStop));
         c.collective = clamp(v, 0, 1);
       } else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
     }
@@ -904,6 +913,8 @@ export class InputSystem implements Subsystem {
     }
 
     const yaw = this.dir('rudderLeft', 'rudderRight');
+    // Re-centring keyboard pedals (InputProfile.centringPedals): back to the (followed) pedal centre once no pedal key is held.
+    if (this.profile.centringPedals && yaw === 0 && kbRud && this.kbRudder !== 0) this.centring.rudder = true;
     if (yaw !== 0) {
       if (this.rudCentred) {
         // The pilot's feet take the pedals from the auto-rudder without a bump.
@@ -1191,7 +1202,9 @@ export class InputSystem implements Subsystem {
     if (propGrip) {
       const grip = this.dir('propDecrease', 'propIncrease');
       if (grip !== 0) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? propGrip.detent) + grip * PROP_GRIP_RATE * dt, 0, 1); }
-      else if (this.assists.propSchedule && propGrip.schedule && !this.gripTouched) c.propLever = clamp(interp1(propGrip.schedule.kias, propGrip.schedule.lever, s.ias / KT), 0, 1);
+      // The schedule is the powered trim's: with an engine stopped the grip is left where it is (the autorotation's +8 deg is the
+      // pilot's snap; the schedule would keep driving the shared shaft's prop to the speed's angle).
+      else if (this.assists.propSchedule && propGrip.schedule && !this.gripTouched && s.engines.every((e) => e.running)) c.propLever = clamp(interp1(propGrip.schedule.kias, propGrip.schedule.lever, s.ias / KT), 0, 1);
     }
     if (this.profile.has.propeller) {
       // Propeller lever: down to the feather gate and no further (Shift+F feathers); up from feather starts at the gate.

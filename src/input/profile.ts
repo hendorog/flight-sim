@@ -137,6 +137,40 @@ export interface StabilityAssistTuning {
   cruiseHold?: { gain: number };
   translationalRate?: { degPerKt: number; limitDeg: number; trimDegPerSPerKt: number; restS: number; trimMaxDegS?: number;
     fadeKt: readonly [number, number] };
+  // ---- AH-56A tune round 3 (opt-in; absent = the law as before, so no other type's rows move).
+  /**
+   * Sideslip pedal follow-up on the KEYBOARD pedals (with `followUp`): airborne, while no pedal key is held, the keyboard pedal
+   * centre walks toward zero sideslip at `gain` of the axis per second per rad of the sideslip (low-passed over `filterS`), at
+   * most `rate` of the axis per second, weighted 0 -> 1 between kias[0] and kias[1] of FORWARD air speed (body x, kt: a sideways
+   * drift is not a turn to coordinate), full to kias[2], none from kias[3]. It
+   * runs above fadeKias[1] too (the pedal trim keeps moving with speed in the cruise), and adds to the heading hold's and the
+   * rate damping's follow-up below it. Absent: none (above the heading hold's fade the keyboard pedal stays where the hover
+   * left it).
+   */
+  sideslipPedal?: { kias: readonly [number, number, number, number]; gain: number; rate: number; filterS: number };
+  /**
+   * The cyclic datum is taken again where the aircraft is once a RE-CENTRING keyboard stick (InputProfile.centringCyclic) has
+   * come back to rest for `quietS` after a key moved it: attitude hold at the attitude the pilot left (as the control gyro
+   * itself does), instead of an attitude command back to the captured one. Absent: the captured datum stays.
+   */
+  recaptureOnCentre?: { quietS: number };
+  /**
+   * The cyclic datum is captured only fully airborne (no wheel or skid load) with the stick quiet for `quietS`; until then the
+   * cyclic terms wait (the pedal term works as before, on light skids or wheels too). Absent: captured at the first active
+   * step (light skids included).
+   */
+  captureAirborne?: { quietS: number };
+  // ---- AH-56A tune round 4 (opt-in; absent = the law as before).
+  /**
+   * Heading hold on the KEYBOARD pedals on the wheels (with `followUp`): on the ground with the tail wheel locked
+   * (ControlInputs.tailWheelLock) and no pedal key held, a series pedal term clamp(-kpsi (psi - psi0) - kr r, +/-authority),
+   * weighted 0 -> 1 from gsKt[0] to gsKt[1] of ground speed, full to gsKt[2], none from gsKt[3]; psi0 is the heading at the
+   * touchdown (or where a pedal key last let go). The keyboard pedal centre is walked by the term (low-passed over `filterS`) at
+   * `gain` of the axis per second per unit of it, at most `rate`, so what it holds stays when it fades. Absent: none (on the
+   * wheels the pedals are the pilot's).
+   */
+  groundRollHeading?: { gsKt: readonly [number, number, number, number]; kpsi: number; kr: number; authority: number; gain: number;
+    rate: number; filterS: number };
 }
 
 export interface InputProfile {
@@ -156,7 +190,15 @@ export interface InputProfile {
    * pair). `downStop`: the lowering key stops there (the autorotation entry position, travel 0..1) and never takes the
    * collective below it, held or pressed again; bare F5 goes on to the floor. Absent: the lowering key runs to the floor.
    */
-  collectiveFastRate?: { down: number; up: number; downStop?: number };
+  collectiveFastRate?: { down: number; up: number; downStop?: number;
+    /** The raising key stops there (travel 0..1) and never takes the collective above it while every engine runs (an engine
+     *  failure's cushion takes the whole travel); bare F6 goes on up. Absent: to the top. */
+    upStop?: number;
+    /** The lowering key acts as the bare key (F5: collectiveRate, and the STAB ASSIST's held-key sink command) while every
+     *  engine runs below `minKias` of forward air speed (body x, kt): the hand-speed drop is the autorotation entry, for forward
+     *  flight or an engine failure, not for the powered hover (the AH-56A's tune round 4: Shift+F5 for 1 s in the 15 m hover
+     *  hit the ground at 2,640 fpm). Absent: always at hand speed. */
+    downGate?: { minKias: number } };
   /** Keyboard re-centring rate (5 / Numpad 5), travel per second. Absent: virtualYoke CENTRE_RATE (4). */
   centreRate?: number;
   /**
@@ -213,9 +255,12 @@ export interface InputProfile {
    *  -2.2 deg, autorotation +8 deg, full reverse -12 deg), `detent` the hover detent. */
   propLever?: { detent: number; snaps: readonly number[];
     /** The trim schedule the optional laptop assist (InputAssists.propSchedule, off by default) follows until the pilot
-     *  touches the grip: lever position against indicated airspeed, kt (plain tables; AC fills them from the pusher's
-     *  trim schedule). Absent: no assist. */
-    schedule?: { kias: readonly number[]; lever: readonly number[] } };
+     *  touches the grip, while every engine runs: lever position against indicated airspeed, kt (plain tables; AC fills them
+     *  from the pusher's trim schedule). Absent: no assist. */
+    schedule?: { kias: readonly number[]; lever: readonly number[];
+      /** The assist starts ON for this type (tune round 3, the AH-56A's keyboard pilot: the P transition technique is the
+       *  propeller). Absent: off, as before. */
+      default?: boolean } };
   /** Tail-wheel lock toggle key (ControlInputs.tailWheelLock). */
   tailWheelLock?: boolean;
   /** Gear lever keys on a rotorcraft with retractable wheels. */
@@ -226,6 +271,10 @@ export interface InputProfile {
   /** Keyboard cyclic re-centres to the spring-trim anchor (at the Numpad-5 recentring rate) when no cyclic key is held,
    *  and the mouse yoke has a small deadzone: a rate-command control gyro (AH-56A AMCS) holds attitude at stick centre. */
   centringCyclic?: boolean;
+  /** The keyboard pedals re-centre too: with no pedal key held they glide back (at the Numpad-5 rate) to the keyboard pedal
+   *  centre, which the STAB ASSIST's follow-up walks to the trim (ControlInputs.pedalFollowUp). Absent: they stay where the keys
+   *  left them. */
+  centringPedals?: boolean;
   /** Stick pusher interrupt button on the control wheel (Shift+D, held): ControlInputs.pusherInterrupt. Absent: none. */
   pusherInterrupt?: boolean;
   /**
