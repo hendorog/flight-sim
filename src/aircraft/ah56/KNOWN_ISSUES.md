@@ -718,3 +718,48 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     pedal centre the ground-roll hold walked stays at +0.30 / +0.35 of travel, so the next hands-off F6 lift-off swings 20.2 / 19.4
     deg of heading (9.4 deg from a clean start); walk it back when the hold disengages.
   - Not done: item E (an XH-51A-sized gyro rig): not cheap (a definition of its own), not attempted. The ICS on keys: not re-flown.
+
+## Hold autopilot (2026-10-25, branch fix/ah56-autopilot; the owner: "the autopilot is terrible in the AH56"; AGENT choices, not owner decisions)
+
+Probes and logs: `W/rigid/ah56ap` (notes.md has the before / after table; out/ the traces). Rows: tests/rotorcraft/ah56Autopilot.test.ts,
+through the shell path (SimPhysics + InputSystem at 60 Hz, the Simulator's autopilotFlying link). docs/ah56-integration.md section 16.
+
+- **What was terrible (before, main 69aca96).** (1) The AMCS hold rocked all the time: the shared inner loop (4 per rad, 1.5 per
+  rad/s, trim 0.8, the R22 family's position-command cyclic) sawed the rate-command stick at the 1/s hand-rate limit, +/-0.3 of
+  pitch stick and +/-0.25 of roll, the aircraft +/-3 deg in pitch and roll about once a second (pitch 1.1-1.3 s, roll 0.6-0.9 s)
+  at every speed from the hover to 150 KIAS, for as long as it was on. The averages were fine (speed +/-1-2 kt, height +/-0.3 m,
+  hover 0.5 m); the ICS with the same law was rock steady. (2) Heading-bug turns were flat pedal turns at 8 deg/s at every speed: a
+  90 at 100 kt 19 deg of sideslip with the pedal on its stop 24 % of the time; a 180 at 60 kt 38 deg, +/-14 kt, 4 m. (3) Engaged in a
+  21 deg bank it rolled 16 deg past level (aileron step 0.53); in a 2 m/s climb or descent a 0.11 collective step and an 11-12 deg
+  roll kick. (4) A off stepped the stick 0.12-0.27 (the keyboard cyclic re-centred to the anchor it had before A; the ICS then lost
+  14-28 m in 10 s). (5) The pusher was not managed (the PROP SCHEDULE input aid moved it with the IAS, or nobody once the grip was
+  touched); a held-speed change (dev panel) was a step: 36 deg of pitch and 59-74 m. (6) In cruise it held the forward ground
+  speed (12 kt of crosswind: 113 kt over the ground with the ASI at 96-100). (7) Engaged drifting in the hover it flew back to
+  where A was pressed: 21 deg nose-up, 46 m.
+- **Fixed (opt-in, SimProfile.heliHold = AH56_SIM.heliHold, src/sim/rotorcraft/autopilot.ts HeliHoldTuning).** AMCS inner gains
+  2 / 0.6 / 0.3 pitch, 2 / 0.4 / 0.3 roll (roll damping 0.8 still cycles in the hover: 0.6 s; 0.4 has twice the margin); the ICS keeps
+  the shared gains. Coordinated turns from 20 KIAS (back below 15, and always in the hover hold): the heading error asks for up to
+  3 deg/s, flown as the bank for it at the TAS (up to 25 deg, rolled at 5 deg/s) with a learnt trim bank, the pedals to zero
+  sideslip; engaged in a bank the wings come level first with the bug following the nose. IAS held above 40 KIAS; the held speed
+  walks at 2 kt/s; the climb demand walks at 0.3 m/s/s to at most 2 m/s, engaged climbing it levels where the walk ends; stronger
+  collective gains (0.1 / 0.05, shared 0.05 / 0.025). The pusher grip on the PROP SCHEDULE table at the held speed at 0.1/s. The
+  spring-trim anchor (through the coolie, ControlInputs.cyclicTrimPitch / Roll) and the keyboard pedal centre (pedalFollowUp) walked
+  to the hold's controls. Engaged over 1.5 m/s in the hover: stop at 0.5 m/s/s and hold where it stopped.
+- **After.** Hover 0.1 / 0.01 deg of pitch / roll range, 0.04 m, 0.001 m; cruise 35-150 KIAS attitude range < 0.25 deg, IAS
+  +/-0.01-0.3 kt, height < 0.2 m, heading < 0.2 deg (300 s at 60: 0.006 deg, 0.003 kt); turns 3.04-3.08 deg/s, sideslip < 0.5 deg,
+  bank 16 at 100 kt, height 0.3 m, IAS 0.8 kt; in a bank: rolls level at 5 deg/s, 2.6 deg past level; in a climb: 0.024 of
+  collective in 1 s, levels 9.5 m on; ALT +100 ft at 2.0 m/s, 0.9 m overshoot; hand-back steps < 0.03 (0.0002-0.006 at steady
+  speed), pitch 0.05 deg in 10 s; a 100 -> 130 kt change 6.5 deg of pitch, 1.7 m; drifting 15 kt with the wind: stops with 3 deg of
+  pitch, holds within 3.8 m of the stop in 5 kt gusts. The other helicopters fly the shared law unchanged (legacy digests, Bo 105 and
+  autopilot rows identical).
+- **Open (numbers).** (a) The prop keys do nothing while A is on: the hold rewrites the grip every physics step. Handing it to the
+  pilot needs the input module to say the grip was worked (e.g. a ControlInputs flag set with gripTouched), not in this lane. (b)
+  Below 20 KIAS heading-bug turns stay pedal turns at 8 deg/s (at 21 kt that was 11 deg of sideslip and 10 deg of roll, so the
+  coordinated turn now starts at 20); at 22-25 kt the coordinated turn runs at 2.3-2.6 deg/s and its trim bank (the -4 deg low-speed
+  trim roll) takes about 60 s to settle the last 4 deg. (c) Engaged climbing or descending at 2.4 m/s it levels 9-10 m on (ICS at
+  a faster climb: 21 m); engaged in a bank after the bank has sunk the aircraft, the sink continues while it rolls level (7.8 m at
+  21 deg / 100 kt). (d) 12 kt crosswind gusting 4 at 100 kt: IAS +/-4.8 kt, height +/-1.5 m, heading +/-3.9 deg (the gusts);
+  after A off in that air the aircraft itself diverges hands off (AMCS 24 m in 10 s, ICS 23.5 m and 18 deg of roll), not the hold.
+  (e) ICS at 20 KIAS: A arrests the start's 2 s pitch-up with a 7.7 deg swing (AMCS 4.9). (f) The held speed only changes from the
+  dev panel (no speed key): ramps at 2 kt/s, the IAS within 4-5 kt of the ramp, 3.5 kt past its end. (g) The hold is not part of
+  the save (exportState null, as on every helicopter).

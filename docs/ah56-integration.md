@@ -432,3 +432,27 @@ branch, its snapshot fields only for a type that sets it). No shared rotor file 
 
 Suite command (vitest here hides the rows' console values unless `--silent=false` is passed):
 `npx vitest run tests/rotorcraft/ah56 tests/aircraft/ah56 tests/gear/ah56 tests/rotorcraft/bo105 tests/rotorcraft/legacyDigest.test.ts tests/input tests/ui --maxWorkers=4 --silent=false`.
+
+## 16. The hold (A) on the AH-56A (2026-10-25, branch `fix/ah56-autopilot`)
+
+The owner: "the autopilot is terrible in the AH56". Measured headlessly through the shell path (SimPhysics + InputSystem at 60 Hz,
+the Simulator's autopilotFlying link, no keys while A is on); probes, traces and the full before / after table in
+`W/rigid/ah56ap/` (notes.md). Details and the open items: KNOWN_ISSUES "Hold autopilot". Rows: tests/rotorcraft/ah56Autopilot.test.ts.
+
+| Item | Before (shared law) | Change (AH56_SIM.heliHold, opt-in) | After |
+|---|---|---|---|
+| AMCS inner loop | the cyclic sawed +/-0.3 at the 1/s hand-rate limit; +/-3 deg of pitch and roll at ~1 Hz at every speed | gains 2 / 0.6 / 0.3 pitch, 2 / 0.4 / 0.3 roll (AMCS only; the ICS keeps the shared, steady gains) | attitude range 0.001-0.1 deg hover to 150 KIAS |
+| Heading-bug turns | flat pedal turns at 8 deg/s: 19-38 deg of sideslip, pedal on its stop | from 20 KIAS: bank for up to 3 deg/s (25 deg max, 5 deg/s roll), learnt trim bank, pedals to zero sideslip | 3.04-3.08 deg/s, sideslip < 0.5 deg, height 0.3 m |
+| Engaged in a bank / a climb | 16 deg past level, aileron step 0.53 / collective step 0.11, 11-12 deg roll | wings level first (bug follows the nose); climb demand walked at 0.3 m/s/s, stronger collective gains | 5 deg/s roll-out, 2.6 past level / 0.024 in 1 s, levels 9.5 m on |
+| Speed | forward ground speed; a held-speed change a step (36 deg of pitch, 59-74 m) | IAS above 40 KIAS; walked at 2 kt/s | IAS +/-0.01-0.3 kt; a 100 -> 130 change 6.5 deg, 1.7 m |
+| Pusher | not managed (the PROP SCHEDULE input aid, or frozen once touched) | grip on the schedule table at the held speed, 0.1/s, while A is on | 130 kt: the table's 0.631; the hover detent in the hover |
+| Hand-back | stick 0.12-0.27 back to the old anchor | spring-trim anchor (coolie) and keyboard pedal centre walked to the hold's | every control < 0.03 in 2 s (steady: < 0.006) |
+| Engaged drifting in the hover | flew back 46 m with 21 deg of pitch | stop at 0.5 m/s/s, hold where it stopped | 3 deg of pitch; 3.8 m in 15 kt gusting 5 |
+
+Shared files: `src/sim/rotorcraft/autopilot.ts` (HeliHoldTuning, every branch behind `tuning`), `scriptedPilot.ts` (four fields
+replacing literals with the same values: aileronRate 1, yawRateRef 0, liftGain 0.05, liftLearning 0.025), `src/aircraft/types.ts`
+(SimProfile.heliHold, optional), `src/sim/SimPhysics.ts` (sets the tuning from the profile). No physics file. The legacy digests,
+the Bo 105 rows and the R22 / R44 / S269 hold rows print the same values as on main.
+
+Not in this lane (described for the input lane): the prop keys do nothing while A is on (the hold rewrites the grip before each
+physics step); a ControlInputs flag set when the pilot works the grip would let the hold hand it over.
