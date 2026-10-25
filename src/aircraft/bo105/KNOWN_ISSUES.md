@@ -745,6 +745,23 @@ changed.
   `src/sim/SimPhysics.ts` (one line setting it from the profile), `src/aircraft/types.ts` (`SimProfile
   .heliHoldGroundSpeed`, optional). The AH-56A sets none of them; the legacy digests are unchanged.
 
+#### Fix round gate (2026-10-25, W/tune2/bo105 `gate2/`, 6.5/10; recorded at integration on tune/rigid-r2, not fixed)
+
+- **Open (gate must): the hand-held stick's datum relaxation in cruise** (`gate2/hand.test.ts`, the trackpad through the real
+  mouse-yoke path, `out/hand.head.log`). With `cruiseHold.handHeld` the cyclic gain is 1 in cruise, and the datums still relax
+  toward the flown attitude whenever the filtered airspeed falls while the stick was active within 2 s (`datumRelaxKt` 2 kt,
+  meant for the mouse-yoke deceleration below the fade). So a nose-up nudge rewrites the datum: pointer 0.5 of the half view
+  (stick 0.28) for 0.5-2 s then back to the centre crashes 6 of 27 (60 KIAS 1, 100 KIAS 1, 120 KIAS 4), and the others keep a
+  datum error (100 KIAS back 1 s: +4.4 deg pitch, +18 deg bank held; 2 s: +14 / +47 deg at 16 m AGL; push 1 s: sinks 3 m/s
+  into the ground at 38.7 s). With `datumRelaxKt` deleted (`out/hand.noRelax.log`): 1 of 27, datum error 0.0 deg. The gate's
+  fix: apply the speed relaxation only in the fade band, not in cruise. Pointer 0.3 (stick 0.09) nudges: 0 of 27.
+- **Open (gate should): no travel cap on the hand-held stick.** Pointer 0.7 (stick 0.69, a 51 deg command): 16 of 27 crash (9
+  of 27 without the relaxation), and a 1 s nudge in the hover crashes at 3.9 s; the keys have the 0.12 limit, the hand stick none.
+- **Open (gate should; contract request, shared UI): no toast or voice at an engine failure.** The beginner's only cue is the OEI
+  flag in the status string and the hint text; at 120 KIAS (above the 100 KIAS OEI Vne) level flight needs more than one engine.
+- **Open (gate, text):** the Collective hint still says F6 stops raising the lever at the torque limit (86 %); with one engine
+  out the limit is 95 %.
+
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 
 From TW (twin drivetrain, `docs/twin-turboshaft.md`):

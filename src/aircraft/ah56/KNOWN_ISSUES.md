@@ -711,4 +711,10 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     The hint now says: hold Shift+F6 when the HUD AGL first reads 8 ft (arriving at about 2 m). The window in true height above
     (1.75-2.25 m) is unchanged. Open: the ah56Assist igeLevelWings rows still pull on the true height with no lag; they should
     trigger on the lagged, HUD-rounded reading (the gate's nice).
+  - Open from the round-4 gate (W/tune2/ah56/gate2/notes.md, q_edges.txt), not fixed at integration: (should) Shift+F5 outside the
+    30 kt gate but low, at the beginner's own 40 KIAS / 30 m descent, is still the full hand-speed drop: 1 s takes 36-39 % of the
+    collective and the aircraft hits the ground 2.5 s later at 2,440-2,740 fpm, hands off and with the watching beginner at both
+    paces (gate's fix: downGate.maxAglM 150, Shift+F5 as F5 below 500 ft AGL too). (nice) After a run-on roll-out the keyboard
+    pedal centre the ground-roll hold walked stays at +0.30 / +0.35 of travel, so the next hands-off F6 lift-off swings 20.2 / 19.4
+    deg of heading (9.4 deg from a clean start); walk it back when the hold disengages.
   - Not done: item E (an XH-51A-sized gyro rig): not cheap (a definition of its own), not attempted. The ICS on keys: not re-flown.
