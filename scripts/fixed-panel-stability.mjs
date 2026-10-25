@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Usage: node scripts/fixed-panel-stability.mjs [aircraft=pc12] [outDir]
-//   env VP=1366,768,1 (viewport width, height, device pixel ratio), FRAMES=40 (frames per window)
+//   env VP=1366,768,1 (viewport width, height, device pixel ratio), FRAMES=40 (frames per window),
+//   ANGLE=gl|vulkan (default: Chrome's own choice, as the owner runs it)
 //
 // Measures whether the gauge BODIES of the fixed 2D panel (src/ui/fixedPanel.ts) stay put, in the real app (headless
 // Chrome): per measuring window of FRAMES consecutive frames it reads back the native panel canvas and the fixed
@@ -10,6 +11,14 @@
 // those pixels; a needle cannot. Also checks that the canvas's CSS box and backing store do not change within a
 // window, that the canvas sits on whole device pixels with a 1:1 backing store (no compositor resampling), and that a
 // resize away and back reproduces the same image.
+//
+// Source integrity: every frame, no pixel of the native panel canvas may change outside the rectangles the panel
+// redrew that frame (InstrumentPanel.upload.add). This is what the owner's recordings showed (2026-10-26): on Chrome's
+// default Linux backend (ANGLE on OpenGL, Mesa radeonsi) drawing every gauge straight into the one large panel canvas
+// put whole gauges at the wrong x, so a navcom or the cabin gauge slid 10-60 px sideways inside its fixed box. The
+// body-pixel check above cannot see that (a moving source pixel counts as a needle), and the first version of this
+// script forced ANGLE on Vulkan, where it does not happen. So Chrome runs with its default GPU backend here
+// (ANGLE=vulkan or ANGLE=gl to force one).
 //
 // Windows: cruise in turbulence (Upper, entered with Shift+V), Lower (]), back to Upper, a resize round trip, Upper
 // active from the saved preference at load, and the runway with power up (taxi). Prints per-window results, writes
@@ -30,7 +39,8 @@ const FRAMES = Number(process.env.FRAMES ?? 40);
 const port = await new Promise((res) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 const server = await createServer({ root, logLevel: 'error', server: { port, strictPort: true, host: '127.0.0.1', hmr: false, watch: null } });
 await server.listen();
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=vulkan', '--enable-features=Vulkan', '--enable-webgl'] });
+const angle = process.env.ANGLE === 'vulkan' ? ['--use-angle=vulkan', '--enable-features=Vulkan'] : process.env.ANGLE ? [`--use-angle=${process.env.ANGLE}`] : [];
+const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', '--enable-webgl', ...angle] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const failures = [];
@@ -53,13 +63,40 @@ async function measure(p, name, reference) {
     const s0 = readSource(), f0 = readFixed();
     const sChanged = new Uint8Array(SW * SH), fChanged = new Uint8Array(W * H);
     const differs = (a, b, k, tol) => Math.abs(a[k] - b[k]) + Math.abs(a[k + 1] - b[k + 1]) + Math.abs(a[k + 2] - b[k + 2]) > tol;
+    // Source integrity: the rectangles the panel redraws each frame; nothing outside them may change.
+    const panel = __sim.systems.panel;
+    const redrawn = [];
+    const add = panel.upload.add;
+    panel.upload.add = function (r) { redrawn.push({ x: r.x, y: r.y, w: r.w, h: r.h }); return add.call(this, r); };
+    const inRedrawn = new Uint8Array(SW * SH);
+    const stray = { frames: 0, px: 0, box: null };
+    let sPrev = s0;
     geometry.add(geom());
-    for (let i = 0; i < frames; i++) {
-      await new Promise((res) => requestAnimationFrame(res));
-      geometry.add(geom());
-      const s = readSource(), f = readFixed();
-      for (let j = 0, k = 0; j < SW * SH; j++, k += 4) if (!sChanged[j] && differs(s, s0, k, 0)) sChanged[j] = 1;
-      for (let j = 0, k = 0; j < W * H; j++, k += 4) if (!fChanged[j] && differs(f, f0, k, 6)) fChanged[j] = 1;
+    try {
+      for (let i = 0; i < frames; i++) {
+        await new Promise((res) => requestAnimationFrame(res));
+        geometry.add(geom());
+        const s = readSource(), f = readFixed();
+        inRedrawn.fill(0);
+        for (const r of redrawn.splice(0)) {
+          const x0 = Math.max(0, Math.floor(r.x) - 1), y0 = Math.max(0, Math.floor(r.y) - 1), x1 = Math.min(SW, Math.ceil(r.x + r.w) + 1), y1 = Math.min(SH, Math.ceil(r.y + r.h) + 1);
+          for (let y = y0; y < y1; y++) inRedrawn.fill(1, y * SW + x0, y * SW + x1);
+        }
+        let n = 0;
+        for (let j = 0, k = 0; j < SW * SH; j++, k += 4) {
+          if (!sChanged[j] && differs(s, s0, k, 0)) sChanged[j] = 1;
+          if (!inRedrawn[j] && differs(s, sPrev, k, 6)) {
+            n++;
+            const x = j % SW, y = (j / SW) | 0, b = stray.box ??= [x, y, x, y];
+            b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y);
+          }
+        }
+        if (n) { stray.frames++; stray.px += n; }
+        sPrev = s;
+        for (let j = 0, k = 0; j < W * H; j++, k += 4) if (!fChanged[j] && differs(f, f0, k, 6)) fChanged[j] = 1;
+      }
+    } finally {
+      panel.upload.add = add;
     }
     // A fixed pixel is "body" when every source pixel within 2 px of its footprint stayed unchanged.
     const sx = W / sec.size.w, sy = H / sec.size.h;
@@ -93,6 +130,7 @@ async function measure(p, name, reference) {
     return {
       geometry: [...geometry],
       snapped,
+      stray,
       panes: panes.map((pn) => ({ at: [pn.source.x, pn.source.y, pn.source.w, pn.source.h], body: pn.body, moved: pn.moved })),
       image: keepImage ? fc.toDataURL() : null,
       compass: sec.compass ? [sec.compass.x * sx, sec.compass.y * sy, (sec.compass.x + sec.compass.w) * sx, (sec.compass.y + sec.compass.h) * sy] : null,
@@ -102,7 +140,7 @@ async function measure(p, name, reference) {
   if (r.error) { failures.push(`${name}: ${r.error}`); console.log(name, r.error); return null; }
   writeFileSync(`${out}/${results.length}-map.png`, Buffer.from(r.map.split(',')[1], 'base64'));
   const moving = r.panes.filter((x) => x.moved > 0);
-  const row = { name, geometry: r.geometry, snapped: r.snapped, bodyPixels: r.panes.reduce((a, x) => a + x.body, 0), moving };
+  const row = { name, geometry: r.geometry, snapped: r.snapped, bodyPixels: r.panes.reduce((a, x) => a + x.body, 0), moving, stray: r.stray };
   if (reference) {
     // Same image up to GPU rounding (a channel off by a few levels): no pixel may differ by more than 6 in R+G+B.
     // The magnetic compass is left out: its float keeps settling while the simulation is paused.
@@ -119,7 +157,8 @@ async function measure(p, name, reference) {
     row.roundTripDifferingPx = differing;
   }
   results.push(row);
-  console.log(`${name}: ${row.bodyPixels} body px, ${moving.length ? `MOVING ${JSON.stringify(moving)}` : 'no body pixel changed'}; geometry ${r.geometry.length === 1 ? 'constant' : `CHANGED ${r.geometry.join(' -> ')}`}; whole device pixels ${r.snapped}${reference ? `; identical after the round trip ${row.sameAsBefore}` : ''}`);
+  console.log(`${name}: ${row.bodyPixels} body px, ${moving.length ? `MOVING ${JSON.stringify(moving)}` : 'no body pixel changed'}; geometry ${r.geometry.length === 1 ? 'constant' : `CHANGED ${r.geometry.join(' -> ')}`}; whole device pixels ${r.snapped}; source changed outside redrawn rects ${r.stray.px ? `IN ${r.stray.frames}/${FRAMES} FRAMES (${r.stray.px} px, box ${r.stray.box})` : 'never'}${reference ? `; identical after the round trip ${row.sameAsBefore}` : ''}`);
+  if (r.stray.px) failures.push(`${name}: the native panel canvas changed outside the redrawn rectangles in ${r.stray.frames} frames (${r.stray.px} px within ${r.stray.box}): gauges drawn in the wrong place`);
   if (moving.length) failures.push(`${name}: gauge bodies changed ${JSON.stringify(moving)}`);
   if (r.geometry.length !== 1) failures.push(`${name}: canvas geometry changed within the window`);
   if (!r.snapped) failures.push(`${name}: canvas not on whole device pixels / backing store not 1:1 (${r.geometry[0]})`);

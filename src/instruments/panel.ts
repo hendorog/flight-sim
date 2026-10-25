@@ -7,6 +7,13 @@
 // latches its display values quantised to what is visible; per frame only instruments whose latched values
 // changed are redrawn (background restore + face + needles + bezel) and the texture is re-uploaded only
 // if something changed.
+//
+// Each instrument is redrawn in its own small layer canvas, which is then copied onto the panel canvas
+// (drawLayered). Drawing all the instruments straight into the one large panel canvas let Chrome's GPU canvas
+// (ANGLE on OpenGL, the Linux default, Mesa radeonsi) place whole instruments at the wrong x: a gauge slid
+// tens of pixels sideways inside its own box, or painted over its neighbour, frame after frame (the PC-12
+// and C208 right halves, fixed 2D panel and 3D cockpit alike). With a layer per instrument the panel canvas
+// only receives plain image copies, and the fault does not occur (scripts/fixed-panel-stability.mjs).
 
 import { DualSectorGauge } from './render/dualSector';
 import * as THREE from 'three';
@@ -106,6 +113,8 @@ export class InstrumentPanel {
   } | null = null;
   /** Re-uploads only the redrawn instrument rectangles of `texture` (see render/dirtyUpload.ts). */
   readonly upload: DirtyRectUploader;
+  /** Per-instrument layer canvases (see drawLayered). */
+  private readonly layers = new Map<PanelComponent, { canvas: HTMLCanvasElement; g: Ctx2D; x: number; y: number }>();
   private lastStateTime = -Infinity;
   private readonly lastPos = { x: NaN, y: NaN, z: NaN };
 
@@ -232,8 +241,7 @@ export class InstrumentPanel {
     for (const c of this.components) {
       if (!c.sample(r, ctx.controls, ctx.simTime)) continue;
       const rects = c.paintRects ?? [c.bounds];
-      for (const b of rects) this.g.drawImage(this.background, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
-      c.draw(this.g);
+      this.drawLayered(c, rects);
       this.version++;
       for (const b of rects) {
         this.upload.add(b);
@@ -244,6 +252,38 @@ export class InstrumentPanel {
     this.upload.flush(ctx.renderer);
     light?.composer.render(ctx.renderer);
     this.lastUpdateMs = performance.now() - t0;
+  }
+
+  /**
+   * Redraw one instrument: background restore + draw in its own layer canvas (whole-pixel box around `rects`),
+   * then copy the layer's `rects` onto the panel canvas. The result equals restoring the background in `rects`
+   * and drawing the instrument straight onto the panel, except that paint falling outside `rects` (a shadow edge)
+   * is dropped instead of being left behind on the panel until the next full repaint.
+   */
+  private drawLayered(c: PanelComponent, rects: readonly Rect[]): void {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const b of rects) {
+      x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+    }
+    x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+    const w = Math.min(this.canvas.width, Math.ceil(x1)) - x0, h = Math.min(this.canvas.height, Math.ceil(y1)) - y0;
+    if (w <= 0 || h <= 0) return;
+    let layer = this.layers.get(c);
+    if (!layer || layer.x !== x0 || layer.y !== y0 || layer.canvas.width !== w || layer.canvas.height !== h) {
+      const canvas = makeCanvas(w, h);
+      layer = { canvas, g: context2d(canvas), x: x0, y: y0 };
+      this.layers.set(c, layer);
+    }
+    const lg = layer.g;
+    lg.setTransform(1, 0, 0, 1, 0, 0);
+    lg.globalCompositeOperation = 'copy';
+    lg.drawImage(this.background, x0, y0, w, h, 0, 0, w, h);
+    lg.globalCompositeOperation = 'source-over';
+    lg.setTransform(1, 0, 0, 1, -x0, -y0);
+    lg.save();
+    c.draw(lg);
+    lg.restore();
+    for (const b of rects) this.g.drawImage(layer.canvas, b.x - x0, b.y - y0, b.w, b.h, b.x, b.y, b.w, b.h);
   }
 
   /**
