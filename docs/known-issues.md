@@ -145,7 +145,7 @@ a recorded measurement ([AH-56A known issues](../src/aircraft/ah56/KNOWN_ISSUES.
   constant in `src/aircraft/ah56/gear.ts`), and the AMCS net gyro spring 1059 -> 250 N m/rad with the input rotation
   5 -> 3 deg (`gyro.ts`; the gyro-alone hover was speed- and dihedral-unstable).
 Evidence: `tests/rotorcraft/ah56Assist.test.ts`, `ah56KeyMission.test.ts`, `ah56GyroHover.test.ts`, `ah56Ground.test.ts`
-(run with `--silent=false` to see the measured values); [ah56-integration.md](ah56-integration.md) sections 13-15.
+(run with `--silent=false` to see the measured values); [ah56-integration.md](ah56-integration.md) sections 12-15.
 Close with: the owner's choice on the knock; an approach-path or sink-rate aid above the height-hold band before the run-on
 is offered as beginner-safe; the Shift+F5 height gate; SimProfile ground presets for the ICS.
 
