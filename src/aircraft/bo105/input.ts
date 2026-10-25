@@ -96,7 +96,9 @@ export const BO105_INPUT: InputProfile = {
   //   back at once and the walk runs whenever no arrow is held: the wings-level beginner lands under 5 kt in 12 of 12
   //   (3 of 12, sliding 17-29 kt and rolling over, before; q2_land).
   // - CLIMB-RATE COMMAND AT EVERY SPEED (heightHold.held.everySpeed): a held F5 / F6 in cruise walks the lever to 2 m/s
-  //   (F5 held 2 s at 100 KIAS: 84 deg / 135 % before, 8.7 deg / 63 % now; q3_cruise). ESTIMATES.
+  //   (F5 held 2 s at 100 KIAS: 84 deg / 135 % before, 8.7 deg / 63 % now; q3_cruise); the limit back-off of a held F6
+  //   never lowers the lever below where the key found it (at 140 KIAS the beginner's F6 taps flew it into the ground).
+  //   ESTIMATES.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },

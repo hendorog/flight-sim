@@ -624,7 +624,12 @@ are in the control path, labelled, and absent on every other type:
     stopped at the power limit; let go above 40 KIAS, the lever stays where the command left it (the height hold keeps its
     30-40 KIAS fade). After: attitude within 9 deg, torque at most 63 %, no crash; the climb-out at most 86.1 %; the ten
     by-hand accelerations out of the hover (the gate's g1) all past 45 kt and none lost (before 5 of 10 lost), in 27-44 s
-    (17-35 s before: the limit makes the start slower) (`q3_cruise.cfg3`).
+    (17-35 s before: the limit makes the start slower) (`q3_cruise.cfg3`). Above the maximum continuous power (140 KIAS)
+    the limit back-off of a held F6 lowered the lever, so the beginner's height-law F6 taps flew all three tappers (looks
+    every 1 / 2 / 3 s) into the ground at 56-59 s; with `everySpeed` the back-off never goes below where the key found the
+    lever, and they sink 27-32 m in 60 s (no power to climb at that speed) without a crash. Round 2's recorded limit (the
+    1 s tapper lost above about 110 KIAS: through 180 deg at 120, crashed at 38.9 s at 140) is gone: at 120 / 140 KIAS the
+    bank and the pitch off the trim stay within 15.2 / 3.6 deg (`q12_cruise`, `bo105KeyFlows`).
   - *The gate's rigs re-flown* (`g2/`, cfg3): held keys at the threshold (1.25-1.75 s) all back within 19 m; the A route
     done calm, 6 kt and tail 6 kt (round 2: crashed at the landing calm and in 6 kt); the keyboard circuit (lift-off,
     climb-out, two turns, descent, approach, landing) done in 5 of 8 (0 of 8: lost in the climb-out calm, in the approach

@@ -175,6 +175,8 @@ export class StabilityAssist {
   private collLeft = NaN;
   /** The direction of the collective key held (+1 F6, -1 F5, 0 none or not yet seen). */
   private keyDir = 0;
+  /** The collective when the held key was pressed (heightHold.held.everySpeed: the back-off never goes below it). */
+  private collAtPress = NaN;
   /** A pedal key was worked since the skids last left the ground (the crossfeed then leaves the lift-off to the pilot). */
   private pedalOnSkids = false;
   /** The climb rate of the last step (the height hold's proportional term reads its change), m/s. */
@@ -204,6 +206,8 @@ export class StabilityAssist {
       ...(Number.isFinite(this.collLeft) ? { collLeft: this.collLeft } : {}), keyDir: this.keyDir, pedalOnSkids: this.pedalOnSkids,
       // translationalRate.keyRest (opt-in): the arrow keys' rest.
       ...(this.tuning.translationalRate?.keyRest ? { keyQuietFor: Math.min(this.keyQuietFor, STICK_QUIET_MAX) } : {}),
+      // heightHold.held.everySpeed (opt-in): the collective at the press.
+      ...(this.tuning.heightHold?.held?.everySpeed && Number.isFinite(this.collAtPress) ? { collAtPress: this.collAtPress } : {}),
     };
   }
 
@@ -232,6 +236,7 @@ export class StabilityAssist {
     this.xfeed = num('xfeed', 0); this.collWas = num('collWas', NaN);
     this.collLeft = num('collLeft', NaN); this.keyDir = Math.sign(num('keyDir', 0)); this.pedalOnSkids = flag('pedalOnSkids');
     const keyQuiet = num('keyQuietFor', STICK_QUIET_MAX);
+    this.collAtPress = num('collAtPress', NaN);
     this.keyQuietFor = keyQuiet >= STICK_QUIET_MAX ? Infinity : keyQuiet;
   }
 
@@ -456,7 +461,7 @@ export class StabilityAssist {
       // A bare F5 / F6 held airborne: a climb-rate command. The key's own move is taken back and the lever is walked to
       // the commanded climb or sink, the sink slowing near the ground.
       this.heightMode = 'off';
-      if (key !== 0) this.keyDir = Math.sign(key);
+      if (key !== 0) { if (this.keyDir === 0) this.collAtPress = this.collLeft; this.keyDir = Math.sign(key); }
       back = hfHeld * key;
       const sink = clamp(held.landSinkMps + (s.altitudeAGL - held.landAglM) * (held.sinkMps - held.landSinkMps) / held.landBandM,
         held.landSinkMps, held.sinkMps);
@@ -479,9 +484,14 @@ export class StabilityAssist {
     // carried the lever past the limit (the torque lags the lever) is backed off.
     const overLimit = rc!.powerLimitExceeded || rc!.takeoffPowerSeconds > 0;
     if (rate > 0 && overLimit) rate = 0;
-    if (overLimit && this.keyDir > 0 && held?.limitBackRate) rate = -hfHeld * held.limitBackRate;
+    const backingOff = overLimit && this.keyDir > 0 && !!held?.limitBackRate;
+    if (backingOff) rate = -hfHeld * held!.limitBackRate!;
     const was = c.collective;
-    c.collective = clamp(was - back + rate * dt, Math.min(was, hh.floor), 1);
+    let next = was - back + rate * dt;
+    // held.everySpeed (opt-in): the back-off never takes the lever below where the key found it (in cruise above the
+    // maximum continuous power a tap of F6 then does nothing instead of lowering the lever).
+    if (backingOff && held!.everySpeed && Number.isFinite(this.collAtPress)) next = Math.max(next, Math.min(was - back, this.collAtPress));
+    c.collective = clamp(next, Math.min(was, hh.floor), 1);
     this.followed.collective += c.collective - was;
     this.collLeft = c.collective;
   }

@@ -110,7 +110,9 @@ export interface StabilityAssistTuning {
       /**
        * The climb-rate command works at every speed (the keyboard collective's protection in cruise: a held F5 / F6 walks
        * the lever to the commanded rate, never into the power limit), not only inside the height hold's fadeKias; the
-       * capture and the hold once the keys rest keep that fade. Absent: the command fades with the height hold.
+       * capture and the hold once the keys rest keep that fade; the limit back-off never takes the lever below where the
+       * key found it (above the maximum continuous power in cruise a held F6 then holds the lever). Absent: the command
+       * fades with the height hold.
        */
       everySpeed?: boolean } };
   /**

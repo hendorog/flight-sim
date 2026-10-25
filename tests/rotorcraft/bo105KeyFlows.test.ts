@@ -235,6 +235,41 @@ describe('the keyboard collective in cruise (tune pass 2: the held-key climb-rat
 });
 
 /**
+ * Should 4 (round 2's recorded limit, W/tune2/bo105 q12_cruise): the tapping beginner above 110 KIAS, holding the attitude,
+ * the wings level, the heading and the height (looks every 1 / 2 / 3 s). Round 2: the 1 s tapper lost control above
+ * about 110 KIAS (120: the attitude through 180 deg; 140: crashed at 38.9 s), its raw collective taps coupling into pitch
+ * and roll. With the climb-rate command at every speed the attitude holds; at 140 KIAS (above the maximum continuous
+ * power) a held F6 first backed the lever off, so the height law's F6 taps lowered it and all three tappers flew into the
+ * ground at 56-59 s; the back-off now never goes below where the key found the lever (heightHold.held.everySpeed), and
+ * at 140 KIAS the beginner sinks slowly (27-32 m in 60 s: no power to climb at that speed) without a crash.
+ */
+describe('the tapping beginner at 120 and 140 KIAS (tune pass 2)', () => {
+  it('looks every 1 / 2 / 3 s, 60 s from 100 m: no crash, the bank and the pitch off the trim within 20 deg (round 2: the 1 s tapper through 180 deg at 120, crashed at 140)', () => {
+    const rows: Record<string, unknown> = {};
+    for (const kias of [120, 140]) for (const interval of [1, 2, 3]) {
+      const r = keyRig({ start: 'level', kias, heightM: 100 }), keys = new Keys(r);
+      for (let i = 0; i < 60; i++) frame(r);
+      const s0 = view(r);
+      const step = targetBeginner(r, keys, interval, () => ({ pitch: s0.pitch, roll: 0, hdg: s0.hdg, z: s0.z }));
+      let maxAtt = 0, crashedS: number | null = null, minAgl = Infinity;
+      const t0 = r.t;
+      while (r.t - t0 < 60) {
+        step(); keys.update(); frame(r);
+        const s = r.physics.state;
+        // As the cruise row (bo105KeyTransitions): the bank, and the pitch away from the trimmed attitude.
+        maxAtt = Math.max(maxAtt, Math.abs(s.roll) / DEG, Math.abs(s.pitch - s0.pitch) / DEG); minAgl = Math.min(minAgl, s.altitudeAGL);
+        if (s.crashed) { crashedS = r.t - t0; break; }
+      }
+      keys.releaseAll();
+      const name = `${kias}/${interval}`;
+      rows[name] = { crashedS, maxAtt, minAgl, endKias: r.physics.state.ias / KT };
+      expect(crashedS, name).toBeNull(); expect(maxAtt, name).toBeLessThanOrEqual(20);
+    }
+    report.highSpeedTappers = rows;
+  }, 600_000);
+});
+
+/**
  * Should 4 (the round-2 gate's g1): the by-hand accelerations out of the hover, from 16 m and from 3 ft: nose down 8 or
  * 12 deg under the hover attitude until 50 kt (looking every 1 / 2 s), then 4 deg; the height law on the start height
  * or a 1.5 m/s climb of 30 m. Before, 5 of these 10 were lost (three flew into the ground accelerating at 3 ft, two

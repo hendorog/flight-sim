@@ -600,6 +600,11 @@ collective in cruise. Docs section 9 ("Tune pass 2") has the laws and every numb
   (`heightHold.held.everySpeed`): attitude within 9 deg, torque at most 63 %, the climb-out at most 86.1 %, no crash.
 - **By-hand accelerations** (gate should 4): 10 of 10 not lost (5 of 10), past 45 kt in 27-44 s (17-35 s: the limit
   makes the start slower).
+- **Fixed: the tapper above 110 KIAS** (round 2's recorded limit, gate should 4): at 120 KIAS the 1 s tapper went through
+  180 deg, at 140 it crashed at 38.9 s; now the bank and the pitch off the trim stay within 15.2 deg at 120 and 3.6 deg at
+  140 for 60 s (looks every 1 / 2 / 3 s). At 140 KIAS (above the maximum continuous power) the held-F6 limit back-off
+  first lowered the lever and the height-law taps flew all three into the ground at 56-59 s; the back-off now stops
+  where the key found the lever (they sink 27-32 m in 60 s: no power to climb at that speed).
 - **Open: KNOWN TAILWIND GAP** (gate should 4; unchanged, `bo105KeyTransitions` it.fails): the gate's wind decelerations
   7 of 10, as round 2. The three: tail10 with 1 s taps pirouettes at up to 75 deg/s and reaches no hover (12 kt at the
   end); head10gust with 1 s taps reaches no hover (17 KIAS, 4.5 kt at 60 s); tail6 with 1 s taps reaches the hover at 59
