@@ -718,3 +718,40 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     pedal centre the ground-roll hold walked stays at +0.30 / +0.35 of travel, so the next hands-off F6 lift-off swings 20.2 / 19.4
     deg of heading (9.4 deg from a clean start); walk it back when the hold disengages.
   - Not done: item E (an XH-51A-sized gyro rig): not cheap (a definition of its own), not attempted. The ICS on keys: not re-flown.
+
+## Tuning round 5, the keyboard feel (2026-10-25, branch tune3/ah56keys; OWNER decisions: no auto-centring, a crisp feel; the how is AGENT choices)
+
+- **T12. The keys: no auto-centring, an attitude-command stick, yaw-rate pedals, faster collective commands.** The owner's reports on
+  the AH-56A keys: "spring loaded and unresponsive", "feels like a 747, not a military helo", "the auto centre action of the
+  controls is also a big issue. Not possible to fly this if the controls keep reverting back". Measured through the real key path
+  (W/rigid/tune3, notes.md, table_before_after.md; 15 m hover, assist on): before, a 1 s arrow key gave 3 deg/s of roll and 1.9 of
+  pitch, the first 1 deg/s at 0.4 / 0.75 s, the stick then springing back; a 1 s pedal key 1.8 deg/s.
+  - Shipped (docs/ah56-integration.md section 16; input.ts): the keyboard cyclic and pedals stay where the keys leave them
+    (centringCyclic, centringPedals and recaptureOnCentre dropped; 5 still centres; the mouse yoke unchanged, its 0.03 deadzone
+    written out). With the STAB ASSIST on the stick is an attitude command (StabilityAssistTuning.keyAttitude, opt-in): 30 deg of
+    bank / 15 deg of pitch at 0.6 of the axis, the assist flying it with its own zero-rate trim at every speed; a held arrow key
+    about 22 deg/s of bank and 12 of pitch, the first 1 deg/s at 0.1 s (roll) / 0.25 s (pitch), the attitude stays when the key
+    comes up; within 4 m of the ground the bank closes to 8 deg (10 m: 30). The pedal keys are a yaw-rate command
+    (StabilityAssistTuning.keyPedal, opt-in): 34 deg/s after a 1 s key (35-39 at most), the turn braked when the key comes up and
+    the heading hold taking the new heading (a 2 s key: 0.1 deg/s and 1.1 deg from the datum 6 s later; before 0.3 deg/s, 5.4 deg);
+    the keyboard pedal then settles to the pedal that holds the heading. F6 / F5 held: 4.5 / 2.5 m/s climb / sink commands at every
+    speed (heightHold.held, everySpeed; before 2 / 2 below 30 KIAS), the first 0.3 m/s at 0.3 / 0.45 s.
+  - Side fixes the crisp keys needed (AGENT): the sideslip pedal gain 1 -> 0.5 and a yaw damper about the coordinated rate above
+    30-45 KIAS (keyPedal.cruiseDamp): the crisp banks excited a lightly damped 6.5 s yaw-sideslip swing that the sideslip pedal
+    pumped (r 0-13 deg/s at a steady 11 deg bank, 45 KIAS; now settled in 5 s); the collective-to-pedal crossfeed (pedalCrossfeed
+    -2 per unit, 3 s washout): a 1 s F6 in the hover swung the nose 18 deg/s, now 6; the attitude-command trim integrates only while
+    the stick is still (integrating the ramp overshot the release 3-6 deg).
+  - Rows restated (tests/rotorcraft/ah56Assist, ah56KeyMission; before / after in each comment): the 1 s pedal tap (under 15
+    deg/s -> 25-45 deg/s, the new heading held); the held arrow keys (1 s >= 1 deg, 3 s < 15 / 20 deg -> 1 s >= 10 deg, 3 s < 22 / 32,
+    the bounds 15 / 30); the raw-aircraft tapper (held -> lost at 31.9 s, the keys no longer re-centre); the watching beginner's
+    lift-off drift (15 -> 25 m: 23.3 / 22.6 m); two KNOWN GAPs now pass (the Bo 105 tapper's lift-off: 22-26 deg, 8-10 m; the
+    run-on landing, both paces: 201-228 fpm, 10-22 deg); the IGE engine-failure rows' wings-level pilot sizes its presses to the bank
+    (|roll| / 22 s, a 0.7 s wait) and passes the unchanged P bands (297-394 fpm, 66-114 kN).
+  - KNOWN GAP (the price of the crisp keys, with numbers): the whole flight still lands at both row paces, no crash, but the stop to
+    under 3 kt for 2 s within 90 s is no longer reached at the 0.8 s pace (round 3: 71.8 s, the hover 8.0 m, 51 fpm at 1.0 kt; now
+    not stopped, the hover off 330 m, 35 fpm at 17.6 kt). Over six paces (the two row paces and 0.75 / 0.85 / 1.15 / 1.25 s) the
+    roll key rate decides it: 0.1 per s (5 deg/s, near the old feel) 6 of 6 landed with the stop reached at four; 0.25-0.5 per s 4-5
+    of 6; shipped 0.45 per s: 5 of 6 land (the 1.25 s pace strikes a wingtip after a 32 kt touchdown), the stop reached at one (0.85
+    s: 44.8 s, the hover 8.2 m). The roll key rate is one number in input.ts (assists.axes.aileron) for the owner to trade. Assist OFF the keys stay too: on the raw rate-command gyro a 1 s arrow key left alone crashes from 15 m in about 6 s and
+    a 1 s pedal key spins the hover at 120 deg/s; the hint says the raw stick keeps the nose moving. Held 2-3 s nose-down at 100
+    KIAS from 100 m and left there, the 15 deg dive reaches the ground in about 8 s (the attitude stays as commanded).

@@ -10,13 +10,17 @@
 // seen rate, serves both (round 2's beginner was written for a re-centring stick, where letting go also stopped the nose, and
 // held a key up to 2 s: on the new keys that is a 30 deg bank). Here:
 //  - the pilot sees the state `lag` s late (0.3 s), decides to press only every `interval` s (0.8 s), one key per axis;
-//  - a pressed key is held until the seen error, led by the seen rate, comes inside the release band, or `maxHold` s pass
-//    (1 s for the cyclic, 1.5 s for the pedals, 1 s for the collective; round 2: 2 / 2 / 1 s), and then not pressed again on
-//    that axis for `gap` s (0.3 s);
+//  - a pressed key is held until the seen error, led by the seen rate, comes inside the release band, or the press the pilot
+//    planned for it has run (tune3: the error over what the pilot has learnt a held key does, 22 deg/s of roll, 12 of pitch, 2
+//    m/s of climb per s, at least 0.1 s), or `maxHold` s pass (1 s for the cyclic, 1.5 s for the pedals, 1 s for the
+//    collective; round 2: 2 / 2 / 1 s), and then not pressed again on that axis for `gap` s (0.3 s); tune3: a cyclic key is
+//    pressed again only once the nose has settled (the seen pitch rate under 3 deg/s, roll under 6): the attitude stays, so the
+//    pilot waits to see where it went;
 //  - outer loops in pilot terms: the speed by the pitch (0.25 deg per kt from the hover attitude, +/- 10 deg), a position by
-//    the attitude (the Bo 105 helper's law), the heading by the pedals below 25 kt and by a bank above it, the height by a
-//    climb rate (0.15 m/s per m, +/- 2 m/s) on F5 / F6.
-// Deliberately no trim keys, no snaps, no anticipation beyond the seen rate: what the owner (no helicopter experience,
+//    the attitude (the Bo 105 helper's law at half its gains, +/- 6 deg: tune3, the full gains overcontrol an attitude that
+//    arrives in 0.3 s), the heading by the pedals below 25 kt and by a bank above it (tune3: 0.5 deg of bank per deg, leading
+//    by 2 s of the turn; round 2: 1 deg per deg), the height by a climb rate (0.15 m/s per m, +/- 2 m/s) on F5 / F6.
+// Deliberately no trim keys, no snaps, no anticipation beyond the seen rate and the planned press: what the owner (no helicopter experience,
 // keyboard and trackpad) does on the first day. Pilot units throughout (deg, kt, m).
 import { DEG, KT, clamp } from '../../src/core/math';
 import { FRAME, frame, type KeyRig } from './bo105KeyPilot';

@@ -107,7 +107,8 @@ export const AH56_INPUT: InputProfile = {
   //   first 1 deg/s within 0.1 s (roll) and 0.25 s (pitch; round 3: 0.4 / 0.75 s, 3 / 1.9 deg/s after 1 s), and the attitude
   //   stays when the key comes up. Near the ground the bank closes to 8 deg below 4 m of the reference point (10 m: the whole 30):
   //   a 3 s hold at 3 ft no longer reaches a wingtip. The roll rate 0.45 (0.5 = 25 deg/s) is the balance with the whole-flight
-  //   rows: at 0.5 the 0.8 s pace's landing struck a wingtip and 4-5 of 6 paces landed, at 0.45 6 of 6 (notes.md, m5_rob_*).
+  //   rows: at 0.5 the 0.8 s pace's landing struck a wingtip and 4-5 of 6 paces landed, at 0.45 both row paces land and 5 of 6
+  //   paces (notes.md, out/m5_rob_*); 0.1 (5 deg/s) lands 6 of 6 but is the old feel. The stop's KNOWN GAP is T12's.
   // - keyPedal (opt-in shared field): inside the heading hold's band a pedal key is a yaw-rate command, 35 deg/s within 0.35 of the
   //   axis, the turn braked when the key comes up and the hold taking the new heading (no pull-back); the keyboard pedal then
   //   settles to the pedal that holds the heading (returnRate 0.5, not a spring to centre); above 30-45 KIAS a yaw damper about
