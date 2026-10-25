@@ -94,6 +94,17 @@ describe('the aircraft of a session', () => {
     expect(aircraftSwitchUrl(href, { open: 'school' })).toBe('https://x.test/index.html?cam=chase&tod=9&school=1');
   });
 
+  it("a change of aircraft from a helicopter's hover test does not carry the autoflight into the next type", () => {
+    // The menu's "Start helicopter hover test" link (Simulator ui.autopilot.helicopter.hoverUrl), then the Caravan chosen:
+    // with ap=1 kept, the C208 booted with its autoflight flying the take-off and the throttle keys did nothing.
+    const href = 'https://x.test/index.html?aircraft=ah56&hover=1&ap=1&resume=0&config=ics&halfp=1&stab=0&demo=hover&trace=1&run=30&freeze=1&student=auto&mute=1';
+    const next = aircraftSwitchUrl(href);
+    expect(next).toBe('https://x.test/index.html?mute=1');
+    const p = parseParams(new URL(next).search);
+    expect(p.autoflight).toBe(false);
+    expect(p.helicopterHover).toBe(false);
+  });
+
   it('carburettor icing is on unless switched off', () => {
     const store = memoryStore();
     expect(loadCarbIcing(store)).toBe(true);

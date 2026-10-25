@@ -17,8 +17,16 @@ import type { KeyValueStore } from './resume';
 /** localStorage key of the carburettor-icing realism switch ('0' = off; absent = on). */
 export const CARB_ICING_KEY = 'fs.carbIcing';
 
-/** URL parameters a change of aircraft removes: each would bring the old type or its flight back. */
-export const AIRCRAFT_SWITCH_DROPS = ['aircraft', 'scenario', 'lesson', 'phase', 'brief', 'resume'] as const;
+/**
+ * URL parameters a change of aircraft removes: each would bring the old type or its flight back. The flight-scripting
+ * and type-specific ones go too: a helicopter's "Start helicopter hover test" link (hover=1&ap=1) kept ap=1 into the
+ * next type, whose autoflight then flew the take-off and held the power lever against the keys (owner, 2026-10-26: the
+ * Caravan's throttle stuck near full after the AH-56A hover test).
+ */
+export const AIRCRAFT_SWITCH_DROPS = [
+  'aircraft', 'scenario', 'lesson', 'phase', 'brief', 'resume',
+  'ap', 'hover', 'demo', 'trace', 'config', 'halfp', 'stab', 'run', 'freeze', 'student',
+] as const;
 
 export interface AircraftChoice {
   id: AircraftId;

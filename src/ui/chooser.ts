@@ -3,17 +3,20 @@
 
 import type { AircraftId, AircraftSummary } from '../aircraft/types';
 import type { AircraftState } from '../core/types';
+import { AIRCRAFT_SWITCH_DROPS } from '../sim/aircraftChoice';
 
 /**
- * URL parameters that would undo or outlive the choice: they are removed when another type is chosen. `era` is
+ * URL parameters that would undo or outlive the choice (the shell's AIRCRAFT_SWITCH_DROPS, one list for the menu and
+ * the dev pages): they are removed when another type is chosen. `era` is
  * deliberately NOT among them: another aircraft is flown in the same world (the era survives the switch;
  * tests/ui/eraChooser.test.ts pins it).
  */
-export const CHOICE_DROPPED_PARAMS: readonly string[] = ['aircraft', 'scenario', 'lesson', 'phase', 'brief', 'resume', 'hover'];
+export const CHOICE_DROPPED_PARAMS: readonly string[] = AIRCRAFT_SWITCH_DROPS;
 
 /**
  * The address the page reloads into after a choice (contract 2.5, commands.setAircraft): the current one
- * without `aircraft`, `scenario`, `lesson`, `phase`, `brief` and `resume`, plus `school=1` when the Flight
+ * without the parameters of AIRCRAFT_SWITCH_DROPS (the shell's own list: the old type's flight, and the autoflight and
+ * other flight-scripting parameters such as a hover test's ap=1), plus `school=1` when the Flight
  * School is to open. The hash and every other parameter are kept.
  */
 export function aircraftChoiceUrl(current: string, opts?: { open?: 'school' }): string {

@@ -14,6 +14,10 @@ describe('navigation URL', () => {
     expect(aircraftChoiceUrl(url)).toBe('https://fs.local/index.html?cam=chase&mute=1#x');
   });
 
+  it('drops the autoflight of a hover test: the next type does not boot flying itself (ap=1 held its throttle)', () => {
+    expect(aircraftChoiceUrl('https://fs.local/index.html?aircraft=ah56&hover=1&ap=1&resume=0&stab=0&mute=1')).toBe('https://fs.local/index.html?mute=1');
+  });
+
   it('adds school=1 when the Flight School is to open', () => {
     expect(aircraftChoiceUrl('https://fs.local/?aircraft=da20&lesson=L01', { open: 'school' })).toBe('https://fs.local/?school=1');
     expect(aircraftChoiceUrl('https://fs.local/?school=0&q=1', { open: 'school' })).toBe('https://fs.local/?school=1&q=1');
