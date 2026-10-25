@@ -113,7 +113,7 @@ is engineRatio 55.28 (D), and the torque gauge reads % of 3435 shp at 100 % Nf (
   loads tail 6.8 / left 30.6 / right 51.9 kN). The tail rotor's 3.6 kN of side force at the centred pedal (8.4° of pitch) is reacted at the
   tyres about 2 m below the CG, the main rotor at the bottom of the collective (−2.5°) presses the gear with −8.1 kN, and the gravity
   overturning term (W h ≈ 160 kN m/rad) is a large part of the narrow gear's roll stiffness. The main oleos' gas column is 0.16 m (ESTIMATE,
-  was 0.22 m and a 3.0° lean): a worst-case 9.5 ft/s drop with the collective full down peaks at 93 kN on one main, against the 140 kN limit.
+  was 0.22 m and a 3.0° lean): a worst-case 9.5 ft/s drop with the collective full down peaks at 93 kN on one main, against the 140 kN limit (180 kN since tune round 3: the one-wheel touchdown at the P sink, KNOWN_ISSUES T11).
 - **Full pedal on the ground** (G13 tip-over margin): at ground idle with the parking brake, full left pedal (7.4 kN of tail-rotor thrust
   at 100 %, 4.6 kN as Nr sags) pivots the aircraft about the braked mains at up to 86 °/s with the roll within 2.8°, full right pedal 0.9°.
   **Brakes off, full left pedal** spins it to 108 °/s and trips it over the left main onto the wingtip in under 4 s (0.40 g of side force

@@ -339,6 +339,30 @@ describe('G15: every scenario spawns on the wheels and survives 5 s, in both con
   }, 60000);
 });
 
+describe('G13: touchdown sinks against the main leg (tune round 3, KNOWN_ISSUES T11; D from the P 9.5 ft/s limit with FAR 27)', () => {
+  /** From 0.15 m of wheel clearance at the trimmed IGE hover attitude (4.7 deg left wing low: one wheel first) or wings level, the
+   *  collective at the hover's, the sink set: the peak wheel loads and whether a leg collapsed. */
+  const drop = (fps: number, level: boolean) => {
+    const r = rig({ height: AH56_DEFINITION.geometry.restHeight! + 3, gearDown: true });
+    const x = (r.fm as unknown as { x: Float64Array }).x;
+    x[2] = -(AH56_DEFINITION.geometry.restHeight! + 0.25);
+    if (level) { const e = quat.toEuler(quat.normalize({ w: x[6], x: x[7], y: x[8], z: x[9] })); const q = quat.fromEuler(0, e.pitch, e.heading); x[6] = q.w; x[7] = q.x; x[8] = q.y; x[9] = q.z; }
+    x[5] = fps * FT;
+    const peak = [0, 0, 0];
+    run(r, 3, () => { const w = r.fm.state.wheels; for (let i = 0; i < 3; i++) peak[i] = Math.max(peak[i], w[i].load); });
+    return { peakMainKN: Math.max(peak[1], peak[2]) / 1000, crashed: r.fm.state.crashed, reason: (r.fm as unknown as { crashReason: string }).crashReason };
+  };
+  it('at the P 9.5 ft/s sink: one wheel first (the hover attitude) and wings level, no leg collapses; at the 1.2 x reserve-energy sink (FAR 27.725) wings level holds and one wheel first collapses', () => {
+    const one = drop(9.5, false), lvl = drop(9.5, true), lvlR = drop(11.4, true), oneR = drop(11.4, false);
+    report('G13 touchdown sinks', { oneWheel95KN: one.peakMainKN, level95KN: lvl.peakMainKN, level114KN: lvlR.peakMainKN, oneWheel114KN: oneR.peakMainKN,
+      oneWheel114: oneR.reason || 'held', limitKN: 180, before: '140 kN: the hover-attitude landing collapsed the left main from about 375 fpm' });
+    expect(one.crashed).toBe(false);
+    expect(lvl.crashed).toBe(false);
+    expect(lvlR.crashed).toBe(false);
+    expect(oneR.crashed).toBe(true);
+  }, 60000);
+});
+
 describe('RotorClearance (the wheeled rotorcraft\'s strike checks, extracted from the skids)', () => {
   const pose = wheelRestingPose(AH56_DEFINITION.geometry.gear, 8301, v3.zero());
   const body = (rollDeg: number) => ({ time: 0, position: { x: 0, y: 0, z: -pose.height }, orientation: quat.fromEuler(rollDeg * DEG, 0, 0),

@@ -14,7 +14,24 @@ export const ICS_INPUT_ROTATION_DEG = 13;
 /** The AMCS input rotation, deg advanced (fitted to G8). */
 // Stage 5 (AH handover, docs/ah56-high-speed.md section 5.1): 9 -> 5 deg with the lateral stick moment 975 -> 907 N m (below) and
 // AC's K_R / longitudinal refit: G8 AMCS p/q 0.095 / 0.187 (<= 0.2) against C9's 0.498 in lateral trim at 190 KCAS (<= 0.5).
-export const AMCS_INPUT_ROTATION_DEG = 5;
+// Tune round 3 (with the net spring below, AMCS_NET_SPRING): 5 -> 3 deg. The smaller net spring raised G8 to 0.166 / 0.198 at 5
+// deg (7 deg: 0.202 / 0.241; 3 deg: 0.130 / 0.155; 1 deg: 0.094 / 0.113) and took C9's 190 KCAS lateral trim to 0.18 in, so C9 no
+// longer binds; 3 deg is the nearest angle with a 20 % margin on G8 (W/tune2/ah56 suite/trun-250-in*.log). FITTED.
+export const AMCS_INPUT_ROTATION_DEG = 3;
+/**
+ * The AMCS net centring spring, N m/rad (the positive spring less the negative spring that partly cancels it): ESTIMATE, refitted
+ * in tune round 3 from 1059 (5559 - 4500) to 250. The spring acts in the physical axes and the flap feedback arrives turned
+ * 90 deg, so at equilibrium the spring's torque is balanced by a residual flap K_net / K_R x the gyro tilt, turned 90 deg (+20
+ * deg): at 1059 (a third of K_R 3200) the low-frequency rotor kept cross-axis hub moments, and the gyro-alone hover was speed- and
+ * dihedral-UNSTABLE (gyro settled, per m/s: u -> roll +559, pitch -265 N m; v -> roll +178, pitch +774; the hands-off IGE hover
+ * reached 21.7 deg and 71 m in 60 s; a 625 N m step 10.4 deg in 20 s). Hohenemser (Hoh-74 sect. 6.1, P/INF): the negative springs
+ * "partially compensate the positive springs through which the pilot inputs are transferred ... Without these negative springs,
+ * the gyro lag tau would be undesirable", "the pitch-roll cross coupling is zero", "the rotor has no influence on stability":
+ * a net spring small against K_R. At 250 (K_net / K_R 0.08): u -> roll -118, pitch +163; v -> roll -206, pitch +77 (speed- and
+ * dihedral-stable, each cross term under its direct one); the IGE hover 60 s hands off 0.03 deg, 8.4 m; G5 / G6 / C18 / C19 move
+ * under 2 % (docs/control-gyro-model.md section 7; tests/rotorcraft/ah56GyroHover.test.ts; W/tune2/ah56 out/a9_grid*.log, a10*.log).
+ */
+export const AMCS_NET_SPRING = 250;
 
 /**
  * ICS 1972 (P ASTA-72 App C pp 57-60 unless tagged): the 45 slug-ft^2 gyro X turning with the rotor (INF: a "main rotor
@@ -84,7 +101,9 @@ export const AH56_AMCS_CONFIG: ControlGyroConfig = {
     left: AH56_AMCS_GYRO.stopsDeg.left * DEG, right: AH56_AMCS_GYRO.stopsDeg.right * DEG },
   stickTravel: { longitudinal: AH56_STICK_IN.amcs.longitudinal / 2 * IN, lateral: AH56_STICK_IN.amcs.lateral / 2 * IN },
   stickMoment: { longitudinal: AMCS_LONGITUDINAL_STICK_MOMENT, lateral: 907 },
-  spring: AH56_ICS_GYRO.spring, negativeSpring: 4500,
+  // The positive spring is the ICS's (P for the ICS); the negative spring makes the net AMCS_NET_SPRING (ESTIMATE, tune round 3:
+  // was 4500, net 1059).
+  spring: AH56_ICS_GYRO.spring, negativeSpring: AH56_ICS_GYRO.spring - AMCS_NET_SPRING,
   damping: AH56_ICS_GYRO.dampingPerAxis, rotatingDamping: 0.4,
   // No AMCS angles are published: the feedback at the model's best-damped auto-trim phase, 20 deg advanced (ESTIMATE, docs
   // "Senses"); the input FITTED to G8 (pure longitudinal stick, roll within 20 % of pitch).

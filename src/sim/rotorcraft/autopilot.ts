@@ -26,6 +26,12 @@ export class HelicopterAutopilot {
    * from SimProfile.heliHoldSlowToHover (the Bo 105); null on every other type.
    */
   slowToHover: { belowKt: number; ktPerS: number } | null = null;
+  /**
+   * Engaged moving forward, the held speed is the speed over the ground (s.groundSpeed), not its component along the nose:
+   * the hold then turns the side speed into forward speed instead of dropping it. Set by the shell from
+   * SimProfile.heliHoldGroundSpeed (the Bo 105); false on every other type.
+   */
+  groundSpeedTarget = false;
   /** The held speed is running down to the hover (slowToHover), and the value it last wrote, m/s. */
   private slowing = false;
   private slowedTo = 0;
@@ -41,6 +47,7 @@ export class HelicopterAutopilot {
     }
     const observation = observePilot(s, this.definition);
     this.engagementSpeed = observation.forwardSpeed;
+    if (this.groundSpeedTarget && observation.forwardSpeed > 0) this.engagementSpeed = Math.max(observation.forwardSpeed, s.groundSpeed);
     this.pilot = new ScriptedPilot(observation, c);
     this.pilot.heading = s.heading;
     this.north = s.position.x; this.east = s.position.y;

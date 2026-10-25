@@ -145,6 +145,40 @@ describe('one engine inoperative on the real Bo 105 (plan 5 T7a-c, ESTIMATE / P5
     expect(survivor.n1Max).toBeLessThanOrEqual(BO105_N1_PCT.transient15s); expect(survivor.tqMax).toBeLessThanOrEqual(105);
   });
 
+  /**
+   * Tune pass 2 (the round-1 gate's physics item, W/tune2/bo105 q6_oei): one engine out in the hover with the pilot pulling
+   * the collective against the sink (the gate's beginner tapping F6: 168-172 % torque at 62-64 % NR, still landing). The
+   * CB-4's 250-C20B has a gas-producer fuel control and a power-turbine governor per engine and no torque or TOT limiter
+   * (P5 FM 7.5.4; the RFM limits are the pilot's to observe): the limit response is the gas producer's topping at its
+   * 105 % N1 stop (P TCDS p9), which this model has. So the survivor tops out at the stop and about 810 C, its power stays
+   * at what the stop gives, the NR droops under the raised collective and the torque gauge (power over NR) reads high. The
+   * over-limit torque reading is the pilot's exceedance, as in the aircraft; no limiter is added.
+   */
+  it('one engine out in the 2500 kg hover, the collective raised to 0.8 over 8 s: the survivor tops out at its N1 stop (<= 105.5 %) and about 810 C with its power held, the NR droops below 80 % and the torque gauge reads power over NR (no torque limiter on the CB-4)', () => {
+    const r = rig(2500, { kt: 0 }), hold = attitudePilot(r, true);
+    run(r, 1, () => hold(DT));
+    lever(r.c, 1, LEVER.off);
+    run(r, 4, () => hold(DT));
+    const c0 = r.c.collective ?? 0, atStop = gauges(r);
+    let n1Max = 0, totMax = 0, powerMax = 0, tqMax = 0;
+    run(r, 12, (t) => {
+      hold(DT);
+      r.c.collective = Math.min(0.8, c0 + (0.8 - c0) * t / 8);
+      const g = gauges(r);
+      n1Max = Math.max(n1Max, g.n1[0]); totMax = Math.max(totMax, g.tot[0]); tqMax = Math.max(tqMax, g.tq[0]);
+      powerMax = Math.max(powerMax, g.tq[0] * g.nr / 100);
+    });
+    const end = gauges(r);
+    report.oeiOverPitch = { atStop: { tq: atStop.tq[0], nr: atStop.nr, n1: atStop.n1[0], tot: atStop.tot[0] }, n1Max, totMax, tqMax, powerMax,
+      end: { tq: end.tq[0], nr: end.nr, n1: end.n1[0], tot: end.tot[0], collective: r.c.collective } };
+    expect(atStop.n1[0]).toBeGreaterThanOrEqual(104.5);
+    expect(n1Max).toBeLessThanOrEqual(105.5); expect(totMax).toBeLessThanOrEqual(815);
+    // The survivor's power (torque x NR) stays at what the stop gave before the pull (within 5 %): no more power appears.
+    expect(powerMax).toBeLessThanOrEqual(atStop.tq[0] * atStop.nr / 100 * 1.05);
+    expect(end.nr).toBeLessThan(80);
+    expect(end.tq[0] * end.nr / 100).toBeGreaterThan(atStop.tq[0] * atStop.nr / 100 * 0.9);
+  }, 90_000);
+
   it('after a single engine failure, level flight at 60-80 KIAS at 2200 kg needs <= 95 % on the survivor (ESTIMATE)', () => {
     const rows = [60, 70, 80].map((kt) => { const g = gauges(rig(2200, { kt, enginesRunning: [true, false] })); return { kt, tq: g.tq[0], nr: g.nr, tot: g.tot[0] }; });
     report.oeiLevel = rows;

@@ -84,14 +84,61 @@ export const BO105_INPUT: InputProfile = {
   //   accelerations out of the hover: 6 of 12 not lost (0 of 12; the rest fly into the ground from 3 ft or over-torque
   //   climbing). Above about 110 KIAS the 1 s tapper still loses it (p12_ch1hi). A mouse yoke or hardware stick flies the
   //   raw aircraft above the fade, as before (r2 p11 / p12). ESTIMATES.
+  // Tune pass 2 (W/tune2/bo105, the round-2 gate's must items; docs section 9 "Tune pass 2"):
+  // - KEYBOARD CYCLIC LIMIT (keyboardLimit, in the input module): below 15 kt of ground speed the arrow keys move the stick
+  //   at most 0.12 of the axis from where it last rested (8.9 deg of commanded attitude, inside the 0.2 series authority),
+  //   open by 30 kt; 2.5 s after the arrow keys rest the keyed displacement glides back at 0.1 per second. An arrow held
+  //   1.5-2 s used to take the stick past the authority (ArrowUp 2 s crashed at 5.3 s; 12 of 40 holds of 1-5 s came
+  //   back): now 40 of 40, at most 18.6 deg, 10.6 kt, 37 m (q1_held). Swept 0.10 / 0.12 / 0.15 (0.15: 87 m).
+  // - The TRC walk waits for the arrow keys (translationalRate.keyRest): a key held against the limit is still a command
+  //   (without it the beginner could not accelerate out of the hover, 0 of 10).
+  // - LETTING DOWN (recentre.landing, landingRestS 0): with the CG under 8 m and a bare F5 within 5 s the keyed stick glides
+  //   back at once and the walk runs whenever no arrow is held: the wings-level beginner lands under 5 kt in 12 of 12
+  //   (3 of 12, sliding 17-29 kt and rolling over, before; q2_land).
+  // - CLIMB-RATE COMMAND AT EVERY SPEED (heightHold.held.everySpeed): a held F5 / F6 in cruise walks the lever to 2 m/s
+  //   (F5 held 2 s at 100 KIAS: 84 deg / 135 % before, 8.7 deg / 63 % now; q3_cruise); the limit back-off of a held F6
+  //   never lowers the lever below where the key found it (at 140 KIAS the beginner's F6 taps flew it into the ground).
+  //   ESTIMATES.
+  // Tune pass 2 fix round (W/tune2/bo105 fix1, the pass-2 gate gate1):
+  // - ONE ENGINE OUT, the held F5 / F6 (heightHold.oei): above the 30-40 KIAS band the climb-rate command keeps working
+  //   with one engine out, F6 stopped at the survivor's OEI limits (95 % torque, 810 C, 105 % N1) and never backed off;
+  //   below the band the keys stay raw (the OEI cushion). The beginner holding the height at 100 KIAS pumped the raw lever
+  //   against the topping and rolled inverted (111.9 %, crashed); now 80 / 100 KIAS with the height law (gain 1, 0.5) or
+  //   the attitude alone: none crashed in 60 s, NR at least 96.3 % (f_oei). An at-rest back-off over the limits (0.01-0.05
+  //   per second) flew the attitude-only beginner into the ground at 100 KIAS; held in the hover band, the OEI landing
+  //   from 16 m crashed (3.9-5.2 m/s; raw 2.1-2.3): both measured, not adopted.
+  // - THE TRC WALK AT 1 DEG/S (translationalRate.trimMaxDegS, round 2's 2): an arrow key reversal in the hover (ArrowUp
+  //   2 s, ArrowDown 2 s) rang the walk against the saturated attitude hold into a growing limit cycle and crashed from
+  //   16 m and 3 ft (f_rev); at 1 deg/s 10 of 10 reversals come back (1.5: 8 of 10). Round 2 dropped 1 deg/s for the 1 s
+  //   knock past 30 m; behind the keyboard cyclic limit it stays within 15 m. The 10 kt tailwind deceleration with 1 s
+  //   taps reached the hover with the walk alone (50.5 s), and with the limit at speed below none again (6.4 kt at 60 s).
+  // - THE KEYBOARD CYCLIC LIMIT AT SPEED (keyboardLimit.cruise): above 15 kt of ground speed one press of an arrow key
+  //   moves the stick at most 0.12 of the axis (about 9 deg of commanded attitude) from where it was when the keys last
+  //   rested 0.3 s (the limit used to open to the whole travel by 30 kt). Held 1.5-3 s at 20-100 KIAS a key took the stick
+  //   0.3-0.8 out, past the series authority, and the raw aircraft answered: with the beginner recovering 12 of 60
+  //   crashed, hands off 35 of 60 (the pass-2 gate's k1). Now 0 of 60 and 9 of 60: the nine are ArrowUp held then hands
+  //   off at 45-100 KIAS, the commanded 9 deg nose down held into a dive (17-41 s from 150 m). Swept 0.12 / 0.16 / 0.2
+  //   (0.2: the 100 KIAS recovery through 180 deg) and the rest 1 / 0.3 s (the 1 s rest, and a limit kept through the
+  //   15-30 kt band, added the beginner's taps up: by-hand accelerations past 45 kt 10-15 s later, the circuit's
+  //   approaches 1 of 8 done; with 0.3 s across the band they are as before, the circuit 6 of 8 against 5).
+  // - THE CRUISE ATTITUDE HOLD ON THE MOUSE YOKE TOO (cruiseHold.handHeld): a hand-held stick (the mouse yoke, Y; a
+  //   hardware stick) kept the raw aircraft above the 30-50 KIAS fade, and with the owner's trackpad as the yoke every
+  //   careless input in cruise departed (the pass-2 gate's h5: the tapper crashed at 80 / 100 KIAS; hands off at 120 / 140
+  //   and F5 / F6 held 2 s at 100 crashed; f_h5: 13 of 17 crashed). Now the yoke is attitude command / attitude hold at
+  //   every speed, as the keys are (no follow-up: the hand holds it): 1 of 20 crashed, the yoke left forward after a
+  //   knock at 100 KIAS, the commanded dive. Control wheel steering (the datum following the flown attitude while the yoke
+  //   moves, 0.25-2 s) crashed the 100-120 KIAS tappers and both speed changes: measured, not adopted.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
     heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1, minNrPct: 95,
-      held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.7, landAglM: 4, landBandM: 4, rate: 0.2, limitBackRate: 0.05 } },
+      held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.7, landAglM: 4, landBandM: 4, rate: 0.2, limitBackRate: 0.05, everySpeed: true },
+      oei: true },
     pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
-    cruiseHold: { gain: 1 },
-    translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 2, fadeKt: [15, 30] } },
+    cruiseHold: { gain: 1, handHeld: true },
+    translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 1, fadeKt: [15, 30], keyRest: true, landingRestS: 0 },
+    keyboardLimit: { travel: 0.12, fadeKt: [15, 30], recentre: { rate: 0.1, restS: 2.5, landing: { aglM: 8, restS: 0, f5S: 5 } },
+      cruise: { travel: 0.12, restS: 0.3 } } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
   // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine
@@ -127,6 +174,6 @@ export const BO105_INPUT: InputProfile = {
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
     centreControls: 'Cyclic back to the keyboard trim (the pedals stay where they are)',
-    stabilityAssist: 'STAB ASSIST on / off: holds the attitude (on the arrow keys at every speed, the mouse yoke below 30 KIAS; with the arrow keys at rest below 30 kt it comes back to a hover over the ground), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
+    stabilityAssist: 'STAB ASSIST on / off: holds the attitude (on the arrow keys and the mouse yoke at every speed; with the arrow keys at rest below 30 kt it comes back to a hover over the ground, and one press of an arrow key moves the stick at most 0.12 of the travel), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s at any speed, with one engine out too), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

@@ -113,6 +113,18 @@ export interface ControlInputs {
   keyboardCyclic?: boolean;
   keyboardPedals?: boolean;
   /**
+   * Optional: a cyclic key (an arrow key) is held. Set by the input module on a type whose STAB ASSIST asks for it
+   * (StabilityAssistTuning.translationalRate.keyRest: the Bo 105), whose translational rate command waits for the keys
+   * to rest; the flight model ignores it. Absent = false (the assist then goes by the stick's movement alone).
+   */
+  cyclicWorked?: boolean;
+  /**
+   * Optional: the input module's keyboard-cyclic landing condition holds (StabilityAssistTuning.keyboardLimit.recentre
+   * .landing: low, with a bare F5 held lately), set only on a type that asks for it; the STAB ASSIST's trim
+   * walk then waits only translationalRate.landingRestS. The flight model ignores it. Absent = false.
+   */
+  cyclicLanding?: boolean;
+  /**
    * Optional: the keyboard holds the collective (no hardware lever in use) / a collective key is held. Set by the input
    * module on a type with a STAB ASSIST, whose height hold walks only a keyboard collective and waits while a key is
    * held (StabilityAssistTuning.heightHold); the flight model ignores them. Absent = false.

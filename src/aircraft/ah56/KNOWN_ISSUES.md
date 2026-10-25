@@ -574,3 +574,147 @@ presets, cues and rows only.
   s late within 1 in of the trim: back within 0.35 deg (the gate's keyboard tapper wound the non-centring pedal to 3 in and struck
   a wingtip at 28 kt). Contract requests: a speed-conditional cue (the toast when unlocking above 5 kt; ui), a re-centring
   pedal-key option on the wheels (input).
+
+## Tuning round 3 (2026-10-25, branch tune2/ah56; the owner's film notes; AGENT choices, not owner decisions)
+
+Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
+
+- **T10 (item A, must). The gyro alone holds the trimmed hover hands-off, offsets included; the precession under a NEW moment is the
+  rate command; the AMCS net spring was the defect.** New file tests/rotorcraft/ah56GyroHover.test.ts, the stage-2 helicopter (no
+  wing, no pusher), aids off, stick held, both configurations; docs/control-gyro-model.md section 7b has the derivation and the
+  tables.
+  - The film's case (a man on a 16 ft boom, trimmed, released, hands off) holds: 90 kg at 4.9 m to starboard or port, 30 s, AMCS
+    0.03 deg of attitude, 1.5-1.8 m, stick 1.9 %; ICS 0.5 deg, 0.6 m, stick 17.1 % (KNOWN GAP against ~15 %: the P stick gearing
+    against G4's 5.5 kN m per inch). A 10 in lateral CG shift: AMCS 0.1 deg, 2.2-2.5 m, stick 9.1 %; ICS 82 % of the lateral stick
+    (KNOWN GAP). Hands-off 30 s from trim: AMCS OGE 0.17 deg, 3.1 m; IGE 0.04 deg, 1.7 m; ICS 0.65 / 0.51 deg, 0.8 / 0.6 m.
+  - A NEW steady moment with the stick held has no fixed-lean equilibrium (the gyro's balance pins the hub moment to the stick;
+    the lean does not change the thrust's moment about the CG): it is a rate, K_R beta / H on the AMCS. Measured 0.98 / 1.16 / 0.76
+    of it for a 2.2 kN m nose / tail step and the 4.33 kN m boom step (0.37 / 0.37 / 0.73 deg/s). The ah56Handling "625 N m" row is
+    re-titled accordingly. On the ICS the same step is Lambda M / H = 5.6 deg/s (0.34 in of stick): the pilot's to take out, as the
+    film's nose-handle step was.
+  - The defect: the AMCS net spring (ESTIMATE 5559 - 4500 = 1059 N m/rad, a third of K_R) left the low-frequency rotor speed- and
+    dihedral-UNSTABLE through a cross-axis residual flap (gyro settled, per m/s: u -> pitch -265 N m, v -> roll +178, cross terms
+    559 / 774): the hands-off IGE hover reached 21.7 deg and 71 m in 60 s, the 625 N m step 10.4 deg in 20 s. Refitted to 250 N m/rad
+    (gyro.ts AMCS_NET_SPRING, ESTIMATE; Hoh-74 sect 6.1: a negative spring that "partially compensate[s]" the positive one, "the
+    pitch-roll cross coupling is zero"): u -> pitch +161, v -> roll -212, cross 124 / 75; IGE 60 s 0.04 deg, 9.1 m; the step 5.1 deg
+    at 20 s. The input rotation (FITTED to G8) 5 -> 3 deg for G8's margin (0.130 / 0.155). Every other AH-56A row passes; G5, G6,
+    C18, C19 within 2 %; C9's 190 KCAS lateral trim 0.34 -> 0.18 in. Side effect: the IGE engine failure on keys hands off now holds
+    the gear (ah56Assist, was a KNOWN GAP).
+  - Left: OGE, hands off on the pedals too, 60 s: 2.9 deg, 51 m, the heading 29 deg: a lateral drift starts the tail rotor's
+    weathercock and the yaw of the rolled hover carries the space-held tilt round (tail rotor / in-plane, scored apart; with the
+    heading held on the pedals 0.36 deg, 22.8 m). The ICS 60 s hands off grows to 29 deg (KNOWN GAP; its spring, cant and sweep are P).
+  - Round 4 (the pass-2 gate's disclosures). On the SHIPPED compound (wing on, the pusher at the hover detent; the owner's Shift+A
+    aircraft), aids off: IGE 60 s 0.49 deg, 10.4 m; OGE 30 s 0.21 deg, 3.5 m; the trimmed boom 0.08 deg, 2.1-2.4 m at 30 s, 1.9 % of
+    stick. OGE 60 s with the pedals free it is 5.9 deg, 59 m, the heading 61 deg, 12 kt (the stage-2 rig's 2.9 / 51 / 29 above: the
+    compound's weathercock is stronger; scored apart, tail rotor).
+  - A step load with the stick held: the attitude stays bounded but the DRIFT does not. The 4.33 kN m boom step rolls 3.2 / 6.0 / 7.9
+    / 11.9 deg at 5 / 10 / 15 / 30 s, and the ground speed is 2.5 / 9 / 17 / 46 kt, the heading through 170 deg by 30 s, 250-660 m in
+    60 s, heading held or free, stage-2 and compound alike (new informational A4 30 s row; the gate's p1). So a step load leaves the
+    hover within 15 s and needs a re-trim of about 2 % of the stick; the film's nose-handle step was pilot-flown, and the owner's
+    "fixed lean, no drift build-up" is reproduced for the TRIMMED offset (A2).
+  - The ICS hands-off oscillation is a ground contact, not only an attitude: the 3 m IGE hover (stage-2 and compound, with and without
+    the boom) hits the ground at 52 s; OGE 29-43 deg by 60 s. Pre-existing (this round changed only the AMCS constants); the film's 30 s
+    window holds (0.5 deg, 1 m). On keys the ICS runway lift-off rolls onto the right wingtip 1.6 s after the unload (24 deg at 34
+    deg/s), hands off or with the beginner, as on main 7b3e8f4 (2.1 s): the ICS hint now says to fly it with a stick or from the hover
+    scenario (the keyboard beginner profile and the aids are the AMCS's).
+- **T11 (items B, C, D). The keyboard beginner: the whole flight now completes; a light attitude hold kept for the way back; four
+  new sim aids; the main leg sized for the one-wheel touchdown.** AGENT choices for the owner (no helicopter experience, keyboard
+  and trackpad; "go with recommendations"). Rows: tests/rotorcraft/ah56Assist.test.ts (round 3 block) and the new
+  ah56KeyMission.test.ts (the whole flight); the test pilot is ah56KeyPilot's watching beginner, feet off the pedal keys.
+  - B (the owner prefers the gyro, not a pitch/roll STAB ASSIST, for the attitude). With T10 the beginner holds the hover with the
+    cyclic attitude term OFF (the Bo 105 helper's tapper 3.7-5.0 m in 60 s, the watching beginner 2.2-15.4 m), so the hover does
+    not need it. The whole flight does: with it off 2 of 4 paces landed, the hover after the stop drifting 80-900 m; with katt 0.3
+    and the datum RE-CAPTURED where the re-centring keyboard stick comes back to rest (recaptureOnCentre: the attitude the pilot
+    left, held as the gyro holds it, firmer; not round 2's command back to a captured hover attitude) and captured only fully
+    airborne (captureAirborne), 4 of 4, the hover 5-24 m. katt 0.15 or authority 0.1 completed 3 of 4 (4 samples: noise around
+    "with it"). Shipped: katt 0.3, stickAttitude 0.6, authority 0.2, both re-capture fields. The price: the knock, 2 s ArrowRight
+    then hands off, 168 m in 22 s (round 2 148 m; katt 0: 162 m), ArrowUp 114 m (99; 103). katt 0 is
+    one line in input.ts (the numbers above are for the owner's choice).
+  - Round 4, the knock over 60 s (the pass-2 gate's should; an OWNER DECISION). From the 15 m hover, aids on, a cyclic tap then
+    hands off 60 s (W/tune2/ah56/r4/out/arm-1.log): a 1 s tap leaves at 8-28 KIAS, 200-440 m away (ArrowDown backwards at 8 kt); a 2 s
+    tap became a climb-out at 47-67 KIAS to 44-273 m AGL, 957-1,179 m away, because the PROP SCHEDULE came in from 30 KIAS and the
+    height hold fades at 30-40. Nothing crashes, but the watching beginner after a 2 s push never regains the spot in 60 s (ends
+    92-346 m off at 7-33 kt; arm-3.log). Neither option is shipped; both were flown for the owner.
+    Option (ii), keeping the gyro's behaviour (the propLever.schedule.arm hunks of W/tune2/ah56/r4/arm-and-groundroll-shared.patch,
+    ~15 lines in the shared input files): the PROP SCHEDULE holds the hover detent until the nose-down key is held at 15 KIAS or more (and again below 10).
+    The 2 s tap then stays at 26-45 KIAS and 17-58 m AGL (no climb-out) but still drifts 600-824 m; the 1 s tap, the beginner's
+    recovery (7 of 8 the same), the pushes row and the whole flight are unchanged; but the deliberate transition gets worse at all
+    four paces (out/trans-1.log): hover to 38 KIAS 33.7-39.5 s (27.1-29.7) with the heading 18-54 deg off (14-37), and back to the
+    hover in 60 s / not in 90 s at two of the three paces that made it (35-37 s) - a cost on the core manoeuvre for a mis-input.
+    Option (i), the owner said they would rather not have a pitch/roll aid: the shared law's translationalRate (the Bo 105 lane's
+    TRC, fadeKt 10-20 kt) on the keyboard cyclic. With this profile's light katt 0.3 it makes the 2 s tap WORSE (60-96 KIAS, 110-156
+    m AGL); with katt 1.0 within 0.3 of the travel the 1 s tap drifts 5-6 m and the 2 s tap 17-19 m, back to 1 kt or less by 60 s,
+    and the whole flight's stop takes 8-12 s (shipped 78 s / over 90 s), but at the 1.2 s pace the landing heading spun 142 deg
+    (shipped 43; out/trc-1.log). Option (i) is two lines in input.ts; the hint's "bring it back yourself" is the defence today. Shift+A switches the STAB ASSIST off; the prop schedule lets go when the prop grip is touched.
+  - C, the "one gate" (above 25 KIAS the keyboard pedal stayed at the hover's): sideslipPedal walks the keyboard pedal to zero
+    sideslip from 20 to 160 kt of forward air speed, above the assist's fade too. The circuit's four turns and legs complete at every
+    pace (before: the heading 140-171 deg off on leg 1, 20-30 kt of slip); at 80 / 100 KIAS a pedal knocked 0.13 off is back in 5 s
+    with zero slip (without: the roll spiralled to -30 deg). Re-centring pedal keys (centringPedals): the raw aircraft keeps the
+    Bo 105 tapper's heading within 11.6 deg (round 2's non-centring keys: 72.6 deg); the beginner's own Z / X in the lift-off still
+    spin it (84-180 deg, no crash): the hint says leave them alone.
+  - C, the transition: the rotor is speed-stable since T10, and the beginner tilting the nose alone settled at 42-50 KIAS (the
+    pushes row never reached 60). The P technique is the propeller (APE-I para 97), so the existing laptop aid
+    InputAssists.propSchedule is ON for this type (propLever.schedule.default): until the pilot touches the prop grip, it follows
+    the AMCS trim schedule from 40 KIAS and holds the hover detent below 30 (AGENT: with the table's 5 deg at 20 kt the stop pushed
+    against prop thrust, 0-1 of 4 decelerations reached the hover; with the detent 3 of 4); it lets go with the engine stopped.
+    38 KIAS in 27-30 s (was 50 s / not in 60), 60 KIAS by the pushes in 30.1 s, the circuit at 62-77 KIAS.
+  - The whole flight (ah56KeyMission, two paces; four in W/tune2/ah56 out/fin_c1_*.log): every flight lands, no crash; at 0.8 s the
+    stop takes 71.8 s, the hover 8.0 m, the touchdown 51 fpm at 1.0 kt. KNOWN GAP at 1.2 s (0.5 s late): not stopped in 90 s, the
+    hover 18.8 m, 40 fpm at 9.5 kt (still no crash; the 1.2 s touchdown varies 10-20 kt between rigs: 9.5 kt in ah56KeyMission,
+    18.8 kt in the probe mission of W/tune2/ah56/clib.ts). The way back from 40 KIAS (ah56Assist): 36.7 s at 0.8 s, not stopped in 90 s at
+    1.2 s, and feet off the heading ends 44-57 deg from the start (the hold takes the nose where it is at 20 KIAS) (KNOWN GAP).
+  - D, the collective (heightHold, the Bo 105 lane's law with landAglM 4.5; collectiveFastRate.upStop 0.8 with the engine running):
+    F6 held 1 / 2 s past the first unload: no crash, 15-67 fpm (round 2: crashes, left main at 420-699 fpm); F5 held 2 s in the 15 m
+    hover: 13 m minimum, 337 fpm (960 fpm, a crash); Shift+F6 held to stop a sink: 19.6-21 m, the heading 25-29 deg (200 m, 180 deg).
+    Shift+F5 for 1 s in the hover still hits the ground at 2,640 fpm: it is the autorotation entry; the key label and the hint say
+    never in the hover (KNOWN GAP row on the record). Round 4 (the pass-2 gate's should): a sim guard, collectiveFastRate.downGate
+    (opt-in, AH-56A only): with the engine running below 30 kt of forward air speed Shift+F5 acts as bare F5, the height hold's
+    sink command (air speed: in a hover into a headwind of 30 kt or more it keeps the hand speed). 1 s in the 15 m hover: 14.8 m minimum, 194 fpm; 2 s: 12.7 m, 337 fpm; held 6 s: 5.4 m, 408 fpm; from the 3 m IGE
+    hover 58-91 fpm (W/tune2/ah56/r4/out/shiftf5.log). At 90 KIAS it still reaches the 15 % entry stop in 0.5 s, and with the
+    engine stopped it keeps the hand speed (the KNOWN GAP row is now three passing rows).
+  - D, the run-on landing from a trimmed 45 KIAS approach, feet off (KNOWN GAP): 289 fpm, then the roll-out turns 140 deg as the
+    collective comes down (no crash); at the slower pace 547 fpm and the right main collapses (181 kN). Round 4 (the pass-2 gate):
+    the Landing hint's "hold the heading with Z / X on the wheels" was flown and does not work (the beginner's pedal keys on the
+    wheels: 127 deg at 21 deg of roll; feet on from the approach: 145 deg, at the slow pace a right wingtip strike). The Landing hint
+    now LEADS with the hover landing on a held F5 (6 of 6 at both paces, 8-68 fpm: the gate's p6) and says the run-on is not yet
+    beginner-safe on keys (the roll-out swings 120-145 deg with the tail rotor as the collective comes down); the Z / X cue is gone.
+  - Round 4, a ground-roll heading hold (the gate's should; StabilityAssistTuning.groundRollHeading, opt-in, AH-56A only, a sim aid):
+    on the wheels with the tail wheel locked and no pedal key held, the touchdown heading is held on the keyboard pedals between 6
+    and 50 kt of ground speed (faded in from 3, out by 60; kpsi 1.5, kr 0.5, within 0.5 of the axis, the pedal centre walked along).
+    The swing came from the main term being off on heavy wheels and the tail rotor's thrust outliving the collective. 40 / 45 / 50
+    KIAS approaches at 0.8 / 1.0 / 1.2 s, feet off (W/tune2/ah56/r4/out/runon-5.log, runon-6.log; the touchdowns that collapse a main
+    at the slow pace left out): with the brakes held below 20 kt 7 of 7 roll-outs end intact (without the hold 1 of 7: wingtip
+    strikes, main and tail legs collapsed, 49-145 deg off the approach heading); with the brakes held from the touchdown 5 of 7 (2 nose-overs onto the
+    turret, pitch -8.9 deg: a straight roll-out takes the full braking, which the swing used to hide; without the hold 6 of 7 intact,
+    swinging 38-150 deg). New ah56Assist rows (45 KIAS, 0.8 / 1.0 s, brakes below 20 kt): 16.6 / 32.3 deg from the touchdown heading,
+    no crash. Still not beginner-safe, so the Landing hint keeps the hover landing first: at the 1.2 s pace the beginner's approach
+    touches down at 547-565 fpm and collapses a main (no ground-roll term can help), and full brakes above 20 kt can nose over; the
+    hint says brakes below 20 kt and feet off the pedal keys (the beginner's own Z / X on the wheels crashed 10 of 16 at 45 / 55 KIAS in
+    runon-5, 3 of 4 with this hold). The KNOWN GAP row (both paces, from the approach heading) stays: 55 deg at 0.8 s (35 of it before the
+    touchdown), the collapse at 1.2 s. kpsi 2 crashed 3 of 14 (1.5: 2 of 14); kpsi 3 nosed over in the 45 KIAS full-brake case (runon-2).
+  - D, the main gear (gear.ts limitLoad, the collapse load, ESTIMATE): 140 -> 180 kN, D from the P 9.5 ft/s touchdown sink with FAR
+    27: the level landing at the P sink gives 103 kN a main (this strut, the hover collective), FAR 27.483 puts the level-landing load
+    on one wheel, 1.5 x ultimate = 155 kN; a vertical landing from this aircraft's 4.7 deg left-wing-low hover is a one-wheel
+    touchdown, 173 kN at the P sink. At 1.2 x the sink (11.4 ft/s, FAR 27.725 reserve energy) the level case holds (152 kN) and the
+    one-wheel case still collapses (new ah56Ground G13 row). The IGE engine failure on keys now holds the gear from a 2 m pull (451
+    fpm, 145 kN) but not from 1.6 or 2.5 m (542 / 481 fpm, 184 / 183 kN): sensitive, recorded.
+  - Round 4, the engine-failure hint (the pass-2 gate, must): it said Shift+F6 "from about 1.5 m" (the written pilot of ah56Systems
+    G11c), where its own level-wings technique on keys collapses a main at one lag of two (181 kN). It now says about 2 m of wheel
+    height, 6-7 ft on the HUD AGL, between 1.75 and 2.25 m. The window, wings levelled on the arrow keys 0.3 / 0.5 s late (three new
+    passing ah56Assist rows; W/tune2/ah56/r4/out/ige.log): 1.75 m 361-406 fpm, 96 kN a main; 2.0 m 309-323 fpm, 70 kN; 2.25 m 315-335
+    fpm, 93 kN. Outside it 1.5 and 2.5 m hold at one lag and collapse a main at the other (181 / 183 kN), 1.0 m at both. Hands off
+    (the older row, a different technique) only 2.0-2.25 m holds (317 / 315 fpm, 145 / 175 kN); 1.75 m collapses (416 fpm, 181 kN).
+  - Integration (tune/rigid-r2, the round-4 gate's must): the hint's cue was the true height, but the pilot reads the HUD AGL
+    (rounded, 2.5-3 m/s of sink) late. Flown off the seen HUD reading (W/tune2/ah56/gate2/out/q_edges.txt qD, q_hud8.txt): first
+    reads 7 ft holds at 0.3 s (1.8 m, 389 fpm, 90 kN) but collapses the left main at 0.5 s (1.3 m, 514 fpm, 183 kN); 6 ft collapses
+    at 0.5 s (184 kN); 8 ft holds at 0.2-0.5 s (2.4-1.9 m, 315-411 fpm, 67-106 kN) and collapses only at a 0.1 s read (180 kN).
+    The hint now says: hold Shift+F6 when the HUD AGL first reads 8 ft (arriving at about 2 m). The window in true height above
+    (1.75-2.25 m) is unchanged. Open: the ah56Assist igeLevelWings rows still pull on the true height with no lag; they should
+    trigger on the lagged, HUD-rounded reading (the gate's nice).
+  - Open from the round-4 gate (W/tune2/ah56/gate2/notes.md, q_edges.txt), not fixed at integration: (should) Shift+F5 outside the
+    30 kt gate but low, at the beginner's own 40 KIAS / 30 m descent, is still the full hand-speed drop: 1 s takes 36-39 % of the
+    collective and the aircraft hits the ground 2.5 s later at 2,440-2,740 fpm, hands off and with the watching beginner at both
+    paces (gate's fix: downGate.maxAglM 150, Shift+F5 as F5 below 500 ft AGL too). (nice) After a run-on roll-out the keyboard
+    pedal centre the ground-roll hold walked stays at +0.30 / +0.35 of travel, so the next hands-off F6 lift-off swings 20.2 / 19.4
+    deg of heading (9.4 deg from a clean start); walk it back when the hold disengages.
+  - Not done: item E (an XH-51A-sized gyro rig): not cheap (a definition of its own), not attempted. The ICS on keys: not re-flown.

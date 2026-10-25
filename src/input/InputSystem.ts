@@ -304,6 +304,16 @@ export class InputSystem implements Subsystem {
   private kbElevator = 0;
   private kbRudder = 0;
   /**
+   * STAB ASSIST keyboard cyclic re-centring (StabilityAssistTuning.keyboardLimit.recentre, opt-in; the Bo 105): time since
+   * an arrow key was last held, and since a bare F5 was last held, s.
+   */
+  private cyclicKeysQuiet = Infinity;
+  private lowerKeyAgo = Infinity;
+  /** How far the arrow keys have moved the keyboard cyclic since it last rested (the limit and the re-centring act on it). */
+  private readonly kbKeyed = { aileron: 0, elevator: 0 };
+  /** The keyboard cyclic as that block left it last frame (a change since is another writer's, a reset, 5 or Shift+5). */
+  private readonly kbLeft = { aileron: 0, elevator: 0 };
+  /**
    * Centre of the keyboard controls: the flight model's trimmed aileron, elevator and rudder at the last
    * scenario reset, so centring returns to trimmed flight rather than to an untrimmed zero (the trimmed
    * aileron/rudder are tiny but the spiral mode is slow to forgive them).
@@ -431,6 +441,8 @@ export class InputSystem implements Subsystem {
     this.rollTrim = new RollTrimAssist(assists.rollTrim);
     this.rotation = new RotationGuard(assists.rotation);
     if (this.profile.stabilityAssist) this.assists.stabilityAssist = this.profile.stabilityAssist.default;
+    // A type whose pusher-grip schedule says so starts with the propSchedule assist on (opt-in; absent: off as before).
+    if (this.profile.propLever?.schedule?.default) this.assists.propSchedule = true;
   }
 
   /** Which engine(s) the engine keys act on (0 = left). One engine: always 'all'. After every reset: 'all'. */
@@ -480,6 +492,8 @@ export class InputSystem implements Subsystem {
     this.neutral.elevator = c.elevator;
     this.neutral.rudder = c.rudder;
     this.kbAileron = this.kbElevator = this.kbRudder = 0;
+    // The keyboard cyclic limit's keyed displacement (StabilityAssistTuning.keyboardLimit) belongs to the last flight.
+    this.kbKeyed.aileron = this.kbKeyed.elevator = 0;
     this.ailCentred = this.rudCentred = true;
     this.centring = { aileron: false, elevator: false, rudder: false };
     this.written.aileron = this.written.elevator = this.written.rudder = null;
@@ -780,10 +794,14 @@ export class InputSystem implements Subsystem {
     const tuning = this.profile.assists;
     this.updateSpringTrim(s);
     if (this.profile.rotorcraft) {
-      const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp'));
+      // The lowering hand-rate key gated to the bare key (collectiveFastRate.downGate, opt-in; absent: never): every engine
+      // running, below the gate's forward air speed (the powered hover, where the hand-speed drop is not wanted).
+      const downGate = this.profile.collectiveFastRate?.downGate;
+      const downAsBare = !!downGate && this.held.has('collectiveFastDown') && s.engines.every((e) => e.running) && Math.max(0, s.airVelocityBody.x) / KT < downGate.minKias;
+      const change = Number(this.held.has('flapsDown')) - Number(this.held.has('flapsUp') || downAsBare);
       // The hand-rate pair (InputProfile.collectiveFastRate: Shift+F5 / Shift+F6), travel per second; 0 on every other type.
       const fast = this.profile.collectiveFastRate;
-      const fastDown = !!fast && this.held.has('collectiveFastDown'), fastUp = !!fast && this.held.has('collectiveFastUp');
+      const fastDown = !!fast && this.held.has('collectiveFastDown') && !downAsBare, fastUp = !!fast && this.held.has('collectiveFastUp');
       const fastChange = fast ? (fastUp ? fast.up : 0) - (fastDown ? fast.down : 0) : 0;
       const hardware = this.hardwareLever('collective') ?? this.hardwareLever('throttle');
       const hardwareCollective = this.collectiveOwner.update(change !== 0 || fastChange !== 0, hardware?.moved ?? false) === 'hardware' && !!hardware;
@@ -797,6 +815,9 @@ export class InputSystem implements Subsystem {
         let v = was + change * (this.profile.collectiveRate ?? 0.15) * dt + fastChange * dt;
         // The lowering key's entry stop (Bo 105: the autorotation entry position): never below it, nor below where it was.
         if (fastDown && !fastUp && fast!.downStop !== undefined) v = Math.max(v, Math.min(was, fast!.downStop));
+        // The raising key's stop (AH-56A: the powered cushion, not a climb): never above it, nor above where it was; with an engine
+        // stopped it is off (an engine failure's cushion takes the whole travel).
+        if (fastUp && !fastDown && fast!.upStop !== undefined && s.engines.every((e) => e.running)) v = Math.min(v, Math.max(was, fast!.upStop));
         c.collective = clamp(v, 0, 1);
       } else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
     }
@@ -863,6 +884,7 @@ export class InputSystem implements Subsystem {
     // cyclic (InputProfile.centringCyclic: a rate-command control gyro) glides back to the spring-trim anchor at the
     // Numpad 5 rate as soon as no cyclic key is held.
     const roll = this.dir('rollLeft', 'rollRight');
+    const kbAileronBefore = this.kbAileron;
     if (this.profile.centringCyclic) {
       if (roll === 0 && kbAil && this.kbAileron !== 0) this.centring.aileron = true;
       if (this.dir('pitchDown', 'pitchUp') === 0 && kbEle && this.kbElevator !== 0) this.centring.elevator = true;
@@ -895,6 +917,48 @@ export class InputSystem implements Subsystem {
       this.kbElevator = stepCentre(this.kbElevator, dt, this.centreRate);
       if (this.kbElevator === 0) this.centring.elevator = false;
     }
+    // STAB ASSIST keyboard cyclic limit (StabilityAssistTuning.keyboardLimit, opt-in; the Bo 105): at hover and low speed
+    // the arrow keys move the keyboard cyclic at most `travel` from where it last rested (inside the series authority),
+    // and once they rest it glides back there.
+    const kbLimit = this.profile.stabilityAssist?.keyboardLimit;
+    if (kbLimit && this.assists.stabilityAssist && kbAil && kbEle) {
+      const f = clamp((s.groundSpeed / KT - kbLimit.fadeKt[0]) / (kbLimit.fadeKt[1] - kbLimit.fadeKt[0]), 0, 1);
+      // keyboardLimit.cruise (opt-in, tune pass 2 fix): the limit opens to cruise.travel, not the whole travel.
+      const cr = kbLimit.cruise;
+      const lim = kbLimit.travel + ((cr ? cr.travel : 2) - kbLimit.travel) * f;
+      const k = this.kbKeyed;
+      // The stick moved by anything but the keys (the hold handing over, a reset, 5, Shift+5): nothing keyed is left.
+      if (kbAileronBefore !== this.kbLeft.aileron || (roll === 0 && this.kbAileron !== kbAileronBefore)) k.aileron = 0;
+      if (kbElevatorBefore !== this.kbLeft.elevator || (pitch === 0 && this.kbElevator !== kbElevatorBefore)) k.elevator = 0;
+      // The limit stops a key only from driving the keyed displacement further out.
+      if (roll !== 0) {
+        const keyed = k.aileron + this.kbAileron - kbAileronBefore, kept = clamp(keyed, Math.min(k.aileron, -lim), Math.max(k.aileron, lim));
+        this.kbAileron += kept - keyed; k.aileron = kept;
+      }
+      if (pitch !== 0) {
+        const keyed = k.elevator + this.kbElevator - kbElevatorBefore, kept = clamp(keyed, Math.min(k.elevator, -lim), Math.max(k.elevator, lim));
+        this.kbElevator += kept - keyed; k.elevator = kept;
+      }
+      // Once the arrow keys have rested (recentre.restS; letting down: CG under aglM with a bare F5 held lately, its own
+      // restS) the keyed displacement glides back out at recentre.rate, faded out with the limit.
+      const rc = kbLimit.recentre;
+      if (rc && dt > 0) {
+        this.cyclicKeysQuiet = roll !== 0 || pitch !== 0 ? 0 : this.cyclicKeysQuiet + dt;
+        this.lowerKeyAgo = this.held.has('flapsUp') ? 0 : this.lowerKeyAgo + dt;
+        const ld = rc.landing;
+        const landing = !!ld && s.altitudeAGL < ld.aglM && this.lowerKeyAgo < ld.f5S;
+        if (ld) c.cyclicLanding = landing;
+        if (this.cyclicKeysQuiet > 0 && this.cyclicKeysQuiet >= (landing ? ld!.restS : rc.restS)) {
+          const step = rc.rate * (1 - f) * dt;
+          const da = Math.sign(k.aileron) * Math.min(step, Math.abs(k.aileron)), de = Math.sign(k.elevator) * Math.min(step, Math.abs(k.elevator));
+          this.kbAileron -= da; k.aileron -= da; this.kbElevator -= de; k.elevator -= de;
+        }
+        // keyboardLimit.cruise: above fadeKt[0] the keys' rest of cruise.restS makes where the stick is the new rest (the
+        // attitude hold keeps what the keys commanded), so one press moves it at most the limit, and taps do not add up.
+        if (cr && f > 0 && this.cyclicKeysQuiet >= cr.restS) k.aileron = k.elevator = 0;
+      }
+      this.kbLeft.aileron = this.kbAileron; this.kbLeft.elevator = this.kbElevator;
+    }
     if (!this.profile.rotorcraft) this.kbElevator = this.rotation.step(this.kbElevator, kbElevatorBefore, s.angularVelocity.y, s.pitch, onMains, dt, this.held.has('pitchUp'));
     if (dt > 0 && !this.profile.rotorcraft) {
       // Soft load-factor stops: ease the held keyboard elevator back while beyond them.
@@ -904,6 +968,8 @@ export class InputSystem implements Subsystem {
     }
 
     const yaw = this.dir('rudderLeft', 'rudderRight');
+    // Re-centring keyboard pedals (InputProfile.centringPedals): back to the (followed) pedal centre once no pedal key is held.
+    if (this.profile.centringPedals && yaw === 0 && kbRud && this.kbRudder !== 0) this.centring.rudder = true;
     if (yaw !== 0) {
       if (this.rudCentred) {
         // The pilot's feet take the pedals from the auto-rudder without a bump.
@@ -956,6 +1022,8 @@ export class InputSystem implements Subsystem {
     // The STAB ASSIST's heading hold waits while the pilot works the pedals (a pedal key held, a hardware pedal in use);
     // its trim follow-up moves only what the keyboard holds.
     if (this.profile.stabilityAssist) { c.pedalWorked = yaw !== 0 || hwRud !== null; c.keyboardCyclic = kbAil && kbEle; c.keyboardPedals = kbRud; }
+    // A cyclic key held (the STAB ASSIST's translational rate command waits for the keys to rest; opt-in, the Bo 105).
+    if (this.profile.stabilityAssist?.translationalRate?.keyRest) c.cyclicWorked = roll !== 0 || pitch !== 0;
     this.written.aileron = kbAil ? c.aileron : null;
     this.written.elevator = kbEle ? c.elevator : null;
     this.written.rudder = kbRud ? c.rudder : null;
@@ -1191,7 +1259,9 @@ export class InputSystem implements Subsystem {
     if (propGrip) {
       const grip = this.dir('propDecrease', 'propIncrease');
       if (grip !== 0) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? propGrip.detent) + grip * PROP_GRIP_RATE * dt, 0, 1); }
-      else if (this.assists.propSchedule && propGrip.schedule && !this.gripTouched) c.propLever = clamp(interp1(propGrip.schedule.kias, propGrip.schedule.lever, s.ias / KT), 0, 1);
+      // The schedule is the powered trim's: with an engine stopped the grip is left where it is (the autorotation's +8 deg is the
+      // pilot's snap; the schedule would keep driving the shared shaft's prop to the speed's angle).
+      else if (this.assists.propSchedule && propGrip.schedule && !this.gripTouched && s.engines.every((e) => e.running)) c.propLever = clamp(interp1(propGrip.schedule.kias, propGrip.schedule.lever, s.ias / KT), 0, 1);
     }
     if (this.profile.has.propeller) {
       // Propeller lever: down to the feather gate and no further (Shift+F feathers); up from feather starts at the gate.

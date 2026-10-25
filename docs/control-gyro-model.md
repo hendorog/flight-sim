@@ -241,9 +241,9 @@ docs/ah56-integration.md section 11). The gyro numbers did not move.
 | Stick moment at full longitudinal stick (4.95 in) | 566 N m (114 N m/in); stage 2: 811 | G5 pitch response and hover sensitivity, C18 at 180 KCAS, on the compound |
 | Stick moment at full lateral stick (2.9 in) | 907 N m (313 N m/in); stage 2: 975 | G5 roll response and sensitivity, C9 lateral trim |
 | K_R | 3,200 N m/rad; stage 2: 7,500 | the 150 KCAS / hover pitch ratio against the hover sensitivity, on the compound |
-| Input rotation | 5° advanced; stage 2: 9° | G8 |
+| Input rotation | 3° advanced (tune round 3; stage 5: 5°; stage 2: 9°) | G8 |
 | Feedback rotation | 20° advanced | the best-damped auto-trim |
-| Spring / negative spring / C_R | 5559 / 4500 N m/rad / 0.4 N m s/rad | ESTIMATE (net spring small: Hohenemser's negative spring) |
+| Spring / negative spring / C_R | 5559 / 5309 N m/rad (net 250; tune round 3, was 4500, net 1059) / 0.4 N m s/rad | ESTIMATE (net spring small against K_R: Hohenemser's negative spring; section 7b) |
 | SSL gain G | 1 | the stops read as cyclic (G5a) |
 
 ## 7. Results (stage 2; targets from plan 7.2)
@@ -262,7 +262,7 @@ Measured on the stage-2 aircraft (18,300 lb at FS 298, SL ISA, no wing and no pu
 | G5a cyclic authority | ≥ ±8° (D) | stops 10.11 aft / 18.05 fwd / 12.27 R / 18.08 L at G = 1; full stick on a fixed shaft settles at 5.8° of tilt with 6.0° of flap (72.6 kN m), inside the stops; the 150 KCAS trims inside the stops | pass |
 | G6 AMCS attitude retention, no SAS | bank within 2° for 10 s after a 10° disturbance at 80 KCAS (P Hoh-74) | 11.8° bank held within 1.23° (SAS off, as "no SAS was used"); with the sideslip SAS on, the uncoordinated turn rolls level (≈ 7° in 10 s) | pass |
 | G6 keyboard tap | ≤ 3° over 10 s (ESTIMATE) | 0.36° (0.02° with the production air wiring) | pass |
-| G6 variant: a steady 625 N m roll moment (AG, no plan band) | what the AMCS holds | the bank precesses: 0.16 °/s at 2–3 s at the hover (K_R β / H = 7500 × (625 / 693 kN m/rad) / 1572 predicts 0.25 °/s), +2.1° at 10 s, +16.6° at 20 s; at 80 KCAS 0.14 °/s, then the weathercock and the sideslip SAS hold it to +2.1° at 20 s | recorded: **attitude retention holds only with no residual moment** (below) |
+| G6 variant: a steady 625 N m roll moment (AG, no plan band) | what the AMCS holds | the bank precesses: 0.16 °/s at 2–3 s at the hover (K_R β / H = 7500 × (625 / 693 kN m/rad) / 1572 predicts 0.25 °/s), +2.1° at 10 s, +16.6° at 20 s; at 80 KCAS 0.14 °/s, then the weathercock and the sideslip SAS hold it to +2.1° at 20 s | recorded: **attitude retention holds only with no residual moment** (below). Tune round 3 (K_net 1059 → 250, section 7b): +0.90° at 10 s, +5.1° at 20 s, the rate at 20 s −0.01 °/s (was 0.91): the rate command, no longer the divergence |
 | G7 ICS roll | τ 0.3–0.7 s; ≈ 34 °/s²/in ±40 %; 11–16 °/s/in (D) | τ63 0.295 s (interpolated between samples; it read 0.30 quantised); 30.9 °/s²/in; first peak 9.5 (hover, roll compensator on) / 10.2 °/s/in (150 KCAS) | acceleration pass; τ **KNOWN GAP** (1.7 % under the edge) |
 | G7 ICS pitch | τ 1.5–3.5 s hover, 0.8–2.0 s at 150 KCAS; ≈ 5.4 °/s²/in ±40 %; 9–14 °/s/in (D) | τ63 0.84 s (hover) / 0.32 s (150 KCAS); 6.38 °/s²/in; first peak 5.7 (2.48 s) / 2.6 °/s/in | acceleration pass; τ and the steady rates **KNOWN GAP** (the droop term, section 3) |
 | G7a ICS full lateral stick, 120 KCAS | 40–65 °/s; right/left 1.5–1.9 (D / P ASTA-72 para 60) | 50.0 R / 31.1 L °/s, ratio 1.61 (trim stick 0.76 in left); asserted: the right rate in 40–65 (25 % / 23 % margins) and the ratio in 1.5–1.9 (7 % / 15 %) | pass |
@@ -284,6 +284,72 @@ moment**, not the attitude error. G6's disturbance is a stick-induced bank that 
 **steady external moment** M needs a steady hub moment −M, i.e. a flap β = M / K_hub, and K_R β precesses the gyro, and the aircraft
 following it, at K_R β / H: about 0.26 °/s per kN m at the hover (G6 variant above). So attitude retention holds only with zero residual
 moment; a trim change, a CG shift or the hover in-plane force step (KNOWN_ISSUES #2) becomes a slow steady rate the pilot trims out.
+
+## 7b. Tune round 3: the hover with the gyro alone (the CL-475 / XH-51A films)
+
+The owner's films (owner-notes 2026-10-22): the CL-475 and the XH-51A (no pusher) hovered with a man on a ~16 ft side boom, the
+XH-51A one hands-off over about 15 s; a man lifted hanging from a nose handle with the pitch near level. Rows:
+`tests/rotorcraft/ah56GyroHover.test.ts`, on the stage-2 helicopter (no wing, no pusher), aids off, stick held where the trim put
+it; probes and logs in `W/tune2/ah56` (notes.md).
+
+**What a gyro can hold and what it cannot.** With the stick held, rates and velocity zero (φ' = 0, ω = 0), the gyro's balance
+
+    K_net φ + C_R Ω_g J φ + sgn(h) J R(fb) F x = sgn(h) J R(in) m_stick
+
+has a unique tilt for the stick moment, so the flap and the hub moment are pinned to the stick. A body that leans does not change
+the thrust's moment about the CG (it turns with the body). A NEW steady moment M therefore has no fixed-lean equilibrium at zero
+velocity, whatever K_net: it becomes a steady rate, the precession K_R (M / K_hub) / H (AMCS) or tan(sweep) M / H (ICS), or a drift.
+This is Hoh-74's rate command (eq 6.1-6.2): "the gyro ... is positioned by the pilot with the help of an attitude rate command", and
+"trim ... depends only on τ and the body trim moments". The film's boom hover was TRIMMED (the man on the boom from the lift-off),
+and a trimmed offset holds: A2 / A3. The nose-handle step was the pilot's to take out (a 2.2 kN m step is about 0.34 in of ICS stick).
+
+**The defect: the AMCS net spring.** The springs act in the physical axes and the feedback arrives turned 90° (section 2), so at
+equilibrium the spring's torque K_net φ is balanced by a residual flap of K_net / K_R times the gyro tilt, turned 90° (+20°). At
+the stage-2 ESTIMATE (5559 − 4500 = 1059 N m/rad, a third of K_R 3200) the low-frequency rotor kept cross-axis hub moments; with the
+gyro and the flap settled (`Rotorcraft.settle`), per m/s at the hover:
+
+| K_net, N m/rad | u: roll, pitch (N m) | v: roll, pitch (N m) | hands-off 60 s IGE | 625 N m step, bank at 20 s |
+|---|---|---|---|---|
+| 1059 (was) | +559, **−265** (speed-unstable) | **+178** (dihedral-unstable), +774 | 21.7°, 71 m, heading 179° | 10.4° |
+| 250 (flown) | −124, +161 | −212, +75 | 0.04°, 9.1 m, heading 3.7° | 5.1° |
+
+Hohenemser (Hoh-74 sect. 6.1): the negative springs "partially compensate the positive springs through which the pilot inputs are
+transferred to the swashplate. Without these negative springs, the gyro lag τ would be undesirable"; "the pitch-roll cross coupling
+is zero"; "the rotor has no influence on stability". A net spring small against K_R is that reading (INF): 250 N m/rad (K_net / K_R
+0.08) is the flown ESTIMATE. The sweep (`W/tune2/ah56 out/a9_grid_rot*.log`, `a10_*.log`): 400 restores the signs weakly (the cross
+term 193 against the direct 116), 150 and below make G8 fail; the feedback rotation (20° ESTIMATE) was left. G5, G6, C18 and C19 moved
+under 2 %; G8 rose (0.166 / 0.198 at 5° of input rotation), so the input rotation (FITTED to G8) went 5° → 3° (0.130 / 0.155), with
+C9's 190 KCAS lateral trim now 0.18 in (was 0.34; Hoh-74: "trim values ... less than 1 inch").
+
+**Measured on the flown values** (ah56GyroHover; bands ESTIMATE from the film, read as changes from the trimmed hover, which is
+5° left wing low, P APE-I para 96):
+
+| Row | Target | AMCS | ICS |
+|---|---|---|---|
+| A1 hands-off 30 s, OGE / IGE | roll, pitch ≤ 5°; disc ≤ 2°; drift < 5 m, < 1 kt | 0.17° / 0.04°; 3.1 m, 0.65 kt / 1.7 m | 0.65° / 0.51°; 0.8 m / 0.6 m |
+| A1b 60 s IGE hands-off; OGE heading held | the same, < 15 / 30 m | 0.04°, 9.1 m; 0.36°, 22.8 m (pedals free: 2.9°, 51 m, heading 29°) | OGE 29° (KNOWN GAP: P spring, cant, sweep) |
+| A2 90 kg at 16 ft, starboard / port, trimmed, 30 s | the bands; stick ≤ ~15 % | 0.03°, 1.5-1.8 m; stick 1.9 % | 0.5°, 0.6 m; stick 17.1 % (KNOWN GAP, P gearing) |
+| A3 10 in lateral CG (20.7 kN m) | the same | 0.1°, 2.2-2.5 m; stick 9.1 % | stick 82 % (KNOWN GAP) |
+| A4 2.2 kN m nose / tail step, 4.33 kN m boom step | 0.4-1.6 x the derived rate | 0.98 / 1.16 / 0.76 x (0.37 / 0.37 / 0.73 °/s) | Λ M / H = 5.6 °/s: the pilot's |
+| A5 derivatives (gyro settled) | speed- and dihedral-stable, cross < direct | as the table above | — |
+
+**A step with the stick held, past 10 s** (the pass-2 gate, `W/tune2/ah56/gate1/out/probes-a.txt` p1, and the informational A4 30 s
+row). The attitude stays bounded: the 4.33 kN m boom step rolls 3.2 / 6.0 / 7.9 / 11.9° at 5 / 10 / 15 / 30 s. The drift does not: 2.5
+/ 9 / 17 / 46 kt of ground speed at 5 / 10 / 15 / 30 s, the heading through 170° by 30 s, 250-660 m in 60 s, heading held on the
+pedals or free, stage-2 and compound alike. So a step load with the stick held leaves the hover within 15 s and needs a re-trim of
+about 2 % of the stick (the boom's A2 trim); the film's nose-handle step was pilot-flown, and the owner's "fixed lean, no drift
+build-up" is reproduced for the TRIMMED offset (A2, on the stage-2 rig and on the shipped compound alike: 0.08°, 2.1-2.4 m at 30 s).
+
+**The ICS's 60 s hands-off oscillation** (A1b, about 12-15 s period, its spring, cant and sweep P) is a ground contact from the 3 m
+IGE hover at 52 s, stage-2 and compound, with and without the boom (the gate's p1); OGE it reaches 29-43° by 60 s. It is
+pre-existing (this round changed only the AMCS constants); the film's 30 s window holds (0.5°, 1 m).
+
+What remains is not the gyro's: a lateral drift starts the tail rotor's weathercock (the tail follows the drift, r = v / l), the
+yaw about the body axis carries the space-held hover tilt round (an Euler pitch rate −r sin φ at the 5° hover roll), and with the
+hub-moment derivatives emasculated nothing pulls the tilt back; with the heading held on the pedals the lateral kick decays in about
+25 s (`out/a11_vkick.log`). On the shipped compound (wing on, the pusher at the hover detent) the same 60 s OGE hands-off case with
+the pedals free is 5.9°, 59 m, the heading 61°, 12 kt (the stage-2 rig 2.9°, 51 m, 29°): the compound's weathercock is stronger. IGE
+60 s it is 0.49°, 10.4 m; OGE 30 s 0.21°, 3.5 m (the gate's p1).
 
 ## 8. Contract requests from this model
 

@@ -438,6 +438,13 @@ export interface SimProfile {
    */
   heliHoldSlowToHover?: { belowKt: number; ktPerS: number };
   /**
+   * The helicopter hold (A) engaged moving forward holds the speed over the ground it was engaged at, not that speed's
+   * component along the nose (a crabbed or sideslipping engagement otherwise holds far less: the Bo 105's by-hand
+   * acceleration ends 35 kt sideways at 42 kt, and held 23 kt). Absent: the forward component (every helicopter but the
+   * Bo 105).
+   */
+  heliHoldGroundSpeed?: boolean;
+  /**
    * An airborne start at zero airspeed (the hover scenario, hover=1) is turned into the mean wind at the start point and
    * trimmed at that airspeed, so the helicopter starts still over the ground instead of drifting off with the air mass
    * (src/sim/SimPhysics.ts resetTo). Calm air changes nothing. Absent: the start keeps its heading and drifts with the

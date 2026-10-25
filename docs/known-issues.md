@@ -16,8 +16,8 @@ Outstanding work is kept beside each aircraft model, ordered by pilot impact:
 | Robinson R44 Raven II | [12 entries](../src/aircraft/r44/KNOWN_ISSUES.md) |
 | Schweizer 269C-1 / 300CB | [12 entries](../src/aircraft/s269/KNOWN_ISSUES.md) |
 | MD Helicopters MD 500E (in development) | [14 entries](../src/aircraft/md500/KNOWN_ISSUES.md) |
-| MBB Bo 105 CB-4 (in development, `available: false`) | [45 entries](../src/aircraft/bo105/KNOWN_ISSUES.md) (22 from the flight model, 23 handed over) |
-| Lockheed AH-56A Cheyenne (in development, `available: false`) | [60 entries](../src/aircraft/ah56/KNOWN_ISSUES.md) (15 from the stage-2 flight model, 33 handed over from TW, AU, PN, AX, AC and AH, 5 integration dispositions, 7 from the pilot-review round, and the final fix round section (3 items resolved, 6 new KNOWN GAP rows recorded); see [ah56-integration.md](ah56-integration.md) section 11) |
+| MBB Bo 105 CB-4 (in development, `available: false`) | [Bo 105 known issues](../src/aircraft/bo105/KNOWN_ISSUES.md) (the flight model, the integration, the flyability pass, tune pass 1 and its round 2, tune pass 2, its fix round and that round's gate; items handed over by other packages; the open beginner rows are summarised below) |
+| Lockheed AH-56A Cheyenne (in development, `available: false`) | [AH-56A known issues](../src/aircraft/ah56/KNOWN_ISSUES.md) (15 from the stage-2 flight model, 33 handed over from TW, AU, PN, AX, AC and AH, 5 integration dispositions, 7 from the pilot-review round, the final fix round, and the tuning rounds T1-T11; see [ah56-integration.md](ah56-integration.md) sections 11-15; the open beginner rows are summarised below) |
 
 Kinds: **defect** = demonstrated wrong behavior; **unvalidated** = evidence or acceptance still missing;
 **estimate** = a parameter without a measured/published value; **missing feature** = behavior not implemented.
@@ -115,6 +115,65 @@ both rotation senses). The AH-56A's hands-off hover now holds (AMCS −5.35 → 
 0.3 kt in 20 s calm; was 14.3 / 6.6 kt); the Bo 105's hover phugoid moves from doubling 2.3 s to 2.5 s (still inside the
 ERF 1995 flight-identified band). The side component also acts in forward flight, which moved the AH-56A ICS lateral trim
 and two sense rows (C17, C23 frozen-controls roll; [ah56-integration.md](ah56-integration.md) section 11).
+
+### AH-56A on the keyboard and trackpad (tuning passes 1 and 2) — **missing feature / owner decision**
+
+The STAB ASSIST (a labelled sim aid, ON by default) lets a keyboard beginner lift off, hover, go out to 40 KIAS and back
+at a 0.8 s reaction pace, fly the circuit and land in the hover on a held F5. Open, each with an it.fails KNOWN GAP row or
+a recorded measurement ([AH-56A known issues](../src/aircraft/ah56/KNOWN_ISSUES.md) T1-T11):
+- The hands-off knock (owner decision, nothing shipped): a 1 s arrow tap then hands off from the 15 m hover drifts
+  200-440 m in 60 s; a 2 s tap climbs out to 44-273 m AGL, 957-1,179 m away. Measured options: arming the prop schedule
+  only once the nose-down key is held at 15 KIAS (600-824 m, no climb-out, but the deliberate hover -> 40 KIAS -> hover
+  takes 33.7-39.5 s instead of 27.1-29.7 s and comes back worse), or the shared translational-rate term at katt 1.0 (5-19 m,
+  but the 1.2 s pace's landing heading spun 142 deg, and it is the pitch/roll aid the owner would rather not have).
+- The run-on landing on keys (`ah56Assist` it.fails): at the 1.2 s pace the approach touches down at 547-565 fpm and
+  collapses a main; full brakes above 20 kt can nose over (2 of 7); the beginner's own Z / X on the wheels crashed 10 of 16.
+  The hints put the hover landing first. The ground-roll heading hold (opt-in, AH-56A only) keeps 7 of 7 roll-outs intact
+  with brakes below 20 kt.
+- Hover -> 40 KIAS -> hover at the 1.2 s pace (`ah56Assist`, `ah56KeyMission` it.fails): not stopped within 90 s, the
+  heading 44-57 deg off.
+- The IGE engine failure: survivable only in a narrow pull window (1.75-2.25 m of wheel height with the wings levelled;
+  hands off only 2.0-2.25 m, 175 kN against the 180 kN limit). The hint now cues the pull on the HUD AGL first reading 8 ft
+  (the 6-7 ft cue read 0.5 s late collapsed a main); the test rows still pull on the true height.
+- Shift+F5 is gated to act as F5 only below 30 kt of forward air speed: at 35-40 KIAS and 30 m it is still the full
+  hand-speed drop and hits the ground 2.5 s later at 2,440-2,740 fpm (a 500 ft AGL gate is proposed). After a run-on the
+  walked keyboard pedal centre stays and doubles the next lift-off's heading swing.
+- The ICS configuration on keys (needs per-configuration ground presets in SimProfile); the ICS 60 s hands-off oscillation,
+  its boom trim (17.1 % of stick) and the 10 in CG case (80-83 % of travel); the unlocked tail-wheel taxi divergence above
+  about 5 kt (G13 rows; free-castor physics); Nr minimum 80.7 % against the P 82 % after the 63 KCAS engine failure.
+- Physics changes carried by these passes (ESTIMATE, owner-visible): the main-leg collapse load 140 -> 180 kN (one
+  constant in `src/aircraft/ah56/gear.ts`), and the AMCS net gyro spring 1059 -> 250 N m/rad with the input rotation
+  5 -> 3 deg (`gyro.ts`; the gyro-alone hover was speed- and dihedral-unstable).
+Evidence: `tests/rotorcraft/ah56Assist.test.ts`, `ah56KeyMission.test.ts`, `ah56GyroHover.test.ts`, `ah56Ground.test.ts`
+(run with `--silent=false` to see the measured values); [ah56-integration.md](ah56-integration.md) sections 12-15.
+Close with: the owner's choice on the knock; an approach-path or sink-rate aid above the height-hold band before the run-on
+is offered as beginner-safe; the Shift+F5 height gate; SimProfile ground presets for the ICS.
+
+### Bo 105 on the keyboard and trackpad (tuning passes 1 and 2) — **missing feature / defect**
+
+The STAB ASSIST (translational rate command at the hover, attitude hold in cruise, height hold and a climb-rate command on
+held F5 / F6, keyboard cyclic limits) lets a keyboard beginner fly the hover, the accelerations, the circuit (6 of 8 rig
+variants), the landings and one engine out. Open ([Bo 105 known issues](../src/aircraft/bo105/KNOWN_ISSUES.md), the tune
+sections):
+- The hand-held stick (mouse yoke / trackpad) in cruise, the fix-round gate's must, not fixed: the datum relaxes toward the
+  flown attitude whenever the airspeed falls while the stick moved, so a pointer-0.5 nudge then back to the centre crashes
+  6 of 27 and leaves a held attitude error in the rest (up to +14 deg pitch, +47 deg bank). The hand stick also has no
+  travel cap (pointer 0.7: 16 of 27 crash; a 1 s nudge in the hover crashes).
+- One engine out in cruise (`bo105KeyFlows` it.fails KNOWN OEI-CRUISE TORQUE GAP): holding the cruise attitude at 100 KIAS
+  keeps the survivor at 101 % torque (over the 95 % rating); at 120 KIAS (above the OEI Vne) the beginner sinks into the
+  ground at 42-45 s unless they follow the hint (slow to about 70 KIAS). No toast or voice at the failure.
+- An arrow key held 1.5-3 s at speed then hands off: 9 of 60 dive into the ground (the commanded 9 deg nose-down held).
+- KNOWN REVERSAL-DRIFT GAP (an arrow-key reversal in the hover ends 57-59 m away), KNOWN LEVEL-TAPPER GAP (1 s looks past
+  30 m at about 20 s, 7 kt), KNOWN TAILWIND GAP (the 10 kt tailwind deceleration with 1 s taps reaches no hover)
+  (`bo105KeyFlows`, `bo105KeyTransitions` it.fails).
+- The double engine failure has no keyboard landing in 121 variants; the 16 m hover failure sits in the H-V avoid area.
+- Pre-existing: the by-hand acceleration ends about 35 kt sideways with full left pedal; the phugoid growth at 120 / 140 KCAS
+  is recorded, not fitted; the AEO climb and the AR-280 band edges (see the hingeless rotor core above).
+Evidence: `tests/rotorcraft/bo105KeyFlows.test.ts`, `bo105KeyTransitions.test.ts`, `bo105Assist.test.ts`,
+`tests/input/bo105Aids.test.ts`; [bo105-flight-model.md](bo105-flight-model.md) sections 9 and 11.
+Close with: the speed relaxation of the hand-stick datum only in the fade band, and a hand-stick travel cap; an engine
+failure toast (shared UI); a trim mark on the attitude indicator for the level tapper (shared panel); a stronger heading
+hold below 10 kt for the tailwind case.
 
 ### Multi-engine resume: one-frame gauge glitch — **defect (cosmetic)**
 

@@ -263,10 +263,12 @@ describe('keyboard deceleration to the hover in the app\'s default 6 kt wind and
   /**
    * The same beginner in a 10 kt tailwind with 1 s taps: the nose goes round (73 deg/s at most) and there is no hover by
    * 60 s, 15.7 kt at the end (p5b_ch1; not lost, not crashed). Its 1 s pedal taps keep the heading hold from capturing
-   * while the fin weathercocks it toward the wind; with 2 s taps it reaches the hover (33.7 s). The hints: hover into
-   * the wind. Expected to fail (KNOWN_ISSUES).
+   * while the fin weathercocks it toward the wind; with 2 s taps it reaches the hover (33.7 s). Tune pass 2 fix (W/tune2/
+   * bo105 fix1): with the TRC walk at 1 deg/s alone it reached the hover at 50.5 s; with the keyboard cyclic limit at
+   * speed too (keyboardLimit.cruise: the stick held to 0.12 a press through the 15-30 kt band) it reaches none again,
+   * 6.4 kt at 60 s. Expected to fail (KNOWN_ISSUES).
    */
-  it.fails('KNOWN TAILWIND GAP: the wings-level beginner reaches the hover in a 10 kt tailwind with 1 s taps (pirouettes, 15.7 kt at 60 s)', () => {
+  it.fails('KNOWN TAILWIND GAP: the wings-level beginner reaches the hover in a 10 kt tailwind with 1 s taps (6.4 kt at 60 s)', () => {
     const r = keyRig({ start: 'level', kias: 45, heightM: 30, wind: { fromDeg: 250, kt: 10 } }), keys = new Keys(r);
     const d = decelToHoverKeys(r, keys, { interval: 1, noseUpDeg: 8 });
     report.decelTailwind10 = { ...d, endKt: r.physics.state.groundSpeed / KT };

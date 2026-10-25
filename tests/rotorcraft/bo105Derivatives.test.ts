@@ -131,6 +131,59 @@ describe('control derivatives at 80 KCAS per % of full travel (P AR-280 Table 6.
   }, 120_000);
 });
 
+/**
+ * Tune pass 2 (the round-1 / round-2 gates' physics item, W/tune2/bo105 q5_coll): trimmed at 60 KIAS with the assist off
+ * and the stick frozen, a -0.05 collective step gave -11 deg of pitch and -17 deg of roll at 5 s (gate1 g11), and the gate
+ * asked for L_col / M_col to be checked against the sources. At AR-280's 80 kt both are inside the envelope rule (sim
+ * 0.052 / 0.063 rad/s^2 per %, DLR 0.032 / 0.057, AFDD 0.058 / 0.073), and the flight-identified models themselves, the
+ * 8-state DLR and AFDD sets of Tables 6.2.8-6.2.11, answer a -5 % step with -20.8 / -25.3 deg of pitch and -22.4 / -27.8
+ * deg of roll at 5 s: the real Bo 105 (P) pitches and rolls that far with the stick frozen. The sim's own nonlinear step
+ * (at 80 KCAS: -19.2 / -22.8 deg at 5 s) sits inside the band of the two at every time; no physics changed.
+ */
+describe('the collective coupling at 80 KCAS (tune pass 2; P AR-280 Tables 6.2.8-6.2.11)', () => {
+  it('L_col and M_col inside the AR-280 envelope [min x 0.7, max x 1.3] (DLR 0.032 / 0.057, AFDD 0.058 / 0.073 rad/s^2 per %)', () => {
+    const r = derivatives().rows, l = r.L[COLUMN.col], m = r.M[COLUMN.col];
+    const band = (a: number, b: number): [number, number] => [Math.min(a, b) * 0.7, Math.max(a, b) * 1.3];
+    const [ll, lh] = band(AR280_DLR.L[COLUMN.col], AR280_AFDD.L[COLUMN.col]), [ml, mh] = band(AR280_DLR.M[COLUMN.col], AR280_AFDD.M[COLUMN.col]);
+    report.collectiveCoupling = { ...(report.collectiveCoupling as object), Lcol: l, Mcol: m, LcolBand: [ll, lh], McolBand: [ml, mh] };
+    expect(l).toBeGreaterThanOrEqual(ll); expect(l).toBeLessThanOrEqual(lh);
+    expect(m).toBeGreaterThanOrEqual(ml); expect(m).toBeLessThanOrEqual(mh);
+  });
+  it('a -5 % collective step, stick frozen (2200 kg, 80 KCAS, 3000 ft): the pitch and roll at 1 / 2 / 3 / 5 s inside the band of the DLR and AFDD identified models\' own step (min x 0.7, max x 1.3)', () => {
+    const T = [1, 2, 3, 5];
+    /** The 8-state model's attitude (theta, phi: states 3 and 7) after a step of `percent` % of collective, deg. */
+    const model = (k: typeof AR280_DLR) => {
+      const A = linearModel(k), j = COLUMN.col, b = [k.X[j], k.Z[j], k.M[j], 0, k.Y[j], k.L[j], k.N[j], 0].map((x) => x * -5);
+      const f = (x: number[]) => A.map((row, i) => row.reduce((acc, aij, c) => acc + aij * x[c], 0) + b[i]);
+      let x = [0, 0, 0, 0, 0, 0, 0, 0], t = 0;
+      const h = 0.001, out: { pitch: number; roll: number }[] = [];
+      for (const end of T) {
+        while (t < end - 1e-12) {
+          const k1 = f(x), k2 = f(x.map((xi, i) => xi + h / 2 * k1[i])), k3 = f(x.map((xi, i) => xi + h / 2 * k2[i])), k4 = f(x.map((xi, i) => xi + h * k3[i]));
+          x = x.map((xi, i) => xi + h / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i])); t += h;
+        }
+        out.push({ pitch: x[3] / DEG, roll: x[7] / DEG });
+      }
+      return out;
+    };
+    const dlr = model(AR280_DLR), afdd = model(AR280_AFDD);
+    const r = rig(2200, { kt: KTAS80, ft: 3000 }), p0 = r.fm.state.pitch, q0 = r.fm.state.roll, sim: { pitch: number; roll: number }[] = [];
+    r.c.collective = (r.c.collective ?? 0) - 0.05;
+    let t = 0;
+    for (const end of T) {
+      for (; t < end - 1e-9; t += DT) r.fm.step(DT, r.c, r.env);
+      sim.push({ pitch: (r.fm.state.pitch - p0) / DEG, roll: (r.fm.state.roll - q0) / DEG });
+    }
+    report.collectiveCoupling = { ...(report.collectiveCoupling as object), step: { T, sim, dlr, afdd } };
+    T.forEach((time, i) => {
+      for (const ax of ['pitch', 'roll'] as const) {
+        const lo = Math.min(dlr[i][ax], afdd[i][ax]) * 1.3, hi = Math.max(dlr[i][ax], afdd[i][ax]) * 0.7;
+        expect(sim[i][ax], `${ax} at ${time} s`).toBeGreaterThanOrEqual(lo); expect(sim[i][ax], `${ax} at ${time} s`).toBeLessThanOrEqual(hi);
+      }
+    });
+  }, 60_000);
+});
+
 describe('R19 on the real Bo 105: modes of the 8-state linear model of the R18 derivatives (P AR-280 Table 6.2.13)', () => {
   it('roll mode 1/T 8.49 1/s +/-30 % (tau 0.118 s)', () => {
     const m = linear(derivatives()), roll = Math.max(...m.subsidences);
