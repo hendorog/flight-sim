@@ -180,7 +180,8 @@ export interface InputProfile {
    * collective below it, held or pressed again; bare F5 goes on to the floor. Absent: the lowering key runs to the floor.
    */
   collectiveFastRate?: { down: number; up: number; downStop?: number;
-    /** The raising key stops there (travel 0..1) and never takes the collective above it; bare F6 goes on up. Absent: to the top. */
+    /** The raising key stops there (travel 0..1) and never takes the collective above it while every engine runs (an engine
+     *  failure's cushion takes the whole travel); bare F6 goes on up. Absent: to the top. */
     upStop?: number };
   /** Keyboard re-centring rate (5 / Numpad 5), travel per second. Absent: virtualYoke CENTRE_RATE (4). */
   centreRate?: number;
@@ -238,9 +239,12 @@ export interface InputProfile {
    *  -2.2 deg, autorotation +8 deg, full reverse -12 deg), `detent` the hover detent. */
   propLever?: { detent: number; snaps: readonly number[];
     /** The trim schedule the optional laptop assist (InputAssists.propSchedule, off by default) follows until the pilot
-     *  touches the grip: lever position against indicated airspeed, kt (plain tables; AC fills them from the pusher's
-     *  trim schedule). Absent: no assist. */
-    schedule?: { kias: readonly number[]; lever: readonly number[] } };
+     *  touches the grip, while every engine runs: lever position against indicated airspeed, kt (plain tables; AC fills them
+     *  from the pusher's trim schedule). Absent: no assist. */
+    schedule?: { kias: readonly number[]; lever: readonly number[];
+      /** The assist starts ON for this type (tune round 3, the AH-56A's keyboard pilot: the P transition technique is the
+       *  propeller). Absent: off, as before. */
+      default?: boolean } };
   /** Tail-wheel lock toggle key (ControlInputs.tailWheelLock). */
   tailWheelLock?: boolean;
   /** Gear lever keys on a rotorcraft with retractable wheels. */
