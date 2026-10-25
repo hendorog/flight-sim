@@ -86,8 +86,8 @@ describe('Bo 105 overhead power levers on the engine-select keys (OFF - IDLE - F
   });
 });
 
-describe('ENGINE TRIM (Bo 105): fore/aft on ; / Shift+;, left/right on Shift+, / Shift+.', () => {
-  it('Shift+, / Shift+. drive n2BeepSplit -1 / +1 while held, 0 when let go; ; / Shift+; the common beep', () => {
+describe("ENGINE TRIM (Bo 105): fore/aft on ; / ', left/right on Shift+, / Shift+.", () => {
+  it("Shift+, / Shift+. drive n2BeepSplit -1 / +1 while held, 0 when let go; ; / ' the common beep", () => {
     const r = makeInputRig(BO105_INPUT);
     r.input.keyDown('Comma', true); r.run(0.2);
     expect(r.c.n2BeepSplit).toBe(-1);
@@ -97,9 +97,9 @@ describe('ENGINE TRIM (Bo 105): fore/aft on ; / Shift+;, left/right on Shift+, /
     expect(r.c.n2BeepSplit).toBe(1);
     r.input.keyUp('Period'); r.run(FRAME);
     expect(r.c.n2BeepSplit).toBe(0);
-    r.input.keyDown('Semicolon', true); r.run(0.2);
+    r.input.keyDown('Quote'); r.run(0.2);
     expect(r.c.n2Beep).toBe(1); expect(r.c.n2BeepSplit).toBe(0);
-    r.input.keyUp('Semicolon'); r.run(FRAME);
+    r.input.keyUp('Quote'); r.run(FRAME);
     const rows = keyBindingsFor(BO105_INPUT);
     expect(rows.find((b) => b.keys === 'Shift+,')?.action).toMatch(/ENGINE TRIM left/);
     expect(rows.find((b) => b.keys === 'Shift+.')?.action).toMatch(/ENGINE TRIM right/);
@@ -127,11 +127,11 @@ describe('ENGINE TRIM (Bo 105): fore/aft on ; / Shift+;, left/right on Shift+, /
 });
 
 describe('a wheeled pusher helicopter (propLever, tailWheelLock, gearLever, wheelBrakes)', () => {
-  it('; / Shift+; turn the propeller grip (a tap 0.02, held at PROP_GRIP_RATE), not the beep', () => {
+  it("; / ' turn the propeller grip (a tap 0.02, held at PROP_GRIP_RATE), not the beep", () => {
     const r = makeInputRig(PUSHER_HELI_INPUT);
     r.c.propLever = 0.35;
     // A tap: the press's 0.02 and one frame held.
-    r.tap('Semicolon', true);
+    r.tap('Quote');
     expect(r.c.propLever).toBeCloseTo(0.37 + PROP_GRIP_RATE * FRAME, 9);
     const before = r.c.propLever!;
     hold(r, 'Semicolon', 1);
@@ -139,7 +139,7 @@ describe('a wheeled pusher helicopter (propLever, tailWheelLock, gearLever, whee
     expect(r.c.n2Beep ?? 0).toBe(0);
     hold(r, 'Semicolon', 10);
     expect(r.c.propLever).toBe(0);
-    hold(r, 'Semicolon', 10, true);
+    hold(r, 'Quote', 10);
     expect(r.c.propLever).toBe(1);
   });
 

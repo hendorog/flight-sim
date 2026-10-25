@@ -1,6 +1,6 @@
 // MD 500E: HUD levers, readouts and hints. Simulator control reference, not a checklist (those are on F). Facts:
 // RFM CSP-E-1 Rev 16 4-2..4-4 (start), 2-5 (limits), 3-14 (governor failure). Keys: F5 / F6 collective; F1 / F2 / F3 twist grip
-// (F1 stops at GROUND IDLE); ; and Shift+; are the N2 INC / DEC beep switch on the collective head (turbine-core / T1b wiring).
+// (F1 stops at GROUND IDLE); ; and ' are the N2 INC / DEC beep switch on the collective head (turbine-core / T1b wiring).
 import type { AircraftState, ControlInputs } from '../../core/types';
 import type { UiProfile } from '../types';
 import { MD500_N2_PCT, MD500_N1_PCT, md500TorquePsi } from './facts';
@@ -25,7 +25,7 @@ export const MD500_UI: UiProfile = {
     ['Start', 'Hold START (S, or the console START). At 12 – 15 % N1 roll the grip to GROUND IDLE (F1, or F3 from CUTOFF with the idle release). Watch TOT'],
     ['Abort start if', 'no TOT rise, no oil pressure, the rotor is not turning by 25 % N1, or the ammeter reads zero or positive (RFM 4-3)'],
     ['Release START', 'At 58 – 60 % N1. Idle is 64 – 65 % N1. XMSN OIL PRESS goes out within 30 s; press RE-IGN P RST, then switch GEN ON'],
-    ['Run-up', 'Grip FULL OPEN (F3). N2 and Nr needles must lie on each other at 102 – 103 %; the beep switch (; / Shift+;) sets 98 % or less to 104 – 105 %'],
+    ['Run-up', 'Grip FULL OPEN (F3). N2 and Nr needles must lie on each other at 102 – 103 %; the beep switch (; / \') sets 98 % or less to 104 – 105 %'],
     ['Shutdown', 'Ground idle 2 minutes, then CUTOFF: the needles split with Nr lagging, ENGINE OUT lights at 55 % N1'],
   ],
   starterAdvice(c) {
@@ -68,7 +68,7 @@ export const MD500_UI: UiProfile = {
     ['Cyclic / pedals', 'Arrow keys / Z, X; 5 centres. Trim: Home / End and 6 / 7 (spring trim, as the RFM trim switch)'],
     ['Collective', 'F5 / F6 down / up. The twist grip and N2 beep switch are on the collective head'],
     ['Twist grip', 'F2 / F3 close / open; F1 stops at GROUND IDLE. Below full open the N2 governor is out and you hold 102 – 103 % yourself (RFM 3-14)'],
-    ['N2 beep', '; lowers and Shift+; raises the governor set point (98 % or less to 104 – 105 %). Take-off 103 %'],
+    ['N2 beep', '; lowers and \' raises the governor set point (98 % or less to 104 – 105 %). Take-off 103 %'],
     ['Start', 'Hold S (the console START is the same button). The igniter fires with the starter; no magnetos'],
     ['Warning lenses', 'ENGINE OUT lights below 55 % N1 or Nr 468 rpm (the horn needs the GEN switch ON). Press RE-IGN P RST to reset it'],
     ['Needles', 'In powered flight N2 and Nr lie on each other; they split in autorotation and at shutdown (freewheel)'],

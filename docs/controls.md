@@ -25,7 +25,7 @@ with the wheel, a click on either half, or a drag (right/up increases), and hold
 | F1 / F4 | Throttle idle / full |
 | Shift+F2, Shift+Page Down | Turboprops (C208; PC-12 when available): power lever to the idle gate; release and hold again to go over the gate into BETA, then REVERSE (hold) |
 | Shift+F1 | Turboshaft (MD 500E when available): twist grip to CUTOFF |
-| ; / Shift+; | Turboshaft: N2 governor beep DECR / INCR (hold) |
+| ; / ' | Turboshaft: N2 governor beep DECR / INCR (hold) |
 | M / Shift+M | Mixture lean / rich (hold; lean to rich takes about 3 s) |
 | S | Starter (hold; on a latching start switch, PC-12, one press) |
 | Shift+N | STARTER INTERRUPT (hold; PC-12) |

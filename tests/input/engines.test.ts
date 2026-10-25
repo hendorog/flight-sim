@@ -297,13 +297,13 @@ describe('the propeller lever and feathering', () => {
     // The lever back key does nothing behind the gate.
     r.tap('Semicolon', false, 0.5);
     expect(engineControl(r.c, 0, 'propeller')).toBe(0);
-    r.input.keyDown('Semicolon', true);
+    r.input.keyDown('Quote');
     r.run(FRAME);
     const first = engineControl(r.c, 0, 'propeller');
     expect(first).toBeGreaterThan(PROP_FEATHER_GATE);
     expect(first).toBeLessThan(PROP_FEATHER_GATE + 0.03);
     r.run(4);
-    r.input.keyUp('Semicolon');
+    r.input.keyUp('Quote');
     r.run(FRAME);
     expect(engineControl(r.c, 0, 'propeller')).toBe(1);
     expect(r.c.engines).toEqual([{}, {}]);
@@ -315,7 +315,7 @@ describe('the propeller lever and feathering', () => {
     r.tap('KeyF', true);
     r.tap('Digit0');
     r.tap('Semicolon', false, 1);
-    r.tap('Semicolon', true, 3);
+    r.tap('Quote', false, 3);
     expect(engineControl(r.c, 0, 'propeller')).toBe(0);
     expect(engineControl(r.c, 1, 'propeller')).toBe(1);
   });
@@ -594,13 +594,13 @@ describe('the Cessna 172S: none of the new keys does anything', () => {
     // (A Shift+ entry whose action the type lacks on a key that also has a shift-agnostic action falls back to that:
     // Shift+, is still the left toe brake here, actionForKey's profile fallback; input.test.ts checks those.)
     const fresh = KEY_MAP.filter((m) => !profileHasAction(C172S_INPUT, m.action) && actionForKey(m.code, m.shift === true, C172S_INPUT) === m.action);
-    // The sixteen key entries of the levers and switches this type has not, the five turbine keys (reverse, grip
+    // The sixteen key entries of the levers and switches this type has not (' is the propeller increase, Shift+' the tail-wheel lock), the five turbine keys (reverse, grip
     // CUTOFF, STARTER INTERRUPT, pusher interrupt), the STAB ASSIST toggle (Shift+A, the Bo 105's sim aid), and nothing
     // it had before.
     expect(fresh.map((m) => `${m.shift === true ? 'Shift+' : ''}${m.code}`)).toEqual([
       'Shift+F2', 'Shift+PageDown', 'Shift+F1', 'Shift+KeyA',
-      'Insert', 'Delete', 'F7', 'Shift+F7', 'F10', 'Digit6', 'Digit7', 'Semicolon', 'Shift+Semicolon', 'Shift+KeyF', 'Slash', 'Backslash', 'Shift+Backslash', 'Digit8', 'Digit9', 'Digit0',
-      'Shift+KeyN', 'Shift+KeyD',
+      'Insert', 'Delete', 'F7', 'Shift+F7', 'F10', 'Digit6', 'Digit7', 'Semicolon', 'Quote', 'Shift+KeyF', 'Slash', 'Backslash', 'Shift+Backslash', 'Digit8', 'Digit9', 'Digit0',
+      'Shift+KeyN', 'Shift+Quote', 'Shift+KeyD',
     ]);
     for (const airborne of [false, true]) {
       const r = makeInputRig(C172S_INPUT);
@@ -651,7 +651,7 @@ describe('help listing of other types', () => {
     expect(twin.get('Rudder trim nose left (hold)')).toBe('6');
     expect(twin.get('Rudder trim nose right (hold)')).toBe('7');
     expect(twin.get('Propeller lever back (lower rpm), as far as the feather gate')).toBe(';');
-    expect(twin.get('Propeller lever forward (higher rpm); out of feather')).toBe('Shift+;');
+    expect(twin.get('Propeller lever forward (higher rpm); out of feather')).toBe("'");
     expect(twin.get('Feather the propeller of the selected engine')).toBe('Shift+F');
     expect(twin.get('Cowl flaps open one step')).toBe('\\');
     expect(twin.get('Cowl flaps close one step')).toBe('Shift+\\');

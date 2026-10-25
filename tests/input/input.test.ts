@@ -98,7 +98,8 @@ describe('key bindings', () => {
     expect(actionForKey('Backslash', false)).toBe('cowlFlapsOpen');
     expect(actionForKey('Backslash', true)).toBe('cowlFlapsClose');
     expect(actionForKey('Semicolon', false)).toBe('propDecrease');
-    expect(actionForKey('Semicolon', true)).toBe('propIncrease');
+    expect(actionForKey('Quote', false)).toBe('propIncrease');
+    expect(actionForKey('Semicolon', true)).toBe('panelLights');
     // Feather is Shift+F only: the bare F stays free.
     expect(actionForKey('KeyF', true)).toBe('propFeather');
     expect(actionForKey('KeyF', false)).toBeNull();
@@ -130,7 +131,6 @@ describe('key bindings', () => {
       'Digit6/undefined/rudderTrimLeft',
       'Digit7/undefined/rudderTrimRight',
       'Semicolon/false/propDecrease',
-      'Semicolon/true/propIncrease',
       'KeyF/true/propFeather',
       'Slash/undefined/carbHeat',
       'Slash/true/propLeverSnap',
@@ -139,6 +139,7 @@ describe('key bindings', () => {
       'Digit8/undefined/engineSelect1',
       'Digit9/undefined/engineSelect2',
       'Digit0/undefined/engineSelectAll',
+      'Semicolon/true/panelLights',
     ]);
     // 71 originals, fourteen aircraft controls, two rotorcraft controls, two panel view keys, the turbine keys (the
     // power lever aft of the gate (Shift+F2, Shift+Page Down), the twist grip's CUTOFF (Shift+F1), STARTER INTERRUPT
@@ -174,7 +175,7 @@ describe('key bindings', () => {
     // entry plus one Shift+ entry whose action few types have: there the Shift+ entry wins only on a type that has its
     // action (actionForKey's profile fallback), so on the Cessna 172S Shift+ still gives the shift-agnostic action.
     // F5 / F6 (the Bo 105's hand-rate collective) and 5 / Num 5 (its keyboard trim here) joined at the flyability pass.
-    const both = ['Comma', 'Period', 'Slash', 'Quote', 'F5', 'F6', 'Digit5', 'Numpad5'];
+    const both = ['Comma', 'Period', 'Slash', 'F5', 'F6', 'Digit5', 'Numpad5'];
     for (const code of new Set(KEY_MAP.map((m) => m.code))) {
       const entries = KEY_MAP.filter((m) => m.code === code);
       if (!entries.some((m) => m.shift === undefined)) continue;
@@ -496,9 +497,9 @@ describe('InputSystem: knobs and switches from the keyboard', () => {
     }
     expect(sel).toEqual(['left', 'right', 'off', 'both']);
     c.lights.panel = 0.6;
-    tap(r, 'Quote');
+    tap(r, 'Semicolon', true);
     expect(c.lights.panel).toBe(1);
-    tap(r, 'Quote');
+    tap(r, 'Semicolon', true);
     expect(c.lights.panel).toBe(0);
   });
 

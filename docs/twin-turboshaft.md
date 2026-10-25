@@ -15,14 +15,14 @@ by the owner.
 | Control | Bo 105 | Keys (laptop) |
 |---|---|---|
 | Two overhead power levers OFF - IDLE - FLIGHT, IDLE lock (P5 FM 7-12) | `ControlInputs.engines[i].throttle` with the profile's `twistGrip` stops | 8 / 9 / 0 choose the left / right / both levers; F1 IDLE, F4 FLIGHT, F2 / F3 back / forward (back stops at IDLE), Shift+F1 OFF through the IDLE lock. In the air Shift+F1 with both levers selected does nothing and says "Select an engine first" (AGENT: the twin guard of the aeroplane twins). |
-| ENGINE TRIM fore/aft (both N2) | `n2Beep` | `;` aft (DECR) / `Shift+;` fore (INCR), held |
+| ENGINE TRIM fore/aft (both N2) | `n2Beep` | `;` aft (DECR) / `'` fore (INCR), held |
 | ENGINE TRIM left/right (torque split) | `n2BeepSplit` | `Shift+,` left / `Shift+.` right (`<` `>`), held |
 
 Wheeled pusher helicopter (the AH-56A's profile is AG's; these are tested on a synthetic profile):
 
 | Control | Profile field | Keys |
 |---|---|---|
-| Pusher twist grip (blade angle) | `propLever` | `;` back (toward reverse) / `Shift+;` forward, held: a press 0.02 of travel, then 0.25 of travel per second (AGENT) |
+| Pusher twist grip (blade angle) | `propLever` | `;` back (toward reverse) / `'` forward, held: a press 0.02 of travel, then 0.25 of travel per second (AGENT) |
 | Grip snaps (hover detent -2.2 deg, autorotation +8 deg, full reverse -12 deg) | `propLever.snaps` (lever positions) | `Shift+/` steps to the next snap in the listed order; from anywhere else to the first |
 | Nf / RPM SET beep (moved off the propeller keys) | `n2Beep` with `propLever` | `Shift+,` DECR / `Shift+.` INCR, held |
 | Tail-wheel lock | `tailWheelLock` | `Shift+'` toggles |

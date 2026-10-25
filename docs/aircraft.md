@@ -143,7 +143,7 @@ A twin: the engine keys act on the selected engine(s). The keys are the C172S's 
 | Keys | Action |
 |---|---|
 | 8 / 9 / 0 | Select the left / right / both engines for the throttle, propeller, mixture, fuel selector and starter keys |
-| ; / Shift+; | Propeller lever(s): lower / higher rpm |
+| ; / ' | Propeller lever(s): lower / higher rpm |
 | Shift+F | Feather the selected engine's propeller (above 800 rpm; below it the blades latch in fine pitch) |
 | F7 / Shift+F7 | Landing gear down / up (retract below 109 KIAS); F10 emergency extension (below 87 KIAS) |
 | \\ / Shift+\\ | Cowl flaps open / closed (open for ground running and the climb) |

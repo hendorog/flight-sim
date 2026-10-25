@@ -245,7 +245,7 @@ describe('the twist grip of a turboshaft', () => {
 });
 
 describe('the governor beep switch', () => {
-  it('; and Shift+; drive n2Beep -1 / +1 while held, 0 when let go', () => {
+  it("; and ' drive n2Beep -1 / +1 while held, 0 when let go", () => {
     const r = makeInputRig(TURBOSHAFT_INPUT);
     r.input.keyDown('Semicolon');
     r.run(0.2);
@@ -253,10 +253,10 @@ describe('the governor beep switch', () => {
     r.input.keyUp('Semicolon');
     r.run(FRAME);
     expect(r.c.n2Beep).toBe(0);
-    r.input.keyDown('Semicolon', true);
+    r.input.keyDown('Quote');
     r.run(0.2);
     expect(r.c.n2Beep).toBe(1);
-    r.input.keyUp('Semicolon');
+    r.input.keyUp('Quote');
     r.run(FRAME);
     expect(r.c.n2Beep).toBe(0);
     expect(keyBindingsFor(TURBOSHAFT_INPUT).find((b) => b.keys === ';')?.action).toMatch(/beep DECR/);

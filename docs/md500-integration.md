@@ -18,7 +18,7 @@ choice.
 The 250-C20B is a free power turbine on the engine output shaft (gearRatio 1, 6016 rpm = 100 % N2) driving the main
 transmission (engine ratio 12.594) through a freewheel. The N2 governor (power-turbine governor) trims the gas
 producer's Ng demand under the twist grip's schedule, with collective anticipation and a beep switch
-(`ControlInputs.n2Beep`, ; / Shift+;). The twist grip: CUTOFF below 0.05, GROUND IDLE 0.18 (F1 stops there), FULL OPEN 1;
+(`ControlInputs.n2Beep`, ; / '). The twist grip: CUTOFF below 0.05, GROUND IDLE 0.18 (F1 stops there), FULL OPEN 1;
 Shift+F1 to CUTOFF. Below full open the governor is in manual mode.
 
 ## Measured (T2's acceptance, `tests/rotorcraft/md500*.test.ts`, re-run green at integration)

@@ -3,7 +3,7 @@
 // written INLINE against the controls and the state.
 //
 // What differs from the piston singles: a PT6A-114A free turbine. The keys keep their names (no new control keys):
-// the POWER lever is the throttle (F1-F4, Page Up / Down), the PROPELLER lever the propeller keys (; and Shift+;,
+// the POWER lever is the throttle (F1-F4, Page Up / Down), the PROPELLER lever the propeller keys (; and ',
 // Shift+F feathers), the CONDITION lever the mixture keys (M / Shift+M: CUT-OFF, LOW IDLE, HIGH IDLE), the
 // STARTER switch is S (held), the IGNITION switch the magneto keys (1 = OFF, 4 = NORM), FUEL BOOST is J, the
 // two tank selectors Shift+J, the generator Shift+W. The start is the PT6 start of POH sect. 4: starter on with
@@ -34,7 +34,7 @@ const FUEL_NAMES: Record<FuelSelector, string> = { off: 'BOTH OFF', left: 'LEFT 
 const STARTUP_STEPS: readonly [string, string][] = [
   ['Fuel tank selectors', 'check both ON (Shift+J cycles them)'],
   ['Power lever', 'IDLE: F1'],
-  ['Propeller lever', 'full forward: hold Shift+; (the blades unfeather as the oil pressure builds)'],
+  ['Propeller lever', 'full forward: hold \' (the blades unfeather as the oil pressure builds)'],
   ['Condition lever', 'CUT-OFF: check COND; if not, M (to LO IDLE), then M again held 1 s until COND shows CUT-OFF'],
   ['Battery', 'W: ON (battery and generator); voltage 24 V or more'],
   ['Fuel boost and beacon', 'J: FUEL BOOST ON, FUEL PRESS LOW goes out · Shift+O: beacon ON'],
@@ -125,7 +125,7 @@ export const C208_UI: UiProfile = {
   hints: [
     ['Power lever', 'F1 idle · F2 / F3 (Page Down / Up) less / more · F4 full; set torque, keep ITT and Ng in the green'],
     ['Beta and reverse', 'on the ground only: hold Shift+F2 to the idle gate, let go, hold it again: BETA (blades only, taxi speed), then REVERSE · F3 back to the gate · F1 idle on the gate'],
-    ['Propeller lever', '; lower rpm · Shift+; higher rpm (1600-1900) · Shift+F feathers'],
+    ['Propeller lever', '; lower rpm · \' higher rpm (1600-1900) · Shift+F feathers'],
     ['Condition lever', 'one detent a press: Shift+M forward (LOW IDLE, HIGH IDLE), M back to LOW IDLE; CUT-OFF (shuts the engine down): M pressed again at LOW IDLE and held 1 s'],
     ['Starter and ignition', 'S held: STARTER · 1 IGNITION NORM, 4 ON (continuous) · a dry motoring run: STARTER with the condition lever at CUT-OFF'],
     ['Fuel', 'J FUEL BOOST · Shift+J tank selectors (keep both ON)'],

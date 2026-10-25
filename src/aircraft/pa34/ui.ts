@@ -37,7 +37,7 @@ const STARTUP_STEPS: readonly [string, string][] = [
   ['Cowl flaps', 'check OPEN (\\ opens, Shift+\\ closes)'],
   ['Master and alternators', 'W: ON'],
   ['Mixtures', 'hold Shift+M until FULL RICH'],
-  ['Propellers', 'hold Shift+; until full forward'],
+  ['Propellers', 'hold \' until full forward'],
   ['Throttles', 'open half an inch: F3 (or Page Up) briefly (~10%)'],
   ['Electric fuel pumps', 'J: ON to prime until fuel flow shows (3-5 s), then J: OFF; a warm engine needs no prime'],
   ['Parking brake', 'check SET (PARKING BRAKE shown); only if it is not, Shift+B sets it'],
@@ -138,7 +138,7 @@ export const PA34_UI: UiProfile = {
   },
   hints: [
     ['Engines', '8 left · 9 right · 0 both: the engine keys act on the selected engine(s)'],
-    ['Propellers', '; lower rpm · Shift+; higher rpm · Shift+F feathers the selected engine (above 800 rpm)'],
+    ['Propellers', '; lower rpm · \' higher rpm · Shift+F feathers the selected engine (above 800 rpm)'],
     ['Landing gear', 'F7 down · Shift+F7 up (below 109 KIAS) · F10 emergency extension (below 87 KIAS)'],
     ['Cowl flaps', '\\ open · Shift+\\ close (open for ground running and the climb)'],
     ['Rudder trim', '6 left · 7 right'],

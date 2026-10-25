@@ -73,7 +73,7 @@ Nr is `RotorcraftState.rotorRpm / 477.67`. Needles read through the shared lag f
 
 HUD: COLL, GRIP (CUTOFF / IDLE / FLY / BETWEEN, `(MANUAL)` when the governor is out), N2 SET (marker bar over the 97.5-104.5 % beep range);
 readouts N1 %, TOT, TQ psi, N2/Nr % (SPLIT, ENG OUT flags), VNE, BUS, OAT. `starterAdvice`: "Hold START; roll the grip to GROUND IDLE at
-12-15 % N1; release at 58-60 %" (after BAT / fuel valve / collective checks). Keys quoted: F5/F6 collective, F1/F2/F3 grip, ; and Shift+; N2 beep
+12-15 % N1; release at 58-60 %" (after BAT / fuel valve / collective checks). Keys quoted: F5/F6 collective, F1/F2/F3 grip, ; and ' N2 beep
 (T1b wires them).
 
 ## Checklists (`checklists.ts`)

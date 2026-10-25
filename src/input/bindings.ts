@@ -178,8 +178,10 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'Digit7', action: 'rudderTrimRight' },
   { code: 'KeyM', shift: false, action: 'mixtureLean' },
   { code: 'KeyM', shift: true, action: 'mixtureRich' },
+  // Propeller lever (and the keys that take its place: the N2 beep, ENGINE TRIM fore/aft, the AH-56A's pusher grip): ; lowers,
+  // ' (the key to its right) raises, the left-lower / right-higher pattern of F5 / F6 and F2 / F3 (owner, 2026-10-25).
   { code: 'Semicolon', shift: false, action: 'propDecrease' },
-  { code: 'Semicolon', shift: true, action: 'propIncrease' },
+  { code: 'Quote', shift: false, action: 'propIncrease' },
   { code: 'KeyF', shift: true, action: 'propFeather' },
   { code: 'Slash', action: 'carbHeat' },
   // Types with a pusher twist grip: Shift+/ steps it to the next snap position (hover detent, autorotation, reverse).
@@ -207,8 +209,9 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'KeyI', shift: true, action: 'pitotHeat' },
   { code: 'KeyJ', shift: false, action: 'fuelPump' },
   { code: 'KeyJ', shift: true, action: 'fuelSelector' },
-  { code: 'Quote', action: 'panelLights' },
-  // Types with a lockable tail wheel: Shift+' (elsewhere it stays the panel lights).
+  // Panel lights: Shift+; (was ', which is now the propeller's increase key).
+  { code: 'Semicolon', shift: true, action: 'panelLights' },
+  // Types with a lockable tail wheel: Shift+'.
   { code: 'Quote', shift: true, action: 'tailWheelLock' },
   { code: 'KeyG', shift: false, action: 'headingBugRight' },
   { code: 'KeyG', shift: true, action: 'headingBugLeft' },

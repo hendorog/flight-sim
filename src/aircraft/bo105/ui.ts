@@ -1,7 +1,7 @@
 // MBB Bo 105 CB-4: HUD levers, readouts and hints. Simulator control reference, not a checklist (those are on F). Facts: FM
 // Sections 2-4 and 7 (BO 105 CB-5/CBS-5 FM used for the CB-4, P5): start 4-9..4-14, limits 2-8..2-10, ENGINE TRIM 7-12,
 // warnings 3-16. Keys: 8 / 9 / 0 select engine 1 / engine 2 / both; F1 / F2 / F3 / F4 move the selected power lever(s)
-// (IDLE gate, down, up, FLIGHT); F5 / F6 collective; Shift+; is ENGINE TRIM fore (N2 INCR) and ; is aft (N2 DECR) (n2Beep, both engines);
+// (IDLE gate, down, up, FLIGHT); F5 / F6 collective; ' is ENGINE TRIM fore (N2 INCR) and ; is aft (N2 DECR) (n2Beep, both engines);
 // ENGINE TRIM left / right is the n2BeepSplit pair listed under Controls. The state blocks of the twin (twinTurboshaft,
 // mastMoment) are read defensively: absent, a readout shows a dash.
 import { engineControl, type AircraftState, type ControlInputs, type EngineControlKey } from '../../core/types';
@@ -49,7 +49,7 @@ export const BO105_UI: UiProfile = {
     ['Abort start if', 'no TOT rise, the rotor is not turning by 25 % N1, no oil pressure, or TOT nears 927 °C (more than 10 s above 810). Lever OFF, pumps OFF, keep cranking until TOT is under 150 °C'],
     ['Release the starter', 'At 58 % N1; ignition OFF. Idle is 59 – 65 % N1 with the rotor about 60 %. Above 40 % N2 / NR switch GEN 1 ON'],
     ['Start engine 2', 'Same, with engine 2 selected (9). Ammeter under 100 A first. Both generators ON'],
-    ['Before take-off', 'Both levers to FLIGHT (0, then F4), N2 trimmed to 98 % with ENGINE TRIM (; / Shift+;), torques synchronised with ENGINE TRIM left / right. RPM, T OIL, GEN lenses out'],
+    ['Before take-off', 'Both levers to FLIGHT (0, then F4), N2 trimmed to 98 % with ENGINE TRIM (; / \'), torques synchronised with ENGINE TRIM left / right. RPM, T OIL, GEN lenses out'],
     ['Shutdown', 'Levers IDLE for 2 minutes, then OFF. BAT stays ON until the rotor stops (OIL COOL lights below 20 % NR)'],
   ],
   starterAdvice(c, engine) {
@@ -101,7 +101,7 @@ export const BO105_UI: UiProfile = {
     ['Stick and flares', 'The Bo 105 hovers with the stick well aft and uses the forward travel for speed: flare moderately (15 – 20°). A big flare below 30 kt can run out of aft stick; the control box shows the stick and its trim'],
     ['Slowing to the hover', 'Easiest: below about 30 kt press A; the hold slows to a hover and holds the position. By hand: below about 20 kt the helicopter needs more power, not less: below 30 KIAS STAB ASSIST adds it while F5 / F6 rest, so slow down with the nose up a little and let it hold the height (the hover takes about 40 % collective). Near the stop let go of the arrow keys: STAB ASSIST brings it to a hover over the ground within a few seconds'],
     ['Power levers', '8 / 9 / 0 select engine 1 / 2 / both. F1 IDLE, F2 / F3 lever down / up, F4 FLIGHT. In flight both levers sit at FLIGHT; the N2 governors do the rest'],
-    ['ENGINE TRIM', 'Shift+; fore (N2 INCR) / ; aft (N2 DECR): both engines (N2 / NR 98 – 102 %, 100 % recommended). Left / right (see Controls) trades torque between the engines'],
+    ['ENGINE TRIM', '\' fore (N2 INCR) / ; aft (N2 DECR): both engines (N2 / NR 98 – 102 %, 100 % recommended). Left / right (see Controls) trades torque between the engines'],
     ['Torque sharing', 'Synchronise the two torque needles before take-off (FM 4-16). The engines may sit a few percent apart until you do'],
     ['Warnings', 'RPM flashes (FM 3-16; the 2 Hz rate is an estimate) for N1 split 12 % or more, NR 95 % or less, NR 103 % or more (with a tone; 108 % steady). T OIL: transmission oil over 105 °C or under 0.5 kp/cm²'],
     ['Mast moment', 'The indicator reads the rotor hub moment against its LIMIT: use the controls smoothly, and keep slope landings gentle. MM LIMIT is not a failure but a call to reduce the control input'],

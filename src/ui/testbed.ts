@@ -26,7 +26,7 @@ export const TWIN_TESTBED_UI: UiProfile = {
     ['Master', 'W (battery and both alternators on)'],
     ['Engine', '8 left engine (9 right)'],
     ['Mixture', 'hold Shift+M until FULL RICH'],
-    ['Propeller', 'hold Shift+; until full forward'],
+    ['Propeller', 'hold \' until full forward'],
     ['Parking brake', 'check SET (PARKING BRAKE shown); only if it is not, Shift+B sets it'],
     ['Start', 'hold S until the engine runs, then let go; then the other engine'],
   ],
@@ -63,7 +63,7 @@ export const TWIN_TESTBED_UI: UiProfile = {
   },
   hints: [
     ['Engines', '8 left · 9 right · 0 both'],
-    ['Propellers', '; lower rpm · Shift+; higher · Shift+F feather'],
+    ['Propellers', '; lower rpm · \' higher · Shift+F feather'],
     ['Gear', 'F7 down · Shift+F7 up'],
   ],
 };

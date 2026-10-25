@@ -8,7 +8,7 @@
 // Shift+F2 then F4 full forward) and its condition lever's detents (M / Shift+M a detent a press, CUT-OFF by a fresh M
 // held 1 s at LOW IDLE), and that Shift+F2 does nothing on the Cessna 172S. Then the Bo 105 on the runway (engines
 // running): the engine-select keys move the chosen overhead power lever between its stops (9 F1 IDLE, Shift+F1 OFF on
-// the ground, F4 FLIGHT; 0 both), ENGINE TRIM left/right on Shift+, / Shift+. and fore/aft on ; / Shift+; (held), and
+// the ground, F4 FLIGHT; 0 both), ENGINE TRIM left/right on Shift+, / Shift+. and fore/aft on ; / ' (held), and
 // that Shift+, stays the Cessna's left toe brake. Prints and writes keycheck.json; exits 1 if a check of the Caravan's
 // gate or condition lever, or of the Bo 105's levers and ENGINE TRIM, fails.
 import { createServer } from 'vite';
@@ -173,7 +173,7 @@ try {
   await hhold('Digit8', 80); await hhold('F1', 80); bo.eightF1 = await levers();
   await hhold('Digit0', 80); await hhold('F4', 80); bo.zeroF4 = await levers();
   bo.trimLeft = await held('Comma', true); bo.trimRight = await held('Period', true);
-  bo.beepDown = await held('Semicolon', false); bo.beepUp = await held('Semicolon', true);
+  bo.beepDown = await held('Semicolon', false); bo.beepUp = await held('Quote', false);
   bo.released = await levers();
   bo.help = await h.evaluate(() => document.body.innerText.includes('ENGINE TRIM'));
   res.bo105 = { ...bo, idle };
@@ -185,7 +185,7 @@ try {
   check('Bo 105: 0 F4 both at FLIGHT', bo.zeroF4.e1 === 1 && bo.zeroF4.e2 === 1, bo.zeroF4);
   check('Bo 105: Shift+, held is ENGINE TRIM left', bo.trimLeft.split === -1, bo.trimLeft);
   check('Bo 105: Shift+. held is ENGINE TRIM right', bo.trimRight.split === 1, bo.trimRight);
-  check('Bo 105: ; / Shift+; held are ENGINE TRIM aft / fore', bo.beepDown.beep === -1 && bo.beepUp.beep === 1, { down: bo.beepDown, up: bo.beepUp });
+  check("Bo 105: ; / ' held are ENGINE TRIM aft / fore", bo.beepDown.beep === -1 && bo.beepUp.beep === 1, { down: bo.beepDown, up: bo.beepUp });
   check('Bo 105: let go, ENGINE TRIM is centred', bo.released.split === 0 && bo.released.beep === 0, bo.released);
   await h.screenshot({ path: `${out}/keycheck_bo105.png` });
 } catch (e) {
