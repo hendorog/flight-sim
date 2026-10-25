@@ -669,7 +669,7 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     Shift+F5 for 1 s in the hover still hits the ground at 2,640 fpm: it is the autorotation entry; the key label and the hint say
     never in the hover (KNOWN GAP row on the record). Round 4 (the pass-2 gate's should): a sim guard, collectiveFastRate.downGate
     (opt-in, AH-56A only): with the engine running below 30 kt of forward air speed Shift+F5 acts as bare F5, the height hold's
-    sink command. 1 s in the 15 m hover: 14.8 m minimum, 194 fpm; 2 s: 12.7 m, 337 fpm; held 6 s: 5.4 m, 408 fpm; from the 3 m IGE
+    sink command (air speed: in a hover into a headwind of 30 kt or more it keeps the hand speed). 1 s in the 15 m hover: 14.8 m minimum, 194 fpm; 2 s: 12.7 m, 337 fpm; held 6 s: 5.4 m, 408 fpm; from the 3 m IGE
     hover 58-91 fpm (W/tune2/ah56/r4/out/shiftf5.log). At 90 KIAS it still reaches the 15 % entry stop in 0.5 s, and with the
     engine stopped it keeps the hand speed (the KNOWN GAP row is now three passing rows).
   - D, the run-on landing from a trimmed 45 KIAS approach, feet off (KNOWN GAP): 289 fpm, then the roll-out turns 140 deg as the
