@@ -531,3 +531,68 @@ describe('arrow keys held at speed (tune pass 2 fix: the keyboard cyclic limit a
     expect(h.crashedS).not.toBeNull();
   }, 120_000);
 });
+
+/**
+ * Should 3 of the pass-2 gate (gate1 h5; fix1 f_h5): the trackpad path. With the mouse yoke (Y) the cyclic is a hand-held
+ * stick (ControlInputs.keyboardCyclic false), and above the 30-50 KIAS fade it flew the raw aircraft: the gate's 1 s
+ * tapper crashed at 80 / 100 KIAS (30.1 / 15.2 s), hands off at 120 / 140 KIAS the phugoid crashed it (55.6 / 22.8 s),
+ * F5 or F6 held 2 s at 100 KIAS then hands off crashed (10.8 / 25.6 s): 13 of 17 cases. cruiseHold.handHeld keeps the
+ * attitude command / attitude hold for a hand-held stick at every speed (no trim follow-up: the hand holds the stick).
+ * As the gate's rig does, the keys move the stick and keyboardCyclic is forced false before every physics step, so the
+ * assist sees a hand stick. After: 1 of 20 crashed (a 1 s ArrowUp knock at 100 KIAS left forward: the commanded dive).
+ */
+describe('the mouse yoke in cruise (tune pass 2 fix: cruiseHold.handHeld)', () => {
+  function handRig(kias: number, dd?: AircraftDefinition) {
+    const r = keyRig({ start: 'level', kias, heightM: 300, dd });
+    const adv = r.physics.advance.bind(r.physics);
+    r.physics.advance = (dt: number) => { r.c.keyboardCyclic = false; return adv(dt); };
+    for (let i = 0; i < 60; i++) frame(r);
+    return r;
+  }
+  function fly(r: KeyRig, keys: Keys, s: number, step: (() => void) | null) {
+    const s0 = view(r), t0 = r.t;
+    let maxAtt = 0, maxOff = 0, crashedS: number | null = null;
+    while (r.t - t0 < s) {
+      step?.(); keys.update(); frame(r);
+      const st = r.physics.state;
+      maxAtt = Math.max(maxAtt, Math.abs(st.roll) / DEG, Math.abs(st.pitch) / DEG);
+      maxOff = Math.max(maxOff, Math.abs(st.roll - s0.roll) / DEG, Math.abs(st.pitch - s0.pitch) / DEG);
+      if (st.crashed) { crashedS = r.t - t0; break; }
+    }
+    keys.releaseAll();
+    return { crashedS, maxAtt, maxOff, endKias: r.physics.state.ias / KT, cyclicGain: r.physics.stabilityAssist!.output.cyclicGain };
+  }
+  const tapper = (kias: number, interval: number, dd?: AircraftDefinition) => {
+    const r = handRig(kias, dd), keys = new Keys(r), s0 = view(r);
+    return fly(r, keys, 60, targetBeginner(r, keys, interval, () => ({ pitch: s0.pitch, roll: 0, hdg: s0.hdg, z: s0.z })));
+  };
+  it('the tapping beginner on the yoke at 80 / 100 / 120 KIAS (looks every 1 / 2 s): no crash in 60 s, attitude within 20 deg (before: all six crashed)', () => {
+    const rows: Record<string, unknown> = {};
+    for (const kias of [80, 100, 120]) for (const interval of [1, 2]) {
+      const h = tapper(kias, interval), name = `${kias}/${interval}`;
+      rows[name] = h;
+      expect(h.crashedS, name).toBeNull(); expect(h.maxAtt, name).toBeLessThanOrEqual(20); expect(h.cyclicGain, name).toBe(1);
+    }
+    report.yokeTapper = rows;
+  }, 600_000);
+  it('hands off on the yoke at 120 / 140 KIAS, and F5 or F6 held 2 s at 100 KIAS then hands off: no crash in 60 s, within 5 deg of the start attitude (before: all four crashed)', () => {
+    const rows: Record<string, unknown> = {};
+    for (const [kias, key] of [[120, null], [140, null], [100, 'F5'], [100, 'F6']] as const) {
+      const r = handRig(kias), keys = new Keys(r);
+      if (key) keys.tap(key, 2);
+      const h = fly(r, keys, 60, null), name = `${kias}/${key ?? 'none'}`;
+      rows[name] = h;
+      expect(h.crashedS, name).toBeNull(); expect(h.maxOff, name).toBeLessThanOrEqual(5);
+    }
+    report.yokeHandsOff = rows;
+  }, 300_000);
+  it('without cruiseHold.handHeld, hands off on the yoke at 140 KIAS and F5 held 2 s at 100 KIAS then hands off both crash (the raw aircraft above the fade; the keys\' own limit keeps the 1 s tapper\'s stick small in this rig, so it no longer shows it)', () => {
+    const t = def.input.stabilityAssist!, dd = { ...def, input: { ...def.input, stabilityAssist: { ...t, cruiseHold: { gain: t.cruiseHold!.gain } } } };
+    const fast = handRig(140, dd), k1 = new Keys(fast), a = fly(fast, k1, 60, null);
+    const slow = handRig(100, dd), k2 = new Keys(slow);
+    k2.tap('F5', 2);
+    const b = fly(slow, k2, 60, null);
+    report.yokeWithout = { handsOff140: a, f5at100: b };
+    expect(a.crashedS).not.toBeNull(); expect(b.crashedS).not.toBeNull();
+  }, 240_000);
+});

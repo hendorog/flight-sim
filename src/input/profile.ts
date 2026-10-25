@@ -151,7 +151,15 @@ export interface StabilityAssistTuning {
    * attitude hold, the keyboard stick's attitude command and its trim follow-up) keep this gain instead of fading out;
    * the pedal term and the height hold keep their own fades. Absent: everything fades out by fadeKias[1].
    */
-  cruiseHold?: { gain: number };
+  cruiseHold?: { gain: number;
+    /**
+     * A HAND-HELD cyclic too (ControlInputs.keyboardCyclic false: the mouse yoke, a hardware stick; tune pass 2 fix): the
+     * cyclic terms keep `gain` at every speed, so the stick is attitude command / attitude hold in cruise as the keys are
+     * (the hand holds the stick: no trim follow-up; the datum still tracks the trim while slowing, datumRelaxKt). Without
+     * the input module's report (keyboardCyclic absent) nothing changes. Absent: a hand-held stick flies the raw aircraft
+     * above the fade.
+     */
+    handHeld?: boolean };
   translationalRate?: { degPerKt: number; limitDeg: number; trimDegPerSPerKt: number; restS: number; trimMaxDegS?: number;
     fadeKt: readonly [number, number];
     /**

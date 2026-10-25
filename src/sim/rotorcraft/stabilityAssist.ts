@@ -273,7 +273,10 @@ export class StabilityAssist {
     this.pedalStep = 0;
     const fade = clamp((t.fadeKias[1] - s.ias / KT) / (t.fadeKias[1] - t.fadeKias[0]), 0, 1);
     // The cyclic terms' gain: the speed fade, or on a keyboard cyclic the cruise attitude hold's (cruiseHold).
-    const cyc = Math.max(fade, t.cruiseHold && fu && c.keyboardCyclic === true ? t.cruiseHold.gain : 0);
+    // cruiseHold.handHeld (opt-in, tune pass 2 fix): a hand-held stick (the input module's keyboardCyclic false) keeps
+    // the cruise gain too.
+    const hand = t.cruiseHold?.handHeld === true && c.keyboardCyclic === false ? t.cruiseHold.gain : 0;
+    const cyc = Math.max(fade, t.cruiseHold && fu && c.keyboardCyclic === true ? t.cruiseHold.gain : 0, hand);
     const lightSkids = s.onGround && t.groundLoad !== undefined && groundLoadFraction(s) < t.groundLoad;
     // A pedal key worked on the skids makes the lift-off's yaw the pilot's (kept through the reset below).
     if (!s.onGround) this.pedalOnSkids = false;

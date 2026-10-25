@@ -687,14 +687,16 @@ describe('STAB ASSIST cruise attitude hold on the keyboard cyclic (tune round 2:
   /**
    * One step at 80 KIAS (above the 30-50 KIAS fade) on a live trimmed state with 5 deg of roll and pitch error put on it:
    * the keyboard stick's cyclic terms keep full gain (cyclicGain 1) and command against the error, while the pedal term
-   * stays faded (gain 0, no rudder); a hand-held stick (keyboardCyclic false) gets nothing above the fade, as before.
+   * stays faded (gain 0, no rudder). A hand-held stick (keyboardCyclic false: the mouse yoke, a hardware stick) got
+   * nothing above the fade (tune round 2); since the tune pass 2 fix (cruiseHold.handHeld, W/tune2/bo105 fix1 f_h5) it
+   * keeps the same hold, and without handHeld it gets none, as before.
    */
-  it('above the fade the keyboard cyclic keeps the attitude hold (cyclic gain 1, the pedal term silent); a hand-held stick gets none', () => {
+  it('above the fade the keyboard cyclic keeps the attitude hold (cyclic gain 1, the pedal term silent); a hand-held stick too with cruiseHold.handHeld, none without', () => {
     const r = rig({ assist: true, level: { kias: 80, heightM: 100 } });
     for (let i = 0; i < 30; i++) frame(r);
     expect(r.physics.state.ias / KT).toBeGreaterThan(70);
-    const step = (keyboard: boolean) => {
-      const a = new StabilityAssist(def.input.stabilityAssist!), s = structuredClone(r.physics.state);
+    const step = (keyboard: boolean, tuning = def.input.stabilityAssist!) => {
+      const a = new StabilityAssist(tuning), s = structuredClone(r.physics.state);
       const c = { ...r.c, keyboardCyclic: keyboard, keyboardPedals: keyboard, keyboardCollective: false };
       a.before(DT, s, c, true);
       s.roll += 5 * DEG; s.pitch += 5 * DEG;
@@ -703,11 +705,14 @@ describe('STAB ASSIST cruise attitude hold on the keyboard cyclic (tune round 2:
       a.after(c);
       return out;
     };
-    const kb = step(true), hand = step(false);
-    report.cruiseStep = { kb, hand };
+    const t = def.input.stabilityAssist!;
+    const kb = step(true), hand = step(false), handWithout = step(false, { ...t, cruiseHold: { gain: t.cruiseHold!.gain } });
+    report.cruiseStep = { kb, hand, handWithout };
     expect(kb.cyclicGain).toBe(1); expect(kb.gain).toBe(0); expect(Math.abs(kb.rudder)).toBe(0);
     expect(kb.aileron).toBeLessThan(-0.05); expect(kb.elevator).toBeLessThan(-0.05);
-    expect(hand.cyclicGain).toBe(0); expect(hand.aileron).toBe(0); expect(hand.elevator).toBe(0);
+    expect(t.cruiseHold!.handHeld).toBe(true);
+    expect(hand.cyclicGain).toBe(1); expect(hand.gain).toBe(0); expect(hand.aileron).toBeLessThan(-0.05); expect(hand.elevator).toBeLessThan(-0.05);
+    expect(handWithout.cyclicGain).toBe(0); expect(handWithout.aileron).toBe(0); expect(handWithout.elevator).toBe(0);
   });
 });
 

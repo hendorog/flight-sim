@@ -121,6 +121,13 @@ export const BO105_INPUT: InputProfile = {
   //   (0.2: the 100 KIAS recovery through 180 deg) and the rest 1 / 0.3 s (the 1 s rest, and a limit kept through the
   //   15-30 kt band, added the beginner's taps up: by-hand accelerations past 45 kt 10-15 s later, the circuit's
   //   approaches 1 of 8 done; with 0.3 s across the band they are as before, the circuit 6 of 8 against 5).
+  // - THE CRUISE ATTITUDE HOLD ON THE MOUSE YOKE TOO (cruiseHold.handHeld): a hand-held stick (the mouse yoke, Y; a
+  //   hardware stick) kept the raw aircraft above the 30-50 KIAS fade, and with the owner's trackpad as the yoke every
+  //   careless input in cruise departed (the pass-2 gate's h5: the tapper crashed at 80 / 100 KIAS; hands off at 120 / 140
+  //   and F5 / F6 held 2 s at 100 crashed; f_h5: 13 of 17 crashed). Now the yoke is attitude command / attitude hold at
+  //   every speed, as the keys are (no follow-up: the hand holds it): 1 of 20 crashed, the yoke left forward after a
+  //   knock at 100 KIAS, the commanded dive. Control wheel steering (the datum following the flown attitude while the yoke
+  //   moves, 0.25-2 s) crashed the 100-120 KIAS tappers and both speed changes: measured, not adopted.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
@@ -128,7 +135,7 @@ export const BO105_INPUT: InputProfile = {
       held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.7, landAglM: 4, landBandM: 4, rate: 0.2, limitBackRate: 0.05, everySpeed: true },
       oei: true },
     pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
-    cruiseHold: { gain: 1 },
+    cruiseHold: { gain: 1, handHeld: true },
     translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 1, fadeKt: [15, 30], keyRest: true, landingRestS: 0 },
     keyboardLimit: { travel: 0.12, fadeKt: [15, 30], recentre: { rate: 0.1, restS: 2.5, landing: { aglM: 8, restS: 0, f5S: 5 } },
       cruise: { travel: 0.12, restS: 0.3 } } },
@@ -167,6 +174,6 @@ export const BO105_INPUT: InputProfile = {
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
     centreControls: 'Cyclic back to the keyboard trim (the pedals stay where they are)',
-    stabilityAssist: 'STAB ASSIST on / off: holds the attitude (on the arrow keys at every speed, the mouse yoke below 30 KIAS; with the arrow keys at rest below 30 kt it comes back to a hover over the ground, and below 15 kt an arrow key moves the stick at most 0.12 of the travel), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s at any speed), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
+    stabilityAssist: 'STAB ASSIST on / off: holds the attitude (on the arrow keys and the mouse yoke at every speed; with the arrow keys at rest below 30 kt it comes back to a hover over the ground, and one press of an arrow key moves the stick at most 0.12 of the travel), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s at any speed, with one engine out too), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };
