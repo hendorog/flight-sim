@@ -487,3 +487,30 @@ the Bo 105 rows and the R22 / R44 / S269 hold rows print the same values as on m
 
 Not in this lane (described for the input lane): the prop keys do nothing while A is on (the hold rewrites the grip before each
 physics step); a ControlInputs flag set when the pilot works the grip would let the hold hand it over.
+
+## 18. Tuning round 6 (2026-10-26, branch `tune4/ah56-envelope`): the cruise envelope
+
+The owner: "We can widen the stability circle more as it limits manoeuvrability too much in the cruise - could be adaptive." The
+circle is the STAB ASSIST keyboard attitude command of section 16 (30 deg of bank / 15 deg of pitch at every speed). AGENT choices;
+probes, logs and the full tables in `W/rigid/tune4/` (notes.md). Details: KNOWN_ISSUES T13.
+
+| Held arrow, AMCS (start level, STAB ASSIST on) | Before | After |
+|---|---|---|
+| Right, 3 s, 60 / 100 / 150 KIAS | 30 / 30 / 30 deg; turn 10.3 / 6.3 / 4.2 deg/s; 1.2 g | 37 / 58 / 59 deg (60 at most); 15 / 16 / 12 deg/s; 1.4 / 2.0 / 2.1 g |
+| Right, 1 / 2 s, 100 KIAS | 17 / 28.5 deg; roll rate 28 deg/s | 18.5 / 49 deg; 39 deg/s |
+| Nose up, 3 s, 100 / 150 KIAS | 13.6 / 12.7 deg at release (15 at most); 1.54 / 1.82 g | 21 / 21 deg (21 / 26); 1.77 / 2.17 g |
+| Nose down, 3 s, 100 / 150 KIAS | -15 deg at most; 0.44 / 0.19 g | -20 / -19 deg at most; 0.41 / 0.35 g |
+| Taps 0.3 / 0.5 s, 100-150 KIAS | 7-12 deg of bank, 4-7 of pitch | the same |
+| Hover, under 50 KIAS | 30 / 15 deg | the same law (a bank held from the hover until it is flying forward at 75-80 KIAS widens there) |
+| ICS, right 3 s, 100 / 150 KIAS | 34 / 35 deg at most, 1.22 / 1.2 g | 42 deg at most, 36-37 held, 1.27 g (the ICS stop at 1.25-1.4 g) |
+
+What changed: new opt-in fields of the shared law (`StabilityAssistTuning.keyAttitude.cruise`, `.gStop`; `src/input/profile.ts`,
+`src/sim/rotorcraft/stabilityAssist.ts`), set only in the AH-56A's input profile: the envelope widened linearly with the forward IAS
+from 50 to 90 KIAS (60 deg bank, 25 nose up, 20 nose down: the 1972 release's dive limit), the first half of the stick travel at
+the hover's gain, the loop authority 0.8 -> 1 over the band; the pitch loop's load-factor stop (AMCS 2.2-2.5 g up, 0.5-0.3 g down;
+ICS 1.25-1.4 g) with the widened bank held to the level turn's bank for the onset g; the bank guard (the bank walked back while the
+pitch loop is at the aft stop, which otherwise wound a 60 deg bank below about 110 KIAS into a spiral dive) and a trim anti-windup
+while widened. The keyboard stick and its travel are untouched (it never moves by itself); `src/input/InputSystem.ts` and
+`bindings.ts` are unchanged. The R22 / R44 / S269 / MD 500 digest and the Bo 105 rows are unchanged (no other type sets the fields).
+The whole flight's rows (ah56KeyMission) and the hover rows pass unchanged; over 12 paces 12 flights land (tune3: 11).
+

@@ -117,12 +117,31 @@ export const AH56_INPUT: InputProfile = {
   //   washed out in 3 s): a 1 s F6 in the hover swung the nose 18 deg/s, now 6.
   // - The collective: F6 / F5 held are a 4.5 m/s climb / 2.5 m/s sink command (round 3: 2 / 2) with the lever walked at 0.4 per s
   //   (0.2), at every speed (held.everySpeed: in forward flight too, never into the power limit), the keys 0.1 per s (0.06).
+  // Tune4 (2026-10-26, KNOWN_ISSUES T13; the OWNER: "widen the stability circle more as it limits manoeuvrability too much in the
+  // cruise - could be adaptive"). AGENT choices for how (W/rigid/tune4, notes.md):
+  // - keyAttitude.cruise: the envelope widens with the forward IAS from 50 to 90 KIAS (linear; the hover and below 50 exactly as
+  //   tune3): by 90 KIAS the stick's full 0.6 commands 60 deg of bank, 25 deg nose up and 20 deg nose down (20: the 1972 release's
+  //   dive limit, checklists.ts). The first half of the travel keeps the hover's gain (15 deg of bank, 7.5 of pitch: a tap and the
+  //   trimmed attitude are the same at every speed), the outer half takes the widening, so the time to the full envelope stays
+  //   about the same (the roll rate 28 -> 38 deg/s at 100-150 KIAS: authority 0.8 -> 1 over the band). A held stick follows the
+  //   speed: slowing down the bank comes back to 30 deg as the IAS falls through the band, no step. The band is the forward IAS
+  //   (a sideways drift does not widen it). 50 / 90, not 40 / 80: at 40 / 80 both of the whole flight's row paces crashed after
+  //   the touchdown (4 of 6 paces landed); at 50 / 90 12 of 12 paces land (tune3: 11; notes.md, out/m5r_*, m5r2_*).
+  // - keyAttitude.gStop: the pitch loop eased nose down from 2.2 g (all of it at 2.5: the AMCS's 0.25-2.5 g, P AMCS-73), nose up
+  //   below 0.5 g (all at 0.3); the widened bank stops at the level turn's bank for the onset g (60 deg at 2.2 g -> rollDeg). ICS
+  //   (byMode): 1.25 / 1.4 g, the bank about 37 deg (the ICS's manoeuvre stability neutral above 1.3 g at 120 KCAS, the moment
+  //   stall about 0.1 g later: ASTA-72 HQRS 10).
+  // - cruise.bankGuard: with the pitch loop at the aft stop (a 60 deg bank below about 110 KIAS: full aft stick makes 1.8-2.0 g)
+  //   the bank walks back 5 deg/s until the pull holds the nose (out again 2 deg/s): without it a held 60 deg bank at 100 KIAS
+  //   wound into a spiral dive, the nose at -18 deg after 25 s.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.5, katt: 0.3, stickAttitude: 0.6, authority: 0.2, yawAuthority: 0.25,
     holdAuthority: 0.5, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 60],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.5 },
     captureAirborne: { quietS: 0.5 },
     keyAttitude: { travel: 0.6, rollDeg: 30, pitchDeg: 15, kattRoll: 3, kattPitch: 2.5, kp: 0.2, kq: 0.1, ffRoll: 1, ffPitch: 1.5, authority: 0.8,
-      trimRate: 0.3, groundRoll: { aglM: [4, 10], rollDeg: 8 } },
+      trimRate: 0.3, groundRoll: { aglM: [4, 10], rollDeg: 8 },
+      cruise: { kias: [50, 90], rollDeg: 60, pitchUpDeg: 25, pitchDownDeg: 20, knee: 0.5, authority: 1, bankGuard: { inDegS: 5, outDegS: 2 } },
+      gStop: { up: [2.2, 2.5], down: [0.5, 0.3], byMode: { ics: { up: [1.25, 1.4], down: [0.5, 0.3] } } } },
     keyPedal: { turnPerUnit: 200, turnDegS: 35, ff: 0.33, kr: 1.5, authority: 0.9, brakeDegS: 2, returnRate: 0.5, travel: 0.35,
       cruiseDamp: { kd: 1, authority: 0.2, kias: [30, 45] } },
     pedalCrossfeed: { perCollective: -2, washS: 3 },
