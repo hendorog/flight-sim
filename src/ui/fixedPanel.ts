@@ -61,7 +61,7 @@ export class FixedPanel {
     this.root.classList.toggle('hidden', !active);
     this.parent.classList.toggle('has-fixed-panel', active);
     this.section = active && (view === 'upper' || view === 'lower') ? this.sections[view] : null;
-    this.fit = this.section ? fitPanel(this.section, w, h, view === 'lower') : null;
+    this.fit = this.section ? fitPanel(this.section, w, h, view === 'lower', dpr) : null;
     const panelHeight = active ? (this.fit?.height ?? 0) + 32 : 0;
     this.ctx.fixedPanelHeight = panelHeight;
     this.parent.style.setProperty('--fixed-panel-height', `${panelHeight}px`);
@@ -73,6 +73,10 @@ export class FixedPanel {
       this.canvas.style.width = `${this.fit.width}px`;
       this.canvas.style.height = `${this.fit.height}px`;
       this.canvas.style.marginLeft = `${this.fit.left}px`;
+      // The panel hangs from the bottom of the window, whose height in CSS px can be fractional (innerHeight is
+      // rounded): take the canvas's real top so the mouse mapping matches the pixels.
+      const box = active ? this.canvas.getBoundingClientRect() : null;
+      if (box && box.height > 0) this.fit.top = box.top;
     }
     for (const [v, b] of this.buttons) b.setAttribute('aria-pressed', String(v === view));
   };
