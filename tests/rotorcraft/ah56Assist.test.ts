@@ -104,6 +104,8 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
     expect(f.driftM).toBeLessThan(15);
   }, 120_000);
 
+  // Round 3: passes because of the PROP SCHEDULE aid (30.1 s); the speed-stable rotor of T10 without it settles at 42-50 KIAS (49.8
+  // at most) on these pushes (KNOWN_ISSUES T11).
   it('out of the hover: ArrowUp held 1.5 s every 4 s (the collective written for 30 m) reaches 60 KIAS within 60 s (round 1: never, 46.9 KIAS at most)', () => {
     const r = ah56('hover15'), c0 = r.c.collective ?? 0;
     let next = 1, t60 = NaN, crashed = false, held = false;
