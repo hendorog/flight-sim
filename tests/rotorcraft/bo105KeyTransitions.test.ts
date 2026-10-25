@@ -261,12 +261,13 @@ describe('keyboard deceleration to the hover in the app\'s default 6 kt wind and
     expect(d.hoverS).not.toBeNull();
   }, 120_000);
   /**
-   * The same beginner in a 10 kt tailwind with 1 s taps: the nose goes round (73 deg/s at most) and there is no hover by
-   * 60 s, 15.7 kt at the end (p5b_ch1; not lost, not crashed). Its 1 s pedal taps keep the heading hold from capturing
-   * while the fin weathercocks it toward the wind; with 2 s taps it reaches the hover (33.7 s). The hints: hover into
-   * the wind. Expected to fail (KNOWN_ISSUES).
+   * The same beginner in a 10 kt tailwind with 1 s taps: the nose went round (73 deg/s at most) and there was no hover by
+   * 60 s, 15.7 kt at the end (p5b_ch1; not lost, not crashed; the KNOWN TAILWIND GAP row of round 2 and tune pass 2). Its
+   * 1 s pedal taps keep the heading hold from capturing while the fin weathercocks it toward the wind. With the TRC walk
+   * at 1 deg/s (tune pass 2 fix, W/tune2/bo105 fix1: the hover reversal's limit cycle) it reaches the hover at 50.5 s, 1.6
+   * kt at the end. The gate's other tailwind variants (g7 tail10 / head10gust with 1 s taps) still reach none.
    */
-  it.fails('KNOWN TAILWIND GAP: the wings-level beginner reaches the hover in a 10 kt tailwind with 1 s taps (pirouettes, 15.7 kt at 60 s)', () => {
+  it('the wings-level beginner reaches the hover in a 10 kt tailwind with 1 s taps (before the walk at 1 deg/s: pirouettes, 15.7 kt at 60 s)', () => {
     const r = keyRig({ start: 'level', kias: 45, heightM: 30, wind: { fromDeg: 250, kt: 10 } }), keys = new Keys(r);
     const d = decelToHoverKeys(r, keys, { interval: 1, noseUpDeg: 8 });
     report.decelTailwind10 = { ...d, endKt: r.physics.state.groundSpeed / KT };

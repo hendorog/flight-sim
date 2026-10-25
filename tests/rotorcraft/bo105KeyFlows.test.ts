@@ -415,3 +415,49 @@ describe('one engine out in cruise with the beginner on the keys (tune pass 2 fi
     expect(h.crashed).toBe(true);
   }, 120_000);
 });
+
+/**
+ * The pass-2 gate's k1 hover keys (fix1 f_rev): an arrow key reversal in the hover, ArrowUp held 2 s then ArrowDown 2 s,
+ * crashed from 16 m (30.9 s, 27 kt, 55 deg) and from 3 ft (22.0 s). Not the limit: the ground speed stayed under 15 kt.
+ * The TRC's trim walk (at most 2 deg/s) against an attitude hold at its series authority rang into a growing pitch / roll
+ * limit cycle, 8 s a swing (+24 / -19 deg pitch, -14 / +17 / -26 deg roll). The walk limit at 1 deg/s
+ * (translationalRate.trimMaxDegS): 10 of 10 reversals (2 / 3 s, fore-aft, aft-fore, sideways, both heights) back to a
+ * hover, at most 27.9 deg and 38 m. 1.5 deg/s left two of the 3 ft reversals crashing; an anti-windup on the walk alone
+ * (no walk while the series term is at its authority) two. Round 2's 1 deg/s sweep left the 1 s knock past 30 m; with the
+ * keyboard cyclic limit since tune pass 2 it stays within 15 m.
+ */
+describe('an arrow key reversal in the hover (tune pass 2 fix: the TRC walk at 1 deg/s)', () => {
+  function reversal(start: 'hover15' | 'ige3', a: string, b: string, len: number, dd?: AircraftDefinition) {
+    const r = keyRig({ start, dd }), keys = new Keys(r);
+    for (let i = 0; i < 60; i++) frame(r);
+    const s0 = r.physics.state, x0 = s0.position.x, y0 = s0.position.y, t0 = r.t;
+    let maxAtt = 0, maxDrift = 0, crashedS: number | null = null;
+    while (r.t - t0 < 2 * len + 60) {
+      const t = r.t - t0;
+      if (t < len) keys.tap(a, 2 / 60); else if (t < 2 * len) keys.tap(b, 2 / 60);
+      keys.update(); frame(r);
+      const s = r.physics.state;
+      maxAtt = Math.max(maxAtt, Math.abs(s.roll) / DEG, Math.abs(s.pitch) / DEG);
+      maxDrift = Math.max(maxDrift, Math.hypot(s.position.x - x0, s.position.y - y0));
+      if (s.crashed) { crashedS = r.t - t0; break; }
+    }
+    keys.releaseAll();
+    return { crashedS, maxAtt, maxDrift, endKt: r.physics.state.groundSpeed / KT };
+  }
+  it('ArrowUp then ArrowDown (2 s and 3 s each), ArrowDown then ArrowUp and ArrowLeft then ArrowRight (2 s), from 16 m and 3 ft: no crash, attitude within 30 deg, back under 1 kt 60 s after, within 45 m (before: up 2 s / down 2 s crashed at 30.9 / 22.0 s)', () => {
+    const rows: Record<string, unknown> = {};
+    for (const start of ['hover15', 'ige3'] as const) for (const [a, b, len] of [['ArrowUp', 'ArrowDown', 2], ['ArrowUp', 'ArrowDown', 3], ['ArrowDown', 'ArrowUp', 2], ['ArrowLeft', 'ArrowRight', 2]] as const) {
+      const h = reversal(start, a, b, len), name = `${start}/${a}-${b}/${len}`;
+      rows[name] = h;
+      expect(h.crashedS, name).toBeNull(); expect(h.maxAtt, name).toBeLessThanOrEqual(30);
+      expect(h.endKt, name).toBeLessThan(1); expect(h.maxDrift, name).toBeLessThanOrEqual(45);
+    }
+    report.reversals = rows;
+  }, 600_000);
+  it('with the walk at 2 deg/s (tune round 2) ArrowUp 2 s then ArrowDown 2 s from 16 m still crashes (the limit cycle)', () => {
+    const t = def.input.stabilityAssist!;
+    const h = reversal('hover15', 'ArrowUp', 'ArrowDown', 2, { ...def, input: { ...def.input, stabilityAssist: { ...t, translationalRate: { ...t.translationalRate!, trimMaxDegS: 2 } } } });
+    report.reversalWalk2 = h;
+    expect(h.crashedS).not.toBeNull();
+  }, 120_000);
+});

@@ -107,6 +107,11 @@ export const BO105_INPUT: InputProfile = {
   //   the attitude alone: none crashed in 60 s, NR at least 96.3 % (f_oei). An at-rest back-off over the limits (0.01-0.05
   //   per second) flew the attitude-only beginner into the ground at 100 KIAS; held in the hover band, the OEI landing
   //   from 16 m crashed (3.9-5.2 m/s; raw 2.1-2.3): both measured, not adopted.
+  // - THE TRC WALK AT 1 DEG/S (translationalRate.trimMaxDegS, round 2's 2): an arrow key reversal in the hover (ArrowUp
+  //   2 s, ArrowDown 2 s) rang the walk against the saturated attitude hold into a growing limit cycle and crashed from
+  //   16 m and 3 ft (f_rev); at 1 deg/s 10 of 10 reversals come back (1.5: 8 of 10). Round 2 dropped 1 deg/s for the 1 s
+  //   knock past 30 m; behind the keyboard cyclic limit it stays within 15 m. The 10 kt tailwind deceleration with 1 s
+  //   taps now reaches the hover (50.5 s; it pirouetted before).
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
@@ -115,7 +120,7 @@ export const BO105_INPUT: InputProfile = {
       oei: true },
     pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
     cruiseHold: { gain: 1 },
-    translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 2, fadeKt: [15, 30], keyRest: true, landingRestS: 0 },
+    translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 1, fadeKt: [15, 30], keyRest: true, landingRestS: 0 },
     keyboardLimit: { travel: 0.12, fadeKt: [15, 30], recentre: { rate: 0.1, restS: 2.5, landing: { aglM: 8, restS: 0, f5S: 5 } } } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
