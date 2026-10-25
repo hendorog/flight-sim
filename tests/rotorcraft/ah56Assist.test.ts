@@ -213,16 +213,22 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
     expect(maxSink).toBeLessThan(800);
   }, 60_000);
 
-  it.fails('KNOWN GAP: the IGE engine failure on keys, hands off (Shift+F1, Shift+F6 held from 2 m of wheel height): the gear holds (measured: 320 fpm, the hover\'s 4.2 deg of left roll puts it on the left main, 140 kN, collapsed; KNOWN_ISSUES T7)', () => {
+  // Tune round 3: a passing row since the AMCS net-spring refit (gyro.ts AMCS_NET_SPRING; KNOWN_ISSUES T10). Before it (round 2):
+  // 320 fpm, the hover's 4.2 deg of left roll on the left main alone, 140 kN, collapsed.
+  it('the IGE engine failure on keys, hands off (Shift+F1, Shift+F6 held from 2 m of wheel height): the gear holds (round 2: 320 fpm on the left main, 140 kN, collapsed; KNOWN_ISSUES T7, T10)', () => {
     const r = ah56('ige3'), wheels0 = see(r).agl - 1.9;
     r.input.keyDown('F1', true);
-    let pulled = false;
+    let pulled = false, sink = 0, peak = 0, rollTouch = NaN;
     while (r.t < 8) {
       if (r.t >= 0.2 - FRAME / 2) r.input.keyUp('F1');
       if (!pulled && see(r).agl - 1.9 < 2) { pulled = true; r.input.keyDown('F6', true); }
       frame(r);
+      const s = r.physics.state;
+      if (!s.onGround) sink = Math.max(sink, -see(r).climb * 196.85);
+      else if (Number.isNaN(rollTouch)) rollTouch = s.roll / DEG;
+      peak = Math.max(peak, ...s.wheels.map((w) => w.load));
     }
-    report('IGE engine failure on keys', { wheelHeightM: wheels0, crashed: r.physics.state.crashed });
+    report('IGE engine failure on keys', { wheelHeightM: wheels0, crashed: r.physics.state.crashed, sinkFpm: sink, peakWheelKN: peak / 1000, rollAtTouchDeg: rollTouch });
     expect(r.physics.state.crashed).toBe(false);
   }, 60_000);
 });

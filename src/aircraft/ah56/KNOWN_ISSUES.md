@@ -574,3 +574,32 @@ presets, cues and rows only.
   s late within 1 in of the trim: back within 0.35 deg (the gate's keyboard tapper wound the non-centring pedal to 3 in and struck
   a wingtip at 28 kt). Contract requests: a speed-conditional cue (the toast when unlocking above 5 kt; ui), a re-centring
   pedal-key option on the wheels (input).
+
+## Tuning round 3 (2026-10-25, branch tune2/ah56; the owner's film notes; AGENT choices, not owner decisions)
+
+Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
+
+- **T10 (item A, must). The gyro alone holds the trimmed hover hands-off, offsets included; the precession under a NEW moment is the
+  rate command; the AMCS net spring was the defect.** New file tests/rotorcraft/ah56GyroHover.test.ts, the stage-2 helicopter (no
+  wing, no pusher), aids off, stick held, both configurations; docs/control-gyro-model.md section 7b has the derivation and the
+  tables.
+  - The film's case (a man on a 16 ft boom, trimmed, released, hands off) holds: 90 kg at 4.9 m to starboard or port, 30 s, AMCS
+    0.03 deg of attitude, 1.5-1.8 m, stick 1.9 %; ICS 0.5 deg, 0.6 m, stick 17.1 % (KNOWN GAP against ~15 %: the P stick gearing
+    against G4's 5.5 kN m per inch). A 10 in lateral CG shift: AMCS 0.1 deg, 2.2-2.5 m, stick 9.1 %; ICS 82 % of the lateral stick
+    (KNOWN GAP). Hands-off 30 s from trim: AMCS OGE 0.17 deg, 3.1 m; IGE 0.04 deg, 1.7 m; ICS 0.65 / 0.51 deg, 0.8 / 0.6 m.
+  - A NEW steady moment with the stick held has no fixed-lean equilibrium (the gyro's balance pins the hub moment to the stick;
+    the lean does not change the thrust's moment about the CG): it is a rate, K_R beta / H on the AMCS. Measured 0.98 / 1.16 / 0.76
+    of it for a 2.2 kN m nose / tail step and the 4.33 kN m boom step (0.37 / 0.37 / 0.73 deg/s). The ah56Handling "625 N m" row is
+    re-titled accordingly. On the ICS the same step is Lambda M / H = 5.6 deg/s (0.34 in of stick): the pilot's to take out, as the
+    film's nose-handle step was.
+  - The defect: the AMCS net spring (ESTIMATE 5559 - 4500 = 1059 N m/rad, a third of K_R) left the low-frequency rotor speed- and
+    dihedral-UNSTABLE through a cross-axis residual flap (gyro settled, per m/s: u -> pitch -265 N m, v -> roll +178, cross terms
+    559 / 774): the hands-off IGE hover reached 21.7 deg and 71 m in 60 s, the 625 N m step 10.4 deg in 20 s. Refitted to 250 N m/rad
+    (gyro.ts AMCS_NET_SPRING, ESTIMATE; Hoh-74 sect 6.1: a negative spring that "partially compensate[s]" the positive one, "the
+    pitch-roll cross coupling is zero"): u -> pitch +161, v -> roll -212, cross 124 / 75; IGE 60 s 0.04 deg, 9.1 m; the step 5.1 deg
+    at 20 s. The input rotation (FITTED to G8) 5 -> 3 deg for G8's margin (0.130 / 0.155). Every other AH-56A row passes; G5, G6,
+    C18, C19 within 2 %; C9's 190 KCAS lateral trim 0.34 -> 0.18 in. Side effect: the IGE engine failure on keys hands off now holds
+    the gear (ah56Assist, was a KNOWN GAP).
+  - Left: OGE, hands off on the pedals too, 60 s: 2.9 deg, 51 m, the heading 29 deg: a lateral drift starts the tail rotor's
+    weathercock and the yaw of the rolled hover carries the space-held tilt round (tail rotor / in-plane, scored apart; with the
+    heading held on the pedals 0.36 deg, 22.8 m). The ICS 60 s hands off grows to 29 deg (KNOWN GAP; its spring, cant and sweep are P).

@@ -130,11 +130,17 @@ describe('G6: AMCS attitude retention, no SAS (P Hoh-74: "no SAS was used")', ()
 });
 
 describe('G6 variant: what the AMCS holds against a STEADY disturbance moment (AG; informational, no plan band)', () => {
-  it('a steady 625 N m roll moment (the hover in-plane force\'s, KNOWN_ISSUES #2): the bank precesses at about K_R beta / H, it is not held', () => {
+  it('a steady 625 N m roll moment applied after the trim (the hover in-plane force\'s, KNOWN_ISSUES #2), stick held: the bank moves at the rate command\'s K_R beta / H', () => {
     // The AMCS feedback is K_R x first-harmonic flap, which nulls the HUB moment, not the attitude error: a steady external
     // moment M needs a steady hub moment -M, i.e. a flap beta = M / K_hub, and K_R beta precesses the gyro (and the aircraft
     // following it) at K_R beta / H. So the G6 attitude retention holds only with zero residual moment (G6's disturbance is
     // a stick-induced bank, which leaves none). Recorded at the hover and at G6's 80 KCAS (sideslip SAS and weathercock on).
+    // Tune round 3 (owner: the films show the gyro holding a man on a side boom; treat this row as a defect): it is the right
+    // physics for a NEW moment with the stick held (no fixed-lean equilibrium exists at zero velocity: the gyro's balance pins the
+    // hub moment to the stick, docs/control-gyro-model.md section 7); the film's boom hover was TRIMMED, and that holds
+    // (tests/rotorcraft/ah56GyroHover.test.ts A2 / A3). The defect was what followed: with the AMCS net spring at 1059 N m/rad
+    // the low-frequency rotor was speed- and dihedral-unstable and the hover bank ran to +10.4 deg at 20 s; at 250 (gyro.ts
+    // AMCS_NET_SPRING) +5.1 deg, the rate at 20 s 0.91 -> -0.01 deg/s (ah56GyroHover A4 / A5).
     const g = gyroDef.configs.amcs, fb = g.feedback;
     if (fb.mode !== 'flapping') throw new Error('AMCS flapping feedback expected');
     // K_hub = (B/2)(e M_beta Omega^2 + K_beta) at the AMCS's governed 97.5 % (ah56GyroModes G2 (i)), H = I_g x spin.
