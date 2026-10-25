@@ -5,11 +5,11 @@
 // per 1 s tap, F5 / F6 on the height law). All the aids are ESTIMATE sim aids (docs/bo105-flight-model.md section 9,
 // "Tune pass 2"); "before" is main at 7b3e8f4.
 import { afterAll, describe, expect, it } from 'vitest';
-import { DEG, KT } from '../../src/core/math';
+import { DEG, KT, clamp } from '../../src/core/math';
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import { BO105_DEFINITION as def } from '../../src/aircraft/bo105';
 import { Keys, flyHover, frame, hoverBeginner, keyRig, liftOffKeys, targetBeginner, type KeyRig } from './bo105KeyPilot';
-import { writeTrace } from './bo105Rig';
+import { LEVER, lever, writeTrace } from './bo105Rig';
 
 const report: Record<string, unknown> = {};
 afterAll(() => writeTrace('bo105KeyFlows', report));
@@ -343,4 +343,75 @@ describe('the hover hold pressed at the end of a by-hand acceleration (tune pass
     report.holdAfterAccelWithout = h;
     expect(h.kias40).toBeLessThan(30);
   }, 300_000);
+});
+
+/**
+ * Must 1 of the pass-2 gate (gate1 g4 oeiCruise 100, k4; fix1 f_oei): one engine out in cruise with the beginner on the
+ * keys. The height hold and the held-key climb-rate command stopped with the engine, so the beginner's height-law F6 / F5
+ * taps were the raw lever: at 100 KIAS the collective pumped 0.34-0.46 against the survivor's topping (100-111 % torque,
+ * NR 91-96 %), the collective's pitch coupling (M_col, checked P) and the late attitude taps built a pitch oscillation
+ * past the series authority and it rolled inverted (round 2 and pass 2: crashed, 111.9 %, 179.9 deg). heightHold.oei keeps
+ * the climb-rate command with one engine out above the 30-40 KIAS band, F6 stopped by the survivor's OEI limits (95 %
+ * torque, 810 C, 105 % N1) and never backed off (an at-rest back-off at 0.01-0.05 per second over the limits flew the
+ * hands-off and attitude-only beginners into the ground at 100 KIAS); below the band the keys stay raw (an OEI landing's
+ * cushion pulls past the limits: held there, the 16 m hover landings crashed at 3.9-5.2 m/s, 2.1-2.3 raw).
+ * Level flight at 100 KIAS (2200 kg) needs about 101 % of one engine (2 x 54 % before the cut), over the 95 % OEI
+ * rating: the survivor tops out and it sinks about 1 m/s; the One engine out hint says to slow to about 70 KIAS.
+ */
+describe('one engine out in cruise with the beginner on the keys (tune pass 2 fix: heightHold.oei)', () => {
+  function oei(kias: number, how: 'law1' | 'law0.5' | 'attOnly' | 'hint', dd?: AircraftDefinition) {
+    const r = keyRig({ start: 'level', kias, heightM: 150, dd }), keys = new Keys(r);
+    for (let i = 0; i < 120; i++) frame(r);
+    const s0 = view(r), t0 = r.t;
+    const hint = how === 'hint';
+    // hint: the One engine out hint (a 0.5 s F5 tap at the warning, the nose eased up to slow to about 70 KIAS: 0.4 deg
+    // per kt off 70 within -3 / +10 deg of the cruise attitude, the height held with the law).
+    const step = targetBeginner(r, keys, 1, (s) => ({
+      pitch: hint ? s0.pitch + clamp(0.4 * (Math.hypot(s.vx, s.vy) / KT - 70) * DEG, -3 * DEG, 10 * DEG) : s0.pitch,
+      roll: 0, hdg: s0.hdg, z: how === 'attOnly' ? null : s0.z, collGain: how === 'law0.5' ? 0.5 : 1 }));
+    let cut = false, tapped = false, tq5 = 0, nr5 = 200, tq20 = 0, nr20 = 200, maxAtt = 0;
+    while (r.t - t0 < 62) {
+      const t = r.t - t0;
+      if (!cut && t >= 2) { lever(r.c, 1, LEVER.off); cut = true; }
+      if (t >= 4) { if (hint && !tapped) { keys.tap('F5', 0.5); tapped = true; } step(); }
+      keys.update(); frame(r);
+      const s = r.physics.state, tq = torque(r), nr = s.rotorcraft!.turboshaft!.nrPct;
+      if (t >= 7) { tq5 = Math.max(tq5, tq); nr5 = Math.min(nr5, nr); maxAtt = Math.max(maxAtt, Math.abs(s.roll) / DEG, Math.abs(s.pitch - s0.pitch) / DEG); }
+      if (t >= 22) { tq20 = Math.max(tq20, tq); nr20 = Math.min(nr20, nr); }
+      if (s.crashed) break;
+    }
+    keys.releaseAll();
+    const s = r.physics.state;
+    return { crashed: s.crashed, tq5, nr5, tq20, nr20, maxAtt, endAgl: s.altitudeAGL, endKias: s.ias / KT, dz: s.position.z - s0.z };
+  }
+  it('at 80 and 100 KIAS from 150 m the beginner holding the cruise attitude and the height (law gain 1 and 0.5) or the attitude alone: no crash in 60 s, NR at least 95 % and the attitude within 10 deg from 5 s after the cut (before: the law at 100 KIAS crashed at 33-43 s, NR 86-90 %)', () => {
+    const rows: Record<string, unknown> = {};
+    for (const kias of [80, 100]) for (const how of ['law1', 'law0.5', 'attOnly'] as const) {
+      const h = oei(kias, how), name = `${kias}/${how}`;
+      rows[name] = h;
+      expect(h.crashed, name).toBe(false); expect(h.nr5, name).toBeGreaterThanOrEqual(95); expect(h.maxAtt, name).toBeLessThanOrEqual(10);
+    }
+    report.oeiCruise = rows;
+  }, 600_000);
+  it('the beginner following the One engine out hint (F5 tap, slow to about 70 KIAS, hold the height) at 100 and 120 KIAS: no crash, from 20 s after the cut the torque under 100 % and NR at least 95 %, within 30 m of the height at 60 s', () => {
+    const rows: Record<string, unknown> = {};
+    for (const kias of [100, 120]) {
+      const h = oei(kias, 'hint'), name = `${kias}/hint`;
+      rows[name] = h;
+      expect(h.crashed, name).toBe(false); expect(h.tq20, name).toBeLessThan(100); expect(h.nr20, name).toBeGreaterThanOrEqual(95);
+      expect(Math.abs(h.dz), name).toBeLessThanOrEqual(30);
+    }
+    report.oeiHint = rows;
+  }, 300_000);
+  it.fails('KNOWN OEI-CRUISE TORQUE GAP: at 100 KIAS the beginner holding the cruise attitude keeps the survivor under 100 % from 5 s after the cut (101.0 %: at its topping, NR 96.3 %; level flight there needs about 101 % of one engine)', () => {
+    const h = oei(100, 'attOnly');
+    report.oeiTorqueGap = h;
+    expect(h.tq5).toBeLessThan(100);
+  }, 120_000);
+  it('without heightHold.oei the 100 KIAS beginner holding the height crashes (the raw lever against the topping)', () => {
+    const t = def.input.stabilityAssist!;
+    const h = oei(100, 'law1', { ...def, input: { ...def.input, stabilityAssist: { ...t, heightHold: { ...t.heightHold!, oei: undefined } } } });
+    report.oeiWithout = h;
+    expect(h.crashed).toBe(true);
+  }, 120_000);
 });

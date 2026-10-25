@@ -114,7 +114,16 @@ export interface StabilityAssistTuning {
        * key found it (above the maximum continuous power in cruise a held F6 then holds the lever). Absent: the command
        * fades with the height hold.
        */
-      everySpeed?: boolean } };
+      everySpeed?: boolean };
+    /**
+     * One engine out (RotorcraftState.twinTurboshaft.oei; tune pass 2 fix), airborne on the keyboard collective, faded IN
+     * over fadeKias (none below fadeKias[0], whole above fadeKias[1]): a held bare F5 / F6 stays the climb-rate command
+     * (`held`), F6 stopped by the limits the survivor is judged on then (powerLimitExceeded from the OEI ratings) and never
+     * backed off; whatever NR (a held F5 is how NR comes back). The hold at rest stays off and the lever stays where the
+     * keys leave it; Shift+F5 / Shift+F6 stay raw, and so do the keys below the band (an OEI landing's cushion pulls past
+     * the limits). Absent: with an engine out the collective is the pilot's.
+     */
+    oei?: boolean };
   /**
    * Collective-to-pedal crossfeed on the KEYBOARD pedals (with `followUp`, through its pedal channel), airborne: while no
    * pedal key is held, every change of the collective (the pilot's keys or lever, the height hold's walk) moves the

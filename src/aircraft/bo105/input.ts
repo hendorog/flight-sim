@@ -99,11 +99,20 @@ export const BO105_INPUT: InputProfile = {
   //   (F5 held 2 s at 100 KIAS: 84 deg / 135 % before, 8.7 deg / 63 % now; q3_cruise); the limit back-off of a held F6
   //   never lowers the lever below where the key found it (at 140 KIAS the beginner's F6 taps flew it into the ground).
   //   ESTIMATES.
+  // Tune pass 2 fix round (W/tune2/bo105 fix1, the pass-2 gate gate1):
+  // - ONE ENGINE OUT, the held F5 / F6 (heightHold.oei): above the 30-40 KIAS band the climb-rate command keeps working
+  //   with one engine out, F6 stopped at the survivor's OEI limits (95 % torque, 810 C, 105 % N1) and never backed off;
+  //   below the band the keys stay raw (the OEI cushion). The beginner holding the height at 100 KIAS pumped the raw lever
+  //   against the topping and rolled inverted (111.9 %, crashed); now 80 / 100 KIAS with the height law (gain 1, 0.5) or
+  //   the attitude alone: none crashed in 60 s, NR at least 96.3 % (f_oei). An at-rest back-off over the limits (0.01-0.05
+  //   per second) flew the attitude-only beginner into the ground at 100 KIAS; held in the hover band, the OEI landing
+  //   from 16 m crashed (3.9-5.2 m/s; raw 2.1-2.3): both measured, not adopted.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
     heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1, minNrPct: 95,
-      held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.7, landAglM: 4, landBandM: 4, rate: 0.2, limitBackRate: 0.05, everySpeed: true } },
+      held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.7, landAglM: 4, landBandM: 4, rate: 0.2, limitBackRate: 0.05, everySpeed: true },
+      oei: true },
     pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
     cruiseHold: { gain: 1 },
     translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 2, fadeKt: [15, 30], keyRest: true, landingRestS: 0 },

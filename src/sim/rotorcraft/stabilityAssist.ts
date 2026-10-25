@@ -444,6 +444,12 @@ export class StabilityAssist {
     // works at every speed (its own fade 1), while the capture and the hold keep the height hold's fade.
     const heldKey = c.collectiveWorked === true && !!hh?.held && c.collectiveFastWorked !== true && !s.onGround;
     const hfHeld = hh?.held?.everySpeed ? 1 : hf;
+    // heightHold.oei (opt-in, tune pass 2 fix): one engine out, above the band.
+    if (hh?.oei && rc && tw?.oei === true && !powered && hf < 1 && c.keyboardCollective === true && c.collective !== undefined &&
+        !s.onGround && c.collectiveFastWorked !== true) {
+      this.oeiCollective(dt, s, c, 1 - hf, heldKey);
+      return;
+    }
     if (!hh || c.keyboardCollective !== true || !(hf > 0 || (heldKey && hfHeld > 0)) || !powered || c.collective === undefined) {
       this.heightMode = 'off'; this.climbWas = NaN; this.keyDir = 0;
       this.collLeft = c.collective ?? NaN;
@@ -492,6 +498,34 @@ export class StabilityAssist {
     // maximum continuous power a tap of F6 then does nothing instead of lowering the lever).
     if (backingOff && held!.everySpeed && Number.isFinite(this.collAtPress)) next = Math.max(next, Math.min(was - back, this.collAtPress));
     c.collective = clamp(next, Math.min(was, hh.floor), 1);
+    this.followed.collective += c.collective - was;
+    this.collLeft = c.collective;
+  }
+
+  /**
+   * heightHold.oei (opt-in, tune pass 2 fix): one engine out above the height hold's band, with gain `g` (the band's fade
+   * in). A held bare key is the climb-rate command, F6 stopped at the OEI limits (not backed off: lowering the lever
+   * there flew the beginner holding the cruise attitude into the ground); at rest the lever stays where the keys left it.
+   */
+  private oeiCollective(dt: number, s: AircraftState, c: ControlInputs, g: number, heldKey: boolean): void {
+    const hh = this.tuning.heightHold!, held = hh.held, over = s.rotorcraft!.powerLimitExceeded;
+    this.heightMode = 'off';
+    const w = -s.velocity.z;
+    const dw = Number.isFinite(this.climbWas) && dt > 0 ? (w - this.climbWas) / dt : 0;
+    this.climbWas = w;
+    const key = Number.isFinite(this.collLeft) ? c.collective! - this.collLeft : 0;
+    let rate = 0, back = 0;
+    if (heldKey && held) {
+      if (key !== 0) this.keyDir = Math.sign(key);
+      back = g * key;
+      const sink = clamp(held.landSinkMps + (s.altitudeAGL - held.landAglM) * (held.sinkMps - held.landSinkMps) / held.landBandM,
+        held.landSinkMps, held.sinkMps);
+      const vsCmd = this.keyDir > 0 ? held.climbMps : this.keyDir < 0 ? -sink : 0;
+      rate = clamp(hh.kv * (vsCmd - w) - hh.kp * dw, -held.rate, held.rate);
+    } else this.keyDir = 0;
+    if (rate > 0 && over) rate = 0;
+    const was = c.collective!;
+    c.collective = clamp(was - back + g * rate * dt, Math.min(was, hh.floor), 1);
     this.followed.collective += c.collective - was;
     this.collLeft = c.collective;
   }
