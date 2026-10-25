@@ -11,8 +11,11 @@
 // moment to the stick (rates and velocity zero), and a leaning body does not change the thrust's moment about the CG, so a NEW
 // steady moment cannot be met by a fixed lean at zero velocity: it becomes a steady rate, the precession K_R beta / H (Hoh-74
 // eq 6.1-6.2: the stick is an attitude-rate command). The film's boom hover was TRIMMED (the man was on the boom from the
-// lift-off): the rows below trim with the offset, release, and hold. The step rows check the rate is the derived one and does
-// not diverge.
+// lift-off): the rows below trim with the offset, release, and hold. The step rows check the rate is the derived one and that the
+// ATTITUDE does not diverge; the DRIFT does (the pass-2 gate, W/tune2/ah56/gate1/out/probes-a.txt p1, and the informational A4 30 s
+// row): with the stick held a step load leaves the hover within 15 s (the boom step 17 kt at 15 s, 46 kt at 30 s, the heading
+// through 170 deg, 250-660 m in 60 s, heading held or free, stage-2 and compound alike) and needs a re-trim of about 2 % of the
+// stick. The owner's "fixed lean, no drift build-up" is the TRIMMED offset's (A2); the film's nose-handle step was pilot-flown.
 import { afterAll, describe, expect, it } from 'vitest';
 import { AH56_DEFINITION } from '../../src/aircraft/ah56';
 import { AH56_BASE } from '../../src/aircraft/ah56/base';
@@ -213,6 +216,13 @@ describe('A4: a sudden load step, the stick held (the film: a man lifted hanging
       expect(o.att10).toBeLessThan(2.5 * o.att5);
     }, 60_000);
   }
+  it('AMCS starboard boom step, 30 s (informational: the attitude stays bounded, under 15 deg; the drift does not, recorded: the hover is left within 15 s and the stick needs a re-trim)', () => {
+    const v = hover('amcs', 150);
+    const o = handsOff(v, 30, { t: 0, set: () => { v.ext.x = 90 * 9.81 * 4.9; } });
+    report('A4 starboard boom step amcs 30 s', { ...o, target: 'attitude change < 15 deg (bounded); ground speed and drift recorded (not bounded: the stick is held)' });
+    trace.A4_amcs_boom30 = o;
+    expect(Math.max(o.rollDeg, o.pitchDeg)).toBeLessThan(15);
+  }, 60_000);
   it('ICS (informational): the feathering-moment feedback turns a step into a much faster rate, Lambda M / H (the 2.2 kN m nose load is worth about 0.34 in of stick): the pilot\'s to take out, as the film\'s was', () => {
     const o = step('ics', 0, -90 * 9.81 * 2.5);
     report('A4 nose step ics', { ...o, stickEquivalentIn: r2(Math.tan(4 * DEG) * 90 * 9.81 * 2.5 / (337 * 1.3558)) });

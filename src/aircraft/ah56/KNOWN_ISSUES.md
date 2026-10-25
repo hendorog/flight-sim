@@ -603,6 +603,20 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
   - Left: OGE, hands off on the pedals too, 60 s: 2.9 deg, 51 m, the heading 29 deg: a lateral drift starts the tail rotor's
     weathercock and the yaw of the rolled hover carries the space-held tilt round (tail rotor / in-plane, scored apart; with the
     heading held on the pedals 0.36 deg, 22.8 m). The ICS 60 s hands off grows to 29 deg (KNOWN GAP; its spring, cant and sweep are P).
+  - Round 4 (the pass-2 gate's disclosures). On the SHIPPED compound (wing on, the pusher at the hover detent; the owner's Shift+A
+    aircraft), aids off: IGE 60 s 0.49 deg, 10.4 m; OGE 30 s 0.21 deg, 3.5 m; the trimmed boom 0.08 deg, 2.1-2.4 m at 30 s, 1.9 % of
+    stick. OGE 60 s with the pedals free it is 5.9 deg, 59 m, the heading 61 deg, 12 kt (the stage-2 rig's 2.9 / 51 / 29 above: the
+    compound's weathercock is stronger; scored apart, tail rotor).
+  - A step load with the stick held: the attitude stays bounded but the DRIFT does not. The 4.33 kN m boom step rolls 3.2 / 6.0 / 7.9
+    / 11.9 deg at 5 / 10 / 15 / 30 s, and the ground speed is 2.5 / 9 / 17 / 46 kt, the heading through 170 deg by 30 s, 250-660 m in
+    60 s, heading held or free, stage-2 and compound alike (new informational A4 30 s row; the gate's p1). So a step load leaves the
+    hover within 15 s and needs a re-trim of about 2 % of the stick; the film's nose-handle step was pilot-flown, and the owner's
+    "fixed lean, no drift build-up" is reproduced for the TRIMMED offset (A2).
+  - The ICS hands-off oscillation is a ground contact, not only an attitude: the 3 m IGE hover (stage-2 and compound, with and without
+    the boom) hits the ground at 52 s; OGE 29-43 deg by 60 s. Pre-existing (this round changed only the AMCS constants); the film's 30 s
+    window holds (0.5 deg, 1 m). On keys the ICS runway lift-off rolls onto the right wingtip 1.6 s after the unload (24 deg at 34
+    deg/s), hands off or with the beginner, as on main 7b3e8f4 (2.1 s): the ICS hint now says to fly it with a stick or from the hover
+    scenario (the keyboard beginner profile and the aids are the AMCS's).
 - **T11 (items B, C, D). The keyboard beginner: the whole flight now completes; a light attitude hold kept for the way back; four
   new sim aids; the main leg sized for the one-wheel touchdown.** AGENT choices for the owner (no helicopter experience, keyboard
   and trackpad; "go with recommendations"). Rows: tests/rotorcraft/ah56Assist.test.ts (round 3 block) and the new

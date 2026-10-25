@@ -333,10 +333,23 @@ C9's 190 KCAS lateral trim now 0.18 in (was 0.34; Hoh-74: "trim values ... less 
 | A4 2.2 kN m nose / tail step, 4.33 kN m boom step | 0.4-1.6 x the derived rate | 0.98 / 1.16 / 0.76 x (0.37 / 0.37 / 0.73 °/s) | Λ M / H = 5.6 °/s: the pilot's |
 | A5 derivatives (gyro settled) | speed- and dihedral-stable, cross < direct | as the table above | — |
 
+**A step with the stick held, past 10 s** (the pass-2 gate, `W/tune2/ah56/gate1/out/probes-a.txt` p1, and the informational A4 30 s
+row). The attitude stays bounded: the 4.33 kN m boom step rolls 3.2 / 6.0 / 7.9 / 11.9° at 5 / 10 / 15 / 30 s. The drift does not: 2.5
+/ 9 / 17 / 46 kt of ground speed at 5 / 10 / 15 / 30 s, the heading through 170° by 30 s, 250-660 m in 60 s, heading held on the
+pedals or free, stage-2 and compound alike. So a step load with the stick held leaves the hover within 15 s and needs a re-trim of
+about 2 % of the stick (the boom's A2 trim); the film's nose-handle step was pilot-flown, and the owner's "fixed lean, no drift
+build-up" is reproduced for the TRIMMED offset (A2, on the stage-2 rig and on the shipped compound alike: 0.08°, 2.1-2.4 m at 30 s).
+
+**The ICS's 60 s hands-off oscillation** (A1b, about 12-15 s period, its spring, cant and sweep P) is a ground contact from the 3 m
+IGE hover at 52 s, stage-2 and compound, with and without the boom (the gate's p1); OGE it reaches 29-43° by 60 s. It is
+pre-existing (this round changed only the AMCS constants); the film's 30 s window holds (0.5°, 1 m).
+
 What remains is not the gyro's: a lateral drift starts the tail rotor's weathercock (the tail follows the drift, r = v / l), the
 yaw about the body axis carries the space-held hover tilt round (an Euler pitch rate −r sin φ at the 5° hover roll), and with the
 hub-moment derivatives emasculated nothing pulls the tilt back; with the heading held on the pedals the lateral kick decays in about
-25 s (`out/a11_vkick.log`).
+25 s (`out/a11_vkick.log`). On the shipped compound (wing on, the pusher at the hover detent) the same 60 s OGE hands-off case with
+the pedals free is 5.9°, 59 m, the heading 61°, 12 kt (the stage-2 rig 2.9°, 51 m, 29°): the compound's weathercock is stronger. IGE
+60 s it is 0.49°, 10.4 m; OGE 30 s 0.21°, 3.5 m (the gate's p1).
 
 ## 8. Contract requests from this model
 
