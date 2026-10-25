@@ -748,8 +748,8 @@ through the shell path (SimPhysics + InputSystem at 60 Hz, the Simulator's autop
 - **After.** Hover 0.1 / 0.01 deg of pitch / roll range, 0.04 m, 0.001 m; cruise 35-150 KIAS attitude range < 0.25 deg, IAS
   +/-0.01-0.3 kt, height < 0.2 m, heading < 0.2 deg (300 s at 60: 0.006 deg, 0.003 kt); turns 3.04-3.08 deg/s, sideslip < 0.5 deg,
   bank 16 at 100 kt, height 0.3 m, IAS 0.8 kt; in a bank: rolls level at 5 deg/s, 2.6 deg past level; in a climb: 0.024 of
-  collective in 1 s, levels 9.5 m on; ALT +100 ft at 2.0 m/s, 0.9 m overshoot; hand-back steps < 0.03 (0.0002-0.006 at steady
-  speed), pitch 0.05 deg in 10 s; a 100 -> 130 kt change 6.5 deg of pitch, 1.7 m; drifting 15 kt with the wind: stops with 3 deg of
+  collective in 1 s, levels 9.5 m on; ALT +100 ft at 2.0 m/s, 0.9 m overshoot; hand-back steps in calm air < 0.03 (0.0002-0.006 at steady
+  speed; 12 kt gusting 4: elevator 0.056), pitch 0.05 deg in 10 s; a 100 -> 130 kt change 6.5 deg of pitch, 1.7 m; drifting 15 kt with the wind: stops with 3 deg of
   pitch, holds within 3.8 m of the stop in 5 kt gusts. The other helicopters fly the shared law unchanged (legacy digests, Bo 105 and
   autopilot rows identical).
 - **Open (numbers).** (a) The prop keys do nothing while A is on: the hold rewrites the grip every physics step. Handing it to the
@@ -762,4 +762,7 @@ through the shell path (SimPhysics + InputSystem at 60 Hz, the Simulator's autop
   after A off in that air the aircraft itself diverges hands off (AMCS 24 m in 10 s, ICS 23.5 m and 18 deg of roll), not the hold.
   (e) ICS at 20 KIAS: A arrests the start's 2 s pitch-up with a 7.7 deg swing (AMCS 4.9). (f) The held speed only changes from the
   dev panel (no speed key): ramps at 2 kt/s, the IAS within 4-5 kt of the ramp, 3.5 kt past its end. (g) The hold is not part of
-  the save (exportState null, as on every helicopter).
+  the save (exportState null, as on every helicopter). (h) The held speed changes measure at 40 KIAS (forward ground speed below,
+  IAS above): a dev-panel ramp crossing 40 in wind steps the speed error by the wind along the nose there (estimate: 10 kt of
+  headwind, about 13 deg of pitch target, walked at the 20 deg/s pitch-rate limit; not measured: the calm hover -> 60 -> hover row
+  was smooth). Engagement picks the measure once, so the owner (no speed key) cannot meet it.

@@ -446,12 +446,12 @@ the Simulator's autopilotFlying link, no keys while A is on); probes, traces and
 | Engaged in a bank / a climb | 16 deg past level, aileron step 0.53 / collective step 0.11, 11-12 deg roll | wings level first (bug follows the nose); climb demand walked at 0.3 m/s/s, stronger collective gains | 5 deg/s roll-out, 2.6 past level / 0.024 in 1 s, levels 9.5 m on |
 | Speed | forward ground speed; a held-speed change a step (36 deg of pitch, 59-74 m) | IAS above 40 KIAS; walked at 2 kt/s | IAS +/-0.01-0.3 kt; a 100 -> 130 change 6.5 deg, 1.7 m |
 | Pusher | not managed (the PROP SCHEDULE input aid, or frozen once touched) | grip on the schedule table at the held speed, 0.1/s, while A is on | 130 kt: the table's 0.631; the hover detent in the hover |
-| Hand-back | stick 0.12-0.27 back to the old anchor | spring-trim anchor (coolie) and keyboard pedal centre walked to the hold's | every control < 0.03 in 2 s (steady: < 0.006) |
+| Hand-back | stick 0.12-0.27 back to the old anchor | spring-trim anchor (coolie) and keyboard pedal centre walked to the hold's | calm air: every control < 0.03 in 2 s (steady: < 0.006); 12 kt gusting 4: elevator 0.056 |
 | Engaged drifting in the hover | flew back 46 m with 21 deg of pitch | stop at 0.5 m/s/s, hold where it stopped | 3 deg of pitch; 3.8 m in 15 kt gusting 5 |
 
 Shared files: `src/sim/rotorcraft/autopilot.ts` (HeliHoldTuning, every branch behind `tuning`), `scriptedPilot.ts` (four fields
 replacing literals with the same values: aileronRate 1, yawRateRef 0, liftGain 0.05, liftLearning 0.025), `src/aircraft/types.ts`
-(SimProfile.heliHold, optional), `src/sim/SimPhysics.ts` (sets the tuning from the profile). No physics file. The legacy digests,
+(SimProfile.heliHold, optional, and the HeliHoldTuning / HeliHoldGains types), `src/sim/SimPhysics.ts` (sets the tuning from the profile). No physics file. The legacy digests,
 the Bo 105 rows and the R22 / R44 / S269 hold rows print the same values as on main.
 
 Not in this lane (described for the input lane): the prop keys do nothing while A is on (the hold rewrites the grip before each

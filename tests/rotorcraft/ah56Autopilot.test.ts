@@ -81,15 +81,19 @@ function engage(r: Rig, pre?: (r: Rig) => void): Sample {
 }
 
 describe('AH-56A hold (AMCS)', () => {
-  it('the shared law alone (no AH56_SIM.heliHold) still rocks on the AMCS: the reference the tuning fixes', () => {
-    const r = rig({ kias: 100, heightM: 150 });
-    r.physics.autoflight.helicopter!.tuning = null;
-    engage(r);
-    const late = fly(r, 40).filter((x) => x.t > r.t - 20);
-    const pitch = range(late, (x) => x.pitch), roll = range(late, (x) => x.roll), elev = range(late, (x) => x.elev);
-    log('shared law 100 kt', { pitch, roll, elev });
-    expect(pitch).toBeGreaterThan(3); // before: 5.9 deg (and 5.4-7.4 at every speed)
-    expect(elev).toBeGreaterThan(0.4); // before: 0.62
+  it('the tuning is what fixes it: the shared law alone (no AH56_SIM.heliHold) rocks at 100 kt, the tuned hold is still (pitch range under a tenth)', () => {
+    const run = (tuned: boolean) => {
+      const r = rig({ kias: 100, heightM: 150 });
+      if (!tuned) r.physics.autoflight.helicopter!.tuning = null;
+      engage(r);
+      const late = fly(r, 40).filter((x) => x.t > r.t - 20);
+      return { pitch: range(late, (x) => x.pitch), roll: range(late, (x) => x.roll), elev: range(late, (x) => x.elev) };
+    };
+    const shared = run(false), tuned = run(true);
+    log('shared law 100 kt', shared); log('tuned 100 kt', tuned);
+    // Before (main 69aca96): the shared law's 5.9 deg of pitch and 0.62 of elevator swing (5.4-7.4 deg at every speed).
+    expect(tuned.pitch).toBeLessThan(0.1 * shared.pitch);
+    expect(tuned.roll).toBeLessThan(0.1 * shared.roll);
   }, 120_000);
 
   it('hovers (15 m and 3 ft) without rocking: attitude range < 0.5 deg, position within 1 m, height within 0.2 m, for 90 s', () => {
