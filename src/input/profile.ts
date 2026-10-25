@@ -249,7 +249,13 @@ export interface StabilityAssistTuning {
    * the keyboard stick within `travel` of the spring-trim anchor. Absent: the law above (a hand-held stick keeps it either way).
    */
   keyAttitude?: { travel: number; rollDeg: number; pitchDeg: number; kattRoll: number; kattPitch: number; kp: number; kq: number;
-    authority: number; trimRate: number; ffRoll?: number; ffPitch?: number };
+    authority: number; trimRate: number; ffRoll?: number; ffPitch?: number;
+    /**
+     * Near the ground (a sim guard): the commanded bank is held within +/-`rollDeg` (absolute, never inside the captured roll plus 3
+     * deg) with the reference point under aglM[0] above the ground, opening linearly to the whole `rollDeg` above at aglM[1].
+     * Absent: the whole bank everywhere.
+     */
+    groundRoll?: { aglM: readonly [number, number]; rollDeg: number } };
   /**
    * KEYBOARD pedals as a yaw-rate command inside the heading hold's band (with `followUp`): airborne below the heading hold's
    * fade, while a pedal key is held, the flight model sees the pedal where the key found it plus clamp(`ff` x r(cmd) + `kr` x
@@ -262,7 +268,13 @@ export interface StabilityAssistTuning {
    * (ControlInputs.pedalFollowUp) moves the keyboard pedal itself rather than its centre. Absent: a key's move is the pedal's.
    */
   keyPedal?: { turnPerUnit: number; turnDegS: number; ff: number; kr: number; authority: number; brakeDegS: number; returnRate: number;
-    travel: number };
+    travel: number;
+    /**
+     * Forward-flight yaw damping on the keyboard pedals, airborne with no pedal key held: a series term clamp(-`kd` x (r - g
+     * sin(roll) / V), +/-`authority`) (the yaw rate beyond a coordinated turn's), weighted 0 -> 1 between kias[0] and kias[1] of
+     * forward air speed. Absent: none.
+     */
+    cruiseDamp?: { kd: number; authority: number; kias: readonly [number, number] } };
 }
 
 export interface InputProfile {

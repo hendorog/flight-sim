@@ -33,8 +33,15 @@ function mission(iv: number, lag: number) {
   };
   const go = (): string => {
     if (Number.isNaN(lift)) return 'no lift-off';
-    if (!phase('hover', { holdPos: true, hdg: s0.hdg, agl: s0.agl + 3, feetOff: true }, 20)) return 'hover';
-    const sh = see(r);
+    // The hover attitude the beginner remembers for the stop (tune3, a fixture repair): the average over the hover's last 5 s. One
+    // sample at the end of the hover caught a wobble on the crisper keys (-4.6 deg against a -0.4 deg hover), so the stop's "6 deg
+    // above the hover attitude" was +1.4 deg and the stop sped up instead.
+    const avg = { pitch: 0, roll: 0, n: 0 }, tH = r.t;
+    if (!phase('hover', { holdPos: true, hdg: s0.hdg, agl: s0.agl + 3, feetOff: true }, 20, (q) => {
+      if (r.t - tH > 15) { avg.pitch += q.pitch; avg.roll += q.roll; avg.n++; }
+      return false;
+    })) return 'hover';
+    const sh = { ...see(r), pitch: avg.pitch / avg.n, roll: avg.roll / avg.n };
     if (!phase('climbOut', { kias: 60, hdg: s0.hdg, climb: 3, feetOff: true }, 90, (s) => s.agl >= agl)) return 'climbOut';
     const h = [s0.hdg - 90, s0.hdg - 180, s0.hdg - 270, s0.hdg];
     if (!phase('leg1', { kias: 60, hdg: s0.hdg, agl, feetOff: true }, 20)) return 'leg1';

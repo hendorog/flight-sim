@@ -112,6 +112,8 @@ const HOLD_SLIP = Math.PI / 4;
  * runs every physics step, so the raw change comes as one spike a frame.
  */
 const KA_RATE_FILTER_S = 0.1;
+/** keyAttitude (opt-in): the commanded rate under which the zero-rate trim integrates, rad/s (0.5 deg/s). */
+const KA_STILL = 0.5 * DEG;
 /** keyPedal (opt-in): the longest the turn is braked after a pedal key comes up, s. */
 const BRAKE_MAX_S = 2;
 
@@ -401,6 +403,14 @@ export class StabilityAssist {
       if (Math.abs(r) < kp.brakeDegS * DEG || this.pedalBrake > BRAKE_MAX_S || !(h > 0)) this.pedalBrake = -1;
       else phys = pedal - this.pedalOff + (1 - h) * law + h * clamp(-kp.kr * r, -kp.authority, kp.authority);
     }
+    // In forward flight, no pedal key held: the yaw rate beyond a coordinated turn's (g sin(roll) / V) damped (cruiseDamp).
+    const cd = kp.cruiseDamp;
+    if (cd && !worked && !s.onGround) {
+      const air = s.airVelocityBody, fwd = Math.max(0, air.x) / KT;
+      const wt = clamp((fwd - cd.kias[0]) / Math.max(cd.kias[1] - cd.kias[0], 1e-6), 0, 1);
+      const turn = G0 * Math.sin(s.roll) / Math.max(Math.hypot(air.x, air.y), 10);
+      if (wt > 0) phys += wt * clamp(-cd.kd * (r - turn), -cd.authority, cd.authority);
+    }
     c.rudder = clamp(phys, -1, 1);
   }
 
@@ -546,6 +556,13 @@ export class StabilityAssist {
       const rl = ka.rollDeg * DEG, pl = ka.pitchDeg * DEG;
       roll0 = this.rollRef + clamp(rl / ka.travel * (c.aileron - this.aileronRef), -rl, rl);
       pitch0 = this.pitchRef + clamp(pl / ka.travel * (c.elevator - this.elevatorRef), -pl, pl);
+      // Near the ground the commanded bank closes to groundRoll.rollDeg (absolute; never inside the captured roll plus 3 deg).
+      const gr = ka.groundRoll;
+      if (gr) {
+        const f = clamp((s.altitudeAGL - gr.aglM[0]) / Math.max(gr.aglM[1] - gr.aglM[0], 1e-6), 0, 1);
+        const lim = Math.max(gr.rollDeg * DEG + (rl - gr.rollDeg * DEG) * f, Math.abs(this.rollRef) + 3 * DEG);
+        roll0 = clamp(roll0, -lim, lim);
+      }
       // The commanded rate (the datum's change): fed forward (ffRoll / ffPitch) and the rate damping on the rate error.
       const f = Math.min(1, dt / KA_RATE_FILTER_S);
       this.kaP += ((Number.isFinite(this.kaRollWas) && dt > 0 ? wrap(roll0 - this.kaRollWas) / dt : 0) - this.kaP) * f;
@@ -554,10 +571,11 @@ export class StabilityAssist {
       const pc = this.kaP, qc = this.kaQ;
       const ia = clamp((ka.ffRoll ?? 0) * pc - ka.kp * (w.x - pc) - ka.kattRoll * wrap(s.roll - roll0), -ka.authority, ka.authority);
       const ie = clamp((ka.ffPitch ?? 0) * qc - ka.kq * (w.y - qc) - ka.kattPitch * (s.pitch - pitch0), -ka.authority, ka.authority);
-      // The trims integrate the loop's term out, airborne (not on light wheels, where the ground holds the attitude).
+      // The trims integrate the loop's term out, airborne (not on light wheels, where the ground holds the attitude), each only
+      // while its command is still (a key moving the stick makes the error by design; integrating it overshot the release).
       if (!s.onGround) {
-        this.kaTrimA = clamp(this.kaTrimA + ka.trimRate * ia * dt, -1, 1);
-        this.kaTrimE = clamp(this.kaTrimE + ka.trimRate * ie * dt, -1, 1);
+        if (Math.abs(pc) < KA_STILL) this.kaTrimA = clamp(this.kaTrimA + ka.trimRate * ia * dt, -1, 1);
+        if (Math.abs(qc) < KA_STILL) this.kaTrimE = clamp(this.kaTrimE + ka.trimRate * ie * dt, -1, 1);
       }
       o.aileron = this.kaTrimA + ia - c.aileron;
       o.elevator = this.kaTrimE + ie - c.elevator;
