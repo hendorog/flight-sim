@@ -342,7 +342,11 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    at sea level, the top about 660 ft at 0 kt, the knee about 48 kt at about 100 ft): recorded as that, not as a gap. Its
    60 KIAS / 100 m case is outside the area, and it crashes the way the 300 m glides do (the keyboard flare). The Engine
    failure hint now says the power-off landing on the keys has not been flown in the sim's tests and gives the glide to
-   practise at height.
+   practise at height. The entry re-flown at the end of the round (`q8_nrhigh`, `fix1/f_q8`): with the keyboard limit at
+   speed (one press of ArrowDown at most 0.12 of the axis; the 1 s press used to reach about 0.14) the hinted 1 s press
+   leaves 1 of 4 crashing (120 KIAS at 2500 kg, NR 207 % in the dive; 1.5 s the same), two presses of about 0.8 s with
+   0.4 s between 0 of 4; the corner is close (without the limit the 1 s press 0 of 4, two presses 1 of 4). The hint now
+   says two presses. NR still peaks at 108-209 % in the flare that follows (the collective is the pilot's).
 
 ## Integration (feat/rigid-rotor, Bo 105 stage 1)
 

@@ -708,7 +708,8 @@ are in the control path, labelled, and absent on every other type:
     from the keys' rest stopped the slide (41-49 m, then 0 kt) but rolled a recovering beginner at 20 KIAS to 51 deg, and
     with pitch taps too it held the accelerations in the hover: not adopted; the trim mark the gate suggested is panel / UI
     code. The double engine failure flown to the ground: no keyboard landing among 121 variants (KNOWN_ISSUES 22); the
-    hint says so. The keyboard circuit 6 of 8; its approach ends on the skids over rising ground (a rig note).
+    hint says so. The entry's ArrowDown press: with the limit at speed one 1 s press left 1 of 4 Shift+F5 entries crashing
+    at 120 KIAS / 2500 kg (0 of 4 before); two presses 0 of 4, and the hint says two presses. The keyboard circuit 6 of 8; its approach ends on the skids over rising ground (a rig note).
 - **Hand-rate collective** (`collectiveFastRate`): Shift+F5 lowers at 1.0 of the travel per second, Shift+F6 raises at
   0.5; bare F5 / F6 stay the fine 0.12 per second for the hover. Both levers OFF at 100 KIAS (2200 kg, 3000 ft), attitude
   held, the key held after the delay, through the InputSystem: 1 s of delay NR minimum 75.1 % (bare F5 69.0 %), 2 s 68.0
