@@ -48,9 +48,11 @@ export interface HeliHoldTuning {
   /**
    * The spring-trim anchor walked toward the hold's cyclic, low-passed over `tauS` s, through the trim button
    * (ControlInputs.cyclicTrimPitch / cyclicTrimRoll, at the type's trim rate): a re-centring keyboard cyclic then comes back
-   * to rest where the hold left it at the hand-back.
+   * to rest where the hold left it at the hand-back; keyboard pedals likewise.
    */
-  trimFollowUp?: { tauS: number };
+  trimFollowUp?: { tauS: number;
+    /** Keyboard pedals (ControlInputs.keyboardPedals): their centre walked the same way through pedalFollowUp, travel per s. */
+    pedalRate: number };
   /**
    * Engaged drifting (the hover hold engaged over `minMs` m/s of ground speed): the ground velocity asked for runs down to
    * zero at `decel` m/s per s, and the position is held where it stops instead of where A was pressed.
@@ -97,6 +99,8 @@ export class HelicopterAutopilot {
   private turning = false;
   private capture: { vn: number; ve: number } | null = null;
   private stickLp = { pitch: 0, roll: 0 };
+  private rudLp = 0;
+  private pedalCentre = 0;
   private prop = NaN;
   private first = false;
   /** Engaged in a bank with coordinated turns: the heading bug follows the nose until the wings are level. */
@@ -137,6 +141,7 @@ export class HelicopterAutopilot {
       // Drifting into the hover hold: stop first, then hold the point where it stopped.
       this.capture = t.hoverCapture && this.speedCmd === 0 && s.groundSpeed > t.hoverCapture.minMs ? { vn: s.velocity.x, ve: s.velocity.y } : null;
       this.stickLp = { pitch: c.elevator, roll: c.aileron };
+      this.rudLp = this.pedalCentre = c.rudder;
       this.prop = c.propLever ?? NaN;
       this.first = true;
     }
@@ -294,6 +299,13 @@ export class HelicopterAutopilot {
       // Full trim rate beyond 0.02 of the stick, proportional inside it.
       c.cyclicTrimPitch = clamp((this.stickLp.pitch - spring.pitch)/0.02, -1, 1);
       c.cyclicTrimRoll = clamp((this.stickLp.roll - spring.roll)/0.02, -1, 1);
+    }
+    // Keyboard pedals: their centre (what they return to at A off) walked to the hold's pedal, as the STAB ASSIST's
+    // follow-up walks it (ControlInputs.pedalFollowUp), from where the pedals rested when A was pressed.
+    if (t.trimFollowUp && c.keyboardPedals) {
+      this.rudLp += (c.rudder - this.rudLp)*Math.min(1, dt/t.trimFollowUp.tauS);
+      const step = clamp(this.rudLp - this.pedalCentre, -t.trimFollowUp.pedalRate*dt, t.trimFollowUp.pedalRate*dt);
+      if (step !== 0) { c.pedalFollowUp = (c.pedalFollowUp ?? 0) + step; this.pedalCentre += step; }
     }
   }
 }

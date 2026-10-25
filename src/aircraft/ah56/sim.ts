@@ -50,8 +50,8 @@ export const AH56_SIM: SimProfile = {
     climb: { accel: 0.3, heightGain: 0.3, maxClimb: 2, liftGain: 0.1, liftLearning: 0.05 },
     // The pusher grip on the PROP SCHEDULE's table at the held speed (the hover detent below 30 kt).
     pusher: { kias: AH56_INPUT.propLever!.schedule!.kias, lever: AH56_INPUT.propLever!.schedule!.lever, ratePerS: 0.1 },
-    // The keyboard stick's spring-trim anchor walked to the hold's stick, so A off leaves the stick where the hold had it.
-    trimFollowUp: { tauS: 2 },
+    // The keyboard stick's spring-trim anchor and pedal centre walked to the hold's, so A off leaves them where the hold had them.
+    trimFollowUp: { tauS: 2, pedalRate: 0.2 },
     // Engaged drifting in the hover: stop at 0.5 m/s per s and hold where it stopped.
     hoverCapture: { decel: 0.5, minMs: 1.5 },
   },
