@@ -312,6 +312,22 @@ record is `docs/bo105-flight-model.md`. Other packages hand their entries over i
    speed runs to 130 KIAS, where 0.08 holds the rotor back. A dip to the floor and back up to the stop keeps 78.1 % but
    overspeeds again in the flare (114-125 %); no fixed stop does both, and an NR-following collective would be an
    autopilot. The powerFailure checklist's collective item ticks at 0.1 or below with NR in the limits.
+   **Tune pass 2 (2026-10-25; the round-2 gate's nice item, W/tune2/bo105 `q8_nrhigh`): the keyboard beginner's entry.**
+   Both levers OFF from level flight at 600 m, Shift+F5 held from 1 s after the cut, the gate's tapping beginner holding
+   the nose 3 deg up (looks every 1 s): at 100 KIAS NR peaks at 127.9 % (2200 kg; 3.6 s over 110 %) and 177.5 % (2500 kg),
+   120.2 / 146.0 % with an 8 deg flare; bare F5 to the floor 149.7 / 227.6 % (the heavy one crashed). These are not the
+   gate's hand pilot's numbers above (it held the attitude and slowed to 75 KIAS: 115.7 % at 2500 kg / 100 KIAS, 117.2 %
+   at 120 KIAS / 2200 kg, 126.1 % at 120 / 2500): the tapping beginner lets the entry's pitch go. At 120 KIAS the dump
+   (0.36 of the travel in 0.36 s) meets the collective's pitch coupling (M_col 0.089 rad/s^2 per % at 120 KCAS: about 3.2
+   rad/s^2 nose down, against the series authority's 0.9 rad/s^2 in the cruise attitude hold): the aircraft bunts through -85
+   deg of pitch, rolls inverted and NR runs to 195 % in the dive; of the four Shift+F5 entries at 120 KIAS (with and
+   without an 8 deg flare, 2200 / 2500 kg) the two at 2500 kg crashed. The NR HIGH tone (108 %, 2600 Hz)
+   reaches the audio bus whenever it is on (the battery bus at 25.5 V, cut-off 18 V; no case missed it). Recorded: the
+   real Bo 105 pitches the same way to a fast collective dump at speed (the coupling is sourced at 80 kt, `bo105Derivatives`), and
+   the FM's entry is the pilot's (aft cyclic with the collective); a collective-to-cyclic crossfeed in the cruise hold
+   would be the sim-aid answer and is not built (it needs its own gate). The engine-failure hint now says to hold
+   ArrowDown about a second with Shift+F5 at cruise speed: then 0 of 4 of these crash (100 / 120 KIAS, 2200 / 2500 kg;
+   1 of 4 without), NR still 120-194 % in the flare that follows (the collective is the pilot's).
 
 ## Integration (feat/rigid-rotor, Bo 105 stage 1)
 
@@ -558,6 +574,66 @@ changed.
   `src/input/profile.ts` (`translationalRate`, `heightHold.held`, `pedalCrossfeed.onLightSkids`, `cruiseHold`, optional),
   `src/input/InputSystem.ts` and `src/core/types.ts` (`ControlInputs.collectiveFastWorked`, set only on a type with a STAB
   ASSIST), `src/sim/SimPhysics.ts` (a comment). No other type has a STAB ASSIST: the legacy digests are unchanged.
+
+#### Tune pass 2 (2026-10-25, branch `tune2/bo105`; probes W/tune2/bo105, logs `out/*.base.log` / `out/*.cfg3.log`)
+
+The round-2 pilot gate (6/10, W/tune/bo105 `gate2/`) found two ordinary beginner inputs that still crashed and the raw
+collective in cruise. Docs section 9 ("Tune pass 2") has the laws and every number; rows in `bo105KeyFlows`,
+`tests/input/bo105Aids`, `bo105Derivatives`, `bo105Systems`. No physics changed.
+- **Fixed: an arrow key held in the hover** (gate must 1). ArrowUp held 2 s crashed 5.3 s after the press from 16 m and
+  3.5 s from 3 ft; 12 of 40 holds of 1-5 s came back. The **keyboard cyclic limit** (`keyboardLimit`: 0.12 of the axis
+  from where the stick last rested below 15 kt of ground speed, open by 30 kt), its **re-centring** 2.5 s after the
+  arrow keys rest (0.1 of the axis per second) and the TRC walk waiting for the keys (`translationalRate.keyRest`): 40 of
+  40 come back, at most 18.6 deg, 10.6 kt, 37 m. Without the limit the 2 s hold still crashes (the contrast row).
+- **Fixed: attitude taps while letting down** (gate must 2). The wings-level beginner slid 17-29 kt from 16 m and
+  rolled over at the touchdown (3 of 12 landings under 5 kt); letting down (CG under 8 m, a bare F5 within 5 s) the keyed
+  stick glides back at once and the walk runs whenever no arrow key is held (`recentre.landing`, `landingRestS` 0): 12
+  of 12 under 5 kt (0.1-0.9 kt); the gate's A route lands calm, in 6 kt and with 6 kt from behind.
+- **Open: KNOWN LEVEL-TAPPER GAP** (`bo105KeyFlows` it.fails): the same beginner holding a level hover (no F5) with 1 s
+  looks never rests the keys 2.5 s; its taps toward 0 deg of roll hold the keyed stick at the limit and it slides at
+  6.5-6.7 kt, past 30 m at 20.5 s (round 2: 31.6 kt, 15.3 s). With 2 s looks it holds within 19 m (round 2: lost at 18 s).
+  A shorter rest at height takes the 1 s roll tap's bank (bo105Assist's 7-11 deg at 3 s) away; the hint says to let the
+  keys rest a few seconds and that F5 stops a slide.
+- **Fixed: the keyboard collective in cruise** (gate must 3). Above 40 KIAS the bare keys were the raw lever: F5 held 2 s
+  at 100 KIAS 84 deg / 135 %, 4 s crashed; left alone afterwards every F5 hold at 60 / 100 KIAS flew into the ground;
+  the climb-out at 1.5 m/s 101-111 % torque. The held-key **climb-rate command at every speed**
+  (`heightHold.held.everySpeed`): attitude within 9 deg, torque at most 63 %, the climb-out at most 86.1 %, no crash.
+- **By-hand accelerations** (gate should 4): 10 of 10 not lost (5 of 10), past 45 kt in 27-44 s (17-35 s: the limit
+  makes the start slower).
+- **Open: KNOWN TAILWIND GAP** (gate should 4; unchanged, `bo105KeyTransitions` it.fails): the gate's wind decelerations
+  7 of 10, as round 2. The three: tail10 with 1 s taps pirouettes at up to 75 deg/s and reaches no hover (12 kt at the
+  end); head10gust with 1 s taps reaches no hover (17 KIAS, 4.5 kt at 60 s); tail6 with 1 s taps reaches the hover at 59
+  s and is lost 16 s into the fly-on (heading 180 round, 75 deg/s, 30 m). With 2 s taps all three hover. Round 2's
+  counter-pedal variant was measured and not adopted; a stronger heading hold below 10 kt in a tailwind is the next step.
+- **Physics checked, not changed (for the physics owner's record).** (a) The collective coupling: at 80 KCAS L_col 0.052
+  / M_col 0.063 rad/s^2 per % inside the AR-280 envelope (DLR 0.032 / 0.057, AFDD 0.058 / 0.073, P), and the frozen-stick
+  -5 % step (-19.2 deg pitch, -22.8 deg roll at 5 s) inside the band of the DLR and AFDD identified models' own step
+  (-20.8 / -22.4, -25.3 / -27.8): the gate's 60 KIAS -11 / -17 deg is the real Bo 105's response (new rows). (b) The raw
+  hands-off divergence at 120 / 140 KIAS (crashed at 57 / 24 s): the phugoid, sigma +0.08 1/s at 80 KCAS between DLR
+  +0.05 and AFDD +0.11 (P), grows to +0.20 / +0.28 at 120 / 140 KCAS (Mu 0.046 -> 0.072); the sources hold no flight data
+  above 80 kt, and Helisim (S, decoupled) misses the identified phugoid frequency at 80 kt (0.08-0.18 against 0.30-0.33
+  rad/s), so its weak high-speed instability is no reference: recorded, not fitted. (c) One engine out with the pilot
+  pulling the collective: the survivor tops out at its 105 % N1 stop and about 810 C (gas-producer topping, TCDS P); the
+  CB-4 has no torque or TOT limiter (P5 FM 7.5.4); 158-172 % on the gauge is power over a drooped NR (new row).
+- **Recorded (gate nice items):** the NR HIGH tone (108 %, 2600 Hz) reaches the audio bus whenever on in an
+  autorotation (battery bus 25.5 V); the beginner's Shift+F5 entry NR peaks and the 120 KIAS bunt are in item 22; a 1 s
+  pedal key tap peaks at 18 deg and is dragged back to 7.6 deg, a 2 s tap goes round (`q10_pedal`; unchanged from round
+  2); the hover hold engaged at the end of a by-hand acceleration to 42 kt settles at 24.7 kt calm (round 2: 34.9). The
+  pedal hold's capture and the hold's speed loop are shared code (every helicopter's hold): not changed.
+- **Measured, not adopted:** a near-ground walk without rest whatever the pilot does (held the 3 ft accelerating
+  beginner, cycled at 4-5 kt hands off at 1 deg/s per kt); a touchdown guard (held the deliberately moving pilot at 4 m;
+  F5 with an arrow held lands at 7-8 kt, not crashed); a sink trigger for the landing re-centring (2 of 6 one-engine-out
+  touchdowns crashed); limits 0.10 / 0.15.
+- **Owner-facing choices (AGENT, on the owner's delegation; each one line in `bo105/input.ts`):** (e) below 15 kt an
+  arrow key moves the stick at most 0.12 of the travel (about 9 deg of attitude) and, a few seconds after the keys rest,
+  the stick glides back: to move, hold the key; to stop, let go (the mouse yoke and Shift+A for the raw aircraft are
+  unchanged); (f) letting down with F5 the stick glides back at once; (g) held, F5 / F6 climb or descend at up to 2 m/s
+  at any speed, and in cruise the lever stays where they leave it.
+- **Shared files touched:** `src/sim/rotorcraft/stabilityAssist.ts` (`translationalRate.keyRest`, `landingRestS`,
+  `heightHold.held.everySpeed`; a touchdown guard was added and removed again), `src/input/profile.ts` (`keyboardLimit`
+  and those fields, optional), `src/input/InputSystem.ts` (one block for the limit and re-centring, set only with
+  `keyboardLimit`; the flag lines), `src/core/types.ts` (`ControlInputs.cyclicWorked`, `cyclicLanding`, optional, set
+  only when the profile asks for them). The AH-56A sets none of them; the legacy digests are unchanged.
 
 ## Handed over by other packages (added by the integrator; numbers as each package measured them)
 
