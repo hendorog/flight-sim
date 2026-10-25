@@ -67,6 +67,10 @@
 // ground, stopped and backed off at the power limit); Shift+F5 / Shift+F6 stay the pilot's.
 // The collective-to-pedal crossfeed also works on light skids unless a pedal key was worked on the skids
 // (pedalCrossfeed.onLightSkids: the untouched lift-off's yaw).
+// AH-56A tune round 3, all opt-in (absent: the law above exactly): sideslipPedal walks the keyboard pedals toward zero sideslip
+// in its own speed band, above fadeKias[1] too (the round-2 gate's "one gate": above 25 KIAS the keyboard pedal stayed at the
+// hover's, 15-40 kt of sideslip); recaptureOnCentre takes the cyclic datum again where a re-centring keyboard stick
+// (InputProfile.centringCyclic) comes back to rest; captureAirborne captures it only fully airborne with the stick quiet.
 // Off on the ground (but working once the skids carry less than groundLoad of the weight, the cyclic datum kept through
 // a skid touch in a low hover, the heading held from before lift-off), when crashed, and while the hover hold or an
 // instructor flies (the caller's `active`).
@@ -179,6 +183,15 @@ export class StabilityAssist {
   private climbWas = NaN;
   private applied = false;
   private readonly pilot = { aileron: 0, elevator: 0, rudder: 0 };
+  // AH-56A tune round 3 (the opt-in sideslipPedal / recaptureOnCentre / captureAirborne; unused without them).
+  /** The low-passed sideslip the sideslip pedal follow-up reads, rad. */
+  private lpBeta = 0;
+  /** A keyboard cyclic key moved the stick since the datum was last taken (recaptureOnCentre). */
+  private stickMoved = false;
+  /** The stick and how long it has rested fully airborne before the capture (captureAirborne), axis units and s. */
+  private airRestA = 0;
+  private airRestE = 0;
+  private airQuietFor = 0;
 
   constructor(readonly tuning: StabilityAssistTuning) {}
 
@@ -200,6 +213,10 @@ export class StabilityAssist {
       ...(Number.isFinite(this.climbWas) ? { climbWas: this.climbWas } : {}), xfeed: this.xfeed,
       ...(Number.isFinite(this.collWas) ? { collWas: this.collWas } : {}),
       ...(Number.isFinite(this.collLeft) ? { collLeft: this.collLeft } : {}), keyDir: this.keyDir, pedalOnSkids: this.pedalOnSkids,
+      // The opt-in round-3 states, only for a type that has them (the other types' snapshots are as before).
+      ...(this.tuning.sideslipPedal ? { lpBeta: this.lpBeta } : {}),
+      ...(this.tuning.recaptureOnCentre ? { stickMoved: this.stickMoved } : {}),
+      ...(this.tuning.captureAirborne ? { airRestA: this.airRestA, airRestE: this.airRestE, airQuietFor: Math.min(this.airQuietFor, STICK_QUIET_MAX) } : {}),
     };
   }
 
@@ -227,6 +244,8 @@ export class StabilityAssist {
     this.heightRef = num('heightRef', 0); this.climbWas = num('climbWas', NaN);
     this.xfeed = num('xfeed', 0); this.collWas = num('collWas', NaN);
     this.collLeft = num('collLeft', NaN); this.keyDir = Math.sign(num('keyDir', 0)); this.pedalOnSkids = flag('pedalOnSkids');
+    this.lpBeta = num('lpBeta', 0); this.stickMoved = flag('stickMoved');
+    this.airRestA = num('airRestA', 0); this.airRestE = num('airRestE', 0); this.airQuietFor = num('airQuietFor', 0);
   }
 
   /**
@@ -236,6 +255,7 @@ export class StabilityAssist {
   newFlight(): void {
     this.reset();
     this.pedalOnSkids = false;
+    this.lpBeta = 0; this.stickMoved = false;
   }
 
   /** Forget the datums (a reset or a restore): the next active step captures the attitude, stick and heading it finds. */
@@ -249,6 +269,7 @@ export class StabilityAssist {
     this.heightMode = 'off'; this.climbWas = NaN;
     this.xfeed = 0; this.collWas = NaN; this.collLeft = NaN; this.keyDir = 0;
     this.output.aileron = this.output.elevator = this.output.rudder = this.output.gain = this.output.cyclicGain = 0;
+    this.airQuietFor = 0;
   }
 
   /**
@@ -269,6 +290,8 @@ export class StabilityAssist {
     else if (c.pedalWorked === true) this.pedalOnSkids = true;
     if (!active || s.crashed || !(cyc > 0) || (s.onGround && !lightSkids)) {
       this.reset();
+      // Above the fade the sideslip pedal follow-up (opt-in) still trims the keyboard pedals.
+      if (t.sideslipPedal && fu && active && !s.crashed && !s.onGround && c.keyboardPedals === true) this.sideslipOnly(dt, s, c);
       return;
     }
     const w = s.angularVelocity;
@@ -278,7 +301,17 @@ export class StabilityAssist {
 
     // Cyclic: airborne, or on light skids with the datum kept through the touch.
     const air = s.airVelocityBody;
-    if (!this.captured) {
+    // The capture waits until fully airborne with the stick quiet (captureAirborne, opt-in); the cyclic terms wait with it.
+    let cyclicOn = true;
+    const ca = t.captureAirborne;
+    if (ca && !this.captured) {
+      const moved = Math.abs(c.aileron - this.airRestA) > STICK_EPS || Math.abs(c.elevator - this.airRestE) > STICK_EPS;
+      this.airRestA = c.aileron; this.airRestE = c.elevator;
+      this.airQuietFor = s.onGround || moved ? 0 : this.airQuietFor + dt;
+      cyclicOn = this.airQuietFor >= ca.quietS;
+    }
+    if (!this.captured && cyclicOn) {
+      this.stickMoved = false;
       this.captured = true;
       this.rollRef = s.roll; this.pitchRef = s.pitch;
       this.aileronRef = c.aileron; this.elevatorRef = c.elevator;
@@ -290,6 +323,18 @@ export class StabilityAssist {
     if (Math.abs(c.aileron - this.stickRestA) > STICK_EPS || Math.abs(c.elevator - this.stickRestE) > STICK_EPS) {
       this.stickRestA = c.aileron; this.stickRestE = c.elevator; this.stickQuietFor = 0;
     } else this.stickQuietFor += dt;
+    // Re-capture on a re-centring keyboard stick back at rest (recaptureOnCentre, opt-in): the datum is where the pilot left
+    // the attitude, not where it was captured.
+    const rcc = t.recaptureOnCentre;
+    if (rcc && kbCyclic && this.captured) {
+      if (this.stickQuietFor === 0) this.stickMoved = true;
+      const anchor = s.rotorcraft?.springTrim;
+      const atAnchor = !anchor || (Math.abs(c.aileron - anchor.roll) <= STICK_EPS && Math.abs(c.elevator - anchor.pitch) <= STICK_EPS);
+      if (this.stickMoved && atAnchor && this.stickQuietFor >= rcc.quietS) {
+        this.rollRef = s.roll; this.pitchRef = s.pitch; this.aileronRef = c.aileron; this.elevatorRef = c.elevator;
+        this.stickMoved = false;
+      }
+    }
     // Datum relaxation toward the flown attitude: the fade band's (time) and the airspeed change's (datumRelaxKt; a
     // hand-held stick only when the keyboard stick is followed up instead).
     const kFade = cyc < 1 ? Math.min(1, (1 - cyc) * dt / RELAX_S) : 0;
@@ -330,6 +375,7 @@ export class StabilityAssist {
     const a = t.authority;
     o.aileron = cyc * clamp(-t.kp * w.x - t.katt * wrap(s.roll - roll0), -a, a);
     o.elevator = cyc * clamp(-t.kq * w.y - t.katt * (s.pitch - pitch0), -a, a);
+    if (!cyclicOn) { o.aileron = 0; o.elevator = 0; }
     // Cyclic follow-up through the spring-trim anchor: the keyboard stick follows the anchor at the input module's next
     // frame, and the stick reference moves with it now, so the commanded attitude stays.
     const spring = s.rotorcraft?.springTrim;
@@ -402,6 +448,8 @@ export class StabilityAssist {
         this.lpR += (fade * (rd + hp) - this.lpR) * Math.min(1, dt / fu!.filterS);
         step += followSpeed(this.lpR, ya, fu!.deadBand, fu!.pedalGain, fu!.pedalRate) * dt;
       }
+      // The sideslip pedal follow-up (opt-in; 0 while a pedal key is held or on the ground).
+      if (t.sideslipPedal) step += this.sideslipStep(dt, s, c);
       this.pedalStep = clamp(c.rudder + step, -1, 1) - c.rudder;
       this.pedalRest += this.pedalStep;
       this.followed.rudder += this.pedalStep;
@@ -410,6 +458,36 @@ export class StabilityAssist {
     c.aileron = clamp(c.aileron + o.aileron, -1, 1);
     c.elevator = clamp(c.elevator + o.elevator, -1, 1);
     c.rudder = clamp(c.rudder + o.rudder, -1, 1);
+    this.applied = true;
+  }
+
+  /**
+   * The sideslip pedal follow-up's step for this physics step (sideslipPedal, opt-in), axis units: the low-passed sideslip (+ =
+   * the aircraft moving right through the air: right pedal) times `gain`, within `rate`, weighted by the speed band on the
+   * forward air speed (body x); 0 while a pedal key is held or on the ground (the filter keeps running).
+   */
+  private sideslipStep(dt: number, s: AircraftState, c: ControlInputs): number {
+    const sp = this.tuning.sideslipPedal;
+    if (!sp) return 0;
+    const air = s.airVelocityBody, beta = Math.hypot(air.x, air.y) > 1 ? Math.atan2(air.y, Math.abs(air.x)) : 0;
+    this.lpBeta += (beta - this.lpBeta) * Math.min(1, dt / sp.filterS);
+    if (c.pedalWorked === true || s.onGround) return 0;
+    // Weighted by the FORWARD air speed: a sideways drift (the sideslip near 90 deg) is not a turn to coordinate.
+    const fwd = Math.max(0, air.x) / KT, k = sp.kias;
+    const wt = clamp((fwd - k[0]) / Math.max(k[1] - k[0], 1e-6), 0, 1) * clamp((k[3] - fwd) / Math.max(k[3] - k[2], 1e-6), 0, 1);
+    return wt > 0 ? wt * clamp(sp.gain * this.lpBeta, -sp.rate, sp.rate) * dt : 0;
+  }
+
+  /**
+   * Above the fade (the assist otherwise inactive): the sideslip pedal follow-up alone, handed to the input module through
+   * after() as the main path's follow-up is; the stick and pedals this step are the pilot's.
+   */
+  private sideslipOnly(dt: number, s: AircraftState, c: ControlInputs): void {
+    const step = this.sideslipStep(dt, s, c);
+    const p = this.pilot;
+    p.aileron = c.aileron; p.elevator = c.elevator; p.rudder = c.rudder;
+    this.pedalStep = clamp(c.rudder + step, -1, 1) - c.rudder;
+    this.followed.rudder += this.pedalStep;
     this.applied = true;
   }
 

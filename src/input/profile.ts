@@ -137,6 +137,29 @@ export interface StabilityAssistTuning {
   cruiseHold?: { gain: number };
   translationalRate?: { degPerKt: number; limitDeg: number; trimDegPerSPerKt: number; restS: number; trimMaxDegS?: number;
     fadeKt: readonly [number, number] };
+  // ---- AH-56A tune round 3 (opt-in; absent = the law as before, so no other type's rows move).
+  /**
+   * Sideslip pedal follow-up on the KEYBOARD pedals (with `followUp`): airborne, while no pedal key is held, the keyboard pedal
+   * centre walks toward zero sideslip at `gain` of the axis per second per rad of the sideslip (low-passed over `filterS`), at
+   * most `rate` of the axis per second, weighted 0 -> 1 between kias[0] and kias[1] of FORWARD air speed (body x, kt: a sideways
+   * drift is not a turn to coordinate), full to kias[2], none from kias[3]. It
+   * runs above fadeKias[1] too (the pedal trim keeps moving with speed in the cruise), and adds to the heading hold's and the
+   * rate damping's follow-up below it. Absent: none (above the heading hold's fade the keyboard pedal stays where the hover
+   * left it).
+   */
+  sideslipPedal?: { kias: readonly [number, number, number, number]; gain: number; rate: number; filterS: number };
+  /**
+   * The cyclic datum is taken again where the aircraft is once a RE-CENTRING keyboard stick (InputProfile.centringCyclic) has
+   * come back to rest for `quietS` after a key moved it: attitude hold at the attitude the pilot left (as the control gyro
+   * itself does), instead of an attitude command back to the captured one. Absent: the captured datum stays.
+   */
+  recaptureOnCentre?: { quietS: number };
+  /**
+   * The cyclic datum is captured only fully airborne (no wheel or skid load) with the stick quiet for `quietS`; until then the
+   * cyclic terms wait (the pedal term works as before, on light skids or wheels too). Absent: captured at the first active
+   * step (light skids included).
+   */
+  captureAirborne?: { quietS: number };
 }
 
 export interface InputProfile {
@@ -156,7 +179,9 @@ export interface InputProfile {
    * pair). `downStop`: the lowering key stops there (the autorotation entry position, travel 0..1) and never takes the
    * collective below it, held or pressed again; bare F5 goes on to the floor. Absent: the lowering key runs to the floor.
    */
-  collectiveFastRate?: { down: number; up: number; downStop?: number };
+  collectiveFastRate?: { down: number; up: number; downStop?: number;
+    /** The raising key stops there (travel 0..1) and never takes the collective above it; bare F6 goes on up. Absent: to the top. */
+    upStop?: number };
   /** Keyboard re-centring rate (5 / Numpad 5), travel per second. Absent: virtualYoke CENTRE_RATE (4). */
   centreRate?: number;
   /**
@@ -226,6 +251,10 @@ export interface InputProfile {
   /** Keyboard cyclic re-centres to the spring-trim anchor (at the Numpad-5 recentring rate) when no cyclic key is held,
    *  and the mouse yoke has a small deadzone: a rate-command control gyro (AH-56A AMCS) holds attitude at stick centre. */
   centringCyclic?: boolean;
+  /** The keyboard pedals re-centre too: with no pedal key held they glide back (at the Numpad-5 rate) to the keyboard pedal
+   *  centre, which the STAB ASSIST's follow-up walks to the trim (ControlInputs.pedalFollowUp). Absent: they stay where the keys
+   *  left them. */
+  centringPedals?: boolean;
   /** Stick pusher interrupt button on the control wheel (Shift+D, held): ControlInputs.pusherInterrupt. Absent: none. */
   pusherInterrupt?: boolean;
   /**

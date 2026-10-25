@@ -797,6 +797,8 @@ export class InputSystem implements Subsystem {
         let v = was + change * (this.profile.collectiveRate ?? 0.15) * dt + fastChange * dt;
         // The lowering key's entry stop (Bo 105: the autorotation entry position): never below it, nor below where it was.
         if (fastDown && !fastUp && fast!.downStop !== undefined) v = Math.max(v, Math.min(was, fast!.downStop));
+        // The raising key's stop (AH-56A: the cushion, not a climb): never above it, nor above where it was.
+        if (fastUp && !fastDown && fast!.upStop !== undefined) v = Math.min(v, Math.max(was, fast!.upStop));
         c.collective = clamp(v, 0, 1);
       } else c.collective = clamp((c.collective ?? 0) + change * (this.profile.collectiveRate ?? 0.15) * dt, 0, 1);
     }
@@ -904,6 +906,8 @@ export class InputSystem implements Subsystem {
     }
 
     const yaw = this.dir('rudderLeft', 'rudderRight');
+    // Re-centring keyboard pedals (InputProfile.centringPedals): back to the (followed) pedal centre once no pedal key is held.
+    if (this.profile.centringPedals && yaw === 0 && kbRud && this.kbRudder !== 0) this.centring.rudder = true;
     if (yaw !== 0) {
       if (this.rudCentred) {
         // The pilot's feet take the pedals from the auto-rudder without a bump.
