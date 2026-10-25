@@ -106,7 +106,24 @@ export interface StabilityAssistTuning {
      */
     held?: { climbMps: number; sinkMps: number; landSinkMps: number; landAglM: number; landBandM: number; rate: number;
       /** While F6 is held above the maximum continuous power the lever is lowered at this rate, travel per second. */
-      limitBackRate?: number } };
+      limitBackRate?: number;
+      /**
+       * The climb-rate command works at every speed (the keyboard collective's protection in cruise: a held F5 / F6 walks
+       * the lever to the commanded rate, never into the power limit), not only inside the height hold's fadeKias; the
+       * capture and the hold once the keys rest keep that fade; the limit back-off never takes the lever below where the
+       * key found it (above the maximum continuous power in cruise a held F6 then holds the lever). Absent: the command
+       * fades with the height hold.
+       */
+      everySpeed?: boolean };
+    /**
+     * One engine out (RotorcraftState.twinTurboshaft.oei; tune pass 2 fix), airborne on the keyboard collective, faded IN
+     * over fadeKias (none below fadeKias[0], whole above fadeKias[1]): a held bare F5 / F6 stays the climb-rate command
+     * (`held`), F6 stopped by the limits the survivor is judged on then (powerLimitExceeded from the OEI ratings) and never
+     * backed off; whatever NR (a held F5 is how NR comes back). The hold at rest stays off and the lever stays where the
+     * keys leave it; Shift+F5 / Shift+F6 stay raw, and so do the keys below the band (an OEI landing's cushion pulls past
+     * the limits). Absent: with an engine out the collective is the pilot's.
+     */
+    oei?: boolean };
   /**
    * Collective-to-pedal crossfeed on the KEYBOARD pedals (with `followUp`, through its pedal channel), airborne: while no
    * pedal key is held, every change of the collective (the pilot's keys or lever, the height hold's walk) moves the
@@ -134,9 +151,56 @@ export interface StabilityAssistTuning {
    * attitude hold, the keyboard stick's attitude command and its trim follow-up) keep this gain instead of fading out;
    * the pedal term and the height hold keep their own fades. Absent: everything fades out by fadeKias[1].
    */
-  cruiseHold?: { gain: number };
+  cruiseHold?: { gain: number;
+    /**
+     * A HAND-HELD cyclic too (ControlInputs.keyboardCyclic false: the mouse yoke, a hardware stick; tune pass 2 fix): the
+     * cyclic terms keep `gain` at every speed, so the stick is attitude command / attitude hold in cruise as the keys are
+     * (the hand holds the stick: no trim follow-up; the datum still tracks the trim while slowing, datumRelaxKt). Without
+     * the input module's report (keyboardCyclic absent) nothing changes. Absent: a hand-held stick flies the raw aircraft
+     * above the fade.
+     */
+    handHeld?: boolean };
   translationalRate?: { degPerKt: number; limitDeg: number; trimDegPerSPerKt: number; restS: number; trimMaxDegS?: number;
-    fadeKt: readonly [number, number] };
+    fadeKt: readonly [number, number];
+    /**
+     * The rest is the arrow keys' (ControlInputs.cyclicWorked, set by the input module when this is set): the trim walk
+     * waits `restS` after an arrow key was last held, whatever moves the stick meanwhile (a key held against the
+     * keyboardLimit leaves the stick still but is the pilot's command; the limit's re-centring after the rest, or 5, is
+     * not). Absent: the stick's movement.
+     */
+    keyRest?: boolean;
+    /**
+     * While the input module reports the keyboardLimit's landing condition (ControlInputs.cyclicLanding) the trim walk
+     * waits only this (0: whenever no arrow key is held), so a pilot tapping the attitude while letting down cannot keep
+     * a datum off the zero-ground-speed trim. Absent: restS always.
+     */
+    landingRestS?: number };
+  /**
+   * Keyboard cyclic limit at hover and low speed (tune pass 2; the input module applies it, src/input/InputSystem.ts):
+   * with the STAB ASSIST on and the cyclic on the keys, below fadeKt[0] of ground speed the arrow keys cannot move the
+   * keyboard stick more than `travel` of the axis from where it last rested (the trim the follow-up keeps; where the hover
+   * hold or a reset left it), so a held key commands at most `travel` x stickAttitude of attitude and stays inside the
+   * series authority; the limit opens linearly to the whole travel at fadeKt[1]. It only stops a key driving the stick
+   * further out (a key back toward the rest moves as before). Absent: the keys reach the whole travel.
+   */
+  keyboardLimit?: { travel: number; fadeKt: readonly [number, number];
+    /**
+     * Once the arrow keys have rested `restS`, the keyboard stick glides back to where it last rested at `rate` of the
+     * axis per second (faded out with the limit over fadeKt): the attitude the keys commanded is taken back and the TRC
+     * stops the helicopter, and a key held to the limit and let go has the full limit again. `landing`: with the reference point under `aglM` above the
+     * ground and a bare F5 held within the last `f5S` s (letting down), it waits only `restS` of its own (0: as soon as
+     * no arrow key is held), so the attitude taps of a pilot letting down cannot add up to a slide.
+     * Absent: the keyboard stick stays where the keys leave it.
+     */
+    recentre?: { rate: number; restS: number; landing?: { aglM: number; restS: number; f5S: number } };
+    /**
+     * At speed (tune pass 2 fix; needs `recentre`): the limit opens to `travel` of the axis by fadeKt[1] instead of the
+     * whole travel, and above fadeKt[0], once the arrow keys have rested `restS`, the stick's position is the new rest (the
+     * attitude hold keeps what the keys commanded), so one press, however long, moves the stick at most the limit, a held
+     * key cannot take it past the series authority into the raw aircraft, and taps do not add up. Absent: the whole
+     * travel.
+     */
+    cruise?: { travel: number; restS: number } };
   // ---- AH-56A tune round 3 (opt-in; absent = the law as before, so no other type's rows move).
   /**
    * Sideslip pedal follow-up on the KEYBOARD pedals (with `followUp`): airborne, while no pedal key is held, the keyboard pedal

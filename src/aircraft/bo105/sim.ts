@@ -48,6 +48,10 @@ export const BO105_SIM: SimProfile = {
   // (1 kt/s: 11-28 s; 3 kt/s: up to 16 deg). Above 30 kt it holds the speed it was engaged at, as every helicopter's.
   // ESTIMATE (the rate is gentler than ADS-33E's deceleration MTE; the band is the STAB ASSIST's full-gain band).
   heliHoldSlowToHover: { belowKt: 30, ktPerS: 1.5 },
+  // Faster than that it holds the speed over the ground it was engaged at, not that speed's part along the nose (tune pass
+  // 2 fix; W/tune2/bo105 fix1 f_hold, the pass-2 gate's g10): the by-hand acceleration ends sliding 35 kt sideways at 42
+  // kt (the pedal at its stop), and A then held 22.7 kt; now 42 (41.9 KIAS calm 40 s later). A sim convenience.
+  heliHoldGroundSpeed: true,
   // The hover scenario (hover=1) starts into the wind, trimmed at the wind's speed, still over the ground (the tune pass,
   // item 2: in the default 8 kt it started at 11.1 kt of ground speed with the air mass and the round-2 gate's beginner
   // crashed at 14-15 s; W/tune/bo105 j_wind.log). A sim convenience: a pilot hovers into the wind.

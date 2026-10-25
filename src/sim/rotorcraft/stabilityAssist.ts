@@ -157,6 +157,8 @@ export class StabilityAssist {
   private stickQuietFor = Infinity;
   /** Time since the cyclic datum was captured, s (the TRC's trim walk waits restS after a capture too). */
   private sinceCapture = 0;
+  /** Time since a cyclic key was last held (ControlInputs.cyclicWorked; translationalRate.keyRest), s. */
+  private keyQuietFor = Infinity;
   private yawActive = false;
   private headingRef = 0;
   private pedalRest = 0;
@@ -179,6 +181,8 @@ export class StabilityAssist {
   private collLeft = NaN;
   /** The direction of the collective key held (+1 F6, -1 F5, 0 none or not yet seen). */
   private keyDir = 0;
+  /** The collective when the held key was pressed (heightHold.held.everySpeed: the back-off never goes below it). */
+  private collAtPress = NaN;
   /** A pedal key was worked since the skids last left the ground (the crossfeed then leaves the lift-off to the pilot). */
   private pedalOnSkids = false;
   /** The climb rate of the last step (the height hold's proportional term reads its change), m/s. */
@@ -225,6 +229,10 @@ export class StabilityAssist {
       ...(this.tuning.recaptureOnCentre ? { stickMoved: this.stickMoved } : {}),
       ...(this.tuning.captureAirborne ? { airRestA: this.airRestA, airRestE: this.airRestE, airQuietFor: Math.min(this.airQuietFor, STICK_QUIET_MAX) } : {}),
       ...(this.tuning.groundRollHeading ? { rollEngaged: this.rollEngaged, rollHeadingRef: this.rollHeadingRef, lpRoll: this.lpRoll } : {}),
+      // translationalRate.keyRest (opt-in): the arrow keys' rest.
+      ...(this.tuning.translationalRate?.keyRest ? { keyQuietFor: Math.min(this.keyQuietFor, STICK_QUIET_MAX) } : {}),
+      // heightHold.held.everySpeed (opt-in): the collective at the press.
+      ...(this.tuning.heightHold?.held?.everySpeed && Number.isFinite(this.collAtPress) ? { collAtPress: this.collAtPress } : {}),
     };
   }
 
@@ -255,6 +263,9 @@ export class StabilityAssist {
     this.lpBeta = num('lpBeta', 0); this.stickMoved = flag('stickMoved');
     this.airRestA = num('airRestA', 0); this.airRestE = num('airRestE', 0); this.airQuietFor = num('airQuietFor', 0);
     this.rollEngaged = flag('rollEngaged'); this.rollHeadingRef = num('rollHeadingRef', 0); this.lpRoll = num('lpRoll', 0);
+    const keyQuiet = num('keyQuietFor', STICK_QUIET_MAX);
+    this.collAtPress = num('collAtPress', NaN);
+    this.keyQuietFor = keyQuiet >= STICK_QUIET_MAX ? Infinity : keyQuiet;
   }
 
   /**
@@ -293,7 +304,10 @@ export class StabilityAssist {
     this.pedalStep = 0;
     const fade = clamp((t.fadeKias[1] - s.ias / KT) / (t.fadeKias[1] - t.fadeKias[0]), 0, 1);
     // The cyclic terms' gain: the speed fade, or on a keyboard cyclic the cruise attitude hold's (cruiseHold).
-    const cyc = Math.max(fade, t.cruiseHold && fu && c.keyboardCyclic === true ? t.cruiseHold.gain : 0);
+    // cruiseHold.handHeld (opt-in, tune pass 2 fix): a hand-held stick (the input module's keyboardCyclic false) keeps
+    // the cruise gain too.
+    const hand = t.cruiseHold?.handHeld === true && c.keyboardCyclic === false ? t.cruiseHold.gain : 0;
+    const cyc = Math.max(fade, t.cruiseHold && fu && c.keyboardCyclic === true ? t.cruiseHold.gain : 0, hand);
     const lightSkids = s.onGround && t.groundLoad !== undefined && groundLoadFraction(s) < t.groundLoad;
     // A pedal key worked on the skids makes the lift-off's yaw the pilot's (kept through the reset below).
     if (!s.onGround) this.pedalOnSkids = false;
@@ -355,6 +369,8 @@ export class StabilityAssist {
         this.stickMoved = false;
       }
     }
+    // The arrow keys' rest (translationalRate.keyRest, opt-in: ControlInputs.cyclicWorked).
+    if (c.cyclicWorked === true) this.keyQuietFor = 0; else this.keyQuietFor += dt;
     // Datum relaxation toward the flown attitude: the fade band's (time) and the airspeed change's (datumRelaxKt; a
     // hand-held stick only when the keyboard stick is followed up instead).
     const kFade = cyc < 1 ? Math.min(1, (1 - cyc) * dt / RELAX_S) : 0;
@@ -379,7 +395,12 @@ export class StabilityAssist {
         const kv = tr.degPerKt * DEG / KT, lim = tr.limitDeg * DEG;
         pitch0 += ft * clamp(kv * vf, -lim, lim);
         roll0 -= ft * clamp(kv * vr, -lim, lim);
-        if (Math.min(this.stickQuietFor, this.sinceCapture) >= tr.restS) {
+        // keyRest (opt-in, tune pass 2): the rest is the arrow keys' (a key held against the keyboardLimit, the stick not
+        // moving, is still the pilot's command; the keyboard stick's re-centring after the rest is not the pilot's);
+        // landingRestS (opt-in): letting down, a shorter rest (ControlInputs.cyclicLanding).
+        const quiet = tr.keyRest ? this.keyQuietFor : this.stickQuietFor;
+        const restS = c.cyclicLanding === true && tr.landingRestS !== undefined ? tr.landingRestS : tr.restS;
+        if (quiet > 0 && quiet >= restS && this.sinceCapture >= tr.restS) {
           const ki = fade * ft * tr.trimDegPerSPerKt * DEG / KT, cap = (tr.trimMaxDegS ?? Infinity) * DEG * dt;
           const dp = clamp(ki * vf * dt, -cap, cap), dr = clamp(ki * vr * dt, -cap, cap);
           this.pitchRef += dp; pitch0 += dp;
@@ -544,7 +565,17 @@ export class StabilityAssist {
     const hf = hh ? clamp((hh.fadeKias[1] - s.ias / KT) / (hh.fadeKias[1] - hh.fadeKias[0]), 0, 1) : 0;
     const ts = rc?.turboshaft, tw = rc?.twinTurboshaft;
     const powered = !!rc && s.engines.every((e) => e.running) && !tw?.oei && !ts?.needlesSplit && (ts?.nrPct ?? 100) >= (hh?.minNrPct ?? 0);
-    if (!hh || c.keyboardCollective !== true || !(hf > 0) || !powered || c.collective === undefined) {
+    // A bare collective key held airborne (the climb-rate command, held); with held.everySpeed (opt-in, tune pass 2) it
+    // works at every speed (its own fade 1), while the capture and the hold keep the height hold's fade.
+    const heldKey = c.collectiveWorked === true && !!hh?.held && c.collectiveFastWorked !== true && !s.onGround;
+    const hfHeld = hh?.held?.everySpeed ? 1 : hf;
+    // heightHold.oei (opt-in, tune pass 2 fix): one engine out, above the band.
+    if (hh?.oei && rc && tw?.oei === true && !powered && hf < 1 && c.keyboardCollective === true && c.collective !== undefined &&
+        !s.onGround && c.collectiveFastWorked !== true) {
+      this.oeiCollective(dt, s, c, 1 - hf, heldKey);
+      return;
+    }
+    if (!hh || c.keyboardCollective !== true || !(hf > 0 || (heldKey && hfHeld > 0)) || !powered || c.collective === undefined) {
       this.heightMode = 'off'; this.climbWas = NaN; this.keyDir = 0;
       this.collLeft = c.collective ?? NaN;
       return;
@@ -557,12 +588,12 @@ export class StabilityAssist {
     const key = Number.isFinite(this.collLeft) ? c.collective - this.collLeft : 0;
     let rate: number, back = 0;
     const held = hh.held;
-    if (c.collectiveWorked === true && held && c.collectiveFastWorked !== true && !s.onGround) {
+    if (heldKey && held) {
       // A bare F5 / F6 held airborne: a climb-rate command. The key's own move is taken back and the lever is walked to
       // the commanded climb or sink, the sink slowing near the ground.
       this.heightMode = 'off';
-      if (key !== 0) this.keyDir = Math.sign(key);
-      back = hf * key;
+      if (key !== 0) { if (this.keyDir === 0) this.collAtPress = this.collLeft; this.keyDir = Math.sign(key); }
+      back = hfHeld * key;
       const sink = clamp(held.landSinkMps + (s.altitudeAGL - held.landAglM) * (held.sinkMps - held.landSinkMps) / held.landBandM,
         held.landSinkMps, held.sinkMps);
       const vsCmd = this.keyDir > 0 ? held.climbMps : this.keyDir < 0 ? -sink : 0;
@@ -579,14 +610,47 @@ export class StabilityAssist {
       const vsCmd = this.heightMode === 'hold' ? clamp(hh.kh * (this.heightRef - s.altitudeMSL), -hh.vsMax, hh.vsMax) : 0;
       rate = clamp(hh.kv * (vsCmd - w) - hh.kp * dw, -hh.rate, hh.rate);
     }
-    rate *= hf;
+    rate *= heldKey ? hfHeld : hf;
     // Never into the power limit (above the maximum continuous power), never below the floor; a held F6 that has
     // carried the lever past the limit (the torque lags the lever) is backed off.
     const overLimit = rc!.powerLimitExceeded || rc!.takeoffPowerSeconds > 0;
     if (rate > 0 && overLimit) rate = 0;
-    if (overLimit && this.keyDir > 0 && held?.limitBackRate) rate = -hf * held.limitBackRate;
+    const backingOff = overLimit && this.keyDir > 0 && !!held?.limitBackRate;
+    if (backingOff) rate = -hfHeld * held!.limitBackRate!;
     const was = c.collective;
-    c.collective = clamp(was - back + rate * dt, Math.min(was, hh.floor), 1);
+    let next = was - back + rate * dt;
+    // held.everySpeed (opt-in): the back-off never takes the lever below where the key found it (in cruise above the
+    // maximum continuous power a tap of F6 then does nothing instead of lowering the lever).
+    if (backingOff && held!.everySpeed && Number.isFinite(this.collAtPress)) next = Math.max(next, Math.min(was - back, this.collAtPress));
+    c.collective = clamp(next, Math.min(was, hh.floor), 1);
+    this.followed.collective += c.collective - was;
+    this.collLeft = c.collective;
+  }
+
+  /**
+   * heightHold.oei (opt-in, tune pass 2 fix): one engine out above the height hold's band, with gain `g` (the band's fade
+   * in). A held bare key is the climb-rate command, F6 stopped at the OEI limits (not backed off: lowering the lever
+   * there flew the beginner holding the cruise attitude into the ground); at rest the lever stays where the keys left it.
+   */
+  private oeiCollective(dt: number, s: AircraftState, c: ControlInputs, g: number, heldKey: boolean): void {
+    const hh = this.tuning.heightHold!, held = hh.held, over = s.rotorcraft!.powerLimitExceeded;
+    this.heightMode = 'off';
+    const w = -s.velocity.z;
+    const dw = Number.isFinite(this.climbWas) && dt > 0 ? (w - this.climbWas) / dt : 0;
+    this.climbWas = w;
+    const key = Number.isFinite(this.collLeft) ? c.collective! - this.collLeft : 0;
+    let rate = 0, back = 0;
+    if (heldKey && held) {
+      if (key !== 0) this.keyDir = Math.sign(key);
+      back = g * key;
+      const sink = clamp(held.landSinkMps + (s.altitudeAGL - held.landAglM) * (held.sinkMps - held.landSinkMps) / held.landBandM,
+        held.landSinkMps, held.sinkMps);
+      const vsCmd = this.keyDir > 0 ? held.climbMps : this.keyDir < 0 ? -sink : 0;
+      rate = clamp(hh.kv * (vsCmd - w) - hh.kp * dw, -held.rate, held.rate);
+    } else this.keyDir = 0;
+    if (rate > 0 && over) rate = 0;
+    const was = c.collective!;
+    c.collective = clamp(was - back + g * rate * dt, Math.min(was, hh.floor), 1);
     this.followed.collective += c.collective - was;
     this.collLeft = c.collective;
   }

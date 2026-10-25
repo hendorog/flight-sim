@@ -74,6 +74,11 @@ describe('5-key centring rate (InputProfile.centreRate) and Shift+5 keyboard tri
     for (const [p, rate] of [[BO105_INPUT, 1], [MD500_INPUT, CENTRE_RATE]] as const) {
       const r = makeInputRig(p);
       r.setAirborne(true);
+      // At cruise (the untrimmed 120 KIAS pilot this rate is for), with the STAB ASSIST off: its keyboard cyclic limit
+      // (StabilityAssistTuning.keyboardLimit, 0.12 of the axis a press at speed since the tune pass 2 fix) would stop the
+      // push at 0.12, and the row is about the 5 key alone.
+      r.s.groundSpeed = 120 * 0.514444;
+      if (p === BO105_INPUT) r.tap('KeyA', true);
       const e0 = r.c.elevator;
       hold(r, 'ArrowUp', 3);
       const pushed = e0 - r.c.elevator;
@@ -266,5 +271,106 @@ describe('STAB ASSIST toggle (InputProfile.stabilityAssist; the physics side is 
     expect(row('Shift+F5')?.action).toMatch(/hand speed/);
     expect(row('Shift+F6')?.action).toMatch(/hand speed/);
     expect(row('Shift+5')?.action).toMatch(/Keyboard trim here/);
+  });
+});
+
+/**
+ * Tune pass 2 (the round-2 gate's must 1, W/tune2/bo105 q1_held): the keyboard cyclic limit and its re-centring
+ * (StabilityAssistTuning.keyboardLimit), on the input module alone. Below 15 kt of ground speed the arrow keys move the
+ * keyboard stick at most 0.12 of the axis from where it last rested (inside the STAB ASSIST's 0.2 series authority); the
+ * limit opens to the whole travel by 30 kt. Once the keys have rested 2.5 s the keyed displacement glides back at 0.1 of
+ * the axis per second (letting down, with the CG under 8 m and a bare F5 held within 5 s, at once), so the next
+ * press has the whole limit again. Another writer's stick (the hover hold handing over) is not keyed and stays.
+ */
+describe('the keyboard cyclic limit and its re-centring (StabilityAssistTuning.keyboardLimit, tune pass 2: the Bo 105)', () => {
+  const lim = BO105_INPUT.stabilityAssist!.keyboardLimit!;
+  const airborne = (p = BO105_INPUT, groundSpeed = 0, agl = 16) => {
+    const r = makeInputRig(p);
+    r.setAirborne(true);
+    r.s.groundSpeed = groundSpeed; r.s.altitudeAGL = agl;
+    return r;
+  };
+  it('a held arrow stops 0.12 of the axis from the rest below 15 kt; with the assist off and on the MD 500E it goes on', () => {
+    expect(lim.travel).toBe(0.12); expect(lim.fadeKt).toEqual([15, 30]);
+    const push = (r: InputRig) => { const e0 = r.c.elevator; hold(r, 'ArrowUp', 3); return e0 - r.c.elevator; };
+    const hover = push(airborne());
+    const off = airborne(); off.tap('KeyA', true);
+    const md = push(airborne(MD500_INPUT));
+    expect(hover).toBeCloseTo(0.12, 6);
+    expect(push(off)).toBeGreaterThan(0.3); expect(md).toBeGreaterThan(0.3);
+  });
+  /**
+   * The tune pass 2 fix (keyboardLimit.cruise; the pass-2 gate's k1): above 15 kt the limit used to open to the whole
+   * travel by 30 kt, and a key held 1.5-3 s in cruise took the stick 0.3-0.8 out, past the series authority. Now one
+   * press moves it at most 0.12 from where the keys last rested 0.3 s, at every speed above the hover band; a press after
+   * that rest moves it another 0.12 (the attitude hold keeps the first), one inside it adds nothing past the limit.
+   */
+  it('above 15 kt (31 kt, 120 kt) one press moves the stick at most 0.12; another after a 0.3 s rest 0.12 more; one inside the rest nothing past the limit', () => {
+    expect(lim.cruise).toEqual({ travel: 0.12, restS: 0.3 });
+    for (const kt of [31, 120]) {
+      const r = airborne(BO105_INPUT, kt * 0.514444), e0 = r.c.elevator;
+      hold(r, 'ArrowUp', 3);
+      expect(e0 - r.c.elevator, `${kt} first`).toBeCloseTo(0.12, 6);
+      r.run(0.5);
+      hold(r, 'ArrowUp', 3);
+      expect(e0 - r.c.elevator, `${kt} second`).toBeCloseTo(0.24, 6);
+      const q = airborne(BO105_INPUT, kt * 0.514444), f0 = q.c.elevator;
+      hold(q, 'ArrowUp', 3); q.run(0.2); hold(q, 'ArrowUp', 3);
+      expect(f0 - q.c.elevator, `${kt} inside the rest`).toBeCloseTo(0.12, 6);
+    }
+  });
+  it('2.5 s after the keys rest the keyed displacement glides back at 0.1 per second, and the next press has the whole limit again', () => {
+    const r = airborne(), e0 = r.c.elevator, a0 = r.c.aileron;
+    hold(r, 'ArrowUp', 3); hold(r, 'ArrowRight', 3);
+    const e1 = r.c.elevator, a1 = r.c.aileron;
+    expect(e0 - e1).toBeCloseTo(0.12, 6); expect(a1 - a0).toBeCloseTo(0.12, 6);
+    r.run(2.4);
+    // The elevator has rested 3 s (the aileron key was held after it): the rest is the arrow keys', both wait.
+    expect(r.c.elevator).toBeCloseTo(e1, 9); expect(r.c.aileron).toBeCloseTo(a1, 9);
+    r.run(0.6);
+    expect(r.c.elevator - e1).toBeCloseTo(0.1 * 0.5, 2); expect(a1 - r.c.aileron).toBeCloseTo(0.1 * 0.5, 2);
+    r.run(2);
+    expect(r.c.elevator).toBeCloseTo(e0, 9); expect(r.c.aileron).toBeCloseTo(a0, 9);
+    hold(r, 'ArrowUp', 3);
+    expect(e0 - r.c.elevator).toBeCloseTo(0.12, 6);
+  });
+  it('letting down (under 8 m, a bare F5 held within 5 s) it glides back as soon as the arrow key is let go; higher up it waits', () => {
+    for (const agl of [5, 12]) {
+      const r = airborne(BO105_INPUT, 0, agl), e0 = r.c.elevator;
+      hold(r, 'F5', 0.2);
+      hold(r, 'ArrowUp', 1);
+      const e1 = r.c.elevator;
+      r.run(0.5);
+      if (agl < lim.recentre!.landing!.aglM) {
+        expect(r.c.elevator - e1).toBeCloseTo(0.1 * 0.5, 2);
+        expect(r.c.cyclicLanding).toBe(true);
+      } else {
+        expect(r.c.elevator).toBeCloseTo(e1, 9);
+        expect(r.c.cyclicLanding).toBe(false);
+      }
+      expect(e0 - e1).toBeGreaterThan(0.05);
+    }
+  });
+  it('the arrow keys held are reported (ControlInputs.cyclicWorked) on the Bo 105 only', () => {
+    const r = airborne();
+    r.input.keyDown('ArrowLeft'); r.run(0.2);
+    expect(r.c.cyclicWorked).toBe(true);
+    r.input.keyUp('ArrowLeft'); r.run(0.1);
+    expect(r.c.cyclicWorked).toBe(false);
+    for (const p of [MD500_INPUT, R22_INPUT]) {
+      const m = airborne(p);
+      m.input.keyDown('ArrowLeft'); m.run(0.2);
+      expect(m.c.cyclicWorked).toBeUndefined(); expect(m.c.cyclicLanding).toBeUndefined();
+    }
+  });
+  it('a stick moved by another writer (the hover hold handing over) is not keyed: it stays where it was left', () => {
+    const r = airborne(), e0 = r.c.elevator;
+    r.run(0.1);
+    r.c.elevator = e0 + 0.2;
+    r.run(6);
+    expect(r.c.elevator).toBeCloseTo(e0 + 0.2, 9);
+    // And the keys then move from there, at most the limit.
+    hold(r, 'ArrowDown', 3);
+    expect(r.c.elevator - (e0 + 0.2)).toBeCloseTo(0.12, 6);
   });
 });
