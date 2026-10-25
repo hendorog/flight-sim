@@ -657,8 +657,58 @@ are in the control path, labelled, and absent on every other type:
     engine-failure hint now says to hold ArrowDown about a second with Shift+F5 at cruise speed (0 of 4 crashed, 1 of 4
     without). A 1 s pedal key tap peaks at 18 deg and is dragged
     back to 7.6 deg by the hold, a 2 s tap goes round (`q10_pedal`; pre-existing, unchanged from round 2); the hover hold
-    engaged at the end of a by-hand acceleration to 42 kt settles at 24.7 kt calm (the shared hold's speed loop; round 2:
-    34.9). Not changed (both in shared code).
+    engaged at the end of a by-hand acceleration to 42 kt settles at 24.7 kt calm (round 2: 34.9; not the shared speed
+    loop: the fix round below found and fixed the cause). The pedal tap not changed (shared code).
+  **Tune pass 2 fix round (2026-10-25, `tune2/bo105`; the pass-2 gate W/tune2/bo105 `gate1/`, 7/10; probes `fix1/`,
+  logs `fix1/out/*.cfg.log` before and `*.head.log` after; rows `bo105KeyFlows`, `bo105KeyTransitions`, `bo105Assist`,
+  `tests/input/bo105Aids`).** The gate found one beginner crash flow left (one engine out in cruise), the hover hold's
+  speed after the by-hand acceleration and the raw aircraft on the mouse yoke in cruise; its caveat probes (`gate1/k1`,
+  read before this list was fixed) found arrow keys held at speed and an arrow key reversal in the hover that crashed.
+  Five labelled parts, each one line in `bo105/input.ts` or `sim.ts` (ESTIMATES tuned on the probes; no physics changed):
+  - *One engine out, the held F5 / F6* (`heightHold.oei`). The height hold and the climb-rate command stopped with an
+    engine, so at 100 KIAS the beginner's height-law taps were the raw lever against the survivor's topping (111.9 %, NR
+    90.7 %), and the collective's pitch coupling with the late attitude taps rolled it inverted. Now above the 30-40 KIAS
+    band the climb-rate command keeps working with one engine out, F6 stopped by the survivor's OEI limits
+    (`powerLimitExceeded` from the OEI ratings: 95 % torque, 810 C, 105 % N1) and never backed off; at rest the lever stays;
+    below the band the keys stay raw (the OEI cushion pulls past the limits: held there, the 16 m OEI landings crashed at
+    3.9-5.2 m/s). At 80 / 100 KIAS from 150 m no beginner (the law at gain 1 / 0.5, attitude only, an F5 tap first, hands
+    off) crashed in 60 s, NR at least 96.3 % (`f_oei`; before: the law at 100 KIAS crashed at 33-43 s); one engine out in
+    the hover 8 of 8 as before. Holding the cruise attitude at 100 KIAS the survivor sits at 101 % (level flight there
+    needs about 101 % of one engine at 2200 kg) and it sinks 0.9 m/s: KNOWN OEI-CRUISE TORQUE GAP. The hint's beginner
+    (an F5 tap, slowing to about 70 KIAS) holds the height within 1.5 m at 100 and 120 KIAS, torque under 97 % from 20 s.
+    An at-rest back-off over the limits flew the attitude-only beginner into the ground at 100 KIAS (0.01-0.05 per
+    second): not adopted.
+  - *The hover hold's speed* (`SimProfile.heliHoldGroundSpeed`; `autopilot.ts` `groundSpeedTarget`, the Bo 105 only). The
+    hold captured `observePilot.forwardSpeed`, the ground speed along the nose; the gate's by-hand acceleration arrives at
+    42 kt sliding 34.6 kt sideways (the pedal at its stop: pre-existing, main 23 kt), so A held 22.7 kt. Engaged moving
+    forward it now holds the speed over the ground: 41.9 KIAS calm 40 s after a 42 kt press (24.7 at 15 s before);
+    pressed at 35 / 42 / 45 kt from the 16 m hover 34.9 / 41.8 / 44.8 (30.8 / 37.2 / 40.0); the A route done calm, in 6 kt
+    and in 6 kt from behind.
+  - *The cruise hold on the mouse yoke* (`cruiseHold.handHeld`). Above the fade a hand-held stick (keyboardCyclic false:
+    the mouse yoke, a hardware stick) flew the raw aircraft: 13 of 17 trackpad cases crashed (`f_h5`: the tapper at 60-120
+    KIAS, hands off at 120 / 140 KIAS, F5 / F6 held 2 s at 100 KIAS). Now it keeps the cruise attitude command / attitude
+    hold (no follow-up: the hand holds the stick): 1 of 20, the yoke left forward after a knock (the commanded dive).
+    Control wheel steering (the datum following the flown attitude while the yoke moves) crashed the 100-120 KIAS tappers
+    and the speed changes: not adopted.
+  - *The keyboard cyclic limit at speed* (`keyboardLimit.cruise`, applied by the input module). The limit opened to the
+    whole travel by 30 kt, and the key accelerates, so held 1.5-3 s at 20-100 KIAS it took the stick 0.3-0.8 out, past the
+    series authority (with the beginner recovering 12 of 60 crashed, hands off 35 of 60, `gate1/k1`). Now above 15 kt the
+    limit opens only to 0.12 of the axis, and once the arrow keys have rested 0.3 s the stick's position is the new rest:
+    one press moves it at most 0.12 (about 9 deg of commanded attitude), taps do not add up. After: 0 of 60 and 9 of 60,
+    the nine ArrowUp held at 45-100 KIAS then hands off: the commanded nose-down held into a dive, 17-41 s from 150 m.
+    Swept 0.12 / 0.16 / 0.2 and a 1 s rest (slower accelerations, the circuit's approaches 1 of 8); the accelerations,
+    the A route and the circuit (6 of 8, 5 before) are as before at 0.3 s.
+  - *The TRC walk at 1 deg/s* (`translationalRate.trimMaxDegS`, round 2's 2). ArrowUp 2 s then ArrowDown 2 s in the
+    hover crashed from 16 m and 3 ft: the walk against the attitude hold at its authority rang into a growing limit
+    cycle (8 s a swing; `f_rev`). At 1 deg/s 10 of 10 reversals come back (1.5: 8; an anti-windup alone: 8). The 3 s
+    reversal passes 15 kt, where the limit at speed holds the braking key too: 57.0 / 58.9 m, not crashed (KNOWN
+    REVERSAL-DRIFT GAP). The 10 kt tailwind 1 s deceleration reached the hover with the walk alone (50.5 s) and reaches none
+    with the limit at speed (KNOWN TAILWIND GAP, as before).
+  - *Open and recorded.* KNOWN LEVEL-TAPPER GAP unchanged (past 30 m at 20.1 s, 7.0 kt); a roll-only short-tap exemption
+    from the keys' rest stopped the slide (41-49 m, then 0 kt) but rolled a recovering beginner at 20 KIAS to 51 deg, and
+    with pitch taps too it held the accelerations in the hover: not adopted; the trim mark the gate suggested is panel / UI
+    code. The double engine failure flown to the ground: no keyboard landing among 121 variants (KNOWN_ISSUES 22); the
+    hint says so. The keyboard circuit 6 of 8; its approach ends on the skids over rising ground (a rig note).
 - **Hand-rate collective** (`collectiveFastRate`): Shift+F5 lowers at 1.0 of the travel per second, Shift+F6 raises at
   0.5; bare F5 / F6 stay the fine 0.12 per second for the hover. Both levers OFF at 100 KIAS (2200 kg, 3000 ft), attitude
   held, the key held after the delay, through the InputSystem: 1 s of delay NR minimum 75.1 % (bare F5 69.0 %), 2 s 68.0
@@ -726,7 +776,9 @@ Zw (rotor/inflow, structural); Lq/|Lp| 0.19; hover Mq -3.27, Mu +0.088, Mp -0.76
 against ERF 1995 (section 5; the hover Lp row now passes its sourced band); pedal-step sideslip 4 deg; rearward margin
 5.2 % (the 120 KIAS stick row now passes its CR-3144 band, section 4); the keyboard deceleration in a 10 kt tailwind
 with 1 s taps pirouettes and reaches no hover (KNOWN TAILWIND GAP, section 9; tune round 2 closed the let-go drift gap); the
-wings-level beginner holding a level hover with 1 s looks slides at 6.7 kt (KNOWN LEVEL-TAPPER GAP, tune pass 2);
+wings-level beginner holding a level hover with 1 s looks slides at 7.0 kt (KNOWN LEVEL-TAPPER GAP, tune pass 2); the 3 s
+arrow key reversal in the hover drifts 57-59 m (KNOWN REVERSAL-DRIFT GAP) and one engine out at 100 KIAS the beginner holding
+the cruise attitude keeps the survivor at 101 % (KNOWN OEI-CRUISE TORQUE GAP; both the tune pass 2 fix round);
 AEO climb +34 % at 2200 kg (+11 / +19 % on the CB-5 chart; section 8); autorotation collective 0.08 of travel; descent weight effect +0.5 %; T7b NR 96.1 %
 with the light out; T15 98 % NR in 4.35 s (plan 10-20 s); OEI IGE cushion torque 114 %. Guards red at BO HEAD and not
 fixable in BO's files: GA consistency bo105 row (BX/PN stubs; resolved by merging BX and PN with or before BO) and TW's

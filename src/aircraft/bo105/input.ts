@@ -111,7 +111,7 @@ export const BO105_INPUT: InputProfile = {
   //   2 s, ArrowDown 2 s) rang the walk against the saturated attitude hold into a growing limit cycle and crashed from
   //   16 m and 3 ft (f_rev); at 1 deg/s 10 of 10 reversals come back (1.5: 8 of 10). Round 2 dropped 1 deg/s for the 1 s
   //   knock past 30 m; behind the keyboard cyclic limit it stays within 15 m. The 10 kt tailwind deceleration with 1 s
-  //   taps now reaches the hover (50.5 s; it pirouetted before).
+  //   taps reached the hover with the walk alone (50.5 s), and with the limit at speed below none again (6.4 kt at 60 s).
   // - THE KEYBOARD CYCLIC LIMIT AT SPEED (keyboardLimit.cruise): above 15 kt of ground speed one press of an arrow key
   //   moves the stick at most 0.12 of the axis (about 9 deg of commanded attitude) from where it was when the keys last
   //   rested 0.3 s (the limit used to open to the whole travel by 30 kt). Held 1.5-3 s at 20-100 KIAS a key took the stick

@@ -151,8 +151,11 @@ describe('the wings-level beginner letting down from the hover (tune pass 2)', (
    * taps toward 0 deg of roll hold the keyed stick at the limit: it slides at 6.5-6.7 kt and passes 30 m at 20.5 / 20.9 s
    * (before 15.3 / 15.6 s at 31.6 / 25 kt, q2_land.base counted from the start of the rig, 1 s earlier). A shorter rest at height takes the 1 s roll tap's bank (7-11 deg at 3 s,
    * bo105Assist) away; the hint says to let the keys rest a few seconds in the hover. Once it lets down, it lands (above).
+   * Tune pass 2 fix round (the TRC walk at 1 deg/s, the limit at speed): 7.0 / 6.9 kt, past 30 m at 20.1 / 20.5 s. A
+   * roll-only tap of under 0.5 s not ending the keys' rest stopped the slide at 41-49 m but rolled a recovering beginner
+   * at 20 KIAS to 51 deg (W/tune2/bo105 fix1 f_h1, f_k1): not adopted.
    */
-  it.fails('KNOWN LEVEL-TAPPER GAP: holding the hover 60 s looking every 1 s it stays within 30 m at 16 m and at 3 ft (6.7 kt, past 30 m at 20.5 s)', () => {
+  it.fails('KNOWN LEVEL-TAPPER GAP: holding the hover 60 s looking every 1 s it stays within 30 m at 16 m and at 3 ft (7.0 kt, past 30 m at 20.1 s)', () => {
     const rows = { hover15: levelHover('hover15', 1), ige3: levelHover('ige3', 1) };
     report.levelHover1 = rows;
     for (const [name, h] of Object.entries(rows)) expect(h.lostS, name).toBeNull();
