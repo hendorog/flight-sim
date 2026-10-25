@@ -107,7 +107,7 @@ export const AH56_INPUT: InputProfile = {
     sideslipPedal: { kias: [20, 30, 140, 160], gain: 0.5, rate: 0.2, filterS: 1 },
     groundRollHeading: { gsKt: [3, 6, 50, 60], kpsi: 1.5, kr: 0.5, authority: 0.5, gain: 1, rate: 0.5, filterS: 0.5 },
     heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1,
-      minNrPct: 95, held: { climbMps: 4.5, sinkMps: 3.5, landSinkMps: 0.5, landAglM: 4.5, landBandM: 8, rate: 0.4, limitBackRate: 0.05 } } },
+      minNrPct: 95, held: { climbMps: 4.5, sinkMps: 2.5, landSinkMps: 0.5, landAglM: 4.5, landBandM: 8, rate: 0.4, limitBackRate: 0.05, everySpeed: true } } },
   // Collective keys (round 2; AGENT input choices): the MD 500E's 0.12 of the travel per second is 2.5 deg/s on this collective's 21
   // deg: F5 held 1 s from the 15 m hover reached the ground at 1,057 fpm (a crash); at 0.06 it settles onto the wheels (645 fpm at
   // most), and a 0.5 s tap sinks at 369 fpm and stays up. The hand-rate pair of the Bo 105 (Shift+F5 1.0 / Shift+F6 0.5 of the travel

@@ -253,7 +253,7 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
   // it, 1.5 m and 2.5 m hold at one lag and collapse a main at the other (181 / 183 kN); 1.0 m collapses at both (the gate's p9).
   const igeLevelWings = (cushionM: number, lag: number) => {
     const r = ah56('ige3'), nLag = Math.round(lag / FRAME), seen: number[] = [];
-    let pulled = false, rollKey: string | null = null, touchFpm = NaN, peak = 0;
+    let pulled = false, rollKey: string | null = null, touchFpm = NaN, peak = 0, upAt = Infinity, lastUp = -1e9;
     r.input.keyDown('F1', true);
     while (r.t < 8 && !r.physics.state.crashed) {
       if (r.t >= 0.2 - FRAME / 2) r.input.keyUp('F1');
@@ -261,9 +261,12 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
       seen.push(now.roll);
       const roll = seen.length > nLag ? seen[seen.length - 1 - nLag] : seen[0];
       if (r.t > 0.3) {
+        // Tune3: the keyboard stick holds where it is left and is an attitude command (about 25 deg/s of bank while held), so the
+        // wings are levelled with a press sized to the seen bank (|roll| / 25 s, at least 0.1 s), and the next press waits 0.7 s
+        // for the wings to settle (round 4: a key held while the seen roll was more than 1 deg off, on the 0.1-per-second keys).
         const want = roll < -1 ? 'ArrowRight' : roll > 1 ? 'ArrowLeft' : null;
-        if (rollKey && rollKey !== want) { r.input.keyUp(rollKey); rollKey = null; }
-        if (want && !rollKey) { r.input.keyDown(want); rollKey = want; }
+        if (rollKey && (rollKey !== want || r.t >= upAt - FRAME / 2)) { r.input.keyUp(rollKey); rollKey = null; lastUp = r.t; }
+        if (want && !rollKey && r.t - lastUp >= 0.7) { r.input.keyDown(want); rollKey = want; upAt = r.t + Math.max(0.1, Math.abs(roll) / 25); }
       }
       if (!pulled && now.agl - 1.9 < cushionM) { pulled = true; r.input.keyDown('F6', true); }
       frame(r);

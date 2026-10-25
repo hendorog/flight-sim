@@ -377,7 +377,9 @@ export class StabilityAssist {
     const h = this.output.gain > 0 && kpsi > 0 ? clamp((t.fadeKias[0] - s.ias / KT) / HOLD_FADE_KT, 0, 1) : 0;
     const worked = c.pedalWorked === true, r = s.angularVelocity.z;
     if (worked && !this.pedalKeyWas) this.pedalBrake = -1;
-    const moved = Number.isFinite(this.pedalKeyRest) ? pedal - this.pedalKeyRest : 0;
+    // No rest seen yet (a key held from the first step): the pedal where the key was first seen.
+    if (!Number.isFinite(this.pedalKeyRest)) this.pedalKeyRest = pedal;
+    const moved = pedal - this.pedalKeyRest;
     if (!worked && this.pedalKeyWas) {
       // The key came up: its move goes under the pedal (the flight model never saw it inside the band) and the turn is braked.
       this.pedalOff += h * moved;
