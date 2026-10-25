@@ -128,6 +128,6 @@ export const BO105_INPUT: InputProfile = {
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (8 %): engine failure; bare F5 goes on down',
     collectiveFastUp: 'Raise the collective at hand speed (hold): the autorotation cushion',
     centreControls: 'Cyclic back to the keyboard trim (the pedals stay where they are)',
-    stabilityAssist: 'STAB ASSIST on / off: holds the attitude (on the arrow keys at every speed, the mouse yoke below 30 KIAS; with the arrow keys at rest below 30 kt it comes back to a hover over the ground), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
+    stabilityAssist: 'STAB ASSIST on / off: holds the attitude (on the arrow keys at every speed, the mouse yoke below 30 KIAS; with the arrow keys at rest below 30 kt it comes back to a hover over the ground, and below 15 kt an arrow key moves the stick at most 0.12 of the travel), the heading when the pedals rest and the height when F5 / F6 rest (held, they climb or descend at up to 2 m/s at any speed), pedals with the collective, and walks the keyboard stick and pedals to the trim (a sim aid: the CB-4 has no SAS)',
     setTrimHere: 'Keyboard trim here: 5 returns the stick to this position (sim convenience: the CB-4 has beep trim only)' },
 };

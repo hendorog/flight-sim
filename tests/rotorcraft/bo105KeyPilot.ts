@@ -108,7 +108,9 @@ export interface BeginnerView { pitch: number; roll: number; hdg: number; p: num
  * pedals left alone) and height (z NED m, or null: the collective left alone), with bo105KeyPilot's tap laws.
  */
 export function targetBeginner(r: KeyRig, keys: Keys, interval: number,
-  targets: (s: BeginnerView) => { pitch: number; roll: number; hdg: number | null; z: number | null }) {
+  targets: (s: BeginnerView) => { pitch: number; roll: number; hdg: number | null; z: number | null;
+    /** The height law's gain (the round-2 gate's g3 'lawDownBeginner': 0.5); default 1. */
+    collGain?: number }) {
   const buf: Snap[] = [], nLag = Math.round(0.3 / FRAME);
   let next = r.t + 1;
   return (): void => {
@@ -127,7 +129,7 @@ export function targetBeginner(r: KeyRig, keys: Keys, interval: number,
       if (Math.abs(e) > 3) keys.tap(e > 0 ? 'KeyZ' : 'KeyX', clamp(Math.abs(e) / 60, 0.1, 0.5));
     }
     if (t.z !== null) {
-      const hold = clamp(-(0.1 * (t.z - s.z) - 0.2 * s.vz), -0.5, 0.5);
+      const hold = clamp(-(t.collGain ?? 1) * (0.1 * (t.z - s.z) - 0.2 * s.vz), -0.5, 0.5);
       if (Math.abs(hold) > 0.08) keys.tap(hold > 0 ? 'F6' : 'F5', Math.abs(hold));
     }
   };
