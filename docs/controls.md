@@ -39,7 +39,7 @@ with the wheel, a click on either half, or a drag (right/up increases), and hold
 | L / Shift+L | Landing / taxi light |
 | N | Navigation lights |
 | O / Shift+O | Strobes / beacon |
-| ' | Panel lights: off, dim, medium, bright |
+| Shift+; | Panel lights: off, dim, medium, bright |
 | **Instruments** | |
 | G / Shift+G | Heading bug right / left (hold to turn faster) |
 | K / Shift+K | Altimeter setting up / down (1 hPa) |
