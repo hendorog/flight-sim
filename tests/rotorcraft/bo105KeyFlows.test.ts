@@ -8,7 +8,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { DEG, KT } from '../../src/core/math';
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import { BO105_DEFINITION as def } from '../../src/aircraft/bo105';
-import { Keys, frame, keyRig, targetBeginner, type KeyRig } from './bo105KeyPilot';
+import { Keys, flyHover, frame, hoverBeginner, keyRig, liftOffKeys, targetBeginner, type KeyRig } from './bo105KeyPilot';
 import { writeTrace } from './bo105Rig';
 
 const report: Record<string, unknown> = {};
@@ -304,4 +304,43 @@ describe('by-hand accelerations out of the hover (tune pass 2)', () => {
     }
     report.accelerations = rows;
   }, 900_000);
+});
+
+/**
+ * Should 2 of the pass-2 gate (gate1 g10 holdSettle, k2): the hover hold (A) pressed at 42 kt at the end of the by-hand
+ * acceleration (the gate's g10: lift-off from the runway, 3 s of hover, 8 deg nose down climbing 1.5 m/s, looking every 1
+ * s) held 24.7 KIAS calm 15 s later (main 34.9). The hold captured the speed along the nose (observePilot.forwardSpeed):
+ * at the press the beginner was sliding 34.6 kt sideways with the pedal at its left stop (the nose about 56 deg off the
+ * track, pre-existing: main 23 kt sideways, held 33 kt), so it held 22.7 kt and turned the side speed away with 10 deg of
+ * bank. SimProfile.heliHoldGroundSpeed (the Bo 105) captures the speed over the ground instead: held 42.0 kt, 41.9 KIAS
+ * calm at 40 s, 48.9 into the 6 kt wind, 34.2 with it behind (a ground-speed hold, as the A route's turns are; fix1
+ * f_hold). From the 16 m hover pressed at 35 / 42 / 45 kt: 34.9 / 41.8 / 44.8 KIAS at 40 s (37.3 at 42 before, k2).
+ */
+describe('the hover hold pressed at the end of a by-hand acceleration (tune pass 2 fix)', () => {
+  function accelThenHold(start: 'runway' | 'hover15', dd?: AircraftDefinition) {
+    const r = keyRig({ start, dd }), keys = new Keys(r);
+    if (start === 'runway') { liftOffKeys(r, keys, 0); flyHover(r, keys, 3, hoverBeginner(r, keys)); } else for (let i = 0; i < 60; i++) frame(r);
+    const s1 = view(r), t1 = r.t;
+    const step = targetBeginner(r, keys, 1, () => ({ pitch: s1.pitch - 8 * DEG, roll: 0, hdg: s1.hdg, z: Math.max(s1.z - 60, s1.z - 1.5 * (r.t - t1)) }));
+    while (r.t - t1 < 60 && r.physics.state.groundSpeed / KT <= 42 && !r.physics.state.crashed) { step(); keys.update(); frame(r); }
+    keys.releaseAll();
+    const press = { gs: r.physics.state.groundSpeed / KT, kias: r.physics.state.ias / KT };
+    r.physics.setAutoflight(true);
+    const held = r.physics.autoflight.autopilot.settings.airspeed / KT;
+    for (let i = 0; i < 40 / (1 / 60); i++) frame(r);
+    return { press, held, engaged: r.physics.autoflight.engaged, kias40: r.physics.state.ias / KT, crashed: r.physics.state.crashed };
+  }
+  it('A pressed at 42 kt after the gate\'s by-hand acceleration (from the runway, and from the 16 m hover) holds 35-45 KIAS calm 40 s later (before: 22.5 KIAS from the runway, the speed along the nose)', () => {
+    const rows = { runway: accelThenHold('runway'), hover15: accelThenHold('hover15') };
+    report.holdAfterAccel = rows;
+    for (const [name, h] of Object.entries(rows)) {
+      expect(h.press.gs, name).toBeGreaterThan(42); expect(h.engaged, name).toBe(true); expect(h.crashed, name).toBe(false);
+      expect(h.kias40, name).toBeGreaterThanOrEqual(35); expect(h.kias40, name).toBeLessThanOrEqual(45);
+    }
+  }, 300_000);
+  it('without heliHoldGroundSpeed the same press from the runway holds under 30 KIAS (the sideslipping acceleration\'s speed along the nose)', () => {
+    const h = accelThenHold('runway', { ...def, sim: { ...def.sim, heliHoldGroundSpeed: undefined } });
+    report.holdAfterAccelWithout = h;
+    expect(h.kias40).toBeLessThan(30);
+  }, 300_000);
 });
