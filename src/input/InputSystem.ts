@@ -490,6 +490,8 @@ export class InputSystem implements Subsystem {
     this.neutral.elevator = c.elevator;
     this.neutral.rudder = c.rudder;
     this.kbAileron = this.kbElevator = this.kbRudder = 0;
+    // The keyboard cyclic limit's keyed displacement (StabilityAssistTuning.keyboardLimit) belongs to the last flight.
+    this.kbKeyed.aileron = this.kbKeyed.elevator = 0;
     this.ailCentred = this.rudCentred = true;
     this.centring = { aileron: false, elevator: false, rudder: false };
     this.written.aileron = this.written.elevator = this.written.rudder = null;
