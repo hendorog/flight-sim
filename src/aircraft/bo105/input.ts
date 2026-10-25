@@ -84,6 +84,19 @@ export const BO105_INPUT: InputProfile = {
   //   accelerations out of the hover: 6 of 12 not lost (0 of 12; the rest fly into the ground from 3 ft or over-torque
   //   climbing). Above about 110 KIAS the 1 s tapper still loses it (p12_ch1hi). A mouse yoke or hardware stick flies the
   //   raw aircraft above the fade, as before (r2 p11 / p12). ESTIMATES.
+  // Tune pass 2 (W/tune2/bo105, the round-2 gate's must items; docs section 9 "Tune pass 2"):
+  // - KEYBOARD CYCLIC LIMIT (keyboardLimit, in the input module): below 15 kt of ground speed the arrow keys move the stick
+  //   at most 0.12 of the axis from where it last rested (8.9 deg of commanded attitude, inside the 0.2 series authority),
+  //   open by 30 kt; 2.5 s after the arrow keys rest the keyed displacement glides back at 0.1 per second. An arrow held
+  //   1.5-2 s used to take the stick past the authority (ArrowUp 2 s crashed at 5.3 s; 12 of 40 holds of 1-5 s came
+  //   back): now 40 of 40, at most 18.6 deg, 10.6 kt, 37 m (q1_held). Swept 0.10 / 0.12 / 0.15 (0.15: 87 m).
+  // - The TRC walk waits for the arrow keys (translationalRate.keyRest): a key held against the limit is still a command
+  //   (without it the beginner could not accelerate out of the hover, 0 of 10).
+  // - LETTING DOWN (recentre.landing, landingRestS 0): with the CG under 8 m and a bare F5 within 5 s the keyed stick glides
+  //   back at once and the walk runs whenever no arrow is held: the wings-level beginner lands under 5 kt in 12 of 12
+  //   (3 of 12, sliding 17-29 kt and rolling over, before; q2_land).
+  // - CLIMB-RATE COMMAND AT EVERY SPEED (heightHold.held.everySpeed): a held F5 / F6 in cruise walks the lever to 2 m/s
+  //   (F5 held 2 s at 100 KIAS: 84 deg / 135 % before, 8.7 deg / 63 % now; q3_cruise). ESTIMATES.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
