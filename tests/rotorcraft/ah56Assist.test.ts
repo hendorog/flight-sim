@@ -226,7 +226,9 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
   // Tune round 3: a passing row (KNOWN_ISSUES T10, T11). Before (round 2): 320 fpm, the hover's 4.2 deg of left roll on the left main
   // alone, 140 kN, collapsed. Now 451 fpm and 145 kN against the main leg's 180 kN (gear.ts, the one-wheel touchdown at the P sink)
   // with Shift+F6 taking the whole travel (its 80 % stop is off with the engine out). Sensitive to the height of the pull: from 1.6 m
-  // or 2.5 m the left main still collapses (542 / 481 fpm, 184 / 183 kN; W/tune2/ah56 out/fin_d4c7.log).
+  // or 2.5 m the left main still collapses (542 / 481 fpm, 184 / 183 kN; W/tune2/ah56 out/fin_d4c7.log); round 4 (W/tune2/ah56/r4/
+  // out/ige.log) hands off holds from 2.0 and 2.25 m (317 / 315 fpm, 145 / 175 kN) and collapses from 1.75 m (416 fpm, 181 kN). The
+  // hint's technique (level the wings) has the wider window: the rows after this one.
   it('the IGE engine failure on keys, hands off (Shift+F1, Shift+F6 held from 2 m of wheel height): the gear holds (round 2: 320 fpm on the left main, 140 kN, collapsed; KNOWN_ISSUES T7, T10)', () => {
     const r = ah56('ige3'), wheels0 = see(r).agl - 1.9;
     r.input.keyDown('F1', true);
@@ -243,6 +245,46 @@ describe('STAB ASSIST round 2: the keyboard beginner beyond the hover', () => {
     report('IGE engine failure on keys', { wheelHeightM: wheels0, crashed: r.physics.state.crashed, sinkFpm: sink, peakWheelKN: peak / 1000, rollAtTouchDeg: rollTouch });
     expect(r.physics.state.crashed).toBe(false);
   }, 60_000);
+  // Round 4 (the pass-2 gate: the hint said Shift+F6 "from about 1.5 m", where its own technique collapses a main at one lag of
+  // two; KNOWN_ISSUES T11). The hint's technique: the wings levelled on the arrow keys (the roll seen 0.3 or 0.5 s late, a key held
+  // while it is more than 1 deg off), the collective held, Shift+F6 held from the cushion height. The window on the record, both
+  // lags (W/tune2/ah56/r4/out/ige.log; this row reads the touchdown a frame later): 1.75 m 361-406 fpm, 96 kN; 2.0 m 309-323 fpm, 70
+  // kN; 2.25 m 315-335 fpm, 93 kN a main. Outside
+  // it, 1.5 m and 2.5 m hold at one lag and collapse a main at the other (181 / 183 kN); 1.0 m collapses at both (the gate's p9).
+  const igeLevelWings = (cushionM: number, lag: number) => {
+    const r = ah56('ige3'), nLag = Math.round(lag / FRAME), seen: number[] = [];
+    let pulled = false, rollKey: string | null = null, touchFpm = NaN, peak = 0;
+    r.input.keyDown('F1', true);
+    while (r.t < 8 && !r.physics.state.crashed) {
+      if (r.t >= 0.2 - FRAME / 2) r.input.keyUp('F1');
+      const now = see(r);
+      seen.push(now.roll);
+      const roll = seen.length > nLag ? seen[seen.length - 1 - nLag] : seen[0];
+      if (r.t > 0.3) {
+        const want = roll < -1 ? 'ArrowRight' : roll > 1 ? 'ArrowLeft' : null;
+        if (rollKey && rollKey !== want) { r.input.keyUp(rollKey); rollKey = null; }
+        if (want && !rollKey) { r.input.keyDown(want); rollKey = want; }
+      }
+      if (!pulled && now.agl - 1.9 < cushionM) { pulled = true; r.input.keyDown('F6', true); }
+      frame(r);
+      const s = r.physics.state;
+      if (s.onGround && Number.isNaN(touchFpm) && r.t > 0.3) touchFpm = -now.climb * 196.85;
+      peak = Math.max(peak, ...s.wheels.map((w) => w.load));
+    }
+    for (const k of [rollKey, 'F6']) if (k) r.input.keyUp(k);
+    return { crashed: r.physics.state.crashed, touchFpm, peakWheelKN: peak / 1000 };
+  };
+  for (const cushionM of [1.75, 2.0, 2.25]) {
+    it(`the IGE engine failure on keys as the hint says (wings level, Shift+F6 from ${cushionM} m of wheel height), 0.3 and 0.5 s late: the gear holds, the touchdown inside the P 9.5 ft/s (570 fpm) and each main under 150 kN of its 180`, () => {
+      for (const lag of [0.3, 0.5]) {
+        const f = igeLevelWings(cushionM, lag);
+        report(`IGE engine failure on keys, wings level, Shift+F6 from ${cushionM} m, ${lag} s late`, f);
+        expect(f.crashed).toBe(false);
+        expect(f.touchFpm).toBeLessThan(570);
+        expect(f.peakWheelKN).toBeLessThan(150);
+      }
+    }, 120_000);
+  }
 });
 
 // Round 3 (the round-2 gate's other issues, KNOWN_ISSUES T11): the presses a first-day pilot makes on the collective, flown on the

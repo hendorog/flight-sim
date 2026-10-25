@@ -638,12 +638,21 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     Shift+F5 for 1 s in the hover still hits the ground at 2,640 fpm: it is the autorotation entry; the key label and the hint say
     never in the hover (KNOWN GAP row on the record).
   - D, the run-on landing from a trimmed 45 KIAS approach, feet off (KNOWN GAP): 289 fpm, then the roll-out turns 140 deg as the
-    collective comes down (no crash); at the slower pace 547 fpm and the right main collapses (181 kN). The Landing hint says hold
-    the heading with Z / X on the wheels. A ground-roll pedal term was not attempted.
+    collective comes down (no crash); at the slower pace 547 fpm and the right main collapses (181 kN). Round 4 (the pass-2 gate):
+    the Landing hint's "hold the heading with Z / X on the wheels" was flown and does not work (the beginner's pedal keys on the
+    wheels: 127 deg at 21 deg of roll; feet on from the approach: 145 deg, at the slow pace a right wingtip strike). The Landing hint
+    now LEADS with the hover landing on a held F5 (6 of 6 at both paces, 8-68 fpm: the gate's p6) and says the run-on is not yet
+    beginner-safe on keys (the roll-out swings 120-145 deg with the tail rotor as the collective comes down); the Z / X cue is gone.
   - D, the main gear (gear.ts limitLoad, the collapse load, ESTIMATE): 140 -> 180 kN, D from the P 9.5 ft/s touchdown sink with FAR
     27: the level landing at the P sink gives 103 kN a main (this strut, the hover collective), FAR 27.483 puts the level-landing load
     on one wheel, 1.5 x ultimate = 155 kN; a vertical landing from this aircraft's 4.7 deg left-wing-low hover is a one-wheel
     touchdown, 173 kN at the P sink. At 1.2 x the sink (11.4 ft/s, FAR 27.725 reserve energy) the level case holds (152 kN) and the
     one-wheel case still collapses (new ah56Ground G13 row). The IGE engine failure on keys now holds the gear from a 2 m pull (451
     fpm, 145 kN) but not from 1.6 or 2.5 m (542 / 481 fpm, 184 / 183 kN): sensitive, recorded.
+  - Round 4, the engine-failure hint (the pass-2 gate, must): it said Shift+F6 "from about 1.5 m" (the written pilot of ah56Systems
+    G11c), where its own level-wings technique on keys collapses a main at one lag of two (181 kN). It now says about 2 m of wheel
+    height, 6-7 ft on the HUD AGL, between 1.75 and 2.25 m. The window, wings levelled on the arrow keys 0.3 / 0.5 s late (three new
+    passing ah56Assist rows; W/tune2/ah56/r4/out/ige.log): 1.75 m 361-406 fpm, 96 kN a main; 2.0 m 309-323 fpm, 70 kN; 2.25 m 315-335
+    fpm, 93 kN. Outside it 1.5 and 2.5 m hold at one lag and collapse a main at the other (181 / 183 kN), 1.0 m at both. Hands off
+    (the older row, a different technique) only 2.0-2.25 m holds (317 / 315 fpm, 145 / 175 kN); 1.75 m collapses (416 fpm, 181 kN).
   - Not done: item E (an XH-51A-sized gyro rig): not cheap (a definition of its own), not attempted. The ICS on keys: not re-flown.
