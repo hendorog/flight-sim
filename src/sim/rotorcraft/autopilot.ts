@@ -1,9 +1,62 @@
-import { clamp, DEG, KT, wrapPi } from '../../core/math';
+import { clamp, DEG, G0, KT, interp1, wrapPi } from '../../core/math';
 import type { AircraftState, ControlInputs } from '../../core/types';
 import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 import type { AutopilotSettings } from '../../physics/autopilot';
-import { ScriptedPilot, observePilot } from './scriptedPilot';
+import { ScriptedPilot, observePilot, type PilotObservation } from './scriptedPilot';
 import { OnlinePencil } from '../../physics/identification/onlinePencil';
+
+/** Inner attitude-loop gains of the hold (ScriptedPilot's): cyclic per rad of attitude error, per rad/s of rate, and the trim
+ * integrators' rate (per rad·s); `cyclicRate` the hand-rate limit of both cyclic axes, travel per second. */
+export interface HeliHoldGains {
+  pitchGain: number; pitchDamping: number; pitchLearning: number;
+  rollGain: number; rollDamping: number; rollLearning: number;
+  cyclicRate: number;
+}
+
+/**
+ * Opt-in laws of the hold for one type (SimProfile.heliHold; the AH-56A only). Every field absent = the shared law.
+ */
+export interface HeliHoldTuning {
+  /** Inner-loop gains by control-gyro configuration (RotorcraftState.controlGyro.mode, read every step). */
+  inner?: Partial<Record<'amcs' | 'ics', HeliHoldGains>>;
+  /**
+   * Heading changes as coordinated turns: at or above `onKias` IAS (back below `offKias`) the heading error asks for a turn
+   * rate (`headingGain` per s, up to `rateDegS`), flown as the bank of that rate at the true airspeed (up to `maxBankDeg`,
+   * rolled at `rollRateDegS`), and the pedals fly the sideslip to zero (`slipGain` rad of heading per rad of s.beta). Below
+   * `offKias`, and in the hover hold, the shared pedal turn (8 deg/s) and the sideways-drift bank. Engaged in a bank, the wings come level and the
+   * heading bug follows the nose until they are.
+   */
+  turns?: { onKias: number; offKias: number; rateDegS: number; headingGain: number; maxBankDeg: number; rollRateDegS: number; slipGain: number;
+    /** The trim bank's integrator, rad of bank per rad of heading error per s (within 10 deg of the bug). */
+    trimLearning: number };
+  /** The held speed is the IAS when it is above this, kt (engaged faster: the IAS then); slower, the forward ground speed. */
+  airspeedAboveKias?: number;
+  /** The held speed walks to a new value at this rate, kt/s (a held speed set from elsewhere, e.g. the dev panel). */
+  speedRateKtS?: number;
+  /**
+   * The climb-rate demand walks at this rate, m/s per s, and the shared law's 0.3 per s height gain and 1.5 m/s limit become
+   * `heightGain` and `maxClimb`; engaged climbing or descending, the held height is where that walk levels off.
+   */
+  climb?: { accel: number; heightGain: number; maxClimb: number;
+    /** Collective per m/s of climb-rate error and its integrator's rate (shared: 0.05 and 0.025). */
+    liftGain: number; liftLearning: number };
+  /**
+   * The pusher grip (ControlInputs.propLever) driven to `lever` at the held speed (`kias`, IAS) at `ratePerS` of travel per
+   * second, every step while the hold is on (the type's PROP SCHEDULE table: the hover detent below 30 kt).
+   */
+  pusher?: { kias: readonly number[]; lever: readonly number[]; ratePerS: number };
+  /**
+   * The spring-trim anchor walked toward the hold's cyclic, low-passed over `tauS` s, through the trim button
+   * (ControlInputs.cyclicTrimPitch / cyclicTrimRoll, at the type's trim rate): a re-centring keyboard cyclic then comes back
+   * to rest where the hold left it at the hand-back.
+   */
+  trimFollowUp?: { tauS: number };
+  /**
+   * Engaged drifting (the hover hold engaged over `minMs` m/s of ground speed): the ground velocity asked for runs down to
+   * zero at `decel` m/s per s, and the position is held where it stops instead of where A was pressed.
+   */
+  hoverCapture?: { decel: number; minMs: number };
+}
 
 /** Experimental control-only helicopter hold. Never writes flight-model state.
  * The proven demo attitude loops form the baseline; position capture adds a slow
@@ -32,6 +85,22 @@ export class HelicopterAutopilot {
    * SimProfile.heliHoldGroundSpeed (the Bo 105); false on every other type.
    */
   groundSpeedTarget = false;
+  /** The type's opt-in laws (SimProfile.heliHold, set by the shell); null on every type but the AH-56A. */
+  tuning: HeliHoldTuning | null = null;
+  /** Tuned path state: the held speed walking to st.airspeed (m/s, in its measure), the climb-rate demand (m/s), the bank
+   *  demand (rad), coordinated turns on, the hover capture's ground velocity demand (m/s north, east; null: not running), the
+   *  low-passed cyclic of the trim follow-up, the pusher lever written, the first step after engagement. */
+  private speedCmd = 0;
+  private vsCmd = 0;
+  private bankCmd = 0;
+  private bankTrim = 0;
+  private turning = false;
+  private capture: { vn: number; ve: number } | null = null;
+  private stickLp = { pitch: 0, roll: 0 };
+  private prop = NaN;
+  private first = false;
+  /** Engaged in a bank with coordinated turns: the heading bug follows the nose until the wings are level. */
+  private syncBug = false;
   /** The held speed is running down to the hover (slowToHover), and the value it last wrote, m/s. */
   private slowing = false;
   private slowedTo = 0;
@@ -54,6 +123,23 @@ export class HelicopterAutopilot {
     this.hovering = s.groundSpeed < 3;
     this.slowing = !!this.slowToHover && !this.hovering && s.groundSpeed < this.slowToHover.belowKt * KT;
     this.slowedTo = Infinity;
+    const t = this.tuning;
+    if (t) {
+      // The held speed in its measure: the IAS above airspeedAboveKias, else the forward ground speed (as shared).
+      if (t.airspeedAboveKias !== undefined && s.ias > t.airspeedAboveKias*KT) this.engagementSpeed = s.ias;
+      this.speedCmd = Math.max(0, this.engagementSpeed);
+      if (s.groundSpeed < 3 || s.ias < 3*KT) this.speedCmd = 0;
+      this.vsCmd = s.verticalSpeed;
+      this.bankCmd = s.roll;
+      this.turning = !!t.turns && s.ias >= t.turns.onKias*KT && this.speedCmd >= 3*KT;
+      this.syncBug = this.turning && Math.abs(s.roll) > 5*DEG;
+      this.bankTrim = this.syncBug ? 0 : clamp(s.roll, -5*DEG, 5*DEG);
+      // Drifting into the hover hold: stop first, then hold the point where it stopped.
+      this.capture = t.hoverCapture && this.speedCmd === 0 && s.groundSpeed > t.hoverCapture.minMs ? { vn: s.velocity.x, ve: s.velocity.y } : null;
+      this.stickLp = { pitch: c.elevator, roll: c.aileron };
+      this.prop = c.propLever ?? NaN;
+      this.first = true;
+    }
     return true;
   }
   update(dt: number, s: AircraftState, c: ControlInputs, st: AutopilotSettings): boolean {
@@ -69,24 +155,37 @@ export class HelicopterAutopilot {
       if (st.airspeed > this.slowedTo + 1e-9) this.slowing = false;
       else st.airspeed = this.slowedTo = Math.max(0, st.airspeed - this.slowToHover!.ktPerS * KT * dt);
     }
-    const hover = st.airspeed < 3*KT;
-    if (hover && !this.hovering) { this.north = s.position.x; this.east = s.position.y; }
-    this.hovering = hover;
-    let forward = st.airspeed, side = 0;
-    if (hover) {
-      const vn = clamp(0.12*(this.north-s.position.x), -2, 2);
-      const ve = clamp(0.12*(this.east-s.position.y), -2, 2);
-      forward = vn*Math.cos(s.heading) + ve*Math.sin(s.heading);
-      side = -vn*Math.sin(s.heading) + ve*Math.cos(s.heading);
+    const t = this.tuning;
+    let forward: number, vs: number;
+    if (t) ({ forward, vs } = this.outer(t, dt, s, st, o));
+    else {
+      const hover = st.airspeed < 3*KT;
+      if (hover && !this.hovering) { this.north = s.position.x; this.east = s.position.y; }
+      this.hovering = hover;
+      forward = st.airspeed; let side = 0;
+      if (hover) {
+        const vn = clamp(0.12*(this.north-s.position.x), -2, 2);
+        const ve = clamp(0.12*(this.east-s.position.y), -2, 2);
+        forward = vn*Math.cos(s.heading) + ve*Math.sin(s.heading);
+        side = -vn*Math.sin(s.heading) + ve*Math.cos(s.heading);
+      }
+      o.sideSpeed -= side;
+      vs = clamp(0.3*(st.altitude-s.altitudeMSL), -1.5, 1.5);
     }
-    o.sideSpeed -= side;
-    const vs = clamp(0.3*(st.altitude-s.altitudeMSL), -1.5, 1.5);
     this.rollModel.enabled = this.pitchModel.enabled = this.adaptive;
     this.rollModel.update(dt, s.angularVelocity.x, c.aileron);
     this.pitchModel.update(dt, s.angularVelocity.y, c.elevator);
     this.pilot.rollGain = 4*this.rollModel.scale; this.pilot.rollDamping = 1.5*this.rollModel.scale;
     this.pilot.pitchGain = 4*this.pitchModel.scale; this.pilot.pitchDamping = 1.5*this.pitchModel.scale;
-    this.pilot.heading += clamp(wrapPi(st.heading-this.pilot.heading), -8*DEG*dt, 8*DEG*dt);
+    const inner = this.tuning?.inner?.[s.rotorcraft?.controlGyro?.mode ?? 'amcs'];
+    if (inner) {
+      const p = this.pilot, rs = this.rollModel.scale, ps = this.pitchModel.scale;
+      p.rollGain = inner.rollGain*rs; p.rollDamping = inner.rollDamping*rs; p.rollLearning = inner.rollLearning;
+      p.pitchGain = inner.pitchGain*ps; p.pitchDamping = inner.pitchDamping*ps; p.pitchLearning = inner.pitchLearning;
+      p.cyclicRate = p.aileronRate = inner.cyclicRate;
+    }
+    if (!t?.turns || !this.turning) this.pilot.heading += clamp(wrapPi(st.heading-this.pilot.heading), -8*DEG*dt, 8*DEG*dt);
+    else this.coordinate(t.turns, dt, s, c, st, o);
     const old = { pitch: this.pilot.pitchI, roll: this.pilot.rollI, yaw: this.pilot.yawI, lift: this.pilot.liftI };
     this.pilot.step(dt, o, c, forward/KT, vs);
     // Prevent the inner integrators from winding farther into actuator saturation.
@@ -96,7 +195,106 @@ export class HelicopterAutopilot {
     if ((c.collective! > 0.98 && this.pilot.liftI > old.lift) ||
         (c.collective! < 0.02 && this.pilot.liftI < old.lift)) this.pilot.liftI = old.lift;
     c.feetOffRudder = false;
+    if (t) this.after(t, dt, s, c);
     return true;
+  }
+
+  /** The tuned outer loops (SimProfile.heliHold): the held speed, the hover capture, the climb-rate demand. */
+  private outer(t: HeliHoldTuning, dt: number, s: AircraftState, st: AutopilotSettings, o: PilotObservation): { forward: number; vs: number } {
+    const pilot = this.pilot!;
+    // Held speed: walks to the setting (a set from elsewhere: the dev panel) instead of stepping.
+    const rate = (t.speedRateKtS ?? Infinity)*KT*dt;
+    this.speedCmd += clamp(st.airspeed - this.speedCmd, -rate, rate);
+    const airspeed = t.airspeedAboveKias !== undefined && this.speedCmd > t.airspeedAboveKias*KT;
+    if (airspeed) o.forwardSpeed = s.ias;
+    const hover = this.speedCmd < 3*KT;
+    if (hover && !this.hovering) { this.north = s.position.x; this.east = s.position.y; }
+    if (!hover) this.capture = null;
+    this.hovering = hover;
+    let forward = this.speedCmd, side = 0;
+    if (hover) {
+      let vn: number, ve: number;
+      if (this.capture) {
+        // Stopping: the demand runs down to zero; the point held moves with the aircraft until it has stopped.
+        const k = this.capture, v = Math.hypot(k.vn, k.ve), dv = t.hoverCapture!.decel*dt;
+        const f = v > dv ? (v - dv)/v : 0;
+        k.vn *= f; k.ve *= f;
+        vn = k.vn; ve = k.ve;
+        this.north = s.position.x; this.east = s.position.y;
+        if (f === 0) this.capture = null;
+      } else {
+        vn = clamp(0.12*(this.north-s.position.x), -2, 2);
+        ve = clamp(0.12*(this.east-s.position.y), -2, 2);
+      }
+      forward = vn*Math.cos(s.heading) + ve*Math.sin(s.heading);
+      side = -vn*Math.sin(s.heading) + ve*Math.cos(s.heading);
+    }
+    o.sideSpeed -= side;
+    // Coordinated turns: the sideways-drift bank stands down (the turn law sets the bank).
+    if (t.turns) {
+      const ias = s.ias/KT;
+      if (!this.turning && ias >= t.turns.onKias && !hover) { this.turning = true; this.bankCmd = s.roll; this.bankTrim = clamp(s.roll, -5*DEG, 5*DEG); }
+      else if (this.turning && (ias < t.turns.offKias || hover)) {
+        this.turning = false; pilot.heading = s.heading; pilot.bank = 0; pilot.yawRateRef = 0;
+        pilot.driftI = clamp(s.roll, -10*DEG, 10*DEG);
+      }
+      if (this.turning) o.sideSpeed = 0;
+    }
+    let vs: number;
+    if (t.climb) {
+      const k = t.climb;
+      if (this.first && Math.abs(this.vsCmd) > 0.2) st.altitude = s.altitudeMSL + this.vsCmd*Math.abs(this.vsCmd)/(2*k.accel);
+      const law = clamp(k.heightGain*(st.altitude-s.altitudeMSL), -k.maxClimb, k.maxClimb);
+      this.vsCmd += clamp(law - this.vsCmd, -k.accel*dt, k.accel*dt);
+      vs = this.vsCmd;
+      pilot.liftGain = k.liftGain; pilot.liftLearning = k.liftLearning;
+    } else vs = clamp(0.3*(st.altitude-s.altitudeMSL), -1.5, 1.5);
+    this.first = false;
+    return { forward, vs };
+  }
+
+  /** Coordinated turn (HeliHoldTuning.turns): bank for the heading, pedals for zero sideslip. */
+  private coordinate(k: NonNullable<HeliHoldTuning['turns']>, dt: number, s: AircraftState, c: ControlInputs, st: AutopilotSettings, o: PilotObservation): void {
+    const pilot = this.pilot!;
+    // Engaged in a bank: the wings come level first and the heading bug follows the nose until they are (the heading
+    // then held is the one rolled out on, not the one A was pressed on, which a turn back to would need).
+    if (this.syncBug) {
+      c.headingBugDeg = (((c.headingBugDeg + wrapPi(s.heading - st.heading)/DEG) % 360) + 360) % 360;
+      st.heading = s.heading;
+      if (Math.abs(this.bankCmd) < 1*DEG) this.syncBug = false;
+    }
+    const e = wrapPi(st.heading - s.heading), rate = k.rateDegS*DEG;
+    const yawRate = clamp(k.headingGain*e, -rate, rate);
+    const v = Math.max(s.tas, 10), maxBank = k.maxBankDeg*DEG;
+    // The trim bank (the wings-level flight of a rigid rotor and its tail rotor is a degree or so off level): learnt from a
+    // small heading error, as the drift law's integrator learns the side speed, so the heading settles on the bug.
+    if (Math.abs(e) < 10*DEG && !this.syncBug) this.bankTrim = clamp(this.bankTrim + k.trimLearning*e*dt, -5*DEG, 5*DEG);
+    const target = clamp(Math.atan(v*yawRate/G0) + this.bankTrim, -maxBank, maxBank);
+    const roll = k.rollRateDegS*DEG*dt;
+    this.bankCmd += clamp(target - this.bankCmd, -roll, roll);
+    // The drift term (frozen: its side speed is zeroed) plus pilot.bank is the bank flown; make it the turn's.
+    pilot.bank = this.bankCmd - clamp(pilot.driftI - pilot.driftGain*o.sideSpeed, -10*DEG, 10*DEG);
+    pilot.heading = s.heading + k.slipGain*s.beta;
+    pilot.yawRateRef = G0*Math.sin(s.roll)/v;
+  }
+
+  /** After the shared step (tuned path): the pusher grip and the trim follow-up. */
+  private after(t: HeliHoldTuning, dt: number, s: AircraftState, c: ControlInputs): void {
+    if (t.pusher && c.propLever !== undefined) {
+      const k = t.pusher, want = clamp(interp1(k.kias, k.lever, this.speedCmd/KT), 0, 1);
+      if (!Number.isFinite(this.prop)) this.prop = c.propLever;
+      this.prop += clamp(want - this.prop, -k.ratePerS*dt, k.ratePerS*dt);
+      c.propLever = this.prop;
+    }
+    const spring = s.rotorcraft?.springTrim;
+    if (t.trimFollowUp && spring) {
+      const f = Math.min(1, dt/t.trimFollowUp.tauS);
+      this.stickLp.pitch += (c.elevator - this.stickLp.pitch)*f;
+      this.stickLp.roll += (c.aileron - this.stickLp.roll)*f;
+      // Full trim rate beyond 0.02 of the stick, proportional inside it.
+      c.cyclicTrimPitch = clamp((this.stickLp.pitch - spring.pitch)/0.02, -1, 1);
+      c.cyclicTrimRoll = clamp((this.stickLp.roll - spring.roll)/0.02, -1, 1);
+    }
   }
 }
 

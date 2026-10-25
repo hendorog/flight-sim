@@ -17,6 +17,7 @@ import type { AirframeVisualDef } from '../render/aircraft/airframe/types';
 import type { InstrumentSystemsDef, PanelDef } from '../instruments/panelDef';
 import type { InputProfile } from '../input/profile';
 import type { AudioProfile } from '../audio/profile';
+import type { HeliHoldTuning } from '../sim/rotorcraft/autopilot';
 import type { AircraftTypeDef } from '../training/types';
 
 export type { AircraftId } from '../core/types';
@@ -444,6 +445,12 @@ export interface SimProfile {
    * Bo 105).
    */
   heliHoldGroundSpeed?: boolean;
+  /**
+   * The helicopter hold's (A) laws for a type whose cyclic is not the R22 family's position command (the AH-56A's AMCS
+   * rate-command control gyro, its wing and pusher): src/sim/rotorcraft/autopilot.ts HeliHoldTuning. Absent: the shared
+   * laws (every helicopter but the AH-56A).
+   */
+  heliHold?: HeliHoldTuning;
   /**
    * An airborne start at zero airspeed (the hover scenario, hover=1) is turned into the mean wind at the start point and
    * trimmed at that airspeed, so the helicopter starts still over the ground instead of drifting off with the air mass

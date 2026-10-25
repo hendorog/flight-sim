@@ -219,6 +219,8 @@ export class SimPhysics {
     if (this.autoflight.helicopter && def.sim.heliHoldSlowToHover) this.autoflight.helicopter.slowToHover = { ...def.sim.heliHoldSlowToHover };
     // ... and holds the speed over the ground it was engaged at on a type that asks for it (the Bo 105).
     if (this.autoflight.helicopter && def.sim.heliHoldGroundSpeed) this.autoflight.helicopter.groundSpeedTarget = true;
+    // ... and flies the type's own laws where it has them (the AH-56A: SimProfile.heliHold).
+    if (this.autoflight.helicopter && def.sim.heliHold) this.autoflight.helicopter.tuning = def.sim.heliHold;
     this.stepSize = 1 / this.fm.physicsRate;
     this.h = this.stepSize;
     this.renderState = copyInto({} as AircraftState, this.fm.state);
