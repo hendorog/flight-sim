@@ -527,7 +527,8 @@ describe('the beta cam (BetaDef.pitchOnlySchedule)', () => {
     const { C208_PROPELLER, C208_BETA } = await import('../../src/aircraft/c208/powerplant');
     const pitch = C208_PROPELLER.pitchControl;
     if (pitch.kind !== 'constantSpeed') throw new Error('constant speed');
-    const cam = new PropGovernor(pitch);
+    // A cam on the C208's beta (which itself is linear since its low-pitch stop moved to the TCDS's station).
+    const cam = new PropGovernor({ ...pitch, beta: { ...C208_BETA, pitchOnlySchedule: { lever: [0, 0.5, 1], fraction: [0, 0.73, 1] } } });
     const linear = new PropGovernor({ ...pitch, beta: { ...C208_BETA, pitchOnlySchedule: undefined } });
     const pot = C208_BETA.pitchOnlyTravel, stop = pitch.fineStop, gf = C208_BETA.groundFine;
     const at = (g: InstanceType<typeof PropGovernor>, r: number) => { g.setLevers(r, 0); return g.commanded; };

@@ -35,11 +35,10 @@ const C208_BETA: AircraftDefinition = (() => {
 })();
 
 describe('idle taxi (measure.ts idleTaxi)', () => {
-  it('on the gate at high idle the aircraft runs away; ground fine holds it near a stop with |static thrust| < 500 N; half beta between', () => {
+  it('on the gate at high idle the aircraft taxies briskly; ground fine holds it near a stop with |static thrust| < 500 N; half beta between', () => {
     const rig = () => makeRig({ def: C208_BETA, loading: 'maxGross', env: flatEnvironment() });
-    // On the gate at HIGH idle (the clear runaway: 3.5 kN); the beta positions at low idle. Half beta (1.35 kN at
-    // LOW IDLE since the C208's low idle went from 20 to 40 shp) is still accelerating at 150 s (20.1 kt) and settles
-    // at about 22.7 kt by 400 s: it gets the longer window.
+    // On the gate at HIGH idle (1.4 kN since 2026-10-26, when the C208's idle stopped pulling it along: 3.5 kN and a
+    // run-away before); the beta positions at low idle. Half beta gets the longer window to settle.
     const gate = idleTaxi(rig(), { reverse: 0, condition: 1 });
     const fine = idleTaxi(rig(), { reverse: BETA.pitchOnlyTravel, condition: CUTOFF_BELOW });
     const half = idleTaxi(rig(), { reverse: 0.5 * BETA.pitchOnlyTravel, condition: CUTOFF_BELOW, seconds: 400 });
@@ -47,9 +46,9 @@ describe('idle taxi (measure.ts idleTaxi)', () => {
       log(`C208 + beta test-bed, ${name}: static ${r.staticThrustN.toFixed(0)} N, Np ${r.staticNp.toFixed(0)}, Ng ${r.staticNg.toFixed(1)} %, ITT ${r.staticIttC.toFixed(0)} C; unbraked ${r.speedKt.toFixed(1)} kt (Np ${r.np.toFixed(0)}, steady ${r.steady})`);
       for (const x of [r.staticThrustN, r.staticNp, r.staticNg, r.staticIttC, r.speedKt, r.np]) expect(Number.isFinite(x)).toBe(true);
     }
-    // High idle on the gate never settles to a taxi speed (3.5 kN: the reason PT6 aircraft taxi in beta).
+    // High idle on the gate is still gathering speed at 150 s, past 15 kt (the reason PT6 aircraft taxi in beta).
     expect(gate.steady).toBe(false);
-    expect(gate.speedKt).toBeGreaterThan(30);
+    expect(gate.speedKt).toBeGreaterThan(15);
     expect(fine.steady).toBe(true);
     expect(half.steady).toBe(true);
     expect(gate.staticThrustN).toBeGreaterThan(1000);

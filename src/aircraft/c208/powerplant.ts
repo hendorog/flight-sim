@@ -79,14 +79,20 @@ export const PT6A_114A: EngineDef = {
       inertia: 0.08,
       compressorPower: 860e3,
       map: {
-        ng: [0.5, 0.52, 0.6, 0.7, 0.8, 0.9, 0.95, 0.97, 1.0, 1.05, 1.1],
-        fuelFlow: [81, 85, 115, 160, 225, 310, 365, 395, 445, 550, 650].map((lbh) => lbh * LB_PER_H),
-        itt: [565, 560, 530, 540, 580, 640, 680, 700, 735, 835, 920],
-        // Low idle (52 % Ng) raised from 20 to 40 shp of gas power (and 50 % Ng from 10 to 25) when beta came in: with
-        // 20 shp the propeller turned 500 rpm on the gate and the aircraft did not break away at LOW IDLE, where the
-        // real one creeps off and has to be held in beta (ESTIMATE, calibrated to a steady 22 kt unbraked on the gate
-        // at LOW IDLE: tests/conformance/c208.test.ts). Above 55 % Ng nothing changed.
-        power: [25, 40, 70, 170, 320, 510, 620, 675, 780, 1000, 1200].map((shp) => shp * HP),
+        ng: [0.5, 0.52, 0.6, 0.65, 0.7, 0.75, 0.8, 0.9, 0.95, 0.97, 1.0, 1.05, 1.1],
+        fuelFlow: [81, 85, 115, 137, 160, 192, 225, 310, 365, 395, 445, 550, 650].map((lbh) => lbh * LB_PER_H),
+        itt: [565, 560, 530, 535, 540, 560, 580, 640, 680, 700, 735, 835, 920],
+        // The idle end (ESTIMATE, calibrated 2026-10-26 with the low-pitch stop moved to the TCDS's station, below):
+        // LOW IDLE (52 % Ng) 25 shp and HIGH IDLE (65 %) 40 shp of gas power. Before, 40 and about 120 shp (65 % lay
+        // between 70 shp at 60 % and 170 at 70 %): at HIGH IDLE on the gate the propeller pulled 3.5 kN at a standstill
+        // and +1.8 kN at 70 kt, so an unbraked landing roll at idle levelled off at 55 kt, and in an idle glide it
+        // pulled +1.2 kN at 95 KIAS (L/D 21 at idle against 12.7 feathered). Real ones: feathering at idle makes the
+        // aircraft surge forward and below about 500 ft lbf the flattened blades are "a giant, drag-producing disc"
+        // (AOPA Pilot, Turbine Pilot: Cessna Caravan, March 2009); "a fair amount of breakaway power" is needed to start
+        // a loaded Caravan taxiing from LOW IDLE (same). Now, maximum gross, level, unbraked: LOW IDLE on the gate
+        // about 8 kt, HIGH IDLE on the gate about 27 kt, and at idle 95 KIAS clean the propeller drags (about -0.35 kN).
+        // 0.7-0.8 refaired to the new idle (110 / 210 / 320 shp; 170 at 70 % before); 80 % Ng and above unchanged.
+        power: [15, 25, 33, 40, 110, 210, 320, 510, 620, 675, 780, 1000, 1200].map((shp) => shp * HP),
       },
       lightOffNg: 0.09,
       selfSustainingNg: 0.35,
@@ -119,30 +125,46 @@ export const PT6A_114A: EngineDef = {
 
 /** Thin, fast blade section of a turboprop's propeller (tip Mach about 0.8 at 1900 rpm): as the constant-speed test-bed blades. */
 const BLADE_SECTION: BladeSectionDef = { ...C172_BLADE_SECTION, clMaxLowSpeed: 1.6, clMaxMachLoss: 1.0, cdMax: 1.3 };
-const FINE = 15 * DEG;
-const FEATHER = 88 * DEG;
 /** Reference station of the blade angles, r / R. */
 const STATION = 0.75;
+/** Pitch of the constant-pitch helix the blades are twisted to: the blade angle at STATION when the twist is zero there, rad. */
+const HELIX_DESIGN = 26 * DEG;
+/** Twist of that helix at r / R = x relative to STATION, rad (the blade there sits this much coarser than at STATION). */
+function helixTwistAt(x: number): number {
+  return Math.atan((Math.tan(HELIX_DESIGN) * STATION) / x) - HELIX_DESIGN;
+}
+/** The TCDS's blade-angle station: 30 in out on the 106 in propeller, r / R. */
+const TCDS_STATION = 30 / (106 / 2);
+/**
+ * Low-pitch stop (beta pickup), rad at 0.75 R: the TCDS's +15.6 deg at the 30 in station (IM.A.226 sect. 6.2) carried
+ * out to 0.75 R along the blade's twist (helixTwistAt: 6.9 deg finer there), 8.7 deg. Until 2026-10-26 the TCDS
+ * angle stood at 0.75 R itself (15 deg): a blade that coarse at idle pulled the aircraft along instead of dragging
+ * (see the gas-generator map's idle end). The twist is the model's helix, not McCauley's blade drawing, so the
+ * angle at 0.75 R is as good as that assumption (ESTIMATE).
+ */
+const FINE = 15.6 * DEG - helixTwistAt(TCDS_STATION);
+const FEATHER = 88 * DEG;
 /** Ground fine, deg at 0.75 R: about zero static thrust at LOW IDLE (calibrated: tests/conformance/targets/c208.ts idle taxi). */
 const GROUND_FINE_DEG = -5.5;
-/** Full reverse, deg at 0.75 R: the TCDS's 29.6 deg (15.6 - -14) below the low-pitch stop (15). */
-const REVERSE_DEG = 15 - (15.6 - -14);
-/** Blade angles of the beta slices, deg: full reverse, ground fine, one between them and two above ground fine. */
-const BETA_NODES_DEG = [REVERSE_DEG, -9, GROUND_FINE_DEG, 2, 8.5];
-/** Twist table of a constant-pitch helix that is 26 degrees at the reference station. */
-function helixTwist(design: number): PropellerDef['twist'] {
+/** Full reverse, deg at 0.75 R: the TCDS's 29.6 deg (15.6 - -14) below the low-pitch stop. */
+const REVERSE_DEG = FINE / DEG - (15.6 - -14);
+/** Blade angles of the beta slices, deg: full reverse, one between it and ground fine, ground fine, two between ground fine and the stop. */
+const BETA_NODES_DEG = [REVERSE_DEG, -13, GROUND_FINE_DEG, -1.5, 3];
+/** Twist table of the constant-pitch helix (HELIX_DESIGN at the reference station). */
+function helixTwist(): PropellerDef['twist'] {
   const x = [0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-  return { kind: 'table', x, angle: x.map((xi) => Math.atan((Math.tan(design) * STATION) / xi) - design) };
+  return { kind: 'table', x, angle: x.map(helixTwistAt) };
 }
 
 /**
  * Beta and reverse (EASA TCDS IM.A.226 issue 15, sect. 6.2: McCauley 3GFR34C703/106GA-0, blade angles at the 30 in
  * station: low pitch (beta pickup) +15.6, feathered +88, maximum reverse -14 deg). The blade turns as a rigid body,
  * so the TCDS's angle DIFFERENCES hold at any station: maximum reverse is 29.6 deg below the low-pitch stop and
- * feather 72.4 deg above it. The model keeps its calibrated low-pitch stop (15 deg at 0.75 R, which the approach
- * torque and the governed climb are fitted to; feather 88, 0.6 deg from the TCDS difference) and puts reverse the
- * TCDS's 29.6 deg below it. Ground fine (the end of the pitch-only travel) is a calibration: the angle at which the
- * propeller makes about zero static thrust at LOW IDLE. How much of the lever's aft travel moves the blades only
+ * feather 72.4 deg above it. The low-pitch stop is the TCDS's, carried to 0.75 R along the twist (FINE, 8.7 deg), and
+ * reverse sits the TCDS's 29.6 deg below it (-20.9 deg). Feather stays at 88 deg at 0.75 R (the TCDS's 72.4 deg above
+ * the stop would be 81 deg; the feathered glide hardly differs: 12.8 against 12.7 at 95 KIAS). Ground fine (the end
+ * of the pitch-only travel) is a calibration: the angle at which the propeller makes about zero static thrust at LOW
+ * IDLE. How much of the lever's aft travel moves the blades only
  * (Ng at idle), and the beta valve's slew, are ESTIMATES (the C208 POH describes the beta range from the idle gate
  * to the start of the reversing cam, without a number): about 40 % of the aft travel, and the gate to full reverse
  * in about 1.5 s.
@@ -152,12 +174,11 @@ export const C208_BETA: BetaDef = {
   reverse: REVERSE_DEG * DEG,
   pitchOnlyTravel: 0.4,
   rate: 20 * DEG,
-  // The beta cam (ESTIMATE, AGENT choice, integration): half the pitch-only travel puts the blades at about 0 deg
-  // (73 % of the way from the 15 deg stop to ground fine), a walking taxi at LOW IDLE (conformance: 1089 N static,
-  // Np 1285, 10.9 kt steady unbraked); with the angle linear in the lever, half travel was 4.75 deg, where this blade at idle
-  // pulls as hard as on the stop (1346 N, 22.8 kt). Probe: 2 deg 1310 N / 19.1 kt, -1 deg 932 N / 6.0 kt, -2 deg 767 N /
-  // 0.7 kt, -4 deg 415 N / 0 kt.
-  pitchOnlySchedule: { lever: [0, 0.5, 1], fraction: [0, 0.73, 1] },
+  // The blade angle is linear in the lever over the pitch-only travel (no cam). Until 2026-10-26 a cam put half
+  // travel 73 % of the way from the old 15 deg stop to ground fine (about 0 deg), because a linear 4.75 deg there
+  // pulled as hard as the stop. From the 8.7 deg stop, half travel is 1.6 deg: at LOW IDLE, maximum gross, unbraked,
+  // the gate creeps at about 8 kt, half travel about 3 kt and ground fine stands still (tests/conformance/targets/c208.ts
+  // C208_BETA_TAXI); at HIGH IDLE half travel is about 18 kt against 25-27 on the gate.
 };
 
 /**
@@ -175,7 +196,7 @@ export const C208_PROPELLER: PropellerDef = {
   blades: PROP.blades,
   hubRadius: 0.2,
   chordOverR: C172_PROPELLER.chordOverR.map((c) => 0.95 * c),
-  twist: helixTwist(26 * DEG),
+  twist: helixTwist(),
   referenceStation: STATION,
   section: BLADE_SECTION,
   // Three 106 in aluminium blades, hub and spinner.
@@ -190,9 +211,9 @@ export const C208_PROPELLER: PropellerDef = {
     governor: { minRpm: 1600, maxRpm: C208_MAX_NP, gain: 0.03, dampingTime: 0.2 },
     failsTo: 'feather',
     beta: C208_BETA,
-    // Five beta slices (full reverse, two between it and ground fine, ground fine, one below the low-pitch stop)
-    // ahead of the fifteen of the governing and feather range: PROP_MAX_SLICES (20) in all.
-    pitchNodes: [...BETA_NODES_DEG, 15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, 38, 42, 48, 58, 70, 88].map((deg) => deg * DEG),
+    // Five beta slices (full reverse, one between it and ground fine, ground fine, two below the low-pitch stop)
+    // ahead of the fifteen of the governing and feather range from the stop: PROP_MAX_SLICES (20) in all.
+    pitchNodes: [...BETA_NODES_DEG.map((deg) => deg * DEG), FINE, ...[11.5, 14.5, 17.5, 20.5, 23.5, 26.5, 29.5, 32.5, 36, 40, 46, 54, 68, 88].map((deg) => deg * DEG)],
   },
 };
 

@@ -3,6 +3,34 @@
 See also the [cross-aircraft issues](../../../docs/known-issues.md#cross-aircraft-issues) and the
 [turbine model](../../../docs/turbine-model.md). Entries are ordered by pilot impact.
 
+## Idle drag on the ground and in the air — **fixed 2026-10-26 (estimate)**
+
+Owner report: after touchdown with the power lever at idle the Caravan "will not stop on its own". Measured (maximum
+landing weight, flaps FULL, touchdown 71 KIAS, power lever on the gate, condition HIGH IDLE, no brakes): the propeller
+on its low-pitch stop pulled +1.8 kN at 70 kt and +3.2 kN at 10 kt, so the roll levelled off at 55 kt; on the brakes it
+pulled 3.5 kN. In the air it pulled +1.2 kN at 95 KIAS clean, an idle glide of L/D 21 against 12.7 feathered. Rolling
+resistance (0.02, shared, Torenbeek) and airframe drag (CD about 0.12 on the roll, flaps FULL) were in order; the C172S
+on the same model creeps at about 4 kt at idle. Two causes: the TCDS's low-pitch stop (+15.6 deg) is at the 30 in
+station but stood in the model at 0.75 R, 6.9 deg too coarse along the blade's twist; and HIGH IDLE (65 % Ng) gave
+about 120 shp of gas power (between 70 shp at 60 % and 170 at 70 %), LOW IDLE 40 shp. Now: the stop at 8.7 deg at
+0.75 R (reverse 29.6 deg below it, -20.9), gas power 25 / 40 shp at LOW / HIGH IDLE (70-80 % Ng refaired), the beta
+cam linear. After: HIGH IDLE on the gate 1.45 kN static, unbraked steady 26 kt (the landing roll from 71 KIAS passes
+50 kt at 27 s and 30 kt at 97 s); LOW IDLE on the gate 0.93 kN, about 7 kt; idle descents clean at 95 / 120 KIAS
+-0.4 / -1.8 kN (5.0 / 7.3 deg), flaps FULL at 78 KIAS 6.4 deg (was 4.6). Source for the behaviour: AOPA Pilot, Turbine
+Pilot: Cessna Caravan, March 2009 (feathering at idle makes it surge forward; below about 500 ft lbf the blades are "a
+giant, drag-producing disc"; "a fair amount of breakaway power" to start taxiing). The idle powers and the angle at
+0.75 R (the model's helix twist, not McCauley's blade drawing) are ESTIMATES. With no brakes and no beta the aircraft
+still settles into a brisk taxi at HIGH IDLE: the POH's technique is beta after touchdown. Side effect: the suite's
+engine-dead glide (targets `glide`, labelled `propeller: 'feathered'`) trims this single with its propeller
+windmilling on the stop, not feathered (blade 8.7 deg, 1674 rpm at 95 KIAS): it went from 12.0 to 10.8 at 88 KIAS
+(best-glide speed 95 to 88 KIAS) with the finer stop; feathered in flight it glides at about 12.8. Flaps FULL at
+78 KIAS idle still pulls about +0.2 kN: the remaining soft spot (a finer real stop would turn it into drag).
+Owner decisions: the LOW IDLE taxi bands (the gate 4-12 kt, was 15-30; half travel 1-6 kt, was 8-12), and whether
+HIGH IDLE on the gate should roll slower still.
+Evidence: [conformance targets](../../../tests/conformance/targets/c208.ts) `C208_BETA_TAXI`, `C208_IDLE_DESCENT`;
+tests/aircraft/c208.test.ts; [powerplant.ts](powerplant.ts) `FINE`, the gas-generator map.
+Close with: POH idle-descent and taxi figures, the PT6A-114A idle torque and Np on the gate, the real blade twist.
+
 ## Full reverse held to a stop with full brakes — **not reproduced (closed)**
 
 The defect seen on the turbine-core test-bed and on the C208 at T1b (full reverse held to walking pace with full
@@ -19,25 +47,25 @@ Close with: a reverse-to-stop item in the conformance targets if the POH gives a
 
 ## Beta range lever schedule — **estimate**
 
-The beta cam (`C208_BETA.pitchOnlySchedule`, integration) is three points: the low-pitch stop (15 deg at 0.75 R) at the
-gate, about 0 deg at half the pitch-only travel (73 % of the way to ground fine), ground fine (-5.5 deg) at 40 % of the
-aft travel. With the angle linear in the lever, half travel was 4.75 deg, where this blade at idle pulls as hard as on the
-stop (1346 N, 22.8 kt). Measured at LOW IDLE, maximum gross, level, unbraked: on the gate 1292 N and a steady 22 kt;
-half travel (lever 0.2) 1089 N, Np 1285 and a steady 10.9 kt (band 8-12 kt, ESTIMATE); ground fine 186 N and 0 kt. The first quarter of the
-travel still passes the 5 deg hump (about as much thrust as on the stop), so the taxi slows over the second quarter.
+The blade angle is linear in the lever over the pitch-only travel, from the low-pitch stop (8.7 deg at 0.75 R) at the
+gate to ground fine (-5.5 deg) at 40 % of the aft travel. Until 2026-10-26 a cam (73 % of the way at half travel) made
+up for the old 15 deg stop. Measured at LOW IDLE, maximum gross, level, unbraked: on the gate 925 N and about 7 kt;
+half travel (lever 0.2, 1.6 deg) 809 N, Np 984 and 2.7 kt (band 1-6 kt, ESTIMATE); ground fine 125 N and 0 kt.
 Evidence: [conformance targets](../../../tests/conformance/targets/c208.ts) `C208_BETA_TAXI`,
 [powerplant.ts](powerplant.ts) `C208_BETA`.
 Close with: the real cam profile (a PT6A-114A / McCauley beta schedule).
 
 ## Beta and reverse data — **estimate**
 
-The blade angles are the TCDS's (IM.A.226 sect. 6.2: low pitch +15.6, reverse -14, feather +88 deg at the 30 in station)
-moved to the model's 0.75 R reference as differences from the low-pitch stop. Ground fine (-5.5 deg, about 190 N of
+The blade angles are the TCDS's (IM.A.226 sect. 6.2: low pitch +15.6, reverse -14, feather +88 deg at the 30 in station):
+the stop carried to 0.75 R along the model's twist (8.7 deg), reverse the TCDS's difference below it (-20.9), feather
+left at 88 deg. Ground fine (-5.5 deg, about 125 N of
 static thrust at LOW IDLE), the pitch-only share of the lever (40 %), the beta valve's rate (20 deg/s), the reversing
 cam's top (85 % Ng) and the topping reset in reverse (95 % Np, 1805 rpm, under the TCDS's 1825) are estimates; no POH
-figure for the reverse torque was in hand. Full reverse on a static run gives 1160 ft lbf at 1800 rpm and 85 % Ng (the
-blade absorbs no more at -14.6 deg; the TCDS allows 1865 ft lbf). LOW IDLE gas power was raised from 20 to 40 shp to
-let the aircraft creep off on the gate as the real one does.
+figure for the reverse torque was in hand. Full reverse on a static run gives -3.5 kN, 1218 ft lbf at 1709 rpm and
+85 % Ng (the TCDS allows 1865 ft lbf, 1825 rpm); before 2026-10-26, at -14.6 deg, -2.9 kN and 1162 ft lbf at 1800 rpm.
+LOW IDLE gas power, raised from 20 to 40 shp at integration to let the aircraft creep off on the gate, is 25 shp since
+2026-10-26 (see the idle drag entry).
 Evidence: [powerplant.ts](powerplant.ts) `C208_BETA`, `PT6A_114A.turbine.reversingCam`.
 Close with: the POH's reverse and beta figures (Np, torque, Ng at full reverse; idle Np on the gate and in beta).
 
@@ -62,16 +90,14 @@ Close with: a data sheet like the other types' (TCDS A37CE, POH, maintenance man
 ## Keyboard circuit — **workaround**
 
 The keyboard circuit is flown by torque (the pilot reads ft lbf and sets it with taps; take-off 1750, climb 1650),
-flaps 20 for the take-off and the climb at 85-95 KIAS, and beta after touchdown. It needs a wider circuit than the
-172's: at flight idle (HIGH IDLE) the propeller on its low-pitch stop still turns about 400 ft lbf at 78-95 KIAS, so
-with flaps FULL at idle the Caravan comes down at only about 3.6 deg; the pilot descends 450 ft from abeam the
-threshold and turns base 2500 m beyond it. A real Caravan comes down far more steeply at idle, so the flight-idle
-thrust (or drag) on approach is suspect; it was not recalibrated here (the low-pitch stop carries the climb and cruise
-fit).
+flaps 20 for the take-off and the climb at 85-95 KIAS, and beta after touchdown. It was widened (base 2500 m beyond the
+threshold, 450 ft descended from abeam it) when the idle propeller still turned about 400 ft lbf on approach and flaps
+FULL at idle came down at only 3.6 deg. Since 2026-10-26 idle drags (about 100 ft lbf, 6.4 deg at 78 KIAS flaps FULL);
+the circuit was left as it was and passes, with the flare raised from 7 to 7.5 m (touchdown 1.41 / 1.69 m/s calm /
+10 kt crosswind; limit 1.8).
 Evidence: [conformance targets](../../../tests/conformance/targets/c208.ts) `KEYBOARD_PILOT_TARGETS`,
 `C208_KEYBOARD_CIRCUIT`; `node scripts/fly-keyboard.mjs c208 <dir>`.
-Close with: the POH's idle descent figures (rate of descent at idle, flaps FULL), the flight-idle thrust checked
-against them, and the 172's circuit flown unchanged.
+Close with: the POH's idle descent figures, then the circuit brought back toward the 172's.
 
 ## Roll spoilers, anti-ice, inertial separator — **missing feature**
 

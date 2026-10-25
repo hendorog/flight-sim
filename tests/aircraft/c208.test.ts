@@ -15,6 +15,7 @@ import { panelLayoutProblems } from '../../src/instruments/panelLayout';
 import { CUTOFF_BELOW } from '../../src/physics/propulsion/turbineEngine';
 import { SimPhysics } from '../../src/sim/SimPhysics';
 import { at, calmWeather, makeRig, resetTo } from '../fdm/helpers';
+import { idleDescent, idleTaxi, runwayRig } from '../fdm/measure';
 
 describe('Cessna 208 Caravan 675', () => {
   it('is what the registry loads: the type itself, a free turbine with a constant-speed feathering propeller', async () => {
@@ -77,6 +78,19 @@ describe('Cessna 208 Caravan 675', () => {
     expect(s.engine.lit).toBe(false);
     expect(s.engine.ng).toBeLessThan(5);
     expect(s.propeller.feathered).toBe(true);
+  }, 60_000);
+
+  it('at idle on the gate the propeller does not run the aircraft away on the ground and drags in the air (2026-10-26)', () => {
+    // Before: at HIGH IDLE on the gate 3.5 kN on the brakes, an unbraked landing roll at idle levelling off at 55 kt,
+    // and +1.2 kN at 95 KIAS in an idle glide (L/D 21 against 12.7 feathered). The bands: tests/conformance/targets/c208.ts.
+    const ground = idleTaxi(runwayRig(C208_DEFINITION, 'maxGross'), { reverse: 0, condition: 1, seconds: 40 });
+    expect(ground.staticThrustN).toBeGreaterThan(1000);
+    expect(ground.staticThrustN).toBeLessThan(2000);
+    expect(ground.speedKt).toBeLessThan(25);
+    const air = idleDescent(makeRig({ def: C208_DEFINITION, loading: 'maxGross' }), { kias: 95, flapLever: 0, altitude: 1500 });
+    expect(air.kias).toBeCloseTo(95, 0);
+    expect(air.thrustN).toBeLessThan(0);
+    expect(air.pathDeg).toBeGreaterThan(4.6);
   }, 60_000);
 
   it('a scenario reset after reverse puts the power lever forward of the gate (controlDefaults reverse 0)', () => {

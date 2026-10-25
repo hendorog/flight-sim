@@ -85,9 +85,10 @@ export const C208_TARGETS: ConformanceTargets = {
   ground: {
     restHeightM: band(1.905, 0.03, 'geometry.restHeight; contract 5 intro (3 cm)'),
     // Power-turbine rpm at HIGH IDLE on the ground (the definition's default condition lever), the power lever on
-    // the idle gate: the propeller at about 900-1200 rpm. The Ng is the POH's (high idle 65 %); the Np band is an
-    // ESTIMATE (no handbook figure in hand), the same as the idle-taxi case "on the gate, HIGH IDLE" below.
-    idleRpm: range(15_500, 21_000, 'POH sect. 7: HIGH IDLE 65 % Ng; Np about 900-1200 (ESTIMATE)'),
+    // the idle gate: the propeller at about 850-1200 rpm. The Ng is the POH's (high idle 65 %); the Np band is an
+    // ESTIMATE (no handbook figure in hand), the same as the idle-taxi case "on the gate, HIGH IDLE" below. Widened
+    // from 900 to 850 rpm (2026-10-26) when the idle gas power came down so that idle drags (powerplant.ts): about 890.
+    idleRpm: range(14_700, 21_000, 'POH sect. 7: HIGH IDLE 65 % Ng; Np about 850-1200 (ESTIMATE)'),
     parkedDriftMm: below(5, 'contract 3.10 generic block'),
     parkedRateDegS: below(0.05, 'contract 3.10 generic block'),
     taxi: {
@@ -107,7 +108,7 @@ export const C208_TARGETS: ConformanceTargets = {
         label: 'on the gate, HIGH IDLE',
         reverse: 0,
         condition: 1,
-        idleNp: range(900, 1200, 'HIGH IDLE on the ground: Np about 900-1200 (ESTIMATE, as ground.idleRpm)'),
+        idleNp: range(850, 1200, 'HIGH IDLE on the ground: Np about 850-1200 (ESTIMATE, as ground.idleRpm)'),
         idleNgPct: band(65, 1, 'POH sect. 7: HIGH IDLE 65 % Ng'),
       },
       {
@@ -147,28 +148,74 @@ export const C208_TAKEOFF_LIMITS = {
 };
 
 /**
- * The power lever's positions on the ground at LOW IDLE that settle slower than the suite's idle-taxi block rolls
- * (c208.test.ts; plan 4, T1b items a and c). On the gate the propeller on its low-pitch stop pulls the aircraft to a
- * brisk taxi, which is why the POH taxies it in beta; halfway through the pitch-only travel it should be a walking
- * taxi. Both bands are ESTIMATES. Half travel puts the blades at about 0 deg through the beta cam
- * (C208_BETA.pitchOnlySchedule; 'C208-beta-cam' closed at integration).
+ * The power lever's positions on the ground at idle that settle slower than the suite's idle-taxi block rolls
+ * (c208.test.ts; plan 4, T1b items a and c), maximum gross, level, unbraked. All bands are ESTIMATES. Recalibrated
+ * 2026-10-26 when the idle stopped pulling the aircraft along (powerplant.ts: the low-pitch stop at the TCDS's station,
+ * LOW / HIGH IDLE 25 / 40 shp of gas power): before, the gate at HIGH IDLE ran away past 70 kt (3.5 kN static) and an
+ * unbraked landing roll at idle levelled off at 55 kt; the gate at LOW IDLE ran 22 kt (band 15-30) and half travel
+ * 10.9 kt (band 8-12). Now the gate at LOW IDLE is a slow taxi that a loaded Caravan needs "a fair amount of breakaway
+ * power" to start (AOPA Pilot, Turbine Pilot: Cessna Caravan, March 2009), and the gate at HIGH IDLE (the landing
+ * setting) still a brisk taxi that the POH's "beta after touchdown" controls. Owner decision: the LOW IDLE bands.
  */
 export const C208_BETA_TAXI = [
   {
     label: 'on the gate',
     reverse: 0,
-    speedKt: range(15, 30, 'on the gate at LOW IDLE the Caravan runs away and is taxied in beta (plan 4 item a, ESTIMATE)'),
-    thrustN: range(1000, 2500, 'enough to break away and accelerate (ESTIMATE)'),
-    np: range(600, 1000, 'below HIGH IDLE (900-1200): LOW IDLE 52 % Ng on the low-pitch stop (ESTIMATE)'),
+    condition: 0.1,
+    speedKt: range(4, 12, 'on the gate at LOW IDLE a slow taxi; breaks away slowly when loaded (AOPA 2009; ESTIMATE, owner decision)'),
+    thrustN: range(700, 1200, 'a little more than the rolling resistance (0.02 x 35 kN, about 700 N): it creeps off (ESTIMATE)'),
+    np: range(600, 1000, 'below HIGH IDLE (850-1200): LOW IDLE 52 % Ng on the low-pitch stop (ESTIMATE)'),
     settled: range(1, 1, 'measure.ts idleTaxi steady'),
   },
   {
     label: 'half the pitch-only travel',
     reverse: C208_BETA.pitchOnlyTravel / 2,
-    speedKt: range(8, 12, 'halfway into beta: a walking taxi (plan 4 item c, ESTIMATE)'),
+    condition: 0.1,
+    speedKt: range(1, 6, 'halfway into beta at LOW IDLE: slower than the gate, a creep (ESTIMATE)'),
     thrustN: range(500, 1200, 'between ground fine and the gate (ESTIMATE)'),
     np: range(600, 1700, 'between the gate and ground fine; under 95 % Np, the beta topping (ESTIMATE)'),
     settled: range(1, 1, 'measure.ts idleTaxi steady'),
+  },
+  {
+    label: 'on the gate, HIGH IDLE',
+    reverse: 0,
+    condition: 1,
+    speedKt: range(15, 35, 'on the gate at HIGH IDLE (the landing setting) a brisk taxi, not a run-away: it was 73 kt and still accelerating (ESTIMATE)'),
+    thrustN: range(1000, 2000, 'HIGH IDLE static on the gate: was 3.5 kN (ESTIMATE)'),
+    np: range(850, 1200, 'HIGH IDLE on the ground: Np about 850-1200 (ESTIMATE, as ground.idleRpm)'),
+    settled: range(1, 1, 'measure.ts idleTaxi steady'),
+  },
+] as const;
+
+/**
+ * Idle descents (power lever on the gate, condition HIGH IDLE, propeller MAX; maximum gross, 5000 ft above the field,
+ * the speed held on the pitch): the propeller on its low-pitch stop drags, as on the real aircraft: feathering at
+ * idle makes it surge forward, and below about 500 ft lbf the flattened blades are "a giant, drag-producing disc"
+ * (AOPA Pilot, Turbine Pilot: Cessna Caravan, March 2009). Before 2026-10-26 the idle propeller pulled +1.2 kN at
+ * 95 KIAS (an idle glide of 2.7 deg, L/D 21, against 4.5 deg feathered) and the flaps-FULL idle path was 4.6 deg.
+ * The bands are ESTIMATES (no POH idle-descent figure in hand).
+ */
+export const C208_IDLE_DESCENT = [
+  {
+    label: 'clean at 95 KIAS',
+    kias: 95,
+    flapLever: 0,
+    thrustN: below(0, 'idle drags: feathering it gains (AOPA 2009)'),
+    pathDeg: range(4.6, 9, 'steeper than the feathered glide at 95 KIAS (about 4.5 deg, L/D 12-13) (ESTIMATE)'),
+  },
+  {
+    label: 'clean at 120 KIAS',
+    kias: 120,
+    flapLever: 0,
+    thrustN: below(0, 'idle drags: feathering it gains (AOPA 2009)'),
+    pathDeg: range(5, 10, 'idle descent clean at 120 KIAS: about 1300-2000 ft/min (ESTIMATE)'),
+  },
+  {
+    label: 'flaps FULL at 78 KIAS',
+    kias: 78,
+    flapLever: 1,
+    thrustN: below(600, 'about no thrust on short final at idle (ESTIMATE)'),
+    pathDeg: range(5.5, 12, 'flaps FULL at idle comes down steeply: "do not go to flight idle until about to touch down" (AOPA 2009; ESTIMATE)'),
   },
 ] as const;
 
@@ -206,16 +253,17 @@ export const KEYBOARD_PILOT_TARGETS: Partial<PilotTargets> = {
   powerPerKt: 20,
   powerPerMetre: 10,
   powerBand: 60,
-  // A wider circuit than the 172's: at flight idle the Caravan's propeller still turns about 400 ft lbf on approach,
-  // so it can steepen a 3 deg path only a little (flaps FULL, 78 KIAS, idle: about 3.6 deg). The pilot comes down
-  // 450 ft from abeam the threshold, turns base 2500 m beyond it and flies base at 450 ft, so the final starts on
-  // or a little under the path, where power, not idle, corrects it.
+  // A wider circuit than the 172's, set when the Caravan's idle propeller still turned about 400 ft lbf on approach
+  // (flaps FULL, 78 KIAS, idle: about 3.6 deg; since 2026-10-26 about 100 ft lbf and 6.4 deg, and the circuit was
+  // left as it was). The pilot comes down 450 ft from abeam the threshold, turns base 2500 m beyond it and flies base
+  // at 450 ft, so the final starts on or a little under the path, where power, not idle, corrects it.
   baseTurnM: 2500,
   baseFt: 450,
   downwindDescentFt: 450,
-  // A heavy aircraft that floats in the round-out: a lower flare, and the crab kept until just before the wheels touch
-  // (its ailerons would not hold a wing down against the drift through a long float).
-  flareM: 7,
+  // A heavy aircraft: the crab kept until just before the wheels touch (its ailerons would not hold a wing down
+  // against the drift through a long float). The flare from 7.5 m (7 m until 2026-10-26: with idle now dragging, the
+  // 7 m round-out touched at 1.81 m/s in the 10 kt crosswind; 7.5 m gives 1.41 / 1.69 m/s calm / crosswind).
+  flareM: 7.5,
   decrabM: 2,
   flareBankDeg: 8,
   brakeKias: 55,
