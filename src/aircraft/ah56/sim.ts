@@ -17,8 +17,8 @@ const RUNNING: ControlPatch = {
 };
 
 // The pilot's cyclic for the lift-off (tuning round 2, KNOWN_ISSUES T9; D from the 3 ft IGE hover trim, typical load: 0.058 / -0.028
-// of the travel): on the wheels the trim leaves the stick at 0, about 0.06 forward of the hover's, and the keyboard cyclic re-centres
-// there, so a keyboard lift-off left the ground nose 2-2.5 deg low and running forward at 1-2 kt/s (W/tune/ah56/r2 out/
+// of the travel): on the wheels the trim leaves the stick at 0, about 0.06 forward of the hover's, and the keyboard cyclic sat
+// there (re-centred there before tune3; it now stays where the keys leave it), so a keyboard lift-off left the ground nose 2-2.5 deg low and running forward at 1-2 kt/s (W/tune/ah56/r2 out/
 // p3_lifttrace.log). Set where a pilot holds it before raising the collective, it sits still on the wheels (20 s hands off, brakes off:
 // 0 m, 0.2 deg) and lifts nose -0.4 deg. The ground starts only (cold too): the airborne and approach starts keep their trim. The pedal
 // is not preset: at the hover's 0.38 left on the ground, with the collective down, the tail rotor turned the aircraft 36 deg on its
