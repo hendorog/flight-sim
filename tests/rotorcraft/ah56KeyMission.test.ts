@@ -86,7 +86,7 @@ describe('the keyboard beginner\'s whole flight (aids on, feet off): lift-off, c
     expect(a.m.touchGs).toBeLessThan(5);
   });
   // Measured (this file): every 0.8 s stopped in 71.8 s, the hover 8.0 m, the touchdown 51 fpm at 1.0 kt.
-  it.fails('KNOWN GAP every 1.2 s (0.5 s late): the same stop, hover and touchdown (measured: not stopped in 90 s; the hover 18.8 m; 40 fpm at 9.5 kt, no crash; KNOWN_ISSUES T11)', () => {
+  it.fails('KNOWN GAP every 1.2 s (0.5 s late): the same stop, hover and touchdown (measured: not stopped in 90 s; the hover 18.8 m; 40 fpm at 9.5 kt, 10-20 kt between rigs, no crash; KNOWN_ISSUES T11)', () => {
     expect(b.m.phases.stop.why).toBe('done');
     expect(b.m.phases.hover2.drift).toBeLessThan(15);
     expect(b.m.touchFpm).toBeLessThan(300);
