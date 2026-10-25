@@ -91,11 +91,20 @@ export function fixedSections(def: PanelDef): FixedSections {
   return { upper, lower };
 }
 
-/** CSS pixels. Keep at least half the screen for the outside view in Upper; Lower may use 55%. */
-export function fitPanel(section: FixedSection, width: number, height: number, lower = false): PanelFit {
-  const scale = Math.max(0, Math.min(width / section.size.w, (height * (lower ? 0.55 : 0.48) - 32) / section.size.h, 1.5));
-  const w = section.size.w * scale, h = section.size.h * scale;
-  return { left: (width - w) / 2, top: height - h, scale, width: w, height: h };
+/**
+ * CSS pixels. Keep at least half the screen for the outside view in Upper; Lower may use 55%.
+ * The box is snapped to whole device pixels (`dpr`): its width and height are whole device pixels, so the canvas
+ * backing store maps 1:1 onto the screen, and it is centred on a device-pixel boundary. A fractional box made the
+ * compositor resample the whole panel (backing 327 rows shown over 327.44 CSS px at an offset of 0.56 px), which
+ * blurs every gauge edge and lets needles shimmer through the filter. The panel is anchored to the bottom of the
+ * window, so a whole device-pixel height also puts its top edge on a device-pixel boundary.
+ */
+export function fitPanel(section: FixedSection, width: number, height: number, lower = false, dpr = 1): PanelFit {
+  const fit = Math.max(0, Math.min(width / section.size.w, (height * (lower ? 0.55 : 0.48) - 32) / section.size.h, 1.5));
+  const w = Math.floor(section.size.w * fit * dpr + 1e-6) / dpr;
+  const scale = w / section.size.w;
+  const h = Math.floor(section.size.h * scale * dpr + 1e-6) / dpr;
+  return { left: Math.round(((width - w) / 2) * dpr) / dpr, top: height - h, scale, width: w, height: h };
 }
 const contains = (r: Rect, x: number, y: number): boolean => x >= r.x && y >= r.y && x <= r.x + r.w && y <= r.y + r.h;
 

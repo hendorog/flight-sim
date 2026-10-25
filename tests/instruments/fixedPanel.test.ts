@@ -66,6 +66,21 @@ for (const [id, def] of Object.entries(panels)) describe(`${id} fixed panel`, ()
     const fit = fitPanel(sections.upper, 1366, 768);
     expect(172 * (def.instrumentScale?.large ?? 1) * fit.scale).toBeGreaterThanOrEqual(120);
   });
+  it.each([[1366, 768, 1], [1920, 991, 1.5], [1366, 768, 1.25], [1440, 900, 2], [1093, 614, 1.25], [1279, 701, 1.1]])(
+    'fits on whole device pixels at %ix%i, DPR %f (a 1:1 backing store, no compositor resampling)', (width, height, dpr) => {
+      const whole = (v: number): void => expect(Math.abs(v * dpr - Math.round(v * dpr))).toBeLessThan(1e-6);
+      for (const lower of [false, true]) {
+        const section = lower ? sections.lower : sections.upper;
+        const fit = fitPanel(section, width, height, lower, dpr);
+        whole(fit.width); whole(fit.height); whole(fit.left); whole(height - fit.top);
+        expect(fit.width).toBeLessThanOrEqual(width);
+        expect(fit.scale).toBeCloseTo(fit.width / section.size.w, 12);
+        // Snapping takes less than a device pixel off the unsnapped fit.
+        const loose = fitPanel(section, width, height, lower, 1e9); // effectively unsnapped
+        expect(loose.width - fit.width).toBeLessThan(1 / dpr + 1e-9);
+        expect(loose.width - fit.width).toBeGreaterThanOrEqual(-1e-9);
+      }
+    });
 });
 
 it('269 puts the concentric tach, flight/engine instruments and warnings above, console controls below', () => {
