@@ -160,6 +160,17 @@ export interface StabilityAssistTuning {
    * step (light skids included).
    */
   captureAirborne?: { quietS: number };
+  // ---- AH-56A tune round 4 (opt-in; absent = the law as before).
+  /**
+   * Heading hold on the KEYBOARD pedals on the wheels (with `followUp`): on the ground with the tail wheel locked
+   * (ControlInputs.tailWheelLock) and no pedal key held, a series pedal term clamp(-kpsi (psi - psi0) - kr r, +/-authority),
+   * weighted 0 -> 1 from gsKt[0] to gsKt[1] of ground speed, full to gsKt[2], none from gsKt[3]; psi0 is the heading at the
+   * touchdown (or where a pedal key last let go). The keyboard pedal centre is walked by the term (low-passed over `filterS`) at
+   * `gain` of the axis per second per unit of it, at most `rate`, so what it holds stays when it fades. Absent: none (on the
+   * wheels the pedals are the pilot's).
+   */
+  groundRollHeading?: { gsKt: readonly [number, number, number, number]; kpsi: number; kr: number; authority: number; gain: number;
+    rate: number; filterS: number };
 }
 
 export interface InputProfile {

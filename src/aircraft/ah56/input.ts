@@ -86,11 +86,19 @@ export const AH56_INPUT: InputProfile = {
   //   rest holds the height, a held F5 / F6 airborne is a 2 m/s sink / climb command slowing to 0.5 m/s near the ground. F6 held 1-2
   //   s past the first unload: no crash (without: 2 crashes of 4, left main 143-146 kN); F5 held 2 s in the 15 m hover: 13 m
   //   minimum (without: 885-960 fpm and a crash); Shift+F6 used to stop a sink: 20-31 m (without: 164-199 m, heading 180 deg off).
+  // Round 4 (the pass-2 gate's should; KNOWN_ISSUES T11): groundRollHeading holds the touchdown heading on the keyboard pedals on
+  // the wheels, tail wheel locked, 6-50 kt of ground speed (faded in from 3, out by 60): the run-on's roll-out swung 105-150 deg
+  // with the tail rotor as the collective came down (the main term is off on heavy wheels). 40-50 KIAS approaches at three paces,
+  // feet off (W/tune2/ah56/r4/out/runon-5.log, runon-6.log): with the brakes held below 20 kt 7 of 7 roll-outs end intact (without
+  // it 1 of 7: wingtip strikes and main-leg collapses); with the brakes held from the touchdown 5 of 7 (2 nose-overs onto the
+  // turret: the straight roll-out takes the full braking, which the swing was hiding; without it 6 of 7, swinging 38-150 deg).
+  // kpsi 2 crashed 3 of 14 (1.5: 2 of 14); kpsi 3 nosed over in the 45 KIAS full-brake case.
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.5, katt: 0.3, stickAttitude: 0.6, authority: 0.2, yawAuthority: 0.25,
     holdAuthority: 0.5, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 60],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.5 },
     recaptureOnCentre: { quietS: 0.5 }, captureAirborne: { quietS: 0.5 },
     sideslipPedal: { kias: [20, 30, 140, 160], gain: 1, rate: 0.2, filterS: 1 },
+    groundRollHeading: { gsKt: [3, 6, 50, 60], kpsi: 1.5, kr: 0.5, authority: 0.5, gain: 1, rate: 0.5, filterS: 0.5 },
     heightHold: { fadeKias: [30, 40], kv: 0.06, kp: 0.06, kvHeld: 0.03, rate: 0.1, captureMps: 0.3, kh: 0.3, vsMax: 1, floor: 0.1,
       minNrPct: 95, held: { climbMps: 2, sinkMps: 2, landSinkMps: 0.5, landAglM: 4.5, landBandM: 4, rate: 0.2, limitBackRate: 0.05 } } },
   // Collective keys (round 2; AGENT input choices): the MD 500E's 0.12 of the travel per second is 2.5 deg/s on this collective's 21
@@ -128,6 +136,6 @@ export const AH56_INPUT: InputProfile = {
     trimNoseUp: 'Cyclic trim aft (hold)', trimNoseDown: 'Cyclic trim forward (hold)',
     fuelPump: 'Boost pump', starter: 'START button (hold)',
     collectiveFastDown: 'Lower the collective at hand speed (hold) to the autorotation entry position (15 %): an engine failure in forward flight or with the engine stopped; with the engine running below 30 KIAS it acts as F5 (a sim guard: in the hover the hand-speed drop puts the aircraft on the ground at about 2,700 fpm); bare F5 goes on down',
-    stabilityAssist: 'STAB ASSIST on / off: a light hold of the attitude where you leave it (as the gyro does; nothing pulls it back to the hover attitude), the heading held while the pedal keys rest, the yaw damped to 60 KIAS, the pedals walked to zero sideslip in forward flight, the height held while the collective keys rest (F5 / F6 held: descend / climb), and the keyboard stick and pedals walked to the trim (a sim aid: the AH-56A had no such system)',
+    stabilityAssist: 'STAB ASSIST on / off: a light hold of the attitude where you leave it (as the gyro does; nothing pulls it back to the hover attitude), the heading held while the pedal keys rest, the yaw damped to 60 KIAS, the pedals walked to zero sideslip in forward flight, the heading held on the wheels in a run-on (tail wheel locked), the height held while the collective keys rest (F5 / F6 held: descend / climb), and the keyboard stick and pedals walked to the trim (a sim aid: the AH-56A had no such system)',
     collectiveFastUp: 'Raise the collective at hand speed (hold), up to 80 %: the landing cushion; bare F6 goes on up' },
 };

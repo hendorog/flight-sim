@@ -387,23 +387,47 @@ describe('STAB ASSIST round 3: the collective presses', () => {
     expect(cutoff.physics.state.engines.every((x) => x.running)).toBe(false);
     expect(c0 - (cutoff.c.collective ?? 0)).toBeGreaterThan(0.2);
   }, 60_000);
-  it.fails('KNOWN GAP: the run-on landing from a trimmed 45 KIAS approach, feet off, F5 and the brakes on the wheels (both paces): no crash and the roll-out heading within 30 deg (measured: 289 fpm, the roll-out turning 140 deg; 547 fpm, the right main collapsed at 181 kN)', () => {
+  /** The run-on: a trimmed `kias` approach (the watching beginner, feet off) to the touchdown, then F5 held and the brakes (from
+   *  the touchdown, or below 20 kt), hands and feet off, until stopped; headings from the approach's and from the touchdown's. */
+  const runOn = (iv: number, lag: number, brake: 'touchdown' | 'below20' = 'touchdown', kias = 45) => {
+    const r = keyRig({ start: 'level', kias, heightM: 45, dd: AH56_DEFINITION, assist: true });
+    for (let i = 0; i < 120; i++) frame(r);
+    r.c.tailWheelLock = true; r.c.gearLever = 'down';
+    const s0 = see(r), p = new WatchingBeginner(r, { kias, hdg: s0.hdg, climb: -2, feetOff: true }, iv, lag);
+    fly(r, 60, p, undefined, (s) => s.agl <= 12);
+    p.cmd = { kias: kias - 5, hdg: s0.hdg, climb: -1, feetOff: true };
+    const touch = fly(r, 60, p, undefined, (s) => s.onGround);
+    const st = see(r), fpm = -st.climb * 196.85;
+    p.releaseAll(); r.input.keyDown('F5');
+    let braking = brake === 'touchdown', maxHdg = 0, maxSwing = 0;
+    if (braking) r.input.keyDown('KeyB');
+    for (let t = 0; t < 30 && !r.physics.state.crashed; t += FRAME) {
+      frame(r);
+      const s = see(r);
+      if (!braking && s.gs < 20) { r.input.keyDown('KeyB'); braking = true; }
+      maxHdg = Math.max(maxHdg, Math.abs(wrapDeg(s.hdg - s0.hdg))); maxSwing = Math.max(maxSwing, Math.abs(wrapDeg(s.hdg - st.hdg)));
+      if (s.gs < 0.5 && t > 3) break;
+    }
+    r.input.keyUp('F5'); if (braking) r.input.keyUp('KeyB');
+    return { touch: touch.why, touchFpm: fpm, touchKias: st.kias, touchHdgDeg: wrapDeg(st.hdg - s0.hdg), rollOutHdgDeg: maxHdg, swingFromTouchDeg: maxSwing, crashed: r.physics.state.crashed };
+  };
+  // Round 4 (the pass-2 gate's should; STAB ASSIST groundRollHeading): the touchdown heading held on the keyboard pedals on the
+  // wheels. Feet off, F5 on the wheels and the brakes below 20 kt (W/tune2/ah56/r4/out/runon-6.log: without the hold 6 of 7 such
+  // roll-outs crashed, wingtip or main leg).
+  for (const [iv, lag] of [[0.8, 0.3], [1.0, 0.4]] as const) {
+    it(`the run-on roll-out from a trimmed 45 KIAS approach (every ${iv} s), feet off, F5 and the brakes below 20 kt: no crash, within 45 deg of the touchdown heading (without the ground-roll hold: a main collapsed / a wingtip struck)`, () => {
+      const f = runOn(iv, lag, 'below20');
+      report(`run-on roll-out, brakes below 20 kt, every ${iv} s`, f);
+      expect(f.crashed).toBe(false);
+      expect(f.swingFromTouchDeg).toBeLessThan(45);
+    }, 180_000);
+  }
+  it.fails('KNOWN GAP: the run-on landing from a trimmed 45 KIAS approach, feet off, F5 and the brakes on the wheels (both paces): no crash and the roll-out heading within 30 deg (measured: 289 fpm, the roll-out turning 140 deg; 547 fpm, the right main collapsed at 181 kN; round 4 with the ground-roll heading hold: 55 deg of the approach heading, 35 of them before the touchdown; the slow pace still collapses the right main at the touchdown)', () => {
     for (const [iv, lag] of PACES) {
-      const r = keyRig({ start: 'level', kias: 45, heightM: 45, dd: AH56_DEFINITION, assist: true });
-      for (let i = 0; i < 120; i++) frame(r);
-      r.c.tailWheelLock = true; r.c.gearLever = 'down';
-      const s0 = see(r), p = new WatchingBeginner(r, { kias: 45, hdg: s0.hdg, climb: -2, feetOff: true }, iv, lag);
-      fly(r, 60, p, undefined, (s) => s.agl <= 12);
-      p.cmd = { kias: 40, hdg: s0.hdg, climb: -1, feetOff: true };
-      const touch = fly(r, 60, p, undefined, (s) => s.onGround);
-      const fpm = -see(r).climb * 196.85;
-      p.releaseAll(); r.input.keyDown('F5'); r.input.keyDown('KeyB');
-      let maxHdg = 0;
-      for (let t = 0; t < 30 && !r.physics.state.crashed; t += FRAME) { frame(r); maxHdg = Math.max(maxHdg, Math.abs(wrapDeg(see(r).hdg - s0.hdg))); if (see(r).gs < 0.5 && t > 3) break; }
-      r.input.keyUp('F5'); r.input.keyUp('KeyB');
-      report(`run-on landing every ${iv} s`, { touch: touch.why, touchFpm: fpm, rollOutHdgDeg: maxHdg, crashed: r.physics.state.crashed });
-      expect(r.physics.state.crashed).toBe(false);
-      expect(maxHdg).toBeLessThan(30);
+      const f = runOn(iv, lag);
+      report(`run-on landing every ${iv} s`, f);
+      expect(f.crashed).toBe(false);
+      expect(f.rollOutHdgDeg).toBeLessThan(30);
     }
   }, 180_000);
 });

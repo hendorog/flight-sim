@@ -71,6 +71,8 @@
 // in its own speed band, above fadeKias[1] too (the round-2 gate's "one gate": above 25 KIAS the keyboard pedal stayed at the
 // hover's, 15-40 kt of sideslip); recaptureOnCentre takes the cyclic datum again where a re-centring keyboard stick
 // (InputProfile.centringCyclic) comes back to rest; captureAirborne captures it only fully airborne with the stick quiet.
+// AH-56A tune round 4, opt-in: groundRollHeading holds the touchdown heading on the keyboard pedals on the wheels (tail wheel
+// locked, in a ground-speed band): the run-on's roll-out swung 120-145 deg with the tail rotor as the collective came down.
 // Off on the ground (but working once the skids carry less than groundLoad of the weight, the cyclic datum kept through
 // a skid touch in a low hover, the heading held from before lift-off), when crashed, and while the hover hold or an
 // instructor flies (the caller's `active`).
@@ -192,6 +194,11 @@ export class StabilityAssist {
   private airRestA = 0;
   private airRestE = 0;
   private airQuietFor = 0;
+  // AH-56A tune round 4 (the opt-in groundRollHeading; unused without it).
+  /** The ground-roll heading hold has a datum (on the wheels since the touchdown), its heading (rad) and its low-passed term. */
+  private rollEngaged = false;
+  private rollHeadingRef = 0;
+  private lpRoll = 0;
 
   constructor(readonly tuning: StabilityAssistTuning) {}
 
@@ -217,6 +224,7 @@ export class StabilityAssist {
       ...(this.tuning.sideslipPedal ? { lpBeta: this.lpBeta } : {}),
       ...(this.tuning.recaptureOnCentre ? { stickMoved: this.stickMoved } : {}),
       ...(this.tuning.captureAirborne ? { airRestA: this.airRestA, airRestE: this.airRestE, airQuietFor: Math.min(this.airQuietFor, STICK_QUIET_MAX) } : {}),
+      ...(this.tuning.groundRollHeading ? { rollEngaged: this.rollEngaged, rollHeadingRef: this.rollHeadingRef, lpRoll: this.lpRoll } : {}),
     };
   }
 
@@ -246,6 +254,7 @@ export class StabilityAssist {
     this.collLeft = num('collLeft', NaN); this.keyDir = Math.sign(num('keyDir', 0)); this.pedalOnSkids = flag('pedalOnSkids');
     this.lpBeta = num('lpBeta', 0); this.stickMoved = flag('stickMoved');
     this.airRestA = num('airRestA', 0); this.airRestE = num('airRestE', 0); this.airQuietFor = num('airQuietFor', 0);
+    this.rollEngaged = flag('rollEngaged'); this.rollHeadingRef = num('rollHeadingRef', 0); this.lpRoll = num('lpRoll', 0);
   }
 
   /**
@@ -256,6 +265,7 @@ export class StabilityAssist {
     this.reset();
     this.pedalOnSkids = false;
     this.lpBeta = 0; this.stickMoved = false;
+    this.rollEngaged = false; this.lpRoll = 0;
   }
 
   /** Forget the datums (a reset or a restore): the next active step captures the attitude, stick and heading it finds. */
@@ -292,7 +302,17 @@ export class StabilityAssist {
       this.reset();
       // Above the fade the sideslip pedal follow-up (opt-in) still trims the keyboard pedals.
       if (t.sideslipPedal && fu && active && !s.crashed && !s.onGround && c.keyboardPedals === true) this.sideslipOnly(dt, s, c);
+      // On the wheels the ground-roll heading hold (opt-in) holds the touchdown heading on the keyboard pedals.
+      if (t.groundRollHeading) {
+        if (fu && active && !s.crashed && s.onGround && c.keyboardPedals === true) this.groundRoll(dt, s, c);
+        else if (!s.onGround || s.crashed) { this.rollEngaged = false; this.lpRoll = 0; }
+      }
       return;
+    }
+    // Airborne or on light wheels: the ground-roll hold's datum is the heading at the touchdown (opt-in).
+    if (t.groundRollHeading) {
+      if (!s.onGround) { this.rollEngaged = false; this.lpRoll = 0; }
+      else if (!this.rollEngaged) { this.rollEngaged = true; this.rollHeadingRef = s.heading; this.lpRoll = 0; }
     }
     const w = s.angularVelocity;
     const p = this.pilot;
@@ -488,6 +508,30 @@ export class StabilityAssist {
     p.aileron = c.aileron; p.elevator = c.elevator; p.rudder = c.rudder;
     this.pedalStep = clamp(c.rudder + step, -1, 1) - c.rudder;
     this.followed.rudder += this.pedalStep;
+    this.applied = true;
+  }
+
+  /**
+   * On the wheels (groundRollHeading, opt-in): the heading at the touchdown held on the keyboard pedals, as a series term (put back
+   * in after()) and a walk of the keyboard pedal centre handed to the input module through after(); a held pedal key moves the
+   * datum with the heading (the pilot's turn) and the term waits. Nothing with the tail wheel unlocked (the castor's turns are the
+   * pilot's) or outside the ground-speed band.
+   */
+  private groundRoll(dt: number, s: AircraftState, c: ControlInputs): void {
+    const g = this.tuning.groundRollHeading!, fu = this.tuning.followUp!;
+    if (!this.rollEngaged || c.pedalWorked === true) { this.rollEngaged = true; this.rollHeadingRef = s.heading; this.lpRoll = 0; }
+    const gs = s.groundSpeed / KT, k = g.gsKt;
+    const wt = c.tailWheelLock === true
+      ? clamp((gs - k[0]) / Math.max(k[1] - k[0], 1e-6), 0, 1) * clamp((k[3] - gs) / Math.max(k[3] - k[2], 1e-6), 0, 1) : 0;
+    const term = wt * clamp(-g.kpsi * wrap(s.heading - this.rollHeadingRef) - g.kr * s.angularVelocity.z, -g.authority, g.authority);
+    this.lpRoll += (term - this.lpRoll) * Math.min(1, dt / g.filterS);
+    if (!(wt > 0) || c.pedalWorked === true) return;
+    const p = this.pilot;
+    p.aileron = c.aileron; p.elevator = c.elevator; p.rudder = c.rudder;
+    this.pedalStep = clamp(c.rudder + followSpeed(this.lpRoll, g.authority, fu.deadBand, g.gain, g.rate) * dt, -1, 1) - c.rudder;
+    this.followed.rudder += this.pedalStep;
+    this.output.rudder = term;
+    c.rudder = clamp(c.rudder + term, -1, 1);
     this.applied = true;
   }
 
