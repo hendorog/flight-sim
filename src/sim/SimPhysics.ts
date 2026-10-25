@@ -512,6 +512,8 @@ export class SimPhysics {
 
   /** Engage (true) or disengage the autoflight; engaging mid-flight holds the current heading/altitude/speed. */
   setAutoflight(on: boolean, useScenarioPlan = false): void {
+    // The hold starts from the controls the rotor flew, not a STAB ASSIST keyboard command (StabilityAssist.handOver).
+    if (on && !this.autoflight.engaged) this.stabilityAssist?.handOver(this.fm.state, this.controls);
     if (!on) this.autoflight.disengage();
     else if (useScenarioPlan) this.autoflight.engage(this.scenario.autoflight, this.fm.state, this.controls);
     else this.autoflight.engageHere(this.fm.state, this.controls);

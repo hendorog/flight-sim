@@ -761,6 +761,8 @@ export class InputSystem implements Subsystem {
 
   /** The pilot has moved the pusher grip since the last reset (the propSchedule assist lets go of it then). */
   private gripTouched = false;
+  /** A propeller key tapped or the snap pressed this frame (ControlInputs.propGripWorked). */
+  private gripTapped = false;
 
   /** The keyboard's re-centring rate (5 / Numpad 5 and a centring cyclic), travel per second. */
   private get centreRate(): number {
@@ -1282,6 +1284,8 @@ export class InputSystem implements Subsystem {
     if (this.profile.n2BeepSplit) c.n2BeepSplit = this.dir('engineTrimLeft', 'engineTrimRight');
     if (propGrip) {
       const grip = this.dir('propDecrease', 'propIncrease');
+      c.propGripWorked = grip !== 0 || this.gripTapped;
+      this.gripTapped = false;
       if (grip !== 0) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? propGrip.detent) + grip * PROP_GRIP_RATE * dt, 0, 1); }
       // The schedule is the powered trim's: with an engine stopped the grip is left where it is (the autorotation's +8 deg is the
       // pilot's snap; the schedule would keep driving the shared shaft's prop to the speed's angle).
@@ -1518,15 +1522,15 @@ export class InputSystem implements Subsystem {
         break;
       }
       case 'propDecrease':
-        if (this.profile.propLever) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) - LEVER_TAP, 0, 1); }
+        if (this.profile.propLever) { this.gripTouched = this.gripTapped = true; c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) - LEVER_TAP, 0, 1); }
         else this.moveLever(c, 'propeller', -LEVER_TAP, this.target('propeller', engine), PROP_FEATHER_GATE, true);
         break;
       case 'propIncrease':
-        if (this.profile.propLever) { this.gripTouched = true; c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) + LEVER_TAP, 0, 1); }
+        if (this.profile.propLever) { this.gripTouched = this.gripTapped = true; c.propLever = clamp((c.propLever ?? this.profile.propLever.detent) + LEVER_TAP, 0, 1); }
         else this.moveLever(c, 'propeller', LEVER_TAP, this.target('propeller', engine), PROP_FEATHER_GATE, true);
         break;
       case 'propLeverSnap':
-        this.gripTouched = true;
+        this.gripTouched = this.gripTapped = true;
         c.propLever = nextSnap(c.propLever ?? this.profile.propLever!.detent, this.profile.propLever!.snaps);
         break;
       case 'tailWheelLock':

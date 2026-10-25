@@ -77,6 +77,12 @@ export interface ControlInputs {
   n2BeepSplit?: number;
   /** Pusher propeller twist grip (AH-56A), [0, 1] -> the blade-angle table of RotorcraftDefinition.pusher. Persisted. */
   propLever?: number;
+  /**
+   * Optional: the pilot moved the pusher grip (propLever) this frame (a propeller key held or tapped, the snap). Set by the
+   * input module on a type with a pusher grip; the helicopter hold (A) takes it as a nudge of its own pusher target rather
+   * than rewriting the grip. The flight model ignores it. Absent = false.
+   */
+  propGripWorked?: boolean;
   /** Tail-wheel lock (AH-56A), true = locked. Persisted. Read by the gear through gearIn.controls. */
   tailWheelLock?: boolean;
   /** Stick-pusher interrupt (PUSHER INTR / the trim interrupt switch on the yoke), held. Absent = false. */

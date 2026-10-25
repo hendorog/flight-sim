@@ -46,17 +46,28 @@ function rig(o: { kias: number; heightM: number; config?: 'amcs' | 'ics'; headin
   input.assists.stabilityAssist = true;
   physics.stabilityAssistOn = () => input.assists.stabilityAssist === true;
   input.autopilotFlying = () => !!physics.autoflight.helicopter && physics.autoflight.engaged;
-  return { physics, input, c: physics.controls, ctx, t: 0 };
+  // What the flight model saw on the last physics step (the STAB ASSIST's series terms ride on the controls for that step only):
+  // the cyclic and pedals the rotor flew, which is what a step on engagement or hand-back is measured in.
+  const seen = { elev: 0, ail: 0, rud: 0, coll: 0 };
+  const fm = physics.fm, step = fm.step.bind(fm);
+  fm.step = ((h: number, c: typeof physics.controls, env: unknown) => {
+    seen.elev = c.elevator; seen.ail = c.aileron; seen.rud = c.rudder; seen.coll = c.collective ?? 0;
+    return (step as (h: number, c: unknown, env: unknown) => unknown)(h, c, env);
+  }) as typeof fm.step;
+  return { physics, input, c: physics.controls, ctx, t: 0, seen };
 }
 type Rig = ReturnType<typeof rig>;
 function frame(r: Rig): void { r.input.update(FRAME, r.ctx); r.physics.advance(FRAME); r.t += FRAME; }
 
 interface Sample { t: number; kias: number; alt: number; vs: number; hdg: number; n: number; e: number; pitch: number; roll: number; beta: number;
-  elev: number; ail: number; rud: number; coll: number; prop: number }
+  elev: number; ail: number; rud: number; coll: number; prop: number;
+  /** The cyclic, pedal and collective the flight model flew on the last step (rig's `seen`). */
+  fmElev: number; fmAil: number; fmRud: number; fmColl: number }
 function sample(r: Rig): Sample {
   const s = r.physics.state, c = r.c;
   return { t: r.t, kias: s.ias / KT, alt: s.altitudeMSL, vs: s.verticalSpeed, hdg: s.heading / DEG, n: s.position.x, e: s.position.y,
-    pitch: s.pitch / DEG, roll: s.roll / DEG, beta: s.beta / DEG, elev: c.elevator, ail: c.aileron, rud: c.rudder, coll: c.collective ?? 0, prop: c.propLever ?? NaN };
+    pitch: s.pitch / DEG, roll: s.roll / DEG, beta: s.beta / DEG, elev: c.elevator, ail: c.aileron, rud: c.rudder, coll: c.collective ?? 0, prop: c.propLever ?? NaN,
+    fmElev: r.seen.elev, fmAil: r.seen.ail, fmRud: r.seen.rud, fmColl: r.seen.coll };
 }
 /** Fly `seconds`, a sample every frame; `each(t since start)` before each frame. */
 function fly(r: Rig, seconds: number, each?: (t: number) => void): Sample[] {
@@ -149,33 +160,50 @@ describe('AH-56A hold (AMCS)', () => {
     }
   }, 240_000);
 
-  it('engaged in a 20 deg bank at 100 kt: rolls level smoothly at 5 deg/s (aileron change < 0.2 in the first second, no roll past level by more than 3 deg) and holds the heading it rolled out on', () => {
+  // integ3 (fix/prop-keys + tune3/ah56keys + fix/ah56-autopilot): with the tune3 keyAttitude the keyboard stick is an attitude
+  // COMMAND (20 deg of bank sits 0.5 of the aileron off), not the cyclic the rotor flies, so these rows measure the cyclic, pedal
+  // and collective the FLIGHT MODEL flew (fm*: the rig's `seen`), and the hold must start from those (StabilityAssist.handOver):
+  // without it the rotor's aileron stepped 0.46 on the first step in the bank (0.17 aileron / 0.16 pedal in the climb). The
+  // on-screen stick moves from the command to the hold's cyclic at A (a presentation change, not a rotor step).
+  it('engaged in a 20 deg bank at 100 kt: no first-step jump, rolls level smoothly at 5 deg/s (aileron change < 0.2 in the first second, no roll past level by more than 3 deg) and holds the heading it rolled out on', () => {
     const r = rig({ kias: 100, heightM: 150 });
-    const s0 = engage(r, (rr) => { for (let i = 0; i < 600 && rr.physics.state.roll < 20 * DEG; i++) { rr.input.keyDown('ArrowRight'); frame(rr); } rr.input.keyUp('ArrowRight'); fly(rr, 0.5); });
+    // Settled 1.5 s after the key (was 0.5 s): the attitude command is still rolling in 0.5 s after the key comes up (24.2 deg
+    // and rising to 25.5), and arresting that roll-in took 0.19 of the aileron in the first second instead of 0.12.
+    const s0 = engage(r, (rr) => { for (let i = 0; i < 600 && rr.physics.state.roll < 20 * DEG; i++) { rr.input.keyDown('ArrowRight'); frame(rr); } rr.input.keyUp('ArrowRight'); fly(rr, 1.5); });
     expect(s0.roll).toBeGreaterThan(18);
     const all = fly(r, 60), first = all.filter((x) => x.t < s0.t + 1), late = all.filter((x) => x.t > s0.t + 30);
     const bug = r.physics.autoflight.autopilot.settings.heading / DEG;
-    const v = { ail1s: maxAbs(first, (x) => x.ail - s0.ail), overshoot: Math.max(0, -Math.min(...all.map((x) => x.roll))) , hdgLate: maxAbs(late, (x) => wrapDeg(x.hdg - bug)),
+    const v = { step: Math.max(Math.abs(all[0].fmAil - s0.fmAil), Math.abs(all[0].fmElev - s0.fmElev), Math.abs(all[0].fmRud - s0.fmRud)),
+      ail1s: maxAbs(first, (x) => x.fmAil - s0.fmAil), elev1s: maxAbs(first, (x) => x.fmElev - s0.fmElev), rud1s: maxAbs(first, (x) => x.fmRud - s0.fmRud),
+      stick1s: maxAbs(first, (x) => x.ail - s0.ail), overshoot: Math.max(0, -Math.min(...all.map((x) => x.roll))), hdgLate: maxAbs(late, (x) => wrapDeg(x.hdg - bug)),
       rollLate: range(late, (x) => x.roll), bugMoved: wrapDeg(bug - s0.hdg) };
     log('engaged in a bank', v);
-    expect(v.ail1s).toBeLessThan(0.2); // 0.12-0.15: the 5 deg/s roll-out ramp; before 0.53 at once
-    expect(v.overshoot).toBeLessThan(4); // 2.75 (the trim roll is -1); before: rolled 16 deg past level
+    expect(v.step).toBeLessThan(0.02); // integ3 before handOver: 0.46 (aileron)
+    expect(v.ail1s).toBeLessThan(0.2); // 0.12: the 5 deg/s roll-out ramp (fix/ah56-autopilot alone 0.13); before 0.53 at once
+    expect(v.overshoot).toBeLessThan(4); // 2.7-2.9 (the trim roll is -1); before: rolled 16 deg past level
     expect(v.hdgLate).toBeLessThan(1);
     expect(v.rollLate).toBeLessThan(0.5);
   }, 120_000);
 
-  it('engaged in a climb and in a descent (F6 / F5 held 1 s at 60 kt): no collective step (< 0.05 in 1 s), levels off smoothly and holds within 0.5 m', () => {
+  it('engaged in a climb and in a descent (F6 / F5 held 1 s at 60 kt): no first-step jump, no collective step (< 0.05 in 1 s), levels off where the hold\'s 0.3 m/s/s walk ends and holds within 0.5 m', () => {
+    const accel = AH56_DEFINITION.sim.heliHold!.climb!.accel;
     for (const key of ['F6', 'F5']) {
       const r = rig({ kias: 60, heightM: 120 });
       const s0 = engage(r, (rr) => { rr.input.keyDown(key); fly(rr, 1); rr.input.keyUp(key); fly(rr, 3); });
       expect(Math.abs(s0.vs)).toBeGreaterThan(1);
       const all = fly(r, 60), first = all.filter((x) => x.t < s0.t + 1), late = all.filter((x) => x.t > s0.t + 40);
       const held = r.physics.autoflight.autopilot.settings.altitude;
-      const v = { vs0: s0.vs, coll1s: maxAbs(first, (x) => x.coll - s0.coll), levelOffM: held - s0.alt, altLate: maxAbs(late, (x) => x.alt - held), rollTr: maxAbs(all, (x) => x.roll - s0.roll) };
+      const v = { vs0: s0.vs, step: Math.max(Math.abs(all[0].fmAil - s0.fmAil), Math.abs(all[0].fmElev - s0.fmElev), Math.abs(all[0].fmRud - s0.fmRud)),
+        coll1s: maxAbs(first, (x) => x.fmColl - s0.fmColl), ail1s: maxAbs(first, (x) => x.fmAil - s0.fmAil), rud1s: maxAbs(first, (x) => x.fmRud - s0.fmRud),
+        levelOffM: held - s0.alt, walkM: s0.vs * Math.abs(s0.vs) / (2 * accel), altLate: maxAbs(late, (x) => x.alt - held), rollTr: maxAbs(all, (x) => x.roll - s0.roll) };
       log(`engaged in ${key === 'F6' ? 'a climb' : 'a descent'}`, v);
+      expect(v.step).toBeLessThan(0.02); // integ3 before handOver: 0.17 aileron / 0.16 pedal over the first second, part of it at once
       expect(v.coll1s).toBeLessThan(0.05); // before 0.11
       expect(v.altLate).toBeLessThan(0.5);
-      expect(Math.abs(v.levelOffM)).toBeLessThan(15); // where the 0.3 m/s/s walk levels off
+      // Restated (integ3): the row was "level-off < 15 m" for fix/ah56-autopilot's 2.4 m/s (F6 1 s; 9.5 m on). Tune3's F6 is a
+      // 4.5 m/s climb command, so F6 1 s now climbs at 4.5 m/s and the same 0.3 m/s/s walk levels off 33 m on (F5: 2.5 m/s,
+      // about 10 m, as before). The hold levels off where its walk from the engagement climb rate ends: within 2 m of v^2 / 2a.
+      expect(Math.abs(v.levelOffM - v.walkM)).toBeLessThan(2);
     }
   }, 240_000);
 
@@ -193,21 +221,29 @@ describe('AH-56A hold (AMCS)', () => {
     expect(v.kias).toBeLessThan(2);
   }, 120_000);
 
-  it('hands back without a step: A off after 60 s at 100 kt and after the hover moves no control more than 0.02 in 2 s', () => {
-    for (const kias of [100, 0]) {
+  it('hands back without a step: A off after 60 s at 100 kt and after the hover (also engaged after a keyed bank / pedal turn) moves no control more than 0.02 in 2 s', () => {
+    // integ3: the keyboard stick and pedals stay where the keys leave them (tune3), so the two keyed cases engage with the keyboard
+    // stick 0.5 off for a 25 deg bank and the pedal moved by a 0.5 s pedal press; while the hold flies the keyboard controls follow
+    // its (InputSystem's external-writer check), so A off leaves them where the hold had them. Stick and rotor (fm*) both measured.
+    const cases = [{ kias: 100, keys: '' }, { kias: 0, keys: '' }, { kias: 100, keys: 'bank' }, { kias: 0, keys: 'pedal' }] as const;
+    for (const { kias, keys } of cases) {
       const r = rig({ kias, heightM: kias ? 150 : 15 });
-      engage(r);
+      engage(r, keys === 'bank' ? (rr) => { for (let i = 0; i < 600 && rr.physics.state.roll < 20 * DEG; i++) { rr.input.keyDown('ArrowRight'); frame(rr); } rr.input.keyUp('ArrowRight'); fly(rr, 1.5); }
+        : keys === 'pedal' ? (rr) => { rr.input.keyDown('KeyX'); fly(rr, 0.5); rr.input.keyUp('KeyX'); fly(rr, 3); } : undefined);
       fly(r, 60);
       const before = sample(r);
       r.physics.setAutoflight(false);
       const after = fly(r, 10), d2 = after.filter((x) => x.t < before.t + 2);
       const v = { elev: maxAbs(d2, (x) => x.elev - before.elev), ail: maxAbs(d2, (x) => x.ail - before.ail), rud: maxAbs(d2, (x) => x.rud - before.rud),
-        coll: maxAbs(d2, (x) => x.coll - before.coll), prop: maxAbs(d2, (x) => x.prop - before.prop), pitch10: after[after.length - 1].pitch - before.pitch };
-      log(`hand-back ${kias}`, v);
-      for (const k of ['elev', 'ail', 'rud', 'coll', 'prop'] as const) expect(v[k], k).toBeLessThan(0.02); // before: elev 0.15-0.27
+        coll: maxAbs(d2, (x) => x.coll - before.coll), prop: maxAbs(d2, (x) => x.prop - before.prop),
+        fmElev: maxAbs(d2, (x) => x.fmElev - before.fmElev), fmAil: maxAbs(d2, (x) => x.fmAil - before.fmAil), fmRud: maxAbs(d2, (x) => x.fmRud - before.fmRud),
+        pitch10: after[after.length - 1].pitch - before.pitch, roll10: after[after.length - 1].roll - before.roll };
+      log(`hand-back ${kias}${keys ? ' ' + keys : ''}`, v);
+      for (const k of ['elev', 'ail', 'rud', 'coll', 'prop', 'fmElev', 'fmAil', 'fmRud'] as const) expect(v[k], k).toBeLessThan(0.02); // before: elev 0.15-0.27
       expect(Math.abs(v.pitch10)).toBeLessThan(1); // before 1.7-3.1 deg
+      expect(Math.abs(v.roll10)).toBeLessThan(1);
     }
-  }, 240_000);
+  }, 300_000);
 
   it('flies the pusher grip: on the PROP SCHEDULE table at the held speed, even with the grip touched (a dev-panel 100 -> 130 kt change), and the hover detent in the hover', () => {
     const sched = AH56_DEFINITION.input.propLever!.schedule!;
@@ -229,6 +265,25 @@ describe('AH-56A hold (AMCS)', () => {
     log('pusher hover', { lever: hv[hv.length - 1].prop, detent: sched.lever[0] });
     expect(Math.abs(hv[hv.length - 1].prop - sched.lever[0])).toBeLessThan(0.002);
   }, 180_000);
+
+  it('the propeller keys nudge the pusher while A is on (integ3; before, the hold rewrote the grip every step and the keys did nothing): the move stays, the speed is held, A stays on', () => {
+    const r = rig({ kias: 100, heightM: 150 });
+    const s0 = engage(r);
+    fly(r, 5);
+    const l0 = r.c.propLever!;
+    r.input.keyDown('Quote'); fly(r, 0.5); r.input.keyUp('Quote');
+    const l1 = r.c.propLever!;
+    const all = fly(r, 30), end = all[all.length - 1];
+    const held = r.physics.autoflight.autopilot.settings.airspeed / KT;
+    const v = { nudge: l1 - l0, kept: end.prop - l0, kias: maxAbs(all.filter((x) => x.t > s0.t + 25), (x) => x.kias - held), alt: maxAbs(all, (x) => x.alt - s0.alt),
+      engaged: r.physics.autoflight.engaged };
+    log('prop keys under A', v);
+    expect(v.engaged).toBe(true);
+    expect(v.nudge).toBeGreaterThan(0.02);
+    expect(Math.abs(v.kept - v.nudge)).toBeLessThan(0.005); // the move stays (the hold's target moved with it)
+    expect(v.kias).toBeLessThan(1);
+    expect(v.alt).toBeLessThan(3); // 2.1 m for the 0.5 s press (0.145 of the grip at once; the 100 -> 130 kt ramp above: 1.7 m)
+  }, 120_000);
 
   it('engaged drifting with the wind in the hover (15 kt, gusts 5): stops gently (pitch within 8 deg) and holds within 5 m of where it stopped', () => {
     const r = rig({ kias: 0, heightM: 15, wind: { fromDeg: 280, kt: 15, gustKt: 5, turbulence: 0.2 } });

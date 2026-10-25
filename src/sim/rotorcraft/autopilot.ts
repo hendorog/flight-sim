@@ -50,6 +50,8 @@ export class HelicopterAutopilot {
   private rudLp = 0;
   private pedalCentre = 0;
   private prop = NaN;
+  /** The pilot's nudges of the pusher grip while engaged (ControlInputs.propGripWorked), added to the schedule's lever. */
+  private propBias = 0;
   private first = false;
   /** Engaged in a bank with coordinated turns: the heading bug follows the nose until the wings are level. */
   private syncBug = false;
@@ -91,6 +93,7 @@ export class HelicopterAutopilot {
       this.stickLp = { pitch: c.elevator, roll: c.aileron };
       this.rudLp = this.pedalCentre = c.rudder;
       this.prop = c.propLever ?? NaN;
+      this.propBias = 0;
       this.first = true;
     }
     return true;
@@ -234,8 +237,12 @@ export class HelicopterAutopilot {
   /** After the shared step (tuned path): the pusher grip and the trim follow-up. */
   private after(t: HeliHoldTuning, dt: number, s: AircraftState, c: ControlInputs): void {
     if (t.pusher && c.propLever !== undefined) {
-      const k = t.pusher, want = clamp(interp1(k.kias, k.lever, this.speedCmd/KT), 0, 1);
+      const k = t.pusher;
       if (!Number.isFinite(this.prop)) this.prop = c.propLever;
+      // The pilot moved the grip (the propeller keys while A is on): his move stands and shifts the hold's target by as much,
+      // so the keys nudge the pusher instead of being rewritten (integ3; the hold's speed loop then trims the pitch to it).
+      if (c.propGripWorked && c.propLever !== this.prop) { this.propBias = clamp(this.propBias + c.propLever - this.prop, -1, 1); this.prop = c.propLever; }
+      const want = clamp(interp1(k.kias, k.lever, this.speedCmd/KT) + this.propBias, 0, 1);
       this.prop += clamp(want - this.prop, -k.ratePerS*dt, k.ratePerS*dt);
       c.propLever = this.prop;
     }

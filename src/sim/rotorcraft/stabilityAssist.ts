@@ -231,6 +231,8 @@ export class StabilityAssist {
   /** The keyboard pedal where the keys last left it, and whether a pedal key was held at the last step. */
   private pedalKeyRest = NaN;
   private pedalKeyWas = false;
+  /** The cyclic and pedal the flight model flew on the last step with the series terms on it (handOver); null: none. */
+  private flew: { aileron: number; elevator: number; rudder: number } | null = null;
 
   constructor(readonly tuning: StabilityAssistTuning) {}
 
@@ -315,6 +317,7 @@ export class StabilityAssist {
     this.lpBeta = 0; this.stickMoved = false;
     this.rollEngaged = false; this.lpRoll = 0;
     this.pedalOff = 0; this.pedalBrake = -1; this.pedalKeyRest = NaN; this.pedalKeyWas = false;
+    this.flew = null;
   }
 
   /** Forget the datums (a reset or a restore): the next active step captures the attitude, stick and heading it finds. */
@@ -825,8 +828,34 @@ export class StabilityAssist {
    * After the flight model's step: the pilot's own aileron, elevator and rudder back (restored, not subtracted), the
    * rudder with this step's pedal follow-up, which ControlInputs.pedalFollowUp hands to the input module.
    */
+  /**
+   * Another flier takes the controls from the next step (the A key's hold; the shell calls this before it engages). With the
+   * opt-in keyboard attitude command (keyAttitude) or yaw-rate pedals (keyPedal) the stick and pedals are a COMMAND, not
+   * what the rotor flies (the flight model sees the zero-rate trim plus the attitude loop, the pedal less what is kept under
+   * it): hand the new flier the cyclic and pedal the flight model flew on the last step, so its bumpless start is the rotor's
+   * control and not the command's (integ3: engaged in a 20 deg bank the hold started 0.46 of the aileron away). The
+   * spring-trim anchor moves with the cyclic, as when the attitude command stops flying (before()), and the datums are
+   * forgotten, so the first inactive step neither moves the anchor again nor hands the pedal offset back a second time; the
+   * input module's keyboard stick and pedal then follow the new flier's controls (InputSystem's external writer check), and
+   * nothing springs back. Without those opt-ins, or with nothing flown last step, nothing changes.
+   */
+  handOver(s: AircraftState, c: ControlInputs): void {
+    const f = this.flew, t = this.tuning;
+    this.flew = null;
+    if (!f || !(t.keyAttitude || t.keyPedal) || s.crashed) return;
+    const sp = s.rotorcraft?.springTrim;
+    if (sp && c.keyboardCyclic === true) {
+      sp.roll = clamp(sp.roll + f.aileron - c.aileron, -1, 1); sp.pitch = clamp(sp.pitch + f.elevator - c.elevator, -1, 1);
+    }
+    c.aileron = f.aileron; c.elevator = f.elevator; c.rudder = f.rudder;
+    this.reset();
+    this.pedalOff = 0; this.pedalBrake = -1; this.pedalKeyRest = NaN; this.pedalKeyWas = false;
+  }
+
   after(c: ControlInputs): void {
-    if (!this.applied) return;
+    if (!this.applied) { this.flew = null; return; }
+    const f = (this.flew ??= { aileron: 0, elevator: 0, rudder: 0 });
+    f.aileron = c.aileron; f.elevator = c.elevator; f.rudder = c.rudder;
     const p = this.pilot;
     c.aileron = p.aileron; c.elevator = p.elevator; c.rudder = p.rudder + this.pedalStep;
     if (this.pedalStep !== 0) c.pedalFollowUp = (c.pedalFollowUp ?? 0) + this.pedalStep;
