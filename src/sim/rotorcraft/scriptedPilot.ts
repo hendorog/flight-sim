@@ -33,6 +33,12 @@ export class ScriptedPilot {
   rollGain = 4; rollDamping = 1.5; rollLearning = 0.8;
   speedGain = 0.045; speedLearning = 0.005; driftGain = 0.08; driftLearning = 0.015;
   pitchRate = 20 * DEG; cyclicRate = 1;
+  /** Collective per m/s of climb-rate error, and its trim integrator's rate (0.05, 0.025; the hold's opt-in tuning may change them). */
+  liftGain = 0.05; liftLearning = 0.025;
+  /** Yaw rate the pedals' rate damping works about, rad/s (0; the helicopter hold's coordinated turn sets the turn's). */
+  yawRateRef = 0;
+  /** Hand-rate limit of the lateral cyclic, travel per second (1; the helicopter hold's opt-in tuning may change it). */
+  aileronRate = 1;
   /** Anticipate a fraction of the demanded pitch rate; cyclic still passes through the hand-rate limit. */
   pitchLead = 0;
   constructor(s: PilotObservation, c: ControlInputs) {
@@ -61,9 +67,9 @@ export class ScriptedPilot {
     this.yawI = clamp(this.yawI + 0.4 * ey * dt, -1, 1);
     const move = (value: number, to: number, rate: number) => value + clamp(clamp(to, -1, 1) - value, -rate * dt, rate * dt);
     c.elevator = move(c.elevator, this.pitchI + this.pitchGain * ep - this.pitchDamping * (s.angularVelocity.y - this.pitchLead * pitchStep / dt), this.cyclicRate);
-    c.aileron = move(c.aileron, this.rollI + this.rollGain * er - this.rollDamping * s.angularVelocity.x, 1);
-    c.rudder = move(c.rudder, this.yawI + 2 * ey - 1.2 * s.angularVelocity.z, 0.7);
-    this.liftI = clamp(this.liftI + 0.025 * (verticalSpeed - s.verticalSpeed) * dt, 0, 0.8);
-    c.collective = clamp(move(c.collective ?? 0, collective ?? this.liftI + 0.05 * (verticalSpeed - s.verticalSpeed), collectiveRate), 0, 1);
+    c.aileron = move(c.aileron, this.rollI + this.rollGain * er - this.rollDamping * s.angularVelocity.x, this.aileronRate);
+    c.rudder = move(c.rudder, this.yawI + 2 * ey - 1.2 * (s.angularVelocity.z - this.yawRateRef), 0.7);
+    this.liftI = clamp(this.liftI + this.liftLearning * (verticalSpeed - s.verticalSpeed) * dt, 0, 0.8);
+    c.collective = clamp(move(c.collective ?? 0, collective ?? this.liftI + this.liftGain * (verticalSpeed - s.verticalSpeed), collectiveRate), 0, 1);
   }
 }
