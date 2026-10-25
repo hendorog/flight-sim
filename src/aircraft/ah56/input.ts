@@ -95,6 +95,27 @@ export const AH56_INPUT: InputProfile = {
   // it 1 of 7: wingtip strikes and main-leg collapses); with the brakes held from the touchdown 5 of 7 (2 nose-overs onto the
   // turret: the straight roll-out takes the full braking, which the swing was hiding; without it 6 of 7, swinging 38-150 deg).
   // kpsi 2 crashed 3 of 14 (1.5: 2 of 14); kpsi 3 nosed over in the 45 KIAS full-brake case.
+  // Tune3 (2026-10-25, KNOWN_ISSUES T12; the OWNER's reports on the keys: "spring loaded and unresponsive", "feels like a 747, not
+  // a military helo", "the auto centre action ... not possible to fly this if the controls keep reverting back"). Owner decisions:
+  // no auto-centring of the keyboard controls, a crisp military-helicopter feel. AGENT choices for how (W/rigid/tune3, notes.md):
+  // - The keyboard cyclic and pedals no longer re-centre (centringCyclic / centringPedals dropped, recaptureOnCentre dropped): they
+  //   stay where the keys leave them, as on the other types; 5 still centres on demand, the coolie-hat trim stays.
+  // - keyAttitude (opt-in shared field): with the STAB ASSIST on, at every speed, where the keyboard stick sits is the attitude
+  //   flown (attitude command / attitude hold): 30 deg of bank and 15 deg of pitch at 0.6 of the axis from where the datum was
+  //   taken, the assist flying it with its own zero-rate trim (the stick's offset is the command, not a rate demand on the
+  //   rate-command gyro). Keys 0.45 / 0.5 of the axis per second: about 22 deg/s of bank and 12 deg/s of pitch while held, the
+  //   first 1 deg/s within 0.1 s (roll) and 0.25 s (pitch; round 3: 0.4 / 0.75 s, 3 / 1.9 deg/s after 1 s), and the attitude
+  //   stays when the key comes up. Near the ground the bank closes to 8 deg below 4 m of the reference point (10 m: the whole 30):
+  //   a 3 s hold at 3 ft no longer reaches a wingtip. The roll rate 0.45 (0.5 = 25 deg/s) is the balance with the whole-flight
+  //   rows: at 0.5 the 0.8 s pace's landing struck a wingtip and 4-5 of 6 paces landed, at 0.45 6 of 6 (notes.md, m5_rob_*).
+  // - keyPedal (opt-in shared field): inside the heading hold's band a pedal key is a yaw-rate command, 35 deg/s within 0.35 of the
+  //   axis, the turn braked when the key comes up and the hold taking the new heading (no pull-back); the keyboard pedal then
+  //   settles to the pedal that holds the heading (returnRate 0.5, not a spring to centre); above 30-45 KIAS a yaw damper about
+  //   the coordinated turn's rate (cruiseDamp: the crisp banks excited a lightly damped yaw-sideslip swing, 6.5 s, the sideslip
+  //   pedal at gain 1 pumping it; the sideslip pedal is 0.5 now). The collective-to-pedal crossfeed (pedalCrossfeed, -2 per unit,
+  //   washed out in 3 s): a 1 s F6 in the hover swung the nose 18 deg/s, now 6.
+  // - The collective: F6 / F5 held are a 4.5 m/s climb / 2.5 m/s sink command (round 3: 2 / 2) with the lever walked at 0.4 per s
+  //   (0.2), at every speed (held.everySpeed: in forward flight too, never into the power limit), the keys 0.1 per s (0.06).
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.5, katt: 0.3, stickAttitude: 0.6, authority: 0.2, yawAuthority: 0.25,
     holdAuthority: 0.5, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 60],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.5 },
@@ -128,10 +149,12 @@ export const AH56_INPUT: InputProfile = {
   // tap is 0.15 in, a 2 s hold 0.7 in; full pedal is still there held. Cyclic (round 2): the MD 500E's ramp (0.05 -> 0.35 per second
   // over 1.2 s, squared) on a rate-command gyro gave nothing for a second and then a lot (with the STAB ASSIST 2.3 / 13.6 / 33.7 deg
   // of pitch for 1 / 2 / 3 s holds, roll 3.2 / 20.5 / 51.7: a 3 s roll hold reached the ground). A constant 0.1 of the axis per
-  // second: 1.3 / 4.6 / 9.7 deg, roll 1.9 / 6.9 / 14.6 (r2 out/bat-H30.log, G).
+  // second: 1.3 / 4.6 / 9.7 deg, roll 1.9 / 6.9 / 14.6 (r2 out/bat-H30.log, G). Tune3 (above): the stick is an attitude command
+  // now, so the keys move the commanded attitude at a constant 0.45 (roll) / 0.5 (pitch) of the axis per second, and the pedal keys
+  // the yaw-rate command at 0.5 per second within 0.35 of where the key found the pedal.
   assists: { ...MD500_INPUT.assists, axes: { ...mdAxes,
     elevator: { ...mdAxes.elevator, baseRate: 0.5, maxRate: 0.5, accelTime: 1, accelExponent: 1 },
-    aileron: { ...mdAxes.aileron, baseRate: 0.5, maxRate: 0.5, accelTime: 1, accelExponent: 1 },
+    aileron: { ...mdAxes.aileron, baseRate: 0.45, maxRate: 0.45, accelTime: 1, accelExponent: 1 },
     rudder: { ...mdAxes.rudder, baseRate: 0.5, maxRate: 0.5, accelTime: 1, accelExponent: 1 } } },
   has: { ...MD500_INPUT.has, gear: true },
   labels: { ...MD500_INPUT.labels,

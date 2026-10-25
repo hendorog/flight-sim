@@ -3,7 +3,7 @@
 // Simulator links it), flown by a WATCHING beginner rather than a timed tapper. A first-time laptop pilot presses a key and
 // WATCHES: holds it until the nose (wings, heading, climb) looks right, then lets go.
 // Tune3 (the owner's keyboard reports): the keyboard stick and pedals no longer re-centre. They stay where the keys leave them,
-// and with the STAB ASSIST the stick's position is a held attitude (a press moves the nose about 25 deg/s in roll and 12 deg/s
+// and with the STAB ASSIST the stick's position is a held attitude (a press moves the nose about 22 deg/s in roll and 12 deg/s
 // in pitch and the attitude stays where the key left it), a pedal key a turn (up to 35 deg/s) that stops when the key comes up.
 // So this beginner flies a position-holding stick the way a first-day laptop pilot would: press to move the nose toward where
 // it should be, let go when it is there (it stays), and to come back press the opposite key; the same release band, led by the
@@ -102,7 +102,7 @@ export class WatchingBeginner {
     this.axes = {
       // + = nose up (ArrowDown), roll right, nose right, collective up.
       pitch: ax('ArrowDown', 'ArrowUp', 1.5, 0.5, o.cyclicHold ?? 1, o.pitchDegS ?? 12),
-      roll: ax('ArrowRight', 'ArrowLeft', 2, 0.5, o.cyclicHold ?? 1, o.rollDegS ?? 25),
+      roll: ax('ArrowRight', 'ArrowLeft', 2, 0.5, o.cyclicHold ?? 1, o.rollDegS ?? 22),
       yaw: ax('KeyX', 'KeyZ', 3, 1, o.pedalHold ?? 1.5),
       coll: ax('F6', 'F5', 0.5, 0.15, o.collHold ?? 1, 2),
     };
