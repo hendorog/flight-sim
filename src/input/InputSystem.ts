@@ -914,7 +914,9 @@ export class InputSystem implements Subsystem {
     const kbLimit = this.profile.stabilityAssist?.keyboardLimit;
     if (kbLimit && this.assists.stabilityAssist && kbAil && kbEle) {
       const f = clamp((s.groundSpeed / KT - kbLimit.fadeKt[0]) / (kbLimit.fadeKt[1] - kbLimit.fadeKt[0]), 0, 1);
-      const lim = kbLimit.travel + (2 - kbLimit.travel) * f;
+      // keyboardLimit.cruise (opt-in, tune pass 2 fix): the limit opens to cruise.travel, not the whole travel.
+      const cr = kbLimit.cruise;
+      const lim = kbLimit.travel + ((cr ? cr.travel : 2) - kbLimit.travel) * f;
       const k = this.kbKeyed;
       // The stick moved by anything but the keys (the hold handing over, a reset, 5, Shift+5): nothing keyed is left.
       if (kbAileronBefore !== this.kbLeft.aileron || (roll === 0 && this.kbAileron !== kbAileronBefore)) k.aileron = 0;
@@ -942,6 +944,9 @@ export class InputSystem implements Subsystem {
           const da = Math.sign(k.aileron) * Math.min(step, Math.abs(k.aileron)), de = Math.sign(k.elevator) * Math.min(step, Math.abs(k.elevator));
           this.kbAileron -= da; k.aileron -= da; this.kbElevator -= de; k.elevator -= de;
         }
+        // keyboardLimit.cruise: above fadeKt[0] the keys' rest of cruise.restS makes where the stick is the new rest (the
+        // attitude hold keeps what the keys commanded), so one press moves it at most the limit, and taps do not add up.
+        if (cr && f > 0 && this.cyclicKeysQuiet >= cr.restS) k.aileron = k.elevator = 0;
       }
       this.kbLeft.aileron = this.kbAileron; this.kbLeft.elevator = this.kbElevator;
     }

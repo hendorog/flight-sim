@@ -112,6 +112,15 @@ export const BO105_INPUT: InputProfile = {
   //   16 m and 3 ft (f_rev); at 1 deg/s 10 of 10 reversals come back (1.5: 8 of 10). Round 2 dropped 1 deg/s for the 1 s
   //   knock past 30 m; behind the keyboard cyclic limit it stays within 15 m. The 10 kt tailwind deceleration with 1 s
   //   taps now reaches the hover (50.5 s; it pirouetted before).
+  // - THE KEYBOARD CYCLIC LIMIT AT SPEED (keyboardLimit.cruise): above 15 kt of ground speed one press of an arrow key
+  //   moves the stick at most 0.12 of the axis (about 9 deg of commanded attitude) from where it was when the keys last
+  //   rested 0.3 s (the limit used to open to the whole travel by 30 kt). Held 1.5-3 s at 20-100 KIAS a key took the stick
+  //   0.3-0.8 out, past the series authority, and the raw aircraft answered: with the beginner recovering 12 of 60
+  //   crashed, hands off 35 of 60 (the pass-2 gate's k1). Now 0 of 60 and 9 of 60: the nine are ArrowUp held then hands
+  //   off at 45-100 KIAS, the commanded 9 deg nose down held into a dive (17-41 s from 150 m). Swept 0.12 / 0.16 / 0.2
+  //   (0.2: the 100 KIAS recovery through 180 deg) and the rest 1 / 0.3 s (the 1 s rest, and a limit kept through the
+  //   15-30 kt band, added the beginner's taps up: by-hand accelerations past 45 kt 10-15 s later, the circuit's
+  //   approaches 1 of 8 done; with 0.3 s across the band they are as before, the circuit 6 of 8 against 5).
   stabilityAssist: { default: true, kp: 0.15, kq: 0.3, kr: 0.3, katt: 1.2, stickAttitude: 1.3, authority: 0.2, yawAuthority: 0.13,
     holdAuthority: 0.3, kpsi: 1.0, kpsiI: 0.3, datumRelaxKt: 2, groundLoad: 0.5, fadeKias: [30, 50],
     followUp: { filterS: 0.5, deadBand: 0.2, cyclicGain: 0.3, cyclicRate: 0.1, pedalGain: 1, pedalRate: 0.2 },
@@ -121,7 +130,8 @@ export const BO105_INPUT: InputProfile = {
     pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
     cruiseHold: { gain: 1 },
     translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 1, fadeKt: [15, 30], keyRest: true, landingRestS: 0 },
-    keyboardLimit: { travel: 0.12, fadeKt: [15, 30], recentre: { rate: 0.1, restS: 2.5, landing: { aglM: 8, restS: 0, f5S: 5 } } } },
+    keyboardLimit: { travel: 0.12, fadeKt: [15, 30], recentre: { rate: 0.1, restS: 2.5, landing: { aglM: 8, restS: 0, f5S: 5 } },
+      cruise: { travel: 0.12, restS: 0.3 } } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
   // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine

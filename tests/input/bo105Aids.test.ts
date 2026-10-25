@@ -74,9 +74,11 @@ describe('5-key centring rate (InputProfile.centreRate) and Shift+5 keyboard tri
     for (const [p, rate] of [[BO105_INPUT, 1], [MD500_INPUT, CENTRE_RATE]] as const) {
       const r = makeInputRig(p);
       r.setAirborne(true);
-      // At cruise (the untrimmed 120 KIAS pilot this rate is for): the Bo 105's keyboard cyclic limit is a hover and
-      // low-speed aid (StabilityAssistTuning.keyboardLimit, open above 30 kt of ground speed).
+      // At cruise (the untrimmed 120 KIAS pilot this rate is for), with the STAB ASSIST off: its keyboard cyclic limit
+      // (StabilityAssistTuning.keyboardLimit, 0.12 of the axis a press at speed since the tune pass 2 fix) would stop the
+      // push at 0.12, and the row is about the 5 key alone.
       r.s.groundSpeed = 120 * 0.514444;
+      if (p === BO105_INPUT) r.tap('KeyA', true);
       const e0 = r.c.elevator;
       hold(r, 'ArrowUp', 3);
       const pushed = e0 - r.c.elevator;
@@ -288,14 +290,34 @@ describe('the keyboard cyclic limit and its re-centring (StabilityAssistTuning.k
     r.s.groundSpeed = groundSpeed; r.s.altitudeAGL = agl;
     return r;
   };
-  it('a held arrow stops 0.12 of the axis from the rest below 15 kt; above 30 kt of ground speed, with the assist off and on the MD 500E it goes on', () => {
+  it('a held arrow stops 0.12 of the axis from the rest below 15 kt; with the assist off and on the MD 500E it goes on', () => {
     expect(lim.travel).toBe(0.12); expect(lim.fadeKt).toEqual([15, 30]);
     const push = (r: InputRig) => { const e0 = r.c.elevator; hold(r, 'ArrowUp', 3); return e0 - r.c.elevator; };
-    const hover = push(airborne()), fast = push(airborne(BO105_INPUT, 31 * 0.514444));
+    const hover = push(airborne());
     const off = airborne(); off.tap('KeyA', true);
     const md = push(airborne(MD500_INPUT));
     expect(hover).toBeCloseTo(0.12, 6);
-    expect(fast).toBeGreaterThan(0.3); expect(push(off)).toBeGreaterThan(0.3); expect(md).toBeGreaterThan(0.3);
+    expect(push(off)).toBeGreaterThan(0.3); expect(md).toBeGreaterThan(0.3);
+  });
+  /**
+   * The tune pass 2 fix (keyboardLimit.cruise; the pass-2 gate's k1): above 15 kt the limit used to open to the whole
+   * travel by 30 kt, and a key held 1.5-3 s in cruise took the stick 0.3-0.8 out, past the series authority. Now one
+   * press moves it at most 0.12 from where the keys last rested 0.3 s, at every speed above the hover band; a press after
+   * that rest moves it another 0.12 (the attitude hold keeps the first), one inside it adds nothing past the limit.
+   */
+  it('above 15 kt (31 kt, 120 kt) one press moves the stick at most 0.12; another after a 0.3 s rest 0.12 more; one inside the rest nothing past the limit', () => {
+    expect(lim.cruise).toEqual({ travel: 0.12, restS: 0.3 });
+    for (const kt of [31, 120]) {
+      const r = airborne(BO105_INPUT, kt * 0.514444), e0 = r.c.elevator;
+      hold(r, 'ArrowUp', 3);
+      expect(e0 - r.c.elevator, `${kt} first`).toBeCloseTo(0.12, 6);
+      r.run(0.5);
+      hold(r, 'ArrowUp', 3);
+      expect(e0 - r.c.elevator, `${kt} second`).toBeCloseTo(0.24, 6);
+      const q = airborne(BO105_INPUT, kt * 0.514444), f0 = q.c.elevator;
+      hold(q, 'ArrowUp', 3); q.run(0.2); hold(q, 'ArrowUp', 3);
+      expect(f0 - q.c.elevator, `${kt} inside the rest`).toBeCloseTo(0.12, 6);
+    }
   });
   it('2.5 s after the keys rest the keyed displacement glides back at 0.1 per second, and the next press has the whole limit again', () => {
     const r = airborne(), e0 = r.c.elevator, a0 = r.c.aileron;

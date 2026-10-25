@@ -184,7 +184,15 @@ export interface StabilityAssistTuning {
      * no arrow key is held), so the attitude taps of a pilot letting down cannot add up to a slide.
      * Absent: the keyboard stick stays where the keys leave it.
      */
-    recentre?: { rate: number; restS: number; landing?: { aglM: number; restS: number; f5S: number } } };
+    recentre?: { rate: number; restS: number; landing?: { aglM: number; restS: number; f5S: number } };
+    /**
+     * At speed (tune pass 2 fix; needs `recentre`): the limit opens to `travel` of the axis by fadeKt[1] instead of the
+     * whole travel, and above fadeKt[0], once the arrow keys have rested `restS`, the stick's position is the new rest (the
+     * attitude hold keeps what the keys commanded), so one press, however long, moves the stick at most the limit, a held
+     * key cannot take it past the series authority into the raw aircraft, and taps do not add up. Absent: the whole
+     * travel.
+     */
+    cruise?: { travel: number; restS: number } };
 }
 
 export interface InputProfile {
