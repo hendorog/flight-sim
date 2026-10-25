@@ -959,6 +959,46 @@ function setReverse(c: ControlInputs, v: number): void {
   clearEngineControl(c, 'reverse');
 }
 
+export interface IdleDescentResult {
+  /** Mean over the last 20 s: indicated airspeed, kt; vertical speed, ft/min; flight path below the horizon, deg. */
+  kias: number;
+  fpm: number;
+  pathDeg: number;
+  /** Mean propeller thrust of all engines, N (negative: the propellers drag), and engine 0's Np at the end, rpm. */
+  thrustN: number;
+  np: number;
+}
+
+/**
+ * Steady idle descent: every power lever at idle on the gate (condition / mixture levers forward), the autopilot holding
+ * `kias` with the pitch (auto-trim on), wings level; 70 s from a reset 8 % fast on a 4 degree path, measured over the last
+ * 20 s. The rig should be in the air (makeRig; `altitude` MSL, m).
+ */
+export function idleDescent(rig: AnyRig, o: { kias: number; flapLever: number; altitude: number }): IdleDescentResult {
+  const def = rig.fm.definition;
+  resetTo(rig, { position: at(o.altitude), airspeed: o.kias * KT * 1.08, flaps: o.flapLever, flightPathAngle: -4 * DEG });
+  const s = rig.fm.state;
+  const c = rig.controls;
+  const ap = new Autopilot(def.autopilot);
+  ap.settings = { ...ap.settings, lateral: 'heading', heading: s.heading, vertical: 'airspeed', airspeed: o.kias * KT, autoTrim: true, autothrottle: false };
+  c.throttle = 0;
+  clearEngineControl(c, 'throttle');
+  c.mixture = 1;
+  clearEngineControl(c, 'mixture');
+  let n = 0, vs = 0, ias = 0, gs = 0, thrust = 0;
+  rig.run(70, (t) => {
+    ap.update(FRAME, s, c);
+    if (t > 50) {
+      n++;
+      vs += s.verticalSpeed;
+      ias += s.ias;
+      gs += s.groundSpeed;
+      thrust += s.propellers.reduce((sum, p) => sum + p.thrust, 0);
+    }
+  });
+  return { kias: kt(ias / n), fpm: fpm(vs / n), pathDeg: Math.atan2(-vs, gs) / DEG, thrustN: thrust / n, np: s.engines[0].propRpm };
+}
+
 export interface IdleTaxiOptions {
   /** ControlInputs.reverse: 0 on the gate, BetaDef.pitchOnlyTravel ground fine, 1 full reverse. */
   reverse: number;

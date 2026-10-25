@@ -181,7 +181,7 @@ at 20 % Ng and restored cuts out at 50.03 % Ng and reaches idle; a dry run captu
 press, condition lever to GROUND IDLE at 13 % Ng: light-off, peak ITT 733 C, cut-out at 50.03 % Ng after 42 s,
 idle at 54.9 % Ng; a second press at 20 % Ng drops it out (the start hangs); a dry motoring run times out at 80 s.
 
-**Propeller maps.** `PROP_MAX_SLICES` is 20 (the C208's 15 slices plus up to 5 in beta); slices below the fine stop
+**Propeller maps.** `PROP_MAX_SLICES` is 20 (the C208's 15 slices from its stop plus up to 5 in beta); slices below the fine stop
 (to the reverse angle) are ordinary slices. The slice grid's floor (advance angle -20 deg) is unchanged. The maps
 give finite loads from -20 to 90 deg blade angle at 0-150 kt, turning or stopped, in line or inclined.
 
@@ -233,9 +233,12 @@ passes 20 psi; the limit is the helix twist, whose inner third stays at a positi
    C208 and PC-12 (landing roll with no cancel, then 10 s held at the stop, four loadings): no crash, mains at most
    20 kN (C208) and 25 kN (PC-12). The PC-12 at MTOW on its aft limit sits back on its tail while the reverse is held,
    a CG and thrust matter (its KNOWN_ISSUES). The test-bed graft was not re-run.
-4. **C208 idle on the gate** — closed by T1b. LOW IDLE on the gate gives 1292 N static, Np 691 and a steady 22.1 kt
-   unbraked; ground fine 186 N and 0 kt; half the pitch-only travel through the beta cam (`BetaDef.pitchOnlySchedule`,
-   integration) 1089 N and 10.9 kt.
+4. **C208 idle on the gate** — closed by T1b; recalibrated 2026-10-26 (owner: "it will not stop on its own"). The
+   low-pitch stop moved to the TCDS's 30 in station (15 deg at 0.75 R before, 8.7 now), idle gas power 25 / 40 shp at
+   LOW / HIGH IDLE (40 / about 120 before), the beta cam linear. LOW IDLE on the gate 925 N static, Np 713, about 7 kt
+   unbraked (was 1292 N, 22.1 kt); HIGH IDLE on the gate 1446 N, 26 kt (was 3.5 kN and a run-away past 70 kt); half
+   the pitch-only travel 809 N, 2.7 kt; ground fine 125 N, 0 kt; at idle in the air the propeller drags (-0.4 kN at
+   95 KIAS clean, was +1.2 kN). The C208's KNOWN_ISSUES has the numbers and the sources.
 5. **Windmilling in the beta range at speed.** Between about -6 and +6 deg at 80 kt the test-bed blade drives the
    shaft; the valve takes the blades through it in about 0.4 s and the topping reset holds Np.
 6. **Torque limiter dynamics.** The cap is the steady solution (no pneumatic lag); transients overshoot only by the

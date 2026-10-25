@@ -1,7 +1,7 @@
 // Conformance of the Cessna 208 Caravan 675 (quick tier always; flown tier with FS_AIRCRAFT=c208 or all): the suite's
 // blocks on the targets of targets/c208.ts, and the items no generic block measures: the rest attitude and propeller
 // clearance, the engine at the take-off power setting (torque, ITT, Ng, Np inside the limits), and the fuel flow
-// of the maximum cruise, the idle taxi on the gate and in beta, and the keyboard circuit (flown by torque:
+// of the maximum cruise, the idle taxi on the gate and in beta, the idle descents, and the keyboard circuit (flown by torque:
 // targets/c208.ts KEYBOARD_PILOT_TARGETS) with the plan's speed, flap, touchdown and beta checks.
 
 import { beforeAll, describe } from 'vitest';
@@ -9,13 +9,13 @@ import { loadAircraft } from '../../src/aircraft/registry';
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import { DEG, FT, KT } from '../../src/core/math';
 import { at, flatEnvironment, makeRig, resetTo } from '../fdm/helpers';
-import { LOW_TERRAIN, cruiseSpeed, idleTaxi, restOnGround } from '../fdm/measure';
+import { LOW_TERRAIN, cruiseSpeed, idleDescent, idleTaxi, restOnGround } from '../fdm/measure';
 import { once } from './plan';
 import { flyCircuit, makeRig as makeKeyboardRig, type FlightLog } from '../input/keyboardPilot';
 import { keyboardCircuit, keyboardPilotOptions } from './keyboard';
 import { describeAircraft, flownTier, item } from './suite';
 import { AIRPORT } from '../../src/core/world';
-import { C208_BETA_TAXI, C208_CRUISE_FUEL_PPH, C208_KEYBOARD_CIRCUIT, C208_REST, C208_TAKEOFF_LIMITS, C208_TARGETS, KEYBOARD_PILOT_TARGETS } from './targets/c208';
+import { C208_BETA_TAXI, C208_CRUISE_FUEL_PPH, C208_IDLE_DESCENT, C208_KEYBOARD_CIRCUIT, C208_REST, C208_TAKEOFF_LIMITS, C208_TARGETS, KEYBOARD_PILOT_TARGETS } from './targets/c208';
 
 const ID = 'c208';
 const QUICK_MS = 120_000;
@@ -65,15 +65,24 @@ describe(`conformance ${ID}: items outside the generic blocks`, () => {
     item(ID, '  Np', () => r().np, C208_TAKEOFF_LIMITS.np, 'rpm', QUICK_MS);
   });
 
-  describe.runIf(flownTier(ID))('taxi at LOW IDLE on the gate and in beta (flown tier)', () => {
-    // As the suite's idle-taxi block (measure.ts idleTaxi: level runway, no brakes, condition LOW IDLE), rolled until
-    // the speed is steady: a 3.6 t aircraft on 1-1.5 kN of idle thrust takes three to four minutes to settle.
+  describe.runIf(flownTier(ID))('taxi at idle on the gate and in beta (flown tier)', () => {
+    // As the suite's idle-taxi block (measure.ts idleTaxi: level runway, no brakes), rolled until the speed is steady:
+    // a 3.6 t aircraft on about 1 kN of idle thrust takes minutes to settle.
     for (const k of C208_BETA_TAXI) {
-      const r = once(() => idleTaxi(makeRig({ def, loading: 'maxGross' }), { reverse: k.reverse, condition: 0.1, seconds: 600 }));
-      item(ID, `idle taxi, ${k.label} (reverse ${k.reverse}, LOW IDLE): steady unbraked ground speed`, () => r().speedKt, k.speedKt, 'kt', FLOWN_MS);
+      const idle = k.condition < 0.5 ? 'LOW IDLE' : 'HIGH IDLE';
+      const r = once(() => idleTaxi(makeRig({ def, loading: 'maxGross' }), { reverse: k.reverse, condition: k.condition, seconds: 600 }));
+      item(ID, `idle taxi, ${k.label} (reverse ${k.reverse}, ${idle}): steady unbraked ground speed`, () => r().speedKt, k.speedKt, 'kt', FLOWN_MS);
       item(ID, `idle taxi, ${k.label}: static thrust on the parking brake`, () => r().staticThrustN, k.thrustN, 'N', FLOWN_MS);
       item(ID, `idle taxi, ${k.label}: Np on the parking brake`, () => r().staticNp, k.np, 'rpm', FLOWN_MS);
       item(ID, `idle taxi, ${k.label}: the speed settled (1 = yes)`, () => Number(r().steady), k.settled, '', FLOWN_MS);
+    }
+  });
+
+  describe('idle descents: the propeller on its low-pitch stop drags', () => {
+    for (const k of C208_IDLE_DESCENT) {
+      const r = once(() => idleDescent(makeRig({ def, loading: 'maxGross' }), { kias: k.kias, flapLever: k.flapLever, altitude: AIRPORT.elevation + 5000 * FT }));
+      item(ID, `idle descent, ${k.label}: propeller thrust`, () => r().thrustN, k.thrustN, 'N', QUICK_MS);
+      item(ID, `idle descent, ${k.label}: flight path below the horizon`, () => r().pathDeg, k.pathDeg, 'deg', QUICK_MS);
     }
   });
 
