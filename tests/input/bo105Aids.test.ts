@@ -277,7 +277,7 @@ describe('STAB ASSIST toggle (InputProfile.stabilityAssist; the physics side is 
  * (StabilityAssistTuning.keyboardLimit), on the input module alone. Below 15 kt of ground speed the arrow keys move the
  * keyboard stick at most 0.12 of the axis from where it last rested (inside the STAB ASSIST's 0.2 series authority); the
  * limit opens to the whole travel by 30 kt. Once the keys have rested 2.5 s the keyed displacement glides back at 0.1 of
- * the axis per second (letting down, with the CG under 8 m and a bare F5 held within 5 s or a sink, at once), so the next
+ * the axis per second (letting down, with the CG under 8 m and a bare F5 held within 5 s, at once), so the next
  * press has the whole limit again. Another writer's stick (the hover hold handing over) is not keyed and stays.
  */
 describe('the keyboard cyclic limit and its re-centring (StabilityAssistTuning.keyboardLimit, tune pass 2: the Bo 105)', () => {

@@ -169,11 +169,11 @@ export interface StabilityAssistTuning {
      * Once the arrow keys have rested `restS`, the keyboard stick glides back to where it last rested at `rate` of the
      * axis per second (faded out with the limit over fadeKt): the attitude the keys commanded is taken back and the TRC
      * stops the helicopter, and a key held to the limit and let go has the full limit again. `landing`: with the reference point under `aglM` above the
-     * ground and a bare F5 held within the last `f5S` s or a sink over `sinkMps` m/s, it waits only `restS` of its own
-     * (0: as soon as no arrow key is held), so the attitude taps of a pilot letting down cannot add up to a slide.
+     * ground and a bare F5 held within the last `f5S` s (letting down), it waits only `restS` of its own (0: as soon as
+     * no arrow key is held), so the attitude taps of a pilot letting down cannot add up to a slide.
      * Absent: the keyboard stick stays where the keys leave it.
      */
-    recentre?: { rate: number; restS: number; landing?: { aglM: number; restS: number; f5S: number; sinkMps: number } } };
+    recentre?: { rate: number; restS: number; landing?: { aglM: number; restS: number; f5S: number } } };
 }
 
 export interface InputProfile {

@@ -92,7 +92,7 @@ export const BO105_INPUT: InputProfile = {
     pedalCrossfeed: { perCollective: -3, washS: 3, onLightSkids: true },
     cruiseHold: { gain: 1 },
     translationalRate: { degPerKt: 1.0, limitDeg: 6, trimDegPerSPerKt: 0.3, restS: 2.5, trimMaxDegS: 2, fadeKt: [15, 30], keyRest: true, landingRestS: 0 },
-    keyboardLimit: { travel: 0.12, fadeKt: [15, 30], recentre: { rate: 0.1, restS: 2.5, landing: { aglM: 8, restS: 0, f5S: 5, sinkMps: 0.3 } } } },
+    keyboardLimit: { travel: 0.12, fadeKt: [15, 30], recentre: { rate: 0.1, restS: 2.5, landing: { aglM: 8, restS: 0, f5S: 5 } } } },
   // Hand-rate collective keys (flyability pass F2): Shift+F5 lowers at 1.0 of the travel per second (full down in about
   // 0.4 s from the cruise collective), Shift+F6 raises at 0.5 per second (a 0.4 cushion in 0.8 s). The double-engine
   // failure's NR decays about 19 %/s at 100 KIAS (840 kJ in the rotor against 325 kW: D, KNOWN_ISSUES 22), and the fine

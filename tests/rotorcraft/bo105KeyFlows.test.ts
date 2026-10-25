@@ -82,7 +82,7 @@ describe('arrow keys held at the hover (tune pass 2: the keyboard cyclic limit a
  * the ground (gain 1, and the gate's 0.5) or in F5 taps of 0.3 s a second (looking every 1 / 2 s). Each tap took back the
  * TRC's lean and its walk waited 2.5 s of rest, which a 1-2 s tapper never gives: before, from 16 m it slid 17-29 kt
  * and rolled over at the touchdown; 3 of 12 landings (with F5 held and the arrows untouched among them) were under 5 kt
- * (q2_land.base). Letting down (the CG under 8 m with a bare F5 held within 5 s or a sink over 0.3 m/s) the keyed stick
+ * (q2_land.base). Letting down (the CG under 8 m with a bare F5 held within 5 s) the keyed stick
  * glides back as soon as the arrow key is let go (keyboardLimit.recentre.landing) and the walk runs whenever no arrow is
  * held (translationalRate.landingRestS 0). After: 12 of 12, touchdown 0.1-0.9 kt (q2_land.cfg2); F5 held with an arrow
  * held too (moving on purpose) touches down at 7-8 kt, not crashed.

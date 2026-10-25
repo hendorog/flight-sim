@@ -926,14 +926,14 @@ export class InputSystem implements Subsystem {
         const keyed = k.elevator + this.kbElevator - kbElevatorBefore, kept = clamp(keyed, Math.min(k.elevator, -lim), Math.max(k.elevator, lim));
         this.kbElevator += kept - keyed; k.elevator = kept;
       }
-      // Once the arrow keys have rested (recentre.restS; landing: CG under aglM with a bare F5 held lately or a sink, its
-      // own restS) the keyed displacement glides back out at recentre.rate, faded out with the limit.
+      // Once the arrow keys have rested (recentre.restS; letting down: CG under aglM with a bare F5 held lately, its own
+      // restS) the keyed displacement glides back out at recentre.rate, faded out with the limit.
       const rc = kbLimit.recentre;
       if (rc && dt > 0) {
         this.cyclicKeysQuiet = roll !== 0 || pitch !== 0 ? 0 : this.cyclicKeysQuiet + dt;
         this.lowerKeyAgo = this.held.has('flapsUp') ? 0 : this.lowerKeyAgo + dt;
         const ld = rc.landing;
-        const landing = !!ld && s.altitudeAGL < ld.aglM && (this.lowerKeyAgo < ld.f5S || s.velocity.z > ld.sinkMps);
+        const landing = !!ld && s.altitudeAGL < ld.aglM && this.lowerKeyAgo < ld.f5S;
         if (ld) c.cyclicLanding = landing;
         if (this.cyclicKeysQuiet > 0 && this.cyclicKeysQuiet >= (landing ? ld!.restS : rc.restS)) {
           const step = rc.rate * (1 - f) * dt;
