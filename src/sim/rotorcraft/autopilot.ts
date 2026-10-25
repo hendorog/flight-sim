@@ -3,62 +3,10 @@ import type { AircraftState, ControlInputs } from '../../core/types';
 import type { RotorcraftDefinition } from '../../physics/rotorcraft/definition';
 import type { AutopilotSettings } from '../../physics/autopilot';
 import { ScriptedPilot, observePilot, type PilotObservation } from './scriptedPilot';
+import type { HeliHoldTuning } from '../../aircraft/types';
+
+export type { HeliHoldGains, HeliHoldTuning } from '../../aircraft/types';
 import { OnlinePencil } from '../../physics/identification/onlinePencil';
-
-/** Inner attitude-loop gains of the hold (ScriptedPilot's): cyclic per rad of attitude error, per rad/s of rate, and the trim
- * integrators' rate (per rad·s); `cyclicRate` the hand-rate limit of both cyclic axes, travel per second. */
-export interface HeliHoldGains {
-  pitchGain: number; pitchDamping: number; pitchLearning: number;
-  rollGain: number; rollDamping: number; rollLearning: number;
-  cyclicRate: number;
-}
-
-/**
- * Opt-in laws of the hold for one type (SimProfile.heliHold; the AH-56A only). Every field absent = the shared law.
- */
-export interface HeliHoldTuning {
-  /** Inner-loop gains by control-gyro configuration (RotorcraftState.controlGyro.mode, read every step). */
-  inner?: Partial<Record<'amcs' | 'ics', HeliHoldGains>>;
-  /**
-   * Heading changes as coordinated turns: at or above `onKias` IAS (back below `offKias`) the heading error asks for a turn
-   * rate (`headingGain` per s, up to `rateDegS`), flown as the bank of that rate at the true airspeed (up to `maxBankDeg`,
-   * rolled at `rollRateDegS`), and the pedals fly the sideslip to zero (`slipGain` rad of heading per rad of s.beta). Below
-   * `offKias`, and in the hover hold, the shared pedal turn (8 deg/s) and the sideways-drift bank. Engaged in a bank, the wings come level and the
-   * heading bug follows the nose until they are.
-   */
-  turns?: { onKias: number; offKias: number; rateDegS: number; headingGain: number; maxBankDeg: number; rollRateDegS: number; slipGain: number;
-    /** The trim bank's integrator, rad of bank per rad of heading error per s (within 10 deg of the bug). */
-    trimLearning: number };
-  /** The held speed is the IAS when it is above this, kt (engaged faster: the IAS then); slower, the forward ground speed. */
-  airspeedAboveKias?: number;
-  /** The held speed walks to a new value at this rate, kt/s (a held speed set from elsewhere, e.g. the dev panel). */
-  speedRateKtS?: number;
-  /**
-   * The climb-rate demand walks at this rate, m/s per s, and the shared law's 0.3 per s height gain and 1.5 m/s limit become
-   * `heightGain` and `maxClimb`; engaged climbing or descending, the held height is where that walk levels off.
-   */
-  climb?: { accel: number; heightGain: number; maxClimb: number;
-    /** Collective per m/s of climb-rate error and its integrator's rate (shared: 0.05 and 0.025). */
-    liftGain: number; liftLearning: number };
-  /**
-   * The pusher grip (ControlInputs.propLever) driven to `lever` at the held speed (`kias`, IAS) at `ratePerS` of travel per
-   * second, every step while the hold is on (the type's PROP SCHEDULE table: the hover detent below 30 kt).
-   */
-  pusher?: { kias: readonly number[]; lever: readonly number[]; ratePerS: number };
-  /**
-   * The spring-trim anchor walked toward the hold's cyclic, low-passed over `tauS` s, through the trim button
-   * (ControlInputs.cyclicTrimPitch / cyclicTrimRoll, at the type's trim rate): a re-centring keyboard cyclic then comes back
-   * to rest where the hold left it at the hand-back; keyboard pedals likewise.
-   */
-  trimFollowUp?: { tauS: number;
-    /** Keyboard pedals (ControlInputs.keyboardPedals): their centre walked the same way through pedalFollowUp, travel per s. */
-    pedalRate: number };
-  /**
-   * Engaged drifting (the hover hold engaged over `minMs` m/s of ground speed): the ground velocity asked for runs down to
-   * zero at `decel` m/s per s, and the position is held where it stops instead of where A was pressed.
-   */
-  hoverCapture?: { decel: number; minMs: number };
-}
 
 /** Experimental control-only helicopter hold. Never writes flight-model state.
  * The proven demo attitude loops form the baseline; position capture adds a slow
