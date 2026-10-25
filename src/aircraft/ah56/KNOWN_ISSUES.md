@@ -603,3 +603,47 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
   - Left: OGE, hands off on the pedals too, 60 s: 2.9 deg, 51 m, the heading 29 deg: a lateral drift starts the tail rotor's
     weathercock and the yaw of the rolled hover carries the space-held tilt round (tail rotor / in-plane, scored apart; with the
     heading held on the pedals 0.36 deg, 22.8 m). The ICS 60 s hands off grows to 29 deg (KNOWN GAP; its spring, cant and sweep are P).
+- **T11 (items B, C, D). The keyboard beginner: the whole flight now completes; a light attitude hold kept for the way back; four
+  new sim aids; the main leg sized for the one-wheel touchdown.** AGENT choices for the owner (no helicopter experience, keyboard
+  and trackpad; "go with recommendations"). Rows: tests/rotorcraft/ah56Assist.test.ts (round 3 block) and the new
+  ah56KeyMission.test.ts (the whole flight); the test pilot is ah56KeyPilot's watching beginner, feet off the pedal keys.
+  - B (the owner prefers the gyro, not a pitch/roll STAB ASSIST, for the attitude). With T10 the beginner holds the hover with the
+    cyclic attitude term OFF (the Bo 105 helper's tapper 3.7-5.0 m in 60 s, the watching beginner 2.2-15.4 m), so the hover does
+    not need it. The whole flight does: with it off 2 of 4 paces landed, the hover after the stop drifting 80-900 m; with katt 0.3
+    and the datum RE-CAPTURED where the re-centring keyboard stick comes back to rest (recaptureOnCentre: the attitude the pilot
+    left, held as the gyro holds it, firmer; not round 2's command back to a captured hover attitude) and captured only fully
+    airborne (captureAirborne), 4 of 4, the hover 5-24 m. katt 0.15 or authority 0.1 completed 3 of 4 (4 samples: noise around
+    "with it"). Shipped: katt 0.3, stickAttitude 0.6, authority 0.2, both re-capture fields. The price: the knock, 2 s ArrowRight
+    then hands off, 168 m in 22 s (round 2 148 m; katt 0: 162 m), ArrowUp 114 m (99; 103). katt 0 is
+    one line in input.ts (the numbers above are for the owner's choice). Shift+A switches the STAB ASSIST off; the prop schedule lets go when the prop grip is touched.
+  - C, the "one gate" (above 25 KIAS the keyboard pedal stayed at the hover's): sideslipPedal walks the keyboard pedal to zero
+    sideslip from 20 to 160 kt of forward air speed, above the assist's fade too. The circuit's four turns and legs complete at every
+    pace (before: the heading 140-171 deg off on leg 1, 20-30 kt of slip); at 80 / 100 KIAS a pedal knocked 0.13 off is back in 5 s
+    with zero slip (without: the roll spiralled to -30 deg). Re-centring pedal keys (centringPedals): the raw aircraft keeps the
+    Bo 105 tapper's heading within 11.6 deg (round 2's non-centring keys: 72.6 deg); the beginner's own Z / X in the lift-off still
+    spin it (84-180 deg, no crash): the hint says leave them alone.
+  - C, the transition: the rotor is speed-stable since T10, and the beginner tilting the nose alone settled at 42-50 KIAS (the
+    pushes row never reached 60). The P technique is the propeller (APE-I para 97), so the existing laptop aid
+    InputAssists.propSchedule is ON for this type (propLever.schedule.default): until the pilot touches the prop grip, it follows
+    the AMCS trim schedule from 40 KIAS and holds the hover detent below 30 (AGENT: with the table's 5 deg at 20 kt the stop pushed
+    against prop thrust, 0-1 of 4 decelerations reached the hover; with the detent 3 of 4); it lets go with the engine stopped.
+    38 KIAS in 27-30 s (was 50 s / not in 60), 60 KIAS by the pushes in 30.1 s, the circuit at 62-77 KIAS.
+  - The whole flight (ah56KeyMission, two paces; four in W/tune2/ah56 out/fin_c1_*.log): every flight lands, no crash; at 0.8 s the
+    stop takes 71.8 s, the hover 8.0 m, the touchdown 51 fpm at 1.0 kt. KNOWN GAP at 1.2 s (0.5 s late): not stopped in 90 s, the
+    hover 18.8 m, 40 fpm at 9.5 kt (still no crash). The way back from 40 KIAS (ah56Assist): 36.7 s at 0.8 s, not stopped in 90 s at
+    1.2 s, and feet off the heading ends 44-57 deg from the start (the hold takes the nose where it is at 20 KIAS) (KNOWN GAP).
+  - D, the collective (heightHold, the Bo 105 lane's law with landAglM 4.5; collectiveFastRate.upStop 0.8 with the engine running):
+    F6 held 1 / 2 s past the first unload: no crash, 15-67 fpm (round 2: crashes, left main at 420-699 fpm); F5 held 2 s in the 15 m
+    hover: 13 m minimum, 337 fpm (960 fpm, a crash); Shift+F6 held to stop a sink: 19.6-21 m, the heading 25-29 deg (200 m, 180 deg).
+    Shift+F5 for 1 s in the hover still hits the ground at 2,640 fpm: it is the autorotation entry; the key label and the hint say
+    never in the hover (KNOWN GAP row on the record).
+  - D, the run-on landing from a trimmed 45 KIAS approach, feet off (KNOWN GAP): 289 fpm, then the roll-out turns 140 deg as the
+    collective comes down (no crash); at the slower pace 547 fpm and the right main collapses (181 kN). The Landing hint says hold
+    the heading with Z / X on the wheels. A ground-roll pedal term was not attempted.
+  - D, the main gear (gear.ts limitLoad, the collapse load, ESTIMATE): 140 -> 180 kN, D from the P 9.5 ft/s touchdown sink with FAR
+    27: the level landing at the P sink gives 103 kN a main (this strut, the hover collective), FAR 27.483 puts the level-landing load
+    on one wheel, 1.5 x ultimate = 155 kN; a vertical landing from this aircraft's 4.7 deg left-wing-low hover is a one-wheel
+    touchdown, 173 kN at the P sink. At 1.2 x the sink (11.4 ft/s, FAR 27.725 reserve energy) the level case holds (152 kN) and the
+    one-wheel case still collapses (new ah56Ground G13 row). The IGE engine failure on keys now holds the gear from a 2 m pull (451
+    fpm, 145 kN) but not from 1.6 or 2.5 m (542 / 481 fpm, 184 / 183 kN): sensitive, recorded.
+  - Not done: item E (an XH-51A-sized gyro rig): not cheap (a definition of its own), not attempted. The ICS on keys: not re-flown.

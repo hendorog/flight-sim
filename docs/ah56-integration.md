@@ -386,3 +386,26 @@ not move this aircraft's re-centring, rate-command keyboard cyclic; on round 1's
 | taxi (should) | locked 20 kt: the tapping pilot winds 3 in of pedal, wingtip | non-centring pedal keys | unlock toast and Taxi hint (sim advice); a locked pilot row | locked 20 kt, pilot 0.3 s late within 1 in: 0.35° |
 | engine failure (should) | (the gate: 15 m hover unsurvivable; IGE "survivable" read at first contact) | P inertia; one-wheel touchdown in the 5° left-wing-low hover | G11c row; hint row; gear finding recorded (not changed) | IGE written 282 fpm, no damage; on keys hands off the left main collapses (KNOWN GAP); main leg 140 kN covers a one-wheel touchdown only to about 375 fpm |
 | test gap (should) | the hover rows only | | 9 new ah56Assist rows (6 passing, 3 KNOWN GAP), G11c, the locked-taxi row | |
+
+## 14. Tuning round 3 (2026-10-25, branch `tune2/ah56`): the gyro alone, and the keyboard beginner's whole flight
+
+Owner input this round: the CL-475 / XH-51A films (a man on a 16 ft side boom, the XH-51A hover with him on the STARBOARD boom
+hands-off), the expectation that the control gyro holds the hover by itself, and a preference for the attitude stability to come
+from the gyro rather than from a pitch/roll STAB ASSIST. Probes, logs and notes: `W/tune2/ah56/` (notes.md). Details: KNOWN_ISSUES
+T10 (A) and T11 (B-D); docs/control-gyro-model.md section 7b.
+
+| Item | Before | Cause | Change | After |
+|---|---|---|---|---|
+| A gyro-alone hover (must) | trimmed hover 30 s held; a 625 N m step: 10.4° at 20 s; hands-off IGE 60 s 21.7°, 71 m; low-frequency rotor (gyro settled) speed- and dihedral-unstable | the AMCS net spring (ESTIMATE 1059 N m/rad, a third of K_R) leaves a 90°-turned residual flap; a NEW steady moment has no fixed-lean equilibrium (a rate command) | net spring 250 N m/rad (Hoh-74: partial compensation, zero pitch-roll coupling); input rotation 5 → 3° (G8) | the film's trimmed boom both sides 0.03°, 1.5-1.8 m, stick 1.9 %; 10 in CG 9.1 % stick; IGE 60 s 0.04°, 9.1 m; steps at 0.76-1.16 x K_R β / H; every sourced row passes (G5 / G6 / C18 / C19 within 2 %) |
+| B attitude assist (must) | katt 0.3, an attitude command back to the captured hover attitude | — | katt 0.3 kept, the datum re-captured where the keyboard stick comes to rest (contract requests 2-3) | the hover needs none (tapper 3.7-5.0 m with it off); the whole flight 2/4 → 4/4 with it, the knock 168 / 114 m |
+| C the one gate (must) | above 25 KIAS the pedal at the hover's; 15-40 kt of slip; no circuit | no pedal follow-up from sideslip | sideslipPedal (20-160 kt), centringPedals, the prop schedule aid ON (the P propeller technique; the rotor is speed-stable since A) | the whole flight lands at both row paces (4 of 4 in the probe); the 1.2 s pace's stop over 90 s (KNOWN GAP) |
+| D collective presses (should) | F6 past the unload, F5 2 s: crashes; Shift+F6 to stop a sink: 200 m | keyboard collective with no hold | heightHold (the Bo 105 lane's law), Shift+F6 stop at 80 % with the engine running | no crash, 15-67 fpm; 13 m min; 20-21 m |
+| D Shift+F5 in the hover (should) | 2,783 fpm | the autorotation entry | label and hint: never in the hover | 2,640 fpm, KNOWN GAP row on the record |
+| D run-on roll-out (should) | 116-126° | the pedal at the approach trim as the torque goes | Landing hint | 140°, and a 547 fpm touchdown collapses a main at the slow pace (KNOWN GAP) |
+| D main gear (should) | 140 kN, collapsed from about 375 fpm in the hover attitude | sized for a level drop | 180 kN (D: P 9.5 ft/s with FAR 27.483 / 27.725) | the one-wheel touchdown at the P sink holds (173 kN); G13 row |
+| E XH-51A rig (nice) | — | — | not attempted (not cheap) | — |
+
+Shared files (both lanes): every addition is an opt-in field, default off — StabilityAssistTuning.sideslipPedal /
+recaptureOnCentre / captureAirborne, InputProfile.centringPedals, collectiveFastRate.upStop, propLever.schedule.default and the
+propSchedule's engine-running gate; tests/rotorcraft/bo105*, tests/input, tests/ui and legacyDigest pass unchanged. No shared rotor
+file was touched.
