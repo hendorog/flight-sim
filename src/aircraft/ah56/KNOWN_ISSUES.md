@@ -756,6 +756,41 @@ Probes and logs: `W/tune2/ah56` (notes.md, out/, logs/).
     a 1 s pedal key spins the hover at 120 deg/s; the hint says the raw stick keeps the nose moving. Held 2-3 s nose-down at 100
     KIAS from 100 m and left there, the 15 deg dive reaches the ground in about 8 s (the attitude stays as commanded).
 
+## Tuning round 6, the cruise envelope (2026-10-26, branch tune4/ah56-envelope; OWNER: widen the circle in the cruise, "could be adaptive"; the how is AGENT choices)
+
+- **T13. The STAB ASSIST attitude command widens with speed.** The owner: "We can widen the stability circle more as it limits
+  manoeuvrability too much in the cruise - could be adaptive." Measured through the real key path (W/rigid/tune4, notes.md;
+  out/table_amcs.md, table_ics.md, table_taps.md): before, a held arrow stopped at 30 deg of bank / 15 deg of pitch at every
+  speed (a held right arrow at 100 / 150 KIAS: 30 deg, 6.3 / 4.2 deg/s of turn, 1.2 g).
+  - Shipped (input.ts keyAttitude.cruise, gStop; the shared law's new opt-in fields, src/sim/rotorcraft/stabilityAssist.ts,
+    src/input/profile.ts): below 50 KIAS of forward IAS the command is tune3's exactly; from 50 to 90 KIAS the stick's full travel
+    widens linearly to 60 deg of bank, 25 deg nose up, 20 deg nose down (the 1972 release's dive limit), bounded absolutely there.
+    The first half of the travel keeps the hover's gain (15 deg / 7.5 deg: a 0.3 / 0.5 s tap at 100-150 KIAS gives the same 7-12
+    deg of bank and 4-7 of pitch as before), the outer half takes the widening, so the full envelope takes the same ~1.3 s of key;
+    the loop's authority 0.8 -> 1 over the band (roll rate 28 -> 38-39 deg/s). Held right arrow at 100 / 150 KIAS: 2 s 49-50 deg,
+    3 s 58-59 deg, 60 deg at most; the turn 16 / 12 deg/s (was 6.3 / 4.2); 2.0-2.1 g. Nose up (ArrowDown) 3 s: 21 deg (was 14-15),
+    1.8 / 2.2 g at 100 / 150; nose down 3 s: -17 / -11 deg at release, -19 at most, 0.41 / 0.35 g at least (was 0.44 / 0.19).
+    At 60 KIAS the envelope is 37.5 deg (3 s: 37 deg, 15 deg/s of turn). Slowing down with a wide bank held, the bank comes back to
+    30 deg as the IAS falls through the band, no step (120 KIAS, a 55 deg bank held, nose up to slow: 30 deg at 40 KIAS, the
+    keys-up roll rate never over 9 deg/s; out/m2_final_decel.log).
+  - Load factor (keyAttitude.gStop): the pitch loop eased nose down from 2.2 g (all of it at 2.5: the AMCS's 0.25-2.5 g, P
+    AMCS-73), nose up below 0.5 g (all at 0.3), and the widened bank stops at the level turn's bank for the onset g. ICS (byMode):
+    1.25 / 1.4 g, the bank about 37 deg (its manoeuvre stability neutral above 1.3 g at 120 KCAS and 1.4 at 150, the moment stall
+    about 0.1 g later; ASTA-72 HQRS 10): held right arrow at 100 / 150 KIAS ICS 42 deg at most, settling at 36-37, 1.27 g (with the
+    AMCS widening and no ICS stop it rolled to 80 deg at 2.6 g).
+  - The bank guard (cruise.bankGuard): with the pitch loop at the aft stop the widened bank walks back 5 deg/s until the pull holds
+    the nose, out again at 2 deg/s. Below about 110 KIAS full aft stick makes 1.8-2.0 g, short of a level 60 deg turn: without the
+    guard a held 60 deg bank at 100 KIAS wound into a spiral dive (the nose -18 deg and 400 m lost in 25 s); with it the bank
+    settles at 52-56 deg. While widened, the zero-rate trim does not wind up past the stick's stop.
+  - Price and open (numbers): a widened bank held without collective sinks: 60 deg held at 150 KIAS loses about 130 m in 11 s
+    (30 deg before: 31 m), at 100 KIAS 110 m, and the speed bleeds in a long turn (the height hold fades out by 40 KIAS: F6 is the
+    climb command at every speed). A 30 deg bank held from the hover becomes forward flight at 75-80 KIAS within 10 s (the
+    sideslip pedal weathercocks it), and there the same stick widens to 50-53 deg (the first 3 s are unchanged; a sideways drift
+    alone does not widen it). Near the ground (4-10 m) the bank's opening runs to the widened bank (at 5 m and 60 KIAS 13 deg, was
+    12). The whole flight's rows: both row paces land, no crash (tests/rotorcraft/ah56KeyMission); over 12 paces 12 land (tune3
+    11, the 1.25 s pace's wingtip), the stop within 90 s at 5 (tune3 3). With the band at 40-80 KIAS 4 of 6 paces landed, both row
+    paces crashing after the touchdown (W/rigid/tune4 out/m5r_a.log); the circuit's 50-60 KIAS legs sit at the band's low end.
+
 ## Hold autopilot (2026-10-25, branch fix/ah56-autopilot; the owner: "the autopilot is terrible in the AH56"; AGENT choices, not owner decisions)
 
 Probes and logs: `W/rigid/ah56ap` (notes.md has the before / after table; out/ the traces). Rows: tests/rotorcraft/ah56Autopilot.test.ts,

@@ -251,6 +251,32 @@ export interface StabilityAssistTuning {
   keyAttitude?: { travel: number; rollDeg: number; pitchDeg: number; kattRoll: number; kattPitch: number; kp: number; kq: number;
     authority: number; trimRate: number; ffRoll?: number; ffPitch?: number;
     /**
+     * The envelope widened with the indicated airspeed (opt-in): at and below kias[0] the command is the law above, unchanged; by
+     * kias[1] the stick's full `travel` commands `rollDeg` of bank and `pitchUpDeg` / `pitchDownDeg` of pitch from the datum,
+     * linearly in IAS between (a stick held through the band follows it: the bank shrinks as the speed falls, no step). The first
+     * `knee` of the travel keeps the unwidened degrees per unit (absent: 0, the whole travel scales), the rest takes up the
+     * widening, so small inputs and the trimmed attitude do not move with the speed; the keys' time to the full envelope stays the
+     * same. The commanded attitude is bounded absolutely too: the bank within +/-rollDeg, the pitch within -pitchDownDeg /
+     * +pitchUpDeg (never inside the unwidened command's bounds). `authority`: the loop's authority by kias[1], blended the same way
+     * (absent: `authority`). Absent: the fixed envelope above.
+     */
+    cruise?: { kias: readonly [number, number]; rollDeg: number; pitchUpDeg: number; pitchDownDeg: number; knee?: number; authority?: number;
+      /**
+       * The bank guard: while the pitch loop pulls at the stick's aft stop (its zero-rate trim plus term at 0.9-1.0 of the axis)
+       * the widened bank is walked back at up to `inDegS`, and out again at `outDegS` once the pull is inside the travel (a
+       * widened bank the rotor cannot hold level would wind into a spiral dive, the nose falling). Never inside the unwidened
+       * bank. Absent: none.
+       */
+      bankGuard?: { inDegS: number; outDegS: number } };
+    /**
+     * A load-factor stop on the pitch loop (opt-in, a sim guard): above up[0] g the pitch term is eased nose down, below down[0] g
+     * nose up, linearly to the loop's whole authority at up[1] / down[1] g. With `cruise`, the widened bank also stops at the
+     * level turn's bank for up[0] g (acos(1 / up[0]); never inside the unwidened `rollDeg`). `byMode`: the stop for a control-gyro
+     * configuration (RotorcraftState.controlGyro.mode), in place of the default. Absent: none.
+     */
+    gStop?: { up: readonly [number, number]; down: readonly [number, number];
+      byMode?: Readonly<Record<string, { up: readonly [number, number]; down: readonly [number, number] }>> };
+    /**
      * Near the ground (a sim guard): the commanded bank is held within +/-`rollDeg` (absolute, never inside the captured roll plus 3
      * deg) with the reference point under aglM[0] above the ground, opening linearly to the whole `rollDeg` above at aglM[1].
      * Absent: the whole bank everywhere.

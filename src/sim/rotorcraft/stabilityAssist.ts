@@ -114,6 +114,26 @@ const HOLD_SLIP = Math.PI / 4;
 const KA_RATE_FILTER_S = 0.1;
 /** keyAttitude (opt-in): the commanded rate under which the zero-rate trim integrates, rad/s (0.5 deg/s). */
 const KA_STILL = 0.5 * DEG;
+/** keyAttitude.cruise.bankGuard (opt-in): the pitch loop's trim plus term (axis units) over which it counts as out of pull, from
+ *  none at [0] to all at [1]. */
+const BANK_GUARD_SAT = [0.9, 1.0] as const;
+
+/** keyAttitude.gStop (opt-in) for the control gyro's configuration flown (its byMode entry), or the stop itself. */
+function kaGStop(ka: NonNullable<StabilityAssistTuning['keyAttitude']>, s: AircraftState): { up: readonly [number, number]; down: readonly [number, number] } | undefined {
+  const gs = ka.gStop, mode = s.rotorcraft?.controlGyro?.mode;
+  return gs && mode !== undefined ? gs.byMode?.[mode] ?? gs : gs;
+}
+
+/**
+ * keyAttitude.cruise (opt-in): the attitude a stick offset `x` commands, rad: within `knee` of the `travel` the unwidened gain
+ * (`base` at the travel), beyond it linear to `up` (x > 0) / `down` (x < 0) at the travel, held there. With up = down = base it
+ * is the unwidened command exactly.
+ */
+function kaCommand(x: number, travel: number, knee: number, base: number, up: number, down: number): number {
+  const lim = x >= 0 ? up : down, ax = Math.min(Math.abs(x), travel), xk = knee * travel, g = base / travel;
+  const v = ax <= xk ? g * ax : g * xk + (lim - g * xk) * (ax - xk) / Math.max(travel - xk, 1e-9);
+  return Math.sign(x) * Math.min(v, lim);
+}
 /** keyPedal (opt-in): the longest the turn is braked after a pedal key comes up, s. */
 const BRAKE_MAX_S = 2;
 
@@ -224,6 +244,9 @@ export class StabilityAssist {
   /** The commanded roll and pitch rates, low-passed over KA_RATE_FILTER_S (the keys move the stick once a frame), rad/s. */
   private kaP = 0;
   private kaQ = 0;
+  /** keyAttitude.cruise (opt-in, tune4): the bank guard's cap (NaN: none) and the widened bank it walks back out to, rad. */
+  private kaRollCap = NaN;
+  private kaRollMax = 0;
   /** The offset kept under the keyboard pedal (the flight model sees the pedal less this), axis units. */
   private pedalOff = 0;
   /** Time since the pedal key came up while the turn is braked, s; -1: not braking. */
@@ -265,7 +288,8 @@ export class StabilityAssist {
       ...(this.tuning.heightHold?.held?.everySpeed && Number.isFinite(this.collAtPress) ? { collAtPress: this.collAtPress } : {}),
       // The opt-in tune3 states, only for a type that has them.
       ...(this.tuning.keyAttitude ? { kaOn: this.kaOn, kaTrimA: this.kaTrimA, kaTrimE: this.kaTrimE,
-        ...(Number.isFinite(this.kaRollWas) ? { kaRollWas: this.kaRollWas, kaPitchWas: this.kaPitchWas } : {}), kaP: this.kaP, kaQ: this.kaQ } : {}),
+        ...(Number.isFinite(this.kaRollWas) ? { kaRollWas: this.kaRollWas, kaPitchWas: this.kaPitchWas } : {}), kaP: this.kaP, kaQ: this.kaQ,
+        ...(this.tuning.keyAttitude.cruise?.bankGuard && Number.isFinite(this.kaRollCap) ? { kaRollCap: this.kaRollCap, kaRollMax: this.kaRollMax } : {}) } : {}),
       ...(this.tuning.keyPedal ? { pedalOff: this.pedalOff, pedalBrake: this.pedalBrake, pedalKeyWas: this.pedalKeyWas,
         ...(Number.isFinite(this.pedalKeyRest) ? { pedalKeyRest: this.pedalKeyRest } : {}) } : {}),
     };
@@ -303,6 +327,7 @@ export class StabilityAssist {
     this.keyQuietFor = keyQuiet >= STICK_QUIET_MAX ? Infinity : keyQuiet;
     this.kaOn = flag('kaOn'); this.kaTrimA = num('kaTrimA', 0); this.kaTrimE = num('kaTrimE', 0);
     this.kaRollWas = num('kaRollWas', NaN); this.kaPitchWas = num('kaPitchWas', NaN); this.kaP = num('kaP', 0); this.kaQ = num('kaQ', 0);
+    this.kaRollCap = num('kaRollCap', NaN); this.kaRollMax = num('kaRollMax', 0);
     this.pedalOff = num('pedalOff', 0); this.pedalBrake = num('pedalBrake', -1); this.pedalKeyWas = flag('pedalKeyWas');
     this.pedalKeyRest = num('pedalKeyRest', NaN);
   }
@@ -491,7 +516,7 @@ export class StabilityAssist {
       this.kaOn = true;
       this.rollRef = s.roll; this.pitchRef = s.pitch; this.aileronRef = c.aileron; this.elevatorRef = c.elevator;
       this.kaTrimA = c.aileron; this.kaTrimE = c.elevator;
-      this.kaRollWas = NaN; this.kaPitchWas = NaN; this.kaP = 0; this.kaQ = 0;
+      this.kaRollWas = NaN; this.kaPitchWas = NaN; this.kaP = 0; this.kaQ = 0; this.kaRollCap = NaN;
     } else if (!ka) this.kaOn = false;
     if (Math.abs(c.aileron - this.stickRestA) > STICK_EPS || Math.abs(c.elevator - this.stickRestE) > STICK_EPS) {
       this.stickRestA = c.aileron; this.stickRestE = c.elevator; this.stickQuietFor = 0;
@@ -558,9 +583,30 @@ export class StabilityAssist {
     if (ka) {
       // The keyboard attitude command: the stick's offset is the attitude datum (within the limits), and the flight model sees
       // the zero-rate trim plus the attitude loop, never the stick's own offset.
-      const rl = ka.rollDeg * DEG, pl = ka.pitchDeg * DEG;
-      roll0 = this.rollRef + clamp(rl / ka.travel * (c.aileron - this.aileronRef), -rl, rl);
-      pitch0 = this.pitchRef + clamp(pl / ka.travel * (c.elevator - this.elevatorRef), -pl, pl);
+      let rl = ka.rollDeg * DEG, au = ka.authority, rlBase = rl, wideBy = 0, guard: { inDegS: number; outDegS: number } | undefined;
+      const pl = ka.pitchDeg * DEG, cr = ka.cruise;
+      if (!cr) {
+        roll0 = this.rollRef + clamp(rl / ka.travel * (c.aileron - this.aileronRef), -rl, rl);
+        pitch0 = this.pitchRef + clamp(pl / ka.travel * (c.elevator - this.elevatorRef), -pl, pl);
+      } else {
+        // cruise (opt-in, tune4): the envelope widens with the IAS, the travel's first `knee` keeping the unwidened gain. The IAS
+        // forward only (its share along the body x axis): a bank held from the hover drifts sideways fast, and that must not widen it.
+        const av = s.airVelocityBody, va = Math.hypot(av.x, av.y, av.z), kias = va > 1e-6 ? s.ias / KT * Math.max(0, av.x) / va : 0;
+        const wk = clamp((kias - cr.kias[0]) / Math.max(cr.kias[1] - cr.kias[0], 1e-6), 0, 1), kn = cr.knee ?? 0;
+        const wide = (base: number, to: number): number => base + (Math.max(to, base) - base) * wk;
+        // With the load-factor stop, the widened bank stops at the level turn's bank for its onset g.
+        const gUp = kaGStop(ka, s)?.up[0], rMax = Math.min(cr.rollDeg * DEG, gUp !== undefined ? Math.acos(1 / Math.max(gUp, 1)) : Infinity);
+        const rw = wide(rl, rMax), pu = wide(pl, cr.pitchUpDeg * DEG), pd = wide(pl, cr.pitchDownDeg * DEG);
+        roll0 = this.rollRef + kaCommand(c.aileron - this.aileronRef, ka.travel, kn, rl, rw, rw);
+        pitch0 = this.pitchRef + kaCommand(c.elevator - this.elevatorRef, ka.travel, kn, pl, pu, pd);
+        // The bank guard (bankGuard, opt-in): the bank the pitch loop could not hold level, walked in after the loop (below).
+        const rCap = Number.isFinite(this.kaRollCap) ? Math.min(this.kaRollCap, rMax) : rMax;
+        this.kaRollMax = rMax;
+        roll0 = clamp(roll0, Math.min(-rCap, this.rollRef - rl), Math.max(rCap, this.rollRef + rl));
+        pitch0 = clamp(pitch0, Math.min(-cr.pitchDownDeg * DEG, this.pitchRef - pl), Math.max(cr.pitchUpDeg * DEG, this.pitchRef + pl));
+        rlBase = rl; rl = rw; guard = cr.bankGuard; wideBy = wk;
+        if (cr.authority !== undefined) au += (cr.authority - au) * wk;
+      }
       // Near the ground the commanded bank closes to groundRoll.rollDeg (absolute; never inside the captured roll plus 3 deg).
       const gr = ka.groundRoll;
       if (gr) {
@@ -574,13 +620,36 @@ export class StabilityAssist {
       this.kaQ += ((Number.isFinite(this.kaPitchWas) && dt > 0 ? (pitch0 - this.kaPitchWas) / dt : 0) - this.kaQ) * f;
       this.kaRollWas = roll0; this.kaPitchWas = pitch0;
       const pc = this.kaP, qc = this.kaQ;
-      const ia = clamp((ka.ffRoll ?? 0) * pc - ka.kp * (w.x - pc) - ka.kattRoll * wrap(s.roll - roll0), -ka.authority, ka.authority);
-      const ie = clamp((ka.ffPitch ?? 0) * qc - ka.kq * (w.y - qc) - ka.kattPitch * (s.pitch - pitch0), -ka.authority, ka.authority);
+      const ia = clamp((ka.ffRoll ?? 0) * pc - ka.kp * (w.x - pc) - ka.kattRoll * wrap(s.roll - roll0), -au, au);
+      let ie = (ka.ffPitch ?? 0) * qc - ka.kq * (w.y - qc) - ka.kattPitch * (s.pitch - pitch0);
+      // The load-factor stop (gStop, opt-in): the pitch term eased nose down above up[0] g, nose up below down[0] g.
+      const gs = kaGStop(ka, s);
+      if (gs) {
+        ie -= au * (Math.max(0, s.gLoad - gs.up[0]) / Math.max(gs.up[1] - gs.up[0], 1e-6)
+          - Math.max(0, gs.down[0] - s.gLoad) / Math.max(gs.down[0] - gs.down[1], 1e-6));
+      }
+      ie = clamp(ie, -au, au);
       // The trims integrate the loop's term out, airborne (not on light wheels, where the ground holds the attitude), each only
       // while its command is still (a key moving the stick makes the error by design; integrating it overshot the release).
+      // bankGuard (opt-in, tune4): while the pitch loop pulls at the stick's aft stop (the trim plus the loop's term at
+      // BANK_GUARD_SAT of the axis) the bank cap walks in at up to inDegS (never inside the unwidened bank), and back out at
+      // outDegS once the pull is inside the travel again. A widened bank held at a speed the rotor cannot pull the level turn's
+      // g at would otherwise wind into a spiral dive with the nose falling; the cap settles where the pull just holds the nose.
+      if (guard && dt > 0) {
+        const sat = clamp((this.kaTrimE + ie - BANK_GUARD_SAT[0]) / (BANK_GUARD_SAT[1] - BANK_GUARD_SAT[0]), 0, 1);
+        const cap = Number.isFinite(this.kaRollCap) ? this.kaRollCap : this.kaRollMax;
+        if (sat > 0) this.kaRollCap = Math.max(Math.min(rlBase, cap), cap - sat * guard.inDegS * DEG * dt);
+        else {
+          const out = cap + guard.outDegS * DEG * dt;
+          this.kaRollCap = out >= this.kaRollMax ? NaN : out;
+        }
+      } else this.kaRollCap = NaN;
       if (!s.onGround) {
         if (Math.abs(pc) < KA_STILL) this.kaTrimA = clamp(this.kaTrimA + ka.trimRate * ia * dt, -1, 1);
-        if (Math.abs(qc) < KA_STILL) this.kaTrimE = clamp(this.kaTrimE + ka.trimRate * ie * dt, -1, 1);
+        // Widened (cruise, opt-in): not further while the trim plus the term is past the stick's stop that way (the wind-up
+        // pitched the nose past the command once the pull came back inside the travel).
+        const wound = wideBy > 0 && Math.abs(this.kaTrimE + ie) >= 1 && ie * this.kaTrimE > 0;
+        if (Math.abs(qc) < KA_STILL && !wound) this.kaTrimE = clamp(this.kaTrimE + ka.trimRate * ie * dt, -1, 1);
       }
       o.aileron = this.kaTrimA + ia - c.aileron;
       o.elevator = this.kaTrimE + ie - c.elevator;
