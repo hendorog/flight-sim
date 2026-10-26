@@ -1098,6 +1098,11 @@ export class Cockpit {
     g.add(...b.build('lever').children);
   }
 
+  /** Filter the cockpit's instrument textures (the compass card and placard) at `n`x anisotropy. */
+  setTextureAnisotropy(n: number): void {
+    this.compass?.setAnisotropy(n);
+  }
+
   /** Apply the instrument texture: u to the pilot's right, v up. It is lit and also self-illuminated. */
   setPanelTexture(texture: THREE.Texture): void {
     this.panelMat.map = texture;

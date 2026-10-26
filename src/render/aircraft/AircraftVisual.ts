@@ -108,6 +108,11 @@ const BO105ExteriorVisual = bo105ExteriorVisualClass(RotorcraftVisual, FuselageS
 const AH56ExteriorVisual = ah56ExteriorVisualClass(RotorcraftVisual, FuselageShape, sectionHalfWidth,
   ctx => ctx.state.rotorcraft);
 
+/** The renderer's maximum texture anisotropy (8 where there is no renderer, e.g. a test context). */
+function maxAnisotropy(ctx: SimContext): number {
+  return (ctx.renderer as Partial<SimContext['renderer']> | undefined)?.capabilities?.getMaxAnisotropy?.() ?? 8;
+}
+
 export class AircraftVisual implements Subsystem {
   /** Everything of the aircraft; added to ctx.aircraftRoot by init(). */
   readonly root = new THREE.Group();
@@ -172,6 +177,7 @@ export class AircraftVisual implements Subsystem {
       if (this.pendingPanel) this.helicopter.setPanelTexture(this.pendingPanel);
       if (this.pendingPanelEmissive) this.helicopter.setPanelEmissiveTexture(this.pendingPanelEmissive);
       ctx.scene.add(this.contactShadow.mesh);
+      this.helicopter.cockpit.setTextureAnisotropy(maxAnisotropy(ctx));
       this.initMs = performance.now() - t0;
       return;
     }
@@ -205,6 +211,7 @@ export class AircraftVisual implements Subsystem {
     this.root.add(this.cockpit.group);
     if (this.pendingPanelEmissive) this.cockpit.setPanelEmissiveTexture(this.pendingPanelEmissive);
     if (this.pendingPanel) this.cockpit.setPanelTexture(this.pendingPanel);
+    this.cockpit.setTextureAnisotropy(maxAnisotropy(ctx));
     const cabin = this.applyCabinOcclusion();
     this.buildShadowCasters();
     if (async) this.textureBake = this.bakeInWorker(textures, shapes, cabin);

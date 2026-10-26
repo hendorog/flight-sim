@@ -97,6 +97,11 @@ export class BallCompass {
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8; this.textures.push(texture); return texture;
   }
+  /** Filter the card and placard textures at `n`x anisotropy (the renderer's maximum: they are read at grazing angles). */
+  setAnisotropy(n: number): void {
+    for (const t of this.textures) if (t.anisotropy !== n) { t.anisotropy = n; t.needsUpdate = true; }
+  }
+
   update(reading: CompassReading, backlight = 0): void {
     // Body FRD -> model: pitch about +X, roll about -Z. Tilt the parent before rotating the ball.
     this.float.rotation.set(reading.pitch, 0, -reading.roll, 'ZXY');

@@ -445,6 +445,7 @@ export class Simulator {
       def: presentation.panel,
       systems: presentation.instrumentSystems,
       pxRect: presentation.visual.cockpit.panel.pxRect,
+      anisotropy: renderer.capabilities.getMaxAnisotropy(),
       gyrosSpunUp: ctx.state.engines.some((e) => e.running),
     });
     panel.reset(ctx.state);

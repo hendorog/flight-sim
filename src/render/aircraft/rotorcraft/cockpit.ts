@@ -174,6 +174,11 @@ export class RotorcraftCockpit {
     this.group.add(fixed.build('cabinFurniture'));
   }
 
+  /** Filter the console's own textures (the GOV label, the compass card and placard) at `n`x anisotropy. */
+  setTextureAnisotropy(n: number): void {
+    this.compass?.setAnisotropy(n);
+    for (const t of this.textures) if (t.anisotropy !== n) { t.anisotropy = n; t.needsUpdate = true; }
+  }
   setPanelTexture(texture: THREE.Texture): void { this.panel.material.map = texture; this.panel.material.needsUpdate = true; }
   setPanelEmissiveTexture(texture: THREE.Texture): void { this.panel.material.emissiveMap = texture; this.panel.material.needsUpdate = true; }
 

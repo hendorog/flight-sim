@@ -146,7 +146,8 @@ try {
     if (setup) await p.evaluate(setup);
     await sleep(2500);
     const r = { type, renderer: await p.evaluate(() => { const gl = window.__sim.ctx.renderer.getContext(); const e = gl.getExtension('WEBGL_debug_renderer_info'); return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : '?'; }),
-      pixelRatio: await p.evaluate(() => window.__sim.ctx.renderer.getPixelRatio()) };
+      pixelRatio: await p.evaluate(() => window.__sim.ctx.renderer.getPixelRatio()),
+      anisotropy: await p.evaluate(() => [window.__sim.sim.systems.panel.texture.anisotropy, window.__sim.ctx.renderer.capabilities.getMaxAnisotropy()]) };
     for (const view of views) {
       if (view === 'focus') { await p.keyboard.press('KeyQ'); await sleep(900); }
       r[view] = await p.evaluate(measure);
@@ -161,7 +162,7 @@ try {
     r.errors = errs;
     results[type] = r;
     const brief = (v) => v && `fov ${v.fov} horizon ${v.horizon} outside ${v.outside.join('/')} bottom ${v.outsideBottom.join('/')} dials ${v.dials.map((d) => `${d.id}:${d.px}`).join(' ')}${v.frameMs ? ` frame ${v.frameMs.median}/${v.frameMs.p95} ms` : ''}`;
-    console.log(`${type} [${r.renderer.slice(0, 40)}] pr ${r.pixelRatio}`);
+    console.log(`${type} [${r.renderer.slice(0, 40)}] pr ${r.pixelRatio} aniso ${r.anisotropy.join('/')}`);
     for (const v of views) console.log(`  ${v}: ${brief(r[v])}`);
     if (errs.length) console.log('  errors:', errs.slice(0, 3));
     await ctx.close();

@@ -73,6 +73,11 @@ export interface InstrumentPanelOptions extends InstrumentSetOptions {
    * the 3D cockpit has a real lever in front of the texture.
    */
   paintLevers?: boolean;
+  /**
+   * Anisotropic filtering of the panel texture and its self-illumination map: the renderer's maximum
+   * (renderer.capabilities.getMaxAnisotropy()); the 3D panel is seen at an angle. Default 8 (dev pages).
+   */
+  anisotropy?: number;
 }
 
 export class InstrumentPanel {
@@ -139,7 +144,7 @@ export class InstrumentPanel {
 
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
-    this.texture.anisotropy = 8;
+    this.texture.anisotropy = opts.anisotropy ?? 8;
     this.texture.name = 'instrumentPanel';
     this.upload = new DirtyRectUploader(this.texture);
   }
