@@ -32,6 +32,7 @@ import type { AircraftMaterials } from './materials';
 import { PANEL_HEIGHT, PANEL_WIDTH } from '../../instruments/layout';
 import type { PanelDef } from '../../instruments/panelDef';
 import { PanelRecess, panelRecesses } from './panelMaterial';
+import { columnBoot, StickColumn, YokeColumn, yokeMaterial, yokeStyle, type ControlColumn } from './yoke';
 import type { PointTarget } from '../../training/types';
 
 /**
@@ -346,88 +347,6 @@ function panelGauges(face: PanelFace, panel: PanelDef): THREE.Vector4[] {
   return panelRecesses(panel, (px, py) => facePoint(face, px, py), face.pxPerM);
 }
 
-/** A control column in the cabin: its node, and how it follows the pilot's inputs. */
-interface ControlColumn {
-  readonly group: THREE.Group;
-  /** @param elevator [-1, 1], + = back; @param aileron [-1, 1], + = right */
-  pose(elevator: number, aileron: number): void;
-}
-
-type YokeDef = Extract<CockpitDef['column'], { kind: 'yoke' }>;
-type StickDef = Extract<CockpitDef['column'], { kind: 'stick' }>;
-
-/** A ram's-horn yoke on a column through the panel: it slides fore and aft and turns. */
-class YokeColumn implements ControlColumn {
-  readonly group = new THREE.Group();
-
-  constructor(
-    mat: AircraftMaterials,
-    private readonly column: YokeDef,
-    y: number,
-  ) {
-    const yoke = this.group;
-    frd(column.x, y, column.z, yoke.position);
-    const b = new MeshBatch();
-    // Column (long enough to stay inside the panel at full forward travel).
-    const shaft = new THREE.CylinderGeometry(0.011, 0.011, 0.36, 16);
-    shaft.rotateX(Math.PI / 2);
-    shaft.translate(0, 0, -0.18);
-    b.add(mat.chrome, shaft);
-    // Hub, then the ram's-horn: arms sweeping out and slightly up to grips raked outboard.
-    b.add(mat.black, roundedBox(0.075, 0.045, 0.04, 2, 0.012));
-    for (const s of [-1, 1]) {
-      const arm = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(s * 0.03, 0.0, 0.0),
-        new THREE.Vector3(s * 0.075, 0.004, 0.006),
-        new THREE.Vector3(s * 0.11, 0.018, 0.012),
-        new THREE.Vector3(s * 0.128, 0.045, 0.014),
-      ]);
-      b.add(mat.black, new THREE.TubeGeometry(arm, 12, 0.012, 10, false));
-      const grip = new THREE.CapsuleGeometry(0.0145, 0.075, 4, 12);
-      grip.translate(0, 0.0375, 0);
-      grip.rotateZ(-s * 0.32);
-      grip.translate(s * 0.128, 0.045, 0.014);
-      b.add(mat.black, grip);
-    }
-    // Push-to-talk / trim plate in the centre.
-    b.add(mat.panelPlastic, roundedBox(0.05, 0.028, 0.01, 2, 0.004).translate(0, 0.004, 0.022));
-    yoke.add(...b.build('yoke').children);
-  }
-
-  pose(elevator: number, aileron: number): void {
-    const column = this.column;
-    const YOKE_ROLL = (column.rollDeg * Math.PI) / 180;
-    this.group.position.z = -column.x + column.travel * elevator;
-    this.group.rotation.z = -YOKE_ROLL * aileron;
-  }
-}
-
-/** A centre stick pivoted near the floor: it leans fore and aft and sideways. */
-class StickColumn implements ControlColumn {
-  readonly group = new THREE.Group();
-
-  constructor(
-    mat: AircraftMaterials,
-    private readonly column: StickDef,
-    y: number,
-  ) {
-    frd(column.pivot[0], y, column.pivot[2], this.group.position);
-    const h = column.height;
-    const b = new MeshBatch();
-    // Tube with a slight aft crank under the grip, the grip itself and the boot round the pivot.
-    b.add(mat.darkMetal, new THREE.CylinderGeometry(0.011, 0.013, h - 0.11, 12).translate(0, (h - 0.11) / 2, 0));
-    b.add(mat.black, new THREE.CapsuleGeometry(0.017, 0.085, 4, 12).rotateX(0.2).translate(0, h - 0.055, 0.008));
-    b.add(mat.black, new THREE.CylinderGeometry(0.02, 0.05, 0.07, 16).translate(0, 0.03, 0));
-    this.group.add(...b.build('stick').children);
-  }
-
-  pose(elevator: number, aileron: number): void {
-    const rad = Math.PI / 180;
-    // Stick back = the top moves aft (model +Z); stick right = the top moves to +X.
-    this.group.rotation.x = this.column.pitchDeg * rad * elevator;
-    this.group.rotation.z = -this.column.rollDeg * rad * aileron;
-  }
-}
 
 export class Cockpit {
   readonly group = new THREE.Group();
@@ -436,12 +355,14 @@ export class Cockpit {
   get ownMaterials(): THREE.MeshStandardMaterial[] {
     const own = [this.panelMat];
     if (this.compass) own.push(...this.compass.materials);
-    own.push(this.visorMat, this.rockerMat);
+    own.push(this.visorMat, this.rockerMat, this.yokeMat);
     if (this.knobBlue) own.push(this.knobBlue);
     return own;
   }
   private readonly panelMat: THREE.MeshStandardMaterial;
   /** Smoked, tinted polycarbonate of the sun visors. */
+  /** Vertex-coloured plastic of the yokes and sticks (yoke.ts). */
+  private readonly yokeMat = yokeMaterial();
   private readonly visorMat = new THREE.MeshStandardMaterial({ name: 'sunVisor', color: new THREE.Color().setRGB(0.035, 0.028, 0.02), roughness: 0.18 });
   /** The cockpit of the airframe definition, its panel face and the rocker switches of the panel definition. */
   private readonly def: CockpitDef;
@@ -658,12 +579,12 @@ export class Cockpit {
 
     // --- Yokes or sticks ---
     if (column.kind === 'yoke') {
-      for (const y of [-column.y, column.y]) this.columns.push(new YokeColumn(mat, column, y));
+      for (const y of [-column.y, column.y]) this.columns.push(new YokeColumn(mat, this.yokeMat, column, y));
       this.group.add(...this.columns.map((c) => c.group));
       // Shaft boots where the columns enter the panel.
-      for (const y of [-column.y, column.y]) fixed.add(mat.black, rodX(PANEL.x - 0.008, y, column.z, 0.02, 0.028, 20));
+      for (const y of [-column.y, column.y]) fixed.add(mat.black, columnBoot(yokeStyle(column), PANEL.x, y, column.z));
     } else {
-      for (const y of column.ys) this.columns.push(new StickColumn(mat, column, y));
+      for (const y of column.ys) this.columns.push(new StickColumn(mat, this.yokeMat, column, y));
       this.group.add(...this.columns.map((c) => c.group));
     }
 

@@ -402,7 +402,7 @@ const PANEL_ZB = PANEL_ZTOP + 0.4;
 const FLOOR_Z = 0.565;
 /** Lateral station of the pilots' seats, yokes and pedals. */
 const SEAT_Y = 0.27;
-const YOKE_X = 0.3;
+const YOKE_X = 0.35;
 const YOKE_Z = 0.035;
 /** Rudder pedal floor pivots. */
 const PEDAL_X = 0.64;
@@ -495,7 +495,7 @@ const COCKPIT: CockpitDef = {
   ],
   // Two ram's-horn yokes on columns through the panel: neutral end position, fore-aft travel for full
   // elevator input, maximum rotation.
-  column: { kind: 'yoke', x: YOKE_X, y: SEAT_Y, z: YOKE_Z, travel: 0.07, rollDeg: 40 },
+  column: { kind: 'yoke', x: YOKE_X, y: SEAT_Y, z: YOKE_Z, travel: 0.07, rollDeg: 40, style: 'cessnaSingle' },
   pedals: { x: PEDAL_X, ys: [-SEAT_Y, SEAT_Y] },
   // Push-pull knobs on the lower panel: throttle (black) and mixture (red).
   engineControls: [

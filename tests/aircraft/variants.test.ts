@@ -822,7 +822,7 @@ describe('cockpit variants', () => {
     const cockpit = build(def);
     expect(nonFinite(cockpit.group)).toBe(0);
     const ctx = fakeContext();
-    const sticks = holders(cockpit, 'stick:black');
+    const sticks = holders(cockpit, 'stick:yokePlastic');
     expect(sticks.length).toBe(2);
     const column = def.cockpit.column as Extract<AirframeVisualDef['cockpit']['column'], { kind: 'stick' }>;
     const h = column.height;
@@ -867,7 +867,7 @@ describe('cockpit variants', () => {
       if ((o as THREE.Mesh).isMesh) names.add(`${o.name}|${((o as THREE.Mesh).material as THREE.Material).name}`);
     });
     for (const absent of [/compassCard/, /sunVisor/, /^trimWheel/, /^yoke/, /^gearLever/]) expect([...names].some((n) => absent.test(n)), String(absent)).toBe(false);
-    expect(cockpit.ownMaterials.map((m) => m.name)).toEqual(['instrumentPanel', 'sunVisor', 'rocker']);
+    expect(cockpit.ownMaterials.map((m) => m.name)).toEqual(['instrumentPanel', 'sunVisor', 'rocker', 'yokePlastic']);
     // The instructor's "yoke" target is the pilot's stick grip.
     const target = cockpitControls(def.cockpit, C172S_PANEL).yoke;
     expect(target.y).toBeCloseTo(-(column.pivot[2] - h), 9);
@@ -1160,7 +1160,7 @@ describe('whole synthetic aircraft', () => {
 
     const cockpit = visual.root.getObjectByName('cockpit')!;
     const occupants = visual.root.getObjectByName('occupants')!;
-    const stick = meshesNamed(cockpit, 'stick:black')[0].parent!;
+    const stick = meshesNamed(cockpit, 'stick:yokePlastic')[0].parent!;
     const lever = meshesNamed(cockpit, 'lever:knobBlack')[0].parent!;
     // Seen from outside (chase): the interior, its small controls and the two figures are drawn, and the sticks cast.
     expect([cockpit.visible, occupants.visible, stick.visible, lever.visible]).toEqual([true, true, true, true]);

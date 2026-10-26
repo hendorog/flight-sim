@@ -673,7 +673,7 @@ const COCKPIT: CockpitDef = {
   // Occupied in external views: the pilot.
   occupants: [{ seat: 0 }],
   // Two control wheels on shafts through the panel (s.12): neutral end position, fore-aft travel, rotation.
-  column: { kind: 'yoke', x: PANEL_X - 0.2, y: SEAT_Y, z: faceZ(PA34_PANEL_PARTS.yokes.y), travel: 0.08, rollDeg: 45 },
+  column: { kind: 'yoke', x: PANEL_X - 0.165, y: SEAT_Y, z: faceZ(PA34_PANEL_PARTS.yokes.y), travel: 0.08, rollDeg: 45, style: 'piperSeneca' },
   pedals: { x: PANEL_X + 0.24, ys: [-SEAT_Y, SEAT_Y] },
   engineControls: [
     ...QUADRANT_LEVERS,

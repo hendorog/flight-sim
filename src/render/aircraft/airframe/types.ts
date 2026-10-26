@@ -277,6 +277,9 @@ export interface VisualTrimPanelDef {
   pocket?: { x0: number; x1: number; zTop: number; depth: number; lip: number };
 }
 
+/** Control wheel shapes (render/aircraft/yoke.ts YOKE_STYLES). */
+export type YokeStyleName = 'cessnaSingle' | 'cessna152' | 'piperSeneca' | 'piperTomahawk' | 'cessna208' | 'pilatus';
+
 export interface CockpitDef {
   pilotEye: FRD; defaultPitchDeg: number;
   /** Vertical cockpit field of view; absent keeps the camera default (60 degrees). */
@@ -320,7 +323,9 @@ export interface CockpitDef {
    * yoke: one at y and one at -y, sliding `travel` fore and aft and turning rollDeg. stick: one at each of
    * `ys`, `height` tall from `pivot` (its y is not read), leaning pitchDeg fore and aft and rollDeg sideways.
    */
-  column: { kind: 'yoke'; x: number; y: number; z: number; travel: number; rollDeg: number }
+  column: { kind: 'yoke'; x: number; y: number; z: number; travel: number; rollDeg: number;
+            /** The wheel's shape (render/aircraft/yoke.ts YOKE_STYLES). Absent: the Cessna single's. */
+            style?: YokeStyleName }
         | { kind: 'stick'; pivot: FRD; height: number; pitchDeg: number; rollDeg: number; ys: readonly number[] };
   pedals: { x: number; ys: readonly number[] };
   /**

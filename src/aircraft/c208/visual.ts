@@ -506,7 +506,7 @@ const COCKPIT: CockpitDef = {
   // Occupied in external views: the pilot.
   occupants: [{ seat: 0 }],
   // Two control wheels on shafts through the panel: neutral end position, fore-aft travel, rotation.
-  column: { kind: 'yoke', x: PANEL_X - 0.2, y: SEAT_Y, z: faceZ(C208_PANEL_PARTS.yokes.y), travel: 0.09, rollDeg: 45 },
+  column: { kind: 'yoke', x: PANEL_X - 0.165, y: SEAT_Y, z: faceZ(C208_PANEL_PARTS.yokes.y), travel: 0.09, rollDeg: 45, style: 'cessna208' },
   pedals: { x: PANEL_X + 0.24, ys: [-SEAT_Y, SEAT_Y] },
   // The pedestal's levers, left to right: POWER (black), PROP (blue), CONDITION (red; it moves with the
   // per-engine 'mixture' control: forward HIGH IDLE, aft CUTOFF). The power lever goes on aft of its idle gate
