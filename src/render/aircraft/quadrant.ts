@@ -119,7 +119,8 @@ function prism(outline: readonly THREE.Vector2[], depth: number, bevel = 0, hole
   const shape = new THREE.Shape([...outline]);
   for (const h of holes) shape.holes.push(new THREE.Path([...h]));
   const b = Math.min(bevel, depth / 3);
-  const g = new THREE.ExtrudeGeometry(shape, { depth: depth - 2 * b, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b * 0.9, bevelSegments: 1, curveSegments: 6 });
+  // bevelOffset -bevelSize: the bevel rounds the edges inside the outline instead of growing the shape.
+  const g = new THREE.ExtrudeGeometry(shape, { depth: depth - 2 * b, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b * 0.9, bevelOffset: -b * 0.9, bevelSegments: 1, curveSegments: 6 });
   g.translate(0, 0, -(depth - 2 * b) / 2);
   return g;
 }
@@ -403,16 +404,16 @@ function knobParts(knob: QuadrantKnob, mat: AircraftMaterials): { main: THREE.Bu
       break;
     }
     case 'pcl': {
-      // The PC-12/47 PCL grip: a chunky rounded handle across the console, its top swept aft.
-      const side = [new THREE.Vector2(-0.016, 0), new THREE.Vector2(0.014, 0), new THREE.Vector2(0.02, 0.022), new THREE.Vector2(0.016, 0.046),
-        new THREE.Vector2(-0.004, 0.054), new THREE.Vector2(-0.022, 0.044), new THREE.Vector2(-0.024, 0.02)];
-      // Outline in (z, y) extruded across x.
-      main.push(prism(side, 0.05, 0.006).rotateY(-Math.PI / 2));
+      // The PC-12/47 PCL grip: a fat round handle lying across the console, its ends domed, on a short neck.
+      main.push(new THREE.CylinderGeometry(0.0085, 0.0095, 0.016, 14).translate(0, 0.008, 0));
+      main.push(new THREE.CylinderGeometry(0.019, 0.019, 0.044, 24).rotateZ(Math.PI / 2).translate(0, 0.034, 0));
+      for (const sx of [-1, 1]) main.push(new THREE.SphereGeometry(0.019, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.4, 1).rotateZ((-sx * Math.PI) / 2).translate(sx * 0.022, 0.034, 0));
       break;
     }
     case 'condition': {
-      main.push(new THREE.CylinderGeometry(0.0085, 0.01, 0.012, 14).translate(0, 0.006, 0));
-      extra.push([mat.knobRed, prism(fluted(0.0125, 12, 0.002, 0.45), 0.026, 0.0012).rotateY(Math.PI / 2).translate(0, 0.022, 0), true]);
+      // A black collar on the stem and the fluted grip across the slot in the lever's colour.
+      main.push(prism(fluted(0.0125, 12, 0.0022, 0.45), 0.028, 0.0012).rotateY(Math.PI / 2).translate(0, 0.022, 0));
+      extra.push([mat.knobBlack, new THREE.CylinderGeometry(0.0085, 0.01, 0.012, 14).translate(0, 0.006, 0), false]);
       break;
     }
     case 'override': {
@@ -495,7 +496,7 @@ function sideExtrusion(profile: readonly (readonly [number, number])[], y0: numb
   // Outline in the model (z, y) plane as shape (s, t) = (-x, -z): s along model +z (aft), t along model +y (up).
   const shape = profile.map(([x, z]) => new THREE.Vector2(-x, -z));
   const b = Math.min(bevel, (y1 - y0) / 3);
-  const g = new THREE.ExtrudeGeometry(new THREE.Shape(shape), { depth: y1 - y0 - 2 * b, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b * 0.85, bevelSegments: 2, curveSegments: 8 });
+  const g = new THREE.ExtrudeGeometry(new THREE.Shape(shape), { depth: y1 - y0 - 2 * b, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b * 0.85, bevelOffset: -b * 0.85, bevelSegments: 2, curveSegments: 8 });
   // A proper rotation (no mirror, so no winding flip): rotateY(-90 deg) takes shape x (s) to model +z and the
   // extrusion's z (-b .. depth + b) to model -x; then shift it to y0 .. y1.
   g.rotateY(-Math.PI / 2);
@@ -600,70 +601,70 @@ export function addQuadrant(fixed: MeshBatch, mat: AircraftMaterials, def: Cockp
     if (!gates.empty) fixed.add(mat.darkMetal, gates.build());
   }
 
-  for (const plate of q.plates ?? []) addPlate(fixed, mat, def, plate);
+  for (const plate of q.plates ?? []) addPlate(fixed, mat, def, plate, placards);
   for (const part of q.parts ?? []) addPart(fixed, mat, part);
   for (const p of q.placards ?? []) placards.add(p);
 }
 
 type PlateDef = NonNullable<QuadrantDef['plates']>[number];
 
-/** A flat plate with slots cut out (Shape with holes, extruded), its top face in the plane through `origin`. */
-function addPlate(fixed: MeshBatch, mat: AircraftMaterials, def: CockpitDef, plate: PlateDef): void {
+/**
+ * A flat plate with slots cut out (Shape with holes, extruded), its top face in the plane through `origin`; a dark well
+ * just under each slot; beside a lever's slot its detent ticks (white), and for a lever with beta / reverse the idle
+ * gate (a red stop across half the slot) and the red beta range along its edge; the slot's label past its aft end.
+ */
+function addPlate(fixed: MeshBatch, mat: AircraftMaterials, def: CockpitDef, plate: PlateDef, placards: PlacardAtlas): void {
   const O = new THREE.Vector3(...plate.origin);
   const u = new THREE.Vector3(...plate.u).normalize();
   const v = new THREE.Vector3(...plate.v).normalize();
   const n = new THREE.Vector3().crossVectors(u, v).normalize();
+  const basis = new THREE.Matrix4().makeBasis(dir([u.x, u.y, u.z]), dir([v.x, v.y, v.z]), dir([n.x, n.y, n.z]));
+  const o = at(plate.origin);
+  /** A box in plate coordinates (s along u, t along v, h out of the plate), centred at (s, t, h). */
+  const onPlate = (m: THREE.Material, s: number, t: number, h: number, ls: number, lt: number, lh: number): void => {
+    fixed.add(m, new THREE.BoxGeometry(ls, lt, lh).translate(s, t, h).applyMatrix4(basis).translate(o.x, o.y, o.z));
+  };
   const holes: THREE.Vector2[][] = [];
-  const marks: [number, number, number][] = [];
   for (const s of plate.slots) {
     let from = s.from ?? 0;
     let to = s.to ?? 0;
     let across = s.y ?? 0;
     const e = s.lever !== undefined ? def.engineControls[s.lever] : undefined;
+    const hw = s.w / 2;
     if (e) {
       // Where the lever's line crosses the plate at both ends of its swing (FRD).
       const P = new THREE.Vector3(...e.pos);
-      const hit = (a: number): THREE.Vector3 => {
+      const along = (a: number): number => {
         const d = new THREE.Vector3(-Math.sin(a), 0, -Math.cos(a));
         const t = O.clone().sub(P).dot(n) / d.dot(n);
-        return P.clone().addScaledVector(d, t).sub(O);
+        return P.clone().addScaledVector(d, t).sub(O).dot(u);
       };
       const [a0, a1] = leverSwing(e);
-      const h0 = hit(a0);
-      const h1 = hit(a1);
-      from = Math.min(h0.dot(u), h1.dot(u)) - 0.008;
-      to = Math.max(h0.dot(u), h1.dot(u)) + 0.008;
-      across = h0.dot(v);
-      if (e.reverseTravel) marks.push([hit(leverAngle(e, 0)).dot(u), across, s.w]);
+      from = Math.min(along(a0), along(a1)) - 0.008;
+      to = Math.max(along(a0), along(a1)) + 0.008;
+      across = P.clone().sub(O).dot(v);
+      const side = across + hw + 0.004;
+      for (const d of e.detents ?? []) onPlate(mat.knobWhite, along(leverAngle(e, d)), side, 0.0005, 0.0018, 0.008, 0.001);
+      if (e.reverseTravel) {
+        const idle = along(leverAngle(e, 0));
+        const full = along(leverAngle(e, 0, 1));
+        onPlate(mat.knobRed, idle + 0.006 * Math.sign(full - idle), across - hw * 0.5, 0.002, 0.004, s.w * 0.55, 0.004);
+        onPlate(mat.knobRed, (idle + full) / 2, side, 0.0005, Math.abs(full - idle), 0.003, 0.001);
+      }
     }
-    const hw = s.w / 2;
     holes.push(roundedRect(to - from, s.w, hw * 0.95, 3).map((p) => new THREE.Vector2(p.x + (from + to) / 2, p.y + across)).reverse());
+    // The well just under the slot.
+    onPlate(mat.black, (from + to) / 2, across, -plate.thickness - 0.0015, to - from + 0.006, s.w + 0.006, 0.001);
+    if (s.label) {
+      const c = new THREE.Vector3().addScaledVector(u, to + 0.009).addScaledVector(v, across).add(O);
+      placards.add({ pos: [c.x, c.y, c.z], normal: [n.x, n.y, n.z], up: [-u.x, -u.y, -u.z], w: 0.034, h: 0.007, lines: [s.label], ink: 'white', ground: 'black' });
+    }
   }
   const outline = roundedRect(plate.length, plate.width, 0.006, 2).map((p) => new THREE.Vector2(p.x + plate.length / 2, p.y + plate.width / 2));
   const g = prism(outline, plate.thickness, Math.min(0.0015, plate.thickness / 3), holes);
   // Top face on the plane: the prism is centred on z, so move it down by half its thickness.
   g.translate(0, 0, -plate.thickness / 2);
-  const basis = new THREE.Matrix4().makeBasis(dir([u.x, u.y, u.z]), dir([v.x, v.y, v.z]), dir([n.x, n.y, n.z]));
-  g.applyMatrix4(basis);
-  const o = at(plate.origin);
-  g.translate(o.x, o.y, o.z);
-  fixed.add(mat[plate.material], g);
-  // A dark well under each slot.
-  for (const h of holes) {
-    const xs = h.map((p) => p.x);
-    const ys = h.map((p) => p.y);
-    const w = new THREE.BoxGeometry(Math.max(...xs) - Math.min(...xs) + 0.006, Math.max(...ys) - Math.min(...ys) + 0.006, 0.002);
-    w.translate((Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2, -plate.thickness - 0.012);
-    w.applyMatrix4(basis).translate(o.x, o.y, o.z);
-    fixed.add(mat.black, w);
-  }
-  // The idle gate across the slot of a lever with beta / reverse: a red stop beside it.
-  for (const [s, across, w] of marks) {
-    const gate = new THREE.BoxGeometry(0.004, w * 0.6, 0.004);
-    gate.translate(s + 0.004, across - w * 0.55, 0.002);
-    gate.applyMatrix4(basis).translate(o.x, o.y, o.z);
-    fixed.add(mat.knobRed, gate);
-  }
+  fixed.add(mat[plate.material], g.applyMatrix4(basis).translate(o.x, o.y, o.z));
 }
 
 /** One fixed fitting. */

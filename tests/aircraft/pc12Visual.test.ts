@@ -14,7 +14,7 @@ import { PC12_PANEL_PX_PER_M, PC12_PEDESTAL, pc12PanelPx } from '../../src/aircr
 import { PC12_VISUAL, PC12_VISUAL_HEIGHTS } from '../../src/aircraft/pc12/visual';
 import { loadAirframeVisual } from '../../src/aircraft/visualLoader';
 import { AircraftVisual } from '../../src/render/aircraft/AircraftVisual';
-import { Cockpit, leverSurfaceZ } from '../../src/render/aircraft/cockpit';
+import { Cockpit } from '../../src/render/aircraft/cockpit';
 import { Propeller } from '../../src/render/aircraft/propeller';
 import { cabinFloorGeometry, createFuselageShapes, sectionHalfWidth } from '../../src/render/aircraft/fuselage';
 import { LandingGear } from '../../src/render/aircraft/gear';
@@ -303,30 +303,33 @@ describe('Pilatus PC-12/47 airframe visual', () => {
     ctx.controls.reverse = 1;
     cockpit.update(ctx.state, ctx.controls, 1);
     expect((pcl.rotation.x - gate) / DEG).toBeCloseTo((power.travel * power.reverseTravel!) / DEG, 9);
-    // The detent notches, the idle gate and the reverse arc lie on the pedestal's top, just proud of it (not buried in
-    // it), within its fore and aft faces: every white and red mark in the fixed parts over the two slots.
-    const ped = c.consoles.find((k) => k.material === 'black' && k.min[0] < power.pos[0] && k.max[0] > power.pos[0])!;
-    for (const e of [power, condition]) expect(leverSurfaceZ(c.consoles, e.pos)).toBe(ped.min[2]);
-    const topY = -ped.min[2];
+    // The detent ticks, the idle gate and the beta range lie on the console's top plate, just proud of it (not buried
+    // in it), within its length: every white and red mark in the fixed parts over the two slots.
+    const plate = c.quadrant!.plates![0];
+    expect(plate.slots.map((sl) => sl.lever)).toEqual([0, 1, 2]);
+    const O = new THREE.Vector3(plate.origin[1], -plate.origin[2], -plate.origin[0]);
+    const u = new THREE.Vector3(plate.u[1], -plate.u[2], -plate.u[0]).normalize();
+    const v = new THREE.Vector3(plate.v[1], -plate.v[2], -plate.v[0]).normalize();
+    const n = new THREE.Vector3().crossVectors(u, v);
     const slotY = [power.pos[1], condition.pos[1]];
-    let marks = 0;
+    const counts = { white: 0, red: 0 };
     for (const m of cockpit.group.getObjectsByProperty('isMesh', true) as THREE.Mesh[]) {
-      // Fixed parts only: the flap lever (a moving part) stands 0.032 m outboard of the condition slot at 2000 px/m.
+      // Fixed parts only (the flap lever is a moving part, and on the panel face).
       if (!/^cabinFixed:(knobWhite|knobRed)$/.test(m.name) || cockpit.group.children.some((g) => g !== m.parent && g.children.includes(m))) continue;
       const pos = m.geometry.getAttribute('position');
       for (let i = 0; i < pos.count; i++) {
-        const v = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
-        if (!slotY.some((y) => Math.abs(v.x - y) < 0.03) || Math.abs(v.y - topY) > 0.01) continue;
-        marks++;
-        // 1e-6: the vertices are float32 (0.08 m is stored as 0.0799999982).
-        expect(v.y, 'mark above the pedestal top').toBeGreaterThanOrEqual(topY - 1e-6);
-        expect(v.y).toBeLessThan(topY + 0.005);
-        expect(-v.z).toBeGreaterThan(ped.min[0]);
-        expect(-v.z).toBeLessThan(ped.max[0]);
+        const p = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld).sub(O);
+        const h = p.dot(n);
+        if (!slotY.some((y) => Math.abs(p.x + O.x - y) < 0.03) || Math.abs(h) > 0.01) continue;
+        counts[m.name.endsWith('knobWhite') ? 'white' : 'red']++;
+        expect(h, 'mark above the console plate').toBeGreaterThanOrEqual(-1e-6);
+        expect(h).toBeLessThan(0.005);
+        expect(p.dot(u)).toBeGreaterThan(0);
+        expect(p.dot(u)).toBeLessThan(plate.length);
       }
     }
-    // Three detents + the gate + four reverse ticks = 8 boxes of 24 vertices.
-    expect(marks).toBe(8 * 24);
+    // Three white detent ticks (boxes of 24 vertices); the red gate and the red beta strip.
+    expect(counts).toEqual({ white: 3 * 24, red: 2 * 24 });
     cockpit.dispose();
   });
 

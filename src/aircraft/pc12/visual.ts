@@ -573,11 +573,36 @@ const faceY = (px: number): number => (px - PC12_PANEL_CENTRE_PX) / PX;
 const faceZ = (py: number): number => PANEL_ZTOP + (py - PX_RECT.y) / PX;
 /** Lateral station of the crew seats, the control wheels and the pedals: the pilot's eye. */
 const SEAT_Y = -EYE.y;
-/** The centre pedestal (panelLayout.ts PC12_PEDESTAL): its sides, its top at the face, its aft face. */
+/** The centre pedestal's lever stations (panelLayout.ts PC12_PEDESTAL). */
 const PED = PC12_PEDESTAL;
-const PEDESTAL = { y0: faceY(PED.x0), y1: faceY(PED.x1), top: faceZ(PED.y0), aftX: PANEL_X - 0.34 };
-/** The levers' pivots in the pedestal top, under its slots; the levers stand 0.19 m up out of them. */
-const LEVER = { x: PANEL_X - 0.17, z: PEDESTAL.top + 0.05, length: 0.19 };
+/**
+ * The PC-12/47's centre console (47E 7-10; cockpit-refs/pc12 legacy frame): a short upper pedestal under the panel's
+ * lower centre, a sloped face down from it, and a low console running ~0.45 m aft between the crew seats at about the
+ * cushions' height, ~20 cm wide. Its top plate slopes gently down aft; the MOR, the PCL and the condition lever stand
+ * out of slots in it, the trim switches behind them. PHOTO / ESTIMATE.
+ */
+const CONSOLE = { front: PANEL_X - 0.14, aft: PANEL_X - 0.56, zFront: PANEL_ZB + 0.08, zAft: PANEL_ZB + 0.12, hw: 0.1, upper: PANEL_X - 0.07 };
+/** The top plate's height (FRD z) at station x. */
+const consoleTop = (x: number): number => CONSOLE.zFront + ((CONSOLE.front - x) / (CONSOLE.front - CONSOLE.aft)) * (CONSOLE.zAft - CONSOLE.zFront);
+/** The top plate's direction down the console (FRD unit) and its outward normal. */
+const CONSOLE_U: FRD = (() => {
+  const dx = CONSOLE.aft - CONSOLE.front;
+  const dz = CONSOLE.zAft - CONSOLE.zFront;
+  const l = Math.hypot(dx, dz);
+  return [dx / l, 0, dz / l];
+})();
+const CONSOLE_N: FRD = [-CONSOLE_U[2], 0, CONSOLE_U[0]];
+/** A point on the sloped face from the upper pedestal's top (t = 0) down to the plate's front edge (t = 1), and its normal. */
+const slopePoint = (t: number, y: number): FRD => [CONSOLE.upper + (CONSOLE.front - CONSOLE.upper) * t, y, PANEL_ZB + 0.004 + (CONSOLE.zFront + 0.006 - PANEL_ZB - 0.004) * t];
+const SLOPE_N: FRD = (() => {
+  const dx = CONSOLE.front - CONSOLE.upper;
+  const dz = CONSOLE.zFront + 0.002 - PANEL_ZB;
+  const l = Math.hypot(dx, dz);
+  // Out of the face: aft and up.
+  return [-dz / l, 0, dx / l];
+})();
+/** The levers' pivots under the top plate, ~9 cm under it; the PCL stands ~6 cm out of it to its grip. */
+const LEVER = { x: PANEL_X - 0.33, z: consoleTop(PANEL_X - 0.33) + 0.09, length: 0.16 };
 /** The parking brake handle low on the panel's left (canvas px). */
 const BRAKE_PX = [140, 980] as const;
 /** The headliner's height. */
@@ -632,8 +657,7 @@ const COCKPIT: CockpitDef = {
         [PANEL_X + 0.16, PANEL_ZB - 0.005],
       ],
     },
-    // The centre pedestal from the panel aft and down to the floor; the levers stand out of its top.
-    { min: [PEDESTAL.aftX, PEDESTAL.y0, PEDESTAL.top], max: [PANEL_X + 0.01, PEDESTAL.y1, FLOOR_Z], bevel: 0.015, material: 'black' },
+    // (The centre console with the power levers is CockpitDef.quadrant.)
     // The overhead panel behind the windscreen's top edge (lights, the cockpit air outlets).
     { min: [sx(4.95), -0.16, ROOF_IN + 0.005], max: [sx(4.5), 0.16, ROOF_IN + 0.05], bevel: 0.01, material: 'panelPlastic' },
   ],
@@ -652,10 +676,51 @@ const COCKPIT: CockpitDef = {
   // CUT-OFF/FEATHER (0), GROUND IDLE (0.1: turbineEngine.ts CUTOFF_BELOW, where LOW IDLE starts) and FLIGHT IDLE (1).
   // There is no propeller lever (the CSU governs 1700 rpm).
   engineControls: [
-    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, faceY(PED.levers.mor), LEVER.z], travel: 0.7, colour: 'white', length: LEVER.length * 0.8, fixed: 0 },
-    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, faceY(PED.levers.power), LEVER.z], travel: 0.8, colour: 'black', length: LEVER.length, reverseTravel: 0.45 },
-    { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, faceY(PED.levers.condition), LEVER.z], travel: 0.7, colour: 'red', length: LEVER.length * 0.9, detents: [0, 0.1, 1] },
+    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, faceY(PED.levers.mor), LEVER.z], travel: 0.7, colour: 'white', length: LEVER.length * 0.78, fixed: 0,
+      knob: 'override', tilt: -0.05 },
+    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, faceY(PED.levers.power), LEVER.z], travel: 0.8, colour: 'black', length: LEVER.length, reverseTravel: 0.45,
+      knob: 'pcl', tilt: -0.05 },
+    { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, faceY(PED.levers.condition), LEVER.z], travel: 0.7, colour: 'red', length: LEVER.length * 0.86, detents: [0, 0.1, 1],
+      knob: 'condition', tilt: 0.02 },
   ],
+  quadrant: {
+    housings: [
+      // Upper pedestal under the panel's lower centre, the sloped face down from it, the console's top (just under its
+      // plate) and its aft face down to the floor.
+      {
+        profile: [
+          [PANEL_X + 0.006, PANEL_ZB + 0.004], [CONSOLE.upper, PANEL_ZB + 0.004], [CONSOLE.front, CONSOLE.zFront + 0.006],
+          [CONSOLE.aft, CONSOLE.zAft + 0.006], [CONSOLE.aft - 0.015, CONSOLE.zAft + 0.025], [CONSOLE.aft - 0.015, FLOOR_Z], [PANEL_X + 0.006, FLOOR_Z],
+        ],
+        y0: -CONSOLE.hw, y1: CONSOLE.hw, bevel: 0.008, material: 'black',
+      },
+    ],
+    plates: [
+      {
+        origin: [CONSOLE.front, -CONSOLE.hw + 0.004, CONSOLE.zFront],
+        u: CONSOLE_U,
+        v: [0, 1, 0], length: Math.hypot(CONSOLE.front - CONSOLE.aft, CONSOLE.zAft - CONSOLE.zFront) - 0.01, width: 2 * CONSOLE.hw - 0.008,
+        thickness: 0.004, material: 'trimPlastic',
+        slots: [{ lever: 0, w: 0.009, label: 'MOR' }, { lever: 1, w: 0.012, label: 'POWER' }, { lever: 2, w: 0.009, label: 'COND' }],
+      },
+    ],
+    parts: [
+      // Behind the levers: AILERON and RUDDER trim switches, the guarded STBY PITCH trim; the friction knob on the right.
+      { kind: 'rocker', pos: [CONSOLE.aft + 0.09, -0.05, consoleTop(CONSOLE.aft + 0.09) - 0.001], axis: CONSOLE_N, along: [0, 1, 0], size: 0.014 },
+      { kind: 'rocker', pos: [CONSOLE.aft + 0.09, 0.0, consoleTop(CONSOLE.aft + 0.09) - 0.001], axis: CONSOLE_N, along: [0, 1, 0], size: 0.014 },
+      { kind: 'rocker', pos: [CONSOLE.aft + 0.09, 0.05, consoleTop(CONSOLE.aft + 0.09) - 0.001], axis: CONSOLE_N, along: [1, 0, 0], size: 0.014 },
+      { kind: 'frictionKnob', pos: [LEVER.x - 0.02, CONSOLE.hw, consoleTop(LEVER.x) + 0.035], axis: [0, 1, 0], r: 0.012 },
+      // The red FUEL FIREWALL SHUT OFF handle low on the console's sloped face.
+      { kind: 'tHandle', pos: slopePoint(0.35, 0.06), axis: SLOPE_N, length: 0.05, material: 'knobRed' },
+    ],
+    placards: [
+      { pos: [CONSOLE.aft + 0.06, -0.05, consoleTop(CONSOLE.aft + 0.06) - 0.0005], normal: CONSOLE_N, up: [1, 0, 0], w: 0.034, h: 0.007, lines: ['AIL TRIM'], ink: 'white', ground: 'black' },
+      { pos: [CONSOLE.aft + 0.06, 0.0, consoleTop(CONSOLE.aft + 0.06) - 0.0005], normal: CONSOLE_N, up: [1, 0, 0], w: 0.034, h: 0.007, lines: ['RUD TRIM'], ink: 'white', ground: 'black' },
+      { pos: [CONSOLE.aft + 0.06, 0.05, consoleTop(CONSOLE.aft + 0.06) - 0.0005], normal: CONSOLE_N, up: [1, 0, 0], w: 0.036, h: 0.007, lines: ['STBY PITCH'], ink: 'white', ground: 'black' },
+      { pos: slopePoint(0.75, 0.06), normal: SLOPE_N, up: [CONSOLE.upper - CONSOLE.front, 0, PANEL_ZB - CONSOLE.zFront], w: 0.05, h: 0.012,
+        lines: ['FUEL FIREWALL', 'SHUT OFF'], ink: 'white', ground: 'red' },
+    ],
+  },
   // The flap selector right of the power controls, drawn as a lever in a slot low on the panel face over the
   // pedestal (UP to 40 over 80 px).
   flapControl: {
