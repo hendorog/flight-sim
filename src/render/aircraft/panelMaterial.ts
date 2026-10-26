@@ -67,7 +67,8 @@ const panelRecessMap = (canvasM: { w: number; h: number }): string => /* glsl */
 	#endif
 	diffuseColor.rgb = mix( diffuseColor.rgb * panelAo, vec3( 0.012 ), panelWall );
 `;
-const PANEL_GLASS = /* glsl */ `
+/** @param occlusion GLSL float: the share of the reflection that sees out, where there is no cabin occlusion (CABIN_VIS) */
+const panelGlass = (occlusion: string): string => /* glsl */ `
 	#ifdef USE_ENVMAP
 	if ( panelGlass > 0.5 ) {
 		// Cover glass: a smooth dielectric reflecting what the cabin occlusion lets through.
@@ -76,7 +77,7 @@ const PANEL_GLASS = /* glsl */ `
 		#ifdef CABIN_VIS
 			float glassOcc = vCabinVis;
 		#else
-			float glassOcc = 1.0;
+			float glassOcc = ${occlusion};
 		#endif
 		outgoingLight += glassF * getIBLRadiance( geometryViewDir, geometryNormal, 0.03 ) * glassOcc;
 	}
@@ -94,17 +95,22 @@ export class PanelRecess {
   readonly eye = { value: new THREE.Vector3(0, 0.1, 0.2) };
   private readonly pars: string;
   private readonly map: string;
+  private readonly glass: string;
 
   /**
    * @param gauges panelRecesses: mesh-local centre, aperture radius and depth, m
    * @param canvasM the whole panel canvas mapped on the face (texture coordinates 0..1), m
+   * @param glassOcclusion share of the cover glass's reflection that sees outside, for a panel without the per-vertex
+   *        cabin occlusion (cabinLight.ts CABIN_VIS); with it, that is used instead
    */
   constructor(
     readonly gauges: THREE.Vector4[],
     canvasM: { w: number; h: number },
+    glassOcclusion = 1,
   ) {
     this.pars = panelRecessPars(gauges.length);
     this.map = panelRecessMap(canvasM);
+    this.glass = panelGlass(Number.isInteger(glassOcclusion) ? glassOcclusion.toFixed(1) : String(glassOcclusion));
   }
 
   /** Patch the shader (in onBeforeCompile): the recess map and the cover glass. */
@@ -117,7 +123,7 @@ export class PanelRecess {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${this.pars}`)
       .replace('#include <map_fragment>', this.map)
-      .replace('#include <opaque_fragment>', `${PANEL_GLASS}\n#include <opaque_fragment>`);
+      .replace('#include <opaque_fragment>', `${this.glass}\n#include <opaque_fragment>`);
   }
 
   /** The recess parallax needs the eye in the panel's own space for the camera actually rendering. */

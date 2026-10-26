@@ -1,6 +1,6 @@
 // Shaped helicopter panels and controls, independent of the aeroplane panel/yoke builder.
 import { BallCompass } from '../compass';
-import { cockpitAdaptation } from '../cabinLight';
+import { CABIN_VIS_DEFAULT, cockpitAdaptation } from '../cabinLight';
 import { compassLight } from '../cockpit';
 import type { CompassReading } from '../../../instruments/dynamics/magneticCompass';
 import * as THREE from 'three';
@@ -9,6 +9,7 @@ import { SCENE_UNITS_PER_LUX } from '../../../core/context';
 import { isAircraftId, type ControlInputs } from '../../../core/types';
 import type { PanelDef } from '../../../instruments/panelDef';
 import { frd, MeshBatch } from '../geometry';
+import { PanelRecess, panelRecesses } from '../panelMaterial';
 import type { AircraftMaterials } from '../materials';
 import { box, pathTube, tube } from './geometry';
 import { buildConsole, consoleShape } from './console';
@@ -21,6 +22,12 @@ import { collectiveFittings, ConsolePullControl, ConsoleSwitchCover, pedalPlate 
  */
 const GLOW_DISPLAYS = 0.01;
 const GLOW_MARKINGS = 0.1;
+/**
+ * Share of the console cover glass's reflection that sees outside: the rotorcraft cabin has no per-vertex occlusion
+ * bake, so the glass takes the value an unbaked aeroplane cabin vertex has (the mirror direction from the tilted-back
+ * face mostly meets the pilot, the cabin roof and the glareshield; with the full sky the dials wash out at dusk).
+ */
+const GLASS_OCCLUSION = CABIN_VIS_DEFAULT;
 
 export class RotorcraftCockpit {
   readonly group = new THREE.Group();
@@ -60,19 +67,30 @@ export class RotorcraftCockpit {
     const pos = face.getAttribute('position'), uv = face.getAttribute('uv');
     for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / p.width + 0.5, pos.getY(i) / p.height + 0.5);
     this.panel = new THREE.Mesh(face, new THREE.MeshStandardMaterial({ name: 'rotorcraftPanel', color: 0xffffff, roughness: 0.86, emissive: 0x000000 }));
+    // The round instruments are set into the face behind cover glass, as on the aeroplane panels (panelMaterial.ts):
+    // mesh-local metres from the canvas pixels the same way as the face's own uv (consoleShape).
+    const pxPerM = p.canvas.w / p.width;
+    const recess = new PanelRecess(panelDef ? panelRecesses(panelDef, (px, py) => ({ x: (px / p.canvas.w - 0.5) * p.width, y: (0.5 - py / p.canvas.h) * p.height }), pxPerM) : [],
+      { w: p.width, h: p.height }, GLASS_OCCLUSION);
     // Match the aeroplane panel shader: suppress near-black paint in the dedicated emissive texture.
     // A plain emissive map lights the whole dial face at night exposure, washing out its markings.
+    // The emissive map is read at the recess's shifted coordinate, and the bore wall does not glow.
     this.panel.material.onBeforeCompile = shader => {
+      if (recess.gauges.length) recess.patch(shader);
+      const uv = recess.gauges.length ? 'panelUv' : 'vEmissiveMapUv';
+      const wall = recess.gauges.length ? ' * ( 1.0 - panelWall )' : '';
       shader.uniforms.cockpitPanelDimmer = this.dimmer;
       shader.fragmentShader = 'uniform float cockpitPanelDimmer;\n' + shader.fragmentShader.replace('#include <emissivemap_fragment>', `
 #ifdef USE_EMISSIVEMAP
-  vec4 emissiveColor = texture2D( emissiveMap, vEmissiveMapUv );
+  vec4 emissiveColor = texture2D( emissiveMap, ${uv} );
   float emissivePeak = max( emissiveColor.r, max( emissiveColor.g, emissiveColor.b ) );
   float circuitLevel = emissiveColor.a < 0.75 ? cockpitPanelDimmer : 1.0;
-  totalEmissiveRadiance *= emissiveColor.rgb * smoothstep( 0.006, 0.03, emissivePeak ) * circuitLevel;
+  totalEmissiveRadiance *= emissiveColor.rgb * smoothstep( 0.006, 0.03, emissivePeak ) * circuitLevel${wall};
 #endif`);
     };
-    this.panel.material.customProgramCacheKey = () => 'rotorcraftPanelBacklight';
+    // The shader text depends on the number of recesses and on the face (the program cache does not see it).
+    this.panel.material.customProgramCacheKey = () => `rotorcraftPanelBacklight|${recess.gauges.length}|${p.width}x${p.height}`;
+    recess.bind(this.panel);
     this.panel.name = 'instrumentPanel'; this.panel.receiveShadow = true; pod.add(this.panel);
     this.group.add(pod);
     for (const gauge of panelDef?.gauges ?? []) if (gauge.kind === 'pullKnob') this.pullControls.push(new ConsolePullControl(gauge, p, pod, mat));
