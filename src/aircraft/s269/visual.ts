@@ -79,9 +79,9 @@ export const S269_VISUAL: AirframeVisualDef = {
   },
   cockpit: {
     pilotEye: point(D.PILOT_EYE), defaultPitchDeg: -27, defaultFovDeg: 82,
-    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 94-127 px
+    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 103-140 px
     // across on a 991 px high view, the far ones smallest (scripts/cockpit-focus.mjs).
-    focus: { yawDeg: 21, pitchDeg: -20.5, fovDeg: 48 }, enclosure: 'canopy',
+    focus: { yawDeg: 21, pitchDeg: -21, fovDeg: 44 }, enclosure: 'canopy',
     panel: { x: D.PANEL_FACE.centre.x, zTop: D.PANEL_FACE.centre.z - D.PANEL_FACE.height / 2, width: D.PANEL_FACE.width },
     floor: { z: 0.385, x0: 1.46, x1: 0.0 }, glareshield: { profile: [], halfWidth: D.PANEL_FACE.width / 2 },
     seats: D.SEAT_CENTRES.map(s => ({ x: s.x + 0.31, y: s.y, z: 0.17, kind: 'front', width: 0.44,

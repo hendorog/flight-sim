@@ -104,9 +104,9 @@ export const R44_VISUAL: AirframeVisualDef = {
     { id: 'taxi', circuit: 'landing', requiresClutch: true, pos: [2.27, 0.07, 0.32], radius: 0.043, glowOffset: [0.03, 0, 0], aim: { downDeg: 14, outDeg: 0, halfAngleDeg: 22 } },
   ],
   cockpit: { pilotEye: point(PILOT_EYE), defaultPitchDeg: -24, defaultFovDeg: 82,
-    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 104-135 px
+    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 109-142 px
     // across on a 991 px high view, the far ones smallest (scripts/cockpit-focus.mjs).
-    focus: { yawDeg: 23, pitchDeg: -14.5, fovDeg: 42 }, enclosure: 'canopy',
+    focus: { yawDeg: 23, pitchDeg: -14, fovDeg: 40 }, enclosure: 'canopy',
     panel: { x: PANEL_FACE.centre.x, zTop: PANEL_FACE.centre.z - PANEL_FACE.height / 2, width: PANEL_FACE.width },
     // Wet compass on the central windshield bow above the console (MM ch.13); position estimated.
     compass: { pos: [1.65, 0, -0.50] },

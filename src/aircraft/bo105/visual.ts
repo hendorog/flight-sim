@@ -251,7 +251,7 @@ export const BO105_VISUAL: AirframeVisualDef = {
     // Default view 30 degrees down (was 14): the tall centre console in full, down to its switch row, with the horizon
     // still ~20 % down the frame.
     pilotEye: point(D.PILOT_EYE), defaultPitchDeg: -30, defaultFovDeg: 80,
-    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 96-133 px
+    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 94-137 px
     // across on a 991 px high view, the far ones smallest (scripts/cockpit-focus.mjs).
     focus: { yawDeg: 34, pitchDeg: -23, fovDeg: 50 }, enclosure: 'canopy',
     panel: { x: FACE.centre.x, zTop: FACE.centre.z - FACE.height / 2, width: FACE.width },
