@@ -430,8 +430,20 @@ const SEAT_Y = -EYE.y;
 /** The centre pedestal (panelLayout.ts C208_PEDESTAL): its sides, its top at the face, its aft face. */
 const PED = C208_PANEL_PARTS.pedestal;
 const PEDESTAL = { y0: faceY(PED.x0), y1: faceY(PED.x1), top: faceZ(PED.y0), aftX: PANEL_X - 0.3 };
-/** The levers' pivots in the pedestal top, under its slots; the levers stand 0.2 m up out of them. */
-const LEVER = { x: PANEL_X - 0.16, z: PEDESTAL.top + 0.06, length: 0.2 };
+/**
+ * The pedestal's quadrant: a drum round a lateral axis low between the seats (its top ~0.6 m above the floor, ~0.1 m
+ * under the panel's lower edge), its light grey slotted cover curving from the top round to a vertical aft face; the
+ * levers pivot on the drum's axis and stand ~8 cm out of it, leaned aft by `tilt` so their swing runs from just forward
+ * of the top (MAX) round the aft face (IDLE, then BETA and REVERSE). PHOTO / ESTIMATE from cockpit photographs and
+ * cockpit-refs/c208 (the drum ~22 cm wide, its top ~10 cm under the panel's lower edge).
+ */
+const DRUM = { x: PANEL_X - 0.19, z: FLOOR_Z - 0.475, r: 0.13, thickness: 0.006, y: 0.11, from: -0.5, to: 1.76 };
+/** The levers' pivots on the drum's axis; knob bases 0.2 m out (7 cm proud of the cover), leaned 0.25 rad aft. */
+const LEVER = { x: DRUM.x, z: DRUM.z, length: 0.2, tilt: 0.25 };
+/** The upper pedestal: the box under the panel's lower centre (behind the face's pedestal pixels) down to the floor. */
+const UPPER = { x0: PANEL_X - 0.085, x1: PANEL_X + 0.01 };
+/** Lower aft face of the pedestal under the drum: the aileron and rudder trims and the fuel shut-off. */
+const LOWER_AFT_X = DRUM.x - DRUM.r + 0.002;
 /** The crew door's inner panel and the cabin side walls below the windows. */
 const DOOR = { x0: 2.06, x1: CREW_DOOR_AFT_X + 0.04, z0: CREW_WINDOW.sill + 0.03, z1: FLOOR_Z - 0.06 };
 /** The headliner's height (the lining's roof limit) and the overhead console under it. */
@@ -487,8 +499,8 @@ const COCKPIT: CockpitDef = {
         [PANEL_X + 0.17, PANEL_ZB - 0.005],
       ],
     },
-    // The centre pedestal from the lower panel aft and down to the floor; the three levers stand out of its top.
-    { min: [PEDESTAL.aftX, PEDESTAL.y0, PEDESTAL.top], max: [PANEL_X + 0.01, PEDESTAL.y1, FLOOR_Z], bevel: 0.015, material: 'black' },
+    // The upper pedestal from under the panel's lower centre down to the floor; the drum quadrant stands aft of it.
+    { min: [UPPER.x0, PEDESTAL.y0, PEDESTAL.top], max: [UPPER.x1, PEDESTAL.y1, FLOOR_Z], bevel: 0.012, material: 'panelPlastic' },
     // The overhead fuel selector panel between the crew seats.
     { min: [EYE.x - 0.2, -0.14, ROOF_IN + 0.005], max: [EYE.x + 0.25, 0.14, ROOF_IN + 0.05], bevel: 0.01, material: 'panelPlastic' },
   ],
@@ -513,9 +525,12 @@ const COCKPIT: CockpitDef = {
   // through BETA to REVERSE (ControlInputs.reverse) over a further third of its forward swing (ESTIMATE from cockpit
   // photographs: the reverse slot is about a third as long as the IDLE-MAX slot).
   engineControls: [
-    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, faceY(PED.levers.power), LEVER.z], travel: 0.8, colour: 'black', length: LEVER.length, reverseTravel: 0.35 },
-    { kind: 'lever', control: 'propeller', engine: 0, pos: [LEVER.x, faceY(PED.levers.propeller), LEVER.z], travel: 0.8, colour: 'blue', length: LEVER.length },
-    { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, faceY(PED.levers.condition), LEVER.z], travel: 0.8, colour: 'red', length: LEVER.length },
+    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, faceY(PED.levers.power), LEVER.z], travel: 0.8, colour: 'grey', length: LEVER.length, reverseTravel: 0.35,
+      knob: 'c208Power', tilt: LEVER.tilt, knobOffset: -0.018 },
+    { kind: 'lever', control: 'propeller', engine: 0, pos: [LEVER.x, faceY(PED.levers.propeller), LEVER.z], travel: 0.8, colour: 'blue', length: LEVER.length + 0.006,
+      knob: 'notchedProp', tilt: LEVER.tilt },
+    { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, faceY(PED.levers.condition), LEVER.z], travel: 0.8, colour: 'red', length: LEVER.length + 0.012,
+      knob: 'ribbedMixture', tilt: LEVER.tilt },
   ],
   // The flap selector in its slot on the right of the lower panel, UP to FULL over `travel` px.
   flapControl: {
@@ -523,8 +538,53 @@ const COCKPIT: CockpitDef = {
     pos: [PANEL_X, faceY(C208_PANEL_PARTS.flapSelector.x), faceZ(C208_PANEL_PARTS.flapSelector.y)],
     travel: C208_PANEL_PARTS.flapSelector.travel / PX,
   },
-  // The elevator trim wheel on the pedestal's left side.
-  trimWheel: { pos: [PANEL_X - 0.17, PEDESTAL.y0 - 0.012, FLOOR_Z - 0.56], axis: 'y' },
+  // The elevator trim wheel on the drum's left side, in its guard, ~17 cm across; its NOSE DN / NOSE UP indicator on the
+  // drum's aft face beside it.
+  trimWheel: {
+    pos: [DRUM.x + 0.005, -DRUM.y - 0.019, DRUM.z + 0.02], axis: 'y', radius: 0.088, width: 0.024, housing: 'side', grip: 'scallop',
+    indicator: { pos: [DRUM.x - (DRUM.r + 0.0015) * Math.sin(1.25), -0.094, DRUM.z - (DRUM.r + 0.0015) * Math.cos(1.25)], length: 0.05,
+                 up: [Math.cos(1.25), 0, -Math.sin(1.25)], normal: [-Math.sin(1.25), 0, -Math.cos(1.25)] },
+  },
+  quadrant: {
+    housings: [
+      // The pedestal body under the drum, from the upper pedestal aft to the drum's aft face and down to the flared foot;
+      // its top runs round inside the drum's cover.
+      {
+        profile: [
+          [UPPER.x0 + 0.005, FLOOR_Z], [DRUM.x - DRUM.r - 0.03, FLOOR_Z], [LOWER_AFT_X - 0.004, FLOOR_Z - 0.1], [LOWER_AFT_X, DRUM.z + 0.03],
+          ...[90, 60, 30, 0, -28].map((d): [number, number] => [DRUM.x - (DRUM.r - 0.045) * Math.sin(d * DEG), DRUM.z - (DRUM.r - 0.045) * Math.cos(d * DEG)]),
+          [DRUM.x + DRUM.r * Math.sin(-DRUM.from), DRUM.z - DRUM.r * Math.cos(DRUM.from) + 0.004], [UPPER.x0 + 0.005, DRUM.z - DRUM.r * Math.cos(DRUM.from) + 0.004],
+        ],
+        y0: -DRUM.y + 0.004, y1: DRUM.y - 0.004, bevel: 0.006, material: 'panelPlastic',
+      },
+    ],
+    arcs: [
+      {
+        centre: [DRUM.x, DRUM.z], r: DRUM.r, thickness: DRUM.thickness, from: DRUM.from, to: DRUM.to, y0: -DRUM.y, y1: DRUM.y, material: 'trimPlastic',
+        slots: [{ lever: 0, w: 0.009, label: 'POWER' }, { lever: 1, w: 0.009, label: 'PROP RPM' }, { lever: 2, w: 0.009, label: 'FUEL CONDITION' }],
+      },
+    ],
+    parts: [
+      // The friction lock on the drum's right cheek.
+      { kind: 'frictionKnob', pos: [DRUM.x, DRUM.y + 0.004, DRUM.z], axis: [0, 1, 0], r: 0.014 },
+      // Under the drum on the pedestal's aft face: AILERON TRIM knob, the RUDDER TRIM wheel standing out of a slot below
+      // it, the red FUEL SHUTOFF pull knob at the right.
+      { kind: 'trimKnob', pos: [LOWER_AFT_X, -0.012, DRUM.z + 0.07], axis: [-1, 0, 0], r: 0.013 },
+      { kind: 'flatWheel', pos: [LOWER_AFT_X + 0.022, -0.012, DRUM.z + 0.13], axis: [0, 0, -1], r: 0.04, width: 0.014 },
+      { kind: 'box', min: [LOWER_AFT_X - 0.004, -0.06, DRUM.z + 0.12], max: [LOWER_AFT_X + 0.01, 0.036, DRUM.z + 0.123], bevel: 0.0015, material: 'black' },
+      { kind: 'box', min: [LOWER_AFT_X - 0.004, -0.06, DRUM.z + 0.137], max: [LOWER_AFT_X + 0.01, 0.036, DRUM.z + 0.14], bevel: 0.0015, material: 'black' },
+      { kind: 'pullKnob', pos: [LOWER_AFT_X, 0.06, DRUM.z + 0.1], axis: [-1, 0, 0], r: 0.012, material: 'knobRed' },
+    ],
+    placards: [
+      { pos: [LOWER_AFT_X - 0.001, -0.004, DRUM.z + 0.035], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.1, h: 0.016,
+        lines: ['USE BETA AND REVERSE ONLY', 'WITH ENGINE RUNNING AND', 'PROPELLER OUT OF FEATHER'], ink: 'white', ground: 'black' },
+      { pos: [LOWER_AFT_X - 0.001, -0.012, DRUM.z + 0.054], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.05, h: 0.008, lines: ['AILERON TRIM'], ink: 'white', ground: 'black' },
+      { pos: [LOWER_AFT_X - 0.001, -0.042, DRUM.z + 0.07], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.012, h: 0.008, lines: ['L'], ink: 'white', ground: 'black' },
+      { pos: [LOWER_AFT_X - 0.001, 0.018, DRUM.z + 0.07], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.012, h: 0.008, lines: ['R'], ink: 'white', ground: 'black' },
+      { pos: [LOWER_AFT_X - 0.001, -0.012, DRUM.z + 0.112], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.07, h: 0.008, lines: ['NOSE L   RUD TRIM   NOSE R'], ink: 'white', ground: 'black' },
+      { pos: [LOWER_AFT_X - 0.001, 0.06, DRUM.z + 0.078], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.04, h: 0.014, lines: ['FUEL SHUTOFF', 'PULL OFF'], ink: 'white', ground: 'black' },
+    ],
+  },
   // The parking brake T-handle at the lower left of the panel, pulled to set.
   parkingBrakeHandle: { pos: [PANEL_X, faceY(C208_PANEL_PARTS.parkingBrake[0]), faceZ(C208_PANEL_PARTS.parkingBrake[1])], travel: 0.05 },
   // The standby compass under the windscreen's top on the centre line.

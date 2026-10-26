@@ -499,13 +499,19 @@ const COCKPIT: CockpitDef = {
   pedals: { x: PEDAL_X, ys: [-SEAT_Y, SEAT_Y] },
   // Push-pull knobs on the lower panel: throttle (black) and mixture (red).
   engineControls: [
-    { kind: 'knob', control: 'throttle', engine: 0, pos: [PANEL_X, 0.0, 0.08], travel: 0.075, colour: 'black' },
-    { kind: 'knob', control: 'mixture', engine: 0, pos: [PANEL_X, 0.11, 0.08], travel: 0.075, colour: 'red' },
+    { kind: 'knob', control: 'throttle', engine: 0, pos: [PANEL_X, 0.0, 0.08], travel: 0.075, colour: 'black', knob: 'plunger' },
+    { kind: 'knob', control: 'mixture', engine: 0, pos: [PANEL_X, 0.11, 0.08], travel: 0.075, colour: 'red', knob: 'plungerMixture' },
   ],
   // Electric flap lever in its slot on the panel: 0.1 m of travel from UP to FULL.
   flapControl: { kind: 'panelLever', pos: [PANEL_X, 0.25, 0], travel: 0.1 },
-  // Trim wheel in the pedestal, protruding through its aft face.
-  trimWheel: { pos: [PANEL_X - 0.05, 0, 0.36], axis: 'y' },
+  // Trim wheel in the pedestal (~11 cm across), its knurled rim through a bezel in the aft face; the NOSE DOWN /
+  // TAKE OFF / NOSE UP indicator in a slot left of it.
+  trimWheel: {
+    pos: [PANEL_X - 0.09 + 0.033, 0, 0.33], axis: 'y', radius: 0.055, width: 0.02, housing: 'slot',
+    indicator: { pos: [PANEL_X - 0.0905, -0.04, 0.33], length: 0.075, up: [0, 0, 1], normal: [-1, 0, 0], labelUp: [0, 0, -1] },
+  },
+  // The throttle and mixture's sub-panel: a moulded lip round the recess they stand in.
+  quadrant: { housings: [], parts: [{ kind: 'frame', pos: [PANEL_X, 0.055, 0.078], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.19, h: 0.06, lip: 0.004 }] },
   // Magnetic compass hanging from the windscreen header on the centreline.
   compass: { pos: [0.375, 0, -0.555] },
   fittings: {

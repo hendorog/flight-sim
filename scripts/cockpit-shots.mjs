@@ -7,6 +7,7 @@
 // triangles of the control column meshes ("yoke:" / "stick:"), and which main dials the pilot's own column hides in the
 // default view (a CPU raycast from the eye to each dial centre against the opaque cockpit meshes; no GPU readback).
 // Writes <out>/<type>_<tag>_<view>.png and <out>/shots_<tag>.json. Starts its own vite on a free port.
+// For the engine controls (quadrant close-up, floor and trim views, hotspot / flap click probe) see scripts/quadrant-shots.mjs.
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';

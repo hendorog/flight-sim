@@ -280,6 +280,65 @@ export interface VisualTrimPanelDef {
 /** Control wheel shapes (render/aircraft/yoke.ts YOKE_STYLES). */
 export type YokeStyleName = 'cessnaSingle' | 'cessna152' | 'piperSeneca' | 'piperTomahawk' | 'cessna208' | 'pilatus';
 
+/** The cabin materials a quadrant part can take (AircraftMaterials keys). */
+export type QuadrantMaterial = 'panelPlastic' | 'trimPlastic' | 'black' | 'darkMetal' | 'aluminium' | 'chrome' | 'knobBlack' | 'knobRed' | 'knobWhite' | 'glareshield';
+
+/**
+ * Knob shapes of the quadrant builder (render/aircraft/quadrant.ts), each on its own stem:
+ * pistonThrottle: a flat-faced paddle (Piper twin). notchedProp: a square block with a notched top. ribbedMixture: a
+ * fluted cylinder across the slot. c208Power: the Caravan's wide block with the red beta latch and the lift ring under it.
+ * pcl: the PC-12's power control lever grip. condition: a short grip with a ribbed red tip. override: a small striped grip.
+ * cylinderThrottle: a smooth cylinder across the slot (Tomahawk). scallopedMixture: a scalloped red knob (Tomahawk).
+ * tGrip: a flat T (DA20). plunger / plungerMixture / plungerCarbHeat: Cessna push-pull knobs (kind 'knob').
+ */
+export type QuadrantKnob = 'pistonThrottle' | 'notchedProp' | 'ribbedMixture' | 'c208Power' | 'pcl' | 'condition' | 'override'
+  | 'cylinderThrottle' | 'scallopedMixture' | 'tGrip' | 'plunger' | 'plungerMixture' | 'plungerCarbHeat';
+
+/** A slot in a quadrant cover: for lever `lever` (engineControls index) its swing; or a free slot at `y` from `from` to `to`. */
+export interface QuadrantSlot { lever?: number; y?: number; from?: number; to?: number; w: number;
+  /** A text strip beside the slot (the lever's name), read from the slot's outboard end. */ label?: string }
+
+/** Fixed fittings on and round a quadrant. pos: FRD; axis: the part's own up (FRD unit vector, out of the face it stands on). */
+export type QuadrantPart =
+  /** Knurled friction-lock knob. */
+  | { kind: 'frictionKnob'; pos: FRD; axis: FRD; r: number }
+  /** Push-pull knob (fuel shut-off, alternate air): a ribbed knob on a short shaft. */
+  | { kind: 'pullKnob'; pos: FRD; axis: FRD; r: number; material: QuadrantMaterial }
+  /** A small round trim knob with a pointer, and its L / R scale. */
+  | { kind: 'trimKnob'; pos: FRD; axis: FRD; r: number }
+  /** A flat wheel turning about `axis`, half of it showing out of a slot in the face it stands proud of (rudder trim). */
+  | { kind: 'flatWheel'; pos: FRD; axis: FRD; r: number; width: number }
+  /** A T-handle on a shaft. */
+  | { kind: 'tHandle'; pos: FRD; axis: FRD; length: number; material: QuadrantMaterial }
+  /** A bevelled box (cup holders' brackets, escutcheons). */
+  | { kind: 'box'; min: FRD; max: FRD; bevel: number; material: QuadrantMaterial }
+  /** A rocker or toggle switch on a plate (trim switches): a guard frame and a two-way rocker. */
+  | { kind: 'rocker'; pos: FRD; axis: FRD; along: FRD; size: number }
+  /** A moulded lip round a recessed sub-panel on a face (the Cessna's engine-control panel): w x h, `up` its vertical, `lip` proud. */
+  | { kind: 'frame'; pos: FRD; normal: FRD; up: FRD; w: number; h: number; lip: number };
+
+export interface QuadrantDef {
+  /** Side outlines (x, z) extruded across from y0 to y1 with a bevel: the pedestal body, the quadrant box, the console. */
+  housings: readonly { profile: readonly (readonly [number, number])[]; y0: number; y1: number; bevel: number; material: QuadrantMaterial }[];
+  /**
+   * Slotted covers round a lateral axis at (x, z) (a drum or a convex face plate): a shell of outer radius r and
+   * `thickness` from angle `from` to `to` (rad, 0 = straight up, + = aft) across y0..y1, with its cheeks at both ends
+   * and a dark core under the slots. The levers of `slots` pivot on that axis.
+   */
+  arcs?: readonly { centre: readonly [number, number]; r: number; thickness: number; from: number; to: number; y0: number; y1: number;
+                    material: QuadrantMaterial; cheeks?: QuadrantMaterial; slots: readonly QuadrantSlot[] }[];
+  /**
+   * Flat slotted plates: `origin` a corner (FRD), `u` along the slots and `v` across them (FRD unit vectors, u x v
+   * pointing out of the plate), length along u, width along v. A lever slot runs where the lever's line crosses the plate.
+   */
+  plates?: readonly { origin: FRD; u: FRD; v: FRD; length: number; width: number; thickness: number; material: QuadrantMaterial;
+                      slots: readonly QuadrantSlot[] }[];
+  parts?: readonly QuadrantPart[];
+  /** Placards: printed once into one atlas. pos: centre (FRD); normal: out of the face; up: the text's up (FRD unit). */
+  placards?: readonly { pos: FRD; normal: FRD; up: FRD; w: number; h: number; lines: readonly string[];
+                        ink?: 'white' | 'black' | 'red'; ground?: 'black' | 'white' | 'grey' | 'red' | 'cover' }[];
+}
+
 export interface CockpitDef {
   pilotEye: FRD; defaultPitchDeg: number;
   /** Vertical cockpit field of view; absent keeps the camera default (60 degrees). */
@@ -334,13 +393,21 @@ export interface CockpitDef {
    * its swing, rad (forward = 1), `length` (absent: 0.11) the pivot-to-knob distance, m.
    */
   engineControls: readonly { kind: 'knob' | 'lever'; control: 'throttle' | 'mixture' | 'propeller' | 'carbHeat' | 'cowlFlaps' | 'alternateAir';
-                             engine: number; pos: FRD; travel: number; colour: 'black' | 'red' | 'blue' | 'white'; length?: number;
+                             engine: number; pos: FRD; travel: number; colour: 'black' | 'red' | 'blue' | 'white' | 'grey'; length?: number;
                              /** Lever only: extra AFT arc, as a fraction of `travel`, swept as ControlInputs.reverse goes 0 -> 1 (beta and reverse). Absent: 0. */
                              reverseTravel?: number;
                              /** Lever only: drawn notches, as lever fractions 0..1 (PC-12 condition lever: CUT-OFF, GROUND IDLE, FLIGHT IDLE). */
                              detents?: readonly number[];
                              /** Lever only: drawn standing at this value and never animated (the PC-12's MANUAL OVERRIDE lever, not modelled). */
-                             fixed?: number }[];
+                             fixed?: number;
+                             /** The knob and stem from the quadrant builder's library (render/aircraft/quadrant.ts). Absent: the generic knob. */
+                             knob?: QuadrantKnob;
+                             /** Lever with `knob` only: the lever's whole swing leaned aft by this angle, rad (the slots sit on the aft face of a drum). Absent: 0. */
+                             tilt?: number;
+                             /** With `knob`: the knob's lateral offset from its stem, m (+ right), so wide knobs on neighbouring levers clear each other. Absent: 0. */
+                             knobOffset?: number;
+                             /** With `knob`: the knob's size against the library's (a twin's six knobs side by side are smaller). Absent: 1. */
+                             knobScale?: number }[];
   /**
    * panelLever: a lever in a slot on the panel face, `travel` m down from UP to FULL. panelSwitch: a paddle
    * switch on the face, tilting `travel` rad. floorLever: a hand lever between the seats pivoted at `pos`,
@@ -357,8 +424,21 @@ export interface CockpitDef {
   fuelSelectorHandle?: { pos: FRD; angles: Partial<Record<FuelSelector, number>> };
   /** A T-handle on an aft-facing face at `pos`, pulled `travel` m aft while controls.parkingBrake is set. Absent: none. */
   parkingBrakeHandle?: { pos: FRD; travel: number };
-  /** Absent: no trim wheel. axis: the body axis the wheel turns about. */
-  trimWheel?: { pos: FRD; axis: 'x' | 'y' };
+  /**
+   * Absent: no trim wheel. axis: the body axis the wheel turns about. radius, width: of the knurled wheel, m (absent: 0.075,
+   * 0.022). housing: the moulding it turns in (quadrant.ts): 'slot' a bezel round the rim showing through an aft face,
+   * 'side' a guard round the lower half of a wheel on a pedestal's side; absent: none. indicator: where the trim position
+   * indicator's slot is (its centre, FRD), its length along the slot, m, and which way NOSE UP lies along it (FRD unit).
+   */
+  trimWheel?: { pos: FRD; axis: 'x' | 'y'; radius?: number; width?: number; housing?: 'slot' | 'side';
+                /** The rim's grip: a fine knurl (absent) or deep finger scallops (the Caravan's). */
+                grip?: 'knurl' | 'scallop';
+                /** housing 'slot': the face the rim shows through, its outward normal (FRD unit; absent: aft, [-1, 0, 0]). */
+                slotNormal?: FRD;
+                /** labelUp: the NOSE UP / DN legends' up when it is not `up` (an indicator lying on a floor tunnel). */
+                indicator?: { pos: FRD; length: number; up: FRD; normal: FRD; labelUp?: FRD } };
+  /** The throttle quadrant or pedestal from the shared builder (render/aircraft/quadrant.ts). Absent: none (the consoles alone). */
+  quadrant?: QuadrantDef;
   /** Float pivot in FRD. Absent: no magnetic compass; mount defaults to the header/post bracket. */
   compass?: { pos: FRD; mount?: 'header' | 'glareshield' };
   /**

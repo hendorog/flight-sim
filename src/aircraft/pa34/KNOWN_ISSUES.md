@@ -49,3 +49,9 @@ Close with: mass/rigging, warning and hydraulic measurements; also validate prim
 The Janitrol heater, ice protection and AltiMatic autopilot are absent.
 Evidence: [notModelled](index.ts).
 Close with: installation-specific systems and operating checks.
+
+## Yoke horn passes through the quadrant levers at full forward and full roll — **defect**
+
+With the yokes at full forward and full roll, the inboard horns pass through the propeller and mixture lever knobs at full forward travel. Only at simultaneous stops; the neutral view is clear.
+Evidence: [yokeQuadrantClearance test](../../../tests/render/yokeQuadrantClearance.test.ts) (marked expected-fail for this type).
+Close with: horn, lever or knob geometry that clears at every stop, then drop the type from `KNOWN_CLASH`.

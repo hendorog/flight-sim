@@ -573,8 +573,19 @@ const SEAT_Y = -EYE.y;
 /** The throttle quadrant body (panel.ts PA34_QUADRANT), m on the face. */
 const Q = PA34_PANEL_PARTS.quadrant;
 const QUADRANT = { y0: faceY(Q.x0), y1: faceY(Q.x1), zTop: faceZ(Q.y0), aftX: PANEL_X - 0.1 };
-/** Lever pivots in the slotted housing under the quadrant, aft of its face, so the knobs stay in view. */
-const LEVER = { x: QUADRANT.aftX - 0.08, z: 0.07, pitch: 0.026 };
+/**
+ * The quadrant's convex face plate: an arc round the levers' pivot axis low in the housing, curving from the housing's
+ * top at the panel down and aft to its lower aft edge; six slots in pairs (THROTTLE, PROP, MIXTURE). PHOTO / ESTIMATE from
+ * cockpit-refs/pa34 (the housing ~18 cm wide, its face ~15 cm tall).
+ */
+const ARC = { x: PANEL_X - 0.09, z: PANEL_ZB + 0.055, r: 0.125, from: -0.75, to: 1.2, y: 0.084 };
+/** Lever pivots on the face plate's axis; the knobs 4.5 cm proud of it, the swing leaned 0.25 rad aft. */
+const LEVER = { x: ARC.x, z: ARC.z, length: 0.17, tilt: 0.25 };
+/** Lateral stations of the levers: the pairs 3 cm / 2.6 cm / 2.4 cm apart with a wider gap between pairs, so the six
+ * knobs, side by side at full forward, clear each other. */
+const LEVER_Y = { throttle: [-0.07, -0.04], propeller: [-0.012, 0.014], mixture: [0.04, 0.064] } as const;
+/** The cowl flap levers' pedestal under the quadrant's aft edge. */
+const COWL = { x0: PANEL_X - 0.24, x1: PANEL_X - 0.08, z: PANEL_ZB + 0.065 };
 /** The floor tunnel between the front seats: flap lever, pitch and rudder trims, fuel selectors (s.9). */
 const TUNNEL = { x0: PANEL_X - 0.12, x1: -0.5, hw: 0.075, top: FLOOR_Z - 0.12 };
 
@@ -584,10 +595,15 @@ const QUADRANT_LEVERS: CockpitDef['engineControls'] = (['throttle', 'propeller',
     kind: 'lever' as const,
     control,
     engine,
-    pos: [LEVER.x, (k * 2 + engine - 2.5) * LEVER.pitch, LEVER.z] as FRD,
+    pos: [LEVER.x, LEVER_Y[control][engine], LEVER.z] as FRD,
     travel: 0.8,
     colour: control === 'throttle' ? ('black' as const) : control === 'propeller' ? ('blue' as const) : ('red' as const),
-    length: 0.17,
+    length: LEVER.length + (control === 'throttle' ? 0 : control === 'propeller' ? 0.004 : 0.008),
+    // Flat-faced throttles (each paddle offset outboard of its pair), notched propeller knobs, fluted mixtures (14 CFR 23.781).
+    knob: control === 'throttle' ? ('pistonThrottle' as const) : control === 'propeller' ? ('notchedProp' as const) : ('ribbedMixture' as const),
+    tilt: LEVER.tilt,
+    knobScale: control === 'throttle' ? 0.74 : control === 'propeller' ? 0.8 : 0.85,
+    knobOffset: control === 'throttle' ? (engine === 0 ? -0.001 : 0.001) : 0,
   })),
 );
 
@@ -645,13 +661,10 @@ const COCKPIT: CockpitDef = {
     // cabin's sides start to curve in at the top).
     { min: [PANEL_X - 0.004, -0.57, PANEL_ZTOP], max: [PANEL_X + 0.03, -PANEL_W / 2, PANEL_ZB], bevel: 0.006, material: 'panelPlastic' },
     { min: [PANEL_X - 0.004, PANEL_W / 2, PANEL_ZTOP], max: [PANEL_X + 0.03, 0.57, PANEL_ZB], bevel: 0.006, material: 'panelPlastic' },
-    // The quadrant at the lower centre of the panel, reachable from both seats (s.9): throttles, propellers and
-    // mixtures left to right.
-    { min: [QUADRANT.aftX, QUADRANT.y0, QUADRANT.zTop], max: [PANEL_X + 0.01, QUADRANT.y1, PANEL_ZB + 0.1], bevel: 0.012, material: 'black' },
-    // Its lower part runs aft under the levers, which stand up out of slots in its top; the cowl flap levers below.
-    { min: [LEVER.x - 0.03, QUADRANT.y0, LEVER.z - 0.005], max: [QUADRANT.aftX + 0.01, QUADRANT.y1, PANEL_ZB + 0.1], bevel: 0.012, material: 'black' },
+    // (The quadrant at the lower centre of the panel is CockpitDef.quadrant.) Under it, the cowl flap levers' pedestal.
+    { min: [COWL.x0, -0.055, COWL.z], max: [COWL.x1, 0.055, PANEL_ZB + 0.1], bevel: 0.01, material: 'black' },
     // The pedestal down to the floor, and the floor tunnel between the front seats (s.9, s.12).
-    { min: [LEVER.x - 0.02, QUADRANT.y0 + 0.02, PANEL_ZB + 0.1], max: [PANEL_X - 0.02, QUADRANT.y1 - 0.02, FLOOR_Z], bevel: 0.012, material: 'trimPlastic' },
+    { min: [PANEL_X - 0.2, QUADRANT.y0 + 0.02, PANEL_ZB + 0.1], max: [PANEL_X - 0.02, QUADRANT.y1 - 0.02, FLOOR_Z], bevel: 0.012, material: 'trimPlastic' },
     { min: [TUNNEL.x1, -TUNNEL.hw, TUNNEL.top], max: [TUNNEL.x0, TUNNEL.hw, FLOOR_Z], bevel: 0.015, material: 'trimPlastic' },
     // The aft baggage area behind the rear seats (s.2.4), on a raised floor: the cabin's bottom rounds up toward the
     // tail cone there.
@@ -677,16 +690,53 @@ const COCKPIT: CockpitDef = {
   pedals: { x: PANEL_X + 0.24, ys: [-SEAT_Y, SEAT_Y] },
   engineControls: [
     ...QUADRANT_LEVERS,
-    // The two cowl flap levers below the quadrant (s.4, s.9): push to open.
-    { kind: 'lever', control: 'cowlFlaps', engine: 0, pos: [QUADRANT.aftX - 0.01, -0.035, PANEL_ZB + 0.075], travel: 0.6, colour: 'white', length: 0.06 },
-    { kind: 'lever', control: 'cowlFlaps', engine: 1, pos: [QUADRANT.aftX - 0.01, 0.035, PANEL_ZB + 0.075], travel: 0.6, colour: 'white', length: 0.06 },
+    // The two cowl flap levers below the quadrant (s.4, s.9), short black T-grips: push to open.
+    { kind: 'lever', control: 'cowlFlaps', engine: 0, pos: [COWL.x0 + 0.02, -0.035, COWL.z + 0.03], travel: 0.6, colour: 'black', length: 0.05, knob: 'tGrip', knobScale: 0.7 },
+    { kind: 'lever', control: 'cowlFlaps', engine: 1, pos: [COWL.x0 + 0.02, 0.035, COWL.z + 0.03], travel: 0.6, colour: 'black', length: 0.05, knob: 'tGrip', knobScale: 0.7 },
   ],
   // The hand flap lever on the tunnel between the front seats, 0 / 10 / 25 / 40 degrees (s.2.1, s.9).
   flapControl: { kind: 'floorLever', pos: [-0.12, 0, TUNNEL.top], travel: 0.75 },
   // The gear selector left of the quadrant (panel.ts draws its slot and lights there).
   gearLever: { pos: [PANEL_X, faceY(PA34_PANEL_PARTS.gearLever[0]), faceZ(PA34_PANEL_PARTS.gearLever[1])] },
-  // The pitch trim wheel on the tunnel ahead of the flap lever (s.9).
-  trimWheel: { pos: [0.12, 0, TUNNEL.top - 0.01], axis: 'y' },
+  // The pitch trim wheel on the tunnel ahead of the flap lever's grip (s.9), its rim up through a slot in the tunnel's
+  // top, the trim indicator beside it.
+  trimWheel: {
+    pos: [0.42, 0, TUNNEL.top + 0.044], axis: 'y', radius: 0.075, width: 0.022, housing: 'slot', slotNormal: [0, 0, -1],
+    indicator: { pos: [0.42, 0.045, TUNNEL.top - 0.0015], length: 0.06, up: [-1, 0, 0], normal: [0, 0, -1], labelUp: [1, 0, 0] },
+  },
+  quadrant: {
+    housings: [
+      // The housing from the panel face aft (the face's plain quadrant pixels above it show as panel), round inside
+      // the face plate, a vertical aft edge and its flat bottom just under the panel's lower edge.
+      {
+        profile: [
+          [PANEL_X + 0.006, ARC.z - ARC.r * Math.cos(ARC.from) - 0.001], [ARC.x + ARC.r * Math.sin(-ARC.from) + 0.002, ARC.z - ARC.r * Math.cos(ARC.from) - 0.001],
+          ...[-35, 0, 25, 50, 65].map((d): [number, number] => [ARC.x - (ARC.r - 0.045) * Math.sin(d * DEG), ARC.z - (ARC.r - 0.045) * Math.cos(d * DEG)]),
+          [ARC.x - ARC.r * Math.sin(ARC.to) + 0.004, ARC.z - ARC.r * Math.cos(ARC.to) + 0.003], [ARC.x - ARC.r * Math.sin(ARC.to) + 0.004, COWL.z - 0.008],
+          [PANEL_X + 0.006, COWL.z - 0.008],
+        ],
+        y0: -ARC.y + 0.003, y1: ARC.y - 0.003, bevel: 0.006, material: 'panelPlastic',
+      },
+    ],
+    arcs: [
+      {
+        centre: [ARC.x, ARC.z], r: ARC.r, thickness: 0.005, from: ARC.from, to: ARC.to, y0: -ARC.y, y1: ARC.y, material: 'trimPlastic',
+        slots: [
+          { lever: 0, w: 0.008, label: 'THROTTLE' }, { lever: 1, w: 0.008 },
+          { lever: 2, w: 0.008, label: 'PROP' }, { lever: 3, w: 0.008 },
+          { lever: 4, w: 0.008, label: 'MIXTURE' }, { lever: 5, w: 0.008 },
+        ],
+      },
+    ],
+    parts: [
+      // The friction lock on the housing's right side.
+      { kind: 'frictionKnob', pos: [ARC.x + 0.015, ARC.y + 0.004, ARC.z - 0.05], axis: [0, 1, 0], r: 0.013 },
+    ],
+    placards: [
+      { pos: [ARC.x + 0.015, ARC.y + 0.0045, ARC.z - 0.08], normal: [0, 1, 0], up: [0, 0, -1], w: 0.04, h: 0.007, lines: ['FRICTION'], ink: 'white', ground: 'black' },
+      { pos: [COWL.x0 - 0.0005, 0, COWL.z + 0.045], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.07, h: 0.014, lines: ['COWL FLAPS', 'OPEN  \u2191   CLOSE \u2193'], ink: 'white', ground: 'black' },
+    ],
+  },
   // The parking brake: the hand lever under the left-centre panel, pulled to set (s.3).
   parkingBrakeHandle: { pos: [PANEL_X + 0.005, faceY(780), PANEL_ZB + 0.06], travel: 0.05 },
   // The magnetic compass on the windscreen's centre strip, its bracket 1 cm under the glass (the cabin keys' top

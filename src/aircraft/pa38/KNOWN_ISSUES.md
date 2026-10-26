@@ -43,3 +43,9 @@ Close with: measured mass distribution, rigging, suspension and engine data; rec
 The rudder tab is only a fixed offset; the earlier Tomahawk I configuration is absent.
 Evidence: [notModelled](index.ts): the current aircraft has both flow-strip pairs and Tomahawk II wheels.
 Close with: adjustable ground rigging and a separately sourced earlier variant if supported.
+
+## Yoke horn passes through the throttle and mixture levers at full forward and full roll — **defect**
+
+With the yoke at full forward and full roll, the inboard horn passes through the throttle and mixture levers at an end of their travel. Only at simultaneous stops; the neutral view is clear.
+Evidence: [yokeQuadrantClearance test](../../../tests/render/yokeQuadrantClearance.test.ts) (marked expected-fail for this type).
+Close with: horn, lever or knob geometry that clears at every stop, then drop the type from `KNOWN_CLASH`.
