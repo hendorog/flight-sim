@@ -118,6 +118,31 @@ function measure() {
   return { fov: +cam.fov.toFixed(2), focused: glance.focused, horizon, dials, outside, outsideBottom, eye: frd(cam.getWorldPosition(new THREE.Vector3())) };
 }
 
+/** GPU time of the post pipeline's frame (scene + passes; EXT_disjoint_timer_query_webgl2), ms, over `ms` of frames. */
+async function gpuTimes(p, ms) {
+  return p.evaluate(async (ms) => {
+    const sim = window.__sim, gl = sim.ctx.renderer.getContext();
+    const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    if (!ext) return null;
+    const post = sim.post, orig = post.render, queries = [], out = [];
+    post.render = function (...a) {
+      const q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
+      try { return orig.apply(this, a); } finally { gl.endQuery(ext.TIME_ELAPSED_EXT); queries.push(q); }
+    };
+    await new Promise((done) => { const t0 = performance.now(); const tick = () => (performance.now() - t0 < ms ? requestAnimationFrame(tick) : done()); requestAnimationFrame(tick); });
+    post.render = orig;
+    for (let tries = 0; tries < 100 && queries.length; tries++) {
+      while (queries.length && gl.getQueryParameter(queries[0], gl.QUERY_RESULT_AVAILABLE)) {
+        const q = queries.shift();
+        if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) out.push(gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6);
+        gl.deleteQuery(q);
+      }
+      if (queries.length) await new Promise((r) => setTimeout(r, 20));
+    }
+    return out;
+  }, ms);
+}
+
 async function frameTimes(p, ms) {
   return p.evaluate((ms) => new Promise((res) => {
     const t = []; let last = performance.now(); const t0 = last;
@@ -156,12 +181,14 @@ try {
         await frameTimes(p, 1000);
         const t = (await frameTimes(p, perfMs)).sort((x, y) => x - y);
         r[view].frameMs = { median: +t[Math.floor(t.length / 2)].toFixed(2), p95: +t[Math.floor(t.length * 0.95)].toFixed(2), frames: t.length };
+        const g = (await gpuTimes(p, perfMs))?.sort((x, y) => x - y);
+        if (g?.length) r[view].gpuMs = { median: +g[Math.floor(g.length / 2)].toFixed(2), p90: +g[Math.floor(g.length * 0.9)].toFixed(2), n: g.length };
       }
       if (view === 'focus') { await p.keyboard.press('KeyQ'); await sleep(900); r.restored = await p.evaluate(() => ({ fov: +window.__sim.ctx.camera.fov.toFixed(3), focused: window.__sim.sim.systems.cameras.focused })); }
     }
     r.errors = errs;
     results[type] = r;
-    const brief = (v) => v && `fov ${v.fov} horizon ${v.horizon} outside ${v.outside.join('/')} bottom ${v.outsideBottom.join('/')} dials ${v.dials.map((d) => `${d.id}:${d.px}`).join(' ')}${v.frameMs ? ` frame ${v.frameMs.median}/${v.frameMs.p95} ms` : ''}`;
+    const brief = (v) => v && `fov ${v.fov} horizon ${v.horizon} outside ${v.outside.join('/')} bottom ${v.outsideBottom.join('/')} dials ${v.dials.map((d) => `${d.id}:${d.px}`).join(' ')}${v.frameMs ? ` frame ${v.frameMs.median}/${v.frameMs.p95} ms` : ''}${v.gpuMs ? ` gpu ${v.gpuMs.median}/${v.gpuMs.p90} ms (${v.gpuMs.n})` : ''}`;
     console.log(`${type} [${r.renderer.slice(0, 40)}] pr ${r.pixelRatio} aniso ${r.anisotropy.join('/')}`);
     for (const v of views) console.log(`  ${v}: ${brief(r[v])}`);
     if (errs.length) console.log('  errors:', errs.slice(0, 3));

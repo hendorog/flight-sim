@@ -881,6 +881,19 @@ export class PauseMenu {
       );
       el('p', 'sub', p, 'Lower it for more frames per second on a weaker GPU; the menus and HUD stay sharp.');
     }
+    if (ctx().commands.setCockpitSharpness) {
+      el('h3', '', p, '3D cockpit sharpness');
+      const sharp = el('div', 'chips', p);
+      for (const [v, label] of [['auto', 'Auto'], [1, 'Standard'], [1.25, '1.25x'], [1.5, '1.5x']] as const) {
+        const b = el('button', '', sharp, label);
+        b.addEventListener('click', () => { ctx().commands.setCockpitSharpness?.(v); this.refresh(); });
+        this.refreshers.push(() => b.classList.toggle('sel', (ctx().cockpitSharpness ?? 'auto') === v));
+      }
+      const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+      el('p', 'sub', p, `On a high-resolution screen (this one: ${Number(dpr.toFixed(2))}x) the 3D cockpit can render finer than the page's pixels, `
+        + 'so the dial markings stay crisp. High and Ultra only, never above the screen\'s own resolution; external views are unchanged. '
+        + 'Auto: 1.25x on High. 1.5x costs about twice the GPU time of Standard.');
+    }
     el('h3', '', p, 'Camera');
     const cams = el('div', 'chips', p);
     for (const cam of CAMERAS) {

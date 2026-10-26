@@ -113,6 +113,11 @@ export interface SimCommands {
    * ctx.moonScale; applies live. Optional: older mocks do not implement it.
    */
   setMoonScale?(scale: number): void;
+  /**
+   * 3D cockpit render resolution on a HiDPI screen (src/sim/displayPrefs.ts): 'auto', 1, 1.25 or 1.5 x CSS pixels;
+   * stores 'fs.cockpitSharpness', sets ctx.cockpitSharpness and applies live. Optional: older mocks do not implement it.
+   */
+  setCockpitSharpness?(v: 'auto' | 1 | 1.25 | 1.5): void;
 }
 
 export interface SimEvents {
@@ -210,6 +215,8 @@ export interface SimContext {
    * toward the horizon, src/render/sky/moon.ts). Absent on test fakes and dev pages: DEFAULT_MOON_SCALE (4).
    */
   moonScale?: number;
+  /** The 3D cockpit's resolution setting (SimCommands.setCockpitSharpness). Absent on test fakes: 'auto'. */
+  cockpitSharpness?: 'auto' | 1 | 1.25 | 1.5;
   /** Live weather effects state the overlays publish for other modules (audio, UI). Absent on test fakes and older stubs. */
   weatherFx?: WeatherFx;
 }

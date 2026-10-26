@@ -64,6 +64,7 @@ import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './e
 import { restoreWeather } from './weatherPresets';
 import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
+import { cockpitDprCap, loadCockpitSharpness, saveCockpitSharpness, sanitizeCockpitSharpness } from './displayPrefs';
 import { era, isPresent, setEra } from '../world/era/eraState';
 import { createEraEffects } from '../render/post/eraEffects';
 import { createWeatherEffects, createWeatherOverlays } from '../render/weather';
@@ -105,7 +106,8 @@ import { validateTrainingBlock } from '../training/career/validate';
 /**
  * Device-pixel-ratio cap per quality level. The 3D view renders at CSS-pixel resolution on every quality
  * (a HiDPI buffer is 2.25-4x the pixels, 27-73 ms of GPU at 2560x1440@2 on a desktop GPU); the DOM UI
- * stays sharp at the native ratio. dpr= raises the cap, scale= lowers the render scale.
+ * stays sharp at the native ratio. dpr= raises the cap, scale= lowers the render scale. The 3D cockpit view alone may
+ * render finer on high and ultra (the menu's 3D cockpit sharpness, src/sim/displayPrefs.ts).
  */
 const DPR_CAP: Record<QualityLevel, number> = { low: 1, medium: 1, high: 1, ultra: 1 };
 /** Render scale when neither scale= nor the menu slider set one. */
@@ -196,6 +198,8 @@ export class Simulator {
   private fixedCamera: { pos: THREE.Vector3; look: THREE.Vector3 | null } | null = null;
   private rafId = 0;
   private lastDpr = 1;
+  /** applySize() last ran for the 3D cockpit view (its sharpness setting). */
+  private lastCockpit3d = false;
   /** Simulation held (dt = 0) behind a curtain, without a pause event. */
   private holding = false;
   /** Simulation held while a Flight School screen (home, briefing, debrief...) is open. */
@@ -359,6 +363,13 @@ export class Simulator {
         this.ctx.carbIcing = on;
         this.physics.carbIcing = on;
       },
+      setCockpitSharpness: (v) => {
+        const s = sanitizeCockpitSharpness(v);
+        if (s === null) return;
+        saveCockpitSharpness(this.store, s);
+        this.ctx.cockpitSharpness = s;
+        this.applySize();
+      },
       setMoonScale: (scale) => {
         const v = sanitizeMoonScale(scale);
         if (v === null) return;
@@ -400,6 +411,7 @@ export class Simulator {
       carbIcing,
       era: era().id,
       moonScale: chooseMoonScale(p, this.store),
+      cockpitSharpness: loadCockpitSharpness(this.store),
       weatherFx: { flash: { x: 0, y: 0, z: 0, energy: 0 }, damage: physics.hailDamage.state },
     };
     this.ctx = ctx;
@@ -1070,9 +1082,17 @@ export class Simulator {
     };
   }
 
+  /** The 3D cockpit view is on screen (not an external camera, not the fixed panel): its sharpness setting applies. */
+  private cockpit3d(): boolean {
+    return this.ctx.cameraMode === 'cockpit' && !isFixedPanel(this.ctx) && !this.fixedCamera;
+  }
+
   private applySize(): void {
     const { renderer, camera, quality } = this.ctx;
-    const cap = this.params.dprCap ?? DPR_CAP[quality];
+    // The 3D cockpit may render above CSS resolution (src/sim/displayPrefs.ts); dpr= in the URL overrides everything.
+    this.lastCockpit3d = this.cockpit3d();
+    const cockpitCap = this.lastCockpit3d ? cockpitDprCap(this.ctx.cockpitSharpness ?? 'auto', quality) : 1;
+    const cap = this.params.dprCap ?? Math.max(DPR_CAP[quality], cockpitCap);
     const scale = this.params.renderScale ?? DEFAULT_RENDER_SCALE[quality];
     this.ctx.renderScale = scale;
     const ratio = Math.min(window.devicePixelRatio || 1, cap) * scale;
@@ -1090,6 +1110,12 @@ export class Simulator {
    */
   private checkPixelRatio(): void {
     const dpr = window.devicePixelRatio || 1;
+    // Into or out of the 3D cockpit view (any path: camera keys, menu, fixed panel, a lesson): its own resolution.
+    // The view change cuts the camera and the temporal history anyway, so the render-target reallocation is not seen.
+    if (this.cockpit3d() !== this.lastCockpit3d && dpr === this.lastDpr) {
+      this.applySize();
+      return;
+    }
     if (dpr === this.lastDpr) return;
     this.lastDpr = dpr;
     this.applySize();
