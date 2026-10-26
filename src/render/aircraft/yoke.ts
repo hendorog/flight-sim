@@ -166,34 +166,38 @@ const CESSNA_SINGLE: YokeStyle = {
 };
 
 /**
- * Cessna 152: grey moulded wheel, unlike the 172S's. Round ~3 cm tube horns leave the upper corners of a wide
- * trapezoid shell hub (wider at the top) and rise ~14 cm, nearly upright; their tops curve aft toward the pilot into
- * rounded knobs (a small PTT button on the left one); a cream "Cessna" script plate on the hub; dark column.
+ * Cessna 152 (owner's photo of a removed wheel, scaled to a 31 cm span): a deep rounded-box hub (~16.5 cm wide,
+ * ~8 cm tall, a little narrower at the bottom) with a raised face panel and an elongated chrome "Cessna" badge low
+ * on it; flattened ~2.8 cm bars leave the lower sides of the hub, turn up at a rounded elbow into nearly upright
+ * grips (~11 cm, a little fuller near the top), and the top of each grip hooks inward into a flat knob; black.
  */
 const CESSNA_152: YokeStyle = {
-  colour: [84, 84, 83],
-  hang: 0.045,
+  colour: [38, 38, 40],
+  hang: 0.05,
   horn: {
-    points: [[0, 0.0, 0], [0.05, 0.0, 0], [0.095, 0.006, 0], [0.125, 0.03, 0], [0.137, 0.07, 0], [0.141, 0.112, 0.004], [0.141, 0.138, 0.02], [0.138, 0.146, 0.04]],
+    points: [[0.06, -0.031, 0], [0.1, -0.031, 0], [0.126, -0.035, 0], [0.139, -0.024, 0], [0.142, 0.005, 0], [0.143, 0.048, 0.002], [0.142, 0.07, 0.004], [0.135, 0.081, 0.008], [0.124, 0.084, 0.01]],
     keys: [
-      { t: 0, w: 0.032, dF: 0.017, dB: 0.017, n: 2.2 },
-      { t: 0.45, w: 0.032, dF: 0.017, dB: 0.017, n: 2.2 },
-      { t: 0.75, w: 0.036, dF: 0.02, dB: 0.019, n: 2.2 },
-      { t: 1, w: 0.037, dF: 0.02, dB: 0.02, n: 2 },
+      { t: 0, w: 0.028, dF: 0.015, dB: 0.015, n: 3 },
+      { t: 0.25, w: 0.028, dF: 0.015, dB: 0.015, n: 3 },
+      { t: 0.4, w: 0.028, dF: 0.015, dB: 0.015, n: 2.6 },
+      { t: 0.78, w: 0.032, dF: 0.017, dB: 0.017, n: 2.6 },
+      { t: 0.9, w: 0.024, dF: 0.017, dB: 0.017, n: 2.8 },
+      { t: 1, w: 0.02, dF: 0.015, dB: 0.015, n: 2.8 },
     ],
-    tip: 0.014,
-    ridges: { t0: 0.48, t1: 0.8, count: 3, amp: 0.08 },
-    rings: 32,
+    tip: 0.008,
+    ridges: { t0: 0.45, t1: 0.75, count: 3, amp: 0.06 },
+    rings: 36,
     segments: 16,
   },
-  hub: { y: -0.02, wBottom: 0.1, wTop: 0.135, h: 0.084, r: 0.024, z: 0.04, depth: 0.07, bevel: 0.009, colour: [84, 84, 83] },
+  hub: { y: -0.02, wBottom: 0.15, wTop: 0.165, h: 0.08, r: 0.022, z: 0.035, depth: 0.065, bevel: 0.01, colour: [38, 38, 40] },
   plates: [
-    { y: -0.01, wBottom: 0.056, wTop: 0.06, h: 0.026, r: 0.005, z: 0.0445, depth: 0.003, bevel: 0.0012, colour: CHROME_RIM },
-    { y: -0.01, wBottom: 0.05, wTop: 0.054, h: 0.02, r: 0.004, z: 0.0465, depth: 0.003, bevel: 0.0008, colour: CREAM },
+    { y: -0.026, wBottom: 0.128, wTop: 0.138, h: 0.058, r: 0.016, z: 0.039, depth: 0.008, bevel: 0.002, colour: [44, 44, 46] },
+    { y: -0.03, wBottom: 0.07, wTop: 0.07, h: 0.022, r: 0.008, z: 0.0415, depth: 0.004, bevel: 0.0012, colour: CHROME_RIM },
+    { y: -0.03, wBottom: 0.062, wTop: 0.062, h: 0.016, r: 0.006, z: 0.0435, depth: 0.004, bevel: 0.0008, colour: [196, 150, 140] },
   ],
-  fittings: [{ shape: 'button', at: 1, offset: [0, 0.0015, 0], size: [0.01, 0.004, 0.01], colour: LIGHT_GREY }],
+  fittings: [{ shape: 'button', at: 0.97, offset: [0, 0, 0.004], size: [0.009, 0.004, 0.009], rot: [Math.PI / 2, 0, 0], colour: LIGHT_GREY }],
   copilotFittings: false,
-  column: { section: 'round', r: 0.012, metal: 'black', collar: { r: 0.019, len: 0.03, colour: [84, 84, 83] } },
+  column: { section: 'round', r: 0.012, metal: 'black', collar: { r: 0.019, len: 0.03, colour: [38, 38, 40] } },
   boot: { kind: 'round', w: 0.026, h: 0.026, depth: 0.018 },
 };
 
@@ -240,21 +244,21 @@ const PIPER_SENECA: YokeStyle = {
 /**
  * Piper PA-38 Tomahawk (owner's photo of a removed wheel, scaled against its ~3 cm grips): a wide, low moulded hub,
  * ~21 cm across its flat bottom, its top sloping from the column boss to rounded points at the ends, with a raised
- * centre panel; from each end a short bare steel tube (~1.2 cm) bends up into a separate fat rubber grip (~4 cm,
- * ~10 cm tall, finger grooves on the forward face, leaning slightly out), 30 cm outside to outside; a button on the
- * top of the left grip; black throughout. No trim switch: the Tomahawk's pitch trim is the overhead crank.
+ * centre panel; from each end a short bare steel tube (~1.2 cm) bends up into a separate rubber grip (~10 cm tall,
+ * ~3 cm at the bottom swelling to ~4 cm at the top, finger grooves on the forward face, leaning slightly in), ~29 cm
+ * outside to outside; the red radio transmit button on the top of the left grip; black throughout. No trim switch: the Tomahawk's pitch trim is the overhead crank.
  */
 const PIPER_TOMAHAWK: YokeStyle = {
   colour: BLACK,
   hang: 0.03,
   horn: {
-    points: [[0.085, -0.03, 0], [0.104, -0.03, 0], [0.116, -0.025, 0], [0.123, -0.014, 0], [0.125, 0.0, 0], [0.127, 0.032, 0], [0.129, 0.067, 0.002], [0.131, 0.094, 0.004]],
+    points: [[0.085, -0.03, 0], [0.104, -0.03, 0], [0.116, -0.025, 0], [0.123, -0.014, 0], [0.125, 0.0, 0], [0.123, 0.032, 0], [0.12, 0.067, 0.002], [0.117, 0.094, 0.004]],
     keys: [
       { t: 0, w: 0.012, dF: 0.006, dB: 0.006, n: 2 },
       { t: 0.3, w: 0.012, dF: 0.006, dB: 0.006, n: 2 },
-      { t: 0.34, w: 0.04, dF: 0.019, dB: 0.019, n: 2.4 },
-      { t: 0.42, w: 0.037, dF: 0.017, dB: 0.018, n: 2.4 },
-      { t: 0.82, w: 0.041, dF: 0.019, dB: 0.019, n: 2.6 },
+      { t: 0.34, w: 0.03, dF: 0.0145, dB: 0.0145, n: 2.4 },
+      { t: 0.42, w: 0.029, dF: 0.014, dB: 0.014, n: 2.4 },
+      { t: 0.85, w: 0.04, dF: 0.019, dB: 0.019, n: 2.6 },
       { t: 1, w: 0.039, dF: 0.018, dB: 0.018, n: 2.6 },
     ],
     tip: 0.012,
@@ -265,7 +269,7 @@ const PIPER_TOMAHAWK: YokeStyle = {
   },
   hub: { y: -0.006, wBottom: 0.21, wTop: 0.05, h: 0.058, r: 0.012, z: 0.03, depth: 0.05, bevel: 0.01, colour: BLACK },
   plates: [{ y: -0.008, wBottom: 0.075, wTop: 0.045, h: 0.044, r: 0.006, z: 0.035, depth: 0.008, bevel: 0.0015, colour: [34, 34, 36] }],
-  fittings: [{ shape: 'button', at: 1, offset: [0, 0.0015, 0], size: [0.012, 0.004, 0.012], colour: SATIN_BLACK }],
+  fittings: [{ shape: 'button', at: 1, offset: [0, 0.0015, 0], size: [0.01, 0.004, 0.01], colour: RED }],
   copilotFittings: false,
   column: { section: 'round', r: 0.013, metal: 'black', collar: { r: 0.018, len: 0.03, colour: BLACK } },
   boot: { kind: 'round', w: 0.026, h: 0.026, depth: 0.018 },
