@@ -178,7 +178,8 @@ function fits(flyby: FlybyRig, tower: TowerRig): number[] {
 
 /** A camera system on a page that is not there: the listeners go nowhere and the wall clock is the test's. */
 function bootCameras(): { cameras: CameraSystem; ctx: SimContext; frame: (i: number, dt?: number) => void } {
-  const nowhere = { clientWidth: 1366, clientHeight: 768, addEventListener: () => {}, removeEventListener: () => {} };
+  const nowhere = { clientWidth: 1366, clientHeight: 768, addEventListener: () => {}, removeEventListener: () => {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 1366, height: 768 }) };
   vi.stubGlobal('window', nowhere);
   vi.stubGlobal('document', { pointerLockElement: null, exitPointerLock: () => {} });
   let wall = 1000;
@@ -419,12 +420,13 @@ describe('instrument focus (Q)', () => {
     expect(inner(rig).fov).toBeCloseTo(46, 3);
     rig.toggleFocus();
     expect(rig.focused).toBe(false);
-    expect(inner(rig).targetYaw).toBe(before.targetYaw);
-    expect(inner(rig).targetPitch).toBe(before.targetPitch);
-    expect(inner(rig).targetFov).toBe(before.targetFov);
+    // Back to the view that was on screen.
+    expect(inner(rig).targetYaw).toBe(before.yaw);
+    expect(inner(rig).targetPitch).toBe(before.pitch);
+    expect(inner(rig).targetFov).toBe(before.fov);
     settle(rig, 1.5);
-    expect(inner(rig).pitch).toBeCloseTo(before.targetPitch, 6);
-    expect(inner(rig).fov).toBeCloseTo(before.targetFov, 5);
+    expect(inner(rig).pitch).toBeCloseTo(before.pitch, 6);
+    expect(inner(rig).fov).toBeCloseTo(before.fov, 5);
   });
 
   it('looks around and zooms relative to the focus view, and a recentre ends it', () => {
@@ -439,6 +441,53 @@ describe('instrument focus (Q)', () => {
     expect(rig.focused).toBe(false);
     expect(inner(rig).targetPitch).toBeCloseTo(C172S_CAMERA.defaultPitchDeg * DEG, 9);
     expect(inner(rig).targetFov).toBe(60);
+  });
+
+  it('Q Q returns to the view on screen when Q was pressed, even with a look and a zoom still settling, and after looking and zooming while focused', () => {
+    const rig = new CockpitRig();
+    rig.setAircraft({ ...C172S_CAMERA, focus: FOCUS });
+    settle(rig, 1);
+    // A drag and a zoom, and Q two frames later (the view still on its way to them).
+    rig.look(-150, 60); rig.zoomAt(4, 0.4, -0.2, 1920 / 991);
+    settle(rig, 2 / 60);
+    const seen = { yaw: inner(rig).yaw, pitch: inner(rig).pitch, fov: inner(rig).fov };
+    expect(Math.abs(inner(rig).targetFov - seen.fov)).toBeGreaterThan(1);
+    rig.toggleFocus();
+    settle(rig, 0.6);
+    rig.look(80, -30); rig.zoom(3); rig.zoomAt(-2, -0.5, 0.5, 1920 / 991);
+    settle(rig, 0.2);
+    rig.toggleFocus();
+    expect(rig.focused).toBe(false);
+    settle(rig, 2);
+    expect(inner(rig).yaw).toBeCloseTo(seen.yaw, 6);
+    expect(inner(rig).pitch).toBeCloseTo(seen.pitch, 6);
+    expect(inner(rig).fov).toBeCloseTo(seen.fov, 4);
+  });
+
+  it('drops the rest of a wheel gesture under way at Q (touchpad kinetic scrolling), not a later one', () => {
+    const { cameras, ctx, frame } = bootCameras();
+    cameras.setAircraft({ focus: FOCUS });
+    const wheel = (deltaY: number): void => (cameras as unknown as { onWheel(e: unknown): void }).onWheel({ deltaY, clientX: 900, clientY: 400, preventDefault() {} });
+    let i = 0;
+    for (; i < 60; i++) frame(i);
+    // A zoom-out fling: a wheel event every frame, Q, and Q again, while it is still coming.
+    for (; i < 66; i++) { wheel(4); frame(i); }
+    cameras.toggleFocus();
+    for (; i < 76; i++) { wheel(4); frame(i); }
+    cameras.toggleFocus();
+    for (; i < 90; i++) { wheel(4); frame(i); }
+    for (; i < 240; i++) frame(i);
+    const rig = (cameras as unknown as { cockpit: Inner & { focused: boolean } }).cockpit;
+    const back = { fov: rig.fov, yaw: rig.yaw };
+    expect(rig.targetFov).toBeCloseTo(back.fov, 4);
+    // The fling's remainder did not move the view: it is where it was when Q was first pressed (zoomed out a little).
+    expect(rig.fov).toBeGreaterThan(60);
+    expect(rig.fov).toBeLessThan(80);
+    // A new gesture after a pause zooms again.
+    wheel(-4); frame(i++);
+    expect(rig.targetFov).toBeLessThan(back.fov - 1);
+    void ctx;
+    cameras.dispose();
   });
 
   it('does nothing on a type without a focus view', () => {

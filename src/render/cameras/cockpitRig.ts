@@ -221,14 +221,15 @@ export class CockpitRig implements CameraRig {
     }
     const f = this.focusView;
     if (!f) return;
-    // During a Flight School glance the pilot's own view is the one the glance saved.
-    const own = this.saved ?? { yaw: this.targetYaw, pitch: this.targetPitch };
+    // The view on screen now, not where a look or zoom still settling was heading: Q Q returns to what was seen. During
+    // a Flight School glance the pilot's own view is the one the glance saved.
+    const own = this.saved ?? { yaw: this.yaw, pitch: this.pitch };
     if (this.saved) {
       this.saved = null;
       glanceTarget = null;
       this.seenGlance = ++glanceSeq;
     }
-    this.focusSaved = { yaw: own.yaw, pitch: own.pitch, fov: this.targetFov };
+    this.focusSaved = { yaw: own.yaw, pitch: own.pitch, fov: this.fov };
     this.targetYaw = f.yaw;
     this.targetPitch = f.pitch;
     this.targetFov = f.fov;

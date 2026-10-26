@@ -33,6 +33,13 @@ export interface CameraSystemOptions {
 /** Terrain clearance kept below the sight line from an external camera to the aircraft, m. */
 const SIGHT_CLEARANCE = 1.5;
 
+/**
+ * A wheel event within this long of the previous one belongs to the same scroll gesture, ms. A touchpad's two-finger
+ * scroll goes on sending wheel events for up to a second after the fingers lift (kinetic scrolling); the rest of a
+ * gesture under way when the focus key is pressed is dropped, so it cannot zoom or turn the view it leaves or returns to.
+ */
+const WHEEL_GESTURE_GAP_MS = 250;
+
 /** Duration of the eased blend between camera modes, s. */
 const TRANSITION_TIME = 0.9;
 
@@ -71,6 +78,9 @@ export class CameraSystem implements Subsystem, ViewControl {
   /** When it returns true, a left-button drag is left to something else (the mouse yoke) instead of looking. */
   suppressLeftDrag: (() => boolean) | null = null;
   private dragging = false;
+  /** Wall time of the last wheel event, ms, and whether the gesture it belongs to is being dropped (focus key). */
+  private lastWheel = -Infinity;
+  private dropWheelGesture = false;
   /** A left button is down and may become a look-drag once the pointer has moved a few pixels. */
   private leftPending = false;
   private leftOrigin = { x: 0, y: 0 };
@@ -170,6 +180,7 @@ export class CameraSystem implements Subsystem, ViewControl {
   toggleFocus(): void {
     if (!this.ctx || isFixedPanel(this.ctx) || this.getMode() !== 'cockpit') return;
     this.cockpit.toggleFocus();
+    this.dropWheelGesture = true;
   }
 
   /** The instrument focus view is on (or blending in). */
@@ -223,6 +234,13 @@ export class CameraSystem implements Subsystem, ViewControl {
 
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    const now = performance.now();
+    const sameGesture = now - this.lastWheel < WHEEL_GESTURE_GAP_MS;
+    this.lastWheel = now;
+    if (this.dropWheelGesture) {
+      if (sameGesture) return;
+      this.dropWheelGesture = false;
+    }
     if (this.ctx && isFixedPanel(this.ctx)) return;
     if (e.deltaY === 0) return;
     const steps = e.deltaY < 0 ? 1 : -1;

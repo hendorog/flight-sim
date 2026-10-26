@@ -9,7 +9,8 @@
 // held 1 s at LOW IDLE), and that Shift+F2 does nothing on the Cessna 172S. Then the Bo 105 on the runway (engines
 // running): the engine-select keys move the chosen overhead power lever between its stops (9 F1 IDLE, Shift+F1 OFF on
 // the ground, F4 FLIGHT; 0 both), ENGINE TRIM left/right on Shift+, / Shift+. and fore/aft on ; / ' (held), and
-// that Shift+, stays the Cessna's left toe brake. Q is the instrument focus view (C172S and Bo 105; the fixed panel ends it)
+// that Shift+, stays the Cessna's left toe brake. Q is the instrument focus view (C172S and Bo 105; the fixed panel ends it;
+// move + zoom, Q, look + zoom, Q comes back to exactly the view at the first Q, with a wheel fling running across both)
 // and E is no longer a rudder key. Prints and writes keycheck.json; exits 1 if a check of the Caravan's
 // gate or condition lever, or of the Bo 105's levers and ENGINE TRIM, fails.
 import { createServer } from 'vite';
@@ -111,6 +112,37 @@ try {
   check('C172S: Q is the instrument focus (narrower view), not the rudder', focus.on.focused && focus.on.fov < focus.before.fov - 5 && focus.on.r === focus.before.r, focus);
   check('C172S: Q again returns to the same zoom', !focus.off.focused && Math.abs(focus.off.fov - focus.before.fov) < 0.05, focus);
   check('C172S: E does nothing', focus.e.r === focus.before.r && focus.e.fov === focus.off.fov, focus);
+
+  // Move + zoom -> Q -> look and zoom while focused -> Q: back to exactly the view on screen at the first Q (yaw, pitch,
+  // FOV, eye). A right-drag, Shift+arrow, = and a touchpad-style wheel fling that is still coming at both Q presses.
+  const pose = () => p.evaluate(() => { const r = __sim.sim.systems.cameras.cockpit; const c = __sim.ctx.camera; const a = __sim.ctx.aircraftRoot;
+    const q = a.quaternion.clone().invert().multiply(c.quaternion); const e = c.position.clone().sub(a.position).applyQuaternion(a.quaternion.clone().invert());
+    return { yaw: r.yaw, pitch: r.pitch, fov: r.fov, q: q.toArray(), eye: e.toArray(), focused: r.focused }; });
+  const fling = (n, dy) => p.evaluate(([n, dy]) => new Promise((done) => { const el = __sim.ctx.renderer.domElement; let k = 0;
+    const t = setInterval(() => { el.dispatchEvent(new WheelEvent('wheel', { deltaY: dy, clientX: 900, clientY: 300, bubbles: true, cancelable: true })); if (++k >= n) { clearInterval(t); done(); } }, 16); }), [n, dy]);
+  await p.mouse.move(640, 300); await p.mouse.down({ button: 'right' });
+  for (let i = 0; i < 15; i++) { await p.mouse.move(640 - i * 8, 300 + i * 3); await sleep(16); }
+  await p.mouse.up({ button: 'right' });
+  await p.keyboard.down('Shift'); await hold('ArrowLeft', 250); await p.keyboard.up('Shift');
+  await hold('Equal', 60); await sleep(800);
+  // The view on screen at the moment the first Q takes effect (the fling is still turning and zooming it).
+  await p.evaluate(() => { const cams = __sim.sim.systems.cameras; const orig = cams.toggleFocus.bind(cams);
+    cams.toggleFocus = () => { if (!window.__qqAt) { const r = cams.cockpit, c = __sim.ctx.camera, a = __sim.ctx.aircraftRoot;
+      window.__qqAt = { yaw: r.yaw, pitch: r.pitch, fov: r.fov, q: a.quaternion.clone().invert().multiply(c.quaternion).toArray(),
+        eye: c.position.clone().sub(a.position).applyQuaternion(a.quaternion.clone().invert()).toArray(), focused: false }; } orig(); }; });
+  const flingA = fling(20, 3); await sleep(120);
+  await hold('KeyQ', 60); await flingA; await sleep(700);
+  const qqBefore = await p.evaluate(() => window.__qqAt);
+  await p.mouse.move(640, 300); await p.mouse.down({ button: 'right' });
+  for (let i = 0; i < 10; i++) { await p.mouse.move(640 + i * 8, 300 - i * 3); await sleep(16); }
+  await p.mouse.up({ button: 'right' });
+  await hold('Minus', 60); await sleep(300);
+  const flingB = fling(20, -3); await sleep(120);
+  await hold('KeyQ', 60); await flingB; await sleep(1200);
+  const qqAfter = await pose();
+  const qqDiff = Math.max(Math.abs(qqAfter.yaw - qqBefore.yaw), Math.abs(qqAfter.pitch - qqBefore.pitch), ...qqAfter.q.map((v, i) => Math.abs(v - qqBefore.q[i])), ...qqAfter.eye.map((v, i) => Math.abs(v - qqBefore.eye[i])));
+  res.c172FocusMoved = { before: qqBefore, after: qqAfter, maxDiff: qqDiff };
+  check('C172S: move + zoom, Q, look + zoom, Q returns to the same view', !qqAfter.focused && qqDiff < 2e-3 && Math.abs(qqAfter.fov - qqBefore.fov) < 0.05, res.c172FocusMoved);
 
   // The Caravan on the runway, engine running.
   const q = await ctx.newPage();
