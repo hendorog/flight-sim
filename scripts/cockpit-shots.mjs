@@ -49,12 +49,12 @@ function pose([view]) {
     ctx.aircraftRoot.traverse((o) => { if (o.isMesh && /^(yoke|stick):/.test(o.name) && !target) target = o; });
     const inv = new THREE.Matrix4().copy(ctx.aircraftRoot.matrixWorld).invert();
     // A yoke: its hub (the group origin) and a little above; a stick: the middle of its bounds.
-    const c = (/^yoke/.test(target.name) ? target.parent.localToWorld(new THREE.Vector3(0, -0.02, 0)) : new THREE.Box3().setFromObject(target.parent).getCenter(new THREE.Vector3())).applyMatrix4(inv);
+    const c = (/^yoke/.test(target.name) ? target.parent.localToWorld(new THREE.Vector3(0, 0.04, 0)) : new THREE.Box3().setFromObject(target.parent).getCenter(new THREE.Vector3())).applyMatrix4(inv);
     const eye = ctx.camera.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
     const d = c.sub(eye);
     yaw = Math.atan2(-d.x, -d.z);
     pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
-    fov = 28;
+    fov = 40;
   }
   rig.yaw = rig.targetYaw = yaw;
   rig.pitch = rig.targetPitch = pitch;

@@ -77,8 +77,10 @@ export interface YokeStyle {
   /** Body plastic. */
   colour: Rgb;
   /**
-   * How far the wheel (bar, horns, hub, fittings) sits below the column axis, m: the column enters the hub near its
-   * top and the wheel hangs from it, the horn tops about level with the hub top (every reference frame shows this).
+   * How far the wheel (bar, horns, hub, fittings) is raised on the column axis, m. The sim's columns leave the panel
+   * ~4-6 cm lower than in the reference frames (the panel layouts keep the boots below the engine gauges), so the
+   * wheels sit that much high on their columns: from the pilot eye the horn tops then reach the lower edge of the
+   * main instruments, as in the references. The column still enters the hub, and the wheel turns about it.
    */
   hang: number;
   /** The right half of the lower bar and the right horn. */
@@ -90,8 +92,10 @@ export interface YokeStyle {
   blocks?: readonly { c: V3; size: V3; r: number; colour: Rgb }[];
   /** On the outboard horn. */
   fittings: readonly Fitting[];
-  /** The copilot's yoke has the fittings too (otherwise only the pilot's). */
+  /** The copilot's yoke has the fittings too (otherwise only the pilot's, and the copilot's has `copilot`). */
   copilotFittings: boolean;
+  /** The copilot's own fittings when it does not have the pilot's (on its outboard horn). */
+  copilot?: readonly Fitting[];
   column: { section: 'round' | 'square'; r: number; metal: 'chrome' | 'satin' | 'black'; collar: { r: number; len: number; colour: Rgb } };
   /** Where the column enters the panel: a round boot, a square escutcheon plate, or a large shroud (half-sizes, m). */
   boot: { kind: 'round' | 'square' | 'shroud'; w: number; h: number; depth: number };
@@ -115,74 +119,79 @@ function trimRocker(at: number, offset: V3, rot: V3 = [0, 0, 0]): Fitting[] {
   ];
 }
 
+/** The push-to-talk button on the outboard face of a 172 horn (the copilot's yoke has only this). */
+const PTT_172: Fitting = { shape: 'button', at: 0.72, offset: [0.022, 0, 0.012], size: [0.009, 0.004, 0.009], rot: [0, 0, -Math.PI / 2], colour: SATIN_BLACK };
+
 /**
  * Cessna 172S: a flat-topped U of black textured plastic. Near-vertical horns ~3.5 cm wide by ~4.5 cm deep and
- * ~11.5 cm above a 3 x 3.5 cm bar, 33 cm outside to outside, with a slight outward cant and finger ridges; a wide
+ * ~16 cm above a 3 x 3.5 cm bar (the grips stand ~9 cm above the hub top, as the reference frames show), 33 cm
+ * outside to outside, with a slight outward cant and finger ridges; a wide
  * rectangular hub (9 x 7 cm, 2 cm proud) with a flat-black badge plate (SKYHAWK SP); a trim/AP-disconnect pod on
- * the pilot's left horn (split DN/UP rocker, red AP DISC button); a satin steel 1 in column with a black collar.
+ * the pilot's left horn (split DN/UP rocker, red AP DISC button), PTT on both yokes; a satin black 1 in column.
  */
 const CESSNA_SINGLE: YokeStyle = {
   colour: BLACK,
-  hang: 0,
+  hang: 0.04,
   horn: {
-    points: [[0, -0.042, 0], [0.06, -0.042, 0], [0.105, -0.039, 0], [0.13, -0.022, 0], [0.142, 0.008, 0], [0.147, 0.048, -0.002], [0.15, 0.076, -0.004], [0.151, 0.084, -0.002]],
+    points: [[0, -0.04, 0], [0.07, -0.04, 0], [0.112, -0.036, 0], [0.134, -0.016, 0], [0.142, 0.02, 0.002], [0.145, 0.07, 0.006], [0.147, 0.112, 0.011], [0.148, 0.126, 0.013]],
     keys: [
-      { t: 0, w: 0.03, dF: 0.019, dB: 0.019, n: 3 },
-      { t: 0.32, w: 0.03, dF: 0.019, dB: 0.019, n: 3 },
-      { t: 0.5, w: 0.036, dF: 0.023, dB: 0.022, n: 3.4 },
-      { t: 0.85, w: 0.038, dF: 0.026, dB: 0.024, n: 3.6 },
-      { t: 1, w: 0.036, dF: 0.025, dB: 0.023, n: 4 },
+      { t: 0, w: 0.032, dF: 0.02, dB: 0.02, n: 3 },
+      { t: 0.28, w: 0.034, dF: 0.021, dB: 0.021, n: 3 },
+      { t: 0.45, w: 0.04, dF: 0.025, dB: 0.024, n: 3.4 },
+      { t: 0.85, w: 0.042, dF: 0.028, dB: 0.025, n: 3.6 },
+      { t: 1, w: 0.04, dF: 0.027, dB: 0.024, n: 4 },
     ],
-    tip: 0.008,
-    ridges: { t0: 0.5, t1: 0.9, count: 4, amp: 0.12 },
+    tip: 0.01,
+    ridges: { t0: 0.5, t1: 0.88, count: 4, amp: 0.12 },
     rings: 32,
     segments: 16,
   },
-  hub: { y: -0.01, wBottom: 0.1, wTop: 0.094, h: 0.07, r: 0.012, z: 0.03, depth: 0.05, bevel: 0.005, colour: BLACK },
+  hub: { y: -0.012, wBottom: 0.112, wTop: 0.106, h: 0.094, r: 0.012, z: 0.03, depth: 0.05, bevel: 0.005, colour: BLACK },
   plates: [
-    { y: -0.012, wBottom: 0.078, wTop: 0.072, h: 0.05, r: 0.008, z: 0.0325, depth: 0.003, bevel: 0.001, colour: [14, 14, 15] },
+    { y: -0.008, wBottom: 0.09, wTop: 0.084, h: 0.06, r: 0.008, z: 0.0325, depth: 0.003, bevel: 0.001, colour: [14, 14, 15] },
     { y: -0.024, wBottom: 0.034, wTop: 0.034, h: 0.02, r: 0.01, z: 0.0345, depth: 0.002, bevel: 0.0005, colour: CHROME_RIM },
   ],
   fittings: [
     { shape: 'box', at: 0.9, offset: [0, 0.002, 0], size: [0.042, 0.034, 0.054], rot: [-0.25, 0, 0], colour: SATIN_BLACK, r: 0.009 },
     ...trimRocker(0.9, [0, 0.016, -0.006], [-0.55, 0, 0]),
     { shape: 'button', at: 0.9, offset: [0, 0.014, 0.014], size: [0.01, 0.004, 0.01], rot: [-0.25, 0, 0], colour: RED },
-    { shape: 'button', at: 0.75, offset: [0.019, 0, 0.012], size: [0.008, 0.004, 0.008], rot: [0, 0, -Math.PI / 2], colour: SATIN_BLACK },
+    PTT_172,
   ],
   copilotFittings: false,
-  column: { section: 'round', r: 0.0135, metal: 'satin', collar: { r: 0.02, len: 0.035, colour: BLACK } },
+  copilot: [PTT_172],
+  column: { section: 'round', r: 0.0135, metal: 'black', collar: { r: 0.02, len: 0.035, colour: BLACK } },
   boot: { kind: 'round', w: 0.028, h: 0.028, depth: 0.02 },
 };
 
 /**
  * Cessna 152: grey moulded wheel, unlike the 172S's. Round ~3 cm tube horns leave the upper corners of a wide
- * trapezoid shell hub (wider at the top) and rise with an outward lean; their tops curve aft toward the pilot into
- * rounded knobs (a small PTT button on the left one); a cream "Cessna" script plate on the hub; chrome column.
+ * trapezoid shell hub (wider at the top) and rise ~14 cm, nearly upright; their tops curve aft toward the pilot into
+ * rounded knobs (a small PTT button on the left one); a cream "Cessna" script plate on the hub; dark column.
  */
 const CESSNA_152: YokeStyle = {
-  colour: [112, 112, 110],
-  hang: -0.005,
+  colour: [84, 84, 83],
+  hang: 0.045,
   horn: {
-    points: [[0, 0.005, 0], [0.05, 0.005, 0], [0.09, 0.01, 0], [0.12, 0.03, 0], [0.135, 0.065, 0], [0.141, 0.1, 0.004], [0.141, 0.122, 0.02], [0.137, 0.13, 0.04]],
+    points: [[0, 0.0, 0], [0.05, 0.0, 0], [0.095, 0.006, 0], [0.125, 0.03, 0], [0.137, 0.07, 0], [0.141, 0.112, 0.004], [0.141, 0.138, 0.02], [0.138, 0.146, 0.04]],
     keys: [
-      { t: 0, w: 0.03, dF: 0.016, dB: 0.016, n: 2.2 },
-      { t: 0.45, w: 0.03, dF: 0.016, dB: 0.016, n: 2.2 },
-      { t: 0.75, w: 0.033, dF: 0.018, dB: 0.017, n: 2.2 },
-      { t: 1, w: 0.034, dF: 0.018, dB: 0.018, n: 2 },
+      { t: 0, w: 0.032, dF: 0.017, dB: 0.017, n: 2.2 },
+      { t: 0.45, w: 0.032, dF: 0.017, dB: 0.017, n: 2.2 },
+      { t: 0.75, w: 0.036, dF: 0.02, dB: 0.019, n: 2.2 },
+      { t: 1, w: 0.037, dF: 0.02, dB: 0.02, n: 2 },
     ],
     tip: 0.014,
     ridges: { t0: 0.48, t1: 0.8, count: 3, amp: 0.08 },
     rings: 32,
     segments: 16,
   },
-  hub: { y: -0.008, wBottom: 0.1, wTop: 0.135, h: 0.068, r: 0.024, z: 0.04, depth: 0.07, bevel: 0.009, colour: [112, 112, 110] },
+  hub: { y: -0.02, wBottom: 0.1, wTop: 0.135, h: 0.084, r: 0.024, z: 0.04, depth: 0.07, bevel: 0.009, colour: [84, 84, 83] },
   plates: [
     { y: -0.01, wBottom: 0.056, wTop: 0.06, h: 0.026, r: 0.005, z: 0.0445, depth: 0.003, bevel: 0.0012, colour: CHROME_RIM },
     { y: -0.01, wBottom: 0.05, wTop: 0.054, h: 0.02, r: 0.004, z: 0.0465, depth: 0.003, bevel: 0.0008, colour: CREAM },
   ],
   fittings: [{ shape: 'button', at: 1, offset: [0, 0.0015, 0], size: [0.01, 0.004, 0.01], colour: LIGHT_GREY }],
   copilotFittings: false,
-  column: { section: 'round', r: 0.012, metal: 'chrome', collar: { r: 0.019, len: 0.03, colour: [112, 112, 110] } },
+  column: { section: 'round', r: 0.012, metal: 'black', collar: { r: 0.019, len: 0.03, colour: [84, 84, 83] } },
   boot: { kind: 'round', w: 0.026, h: 0.026, depth: 0.018 },
 };
 
@@ -194,9 +203,9 @@ const CESSNA_152: YokeStyle = {
  */
 const PIPER_SENECA: YokeStyle = {
   colour: BLACK,
-  hang: -0.022,
+  hang: 0.06,
   horn: {
-    points: [[0, -0.078, 0], [0.05, -0.076, 0], [0.095, -0.06, 0], [0.125, -0.025, 0], [0.14, 0.02, -0.002], [0.142, 0.06, -0.006], [0.135, 0.088, -0.006], [0.122, 0.1, -0.004]],
+    points: [[0, -0.078, 0], [0.05, -0.076, 0], [0.097, -0.06, 0], [0.128, -0.022, 0], [0.141, 0.03, -0.002], [0.143, 0.08, -0.004], [0.137, 0.118, -0.004], [0.124, 0.13, -0.002]],
     keys: [
       { t: 0, w: 0.03, dF: 0.017, dB: 0.017, n: 2.6 },
       { t: 0.35, w: 0.03, dF: 0.017, dB: 0.017, n: 2.6 },
@@ -229,13 +238,13 @@ const PIPER_SENECA: YokeStyle = {
 /**
  * Piper PA-38 Tomahawk: the lighter, simpler wheel. Thin round black horns (~3 cm) on a low curved bar, 30 cm
  * span, leaning out and their tops turning aft toward the pilot (a red PTT button on the left one); a small round
- * domed hub (~7 cm); chrome column. No trim switch: the Tomahawk's pitch trim is the overhead crank.
+ * domed hub (~9 cm); dark column. No trim switch: the Tomahawk's pitch trim is the overhead crank.
  */
 const PIPER_TOMAHAWK: YokeStyle = {
   colour: BLACK,
-  hang: -0.02,
+  hang: 0.03,
   horn: {
-    points: [[0, -0.05, 0], [0.05, -0.052, 0], [0.095, -0.042, 0], [0.122, -0.012, 0], [0.135, 0.03, 0.002], [0.14, 0.065, 0.012], [0.137, 0.085, 0.03], [0.133, 0.09, 0.045]],
+    points: [[0, -0.05, 0], [0.05, -0.052, 0], [0.097, -0.04, 0], [0.126, -0.008, 0], [0.137, 0.04, 0.002], [0.14, 0.085, 0.01], [0.138, 0.11, 0.028], [0.134, 0.116, 0.044]],
     keys: [
       { t: 0, w: 0.028, dF: 0.015, dB: 0.015, n: 2.2 },
       { t: 0.4, w: 0.028, dF: 0.015, dB: 0.015, n: 2.2 },
@@ -251,7 +260,7 @@ const PIPER_TOMAHAWK: YokeStyle = {
   plates: [{ y: 0.005, wBottom: 0.05, wTop: 0.05, h: 0.05, r: 0.0245, z: 0.036, depth: 0.003, bevel: 0.001, colour: [40, 40, 42] }],
   fittings: [{ shape: 'button', at: 1, offset: [0, 0.0015, 0], size: [0.011, 0.004, 0.011], colour: RED }],
   copilotFittings: false,
-  column: { section: 'round', r: 0.013, metal: 'chrome', collar: { r: 0.018, len: 0.03, colour: BLACK } },
+  column: { section: 'round', r: 0.013, metal: 'black', collar: { r: 0.018, len: 0.03, colour: BLACK } },
   boot: { kind: 'round', w: 0.026, h: 0.026, depth: 0.018 },
 };
 
@@ -263,9 +272,9 @@ const PIPER_TOMAHAWK: YokeStyle = {
  */
 const CESSNA_208: YokeStyle = {
   colour: [74, 76, 80],
-  hang: -0.012,
+  hang: 0.065,
   horn: {
-    points: [[0, -0.07, 0], [0.08, -0.07, 0], [0.135, -0.066, 0], [0.16, -0.04, 0], [0.168, 0.005, 0], [0.17, 0.05, -0.004], [0.171, 0.07, -0.006], [0.171, 0.078, -0.006]],
+    points: [[0, -0.07, 0], [0.08, -0.07, 0], [0.137, -0.066, 0], [0.162, -0.04, 0], [0.169, 0.01, 0.002], [0.171, 0.07, 0.006], [0.172, 0.105, 0.01], [0.172, 0.114, 0.011]],
     keys: [
       { t: 0, w: 0.034, dF: 0.022, dB: 0.022, n: 4 },
       { t: 0.35, w: 0.034, dF: 0.022, dB: 0.022, n: 4 },
@@ -278,11 +287,11 @@ const CESSNA_208: YokeStyle = {
     rings: 32,
     segments: 16,
   },
-  hub: { y: -0.012, wBottom: 0.088, wTop: 0.104, h: 0.13, r: 0.014, z: 0.034, depth: 0.065, bevel: 0.006, colour: [74, 76, 80] },
+  hub: { y: -0.022, wBottom: 0.088, wTop: 0.104, h: 0.15, r: 0.014, z: 0.034, depth: 0.065, bevel: 0.006, colour: [74, 76, 80] },
   plates: [
     { y: 0.012, wBottom: 0.06, wTop: 0.064, h: 0.07, r: 0.004, z: 0.0385, depth: 0.003, bevel: 0.001, colour: [44, 45, 48] },
     { y: 0.012, wBottom: 0.052, wTop: 0.056, h: 0.061, r: 0.003, z: 0.0405, depth: 0.003, bevel: 0.0006, colour: WHITE },
-    { y: -0.05, wBottom: 0.05, wTop: 0.05, h: 0.026, r: 0.011, z: 0.0385, depth: 0.003, bevel: 0.001, colour: [40, 41, 44] },
+    { y: -0.06, wBottom: 0.05, wTop: 0.05, h: 0.026, r: 0.011, z: 0.0385, depth: 0.003, bevel: 0.001, colour: [40, 41, 44] },
   ],
   blocks: [{ c: [0, 0.056, 0.03], size: [0.11, 0.016, 0.03], r: 0.006, colour: [74, 76, 80] }],
   fittings: [
@@ -304,9 +313,9 @@ const CESSNA_208: YokeStyle = {
  */
 const PILATUS: YokeStyle = {
   colour: [48, 49, 51],
-  hang: -0.015,
+  hang: 0.06,
   horn: {
-    points: [[0, -0.085, 0], [0.05, -0.083, 0], [0.095, -0.066, 0], [0.124, -0.03, 0], [0.136, 0.015, -0.004], [0.14, 0.055, -0.012], [0.138, 0.08, -0.016], [0.135, 0.088, -0.014]],
+    points: [[0, -0.085, 0], [0.05, -0.083, 0], [0.097, -0.064, 0], [0.127, -0.025, 0], [0.138, 0.025, -0.002], [0.141, 0.075, -0.008], [0.139, 0.106, -0.012], [0.136, 0.114, -0.01]],
     keys: [
       { t: 0, w: 0.034, dF: 0.019, dB: 0.019, n: 2.6 },
       { t: 0.35, w: 0.03, dF: 0.017, dB: 0.017, n: 2.6 },
@@ -319,7 +328,7 @@ const PILATUS: YokeStyle = {
     rings: 32,
     segments: 16,
   },
-  hub: { y: -0.035, wBottom: 0.07, wTop: 0.064, h: 0.13, r: 0.02, z: 0.036, depth: 0.07, bevel: 0.008, colour: [118, 116, 110] },
+  hub: { y: -0.03, wBottom: 0.07, wTop: 0.064, h: 0.13, r: 0.02, z: 0.036, depth: 0.07, bevel: 0.008, colour: [118, 116, 110] },
   plates: [{ y: -0.07, wBottom: 0.05, wTop: 0.05, h: 0.016, r: 0.004, z: 0.0415, depth: 0.002, bevel: 0.0006, colour: [92, 90, 86] }],
   fittings: [
     { shape: 'button', at: 1, offset: [0, 0.002, 0.004], size: [0.012, 0.005, 0.012], colour: [30, 30, 32] },
@@ -329,7 +338,7 @@ const PILATUS: YokeStyle = {
   ],
   copilotFittings: true,
   column: { section: 'square', r: 0.016, metal: 'black', collar: { r: 0.024, len: 0.04, colour: [48, 49, 51] } },
-  boot: { kind: 'shroud', w: 0.05, h: 0.045, depth: 0.05 },
+  boot: { kind: 'shroud', w: 0.05, h: 0.045, depth: 0.035 },
 };
 
 export const YOKE_STYLES: Readonly<Record<YokeStyleName, YokeStyle>> = {
@@ -565,12 +574,13 @@ function plateGeometry(p: Plate): THREE.BufferGeometry {
 
 /** The vertex-coloured plastic of the yokes and sticks (one per cockpit; the cabin occlusion patches it in place). */
 export function yokeMaterial(): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ name: 'yokePlastic', vertexColors: true, roughness: 0.62 });
+  return new THREE.MeshStandardMaterial({ name: 'yokePlastic', vertexColors: true, roughness: 0.6 });
 }
 
 /**
  * All the geometry of one yoke in yoke space: the plastic (vertex-coloured) and the column tube.
- * @param outboard -1: the fittings go on the left horn (the pilot's yoke), +1: the right, 0: none
+ * @param outboard -1: the pilot's yoke (its fittings on the left horn), +1: the copilot's (on the right; its own
+ *                 `copilot` fittings unless it has the pilot's), 0: none
  */
 export function yokeGeometry(style: YokeStyle, outboard: -1 | 0 | 1): { plastic: THREE.BufferGeometry[]; tube: THREE.BufferGeometry } {
   const plastic: THREE.BufferGeometry[] = [];
@@ -578,7 +588,7 @@ export function yokeGeometry(style: YokeStyle, outboard: -1 | 0 | 1): { plastic:
   const right = sweep.geometry(style.colour);
   plastic.push(right, mirrorX(right));
   if (outboard !== 0) {
-    for (const f of style.fittings) {
+    for (const f of outboard > 0 && !style.copilotFittings ? (style.copilot ?? []) : style.fittings) {
       const g = sweep.fitting(f);
       plastic.push(outboard < 0 ? mirrorX(g) : g);
       if (outboard < 0) g.dispose();
@@ -649,7 +659,7 @@ export class YokeColumn implements ControlColumn {
     frd(column.x, y, column.z, this.group.position);
     const style = yokeStyle(column);
     const pilot = y < 0;
-    const { plastic, tube } = yokeGeometry(style, pilot || style.copilotFittings ? (pilot ? -1 : 1) : 0);
+    const { plastic, tube } = yokeGeometry(style, pilot ? -1 : 1);
     const b = new MeshBatch();
     b.add(tubeMaterial(mat, style.column.metal), tube);
     for (const g of plastic) b.add(plasticMat, g);

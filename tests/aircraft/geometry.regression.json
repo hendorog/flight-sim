@@ -310,7 +310,7 @@
  },
  "cockpit": {
   "meshes": 56,
-  "vertices": 109048,
+  "vertices": 109124,
   "bbox": [
    -0.519999981,
    -0.589999974,
@@ -320,7 +320,7 @@
    2.099999905
   ],
   "nodes": 71,
-  "transforms": "995a21169a152fa0",
+  "transforms": "fb0d67a240ebc600",
   "parts": [
    "cockpit/instrumentPanel|instrumentPanel v297 i1560:b864f692c6e11e0a normal:8ad503b8db5fbacc position:96acecebb7d5c205 uv:3759c759a6bd7e83 vis:1 shadow:01 order:0",
    "magneticCompass/|compassHousing v2145 i12096:4d55397013f9ff7e normal:f4fbfc47f5ca2f7f position:2de5b5cb28a32fe7 uv:7ed78d9b20ac957d vis:1 shadow:01 order:0",
@@ -338,10 +338,10 @@
    "magneticCompass/| v24 i36:b6dbda6580baea6f normal:bef3920546019d33 position:e46aa7a543596973 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "magneticCompass/|compassHousing v24 i36:b6dbda6580baea6f normal:bef3920546019d33 position:4b5652a53288fc33 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "magneticCompass/compassDeviationCard|compassDeviationCard v4 i6:07c0d37ead8f3a4c normal:919d15a561cd4bc3 position:4de69885cb0e86ab uv:4990eb059147c793 vis:1 shadow:01 order:0",
-   "/yoke:aluminium|aluminium v100 i192:48a1441567a73533 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:11 order:0",
-   "/yoke:yokePlastic|yokePlastic v4396 i9576:a33844a3ed1c77f5 color:2ee124151c929183 normal:efc7e75799f534dd position:e714dd6df7ebd043 uv:528e3b20f373339e vis:1 shadow:11 order:0",
-   "/yoke:aluminium|aluminium v100 i192:48a1441567a73533 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:11 order:0",
-   "/yoke:yokePlastic|yokePlastic v3272 i8316:3fd6d9b1f33d38d3 color:53c79d2d4b40031b normal:8d2cf38174556f77 position:46316fc17cb59f63 uv:29bd2528677b8d56 vis:1 shadow:11 order:0",
+   "/yoke:darkMetal|darkMetal v100 i192:48a1441567a73533 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:11 order:0",
+   "/yoke:yokePlastic|yokePlastic v4396 i9576:a33844a3ed1c77f5 color:2ee124151c929183 normal:f20b723f5d5c34e1 position:d9e1a90f6dfab1c7 uv:528e3b20f373339e vis:1 shadow:11 order:0",
+   "/yoke:darkMetal|darkMetal v100 i192:48a1441567a73533 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:11 order:0",
+   "/yoke:yokePlastic|yokePlastic v3348 i8460:243978ca4584f438 color:e80c97c5339b2d83 normal:b78f99bff4044f21 position:3058702de579fab7 uv:1d863ac9e184d1cf vis:1 shadow:11 order:0",
    "/pedal:darkMetal|darkMetal v100 i180:bb42ca191df8d19b normal:8d1e940dc0f949ff position:63c8ae31967d8617 uv:201ea054bd552cea vis:1 shadow:11 order:0",
    "/pedal:black|black v1800 i1800:2f543f35d91d3f3b normal:0f7f621572149f23 position:85deecabc8f19483 uv:029323e9218a0b7f vis:1 shadow:11 order:0",
    "/pedal:knobBlack|knobBlack v96 i144:5b0525051827bdc3 normal:39f9b4c570c8ac13 position:a154f9e983d66863 uv:4a34b3c508960193 vis:1 shadow:11 order:0",
@@ -401,7 +401,7 @@
  },
  "cockpit.posed": {
   "meshes": 56,
-  "vertices": 109048,
+  "vertices": 109124,
   "bbox": [
    -0.519999981,
    -0.589999974,
@@ -411,7 +411,7 @@
    2.099999905
   ],
   "nodes": 71,
-  "transforms": "bad1c2f92facdb63",
+  "transforms": "098d647564803dd3",
   "parts": [
    "cockpit/instrumentPanel|instrumentPanel v297 i1560:b864f692c6e11e0a normal:8ad503b8db5fbacc position:96acecebb7d5c205 uv:3759c759a6bd7e83 vis:1 shadow:01 order:0",
    "magneticCompass/|compassHousing v2145 i12096:4d55397013f9ff7e normal:f4fbfc47f5ca2f7f position:2de5b5cb28a32fe7 uv:7ed78d9b20ac957d vis:1 shadow:01 order:0",
@@ -429,10 +429,10 @@
    "magneticCompass/| v24 i36:b6dbda6580baea6f normal:bef3920546019d33 position:e46aa7a543596973 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "magneticCompass/|compassHousing v24 i36:b6dbda6580baea6f normal:bef3920546019d33 position:4b5652a53288fc33 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "magneticCompass/compassDeviationCard|compassDeviationCard v4 i6:07c0d37ead8f3a4c normal:919d15a561cd4bc3 position:4de69885cb0e86ab uv:4990eb059147c793 vis:1 shadow:01 order:0",
-   "/yoke:aluminium|aluminium v100 i192:48a1441567a73533 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:11 order:0",
-   "/yoke:yokePlastic|yokePlastic v4396 i9576:a33844a3ed1c77f5 color:2ee124151c929183 normal:efc7e75799f534dd position:e714dd6df7ebd043 uv:528e3b20f373339e vis:1 shadow:11 order:0",
-   "/yoke:aluminium|aluminium v100 i192:48a1441567a73533 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:11 order:0",
-   "/yoke:yokePlastic|yokePlastic v3272 i8316:3fd6d9b1f33d38d3 color:53c79d2d4b40031b normal:8d2cf38174556f77 position:46316fc17cb59f63 uv:29bd2528677b8d56 vis:1 shadow:11 order:0",
+   "/yoke:darkMetal|darkMetal v100 i192:48a1441567a73533 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:11 order:0",
+   "/yoke:yokePlastic|yokePlastic v4396 i9576:a33844a3ed1c77f5 color:2ee124151c929183 normal:f20b723f5d5c34e1 position:d9e1a90f6dfab1c7 uv:528e3b20f373339e vis:1 shadow:11 order:0",
+   "/yoke:darkMetal|darkMetal v100 i192:48a1441567a73533 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:11 order:0",
+   "/yoke:yokePlastic|yokePlastic v3348 i8460:243978ca4584f438 color:e80c97c5339b2d83 normal:b78f99bff4044f21 position:3058702de579fab7 uv:1d863ac9e184d1cf vis:1 shadow:11 order:0",
    "/pedal:darkMetal|darkMetal v100 i180:bb42ca191df8d19b normal:8d1e940dc0f949ff position:63c8ae31967d8617 uv:201ea054bd552cea vis:1 shadow:11 order:0",
    "/pedal:black|black v1800 i1800:2f543f35d91d3f3b normal:0f7f621572149f23 position:85deecabc8f19483 uv:029323e9218a0b7f vis:1 shadow:11 order:0",
    "/pedal:knobBlack|knobBlack v96 i144:5b0525051827bdc3 normal:39f9b4c570c8ac13 position:a154f9e983d66863 uv:4a34b3c508960193 vis:1 shadow:11 order:0",
@@ -589,7 +589,7 @@
    "yoke": {
     "x": -0.27,
     "y": -0.035,
-    "z": -0.3
+    "z": -0.35
    },
    "rudderPedals": {
     "x": -0.27,
@@ -1107,7 +1107,7 @@
  },
  "visual": {
   "meshes": 121,
-  "vertices": 220413,
+  "vertices": 220565,
   "bbox": [
    -5.5,
    -1.359810127,
@@ -1117,7 +1117,7 @@
    6.293864193
   ],
   "nodes": 167,
-  "transforms": "38c77abe88afebfc",
+  "transforms": "7c54f54a83c24f9c",
   "parts": [
    "C172/fuselageSkin|fuselagePaint v19888 i117600:4a15549e2172db94 normal:decc7403bd8ea477 position:a797ece06ba21d44 uv:81b74d7537356433 vis:1 shadow:11 order:0",
    "C172/glazing|glass v4680 i27264:c02568073e50a309 normal:4fa9730cc03a502a position:b40a931250894820 uv:bdda797694178722 vis:1 shadow:00 order:2",
@@ -1196,12 +1196,12 @@
    "magneticCompass/| v24 i36:b6dbda6580baea6f cabinCubeN:6d578722e88bb064 cabinCubeP:ef726a38b41d9dc4 cabinVis:ed7ca23cba3af70c normal:bef3920546019d33 position:e46aa7a543596973 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "magneticCompass/|compassHousing v24 i36:b6dbda6580baea6f cabinCubeN:5368106816a161a0 cabinCubeP:57f13b47d0b6a865 cabinVis:3b99842894a586e2 normal:bef3920546019d33 position:4b5652a53288fc33 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "magneticCompass/compassDeviationCard|compassDeviationCard v4 i6:07c0d37ead8f3a4c cabinCubeN:c19b5354a468884e cabinCubeP:d51ad648214f130c cabinVis:9113a661f691eb93 normal:919d15a561cd4bc3 position:4de69885cb0e86ab uv:4990eb059147c793 vis:1 shadow:01 order:0",
-   "/yoke:aluminium|aluminium v100 i192:48a1441567a73533 cabinCubeN:4636bffd5bacaa1b cabinCubeP:f1b05db76de58823 cabinVis:68aeb7eba3dcad43 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:01 order:0",
-   "/yoke:yokePlastic|yokePlastic v4396 i9576:a33844a3ed1c77f5 cabinCubeN:d5a71f26d53071e8 cabinCubeP:be414bb8b04bcd04 cabinVis:173a5ae47ac1aed4 color:2ee124151c929183 normal:efc7e75799f534dd position:e714dd6df7ebd043 uv:528e3b20f373339e vis:1 shadow:01 order:0",
-   "/shadowProxy:Group|shadowProxy v4496 i9768:ed25127d91059185 position:69adb329fcac4657 vis:1 shadow:10 order:0",
-   "/yoke:aluminium|aluminium v100 i192:48a1441567a73533 cabinCubeN:6bb446a9a7f41625 cabinCubeP:6c4888032bb5f703 cabinVis:87177a31e2faf78b normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:01 order:0",
-   "/yoke:yokePlastic|yokePlastic v3272 i8316:3fd6d9b1f33d38d3 cabinCubeN:c46c21d42c2b7bda cabinCubeP:4f20ab48e56d474e cabinVis:1504a48f505e88d3 color:53c79d2d4b40031b normal:8d2cf38174556f77 position:46316fc17cb59f63 uv:29bd2528677b8d56 vis:1 shadow:01 order:0",
-   "/shadowProxy:Group|shadowProxy v3372 i8508:f01f002a632303ea position:b49a0b1dfd0fd5b7 vis:1 shadow:10 order:0",
+   "/yoke:darkMetal|darkMetal v100 i192:48a1441567a73533 cabinCubeN:dbbb27554a470af7 cabinCubeP:2ed398dfb07b2295 cabinVis:11212352b8c20b5e normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:01 order:0",
+   "/yoke:yokePlastic|yokePlastic v4396 i9576:a33844a3ed1c77f5 cabinCubeN:9067e2d7343f3a43 cabinCubeP:a0c70047d334c235 cabinVis:a81210aa62c808de color:2ee124151c929183 normal:f20b723f5d5c34e1 position:d9e1a90f6dfab1c7 uv:528e3b20f373339e vis:1 shadow:01 order:0",
+   "/shadowProxy:Group|shadowProxy v4496 i9768:ed25127d91059185 position:ce64c1ab0269c70b vis:1 shadow:10 order:0",
+   "/yoke:darkMetal|darkMetal v100 i192:48a1441567a73533 cabinCubeN:262fa40a2c8cb382 cabinCubeP:548e83809ce860d8 cabinVis:b173cbb4717bb380 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:01 order:0",
+   "/yoke:yokePlastic|yokePlastic v3348 i8460:243978ca4584f438 cabinCubeN:e723096dbc7a873b cabinCubeP:62f00a8d38231809 cabinVis:3fcd52b1acf3b4b9 color:e80c97c5339b2d83 normal:b78f99bff4044f21 position:3058702de579fab7 uv:1d863ac9e184d1cf vis:1 shadow:01 order:0",
+   "/shadowProxy:Group|shadowProxy v3448 i8652:8b8307514a9e15a1 position:ecdc5f6976d08beb vis:1 shadow:10 order:0",
    "/pedal:darkMetal|darkMetal v100 i180:bb42ca191df8d19b cabinCubeN:d1d7e7b8009ad5ee cabinCubeP:f2aea8c66d26f3d6 cabinVis:e8634b9966a4d78b normal:8d1e940dc0f949ff position:63c8ae31967d8617 uv:201ea054bd552cea vis:1 shadow:01 order:0",
    "/pedal:black|black v1800 i1800:2f543f35d91d3f3b cabinCubeN:57d45ac0953fc5f8 cabinCubeP:649c7fd156c688d1 cabinVis:0a8e3309b37fc347 normal:0f7f621572149f23 position:85deecabc8f19483 uv:029323e9218a0b7f vis:1 shadow:01 order:0",
    "/pedal:knobBlack|knobBlack v96 i144:5b0525051827bdc3 cabinCubeN:07f9ff99c12f4f73 cabinCubeP:149570414936b813 cabinVis:23a7465762abadaf normal:39f9b4c570c8ac13 position:a154f9e983d66863 uv:4a34b3c508960193 vis:1 shadow:01 order:0",
@@ -1302,7 +1302,7 @@
   ]
  },
  "visual.frame": {
-  "transforms": "90f1e9f9f80c6275",
+  "transforms": "6419ec8178efa4b1",
   "parts": [
    "C172/fuselageSkin|fuselagePaint v19888 i117600:4a15549e2172db94 normal:decc7403bd8ea477 position:a797ece06ba21d44 uv:81b74d7537356433 vis:1 shadow:11 order:0",
    "C172/glazing|glass v4680 i27264:c02568073e50a309 normal:4fa9730cc03a502a position:b40a931250894820 uv:bdda797694178722 vis:1 shadow:00 order:2",
@@ -1381,12 +1381,12 @@
    "magneticCompass/| v24 i36:b6dbda6580baea6f cabinCubeN:6d578722e88bb064 cabinCubeP:ef726a38b41d9dc4 cabinVis:ed7ca23cba3af70c normal:bef3920546019d33 position:e46aa7a543596973 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "magneticCompass/|compassHousing v24 i36:b6dbda6580baea6f cabinCubeN:5368106816a161a0 cabinCubeP:57f13b47d0b6a865 cabinVis:3b99842894a586e2 normal:bef3920546019d33 position:4b5652a53288fc33 uv:d0f0da45b29ec093 vis:1 shadow:01 order:0",
    "magneticCompass/compassDeviationCard|compassDeviationCard v4 i6:07c0d37ead8f3a4c cabinCubeN:c19b5354a468884e cabinCubeP:d51ad648214f130c cabinVis:9113a661f691eb93 normal:919d15a561cd4bc3 position:4de69885cb0e86ab uv:4990eb059147c793 vis:1 shadow:01 order:0",
-   "/yoke:aluminium|aluminium v100 i192:48a1441567a73533 cabinCubeN:4636bffd5bacaa1b cabinCubeP:f1b05db76de58823 cabinVis:68aeb7eba3dcad43 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:01 order:0",
-   "/yoke:yokePlastic|yokePlastic v4396 i9576:a33844a3ed1c77f5 cabinCubeN:d5a71f26d53071e8 cabinCubeP:be414bb8b04bcd04 cabinVis:173a5ae47ac1aed4 color:2ee124151c929183 normal:efc7e75799f534dd position:e714dd6df7ebd043 uv:528e3b20f373339e vis:1 shadow:01 order:0",
-   "/shadowProxy:Group|shadowProxy v4496 i9768:ed25127d91059185 position:69adb329fcac4657 vis:1 shadow:10 order:0",
-   "/yoke:aluminium|aluminium v100 i192:48a1441567a73533 cabinCubeN:6bb446a9a7f41625 cabinCubeP:6c4888032bb5f703 cabinVis:87177a31e2faf78b normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:01 order:0",
-   "/yoke:yokePlastic|yokePlastic v3272 i8316:3fd6d9b1f33d38d3 cabinCubeN:c46c21d42c2b7bda cabinCubeP:4f20ab48e56d474e cabinVis:1504a48f505e88d3 color:53c79d2d4b40031b normal:8d2cf38174556f77 position:46316fc17cb59f63 uv:29bd2528677b8d56 vis:1 shadow:01 order:0",
-   "/shadowProxy:Group|shadowProxy v3372 i8508:f01f002a632303ea position:b49a0b1dfd0fd5b7 vis:1 shadow:10 order:0",
+   "/yoke:darkMetal|darkMetal v100 i192:48a1441567a73533 cabinCubeN:dbbb27554a470af7 cabinCubeP:2ed398dfb07b2295 cabinVis:11212352b8c20b5e normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:01 order:0",
+   "/yoke:yokePlastic|yokePlastic v4396 i9576:a33844a3ed1c77f5 cabinCubeN:9067e2d7343f3a43 cabinCubeP:a0c70047d334c235 cabinVis:a81210aa62c808de color:2ee124151c929183 normal:f20b723f5d5c34e1 position:d9e1a90f6dfab1c7 uv:528e3b20f373339e vis:1 shadow:01 order:0",
+   "/shadowProxy:Group|shadowProxy v4496 i9768:ed25127d91059185 position:ce64c1ab0269c70b vis:1 shadow:10 order:0",
+   "/yoke:darkMetal|darkMetal v100 i192:48a1441567a73533 cabinCubeN:262fa40a2c8cb382 cabinCubeP:548e83809ce860d8 cabinVis:b173cbb4717bb380 normal:35ada3b1305d9fcb position:23486ea1141d5f97 uv:10bdbc709eea575e vis:1 shadow:01 order:0",
+   "/yoke:yokePlastic|yokePlastic v3348 i8460:243978ca4584f438 cabinCubeN:e723096dbc7a873b cabinCubeP:62f00a8d38231809 cabinVis:3fcd52b1acf3b4b9 color:e80c97c5339b2d83 normal:b78f99bff4044f21 position:3058702de579fab7 uv:1d863ac9e184d1cf vis:1 shadow:01 order:0",
+   "/shadowProxy:Group|shadowProxy v3448 i8652:8b8307514a9e15a1 position:ecdc5f6976d08beb vis:1 shadow:10 order:0",
    "/pedal:darkMetal|darkMetal v100 i180:bb42ca191df8d19b cabinCubeN:d1d7e7b8009ad5ee cabinCubeP:f2aea8c66d26f3d6 cabinVis:e8634b9966a4d78b normal:8d1e940dc0f949ff position:63c8ae31967d8617 uv:201ea054bd552cea vis:1 shadow:01 order:0",
    "/pedal:black|black v1800 i1800:2f543f35d91d3f3b cabinCubeN:57d45ac0953fc5f8 cabinCubeP:649c7fd156c688d1 cabinVis:0a8e3309b37fc347 normal:0f7f621572149f23 position:85deecabc8f19483 uv:029323e9218a0b7f vis:1 shadow:01 order:0",
    "/pedal:knobBlack|knobBlack v96 i144:5b0525051827bdc3 cabinCubeN:07f9ff99c12f4f73 cabinCubeP:149570414936b813 cabinVis:23a7465762abadaf normal:39f9b4c570c8ac13 position:a154f9e983d66863 uv:4a34b3c508960193 vis:1 shadow:01 order:0",

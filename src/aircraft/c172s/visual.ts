@@ -402,7 +402,7 @@ const PANEL_ZB = PANEL_ZTOP + 0.4;
 const FLOOR_Z = 0.565;
 /** Lateral station of the pilots' seats, yokes and pedals. */
 const SEAT_Y = 0.27;
-const YOKE_X = 0.3;
+const YOKE_X = 0.35;
 const YOKE_Z = 0.035;
 /** Rudder pedal floor pivots. */
 const PEDAL_X = 0.64;
