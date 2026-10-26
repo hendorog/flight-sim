@@ -32,6 +32,7 @@ import type { AircraftMaterials } from './materials';
 import { PANEL_HEIGHT, PANEL_WIDTH } from '../../instruments/layout';
 import { gaugeRecess, type PanelDef } from '../../instruments/panelDef';
 import type { PointTarget } from '../../training/types';
+import { addQuadrant, buildPlunger, buildQuadrantLever, PlacardAtlas, trimWheelParts } from './quadrant';
 
 /**
  * The flat instrument panel face of a cockpit definition: vertical, facing aft, centred on the aircraft
@@ -311,7 +312,14 @@ export function cockpitControls(cockpit: CockpitDef, panel: PanelDef): Readonly<
   out.magnetos = fromPx(panel.ignition.at[0], panel.ignition.at[1]);
   for (const e of cockpit.engineControls) {
     // (A lever drawn fixed, such as the PC-12's manual override, is not the one the instructor means.)
-    if (e.engine === 0 && e.fixed === undefined && (e.control === 'throttle' || e.control === 'mixture')) out[e.control] = fromFrd(e.pos[0] - 0.04, e.pos[1], e.pos[2]);
+    if (e.engine === 0 && e.fixed === undefined && (e.control === 'throttle' || e.control === 'mixture')) {
+      // A quadrant library lever (quadrant.ts): its knob at mid travel; otherwise just aft of the pivot / shaft.
+      if (e.knob && e.kind === 'lever') {
+        const a = e.tilt ?? 0;
+        const l = e.length ?? 0.11;
+        out[e.control] = fromFrd(e.pos[0] - l * Math.sin(a), e.pos[1], e.pos[2] - l * Math.cos(a));
+      } else out[e.control] = fromFrd(e.pos[0] - 0.04, e.pos[1], e.pos[2]);
+    }
   }
   const flap = cockpit.flapControl.pos;
   out.flapLever = fromFrd(flap[0] - 0.045, flap[1], flap[2]);
@@ -507,11 +515,14 @@ export class Cockpit {
     if (this.compass) own.push(...this.compass.materials);
     own.push(this.visorMat, this.rockerMat);
     if (this.knobBlue) own.push(this.knobBlue);
+    if (this.placards.material.map) own.push(this.placards.material);
     return own;
   }
   private readonly panelMat: THREE.MeshStandardMaterial;
   /** Smoked, tinted polycarbonate of the sun visors. */
   private readonly visorMat = new THREE.MeshStandardMaterial({ name: 'sunVisor', color: new THREE.Color().setRGB(0.035, 0.028, 0.02), roughness: 0.18 });
+  /** The quadrant's and trim indicators' placards, printed once into one atlas (quadrant.ts). */
+  private readonly placards = new PlacardAtlas();
   /** The cockpit of the airframe definition, its panel face and the rocker switches of the panel definition. */
   private readonly def: CockpitDef;
   private readonly face: PanelFace;
@@ -676,6 +687,8 @@ export class Cockpit {
       if (c.profile) fixed.add(mat[c.material], extrudeProfile(c.profile, c.min[1], c.max[1], c.bevel));
       else fixed.add(mat[c.material], box((c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, (c.min[2] + c.max[2]) / 2, c.max[0] - c.min[0], c.max[1] - c.min[1], c.max[2] - c.min[2], c.bevel));
     }
+    // The throttle quadrant / pedestal / console of the shared builder: housings, slotted covers, fittings, placards.
+    if (def.quadrant) addQuadrant(fixed, mat, def, this.placards);
 
     // --- Floor, seats, door trim ---
     fixed.add(mat.carpet, floor);
@@ -810,10 +823,16 @@ export class Cockpit {
     // --- Engine and flap controls on the lower panel ---
     const blue = (): THREE.MeshStandardMaterial => (this.knobBlue ??= new THREE.MeshStandardMaterial({ name: 'knobBlue', color: new THREE.Color().setRGB(0.03, 0.09, 0.4), roughness: 0.45 }));
     for (const e of def.engineControls) {
-      const knobMat = e.colour === 'black' ? mat.knobBlack : e.colour === 'red' ? mat.knobRed : e.colour === 'white' ? mat.knobWhite : blue();
+      const knobMat = e.colour === 'black' ? mat.knobBlack : e.colour === 'red' ? mat.knobRed : e.colour === 'white' ? mat.knobWhite : e.colour === 'grey' ? mat.trimPlastic : blue();
       const g = new THREE.Group();
+      // A knob or lever of the quadrant builder's library (its slots and marks are the quadrant's); else the generic one.
+      if (e.knob) {
+        if (e.kind === 'knob') buildPlunger(g, fixed, mat, knobMat, e);
+        else buildQuadrantLever(g, mat, knobMat, e);
+        if (!def.quadrant && e.kind === 'lever') addLeverMarks(fixed, mat, e, def.consoles);
+      }
       // The mixture knob is ribbed (told by touch from the smooth throttle).
-      if (e.kind === 'knob') this.buildKnob(g, knobMat, mat, e.pos, e.control === 'mixture');
+      else if (e.kind === 'knob') this.buildKnob(g, knobMat, mat, e.pos, e.control === 'mixture');
       else {
         this.buildLever(g, knobMat, mat, e.pos, e.length ?? 0.11, e.fixed !== undefined ? 'fixed' : e.control);
         addLeverMarks(fixed, mat, e, def.consoles);
@@ -890,20 +909,8 @@ export class Cockpit {
       this.group.add(g);
     }
     if (def.trimWheel) {
-      // Trim wheel in the pedestal, protruding through its aft face.
-      const wheel = new MeshBatch();
-      const disc = new THREE.CylinderGeometry(0.075, 0.075, 0.022, 40);
-      disc.rotateZ(Math.PI / 2);
-      wheel.add(mat.black, disc);
-      for (let k = 0; k < 24; k++) {
-        const a = (k / 24) * Math.PI * 2;
-        const rib = new THREE.BoxGeometry(0.024, 0.008, 0.01);
-        rib.translate(0, Math.cos(a) * 0.077, Math.sin(a) * 0.077);
-        wheel.add(mat.knobBlack, rib);
-      }
-      const mark = new THREE.BoxGeometry(0.024, 0.02, 0.006);
-      mark.translate(0, 0.07, 0);
-      wheel.add(mat.knobWhite, mark);
+      // Knurled trim wheel (quadrant.ts) in its moulding, protruding through the pedestal's face or beside it.
+      const wheel = trimWheelParts(mat, def.trimWheel, fixed, this.placards);
       const trim = (this.trimWheel = new THREE.Group());
       const meshes = wheel.build('trimWheel').children as THREE.Mesh[];
       // A wheel turning about the body x axis: the same wheel a quarter turn round the vertical.
@@ -914,6 +921,7 @@ export class Cockpit {
       this.group.add(trim);
     }
 
+    this.placards.build(fixed);
     const built = fixed.build('cabinFixed', { cast: false, receive: true });
     // Leather, carpet and plastic grain at the same scale on every part.
     const textured = new Set<THREE.Material>([mat.seatFabric, mat.carpet, mat.trimPlastic, mat.panelPlastic]);
@@ -1101,6 +1109,7 @@ export class Cockpit {
   /** Filter the cockpit's instrument textures (the compass card and placard) at `n`x anisotropy. */
   setTextureAnisotropy(n: number): void {
     this.compass?.setAnisotropy(n);
+    this.placards.setAnisotropy(n);
   }
 
   /** Apply the instrument texture: u to the pilot's right, v up. It is lit and also self-illuminated. */
@@ -1257,6 +1266,7 @@ export class Cockpit {
     this.visorMat.dispose();
     this.rockerMat.dispose();
     this.knobBlue?.dispose();
+    this.placards.dispose();
   }
 }
 
