@@ -731,7 +731,7 @@ export class Cockpit {
       }
       const b = new MeshBatch();
       b.add(mat.knobBlack, rodX(-0.006, 0, 0, 0.012, 0.022, 24));
-      b.add(mat.chrome, box(-0.018, 0, -0.012, 0.014, 0.016, 0.06, 0.005));
+      b.add(fuel.colour === 'red' ? mat.knobRed : mat.chrome, box(-0.018, 0, -0.012, 0.014, 0.016, 0.06, 0.005));
       b.add(mat.knobWhite, box(-0.025, 0, -0.038, 0.002, 0.008, 0.01, 0.001));
       const g = (this.fuelHandle = new THREE.Group());
       g.add(...b.build('fuelSelector').children);

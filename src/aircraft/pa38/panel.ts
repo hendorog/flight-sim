@@ -40,8 +40,8 @@ const CDI = { x: 828, y: ROWS };
 const STACK = { x: 940, navcom1: 36, navcom2: 120, xpdr: 204, blank: 270 };
 /** Control wheel shafts through the panel (3D boots; visual.ts puts the yokes here). */
 const YOKES = { y: 545, xs: [460, 1540] as const, r: 58 };
-/** Tachometer, left of the quadrant (s.9). */
-const TACH = { x: 728, y: 572 };
+/** Tachometer, just right of the pilot's control wheel shaft, low, where it shows over the wheel's hub (s.9; owner). */
+const TACH = { x: 612, y: 566 };
 /**
  * The throttle quadrant in front of the lower centre of the face (visual.ts builds it from these px): its body
  * covers x0 .. x1 from y0 down past the panel's lower edge. Nothing is painted there.
@@ -272,6 +272,8 @@ export const PA38_PANEL: PanelDef = {
     // Sub-panel seam: the flat full-width panel (s.12) is one sheet from the pilot's side to the radio stack, with
     // the right panel joining it between the two engine-cluster gauges (clear of the fuel gauges over the quadrant).
     seamsX: [(CLUSTER.fuel + CLUSTER.oil) / 2],
+    // The back of the quadrant's well (the 3D surround stands round it): black behind the fuel gauges and the selector.
+    plates: [{ bounds: { x: PA38_QUADRANT.x0, y: 436, w: PA38_QUADRANT.x1 - PA38_QUADRANT.x0, h: PA38_QUADRANT.y0 - 436 + 20 }, color: '#151517', radius: 6 }],
     // Legends of the controls that are painted, not built: the primer right of the quadrant, the cabin heat and
     // defrost knobs on the lower right (s.9). The parking brake handle hangs under the quadrant, below the face.
     bushings: [

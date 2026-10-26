@@ -421,7 +421,7 @@ export interface CockpitDef {
    * `angles[position]` (degrees clockwise as the pilot sees it, 0 = up) for controls.fuelSelector, with a white tick
    * at each position. Absent: none (the C172S's selector is the floor dial of fittings.fuelSelector).
    */
-  fuelSelectorHandle?: { pos: FRD; angles: Partial<Record<FuelSelector, number>> };
+  fuelSelectorHandle?: { pos: FRD; angles: Partial<Record<FuelSelector, number>>; /** The pointer handle's colour (absent: chrome). */ colour?: 'red' };
   /** A T-handle on an aft-facing face at `pos`, pulled `travel` m aft while controls.parkingBrake is set. Absent: none. */
   parkingBrakeHandle?: { pos: FRD; travel: number };
   /**

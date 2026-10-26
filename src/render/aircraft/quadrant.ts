@@ -391,8 +391,10 @@ function knobParts(knob: QuadrantKnob, mat: AircraftMaterials): { main: THREE.Bu
       break;
     }
     case 'cylinderThrottle': {
-      main.push(new THREE.CylinderGeometry(0.0145, 0.0145, 0.036, 22).rotateZ(Math.PI / 2).translate(0, 0.012, 0));
-      for (const s of [-1, 1]) main.push(new THREE.CylinderGeometry(0.0135, 0.0145, 0.003, 22).rotateZ(Math.PI / 2).translate(s * 0.0195, 0.012, 0));
+      // A long cylinder across the slot, most of it outboard (left) of the stem.
+      const len = 0.056, off = -0.014;
+      main.push(new THREE.CylinderGeometry(0.0145, 0.0145, len, 22).rotateZ(Math.PI / 2).translate(off, 0.012, 0));
+      for (const s of [-1, 1]) main.push(new THREE.CylinderGeometry(0.0135, 0.0145, 0.003, 22).rotateZ(Math.PI / 2).translate(off + s * (len / 2 + 0.0015), 0.012, 0));
       break;
     }
     case 'c208Power': {

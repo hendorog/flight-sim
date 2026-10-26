@@ -443,6 +443,8 @@ const QUADRANT = { y0: faceY(Q.x0), y1: faceY(Q.x1), zTop: faceZ(Q.y0), aftX: PA
  */
 const EDGE = { x: QUADRANT.aftX + 0.02, z: PANEL_ZB + 0.0015, r: 0.07, from: -1.0, to: 2.2, inner: 0.04 };
 const LEVER = { x: EDGE.x, z: EDGE.z, y: 0.059, length: 0.105, tilt: 0.55 };
+/** The well's surround: its top edge on the face and how far it stands out. */
+const WELL = { zTop: faceZ(436), lip: 0.03 };
 /** The housing's bottom. */
 const QUADRANT_BOTTOM = PANEL_ZB + 0.12;
 /** The console between the seats carrying the flap lever and the trim wheel (s.9). */
@@ -536,8 +538,9 @@ const COCKPIT: CockpitDef = {
   },
   quadrant: {
     housings: [
-      // The centre: the flat aft face with the fuel selector, from the face's quadrant pixels down to the housing's bottom.
-      { profile: [[PANEL_X + 0.006, QUADRANT.zTop], [QUADRANT.aftX, QUADRANT.zTop], [QUADRANT.aftX, QUADRANT_BOTTOM], [PANEL_X + 0.006, QUADRANT_BOTTOM]],
+      // The centre: a rounded hump between the lever slots, from the well's floor down to the housing's bottom.
+      { profile: [[PANEL_X + 0.006, QUADRANT.zTop], [PANEL_X - 0.03, QUADRANT.zTop + 0.003], [PANEL_X - 0.05, QUADRANT.zTop + 0.016],
+          [PANEL_X - 0.062, QUADRANT.zTop + 0.04], [PANEL_X - 0.066, QUADRANT_BOTTOM], [PANEL_X + 0.006, QUADRANT_BOTTOM]],
         y0: -0.04, y1: 0.04, bevel: 0.008, material: 'black' },
       // Each side: down from the panel, round inside its curved edge, and flat underneath.
       ...([-1, 1] as const).map((s) => ({
@@ -556,11 +559,17 @@ const COCKPIT: CockpitDef = {
       y0: s < 0 ? -0.075 : 0.04, y1: s < 0 ? -0.04 : 0.075, material: 'black' as const,
       slots: [{ lever: s < 0 ? 1 : 2, w: 0.008, label: s < 0 ? 'THROTTLE' : 'MIXTURE' }],
     })),
-    placards: [{ pos: [QUADRANT.aftX - 0.0005, 0, QUADRANT.zTop + 0.02], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.05, h: 0.012, lines: ['FUEL OFF', 'HERE \u2193'], ink: 'white', ground: 'black' }],
+    // The well over the levers: a moulded surround standing out of the face round the fuel gauges and the selector.
+    parts: [
+      { kind: 'box', min: [PANEL_X - WELL.lip, QUADRANT.y0 - 0.012, WELL.zTop], max: [PANEL_X + 0.002, QUADRANT.y1 + 0.012, WELL.zTop + 0.012], bevel: 0.004, material: 'black' },
+      ...([-1, 1] as const).map((s) => ({ kind: 'box' as const, min: [PANEL_X - WELL.lip, s < 0 ? QUADRANT.y0 - 0.012 : QUADRANT.y1 - 0.002, WELL.zTop] as FRD,
+        max: [PANEL_X + 0.002, s < 0 ? QUADRANT.y0 + 0.002 : QUADRANT.y1 + 0.012, QUADRANT.zTop + 0.01] as FRD, bevel: 0.004, material: 'black' as const })),
+    ],
+    placards: [{ pos: [PANEL_X - 0.0008, 0, WELL.zTop + 0.02], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.034, h: 0.012, lines: ['FUEL'], ink: 'white', ground: 'black' }],
   },
   // The fuel selector handle in the middle of the quadrant, LEFT / RIGHT / OFF (no BOTH; s.3, s.9), and the parking
   // brake handle hanging under the quadrant, pulled to set (s.9).
-  fuelSelectorHandle: { pos: [QUADRANT.aftX - 0.002, 0, faceZ(680)], angles: { left: -45, right: 45, off: 180 } },
+  fuelSelectorHandle: { pos: [PANEL_X - 0.003, 0, faceZ(560)], angles: { left: -45, right: 45, off: 180 }, colour: 'red' },
   parkingBrakeHandle: { pos: [PANEL_X - 0.06, 0, PANEL_ZB + 0.15], travel: 0.05 },
   // Magnetic compass at the top centre of the windshield, hung from the front of the metal roof strip (s.9); its
   // bracket (0.083 m above the pivot) stays under the roof skin.
@@ -598,7 +607,7 @@ const COCKPIT: CockpitDef = {
   // The fuel selector in the middle of the quadrant, the parking brake handle hanging under it (s.3, s.9; drawn by
   // fuelSelectorHandle and parkingBrakeHandle).
   controlPoints: {
-    fuelSelector: [QUADRANT.aftX - 0.005, 0, faceZ(680)],
+    fuelSelector: [PANEL_X - 0.02, 0, faceZ(560)],
     parkingBrake: [PANEL_X - 0.06, 0, PANEL_ZB + 0.15],
   },
 };
