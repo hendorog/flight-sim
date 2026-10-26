@@ -381,7 +381,7 @@ function knobParts(knob: QuadrantKnob, mat: AircraftMaterials): { main: THREE.Bu
     }
     case 'ribbedMixture': {
       // A fluted cylinder lying across the slot.
-      main.push(prism(fluted(0.0165, 14, 0.0028, 0.45), 0.026, 0.0015).rotateY(Math.PI / 2).translate(0, 0.0125, 0));
+      main.push(prism(fluted(0.0165, 10, 0.0042, 0.42), 0.026, 0.0015).rotateY(Math.PI / 2).translate(0, 0.0125, 0));
       break;
     }
     case 'scallopedMixture': {
@@ -448,11 +448,12 @@ export function buildQuadrantLever(g: THREE.Group, mat: AircraftMaterials, knobM
   b.add(mat.darkMetal, stem.rotateX(tilt));
   const parts = knobParts(knob, mat);
   const off = e.knobOffset ?? 0;
-  for (const k of parts.main) b.add(knobMat, k.translate(off, length, 0).rotateX(tilt));
+  const sc = e.knobScale ?? 1;
+  for (const k of parts.main) b.add(knobMat, k.scale(sc, sc, sc).translate(off, length, 0).rotateX(tilt));
   g.add(...b.build('lever').children);
   if (parts.extra.length) {
     const x = new MeshBatch();
-    for (const [m, k, onKnob] of parts.extra) x.add(m, k.translate(onKnob ? off : 0, length, 0).rotateX(tilt));
+    for (const [m, k, onKnob] of parts.extra) x.add(m, k.scale(sc, sc, sc).translate(onKnob ? off : 0, length, 0).rotateX(tilt));
     g.add(...x.build('leverPart').children);
   }
 }
@@ -754,19 +755,24 @@ export function trimWheelParts(mat: AircraftMaterials, def: TrimWheelDef, fixed:
   const p = at(def.pos);
   // In model space the wheel turns about x for an axis 'y' wheel; about z for an axis 'x' one.
   const turn = def.axis === 'x' ? new THREE.Matrix4().makeRotationY(Math.PI / 2) : new THREE.Matrix4();
-  const place = (g: THREE.BufferGeometry): THREE.BufferGeometry => g.applyMatrix4(turn).translate(p.x, p.y, p.z);
   if (def.housing === 'slot') {
-    // The moulded bezel round the opening the rim shows through: the opening's plane 0.6 r aft of the hub (body -x).
+    // The moulded bezel round the opening the rim shows through: the opening's plane 0.6 r out of the hub along the
+    // face's normal. Built in a frame (x along the wheel's axis, y along the slot, z out of the face), then placed.
     const d = 0.6 * r;
     const half = Math.sqrt(r * r - d * d) + 0.006;
     const gap = w / 2 + 0.005;
     const frame = 0.007;
+    const axis = new THREE.Vector3(1, 0, 0).applyMatrix4(turn);
+    const n = dir(def.slotNormal ?? [-1, 0, 0]).projectOnPlane(axis).normalize();
+    const along = new THREE.Vector3().crossVectors(n, axis).normalize();
+    const basis = new THREE.Matrix4().makeBasis(axis, along, n);
+    const put = (g: THREE.BufferGeometry): THREE.BufferGeometry => g.applyMatrix4(basis).translate(p.x, p.y, p.z);
     for (const s of [-1, 1]) {
-      fixed.add(mat.black, place(bevelBox(frame, 2 * half + 2 * frame, 0.008, 0.002).translate(s * (gap + frame / 2), 0, d + 0.002)));
-      fixed.add(mat.black, place(bevelBox(2 * gap + 2 * frame, frame, 0.008, 0.002).translate(0, s * (half + frame / 2), d + 0.002)));
+      fixed.add(mat.black, put(bevelBox(frame, 2 * half + 2 * frame, 0.008, 0.002).translate(s * (gap + frame / 2), 0, d + 0.002)));
+      fixed.add(mat.black, put(bevelBox(2 * gap + 2 * frame, frame, 0.008, 0.002).translate(0, s * (half + frame / 2), d + 0.002)));
     }
     // The well behind the rim.
-    fixed.add(mat.black, place(new THREE.BoxGeometry(2 * gap, 2 * half, 0.004).translate(0, 0, -0.2 * r)));
+    fixed.add(mat.black, put(new THREE.BoxGeometry(2 * gap, 2 * half, 0.004).translate(0, 0, -0.2 * r)));
   } else if (def.housing === 'side') {
     // A guard round the lower half of the wheel and a cheek plate on its outboard face (body -y for a left-side wheel).
     const m = new Mesher();
@@ -790,9 +796,10 @@ export function trimWheelParts(mat: AircraftMaterials, def: TrimWheelDef, fixed:
     const pp = c.clone().addScaledVector(up, ind.length * 0.12).addScaledVector(n, 0.002);
     fixed.add(mat.knobWhite, pointer.translate(pp.x, pp.y, pp.z));
     const toFrd = (v: THREE.Vector3): FRD => [-v.z, v.x, -v.y];
+    const labelUp = ind.labelUp ? toFrd(dir(ind.labelUp)) : toFrd(up);
     for (const [s, text] of [[1, 'NOSE UP'], [-1, 'NOSE DN']] as const) {
       const lp = c.clone().addScaledVector(up, s * (ind.length / 2 + 0.007));
-      placards.add({ pos: toFrd(lp), normal: toFrd(n), up: toFrd(up), w: 0.024, h: 0.007, lines: [text], ink: 'white', ground: 'black' });
+      placards.add({ pos: toFrd(lp), normal: toFrd(n), up: labelUp, w: 0.024, h: 0.007, lines: [text], ink: 'white', ground: 'black' });
     }
   }
   return b;

@@ -45,14 +45,15 @@ function look([yawDeg, pitchDeg, fov]) {
 }
 
 /** In the page: head yaw / pitch (deg) that centre the mean of the engine controls' knobs at mid travel. */
-function closeAim() {
+function closeAim(pattern = '^(lever|knob)') {
+  const re = new RegExp(pattern);
   const sim = window.__sim;
   const THREE = window.__THREE;
   const root = sim.ctx.aircraftRoot;
   let cockpit = null;
   root.traverse((o) => { if (o.name === 'cockpit' && !cockpit) o.isGroup && (cockpit = o); });
   const pts = [];
-  cockpit.traverse((o) => { if (o.isMesh && /^(lever|knob)/.test(o.name)) { o.geometry.computeBoundingBox(); const c = o.geometry.boundingBox.getCenter(new THREE.Vector3()); pts.push(o.localToWorld(c)); } });
+  cockpit.traverse((o) => { if (o.isMesh && re.test(o.name)) { o.geometry.computeBoundingBox(); const c = o.geometry.boundingBox.getCenter(new THREE.Vector3()); pts.push(o.localToWorld(c)); } });
   const cam = sim.ctx.camera;
   if (!pts.length) return null;
   const m = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
@@ -123,10 +124,13 @@ try {
     await sleep(3000);
     const rec = { errors: errs };
     const aim = await p.evaluate(closeAim);
+    const trimAim = await p.evaluate(closeAim, '^trimWheel');
     for (const view of views) {
       if (view === 'down') await p.evaluate(look, [0, -40, 60]);
       else if (view === 'downright') await p.evaluate(look, [-30, -38, 60]);
+      else if (view === 'floor') await p.evaluate(look, [-50, -62, 60]);
       else if (view === 'close') { if (!aim) continue; await p.evaluate(look, [aim[0], aim[1], 34]); }
+      else if (view === 'trim') { if (!trimAim) continue; await p.evaluate(look, [trimAim[0], trimAim[1], 30]); }
       await sleep(700);
       rec[view] = await p.evaluate(cost);
       if (clicks && view !== 'close') rec[view].hotspots = await p.evaluate(hotspots);

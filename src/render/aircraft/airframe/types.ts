@@ -398,7 +398,9 @@ export interface CockpitDef {
                              /** Lever with `knob` only: the lever's whole swing leaned aft by this angle, rad (the slots sit on the aft face of a drum). Absent: 0. */
                              tilt?: number;
                              /** With `knob`: the knob's lateral offset from its stem, m (+ right), so wide knobs on neighbouring levers clear each other. Absent: 0. */
-                             knobOffset?: number }[];
+                             knobOffset?: number;
+                             /** With `knob`: the knob's size against the library's (a twin's six knobs side by side are smaller). Absent: 1. */
+                             knobScale?: number }[];
   /**
    * panelLever: a lever in a slot on the panel face, `travel` m down from UP to FULL. panelSwitch: a paddle
    * switch on the face, tilting `travel` rad. floorLever: a hand lever between the seats pivoted at `pos`,
@@ -424,7 +426,10 @@ export interface CockpitDef {
   trimWheel?: { pos: FRD; axis: 'x' | 'y'; radius?: number; width?: number; housing?: 'slot' | 'side';
                 /** The rim's grip: a fine knurl (absent) or deep finger scallops (the Caravan's). */
                 grip?: 'knurl' | 'scallop';
-                indicator?: { pos: FRD; length: number; up: FRD; normal: FRD } };
+                /** housing 'slot': the face the rim shows through, its outward normal (FRD unit; absent: aft, [-1, 0, 0]). */
+                slotNormal?: FRD;
+                /** labelUp: the NOSE UP / DN legends' up when it is not `up` (an indicator lying on a floor tunnel). */
+                indicator?: { pos: FRD; length: number; up: FRD; normal: FRD; labelUp?: FRD } };
   /** The throttle quadrant or pedestal from the shared builder (render/aircraft/quadrant.ts). Absent: none (the consoles alone). */
   quadrant?: QuadrantDef;
   /** Float pivot in FRD. Absent: no magnetic compass; mount defaults to the header/post bracket. */
