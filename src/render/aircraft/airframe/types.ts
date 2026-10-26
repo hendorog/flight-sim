@@ -310,7 +310,9 @@ export type QuadrantPart =
   /** A bevelled box (cup holders' brackets, escutcheons). */
   | { kind: 'box'; min: FRD; max: FRD; bevel: number; material: QuadrantMaterial }
   /** A rocker or toggle switch on a plate (trim switches): a guard frame and a two-way rocker. */
-  | { kind: 'rocker'; pos: FRD; axis: FRD; along: FRD; size: number };
+  | { kind: 'rocker'; pos: FRD; axis: FRD; along: FRD; size: number }
+  /** A moulded lip round a recessed sub-panel on a face (the Cessna's engine-control panel): w x h, `up` its vertical, `lip` proud. */
+  | { kind: 'frame'; pos: FRD; normal: FRD; up: FRD; w: number; h: number; lip: number };
 
 export interface QuadrantDef {
   /** Side outlines (x, z) extruded across from y0 to y1 with a bevel: the pedestal body, the quadrant box, the console. */

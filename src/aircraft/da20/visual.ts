@@ -425,6 +425,17 @@ const SEAT_X = EYE.x + 0.66;
 const SEAT_Z = EYE.z + 0.69;
 /** Centre console: the quadrant's pivots on its sloping top. */
 const QUADRANT = { x: PANEL_X - 0.25, z: FZ(-0.12) };
+/**
+ * The console top's height (FRD z) at station x, between the panel's lower edge and the quadrant's aft end (the
+ * console's outline grows by its bevel, 0.8 x 0.015 m, cockpit.ts extrudeProfile), and the unit vector down it.
+ */
+const consoleTopZ = (x: number): number => PANEL_ZB - 0.01 - 0.012 + ((PANEL_X - x) / (PANEL_X - QUADRANT.x + 0.05)) * (QUADRANT.z + 0.004 - PANEL_ZB + 0.01);
+const CONSOLE_DOWN: FRD = (() => {
+  const dx = QUADRANT.x - 0.05 - PANEL_X;
+  const dz = QUADRANT.z + 0.004 - PANEL_ZB + 0.01;
+  const l = Math.hypot(dx, dz);
+  return [dx / l, 0, dz / l];
+})();
 /** Fixed reclined seat shells with the backs at about 28 degrees (s.2.6, s.12). */
 const RECLINE_DEG = 28;
 const SEAT_WIDTH = 0.38;
@@ -477,8 +488,6 @@ const COCKPIT: CockpitDef = {
         [QUADRANT.x - 0.05, QUADRANT.z + 0.004],
       ],
     },
-    // The quadrant's slotted face plate on the console top.
-    { min: [QUADRANT.x - 0.07, -0.06, QUADRANT.z - 0.006], max: [QUADRANT.x + 0.07, 0.06, QUADRANT.z + 0.004], bevel: 0.004, material: 'black' },
     // The baggage shelf behind the seats, over the fuel tank (s.2.6), and the light grey tub's rear bulkhead.
     { min: [CABIN_REAR_X + 0.02, -0.38, FZ(0.04)], max: [CABIN_REAR_X + 0.32, 0.38, FZ(-0.02)], bevel: 0.012, material: 'carpet' },
   ],
@@ -499,10 +508,20 @@ const COCKPIT: CockpitDef = {
   // The three-lever quadrant side by side (s.9): alternate air left (forward = normal), throttle centre, the red
   // mixture right.
   engineControls: [
-    { kind: 'lever', control: 'alternateAir', engine: 0, pos: [QUADRANT.x, -0.035, QUADRANT.z], travel: 50 * DEG, colour: 'black', length: 0.08 },
-    { kind: 'lever', control: 'throttle', engine: 0, pos: [QUADRANT.x, 0, QUADRANT.z], travel: 50 * DEG, colour: 'black', length: 0.1 },
-    { kind: 'lever', control: 'mixture', engine: 0, pos: [QUADRANT.x, 0.035, QUADRANT.z], travel: 50 * DEG, colour: 'red', length: 0.09 },
+    { kind: 'lever', control: 'alternateAir', engine: 0, pos: [QUADRANT.x, -0.035, QUADRANT.z + 0.05], travel: 50 * DEG, colour: 'black', length: 0.13, knob: 'tGrip', knobScale: 0.65 },
+    { kind: 'lever', control: 'throttle', engine: 0, pos: [QUADRANT.x, 0, QUADRANT.z + 0.05], travel: 50 * DEG, colour: 'black', length: 0.15, knob: 'tGrip' },
+    { kind: 'lever', control: 'mixture', engine: 0, pos: [QUADRANT.x, 0.035, QUADRANT.z + 0.05], travel: 50 * DEG, colour: 'red', length: 0.14, knob: 'ribbedMixture', knobScale: 0.8 },
   ],
+  // The quadrant's face plate on the console's sloping top: black, slotted, labelled, in a moulded lip.
+  quadrant: {
+    housings: [],
+    plates: [
+      { origin: [QUADRANT.x + 0.075, -0.058, consoleTopZ(QUADRANT.x + 0.075) - 0.003], u: CONSOLE_DOWN, v: [0, 1, 0], length: 0.15, width: 0.116, thickness: 0.003,
+        material: 'black', slots: [{ lever: 0, w: 0.008, label: 'ALT AIR' }, { lever: 1, w: 0.009, label: 'THROTTLE' }, { lever: 2, w: 0.008, label: 'MIXTURE' }] },
+    ],
+    parts: [{ kind: 'frame', pos: [QUADRANT.x, 0, consoleTopZ(QUADRANT.x) - 0.003], normal: [-CONSOLE_DOWN[2], 0, CONSOLE_DOWN[0]], up: [-CONSOLE_DOWN[0], 0, -CONSOLE_DOWN[2]],
+              w: 0.12, h: 0.154, lip: 0.003 }],
+  },
   // The three-position flap switch on the lower centre of the panel, beside its lights (panel.ts).
   flapControl: { kind: 'panelSwitch', pos: [PANEL_X, faceY(DA20_FLAP_SWITCH[0]), faceZ(DA20_FLAP_SWITCH[1])], travel: 40 * DEG },
   // Magnetic compass on top of the glareshield at the centre (s.12).

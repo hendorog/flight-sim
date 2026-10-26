@@ -266,7 +266,8 @@ export class PlacardAtlas {
       lines.forEach((line, k) => {
         let size = Math.floor(lh * 0.78);
         ctx.font = `bold ${size}px sans-serif`;
-        const wide = ctx.measureText(line).width;
+        // (A stand-in context in tests may measure nothing.)
+        const wide = ctx.measureText(line)?.width ?? 0;
         if (wide > c.w - 6) {
           size = Math.max(6, Math.floor((size * (c.w - 6)) / wide));
           ctx.font = `bold ${size}px sans-serif`;
@@ -471,22 +472,28 @@ export function buildPlunger(g: THREE.Group, fixed: MeshBatch, mat: AircraftMate
   const z0 = 0.074;
   b.add(mat.chrome, new THREE.CylinderGeometry(0.0045, 0.0045, 0.12, 12).rotateX(Math.PI / 2));
   const knob = e.knob!;
+  // The face disc: the knob's polished end (a white plastic insert on the carb heat).
+  const face = (r: number, z: number, m: THREE.Material): void => b.add(m, new THREE.CylinderGeometry(r, r, 0.003, 24).rotateX(Math.PI / 2).translate(0, 0, z));
   if (knob === 'plungerMixture') {
-    b.add(knobMat, prism(fluted(0.0155, 20, 0.0022, 0.5), 0.03, 0.0015).translate(0, 0, z0));
-    b.add(mat.chrome, new THREE.CylinderGeometry(0.0055, 0.0055, 0.006, 14).rotateX(Math.PI / 2).translate(0, 0, z0 + 0.017));
+    // Fluted red knob, its vernier lock button in the face.
+    b.add(knobMat, prism(fluted(0.0155, 12, 0.003, 0.45), 0.03, 0.0015).translate(0, 0, z0));
+    face(0.0095, z0 + 0.0155, mat.chrome);
   } else if (knob === 'plungerCarbHeat') {
-    b.add(knobMat, new THREE.CylinderGeometry(0.015, 0.016, 0.022, 24).rotateX(Math.PI / 2).translate(0, 0, z0));
+    b.add(knobMat, new THREE.CylinderGeometry(0.0145, 0.0155, 0.02, 24).rotateX(Math.PI / 2).translate(0, 0, z0));
+    face(0.0115, z0 + 0.0105, mat.knobWhite);
   } else {
-    // Smooth throttle knob with a domed face.
-    b.add(knobMat, new THREE.CylinderGeometry(0.0155, 0.0165, 0.026, 26).rotateX(Math.PI / 2).translate(0, 0, z0));
-    const dome = new THREE.SphereGeometry(0.0155, 20, 6, 0, Math.PI * 2, 0, Math.PI * 0.32);
-    b.add(knobMat, dome.rotateX(Math.PI / 2).translate(0, 0, z0 + 0.013 - 0.0155 * Math.cos(Math.PI * 0.32)));
+    // Throttle: a smooth black knob with a flange at its back and a polished face.
+    b.add(knobMat, new THREE.CylinderGeometry(0.0155, 0.0165, 0.024, 28).rotateX(Math.PI / 2).translate(0, 0, z0));
+    b.add(knobMat, new THREE.CylinderGeometry(0.0185, 0.0185, 0.005, 28).rotateX(Math.PI / 2).translate(0, 0, z0 - 0.0105));
+    face(0.011, z0 + 0.0125, mat.chrome);
   }
   g.add(...b.build('knob').children);
   // On the panel: a bushing, and for the throttle the knurled friction-lock nut round the shaft.
   const p = at(e.pos);
-  fixed.add(mat.chrome, new THREE.CylinderGeometry(0.0085, 0.0095, 0.006, 18).rotateX(Math.PI / 2).translate(p.x, p.y, p.z + 0.003));
-  if (knob === 'plunger') fixed.add(mat.knobBlack, prism(fluted(0.0185, 24, 0.0018, 0.5), 0.011, 0.001).translate(p.x, p.y, p.z + 0.0115));
+  // A black bezel ring and a hex bushing nut on the panel; the throttle's knurled friction-lock ring out on the shaft.
+  fixed.add(mat.black, new THREE.CylinderGeometry(0.021, 0.022, 0.003, 28).rotateX(Math.PI / 2).translate(p.x, p.y, p.z + 0.0015));
+  fixed.add(mat.chrome, new THREE.CylinderGeometry(0.0145, 0.0145, 0.007, 6).rotateX(Math.PI / 2).translate(p.x, p.y, p.z + 0.0055));
+  if (knob === 'plunger') fixed.add(mat.knobBlack, prism(fluted(0.0175, 24, 0.0016, 0.5), 0.01, 0.001).translate(p.x, p.y, p.z + 0.014));
 }
 
 // ---- Housings, covers, fittings -----------------------------------------------------------------------------------
@@ -592,8 +599,8 @@ export function addQuadrant(fixed: MeshBatch, mat: AircraftMaterials, def: Cockp
         const a = s.from + (s.to - s.from) * 0.35;
         const p = arcPoint(cx, cz, rOut, a, s.y - s.hw - 0.0045);
         const n = arcNormal(a);
-        placards.add({ pos: [-p.z, p.x, -p.y], normal: [-n.z, n.x, -n.y], up: [0, -1, 0], w: Math.min(0.05, (s.to - s.from) * rOut * 0.6), h: 0.0055, lines: [s.label], ink: 'black',
-                       ground: arc.material === 'trimPlastic' ? 'cover' : 'black' });
+        placards.add({ pos: [-p.z, p.x, -p.y], normal: [-n.z, n.x, -n.y], up: [0, -1, 0], w: Math.min(0.05, (s.to - s.from) * rOut * 0.6), h: 0.0055, lines: [s.label],
+                       ...(arc.material === 'trimPlastic' ? { ink: 'black' as const, ground: 'cover' as const } : { ink: 'white' as const, ground: 'black' as const }) });
       }
     }
     if (!marks.empty) fixed.add(mat.knobWhite, marks.build());
@@ -712,6 +719,20 @@ function addPart(fixed: MeshBatch, mat: AircraftMaterials, part: QuadrantPart): 
       const p = at(part.pos);
       fixed.add(mat.chrome, stand(rod(0.003, 0.02, 8), a, p));
       fixed.add(mat[part.material], stand(new THREE.CapsuleGeometry(0.006, part.length - 0.012, 3, 10).rotateZ(Math.PI / 2).translate(0, 0.024, 0), a, p));
+      return;
+    }
+    case 'frame': {
+      const n = dir(part.normal).normalize();
+      const up = dir(part.up).projectOnPlane(n).normalize();
+      const right = new THREE.Vector3().crossVectors(up, n);
+      const basis = new THREE.Matrix4().makeBasis(right, up, n);
+      const p = at(part.pos);
+      const t = 0.005;
+      const put = (g: THREE.BufferGeometry): THREE.BufferGeometry => g.applyMatrix4(basis).translate(p.x, p.y, p.z);
+      for (const s of [-1, 1]) {
+        fixed.add(mat.black, put(bevelBox(part.w + t, t, part.lip, 0.0015).translate(0, (s * (part.h + t)) / 2, part.lip / 2)));
+        fixed.add(mat.black, put(bevelBox(t, part.h + t, part.lip, 0.0015).translate((s * (part.w + t)) / 2, 0, part.lip / 2)));
+      }
       return;
     }
     case 'rocker': {

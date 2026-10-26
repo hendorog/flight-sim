@@ -437,10 +437,14 @@ const SEAT_Y = -EYE.y;
 const Q = PA38_PANEL_PARTS.quadrant;
 const QUADRANT = { y0: faceY(Q.x0), y1: faceY(Q.x1), zTop: faceZ(Q.y0), aftX: PANEL_X - 0.09 };
 /**
- * Lever pivots in a slotted housing under the quadrant, far enough aft of its face that the knobs stay in front of
- * it over the whole travel (0.17 m x sin 0.4 rad forward of the pivot, plus the knob).
+ * The quadrant (cockpit-refs/pa38): a black housing hung from the lower centre of the panel, its flat aft face carrying
+ * the fuel selector, its sides flaring aft into curved edges with the throttle (left) and mixture (right) slots running
+ * round them. The levers pivot on the edges' axis, leaned aft so that full forward stands near the top. PHOTO / ESTIMATE.
  */
-const LEVER = { x: QUADRANT.aftX - 0.09, z: 0.07 };
+const EDGE = { x: QUADRANT.aftX + 0.02, z: PANEL_ZB + 0.0015, r: 0.07, from: -1.0, to: 2.2, inner: 0.04 };
+const LEVER = { x: EDGE.x, z: EDGE.z, y: 0.059, length: 0.105, tilt: 0.55 };
+/** The housing's bottom. */
+const QUADRANT_BOTTOM = PANEL_ZB + 0.12;
 /** The console between the seats carrying the flap lever and the trim wheel (s.9). */
 const CONSOLE = { x0: 0.24, x1: -0.55, hw: 0.065, top: FLOOR_Z - 0.16 };
 
@@ -492,11 +496,7 @@ const COCKPIT: CockpitDef = {
         [PANEL_X + 0.17, PANEL_ZB - 0.005],
       ],
     },
-    // The throttle quadrant in front of the lower centre of the panel, reachable from both seats (s.9): throttle
-    // on the left, fuel selector in the middle, mixture on the right, the carburettor heat lever at its left edge.
-    { min: [QUADRANT.aftX, QUADRANT.y0, QUADRANT.zTop], max: [PANEL_X + 0.01, QUADRANT.y1, PANEL_ZB + 0.12], bevel: 0.012, material: 'black' },
-    // Its lower part runs aft under the levers, the throttle and mixture standing up out of slots in its top.
-    { min: [LEVER.x - 0.03, QUADRANT.y0, LEVER.z - 0.005], max: [QUADRANT.aftX + 0.01, QUADRANT.y1, PANEL_ZB + 0.12], bevel: 0.012, material: 'black' },
+    // (The throttle quadrant in front of the lower centre of the panel is CockpitDef.quadrant.)
     // The narrow console between the seats, the flap lever at its front and the trim wheel behind it (s.9).
     { min: [CONSOLE.x1, -CONSOLE.hw, CONSOLE.top], max: [CONSOLE.x0, CONSOLE.hw, FLOOR_Z], bevel: 0.015, material: 'trimPlastic' },
     // The open baggage shelf behind the seats under the rear window (s.2.6, s.12).
@@ -523,13 +523,41 @@ const COCKPIT: CockpitDef = {
   // carburettor heat lever on the quadrant's left edge (down = ON).
   engineControls: [
     { kind: 'lever', control: 'carbHeat', engine: 0, pos: [QUADRANT.aftX - 0.006, QUADRANT.y0 - 0.012, LEVER.z - 0.04], travel: 0.5, colour: 'black', length: 0.08 },
-    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, -0.042, LEVER.z], travel: 0.8, colour: 'black', length: 0.17 },
-    { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, 0.042, LEVER.z], travel: 0.8, colour: 'red', length: 0.17 },
+    { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, -LEVER.y, LEVER.z], travel: 0.8, colour: 'black', length: LEVER.length, knob: 'cylinderThrottle', tilt: LEVER.tilt },
+    { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, LEVER.y, LEVER.z], travel: 0.8, colour: 'red', length: LEVER.length, knob: 'scallopedMixture', tilt: LEVER.tilt },
   ],
   // The hand flap lever between the seats, pulled up through 21 to 34 degrees (s.9).
   flapControl: { kind: 'floorLever', pos: [CONSOLE.x0 - 0.06, 0, CONSOLE.top], travel: 0.7 },
-  // The elevator trim wheel on the console behind the flap lever, forward = nose down (s.9).
-  trimWheel: { pos: [0.02, 0, CONSOLE.top - 0.01], axis: 'y' },
+  // The elevator trim wheel on the console behind the flap lever, forward = nose down (s.9): its knurled rim up through
+  // a bezel in the console top, the trim indicator beside it.
+  trimWheel: {
+    pos: [0.02, 0, CONSOLE.top + 0.045], axis: 'y', housing: 'slot', slotNormal: [0, 0, -1],
+    indicator: { pos: [0.02, 0.045, CONSOLE.top - 0.0015], length: 0.06, up: [-1, 0, 0], normal: [0, 0, -1], labelUp: [1, 0, 0] },
+  },
+  quadrant: {
+    housings: [
+      // The centre: the flat aft face with the fuel selector, from the face's quadrant pixels down to the housing's bottom.
+      { profile: [[PANEL_X + 0.006, QUADRANT.zTop], [QUADRANT.aftX, QUADRANT.zTop], [QUADRANT.aftX, QUADRANT_BOTTOM], [PANEL_X + 0.006, QUADRANT_BOTTOM]],
+        y0: -0.04, y1: 0.04, bevel: 0.008, material: 'black' },
+      // Each side: down from the panel, round inside its curved edge, and flat underneath.
+      ...([-1, 1] as const).map((s) => ({
+        profile: [
+          [PANEL_X + 0.006, QUADRANT.zTop + 0.01], [EDGE.x + EDGE.r * Math.sin(-EDGE.from) + 0.002, QUADRANT.zTop + 0.01],
+          [EDGE.x - (EDGE.r - 0.005) * Math.sin(EDGE.from), EDGE.z - (EDGE.r - 0.005) * Math.cos(EDGE.from)],
+          ...[-20, 20, 60, 100, 126].map((d): [number, number] => [EDGE.x - EDGE.inner * Math.sin((d * Math.PI) / 180), EDGE.z - EDGE.inner * Math.cos((d * Math.PI) / 180)]),
+          [EDGE.x - EDGE.r * Math.sin(EDGE.to) + 0.003, EDGE.z - EDGE.r * Math.cos(EDGE.to)], [EDGE.x - EDGE.r * Math.sin(EDGE.to) + 0.003, QUADRANT_BOTTOM],
+          [PANEL_X + 0.006, QUADRANT_BOTTOM],
+        ] as [number, number][],
+        y0: s < 0 ? -0.075 : 0.04, y1: s < 0 ? -0.04 : 0.075, bevel: 0.004, material: 'black' as const,
+      })),
+    ],
+    arcs: ([-1, 1] as const).map((s) => ({
+      centre: [EDGE.x, EDGE.z] as [number, number], r: EDGE.r, thickness: 0.004, from: EDGE.from, to: EDGE.to,
+      y0: s < 0 ? -0.075 : 0.04, y1: s < 0 ? -0.04 : 0.075, material: 'black' as const,
+      slots: [{ lever: s < 0 ? 1 : 2, w: 0.008, label: s < 0 ? 'THROTTLE' : 'MIXTURE' }],
+    })),
+    placards: [{ pos: [QUADRANT.aftX - 0.0005, 0, QUADRANT.zTop + 0.02], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.05, h: 0.012, lines: ['FUEL OFF', 'HERE \u2193'], ink: 'white', ground: 'black' }],
+  },
   // The fuel selector handle in the middle of the quadrant, LEFT / RIGHT / OFF (no BOTH; s.3, s.9), and the parking
   // brake handle hanging under the quadrant, pulled to set (s.9).
   fuelSelectorHandle: { pos: [QUADRANT.aftX - 0.002, 0, faceZ(680)], angles: { left: -45, right: 45, off: 180 } },

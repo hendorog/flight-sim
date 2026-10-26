@@ -529,14 +529,24 @@ const COCKPIT: CockpitDef = {
   // Push-pull knobs along the lower centre of the panel (s.9): carburettor heat left of the throttle (black), the
   // large throttle knob, the red mixture knob right of it.
   engineControls: [
-    { kind: 'knob', control: 'carbHeat', engine: 0, pos: [PANEL_X, faceY(C152_KNOBS.carbHeat), faceZ(C152_KNOBS.y)], travel: 0.06, colour: 'black' },
-    { kind: 'knob', control: 'throttle', engine: 0, pos: [PANEL_X, faceY(C152_KNOBS.throttle), faceZ(C152_KNOBS.y)], travel: 0.075, colour: 'black' },
-    { kind: 'knob', control: 'mixture', engine: 0, pos: [PANEL_X, faceY(C152_KNOBS.mixture), faceZ(C152_KNOBS.y)], travel: 0.075, colour: 'red' },
+    { kind: 'knob', control: 'carbHeat', engine: 0, pos: [PANEL_X, faceY(C152_KNOBS.carbHeat), faceZ(C152_KNOBS.y)], travel: 0.06, colour: 'black', knob: 'plungerCarbHeat' },
+    { kind: 'knob', control: 'throttle', engine: 0, pos: [PANEL_X, faceY(C152_KNOBS.throttle), faceZ(C152_KNOBS.y)], travel: 0.075, colour: 'black', knob: 'plunger' },
+    { kind: 'knob', control: 'mixture', engine: 0, pos: [PANEL_X, faceY(C152_KNOBS.mixture), faceZ(C152_KNOBS.y)], travel: 0.075, colour: 'red', knob: 'plungerMixture' },
   ],
   // The electric flap pre-select lever in its slotted gate right of the mixture: 0.1 m of travel from UP to 30 deg.
   flapControl: { kind: 'panelLever', pos: [PANEL_X, faceY(C152_PANEL_PARTS.flapSlot.x), faceZ(C152_PANEL_PARTS.flapSlot.y)], travel: 0.1 },
-  // The vertical elevator trim wheel on the pedestal below the throttle (s.9).
-  trimWheel: { pos: [PANEL_X - 0.05, 0, PANEL_ZB + 0.11], axis: 'y' },
+  // The vertical elevator trim wheel on the pedestal below the throttle (s.9), its knurled rim through a bezel in the
+  // pedestal's aft face, the NOSE DN / TAKE OFF / NOSE UP indicator left of it.
+  trimWheel: {
+    pos: [PANEL_X - 0.08 + 0.033, 0, PANEL_ZB + 0.12], axis: 'y', radius: 0.055, width: 0.02, housing: 'slot',
+    indicator: { pos: [PANEL_X - 0.0805, -0.038, PANEL_ZB + 0.12], length: 0.07, up: [0, 0, 1], normal: [-1, 0, 0], labelUp: [0, 0, -1] },
+  },
+  // The carb heat, throttle and mixture's sub-panel lip; ELEVATOR TRIM over the wheel.
+  quadrant: {
+    housings: [],
+    parts: [{ kind: 'frame', pos: [PANEL_X, faceY(C152_KNOBS.throttle), faceZ(C152_KNOBS.y)], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.17, h: 0.055, lip: 0.004 }],
+    placards: [{ pos: [PANEL_X - 0.0805, 0, PANEL_ZB + 0.045], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.04, h: 0.012, lines: ['ELEVATOR', 'TRIM'], ink: 'white', ground: 'black' }],
+  },
   // Magnetic compass on the windshield centre post at the top (s.9).
   compass: { pos: [0.375, 0, -0.57] },
   fittings: {

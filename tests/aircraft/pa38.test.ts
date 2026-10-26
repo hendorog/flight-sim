@@ -101,15 +101,21 @@ describe('Piper PA-38 Tomahawk II presentation', () => {
     };
     const c = PA38_VISUAL.cockpit.compass!.pos;
     for (const x of [c[0] - 0.003, c[0] + 0.039]) expect(c[2] - 0.083, `bracket at x ${x}`).toBeGreaterThan(top(x) + 0.003);
-    // Throttle and mixture: at full forward travel (travel / 2 from upright) the knob (radius 0.017) stays aft of
-    // every black quadrant body it is level with.
-    const quadrant = PA38_VISUAL.cockpit.consoles.filter((k) => k.material === 'black');
+    // Throttle and mixture: over their whole swing (leaned aft by `tilt`) the knob (a cylinder 36 mm long across the
+    // slot, radius 15 mm, on the stem's end) stays aft of the panel face and clear of the quadrant's flat centre body
+    // (the fuel selector's face), standing beside it or aft of it.
+    const centre = PA38_VISUAL.cockpit.quadrant!.housings[0];
+    const xs = centre.profile.map((p) => p[0]);
+    const zs = centre.profile.map((p) => p[1]);
     for (const e of PA38_VISUAL.cockpit.engineControls.filter((k) => k.control !== 'carbHeat')) {
-      const len = e.length ?? 0.11;
-      const knob = { x: e.pos[0] + len * Math.sin(e.travel / 2) + 0.017, z: e.pos[2] - len * Math.cos(e.travel / 2) };
-      for (const k of quadrant) {
-        if (knob.z < k.min[2] || knob.z > k.max[2] || e.pos[1] < k.min[1] || e.pos[1] > k.max[1]) continue;
-        expect(knob.x, `${e.control} knob forward of the quadrant face`).toBeLessThan(k.min[0]);
+      const len = (e.length ?? 0.11) + 0.012;
+      for (const v of [0, 0.5, 1]) {
+        const a = (e.tilt ?? 0) + e.travel * (0.5 - v);
+        const knob = { x: e.pos[0] - len * Math.sin(a), z: e.pos[2] - len * Math.cos(a) };
+        expect(knob.x + 0.015, `${e.control} knob aft of the panel`).toBeLessThan(PA38_VISUAL.cockpit.panel.x);
+        const besideBody = Math.abs(e.pos[1]) - 0.018 >= Math.max(centre.y1, -centre.y0) - 1e-9;
+        const aftOfBody = knob.x + 0.015 < Math.min(...xs) || knob.z - 0.015 > Math.max(...zs) || knob.z + 0.015 < Math.min(...zs);
+        expect(besideBody || aftOfBody, `${e.control} knob clear of the centre body at ${v}`).toBe(true);
       }
     }
   });
