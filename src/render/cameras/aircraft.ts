@@ -17,6 +17,20 @@ export interface CameraAircraft {
   defaultPitchDeg: number;
   /** Optional vertical FOV for cockpits with a low central console. */
   defaultFovDeg?: number;
+  /** The instrument focus view (CockpitDef.focus); absent: the focus key does nothing. */
+  focus?: CockpitFocus;
+}
+
+/**
+ * The instrument focus view of a cockpit (the Q key): the head turned `yawDeg` (+ left) and `pitchDeg` (+ up) from
+ * straight ahead, the same angles as CockpitDef.defaultPitchDeg, with a vertical field of view of `fovDeg`. Chosen so
+ * the main flight and engine instruments on the pilot's side are legible (a 3-1/8 in dial ~120 px across or more on a
+ * 991 px high view) while the top of the frame still looks out through the windscreen.
+ */
+export interface CockpitFocus {
+  yawDeg: number;
+  pitchDeg: number;
+  fovDeg: number;
 }
 
 export const C172S_CAMERA: CameraAircraft = {

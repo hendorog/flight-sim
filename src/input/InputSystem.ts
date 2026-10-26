@@ -69,6 +69,8 @@ export interface ViewControl {
   togglePointerLock(): void;
   /** Turn the view by a mouse-drag-equivalent amount, pixels (+x = right, +y = down). Optional. */
   lookBy?(dx: number, dy: number): void;
+  /** 3D cockpit: instrument focus on / off (CockpitDef.focus). Optional; other views ignore it. */
+  toggleFocus?(): void;
 }
 
 export interface InputSystemOptions {
@@ -1720,6 +1722,9 @@ export class InputSystem implements Subsystem {
       }
       case 'viewRecentre':
         this.view?.recentre();
+        break;
+      case 'viewFocus':
+        this.view?.toggleFocus?.();
         break;
       case 'centreControls':
         this.centreControls(ctx);

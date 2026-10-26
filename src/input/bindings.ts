@@ -102,6 +102,7 @@ export type InputAction =
   | 'cameraNext'
   | 'cameraPrev'
   | 'viewRecentre'
+  | 'viewFocus' // 3D cockpit: glance down at the main instruments, zoomed in, a strip of the windscreen still in view (toggle)
   | 'zoomIn'
   | 'zoomOut'
   | 'mouseLook'
@@ -128,9 +129,7 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'ArrowLeft', shift: false, action: 'rollLeft' },
   { code: 'ArrowRight', shift: false, action: 'rollRight' },
   { code: 'KeyZ', action: 'rudderLeft' },
-  { code: 'KeyQ', action: 'rudderLeft' },
   { code: 'KeyX', action: 'rudderRight' },
-  { code: 'KeyE', action: 'rudderRight' },
   { code: 'Comma', action: 'brakeLeft' },
   { code: 'Period', action: 'brakeRight' },
   // Types with ENGINE TRIM left/right (Bo 105), or the Nf beep moved off the propeller keys (AH-56A): Shift+, / Shift+.
@@ -228,6 +227,9 @@ export const KEY_MAP: readonly KeyMapping[] = [
   { code: 'KeyC', shift: false, action: 'cameraNext' },
   { code: 'KeyC', shift: true, action: 'cameraPrev' },
   { code: 'KeyV', shift: false, action: 'viewRecentre' },
+  // Instrument focus: the left hand's key (the right hand is on the arrows). Q and E were spare rudder keys beside Z / X
+  // until 2026-10-26; Q now toggles the focus view (with or without Shift, so it works mid Shift+arrow look) and E is free.
+  { code: 'KeyQ', action: 'viewFocus' },
   { code: 'Backspace', action: 'viewRecentre' },
   { code: 'Equal', action: 'zoomIn' },
   { code: 'NumpadAdd', action: 'zoomIn' },
@@ -330,6 +332,7 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   cameraNext: { label: 'Next camera', category: 'View' },
   cameraPrev: { label: 'Previous camera', category: 'View' },
   viewRecentre: { label: 'Recentre view', category: 'View' },
+  viewFocus: { label: '3D cockpit: instrument focus on / off (zoom in on the main instruments, windscreen strip still in view)', category: 'View' },
   zoomIn: { label: 'Zoom in', category: 'View' },
   zoomOut: { label: 'Zoom out', category: 'View' },
   mouseLook: { label: 'Toggle captured mouse-look', category: 'View' },

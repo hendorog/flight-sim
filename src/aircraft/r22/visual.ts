@@ -84,7 +84,10 @@ export const R22_VISUAL: AirframeVisualDef = {
     { id: 'taxi', circuit: 'landing', pos: [1.64, 0.065, 0.245], radius: 0.038, glowOffset: [0.03, 0, 0], aim: { downDeg: 14, outDeg: 0, halfAngleDeg: 22 } },
   ],
   cockpit: {
-    pilotEye: point(PILOT_EYE), defaultPitchDeg: -28, defaultFovDeg: 82, enclosure: 'canopy',
+    pilotEye: point(PILOT_EYE), defaultPitchDeg: -28, defaultFovDeg: 82,
+    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 112-155 px
+    // across on a 991 px high view, the far ones smallest (scripts/cockpit-focus.mjs).
+    focus: { yawDeg: 25, pitchDeg: -16.5, fovDeg: 46 }, enclosure: 'canopy',
     panel: { x: PANEL_FACE.centre.x, zTop: PANEL_FACE.centre.z - PANEL_FACE.height / 2, width: PANEL_FACE.width },
     floor: { z: 0.43, x0: 1.55, x1: -0.06 }, glareshield: { profile: [], halfWidth: PANEL_FACE.width / 2 },
     seats: [-0.27, 0.27].map(y => ({ x: 1.10, y, z: 0.22, kind: 'front', width: 0.43, depth: 0.47, reclineDeg: 10, back: { height: 0.56, headrest: false } })),

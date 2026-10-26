@@ -430,6 +430,7 @@ export class Simulator {
       // A safari-only head pitch (cretaceousAnchors.ts SAFARI.headPitchDeg; null today: the type's own view).
       defaultPitchDeg: (resumed ? null : safariHeadPitch(physics.scenario.id)) ?? presentation.visual.cockpit.defaultPitchDeg,
       defaultFovDeg: presentation.visual.cockpit.defaultFovDeg,
+      focus: presentation.visual.cockpit.focus,
     });
     // A camera cut (cockpit <-> exterior, a reset) must not blend the old view into the new one.
     cameras.onCut = () => this.post?.resetTemporalHistory();

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { clamp, DEG, type Vec3 } from '../../core/math';
 import type { SimContext } from '../../core/context';
 import type { SimEnvironment } from '../../physics/environment';
-import { C172S_CAMERA, type CameraAircraft } from './aircraft';
+import { C172S_CAMERA, type CameraAircraft, type CockpitFocus } from './aircraft';
 import { HeadMotion } from './headMotion';
 import { smoothing, zoomFov, type AircraftPose, type CameraPose } from './pose';
 import type { CameraRig } from './rig';
@@ -39,6 +39,12 @@ const LEAN_FULL = 150 * DEG;
 const LEAN_FORWARD = 0.13;
 const LEAN_OUTBOARD = 0.03;
 const LEAN_INBOARD = 0.17;
+/**
+ * Instrument focus: one time constant for the head and the zoom while it blends in or out, s, so the glance down and
+ * the zoom arrive together (~0.3 s to 98 %), and how long after the key that holds.
+ */
+const FOCUS_TAU = 0.075;
+const FOCUS_BLEND_TIME = 0.45;
 
 /**
  * Glance (Flight School callouts): the head turns toward a model-space point (x right, y up, z aft, m) while
@@ -99,6 +105,17 @@ export class CockpitRig implements CameraRig {
   /** The pilot's own view while a glance holds the head elsewhere; the glance sequence it belongs to. */
   private saved: { yaw: number; pitch: number } | null = null;
   private seenGlance = 0;
+  /** The type's focus view (head yaw, pitch, rad; fov, deg), or null when it has none. */
+  private focusView: { yaw: number; pitch: number; fov: number } | null = null;
+  /** The pilot's own look and zoom while the focus view is on (restored by the key); null: focus off. */
+  private focusSaved: { yaw: number; pitch: number; fov: number } | null = null;
+  /** Wall time left of a focus blend, s (the shared FOCUS_TAU smoothing applies meanwhile). */
+  private focusBlend = 0;
+
+  /** The instrument focus view is on. */
+  get focused(): boolean {
+    return this.focusSaved !== null;
+  }
 
   activate(): void {
     this.head.reset();
@@ -111,6 +128,8 @@ export class CockpitRig implements CameraRig {
     this.defaultPitch = a.defaultPitchDeg * DEG;
     this.defaultFov = a.defaultFovDeg ?? DEFAULT_FOV;
     this.fov = this.defaultFov;
+    this.focusView = focusAngles(a.focus);
+    this.focusSaved = null;
     eyeInDefaultView(this.defaultPitch, this.eyeDefault);
     this.recentre();
     this.yaw = this.targetYaw;
@@ -131,10 +150,13 @@ export class CockpitRig implements CameraRig {
 
     this.applyGlance();
     // A glance turns the head more slowly than a mouse look, so the student can follow where it goes.
-    const k = smoothing(realDt, this.saved ? 0.18 : 0.06);
+    // The focus key moves head and zoom on one time constant, so the glance down and the zoom arrive together.
+    const focusing = this.focusBlend > 0;
+    this.focusBlend = Math.max(0, this.focusBlend - realDt);
+    const k = smoothing(realDt, focusing ? FOCUS_TAU : this.saved ? 0.18 : 0.06);
     this.yaw += (this.targetYaw - this.yaw) * k;
     this.pitch += (this.targetPitch - this.pitch) * k;
-    this.fov += (this.targetFov - this.fov) * smoothing(realDt, 0.08);
+    this.fov += (this.targetFov - this.fov) * smoothing(realDt, focusing ? FOCUS_TAU : 0.08);
     if (dt > 0) {
       // Body yaw rate r > 0 is a right turn; looking right is a negative yaw about three's +Y.
       const want = clamp(-s.angularVelocity.z * TURN_LOOK_GAIN, -TURN_LOOK_MAX, TURN_LOOK_MAX);
@@ -187,12 +209,60 @@ export class CockpitRig implements CameraRig {
     this.targetPitch = clamp(this.targetPitch + dPitch, PITCH_MIN, PITCH_MAX);
   }
 
+  /**
+   * Instrument focus on / off. On: the pilot's look and zoom are kept and the head turns to the type's focus view at its
+   * zoom. Looking around and zooming keep working from there; off restores the kept look and zoom exactly. A type
+   * without a focus view ignores it.
+   */
+  toggleFocus(): void {
+    if (this.focusSaved) {
+      this.exitFocus(false);
+      return;
+    }
+    const f = this.focusView;
+    if (!f) return;
+    // During a Flight School glance the pilot's own view is the one the glance saved.
+    const own = this.saved ?? { yaw: this.targetYaw, pitch: this.targetPitch };
+    if (this.saved) {
+      this.saved = null;
+      glanceTarget = null;
+      this.seenGlance = ++glanceSeq;
+    }
+    this.focusSaved = { yaw: own.yaw, pitch: own.pitch, fov: this.targetFov };
+    this.targetYaw = f.yaw;
+    this.targetPitch = f.pitch;
+    this.targetFov = f.fov;
+    this.focusBlend = FOCUS_BLEND_TIME;
+  }
+
+  /** End the focus view: back to the kept look and zoom, blended, or at once (`now`: the view changed). */
+  exitFocus(now: boolean): void {
+    const s = this.focusSaved;
+    if (!s) return;
+    this.focusSaved = null;
+    this.targetYaw = s.yaw;
+    this.targetPitch = s.pitch;
+    this.targetFov = s.fov;
+    if (now) {
+      this.yaw = s.yaw;
+      this.pitch = s.pitch;
+      this.fov = s.fov;
+      this.focusBlend = 0;
+    } else this.focusBlend = FOCUS_BLEND_TIME;
+  }
+
   /** Follow the module-level glance: turn toward it, and back to the saved view when it is cleared. */
   private applyGlance(): void {
     if (this.seenGlance === glanceSeq) return;
     this.seenGlance = glanceSeq;
     const g = glanceTarget;
     if (g) {
+      // A glance while focused: the focus ends, and the glance returns to the pilot's own view.
+      if (this.focusSaved) {
+        this.saved ??= { yaw: this.focusSaved.yaw, pitch: this.focusSaved.pitch };
+        this.targetFov = this.focusSaved.fov;
+        this.focusSaved = null;
+      }
       this.saved ??= { yaw: this.targetYaw, pitch: this.targetPitch };
       const a = glanceAngles(g, this.pilotEye);
       this.targetYaw = clamp(a.yaw, -YAW_LIMIT, YAW_LIMIT);
@@ -206,10 +276,18 @@ export class CockpitRig implements CameraRig {
 
   recentre(): void {
     this.saved = null;
+    if (this.focusSaved) this.focusBlend = FOCUS_BLEND_TIME;
+    this.focusSaved = null;
     this.targetYaw = 0;
     this.targetPitch = this.defaultPitch;
     this.targetFov = this.defaultFov;
   }
+}
+
+/** Head yaw, pitch (rad) and fov (deg) of a focus view, or null without one. */
+export function focusAngles(f: CockpitFocus | undefined): { yaw: number; pitch: number; fov: number } | null {
+  if (!f) return null;
+  return { yaw: clamp(f.yawDeg * DEG, -YAW_LIMIT, YAW_LIMIT), pitch: clamp(f.pitchDeg * DEG, PITCH_MIN, PITCH_MAX), fov: clamp(f.fovDeg, 20, 95) };
 }
 
 const smoothstep = (t: number): number => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));

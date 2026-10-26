@@ -448,6 +448,9 @@ const COCKPIT: CockpitDef = {
   pilotEye: [EYE.x, EYE.y, EYE.z],
   /** Default view: 9 degrees nose-down from level, over the deep glareshield to the cowling. */
   defaultPitchDeg: -9,
+  // Instrument focus (Q): the main instruments centred, the glareshield ~25 % down the frame, the 3-1/8 in dials
+  // 127-133 px across on a 991 px high view (scripts/cockpit-focus.mjs).
+  focus: { yawDeg: 0, pitchDeg: -20.5, fovDeg: 48 },
   enclosure: 'cabin',
   panel: { x: PANEL_X, zTop: PANEL_ZTOP, width: PA38_PANEL_PX_RECT.w / PX, pxRect: PA38_PANEL_PX_RECT },
   floor: { z: FLOOR_Z, x0: FIREWALL_X - 0.01, x1: -0.62 },

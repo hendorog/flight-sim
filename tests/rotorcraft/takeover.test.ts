@@ -29,10 +29,15 @@ describe('R22 demonstration authority uses the normal input path', () => {
     for (const k of ['elevator', 'aileron', 'rudder', 'collective', 'throttle'] as const) expect(r.c[k]).toBe(before[k]);
   });
 
-  for (const code of ['ArrowUp', 'KeyZ', 'F3', 'F2', 'F5', 'F6', 'KeyW', 'KeyQ']) it(`takes over on ${code}`, () => {
+  for (const code of ['ArrowUp', 'KeyZ', 'F3', 'F2', 'F5', 'F6', 'KeyW', 'KeyX']) it(`takes over on ${code}`, () => {
     const r = demoInput(); r.tap(code);
     expect(r.flying()).toBe(false);
     if (code === 'ArrowUp') { expect(r.c.elevator).toBeLessThan(.21); expect(r.c.elevator).toBeGreaterThan(.19); }
+  });
+
+  it('keeps flying on the instrument focus key (Q, a view key)', () => {
+    const r = demoInput(); r.tap('KeyQ');
+    expect(r.flying()).toBe(true);
   });
 
   it('ignores resting hardware, then disconnects on motion and waits for the axis to match', () => {

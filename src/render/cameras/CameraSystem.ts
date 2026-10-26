@@ -131,6 +131,7 @@ export class CameraSystem implements Subsystem, ViewControl {
       fitSize: aircraft.fitSize ?? C172S_CAMERA.fitSize,
       defaultPitchDeg: aircraft.defaultPitchDeg ?? C172S_CAMERA.defaultPitchDeg,
       defaultFovDeg: aircraft.defaultFovDeg,
+      focus: aircraft.focus,
     };
     this.airframeRadius = a.radius;
     this.pilotEye = a.pilotEye;
@@ -163,6 +164,17 @@ export class CameraSystem implements Subsystem, ViewControl {
   lookBy(dx: number, dy: number): void {
     if (this.ctx && isFixedPanel(this.ctx)) return;
     this.rigs[this.getMode()].look(dx, dy);
+  }
+
+  /** 3D cockpit only: instrument focus on / off (CockpitDef.focus). */
+  toggleFocus(): void {
+    if (!this.ctx || isFixedPanel(this.ctx) || this.getMode() !== 'cockpit') return;
+    this.cockpit.toggleFocus();
+  }
+
+  /** The instrument focus view is on (or blending in). */
+  get focused(): boolean {
+    return this.cockpit.focused;
   }
 
   togglePointerLock(): void {
@@ -237,6 +249,9 @@ export class CameraSystem implements Subsystem, ViewControl {
     quatToThree(ctx.state.orientation, this.aircraft.quaternion);
 
     if (ctx.cameraMode !== this.mode) this.switchTo(ctx.cameraMode);
+    // Leaving the 3D cockpit (an external camera, the fixed panel) ends the instrument focus: back in the 3D cockpit the
+    // pilot's own view is waiting.
+    if (ctx.cameraMode !== 'cockpit' || isFixedPanel(ctx)) this.cockpit.exitFocus(true);
     if (this.pendingCut) {
       // After a scenario reset the aircraft jumps; the camera cuts with it instead of flying across.
       this.pendingCut = false;

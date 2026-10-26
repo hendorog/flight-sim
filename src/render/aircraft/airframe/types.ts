@@ -281,6 +281,12 @@ export interface CockpitDef {
   pilotEye: FRD; defaultPitchDeg: number;
   /** Vertical cockpit field of view; absent keeps the camera default (60 degrees). */
   defaultFovDeg?: number;
+  /**
+   * The instrument focus view (the Q key, src/render/cameras/aircraft.ts CockpitFocus): the head turned yawDeg (+ left)
+   * and pitchDeg (+ up) with the vertical field of view narrowed to fovDeg, so the main instruments on the pilot's side
+   * are legible with a strip of the outside still in view at the top. Absent: the key does nothing in this type.
+   */
+  focus?: { yawDeg: number; pitchDeg: number; fovDeg: number };
   enclosure: 'cabin' | 'canopy';
   /**
    * The flat panel face. The canvas is always 2080 x 800 px. `pxRect` is the part of it shown on the face

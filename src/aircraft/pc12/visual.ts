@@ -588,6 +588,9 @@ const GLARE_FRONT: readonly [number, number] = [PANEL_X + 0.12, PANEL_ZTOP - 0.0
 const COCKPIT: CockpitDef = {
   pilotEye: [EYE.x, EYE.y, EYE.z],
   defaultPitchDeg: -8,
+  // Instrument focus (Q): the main instruments centred, the glareshield ~25 % down the frame, the 3-1/8 in dials
+  // 126-137 px across on a 991 px high view (scripts/cockpit-focus.mjs).
+  focus: { yawDeg: 2, pitchDeg: -19.5, fovDeg: 50 },
   enclosure: 'cabin',
   panel: { x: PANEL_X, zTop: PANEL_ZTOP, width: PANEL_W, pxRect: PX_RECT },
   floor: { z: FLOOR_Z, x0: FIREWALL_X - 0.04, x1: CABIN_REAR_X + 0.05 },

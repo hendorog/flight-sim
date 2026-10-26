@@ -11,7 +11,7 @@ with the wheel, a click on either half, or a drag (right/up increases), and hold
 | **Flight controls** | |
 | ↓ / ↑ | Yoke back (nose up) / forward (nose down); stays where you leave it |
 | ← / → | Yoke left / right (roll); stays where you leave it |
-| Z or Q / X or E | Left / right rudder; stays where you leave it |
+| Z / X | Left / right rudder; stays where you leave it |
 | Num 5, 5 | Centre aileron, elevator and rudder |
 | F5 / F6 | Flaps up / down one notch (0°, 10°, 20°, 30°) |
 | Home, Num 7 / End, Num 1 | Elevator trim nose down / nose up |
@@ -53,6 +53,7 @@ with the wheel, a click on either half, or a drag (right/up increases), and hold
 | V, Backspace, middle click | Recentre 3D view |
 | = , Num + / - , Num - , mouse wheel | Zoom |
 | Shift+arrows, Num 4/6/8/2 | Look around (hold) |
+| Q | 3D cockpit: instrument focus on / off. The head glances down at the main flight and engine instruments on the pilot's side and the view zooms in (about 37-52° vertical, per type) so the 3-1/8" dials read at ~120 px or more on a 1920 x 991 window, with a strip of the windscreen (the horizon on most types) still at the top. Looking around and zooming work from there; Q again returns to exactly the view and zoom you had. V / Backspace / middle click recentres (and ends the focus); an external camera or the fixed panel ends it too. Q and E were spare rudder keys beside Z / X until this key took Q |
 | Drag (either button) | Look around / orbit the aircraft |
 | \` | Toggle captured mouse-look |
 | **Simulation** | |
@@ -75,7 +76,7 @@ with the simulator's preferences, even with flight resume turned off. **C / Shif
 cameras and return to the chosen cockpit presentation. **P** still pauses.
 
 The outside view is forward from the aircraft's pilot eye, with the horizon centred in the area above the
-panel. Airframe geometry is hidden while landing/taxi illumination remains active. Look, captured mouse-look and zoom are disabled here;
+panel. Airframe geometry is hidden while landing/taxi illumination remains active. Look, captured mouse-look, zoom and the instrument focus (Q) are disabled here;
 return to 3D with Shift+V to use them. The fixed canvas remains sharp independently of graphics render scale.
 All existing panel hotspots use the same actions and tooltips in both views. Double-clicks anywhere on the
 fixed panel cannot engage mouse flight; double-click the outside view instead. The mouse pickup ring and

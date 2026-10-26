@@ -9,7 +9,8 @@
 // held 1 s at LOW IDLE), and that Shift+F2 does nothing on the Cessna 172S. Then the Bo 105 on the runway (engines
 // running): the engine-select keys move the chosen overhead power lever between its stops (9 F1 IDLE, Shift+F1 OFF on
 // the ground, F4 FLIGHT; 0 both), ENGINE TRIM left/right on Shift+, / Shift+. and fore/aft on ; / ' (held), and
-// that Shift+, stays the Cessna's left toe brake. Prints and writes keycheck.json; exits 1 if a check of the Caravan's
+// that Shift+, stays the Cessna's left toe brake. Q is the instrument focus view (C172S and Bo 105; the fixed panel ends it)
+// and E is no longer a rudder key. Prints and writes keycheck.json; exits 1 if a check of the Caravan's
 // gate or condition lever, or of the Bo 105's levers and ENGINE TRIM, fails.
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
@@ -97,6 +98,19 @@ try {
   res.c172ShiftComma = await p.evaluate(() => ({ brakeLeft: +__sim.ctx.controls.brakeLeft.toFixed(3), split: __sim.ctx.controls.n2BeepSplit ?? null }));
   await p.keyboard.up('Comma'); await p.keyboard.up('Shift'); await sleep(200);
   check('C172S: Shift+, is the left toe brake', res.c172ShiftComma.brakeLeft > 0 && res.c172ShiftComma.split === null, res.c172ShiftComma);
+
+  // Q: the instrument focus view (on, then off back to the same zoom), never a rudder key; E does nothing.
+  const view = () => p.evaluate(() => ({ fov: +__sim.ctx.camera.fov.toFixed(2), focused: __sim.sim.systems.cameras.focused, r: +__sim.ctx.controls.rudder.toFixed(4) }));
+  // The ] press above (an old flap key) went to the fixed panel, a remembered preference: back to the 3D cockpit.
+  await p.evaluate(() => __sim.ctx.commands.setPanelView('3d')); await sleep(900);
+  const focus = { before: await view() };
+  await hold('KeyQ', 300); await sleep(700); focus.on = await view();
+  await hold('KeyQ', 80); await sleep(900); focus.off = await view();
+  await hold('KeyE', 300); await sleep(300); focus.e = await view();
+  res.c172Focus = focus;
+  check('C172S: Q is the instrument focus (narrower view), not the rudder', focus.on.focused && focus.on.fov < focus.before.fov - 5 && focus.on.r === focus.before.r, focus);
+  check('C172S: Q again returns to the same zoom', !focus.off.focused && Math.abs(focus.off.fov - focus.before.fov) < 0.05, focus);
+  check('C172S: E does nothing', focus.e.r === focus.before.r && focus.e.fov === focus.off.fov, focus);
 
   // The Caravan on the runway, engine running.
   const q = await ctx.newPage();
@@ -187,6 +201,16 @@ try {
   check('Bo 105: Shift+. held is ENGINE TRIM right', bo.trimRight.split === 1, bo.trimRight);
   check("Bo 105: ; / ' held are ENGINE TRIM aft / fore", bo.beepDown.beep === -1 && bo.beepUp.beep === 1, { down: bo.beepDown, up: bo.beepUp });
   check('Bo 105: let go, ENGINE TRIM is centred', bo.released.split === 0 && bo.released.beep === 0, bo.released);
+  // Q on a helicopter: the focus view too (CockpitDef.focus), and Shift+V (the fixed panel) ends it.
+  const hview = () => h.evaluate(() => ({ fov: +__sim.ctx.camera.fov.toFixed(2), focused: __sim.sim.systems.cameras.focused }));
+  await h.evaluate(() => __sim.ctx.commands.setPanelView('3d')); await sleep(900);
+  const hf = { before: await hview() };
+  await hhold('KeyQ', 80); await sleep(700); hf.on = await hview();
+  await hhold('KeyV', 80, true); await sleep(400); hf.fixed = await hview();
+  await hhold('KeyV', 80, true); await sleep(900); hf.back = await hview();
+  res.bo105Focus = hf;
+  check('Bo 105: Q is the instrument focus', hf.on.focused && hf.on.fov < hf.before.fov - 5, hf);
+  check('Bo 105: the fixed panel ends the focus; back in 3D the normal view', !hf.fixed.focused && !hf.back.focused && Math.abs(hf.back.fov - hf.before.fov) < 0.05, hf);
   await h.screenshot({ path: `${out}/keycheck_bo105.png` });
 } catch (e) {
   res.error = String(e.stack ?? e);

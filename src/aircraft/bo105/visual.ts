@@ -248,7 +248,12 @@ export const BO105_VISUAL: AirframeVisualDef = {
     { id: 'landing', pos: [S(1.30), 0, H(0.43)], radius: 0.05, glowOffset: [0, 0, 0.03], aim: { downDeg: 12, outDeg: 0, halfAngleDeg: 13 } },
   ],
   cockpit: {
-    pilotEye: point(D.PILOT_EYE), defaultPitchDeg: -14, defaultFovDeg: 80, enclosure: 'canopy',
+    // Default view 30 degrees down (was 14): the tall centre console in full, down to its switch row, with the horizon
+    // still ~20 % down the frame.
+    pilotEye: point(D.PILOT_EYE), defaultPitchDeg: -30, defaultFovDeg: 80,
+    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 96-133 px
+    // across on a 991 px high view, the far ones smallest (scripts/cockpit-focus.mjs).
+    focus: { yawDeg: 34, pitchDeg: -23, fovDeg: 50 }, enclosure: 'canopy',
     panel: { x: FACE.centre.x, zTop: FACE.centre.z - FACE.height / 2, width: FACE.width },
     floor: { z: FLOOR_Z, x0: S(0.98), x1: S(CABIN_REAR_STA) }, glareshield: { profile: [], halfWidth: FACE.width / 2 },
     seats: [

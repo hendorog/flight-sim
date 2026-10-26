@@ -335,7 +335,10 @@ export const AH56_VISUAL: AirframeVisualDef = {
     { id: 'landing', pos: [fs(60), 0, wl(44.3)], radius: 0.05, glowOffset: [0, 0, 0.03], aim: { downDeg: 12, outDeg: 0, halfAngleDeg: 13 } },
   ],
   cockpit: {
-    pilotEye, defaultPitchDeg: -10, defaultFovDeg: 80, enclosure: 'canopy',
+    pilotEye, defaultPitchDeg: -10, defaultFovDeg: 80,
+    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 127-134 px
+    // across on a 991 px high view, the far ones smallest (scripts/cockpit-focus.mjs).
+    focus: { yawDeg: 8, pitchDeg: -11, fovDeg: 42 }, enclosure: 'canopy',
     panel: { x: AH56_PANEL_FACE.centre.x, zTop: panelTop, width: AH56_PANEL_FACE.width },
     floor: { z: wl(FLOORS.rear.wl), x0: fs(FLOORS.rear.fs0), x1: fs(FLOORS.rear.fs1) },
     glareshield: { profile: [], halfWidth: AH56_PANEL_FACE.width / 2 },

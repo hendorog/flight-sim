@@ -16,6 +16,7 @@ const LOADING_TIPS = [
   'Tip: Esc opens the menu: scenarios, weather, time of day, graphics and controls.',
   'Tip: set the altimeter with its knob (lower left of the altimeter) when the QNH changes.',
   'Tip: drag to look around; the wheel zooms, a middle click recentres the view.',
+  'Tip: Q in the cockpit zooms in on the main instruments with the windscreen still in view; Q again looks back up.',
   'Tip: A engages the autopilot once airborne; it holds the current track, altitude and speed.',
   'Tip: keep the slip ball centred with the rudder (Z / X): "step on the ball".',
 ];
@@ -283,7 +284,7 @@ function flyingRows(h: HintsAircraft): [string, string][] {
   ];
   for (const [k, v] of h.ui.hints) rows.push([k, v]);
   rows.push(
-    ['Views', 'C next camera · drag to look · wheel to zoom'],
+    ['Views', 'C next camera · drag to look · wheel to zoom · Q instrument focus'],
     ['Panel', 'Click switches; scroll or click knobs'],
     ['Autopilot', 'A (once airborne)'],
     ['Pause / menu', 'P · Esc'],

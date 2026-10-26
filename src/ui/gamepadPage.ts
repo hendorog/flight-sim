@@ -67,6 +67,7 @@ const BUTTON_CHOICES: [InputAction | '', string][] = [
   ['cameraNext', 'Next camera'],
   ['cameraPrev', 'Previous camera'],
   ['viewRecentre', 'Recentre view'],
+  ['viewFocus', 'Instrument focus'],
   ['zoomIn', 'Zoom in'],
   ['zoomOut', 'Zoom out'],
   ['pause', 'Pause'],

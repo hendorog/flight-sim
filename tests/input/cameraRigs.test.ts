@@ -391,3 +391,83 @@ describe('fixed cockpit framing', () => {
     cameras.dispose();
   });
 });
+
+describe('instrument focus (Q)', () => {
+  const FOCUS = { yawDeg: 4, pitchDeg: -19, fovDeg: 46 };
+  type Inner = { yaw: number; pitch: number; fov: number; targetYaw: number; targetPitch: number; targetFov: number };
+  const inner = (rig: CockpitRig): Inner => rig as unknown as Inner;
+  const settle = (rig: CockpitRig, s: number): void => {
+    const ctx = contextAt(0), out = makePose();
+    for (let t = 0; t < s; t += 1 / 60) rig.update(0, 1 / 60, ctx, poseOf(ctx.state), out);
+  };
+
+  it('glances at the type\'s focus view in ~0.3 s and back to the exact look and zoom it left', () => {
+    const rig = new CockpitRig();
+    rig.setAircraft({ ...C172S_CAMERA, focus: FOCUS });
+    rig.look(-120, 40); rig.zoom(2);
+    settle(rig, 1);
+    const before = { ...inner(rig) };
+    rig.toggleFocus();
+    expect(rig.focused).toBe(true);
+    settle(rig, 0.3);
+    // Head and zoom arrive together: both ~98 % of the way at 0.3 s.
+    const done = (v: number, a: number, b: number): number => (v - a) / (b - a);
+    expect(done(inner(rig).pitch, before.pitch, -19 * DEG)).toBeGreaterThan(0.97);
+    expect(done(inner(rig).fov, before.fov, 46)).toBeGreaterThan(0.97);
+    settle(rig, 0.5);
+    expect(inner(rig).yaw).toBeCloseTo(4 * DEG, 5);
+    expect(inner(rig).fov).toBeCloseTo(46, 3);
+    rig.toggleFocus();
+    expect(rig.focused).toBe(false);
+    expect(inner(rig).targetYaw).toBe(before.targetYaw);
+    expect(inner(rig).targetPitch).toBe(before.targetPitch);
+    expect(inner(rig).targetFov).toBe(before.targetFov);
+    settle(rig, 1.5);
+    expect(inner(rig).pitch).toBeCloseTo(before.targetPitch, 6);
+    expect(inner(rig).fov).toBeCloseTo(before.targetFov, 5);
+  });
+
+  it('looks around and zooms relative to the focus view, and a recentre ends it', () => {
+    const rig = new CockpitRig();
+    rig.setAircraft({ ...C172S_CAMERA, focus: FOCUS });
+    rig.toggleFocus();
+    rig.look(100, -50);
+    expect(rig.focused).toBe(true);
+    expect(inner(rig).targetYaw).toBeCloseTo(4 * DEG - 100 * 0.0035, 9);
+    expect(inner(rig).targetPitch).toBeCloseTo(-19 * DEG + 50 * 0.0035, 9);
+    rig.recentre();
+    expect(rig.focused).toBe(false);
+    expect(inner(rig).targetPitch).toBeCloseTo(C172S_CAMERA.defaultPitchDeg * DEG, 9);
+    expect(inner(rig).targetFov).toBe(60);
+  });
+
+  it('does nothing on a type without a focus view', () => {
+    const rig = new CockpitRig();
+    rig.setAircraft(C172S_CAMERA);
+    rig.toggleFocus();
+    expect(rig.focused).toBe(false);
+    expect(inner(rig).targetFov).toBe(60);
+  });
+
+  it('ends at once when the view leaves the 3D cockpit (an external camera, the fixed panel)', () => {
+    for (const leave of ['chase', 'fixed'] as const) {
+      const { cameras, ctx, frame } = bootCameras();
+      cameras.setAircraft({ focus: FOCUS });
+      frame(0);
+      cameras.toggleFocus();
+      expect(cameras.focused).toBe(true);
+      for (let i = 1; i < 30; i++) frame(i);
+      if (leave === 'chase') ctx.cameraMode = 'chase';
+      else { ctx.panelView = 'upper'; ctx.fixedPanelHeight = 368; }
+      frame(30);
+      expect(cameras.focused).toBe(false);
+      // Not available outside the 3D cockpit.
+      cameras.toggleFocus();
+      expect(cameras.focused).toBe(false);
+      ctx.cameraMode = 'cockpit'; ctx.panelView = '3d'; ctx.fixedPanelHeight = 0;
+      for (let i = 31; i < 120; i++) frame(i);
+      expect(ctx.camera.fov).toBeCloseTo(60, 6);
+      cameras.dispose();
+    }
+  });
+});

@@ -12,7 +12,7 @@ import {
 import { classifyDevice, defaultProfile } from '../../src/input/devices';
 import { Activity, AXIS_HOLD_TIME, LeverOwner, mixCentring, mouseYokeDeflection } from '../../src/input/mixer';
 import { FRAME, makeRig, type Rig } from './keyboardPilot';
-import { InputSystem } from '../../src/input/InputSystem';
+import { demoViewKey, InputSystem } from '../../src/input/InputSystem';
 import {
   CENTRE_RATE,
   GroundSteeringAssist,
@@ -146,8 +146,8 @@ describe('key bindings', () => {
     // (Shift+N) and the stick pusher's interrupt (Shift+D)), and the rigid-rotor programme's: ENGINE TRIM left/right
     // or the moved beep (Shift+, / Shift+.), the pusher grip's snap (Shift+/) and the tail-wheel lock (Shift+'); and the
     // Bo 105 flyability pass's: the hand-rate collective (Shift+F5 / Shift+F6), keyboard trim here (Shift+5, Shift+Num 5)
-    // and the STAB ASSIST toggle (Shift+A).
-    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5 + 4 + 5);
+    // and the STAB ASSIST toggle (Shift+A); less the spare rudder keys Q and E, plus the instrument focus (Q).
+    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5 + 4 + 5 - 2 + 1);
     expect(KEY_MAP.filter((m) => ['F5', 'F6', 'Digit5', 'Numpad5', 'KeyA'].includes(m.code)).map((m) => `${m.code}/${m.shift}/${m.action}`)).toEqual([
       'Numpad5/undefined/centreControls',
       'Digit5/undefined/centreControls',
@@ -189,7 +189,8 @@ describe('key bindings', () => {
   });
 
   it('the Cessna 172S help listing is unchanged by the keys it has nothing for', () => {
-    expect(KEY_BINDINGS.length).toBe(64);
+    // 64, and the instrument focus (Q) since 2026-10-26.
+    expect(KEY_BINDINGS.length).toBe(65);
     for (const key of ['F7', 'F10', '/', ';', '\\', 'Shift+F', '6', '7', '8', '9', '0']) expect(KEY_BINDINGS.some((b) => b.keys.split(' / ').includes(key)), key).toBe(false);
   });
 
@@ -560,6 +561,30 @@ describe('InputSystem: hold-position keyboard yoke', () => {
       expect(c.rudder).toBeCloseTo(n.rudder, 9);
       expect(r.input.getYokeIndicator().keyboardOffCentre).toBe(false);
     }
+  });
+
+  it('Q toggles the instrument focus view (with or without Shift); Q and E are no longer rudder keys', () => {
+    expect(actionForKey('KeyQ', false)).toBe('viewFocus');
+    expect(actionForKey('KeyQ', true)).toBe('viewFocus');
+    expect(actionForKey('KeyE', false)).toBeNull();
+    expect(actionForKey('KeyE', true)).toBeNull();
+    expect(KEY_MAP.filter((m) => m.action === 'rudderLeft' || m.action === 'rudderRight').map((m) => m.code)).toEqual(['KeyZ', 'KeyX']);
+    // A view key: it does not take control from a demonstration.
+    expect(demoViewKey('KeyQ', false)).toBe(true);
+    let focus = 0;
+    const view = { recentre() {}, zoom() {}, togglePointerLock() {}, toggleFocus: () => void focus++ };
+    const r = flying();
+    const input = new InputSystem({ view });
+    input.attach(r.ctx);
+    const c = { ...r.ctx.controls };
+    input.keyDown('KeyQ');
+    input.update(FRAME, r.ctx);
+    input.keyUp('KeyQ');
+    input.update(FRAME, r.ctx);
+    expect(focus).toBe(1);
+    expect(r.ctx.controls.rudder).toBe(c.rudder);
+    // Every type has the key (it is not one of a lever or switch a type may lack).
+    expect(KEY_BINDINGS.some((b) => b.keys === 'Q' && b.category === 'View')).toBe(true);
   });
 
   it('the view recentre key no longer touches the controls, and Numpad 5 no longer recentres the view', () => {

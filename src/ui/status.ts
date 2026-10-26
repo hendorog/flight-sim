@@ -73,8 +73,6 @@ const FLIGHT_KEYS = new Set([
   'ArrowRight',
   'KeyZ',
   'KeyX',
-  'KeyQ',
-  'KeyE',
   'Home',
   'End',
   'Numpad7',

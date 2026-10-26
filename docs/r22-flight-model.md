@@ -38,7 +38,7 @@ input; `tests/rotorcraft/stoppedRotor.test.ts` covers zero/low RPM and actual ra
 | Input | Function |
 |---|---|
 | Arrow keys / pitch and roll axes | Longitudinal and lateral cyclic |
-| Z / X (also Q / E) / yaw axis | Anti-torque pedals |
+| Z / X / yaw axis | Anti-torque pedals |
 | Hold F5 / F6 | Lower / raise collective continuously |
 | Joystick throttle axis | Collective by default; an explicitly assigned collective axis takes precedence |
 | F2 / F3 (also Page Down / Page Up) | Close / open the throttle twist grip, separately from collective |

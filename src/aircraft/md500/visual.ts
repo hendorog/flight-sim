@@ -188,7 +188,10 @@ export const MD500_VISUAL: AirframeVisualDef = {
     { id: 'landing', pos: [sta(23.5), 0, wl(17.5)], radius: 0.045, glowOffset: [0.03, 0, 0], aim: { downDeg: 10, outDeg: 0, halfAngleDeg: 13 } },
   ],
   cockpit: {
-    pilotEye: point(D.PILOT_EYE), defaultPitchDeg: -18, defaultFovDeg: 82, enclosure: 'canopy',
+    pilotEye: point(D.PILOT_EYE), defaultPitchDeg: -18, defaultFovDeg: 82,
+    // Instrument focus (Q): the console's flight instruments, the horizon still near the top of the frame; dials 108-137 px
+    // across on a 991 px high view, the far ones smallest (scripts/cockpit-focus.mjs).
+    focus: { yawDeg: -19, pitchDeg: -14, fovDeg: 46 }, enclosure: 'canopy',
     panel: { x: MD500_PANEL_FACE.centre.x, zTop: MD500_PANEL_FACE.centre.z - MD500_PANEL_FACE.height / 2, width: MD500_PANEL_FACE.width },
     floor: { z: D.FLOOR_Z, x0: sta(40), x1: sta(78.5) }, glareshield: { profile: [], halfWidth: MD500_PANEL_FACE.width / 2 },
     seats: D.SEAT_CENTRES.map(s => ({ x: SEAT.frontX, y: s.y, z: SEAT.z, kind: 'front', width: SEAT.width,
