@@ -36,6 +36,8 @@ export interface SweepDef {
   tip: number;
   /** Finger ridges on the forward face between t0 and t1: `count` bumps of `amp` (share of the forward depth). */
   ridges?: { t0: number; t1: number; count: number; amp: number };
+  /** Rings from the start up to arc-length fraction `t` in another colour (a bare tube under a slid-on grip). */
+  band?: { t: number; colour: Rgb };
   rings: number;
   segments: number;
 }
@@ -236,29 +238,34 @@ const PIPER_SENECA: YokeStyle = {
 };
 
 /**
- * Piper PA-38 Tomahawk: the lighter, simpler wheel. Thin round black horns (~3 cm) on a low curved bar, 30 cm
- * span, leaning out and their tops turning aft toward the pilot (a red PTT button on the left one); a small round
- * domed hub (~9 cm); dark column. No trim switch: the Tomahawk's pitch trim is the overhead crank.
+ * Piper PA-38 Tomahawk (owner's photo of a removed wheel, scaled against its ~3 cm grips): a wide, low moulded hub,
+ * ~21 cm across its flat bottom, its top sloping from the column boss to rounded points at the ends, with a raised
+ * centre panel; from each end a short bare steel tube (~1.2 cm) bends up into a separate fat rubber grip (~4 cm,
+ * ~10 cm tall, finger grooves on the forward face, leaning slightly out), 30 cm outside to outside; a button on the
+ * top of the left grip; black throughout. No trim switch: the Tomahawk's pitch trim is the overhead crank.
  */
 const PIPER_TOMAHAWK: YokeStyle = {
   colour: BLACK,
   hang: 0.03,
   horn: {
-    points: [[0, -0.05, 0], [0.05, -0.052, 0], [0.097, -0.04, 0], [0.126, -0.008, 0], [0.137, 0.04, 0.002], [0.14, 0.085, 0.01], [0.138, 0.11, 0.028], [0.134, 0.116, 0.044]],
+    points: [[0.085, -0.03, 0], [0.104, -0.03, 0], [0.116, -0.025, 0], [0.123, -0.014, 0], [0.125, 0.0, 0], [0.127, 0.032, 0], [0.129, 0.067, 0.002], [0.131, 0.094, 0.004]],
     keys: [
-      { t: 0, w: 0.028, dF: 0.015, dB: 0.015, n: 2.2 },
-      { t: 0.4, w: 0.028, dF: 0.015, dB: 0.015, n: 2.2 },
-      { t: 0.75, w: 0.033, dF: 0.018, dB: 0.017, n: 2.2 },
-      { t: 1, w: 0.034, dF: 0.018, dB: 0.018, n: 2 },
+      { t: 0, w: 0.012, dF: 0.006, dB: 0.006, n: 2 },
+      { t: 0.3, w: 0.012, dF: 0.006, dB: 0.006, n: 2 },
+      { t: 0.34, w: 0.04, dF: 0.019, dB: 0.019, n: 2.4 },
+      { t: 0.42, w: 0.037, dF: 0.017, dB: 0.018, n: 2.4 },
+      { t: 0.82, w: 0.041, dF: 0.019, dB: 0.019, n: 2.6 },
+      { t: 1, w: 0.039, dF: 0.018, dB: 0.018, n: 2.6 },
     ],
-    tip: 0.014,
-    ridges: { t0: 0.45, t1: 0.78, count: 3, amp: 0.08 },
+    tip: 0.012,
+    ridges: { t0: 0.45, t1: 0.85, count: 4, amp: 0.1 },
+    band: { t: 0.32, colour: [70, 70, 72] },
     rings: 32,
     segments: 16,
   },
-  hub: { y: 0.005, wBottom: 0.088, wTop: 0.088, h: 0.088, r: 0.043, z: 0.032, depth: 0.065, bevel: 0.008, colour: BLACK },
-  plates: [{ y: 0.005, wBottom: 0.05, wTop: 0.05, h: 0.05, r: 0.0245, z: 0.036, depth: 0.003, bevel: 0.001, colour: [40, 40, 42] }],
-  fittings: [{ shape: 'button', at: 1, offset: [0, 0.0015, 0], size: [0.011, 0.004, 0.011], colour: RED }],
+  hub: { y: -0.006, wBottom: 0.21, wTop: 0.05, h: 0.058, r: 0.012, z: 0.03, depth: 0.05, bevel: 0.01, colour: BLACK },
+  plates: [{ y: -0.008, wBottom: 0.075, wTop: 0.045, h: 0.044, r: 0.006, z: 0.035, depth: 0.008, bevel: 0.0015, colour: [34, 34, 36] }],
+  fittings: [{ shape: 'button', at: 1, offset: [0, 0.0015, 0], size: [0.012, 0.004, 0.012], colour: SATIN_BLACK }],
   copilotFittings: false,
   column: { section: 'round', r: 0.013, metal: 'black', collar: { r: 0.018, len: 0.03, colour: BLACK } },
   boot: { kind: 'round', w: 0.026, h: 0.026, depth: 0.018 },
@@ -509,7 +516,16 @@ export class Sweep {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setIndex(idx);
     g.computeVertexNormals();
-    return paint(g, colour);
+    paint(g, colour);
+    const band = this.def.band;
+    if (band) {
+      const c = linear(band.colour);
+      const col = g.getAttribute('color');
+      stations.forEach((st, i) => {
+        if (st.t <= band.t) for (let j = 0; j < segments; j++) col.setXYZ(i * segments + j, c.r, c.g, c.b);
+      });
+    }
+    return g;
   }
 
   /** A fitting's geometry, placed in the frame at its station. */
