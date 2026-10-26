@@ -15,8 +15,9 @@
 // The face shown in the cockpit is the left 2000 px of the 2080 x 800 canvas at 2000 px/m (visual.ts: a panel
 // 1.00 m wide and 0.40 m high), so the instruments are drawn at the C172S's scale, their real size.
 
-import { singleGauge, type EngineDial } from '../../instruments/panels/gauges';
 import type { AsiMarkings, GaugeDef, InstrumentSystemsDef, LampDef, LampInputs, PanelDef, Rect, ScaleDef, SwitchDef, TachMarkings } from '../types';
+import type { InstrumentReadings } from '../../instruments/dynamics/instrumentSet';
+import { RectFuelGauge, type RectFuelGaugeDef } from '../../instruments/render/fuelRect';
 import { PA38_REFERENCE } from './reference';
 
 const V = PA38_REFERENCE;
@@ -47,8 +48,13 @@ const TACH = { x: 612, y: 566 };
  * covers x0 .. x1 from y0 down past the panel's lower edge. Nothing is painted there.
  */
 export const PA38_QUADRANT = { x0: 850, x1: 1150, y0: 592 } as const;
-/** The two fuel gauges over the quadrant, either side of the selector (s.9). */
+/** Where the two fuel gauges show, either side of the selector in the quadrant's well (s.9; the instructor's ring). */
 const FUEL = { y: 525, left: 925, right: 1075 };
+/**
+ * The fuel gauges themselves are drawn in the canvas strip right of the face (px 2000-2080, not shown on it) and shown
+ * on the quadrant's tilted housing in front of the well (visual.ts CockpitDef.panel.windows): 34 x 46 mm cases.
+ */
+export const PA38_FUEL_GAUGES = { left: { x: 2006, y: 16, w: 68, h: 92 }, right: { x: 2006, y: 124, w: 68, h: 92 } } as const;
 /** Engine cluster right of the quadrant: fuel pressure and load meter, oil temperature and pressure (s.9). */
 const CLUSTER = { y: 600, fuel: 1240, oil: 1376 };
 const SWITCHES: Rect = { x: 190, y: 676, w: 640, h: 116 };
@@ -113,16 +119,7 @@ export const PA38_SUCTION_SCALE: ScaleDef = {
 };
 
 /** A fuel quantity gauge beside the selector: a 16 US gal tank, 15 gal usable (s.6, s.9). */
-const fuelDial = (seed: number, title: string): EngineDial => ({
-  size: 'small',
-  seed,
-  fromDeg: -60,
-  toDeg: 60,
-  title,
-  units: 'U.S. GAL',
-  labels: [0, 8, 16],
-  scale: { label: '', min: 0, max: 16, majors: [0, 4, 8, 12, 16], minorStep: 2, arcs: [{ from: 0, to: 1, color: 'red' }] },
-});
+const fuelGauge = (tank: 'L' | 'R', read: (r: InstrumentReadings) => number): RectFuelGaugeDef => ({ tank, max: 16, majors: [0, 5, 10, 15], minorStep: 2.5, legend: '15 US GAL USABLE', read });
 
 /**
  * Fuel pressure green 0.5-8 psi, red lines 0.5 and 8 (POH 2.9); the load meter of the 60 A alternator, 0-60 A
@@ -233,8 +230,8 @@ export const PA38_PANEL: PanelDef = {
     { kind: 'clock', id: 'clock', at: [LEFT_COLUMN.x, LEFT_COLUMN.clock] },
     { kind: 'suction', id: 'suction', at: [LEFT_COLUMN.x, LEFT_COLUMN.suction], scale: PA38_SUCTION_SCALE },
     { kind: 'tach', id: 'tach', at: [TACH.x, TACH.y], size: 'large', marks: PA38_TACH_MARKS },
-    singleGauge('fuelLeft', [FUEL.left, FUEL.y], fuelDial(383, 'FUEL L'), (r) => r.fuelLeftGal),
-    singleGauge('fuelRight', [FUEL.right, FUEL.y], fuelDial(384, 'FUEL R'), (r) => r.fuelRightGal),
+    { kind: 'customRect', id: 'fuelLeft', bounds: PA38_FUEL_GAUGES.left, create: (id, b) => new RectFuelGauge(id, b, fuelGauge('L', (r) => r.fuelLeftGal)) },
+    { kind: 'customRect', id: 'fuelRight', bounds: PA38_FUEL_GAUGES.right, create: (id, b) => new RectFuelGauge(id, b, fuelGauge('R', (r) => r.fuelRightGal)) },
     FUEL_PRESS_AMPS,
     OIL,
     { kind: 'navcom', id: 'navcom1', bounds: { x: STACK.x, y: STACK.navcom1, w: 320, h: 76 } },
@@ -316,6 +313,8 @@ export const PA38_PANEL: PanelDef = {
   },
   // The control wheel shaft boots.
   keepOut: YOKES.xs.map((x) => ({ x, y: YOKES.y, r: YOKES.r })),
+  // Shown off the face, on the quadrant's tilted housing.
+  offFace: ['fuelLeft', 'fuelRight'],
   apertures: APERTURES,
   // The instrument groups of InstrumentPanel.drawTo().
   regions: {

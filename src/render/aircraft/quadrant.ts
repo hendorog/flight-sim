@@ -514,7 +514,7 @@ function sideExtrusion(profile: readonly (readonly [number, number])[], y0: numb
 }
 
 /** The slot of a cover, resolved: lateral centre y and half width, and its angular (arc) or along-plate (plate) range. */
-interface Slot { y: number; hw: number; from: number; to: number; lever?: EngineControl; label?: string }
+interface Slot { y: number; hw: number; from: number; to: number; lever?: EngineControl; label?: string; stackedLabel?: number }
 
 const SLOT_MARGIN = 0.07;
 
@@ -524,7 +524,7 @@ function arcSlots(def: CockpitDef, slots: readonly QuadrantSlot[], r: number): S
     const [f, t] = e ? leverSwing(e) : [s.from!, s.to!];
     // A little past each end of the swing for the stem's own width.
     const m = e ? SLOT_MARGIN * (0.12 / r) * 0.6 : 0;
-    return { y: e ? e.pos[1] : s.y!, hw: s.w / 2, from: f - m, to: t + m, lever: e, label: s.label };
+    return { y: e ? e.pos[1] : s.y!, hw: s.w / 2, from: f - m, to: t + m, lever: e, label: s.label, stackedLabel: s.stackedLabel };
   });
 }
 
@@ -596,7 +596,19 @@ export function addQuadrant(fixed: MeshBatch, mat: AircraftMaterials, def: Cockp
         // The gate: a block across half the slot's width, just aft of idle, standing 4 mm proud.
         annularSector(gates, cx, cz, rOut - 0.002, rOut + 0.004, idle + 0.035, idle + 0.035 + 0.006 / rOut, s.y - s.hw - 0.003, s.y + 0.001);
       }
-      if (s.label) {
+      if (s.label && s.stackedLabel) {
+        // Upright letters one under the other down the drum beside the slot, centred on it, each on its own patch.
+        const h = s.stackedLabel;
+        const w = h * 0.78;
+        const step = (h * 1.12) / rOut;
+        const letters = [...s.label];
+        const mid = (s.from + s.to) / 2;
+        letters.forEach((ch, i) => {
+          const a = mid + (i - (letters.length - 1) / 2) * step;
+          const p = arcPoint(cx, cz, rOut + 0.0004, a, s.y - s.hw - 0.002 - w / 2);
+          placards.add({ pos: [-p.z, p.x, -p.y], normal: [-Math.sin(a), 0, -Math.cos(a)], up: [Math.cos(a), 0, -Math.sin(a)], w, h, lines: [ch], ink: 'white', ground: 'black' });
+        });
+      } else if (s.label) {
         // Toward the slot's upper (forward) end.
         const a = s.from + (s.to - s.from) * 0.35;
         const p = arcPoint(cx, cz, rOut, a, s.y - s.hw - 0.0045);

@@ -40,7 +40,7 @@ export function panelLayoutProblems(def: PanelDef, pxRect?: Rect, hotspots: read
   const problems: string[] = [];
   const parts = panelParts(def);
   parts.forEach((p, i) => {
-    if (!inside(p.rect, face)) problems.push(`'${p.id}' (${rectText(p.rect)}) lies outside the panel face (${rectText(face)})`);
+    if (!inside(p.rect, face) && !def.offFace?.includes(p.id)) problems.push(`'${p.id}' (${rectText(p.rect)}) lies outside the panel face (${rectText(face)})`);
     for (let j = 0; j < i; j++) if (partsCollide(parts[j], p)) problems.push(`'${p.id}' overlaps '${parts[j].id}'`);
     for (const k of def.keepOut) {
       let reach: number;

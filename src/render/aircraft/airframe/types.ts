@@ -296,7 +296,8 @@ export type QuadrantKnob = 'pistonThrottle' | 'notchedProp' | 'ribbedMixture' | 
 
 /** A slot in a quadrant cover: for lever `lever` (engineControls index) its swing; or a free slot at `y` from `from` to `to`. */
 export interface QuadrantSlot { lever?: number; y?: number; from?: number; to?: number; w: number;
-  /** A text strip beside the slot (the lever's name), read from the slot's outboard end. */ label?: string }
+  /** A text strip beside the slot (the lever's name), read from the slot's outboard end. */ label?: string;
+  /** The label's letters upright and stacked down the slot, this tall, m (an arc slot only; absent: a small strip). */ stackedLabel?: number }
 
 /** Fixed fittings on and round a quadrant. pos: FRD; axis: the part's own up (FRD unit vector, out of the face it stands on). */
 export type QuadrantPart =
@@ -358,7 +359,12 @@ export interface CockpitDef {
    * width 1.04, no pxRect (2000 px/m, height 0.40). A low panel uses e.g. pxRect { x: 0, y: 0, w: 2080, h: 624 }
    * at width 1.0. The recess radius uses pxPerM, not the literal 2000; the recess depth is in metres (gaugeRecess).
    */
-  panel: { x: number; zTop: number; width: number; pxRect?: { x: number; y: number; w: number; h: number } };
+  panel: { x: number; zTop: number; width: number; pxRect?: { x: number; y: number; w: number; h: number };
+           /**
+            * Parts of the panel canvas off the face (PanelDef.offFace gauges) shown on quads elsewhere in the cockpit: `px`
+            * the canvas rectangle, centre (FRD), normal out of the quad and its up (FRD unit vectors), w x h m.
+            */
+           windows?: readonly { px: { x: number; y: number; w: number; h: number }; centre: FRD; normal: FRD; up: FRD; w: number; h: number }[] };
   floor: { z: number; x0: number; x1: number };
   glareshield: { profile: readonly (readonly [number, number])[]; halfWidth: number };
   /**
@@ -421,7 +427,10 @@ export interface CockpitDef {
    * `angles[position]` (degrees clockwise as the pilot sees it, 0 = up) for controls.fuelSelector, with a white tick
    * at each position. Absent: none (the C172S's selector is the floor dial of fittings.fuelSelector).
    */
-  fuelSelectorHandle?: { pos: FRD; angles: Partial<Record<FuelSelector, number>>; /** The pointer handle's colour (absent: chrome). */ colour?: 'red' };
+  fuelSelectorHandle?: { pos: FRD; angles: Partial<Record<FuelSelector, number>>;
+                         /** A tapered red pointer (absent: a chrome bar). */ colour?: 'red';
+                         /** How far the face it stands on leans back from vertical, rad (absent: 0). */ tilt?: number;
+                         /** Radius of the position ticks, m (absent: 0.048). */ tickR?: number };
   /** A T-handle on an aft-facing face at `pos`, pulled `travel` m aft while controls.parkingBrake is set. Absent: none. */
   parkingBrakeHandle?: { pos: FRD; travel: number };
   /**

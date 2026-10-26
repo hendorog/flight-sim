@@ -45,7 +45,7 @@ export function fixedSections(def: PanelDef): FixedSections {
   const within = (r: Rect, o: Rect): boolean => r.x >= o.x && r.y >= o.y && r.x + r.w <= o.x + o.w && r.y + r.h <= o.y + o.h;
   const cropped = (id: string): boolean => crops.some(c => (parts.get(id) ? within(parts.get(id)!, c) : false));
   const lowered = new Set(def.fixed?.lower ?? []);
-  const engine = def.gauges.filter(g => !flight.has(g.id) && !cropped(g.id) && !lowered.has(g.id) && engineKinds.includes(g.kind));
+  const engine = def.gauges.filter(g => !flight.has(g.id) && !cropped(g.id) && !lowered.has(g.id) && (engineKinds.includes(g.kind) || (def.offFace?.includes(g.id) ?? false)));
   const columns = (section: FixedSection, rects: readonly Rect[], startX: number, height: number): void => {
     let x = startX, y = GAP, width = 0;
     for (const p of rects) {

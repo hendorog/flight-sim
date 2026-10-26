@@ -33,7 +33,7 @@ import type {
   WingVisualDef,
 } from '../types';
 import { PA38_GEOMETRY } from './geometry';
-import { PA38_PANEL_CENTRE_PX, PA38_PANEL_PARTS, PA38_PANEL_PX_PER_M, PA38_PANEL_PX_RECT } from './panel';
+import { PA38_FUEL_GAUGES, PA38_PANEL_CENTRE_PX, PA38_PANEL_PARTS, PA38_PANEL_PX_PER_M, PA38_PANEL_PX_RECT } from './panel';
 
 const W = PA38_GEOMETRY.wing;
 const H = PA38_GEOMETRY.hTail;
@@ -445,6 +445,21 @@ const EDGE = { x: QUADRANT.aftX + 0.02, z: PANEL_ZB + 0.0015, r: 0.07, from: -1.
 const LEVER = { x: EDGE.x, z: EDGE.z, y: 0.059, length: 0.105, tilt: 0.55 };
 /** The well's surround: its top edge on the face and how far it stands out. */
 const WELL = { zTop: faceZ(436), lip: 0.03 };
+/**
+ * The housing in the well that the fuel gauges and the selector stand on (owner's photo): its face leans back ~43 deg
+ * from vertical so the gauges face the pilot's eye, from just under the surround's top rail down and aft to the hump.
+ */
+const SLOPE = { x0: PANEL_X - 0.004, z0: WELL.zTop + 0.012, x1: PANEL_X - 0.066, z1: QUADRANT.zTop };
+const SLOPE_LEN = Math.hypot(SLOPE.x1 - SLOPE.x0, SLOPE.z1 - SLOPE.z0);
+/** Out of the sloping face (aft and up), and up it (forward and up), FRD unit vectors. */
+const SLOPE_N: FRD = [-(SLOPE.z1 - SLOPE.z0) / SLOPE_LEN, 0, (SLOPE.x1 - SLOPE.x0) / SLOPE_LEN];
+const SLOPE_UP: FRD = [-(SLOPE.x1 - SLOPE.x0) / SLOPE_LEN, 0, -(SLOPE.z1 - SLOPE.z0) / SLOPE_LEN];
+/** A point on the sloping face: `f` of the way down it, `y` across, `out` proud of it. */
+const onSlope = (f: number, y: number, out = 0): FRD => [
+  SLOPE.x0 + f * (SLOPE.x1 - SLOPE.x0) + out * SLOPE_N[0], y, SLOPE.z0 + f * (SLOPE.z1 - SLOPE.z0) + out * SLOPE_N[2],
+];
+/** The selector's boss on the slope. */
+const SELECTOR = onSlope(0.62, 0, 0.0005);
 /** The housing's bottom. */
 const QUADRANT_BOTTOM = PANEL_ZB + 0.12;
 /** The console between the seats carrying the flap lever and the trim wheel (s.9). */
@@ -458,7 +473,14 @@ const COCKPIT: CockpitDef = {
   // 127-133 px across on a 991 px high view (scripts/cockpit-focus.mjs).
   focus: { yawDeg: 0, pitchDeg: -20.5, fovDeg: 48 },
   enclosure: 'cabin',
-  panel: { x: PANEL_X, zTop: PANEL_ZTOP, width: PA38_PANEL_PX_RECT.w / PX, pxRect: PA38_PANEL_PX_RECT },
+  panel: {
+    x: PANEL_X, zTop: PANEL_ZTOP, width: PA38_PANEL_PX_RECT.w / PX, pxRect: PA38_PANEL_PX_RECT,
+    // The two fuel gauges (drawn off the face) on the sloping housing either side of the selector.
+    windows: ([-1, 1] as const).map((s) => {
+      const px = s < 0 ? PA38_FUEL_GAUGES.left : PA38_FUEL_GAUGES.right;
+      return { px, centre: onSlope(0.36, s * 0.05, 0.0006), normal: SLOPE_N, up: SLOPE_UP, w: px.w / PX, h: px.h / PX };
+    }),
+  },
   floor: { z: FLOOR_Z, x0: FIREWALL_X - 0.01, x1: -0.62 },
   // Padded black glareshield (s.12): panel-top lip, and a long, nearly flat deck forward to the windshield's
   // lower edge on the firewall, about 5 mm below the glazing.
@@ -538,6 +560,12 @@ const COCKPIT: CockpitDef = {
   },
   quadrant: {
     housings: [
+      // The sloping housing in the well, across between the surround's sides.
+      { profile: [[PANEL_X + 0.006, SLOPE.z0], [SLOPE.x0, SLOPE.z0], [SLOPE.x1, SLOPE.z1], [PANEL_X + 0.006, SLOPE.z1]],
+        y0: QUADRANT.y0 + 0.002, y1: QUADRANT.y1 - 0.002, bevel: 0.004, material: 'black' },
+      // A web behind the hump and the lever drums, so the three read as one moulding.
+      { profile: [[PANEL_X + 0.006, QUADRANT.zTop + 0.01], [PANEL_X - 0.04, QUADRANT.zTop + 0.01], [PANEL_X - 0.04, QUADRANT_BOTTOM], [PANEL_X + 0.006, QUADRANT_BOTTOM]],
+        y0: QUADRANT.y0 - 0.01, y1: QUADRANT.y1 + 0.01, bevel: 0.004, material: 'black' },
       // The centre: a rounded hump between the lever slots, from the well's floor down to the housing's bottom.
       { profile: [[PANEL_X + 0.006, QUADRANT.zTop], [PANEL_X - 0.03, QUADRANT.zTop + 0.003], [PANEL_X - 0.05, QUADRANT.zTop + 0.016],
           [PANEL_X - 0.062, QUADRANT.zTop + 0.04], [PANEL_X - 0.066, QUADRANT_BOTTOM], [PANEL_X + 0.006, QUADRANT_BOTTOM]],
@@ -557,19 +585,19 @@ const COCKPIT: CockpitDef = {
     arcs: ([-1, 1] as const).map((s) => ({
       centre: [EDGE.x, EDGE.z] as [number, number], r: EDGE.r, thickness: 0.004, from: EDGE.from, to: EDGE.to,
       y0: s < 0 ? -0.075 : 0.04, y1: s < 0 ? -0.04 : 0.075, material: 'black' as const,
-      slots: [{ lever: s < 0 ? 1 : 2, w: 0.008, label: s < 0 ? 'THROTTLE' : 'MIXTURE' }],
+      slots: [{ lever: s < 0 ? 1 : 2, w: 0.008, label: s < 0 ? 'THROTTLE' : 'MIXTURE', stackedLabel: 0.009 }],
     })),
     // The well over the levers: a moulded surround standing out of the face round the fuel gauges and the selector.
     parts: [
       { kind: 'box', min: [PANEL_X - WELL.lip, QUADRANT.y0 - 0.012, WELL.zTop], max: [PANEL_X + 0.002, QUADRANT.y1 + 0.012, WELL.zTop + 0.012], bevel: 0.004, material: 'black' },
       ...([-1, 1] as const).map((s) => ({ kind: 'box' as const, min: [PANEL_X - WELL.lip, s < 0 ? QUADRANT.y0 - 0.012 : QUADRANT.y1 - 0.002, WELL.zTop] as FRD,
-        max: [PANEL_X + 0.002, s < 0 ? QUADRANT.y0 + 0.002 : QUADRANT.y1 + 0.012, QUADRANT.zTop + 0.01] as FRD, bevel: 0.004, material: 'black' as const })),
+        max: [PANEL_X + 0.002, s < 0 ? QUADRANT.y0 + 0.002 : QUADRANT.y1 + 0.012, QUADRANT_BOTTOM - 0.01] as FRD, bevel: 0.004, material: 'black' as const })),
     ],
-    placards: [{ pos: [PANEL_X - 0.0008, 0, WELL.zTop + 0.02], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.034, h: 0.012, lines: ['FUEL'], ink: 'white', ground: 'black' }],
+    placards: [{ pos: onSlope(0.17, 0, 0.0008), normal: SLOPE_N, up: SLOPE_UP, w: 0.03, h: 0.011, lines: ['FUEL'], ink: 'white', ground: 'black' }],
   },
   // The fuel selector handle in the middle of the quadrant, LEFT / RIGHT / OFF (no BOTH; s.3, s.9), and the parking
   // brake handle hanging under the quadrant, pulled to set (s.9).
-  fuelSelectorHandle: { pos: [PANEL_X - 0.003, 0, faceZ(560)], angles: { left: -45, right: 45, off: 180 }, colour: 'red' },
+  fuelSelectorHandle: { pos: SELECTOR, angles: { left: -45, right: 45, off: 180 }, colour: 'red', tilt: Math.atan2(SLOPE.x0 - SLOPE.x1, SLOPE.z1 - SLOPE.z0), tickR: 0.03 },
   parkingBrakeHandle: { pos: [PANEL_X - 0.06, 0, PANEL_ZB + 0.15], travel: 0.05 },
   // Magnetic compass at the top centre of the windshield, hung from the front of the metal roof strip (s.9); its
   // bracket (0.083 m above the pivot) stays under the roof skin.
@@ -607,7 +635,7 @@ const COCKPIT: CockpitDef = {
   // The fuel selector in the middle of the quadrant, the parking brake handle hanging under it (s.3, s.9; drawn by
   // fuelSelectorHandle and parkingBrakeHandle).
   controlPoints: {
-    fuelSelector: [PANEL_X - 0.02, 0, faceZ(560)],
+    fuelSelector: onSlope(0.62, 0, 0.015),
     parkingBrake: [PANEL_X - 0.06, 0, PANEL_ZB + 0.15],
   },
 };

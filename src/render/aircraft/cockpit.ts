@@ -364,6 +364,7 @@ export class Cockpit {
   /** Cabin-only materials created here (the cabin occlusion patch applies to them). */
   get ownMaterials(): THREE.MeshStandardMaterial[] {
     const own = [this.panelMat];
+    if (this.hasWindows) own.push(this.windowMat);
     if (this.compass) own.push(...this.compass.materials);
     own.push(this.visorMat, this.rockerMat, this.yokeMat);
     if (this.knobBlue) own.push(this.knobBlue);
@@ -371,6 +372,9 @@ export class Cockpit {
     return own;
   }
   private readonly panelMat: THREE.MeshStandardMaterial;
+  /** The panel canvas on quads off the face (CockpitDef.panel.windows): lit, and self-lit like the dial markings. */
+  private readonly windowMat = new THREE.MeshStandardMaterial({ name: 'panelWindow', color: 0x2c2e32, roughness: 0.55, metalness: 0 });
+  private hasWindows = false;
   /** Vertex-coloured plastic of the yokes and sticks (yoke.ts). */
   private readonly yokeMat = yokeMaterial();
   /** Smoked, tinted polycarbonate of the sun visors. */
@@ -513,6 +517,19 @@ export class Cockpit {
     // The recess parallax needs the eye in the panel's own space for the camera actually rendering.
     recess.bind(this.panelMesh);
     this.group.add(this.panelMesh);
+    // Parts of the canvas off the face, on quads of their own (the Tomahawk's fuel gauges on the quadrant's tilted housing).
+    for (const w of def.panel.windows ?? []) {
+      const g = new THREE.PlaneGeometry(w.w, w.h);
+      const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+      const { canvas } = PANEL;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (w.px.x + uv.getX(i) * w.px.w) / canvas.w, 1 - (w.px.y + (1 - uv.getY(i)) * w.px.h) / canvas.h);
+      const n = new THREE.Vector3(w.normal[1], -w.normal[2], -w.normal[0]).normalize();
+      const up = new THREE.Vector3(w.up[1], -w.up[2], -w.up[0]).projectOnPlane(n).normalize();
+      const right = new THREE.Vector3().crossVectors(up, n);
+      g.applyMatrix4(new THREE.Matrix4().makeBasis(right, up, n).setPosition(frd(w.centre[0], w.centre[1], w.centre[2])));
+      fixed.add(this.windowMat, g);
+      this.hasWindows = true;
+    }
     // Panel backing box (so the panel has thickness at its edges) and bezel lip under the glareshield.
     fixed.add(mat.panelPlastic, box(PANEL.x + 0.03, 0, PANEL.zTop + PANEL.height / 2, 0.055, PANEL.width - 0.004, PANEL.height - 0.004, 0.004));
 
@@ -721,22 +738,42 @@ export class Cockpit {
     if (fuel) {
       // Fuel selector on the quadrant face: a white tick at each position round a black boss, and a bright
       // pointer handle (its tip white) that turns to the selected one.
+      // On a face leaning back by `tilt`, the whole selector is turned back about the lateral axis.
       const [fx, fy, fz] = fuel.pos;
+      const tilt = fuel.tilt ?? 0;
       for (const deg of Object.values(fuel.angles)) {
         const a = (deg * Math.PI) / 180;
-        const tick = box(-0.001, 0, -0.048, 0.003, 0.004, 0.012, 0.001);
+        const tick = box(-0.001, 0, -(fuel.tickR ?? 0.048), 0.003, 0.004, 0.012, 0.001);
         tick.rotateZ(-a);
+        tick.rotateX(-tilt);
         tick.translate(fy, -fz, -fx);
         fixed.add(mat.knobWhite, tick);
       }
       const b = new MeshBatch();
       b.add(mat.knobBlack, rodX(-0.006, 0, 0, 0.012, 0.022, 24));
-      b.add(fuel.colour === 'red' ? mat.knobRed : mat.chrome, box(-0.018, 0, -0.012, 0.014, 0.016, 0.06, 0.005));
-      b.add(mat.knobWhite, box(-0.025, 0, -0.038, 0.002, 0.008, 0.01, 0.001));
+      if (fuel.colour === 'red') {
+        // A red pointer, broad at the boss and tapering to its tip, with a short tail.
+        const outline = [[-0.006, -0.018], [0.006, -0.018], [0.011, 0], [0.0035, 0.046], [-0.0035, 0.046], [-0.011, 0]].map(([x, y]) => new THREE.Vector2(x, y));
+        const pointer = new THREE.ExtrudeGeometry(new THREE.Shape(outline), { depth: 0.007, bevelEnabled: true, bevelThickness: 0.0015, bevelSize: 0.0015, bevelSegments: 2 });
+        pointer.deleteAttribute('uv');
+        b.add(mat.knobRed, pointer.translate(0, 0, 0.0135));
+        b.add(mat.knobWhite, box(-0.0225, 0, -0.038, 0.002, 0.005, 0.008, 0.0008));
+      } else {
+        b.add(mat.chrome, box(-0.018, 0, -0.012, 0.014, 0.016, 0.06, 0.005));
+        b.add(mat.knobWhite, box(-0.025, 0, -0.038, 0.002, 0.008, 0.01, 0.001));
+      }
       const g = (this.fuelHandle = new THREE.Group());
       g.add(...b.build('fuelSelector').children);
-      frd(fx, fy, fz, g.position);
-      this.group.add(g);
+      if (tilt) {
+        const mount = new THREE.Group();
+        mount.rotation.x = -tilt;
+        mount.add(g);
+        frd(fx, fy, fz, mount.position);
+        this.group.add(mount);
+      } else {
+        frd(fx, fy, fz, g.position);
+        this.group.add(g);
+      }
     }
     const brake = def.parkingBrakeHandle;
     if (brake) {
@@ -955,6 +992,9 @@ export class Cockpit {
 
   /** Apply the instrument texture: u to the pilot's right, v up. It is lit and also self-illuminated. */
   setPanelTexture(texture: THREE.Texture): void {
+    this.windowMat.map = texture;
+    this.windowMat.color.setRGB(1, 1, 1);
+    this.windowMat.needsUpdate = true;
     this.panelMat.map = texture;
     if (!this.dedicatedEmissive) this.panelMat.emissiveMap = texture;
     this.panelMat.color.setRGB(1, 1, 1);
@@ -969,6 +1009,10 @@ export class Cockpit {
    * texel brightness. Displays then reach ~20-200 cd/m2 and markings ~2-20 cd/m2 with the dimmer.
    */
   setPanelEmissiveTexture(texture: THREE.Texture): void {
+    // The windows glow only with the dedicated map (it is black where nothing is lit).
+    this.windowMat.emissiveMap = texture;
+    this.windowMat.emissive.setRGB(1, 1, 1);
+    this.windowMat.needsUpdate = true;
     this.panelMat.emissiveMap = texture;
     this.panelMat.emissive.setRGB(1, 1, 1);
     this.dedicatedEmissive = true;
@@ -1025,6 +1069,8 @@ export class Cockpit {
     this.panelDial.value = level >= DIMMER_KNEE ? 1 : markings / (2 + 18 * Math.max(level, 0));
     const nits = this.dedicatedEmissive ? 20 + 180 * Math.max(level, 0) : markings;
     this.panelMat.emissiveIntensity = this.hasPanelTexture || this.dedicatedEmissive ? power * nits * SCENE_UNITS_PER_LUX * panelEmissiveScale : 0;
+    // The windows carry dial markings only: the panel's radiance at the markings' level.
+    this.windowMat.emissiveIntensity = this.dedicatedEmissive ? this.panelMat.emissiveIntensity * this.panelDial.value : 0;
 
     // Interior lamps (cabinLight.cabinLamps): the flood on the PANEL dimmer, the dome on its own switch.
     const flood = power * level * level * this.floodCd * SCENE_UNITS_PER_LUX;
@@ -1104,6 +1150,7 @@ export class Cockpit {
   dispose(): void {
     this.compass?.dispose();
     this.panelMat.dispose();
+    this.windowMat.dispose();
     this.visorMat.dispose();
     this.yokeMat.dispose();
     this.rockerMat.dispose();

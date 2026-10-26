@@ -220,6 +220,8 @@ export interface PanelDef {
                 rack?: { rails: Rect; blanks: readonly Rect[] } };
   /** Circles 3D parts pass through (yoke boots): artwork and hotspots keep out. */
   keepOut: readonly { x: number; y: number; r: number }[];
+  /** Gauges drawn on the canvas outside the face and shown on 3D parts of the cockpit (CockpitDef.panel.windows). */
+  offFace?: readonly string[];
   apertures: { large: number; small: number };
   /** Scale of complete round instruments, including needles, bezels and hotspots; absent = native artwork. */
   instrumentScale?: { large: number; small: number };
