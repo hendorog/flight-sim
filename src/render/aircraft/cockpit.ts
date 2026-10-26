@@ -30,7 +30,8 @@ import { FuselageShape, Ring } from './fuselageShape';
 import { frd, MeshBatch } from './geometry';
 import type { AircraftMaterials } from './materials';
 import { PANEL_HEIGHT, PANEL_WIDTH } from '../../instruments/layout';
-import { gaugeRecess, type PanelDef } from '../../instruments/panelDef';
+import type { PanelDef } from '../../instruments/panelDef';
+import { PanelRecess, panelRecesses } from './panelMaterial';
 import type { PointTarget } from '../../training/types';
 
 /**
@@ -342,78 +343,8 @@ export const COCKPIT_CONTROLS: Readonly<Record<PointTarget, { x: number; y: numb
  * 2-1/4" ones ~10 mm).
  */
 function panelGauges(face: PanelFace, panel: PanelDef): THREE.Vector4[] {
-  const out: THREE.Vector4[] = [];
-  for (const g of panel.gauges) {
-    const r = gaugeRecess(g, panel.apertures);
-    if (!r) continue;
-    const c = facePoint(face, r.x, r.y);
-    out.push(new THREE.Vector4(c.x, c.y, r.r / face.pxPerM, r.depth));
-  }
-  return out;
+  return panelRecesses(panel, (px, py) => facePoint(face, px, py), face.pxPerM);
 }
-
-/**
- * Instrument recesses by ray casting in the panel shader (no extra geometry or draws): inside a gauge's
- * aperture the view ray is followed into a cylinder `depth` deep. Where it reaches the back it samples the
- * dial (and its needles) at the offset texture coordinate, so dial and needles shift against the bezel with
- * the viewpoint; where it hits the bore first the fragment is the dark bore wall. The glass over the
- * aperture adds a Fresnel reflection of the surroundings (panelGlass).
- */
-const panelRecessPars = (gauges: number): string => /* glsl */ `
-#define PANEL_GAUGE_COUNT ${gauges}
-uniform vec3 panelEye;
-uniform vec4 panelGauges[ PANEL_GAUGE_COUNT ];
-varying vec3 vPanelPos;
-`;
-/** @param face the panel face: a shift across it, m, becomes one of the texture coordinate over the whole canvas */
-const panelRecessMap = (face: PanelFace): string => /* glsl */ `
-	vec2 panelUv = vec2( 0.0 );
-	#ifdef USE_MAP
-		panelUv = vMapUv;
-	#endif
-	float panelWall = 0.0;
-	float panelGlass = 0.0;
-	float panelAo = 1.0;
-	{
-		vec3 ray = normalize( vPanelPos - panelEye );
-		for ( int i = 0; i < PANEL_GAUGE_COUNT; i ++ ) {
-			vec4 g = panelGauges[ i ];
-			vec2 rel = vPanelPos.xy - g.xy;
-			if ( dot( rel, rel ) < g.z * g.z ) {
-				panelGlass = 1.0;
-				// Distance along the panel plane travelled while going g.w deep (the face is +z, facing aft).
-				vec2 shift = ray.xy * ( g.w / max( - ray.z, 0.08 ) );
-				vec2 q = rel + shift;
-				float rq = length( q ) / g.z;
-				panelWall = step( 1.0, rq );
-				panelUv += shift / vec2( ${(face.canvas.w / face.pxPerM).toFixed(3)}, ${(face.canvas.h / face.pxPerM).toFixed(3)} );
-				// The bore shades the outer rim of the dial from the diffuse light.
-				panelAo = 1.0 - 0.45 * smoothstep( 0.55, 1.0, rq );
-				break;
-			}
-		}
-	}
-	#ifdef USE_MAP
-		vec4 sampledDiffuseColor = texture2D( map, panelUv );
-		diffuseColor *= sampledDiffuseColor;
-	#endif
-	diffuseColor.rgb = mix( diffuseColor.rgb * panelAo, vec3( 0.012 ), panelWall );
-`;
-const PANEL_GLASS = /* glsl */ `
-	#ifdef USE_ENVMAP
-	if ( panelGlass > 0.5 ) {
-		// Cover glass: a smooth dielectric reflecting what the cabin occlusion lets through.
-		float glassNv = saturate( dot( geometryNormal, geometryViewDir ) );
-		vec3 glassF = F_Schlick( vec3( 0.04 ), 1.0, glassNv );
-		#ifdef CABIN_VIS
-			float glassOcc = vCabinVis;
-		#else
-			float glassOcc = 1.0;
-		#endif
-		outgoingLight += glassF * getIBLRadiance( geometryViewDir, geometryNormal, 0.03 ) * glassOcc;
-	}
-	#endif
-`;
 
 /** A control column in the cabin: its node, and how it follows the pilot's inputs. */
 interface ControlColumn {
@@ -541,8 +472,6 @@ export class Cockpit {
   private readonly rockerPivot = new THREE.Matrix4();
   private readonly rockerRow = new THREE.Vector3();
   private readonly magnetoKey = new THREE.Group();
-  /** Camera position in the panel mesh's space (for the instrument recess parallax). */
-  private readonly panelEye = { value: new THREE.Vector3(0, 0.1, 0.2) };
   /** True once the instruments module's own self-illumination map is in use (exact backlight mask). */
   private dedicatedEmissive = false;
   /**
@@ -592,8 +521,8 @@ export class Cockpit {
     this.rockerRowY = row.bounds.y + row.rockerTop + row.rockerH / 2;
     this.rockerState = new Int8Array(this.switches.length);
     const PANEL_GAUGES = panelGauges(PANEL, panelDef);
-    const recessPars = panelRecessPars(PANEL_GAUGES.length);
-    const recessMap = panelRecessMap(PANEL);
+    // A shift across the face, m, becomes one of the texture coordinate over the whole canvas.
+    const recess = new PanelRecess(PANEL_GAUGES, { w: PANEL.canvas.w / PANEL.pxPerM, h: PANEL.canvas.h / PANEL.pxPerM });
     Cockpit.initLamps(def, PANEL);
     const fixed = new MeshBatch();
 
@@ -605,15 +534,7 @@ export class Cockpit {
     // With a dedicated emissive map from the instruments module (setPanelEmissiveTexture) the map is used
     // as is: it is already black where nothing glows.
     this.panelMat.onBeforeCompile = (shader) => {
-      shader.uniforms.panelEye = this.panelEye;
-      shader.uniforms.panelGauges = { value: PANEL_GAUGES };
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vPanelPos;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvPanelPos = transformed;');
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${recessPars}`)
-        .replace('#include <map_fragment>', recessMap)
-        .replace('#include <opaque_fragment>', `${PANEL_GLASS}\n#include <opaque_fragment>`);
+      recess.patch(shader);
       // The dedicated map carries the dial faces at 0.1 x their near-black paint (~0.002 linear); at night
       // exposure that still reads as grey faces. Real faces are black paint behind the lit markings, so
       // texels below a small floor do not glow (markings are ~0.09, displays up to 1). Without it the colour
@@ -656,10 +577,7 @@ export class Cockpit {
     this.panelMesh.name = 'instrumentPanel';
     this.panelMesh.receiveShadow = true;
     // The recess parallax needs the eye in the panel's own space for the camera actually rendering.
-    this.panelMesh.onBeforeRender = (_r, _s, camera) => {
-      this.panelEye.value.setFromMatrixPosition(camera.matrixWorld);
-      this.panelMesh.worldToLocal(this.panelEye.value);
-    };
+    recess.bind(this.panelMesh);
     this.group.add(this.panelMesh);
     // Panel backing box (so the panel has thickness at its edges) and bezel lip under the glareshield.
     fixed.add(mat.panelPlastic, box(PANEL.x + 0.03, 0, PANEL.zTop + PANEL.height / 2, 0.055, PANEL.width - 0.004, PANEL.height - 0.004, 0.004));

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Usage: node scripts/cockpit-focus.mjs [--types c172s,r44] [--out dir] [--dpr 1.5] [--quality high] [--shots 1]
 //          [--views normal,focus] [--perf ms] [--params "dpr=1.25"] [--setup "<js run in the page first>"]
+//          [--tod 12] [--tag dusk]   (local solar time; a suffix on the screenshot names)
 //          [--override '{"c172s":{"yawDeg":0,"pitchDeg":-20,"fovDeg":44}}']   (a trial focus view per type)
 // The 3D cockpit at the owner's window (1920 x 991 CSS px, devicePixelRatio 1.5) on the runway at noon: for each type the
 // default view and the instrument focus view (the Q key, then Q again to check it restores), a screenshot of each, and
@@ -26,6 +27,8 @@ const shots = flag('shots', '1') === '1';
 const views = flag('views', 'normal,focus').split(',');
 const perfMs = Number(flag('perf', '0'));
 const extra = flag('params', '');
+const tod = Number(flag('tod', '12'));
+const tag = flag('tag', '');
 const override = JSON.parse(flag('override', '{}'));
 // --setup: JS run in the page before measuring (a trial default pitch: "const r=__sim.sim.systems.cameras.cockpit; r.defaultPitch=-0.4; r.recentre()").
 const setup = flag('setup', '');
@@ -158,7 +161,7 @@ try {
     const p = await ctx.newPage();
     const errs = [];
     p.on('pageerror', (e) => errs.push(String(e)));
-    await p.goto(`http://127.0.0.1:${port}/index.html?aircraft=${type}&scenario=runway&cam=cockpit&mute=1&quality=${quality}&tod=12&resume=0${extra ? '&' + extra : ''}`, { waitUntil: 'load', timeout: 180000 });
+    await p.goto(`http://127.0.0.1:${port}/index.html?aircraft=${type}&scenario=runway&cam=cockpit&mute=1&quality=${quality}&tod=${tod}&resume=0${extra ? '&' + extra : ''}`, { waitUntil: 'load', timeout: 180000 });
     await p.waitForFunction(() => window.__ready === true, null, { timeout: 180000 });
     await p.evaluate(async () => { window.__THREE = await import('/node_modules/three/build/three.module.js'); });
     if (override[type]) {
@@ -175,7 +178,7 @@ try {
     for (const view of views) {
       if (view === 'focus') { await p.keyboard.press('KeyQ'); await sleep(900); }
       r[view] = await p.evaluate(measure);
-      if (shots) await p.screenshot({ path: `${out}/${type}_${view}.png` });
+      if (shots) await p.screenshot({ path: `${out}/${type}_${view}${tag ? '_' + tag : ''}.png` });
       if (perfMs > 0) {
         await frameTimes(p, 1000);
         const t = (await frameTimes(p, perfMs)).sort((x, y) => x - y);
@@ -194,7 +197,7 @@ try {
     await ctx.close();
   }
 } finally {
-  writeFileSync(`${out}/focus.json`, JSON.stringify(results, null, 1));
+  writeFileSync(`${out}/focus${tag ? '_' + tag : ''}.json`, JSON.stringify(results, null, 1));
   await browser.close();
   await server.close();
 }
