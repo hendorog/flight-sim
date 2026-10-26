@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // Usage: node scripts/cockpit-focus.mjs [--types c172s,r44] [--out dir] [--dpr 1.5] [--quality high] [--shots 1]
-//                                      [--views normal,focus] [--perf ms] [--override '{"c172s":{"yawDeg":0,"pitchDeg":-20,"fovDeg":44}}']
+//          [--views normal,focus] [--perf ms] [--params "dpr=1.25"] [--setup "<js run in the page first>"]
+//          [--override '{"c172s":{"yawDeg":0,"pitchDeg":-20,"fovDeg":44}}']   (a trial focus view per type)
 // The 3D cockpit at the owner's window (1920 x 991 CSS px, devicePixelRatio 1.5) on the runway at noon: for each type the
-// default view and the instrument focus view (the Q key), a screenshot of each, and in each view the on-screen size of
-// the main dials (CSS px across the dial face: the gauge component's width on the panel canvas, projected from the 3D
-// panel face through the camera) and the fraction of the frame height that looks outside at the centre column
-// (a CPU raycast against the opaque cockpit meshes; no GPU readback). --perf ms: rAF frame time over that window
-// (median and p95, ms), with the WebGL renderer string so a software fallback shows. Prints and writes focus.json.
+// default view and the instrument focus view (the Q key, then Q again to check it restores), a screenshot of each, and
+// in each view: the on-screen size of the main dials (px: a 3-1/8 in span across the dial centre, projected from the 3D
+// panel face through the camera, CSS px; casePx: the gauge's whole canvas rectangle), where the horizon ahead is (fraction
+// of the frame height from the top), and per column the fraction of rows that see out (a CPU raycast against the opaque
+// cockpit meshes; no GPU readback). --perf ms: rAF frame time and the GPU time of the post pipeline's frame
+// (EXT_disjoint_timer_query_webgl2), with the WebGL renderer string so a software fallback shows. Writes focus.json.
 import { createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -104,8 +106,7 @@ function measure() {
     for (let k = 0; k <= 200; k++) {
       const ny = 1 - (2 * k) / 200;
       ray.setFromCamera(new THREE.Vector2(nx, ny), cam);
-      const hits = ray.intersectObjects(opaque, false);
-      if (hits.length === 0) { n++; bottom = k / 200; } else if (window.__debugHits && k % 20 === 0) console.log('hit', nx, k, hits[0].object.name, hits[0].object.parent?.name, hits[0].distance.toFixed(2));
+      if (ray.intersectObjects(opaque, false).length === 0) { n++; bottom = k / 200; }
     }
     outside.push(+(n / 201).toFixed(3));
     outsideBottom.push(+bottom.toFixed(3));
@@ -157,7 +158,6 @@ try {
     const p = await ctx.newPage();
     const errs = [];
     p.on('pageerror', (e) => errs.push(String(e)));
-    if (process.env.DEBUG_HITS) p.on('console', (m) => { if (m.text().startsWith('hit')) console.log('   ', m.text()); });
     await p.goto(`http://127.0.0.1:${port}/index.html?aircraft=${type}&scenario=runway&cam=cockpit&mute=1&quality=${quality}&tod=12&resume=0${extra ? '&' + extra : ''}`, { waitUntil: 'load', timeout: 180000 });
     await p.waitForFunction(() => window.__ready === true, null, { timeout: 180000 });
     await p.evaluate(async () => { window.__THREE = await import('/node_modules/three/build/three.module.js'); });
@@ -167,7 +167,6 @@ try {
         cams.cockpit.focusView = { yaw: f.yawDeg * Math.PI / 180, pitch: f.pitchDeg * Math.PI / 180, fov: f.fovDeg };
       }, [override[type]]);
     }
-    if (process.env.DEBUG_HITS) await p.evaluate(() => { window.__debugHits = true; });
     if (setup) await p.evaluate(setup);
     await sleep(2500);
     const r = { type, renderer: await p.evaluate(() => { const gl = window.__sim.ctx.renderer.getContext(); const e = gl.getExtension('WEBGL_debug_renderer_info'); return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : '?'; }),
