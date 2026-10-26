@@ -524,7 +524,7 @@ const COCKPIT: CockpitDef = {
   ],
   // Two ram's-horn control wheels on shafts through the panel (s.12): neutral end position, fore-aft travel for full
   // elevator input, maximum rotation.
-  column: { kind: 'yoke', x: PANEL_X - 0.18, y: SEAT_Y, z: faceZ(C152_PANEL_PARTS.yokes.y), travel: 0.07, rollDeg: 40 },
+  column: { kind: 'yoke', x: PANEL_X - 0.18, y: SEAT_Y, z: faceZ(C152_PANEL_PARTS.yokes.y), travel: 0.07, rollDeg: 40, style: 'cessna152' },
   pedals: { x: 0.64, ys: [-SEAT_Y, SEAT_Y] },
   // Push-pull knobs along the lower centre of the panel (s.9): carburettor heat left of the throttle (black), the
   // large throttle knob, the red mixture knob right of it.

@@ -644,7 +644,7 @@ const COCKPIT: CockpitDef = {
   ],
   occupants: [{ seat: 0 }],
   // Two control wheels on columns out of the panel.
-  column: { kind: 'yoke', x: PANEL_X - 0.2, y: SEAT_Y, z: faceZ(PC12_YOKES.y), travel: 0.1, rollDeg: 45 },
+  column: { kind: 'yoke', x: PANEL_X - 0.2, y: SEAT_Y, z: faceZ(PC12_YOKES.y), travel: 0.1, rollDeg: 45, style: 'pilatus' },
   pedals: { x: PANEL_X + 0.26, ys: [-SEAT_Y, SEAT_Y] },
   // The pedestal's levers, left to right (47E 7-10): MANUAL OVERRIDE (drawn fixed at OFF, aft: not modelled), the
   // POWER CONTROL LEVER (black grip; aft of the idle gate it swings on through beta into reverse with

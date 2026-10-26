@@ -495,7 +495,7 @@ const COCKPIT: CockpitDef = {
   ],
   // Two ram's-horn yokes on columns through the panel: neutral end position, fore-aft travel for full
   // elevator input, maximum rotation.
-  column: { kind: 'yoke', x: YOKE_X, y: SEAT_Y, z: YOKE_Z, travel: 0.07, rollDeg: 40 },
+  column: { kind: 'yoke', x: YOKE_X, y: SEAT_Y, z: YOKE_Z, travel: 0.07, rollDeg: 40, style: 'cessnaSingle' },
   pedals: { x: PEDAL_X, ys: [-SEAT_Y, SEAT_Y] },
   // Push-pull knobs on the lower panel: throttle (black) and mixture (red).
   engineControls: [

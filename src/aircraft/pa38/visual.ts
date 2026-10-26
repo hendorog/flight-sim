@@ -517,7 +517,7 @@ const COCKPIT: CockpitDef = {
   ],
   // Two ram's-horn control wheels on shafts through the panel (s.9): neutral end position, fore-aft travel for
   // full elevator input, maximum rotation.
-  column: { kind: 'yoke', x: PANEL_X - 0.18, y: SEAT_Y, z: faceZ(PA38_PANEL_PARTS.yokes.y), travel: 0.07, rollDeg: 40 },
+  column: { kind: 'yoke', x: PANEL_X - 0.18, y: SEAT_Y, z: faceZ(PA38_PANEL_PARTS.yokes.y), travel: 0.07, rollDeg: 40, style: 'piperTomahawk' },
   pedals: { x: 0.62, ys: [-SEAT_Y, SEAT_Y] },
   // Quadrant levers (s.9): the large cylindrical throttle knob, the red scalloped mixture knob, the small
   // carburettor heat lever on the quadrant's left edge (down = ON).
