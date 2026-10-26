@@ -13,6 +13,8 @@
 // overhead console, door latches) are built where the definition's `fittings` put them, and not otherwise.
 // Variants: centre sticks instead of yokes, quadrant levers instead of push-pull knobs, a flap switch or a
 // floor lever, a gear selector; a canopy cockpit is seen from outside, so its small controls are never hidden.
+// Throttle quadrants, pedestals and consoles (CockpitDef.quadrant), the knob library, the knurled trim wheels and the
+// placards are built by quadrant.ts.
 
 import { BallCompass } from './compass';
 import type { CompassReading } from '../../instruments/dynamics/magneticCompass';
