@@ -5,8 +5,8 @@
 // Speeds come from ./reference (the same table the HUD, the scenarios and the autoflight use). Checklist wording
 // follows the POH normal procedures (Report 2126 section 4) as the type's engineering data sheet gives them
 // (aircraft-data/pa38.md in the design work folder, s.10; CLUB marks the flying-school expansion quoted there).
-// Items over a control the telemetry has no signal for (carburettor heat, the circuit breakers, the primer) have
-// `state: null` and are confirmed with Enter. There is no avionics master: the avionics key stands for the radios.
+// Items over a control the telemetry has no signal for (carburettor heat, the circuit breakers) have `state: null`
+// and are confirmed with Enter. The primer's lock is read (primerLocked); how many strokes is the pilot's call. There is no avionics master: the avionics key stands for the radios.
 // The fuel selector has LEFT, RIGHT and OFF and no BOTH: "proper tank" is either tank.
 
 import { citeChecklists } from '../../training/checklistData';
@@ -153,6 +153,11 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     fuelTank,
   ]),
   engineStart: list('engineStart', 'Starting engine', [
+    // POH 4.13 (a): "Prime using two to four strokes ... when the temperature is +40 F. Use more primer strokes for
+    // colder temperatures." A hot engine (b) gets none.
+    item('prime', 'Primer', 'As required (2 to 4 strokes when cold, none when hot)', {
+      control: null, state: null, key: 'primerStroke', stateLabel: 'AS REQUIRED',
+      why: why('A cold engine needs the prime to fire; a hot one needs none, and too much floods it.') }),
     item('throttleOpen', 'Throttle', 'Open half an inch', {
       control: 'throttle', state: all(gt('throttle', 0.02), lt('throttle', 0.12)), key: THROTTLE_KEYS, stateLabel: 'OPEN 1/2 INCH',
       why: why('Throttle open half an inch: enough air to start without racing the engine.') }),
@@ -178,6 +183,9 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('fuelPumpOff', 'Electric fuel pump', 'Off, fuel pressure checked', {
       control: 'fuelPump', state: eq('fuelPump', false), key: 'fuelPump',
       why: why('Pump off: the engine-driven pump alone must hold fuel pressure in the green.') }),
+    item('primerLocked', 'Primer', 'Locked', {
+      control: null, state: eq('primerLocked', true), key: 'primerLock', stateLabel: 'LOCKED',
+      why: why('An unlocked primer feeds raw fuel to the cylinders: a rich, rough engine.') }),
     item('ammeter', 'Alternator', 'On, ALT light out', {
       control: 'alternator', state: eq('alternator', true), key: 'alternator',
       why: why('ALT light out: the alternator, not the battery, now carries the electrics.') }),
@@ -369,7 +377,7 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
       control: 'oil', state: null, key: null,
       why: why('Fuel pressure, oil pressure, temperature: they tell us what failed.') }),
     item('primer', 'Primer', 'Locked', {
-      control: null, state: null, key: null, stateLabel: 'LOCKED',
+      control: null, state: eq('primerLocked', true), key: 'primerLock', stateLabel: 'LOCKED',
       why: why('An unlocked primer feeds raw fuel to the cylinders: the engine runs too rich.') }),
     item('mags', 'Ignition switch', 'Left, then right, then back to both', {
       control: 'magnetos', state: eq('mags', 3), key: 'magnetoBoth',
@@ -443,6 +451,7 @@ export const PA38: AircraftTypeDef = {
     engines: 1,
     induction: 'carburettor',
     carbHeat: true,
+    // The hand primer right of the quadrant (EngineDef.primer; E strokes it, Shift+E locks it).
     primer: 'manual',
     electricFuelPump: true,
     fuelSelector: ['off', 'left', 'right'],

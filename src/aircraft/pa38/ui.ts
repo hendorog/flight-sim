@@ -28,22 +28,29 @@ const MAGNETO_NAMES: Record<MagnetoPosition, string> = { 0: 'OFF', 1: 'R', 2: 'L
 const FUEL_NAMES: Record<FuelSelector, string> = { off: 'OFF', left: 'LEFT', right: 'RIGHT', both: 'BOTH', on: 'ON', crossfeed: 'CROSSFEED' };
 
 /**
- * Engine start (POH 4.13, s.10), each step a check or a target state. No priming: the hand primer is not
- * modelled (the engine starts without it).
+ * Engine start (POH 4.13, s.10), each step a check or a target state. The prime in the POH's place (4-5: first of
+ * the cold start), with its stroke counts (4.13 (a)); a hot engine gets none (4.13 (b)).
  */
 const STARTUP_STEPS: readonly [string, string][] = [
   ['Fuel selector', 'check LEFT or RIGHT, the fuller tank (Shift+J cycles; there is no BOTH)'],
   ['Carburettor heat', 'OFF (/ toggles it)'],
+  ['Primer', 'as required: E once per stroke (cold engine 2-4, below freezing more; hot engine none)'],
   ['Throttle', 'open half an inch: F3 (or Page Up) briefly (~10%)'],
   ['Master', 'W (battery and alternator on)'],
   ['Electric fuel pump', 'J: ON'],
   ['Mixture', 'hold Shift+M until FULL RICH'],
   ['Parking brake', 'check SET (PARKING BRAKE shown); only if it is not, Shift+B sets it'],
   ['Start', 'hold S until the engine runs, then let go; about 800 rpm'],
-  ['After start', 'oil pressure rising · J fuel pump OFF, fuel pressure green · I radios on · release the parking brake (Shift+B) to taxi'],
+  ['After start', 'oil pressure rising · J fuel pump OFF, fuel pressure green · Shift+E primer LOCKED · I radios on · release the parking brake (Shift+B) to taxi'],
 ];
 
 const onOff = (b: boolean): string => (b ? 'ON' : 'OFF');
+/** The hand primer: locked in, or unlocked with the strokes made so far. */
+const primerLabel = (c: { primerLocked?: boolean; primerStrokes?: number }): string => {
+  if (c.primerLocked ?? true) return 'LOCKED';
+  const n = c.primerStrokes ?? 0;
+  return `UNLOCKED (${n} stroke${n === 1 ? '' : 's'})`;
+};
 const percent = (v: number): string => `${Math.round(v * 100)}%`;
 const carbHeat = (v: number): string => (v > CARB_HEAT_ON ? 'ON' : 'OFF');
 
@@ -75,6 +82,8 @@ export const PA38_UI: UiProfile = {
     { id: 'fuelSelector', label: 'Fuel selector', read: (c) => FUEL_NAMES[c.fuelSelector] },
     { id: 'fuelPump', label: 'Electric fuel pump', read: (c) => onOff(c.fuelPump) },
     { id: 'carbHeat', label: 'Carburettor heat', read: (c) => carbHeat(c.carbHeat) },
+    // The hand primer: each stroke (E) is announced with the count so far, and the lock (Shift+E).
+    { id: 'primer', label: 'Primer', read: primerLabel },
     { id: 'pitotHeat', label: 'Pitot heat', read: (c) => onOff(c.pitotHeat) },
     // No beacon and no taxi light on the type (POH 7.15): their keys switch nothing that draws current.
     { id: 'nav', label: 'Nav lights', read: (c) => onOff(c.lights.nav) },
@@ -107,5 +116,6 @@ export const PA38_UI: UiProfile = {
     ['Fuel selector', 'Shift+J: LEFT, RIGHT, OFF (no BOTH: change tanks every hour, electric pump on for the change)'],
     ['Electric fuel pump', 'J: ON for take-off, landing and tank changes'],
     ['Carburettor heat', '/ : ON when icing is suspected and before closing the throttle for a long descent; OFF for take-off and go-around'],
+    ['Primer', 'E: one stroke (cold engine 2-4); Shift+E: lock it. Flooded: throttle full, pump off, mixture idle cut-off, crank; advance the mixture as it fires'],
   ],
 };

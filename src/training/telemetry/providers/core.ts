@@ -81,6 +81,8 @@ export const CORE_SIGNALS: readonly SignalDef[] = defineSignals([
   ['avionics', 'bool', '', 0, 'Avionics master'],
   ['fuelSel', 'enum', '', 0, "Fuel selector: 'off' | 'left' | 'right' | 'both'"],
   ['fuelPump', 'bool', '', 0, 'Electric fuel pump'],
+  ['primerLocked', 'bool', '', 0, 'Hand primer in and locked (true on a type without one)'],
+  ['primerStrokes', 'number', '', 0, 'Hand primer strokes made this flight (0 on a type without one)'],
   ['pitotHeat', 'bool', '', 0, 'Pitot heat'],
   ['lightNav', 'bool', '', 0, 'Navigation lights'],
   ['lightBeacon', 'bool', '', 0, 'Beacon'],
@@ -196,6 +198,8 @@ export function createCoreProvider(): SignalProvider {
       out.avionics = c.avionics;
       out.fuelSel = c.fuelSelector;
       out.fuelPump = c.fuelPump;
+      out.primerLocked = c.primerLocked ?? true;
+      out.primerStrokes = c.primerStrokes ?? 0;
       out.pitotHeat = c.pitotHeat;
       out.lightNav = c.lights.nav;
       out.lightBeacon = c.lights.beacon;

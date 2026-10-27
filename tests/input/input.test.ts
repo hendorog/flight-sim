@@ -146,8 +146,9 @@ describe('key bindings', () => {
     // (Shift+N) and the stick pusher's interrupt (Shift+D)), and the rigid-rotor programme's: ENGINE TRIM left/right
     // or the moved beep (Shift+, / Shift+.), the pusher grip's snap (Shift+/) and the tail-wheel lock (Shift+'); and the
     // Bo 105 flyability pass's: the hand-rate collective (Shift+F5 / Shift+F6), keyboard trim here (Shift+5, Shift+Num 5)
-    // and the STAB ASSIST toggle (Shift+A); less the spare rudder keys Q and E, plus the instrument focus (Q).
-    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5 + 4 + 5 - 2 + 1);
+    // and the STAB ASSIST toggle (Shift+A); less the spare rudder keys Q and E, plus the instrument focus (Q); plus the
+    // hand primer's stroke and lock (E, Shift+E).
+    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5 + 4 + 5 - 2 + 1 + 2);
     expect(KEY_MAP.filter((m) => ['F5', 'F6', 'Digit5', 'Numpad5', 'KeyA'].includes(m.code)).map((m) => `${m.code}/${m.shift}/${m.action}`)).toEqual([
       'Numpad5/undefined/centreControls',
       'Digit5/undefined/centreControls',
@@ -566,8 +567,9 @@ describe('InputSystem: hold-position keyboard yoke', () => {
   it('Q toggles the instrument focus view (with or without Shift); Q and E are no longer rudder keys', () => {
     expect(actionForKey('KeyQ', false)).toBe('viewFocus');
     expect(actionForKey('KeyQ', true)).toBe('viewFocus');
-    expect(actionForKey('KeyE', false)).toBeNull();
-    expect(actionForKey('KeyE', true)).toBeNull();
+    // E is the hand primer's now (a type without one ignores it: tests/aircraft/primerSim.test.ts).
+    expect(actionForKey('KeyE', false)).toBe('primerStroke');
+    expect(actionForKey('KeyE', true)).toBe('primerLock');
     expect(KEY_MAP.filter((m) => m.action === 'rudderLeft' || m.action === 'rudderRight').map((m) => m.code)).toEqual(['KeyZ', 'KeyX']);
     // A view key: it does not take control from a demonstration.
     expect(demoViewKey('KeyQ', false)).toBe(true);

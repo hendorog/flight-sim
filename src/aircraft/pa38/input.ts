@@ -18,6 +18,8 @@ export const PA38_INPUT: InputProfile = {
   // LEFT, RIGHT and OFF; the selector has no BOTH (s.9 of the type's data sheet).
   fuelSelectorCycle: ['left', 'right', 'off'],
   ignition: 'key',
+  // The hand primer right of the throttle quadrant (POH 4.13): E strokes it, Shift+E locks it.
+  handPrimer: true,
   // Carburetted, fixed pitch, fixed gear: throttle, mixture, carburettor heat and the electric fuel pump; no trims
   // but the elevator's.
   has: {

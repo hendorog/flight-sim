@@ -5,8 +5,8 @@
 // Speeds come from ./reference (the same table the HUD, the scenarios and the autoflight use). Checklist wording
 // follows the 1978 POH normal procedures as the type's engineering data sheet gives them (aircraft-data/c152.md
 // in the design work folder, s.10; SCHOOL marks common flying-school practice there). Items over a control the
-// telemetry has no signal for (carburettor heat, the circuit breakers, the primer, the doors) have `state: null` and are confirmed with
-// Enter. There is no electric fuel pump and no avionics master: the avionics key stands for the radios.
+// telemetry has no signal for (carburettor heat, the circuit breakers, the doors) have `state: null` and are confirmed with
+// Enter. The primer's lock is read (primerLocked); how many strokes is the pilot's call. There is no electric fuel pump and no avionics master: the avionics key stands for the radios.
 
 import { citeChecklists } from '../../training/checklistData';
 import { C152_EXTRA_CHECKLISTS, C152_CHECKLIST_SOURCE } from './checklists';
@@ -140,6 +140,10 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     fuelOn,
     mixtureRich,
     carbHeatCold,
+    // POH 4-7: "Prime -- AS REQUIRED (up to 3 strokes)"; one in warm weather, up to three near freezing (4-11).
+    item('prime', 'Primer', 'As required (up to 3 strokes), in and locked', {
+      control: null, state: eq('primerLocked', true), key: 'primerStroke', stateLabel: 'AS REQUIRED, LOCKED',
+      why: why('A cold engine needs the prime to fire; a hot one needs none, and too much floods it.') }),
     // About half an inch: two or three taps of F3.
     item('throttleOpen', 'Throttle', 'Open half an inch', {
       control: 'throttle', state: all(gt('throttle', 0.02), lt('throttle', 0.12)), key: THROTTLE_KEYS, stateLabel: 'OPEN 1/2 INCH',
@@ -346,7 +350,7 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
       control: null, state: null, key: 'carbHeat', stateLabel: 'HOT',
       why: why('Carburettor ice is a likely cause: full heat, and give it time.') }),
     item('primer', 'Primer', 'In and locked', {
-      control: null, state: null, key: null, stateLabel: 'IN AND LOCKED',
+      control: null, state: eq('primerLocked', true), key: 'primerLock', stateLabel: 'IN AND LOCKED',
       why: why('An unlocked primer can feed raw fuel and make the engine run too rich.') }),
     item('fuelSelector', 'Fuel shut-off valve', 'On', {
       control: 'fuelSelector', state: eq('fuelSel', 'on'), key: 'fuelSelector', critical: true,
@@ -421,7 +425,7 @@ export const C152: AircraftTypeDef = {
     engines: 1,
     induction: 'carburettor',
     carbHeat: true,
-    // The aeroplane's hand primer (panel knob). Not modelled in the sim (index.ts notModelled); nothing reads this field.
+    // The hand primer on the panel (EngineDef.primer; E strokes it, Shift+E locks it).
     primer: 'manual',
     electricFuelPump: false,
     fuelSelector: ['off', 'on'],
