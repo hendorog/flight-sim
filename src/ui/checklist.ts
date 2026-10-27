@@ -28,6 +28,8 @@ export class ChecklistPanel {
   private phase: string | null = null;
   private candidate: { id: string | null; since: number } = { id: null, since: 0 };
   private followed = true;
+  /** Opened on a list a lesson or a demonstration asked for: it stays until F, Shift+F or the close button. */
+  private linked = false;
 
   constructor(parent: HTMLElement) {
     this.launcher = el('button', 'checklist-launch', parent, 'Checklist · F');
@@ -40,7 +42,7 @@ export class ChecklistPanel {
     this.name = el('strong', '', head, 'Checklist');
     const close = el('button', '', head, '×');
     close.setAttribute('aria-label', 'Close checklist');
-    close.addEventListener('click', () => { this.opened = false; this.renderVisibility(false); close.blur(); });
+    close.addEventListener('click', () => { this.opened = false; this.linked = false; this.renderVisibility(false); close.blur(); });
     const tabs = el('div', 'checklist-tabs', this.root);
     for (const tab of ['normal', 'emergency'] as const) {
       const button = el('button', '', tabs, tab === 'normal' ? 'Normal' : 'Emergency');
@@ -81,19 +83,19 @@ export class ChecklistPanel {
   get isOpen(): boolean { return this.opened; }
   /** F: opens on the list for the current phase, or closes. */
   toggle(): void {
-    if (this.opened) { this.opened = false; this.renderVisibility(false); } else this.open();
+    if (this.opened) { this.opened = false; this.linked = false; this.renderVisibility(false); } else this.open();
   }
   /** Shift+F while open: the next list (the emergency lists after the normal ones); it stays until the phase changes. */
-  step(): void { this.model?.step(); this.followed = false; this.render(); this.scrollToCurrent(); }
+  step(): void { this.model?.step(); this.followed = false; this.linked = false; this.render(); this.scrollToCurrent(); }
   open(section?: string, item?: string): void {
-    if (section) { this.model?.select(section, item ?? null); this.followed = false; } else this.follow(true);
+    if (section) { this.model?.select(section, item ?? null); this.followed = false; this.linked = true; } else { this.linked = false; this.follow(true); }
     this.opened = true; this.render(); this.renderVisibility(false);
     const row = this.rows.find(r => r.id === item);
     row?.row.scrollIntoView?.({ block: 'nearest' });
   }
   reset(): void {
     this.model?.reset(); Object.assign(this.phaseMemory, newPhaseMemory());
-    this.phase = null; this.candidate = { id: null, since: 0 }; this.followed = true;
+    this.phase = null; this.candidate = { id: null, since: 0 }; this.followed = !this.linked;
     this.renderMarks();
   }
   update(ctx: SimContext, hidden: boolean): void {
@@ -112,7 +114,7 @@ export class ChecklistPanel {
     const id = resolvePhase(phaseSection(ctx, this.phaseMemory), m.sections.map(s => s.id));
     if (id !== this.candidate.id) this.candidate = { id, since: now };
     const urgent = m.sections.find(s => s.id === id)?.category === 'emergency';
-    if (id !== this.phase && (urgent || now - this.candidate.since >= 2000)) { this.phase = id; this.followed = true; }
+    if (id !== this.phase && (urgent || now - this.candidate.since >= 2000)) { this.phase = id; this.followed = !this.linked; }
   }
   /** Shows the phase list if the panel is following (or `force`); true if the section changed. */
   private follow(force: boolean): boolean {

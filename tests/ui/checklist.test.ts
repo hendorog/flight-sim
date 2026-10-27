@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { ChecklistPanel } from '../../src/ui/checklist';
+import { FakeElement, installFakeDom } from './fakeDom';
+import { C152_PRESENTATION } from '../../src/aircraft/c152/presentation';
 import { R22_DEFINITION } from '../../src/aircraft/r22';
 import { R22_TRAINING } from '../../src/aircraft/r22/training';
 import { R44_TRAINING } from '../../src/aircraft/r44/training';
@@ -126,6 +129,23 @@ describe('checklist follows the flight', () => {
     ground(8, 1000); expect(at(ctx, memory)).toBe('afterLanding');
     ground(0, 0, false); expect(at(ctx, memory)).toBe('shutdown');
   });
+  it('repeats the departure lists round the circuit: touch-and-go, full stop, taxi back, second departure', () => {
+    const ctx = context(C152_DEFINITION), s = ctx.state, c = ctx.controls, memory = newPhaseMemory(), seen: string[] = [];
+    const ground = (gs: number, rpm: number, throttle: number) => {
+      s.onGround = true; s.altitudeAGL = 0; s.verticalSpeed = 0; s.groundSpeed = gs * KT;
+      s.engine.running = true; s.engine.rpm = rpm; s.engines = [s.engine]; c.throttle = throttle;
+    };
+    const air = (agl: number, vs: number) => { s.onGround = false; s.altitudeAGL = agl * FT; s.verticalSpeed = vs * FPM; s.groundSpeed = 70 * KT; };
+    const log = () => { const id = at(ctx, memory)!; if (seen[seen.length - 1] !== id) seen.push(id); };
+    c.masterBattery = true; c.flaps = 0;
+    ground(0, 900, 0.1); log(); ground(0, 1700, 0.5); log(); ground(50, 2300, 1); log();
+    air(300, 700); log(); air(1000, 0); log(); c.flaps = 0.33; air(400, -500); log();
+    ground(45, 2300, 1); log(); c.flaps = 0; air(300, 700); log(); air(1000, 0); c.flaps = 0.33; log(); air(400, -500); log();
+    ground(40, 1000, 0.1); log(); ground(8, 1000, 0.1); log(); ground(0, 900, 0.1); log();
+    ground(0, 1700, 0.5); log(); ground(50, 2300, 1); log(); c.flaps = 0; air(300, 700); log();
+    expect(seen).toEqual(['afterStart', 'beforeTakeoff', 'afterTakeoff', 'downwind', 'final', 'beforeTakeoff', 'afterTakeoff',
+      'downwind', 'final', 'afterLanding', 'beforeTakeoff', 'afterTakeoff']);
+  });
   it('turns to the engine failure lists when the engine stops in the air', () => {
     const ctx = context(C152_DEFINITION), s = ctx.state, memory = newPhaseMemory();
     s.onGround = false; s.altitudeAGL = 3000 * FT; s.verticalSpeed = -600 * FPM; s.engine.running = false; s.engines = [s.engine];
@@ -140,6 +160,24 @@ describe('checklist follows the flight', () => {
     const firstEmergency = seen.findIndex(id => m.sections.find(s => s.id === id)?.category === 'emergency');
     expect(seen.slice(firstEmergency, -1).every(id => m.sections.find(s => s.id === id)?.category === 'emergency')).toBe(true);
     expect(m.tab).toBe('normal');
+  });
+});
+
+describe('checklist panel', () => {
+  afterAll(() => vi.unstubAllGlobals());
+  it('keeps a list a lesson or demonstration opened when the phase changes, and follows again after F', () => {
+    installFakeDom();
+    let now = 0; vi.stubGlobal('performance', { now: () => now });
+    const ctx = { ...context(C152_DEFINITION), presentation: C152_PRESENTATION } as SimContext, s = ctx.state;
+    s.onGround = true; s.groundSpeed = 0; s.engine.running = false; s.engines = [s.engine]; ctx.controls.masterBattery = false;
+    const panel = new ChecklistPanel(new FakeElement('div') as unknown as HTMLElement);
+    panel.init(ctx);
+    const section = () => (panel as unknown as { model: ChecklistSession }).model.sectionId;
+    const tick = (ms: number) => { for (let t = 0; t < ms; t += 100) { now += 100; panel.update(ctx, false); } };
+    tick(2500); panel.open('engineFailure', 'mags'); expect(section()).toBe('engineFailure');
+    ctx.controls.masterBattery = true; tick(3000); expect(section()).toBe('engineFailure');
+    panel.toggle(); panel.toggle(); expect(section()).toBe('engineStart');
+    ctx.controls.masterBattery = false; tick(3000); expect(section()).toBe('beforeStart');
   });
 });
 

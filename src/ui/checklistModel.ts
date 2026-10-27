@@ -136,8 +136,10 @@ const PHASE_FALLBACK: Readonly<Record<string, readonly string[]>> = {
 /**
  * The checklist section for the current phase of flight, from real state only: parked, start, taxi, run-up,
  * take-off, climb, cruise, descent, circuit, final, landing roll, shutdown, and the engine-failure lists when an
- * engine stops in the air. Heights are above the ground; the circuit is anything below 1500 ft after the
- * climb-out with the flaps out or descending. `memory` carries the run-up and the flight between frames.
+ * engine stops in the air. Heights are above the ground; the climb-out ends at 700 ft, and level or descending
+ * flight below 1500 ft after it is the circuit. `memory` carries the run-up and the flight between frames. Circuits
+ * repeat: each lift-off starts a new climb-out, a fast ground roll at high power after a landing is a touch-and-go
+ * take-off, and a run-up after a landing starts the departure lists again.
  */
 export function phaseSection(ctx: Pick<SimContext, 'state' | 'controls' | 'aircraft'>, memory: PhaseMemory): string {
   const s = ctx.state, c = ctx.controls;
@@ -146,24 +148,26 @@ export function phaseSection(ctx: Pick<SimContext, 'state' | 'controls' | 'aircr
   const agl = s.altitudeAGL / FT, vs = s.verticalSpeed / FPM, gs = s.groundSpeed / KT;
   if (!s.onGround) {
     memory.flown = true;
-    if (agl > 1000) memory.climbedOut = true;
+    if (agl > 700) memory.climbedOut = true;
     if (running < engines.length) return running === 0 && agl < 500 ? 'lowHeightFailure' : 'engineFailure';
     if (!memory.climbedOut) return vs > -200 ? 'afterTakeoff' : 'final';
-    if (agl < 700 && vs < -200) return 'final';
-    if (agl < 1500 && (c.flaps > 0.05 || vs < -200)) return 'downwind';
     if (vs > 300) return 'climb';
+    if (agl < 700 && vs < -200) return 'final';
+    if (agl < 1500) return 'downwind';
     if (vs < -300) return 'descent';
     return 'cruise';
   }
-  if (memory.flown) {
-    if (running === 0) return 'shutdown';
-    if (gs > 30) return 'landing';
-    return gs < 1 && c.parkingBrake ? 'shutdown' : 'afterLanding';
-  }
-  if (running === 0) return c.masterBattery ? 'engineStart' : 'beforeStart';
+  memory.climbedOut = false;
   const rotor = s.rotorcraft, d = ctx.aircraft.rotorcraft;
   const highPower = rotor && d ? rotor.rotorRpm >= d.referenceRpm * 0.9
     : engines.some(e => e.running && (e.ng !== undefined ? (e.ng ?? 0) > 75 : e.rpm > 1500));
+  if (memory.flown) {
+    if (running === 0) return 'shutdown';
+    if (gs > 30) return engineControl(c, 0, 'throttle') > 0.6 ? 'takeoff' : 'landing';
+    if (gs < 1 && highPower && !rotor) { memory.flown = false; memory.runup = true; return 'beforeTakeoff'; }
+    return gs < 1 && c.parkingBrake ? 'shutdown' : 'afterLanding';
+  }
+  if (running === 0) return c.masterBattery ? 'engineStart' : 'beforeStart';
   if (gs > 30) return 'takeoff';
   if (gs < 1 && highPower) memory.runup = true;
   if (memory.runup) return 'beforeTakeoff';
