@@ -13,7 +13,7 @@ export const C152_REFERENCE: ReferenceSpeeds = {
   vr: 50,
   // s.8 (POH sect. 4): sea level to 10 000 ft.
   vx: 55,
-  // s.8 (POH Fig 5-5): at sea level (64 at 5000 ft, 61 at 10 000 ft).
+  // s.8 (POH Fig 5-5, 5-6): at sea level (64 at 5000 ft, Fig 5-6; 61 at 10 000 ft).
   vy: 67,
   // s.8 (POH Fig 3-1): flaps up, propeller windmilling.
   vglide: 60,
