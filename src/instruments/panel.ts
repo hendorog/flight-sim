@@ -600,7 +600,10 @@ function paintGlovebox(g: Ctx2D, door: Rect): void {
   g.fillRect(gx + gw / 2 + 57, gy + 19, 2, 8);
 }
 
-/** Circuit breaker panel, in rows of `perRow` (on the C172S: lower right corner, clear of the flap slot and the right yoke). */
+/**
+ * Circuit breaker panel, in rows of `perRow` (on the C172S: lower right corner, clear of the flap slot and the right
+ * yoke). A breaker named '' is an empty slot.
+ */
 function paintBreakers(g: Ctx2D, breakers: NonNullable<PanelDef['background']['breakers']>, rand: () => number): void {
   const cb = breakers.bounds;
   const amps = breakers.amps;
@@ -615,6 +618,8 @@ function paintBreakers(g: Ctx2D, breakers: NonNullable<PanelDef['background']['b
   const perRow = breakers.perRow;
   const dx = (cb.w - 44) / (perRow - 1);
   breakers.names.forEach((n, i) => {
+    // An empty legend is an empty slot: the grid keeps its place, nothing is painted.
+    if (!n) return;
     const x = cb.x + 22 + (i % perRow) * dx;
     const y = cb.y + 22 + Math.floor(i / perRow) * 54;
     g.font = `600 7.5px ${LABEL_FONT}`;

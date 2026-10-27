@@ -107,7 +107,10 @@ export const PA38_TACH_MARKS: TachMarkings = {
   hourRpm: TACH_HOUR_RPM,
 };
 
-/** Suction gauge: the regulator is set to 5.0 +/- 0.1 inHg (s.9); green 4.8-5.2. The pointer rests on its stop below 3. */
+/**
+ * Suction gauge: the regulator is set to 5.0 +/- 0.1 inHg (POH 4-7, 7.19; s.9). The green 4.8-5.2 is not a POH
+ * marking (section 2 gives none for this gauge). The pointer rests on its stop below 3.
+ */
 export const PA38_SUCTION_SCALE: ScaleDef = {
   label: '',
   min: 2.6,
@@ -271,38 +274,110 @@ export const PA38_PANEL: PanelDef = {
     // The back of the quadrant's well (the 3D surround stands round it): black behind the fuel gauges and the selector.
     plates: [{ bounds: { x: PA38_QUADRANT.x0, y: 436, w: PA38_QUADRANT.x1 - PA38_QUADRANT.x0, h: PA38_QUADRANT.y0 - 436 + 20 }, color: '#151517', radius: 6 }],
     // Legends of the controls that are painted, not built: the primer right of the quadrant, the cabin heat and
-    // defrost knobs on the lower right (s.9). The hand (parking) brake handle hangs under the quadrant, below the face.
+    // defrost knobs on the lower right (s.9), raised clear of the three rows of circuit breakers. The hand (parking)
+    // brake handle hangs under the quadrant, below the face.
     bushings: [
       { at: [1218, 730], text: 'PRIMER', sub: 'PUSH LOCK' },
-      { at: [1640, 600], text: 'CABIN HEAT', sub: 'PULL ON' },
-      { at: [1780, 600], text: 'DEFROST', sub: 'PULL ON' },
+      { at: [1650, 540], text: 'CABIN HEAT', sub: 'PULL ON' },
+      { at: [1800, 540], text: 'DEFROST', sub: 'PULL ON' },
     ],
-    // Placards of the right panel: centre x and top y; lines; lettering size where not the default.
+    // The POH 2.25 placards "in full view of the pilot", centre x and top y; lines; lettering size where not the
+    // default. Two columns on the right panel; the maneuvering speed one near the airspeed indicator, under the
+    // suction gauge. The quadrant's fuel and carburettor heat placards are not painted (the quadrant is 3D), nor
+    // are the baggage, document container, winterization and alternate static ones.
     placards: [
       {
-        x: 1700,
+        x: 1490,
         y: 40,
         lines: [
-          'THIS AIRPLANE MUST BE OPERATED AS A NORMAL OR',
-          'UTILITY CATEGORY AIRPLANE IN COMPLIANCE WITH THE',
-          'OPERATING LIMITATIONS STATED IN THE FORM OF',
-          'PLACARDS, MARKINGS AND MANUALS. UTILITY CATEGORY:',
-          'SPINS APPROVED WITH FLAPS UP ONLY, NO BAGGAGE.',
-          'NO ACROBATIC MANEUVERS IN NORMAL CATEGORY.',
+          'EXCEPT AS MAY BE OTHERWISE INDICATED ON A PLACARD, THE',
+          'MARKINGS AND PLACARDS INSTALLED IN THIS AIRPLANE CONTAIN',
+          'OPERATING LIMITATIONS WHICH MUST BE COMPLIED WITH WHEN',
+          'OPERATING THIS AIRPLANE IN THE NORMAL CATEGORY. OTHER',
+          'OPERATING LIMITATIONS WHICH MUST BE COMPLIED WITH WHEN',
+          'OPERATING THIS AIRPLANE IN THIS CATEGORY OR IN THE UTILITY',
+          'CATEGORY ARE CONTAINED IN THE PILOTS OPERATING HANDBOOK.',
+          '',
+          'FLAPS UP SPINS ARE APPROVED FOR UTILITY CATEGORY OPERATION.',
+          'FOR SPIN RECOVERY, USE FULL RUDDER AGAINST THE SPIN',
+          'FOLLOWED IMMEDIATELY BY FORWARD WHEEL.',
+          '',
+          'THIS AIRPLANE IS APPROVED FOR FLIGHT IN DAY/NIGHT VFR/IFR',
+          'WHEN EQUIPPED IN ACCORDANCE WITH F.A.R. 91. FLIGHT INTO',
+          'KNOWN ICING CONDITIONS IS PROHIBITED.',
         ],
         size: 6.5,
       },
-      { x: 1700, y: 150, lines: ['MANEUVERING SPEED', `${V.va} KIAS AT 1670 LB`], size: 8 },
-      { x: 1700, y: 204, lines: ['FUEL 100LL / 100 MIN. GRADE', '30 U.S. GAL USABLE'], size: 8 },
-      { x: 1700, y: 258, lines: ['ELECTRIC FUEL PUMP ON FOR', 'TAKE-OFF, LANDING AND TANK CHANGES'], size: 7 },
-      { x: 1700, y: 312, lines: ['FLAPS 21° AND 34°', `${V.vfe[V.vfe.length - 1]} KIAS MAX`], size: 7.5 },
+      // The two check list placards, one item a line (the POH sets them in two columns).
+      {
+        x: 1420,
+        y: 210,
+        lines: [
+          'TAKEOFF CHECK LIST',
+          'FUEL - PROPER TANK',
+          'MIXTURE - SET',
+          'ELECTRIC FUEL PUMP - ON',
+          'CARBURETOR HEAT - OFF',
+          'ENGINE GAGES - CHECKED',
+          'SEATS & BACKS - LATCHED',
+          'BELTS/HARNESS - FASTENED',
+          'FLAPS - SET',
+          'TRIM - SET',
+          'CONTROLS - FREE',
+          'DOORS - LATCHED',
+        ],
+        size: 7,
+      },
+      {
+        x: 1580,
+        y: 210,
+        lines: [
+          'LANDING CHECK LIST',
+          'FUEL - PROPER TANK',
+          'MIXTURE - RICH',
+          'ELECTRIC FUEL PUMP - ON',
+          'SEATS & BACKS - LATCHED',
+          'FLAPS - SET (WHITE ARC)',
+          'BELTS/HARNESS - FASTENED',
+        ],
+        size: 7,
+      },
+      { x: 1800, y: 40, lines: ['DEMONSTRATED CROSSWIND', 'COMPONENT 15 KNOTS'], size: 7.5 },
+      { x: 1800, y: 86, lines: ['FLAPS EXTENDED SPINS PROHIBITED'], size: 7.5 },
+      {
+        x: 1800,
+        y: 120,
+        lines: [
+          'UTILITY CATEGORY OPERATION ONLY',
+          'MANEUVERS ARE LIMITED TO THE FOLLOWING',
+          'MANEUVER - ENTRY SPEED',
+          'SPINS (FLAPS UP) - STALL',
+          'STEEP TURNS - 100 KIAS',
+          'LAZY EIGHTS - 100 KIAS',
+          'CHANDELLES - 100 KIAS',
+        ],
+        size: 7,
+      },
+      {
+        x: 1800,
+        y: 216,
+        lines: ['WARNING', 'TURN OFF STROBE LIGHTS WHEN IN', 'CLOSE PROXIMITY TO GROUND OR', 'DURING FLIGHT THROUGH CLOUD,', 'FOG OR HAZE.'],
+        size: 7,
+      },
+      { x: LEFT_COLUMN.x, y: 345, lines: [`MANEUVERING SPEED ${V.va} KIAS`, 'AT 1670 LBS (SEE P.O.H.)'], size: 6.5 },
     ],
-    // Push-to-reset circuit breakers on the lower right (s.9): legend and rating, A.
+    // Push-to-reset circuit breakers on the lower right, POH fig 7-11: legend and rating, A. Three rows as the
+    // figure has them: the five of the top row over the right five of the avionics row (the two blank slots), the
+    // radios, then the engine gauges and lights. The 60 A alternator output breaker (fig 7-9a) is not on this panel.
     breakers: {
-      bounds: { x: 1500, y: 682, w: 480, h: 108 },
-      names: ['ALT FLD', 'ALT', 'INST', 'TURN', 'FUEL PUMP', 'STALL WARN', 'NAV LT', 'LAND LT', 'STROBE', 'PITOT HT', 'RADIO 1', 'RADIO 2'],
-      amps: [5, 60, 5, 5, 5, 5, 10, 10, 10, 10, 5, 5],
-      perRow: 6,
+      bounds: { x: 1490, y: 638, w: 470, h: 158 },
+      names: [
+        '', '', 'START ACC', 'ALT FIELD', 'TURN COORD', 'PITOT HEAT', "WARN'G LIGHTS",
+        'COMM 1', 'NAV 1', 'COMM 2', 'NAV 2', 'ADF', 'AUDIO MKR', 'TRANSPONDER',
+        'ENG GAUGES', "STALL WARN'G", "LAND'G LIGHTS", 'NAV LIGHTS', 'ANTI COLL', 'PANEL LIGHTS', 'FUEL PUMP',
+      ],
+      amps: [0, 0, 10, 5, 5, 20, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 10, 7.5, 10, 5, 5],
+      perRow: 7,
     },
     // Rack rails of the centre stack and the blanking plate under the transponder.
     rack: {
