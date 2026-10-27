@@ -40,7 +40,7 @@ export const R22_DEFINITION: AircraftDefinition = {
     vno: 102, vne: 102, vapp: 60, vref: 0, vcruise: 80, vdownwind: 70, glideRatio: 4 },
   powerplant: { ...C152_POWERPLANT,
     electrical: { ...C152_POWERPLANT.electrical, nominalVolts: 14, regulatorVolts: 14.2,
-      lowVoltsLamp: 12.5, overVolts: 16, busDeadVolts: 10,
+      lowVoltsLamp: 12.5, overVolts: 16, busDeadVolts: 10, overVoltageTrip: undefined,
       battery: { capacityAh: 25, ocvEmpty: 11.6, ocvSpan: 1.3, rDischarge: 0.0125, rChargeBase: 0.04, rChargeFull: 0.75 } },
     engines: [{ ...C152_POWERPLANT.engines[0], hub: { x: 0, y: 0, z: 0 },
       // Propeller is a compatibility carrier for the generic engine module; externalDrive disables its loads.
