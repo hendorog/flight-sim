@@ -62,7 +62,7 @@ export const C152_MASS: MassDef = {
     typical: { payload: CREW, payloadPosition: SEATS },
     // Maximum weight with the CG on the forward limit, FS 32.65 at 1670 lb (s.6): the seats run fully forward.
     forward: { payload: MAX_GROSS_PAYLOAD, payloadPosition: { x: -0.0907, y: 0, z: SEATS.z } },
-    // Maximum weight with the CG on the aft limit, FS 36.4 (36.5, s.6), where POH fig 5-3 gives its aft-CG stall
+    // Maximum weight with the CG on the aft limit, FS 36.5 (s.6, POH p.2-6; this payload gives 36.4), where POH fig 5-3 gives its aft-CG stall
     // speeds. A notional payload centroid (FS 53.3): with full fuel and this empty CG no legal cabin loading gets
     // there at 1670 lb (the crew at the back of the seat rails and 54 kg of baggage give FS 35.2).
     aft: { payload: MAX_GROSS_PAYLOAD, payloadPosition: { x: fs(53.3), y: 0, z: 0.19 } },

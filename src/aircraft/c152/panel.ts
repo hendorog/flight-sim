@@ -5,7 +5,7 @@
 // "Cockpit layout"; "s.N" below is its section N), as close as the panel components allow: the six flight
 // instruments in front of the left seat with the clock and the suction gauge in a column left of them and the
 // VOR indicator to their right; the radio stack in the centre; the tachometer right of centre with the ammeter
-// and the one LOW VOLTAGE lamp beside it, placards and the map compartment on the far right; fuel and oil gauges
+// and the one HIGH VOLTAGE lamp under it, placards and the map compartment on the far right; fuel and oil gauges
 // on the lower left, the master switch, the magneto key and the light rockers below them (no fuel-pump rocker,
 // no avionics master on the 1978 aircraft); along the lower centre the CARB HEAT knob left of the throttle, the
 // mixture right of it, then the flap pre-select lever with its position scale; the circuit breakers under the
@@ -121,8 +121,9 @@ export const C152_AMMETER_SCALE: ScaleDef = {
 };
 
 /**
- * One side of the fuel quantity gauge: a 13 US gal tank, 12.25 gal usable (s.6). The red arc is the "E plus
- * red line" of s.9, about 0.75 gal left in the tank.
+ * One side of the fuel quantity gauge: a 13 US gal tank, 12.25 gal usable (s.6). The gauge reads the whole tank
+ * (C152_INSTRUMENT_SYSTEMS.fuel): full is 13, and the red arc is the "E plus red line" of s.9, the 0.75 gal
+ * unusable left when the usable fuel is gone (POH p.7-19).
  */
 const fuelScale = (label: string, read: ScaleDef['read']): ScaleDef => ({
   label,
@@ -174,8 +175,11 @@ const OIL: GaugeDef = {
 
 const RED = '#ff3b2a';
 
-/** The one warning light, under the ammeter (s.9): the bus is below the alternator's output, the battery is discharging. */
-export const C152_ANNUNCIATOR_LAMPS: readonly LampDef[] = [{ id: 'lowVolts', text: 'LOW VOLTAGE', color: RED, lit: (r) => r.lamps.lowVolts }];
+/**
+ * The one warning light, red HIGH VOLTAGE under the ammeter (POH p.7-20/7-21): the alternator is off line, so the
+ * battery carries everything.
+ */
+export const C152_ANNUNCIATOR_LAMPS: readonly LampDef[] = [{ id: 'highVolts', text: 'HIGH VOLTAGE', color: RED, lit: (r) => r.lamps.highVolts }];
 
 // ---------------------------------------------------------------------------------------------------
 // Switch row: the split MASTER (ALT left half, BAT right half, s.9), the magneto key, the light rockers (up =
@@ -266,32 +270,57 @@ export const C152_PANEL: PanelDef = {
       { at: [C152_KNOBS.mixture, C152_KNOBS.y], text: 'MIXTURE', sub: 'PUSH RICH' },
       { at: [C152_PARKING_BRAKE[0], C152_PARKING_BRAKE[1]], text: 'PARK BRAKE', sub: 'PULL' },
     ],
-    // Placards of the right panel: centre x and top y; lines; lettering size where not the default.
+    // Placards: centre x and top y; lines; lettering size where not the default. The pilot's composite placard
+    // of the right panel and the spin recovery placard above the altimeter, in the POH's words (p.2-8, 2-9).
     placards: [
       {
         x: 1700,
-        y: 36,
+        y: 30,
         lines: [
-          'THIS AIRPLANE MUST BE OPERATED AS A UTILITY',
-          'CATEGORY AIRPLANE IN COMPLIANCE WITH THE OPERATING',
-          'LIMITATIONS STATED IN THE FORM OF PLACARDS,',
-          'MARKINGS AND MANUALS. NO ACROBATIC MANEUVERS',
-          'EXCEPT THOSE LISTED IN THE HANDBOOK. SPINS WITH',
-          'FLAPS EXTENDED PROHIBITED. ALTITUDE LOSS IN A',
-          'STALL RECOVERY 160 FT. FLIGHT INTO KNOWN ICING',
-          'PROHIBITED.',
+          'THIS AIRPLANE IS APPROVED IN THE UTILITY CATEGORY',
+          'AND MUST BE OPERATED IN COMPLIANCE WITH THE',
+          'OPERATING LIMITATIONS AS STATED IN THE FORM OF',
+          'PLACARDS, MARKINGS AND MANUALS.',
+          '— MAXIMUMS —',
+          `MANEUVERING SPEED (IAS) ${V.va} KNOTS`,
+          'GROSS WEIGHT 1670 LBS',
+          'FLIGHT LOAD FACTOR FLAPS UP +4.4, -1.76',
+          'FLAPS DOWN +3.5',
+          '— NO ACROBATIC MANEUVERS APPROVED —',
+          'EXCEPT: CHANDELLES, LAZY EIGHTS, STEEP TURNS 95 KNOTS;',
+          'SPINS, STALLS (EXCEPT WHIP STALLS) SLOW DECELERATION.',
+          `ABRUPT USE OF CONTROLS PROHIBITED ABOVE ${V.va} KNOTS.`,
+          'INTENTIONAL SPINS WITH FLAPS EXTENDED ARE PROHIBITED.',
+          'ALTITUDE LOSS IN STALL RECOVERY - 160 FT. FLIGHT INTO',
+          'KNOWN ICING CONDITIONS PROHIBITED. THIS AIRPLANE IS',
+          'CERTIFIED FOR THE FOLLOWING FLIGHT OPERATIONS AS OF',
+          'DATE OF ORIGINAL AIRWORTHINESS CERTIFICATE:',
+          'DAY - NIGHT - VFR - IFR',
         ],
-        size: 6.5,
+        size: 6,
       },
-      { x: 1700, y: 168, lines: ['MANEUVERING SPEED', `${V.va} KIAS`], size: 8 },
-      { x: 1700, y: 222, lines: ['FUEL 100LL / 100 MIN. GRADE', '24.5 U.S. GAL USABLE'], size: 8 },
+      { x: 1700, y: 236, lines: ['FUEL 100LL / 100 MIN. GRADE', '24.5 U.S. GAL USABLE'], size: 8 },
+      {
+        x: COLS[2],
+        y: 24,
+        lines: [
+          'SPIN RECOVERY',
+          '1. VERIFY AILERONS NEUTRAL AND THROTTLE CLOSED',
+          '2. APPLY FULL OPPOSITE RUDDER',
+          '3. MOVE CONTROL WHEEL BRISKLY FORWARD',
+          'TO BREAK STALL',
+          '4. NEUTRALIZE RUDDER AND RECOVER FROM DIVE',
+        ],
+        size: 5.5,
+      },
     ],
-    // Circuit breakers under the right panel, row by row: legend and rating, A.
+    // Circuit breakers under the right panel, row by row: legend and rating, A. Legends of POH Fig 7-7 (p.7-21),
+    // three radios fitted; ALT FLD is the auto-reset field breaker. The row is not yet under the engine controls.
     breakers: {
       bounds: { x: 1256, y: 680, w: 560, h: 110 },
-      names: ['ALT FLD', 'INST', 'TURN COORD', 'FLAP', 'NAV LT', 'LAND LT', 'BCN', 'STROBE', 'PITOT HT', 'RADIO 1', 'RADIO 2', 'XPDR', 'CIG LTR', 'ALT'],
-      amps: [5, 5, 5, 15, 5, 15, 5, 5, 15, 15, 15, 5, 15, 60],
-      perRow: 7,
+      names: ['FUEL IND', 'BCN PITOT', 'STROBE LTS', 'LDG LTS', 'FLAP', 'INST LTS', 'NAV DOME', 'RADIO 1', 'RADIO 2', 'RADIO 3', 'ALT FLD', 'ALT'],
+      amps: [5, 15, 5, 15, 15, 5, 5, 15, 15, 5, 5, 60],
+      perRow: 6,
     },
     // The map compartment at the far right of the panel.
     glovebox: { x: 1580, y: 330, w: 236, h: 180 },
@@ -332,14 +361,14 @@ export const C152_PANEL: PanelDef = {
 
 /** 100LL avgas, kg per US gallon (6.0 lb/gal). */
 const KG_PER_GAL = 2.7216;
+/** Unusable fuel per tank, kg: 0.75 US gal (POH p.7-19). The physics tanks hold usable fuel only. */
+const UNUSABLE_KG = 0.75 * KG_PER_GAL;
 /** DC bus voltage below which electric gauges and lamps are dead (28 V system, as the C172S). */
 const BUS_DEAD_VOLTS = 18;
 /** Regulated suction in the green arc (4.6-5.4 inHg, s.9); the regulator is set to 5.0. */
 const SUCTION_REGULATED_INHG = 5.0;
 /** Suction at which an air-driven gyro reaches rated speed (bottom of the green arc). */
 const SUCTION_RATED_INHG = 4.6;
-/** The LOW VOLTAGE light comes on below this bus voltage: the 28 V battery alone is carrying the load. */
-const LOW_VOLTS = 24.5;
 
 /** The lamp needs bus power. */
 const powered = (i: LampInputs): boolean => i.state.electrical.busVoltage > BUS_DEAD_VOLTS;
@@ -360,9 +389,13 @@ export const C152_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
     },
   },
   gyroDrive: { attitude: 'vacuum', heading: 'vacuum' },
-  // Two wing tanks, one float sender each.
-  fuel: { kgPerGal: KG_PER_GAL, tanks: [(s) => s.fuel.left, (s) => s.fuel.right] },
+  // Two wing tanks, one float sender each, reading the unusable fuel too: E with the usable fuel gone, 13 full.
+  fuel: { kgPerGal: KG_PER_GAL, tanks: [(s) => s.fuel.left + UNUSABLE_KG, (s) => s.fuel.right + UNUSABLE_KG] },
   busDeadVolts: BUS_DEAD_VOLTS,
   tachHourRpm: TACH_HOUR_RPM,
-  lamps: [{ id: 'lowVolts', lit: (i) => powered(i) && i.state.electrical.busVoltage < LOW_VOLTS }],
+  // A direct pressure oil line feeds the oil pressure gauge; only oil temperature is electric (POH p.7-14).
+  oilPressureDirect: true,
+  // HIGH VOLTAGE: lit while the alternator is off line, tripped by the over-voltage sensor (powerplant.ts) or switched
+  // off with the BAT half on; ALT off is the POH's lamp test (p.7-21). A stopped engine with ALT on leaves it out.
+  lamps: [{ id: 'highVolts', lit: (i) => powered(i) && (!i.controls.alternator || i.state.electrical.overVoltageTripped === true) }],
 };

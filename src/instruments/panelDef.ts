@@ -279,6 +279,8 @@ export interface InstrumentSystemsDef {
   fuel: { kgPerGal: number; tanks: readonly ((s: AircraftState) => number)[] };
   busDeadVolts: number;
   tachHourRpm: number;
+  /** The oil pressure gauge is fed by a pressure line (Bourdon tube) and reads without bus power. Absent: electric. */
+  oilPressureDirect?: boolean;
   /** The shaft the tachometers read: 'propeller' on a geared engine whose cockpit rpm is the propeller's. Absent: 'crank'. */
   tachShaft?: 'crank' | 'propeller';
   /** Electric dual tachometer: independent percent references and battery bypass supply. */

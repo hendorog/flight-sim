@@ -20,7 +20,7 @@ export const C152_TARGETS: ConformanceTargets = {
   stallRecovery: { entryKias: 52, recoveryS: below(4, 'contract 3.1 stall recovery') },
   climb: {
     range: { fromKt: 55, toKt: 85 },
-    rocFpm: pct(715, 10, 'POH fig 5-5 (s.8), contract 5.1'),
+    rocFpm: pct(715, 10, 'POH fig 5-6, standard temperature (s.8), contract 5.1'),
     vyKias: band(67, 7, 'POH fig 5-5 (s.8), contract 5.1 (+/-7 kt)'),
     table: {
       range: { fromKt: 55, toKt: 85 },

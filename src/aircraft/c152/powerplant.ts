@@ -156,9 +156,12 @@ export const C152_POWERPLANT: PowerplantDef = {
       pitotHeat: 9.0,
       fuelPump: 0,
     },
-    // The high-voltage warning light trips the alternator at about 31.5 V (s.9); the bus-powered instruments die below 18 V.
+    // The over-voltage sensor takes the alternator off line at about 31.5 V and latches until the master is cycled
+    // (POH p.3-13, 7-20); the HIGH VOLTAGE light shows it (panel.ts). There is no low-voltage lamp: lowVoltsLamp is
+    // the common threshold, unused here. The bus-powered instruments die below 18 V.
     lowVoltsLamp: 24.5,
     overVolts: 32,
+    overVoltageTrip: 31.5,
     busDeadVolts: 18,
   },
 };

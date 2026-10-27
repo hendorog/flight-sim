@@ -35,6 +35,7 @@ const STARTUP_STEPS: readonly [string, string][] = [
   ['Mixture', 'hold Shift+M until FULL RICH'],
   ['Carburettor heat', 'COLD (/ toggles it)'],
   ['Throttle', 'open about half an inch: F3 (or Page Up) briefly (~10%)'],
+  ['Propeller area', 'CLEAR: look both sides'],
   ['Master', 'W (battery and alternator on)'],
   ['Parking brake', 'check SET (PARKING BRAKE shown); only if it is not, Shift+B sets it'],
   ['Start', 'hold S until the engine runs, then let go; 1,000 rpm or less'],

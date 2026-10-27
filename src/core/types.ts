@@ -515,6 +515,8 @@ export interface AircraftState {
     batteryAmps: number;
     /** Per alternator, A (length = number of alternators). */
     alternators: number[];
+    /** The over-voltage sensor has taken the alternators off line (ElectricalDef.overVoltageTrip). Absent: no sensor or not tripped. */
+    overVoltageTripped?: boolean;
   };
 }
 

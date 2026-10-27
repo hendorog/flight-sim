@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { C152_AUDIO } from '../../src/aircraft/c152/audio';
 import { C152_GEOMETRY } from '../../src/aircraft/c152/geometry';
+import { C152_ENGINE, C152_POWERPLANT } from '../../src/aircraft/c152/powerplant';
 import { C152_INSTRUMENT_SYSTEMS, C152_PANEL, C152_PANEL_PX_RECT } from '../../src/aircraft/c152/panel';
 import C152_PRESENTATION from '../../src/aircraft/c152/presentation';
 import { C152_REFERENCE } from '../../src/aircraft/c152/reference';
@@ -17,6 +18,10 @@ import { C152_UI } from '../../src/aircraft/c152/ui';
 import { C152_VISUAL } from '../../src/aircraft/c152/visual';
 import { loadAirframeVisual, loadPresentation } from '../../src/aircraft/registry';
 import { defaultControls } from '../../src/core/types';
+import { makeMockState } from '../../src/core/mockState';
+import { ElectricalSystem } from '../../src/physics/propulsion/electrical';
+import { InstrumentSet } from '../../src/instruments/dynamics/instrumentSet';
+import { run } from '../instruments/testbed';
 import { buildHotspots } from '../../src/instruments/hotspots';
 import { panelLayoutProblems } from '../../src/instruments/panelLayout';
 import { AircraftVisual } from '../../src/render/aircraft/AircraftVisual';
@@ -107,13 +112,14 @@ describe('Cessna 152 presentation', () => {
     // POH Fig 2-3: green 1900-2550 rpm, red line 2550.
     expect(tach.marks.arcs).toEqual([{ from: 1900, to: 2550, color: 'green' }]);
     expect(tach.marks.redLine).toBe(2550);
-    // No EGT / fuel flow, no fuel pump, no avionics master; one low-voltage lamp; a key ignition.
+    // No EGT / fuel flow, no fuel pump, no avionics master; one HIGH VOLTAGE lamp (POH p.7-20); a key ignition.
     expect(C152_PANEL.gauges.map((g) => g.id)).not.toContain('egtff');
     const switches = C152_PANEL.switchRow.switches.map((s) => s.id);
     expect(switches).not.toContain('fuelPump');
     expect(switches).not.toContain('avionics');
-    expect(C152_PANEL.annunciator?.lamps?.map((l) => l.id)).toEqual(['lowVolts']);
-    expect(C152_INSTRUMENT_SYSTEMS.lamps.map((l) => l.id)).toEqual(['lowVolts']);
+    expect(C152_PANEL.annunciator?.lamps?.map((l) => l.id)).toEqual(['highVolts']);
+    expect(C152_PANEL.annunciator?.lamps?.[0].text).toBe('HIGH VOLTAGE');
+    expect(C152_INSTRUMENT_SYSTEMS.lamps.map((l) => l.id)).toEqual(['highVolts']);
     expect(C152_PANEL.ignition.kind).toBe('key');
     // The CARB HEAT knob is left of the throttle, the mixture right of it, on the panel and in the cockpit.
     const knobs = C152_VISUAL.cockpit.engineControls.map((k) => [k.control, k.pos[1]] as const);
@@ -175,5 +181,84 @@ describe('Cessna 152 presentation', () => {
     ]));
     expect(C152.flapDetentsDeg).toEqual([0, 10, 20, 30]);
     expect(C152.school?.syllabus).toBe(false);
+  });
+});
+
+describe('Cessna 152 over-voltage sensor and HIGH VOLTAGE light (POH p.3-13, 7-20/7-21)', () => {
+  const DT = 0.01;
+  const omega = (rpm: number) => (rpm * 2 * Math.PI) / 60;
+
+  it('a runaway regulator trips the alternator off line until both halves of the master are off', () => {
+    const el = new ElectricalSystem({ ...C152_POWERPLANT.electrical, regulatorVolts: 40 }, C152_ENGINE.starter);
+    const c = defaultControls();
+    c.masterBattery = c.alternator = true;
+    expect(el.step(DT, c, 2300, omega(2300)).overVoltageTripped).toBe(true);
+    // Latched: the alternator gives nothing, the battery carries the bus, whatever the rpm.
+    for (let i = 0; i < 10; i++) el.step(DT, c, 2300, omega(2300));
+    expect(el.state.alternatorAmps).toBe(0);
+    expect(el.state.busVoltage).toBeLessThan(26);
+    expect(el.state.overVoltageTripped).toBe(true);
+    // BAT off alone does not reset it; both halves off does.
+    el.step(DT, { ...c, masterBattery: false }, 2300, omega(2300));
+    expect(el.state.overVoltageTripped).toBe(true);
+    el.step(DT, { ...c, masterBattery: false, alternator: false }, 2300, omega(2300));
+    expect(el.state.overVoltageTripped).toBe(false);
+  });
+
+  it('the normal regulator never trips it', () => {
+    const el = new ElectricalSystem(C152_POWERPLANT.electrical, C152_ENGINE.starter);
+    const c = defaultControls();
+    c.masterBattery = c.alternator = true;
+    for (let i = 0; i < 100; i++) el.step(DT, c, 2300, omega(2300));
+    expect(el.state.overVoltageTripped).toBe(false);
+    expect(el.state.alternatorAmps).toBeGreaterThan(0);
+  });
+
+  it('the light shows the alternator off line: ALT off with BAT on (the lamp test), or tripped; out with the master off', () => {
+    const lamp = C152_INSTRUMENT_SYSTEMS.lamps[0];
+    const state = makeMockState();
+    state.electrical.busVoltage = 28;
+    const controls = defaultControls();
+    controls.masterBattery = controls.alternator = true;
+    const lit = () => lamp.lit({ state, controls, fuelGal: [10, 10], suctionInHg: 5 });
+    expect(lit()).toBe(false);
+    controls.alternator = false;
+    expect(lit()).toBe(true);
+    controls.alternator = true;
+    state.electrical.overVoltageTripped = true;
+    expect(lit()).toBe(true);
+    controls.masterBattery = controls.alternator = false;
+    state.electrical.busVoltage = 0;
+    expect(lit()).toBe(false);
+  });
+});
+
+describe('Cessna 152 engine and fuel gauges (POH p.7-14, 7-19)', () => {
+  const KG_PER_GAL = 2.7216;
+
+  it('the oil pressure gauge is direct-reading (works with the master off); oil temperature is electric', () => {
+    const s = makeMockState();
+    s.engine.oilPressure = 60;
+    s.electrical.busVoltage = 0;
+    const c = defaultControls();
+    c.masterBattery = c.alternator = false;
+    const set = new InstrumentSet({ systems: C152_INSTRUMENT_SYSTEMS });
+    run(set, 10, s, c);
+    expect(set.readings.oilPressurePsi).toBeCloseTo(60, 1);
+    expect(set.readings.oilTempF).toBeLessThan(80);
+  });
+
+  it('the fuel gauges read the whole tank: 13 gal full, E (0.75 gal unusable) with no usable fuel left', () => {
+    const s = makeMockState();
+    s.electrical.busVoltage = 28;
+    const c = defaultControls();
+    const set = new InstrumentSet({ systems: C152_INSTRUMENT_SYSTEMS });
+    s.fuel.left = s.fuel.right = 12.25 * KG_PER_GAL;
+    run(set, 20, s, c);
+    expect(set.readings.fuelLeftGal).toBeCloseTo(13, 2);
+    expect(set.readings.fuelRightGal).toBeCloseTo(13, 2);
+    s.fuel.left = s.fuel.right = 0;
+    run(set, 30, s, c);
+    expect(set.readings.fuelLeftGal).toBeCloseTo(0.75, 2);
   });
 });

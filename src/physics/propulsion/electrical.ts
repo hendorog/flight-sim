@@ -60,6 +60,8 @@ export interface ElectricalResult {
   /** Per engine: starter torque at its crankshaft, N*m, and the mechanical power its alternator(s) take, W. */
   starterTorques: number[];
   alternatorShaftPowers: number[];
+  /** The over-voltage sensor (ElectricalDef.overVoltageTrip) has tripped and holds the alternators off line. */
+  overVoltageTripped: boolean;
 }
 
 export class ElectricalSystem {
@@ -91,6 +93,9 @@ export class ElectricalSystem {
   private readonly loads: ElectricalDef['loads'];
   private readonly nominalVolts: number;
   private readonly overVolts: number;
+  private readonly overVoltageTrip: number | undefined;
+  /** The over-voltage sensor's latch: set above overVoltageTrip, cleared with both halves of the master off. */
+  private tripped = false;
   private readonly engineCount: number;
   private readonly starterK: readonly number[];
   private readonly starterR: readonly number[];
@@ -111,6 +116,7 @@ export class ElectricalSystem {
     this.lighting = def.lighting;
     this.nominalVolts = def.nominalVolts;
     this.overVolts = def.overVolts;
+    this.overVoltageTrip = def.overVoltageTrip;
     this.engineCount = starters.length;
     this.starterK = starters.map((motor) => motor.k);
     this.starterR = starters.map((motor) => motor.r);
@@ -132,6 +138,7 @@ export class ElectricalSystem {
       alternators: def.alternators.map(() => 0),
       starterTorques: starters.map(() => 0),
       alternatorShaftPowers: starters.map(() => 0),
+      overVoltageTripped: false,
     };
   }
 
@@ -199,6 +206,9 @@ export class ElectricalSystem {
       this.oneOmega[0] = omega;
       omega = this.oneOmega;
     }
+    // The sensor resets with the master switch off, both halves (the field is fed through the ALT half).
+    if (this.tripped && !controls.masterBattery && !engineControl(controls, 0, 'alternator')) this.tripped = false;
+    r.overVoltageTripped = this.tripped;
     if (!controls.masterBattery) {
       // The battery contactor is open and the alternator field is fed through the master switch: bus dead.
       r.busVoltage = r.alternatorAmps = r.batteryAmps = r.starterAmps = r.starterTorque = r.alternatorShaftPower = 0;
@@ -215,7 +225,7 @@ export class ElectricalSystem {
     this.rCharge = battery.rChargeBase + battery.rChargeFull * Math.pow(this.charge, 8);
     for (let a = 0; a < alternators.length; a++) {
       const alternator = alternators[a];
-      this.alternatorLimit[a] = engineControl(controls, alternator.engine, 'alternator')
+      this.alternatorLimit[a] = engineControl(controls, alternator.engine, 'alternator') && !this.tripped
         ? alternator.maxAmps * smoothstep(alternator.cutInRpm, alternator.fullRpm, rpm[alternator.engine])
         : 0;
     }
@@ -253,6 +263,8 @@ export class ElectricalSystem {
     }
     r.starterTorque = r.starterTorques[0];
     r.alternatorShaftPower = r.alternatorShaftPowers[0];
+    // Over-voltage (a regulator run away): the sensor takes the field off from the next step on.
+    if (this.overVoltageTrip !== undefined && r.alternatorAmps > 0 && v > this.overVoltageTrip) this.tripped = r.overVoltageTripped = true;
 
     const coulombs = r.batteryAmps > 0 ? r.batteryAmps : r.batteryAmps * CHARGE_EFFICIENCY;
     this.charge = clamp(this.charge - (coulombs * dt) / this.capacity, 0, 1);
@@ -262,5 +274,10 @@ export class ElectricalSystem {
 
   reset(charge = 1): void {
     this.charge = clamp(charge, 0, 1);
+  }
+
+  /** A new flight: the over-voltage sensor is reset. */
+  clearOverVoltage(): void {
+    this.tripped = this.state.overVoltageTripped = false;
   }
 }

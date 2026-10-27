@@ -151,7 +151,10 @@ export interface InstrumentSetOptions {
 const DEG_TO_RAD = Math.PI / 180;
 const fahrenheit = (celsius: number): number => (celsius * 9) / 5 + 32;
 
-/** The indicators of one engine: a mechanical tachometer and manifold pressure gauge, the rest electric. */
+/**
+ * The indicators of one engine: a mechanical tachometer and manifold pressure gauge, the rest electric (the oil
+ * pressure gauge too, unless InstrumentSystemsDef.oilPressureDirect).
+ */
 class EngineIndicators {
   readonly tach: Tachometer;
   readonly oilT = new ElectricNeedle(3, 60);
@@ -169,14 +172,14 @@ class EngineIndicators {
   /** Direct-reading pressure gauge: it shows the pressure in the manifold whether or not the bus is alive. */
   manifold = 29.92;
 
-  constructor(tachHours: number | undefined, hourRpm: number) {
+  constructor(tachHours: number | undefined, hourRpm: number, private readonly oilPressureDirect = false) {
     this.tach = new Tachometer(tachHours, hourRpm);
   }
 
   step(dt: number, e: EngineState, shaftRpm: number, kgPerGal: number, powered: boolean, out: EngineReadings): void {
     this.tach.step(dt, shaftRpm);
     this.oilT.step(dt, (e.oilTemp * 9) / 5 + 32, powered);
-    this.oilP.step(dt, e.oilPressure, powered);
+    this.oilP.step(dt, e.oilPressure, powered || this.oilPressureDirect);
     this.egt.step(dt, (e.egt * 9) / 5 + 32, powered);
     this.ff.step(dt, (e.fuelFlow * 3600) / kgPerGal, powered);
     this.cht.step(dt, fahrenheit(e.cht), powered);
@@ -256,7 +259,7 @@ export class InstrumentSet {
     this.attitude = new AttitudeIndicator(spun, sys.vacuum?.ratedInHg);
     this.heading = new HeadingIndicator(spun, sys.vacuum?.ratedInHg);
     this.turn = new TurnCoordinator(spun);
-    this.engines = Array.from({ length: sys.engines }, () => new EngineIndicators(opts.tachHours, sys.tachHourRpm));
+    this.engines = Array.from({ length: sys.engines }, () => new EngineIndicators(opts.tachHours, sys.tachHourRpm, sys.oilPressureDirect));
     this.tach = this.engines[0].tach;
     this.fuel = sys.fuel.tanks.map(() => new ElectricNeedle(2.5, 0));
     this.fuelGal = sys.fuel.tanks.map(() => 0);
