@@ -55,7 +55,7 @@ const YOKES = { y: 545, xs: [442, 1398] as const, r: 58 };
 export const C152_KNOBS = { y: 670, carbHeat: 800, throttle: 920, mixture: 1040 } as const;
 /** The parking brake handle at the left end of the subpanel, left of the fuel gauges (#43), px. */
 export const C152_PARKING_BRAKE = [56, 628] as const;
-/** The hand primer's knob (POH Fig 7-2 item 42): on the lower left, right of the engine gauges, over the switch row. */
+/** The hand primer's knob (POH Fig 7-2 item 42): on the lower left, between the fuel and the oil gauges, over the switch row. */
 const PRIMER = [427, 625] as const;
 /** Flap scale and lever slot: slot at local x 100, 0 deg at local y 80, 30 deg 200 px lower (FlapIndicator). */
 const FLAPS: Rect = { x: 1100, y: 470, w: 130, h: 312 };
