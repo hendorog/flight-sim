@@ -198,7 +198,31 @@ export class Powerplant implements PowerplantSeam {
 
   /** Per-engine state for a resume snapshot. */
   capture(): EngineSnapshot[] {
-    return this.units.map((unit) => unit.capture());
+    return this.units.map((unit) => {
+      const snap = unit.capture();
+      const engine = unit.engine;
+      if (this.primers[unit.index] && engine instanceof PistonEngine) {
+        // A film still at its first-step equilibrium (NaN) is saved as none.
+        const film = this.fuel.feedFilm(unit.index);
+        snap.primer = { film: Number.isFinite(film) ? film : 0, ports: this.fuel.primerPorts(unit.index), plugWet: engine.plugWet };
+      }
+      return snap;
+    });
+  }
+
+  /**
+   * The hand primers' part of a snapshot (EngineSnapshot.primer): the film, the puddle and the plugs as saved. After
+   * reset(), which leaves them dry. restore() calls it, and so does the fixed-wing FlightModel.restoreSystems().
+   */
+  restorePrimers(engines: readonly EngineSnapshot[]): void {
+    for (const unit of this.units) {
+      const saved = engines[unit.index]?.primer;
+      const engine = unit.engine;
+      if (!saved || !this.primers[unit.index] || !(engine instanceof PistonEngine)) continue;
+      this.fuel.setFeedFilm(unit.index, saved.film);
+      this.fuel.setPrimerPorts(unit.index, saved.ports);
+      engine.plugWet = saved.plugWet;
+    }
   }
 
   /** Put the engines into the states of a snapshot (tanks and battery are restored through reset() and batteryCharge). */
@@ -207,6 +231,7 @@ export class Powerplant implements PowerplantSeam {
       const snap = engines[unit.index];
       if (snap) unit.restore(snap);
     }
+    this.restorePrimers(engines);
   }
 
   /**

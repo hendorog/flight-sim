@@ -202,6 +202,11 @@ export interface EngineSnapshot {
    * (a switch held through the resume is not a new press). Absent: not latched.
    */
   starterLatch?: { latched: boolean; seconds: number; pressed: boolean };
+  /**
+   * Hand primer (EngineDef.primer): the induction's wall film and the primer's puddle in the ports, kg, and how wet
+   * the plugs are (PistonEngine.plugWet). Absent: no primer, or an older save (dry, film at its equilibrium).
+   */
+  primer?: { film: number; ports: number; plugWet: number };
 }
 
 /** The aircraft-level powerplant the assembly programs against: N engine units + ONE fuel network + ONE bus. */

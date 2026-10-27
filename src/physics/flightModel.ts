@@ -1068,6 +1068,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       // Gas generator, blade angle (beta and reverse included), feather latch and the latching start switch.
       unit.restoreSpoolAndPitch(e);
     }
+    // A hand primer's film, puddle and wet plugs.
+    pp.restorePrimers(s.engines);
     if (this.retract) {
       this.retract.restore(s.gear);
       this.publishGear();
