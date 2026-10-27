@@ -73,6 +73,8 @@ function main(name: 'left' | 'right'): WheelConfig {
     damping: (_strutRate, totalRate) => MAIN_DAMPING * totalRate,
     tyre: TYRE,
     steering: null,
+    // The optional dual toe brakes, fitted (B and the pedals' toe brakes). The standard hand brake (POH 7.7, fig 7-13)
+    // works the same discs on both mains: it is Shift+B, the parking brake, on or off only.
     brake: name,
     // Cleveland single-disc hydraulic brake (POH 7.7, s.3), sized to hold the static full-power run (about 2.2 kN of
     // thrust on the brakes: POH 4.5's short-field take-off and the static rpm check, s.5); on the landing roll that

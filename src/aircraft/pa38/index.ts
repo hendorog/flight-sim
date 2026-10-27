@@ -31,6 +31,8 @@ export const PA38_DEFINITION: AircraftDefinition = {
     'Detonation at full throttle with carburettor heat on (POH 4.29): the power falls with the hot air, nothing breaks.',
     'The Tomahawk I (outboard flow strips only, 5.00-5 wheels): the Tomahawk II as every aircraft has been since AD 83-14-08.',
     'The ground-adjustable rudder tab as anything but a fixed rigging offset.',
+    'The hand brake (POH 7.7: the standard fit, the one used in training) as anything but on or off: Shift+B pulls and locks it on both mains, the parking brake. Progressive braking is on the optional toe brakes (B, the pedals), which are fitted.',
+    'Beacon and taxi light: the type has neither (POH 7.15, fig 7-11), so the panel has no switch for them and their keys draw no current; the 3D model still lights its fin-top beacon and second nose lens if those keys are pressed.',
   ],
   geometry: PA38_GEOMETRY,
   mass: PA38_MASS,

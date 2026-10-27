@@ -405,19 +405,14 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
       control: null, state: null, key: null,
       why: why('Belts and harness tight: they hold us if the landing goes wrong.') }),
   ]),
+  // The type has nav, landing and anti-collision (strobe) lights only: no beacon, no taxi light (POH 7.15).
   nightLights: list('nightLights', 'Night: lights', [
     item('navLights', 'Navigation lights', 'On', {
       control: 'navLights', state: eq('lightNav', true), key: 'navLights',
       why: why('Navigation lights on: at night they show which way we are going.') }),
-    item('beacon', 'Beacon', 'On', {
-      control: 'beacon', state: eq('lightBeacon', true), key: 'beacon',
-      why: why('Beacon on whenever the engine runs.') }),
     item('strobes', 'Strobes', 'On', {
       control: 'strobes', state: eq('lightStrobe', true), key: 'strobes',
       why: why('Strobes on in the air: we are seen from miles away.') }),
-    item('taxiLight', 'Taxi light', 'As required', {
-      control: 'taxiLight', state: null, key: 'taxiLight',
-      why: why('Taxi light on the ground to see the taxiway edges.') }),
     item('panelLights', 'Panel lights', 'Set', {
       control: 'panelLights', state: null, key: 'panelLights',
       why: why('Panel lights dim: bright enough to read, dark enough to see out.') }),
@@ -469,6 +464,7 @@ export const PA38: AircraftTypeDef = {
     avionics: { label: 'Radios', where: 'each radio has its own switch; there is no avionics master' },
     flapLever: { label: 'Flap lever', where: 'the hand lever on the console between the seats' },
     trimWheel: { label: 'Trim wheel', where: 'on the console between the seats, behind the flap lever' },
-    parkingBrake: { label: 'Parking brake', where: 'the handle under the throttle quadrant' },
+    // The hand brake (POH 7.7), Shift+B: pulled and locked it is the parking brake. The toe brakes are the optional fit.
+    parkingBrake: { label: 'Hand brake', where: 'the hand brake handle under the throttle quadrant; pulled and locked it holds the parking brake' },
   },
 };

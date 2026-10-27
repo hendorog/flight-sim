@@ -190,8 +190,9 @@ export const PA38_ANNUNCIATOR_LAMPS: readonly LampDef[] = [{ id: 'alt', text: 'A
 
 // ---------------------------------------------------------------------------------------------------
 // Switch row: the split MASTER (ALT left half, BAT right half, s.9), the magneto key, the white rockers (up = ON)
-// of the electric fuel pump, the lights and the pitot heat. The two light rheostats are right of the quadrant
-// (s.9), not in the row: they are not drawn.
+// of the electric fuel pump, the lights and the pitot heat. The lights are the POH's (7.15, fig 7-11): nav, landing
+// and the wingtip strobes it calls anti-collision lights; there is no taxi light and no beacon switch. The two
+// light rheostats are right of the quadrant (s.9), not in the row: they are not drawn.
 
 const rocker = (id: string, label: string, name: string, x: number, on: SwitchDef['on'], toggle: SwitchDef['toggle'], more: Pick<SwitchDef, 'red' | 'group'> = {}): SwitchDef => ({
   id,
@@ -203,7 +204,7 @@ const rocker = (id: string, label: string, name: string, x: number, on: SwitchDe
   toggle,
 });
 
-const RX = { alt: 40, bat: 65, fuelPump: 290, nav: 350, landing: 390, taxi: 430, strobe: 470, beacon: 510, pitotHeat: 575 };
+const RX = { alt: 40, bat: 65, fuelPump: 290, nav: 350, landing: 395, strobe: 445, pitotHeat: 525 };
 
 // ---------------------------------------------------------------------------------------------------
 
@@ -250,9 +251,7 @@ export const PA38_PANEL: PanelDef = {
       rocker('fuelPump', 'FUEL PUMP', 'Electric fuel pump', RX.fuelPump, (c) => c.fuelPump, (c) => { c.fuelPump = !c.fuelPump; }),
       rocker('nav', 'NAV', 'Nav lights', RX.nav, (c) => c.lights.nav, (c) => { c.lights.nav = !c.lights.nav; }, { group: 'lights' }),
       rocker('landing', 'LAND', 'Landing light', RX.landing, (c) => c.lights.landing, (c) => { c.lights.landing = !c.lights.landing; }, { group: 'lights' }),
-      rocker('taxi', 'TAXI', 'Taxi light', RX.taxi, (c) => c.lights.taxi, (c) => { c.lights.taxi = !c.lights.taxi; }, { group: 'lights' }),
-      rocker('strobe', 'STROBE', 'Strobes', RX.strobe, (c) => c.lights.strobe, (c) => { c.lights.strobe = !c.lights.strobe; }, { group: 'lights' }),
-      rocker('beacon', 'BCN', 'Beacon', RX.beacon, (c) => c.lights.beacon, (c) => { c.lights.beacon = !c.lights.beacon; }, { group: 'lights' }),
+      rocker('strobe', 'ANTI COLL', 'Strobes', RX.strobe, (c) => c.lights.strobe, (c) => { c.lights.strobe = !c.lights.strobe; }, { group: 'lights' }),
       rocker('pitotHeat', 'PITOT HT', 'Pitot heat', RX.pitotHeat, (c) => c.pitotHeat, (c) => { c.pitotHeat = !c.pitotHeat; }),
     ],
     // Local px of the row: the MASTER pair, the tab of the bracket over the light switches.
@@ -260,7 +259,7 @@ export const PA38_PANEL: PanelDef = {
       { text: 'MASTER', x: (RX.alt + RX.bat) / 2, y: ROW.rockerTop - 24, size: 8.5 },
       { text: 'ALT', x: RX.alt, y: ROW.rockerTop - 12, size: 8 },
       { text: 'BAT', x: RX.bat, y: ROW.rockerTop - 12, size: 8 },
-      { text: 'LIGHTS', x: (RX.nav + RX.beacon) / 2, y: ROW.rockerTop - 24, size: 8.5 },
+      { text: 'LIGHTS', x: (RX.nav + RX.strobe) / 2, y: ROW.rockerTop - 24, size: 8.5 },
     ],
   },
   // Panel px, where the click hotspot and the 3D key are: under the left control wheel (s.9).
@@ -272,7 +271,7 @@ export const PA38_PANEL: PanelDef = {
     // The back of the quadrant's well (the 3D surround stands round it): black behind the fuel gauges and the selector.
     plates: [{ bounds: { x: PA38_QUADRANT.x0, y: 436, w: PA38_QUADRANT.x1 - PA38_QUADRANT.x0, h: PA38_QUADRANT.y0 - 436 + 20 }, color: '#151517', radius: 6 }],
     // Legends of the controls that are painted, not built: the primer right of the quadrant, the cabin heat and
-    // defrost knobs on the lower right (s.9). The parking brake handle hangs under the quadrant, below the face.
+    // defrost knobs on the lower right (s.9). The hand (parking) brake handle hangs under the quadrant, below the face.
     bushings: [
       { at: [1218, 730], text: 'PRIMER', sub: 'PUSH LOCK' },
       { at: [1640, 600], text: 'CABIN HEAT', sub: 'PULL ON' },
