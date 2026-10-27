@@ -125,33 +125,33 @@ function trimRocker(at: number, offset: V3, rot: V3 = [0, 0, 0]): Fitting[] {
 const PTT_172: Fitting = { shape: 'button', at: 0.72, offset: [0.022, 0, 0.012], size: [0.009, 0.004, 0.009], rot: [0, 0, -Math.PI / 2], colour: SATIN_BLACK };
 
 /**
- * Cessna 172S: a flat-topped U of black textured plastic. Near-vertical horns ~3.5 cm wide by ~4.5 cm deep and
- * ~16 cm above a 3 x 3.5 cm bar (the grips stand ~9 cm above the hub top, as the reference frames show), 33 cm
- * outside to outside, with a slight outward cant and finger ridges; a wide
- * rectangular hub (9 x 7 cm, 2 cm proud) with a flat-black badge plate (SKYHAWK SP); a trim/AP-disconnect pod on
- * the pilot's left horn (split DN/UP rocker, red AP DISC button), PTT on both yokes; a satin black 1 in column.
+ * Cessna 172S (1970s 172M factory photo, cessnaowner.org, and the MSFS frames): a straight bar from the lower half of a
+ * wide rounded hub (~13-14 cm, wider at the top, ~9 cm tall, 2 cm proud) turns up at a tight elbow into a near-upright
+ * grip (~3.4 cm, finger ridges) whose top leans in a few degrees (palm slightly down, never canted out), ~31 cm outside
+ * to outside; a flat-black badge plate (SKYHAWK SP); a trim/AP-disconnect pod on the pilot's left horn (split DN/UP
+ * rocker, red AP DISC button), PTT on both yokes; a satin black 1 in column.
  */
 const CESSNA_SINGLE: YokeStyle = {
   colour: BLACK,
   hang: 0.04,
   horn: {
-    points: [[0, -0.04, 0], [0.07, -0.04, 0], [0.112, -0.036, 0], [0.134, -0.016, 0], [0.142, 0.02, 0.002], [0.145, 0.07, 0.006], [0.147, 0.112, 0.011], [0.148, 0.126, 0.013]],
+    points: [[0, -0.03, 0], [0.09, -0.03, 0], [0.118, -0.03, 0], [0.13, -0.025, 0], [0.136, -0.013, 0.001], [0.136, 0.005, 0.002], [0.133, 0.04, 0.004], [0.129, 0.075, 0.007], [0.127, 0.088, 0.008]],
     keys: [
-      { t: 0, w: 0.032, dF: 0.02, dB: 0.02, n: 3 },
-      { t: 0.28, w: 0.034, dF: 0.021, dB: 0.021, n: 3 },
-      { t: 0.45, w: 0.04, dF: 0.025, dB: 0.024, n: 3.4 },
-      { t: 0.85, w: 0.042, dF: 0.028, dB: 0.025, n: 3.6 },
-      { t: 1, w: 0.04, dF: 0.027, dB: 0.024, n: 4 },
+      { t: 0, w: 0.028, dF: 0.018, dB: 0.018, n: 3 },
+      { t: 0.42, w: 0.03, dF: 0.019, dB: 0.019, n: 3 },
+      { t: 0.6, w: 0.033, dF: 0.022, dB: 0.021, n: 3.4 },
+      { t: 0.88, w: 0.035, dF: 0.024, dB: 0.022, n: 3.6 },
+      { t: 1, w: 0.034, dF: 0.023, dB: 0.021, n: 4 },
     ],
     tip: 0.01,
     ridges: { t0: 0.5, t1: 0.88, count: 4, amp: 0.12 },
     rings: 32,
     segments: 16,
   },
-  hub: { y: -0.012, wBottom: 0.112, wTop: 0.106, h: 0.094, r: 0.012, z: 0.03, depth: 0.05, bevel: 0.005, colour: BLACK },
+  hub: { y: -0.012, wBottom: 0.128, wTop: 0.138, h: 0.086, r: 0.016, z: 0.03, depth: 0.05, bevel: 0.005, colour: BLACK },
   plates: [
-    { y: -0.008, wBottom: 0.09, wTop: 0.084, h: 0.06, r: 0.008, z: 0.0325, depth: 0.003, bevel: 0.001, colour: [14, 14, 15] },
-    { y: -0.024, wBottom: 0.034, wTop: 0.034, h: 0.02, r: 0.01, z: 0.0345, depth: 0.002, bevel: 0.0005, colour: CHROME_RIM },
+    { y: -0.008, wBottom: 0.104, wTop: 0.112, h: 0.056, r: 0.008, z: 0.0325, depth: 0.003, bevel: 0.001, colour: [14, 14, 15] },
+    { y: -0.024, wBottom: 0.05, wTop: 0.05, h: 0.016, r: 0.01, z: 0.0345, depth: 0.002, bevel: 0.0005, colour: CHROME_RIM },
   ],
   fittings: [
     { shape: 'box', at: 0.9, offset: [0, 0.002, 0], size: [0.042, 0.034, 0.054], rot: [-0.25, 0, 0], colour: SATIN_BLACK, r: 0.009 },
@@ -211,7 +211,7 @@ const PIPER_SENECA: YokeStyle = {
   colour: BLACK,
   hang: 0.06,
   horn: {
-    points: [[0, -0.078, 0], [0.05, -0.076, 0], [0.097, -0.06, 0], [0.128, -0.022, 0], [0.141, 0.03, -0.002], [0.143, 0.08, -0.004], [0.137, 0.118, -0.004], [0.124, 0.13, -0.002]],
+    points: [[0, -0.078, 0], [0.08, -0.078, 0], [0.113, -0.075, 0], [0.129, -0.062, 0], [0.135, -0.042, -0.001], [0.134, 0.0, -0.002], [0.13, 0.06, -0.003], [0.126, 0.1, -0.003], [0.121, 0.116, -0.002]],
     keys: [
       { t: 0, w: 0.03, dF: 0.017, dB: 0.017, n: 2.6 },
       { t: 0.35, w: 0.03, dF: 0.017, dB: 0.017, n: 2.6 },
@@ -285,7 +285,7 @@ const CESSNA_208: YokeStyle = {
   colour: [74, 76, 80],
   hang: 0.065,
   horn: {
-    points: [[0, -0.07, 0], [0.08, -0.07, 0], [0.137, -0.066, 0], [0.162, -0.04, 0], [0.169, 0.01, 0.002], [0.171, 0.07, 0.006], [0.172, 0.105, 0.01], [0.172, 0.114, 0.011]],
+    points: [[0, -0.07, 0], [0.1, -0.07, 0], [0.142, -0.068, 0], [0.158, -0.058, 0], [0.164, -0.04, -0.001], [0.163, 0.0, -0.005], [0.159, 0.05, -0.012], [0.155, 0.095, -0.019], [0.154, 0.106, -0.021]],
     keys: [
       { t: 0, w: 0.034, dF: 0.022, dB: 0.022, n: 4 },
       { t: 0.35, w: 0.034, dF: 0.022, dB: 0.022, n: 4 },
@@ -326,7 +326,7 @@ const PILATUS: YokeStyle = {
   colour: [48, 49, 51],
   hang: 0.06,
   horn: {
-    points: [[0, -0.085, 0], [0.05, -0.083, 0], [0.097, -0.064, 0], [0.127, -0.025, 0], [0.138, 0.025, -0.002], [0.141, 0.075, -0.008], [0.139, 0.106, -0.012], [0.136, 0.114, -0.01]],
+    points: [[0, -0.085, 0], [0.07, -0.084, 0], [0.108, -0.079, 0], [0.126, -0.064, 0], [0.134, -0.042, -0.001], [0.135, 0.0, -0.003], [0.132, 0.06, -0.007], [0.128, 0.1, -0.01], [0.126, 0.112, -0.01]],
     keys: [
       { t: 0, w: 0.034, dF: 0.019, dB: 0.019, n: 2.6 },
       { t: 0.35, w: 0.03, dF: 0.017, dB: 0.017, n: 2.6 },
