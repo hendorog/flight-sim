@@ -331,8 +331,8 @@ export function cockpitControls(cockpit: CockpitDef, panel: PanelDef): Readonly<
     }
   }
   const flap = cockpit.flapControl.pos;
-  // A lever lying aft from its pivot: at its grip.
-  out.flapLever = fromFrd(flap[0] - (cockpit.flapControl.aft ? FLOOR_LEVER_GRIP : 0.045), flap[1], flap[2]);
+  // A floor lever: at its grip, forward of its pivot.
+  out.flapLever = fromFrd(flap[0] + (cockpit.flapControl.kind === 'floorLever' ? FLOOR_LEVER_GRIP : -0.045), flap[1], flap[2]);
   if (cockpit.trimWheel) out.trimWheel = fromFrd(cockpit.trimWheel.pos[0], cockpit.trimWheel.pos[1], cockpit.trimWheel.pos[2]);
   for (const [id, p] of Object.entries(cockpit.controlPoints)) out[id] = fromFrd(p[0], p[1], p[2]);
   // The pilot's (left) seat.
@@ -726,11 +726,10 @@ export class Cockpit {
       lever.add(mat.darkMetal, box(-0.012, 0, 0, 0.024, 0.006, 0.006, 0.002));
       lever.add(mat.knobWhite, box(-0.03, 0, 0, 0.016, 0.034, 0.012, 0.004));
     } else {
-      // Hand lever between the seats, lying forward (or aft) from its pivot with a grip and release button at its end.
-      const s = def.flapControl.aft ? -1 : 1;
-      lever.add(mat.darkMetal, box(s * 0.17, 0, -0.03, 0.34, 0.022, 0.014, 0.005));
-      lever.add(mat.black, rodX(s * FLOOR_LEVER_GRIP, 0, -0.03, 0.12, 0.017, 14));
-      lever.add(mat.knobWhite, rodX(s * 0.366, 0, -0.03, 0.012, 0.008, 10));
+      // Hand lever between the seats, lying forward from its pivot with a grip and release button at its end.
+      lever.add(mat.darkMetal, box(0.17, 0, -0.03, 0.34, 0.022, 0.014, 0.005));
+      lever.add(mat.black, rodX(FLOOR_LEVER_GRIP, 0, -0.03, 0.12, 0.017, 14));
+      lever.add(mat.knobWhite, rodX(0.366, 0, -0.03, 0.012, 0.008, 10));
     }
     this.flapLever.add(...lever.build('flapLever').children);
     frd(FLAP[0], FLAP[1], FLAP[2], this.flapLever.position);
@@ -1078,7 +1077,7 @@ export class Cockpit {
     const flap = this.def.flapControl;
     if (flap.kind === 'panelLever') this.flapLever.position.y = -(flap.pos[2] + flap.travel * controls.flaps);
     else if (flap.kind === 'panelSwitch') this.flapLever.rotation.x = flap.travel * (controls.flaps - 0.5);
-    else this.flapLever.rotation.x = (flap.aft ? -1 : 1) * flap.travel * controls.flaps;
+    else this.flapLever.rotation.x = flap.travel * controls.flaps;
     const pr = this.primer;
     if (pr) {
       // Out and back in over a stroke's time; a little out and turned while unlocked.

@@ -552,8 +552,8 @@ const COCKPIT: CockpitDef = {
     { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, LEVER.y, LEVER.z], travel: 0.8, colour: 'red', length: LEVER.length, knob: 'scallopedMixture', tilt: LEVER.tilt },
   ],
   // The hand flap lever on the console between the seats, beside the trim wheel (owner): like an old car's hand brake,
-  // pivoted at its front and lying aft along the console, its grip end pulled up through 21 to 34 degrees (s.9).
-  flapControl: { kind: 'floorLever', pos: [CONSOLE.x0 - 0.06, -0.04, CONSOLE.top], travel: 0.7, aft: true },
+  // hinged at its back and lying forward along the console, its grip end pulled up through 21 to 34 degrees (s.9).
+  flapControl: { kind: 'floorLever', pos: [-0.15, -0.04, CONSOLE.top], travel: 0.7 },
   // The hand primer right of the quadrant (POH 4.13): a metal push-pull plunger, pulled out and pushed in to prime
   // (owner), over the panel's painted knob.
   primer: { pos: [PANEL_X, faceY(PA38_PANEL_PARTS.primer[0]), faceZ(PA38_PANEL_PARTS.primer[1])], travel: 0.05 },

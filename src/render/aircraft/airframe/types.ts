@@ -417,10 +417,9 @@ export interface CockpitDef {
   /**
    * panelLever: a lever in a slot on the panel face, `travel` m down from UP to FULL. panelSwitch: a paddle
    * switch on the face, tilting `travel` rad. floorLever: a hand lever between the seats pivoted at `pos`,
-   * pulled up by `travel` rad for full flap; `aft`: it lies aft from its pivot, its grip end pulled up like a car's
-   * hand brake (absent: it lies forward).
+   * lying forward from it and pulled up by `travel` rad for full flap.
    */
-  flapControl: { kind: 'panelLever' | 'panelSwitch' | 'floorLever'; pos: FRD; travel: number; aft?: boolean };
+  flapControl: { kind: 'panelLever' | 'panelSwitch' | 'floorLever'; pos: FRD; travel: number };
   /**
    * A hand primer built as a metal push-pull plunger (EngineDef.primer) standing out of the panel face at `pos`: in
    * when locked, a little out and turned when unlocked, pulled out `travel` m and pushed back in on each stroke
