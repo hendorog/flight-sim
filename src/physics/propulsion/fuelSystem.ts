@@ -90,6 +90,29 @@ const LOSE_PRIME_TIME = 0.3;
 /** Cold film: shaft speed its evaporation times are quoted at, rpm; and the speed by which air carries spray past the walls. */
 const FILM_CRANK_RPM = 200;
 const FILM_STILL_RPM = 60;
+/**
+ * Float carburettor feeds only. A shut selector (not a tank run dry) seals the lines behind it: no air can follow the
+ * fuel down, so they hold it like a straw with a finger over its top, all but what drains as air bubbles back up
+ * through the float valve and the strainer, kg.
+ */
+const SEALED_LINE_DRAIN = 0.015;
+/**
+ * Float bowl level (fraction of its capacity) below which the falling head over the jets leans the mixture, and at
+ * which nothing more is drawn: the engine runs rough as the bowl drains and quits with fuel still in it.
+ */
+const BOWL_LEAN_LEVEL = 0.5;
+const BOWL_DRY_LEVEL = 0.15;
+/**
+ * The fuel beyond the mixture valve in the main nozzle well and the idle passages, kg: at idle cut-off the venturi
+ * and idle-port vacuum go on drawing it out, at the rate the engine last drew fuel and falling as it empties, so the
+ * engine fires on for a few seconds at idle (a fraction of a second at full power).
+ */
+const CARB_WELL = 0.0013;
+/** Time constant over which the well's draw follows the engine's fuel draw, s. */
+const CARB_DRAW_TIME = 0.5;
+/** Shaft speeds over which the vacuum that draws the well builds up, rpm (next to none while cranking). */
+const CARB_WELL_RPM_START = 250;
+const CARB_WELL_RPM_FULL = 500;
 /** Selector position that draws nothing. */
 const NO_TANKS: readonly number[] = [];
 /** Manifold vacuum at which PrimerDef.unlockedFlow is quoted, Pa. */
@@ -166,6 +189,11 @@ class FuelFeed {
   private drawn: readonly number[] = NO_TANKS;
   /** A quasi-steady step found the feed shut off: its steady state is dry (see settled()). */
   private dry = false;
+  /** What the lines keep that cannot reach the engine, kg: lineUnusable, more behind a shut selector (a carburettor's). */
+  private lineFloor: number;
+  /** A carburettor's nozzle well and idle passages (CARB_WELL), kg, and the rate the engine has been drawing fuel, kg/s. */
+  private well = CARB_WELL;
+  private draw = 0;
 
   constructor(feed: FuelFeedDef, tankCount: number, primer?: PrimerDef) {
     for (const tanks of Object.values(feed.positions)) {
@@ -191,6 +219,7 @@ class FuelFeed {
     this.primer = primer;
     this.line = this.lineCapacity;
     this.injector = this.injectorCapacity;
+    this.lineFloor = this.lineUnusable;
   }
 
   /**
@@ -210,6 +239,8 @@ class FuelFeed {
       // The tanks this position draws from (a position the definition does not list shuts the feed).
       this.selector = selector;
       this.drawn = this.positions[selector] ?? NO_TANKS;
+      const sealed = this.delivery === 'carburettorBowl' && this.drawn.length === 0;
+      this.lineFloor = sealed ? Math.max(this.lineUnusable, this.line - SEALED_LINE_DRAIN) : this.lineUnusable;
     }
     const drawn = this.drawn;
     const room = this.lineCapacity - this.line;
@@ -252,10 +283,13 @@ class FuelFeed {
     const enginePump = this.enginePumpPsi * (1 - Math.exp(-rpm / ENGINE_PUMP_RPM_SCALE)) * smoothstep(PRIME_PRESSURE_START, 1, this.prime);
     const aux = auxPump && busVoltage > this.auxPumpMinVolts ? this.auxPumpPsi : 0;
     const pumpPsi = Math.max(enginePump, aux);
-    r.auxPressurePsi = aux * wet;
-    r.pressurePsi = pumpPsi * wet;
+    // Behind a shut selector the sealed lines hold their fuel under suction: the pumps keep their prime but deliver
+    // nothing once what could drain has gone.
+    const open = smoothstep(this.lineFloor, this.lineFloor + this.lineUnusable, this.line);
+    r.auxPressurePsi = aux * wet * open;
+    r.pressurePsi = pumpPsi * wet * open;
     // The head of fuel standing above the engine adds to whatever the pumps make.
-    if (this.gravityHeadPsi !== 0) r.pressurePsi = (this.gravityHeadPsi + pumpPsi) * wet;
+    if (this.gravityHeadPsi !== 0) r.pressurePsi = (this.gravityHeadPsi + pumpPsi) * wet * open;
 
     if (this.primer) this.workPrimer(dt, primer, steady);
 
@@ -313,12 +347,12 @@ class FuelFeed {
     if (steady || dt <= 0) return;
     // A lower count (controls put back): taken as it is.
     if (input.strokes > seen) {
-      const charge = Math.min((input.strokes - seen) * def.stroke, Math.max(0, this.line - this.lineUnusable));
+      const charge = Math.min((input.strokes - seen) * def.stroke, Math.max(0, this.line - this.lineFloor));
       this.line -= charge;
       this.ports = Math.min(this.ports + charge, def.ports.capacity);
     }
     if (!input.locked && input.vacuum > 0) {
-      const leak = Math.min(def.unlockedFlow * Math.sqrt(input.vacuum / PRIMER_LEAK_VACUUM) * dt, Math.max(0, this.line - this.lineUnusable));
+      const leak = Math.min(def.unlockedFlow * Math.sqrt(input.vacuum / PRIMER_LEAK_VACUUM) * dt, Math.max(0, this.line - this.lineFloor));
       this.line -= leak;
       r.primerFlow = leak / dt;
     }
@@ -348,7 +382,7 @@ class FuelFeed {
   private deliver(dt: number, demand: number, steady: boolean, rpm: number, headC: number): FuelStepResult {
     const r = this.result;
     const supply = smoothstep(0.5 * this.minPsi, this.minPsi, r.pressurePsi);
-    const usable = Math.max(0, this.line - this.lineUnusable);
+    const usable = Math.max(0, this.line - this.lineFloor);
     if (this.delivery === 'commonRail') {
       const metered = Math.min(demand * supply * dt, usable);
       this.line -= metered;
@@ -360,13 +394,31 @@ class FuelFeed {
       const flow = Math.min(demand * dt, this.feedCapacity * supply * dt, usable);
       this.line -= flow;
       this.injector = this.injectorCapacity;
-      sprayed = dt > 0 ? flow / dt : 0;
+      this.well = CARB_WELL;
+      this.draw = dt > 0 ? flow / dt : 0;
+      sprayed = this.draw;
     } else {
       const inflow = Math.min(this.injectorCapacity - this.injector, this.feedCapacity * supply * dt, usable);
       this.line -= inflow;
       this.injector += inflow;
-      const out = Math.min(demand * dt, this.injector);
+      // The jets lean out as the bowl's level falls.
+      const head = smoothstep(BOWL_DRY_LEVEL, BOWL_LEAN_LEVEL, this.injector / this.injectorCapacity);
+      const floor = BOWL_DRY_LEVEL * this.injectorCapacity;
+      let out = Math.min(demand * head * dt, Math.max(0, this.injector - floor));
       this.injector -= out;
+      if (demand > 0) {
+        // Metering: the well stays full (topped up from the bowl), and its draw follows the engine's.
+        const top = Math.min(CARB_WELL - this.well, Math.max(0, this.injector - floor));
+        this.injector -= top;
+        this.well += top;
+        this.draw += (out / dt - this.draw) * (1 - Math.exp(-dt / CARB_DRAW_TIME));
+      } else if (this.well > 0) {
+        // Idle cut-off: a running engine's vacuum goes on drawing the well out, less as it empties.
+        const suction = smoothstep(CARB_WELL_RPM_START, CARB_WELL_RPM_FULL, rpm);
+        const drawn = this.well * (1 - Math.exp((-suction * this.draw / CARB_WELL) * dt));
+        this.well -= drawn;
+        out += drawn;
+      }
       sprayed = out / dt;
     }
     r.metered = sprayed;
@@ -411,6 +463,10 @@ class FuelFeed {
     this.dry = false;
     this.primerSeen = 0;
     this.ports = 0;
+    this.lineFloor = this.lineUnusable;
+    this.selector = null;
+    this.well = CARB_WELL;
+    this.draw = 0;
   }
 
   /** After a quasi-steady evaluation: lines full and primed, as reset() leaves them, unless it found the feed shut off. */
