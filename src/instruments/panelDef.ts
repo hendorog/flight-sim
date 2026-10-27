@@ -214,6 +214,7 @@ export interface PanelDef {
                 plates?: readonly { bounds: Rect; color: string; radius?: number }[];
                 bushings: readonly { at: At; text: string; sub: string }[];
                 placards: readonly { x: number; y: number; lines: readonly string[]; size?: number }[];
+                /** Legends ('' an empty slot) and ratings, A, row by row, `perRow` to a row. */
                 breakers?: { bounds: Rect; names: readonly string[]; amps: readonly number[]; perRow: number };
                 glovebox?: Rect;
                 /** The avionics rack: the rails behind the units and the blanking plate of each empty bay. Absent: none is painted. */

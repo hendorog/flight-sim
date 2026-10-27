@@ -1,6 +1,6 @@
 // Piper PA-38-112 Tomahawk II: the pilot's reference speeds, KIAS. Plain data. Transcribed from the PA-38
 // engineering data sheet (work/aircraft-data/pa38.md, kept outside the tree; "s.8" below is its section 8, with
-// the corrections of its "Verification notes" applied). The handbook is Piper report VB-2126 [POH]. The speeds
+// the corrections of its "Verification notes" applied). The handbook is Piper Report 2126 [POH]. The speeds
 // are those of the Tomahawk II standard, both pairs of flow strips fitted (the aircraft with the outboard pair
 // only stall 2-4 kt slower and approach at 62), at 1670 lb.
 

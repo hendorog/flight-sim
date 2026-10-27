@@ -2,7 +2,7 @@
 // and the autopilot gains. Plain data.
 //
 // Figures from the type's engineering data sheet (aircraft-data/pa38.md in the design work folder; "s.N" is its
-// section N), which takes them from the POH (Piper report VB-2126), the maintenance manual 761-660 and TCDS A18SO.
+// section N), which takes them from the POH (Piper Report 2126), the maintenance manual 761-660 and TCDS A18SO.
 // Positions are reference-point body axes (geometry.ts): x = (77.25 - STA) x 0.0254 m, z = (36.5 - WL) x 0.0254 m.
 // What physics/controlSystem.ts reads is explained in aircraft/c172s/systems.ts; the Tomahawk differs in its spring
 // trim, its hand-lever flaps and its pedals linked straight to the nosewheel.

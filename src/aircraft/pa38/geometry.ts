@@ -1,7 +1,7 @@
 // Piper PA-38-112 Tomahawk II: the geometric facts physics and the 3D model must agree on. Transcribed from the
 // PA-38 engineering data sheet (work/aircraft-data/pa38.md, kept outside the tree): "s.2.4" below is its section
 // 2.4, and the corrections of its "Verification notes" are applied. Source tags as in the sheet: [POH] handbook
-// VB-2126, [MM] maintenance manual 761-660 (dimensioned stations), [TCDS], [3V] scaled from the Piper three-view
+// Report 2126, [MM] maintenance manual 761-660 (dimensioned stations), [TCDS], [3V] scaled from the Piper three-view
 // sketch (+/-5-10 %), [K] from knowledge, [CALC] arithmetic. A number the sheet does not dimension is marked
 // ESTIMATE.
 //

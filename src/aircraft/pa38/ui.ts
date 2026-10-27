@@ -76,11 +76,10 @@ export const PA38_UI: UiProfile = {
     { id: 'fuelPump', label: 'Electric fuel pump', read: (c) => onOff(c.fuelPump) },
     { id: 'carbHeat', label: 'Carburettor heat', read: (c) => carbHeat(c.carbHeat) },
     { id: 'pitotHeat', label: 'Pitot heat', read: (c) => onOff(c.pitotHeat) },
+    // No beacon and no taxi light on the type (POH 7.15): their keys switch nothing that draws current.
     { id: 'nav', label: 'Nav lights', read: (c) => onOff(c.lights.nav) },
-    { id: 'beacon', label: 'Beacon', read: (c) => onOff(c.lights.beacon) },
     { id: 'strobe', label: 'Strobes', read: (c) => onOff(c.lights.strobe) },
     { id: 'landing', label: 'Landing light', read: (c) => onOff(c.lights.landing) },
-    { id: 'taxi', label: 'Taxi light', read: (c) => onOff(c.lights.taxi) },
   ],
   hud: {
     levers: [
