@@ -11,6 +11,20 @@ export const PA38_EXTRA_CHECKLISTS: Record<string, FlightChecklist> = {
     i("fluids", "Fuel and oil", "Check quantities; drain samples and inspect for contamination; caps secure"),
     i("cabin", "Cabin / baggage", "Secure loose articles, seats and restraints; remove control locks, covers and tie-downs"),
   ], { ...PA38_CHECKLIST_SOURCE, source: "PA-38-112 POH 4-3–4-5", category: 'normal' }),
+  hotStart: checklist('hotStart', "Starting engine when hot", [
+    i("throttle", "Throttle", "Cracked; no priming"),
+    i("master", "Master switch", "ON", eq('master', true)),
+    i("pump", "Electric fuel pump", "ON", eq('fuelPump', true)),
+    i("mixture", "Mixture", "Full RICH", ge('mixture', 0.99)),
+    i("starter", "Starter", "Engage; throttle adjust when it fires; if it does not start, open the throttle 1/2 inch and try again"),
+  ], { ...PA38_CHECKLIST_SOURCE, source: "PA-38-112 POH 4-6, 4.13 (b)", category: 'normal' }),
+  floodedStart: checklist('floodedStart', "Starting engine when flooded", [
+    i("throttle", "Throttle", "Open full", ge('throttle', 0.99)),
+    i("master", "Master switch", "ON", eq('master', true)),
+    i("pump", "Electric fuel pump", "OFF", eq('fuelPump', false)),
+    i("mixture", "Mixture", "Idle cut-off", le('mixture', 0.02)),
+    i("starter", "Starter", "Engage; when the engine fires release it, advance the mixture and retard the throttle"),
+  ], { ...PA38_CHECKLIST_SOURCE, source: "PA-38-112 POH 4-6, 4.13 (c)", category: 'normal' }),
   takeoff: checklist('takeoff', "Short / soft field take-off", [
     i("flaps", "Flaps", "21° (first notch)", all(ge('flapsDeg', 20), le('flapsDeg', 22))),
     i("short", "Short field", "Rotate at 53 KIAS; 61 KIAS until the obstacle is cleared (no obstacle: 70 KIAS); then 70 KIAS; flaps up slowly"),

@@ -335,7 +335,10 @@ export interface EngineState {
   /** FADEC engines only. */
   ecuPowered?: boolean;
   glow?: boolean;
-  /** Rough running beyond what the mixture and magnetos give (melt water from carburettor ice), 0 .. 1. Absent: 0. */
+  /**
+   * Rough running beyond what the mixture and magnetos give (melt water from carburettor ice; the primed cylinders
+   * running rich behind an unlocked hand primer), 0 .. 1. Absent: 0.
+   */
   roughness?: number;
   /** Gas turbines only: gas-generator speed, % of its reference speed, and inter-turbine temperature, degrees C (egt reads the same). */
   ng?: number;

@@ -11,6 +11,13 @@ export const C152_EXTRA_CHECKLISTS: Record<string, FlightChecklist> = {
     i("fluids", "Fuel and oil", "Check quantities; drain samples and inspect for contamination; caps secure"),
     i("cabin", "Cabin / baggage", "Secure loose articles, seats and restraints; remove control locks, covers and tie-downs"),
   ], { ...C152_CHECKLIST_SOURCE, source: "C152 POH (1978) 4-5–4-6", category: 'normal' }),
+  floodedStart: checklist('floodedStart', "Flooded engine (over-primed)", [
+    i("signs", "Signs", "Weak intermittent firing, puffs of black smoke; no more priming"),
+    i("mixture", "Mixture", "Idle cut-off", le('mixture', 0.02)),
+    i("throttle", "Throttle", "Full open", ge('throttle', 0.99)),
+    i("crank", "Starter", "Crank through several revolutions"),
+    i("restart", "Then", "Repeat the starting procedure without any additional priming"),
+  ], { ...C152_CHECKLIST_SOURCE, source: "C152 POH (1978) 4-11", category: 'normal' }),
   climb: checklist('climb', "Climb", [
     i("speed", "Airspeed", "70–80 KIAS", all(ge('kias', 70), le('kias', 80))),
     i("power", "Throttle", "Full", ge('throttle', 0.99)),
