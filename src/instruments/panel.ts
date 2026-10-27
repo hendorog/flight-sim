@@ -23,11 +23,11 @@ import type { AircraftState } from '../core/types';
 import { InstrumentSet, type InstrumentSetOptions } from './dynamics/instrumentSet';
 import { gaugeRecess, gaugeScale, type GaugeDef, type PanelDef } from './panelDef';
 import { panelLayoutProblems } from './panelLayout';
-import { gaugeParts, ignitionLayout, isLargeGauge, leverId } from './panelParts';
+import { gaugeParts, ignitionLayout, isLargeGauge, leverId, primerRect } from './panelParts';
 import { ScaledGauge } from './render/scaledGauge';
 import { RoundGauge } from './render/roundGauge';
 import { BlankGauge, RotorTachGauge } from './render/rotorTach';
-import { ConsoleControl, DigitalTemperature, Hourmeter } from './render/panelControls';
+import { ConsoleControl, DigitalTemperature, Hourmeter, PrimerKnob } from './render/panelControls';
 import { screw } from './render/art';
 import { DirtyRectUploader } from './render/dirtyUpload';
 import { PanelLightComposer } from './render/emissiveCompose';
@@ -358,6 +358,7 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
   dials.push(new SwitchPanel(def.switchRow, def.ignition));
   const ignition = ignitionLayout(def.ignition);
   if (ignition && def.ignition.kind !== 'key') dials.push(new IgnitionSwitches(def.ignition.kind, ignition, def.ignition.kind === 'toggles' ? def.ignition.sides : undefined));
+  if (def.primer) dials.push(new PrimerKnob(primerRect(def.primer.at)));
   return [...dials, ...rest];
 }
 

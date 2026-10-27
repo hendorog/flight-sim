@@ -355,6 +355,36 @@ export interface EngineDef {
   fadec?: FadecDef;
   /** kind 'freeTurbine': the gas generator and power turbine. */
   turbine?: TurbineDef;
+  /** Hand primer on the panel (spark engines with a float carburettor: C152, PA-38). Absent: none. */
+  primer?: PrimerDef;
+}
+
+/**
+ * Hand primer (Cessna 152 POH 7-16: "a small pump which draws fuel from the fuel strainer when the plunger is pulled
+ * out, and injects it into the cylinder intake ports when the plunger is pushed back in"; the knob locks in). Each
+ * stroke (ControlInputs.primerStrokes) takes `stroke` kg from the feed's lines and puts it on the intake port walls,
+ * which the cranking air evaporates into the cylinders (fuelSystem.ts). With the member the engine's feed takes `cold`
+ * as its cold film (the feed's own, if it has one, wins): a carburettor's spray wets a cold induction, and a cold
+ * engine needs the prime. Too much floods it: the over-rich charge wets the plugs (PistonEngine). Unlocked, the
+ * primer lets manifold vacuum draw fuel through it into the primed cylinders while the engine runs: they run rich
+ * and the engine rough.
+ */
+export interface PrimerDef {
+  /** Fuel one full stroke injects, kg. */
+  stroke: number;
+  /** Cylinders the primer lines reach, of EngineDef.cylinders. */
+  primedCylinders: number;
+  /** Fuel an unlocked primer passes under 50 kPa of manifold vacuum (about idle), kg/s; as the root of the vacuum. */
+  unlockedFlow: number;
+  /** The carburettor's spray on a cold induction, against cylinder-head temperature (ColdFilmDef). */
+  cold: ColdFilmDef;
+  /** Manifold vacuum, Pa, by which the carburettor's spray is atomised and wets the walls no more than warm ones. */
+  atomisingVacuum: number;
+  /**
+   * The primer's charge on the port walls: its evaporation time at cranking speed (200 rpm; faster in proportion to
+   * the shaft speed) against cylinder-head temperature (C, ascending), s; and what the ports hold, kg.
+   */
+  ports: { temperatureC: readonly number[]; time: readonly number[]; capacity: number };
 }
 
 export interface EngineInstallation {

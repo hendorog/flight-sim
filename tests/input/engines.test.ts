@@ -595,12 +595,12 @@ describe('the Cessna 172S: none of the new keys does anything', () => {
     // Shift+, is still the left toe brake here, actionForKey's profile fallback; input.test.ts checks those.)
     const fresh = KEY_MAP.filter((m) => !profileHasAction(C172S_INPUT, m.action) && actionForKey(m.code, m.shift === true, C172S_INPUT) === m.action);
     // The sixteen key entries of the levers and switches this type has not (' is the propeller increase, Shift+' the tail-wheel lock), the five turbine keys (reverse, grip
-    // CUTOFF, STARTER INTERRUPT, pusher interrupt), the STAB ASSIST toggle (Shift+A, the Bo 105's sim aid), and nothing
-    // it had before.
+    // CUTOFF, STARTER INTERRUPT, pusher interrupt), the STAB ASSIST toggle (Shift+A, the Bo 105's sim aid), the hand
+    // primer's E / Shift+E (C152, PA-38), and nothing it had before.
     expect(fresh.map((m) => `${m.shift === true ? 'Shift+' : ''}${m.code}`)).toEqual([
       'Shift+F2', 'Shift+PageDown', 'Shift+F1', 'Shift+KeyA',
       'Insert', 'Delete', 'F7', 'Shift+F7', 'F10', 'Digit6', 'Digit7', 'Semicolon', 'Quote', 'Shift+KeyF', 'Slash', 'Backslash', 'Shift+Backslash', 'Digit8', 'Digit9', 'Digit0',
-      'Shift+KeyN', 'Shift+Quote', 'Shift+KeyD',
+      'Shift+KeyN', 'Shift+Quote', 'Shift+KeyD', 'KeyE', 'Shift+KeyE',
     ]);
     for (const airborne of [false, true]) {
       const r = makeInputRig(C172S_INPUT);

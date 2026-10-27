@@ -17,6 +17,8 @@ export const C152_INPUT: InputProfile = {
   // One ON / OFF shut-off valve on the cabin floor (s.9 of the type's data sheet).
   fuelSelectorCycle: ['on', 'off'],
   ignition: 'key',
+  // The hand primer, lower left of the panel (POH Fig 7-2 item 42): E strokes it, Shift+E locks it.
+  handPrimer: true,
   // Carburetted, fixed pitch, fixed gear: throttle, mixture and carburettor heat; no fuel pump, no trims but the elevator's.
   has: {
     mixture: true,

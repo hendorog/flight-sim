@@ -55,6 +55,8 @@ const YOKES = { y: 545, xs: [442, 1398] as const, r: 58 };
 export const C152_KNOBS = { y: 670, carbHeat: 800, throttle: 920, mixture: 1040 } as const;
 /** The parking brake handle at the left end of the subpanel, left of the fuel gauges (#43), px. */
 export const C152_PARKING_BRAKE = [56, 628] as const;
+/** The hand primer's knob (POH Fig 7-2 item 42): on the lower left, right of the engine gauges, over the switch row. */
+const PRIMER = [427, 625] as const;
 /** Flap scale and lever slot: slot at local x 100, 0 deg at local y 80, 30 deg 200 px lower (FlapIndicator). */
 const FLAPS: Rect = { x: 1100, y: 470, w: 130, h: 312 };
 /** The lower strip of the subpanel: the master, the key under the fuel gauges, the rheostats, the rockers (#41, #39, #37, #33). */
@@ -219,7 +221,8 @@ const PAIR = Math.hypot(ENGINE_ROW.fuelR - ENGINE_ROW.fuelL + ENGINE_ROW.w, ENGI
 export const C152_PANEL: PanelDef = {
   id: 'c152',
   fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'cdi1'], ['turn', 'heading', 'vsi']],
-    controls: [{ x: SWITCHES.x, y: 680, w: SWITCHES.w, h: 120 }] },
+    // The switch row and key, and the primer's knob with its legend.
+    controls: [{ x: SWITCHES.x, y: 680, w: SWITCHES.w, h: 120 }, { x: PRIMER[0] - 40, y: PRIMER[1] - 22, w: 80, h: 74 }] },
   size: { w: 2080, h: 800 },
   // In the order the panel draws them.
   gauges: [
@@ -275,6 +278,7 @@ export const C152_PANEL: PanelDef = {
   },
   // Panel px, where the click hotspot and the 3D key are.
   ignition: { kind: 'key', at: [SWITCHES.x + ROW.magneto.x, SWITCHES.y + ROW.magneto.y] },
+  primer: { at: [PRIMER[0], PRIMER[1]] },
   background: {
     // The subpanel along the foot of the panel, under the control wheel shafts (#33-#43, #24-#29).
     plates: [{ bounds: SUBPANEL, color: '#3a3c40', radius: 4 }],
@@ -286,6 +290,7 @@ export const C152_PANEL: PanelDef = {
       { at: [C152_KNOBS.throttle, C152_KNOBS.y], text: 'THROTTLE', sub: 'PUSH OPEN' },
       { at: [C152_KNOBS.mixture, C152_KNOBS.y], text: 'MIXTURE', sub: 'PUSH RICH' },
       { at: [C152_PARKING_BRAKE[0], C152_PARKING_BRAKE[1]], text: 'PARK BRAKE', sub: 'PULL' },
+      { at: [PRIMER[0], PRIMER[1]], text: 'PRIMER', sub: 'PUSH TURN LOCK' },
     ],
     // Placards: centre x and top y; lines; lettering size where not the default. The pilot's composite placard
     // of the right panel and the spin recovery placard above the altimeter, in the POH's words (p.2-8, 2-9); the

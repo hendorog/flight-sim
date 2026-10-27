@@ -9,4 +9,4 @@ import C152_DEFINITION from '../../src/aircraft/c152/index';
 import { describeTypeFlightGolden } from './typeFlight';
 
 // Cruise 95 KTAS (2300-2400 rpm school cruise), approach 65 with flap 20, best glide 60 (POH Fig 3-1); no fuel pump.
-describeTypeFlightGolden(C152_DEFINITION, { cruiseKt: 95, approachKt: 65, glideKt: 60, fuelPump: false });
+describeTypeFlightGolden(C152_DEFINITION, { cruiseKt: 95, approachKt: 65, glideKt: 60, fuelPump: false, primerStrokes: 2 });

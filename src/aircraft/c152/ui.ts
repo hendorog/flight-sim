@@ -27,13 +27,14 @@ const MAGNETO_NAMES: Record<MagnetoPosition, string> = { 0: 'OFF', 1: 'R', 2: 'L
 const FUEL_NAMES: Record<FuelSelector, string> = { off: 'OFF', left: 'LEFT', right: 'RIGHT', both: 'BOTH', on: 'ON', crossfeed: 'CROSSFEED' };
 
 /**
- * Engine start (POH section 4, s.10), each step a check or a target state. No priming: the hand primer is not
- * modelled (the engine starts without it).
+ * Engine start (POH section 4, s.10), each step a check or a target state. The prime in the POH's place (4-7:
+ * after the carburettor heat, before the throttle), with its stroke counts (4-11, 4-19).
  */
 const STARTUP_STEPS: readonly [string, string][] = [
   ['Fuel shut-off valve', 'check ON (Shift+J if it is not)'],
   ['Mixture', 'hold Shift+M until FULL RICH'],
   ['Carburettor heat', 'COLD (/ toggles it)'],
+  ['Primer', 'as required: E once per stroke (cold engine 2-3, warm weather 1, below freezing more; hot engine none), then Shift+E to lock it in'],
   ['Throttle', 'open about half an inch: F3 (or Page Up) briefly (~10%)'],
   ['Propeller area', 'CLEAR: look both sides'],
   ['Master', 'W (battery and alternator on)'],
@@ -43,6 +44,12 @@ const STARTUP_STEPS: readonly [string, string][] = [
 ];
 
 const onOff = (b: boolean): string => (b ? 'ON' : 'OFF');
+/** The hand primer: locked in, or unlocked with the strokes made so far. */
+const primerLabel = (c: { primerLocked?: boolean; primerStrokes?: number }): string => {
+  if (c.primerLocked ?? true) return 'IN AND LOCKED';
+  const n = c.primerStrokes ?? 0;
+  return `UNLOCKED (${n} stroke${n === 1 ? '' : 's'})`;
+};
 const percent = (v: number): string => `${Math.round(v * 100)}%`;
 const carbHeat = (v: number): string => (v > CARB_HEAT_HOT ? 'HOT' : 'COLD');
 
@@ -73,6 +80,8 @@ export const C152_UI: UiProfile = {
     { id: 'magnetos', label: 'Magnetos', read: (c) => MAGNETO_NAMES[c.magnetos] },
     { id: 'fuelSelector', label: 'Fuel shut-off valve', read: (c) => FUEL_NAMES[c.fuelSelector] },
     { id: 'carbHeat', label: 'Carburettor heat', read: (c) => carbHeat(c.carbHeat) },
+    // The hand primer: each stroke (E) is announced with the count so far, and the lock (Shift+E).
+    { id: 'primer', label: 'Primer', read: primerLabel },
     { id: 'pitotHeat', label: 'Pitot heat', read: (c) => onOff(c.pitotHeat) },
     { id: 'nav', label: 'Nav lights', read: (c) => onOff(c.lights.nav) },
     { id: 'beacon', label: 'Beacon', read: (c) => onOff(c.lights.beacon) },
@@ -105,5 +114,6 @@ export const C152_UI: UiProfile = {
   hints: [
     ['Carburettor heat', '/ : HOT before closing the throttle (descent, circuit, approach); COLD for take-off and go-around'],
     ['Fuel shut-off valve', 'Shift+J: ON / OFF (no tank selector; both tanks feed together)'],
+    ['Primer', 'E: one stroke (cold engine 2-3); Shift+E: lock it in. Flooded: mixture idle cut-off, throttle full, crank, then start again unprimed'],
   ],
 };

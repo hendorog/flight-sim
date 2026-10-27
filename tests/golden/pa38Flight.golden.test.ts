@@ -11,4 +11,4 @@ import { describeTypeFlightGolden } from './typeFlight';
 // The handbook's indicated speeds as true airspeed at the record's height: cruise 98 KTAS (95 KIAS, 2360 rpm),
 // approach 73 (70 KIAS with flaps 21, the lever's first notch, POH 4.5), best glide 74 (70 KIAS, POH 3.3); the
 // electric fuel pump on for the start (POH 4.5).
-describeTypeFlightGolden(PA38_DEFINITION, { cruiseKt: 98, approachKt: 73, approachFlaps: 21 / 34, glideKt: 74, fuelPump: true });
+describeTypeFlightGolden(PA38_DEFINITION, { cruiseKt: 98, approachKt: 73, approachFlaps: 21 / 34, glideKt: 74, fuelPump: true, primerStrokes: 2 });

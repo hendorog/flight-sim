@@ -30,7 +30,7 @@ const CORE_IDS: Record<CoreSignalId, true> = {
   engineRunning: true, pitchRateDps: true, rollRateDps: true,
   throttle: true, mixture: true, flapLever: true, flapsDeg: true, trim: true, elevator: true, aileron: true, rudder: true, brakes: true,
   parkingBrake: true, mags: true, starter: true, master: true, alternator: true, avionics: true,
-  fuelSel: true, fuelPump: true, pitotHeat: true, lightNav: true, lightBeacon: true,
+  fuelSel: true, fuelPump: true, primerLocked: true, primerStrokes: true, pitotHeat: true, lightNav: true, lightBeacon: true,
   lightStrobe: true, lightLanding: true, lightTaxi: true, qnhErrHpa: true, dgErrDeg: true,
   rwyAlongM: true, rwyAcrossM: true, distAimFt: true, gpDevFt: true,
   onRunway: true, onPaved: true, pastHoldLine: true, circuitLeg: true, downwindOffsetNm: true, headwindKt: true, crosswindKt: true,

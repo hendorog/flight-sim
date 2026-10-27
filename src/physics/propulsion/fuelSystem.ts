@@ -29,11 +29,19 @@
 // gets too little vapour to fire until the film has built up. The prime is fuel sprayed onto the port walls with
 // the engine at rest (the servo's priming flow, PistonEngine), which the cranking airflow then evaporates;
 // too much of it floods the engine until the film has been drawn down.
+//
+// A hand primer (EngineDef.primer: the C152 and the PA-38) is the carburettor engine's way of doing the same. Its
+// definition brings the cold table with it: a float carburettor's spray, poorly atomised at cranking speed, wets the
+// cold induction pipes and evaporates from them only slowly. Each stroke draws a charge from the lines (the strainer,
+// POH 7-16) and squirts it into the intake ports beside the valves, a puddle of its own that the cranking air
+// evaporates in seconds. Once the engine runs, the manifold vacuum atomises the carburettor's fuel and the pipes wet
+// little more than warm ones. Left unlocked, the primer lets that vacuum draw fuel through it into the primed
+// cylinders, past the carburettor (FuelStepResult.primerFlow).
 
 import type { FuelSelector } from '../../core/types';
 import { interp1, smoothstep } from '../../core/math';
 import { C172_POWERPLANT } from './c172Powerplant';
-import type { ColdFilmDef, FuelFeedDef, FuelSystemDef } from './defs';
+import type { ColdFilmDef, FuelFeedDef, FuelSystemDef, PrimerDef } from './defs';
 
 /** The servo and injector lines of a feed's definition. */
 function injectorDelivery(feed: FuelFeedDef): Extract<FuelFeedDef['delivery'], { kind: 'injector' }> {
@@ -84,6 +92,17 @@ const FILM_CRANK_RPM = 200;
 const FILM_STILL_RPM = 60;
 /** Selector position that draws nothing. */
 const NO_TANKS: readonly number[] = [];
+/** Manifold vacuum at which PrimerDef.unlockedFlow is quoted, Pa. */
+const PRIMER_LEAK_VACUUM = 50e3;
+
+/** What the hand primer of a feed's engine is doing this step (FuelFeed.step). */
+export interface PrimerInput {
+  /** ControlInputs.primerStrokes. */
+  strokes: number;
+  locked: boolean;
+  /** Ambient less manifold pressure, Pa. */
+  vacuum: number;
+}
 
 export interface FuelStepResult {
   /** Fuel reaching the cylinders (after the injector lines and the port wall film), kg/s. */
@@ -97,6 +116,8 @@ export interface FuelStepResult {
   /** Fuel drawn from the left-side and right-side tanks during this step, kg (a centre tank counts half to each). */
   usedLeft: number;
   usedRight: number;
+  /** Fuel an unlocked hand primer passes into the primed cylinders, kg/s (NOT in `delivered`; 0 without a primer). */
+  primerFlow: number;
 }
 
 /** One engine's feed: everything between the tanks and the cylinders. */
@@ -109,7 +130,12 @@ class FuelFeed {
   prime = 1;
   /** Fuel film on the intake port walls, kg; NaN until the first step (then set to its equilibrium). */
   film = NaN;
-  readonly result: FuelStepResult = { delivered: 0, metered: 0, pressurePsi: 0, auxPressurePsi: 0, usedLeft: 0, usedRight: 0 };
+  readonly result: FuelStepResult = { delivered: 0, metered: 0, pressurePsi: 0, auxPressurePsi: 0, usedLeft: 0, usedRight: 0, primerFlow: 0 };
+  /**
+   * The hand primer's stroke count as last seen. A reset makes it 0, the count a new flight's controls start at
+   * (ControlInputs.primerStrokes in the type's controlDefaults); a resume sets the saved count (Powerplant.restorePrimers).
+   */
+  primerSeen = 0;
 
   private readonly positions: FuelFeedDef['positions'];
   private readonly gravityHeadPsi: number;
@@ -130,13 +156,18 @@ class FuelFeed {
   private readonly filmFraction: number;
   private readonly filmTime: number;
   private readonly coldFilm: ColdFilmDef | undefined;
+  private readonly primer: PrimerDef | undefined;
+  /** The primer's charge on the intake port walls, kg. */
+  ports = 0;
+  /** Manifold vacuum of the step, Pa (a feed with a primer; it atomises the carburettor's spray). */
+  private vacuum = 0;
   /** The selector position the list below belongs to. */
   private selector: FuelSelector | null = null;
   private drawn: readonly number[] = NO_TANKS;
   /** A quasi-steady step found the feed shut off: its steady state is dry (see settled()). */
   private dry = false;
 
-  constructor(feed: FuelFeedDef, tankCount: number) {
+  constructor(feed: FuelFeedDef, tankCount: number, primer?: PrimerDef) {
     for (const tanks of Object.values(feed.positions)) {
       for (const k of tanks) if (!(k >= 0 && k < tankCount)) throw new Error(`FuelSystem: a selector position names tank ${k} of ${tankCount}`);
     }
@@ -156,7 +187,8 @@ class FuelFeed {
     this.minPsi = delivery.kind === 'carburettorBowl' ? delivery.minHeadPsi : delivery.kind === 'commonRail' ? delivery.minPsi : 0;
     this.filmFraction = feed.film.fraction;
     this.filmTime = feed.film.time;
-    this.coldFilm = feed.film.cold;
+    this.coldFilm = feed.film.cold ?? primer?.cold;
+    this.primer = primer;
     this.line = this.lineCapacity;
     this.injector = this.injectorCapacity;
   }
@@ -164,12 +196,12 @@ class FuelFeed {
   /**
    * Advance one step: refill the lines from the selected tank(s) (`quantities`, kg, drawn down; what is taken
    * from each is ADDED to `used`), pressurise, and deliver up to `demand` kg/s to the engine. `steady`: see
-   * FuelSystem.steady. `headC`: cylinder-head temperature, C (read by a cold film only). The returned object is
-   * reused.
+   * FuelSystem.steady. `headC`: cylinder-head temperature, C (read by a cold film only). `primer`: the hand
+   * primer's controls (a feed whose engine has one). The returned object is reused.
    */
   step(
     dt: number, demand: number, selector: FuelSelector, rpm: number, auxPump: boolean, busVoltage: number,
-    quantities: Float64Array, used: Float64Array, steady: boolean, headC = Infinity,
+    quantities: Float64Array, used: Float64Array, steady: boolean, headC = Infinity, primer?: PrimerInput,
   ): FuelStepResult {
     const r = this.result;
 
@@ -225,12 +257,16 @@ class FuelFeed {
     // The head of fuel standing above the engine adds to whatever the pumps make.
     if (this.gravityHeadPsi !== 0) r.pressurePsi = (this.gravityHeadPsi + pumpPsi) * wet;
 
+    if (this.primer) this.workPrimer(dt, primer, steady);
+
     if (this.delivery !== 'injector') {
       // The steady state of a feed that is shut off is a dry line and an engine that gets nothing. (An injected
       // feed keeps its lines through a quasi-steady evaluation, as it always has.)
       this.dry = steady && drawn.length === 0;
       if (this.dry) this.line = this.injector = 0;
-      return this.deliver(dt, demand, steady, rpm, headC);
+      this.deliver(dt, demand, steady, rpm, headC);
+      if (this.primer && !steady && dt > 0) this.evaporatePorts(dt, rpm, headC);
+      return r;
     }
 
     // Servo: meters the demanded flow into the injector lines once the pressure opens the flow divider.
@@ -257,6 +293,48 @@ class FuelFeed {
       sprayed = demand > 0 ? out / dt : 0;
     }
     return this.throughFilm(dt, sprayed, steady, rpm, headC);
+  }
+
+  /**
+   * The hand primer, out of the lines (the strainer): the charge of the strokes made since the last step (or what the
+   * lines still hold) onto the ports, where more than they hold runs out of the induction drains; and while it is
+   * unlocked, the leak that the manifold vacuum draws through it (as the root of the vacuum), for the primed
+   * cylinders. A quasi-steady step takes the stroke count without either.
+   */
+  private workPrimer(dt: number, input: PrimerInput | undefined, steady: boolean): void {
+    const def = this.primer!;
+    const r = this.result;
+    r.primerFlow = 0;
+    this.vacuum = 0;
+    if (!input) return;
+    const seen = this.primerSeen;
+    this.primerSeen = input.strokes;
+    this.vacuum = input.vacuum;
+    if (steady || dt <= 0) return;
+    // A lower count (controls put back): taken as it is.
+    if (input.strokes > seen) {
+      const charge = Math.min((input.strokes - seen) * def.stroke, Math.max(0, this.line - this.lineUnusable));
+      this.line -= charge;
+      this.ports = Math.min(this.ports + charge, def.ports.capacity);
+    }
+    if (!input.locked && input.vacuum > 0) {
+      const leak = Math.min(def.unlockedFlow * Math.sqrt(input.vacuum / PRIMER_LEAK_VACUUM) * dt, Math.max(0, this.line - this.lineUnusable));
+      this.line -= leak;
+      r.primerFlow = leak / dt;
+    }
+  }
+
+  /**
+   * The primer's puddle in the ports evaporates into the cylinders in proportion to the air drawn past it (none at
+   * rest), as the cold film does but from beside the valves: in seconds of cranking, and faster off hotter heads.
+   */
+  private evaporatePorts(dt: number, rpm: number, headC: number): void {
+    if (!(this.ports > 0)) return;
+    const ports = this.primer!.ports;
+    const rate = Math.max(rpm, 0) / (FILM_CRANK_RPM * interp1(ports.temperatureC, ports.time, headC));
+    const evaporated = this.ports * (1 - Math.exp(-rate * dt));
+    this.ports -= evaporated;
+    this.result.delivered += evaporated / dt;
   }
 
   /**
@@ -304,7 +382,11 @@ class FuelFeed {
       // (none at rest, where the spray all stays on the walls), never faster than off a warm wall.
       const cold = this.coldFilm;
       const turning = smoothstep(0, FILM_STILL_RPM, rpm);
-      const fraction = 1 - (1 - interp1(cold.temperatureC, cold.fraction, headC)) * turning;
+      let wets = interp1(cold.temperatureC, cold.fraction, headC);
+      // A carburettor's spray: the manifold vacuum of a running engine atomises it (from half PrimerDef.atomisingVacuum),
+      // and then it wets the walls no more than warm ones.
+      if (this.primer) wets += (this.filmFraction - wets) * smoothstep(0.5 * this.primer.atomisingVacuum, this.primer.atomisingVacuum, this.vacuum);
+      const fraction = 1 - (1 - wets) * turning;
       const rate = Math.min(1 / this.filmTime, Math.max(rpm, 0) / (FILM_CRANK_RPM * interp1(cold.temperatureC, cold.time, headC)));
       const evaporated = this.film * (1 - Math.exp(-rate * dt));
       this.film = Math.min(this.film + fraction * sprayed * dt - evaporated, cold.capacity);
@@ -327,6 +409,8 @@ class FuelFeed {
     this.prime = 1;
     this.film = NaN;
     this.dry = false;
+    this.primerSeen = 0;
+    this.ports = 0;
   }
 
   /** After a quasi-steady evaluation: lines full and primed, as reset() leaves them, unless it found the feed shut off. */
@@ -356,7 +440,8 @@ export class FuelSystem {
   private readonly leftShare: readonly number[];
   private readonly rightShare: readonly number[];
 
-  constructor(def: FuelSystemDef = C172_POWERPLANT.fuel) {
+  /** `primers`: per feed, the hand primer of its engine (EngineDef.primer). */
+  constructor(def: FuelSystemDef = C172_POWERPLANT.fuel, primers: readonly (PrimerDef | undefined)[] = []) {
     if (def.tanks.length < 1 || def.feeds.length < 1) throw new Error('FuelSystem: at least one tank and one feed');
     this.tankCount = def.tanks.length;
     this.feedCount = def.feeds.length;
@@ -365,7 +450,7 @@ export class FuelSystem {
     this.rightShare = def.tanks.map((tank) => (tank.side === 'right' ? 1 : tank.side === 'left' ? 0 : 0.5));
     this.quantities = Float64Array.from(this.capacities);
     this.used = new Float64Array(this.tankCount);
-    this.feeds = def.feeds.map((feed) => new FuelFeed(feed, this.tankCount));
+    this.feeds = def.feeds.map((feed, i) => new FuelFeed(feed, this.tankCount, primers[i]));
   }
 
   /** Usable fuel in the left-side tanks, kg (the left tank of a two-tank aircraft). Writing sets the first of them. */
@@ -433,6 +518,29 @@ export class FuelSystem {
     this.feeds[0].film = kg;
   }
 
+  /** The port wall film of engine i's feed, kg (NaN: it starts from its equilibrium on the next step). For a resume. */
+  feedFilm(i: number): number {
+    return this.feeds[i].film;
+  }
+
+  setFeedFilm(i: number, kg: number): void {
+    this.feeds[i].film = kg;
+  }
+
+  /** The hand primer's puddle in the ports of engine i, kg (0 without a primer). */
+  primerPorts(i: number): number {
+    return this.feeds[i].ports;
+  }
+
+  setPrimerPorts(i: number, kg: number): void {
+    this.feeds[i].ports = kg;
+  }
+
+  /** Take `strokes` as the hand primer's count of engine i already injected (a resume: the saved count). */
+  setPrimerStrokesSeen(i: number, strokes: number): void {
+    this.feeds[i].primerSeen = strokes;
+  }
+
   /** Start a step of several feeds: nothing drawn from any tank yet. */
   beginStep(): void {
     this.used.fill(0);
@@ -443,8 +551,11 @@ export class FuelSystem {
    * other): `demand` kg/s, that engine's selector position, crank rpm and electric pump switch, and its
    * cylinder-head temperature, C (a cold port film reads it; absent: warm).
    */
-  stepFeed(i: number, dt: number, demand: number, selector: FuelSelector, rpm: number, auxPump: boolean, busVoltage: number, headC = Infinity): FuelStepResult {
-    return this.feeds[i].step(dt, demand, selector, rpm, auxPump, busVoltage, this.quantities, this.used, this.steady, headC);
+  stepFeed(
+    i: number, dt: number, demand: number, selector: FuelSelector, rpm: number, auxPump: boolean, busVoltage: number, headC = Infinity,
+    primer?: PrimerInput,
+  ): FuelStepResult {
+    return this.feeds[i].step(dt, demand, selector, rpm, auxPump, busVoltage, this.quantities, this.used, this.steady, headC, primer);
   }
 
   /**

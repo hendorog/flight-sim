@@ -63,6 +63,14 @@ export interface ControlInputs {
   /** Momentary ignition-key PRIME, separate from the starter and manual pump switch. */
   fuelPrime?: boolean;
   /**
+   * Hand primer (EngineDef.primer; single-engine types): strokes made since the flight began. The powerplant injects one
+   * charge for each increase it sees (a decrease is taken as the new count without injecting; a resume restores the
+   * count with the powerplant, Powerplant.restorePrimers). Absent: the type has no hand primer. Persisted.
+   */
+  primerStrokes?: number;
+  /** Hand primer knob pushed in and turned to lock (POH: "IN and LOCKED"). Unlocked, it leaks fuel into the engine. Persisted. */
+  primerLocked?: boolean;
+  /**
    * Power-lever travel AFT of the flight-idle gate, [0, 1] (types with PitchControlDef.beta; others ignore it).
    * 0 = on the gate (blades on the flight low-pitch stop / lowPitchSchedule); up to BetaDef.pitchOnlyTravel the
    * lever moves the blades only, fineStop -> groundFine, with Ng at idle (ground fine); beyond it the reversing
@@ -327,7 +335,10 @@ export interface EngineState {
   /** FADEC engines only. */
   ecuPowered?: boolean;
   glow?: boolean;
-  /** Rough running beyond what the mixture and magnetos give (melt water from carburettor ice), 0 .. 1. Absent: 0. */
+  /**
+   * Rough running beyond what the mixture and magnetos give (melt water from carburettor ice; the primed cylinders
+   * running rich behind an unlocked hand primer), 0 .. 1. Absent: 0.
+   */
   roughness?: number;
   /** Gas turbines only: gas-generator speed, % of its reference speed, and inter-turbine temperature, degrees C (egt reads the same). */
   ng?: number;

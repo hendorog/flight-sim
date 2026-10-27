@@ -16,7 +16,8 @@ const axis = { baseRate: 0.05, maxRate: 0.35, accelTime: 1.2, accelExponent: 2, 
 
 export const MD500_INPUT: InputProfile = {
   ...C152_INPUT,
-  rotorcraft: true, rotorGovernor: false, springTrim: true, collectiveRate: 0.12, flapDetents: [0],
+  // No hand primer (the C152's handPrimer cleared).
+  rotorcraft: true, rotorGovernor: false, springTrim: true, handPrimer: undefined, collectiveRate: 0.12, flapDetents: [0],
   twistGrip: { ...MD500_TWIST_GRIP }, n2Beep: true,
   ignition: 'toggles',
   // One fuel shut-off valve (FUEL VALVE pull knob, RFM Fig 4-2).

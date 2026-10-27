@@ -8,7 +8,7 @@ import { C172S_PANEL } from '../aircraft/c172s/panel';
 import { engineControl, setEngineControl, type ControlInputs, type MagnetoPosition } from '../core/types';
 import type { InputAction } from '../input/bindings';
 import { gaugeScale, type PanelDef } from './panelDef';
-import { FLAP_SWITCH, flapLeverValues, flapPositionOf, GEAR_LEVER, GUARDED_KNOB, ignitionLayout, leverId } from './panelParts';
+import { FLAP_SWITCH, flapLeverValues, flapPositionOf, GEAR_LEVER, GUARDED_KNOB, ignitionLayout, leverId, PRIMER_HALF } from './panelParts';
 
 /** The hotspots of the C172S panel. */
 export type HotspotId =
@@ -370,6 +370,29 @@ export function buildHotspots(def: PanelDef): PanelHotspot[] {
     });
   } else {
     spots.push(...ignitionHotspots(def));
+  }
+  if (def.primer) {
+    // The hand primer: a click on the right half is one stroke (out and in, which leaves it unlocked), on the left half
+    // a turn of the lock (the same as E and Shift+E).
+    const [px, py] = def.primer.at;
+    spots.push({
+      id: 'primer',
+      kind: 'knob',
+      x: px,
+      y: py,
+      hw: PRIMER_HALF,
+      hh: PRIMER_HALF,
+      name: 'Primer',
+      hint: 'click right half for one stroke, left half to turn the lock',
+      noRepeat: true,
+      turn(dir, c) {
+        if (dir > 0) {
+          c.primerStrokes = (c.primerStrokes ?? 0) + 1;
+          c.primerLocked = false;
+        } else c.primerLocked = !(c.primerLocked ?? true);
+      },
+      value: (c) => ((c.primerLocked ?? true) ? 'LOCKED' : `UNLOCKED, ${c.primerStrokes ?? 0} strokes`),
+    });
   }
   // Rocker centres.
   const rockerY = y + row.rockerTop + row.rockerH / 2;

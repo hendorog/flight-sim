@@ -23,9 +23,10 @@ export const C152_DEFINITION: AircraftDefinition = {
   icaoType: 'C152',
   engineCount: 1,
   // One ON / OFF fuel shut-off valve instead of a LEFT / RIGHT / BOTH selector.
-  controlDefaults: { fuelSelector: 'on' },
+  // The hand primer (EngineDef.primer) pushed in and locked, no strokes yet.
+  controlDefaults: { fuelSelector: 'on', primerStrokes: 0, primerLocked: true },
   notModelled: [
-    'The hand primer and the missing accelerator pump: a cold engine starts without priming; no over-priming, no stumble on a fast throttle opening.',
+    'The missing accelerator pump: no stumble on a fast throttle opening. The hand primer is modelled, but its charge per stroke, the cold induction film and flooding (one wet-plug state for all four cylinders) are estimates set to the POH stroke counts.',
     'The optional wheel fairings and long-range tanks: the trainer as most schools fly it (the POH cruise figures include fairings, about 2 kt).',
     'Fuel cross-feed between the tanks through the vent line on a slope: both tanks feed equally through the shut-off valve.',
     "The ailerons' rigged droop of 1 degree, and the ground-adjustable rudder tab as anything but a fixed rigging offset.",

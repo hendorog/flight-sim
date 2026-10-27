@@ -26,11 +26,18 @@ The T-tail’s rattle and shake in the wing wake are replaced by generic buffet.
 Evidence: [notModelled](index.ts).
 Close with: measured or observed Tomahawk buffet response and a corresponding model.
 
-## Priming and carb-heat damage — **missing feature**
+## Rapid throttle response and carb-heat damage — **missing feature**
 
-Cold starts need no primer; over-priming and rapid-throttle stumble are absent. Full-power carb heat reduces power without detonation damage.
+Rapid-throttle stumble is absent. Full-power carb heat reduces power without detonation damage.
 Evidence: [notModelled](index.ts), citing POH 4.29 for the carb-heat limitation.
-Close with: primer/fuel-film behavior and sourced detonation/damage criteria.
+Close with: a carburettor transient model and sourced detonation/damage criteria.
+
+## Hand primer — **estimate**
+
+The primer is the C152's (the same O-235): modelled, with estimated tables set to the stroke counts of POH 4.13. Each key press
+is a whole stroke: the handbook's last stroke left out and pushed in slowly as the engine fires is not a separate action.
+Evidence: [notModelled](index.ts), [C152 powerplant](../c152/powerplant.ts) (O235_PRIMER).
+Close with: a measured primer delivery and observed start behaviour; a held-out last stroke if wanted.
 
 ## Handling and geometry parameters — **estimate**
 

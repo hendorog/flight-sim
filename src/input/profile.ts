@@ -350,6 +350,11 @@ export interface InputProfile {
   fuelSelectorCycle: readonly FuelSelector[];
   /** Key's clockwise hold primes; starter is a separate button. J holds PRIME on this installation. */
   primeKey?: boolean;
+  /**
+   * A hand primer on the panel (EngineDef.primer): E makes one stroke (ControlInputs.primerStrokes; it leaves the knob
+   * unlocked) and Shift+E turns it to lock or unlock (ControlInputs.primerLocked). Absent: no such keys.
+   */
+  handPrimer?: boolean;
   /** 'engineMaster': the magneto keys act on ENGINE MASTER (Digit1 = off, Digit4 = on); Digit2 / Digit3 do nothing. */
   ignition: 'key' | 'toggles' | 'engineMaster';
   has: { mixture: boolean; propeller: boolean; feather: boolean; carbHeat: boolean; alternateAir: boolean; cowlFlaps: boolean;

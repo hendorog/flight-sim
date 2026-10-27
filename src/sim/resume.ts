@@ -225,6 +225,9 @@ function isEngineSnapshot(v: unknown): v is EngineSnapshot {
   if (g !== undefined && !(isObj(g) && isNum(g.ng) && g.ng >= 0 && g.ng <= 1.2 && isNum(g.itt) && typeof g.lit === 'boolean')) return false;
   const l = v.starterLatch;
   if (l !== undefined && !(isObj(l) && typeof l.latched === 'boolean' && isNum(l.seconds) && l.seconds >= 0 && typeof l.pressed === 'boolean')) return false;
+  // A hand primer: film and puddle (kg) and the plugs' wetness, none negative.
+  const p = v.primer;
+  if (p !== undefined && !(isObj(p) && isNums(p, ['film', 'ports', 'plugWet']) && (p.film as number) >= 0 && (p.ports as number) >= 0 && (p.plugWet as number) >= 0)) return false;
   return true;
 }
 
@@ -352,7 +355,9 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   const c = v.controls;
   if (!isObj(c) || !isObj(c.lights)) return null;
   if (c.collective !== undefined && (!isNum(c.collective) || c.collective < 0 || c.collective > 1)) return null;
-  for (const key of ['rotorGovernor', 'rotorClutch', 'rotorClutchGuardOpen', 'rotorDoorsOff', 'fuelPrime', 'tailWheelLock']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+  for (const key of ['rotorGovernor', 'rotorClutch', 'rotorClutchGuardOpen', 'rotorDoorsOff', 'fuelPrime', 'tailWheelLock', 'primerLocked']) if (c[key] !== undefined && typeof c[key] !== 'boolean') return null;
+  // The hand primer's stroke count (a resume takes it as it is, injecting nothing).
+  if (c.primerStrokes !== undefined && (!isNum(c.primerStrokes) || (c.primerStrokes as number) < 0)) return null;
   if (c.rotorClutchCommand !== undefined && !['engage', 'hold', 'release'].includes(c.rotorClutchCommand as string)) return null;
   for (const key of ['cyclicTrimPitch', 'cyclicTrimRoll', 'n2Beep', 'n2BeepSplit']) {
     if (c[key] !== undefined && (!isNum(c[key]) || Math.abs(c[key] as number) > 1)) return null;

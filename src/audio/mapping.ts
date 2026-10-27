@@ -357,8 +357,9 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
       // Intake roar: the throttle plate's opening. A diesel has none: its intake noise follows the air it is given.
       out[ix.throttle] = diesel ? Math.min(load, 1) : engineControl(c, i, 'throttle');
       out[ix.starter] = starter ? 1 : 0;
-      // A diesel has neither a mixture to lean nor magnetos. Melt water from carburettor ice (EngineState.roughness,
-      // absent on an engine without a carburettor) runs rough on top, at full strength like one magneto off.
+      // A diesel has neither a mixture to lean nor magnetos. Melt water from carburettor ice, or an unlocked hand
+      // primer (EngineState.roughness, absent on an engine without a carburettor) runs rough on top, at full strength
+      // like one magneto off.
       const rough = diesel ? 0 : roughness(engineControl(c, i, 'mixture'), engineControl(c, i, 'magnetos'));
       const melt = e.roughness;
       out[ix.roughness] = melt ? Math.min(1, rough + melt * MELT_WATER_ROUGHNESS) : rough;

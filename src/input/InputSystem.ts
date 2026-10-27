@@ -1660,6 +1660,14 @@ export class InputSystem implements Subsystem {
         // PRIME passes through BOTH; the separate starter does not move the ignition key.
         c.magnetos = 3;
         break;
+      case 'primerStroke':
+        // Unlock, pull out, push in: one charge. The knob is left unlocked until it is turned (POH: "IN and LOCKED").
+        c.primerStrokes = (c.primerStrokes ?? 0) + 1;
+        c.primerLocked = false;
+        break;
+      case 'primerLock':
+        c.primerLocked = !(c.primerLocked ?? true);
+        break;
       case 'fuelPump': {
         if (this.profile.primeKey) { c.magnetos = 3; break; }
         const target = this.target('fuelPump', engine);

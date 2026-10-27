@@ -43,6 +43,11 @@ export interface TypeFlightScript {
   /** Whether the type has an electric fuel pump the cold start switches on for the priming (2-5 s). */
   fuelPump: boolean;
   /**
+   * A type with a hand primer (EngineDef.primer): the strokes the cold start gives it, one every 0.25 s from 2 s with
+   * the knob unlocked, locked again at 4 s.
+   */
+  primerStrokes?: number;
+  /**
    * Twins: trimmed level cruise at 3000 ft on the right engine, the left one failed and feathered (the record
    * 'oeiCruise'). A twin's cold start primes both engines with the pumps (2-6 s), then starts the left engine
    * and the right one after it, each on its own starter.
@@ -206,6 +211,10 @@ export function describeTypeFlightGolden(def: AircraftDefinition, s: TypeFlightS
           fly(rig, r, 15, [0, 0.5, 1.5, 2.5, 4, 6, 6.25, 6.5, 6.75, 7, 7.5, 8, 9, 10, 12, 15], (t, c, frame) => {
             c.masterBattery = c.alternator = t >= 1;
             if (s.fuelPump) c.fuelPump = t >= 2 && t < 5;
+            if (s.primerStrokes) {
+              c.primerStrokes = t < 2 ? 0 : Math.min(s.primerStrokes, Math.floor((t - 2) / 0.25) + 1);
+              c.primerLocked = t < 2 || t >= 4;
+            }
             c.mixture = t >= 3 ? 1 : 0;
             c.magnetos = t >= 4 ? 3 : 0;
             c.avionics = t >= 9;

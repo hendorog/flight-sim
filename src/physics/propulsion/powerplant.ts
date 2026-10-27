@@ -19,8 +19,9 @@ import type { EngineSnapshot, Powerplant as PowerplantSeam, PowerplantResetOptio
 import { C172_POWERPLANT } from './c172Powerplant';
 import type { PowerplantDef } from './defs';
 import { ElectricalSystem } from './electrical';
+import { PistonEngine } from './engine';
 import { EngineUnit } from './engineUnit';
-import { FuelSystem } from './fuelSystem';
+import { FuelSystem, type PrimerInput } from './fuelSystem';
 import type { Propeller } from './propeller';
 import { propellerCharacteristicsFor } from './propellerMap';
 
@@ -88,6 +89,8 @@ export class Powerplant implements PowerplantSeam {
   /** settle(): units in beta whose shaft speed is solved (see solveBetaSpeed), and each unit's fuel delivered last step, kg/s. */
   private readonly betaHeld: EngineUnit[] = [];
   private readonly delivered: Float64Array;
+  /** Per engine: the controls of its hand primer (EngineDef.primer), or undefined. */
+  private readonly primers: readonly (PrimerInput | undefined)[];
 
   /** `propellers`: per engine, a propeller to use instead of one made from the definition. */
   constructor(readonly def: PowerplantDef = C172_POWERPLANT, propellers: readonly (Propeller | undefined)[] = []) {
@@ -95,7 +98,8 @@ export class Powerplant implements PowerplantSeam {
     if (n < 1) throw new Error('Powerplant: at least one engine');
     if (def.fuel.feeds.length !== n) throw new Error(`Powerplant: ${n} engines need ${n} fuel feeds, not ${def.fuel.feeds.length}`);
     this.units = def.engines.map((install, i) => new EngineUnit(install, i, propellers[i]));
-    this.fuel = new FuelSystem(def.fuel);
+    this.fuel = new FuelSystem(def.fuel, def.engines.map((install) => install.engine.primer));
+    this.primers = def.engines.map((install) => (install.engine.primer ? { strokes: 0, locked: true, vacuum: 0 } : undefined));
     this.electrical = new ElectricalSystem(def.electrical, n === 1 ? def.engines[0].engine.starter : def.engines.map((install) => install.engine.starter));
     this.engineCount = n;
     this.hubs = this.units.map((unit) => unit.hub);
@@ -194,7 +198,34 @@ export class Powerplant implements PowerplantSeam {
 
   /** Per-engine state for a resume snapshot. */
   capture(): EngineSnapshot[] {
-    return this.units.map((unit) => unit.capture());
+    return this.units.map((unit) => {
+      const snap = unit.capture();
+      const engine = unit.engine;
+      if (this.primers[unit.index] && engine instanceof PistonEngine) {
+        // A film still at its first-step equilibrium (NaN) is saved as none.
+        const film = this.fuel.feedFilm(unit.index);
+        snap.primer = { film: Number.isFinite(film) ? film : 0, ports: this.fuel.primerPorts(unit.index), plugWet: engine.plugWet };
+      }
+      return snap;
+    });
+  }
+
+  /**
+   * The hand primers' part of a snapshot (EngineSnapshot.primer): the film, the puddle and the plugs as saved, and
+   * `strokes` (the restored ControlInputs.primerStrokes) taken as already injected. After reset(), which leaves them
+   * dry and the count at 0. restore() calls it, and so does the fixed-wing FlightModel.restoreSystems().
+   */
+  restorePrimers(engines: readonly EngineSnapshot[], strokes?: number): void {
+    for (const unit of this.units) {
+      const engine = unit.engine;
+      if (!this.primers[unit.index] || !(engine instanceof PistonEngine)) continue;
+      if (strokes !== undefined) this.fuel.setPrimerStrokesSeen(unit.index, strokes);
+      const saved = engines[unit.index]?.primer;
+      if (!saved) continue;
+      this.fuel.setFeedFilm(unit.index, saved.film);
+      this.fuel.setPrimerPorts(unit.index, saved.ports);
+      engine.plugWet = saved.plugWet;
+    }
   }
 
   /** Put the engines into the states of a snapshot (tanks and battery are restored through reset() and batteryCharge). */
@@ -203,6 +234,7 @@ export class Powerplant implements PowerplantSeam {
       const snap = engines[unit.index];
       if (snap) unit.restore(snap);
     }
+    this.restorePrimers(engines);
   }
 
   /**
@@ -475,7 +507,14 @@ export class Powerplant implements PowerplantSeam {
     for (let i = 0; i < n; i++) {
       const unit = units[i];
       const air = airAt !== undefined ? airAt[i] : input.airVelocityBody;
-      const fed = fuel.stepFeed(i, dt, demand[i], engineControl(controls, i, 'fuelSelector'), rpm[i], this.pumpCommands[i], elec.busVoltage, unit.thermal.cht);
+      const primer = this.primers[i];
+      if (primer) {
+        primer.strokes = controls.primerStrokes ?? 0;
+        primer.locked = controls.primerLocked ?? true;
+        primer.vacuum = input.atmosphere.pressure - unit.engine.manifoldPressure;
+      }
+      const fed = fuel.stepFeed(i, dt, demand[i], engineControl(controls, i, 'fuelSelector'), rpm[i], this.pumpCommands[i], elec.busVoltage, unit.thermal.cht, primer);
+      if (primer && unit.engine instanceof PistonEngine) unit.engine.primerFlow = fed.primerFlow;
       unit.finish(input, air, fed.delivered, elec.starterTorques[i]);
       this.delivered[i] = fed.delivered;
       unit.state.fuelFlow = fed.metered;

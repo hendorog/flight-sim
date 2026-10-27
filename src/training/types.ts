@@ -181,7 +181,7 @@ export type CoreSignalId =
   // controls
   | 'throttle' | 'mixture' | 'flapLever' | 'flapsDeg' | 'trim' | 'elevator' | 'aileron' | 'rudder' | 'brakes'
   | 'parkingBrake' | 'mags' /* 0 off, 1 R, 2 L, 3 both */ | 'starter' | 'master' | 'alternator' | 'avionics'
-  | 'fuelSel' /* 'off'|'left'|'right'|'both' */ | 'fuelPump' | 'pitotHeat' | 'lightNav' | 'lightBeacon'
+  | 'fuelSel' /* 'off'|'left'|'right'|'both' */ | 'fuelPump' | 'primerLocked' | 'primerStrokes' | 'pitotHeat' | 'lightNav' | 'lightBeacon'
   | 'lightStrobe' | 'lightLanding' | 'lightTaxi' | 'qnhErrHpa' /* kollsman - QNH */ | 'dgErrDeg' /* DG - magnetic */
   // airfield geometry (runway 07 frame; core/world.ts runwayCoords)
   | 'rwyAlongM' /* from the 07 threshold, + along 07 */ | 'rwyAcrossM' /* + right of the 07 centreline */
