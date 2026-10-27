@@ -71,8 +71,8 @@ const ROW = {
 };
 const APERTURES = { large: 74, small: 51 };
 
-/** The 3D parts that stand on the panel, in px, for visual.ts (yoke columns, quadrant). */
-export const PA38_PANEL_PARTS = { yokes: YOKES, quadrant: PA38_QUADRANT } as const;
+/** The 3D parts that stand on the panel, in px, for visual.ts (yoke columns, quadrant, the primer's plunger). */
+export const PA38_PANEL_PARTS = { yokes: YOKES, quadrant: PA38_QUADRANT, primer: PRIMER } as const;
 
 // ---------------------------------------------------------------------------------------------------
 // Markings (POH section 2, s.4 and s.7: the Tomahawk II, both pairs of flow strips)
@@ -273,7 +273,8 @@ export const PA38_PANEL: PanelDef = {
   },
   // Panel px, where the click hotspot and the 3D key are: under the left control wheel (s.9).
   ignition: { kind: 'key', at: [SWITCHES.x + ROW.magneto.x, SWITCHES.y + ROW.magneto.y] },
-  // The hand primer right of the quadrant (POH 4.13; its bushing and legend below): painted, and clickable.
+  // The hand primer right of the quadrant (POH 4.13; its legend below): clickable, and painted for the flat panel; in
+  // the cabin its metal plunger (visual.ts) stands over the painted knob.
   primer: { at: [PRIMER[0], PRIMER[1]] },
   background: {
     // Sub-panel seam: the flat full-width panel (s.12) is one sheet from the pilot's side to the radio stack, with
@@ -282,7 +283,7 @@ export const PA38_PANEL: PanelDef = {
     // The back of the quadrant's well (the 3D surround stands round it): black behind the fuel gauges and the selector.
     plates: [{ bounds: { x: PA38_QUADRANT.x0, y: 436, w: PA38_QUADRANT.x1 - PA38_QUADRANT.x0, h: PA38_QUADRANT.y0 - 436 + 20 }, color: '#151517', radius: 6 }],
     // Legends of the controls that are painted, not built: the primer right of the quadrant (its knob is the panel's
-    // primer, painted with its lock and strokes, and clickable), the cabin heat and
+    // primer, painted with its lock and strokes, and clickable; the plunger is built over it), the cabin heat and
     // defrost knobs on the lower right (s.9), raised clear of the three rows of circuit breakers. The hand (parking)
     // brake handle hangs under the quadrant, below the face.
     bushings: [

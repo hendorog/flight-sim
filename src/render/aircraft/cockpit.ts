@@ -136,6 +136,11 @@ function roundedBox(w: number, h: number, d: number, segments: number, r: number
   return new RoundedBoxGeometry(w, h, d, segments, r);
 }
 
+/** A floor flap lever's grip centre from its pivot, m. */
+const FLOOR_LEVER_GRIP = 0.3;
+/** How long a built hand primer takes over one stroke, s (out and back in). */
+const PRIMER_STROKE_TIME = 0.8;
+
 /** Box in body coordinates (centre FRD, size along FRD x, y, z). */
 function box(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, r = 0.008, segments = 2): THREE.BufferGeometry {
   const g = roundedBox(sy, sz, sx, segments, Math.min(r, sx / 2, sy / 2, sz / 2) * 0.99);
@@ -326,7 +331,8 @@ export function cockpitControls(cockpit: CockpitDef, panel: PanelDef): Readonly<
     }
   }
   const flap = cockpit.flapControl.pos;
-  out.flapLever = fromFrd(flap[0] - 0.045, flap[1], flap[2]);
+  // A lever lying aft from its pivot: at its grip.
+  out.flapLever = fromFrd(flap[0] - (cockpit.flapControl.aft ? FLOOR_LEVER_GRIP : 0.045), flap[1], flap[2]);
   if (cockpit.trimWheel) out.trimWheel = fromFrd(cockpit.trimWheel.pos[0], cockpit.trimWheel.pos[1], cockpit.trimWheel.pos[2]);
   for (const [id, p] of Object.entries(cockpit.controlPoints)) out[id] = fromFrd(p[0], p[1], p[2]);
   // The pilot's (left) seat.
@@ -394,6 +400,8 @@ export class Cockpit {
   /** Levers drawn at a fixed position (`fixed`): never animated, but small controls like the others. */
   private readonly fixedLevers: THREE.Group[] = [];
   private readonly flapLever = new THREE.Group();
+  /** The built hand primer's plunger, its rest position (three z) and the stroke it is showing. */
+  private readonly primer: { group: THREE.Group; z0: number; strokes: number; strokeAt: number } | null = null;
   private readonly gearLever: THREE.Group | null = null;
   private readonly trimWheel: THREE.Group | null = null;
   /** The trim indicator's sliding pointer (an indicator with a take-off band) and the slot it slides along. */
@@ -718,14 +726,31 @@ export class Cockpit {
       lever.add(mat.darkMetal, box(-0.012, 0, 0, 0.024, 0.006, 0.006, 0.002));
       lever.add(mat.knobWhite, box(-0.03, 0, 0, 0.016, 0.034, 0.012, 0.004));
     } else {
-      // Hand lever between the seats, lying forward from its pivot with a grip and release button at its end.
-      lever.add(mat.darkMetal, box(0.17, 0, -0.03, 0.34, 0.022, 0.014, 0.005));
-      lever.add(mat.black, rodX(0.3, 0, -0.03, 0.12, 0.017, 14));
-      lever.add(mat.knobWhite, rodX(0.366, 0, -0.03, 0.012, 0.008, 10));
+      // Hand lever between the seats, lying forward (or aft) from its pivot with a grip and release button at its end.
+      const s = def.flapControl.aft ? -1 : 1;
+      lever.add(mat.darkMetal, box(s * 0.17, 0, -0.03, 0.34, 0.022, 0.014, 0.005));
+      lever.add(mat.black, rodX(s * FLOOR_LEVER_GRIP, 0, -0.03, 0.12, 0.017, 14));
+      lever.add(mat.knobWhite, rodX(s * 0.366, 0, -0.03, 0.012, 0.008, 10));
     }
     this.flapLever.add(...lever.build('flapLever').children);
     frd(FLAP[0], FLAP[1], FLAP[2], this.flapLever.position);
     this.group.add(this.flapLever);
+    if (def.primer) {
+      // The hand primer: a chrome hex bushing nut over its painted knob, and the plunger sliding aft out of it, a chrome
+      // shaft and a fluted metal knob with an index bar across its face that turns with the lock.
+      const p = frd(def.primer.pos[0], def.primer.pos[1], def.primer.pos[2]);
+      fixed.add(mat.chrome, new THREE.CylinderGeometry(0.0105, 0.011, 0.006, 6).rotateX(Math.PI / 2).translate(p.x, p.y, p.z + 0.003));
+      const g = new THREE.Group();
+      const b = new MeshBatch();
+      b.add(mat.chrome, new THREE.CylinderGeometry(0.003, 0.003, 0.08, 10).rotateX(Math.PI / 2).translate(0, 0, -0.03));
+      b.add(mat.aluminium, new THREE.CylinderGeometry(0.0105, 0.0115, 0.016, 20).rotateX(Math.PI / 2).translate(0, 0, 0.014));
+      b.add(mat.chrome, new THREE.CylinderGeometry(0.0085, 0.0085, 0.002, 20).rotateX(Math.PI / 2).translate(0, 0, 0.0225));
+      b.add(mat.black, new THREE.BoxGeometry(0.014, 0.0025, 0.0016).translate(0, 0, 0.0238));
+      g.add(...b.build('primer').children);
+      g.position.copy(p);
+      this.group.add(g);
+      this.primer = { group: g, z0: p.z, strokes: NaN, strokeAt: -Infinity };
+    }
     if (def.gearLever) {
       // Gear selector: a short lever standing out of the face with a wheel-shaped knob.
       const g = (this.gearLever = new THREE.Group());
@@ -1053,7 +1078,19 @@ export class Cockpit {
     const flap = this.def.flapControl;
     if (flap.kind === 'panelLever') this.flapLever.position.y = -(flap.pos[2] + flap.travel * controls.flaps);
     else if (flap.kind === 'panelSwitch') this.flapLever.rotation.x = flap.travel * (controls.flaps - 0.5);
-    else this.flapLever.rotation.x = flap.travel * controls.flaps;
+    else this.flapLever.rotation.x = (flap.aft ? -1 : 1) * flap.travel * controls.flaps;
+    const pr = this.primer;
+    if (pr) {
+      // Out and back in over a stroke's time; a little out and turned while unlocked.
+      const strokes = controls.primerStrokes ?? 0;
+      if (strokes > pr.strokes) pr.strokeAt = state.time;
+      pr.strokes = strokes;
+      const t = (state.time - pr.strokeAt) / PRIMER_STROKE_TIME;
+      const stroke = t >= 0 && t < 1 ? 1 - Math.abs(2 * t - 1) : 0;
+      const locked = controls.primerLocked ?? true;
+      pr.group.position.z = pr.z0 + Math.max(stroke * this.def.primer!.travel, locked ? 0 : 0.008);
+      pr.group.rotation.z = locked ? 0 : Math.PI / 2;
+    }
     if (this.gearLever) this.gearLever.rotation.x = controls.gearLever === 'up' ? -0.35 : 0.35;
     if (this.trimWheel) this.trimWheel.rotation[this.def.trimWheel!.axis === 'x' ? 'z' : 'x'] = 3 * controls.elevatorTrim;
     const tp = this.trimPointer;
@@ -1108,6 +1145,7 @@ export class Cockpit {
   /** The small controls under and on the lower panel. */
   private details(): THREE.Group[] {
     const groups = [...this.knobs.map((k) => k.group), ...this.fixedLevers, this.flapLever];
+    if (this.primer) groups.push(this.primer.group);
     if (this.trimWheel) groups.push(this.trimWheel);
     if (this.trimPointer) groups.push(this.trimPointer.group);
     groups.push(...this.pedals.map((p) => p.obj));

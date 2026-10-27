@@ -521,7 +521,7 @@ const COCKPIT: CockpitDef = {
       ],
     },
     // (The throttle quadrant in front of the lower centre of the panel is CockpitDef.quadrant.)
-    // The narrow console between the seats, the flap lever at its front and the trim wheel behind it (s.9).
+    // The narrow console between the seats, the flap lever and the trim wheel side by side on it (s.9).
     { min: [CONSOLE.x1, -CONSOLE.hw, CONSOLE.top], max: [CONSOLE.x0, CONSOLE.hw, FLOOR_Z], bevel: 0.015, material: 'trimPlastic' },
     // The open baggage shelf behind the seats under the rear window (s.2.6, s.12).
     { min: [-1.3, -0.42, 0.12], max: [-0.66, 0.42, 0.3], bevel: 0.012, material: 'carpet' },
@@ -540,8 +540,9 @@ const COCKPIT: CockpitDef = {
     { side: 0, x0: DOOR_REAR_X - 0.02, x1: CABIN_REAR_X + 0.06, z0: -0.33, z1: 0.3, relief: 0.008, material: 'trimPlastic', grid: { rows: 36, cols: 30 }, edge: 0.02 },
   ],
   // Two ram's-horn control wheels on shafts through the panel (s.9): neutral end position, fore-aft travel for
-  // full elevator input, maximum rotation.
-  column: { kind: 'yoke', x: PANEL_X - 0.15, y: SEAT_Y, z: faceZ(PA38_PANEL_PARTS.yokes.y), travel: 0.07, rollDeg: 40, style: 'piperTomahawk' },
+  // full elevator input, maximum rotation. The wheels stand well out from the panel at neutral so the switch row
+  // under them shows from the pilot's seat (owner).
+  column: { kind: 'yoke', x: PANEL_X - 0.24, y: SEAT_Y, z: faceZ(PA38_PANEL_PARTS.yokes.y), travel: 0.07, rollDeg: 40, style: 'piperTomahawk' },
   pedals: { x: 0.62, ys: [-SEAT_Y, SEAT_Y] },
   // Quadrant levers (s.9): the large cylindrical throttle knob, the red scalloped mixture knob, the small
   // carburettor heat lever on the quadrant's left edge (down = ON).
@@ -550,9 +551,13 @@ const COCKPIT: CockpitDef = {
     { kind: 'lever', control: 'throttle', engine: 0, pos: [LEVER.x, -LEVER.y, LEVER.z], travel: 0.8, colour: 'black', length: LEVER.length, knob: 'cylinderThrottle', tilt: LEVER.tilt },
     { kind: 'lever', control: 'mixture', engine: 0, pos: [LEVER.x, LEVER.y, LEVER.z], travel: 0.8, colour: 'red', length: LEVER.length, knob: 'scallopedMixture', tilt: LEVER.tilt },
   ],
-  // The hand flap lever between the seats, pulled up through 21 to 34 degrees (s.9).
-  flapControl: { kind: 'floorLever', pos: [CONSOLE.x0 - 0.06, 0, CONSOLE.top], travel: 0.7 },
-  // The elevator trim wheel on the console behind the flap lever, forward = nose down (s.9): its knurled rim up through
+  // The hand flap lever on the console between the seats, beside the trim wheel (owner): like an old car's hand brake,
+  // pivoted at its front and lying aft along the console, its grip end pulled up through 21 to 34 degrees (s.9).
+  flapControl: { kind: 'floorLever', pos: [CONSOLE.x0 - 0.06, -0.04, CONSOLE.top], travel: 0.7, aft: true },
+  // The hand primer right of the quadrant (POH 4.13): a metal push-pull plunger, pulled out and pushed in to prime
+  // (owner), over the panel's painted knob.
+  primer: { pos: [PANEL_X, faceY(PA38_PANEL_PARTS.primer[0]), faceZ(PA38_PANEL_PARTS.primer[1])], travel: 0.05 },
+  // The elevator trim wheel on the console beside the flap lever, forward = nose down (s.9): its knurled rim up through
   // a bezel in the console top, the trim position indicator beside it (POH 7.9). Take-off trim is "slightly aft of
   // neutral, with the exact setting determined by the loading" (POH 4.23): the TAKE OFF band spans the trim the flight
   // model solves for the climb at Vy (sim.ts takeoffTrim), +0.34 typical and at max gross to +0.45 at the forward CG.

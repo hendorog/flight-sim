@@ -472,7 +472,7 @@ export const PA38: AircraftTypeDef = {
     fuelPump: { label: 'Electric fuel pump', where: 'the first white rocker left of the throttle quadrant' },
     avionics: { label: 'Radios', where: 'each radio has its own switch; there is no avionics master' },
     flapLever: { label: 'Flap lever', where: 'the hand lever on the console between the seats' },
-    trimWheel: { label: 'Trim wheel', where: 'on the console between the seats, behind the flap lever' },
+    trimWheel: { label: 'Trim wheel', where: 'on the console between the seats, beside the flap lever' },
     // The hand brake (POH 7.7), Shift+B: pulled and locked it is the parking brake. The toe brakes are the optional fit.
     parkingBrake: { label: 'Hand brake', where: 'the hand brake handle under the throttle quadrant; pulled and locked it holds the parking brake' },
   },
