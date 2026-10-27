@@ -3,7 +3,7 @@
 // instructor's wording, the checklists of the free-flight cards and the logbook read it.
 //
 // Speeds come from ./reference (the same table the HUD, the scenarios and the autoflight use). Checklist wording
-// follows the POH normal procedures (VB-2126 section 4) as the type's engineering data sheet gives them
+// follows the POH normal procedures (Report 2126 section 4) as the type's engineering data sheet gives them
 // (aircraft-data/pa38.md in the design work folder, s.10; CLUB marks the flying-school expansion quoted there).
 // Items over a control the telemetry has no signal for (carburettor heat, the circuit breakers, the primer) have
 // `state: null` and are confirmed with Enter. There is no avionics master: the avionics key stands for the radios.
@@ -199,9 +199,9 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('magCheck', 'Magnetos', 'Check: drop 175 max, 50 difference', {
       control: 'magnetos', state: null, key: '2 / 3 / 4',
       why: why('Each magneto alone: a big drop or rough running means a fault.') }),
-    item('suction', 'Vacuum', '4.8 to 5.2 inches', {
-      control: null, state: all(ge('suctionInHg', 4.8), le('suctionInHg', 5.2)), key: null,
-      why: why('Vacuum in the green: the pump drives the attitude and heading gyros.') }),
+    item('suction', 'Vacuum', '5.0 inches, plus or minus 0.1', {
+      control: null, state: all(ge('suctionInHg', 4.9), le('suctionInHg', 5.1)), key: null,
+      why: why('Vacuum 5.0 inches (POH 4-7): the pump drives the attitude and heading gyros.') }),
     item('engineInstruments', 'Oil temperature and pressure', 'Green', {
       control: 'oil', state: null, key: null,
       why: why('Oil pressure and temperature in the green before we ask for full power.') }),
@@ -245,6 +245,7 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
       control: 'parkingBrake', state: eq('parkingBrake', false), key: 'parkingBrake',
       why: why('Parking brake off, or we will not roll on the take-off.') }),
   ]),
+  // The electric pump stays on until the desired altitude (POH 4-9, 4.25): it is the climb check's.
   afterTakeoff: list('afterTakeoff', 'After take-off', [
     item('flapsUp', 'Flaps', 'Up, slowly, above 61 knots', {
       control: 'flapLever', state: lt('flapsDeg', 1), key: 'flapsUp',
@@ -252,9 +253,6 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('climbPower', 'Power', 'Full', {
       control: 'throttle', state: ge('throttle', 0.95), key: 'throttleFull',
       why: why('Full throttle for the climb, at 70 knots for the best rate.') }),
-    item('fuelPumpOff', 'Electric fuel pump', 'Off at a safe height, fuel pressure checked', {
-      control: 'fuelPump', state: eq('fuelPump', false), key: 'fuelPump',
-      why: why('Pump off once climbing safely: watch the fuel pressure stay green.') }),
     item('engineInstruments', 'Engine instruments', 'Green', {
       control: 'oil', state: null, key: null,
       why: why('Oil temperature rises in the climb: check it stays in the green.') }),
@@ -263,7 +261,7 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
   hasell: list('hasell', 'HASELL', [
     item('height', 'Height', 'Enough to recover by 4,000 ft above ground', {
       control: 'alt', state: ge('aglFt', 4000), key: null,
-      why: why('Height: the handbook wants stalls recovered by 4,000 feet above the ground.') }),
+      why: why('Height: 4,000 feet is the handbook spin minimum; stalls lose up to 320 feet.') }),
     item('airframe', 'Airframe', 'Flaps as required, clean', {
       control: 'flapLever', state: null, key: null,
       why: why('Airframe: flaps set for the exercise, nothing extended we did not mean.') }),
@@ -352,7 +350,8 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
       control: 'master', state: eq('master', false), key: 'masterSwitch',
       why: why('Master off, or the battery is flat by tomorrow.') }),
   ]),
-  // Engine failure in flight (POH 3.3): trim 70, the other tank, pump, mixture, carb heat, gauges, magnetos.
+  // Engine power loss in flight (POH 3-3, 3-8): the other tank, pump, mixture, carb heat, gauges, primer; then the
+  // magnetos one at a time and other throttle and mixture settings; what to undo when it runs, the glide when not.
   engineFailure: list('engineFailure', 'Engine failure: touch drills', [
     item('fuelSelector', 'Fuel selector', 'Switch to the other tank', {
       control: 'fuelSelector', state: ON_A_TANK, key: 'fuelSelector', critical: true, stateLabel: 'OTHER TANK',
@@ -364,13 +363,26 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('carbHeat', 'Carburettor heat', 'On', {
       control: null, state: null, key: 'carbHeat', stateLabel: 'ON',
       why: why('Carburettor ice is a likely cause: full heat, and give it time.') }),
-    item('gauges', 'Engine gauges', 'Check for the cause', {
+    item('gauges', 'Engine gauges', 'Check for the cause; no fuel pressure: selector on a tank with fuel', {
       control: 'oil', state: null, key: null,
       why: why('Fuel pressure, oil pressure, temperature: they tell us what failed.') }),
-    item('mags', 'Magnetos', 'Left, right, then both', {
+    item('primer', 'Primer', 'Locked', {
+      control: null, state: null, key: null, stateLabel: 'LOCKED',
+      why: why('An unlocked primer feeds raw fuel to the cylinders: the engine runs too rich.') }),
+    item('mags', 'Ignition switch', 'Left, then right, then back to both', {
       control: 'magnetos', state: eq('mags', 3), key: 'magnetoBoth',
       why: why('A failed magneto or a key knocked to one: try each, then both.') }),
+    item('throttleMixture', 'Throttle and mixture', 'Try different settings', {
+      control: 'mixture', state: null, key: null,
+      why: why('Too rich, too lean or a partial restriction: another setting may restore power.') }),
+    item('restored', 'When power is restored', 'Carburettor heat off, electric fuel pump off', {
+      control: null, state: null, key: null,
+      why: why('Running smoothly again: back to cold air and the engine-driven pump.') }),
+    item('notRestored', 'If power cannot be restored', 'Trim for 70 knots; power-off landing', {
+      control: 'trimWheel', state: null, key: TRIM_KEYS,
+      why: why('70 knots is the best glide: then fly the power-off landing.') }),
   ]),
+  // Power-off landing, when committed (POH 3-4, 3-9): ignition, master, fuel selector OFF, mixture cut-off, belts.
   forcedLandingSecurity: list('forcedLandingSecurity', 'Forced landing: security', [
     item('magsOff', 'Ignition', 'Off', {
       control: 'magnetos', state: eq('mags', 0), key: 'magnetoOff',
@@ -387,9 +399,9 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('flapsAsRequired', 'Flaps', 'Full when the field is made, 67 knots', {
       control: 'flapLever', state: null, key: 'flapsDown',
       why: why('Full flap once the field is assured: the slowest touchdown.') }),
-    item('harnesses', 'Doors and harnesses', 'Doors unlatched, harnesses tight', {
+    item('harnesses', 'Seat belts and harness', 'Tight', {
       control: null, state: null, key: null,
-      why: why('Harnesses tight, doors unlatched: we can get out after the landing.') }),
+      why: why('Belts and harness tight: they hold us if the landing goes wrong.') }),
   ]),
   nightLights: list('nightLights', 'Night: lights', [
     item('navLights', 'Navigation lights', 'On', {
