@@ -1596,6 +1596,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     el.batteryCharge = p.electrical.batteryCharge;
     el.alternatorAmps = p.electrical.alternatorAmps;
     el.batteryAmps = p.electrical.batteryAmps;
+    if (p.electrical.overVoltageTripped !== undefined) el.overVoltageTripped = p.electrical.overVoltageTripped;
     if (el.alternators.length === 1) el.alternators[0] = el.alternatorAmps;
     else for (let a = 0; a < el.alternators.length; a++) el.alternators[a] = p.electrical.alternators[a];
     if (this.retract) this.publishGear();

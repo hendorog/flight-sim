@@ -5,7 +5,7 @@
 // "Cockpit layout"; "s.N" below is its section N), as close as the panel components allow: the six flight
 // instruments in front of the left seat with the clock and the suction gauge in a column left of them and the
 // VOR indicator to their right; the radio stack in the centre; the tachometer right of centre with the ammeter
-// and the one LOW VOLTAGE lamp beside it, placards and the map compartment on the far right; fuel and oil gauges
+// and the one HIGH VOLTAGE lamp under it, placards and the map compartment on the far right; fuel and oil gauges
 // on the lower left, the master switch, the magneto key and the light rockers below them (no fuel-pump rocker,
 // no avionics master on the 1978 aircraft); along the lower centre the CARB HEAT knob left of the throttle, the
 // mixture right of it, then the flap pre-select lever with its position scale; the circuit breakers under the
@@ -174,8 +174,11 @@ const OIL: GaugeDef = {
 
 const RED = '#ff3b2a';
 
-/** The one warning light, under the ammeter (s.9): the bus is below the alternator's output, the battery is discharging. */
-export const C152_ANNUNCIATOR_LAMPS: readonly LampDef[] = [{ id: 'lowVolts', text: 'LOW VOLTAGE', color: RED, lit: (r) => r.lamps.lowVolts }];
+/**
+ * The one warning light, red HIGH VOLTAGE under the ammeter (POH p.7-20/7-21): the alternator is off line, so the
+ * battery carries everything.
+ */
+export const C152_ANNUNCIATOR_LAMPS: readonly LampDef[] = [{ id: 'highVolts', text: 'HIGH VOLTAGE', color: RED, lit: (r) => r.lamps.highVolts }];
 
 // ---------------------------------------------------------------------------------------------------
 // Switch row: the split MASTER (ALT left half, BAT right half, s.9), the magneto key, the light rockers (up =
@@ -338,8 +341,6 @@ const BUS_DEAD_VOLTS = 18;
 const SUCTION_REGULATED_INHG = 5.0;
 /** Suction at which an air-driven gyro reaches rated speed (bottom of the green arc). */
 const SUCTION_RATED_INHG = 4.6;
-/** The LOW VOLTAGE light comes on below this bus voltage: the 28 V battery alone is carrying the load. */
-const LOW_VOLTS = 24.5;
 
 /** The lamp needs bus power. */
 const powered = (i: LampInputs): boolean => i.state.electrical.busVoltage > BUS_DEAD_VOLTS;
@@ -364,5 +365,7 @@ export const C152_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
   fuel: { kgPerGal: KG_PER_GAL, tanks: [(s) => s.fuel.left, (s) => s.fuel.right] },
   busDeadVolts: BUS_DEAD_VOLTS,
   tachHourRpm: TACH_HOUR_RPM,
-  lamps: [{ id: 'lowVolts', lit: (i) => powered(i) && i.state.electrical.busVoltage < LOW_VOLTS }],
+  // HIGH VOLTAGE: lit while the alternator is off line, tripped by the over-voltage sensor (powerplant.ts) or switched
+  // off with the BAT half on; ALT off is the POH's lamp test (p.7-21). A stopped engine with ALT on leaves it out.
+  lamps: [{ id: 'highVolts', lit: (i) => powered(i) && (!i.controls.alternator || i.state.electrical.overVoltageTripped === true) }],
 };

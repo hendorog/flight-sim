@@ -167,6 +167,7 @@ export class Powerplant implements PowerplantSeam {
     const oat = o.oat ?? 288.15;
     this.fuel.reset(o.tanks);
     this.electrical.reset(o.batteryCharge ?? 1);
+    this.electrical.clearOverVoltage();
     for (const unit of this.units) {
       const running = perEngine(o.running, unit.index);
       const rpm = o.rpm === undefined ? (running ? unit.install.engine.groundStartRpm : 0) : perEngine(o.rpm, unit.index);
@@ -522,6 +523,7 @@ export class Powerplant implements PowerplantSeam {
     for (let a = 0; a < elec.alternators.length; a++) out.electrical.alternators[a] = elec.alternators[a];
     // ElectricalSystem reports + = discharging; the contract (and the ammeter) use + = charging.
     out.electrical.batteryAmps = -elec.batteryAmps;
+    if (this.def.electrical.overVoltageTrip !== undefined) out.electrical.overVoltageTripped = elec.overVoltageTripped;
     return out;
   }
 

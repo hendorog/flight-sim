@@ -160,7 +160,7 @@ export interface PropulsionOutput extends ForceMoment {
   /** Usable fuel per tank after this step, kg, in PowerplantDef.fuel.tanks order. */
   tanks: number[];
   /** batteryAmps: + = charging (AircraftState convention). alternators: per alternator, A. */
-  electrical: { busVoltage: number; batteryCharge: number; alternatorAmps: number; batteryAmps: number; alternators: number[] };
+  electrical: { busVoltage: number; batteryCharge: number; alternatorAmps: number; batteryAmps: number; alternators: number[]; overVoltageTripped?: boolean };
 }
 
 export interface PowerplantResetOptions {

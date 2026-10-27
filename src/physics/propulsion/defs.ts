@@ -424,6 +424,11 @@ export interface ElectricalDef {
   loads: Readonly<Record<string, number>>;
   /** Thresholds in VOLTS (C172S: 24.5 low-voltage lamp, 32 over-voltage; 14 V systems: 12.5, 16). */
   lowVoltsLamp: number; overVolts: number;
+  /**
+   * Over-voltage sensor, V: above it the sensor removes the alternator field (every alternator goes off line) and
+   * latches until both halves of the master switch are off (the 1978 Cessna 152: 31.5). Absent: no sensor.
+   */
+  overVoltageTrip?: number;
   /** Bus-powered equipment (flap motor, horn, gyros, avionics fan) is dead below this, V (28 V: 18-20; 14 V: 9-10). */
   busDeadVolts: number;
 }
