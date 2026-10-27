@@ -64,8 +64,8 @@ export interface ControlInputs {
   fuelPrime?: boolean;
   /**
    * Hand primer (EngineDef.primer; single-engine types): strokes made since the flight began. The powerplant injects one
-   * charge for each increase it sees (a decrease, or a jump on a reset or resume, is taken as the new count without
-   * injecting). Absent: the type has no hand primer. Persisted.
+   * charge for each increase it sees (a decrease is taken as the new count without injecting; a resume restores the
+   * count with the powerplant, Powerplant.restorePrimers). Absent: the type has no hand primer. Persisted.
    */
   primerStrokes?: number;
   /** Hand primer knob pushed in and turned to lock (POH: "IN and LOCKED"). Unlocked, it leaks fuel into the engine. Persisted. */

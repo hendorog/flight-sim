@@ -211,14 +211,17 @@ export class Powerplant implements PowerplantSeam {
   }
 
   /**
-   * The hand primers' part of a snapshot (EngineSnapshot.primer): the film, the puddle and the plugs as saved. After
-   * reset(), which leaves them dry. restore() calls it, and so does the fixed-wing FlightModel.restoreSystems().
+   * The hand primers' part of a snapshot (EngineSnapshot.primer): the film, the puddle and the plugs as saved, and
+   * `strokes` (the restored ControlInputs.primerStrokes) taken as already injected. After reset(), which leaves them
+   * dry and the count at 0. restore() calls it, and so does the fixed-wing FlightModel.restoreSystems().
    */
-  restorePrimers(engines: readonly EngineSnapshot[]): void {
+  restorePrimers(engines: readonly EngineSnapshot[], strokes?: number): void {
     for (const unit of this.units) {
-      const saved = engines[unit.index]?.primer;
       const engine = unit.engine;
-      if (!saved || !this.primers[unit.index] || !(engine instanceof PistonEngine)) continue;
+      if (!this.primers[unit.index] || !(engine instanceof PistonEngine)) continue;
+      if (strokes !== undefined) this.fuel.setPrimerStrokesSeen(unit.index, strokes);
+      const saved = engines[unit.index]?.primer;
+      if (!saved) continue;
       this.fuel.setFeedFilm(unit.index, saved.film);
       this.fuel.setPrimerPorts(unit.index, saved.ports);
       engine.plugWet = saved.plugWet;

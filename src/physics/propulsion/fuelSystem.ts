@@ -131,8 +131,11 @@ class FuelFeed {
   /** Fuel film on the intake port walls, kg; NaN until the first step (then set to its equilibrium). */
   film = NaN;
   readonly result: FuelStepResult = { delivered: 0, metered: 0, pressurePsi: 0, auxPressurePsi: 0, usedLeft: 0, usedRight: 0, primerFlow: 0 };
-  /** The hand primer's stroke count as last seen (NaN after a reset: the next count is taken without injecting). */
-  primerSeen = NaN;
+  /**
+   * The hand primer's stroke count as last seen. A reset makes it 0, the count a new flight's controls start at
+   * (ControlInputs.primerStrokes in the type's controlDefaults); a resume sets the saved count (Powerplant.restorePrimers).
+   */
+  primerSeen = 0;
 
   private readonly positions: FuelFeedDef['positions'];
   private readonly gravityHeadPsi: number;
@@ -308,7 +311,7 @@ class FuelFeed {
     this.primerSeen = input.strokes;
     this.vacuum = input.vacuum;
     if (steady || dt <= 0) return;
-    // NaN (a reset) or a lower count (a new flight's controls): taken as they are.
+    // A lower count (controls put back): taken as it is.
     if (input.strokes > seen) {
       const charge = Math.min((input.strokes - seen) * def.stroke, Math.max(0, this.line - this.lineUnusable));
       this.line -= charge;
@@ -406,7 +409,7 @@ class FuelFeed {
     this.prime = 1;
     this.film = NaN;
     this.dry = false;
-    this.primerSeen = NaN;
+    this.primerSeen = 0;
     this.ports = 0;
   }
 
@@ -531,6 +534,11 @@ export class FuelSystem {
 
   setPrimerPorts(i: number, kg: number): void {
     this.feeds[i].ports = kg;
+  }
+
+  /** Take `strokes` as the hand primer's count of engine i already injected (a resume: the saved count). */
+  setPrimerStrokesSeen(i: number, strokes: number): void {
+    this.feeds[i].primerSeen = strokes;
   }
 
   /** Start a step of several feeds: nothing drawn from any tank yet. */

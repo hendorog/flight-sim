@@ -46,7 +46,6 @@ function setUp(p: SimPhysics, def: AircraftDefinition): void {
   c.magnetos = 3;
   c.parkingBrake = true;
   if (def.id === 'pa38') c.fuelPump = true;
-  p.step(0.5);
 }
 
 /** Strokes as the E key makes them (one a frame), then Shift+E. */
@@ -97,6 +96,16 @@ for (const def of [C152_DEFINITION, PA38_DEFINITION]) {
       p.step(30);
       expect(p.fm.state.engine.running).toBe(true);
       expect(p.fm.state.engine.roughness ?? 0).toBe(0);
+    }, 60_000);
+
+    it('strokes made at once after the reset, before the physics has stepped (paused), all count', () => {
+      const { p } = apron(def);
+      setUp(p, def);
+      p.controls.primerStrokes = 2;
+      p.controls.primerLocked = true;
+      p.step(0.5);
+      expect(p.fm.captureSystems().engines[0].primer!.ports).toBeCloseTo(2 * def.powerplant.engines[0].engine.primer!.stroke, 9);
+      expect(crank(p, 10)).toBeLessThan(3);
     }, 60_000);
 
     it('cold and dark without the prime, a normal ten-second start does not catch', () => {

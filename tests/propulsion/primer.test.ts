@@ -172,18 +172,26 @@ describe('the hand primer of the C152 and the PA-38', () => {
     });
   }
 
-  it('a stroke count that jumps on a reset or a resume injects nothing; a lower count is taken as it is', () => {
+  it('a resumed stroke count injects nothing again; a lower count is taken as it is; strokes after a reset all count', () => {
     const t = TYPES[0];
+    const stroke = t.def.engines[0].engine.primer!.stroke;
     const sys = new Powerplant(t.def);
     sys.reset({ running: false, tanks: sys.tankCapacities, oat: C15 });
+    // Resumed with 12 strokes made and their puddle: the count is not injected a second time.
+    sys.restorePrimers([{ ...sys.capture()[0], primer: { film: 0, ports: 0.002, plugWet: 0 } }], 12);
     const input = makeInput({ controls: { masterBattery: true, throttle: 0.07, mixture: 1, magnetos: 3, fuelSelector: 'on', primerStrokes: 12 } });
     sys.step(input);
-    expect(sys.fuel.primerPorts(0)).toBe(0);
+    expect(sys.fuel.primerPorts(0)).toBeCloseTo(0.002, 12);
     input.controls.primerStrokes = 0;
     sys.step(input);
     input.controls.primerStrokes = 1;
     sys.step(input);
-    expect(sys.fuel.primerPorts(0)).toBeCloseTo(t.def.engines[0].engine.primer!.stroke, 9);
+    expect(sys.fuel.primerPorts(0)).toBeCloseTo(0.002 + stroke, 9);
+    // A reset: the count starts at none, so two strokes made before the first step are both injected.
+    sys.reset({ running: false, tanks: sys.tankCapacities, oat: C15 });
+    input.controls.primerStrokes = 2;
+    sys.step(input);
+    expect(sys.fuel.primerPorts(0)).toBeCloseTo(2 * stroke, 9);
   });
 
   it('the R22, which spreads the C152 engine, has no primer', () => {
