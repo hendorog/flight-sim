@@ -19,8 +19,9 @@ import type { EngineSnapshot, Powerplant as PowerplantSeam, PowerplantResetOptio
 import { C172_POWERPLANT } from './c172Powerplant';
 import type { PowerplantDef } from './defs';
 import { ElectricalSystem } from './electrical';
+import { PistonEngine } from './engine';
 import { EngineUnit } from './engineUnit';
-import { FuelSystem } from './fuelSystem';
+import { FuelSystem, type PrimerInput } from './fuelSystem';
 import type { Propeller } from './propeller';
 import { propellerCharacteristicsFor } from './propellerMap';
 
@@ -88,6 +89,8 @@ export class Powerplant implements PowerplantSeam {
   /** settle(): units in beta whose shaft speed is solved (see solveBetaSpeed), and each unit's fuel delivered last step, kg/s. */
   private readonly betaHeld: EngineUnit[] = [];
   private readonly delivered: Float64Array;
+  /** Per engine: the controls of its hand primer (EngineDef.primer), or undefined. */
+  private readonly primers: readonly (PrimerInput | undefined)[];
 
   /** `propellers`: per engine, a propeller to use instead of one made from the definition. */
   constructor(readonly def: PowerplantDef = C172_POWERPLANT, propellers: readonly (Propeller | undefined)[] = []) {
@@ -95,7 +98,8 @@ export class Powerplant implements PowerplantSeam {
     if (n < 1) throw new Error('Powerplant: at least one engine');
     if (def.fuel.feeds.length !== n) throw new Error(`Powerplant: ${n} engines need ${n} fuel feeds, not ${def.fuel.feeds.length}`);
     this.units = def.engines.map((install, i) => new EngineUnit(install, i, propellers[i]));
-    this.fuel = new FuelSystem(def.fuel);
+    this.fuel = new FuelSystem(def.fuel, def.engines.map((install) => install.engine.primer));
+    this.primers = def.engines.map((install) => (install.engine.primer ? { strokes: 0, locked: true, vacuum: 0 } : undefined));
     this.electrical = new ElectricalSystem(def.electrical, n === 1 ? def.engines[0].engine.starter : def.engines.map((install) => install.engine.starter));
     this.engineCount = n;
     this.hubs = this.units.map((unit) => unit.hub);
@@ -475,7 +479,14 @@ export class Powerplant implements PowerplantSeam {
     for (let i = 0; i < n; i++) {
       const unit = units[i];
       const air = airAt !== undefined ? airAt[i] : input.airVelocityBody;
-      const fed = fuel.stepFeed(i, dt, demand[i], engineControl(controls, i, 'fuelSelector'), rpm[i], this.pumpCommands[i], elec.busVoltage, unit.thermal.cht);
+      const primer = this.primers[i];
+      if (primer) {
+        primer.strokes = controls.primerStrokes ?? 0;
+        primer.locked = controls.primerLocked ?? true;
+        primer.vacuum = input.atmosphere.pressure - unit.engine.manifoldPressure;
+      }
+      const fed = fuel.stepFeed(i, dt, demand[i], engineControl(controls, i, 'fuelSelector'), rpm[i], this.pumpCommands[i], elec.busVoltage, unit.thermal.cht, primer);
+      if (primer && unit.engine instanceof PistonEngine) unit.engine.primerFlow = fed.primerFlow;
       unit.finish(input, air, fed.delivered, elec.starterTorques[i]);
       this.delivered[i] = fed.delivered;
       unit.state.fuelFlow = fed.metered;

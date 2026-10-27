@@ -11,6 +11,7 @@
 
 import { DEG, HP, LB } from '../../core/math';
 import { C172_BLADE_SECTION, C172_ENGINE, C172_PROPELLER } from '../../physics/propulsion/c172Powerplant';
+import { O235_PRIMER } from '../c152/powerplant';
 import { AVGAS_100LL, type BladeSectionDef, type EngineDef, type PowerplantDef, type PropellerDef } from '../../physics/propulsion/defs';
 import { PA38_GEOMETRY } from './geometry';
 
@@ -69,6 +70,9 @@ export const PA38_ENGINE: EngineDef = {
   airStartRpm: 2200,
   // Prestolite 12 V starter (POH 6.9): about 35 N m at 200 A, cranking near 200 rpm.
   starter: { k: 0.0009, r: 0.03 },
+  // The hand primer right of the throttle quadrant (POH 4.13: two to four strokes at +40 F, more when colder): the
+  // C152's O-235 and its primer (c152/powerplant.ts, where the numbers are explained).
+  primer: O235_PRIMER,
 };
 
 /**

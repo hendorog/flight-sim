@@ -8,11 +8,19 @@ A full-aft, full-rudder entry produces a spiral; developed spins and recovery ar
 Evidence: [aircraft limitations](../../../docs/aircraft.md).
 Close with: a validated post-stall/spin model and aircraft-specific entry/recovery checks.
 
-## Primer and rapid throttle response — **missing feature**
+## Rapid throttle response — **missing feature**
 
-Cold starts need no priming; over-priming and the stumble from opening a throttle without an accelerator pump are absent.
+The stumble from opening a throttle without an accelerator pump is absent.
 Evidence: [notModelled](index.ts).
-Close with: primer/fuel-film behavior and cold, flooded and rapid-throttle checks.
+Close with: a carburettor transient (wall film on throttle opening) and rapid-throttle checks.
+
+## Hand primer — **estimate**
+
+The primer is modelled (cold engines need it, over-priming floods, the flooded-start procedure clears it, an unlocked primer
+roughens the idle), but the charge per stroke, the cold induction film, the evaporation from the ports and the wet-plug
+flooding are estimates set to give the POH's stroke counts (4-7, 4-11, 4-19), not measured.
+Evidence: [powerplant](powerplant.ts) (O235_PRIMER), [primer tests](../../../tests/propulsion/primer.test.ts).
+Close with: a measured primer delivery and observed start behaviour (strokes against OAT, flooding) to recheck the tables.
 
 ## Fuel transfer on slopes — **missing feature**
 

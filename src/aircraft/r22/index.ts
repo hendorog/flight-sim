@@ -56,7 +56,9 @@ export const R22_DEFINITION: AircraftDefinition = {
           inletArea: 1.0e-3 * 5.916 / 3.823 },
         // Full-rich is rich of peak. The previous fuel-flow calibration made it phi = 0.89 (lean).
         // Exact enrichment is estimated; check MAP/power against POH and fuel against Lycoming Fig. 3-40.
-        metering: { kind: 'floatCarburettor', fullRichPhi: 1.15, leanestFraction: 0.35 } } }],
+        metering: { kind: 'floatCarburettor', fullRichPhi: 1.15, leanestFraction: 0.35 },
+        // The R22 has no hand primer (its O-360 is not the C152's O-235 with its panel primer).
+        primer: undefined } }],
     fuel: { ...C152_POWERPLANT.fuel, tanks: [
       { id: 'main', side: 'left', capacity: R22_FUEL_CAPACITY[0], position: { x: -8.6 * 0.0254, y: -11 * 0.0254, z: -0.1 } },
       { id: 'aux', side: 'right', capacity: R22_FUEL_CAPACITY[1], position: { x: -3.8 * 0.0254, y: 11.2 * 0.0254, z: -0.1 } },

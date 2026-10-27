@@ -10,13 +10,38 @@
 
 import { DEG, HP, LB } from '../../core/math';
 import { C172_BLADE_SECTION, C172_ENGINE, C172_POWERPLANT, C172_PROPELLER } from '../../physics/propulsion/c172Powerplant';
-import { AVGAS_100LL, type BladeSectionDef, type EngineDef, type PowerplantDef, type PropellerDef } from '../../physics/propulsion/defs';
+import { AVGAS_100LL, type BladeSectionDef, type EngineDef, type PowerplantDef, type PrimerDef, type PropellerDef } from '../../physics/propulsion/defs';
 import { C152_GEOMETRY } from './geometry';
 
 const INCH = 0.0254;
 /** kg/s per US gal/h of 100LL. */
 const GPH = (3.785411784e-3 * AVGAS_100LL.density) / 3600;
 const PROP = C152_GEOMETRY.propellers[0];
+
+/**
+ * The hand primer (POH 7-16, Fig 7-2 item 42): a plunger pump that draws fuel from the strainer and squirts it into
+ * the intake ports. The handbook sets how much is needed, not how much a stroke delivers: "up to 3 strokes" in a
+ * normal start (4-7), one in warm weather and up to three near freezing (4-11), two to four with preheat in the cold
+ * and three more without (4-19); over-priming floods it (4-11). The stroke, the cold film and the unlocked leak are
+ * ESTIMATES set to give those counts (tests/propulsion/primer.test.ts). The PA-38's O-235 has the same.
+ *  - stroke: about 1.4 cm^3 of fuel.
+ *  - the cold film: a float carburettor's spray, poorly atomised at cranking air speeds, wets a cold induction more
+ *    than an injector's (the PA-34's table, FuelFeedDef.film.cold), and the warm end is this feed's own film.
+ *  - two of the four cylinders primed; unlocked at idle vacuum it passes about 1 US gal/h into them.
+ */
+export const O235_PRIMER: PrimerDef = {
+  stroke: 1.2e-3,
+  primedCylinders: 2,
+  unlockedFlow: 0.15 * GPH,
+  cold: {
+    temperatureC: [-20, 0, 15, 40, 70],
+    fraction: [0.94, 0.9, 0.85, 0.6, 0.4],
+    time: [60, 40, 30, 6, 0.4],
+    capacity: 0.03,
+  },
+  atomisingVacuum: 50e3,
+  ports: { temperatureC: [-20, -10, 0, 15, 40, 70], time: [40, 25, 16, 10, 5, 3], capacity: 0.02 },
+};
 
 /**
  * Lycoming O-235-L2C as installed (TCDS 3A19: 110 hp at 2550 rpm for all operations; s.4): 3.823 L, 8.5 : 1,
@@ -68,6 +93,7 @@ export const C152_ENGINE: EngineDef = {
   rotatingInertia: 0.33,
   airStartRpm: 2200,
   // The starter is the 172's 24 V series motor (the same Prestolite family on a smaller engine).
+  primer: O235_PRIMER,
 };
 
 /**

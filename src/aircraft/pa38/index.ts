@@ -23,9 +23,10 @@ export const PA38_DEFINITION: AircraftDefinition = {
   icaoType: 'PA38',
   engineCount: 1,
   // A LEFT / RIGHT / OFF selector instead of the generic BOTH: the take-off tank (POH 4.27: an hour on the first).
-  controlDefaults: { fuelSelector: 'left' },
+  // The hand primer (EngineDef.primer) pushed in and locked, no strokes yet.
+  controlDefaults: { fuelSelector: 'left', primerStrokes: 0, primerLocked: true },
   notModelled: [
-    'The hand primer: a cold engine starts without priming; no over-priming, no stumble on a fast throttle opening (there is no accelerator pump).',
+    'No stumble on a fast throttle opening (there is no accelerator pump). The hand primer is modelled, but its charge per stroke, the cold induction film and flooding (one wet-plug state for all four cylinders) are estimates set to the POH stroke counts; the last stroke is a whole stroke, not left out to be pushed in as the engine fires (POH 4.13).',
     'The flow strips as anything but an earlier stall over their span: their stations are estimates (Piper SL 876 not found).',
     'The rattle and shake of the T-tail in the wing\'s wake at the stall: the buffet is the generic one.',
     'Detonation at full throttle with carburettor heat on (POH 4.29): the power falls with the hot air, nothing breaks.',

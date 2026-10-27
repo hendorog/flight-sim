@@ -55,6 +55,28 @@ const ICE_WATER_ROUGHNESS = 0.12;
 const IDLE_AREA_MAX = 0.2;
 /** The servo's priming flow fades out by this crank speed, rpm (below cranking speed: air-flow metering from there). */
 const PRIME_FADE_RPM = 100;
+/**
+ * Roughness (EngineState.roughness) per unit difference in relative power between the cylinders an unlocked hand
+ * primer floods and the others: half the power gone from half the cylinders is about running on one magneto.
+ */
+const PRIMER_ROUGHNESS = 2;
+/**
+ * Flooding (engines with a hand primer; ESTIMATES set for the handbooks' "over priming or flooding", C152 POH 4-11):
+ * a charge richer than PLUG_WET_PHI does not burn and wets the plugs, by PLUG_WETTING per unit of the excess per
+ * second at 200 rpm (faster in proportion to the shaft speed); at 1 they no longer fire, and they hold at most
+ * PLUG_WET_MAX. Air leaner than PLUG_DRY_PHI dries them, by PLUG_DRYING per unit of the shortfall per second at
+ * 200 rpm: cranking with the throttle open and the mixture in idle cut-off clears a flooded engine. Wet plugs fire
+ * weakly; once they fire, the combustion dries them within PLUG_DRY_FIRING_TIME, s. Only a cranking engine floods:
+ * the over-rich charge after a throttle chop in flight passes through hot plugs (no wetting from PLUG_WET_RPM).
+ */
+const PLUG_WET_PHI = 2.0;
+const PLUG_WETTING = 1.5;
+const PLUG_WET_MAX = 1.5;
+const PLUG_DRY_PHI = 1.0;
+const PLUG_DRYING = 0.3;
+const PLUG_DRY_FIRING_TIME = 0.5;
+const PLUG_RATE_RPM = 200;
+const PLUG_WET_RPM: readonly [number, number] = [500, 800];
 const SEA_LEVEL_DENSITY = 1.225;
 
 export interface EngineInput {
@@ -143,7 +165,19 @@ export class PistonEngine implements EngineCore {
   lossTorque = 0;
   /** Friction part of the loss (heats the oil), N*m. */
   frictionTorque = 0;
+  /**
+   * Fuel an unlocked hand primer passes into the primed cylinders, kg/s (EngineDef.primer: the powerplant sets it
+   * before burn(); FuelStepResult.primerFlow). It is on top of the fuel delivered.
+   */
+  primerFlow = 0;
 
+  /** Spark plugs wetted by an over-rich charge (engines with a hand primer): at 1 and above they do not fire. */
+  plugWet = 0;
+
+  /** Rough running of the last burn() from the primed cylinders running richer than the rest, 0 .. 1. */
+  private primerRoughness = 0;
+  /** The part of the cylinders the hand primer's lines reach (0: no primer). */
+  private readonly primedFraction: number;
   private readonly mepToTorque: number;
   private readonly compressionRatio: number;
   private readonly stoichFar: number;
@@ -194,6 +228,7 @@ export class PistonEngine implements EngineCore {
     this.heatPressureLoss = carburettor?.heatPressureLoss ?? 0;
     this.alternateRise = alternate?.heatRise ?? 0;
     this.alternatePressureLoss = alternate?.pressureLoss ?? 0;
+    this.primedFraction = def.primer ? def.primer.primedCylinders / def.cylinders : 0;
     this.primeFlow = def.metering.kind === 'rsaInjection' || def.metering.kind === 'continuousInjection' ? (def.metering.primeFlow ?? 0) : 0;
     this.rate();
   }
@@ -347,10 +382,24 @@ export class PistonEngine implements EngineCore {
     const excessResidual = Math.max(0, ind.residualFraction - 1 / this.compressionRatio);
     const sparks =
       input.magnetos === 3 ? 1 : input.magnetos === 0 ? 0 : 1 - this.singleMagLoss - this.singleMagDilutionLoss * excessResidual;
-    const power = mixturePower(this.phi);
+    let power: number;
+    if (this.primerFlow > 0 && ind.airFlow > 1e-9) {
+      // An unlocked primer's fuel goes to the cylinders its lines reach: they run that much richer than the others.
+      const k = this.primedFraction;
+      const extra = this.primerFlow / (ind.airFlow * this.stoichFar);
+      const even = mixturePower(this.phi);
+      const rich = mixturePower(this.phi + extra / k);
+      power = k * rich + (1 - k) * even;
+      this.primerRoughness = Math.min(1, PRIMER_ROUGHNESS * Math.abs(even - rich));
+      this.phi += extra;
+    } else {
+      power = mixturePower(this.phi);
+      this.primerRoughness = 0;
+    }
     this.firing = sparks > 0 && power > 0 && rpm >= this.minFiringRpm;
+    if (this.primedFraction > 0) this.wetPlugs(input, rpm);
     const dilution = 1 - this.dilutionSensitivity * excessResidual;
-    this.combustionQuality = this.firing ? sparks * dilution : 0;
+    this.combustionQuality = this.firing ? sparks * dilution * (1 - this.plugWet) : 0;
     const water = this.induction.meltWater;
     if (water > 0) this.combustionQuality *= 1 - ICE_WATER_ROUGHNESS * Math.min(1, water / ICE_WATER_SECONDS);
 
@@ -367,6 +416,24 @@ export class PistonEngine implements EngineCore {
     this.frictionTorque = fmep * this.mepToTorque;
     const compression = this.compressionLossTorque * (1 - smoothstep(0, COMPRESSION_LOSS_FADE_RPM, rpm));
     this.lossTorque = (fmep + pmep) * this.mepToTorque + compression + input.accessoryPower / Math.max(input.omega, 20);
+  }
+
+  /**
+   * Flooding (PLUG_WET_PHI and the rest): wet plugs do not fire; an over-rich charge wets them, a lean one dries them
+   * and so does firing. The state holds in a quasi-steady evaluation.
+   */
+  private wetPlugs(input: EngineInput, rpm: number): void {
+    if (this.plugWet >= 1) this.firing = false;
+    const dt = input.dt ?? 0;
+    if (input.steady || !(dt > 0)) return;
+    if (this.firing) {
+      this.plugWet *= Math.exp(-dt / PLUG_DRY_FIRING_TIME);
+      return;
+    }
+    const turns = (Math.max(rpm, 0) / PLUG_RATE_RPM) * dt;
+    const cranking = 1 - smoothstep(PLUG_WET_RPM[0], PLUG_WET_RPM[1], rpm);
+    const wetting = PLUG_WETTING * cranking * Math.max(0, this.phi - PLUG_WET_PHI) - PLUG_DRYING * Math.max(0, PLUG_DRY_PHI - this.phi);
+    this.plugWet = clamp(this.plugWet + wetting * turns, 0, PLUG_WET_MAX);
   }
 
   get indicatedEfficiency(): number {
@@ -393,10 +460,11 @@ export class PistonEngine implements EngineCore {
   /**
    * Rough running beyond what the mixture and the magnetos give, 0 (none) .. 1: melt water from carburettor ice
    * going through the cylinders. Published as EngineState.roughness (engines with a carburettor); the audio adds
-   * it to its own roughness(mixture, magnetos).
+   * it to its own roughness(mixture, magnetos). With a hand primer, also the unevenness an unlocked one makes.
    */
   get roughness(): number {
-    return Math.min(1, this.induction.meltWater / ICE_WATER_SECONDS);
+    const melt = Math.min(1, this.induction.meltWater / ICE_WATER_SECONDS);
+    return this.primedFraction > 0 ? Math.max(melt, this.primerRoughness) : melt;
   }
 
   reset(ambientPressure: number, ambientTemp: number): void {
@@ -405,5 +473,6 @@ export class PistonEngine implements EngineCore {
     this.combustionQuality = 0;
     this.firing = false;
     this.induction.ice = this.induction.meltWater = 0;
+    this.primerFlow = this.primerRoughness = this.plugWet = 0;
   }
 }
