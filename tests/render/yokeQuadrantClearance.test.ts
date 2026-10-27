@@ -102,10 +102,9 @@ function pierce(from: { tris: Float32Array }, to: { tris: Float32Array; box: THR
  * controls at an end of their travel. Expected to fail until fixed; remove the type here when it passes.
  * c172s: the inboard horn of the right yoke (full forward, full left roll) through the throttle and mixture plungers
  * (feat/cockpit-yoke). pa34: the inboard horns (full forward, full roll) through the propeller / mixture levers' knobs
- * (feat/cockpit-yoke; at full aft on that branch alone). pa38: the inboard horn (full forward, full roll) through the
- * throttle / mixture levers (feat/cockpit-quadrant's levers; also with the earlier yokes).
+ * (feat/cockpit-yoke; at full aft on that branch alone).
  */
-const KNOWN_CLASH = new Set(['c172s', 'pa34', 'pa38']);
+const KNOWN_CLASH = new Set(['c172s', 'pa34']);
 
 describe('yokes clear the quadrants', () => {
   for (const [id, visual, panel] of TYPES) {

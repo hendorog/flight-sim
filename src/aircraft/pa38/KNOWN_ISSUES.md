@@ -51,12 +51,6 @@ The rudder tab is only a fixed offset; the earlier Tomahawk I configuration is a
 Evidence: [notModelled](index.ts): the current aircraft has both flow-strip pairs and Tomahawk II wheels.
 Close with: adjustable ground rigging and a separately sourced earlier variant if supported.
 
-## Yoke horn passes through the throttle and mixture levers at full forward and full roll — **defect**
-
-With the yoke at full forward and full roll, the inboard horn passes through the throttle and mixture levers at an end of their travel. Only at simultaneous stops; the neutral view is clear.
-Evidence: [yokeQuadrantClearance test](../../../tests/render/yokeQuadrantClearance.test.ts) (marked expected-fail for this type).
-Close with: horn, lever or knob geometry that clears at every stop, then drop the type from `KNOWN_CLASH`.
-
 ## Hand brake is on or off only — **missing feature**
 
 The standard hand brake (POH 7.7, fig 7-13), the one used in training, is Shift+B: it pulls and locks full braking on both mains, as the parking brake. It cannot be pulled part-way, so progressive braking is on the toe brakes (B or the pedals), the optional fit, which the model has.
