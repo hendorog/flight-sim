@@ -130,7 +130,7 @@ export const newPhaseMemory = (): PhaseMemory => ({ runup: false, climbedOut: fa
 const PHASE_FALLBACK: Readonly<Record<string, readonly string[]>> = {
   taxi: ['afterStart'], takeoff: ['beforeTakeoff'], climb: ['afterTakeoff', 'cruise'], downwind: ['descent'],
   final: ['downwind', 'descent'], landing: ['final', 'afterLanding'], engineFailure: ['powerFailure'],
-  powerFailure: ['engineFailure'], lowHeightFailure: ['powerFailure', 'engineFailure'],
+  powerFailure: ['engineFailure'], lowHeightFailure: ['takeoffPowerLoss', 'powerFailure', 'engineFailure'],
 };
 
 /**
