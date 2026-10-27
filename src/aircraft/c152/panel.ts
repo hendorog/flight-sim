@@ -1,15 +1,19 @@
 // Cessna 152 (1978 model): the instrument panel as data (gauges and their markings, switch row, magneto key,
 // artwork, highlight spots) and what the instrument systems behind it need. CLOSURES.
 //
-// Arrangement from the type's engineering data sheet (aircraft-data/c152.md in the design work folder, s.9
-// "Cockpit layout"; "s.N" below is its section N), as close as the panel components allow: the six flight
-// instruments in front of the left seat with the clock and the suction gauge in a column left of them and the
-// VOR indicator to their right; the radio stack in the centre; the tachometer right of centre with the ammeter
-// and the one HIGH VOLTAGE lamp under it, placards and the map compartment on the far right; fuel and oil gauges
-// on the lower left, the master switch, the magneto key and the light rockers below them (no fuel-pump rocker,
-// no avionics master on the 1978 aircraft); along the lower centre the CARB HEAT knob left of the throttle, the
-// mixture right of it, then the flap pre-select lever with its position scale; the circuit breakers under the
-// right panel. There is no EGT and no fuel-flow gauge.
+// Arrangement of the POH's instrument panel figure (Fig 7-2, p.7-6/7-7; "#N" below is its key number), as close
+// as the panel components allow. Top row: airspeed, attitude, the small clock, altimeter, VOR indicator; second
+// row: turn coordinator, heading indicator, vertical speed (the ADF of the figure is not fitted). The tiny
+// suction gauge sits between the airspeed indicator and the turn coordinator, the gyros slightly left of the
+// control column. The radio stack in the centre; the tachometer right of centre with the ammeter and the one HIGH
+// VOLTAGE lamp under it, the placard on the far right. Along the subpanel under the control wheel: the parking
+// brake, the left and right fuel gauges either side of the magneto key, the oil temperature and pressure gauges
+// right of the column; under them the split master, the key, the light rheostats and the light rockers (no
+// fuel-pump rocker, no avionics master on the 1978 aircraft). Right of them the CARB HEAT knob, the throttle,
+// the mixture and the flap pre-select lever with its position scale (the figure's flap switch and indicator),
+// the circuit breakers under them either side of the flap scale and the map compartment at the right end
+// (p.7-8). Further data from the type's engineering data sheet (aircraft-data/c152.md in the design work folder;
+// "s.N" below is its section N). There is no EGT and no fuel-flow gauge.
 //
 // The face shown in the cockpit is the left 1840 px of the 2080 x 800 canvas at 2000 px/m (visual.ts: a panel
 // 0.92 m wide and 0.40 m high), so the instruments are drawn at the C172S's scale, their real size.
@@ -28,33 +32,44 @@ export const C152_PANEL_CENTRE_PX = C152_PANEL_PX_RECT.x + C152_PANEL_PX_RECT.w 
 // ---------------------------------------------------------------------------------------------------
 // Layout, canvas px. Left seat on y = -0.24 m (px 440), right seat on +0.24 m (px 1400).
 
-const COLS = [258, 442, 626] as const;
+// The 3-1/8" cases own 184 px squares; the gaps between the first three columns hold the round suction gauge (a
+// 72 px flange) and the clock (108 px), so the VOR indicator ends at the radio stack.
+const COLS = [93, 351, 643] as const;
 const ROWS = [175, 361] as const;
-/** Clock and suction gauge, left of the airspeed indicator. */
-const LEFT_COLUMN = { x: 86, clock: 140, suction: 282 };
-const CDI = { x: 810, y: ROWS[0] };
+/** The suction gauge at 0.6 of a 2-1/4" case between the first two columns; the clock at 0.9 in the next gap, low in the top row (#3, #7). */
+const SUCTION = { x: 222, y: 268, scale: 0.6 };
+const CLOCK = { x: 497, y: 210, scale: 0.9 };
+const CDI = { x: 827, y: ROWS[0] };
 /** Radio stack: rack units are 320 px wide (render/avionics.ts); the heights are repeated from there. */
 const STACK = { x: 920, navcom1: 36, navcom2: 120, xpdr: 204, blank: 270 };
 const TACH = { x: 1336, y: ROWS[0] };
 const AMMETER = { x: 1500, y: 140 };
-/** Fuel quantity and oil temperature / pressure: two 2-1/4" dual gauges on the lower left. */
-const ENGINE_ROW = { y: 600, fuel: 150, oil: 290 };
+/**
+ * The small rectangular engine gauges of the subpanel, centres: left and right fuel quantity either side of the
+ * magneto key (#40, #38), oil temperature and oil pressure right of the control column (#35, #34).
+ */
+const ENGINE_ROW = { y: 618, w: 100, h: 70, fuelL: 185, fuelR: 295, oilTemp: 560, oilPress: 670 };
 /** Control wheel shafts through the panel (3D boots; visual.ts puts the yokes here). */
 const YOKES = { y: 545, xs: [442, 1398] as const, r: 58 };
-/** The push-pull knobs of the lower centre: carburettor heat, throttle, mixture (visual.ts engineControls). */
-export const C152_KNOBS = { y: 735, carbHeat: 800, throttle: 920, mixture: 1040 } as const;
-/** The parking brake handle at the left end of the lower panel, left of the fuel gauge (s.3, s.9), px. */
+/** The push-pull knobs along the top of the subpanel: carburettor heat, throttle, mixture (visual.ts engineControls). */
+export const C152_KNOBS = { y: 670, carbHeat: 800, throttle: 920, mixture: 1040 } as const;
+/** The parking brake handle at the left end of the subpanel, left of the fuel gauges (#43), px. */
 export const C152_PARKING_BRAKE = [56, 628] as const;
 /** Flap scale and lever slot: slot at local x 100, 0 deg at local y 80, 30 deg 200 px lower (FlapIndicator). */
 const FLAPS: Rect = { x: 1100, y: 470, w: 130, h: 312 };
-const SWITCHES: Rect = { x: 16, y: 672, w: 600, h: 116 };
+/** The lower strip of the subpanel: the master, the key under the fuel gauges, the rheostats, the rockers (#41, #39, #37, #33). */
+const SWITCHES: Rect = { x: 16, y: 672, w: 720, h: 116 };
 const ROW = {
   rockerTop: 44,
   rockerW: 24,
   rockerH: 42,
-  magneto: { x: 130, y: 72 },
-  dimmers: { panel: 510, radio: 562, y: 66 },
+  magneto: { x: (ENGINE_ROW.fuelL + ENGINE_ROW.fuelR) / 2 - 16, y: 72 },
+  dimmers: { panel: 320, radio: 368, y: 66 },
 };
+/** The subpanel strip under the primary panel (p.7-8). */
+const SUBPANEL: Rect = { x: 4, y: 574, w: 1832, h: 222 };
+/** Circuit breakers under the engine controls, either side of the flap scale (#26): one row of 6 + 6. */
+const BREAKERS: Rect = { x: 756, y: 730, w: 816, h: 58 };
 const APERTURES = { large: 74, small: 51 };
 
 /** The 3D parts that stand on the panel, in px, for visual.ts (yoke columns, flap lever slot). */
@@ -135,23 +150,20 @@ const fuelScale = (label: string, read: ScaleDef['read']): ScaleDef => ({
   read,
 });
 
-const FUEL_QTY: GaugeDef = {
-  kind: 'dual',
-  id: 'fuel',
-  at: [ENGINE_ROW.fuel, ENGINE_ROW.y],
-  seed: 211,
-  title: ['FUEL QTY', 'U.S. GAL'],
-  left: fuelScale('L', (r) => r.fuelLeftGal),
-  right: fuelScale('R', (r) => r.fuelRightGal),
-};
+/** A rectangular engine gauge of the subpanel row, centred on x. */
+const engineGauge = (id: string, x: number, title: string, scale: ScaleDef): GaugeDef => ({
+  kind: 'sector',
+  id,
+  bounds: { x: x - ENGINE_ROW.w / 2, y: ENGINE_ROW.y - ENGINE_ROW.h / 2, w: ENGINE_ROW.w, h: ENGINE_ROW.h },
+  title,
+  scale,
+});
+
+const FUEL_LEFT = engineGauge('fuelLeft', ENGINE_ROW.fuelL, 'L FUEL U.S. GAL', fuelScale('L', (r) => r.fuelLeftGal));
+const FUEL_RIGHT = engineGauge('fuelRight', ENGINE_ROW.fuelR, 'R FUEL U.S. GAL', fuelScale('R', (r) => r.fuelRightGal));
 /** Oil temperature green 100-245 F, red line 245; oil pressure red lines 25 (idle) and 100 psi, green 60-90 (POH Fig 2-3). */
-const OIL: GaugeDef = {
-  kind: 'dual',
-  id: 'oil',
-  at: [ENGINE_ROW.oil, ENGINE_ROW.y],
-  seed: 212,
-  title: ['OIL', 'TEMP  PRESS'],
-  left: {
+const OIL = {
+  temp: {
     label: '°F',
     min: 75,
     max: 250,
@@ -160,8 +172,8 @@ const OIL: GaugeDef = {
     arcs: [{ from: 100, to: 245, color: 'green' }],
     redLines: [245],
     read: (r) => r.oilTempF,
-  },
-  right: {
+  } satisfies ScaleDef,
+  press: {
     label: 'PSI',
     min: 0,
     max: 115,
@@ -170,7 +182,7 @@ const OIL: GaugeDef = {
     arcs: [{ from: 60, to: 90, color: 'green' }],
     redLines: [25, 100],
     read: (r) => r.oilPressurePsi,
-  },
+  } satisfies ScaleDef,
 };
 
 const RED = '#ff3b2a';
@@ -195,18 +207,19 @@ const rocker = (id: string, label: string, name: string, x: number, on: SwitchDe
   toggle,
 });
 
-const RX = { alt: 40, bat: 65, beacon: 210, landing: 250, taxi: 290, nav: 330, strobe: 370, pitotHeat: 440 };
+const RX = { alt: 110, bat: 135, beacon: 440, landing: 480, taxi: 520, nav: 560, strobe: 600, pitotHeat: 670 };
 
 // ---------------------------------------------------------------------------------------------------
 
 // Ring radii of the highlight spots: a little outside the glass of a 3-1/8" and of a 2-1/4" instrument.
 const BIG = APERTURES.large * 1.1;
-const SMALL = APERTURES.small * 1.15;
+/** Round a pair of the subpanel's rectangular gauges. */
+const PAIR = Math.hypot(ENGINE_ROW.fuelR - ENGINE_ROW.fuelL + ENGINE_ROW.w, ENGINE_ROW.h) / 2 + 4;
 
 export const C152_PANEL: PanelDef = {
   id: 'c152',
   fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'cdi1'], ['turn', 'heading', 'vsi']],
-    controls: [{ x: 16, y: 680, w: 600, h: 120 }] },
+    controls: [{ x: SWITCHES.x, y: 680, w: SWITCHES.w, h: 120 }] },
   size: { w: 2080, h: 800 },
   // In the order the panel draws them.
   gauges: [
@@ -218,12 +231,14 @@ export const C152_PANEL: PanelDef = {
     { kind: 'vsi', id: 'vsi', at: [COLS[2], ROWS[1]] },
     // The VOR / LOC indicator top right of the block; its course card set to runway 07 when nothing turns the OBS.
     { kind: 'cdi', id: 'cdi1', at: [CDI.x, CDI.y], receiver: 'nav1', fixedCourseDeg: 70 },
-    { kind: 'clock', id: 'clock', at: [LEFT_COLUMN.x, LEFT_COLUMN.clock] },
-    { kind: 'suction', id: 'suction', at: [LEFT_COLUMN.x, LEFT_COLUMN.suction], scale: C152_SUCTION_SCALE },
+    { kind: 'clock', id: 'clock', at: [CLOCK.x, CLOCK.y], scale: CLOCK.scale },
+    { kind: 'suction', id: 'suction', at: [SUCTION.x, SUCTION.y], scale: C152_SUCTION_SCALE, caseScale: SUCTION.scale },
     { kind: 'tach', id: 'tach', at: [TACH.x, TACH.y], size: 'large', marks: C152_TACH_MARKS },
     { kind: 'ammeter', id: 'ammeter', at: [AMMETER.x, AMMETER.y], scale: C152_AMMETER_SCALE },
-    FUEL_QTY,
-    OIL,
+    FUEL_LEFT,
+    FUEL_RIGHT,
+    engineGauge('oilTemp', ENGINE_ROW.oilTemp, 'OIL TEMP °F', OIL.temp),
+    engineGauge('oilPress', ENGINE_ROW.oilPress, 'OIL PRESS PSI', OIL.press),
     // The pre-select lever's position scale: stops at 10 and 20 degrees, full travel 30 (s.2.1).
     { kind: 'flapLever', id: 'flaps', bounds: FLAPS, maxDeg: 30, legends: ['0°', '10°', '20°', '30°'] },
     { kind: 'navcom', id: 'navcom1', bounds: { x: STACK.x, y: STACK.navcom1, w: 320, h: 76 } },
@@ -261,6 +276,8 @@ export const C152_PANEL: PanelDef = {
   // Panel px, where the click hotspot and the 3D key are.
   ignition: { kind: 'key', at: [SWITCHES.x + ROW.magneto.x, SWITCHES.y + ROW.magneto.y] },
   background: {
+    // The subpanel along the foot of the panel, under the control wheel shafts (#33-#43, #24-#29).
+    plates: [{ bounds: SUBPANEL, color: '#3a3c40', radius: 4 }],
     // Sub-panel seams: pilot panel | centre stack | right panel.
     seamsX: [STACK.x - 18, STACK.x + 330],
     // Legend and sub-legend under the three push-pull knobs of the lower centre, and under the parking brake.
@@ -271,7 +288,8 @@ export const C152_PANEL: PanelDef = {
       { at: [C152_PARKING_BRAKE[0], C152_PARKING_BRAKE[1]], text: 'PARK BRAKE', sub: 'PULL' },
     ],
     // Placards: centre x and top y; lines; lettering size where not the default. The pilot's composite placard
-    // of the right panel and the spin recovery placard above the altimeter, in the POH's words (p.2-8, 2-9).
+    // of the right panel and the spin recovery placard above the altimeter, in the POH's words (p.2-8, 2-9); the
+    // registration plate above the clock (#6; the livery's, visual.ts). The fuel placard is on the floor valve.
     placards: [
       {
         x: 1700,
@@ -299,7 +317,7 @@ export const C152_PANEL: PanelDef = {
         ],
         size: 6,
       },
-      { x: 1700, y: 236, lines: ['FUEL 100LL / 100 MIN. GRADE', '24.5 U.S. GAL USABLE'], size: 8 },
+      { x: CLOCK.x, y: 108, lines: ['N152FS'], size: 8 },
       {
         x: COLS[2],
         y: 24,
@@ -314,16 +332,18 @@ export const C152_PANEL: PanelDef = {
         size: 5.5,
       },
     ],
-    // Circuit breakers under the right panel, row by row: legend and rating, A. Legends of POH Fig 7-7 (p.7-21),
-    // three radios fitted; ALT FLD is the auto-reset field breaker. The row is not yet under the engine controls.
+    // Circuit breakers in one row under the engine controls, six left of the flap scale and six right of it:
+    // legend and rating, A. Legends of POH Fig 7-7 (p.7-21), three radios fitted; ALT FLD is the auto-reset field
+    // breaker.
     breakers: {
-      bounds: { x: 1256, y: 680, w: 560, h: 110 },
+      bounds: BREAKERS,
       names: ['FUEL IND', 'BCN PITOT', 'STROBE LTS', 'LDG LTS', 'FLAP', 'INST LTS', 'NAV DOME', 'RADIO 1', 'RADIO 2', 'RADIO 3', 'ALT FLD', 'ALT'],
       amps: [5, 15, 5, 15, 15, 5, 5, 15, 15, 5, 5, 60],
-      perRow: 6,
+      perRow: 12,
+      split: { after: 6, gap: 160 },
     },
-    // The map compartment at the far right of the panel.
-    glovebox: { x: 1580, y: 330, w: 236, h: 180 },
+    // The map compartment at the right end of the subpanel (#23).
+    glovebox: { x: 1600, y: 590, w: 216, h: 196 },
     // Rack rails of the centre stack and the blanking plate under the transponder.
     rack: {
       rails: { x: STACK.x - 4, y: STACK.navcom1 - 6, w: 328, h: STACK.blank + 50 - STACK.navcom1 },
@@ -335,8 +355,8 @@ export const C152_PANEL: PanelDef = {
   apertures: APERTURES,
   // The instrument groups of InstrumentPanel.drawTo().
   regions: {
-    sixpack: { x: COLS[0] - 92, y: ROWS[0] - 92, w: 3 * 184, h: 2 * 188 },
-    engine: { x: ENGINE_ROW.fuel - 66, y: ENGINE_ROW.y - 66, w: ENGINE_ROW.oil - ENGINE_ROW.fuel + 132, h: 132 },
+    sixpack: { x: COLS[0] - 92, y: ROWS[0] - 92, w: COLS[2] - COLS[0] + 184, h: 2 * 188 },
+    engine: { x: ENGINE_ROW.fuelL - ENGINE_ROW.w / 2, y: ENGINE_ROW.y - ENGINE_ROW.h / 2, w: ENGINE_ROW.oilPress - ENGINE_ROW.fuelL + ENGINE_ROW.w, h: ENGINE_ROW.h },
     stack: { x: STACK.x, y: STACK.navcom1, w: 320, h: STACK.blank - STACK.navcom1 },
   },
   // Ring centre and radius of each instrument a lesson can name (training/types.ts InstrumentId).
@@ -350,8 +370,9 @@ export const C152_PANEL: PanelDef = {
     dg: { x: COLS[1], y: ROWS[1], r: BIG },
     vsi: { x: COLS[2], y: ROWS[1], r: BIG },
     tach: { x: TACH.x, y: TACH.y, r: BIG },
-    fuel: { x: ENGINE_ROW.fuel, y: ENGINE_ROW.y, r: SMALL },
-    oil: { x: ENGINE_ROW.oil, y: ENGINE_ROW.y, r: SMALL },
+    // Each ring round the pair of gauges.
+    fuel: { x: (ENGINE_ROW.fuelL + ENGINE_ROW.fuelR) / 2, y: ENGINE_ROW.y, r: PAIR },
+    oil: { x: (ENGINE_ROW.oilTemp + ENGINE_ROW.oilPress) / 2, y: ENGINE_ROW.y, r: PAIR },
     flaps: { x: FLAPS.x + FLAPS.w / 2, y: FLAPS.y + FLAPS.h / 2, r: FLAPS.h / 2 },
   },
 };

@@ -493,8 +493,8 @@ const COCKPIT: CockpitDef = {
     },
     // The small centre pedestal from the panel's lower edge to the floor; the trim wheel sits in it (s.12).
     { min: [PANEL_X - 0.08, -0.065, PANEL_ZB], max: [PANEL_X + 0.03, 0.065, FLOOR_Z], bevel: 0.015, material: 'panelPlastic' },
-    // Plate of the fuel shut-off valve on the floor between the seats (s.9).
-    { min: [-0.06, -0.05, FLOOR_Z - 0.011], max: [0.08, 0.05, FLOOR_Z + 0.001], bevel: 0.005, material: 'panelPlastic' },
+    // Plate of the fuel shut-off valve on the floor between the seats (s.9), its placard ahead of the handle.
+    { min: [-0.06, -0.05, FLOOR_Z - 0.011], max: [0.1, 0.05, FLOOR_Z + 0.001], bevel: 0.005, material: 'panelPlastic' },
     // The flat carpeted baggage shelf behind the seats (s.12; baggage areas 1 and 2, s.6).
     // It stops short of the aft bulkhead and of the side walls, where the cabin narrows into the tail cone.
     { min: [-1.3, -0.32, 0.3], max: [SHELF_X, 0.32, 0.47], bevel: 0.012, material: 'carpet' },
@@ -545,11 +545,15 @@ const COCKPIT: CockpitDef = {
     indicator: { pos: [PANEL_X - 0.0805, -0.038, PANEL_ZB + 0.12], length: 0.07, up: [0, 0, 1], normal: [-1, 0, 0], labelUp: [0, 0, -1],
                  takeOff: { from: -0.07, to: 0.03 } },
   },
-  // The carb heat, throttle and mixture's sub-panel lip; ELEVATOR TRIM over the wheel.
+  // The carb heat, throttle and mixture's sub-panel lip; ELEVATOR TRIM over the wheel; the fuel valve placard on
+  // the floor plate ahead of the shut-off valve handle, in the POH's words (p.2-9), its top toward the nose.
   quadrant: {
     housings: [],
     parts: [{ kind: 'frame', pos: [PANEL_X, faceY(C152_KNOBS.throttle), faceZ(C152_KNOBS.y)], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.17, h: 0.055, lip: 0.004 }],
-    placards: [{ pos: [PANEL_X - 0.0805, 0, PANEL_ZB + 0.045], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.04, h: 0.012, lines: ['ELEVATOR', 'TRIM'], ink: 'white', ground: 'black' }],
+    placards: [
+      { pos: [PANEL_X - 0.0805, 0, PANEL_ZB + 0.045], normal: [-1, 0, 0], up: [0, 0, -1], w: 0.04, h: 0.012, lines: ['ELEVATOR', 'TRIM'], ink: 'white', ground: 'black' },
+      { pos: [0.083, 0, FLOOR_Z - 0.0115], normal: [0, 0, -1], up: [1, 0, 0], w: 0.09, h: 0.014, lines: ['FUEL – 24.5 GALS – ON-OFF'], ink: 'white', ground: 'black' },
+    ],
   },
   // Magnetic compass on the windshield centre post at the top (s.9).
   compass: { pos: [0.375, 0, -0.57] },

@@ -15,7 +15,7 @@
 // and C208 right halves, fixed 2D panel and 3D cockpit alike). With a layer per instrument the panel canvas
 // only receives plain image copies, and the fault does not occur (scripts/fixed-panel-stability.mjs).
 
-import { DualSectorGauge } from './render/dualSector';
+import { DualSectorGauge, SectorGauge } from './render/dualSector';
 import * as THREE from 'three';
 import { C172S_PANEL } from '../aircraft/c172s/panel';
 import type { SimContext } from '../core/context';
@@ -407,6 +407,8 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
       return new TachometerGauge(g.id, g.at[0], g.at[1], r, g.marks, g.size, g.engine);
     case 'dualSector':
       return new DualSectorGauge(g.id, g.bounds, g.left, g.right);
+    case 'sector':
+      return new SectorGauge(g.id, g.bounds, g.title, g.scale);
     case 'dual':
       return new DualGauge(g.id, g.at[0], g.at[1], r, g.seed, g.title, g.left, g.right);
     case 'single':
@@ -602,10 +604,24 @@ function paintGlovebox(g: Ctx2D, door: Rect): void {
 
 /**
  * Circuit breaker panel, in rows of `perRow` (on the C172S: lower right corner, clear of the flap slot and the right
- * yoke). A breaker named '' is an empty slot.
+ * yoke). A breaker named '' is an empty slot. With `split`, each row continues on a second plate across the gap.
  */
 function paintBreakers(g: Ctx2D, breakers: NonNullable<PanelDef['background']['breakers']>, rand: () => number): void {
   const cb = breakers.bounds;
+  const perRow = breakers.perRow;
+  const split = breakers.split;
+  if (!split) {
+    paintBreakerPlate(g, cb, breakers, 0, perRow, rand);
+    return;
+  }
+  // Plate widths in proportion to their breakers.
+  const left = Math.round(((cb.w - split.gap) * split.after) / perRow);
+  paintBreakerPlate(g, { ...cb, w: left }, breakers, 0, split.after, rand);
+  paintBreakerPlate(g, { ...cb, x: cb.x + left + split.gap, w: cb.w - left - split.gap }, breakers, split.after, perRow - split.after, rand);
+}
+
+/** One plate of breakers: columns `from` .. `from + count - 1` of every row. */
+function paintBreakerPlate(g: Ctx2D, cb: Rect, breakers: NonNullable<PanelDef['background']['breakers']>, from: number, count: number, rand: () => number): void {
   const amps = breakers.amps;
   g.fillStyle = 'rgba(0,0,0,0.45)';
   g.beginPath();
@@ -616,11 +632,12 @@ function paintBreakers(g: Ctx2D, breakers: NonNullable<PanelDef['background']['b
   g.roundRect(cb.x, cb.y, cb.w, cb.h, 4);
   g.fill();
   const perRow = breakers.perRow;
-  const dx = (cb.w - 44) / (perRow - 1);
+  const dx = (cb.w - 44) / Math.max(1, count - 1);
   breakers.names.forEach((n, i) => {
+    const col = (i % perRow) - from;
     // An empty legend is an empty slot: the grid keeps its place, nothing is painted.
-    if (!n) return;
-    const x = cb.x + 22 + (i % perRow) * dx;
+    if (!n || col < 0 || col >= count) return;
+    const x = cb.x + 22 + col * dx;
     const y = cb.y + 22 + Math.floor(i / perRow) * 54;
     g.font = `600 7.5px ${LABEL_FONT}`;
     g.fillStyle = '#e4e2da';

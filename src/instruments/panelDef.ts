@@ -113,6 +113,8 @@ export type GaugeDef =
       read(c: ControlInputs): number; set(c: ControlInputs, position: number): void;
       guard?: { closed(c: ControlInputs): boolean; toggle(c: ControlInputs): void } }
   | { kind: 'dualSector'; id: string; bounds: Rect; left: ScaleDef; right: ScaleDef }
+  /** One moving-coil pointer in a small rectangular case (C152 fuel quantity, oil temperature, oil pressure); `title` along its foot. */
+  | { kind: 'sector'; id: string; bounds: Rect; title: string; scale: ScaleDef }
   | { kind: 'dual'; id: string; at: At; seed: number; title: readonly [string, string]; left: ScaleDef; right: ScaleDef }
   | { kind: 'single'; id: string; at: At; seed: number; size: 'large' | 'small'; a0: number; a1: number; title: string; units: string;
       labels: readonly number[]; scale: ScaleDef }
@@ -121,7 +123,8 @@ export type GaugeDef =
       labels: readonly number[]; scale: Omit<ScaleDef, 'read'>; left(r: InstrumentReadings): number; right(r: InstrumentReadings): number;
       /** The letters of the two needles (default L, R; a helicopter's engines are numbered 1, 2). */
       letters?: readonly [string, string] }
-  | { kind: 'suction' | 'ammeter'; id: string; at: At; scale?: ScaleDef }
+  /** `caseScale`: its size against the 2-1/4" case (the C152's 1-1/4" suction gauge); absent: 1. */
+  | { kind: 'suction' | 'ammeter'; id: string; at: At; scale?: ScaleDef; caseScale?: number }
   /** Three greens and the red unsafe light; with `lever`, also the gear selector drawn there, clickable as a 'select' hotspot. */
   | { kind: 'gearLights'; id: string; bounds: Rect; lever?: At;
       /** Legend of the first green lamp (default NOSE): TAIL on a tail-wheel type (the AH-56A's gear state keeps its tail wheel in the nose slot). */
@@ -214,8 +217,13 @@ export interface PanelDef {
                 plates?: readonly { bounds: Rect; color: string; radius?: number }[];
                 bushings: readonly { at: At; text: string; sub: string }[];
                 placards: readonly { x: number; y: number; lines: readonly string[]; size?: number }[];
-                /** Legends ('' an empty slot) and ratings, A, row by row, `perRow` to a row. */
-                breakers?: { bounds: Rect; names: readonly string[]; amps: readonly number[]; perRow: number };
+                /**
+                 * Legends ('' an empty slot) and ratings, A, row by row, `perRow` to a row. `split`: each row on two
+                 * plates, the first `after` breakers on the left one, the rest on one `gap` px to the right (a control
+                 * between them); `bounds` spans both and the gap.
+                 */
+                breakers?: { bounds: Rect; names: readonly string[]; amps: readonly number[]; perRow: number;
+                             split?: { after: number; gap: number } };
                 glovebox?: Rect;
                 /** The avionics rack: the rails behind the units and the blanking plate of each empty bay. Absent: none is painted. */
                 rack?: { rails: Rect; blanks: readonly Rect[] } };
@@ -238,9 +246,10 @@ const RECESS_DEPTH_SMALL = 0.01;
 
 export interface LampInputs { state: AircraftState; controls: ControlInputs; fuelGal: readonly number[]; suctionInHg: number }
 
-/** A gauge's own size factor (GaugeDef `scale`), 1 when it has none. */
+/** A gauge's own size factor (GaugeDef `scale` of a flight instrument, `caseScale` of a suction gauge or ammeter), 1 when it has none. */
 export function gaugeScale(g: GaugeDef): number {
-  return 'scale' in g && typeof g.scale === 'number' ? g.scale : 1;
+  if ('scale' in g && typeof g.scale === 'number') return g.scale;
+  return 'caseScale' in g ? g.caseScale ?? 1 : 1;
 }
 
 /**
