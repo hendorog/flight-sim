@@ -5,7 +5,7 @@
 // Speeds come from ./reference (the same table the HUD, the scenarios and the autoflight use). Checklist wording
 // follows the 1978 POH normal procedures as the type's engineering data sheet gives them (aircraft-data/c152.md
 // in the design work folder, s.10; SCHOOL marks common flying-school practice there). Items over a control the
-// telemetry has no signal for (carburettor heat, the circuit breakers) have `state: null` and are confirmed with
+// telemetry has no signal for (carburettor heat, the circuit breakers, the primer, the doors) have `state: null` and are confirmed with
 // Enter. There is no electric fuel pump and no avionics master: the avionics key stands for the radios.
 
 import { citeChecklists } from '../../training/checklistData';
@@ -147,6 +147,7 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('master', 'Master switch', 'On', {
       control: 'master', state: eq('master', true), key: 'masterSwitch',
       why: why('Master on: it powers the starter, the beacon and the gauges.') }),
+    // SCHOOL: the POH start list has no beacon item.
     item('beacon', 'Beacon', 'On', {
       control: 'beacon', state: eq('lightBeacon', true), key: 'beacon',
       why: why('Beacon on: it warns anyone outside that the engine is about to start.') }),
@@ -166,7 +167,7 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
     item('rpm', 'Throttle', '1,000 rpm or less', {
       control: 'throttle', state: all(ge('rpm', 800), le('rpm', 1100)), key: THROTTLE_KEYS,
       why: why('1,000 rpm or less after the start, while the oil reaches everything.') }),
-    item('ammeter', 'Ammeter', 'Charging, low-voltage light out', {
+    item('ammeter', 'Ammeter', 'Charging, HIGH VOLTAGE light out', {
       control: 'alternator', state: eq('alternator', true), key: 'alternator',
       why: why('Charging: the alternator, not the battery, now carries the electrics.') }),
     item('radiosOn', 'Radios', 'On, set', {
@@ -203,6 +204,9 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
       why: why('An idle check proves the engine will not stop when we close the throttle.') }),
   ]),
   beforeTakeoff: list('beforeTakeoff', 'Before take-off', [
+    item('doors', 'Cabin doors', 'Closed and latched', {
+      control: null, state: null, key: null,
+      why: why('A door that opens on the take-off roll distracts at the worst moment.') }),
     item('controls', 'Flight controls', 'Free and correct', {
       control: 'yoke', state: null, key: null,
       why: why('Full and free, the right way: a jammed or crossed control is found now.') }),
@@ -223,6 +227,12 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
       control: 'strobes', state: eq('lightStrobe', true), key: 'strobes',
       why: why('Strobes on as we enter the runway, so we are seen.') }),
     landingLightOn,
+    item('radiosSet', 'Radios', 'Set', {
+      control: 'avionics', state: null, key: null,
+      why: why('Frequencies and transponder set now, not during the climb-out.') }),
+    item('frictionLock', 'Throttle friction lock', 'Adjust', {
+      control: 'throttle', state: null, key: null,
+      why: why('Friction set so the throttle cannot creep back on the take-off.') }),
     item('parkingBrakeOff', 'Parking brake', 'Off', {
       control: 'parkingBrake', state: eq('parkingBrake', false), key: 'parkingBrake',
       why: why('Parking brake off, or we will not roll on the take-off.') }),
@@ -326,18 +336,25 @@ const CHECKLISTS: Record<ChecklistId, ChecklistDef> = {
       control: 'master', state: eq('master', false), key: 'masterSwitch',
       why: why('Master off, or the battery is flat by tomorrow.') }),
   ]),
-  // Engine failure touch drills (POH section 3, engine failure in flight): fuel, mixture, carb heat, magnetos.
+  // Engine failure touch drills (POH 3-4, engine failure during flight): airspeed, carb heat, primer, fuel,
+  // mixture, ignition, in the POH's order.
   engineFailure: list('engineFailure', 'Engine failure: touch drills', [
+    item('airspeed', 'Airspeed', '60 knots', {
+      control: 'asi', state: null, key: null, stateLabel: '60 KIAS',
+      why: why('Best glide first: 60 knots buys the most time and distance.') }),
     item('carbHeat', 'Carburettor heat', 'On', {
       control: null, state: null, key: 'carbHeat', stateLabel: 'HOT',
       why: why('Carburettor ice is a likely cause: full heat, and give it time.') }),
+    item('primer', 'Primer', 'In and locked', {
+      control: null, state: null, key: null, stateLabel: 'IN AND LOCKED',
+      why: why('An unlocked primer can feed raw fuel and make the engine run too rich.') }),
     item('fuelSelector', 'Fuel shut-off valve', 'On', {
       control: 'fuelSelector', state: eq('fuelSel', 'on'), key: 'fuelSelector', critical: true,
       why: why('Fuel valve on: a valve knocked off starves the engine.') }),
     item('mixture', 'Mixture', 'Rich', {
       control: 'mixture', state: ge('mixture', 0.95), key: 'mixtureRich', critical: true,
       why: why('Mixture rich: a mixture pulled back by mistake starves the engine.') }),
-    item('mags', 'Ignition switch', 'Both', {
+    item('mags', 'Ignition switch', 'Both (START if the propeller has stopped)', {
       control: 'magnetos', state: eq('mags', 3), key: 'magnetoBoth',
       why: why('Magnetos on both: a key knocked to one magneto, or off.') }),
   ]),
@@ -404,6 +421,7 @@ export const C152: AircraftTypeDef = {
     engines: 1,
     induction: 'carburettor',
     carbHeat: true,
+    // The aeroplane's hand primer (panel knob). Not modelled in the sim (index.ts notModelled); nothing reads this field.
     primer: 'manual',
     electricFuelPump: false,
     fuelSelector: ['off', 'on'],
