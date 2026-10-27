@@ -121,8 +121,9 @@ export const C152_AMMETER_SCALE: ScaleDef = {
 };
 
 /**
- * One side of the fuel quantity gauge: a 13 US gal tank, 12.25 gal usable (s.6). The red arc is the "E plus
- * red line" of s.9, about 0.75 gal left in the tank.
+ * One side of the fuel quantity gauge: a 13 US gal tank, 12.25 gal usable (s.6). The gauge reads the whole tank
+ * (C152_INSTRUMENT_SYSTEMS.fuel): full is 13, and the red arc is the "E plus red line" of s.9, the 0.75 gal
+ * unusable left when the usable fuel is gone (POH p.7-19).
  */
 const fuelScale = (label: string, read: ScaleDef['read']): ScaleDef => ({
   label,
@@ -335,6 +336,8 @@ export const C152_PANEL: PanelDef = {
 
 /** 100LL avgas, kg per US gallon (6.0 lb/gal). */
 const KG_PER_GAL = 2.7216;
+/** Unusable fuel per tank, kg: 0.75 US gal (POH p.7-19). The physics tanks hold usable fuel only. */
+const UNUSABLE_KG = 0.75 * KG_PER_GAL;
 /** DC bus voltage below which electric gauges and lamps are dead (28 V system, as the C172S). */
 const BUS_DEAD_VOLTS = 18;
 /** Regulated suction in the green arc (4.6-5.4 inHg, s.9); the regulator is set to 5.0. */
@@ -361,10 +364,12 @@ export const C152_INSTRUMENT_SYSTEMS: InstrumentSystemsDef = {
     },
   },
   gyroDrive: { attitude: 'vacuum', heading: 'vacuum' },
-  // Two wing tanks, one float sender each.
-  fuel: { kgPerGal: KG_PER_GAL, tanks: [(s) => s.fuel.left, (s) => s.fuel.right] },
+  // Two wing tanks, one float sender each, reading the unusable fuel too: E with the usable fuel gone, 13 full.
+  fuel: { kgPerGal: KG_PER_GAL, tanks: [(s) => s.fuel.left + UNUSABLE_KG, (s) => s.fuel.right + UNUSABLE_KG] },
   busDeadVolts: BUS_DEAD_VOLTS,
   tachHourRpm: TACH_HOUR_RPM,
+  // A direct pressure oil line feeds the oil pressure gauge; only oil temperature is electric (POH p.7-14).
+  oilPressureDirect: true,
   // HIGH VOLTAGE: lit while the alternator is off line, tripped by the over-voltage sensor (powerplant.ts) or switched
   // off with the BAT half on; ALT off is the POH's lamp test (p.7-21). A stopped engine with ALT on leaves it out.
   lamps: [{ id: 'highVolts', lit: (i) => powered(i) && (!i.controls.alternator || i.state.electrical.overVoltageTripped === true) }],

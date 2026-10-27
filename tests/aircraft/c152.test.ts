@@ -20,6 +20,8 @@ import { loadAirframeVisual, loadPresentation } from '../../src/aircraft/registr
 import { defaultControls } from '../../src/core/types';
 import { makeMockState } from '../../src/core/mockState';
 import { ElectricalSystem } from '../../src/physics/propulsion/electrical';
+import { InstrumentSet } from '../../src/instruments/dynamics/instrumentSet';
+import { run } from '../instruments/testbed';
 import { buildHotspots } from '../../src/instruments/hotspots';
 import { panelLayoutProblems } from '../../src/instruments/panelLayout';
 import { AircraftVisual } from '../../src/render/aircraft/AircraftVisual';
@@ -228,5 +230,35 @@ describe('Cessna 152 over-voltage sensor and HIGH VOLTAGE light (POH p.3-13, 7-2
     controls.masterBattery = controls.alternator = false;
     state.electrical.busVoltage = 0;
     expect(lit()).toBe(false);
+  });
+});
+
+describe('Cessna 152 engine and fuel gauges (POH p.7-14, 7-19)', () => {
+  const KG_PER_GAL = 2.7216;
+
+  it('the oil pressure gauge is direct-reading (works with the master off); oil temperature is electric', () => {
+    const s = makeMockState();
+    s.engine.oilPressure = 60;
+    s.electrical.busVoltage = 0;
+    const c = defaultControls();
+    c.masterBattery = c.alternator = false;
+    const set = new InstrumentSet({ systems: C152_INSTRUMENT_SYSTEMS });
+    run(set, 10, s, c);
+    expect(set.readings.oilPressurePsi).toBeCloseTo(60, 1);
+    expect(set.readings.oilTempF).toBeLessThan(80);
+  });
+
+  it('the fuel gauges read the whole tank: 13 gal full, E (0.75 gal unusable) with no usable fuel left', () => {
+    const s = makeMockState();
+    s.electrical.busVoltage = 28;
+    const c = defaultControls();
+    const set = new InstrumentSet({ systems: C152_INSTRUMENT_SYSTEMS });
+    s.fuel.left = s.fuel.right = 12.25 * KG_PER_GAL;
+    run(set, 20, s, c);
+    expect(set.readings.fuelLeftGal).toBeCloseTo(13, 2);
+    expect(set.readings.fuelRightGal).toBeCloseTo(13, 2);
+    s.fuel.left = s.fuel.right = 0;
+    run(set, 30, s, c);
+    expect(set.readings.fuelLeftGal).toBeCloseTo(0.75, 2);
   });
 });
