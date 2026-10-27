@@ -40,7 +40,7 @@ export function fixedSections(def: PanelDef): FixedSections {
   }));
   // Engine/auxiliary instruments in short columns beside the flight instruments. Never shrink an
   // individual gauge: the whole section has one scale, including its hotspot boxes.
-  const engineKinds = ['tach', 'single', 'dual', 'twinNeedle', 'dualSector', 'suction', 'ammeter', 'clock', 'digitalTemperature', 'engineDisplay', 'eisWindow'];
+  const engineKinds = ['tach', 'single', 'dual', 'twinNeedle', 'dualSector', 'sector', 'suction', 'ammeter', 'clock', 'digitalTemperature', 'engineDisplay', 'eisWindow'];
   const crops = def.fixed?.crops ?? [];
   const within = (r: Rect, o: Rect): boolean => r.x >= o.x && r.y >= o.y && r.x + r.w <= o.x + o.w && r.y + r.h <= o.y + o.h;
   const cropped = (id: string): boolean => crops.some(c => (parts.get(id) ? within(parts.get(id)!, c) : false));
