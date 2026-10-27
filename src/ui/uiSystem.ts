@@ -695,6 +695,12 @@ export class UISystem implements Subsystem, MenuHost {
   private readonly onKeyCapture = (e: KeyboardEvent): void => {
     const target = e.target;
     const typing = target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement);
+    // Shift+F steps through the lists while the checklist is open (it feathers a propeller only while it is closed).
+    if (e.code === this.hotkeys.checklist && e.shiftKey && this.checklist.isOpen && !typing && !e.ctrlKey && !e.altKey && !e.metaKey && !this.menuOpen && !this.schoolUi?.screen && !this.crash.isOpen) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (!e.repeat) this.checklist.step();
+      return;
+    }
     if (e.code === this.hotkeys.checklist && !typing && !e.shiftKey && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey && !this.schoolUi?.screen && !this.crash.isOpen) {
       e.preventDefault(); e.stopImmediatePropagation();
       if (this.menuOpen) { this.closeMenu(); this.showChecklist(); }

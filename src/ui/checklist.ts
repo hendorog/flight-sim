@@ -1,7 +1,9 @@
 // Compact reference panel in every view. Separate progress from the instructor's graded checklist:
-// checking a reference item never acknowledges a lesson or operates an aircraft control.
+// checking a reference item never acknowledges a lesson or operates an aircraft control. The panel follows the
+// flight: it shows the list for the current phase (phaseSection), F opens it there and Shift+F steps on; a list
+// picked by hand stays until the phase changes.
 import type { SimContext } from '../core/context';
-import { ChecklistSession, type ChecklistTab } from './checklistModel';
+import { ChecklistSession, newPhaseMemory, phaseSection, resolvePhase, type ChecklistTab } from './checklistModel';
 import { el, setText } from './dom';
 
 export class ChecklistPanel {
@@ -21,6 +23,11 @@ export class ChecklistPanel {
   private opened = false;
   private rendered = '';
   private lastUpdate = -Infinity;
+  private readonly phaseMemory = newPhaseMemory();
+  /** The phase list in force (shown unless the pilot picked another since it came in), and a candidate with its first sight. */
+  private phase: string | null = null;
+  private candidate: { id: string | null; since: number } = { id: null, since: 0 };
+  private followed = true;
 
   constructor(parent: HTMLElement) {
     this.launcher = el('button', 'checklist-launch', parent, 'Checklist · F');
@@ -38,11 +45,11 @@ export class ChecklistPanel {
     for (const tab of ['normal', 'emergency'] as const) {
       const button = el('button', '', tabs, tab === 'normal' ? 'Normal' : 'Emergency');
       this.tabs.set(tab, button);
-      button.addEventListener('click', () => { this.model?.changeTab(tab); this.render(); button.blur(); });
+      button.addEventListener('click', () => { this.model?.changeTab(tab); this.followed = false; this.render(); button.blur(); });
     }
     this.selector = el('select', '', this.root);
     this.selector.setAttribute('aria-label', 'Checklist section');
-    this.selector.addEventListener('change', () => { this.model?.select(this.selector.value); this.render(); this.selector.blur(); });
+    this.selector.addEventListener('change', () => { this.model?.select(this.selector.value); this.followed = false; this.render(); this.selector.blur(); });
     this.note = el('div', 'checklist-note', this.root);
     this.items = el('div', 'checklist-items', this.root);
     const nav = el('div', 'checklist-nav', this.root);
@@ -50,10 +57,10 @@ export class ChecklistPanel {
     this.progress = el('span', '', nav);
     this.next = el('button', '', nav, 'Next →');
     for (const [button, delta] of [[this.previous, -1], [this.next, 1]] as const) button.addEventListener('click', () => {
-      this.model?.move(delta); this.render(); button.blur();
+      this.model?.move(delta); this.followed = false; this.render(); button.blur();
     });
     const foot = el('div', 'checklist-foot', this.root);
-    el('span', '', foot, 'AUTO = live state · HAND = your check');
+    el('span', '', foot, 'Follows the flight · Shift+F next list · AUTO = live state · HAND = your check');
     const reset = el('button', '', foot, 'Reset all');
     reset.title = 'Clear all manual marks; automatic marks follow current state';
     reset.addEventListener('click', () => { this.model?.reset(); this.renderMarks(); reset.blur(); });
@@ -72,19 +79,51 @@ export class ChecklistPanel {
     this.render();
   }
   get isOpen(): boolean { return this.opened; }
-  toggle(): void { this.opened = !this.opened; this.renderVisibility(false); }
+  /** F: opens on the list for the current phase, or closes. */
+  toggle(): void {
+    if (this.opened) { this.opened = false; this.renderVisibility(false); } else this.open();
+  }
+  /** Shift+F while open: the next list (the emergency lists after the normal ones); it stays until the phase changes. */
+  step(): void { this.model?.step(); this.followed = false; this.render(); this.scrollToCurrent(); }
   open(section?: string, item?: string): void {
-    if (section) this.model?.select(section, item ?? null);
+    if (section) { this.model?.select(section, item ?? null); this.followed = false; } else this.follow(true);
     this.opened = true; this.render(); this.renderVisibility(false);
     const row = this.rows.find(r => r.id === item);
     row?.row.scrollIntoView?.({ block: 'nearest' });
   }
-  reset(): void { this.model?.reset(); this.renderMarks(); }
+  reset(): void {
+    this.model?.reset(); Object.assign(this.phaseMemory, newPhaseMemory());
+    this.phase = null; this.candidate = { id: null, since: 0 }; this.followed = true;
+    this.renderMarks();
+  }
   update(ctx: SimContext, hidden: boolean): void {
     this.renderVisibility(hidden);
-    if (!this.opened || hidden || performance.now() - this.lastUpdate < 100) return;
-    this.lastUpdate = performance.now();
+    const now = performance.now();
+    if (now - this.lastUpdate < 100) return;
+    this.lastUpdate = now;
+    this.trackPhase(ctx, now);
+    if (!this.opened || hidden) return;
+    if (this.follow(false)) { this.render(); this.scrollToCurrent(); }
     this.model?.update(ctx); this.renderMarks();
+  }
+  /** A new phase takes over once it has held for 2 s (a bounce or a gust does not flip the list); an engine failure at once. */
+  private trackPhase(ctx: SimContext, now: number): void {
+    const m = this.model; if (!m) return;
+    const id = resolvePhase(phaseSection(ctx, this.phaseMemory), m.sections.map(s => s.id));
+    if (id !== this.candidate.id) this.candidate = { id, since: now };
+    const urgent = m.sections.find(s => s.id === id)?.category === 'emergency';
+    if (id !== this.phase && (urgent || now - this.candidate.since >= 2000)) { this.phase = id; this.followed = true; }
+  }
+  /** Shows the phase list if the panel is following (or `force`); true if the section changed. */
+  private follow(force: boolean): boolean {
+    const m = this.model;
+    if (force) this.followed = true;
+    if (!m || !this.followed || !this.phase || m.sectionId === this.phase) return false;
+    m.select(this.phase); return true;
+  }
+  private scrollToCurrent(): void {
+    const current = this.model?.currentItem;
+    this.rows.find(r => r.id === current)?.row.scrollIntoView?.({ block: 'nearest' });
   }
   private renderVisibility(hidden: boolean): void {
     this.root.classList.toggle('hidden', hidden || !this.opened);

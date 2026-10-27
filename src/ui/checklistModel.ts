@@ -122,6 +122,62 @@ export function checklistFrame(ctx: Pick<SimContext, 'state' | 'controls' | 'wea
   return f;
 }
 
+/** What the phase follower remembers between frames: a run-up seen, the climb-out finished, the aircraft flown. */
+export interface PhaseMemory { runup: boolean; climbedOut: boolean; flown: boolean }
+export const newPhaseMemory = (): PhaseMemory => ({ runup: false, climbedOut: false, flown: false });
+
+// Fall-backs for a phase whose list a type does not have: the nearest list that covers it.
+const PHASE_FALLBACK: Readonly<Record<string, readonly string[]>> = {
+  taxi: ['afterStart'], takeoff: ['beforeTakeoff'], climb: ['afterTakeoff', 'cruise'], downwind: ['descent'],
+  final: ['downwind', 'descent'], landing: ['final', 'afterLanding'], engineFailure: ['powerFailure'],
+  powerFailure: ['engineFailure'], lowHeightFailure: ['powerFailure', 'engineFailure'],
+};
+
+/**
+ * The checklist section for the current phase of flight, from real state only: parked, start, taxi, run-up,
+ * take-off, climb, cruise, descent, circuit, final, landing roll, shutdown, and the engine-failure lists when an
+ * engine stops in the air. Heights are above the ground; the circuit is anything below 1500 ft after the
+ * climb-out with the flaps out or descending. `memory` carries the run-up and the flight between frames.
+ */
+export function phaseSection(ctx: Pick<SimContext, 'state' | 'controls' | 'aircraft'>, memory: PhaseMemory): string {
+  const s = ctx.state, c = ctx.controls;
+  const engines = s.engines.length ? s.engines : [s.engine];
+  const running = engines.filter(e => e.running).length;
+  const agl = s.altitudeAGL / FT, vs = s.verticalSpeed / FPM, gs = s.groundSpeed / KT;
+  if (!s.onGround) {
+    memory.flown = true;
+    if (agl > 1000) memory.climbedOut = true;
+    if (running < engines.length) return running === 0 && agl < 500 ? 'lowHeightFailure' : 'engineFailure';
+    if (!memory.climbedOut) return vs > -200 ? 'afterTakeoff' : 'final';
+    if (agl < 700 && vs < -200) return 'final';
+    if (agl < 1500 && (c.flaps > 0.05 || vs < -200)) return 'downwind';
+    if (vs > 300) return 'climb';
+    if (vs < -300) return 'descent';
+    return 'cruise';
+  }
+  if (memory.flown) {
+    if (running === 0) return 'shutdown';
+    if (gs > 30) return 'landing';
+    return gs < 1 && c.parkingBrake ? 'shutdown' : 'afterLanding';
+  }
+  if (running === 0) return c.masterBattery ? 'engineStart' : 'beforeStart';
+  const rotor = s.rotorcraft, d = ctx.aircraft.rotorcraft;
+  const highPower = rotor && d ? rotor.rotorRpm >= d.referenceRpm * 0.9
+    : engines.some(e => e.running && (e.ng !== undefined ? (e.ng ?? 0) > 75 : e.rpm > 1500));
+  if (gs > 30) return 'takeoff';
+  if (gs < 1 && highPower) memory.runup = true;
+  if (memory.runup) return 'beforeTakeoff';
+  return gs > 1 ? 'taxi' : 'afterStart';
+}
+
+/** The section id among `ids` that stands for `phase` (itself, else its fall-backs, else the nearest earlier normal list). */
+export function resolvePhase(phase: string, ids: readonly string[]): string | null {
+  for (const id of [phase, ...(PHASE_FALLBACK[phase] ?? [])]) if (ids.includes(id)) return id;
+  const i = ORDER.indexOf(phase);
+  for (let j = i - 1; j >= 0; j--) if (ids.includes(ORDER[j])) return ORDER[j];
+  return null;
+}
+
 export class ChecklistSession {
   readonly sections: FlightChecklist[];
   tab: ChecklistTab = 'normal';
@@ -149,6 +205,12 @@ export class ChecklistSession {
     this.sectionId = id; this.tab = section.category ?? 'normal'; this.linkedItem = item;
   }
   changeTab(tab: ChecklistTab): void { this.tab = tab; this.sectionId = this.available[0]?.id ?? ''; this.linkedItem = null; }
+  /** Steps to the next section, normal lists first, then the emergency lists, and round again. */
+  step(): void {
+    const lists = [...this.sections.filter(s => s.category !== 'emergency'), ...this.sections.filter(s => s.category === 'emergency')];
+    const next = lists[(lists.findIndex(s => s.id === this.sectionId) + 1) % lists.length];
+    if (next) this.select(next.id);
+  }
   move(delta: number): void {
     const lists = this.available, index = lists.findIndex(s => s.id === this.sectionId);
     const next = lists[index + delta]; if (next) this.select(next.id);

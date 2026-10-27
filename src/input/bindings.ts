@@ -10,7 +10,7 @@
 //
 // Keys owned by other modules and deliberately left unbound here: Escape, F8, F9 (UI); P (pause), bare A
 // (autopilot; Shift+A is the STAB ASSIST toggle on a type that has one), T / Shift+T (autopilot altitude), H (dome light), Shift+R (restart), Shift+[ / Shift+] (time
-// rate) (the shell, src/sim/Simulator.ts); F11 is kept free; F is the checklist (Shift+F feathers).
+// rate) (the shell, src/sim/Simulator.ts); F11 is kept free; F is the checklist (Shift+F steps its lists while it is open, and feathers while it is closed).
 // Shift+V toggles the fixed cockpit panel; bare ] cycles its sections.
 // Owned by the Flight School during a lesson (src/training/TrainingSystem.ts, spec section 5.9; TRAINING_KEY_MAP
 // below): Enter (acknowledge / "I have control"), Shift+Enter (hand control back), bare R (say again), bare [

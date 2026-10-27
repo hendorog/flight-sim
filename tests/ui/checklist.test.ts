@@ -10,7 +10,10 @@ import type { SimContext } from '../../src/core/context';
 import { makeMockState } from '../../src/core/mockState';
 import { defaultControls, defaultWeather, setEngineControl } from '../../src/core/types';
 import { emptyRotorcraftState } from '../../src/physics/rotorcraft/definition';
-import { ChecklistSession, checklistSections, livePredicate } from '../../src/ui/checklistModel';
+import { ChecklistSession, checklistSections, livePredicate, newPhaseMemory, phaseSection, resolvePhase } from '../../src/ui/checklistModel';
+import { C152 } from '../../src/aircraft/c152/training';
+import { C152_DEFINITION } from '../../src/aircraft/c152';
+import { FPM, FT, KT } from '../../src/core/math';
 import { demoChecklistLink } from '../../src/ui/rotorcraftDemoGuide';
 import { PHASE_ACTIONS, R22_DEMOS } from '../../src/sim/rotorcraft/flights';
 import { audibleWarnings } from '../../src/ui/flightCues';
@@ -93,6 +96,50 @@ describe('reference checklists', () => {
       expect(R22_TRAINING.checklists[link.section]?.items.some(i => i.id === link.item), `${id}/${phase}`).toBe(true);
       expect(link.next.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('checklist follows the flight', () => {
+  const ids = checklistSections(C152, 'c152').map(s => s.id);
+  const at = (ctx: SimContext, memory: ReturnType<typeof newPhaseMemory>) => resolvePhase(phaseSection(ctx, memory), ids);
+  it('walks the C152 lists from parked to shutdown', () => {
+    const ctx = context(C152_DEFINITION), s = ctx.state, c = ctx.controls, memory = newPhaseMemory();
+    const ground = (gs: number, rpm: number, running = true) => {
+      s.onGround = true; s.altitudeAGL = 0; s.verticalSpeed = 0; s.groundSpeed = gs * KT;
+      s.engine.running = running; s.engine.rpm = rpm; s.engines = [s.engine];
+    };
+    const air = (agl: number, vs: number) => { s.onGround = false; s.altitudeAGL = agl * FT; s.verticalSpeed = vs * FPM; s.groundSpeed = 80 * KT; };
+    ground(0, 0, false); c.masterBattery = false; expect(at(ctx, memory)).toBe('beforeStart');
+    c.masterBattery = true; expect(at(ctx, memory)).toBe('engineStart');
+    ground(0, 900); expect(at(ctx, memory)).toBe('afterStart');
+    ground(8, 1000); expect(at(ctx, memory)).toBe('afterStart'); // the C152 has no taxi list
+    ground(0, 1700); expect(at(ctx, memory)).toBe('beforeTakeoff'); // the run-up done
+    ground(5, 1000); expect(at(ctx, memory)).toBe('beforeTakeoff');
+    ground(45, 2300); expect(at(ctx, memory)).toBe('beforeTakeoff'); // no take-off list: the nearest one before it
+    air(300, 700); expect(at(ctx, memory)).toBe('afterTakeoff');
+    air(2000, 700); expect(at(ctx, memory)).toBe('climb');
+    air(4000, 0); expect(at(ctx, memory)).toBe('cruise');
+    air(3000, -500); expect(at(ctx, memory)).toBe('descent');
+    air(1000, 0); c.flaps = 0.33; expect(at(ctx, memory)).toBe('downwind');
+    air(400, -500); expect(at(ctx, memory)).toBe('final');
+    ground(40, 1000); expect(at(ctx, memory)).toBe('final'); // the landing roll: no landing list
+    ground(8, 1000); expect(at(ctx, memory)).toBe('afterLanding');
+    ground(0, 0, false); expect(at(ctx, memory)).toBe('shutdown');
+  });
+  it('turns to the engine failure lists when the engine stops in the air', () => {
+    const ctx = context(C152_DEFINITION), s = ctx.state, memory = newPhaseMemory();
+    s.onGround = false; s.altitudeAGL = 3000 * FT; s.verticalSpeed = -600 * FPM; s.engine.running = false; s.engines = [s.engine];
+    expect(at(ctx, memory)).toBe('engineFailure');
+    s.altitudeAGL = 300 * FT; expect(at(ctx, memory)).toBe('powerFailure');
+  });
+  it('Shift+F steps through the normal lists, then the emergency lists, and round again', () => {
+    const m = new ChecklistSession(C152, 'c152', 1), seen: string[] = [m.sectionId];
+    for (let i = 0; i < m.sections.length; i++) { m.step(); seen.push(m.sectionId); }
+    expect(seen[seen.length - 1]).toBe(seen[0]);
+    expect(new Set(seen.slice(0, -1)).size).toBe(m.sections.length);
+    const firstEmergency = seen.findIndex(id => m.sections.find(s => s.id === id)?.category === 'emergency');
+    expect(seen.slice(firstEmergency, -1).every(id => m.sections.find(s => s.id === id)?.category === 'emergency')).toBe(true);
+    expect(m.tab).toBe('normal');
   });
 });
 
