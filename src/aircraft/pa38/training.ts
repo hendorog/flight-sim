@@ -41,7 +41,9 @@ const VSPEEDS: Record<VSpeedId, number> = {
   Vapp: R.vapp,
   VappFlapsUp: 75, // flapless approach (SCHOOL practice: Vref + 8)
   Vref: R.vref,
-  VshortField: 63, // short-field approach, full flap: the 50 ft speed of the landing chart less a little
+  // Short-field approach, full flap: the POH has no separate speed; it slows to 67 for the shortest landing (3-4,
+  // 3-9) and flies the landing charts at 67 (figs 5-36, 5-38).
+  VshortField: R.vref,
   Vcruise: R.vcruise,
   Vslow: 58, // slow flight, flaps as required (SCHOOL: Vs1 + 5 or so)
   VsteepTurn: 95, // entry below Va (103)
