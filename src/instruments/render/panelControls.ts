@@ -74,6 +74,44 @@ export class ConsoleControl implements PanelComponent {
   }
 }
 
+/** How long the knob shows pulled out after a stroke, s (out and back in). */
+const PRIMER_STROKE_SHOW = 0.6;
+
+/**
+ * A hand primer's knob (PanelDef.primer) over its bushing: turned with its slot across when LOCKED, along when
+ * unlocked; drawn pulled out (larger, nearer) for a moment after each stroke (ControlInputs.primerStrokes).
+ */
+export class PrimerKnob implements PanelComponent {
+  readonly id = 'primer';
+  private readonly latch = new Latch(2);
+  private strokes = NaN;
+  private strokeAt = -Infinity;
+  constructor(readonly bounds: Rect) {}
+  sample(_r: InstrumentReadings, c: ControlInputs, time: number): boolean {
+    const strokes = c.primerStrokes ?? 0;
+    if (strokes > this.strokes) this.strokeAt = time;
+    this.strokes = strokes;
+    // Out and back in: a triangle over the stroke's time.
+    const t = (time - this.strokeAt) / PRIMER_STROKE_SHOW;
+    this.latch.set(0, t >= 0 && t < 1 ? 1 - Math.abs(2 * t - 1) : 0, 0.1);
+    this.latch.set(1, (c.primerLocked ?? true) ? 1 : 0, 1);
+    return this.latch.take();
+  }
+  draw(g: Ctx2D): void {
+    const b = this.bounds;
+    const x = b.x + b.w / 2, y = b.y + b.h / 2;
+    const r = 10 + 5 * this.latch.get(0);
+    knob(g, x, y, r);
+    // The slot across the face: horizontal locked, vertical unlocked.
+    const locked = this.latch.get(1) === 1;
+    g.strokeStyle = locked ? '#c9c9c4' : '#f0b44a';
+    g.lineWidth = 2.5;
+    g.beginPath();
+    if (locked) { g.moveTo(x - r * 0.7, y); g.lineTo(x + r * 0.7, y); } else { g.moveTo(x, y - r * 0.7); g.lineTo(x, y + r * 0.7); }
+    g.stroke();
+  }
+}
+
 /** A running-time hourmeter, separate from the rpm-weighted tachometer counter. */
 export class Hourmeter implements PanelComponent {
   private readonly latch = new Latch(1);

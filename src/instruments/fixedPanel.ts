@@ -68,7 +68,7 @@ export function fixedSections(def: PanelDef): FixedSections {
     for (const p of lamps) { add(upper, p, lampX, lampY); lampX += p.w + GAP; }
   }
   const engineIds = new Set(engine.map(g => g.id));
-  const controls = def.fixed?.controls ?? panelParts(def).filter(p => p.id === 'switches' || p.id === 'ignition').map(p => p.rect);
+  const controls = def.fixed?.controls ?? panelParts(def).filter(p => p.id === 'switches' || p.id === 'ignition' || p.id === 'primer').map(p => p.rect);
   const radios = def.gauges.filter(g => g.kind === 'gps' || g.kind === 'navcom' || g.kind === 'xpdr');
   const radioIds = new Set(radios.map(g => g.id));
   const radioRects = radios.flatMap(g => gaugeParts(g, def.apertures, def.instrumentScale).map(p => p.rect));

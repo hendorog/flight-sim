@@ -57,6 +57,11 @@ const FUEL = { y: 525, left: 925, right: 1075 };
 export const PA38_FUEL_GAUGES = { left: { x: 2006, y: 16, w: 68, h: 92 }, right: { x: 2006, y: 124, w: 68, h: 92 } } as const;
 /** Engine cluster right of the quadrant: fuel pressure and load meter, oil temperature and pressure (s.9). */
 const CLUSTER = { y: 600, fuel: 1240, oil: 1376 };
+/**
+ * The hand primer's knob right of the quadrant (POH 4.13), under the fuel pressure gauge: far enough right that the
+ * mixture lever's knob does not hide it from the pilot's seat.
+ */
+const PRIMER = [1320, 742] as const;
 const SWITCHES: Rect = { x: 190, y: 676, w: 640, h: 116 };
 const ROW = {
   rockerTop: 44,
@@ -217,7 +222,8 @@ const SMALL = APERTURES.small * 1.15;
 
 export const PA38_PANEL: PanelDef = {
   fixed: { flightRows: [['asi', 'attitude', 'altimeter', 'cdi1'], ['turn', 'heading', 'vsi', 'cdi2']],
-    controls: [{ x: 190, y: 680, w: 600, h: 120 }] },
+    // The switch row and key, and the primer's knob with its legend.
+    controls: [{ x: 190, y: 680, w: 600, h: 120 }, { x: PRIMER[0] - 40, y: PRIMER[1] - 22, w: 80, h: 70 }] },
   id: 'pa38',
   size: { w: 2080, h: 800 },
   // In the order the panel draws them.
@@ -267,17 +273,20 @@ export const PA38_PANEL: PanelDef = {
   },
   // Panel px, where the click hotspot and the 3D key are: under the left control wheel (s.9).
   ignition: { kind: 'key', at: [SWITCHES.x + ROW.magneto.x, SWITCHES.y + ROW.magneto.y] },
+  // The hand primer right of the quadrant (POH 4.13; its bushing and legend below): painted, and clickable.
+  primer: { at: [PRIMER[0], PRIMER[1]] },
   background: {
     // Sub-panel seam: the flat full-width panel (s.12) is one sheet from the pilot's side to the radio stack, with
     // the right panel joining it between the two engine-cluster gauges (clear of the fuel gauges over the quadrant).
     seamsX: [(CLUSTER.fuel + CLUSTER.oil) / 2],
     // The back of the quadrant's well (the 3D surround stands round it): black behind the fuel gauges and the selector.
     plates: [{ bounds: { x: PA38_QUADRANT.x0, y: 436, w: PA38_QUADRANT.x1 - PA38_QUADRANT.x0, h: PA38_QUADRANT.y0 - 436 + 20 }, color: '#151517', radius: 6 }],
-    // Legends of the controls that are painted, not built: the primer right of the quadrant, the cabin heat and
+    // Legends of the controls that are painted, not built: the primer right of the quadrant (its knob is the panel's
+    // primer, painted with its lock and strokes, and clickable), the cabin heat and
     // defrost knobs on the lower right (s.9), raised clear of the three rows of circuit breakers. The hand (parking)
     // brake handle hangs under the quadrant, below the face.
     bushings: [
-      { at: [1218, 730], text: 'PRIMER', sub: 'PUSH LOCK' },
+      { at: [PRIMER[0], PRIMER[1]], text: 'PRIMER', sub: 'PUSH LOCK' },
       { at: [1650, 540], text: 'CABIN HEAT', sub: 'PULL ON' },
       { at: [1800, 540], text: 'DEFROST', sub: 'PULL ON' },
     ],

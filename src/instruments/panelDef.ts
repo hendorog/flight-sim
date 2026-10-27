@@ -210,6 +210,12 @@ export interface PanelDef {
                legends: readonly { text: string; x: number; y: number; size?: number }[];
                dimmers?: { panel: number; radio: number; y: number } };
   ignition: IgnitionPanelDef;
+  /**
+   * A hand primer's knob (EngineDef.primer), panel px of its centre: painted with its lock and its strokes, and
+   * clickable (instruments/hotspots.ts: right half one stroke, left half the lock). Its bushing and legend are a
+   * background bushing. Absent: none.
+   */
+  primer?: { at: At };
   background: { color?: string; outline?: readonly At[]; seamsX: readonly number[];
                 plates?: readonly { bounds: Rect; color: string; radius?: number }[];
                 bushings: readonly { at: At; text: string; sub: string }[];

@@ -19,6 +19,12 @@ import { actionForKey, keyBindingsFor, profileHasAction } from '../../src/input/
 import { parseSnapshot } from '../../src/sim/resume';
 import { SimPhysics } from '../../src/sim/SimPhysics';
 import { makeInputRig } from '../input/testbed';
+import { C152_PANEL } from '../../src/aircraft/c152/panel';
+import { PA38_PANEL } from '../../src/aircraft/pa38/panel';
+import { C172S_PANEL } from '../../src/aircraft/c172s/panel';
+import { buildHotspots, hotspotAt } from '../../src/instruments/hotspots';
+import { panelLayoutProblems } from '../../src/instruments/panelLayout';
+import { defaultControls as defaults } from '../../src/core/types';
 
 const NOW = 1_800_000_000_000;
 
@@ -156,5 +162,27 @@ describe('the primer keys', () => {
     r.tap('KeyE', true);
     expect(r.c.primerLocked).toBe(false);
     expect(r.c.primerStrokes).toBe(2);
+  });
+});
+
+describe('the primer knob on the panel', () => {
+  it('is clickable on the C152 and the PA-38: right half one stroke (unlocked), left half the lock', () => {
+    for (const panel of [C152_PANEL, PA38_PANEL]) {
+      expect(panelLayoutProblems(panel)).toEqual([]);
+      const spots = buildHotspots(panel);
+      const [x, y] = panel.primer!.at;
+      const spot = hotspotAt(x, y, spots)!;
+      expect(spot.id).toBe('primer');
+      const c = { ...defaults(), primerStrokes: 0, primerLocked: true };
+      spot.turn!(1, c, 1);
+      spot.turn!(1, c, 1);
+      expect(c.primerStrokes).toBe(2);
+      expect(c.primerLocked).toBe(false);
+      expect(spot.value(c)).toBe('UNLOCKED, 2 strokes');
+      spot.turn!(-1, c, 1);
+      expect(c.primerLocked).toBe(true);
+      expect(spot.value(c)).toBe('LOCKED');
+    }
+    expect(buildHotspots(C172S_PANEL).some((h) => h.id === 'primer')).toBe(false);
   });
 });

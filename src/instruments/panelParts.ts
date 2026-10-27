@@ -200,6 +200,14 @@ export function isLargeGauge(g: GaugeDef): boolean {
 export const ANNUNCIATOR_ID = 'annunciator';
 export const SWITCH_ROW_ID = 'switches';
 export const IGNITION_ID = 'ignition';
+export const PRIMER_ID = 'primer';
+/** Half the side of a hand primer's square, panel px: its bushing and its knob pulled out. */
+export const PRIMER_HALF = 18;
+
+/** The square a hand primer's knob is painted in (PanelDef.primer). */
+export function primerRect(at: readonly [number, number]): Rect {
+  return { x: at[0] - PRIMER_HALF, y: at[1] - PRIMER_HALF, w: 2 * PRIMER_HALF, h: 2 * PRIMER_HALF };
+}
 
 /** The artwork of the switch row, panel px: each rocker with its legend, the dimmers, the key with its lettering. */
 export function switchRowSolids(def: Pick<PanelDef, 'switchRow' | 'ignition'>): Rect[] {
@@ -224,5 +232,6 @@ export function panelParts(def: PanelDef): PanelPart[] {
   dials.push({ id: SWITCH_ROW_ID, rect: def.switchRow.bounds, solid: switchRowSolids(def), paintRects: (def.switchRow.distributed || def.switchRow.switches.some(s => s.top !== undefined)) ? switchRowSolids(def) : undefined });
   const ignition = ignitionLayout(def.ignition);
   if (ignition) dials.push({ id: IGNITION_ID, rect: ignition.rect });
+  if (def.primer) dials.push({ id: PRIMER_ID, rect: primerRect(def.primer.at) });
   return [...dials, ...rest];
 }

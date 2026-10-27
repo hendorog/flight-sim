@@ -126,7 +126,9 @@ describe('Cessna 152 presentation', () => {
     expect(knobs.map((k) => k[0])).toEqual(['carbHeat', 'throttle', 'mixture']);
     expect(knobs[0][1]).toBeLessThan(knobs[1][1]);
     expect(knobs[1][1]).toBeLessThan(knobs[2][1]);
-    expect(C152_PANEL.background.bushings.map((b) => b.text)).toEqual(['CARB HEAT', 'THROTTLE', 'MIXTURE', 'PARK BRAKE']);
+    expect(C152_PANEL.background.bushings.map((b) => b.text)).toEqual(['CARB HEAT', 'THROTTLE', 'MIXTURE', 'PARK BRAKE', 'PRIMER']);
+    // The hand primer (POH Fig 7-2 item 42) is painted over its bushing and clickable.
+    expect(C152_PANEL.primer?.at).toEqual(C152_PANEL.background.bushings[4].at);
   });
 
   it('the lift strut root stays outside the cabin; the pneumatic stall horn needs no bus', () => {
