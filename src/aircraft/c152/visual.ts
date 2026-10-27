@@ -536,10 +536,14 @@ const COCKPIT: CockpitDef = {
   // The electric flap pre-select lever in its slotted gate right of the mixture: 0.1 m of travel from UP to 30 deg.
   flapControl: { kind: 'panelLever', pos: [PANEL_X, faceY(C152_PANEL_PARTS.flapSlot.x), faceZ(C152_PANEL_PARTS.flapSlot.y)], travel: 0.1 },
   // The vertical elevator trim wheel on the pedestal below the throttle (s.9), its knurled rim through a bezel in the
-  // pedestal's aft face, the NOSE DN / TAKE OFF / NOSE UP indicator left of it.
+  // pedestal's aft face, the NOSE DN / TAKE OFF / NOSE UP position indicator left of it (s.9, POH 7: "the elevator trim
+  // control wheel, trim position indicator"). The TAKE OFF band spans the trim the flight model solves for the climb at
+  // Vy (sim.ts takeoffTrim) from the forward-CG loading (+0.01) through the typical one (-0.02) to max gross (-0.06):
+  // about neutral.
   trimWheel: {
     pos: [PANEL_X - 0.08 + 0.033, 0, PANEL_ZB + 0.12], axis: 'y', radius: 0.055, width: 0.02, housing: 'slot',
-    indicator: { pos: [PANEL_X - 0.0805, -0.038, PANEL_ZB + 0.12], length: 0.07, up: [0, 0, 1], normal: [-1, 0, 0], labelUp: [0, 0, -1] },
+    indicator: { pos: [PANEL_X - 0.0805, -0.038, PANEL_ZB + 0.12], length: 0.07, up: [0, 0, 1], normal: [-1, 0, 0], labelUp: [0, 0, -1],
+                 takeOff: { from: -0.07, to: 0.03 } },
   },
   // The carb heat, throttle and mixture's sub-panel lip; ELEVATOR TRIM over the wheel.
   quadrant: {

@@ -773,9 +773,16 @@ function addPart(fixed: MeshBatch, mat: AircraftMaterials, part: QuadrantPart): 
 /**
  * A knurled trim wheel turning about its own model x axis (the body's y; cockpit.ts turns it a quarter turn for an
  * x-axis wheel), centred on the origin: a fine knurl (~3.5 mm pitch) round the rim, a white index stripe on it, and the
- * hub faces a shade lighter. Its moulding and indicator go into `fixed` round `def.pos`.
+ * hub faces a shade lighter. Its moulding and indicator go into `fixed` round `def.pos`. An indicator with a take-off
+ * band also returns its sliding pointer, built round the origin, and the slot it slides in (three units): the pointer
+ * sits at `centre + along x travel x controls.elevatorTrim`.
  */
-export function trimWheelParts(mat: AircraftMaterials, def: TrimWheelDef, fixed: MeshBatch, placards: PlacardAtlas): MeshBatch {
+export function trimWheelParts(
+  mat: AircraftMaterials,
+  def: TrimWheelDef,
+  fixed: MeshBatch,
+  placards: PlacardAtlas,
+): { wheel: MeshBatch; pointer?: { batch: MeshBatch; centre: THREE.Vector3; along: THREE.Vector3; travel: number } } {
   const r = def.radius ?? 0.075;
   const w = def.width ?? 0.022;
   const b = new MeshBatch();
@@ -820,23 +827,49 @@ export function trimWheelParts(mat: AircraftMaterials, def: TrimWheelDef, fixed:
     fixed.add(mat.panelPlastic, m.build());
   }
   const ind = def.indicator;
+  let pointer: { batch: MeshBatch; centre: THREE.Vector3; along: THREE.Vector3; travel: number } | undefined;
   if (ind) {
-    // The indicator: a dark slot plate with its pointer at TAKE OFF, and the NOSE DN / NOSE UP legends at its ends.
+    // The indicator: a dark slot plate with its pointer, and the NOSE DN / NOSE UP legends at its ends.
     const n = dir(ind.normal).normalize();
     const up = dir(ind.up).projectOnPlane(n).normalize();
     const c = at(ind.pos);
     const q = new THREE.Quaternion().setFromUnitVectors(Y_UP, up);
     const plate = new THREE.BoxGeometry(0.012, ind.length, 0.003).applyQuaternion(q);
     fixed.add(mat.black, plate.translate(c.x, c.y, c.z));
-    const pointer = new THREE.BoxGeometry(0.014, 0.003, 0.004).applyQuaternion(q);
-    const pp = c.clone().addScaledVector(up, ind.length * 0.12).addScaledVector(n, 0.002);
-    fixed.add(mat.knobWhite, pointer.translate(pp.x, pp.y, pp.z));
     const toFrd = (v: THREE.Vector3): FRD => [-v.z, v.x, -v.y];
     const labelUp = ind.labelUp ? toFrd(dir(ind.labelUp)) : toFrd(up);
+    const to = ind.takeOff;
+    if (!to) {
+      // No take-off band: the pointer fixed at TAKE OFF.
+      const fixedPointer = new THREE.BoxGeometry(0.014, 0.003, 0.004).applyQuaternion(q);
+      const pp = c.clone().addScaledVector(up, ind.length * 0.12).addScaledVector(n, 0.002);
+      fixed.add(mat.knobWhite, fixedPointer.translate(pp.x, pp.y, pp.z));
+    } else {
+      // Across the slot, on the side away from the wheel, where the band and its legend go.
+      const side = new THREE.Vector3().crossVectors(up, n).normalize();
+      if (side.dot(c.clone().sub(p)) < 0) side.negate();
+      const basis = new THREE.Matrix4().makeBasis(side, up, n);
+      const travel = ind.length / 2 - 0.004;
+      // The pointer: a white tab across the plate, standing a little proud of it; cockpit.ts slides it with the trim.
+      const tab = new MeshBatch();
+      tab.add(mat.knobWhite, new THREE.BoxGeometry(0.014, 0.004, 0.005).applyMatrix4(basis));
+      pointer = { batch: tab, centre: c.clone().addScaledVector(n, 0.002), along: up.clone(), travel };
+      // The TAKE OFF band: a white bar clear of the pointer's end over the band's span (at least 6 mm, to be seen),
+      // its legend running along the slot beside it (read upward, the way the NOSE UP / DN legends stand).
+      const mid = ((to.from + to.to) / 2) * travel;
+      const span = Math.max(0.006, Math.abs(to.to - to.from) * travel);
+      const bp = c.clone().addScaledVector(up, mid).addScaledVector(side, 0.0088).addScaledVector(n, 0.0005);
+      fixed.add(mat.knobWhite, new THREE.BoxGeometry(0.003, span, 0.003).applyMatrix4(basis).translate(bp.x, bp.y, bp.z));
+      // On a dark backing, for a light console.
+      fixed.add(mat.black, new THREE.BoxGeometry(0.006, span + 0.003, 0.002).applyMatrix4(basis).translate(bp.x, bp.y, bp.z));
+      const right = up.clone().multiplyScalar(Math.sign(up.dot(dir(labelUp))) || 1);
+      const lp = c.clone().addScaledVector(up, mid).addScaledVector(side, 0.0138);
+      placards.add({ pos: toFrd(lp), normal: toFrd(n), up: toFrd(new THREE.Vector3().crossVectors(n, right)), w: 0.024, h: 0.006, lines: ['TAKE OFF'], ink: 'white', ground: 'black' });
+    }
     for (const [s, text] of [[1, 'NOSE UP'], [-1, 'NOSE DN']] as const) {
       const lp = c.clone().addScaledVector(up, s * (ind.length / 2 + 0.007));
       placards.add({ pos: toFrd(lp), normal: toFrd(n), up: labelUp, w: 0.024, h: 0.007, lines: [text], ink: 'white', ground: 'black' });
     }
   }
-  return b;
+  return { wheel: b, pointer };
 }

@@ -396,6 +396,8 @@ export class Cockpit {
   private readonly flapLever = new THREE.Group();
   private readonly gearLever: THREE.Group | null = null;
   private readonly trimWheel: THREE.Group | null = null;
+  /** The trim indicator's sliding pointer (an indicator with a take-off band) and the slot it slides along. */
+  private readonly trimPointer: { group: THREE.Group; centre: THREE.Vector3; along: THREE.Vector3; travel: number } | null = null;
   private readonly fuelHandle: THREE.Group | null = null;
   private readonly brakeHandle: THREE.Group | null = null;
   private readonly compass?: BallCompass;
@@ -788,7 +790,7 @@ export class Cockpit {
     }
     if (def.trimWheel) {
       // Knurled trim wheel (quadrant.ts) in its moulding, protruding through the pedestal's face or beside it.
-      const wheel = trimWheelParts(mat, def.trimWheel, fixed, this.placards);
+      const { wheel, pointer } = trimWheelParts(mat, def.trimWheel, fixed, this.placards);
       const trim = (this.trimWheel = new THREE.Group());
       const meshes = wheel.build('trimWheel').children as THREE.Mesh[];
       // A wheel turning about the body x axis: the same wheel a quarter turn round the vertical.
@@ -797,6 +799,13 @@ export class Cockpit {
       const TRIM = def.trimWheel.pos;
       frd(TRIM[0], TRIM[1], TRIM[2], trim.position);
       this.group.add(trim);
+      if (pointer) {
+        const group = new THREE.Group();
+        group.add(...pointer.batch.build('trimPointer').children);
+        group.position.copy(pointer.centre);
+        this.group.add(group);
+        this.trimPointer = { group, centre: pointer.centre, along: pointer.along, travel: pointer.travel };
+      }
     }
 
     this.placards.build(fixed);
@@ -1047,6 +1056,8 @@ export class Cockpit {
     else this.flapLever.rotation.x = flap.travel * controls.flaps;
     if (this.gearLever) this.gearLever.rotation.x = controls.gearLever === 'up' ? -0.35 : 0.35;
     if (this.trimWheel) this.trimWheel.rotation[this.def.trimWheel!.axis === 'x' ? 'z' : 'x'] = 3 * controls.elevatorTrim;
+    const tp = this.trimPointer;
+    if (tp) tp.group.position.copy(tp.centre).addScaledVector(tp.along, tp.travel * controls.elevatorTrim);
     // Clockwise as the pilot sees it (looking along -z) is a negative rotation about three's z.
     if (this.fuelHandle) this.fuelHandle.rotation.z = (-(this.def.fuelSelectorHandle!.angles[controls.fuelSelector] ?? 0) * Math.PI) / 180;
     if (this.brakeHandle) this.brakeHandle.position.z = -this.def.parkingBrakeHandle!.pos[0] + (controls.parkingBrake ? this.def.parkingBrakeHandle!.travel : 0);
@@ -1098,6 +1109,7 @@ export class Cockpit {
   private details(): THREE.Group[] {
     const groups = [...this.knobs.map((k) => k.group), ...this.fixedLevers, this.flapLever];
     if (this.trimWheel) groups.push(this.trimWheel);
+    if (this.trimPointer) groups.push(this.trimPointer.group);
     groups.push(...this.pedals.map((p) => p.obj));
     if (this.gearLever) groups.push(this.gearLever);
     if (this.fuelHandle) groups.push(this.fuelHandle);

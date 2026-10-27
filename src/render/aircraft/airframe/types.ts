@@ -444,8 +444,13 @@ export interface CockpitDef {
                 grip?: 'knurl' | 'scallop';
                 /** housing 'slot': the face the rim shows through, its outward normal (FRD unit; absent: aft, [-1, 0, 0]). */
                 slotNormal?: FRD;
-                /** labelUp: the NOSE UP / DN legends' up when it is not `up` (an indicator lying on a floor tunnel). */
-                indicator?: { pos: FRD; length: number; up: FRD; normal: FRD; labelUp?: FRD } };
+                /**
+                 * labelUp: the NOSE UP / DN legends' up when it is not `up` (an indicator lying on a floor tunnel).
+                 * takeOff: the TAKE OFF band, from..to in controls.elevatorTrim (-1 full nose down .. +1 full nose
+                 * up); set, the pointer slides along the slot with the trim and the band is marked beside it. Absent:
+                 * a fixed pointer near the NOSE UP end and no band.
+                 */
+                indicator?: { pos: FRD; length: number; up: FRD; normal: FRD; labelUp?: FRD; takeOff?: { from: number; to: number } } };
   /** The throttle quadrant or pedestal from the shared builder (render/aircraft/quadrant.ts). Absent: none (the consoles alone). */
   quadrant?: QuadrantDef;
   /** Float pivot in FRD. Absent: no magnetic compass; mount defaults to the header/post bracket. */

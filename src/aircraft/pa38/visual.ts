@@ -553,10 +553,13 @@ const COCKPIT: CockpitDef = {
   // The hand flap lever between the seats, pulled up through 21 to 34 degrees (s.9).
   flapControl: { kind: 'floorLever', pos: [CONSOLE.x0 - 0.06, 0, CONSOLE.top], travel: 0.7 },
   // The elevator trim wheel on the console behind the flap lever, forward = nose down (s.9): its knurled rim up through
-  // a bezel in the console top, the trim indicator beside it.
+  // a bezel in the console top, the trim position indicator beside it (POH 7.9). Take-off trim is "slightly aft of
+  // neutral, with the exact setting determined by the loading" (POH 4.23): the TAKE OFF band spans the trim the flight
+  // model solves for the climb at Vy (sim.ts takeoffTrim), +0.34 typical and at max gross to +0.45 at the forward CG.
   trimWheel: {
     pos: [0.02, 0, CONSOLE.top + 0.045], axis: 'y', housing: 'slot', slotNormal: [0, 0, -1],
-    indicator: { pos: [0.02, 0.045, CONSOLE.top - 0.0015], length: 0.06, up: [-1, 0, 0], normal: [0, 0, -1], labelUp: [1, 0, 0] },
+    indicator: { pos: [0.02, 0.045, CONSOLE.top - 0.0015], length: 0.06, up: [-1, 0, 0], normal: [0, 0, -1], labelUp: [1, 0, 0],
+                 takeOff: { from: 0.3, to: 0.46 } },
   },
   quadrant: {
     housings: [
