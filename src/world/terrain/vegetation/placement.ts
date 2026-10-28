@@ -277,13 +277,18 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
         if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
         if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + 2.5) continue;
         const open = rowComp.border < 15 || c.years < 7 || f < 0.5 || nearOpenLand(fx, fz);
+        // Ordered rank, not random: as the impostors thin with distance whole rows go (every other one, then
+        // every fourth), then every other tree along those left, so what remains is still planted in rows.
+        const rank = (BIT_REV4[((bj % 4) + 4) % 4] + (BIT_REV4[((ai % 4) + 4) % 4] + 0.9 * rnd(h0, 6)) / 4) / 4;
         out.push(east, sample.ground, north, height * (0.9 + 0.2 * rnd(h0, 4)), rnd(h0, 5) * Math.PI * 2,
-          SPECIES.pine + (open ? SPECIES_COUNT : 0) + 0.99 * rnd(h0, 6) * (open ? OPEN_RANK : 1));
+          SPECIES.pine + (open ? SPECIES_COUNT : 0) + 0.99 * rank * (open ? OPEN_RANK : 1));
       }
     }
   }
 }
 
+/** Bit-reversed 0..3: the order rows (and trees along them) are kept in as the plantation thins. */
+const BIT_REV4 = [0, 2, 1, 3];
 /** Plantation spacing in multiples of the forest candidate spacing: along the rows, and between them. */
 const TREE_SPACING = 0.75;
 const ROW_SPACING = 1.0;
