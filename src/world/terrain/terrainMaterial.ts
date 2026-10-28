@@ -37,7 +37,7 @@ import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS } from './eraUniforms';
 import { UNDERSTOREY_HEAD_GLSL, UNDERSTOREY_SPECKLE_GLSL } from './vegetation/understorey';
 import { eraOff, type EraLayerName } from '../era/eraOff';
 import { PLANTATION_FLAG, RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
-import { CLEARFELL_YEARS, PLANTATION_GLSL, ROTATION_YEARS } from './plantation';
+import { CLEARFELL_YEARS, PLANT_EUC_ID, PLANT_FIR_ID, PLANTATION_GLSL, ROTATION_YEARS } from './plantation';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
 import { OPEN_RANK } from './vegetation/placement';
@@ -1001,10 +1001,14 @@ if (forestW > 0.001) {
     float conifer = smoothstep(0.35, 0.65, smoothstep(400.0, 1300.0, tH + 300.0 * sB.r) + 0.45 * sB.b);
     // Closed canopy seen from above is far darker than grassland (deep shade between the crowns): spruce
     // and fir stands nearly black-green, broadleaf woods a little lighter and yellower.
-${presentText(`    // Plantation: all conifer, young stands paler and greener, mature ones darker.
-    conifer = mix(conifer, 1.0, vPlantation);
+${presentText(`    // Plantation: one species a compartment (pine, Douglas-fir or eucalypt, as placement.ts plants them),
+    // young stands paler and greener, mature ones darker.
+    float compFir = step(${PLANT_FIR_ID.toFixed(3)}, tComp.w) * (1.0 - step(${PLANT_EUC_ID.toFixed(3)}, tComp.w));
+    float compEuc = step(${PLANT_EUC_ID.toFixed(3)}, tComp.w);
+    conifer = mix(conifer, 1.0 - compEuc, vPlantation);
 `)}    vec3 tint = mix(${P.canopyBroadleaf}, ${P.canopyConifer}, conifer);
-${presentText(`    tint *= mix(vec3(1.0), mix(vec3(1.25, 1.4, 1.05), vec3(0.86), smoothstep(5.0, 16.0, tComp.x)), vPlantation);
+${presentText(`    tint *= mix(vec3(1.0), mix(vec3(1.25, 1.4, 1.05), vec3(0.86), smoothstep(5.0, 16.0, tComp.x))
+      * mix(vec3(1.0), vec3(0.82, 0.88, 0.95), compFir) * mix(vec3(1.0), vec3(0.92, 0.96, 1.06), compEuc), vPlantation);
 `)}    tint *= 0.78 + 0.2 * sC.b + 0.14 * sB.g + 0.1 * sD.a;
     // Stand structure that survives distance (crown clusters, gaps, height classes, a few tens of metres
     // across), as tone and as relief the sun picks out; the crown texture itself filters away beyond ~1 km.

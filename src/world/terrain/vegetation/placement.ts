@@ -12,7 +12,7 @@ import { makeSample, sampleTerrain } from '../heightfield';
 import { makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
 import { inTownClearZone } from '../townMask';
-import { CLEARFELL_YEARS, compartmentAt, makeCompartment, standHeight, type Compartment } from '../plantation';
+import { CLEARFELL_YEARS, compartmentAt, PLANT_EUC_ID, PLANT_FIR_ID, makeCompartment, standHeight, type Compartment } from '../plantation';
 import { era } from '../../era/eraState';
 import { FLORA } from './flora';
 
@@ -224,7 +224,8 @@ const rowComp = makeCompartment();
  * Plantation compartments in this cell: each planted on its own grid (rows ROW_SPACING x spacing apart, trees along
  * them TREE_SPACING x spacing apart, wider once thinned), turned to its row direction, the trees all of the
  * compartment's age. A few are missing, a strip along every compartment border is left for the forestry roads and
- * firebreaks, and fresh clear-fells carry none. Pine (the radiata of a working forest).
+ * firebreaks, and fresh clear-fells carry none. One species a compartment (plantation.ts PLANT_FIR_ID): mostly radiata
+ * pine, some Douglas-fir (the spruce model) and eucalypt (the birch model).
  */
 function plantRows(e0: number, n0: number, size: number, spacing: number, m: number, plant: Float32Array, dens: Float32Array,
   lerp2: (a: Float32Array, fx: number, fz: number) => number, nearOpenLand: (fx: number, fz: number) => boolean, out: number[]): void {
@@ -256,6 +257,7 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
       a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b);
     }
     const height = standHeight(c.years);
+    const species = c.id < PLANT_FIR_ID ? SPECIES.pine : c.id < PLANT_EUC_ID ? SPECIES.spruce : SPECIES.birch;
     for (let bj = Math.ceil(b0 / across); bj <= Math.floor(b1 / across); bj++) {
       for (let ai = Math.ceil(a0 / along); ai <= Math.floor(a1 / along); ai++) {
         const h0 = hash2i(ai * 31 + c.cellX * 7919, bj * 37 + c.cellY * 104729);
@@ -281,7 +283,7 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
         // every fourth), then every other tree along those left, so what remains is still planted in rows.
         const rank = (BIT_REV4[((bj % 4) + 4) % 4] + (BIT_REV4[((ai % 4) + 4) % 4] + 0.9 * rnd(h0, 6)) / 4) / 4;
         out.push(east, sample.ground, north, height * (0.9 + 0.2 * rnd(h0, 4)), rnd(h0, 5) * Math.PI * 2,
-          SPECIES.pine + (open ? SPECIES_COUNT : 0) + 0.99 * rank * (open ? OPEN_RANK : 1));
+          species + (open ? SPECIES_COUNT : 0) + 0.99 * rank * (open ? OPEN_RANK : 1));
       }
     }
   }

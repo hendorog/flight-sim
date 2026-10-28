@@ -26,9 +26,20 @@ export const ESTATE_HIGH: readonly [number, number] = [780, 920];
 export const BLOCK_M = 420;
 export const BLOCK_JITTER = 0.38;
 const BLOCK_SALT = 9157;
+/** Species zones: a value noise on this lattice, m, at the compartment's site, so neighbours share a species. */
+export const SPECIES_M = 1500;
+const SPECIES_SALT = 404;
 /** Rotation (years from planting to felling), and how long a felled compartment lies bare before it shows again. */
 export const ROTATION_YEARS = 28;
 export const CLEARFELL_YEARS = 2.5;
+
+/**
+ * What a compartment is planted with, by its species zone (about 60 %, 28 % and 12 % of them): radiata pine below
+ * PLANT_FIR_ID, Douglas-fir (darker, denser; the spruce slot) up to PLANT_EUC_ID, eucalypt (broadleaf, grey-green;
+ * the birch slot) above.
+ */
+export const PLANT_FIR_ID = 0.59;
+export const PLANT_EUC_ID = 0.79;
 
 /** Height of a compartment's trees at an age, m (about 1.25 m a year once established, to ~34 m). */
 export function standHeight(years: number): number {
@@ -45,7 +56,7 @@ export interface Compartment {
   /** Its Voronoi site, world east and north, m. */
   siteE: number;
   siteN: number;
-  /** Random 0..1 per compartment. */
+  /** Species zone 0..1 at its site (a smooth field, so neighbouring compartments mostly agree; PLANT_FIR_ID). */
   id: number;
   /** Integer cell of its site (a key for the compartment). */
   cellX: number;
@@ -120,7 +131,8 @@ export function compartmentAt(east: number, north: number, out: Compartment): Co
   out.border = border * BLOCK_M;
   out.siteE = sx * BLOCK_M;
   out.siteN = sy * BLOCK_M;
-  out.id = u16(hash2i(bx, by + BLOCK_SALT + 2));
+  fieldNoise((sx * BLOCK_M) / SPECIES_M, (sy * BLOCK_M) / SPECIES_M, SPECIES_SALT);
+  out.id = 0.5 + 0.5 * noiseOut.x;
   out.cellX = bx;
   out.cellY = by;
   return out;
@@ -128,7 +140,7 @@ export function compartmentAt(east: number, north: number, out: Compartment): Co
 
 /**
  * GLSL twins (needs FIELDS_GLSL's fieldNoise and hash2u). xz is world (east, north). compartmentAt returns
- * (years, angle, border m, id).
+ * (years, angle, border m, species zone id).
  */
 export const PLANTATION_GLSL = /* glsl */ `
 float estateWeight(vec2 en, float ground) {
@@ -167,7 +179,7 @@ vec4 compartmentAt(vec2 en) {
   vec2 nz = fieldNoise(s * ${(BLOCK_M / ESTATE_M).toFixed(6)}, ${ESTATE_SALT});
   float years = ${ROTATION_YEARS.toFixed(1)} * (float(h >> 16) / 65535.0);
   float angle = nz.y * 3.14159265 + 0.6 * (float(h & 0xffffu) / 65535.0 - 0.5);
-  float id = float(hash2u(b.x, b.y + ${BLOCK_SALT + 2}) & 0xffffu) / 65535.0;
+  float id = 0.5 + 0.5 * fieldNoise(s * ${(BLOCK_M / SPECIES_M).toFixed(6)}, ${SPECIES_SALT}).x;
   return vec4(years, angle, border * ${BLOCK_M.toFixed(1)}, id);
 }
 `;
