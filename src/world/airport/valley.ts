@@ -17,7 +17,7 @@ import { rng } from './noise';
 import { STREET_ILLUMINANCE, type SharedUniforms } from './shared';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import { computeBiome, coverShape, makeBiome, makeCoverShape } from '../terrain/biome';
-import { makeSample, sampleTerrain } from '../terrain/heightfield';
+import { hydrology, makeSample, sampleTerrain } from '../terrain/heightfield';
 
 /** Street-pool illuminance uniform at full night (scene units), used to normalise the night switch-on. */
 const STREET_ILLUMINANCE_REF = STREET_ILLUMINANCE;
@@ -53,10 +53,13 @@ function nearAirport(north: number, east: number, margin: number): boolean {
 
 /** Built-up radius of the town (the street grid reaches up to ~0.94 of it, plus 40 m), m. */
 export const TOWN_RADIUS = 700;
+/** The town's centre keeps this far beyond the edge of the river's floodplain, m. */
+const TOWN_FLOODPLAIN_CLEAR = 600;
+const valleyHit = { dist: 0, level: 0, floodplain: 0 };
 
 /**
  * Where the valley town is built for a given terrain: the flattest dry area on rings 3.4..7.6 km from the airport,
- * clear of the airfield and its approach paths (null if nowhere is flat enough). Deterministic and pure, so other
+ * clear of the airfield, its approach paths and the river's floodplain (null if nowhere is flat enough). Deterministic and pure, so other
  * modules (e.g. terrain vegetation) can keep woodland off the town: everything lies within TOWN_RADIUS + 60 m.
  */
 export function findTownSite(heightAt: HeightFn): { north: number; east: number; radius: number } | null {
@@ -71,6 +74,9 @@ export function findTownSite(heightAt: HeightFn): { north: number; east: number;
       const a = (k / 28) * Math.PI * 2 + ring * 0.001;
       const n = Math.cos(a) * ring, e = Math.sin(a) * ring;
       if (nearAirport(n, e, 1700)) continue;
+      // On the terrace above the river's floodplain, not out on it among the meanders.
+      hydrology.queryValley(n, e, valleyHit);
+      if (valleyHit.dist < valleyHit.floodplain + TOWN_FLOODPLAIN_CLEAR) continue;
       let s = 0, wet = 0;
       for (let j = 0; j < 9; j++) {
         const b = (j / 9) * Math.PI * 2;

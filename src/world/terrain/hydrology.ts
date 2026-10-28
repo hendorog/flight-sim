@@ -4,6 +4,8 @@
 
 import { AIRPORT } from '../../core/world';
 import { fbm, gnoise } from './noise';
+import { decodePolyline, growMeanders, projectPolyline, type MeanderAxis, type MeanderReach, type MeanderResult, type Oxbow } from './meander';
+import { RIVER_PLANFORM } from './riverPlanform';
 
 /** A lake: a noise-warped ellipse whose bed is carved into the natural terrain. */
 export interface Lake {
@@ -41,20 +43,67 @@ export interface RiverHit {
   beyondSource: number;
 }
 
-export interface Hydrology {
-  lakes: Lake[];
-  /** Densified river centreline: north, east, water level, half-width, arc length. */
-  river: { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array };
-  /** Nearest point of the river centreline. */
-  queryRiver(north: number, east: number, out: RiverHit): RiverHit;
+/** Result of a valley-axis query: the smooth line the floodplain and valley walls are carved about. */
+export interface ValleyHit {
+  /** Horizontal distance from the valley axis, m (Infinity when far away). */
+  dist: number;
+  /** Water level of the river at this point of the valley, m (the floodplain lies a little above it). */
+  level: number;
+  /** Half-width of the flat floodplain here, m. */
+  floodplain: number;
 }
 
-/** Everything within this distance of the river centreline is shaped by it (valley floor and walls). */
+/** Result of an oxbow query: the nearest abandoned loop. */
+export interface OxbowHit {
+  /** Distance from the loop's centreline, m (Infinity when far away). */
+  dist: number;
+  /** Its standing water level, m. */
+  level: number;
+  /** Half-width of its water, m. */
+  halfWidth: number;
+  /** Depth of its water at the middle, m (older loops have silted up more). */
+  depth: number;
+}
+
+export interface Hydrology {
+  lakes: Lake[];
+  /** Densified river channel centreline: north, east, water level, half-width, arc length. */
+  river: { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array };
+  /** The smooth valley axis the channel meanders about. */
+  valley: { north: Float64Array; east: Float64Array; level: Float64Array; floodplain: Float64Array; s: Float64Array };
+  /** Abandoned meander loops: centreline, water level and half-width. */
+  oxbows: ReadonlyArray<{ north: Float64Array; east: Float64Array; level: number; halfWidth: number; depth: number }>;
+  /** Nearest point of the river channel centreline. */
+  queryRiver(north: number, east: number, out: RiverHit): RiverHit;
+  /** Nearest point of the valley axis. */
+  queryValley(north: number, east: number, out: ValleyHit): ValleyHit;
+  /** Nearest oxbow lake. */
+  queryOxbow(north: number, east: number, out: OxbowHit): OxbowHit;
+}
+
+/** Valley walls rise over this distance beyond the floodplain (everything closer to the axis is shaped by the valley). */
 export const RIVER_INFLUENCE = 2400;
 /** Lake zone extends to this multiple of the shoreline ellipse radius. */
 export const LAKE_ZONE = 1.2;
+/** Cell size of the valley axis index, and of the channel and oxbow indexes, m. */
 const INDEX_CELL = 1000;
+/** The legacy river's index cell and reach (buildLegacyHydrology), m. */
+const LEGACY_INDEX_CELL = 1000;
+const LEGACY_RIVER_INFLUENCE = 2400;
+const CHANNEL_CELL = 100;
+/** The channel is searched for this far from it; further out its distance is estimated from the valley axis, m. */
+const CHANNEL_REACH = 450;
 const SAMPLE_SPACING = 60;
+/** Channel sample spacing, m, and migration steps of the meander growth (meander.ts). */
+const CHANNEL_SPACING = 20;
+const MEANDER_STEPS = 1500;
+const MEANDER_SEED = 0x5ea7e1;
+/** Steepest the valley's water level may fall, so the floodplain has no cliffs across it (rapids spread out instead). */
+const MAX_VALLEY_GRADIENT = 0.008;
+/** Oxbow water stands this far above the river level of its valley section (below the floodplain), m. */
+const OXBOW_LEVEL = 0.6;
+/** Bank zone of the channel beyond its half-width, m: the cut rises to the floodplain over it. */
+export const CHANNEL_BANK = 25;
 
 // River control points in the runway frame (along = toward the 25 end, across = right of rwy 07, i.e. SSE).
 // It rises in the alpine valley ENE of the field, runs down the valley parallel to the runway about 3 km to
@@ -132,12 +181,9 @@ function densify(points: ReadonlyArray<{ north: number; east: number }>): { n: n
   return { n, e };
 }
 
-/**
- * Build rivers and lakes against the natural terrain.
- * @param natural terrain height before any water shaping, m MSL.
- */
-export function buildHydrology(natural: (north: number, east: number) => number): Hydrology {
-  const lakes: Lake[] = LAKE_DEFS.map((d) => {
+/** The lakes, with their levels found from the natural terrain around each basin. */
+export function buildLakes(natural: (north: number, east: number) => number): Lake[] {
+  return LAKE_DEFS.map((d) => {
     const p = toNED(d.along, d.across);
     const lake: Lake = { ...d, north: p.north, east: p.east, level: 0, bound: Math.max(d.radiusA, d.radiusB) * LAKE_ZONE * 1.35 };
     // Level: just below the lowest point of the terrain around the shoreline ellipse, so the basin holds water.
@@ -161,7 +207,143 @@ export function buildHydrology(natural: (north: number, east: number) => number)
     lake.level = Math.max(0.5, minRim - 1.5);
     return lake;
   });
+}
 
+/**
+ * Build rivers and lakes against the natural terrain.
+ * @param natural terrain height before any water shaping, m MSL.
+ */
+export function buildHydrology(natural: (north: number, east: number) => number, lakes: Lake[] = buildLakes(natural)): Hydrology {
+  // The valley axis: the smooth curve through the control points. Its water level is the running minimum of the
+  // natural terrain downstream, always descending, reaching sea level at the coast, and never falling more steeply
+  // than MAX_VALLEY_GRADIENT (a drop the terrain would make sharper is spread upstream as a cut).
+  const axis = valleyAxis();
+  const vCount = axis.north.length;
+  const vNorth = axis.north;
+  const vEast = axis.east;
+  const vS = axis.s;
+  const vLevel = new Float64Array(vCount);
+  let run = Infinity;
+  for (let i = 0; i < vCount; i++) {
+    let h = natural(vNorth[i], vEast[i]);
+    for (const [dn, de] of [[80, 0], [-80, 0], [0, 80], [0, -80]]) h = Math.min(h, natural(vNorth[i] + dn, vEast[i] + de));
+    const cand = h - 2.5;
+    run = i === 0 ? cand : Math.min(run - 0.00025 * (vS[i] - vS[i - 1]), cand);
+    vLevel[i] = Math.max(0, run);
+  }
+  for (let i = vCount - 2; i >= 0; i--) vLevel[i] = Math.min(vLevel[i], vLevel[i + 1] + MAX_VALLEY_GRADIENT * (vS[i + 1] - vS[i]));
+  const total = vS[vCount - 1];
+  const reach = riverReach(total);
+  const vFlood = new Float64Array(vCount);
+  for (let i = 0; i < vCount; i++) vFlood[i] = reach.floodplain(vS[i]);
+  const valleyAt = (sv: number, arr: Float64Array): number => {
+    let lo = 0;
+    let hi = vCount - 1;
+    if (sv <= 0) return arr[0];
+    if (sv >= total) return arr[vCount - 1];
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (vS[mid] <= sv) lo = mid;
+      else hi = mid;
+    }
+    const t = (sv - vS[lo]) / (vS[hi] - vS[lo] || 1);
+    return arr[lo] + (arr[hi] - arr[lo]) * t;
+  };
+
+  // The channel: grown into meanders on the valley floor (meander.ts), baked into riverPlanform.ts (the growth takes
+  // seconds). Its level follows the valley's at each point, made to fall monotonically along the channel even where
+  // a loop doubles back.
+  const grown = RIVER_PLANFORM.channel ? unpackPlanform(axis, reach) : growMeanders(axis, reach, MEANDER_SEED, CHANNEL_SPACING, MEANDER_STEPS);
+  const count = grown.north.length;
+  const north = grown.north;
+  const east = grown.east;
+  const s = new Float64Array(count);
+  const level = new Float64Array(count);
+  const halfWidth = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    if (i > 0) s[i] = s[i - 1] + Math.hypot(north[i] - north[i - 1], east[i] - east[i - 1]);
+    const lv = valleyAt(grown.valleyS[i], vLevel);
+    level[i] = i === 0 ? lv : Math.min(level[i - 1], lv);
+    halfWidth[i] = reach.halfWidth(grown.valleyS[i]);
+  }
+  const oxbows = grown.oxbows.map((o) => ({
+    north: o.north,
+    east: o.east,
+    level: valleyAt(o.valleyS, vLevel) + OXBOW_LEVEL,
+    halfWidth: o.halfWidth * 0.85,
+    // Cut off early in the growth (age near 0): longer to fill with silt.
+    depth: 0.8 + 2.2 * o.age,
+  }));
+
+  const channelIndex = new PolylineIndex([{ north, east }], CHANNEL_REACH, CHANNEL_CELL);
+  const valleyIndex = new PolylineIndex([{ north: vNorth, east: vEast }], RIVER_INFLUENCE + reach.maxFloodplain, INDEX_CELL);
+  const oxbowIndex = new PolylineIndex(oxbows, 200, CHANNEL_CELL);
+  const valleyNear: PolylineNear = { line: 0, seg: 0, t: 0, u: 0, dist: Infinity, side: 0 };
+  const near: PolylineNear = { line: 0, seg: 0, t: 0, u: 0, dist: Infinity, side: 0 };
+
+  const queryRiver = (pn: number, pe: number, out: RiverHit): RiverHit => {
+    out.dist = Infinity;
+    out.side = 0;
+    out.beyondSource = 0;
+    if (!channelIndex.nearest(pn, pe, near) || near.dist > CHANNEL_REACH) {
+      // Out of the channel's reach: no bank, and a distance estimated from the edge of the meander belt.
+      if (valleyIndex.nearest(pn, pe, valleyNear)) {
+        const sv = vS[valleyNear.seg] + (vS[valleyNear.seg + 1] - vS[valleyNear.seg]) * valleyNear.t;
+        out.dist = Math.max(CHANNEL_REACH, valleyNear.dist - reach.belt(sv) - reach.halfWidth(sv));
+        out.level = valleyAt(sv, vLevel);
+        out.halfWidth = reach.halfWidth(sv);
+        out.s = 0;
+      }
+      return out;
+    }
+    const bi = near.seg;
+    const bt = near.t;
+    out.dist = near.dist;
+    out.side = near.side;
+    if (bi === 0 && near.u < 0) out.beyondSource = -near.u * Math.hypot(north[1] - north[0], east[1] - east[0]);
+    out.level = level[bi] + (level[bi + 1] - level[bi]) * bt;
+    out.halfWidth = halfWidth[bi] + (halfWidth[bi + 1] - halfWidth[bi]) * bt;
+    out.s = s[bi] + (s[bi + 1] - s[bi]) * bt;
+    return out;
+  };
+  const queryValley = (pn: number, pe: number, out: ValleyHit): ValleyHit => {
+    out.dist = Infinity;
+    if (!valleyIndex.nearest(pn, pe, near)) return out;
+    const bi = near.seg;
+    const bt = near.t;
+    out.dist = near.dist;
+    out.level = vLevel[bi] + (vLevel[bi + 1] - vLevel[bi]) * bt;
+    out.floodplain = vFlood[bi] + (vFlood[bi + 1] - vFlood[bi]) * bt;
+    return out;
+  };
+  const queryOxbow = (pn: number, pe: number, out: OxbowHit): OxbowHit => {
+    out.dist = Infinity;
+    if (!oxbowIndex.nearest(pn, pe, near)) return out;
+    const o = oxbows[near.line];
+    out.dist = near.dist;
+    out.level = o.level;
+    out.halfWidth = o.halfWidth;
+    out.depth = o.depth;
+    return out;
+  };
+
+  return {
+    lakes,
+    river: { north, east, level, halfWidth, s },
+    valley: { north: vNorth, east: vEast, level: vLevel, floodplain: vFlood, s: vS },
+    oxbows,
+    queryRiver,
+    queryValley,
+    queryOxbow,
+  };
+}
+
+/**
+ * The river as it was before its meanders were grown (the Late Cretaceous keeps it: its scenery is placed along this
+ * course): noise meanders on the smooth control curve, its valley carved about the channel itself
+ * (heightfield.ts legacyRiverProfile). Unchanged, so the era's terrain stays byte-identical.
+ */
+export function buildLegacyHydrology(natural: (north: number, east: number) => number, lakes: Lake[]): Hydrology {
   // River centreline with meanders superimposed on the smooth control curve.
   const ctrl = RIVER_CONTROL.map(([a, c]) => toNED(a, c));
   const base = densify(ctrl);
@@ -207,12 +389,12 @@ export function buildHydrology(natural: (north: number, east: number) => number)
   // Spatial index: every cell lists the segments that can influence a point in it.
   const index = new Map<number, number[]>();
   const key = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
-  const pad = Math.ceil(RIVER_INFLUENCE / INDEX_CELL);
+  const pad = Math.ceil(LEGACY_RIVER_INFLUENCE / LEGACY_INDEX_CELL);
   for (let i = 0; i < count - 1; i++) {
-    const n0 = Math.floor(Math.min(north[i], north[i + 1]) / INDEX_CELL) - pad;
-    const n1 = Math.floor(Math.max(north[i], north[i + 1]) / INDEX_CELL) + pad;
-    const e0 = Math.floor(Math.min(east[i], east[i + 1]) / INDEX_CELL) - pad;
-    const e1 = Math.floor(Math.max(east[i], east[i + 1]) / INDEX_CELL) + pad;
+    const n0 = Math.floor(Math.min(north[i], north[i + 1]) / LEGACY_INDEX_CELL) - pad;
+    const n1 = Math.floor(Math.max(north[i], north[i + 1]) / LEGACY_INDEX_CELL) + pad;
+    const e0 = Math.floor(Math.min(east[i], east[i + 1]) / LEGACY_INDEX_CELL) - pad;
+    const e1 = Math.floor(Math.max(east[i], east[i + 1]) / LEGACY_INDEX_CELL) + pad;
     for (let cx = n0; cx <= n1; cx++)
       for (let cy = e0; cy <= e1; cy++) {
         const k = key(cx, cy);
@@ -228,7 +410,7 @@ export function buildHydrology(natural: (north: number, east: number) => number)
     out.dist = Infinity;
     out.side = 0;
     out.beyondSource = 0;
-    const list = cells.get(key(Math.floor(pn / INDEX_CELL), Math.floor(pe / INDEX_CELL)));
+    const list = cells.get(key(Math.floor(pn / LEGACY_INDEX_CELL), Math.floor(pe / LEGACY_INDEX_CELL)));
     if (!list) return out;
     let best = Infinity;
     let bi = 0;
@@ -268,5 +450,144 @@ export function buildHydrology(natural: (north: number, east: number) => number)
     return out;
   };
 
-  return { lakes, river: { north, east, level, halfWidth, s }, queryRiver };
+  const axis = valleyAxis();
+  return {
+    lakes,
+    river: { north, east, level, halfWidth, s },
+    valley: { north: axis.north, east: axis.east, level: new Float64Array(axis.s.length), floodplain: new Float64Array(axis.s.length), s: axis.s },
+    oxbows: [],
+    queryRiver,
+    queryValley: (_n, _e, out) => ((out.dist = Infinity), out),
+    queryOxbow: (_n, _e, out) => ((out.dist = Infinity), out),
+  };
 }
+
+/** The valley axis: the smooth curve through the river's control points, with its arc length. */
+function valleyAxis(): MeanderAxis {
+  const base = densify(RIVER_CONTROL.map(([a, c]) => toNED(a, c)));
+  const count = base.n.length;
+  const s = new Float64Array(count);
+  for (let i = 1; i < count; i++) s[i] = s[i - 1] + Math.hypot(base.n[i] - base.n[i - 1], base.e[i] - base.e[i - 1]);
+  return { north: Float64Array.from(base.n), east: Float64Array.from(base.e), s };
+}
+
+/** The inputs of the channel's meander growth, for the bake (tests/terrain/riverPlanform.test.ts). */
+export function meanderSetup(): { axis: MeanderAxis; reach: MeanderReach; seed: number; ds: number; steps: number } {
+  const axis = valleyAxis();
+  return { axis, reach: riverReach(axis.s[axis.s.length - 1]), seed: MEANDER_SEED, ds: CHANNEL_SPACING, steps: MEANDER_STEPS };
+}
+
+/** The baked channel and oxbows, with their valley arc lengths found again by projection. */
+function unpackPlanform(axis: MeanderAxis, reach: MeanderReach): MeanderResult {
+  const channel = decodePolyline(RIVER_PLANFORM.channel);
+  const oxbows: Oxbow[] = RIVER_PLANFORM.oxbows.map((o) => {
+    const line = decodePolyline(o.line);
+    const sv = projectPolyline(axis, line.north, line.east);
+    const valleyS = sv[sv.length >> 1];
+    return { ...line, valleyS, halfWidth: reach.halfWidth(valleyS), age: o.age };
+  });
+  return { ...channel, valleyS: projectPolyline(axis, channel.north, channel.east), oxbows };
+}
+
+/**
+ * The river's character along its valley (arc length from the source): a mountain torrent, the steep outwash below
+ * the range, the long low-gradient valley past the field where it meanders freely, the reach through the coastal
+ * hills (meanders confined between spurs), the fall to the coast and the estuary. Half-widths grow downstream.
+ */
+function riverReach(total: number): MeanderReach & { floodplain(s: number): number; maxFloodplain: number } {
+  const km = 1000;
+  const table = (pts: ReadonlyArray<[number, number]>) => (sv: number): number => {
+    const x = sv / km;
+    if (x <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) {
+      if (x <= pts[i][0]) {
+        const t = (x - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]);
+        const u = t * t * (3 - 2 * t);
+        return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * u;
+      }
+    }
+    return pts[pts.length - 1][1];
+  };
+  const erodibility = table([[0, 0], [11, 0], [14, 1], [41, 1], [44, 1], [68, 1], [70, 0], [74, 0], [76, 1], [total / km - 1.5, 1], [total / km, 0]]);
+  const beltBase = table([[0, 0], [11, 0], [14, 750], [41, 850], [44, 450], [68, 450], [70, 0], [74, 0], [76, 600], [total / km, 600]]);
+  // The valley floor narrows and widens: stretches where the river swings wide and others held nearly straight.
+  const belt = (sv: number): number => beltBase(sv) * (0.85 + 0.3 * gnoise(sv / 4200 + 3.1, 7.7));
+  const halfWidth = (sv: number): number => 12 + 26 * Math.min(1, sv / total);
+  // The flat floodplain holds the meander belt with room for the channel and its banks either side.
+  const floodplain = (sv: number): number => belt(sv) + halfWidth(sv) + CHANNEL_BANK + 4 * halfWidth(sv) * Math.min(1, belt(sv) / 200);
+  return { erodibility, belt, halfWidth, floodplain, maxFloodplain: 850 + 38 * 5 + CHANNEL_BANK };
+}
+
+interface PolylineNear {
+  /** Which polyline, its nearest segment, the clamped and unclamped parameter along it. */
+  line: number;
+  seg: number;
+  t: number;
+  u: number;
+  dist: number;
+  /** +1 right of the polyline's direction, -1 left. */
+  side: number;
+}
+
+/** Spatial index over polylines: every cell lists the segments that can be within `reach` of a point in it. */
+class PolylineIndex {
+  private readonly cells = new Map<number, Int32Array>();
+  constructor(private readonly lines: ReadonlyArray<{ north: Float64Array; east: Float64Array }>, reach: number, private readonly cell: number) {
+    const lists = new Map<number, number[]>();
+    const pad = Math.ceil(reach / cell);
+    lines.forEach((l, li) => {
+      for (let i = 0; i < l.north.length - 1; i++) {
+        const n0 = Math.floor(Math.min(l.north[i], l.north[i + 1]) / cell) - pad;
+        const n1 = Math.floor(Math.max(l.north[i], l.north[i + 1]) / cell) + pad;
+        const e0 = Math.floor(Math.min(l.east[i], l.east[i + 1]) / cell) - pad;
+        const e1 = Math.floor(Math.max(l.east[i], l.east[i + 1]) / cell) + pad;
+        for (let cx = n0; cx <= n1; cx++)
+          for (let cy = e0; cy <= e1; cy++) {
+            const k = cellKey(cx, cy);
+            let list = lists.get(k);
+            if (!list) lists.set(k, (list = []));
+            list.push(li, i);
+          }
+      }
+    });
+    for (const [k, list] of lists) this.cells.set(k, Int32Array.from(list));
+  }
+
+  /** Nearest point of any polyline listed for the point's cell; false when none is. */
+  nearest(pn: number, pe: number, out: PolylineNear): boolean {
+    const list = this.cells.get(cellKey(Math.floor(pn / this.cell), Math.floor(pe / this.cell)));
+    if (!list) return false;
+    let best = Infinity;
+    for (let k = 0; k < list.length; k += 2) {
+      const l = this.lines[list[k]];
+      const i = list[k + 1];
+      const an = l.north[i];
+      const ae = l.east[i];
+      const dn = l.north[i + 1] - an;
+      const de = l.east[i + 1] - ae;
+      const l2 = dn * dn + de * de;
+      const u = l2 > 0 ? ((pn - an) * dn + (pe - ae) * de) / l2 : 0;
+      const t = u < 0 ? 0 : u > 1 ? 1 : u;
+      const qn = an + dn * t - pn;
+      const qe = ae + de * t - pe;
+      const d2 = qn * qn + qe * qe;
+      if (d2 < best) {
+        best = d2;
+        out.line = list[k];
+        out.seg = i;
+        out.t = t;
+        out.u = u;
+      }
+    }
+    out.dist = Math.sqrt(best);
+    const l = this.lines[out.line];
+    const i = out.seg;
+    const dn = l.north[i + 1] - l.north[i];
+    const de = l.east[i + 1] - l.east[i];
+    // Cross product of the direction (north, east) with the offset: > 0 on the right (north-east axes are left-handed seen from above).
+    out.side = dn * (pe - l.east[i]) - de * (pn - l.north[i]) >= 0 ? 1 : -1;
+    return true;
+  }
+}
+
+const cellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);

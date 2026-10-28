@@ -13,10 +13,11 @@
 // tests/fauna/inc1Freeze.test.ts
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ThermalFrame } from '../../src/physics/weather/windField';
 import { makeThermalCore } from '../../src/physics/weather/thermals';
 import { RIVER_HERD_SITE } from '../../src/world/era/cretaceousAnchors';
+import { setEra } from '../../src/world/era/eraState';
 import { ART_ALBEDO_LIFT, creatureMaterials } from '../../src/world/fauna/art';
 import { createFaunaMaterials } from '../../src/world/fauna/faunaMaterial';
 import { FLYER_MODE, FlyerPool } from '../../src/world/fauna/flight';
@@ -38,6 +39,14 @@ const { readFileSync, writeFileSync } = (await import(/* @vite-ignore */ 'node:f
 const { createHash } = (await import(/* @vite-ignore */ 'node:crypto' as string)) as { createHash(alg: 'sha256'): Hash };
 const FIXTURE = new URL('../fixtures/faunaInc1.json', import.meta.url);
 const CAPTURE = !!(globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.CAPTURE_FAUNA_INC1;
+
+// The creatures' own world: the Cretaceous terrain and river (the present day's river has since grown its meanders).
+beforeAll(() => {
+  setEra('cretaceous');
+});
+afterAll(() => {
+  setEra('present');
+});
 const INC1: FaunaSpeciesId[] = ['edmontosaurus', 'quetzalcoatlus', 'azhdarchidSmall'];
 const DT = 1 / 60;
 

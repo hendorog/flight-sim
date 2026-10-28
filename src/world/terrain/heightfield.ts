@@ -14,7 +14,7 @@
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT } from '../../core/world';
-import { LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, lakeRadius, type Hydrology, type RiverHit } from './hydrology';
+import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type Hydrology, type OxbowHit, type RiverHit, type ValleyHit } from './hydrology';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
 import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
@@ -253,8 +253,23 @@ export function naturalHeight(north: number, east: number): number {
   return h;
 }
 
-const hydro: Hydrology = buildHydrology(naturalHeight);
-export const hydrology: Readonly<Hydrology> = hydro;
+// Both rivers are built at load, against the present-day natural terrain (the era is chosen after): the meandering
+// one, and the Late Cretaceous era's (its scenery is placed along the river's earlier course).
+const lakes = buildLakes(naturalHeight);
+const presentHydro: Hydrology = buildHydrology(naturalHeight, lakes);
+const legacyHydro: Hydrology = buildLegacyHydrology(naturalHeight, lakes);
+/** The water of the current era. */
+const current = (): Hydrology => (isPresent() ? presentHydro : legacyHydro);
+/** Rivers and lakes of the current era (read at call time, like era()). */
+export const hydrology: Readonly<Hydrology> = {
+  get lakes() { return current().lakes; },
+  get river() { return current().river; },
+  get valley() { return current().valley; },
+  get oxbows() { return current().oxbows; },
+  queryRiver: (north, east, out) => current().queryRiver(north, east, out),
+  queryValley: (north, east, out) => current().queryValley(north, east, out),
+  queryOxbow: (north, east, out) => current().queryOxbow(north, east, out),
+};
 
 /** Full terrain sample; see sampleTerrain. */
 export interface TerrainSample {
@@ -283,9 +298,82 @@ export function makeSample(): TerrainSample {
 }
 
 const riverHit: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side: 0, beyondSource: 0 };
+const valleyHit: ValleyHit = { dist: Infinity, level: 0, floodplain: 0 };
+const oxbowHit: OxbowHit = { dist: Infinity, level: 0, halfWidth: 0, depth: 0 };
 
-/** Cross-section of the river valley: height above the water level at distance d from the centreline. */
-function riverProfile(d: number, halfWidth: number): number {
+/** Height of the floodplain at the river's banks above its water level, m. */
+const BANK_HEIGHT = 1.3;
+
+/**
+ * Cross-section of the river valley about its axis: height above the river's water level at distance d. The flat
+ * floodplain (the meander belt) rises a little toward its edges, then the valley walls steepen with distance.
+ */
+function valleyProfile(d: number, floodplain: number): number {
+  if (d < floodplain) return BANK_HEIGHT + 1.2 * smooth(0.5 * floodplain, floodplain, d);
+  const b = d - floodplain;
+  return BANK_HEIGHT + 1.2 + 0.012 * b + 0.00011 * b * b;
+}
+
+/** Cross-section of the channel cut into the floodplain: height above its water level at distance d (rising steeply beyond the bank). */
+function channelProfile(d: number, halfWidth: number): number {
+  if (d < halfWidth) {
+    const t = d / halfWidth;
+    return -(2.2 + halfWidth * 0.05) * (1 - t * t);
+  }
+  const b = d - halfWidth;
+  if (b < CHANNEL_BANK) return BANK_HEIGHT * smooth(0, CHANNEL_BANK, b);
+  return BANK_HEIGHT + 0.05 * (b - CHANNEL_BANK) * (b - CHANNEL_BANK);
+}
+
+/** The meandering river: its valley, oxbow lakes and channel cut into the terrain height h; fills out's river fields. */
+function carveRiver(north: number, east: number, h: number, out: TerrainSample): number {
+  // River valley: the natural terrain is cut down to the floodplain and valley walls about the valley axis.
+  presentHydro.queryValley(north, east, valleyHit);
+  if (valleyHit.dist < valleyHit.floodplain + RIVER_INFLUENCE) {
+    const d = valleyHit.dist;
+    const f = valleyHit.floodplain;
+    const carved = smin(h, valleyHit.level + valleyProfile(d, f), 4);
+    h += (carved - h) * (1 - smooth(f + RIVER_INFLUENCE * 0.75, f + RIVER_INFLUENCE, d));
+  }
+
+  // Oxbow lakes: still water in the abandoned loops, a little above the river and below the floodplain.
+  presentHydro.queryOxbow(north, east, oxbowHit);
+  if (oxbowHit.dist < oxbowHit.halfWidth + 30) {
+    const d = oxbowHit.dist;
+    const w = oxbowHit.halfWidth;
+    const bank = BANK_HEIGHT - 0.6;
+    const target = d < w ? oxbowHit.level - oxbowHit.depth * (1 - (d / w) * (d / w)) : oxbowHit.level + bank * smooth(0, 20, d - w) + 0.05 * Math.max(0, d - w - 20) ** 2;
+    h = smin(h, target, 1.5);
+    if (d < w && h < oxbowHit.level) out.standing = Math.max(out.standing, oxbowHit.level);
+  }
+
+  // River channel: cut into the floodplain along the meandering centreline.
+  presentHydro.queryRiver(north, east, riverHit);
+  out.riverDist = riverHit.dist;
+  if (riverHit.side !== 0) {
+    out.riverSigned = riverHit.dist * riverHit.side;
+    out.riverHalfWidth = riverHit.halfWidth * (1 - smooth(0, 60, riverHit.beyondSource));
+    out.riverArc = riverHit.s;
+  }
+  if (riverHit.side !== 0 && riverHit.dist < riverHit.halfWidth + CHANNEL_BANK + 40) {
+    const d = riverHit.dist;
+    const w = riverHit.halfWidth;
+    const target = riverHit.level + channelProfile(d, w);
+    let carved = smin(h, target, 3);
+    // The smooth minimum dips below both inputs; keep the immediate banks dry (a low natural levee where
+    // the plain beside the river lies below its water level). Not at the mouth, where the river meets the sea.
+    if (d > w && d < w + 40 && riverHit.level > 0.5) {
+      const levee = riverHit.level + 0.3 + 0.03 * (d - w);
+      carved += (Math.max(carved, levee) - carved) * (1 - smooth(w + 25, w + 40, d));
+    }
+    h = carved;
+    if (d < w && h < riverHit.level) out.river = riverHit.level;
+  }
+  return h;
+}
+
+/** Cross-section of the Late Cretaceous river's valley, carved about the channel: height above its water level at d. */
+function legacyRiverProfile(d: number, halfWidth: number): number {
   if (d < halfWidth) {
     const t = d / halfWidth;
     return -(2.2 + halfWidth * 0.05) * (1 - t * t);
@@ -294,6 +382,32 @@ function riverProfile(d: number, halfWidth: number): number {
   if (b < 25) return 1.3 * smooth(0, 25, b);
   // Floodplain, then valley walls steepening with distance.
   return 1.3 + 0.012 * (b - 25) + 0.00011 * (b - 25) * (b - 25);
+}
+
+/** The Late Cretaceous river (buildLegacyHydrology): the natural terrain cut down to its valley about the channel. */
+function carveLegacyRiver(north: number, east: number, h: number, out: TerrainSample): number {
+  legacyHydro.queryRiver(north, east, riverHit);
+  out.riverDist = riverHit.dist;
+  if (riverHit.side !== 0) {
+    out.riverSigned = riverHit.dist * riverHit.side;
+    out.riverHalfWidth = riverHit.halfWidth * (1 - smooth(0, 60, riverHit.beyondSource));
+    out.riverArc = riverHit.s;
+  }
+  if (riverHit.dist < RIVER_INFLUENCE) {
+    const d = riverHit.dist;
+    const w = riverHit.halfWidth;
+    const target = riverHit.level + legacyRiverProfile(d, w);
+    let carved = smin(h, target, 4);
+    // The smooth minimum dips below both inputs; keep the immediate banks dry (a low natural levee where
+    // the plain beside the river lies below its water level). Not at the mouth, where the river meets the sea.
+    if (d > w && d < w + 40 && riverHit.level > 0.5) {
+      const levee = riverHit.level + 0.3 + 0.03 * (d - w);
+      carved += (Math.max(carved, levee) - carved) * (1 - smooth(w + 25, w + 40, d));
+    }
+    h += (carved - h) * (1 - smooth(RIVER_INFLUENCE * 0.75, RIVER_INFLUENCE, d));
+    if (d < w && h < riverHit.level) out.river = riverHit.level;
+  }
+  return h;
 }
 
 /**
@@ -324,8 +438,8 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
   let h = naturalHeight(north, east);
 
   // Lakes: bed = natural terrain lowered toward (level - depth) inside the warped ellipse.
-  for (let i = 0; i < hydro.lakes.length; i++) {
-    const lake = hydro.lakes[i];
+  for (let i = 0; i < lakes.length; i++) {
+    const lake = lakes[i];
     const ln = north - lake.north;
     const le = east - lake.east;
     if (ln * ln + le * le > lake.bound * lake.bound) continue;
@@ -338,28 +452,7 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
     }
   }
 
-  // River: the natural terrain is cut down to the valley cross-section around the water level.
-  hydro.queryRiver(north, east, riverHit);
-  out.riverDist = riverHit.dist;
-  if (riverHit.side !== 0) {
-    out.riverSigned = riverHit.dist * riverHit.side;
-    out.riverHalfWidth = riverHit.halfWidth * (1 - smooth(0, 60, riverHit.beyondSource));
-    out.riverArc = riverHit.s;
-  }
-  if (riverHit.dist < RIVER_INFLUENCE) {
-    const d = riverHit.dist;
-    const w = riverHit.halfWidth;
-    const target = riverHit.level + riverProfile(d, w);
-    let carved = smin(h, target, 4);
-    // The smooth minimum dips below both inputs; keep the immediate banks dry (a low natural levee where
-    // the plain beside the river lies below its water level). Not at the mouth, where the river meets the sea.
-    if (d > w && d < w + 40 && riverHit.level > 0.5) {
-      const levee = riverHit.level + 0.3 + 0.03 * (d - w);
-      carved += (Math.max(carved, levee) - carved) * (1 - smooth(w + 25, w + 40, d));
-    }
-    h += (carved - h) * (1 - smooth(RIVER_INFLUENCE * 0.75, RIVER_INFLUENCE, d));
-    if (d < w && h < riverHit.level) out.river = riverHit.level;
-  }
+  h = isPresent() ? carveRiver(north, east, h, out) : carveLegacyRiver(north, east, h, out);
 
   // Approach corridors: keep terrain under a gradient well below the 3 degree glide path from both ends.
   const beyond = Math.abs(along) - HALF_LEN;

@@ -125,7 +125,11 @@ describe('the safari start (SAFARI)', () => {
 });
 
 describe('the anchors', () => {
-  const herd = riverHerdSite(countingTerrain());
+  // Found in the Cretaceous (the file's beforeAll has set it): its river is not the present day's.
+  let herd: ReturnType<typeof riverHerdSite>;
+  beforeAll(() => {
+    herd = riverHerdSite(countingTerrain());
+  });
   const q = nedToPath(RIVER_HERD_SITE.north, RIVER_HERD_SITE.east);
 
   it('the river herd site is riverHerdSite(), HERD_LATERAL_M left of the flown path at closest approach', () => {

@@ -15,7 +15,7 @@ import { setEra } from '../../src/world/era/eraState';
 import { CRETACEOUS } from '../../src/world/era/cretaceous';
 import { computeBiome, makeBiome } from '../../src/world/terrain/biome';
 import { hydrology, makeSample, naturalHeight, sampleTerrain } from '../../src/world/terrain/heightfield';
-import { buildHydrology, lakeRadius } from '../../src/world/terrain/hydrology';
+import { buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius } from '../../src/world/terrain/hydrology';
 import { createTerrainMaterial, type TerrainUniforms } from '../../src/world/terrain/terrainMaterial';
 import type { TerrainTextures } from '../../src/world/terrain/textures';
 import { buildTile } from '../../src/world/terrain/tileBuilder';
@@ -37,17 +37,30 @@ afterAll(() => {
   setEra('present');
 });
 
-/** Ground (sampleTerrain) at every point, in the given era. */
+/**
+ * The natural terrain (naturalHeight, before the water and the airfield) at every point, in the given era. The
+ * ground sampleTerrain gives at a point is the natural terrain there shaped by the era's water and airfield, so an
+ * unchanged natural terrain is an unchanged ground for the Cretaceous's own river, lakes and airfield. (The ground
+ * itself differs between the eras along the river: the present day's meanders, the Cretaceous's earlier course.)
+ */
 function grounds(era: 'present' | 'cretaceous', pts: Array<[number, number]>): Float64Array {
   setEra(era);
-  const s = makeSample();
   const out = new Float64Array(pts.length);
-  for (let i = 0; i < pts.length; i++) out[i] = sampleTerrain(pts[i][0], pts[i][1], s).ground;
+  for (let i = 0; i < pts.length; i++) out[i] = naturalHeight(pts[i][0], pts[i][1]);
   setEra('present');
   return out;
 }
 
-/** The largest |ground(cretaceous) - ground(present)| over the points, and where. */
+/** Both eras' rivers (the present day's meanders and the Cretaceous's earlier course). */
+function rivers(): Array<{ north: Float64Array; east: Float64Array }> {
+  const present = hydrology.river;
+  setEra('cretaceous');
+  const cretaceous = hydrology.river;
+  setEra('present');
+  return [present, cretaceous];
+}
+
+/** The largest |natural(cretaceous) - natural(present)| over the points, and where. */
 function maxDelta(pts: Array<[number, number]>): { d: number; at: [number, number] | null } {
   const a = grounds('present', pts);
   const b = grounds('cretaceous', pts);
@@ -75,8 +88,7 @@ describe('the volcano spec', () => {
     expect(V).toEqual({ north: 2000, east: -17500, baseRadius: 5500, summit: 2600, craterRadius: 400, craterDepth: 160 });
     const b = volcanoBound(V);
     for (const l of hydrology.lakes) expect(Math.hypot(l.north - V.north, l.east - V.east) - l.bound).toBeGreaterThan(b);
-    const r = hydrology.river;
-    for (let k = 0; k < r.north.length; k++) expect(Math.hypot(r.north[k] - V.north, r.east[k] - V.east)).toBeGreaterThan(b + 2400);
+    for (const r of rivers()) for (let k = 0; k < r.north.length; k++) expect(Math.hypot(r.north[k] - V.north, r.east[k] - V.east)).toBeGreaterThan(b + 2400);
   });
 });
 
@@ -87,12 +99,17 @@ describe('the volcano leaves the water and the airfield alone', () => {
     setEra('present');
     expect(h.lakes).toEqual(hydrology.lakes);
     expect(h.river).toEqual(hydrology.river);
+    // And the Cretaceous's own river.
+    setEra('cretaceous');
+    const legacy = buildLegacyHydrology(naturalHeight, buildLakes(naturalHeight));
+    const river = hydrology.river;
+    setEra('present');
+    expect(legacy.river).toEqual(river);
   });
 
   it('|dh| < 0.5 m along the whole river, out to 80 m either side', () => {
-    const r = hydrology.river;
     const pts: Array<[number, number]> = [];
-    for (let k = 1; k < r.north.length - 1; k++) {
+    for (const r of rivers()) for (let k = 1; k < r.north.length - 1; k++) {
       const tn = r.north[k + 1] - r.north[k - 1];
       const te = r.east[k + 1] - r.east[k - 1];
       const l = Math.hypot(tn, te) || 1;

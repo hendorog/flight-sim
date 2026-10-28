@@ -40,8 +40,9 @@ function slopeAt(n: number, e: number, d = 30): number {
   return Math.hypot((he - hw) / (2 * d), (hn - hs) / (2 * d));
 }
 
-/** Every layer-1 herd site found over +-24 km. */
-const sites = (() => {
+/** Every layer-1 herd site found over +-24 km (in the Cretaceous: found once the file's beforeAll has set it). */
+let sitesCache: { sites: ReturnType<typeof makeSite>[]; maxSamples: number } | null = null;
+const findSites = (): { sites: ReturnType<typeof makeSite>[]; maxSamples: number } => {
   const terrain = countingTerrain();
   const out: ReturnType<typeof makeSite>[] = [];
   let maxSamples = 0;
@@ -54,7 +55,15 @@ const sites = (() => {
     }
   }
   return { sites: out, maxSamples };
-})();
+};
+const sites = {
+  get sites() {
+    return (sitesCache ??= findSites()).sites;
+  },
+  get maxSamples() {
+    return (sitesCache ??= findSites()).maxSamples;
+  },
+};
 
 describe('habitat cells', () => {
   it('finds herds beside the water', () => {
