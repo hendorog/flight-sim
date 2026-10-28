@@ -12,6 +12,7 @@ import { makeSample, sampleTerrain } from '../heightfield';
 import { makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
 import { inTownClearZone } from '../townMask';
+import { CLEARFELL_YEARS, compartmentAt, makeCompartment, standHeight, type Compartment } from '../plantation';
 import { era } from '../../era/eraState';
 import { FLORA } from './flora';
 
@@ -97,6 +98,8 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
   const farm = new Float32Array(m * m);
   // Distance from the river's water edge (m, large away from it) for the bankside trees.
   const bank = new Float32Array(m * m);
+  // Forestry plantation estate weight (biome.ts; over 0.5 the estate's compartments are planted in rows below).
+  const plant = new Float32Array(m * m);
   for (let jx = 0; jx < mx; jx++) {
     for (let ix = 0; ix < mx; ix++) {
       const i = ix - M;
@@ -110,6 +113,7 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
       if (i < 0 || j < 0 || i >= m || j >= m) continue;
       dens[j * m + i] = biome.forest;
       farm[j * m + i] = biome.farmland;
+      plant[j * m + i] = biome.plantation;
       bank[j * m + i] = sample.riverHalfWidth > 0 ? Math.min(1e4, sample.riverDist - sample.riverHalfWidth) : 1e4;
       // Conifer share: more with altitude and on dry ground, plus planted conifer stands in lowland woods.
       const stand = fbm(east / 900 + 4.1, north / 900 - 2.3, 2);
@@ -151,6 +155,8 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
       const north = n0 + (j + rnd(h0, 2)) * spacing;
       const fx = (east - e0) / LATTICE;
       const fz = (north - n0) / LATTICE;
+      // Plantation estates are planted in rows (below), not scattered.
+      if (lerp2(plant, fx, fz) > 0.5) continue;
       const f = lerp2(dens, fx, fz);
       // Dense stands where f is high, scattered trees at the edges, rare lone trees in open land.
       const p = f < 0.2 ? 0 : Math.min(1, (f - 0.2) * 1.6);
@@ -207,8 +213,87 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
     }
   }
 
+  plantRows(e0, n0, size, spacing, m, plant, dens, lerp2, nearOpenLand, out);
   return finishCell(cx, cz, size, out);
 }
+
+const comp = makeCompartment();
+const rowComp = makeCompartment();
+
+/**
+ * Plantation compartments in this cell: each planted on its own grid (rows ROW_SPACING x spacing apart, trees along
+ * them TREE_SPACING x spacing apart, wider once thinned), turned to its row direction, the trees all of the
+ * compartment's age. A few are missing, a strip along every compartment border is left for the forestry roads and
+ * firebreaks, and fresh clear-fells carry none. Pine (the radiata of a working forest).
+ */
+function plantRows(e0: number, n0: number, size: number, spacing: number, m: number, plant: Float32Array, dens: Float32Array,
+  lerp2: (a: Float32Array, fx: number, fz: number) => number, nearOpenLand: (fx: number, fz: number) => boolean, out: number[]): void {
+  // The compartments that reach into the cell: probe it on a coarse grid.
+  const found = new Map<string, Compartment>();
+  const step = size / 8;
+  for (let j = 0; j <= 8; j++)
+    for (let i = 0; i <= 8; i++) {
+      const fx = Math.min(m - 1, (i * step) / LATTICE);
+      const fz = Math.min(m - 1, (j * step) / LATTICE);
+      if (lerp2(plant, fx, fz) <= 0.5) continue;
+      compartmentAt(e0 + i * step, n0 + j * step, comp);
+      const key = `${comp.cellX},${comp.cellY}`;
+      if (!found.has(key) && comp.years >= CLEARFELL_YEARS) found.set(key, { ...comp });
+    }
+  for (const c of found.values()) {
+    const thinned = smoothstep(10, 16, c.years);
+    const along = spacing * (TREE_SPACING + 0.4 * thinned);
+    const across = spacing * (ROW_SPACING + 0.3 * thinned);
+    const ue = Math.cos(c.angle);
+    const un = Math.sin(c.angle);
+    // The cell's corners in the compartment's row frame: a along the rows, b across them.
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (const [de, dn] of [[0, 0], [size, 0], [0, size], [size, size]]) {
+      const re = e0 + de - c.siteE;
+      const rn = n0 + dn - c.siteN;
+      const a = re * ue + rn * un;
+      const b = -re * un + rn * ue;
+      a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b);
+    }
+    const height = standHeight(c.years);
+    for (let bj = Math.ceil(b0 / across); bj <= Math.floor(b1 / across); bj++) {
+      for (let ai = Math.ceil(a0 / along); ai <= Math.floor(a1 / along); ai++) {
+        const h0 = hash2i(ai * 31 + c.cellX * 7919, bj * 37 + c.cellY * 104729);
+        if (rnd(h0, 1) < 0.04) continue;
+        const a = ai * along + 0.25 * (rnd(h0, 2) - 0.5);
+        const b = bj * across + 0.25 * (rnd(h0, 3) - 0.5);
+        const east = c.siteE + a * ue - b * un;
+        const north = c.siteN + a * un + b * ue;
+        if (east < e0 || east >= e0 + size || north < n0 || north >= n0 + size) continue;
+        const fx = (east - e0) / LATTICE;
+        const fz = (north - n0) / LATTICE;
+        if (lerp2(plant, fx, fz) <= 0.5) continue;
+        const f = lerp2(dens, fx, fz);
+        if (f < 0.25) continue;
+        compartmentAt(east, north, rowComp);
+        if (rowComp.cellX !== c.cellX || rowComp.cellY !== c.cellY || rowComp.border < ROAD_HALF_WIDTH) continue;
+        if (inTownClearZone(north, east)) continue;
+        sampleTerrain(north, east, sample);
+        if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
+        if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + 2.5) continue;
+        const open = rowComp.border < 15 || c.years < 7 || f < 0.5 || nearOpenLand(fx, fz);
+        out.push(east, sample.ground, north, height * (0.9 + 0.2 * rnd(h0, 4)), rnd(h0, 5) * Math.PI * 2,
+          SPECIES.pine + (open ? SPECIES_COUNT : 0) + 0.99 * rnd(h0, 6) * (open ? OPEN_RANK : 1));
+      }
+    }
+  }
+}
+
+/** Plantation spacing in multiples of the forest candidate spacing: along the rows, and between them. */
+const TREE_SPACING = 0.75;
+const ROW_SPACING = 1.0;
+/** Half-width of the unplanted strip along compartment borders (roads, firebreaks), m. */
+const ROAD_HALF_WIDTH = 4;
+
+const smoothstep = (e0: number, e1: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
 
 /** Sorts a cell's instances (open trees first, then forest trees, each by rank) and buckets them. */
 function finishCell(cx: number, cz: number, size: number, out: number[]): TreeCellData {

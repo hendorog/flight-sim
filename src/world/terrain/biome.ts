@@ -9,6 +9,7 @@ import { runwayCoords } from '../../core/world';
 import { FENCE_RECT } from '../airport/layout';
 import { SEA_LEVEL, makeSample, sampleTerrain, snowLine, type TerrainSample } from './heightfield';
 import { fbm } from './noise';
+import { CLEARFELL_YEARS, compartmentAt, estateWeight, makeCompartment, standHeight } from './plantation';
 import { townFieldFactor, townWoodFactor } from './townMask';
 import { era, isPresent } from '../era/eraState';
 import { makeVolcanoMask, volcanoMask, volcanoWoodsCut } from './volcano';
@@ -23,6 +24,11 @@ export interface Biome {
   /** Beach sand, 0..1. */
   sand: number;
   /**
+   * Forestry plantation estate, 0..1 (plantation.ts; present day only): where it is over 0.5 the land is the estate's
+   * compartments (forest by their age, no farmland), and the tile carries PLANTATION_FLAG for the ground shader.
+   */
+  plantation: number;
+  /**
    * Marsh (horsetail flats on the wet floodplain), 0..1: only in an era with EraTerrain.marsh (0 in the present
    * day). It shares the farmland channel of the terrain's biome attribute (tileBuilder.ts), which such an era
    * has no farmland for, and the shader reads it as marsh under MARSH_CHANNEL (terrainMaterial.ts).
@@ -31,7 +37,7 @@ export interface Biome {
 }
 
 export function makeBiome(): Biome {
-  return { forest: 0, farmland: 0, moisture: 0, sand: 0, marsh: 0 };
+  return { forest: 0, farmland: 0, moisture: 0, sand: 0, marsh: 0, plantation: 0 };
 }
 
 const smooth = (e0: number, e1: number, x: number): number => {
@@ -166,6 +172,11 @@ export class CoverShapeField {
   }
 }
 
+/** Plantation estates keep this far from the river (its floodplain stays farmland) and from the field, m. */
+export const ESTATE_RIVER_CLEAR = 700;
+export const ESTATE_FIELD_CLEAR = 3500;
+const compartment = makeCompartment();
+
 /** Width of the uncultivated strip along each river bank (the ground shader's riparian strip), m. */
 export const RIVER_STRIP = 14;
 
@@ -231,7 +242,7 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
   // The tree line climbs on sunny south faces and drops on shaded north faces.
   const tl = treeLine(north, east) - TREE_LINE_ASPECT * faceNorth;
   const woods = smooth(-0.1, 0.1, patches + hilly - 0.12);
-  const forest =
+  let forest =
     woods *
     (1 - smooth(tl, tl + 250, h)) *
     smooth(FOREST_UP_MIN, FOREST_UP_FULL, up) *
@@ -241,6 +252,30 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
     smooth(0.98, 1.0, s.airportBlend) *
     townWoodFactor(north, east) *
     (h < snowLine(north, east) ? 1 : 0);
+
+  // Forestry plantations (present day): within an estate the compartment decides - forest by its stand's age, none
+  // on a fresh clear-fell - under the same limits as the woods (slope, tree line, water, approaches, town, snow).
+  let estate = 0;
+  if (isPresent()) {
+    estate =
+      estateWeight(east, north, h) *
+      smooth(ESTATE_RIVER_CLEAR, ESTATE_RIVER_CLEAR + 600, s.riverDist) *
+      smooth(ESTATE_FIELD_CLEAR, ESTATE_FIELD_CLEAR + 1500, Math.hypot(north, east));
+    if (estate > 0) {
+      compartmentAt(east, north, compartment);
+      const stand = compartment.years < CLEARFELL_YEARS ? 0 : 0.55 + 0.45 * (standHeight(compartment.years) / 34);
+      const limits =
+        (1 - smooth(tl, tl + 250, h)) *
+        smooth(FOREST_UP_MIN, FOREST_UP_FULL, up) *
+        smooth(3, 12, aboveWater) *
+        (1 - sand) *
+        (1 - s.approach) *
+        smooth(0.98, 1.0, s.airportBlend) *
+        townWoodFactor(north, east) *
+        (h < snowLine(north, east) ? 1 : 0);
+      forest += (stand * limits - forest) * smooth(0.35, 0.65, estate);
+    }
+  }
 
   // Farmland (crop fields and hedged pastures): the gentle land outside the woods up into the foothills,
   // except occasional commons and rough grazing. Around the airport it runs up to the perimeter fence (the
@@ -259,9 +294,11 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
     ) *
     smooth(4, 20, s.airportBlend < 1 ? fenceDistance(north, east) : 1e4) *
     townFieldFactor(north, east) *
-    riverStrip;
+    riverStrip *
+    (1 - smooth(0.35, 0.65, estate));
 
   out.forest = forest;
+  out.plantation = estate;
   out.farmland = farmland;
   out.moisture = moisture;
   out.sand = sand;

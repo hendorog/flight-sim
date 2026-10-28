@@ -144,9 +144,9 @@ const edgeKind = (h: number): number => {
 };
 const colJitter = (k: number, dseed: number): number => 0.3 * (u16(hash2i(k, dseed)) - 0.5) * 2;
 
-const noiseOut = { x: 0, y: 0 };
+export const noiseOut = { x: 0, y: 0 };
 /** TypeScript twin of fieldNoise() in FIELDS_GLSL; result in noiseOut. */
-function fieldNoise(px: number, py: number, salt: number): void {
+export function fieldNoise(px: number, py: number, salt: number): void {
   const ix = Math.floor(px);
   const iy = Math.floor(py);
   const fx = px - ix;

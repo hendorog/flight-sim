@@ -36,7 +36,8 @@ import { ASH_REACH, VOLCANO_GLSL, VOLCANO_LAVA_GLSL, VOLCANO_LAVA_HEAD_GLSL, VOL
 import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS } from './eraUniforms';
 import { UNDERSTOREY_HEAD_GLSL, UNDERSTOREY_SPECKLE_GLSL } from './vegetation/understorey';
 import { eraOff, type EraLayerName } from '../era/eraOff';
-import { RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
+import { PLANTATION_FLAG, RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
+import { CLEARFELL_YEARS, PLANTATION_GLSL, ROTATION_YEARS } from './plantation';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
 import { OPEN_RANK } from './vegetation/placement';
@@ -106,6 +107,8 @@ const glslVec = (c: readonly number[]): string => `vec3(${c.map((x) => x.toFixed
 
 /** Era-only shader text: '' in the present day. */
 const eraText = (t: string): string => (isPresent() ? '' : t);
+/** Shader text for the present day only (forestry plantations: no other era has them). */
+const presentText = (t: string): string => (isPresent() ? t : '');
 
 /**
  * Increment 2 (WP0a): an era shader SLOT. Its text comes from the owning package's module (volcano.ts lava,
@@ -327,7 +330,8 @@ if (tMudW > 0.001) {
   return { cover, mud };
 }
 
-const VERTEX_HEAD = /* glsl */ `
+/** Vertex shader declarations (built per era: the present day's carry the plantation flag). */
+const vertexHead = (): string => /* glsl */ `
 // Vertex attributes (tileBuilder.ts): normals (own x, z; parent x, z), morph height, biome, shape
 // (curvature, parent forest, level byte).
 attribute vec4 aNormals;
@@ -336,7 +340,7 @@ attribute vec4 aBiome;
 attribute vec4 aShape;
 attribute vec2 aRiver;
 varying vec2 vRiver;
-uniform vec2 uMorph[${MAX_LEVELS}];
+${presentText('varying float vPlantation;\n')}uniform vec2 uMorph[${MAX_LEVELS}];
 uniform float uSkirt[${MAX_LEVELS}];
 uniform vec3 uLodCenter;
 uniform vec2 uForestFade;
@@ -361,7 +365,7 @@ float canopyLift(vec3 w, float tMorph, float level) {
   return smoothstep(0.45, 0.85, forest) * rise * coarse * ${CANOPY_HEIGHT.toFixed(1)};
 }
 // Level byte: the node level, plus SKIRT_FLAG on skirt vertices.
-float levelByte() { return floor(aShape.z * 255.0 + 0.5); }
+float levelByte() { return ${isPresent() ? `mod(floor(aShape.z * 255.0 + 0.5), ${PLANTATION_FLAG.toFixed(1)})` : 'floor(aShape.z * 255.0 + 0.5)'}; }
 float tileLevel() {
   float lv = levelByte();
   return lv > ${(SKIRT_FLAG - 0.5).toFixed(1)} ? lv - ${SKIRT_FLAG.toFixed(1)} : lv;
@@ -390,7 +394,7 @@ vec3 objectTangent = vec3(tangent.xyz);
 #endif
 `;
 
-const VERTEX_BEGIN = /* glsl */ `
+const vertexBegin = (): string => /* glsl */ `
 vec3 transformed = position;
 transformed.y += aMorph * tMorph - tDrop;
 {
@@ -404,7 +408,7 @@ vBiome = aBiome;
 vCurvature = aShape.x * 2.0 - 1.0;
 vCoverUp = aShape.w;
 vRiver = aRiver * ${(1 / RIVER_UNITS).toFixed(4)};
-`;
+${presentText(`vPlantation = step(${(PLANTATION_FLAG - 0.5).toFixed(1)}, floor(aShape.z * 255.0 + 0.5));\n`)}`;
 
 export function fragmentHead(): string {
   const E = eraText;
@@ -434,9 +438,9 @@ varying float vLiftK;
 varying float vCoverUp;
 // Signed distance from the river centreline and the channel half-width there, m (tileBuilder.ts).
 varying vec2 vRiver;
-${HASH_GLSL}
+${presentText('varying float vPlantation;\n')}${HASH_GLSL}
 ${ROT_GLSL}
-${E('#if ERA_FARM\n')}${FIELDS_GLSL}
+${E('#if ERA_FARM\n')}${FIELDS_GLSL}${presentText(PLANTATION_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
 
@@ -854,7 +858,22 @@ if (vRiver.y > 1.0) {
     meadow = mix(meadow, rough, strip);
   }
 }
-float landW = 1.0 - sandW;
+${presentText(`// Plantation estates (plantation.ts): the compartment here. A fresh clear-fell is bare brown ground strewn with
+// slash, greening as the new planting takes; the canopy takes a conifer tone by stand age (below).
+vec4 tComp = vec4(${ROTATION_YEARS.toFixed(1)}, 0.0, 1e3, 0.0);
+if (vPlantation > 0.01) {
+  tComp = compartmentAt(vec2(tP.x, -tP.z));
+  float clearW = vPlantation * (1.0 - smoothstep(${(CLEARFELL_YEARS - 0.5).toFixed(2)}, ${(CLEARFELL_YEARS + 0.5).toFixed(2)}, tComp.x));
+  vec3 slash = mix(vec3(0.085, 0.052, 0.026), vec3(0.13, 0.092, 0.055), smoothstep(0.4, 0.65, nD.g)) * (0.8 + 0.3 * sC.r);
+  // Windrows: the slash raked into long dark heaps along the planting rows, 25 m apart.
+  vec2 rowDir = vec2(-sin(tComp.y), cos(tComp.y));
+  float windrow = abs(fract(dot(vec2(tP.x, -tP.z), rowDir) / 25.0 + 0.2 * sD.b) - 0.5) * 2.0;
+  slash *= 1.0 - 0.45 * smoothstep(0.7, 0.92, windrow);
+  slash = mix(slash, ${P.bankRoughA}, 0.55 * smoothstep(0.5, 2.5, tComp.x));
+  meadow = mix(meadow, slash, clearW);
+  farmW *= 1.0 - vPlantation;
+}
+`)}float landW = 1.0 - sandW;
 // Farmland first (its colour and weight; the ground layer is sampled below, shared with the meadow).
 float farmWeight = 0.0;
 float farmSoil = 0.0;
@@ -982,8 +1001,11 @@ if (forestW > 0.001) {
     float conifer = smoothstep(0.35, 0.65, smoothstep(400.0, 1300.0, tH + 300.0 * sB.r) + 0.45 * sB.b);
     // Closed canopy seen from above is far darker than grassland (deep shade between the crowns): spruce
     // and fir stands nearly black-green, broadleaf woods a little lighter and yellower.
-    vec3 tint = mix(${P.canopyBroadleaf}, ${P.canopyConifer}, conifer);
-    tint *= 0.78 + 0.2 * sC.b + 0.14 * sB.g + 0.1 * sD.a;
+${presentText(`    // Plantation: all conifer, young stands paler and greener, mature ones darker.
+    conifer = mix(conifer, 1.0, vPlantation);
+`)}    vec3 tint = mix(${P.canopyBroadleaf}, ${P.canopyConifer}, conifer);
+${presentText(`    tint *= mix(vec3(1.0), mix(vec3(1.25, 1.4, 1.05), vec3(0.86), smoothstep(5.0, 16.0, tComp.x)), vPlantation);
+`)}    tint *= 0.78 + 0.2 * sC.b + 0.14 * sB.g + 0.1 * sD.a;
     // Stand structure that survives distance (crown clusters, gaps, height classes, a few tens of metres
     // across), as tone and as relief the sun picks out; the crown texture itself filters away beyond ~1 km.
     vec4 nS = texture(tNoise, rot2(tXZ, 1.3) * (1.0 / 37.0));
@@ -1223,9 +1245,9 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${VERTEX_HEAD}`)
+      .replace('#include <common>', `#include <common>\n${vertexHead()}`)
       .replace('#include <beginnormal_vertex>', VERTEX_NORMAL)
-      .replace('#include <begin_vertex>', VERTEX_BEGIN);
+      .replace('#include <begin_vertex>', vertexBegin());
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${head}`)
       .replace('#include <map_fragment>', splat)
@@ -1258,7 +1280,7 @@ export function createTerrainDepthMaterial(uniforms: TerrainUniforms): THREE.Mes
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${VERTEX_HEAD}`)
+      .replace('#include <common>', `#include <common>\n${vertexHead()}`)
       .replace(
         '#include <begin_vertex>',
         `float tDrop;\nfloat tMorph = terrainMorph(position, tDrop);\nvec3 transformed = position;\ntransformed.y += aMorph * tMorph;\ntransformed.y += canopyLift((modelMatrix * vec4(transformed, 1.0)).xyz, tMorph, tileLevel());`,

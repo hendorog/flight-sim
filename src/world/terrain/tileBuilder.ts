@@ -52,7 +52,7 @@ export interface TileData {
   /**
    * Per vertex, unorm8 x4: terrain curvature (0.5 = planar, below = convex ridges, above = hollows), the
    * forest density on the parent lattice (the geomorph target of the canopy lift, see terrainMaterial.ts),
-   * the node level (+ SKIRT_FLAG on skirt vertices, as a raw byte) and the land-cover slope (the vertical
+   * the node level (+ SKIRT_FLAG on skirt vertices, + PLANTATION_FLAG in a plantation estate, as a raw byte) and the land-cover slope (the vertical
    * normal component measured on the land-cover lattice, independent of LOD; the shader's rock uses it).
    */
   shape: Uint8Array;
@@ -72,6 +72,8 @@ export interface TileData {
 const BORDER = 2;
 /** Skirt vertex flag added to the level byte of the shape attribute. */
 export const SKIRT_FLAG = 16;
+/** Added to the level byte where the vertex lies in a forestry plantation estate (Biome.plantation over 0.5). */
+export const PLANTATION_FLAG = 32;
 
 export function tileVertexCount(grid: number): number {
   return (grid + 1) * (grid + 1) + 4 * (grid + 1);
@@ -284,6 +286,8 @@ export function buildTile(req: TileRequest): TileData {
       bio[v * 4 + 1] = Math.round((biome.farmland + biome.marsh) * 255);
       bio[v * 4 + 2] = Math.round(biome.moisture * 255);
       bio[v * 4 + 3] = Math.round(biome.sand * 255);
+      // The level is added below.
+      form[v * 4 + 2] = biome.plantation > 0.5 ? PLANTATION_FLAG : 0;
     }
   }
 
@@ -316,7 +320,7 @@ export function buildTile(req: TileRequest): TileData {
       }
       morph[v] = hc - positions[v * 3 + 1];
       form[v * 4 + 1] = (bio[a * 4] + bio[b * 4] + 1) >> 1;
-      form[v * 4 + 2] = level;
+      form[v * 4 + 2] += level;
       normals[v * 4 + 2] = snorm16(nx);
       normals[v * 4 + 3] = snorm16(nz);
     }
@@ -333,7 +337,7 @@ export function buildTile(req: TileRequest): TileData {
       morph[dst] = morph[src];
       bio.copyWithin(dst * 4, src * 4, src * 4 + 4);
       form.copyWithin(dst * 4, src * 4, src * 4 + 4);
-      form[dst * 4 + 2] = level + SKIRT_FLAG;
+      form[dst * 4 + 2] += SKIRT_FLAG;
       riv.copyWithin(dst * 2, src * 2, src * 2 + 2);
     }
   }
