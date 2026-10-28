@@ -80,6 +80,8 @@ export interface SimCommands {
   setPaused(paused: boolean): void;
   setCameraMode(mode: CameraMode): void;
   setPanelView?(view: PanelView): void;
+  /** Hide or show the yokes / sticks in the 3D cockpit (a view preference: the controls still work). */
+  setYokeHidden?(hidden: boolean): void;
   setTimeScale(scale: number): void;
   setQuality(q: QualityLevel): void;
   /**
@@ -190,6 +192,8 @@ export interface SimContext {
   cameraMode: CameraMode;
   /** Cockpit presentation; absent on older test contexts means 3D. */
   panelView?: PanelView;
+  /** The 3D cockpit's control columns are hidden (Shift+H); absent means shown. */
+  yokeHidden?: boolean;
   /** CSS pixels reserved by the fixed canvas and its section bar. */
   fixedPanelHeight?: number;
   quality: QualityLevel;

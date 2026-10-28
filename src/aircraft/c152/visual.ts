@@ -534,6 +534,9 @@ const COCKPIT: CockpitDef = {
     { kind: 'knob', control: 'mixture', engine: 0, pos: [PANEL_X, faceY(C152_KNOBS.mixture), faceZ(C152_KNOBS.y)], travel: 0.075, colour: 'red', knob: 'plungerMixture' },
   ],
   // The electric flap pre-select lever in its slotted gate right of the mixture: 0.1 m of travel from UP to 30 deg.
+  // The hand primer between the fuel and oil gauges (POH Fig 7-2 item 42): a metal push-pull plunger, pulled out and
+  // pushed in to prime, over the painted knob (which stays for the flat panel and takes the clicks).
+  primer: { pos: [PANEL_X, faceY(C152_PANEL_PARTS.primer[0]), faceZ(C152_PANEL_PARTS.primer[1])], travel: 0.05 },
   flapControl: { kind: 'panelLever', pos: [PANEL_X, faceY(C152_PANEL_PARTS.flapSlot.x), faceZ(C152_PANEL_PARTS.flapSlot.y)], travel: 0.1 },
   // The vertical elevator trim wheel on the pedestal below the throttle (s.9), its knurled rim through a bezel in the
   // pedestal's aft face, the NOSE DN / TAKE OFF / NOSE UP position indicator left of it (s.9, POH 7: "the elevator trim

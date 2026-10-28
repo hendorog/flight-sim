@@ -1734,6 +1734,9 @@ export class InputSystem implements Subsystem {
       case 'viewFocus':
         this.view?.toggleFocus?.();
         break;
+      case 'viewYoke':
+        ctx.commands.setYokeHidden?.(!ctx.yokeHidden);
+        break;
       case 'centreControls':
         this.centreControls(ctx);
         break;

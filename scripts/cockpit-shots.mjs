@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Usage: node scripts/cockpit-shots.mjs [--types c172s,c208] [--out dir] [--views default,wide,down,downright,close]
-//          [--width 1366] [--height 768] [--dpr 1] [--quality high] [--tag before]
+//          [--width 1366] [--height 768] [--dpr 1] [--quality high] [--tag before] [--hide-yoke]
 // Screenshots of the 3D cockpit on the runway at noon from the pilot eye, in fixed head poses: the default view, a wide
 // view a little down (framed like the MSFS reference frames), looking down at the controls, down and right at the pedestal, and a close-up aimed at the pilot's yoke (or stick) at a 28 degree
 // field of view. Per type it also records the draw calls and triangles of one frame (renderer.info over every pass), the
@@ -24,6 +24,8 @@ const width = Number(flag('width', '1366')), height = Number(flag('height', '768
 const dpr = Number(flag('dpr', '1'));
 const quality = flag('quality', 'high');
 const tag = flag('tag', 'now');
+// Shift+H pressed first: the yokes hidden, to see the panel behind them.
+const hideYoke = argv.includes('--hide-yoke');
 mkdirSync(out, { recursive: true });
 
 const server = await createServer({ root, logLevel: 'error', server: { port: 0, host: '127.0.0.1', hmr: false, watch: null }, optimizeDeps: { holdUntilCrawlEnd: true } });
@@ -148,6 +150,7 @@ try {
     await p.goto(`http://127.0.0.1:${port}/index.html?aircraft=${type}&scenario=runway&cam=cockpit&mute=1&quality=${quality}&tod=12&resume=0`, { waitUntil: 'load', timeout: 180000 });
     await p.waitForFunction(() => window.__ready === true, null, { timeout: 180000 });
     await p.evaluate(async () => { window.__THREE = await import('/node_modules/three/build/three.module.js'); });
+    if (hideYoke) await p.keyboard.press('Shift+H');
     await sleep(2500);
     const r = { counts: await p.evaluate(counts), views: {} };
     for (const view of views) {

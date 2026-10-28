@@ -74,8 +74,8 @@ const SUBPANEL: Rect = { x: 4, y: 574, w: 1832, h: 222 };
 const BREAKERS: Rect = { x: 756, y: 730, w: 816, h: 58 };
 const APERTURES = { large: 74, small: 51 };
 
-/** The 3D parts that stand on the panel, in px, for visual.ts (yoke columns, flap lever slot). */
-export const C152_PANEL_PARTS = { yokes: YOKES, flapSlot: { x: FLAPS.x + 100, y: FLAPS.y + 80 } } as const;
+/** The 3D parts that stand on the panel, in px, for visual.ts (yoke columns, flap lever slot, the primer's plunger). */
+export const C152_PANEL_PARTS = { yokes: YOKES, flapSlot: { x: FLAPS.x + 100, y: FLAPS.y + 80 }, primer: PRIMER } as const;
 
 // ---------------------------------------------------------------------------------------------------
 // Markings (POH section 2, s.4 and s.7)

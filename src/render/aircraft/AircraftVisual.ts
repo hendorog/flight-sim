@@ -399,6 +399,8 @@ export class AircraftVisual implements Subsystem {
     // Interior shadows (the yokes on the panel) only matter seen from inside.
     for (const p of this.interiorCasters) p.castShadow = inside || canopy;
     this.cockpit.setDetailVisible(inside || canopy);
+    // Shift+H: the yokes hidden from the pilot's seat, to see the switches behind them (outside they stay).
+    this.cockpit.setColumnsVisible(!(inside && ctx.yokeHidden));
     this.cockpit.group.visible = inside || interiorInView(this.camLocal.length(), canopy ? ctx.camera.fov : 60, this.opts.interiorLodDistance);
     if (this.occupants) this.occupants.group.visible = !inside;
     if (this.cockpit.group.visible) {

@@ -550,3 +550,12 @@ export function loadPanelView(store: KeyValueStore | null): PanelView {
 export function savePanelView(store: KeyValueStore | null, view: PanelView): void {
   try { store?.setItem(PANEL_VIEW_PREF_KEY, view); } catch { /* private browsing / quota */ }
 }
+
+/** The 3D cockpit's yokes hidden (Shift+H): a view preference, like the panel view. */
+export const YOKE_HIDDEN_PREF_KEY = 'fs.yokeHidden';
+export function loadYokeHidden(store: KeyValueStore | null): boolean {
+  try { return store?.getItem(YOKE_HIDDEN_PREF_KEY) === '1'; } catch { return false; }
+}
+export function saveYokeHidden(store: KeyValueStore | null, hidden: boolean): void {
+  try { store?.setItem(YOKE_HIDDEN_PREF_KEY, hidden ? '1' : '0'); } catch { /* private browsing / quota */ }
+}

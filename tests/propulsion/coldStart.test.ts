@@ -5,7 +5,7 @@
 // these members and starts as it always has (its goldens pin that).
 
 import { describe, expect, it } from 'vitest';
-import { setEngineControl, type ControlInputs } from '../../src/core/types';
+import { setEngineControl, type ControlInputs, type FuelSelector } from '../../src/core/types';
 import { Powerplant } from '../../src/physics/propulsion';
 import { C172_POWERPLANT } from '../../src/physics/propulsion/c172Powerplant';
 import type { PowerplantDef } from '../../src/physics/propulsion/defs';
@@ -18,6 +18,9 @@ function coldAndDark(def: PowerplantDef, oat = 288.15) {
   const n = def.engines.length;
   sys.reset({ running: false, tanks: sys.tankCapacities, oat });
   const input = makeInput({ engines: n, controls: { masterBattery: true, throttle: 0.07, propeller: 1, mixture: 0 } });
+  // The selector on a position the type has (the PA-34's are ON and CROSSFEED): one it does not list shuts the feed.
+  const positions = Object.keys(def.fuel.feeds[0].positions) as FuelSelector[];
+  input.controls.fuelSelector = positions.includes('both') ? 'both' : positions[0];
   input.atmosphere.temperature = oat;
   for (let i = 0; i < n; i++) {
     setEngineControl(input.controls, i, 'magnetos', 3);

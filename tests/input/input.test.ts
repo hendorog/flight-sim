@@ -71,8 +71,10 @@ describe('key bindings', () => {
   });
 
   it('leaves the UI keys unbound and has no duplicate key+shift pairs', () => {
-    // UI (Escape, F8, F9), shell (P, A, Shift+R) and keys kept free (H, F11, Tab).
-    for (const code of ['KeyH', 'Escape', 'KeyP', 'F11', 'Tab', 'KeyR', 'F8', 'F9']) {
+    // UI (Escape, F8, F9), shell (P, A, Shift+R, bare H the dome light) and keys kept free (F11, Tab).
+    expect(actionForKey('KeyH', false)).toBeNull();
+    expect(actionForKey('KeyH', true)).toBe('viewYoke');
+    for (const code of ['Escape', 'KeyP', 'F11', 'Tab', 'KeyR', 'F8', 'F9']) {
       expect(actionForKey(code, false)).toBeNull();
       expect(actionForKey(code, true)).toBeNull();
     }
@@ -147,8 +149,8 @@ describe('key bindings', () => {
     // or the moved beep (Shift+, / Shift+.), the pusher grip's snap (Shift+/) and the tail-wheel lock (Shift+'); and the
     // Bo 105 flyability pass's: the hand-rate collective (Shift+F5 / Shift+F6), keyboard trim here (Shift+5, Shift+Num 5)
     // and the STAB ASSIST toggle (Shift+A); less the spare rudder keys Q and E, plus the instrument focus (Q); plus the
-    // hand primer's stroke and lock (E, Shift+E).
-    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5 + 4 + 5 - 2 + 1 + 2);
+    // hand primer's stroke and lock (E, Shift+E); and hiding the yokes (Shift+H).
+    expect(KEY_MAP.length).toBe(71 + 14 + 2 + 2 + 5 + 4 + 5 - 2 + 1 + 2 + 1);
     expect(KEY_MAP.filter((m) => ['F5', 'F6', 'Digit5', 'Numpad5', 'KeyA'].includes(m.code)).map((m) => `${m.code}/${m.shift}/${m.action}`)).toEqual([
       'Numpad5/undefined/centreControls',
       'Digit5/undefined/centreControls',
@@ -190,8 +192,8 @@ describe('key bindings', () => {
   });
 
   it('the Cessna 172S help listing is unchanged by the keys it has nothing for', () => {
-    // 64, and the instrument focus (Q) since 2026-10-26.
-    expect(KEY_BINDINGS.length).toBe(65);
+    // 64, and the instrument focus (Q) since 2026-10-26, and hiding the yokes (Shift+H) since 2026-10-28.
+    expect(KEY_BINDINGS.length).toBe(66);
     for (const key of ['F7', 'F10', '/', ';', '\\', 'Shift+F', '6', '7', '8', '9', '0']) expect(KEY_BINDINGS.some((b) => b.keys.split(' / ').includes(key)), key).toBe(false);
   });
 

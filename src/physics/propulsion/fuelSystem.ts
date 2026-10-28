@@ -91,11 +91,13 @@ const LOSE_PRIME_TIME = 0.3;
 const FILM_CRANK_RPM = 200;
 const FILM_STILL_RPM = 60;
 /**
- * Float carburettor feeds only. A shut selector (not a tank run dry) seals the lines behind it: no air can follow the
- * fuel down, so they hold it like a straw with a finger over its top, all but what drains as air bubbles back up
- * through the float valve and the strainer, kg.
+ * Float carburettor and injected feeds. A shut selector (not a tank run dry) seals the lines behind it: no air can
+ * follow the fuel down, so they hold it like a straw with a finger over its top, all but what drains as air bubbles
+ * back up through the float valve and the strainer, kg. An injected engine's pump pulls harder on them and draws out
+ * more as the fuel left in the strainer and lines boils off under its suction.
  */
 const SEALED_LINE_DRAIN = 0.015;
+const SEALED_LINE_DRAIN_PUMPED = 0.05;
 /**
  * Float bowl level (fraction of its capacity) below which the falling head over the jets leans the mixture, and at
  * which nothing more is drawn: the engine runs rough as the bowl drains and quits with fuel still in it.
@@ -239,8 +241,9 @@ class FuelFeed {
       // The tanks this position draws from (a position the definition does not list shuts the feed).
       this.selector = selector;
       this.drawn = this.positions[selector] ?? NO_TANKS;
-      const sealed = this.delivery === 'carburettorBowl' && this.drawn.length === 0;
-      this.lineFloor = sealed ? Math.max(this.lineUnusable, this.line - SEALED_LINE_DRAIN) : this.lineUnusable;
+      const sealed = this.delivery !== 'commonRail' && this.drawn.length === 0;
+      const drain = this.delivery === 'injector' ? SEALED_LINE_DRAIN_PUMPED : SEALED_LINE_DRAIN;
+      this.lineFloor = sealed ? Math.max(this.lineUnusable, this.line - drain) : this.lineUnusable;
     }
     const drawn = this.drawn;
     const room = this.lineCapacity - this.line;
@@ -273,7 +276,13 @@ class FuelFeed {
 
     // Pumps only develop pressure while they have fuel to pump; they lose prime (suck air) once the lines are
     // down to the fuel that cannot reach the pump inlet.
-    const wet = smoothstep(this.lineUnusable, 2 * this.lineUnusable, this.line);
+    // An injected engine's pump sucks vapour once a sealed line is down to what it cannot draw, and loses prime as it
+    // would on a dry line (only near the end, the pressure fading out ahead of it); a float carburettor's gravity head
+    // keeps its pump wetted.
+    const sealedPump = this.delivery === 'injector' && this.lineFloor > this.lineUnusable;
+    const wet = sealedPump
+      ? smoothstep(this.lineFloor, this.lineFloor + 0.3 * this.lineUnusable, this.line)
+      : smoothstep(this.lineUnusable, 2 * this.lineUnusable, this.line);
     if (steady) this.prime = wet;
     else if (dt > 0) {
       // A dry pump loses prime within a fraction of a second; a wetted one re-primes as it turns.
@@ -285,7 +294,7 @@ class FuelFeed {
     const pumpPsi = Math.max(enginePump, aux);
     // Behind a shut selector the sealed lines hold their fuel under suction: the pumps keep their prime but deliver
     // nothing once what could drain has gone.
-    const open = smoothstep(this.lineFloor, this.lineFloor + this.lineUnusable, this.line);
+    const open = smoothstep(this.lineFloor, this.lineFloor + (sealedPump ? 0.5 : 1) * this.lineUnusable, this.line);
     r.auxPressurePsi = aux * wet * open;
     r.pressurePsi = pumpPsi * wet * open;
     // The head of fuel standing above the engine adds to whatever the pumps make.
@@ -305,7 +314,7 @@ class FuelFeed {
 
     // Servo: meters the demanded flow into the injector lines once the pressure opens the flow divider.
     const meterable = demand * smoothstep(this.injectionOpenPsi, this.injectionFullPsi, r.pressurePsi);
-    const metered = Math.min(meterable * dt, Math.max(0, this.line - this.lineUnusable));
+    const metered = Math.min(meterable * dt, Math.max(0, this.line - this.lineFloor));
     this.line -= metered;
     r.metered = dt > 0 ? metered / dt : 0;
 

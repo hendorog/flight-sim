@@ -1163,6 +1163,11 @@ export class Cockpit {
     for (const g of this.details()) g.visible = visible;
   }
 
+  /** Show or hide the yokes / sticks (with their shadow proxies, which hang under them). */
+  setColumnsVisible(visible: boolean): void {
+    for (const c of this.columns) c.group.visible = visible;
+  }
+
   /** Luminous flux of the interior lamps now, lumens x SCENE_UNITS_PER_LUX (linear RGB). */
   lampFlux(out: THREE.Color): THREE.Color {
     // A spot of ~45 degrees half-angle subtends ~1.9 sr; a downward Lambertian emitter PI sr.

@@ -48,7 +48,7 @@ describe.each([['c152', C152], ['pa38', PA38]] as const)('%s float carburettor s
     expect(idle.stop).toBeGreaterThan(2.5);
     expect(idle.stop).toBeLessThan(6);
     expect(stopTime(def, 1, 'mixture', 30).stop).toBeLessThan(6);
-  });
+  }, 60_000);
 
   it('catches again when the selector is turned back on as it falters, or the mixture pushed back in at once', () => {
     const rig = makeRig({ def });

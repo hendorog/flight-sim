@@ -11,7 +11,7 @@
 // Keys owned by other modules and deliberately left unbound here: Escape, F8, F9 (UI); P (pause), bare A
 // (autopilot; Shift+A is the STAB ASSIST toggle on a type that has one), T / Shift+T (autopilot altitude), H (dome light), Shift+R (restart), Shift+[ / Shift+] (time
 // rate) (the shell, src/sim/Simulator.ts); F11 is kept free; F is the checklist (Shift+F steps its lists while it is open, and feathers while it is closed).
-// Shift+V toggles the fixed cockpit panel; bare ] cycles its sections. E / Shift+E work a hand primer (the C152 and PA-38).
+// Shift+V toggles the fixed cockpit panel; bare ] cycles its sections; Shift+H hides the yokes in the 3D cockpit. E / Shift+E work a hand primer (the C152 and PA-38).
 // Owned by the Flight School during a lesson (src/training/TrainingSystem.ts, spec section 5.9; TRAINING_KEY_MAP
 // below): Enter (acknowledge / "I have control"), Shift+Enter (hand control back), bare R (say again), bare [
 // (show me), Tab (lesson card) and Shift+R (try the phase again; the scenario restart outside a lesson).
@@ -104,6 +104,7 @@ export type InputAction =
   | 'cameraNext'
   | 'cameraPrev'
   | 'viewRecentre'
+  | 'viewYoke' // 3D cockpit: hide / show the yokes or sticks, to see the panel behind them (toggle)
   | 'viewFocus' // 3D cockpit: glance down at the main instruments, zoomed in, a strip of the windscreen still in view (toggle)
   | 'zoomIn'
   | 'zoomOut'
@@ -232,6 +233,8 @@ export const KEY_MAP: readonly KeyMapping[] = [
   // Instrument focus: the left hand's key (the right hand is on the arrows). Q and E were spare rudder keys beside Z / X
   // until 2026-10-26; Q now toggles the focus view (with or without Shift, so it works mid Shift+arrow look).
   { code: 'KeyQ', action: 'viewFocus' },
+  // Shift+H hides the control columns in the 3D cockpit, to see the switches behind them (bare H is the shell's dome light).
+  { code: 'KeyH', shift: true, action: 'viewYoke' },
   // Types with a hand primer (InputProfile.handPrimer): E is one stroke, Shift+E turns the knob to lock or unlock it.
   { code: 'KeyE', shift: false, action: 'primerStroke' },
   { code: 'KeyE', shift: true, action: 'primerLock' },
@@ -339,6 +342,7 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   cameraNext: { label: 'Next camera', category: 'View' },
   cameraPrev: { label: 'Previous camera', category: 'View' },
   viewRecentre: { label: 'Recentre view', category: 'View' },
+  viewYoke: { label: '3D cockpit: hide / show the yokes', category: 'View' },
   viewFocus: { label: '3D cockpit: instrument focus on / off (zoom in on the main instruments, windscreen strip still in view)', category: 'View' },
   zoomIn: { label: 'Zoom in', category: 'View' },
   zoomOut: { label: 'Zoom out', category: 'View' },

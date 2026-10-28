@@ -86,7 +86,9 @@ import {
   formatAge,
   loadResumePreference,
   loadPanelView,
+  loadYokeHidden,
   savePanelView,
+  saveYokeHidden,
   loadSnapshot,
   RESUME_ARM_SECONDS,
   SAVE_INTERVAL_S,
@@ -342,6 +344,7 @@ export class Simulator {
       setPaused: (paused) => this.setPaused(paused),
       setCameraMode: (mode) => this.setCameraMode(mode),
       setPanelView: (view) => this.setPanelView(view),
+      setYokeHidden: (hidden) => this.setYokeHidden(hidden),
       setTimeScale: (s) => {
         // A lesson caps time acceleration (1x, 4x on navigation legs; section 3.10).
         const cap = this.training?.timeScaleCap ?? Number.POSITIVE_INFINITY;
@@ -404,6 +407,7 @@ export class Simulator {
       achievedTimeScale: 1,
       cameraMode: bootCameraMode(resumed && !p.camPos ? resumed.snapshot.cameraMode : p.cam),
       panelView: loadPanelView(this.store),
+      yokeHidden: loadYokeHidden(this.store),
       quality: resumed ? resumed.snapshot.quality : p.quality,
       commands,
       events,
@@ -1037,6 +1041,12 @@ export class Simulator {
     this.setCameraMode('cockpit');
     this.systems?.ui.refreshPanel();
     this.post?.resetTemporalHistory();
+  }
+
+  setYokeHidden(hidden: boolean): void {
+    this.ctx.yokeHidden = hidden;
+    saveYokeHidden(this.store, hidden);
+    this.systems?.ui.showToast(hidden ? 'Yokes hidden (Shift+H to show them)' : 'Yokes shown');
   }
 
   setCameraMode(mode: CameraMode): void {
