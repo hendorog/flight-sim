@@ -1369,6 +1369,21 @@ function roadUniforms(): Record<string, { value: unknown }> {
   return roadUniformCache;
 }
 
+/**
+ * Refill uVillage with the villages nearest a point (the shader takes VILLAGE_MAX; there are more across the world).
+ * TerrainSystem calls it as the view moves.
+ */
+export function updateVillageUniforms(north: number, east: number): void {
+  if (!roadUniformCache) return;
+  const slots = roadUniformCache.uVillage.value as THREE.Vector4[];
+  const near = [...villageSites()].sort((a, b) => Math.hypot(a.north - north, a.east - east) - Math.hypot(b.north - north, b.east - east));
+  slots.forEach((v, i) => {
+    const s = near[i];
+    if (s) v.set(s.east, s.north, s.radius, 1);
+    else v.set(0, 0, 0, 0);
+  });
+}
+
 /** The generated airfields for FIELD_EDGE_GLSL (airfields.ts; empty slots have a zero half length). */
 function fieldUniforms(): Record<string, { value: THREE.Vector4[] }> {
   const fields = generatedAirfields();

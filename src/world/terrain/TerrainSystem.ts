@@ -13,7 +13,7 @@ import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { findTownSite } from '../airport/valley';
 import { terrainHeight } from './heightfield';
 import { morphWindow, nodeKey, nodeSize, NodeRefPool, selectNodes, type LodSettings, type LodView, type NodeRef } from './quadtree';
-import { CANOPY_HEIGHT, createTerrainDepthMaterial, createTerrainMaterial, MAX_LEVELS, setTerrainDebug, setTerrainDetail, type TerrainUniforms } from './terrainMaterial';
+import { CANOPY_HEIGHT, createTerrainDepthMaterial, createTerrainMaterial, MAX_LEVELS, updateVillageUniforms, setTerrainDebug, setTerrainDetail, type TerrainUniforms } from './terrainMaterial';
 import { createTerrainTextures, type TerrainTextures } from './textures';
 import { buildTileIndices, type TileData } from './tileBuilder';
 import { AirfieldGrass } from './vegetation/grass';
@@ -311,6 +311,7 @@ export class TerrainSystem implements Subsystem {
       this.view.dz = Math.max(0, p.y - maxH);
       this.dzAge = 0;
       this.dzAt.copy(p);
+      updateVillageUniforms(this.view.north, this.view.east);
     }
     this.uniforms.uLodCenter.value.set(p.x, this.view.dz, p.z);
     this.uniforms.uViewPos.value.copy(p);

@@ -124,11 +124,12 @@ export function buildAirfieldScenery(fields: readonly Airfield[]): { group: THRE
         }
       }
       // Taxiway to a small apron on the right of the runway, hangars behind the apron.
-      const ap = (r() - 0.5) * L * 0.6;
+      // (The access road arrives at the apron's outer edge between the hangars: airfields.ts airfieldAccess.)
+      const ap = f.apronAlong;
       rect(ap - 6, ap + 6, W, W + 28, 0.05, APRON);
       rect(ap - 35, ap + 35, W + 28, W + 58, 0.05, APRON);
-      hangar(ap - 18, W + 78, 1);
-      if (r() < 0.7) hangar(ap + 18, W + 78, 1);
+      hangar(ap - 25, W + 78, 1);
+      if (r() < 0.7) hangar(ap + 25, W + 78, 1);
     } else {
       // The mown strip is the ground shader's (terrainMaterial fieldAt); white markers along both edges and across
       // each end.
@@ -136,7 +137,7 @@ export function buildAirfieldScenery(fields: readonly Airfield[]): { group: THRE
         for (const side of [-1, 1]) box(a, side * (W + 0.5), 2.5, 0.6, 0.35, MARKER);
       }
       for (const end of [-1, 1]) for (const x of [-W + 3, -W / 3, W / 3, W - 3]) box(end * L, x, 0.6, 2.5, 0.35, MARKER);
-      hangar((r() - 0.5) * L * 0.5, W + 35, 1);
+      hangar(f.apronAlong, W + 35, 1);
     }
   }
 

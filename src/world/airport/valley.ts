@@ -378,7 +378,18 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
   // crossroads, and each ends in a cul-de-sac: a round turning head just past its last houses, with more houses
   // facing it. Each village draws from its own random stream.
   const heads: { n: number; e: number }[] = [];
+  // Each road's bounding box, so a village only walks the roads that reach it.
+  const roadBoxes = regionalRoads().map((l) => {
+    let n0 = Infinity, n1 = -Infinity, e0 = Infinity, e1 = -Infinity;
+    for (let i = 0; i < l.north.length; i++) {
+      n0 = Math.min(n0, l.north[i]); n1 = Math.max(n1, l.north[i]);
+      e0 = Math.min(e0, l.east[i]); e1 = Math.max(e1, l.east[i]);
+    }
+    return { l, n0, n1, e0, e1 };
+  });
   villageSites().forEach((v, vi) => {
+    const reach = v.radius + 60;
+    const nearRoads = roadBoxes.filter((b) => v.north > b.n0 - reach && v.north < b.n1 + reach && v.east > b.e0 - reach && v.east < b.e1 + reach).map((b) => b.l);
     const vr = rng(seeded(9100 + vi));
     const vpick = (list: number[]) => new THREE.Color(list[Math.floor(vr() * list.length)]);
     const R = v.radius;
@@ -386,7 +397,7 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
     const edge = (b: number) => R * (0.8 + 0.12 * Math.sin(2 * b + ph) + 0.08 * Math.sin(3 * b + 2 * ph));
     // The crossroads: the point of the regional roads nearest the centre, and the road's bearing there.
     let jn = v.north, je = v.east, b0 = 0, best = Infinity;
-    for (const l of regionalRoads()) {
+    for (const l of nearRoads) {
       for (let i = 0; i + 1 < l.north.length; i++) {
         const dn = l.north[i + 1] - l.north[i], de = l.east[i + 1] - l.east[i];
         const l2 = dn * dn + de * de;
@@ -444,7 +455,7 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
       }
     };
     // Houses along the regional roads, both sides, thinning toward the edge.
-    for (const l of regionalRoads()) {
+    for (const l of nearRoads) {
       let step = 24 + vr() * 8;
       for (let i = 0; i + 1 < l.north.length; i++) {
         const dn = l.north[i + 1] - l.north[i], de = l.east[i + 1] - l.east[i];

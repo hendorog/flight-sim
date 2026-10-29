@@ -3,7 +3,7 @@
 // so this module does not import heightfield.ts).
 //
 // Two passes keep it cheap enough for every thread to run at load: a coarse lattice over the ring around the
-// home field scores each spot by how flat and dry the ground is in a 1.6 km square; the flattest few then try
+// home field scores each spot by how flat and dry the ground is in a 1.6 km square (outside the forestry estates); the flattest few then try
 // eight runway headings, scored by the spread of the ground along and beside the runway and by high ground
 // under the approaches. Fields are then taken best first, spaced apart, a few kilometres from any water.
 // Sealed aerodromes go to the best sites, grass strips to most of the rest.
@@ -13,6 +13,7 @@ import { runwayIds } from '../airfields';
 import { rng } from '../airport/noise';
 import { seeded } from '../worldSeed';
 import type { Hydrology, Lake } from './hydrology';
+import { estateWeight } from './plantation';
 
 /** Ring around the home field the fields are sited in, m. */
 export const AIRFIELD_RING: readonly [number, number] = [14000, 46000];
@@ -68,6 +69,10 @@ export function siteAirfields(natural: (north: number, east: number) => number, 
       }
       if (lo < MIN_HEIGHT || hi > MAX_HEIGHT) continue;
       if (!dry(jn, je, 600)) continue;
+      // Not inside a forestry estate (plantation.ts): its compartments and tracks would run across the field.
+      let estate = 0;
+      for (const [i, j] of [[0, 0], [-3, -3], [-3, 3], [3, -3], [3, 3]]) estate = Math.max(estate, estateWeight(je + j * 400, jn + i * 400, lo));
+      if (estate > 0.1) continue;
       spots.push({ n: jn, e: je, score: hi - lo });
     }
   }
@@ -134,6 +139,7 @@ export function siteAirfields(natural: (north: number, east: number) => number, 
       approachLength: kit.approach,
       circuit: r() < 0.7 ? 'left' : 'right',
       frequency: Math.round((122.7 + Math.floor(r() * 12) * 0.025) * 1000) / 1000,
+      apronAlong: Math.round((r() - 0.5) * length * (sealed ? 0.6 : 0.5)),
     });
   }
   return fields;

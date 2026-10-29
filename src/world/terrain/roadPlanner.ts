@@ -20,6 +20,8 @@ import { encodePolyline } from './meander';
 import { estateWeight } from './plantation';
 import { setTownSite } from './townMask';
 import { ROAD_KIND_GRAVEL, ROAD_KIND_SEALED, VILLAGE_RADIUS } from './roads';
+import { airfieldAccess, generatedAirfields } from '../airfields';
+import { AIRFIELD_RING } from './airfieldSiting';
 
 /** Villages to site, and the ring around the field they are sited in, m. */
 export const VILLAGE_COUNT = 5;
@@ -40,6 +42,12 @@ const FOREST_COST = 0.8;
 /** Gravel links: at most this many, each where the network detour is this many times the straight distance. */
 const LOOP_LINKS = 2;
 const LOOP_DETOUR = 1.8;
+/** Beyond the inner network: villages (at most this many, this far apart), the grid cell, and how far a new road
+ * searches for the network before the place is left unjoined, m. */
+const OUTER_VILLAGES = 36;
+const OUTER_SPACING = 5000;
+const OUTER_CELL = 80;
+const OUTER_REACH = 16000;
 
 export interface PlannedNetwork {
   villages: { north: number; east: number; radius: number }[];
@@ -348,6 +356,167 @@ export function planRoadNetwork(): PlannedNetwork {
     }
     if (laid > 0) added++;
   }
+
+  // --- Stage B: beyond the inner network (left exactly as above). Villages out to the generated airfields' ring,
+  // and every village and airfield joined to the network nearest to it, nearest the home field first, so the
+  // network grows outward. The grid out here is coarser and lazy (a cell is costed when a search first reaches
+  // it), and each search runs outward from the new place only until it meets a road.
+  const B = OUTER_CELL;
+  const RB = AIRFIELD_RING[1] + 4000;
+  const bCols = Math.ceil((2 * RB) / B) + 1;
+  const bCount = bCols * bCols;
+  const bH = new Float32Array(bCount).fill(NaN);
+  const bExtra = new Float32Array(bCount);
+  const bSide = new Int8Array(bCount);
+  const bBlocked = new Uint8Array(bCount);
+  const bNet = new Uint8Array(bCount);
+  const bN = (k: number): number => -RB + Math.floor(k / bCols) * B;
+  const bE = (k: number): number => -RB + (k % bCols) * B;
+  const bAt = (n: number, e: number): number => {
+    const r = Math.min(bCols - 1, Math.max(0, Math.round((n + RB) / B)));
+    const c = Math.min(bCols - 1, Math.max(0, Math.round((e + RB) / B)));
+    return r * bCols + c;
+  };
+  const bCost = (k: number): void => {
+    if (!Number.isNaN(bH[k])) return;
+    const n = bN(k);
+    const e = bE(k);
+    sampleTerrain(n, e, sample);
+    bH[k] = sample.ground;
+    bSide[k] = Number.isFinite(sample.riverDist) && sample.riverDist < 400 ? (sample.riverSigned >= 0 ? 1 : -1) : 0;
+    if (sample.airportBlend < 1 || sample.approach > 0 || nearAirport(n, e, 60)) bBlocked[k] = 1;
+    if (town && Math.hypot(n - town.north, e - town.east) < town.radius - 60) bBlocked[k] = 1;
+    if (bBlocked[k]) return;
+    const wet = sample.ground < Math.max(sample.standing, sample.river) + 0.3;
+    coverShape(n, e, sample.ground, shape);
+    bExtra[k] = FOREST_COST * computeBiome(n, e, sample, shape.up, biome, shape.north).forest + (wet ? WATER_COST : 0);
+  };
+  const bStep = (a: number, b: number, len: number): number => {
+    const grade = Math.abs(bH[b] - bH[a]) / len;
+    let c = len * (1 + (grade / GRADE_REF) ** 2 + 0.5 * (bExtra[a] + bExtra[b]));
+    if (grade > GRADE_MAX) c += len * 60;
+    if (bSide[a] !== 0 && bSide[b] !== 0 && bSide[a] !== bSide[b]) c += CROSSING_COST;
+    return c;
+  };
+  /** Mark a polyline's cells (and their neighbours) as network. */
+  const bMark = (l: { n: number[]; e: number[] }): void => {
+    for (let i = 0; i + 1 < l.n.length; i++) {
+      const m = Math.max(1, Math.ceil(Math.hypot(l.n[i + 1] - l.n[i], l.e[i + 1] - l.e[i]) / (B / 2)));
+      for (let t = 0; t <= m; t++) {
+        const k = bAt(l.n[i] + ((l.n[i + 1] - l.n[i]) * t) / m, l.e[i] + ((l.e[i + 1] - l.e[i]) * t) / m);
+        const r = Math.floor(k / bCols);
+        const c = k % bCols;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) bNet[(r + dr) * bCols + c + dc] = 1;
+      }
+    }
+  };
+  for (const l of lines) bMark(l);
+  for (const x of exits) bNet[bAt(x.n, x.e)] = 1;
+  const bDist = new Float64Array(bCount).fill(Infinity);
+  const bPrev = new Int32Array(bCount).fill(-1);
+  const touched: number[] = [];
+  /** Cheapest path from `src` to the nearest network cell within `reach` m, source first; null if none. */
+  const bRoute = (src: number, reach: number): number[] | null => {
+    for (const k of touched) {
+      bDist[k] = Infinity;
+      bPrev[k] = -1;
+    }
+    touched.length = 0;
+    const sr = Math.floor(src / bCols);
+    const sc = src % bCols;
+    const lim = Math.ceil(reach / B);
+    const heap = new MinHeap();
+    bCost(src);
+    bDist[src] = 0;
+    touched.push(src);
+    heap.push(src, 0);
+    while (heap.size > 0) {
+      const [k, d] = heap.pop();
+      if (d > bDist[k]) continue;
+      if (bNet[k]) {
+        const path = [k];
+        for (let p = bPrev[k]; p >= 0; p = bPrev[p]) path.push(p);
+        return path.reverse();
+      }
+      const r = Math.floor(k / bCols);
+      const c = k % bCols;
+      for (const [dr, dc] of moves) {
+        const rr = r + dr;
+        const cc = c + dc;
+        if (rr < 0 || cc < 0 || rr >= bCols || cc >= bCols || Math.abs(rr - sr) > lim || Math.abs(cc - sc) > lim) continue;
+        const j = rr * bCols + cc;
+        bCost(j);
+        if (bBlocked[j]) continue;
+        const nd = d + bStep(k, j, B * Math.hypot(dr, dc));
+        if (nd < bDist[j]) {
+          if (bDist[j] === Infinity) touched.push(j);
+          bDist[j] = nd;
+          bPrev[j] = k;
+          heap.push(j, nd);
+        }
+      }
+    }
+    return null;
+  };
+
+  // Outer villages: the inner rules on a coarser lattice, best first, spaced from every village and the town.
+  const outerCands: { n: number; e: number; score: number }[] = [];
+  const OL = 800;
+  for (let n = -AIRFIELD_RING[1]; n <= AIRFIELD_RING[1]; n += OL) {
+    for (let e = -AIRFIELD_RING[1]; e <= AIRFIELD_RING[1]; e += OL) {
+      const d = Math.hypot(n, e);
+      if (d <= VILLAGE_RING[1] || d > AIRFIELD_RING[1] || nearAirport(n, e, 1500)) continue;
+      hydrology.queryValley(n, e, valleyHit);
+      if (valleyHit.dist < valleyHit.floodplain + 300) continue;
+      sampleTerrain(n, e, sample);
+      if (sample.ground > 700 || sample.ground < 8 || sample.approach > 0 || sample.airportBlend < 1) continue;
+      if (estateWeight(e, n, sample.ground) > 0.15 || slope(n, e, 30) > 0.08) continue;
+      let s = 0;
+      let wet = 0;
+      let wood = 0;
+      for (let j = 0; j < 9; j++) {
+        const b = (j / 9) * Math.PI * 2;
+        const rr = j === 0 ? 0 : VILLAGE_RADIUS + 80;
+        const pn = n + Math.cos(b) * rr;
+        const pe = e + Math.sin(b) * rr;
+        s += slope(pn, pe, 30);
+        sampleTerrain(pn, pe, sample);
+        if (sample.ground < Math.max(sample.standing, sample.river) + 2) wet++;
+        wood += forestAt(pn, pe);
+      }
+      if (wet > 0 || wood / 9 > 0.3) continue;
+      outerCands.push({ n, e, score: s / 9 + 0.15 * (wood / 9) });
+    }
+  }
+  outerCands.sort((a, b) => a.score - b.score);
+  const outer: Pt[] = [];
+  for (const c of outerCands) {
+    if (outer.length >= OUTER_VILLAGES) break;
+    if ([...villages, ...outer].some((v) => Math.hypot(v.n - c.n, v.e - c.e) < OUTER_SPACING)) continue;
+    if (town && Math.hypot(town.north - c.n, town.east - c.e) < OUTER_SPACING) continue;
+    outer.push({ n: c.n, e: c.e });
+  }
+
+  // Join them and the airfields, nearest the home field first.
+  type Place = { at: Pt; kind: number; lead?: Pt };
+  const places: Place[] = outer.map((v) => ({ at: v, kind: ROAD_KIND_SEALED }));
+  for (const f of generatedAirfields()) {
+    const a = airfieldAccess(f);
+    places.push({ at: { n: a.gate.north, e: a.gate.east }, kind: f.kind === 'sealed' ? ROAD_KIND_SEALED : ROAD_KIND_GRAVEL, lead: { n: a.end.north, e: a.end.east } });
+  }
+  places.sort((a, b) => Math.hypot(a.at.n, a.at.e) - Math.hypot(b.at.n, b.at.e));
+  for (const p of places) {
+    const path = bRoute(bAt(p.at.n, p.at.e), OUTER_REACH);
+    if (!path) continue;
+    const endCell = path[path.length - 1];
+    const end = snap({ n: bN(endCell), e: bE(endCell) });
+    const raw: Pt[] = [...(p.lead ? [p.lead] : []), p.at, ...path.slice(1, -1).map((k) => ({ n: bN(k), e: bE(k) })), end];
+    const line = resample(chaikin(simplify(raw, 20), 4), 0.25);
+    const laid = { kind: p.kind, n: line.map((q) => q.n), e: line.map((q) => q.e) };
+    lines.push(laid);
+    bMark(laid);
+  }
+  villages.push(...outer);
 
   // --- River crossings along the laid roads.
   const crossings: PlannedNetwork['crossings'] = [];

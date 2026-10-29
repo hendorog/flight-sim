@@ -2,7 +2,8 @@
 // dry and spaced apart, with the terrain levelled under them and paved runways felt by the wheels.
 
 import { afterAll, describe, expect, it } from 'vitest';
-import { airfields, airfieldSurface, fieldCoords, generatedAirfields, HOME_AIRFIELD, runwayIds } from '../../src/world/airfields';
+import { regionalRoads } from '../../src/world/terrain/roads';
+import { airfieldAccess, airfields, airfieldSurface, fieldCoords, generatedAirfields, HOME_AIRFIELD, runwayIds } from '../../src/world/airfields';
 import { setEra } from '../../src/world/era/eraState';
 import { AIRFIELD_COUNT, AIRFIELD_RING } from '../../src/world/terrain/airfieldSiting';
 import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
@@ -63,6 +64,16 @@ describe('generated airfields', () => {
     setWorldSeed(7);
     expect(JSON.stringify(generatedAirfields())).toBe(a);
     expect(a).not.toBe(b);
+  });
+
+  it("seed 0: a road reaches every field's apron or hangar (roadNetwork.ts)", () => {
+    setEra('present');
+    setWorldSeed(0);
+    const lines = regionalRoads();
+    for (const f of generatedAirfields()) {
+      const { end } = airfieldAccess(f);
+      expect(lines.some((l) => Math.hypot(l.north[0] - end.north, l.east[0] - end.east) < 1)).toBe(true);
+    }
   });
 
   it('none in the Cretaceous', () => {

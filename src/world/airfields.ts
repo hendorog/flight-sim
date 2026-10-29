@@ -35,6 +35,8 @@ export interface Airfield {
   circuit: 'left' | 'right';
   /** Common traffic frequency, MHz. */
   frequency: number;
+  /** Along the runway from its centre to the apron (sealed) or hangar (grass), on the right of the runway, m. */
+  apronAlong: number;
 }
 
 /** The home field, as an Airfield (its constants stay in core/world.ts AIRPORT, which most of the sim reads). */
@@ -54,6 +56,7 @@ export const HOME_AIRFIELD: Airfield = {
   approachLength: 12000,
   circuit: 'left',
   frequency: 118.3,
+  apronAlong: 0,
 };
 
 let generated: readonly Airfield[] = [];
@@ -80,6 +83,23 @@ export function fieldCoords(f: Airfield, north: number, east: number): { along: 
   const c = Math.cos(f.heading);
   const s = Math.sin(f.heading);
   return { along: dn * c + de * s, across: -dn * s + de * c };
+}
+
+/** A point in a field's frame (along the runway from its centre, across it: + right on take-off), NED. */
+export function fieldPoint(f: Airfield, along: number, across: number): { north: number; east: number } {
+  const c = Math.cos(f.heading);
+  const s = Math.sin(f.heading);
+  return { north: f.north + c * along - s * across, east: f.east + s * along + c * across };
+}
+
+/**
+ * Where a generated field's access road arrives (`end`: the apron's outer edge, or beside the hangar of a grass strip)
+ * and where it leaves the levelled ground (`gate`, square to the runway beyond the blend), NED.
+ */
+export function airfieldAccess(f: Airfield): { end: { north: number; east: number }; gate: { north: number; east: number } } {
+  const w = f.width / 2;
+  const end = f.kind === 'sealed' ? fieldPoint(f, f.apronAlong, w + 58) : fieldPoint(f, f.apronAlong + 26, w + 30);
+  return { end, gate: fieldPoint(f, f.kind === 'sealed' ? f.apronAlong : f.apronAlong + 26, w + f.flatMargin + f.blend + 60) };
 }
 
 /** Runway designators for a take-off heading (rad, true, 0..pi): '07' and '25' for 070. */
