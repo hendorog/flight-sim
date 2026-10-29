@@ -7,6 +7,7 @@ import { findTownSite } from '../../src/world/airport/valley';
 import { terrainHeight } from '../../src/world/terrain/heightfield';
 import { setTownSite } from '../../src/world/terrain/townMask';
 import { setWorldSeed } from '../../src/world/worldSeed';
+import { airfields } from '../../src/world/airfields';
 import { regionalRoads, villageSites, regionalRoadKinds, riverCrossings } from '../../src/world/terrain/roads';
 
 const node = (await import(/* @vite-ignore */ 'node:zlib' as string)) as { deflateSync(b: Uint8Array): Uint8Array; crc32?: (b: Uint8Array) => number };
@@ -85,5 +86,11 @@ it('world map', () => {
   }
   for (const v of villageSites()) for (let a = 0; a < 64; a++) for (let rr = 0; rr <= v.radius; rr += step / 2) put(v.north + Math.cos(a / 10.2) * rr, v.east + Math.sin(a / 10.2) * rr, [255, 140, 0]);
   for (const c of riverCrossings()) for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) put(c.north + dy * step, c.east + dx * step, [255, 0, 255]);
+  // Airfields: red runways (home and generated), drawn thick so they show at a coarse step.
+  for (const f of airfields()) {
+    for (let t = -f.length / 2; t <= f.length / 2; t += step / 3) {
+      for (let w = -2; w <= 2; w++) put(f.north + Math.cos(f.heading) * t - Math.sin(f.heading) * w * step / 2, f.east + Math.sin(f.heading) * t + Math.cos(f.heading) * w * step / 2, [230, 0, 0]);
+    }
+  }
   fs.writeFileSync(env.MAP_OUT ?? 'map.png', png(n, n, rgb));
 });

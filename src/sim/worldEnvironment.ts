@@ -7,6 +7,7 @@ import type { Vec3 } from '../core/math';
 import type { SurfaceType, WeatherSettings } from '../core/types';
 import { createEnvironment, type SimEnvironment, type TerrainProvider } from '../physics';
 import { airportSurface } from '../world/airport/layout';
+import { airfieldSurface } from '../world/airfields';
 import { RUNWAY_HEIGHT, TAXIWAY_HEIGHT } from '../world/airport/pavement';
 import { isPresent, era } from '../world/era/eraState';
 import { makeSample, sampleTerrain, terrainHeight, terrainNormal, terrainSurface } from '../world/terrain/heightfield';
@@ -32,7 +33,7 @@ function flatsSurface(north: number, east: number): SurfaceType {
 export const worldTerrain: TerrainProvider = {
   height(north: number, east: number): number {
     if (noAirport()) return terrainHeight(north, east);
-    const paved = airportSurface(north, east);
+    const paved = airportSurface(north, east) ?? airfieldSurface(north, east);
     const h = terrainHeight(north, east);
     return paved === 'runway' ? h + RUNWAY_HEIGHT : paved === 'taxiway' ? h + TAXIWAY_HEIGHT : h;
   },
@@ -41,7 +42,7 @@ export const worldTerrain: TerrainProvider = {
   },
   surface(north: number, east: number): SurfaceType {
     if (noAirport()) return flatsSurface(north, east);
-    return airportSurface(north, east) ?? terrainSurface(north, east);
+    return airportSurface(north, east) ?? airfieldSurface(north, east) ?? terrainSurface(north, east);
   },
 };
 

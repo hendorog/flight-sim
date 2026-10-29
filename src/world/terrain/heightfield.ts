@@ -19,6 +19,8 @@ import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, b
 import { fbm, gnoise, gullies, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
 import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
+import { setGeneratedAirfields, type Airfield } from '../airfields';
+import { siteAirfields } from './airfieldSiting';
 
 const ELEV = AIRPORT.elevation;
 const RW = AIRPORT.runway;
@@ -260,10 +262,15 @@ export function naturalHeight(north: number, east: number): number {
 let lakes = buildLakes(naturalHeight);
 let presentHydro: Hydrology = buildHydrology(naturalHeight, lakes);
 let legacyHydro: Hydrology = buildLegacyHydrology(naturalHeight, lakes);
+// The generated airfields (airfields.ts, present day only), sited against the same natural terrain and water.
+let fields: readonly Airfield[] = siteAirfields(naturalHeight, presentHydro, lakes);
+setGeneratedAirfields(fields);
 onWorldSeed(() => {
   lakes = buildLakes(naturalHeight);
   presentHydro = buildHydrology(naturalHeight, lakes);
   legacyHydro = buildLegacyHydrology(naturalHeight, lakes);
+  fields = siteAirfields(naturalHeight, presentHydro, lakes);
+  setGeneratedAirfields(fields);
 });
 /** The water of the current era. */
 const current = (): Hydrology => (isPresent() ? presentHydro : legacyHydro);
@@ -441,6 +448,34 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
     out.airportBlend = 0;
     return out;
   }
+  // A generated airfield within reach (present day; they are spaced so at most one is): its runway coordinates.
+  let gf: Airfield | null = null;
+  let gAlong = 0;
+  let gAcross = 0;
+  let gRect = Infinity;
+  if (fields.length && isPresent()) {
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      const fn = north - f.north;
+      const fe = east - f.east;
+      const reach = f.length / 2 + f.approachLength + f.blend;
+      if (fn * fn + fe * fe > reach * reach) continue;
+      const c = Math.cos(f.heading);
+      const sn = Math.sin(f.heading);
+      gAlong = fn * c + fe * sn;
+      gAcross = -fn * sn + fe * c;
+      const fx = Math.max(Math.abs(gAlong) - f.length / 2, 0);
+      const fy = Math.max(Math.abs(gAcross) - f.width / 2, 0);
+      gRect = Math.sqrt(fx * fx + fy * fy);
+      gf = f;
+      break;
+    }
+    if (gf && gRect <= gf.flatMargin) {
+      out.ground = gf.elevation;
+      out.airportBlend = 0;
+      return out;
+    }
+  }
 
   let h = naturalHeight(north, east);
 
@@ -475,9 +510,26 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
     }
   }
 
+  // A generated field: its approaches kept low and clear the same way (shorter and narrower), then its flat area.
+  let gBlend = 1;
+  if (gf) {
+    const gBeyond = Math.abs(gAlong) - gf.length / 2;
+    if (gBeyond > 0 && gBeyond < gf.approachLength) {
+      const halfW = 150 + 0.12 * gBeyond;
+      const w = (1 - smooth(halfW, halfW * 1.8, Math.abs(gAcross))) * (1 - smooth(gf.approachLength * 0.85, gf.approachLength, gBeyond));
+      out.approach = Math.max(out.approach, w * (1 - smooth(800, 1600, gBeyond)));
+      if (w > 0) {
+        const excess = h - (gf.elevation + APPROACH_GRADIENT * gBeyond);
+        h -= w * 0.5 * (excess + Math.sqrt(excess * excess + 400));
+      }
+    }
+    gBlend = smoother(gf.flatMargin, gf.flatMargin + gf.blend, gRect);
+    h = gf.elevation + (h - gf.elevation) * gBlend;
+  }
+
   // Blend into the flat airfield.
   const blend = smoother(FLAT, FLAT + BLEND, dRect);
-  out.airportBlend = blend;
+  out.airportBlend = Math.min(blend, gBlend);
   out.ground = ELEV + (h - ELEV) * blend;
   return out;
 }

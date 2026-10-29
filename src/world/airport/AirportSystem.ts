@@ -29,6 +29,8 @@ import { createSigns } from './signs';
 import { makeAsphaltTexture, makeBuildingTextures, makeConcreteTexture, makeCrackTexture, makeNoiseTexture } from './textures';
 import { buildValley } from './valley';
 import { buildSegmentedCircle, Windsocks } from './windsock';
+import { airfieldWindsocks, buildAirfieldScenery } from './airfieldScenery';
+import { generatedAirfields } from '../airfields';
 
 export interface AirportSystemOptions {
   /** Terrain elevation MSL at a horizontal NED position (the terrain module's terrainHeight). Enables the valley scenery. */
@@ -118,8 +120,18 @@ export class AirportSystem implements Subsystem {
     this.disposables.push(signs.material.map!);
     this.local.add(signs.mesh);
 
-    this.windsocks = new Windsocks();
+    // The generated airfields (airfields.ts): their runways, hangars and windsocks.
+    const fields = generatedAirfields();
+    this.windsocks = new Windsocks(airfieldWindsocks(fields));
     this.disposables.push(this.windsocks);
+    if (fields.length) {
+      const scenery = buildAirfieldScenery(fields);
+      scenery.group.traverse((o: THREE.Object3D) => {
+        if (o instanceof THREE.Mesh) this.disposables.push(o.geometry);
+      });
+      this.disposables.push(...scenery.materials);
+      this.root.add(scenery.group);
+    }
     lights.push(...this.windsocks.lights);
     this.root.add(this.windsocks.group);
 

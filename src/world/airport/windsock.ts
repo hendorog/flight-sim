@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import type { SimContext } from '../../core/context';
 import { KT, smoothstep } from '../../core/math';
 import { AIRPORT } from '../../core/world';
+import { nedToThree } from '../../core/frames';
 import { BatchSet, boxGeo, cylGeo, placement } from './geom';
 import { localToNed, SEGMENTED_CIRCLE, WINDSOCKS } from './layout';
 import { LIGHT_COLORS, localToWorld, type LightSpec } from './lights';
@@ -38,17 +39,22 @@ export class Windsocks {
   private readonly poleMaterial = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.45, metalness: 0.6 });
   private readonly tmp = new THREE.Vector2();
 
-  constructor() {
+  /** The home field's socks (layout.ts WINDSOCKS, lit), plus `extra` ones (unlit, e.g. the generated fields'). */
+  constructor(extra: readonly { north: number; east: number; elevation: number }[] = []) {
     this.group.name = 'windsocks';
     this.fabric = [0xff4d0a, 0xf2f2ee].map(
       (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, side: THREE.DoubleSide, emissive: c, emissiveIntensity: 0 }),
     );
     const poleGeo = new THREE.CylinderGeometry(0.05, 0.08, 1, 8).translate(0, 0.5, 0);
     const ringGeo = new THREE.TorusGeometry(THROAT_R, 0.02, 6, 20);
-    WINDSOCKS.forEach((w, i) => {
+    const spots = [
+      ...WINDSOCKS.map((w) => ({ ...localToNed(w.u, w.v), elevation: AIRPORT.elevation, main: w.main, home: { u: w.u, v: w.v } })),
+      ...extra.map((x) => ({ north: x.north, east: x.east, elevation: x.elevation, main: false, home: null })),
+    ];
+    spots.forEach((w, i) => {
       const height = w.main ? 6.1 : 4.6;
-      const n = localToNed(w.u, w.v);
-      const base = localToWorld(w.u, w.v, 0);
+      const n = w;
+      const base = nedToThree({ x: w.north, y: w.east, z: -w.elevation });
       const pole = new THREE.Mesh(poleGeo, this.poleMaterial);
       pole.position.copy(base);
       pole.scale.set(1, height, 1);
@@ -78,10 +84,11 @@ export class Windsocks {
         segments.push(joint);
         parent = joint;
       }
-      this.socks.push({ pos: { x: n.north, y: n.east, z: -(AIRPORT.elevation + height) }, head, segments, wind: new THREE.Vector2(), phase: i * 1.7 });
+      this.socks.push({ pos: { x: n.north, y: n.east, z: -(w.elevation + height) }, head, segments, wind: new THREE.Vector2(), phase: i * 1.7 });
+      if (!w.home) return;
       // Lit windsock: floodlamps at the head (night only) and a red obstruction light on the main pole.
-      this.lights.push({ position: localToWorld(w.u, w.v, height + 0.35), colorA: LIGHT_COLORS.flood, lens: 0.15, cd: 60, cdDay: 0 });
-      if (w.main) this.lights.push({ position: localToWorld(w.u, w.v, height + 0.6), colorA: LIGHT_COLORS.red, lens: 0.15, cd: 32.5, cdDay: 32.5 });
+      this.lights.push({ position: localToWorld(w.home.u, w.home.v, height + 0.35), colorA: LIGHT_COLORS.flood, lens: 0.15, cd: 60, cdDay: 0 });
+      if (w.main) this.lights.push({ position: localToWorld(w.home.u, w.home.v, height + 0.6), colorA: LIGHT_COLORS.red, lens: 0.15, cd: 32.5, cdDay: 32.5 });
     });
   }
 

@@ -21,6 +21,7 @@ import { computeBiome, coverShape, makeBiome, makeCoverShape } from '../terrain/
 import { hydrology, makeSample, sampleTerrain } from '../terrain/heightfield';
 import { onRoadVerge, regionalRoads, ROAD_HALF_WIDTH, ROAD_KIND_SEALED, villageSites } from '../terrain/roads';
 import { buildBridges } from './bridges';
+import { fieldCoords, generatedAirfields } from '../airfields';
 
 /** Street-pool illuminance uniform at full night (scene units), used to normalise the night switch-on. */
 const STREET_ILLUMINANCE_REF = STREET_ILLUMINANCE;
@@ -53,7 +54,16 @@ export function nearAirport(north: number, east: number, margin: number): boolea
   const { along, across } = runwayCoords(north, east);
   const hl = AIRPORT.runway.length / 2, fm = AIRPORT.flatMargin;
   if (Math.abs(along) < hl + fm + margin && Math.abs(across) < AIRPORT.runway.width / 2 + fm + margin) return true;
-  return Math.abs(across) < 350 && Math.abs(along) < hl + 4500;
+  if (Math.abs(across) < 350 && Math.abs(along) < hl + 4500) return true;
+  // The generated fields (airfields.ts): their flat area and the first 2.5 km of each approach.
+  for (const f of generatedAirfields()) {
+    if (Math.hypot(north - f.north, east - f.east) > f.length / 2 + 2500 + f.flatMargin + margin) continue;
+    const c = fieldCoords(f, north, east);
+    const fl = f.length / 2;
+    if (Math.abs(c.along) < fl + f.flatMargin + margin && Math.abs(c.across) < f.width / 2 + f.flatMargin + margin) return true;
+    if (Math.abs(c.across) < 200 && Math.abs(c.along) < fl + 2500) return true;
+  }
+  return false;
 }
 
 /** Built-up radius of the town (the street grid reaches up to ~0.94 of it, plus 40 m), m. */

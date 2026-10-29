@@ -44,6 +44,8 @@ import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOO
 import { ROAD_HALF_WIDTH, ROAD_VERGE, ROADS_GLSL, roadTables, VILLAGE_MAX, villageSites } from './roads';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
 import { OPEN_RANK } from './vegetation/placement';
+import { generatedAirfields, type Airfield } from '../airfields';
+import { AIRFIELD_COUNT } from './airfieldSiting';
 
 export const MAX_LEVELS = 16;
 /**
@@ -443,7 +445,7 @@ varying float vCoverUp;
 varying vec2 vRiver;
 ${presentText('varying float vPlantation;\n')}${hashGlsl()}
 ${ROT_GLSL}
-${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}
+${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}${presentText(FIELD_EDGE_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
 
@@ -839,7 +841,22 @@ ${E('#if ERA_FARM\n')}if (uTown.w > 0.5) {
     meadow = mix(meadow, urban, urbanW);
   }
 }
-${presentText(`// Villages (roads.ts villageSites): the town's treatment on a smaller scale - no woods within ${VILLAGE_WOOD_MARGIN} m of the edge,
+${presentText(`// Generated airfields: no crops or woods on their flat ground (the land cover per vertex says so, but coarse tiles
+// interpolate it over tens of metres).
+// A grass field's runway strip is cut short, in mowing passes along it.
+{
+  vec4 fAt = fieldAt(vec2(tXZ.x, -tXZ.y));
+  farmW *= smoothstep(3.0, 10.0, fAt.x);
+  forestW *= smoothstep(10.0, 40.0, fAt.x);
+  if (fAt.w > 0.0 && fAt.x < 0.0) {
+    float sFw = max(fwidth(fAt.z), 0.02);
+    float strip = (1.0 - smoothstep(fAt.w - sFw, fAt.w + sFw, abs(fAt.z))) * (1.0 - smoothstep(-sFw, sFw, fAt.y));
+    float pass = mod(floor(fAt.z / 5.0 + 0.5), 2.0);
+    vec3 mown = meadow * mix(vec3(1.16, 1.2, 0.92), vec3(1.26, 1.28, 0.95), pass * (1.0 - smoothstep(0.3, 1.2, sFw)));
+    meadow = mix(meadow, mown, strip);
+  }
+}
+`)}${presentText(`// Villages (roads.ts villageSites): the town's treatment on a smaller scale - no woods within ${VILLAGE_WOOD_MARGIN} m of the edge,
 // gardens and yards in the core, grass parcels out to the edge.
 {
   vec2 vNE = vec2(tXZ.x, -tXZ.y);
@@ -1352,6 +1369,39 @@ function roadUniforms(): Record<string, { value: unknown }> {
   return roadUniformCache;
 }
 
+/** The generated airfields for FIELD_EDGE_GLSL (airfields.ts; empty slots have a zero half length). */
+function fieldUniforms(): Record<string, { value: THREE.Vector4[] }> {
+  const fields = generatedAirfields();
+  const slot = (i: number, f: (a: Airfield) => THREE.Vector4) => (fields[i] ? f(fields[i]) : new THREE.Vector4(0, 0, 0, 0));
+  return {
+    uField: { value: Array.from({ length: AIRFIELD_COUNT }, (_, i) => slot(i, (a) => new THREE.Vector4(a.east, a.north, Math.cos(a.heading), Math.sin(a.heading)))) },
+    uFieldDims: { value: Array.from({ length: AIRFIELD_COUNT }, (_, i) => slot(i, (a) => new THREE.Vector4(a.length / 2, a.kind === 'sealed' ? -a.width / 2 : a.width / 2, a.flatMargin, a.blend))) },
+  };
+}
+
+/**
+ * GLSL: fieldAt(east, north) -> the nearest generated airfield: (distance beyond its flat ground, m, negative on it;
+ * distance beyond its runway's ends, m, negative between them; across the runway, m; the runway's half width for a
+ * grass strip, 0 for a sealed runway). uFieldDims.y is negative for a sealed runway.
+ */
+const FIELD_EDGE_GLSL = /* glsl */ `
+uniform vec4 uField[${AIRFIELD_COUNT}];
+uniform vec4 uFieldDims[${AIRFIELD_COUNT}];
+vec4 fieldAt(vec2 ne) {
+  vec4 best = vec4(1e4, 1e4, 0.0, 0.0);
+  for (int i = 0; i < ${AIRFIELD_COUNT}; i++) {
+    vec4 F = uField[i];
+    vec4 D = uFieldDims[i];
+    if (D.x <= 0.0) continue;
+    vec2 d = ne - F.xy;
+    vec2 rw = vec2(d.y * F.z + d.x * F.w, -d.y * F.w + d.x * F.z);
+    float e = length(max(abs(rw) - vec2(D.x, abs(D.y)), 0.0)) - D.z;
+    if (e < best.x) best = vec4(e, abs(rw.x) - D.x, rw.y, max(D.y, 0.0));
+  }
+  return best;
+}
+`;
+
 export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUniforms): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
   mat.name = 'terrain';
@@ -1377,8 +1427,8 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
     uFence: { value: new THREE.Vector4(FENCE_RECT.u0, FENCE_RECT.u1, FENCE_RECT.v0, FENCE_RECT.v1) },
     uTown: { value: townUniform() },
   });
-  // Regional roads (present day): the segment tables roadAt() reads.
-  if (isPresent()) Object.assign(uniforms, roadUniforms());
+  // Regional roads (present day): the segment tables roadAt() reads; the generated airfields.
+  if (isPresent()) Object.assign(uniforms, roadUniforms(), fieldUniforms());
   // The era's uniforms (not in the present day, whose uniform names stay as they were).
   const V = era().terrain.volcano;
   if (!isPresent() && V) Object.assign(uniforms, { uVolcano: { value: new THREE.Vector4(V.east, V.north, V.baseRadius, V.craterRadius) } });

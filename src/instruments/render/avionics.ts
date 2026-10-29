@@ -3,6 +3,7 @@
 import { DEG, NM, clamp } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import { AIRPORT, runwayThreshold } from '../../core/world';
+import { generatedAirfields } from '../../world/airfields';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
 import { centredText, font, screw } from './art';
 import { context2d, LABEL_FONT, makeCanvas, rng, type Ctx2D } from './canvas';
@@ -321,6 +322,23 @@ export class GpsUnit extends RackUnit {
     g.textAlign = 'left';
     g.textBaseline = 'middle';
     g.fillText(AIRPORT.icao, toScreenX(apN, apE) + 8, toScreenY(apN, apE) - 8);
+    // The other airfields (airfields.ts), placed from own ship: the home field's offset gives own ship's position.
+    const ownN = c.north - apN;
+    const ownE = c.east - apE;
+    for (const f of generatedAirfields()) {
+      const fn = f.north - ownN;
+      const fe = f.east - ownE;
+      if (Math.hypot(fn, fe) > range * NM * 1.2) continue;
+      const fx = Math.cos(f.heading) * f.length / 2;
+      const fy = Math.sin(f.heading) * f.length / 2;
+      g.strokeStyle = f.kind === 'sealed' ? '#f0f0f0' : '#8fd18a';
+      g.lineWidth = Math.max(2.5, f.width * k);
+      g.beginPath();
+      g.moveTo(toScreenX(fn - fx, fe - fy), toScreenY(fn - fx, fe - fy));
+      g.lineTo(toScreenX(fn + fx, fe + fy), toScreenY(fn + fx, fe + fy));
+      g.stroke();
+      g.fillText(f.code, toScreenX(fn, fe) + 8, toScreenY(fn, fe) - 8);
+    }
     // Track vector (1 minute ahead) and own ship.
     const ahead = clamp(gs * (NM / 60) * k, 0, mh);
     g.strokeStyle = '#e8e8e8';
