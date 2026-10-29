@@ -13,6 +13,7 @@
 
 import { nearAirport, findTownSite, TOWN_RADIUS } from '../airport/valley';
 import { rng } from '../airport/noise';
+import { seeded } from '../worldSeed';
 import { computeBiome, coverShape, makeBiome, makeCoverShape } from './biome';
 import { hydrology, makeSample, sampleTerrain, terrainHeight } from './heightfield';
 import { encodePolyline } from './meander';
@@ -56,7 +57,7 @@ interface Pt {
 function townFrame(): { north: number; east: number; radius: number; angle: number } | null {
   const t = findTownSite(terrainHeight);
   if (!t) return null;
-  return { north: t.north, east: t.east, radius: TOWN_RADIUS, angle: rng(4242)() * Math.PI };
+  return { north: t.north, east: t.east, radius: TOWN_RADIUS, angle: rng(seeded(4242))() * Math.PI };
 }
 
 export function planRoadNetwork(): PlannedNetwork {

@@ -5,6 +5,8 @@
 // not allocate. The hash is a fixed permutation table (period 256 cells per octave); octaves are rotated
 // and offset against each other so the period never shows.
 
+import { onWorldSeed, seedSaltX, seedSaltY, worldSeed } from '../worldSeed';
+
 /** Scratch for derivatives: d/dx and d/dy of the last noise evaluation. */
 export interface Deriv {
   dx: number;
@@ -25,7 +27,7 @@ export function mulberry32(seed: number): () => number {
 
 /** 32-bit integer hash of two integers (lowbias32 finaliser); identical to the GLSL version in terrain shaders. */
 export function hash2i(x: number, y: number): number {
-  let h = (Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1)) >>> 0;
+  let h = (Math.imul(x + SALT_X, 0x27d4eb2d) ^ Math.imul(y + SALT_Y, 0x165667b1)) >>> 0;
   h ^= h >>> 16;
   h = Math.imul(h, 0x7feb352d);
   h ^= h >>> 15;
@@ -34,11 +36,15 @@ export function hash2i(x: number, y: number): number {
   return h >>> 0;
 }
 
+// The world seed's salt on the hash inputs (worldSeed.ts; 0 for today's world).
+let SALT_X = 0;
+let SALT_Y = 0;
 const PERM = new Int32Array(512);
 const GX = new Float64Array(256);
 const GY = new Float64Array(256);
-{
-  const rnd = mulberry32(0x5eed1234);
+/** The permutation and gradient tables, from a PRNG seeded by the world seed (today's tables at seed 0). */
+function buildTables(): void {
+  const rnd = mulberry32(worldSeed() === 0 ? 0x5eed1234 : (0x5eed1234 ^ hash2iRaw(worldSeed(), 0x5eed)) >>> 0);
   const p = Array.from({ length: 256 }, (_, i) => i);
   for (let i = 255; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
@@ -50,7 +56,17 @@ const GY = new Float64Array(256);
     GX[i] = Math.cos(a);
     GY[i] = Math.sin(a);
   }
+  SALT_X = seedSaltX();
+  SALT_Y = seedSaltY();
 }
+function hash2iRaw(x: number, y: number): number {
+  let h = (Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1)) >>> 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x7feb352d);
+  return (h ^ (h >>> 15)) >>> 0;
+}
+buildTables();
+onWorldSeed(buildTables);
 
 /**
  * 2D gradient (Perlin) noise with quintic fade, scaled to roughly [-1, 1].

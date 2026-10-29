@@ -11,6 +11,7 @@
 //
 // Every function here is unbounded: any (north, east) gives a valid answer.
 
+import { onWorldSeed } from '../worldSeed';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT } from '../../core/world';
@@ -255,9 +256,15 @@ export function naturalHeight(north: number, east: number): number {
 
 // Both rivers are built at load, against the present-day natural terrain (the era is chosen after): the meandering
 // one, and the Late Cretaceous era's (its scenery is placed along the river's earlier course).
-const lakes = buildLakes(naturalHeight);
-const presentHydro: Hydrology = buildHydrology(naturalHeight, lakes);
-const legacyHydro: Hydrology = buildLegacyHydrology(naturalHeight, lakes);
+// Rebuilt when the world seed changes (worldSeed.ts), against that world's natural terrain.
+let lakes = buildLakes(naturalHeight);
+let presentHydro: Hydrology = buildHydrology(naturalHeight, lakes);
+let legacyHydro: Hydrology = buildLegacyHydrology(naturalHeight, lakes);
+onWorldSeed(() => {
+  lakes = buildLakes(naturalHeight);
+  presentHydro = buildHydrology(naturalHeight, lakes);
+  legacyHydro = buildLegacyHydrology(naturalHeight, lakes);
+});
 /** The water of the current era. */
 const current = (): Hydrology => (isPresent() ? presentHydro : legacyHydro);
 /** Rivers and lakes of the current era (read at call time, like era()). */

@@ -14,6 +14,7 @@ import { cylGeo, GeometryBatch, placement, ribbonGeo } from './geom';
 import { ACCESS_ROAD, localToNed } from './layout';
 import { LIGHT_COLORS, LightKind, type LightSpec } from './lights';
 import { rng } from './noise';
+import { seeded } from '../worldSeed';
 import { STREET_ILLUMINANCE, type SharedUniforms } from './shared';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import { computeBiome, coverShape, makeBiome, makeCoverShape } from '../terrain/biome';
@@ -103,7 +104,7 @@ export interface ValleyResult {
 }
 
 export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMaterial: THREE.Material, trackMaterial: THREE.Material): ValleyResult {
-  const r = rng(4242);
+  const r = rng(seeded(4242));
   const slope = (n: number, e: number, s: number): number => {
     const hx = heightAt(n + s, e) - heightAt(n - s, e);
     const hy = heightAt(n, e + s) - heightAt(n, e - s);
@@ -363,7 +364,7 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
   // larger buildings (hall, store, pub, garage) and a church round the crossroads, two short side lanes with houses
   // along them, and street lights through the middle. Each village draws from its own random stream.
   villageSites().forEach((v, vi) => {
-    const vr = rng(9100 + vi);
+    const vr = rng(seeded(9100 + vi));
     const vpick = (list: number[]) => new THREE.Color(list[Math.floor(vr() * list.length)]);
     const R = v.radius;
     const ph = vr() * 6.3;

@@ -7,6 +7,7 @@
 // (quadtree.ts), show those meshes, queue the missing nodes nearest-first, integrate finished tiles,
 // evict the least recently used ones beyond the memory budget.
 
+import { worldSeed } from '../worldSeed';
 import * as THREE from 'three';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { findTownSite } from '../airport/valley';
@@ -148,7 +149,7 @@ export class TerrainSystem implements Subsystem {
     // findTownSite picks for this terrain); the workers need it before their first job.
     // (Not in an era without the town, whatever the option says.)
     if (this.options.town !== false && era().terrain.town) setTownSite(findTownSite(terrainHeight));
-    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id });
+    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id, seed: worldSeed() });
     this.uploader = new GeometryUploader(ctx.renderer);
     this.textures = createTerrainTextures(ctx.renderer);
     this.material = createTerrainMaterial(this.textures, this.uniforms);

@@ -29,6 +29,7 @@
 // hold the simulation, do the synchronous work (trim, shader compiles, terrain rebuild), render a warm-up
 // frame for the interior and exterior views so every shader variant is linked, and fade back in.
 
+import { setWorldSeed } from '../world/worldSeed';
 import * as THREE from 'three';
 import {
   createEventBus,
@@ -247,6 +248,8 @@ export class Simulator {
     // The era first: everything built from here on (weather, physics environment, airport, terrain and its
     // workers) reads it. Its weather preset goes under the URL's weather.
     setEra(chooseEra(this.params, this.store).id);
+    // The world seed with it, before anything is built from the terrain.
+    setWorldSeed(this.params.seed);
     this.weather = applyEraWeather(defaultWeather(), era().weather);
     const w = this.params.weather;
     deriveCloudTop(w, this.weather);

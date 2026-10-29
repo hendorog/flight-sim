@@ -27,7 +27,8 @@ import * as THREE from 'three';
 import { AIRPORT } from '../../core/world';
 import { FENCE_RECT } from '../airport/layout';
 import { fieldsGlsl } from './fields';
-import { HASH_GLSL, ROT_GLSL } from './glsl';
+import { hashGlsl, ROT_GLSL } from './glsl';
+import { worldSeed } from '../worldSeed';
 import { riverStrip, TREE_LINE_ASPECT, treeLineBase } from './biome';
 import { GALLERY_FAR } from './riparian';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
@@ -440,7 +441,7 @@ varying float vLiftK;
 varying float vCoverUp;
 // Signed distance from the river centreline and the channel half-width there, m (tileBuilder.ts).
 varying vec2 vRiver;
-${presentText('varying float vPlantation;\n')}${HASH_GLSL}
+${presentText('varying float vPlantation;\n')}${hashGlsl()}
 ${ROT_GLSL}
 ${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
@@ -1405,7 +1406,7 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
       // Debug view 4: unlit albedo, scaled to be visible under the scene's exposure.
       .replace('#include <opaque_fragment>', `#if TERRAIN_DEBUG == 4\noutgoingLight = diffuseColor.rgb * 4000.0;\n#endif\n${lava}#include <opaque_fragment>`);
   };
-  const suffix = eraKeySuffix();
+  const suffix = `${eraKeySuffix()}${worldSeed() === 0 ? '' : `-s${worldSeed()}`}`;
   mat.customProgramCacheKey = () => `terrain-v5-${mat.defines?.TERRAIN_DETAIL}-${mat.defines?.TERRAIN_DEBUG}${suffix}`;
   return mat;
 }

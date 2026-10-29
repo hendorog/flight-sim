@@ -1,3 +1,5 @@
+import { seedSaltX, seedSaltY, worldSeed } from '../worldSeed';
+
 // GLSL shared by the terrain, water and vegetation shaders and the procedural texture generators.
 
 /** Integer hashing (PCG) and periodic value noise / Voronoi for generating tileable textures. */
@@ -70,3 +72,13 @@ vec3 voronoi(vec2 uv, int period, float jitter) {
 export const ROT_GLSL = /* glsl */ `
 vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
 `;
+
+/**
+ * HASH_GLSL for this world: hash2u salted like noise.ts hash2i (worldSeed.ts), so the shaders' fields, plantations and
+ * the rest agree with the land cover the workers compute. Today's text, unchanged, at seed 0. Call when building a
+ * material (after the seed is set), not at module load.
+ */
+export function hashGlsl(): string {
+  if (worldSeed() === 0) return HASH_GLSL;
+  return HASH_GLSL.replace('uint h = (uint(x) * 0x27d4eb2du) ^ (uint(y) * 0x165667b1u);', `uint h = (uint(x + ${seedSaltX()}) * 0x27d4eb2du) ^ (uint(y + ${seedSaltY()}) * 0x165667b1u);`);
+}

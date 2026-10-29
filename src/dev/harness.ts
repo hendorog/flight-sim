@@ -18,6 +18,7 @@
 //
 // Manual inspection: drag = look, WASD/QE = move, shift = fast, wheel = change speed.
 
+import { setWorldSeed } from '../world/worldSeed';
 import * as THREE from 'three';
 import { DEFAULT_AIRCRAFT_ID, isAircraftId, loadAircraft, loadPresentation } from '../aircraft/registry';
 import { createEventBus, type SimContext, type Subsystem } from '../core/context';
@@ -48,6 +49,7 @@ export interface HarnessOptions {
 const params = new URLSearchParams(location.search);
 // The era before any page code runs (a dev page imports this module first and builds its subsystems after).
 setEra(params.get('era'));
+setWorldSeed(params.get('seed'));
 const num = (key: string, fallback: number): number => {
   const v = params.get(key);
   return v === null || v === '' || Number.isNaN(Number(v)) ? fallback : Number(v);

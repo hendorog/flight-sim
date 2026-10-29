@@ -1,13 +1,13 @@
 // World overview map (probe): land cover over a square around the field, written as a PNG.
-//   MAP_HALF=20000 MAP_STEP=100 MAP_OUT=map.png npx vitest run --config scripts/probes/vitest.config.ts worldMap
+//   MAP_SEED=7 MAP_HALF=20000 MAP_STEP=100 MAP_OUT=map.png npx vitest run --config scripts/probes/vitest.config.ts worldMap
 import { it } from 'vitest';
 import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { computeBiome, coverShape, makeBiome, makeCoverShape } from '../../src/world/terrain/biome';
 import { findTownSite } from '../../src/world/airport/valley';
 import { terrainHeight } from '../../src/world/terrain/heightfield';
 import { setTownSite } from '../../src/world/terrain/townMask';
-import { ROAD_NETWORK } from '../../src/world/terrain/roadNetwork';
-import { decodePolyline } from '../../src/world/terrain/meander';
+import { setWorldSeed } from '../../src/world/worldSeed';
+import { regionalRoads, villageSites, regionalRoadKinds, riverCrossings } from '../../src/world/terrain/roads';
 
 const node = (await import(/* @vite-ignore */ 'node:zlib' as string)) as { deflateSync(b: Uint8Array): Uint8Array; crc32?: (b: Uint8Array) => number };
 const fs = (await import(/* @vite-ignore */ 'node:fs' as string)) as { writeFileSync(p: string, d: Uint8Array | string): void };
@@ -42,6 +42,7 @@ function png(w: number, h: number, rgb: Uint8Array): Uint8Array {
 it('world map', () => {
   const half = Number(env.MAP_HALF ?? 20000), step = Number(env.MAP_STEP ?? 100);
   const cn = Number(env.MAP_N ?? 0), ce = Number(env.MAP_E ?? 0);
+  setWorldSeed(env.MAP_SEED ?? 0);
   const town = findTownSite(terrainHeight);
   setTownSite(town);
   console.log('town', town);
@@ -74,14 +75,15 @@ it('world map', () => {
     if (x < 0 || y < 0 || x >= n || y >= n) return;
     rgb.set(c, (y * n + x) * 3);
   };
-  for (const r of ROAD_NETWORK.roads) {
-    const l = decodePolyline(r.line);
+  const kinds = regionalRoadKinds();
+  for (const [ri, l] of regionalRoads().entries()) {
+    const r = { kind: kinds[ri] };
     for (let i = 0; i + 1 < l.north.length; i++) {
       const m = Math.ceil(Math.hypot(l.north[i + 1] - l.north[i], l.east[i + 1] - l.east[i]) / (step / 3));
       for (let k = 0; k <= m; k++) put(l.north[i] + (l.north[i + 1] - l.north[i]) * k / m, l.east[i] + (l.east[i + 1] - l.east[i]) * k / m, r.kind === 0 ? [0, 0, 0] : [120, 60, 20]);
     }
   }
-  for (const v of ROAD_NETWORK.villages) for (let a = 0; a < 64; a++) for (let rr = 0; rr <= v.radius; rr += step / 2) put(v.north + Math.cos(a / 10.2) * rr, v.east + Math.sin(a / 10.2) * rr, [255, 140, 0]);
-  for (const c of ROAD_NETWORK.crossings) for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) put(c.north + dy * step, c.east + dx * step, [255, 0, 255]);
+  for (const v of villageSites()) for (let a = 0; a < 64; a++) for (let rr = 0; rr <= v.radius; rr += step / 2) put(v.north + Math.cos(a / 10.2) * rr, v.east + Math.sin(a / 10.2) * rr, [255, 140, 0]);
+  for (const c of riverCrossings()) for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) put(c.north + dy * step, c.east + dx * step, [255, 0, 255]);
   fs.writeFileSync(env.MAP_OUT ?? 'map.png', png(n, n, rgb));
 });

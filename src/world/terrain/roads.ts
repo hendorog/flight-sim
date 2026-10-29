@@ -7,6 +7,10 @@
 // Pure and three.js-free (runs in the workers).
 
 import { isPresent } from '../era/eraState';
+import { worldSeed } from '../worldSeed';
+
+/** The baked network belongs to today's world: the present day at seed 0 (worldSeed.ts). */
+const active = (): boolean => isPresent() && worldSeed() === 0;
 import { PolylineIndex, type PolylineNear } from './hydrology';
 import { decodePolyline } from './meander';
 import { ROAD_NETWORK } from './roadNetwork';
@@ -69,7 +73,7 @@ const near: PolylineNear = { line: 0, seg: 0, t: 0, u: 0, dist: Infinity, side: 
 /** The nearest regional road within 40 m (present day only); false, with dist Infinity, when there is none. */
 export function queryRoad(north: number, east: number, out: RoadHit): boolean {
   out.dist = Infinity;
-  if (!isPresent() || ROAD_NETWORK.roads.length === 0) return false;
+  if (!active() || ROAD_NETWORK.roads.length === 0) return false;
   const n = network();
   if (!n.index.nearest(north, east, near) || near.dist > REACH) return false;
   const s = n.along[near.line];
@@ -88,22 +92,22 @@ export function onRoadVerge(north: number, east: number, margin = 0): boolean {
 
 /** The roads' centre lines (present day only; none in other eras). */
 export function regionalRoads(): ReadonlyArray<{ north: Float64Array; east: Float64Array }> {
-  return isPresent() && ROAD_NETWORK.roads.length ? network().lines : [];
+  return active() && ROAD_NETWORK.roads.length ? network().lines : [];
 }
 
 /** Each road's kind, in regionalRoads() order. */
 export function regionalRoadKinds(): readonly number[] {
-  return isPresent() && ROAD_NETWORK.roads.length ? network().kind : [];
+  return active() && ROAD_NETWORK.roads.length ? network().kind : [];
 }
 
 /** Where the roads cross the river (present day only): the point and the road's bearing there, rad from north. */
 export function riverCrossings(): ReadonlyArray<{ north: number; east: number; bearing: number }> {
-  return isPresent() ? ROAD_NETWORK.crossings : [];
+  return active() ? ROAD_NETWORK.crossings : [];
 }
 
 /** The villages (present day only; none in other eras). */
 export function villageSites(): ReadonlyArray<{ north: number; east: number; radius: number }> {
-  return isPresent() ? ROAD_NETWORK.villages : [];
+  return active() ? ROAD_NETWORK.villages : [];
 }
 
 /** The shader's tables (see ROADS_GLSL), as float texels. */
@@ -126,7 +130,7 @@ export interface RoadTables {
 }
 
 export function roadTables(): RoadTables {
-  const n = network();
+  const n = active() ? network() : { lines: [], kind: [], along: [] };
   const segs: number[] = [];
   let e0 = Infinity;
   let n0 = Infinity;
