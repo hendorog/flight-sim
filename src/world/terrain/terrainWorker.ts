@@ -16,7 +16,7 @@ function transferables(r: WorkerResult): Transferable[] {
     if (r.water) t.push(r.water.positions.buffer, r.water.depth.buffer, r.water.index.buffer);
     return t;
   }
-  return [r.instances.buffer, r.order.buffer, r.bucketStart.buffer];
+  return [r.instances.buffer, r.order.buffer, r.bucketStart.buffer, r.walls.buffer];
 }
 
 /**

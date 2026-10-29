@@ -25,6 +25,7 @@ import { bakeImpostors, type ImpostorAtlas } from './impostors';
 import { BUCKETS, SPECIES_COUNT, TREE_STRIDE, type TreeCellData } from './placement';
 import { createImpostorDepthMaterial, createImpostorMaterial, createNearTreeMaterial, createShadowProxyMaterials, type TreeUniforms } from './treeMaterials';
 import { createShadowProxies, createTreeGeometries } from './treeModels';
+import { HedgeWalls } from './hedges';
 
 interface VegetationPreset {
   /** Near meshes of forest trees are drawn to this distance (hand-over to impostors over its last 12%), m. */
@@ -205,6 +206,10 @@ export class VegetationSystem {
   private readonly lastNear = new THREE.Vector3(Infinity, 0, 0);
   private readonly lastFar = new THREE.Vector3(Infinity, 0, 0);
   private cellsChanged = false;
+  /** The clipped hedges (hedges.ts), laid out again when cells arrive or leave. */
+  private hedges: HedgeWalls | null = null;
+  private hedgesChanged = false;
+  private lastHedges = -Infinity;
   /** Cells changed since the impostor list was last planned; wall-clock time of that plan, ms. */
   private farCellsChanged = false;
   private lastFarPlan = -Infinity;
@@ -292,6 +297,8 @@ export class VegetationSystem {
       impostors.renderOrder = 2;
       this.root.add(impostors);
     }
+    this.hedges = new HedgeWalls();
+    this.root.add(this.hedges.mesh);
     this.setQuality(ctx.quality);
   }
 
@@ -310,6 +317,7 @@ export class VegetationSystem {
     this.applyRanges();
     if (spacingChanged) {
       this.cells.clear();
+      this.hedgesChanged = true;
       this.generation++;
       this.scanDirty = true;
     }
@@ -337,6 +345,21 @@ export class VegetationSystem {
     this.pumpFar(cam, FAR_UPLOAD_BUDGET);
     if (this.cellsChanged || cam.distanceToSquared(this.lastNear) > NEAR_REBUILD * NEAR_REBUILD) this.rebuildNear(cam);
     this.cellsChanged = false;
+    if (this.hedgesChanged && now - this.lastHedges >= FAR_REBUILD_INTERVAL_MS) this.rebuildHedges();
+  }
+
+  private rebuildHedges(): void {
+    if (!this.hedges) return;
+    this.hedgesChanged = false;
+    this.lastHedges = performance.now();
+    const before = this.hedges.mesh;
+    const data: TreeCellData[] = [];
+    for (const c of this.cells.values()) if (c.data) data.push(c.data);
+    const mesh = this.hedges.rebuild(data);
+    if (mesh !== before) {
+      before.removeFromParent();
+      this.root.add(mesh);
+    }
   }
 
   private applyRanges(): void {
@@ -374,6 +397,7 @@ export class VegetationSystem {
     this.planFar(cam);
     this.pumpFar(cam, Infinity);
     this.rebuildNear(cam);
+    this.rebuildHedges();
   }
 
   dispose(): void {
@@ -382,6 +406,7 @@ export class VegetationSystem {
     for (const g of [...this.geometries, ...this.lodGeometries, ...this.proxyGeometries]) g.dispose();
     for (const l of [...this.near.flat(), ...this.far]) l.dispose();
     for (const m of this.materials) m.dispose();
+    this.hedges?.dispose();
     this.root.removeFromParent();
   }
 
@@ -404,7 +429,7 @@ export class VegetationSystem {
       for (const [k, c] of this.cells) {
         if (cellDistance(c.cx, c.cz, east, north) > keepRange) {
           this.cells.delete(k);
-          this.cellsChanged = this.farCellsChanged = true;
+          this.cellsChanged = this.farCellsChanged = this.hedgesChanged = true;
         }
       }
     }
@@ -452,7 +477,7 @@ export class VegetationSystem {
       .then((res) => {
         if (gen !== this.generation || this.cells.get(key) !== cell) return;
         cell.data = res as TreeCellData;
-        this.farCellsChanged = this.scanDirty = true;
+        this.farCellsChanged = this.scanDirty = this.hedgesChanged = true;
         // The near list only needs rebuilding for cells within its reach.
         const cam = this.uniforms.uViewPos.value;
         if (cellDistance(cx, cz, cam.x, -cam.z) < this.preset.nearOpen + NEAR_REBUILD + 20) this.cellsChanged = true;

@@ -970,9 +970,9 @@ ${E('#if ERA_FARM\n')}if (farmW > 0.001) {
     vec3 crown = canopyLayer(tXZ, nC.b).albedo * vec3(0.9, 0.92, 0.86) * 0.85 * tCrowns;
     fieldCol = mix(fieldCol, crown, 0.85 * bandCover(pc.hedge, hw, 2.0, edgeFw) * hedgeMiss);
   }
-${presentText(`  // Shelterbelts (fields.ts; placement.ts plants a row of tall trees on each): a dark footing of shade and litter
-  // under the row, and far away, where the row thins out, a band of crowns standing in for it as for the hedges,
-  // its far side covering the ground a row about 16 m tall hides.
+${presentText(`  // Shelterbelts (fields.ts; placement.ts plants a row of tall trees on each, or lays a clipped hedge): a dark
+  // footing of shade and litter under the row, and far away, where the row thins out, a band of crowns standing in
+  // for it as for the hedges, its far side covering the ground a row about 12 m tall hides.
   float beltOk = smoothstep(0.97, 0.995, airportBlendAt(tRw)) * (1.0 - townParcel);
   fieldCol = mix(fieldCol, vec3(0.02, 0.034, 0.013), bandCover(pc.shelter, 2.5, 1.5, edgeFw) * beltOk);
   float beltMiss = (1.0 - tKeepOpen) * tFarForest * beltOk;
@@ -982,7 +982,7 @@ ${presentText(`  // Shelterbelts (fields.ts; placement.ts plants a row of tall t
     float det = dpx.x * dpy.y - dpx.y * dpy.x;
     vec2 grad = vec2(bx * dpy.y - by * dpx.y, by * dpx.x - bx * dpy.x) / (abs(det) > 1e-8 ? det : 1e-8);
     float behind = step(0.0, -dot(grad, tToCam.xz));
-    float bw = 3.5 + behind * min(80.0, 16.0 * sqrt(1.0 - tToCam.y * tToCam.y) / max(tToCam.y, 0.05));
+    float bw = 3.0 + behind * min(60.0, 12.0 * sqrt(1.0 - tToCam.y * tToCam.y) / max(tToCam.y, 0.05));
     vec3 crown = canopyLayer(tXZ, nC.b).albedo * vec3(0.82, 0.88, 0.86) * 0.8 * tCrowns;
     fieldCol = mix(fieldCol, crown, 0.9 * bandCover(pc.shelter, bw, 2.5, edgeFw) * beltMiss);
   }

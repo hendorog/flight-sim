@@ -47,7 +47,15 @@ export interface TreeCellData {
    */
   order: Uint16Array;
   bucketStart: Uint16Array;
+  /**
+   * Clipped hedges (the trimmed shelterbelts): WALL_STRIDE floats each - east, north, ground at one end; the same at
+   * the other; height above the ground and width, m. Empty in another era.
+   */
+  walls: Float32Array;
 }
+
+/** Floats per clipped-hedge piece in TreeCellData.walls. */
+export const WALL_STRIDE = 8;
 
 /** Sub-squares per cell side in TreeCellData.order. */
 export const BUCKETS = 8;
@@ -233,8 +241,9 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
   }
 
   plantRows(e0, n0, size, spacing, m, plant, dens, lerp2, nearOpenLand, out);
-  plantShelterbelts(e0, n0, size, m, farm, plant, lerp2, out);
-  return finishCell(cx, cz, size, out);
+  const walls: number[] = [];
+  plantShelterbelts(e0, n0, size, m, farm, plant, lerp2, out, walls);
+  return finishCell(cx, cz, size, out, walls);
 }
 
 const comp = makeCompartment();
@@ -314,12 +323,14 @@ const beltProbe = makeParcel();
 
 /**
  * Shelterbelts (fields.ts): a single row along each shelterbelt boundary of the field pattern through this cell, one
- * species and about one height per belt - tall Lombardy poplars, a dense dark wall of macrocarpa (often kept trimmed),
- * or pines - evenly spaced, a few gaps. Only where the land either side is farmland. Like the plantation rows, the
- * row thins with distance a tree in two, then in four, so a far belt still reads as a line.
+ * species and about one height per belt - tall Lombardy poplars, macrocarpa, or pines - evenly spaced, a few gaps. Only
+ * where the land either side is farmland. Like the plantation rows, the row thins with distance a tree in two, then in
+ * four, so a far belt still reads as a line. Most macrocarpa belts are mature and kept clipped: a continuous hedge with
+ * square sides and a flat top, 3-10 m tall by belt, emitted as wall pieces (at most WALL_PIECE_M long, so they follow
+ * the ground) instead of trees; the young ones are still a row of small trees.
  */
 function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm: Float32Array, plant: Float32Array,
-  lerp2: (a: Float32Array, fx: number, fz: number) => number, out: number[]): void {
+  lerp2: (a: Float32Array, fx: number, fz: number) => number, out: number[], walls: number[]): void {
   const seen = new Set<string>();
   for (const [de, dn] of [[0.5, 0.5], [0, 0], [1, 0], [0, 1], [1, 1]]) {
     parcelAt(e0 + de * size, n0 + dn * size, beltParcel);
@@ -346,31 +357,65 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
       const r = edgeRandom(k, dseed, 0);
       const species = r < 0.4 ? SPECIES.poplar : r < 0.75 ? SPECIES.macrocarpa : SPECIES.pine;
       const along = species === SPECIES.poplar ? 4.5 : species === SPECIES.macrocarpa ? 3.2 : 4;
-      const tall = species === SPECIES.poplar ? 17 + 9 * edgeRandom(k, dseed, 1) : species === SPECIES.macrocarpa ? 7 + 9 * edgeRandom(k, dseed, 1) : 13 + 8 * edgeRandom(k, dseed, 1);
+      // Macrocarpa belts by maturity: a quarter young (a row of small trees), the rest clipped hedges.
+      const age = edgeRandom(k, dseed, 2);
+      const clipped = species === SPECIES.macrocarpa && age > 0.25;
+      const tall = species === SPECIES.poplar ? 17 + 9 * edgeRandom(k, dseed, 1) : species === SPECIES.macrocarpa ? (clipped ? 3 + 7 * edgeRandom(k, dseed, 1) : 3 + 3 * edgeRandom(k, dseed, 1)) : 13 + 8 * edgeRandom(k, dseed, 1);
+      const wide = Math.min(tall * 0.5, 2.2 + 2 * edgeRandom(k, dseed, 3));
+      // The hedge run being laid: its first point (east, north, ground), its last, and its length so far.
+      let run: number[] | null = null;
+      const flush = (): void => {
+        // Each end reaches half a spacing past its last point, so pieces (and cells) meet without a gap.
+        if (run && (run[3] - run[0]) ** 2 + (run[4] - run[1]) ** 2 > 1) {
+          const h = 0.5 * along;
+          walls.push(run[0] + s * h, run[1] - c * h, run[2], run[3] - s * h, run[4] + c * h, run[5], tall, wide);
+        }
+        run = null;
+      };
       for (let j = Math.ceil(y0 / along); j * along <= y1; j++) {
         const qy = j * along;
         const east = c * x - s * qy;
         const north = s * x + c * qy;
-        if (east < e0 || east >= e0 + size || north < n0 || north >= n0 + size) continue;
+        if (east < e0 || east >= e0 + size || north < n0 || north >= n0 + size) { if (clipped) flush(); continue; }
         const h0 = hash2i(k * 7 + j, dseed + 99);
-        if (rnd(h0, 1) < 0.03) continue;
+        if (!clipped && rnd(h0, 1) < 0.03) continue;
         const fx = (east - e0) / LATTICE;
         const fz = (north - n0) / LATTICE;
-        if (lerp2(farm, fx, fz) < 0.2 || lerp2(plant, fx, fz) > 0.3) continue;
-        // Still this district's boundary here (not across a lane into the next district), and off the lanes.
-        parcelAt(east, north, beltProbe);
-        if (beltProbe.districtX !== dx || beltProbe.districtY !== dy || beltProbe.shelter > 1 || beltProbe.border < 6) continue;
-        if (inTownClearZone(north, east)) continue;
-        sampleTerrain(north, east, sample);
-        if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
-        if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + GALLERY_FAR) continue;
+        const ok = ((): boolean => {
+          if (lerp2(farm, fx, fz) < 0.2 || lerp2(plant, fx, fz) > 0.3) return false;
+          // Still this district's boundary here (not across a lane into the next district), and off the lanes.
+          parcelAt(east, north, beltProbe);
+          if (beltProbe.districtX !== dx || beltProbe.districtY !== dy || beltProbe.shelter > 1 || beltProbe.border < 6) return false;
+          if (inTownClearZone(north, east)) return false;
+          sampleTerrain(north, east, sample);
+          if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) return false;
+          return !(sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + GALLERY_FAR);
+        })();
+        if (clipped) {
+          // Lay the hedge: extend the run to this point, or end it here (a gap: lane, town, river, field's end).
+          if (!ok) { flush(); continue; }
+          if (!run) run = [east, north, sample.ground, east, north, sample.ground];
+          else {
+            run[3] = east; run[4] = north; run[5] = sample.ground;
+            if ((run[3] - run[0]) ** 2 + (run[4] - run[1]) ** 2 >= WALL_PIECE_M * WALL_PIECE_M) {
+              flush();
+              run = [east, north, sample.ground, east, north, sample.ground];
+            }
+          }
+          continue;
+        }
+        if (!ok) continue;
         const rank = (BIT_REV4[((j % 4) + 4) % 4] + 0.9 * rnd(h0, 2)) / 4;
         out.push(east + 0.3 * (rnd(h0, 3) - 0.5), sample.ground, north + 0.3 * (rnd(h0, 4) - 0.5), tall * (0.92 + 0.16 * rnd(h0, 5)), rnd(h0, 6) * Math.PI * 2,
           species + SPECIES_COUNT + 0.99 * rank * OPEN_RANK);
       }
+      flush();
     }
   }
 }
+
+/** Longest piece of clipped hedge, m (each piece's top follows the ground between its ends). */
+const WALL_PIECE_M = 24;
 
 /** Bit-reversed 0..3: the order rows (and trees along them) are kept in as the plantation thins. */
 const BIT_REV4 = [0, 2, 1, 3];
@@ -386,7 +431,7 @@ const smoothstep = (e0: number, e1: number, x: number): number => {
 };
 
 /** Sorts a cell's instances (open trees first, then forest trees, each by rank) and buckets them. */
-function finishCell(cx: number, cz: number, size: number, out: number[]): TreeCellData {
+function finishCell(cx: number, cz: number, size: number, out: number[], walls: number[] = []): TreeCellData {
   const e0 = cx * size;
   const n0 = cz * size;
   const count = out.length / TREE_STRIDE;
@@ -415,7 +460,7 @@ function finishCell(cx: number, cz: number, size: number, out: number[]): TreeCe
   const fill = bucketStart.slice(0, BUCKETS * BUCKETS);
   const byBucket = new Uint16Array(count);
   for (let k = 0; k < count; k++) byBucket[fill[bucketOf[k]]++] = k;
-  return { cx, cz, instances, count, openCount, order: byBucket, bucketStart };
+  return { cx, cz, instances, count, openCount, order: byBucket, bucketStart, walls: new Float32Array(walls) };
 }
 
 // ------------------------------------------------------------------------------------------------ eras
