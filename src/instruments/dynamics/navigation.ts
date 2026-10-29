@@ -1,8 +1,9 @@
 // Navigation signals the panel displays: the ILS to runway 07 (NAV1, 110.30) and GPS quantities
-// relative to the airport. Pure geometry on the flat-earth NED frame.
+// relative to the destination airfield (the home field unless the pilot chose another). Pure geometry on the flat-earth NED frame.
 
 import { DEG, KT, NM, RAD, clamp, wrapTwoPi, type Vec3 } from '../../core/math';
 import { AIRPORT, runwayCoords } from '../../core/world';
+import { airfields, HOME_AIRFIELD, type Airfield } from '../../world/airfields';
 
 /** ICAO Annex 10 ILS geometry. */
 const LOC_ANTENNA_BEYOND_END = 300; // m past the far (stop) end
@@ -46,8 +47,21 @@ export function ils07(position: Vec3, out: IlsSignal): IlsSignal {
   return out;
 }
 
+// The GPS destination (Direct-to): the home field unless the pilot chose another airfield (menu: Airfields).
+let target: Airfield = HOME_AIRFIELD;
+
+/** Fly the GPS direct to this airfield (by code); null or an unknown code: the home field. */
+export function setGpsTarget(code: string | null): void {
+  target = airfields().find((f) => f.code === code) ?? HOME_AIRFIELD;
+}
+
+/** The GPS destination. */
+export function gpsTarget(): Airfield {
+  return target;
+}
+
 export interface GpsData {
-  /** Distance to the airport reference point, NM. */
+  /** Distance to the destination's reference point (its runway centre), NM. */
   distanceNm: number;
   /** Bearing to the airport, degrees true [0, 360). */
   bearingDeg: number;
@@ -57,8 +71,8 @@ export interface GpsData {
 }
 
 export function gpsToAirport(position: Vec3, track: number, groundSpeedMs: number, out: GpsData): GpsData {
-  const dn = AIRPORT.runway.center.north - position.x;
-  const de = AIRPORT.runway.center.east - position.y;
+  const dn = target.north - position.x;
+  const de = target.east - position.y;
   out.distanceNm = Math.hypot(dn, de) / NM;
   out.bearingDeg = wrapTwoPi(Math.atan2(de, dn)) * RAD;
   out.trackDeg = wrapTwoPi(track) * RAD;

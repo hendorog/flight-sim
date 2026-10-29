@@ -18,6 +18,7 @@ import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
 import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, seedConfirmation, type EraGates, type EraRow } from './eraChooser';
 import { randomSeed, SEED_PREF_KEY, seedDevChoiceUrl, seedLabel } from '../sim/seedChoice';
 import { setStartField } from '../sim/startField';
+import { gpsTarget, setGpsTarget } from '../instruments/dynamics/navigation';
 import { generatedAirfields } from '../world/airfields';
 import { normalizeSeed, worldSeed } from '../world/worldSeed';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
@@ -373,8 +374,26 @@ export class PauseMenu {
     const fields = eraId === 'present' ? generatedAirfields() : [];
     if (fields.length) {
       el('h3', '', p, 'Airfields');
-      el('p', 'sub', p, `Other fields in this world, to fly to or start from. Runway, Apron and Final above start at ${AIRPORT.icao}.`);
+      el('p', 'sub', p, `Other fields in this world, to fly to or start from. Runway, Apron and Final above start at ${AIRPORT.icao}. Direct to sends the panel GPS there.`);
       const list = el('div', 'fields', p);
+      // Direct-to buttons (the GPS destination, navigation.ts), the chosen one marked.
+      const directs: { code: string; b: HTMLButtonElement }[] = [];
+      const markDirect = (): void => {
+        for (const d of directs) d.b.classList.toggle('sel', d.code === gpsTarget().code);
+      };
+      const direct = (parent: HTMLElement, code: string, label: string): void => {
+        const b = el('button', '', parent, label);
+        b.addEventListener('click', () => {
+          setGpsTarget(code);
+          markDirect();
+          this.host.toast(`GPS direct to ${code}`);
+        });
+        directs.push({ code, b });
+      };
+      const home = el('div', 'chips', p);
+      direct(home, AIRPORT.icao, `Direct to ${AIRPORT.icao} (home)`);
+      p.insertBefore(home, list);
+      this.refreshers.push(markDirect);
       for (const f of [...fields].sort((a, b) => Math.hypot(a.north, a.east) - Math.hypot(b.north, b.east))) {
         const row = el('div', 'field-row', list);
         const info = el('div', '', row);
@@ -387,7 +406,9 @@ export class PauseMenu {
         parked.addEventListener('click', () => ask(f.name, () => go('apron', `${f.name}, parked`, f.code)));
         const lined = el('button', '', chips, `Runway ${f.ids[0]}`);
         lined.addEventListener('click', () => ask(f.name, () => go('runway', `${f.name}, runway ${f.ids[0]}`, f.code)));
+        direct(chips, f.code, 'Direct to');
       }
+      markDirect();
     }
     el('h3', '', p, 'Autopilot');
     const ap = el('div', 'chips', p);

@@ -2,8 +2,8 @@
 
 import { DEG, NM, clamp } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
-import { AIRPORT, runwayThreshold } from '../../core/world';
-import { generatedAirfields } from '../../world/airfields';
+import { airfields } from '../../world/airfields';
+import { gpsTarget } from '../dynamics/navigation';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
 import { centredText, font, screw } from './art';
 import { context2d, LABEL_FONT, makeCanvas, rng, type Ctx2D } from './canvas';
@@ -152,7 +152,6 @@ const fmtFreq = (f: number, decimals: number): string => f.toFixed(decimals);
 
 // ---------------------------------------------------------------------------------------------------
 const MAP_RANGES_NM = [0.5, 1, 2, 5, 10, 20, 50];
-const RUNWAY_ENDS = [runwayThreshold(0), runwayThreshold(1)];
 
 /**
  * GPS / NAV / COM unit (in the style of a panel-mount GPS navigator): frequency column on the left of the
@@ -295,50 +294,51 @@ export class GpsUnit extends RackUnit {
     g.beginPath();
     g.arc(ox, oy, (range / 2) * NM * k, Math.PI, 2 * Math.PI);
     g.stroke();
-    // Extended runway centreline, 3 NM each way.
-    const rw = AIRPORT.runway;
-    const dn = Math.cos(rw.heading);
-    const de = Math.sin(rw.heading);
-    const c = rw.center;
-    const ext = rw.length / 2 + 3 * NM;
-    g.strokeStyle = 'rgba(230,230,230,0.5)';
-    g.beginPath();
-    g.moveTo(toScreenX(apN - dn * ext, apE - de * ext), toScreenY(apN - dn * ext, apE - de * ext));
-    g.lineTo(toScreenX(apN + dn * ext, apE + de * ext), toScreenY(apN + dn * ext, apE + de * ext));
-    g.stroke();
-    g.setLineDash([]);
-    // Runway
-    const e0 = RUNWAY_ENDS[0];
-    const e1 = RUNWAY_ENDS[1];
-    g.strokeStyle = '#f0f0f0';
-    g.lineCap = 'butt';
-    g.lineWidth = Math.max(3, rw.width * k);
-    g.beginPath();
-    g.moveTo(toScreenX(apN + e0.x - c.north, apE + e0.y - c.east), toScreenY(apN + e0.x - c.north, apE + e0.y - c.east));
-    g.lineTo(toScreenX(apN + e1.x - c.north, apE + e1.y - c.east), toScreenY(apN + e1.x - c.north, apE + e1.y - c.east));
-    g.stroke();
+    // The destination (gpsTarget: the home field unless the pilot chose another) and the other airfields, placed
+    // from own ship: the destination's offset gives own ship's position.
+    const dest = gpsTarget();
+    const ownN = dest.north - apN;
+    const ownE = dest.east - apE;
     g.font = `700 9px ${LABEL_FONT}`;
-    g.fillStyle = '#6fd3ff';
     g.textAlign = 'left';
     g.textBaseline = 'middle';
-    g.fillText(AIRPORT.icao, toScreenX(apN, apE) + 8, toScreenY(apN, apE) - 8);
-    // The other airfields (airfields.ts), placed from own ship: the home field's offset gives own ship's position.
-    const ownN = c.north - apN;
-    const ownE = c.east - apE;
-    for (const f of generatedAirfields()) {
+    for (const f of airfields()) {
       const fn = f.north - ownN;
       const fe = f.east - ownE;
-      if (Math.hypot(fn, fe) > range * NM * 1.2) continue;
-      const fx = Math.cos(f.heading) * f.length / 2;
-      const fy = Math.sin(f.heading) * f.length / 2;
-      g.strokeStyle = f.kind === 'sealed' ? '#f0f0f0' : '#8fd18a';
-      g.lineWidth = Math.max(2.5, f.width * k);
+      const isDest = f === dest;
+      if (!isDest && Math.hypot(fn, fe) > range * NM * 1.2) continue;
+      const dn = Math.cos(f.heading);
+      const de = Math.sin(f.heading);
+      if (isDest) {
+        // Extended runway centreline, 3 NM each way.
+        const ext = f.length / 2 + 3 * NM;
+        g.strokeStyle = 'rgba(230,230,230,0.5)';
+        g.lineWidth = 1;
+        g.setLineDash([3, 3]);
+        g.beginPath();
+        g.moveTo(toScreenX(fn - dn * ext, fe - de * ext), toScreenY(fn - dn * ext, fe - de * ext));
+        g.lineTo(toScreenX(fn + dn * ext, fe + de * ext), toScreenY(fn + dn * ext, fe + de * ext));
+        g.stroke();
+        g.setLineDash([]);
+      }
+      const hl = f.length / 2;
+      g.strokeStyle = f.kind === 'grass' ? '#8fd18a' : '#f0f0f0';
+      g.lineCap = 'butt';
+      g.lineWidth = Math.max(isDest ? 3 : 2.5, f.width * k);
       g.beginPath();
-      g.moveTo(toScreenX(fn - fx, fe - fy), toScreenY(fn - fx, fe - fy));
-      g.lineTo(toScreenX(fn + fx, fe + fy), toScreenY(fn + fx, fe + fy));
+      g.moveTo(toScreenX(fn - dn * hl, fe - de * hl), toScreenY(fn - dn * hl, fe - de * hl));
+      g.lineTo(toScreenX(fn + dn * hl, fe + de * hl), toScreenY(fn + dn * hl, fe + de * hl));
       g.stroke();
+      g.fillStyle = isDest ? '#ff6ad5' : '#6fd3ff';
       g.fillText(f.code, toScreenX(fn, fe) + 8, toScreenY(fn, fe) - 8);
     }
+    // The course line from own ship to the destination.
+    g.strokeStyle = 'rgba(255,106,213,0.7)';
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(ox, oy);
+    g.lineTo(toScreenX(apN, apE), toScreenY(apN, apE));
+    g.stroke();
     // Track vector (1 minute ahead) and own ship.
     const ahead = clamp(gs * (NM / 60) * k, 0, mh);
     g.strokeStyle = '#e8e8e8';
@@ -374,7 +374,8 @@ export class GpsUnit extends RackUnit {
     const fields: [string, string][] = [
       ['GS', `${Math.round(gs)}kt`],
       ['TRK', `${String(Math.round(this.latch.get(2)) % 360).padStart(3, '0')}°`],
-      ['DIS', `${this.latch.get(3).toFixed(1)}nm`],
+      ['BRG', `${String(Math.round(this.latch.get(4)) % 360).padStart(3, '0')}°`],
+      [gpsTarget().code, `${this.latch.get(3).toFixed(1)}nm`],
     ];
     const cw = mw / fields.length;
     fields.forEach(([label, value], i) => {
