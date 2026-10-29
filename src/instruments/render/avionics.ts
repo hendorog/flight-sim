@@ -4,28 +4,12 @@ import { DEG, NM, clamp } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import { airfields } from '../../world/airfields';
 import { gpsTarget } from '../dynamics/navigation';
+import { radioRevision, type RadioTuning } from '../dynamics/radios';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
 import { centredText, font, screw } from './art';
 import { context2d, LABEL_FONT, makeCanvas, rng, type Ctx2D } from './canvas';
 import { Latch, LIGHT_DISPLAY, type PanelComponent, type Rect } from './component';
 import { drawSegments } from './sevenSegment';
-
-/** Radio frequencies shown on the displays (MHz). NAV1 is the runway 07 ILS. */
-export interface RadioTuning {
-  com1: [number, number];
-  nav1: [number, number];
-  com2: [number, number];
-  nav2: [number, number];
-  squawk: string;
-}
-
-export const DEFAULT_TUNING: RadioTuning = {
-  com1: [120.3, 121.9],
-  nav1: [110.3, 113.9],
-  com2: [124.85, 118.0],
-  nav2: [113.9, 116.8],
-  squawk: '1200',
-};
 
 /** A boxed unit whose chassis is painted once and whose display is drawn on change. */
 export abstract class RackUnit implements PanelComponent {
@@ -148,7 +132,9 @@ export function screenGlass(g: Ctx2D, x: number, y: number, w: number, h: number
   g.fillRect(x, y, w, h);
 }
 
-const fmtFreq = (f: number, decimals: number): string => f.toFixed(decimals);
+// Two decimals drop the last digit of a 25 kHz channel (122.725 reads 122.72), as the radios do.
+const fmtFreq = (f: number, decimals: number): string =>
+  decimals === 2 ? (Math.floor(f * 100 + 1e-6) / 100).toFixed(2) : f.toFixed(decimals);
 
 // ---------------------------------------------------------------------------------------------------
 const MAP_RANGES_NM = [0.5, 1, 2, 5, 10, 20, 50];
@@ -163,7 +149,7 @@ export class GpsUnit extends RackUnit {
   protected readonly screens = [GpsUnit.SCREEN];
   private static readonly FREQ_W = 68;
   private static readonly REFRESH = 0.2;
-  private readonly latch = new Latch(7);
+  private readonly latch = new Latch(8);
   private lastRefresh = -Infinity;
 
   constructor(
@@ -177,6 +163,7 @@ export class GpsUnit extends RackUnit {
 
   sample(r: InstrumentReadings, _c: ControlInputs, time: number): boolean {
     this.latch.set(0, r.avionicsPowered ? 1 : 0, 1);
+    this.latch.set(7, radioRevision(), 1);
     if (Math.abs(time - this.lastRefresh) >= GpsUnit.REFRESH) {
       this.lastRefresh = time;
       this.latch.set(1, r.gps.groundSpeedKt, 1);
@@ -395,25 +382,27 @@ export class GpsUnit extends RackUnit {
 const LED = '#ff8f2a';
 const LED_OFF = 'rgba(255,143,42,0.07)';
 
-/** NAV/COM 2 with gas-discharge style segment displays. */
+/** NAV/COM with gas-discharge style segment displays: COM1/NAV1 on panels without a GPS, else COM2/NAV2. */
 export class NavComRadio extends RackUnit {
   protected readonly screens = [
     { x: 22, y: 10, w: 128, h: 32 },
     { x: 170, y: 10, w: 128, h: 32 },
   ];
-  private readonly latch = new Latch(1);
+  private readonly latch = new Latch(2);
 
   constructor(
     id: string,
     x: number,
     y: number,
     private readonly tuning: RadioTuning,
+    private readonly set: 1 | 2 = 2,
   ) {
     super(id, { x, y, w: 320, h: 76 });
   }
 
   sample(r: InstrumentReadings): boolean {
     this.latch.set(0, r.avionicsPowered ? 1 : 0, 1);
+    this.latch.set(1, radioRevision(), 1);
     return this.latch.take();
   }
 
@@ -437,10 +426,12 @@ export class NavComRadio extends RackUnit {
     if (this.latch.get(0)) {
       const style = { height: 16, on: LED, off: LED_OFF, glow: 5 };
       const small = { ...style, height: 12 };
-      drawSegments(g, fmtFreq(this.tuning.com2[0], 2), 90, 18, style);
-      drawSegments(g, fmtFreq(this.tuning.com2[1], 2), 146, 21, small);
-      drawSegments(g, fmtFreq(this.tuning.nav2[0], 2), 238, 18, style);
-      drawSegments(g, fmtFreq(this.tuning.nav2[1], 2), 294, 21, small);
+      const com = this.set === 1 ? this.tuning.com1 : this.tuning.com2;
+      const nav = this.set === 1 ? this.tuning.nav1 : this.tuning.nav2;
+      drawSegments(g, fmtFreq(com[0], 2), 90, 18, style);
+      drawSegments(g, fmtFreq(com[1], 2), 146, 21, small);
+      drawSegments(g, fmtFreq(nav[0], 2), 238, 18, style);
+      drawSegments(g, fmtFreq(nav[1], 2), 294, 21, small);
     }
     screenGlass(g, 22, 10, 128, 32);
     screenGlass(g, 170, 10, 128, 32);

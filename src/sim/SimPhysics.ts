@@ -27,6 +27,7 @@
 //   model, its scenarios and its scripted pilot. Everything goes through the AircraftFlightModel interface.
 
 import { setStartField } from './startField';
+import { resetRadios, setCom1 } from '../instruments/dynamics/radios';
 import type { AircraftDefinition } from '../aircraft/types';
 import { quat, v3, type Quat, type Vec3 } from '../core/math';
 import type { CameraMode, EventBus, QualityLevel, ScenarioId } from '../core/context';
@@ -417,6 +418,8 @@ export class SimPhysics {
     const sys = snapshotSystems(snap);
     // A flight that started at a generated airfield restarts there.
     setStartField(snap.field ?? null);
+    if (snap.com1) setCom1(snap.com1);
+    else resetRadios();
     const sc = buildScenario(snap.scenario, this.env, def);
     this.scenario = sc;
     const b = snap.body;

@@ -110,6 +110,8 @@ export interface FlightSnapshot {
   seed?: number;
   /** The generated airfield the scenario started at (startField.ts); absent: the home field. */
   field?: string;
+  /** COM1 [active, standby], MHz (instruments/dynamics/radios.ts); written only when retuned. Absent: the defaults. */
+  com1?: [number, number];
   /** Epoch ms of the save. */
   savedAt: number;
   /** False right after a deliberate scenario restart: a reload then starts that scenario fresh. */
@@ -347,6 +349,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (v.era !== undefined && !isEraId(v.era)) return null;
   if (v.seed !== undefined && !(isNum(v.seed) && Number.isInteger(v.seed) && v.seed >= 0)) return null;
   if (v.field !== undefined && typeof v.field !== 'string') return null;
+  if (v.com1 !== undefined && !(Array.isArray(v.com1) && v.com1.length === 2 && v.com1.every(isNum))) return null;
   if (!(SCENARIO_IDS.includes(v.scenario as ScenarioId) || ERA_SCENARIO_IDS.includes(v.scenario as ScenarioId)) || !isNum(v.simTime) || v.simTime < 0) return null;
   const b = v.body;
   if (!isObj(b) || !isVec(b.position) || !isVec(b.velocity) || !isQuat(b.orientation) || !isVec(b.angularVelocity)) return null;

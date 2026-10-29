@@ -19,7 +19,8 @@ import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, seedConfirmation, 
 import { randomSeed, SEED_PREF_KEY, seedDevChoiceUrl, seedLabel } from '../sim/seedChoice';
 import { setStartField } from '../sim/startField';
 import { gpsTarget, setGpsTarget } from '../instruments/dynamics/navigation';
-import { generatedAirfields } from '../world/airfields';
+import { HOME_GROUND, tuneCom1 } from '../instruments/dynamics/radios';
+import { generatedAirfields, HOME_AIRFIELD } from '../world/airfields';
 import { normalizeSeed, worldSeed } from '../world/worldSeed';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
 import { DEFAULT_MOON_SCALE, MOON_SCALE_MAX, MOON_SCALE_MIN, MOON_SCALE_STEP } from '../sim/skyPrefs';
@@ -374,7 +375,7 @@ export class PauseMenu {
     const fields = eraId === 'present' ? generatedAirfields() : [];
     if (fields.length) {
       el('h3', '', p, 'Airfields');
-      el('p', 'sub', p, `Other fields in this world, to fly to or start from. Runway, Apron and Final above start at ${AIRPORT.icao}. Direct to sends the panel GPS there.`);
+      el('p', 'sub', p, `Other fields in this world, to fly to or start from. Runway, Apron and Final above start at ${AIRPORT.icao}. Direct to sends the panel GPS there; Tune sets COM1 to the field's frequency.`);
       const list = el('div', 'fields', p);
       // Direct-to buttons (the GPS destination, navigation.ts), the chosen one marked.
       const directs: { code: string; b: HTMLButtonElement }[] = [];
@@ -390,8 +391,18 @@ export class PauseMenu {
         });
         directs.push({ code, b });
       };
+      // Tune buttons set COM1 (radios.ts); the old frequency goes to standby.
+      const tune = (parent: HTMLElement, mhz: number, label: string): void => {
+        const b = el('button', '', parent, label);
+        b.addEventListener('click', () => {
+          tuneCom1(mhz);
+          this.host.toast(`COM1 ${mhz.toFixed(3)}`);
+        });
+      };
       const home = el('div', 'chips', p);
       direct(home, AIRPORT.icao, `Direct to ${AIRPORT.icao} (home)`);
+      tune(home, HOME_AIRFIELD.frequency, `Tower ${HOME_AIRFIELD.frequency.toFixed(1)}`);
+      tune(home, HOME_GROUND, `Ground ${HOME_GROUND.toFixed(1)}`);
       p.insertBefore(home, list);
       this.refreshers.push(markDirect);
       for (const f of [...fields].sort((a, b) => Math.hypot(a.north, a.east) - Math.hypot(b.north, b.east))) {
@@ -407,6 +418,7 @@ export class PauseMenu {
         const lined = el('button', '', chips, `Runway ${f.ids[0]}`);
         lined.addEventListener('click', () => ask(f.name, () => go('runway', `${f.name}, runway ${f.ids[0]}`, f.code)));
         direct(chips, f.code, 'Direct to');
+        tune(chips, f.frequency, `Tune ${f.frequency.toFixed(3)}`);
       }
       markDirect();
     }

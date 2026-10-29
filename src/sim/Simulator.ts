@@ -64,6 +64,7 @@ import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreferenc
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
 import { chooseSeed, saveSeedPreference, seedSwitchUrl } from './seedChoice';
 import { setStartField, startField } from './startField';
+import { com1Changed, radioTuning } from '../instruments/dynamics/radios';
 import { restoreWeather } from './weatherPresets';
 import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
@@ -914,6 +915,7 @@ export class Simulator {
     if (worldSeed() !== 0) snap.seed = worldSeed();
     const field = startField();
     if (field) snap.field = field.code;
+    if (com1Changed()) snap.com1 = [...radioTuning().com1];
     return snap;
   }
 
