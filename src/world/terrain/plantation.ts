@@ -35,8 +35,8 @@ export const CLEARFELL_YEARS = 2.5;
 
 /**
  * What a compartment is planted with, by its species zone (about 60 %, 28 % and 12 % of them): radiata pine below
- * PLANT_FIR_ID, Douglas-fir (darker, denser; the spruce slot) up to PLANT_EUC_ID, eucalypt (broadleaf, grey-green;
- * the birch slot) above.
+ * PLANT_FIR_ID, Douglas-fir (darker, denser; the spruce slot) up to PLANT_EUC_ID, eucalypt (broadleaf, grey-green)
+ * above.
  */
 export const PLANT_FIR_ID = 0.59;
 export const PLANT_EUC_ID = 0.79;

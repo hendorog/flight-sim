@@ -53,8 +53,8 @@ export interface TreeCellData {
 export const BUCKETS = 8;
 
 /** Species indices; see treeModels.ts. */
-export const SPECIES = { spruce: 0, pine: 1, oak: 2, birch: 3 } as const;
-export const SPECIES_COUNT = 4;
+export const SPECIES = { spruce: 0, pine: 1, oak: 2, birch: 3, poplar: 4, macrocarpa: 5, willow: 6, eucalypt: 7 } as const;
+export const SPECIES_COUNT = 8;
 
 const LATTICE = 16;
 /**
@@ -170,7 +170,7 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
         // wide, so each candidate on it stands for a few metres of hedge).
         hedge = parcel.hedge < 2.2 ? u < 0.85 : parcel.margin < 3 && u < 0.004;
       }
-      // Bankside trees (alder, willow, poplar - here birch and oak) in a broken gallery along the river, where
+      // Bankside trees (willow, poplar, with birch and oak standing in for alder and ash) in a broken gallery along the river, where
       // riparianPresence says (the water shader reflects the same trees).
       let riparian = false;
       if (!hedge && u >= p + lone) {
@@ -194,19 +194,28 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
       let species: number;
       let height: number;
       if (riparian) {
-        species = rnd(h0, 5) < 0.65 ? SPECIES.birch : SPECIES.oak;
-        height = 7 + 11 * rnd(h0, 6);
+        const r = rnd(h0, 5);
+        species = r < 0.45 ? SPECIES.willow : r < 0.6 ? SPECIES.poplar : r < 0.85 ? SPECIES.birch : SPECIES.oak;
+        height = species === SPECIES.willow ? 8 + 6 * rnd(h0, 6) : species === SPECIES.poplar ? 15 + 12 * rnd(h0, 6) : 7 + 11 * rnd(h0, 6);
       } else if (hedge) {
         const r = rnd(h0, 5);
-        species = r < 0.7 ? SPECIES.oak : r < 0.85 ? SPECIES.birch : SPECIES.spruce;
-        // Half are shrubs; the rest hedgerow trees.
-        height = rnd(h0, 6) < 0.5 ? 3.5 + 3 * rnd(h0, 9) : 7 + 9 * rnd(h0, 9);
+        species = r < 0.45 ? SPECIES.oak : r < 0.65 ? SPECIES.macrocarpa : r < 0.75 ? SPECIES.birch : r < 0.85 ? SPECIES.poplar : r < 0.95 ? SPECIES.spruce : SPECIES.eucalypt;
+        // Half are shrubs; the rest hedgerow trees (a poplar or eucalypt is always a tree, and a tall one).
+        const tall = species === SPECIES.poplar || species === SPECIES.eucalypt;
+        height = tall ? 14 + 12 * rnd(h0, 9) : rnd(h0, 6) < 0.5 ? 3.5 + 3 * rnd(h0, 9) : 7 + 9 * rnd(h0, 9);
       } else {
         const conifer = rnd(h0, 4) < lerp2(cons, fx, fz);
-        species = conifer ? (rnd(h0, 5) < 0.7 ? SPECIES.spruce : SPECIES.pine) : rnd(h0, 5) < 0.7 ? SPECIES.oak : SPECIES.birch;
-        // Heights (m): forest-grown conifers 14-28, broadleaves 10-22; edge and lone trees a bit shorter.
+        const r = rnd(h0, 5);
+        // In the open (scattered and lone trees in paddocks) gums and macrocarpas join them.
+        const paddock = f < 0.5 && rnd(h0, 10) < 0.35;
+        species = paddock
+          ? (conifer ? SPECIES.macrocarpa : SPECIES.eucalypt)
+          : conifer ? (r < 0.7 ? SPECIES.spruce : SPECIES.pine) : r < 0.6 ? SPECIES.oak : r < 0.9 ? SPECIES.birch : SPECIES.eucalypt;
+        // Heights (m): forest-grown conifers 14-28, broadleaves 10-22, gums 16-34; edge and lone trees a bit
+        // shorter.
         const vigour = 0.75 + 0.25 * Math.min(1, f * 1.5);
-        height = (conifer ? 14 + 14 * rnd(h0, 6) : 10 + 12 * rnd(h0, 6)) * vigour;
+        const base = species === SPECIES.eucalypt ? 16 + 18 * rnd(h0, 6) : species === SPECIES.macrocarpa ? 9 + 11 * rnd(h0, 6) : conifer ? 14 + 14 * rnd(h0, 6) : 10 + 12 * rnd(h0, 6);
+        height = base * vigour;
       }
       const open = hedge || riparian || f < 0.5 || nearOpenLand(fx, fz);
       out.push(east, sample.ground, north, height, rnd(h0, 7) * Math.PI * 2, species + (open ? SPECIES_COUNT : 0) + 0.99 * rnd(h0, 8) * (open ? OPEN_RANK : 1));
@@ -225,7 +234,7 @@ const rowComp = makeCompartment();
  * them TREE_SPACING x spacing apart, wider once thinned), turned to its row direction, the trees all of the
  * compartment's age. A few are missing, a strip along every compartment border is left for the forestry roads and
  * firebreaks, and fresh clear-fells carry none. One species a compartment (plantation.ts PLANT_FIR_ID): mostly radiata
- * pine, some Douglas-fir (the spruce model) and eucalypt (the birch model).
+ * pine, some Douglas-fir (the spruce model) and eucalypt.
  */
 function plantRows(e0: number, n0: number, size: number, spacing: number, m: number, plant: Float32Array, dens: Float32Array,
   lerp2: (a: Float32Array, fx: number, fz: number) => number, nearOpenLand: (fx: number, fz: number) => boolean, out: number[]): void {
@@ -257,7 +266,7 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
       a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b);
     }
     const height = standHeight(c.years);
-    const species = c.id < PLANT_FIR_ID ? SPECIES.pine : c.id < PLANT_EUC_ID ? SPECIES.spruce : SPECIES.birch;
+    const species = c.id < PLANT_FIR_ID ? SPECIES.pine : c.id < PLANT_EUC_ID ? SPECIES.spruce : SPECIES.eucalypt;
     for (let bj = Math.ceil(b0 / across); bj <= Math.floor(b1 / across); bj++) {
       for (let ai = Math.ceil(a0 / along); ai <= Math.floor(a1 / along); ai++) {
         const h0 = hash2i(ai * 31 + c.cellX * 7919, bj * 37 + c.cellY * 104729);

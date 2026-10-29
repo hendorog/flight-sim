@@ -116,9 +116,9 @@ describe('subsystem tables', () => {
     }
   });
 
-  it('flora sets have the four slots of the tree system, the present one today’s species in order', () => {
-    expect(FLORA_SLOTS).toBe(SPECIES_COUNT);
-    for (const f of Object.values(FLORA)) expect(f.slots.length).toBe(FLORA_SLOTS);
+  it('flora sets fit the slots of the tree system, the present one today’s species in order', () => {
+    expect(FLORA_SLOTS).toBeLessThanOrEqual(SPECIES_COUNT);
+    for (const f of Object.values(FLORA)) expect(f.slots.length).toBe(f.id === 'present' ? SPECIES_COUNT : FLORA_SLOTS);
     expect(FLORA.present.slots.map((s) => s.key)).toEqual(Object.keys(SPECIES));
     expect(FLORA.present.slots.map((s, i) => [s.key, i])).toEqual(Object.entries(SPECIES));
   });

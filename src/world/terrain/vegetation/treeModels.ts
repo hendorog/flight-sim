@@ -7,9 +7,13 @@
 //   pine:   tall bare trunk, irregular tufted crown  (~100 cards)
 //   oak:    short trunk, limbs, broad rounded crown  (~145 cards)
 //   birch:  slender white trunk, narrow oval crown   (~100 cards)
+//   poplar: Lombardy poplar, a tall narrow column     (~75 cards)
+//   macrocarpa: cypress, broad dense dark crown low to the ground (~95 cards)
+//   willow: weeping, a wide dome with hanging curtains (~120 cards)
+//   eucalypt: tall pale trunk, open crown of separate clumps (~70 cards)
 //
-// Another era (Deep Time) puts its own four species in the same slots (flora/index.ts): the builders below
-// and in flora/*.ts, picked by slot key; the present day builds exactly today's four.
+// Another era (Deep Time) puts its own four species in the first four slots (flora/index.ts): the builders
+// below and in flora/*.ts, picked by slot key; the present day builds today's eight.
 
 import * as THREE from 'three';
 import { mulberry32 } from '../noise';
@@ -228,7 +232,7 @@ function pine(lod: number): THREE.BufferGeometry {
   return b.build();
 }
 
-function broadleaf(seed: number, trunkTop: number, c: V3, r: V3, clumps: number, size: number, birch: boolean, lod: number): THREE.BufferGeometry {
+function broadleaf(seed: number, trunkTop: number, c: V3, r: V3, clumps: number, size: number, birch: boolean, lod: number, leaves: Rect = ATLAS.leaves): THREE.BufferGeometry {
   const b = new Builder();
   const rnd = mulberry32(seed);
   const bark = birch ? ATLAS.birch : ATLAS.bark;
@@ -244,12 +248,87 @@ function broadleaf(seed: number, trunkTop: number, c: V3, r: V3, clumps: number,
   // The far LOD: under half the clumps, larger, covering the same crown.
   const n = lod ? Math.round(clumps * 0.45) : clumps;
   const grow = lod ? 1.4 : 1;
-  for (let k = 0; k < n; k++) clump(b, inShell(c, r, 0.45, rnd), size * grow * (0.8 + 0.4 * rnd()), ATLAS.leaves, rnd, normal, ao);
+  for (let k = 0; k < n; k++) clump(b, inShell(c, r, 0.45, rnd), size * grow * (0.8 + 0.4 * rnd()), leaves, rnd, normal, ao);
   // A few clumps over the crown's core, so it is closed seen from above (the aerial and impostor view).
   for (let k = 0; k < (lod ? 3 : 5); k++) {
     const p = inShell([c[0], c[1] + r[1] * 0.35, c[2]], [r[0] * 0.45, r[1] * 0.3, r[2] * 0.45], 0, rnd);
-    clump(b, p, size * (1.0 + 0.3 * rnd()), ATLAS.leaves, rnd, normal, ao);
+    clump(b, p, size * (1.0 + 0.3 * rnd()), leaves, rnd, normal, ao);
   }
+  return b.build();
+}
+
+/** Lombardy poplar: a short trunk and a tall, narrow, upright column of small leafy clumps. */
+const poplar = (lod: number): THREE.BufferGeometry => broadleaf(707, 0.2, [0, 0.54, 0], [0.07, 0.44, 0.07], 58, 0.085, false, lod);
+
+/** Macrocarpa (Monterey cypress): a stout trunk and a broad, dense, dark crown of scale-leaf sprays down low. */
+const macrocarpa = (lod: number): THREE.BufferGeometry => broadleaf(808, 0.28, [0, 0.52, 0], [0.3, 0.36, 0.3], 60, 0.2, false, lod, ATLAS.needles);
+
+/**
+ * Weeping willow: a short, stout trunk forking low, a wide dome, and curtains of hanging leaf cards from
+ * its rim nearly to the ground.
+ */
+function willow(lod: number): THREE.BufferGeometry {
+  const b = new Builder();
+  const rnd = mulberry32(909);
+  b.limb([0, -0.02, 0], [0.02, 0.32, 0], 0.035, 0.022, 6, ATLAS.bark, 0.6);
+  const c: V3 = [0, 0.58, 0];
+  const r: V3 = [0.36, 0.3, 0.36];
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + rnd();
+    b.limb([0.02, 0.3, 0], [Math.cos(a) * 0.22, 0.72 + 0.1 * rnd(), Math.sin(a) * 0.22], 0.016, 0.004, 5, ATLAS.bark, 0.5);
+  }
+  const normal = crownNormal(c, r);
+  const ao = crownAO(c, r);
+  const grow = lod ? 1.4 : 1;
+  // The dome: clumps in its upper shell.
+  for (let k = 0; k < (lod ? 16 : 36); k++) {
+    const p = inShell(c, r, 0.5, rnd);
+    p[1] = Math.max(p[1], c[1] - 0.1);
+    clump(b, p, 0.17 * grow * (0.8 + 0.4 * rnd()), ATLAS.leaves, rnd, normal, ao);
+  }
+  // The curtains: long narrow cards hanging from the dome, tangential to it, drooping out a little as they fall.
+  const strands = lod ? 14 : 26;
+  for (let k = 0; k < strands; k++) {
+    const a = (k / strands) * Math.PI * 2 + (rnd() - 0.5) * 0.4;
+    const rr = 0.22 + 0.06 * rnd();
+    const top = 0.66 + 0.1 * rnd();
+    const bottom = 0.14 + 0.1 * rnd();
+    const out = 0.03 + 0.03 * rnd();
+    const w = (0.1 + 0.05 * rnd()) * (lod ? 1.4 : 1);
+    const dx = Math.cos(a);
+    const dz = Math.sin(a);
+    const tx = -dz * w * 0.5;
+    const tz = dx * w * 0.5;
+    const ex = dx * (rr + out);
+    const ez = dz * (rr + out);
+    b.card([dx * rr - tx, top, dz * rr - tz], [dx * rr + tx, top, dz * rr + tz], [ex + tx, bottom, ez + tz], [ex - tx, bottom, ez - tz], ATLAS.leaves, normal, ao);
+  }
+  return b.build();
+}
+
+/**
+ * Eucalypt (blue gum): a tall, straight, pale trunk, a few limbs splaying up from high on it, and an open,
+ * irregular crown of separate leaf clumps at their ends, with sky through the gaps.
+ */
+function eucalypt(lod: number): THREE.BufferGeometry {
+  const b = new Builder();
+  const rnd = mulberry32(1010);
+  b.limb([0, -0.02, 0], [0.015, 0.72, 0.01], 0.017, 0.008, 6, ATLAS.birch, 0.75);
+  const c: V3 = [0.015, 0.8, 0.01];
+  const r: V3 = [0.25, 0.16, 0.25];
+  const normal = crownNormal(c, r);
+  const ao = crownAO(c, r);
+  const limbs = 6;
+  for (let k = 0; k < limbs; k++) {
+    const a = (k / limbs) * Math.PI * 2 + (rnd() - 0.5) * 0.8;
+    const y0 = 0.5 + 0.2 * rnd();
+    const reach = 0.13 + 0.12 * rnd();
+    const tip: V3 = [0.015 + Math.cos(a) * reach, 0.74 + 0.18 * rnd(), 0.01 + Math.sin(a) * reach];
+    b.limb([0.015, y0, 0.01], tip, 0.007, 0.002, 4, ATLAS.birch, 0.6);
+    const tufts = lod ? 2 : 4;
+    for (let t = 0; t < tufts; t++) clump(b, inShell(tip, [0.08, 0.06, 0.08], 0, rnd), (0.12 + 0.05 * rnd()) * (lod ? 1.35 : 1), ATLAS.leaves, rnd, normal, ao);
+  }
+  for (let k = 0; k < (lod ? 2 : 4); k++) clump(b, inShell([0.015, 0.93, 0.01], [0.08, 0.04, 0.08], 0, rnd), 0.12 * (lod ? 1.3 : 1), ATLAS.leaves, rnd, normal, ao);
   return b.build();
 }
 
@@ -301,6 +380,10 @@ export function createShadowProxies(): THREE.BufferGeometry[] {
     merge([ellipsoid([0.02, 0.76, 0.01], [0.21 * k, 0.15 * k, 0.21 * k]), trunk(0.72, 0.018)]),
     merge([ellipsoid([0, 0.62, 0], [0.34 * k, 0.3 * k, 0.34 * k]), trunk(0.5, 0.03)]),
     merge([ellipsoid([0, 0.64, 0], [0.17 * k, 0.32 * k, 0.17 * k]), trunk(0.5, 0.012)]),
+    merge([ellipsoid([0, 0.54, 0], [0.08 * k, 0.44 * k, 0.08 * k]), trunk(0.2, 0.014)]),
+    merge([ellipsoid([0, 0.52, 0], [0.3 * k, 0.36 * k, 0.3 * k]), trunk(0.28, 0.03)]),
+    merge([ellipsoid([0, 0.5, 0], [0.34 * k, 0.36 * k, 0.34 * k]), trunk(0.32, 0.03)]),
+    merge([ellipsoid([0.015, 0.82, 0.01], [0.24 * k, 0.13 * k, 0.24 * k]), trunk(0.72, 0.016)]),
   ];
 }
 
@@ -316,6 +399,10 @@ export function createTreeGeometries(lod: 0 | 1 = 0): THREE.BufferGeometry[] {
     pine(lod),
     broadleaf(303, 0.45, [0, 0.62, 0], [0.34, 0.3, 0.34], 48, 0.27, false, lod),
     broadleaf(404, 0.7, [0, 0.64, 0], [0.17, 0.32, 0.17], 34, 0.18, true, lod),
+    poplar(lod),
+    macrocarpa(lod),
+    willow(lod),
+    eucalypt(lod),
   ];
 }
 
@@ -327,6 +414,10 @@ export const SPECIES_TINT: ReadonlyArray<V3> = [
   [1.0, 0.92, 0.82], // pine: yellower, greyer
   [0.92, 0.95, 0.95], // oak
   [1.08, 1.12, 0.92], // birch: light, yellow-green
+  [1.04, 1.1, 0.8], // poplar: bright yellow-green
+  [0.62, 0.74, 0.72], // macrocarpa: very dark, blue-black green
+  [1.16, 1.2, 0.78], // willow: pale yellow-green
+  [0.98, 0.98, 1.1], // eucalypt: grey-blue green
 ];
 
 /** Per-species foliage tint of this thread's era: SPECIES_TINT in the present day. */

@@ -6,6 +6,7 @@ import { computeBiome, CoverShapeField, coverShape, fenceDistance, makeBiome, ma
 import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { buildTile, tileVertexCount } from '../../src/world/terrain/tileBuilder';
 import { createShadowProxies, createTreeGeometries } from '../../src/world/terrain/vegetation/treeModels';
+import { SPECIES_COUNT } from '../../src/world/terrain/vegetation/placement';
 
 const localToNed = (u: number, v: number): { north: number; east: number } => {
   const c = Math.cos(AIRPORT.runway.heading);
@@ -122,7 +123,7 @@ describe('tree models', () => {
 
   it('has a small closed shadow proxy per species inside the unit tree', () => {
     const proxies = createShadowProxies();
-    expect(proxies.length).toBe(4);
+    expect(proxies.length).toBe(SPECIES_COUNT);
     for (const g of proxies) {
       expect(g.index!.count / 3).toBeLessThan(400);
       g.computeBoundingBox();

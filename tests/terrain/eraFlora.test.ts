@@ -228,10 +228,10 @@ describe('Cretaceous flora', () => {
     const lod1 = createTreeGeometries(1);
     const proxies = createShadowProxies();
     const tints = speciesTints();
-    expect(lod0.length).toBe(SPECIES_COUNT);
-    expect(lod1.length).toBe(SPECIES_COUNT);
-    expect(proxies.length).toBe(SPECIES_COUNT);
-    expect(tints.length).toBe(SPECIES_COUNT);
+    expect(lod0.length).toBe(FLORA_SLOTS);
+    expect(lod1.length).toBe(FLORA_SLOTS);
+    expect(proxies.length).toBe(FLORA_SLOTS);
+    expect(tints.length).toBe(FLORA_SLOTS);
     tints.forEach((t, s) => expect(t).toEqual([...SLOTS[s].tint]));
     // Each shadow caster stays inside its tree: no higher, and no wider, than the LOD 0 model.
     proxies.forEach((p, s) => {
@@ -251,7 +251,7 @@ describe('Cretaceous flora', () => {
   it('keeps each model within the card budget, LOD 1 at most half of LOD 0', () => {
     const lod0 = createTreeGeometries(0);
     const lod1 = createTreeGeometries(1);
-    for (let s = 0; s < SPECIES_COUNT; s++) {
+    for (let s = 0; s < FLORA_SLOTS; s++) {
       const c0 = lod0[s].userData.cards as number;
       const c1 = lod1[s].userData.cards as number;
       expect(c0, SLOTS[s].key).toBeGreaterThanOrEqual(100);
@@ -286,11 +286,11 @@ describe('Cretaceous flora', () => {
 });
 
 describe('present-day trees (era code off)', () => {
-  it('builds today’s four species, tints and near material', () => {
+  it('builds today’s species, tints and near material', () => {
     setEra('present');
     expect(speciesTints()).toBe(SPECIES_TINT);
     const cards = createTreeGeometries(0).map((g) => g.userData.cards as number);
-    expect(cards.length).toBe(4);
+    expect(cards.length).toBe(SPECIES_COUNT);
     const shader = patchNear();
     expect(shader.defines).toEqual({ TREE_LOD: 0 });
     expect(shader.key).toBe('tree-near-v11-0');

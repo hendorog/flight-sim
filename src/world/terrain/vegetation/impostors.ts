@@ -4,7 +4,8 @@
 // shows the frames around the actual view direction (dither-blended), and the normal atlas lets
 // the standard lighting shade the impostor like the mesh it replaces.
 //
-// Atlas: 2x2 species quadrants of IMPOSTOR_GRID x IMPOSTOR_GRID frames of IMPOSTOR_FRAME pixels.
+// Atlas: IMPOSTOR_COLS x IMPOSTOR_ROWS species quadrants (species s at column s % IMPOSTOR_COLS, row
+// floor(s / IMPOSTOR_COLS)) of IMPOSTOR_GRID x IMPOSTOR_GRID frames of IMPOSTOR_FRAME pixels.
 
 import * as THREE from 'three';
 import { SPECIES_COUNT } from './placement';
@@ -12,8 +13,11 @@ import { TREE_BOUND_RADIUS } from './treeModels';
 
 export const IMPOSTOR_GRID = 8;
 export const IMPOSTOR_FRAME = 128;
+export const IMPOSTOR_COLS = 4;
+export const IMPOSTOR_ROWS = SPECIES_COUNT / IMPOSTOR_COLS;
 const QUAD = IMPOSTOR_GRID * IMPOSTOR_FRAME;
-const SIZE = QUAD * 2;
+const WIDTH = QUAD * IMPOSTOR_COLS;
+const HEIGHT = QUAD * IMPOSTOR_ROWS;
 
 export interface ImpostorAtlas {
   albedo: THREE.Texture;
@@ -63,7 +67,7 @@ void main() {
 
 export function bakeImpostors(renderer: THREE.WebGLRenderer, geometries: THREE.BufferGeometry[], foliage: THREE.Texture): ImpostorAtlas {
   const target = (): THREE.WebGLRenderTarget => {
-    const rt = new THREE.WebGLRenderTarget(SIZE, SIZE, {
+    const rt = new THREE.WebGLRenderTarget(WIDTH, HEIGHT, {
       type: THREE.UnsignedByteType,
       generateMipmaps: true,
       minFilter: THREE.LinearMipmapLinearFilter,
@@ -72,6 +76,7 @@ export function bakeImpostors(renderer: THREE.WebGLRenderer, geometries: THREE.B
     rt.texture.anisotropy = 4;
     return rt;
   };
+  if (renderer.capabilities.maxTextureSize < WIDTH) throw new Error(`impostor atlas needs ${WIDTH} px textures (max ${renderer.capabilities.maxTextureSize})`);
   const albedoRT = target();
   const normalRT = target();
   // Allocate the mip chain now, then skip regenerating it after each of the 512 frame renders; it is
@@ -137,8 +142,8 @@ export function bakeImpostors(renderer: THREE.WebGLRenderer, geometries: THREE.B
           camera.up.set(0, 1, 0);
           camera.lookAt(centre);
           camera.updateMatrixWorld();
-          const x = (s % 2) * QUAD + i * IMPOSTOR_FRAME;
-          const y = Math.floor(s / 2) * QUAD + j * IMPOSTOR_FRAME;
+          const x = (s % IMPOSTOR_COLS) * QUAD + i * IMPOSTOR_FRAME;
+          const y = Math.floor(s / IMPOSTOR_COLS) * QUAD + j * IMPOSTOR_FRAME;
           rt.viewport.set(x, y, IMPOSTOR_FRAME, IMPOSTOR_FRAME);
           rt.scissor.set(x, y, IMPOSTOR_FRAME, IMPOSTOR_FRAME);
           renderer.setRenderTarget(rt);
@@ -147,8 +152,8 @@ export function bakeImpostors(renderer: THREE.WebGLRenderer, geometries: THREE.B
         }
       }
     }
-    rt.viewport.set(0, 0, SIZE, SIZE);
-    rt.scissor.set(0, 0, SIZE, SIZE);
+    rt.viewport.set(0, 0, WIDTH, HEIGHT);
+    rt.scissor.set(0, 0, WIDTH, HEIGHT);
     // An empty render with mipmapping re-enabled makes three regenerate the mip chain once.
     rt.texture.generateMipmaps = true;
     renderer.setScissorTest(false);

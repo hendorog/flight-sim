@@ -9,11 +9,14 @@
 // impostors are thinned by rank (a tree of rank r shrinks away where the kept fraction drops below r).
 
 import * as THREE from 'three';
-import { HEMI_OCT_GLSL, IMPOSTOR_FRAME, IMPOSTOR_GRID } from './impostors';
+import { HEMI_OCT_GLSL, IMPOSTOR_COLS, IMPOSTOR_FRAME, IMPOSTOR_GRID, IMPOSTOR_ROWS } from './impostors';
 import { SPECIES_COUNT } from './placement';
 import { speciesTints, TREE_BOUND_RADIUS } from './treeModels';
 import { era, isPresent } from '../../era/eraState';
 import { FLORA } from './flora';
+
+/** Frames across and down the impostor atlas, as a GLSL vec2. */
+const ATLAS_FRAMES = `vec2(${(IMPOSTOR_COLS * IMPOSTOR_GRID).toFixed(1)}, ${(IMPOSTOR_ROWS * IMPOSTOR_GRID).toFixed(1)})`;
 
 export interface TreeUniforms {
   uTime: { value: number };
@@ -49,7 +52,7 @@ uniform vec2 uNearOpen;
 uniform float uDensityRange;
 uniform vec3 uViewPos;
 uniform float uShadowRange;
-uniform vec3 uSpeciesTint[4];
+uniform vec3 uSpeciesTint[${SPECIES_COUNT}];
 varying float vFade;
 varying vec3 vTint;
 float treeSpecies() { return mod(floor(aInstB.y), ${SPECIES_COUNT.toFixed(1)}); }
@@ -186,7 +189,10 @@ if (tDither < vFade || tDither >= vLod) discard;
 
 /** Uniforms every tree material reads besides TreeUniforms. */
 function speciesTint(): { uSpeciesTint: { value: THREE.Vector3[] } } {
-  return { uSpeciesTint: { value: speciesTints().map((t) => new THREE.Vector3(...t)) } };
+  // An era with fewer species than slots leaves the rest unused (black).
+  const tints = speciesTints().map((t) => new THREE.Vector3(...t));
+  while (tints.length < SPECIES_COUNT) tints.push(new THREE.Vector3());
+  return { uSpeciesTint: { value: tints } };
 }
 
 /**
@@ -337,10 +343,10 @@ varying float vYawC;
 varying float vYawS;
 varying vec3 vTint;
 vec2 frameUv(vec2 frame) {
-  vec2 quadrant = vec2(mod(vSpecies, 2.0), floor(vSpecies / 2.0));
+  vec2 quadrant = vec2(mod(vSpecies, ${IMPOSTOR_COLS.toFixed(1)}), floor(vSpecies / ${IMPOSTOR_COLS.toFixed(1)}));
   // Inset by half a texel so bilinear filtering stays inside the frame.
   vec2 uv = clamp(vImpUv, 0.5 / ${IMPOSTOR_FRAME.toFixed(1)}, 1.0 - 0.5 / ${IMPOSTOR_FRAME.toFixed(1)});
-  return (quadrant * ${IMPOSTOR_GRID.toFixed(1)} + frame + uv) / ${(2 * IMPOSTOR_GRID).toFixed(1)};
+  return (quadrant * ${IMPOSTOR_GRID.toFixed(1)} + frame + uv) / ${ATLAS_FRAMES};
 }
 `;
 
@@ -459,9 +465,9 @@ if (tH > 0.0 && sunCascade && distance(treeBase(), uViewPos) > uShadowRange) {
 
 const IMPOSTOR_SHADOW_FRAGMENT = /* glsl */ `
 {
-  vec2 quadrant = vec2(mod(vSpecies, 2.0), floor(vSpecies / 2.0));
+  vec2 quadrant = vec2(mod(vSpecies, ${IMPOSTOR_COLS.toFixed(1)}), floor(vSpecies / ${IMPOSTOR_COLS.toFixed(1)}));
   vec2 uv = clamp(vImpUv, 0.5 / ${IMPOSTOR_FRAME.toFixed(1)}, 1.0 - 0.5 / ${IMPOSTOR_FRAME.toFixed(1)});
   // Mipmapped coverage: a lower threshold keeps the shadow of a distant crown as wide as the crown.
-  if (texture2D(tImpAlbedo, (quadrant * ${IMPOSTOR_GRID.toFixed(1)} + vFrame + uv) / ${(2 * IMPOSTOR_GRID).toFixed(1)}).a < 0.4) discard;
+  if (texture2D(tImpAlbedo, (quadrant * ${IMPOSTOR_GRID.toFixed(1)} + vFrame + uv) / ${ATLAS_FRAMES}).a < 0.4) discard;
 }
 `;

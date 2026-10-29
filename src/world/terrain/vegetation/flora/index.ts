@@ -1,8 +1,8 @@
 // Tree species per era (Deep Time). Owned by the flora package (WP2).
 //
-// An era's trees occupy the SAME four slots as today's (index-aligned with placement.ts SPECIES: spruce 0,
-// pine 1, oak 2, birch 3), so SPECIES_COUNT, uSpeciesTint[4], the 2x2 impostor quadrants, the 4-rect foliage
-// atlas, TREE_STRIDE, TREE_BOUND_RADIUS and CANOPY_HEIGHT are unchanged. The present set is today's trees;
+// An era's trees occupy the first FLORA_SLOTS of today's SPECIES_COUNT slots (index-aligned with placement.ts
+// SPECIES: spruce 0, pine 1, oak 2, birch 3), so the impostor quadrants, the 4-rect foliage atlas, TREE_STRIDE,
+// TREE_BOUND_RADIUS and CANOPY_HEIGHT are shared; the slots above go unused. The present set is today's trees;
 // the present code paths (treeModels.ts, placement.ts, foliageTexture.ts, treeMaterials.ts) stay
 // byte-identical in what they produce and do not consult this table.
 //
@@ -15,7 +15,7 @@
 
 import type { FloraId } from '../../../era/types';
 
-/** Slots per flora set: placement.ts SPECIES_COUNT (asserted in tests/era/eraState.test.ts). */
+/** Slots of another era's flora set (the present day has placement.ts SPECIES_COUNT; tests/era/eraState.test.ts). */
 export const FLORA_SLOTS = 4;
 
 /**
@@ -46,8 +46,8 @@ export interface FloraSlot {
 
 export interface FloraSet {
   readonly id: FloraId;
-  /** Exactly FLORA_SLOTS species, index-aligned with placement.ts SPECIES. */
-  readonly slots: readonly [FloraSlot, FloraSlot, FloraSlot, FloraSlot];
+  /** Species index-aligned with placement.ts SPECIES: all SPECIES_COUNT today, FLORA_SLOTS in another era. */
+  readonly slots: readonly FloraSlot[];
 }
 
 // Today's trees, described (the present code paths use their own literals, which these mirror).
@@ -85,6 +85,38 @@ const PRESENT_FLORA: FloraSet = Object.freeze({
       height: [3.5, 22],
       tint: [1.08, 1.12, 0.92],
       proxy: { crown: [{ kind: 'ellipsoid', y0: 0.64, y1: 0.272, rx: 0.1445 }], trunk: [0.5, 0.012] },
+    },
+    {
+      key: 'poplar',
+      name: 'Lombardy poplar',
+      conifer: false,
+      height: [14, 30],
+      tint: [1.04, 1.1, 0.8],
+      proxy: { crown: [{ kind: 'ellipsoid', y0: 0.54, y1: 0.374, rx: 0.068 }], trunk: [0.2, 0.014] },
+    },
+    {
+      key: 'macrocarpa',
+      name: 'Macrocarpa',
+      conifer: true,
+      height: [8, 25],
+      tint: [0.62, 0.74, 0.72],
+      proxy: { crown: [{ kind: 'ellipsoid', y0: 0.52, y1: 0.306, rx: 0.255 }], trunk: [0.28, 0.03] },
+    },
+    {
+      key: 'willow',
+      name: 'Weeping willow',
+      conifer: false,
+      height: [8, 16],
+      tint: [1.16, 1.2, 0.78],
+      proxy: { crown: [{ kind: 'ellipsoid', y0: 0.5, y1: 0.306, rx: 0.289 }], trunk: [0.32, 0.03] },
+    },
+    {
+      key: 'eucalypt',
+      name: 'Eucalypt',
+      conifer: false,
+      height: [12, 40],
+      tint: [0.98, 0.98, 1.1],
+      proxy: { crown: [{ kind: 'ellipsoid', y0: 0.82, y1: 0.1105, rx: 0.204 }], trunk: [0.72, 0.016] },
     },
   ] as const),
 });

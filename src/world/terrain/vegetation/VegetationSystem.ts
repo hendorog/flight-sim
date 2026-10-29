@@ -253,7 +253,8 @@ export class VegetationSystem {
     for (const lod of [0, 1] as const) {
       const nearMat = createNearTreeMaterial(this.foliage, this.uniforms, lod);
       this.materials.push(nearMat);
-      for (let s = 0; s < SPECIES_COUNT; s++) {
+      // (An era with fewer species than SPECIES_COUNT builds only its own.)
+      for (let s = 0; s < Math.min(SPECIES_COUNT, this.geometries.length); s++) {
         const list = new InstanceList((lod ? this.lodGeometries : this.geometries)[s]);
         // The trees cast their shadows through solid proxies (treeModels.ts createShadowProxies).
         const proxy = new THREE.Mesh(list.addGeometry(this.proxyGeometries[s]), proxyMat.main);
