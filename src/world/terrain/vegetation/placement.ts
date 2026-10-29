@@ -367,8 +367,8 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
       const tall =
         species === SPECIES.poplar ? 17 + 9 * h1
         : young ? 3 + 3 * h1
-        : species === SPECIES.macrocarpa ? (clipped ? 6 + 6 * h1 : 10 + 8 * h1)
-        : clipped ? 7 + 7 * h1 : 13 + 8 * h1;
+        : species === SPECIES.macrocarpa ? (clipped ? 3 + 3 * h1 : 10 + 8 * h1)
+        : clipped ? 3.5 + 3.5 * h1 : 13 + 8 * h1;
       const wide = 3 + 2.5 * edgeRandom(k, dseed, 3);
       // The hedge run being laid: its first point (east, north, ground), its last, and its length so far.
       let run: number[] | null = null;
