@@ -1,4 +1,4 @@
-// Clipped hedges: the mature macrocarpa shelterbelts, kept trimmed into continuous walls with square sides and a
+// Clipped hedges: the mature macrocarpa and pine shelterbelts, kept trimmed into continuous walls with square sides and a
 // flat top (placement.ts plantShelterbelts emits them as wall pieces per tree cell). Drawn as one instanced box per
 // piece, sheared so its base and top follow the ground between the piece's ends, in a dense-foliage material:
 // darker in the hollows and lighter where the clipped surface faces the sky, mottled at two scales, the fresh
@@ -6,10 +6,15 @@
 // stays solid as far as the cells reach.
 
 import * as THREE from 'three';
-import { WALL_STRIDE, type TreeCellData } from './placement';
+import { SPECIES, WALL_STRIDE, type TreeCellData } from './placement';
 
 /** The hedge stands this far into the ground at its lower end, m (so it never shows a gap on a slope). */
 const FOOT = 1;
+/** Foliage colour by species (linear): macrocarpa dark and bluish, pine lighter and yellower. */
+const MACROCARPA = new THREE.Color(0.008, 0.026, 0.006);
+const PINE = new THREE.Color(0.017, 0.032, 0.008);
+
+const fract = (x: number): number => x - Math.floor(x);
 
 export class HedgeWalls {
   readonly mesh: THREE.InstancedMesh;
@@ -17,6 +22,7 @@ export class HedgeWalls {
   private readonly material: THREE.MeshStandardMaterial;
   private capacity = 0;
   private readonly m = new THREE.Matrix4();
+  private readonly col = new THREE.Color();
 
   constructor() {
     this.geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -61,11 +67,15 @@ export class HedgeWalls {
         const ux = (-dz / len) * wide;
         const uz = (dx / len) * wide;
         this.m.set(dx, 0, ux, (ea + eb) / 2, gb - ga, h + FOOT, 0, (ga + gb) / 2 - FOOT, dz, 0, uz, -(na + nb) / 2, 0, 0, 0, 1);
-        mesh.setMatrixAt(i++, this.m);
+        mesh.setMatrixAt(i, this.m);
+        // A little variation from belt to belt.
+        const v = 0.85 + 0.3 * fract(ea * 0.0137 + na * 0.0071);
+        mesh.setColorAt(i++, this.col.copy(w[o + 8] === SPECIES.pine ? PINE : MACROCARPA).multiplyScalar(v));
       }
     }
     mesh.count = i;
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     return mesh;
   }
 
@@ -78,7 +88,8 @@ export class HedgeWalls {
 
 /** Dense clipped foliage: dark green, mottled by world-position noise, the sky-facing top a little fresher. */
 function createHedgeMaterial(): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.008, 0.026, 0.006), roughness: 0.95, metalness: 0 });
+  // (The colour comes per instance, by species.)
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 });
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vHedgePos;\nvarying vec3 vHedgeN;')

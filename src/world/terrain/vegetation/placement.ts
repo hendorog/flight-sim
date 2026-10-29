@@ -49,13 +49,13 @@ export interface TreeCellData {
   bucketStart: Uint16Array;
   /**
    * Clipped hedges (the trimmed shelterbelts): WALL_STRIDE floats each - east, north, ground at one end; the same at
-   * the other; height above the ground and width, m. Empty in another era.
+   * the other; height above the ground and width, m; species (placement SPECIES). Empty in another era.
    */
   walls: Float32Array;
 }
 
 /** Floats per clipped-hedge piece in TreeCellData.walls. */
-export const WALL_STRIDE = 8;
+export const WALL_STRIDE = 9;
 
 /** Sub-squares per cell side in TreeCellData.order. */
 export const BUCKETS = 8;
@@ -325,9 +325,10 @@ const beltProbe = makeParcel();
  * Shelterbelts (fields.ts): a single row along each shelterbelt boundary of the field pattern through this cell, one
  * species and about one height per belt - tall Lombardy poplars, macrocarpa, or pines - evenly spaced, a few gaps. Only
  * where the land either side is farmland. Like the plantation rows, the row thins with distance a tree in two, then in
- * four, so a far belt still reads as a line. Most macrocarpa belts are mature and kept clipped: a continuous hedge with
- * square sides and a flat top, 3-10 m tall by belt, emitted as wall pieces (at most WALL_PIECE_M long, so they follow
- * the ground) instead of trees; the young ones are still a row of small trees.
+ * four, so a far belt still reads as a line. Macrocarpa and pine belts vary in maturity: some young (a row of small
+ * trees), some grown out untrimmed (not every farmer cuts them), and most mature and kept clipped - the full-grown
+ * trees squared off into a continuous tall hedge with square sides and a flat top, emitted as wall pieces (at most
+ * WALL_PIECE_M long, so they follow the ground) instead of trees. Poplars are never cut.
  */
 function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm: Float32Array, plant: Float32Array,
   lerp2: (a: Float32Array, fx: number, fz: number) => number, out: number[], walls: number[]): void {
@@ -357,18 +358,24 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
       const r = edgeRandom(k, dseed, 0);
       const species = r < 0.4 ? SPECIES.poplar : r < 0.75 ? SPECIES.macrocarpa : SPECIES.pine;
       const along = species === SPECIES.poplar ? 4.5 : species === SPECIES.macrocarpa ? 3.2 : 4;
-      // Macrocarpa belts by maturity: a quarter young (a row of small trees), the rest clipped hedges.
-      const age = edgeRandom(k, dseed, 2);
-      const clipped = species === SPECIES.macrocarpa && age > 0.25;
-      const tall = species === SPECIES.poplar ? 17 + 9 * edgeRandom(k, dseed, 1) : species === SPECIES.macrocarpa ? (clipped ? 3 + 7 * edgeRandom(k, dseed, 1) : 3 + 3 * edgeRandom(k, dseed, 1)) : 13 + 8 * edgeRandom(k, dseed, 1);
-      const wide = Math.min(tall * 0.5, 2.2 + 2 * edgeRandom(k, dseed, 3));
+      // Maturity (macrocarpa and pine): 15 % young, 25 % grown out untrimmed, 60 % clipped.
+      const age = species === SPECIES.poplar ? 1 : edgeRandom(k, dseed, 2);
+      const young = age < 0.15;
+      const clipped = age >= 0.4;
+      const h1 = edgeRandom(k, dseed, 1);
+      const tall =
+        species === SPECIES.poplar ? 17 + 9 * h1
+        : young ? 3 + 3 * h1
+        : species === SPECIES.macrocarpa ? (clipped ? 6 + 6 * h1 : 10 + 8 * h1)
+        : clipped ? 7 + 7 * h1 : 13 + 8 * h1;
+      const wide = 3 + 2.5 * edgeRandom(k, dseed, 3);
       // The hedge run being laid: its first point (east, north, ground), its last, and its length so far.
       let run: number[] | null = null;
       const flush = (): void => {
         // Each end reaches half a spacing past its last point, so pieces (and cells) meet without a gap.
         if (run && (run[3] - run[0]) ** 2 + (run[4] - run[1]) ** 2 > 1) {
           const h = 0.5 * along;
-          walls.push(run[0] + s * h, run[1] - c * h, run[2], run[3] - s * h, run[4] + c * h, run[5], tall, wide);
+          walls.push(run[0] + s * h, run[1] - c * h, run[2], run[3] - s * h, run[4] + c * h, run[5], tall, wide, species);
         }
         run = null;
       };
