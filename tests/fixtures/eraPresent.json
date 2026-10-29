@@ -1,12 +1,12 @@
 {
   "shaders": {
     "river": "{\"vertex\":\"888bdc6c90c882d53103ea23ec4a1f05a787d46de169d7c6a1dbc13b24331a0d\",\"fragment\":\"a49dcd58998e5feb22e6528b8a0ae5e5a07edcf3ea8616991afbbbc6958ea20a\",\"defines\":\"[[\\\"RIVER\\\",\\\"\\\"]]\",\"uniforms\":\"tNoise,uHazeColor,uSkyColor,uTime\",\"cacheKey\":\"river-v4\"}",
-    "terrain": "{\"vertex\":\"03b13ed8023fbd4667971b871c6567e865d06e1ec4d06af11a7d23c70ec54102\",\"fragment\":\"2579ca84b84c79aa36a46a89ddaf9b944defa6ff18b72fd53d8cf4c1f3c2c9f9\",\"defines\":\"[[\\\"TERRAIN_DEBUG\\\",0],[\\\"TERRAIN_DETAIL\\\",1]]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-v5-1-0\"}",
-    "terrainDepth": "{\"vertex\":\"63b8d79adb0b03dc095e85d920737e4cdf61c61f5dd57c00a62bb3f808c9ef3d\",\"fragment\":\"0c4ec80cc2a5bcfb37e653fae3d4dbda6ebd5ce45d901b42f5103799e4c63267\",\"defines\":\"[]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-depth-v4\"}",
+    "terrain": "{\"vertex\":\"6f8a385f6e9727a4ff745a9de1c0ca828e80430a0127f931f2efea00895db342\",\"fragment\":\"a2ba72d679a42513e2e8d08d65a1efc41a4f88aff4387c441e146be3668b9a08\",\"defines\":\"[[\\\"TERRAIN_DEBUG\\\",0],[\\\"TERRAIN_DETAIL\\\",1]]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-v5-1-0\"}",
+    "terrainDepth": "{\"vertex\":\"438cd43b3d44a26f588e318bfdf214961c121aab5787813477721ec2c6273c97\",\"fragment\":\"0c4ec80cc2a5bcfb37e653fae3d4dbda6ebd5ce45d901b42f5103799e4c63267\",\"defines\":\"[]\",\"uniforms\":\"tDetailA,tDetailN,tNoise,uCanopyKeep,uFence,uForestFade,uLayerMean,uLayerRough,uLodCenter,uMorph,uRunway,uRunwayDims,uSkirt,uTile,uTown,uViewPos\",\"cacheKey\":\"terrain-depth-v4\"}",
     "water": "{\"vertex\":\"888bdc6c90c882d53103ea23ec4a1f05a787d46de169d7c6a1dbc13b24331a0d\",\"fragment\":\"a49dcd58998e5feb22e6528b8a0ae5e5a07edcf3ea8616991afbbbc6958ea20a\",\"defines\":\"[[\\\"STANDARD\\\",\\\"\\\"]]\",\"uniforms\":\"tNoise,uHazeColor,uSkyColor,uTime\",\"cacheKey\":\"water-v4\"}"
   },
   "terrain": {
-    "computeBiome": "9cc8cdb380e9909ee35c75fe1a8ec5b99d60a4947c9bc791a79e46dd84ee6aca",
+    "computeBiome": "68d33e57885a58e1060c8ba583c3a21be7b0eb8707f7fe619d1244cff43be2ce",
     "hydrology": "5833c3fe228bad82ef67d280963c1dc2b1bb28bbce67deed501718d0c40a2b32",
     "points": "2ea4439a37e888ad52e15f95300debefd524de6e89a0f21452a4f41ef53adc80",
     "sampleTerrain": "a47b8f0a256322b93cf31bed00f940d5505952829a8a8715b379a52b26bbae3b",
@@ -16,10 +16,10 @@
   "tiles": {
     "airport-l0-g64": "c63544acec0e41eb5f0219db94ee952609ddc84181e0880552309688f8bf13ed",
     "l3-g32": "e9dddb578ca515291e50f053bf130bb90a00b5d5fe414b308a8742627b34b45c",
-    "l6-g32": "518ce02e6f3ce0e2d9486aa470755e8356a2e72c2a1649ec477168f8ab90463d",
+    "l6-g32": "20f2846f93b704278d369d44abed6d451a899aa18147b0424519151fae1f0212",
     "lake-l2-g64": "32da70938c7bc050c820dc671dec4dc63c2c50ec6b528ea488404c9d5cfbcd33",
     "river-l0-g64": "4d51e8e59770d186dd56a4f58280200cf6c6cbd007b4aaea9375e293fa4a0a57",
-    "root-l10-g32": "40bf94747393c0e41ac61653ca773a73306a808b7b40eb8e439df6ab4a78157d"
+    "root-l10-g32": "8eaa9f9359a34e1bdb912a7f2f1ea24ddaf11fd6b9c058216f729b0099e8d84f"
   },
   "townSite": {
     "east": -3338.562686473753,
