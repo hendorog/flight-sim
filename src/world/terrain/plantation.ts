@@ -68,8 +68,9 @@ export interface Compartment {
   angle: number;
   /** Distance to the compartment's border, m. */
   border: number;
-  /** Kind of that border (EDGE_GAP, EDGE_ROAD, EDGE_FIREBREAK). */
-  edge: number;
+  /** Distance to the nearest forestry road and firebreak on its borders, m (large if none). */
+  roadDist: number;
+  fireDist: number;
   /** Its Voronoi site, world east and north, m. */
   siteE: number;
   siteN: number;
@@ -81,7 +82,7 @@ export interface Compartment {
 }
 
 export function makeCompartment(): Compartment {
-  return { years: 0, angle: 0, border: 0, edge: 0, siteE: 0, siteN: 0, id: 0, cellX: 0, cellY: 0 };
+  return { years: 0, angle: 0, border: 0, roadDist: 1e4, fireDist: 1e4, siteE: 0, siteN: 0, id: 0, cellX: 0, cellY: 0 };
 }
 
 const smooth = (e0: number, e1: number, x: number): number => {
@@ -104,6 +105,16 @@ function blockSite(x: number, y: number): void {
   const h = hash2i(x, y + BLOCK_SALT);
   site.x = x + 0.5 + 2 * BLOCK_JITTER * (u16(h) - 0.5);
   site.y = y + 0.5 + 2 * BLOCK_JITTER * ((h >>> 16) / 65535 - 0.5);
+}
+
+const mod = (a: number, n: number): number => ((a % n) + n) % n;
+/**
+ * Kind of the border between compartments (ax, ay) and (bx, by), the same seen from either side: road on the lattice
+ * lines, else a firebreak or a plain gap by a symmetric hash of the two.
+ */
+function edgeKind(ax: number, ay: number, bx: number, by: number): number {
+  if ((ax !== bx && mod(Math.min(ax, bx), ROAD_EVERY[0]) === 0) || (ay !== by && mod(Math.min(ay, by), ROAD_EVERY[1]) === 0)) return EDGE_ROAD;
+  return u16((hash2i(ax, ay + BLOCK_SALT + 3) ^ hash2i(bx, by + BLOCK_SALT + 3)) >>> 0) < FIREBREAK_SHARE ? EDGE_FIREBREAK : EDGE_GAP;
 }
 
 /** The compartment at a point (TypeScript twin of compartmentAt()). `east`, `north` in m. */
@@ -129,10 +140,11 @@ export function compartmentAt(east: number, north: number, out: Compartment): Co
         sy = site.y;
       }
     }
-  // Distance to the nearest Voronoi border: to each bisector between this site and a neighbour's.
+  // Distance to the nearest Voronoi border: to each bisector between this site and a neighbour's; and to the
+  // nearest of each kind (so a road runs on through a junction with a plain border).
   let border = Infinity;
-  let nx = 0;
-  let ny = 0;
+  let roadD = Infinity;
+  let fireD = Infinity;
   for (let dy = -2; dy <= 2; dy++)
     for (let dx = -2; dx <= 2; dx++) {
       if (dx === 0 && dy === 0) continue;
@@ -140,19 +152,14 @@ export function compartmentAt(east: number, north: number, out: Compartment): Co
       const mx = site.x - sx;
       const my = site.y - sy;
       const l = Math.sqrt(mx * mx + my * my);
-      const d = ((px - sx) * mx + (py - sy) * my) / l;
-      if (0.5 * l - d < border) {
-        border = 0.5 * l - d;
-        nx = bx + dx;
-        ny = by + dy;
-      }
+      const d = 0.5 * l - ((px - sx) * mx + (py - sy) * my) / l;
+      border = Math.min(border, d);
+      const kind = edgeKind(bx, by, bx + dx, by + dy);
+      if (kind === EDGE_ROAD) roadD = Math.min(roadD, d);
+      else if (kind === EDGE_FIREBREAK) fireD = Math.min(fireD, d);
     }
-  // The border's kind, the same seen from either side: road on the lattice lines, else a firebreak or a plain gap
-  // by a symmetric hash of the two compartments.
-  const mod = (a: number, n: number): number => ((a % n) + n) % n;
-  const road = (bx !== nx && mod(Math.min(bx, nx), ROAD_EVERY[0]) === 0) || (by !== ny && mod(Math.min(by, ny), ROAD_EVERY[1]) === 0);
-  const pair = u16((hash2i(bx, by + BLOCK_SALT + 3) ^ hash2i(nx, ny + BLOCK_SALT + 3)) >>> 0);
-  out.edge = road ? EDGE_ROAD : pair < FIREBREAK_SHARE ? EDGE_FIREBREAK : EDGE_GAP;
+  out.roadDist = Math.min(1e4, roadD * BLOCK_M);
+  out.fireDist = Math.min(1e4, fireD * BLOCK_M);
   const h = hash2i(bx, by + BLOCK_SALT + 1);
   fieldNoise((sx * BLOCK_M) / ESTATE_M, (sy * BLOCK_M) / ESTATE_M, ESTATE_SALT);
   out.years = ROTATION_YEARS * ((h >>> 16) / 65535);
@@ -169,7 +176,8 @@ export function compartmentAt(east: number, north: number, out: Compartment): Co
 
 /**
  * GLSL twins (needs FIELDS_GLSL's fieldNoise and hash2u). xz is world (east, north). compartmentAt returns
- * (years, angle, border m + 1e4 * border kind, species zone id).
+ * (years, angle, distances to the nearest road and firebreak packed (road m, below 1000, + 1000 * whole firebreak
+ * m, each clamped to 999), species zone id). The border distance itself only the CPU needs (tree placement).
  */
 export const PLANTATION_GLSL = /* glsl */ `
 float estateWeight(vec2 en, float ground) {
@@ -196,24 +204,27 @@ vec4 compartmentAt(vec2 en) {
       float d = dot(q - p, q - p);
       if (d < best) { best = d; b = c + ivec2(dx, dy); s = q; }
     }
-  float border = 1e9;
-  ivec2 nb = b;
+  float roadD = 1e9;
+  float fireD = 1e9;
   for (int dy = -2; dy <= 2; dy++)
     for (int dx = -2; dx <= 2; dx++) {
       if (dx == 0 && dy == 0) continue;
-      vec2 m = blockSite(b.x + dx, b.y + dy) - s;
+      ivec2 nb = b + ivec2(dx, dy);
+      vec2 m = blockSite(nb.x, nb.y) - s;
       float l = length(m);
       float d = 0.5 * l - dot(p - s, m) / l;
-      if (d < border) { border = d; nb = b + ivec2(dx, dy); }
+      bool road = (b.x != nb.x && mod(float(min(b.x, nb.x)), ${ROAD_EVERY[0].toFixed(1)}) == 0.0) || (b.y != nb.y && mod(float(min(b.y, nb.y)), ${ROAD_EVERY[1].toFixed(1)}) == 0.0);
+      float pair = float((hash2u(b.x, b.y + ${BLOCK_SALT + 3}) ^ hash2u(nb.x, nb.y + ${BLOCK_SALT + 3})) & 0xffffu) / 65535.0;
+      if (road) roadD = min(roadD, d);
+      else if (pair < ${FIREBREAK_SHARE.toFixed(3)}) fireD = min(fireD, d);
     }
-  bool road = (b.x != nb.x && mod(float(min(b.x, nb.x)), ${ROAD_EVERY[0].toFixed(1)}) == 0.0) || (b.y != nb.y && mod(float(min(b.y, nb.y)), ${ROAD_EVERY[1].toFixed(1)}) == 0.0);
-  float pair = float((hash2u(b.x, b.y + ${BLOCK_SALT + 3}) ^ hash2u(nb.x, nb.y + ${BLOCK_SALT + 3})) & 0xffffu) / 65535.0;
-  float kind = road ? ${EDGE_ROAD.toFixed(1)} : pair < ${FIREBREAK_SHARE.toFixed(3)} ? ${EDGE_FIREBREAK.toFixed(1)} : ${EDGE_GAP.toFixed(1)};
+  roadD = min(roadD * ${BLOCK_M.toFixed(1)}, 999.0);
+  fireD = min(fireD * ${BLOCK_M.toFixed(1)}, 999.0);
   uint h = hash2u(b.x, b.y + ${BLOCK_SALT + 1});
   vec2 nz = fieldNoise(s * ${(BLOCK_M / ESTATE_M).toFixed(6)}, ${ESTATE_SALT});
   float years = ${ROTATION_YEARS.toFixed(1)} * (float(h >> 16) / 65535.0);
   float angle = nz.y * 3.14159265 + 0.6 * (float(h & 0xffffu) / 65535.0 - 0.5);
   float id = 0.5 + 0.5 * fieldNoise(s * ${(BLOCK_M / SPECIES_M).toFixed(6)}, ${SPECIES_SALT}).x;
-  return vec4(years, angle, border * ${BLOCK_M.toFixed(1)} + 1e4 * kind, id);
+  return vec4(years, angle, roadD + 1000.0 * floor(fireD), id);
 }
 `;

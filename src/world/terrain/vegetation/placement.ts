@@ -12,7 +12,7 @@ import { makeSample, sampleTerrain } from '../heightfield';
 import { COLUMN_M, columnEdge, districtHasBelts, edgeRandom, isShelterbelt, makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
 import { inTownClearZone } from '../townMask';
-import { CLEARFELL_YEARS, compartmentAt, EDGE_HALF_WIDTH, PLANT_EUC_ID, PLANT_FIR_ID, makeCompartment, standHeight, type Compartment } from '../plantation';
+import { CLEARFELL_YEARS, compartmentAt, EDGE_FIREBREAK, EDGE_GAP, EDGE_HALF_WIDTH, EDGE_ROAD, PLANT_EUC_ID, PLANT_FIR_ID, makeCompartment, standHeight, type Compartment } from '../plantation';
 import { era } from '../../era/eraState';
 import { FLORA } from './flora';
 
@@ -242,7 +242,7 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
 
   plantRows(e0, n0, size, spacing, m, plant, dens, lerp2, nearOpenLand, out);
   const walls: number[] = [];
-  plantShelterbelts(e0, n0, size, m, farm, plant, lerp2, out, walls);
+  plantShelterbelts(e0, n0, size, m, farm, plant, dens, lerp2, out, walls);
   return finishCell(cx, cz, size, out, walls);
 }
 
@@ -302,7 +302,7 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
         const f = lerp2(dens, fx, fz);
         if (f < 0.25) continue;
         compartmentAt(east, north, rowComp);
-        if (rowComp.cellX !== c.cellX || rowComp.cellY !== c.cellY || rowComp.border < EDGE_HALF_WIDTH[rowComp.edge]) continue;
+        if (rowComp.cellX !== c.cellX || rowComp.cellY !== c.cellY || rowComp.border < EDGE_HALF_WIDTH[EDGE_GAP] || rowComp.roadDist < EDGE_HALF_WIDTH[EDGE_ROAD] || rowComp.fireDist < EDGE_HALF_WIDTH[EDGE_FIREBREAK]) continue;
         if (inTownClearZone(north, east)) continue;
         sampleTerrain(north, east, sample);
         if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
@@ -330,7 +330,7 @@ const beltProbe = makeParcel();
  * trees squared off into a continuous tall hedge with square sides and a flat top, emitted as wall pieces (at most
  * WALL_PIECE_M long, so they follow the ground) instead of trees. Poplars are never cut.
  */
-function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm: Float32Array, plant: Float32Array,
+function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm: Float32Array, plant: Float32Array, dens: Float32Array,
   lerp2: (a: Float32Array, fx: number, fz: number) => number, out: number[], walls: number[]): void {
   const seen = new Set<string>();
   for (const [de, dn] of [[0.5, 0.5], [0, 0], [1, 0], [0, 1], [1, 1]]) {
@@ -389,7 +389,8 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
         const fx = (east - e0) / LATTICE;
         const fz = (north - n0) / LATTICE;
         const ok = ((): boolean => {
-          if (lerp2(farm, fx, fz) < 0.2 || lerp2(plant, fx, fz) > 0.3) return false;
+          // Farmland only: a belt ends where the woods begin.
+          if (lerp2(farm, fx, fz) < 0.2 || lerp2(plant, fx, fz) > 0.3 || lerp2(dens, fx, fz) > 0.25) return false;
           // Still this district's boundary here (not across a lane into the next district), and off the lanes.
           parcelAt(east, north, beltProbe);
           if (beltProbe.districtX !== dx || beltProbe.districtY !== dy || beltProbe.shelter > 1 || beltProbe.border < 6) return false;

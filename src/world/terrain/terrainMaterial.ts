@@ -38,7 +38,7 @@ import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS } from './eraUniforms';
 import { UNDERSTOREY_HEAD_GLSL, UNDERSTOREY_SPECKLE_GLSL } from './vegetation/understorey';
 import { eraOff, type EraLayerName } from '../era/eraOff';
 import { PLANTATION_FLAG, RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
-import { CLEARFELL_YEARS, EDGE_FIREBREAK, EDGE_GAP, EDGE_HALF_WIDTH, EDGE_ROAD, PLANT_EUC_ID, PLANT_FIR_ID, PLANTATION_GLSL, ROAD_GRAVEL, ROTATION_YEARS } from './plantation';
+import { CLEARFELL_YEARS, EDGE_FIREBREAK, EDGE_HALF_WIDTH, EDGE_ROAD, PLANT_EUC_ID, PLANT_FIR_ID, PLANTATION_GLSL, ROAD_GRAVEL, ROTATION_YEARS } from './plantation';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
 import { OPEN_RANK } from './vegetation/placement';
@@ -868,7 +868,7 @@ ${presentText(`    // Under and between the bank trees the ground is overgrown: 
 }
 ${presentText(`// Plantation estates (plantation.ts): the compartment here. A fresh clear-fell is bare brown ground strewn with
 // slash, greening as the new planting takes; the canopy takes a conifer tone by stand age (below).
-vec4 tComp = vec4(${ROTATION_YEARS.toFixed(1)}, 0.0, 1e3, 0.0);
+vec4 tComp = vec4(${ROTATION_YEARS.toFixed(1)}, 0.0, 999999.0, 0.0);
 if (vPlantation > 0.01) {
   tComp = compartmentAt(vec2(tP.x, -tP.z));
   float clearW = vPlantation * (1.0 - smoothstep(${(CLEARFELL_YEARS - 0.5).toFixed(2)}, ${(CLEARFELL_YEARS + 0.5).toFixed(2)}, tComp.x));
@@ -880,18 +880,17 @@ if (vPlantation > 0.01) {
   slash = mix(slash, ${P.bankRoughA}, 0.55 * smoothstep(0.5, 2.5, tComp.x));
   meadow = mix(meadow, slash, clearW);
   farmW *= 1.0 - vPlantation;
-  // Compartment borders: forestry roads (pale gravel between grass verges), firebreaks (wide strips of rough grass and
-  // scrub) and the narrow gaps between plantings - all cut through the canopy, so the estate's network shows from
-  // the air.
-  float edgeKind = floor(tComp.z / 1e4);
-  float edgeD = tComp.z - 1e4 * edgeKind;
+  // Compartment borders: forestry roads (gravel between grass verges) and firebreaks (wide strips of rough grass),
+  // cut through the canopy so the estate's network shows from the air (plain borders the crowns close over).
+  float fireD = floor(tComp.z / 1000.0);
+  float roadD = tComp.z - 1000.0 * fireD;
   float edgeFw = max(fwidth(tXZ.x), fwidth(tXZ.y));
-  float halfW = edgeKind == ${EDGE_ROAD.toFixed(1)} ? ${EDGE_HALF_WIDTH[EDGE_ROAD].toFixed(1)} : edgeKind == ${EDGE_FIREBREAK.toFixed(1)} ? ${EDGE_HALF_WIDTH[EDGE_FIREBREAK].toFixed(1)} : ${EDGE_HALF_WIDTH[EDGE_GAP].toFixed(1)};
-  // (A plain gap between plantings is only the row spacing: the crowns close over it.)
-  float open = edgeKind == ${EDGE_GAP.toFixed(1)} ? 0.0 : vPlantation * (1.0 - smoothstep(halfW - 1.0 - edgeFw, halfW + edgeFw, edgeD));
+  float roadW = 1.0 - smoothstep(${(EDGE_HALF_WIDTH[EDGE_ROAD] - 1).toFixed(1)} - edgeFw, ${EDGE_HALF_WIDTH[EDGE_ROAD].toFixed(1)} + edgeFw, roadD);
+  float fireW = 1.0 - smoothstep(${(EDGE_HALF_WIDTH[EDGE_FIREBREAK] - 1.5).toFixed(1)} - edgeFw, ${EDGE_HALF_WIDTH[EDGE_FIREBREAK].toFixed(1)} + edgeFw, fireD + 0.5);
+  float open = vPlantation * max(roadW, fireW);
   vec3 verge = mix(${P.bankRoughB}, ${P.bankRoughA}, smoothstep(0.35, 0.65, nD.g + 0.2 * sC.b)) * 0.8;
   meadow = mix(meadow, verge, open);
-  float gravel = edgeKind == ${EDGE_ROAD.toFixed(1)} ? vPlantation * (1.0 - smoothstep(${ROAD_GRAVEL.toFixed(1)} - edgeFw, ${(ROAD_GRAVEL + 0.8).toFixed(1)} + edgeFw, edgeD + 0.6 * sD.r)) : 0.0;
+  float gravel = vPlantation * (1.0 - smoothstep(${ROAD_GRAVEL.toFixed(1)} - edgeFw, ${(ROAD_GRAVEL + 0.8).toFixed(1)} + edgeFw, roadD + 0.6 * sD.r));
   meadow = mix(meadow, vec3(0.12, 0.1, 0.075) * (0.85 + 0.25 * sD.g), gravel);
   forestW *= 1.0 - open;
 }
