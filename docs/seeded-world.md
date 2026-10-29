@@ -97,3 +97,12 @@ Order: the seed box (small); generated airfields (step 5, brought forward: a reg
 field, sited by the seed 15-40 km out, terrain flattening and approach protection per field, drawn on the map);
 then growing seed 0's villages and roads out to the new fields (step 4). Generated rivers and provinces (step 3)
 and the Cretaceous on top (step 6) wait.
+
+## Where it stands (2026-10-30)
+
+Done on this branch: the seed box, eight generated airfields per seed, seed 0 grown to 41 villages and roads to
+every field, starting at a generated field, GPS direct-to and night lighting at the sealed fields.
+
+Owner's choice: roads and villages stay at seed 0 only for now. Other seeds get their airfields but no roads or
+villages. Running the road planner for any seed (about 12 s, in a worker while the world loads, cached per seed) is
+parked; ATC and other traffic come first.
