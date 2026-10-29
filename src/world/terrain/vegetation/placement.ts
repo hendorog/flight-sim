@@ -9,7 +9,7 @@
 import { computeBiome, CoverShapeField, makeBiome, makeCoverShape } from '../biome';
 import { GALLERY_FAR, GALLERY_FLOOR, GALLERY_NEAR, GALLERY_SCRUB, RIPARIAN_FAR, RIPARIAN_NEAR, riparianPresence } from '../riparian';
 import { makeSample, sampleTerrain } from '../heightfield';
-import { makeParcel, parcelAt } from '../fields';
+import { COLUMN_M, columnEdge, districtHasBelts, edgeRandom, isShelterbelt, makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
 import { inTownClearZone } from '../townMask';
 import { CLEARFELL_YEARS, compartmentAt, PLANT_EUC_ID, PLANT_FIR_ID, makeCompartment, standHeight, type Compartment } from '../plantation';
@@ -168,7 +168,8 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
         parcelAt(east, north, parcel);
         // A hedgerow: shrubs and trees along most of its length (the painted hedge is a band about 4 m
         // wide, so each candidate on it stands for a few metres of hedge).
-        hedge = parcel.hedge < 2.2 ? u < 0.85 : parcel.margin < 3 && u < 0.004;
+        // (A shelterbelt, planted below, replaces any hedge along its boundary.)
+        hedge = parcel.shelter < 6 ? false : parcel.hedge < 2.2 ? u < 0.85 : parcel.margin < 3 && u < 0.004;
       }
       // Bankside trees (willow, poplar, with birch and oak standing in for alder and ash): a wooded bank from the
       // water's edge out to GALLERY_FAR, thinning a little toward the fields, with few gaps (fewer trees where
@@ -232,6 +233,7 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
   }
 
   plantRows(e0, n0, size, spacing, m, plant, dens, lerp2, nearOpenLand, out);
+  plantShelterbelts(e0, n0, size, m, farm, plant, lerp2, out);
   return finishCell(cx, cz, size, out);
 }
 
@@ -302,6 +304,69 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
         const rank = (BIT_REV4[((bj % 4) + 4) % 4] + (BIT_REV4[((ai % 4) + 4) % 4] + 0.9 * rnd(h0, 6)) / 4) / 4;
         out.push(east, sample.ground, north, height * (0.9 + 0.2 * rnd(h0, 4)), rnd(h0, 5) * Math.PI * 2,
           species + (open ? SPECIES_COUNT : 0) + 0.99 * rank * (open ? OPEN_RANK : 1));
+      }
+    }
+  }
+}
+
+const beltParcel = makeParcel();
+const beltProbe = makeParcel();
+
+/**
+ * Shelterbelts (fields.ts): a single row along each shelterbelt boundary of the field pattern through this cell, one
+ * species and about one height per belt - tall Lombardy poplars, a dense dark wall of macrocarpa (often kept trimmed),
+ * or pines - evenly spaced, a few gaps. Only where the land either side is farmland. Like the plantation rows, the
+ * row thins with distance a tree in two, then in four, so a far belt still reads as a line.
+ */
+function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm: Float32Array, plant: Float32Array,
+  lerp2: (a: Float32Array, fx: number, fz: number) => number, out: number[]): void {
+  const seen = new Set<string>();
+  for (const [de, dn] of [[0.5, 0.5], [0, 0], [1, 0], [0, 1], [1, 1]]) {
+    parcelAt(e0 + de * size, n0 + dn * size, beltParcel);
+    const dx = beltParcel.districtX;
+    const dy = beltParcel.districtY;
+    const key = `${dx},${dy}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!districtHasBelts(dx, dy)) continue;
+    const { angle, dseed } = beltParcel;
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    // The cell in the district's frame: x across the columns, y along them.
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const [ce, cn] of [[e0, n0], [e0 + size, n0], [e0, n0 + size], [e0 + size, n0 + size]]) {
+      const qx = c * ce + s * cn;
+      const qy = -s * ce + c * cn;
+      x0 = Math.min(x0, qx); x1 = Math.max(x1, qx); y0 = Math.min(y0, qy); y1 = Math.max(y1, qy);
+    }
+    for (let k = Math.floor(x0 / COLUMN_M) - 1; k <= Math.floor(x1 / COLUMN_M) + 1; k++) {
+      if (!isShelterbelt(k, dseed)) continue;
+      const x = columnEdge(k, dseed);
+      if (x < x0 || x > x1) continue;
+      const r = edgeRandom(k, dseed, 0);
+      const species = r < 0.4 ? SPECIES.poplar : r < 0.75 ? SPECIES.macrocarpa : SPECIES.pine;
+      const along = species === SPECIES.poplar ? 4.5 : species === SPECIES.macrocarpa ? 3.2 : 4;
+      const tall = species === SPECIES.poplar ? 17 + 9 * edgeRandom(k, dseed, 1) : species === SPECIES.macrocarpa ? 7 + 9 * edgeRandom(k, dseed, 1) : 13 + 8 * edgeRandom(k, dseed, 1);
+      for (let j = Math.ceil(y0 / along); j * along <= y1; j++) {
+        const qy = j * along;
+        const east = c * x - s * qy;
+        const north = s * x + c * qy;
+        if (east < e0 || east >= e0 + size || north < n0 || north >= n0 + size) continue;
+        const h0 = hash2i(k * 7 + j, dseed + 99);
+        if (rnd(h0, 1) < 0.03) continue;
+        const fx = (east - e0) / LATTICE;
+        const fz = (north - n0) / LATTICE;
+        if (lerp2(farm, fx, fz) < 0.2 || lerp2(plant, fx, fz) > 0.3) continue;
+        // Still this district's boundary here (not across a lane into the next district), and off the lanes.
+        parcelAt(east, north, beltProbe);
+        if (beltProbe.districtX !== dx || beltProbe.districtY !== dy || beltProbe.shelter > 1 || beltProbe.border < 6) continue;
+        if (inTownClearZone(north, east)) continue;
+        sampleTerrain(north, east, sample);
+        if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
+        if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + GALLERY_FAR) continue;
+        const rank = (BIT_REV4[((j % 4) + 4) % 4] + 0.9 * rnd(h0, 2)) / 4;
+        out.push(east + 0.3 * (rnd(h0, 3) - 0.5), sample.ground, north + 0.3 * (rnd(h0, 4) - 0.5), tall * (0.92 + 0.16 * rnd(h0, 5)), rnd(h0, 6) * Math.PI * 2,
+          species + SPECIES_COUNT + 0.99 * rank * OPEN_RANK);
       }
     }
   }

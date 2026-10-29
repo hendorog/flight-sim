@@ -9,8 +9,13 @@
 // a plain grass margin, a hedgerow or a farm track (column boundaries change kind every few hundred metres,
 // so hedges and tracks end and resume rather than running straight across the district); district borders
 // are winding lanes.
+//
+// Shelterbelts (present day): in some districts, some column boundaries carry a windbreak along their whole length -
+// a single tall row of poplar, macrocarpa or pine (vegetation/placement.ts plants it; the ground shader paints its
+// footing and stands in for it far away). Columns run the same way across a district, so its belts are parallel.
 
 import { hash2i } from './noise';
+import { isPresent } from '../era/eraState';
 
 export const DISTRICT_M = 2400;
 export const COLUMN_M = 150;
@@ -24,10 +29,30 @@ export const DISTRICT_JITTER = 0.35;
 /** Column boundaries change kind (plain / hedge / track) along their length every this many metres. */
 export const EDGE_SEGMENT_M = 420;
 
+/** Share of districts with shelterbelts, and of their column boundaries that carry one. */
+export const SHELTER_DISTRICTS = 0.55;
+export const SHELTER_EDGES = 0.2;
+const SHELTER_SALT = 6007;
+
 /** Edge kinds. */
 export const EDGE_PLAIN = 0;
 export const EDGE_HEDGE = 1;
 export const EDGE_TRACK = 2;
+
+/** The parcel GLSL of this thread's era (the present day adds the shelterbelts); FIELDS_GLSL's text otherwise. */
+export function fieldsGlsl(): string {
+  return isPresent() ? FIELDS_GLSL.replace(SHELTER_STRUCT_AT, SHELTER_STRUCT).replace(SHELTER_CODE_AT, SHELTER_CODE) : FIELDS_GLSL;
+}
+const SHELTER_STRUCT_AT = '  vec2 centre;    // parcel centre, world (east, north), m\n';
+const SHELTER_STRUCT = SHELTER_STRUCT_AT + '  float shelter;  // distance to the nearest shelterbelt (a column boundary), m (large if none)\n';
+const SHELTER_CODE_AT = '  o.margin = min(min(dL, dR), min(dB, dT));\n';
+const SHELTER_CODE =
+  SHELTER_CODE_AT +
+  `  bool belts = float(hash2u(dc.x, dc.y + ${SHELTER_SALT}) & 0xffffu) / 65535.0 < ${SHELTER_DISTRICTS.toFixed(3)};
+  float sL = belts && float(hash2u(k, dseed + ${SHELTER_SALT + 1}) & 0xffffu) / 65535.0 < ${SHELTER_EDGES.toFixed(3)} ? dL : 1e4;
+  float sR = belts && float(hash2u(k + 1, dseed + ${SHELTER_SALT + 1}) & 0xffffu) / 65535.0 < ${SHELTER_EDGES.toFixed(3)} ? dR : 1e4;
+  o.shelter = min(sL, sR);
+`;
 
 export const FIELDS_GLSL = /* glsl */ `
 const float DISTRICT_M = ${DISTRICT_M.toFixed(1)};
@@ -132,6 +157,11 @@ export interface Parcel {
   margin: number;
   /** Distance to the district border (a lane), m. */
   border: number;
+  /** Distance to the nearest shelterbelt, m (large if none; present day). */
+  shelter: number;
+  /** The district's lattice orientation, rad (columns run along angle + 90 degrees), and its seed. */
+  angle: number;
+  dseed: number;
   /** District cell (Voronoi site index). */
   districtX: number;
   districtY: number;
@@ -262,9 +292,30 @@ export function parcelAt(east: number, north: number, out: Parcel): Parcel {
   const track = Math.min(kL === EDGE_TRACK ? dL : 1e4, kR === EDGE_TRACK ? dR : 1e4, kB === EDGE_TRACK ? dB : 1e4, kT === EDGE_TRACK ? dT : 1e4);
   out.track = Math.min(track, border);
   out.margin = Math.min(dL, dR, dB, dT, border);
+  out.angle = ang;
+  out.dseed = dseed;
+  const belts = districtHasBelts(dcx, dcy);
+  out.shelter = Math.min(belts && isShelterbelt(k, dseed) ? dL : 1e4, belts && isShelterbelt(k + 1, dseed) ? dR : 1e4);
   return out;
 }
 
+/** Whether a district has shelterbelts (twin of the GLSL in fieldsGlsl()). */
+export function districtHasBelts(dcx: number, dcy: number): boolean {
+  return u16(hash2i(dcx, dcy + SHELTER_SALT)) < SHELTER_DISTRICTS;
+}
+/** Whether column boundary k of the district with this seed carries a shelterbelt (in a district that has them). */
+export function isShelterbelt(k: number, dseed: number): boolean {
+  return u16(hash2i(k, dseed + SHELTER_SALT + 1)) < SHELTER_EDGES;
+}
+/** Position of column boundary k across the district's columns (its rotated x), m. */
+export function columnEdge(k: number, dseed: number): number {
+  return (k + colJitter(k, dseed)) * COLUMN_M;
+}
+/** Random 0..1 per boundary k (a shelterbelt's species and height). */
+export function edgeRandom(k: number, dseed: number, salt: number): number {
+  return u16(hash2i(k, dseed + SHELTER_SALT + 2 + salt));
+}
+
 export function makeParcel(): Parcel {
-  return { id: 0, hedge: 1e4, track: 1e4, margin: 1e4, border: 1e4, districtX: 0, districtY: 0 };
+  return { id: 0, hedge: 1e4, track: 1e4, margin: 1e4, border: 1e4, shelter: 1e4, angle: 0, dseed: 0, districtX: 0, districtY: 0 };
 }
