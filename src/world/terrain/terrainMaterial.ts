@@ -40,6 +40,7 @@ import { eraOff, type EraLayerName } from '../era/eraOff';
 import { PLANTATION_FLAG, RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
 import { CLEARFELL_YEARS, EDGE_FIREBREAK, EDGE_HALF_WIDTH, EDGE_ROAD, PLANT_EUC_ID, PLANT_FIR_ID, PLANTATION_GLSL, ROAD_GRAVEL, ROTATION_YEARS } from './plantation';
 import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
+import { ROAD_HALF_WIDTH, ROAD_VERGE, ROADS_GLSL, roadTables } from './roads';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
 import { OPEN_RANK } from './vegetation/placement';
 
@@ -441,7 +442,7 @@ varying float vCoverUp;
 varying vec2 vRiver;
 ${presentText('varying float vPlantation;\n')}${HASH_GLSL}
 ${ROT_GLSL}
-${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}
+${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
 
@@ -894,6 +895,43 @@ if (vPlantation > 0.01) {
   meadow = mix(meadow, vec3(0.12, 0.1, 0.075) * (0.85 + 0.25 * sD.g), gravel);
   forestW *= 1.0 - open;
 }
+// Regional roads (roads.ts): a sealed two-lane road (dark asphalt, white edge lines and a dashed centre line, a narrow
+// gravel shoulder) or a gravel road (pale metal with darker wheel tracks and a loose crown), between mown verges that
+// keep the fields, hedges and woods back. Filtered over the pixel's footprint, so far away a road thins to a faint
+// line rather than breaking up.
+vec4 tRoad = roadAt(vec2(tXZ.x, -tXZ.y));
+float rFw = max(max(fwidth(tXZ.x), fwidth(tXZ.y)), 0.02);
+if (tRoad.x < ${(Math.max(...ROAD_HALF_WIDTH) + ROAD_VERGE + 2).toFixed(1)} + rFw) {
+  float rHw = tRoad.y;
+  float rD = tRoad.x;
+  float vergeW = 1.0 - smoothstep(rHw + ${(ROAD_VERGE - 1.5).toFixed(1)} - rFw, rHw + ${ROAD_VERGE.toFixed(1)} + rFw, rD + 1.2 * sD.r);
+  farmW *= 1.0 - vergeW;
+  forestW *= 1.0 - vergeW;
+  meadow = mix(meadow, meadow * vec3(1.05, 1.1, 0.92) * (0.9 + 0.2 * sC.g), vergeW);
+  float sealed = 1.0 - step(0.5, tRoad.z);
+  // A pixel wider than the road shows it as a line of its mean tone, fading with how little of the pixel it fills.
+  float fill = min(1.0, (2.0 * rHw + 2.0) / rFw);
+  float shoulder = sealed * (1.0 - smoothstep(rHw + 0.6 - rFw, rHw + 0.9 + rFw, rD + 0.3 * sD.g));
+  float carW = 1.0 - smoothstep(rHw - 0.15 - rFw, rHw + 0.15 + rFw, rD + (1.0 - sealed) * 0.5 * (sD.r - 0.3));
+  vec3 asphalt = vec3(0.07, 0.07, 0.068) * (0.85 + 0.2 * sD.g + 0.1 * sC.a);
+  // Wheel paths worn lighter, oil darker down the middle of each lane.
+  float lane = abs(abs(rD) - 0.5 * rHw) / (0.5 * rHw);
+  asphalt *= 1.0 + 0.08 * (1.0 - smoothstep(0.15, 0.45, lane)) * step(rFw, 2.0);
+  float lineFade = 1.0 - smoothstep(0.6, 2.5, rFw);
+  float edgeLine = (1.0 - smoothstep(0.06, 0.06 + rFw, abs(rD - (rHw - 0.35)))) * min(1.0, 0.12 / rFw);
+  float dash = step(fract(tRoad.w / 12.0), 0.25);
+  float centreLine = (1.0 - smoothstep(0.06, 0.06 + rFw, rD)) * min(1.0, 0.12 / rFw) * mix(0.25, dash, lineFade);
+  asphalt = mix(asphalt, vec3(0.55, 0.55, 0.52), max(edgeLine, centreLine) * 0.85);
+  vec3 metal = vec3(0.19, 0.17, 0.135) * (0.85 + 0.25 * sD.g + 0.1 * sC.r);
+  float rut = 1.0 - smoothstep(0.25, 0.6, abs(abs(rD) - 0.95));
+  metal = mix(metal, metal * 0.72, rut * 0.6 * lineFade);
+  metal = mix(metal, meadow, (1.0 - smoothstep(0.15, 0.35, rD)) * 0.25 * lineFade * step(0.6, nD.g));
+  vec3 surface = mix(metal, asphalt, sealed);
+  // Seen from afar a road reads as a pale line: weathered seal, dust and the bright verges either side.
+  surface = mix(surface, mix(vec3(0.2, 0.18, 0.15), vec3(0.14, 0.14, 0.135), sealed), smoothstep(1.5, 6.0, rFw) * 0.8);
+  meadow = mix(meadow, vec3(0.15, 0.14, 0.12) * (0.85 + 0.2 * sD.b), shoulder * fill);
+  meadow = mix(meadow, surface, carW * fill);
+}
 `)}float landW = 1.0 - sandW;
 // Farmland first (its colour and weight; the ground layer is sampled below, shared with the meadow).
 float farmWeight = 0.0;
@@ -1253,6 +1291,28 @@ export function townUniform(): THREE.Vector4 {
   return t ? new THREE.Vector4(t.east, t.north, t.radius, 1) : new THREE.Vector4(0, 0, 0, 0);
 }
 
+let roadUniformCache: Record<string, { value: unknown }> | null = null;
+/** The road tables (roads.ts roadTables) as float textures, and the grid's placement (built once). */
+function roadUniforms(): Record<string, { value: unknown }> {
+  if (roadUniformCache) return roadUniformCache;
+  const t = roadTables();
+  const tex = (data: Float32Array, w: number, h: number, format: THREE.PixelFormat): THREE.DataTexture => {
+    const d = new THREE.DataTexture(data, w, h, format, THREE.FloatType);
+    d.minFilter = THREE.NearestFilter;
+    d.magFilter = THREE.NearestFilter;
+    d.generateMipmaps = false;
+    d.needsUpdate = true;
+    return d;
+  };
+  roadUniformCache = {
+    tRoadSeg: { value: tex(t.seg, t.width, t.segRows, THREE.RGBAFormat) },
+    tRoadCell: { value: tex(t.cell, t.cols, t.rows, THREE.RGFormat) },
+    tRoadList: { value: tex(t.list, t.width, t.listRows, THREE.RedFormat) },
+    uRoadGrid: { value: new THREE.Vector4(t.east0, t.north0, 1 / t.cellSize, 0) },
+  };
+  return roadUniformCache;
+}
+
 export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUniforms): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
   mat.name = 'terrain';
@@ -1278,6 +1338,8 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
     uFence: { value: new THREE.Vector4(FENCE_RECT.u0, FENCE_RECT.u1, FENCE_RECT.v0, FENCE_RECT.v1) },
     uTown: { value: townUniform() },
   });
+  // Regional roads (present day): the segment tables roadAt() reads.
+  if (isPresent()) Object.assign(uniforms, roadUniforms());
   // The era's uniforms (not in the present day, whose uniform names stay as they were).
   const V = era().terrain.volcano;
   if (!isPresent() && V) Object.assign(uniforms, { uVolcano: { value: new THREE.Vector4(V.east, V.north, V.baseRadius, V.craterRadius) } });

@@ -12,6 +12,7 @@ import { makeSample, sampleTerrain } from '../heightfield';
 import { COLUMN_M, columnEdge, districtHasBelts, edgeRandom, isShelterbelt, makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
 import { inTownClearZone } from '../townMask';
+import { onRoadVerge } from '../roads';
 import { CLEARFELL_YEARS, compartmentAt, EDGE_FIREBREAK, EDGE_GAP, EDGE_HALF_WIDTH, EDGE_ROAD, PLANT_EUC_ID, PLANT_FIR_ID, makeCompartment, standHeight, type Compartment } from '../plantation';
 import { era } from '../../era/eraState';
 import { FLORA } from './flora';
@@ -198,8 +199,8 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
         }
         if (!riparian) continue;
       }
-      // No trees in the valley town (hedgerows of its paddocks included).
-      if (inTownClearZone(north, east)) continue;
+      // No trees in the valley town (hedgerows of its paddocks included), nor on a road or its verges.
+      if (inTownClearZone(north, east) || onRoadVerge(north, east, 1)) continue;
       sampleTerrain(north, east, sample);
       if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
       // Never in the river channel (nor on the first metres of its bank), whatever the coarse lattice says.
@@ -303,7 +304,7 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
         if (f < 0.25) continue;
         compartmentAt(east, north, rowComp);
         if (rowComp.cellX !== c.cellX || rowComp.cellY !== c.cellY || rowComp.border < EDGE_HALF_WIDTH[EDGE_GAP] || rowComp.roadDist < EDGE_HALF_WIDTH[EDGE_ROAD] || rowComp.fireDist < EDGE_HALF_WIDTH[EDGE_FIREBREAK]) continue;
-        if (inTownClearZone(north, east)) continue;
+        if (inTownClearZone(north, east) || onRoadVerge(north, east, 1)) continue;
         sampleTerrain(north, east, sample);
         if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
         if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + 2.5) continue;
@@ -394,7 +395,7 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
           // Still this district's boundary here (not across a lane into the next district), and off the lanes.
           parcelAt(east, north, beltProbe);
           if (beltProbe.districtX !== dx || beltProbe.districtY !== dy || beltProbe.shelter > 1 || beltProbe.border < 6) return false;
-          if (inTownClearZone(north, east)) return false;
+          if (inTownClearZone(north, east) || onRoadVerge(north, east, 2)) return false;
           sampleTerrain(north, east, sample);
           if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) return false;
           return !(sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + GALLERY_FAR);

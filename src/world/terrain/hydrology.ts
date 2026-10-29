@@ -518,7 +518,7 @@ function riverReach(total: number): MeanderReach & { floodplain(s: number): numb
   return { erodibility, belt, halfWidth, floodplain, maxFloodplain: 850 + 38 * 5 + CHANNEL_BANK };
 }
 
-interface PolylineNear {
+export interface PolylineNear {
   /** Which polyline, its nearest segment, the clamped and unclamped parameter along it. */
   line: number;
   seg: number;
@@ -530,7 +530,7 @@ interface PolylineNear {
 }
 
 /** Spatial index over polylines: every cell lists the segments that can be within `reach` of a point in it. */
-class PolylineIndex {
+export class PolylineIndex {
   private readonly cells = new Map<number, Int32Array>();
   constructor(private readonly lines: ReadonlyArray<{ north: Float64Array; east: Float64Array }>, reach: number, private readonly cell: number) {
     const lists = new Map<number, number[]>();

@@ -18,6 +18,7 @@ import { STREET_ILLUMINANCE, type SharedUniforms } from './shared';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import { computeBiome, coverShape, makeBiome, makeCoverShape } from '../terrain/biome';
 import { hydrology, makeSample, sampleTerrain } from '../terrain/heightfield';
+import { onRoadVerge, regionalRoads } from '../terrain/roads';
 
 /** Street-pool illuminance uniform at full night (scene units), used to normalise the night switch-on. */
 const STREET_ILLUMINANCE_REF = STREET_ILLUMINANCE;
@@ -44,7 +45,7 @@ interface Placed {
 }
 
 /** Keep clear of the airfield, its approach corridors and the traffic pattern's final legs. */
-function nearAirport(north: number, east: number, margin: number): boolean {
+export function nearAirport(north: number, east: number, margin: number): boolean {
   const { along, across } = runwayCoords(north, east);
   const hl = AIRPORT.runway.length / 2, fm = AIRPORT.flatMargin;
   if (Math.abs(along) < hl + fm + margin && Math.abs(across) < AIRPORT.runway.width / 2 + fm + margin) return true;
@@ -311,9 +312,8 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
     const g2 = localToNed(ACCESS_ROAD.end.u, ACCESS_ROAD.end.v - 400);
     addRoads(roadRuns({ n: gate.north, e: gate.east }, { n: g2.north, e: g2.east }, 10));
     addRoads(roadRuns({ n: g2.north, e: g2.east }, edge, 10));
-    // Through road across the valley.
-    const far1 = toNE(-6000, 0), far2 = toNE(6000, 0);
-    addRoads([...roadRuns(far1, toNE(-R + 30, 0), 12, true), ...roadRuns(toNE(R - 30, 0), far2, 12, true)]);
+    // The roads out of the town to the villages are the terrain's regional network (terrain/roads.ts), painted on
+    // the ground: they leave from the ends of the two main streets.
   }
 
   // --- Farmsteads on dry, gentle, open ground across the valley (not inside woodland, where the terrain
@@ -334,7 +334,7 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
     if (nearAirport(n, e, 300)) continue;
     if (town && Math.hypot(n - town.north, e - town.east) < 1100) continue;
     if (farms.some((f) => Math.hypot(f.n - n, f.e - e) < 700)) continue;
-    if (!buildable(n, e) || slope(n, e, 60) > 0.08 || wooded(n, e)) continue;
+    if (!buildable(n, e) || slope(n, e, 60) > 0.08 || wooded(n, e) || onRoadVerge(n, e, 40)) continue;
     farms.push({ n, e });
     const rot = r() * Math.PI;
     const c = Math.cos(rot), s = Math.sin(rot);
@@ -342,14 +342,18 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
     placed.push({ ...at(0, 0), rot, w: 11, d: 9, h: 5.6, color: pick(houseWall), roof: { h: 2.6, color: pick(roofCols) }, windows: true });
     placed.push({ ...at(28, 6), rot, w: 16 + r() * 8, d: 12 + r() * 4, h: 6, color: new THREE.Color(r() < 0.5 ? 0x7a2a20 : 0x8a8a84), roof: { h: 4, color: new THREE.Color(0x4a4a4c) }, windows: false });
     if (r() < 0.7) placed.push({ ...at(24, -18), rot, w: 22, d: 10, h: 4.5, color: new THREE.Color(0x9a9a94), roof: { h: 1.5, color: new THREE.Color(0x5a5a5c) }, windows: false });
-    // Farm track to the nearest road point within 1.5 km.
-    let nearest: THREE.Vector3 | null = null, nd = 1500;
+    // Farm track to the nearest road point within 1.5 km (a town street or a regional road).
+    let nearest: { n: number; e: number } | null = null, nd = 1500;
     const here = worldPoint(n, e, 0);
     for (const run of roads) for (const p of run) {
       const d = Math.hypot(p.x - here.x, p.z - here.z);
-      if (d < nd) { nd = d; nearest = p; }
+      if (d < nd) { nd = d; nearest = { n: -p.z, e: p.x }; }
     }
-    if (nearest) tracks.push(...roadRuns({ n: n + 8 * c, e: e + 8 * s }, { n: -nearest.z, e: nearest.x }, 10));
+    for (const l of regionalRoads()) for (let i = 0; i < l.north.length; i++) {
+      const d = Math.hypot(l.north[i] - n, l.east[i] - e);
+      if (d < nd) { nd = d; nearest = { n: l.north[i], e: l.east[i] }; }
+    }
+    if (nearest) tracks.push(...roadRuns({ n: n + 8 * c, e: e + 8 * s }, nearest, 10));
     lights.push({ position: worldPoint(at(8, 6).north, at(8, 6).east, 5), colorA: LIGHT_COLORS.window, lens: 0.3, cd: 1500, cdDay: 0, height: 5 });
   }
 
