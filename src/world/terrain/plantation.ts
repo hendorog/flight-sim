@@ -8,7 +8,10 @@
 // the rest: off the valley floor, out of the approaches, the town and the water). Compartments: the cells of a
 // jittered Voronoi diagram about BLOCK_M apart (straight borders, as surveyed boundaries are). Each compartment
 // has its age (years since planting, over a ROTATION_YEARS rotation) and its row direction, which follows the
-// estate's with a little turn of its own. Present day only.
+// estate's with a little turn of its own. Each border between two compartments is a forestry road (gravel, with
+// verges), a firebreak (a wide grassy strip), or just the gap between the two plantings. The roads form a connected
+// grid: every border crossing one of the lattice lines x = ROAD_EVERY[0] k (between compartments either side of it)
+// or y = ROAD_EVERY[1] k is road, so they run as winding lines across the estate. Present day only.
 
 import { fieldNoise, noiseOut } from './fields';
 import { hash2i } from './noise';
@@ -29,6 +32,18 @@ const BLOCK_SALT = 9157;
 /** Species zones: a value noise on this lattice, m, at the compartment's site, so neighbours share a species. */
 export const SPECIES_M = 1500;
 const SPECIES_SALT = 404;
+/** Border kinds between compartments, and how far either side of the border the trees keep, m. */
+export const EDGE_GAP = 0;
+export const EDGE_ROAD = 1;
+export const EDGE_FIREBREAK = 2;
+export const EDGE_HALF_WIDTH: readonly number[] = [2.5, 6, 11];
+/** Road lattice lines every this many compartments, across x and across y. */
+export const ROAD_EVERY: readonly [number, number] = [3, 4];
+/** Share of the other borders that are firebreaks. */
+export const FIREBREAK_SHARE = 0.12;
+/** Half-width of a forestry road's gravel, m. */
+export const ROAD_GRAVEL = 2.3;
+
 /** Rotation (years from planting to felling), and how long a felled compartment lies bare before it shows again. */
 export const ROTATION_YEARS = 28;
 export const CLEARFELL_YEARS = 2.5;
@@ -53,6 +68,8 @@ export interface Compartment {
   angle: number;
   /** Distance to the compartment's border, m. */
   border: number;
+  /** Kind of that border (EDGE_GAP, EDGE_ROAD, EDGE_FIREBREAK). */
+  edge: number;
   /** Its Voronoi site, world east and north, m. */
   siteE: number;
   siteN: number;
@@ -64,7 +81,7 @@ export interface Compartment {
 }
 
 export function makeCompartment(): Compartment {
-  return { years: 0, angle: 0, border: 0, siteE: 0, siteN: 0, id: 0, cellX: 0, cellY: 0 };
+  return { years: 0, angle: 0, border: 0, edge: 0, siteE: 0, siteN: 0, id: 0, cellX: 0, cellY: 0 };
 }
 
 const smooth = (e0: number, e1: number, x: number): number => {
@@ -114,6 +131,8 @@ export function compartmentAt(east: number, north: number, out: Compartment): Co
     }
   // Distance to the nearest Voronoi border: to each bisector between this site and a neighbour's.
   let border = Infinity;
+  let nx = 0;
+  let ny = 0;
   for (let dy = -2; dy <= 2; dy++)
     for (let dx = -2; dx <= 2; dx++) {
       if (dx === 0 && dy === 0) continue;
@@ -122,8 +141,18 @@ export function compartmentAt(east: number, north: number, out: Compartment): Co
       const my = site.y - sy;
       const l = Math.sqrt(mx * mx + my * my);
       const d = ((px - sx) * mx + (py - sy) * my) / l;
-      border = Math.min(border, 0.5 * l - d);
+      if (0.5 * l - d < border) {
+        border = 0.5 * l - d;
+        nx = bx + dx;
+        ny = by + dy;
+      }
     }
+  // The border's kind, the same seen from either side: road on the lattice lines, else a firebreak or a plain gap
+  // by a symmetric hash of the two compartments.
+  const mod = (a: number, n: number): number => ((a % n) + n) % n;
+  const road = (bx !== nx && mod(Math.min(bx, nx), ROAD_EVERY[0]) === 0) || (by !== ny && mod(Math.min(by, ny), ROAD_EVERY[1]) === 0);
+  const pair = u16((hash2i(bx, by + BLOCK_SALT + 3) ^ hash2i(nx, ny + BLOCK_SALT + 3)) >>> 0);
+  out.edge = road ? EDGE_ROAD : pair < FIREBREAK_SHARE ? EDGE_FIREBREAK : EDGE_GAP;
   const h = hash2i(bx, by + BLOCK_SALT + 1);
   fieldNoise((sx * BLOCK_M) / ESTATE_M, (sy * BLOCK_M) / ESTATE_M, ESTATE_SALT);
   out.years = ROTATION_YEARS * ((h >>> 16) / 65535);
@@ -140,7 +169,7 @@ export function compartmentAt(east: number, north: number, out: Compartment): Co
 
 /**
  * GLSL twins (needs FIELDS_GLSL's fieldNoise and hash2u). xz is world (east, north). compartmentAt returns
- * (years, angle, border m, species zone id).
+ * (years, angle, border m + 1e4 * border kind, species zone id).
  */
 export const PLANTATION_GLSL = /* glsl */ `
 float estateWeight(vec2 en, float ground) {
@@ -168,18 +197,23 @@ vec4 compartmentAt(vec2 en) {
       if (d < best) { best = d; b = c + ivec2(dx, dy); s = q; }
     }
   float border = 1e9;
+  ivec2 nb = b;
   for (int dy = -2; dy <= 2; dy++)
     for (int dx = -2; dx <= 2; dx++) {
       if (dx == 0 && dy == 0) continue;
       vec2 m = blockSite(b.x + dx, b.y + dy) - s;
       float l = length(m);
-      border = min(border, 0.5 * l - dot(p - s, m) / l);
+      float d = 0.5 * l - dot(p - s, m) / l;
+      if (d < border) { border = d; nb = b + ivec2(dx, dy); }
     }
+  bool road = (b.x != nb.x && mod(float(min(b.x, nb.x)), ${ROAD_EVERY[0].toFixed(1)}) == 0.0) || (b.y != nb.y && mod(float(min(b.y, nb.y)), ${ROAD_EVERY[1].toFixed(1)}) == 0.0);
+  float pair = float((hash2u(b.x, b.y + ${BLOCK_SALT + 3}) ^ hash2u(nb.x, nb.y + ${BLOCK_SALT + 3})) & 0xffffu) / 65535.0;
+  float kind = road ? ${EDGE_ROAD.toFixed(1)} : pair < ${FIREBREAK_SHARE.toFixed(3)} ? ${EDGE_FIREBREAK.toFixed(1)} : ${EDGE_GAP.toFixed(1)};
   uint h = hash2u(b.x, b.y + ${BLOCK_SALT + 1});
   vec2 nz = fieldNoise(s * ${(BLOCK_M / ESTATE_M).toFixed(6)}, ${ESTATE_SALT});
   float years = ${ROTATION_YEARS.toFixed(1)} * (float(h >> 16) / 65535.0);
   float angle = nz.y * 3.14159265 + 0.6 * (float(h & 0xffffu) / 65535.0 - 0.5);
   float id = 0.5 + 0.5 * fieldNoise(s * ${(BLOCK_M / SPECIES_M).toFixed(6)}, ${SPECIES_SALT}).x;
-  return vec4(years, angle, border * ${BLOCK_M.toFixed(1)}, id);
+  return vec4(years, angle, border * ${BLOCK_M.toFixed(1)} + 1e4 * kind, id);
 }
 `;

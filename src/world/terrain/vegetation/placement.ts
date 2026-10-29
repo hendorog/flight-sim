@@ -12,7 +12,7 @@ import { makeSample, sampleTerrain } from '../heightfield';
 import { COLUMN_M, columnEdge, districtHasBelts, edgeRandom, isShelterbelt, makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
 import { inTownClearZone } from '../townMask';
-import { CLEARFELL_YEARS, compartmentAt, PLANT_EUC_ID, PLANT_FIR_ID, makeCompartment, standHeight, type Compartment } from '../plantation';
+import { CLEARFELL_YEARS, compartmentAt, EDGE_HALF_WIDTH, PLANT_EUC_ID, PLANT_FIR_ID, makeCompartment, standHeight, type Compartment } from '../plantation';
 import { era } from '../../era/eraState';
 import { FLORA } from './flora';
 
@@ -252,8 +252,8 @@ const rowComp = makeCompartment();
 /**
  * Plantation compartments in this cell: each planted on its own grid (rows ROW_SPACING x spacing apart, trees along
  * them TREE_SPACING x spacing apart, wider once thinned), turned to its row direction, the trees all of the
- * compartment's age. A few are missing, a strip along every compartment border is left for the forestry roads and
- * firebreaks, and fresh clear-fells carry none. One species a compartment (plantation.ts PLANT_FIR_ID): mostly radiata
+ * compartment's age. A few are missing, a strip along every compartment border is left (plantation.ts EDGE_HALF_WIDTH: wider
+ * for the forestry roads and firebreaks), and fresh clear-fells carry none. One species a compartment (plantation.ts PLANT_FIR_ID): mostly radiata
  * pine, some Douglas-fir (the spruce model) and eucalypt.
  */
 function plantRows(e0: number, n0: number, size: number, spacing: number, m: number, plant: Float32Array, dens: Float32Array,
@@ -302,7 +302,7 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
         const f = lerp2(dens, fx, fz);
         if (f < 0.25) continue;
         compartmentAt(east, north, rowComp);
-        if (rowComp.cellX !== c.cellX || rowComp.cellY !== c.cellY || rowComp.border < ROAD_HALF_WIDTH) continue;
+        if (rowComp.cellX !== c.cellX || rowComp.cellY !== c.cellY || rowComp.border < EDGE_HALF_WIDTH[rowComp.edge]) continue;
         if (inTownClearZone(north, east)) continue;
         sampleTerrain(north, east, sample);
         if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
@@ -429,8 +429,6 @@ const BIT_REV4 = [0, 2, 1, 3];
 /** Plantation spacing in multiples of the forest candidate spacing: along the rows, and between them. */
 const TREE_SPACING = 0.75;
 const ROW_SPACING = 1.0;
-/** Half-width of the unplanted strip along compartment borders (roads, firebreaks), m. */
-const ROAD_HALF_WIDTH = 4;
 
 const smoothstep = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
