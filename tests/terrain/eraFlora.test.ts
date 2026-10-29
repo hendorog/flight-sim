@@ -302,18 +302,18 @@ describe('present-day trees (era code off)', () => {
     // Geometry: every attribute and index buffer of each species (userData, which gained a card count, is
     // left out). Materials: type, defines, program cache key, patched vertex and fragment text and the
     // uniforms the patch adds (textures by kind, not uuid). Taken at commit 2cdce84, materials retaken after
-    // render/vegetation (fixed tree ranges, open trees) changed the tree shaders; a three.js upgrade that
+    // render/vegetation (fixed tree ranges, open trees) changed the tree shaders, all retaken for the eight species; a three.js upgrade that
     // changes ShaderLib moves the material hashes, which then need retaking on a pre-Deep-Time checkout.
     expect(presentTreeHashes()).toEqual({
-      lod0: '8c673bc2',
-      lod1: 'ad188453',
-      proxies: 'd8cc6740',
-      near0: 'f31ffcde',
-      near1: 'af737fb6',
+      lod0: '88609afb',
+      lod1: '389b49d7',
+      proxies: 'e0e23bb7',
+      near0: '3d038ef1',
+      near1: 'a6f49df9',
       proxyMain: '37d4d04c',
-      proxyDepth: '4b5551a6',
-      impostor: 'e5e564c9',
-      impostorDepth: '4dc691bd',
+      proxyDepth: '5bd51482',
+      impostor: 'a6ac0d02',
+      impostorDepth: '12d61c45',
     });
   });
 });
