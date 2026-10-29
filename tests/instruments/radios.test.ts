@@ -23,11 +23,11 @@ describe('radio tuning', () => {
   it('tunes COM1 like a flip-flop radio and bumps the revision', () => {
     resetRadios();
     const r0 = radioRevision();
-    tuneCom1(118.3);
-    expect(radioTuning().com1).toEqual([118.3, DEFAULT_TUNING.com1[0]]);
+    tuneCom1(122.7);
+    expect(radioTuning().com1).toEqual([122.7, DEFAULT_TUNING.com1[0]]);
     expect(radioRevision()).toBeGreaterThan(r0);
     swapCom1();
-    expect(radioTuning().com1).toEqual([DEFAULT_TUNING.com1[0], 118.3]);
+    expect(radioTuning().com1).toEqual([DEFAULT_TUNING.com1[0], 122.7]);
     expect(com1Changed()).toBe(true);
     resetRadios();
     expect(com1Changed()).toBe(false);
@@ -40,8 +40,8 @@ describe('radio tuning', () => {
     resetRadios();
     tuneCom1(108.0);
     expect(com1Changed()).toBe(false);
-    setCom1([999, 118.3]);
-    expect(radioTuning().com1).toEqual([DEFAULT_TUNING.com1[0], 118.3]);
+    setCom1([999, 122.7]);
+    expect(radioTuning().com1).toEqual([DEFAULT_TUNING.com1[0], 122.7]);
   });
 
   it('reaches the home tower and ground, and the nearest generated field on a shared frequency', () => {

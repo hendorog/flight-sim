@@ -4,7 +4,7 @@
 
 import { airfields, type Airfield } from '../../world/airfields';
 
-/** Radio frequencies shown on the displays (MHz): [active, standby]. NAV1 is the runway 07 ILS. */
+/** Radio frequencies shown on the displays (MHz): [active, standby]. NAV1 is the runway 07 ILS; COM1 starts on the home tower, its ATIS in standby. */
 export interface RadioTuning {
   com1: [number, number];
   nav1: [number, number];
@@ -14,7 +14,7 @@ export interface RadioTuning {
 }
 
 export const DEFAULT_TUNING: Readonly<RadioTuning> = Object.freeze({
-  com1: [120.3, 121.9] as [number, number],
+  com1: [118.3, 120.3] as [number, number],
   nav1: [110.3, 113.9] as [number, number],
   com2: [124.85, 118.0] as [number, number],
   nav2: [113.9, 116.8] as [number, number],

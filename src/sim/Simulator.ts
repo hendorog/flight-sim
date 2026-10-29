@@ -65,6 +65,7 @@ import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './e
 import { chooseSeed, saveSeedPreference, seedSwitchUrl } from './seedChoice';
 import { setStartField, startField } from './startField';
 import { com1Changed, radioTuning } from '../instruments/dynamics/radios';
+import { RadioSystem } from '../atc/RadioSystem';
 import { restoreWeather } from './weatherPresets';
 import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
@@ -147,6 +148,7 @@ const NEAR_TERRAIN = 4000;
 /** Keys the shell itself handles (listed in the UI's Controls tab together with the input bindings). */
 const SHELL_BINDINGS: KeyBinding[] = [
   { keys: 'P', action: 'Pause / resume', category: 'Simulation' },
+  { keys: 'Space', action: 'Radio: the calls for the station COM1 is tuned to (1-9 transmits)', category: 'Simulation' },
   { keys: 'A', action: 'Autopilot on / off (flies the heading bug, holds altitude; power is yours)', category: 'Simulation' },
   { keys: 'T / Shift+T', action: 'Autopilot altitude up / down 100 ft', category: 'Simulation' },
   { keys: 'Shift+R', action: 'Restart the scenario', category: 'Simulation' },
@@ -213,6 +215,7 @@ export class Simulator {
   private schoolHold = false;
   /** The Flight School (null until boot has created it). */
   training: TrainingSystem | null = null;
+  private radio: RadioSystem | null = null;
   demo: R22Flight | null = null;
   private demoUi: RotorcraftDemoUi | null = null;
   private schoolCopilot: StepController | null = null;
@@ -603,6 +606,9 @@ export class Simulator {
     });
     training?.init(ctx);
     this.training = training;
+    // The radio (docs/atc.md) speaks through the Flight School's scheduler and captions.
+    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, layer: ui.schoolLayer }) : null;
+    this.radio?.init(ctx);
     this.schoolCopilot = physics.copilot;
     if (id === 'r22') {
       this.demoUi = new RotorcraftDemoUi(ui.root, () => input.takeControl(), (section, item) => ui.showChecklist(section, item));
@@ -1331,6 +1337,7 @@ export class Simulator {
     }
     // The Flight School: telemetry, runner, coach, safety, speech, UI models (needs the fresh panel readings).
     if (this.training) this.run('training', this.training, subsystemDt);
+    if (this.radio) this.run('radio', this.radio, subsystemDt);
     s.ui.demoFlying = !!this.demo && this.demo.outcome !== 'taken-over';
     this.run('aircraftWeather', this.aircraftWeather, subsystemDt);
     this.run('ui', s.ui, subsystemDt);

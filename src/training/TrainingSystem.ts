@@ -44,7 +44,7 @@ import { SchoolUi } from '../ui/school/schoolUi';
 import { DEFAULT_AIRCRAFT, getAircraftType, hasAircraftType, SCHOOL_AIRCRAFT, schoolSupports } from './aircraft/registry';
 import { addBest, scoreChallenge } from './career/challenges';
 import { DEFAULT_INSTRUCTOR, DEFAULT_STUDENT, defaultSettings } from './career/defaults';
-import { logbookEntryFor } from './career/logbook';
+import { logbookEntryFor, registrationFor } from './career/logbook';
 import { applyResult, lessonStatuses, nextLesson } from './career/progress';
 import { exportFileName, memoryStore, TrainingStore } from './career/store';
 import { validateTrainingBlock } from './career/validate';
@@ -62,7 +62,7 @@ import { normalisedError } from './grading/accumulators';
 import { STANDARDS } from './grading/standards';
 import { CaptionBackend } from './speech/captionBackend';
 import { SpeechScheduler } from './speech/scheduler';
-import { pickVoice, type VoiceInfo } from './speech/voices';
+import { pickRadioVoice, pickVoice, type VoiceInfo } from './speech/voices';
 import { WebSpeechBackend } from './speech/webSpeech';
 import { Telemetry } from './telemetry/telemetry';
 import {
@@ -925,6 +925,13 @@ export class TrainingSystem implements Subsystem {
     return this.shell.params.standard ?? this.save?.settings.authority ?? 'easa';
   }
 
+  /** Who the aircraft is on the radio (docs/atc.md): the authority's phraseology, the registration, the ICAO type. */
+  radioIdentity(): { authority: AuthorityId; registration: string; icaoType: string } {
+    const a = this.authority();
+    const def = this.aircraftDef;
+    return { authority: a, registration: registrationFor(def, a), icaoType: def.icaoType };
+  }
+
   /** Export file download (section 3.11). Returns the JSON text (also for the automation API). */
   exportFile(includeTraces = true, download = true): string | null {
     if (!this.save) return null;
@@ -1077,7 +1084,9 @@ export class TrainingSystem implements Subsystem {
   private voiceForPersona(persona: Lesson['persona']): void {
     const settings = this.save?.settings.voice ?? defaultSettings().voice;
     const voices = this.voices();
+    const radio = pickRadioVoice(voices, settings);
     this.speech.voiceFor = (actor) => {
+      if (actor === 'tower' || actor === 'ground' || actor === 'atis') return radio;
       const who = actor === 'examiner' ? 'examiner' : actor === 'instructor' ? 'instructor' : persona;
       return pickVoice(voices, who, settings[who], settings);
     };
