@@ -19,6 +19,7 @@ import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import { computeBiome, coverShape, makeBiome, makeCoverShape } from '../terrain/biome';
 import { hydrology, makeSample, sampleTerrain } from '../terrain/heightfield';
 import { onRoadVerge, regionalRoads, villageSites } from '../terrain/roads';
+import { buildBridges } from './bridges';
 
 /** Street-pool illuminance uniform at full night (scene units), used to normalise the night switch-on. */
 const STREET_ILLUMINANCE_REF = STREET_ILLUMINANCE;
@@ -450,6 +451,9 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
   materials.push(...built.materials);
   if (roads.length) group.add(roadMesh(roads, 7, roadMaterial, heightAt, roadInfo));
   if (tracks.length) group.add(roadMesh(tracks, 4, trackMaterial, heightAt));
+  const bridges = buildBridges(heightAt);
+  if (bridges.mesh) group.add(bridges.mesh);
+  materials.push(bridges.material);
 
   // Street-light poles.
   const poleMesh = new THREE.InstancedMesh(new GeometryBatch().add(cylGeo(0.07, 0.1, 1, 6), placement(0, 0.5, 0), 0x8a8e92).build(), built.poleMaterial, Math.max(poles.length, 1));

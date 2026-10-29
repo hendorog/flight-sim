@@ -91,6 +91,16 @@ export function regionalRoads(): ReadonlyArray<{ north: Float64Array; east: Floa
   return isPresent() && ROAD_NETWORK.roads.length ? network().lines : [];
 }
 
+/** Each road's kind, in regionalRoads() order. */
+export function regionalRoadKinds(): readonly number[] {
+  return isPresent() && ROAD_NETWORK.roads.length ? network().kind : [];
+}
+
+/** Where the roads cross the river (present day only): the point and the road's bearing there, rad from north. */
+export function riverCrossings(): ReadonlyArray<{ north: number; east: number; bearing: number }> {
+  return isPresent() ? ROAD_NETWORK.crossings : [];
+}
+
 /** The villages (present day only; none in other eras). */
 export function villageSites(): ReadonlyArray<{ north: number; east: number; radius: number }> {
   return isPresent() ? ROAD_NETWORK.villages : [];
