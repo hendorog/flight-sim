@@ -18,7 +18,7 @@ import { STREET_ILLUMINANCE, type SharedUniforms } from './shared';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import { computeBiome, coverShape, makeBiome, makeCoverShape } from '../terrain/biome';
 import { hydrology, makeSample, sampleTerrain } from '../terrain/heightfield';
-import { onRoadVerge, regionalRoads } from '../terrain/roads';
+import { onRoadVerge, regionalRoads, villageSites } from '../terrain/roads';
 
 /** Street-pool illuminance uniform at full night (scene units), used to normalise the night switch-on. */
 const STREET_ILLUMINANCE_REF = STREET_ILLUMINANCE;
@@ -333,6 +333,7 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
     const n = Math.cos(a) * dist, e = Math.sin(a) * dist;
     if (nearAirport(n, e, 300)) continue;
     if (town && Math.hypot(n - town.north, e - town.east) < 1100) continue;
+    if (villageSites().some((v) => Math.hypot(n - v.north, e - v.east) < v.radius + 400)) continue;
     if (farms.some((f) => Math.hypot(f.n - n, f.e - e) < 700)) continue;
     if (!buildable(n, e) || slope(n, e, 60) > 0.08 || wooded(n, e) || onRoadVerge(n, e, 40)) continue;
     farms.push({ n, e });
@@ -356,6 +357,88 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
     if (nearest) tracks.push(...roadRuns({ n: n + 8 * c, e: e + 8 * s }, nearest, 10));
     lights.push({ position: worldPoint(at(8, 6).north, at(8, 6).east, 5), colorA: LIGHT_COLORS.window, lens: 0.3, cd: 1500, cdDay: 0, height: 5 });
   }
+
+  // --- Villages (terrain/roads.ts villageSites): houses facing the regional roads that meet at each one, a core of
+  // larger buildings (hall, store, pub, garage) and a church round the crossroads, two short side lanes with houses
+  // along them, and street lights through the middle. Each village draws from its own random stream.
+  villageSites().forEach((v, vi) => {
+    const vr = rng(9100 + vi);
+    const vpick = (list: number[]) => new THREE.Color(list[Math.floor(vr() * list.length)]);
+    const R = v.radius;
+    const ph = vr() * 6.3;
+    const edge = (b: number) => R * (0.8 + 0.12 * Math.sin(2 * b + ph) + 0.08 * Math.sin(3 * b + 2 * ph));
+    const lotFree = (n: number, e: number) => buildable(n, e) && !nearAirport(n, e, 150) && !onRoadVerge(n, e, 3);
+    const house = (n: number, e: number, rot: number, core: boolean) => {
+      if (core) {
+        placed.push({ north: n, east: e, rot, w: 14 + vr() * 7, d: 10 + vr() * 5, h: 3.6 + vr() * 3, color: vpick([0xd8d0c0, 0xc8b8a0, 0xb8a890, 0xe0dcd0]), roof: { h: 1.8 + vr() * 1.4, color: vpick(roofCols) }, windows: true });
+      } else {
+        placed.push({ north: n, east: e, rot, w: 9 + vr() * 4, d: 8 + vr() * 3, h: vr() < 0.25 ? 5.6 : 3.0, color: vpick(houseWall), roof: { h: 2 + vr() * 1.5, color: vpick(roofCols) }, windows: true });
+      }
+    };
+    // The direction of the road nearest the centre (the side lanes run across it).
+    let b0 = 0, best = Infinity;
+    for (const l of regionalRoads()) {
+      let step = 24 + vr() * 8;
+      for (let i = 0; i + 1 < l.north.length; i++) {
+        const dn = l.north[i + 1] - l.north[i], de = l.east[i + 1] - l.east[i];
+        const len = Math.hypot(dn, de);
+        if (len < 1e-3) continue;
+        for (let t = 0; t < len; t += 4) {
+          const n = l.north[i] + (dn * t) / len, e = l.east[i] + (de * t) / len;
+          const dc = Math.hypot(n - v.north, e - v.east);
+          if (dc < best) { best = dc; b0 = Math.atan2(de, dn); }
+          if (dc > R + 30) continue;
+          step -= 4;
+          if (step > 0) continue;
+          step = 24 + vr() * 8;
+          const b = Math.atan2(de, dn);
+          const core = dc < R * 0.35;
+          for (const side of [-1, 1]) {
+            if (vr() > (core ? 0.95 : 0.95 - 0.4 * (dc / R))) continue;
+            if (dc > edge(Math.atan2(e - v.east, n - v.north))) continue;
+            const off = core ? 18 : 15 + vr() * 4;
+            const hn = n + Math.cos(b + side * Math.PI / 2) * off, he = e + Math.sin(b + side * Math.PI / 2) * off;
+            if (lotFree(hn, he)) house(hn, he, b, core);
+          }
+          // Street lights through the middle of the village, on one side.
+          if (dc < R * 0.6) lamp(n + Math.cos(b + Math.PI / 2) * 6, e + Math.sin(b + Math.PI / 2) * 6, STREET_POLE, LIGHT_COLORS.sodium, 6000);
+        }
+      }
+    }
+    // The church: set back on its own plot near the crossroads, gable to the road, with a tall steep roof.
+    for (let k = 0; k < 8; k++) {
+      const a = b0 + (k % 2 ? 1 : -1) * Math.PI / 2 + (vr() - 0.5) * 0.6;
+      const dc = 45 + vr() * 40;
+      const n = v.north + Math.cos(a) * dc, e = v.east + Math.sin(a) * dc;
+      if (!lotFree(n, e)) continue;
+      placed.push({ north: n, east: e, rot: b0 + Math.PI / 2, w: 20, d: 10, h: 5.5, color: new THREE.Color(0xe8e4dc), roof: { h: 5.5, color: new THREE.Color(0x5a5c60) }, windows: true });
+      break;
+    }
+    // Two side lanes across the main road, with houses along both sides.
+    for (const side of [-1, 1]) {
+      const a = b0 + side * Math.PI / 2 + (vr() - 0.5) * 0.5;
+      const along = (vr() - 0.5) * 60;
+      const sn = v.north + Math.cos(b0) * along + Math.cos(a) * 8, se = v.east + Math.sin(b0) * along + Math.sin(a) * 8;
+      const len = 120 + vr() * 80;
+      const en = sn + Math.cos(a) * len, ee = se + Math.sin(a) * len;
+      const runs = roadRuns({ n: sn, e: se }, { n: en, e: ee }, 10, true);
+      addRoads(runs, { origin: { n: sn, e: se }, first: 20, spacing: STREET_CLASSES.residential.spacing, scale: STREET_CLASSES.residential.cd / STREET_REFERENCE_CD, led: false });
+      // The lamps the road material's light pools assume: every spacing from `first`, alternating sides.
+      for (let j = 0, t = 20; t < len - 5; j++, t += STREET_CLASSES.residential.spacing) {
+        const off = (j % 2 ? 1 : -1) * 4.5;
+        lamp(sn + Math.cos(a) * t + Math.cos(a + Math.PI / 2) * off, se + Math.sin(a) * t + Math.sin(a + Math.PI / 2) * off, STREET_POLE, LIGHT_COLORS.sodium, STREET_CLASSES.residential.cd);
+      }
+      for (let t = 30; t < len - 5; t += 26 + vr() * 8) {
+        const n = sn + Math.cos(a) * t, e = se + Math.sin(a) * t;
+        for (const s2 of [-1, 1]) {
+          if (vr() < 0.2) continue;
+          const hn = n + Math.cos(a + s2 * Math.PI / 2) * 14, he = e + Math.sin(a + s2 * Math.PI / 2) * 14;
+          if (lotFree(hn, he)) house(hn, he, a, false);
+        }
+        
+      }
+    }
+  });
 
   const group = new THREE.Group();
   group.name = 'valley';

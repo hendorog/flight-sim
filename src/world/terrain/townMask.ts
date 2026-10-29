@@ -3,7 +3,12 @@
 // comes from the airport module's findTownSite(); the terrain system computes it once on the main thread and
 // hands it to its workers (setTownSite), so the tile and tree workers and the ground shader agree.
 //
+// The villages of today's road network (roads.ts villageSites) are kept clear the same way, on a smaller scale: no
+// woods within VILLAGE_WOOD_MARGIN of their edge, gardens rather than crops in their cores.
+//
 // Pure and three.js-free (runs in the workers).
+
+import { villageSites } from './roads';
 
 export interface TownSite {
   north: number;
@@ -25,6 +30,13 @@ export const TOWN_WOOD_FADE = 100;
 export const TOWN_CORE = 0.42;
 export const TOWN_CORE_FADE = 0.62;
 export const TOWN_PARCEL_MARGIN = 40;
+
+/** Woodland keeps this far beyond a village's radius, and fades in over VILLAGE_WOOD_FADE beyond that, m. */
+export const VILLAGE_WOOD_MARGIN = 30;
+export const VILLAGE_WOOD_FADE = 60;
+/** A village's core (no crops) reaches this share of its radius, fading out to VILLAGE_CORE_FADE. */
+export const VILLAGE_CORE = 0.35;
+export const VILLAGE_CORE_FADE = 0.6;
 
 let site: TownSite | null = null;
 
@@ -48,20 +60,39 @@ export function townDistance(north: number, east: number): number {
   return Math.hypot(north - site.north, east - site.east);
 }
 
-/** 0 inside the town's woodland-free zone, rising to 1 where woods may grow. */
+/** Distance beyond the edge of the nearest village (negative inside it) and that village's radius, m. */
+function nearestVillage(north: number, east: number): { beyond: number; radius: number } {
+  let beyond = Infinity;
+  let radius = 0;
+  for (const v of villageSites()) {
+    const b = Math.hypot(north - v.north, east - v.east) - v.radius;
+    if (b < beyond) {
+      beyond = b;
+      radius = v.radius;
+    }
+  }
+  return { beyond, radius };
+}
+
+/** 0 inside the town's (or a village's) woodland-free zone, rising to 1 where woods may grow. */
 export function townWoodFactor(north: number, east: number): number {
-  if (!site) return 1;
+  const v = nearestVillage(north, east).beyond;
+  const village = v < VILLAGE_WOOD_MARGIN + VILLAGE_WOOD_FADE ? smooth(VILLAGE_WOOD_MARGIN, VILLAGE_WOOD_MARGIN + VILLAGE_WOOD_FADE, v) : 1;
+  if (!site) return village;
   const r = site.radius + TOWN_WOOD_MARGIN;
-  return smooth(r, r + TOWN_WOOD_FADE, townDistance(north, east));
+  return smooth(r, r + TOWN_WOOD_FADE, townDistance(north, east)) * village;
 }
 
-/** 0 in the town's built-up core, rising to 1 where the field pattern may lie. */
+/** 0 in the town's (or a village's) built-up core, rising to 1 where the field pattern may lie. */
 export function townFieldFactor(north: number, east: number): number {
-  if (!site) return 1;
-  return smooth(site.radius * TOWN_CORE, site.radius * TOWN_CORE_FADE, townDistance(north, east));
+  const v = nearestVillage(north, east);
+  const village = v.radius > 0 && v.beyond < 0 ? smooth(VILLAGE_CORE, VILLAGE_CORE_FADE, (v.beyond + v.radius) / v.radius) : 1;
+  if (!site) return village;
+  return smooth(site.radius * TOWN_CORE, site.radius * TOWN_CORE_FADE, townDistance(north, east)) * village;
 }
 
-/** True where no tree may stand: inside the town radius plus the woodland margin. */
+/** True where no tree may stand: inside the town radius plus the woodland margin, or a village's plus its own. */
 export function inTownClearZone(north: number, east: number): boolean {
-  return site !== null && townDistance(north, east) < site.radius + TOWN_WOOD_MARGIN;
+  if (site !== null && townDistance(north, east) < site.radius + TOWN_WOOD_MARGIN) return true;
+  return nearestVillage(north, east).beyond < VILLAGE_WOOD_MARGIN;
 }

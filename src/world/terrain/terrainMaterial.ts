@@ -39,8 +39,8 @@ import { UNDERSTOREY_HEAD_GLSL, UNDERSTOREY_SPECKLE_GLSL } from './vegetation/un
 import { eraOff, type EraLayerName } from '../era/eraOff';
 import { PLANTATION_FLAG, RIVER_UNITS, SKIRT_FLAG } from './tileBuilder';
 import { CLEARFELL_YEARS, EDGE_FIREBREAK, EDGE_HALF_WIDTH, EDGE_ROAD, PLANT_EUC_ID, PLANT_FIR_ID, PLANTATION_GLSL, ROAD_GRAVEL, ROTATION_YEARS } from './plantation';
-import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite } from './townMask';
-import { ROAD_HALF_WIDTH, ROAD_VERGE, ROADS_GLSL, roadTables } from './roads';
+import { TOWN_CORE, TOWN_CORE_FADE, TOWN_PARCEL_MARGIN, TOWN_WOOD_FADE, TOWN_WOOD_MARGIN, townSite, VILLAGE_CORE, VILLAGE_CORE_FADE, VILLAGE_WOOD_FADE, VILLAGE_WOOD_MARGIN } from './townMask';
+import { ROAD_HALF_WIDTH, ROAD_VERGE, ROADS_GLSL, roadTables, VILLAGE_MAX, villageSites } from './roads';
 import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures } from './textures';
 import { OPEN_RANK } from './vegetation/placement';
 
@@ -432,7 +432,7 @@ uniform vec4 uRunwayDims;
 uniform vec4 uFence;
 // Valley town: centre (east, north), radius, 1 if there is one (townMask.ts).
 uniform vec4 uTown;
-varying vec3 vTerrainPos;
+${presentText(`// Villages: centre (east, north), radius (0: none) (roads.ts villageSites).\nuniform vec4 uVillage[${VILLAGE_MAX}];\n`)}varying vec3 vTerrainPos;
 varying vec3 vTerrainNormal;
 varying vec4 vBiome;
 varying float vCurvature;
@@ -838,7 +838,38 @@ ${E('#if ERA_FARM\n')}if (uTown.w > 0.5) {
     meadow = mix(meadow, urban, urbanW);
   }
 }
-${E('#endif\n')}// River: the bed under the water, muddy and gravelly banks, then a strip of rough grass, reeds and tall herbs
+${presentText(`// Villages (roads.ts villageSites): the town's treatment on a smaller scale - no woods within ${VILLAGE_WOOD_MARGIN} m of the edge,
+// gardens and yards in the core, grass parcels out to the edge.
+{
+  vec2 vNE = vec2(tXZ.x, -tXZ.y);
+  float vD = 1e9;
+  float vR = 1.0;
+  for (int i = 0; i < ${VILLAGE_MAX}; i++) {
+    if (uVillage[i].z > 0.0) {
+      float d = length(vNE - uVillage[i].xy);
+      if (d - uVillage[i].z < vD - vR) {
+        vD = d;
+        vR = uVillage[i].z;
+      }
+    }
+  }
+  if (vD < vR + ${(VILLAGE_WOOD_MARGIN + VILLAGE_WOOD_FADE + 10).toFixed(1)}) {
+    forestW *= smoothstep(vR + ${VILLAGE_WOOD_MARGIN.toFixed(1)}, vR + ${(VILLAGE_WOOD_MARGIN + VILLAGE_WOOD_FADE).toFixed(1)}, vD);
+    float core = 1.0 - smoothstep(vR * ${VILLAGE_CORE.toFixed(3)}, vR * ${VILLAGE_CORE_FADE.toFixed(3)}, vD + 30.0 * sC.g);
+    farmW *= 1.0 - core;
+    float urbanW = 1.0 - smoothstep(vR * ${VILLAGE_CORE.toFixed(3)}, vR + 10.0, vD);
+    tUrbanW = max(tUrbanW, urbanW);
+    if (urbanW > 0.001) {
+      float g1 = texture(tNoise, rot2(tXZ, 0.7) * (1.0 / 31.0)).r + 0.5 * (texture(tNoise, rot2(tXZ, 1.9) * (1.0 / 7.0)).b - 0.5);
+      float g2 = texture(tNoise, rot2(tXZ, 2.9) * (1.0 / 11.0)).g;
+      vec3 urban = meadow * vec3(0.95, 1.05, 0.9) * (0.8 + 0.4 * texture(tNoise, rot2(tXZ, 4.4) * (1.0 / 17.0)).a);
+      urban = mix(urban, vec3(0.022, 0.034, 0.015), smoothstep(0.44, 0.62, g1) * 0.8);
+      urban = mix(urban, vec3(0.11, 0.104, 0.094) * (0.85 + 0.3 * nC.a), smoothstep(0.6, 0.78, g2) * 0.5 * core);
+      meadow = mix(meadow, urban, urbanW);
+    }
+  }
+}
+`)}${E('#endif\n')}// River: the bed under the water, muddy and gravelly banks, then a strip of rough grass, reeds and tall herbs
 // (the bankside trees stand in it) before the fields begin. vRiver.x interpolates linearly across the
 // channel, so the banks are placed right even on coarse tiles.
 float tRiverBank = 0.0;
@@ -946,7 +977,10 @@ ${E('#if ERA_FARM\n')}if (farmW > 0.001) {
   vec3 crop = cropColor(pc.id, pasture, soil, rows, passW);
   // Parcels in and at the edge of the town: paddocks, pasture and gardens only (no crops, no hedgerows).
   float townParcel = step(length(pc.centre - uTown.xy), uTown.z + ${TOWN_PARCEL_MARGIN.toFixed(1)}) * uTown.w;
-  if (townParcel > 0.5) {
+${presentText(`  for (int i = 0; i < ${VILLAGE_MAX}; i++) {
+    if (uVillage[i].z > 0.0) townParcel = max(townParcel, step(length(pc.centre - uVillage[i].xy), uVillage[i].z + ${TOWN_PARCEL_MARGIN.toFixed(1)}));
+  }
+`)}  if (townParcel > 0.5) {
     float k = fract(pc.id * 7.31);
     vec3 grass = k < 0.45 ? vec3(0.046, 0.078, 0.029) : k < 0.8 ? vec3(0.060, 0.086, 0.034) : vec3(0.085, 0.092, 0.045);
     crop = mix(grass * (0.8 + 0.4 * fract(pc.id * 17.0)), meadow, 0.3 + 0.6 * tUrbanW);
@@ -1309,6 +1343,10 @@ function roadUniforms(): Record<string, { value: unknown }> {
     tRoadCell: { value: tex(t.cell, t.cols, t.rows, THREE.RGFormat) },
     tRoadList: { value: tex(t.list, t.width, t.listRows, THREE.RedFormat) },
     uRoadGrid: { value: new THREE.Vector4(t.east0, t.north0, 1 / t.cellSize, 0) },
+    uVillage: { value: Array.from({ length: VILLAGE_MAX }, (_, i) => {
+      const v = villageSites()[i];
+      return v ? new THREE.Vector4(v.east, v.north, v.radius, 1) : new THREE.Vector4(0, 0, 0, 0);
+    }) },
   };
   return roadUniformCache;
 }

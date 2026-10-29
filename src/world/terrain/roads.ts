@@ -17,6 +17,8 @@ export const ROAD_KIND_GRAVEL = 1;
 export const ROAD_HALF_WIDTH: readonly number[] = [3.5, 2.5];
 /** The mown verge beyond the carriageway on each side, m: no crops, hedges or trees on it. */
 export const ROAD_VERGE = 4;
+/** Most villages the ground shader takes (uVillage). */
+export const VILLAGE_MAX = 8;
 /** A village's built-up radius, m. */
 export const VILLAGE_RADIUS = 220;
 /** The CPU index answers within this distance of a road's centre line, m. */
