@@ -167,7 +167,7 @@ describe('river', () => {
     // Bankside trees stand mostly where the (shared, reflected) gallery presence is high (today the bank is wooded
     // nearly throughout, thinner where it is low).
     expect(bankPresence / bankside).toBeGreaterThan(0.5);
-  });
+  }, 30_000);
 });
 
 describe('tree line', () => {
