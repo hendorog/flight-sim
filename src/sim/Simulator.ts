@@ -63,6 +63,7 @@ import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
 import { chooseSeed, saveSeedPreference, seedSwitchUrl } from './seedChoice';
+import { setStartField, startField } from './startField';
 import { restoreWeather } from './weatherPresets';
 import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
@@ -251,6 +252,7 @@ export class Simulator {
     setEra(chooseEra(this.params, this.store).id);
     // The world seed with it, before anything is built from the terrain.
     setWorldSeed(chooseSeed(this.params, this.store).seed);
+    setStartField(this.params.field);
     this.weather = applyEraWeather(defaultWeather(), era().weather);
     const w = this.params.weather;
     deriveCloudTop(w, this.weather);
@@ -910,6 +912,8 @@ export class Simulator {
     // Only outside the present day: present snapshots stay exactly as they were.
     if (!isPresent()) snap.era = era().id;
     if (worldSeed() !== 0) snap.seed = worldSeed();
+    const field = startField();
+    if (field) snap.field = field.code;
     return snap;
   }
 

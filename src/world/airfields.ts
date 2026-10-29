@@ -111,15 +111,21 @@ export function runwayIds(heading: number): [string, string] {
   return [f(lo), f(hi)];
 }
 
-/** Pavement of a generated field at a point, for tyre friction: 'runway' on a sealed runway (apron and taxiway: the terrain's own surface for now), else null. */
-export function airfieldSurface(north: number, east: number): 'runway' | null {
+/**
+ * Pavement of a generated field at a point, for tyre friction and the wheels' height: 'runway' on a sealed runway,
+ * 'taxiway' on its taxiway and apron (as airfieldScenery.ts draws them), else null.
+ */
+export function airfieldSurface(north: number, east: number): 'runway' | 'taxiway' | null {
   if (generated.length === 0 || !isPresent()) return null;
   for (const f of generated) {
     if (f.kind !== 'sealed') continue;
     const dn = north - f.north, de = east - f.east;
-    if (dn * dn + de * de > (f.length / 2 + 50) ** 2) continue;
+    if (dn * dn + de * de > (f.length / 2 + 100) ** 2) continue;
     const { along, across } = fieldCoords(f, north, east);
-    if (Math.abs(along) <= f.length / 2 && Math.abs(across) <= f.width / 2) return 'runway';
+    const w = f.width / 2;
+    if (Math.abs(along) <= f.length / 2 && Math.abs(across) <= w) return 'runway';
+    const a = along - f.apronAlong;
+    if ((Math.abs(a) <= 6 && across > w && across <= w + 28) || (Math.abs(a) <= 35 && across > w + 28 && across <= w + 58)) return 'taxiway';
   }
   return null;
 }

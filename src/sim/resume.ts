@@ -108,6 +108,8 @@ export interface FlightSnapshot {
   era?: EraId;
   /** The world seed the flight was in; written only when not 0. Absent: 0. */
   seed?: number;
+  /** The generated airfield the scenario started at (startField.ts); absent: the home field. */
+  field?: string;
   /** Epoch ms of the save. */
   savedAt: number;
   /** False right after a deliberate scenario restart: a reload then starts that scenario fresh. */
@@ -344,6 +346,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (v.aircraft !== undefined && !isAircraftId(v.aircraft)) return null;
   if (v.era !== undefined && !isEraId(v.era)) return null;
   if (v.seed !== undefined && !(isNum(v.seed) && Number.isInteger(v.seed) && v.seed >= 0)) return null;
+  if (v.field !== undefined && typeof v.field !== 'string') return null;
   if (!(SCENARIO_IDS.includes(v.scenario as ScenarioId) || ERA_SCENARIO_IDS.includes(v.scenario as ScenarioId)) || !isNum(v.simTime) || v.simTime < 0) return null;
   const b = v.body;
   if (!isObj(b) || !isVec(b.position) || !isVec(b.velocity) || !isQuat(b.orientation) || !isVec(b.angularVelocity)) return null;

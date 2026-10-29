@@ -124,7 +124,8 @@ export function buildAirfieldScenery(fields: readonly Airfield[]): { group: THRE
         }
       }
       // Taxiway to a small apron on the right of the runway, hangars behind the apron.
-      // (The access road arrives at the apron's outer edge between the hangars: airfields.ts airfieldAccess.)
+      // (The access road arrives at the apron's outer edge between the hangars: airfields.ts airfieldAccess. The
+      // wheels feel the taxiway and apron where airfields.ts airfieldSurface says: keep the two in step.)
       const ap = f.apronAlong;
       rect(ap - 6, ap + 6, W, W + 28, 0.05, APRON);
       rect(ap - 35, ap + 35, W + 28, W + 58, 0.05, APRON);

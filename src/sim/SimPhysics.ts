@@ -26,6 +26,7 @@
 //   One type for the life of the instance (SimPhysicsOptions.aircraft, default the Cessna 172S): its flight
 //   model, its scenarios and its scripted pilot. Everything goes through the AircraftFlightModel interface.
 
+import { setStartField } from './startField';
 import type { AircraftDefinition } from '../aircraft/types';
 import { quat, v3, type Quat, type Vec3 } from '../core/math';
 import type { CameraMode, EventBus, QualityLevel, ScenarioId } from '../core/context';
@@ -414,6 +415,8 @@ export class SimPhysics {
     const aircraft = snap.aircraft ?? DEFAULT_AIRCRAFT_ID;
     if (aircraft !== def.id) throw new Error(`a snapshot of the ${aircraft} cannot be restored into the ${def.id}`);
     const sys = snapshotSystems(snap);
+    // A flight that started at a generated airfield restarts there.
+    setStartField(snap.field ?? null);
     const sc = buildScenario(snap.scenario, this.env, def);
     this.scenario = sc;
     const b = snap.body;

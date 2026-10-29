@@ -216,6 +216,11 @@ ${FLIGHT_CUES_CSS}
 #fsui .row output { text-align: right; font-weight: 600; font-size: 13px; }
 #fsui .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 #fsui .chips button { padding: 7px 12px; font-size: 13px; }
+#fsui .fields { display: flex; flex-direction: column; gap: 8px; }
+#fsui .field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; }
+#fsui .field-row b { display: block; font-size: 13px; }
+#fsui .field-row span { display: block; font-size: 12px; color: var(--fg-dim); }
+#fsui .field-row .chips { flex: none; }
 #fsui .seed-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 #fsui .seed-row input { width: 9em; padding: 6px 8px; font: inherit; font-size: 13px; color: inherit; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16); border-radius: 6px; }
 #fsui .seed-row button { padding: 7px 12px; font-size: 13px; }

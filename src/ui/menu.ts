@@ -17,6 +17,8 @@ import { el, formatHours } from './dom';
 import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
 import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, seedConfirmation, type EraGates, type EraRow } from './eraChooser';
 import { randomSeed, SEED_PREF_KEY, seedDevChoiceUrl, seedLabel } from '../sim/seedChoice';
+import { setStartField } from '../sim/startField';
+import { generatedAirfields } from '../world/airfields';
 import { normalizeSeed, worldSeed } from '../world/worldSeed';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
 import { DEFAULT_MOON_SCALE, MOON_SCALE_MAX, MOON_SCALE_MIN, MOON_SCALE_STEP } from '../sim/skyPrefs';
@@ -329,20 +331,33 @@ export class PauseMenu {
     // During a lesson a scenario ends it: ask first (section 5.6).
     const confirm = el('div', 'sc-confirm hidden', p);
     const confirmText = el('span', '', confirm);
-    let pending: (typeof SCENARIOS)[number] | null = null;
+    let pending: (() => void) | null = null;
     const keep = el('button', '', confirm, 'Keep flying the lesson');
     keep.addEventListener('click', () => confirm.classList.add('hidden'));
     const abandon = el('button', 'danger', confirm, 'Abandon');
-    const start = (s: (typeof SCENARIOS)[number]): void => {
-      this.host.ctx.commands.reset(s.id);
+    /** Start a scenario: at the home field, or (runway, apron, final) at a generated one (startField.ts). */
+    const go = (id: ScenarioId, name: string, field: string | null = null): void => {
+      setStartField(field);
+      this.host.ctx.commands.reset(id);
       this.host.close();
-      this.host.toast(`Scenario: ${s.name}`);
+      this.host.toast(`Scenario: ${name}`);
+    };
+    const start = (s: (typeof SCENARIOS)[number]): void => go(s.id, s.name);
+    /** Ask first during a lesson (a scenario ends it). */
+    const ask = (name: string, run: () => void): void => {
+      if (!this.host.school?.lessonActive) {
+        run();
+        return;
+      }
+      pending = run;
+      confirmText.textContent = `Abandon the lesson and start ${name}? The flight so far is logged.`;
+      confirm.classList.remove('hidden');
     };
     abandon.addEventListener('click', () => {
       confirm.classList.add('hidden');
       if (!pending) return;
       this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
-      start(pending);
+      pending();
     });
     this.refreshers.push(() => confirm.classList.add('hidden'));
     const grid = el('div', 'scenarios', p);
@@ -352,15 +367,27 @@ export class PauseMenu {
       const b = el('button', '', grid);
       el('b', '', b, s.name);
       el('span', '', b, s.text);
-      b.addEventListener('click', () => {
-        if (this.host.school?.lessonActive) {
-          pending = s;
-          confirmText.textContent = `Abandon the lesson and start ${s.name}? The flight so far is logged.`;
-          confirm.classList.remove('hidden');
-          return;
-        }
-        start(s);
-      });
+      b.addEventListener('click', () => ask(s.name, () => start(s)));
+    }
+    // The generated airfields (airfields.ts): start parked there, or lined up on its runway.
+    const fields = eraId === 'present' ? generatedAirfields() : [];
+    if (fields.length) {
+      el('h3', '', p, 'Airfields');
+      el('p', 'sub', p, `Other fields in this world, to fly to or start from. Runway, Apron and Final above start at ${AIRPORT.icao}.`);
+      const list = el('div', 'fields', p);
+      for (const f of [...fields].sort((a, b) => Math.hypot(a.north, a.east) - Math.hypot(b.north, b.east))) {
+        const row = el('div', 'field-row', list);
+        const info = el('div', '', row);
+        el('b', '', info, `${f.name} · ${f.code}`);
+        const km = Math.hypot(f.north, f.east) / 1000;
+        const brg = Math.round(((Math.atan2(f.east, f.north) * 180) / Math.PI + 360) % 360);
+        el('span', '', info, `${f.kind === 'sealed' ? 'Sealed' : 'Grass'} ${f.length} m, runway ${f.ids.join('/')}, elevation ${Math.round(f.elevation / 0.3048)} ft · ${km.toFixed(0)} km (${(km / 1.852).toFixed(0)} NM) ${String(brg).padStart(3, '0')}° from ${AIRPORT.icao} · ${f.frequency.toFixed(3)}`);
+        const chips = el('div', 'chips', row);
+        const parked = el('button', '', chips, 'Parked');
+        parked.addEventListener('click', () => ask(f.name, () => go('apron', `${f.name}, parked`, f.code)));
+        const lined = el('button', '', chips, `Runway ${f.ids[0]}`);
+        lined.addEventListener('click', () => ask(f.name, () => go('runway', `${f.name}, runway ${f.ids[0]}`, f.code)));
+      }
     }
     el('h3', '', p, 'Autopilot');
     const ap = el('div', 'chips', p);

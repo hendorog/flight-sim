@@ -22,6 +22,8 @@ import { isPresent } from '../world/era/eraState';
 import { SAFARI } from '../world/era/cretaceousAnchors';
 import { terrainHeight } from '../world/terrain/heightfield';
 import type { StartSpec } from './starts';
+import { startField } from './startField';
+import type { Airfield } from '../world/airfields';
 
 export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 'cruise', 'downwind'];
 
@@ -150,6 +152,52 @@ export function startOnDownwind(env: Environment, along: number, kias: number, f
   return ic;
 }
 
+/** The runway, apron and final scenarios at a generated airfield (startField.ts), as at home. */
+function fieldScenario(id: 'runway' | 'apron' | 'final', f: Airfield, env: Environment, def: ScenarioAircraft): Scenario {
+  const sc = def.sim.scenario;
+  const presets = def.sim.presets;
+  const c = Math.cos(f.heading);
+  const s = Math.sin(f.heading);
+  const at = (along: number, across: number, z: number) => ({ x: f.north + c * along - s * across, y: f.east + s * along + c * across, z });
+  const w = f.width / 2;
+  const rwy = `${f.name} (${f.code}), runway ${f.ids[0]}`;
+  if (id === 'runway') {
+    return {
+      id,
+      title: `${rwy}, ready for take-off`,
+      ic: { position: at(-f.length / 2 + 25, 0, -f.elevation), heading: f.heading, airspeed: 0, onGround: true, engineRunning: true },
+      controls: presets.linedUp,
+      // (The scripted autoflight knows only the home runway's geometry; at a generated field it leaves the pilot be.)
+      autoflight: { kind: 'parked' },
+    };
+  }
+  if (id === 'apron') {
+    // On the apron (sealed) or beside the hangar (grass), on the right of the runway, facing it.
+    const spot = f.kind === 'sealed' ? at(f.apronAlong, w + 43, -f.elevation) : at(f.apronAlong + 30, w + 16, -f.elevation);
+    return {
+      id,
+      title: `${f.name} (${f.code}), parked, cold and dark`,
+      ic: { position: spot, heading: wrapTwoPi(f.heading - Math.PI / 2), airspeed: 0, onGround: true, engineRunning: false },
+      controls: presets.cold,
+      autoflight: { kind: 'parked' },
+    };
+  }
+  // 3 NM final for the low-numbered end on a 3 degree path.
+  const dist = 3 * NM;
+  const alt = f.elevation + (dist + AIM_POINT) * Math.tan(GLIDE_PATH);
+  const ic: InitialConditions = {
+    position: at(-f.length / 2 - dist, 0, -alt),
+    heading: f.heading,
+    airspeed: kiasToTas(sc.finalKias, alt, env),
+    onGround: false,
+    engineRunning: true,
+    flaps: flapLever(def.controls.flaps, sc.finalFlapsDeg),
+    flightPathAngle: -GLIDE_PATH,
+  };
+  if (def.geometry.gear.retractable) ic.gearDown = true;
+  return { id, title: `3 NM final, ${rwy}`, ic, controls: presets.approach, autoflight: { kind: 'hold', heading: f.heading, altitude: alt, kias: sc.finalKias } };
+}
+
 /**
  * Build a scenario's start conditions for an aircraft (default the Cessna 172S): its speeds, flap settings and
  * switch presets (def.sim). `env` supplies the atmosphere (IAS -> TAS) for the airborne starts. A retractable
@@ -160,6 +208,8 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
   const presets = def.sim.presets;
   const retractable = def.geometry.gear.retractable;
   const lever = (deg: number): number => flapLever(def.controls.flaps, deg);
+  const field = startField();
+  if (field && (id === 'runway' || id === 'apron' || id === 'final')) return fieldScenario(id, field, env, def);
   switch (id) {
     case 'runway': {
       const p = LINE_UP.find((l) => l.runway === '07')!;
