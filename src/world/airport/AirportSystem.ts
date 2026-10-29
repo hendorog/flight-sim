@@ -29,7 +29,7 @@ import { createSigns } from './signs';
 import { makeAsphaltTexture, makeBuildingTextures, makeConcreteTexture, makeCrackTexture, makeNoiseTexture } from './textures';
 import { buildValley } from './valley';
 import { buildSegmentedCircle, Windsocks } from './windsock';
-import { airfieldWindsocks, buildAirfieldScenery } from './airfieldScenery';
+import { airfieldLights, airfieldWindsocks, buildAirfieldScenery } from './airfieldScenery';
 import { generatedAirfields } from '../airfields';
 
 export interface AirportSystemOptions {
@@ -125,6 +125,7 @@ export class AirportSystem implements Subsystem {
     this.windsocks = new Windsocks(airfieldWindsocks(fields));
     this.disposables.push(this.windsocks);
     if (fields.length) {
+      lights.push(...airfieldLights(fields));
       const scenery = buildAirfieldScenery(fields);
       scenery.group.traverse((o: THREE.Object3D) => {
         if (o instanceof THREE.Mesh) this.disposables.push(o.geometry);

@@ -8,7 +8,8 @@
 
 import * as THREE from 'three';
 import { nedToThree } from '../../core/frames';
-import type { Airfield } from '../airfields';
+import { fieldPoint, type Airfield } from '../airfields';
+import { LIGHT_COLORS, LightKind, type LightSpec } from './lights';
 import { rng } from './noise';
 
 const ASPHALT = new THREE.Color(0.075, 0.075, 0.072);
@@ -30,6 +31,36 @@ export function airfieldWindsocks(fields: readonly Airfield[]): { north: number;
     const off = -(f.width / 2 + 25);
     return { north: f.north - Math.sin(f.heading) * off, east: f.east + Math.cos(f.heading) * off, elevation: f.elevation };
   });
+}
+
+/** Lens height of the runway lights above the ground, m. */
+const LENS = 0.36;
+/** Medium-intensity runway lights (MIRL), night only, cd: all-round, so one colour each (no bidirectional filters). */
+const MIRL = 200;
+
+/**
+ * Night lighting of the sealed fields: white runway edge lights every 60 m, a row of green threshold lights across
+ * each end, and a floodlight over the apron. The grass strips are unlit.
+ */
+export function airfieldLights(fields: readonly Airfield[]): LightSpec[] {
+  const specs: LightSpec[] = [];
+  for (const f of fields) {
+    if (f.kind !== 'sealed') continue;
+    const at = (along: number, across: number, h: number) => {
+      const p = fieldPoint(f, along, across);
+      return nedToThree({ x: p.north, y: p.east, z: -(f.elevation + h) });
+    };
+    const L = f.length / 2, W = f.width / 2;
+    const n = Math.round(f.length / 60);
+    for (let i = 0; i <= n; i++) {
+      for (const side of [-1, 1]) specs.push({ position: at(-L + (i * f.length) / n, side * (W + 1), LENS), colorA: LIGHT_COLORS.runwayWhite, lens: 0.1, cd: MIRL, cdDay: 0, height: LENS });
+    }
+    for (const end of [-1, 1]) {
+      for (const x of [-9, -6, -3, 3, 6, 9]) specs.push({ position: at(end * (L + 1), x, LENS), colorA: LIGHT_COLORS.green, lens: 0.1, cd: MIRL * 0.4, cdDay: 0, height: LENS });
+    }
+    specs.push({ position: at(f.apronAlong, W + 62, 8), colorA: LIGHT_COLORS.metalHalide, lens: 0.4, cd: 3000, cdDay: 0, kind: LightKind.CutOff, param: 0.05, height: 8 });
+  }
+  return specs;
 }
 
 export function buildAirfieldScenery(fields: readonly Airfield[]): { group: THREE.Group; materials: THREE.Material[] } {
