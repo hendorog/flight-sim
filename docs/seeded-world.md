@@ -84,11 +84,16 @@ field (1,600–2,000 m, a terminal, lights).
 Same seed and same macro terrain. The era's river network follows from step 3's tracing (its scenery is already
 placed along "the river's earlier course"). Herds and the volcano are placed by district, like the settlements.
 
-## Questions for the owner
+## Owner's answers and the order now (2026-10-30)
 
-1. Region sizes (64 km provinces, 16 km districts): fine, or should districts be larger (fewer, bigger towns)?
-2. Should the home airfield always be at the origin of every seed's world, or could a seed start you at a
-   generated field?
-3. Seed in the UI: a field in the menu with a "random" button, and the seed shown on the map?
-4. Should seed 0 stay exactly as it is forever, or may it gain generated features beyond today's area (more
-   villages and roads past 15 km)?
+- Long term: a whole planet generated from the seed as you fly, with the variety of real landscapes. Not now.
+- Now: flying between airports, with ATC and other traffic to follow, so the world has to be big enough for real
+  legs between fields.
+- Yes to a seed box with a "random" button in the menu. Yes to seed 0 growing villages and roads past today's 15 km
+  (the present guard re-pins as it grows, each re-pin its own commit).
+- Not answered, so taking the defaults: every seed starts at the home field at the origin, and districts are 16 km.
+
+Order: the seed box (small); generated airfields (step 5, brought forward: a registry whose first entry is today's
+field, sited by the seed 15-40 km out, terrain flattening and approach protection per field, drawn on the map);
+then growing seed 0's villages and roads out to the new fields (step 4). Generated rivers and provinces (step 3)
+and the Cretaceous on top (step 6) wait.
