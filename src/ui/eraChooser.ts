@@ -64,10 +64,19 @@ const STANDING_STILL = 0.5;
 
 /** What to say before reloading into another world, or null to go straight away (standing still on the ground). */
 export function eraConfirmation(s: AircraftState, lessonActive: boolean, current: EraRow, chosen: EraRow): { kind: 'flight' | 'lesson'; text: string } | null {
+  return worldConfirmation(s, lessonActive, current.label, chosen.label);
+}
+
+/** The same for another world seed (the menu's Seed row). */
+export function seedConfirmation(s: AircraftState, lessonActive: boolean, current: number, chosen: number): { kind: 'flight' | 'lesson'; text: string } | null {
+  return worldConfirmation(s, lessonActive, `world ${current}`, `world ${chosen}`);
+}
+
+function worldConfirmation(s: AircraftState, lessonActive: boolean, current: string, chosen: string): { kind: 'flight' | 'lesson'; text: string } | null {
   const reload = 'Reloads the world.';
-  if (lessonActive) return { kind: 'lesson', text: `${reload} Abandon the lesson and go to ${chosen.label}? The flight so far is logged.` };
+  if (lessonActive) return { kind: 'lesson', text: `${reload} Abandon the lesson and go to ${chosen}? The flight so far is logged.` };
   const airborne = !s.wheels.some((w) => w.onGround);
-  if (airborne || s.groundSpeed > STANDING_STILL) return { kind: 'flight', text: `${reload} Leave this flight in ${current.label} and go to ${chosen.label}? It is not resumed later.` };
+  if (airborne || s.groundSpeed > STANDING_STILL) return { kind: 'flight', text: `${reload} Leave this flight in ${current} and go to ${chosen}? It is not resumed later.` };
   return null;
 }
 

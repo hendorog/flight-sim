@@ -111,6 +111,12 @@ export interface SimCommands {
    */
   setEra?(id: EraId): void;
   /**
+   * Choose another world seed: saves the flight, stores the preference ('fs.seed') and RELOADS the page without the
+   * URL parameters that would undo the choice (src/sim/seedChoice.ts seedSwitchUrl). Optional: older mocks do not
+   * implement it.
+   */
+  setSeed?(seed: number): void;
+  /**
    * Moon size setting (night sky; 1 = real size .. 5, src/sim/skyPrefs.ts): stores 'fs.moonScale' and sets
    * ctx.moonScale; applies live. Optional: older mocks do not implement it.
    */

@@ -15,7 +15,9 @@ import type { SchoolCommand } from '../training/types';
 import { AIRPORT, sunDirectionNED } from '../core/world';
 import { el, formatHours } from './dom';
 import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
-import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, type EraGates, type EraRow } from './eraChooser';
+import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, seedConfirmation, type EraGates, type EraRow } from './eraChooser';
+import { randomSeed, SEED_PREF_KEY, seedDevChoiceUrl, seedLabel } from '../sim/seedChoice';
+import { normalizeSeed, worldSeed } from '../world/worldSeed';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
 import { DEFAULT_MOON_SCALE, MOON_SCALE_MAX, MOON_SCALE_MIN, MOON_SCALE_STEP } from '../sim/skyPrefs';
 import { SKY_DAYS_IN_YEAR, skyDateLabel } from '../render/sky/skyTime';
@@ -544,6 +546,78 @@ export class PauseMenu {
       });
     }
     el('p', 'sub', p, current.blurb);
+    this.buildSeed(p);
+  }
+
+  /**
+   * The Seed row under the World chips: the seed the world is built from (0, today's world, or any other number for
+   * another landscape), a box to type one and a Random button. Another seed is a reload (commands.setSeed), so it
+   * asks first unless the aircraft stands still on the ground, as the World chips do.
+   */
+  private buildSeed(p: HTMLElement): void {
+    const ctx = (): SimContext => this.host.ctx;
+    const current = worldSeed();
+    const row = el('div', 'seed-row', p);
+    el('span', '', row, 'Seed');
+    const input = el('input', '', row);
+    input.type = 'number';
+    input.min = '0';
+    input.step = '1';
+    input.value = String(current);
+    input.title = "The number the world is generated from: 0 is today's world, any other number another landscape.";
+    const go = el('button', '', row, 'Go');
+    const random = el('button', '', row, 'Random');
+    const confirm = el('div', 'sc-confirm hidden', p);
+    const confirmText = el('span', '', confirm);
+    const keep = el('button', '', confirm, 'Keep flying');
+    keep.addEventListener('click', () => confirm.classList.add('hidden'));
+    const leave = el('button', 'danger', confirm, 'Go');
+    let pending: number | null = null;
+    const choose = (seed: number): void => {
+      if (ctx().commands.setSeed) {
+        ctx().commands.setSeed?.(seed);
+        return;
+      }
+      // A shell without the command (dev pages): store the preference and reload with ?seed=.
+      try {
+        localStorage.setItem(SEED_PREF_KEY, String(seed));
+      } catch {
+        // Storage unavailable: the URL still names the seed.
+      }
+      location.replace(seedDevChoiceUrl(location.href, seed));
+    };
+    const ask = (seed: number): void => {
+      if (seed === current) return;
+      const q = seedConfirmation(ctx().state, !!this.host.school?.lessonActive, current, seed);
+      if (!q) {
+        choose(seed);
+        return;
+      }
+      pending = seed;
+      confirmText.textContent = q.text;
+      leave.textContent = q.kind === 'lesson' ? 'Abandon and go' : 'Go';
+      confirm.classList.remove('hidden');
+    };
+    leave.addEventListener('click', () => {
+      confirm.classList.add('hidden');
+      if (pending === null) return;
+      if (this.host.school?.lessonActive) this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      choose(pending);
+    });
+    go.addEventListener('click', () => ask(normalizeSeed(input.value)));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') ask(normalizeSeed(input.value));
+    });
+    random.addEventListener('click', () => {
+      const s = randomSeed();
+      input.value = String(s);
+      ask(s);
+    });
+    this.refreshers.push(() => {
+      confirm.classList.add('hidden');
+      input.value = String(current);
+    });
+    el('p', 'sub', p, `Flying world ${seedLabel(current)}. Every number gives its own hills, coast, woods and fields; 0 is today's world.`);
   }
 
   /**

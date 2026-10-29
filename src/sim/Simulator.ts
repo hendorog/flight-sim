@@ -29,7 +29,7 @@
 // hold the simulation, do the synchronous work (trim, shader compiles, terrain rebuild), render a warm-up
 // frame for the interior and exterior views so every shader variant is linked, and fade back in.
 
-import { setWorldSeed } from '../world/worldSeed';
+import { setWorldSeed, worldSeed } from '../world/worldSeed';
 import * as THREE from 'three';
 import {
   createEventBus,
@@ -62,6 +62,7 @@ import { AirportSystem, TOWER } from '../world/airport';
 import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
+import { chooseSeed, saveSeedPreference, seedSwitchUrl } from './seedChoice';
 import { restoreWeather } from './weatherPresets';
 import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
@@ -249,7 +250,7 @@ export class Simulator {
     // workers) reads it. Its weather preset goes under the URL's weather.
     setEra(chooseEra(this.params, this.store).id);
     // The world seed with it, before anything is built from the terrain.
-    setWorldSeed(this.params.seed);
+    setWorldSeed(chooseSeed(this.params, this.store).seed);
     this.weather = applyEraWeather(defaultWeather(), era().weather);
     const w = this.params.weather;
     deriveCloudTop(w, this.weather);
@@ -302,7 +303,7 @@ export class Simulator {
     await progress(0.06, 'Building the flight model');
     const events = createEventBus();
     // Resume the last flight (a reload), or start the URL's (or the remembered) scenario.
-    const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId || (p.helicopterHover && def.rotorcraft) ? false : p.resume, explicitScenario: !!demoId || p.helicopterHover || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id, era: era().id });
+    const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId || (p.helicopterHover && def.rotorcraft) ? false : p.resume, explicitScenario: !!demoId || p.helicopterHover || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id, era: era().id, seed: worldSeed() });
     // An era's own start (the Cretaceous safari) when the URL names no scenario and nothing is resumed.
     const eraStart = !p.explicitScenario && !demoId && !(p.helicopterHover && def.rotorcraft) ? era().world.defaultScenario : undefined;
     const startId = decision.kind === 'scenario' ? decision.scenario : (eraStart ?? p.scenario);
@@ -365,6 +366,7 @@ export class Simulator {
       },
       setAircraft: (next, opts) => this.setAircraft(next, opts),
       setEra: (next) => this.setEra(next),
+      setSeed: (next) => this.setSeed(next),
       setCarbIcing: (on) => {
         saveCarbIcing(this.store, on);
         this.ctx.carbIcing = on;
@@ -711,6 +713,17 @@ export class Simulator {
   }
 
   /**
+   * Another world seed (SimCommands.setSeed; the UI has asked for confirmation): the flight is saved, the choice
+   * stored, and the page reloaded without the parameters that would undo it. This flight is not resumed in the new
+   * world (decideBoot refuses a snapshot of another seed).
+   */
+  setSeed(seed: number): void {
+    this.persist();
+    saveSeedPreference(this.store, seed);
+    location.replace(seedSwitchUrl(location.href));
+  }
+
+  /**
    * Compile and link every shader variant the views need, so no camera switch stalls later. For the cockpit
    * and an exterior view (the aircraft shows different parts in each): renderer.compile() over the whole
    * scene (all visible objects, not just those in the frustum) with an HDR render target bound, as the post
@@ -896,6 +909,7 @@ export class Simulator {
     });
     // Only outside the present day: present snapshots stay exactly as they were.
     if (!isPresent()) snap.era = era().id;
+    if (worldSeed() !== 0) snap.seed = worldSeed();
     return snap;
   }
 

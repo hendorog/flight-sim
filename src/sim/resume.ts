@@ -106,6 +106,8 @@ export interface FlightSnapshot {
   aircraft: AircraftId;
   /** The era the flight was in; written only for a non-present era. Absent: 'present'. */
   era?: EraId;
+  /** The world seed the flight was in; written only when not 0. Absent: 0. */
+  seed?: number;
   /** Epoch ms of the save. */
   savedAt: number;
   /** False right after a deliberate scenario restart: a reload then starts that scenario fresh. */
@@ -341,6 +343,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (!isNum(v.savedAt) || typeof v.resume !== 'boolean') return null;
   if (v.aircraft !== undefined && !isAircraftId(v.aircraft)) return null;
   if (v.era !== undefined && !isEraId(v.era)) return null;
+  if (v.seed !== undefined && !(isNum(v.seed) && Number.isInteger(v.seed) && v.seed >= 0)) return null;
   if (!(SCENARIO_IDS.includes(v.scenario as ScenarioId) || ERA_SCENARIO_IDS.includes(v.scenario as ScenarioId)) || !isNum(v.simTime) || v.simTime < 0) return null;
   const b = v.body;
   if (!isObj(b) || !isVec(b.position) || !isVec(b.velocity) || !isQuat(b.orientation) || !isVec(b.angularVelocity)) return null;
@@ -432,6 +435,8 @@ export interface BootOptions {
   aircraft?: AircraftId;
   /** The era this session is set in. Optional (absent = 'present'), like `aircraft`. */
   era?: EraId;
+  /** The world seed this session is built from. Optional (absent = 0), like `era`. */
+  seed?: number;
 }
 
 /**
@@ -449,6 +454,7 @@ export function decideBoot(snap: FlightSnapshot | null, o: BootOptions): BootDec
   if (!snap) return { kind: 'normal', reason: 'no valid snapshot' };
   if ((snap.aircraft ?? DEFAULT_AIRCRAFT_ID) !== (o.aircraft ?? DEFAULT_AIRCRAFT_ID)) return { kind: 'normal', reason: 'snapshot is for another aircraft' };
   if ((snap.era ?? 'present') !== (o.era ?? 'present')) return { kind: 'normal', reason: 'snapshot is from another era' };
+  if ((snap.seed ?? 0) !== (o.seed ?? 0)) return { kind: 'normal', reason: 'snapshot is from another world seed' };
   const ageMs = o.now - snap.savedAt;
   if (!(ageMs >= 0) || ageMs > MAX_AGE_MS) return { kind: 'normal', reason: 'snapshot too old' };
   if (snap.status.crashed) return { kind: 'normal', reason: 'crashed' };

@@ -3,7 +3,7 @@
 //   aircraft=c172s|c152|pa38|da20|pa34|da42       aircraft type (default: the type chosen in the menu, else c172s)
 //   era=present|cretaceous                        world era (default: the era chosen in the menu, else present;
 //                                                 see src/sim/eraChoice.ts and src/world/era/types.ts)
-//   seed=<n>                                      world seed (default 0: today's world); any other number reshapes the hills, coast, woods, fields and towns (worldSeed.ts)
+//   seed=<n>                                      world seed (absent: the one chosen in the menu, else 0, today's world); any other number reshapes the hills, coast, woods, fields and towns (worldSeed.ts)
 //   scenario=runway|apron|final|cruise|downwind|safari   start scenario (default runway, or the era's default
 //                                                 start, e.g. safari in the Cretaceous)
 //   cam=cockpit|chase|orbit|flyby|tower           camera mode (default cockpit)
@@ -90,8 +90,8 @@ export interface SimParams {
   aircraft: AircraftId | null;
   /** era=<id>, or undefined when it is absent or not a known id (eraChoice.ts then uses the stored choice). */
   era: EraId | undefined;
-  /** seed=<n>: the world seed (worldSeed.ts), 0 when absent or not a number. */
-  seed: number;
+  /** seed=<n>: the world seed (worldSeed.ts; normalized, 0 when not a number); absent: undefined (seedChoice.ts). */
+  seed?: number;
   scenario: ScenarioId;
   /** scenario= was given (a valid id): the URL asks for that scenario, not for the resumed flight. */
   explicitScenario: boolean;
@@ -259,7 +259,7 @@ export function parseParams(search: string): SimParams {
   return {
     aircraft: isAircraftId(aircraft) ? aircraft : null,
     era: (ERA_IDS as readonly string[]).includes(q.get('era') ?? '') ? (q.get('era') as EraId) : undefined,
-    seed: normalizeSeed(q.get('seed') ?? 0),
+    seed: q.has('seed') ? normalizeSeed(q.get('seed')) : undefined,
     scenario: oneOf('scenario', URL_SCENARIO_IDS, 'runway'),
     explicitScenario: URL_SCENARIO_IDS.includes(q.get('scenario') as ScenarioId),
     resume: q.get('resume') === '1' ? true : q.get('resume') === '0' ? false : null,
