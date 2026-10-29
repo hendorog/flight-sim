@@ -7,7 +7,7 @@
 // tree gets a random rank; instances are sorted by rank so distant LODs can draw a thinned prefix.
 
 import { computeBiome, CoverShapeField, makeBiome, makeCoverShape } from '../biome';
-import { RIPARIAN_FAR, RIPARIAN_NEAR, riparianPresence } from '../riparian';
+import { GALLERY_FAR, GALLERY_FLOOR, GALLERY_NEAR, GALLERY_SCRUB, RIPARIAN_FAR, RIPARIAN_NEAR, riparianPresence } from '../riparian';
 import { makeSample, sampleTerrain } from '../heightfield';
 import { makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
@@ -170,17 +170,21 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
         // wide, so each candidate on it stands for a few metres of hedge).
         hedge = parcel.hedge < 2.2 ? u < 0.85 : parcel.margin < 3 && u < 0.004;
       }
-      // Bankside trees (willow, poplar, with birch and oak standing in for alder and ash) in a broken gallery along the river, where
-      // riparianPresence says (the water shader reflects the same trees).
+      // Bankside trees (willow, poplar, with birch and oak standing in for alder and ash): a wooded bank from the
+      // water's edge out to GALLERY_FAR, thinning a little toward the fields, with few gaps (fewer trees where
+      // riparianPresence is low; the water shader reflects the same trees), scrub in its first metres.
       let riparian = false;
+      let scrub = false;
       if (!hedge && u >= p + lone) {
         const be = lerp2(bank, fx, fz);
-        if (be > RIPARIAN_NEAR - 4 && be < RIPARIAN_FAR + 4) {
+        if (be > GALLERY_NEAR - 4 && be < GALLERY_FAR + 4) {
           sampleTerrain(north, east, sample);
           const edge = sample.riverDist - sample.riverHalfWidth;
-          if (sample.riverHalfWidth > 0 && edge > RIPARIAN_NEAR && edge < RIPARIAN_FAR) {
+          if (sample.riverHalfWidth > 0 && edge > GALLERY_NEAR && edge < GALLERY_FAR) {
             const pr = riparianPresence(sample.riverArc, Math.sign(sample.riverSigned));
-            riparian = u < 0.6 * pr * (1 - 0.6 * (edge - RIPARIAN_NEAR) / (RIPARIAN_FAR - RIPARIAN_NEAR));
+            const t = (edge - GALLERY_NEAR) / (GALLERY_FAR - GALLERY_NEAR);
+            riparian = u < 0.95 * (GALLERY_FLOOR + (1 - GALLERY_FLOOR) * pr) * (1 - 0.45 * t * t);
+            scrub = riparian && edge < GALLERY_SCRUB && rnd(h0, 11) < 0.6;
           }
         }
         if (!riparian) continue;
@@ -190,12 +194,17 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
       sampleTerrain(north, east, sample);
       if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
       // Never in the river channel (nor on the first metres of its bank), whatever the coarse lattice says.
-      if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + 2.5) continue;
+      if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + (scrub ? 1.2 : 2.5)) continue;
       let species: number;
       let height: number;
-      if (riparian) {
+      if (scrub) {
+        // Bank scrub: young willows, birch and bramble-height bushes (oak) down to the water.
         const r = rnd(h0, 5);
-        species = r < 0.45 ? SPECIES.willow : r < 0.6 ? SPECIES.poplar : r < 0.85 ? SPECIES.birch : SPECIES.oak;
+        species = r < 0.55 ? SPECIES.willow : r < 0.8 ? SPECIES.birch : SPECIES.oak;
+        height = 2.5 + 4.5 * rnd(h0, 6);
+      } else if (riparian) {
+        const r = rnd(h0, 5);
+        species = r < 0.4 ? SPECIES.willow : r < 0.48 ? SPECIES.poplar : r < 0.75 ? SPECIES.birch : SPECIES.oak;
         height = species === SPECIES.willow ? 8 + 6 * rnd(h0, 6) : species === SPECIES.poplar ? 15 + 12 * rnd(h0, 6) : 7 + 11 * rnd(h0, 6);
       } else if (hedge) {
         const r = rnd(h0, 5);

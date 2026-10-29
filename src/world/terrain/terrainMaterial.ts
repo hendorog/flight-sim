@@ -28,7 +28,8 @@ import { AIRPORT } from '../../core/world';
 import { FENCE_RECT } from '../airport/layout';
 import { FIELDS_GLSL } from './fields';
 import { HASH_GLSL, ROT_GLSL } from './glsl';
-import { RIVER_STRIP, TREE_LINE_ASPECT, treeLineBase } from './biome';
+import { riverStrip, TREE_LINE_ASPECT, treeLineBase } from './biome';
+import { GALLERY_FAR } from './riparian';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
 import { snowLineBase } from './heightfield';
 import { era, isPresent } from '../era/eraState';
@@ -843,19 +844,26 @@ float tRiverBank = 0.0;
 float tRiverBed = 0.0;
 if (vRiver.y > 1.0) {
   float rEdge = abs(vRiver.x) - vRiver.y;
-  if (rEdge < ${(RIVER_STRIP + 24).toFixed(1)}) {
+  if (rEdge < ${(riverStrip() + 24).toFixed(1)}) {
     float rFw = max(fwidth(vRiver.x), 0.05);
-    float bankW = 2.5 + 0.08 * vRiver.y;
+    float bankW = ${isPresent() ? '0.6 + 0.02' : '2.5 + 0.08'} * vRiver.y;
     float rN = 2.0 * sD.r + 1.2 * sC.g;
     tRiverBed = 1.0 - smoothstep(-rFw, rFw, rEdge + 0.5 * sD.b);
     tRiverBank = 1.0 - smoothstep(bankW - rFw, bankW + 1.5 + rFw, rEdge - rN);
-    float strip = 1.0 - smoothstep(${RIVER_STRIP.toFixed(1)}, ${(RIVER_STRIP + 16).toFixed(1)}, rEdge + 5.0 * sC.g + 3.0 * sD.a);
+    float strip = 1.0 - smoothstep(${riverStrip().toFixed(1)}, ${(riverStrip() + 16).toFixed(1)}, rEdge + 5.0 * sC.g + 3.0 * sD.a);
     farmW *= 1.0 - strip;
-    // Rough bankside vegetation: tussocky, olive and dark, with pale reed beds at the water's edge.
+${presentText(`    // The wooded bank (riparian.ts GALLERY_FAR; placement.ts plants it): as its trees thin out with distance the
+    // canopy shell stands in for them, so the river keeps its dark green margins from the air.
+    float gallery = (1.0 - smoothstep(${(GALLERY_FAR - 6).toFixed(1)}, ${(GALLERY_FAR + 4).toFixed(1)}, rEdge + 5.0 * sC.g)) * smoothstep(0.0, 2.0, rEdge);
+    forestW += (1.0 - forestW) * 0.85 * gallery * (1.0 - tKeepOpen);
+    farmW *= 1.0 - gallery;
+`)}    // Rough bankside vegetation: tussocky, olive and dark, with pale reed beds at the water's edge.
     float reeds = (1.0 - smoothstep(bankW + 1.0, bankW + 6.0, rEdge + 2.0 * sD.g)) * smoothstep(0.45, 0.6, nC.r);
     vec3 rough = mix(${P.bankRoughA}, ${P.bankRoughB}, smoothstep(0.3, 0.7, nD.g)) * (0.85 + 0.3 * sD.b);
     rough = mix(rough, ${P.reeds}, reeds * 0.7);
-    meadow = mix(meadow, rough, strip);
+${presentText(`    // Under and between the bank trees the ground is overgrown: bramble, nettle and young growth, dark and lush.
+    rough = mix(rough, vec3(0.026, 0.05, 0.016) * (0.8 + 0.4 * nD.g), 0.85 * (1.0 - 0.6 * reeds));
+`)}    meadow = mix(meadow, rough, strip);
   }
 }
 ${presentText(`// Plantation estates (plantation.ts): the compartment here. A fresh clear-fell is bare brown ground strewn with

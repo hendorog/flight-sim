@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { PALETTES } from './eraPalette';
 import { HASH_GLSL } from './glsl';
 import { hydrology } from './heightfield';
-import { RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
+import { GALLERY_FLOOR, RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
 import type { WaterData } from './tileBuilder';
 import { era, isPresent } from '../era/eraState';
 
@@ -199,9 +199,12 @@ vec3 wDirect = reflectedLight.directSpecular;
   float ac = max(abs(c), 0.03);
   float x = max(vRiverInfo.z - bSide * vRiverInfo.x, 0.0) / ac;
   float sHit = vRiverInfo.y + dot(dH, fT) * x;
-  // Canopy cover of the bank seen edge-on: the gallery is broken (placement plants at most ~60% of its
-  // candidates where presence is 1, fewer further from the water), so gaps show the sky between crowns.
-  float trees = riparianPresence(sHit, bSide) * (0.25 + 0.35 * texture(tNoise, vec2(sHit / 23.0, bSide * 0.37)).r);
+  // Canopy cover of the bank seen edge-on: in another era the gallery is broken (placement plants at most ~60% of
+  // its candidates where presence is 1, fewer further from the water), so gaps show the sky between crowns; today
+  // the bank is wooded nearly throughout (riparian.ts GALLERY_FLOOR).
+  float trees = ${isPresent()
+    ? `(${GALLERY_FLOOR.toFixed(2)} + ${(1 - GALLERY_FLOOR).toFixed(2)} * riparianPresence(sHit, bSide)) * (0.6 + 0.35 * texture(tNoise, vec2(sHit / 23.0, bSide * 0.37)).r)`
+    : 'riparianPresence(sHit, bSide) * (0.25 + 0.35 * texture(tNoise, vec2(sHit / 23.0, bSide * 0.37)).r)'};
   // Crown outline along the bank: tree-sized bumps of varying height.
   float crowns = texture(tNoise, vec2(sHit / 31.0, 0.61 + bSide * 0.23)).g + 0.5 * texture(tNoise, vec2(sHit / 8.0, 0.13 + bSide * 0.31)).b;
   float hT = ${RIPARIAN_TREE_HEIGHT.toFixed(1)} * clamp(0.35 + 0.75 * crowns, 0.3, 1.5);

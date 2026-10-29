@@ -11,6 +11,15 @@ export const RIPARIAN_TREE_HEIGHT = 12;
 /** The trees stand this far beyond the water's edge (a band), m. */
 export const RIPARIAN_NEAR = 3;
 export const RIPARIAN_FAR = 22;
+/**
+ * Today the banks are wooded almost throughout (planted and left for bank protection): a gallery from the water's
+ * edge out to GALLERY_FAR, its gaps few (GALLERY_FLOOR of the full density where riparianPresence is 0), with
+ * shrubs and young trees in its first GALLERY_SCRUB metres. Another era keeps the broken gallery above.
+ */
+export const GALLERY_NEAR = 1.5;
+export const GALLERY_FAR = 50;
+export const GALLERY_FLOOR = 0.7;
+export const GALLERY_SCRUB = 12;
 
 const salt = (side: number): number => (side > 0 ? 71 : 73);
 const h01 = (k: number, s: number): number => hash2i(k, s) / 4294967296;

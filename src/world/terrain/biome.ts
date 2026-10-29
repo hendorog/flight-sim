@@ -179,6 +179,10 @@ const compartment = makeCompartment();
 
 /** Width of the uncultivated strip along each river bank (the ground shader's riparian strip), m. */
 export const RIVER_STRIP = 14;
+/** The strip of this thread's era: today it holds the wooded bank (riparian.ts GALLERY_FAR) as well, m. */
+export function riverStrip(): number {
+  return isPresent() ? 52 : RIVER_STRIP;
+}
 
 /** Tree line elevation on level ground, m: forests thin out above it and stop 250 m higher. */
 export function treeLine(north: number, east: number): number {
@@ -285,7 +289,8 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
   const lowland = 1 - smooth(800, 1150, h);
   const nearField = 1 - s.airportBlend;
   // Along the river the fields stop short of the bank: a strip of rough grass, reeds and bankside trees.
-  const riverStrip = s.riverHalfWidth > 0 ? smooth(s.riverHalfWidth + RIVER_STRIP, s.riverHalfWidth + RIVER_STRIP + 16, s.riverDist) : 1;
+  const strip = riverStrip();
+  const bankStrip = s.riverHalfWidth > 0 ? smooth(s.riverHalfWidth + strip, s.riverHalfWidth + strip + 16, s.riverDist) : 1;
   const farmland =
     clamp(
       Math.max(flatness, nearField) * lowland * Math.max(smooth(-0.45, -0.2, commons), nearField) * smooth(2, 6, aboveWater) * (1 - sand) * (1 - forest),
@@ -294,7 +299,7 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
     ) *
     smooth(4, 20, s.airportBlend < 1 ? fenceDistance(north, east) : 1e4) *
     townFieldFactor(north, east) *
-    riverStrip *
+    bankStrip *
     (1 - smooth(0.35, 0.65, estate));
 
   out.forest = forest;

@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { findTownSite } from '../../src/world/airport/valley';
 import { computeBiome, makeBiome, RIVER_STRIP, treeLine, TREE_LINE_ASPECT } from '../../src/world/terrain/biome';
 import { hydrology, makeSample, sampleTerrain, terrainHeight } from '../../src/world/terrain/heightfield';
-import { RIPARIAN_FAR, RIPARIAN_NEAR, riparianPresence } from '../../src/world/terrain/riparian';
+import { GALLERY_FAR, GALLERY_NEAR, riparianPresence } from '../../src/world/terrain/riparian';
 import { RIVER_FAR, RIVER_UNITS, buildTile, tileVertexCount } from '../../src/world/terrain/tileBuilder';
 import { setTownSite, TOWN_CORE, TOWN_WOOD_MARGIN, townSite } from '../../src/world/terrain/townMask';
 import { buildTreeCell, TREE_STRIDE } from '../../src/world/terrain/vegetation/placement';
@@ -154,8 +154,9 @@ describe('river', () => {
         sampleTerrain(p.north, p.east, s);
         if (s.riverHalfWidth <= 0) continue;
         const edge = s.riverDist - s.riverHalfWidth;
-        if (edge < 2) inChannel++;
-        if (edge > RIPARIAN_NEAR && edge < RIPARIAN_FAR) {
+        // (Bank scrub stands from 1.2 m of the water's edge, riparian.ts GALLERY_SCRUB.)
+        if (edge < 1) inChannel++;
+        if (edge > GALLERY_NEAR && edge < GALLERY_FAR) {
           bankside++;
           bankPresence += riparianPresence(s.riverArc, Math.sign(s.riverSigned));
         }
@@ -163,7 +164,8 @@ describe('river', () => {
     }
     expect(inChannel).toBe(0);
     expect(bankside).toBeGreaterThan(20);
-    // Bankside trees stand mostly where the (shared, reflected) gallery presence is high.
+    // Bankside trees stand mostly where the (shared, reflected) gallery presence is high (today the bank is wooded
+    // nearly throughout, thinner where it is low).
     expect(bankPresence / bankside).toBeGreaterThan(0.5);
   });
 });
