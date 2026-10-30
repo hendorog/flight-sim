@@ -164,6 +164,12 @@ export class SpeechScheduler {
     return this.current !== null && (channel === undefined || this.current.entry.req.channel === channel);
   }
 
+  /** `actor` is speaking now (on `channel`, when given). */
+  speaking(actor: ActorId, channel?: Channel): boolean {
+    const r = this.current?.entry.req;
+    return !!r && r.actor === actor && (channel === undefined || r.channel === channel);
+  }
+
   /** Nothing playing or queued (for `actor`, when given). */
   idle(actor?: ActorId): boolean {
     const mine = (r: SpeechRequest): boolean => actor === undefined || r.actor === actor;

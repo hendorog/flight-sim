@@ -21,7 +21,7 @@ const { RadioSystem } = await import('../../src/atc/RadioSystem');
 
 function rig(traffic: () => unknown[] = () => [], coms: ComRadio = 2) {
   const said: { actor: string; caption: string }[] = [];
-  const speech = { enqueue: (u: { actor: string; caption: string }) => said.push(u), busy: () => false, idle: () => true, cancel() {} };
+  const speech = { enqueue: (u: { actor: string; caption: string }) => said.push(u), busy: () => false, idle: () => true, speaking: () => false, cancel() {} };
   const inputs: string[] = [];
   const training = { speech, active: false, input: (c: string) => inputs.push(c), radioIdentity: () => ({ authority: 'easa', registration: 'G-FSCK', icaoType: 'C172' }) };
   const p = fieldPoint(H, -600, 0);

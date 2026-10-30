@@ -9,7 +9,7 @@ import type { SimContext, Subsystem } from '../core/context';
 import { Priority, type ActorId } from '../training/types';
 import type { TrainingSystem } from '../training/TrainingSystem';
 import type { InstrumentReadings } from '../instruments/dynamics/instrumentSet';
-import { HOME_GROUND, radioTuning, selectMic, stationOn, stations, swapCom, tuneCom, type ComRadio, type Station } from '../instruments/dynamics/radios';
+import { HOME_GROUND, radioTuning, selectMic, setTransmitting, stationOn, stations, swapCom, tuneCom, type ComRadio, type Station } from '../instruments/dynamics/radios';
 import { RadioMenu, type RadioMenuItem } from '../ui/radioMenu';
 import { atisText, callsFor, replyTo, stationName, vacateInstruction, type Call, type Intent, type RadioSituation } from './calls';
 import { callsign } from './phrases';
@@ -103,6 +103,7 @@ export class RadioSystem implements Subsystem {
   }
 
   dispose(): void {
+    setTransmitting(false);
     this.unsubscribe?.();
     window.removeEventListener('keydown', this.onKey, true);
     this.menu.root.remove();
@@ -313,6 +314,8 @@ export class RadioSystem implements Subsystem {
       this.airborneFor = 0;
     }
     if (this.deps.comRadios?.() === 1 && radioTuning().mic === 2) selectMic(1);
+    // The radios' TX annunciator while the pilot's call is going out.
+    setTransmitting(this.speech.speaking('student', 'radio'));
     if (this.handover && (this.simClock > this.handover.until || Math.abs(this.frequency() - this.handover.frequency) < 0.004)) this.handover = null;
     if (this.mode && (this.refresh -= dt) <= 0) {
       this.refresh = 0.5;

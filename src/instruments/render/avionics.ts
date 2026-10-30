@@ -4,7 +4,7 @@ import { DEG, NM, clamp } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import { airfields } from '../../world/airfields';
 import { gpsTarget } from '../dynamics/navigation';
-import { radioRevision, type RadioTuning } from '../dynamics/radios';
+import { radioRevision, transmitting, type RadioTuning } from '../dynamics/radios';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
 import { centredText, font, screw } from './art';
 import { context2d, LABEL_FONT, makeCanvas, rng, type Ctx2D } from './canvas';
@@ -237,6 +237,15 @@ export class GpsUnit extends RackUnit {
       g.font = `600 9px ${LABEL_FONT}`;
       g.fillStyle = '#7fc4ea';
       g.fillText(label, x, y);
+      // The COM the audio panel's MIC is on, and TX while a call is going out.
+      if (i === 0 && this.tuning.mic === 1) {
+        g.fillStyle = '#5dffa0';
+        g.fillText('MIC', x + 25, y);
+        if (transmitting()) {
+          g.fillStyle = '#ffb347';
+          g.fillText('TX', x + 48, y);
+        }
+      }
       g.font = font(15, 600);
       g.fillStyle = '#5dffa0';
       g.fillText(fmtFreq(active, dec), x, y + 19);
@@ -381,12 +390,17 @@ export class GpsUnit extends RackUnit {
 // ---------------------------------------------------------------------------------------------------
 const LED = '#ff8f2a';
 const LED_OFF = 'rgba(255,143,42,0.07)';
+/** The MIC lamp beside the COM window: lit on the COM the audio panel transmits and listens on; TX while it does. */
+const MIC_LAMP = { x: 56, y: 49, r: 2.6, on: '#7dff9a', glow: 'rgba(80,255,120,0.9)', off: '#16301c' };
+const TX_LAMP = { x: 114, y: 49, r: 2.6, on: '#ffb347', glow: 'rgba(255,160,60,0.9)', off: '#33220f' };
 
 /** NAV/COM with gas-discharge style segment displays: COM1/NAV1 on panels without a GPS, else COM2/NAV2. */
 export class NavComRadio extends RackUnit {
   protected readonly screens = [
     { x: 22, y: 10, w: 128, h: 32 },
     { x: 170, y: 10, w: 128, h: 32 },
+    { x: MIC_LAMP.x - 4, y: MIC_LAMP.y - 4, w: 8, h: 8 },
+    { x: TX_LAMP.x - 4, y: TX_LAMP.y - 4, w: 8, h: 8 },
   ];
   private readonly latch = new Latch(2);
 
@@ -415,6 +429,8 @@ export class NavComRadio extends RackUnit {
     }
     centredText(g, 'COM', 40, 52, 7);
     centredText(g, 'NAV', 188, 52, 7);
+    centredText(g, 'MIC', MIC_LAMP.x, 61, 5);
+    centredText(g, 'TX', TX_LAMP.x, 61, 5);
     button(g, 66, 48, 36, 12, '⇄');
     button(g, 214, 48, 36, 12, '⇄');
     dualKnob(g, 138, 57, 11);
@@ -429,13 +445,33 @@ export class NavComRadio extends RackUnit {
       const com = this.set === 1 ? this.tuning.com1 : this.tuning.com2;
       const nav = this.set === 1 ? this.tuning.nav1 : this.tuning.nav2;
       drawSegments(g, fmtFreq(com[0], 2), 90, 18, style);
+      const mic = this.tuning.mic === this.set;
+      lamp(g, MIC_LAMP, mic);
+      lamp(g, TX_LAMP, mic && transmitting());
       drawSegments(g, fmtFreq(com[1], 2), 146, 21, small);
       drawSegments(g, fmtFreq(nav[0], 2), 238, 18, style);
       drawSegments(g, fmtFreq(nav[1], 2), 294, 21, small);
+    } else {
+      lamp(g, MIC_LAMP, false);
+      lamp(g, TX_LAMP, false);
     }
     screenGlass(g, 22, 10, 128, 32);
     screenGlass(g, 170, 10, 128, 32);
   }
+}
+
+/** A small panel lamp, lit or dark. */
+function lamp(g: Ctx2D, at: typeof MIC_LAMP, on: boolean): void {
+  g.save();
+  g.beginPath();
+  g.arc(at.x, at.y, at.r, 0, Math.PI * 2);
+  if (on) {
+    g.shadowColor = at.glow;
+    g.shadowBlur = 5;
+    g.fillStyle = at.on;
+  } else g.fillStyle = at.off;
+  g.fill();
+  g.restore();
 }
 
 /** Mode C transponder: squawk code, ALT mode, pressure altitude and the reply lamp. */

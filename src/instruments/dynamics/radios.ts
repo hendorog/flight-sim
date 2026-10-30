@@ -78,6 +78,19 @@ export function swapCom1(): void {
   swapCom(1);
 }
 
+let tx = false;
+
+/** The MIC is keyed (a call going out): the radios light TX. */
+export function setTransmitting(on: boolean): void {
+  if (tx === on) return;
+  tx = on;
+  revision++;
+}
+
+export function transmitting(): boolean {
+  return tx;
+}
+
 /** The audio panel's MIC selector. */
 export function selectMic(n: ComRadio): void {
   if (live.mic === n) return;
@@ -111,6 +124,7 @@ export function com1Changed(): boolean {
 /** Back to the defaults (a new world, or a snapshot that carries no tuning). */
 export function resetRadios(): void {
   Object.assign(live, copy(DEFAULT_TUNING));
+  tx = false;
   revision++;
 }
 

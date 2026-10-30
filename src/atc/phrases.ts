@@ -72,14 +72,17 @@ export function pressure(qnhHpa: number, a: Authority): Phrase {
   return { text: `QNH ${h}`, speak: `Q N H ${spell(h)}` };
 }
 
+/** "wind" as speech engines say the noun: some read the bare word as the verb (to wind up). */
+const WIND = 'winnd';
+
 /** The wind: 'wind 250 at 8' / 'wind two five zero degrees, eight knots'; calm under 3 kt. */
 export function wind(fromDeg: number, kt: number, a: Authority): Phrase {
   const k = Math.round(kt);
-  if (k < 3) return both('wind calm');
+  if (k < 3) return both('wind calm', `${WIND} calm`);
   const d = String((Math.round(fromDeg / 10) * 10 + 359) % 360 + 1).padStart(3, '0');
   return a === 'faa'
-    ? { text: `wind ${d} at ${k}`, speak: `wind ${spell(d)} at ${spell(String(k))}` }
-    : { text: `wind ${d} degrees ${k} knots`, speak: `wind ${spell(d)} degrees, ${spell(String(k))} knots` };
+    ? { text: `wind ${d} at ${k}`, speak: `${WIND} ${spell(d)} at ${spell(String(k))}` }
+    : { text: `wind ${d} degrees ${k} knots`, speak: `${WIND} ${spell(d)} degrees, ${spell(String(k))} knots` };
 }
 
 /** Compass words for a bearing (deg true) from a field: 'north-east'. */
