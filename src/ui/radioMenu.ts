@@ -12,12 +12,15 @@ export interface RadioMenuItem {
   key?: string;
   /** Marked as the current choice (the active frequency, the MIC's COM). */
   on?: boolean;
+  /** One of the radio window's actions (flip-flop, MIC, say again): on one row above the list. */
+  action?: boolean;
 }
 
 export class RadioMenu {
   readonly root: HTMLDivElement;
   private readonly head: HTMLElement;
   private readonly status: HTMLElement;
+  private readonly actions: HTMLElement;
   private readonly list: HTMLElement;
   private readonly note: HTMLElement;
   private key = '';
@@ -27,6 +30,7 @@ export class RadioMenu {
     this.root = el('div', 'radio-menu hidden', parent);
     this.head = el('div', 'radio-menu-head', this.root);
     this.status = el('div', 'radio-menu-status', this.root);
+    this.actions = el('div', 'radio-menu-actions', this.root);
     this.list = el('div', 'radio-menu-list', this.root);
     this.note = el('div', 'radio-menu-note', this.root);
   }
@@ -48,12 +52,13 @@ export class RadioMenu {
       this.status.replaceChildren();
       for (const l of status) el('div', l.on ? 'on' : '', this.status, l.text);
     }
-    const key = items.map((i) => `${i.key ?? ''}${i.on ? '*' : ''}${i.label}${i.detail}`).join('|');
+    const key = items.map((i) => `${i.key ?? ''}${i.on ? '*' : ''}${i.action ? '!' : ''}${i.label}${i.detail}`).join('|');
     if (key === this.key) return;
     this.key = key;
+    this.actions.replaceChildren();
     this.list.replaceChildren();
     items.forEach((item, i) => {
-      const b = el('button', item.on ? 'radio-call on' : 'radio-call', this.list);
+      const b = el('button', item.on ? 'radio-call on' : 'radio-call', item.action ? this.actions : this.list);
       el('kbd', '', b, item.key ?? String(i + 1));
       const t = el('span', '', b);
       el('b', '', t, item.label);
@@ -75,6 +80,11 @@ export const RADIO_MENU_CSS = `
   padding: 10px 12px 10px; border-radius: 12px; background: rgba(10,14,20,.84); backdrop-filter: blur(10px);
   border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,.35); pointer-events: auto; }
 #fsui .radio-menu-head { font-size: 10px; letter-spacing: .14em; color: #ffc34d; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; }
+#fsui .radio-menu-actions { display: flex; gap: 6px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.12); }
+#fsui .radio-menu-actions:empty { display: none; }
+#fsui .radio-menu-actions .radio-call { flex: 1 1 0; min-width: 0; }
+#fsui .radio-menu.compact .radio-menu-actions .radio-call span { display: block; }
+#fsui .radio-menu.compact .radio-menu-actions .radio-call small { margin-left: 0; text-align: left; }
 #fsui .radio-menu-list { display: flex; flex-direction: column; gap: 4px; }
 #fsui .radio-call { display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 6px 8px; border-radius: 8px;
   background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); color: var(--fg); cursor: pointer; }

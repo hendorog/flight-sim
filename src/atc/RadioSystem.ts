@@ -81,7 +81,7 @@ export class RadioSystem implements Subsystem {
   private vacateGiven = true;
 
   constructor(private readonly deps: RadioDeps) {
-    this.menu = new RadioMenu(deps.layer, (i) => this.transmit(i));
+    this.menu = new RadioMenu(deps.layer, (i) => (this.mode === 'tune' ? this.tuneItems[i]?.run() : this.transmit(i)));
   }
 
   private unsubscribe: (() => void) | null = null;
@@ -227,7 +227,7 @@ export class RadioSystem implements Subsystem {
       items.push({ key: String(items.length + 1), label: `${stationLabel(s)} ${s.frequency.toFixed(3)}`, detail: `${where}${range}${handed}`, on: Math.abs(s.frequency - com[0]) < 0.004, run: () => tune(s.frequency) });
     }
     items.push({
-      key: 'S', label: `Flip-flop COM${n}`, detail: `${com[1].toFixed(3)} active, ${com[0].toFixed(3)} to standby`,
+      key: 'S', action: true, label: `Flip-flop COM${n}`, detail: `${com[1].toFixed(3)} active`,
       run: () => {
         swapCom(n);
         this.deps.toast?.(`COM${n} ${com[0].toFixed(3)}`);
@@ -238,7 +238,7 @@ export class RadioSystem implements Subsystem {
       const other: ComRadio = n === 1 ? 2 : 1;
       const oc = other === 1 ? t.com1 : t.com2;
       items.push({
-        key: 'C', label: `MIC to COM${other}`, detail: `Transmit and listen on COM${other} ${oc[0].toFixed(3)}`,
+        key: 'C', action: true, label: `MIC to COM${other}`, detail: `Talk and listen on ${oc[0].toFixed(3)}`,
         run: () => {
           selectMic(other);
           this.updateTune();
@@ -247,7 +247,7 @@ export class RadioSystem implements Subsystem {
     }
     if (this.deps.training.active) {
       items.push({
-        key: '0', label: 'Say again', detail: 'The instructor repeats the last instruction',
+        key: '0', action: true, label: 'Say again', detail: 'The instructor repeats',
         run: () => {
           this.hide();
           this.deps.training.input('sayAgain');

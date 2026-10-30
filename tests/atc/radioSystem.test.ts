@@ -9,6 +9,7 @@ import '../../src/world/terrain/heightfield';
 vi.mock('../../src/ui/radioMenu', () => ({
   RadioMenu: class {
     open = false; items: { key?: string; label: string; detail: string }[] = []; root = { remove() {} };
+    constructor(_layer: unknown, readonly onPick: (i: number) => void) {}
     show(_t: string, items: { label: string; detail: string }[]) { this.open = true; this.items = items; }
     hide() { this.open = false; }
   },
@@ -28,7 +29,7 @@ function rig(traffic: () => unknown[] = () => [], coms: ComRadio = 2) {
   const ctx = { state, weather: { windDirectionDeg: 70, windSpeedKt: 6, qnhHpa: 1013, timeOfDay: 10, visibilityM: 20000 }, events: { on: () => () => {} }, paused: false };
   const radio = new RadioSystem({ training: training as never, readings: () => ({ avionicsPowered: true }) as never, layer: {} as never, traffic: traffic as never, comRadios: () => coms });
   radio.init(ctx as never);
-  const r = radio as unknown as { onKey: (e: unknown) => void; menu: { open: boolean; items: { key?: string; label: string; detail: string }[] } };
+  const r = radio as unknown as { onKey: (e: unknown) => void; menu: { open: boolean; onPick: (i: number) => void; items: { key?: string; label: string; detail: string; action?: boolean }[] } };
   const key = (code: string, shiftKey = false) => r.onKey({ code, shiftKey, repeat: false, target: null, preventDefault() {}, stopImmediatePropagation() {} });
   return { radio, state, said, training, inputs, key, menu: r.menu };
 }
@@ -113,6 +114,14 @@ describe('the radio window (R)', () => {
     expect(radioTuning().com1).toEqual([120.3, H.frequency]);
     radio.update(0.1);
     expect(radioTuning().mic).toBe(2);
+  });
+
+  it('tunes a clicked station, and marks S and C as the actions row', () => {
+    const { key, menu } = rig();
+    key('KeyR');
+    expect(menu.items.filter((i) => i.action).map((i) => i.key)).toEqual(['S', 'C']);
+    menu.onPick(menu.items.findIndex((i) => i.label.includes('Ground')));
+    expect(radioTuning().com1[0]).toBe(HOME_GROUND);
   });
 
   it('keeps the MIC on COM1 with one COM radio, and offers no C', () => {
