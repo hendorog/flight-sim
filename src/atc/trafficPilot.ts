@@ -26,8 +26,6 @@ const TOUCH_HOLD = 2;
 const CROSSWIND_MIN = 450 * FT;
 /** The descent from abeam the threshold to the base height, m/s (500 fpm). */
 const CIRCUIT_DESCENT = 500 * FT / 60;
-/** The height base is flown at and final turned onto, m. */
-const BASE_HEIGHT = 500 * FT;
 const DRIFT_TAU = 3;
 /** The autopilot's bank limit in the circuit: its turns overshoot the limit by a few degrees, so a little under 25. */
 const CIRCUIT_BANK = 22 * DEG;
@@ -123,6 +121,16 @@ export class TrafficPilot {
     this.engageLeg(false);
   }
 
+  /** The height base is flown at and final turned onto, m (higher on an extended downwind). */
+  private get baseHeight(): number {
+    return this.path.legs[3].height;
+  }
+
+  /** The same circuit with base moved out (following traffic): flown on from where it is, nothing re-engaged. */
+  extend(path: CircuitPath): void {
+    this.path = path;
+  }
+
   /** Go around: full power, take-off flap, climb out on the runway heading, then the circuit again. */
   goAround(): void {
     const s = this.fm.state;
@@ -146,7 +154,7 @@ export class TrafficPilot {
     const leg = this.path.legs[this.leg];
     if (onGround || leg.id === 'upwind') af.engage(this.takeoffPlan(), s, this.controls);
     else if (leg.id === 'final') af.engage({ kind: 'approach', kias: this.def.sim.scenario.finalKias }, s, this.controls);
-    else this.hold(leg.id === 'base' ? BASE_HEIGHT : CIRCUIT_HEIGHT, leg.id === 'downwind' ? this.def.sim.scenario.downwindKias : this.def.sim.scenario.finalKias + 5);
+    else this.hold(leg.id === 'base' ? this.baseHeight : CIRCUIT_HEIGHT, leg.id === 'downwind' ? this.def.sim.scenario.downwindKias : this.def.sim.scenario.finalKias + 5);
   }
 
   private hold(height: number, kias: number): void {
@@ -212,7 +220,7 @@ export class TrafficPilot {
         af.engage({ kind: 'approach', kias: this.def.sim.scenario.finalKias }, s, this.controls);
       } else if (next.id === 'base') {
         this.controls.flaps = this.flaps.base;
-        this.hold(BASE_HEIGHT, this.def.sim.scenario.finalKias + 5);
+        this.hold(this.baseHeight, this.def.sim.scenario.finalKias + 5);
         this.autoflight.autopilot.settings.verticalSpeed = CIRCUIT_DESCENT;
       } else {
         // Crosswind and downwind at circuit height (the climb continues on crosswind).
@@ -227,10 +235,11 @@ export class TrafficPilot {
       af.autopilot.settings.heading = wrapPi(legTrack(path, this.leg, p.cross) + this.drift);
       // Abeam the threshold on downwind: power back, the first stage of flap, the approach's speed plus ten and
       // a 500 fpm descent toward the base height.
-      if (now.id === 'downwind' && activeFrame(path.field, path.end, s.position.x, s.position.y).along < -path.field.length / 2 && af.autopilot.settings.altitude > path.field.elevation + BASE_HEIGHT + this.def.geometry.restHeight + 1) {
+      // Following traffic, abeam the threshold moves out with the extended downwind.
+      if (now.id === 'downwind' && activeFrame(path.field, path.end, s.position.x, s.position.y).along < -path.field.length / 2 - path.extension && af.autopilot.settings.altitude > path.field.elevation + this.baseHeight + this.def.geometry.restHeight + 1) {
         this.controls.flaps = Math.max(this.controls.flaps, Math.min(this.flaps.first, this.flaps.base));
         af.autopilot.settings.airspeed = (this.def.sim.scenario.finalKias + 10) * KT;
-        af.autopilot.settings.altitude = path.field.elevation + BASE_HEIGHT + this.def.geometry.restHeight;
+        af.autopilot.settings.altitude = path.field.elevation + this.baseHeight + this.def.geometry.restHeight;
         af.autopilot.settings.verticalSpeed = CIRCUIT_DESCENT;
       }
     }

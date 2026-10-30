@@ -32,6 +32,8 @@ export interface CircuitPath {
   legs: CircuitLeg[];
   /** Touchdown aim point, m along the active frame. */
   aim: number;
+  /** How much farther downwind than usual base is turned (following traffic ahead), m. */
+  extension: number;
 }
 
 /** Circuit height above the field, m. */
@@ -56,23 +58,28 @@ const ROTATE = 55 * KT;
 /** Below this height on final the aircraft flares, m. */
 const FLARE = 6;
 
-/** The circuit for a field and runway end: upwind, crosswind, downwind, base and final on the field's circuit side. */
-export function circuitPath(field: Airfield, end: RunwayEnd): CircuitPath {
+/**
+ * The circuit for a field and runway end: upwind, crosswind, downwind, base and final on the field's circuit side.
+ * An extension (following traffic ahead) moves base that much farther out, flown higher to stay near the glide path.
+ */
+export function circuitPath(field: Airfield, end: RunwayEnd, extension = 0): CircuitPath {
   const thr = -field.length / 2;
   const side = field.circuit === 'left' ? -1 : 1;
   const out = side * DOWNWIND_OFFSET;
   const turnUp = Math.max(field.length / 2 + 400, thr + 1800);
-  const turnBase = thr - FINAL_LENGTH;
+  const turnBase = thr - FINAL_LENGTH - extension;
+  const baseHeight = Math.min(CIRCUIT_HEIGHT, Math.max(500 * FT, (thr + AIM - turnBase) * Math.tan(GLIDE)));
   const p = (along: number, across: number) => ({ along, across });
   return {
     field,
     end,
     aim: thr + AIM,
+    extension,
     legs: [
       { id: 'upwind', from: p(thr, 0), to: p(turnUp, 0), height: CIRCUIT_HEIGHT, speed: 70 * KT },
       { id: 'crosswind', from: p(turnUp, 0), to: p(turnUp, out), height: CIRCUIT_HEIGHT, speed: 75 * KT },
       { id: 'downwind', from: p(turnUp, out), to: p(turnBase, out), height: CIRCUIT_HEIGHT, speed: 90 * KT },
-      { id: 'base', from: p(turnBase, out), to: p(turnBase, 0), height: 500 * FT, speed: 70 * KT },
+      { id: 'base', from: p(turnBase, out), to: p(turnBase, 0), height: baseHeight, speed: 70 * KT },
       { id: 'final', from: p(turnBase, 0), to: p(thr + AIM, 0), height: 0, speed: 65 * KT },
     ],
   };
@@ -136,6 +143,19 @@ export function legPosition(path: CircuitPath, leg: number, north: number, east:
   const ra = along - l.from.along, rc = across - l.from.across;
   const done = ra * ua + rc * uc;
   return { toGo: len - done, cross: ra * -uc + rc * ua, length: len };
+}
+
+/**
+ * The distance still to fly to the touchdown aim point from a position on a leg, m: what is left of that leg and
+ * the legs after it (upwind and crosswind count the whole downwind, base and final still to come).
+ */
+export function circuitRemaining(path: CircuitPath, leg: number, north: number, east: number): number {
+  let d = Math.max(0, legPosition(path, leg, north, east).toGo);
+  for (let i = leg + 1; i < path.legs.length; i++) {
+    const l = path.legs[i];
+    d += Math.hypot(l.to.along - l.from.along, l.to.across - l.from.across);
+  }
+  return d;
 }
 
 /** The leg's guidance: the heading to fly, with the cross-track correction (at most 45 degrees of intercept). */

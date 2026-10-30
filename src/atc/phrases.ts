@@ -103,8 +103,8 @@ export interface Callsign {
   short: Phrase;
 }
 
-/** Manufacturer word an FAA callsign starts with, from the ICAO type designator. */
-function maker(icaoType: string): string {
+/** Manufacturer word an FAA callsign starts with, from the ICAO type designator (also the tower's 'follow the Cessna'). */
+export function maker(icaoType: string): string {
   const t = icaoType.toUpperCase();
   if (/^C\d/.test(t)) return t === 'C208' ? 'Caravan' : 'Cessna';
   if (t.startsWith('PA')) return 'Piper';

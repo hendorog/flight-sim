@@ -610,9 +610,9 @@ export class Simulator {
     training?.init(ctx);
     this.training = training;
     // The radio (docs/atc.md) speaks through the Flight School's scheduler and captions.
-    const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority, env: () => physics.env }) : null);
+    const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority, env: () => physics.env, homeTraffic: () => !training.active, player: () => training.radioIdentity() }) : null);
     traffic?.init(ctx);
-    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, comRadios: () => panel.comRadios, cdiSelect: () => panel.cdiSelect, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [] }) : null;
+    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, comRadios: () => panel.comRadios, cdiSelect: () => panel.cdiSelect, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [], towerReply: (c, i) => traffic?.towerReply(c, i) ?? null }) : null;
     this.radio?.init(ctx);
     this.schoolCopilot = physics.copilot;
     if (id === 'r22') {

@@ -5,6 +5,8 @@
 // speech scheduler and the captions). R opens the radio window: the nearby stations to tune with one key (the one a
 // controller just handed over to first), the flip-flop, the MIC selector and, in a lesson, the instructor's say again;
 // Tab turns it to the NAV page: the nearby ILSs and VORs, the NAV flip-flop and which NAV receiver is tuned.
+// Readbacks (step 4): a clearance from the tower or ground puts its readback first in the Space menu; one that
+// must be read back and is not, within READBACK_S, brings a prompt. "Say again" has the last message repeated.
 
 import type { SimContext, Subsystem } from '../core/context';
 import { Priority, type ActorId } from '../training/types';
@@ -13,9 +15,11 @@ import type { InstrumentReadings } from '../instruments/dynamics/instrumentSet';
 import { HOME_GROUND, radioTuning, selectCdi, selectMic, setTransmitting, stationOn, stations, swapCom, swapNav, tuneCom, tuneNav, type ComRadio, type Station } from '../instruments/dynamics/radios';
 import { emptyNavSignal, navaids, receiveNav } from '../instruments/dynamics/navigation';
 import { RadioMenu, type RadioMenuItem } from '../ui/radioMenu';
-import { atisText, callsFor, replyTo, stationName, vacateInstruction, type Call, type Intent, type RadioSituation } from './calls';
-import { callsign } from './phrases';
+import { HOME_AIRFIELD } from '../world/airfields';
+import { atisText, callsFor, mustReadBack, readbackFor, replyTo, stationName, vacateInstruction, vacateReadback, type Call, type CallId, type Intent, type RadioSituation } from './calls';
+import { both, callsign, join, type Phrase } from './phrases';
 import type { Transmission } from './TrafficSystem';
+import type { TowerReply } from './tower';
 
 /** The answer follows the call after this long, s of sim time. */
 const REPLY_DELAY = 1.6;
@@ -25,6 +29,11 @@ const ATIS_GAP_MS = 4000;
 const ANTENNA = 10;
 /** A handover ("contact Ground 121.9") stays first in the radio window for this long, s of sim time. */
 const HANDOVER_S = 180;
+/** A clearance not read back after this long brings the controller's prompt, s of sim time; the readback is offered for READBACK_KEEP_S. */
+const READBACK_S = 15;
+const READBACK_KEEP_S = 60;
+/** "Say again" is offered for this long after a message to this aircraft, s. */
+const SAY_AGAIN_S = 60;
 const NM = 1852;
 
 /** VHF line-of-sight range between an aircraft this high above the ground and a station antenna (or another aircraft this high), m. */
@@ -51,6 +60,8 @@ export interface RadioDeps {
   toast?: (text: string) => void;
   /** A menu or dialog has the keys: Space and R are left to it. */
   blocked?: () => boolean;
+  /** The home tower's sequencing answer to a call (TrafficSystem.towerReply); null: calls.ts replyTo answers. */
+  towerReply?: (call: CallId, intent?: Intent) => TowerReply | null;
 }
 
 interface TuneItem extends RadioMenuItem {
@@ -74,7 +85,11 @@ export class RadioSystem implements Subsystem {
   private situation: RadioSituation | null = null;
   /** Stations that have answered this aircraft (by frequency and field): the abbreviated callsign from then on. */
   private readonly contacted = new Set<string>();
-  private pending: { at: number; actor: ActorId; text: string; speak: string; key: string } | null = null;
+  private pending: { at: number; actor: ActorId; text: string; speak: string; key: string; readback?: Phrase } | null = null;
+  /** What the pilot should read back of the last clearance, to whom, and whether it has been asked for. */
+  private readback: { line: Phrase; key: string; at: number; prompted: boolean } | null = null;
+  /** The last message to this aircraft, for say again. */
+  private lastToMe: { actor: ActorId; line: Phrase; key: string; at: number; readback?: Phrase } | null = null;
   private simClock = 0;
   private refresh = 0;
   private atisKey = '';
@@ -106,6 +121,7 @@ export class RadioSystem implements Subsystem {
       this.intent = this.landingIntent = null;
       this.vacateGiven = true;
       this.handover = null;
+      this.readback = this.lastToMe = null;
       this.hide();
     });
   }
@@ -360,7 +376,14 @@ export class RadioSystem implements Subsystem {
       return;
     }
     const s = (this.situation = this.situationNow(station));
-    this.calls = callsFor(s).slice(0, 9);
+    const key = stationKey(station);
+    const extra: Call[] = [];
+    // The readback first, then say again, while they are for this station.
+    if (this.readback?.key === key) extra.push({ id: 'readback', label: 'Read back', line: this.readback.line });
+    if (this.lastToMe?.key === key && this.simClock - this.lastToMe.at < SAY_AGAIN_S) {
+      extra.push({ id: 'sayAgain', label: 'Say again', line: join([both(stationLabel(station)), s.callsign.short, both('say again')]) });
+    }
+    this.calls = [...extra, ...callsFor(s)].slice(0, 9);
     const who = stationLabel(station);
     const note = station.kind === 'atis' ? 'An information broadcast: listen, then tune the tower.' : station.kind === 'traffic' ? 'Uncontrolled: announce your position and intentions. Space or Esc closes.' : 'Space or Esc closes.';
     this.menu.show(`${f} · ${who}`, this.calls.map((c) => ({ label: c.label, detail: c.line.text })), note);
@@ -373,11 +396,49 @@ export class RadioSystem implements Subsystem {
     this.hide();
     if (call.intent) this.intent = call.intent;
     this.speech.enqueue({ actor: 'student', channel: 'radio', caption: call.line.text, speak: call.line.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
-    const reply = replyTo(s, call.id, call.intent);
+    const key = stationKey(s.station);
+    if (call.id === 'readback') {
+      this.readback = null;
+      return;
+    }
+    if (call.id === 'sayAgain') {
+      const last = this.lastToMe;
+      if (last) this.pending = { at: this.simClock + REPLY_DELAY, actor: last.actor, text: last.line.text, speak: last.line.speak, key, readback: last.readback };
+      return;
+    }
+    const tower = s.station.kind === 'tower' && s.station.field.kind === 'home' ? this.deps.towerReply?.(call.id, call.intent) : null;
+    const reply = tower?.line ?? replyTo(s, call.id, call.intent);
     if (reply) {
       const actor: ActorId = s.station.kind === 'ground' ? 'ground' : 'tower';
-      this.pending = { at: this.simClock + REPLY_DELAY, actor, text: reply.text, speak: reply.speak, key: stationKey(s.station) };
+      const readback = (tower ? tower.readback : readbackFor(s, call.id, call.intent)) ?? undefined;
+      this.pending = { at: this.simClock + REPLY_DELAY, actor, text: reply.text, speak: reply.speak, key, readback };
     }
+  }
+
+  /** A message to this aircraft has gone out: say again repeats it; a clearance waits for its readback. */
+  private toMe(actor: ActorId, line: Phrase, key: string, readback?: Phrase): void {
+    this.contacted.add(key);
+    this.lastToMe = { actor, line, key, at: this.simClock, readback };
+    this.readback = readback ? { line: readback, key, at: this.simClock, prompted: false } : null;
+    this.speech.enqueue({ actor, channel: 'radio', caption: line.text, speak: line.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
+  }
+
+  /** The controller asks once for a clearance that has not been read back; the readback is dropped after a while. */
+  private updateReadback(): void {
+    const r = this.readback;
+    if (!r) return;
+    if (this.simClock - r.at > READBACK_KEEP_S) {
+      this.readback = null;
+      return;
+    }
+    if (r.prompted || this.simClock - r.at < READBACK_S || !mustReadBack(r.line) || this.pending || this.speech.busy('radio')) return;
+    r.prompted = true;
+    const station = this.reachable();
+    if (!station || stationKey(station) !== r.key) return;
+    const s = this.situationNow(station);
+    const actor: ActorId = station.kind === 'ground' ? 'ground' : 'tower';
+    const line = join([s.callsign.short, both('read back')]);
+    this.speech.enqueue({ actor, channel: 'radio', caption: line.text, speak: line.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
   }
 
   update(dt: number): void {
@@ -407,12 +468,10 @@ export class RadioSystem implements Subsystem {
       this.pending = null;
       // Retuned or out of range since the call: the answer is not heard.
       const now = this.reachable();
-      if (now && stationKey(now) === p.key) {
-        this.contacted.add(p.key);
-        this.speech.enqueue({ actor: p.actor, channel: 'radio', caption: p.text, speak: p.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
-      }
+      if (now && stationKey(now) === p.key) this.toMe(p.actor, { text: p.text, speak: p.speak }, p.key, p.readback);
     }
     this.updateVacate();
+    this.updateReadback();
     this.hearTraffic();
     this.updateAtis();
   }
@@ -426,7 +485,11 @@ export class RadioSystem implements Subsystem {
     for (const t of calls) {
       if (Math.abs(t.frequency - f) > 0.004) continue;
       if (Math.hypot(t.north - st.position.x, t.east - st.position.y) > radioRange(st.altitudeAGL, t.heightAgl)) continue;
-      this.speech.enqueue({ actor: 'traffic', voice: t.speaker, channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
+      if (t.actor === 'tower') {
+        // The home tower, to the circuit traffic or to the player (who is then in contact).
+        if (t.toPlayer) this.toMe('tower', t.line, `${HOME_AIRFIELD.code}:tower`, t.readback);
+        else this.speech.enqueue({ actor: 'tower', channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
+      } else this.speech.enqueue({ actor: 'traffic', voice: t.speaker, channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
     }
   }
 
@@ -442,11 +505,11 @@ export class RadioSystem implements Subsystem {
     this.vacateGiven = true;
     const station = this.reachable();
     if (!station) return;
-    const msg = vacateInstruction(this.situationNow(station));
+    const s = this.situationNow(station);
+    const msg = vacateInstruction(s);
     if (!msg) return;
-    this.contacted.add(stationKey(station));
     if (station.kind === 'tower') this.handover = { frequency: HOME_GROUND, until: this.simClock + HANDOVER_S };
-    this.speech.enqueue({ actor: 'tower', channel: 'radio', caption: msg.text, speak: msg.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
+    this.toMe('tower', msg, stationKey(station), vacateReadback(s) ?? undefined);
   }
 
   /** The ATIS repeats while COM1 is on it and in range; retuning cuts it off. */

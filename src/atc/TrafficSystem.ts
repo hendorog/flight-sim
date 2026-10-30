@@ -3,7 +3,14 @@
 // frequency as the player would (downwind, base, final; the wording from calls.ts callsFor, so the phrasebook is
 // shared). This subsystem flies and draws them and queues their transmissions; RadioSystem decides what the player
 // hears (COM1 tuned to the frequency, the avionics on, within line of sight). No collision or separation with the
-// player yet. Present day only (built where the Flight School is); the home field's circuit waits for its tower.
+// player yet. Present day only (built where the Flight School is).
+//
+// THE HOME FIELD (step 4). One more aircraft flies the home circuit (not during a lesson) and works the tower
+// (tower.ts HomeTower): it calls downwind and final on the tower frequency, the tower answers with its number and the
+// traffic to follow, clears it or tells it to continue, and sends it round if the runway is still occupied at
+// 400 ft; it reads its clearances back. Following traffic ahead it extends its downwind (circuitPath's extension).
+// The tower sequences the player with it, answering the player's calls (towerReply) and calling the player when a
+// held landing or departure is cleared or an approach must go round (Transmission.toPlayer).
 //
 // PHYSICS LOD. The nearest MAX_FLOWN aircraft within FLOWN_RANGE of the player fly on their type's own flight model
 // (trafficPilot.ts: the player's physics and scripted pilot) and are drawn with the type's own exterior
@@ -22,10 +29,11 @@ import { TrafficExterior } from '../render/aircraft/trafficExterior';
 import { TrafficPilot } from './trafficPilot';
 import { quat } from '../core/math';
 import { applyPose } from '../core/frames';
-import { generatedAirfields, type Airfield } from '../world/airfields';
-import { activeFrame, callsFor, runwayInUse, type CallId, type RadioSituation, type RunwayEnd } from './calls';
-import { circuitPath, placeOnLeg, stepTraffic, type CircuitPath, type TrafficState } from './circuit';
-import { callsign, type Authority, type Callsign, type Phrase } from './phrases';
+import { generatedAirfields, HOME_AIRFIELD, type Airfield } from '../world/airfields';
+import { activeFrame, CIRCUIT_RADIUS, callsFor, circuitLeg, runwayInUse, type CallId, type Intent, type RadioSituation, type RunwayEnd } from './calls';
+import { circuitPath, circuitRemaining, placeOnLeg, stepTraffic, turnLead, type CircuitPath, type TrafficState } from './circuit';
+import { callsign, maker, type Authority, type Callsign, type Phrase } from './phrases';
+import { GO_AROUND_HEIGHT, HomeTower, type TowerAircraft, type TowerReply, type TowerView } from './tower';
 import { buildTrafficMesh, type TrafficMesh, type TrafficType } from './trafficMesh';
 
 /** A circuit aircraft's call, for the radio to hear or not. */
@@ -36,12 +44,26 @@ export interface Transmission {
   /** Height above the ground, m (its line of sight). */
   heightAgl: number;
   line: Phrase;
-  /** Which aircraft (a voice per aircraft). */
+  /** Which aircraft (a voice per aircraft); the tower's own voice when actor is 'tower'. */
   speaker: number;
+  /** The home tower speaking (from the field's antenna); absent: the aircraft. */
+  actor?: 'tower';
+  /** The tower speaking to the player, and what the player should read back. */
+  toPlayer?: boolean;
+  readback?: Phrase;
 }
 
-/** On final below this height above the field with the runway occupied, the aircraft goes around, m. */
-const GO_AROUND_HEIGHT = 400 * 0.3048;
+/** Ground station antenna height, m (RadioSystem's). */
+const ANTENNA = 10;
+/** The tower answers an aircraft's call after this long, and the aircraft reads back after the same again, s. */
+const ANSWER_DELAY = 2;
+/** An aircraft following traffic keeps base at least this far ahead of it on downwind beyond its turn, m; and extends at most this far. */
+const FOLLOW_LEAD = 600;
+const MAX_EXTENSION = 6000;
+/** Below this height above the home field (and within CIRCUIT_RADIUS) the player is in the circuit, m. */
+const CIRCUIT_CEILING = 2500 * 0.3048;
+/** A straight-in final is sequenced from this far out, m. */
+const LONG_FINAL = 10000;
 /** Drawn within this distance of the camera, m. */
 const DRAW_RANGE = 20000;
 /** A flown aircraft is drawn with its own exterior (~110k triangles) within this distance of the camera, the stand-in beyond, m. */
@@ -76,6 +98,9 @@ interface Aircraft {
   said: Set<CallId>;
   /** The wind now favours the other end: the aircraft changes over after its next take-off. */
   nextEnd: RunwayEnd | null;
+  /** The home field's aircraft, working the tower; and the tower has answered it. */
+  home: boolean;
+  contacted: boolean;
 }
 
 /** A small deterministic hash of a string (FNV-1a). */
@@ -102,6 +127,10 @@ export interface TrafficDeps {
   /** Definition and visual loaders (default the aircraft registry's). */
   loadDefinition?: (id: AircraftId) => Promise<AircraftDefinition>;
   loadVisual?: (id: AircraftId) => Promise<AirframeVisualDef>;
+  /** An aircraft in the home circuit too (default none; the Simulator's: not during a lesson). */
+  homeTraffic?: () => boolean;
+  /** The player's registration and type, for the tower's sequencing (absent: the tower sees only the traffic). */
+  player?: () => { registration: string; icaoType: string };
 }
 
 export class TrafficSystem implements Subsystem {
@@ -112,6 +141,12 @@ export class TrafficSystem implements Subsystem {
   private authority: Authority = 'easa';
   private clock = 0;
   private outbox: Transmission[] = [];
+  /** Transmissions waiting their turn (the tower's answers, the readbacks), by sim time. */
+  private later: { at: number; tx: Transmission }[] = [];
+  private home = false;
+  /** The home field's controller: the landing sequence and the runway. */
+  readonly tower = new HomeTower();
+  private unsubscribe: (() => void) | null = null;
   private readonly camPos = new THREE.Vector3();
   private readonly definitions = new Map<AircraftId, AircraftDefinition | 'loading'>();
   private readonly visuals = new Map<AircraftId, AirframeVisualDef | 'loading'>();
@@ -124,9 +159,15 @@ export class TrafficSystem implements Subsystem {
     this.ctx = ctx;
     ctx.scene.add(this.group);
     this.sync();
+    this.unsubscribe = ctx.events?.on('reset', () => {
+      this.tower.reset();
+      this.later = [];
+      for (const a of this.aircraft) a.contacted = false;
+    }) ?? null;
   }
 
   dispose(): void {
+    this.unsubscribe?.();
     this.clear();
     this.group.removeFromParent();
   }
@@ -139,50 +180,70 @@ export class TrafficSystem implements Subsystem {
   }
 
   /** The aircraft now, for tests and the dev tools. */
-  get states(): readonly { field: Airfield; registration: string; state: TrafficState; path: CircuitPath; pilot: TrafficPilot | null }[] {
+  get states(): readonly { field: Airfield; registration: string; state: TrafficState; path: CircuitPath; pilot: TrafficPilot | null; home: boolean }[] {
     return this.aircraft;
   }
 
   private clear(): void {
-    for (const a of this.aircraft) {
-      this.ground(a);
-      a.mesh.root.traverse((o) => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.Points) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
-      a.mesh.root.removeFromParent();
-    }
-    this.aircraft = [];
+    for (const a of [...this.aircraft]) this.remove(a);
   }
 
-  /** One aircraft per generated field, rebuilt when the seed (the field list) or the authority changes. */
+  /**
+   * One aircraft per generated field, rebuilt when the seed (the field list) or the authority changes; the home
+   * field's added or taken away as homeTraffic() says.
+   */
   private sync(): void {
     const fields = generatedAirfields();
     const authority = this.deps.authority();
-    if (fields === this.fields && authority === this.authority) return;
+    const home = this.deps.homeTraffic?.() ?? false;
+    if (fields === this.fields && authority === this.authority && home === this.home) return;
     const sameFields = fields === this.fields;
     this.fields = fields;
     this.authority = authority;
     if (sameFields) {
       // Only the registrations change; the aircraft fly on.
       for (const a of this.aircraft) a.registration = trafficRegistration(a.field.code, authority);
-      return;
+    } else {
+      this.clear();
+      this.home = false;
+      fields.forEach((field, i) => this.add(field, i));
     }
-    this.clear();
+    if (home !== this.home) {
+      this.home = home;
+      if (home) this.add(HOME_AIRFIELD, fields.length);
+      else {
+        for (const a of this.aircraft.filter((x) => x.home)) {
+          this.remove(a);
+          this.tower.forget(a.registration);
+        }
+      }
+    }
+  }
+
+  private add(field: Airfield, i: number): void {
     const w = this.ctx.weather;
-    fields.forEach((field, i) => {
-      const h = hash(field.code);
-      const type = TYPES[h % TYPES.length];
-      const path = circuitPath(field, runwayInUse(field, w.windDirectionDeg, w.windSpeedKt));
-      // Somewhere round the circuit, different at each field.
-      const leg = 1 + (h >>> 4) % 4;
-      const state = placeOnLeg(path, leg, ((h >>> 8) % 100) / 100 * 0.8 + 0.1);
-      const mesh = buildTrafficMesh(type.icao, TRIMS[i % TRIMS.length]);
-      this.group.add(mesh.root);
-      this.aircraft.push({ field, typeId: type.id, type: type.icao, registration: trafficRegistration(field.code, authority), path, state, mesh, pilot: null, exterior: null, said: new Set(), nextEnd: null });
+    const h = hash(field.code);
+    const type = TYPES[h % TYPES.length];
+    const path = circuitPath(field, runwayInUse(field, w.windDirectionDeg, w.windSpeedKt));
+    // Somewhere round the circuit, different at each field; at home early on downwind, clear of a start on the runway.
+    const home = field.kind === 'home';
+    const leg = home ? 2 : 1 + (h >>> 4) % 4;
+    const state = placeOnLeg(path, leg, home ? 0.2 : ((h >>> 8) % 100) / 100 * 0.8 + 0.1);
+    const mesh = buildTrafficMesh(type.icao, TRIMS[i % TRIMS.length]);
+    this.group.add(mesh.root);
+    this.aircraft.push({ field, typeId: type.id, type: type.icao, registration: trafficRegistration(field.code, this.authority), path, state, mesh, pilot: null, exterior: null, said: new Set(), nextEnd: null, home: field.kind === 'home', contacted: false });
+  }
+
+  private remove(a: Aircraft): void {
+    this.ground(a);
+    a.mesh.root.traverse((o) => {
+      if (o instanceof THREE.Mesh || o instanceof THREE.Points) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
     });
+    a.mesh.root.removeFromParent();
+    this.aircraft = this.aircraft.filter((x) => x !== a);
   }
 
   update(dt: number): void {
@@ -205,16 +266,121 @@ export class TrafficSystem implements Subsystem {
         }
       } else changed = stepTraffic(a.path, a.state, dt);
       if (changed === 0 && a.state.onGround) {
-        // A touchdown: a new lap; if the wind now favours the other end, change over once airborne again.
+        // A touchdown: a new lap, the usual circuit again; if the wind now favours the other end, change over once airborne again.
         a.said.clear();
+        if (a.path.extension > 0) {
+          a.path = circuitPath(a.field, a.path.end);
+          a.pilot?.extend(a.path);
+        }
         const end: RunwayEnd = runwayInUse(a.field, w.windDirectionDeg, w.windSpeedKt);
         a.nextEnd = end !== a.path.end ? end : null;
       }
       if (a.nextEnd !== null && a.state.leg === 0 && a.state.height > 300 * 0.3048) this.changeEnds(a, a.nextEnd);
-      if (!a.state.onGround && a.state.leg === 4 && a.state.height < GO_AROUND_HEIGHT && this.runwayBlocked(a.field)) this.goAround(a, i);
+      // At the generated fields the aircraft looks after itself; at home the tower decides (below).
+      if (!a.home && !a.state.onGround && a.state.leg === 4 && a.state.height < GO_AROUND_HEIGHT && this.runwayBlocked(a.field)) this.goAround(a, i);
       this.announce(a, i);
       this.pose(a, cam, i);
     }
+    this.control();
+    this.later = this.later.filter((l) => {
+      if (l.at > this.clock) return true;
+      this.outbox.push(l.tx);
+      return false;
+    });
+  }
+
+  /** The home field's aircraft as the tower sees them, the player first. */
+  private towerView(): TowerView {
+    const f = HOME_AIRFIELD;
+    const w = this.ctx.weather;
+    const end = runwayInUse(f, w.windDirectionDeg, w.windSpeedKt);
+    const list: TowerAircraft[] = [];
+    const me = this.deps.player?.();
+    if (me) {
+      const st = this.ctx.state;
+      const n = st.position.x, e = st.position.y;
+      const { along, across } = activeFrame(f, end, n, e);
+      const height = st.altitudeMSL - f.elevation;
+      const dist = Math.hypot(n - f.north, e - f.east);
+      const heading = st.groundSpeed > 2 ? st.track : st.heading;
+      const leg = st.onGround || height > CIRCUIT_CEILING ? null : circuitLeg(f, end, n, e, heading);
+      const inCircuit = leg !== null && (dist < CIRCUIT_RADIUS || (leg === 'final' && dist < LONG_FINAL));
+      const path = circuitPath(f, end);
+      const index = path.legs.findIndex((l) => l.id === leg);
+      list.push({
+        id: 'player', callsign: callsign(me.registration, me.icaoType, this.authority), type: maker(me.icaoType),
+        height, onGround: st.onGround, onRunway: st.onGround && Math.abs(across) < f.width / 2 + 10 && Math.abs(along) < f.length / 2 + 30,
+        leg: inCircuit ? leg : null, remaining: inCircuit ? circuitRemaining(path, index, n, e) : Infinity, along,
+      });
+    }
+    for (const a of this.aircraft) {
+      if (!a.home) continue;
+      const s = a.state;
+      list.push({
+        id: a.registration, callsign: callsign(a.registration, a.type, this.authority), type: maker(a.type), height: s.height, onGround: s.onGround,
+        onRunway: s.onGround, leg: s.onGround ? null : a.path.legs[s.leg].id, remaining: s.onGround ? Infinity : circuitRemaining(a.path, s.leg, s.north, s.east),
+        along: activeFrame(a.field, a.path.end, s.north, s.east).along,
+      });
+    }
+    return { authority: this.authority, windFromDeg: w.windDirectionDeg, windKt: w.windSpeedKt, aircraft: list };
+  }
+
+  /** The tower's answer to the player's call (RadioSystem), or null where calls.ts replyTo answers. */
+  towerReply(call: CallId, intent?: Intent): TowerReply | null {
+    if (!this.deps.player) return null;
+    return this.tower.call(this.towerView(), 'player', call, intent);
+  }
+
+  /** A tower transmission from the home field's antenna, now or after a delay. */
+  private towerSays(line: Phrase, delay: number, toPlayer?: { readback?: Phrase }): void {
+    const f = HOME_AIRFIELD;
+    const tx: Transmission = { frequency: f.frequency, north: f.north, east: f.east, heightAgl: ANTENNA, line, speaker: 0, actor: 'tower', ...(toPlayer ? { toPlayer: true, readback: toPlayer.readback } : {}) };
+    if (delay > 0) this.later.push({ at: this.clock + delay, tx });
+    else this.outbox.push(tx);
+  }
+
+  /** An aircraft's transmission after a delay (its readback). */
+  private aircraftSays(a: Aircraft, line: Phrase, delay: number): void {
+    const s = a.state;
+    this.later.push({ at: this.clock + delay, tx: { frequency: a.field.frequency, north: s.north, east: s.east, heightAgl: s.height, line, speaker: this.aircraft.indexOf(a) } });
+  }
+
+  /** The home tower's own instructions: clearances that were waiting, go-arounds, following traffic on downwind. */
+  private control(): void {
+    if (!this.home && !this.deps.player) return;
+    const v = this.towerView();
+    const out = this.tower.update(v);
+    for (const m of out.messages) {
+      if (m.to === 'player') {
+        this.towerSays(m.line, 0, { readback: m.readback });
+        continue;
+      }
+      const a = this.aircraft.find((x) => x.home && x.registration === m.to);
+      if (!a) continue;
+      this.towerSays(m.line, 0);
+      if (m.readback) this.aircraftSays(a, m.readback, ANSWER_DELAY);
+    }
+    for (const id of out.goAround) {
+      const a = this.aircraft.find((x) => x.home && x.registration === id);
+      if (a) this.goAround(a, this.aircraft.indexOf(a), ANSWER_DELAY);
+    }
+    for (const id of out.follow) {
+      const a = this.aircraft.find((x) => x.home && x.registration === id);
+      if (a) this.follow(a);
+    }
+  }
+
+  /** Following traffic: base moved out so it stays ahead of the aircraft on downwind. */
+  private follow(a: Aircraft): void {
+    const s = a.state;
+    const { along } = activeFrame(a.field, a.path.end, s.north, s.east);
+    const want = along - turnLead(s.speed) - FOLLOW_LEAD;
+    const baseAt = a.path.legs[3].from.along;
+    if (baseAt < want + 50) return;
+    const extension = Math.min(MAX_EXTENSION, a.path.extension + (baseAt - want));
+    if (extension <= a.path.extension) return;
+    a.path = circuitPath(a.field, a.path.end, extension);
+    a.pilot?.extend(a.path);
   }
 
   /**
@@ -277,14 +443,16 @@ export class TrafficSystem implements Subsystem {
     return Math.abs(across) < f.width / 2 + 10 && Math.abs(along) < f.length / 2 + 30;
   }
 
-  /** Something on the runway: go around, climbing away on the upwind leg, and say so. */
-  private goAround(a: Aircraft, speaker: number): void {
+  /** Something on the runway: go around, climbing away on the upwind leg, and say so (after the tower's instruction). */
+  private goAround(a: Aircraft, speaker: number, delay = 0): void {
     const line = this.callFor(a, 'goAround');
     a.pilot?.goAround();
     a.state.leg = 0;
     a.said.clear();
     const s = a.state;
-    if (line) this.outbox.push({ frequency: a.field.frequency, north: s.north, east: s.east, heightAgl: s.height, line, speaker });
+    if (!line) return;
+    if (delay > 0) this.aircraftSays(a, line, delay);
+    else this.outbox.push({ frequency: a.field.frequency, north: s.north, east: s.east, heightAgl: s.height, line, speaker });
   }
 
   /**
@@ -308,13 +476,22 @@ export class TrafficSystem implements Subsystem {
     const { along, across } = activeFrame(a.field, a.path.end, s.north, s.east);
     const due =
       leg === 'downwind' ? along < 0 :
-      leg === 'base' ? Math.abs(across) < Math.abs(a.path.legs[3].from.across) * 0.8 :
+      leg === 'base' ? !a.home && Math.abs(across) < Math.abs(a.path.legs[3].from.across) * 0.8 :
       leg === 'final' ? Math.abs(across) < 60 :
       false;
     if (!due) return;
     a.said.add(leg);
+    // Already cleared (an FAA tower clears on downwind): no final call.
+    if (a.home && leg === 'final' && this.tower.cleared(a.registration)) return;
     const line = this.callFor(a, leg);
     if (line) this.outbox.push({ frequency: a.field.frequency, north: s.north, east: s.east, heightAgl: s.height, line, speaker });
+    if (!a.home || !line) return;
+    // The tower answers, and the aircraft reads back what it must.
+    const reply = this.tower.call(this.towerView(), a.registration, leg, 'touchAndGo');
+    if (!reply) return;
+    a.contacted = true;
+    this.towerSays(reply.line, ANSWER_DELAY);
+    if (reply.readback) this.aircraftSays(a, reply.readback, ANSWER_DELAY * 2);
   }
 
   private callFor(a: Aircraft, leg: CallId): Phrase | null {
@@ -322,7 +499,7 @@ export class TrafficSystem implements Subsystem {
     const w = this.ctx.weather;
     const cs: Callsign = callsign(a.registration, a.type, this.authority);
     const situation: RadioSituation = {
-      authority: this.authority, callsign: cs, station: { field: a.field, kind: 'traffic', frequency: a.field.frequency }, contacted: false,
+      authority: this.authority, callsign: cs, station: { field: a.field, kind: a.home ? 'tower' : 'traffic', frequency: a.field.frequency }, contacted: a.contacted,
       north: s.north, east: s.east, altitude: a.field.elevation + s.height, onGround: false, groundSpeedKt: s.speed / 0.514444, heading: s.heading,
       windFromDeg: w.windDirectionDeg, windKt: w.windSpeedKt, qnhHpa: w.qnhHpa, landedAgoS: Infinity, atisLetter: '',
     };

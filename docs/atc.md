@@ -54,6 +54,19 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   The radios show a green MIC lamp on the COM in use and an amber TX lamp while a call goes out.
   A panel with one course indicator and two NAVs (C152, DA20) has a source switch: C on the NAV page puts the
   CDI on the other NAV, a green CDI lamp beside the NAV window shows which (CDI by VLOC on the GPS).
+- **Step 4: the home tower sequences and wants readbacks** (`src/atc/tower.ts` HomeTower). One aircraft flies the
+  home circuit too (not during a lesson, so the instructor's circuits stay as they were), calling downwind and final
+  on 118.3 and reading its clearances back. The tower numbers every arrival by the distance it still has to fly to
+  touchdown: "number two, follow the Cessna on base". EASA: "report final", and on final the landing clearance only
+  for number one with the runway free, else "continue approach, one ahead" (or "runway occupied") with the clearance
+  following unasked when it frees. FAA: cleared to land in sequence on downwind. Still not clear at 400 ft, or the
+  runway occupied after all: "go around". A departure is held ("hold position" / "hold short", "traffic on final")
+  while an arrival is within 3 km (1.8 km once lined up), then cleared unasked. The AI aircraft following traffic
+  extends its downwind until the one ahead is on final 900 m nearer the runway, base flown higher to stay near the
+  glide path. The player is spoken to unasked only once it has called the tower. Readbacks: a clearance or
+  instruction puts its readback first in the Space menu (the runway and clearance, holding point, pressure setting,
+  new frequency, callsign last); one that must be read back and is not within 15 s brings "read back" once. "Say
+  again" (60 s after a message) has it repeated.
 - **Step 3: circuit traffic** (`src/atc/circuit.ts`, `TrafficSystem.ts`, `trafficMesh.ts`). One AI aircraft at
   each generated field (C172, C152 or PA-28 by the field's code), flying touch-and-go circuits on the runway the
   wind favours: upwind to 1000 ft, 1000 m out on downwind at 90 kt, base descending at up to 700 fpm, a 4 degree

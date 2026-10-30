@@ -19,7 +19,7 @@ vi.mock('../../src/ui/radioMenu', () => ({
 
 const { RadioSystem } = await import('../../src/atc/RadioSystem');
 
-function rig(traffic: () => unknown[] = () => [], coms: ComRadio = 2, cdiSelect = false) {
+function rig(traffic: () => unknown[] = () => [], coms: ComRadio = 2, cdiSelect = false, towerReply?: unknown) {
   const said: { actor: string; caption: string }[] = [];
   const speech = { enqueue: (u: { actor: string; caption: string }) => said.push(u), busy: () => false, idle: () => true, speaking: () => false, cancel() {} };
   const inputs: string[] = [];
@@ -27,7 +27,7 @@ function rig(traffic: () => unknown[] = () => [], coms: ComRadio = 2, cdiSelect 
   const p = fieldPoint(H, -600, 0);
   const state = { position: { x: p.north, y: p.east }, onGround: false, groundSpeed: 30, track: H.heading, heading: H.heading, altitudeAGL: 20, altitudeMSL: H.elevation + 20 };
   const ctx = { state, weather: { windDirectionDeg: 70, windSpeedKt: 6, qnhHpa: 1013, timeOfDay: 10, visibilityM: 20000 }, events: { on: () => () => {} }, paused: false };
-  const radio = new RadioSystem({ training: training as never, readings: () => ({ avionicsPowered: true }) as never, layer: {} as never, traffic: traffic as never, comRadios: () => coms, cdiSelect: () => cdiSelect });
+  const radio = new RadioSystem({ training: training as never, readings: () => ({ avionicsPowered: true }) as never, layer: {} as never, traffic: traffic as never, comRadios: () => coms, cdiSelect: () => cdiSelect, towerReply: towerReply as never });
   radio.init(ctx as never);
   const r = radio as unknown as { onKey: (e: unknown) => void; menu: { open: boolean; onPick: (i: number) => void; items: { key?: string; label: string; detail: string; action?: boolean }[] } };
   const key = (code: string, shiftKey = false) => r.onKey({ code, shiftKey, repeat: false, target: null, preventDefault() {}, stopImmediatePropagation() {} });
@@ -57,6 +57,69 @@ describe('the tower after a landing', () => {
     state.groundSpeed = 15;
     for (let i = 0; i < 20; i++) radio.update(0.1);
     expect(said).toHaveLength(0);
+  });
+});
+
+describe('readbacks', () => {
+  beforeEach(() => resetRadios());
+
+  /** Landed and slowed: the tower's vacate instruction. */
+  const vacated = () => {
+    const r = rig();
+    (r.radio as unknown as { intent: string }).intent = 'fullStop';
+    for (let i = 0; i < 120; i++) r.radio.update(0.1);
+    r.state.onGround = true;
+    r.state.groundSpeed = 15;
+    for (let i = 0; i < 20; i++) r.radio.update(0.1);
+    return r;
+  };
+
+  it('offers the readback first, and it goes out as the pilot reads it', () => {
+    const { key, menu, said, radio } = vacated();
+    key('Space');
+    expect(menu.items[0]).toEqual(expect.objectContaining({ label: 'Read back', detail: 'Vacate left at A2, Ground 121.9, G-CK' }));
+    expect(menu.items[1]).toEqual(expect.objectContaining({ label: 'Say again', detail: 'Fable Regional Tower, G-CK, say again' }));
+    key('Digit1');
+    expect(said.at(-1)).toEqual(expect.objectContaining({ actor: 'student', caption: 'Vacate left at A2, Ground 121.9, G-CK' }));
+    for (let i = 0; i < 200; i++) radio.update(0.1);
+    expect(said.at(-1)!.actor).toBe('student'); // no prompt
+    key('Space');
+    expect(menu.items[0].label).toBe('Say again');
+  });
+
+  it('prompts once when a clearance is not read back', () => {
+    const { said, radio } = vacated();
+    for (let i = 0; i < 400; i++) radio.update(0.1);
+    expect(said.map((s) => s.caption).filter((c) => c === 'G-CK, read back')).toHaveLength(1);
+  });
+
+  it('says it again on request', () => {
+    const { key, said, radio } = vacated();
+    key('Space');
+    key('Digit2');
+    for (let i = 0; i < 20; i++) radio.update(0.1);
+    expect(said.at(-1)).toEqual(expect.objectContaining({ actor: 'tower', caption: 'G-CK, vacate left at A2, when vacated contact Ground 121.9' }));
+  });
+
+  it("takes the home tower's sequencing answer, and its readback", () => {
+    const calls: string[] = [];
+    const towerReply = (c: string) => {
+      calls.push(c);
+      return c === 'final' ? { line: { text: 'G-CK, runway 07, cleared to land, wind calm', speak: '' }, readback: { text: 'Runway 07, cleared to land, G-CK', speak: '' } } : null;
+    };
+    const { key, menu, said, radio, state } = rig(undefined, 2, false, towerReply);
+    const p = fieldPoint(H, -H.length / 2 - 1500, 0);
+    Object.assign(state.position, { x: p.north, y: p.east });
+    state.altitudeMSL = H.elevation + 80;
+    state.altitudeAGL = 80;
+    key('Space');
+    const i = menu.items.findIndex((m) => m.label === 'Final 07, full stop');
+    key(`Digit${i + 1}`);
+    for (let k = 0; k < 20; k++) radio.update(0.1);
+    expect(calls).toEqual(['final']);
+    expect(said.at(-1)!.caption).toBe('G-CK, runway 07, cleared to land, wind calm');
+    key('Space');
+    expect(menu.items[0].detail).toBe('Runway 07, cleared to land, G-CK');
   });
 });
 

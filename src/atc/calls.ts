@@ -26,7 +26,7 @@ const LONG_FINAL = 10000;
 /** Height above the field below which an aircraft near it counts as in the circuit, m. */
 const CIRCUIT_CEILING = 2500 * FT;
 
-export type CallId = 'radioCheck' | 'taxi' | 'ready' | 'departing' | 'inbound' | 'upwind' | 'crosswind' | 'downwind' | 'base' | 'final' | 'goAround' | 'clear' | 'leaving';
+export type CallId = 'radioCheck' | 'taxi' | 'ready' | 'departing' | 'inbound' | 'upwind' | 'crosswind' | 'downwind' | 'base' | 'final' | 'goAround' | 'clear' | 'leaving' | 'readback' | 'sayAgain';
 
 export interface RadioSituation {
   authority: Authority;
@@ -316,8 +316,73 @@ export function replyTo(s: RadioSituation, call: CallId, intent?: Intent): Phras
     case 'leaving':
       return say(both('frequency change approved'));
     case 'departing':
+    case 'readback':
+    case 'sayAgain':
       return null;
   }
+}
+
+const capital = (p: Phrase): Phrase => ({ text: p.text[0].toUpperCase() + p.text.slice(1), speak: p.speak });
+
+/**
+ * What the pilot reads back of replyTo's answer: the clearance, the runway, the holding point, the pressure setting and
+ * a new frequency, the callsign last; null where an acknowledgement will do.
+ */
+export function readbackFor(s: RadioSituation, call: CallId, intent?: Intent): Phrase | null {
+  const st = s.station;
+  if (st.kind !== 'tower' && st.kind !== 'ground') return null;
+  const f = st.field;
+  const a = s.authority;
+  const end = runwayInUse(f, s.windFromDeg, s.windKt);
+  const rw = runway(f.ids[end]);
+  const cs = s.callsign.short;
+  const p = pressure(s.qnhHpa, a);
+  const side = f.circuit;
+  const hand = a === 'easa' ? `${side} hand` : side;
+  const back = (...parts: Phrase[]): Phrase => capital(join([...parts, cs]));
+  const contact = (name: string, mhz: number): Phrase => join([both(name), frequency(mhz, a)], ' ');
+  switch (call) {
+    case 'taxi': {
+      if (st.kind === 'tower') return back(contact('Ground', HOME_GROUND));
+      const hp = taxiway(holdingPoint(end));
+      return a === 'faa' ? back(rw, join([both('taxi via Alpha, hold short at'), hp], ' '), p) : back(join([both('taxi to holding point'), hp], ' '), rw, p);
+    }
+    case 'ready':
+      if (st.kind === 'ground') return back(contact('Tower', f.frequency));
+      return back(rw, both(a === 'faa' ? 'cleared for takeoff' : 'cleared for take-off'));
+    case 'inbound':
+      return a === 'faa'
+        ? back(both(`enter ${side} downwind ${rw.text}`, `enter ${side} downwind ${rw.speak}`), p)
+        : back(both(`join ${hand} downwind ${rw.text}`, `join ${hand} downwind ${rw.speak}`), p);
+    case 'downwind':
+    case 'crosswind':
+    case 'upwind':
+    case 'base':
+    case 'final':
+      if (a === 'easa' && call !== 'final') return null;
+      return back(rw, intent === 'touchAndGo' ? both(a === 'faa' ? 'cleared touch-and-go' : 'cleared touch and go', 'cleared touch and go') : both('cleared to land'));
+    case 'clear':
+      if (st.kind === 'tower') return back(contact('Ground', HOME_GROUND));
+      return back(join([both(a === 'faa' ? 'taxi to the ramp via Alpha,' : 'taxi to the apron via Alpha and', a === 'faa' ? 'taxi to the ramp via Alpha' : 'taxi to the apron via Alpha and'), taxiway(connectorU(nearestExit(s.north, s.east)) < 0 ? 'B1' : 'B2')], ' '));
+    default:
+      return null;
+  }
+}
+
+/** The readback of vacateInstruction: where to turn off, and the frequency to call. */
+export function vacateReadback(s: RadioSituation): Phrase | null {
+  const msg = vacateInstruction(s);
+  if (!msg) return null;
+  const end = rollingToward(s.station.field, s.heading);
+  const side = end === 0 ? 'left' : 'right';
+  const exit = taxiway(vacateVia(end, nedToLocal(s.north, s.east).u, s.groundSpeedKt * 0.514444));
+  const ground = join([both('Ground'), frequency(HOME_GROUND, s.authority)], ' ');
+  return capital(join([join([both(s.authority === 'faa' ? `${side} at` : `vacate ${side} at`), exit], ' '), ground, s.callsign.short]));
+}
+
+/** A clearance or instruction the tower expects read back (an acknowledgement will not do). */
+export function mustReadBack(readback: Phrase): boolean {
+  return /cleared|hold|taxi|vacate|join|enter|QNH|altimeter|\d{3}\.\d/i.test(readback.text);
 }
 
 /** The home field's ATIS broadcast. */
