@@ -53,7 +53,7 @@ const DESCENT = 500 * 0.00508;
 /** Descent on base, to arrive at the final turn near the glide path, m/s. */
 const BASE_DESCENT = 700 * 0.00508;
 /** The roll after a touchdown before full power is put on again (flaps up, carb heat cold), s. */
-const ROLL_HOLD = 5;
+export const ROLL_HOLD = 5;
 const ROTATE = 55 * KT;
 /** Below this height on final the aircraft flares, m. */
 const FLARE = 6;
@@ -85,6 +85,74 @@ export function circuitPath(field: Airfield, end: RunwayEnd, extension = 0): Cir
   };
 }
 
+/** Taxi speed on the straight and in the turns, m/s. */
+export const TAXI_SPEED = 8;
+const TAXI_TURN_SPEED = 3;
+/** How fast a taxiing aircraft turns, rad/s. */
+const TAXI_TURN_RATE = 25 * DEG;
+
+/**
+ * Taxi along a route of NED points from waypoint `wp` (the one being steered to): the nose turned toward it at a
+ * limited rate, slowing for the turn at it, at most `limit` m/s (0: stopped, as behind another aircraft). Returns the
+ * waypoint steered to next; route.length when the end is reached (stopped there).
+ */
+export function stepTaxi(s: TrafficState, route: readonly { north: number; east: number }[], wp: number, dt: number, limit = TAXI_SPEED): number {
+  s.onGround = true;
+  s.height = 0;
+  s.bank = 0;
+  s.pitch = 0;
+  s.verticalSpeed = 0;
+  while (wp < route.length) {
+    const p = route[wp];
+    const d = Math.hypot(p.north - s.north, p.east - s.east);
+    if (d > Math.max(1, s.speed * dt * 1.5)) break;
+    wp++;
+  }
+  if (wp >= route.length) {
+    s.speed = 0;
+    return wp;
+  }
+  const p = route[wp];
+  const d = Math.hypot(p.north - s.north, p.east - s.east);
+  const want = Math.atan2(p.east - s.east, p.north - s.north);
+  const err = wrap(want - s.heading);
+  s.heading = wrap(s.heading + Math.max(-TAXI_TURN_RATE * dt, Math.min(TAXI_TURN_RATE * dt, err)));
+  // Slow for a sharp turn at the next waypoint or a big heading error now; stop at the route's end.
+  const next = route[wp + 1];
+  const turn = next ? Math.abs(wrap(Math.atan2(next.east - p.east, next.north - p.north) - want)) : Math.PI;
+  // (Braking at 1.5 m/s/s from where it must, for a turn or the stop.)
+  const slow = (turn > 0.5 && d < 10 + (s.speed * s.speed) / 3) || Math.abs(err) > 0.6;
+  const target = Math.min(limit, slow ? TAXI_TURN_SPEED : limit, wp === route.length - 1 ? Math.max(1, d * 0.4) : limit);
+  s.speed += Math.max(-2 * dt, Math.min(1 * dt, target - s.speed));
+  if (Math.abs(err) > 1.2) s.speed = Math.min(s.speed, 1.5);
+  s.north += Math.cos(s.heading) * s.speed * dt;
+  s.east += Math.sin(s.heading) * s.speed * dt;
+  return wp;
+}
+
+/**
+ * Fly straight to a point (a joining arrival, a departure leaving): bank-limited turns toward it, climbing or
+ * descending to `height` above the field at up to 500 fpm, at `speed`. Returns the distance left, m.
+ */
+export function stepDirect(s: TrafficState, north: number, east: number, height: number, speed: number, dt: number): number {
+  for (let left = dt; left > 1e-9; ) {
+    const h = Math.min(0.1, left);
+    left -= h;
+    const err = wrap(Math.atan2(east - s.east, north - s.north) - s.heading);
+    const bankCmd = Math.max(-TURN_BANK, Math.min(TURN_BANK, err * 1.2));
+    s.bank += Math.max(-ROLL_RATE * h, Math.min(ROLL_RATE * h, bankCmd - s.bank));
+    s.heading = wrap(s.heading + ((G * Math.tan(s.bank)) / Math.max(s.speed, 10)) * h);
+    s.speed += Math.max(-1 * h, Math.min(1 * h, speed - s.speed));
+    const vsCmd = Math.max(-DESCENT, Math.min(CLIMB, (height - s.height) * 0.1));
+    s.verticalSpeed += (vsCmd - s.verticalSpeed) * Math.min(1, h / 1.5);
+    s.height += s.verticalSpeed * h;
+    s.pitch = attitude(s.speed, s.verticalSpeed);
+    s.north += Math.cos(s.heading) * s.speed * h;
+    s.east += Math.sin(s.heading) * s.speed * h;
+  }
+  return Math.hypot(north - s.north, east - s.east);
+}
+
 /** A circuit aircraft's state. Heights are above the field; heading true, rad. */
 export interface TrafficState {
   north: number;
@@ -100,6 +168,8 @@ export interface TrafficState {
   onGround: boolean;
   /** Time on the ground since the touchdown, s. */
   rollTime: number;
+  /** This landing is a full stop: the roll brakes down to a taxi instead of a touch and go. */
+  fullStop?: boolean;
 }
 
 /** Leg bearing in the active frame turned to a true heading. */
@@ -200,7 +270,16 @@ function stepOnce(path: CircuitPath, s: TrafficState, dt: number): number | null
   let changed: number | null = null;
   const prog = legProgress(path, s);
 
-  if (s.onGround) {
+  if (s.onGround && s.fullStop) {
+    // A full stop: brakes down to a walking pace on the centreline (the traffic then taxis it off).
+    s.rollTime += dt;
+    s.speed = Math.max(0, s.speed - (s.speed > 20 * KT ? 1.5 : 2.5) * dt);
+    s.bank = 0;
+    s.heading = desiredHeading(path, s, prog.cross);
+    s.verticalSpeed = 0;
+    s.height = 0;
+    s.pitch = 0;
+  } else if (s.onGround) {
     // The touch and go: roll on, flaps up and full power, rotate at 55 kt.
     s.rollTime += dt;
     s.speed = s.rollTime < ROLL_HOLD ? Math.max(45 * KT, s.speed - 1.5 * dt) : s.speed + 1.8 * dt;

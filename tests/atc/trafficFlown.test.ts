@@ -114,7 +114,7 @@ describe('the physics LOD', () => {
     let goneAround = false, landed = false;
     for (let t = 0; t < 420 && !goneAround; t += 0.1) {
       traffic.update(0.1);
-      if (traffic.drain().some((h) => h.speaker === 0 && h.line.text.endsWith('going around'))) goneAround = true;
+      if (traffic.drain().some((h) => h.line.text.includes(near.registration) && h.line.text.endsWith('going around'))) goneAround = true;
       if (near.pilot?.state.onGround) landed = true;
     }
     expect(goneAround).toBe(true);
@@ -146,3 +146,34 @@ describe('taking over low on short final', () => {
   }, 60_000);
 });
 
+
+describe('the home field on the flight model', () => {
+  it('flies the departures, circuits and arrivals near the player without a crash, handing a full stop over to the vacate', async () => {
+    const env = flatEnvironment(calmWeather({ windDirectionDeg: 250, windSpeedKt: 10 }), H.elevation);
+    const defs: Record<string, AircraftDefinition> = { c172s: C172, c152: C152, pa38: PA38, da20: DA20 };
+    const traffic = new TrafficSystem({ authority: () => 'easa', env: () => env, exteriors: false, loadDefinition: async (id) => defs[id], homeTraffic: () => true, player: () => ({ registration: 'G-ABFS', icaoType: 'C152' }) });
+    const state = { position: { x: H.north + 600, y: H.east }, altitudeMSL: H.elevation, onGround: true, groundSpeed: 0, heading: 0, track: 0 };
+    traffic.init({ state, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), weather: { windDirectionDeg: 250, windSpeedKt: 10, qnhHpa: 1015, timeOfDay: 10 }, timeScale: 1 } as never);
+    let flownTakeOff = false, flownLanding = false;
+    const was = new Map<string, string>();
+    for (let k = 0; k < 6000; k++) {
+      traffic.update(0.1);
+      traffic.drain();
+      if (k % 10 === 0) {
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+      for (const a of traffic.states) {
+        if (!a.ops) continue;
+        expect(a.pilot?.state.crashed ?? false).toBe(false);
+        const before = was.get(a.registration);
+        if (a.ops.phase === 'air' && a.state.onGround && a.pilot) flownTakeOff ||= a.pilot.state.groundSpeed > 10 && a.pilot.state.position.z < 0;
+        if (before === 'air' && a.ops.phase === 'vacate' && was.get(`${a.registration}*`) === 'flown') flownLanding = true;
+        was.set(a.registration, a.ops.phase);
+        was.set(`${a.registration}*`, a.pilot ? 'flown' : 'kinematic');
+      }
+    }
+    expect(flownTakeOff).toBe(true);
+    expect(flownLanding).toBe(true);
+  }, 600_000);
+});

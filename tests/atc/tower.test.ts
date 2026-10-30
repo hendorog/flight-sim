@@ -62,10 +62,10 @@ describe('the home tower', () => {
     const t = new HomeTower();
     const out = t.update(view([me({ onGround: true, onRunway: true, leg: null, remaining: Infinity }), ai({ id: 'G-TRAF', leg: 'final', height: 100, remaining: 1500 })]));
     expect(out.goAround).toEqual(['G-TRAF']);
-    const behind = ai({ leg: 'downwind', remaining: 7000, along: -3400 });
+    const behind = ai({ leg: 'downwind', remaining: 7000, along: -4000 });
     expect(t.update(view([me({ leg: 'base', remaining: 3500, along: -3700 }), behind])).follow).toEqual(['G-TRAF']);
     expect(t.update(view([me({ leg: 'final', remaining: 2000, along: -3000 }), behind])).follow).toEqual(['G-TRAF']);
-    expect(t.update(view([me({ leg: 'final', remaining: 1000, along: -2200 }), behind])).follow).toEqual([]);
+    expect(t.update(view([me({ leg: 'final', remaining: 500, along: -1300 }), behind])).follow).toEqual([]);
   });
 
   it('holds a departure for traffic on final, then clears the take-off', () => {

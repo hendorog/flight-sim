@@ -8,7 +8,7 @@
 // abeam the threshold, the final setting on base. Node-safe (no three.js).
 
 import type { AircraftDefinition } from '../aircraft/types';
-import { DEG, FT, KT, wrapPi } from '../core/math';
+import { DEG, FT, KT, quat, wrapPi } from '../core/math';
 import { copyControls, defaultControls, type AircraftState, type ControlInputs, type Environment } from '../core/types';
 import { createFlightModelFor, type BladeElementFlightModel } from '../physics';
 import { Autoflight, type AutoflightRunway } from '../sim/autoflight';
@@ -51,6 +51,12 @@ export class TrafficPilot {
   private drift = 0;
   /** Time since the mains touched on a touch and go, s (NaN: not on the ground after a landing). */
   private touchTime = NaN;
+  /** This landing is a full stop: the roll-out brakes to a stop (the traffic then taxis it off) instead of a touch and go. */
+  fullStop = false;
+  /** Flying straight to a point (joining, leaving) instead of round the circuit. */
+  private direct: { north: number; east: number } | null = null;
+  /** The pitch attitude standing on its wheels (for posing it on the ground). */
+  private groundPitch = 0;
   /** Flap levers: the base and final settings, and the take-off's. */
   private readonly flaps: { first: number; base: number; final: number };
 
@@ -98,6 +104,9 @@ export class TrafficPilot {
     );
     copyControls(this.controls, this.fm.trimControls);
     this.controls.parkingBrake = false;
+    this.direct = null;
+    this.fullStop = k.fullStop ?? false;
+    if (k.onGround) this.groundPitch = this.fm.state.pitch;
     // Nav lights, beacon, strobes and the landing light on, as in the circuit.
     Object.assign(this.controls.lights, { nav: true, beacon: true, strobe: true, landing: true, taxi: false });
     this.drift = 0;
@@ -114,11 +123,38 @@ export class TrafficPilot {
     });
   }
 
-  /** The circuit changed (the wind swung round): fly the new one from the leg given. */
+  /** The circuit changed (the wind swung round), or joining it: fly the circuit from the leg given. */
   setPath(path: CircuitPath, leg: number): void {
     this.path = path;
     this.leg = leg;
+    this.direct = null;
     this.engageLeg(false);
+  }
+
+  /** Fly straight to a point at this altitude MSL and speed (a joining arrival, a departure leaving the circuit). */
+  flyDirect(north: number, east: number, altitude: number, kias: number): void {
+    const s = this.fm.state;
+    this.direct = { north, east };
+    this.controls.flaps = 0;
+    this.autoflight.engage({ kind: 'hold', heading: Math.atan2(east - s.position.y, north - s.position.x), altitude: altitude + this.def.geometry.restHeight, kias }, s, this.controls);
+  }
+
+  /**
+   * Stand it where the kinematic traffic has it on the ground (taxiing, holding, parked), for its exterior: no
+   * physics; the propeller turns at idle when the engine runs.
+   */
+  pose(k: TrafficState, elevation: number, dt: number, engine: boolean): void {
+    const s = this.fm.state;
+    s.position.x = k.north;
+    s.position.y = k.east;
+    s.position.z = -(elevation + this.def.geometry.restHeight);
+    s.orientation = quat.fromEuler(0, this.groundPitch, k.heading);
+    s.heading = k.heading;
+    s.onGround = true;
+    for (const p of s.propellers) {
+      p.rpm = engine ? 900 : 0;
+      p.rotation = (p.rotation + (p.rpm / 60) * 2 * Math.PI * dt) % (2 * Math.PI);
+    }
   }
 
   /** The height base is flown at and final turned onto, m (higher on an extended downwind). */
@@ -199,6 +235,8 @@ export class TrafficPilot {
         this.leg = 0;
         changed = 0;
       }
+      // A full stop: the scripted pilot brakes it to a stop on the centreline.
+      if (this.fullStop) return changed;
       this.touchTime += dt;
       this.controls.brakeLeft = this.controls.brakeRight = 0;
       this.controls.parkingBrake = false;
@@ -209,6 +247,10 @@ export class TrafficPilot {
       return changed;
     }
     if (s.onGround) return null;
+    if (this.direct) {
+      if (af.phase === 'hold') af.autopilot.settings.heading = Math.atan2(this.direct.east - s.position.y, this.direct.north - s.position.x);
+      return null;
+    }
 
     const pos = legPosition(path, this.leg, s.position.x, s.position.y);
     if (leg.id !== 'final' && pos.toGo < turnLead(s.groundSpeed) && (leg.id !== 'upwind' || this.height > CROSSWIND_MIN)) {

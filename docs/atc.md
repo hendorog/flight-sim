@@ -54,19 +54,30 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   The radios show a green MIC lamp on the COM in use and an amber TX lamp while a call goes out.
   A panel with one course indicator and two NAVs (C152, DA20) has a source switch: C on the NAV page puts the
   CDI on the other NAV, a green CDI lamp beside the NAV window shows which (CDI by VLOC on the GPS).
-- **Step 4: the home tower sequences and wants readbacks** (`src/atc/tower.ts` HomeTower). One aircraft flies the
-  home circuit too (not during a lesson, so the instructor's circuits stay as they were), calling downwind and final
-  on 118.3 and reading its clearances back. The tower numbers every arrival by the distance it still has to fly to
-  touchdown: "number two, follow the Cessna on base". EASA: "report final", and on final the landing clearance only
-  for number one with the runway free, else "continue approach, one ahead" (or "runway occupied") with the clearance
-  following unasked when it frees. FAA: cleared to land in sequence on downwind. Still not clear at 400 ft, or the
-  runway occupied after all: "go around". A departure is held ("hold position" / "hold short", "traffic on final")
-  while an arrival is within 3 km (1.8 km once lined up), then cleared unasked. The AI aircraft following traffic
-  extends its downwind until the one ahead is on final 900 m nearer the runway, base flown higher to stay near the
-  glide path. The player is spoken to unasked only once it has called the tower. Readbacks: a clearance or
-  instruction puts its readback first in the Space menu (the runway and clearance, holding point, pressure setting,
-  new frequency, callsign last); one that must be read back and is not within 15 s brings "read back" once. "Say
-  again" (60 s after a message) has it repeated.
+- **Step 4: the home tower sequences and wants readbacks** (`src/atc/tower.ts` HomeTower). Up to five AI aircraft
+  use the home field (none during a lesson, so the instructor's circuits stay as they were), each working Ground and
+  the tower as the player does (TrafficSystem, `taxi.ts`). To begin with one is in the circuit, one is about to
+  depart and one is inbound; another arrival every 4-8 minutes. Departures start on a free apron spot (the scenery's
+  parked aircraft keep theirs), ask Ground for taxi, taxi to the holding point (A1 for 07, A4 for 25), call ready and
+  are cleared, told to line up and wait behind a departure on its roll, or held for traffic on final; then most
+  leave the circuit (turning out at 500 ft or the crosswind turn, calling leaving, gone at 12 km) and some stay for
+  two to four touch and goes and a full stop. Arrivals call inbound from 11 km, are told to join downwind, land full
+  stop, are told where to vacate (A3 or A4 landing on 07, A2 or A1 on 25), call Ground clear of the runway and taxi
+  to a spot, where they stay three to six minutes and then depart. Departures and arrivals use separate links and
+  stretches of Alpha so they never meet nose to nose; one AI aircraft moves on the apron at a time; a taxiing
+  aircraft stops for anything 40 m ahead of it (the player included). Every clearance is read back. The tower
+  numbers every arrival by the distance it still has to fly to touchdown: "number two, follow the Cessna on base".
+  EASA: "report final", and on final the landing clearance only for number one with the runway free, else
+  "continue, number two" (or "continue, runway occupied") with the clearance following unasked when it frees. FAA:
+  cleared to land in sequence on downwind. Still not clear at 400 ft, or the runway occupied after all: "go around".
+  Departures go in the order they called ready; one is held ("hold position" / "hold short", "traffic on final")
+  while an arrival is within 3 km (1.8 km once lined up), then cleared unasked. An AI aircraft following traffic
+  extends its downwind until the one ahead is on final 2.5 km nearer the runway, base flown higher to stay near the
+  glide path. The player is spoken to unasked only once it has called the tower. Physics: the nearest three
+  airborne aircraft fly their flight models; the nearest four on the ground are posed for their exteriors. Readbacks:
+  a clearance or instruction puts its readback first in the Space menu (the runway and clearance, holding point,
+  pressure setting, new frequency, callsign last); one that must be read back and is not within 15 s brings "read
+  back" once. "Say again" (60 s after a message) has it repeated.
 - **Step 3: circuit traffic** (`src/atc/circuit.ts`, `TrafficSystem.ts`, `trafficMesh.ts`). One AI aircraft at
   each generated field (C172, C152 or PA-28 by the field's code), flying touch-and-go circuits on the runway the
   wind favours: upwind to 1000 ft, 1000 m out on downwind at 90 kt, base descending at up to 700 fpm, a 4 degree

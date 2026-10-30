@@ -151,14 +151,14 @@ const rollingToward = (field: Airfield, heading: number): RunwayEnd => (Math.cos
  * The home tower's instruction to an aircraft slowing on the runway after a full-stop landing: which way and where
  * to turn off, and to call Ground. The apron is left of runway 07, right of 25. Null off the home runway.
  */
-export function vacateInstruction(s: RadioSituation): Phrase | null {
+export function vacateInstruction(s: RadioSituation, via?: string): Phrase | null {
   const f = s.station.field;
   if (s.station.kind !== 'tower' || f.kind !== 'home' || !s.onGround) return null;
   const end = rollingToward(f, s.heading);
   const { along, across } = activeFrame(f, end, s.north, s.east);
   if (Math.abs(across) > f.width / 2 + 3 || Math.abs(along) > f.length / 2) return null;
   const side = end === 0 ? 'left' : 'right';
-  const exit = taxiway(vacateVia(end, nedToLocal(s.north, s.east).u, s.groundSpeedKt * 0.514444));
+  const exit = taxiway(via ?? vacateVia(end, nedToLocal(s.north, s.east).u, s.groundSpeedKt * 0.514444));
   const ground = join([both('contact Ground'), frequency(HOME_GROUND, s.authority)], ' ');
   return s.authority === 'faa'
     ? join([s.callsign.short, join([both(`turn ${side} at`), exit], ' '), ground])
@@ -370,12 +370,12 @@ export function readbackFor(s: RadioSituation, call: CallId, intent?: Intent): P
 }
 
 /** The readback of vacateInstruction: where to turn off, and the frequency to call. */
-export function vacateReadback(s: RadioSituation): Phrase | null {
-  const msg = vacateInstruction(s);
+export function vacateReadback(s: RadioSituation, via?: string): Phrase | null {
+  const msg = vacateInstruction(s, via);
   if (!msg) return null;
   const end = rollingToward(s.station.field, s.heading);
   const side = end === 0 ? 'left' : 'right';
-  const exit = taxiway(vacateVia(end, nedToLocal(s.north, s.east).u, s.groundSpeedKt * 0.514444));
+  const exit = taxiway(via ?? vacateVia(end, nedToLocal(s.north, s.east).u, s.groundSpeedKt * 0.514444));
   const ground = join([both('Ground'), frequency(HOME_GROUND, s.authority)], ' ');
   return capital(join([join([both(s.authority === 'faa' ? `${side} at` : `vacate ${side} at`), exit], ' '), ground, s.callsign.short]));
 }

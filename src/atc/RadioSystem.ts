@@ -485,10 +485,10 @@ export class RadioSystem implements Subsystem {
     for (const t of calls) {
       if (Math.abs(t.frequency - f) > 0.004) continue;
       if (Math.hypot(t.north - st.position.x, t.east - st.position.y) > radioRange(st.altitudeAGL, t.heightAgl)) continue;
-      if (t.actor === 'tower') {
-        // The home tower, to the circuit traffic or to the player (who is then in contact).
-        if (t.toPlayer) this.toMe('tower', t.line, `${HOME_AIRFIELD.code}:tower`, t.readback);
-        else this.speech.enqueue({ actor: 'tower', channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
+      if (t.actor) {
+        // The home tower or ground, to the traffic or to the player (who is then in contact).
+        if (t.toPlayer) this.toMe(t.actor, t.line, `${HOME_AIRFIELD.code}:${t.actor}`, t.readback);
+        else this.speech.enqueue({ actor: t.actor, channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
       } else this.speech.enqueue({ actor: 'traffic', voice: t.speaker, channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
     }
   }

@@ -18,7 +18,7 @@ export const GO_AROUND_HEIGHT = 400 * FT;
 const DEPARTURE_GAP = 3000;
 const LINED_UP_GAP = 1800;
 /** An aircraft on downwind turns base once the one ahead is on final at least this much nearer the runway, m. */
-export const FOLLOW_SPACING = 900;
+export const FOLLOW_SPACING = 2500;
 
 /** An aircraft as the tower sees it. */
 export interface TowerAircraft {
@@ -47,16 +47,21 @@ export interface TowerView {
   aircraft: readonly TowerAircraft[];
 }
 
+/** What an answer tells the aircraft to do (the AI traffic acts on it). */
+export type TowerKind = 'number' | 'land' | 'continue' | 'takeoff' | 'lineUp' | 'hold' | 'goAround';
+
 /** A transmission from the tower to one aircraft, with what it must read back. */
 export interface TowerMessage {
   to: string;
   line: Phrase;
   readback?: Phrase;
+  kind: TowerKind;
 }
 
 export interface TowerReply {
   line: Phrase;
   readback?: Phrase;
+  kind: TowerKind;
 }
 
 /** What the tower has told an aircraft, by id. */
@@ -68,6 +73,10 @@ interface Track {
   waiting: 'land' | 'depart' | null;
   /** Sent round on this approach. */
   sentRound: boolean;
+  /** Departures: the order the ready calls came in, told to line up and wait, cleared and still on the runway. */
+  readyAt: number;
+  linedUp: boolean;
+  departing: boolean;
 }
 
 const NUMBERS = ['one', 'two', 'three', 'four', 'five', 'six'];
@@ -75,6 +84,7 @@ const cap = (p: Phrase): Phrase => ({ text: p.text[0].toUpperCase() + p.text.sli
 
 export class HomeTower {
   private readonly tracks = new Map<string, Track>();
+  private readyCount = 0;
 
   constructor(readonly field: Airfield = HOME_AIRFIELD) {}
 
@@ -120,15 +130,35 @@ export class HomeTower {
     return this.place(v, a).ahead === null && !this.occupied(v, a.id);
   }
 
-  /** Nothing else on the runway and no arrival close in. */
-  canDepart(v: TowerView, a: TowerAircraft): boolean {
+  /** No arrival close in (closer still once lined up). */
+  private arrivalsClear(v: TowerView, a: TowerAircraft): boolean {
     const gap = a.onRunway ? LINED_UP_GAP : DEPARTURE_GAP;
-    return !this.occupied(v, a.id) && !this.sequence(v).some((x) => x.id !== a.id && x.remaining < gap);
+    return !this.sequence(v).some((x) => x.id !== a.id && x.remaining < gap);
+  }
+
+  /** First of the departures waiting on the ground (by their ready calls). */
+  private firstToGo(v: TowerView, a: TowerAircraft): boolean {
+    const mine = this.tracks.get(a.id)?.readyAt ?? Infinity;
+    return !v.aircraft.some((x) => {
+      const t = this.tracks.get(x.id);
+      return x.id !== a.id && x.onGround && t?.waiting === 'depart' && t.readyAt < mine;
+    });
+  }
+
+  /** Nothing else on the runway, no arrival close in, and first in the queue. */
+  canDepart(v: TowerView, a: TowerAircraft): boolean {
+    return !this.occupied(v, a.id) && this.arrivalsClear(v, a) && this.firstToGo(v, a);
+  }
+
+  /** Line up and wait: first in the queue, the runway held only by a departure on its take-off roll, no arrival close in. */
+  private canLineUp(v: TowerView, a: TowerAircraft): boolean {
+    const others = v.aircraft.filter((x) => x.id !== a.id && x.onRunway);
+    return others.length > 0 && others.every((x) => this.tracks.get(x.id)?.departing) && this.arrivalsClear(v, a) && this.firstToGo(v, a);
   }
 
   private track(id: string, intent?: Intent): Track {
     let t = this.tracks.get(id);
-    if (!t) this.tracks.set(id, (t = { intent: intent ?? 'fullStop', cleared: false, waiting: null, sentRound: false }));
+    if (!t) this.tracks.set(id, (t = { intent: intent ?? 'fullStop', cleared: false, waiting: null, sentRound: false, readyAt: Infinity, linedUp: false, departing: false }));
     if (intent) t.intent = intent;
     return t;
   }
@@ -150,11 +180,34 @@ export class HomeTower {
     t.waiting = null;
     const rw = this.rw(v);
     const cl = this.clearedWord(v, t.intent);
-    return { line: join([a.callsign.short, rw, cl, wind(v.windFromDeg, v.windKt, v.authority)]), readback: cap(join([rw, cl, a.callsign.short])) };
+    return { line: join([a.callsign.short, rw, cl, wind(v.windFromDeg, v.windKt, v.authority)]), readback: cap(join([rw, cl, a.callsign.short])), kind: 'land' };
+  }
+
+  private lineUp(v: TowerView, a: TowerAircraft, t: Track): TowerReply {
+    t.linedUp = true;
+    const rw = this.rw(v);
+    const luaw = both('line up and wait');
+    return { line: join([a.callsign.short, rw, luaw]), readback: cap(join([rw, luaw, a.callsign.short])), kind: 'lineUp' };
+  }
+
+  /** The answer to a departure: cleared, line up and wait, or hold. */
+  private departure(v: TowerView, a: TowerAircraft, t: Track): TowerReply {
+    if (this.canDepart(v, a)) return this.takeOff(v, a, t);
+    t.waiting = 'depart';
+    if (!a.onRunway && !t.linedUp && this.canLineUp(v, a)) return this.lineUp(v, a, t);
+    const cs = a.callsign.short;
+    const why = both(this.sequence(v).some((x) => x.remaining < DEPARTURE_GAP) ? 'traffic on final' : this.occupied(v, a.id) ? 'runway occupied' : 'traffic departing');
+    if (a.onRunway) return { line: join([cs, both('hold position'), why]), readback: cap(join([both('holding position'), cs])), kind: 'hold' };
+    const rw = this.rw(v);
+    return v.authority === 'faa'
+      ? { line: join([cs, join([both('hold short'), rw], ' '), why]), readback: cap(join([join([both('holding short'), rw], ' '), cs])), kind: 'hold' }
+      : { line: join([cs, both('hold position'), why]), readback: cap(join([both('holding position'), cs])), kind: 'hold' };
   }
 
   private takeOff(v: TowerView, a: TowerAircraft, t: Track): TowerReply {
     t.waiting = null;
+    t.departing = true;
+    t.linedUp = false;
     const rw = this.rw(v);
     const w = wind(v.windFromDeg, v.windKt, v.authority);
     const faa = v.authority === 'faa';
@@ -162,6 +215,7 @@ export class HomeTower {
     return {
       line: faa ? join([a.callsign.short, w, rw, cl]) : join([a.callsign.short, rw, cl, w]),
       readback: cap(join([rw, cl, a.callsign.short])),
+      kind: 'takeoff',
     };
   }
 
@@ -178,16 +232,16 @@ export class HomeTower {
     const cs = a.callsign.short;
     if (faa) {
       // An FAA tower clears the landing in sequence; the runway is checked again on short final.
-      if (call === 'base' && t.cleared) return { line: join([cs, both('roger')]) };
+      if (call === 'base' && t.cleared) return { line: join([cs, both('roger')]), kind: 'number' };
       const rw = this.rw(v);
       const cl = this.clearedWord(v, t.intent);
       t.cleared = true;
-      if (!ahead) return { line: join([cs, num, rw, cl]), readback: cap(join([cl, rw, cs])) };
-      return { line: join([cs, num, this.follow(ahead), rw, cl]), readback: cap(join([both(`following the ${ahead.type}`), cl, rw, cs])) };
+      if (!ahead) return { line: join([cs, num, rw, cl]), readback: cap(join([cl, rw, cs])), kind: 'land' };
+      return { line: join([cs, num, this.follow(ahead), rw, cl]), readback: cap(join([both(`following the ${ahead.type}`), cl, rw, cs])), kind: 'land' };
     }
     const report = both('report final');
-    if (!ahead) return { line: join([cs, num, report]) };
-    return { line: join([cs, num, this.follow(ahead), report]), readback: cap(join([num, both(`following the ${ahead.type}`), cs])) };
+    if (!ahead) return { line: join([cs, num, report]), kind: 'number' };
+    return { line: join([cs, num, this.follow(ahead), report]), readback: cap(join([num, both(`following the ${ahead.type}`), cs])), kind: 'number' };
   }
 
   /**
@@ -198,7 +252,6 @@ export class HomeTower {
     const a = v.aircraft.find((x) => x.id === id);
     if (!a) return null;
     const t = this.track(id, intent);
-    const faa = v.authority === 'faa';
     const cs = a.callsign.short;
     switch (call) {
       case 'downwind':
@@ -215,18 +268,13 @@ export class HomeTower {
         // Behind traffic: "continue, number two"; number one with the runway still occupied: "continue, runway occupied".
         const { number } = this.place(v, a);
         const reason = number > 1 ? `number ${NUMBERS[number - 1] ?? number}` : 'runway occupied';
-        return { line: join([cs, both('continue'), both(reason)]) };
+        return { line: join([cs, both('continue'), both(reason)]), kind: 'continue' };
       }
-      case 'ready': {
+      case 'ready':
         t.cleared = false;
-        if (this.canDepart(v, a)) return this.takeOff(v, a, t);
-        t.waiting = 'depart';
-        const rw = this.rw(v);
-        if (a.onRunway) return { line: join([cs, both('hold position'), both('traffic on final')]), readback: cap(join([both('holding position'), cs])) };
-        return faa
-          ? { line: join([cs, join([both('hold short'), rw], ' '), both('traffic on final')]), readback: cap(join([join([both('holding short'), rw], ' '), cs])) }
-          : { line: join([cs, both('hold position'), both('traffic on final')]), readback: cap(join([both('holding position'), cs])) };
-      }
+        t.linedUp = a.onRunway;
+        t.readyAt = ++this.readyCount;
+        return this.departure(v, a, t);
       case 'goAround':
         t.cleared = false;
         t.waiting = null;
@@ -256,7 +304,9 @@ export class HomeTower {
       } else if (t?.waiting === 'depart') {
         if (!a.onGround) t.waiting = null;
         else if (this.canDepart(v, a)) messages.push({ to: a.id, ...this.takeOff(v, a, t) });
+        else if (!a.onRunway && !t.linedUp && this.canLineUp(v, a)) messages.push({ to: a.id, ...this.lineUp(v, a, t) });
       }
+      if (t?.departing && !a.onGround) t.departing = false;
       if (t && (a.onGround || (a.leg !== 'final' && a.leg !== null))) {
         // Landed, or round again: the next approach starts afresh.
         if (a.onGround) t.cleared = false;
@@ -270,7 +320,7 @@ export class HomeTower {
           tr.sentRound = true;
           tr.cleared = false;
           tr.waiting = null;
-          messages.push({ to: a.id, line: join([a.callsign.short, both('go around'), both(this.occupied(v, a.id) ? 'runway occupied' : 'traffic ahead')]) });
+          messages.push({ to: a.id, line: join([a.callsign.short, both('go around'), both(this.occupied(v, a.id) ? 'runway occupied' : 'traffic ahead')]), kind: 'goAround' });
           if (ai) goAround.push(a.id);
         }
       }
