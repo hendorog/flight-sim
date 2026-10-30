@@ -5,7 +5,7 @@
 
 import type { Airfield } from '../world/airfields';
 import { fieldCoords } from '../world/airfields';
-import { RUNWAY_CONNECTORS } from '../world/airport/layout';
+import { nedToLocal, RUNWAY_CONNECTORS, TAXIWAYS } from '../world/airport/layout';
 import type { Station } from '../instruments/dynamics/radios';
 import { HOME_GROUND } from '../instruments/dynamics/radios';
 import {
@@ -21,6 +21,8 @@ const FT = 0.3048;
 export const CIRCUIT_RADIUS = 4500;
 /** Inbound and leaving calls are offered out to this distance, m. */
 const INBOUND_RADIUS = 30000;
+/** A straight-in final is called from this far out, m. */
+const LONG_FINAL = 10000;
 /** Height above the field below which an aircraft near it counts as in the circuit, m. */
 const CIRCUIT_CEILING = 2500 * FT;
 
@@ -50,8 +52,13 @@ export interface RadioSituation {
   atisLetter: string;
 }
 
+/** What a landing will be, as told to the tower or the traffic on downwind and final. */
+export type Intent = 'fullStop' | 'touchAndGo';
+
 export interface Call {
   id: CallId;
+  /** A landing call's stated intention. */
+  intent?: Intent;
   /** Short label for the menu ('Left downwind 25'). */
   label: string;
   /** The transmission, callsign and station included. */
@@ -85,7 +92,7 @@ export function circuitLeg(field: Airfield, end: RunwayEnd, north: number, east:
   const dh = wrap(heading - hdg);
   const near = (target: number, tol: number): boolean => Math.abs(wrap(dh - target)) < tol * DEG;
   const threshold = -field.length / 2;
-  if (along < threshold + 300 && Math.abs(across) < 500 && near(0, 35)) return 'final';
+  if (along < threshold + 300 && Math.abs(across) < Math.max(500, (threshold - along) * 0.15) && near(0, 35)) return 'final';
   if (out > 300 && near(Math.PI, 50)) return 'downwind';
   if (along < threshold + 600 && out > 0 && near(-side * Math.PI / 2, 50)) return 'base';
   if (along > threshold && near(side * Math.PI / 2, 50)) return 'crosswind';
@@ -117,6 +124,47 @@ function holdingPoint(end: RunwayEnd): string {
 /** A taxiway name: 'A4' / 'Alpha four'. */
 const taxiway = (name: string): Phrase => ({ text: name, speak: spell(name) });
 
+/** Where a home-field connector meets the runway, m along it (layout u, + toward the 25 end). */
+const connectorU = (name: string): number => TAXIWAYS.find((t) => t.name === name)!.a.u;
+
+/**
+ * The home field's runway exit for an aircraft rolling out at `u` (layout frame) toward `end`'s far end at this
+ * speed: the first connector it can make with gentle braking, else the one at the end of the runway.
+ */
+export function vacateVia(end: RunwayEnd, u: number, speedMs: number): string {
+  const dir = end === 0 ? 1 : -1;
+  const need = (speedMs * speedMs) / (2 * 1.5) + 30;
+  const ahead = RUNWAY_CONNECTORS.map((c) => ({ name: c.name, d: (connectorU(c.name) - u) * dir })).sort((x, y) => x.d - y.d);
+  return (ahead.find((e) => e.d >= need) ?? ahead[ahead.length - 1]).name;
+}
+
+/** The home-field connector nearest a position (the one an aircraft just left the runway by). */
+function nearestExit(north: number, east: number): string {
+  const { u } = nedToLocal(north, east);
+  return RUNWAY_CONNECTORS.map((c) => c.name).sort((x, y) => Math.abs(connectorU(x) - u) - Math.abs(connectorU(y) - u))[0];
+}
+
+/** The landing end from the direction of the roll. */
+const rollingToward = (field: Airfield, heading: number): RunwayEnd => (Math.cos(heading - field.heading) >= 0 ? 0 : 1);
+
+/**
+ * The home tower's instruction to an aircraft slowing on the runway after a full-stop landing: which way and where
+ * to turn off, and to call Ground. The apron is left of runway 07, right of 25. Null off the home runway.
+ */
+export function vacateInstruction(s: RadioSituation): Phrase | null {
+  const f = s.station.field;
+  if (s.station.kind !== 'tower' || f.kind !== 'home' || !s.onGround) return null;
+  const end = rollingToward(f, s.heading);
+  const { along, across } = activeFrame(f, end, s.north, s.east);
+  if (Math.abs(across) > f.width / 2 + 3 || Math.abs(along) > f.length / 2) return null;
+  const side = end === 0 ? 'left' : 'right';
+  const exit = taxiway(vacateVia(end, nedToLocal(s.north, s.east).u, s.groundSpeedKt * 0.514444));
+  const ground = join([both('contact Ground'), frequency(HOME_GROUND, s.authority)], ' ');
+  return s.authority === 'faa'
+    ? join([s.callsign.short, join([both(`turn ${side} at`), exit], ' '), ground])
+    : join([s.callsign.short, join([both(`vacate ${side} at`), exit], ' '), join([both('when vacated'), ground], ' ')]);
+}
+
 /** The calls that fit the moment, the likeliest first. Empty when the station takes no calls (an ATIS). */
 export function callsFor(s: RadioSituation): Call[] {
   const st = s.station;
@@ -134,13 +182,13 @@ export function callsFor(s: RadioSituation): Call[] {
   const hand = a === 'easa' ? `${side} hand` : side;
   const info = s.atisLetter && !ctaf && f.kind === 'home' ? both(`information ${s.atisLetter}`, `information ${letterWord(s.atisLetter)}`) : null;
   const out: Call[] = [];
-  const add = (id: CallId, label: string, body: Phrase[]): void => {
+  const add = (id: CallId, label: string, body: Phrase[], intent?: Intent): void => {
     const cs = s.contacted && !ctaf ? s.callsign.short : s.callsign.full;
     const head = both(stationCall(s));
     // FAA common-frequency calls end with the field's name again.
     const parts = [head, cs, ...body];
     if (ctaf && a === 'faa') parts.push(both(stationName(f)));
-    out.push({ id, label, line: join(parts) });
+    out.push({ id, label, line: join(parts), ...(intent ? { intent } : {}) });
   };
 
   const { along, across } = activeFrame(f, end, s.north, s.east);
@@ -153,7 +201,14 @@ export function callsFor(s: RadioSituation): Call[] {
       if (ctaf) add('departing', `Departing ${rwy}`, [both(`departing ${rw.text}`, `departing ${rw.speak}`)]);
       else if (towered) add('ready', `Ready ${rwy}`, a === 'faa' ? [both(`holding short ${rw.text}`, `holding short ${rw.speak}`), both('ready for departure')] : [both('ready for departure')]);
     }
-    if (landed && !onRunway) add('clear', `Clear of ${rwy}`, [both(`clear of ${rw.text}`, `clear of ${rw.speak}`)]);
+    if (landed && !onRunway) {
+      const clearOf = both(`clear of ${rw.text}`, `clear of ${rw.speak}`);
+      if (st.kind === 'ground') {
+        const exit = taxiway(nearestExit(s.north, s.east));
+        const at = join([both(a === 'faa' ? `clear of ${rw.text} at` : `vacated ${rw.text} at`, a === 'faa' ? `clear of ${rw.speak} at` : `vacated ${rw.speak} at`), exit], ' ');
+        add('clear', 'Request taxi to the apron', [at, both(a === 'faa' ? 'taxi to the ramp' : 'request taxi to the apron')]);
+      } else add('clear', `Clear of ${rwy}`, ctaf ? [clearOf, both('taxiing to parking')] : [clearOf]);
+    }
     if (!onRunway) {
       if (ctaf) add('taxi', `Taxiing to ${rwy}`, [both(`taxiing to ${rw.text}`, `taxiing to ${rw.speak}`)]);
       else if (st.kind === 'ground' || towered) {
@@ -163,7 +218,7 @@ export function callsFor(s: RadioSituation): Call[] {
       }
       if (towered) add('ready', `Ready ${rwy}`, a === 'faa' ? [both(`holding short ${rw.text}`, `holding short ${rw.speak}`), both('ready for departure')] : [both(`at holding point, ${rw.text}`, `at holding point, ${rw.speak}`), both('ready for departure')]);
     }
-  } else if (!s.onGround && dist < CIRCUIT_RADIUS && height < CIRCUIT_CEILING) {
+  } else if (!s.onGround && height < CIRCUIT_CEILING && (dist < CIRCUIT_RADIUS || (dist < LONG_FINAL && circuitLeg(f, end, s.north, s.east, s.heading) === 'final'))) {
     const leg = circuitLeg(f, end, s.north, s.east, s.heading);
     const legs: { id: CallId; label: string; body: Phrase }[] = [
       { id: 'downwind', label: `${side[0].toUpperCase()}${side.slice(1)} downwind ${rwy}`, body: a === 'faa' && towered ? both(`midfield ${side} downwind ${rw.text}`, `midfield ${side} downwind ${rw.speak}`) : both(`${hand} downwind ${rw.text}`, `${hand} downwind ${rw.speak}`) },
@@ -172,9 +227,18 @@ export function callsFor(s: RadioSituation): Call[] {
       { id: 'crosswind', label: `Crosswind ${rwy}`, body: both(`${hand} crosswind ${rw.text}`, `${hand} crosswind ${rw.speak}`) },
       { id: 'upwind', label: `Upwind ${rwy}`, body: both(`upwind ${rw.text}`, `upwind ${rw.speak}`) },
     ];
+    // Downwind and final carry the intention: a full stop or a touch and go.
+    const intents: { intent: Intent; label: string; say: Phrase }[] = [
+      { intent: 'fullStop', label: 'full stop', say: both('full stop') },
+      { intent: 'touchAndGo', label: 'touch and go', say: both(a === 'faa' ? 'touch-and-go' : 'touch and go', 'touch and go') },
+    ];
     // The leg it is on first, then the others in circuit order.
     legs.sort((x, y) => Number(y.id === leg) - Number(x.id === leg));
-    for (const l of legs.slice(0, 4)) add(l.id, l.label, [l.body]);
+    // A straight-in final from outside the circuit is called as just that.
+    for (const l of dist < CIRCUIT_RADIUS ? legs.slice(0, 4) : legs.filter((x) => x.id === 'final')) {
+      if (l.id === 'downwind' || l.id === 'final') for (const i of intents) add(l.id, `${l.label}, ${i.label}`, [l.body, i.say], i.intent);
+      else add(l.id, l.label, [l.body]);
+    }
     add('goAround', 'Going around', [both('going around')]);
   } else if (!s.onGround && dist < INBOUND_RADIUS) {
     const brg = Math.atan2(s.east - f.east, s.north - f.north) / DEG;
@@ -198,7 +262,7 @@ export function callsFor(s: RadioSituation): Call[] {
 }
 
 /** What the home tower or ground says back (null: no answer, as on a common frequency). */
-export function replyTo(s: RadioSituation, call: CallId): Phrase | null {
+export function replyTo(s: RadioSituation, call: CallId, intent?: Intent): Phrase | null {
   const st = s.station;
   if (st.kind !== 'tower' && st.kind !== 'ground') return null;
   const f = st.field;
@@ -212,6 +276,7 @@ export function replyTo(s: RadioSituation, call: CallId): Phrase | null {
   const hand = a === 'easa' ? `${side} hand` : side;
   const ground = join([both('contact Ground'), frequency(HOME_GROUND, a)], ' ');
   const say = (...parts: Phrase[]): Phrase => join([cs, ...parts]);
+  const cleared = intent === 'touchAndGo' ? both(a === 'faa' ? 'cleared touch-and-go' : 'cleared touch and go', 'cleared touch and go') : both('cleared to land');
   switch (call) {
     case 'radioCheck':
       return say(both(`${stationName(f)} ${st.kind === 'tower' ? 'Tower' : 'Ground'}`), both(a === 'faa' ? 'loud and clear' : 'readability five'));
@@ -232,15 +297,22 @@ export function replyTo(s: RadioSituation, call: CallId): Phrase | null {
     case 'downwind':
     case 'crosswind':
     case 'upwind':
-      return a === 'faa' ? say(both('number one'), rw, both('cleared to land')) : say(both('number one, report final'));
+      return a === 'faa' ? say(both('number one'), rw, cleared) : say(both('number one, report final'));
     case 'base':
-      return a === 'faa' ? say(rw, both('cleared to land')) : say(both('report final'));
+      return a === 'faa' ? say(rw, cleared) : say(both('report final'));
     case 'final':
-      return say(rw, both('cleared to land'), w);
+      return say(rw, cleared, w);
     case 'goAround':
       return say(both(a === 'faa' ? `roger, make ${side} traffic, report downwind` : 'roger, report downwind'));
     case 'clear':
-      return st.kind === 'tower' ? say(ground) : say(both('taxi to the apron via Alpha'));
+      if (st.kind === 'tower') return say(ground);
+      {
+        // From the connector it left by along Alpha to the apron link on that side.
+        const link = taxiway(connectorU(nearestExit(s.north, s.east)) < 0 ? 'B1' : 'B2');
+        return a === 'faa'
+          ? say(join([both('taxi to the ramp via Alpha,', 'taxi to the ramp via Alpha'), link], ' '))
+          : say(join([both('taxi to the apron via Alpha and'), link], ' '));
+      }
     case 'leaving':
       return say(both('frequency change approved'));
     case 'departing':

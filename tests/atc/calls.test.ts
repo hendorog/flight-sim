@@ -2,7 +2,7 @@
 // offered where the aircraft is, and the home tower's answers.
 
 import { describe, expect, it } from 'vitest';
-import { activeFrame, atisText, callsFor, circuitLeg, replyTo, runwayInUse, type RadioSituation } from '../../src/atc/calls';
+import { activeFrame, atisText, callsFor, circuitLeg, replyTo, runwayInUse, vacateInstruction, type RadioSituation } from '../../src/atc/calls';
 import { callsign, frequency, pressure, spell } from '../../src/atc/phrases';
 import { fieldPoint, generatedAirfields, HOME_AIRFIELD, type Airfield } from '../../src/world/airfields';
 import { HOME_GROUND, type Station } from '../../src/instruments/dynamics/radios';
@@ -118,5 +118,39 @@ describe('a generated field', () => {
     const faa = callsFor({ ...s, authority: 'faa', callsign: callsign('N172FS', 'C172', 'faa') })[0].line.text;
     expect(faa.endsWith(`, ${f.name.replace(/ (Aerodrome|Airstrip)$/, '')}`)).toBe(true);
     expect(calls.some((c) => c.id === 'radioCheck')).toBe(false);
+  });
+});
+
+describe('landing: full stop or touch and go, vacating, taxiing in', () => {
+  const hdg25 = H.heading + Math.PI;
+  it('offers both intentions on final and downwind, and clears each its own way', () => {
+    const s = at(tower, 2000, 0, { onGround: false, altitude: H.elevation + 150, heading: hdg25 });
+    const calls = callsFor(s);
+    expect(calls.slice(0, 2).map((c) => c.label)).toEqual(['Final 25, full stop', 'Final 25, touch and go']);
+    expect(calls[0].line.text).toBe('Fable Regional Tower, G-FSCK, final runway 25, full stop');
+    expect(calls.filter((c) => c.id === 'downwind').map((c) => c.intent)).toEqual(['fullStop', 'touchAndGo']);
+    expect(replyTo(s, 'final', 'fullStop')!.text).toBe('G-CK, runway 25, cleared to land, wind 250 degrees 10 knots');
+    expect(replyTo(s, 'final', 'touchAndGo')!.text).toBe('G-CK, runway 25, cleared touch and go, wind 250 degrees 10 knots');
+    const faa = { ...s, authority: 'faa' as const, callsign: callsign('N172FS', 'C172', 'faa') };
+    expect(replyTo(faa, 'final', 'touchAndGo')!.text).toBe('Cessna 2FS, runway 25, cleared touch-and-go, wind 250 at 10');
+  });
+
+  it('a straight-in final 6 km out is offered the final calls too', () => {
+    const s = at(tower, 6000, 300, { onGround: false, altitude: H.elevation + 400, heading: hdg25 });
+    expect(callsFor(s)[0].label).toBe('Final 25, full stop');
+  });
+
+  it('rolling out on 25: vacate right at the next exit it can make, then ground taxis it to the apron', () => {
+    // Rolling toward the 07 end at 30 kt from 200 m past the 25 threshold's side of centre: A3 (u = 300) is behind.
+    const roll = at(tower, 200, 0, { heading: hdg25, groundSpeedKt: 30, contacted: true });
+    expect(vacateInstruction(roll)!.text).toBe('G-CK, vacate right at A2, when vacated contact Ground 121.9');
+    expect(vacateInstruction({ ...roll, authority: 'faa', callsign: callsign('N172FS', 'C172', 'faa') })!.text).toBe('Cessna 2FS, turn right at A2, contact Ground 121.9');
+    expect(vacateInstruction(at(tower, -200, 0, { heading: hdg25, groundSpeedKt: 30 }))!.text).toContain('at A1');
+    expect(vacateInstruction({ ...roll, station: ground })).toBeNull();
+    // Off the runway on A2 and called Ground.
+    const off = at(ground, -300, -90, { landedAgoS: 30 });
+    const c = callsFor(off)[0];
+    expect(c.line.text).toBe('Fable Regional Ground, G-FSCK, vacated runway 25 at A2, request taxi to the apron');
+    expect(replyTo(off, 'clear')!.text).toBe('G-CK, taxi to the apron via Alpha and B1');
   });
 });

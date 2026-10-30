@@ -10,7 +10,7 @@ import type { TrainingSystem } from '../training/TrainingSystem';
 import type { InstrumentReadings } from '../instruments/dynamics/instrumentSet';
 import { radioTuning, stationOn, type Station } from '../instruments/dynamics/radios';
 import { RadioMenu } from '../ui/radioMenu';
-import { atisText, callsFor, replyTo, stationName, type Call, type RadioSituation } from './calls';
+import { atisText, callsFor, replyTo, stationName, vacateInstruction, type Call, type Intent, type RadioSituation } from './calls';
 import { callsign } from './phrases';
 
 /** The answer follows the call after this long, s of sim time. */
@@ -51,6 +51,11 @@ export class RadioSystem implements Subsystem {
   /** Sim time of the last touchdown after flight, and how long it has been airborne. */
   private landedAt: number | null = null;
   private airborneFor = 0;
+  /** The intention last stated on downwind or final, and the one the latest landing was made with. */
+  private intent: Intent | null = null;
+  private landingIntent: Intent | null = null;
+  /** The tower has told this landing where to turn off. */
+  private vacateGiven = true;
 
   constructor(private readonly deps: RadioDeps) {
     this.menu = new RadioMenu(deps.layer, (i) => this.transmit(i));
@@ -67,6 +72,8 @@ export class RadioSystem implements Subsystem {
       this.pending = null;
       this.landedAt = null;
       this.airborneFor = 0;
+      this.intent = this.landingIntent = null;
+      this.vacateGiven = true;
       this.menu.hide();
     });
   }
@@ -161,8 +168,9 @@ export class RadioSystem implements Subsystem {
     const s = this.situation;
     if (!call || !s) return;
     this.menu.hide();
+    if (call.intent) this.intent = call.intent;
     this.speech.enqueue({ actor: 'student', channel: 'radio', caption: call.line.text, speak: call.line.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
-    const reply = replyTo(s, call.id);
+    const reply = replyTo(s, call.id, call.intent);
     if (reply) {
       const actor: ActorId = s.station.kind === 'ground' ? 'ground' : 'tower';
       this.pending = { at: this.simClock + REPLY_DELAY, actor, text: reply.text, speak: reply.speak, key: stationKey(s.station) };
@@ -174,7 +182,12 @@ export class RadioSystem implements Subsystem {
     const st = this.ctx.state;
     if (!st.onGround) this.airborneFor += dt;
     else {
-      if (this.airborneFor > 10) this.landedAt = this.simClock;
+      if (this.airborneFor > 10) {
+        this.landedAt = this.simClock;
+        this.landingIntent = this.intent;
+        this.intent = null;
+        this.vacateGiven = false;
+      }
       this.airborneFor = 0;
     }
     if (this.menu.open && (this.refresh -= dt) <= 0) {
@@ -191,7 +204,26 @@ export class RadioSystem implements Subsystem {
         this.speech.enqueue({ actor: p.actor, channel: 'radio', caption: p.text, speak: p.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
       }
     }
+    this.updateVacate();
     this.updateAtis();
+  }
+
+  /** Slowing on the home runway after a landing that was not a touch and go: the tower says where to turn off. */
+  private updateVacate(): void {
+    if (this.vacateGiven || this.landingIntent === 'touchAndGo' || this.landedAt === null) return;
+    const st = this.ctx.state;
+    if (!st.onGround || this.simClock - this.landedAt > 60) {
+      this.vacateGiven = true;
+      return;
+    }
+    if (st.groundSpeed / 0.514444 > 35 || this.pending || this.speech.busy('radio')) return;
+    this.vacateGiven = true;
+    const station = this.reachable();
+    if (!station) return;
+    const msg = vacateInstruction(this.situationNow(station));
+    if (!msg) return;
+    this.contacted.add(stationKey(station));
+    this.speech.enqueue({ actor: 'tower', channel: 'radio', caption: msg.text, speak: msg.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
   }
 
   /** The ATIS repeats while COM1 is on it and in range; retuning cuts it off. */
