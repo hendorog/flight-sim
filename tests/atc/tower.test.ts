@@ -35,7 +35,7 @@ describe('the home tower', () => {
     const t = new HomeTower();
     const p = me({ leg: 'final', remaining: 3000, height: 250, along: -3800 });
     const r = t.call(view([p, ai({ leg: 'final', remaining: 1200, along: -2000 })]), 'player', 'final', 'fullStop')!;
-    expect(r.line.text).toBe('G-FS, continue approach, one ahead');
+    expect(r.line.text).toBe('G-FS, continue, number two');
     // The traffic on the runway: still waiting.
     expect(t.update(view([p, ai({ leg: null, onGround: true, onRunway: true, remaining: Infinity })])).messages).toHaveLength(0);
     // Off again on its touch and go: cleared.

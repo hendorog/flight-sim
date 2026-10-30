@@ -70,6 +70,7 @@ interface Track {
   sentRound: boolean;
 }
 
+const NUMBERS = ['one', 'two', 'three', 'four', 'five', 'six'];
 const cap = (p: Phrase): Phrase => ({ text: p.text[0].toUpperCase() + p.text.slice(1), speak: p.speak });
 
 export class HomeTower {
@@ -173,7 +174,7 @@ export class HomeTower {
   private numbered(v: TowerView, a: TowerAircraft, t: Track, call: CallId): TowerReply {
     const { number, ahead } = this.place(v, a);
     const faa = v.authority === 'faa';
-    const num = both(`number ${['one', 'two', 'three', 'four'][number - 1] ?? number}`);
+    const num = both(`number ${NUMBERS[number - 1] ?? number}`);
     const cs = a.callsign.short;
     if (faa) {
       // An FAA tower clears the landing in sequence; the runway is checked again on short final.
@@ -211,8 +212,10 @@ export class HomeTower {
         if (this.canLand(v, a)) return this.landing(v, a, t);
         t.cleared = false;
         t.waiting = 'land';
-        const reason = this.occupied(v, id) ? 'runway occupied' : faa ? 'traffic landing ahead' : 'one ahead';
-        return { line: join([cs, both(faa ? 'continue' : 'continue approach'), both(reason)]) };
+        // Behind traffic: "continue, number two"; number one with the runway still occupied: "continue, runway occupied".
+        const { number } = this.place(v, a);
+        const reason = number > 1 ? `number ${NUMBERS[number - 1] ?? number}` : 'runway occupied';
+        return { line: join([cs, both('continue'), both(reason)]) };
       }
       case 'ready': {
         t.cleared = false;
