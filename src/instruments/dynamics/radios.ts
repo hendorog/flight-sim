@@ -1,6 +1,6 @@
 // The radios' tuning: the frequencies the panel displays and the radio traffic is heard on (docs/atc.md). One live
-// store, like the GPS destination (navigation.ts): the menu and the push-to-talk menu tune it, the resume snapshot
-// keeps COM1, and the rack units redraw when its revision changes.
+// store, like the GPS destination (navigation.ts): the menu and the radio window (R) tune it, the resume snapshot
+// keeps both COMs and the audio panel's MIC selection, and the rack units redraw when its revision changes.
 
 import { airfields, type Airfield } from '../../world/airfields';
 
@@ -11,7 +11,11 @@ export interface RadioTuning {
   com2: [number, number];
   nav2: [number, number];
   squawk: string;
+  /** The audio panel's MIC selection: the COM transmitted and listened on. */
+  mic: ComRadio;
 }
+
+export type ComRadio = 1 | 2;
 
 export const DEFAULT_TUNING: Readonly<RadioTuning> = Object.freeze({
   com1: [118.3, 120.3] as [number, number],
@@ -19,6 +23,7 @@ export const DEFAULT_TUNING: Readonly<RadioTuning> = Object.freeze({
   com2: [124.85, 118.0] as [number, number],
   nav2: [113.9, 116.8] as [number, number],
   squawk: '1200',
+  mic: 1,
 });
 
 /** The home field's stations (its tower is HOME_AIRFIELD.frequency). */
@@ -29,7 +34,7 @@ const live: RadioTuning = copy(DEFAULT_TUNING);
 let revision = 0;
 
 function copy(t: Readonly<RadioTuning>): RadioTuning {
-  return { com1: [...t.com1], nav1: [...t.nav1], com2: [...t.com2], nav2: [...t.nav2], squawk: t.squawk };
+  return { com1: [...t.com1], nav1: [...t.nav1], com2: [...t.com2], nav2: [...t.nav2], squawk: t.squawk, mic: t.mic };
 }
 
 /** The live tuning (the panel holds this object and redraws on radioRevision()). */
@@ -48,29 +53,59 @@ export function validCom(mhz: number): number | null {
   return Math.round(mhz * 40) / 40;
 }
 
-/** Tune COM1: the new frequency becomes active and the old one goes to standby, as a flip-flop radio does. */
-export function tuneCom1(mhz: number): void {
+/** Tune a COM: the new frequency becomes active and the old one goes to standby, as a flip-flop radio does. */
+export function tuneCom(n: ComRadio, mhz: number): void {
   const f = validCom(mhz);
-  if (f === null || Math.abs(f - live.com1[0]) < 1e-6) return;
-  live.com1 = [f, live.com1[0]];
+  const com = n === 1 ? live.com1 : live.com2;
+  if (f === null || Math.abs(f - com[0]) < 1e-6) return;
+  if (n === 1) live.com1 = [f, com[0]];
+  else live.com2 = [f, com[0]];
   revision++;
 }
 
-/** Swap COM1's active and standby frequencies. */
+export function tuneCom1(mhz: number): void {
+  tuneCom(1, mhz);
+}
+
+/** Swap a COM's active and standby frequencies (the flip-flop button). */
+export function swapCom(n: ComRadio): void {
+  if (n === 1) live.com1 = [live.com1[1], live.com1[0]];
+  else live.com2 = [live.com2[1], live.com2[0]];
+  revision++;
+}
+
 export function swapCom1(): void {
-  live.com1 = [live.com1[1], live.com1[0]];
+  swapCom(1);
+}
+
+/** The audio panel's MIC selector. */
+export function selectMic(n: ComRadio): void {
+  if (live.mic === n) return;
+  live.mic = n;
   revision++;
 }
 
-/** COM1 as a pair (a restored flight); an invalid frequency falls back to the default. */
+/** A COM as a pair (a restored flight); an invalid frequency falls back to the default. */
+export function setCom(n: ComRadio, pair: readonly [number, number]): void {
+  const d = n === 1 ? DEFAULT_TUNING.com1 : DEFAULT_TUNING.com2;
+  const v: [number, number] = [validCom(pair[0]) ?? d[0], validCom(pair[1]) ?? d[1]];
+  if (n === 1) live.com1 = v;
+  else live.com2 = v;
+  revision++;
+}
+
 export function setCom1(pair: readonly [number, number]): void {
-  live.com1 = [validCom(pair[0]) ?? DEFAULT_TUNING.com1[0], validCom(pair[1]) ?? DEFAULT_TUNING.com1[1]];
-  revision++;
+  setCom(1, pair);
 }
 
-/** COM1 differs from the defaults (the snapshot keeps it only then). */
+/** A COM differs from the defaults (the snapshot keeps it only then). */
+export function comChanged(n: ComRadio): boolean {
+  const [c, d] = n === 1 ? [live.com1, DEFAULT_TUNING.com1] : [live.com2, DEFAULT_TUNING.com2];
+  return c[0] !== d[0] || c[1] !== d[1];
+}
+
 export function com1Changed(): boolean {
-  return live.com1[0] !== DEFAULT_TUNING.com1[0] || live.com1[1] !== DEFAULT_TUNING.com1[1];
+  return comChanged(1);
 }
 
 /** Back to the defaults (a new world, or a snapshot that carries no tuning). */

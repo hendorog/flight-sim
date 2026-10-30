@@ -19,7 +19,7 @@ import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, seedConfirmation, 
 import { randomSeed, SEED_PREF_KEY, seedDevChoiceUrl, seedLabel } from '../sim/seedChoice';
 import { setStartField } from '../sim/startField';
 import { gpsTarget, setGpsTarget } from '../instruments/dynamics/navigation';
-import { HOME_ATIS, HOME_GROUND, tuneCom1 } from '../instruments/dynamics/radios';
+import { HOME_ATIS, HOME_GROUND, radioTuning, tuneCom } from '../instruments/dynamics/radios';
 import { generatedAirfields, HOME_AIRFIELD } from '../world/airfields';
 import { normalizeSeed, worldSeed } from '../world/worldSeed';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
@@ -375,7 +375,7 @@ export class PauseMenu {
     const fields = eraId === 'present' ? generatedAirfields() : [];
     if (fields.length) {
       el('h3', '', p, 'Airfields');
-      el('p', 'sub', p, `Other fields in this world, to fly to or start from. Runway, Apron and Final above start at ${AIRPORT.icao}. Direct to sends the panel GPS there; Tune sets COM1 to the field's frequency.`);
+      el('p', 'sub', p, `Other fields in this world, to fly to or start from. Runway, Apron and Final above start at ${AIRPORT.icao}. Direct to sends the panel GPS there; Tune sets the transmitting COM to the field's frequency (R in flight does it quicker).`);
       const list = el('div', 'fields', p);
       // Direct-to buttons (the GPS destination, navigation.ts), the chosen one marked.
       const directs: { code: string; b: HTMLButtonElement }[] = [];
@@ -391,12 +391,13 @@ export class PauseMenu {
         });
         directs.push({ code, b });
       };
-      // Tune buttons set COM1 (radios.ts); the old frequency goes to standby.
+      // Tune buttons set the COM the MIC is on (radios.ts); the old frequency goes to standby.
       const tune = (parent: HTMLElement, mhz: number, label: string): void => {
         const b = el('button', '', parent, label);
         b.addEventListener('click', () => {
-          tuneCom1(mhz);
-          this.host.toast(`COM1 ${mhz.toFixed(3)}`);
+          const n = radioTuning().mic;
+          tuneCom(n, mhz);
+          this.host.toast(`COM${n} ${mhz.toFixed(3)}`);
         });
       };
       const home = el('div', 'chips', p);

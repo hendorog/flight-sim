@@ -64,7 +64,7 @@ import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreferenc
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
 import { chooseSeed, saveSeedPreference, seedSwitchUrl } from './seedChoice';
 import { setStartField, startField } from './startField';
-import { com1Changed, radioTuning } from '../instruments/dynamics/radios';
+import { comChanged, radioTuning } from '../instruments/dynamics/radios';
 import { RadioSystem } from '../atc/RadioSystem';
 import { TrafficSystem } from '../atc/TrafficSystem';
 import { restoreWeather } from './weatherPresets';
@@ -612,7 +612,7 @@ export class Simulator {
     // The radio (docs/atc.md) speaks through the Flight School's scheduler and captions.
     const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority, env: () => physics.env }) : null);
     traffic?.init(ctx);
-    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [] }) : null;
+    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, comRadios: () => panel.comRadios, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [] }) : null;
     this.radio?.init(ctx);
     this.schoolCopilot = physics.copilot;
     if (id === 'r22') {
@@ -926,7 +926,9 @@ export class Simulator {
     if (worldSeed() !== 0) snap.seed = worldSeed();
     const field = startField();
     if (field) snap.field = field.code;
-    if (com1Changed()) snap.com1 = [...radioTuning().com1];
+    if (comChanged(1)) snap.com1 = [...radioTuning().com1];
+    if (comChanged(2)) snap.com2 = [...radioTuning().com2];
+    if (radioTuning().mic === 2) snap.mic = 2;
     return snap;
   }
 

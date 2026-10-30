@@ -32,7 +32,7 @@ import { screw } from './render/art';
 import { DirtyRectUploader } from './render/dirtyUpload';
 import { PanelLightComposer } from './render/emissiveCompose';
 import { GpsUnit, NavComRadio, Transponder } from './render/avionics';
-import { radioTuning, type RadioTuning } from './dynamics/radios';
+import { radioTuning, type ComRadio, type RadioTuning } from './dynamics/radios';
 import { context2d, LABEL_FONT, makeCanvas, noiseCanvas, rng, type Ctx2D } from './render/canvas';
 import { LIGHT_DIAL_LINEAR, type PanelComponent, type Rect } from './render/component';
 import { AnnunciatorPanel, FlapIndicator, paintBlankPlate, paintEngineControls, paintPlacard, SwitchPanel } from './render/controls';
@@ -104,6 +104,9 @@ export class InstrumentPanel {
    */
   readonly layoutWarnings: readonly string[];
 
+  /** The COM radios fitted: the GPS navigator's and a NAV/COM's, or one or two NAV/COMs (comRadios). */
+  readonly comRadios: ComRadio;
+
   private readonly def: PanelDef;
   private readonly paintLevers: boolean;
   private readonly g: Ctx2D;
@@ -128,6 +131,7 @@ export class InstrumentPanel {
     const def = opts.def ?? C172S_PANEL;
     const { w, h } = def.size;
     this.def = def;
+    this.comRadios = comRadios(def);
     this.paintLevers = opts.paintLevers ?? false;
     this.layoutWarnings = panelLayoutProblems(def, opts.pxRect);
     for (const w of this.layoutWarnings) console.warn(`[panel ${def.id}] ${w}`);
@@ -330,6 +334,12 @@ export class InstrumentPanel {
 
 /** Course on the card of each CDI of the C172S panel while its receiver has no OBS input, degrees (NAV 1, NAV 2). */
 export const CDI_FIXED_COURSES = C172S_PANEL.gauges.flatMap((g) => (g.kind === 'cdi' ? [g.fixedCourseDeg] : []));
+
+/** How many COM radios a panel has: a GPS navigator is COM1 and its NAV/COMs COM2, else the NAV/COMs in order. */
+export function comRadios(def: PanelDef): ComRadio {
+  const navcoms = def.gauges.filter((g) => g.kind === 'navcom').length;
+  return navcoms + (def.gauges.some((g) => g.kind === 'gps') ? 1 : 0) >= 2 ? 2 : 1;
+}
 
 /**
  * The components of the definition's gauges, in its order (panelParts lists the same rectangles), with the

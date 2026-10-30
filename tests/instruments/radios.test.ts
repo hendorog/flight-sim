@@ -69,4 +69,19 @@ describe('radio tuning', () => {
     expect(com1Changed()).toBe(false);
     expect(parseSnapshot(JSON.stringify({ ...snap, com1: ['x', 1] }))).toBeNull();
   });
+
+  it('a restored flight gets COM2 and the MIC selection back', () => {
+    const w = defaultWeather();
+    const p = new SimPhysics({ weather: w });
+    p.reset('cruise');
+    const snap = p.captureSnapshot({ weather: w, cameraMode: 'chase', quality: 'high', renderScale: null, resume: true, now: 1_800_000_000_000 });
+    const back = parseSnapshot(JSON.stringify({ ...snap, com2: [122.7, 121.9], mic: 2 }));
+    p.restore(back!);
+    expect(radioTuning().com2).toEqual([122.7, 121.9]);
+    expect(radioTuning().mic).toBe(2);
+    p.restore(snap);
+    expect(radioTuning().mic).toBe(1);
+    expect(radioTuning().com2).toEqual(DEFAULT_TUNING.com2);
+    expect(parseSnapshot(JSON.stringify({ ...snap, mic: 3 }))).toBeNull();
+  });
 });

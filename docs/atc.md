@@ -42,6 +42,11 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   Downwind and final calls carry the intention (full stop or touch and go) and the tower clears each its own way.
   After a full-stop landing at home the tower says which way and where to vacate (the first exit the roll can
   make, `vacateVia`) and to call Ground, who taxis the aircraft to the apron via Alpha and B1 or B2.
+- **The radio window (R).** The nearest stations, each tuned with one number key (the old frequency to standby);
+  after the tower's handover Ground is first, marked "as instructed". S is the flip-flop, C the audio panel's MIC
+  (COM1 or COM2, on panels with two COMs: a GPS navigator and a NAV/COM, or two NAV/COMs), and in a lesson 0 is the
+  instructor's say again (bare R used to be say again). The MIC's COM is the one transmitted and listened on; the
+  snapshot keeps COM2 and the MIC.
 - **Step 3: circuit traffic** (`src/atc/circuit.ts`, `TrafficSystem.ts`, `trafficMesh.ts`). One AI aircraft at
   each generated field (C172, C152 or PA-28 by the field's code), flying touch-and-go circuits on the runway the
   wind favours: upwind to 1000 ft, 1000 m out on downwind at 90 kt, base descending at up to 700 fpm, a 4 degree

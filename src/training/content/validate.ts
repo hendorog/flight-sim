@@ -104,7 +104,7 @@ const EVENT_FIELDS = {
 
 /**
  * Training key ids a briefing may list besides the InputActions (section 5.9): Enter (ack), Shift+Enter
- * (handback), R (sayAgain), [ (showMe), Tab (cycleCard), Shift+R (retryPhase). The shell's TRAINING_KEYS
+ * (handback), R then 0 (sayAgain, in the radio window), [ (showMe), Tab (cycleCard), Shift+R (retryPhase). The shell's TRAINING_KEYS
  * (wave 2) should use these ids.
  */
 export const TRAINING_KEY_IDS: readonly string[] = ['ack', 'handback', 'sayAgain', 'showMe', 'cycleCard', 'retryPhase'];

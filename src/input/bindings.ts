@@ -13,9 +13,9 @@
 // rate) (the shell, src/sim/Simulator.ts); F11 is kept free; F is the checklist (Shift+F steps its lists while it is open, and feathers while it is closed).
 // Shift+V toggles the fixed cockpit panel; bare ] cycles its sections; Shift+H hides the yokes in the 3D cockpit. E / Shift+E work a hand primer (the C152 and PA-38).
 // Owned by the Flight School during a lesson (src/training/TrainingSystem.ts, spec section 5.9; TRAINING_KEY_MAP
-// below): Enter (acknowledge / "I have control"), Shift+Enter (hand control back), bare R (say again), bare [
-// (show me), Tab (lesson card) and Shift+R (try the phase again; the scenario restart outside a lesson).
-// Space stays reserved for radio push-to-talk (step 3).
+// below): Enter (acknowledge / "I have control"), Shift+Enter (hand control back), bare [ (show me), Tab (lesson
+// card) and Shift+R (try the phase again; the scenario restart outside a lesson). Say again is R then 0: bare R
+// opens the radio window (src/atc/RadioSystem.ts), which offers it during a lesson; Space is radio push-to-talk.
 // Pause is also on the Pause/Break key (and the gamepad Start button); see InputSystem.
 //
 // There is ONE key map for every aircraft type (lesson validation and the Controls tab depend on it). A key
@@ -560,7 +560,8 @@ export interface TrainingKeyMapping {
 export const TRAINING_KEY_MAP: readonly TrainingKeyMapping[] = [
   { id: 'ack', codes: ['Enter', 'NumpadEnter'], shift: false, label: 'Acknowledge; "I have control" when offered; confirm a checklist item' },
   { id: 'handback', codes: ['Enter', 'NumpadEnter'], shift: true, label: '"You have control": hand control to the instructor' },
-  { id: 'sayAgain', codes: ['KeyR'], shift: false, label: 'Say again' },
+  // R opens the radio window first (RadioSystem); its 0 item is the say again.
+  { id: 'sayAgain', codes: ['KeyR'], shift: false, label: 'Say again (R, then 0)' },
   { id: 'showMe', codes: ['BracketLeft'], shift: false, label: 'Show me (a demonstration)' },
   { id: 'cycleCard', codes: ['Tab'], shift: false, label: 'Lesson card: compact, expanded, essentials' },
   { id: 'retryPhase', codes: ['KeyR'], shift: true, label: 'Try again from the start of this phase' },
