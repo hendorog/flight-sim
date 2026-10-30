@@ -64,6 +64,8 @@ const MAX_EXTENSION = 6000;
 const CIRCUIT_CEILING = 2500 * 0.3048;
 /** A straight-in final is sequenced from this far out, m. */
 const LONG_FINAL = 10000;
+/** The tower looks round this often, s. */
+const TOWER_PERIOD = 0.5;
 /** Drawn within this distance of the camera, m. */
 const DRAW_RANGE = 20000;
 /** A flown aircraft is drawn with its own exterior (~110k triangles) within this distance of the camera, the stand-in beyond, m. */
@@ -144,6 +146,7 @@ export class TrafficSystem implements Subsystem {
   /** Transmissions waiting their turn (the tower's answers, the readbacks), by sim time. */
   private later: { at: number; tx: Transmission }[] = [];
   private home = false;
+  private towerClock = 0;
   /** The home field's controller: the landing sequence and the runway. */
   readonly tower = new HomeTower();
   private unsubscribe: (() => void) | null = null;
@@ -281,7 +284,10 @@ export class TrafficSystem implements Subsystem {
       this.announce(a, i);
       this.pose(a, cam, i);
     }
-    this.control();
+    if ((this.towerClock -= dt) <= 0) {
+      this.towerClock = TOWER_PERIOD;
+      this.control();
+    }
     this.later = this.later.filter((l) => {
       if (l.at > this.clock) return true;
       this.outbox.push(l.tx);

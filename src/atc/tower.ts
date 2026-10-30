@@ -248,7 +248,7 @@ export class HomeTower {
       const t = this.tracks.get(a.id);
       const ai = a.id !== 'player';
       if (t?.waiting === 'land') {
-        if (a.onGround || a.leg !== 'final') t.waiting = null;
+        if (a.onGround || (a.leg !== null && a.leg !== 'final')) t.waiting = null;
         else if (this.canLand(v, a)) messages.push({ to: a.id, ...this.landing(v, a, t) });
       } else if (t?.waiting === 'depart') {
         if (!a.onGround) t.waiting = null;
