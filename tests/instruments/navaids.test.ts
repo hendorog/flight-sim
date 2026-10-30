@@ -60,3 +60,17 @@ describe('navaids', () => {
     expect(receiveNav(113.9, { x: 400000, y: 0, z: -1000 }, emptyNavSignal()).locValid).toBe(false);
   });
 });
+
+describe('the course indicator source switch', () => {
+  it('is on panels with one CDI and two NAVs only (the C152 and the DA20)', async () => {
+    const { cdiSelect } = await import('../../src/instruments/panel');
+    const { C152_PANEL } = await import('../../src/aircraft/c152/panel');
+    const { DA20_PANEL } = await import('../../src/aircraft/da20/panel');
+    const { C172S_PANEL } = await import('../../src/aircraft/c172s/panel');
+    const { PA38_PANEL } = await import('../../src/aircraft/pa38/panel');
+    const { PC12_PANEL } = await import('../../src/aircraft/pc12/panel');
+    expect(cdiSelect(C152_PANEL)).toBe(true);
+    expect(cdiSelect(DA20_PANEL)).toBe(true);
+    for (const p of [C172S_PANEL, PA38_PANEL, PC12_PANEL]) expect(cdiSelect(p)).toBe(false);
+  });
+});

@@ -157,6 +157,8 @@ export class GpsUnit extends RackUnit {
     x: number,
     y: number,
     private readonly tuning: RadioTuning,
+    /** The panel's one course indicator has a NAV source switch: CDI by VLOC when it is on NAV1. */
+    private readonly cdiSelect = false,
   ) {
     super(id, { x, y, w: 320, h: 236 });
   }
@@ -245,6 +247,10 @@ export class GpsUnit extends RackUnit {
           g.fillStyle = '#ffb347';
           g.fillText('TX', x + 48, y);
         }
+      }
+      if (i === 1 && this.cdiSelect && this.tuning.cdi === 1) {
+        g.fillStyle = '#5dffa0';
+        g.fillText('CDI', x + 30, y);
       }
       g.font = font(15, 600);
       g.fillStyle = '#5dffa0';
@@ -393,6 +399,8 @@ const LED_OFF = 'rgba(255,143,42,0.07)';
 /** The MIC lamp beside the COM window: lit on the COM the audio panel transmits and listens on; TX while it does. */
 const MIC_LAMP = { x: 56, y: 49, r: 2.6, on: '#7dff9a', glow: 'rgba(80,255,120,0.9)', off: '#16301c' };
 const TX_LAMP = { x: 114, y: 49, r: 2.6, on: '#ffb347', glow: 'rgba(255,160,60,0.9)', off: '#33220f' };
+/** Beside the NAV window: lit on the NAV the course indicator shows, where one indicator has a source switch. */
+const CDI_LAMP = { ...MIC_LAMP, x: 204 };
 
 /** NAV/COM with gas-discharge style segment displays: COM1/NAV1 on panels without a GPS, else COM2/NAV2. */
 export class NavComRadio extends RackUnit {
@@ -401,6 +409,7 @@ export class NavComRadio extends RackUnit {
     { x: 170, y: 10, w: 128, h: 32 },
     { x: MIC_LAMP.x - 4, y: MIC_LAMP.y - 4, w: 8, h: 8 },
     { x: TX_LAMP.x - 4, y: TX_LAMP.y - 4, w: 8, h: 8 },
+    { x: CDI_LAMP.x - 4, y: CDI_LAMP.y - 4, w: 8, h: 8 },
   ];
   private readonly latch = new Latch(2);
 
@@ -410,6 +419,7 @@ export class NavComRadio extends RackUnit {
     y: number,
     private readonly tuning: RadioTuning,
     private readonly set: 1 | 2 = 2,
+    private readonly cdiSelect = false,
   ) {
     super(id, { x, y, w: 320, h: 76 });
   }
@@ -431,6 +441,7 @@ export class NavComRadio extends RackUnit {
     centredText(g, 'NAV', 188, 52, 7);
     centredText(g, 'MIC', MIC_LAMP.x, 61, 5);
     centredText(g, 'TX', TX_LAMP.x, 61, 5);
+    if (this.cdiSelect) centredText(g, 'CDI', CDI_LAMP.x, 61, 5);
     button(g, 66, 48, 36, 12, '⇄');
     button(g, 214, 48, 36, 12, '⇄');
     dualKnob(g, 138, 57, 11);
@@ -448,12 +459,14 @@ export class NavComRadio extends RackUnit {
       const mic = this.tuning.mic === this.set;
       lamp(g, MIC_LAMP, mic);
       lamp(g, TX_LAMP, mic && transmitting());
+      if (this.cdiSelect) lamp(g, CDI_LAMP, this.tuning.cdi === this.set);
       drawSegments(g, fmtFreq(com[1], 2), 146, 21, small);
       drawSegments(g, fmtFreq(nav[0], 2), 238, 18, style);
       drawSegments(g, fmtFreq(nav[1], 2), 294, 21, small);
     } else {
       lamp(g, MIC_LAMP, false);
       lamp(g, TX_LAMP, false);
+      if (this.cdiSelect) lamp(g, CDI_LAMP, false);
     }
     screenGlass(g, 22, 10, 128, 32);
     screenGlass(g, 170, 10, 128, 32);

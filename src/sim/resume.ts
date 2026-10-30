@@ -119,6 +119,8 @@ export interface FlightSnapshot {
   nav2?: [number, number];
   /** The audio panel's MIC on COM2; absent: COM1. */
   mic?: 2;
+  /** The course indicator's NAV source switch on NAV2 (RadioTuning.cdi); absent: NAV1. */
+  cdi?: 2;
   /** Epoch ms of the save. */
   savedAt: number;
   /** False right after a deliberate scenario restart: a reload then starts that scenario fresh. */
@@ -363,6 +365,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
     if (n !== undefined && !(Array.isArray(n) && n.length === 2 && n.every(isNum))) return null;
   }
   if (v.mic !== undefined && v.mic !== 2) return null;
+  if (v.cdi !== undefined && v.cdi !== 2) return null;
   if (!(SCENARIO_IDS.includes(v.scenario as ScenarioId) || ERA_SCENARIO_IDS.includes(v.scenario as ScenarioId)) || !isNum(v.simTime) || v.simTime < 0) return null;
   const b = v.body;
   if (!isObj(b) || !isVec(b.position) || !isVec(b.velocity) || !isQuat(b.orientation) || !isVec(b.angularVelocity)) return null;

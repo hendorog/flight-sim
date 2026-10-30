@@ -13,6 +13,8 @@ export interface RadioTuning {
   squawk: string;
   /** The audio panel's MIC selection: the COM transmitted and listened on. */
   mic: ComRadio;
+  /** The NAV selected to the course indicator on a panel with one indicator and two NAV receivers (cdiSelect). */
+  cdi: ComRadio;
 }
 
 export type ComRadio = 1 | 2;
@@ -24,6 +26,7 @@ export const DEFAULT_TUNING: Readonly<RadioTuning> = Object.freeze({
   nav2: [113.9, 116.8] as [number, number],
   squawk: '1200',
   mic: 1,
+  cdi: 1,
 });
 
 /** The home field's stations (its tower is HOME_AIRFIELD.frequency). */
@@ -34,7 +37,7 @@ const live: RadioTuning = copy(DEFAULT_TUNING);
 let revision = 0;
 
 function copy(t: Readonly<RadioTuning>): RadioTuning {
-  return { com1: [...t.com1], nav1: [...t.nav1], com2: [...t.com2], nav2: [...t.nav2], squawk: t.squawk, mic: t.mic };
+  return { com1: [...t.com1], nav1: [...t.nav1], com2: [...t.com2], nav2: [...t.nav2], squawk: t.squawk, mic: t.mic, cdi: t.cdi };
 }
 
 /** The live tuning (the panel holds this object and redraws on radioRevision()). */
@@ -131,6 +134,13 @@ export function transmitting(): boolean {
 export function selectMic(n: ComRadio): void {
   if (live.mic === n) return;
   live.mic = n;
+  revision++;
+}
+
+/** The NAV source switch of a single course indicator. */
+export function selectCdi(n: ComRadio): void {
+  if (live.cdi === n) return;
+  live.cdi = n;
   revision++;
 }
 

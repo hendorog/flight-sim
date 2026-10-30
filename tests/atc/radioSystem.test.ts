@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fieldPoint, HOME_AIRFIELD as H } from '../../src/world/airfields';
-import { HOME_GROUND, radioTuning, resetRadios, tuneCom1, type ComRadio } from '../../src/instruments/dynamics/radios';
+import { DEFAULT_TUNING, HOME_GROUND, radioTuning, resetRadios, tuneCom1, type ComRadio } from '../../src/instruments/dynamics/radios';
 import '../../src/world/terrain/heightfield';
 
 vi.mock('../../src/ui/radioMenu', () => ({
@@ -19,7 +19,7 @@ vi.mock('../../src/ui/radioMenu', () => ({
 
 const { RadioSystem } = await import('../../src/atc/RadioSystem');
 
-function rig(traffic: () => unknown[] = () => [], coms: ComRadio = 2) {
+function rig(traffic: () => unknown[] = () => [], coms: ComRadio = 2, cdiSelect = false) {
   const said: { actor: string; caption: string }[] = [];
   const speech = { enqueue: (u: { actor: string; caption: string }) => said.push(u), busy: () => false, idle: () => true, speaking: () => false, cancel() {} };
   const inputs: string[] = [];
@@ -27,7 +27,7 @@ function rig(traffic: () => unknown[] = () => [], coms: ComRadio = 2) {
   const p = fieldPoint(H, -600, 0);
   const state = { position: { x: p.north, y: p.east }, onGround: false, groundSpeed: 30, track: H.heading, heading: H.heading, altitudeAGL: 20, altitudeMSL: H.elevation + 20 };
   const ctx = { state, weather: { windDirectionDeg: 70, windSpeedKt: 6, qnhHpa: 1013, timeOfDay: 10, visibilityM: 20000 }, events: { on: () => () => {} }, paused: false };
-  const radio = new RadioSystem({ training: training as never, readings: () => ({ avionicsPowered: true }) as never, layer: {} as never, traffic: traffic as never, comRadios: () => coms });
+  const radio = new RadioSystem({ training: training as never, readings: () => ({ avionicsPowered: true }) as never, layer: {} as never, traffic: traffic as never, comRadios: () => coms, cdiSelect: () => cdiSelect });
   radio.init(ctx as never);
   const r = radio as unknown as { onKey: (e: unknown) => void; menu: { open: boolean; onPick: (i: number) => void; items: { key?: string; label: string; detail: string; action?: boolean }[] } };
   const key = (code: string, shiftKey = false) => r.onKey({ code, shiftKey, repeat: false, target: null, preventDefault() {}, stopImmediatePropagation() {} });
@@ -173,6 +173,21 @@ describe('the radio window (R)', () => {
     const ils = menu.items.find((i) => i.label.includes('ILS 07'))!;
     key(`Digit${ils.key}`);
     expect(radioTuning().nav2).toEqual([110.3, 113.9]);
+  });
+
+  it('switches the one CDI between NAV1 and NAV2 with C, and tunes the NAV it shows', () => {
+    const { key, menu } = rig(undefined, 2, true);
+    key('KeyR');
+    key('Tab');
+    expect(menu.items.find((i) => i.key === 'C')!.label).toBe('CDI to NAV2');
+    key('KeyC');
+    expect(radioTuning().cdi).toBe(2);
+    const vor = menu.items.find((i) => i.label.includes('VOR 113.90'))!;
+    key(`Digit${vor.key}`);
+    expect(radioTuning().nav1).toEqual(DEFAULT_TUNING.nav1);
+    expect(radioTuning().nav2[0]).toBe(113.9);
+    key('KeyR'); // reopens on NAV2, the CDI's
+    expect(menu.items.find((i) => i.key === 'C')!.label).toBe('CDI to NAV1');
   });
 
   it('leaves Shift+R (the restart) alone', () => {

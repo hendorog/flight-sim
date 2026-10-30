@@ -52,6 +52,8 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   VOR on 116.80 at the sealed field farthest from home. A VOR moves the CDI / HSI needle from the OBS course (10
   degrees full scale) with TO / FROM; anything else shows the NAV flag. Tab turns the radio window to its NAV page.
   The radios show a green MIC lamp on the COM in use and an amber TX lamp while a call goes out.
+  A panel with one course indicator and two NAVs (C152, DA20) has a source switch: C on the NAV page puts the
+  CDI on the other NAV, a green CDI lamp beside the NAV window shows which (CDI by VLOC on the GPS).
 - **Step 3: circuit traffic** (`src/atc/circuit.ts`, `TrafficSystem.ts`, `trafficMesh.ts`). One AI aircraft at
   each generated field (C172, C152 or PA-28 by the field's code), flying touch-and-go circuits on the runway the
   wind favours: upwind to 1000 ft, 1000 m out on downwind at 90 kt, base descending at up to 700 fpm, a 4 degree

@@ -10,7 +10,7 @@ import type { SimContext, Subsystem } from '../core/context';
 import { Priority, type ActorId } from '../training/types';
 import type { TrainingSystem } from '../training/TrainingSystem';
 import type { InstrumentReadings } from '../instruments/dynamics/instrumentSet';
-import { HOME_GROUND, radioTuning, selectMic, setTransmitting, stationOn, stations, swapCom, swapNav, tuneCom, tuneNav, type ComRadio, type Station } from '../instruments/dynamics/radios';
+import { HOME_GROUND, radioTuning, selectCdi, selectMic, setTransmitting, stationOn, stations, swapCom, swapNav, tuneCom, tuneNav, type ComRadio, type Station } from '../instruments/dynamics/radios';
 import { emptyNavSignal, navaids, receiveNav } from '../instruments/dynamics/navigation';
 import { RadioMenu, type RadioMenuItem } from '../ui/radioMenu';
 import { atisText, callsFor, replyTo, stationName, vacateInstruction, type Call, type Intent, type RadioSituation } from './calls';
@@ -45,6 +45,8 @@ export interface RadioDeps {
   traffic?: () => Transmission[];
   /** The COM radios the panel has (InstrumentPanel.comRadios); one: the MIC stays on COM1. */
   comRadios?: () => ComRadio;
+  /** One course indicator and two NAVs (InstrumentPanel.cdiSelect): the NAV page's C switches its source. */
+  cdiSelect?: () => boolean;
   /** A short confirmation over the flight view. */
   toast?: (text: string) => void;
   /** A menu or dialog has the keys: Space and R are left to it. */
@@ -283,7 +285,10 @@ export class RadioSystem implements Subsystem {
   private updateNav(): void {
     const t = radioTuning();
     const two = this.deps.comRadios?.() === 2;
+    const select = two && (this.deps.cdiSelect?.() ?? false);
+    // One indicator: the NAV tuned is the one it shows.
     if (!two) this.navSel = 1;
+    else if (select) this.navSel = t.cdi;
     const n = this.navSel;
     const nav = n === 1 ? t.nav1 : t.nav2;
     const st = this.ctx.state;
@@ -317,9 +322,13 @@ export class RadioSystem implements Subsystem {
       const other: ComRadio = n === 1 ? 2 : 1;
       const on = other === 1 ? t.nav1 : t.nav2;
       items.push({
-        key: 'C', action: true, label: `Tune NAV${other}`, detail: `${on[0].toFixed(2)} active`,
+        key: 'C', action: true, label: select ? `CDI to NAV${other}` : `Tune NAV${other}`, detail: `${on[0].toFixed(2)} active`,
         run: () => {
           this.navSel = other;
+          if (select) {
+            selectCdi(other);
+            this.deps.toast?.(`CDI on NAV${other}`);
+          }
           this.updateTune();
         },
       });
@@ -328,7 +337,8 @@ export class RadioSystem implements Subsystem {
     this.tuneItems = items;
     const status = (two ? ([1, 2] as const) : ([1] as const)).map((c) => {
       const p = c === 1 ? t.nav1 : t.nav2;
-      return { text: `NAV${c} ${p[0].toFixed(2)} / ${p[1].toFixed(2)}`, on: c === n };
+      const cdi = select && t.cdi === c ? ' CDI' : '';
+      return { text: `NAV${c} ${p[0].toFixed(2)} / ${p[1].toFixed(2)}${cdi}`, on: c === n };
     });
     const power = this.deps.readings().avionicsPowered ? '' : 'The avionics are off. ';
     this.menu.show(`Radios · tuning NAV${n}`, items, `${power}A number tunes NAV${n} (the old frequency goes to standby). Tab: COM. R or Esc closes.`, status, true);

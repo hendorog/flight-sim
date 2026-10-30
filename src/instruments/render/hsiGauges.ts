@@ -4,6 +4,7 @@
 import { DEG } from '../../core/math';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
 import { navNeedle } from '../dynamics/navigation';
+import { radioTuning } from '../dynamics/radios';
 import { ARC_RED, centredText, font, INK, knob, tick } from './art';
 import { context2d, makeCanvas, type Ctx2D } from './canvas';
 import { SIXPACK_BEZEL } from './pitotStaticGauges';
@@ -85,10 +86,11 @@ export class HsiGauge extends RoundGauge {
     cx: number,
     cy: number,
     aperture: number,
-    private readonly receiver: 'nav1' | 'nav2',
+    /** 'selected': the NAV the source switch selects (RadioTuning.cdi), on a panel with one indicator. */
+    private readonly receiver: 'nav1' | 'nav2' | 'selected',
     private readonly fixedCourseDeg: number,
   ) {
-    super(id, cx, cy, { bezel: SIXPACK_BEZEL, aperture, shape: 'square', values: 8, seed: receiver === 'nav1' ? 131 : 132 });
+    super(id, cx, cy, { bezel: SIXPACK_BEZEL, aperture, shape: 'square', values: 8, seed: receiver !== 'nav2' ? 131 : 132 });
   }
 
   private get R(): number {
@@ -97,10 +99,11 @@ export class HsiGauge extends RoundGauge {
 
   sample(r: InstrumentReadings): boolean {
     const live = r.avionicsPowered;
-    const sig = this.receiver === 'nav1' ? r.ils : r.nav2;
+    const nav1 = this.receiver === 'nav1' || (this.receiver === 'selected' && radioTuning().cdi === 1);
+    const sig = nav1 ? r.ils : r.nav2;
     this.latch.track(0, r.headingDeg * DEG, 0.002);
     this.latch.track(1, r.headingBugDeg * DEG, 0.002);
-    const course = this.receiver === 'nav1' && Number.isFinite(r.obsDeg) ? r.obsDeg : this.fixedCourseDeg;
+    const course = this.receiver !== 'nav2' && Number.isFinite(r.obsDeg) ? r.obsDeg : this.fixedCourseDeg;
     const needle = navNeedle(sig, course);
     this.latch.set(2, ((course % 360) + 360) % 360, 0.25);
     this.latch.track(3, live && sig.locValid ? needle.loc : 0, 0.004);
