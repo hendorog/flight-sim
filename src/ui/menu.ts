@@ -19,7 +19,7 @@ import { eraConfirmation, eraDevChoiceUrl, eraGates, eraRows, seedConfirmation, 
 import { randomSeed, SEED_PREF_KEY, seedDevChoiceUrl, seedLabel } from '../sim/seedChoice';
 import { setStartField } from '../sim/startField';
 import { gpsTarget, setGpsTarget } from '../instruments/dynamics/navigation';
-import { HOME_GROUND, tuneCom1 } from '../instruments/dynamics/radios';
+import { HOME_ATIS, HOME_GROUND, tuneCom1 } from '../instruments/dynamics/radios';
 import { generatedAirfields, HOME_AIRFIELD } from '../world/airfields';
 import { normalizeSeed, worldSeed } from '../world/worldSeed';
 import { ERA_PREF_KEY } from '../sim/eraChoice';
@@ -403,6 +403,7 @@ export class PauseMenu {
       direct(home, AIRPORT.icao, `Direct to ${AIRPORT.icao} (home)`);
       tune(home, HOME_AIRFIELD.frequency, `Tower ${HOME_AIRFIELD.frequency.toFixed(1)}`);
       tune(home, HOME_GROUND, `Ground ${HOME_GROUND.toFixed(1)}`);
+      tune(home, HOME_ATIS, `ATIS ${HOME_ATIS.toFixed(1)}`);
       p.insertBefore(home, list);
       this.refreshers.push(markDirect);
       for (const f of [...fields].sort((a, b) => Math.hypot(a.north, a.east) - Math.hypot(b.north, b.east))) {

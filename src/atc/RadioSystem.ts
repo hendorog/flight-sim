@@ -56,12 +56,23 @@ export class RadioSystem implements Subsystem {
     this.menu = new RadioMenu(deps.layer, (i) => this.transmit(i));
   }
 
+  private unsubscribe: (() => void) | null = null;
+
   init(ctx: SimContext): void {
     this.ctx = ctx;
     window.addEventListener('keydown', this.onKey, true);
+    // A new flight: the stations have not heard from it yet.
+    this.unsubscribe = ctx.events.on('reset', () => {
+      this.contacted.clear();
+      this.pending = null;
+      this.landedAt = null;
+      this.airborneFor = 0;
+      this.menu.hide();
+    });
   }
 
   dispose(): void {
+    this.unsubscribe?.();
     window.removeEventListener('keydown', this.onKey, true);
     this.menu.root.remove();
   }
@@ -173,8 +184,12 @@ export class RadioSystem implements Subsystem {
     const p = this.pending;
     if (p && this.simClock >= p.at && !this.speech.busy('radio')) {
       this.pending = null;
-      this.contacted.add(p.key);
-      this.speech.enqueue({ actor: p.actor, channel: 'radio', caption: p.text, speak: p.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
+      // Retuned or out of range since the call: the answer is not heard.
+      const now = this.reachable();
+      if (now && stationKey(now) === p.key) {
+        this.contacted.add(p.key);
+        this.speech.enqueue({ actor: p.actor, channel: 'radio', caption: p.text, speak: p.speak, priority: Priority.Instruction, interrupt: false, resumable: false, ttlMs: 20000 });
+      }
     }
     this.updateAtis();
   }
