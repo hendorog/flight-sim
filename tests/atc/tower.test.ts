@@ -82,4 +82,20 @@ describe('the home tower', () => {
     const f = new HomeTower().call(view([me({ onGround: true, leg: null, remaining: Infinity }, 'faa'), ai({ leg: 'final', remaining: 2000 }, 'faa')], 'faa'), 'player', 'ready')!;
     expect(f.line.text).toMatch(/hold short runway 07, traffic on final$/);
   });
+
+  it('clears departures in the order they called ready, and lines the next one up behind a take-off roll', () => {
+    const t = new HomeTower();
+    const hp = (id: string) => ai({ id, callsign: callsign(id, 'PA38', 'easa'), onGround: true, leg: null, remaining: Infinity, height: 0 });
+    const first = hp('G-ONEE'), second = hp('G-TWOO');
+    expect(t.call(view([first, second]), 'G-ONEE', 'ready')!.kind).toBe('takeoff');
+    // The first rolling: the second lines up and waits.
+    const rolling = { ...first, onRunway: true };
+    const r = t.call(view([rolling, second]), 'G-TWOO', 'ready')!;
+    expect(r.kind).toBe('lineUp');
+    expect(r.line.text).toBe('G-OO, runway 07, line up and wait');
+    expect(r.readback!.text).toBe('Runway 07, line up and wait, G-OO');
+    // Airborne: cleared.
+    const out = t.update(view([{ ...first, onGround: false, onRunway: false, leg: 'upwind' }, { ...second, onRunway: true }]));
+    expect(out.messages.map((m) => [m.to, m.kind])).toEqual([['G-TWOO', 'takeoff']]);
+  });
 });
