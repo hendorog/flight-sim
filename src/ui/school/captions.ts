@@ -8,7 +8,7 @@ import type { ActorId, Caption } from '../../training/types';
 import { el } from '../dom';
 
 const TAGS: Record<ActorId, string> = {
-  instructor: 'INSTRUCTOR', examiner: 'EXAMINER', student: 'YOU', tower: 'TOWER', ground: 'GROUND', atis: 'ATIS', system: '',
+  instructor: 'INSTRUCTOR', examiner: 'EXAMINER', student: 'YOU', tower: 'TOWER', ground: 'GROUND', atis: 'ATIS', traffic: 'TRAFFIC', system: '',
 };
 
 export function speakerTag(a: ActorId): string {

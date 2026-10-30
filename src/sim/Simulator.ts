@@ -66,6 +66,7 @@ import { chooseSeed, saveSeedPreference, seedSwitchUrl } from './seedChoice';
 import { setStartField, startField } from './startField';
 import { com1Changed, radioTuning } from '../instruments/dynamics/radios';
 import { RadioSystem } from '../atc/RadioSystem';
+import { TrafficSystem } from '../atc/TrafficSystem';
 import { restoreWeather } from './weatherPresets';
 import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
@@ -216,6 +217,8 @@ export class Simulator {
   /** The Flight School (null until boot has created it). */
   training: TrainingSystem | null = null;
   private radio: RadioSystem | null = null;
+  /** The circuit traffic at the generated fields (present day only, with the radio). */
+  private traffic: TrafficSystem | null = null;
   demo: R22Flight | null = null;
   private demoUi: RotorcraftDemoUi | null = null;
   private schoolCopilot: StepController | null = null;
@@ -607,7 +610,9 @@ export class Simulator {
     training?.init(ctx);
     this.training = training;
     // The radio (docs/atc.md) speaks through the Flight School's scheduler and captions.
-    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, layer: ui.schoolLayer }) : null;
+    const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority }) : null);
+    traffic?.init(ctx);
+    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [] }) : null;
     this.radio?.init(ctx);
     this.schoolCopilot = physics.copilot;
     if (id === 'r22') {
@@ -1337,6 +1342,7 @@ export class Simulator {
     }
     // The Flight School: telemetry, runner, coach, safety, speech, UI models (needs the fresh panel readings).
     if (this.training) this.run('training', this.training, subsystemDt);
+    if (this.traffic) this.run('traffic', this.traffic, subsystemDt);
     if (this.radio) this.run('radio', this.radio, subsystemDt);
     s.ui.demoFlying = !!this.demo && this.demo.outcome !== 'taken-over';
     this.run('aircraftWeather', this.aircraftWeather, subsystemDt);

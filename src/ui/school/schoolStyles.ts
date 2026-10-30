@@ -354,7 +354,7 @@ export const SCHOOL_CSS = /* css */ `
 #fsui .sc-spk-system { color: var(--fg-dim); }
 #fsui .sc-caption em.examiner { background: var(--sc-slate); }
 #fsui .sc-caption em.student { background: #b9c3cd; }
-#fsui .sc-caption em.tower, #fsui .sc-caption em.ground, #fsui .sc-caption em.atis { background: var(--sc-amber); }
+#fsui .sc-caption em.tower, #fsui .sc-caption em.ground, #fsui .sc-caption em.atis, #fsui .sc-caption em.traffic { background: var(--sc-amber); }
 #fsui .sc-caption em.system { background: var(--fg-dim); }
 #fsui .sc-caption.safety { border-color: rgba(255,77,61,.7); background: rgba(60,8,6,.85); }
 #fsui .sc-caption.safety em { background: var(--alert); color: #fff; }

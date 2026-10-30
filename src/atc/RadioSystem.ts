@@ -12,6 +12,7 @@ import { radioTuning, stationOn, type Station } from '../instruments/dynamics/ra
 import { RadioMenu } from '../ui/radioMenu';
 import { atisText, callsFor, replyTo, stationName, vacateInstruction, type Call, type Intent, type RadioSituation } from './calls';
 import { callsign } from './phrases';
+import type { Transmission } from './TrafficSystem';
 
 /** The answer follows the call after this long, s of sim time. */
 const REPLY_DELAY = 1.6;
@@ -20,9 +21,9 @@ const ATIS_GAP_MS = 4000;
 /** Ground station antenna height, m. */
 const ANTENNA = 10;
 
-/** VHF line-of-sight range between an aircraft this high above the ground and a station antenna, m. */
-export function radioRange(heightAgl: number): number {
-  return 4120 * (Math.sqrt(Math.max(2, heightAgl)) + Math.sqrt(ANTENNA));
+/** VHF line-of-sight range between an aircraft this high above the ground and a station antenna (or another aircraft this high), m. */
+export function radioRange(heightAgl: number, otherAgl = ANTENNA): number {
+  return 4120 * (Math.sqrt(Math.max(2, heightAgl)) + Math.sqrt(Math.max(2, otherAgl)));
 }
 
 /** The ATIS letter: a new one each hour of the day. */
@@ -34,6 +35,8 @@ export interface RadioDeps {
   training: TrainingSystem;
   readings: () => InstrumentReadings;
   layer: HTMLElement;
+  /** The circuit traffic's calls since the last frame (TrafficSystem.drain). */
+  traffic?: () => Transmission[];
 }
 
 export class RadioSystem implements Subsystem {
@@ -205,7 +208,21 @@ export class RadioSystem implements Subsystem {
       }
     }
     this.updateVacate();
+    this.hearTraffic();
     this.updateAtis();
+  }
+
+  /** The circuit traffic heard on COM1: tuned to its frequency, the avionics on, within line of sight. */
+  private hearTraffic(): void {
+    const calls = this.deps.traffic?.() ?? [];
+    if (!calls.length || !this.deps.readings().avionicsPowered) return;
+    const st = this.ctx.state;
+    const com1 = radioTuning().com1[0];
+    for (const t of calls) {
+      if (Math.abs(t.frequency - com1) > 0.004) continue;
+      if (Math.hypot(t.north - st.position.x, t.east - st.position.y) > radioRange(st.altitudeAGL, t.heightAgl)) continue;
+      this.speech.enqueue({ actor: 'traffic', voice: t.speaker, channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
+    }
   }
 
   /** Slowing on the home runway after a landing that was not a touch and go: the tower says where to turn off. */

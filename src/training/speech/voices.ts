@@ -110,3 +110,17 @@ export function pickRadioVoice(voices: readonly VoiceInfo[], settings: { rate: n
   return hit ? { voiceURI: hit.voiceURI, lang: hit.lang, rate, pitch: 1, volume } : { ...instructor, rate, pitch: 0.85 };
 }
 
+/**
+ * The voice of one of the circuit traffic's pilots (variant: which aircraft): the English voices other than the
+ * instructor's and the tower's in turn, each at one of three pitches, so neighbouring aircraft sound apart. With no
+ * other voice, the tower's at another pitch.
+ */
+export function pickTrafficVoice(voices: readonly VoiceInfo[], settings: { rate: number; volume: number }, variant: number): VoiceProfile {
+  const instructor = pickVoice(voices, 'instructor', null, settings);
+  const tower = pickRadioVoice(voices, settings);
+  const pitch = [1.08, 0.94, 1.18][variant % 3];
+  const pool = voices.filter((v) => langMatches(v.lang, 'en') && v.voiceURI !== instructor.voiceURI && v.voiceURI !== tower.voiceURI);
+  const hit = pool[variant % Math.max(1, pool.length)];
+  return hit ? { voiceURI: hit.voiceURI, lang: hit.lang, rate: tower.rate, pitch, volume: tower.volume } : { ...tower, pitch };
+}
+

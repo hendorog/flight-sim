@@ -2527,7 +2527,7 @@ export class LessonRunner {
     const actor = line.actor ?? (this.lesson.persona === 'examiner' ? 'examiner' : 'instructor');
     const priority = opts?.priority ?? line.priority ?? Priority.Instruction;
     const id = this.host.speech.enqueue({
-      actor, channel: line.channel ?? (actor === 'tower' || actor === 'ground' || actor === 'atis' ? 'radio' : 'cabin'),
+      actor, channel: line.channel ?? (actor === 'tower' || actor === 'ground' || actor === 'atis' || actor === 'traffic' ? 'radio' : 'cabin'),
       caption: r.caption, speak: r.speak, priority, interrupt: opts?.interrupt ?? line.interrupt ?? priority === Priority.Safety,
       resumable: priority === Priority.Instruction, ttlMs: (opts?.ttlS ?? line.ttlS ?? TTL_S[priority]) * 1000,
       key: opts?.key ?? line.key, cooldownMs: line.cooldownS !== undefined ? line.cooldownS * 1000 : undefined,

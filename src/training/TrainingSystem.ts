@@ -62,7 +62,7 @@ import { normalisedError } from './grading/accumulators';
 import { STANDARDS } from './grading/standards';
 import { CaptionBackend } from './speech/captionBackend';
 import { SpeechScheduler } from './speech/scheduler';
-import { pickRadioVoice, pickVoice, type VoiceInfo } from './speech/voices';
+import { pickRadioVoice, pickTrafficVoice, pickVoice, type VoiceInfo } from './speech/voices';
 import { WebSpeechBackend } from './speech/webSpeech';
 import { Telemetry } from './telemetry/telemetry';
 import {
@@ -1085,8 +1085,9 @@ export class TrainingSystem implements Subsystem {
     const settings = this.save?.settings.voice ?? defaultSettings().voice;
     const voices = this.voices();
     const radio = pickRadioVoice(voices, settings);
-    this.speech.voiceFor = (actor) => {
+    this.speech.voiceFor = (actor, variant) => {
       if (actor === 'tower' || actor === 'ground' || actor === 'atis') return radio;
+      if (actor === 'traffic') return pickTrafficVoice(voices, settings, variant ?? 0);
       const who = actor === 'examiner' ? 'examiner' : actor === 'instructor' ? 'instructor' : persona;
       return pickVoice(voices, who, settings[who], settings);
     };
@@ -1119,7 +1120,7 @@ export class TrainingSystem implements Subsystem {
     const settings = this.save?.settings.voice ?? defaultSettings().voice;
     const before = this.speech.voiceFor;
     const voice = pickVoice(this.voices(), persona, voiceURI, settings);
-    this.speech.voiceFor = (actor) => (actor === persona ? voice : before(actor));
+    this.speech.voiceFor = (actor, variant) => (actor === persona ? voice : before(actor, variant));
     const name = persona === 'examiner' ? PERSONAS.examiner.name : this.save?.profile.instructorName ?? PERSONAS.instructor.name;
     this.enqueueSystemLine(`Hello, I'm ${name}. This is how I sound.`, persona);
     setTimeout(() => (this.speech.voiceFor = before), 8000);
