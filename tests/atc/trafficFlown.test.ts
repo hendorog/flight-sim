@@ -98,4 +98,51 @@ describe('the physics LOD', () => {
     expect(near.state.leg).toBe(leg);
     expect(Math.hypot(near.state.north - before.north, near.state.east - before.east)).toBeLessThan(1);
   }, 120_000);
+
+  it('goes around on its flight model when the player is on its runway, and does not land', async () => {
+    const f = generatedAirfields()[0];
+    const env = createEnvironment({ weather: calmWeather(), terrain: { height: () => f.elevation, normal: () => ({ x: 0, y: 0, z: -1 }), surface: () => 'runway' } });
+    const defs: Record<string, AircraftDefinition> = { c172s: C172, c152: C152, pa38: PA38, da20: DA20 };
+    const traffic = new TrafficSystem({ authority: () => 'easa', env: () => env, exteriors: false, loadDefinition: async (id) => defs[id] });
+    const state = { position: { x: f.north, y: f.east }, onGround: true };
+    const ctx = { state, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), weather: { windDirectionDeg: 250, windSpeedKt: 0, qnhHpa: 1013 }, timeScale: 1 };
+    traffic.init(ctx as never);
+    traffic.update(0.1);
+    await Promise.resolve();
+    await Promise.resolve();
+    const near = traffic.states.find((a) => a.field.code === f.code)!;
+    let goneAround = false, landed = false;
+    for (let t = 0; t < 420 && !goneAround; t += 0.1) {
+      traffic.update(0.1);
+      if (traffic.drain().some((h) => h.speaker === 0 && h.line.text.endsWith('going around'))) goneAround = true;
+      if (near.pilot?.state.onGround) landed = true;
+    }
+    expect(goneAround).toBe(true);
+    for (let t = 0; t < 30; t += 0.1) {
+      traffic.update(0.1);
+      if (near.pilot?.state.onGround) landed = true;
+    }
+    expect(landed).toBe(false);
+    expect(['climb', 'cruise', 'roll']).toContain(near.pilot!.autoflight.phase);
+    expect(near.pilot!.state.verticalSpeed).toBeGreaterThan(0);
+  }, 180_000);
 });
+
+describe('taking over low on short final', () => {
+  it('trims with the landing flap and lands in the touchdown zone', () => {
+    const field: Airfield = { ...H, length: 1100 };
+    const env = flatEnvironment(calmWeather(), field.elevation);
+    const path = circuitPath(field, 1);
+    const pilot = new TrafficPilot(C172, path);
+    pilot.start(env, path, placeOnLeg(path, 4, 0.85));
+    let touch = NaN;
+    for (let t = 0; t < 120 && Number.isNaN(touch); t += 1 / 30) {
+      pilot.step(1 / 30, env);
+      if (pilot.state.onGround) touch = activeFrame(field, 1, pilot.state.position.x, pilot.state.position.y).along;
+      expect(pilot.state.crashed).toBe(false);
+    }
+    expect(touch).toBeGreaterThan(-550 + 30);
+    expect(touch).toBeLessThan(-550 + 450);
+  }, 60_000);
+});
+
