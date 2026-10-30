@@ -119,7 +119,7 @@ describe('the radio window (R)', () => {
   it('tunes a clicked station, and marks S and C as the actions row', () => {
     const { key, menu } = rig();
     key('KeyR');
-    expect(menu.items.filter((i) => i.action).map((i) => i.key)).toEqual(['S', 'C']);
+    expect(menu.items.filter((i) => i.action).map((i) => i.key)).toEqual(['S', 'C', 'Tab']);
     menu.onPick(menu.items.findIndex((i) => i.label.includes('Ground')));
     expect(radioTuning().com1[0]).toBe(HOME_GROUND);
   });
@@ -158,6 +158,21 @@ describe('the radio window (R)', () => {
     expect(menu.items[0].detail).toContain('as instructed');
     key('Digit1');
     expect(radioTuning().com1[0]).toBe(HOME_GROUND);
+  });
+
+  it('turns to the NAV page with Tab and tunes NAV1, then NAV2 after C', () => {
+    const { key, menu } = rig();
+    key('KeyR');
+    key('Tab');
+    expect(menu.items[0].label).toMatch(/ILS 07 110\.30|VOR 113\.90/);
+    const vor = menu.items.find((i) => i.label.includes('VOR 113.90'))!;
+    key(`Digit${vor.key}`);
+    expect(radioTuning().nav1).toEqual([113.9, 110.3]);
+    key('KeyR'); // the window reopens on the NAV page
+    key('KeyC');
+    const ils = menu.items.find((i) => i.label.includes('ILS 07'))!;
+    key(`Digit${ils.key}`);
+    expect(radioTuning().nav2).toEqual([110.3, 113.9]);
   });
 
   it('leaves Shift+R (the restart) alone', () => {

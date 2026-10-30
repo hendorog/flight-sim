@@ -78,6 +78,42 @@ export function swapCom1(): void {
   swapCom(1);
 }
 
+/** A NAV frequency on the 50 kHz raster (108.00-117.95), or null. */
+export function validNav(mhz: number): number | null {
+  if (!Number.isFinite(mhz) || mhz < 108 || mhz > 117.95) return null;
+  return Math.round(mhz * 20) / 20;
+}
+
+/** Tune a NAV receiver: the new frequency active, the old one to standby. */
+export function tuneNav(n: ComRadio, mhz: number): void {
+  const f = validNav(mhz);
+  const nav = n === 1 ? live.nav1 : live.nav2;
+  if (f === null || Math.abs(f - nav[0]) < 1e-6) return;
+  if (n === 1) live.nav1 = [f, nav[0]];
+  else live.nav2 = [f, nav[0]];
+  revision++;
+}
+
+export function swapNav(n: ComRadio): void {
+  if (n === 1) live.nav1 = [live.nav1[1], live.nav1[0]];
+  else live.nav2 = [live.nav2[1], live.nav2[0]];
+  revision++;
+}
+
+/** A NAV as a pair (a restored flight); an invalid frequency falls back to the default. */
+export function setNav(n: ComRadio, pair: readonly [number, number]): void {
+  const d = n === 1 ? DEFAULT_TUNING.nav1 : DEFAULT_TUNING.nav2;
+  const v: [number, number] = [validNav(pair[0]) ?? d[0], validNav(pair[1]) ?? d[1]];
+  if (n === 1) live.nav1 = v;
+  else live.nav2 = v;
+  revision++;
+}
+
+export function navChanged(n: ComRadio): boolean {
+  const [c, d] = n === 1 ? [live.nav1, DEFAULT_TUNING.nav1] : [live.nav2, DEFAULT_TUNING.nav2];
+  return c[0] !== d[0] || c[1] !== d[1];
+}
+
 let tx = false;
 
 /** The MIC is keyed (a call going out): the radios light TX. */

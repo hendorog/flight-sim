@@ -2,6 +2,7 @@
 
 import { DEG } from '../../core/math';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
+import { navNeedle } from '../dynamics/navigation';
 import { centredText, font, INK, knob, tick } from './art';
 import { context2d, makeCanvas, type Ctx2D } from './canvas';
 import { SIXPACK_BEZEL } from './pitotStaticGauges';
@@ -12,7 +13,7 @@ const NEEDLE_HALF = 40;
 
 /**
  * CDI with glideslope. Full-scale deflection (5 dots) corresponds to the full-scale signal from the
- * receiver. NAV2 is not connected to a receiver in this simulation, so its flags are always in view.
+ * receiver: a localizer, or a VOR's 10 degrees off the course set on the OBS, with its TO / FROM flag.
  */
 export class CdiGauge extends RoundGauge {
   private card: HTMLCanvasElement | null = null;
@@ -26,19 +27,22 @@ export class CdiGauge extends RoundGauge {
     /** Course set on the OBS when the receiver has no knob input (NAV2). */
     private readonly fixedCourseDeg: number,
   ) {
-    super(id, cx, cy, { bezel: SIXPACK_BEZEL, aperture, shape: 'square', values: 5, seed: receiver === 'nav1' ? 108 : 109 });
+    super(id, cx, cy, { bezel: SIXPACK_BEZEL, aperture, shape: 'square', values: 6, seed: receiver === 'nav1' ? 108 : 109 });
   }
 
   sample(r: InstrumentReadings): boolean {
-    const live = this.receiver === 'nav1' && r.avionicsPowered;
-    this.latch.track(0, live && r.ils.locValid ? r.ils.loc : 0, 0.004);
-    this.latch.track(1, live && r.ils.gsValid ? r.ils.gs : 0, 0.004);
-    this.latch.set(2, live && r.ils.locValid ? 1 : 0, 1);
-    this.latch.set(3, live && r.ils.gsValid ? 1 : 0, 1);
+    const live = r.avionicsPowered;
+    const sig = this.receiver === 'nav1' ? r.ils : r.nav2;
     // NAV1's OBS knob is ControlInputs.obsDeg (via readings.obsDeg). A localizer ignores the OBS, as on
     // the real receiver; the card still turns so the pilot can set the inbound course as a reminder.
     const course = this.receiver === 'nav1' && Number.isFinite(r.obsDeg) ? r.obsDeg : this.fixedCourseDeg;
+    const needle = navNeedle(sig, course);
+    this.latch.track(0, live && sig.locValid ? needle.loc : 0, 0.004);
+    this.latch.track(1, live && sig.gsValid ? sig.gs : 0, 0.004);
+    this.latch.set(2, live && sig.locValid ? 1 : 0, 1);
+    this.latch.set(3, live && sig.gsValid ? 1 : 0, 1);
     this.latch.set(4, ((course % 360) + 360) % 360, 0.25);
+    this.latch.set(5, live && sig.locValid ? needle.toFrom : 0, 1);
     return this.latch.take();
   }
 
@@ -114,6 +118,8 @@ export class CdiGauge extends RoundGauge {
     // Warning flags: NAV (red, left) and GS (red, right), in view when the signal is invalid.
     if (!this.latch.get(2)) flag(g, cx - 34, cy - 20, 'NAV');
     if (!this.latch.get(3)) flag(g, cx + 22, cy - 20, 'GS');
+    const tf = this.latch.get(5);
+    if (tf) toFrom(g, cx + 22, cy + 10, tf > 0 ? 'TO' : 'FR');
     g.restore();
   }
 
@@ -139,6 +145,17 @@ export class CdiGauge extends RoundGauge {
     knob(g, -SIXPACK_BEZEL / 2 + 16, SIXPACK_BEZEL / 2 - 14, 11);
     centredText(g, 'OBS', -SIXPACK_BEZEL / 2 + 36, SIXPACK_BEZEL / 2 - 8, 6);
   }
+}
+
+/** The VOR's TO / FROM window. */
+function toFrom(g: Ctx2D, x: number, y: number, text: string): void {
+  g.fillStyle = '#101010';
+  g.fillRect(x, y, 16, 11);
+  g.fillStyle = '#f5f1e6';
+  g.font = font(6.5, 700);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, x + 8, y + 6);
 }
 
 function flag(g: Ctx2D, x: number, y: number, text: string): void {

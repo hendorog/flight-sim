@@ -64,7 +64,7 @@ import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreferenc
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
 import { chooseSeed, saveSeedPreference, seedSwitchUrl } from './seedChoice';
 import { setStartField, startField } from './startField';
-import { comChanged, radioTuning } from '../instruments/dynamics/radios';
+import { comChanged, navChanged, radioTuning } from '../instruments/dynamics/radios';
 import { RadioSystem } from '../atc/RadioSystem';
 import { TrafficSystem } from '../atc/TrafficSystem';
 import { restoreWeather } from './weatherPresets';
@@ -928,6 +928,8 @@ export class Simulator {
     if (field) snap.field = field.code;
     if (comChanged(1)) snap.com1 = [...radioTuning().com1];
     if (comChanged(2)) snap.com2 = [...radioTuning().com2];
+    if (navChanged(1)) snap.nav1 = [...radioTuning().nav1];
+    if (navChanged(2)) snap.nav2 = [...radioTuning().nav2];
     if (radioTuning().mic === 2) snap.mic = 2;
     return snap;
   }

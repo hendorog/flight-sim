@@ -3,6 +3,7 @@
 
 import { DEG } from '../../core/math';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
+import { navNeedle } from '../dynamics/navigation';
 import { ARC_RED, centredText, font, INK, knob, tick } from './art';
 import { context2d, makeCanvas, type Ctx2D } from './canvas';
 import { SIXPACK_BEZEL } from './pitotStaticGauges';
@@ -74,7 +75,7 @@ function flag(g: Ctx2D, x: number, y: number, text: string): void {
 /**
  * HSI: slaved card, heading bug, course pointer with its deviation bar between two dots each side (full-scale
  * localiser / VOR deflection at the second dot), a fixed aircraft symbol, glideslope pointer on the right and
- * NAV / GS flags. Course from the OBS (NAV 1) or fixed (NAV 2, no receiver here).
+ * NAV / GS flags, and TO / FROM on a VOR. Course from the OBS (NAV 1) or fixed (NAV 2).
  */
 export class HsiGauge extends RoundGauge {
   private card: HTMLCanvasElement | null = null;
@@ -87,7 +88,7 @@ export class HsiGauge extends RoundGauge {
     private readonly receiver: 'nav1' | 'nav2',
     private readonly fixedCourseDeg: number,
   ) {
-    super(id, cx, cy, { bezel: SIXPACK_BEZEL, aperture, shape: 'square', values: 7, seed: receiver === 'nav1' ? 131 : 132 });
+    super(id, cx, cy, { bezel: SIXPACK_BEZEL, aperture, shape: 'square', values: 8, seed: receiver === 'nav1' ? 131 : 132 });
   }
 
   private get R(): number {
@@ -95,15 +96,18 @@ export class HsiGauge extends RoundGauge {
   }
 
   sample(r: InstrumentReadings): boolean {
-    const live = this.receiver === 'nav1' && r.avionicsPowered;
+    const live = r.avionicsPowered;
+    const sig = this.receiver === 'nav1' ? r.ils : r.nav2;
     this.latch.track(0, r.headingDeg * DEG, 0.002);
     this.latch.track(1, r.headingBugDeg * DEG, 0.002);
     const course = this.receiver === 'nav1' && Number.isFinite(r.obsDeg) ? r.obsDeg : this.fixedCourseDeg;
+    const needle = navNeedle(sig, course);
     this.latch.set(2, ((course % 360) + 360) % 360, 0.25);
-    this.latch.track(3, live && r.ils.locValid ? r.ils.loc : 0, 0.004);
-    this.latch.track(4, live && r.ils.gsValid ? r.ils.gs : 0, 0.004);
-    this.latch.set(5, live && r.ils.locValid ? 1 : 0, 1);
-    this.latch.set(6, live && r.ils.gsValid ? 1 : 0, 1);
+    this.latch.track(3, live && sig.locValid ? needle.loc : 0, 0.004);
+    this.latch.track(4, live && sig.gsValid ? sig.gs : 0, 0.004);
+    this.latch.set(5, live && sig.locValid ? 1 : 0, 1);
+    this.latch.set(6, live && sig.gsValid ? 1 : 0, 1);
+    this.latch.set(7, live && sig.locValid ? needle.toFrom : 0, 1);
     return this.latch.take();
   }
 
@@ -169,6 +173,21 @@ export class HsiGauge extends RoundGauge {
       g.fill();
     } else flag(g, R - 34, -26, 'GS');
     if (!this.latch.get(5)) flag(g, -R + 14, -26, 'NAV');
+    const tf = this.latch.get(7);
+    if (tf) {
+      // TO / FROM: a small triangle on the course line, pointing to or away from the station.
+      g.save();
+      g.rotate(this.latch.get(2) * DEG - hdg);
+      g.fillStyle = '#f5f1e6';
+      g.beginPath();
+      const y = tf > 0 ? -18 : 18;
+      g.moveTo(0, y - 6 * Math.sign(tf));
+      g.lineTo(-6, y);
+      g.lineTo(6, y);
+      g.closePath();
+      g.fill();
+      g.restore();
+    }
     g.restore();
   }
 

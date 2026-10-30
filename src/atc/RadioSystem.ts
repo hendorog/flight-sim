@@ -3,13 +3,15 @@
 // and the home tower or ground answers a moment later. Tuned to the home ATIS, the broadcast repeats while in range.
 // Nothing is heard with the avionics off or out of radio range. Runs only where the Flight School does (it owns the
 // speech scheduler and the captions). R opens the radio window: the nearby stations to tune with one key (the one a
-// controller just handed over to first), the flip-flop, the MIC selector and, in a lesson, the instructor's say again.
+// controller just handed over to first), the flip-flop, the MIC selector and, in a lesson, the instructor's say again;
+// Tab turns it to the NAV page: the nearby ILSs and VORs, the NAV flip-flop and which NAV receiver is tuned.
 
 import type { SimContext, Subsystem } from '../core/context';
 import { Priority, type ActorId } from '../training/types';
 import type { TrainingSystem } from '../training/TrainingSystem';
 import type { InstrumentReadings } from '../instruments/dynamics/instrumentSet';
-import { HOME_GROUND, radioTuning, selectMic, setTransmitting, stationOn, stations, swapCom, tuneCom, type ComRadio, type Station } from '../instruments/dynamics/radios';
+import { HOME_GROUND, radioTuning, selectMic, setTransmitting, stationOn, stations, swapCom, swapNav, tuneCom, tuneNav, type ComRadio, type Station } from '../instruments/dynamics/radios';
+import { emptyNavSignal, navaids, receiveNav } from '../instruments/dynamics/navigation';
 import { RadioMenu, type RadioMenuItem } from '../ui/radioMenu';
 import { atisText, callsFor, replyTo, stationName, vacateInstruction, type Call, type Intent, type RadioSituation } from './calls';
 import { callsign } from './phrases';
@@ -61,6 +63,10 @@ export class RadioSystem implements Subsystem {
   /** Which window is open: the calls (Space) or the tuning (R). */
   private mode: 'calls' | 'tune' | null = null;
   private tuneItems: TuneItem[] = [];
+  /** The radio window's page, and the NAV receiver its NAV page tunes. */
+  private page: 'com' | 'nav' = 'com';
+  private navSel: ComRadio = 1;
+  private readonly navProbe = emptyNavSignal();
   /** The frequency a controller last handed this aircraft to, until the sim time given. */
   private handover: { frequency: number; until: number } | null = null;
   private situation: RadioSituation | null = null;
@@ -179,6 +185,8 @@ export class RadioSystem implements Subsystem {
       this.hide();
     } else if (this.mode === 'calls' && /^(Digit|Numpad)[1-9]$/.test(e.code)) {
       this.transmit(Number(e.code.slice(-1)) - 1);
+    } else if (this.mode === 'tune' && e.code === 'Tab') {
+      this.turnPage();
     } else if (this.mode === 'tune' && /^(Digit|Numpad)[0-9]$|^Key[SC]$/.test(e.code)) {
       const k = e.code.slice(-1);
       this.tuneItems.find((i) => i.key === k)?.run();
@@ -201,6 +209,7 @@ export class RadioSystem implements Subsystem {
 
   /** The radio window: the stations nearest first (a handover on top), then the flip-flop, the MIC and say again. */
   private updateTune(): void {
+    if (this.page === 'nav') return this.updateNav();
     const t = radioTuning();
     const n = this.mic();
     const two = this.deps.comRadios?.() === 2;
@@ -246,6 +255,7 @@ export class RadioSystem implements Subsystem {
         },
       });
     }
+    items.push({ key: 'Tab', action: true, label: 'NAV page', detail: 'ILS and VOR', run: () => this.turnPage() });
     if (this.deps.training.active) {
       items.push({
         key: '0', action: true, label: 'Say again', detail: 'The instructor repeats',
@@ -261,7 +271,67 @@ export class RadioSystem implements Subsystem {
       return { text: `COM${c} ${p[0].toFixed(3)} / ${p[1].toFixed(3)}${two && c === n ? ' MIC' : ''}`, on: c === n };
     });
     const power = this.deps.readings().avionicsPowered ? '' : 'The avionics are off. ';
-    this.menu.show(`Radios · tuning COM${n}`, items, `${power}A number tunes COM${n} (the old frequency goes to standby). R or Esc closes.`, status, true);
+    this.menu.show(`Radios · tuning COM${n}`, items, `${power}A number tunes COM${n} (the old frequency goes to standby). Tab: NAV. R or Esc closes.`, status, true);
+  }
+
+  private turnPage(): void {
+    this.page = this.page === 'com' ? 'nav' : 'com';
+    this.updateTune();
+  }
+
+  /** The radio window's NAV page: the ILSs and VORs nearest first, the flip-flop, NAV1 or NAV2. */
+  private updateNav(): void {
+    const t = radioTuning();
+    const two = this.deps.comRadios?.() === 2;
+    if (!two) this.navSel = 1;
+    const n = this.navSel;
+    const nav = n === 1 ? t.nav1 : t.nav2;
+    const st = this.ctx.state;
+    const items: TuneItem[] = [];
+    const near = navaids()
+      .map((a) => ({ a, d: Math.hypot(a.north - st.position.x, a.east - st.position.y) }))
+      .sort((x, y) => x.d - y.d);
+    for (const { a, d } of near.slice(0, 9)) {
+      const brg = Math.round(((Math.atan2(a.east - st.position.y, a.north - st.position.x) * 180) / Math.PI + 360) % 360) || 360;
+      const where = d < 1500 ? 'here' : `${(d / NM).toFixed(d < 10 * NM ? 1 : 0)} NM ${String(brg).padStart(3, '0')}°`;
+      const heard = receiveNav(a.frequency, st.position, this.navProbe).locValid ? '' : ' · no signal here';
+      items.push({
+        key: String(items.length + 1), label: `${a.name} ${a.frequency.toFixed(2)}`, detail: `${a.ident} · ${where}${heard}`,
+        on: Math.abs(a.frequency - nav[0]) < 0.004,
+        run: () => {
+          tuneNav(n, a.frequency);
+          this.deps.toast?.(`NAV${n} ${a.frequency.toFixed(2)} ${a.ident}`);
+          this.hide();
+        },
+      });
+    }
+    items.push({
+      key: 'S', action: true, label: `Flip-flop NAV${n}`, detail: `${nav[1].toFixed(2)} active`,
+      run: () => {
+        swapNav(n);
+        this.deps.toast?.(`NAV${n} ${nav[1].toFixed(2)}`);
+        this.hide();
+      },
+    });
+    if (two) {
+      const other: ComRadio = n === 1 ? 2 : 1;
+      const on = other === 1 ? t.nav1 : t.nav2;
+      items.push({
+        key: 'C', action: true, label: `Tune NAV${other}`, detail: `${on[0].toFixed(2)} active`,
+        run: () => {
+          this.navSel = other;
+          this.updateTune();
+        },
+      });
+    }
+    items.push({ key: 'Tab', action: true, label: 'COM page', detail: 'Stations to talk to', run: () => this.turnPage() });
+    this.tuneItems = items;
+    const status = (two ? ([1, 2] as const) : ([1] as const)).map((c) => {
+      const p = c === 1 ? t.nav1 : t.nav2;
+      return { text: `NAV${c} ${p[0].toFixed(2)} / ${p[1].toFixed(2)}`, on: c === n };
+    });
+    const power = this.deps.readings().avionicsPowered ? '' : 'The avionics are off. ';
+    this.menu.show(`Radios · tuning NAV${n}`, items, `${power}A number tunes NAV${n} (the old frequency goes to standby). Tab: COM. R or Esc closes.`, status, true);
   }
 
   private updateMenu(): void {

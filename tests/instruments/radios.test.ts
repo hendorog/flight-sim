@@ -75,13 +75,16 @@ describe('radio tuning', () => {
     const p = new SimPhysics({ weather: w });
     p.reset('cruise');
     const snap = p.captureSnapshot({ weather: w, cameraMode: 'chase', quality: 'high', renderScale: null, resume: true, now: 1_800_000_000_000 });
-    const back = parseSnapshot(JSON.stringify({ ...snap, com2: [122.7, 121.9], mic: 2 }));
+    const back = parseSnapshot(JSON.stringify({ ...snap, com2: [122.7, 121.9], nav1: [113.9, 110.3], nav2: [116.8, 113.9], mic: 2 }));
     p.restore(back!);
     expect(radioTuning().com2).toEqual([122.7, 121.9]);
+    expect(radioTuning().nav1).toEqual([113.9, 110.3]);
+    expect(radioTuning().nav2).toEqual([116.8, 113.9]);
     expect(radioTuning().mic).toBe(2);
     p.restore(snap);
     expect(radioTuning().mic).toBe(1);
     expect(radioTuning().com2).toEqual(DEFAULT_TUNING.com2);
+    expect(radioTuning().nav1).toEqual(DEFAULT_TUNING.nav1);
     expect(parseSnapshot(JSON.stringify({ ...snap, mic: 3 }))).toBeNull();
   });
 });

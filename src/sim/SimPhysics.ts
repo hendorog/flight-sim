@@ -27,7 +27,7 @@
 //   model, its scenarios and its scripted pilot. Everything goes through the AircraftFlightModel interface.
 
 import { setStartField } from './startField';
-import { resetRadios, selectMic, setCom } from '../instruments/dynamics/radios';
+import { resetRadios, selectMic, setCom, setNav } from '../instruments/dynamics/radios';
 import type { AircraftDefinition } from '../aircraft/types';
 import { quat, v3, type Quat, type Vec3 } from '../core/math';
 import type { CameraMode, EventBus, QualityLevel, ScenarioId } from '../core/context';
@@ -421,6 +421,8 @@ export class SimPhysics {
     resetRadios();
     if (snap.com1) setCom(1, snap.com1);
     if (snap.com2) setCom(2, snap.com2);
+    if (snap.nav1) setNav(1, snap.nav1);
+    if (snap.nav2) setNav(2, snap.nav2);
     if (snap.mic) selectMic(snap.mic);
     const sc = buildScenario(snap.scenario, this.env, def);
     this.scenario = sc;

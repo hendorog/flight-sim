@@ -12,7 +12,8 @@ import { lagStep } from './filters';
 import { SUCTION_RATED_INHG } from './gyro';
 import { AttitudeIndicator, HeadingIndicator, TurnCoordinator } from './gyroInstruments';
 import { MagneticCompass, type CompassReading } from './magneticCompass';
-import { gpsToAirport, ils07, type GpsData, type IlsSignal } from './navigation';
+import { emptyNavSignal, gpsToAirport, receiveNav, type GpsData, type NavSignal } from './navigation';
+import { radioTuning } from './radios';
 import { Altimeter, AirspeedIndicator, pressureAltitudeFt, VerticalSpeedIndicator } from './pitotStatic';
 
 /** What the gauges of one engine show, in display units. */
@@ -99,8 +100,11 @@ export interface InstrumentReadings {
   /** Actual flap deflection, degrees. */
   flapsDeg: number;
   // Avionics
-  ils: IlsSignal;
-  /** ILS course selected on the NAV1 OBS, degrees. */
+  /** NAV1 as received (an ILS, a VOR's radial, or nothing; the name is from when it was only the ILS 07). */
+  ils: NavSignal;
+  /** NAV2 as received. */
+  nav2: NavSignal;
+  /** Course selected on the NAV1 OBS, degrees. */
   obsDeg: number;
   gps: GpsData;
   /** Transponder pressure altitude (Mode C), ft. */
@@ -298,7 +302,8 @@ export class InstrumentSet {
       oatC: 15,
       clockSeconds: 0,
       flapsDeg: 0,
-      ils: { locValid: false, gsValid: false, loc: 0, gs: 0 },
+      ils: emptyNavSignal(),
+      nav2: emptyNavSignal(),
       obsDeg: 70,
       gps: { distanceNm: 0, bearingDeg: 0, trackDeg: 0, groundSpeedKt: 0 },
       pressureAltitudeFt: 0,
@@ -512,7 +517,8 @@ export class InstrumentSet {
     r.clockSeconds = w.timeOfDay * 3600;
     r.flapsDeg = s.surfaces.flaps * RAD;
     r.obsDeg = c.obsDeg;
-    ils07(s.position, r.ils);
+    receiveNav(radioTuning().nav1[0], s.position, r.ils);
+    receiveNav(radioTuning().nav2[0], s.position, r.nav2);
     gpsToAirport(s.position, s.track, s.groundSpeed, r.gps);
     r.pressureAltitudeFt = pressureAltitudeFt(s.staticPressure);
     if (sys.extra) {
