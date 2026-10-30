@@ -52,5 +52,16 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   avionics are on and the two aircraft are within line of sight of each other; each aircraft has its own voice.
   When the wind swings round it changes ends after its next take-off, joining the other end's downwind. If the
   player is on its runway when it is below 400 ft on final it goes around and says so. Otherwise there is no
-  separation or collision with the player yet. The model is a stand-in made of boxes, with navigation lights, a
-  beacon and strobes.
+  separation or collision with the player yet.
+- **The real flight model and exteriors near the player** (`trafficPilot.ts`, `render/aircraft/trafficExterior.ts`).
+  The types are the sim's own C172S, C152, PA-38 and DA20. The nearest two aircraft within 15 km of the player
+  (dropped beyond 17 km; none above 4x time acceleration) fly on their type's flight model, flown by the player's
+  scripted pilot (`sim/autoflight.ts`, now given the runway as a frame, home 07 by default and bit-identical):
+  its take-off, approach, flare and roll-out, with crosswind, downwind and base on its heading and altitude hold
+  steered along the circuit's legs with the drift added. Flaps by the type's profile: the first stage abeam the
+  threshold with a 500 fpm descent to 500 ft, the base setting on base, the final setting on final; the crosswind
+  turn not below 450 ft; turns at up to 22 degrees of bank; a touch and go is two seconds on the wheels, then the
+  take-off flap and full power. 240 Hz on and near the ground, 120 Hz in the air: about 2 % of a core each. They
+  are drawn with the type's own exterior (no cockpit, light glows only, the livery baked with the aircraft's own
+  registration) within 3 km of the camera, the box stand-in beyond; the others stay kinematic. Changing over keeps
+  the leg and position.

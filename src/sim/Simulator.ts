@@ -610,7 +610,7 @@ export class Simulator {
     training?.init(ctx);
     this.training = training;
     // The radio (docs/atc.md) speaks through the Flight School's scheduler and captions.
-    const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority }) : null);
+    const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority, env: () => physics.env }) : null);
     traffic?.init(ctx);
     this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [] }) : null;
     this.radio?.init(ctx);
@@ -1504,6 +1504,10 @@ export class Simulator {
       /** The era this session is set in (src/world/era). */
       get era() {
         return era().id;
+      },
+      /** The circuit traffic (src/atc/TrafficSystem.ts), or null outside the present day. */
+      get traffic() {
+        return sim.traffic;
       },
       /** The era's FaunaSystem (stats: visible, terrainCalls, reallocs, cpuMs), or null (the present day). */
       get fauna() {

@@ -38,8 +38,11 @@ export interface CircuitPath {
 export const CIRCUIT_HEIGHT = 1000 * FT;
 /** Downwind is flown this far out from the centreline, m. */
 const DOWNWIND_OFFSET = 1000;
-/** The final approach slope, rad (a steep light-aircraft approach to the aim point). */
-const GLIDE = 4 * DEG;
+/** The final approach slope, rad, and the aim point past the threshold, m: the scripted pilot's (sim/scenarios.ts GLIDE_PATH, AIM_POINT). */
+const GLIDE = 3 * DEG;
+const AIM = 150;
+/** Final is turned onto this far before the threshold, m: about 1.5 NM, near 500 ft on the glide path. */
+const FINAL_LENGTH = 2600;
 /** Bank in the circuit turns, rad. */
 const TURN_BANK = 25 * DEG;
 const ROLL_RATE = 15 * DEG;
@@ -59,18 +62,18 @@ export function circuitPath(field: Airfield, end: RunwayEnd): CircuitPath {
   const side = field.circuit === 'left' ? -1 : 1;
   const out = side * DOWNWIND_OFFSET;
   const turnUp = Math.max(field.length / 2 + 400, thr + 1800);
-  const turnBase = thr - 1800;
+  const turnBase = thr - FINAL_LENGTH;
   const p = (along: number, across: number) => ({ along, across });
   return {
     field,
     end,
-    aim: thr + 120,
+    aim: thr + AIM,
     legs: [
       { id: 'upwind', from: p(thr, 0), to: p(turnUp, 0), height: CIRCUIT_HEIGHT, speed: 70 * KT },
       { id: 'crosswind', from: p(turnUp, 0), to: p(turnUp, out), height: CIRCUIT_HEIGHT, speed: 75 * KT },
       { id: 'downwind', from: p(turnUp, out), to: p(turnBase, out), height: CIRCUIT_HEIGHT, speed: 90 * KT },
       { id: 'base', from: p(turnBase, out), to: p(turnBase, 0), height: 500 * FT, speed: 70 * KT },
-      { id: 'final', from: p(turnBase, 0), to: p(thr + 120, 0), height: 0, speed: 65 * KT },
+      { id: 'final', from: p(turnBase, 0), to: p(thr + AIM, 0), height: 0, speed: 65 * KT },
     ],
   };
 }
@@ -93,7 +96,7 @@ export interface TrafficState {
 }
 
 /** Leg bearing in the active frame turned to a true heading. */
-function legHeading(path: CircuitPath, leg: CircuitLeg): number {
+export function legHeading(path: CircuitPath, leg: CircuitLeg): number {
   const base = path.field.heading + (path.end === 1 ? Math.PI : 0);
   const da = leg.to.along - leg.from.along;
   const dc = leg.to.across - leg.from.across;
@@ -119,8 +122,13 @@ export function placeOnLeg(path: CircuitPath, leg: number, fraction: number): Tr
 
 /** Where the aircraft is along and across the current leg: distance to go and cross-track (+ right of track), m. */
 function legProgress(path: CircuitPath, s: TrafficState): { toGo: number; cross: number; length: number } {
-  const l = path.legs[s.leg];
-  const { along, across } = activeFrame(path.field, path.end, s.north, s.east);
+  return legPosition(path, s.leg, s.north, s.east);
+}
+
+/** A position against a leg of the circuit: distance to go to its end and cross-track (+ right of track), m. */
+export function legPosition(path: CircuitPath, leg: number, north: number, east: number): { toGo: number; cross: number; length: number } {
+  const l = path.legs[leg];
+  const { along, across } = activeFrame(path.field, path.end, north, east);
   const da = l.to.along - l.from.along;
   const dc = l.to.across - l.from.across;
   const len = Math.hypot(da, dc);
@@ -132,7 +140,18 @@ function legProgress(path: CircuitPath, s: TrafficState): { toGo: number; cross:
 
 /** The leg's guidance: the heading to fly, with the cross-track correction (at most 45 degrees of intercept). */
 function desiredHeading(path: CircuitPath, s: TrafficState, cross: number): number {
-  return legHeading(path, path.legs[s.leg]) - Math.min(45 * DEG, Math.max(-45 * DEG, Math.atan(cross / 200)));
+  return legTrack(path, s.leg, cross);
+}
+
+/** The track to fly on a leg from this cross-track error (+ right of it), rad: the leg's, plus up to 45 degrees of intercept. */
+export function legTrack(path: CircuitPath, leg: number, cross: number): number {
+  return legHeading(path, path.legs[leg]) - Math.min(45 * DEG, Math.max(-45 * DEG, Math.atan(cross / 200)));
+}
+
+/** The distance before a leg's end at which the turn onto the next begins, at this speed, m. */
+export function turnLead(speed: number): number {
+  // (A quarter more than the turn's radius for the roll-in and the speed change on the new leg.)
+  return (1.25 * speed * speed) / (G * Math.tan(TURN_BANK));
 }
 
 /** Pitch attitude from the flight path and an angle of attack that grows as the speed falls, rad. */
@@ -176,8 +195,7 @@ function stepOnce(path: CircuitPath, s: TrafficState, dt: number): number | null
     }
   } else {
     // The next leg once the turn onto it would take up the distance left (its radius at the turn bank).
-    // (A quarter more for the roll-in and the speed change on the new leg.)
-    const radius = (1.25 * s.speed * s.speed) / (G * Math.tan(TURN_BANK));
+    const radius = turnLead(s.speed);
     if (leg.id !== 'final' && prog.toGo < radius) {
       s.leg = (s.leg + 1) % path.legs.length;
       changed = s.leg;

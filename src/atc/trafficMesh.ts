@@ -1,11 +1,12 @@
-// The circuit traffic's stand-in model (docs/atc.md, step 3): a light aircraft from a dozen boxes, high-winged for a
-// Cessna and low-winged for a Piper, with a propeller disc and its navigation lights, beacon and strobes. A proper
-// exterior replaces it later. Model space as the player's aircraft (render/aircraft/AircraftVisual.ts): nose -Z,
+// The circuit traffic's distant stand-in (docs/atc.md, step 3): a light aircraft from a dozen boxes, high-winged for a
+// Cessna and low-winged for the Piper and the Diamond, with a propeller disc and its navigation lights, beacon and
+// strobes. Drawn for aircraft not on the flight model (far from the player); the near ones are the type's own
+// exterior (render/aircraft/trafficExterior.ts). Model space as the player's aircraft (render/aircraft/AircraftVisual.ts): nose -Z,
 // right wing +X, up +Y, metres; the origin is where the main wheels touch the ground.
 
 import * as THREE from 'three';
 
-export type TrafficType = 'C152' | 'C172' | 'PA28';
+export type TrafficType = 'C152' | 'C172' | 'PA38' | 'DA20';
 
 export interface TrafficMesh {
   root: THREE.Group;
@@ -16,7 +17,8 @@ export interface TrafficMesh {
 const SIZES: Record<TrafficType, { span: number; length: number; highWing: boolean }> = {
   C152: { span: 10.1, length: 7.3, highWing: true },
   C172: { span: 11.0, length: 8.3, highWing: true },
-  PA28: { span: 10.7, length: 7.3, highWing: false },
+  PA38: { span: 10.4, length: 7.0, highWing: false },
+  DA20: { span: 10.9, length: 7.2, highWing: false },
 };
 
 function box(mat: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number): THREE.Mesh {
