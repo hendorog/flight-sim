@@ -7,7 +7,22 @@ import { TrafficSystem, trafficRegistration, type Transmission } from '../../src
 import { callsign } from '../../src/atc/phrases';
 import { fieldPoint, generatedAirfields, HOME_AIRFIELD } from '../../src/world/airfields';
 import { circuitPath, pathPoint } from '../../src/atc/circuit';
-import { ARRIVAL_ROUTE, DEPARTURE_ROUTE, freeSpots } from '../../src/atc/taxi';
+import { ARRIVAL_ROUTE, DEPARTURE_ROUTE, freeSpots, taxiOutRoute } from '../../src/atc/taxi';
+import { stepTaxi } from '../../src/atc/circuit';
+import { APRON_TAXILANE_V, HOLD_LINE_V, localToNed, PARALLEL_TAXIWAY_V, type NedXY, type ParkingSpot } from '../../src/world/airport/layout';
+
+/** The straights of a departure's taxi route before its corners are rounded (25: via B2 to A4). */
+function taxiLines(spot: ParkingSpot, _end: 1): [NedXY, NedXY][] {
+  const u = (n: string) => TAXIWAYS.find((t) => t.name === n)!.a.u;
+  const pts = [[spot.u, spot.v], [spot.u, APRON_TAXILANE_V], [u('B2'), APRON_TAXILANE_V], [u('B2'), PARALLEL_TAXIWAY_V], [u('A4'), PARALLEL_TAXIWAY_V], [u('A4'), HOLD_LINE_V - 4]].map(([a, b]) => localToNed(a, b));
+  return pts.slice(1).map((p, i) => [pts[i], p]);
+}
+
+function segmentDistance(p: { north: number; east: number }, a: NedXY, b: NedXY): number {
+  const dx = b.north - a.north, dy = b.east - a.east;
+  const t = Math.max(0, Math.min(1, ((p.north - a.north) * dx + (p.east - a.east) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(p.north - a.north - t * dx, p.east - a.east - t * dy);
+}
 import { staticParkedSpots } from '../../src/world/airport/props';
 import { TAXIWAYS } from '../../src/world/airport/layout';
 import { HOME_GROUND } from '../../src/instruments/dynamics/radios';
@@ -127,6 +142,33 @@ describe('the home field', () => {
     for (const p of ['parked', 'taxiOut', 'holding', 'lined', 'vacate', 'clear', 'taxiIn']) expect(phases.has(p), p).toBe(true);
     // Never on top of one another on the ground.
     expect(closest).toBeGreaterThan(15);
+  });
+
+  it('taxis round the corners in curves, central in the taxiway, slowing for them', () => {
+    const spot = freeSpots()[0];
+    const route = taxiOutRoute(spot, 1);
+    // No sharp corner left: every turn at a waypoint is a fraction of one.
+    for (let i = 1; i < route.length - 1; i++) {
+      const a = Math.atan2(route[i].east - route[i - 1].east, route[i].north - route[i - 1].north);
+      const b = Math.atan2(route[i + 1].east - route[i].east, route[i + 1].north - route[i].north);
+      expect(Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a)))).toBeLessThan(0.3);
+    }
+    // Taxied: within 6 m of the centreline (the straights between the original corners) throughout, slower in the turns.
+    const lines = taxiLines(spot, 1);
+    const s = { north: route[0].north, east: route[0].east, height: 0, heading: Math.atan2(route[1].east - route[0].east, route[1].north - route[0].north), bank: 0, pitch: 0, speed: 0, verticalSpeed: 0, leg: 0, onGround: true, rollTime: 0 };
+    let wp = 0, worst = 0, minTurnSpeed = Infinity, maxSpeed = 0;
+    for (let k = 0; k < 6000 && wp < route.length; k++) {
+      const h0 = s.heading;
+      wp = stepTaxi(s, route, wp, 0.1);
+      worst = Math.max(worst, Math.min(...lines.map((l) => segmentDistance(s, l[0], l[1]))));
+      const rate = Math.abs(Math.atan2(Math.sin(s.heading - h0), Math.cos(s.heading - h0))) / 0.1;
+      if (rate > 0.15) minTurnSpeed = Math.min(minTurnSpeed, s.speed);
+      maxSpeed = Math.max(maxSpeed, s.speed);
+    }
+    expect(wp).toBe(route.length);
+    expect(worst).toBeLessThan(6);
+    expect(maxSpeed).toBeGreaterThan(7);
+    expect(minTurnSpeed).toBeLessThan(5);
   });
 
   it('keeps departures and arrivals apart on Alpha (no nose to nose)', () => {

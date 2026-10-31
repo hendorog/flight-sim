@@ -43,6 +43,9 @@ const WHEEL_GESTURE_GAP_MS = 250;
 /** Duration of the eased blend between camera modes, s. */
 const TRANSITION_TIME = 0.9;
 
+/** The focus key pressed again within this long centres the cockpit view instead, ms. */
+const DOUBLE_PRESS_MS = 350;
+
 /** A click in the tower view picks the aircraft drawn within this far of the pointer (normalised device units, x scaled by the aspect). */
 const PICK_RADIUS = 0.08;
 
@@ -216,12 +219,21 @@ export class CameraSystem implements Subsystem, ViewControl {
     this.rigs[this.getMode()].look(dx, dy);
   }
 
-  /** 3D cockpit only: instrument focus on / off (CockpitDef.focus). */
+  /** 3D cockpit only: instrument focus on / off (CockpitDef.focus); pressed twice quickly (Q Q), the view is centred. */
   toggleFocus(): void {
     if (!this.ctx || isFixedPanel(this.ctx) || this.getMode() !== 'cockpit') return;
-    this.cockpit.toggleFocus();
+    const now = performance.now();
+    if (now - this.lastFocusKey < DOUBLE_PRESS_MS) {
+      this.lastFocusKey = -Infinity;
+      this.cockpit.recentre();
+    } else {
+      this.lastFocusKey = now;
+      this.cockpit.toggleFocus();
+    }
     this.dropWheelGesture = true;
   }
+
+  private lastFocusKey = -Infinity;
 
   /** The instrument focus view is on (or blending in). */
   get focused(): boolean {

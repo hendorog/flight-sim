@@ -6,7 +6,7 @@
 // airport layout (world/airport/layout.ts).
 
 import {
-  APRON_TAXILANE_V, HOLD_LINE_V, localHeading, localToNed, nedToLocal, PARALLEL_TAXIWAY_V, PARKING, PARKING_SPOTS,
+  APRON_RECT, APRON_TAXILANE_V, HOLD_LINE_V, localHeading, localToNed, nedToLocal, PARALLEL_TAXIWAY_V, PARKING, PARKING_SPOTS,
   RUNWAY_HALF_LENGTH, TAXIWAYS, type NedXY, type ParkingSpot,
 } from '../world/airport/layout';
 import { rng } from '../world/airport/noise';
@@ -33,21 +33,62 @@ const CLEAR_V = HOLD_LINE_V - 14;
 
 const ned = (u: number, v: number): NedXY => localToNed(u, v);
 
+/** The radius a pilot rounds a taxiway corner off with, m: wider than the painted centreline's, inside the fillets. */
+const TURN_RADIUS = 18;
+/** Points per rounded corner. */
+const ARC_POINTS = 8;
+
+/**
+ * The route with its corners rounded off: each corner between two straights becomes an arc of TURN_RADIUS (less where
+ * the straights are short), so the aircraft stays central in the taxiway rather than turning on the spot at the
+ * line's corner. The first point (reached from wherever the aircraft is) and the last are kept.
+ */
+export function roundCorners(points: readonly NedXY[], radius = TURN_RADIUS): NedXY[] {
+  const out: NedXY[] = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const a = points[i - 1], p = points[i], b = points[i + 1];
+    const l1 = Math.hypot(p.north - a.north, p.east - a.east);
+    const l2 = Math.hypot(b.north - p.north, b.east - p.east);
+    const u1 = { n: (p.north - a.north) / l1, e: (p.east - a.east) / l1 };
+    const u2 = { n: (b.north - p.north) / l2, e: (b.east - p.east) / l2 };
+    const turn = Math.acos(Math.max(-1, Math.min(1, u1.n * u2.n + u1.e * u2.e)));
+    if (turn < 0.05 || turn > 3) {
+      out.push(p);
+      continue;
+    }
+    // Where the arc leaves the first straight and joins the second, at most half way along either.
+    const t = Math.min(radius * Math.tan(turn / 2), l1 / 2, l2 / 2);
+    const from = { north: p.north - u1.n * t, east: p.east - u1.e * t };
+    const to = { north: p.north + u2.n * t, east: p.east + u2.e * t };
+    // A quadratic Bezier with the corner as its control point: tangent to both straights.
+    for (let k = 0; k <= ARC_POINTS; k++) {
+      const f = k / ARC_POINTS;
+      const w0 = (1 - f) * (1 - f), w1 = 2 * f * (1 - f), w2 = f * f;
+      out.push({ north: w0 * from.north + w1 * p.north + w2 * to.north, east: w0 * from.east + w1 * p.east + w2 * to.east });
+    }
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
 /** Spot to holding point: out to the apron taxilane, along it to the link, down to Alpha, along to the holding point. */
 export function taxiOutRoute(spot: ParkingSpot, end: RunwayEnd): NedXY[] {
   const { hold, link } = DEPARTURE_ROUTE[end];
   const l = taxiU(link);
   const h = taxiU(hold);
-  return [ned(spot.u, APRON_TAXILANE_V), ned(l, APRON_TAXILANE_V), ned(l, PARALLEL_TAXIWAY_V), ned(h, PARALLEL_TAXIWAY_V), ned(h, HOLD_V)];
+  return roundCorners([ned(spot.u, spot.v), ned(spot.u, APRON_TAXILANE_V), ned(l, APRON_TAXILANE_V), ned(l, PARALLEL_TAXIWAY_V), ned(h, PARALLEL_TAXIWAY_V), ned(h, HOLD_V)]);
 }
-/** taxiOutRoute's waypoint at which the aircraft is back on Alpha, off the apron. */
-export const TAXI_OUT_OFF_APRON = 3;
+
+/** On the apron or the link down to Alpha within `margin` of it, m (where one AI aircraft moves at a time). */
+export function nearApron(north: number, east: number, margin = 0): boolean {
+  return nedToLocal(north, east).v < APRON_RECT.v1 + margin;
+}
 
 /** Holding point onto the runway, lined up a little way in from the threshold. */
 export function lineUpRoute(end: RunwayEnd): NedXY[] {
   const h = taxiU(DEPARTURE_ROUTE[end].hold);
   const dir = end === 0 ? 1 : -1;
-  return [ned(h, -10), ned(h + dir * 14, -1), ned(h + dir * 35, 0)];
+  return roundCorners([ned(h, HOLD_V), ned(h, 0), ned(h + dir * 40, 0)]);
 }
 
 /** The take-off heading from a runway end, rad. */
@@ -63,20 +104,18 @@ export function arrivalExit(end: RunwayEnd, north: number, east: number): string
   return exits.find((e) => (taxiU(e) - u) * dir > 30) ?? exits[exits.length - 1];
 }
 
-/** Off the runway at the exit, to a stop just past the hold line. */
-export function vacateRoute(exit: string): NedXY[] {
+/** From where it is on the runway, off at the exit, to a stop just past the hold line. */
+export function vacateRoute(exit: string, from: NedXY): NedXY[] {
   const x = taxiU(exit);
-  return [ned(x, 0), ned(x, -20), ned(x, CLEAR_V)];
+  return roundCorners([from, ned(x, 0), ned(x, CLEAR_V)]);
 }
 
 /** From clear of the runway to a spot: Alpha to the link, up to the apron taxilane, along it, into the spot. */
 export function taxiInRoute(exit: string, end: RunwayEnd, spot: ParkingSpot): NedXY[] {
   const x = taxiU(exit);
   const l = taxiU(ARRIVAL_ROUTE[end].link);
-  return [ned(x, PARALLEL_TAXIWAY_V), ned(l, PARALLEL_TAXIWAY_V), ned(l, APRON_TAXILANE_V), ned(spot.u, APRON_TAXILANE_V), ned(spot.u, spot.v)];
+  return roundCorners([ned(x, CLEAR_V), ned(x, PARALLEL_TAXIWAY_V), ned(l, PARALLEL_TAXIWAY_V), ned(l, APRON_TAXILANE_V), ned(spot.u, APRON_TAXILANE_V), ned(spot.u, spot.v)]);
 }
-/** taxiInRoute's waypoint from which the aircraft is on the apron (it waits for it to be clear before going on). */
-export const TAXI_IN_ON_APRON = 2;
 
 /** The parking spots the traffic may use: those the scenery's parked aircraft leave free, never the player's own. */
 export function freeSpots(): readonly ParkingSpot[] {

@@ -40,6 +40,8 @@ const DEFAULT_FILL = 0.2;
 /** Free look: the field of view to start from, deg, and how far up or down, rad. */
 const FREE_FOV = 30;
 const PITCH_LIMIT = (85 * Math.PI) / 180;
+/** The wheel within this far of the middle of the view (normalised device units) zooms on the aircraft followed. */
+const FOLLOW_ZOOM_RADIUS = 0.15;
 
 /** Another aircraft the binoculars can follow (three.js world frame). */
 export interface TowerTarget {
@@ -195,6 +197,26 @@ export class TowerRig implements CameraRig {
   zoom(steps: number): void {
     if (this.free) this.freeFov = clamp(this.freeFov / Math.pow(1.15, steps), MIN_FOV, MAX_FOV);
     else this.fill = clamp(this.fill * Math.pow(1.15, steps), 0.02, 0.8);
+  }
+
+  /**
+   * The wheel over a point of the view: zoom toward it, the direction under the pointer staying under it. Over the
+   * aircraft followed (near the middle of the view) it zooms on that and keeps following; anywhere else the
+   * binoculars leave it and look there.
+   */
+  zoomAt(steps: number, nx: number, ny: number, aspect: number): void {
+    if (!this.free) {
+      if (Math.hypot(nx * aspect, ny) < FOLLOW_ZOOM_RADIUS) return this.zoom(steps);
+      this.free = true;
+      this.freeFov = this.fov;
+    }
+    const t0 = Math.tan((this.fov * Math.PI) / 360);
+    this.freeFov = clamp(this.freeFov / Math.pow(1.15, steps), MIN_FOV, MAX_FOV);
+    // At once, so the point stays put under the pointer.
+    this.fov = this.freeFov;
+    const t1 = Math.tan((this.fov * Math.PI) / 360);
+    this.yaw -= Math.atan(nx * t0 * aspect) - Math.atan(nx * t1 * aspect);
+    this.pitch = clamp(this.pitch + Math.atan(ny * t0) - Math.atan(ny * t1), -PITCH_LIMIT, PITCH_LIMIT);
   }
 
   /** Back on the player's aircraft. */

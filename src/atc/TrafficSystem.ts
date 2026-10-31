@@ -48,7 +48,7 @@ import {
 } from './circuit';
 import { callsign, maker, type Authority, type Callsign, type Phrase } from './phrases';
 import {
-  arrivalExit, freeSpots, lineUpRoute, onRunway, runwayHeading, seededRandom, TAXI_IN_ON_APRON, TAXI_OUT_OFF_APRON, taxiInRoute,
+  arrivalExit, freeSpots, lineUpRoute, nearApron, onRunway, runwayHeading, seededRandom, taxiInRoute,
   taxiOutRoute, vacateRoute,
 } from './taxi';
 import { GO_AROUND_HEIGHT, HomeTower, type TowerAircraft, type TowerKind, type TowerReply, type TowerView } from './tower';
@@ -488,7 +488,8 @@ export class TrafficSystem implements Subsystem {
         return;
       case 'taxiOut':
         o.wp = stepTaxi(s, o.route, o.wp, dt, this.clock >= o.at && !this.blocked(a) ? TAXI_SPEED : 0);
-        if (o.wp >= TAXI_OUT_OFF_APRON) o.apron = false;
+        // Down the link toward Alpha, off the apron: the next may move.
+        if (!nearApron(s.north, s.east, 40)) o.apron = false;
         if (o.wp >= o.route.length) {
           o.phase = 'holding';
           o.at = this.clock + 4;
@@ -519,7 +520,8 @@ export class TrafficSystem implements Subsystem {
         return;
       case 'taxiIn': {
         let go = this.clock >= o.at && !this.blocked(a);
-        if (go && o.wp >= TAXI_IN_ON_APRON && !o.apron) {
+        // Coming up the link: onto the apron only when no other is moving on it.
+        if (go && nearApron(s.north, s.east, 50) && !o.apron) {
           if (this.apronBusy(a)) go = false;
           else o.apron = true;
         }
@@ -660,7 +662,7 @@ export class TrafficSystem implements Subsystem {
     s.height = 0;
     o.end = a.path.end;
     o.exit = arrivalExit(o.end, s.north, s.east);
-    o.route = vacateRoute(o.exit);
+    o.route = vacateRoute(o.exit, { north: s.north, east: s.east });
     o.wp = 0;
     o.phase = 'vacate';
     o.calls.clear();

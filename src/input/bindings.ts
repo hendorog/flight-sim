@@ -343,7 +343,7 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   cameraPrev: { label: 'Previous camera', category: 'View' },
   viewRecentre: { label: 'Recentre view', category: 'View' },
   viewYoke: { label: '3D cockpit: hide / show the yokes', category: 'View' },
-  viewFocus: { label: '3D cockpit: instrument focus on / off (zoom in on the main instruments, windscreen strip still in view)', category: 'View' },
+  viewFocus: { label: '3D cockpit: instrument focus on / off (zoom in on the main instruments, windscreen strip still in view); twice quickly: centre the view', category: 'View' },
   zoomIn: { label: 'Zoom in', category: 'View' },
   zoomOut: { label: 'Zoom out', category: 'View' },
   mouseLook: { label: 'Toggle captured mouse-look', category: 'View' },

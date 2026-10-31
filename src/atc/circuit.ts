@@ -85,16 +85,20 @@ export function circuitPath(field: Airfield, end: RunwayEnd, extension = 0): Cir
   };
 }
 
-/** Taxi speed on the straight and in the turns, m/s. */
+/** Taxi speed on the straight, m/s (about 15 kt). */
 export const TAXI_SPEED = 8;
-const TAXI_TURN_SPEED = 3;
-/** How fast a taxiing aircraft turns, rad/s. */
+/** How fast a taxiing aircraft can turn, rad/s; the sideways acceleration taken round a curve, m/s/s; braking, m/s/s. */
 const TAXI_TURN_RATE = 25 * DEG;
+const TAXI_SIDEWAYS = 1.2;
+const TAXI_BRAKING = 1.5;
+/** The slowest a curve is taken (a tight turn into a spot), m/s. */
+const TAXI_CREEP = 2;
 
 /**
- * Taxi along a route of NED points from waypoint `wp` (the one being steered to): the nose turned toward it at a
- * limited rate, slowing for the turn at it, at most `limit` m/s (0: stopped, as behind another aircraft). Returns the
- * waypoint steered to next; route.length when the end is reached (stopped there).
+ * Taxi along a route of NED points from waypoint `wp` (the one being steered to), as a pilot does: steering for a
+ * point a little way ahead along the route (so corners are rounded off, taxi.ts gives them curves), slowing before
+ * each curve to a speed it can be taken at and braking from far enough out, at most `limit` m/s (0: stopped, as
+ * behind another aircraft). Returns the waypoint steered to next; route.length when the end is reached (stopped).
  */
 export function stepTaxi(s: TrafficState, route: readonly { north: number; east: number }[], wp: number, dt: number, limit = TAXI_SPEED): number {
   s.onGround = true;
@@ -102,10 +106,12 @@ export function stepTaxi(s: TrafficState, route: readonly { north: number; east:
   s.bank = 0;
   s.pitch = 0;
   s.verticalSpeed = 0;
+  // Past a waypoint once within a few metres of it, or once it is behind the nose.
   while (wp < route.length) {
     const p = route[wp];
     const d = Math.hypot(p.north - s.north, p.east - s.east);
-    if (d > Math.max(1, s.speed * dt * 1.5)) break;
+    const behind = Math.abs(wrap(Math.atan2(p.east - s.east, p.north - s.north) - s.heading)) > Math.PI / 2 && d < 6;
+    if (d > Math.max(wp === route.length - 1 ? 0.5 : 2.5, s.speed * dt * 1.5) && !behind) break;
     wp++;
   }
   if (wp >= route.length) {
@@ -114,17 +120,41 @@ export function stepTaxi(s: TrafficState, route: readonly { north: number; east:
   }
   const p = route[wp];
   const d = Math.hypot(p.north - s.north, p.east - s.east);
-  const want = Math.atan2(p.east - s.east, p.north - s.north);
-  const err = wrap(want - s.heading);
+  // Steer for a point a look-ahead distance along the route.
+  const look = Math.max(5, 1.5 * s.speed);
+  let aim = p;
+  const q = route[wp + 1];
+  if (q && d < look) {
+    const seg = Math.hypot(q.north - p.north, q.east - p.east);
+    const f = Math.min(1, (look - d) / Math.max(seg, 1e-6));
+    aim = { north: p.north + (q.north - p.north) * f, east: p.east + (q.east - p.east) * f };
+  }
+  const err = wrap(Math.atan2(aim.east - s.east, aim.north - s.north) - s.heading);
   s.heading = wrap(s.heading + Math.max(-TAXI_TURN_RATE * dt, Math.min(TAXI_TURN_RATE * dt, err)));
-  // Slow for a sharp turn at the next waypoint or a big heading error now; stop at the route's end.
-  const next = route[wp + 1];
-  const turn = next ? Math.abs(wrap(Math.atan2(next.east - p.east, next.north - p.north) - want)) : Math.PI;
-  // (Braking at 1.5 m/s/s from where it must, for a turn or the stop.)
-  const slow = (turn > 0.5 && d < 10 + (s.speed * s.speed) / 3) || Math.abs(err) > 0.6;
-  const target = Math.min(limit, slow ? TAXI_TURN_SPEED : limit, wp === route.length - 1 ? Math.max(1, d * 0.4) : limit);
-  s.speed += Math.max(-2 * dt, Math.min(1 * dt, target - s.speed));
-  if (Math.abs(err) > 1.2) s.speed = Math.min(s.speed, 1.5);
+  // The speed it may have now: for each curve ahead (a waypoint where the route turns, its radius from the turn
+  // and the spacing of the points), the speed for it plus what braking from here allows; stopping at the end.
+  let allowed = limit;
+  let dist = d;
+  let prev = Math.atan2(p.east - s.east, p.north - s.north);
+  for (let i = wp; i < route.length && dist < 80; i++) {
+    const a = route[i];
+    const b = route[i + 1];
+    let v: number;
+    if (!b) v = 0;
+    else {
+      const len = Math.hypot(b.north - a.north, b.east - a.east);
+      const dir = Math.atan2(b.east - a.east, b.north - a.north);
+      const turn = Math.abs(wrap(dir - prev));
+      v = turn < 0.02 ? limit : Math.max(TAXI_CREEP, Math.sqrt((TAXI_SIDEWAYS * Math.max(len, 1)) / turn));
+      prev = dir;
+      allowed = Math.min(allowed, Math.sqrt(v * v + 2 * TAXI_BRAKING * dist));
+      dist += len;
+      continue;
+    }
+    allowed = Math.min(allowed, Math.sqrt(v * v + 2 * TAXI_BRAKING * Math.max(0, dist - 0.5)));
+  }
+  if (Math.abs(err) > 0.6) allowed = Math.min(allowed, TAXI_CREEP);
+  s.speed += Math.max(-2 * dt, Math.min(1 * dt, allowed - s.speed));
   s.north += Math.cos(s.heading) * s.speed * dt;
   s.east += Math.sin(s.heading) * s.speed * dt;
   return wp;
