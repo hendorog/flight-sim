@@ -2,8 +2,9 @@
 
 import { CHECKLIST_CSS } from './checklistStyles';
 import { FLIGHT_CUES_CSS } from './flightCues';
+import { RADIO_MENU_CSS } from './radioMenu';
 
-export const UI_CSS = /* css */ `${CHECKLIST_CSS}
+export const UI_CSS = /* css */ `${CHECKLIST_CSS}${RADIO_MENU_CSS}
 ${FLIGHT_CUES_CSS}
 
 #fsui {

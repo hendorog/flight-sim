@@ -110,6 +110,17 @@ export interface FlightSnapshot {
   seed?: number;
   /** The generated airfield the scenario started at (startField.ts); absent: the home field. */
   field?: string;
+  /** COM1 [active, standby], MHz (instruments/dynamics/radios.ts); written only when retuned. Absent: the defaults. */
+  com1?: [number, number];
+  /** COM2 [active, standby], MHz; written only when retuned. */
+  com2?: [number, number];
+  /** NAV1 and NAV2 [active, standby], MHz; written only when retuned. */
+  nav1?: [number, number];
+  nav2?: [number, number];
+  /** The audio panel's MIC on COM2; absent: COM1. */
+  mic?: 2;
+  /** The course indicator's NAV source switch on NAV2 (RadioTuning.cdi); absent: NAV1. */
+  cdi?: 2;
   /** Epoch ms of the save. */
   savedAt: number;
   /** False right after a deliberate scenario restart: a reload then starts that scenario fresh. */
@@ -347,6 +358,14 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   if (v.era !== undefined && !isEraId(v.era)) return null;
   if (v.seed !== undefined && !(isNum(v.seed) && Number.isInteger(v.seed) && v.seed >= 0)) return null;
   if (v.field !== undefined && typeof v.field !== 'string') return null;
+  if (v.com1 !== undefined && !(Array.isArray(v.com1) && v.com1.length === 2 && v.com1.every(isNum))) return null;
+  if (v.com2 !== undefined && !(Array.isArray(v.com2) && v.com2.length === 2 && v.com2.every(isNum))) return null;
+  for (const k of ['nav1', 'nav2'] as const) {
+    const n = v[k];
+    if (n !== undefined && !(Array.isArray(n) && n.length === 2 && n.every(isNum))) return null;
+  }
+  if (v.mic !== undefined && v.mic !== 2) return null;
+  if (v.cdi !== undefined && v.cdi !== 2) return null;
   if (!(SCENARIO_IDS.includes(v.scenario as ScenarioId) || ERA_SCENARIO_IDS.includes(v.scenario as ScenarioId)) || !isNum(v.simTime) || v.simTime < 0) return null;
   const b = v.body;
   if (!isObj(b) || !isVec(b.position) || !isVec(b.velocity) || !isQuat(b.orientation) || !isVec(b.angularVelocity)) return null;

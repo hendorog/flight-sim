@@ -307,7 +307,7 @@ export interface LandingData extends TouchdownData {
 // 2.6 Cues (what the instructor says)
 // =============================================================================================================
 
-export type ActorId = 'instructor' | 'examiner' | 'student' | 'tower' | 'ground' | 'atis' | 'system';
+export type ActorId = 'instructor' | 'examiner' | 'student' | 'tower' | 'ground' | 'atis' | 'traffic' | 'system';
 export type Channel = 'cabin' | 'radio';
 /** Lower number = more important. (A real enum at run time under isolatedModules; import it as a value.) */
 export const enum Priority { Safety = 0, Instruction = 1, Coach = 2, Praise = 3 }
@@ -838,6 +838,8 @@ export interface TrainingResumeBlock {
 export interface SpeechRequest {
   id: string; actor: ActorId; channel: Channel; caption: string; speak: string;
   priority: Priority; interrupt: boolean; resumable: boolean; ttlMs: number; key?: string; cooldownMs?: number;
+  /** Which of the actor's voices (the circuit traffic: one per aircraft). */
+  voice?: number;
 }
 export interface Caption { id: string; actor: ActorId; channel: Channel; text: string; atWall: number; atSim: number; spoken: boolean }
 /** (contract addition: named by SpeechBackend.speak but not defined in the spec) A resolved synthesiser voice. */

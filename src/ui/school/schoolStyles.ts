@@ -354,11 +354,14 @@ export const SCHOOL_CSS = /* css */ `
 #fsui .sc-spk-system { color: var(--fg-dim); }
 #fsui .sc-caption em.examiner { background: var(--sc-slate); }
 #fsui .sc-caption em.student { background: #b9c3cd; }
-#fsui .sc-caption em.tower, #fsui .sc-caption em.ground, #fsui .sc-caption em.atis { background: var(--sc-amber); }
+#fsui .sc-caption em.tower, #fsui .sc-caption em.ground, #fsui .sc-caption em.atis, #fsui .sc-caption em.traffic { background: var(--sc-amber); }
 #fsui .sc-caption em.system { background: var(--fg-dim); }
 #fsui .sc-caption.safety { border-color: rgba(255,77,61,.7); background: rgba(60,8,6,.85); }
 #fsui .sc-caption.safety em { background: var(--alert); color: #fff; }
 #fsui .sc-caption.student-line { font-style: italic; color: #d6dde4; }
+#fsui .sc-radio-captions { position: absolute; left: 14px; bottom: 14px; width: min(420px, calc(100vw - 28px)); display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+#fsui .sc-radio-captions .sc-caption { font-size: 13px; line-height: 1.35; padding: 6px 10px; border-radius: 9px; background: rgba(6,9,14,.86); transition: opacity .8s; }
+#fsui .sc-radio-captions .sc-caption em { font-size: 10px; }
 #fsui .sc-ring { position: absolute; left: 0; top: 0; border-radius: 50%; border: 3px solid var(--sc-amber); box-shadow: 0 0 14px rgba(255,178,36,.7), inset 0 0 10px rgba(255,178,36,.35);
   animation: sc-pulse 1.1s ease-in-out infinite; }
 @keyframes sc-pulse { 50% { opacity: .35; } }

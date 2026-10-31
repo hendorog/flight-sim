@@ -13,9 +13,9 @@
 // rate) (the shell, src/sim/Simulator.ts); F11 is kept free; F is the checklist (Shift+F steps its lists while it is open, and feathers while it is closed).
 // Shift+V toggles the fixed cockpit panel; bare ] cycles its sections; Shift+H hides the yokes in the 3D cockpit. E / Shift+E work a hand primer (the C152 and PA-38).
 // Owned by the Flight School during a lesson (src/training/TrainingSystem.ts, spec section 5.9; TRAINING_KEY_MAP
-// below): Enter (acknowledge / "I have control"), Shift+Enter (hand control back), bare R (say again), bare [
-// (show me), Tab (lesson card) and Shift+R (try the phase again; the scenario restart outside a lesson).
-// Space stays reserved for radio push-to-talk (step 3).
+// below): Enter (acknowledge / "I have control"), Shift+Enter (hand control back), bare [ (show me), Tab (lesson
+// card) and Shift+R (try the phase again; the scenario restart outside a lesson). Say again is R then 0: bare R
+// opens the radio window (src/atc/RadioSystem.ts), which offers it during a lesson; Space is radio push-to-talk.
 // Pause is also on the Pause/Break key (and the gamepad Start button); see InputSystem.
 //
 // There is ONE key map for every aircraft type (lesson validation and the Controls tab depend on it). A key
@@ -343,7 +343,7 @@ const ACTION_INFO: Record<InputAction, ActionInfo> = {
   cameraPrev: { label: 'Previous camera', category: 'View' },
   viewRecentre: { label: 'Recentre view', category: 'View' },
   viewYoke: { label: '3D cockpit: hide / show the yokes', category: 'View' },
-  viewFocus: { label: '3D cockpit: instrument focus on / off (zoom in on the main instruments, windscreen strip still in view)', category: 'View' },
+  viewFocus: { label: '3D cockpit: instrument focus on / off (zoom in on the main instruments, windscreen strip still in view); twice quickly: centre the view', category: 'View' },
   zoomIn: { label: 'Zoom in', category: 'View' },
   zoomOut: { label: 'Zoom out', category: 'View' },
   mouseLook: { label: 'Toggle captured mouse-look', category: 'View' },
@@ -499,6 +499,7 @@ export function keyBindingsFor(profile: InputProfile): { keys: string; action: s
     { keys: 'Drag', action: 'Orbit the aircraft (orbit camera)', category: 'View' },
     { keys: 'Mouse wheel', action: 'Zoom / camera distance', category: 'View' },
     { keys: 'Middle click', action: 'Recentre view', category: 'View' },
+    { keys: 'Click an aircraft', action: 'Tower view: follow it (right-click with the mouse yoke on); drag looks round, middle click back to yours', category: 'View' },
   );
   const order = ['Flight controls', 'Brakes', 'Engine', 'Switches', 'Lights', 'Instruments', 'View', 'Simulation'];
   return rows.sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
@@ -560,7 +561,8 @@ export interface TrainingKeyMapping {
 export const TRAINING_KEY_MAP: readonly TrainingKeyMapping[] = [
   { id: 'ack', codes: ['Enter', 'NumpadEnter'], shift: false, label: 'Acknowledge; "I have control" when offered; confirm a checklist item' },
   { id: 'handback', codes: ['Enter', 'NumpadEnter'], shift: true, label: '"You have control": hand control to the instructor' },
-  { id: 'sayAgain', codes: ['KeyR'], shift: false, label: 'Say again' },
+  // R opens the radio window first (RadioSystem); its 0 item is the say again.
+  { id: 'sayAgain', codes: ['KeyR'], shift: false, label: 'Say again (R, then 0)' },
   { id: 'showMe', codes: ['BracketLeft'], shift: false, label: 'Show me (a demonstration)' },
   { id: 'cycleCard', codes: ['Tab'], shift: false, label: 'Lesson card: compact, expanded, essentials' },
   { id: 'retryPhase', codes: ['KeyR'], shift: true, label: 'Try again from the start of this phase' },

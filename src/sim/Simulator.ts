@@ -64,6 +64,9 @@ import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreferenc
 import { applyEraWeather, chooseEra, eraSwitchUrl, saveEraPreference } from './eraChoice';
 import { chooseSeed, saveSeedPreference, seedSwitchUrl } from './seedChoice';
 import { setStartField, startField } from './startField';
+import { comChanged, navChanged, radioTuning } from '../instruments/dynamics/radios';
+import { RadioSystem } from '../atc/RadioSystem';
+import { TrafficSystem } from '../atc/TrafficSystem';
 import { restoreWeather } from './weatherPresets';
 import { deriveCloudTop } from '../core/weatherFields';
 import { chooseMoonScale, saveMoonScale, sanitizeMoonScale } from './skyPrefs';
@@ -146,6 +149,7 @@ const NEAR_TERRAIN = 4000;
 /** Keys the shell itself handles (listed in the UI's Controls tab together with the input bindings). */
 const SHELL_BINDINGS: KeyBinding[] = [
   { keys: 'P', action: 'Pause / resume', category: 'Simulation' },
+  { keys: 'Space', action: 'Radio: the calls for the station COM1 is tuned to (1-9 transmits)', category: 'Simulation' },
   { keys: 'A', action: 'Autopilot on / off (flies the heading bug, holds altitude; power is yours)', category: 'Simulation' },
   { keys: 'T / Shift+T', action: 'Autopilot altitude up / down 100 ft', category: 'Simulation' },
   { keys: 'Shift+R', action: 'Restart the scenario', category: 'Simulation' },
@@ -212,6 +216,9 @@ export class Simulator {
   private schoolHold = false;
   /** The Flight School (null until boot has created it). */
   training: TrainingSystem | null = null;
+  private radio: RadioSystem | null = null;
+  /** The circuit traffic at the generated fields (present day only, with the radio). */
+  private traffic: TrafficSystem | null = null;
   demo: R22Flight | null = null;
   private demoUi: RotorcraftDemoUi | null = null;
   private schoolCopilot: StepController | null = null;
@@ -602,6 +609,13 @@ export class Simulator {
     });
     training?.init(ctx);
     this.training = training;
+    // The radio (docs/atc.md) speaks through the Flight School's scheduler and captions.
+    const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority, env: () => physics.env, homeTraffic: () => !training.active, player: () => training.radioIdentity() }) : null);
+    traffic?.init(ctx);
+    // The tower view's binoculars: a click on an aircraft follows it.
+    if (traffic) cameras.setTowerTargets(() => traffic.viewTargets(), (label) => ui.showToast(`Tower view: ${label}`));
+    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, comRadios: () => panel.comRadios, cdiSelect: () => panel.cdiSelect, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [], towerReply: (c, i) => traffic?.towerReply(c, i) ?? null }) : null;
+    this.radio?.init(ctx);
     this.schoolCopilot = physics.copilot;
     if (id === 'r22') {
       this.demoUi = new RotorcraftDemoUi(ui.root, () => input.takeControl(), (section, item) => ui.showChecklist(section, item));
@@ -914,6 +928,12 @@ export class Simulator {
     if (worldSeed() !== 0) snap.seed = worldSeed();
     const field = startField();
     if (field) snap.field = field.code;
+    if (comChanged(1)) snap.com1 = [...radioTuning().com1];
+    if (comChanged(2)) snap.com2 = [...radioTuning().com2];
+    if (navChanged(1)) snap.nav1 = [...radioTuning().nav1];
+    if (navChanged(2)) snap.nav2 = [...radioTuning().nav2];
+    if (radioTuning().mic === 2) snap.mic = 2;
+    if (radioTuning().cdi === 2) snap.cdi = 2;
     return snap;
   }
 
@@ -1329,6 +1349,8 @@ export class Simulator {
     }
     // The Flight School: telemetry, runner, coach, safety, speech, UI models (needs the fresh panel readings).
     if (this.training) this.run('training', this.training, subsystemDt);
+    if (this.traffic) this.run('traffic', this.traffic, subsystemDt);
+    if (this.radio) this.run('radio', this.radio, subsystemDt);
     s.ui.demoFlying = !!this.demo && this.demo.outcome !== 'taken-over';
     this.run('aircraftWeather', this.aircraftWeather, subsystemDt);
     this.run('ui', s.ui, subsystemDt);
@@ -1489,6 +1511,10 @@ export class Simulator {
       /** The era this session is set in (src/world/era). */
       get era() {
         return era().id;
+      },
+      /** The circuit traffic (src/atc/TrafficSystem.ts), or null outside the present day. */
+      get traffic() {
+        return sim.traffic;
       },
       /** The era's FaunaSystem (stats: visible, terrainCalls, reallocs, cpuMs), or null (the present day). */
       get fauna() {

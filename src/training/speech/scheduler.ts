@@ -53,7 +53,7 @@ export class SpeechScheduler {
   onCaption?: (c: Caption) => void;
   onEvent?: (e: 'start' | 'end', r: SpeechRequest, result?: 'done' | 'interrupted' | 'dropped') => void;
   /** Voice per actor (pickVoice); the host sets it when settings or the lesson persona change. */
-  voiceFor: (actor: ActorId) => VoiceProfile = () => DEFAULT_VOICE;
+  voiceFor: (actor: ActorId, variant?: number) => VoiceProfile = () => DEFAULT_VOICE;
 
   private backend: SpeechBackend;
   private readonly queue: Entry[] = [];
@@ -164,6 +164,12 @@ export class SpeechScheduler {
     return this.current !== null && (channel === undefined || this.current.entry.req.channel === channel);
   }
 
+  /** `actor` is speaking now (on `channel`, when given). */
+  speaking(actor: ActorId, channel?: Channel): boolean {
+    const r = this.current?.entry.req;
+    return !!r && r.actor === actor && (channel === undefined || r.channel === channel);
+  }
+
   /** Nothing playing or queued (for `actor`, when given). */
   idle(actor?: ActorId): boolean {
     const mine = (r: SpeechRequest): boolean => actor === undefined || r.actor === actor;
@@ -233,7 +239,7 @@ export class SpeechScheduler {
       this.finish(token, 'done');
       return;
     }
-    this.backend.speak(req.speak, this.voiceFor(req.actor), {
+    this.backend.speak(req.speak, this.voiceFor(req.actor, req.voice), {
       onStart: () => {},
       onEnd: () => this.finish(token, 'done'),
       onError: () => this.finish(token, 'done'),

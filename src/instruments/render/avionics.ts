@@ -4,28 +4,12 @@ import { DEG, NM, clamp } from '../../core/math';
 import type { ControlInputs } from '../../core/types';
 import { airfields } from '../../world/airfields';
 import { gpsTarget } from '../dynamics/navigation';
+import { radioRevision, transmitting, type RadioTuning } from '../dynamics/radios';
 import type { InstrumentReadings } from '../dynamics/instrumentSet';
 import { centredText, font, screw } from './art';
 import { context2d, LABEL_FONT, makeCanvas, rng, type Ctx2D } from './canvas';
 import { Latch, LIGHT_DISPLAY, type PanelComponent, type Rect } from './component';
 import { drawSegments } from './sevenSegment';
-
-/** Radio frequencies shown on the displays (MHz). NAV1 is the runway 07 ILS. */
-export interface RadioTuning {
-  com1: [number, number];
-  nav1: [number, number];
-  com2: [number, number];
-  nav2: [number, number];
-  squawk: string;
-}
-
-export const DEFAULT_TUNING: RadioTuning = {
-  com1: [120.3, 121.9],
-  nav1: [110.3, 113.9],
-  com2: [124.85, 118.0],
-  nav2: [113.9, 116.8],
-  squawk: '1200',
-};
 
 /** A boxed unit whose chassis is painted once and whose display is drawn on change. */
 export abstract class RackUnit implements PanelComponent {
@@ -148,7 +132,9 @@ export function screenGlass(g: Ctx2D, x: number, y: number, w: number, h: number
   g.fillRect(x, y, w, h);
 }
 
-const fmtFreq = (f: number, decimals: number): string => f.toFixed(decimals);
+// Two decimals drop the last digit of a 25 kHz channel (122.725 reads 122.72), as the radios do.
+const fmtFreq = (f: number, decimals: number): string =>
+  decimals === 2 ? (Math.floor(f * 100 + 1e-6) / 100).toFixed(2) : f.toFixed(decimals);
 
 // ---------------------------------------------------------------------------------------------------
 const MAP_RANGES_NM = [0.5, 1, 2, 5, 10, 20, 50];
@@ -163,7 +149,7 @@ export class GpsUnit extends RackUnit {
   protected readonly screens = [GpsUnit.SCREEN];
   private static readonly FREQ_W = 68;
   private static readonly REFRESH = 0.2;
-  private readonly latch = new Latch(7);
+  private readonly latch = new Latch(8);
   private lastRefresh = -Infinity;
 
   constructor(
@@ -171,12 +157,15 @@ export class GpsUnit extends RackUnit {
     x: number,
     y: number,
     private readonly tuning: RadioTuning,
+    /** The panel's one course indicator has a NAV source switch: CDI by VLOC when it is on NAV1. */
+    private readonly cdiSelect = false,
   ) {
     super(id, { x, y, w: 320, h: 236 });
   }
 
   sample(r: InstrumentReadings, _c: ControlInputs, time: number): boolean {
     this.latch.set(0, r.avionicsPowered ? 1 : 0, 1);
+    this.latch.set(7, radioRevision(), 1);
     if (Math.abs(time - this.lastRefresh) >= GpsUnit.REFRESH) {
       this.lastRefresh = time;
       this.latch.set(1, r.gps.groundSpeedKt, 1);
@@ -250,6 +239,19 @@ export class GpsUnit extends RackUnit {
       g.font = `600 9px ${LABEL_FONT}`;
       g.fillStyle = '#7fc4ea';
       g.fillText(label, x, y);
+      // The COM the audio panel's MIC is on, and TX while a call is going out.
+      if (i === 0 && this.tuning.mic === 1) {
+        g.fillStyle = '#5dffa0';
+        g.fillText('MIC', x + 25, y);
+        if (transmitting()) {
+          g.fillStyle = '#ffb347';
+          g.fillText('TX', x + 48, y);
+        }
+      }
+      if (i === 1 && this.cdiSelect && this.tuning.cdi === 1) {
+        g.fillStyle = '#5dffa0';
+        g.fillText('CDI', x + 30, y);
+      }
       g.font = font(15, 600);
       g.fillStyle = '#5dffa0';
       g.fillText(fmtFreq(active, dec), x, y + 19);
@@ -394,26 +396,37 @@ export class GpsUnit extends RackUnit {
 // ---------------------------------------------------------------------------------------------------
 const LED = '#ff8f2a';
 const LED_OFF = 'rgba(255,143,42,0.07)';
+/** The MIC lamp beside the COM window: lit on the COM the audio panel transmits and listens on; TX while it does. */
+const MIC_LAMP = { x: 56, y: 49, r: 2.6, on: '#7dff9a', glow: 'rgba(80,255,120,0.9)', off: '#16301c' };
+const TX_LAMP = { x: 114, y: 49, r: 2.6, on: '#ffb347', glow: 'rgba(255,160,60,0.9)', off: '#33220f' };
+/** Beside the NAV window: lit on the NAV the course indicator shows, where one indicator has a source switch. */
+const CDI_LAMP = { ...MIC_LAMP, x: 204 };
 
-/** NAV/COM 2 with gas-discharge style segment displays. */
+/** NAV/COM with gas-discharge style segment displays: COM1/NAV1 on panels without a GPS, else COM2/NAV2. */
 export class NavComRadio extends RackUnit {
   protected readonly screens = [
     { x: 22, y: 10, w: 128, h: 32 },
     { x: 170, y: 10, w: 128, h: 32 },
+    { x: MIC_LAMP.x - 4, y: MIC_LAMP.y - 4, w: 8, h: 8 },
+    { x: TX_LAMP.x - 4, y: TX_LAMP.y - 4, w: 8, h: 8 },
+    { x: CDI_LAMP.x - 4, y: CDI_LAMP.y - 4, w: 8, h: 8 },
   ];
-  private readonly latch = new Latch(1);
+  private readonly latch = new Latch(2);
 
   constructor(
     id: string,
     x: number,
     y: number,
     private readonly tuning: RadioTuning,
+    private readonly set: 1 | 2 = 2,
+    private readonly cdiSelect = false,
   ) {
     super(id, { x, y, w: 320, h: 76 });
   }
 
   sample(r: InstrumentReadings): boolean {
     this.latch.set(0, r.avionicsPowered ? 1 : 0, 1);
+    this.latch.set(1, radioRevision(), 1);
     return this.latch.take();
   }
 
@@ -426,6 +439,9 @@ export class NavComRadio extends RackUnit {
     }
     centredText(g, 'COM', 40, 52, 7);
     centredText(g, 'NAV', 188, 52, 7);
+    centredText(g, 'MIC', MIC_LAMP.x, 61, 5);
+    centredText(g, 'TX', TX_LAMP.x, 61, 5);
+    if (this.cdiSelect) centredText(g, 'CDI', CDI_LAMP.x, 61, 5);
     button(g, 66, 48, 36, 12, '⇄');
     button(g, 214, 48, 36, 12, '⇄');
     dualKnob(g, 138, 57, 11);
@@ -437,14 +453,38 @@ export class NavComRadio extends RackUnit {
     if (this.latch.get(0)) {
       const style = { height: 16, on: LED, off: LED_OFF, glow: 5 };
       const small = { ...style, height: 12 };
-      drawSegments(g, fmtFreq(this.tuning.com2[0], 2), 90, 18, style);
-      drawSegments(g, fmtFreq(this.tuning.com2[1], 2), 146, 21, small);
-      drawSegments(g, fmtFreq(this.tuning.nav2[0], 2), 238, 18, style);
-      drawSegments(g, fmtFreq(this.tuning.nav2[1], 2), 294, 21, small);
+      const com = this.set === 1 ? this.tuning.com1 : this.tuning.com2;
+      const nav = this.set === 1 ? this.tuning.nav1 : this.tuning.nav2;
+      drawSegments(g, fmtFreq(com[0], 2), 90, 18, style);
+      const mic = this.tuning.mic === this.set;
+      lamp(g, MIC_LAMP, mic);
+      lamp(g, TX_LAMP, mic && transmitting());
+      if (this.cdiSelect) lamp(g, CDI_LAMP, this.tuning.cdi === this.set);
+      drawSegments(g, fmtFreq(com[1], 2), 146, 21, small);
+      drawSegments(g, fmtFreq(nav[0], 2), 238, 18, style);
+      drawSegments(g, fmtFreq(nav[1], 2), 294, 21, small);
+    } else {
+      lamp(g, MIC_LAMP, false);
+      lamp(g, TX_LAMP, false);
+      if (this.cdiSelect) lamp(g, CDI_LAMP, false);
     }
     screenGlass(g, 22, 10, 128, 32);
     screenGlass(g, 170, 10, 128, 32);
   }
+}
+
+/** A small panel lamp, lit or dark. */
+function lamp(g: Ctx2D, at: typeof MIC_LAMP, on: boolean): void {
+  g.save();
+  g.beginPath();
+  g.arc(at.x, at.y, at.r, 0, Math.PI * 2);
+  if (on) {
+    g.shadowColor = at.glow;
+    g.shadowBlur = 5;
+    g.fillStyle = at.on;
+  } else g.fillStyle = at.off;
+  g.fill();
+  g.restore();
 }
 
 /** Mode C transponder: squawk code, ALT mode, pressure altitude and the reply lamp. */

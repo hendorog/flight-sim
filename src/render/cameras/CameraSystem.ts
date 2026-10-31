@@ -20,7 +20,7 @@ import { FlybyRig } from './flybyRig';
 import { OrbitRig } from './orbitRig';
 import { copyPose, makePose, type AircraftPose, type CameraPose } from './pose';
 import type { CameraRig } from './rig';
-import { TowerRig } from './towerRig';
+import { TowerRig, type TowerTarget } from './towerRig';
 import { isFixedPanel } from '../../instruments/fixedPanel';
 
 export interface CameraSystemOptions {
@@ -42,6 +42,12 @@ const WHEEL_GESTURE_GAP_MS = 250;
 
 /** Duration of the eased blend between camera modes, s. */
 const TRANSITION_TIME = 0.9;
+
+/** The focus key pressed again within this long centres the cockpit view instead, ms. */
+const DOUBLE_PRESS_MS = 350;
+
+/** A click in the tower view picks the aircraft drawn within this far of the pointer (normalised device units, x scaled by the aspect). */
+const PICK_RADIUS = 0.08;
 
 const smootherstep = (t: number): number => t * t * t * (t * (t * 6 - 15) + 10);
 
@@ -148,6 +154,43 @@ export class CameraSystem implements Subsystem, ViewControl {
     for (const rig of Object.values(this.rigs)) rig.setAircraft?.(a);
   }
 
+  /** The traffic the tower view's binoculars can be turned on (a click on one follows it), and who is told. */
+  setTowerTargets(targets: () => readonly TowerTarget[], picked?: (label: string) => void): void {
+    this.tower.setTargets(targets);
+    this.towerTargets = targets;
+    this.towerPicked = picked ?? null;
+  }
+
+  private towerTargets: (() => readonly TowerTarget[]) | null = null;
+  private towerPicked: ((label: string) => void) | null = null;
+  /** Where a right-button press began (a click without a drag picks in the tower view). */
+  private rightOrigin: { x: number; y: number } | null = null;
+  private readonly pickPoint = new THREE.Vector3();
+
+  /** A click in the tower view: follow the aircraft drawn nearest the pointer (the player's own included). */
+  private pickTower(clientX: number, clientY: number): void {
+    const el = this.el;
+    if (!el || !this.ctx || this.getMode() !== 'tower') return;
+    const r = el.getBoundingClientRect();
+    const nx = ((clientX - r.left) / r.width) * 2 - 1;
+    const ny = 1 - ((clientY - r.top) / r.height) * 2;
+    const aspect = r.width / r.height;
+    const cam = this.ctx.camera;
+    let best: { id: string | null; label: string; d: number } | null = null;
+    const consider = (id: string | null, label: string, pos: THREE.Vector3): void => {
+      const p = this.pickPoint.copy(pos).project(cam);
+      if (p.z > 1 || Math.abs(p.x) > 1.1 || Math.abs(p.y) > 1.1) return;
+      const d = Math.hypot((p.x - nx) * aspect, p.y - ny);
+      if (d < PICK_RADIUS && (!best || d < best.d)) best = { id, label, d };
+    };
+    consider(null, 'your aircraft', this.aircraft.position);
+    for (const t of this.towerTargets?.() ?? []) consider(t.id, t.label, t.position);
+    const b = best as { id: string | null; label: string } | null;
+    if (!b) return;
+    this.tower.followTarget(b.id);
+    this.towerPicked?.(b.label);
+  }
+
   /** Move the tower camera (NED metres). */
   setTowerPosition(ned: Vec3): void {
     this.tower.setPosition(ned);
@@ -176,12 +219,21 @@ export class CameraSystem implements Subsystem, ViewControl {
     this.rigs[this.getMode()].look(dx, dy);
   }
 
-  /** 3D cockpit only: instrument focus on / off (CockpitDef.focus). */
+  /** 3D cockpit only: instrument focus on / off (CockpitDef.focus); pressed twice quickly (Q Q), the view is centred. */
   toggleFocus(): void {
     if (!this.ctx || isFixedPanel(this.ctx) || this.getMode() !== 'cockpit') return;
-    this.cockpit.toggleFocus();
+    const now = performance.now();
+    if (now - this.lastFocusKey < DOUBLE_PRESS_MS) {
+      this.lastFocusKey = -Infinity;
+      this.cockpit.recentre();
+    } else {
+      this.lastFocusKey = now;
+      this.cockpit.toggleFocus();
+    }
     this.dropWheelGesture = true;
   }
+
+  private lastFocusKey = -Infinity;
 
   /** The instrument focus view is on (or blending in). */
   get focused(): boolean {
@@ -206,6 +258,7 @@ export class CameraSystem implements Subsystem, ViewControl {
     }
     if (e.button === 2) {
       this.dragging = true;
+      this.rightOrigin = { x: e.clientX, y: e.clientY };
       return;
     }
     if (e.button !== 0 || e.detail >= 2 || this.suppressLeftDrag?.()) return;
@@ -219,7 +272,12 @@ export class CameraSystem implements Subsystem, ViewControl {
     });
   };
 
-  private readonly onPointerUp = (): void => {
+  private readonly onPointerUp = (e?: PointerEvent): void => {
+    // A left click that did not become a drag: in the tower view, turn the binoculars on what was clicked.
+    // The right button too (it drags the view; a click without moving picks), for the mouse yoke has the left.
+    if (e && this.leftPending && !this.dragging && e.button === 0) this.pickTower(e.clientX, e.clientY);
+    if (e?.button === 2 && this.rightOrigin && Math.hypot(e.clientX - this.rightOrigin.x, e.clientY - this.rightOrigin.y) <= MOUSE_DRAG_SLOP) this.pickTower(e.clientX, e.clientY);
+    this.rightOrigin = null;
     this.dragging = false;
     this.leftPending = false;
   };

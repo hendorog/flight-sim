@@ -210,9 +210,26 @@ export interface ApronProps {
   meshes: THREE.Object3D[];
 }
 
+/** The seed of the parked aircraft's choices (createProps and staticParkedSpots must draw the same stream). */
+const PARKED_SEED = 172;
+
+/** The spots createProps parks an aircraft on: the same draws, replayed (the AI traffic parks on the others). */
+export function staticParkedSpots(): ReadonlySet<string> {
+  const r = rng(PARKED_SEED);
+  const player = nedToLocal(PARKING.north, PARKING.east);
+  const taken = new Set<string>();
+  for (const s of PARKING_SPOTS) {
+    if (Math.hypot(s.u - player.u, s.v - player.v) < 1) continue;
+    if (r() > 0.55) continue;
+    taken.add(s.name);
+    r(); r(); r(); r();
+  }
+  return taken;
+}
+
 /** Parked aircraft on about half the apron spots (never the player's spot), plus a fuel truck and a tug. */
 export function createProps(mats: MaterialSet): ApronProps {
-  const r = rng(172);
+  const r = rng(PARKED_SEED);
   const player = nedToLocal(PARKING.north, PARKING.east);
   const placements: { m: THREE.Matrix4; low: boolean; trim: THREE.Color; body: THREE.Color }[] = [];
   for (const s of PARKING_SPOTS) {

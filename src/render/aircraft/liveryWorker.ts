@@ -36,7 +36,29 @@ export async function bakeAircraft(request: AircraftBakeRequest): Promise<{ resu
   return { result, transfer };
 }
 
-self.onmessage = (e: MessageEvent<AircraftBakeRequest>) => {
+/** The circuit traffic's exteriors (render/aircraft/trafficExterior.ts): the livery alone, with its own registration. */
+export interface ExteriorBakeRequest {
+  exterior: true;
+  airframeId: string;
+  registration: string;
+}
+
+export async function bakeExterior(request: ExteriorBakeRequest): Promise<{ result: { textures: FuselageTextureData }; transfer: ArrayBuffer[] }> {
+  const base = await loadAirframeVisual(request.airframeId);
+  const def = { ...base, livery: { ...base.livery, registration: request.registration } };
+  const shapes = createFuselageShapes(def);
+  const d = bakeFuselageData(shapes.outer, shapes.glass, shapes.lining, def);
+  return { result: { textures: d }, transfer: [d.colour.data.buffer, d.detail.data.buffer, d.glass.data.buffer, d.lining.data.buffer] as ArrayBuffer[] };
+}
+
+self.onmessage = (e: MessageEvent<AircraftBakeRequest | ExteriorBakeRequest>) => {
+  if ('exterior' in e.data) {
+    bakeExterior(e.data).then(
+      ({ result, transfer }) => (self as unknown as Worker).postMessage(result, transfer),
+      (why: unknown) => (self as unknown as Worker).postMessage({ error: String(why) }),
+    );
+    return;
+  }
   bakeAircraft(e.data).then(
     ({ result, transfer }) => (self as unknown as Worker).postMessage(result, transfer),
     (why: unknown) => (self as unknown as Worker).postMessage({ error: String(why) }),

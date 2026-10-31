@@ -81,7 +81,7 @@ export function header(parent: HTMLElement, title: string, sub?: string, kicker?
 const TRAINING_KEYS: Record<string, { label: string; keys: string[][] }> = {
   ack: { label: 'Acknowledge / I have control', keys: [['Enter']] },
   handback: { label: 'You have control (hand back)', keys: [['Shift', 'Enter']] },
-  sayAgain: { label: 'Say again', keys: [['R']] },
+  sayAgain: { label: 'Say again', keys: [['R', '0']] },
   showMe: { label: 'Show me', keys: [['[']] },
   card: { label: 'Lesson card', keys: [['Tab']] },
   // The id lesson briefings use (content/validate.ts TRAINING_KEY_IDS); 'card' is the UI's own name.

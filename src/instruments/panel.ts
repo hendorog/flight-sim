@@ -31,7 +31,8 @@ import { ConsoleControl, DigitalTemperature, Hourmeter, PrimerKnob } from './ren
 import { screw } from './render/art';
 import { DirtyRectUploader } from './render/dirtyUpload';
 import { PanelLightComposer } from './render/emissiveCompose';
-import { DEFAULT_TUNING, GpsUnit, NavComRadio, Transponder, type RadioTuning } from './render/avionics';
+import { GpsUnit, NavComRadio, Transponder } from './render/avionics';
+import { radioTuning, type ComRadio, type RadioTuning } from './dynamics/radios';
 import { context2d, LABEL_FONT, makeCanvas, noiseCanvas, rng, type Ctx2D } from './render/canvas';
 import { LIGHT_DIAL_LINEAR, type PanelComponent, type Rect } from './render/component';
 import { AnnunciatorPanel, FlapIndicator, paintBlankPlate, paintEngineControls, paintPlacard, SwitchPanel } from './render/controls';
@@ -103,6 +104,11 @@ export class InstrumentPanel {
    */
   readonly layoutWarnings: readonly string[];
 
+  /** The COM radios fitted: the GPS navigator's and a NAV/COM's, or one or two NAV/COMs (comRadios). */
+  readonly comRadios: ComRadio;
+  /** One course indicator and two NAV receivers: a source switch picks the NAV it shows (cdiSelect). */
+  readonly cdiSelect: boolean;
+
   private readonly def: PanelDef;
   private readonly paintLevers: boolean;
   private readonly g: Ctx2D;
@@ -127,13 +133,15 @@ export class InstrumentPanel {
     const def = opts.def ?? C172S_PANEL;
     const { w, h } = def.size;
     this.def = def;
+    this.comRadios = comRadios(def);
+    this.cdiSelect = cdiSelect(def);
     this.paintLevers = opts.paintLevers ?? false;
     this.layoutWarnings = panelLayoutProblems(def, opts.pxRect);
     for (const w of this.layoutWarnings) console.warn(`[panel ${def.id}] ${w}`);
     this.instruments = new InstrumentSet(opts);
     this.canvas = makeCanvas(w, h);
     this.g = context2d(this.canvas);
-    this.components = buildComponents(def, opts.tuning ?? DEFAULT_TUNING, opts.paintLevers ?? false);
+    this.components = buildComponents(def, opts.tuning ?? radioTuning(), opts.paintLevers ?? false);
     this.background = makeCanvas(w, h);
     paintBackground(context2d(this.background), def, this.components);
     this.g.drawImage(this.background, 0, 0);
@@ -330,11 +338,28 @@ export class InstrumentPanel {
 /** Course on the card of each CDI of the C172S panel while its receiver has no OBS input, degrees (NAV 1, NAV 2). */
 export const CDI_FIXED_COURSES = C172S_PANEL.gauges.flatMap((g) => (g.kind === 'cdi' ? [g.fixedCourseDeg] : []));
 
+/** How many COM radios a panel has: a GPS navigator is COM1 and its NAV/COMs COM2, else the NAV/COMs in order. */
+export function comRadios(def: PanelDef): ComRadio {
+  const navcoms = def.gauges.filter((g) => g.kind === 'navcom').length;
+  return navcoms + (def.gauges.some((g) => g.kind === 'gps') ? 1 : 0) >= 2 ? 2 : 1;
+}
+
+/**
+ * A panel with two NAV receivers (as comRadios counts them) but one CDI or HSI, as the C152 and the DA20: the
+ * indicator shows the NAV its source switch selects (RadioTuning.cdi), lamped on the radio.
+ */
+export function cdiSelect(def: PanelDef): boolean {
+  return comRadios(def) === 2 && def.gauges.filter((g) => g.kind === 'cdi' || g.kind === 'hsi').length === 1;
+}
+
 /**
  * The components of the definition's gauges, in its order (panelParts lists the same rectangles), with the
  * annunciator strip, the switch row and the ignition switches after the dials.
  */
 function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolean): PanelComponent[] {
+  // Without a GPS navigator the first NAV/COM is COM1, the radio the traffic is heard on.
+  const comOne = !def.gauges.some((g) => g.kind === 'gps');
+  const select = cdiSelect(def);
   const dials: PanelComponent[] = [];
   const rest: PanelComponent[] = [];
   for (const g of def.gauges) {
@@ -342,11 +367,11 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
     const k = (def.instrumentScale?.[isLargeGauge(g) ? 'large' : 'small'] ?? 1) * gaugeScale(g);
     if (k !== 1 && gaugeRecess(g, def.apertures) && 'at' in g) {
       const apertures = { large: def.apertures.large / k, small: def.apertures.small / k };
-      const component = buildGauge(g, apertures, tuning, paintLevers);
+      const component = buildGauge(g, apertures, tuning, paintLevers, comOne, select);
       if (def.instrumentBezel && component instanceof RoundGauge) component.setBezelShape(def.instrumentBezel);
       into.push(new ScaledGauge(component, gaugeParts(g, def.apertures, def.instrumentScale)[0].rect, g.at[0], g.at[1], k));
     } else {
-      const component = buildGauge(g, def.apertures, tuning, paintLevers);
+      const component = buildGauge(g, def.apertures, tuning, paintLevers, comOne, select);
       if (def.instrumentBezel && component instanceof RoundGauge) component.setBezelShape(def.instrumentBezel);
       into.push(component);
     }
@@ -362,7 +387,7 @@ function buildComponents(def: PanelDef, tuning: RadioTuning, paintLevers: boolea
   return [...dials, ...rest];
 }
 
-function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: RadioTuning, paintLevers: boolean): PanelComponent {
+function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: RadioTuning, paintLevers: boolean, comOne: boolean, select: boolean): PanelComponent {
   // The glass aperture is the 3D recess's (gaugeRecess), so the artwork and the cockpit cannot disagree.
   const r = gaugeRecess(g, apertures)?.r ?? 0;
   switch (g.kind) {
@@ -393,9 +418,9 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
     case 'vsi':
       return new VerticalSpeedGauge(g.id, g.at[0], g.at[1], r);
     case 'cdi':
-      return new CdiGauge(g.id, g.at[0], g.at[1], r, g.receiver, g.fixedCourseDeg);
+      return new CdiGauge(g.id, g.at[0], g.at[1], r, select ? 'selected' : g.receiver, g.fixedCourseDeg);
     case 'hsi':
-      return new HsiGauge(g.id, g.at[0], g.at[1], r, g.receiver, g.fixedCourseDeg);
+      return new HsiGauge(g.id, g.at[0], g.at[1], r, select ? 'selected' : g.receiver, g.fixedCourseDeg);
     case 'rmi':
       return new RmiGauge(g.id, g.at[0], g.at[1], r);
     case 'clock':
@@ -432,9 +457,9 @@ function buildGauge(g: GaugeDef, apertures: PanelDef['apertures'], tuning: Radio
     case 'eisWindow':
       return new EisWindow(g);
     case 'gps':
-      return new GpsUnit(g.id, g.bounds.x, g.bounds.y, tuning);
+      return new GpsUnit(g.id, g.bounds.x, g.bounds.y, tuning, select);
     case 'navcom':
-      return new NavComRadio(g.id, g.bounds.x, g.bounds.y, tuning);
+      return new NavComRadio(g.id, g.bounds.x, g.bounds.y, tuning, comOne && g.id === 'navcom1' ? 1 : 2, select);
     case 'xpdr':
       return new Transponder(g.id, g.bounds.x, g.bounds.y, tuning);
   }

@@ -31,6 +31,22 @@ import { AIM_POINT, GLIDE_PATH, flapLever, type AutoflightPlan } from './scenari
 
 const RWY = AIRPORT.runway;
 const HALF_LENGTH = RWY.length / 2;
+
+/**
+ * The runway the scripted pilot takes off from and lands on, as a frame: `heading` is the landing (and take-off)
+ * direction, `coords` gives along (+ that way) and across (+ to its right) from the runway centre, so the
+ * threshold is at along = -halfLength. The default is the home field's runway 07; the circuit traffic
+ * (src/atc) flies its own field's runway in use.
+ */
+export interface AutoflightRunway {
+  heading: number;
+  halfLength: number;
+  /** Field elevation MSL, m. */
+  elevation: number;
+  coords(north: number, east: number): { along: number; across: number };
+}
+
+export const HOME_RUNWAY: AutoflightRunway = { heading: RWY.heading, halfLength: HALF_LENGTH, elevation: AIRPORT.elevation, coords: runwayCoords };
 /** Time constant of the drift-angle filter, s. */
 const DRIFT_TAU = 3;
 
@@ -91,9 +107,9 @@ export type AutoflightPhase = 'off' | 'roll' | 'climb' | 'cruise' | 'hold' | 'ap
  * Heading converging onto a line parallel to the runway, `offset` m to its right, flown on `course`.
  * Exported for the Flight School copilot's ground recovery (src/training/copilot); behaviour unchanged.
  */
-export function trackHeading(s: AircraftState, course: number, offset = 0): number {
-  const c = runwayCoords(s.position.x, s.position.y);
-  const along = Math.cos(course - RWY.heading) > 0 ? 1 : -1;
+export function trackHeading(s: AircraftState, course: number, offset = 0, runway: AutoflightRunway = HOME_RUNWAY): number {
+  const c = runway.coords(s.position.x, s.position.y);
+  const along = Math.cos(course - runway.heading) > 0 ? 1 : -1;
   return course - Math.atan2((c.across - offset) * along, 250) * 0.8;
 }
 
@@ -101,9 +117,9 @@ export function trackHeading(s: AircraftState, course: number, offset = 0): numb
  * Rudder (and nosewheel) command holding the runway centreline on the ground, by the centreline law of a
  * profile (default the Cessna 172S's). Exported like trackHeading.
  */
-export function centrelineRudder(s: AircraftState, course: number, law: AutoflightProfile['centreline'] = A.centreline): number {
-  const c = runwayCoords(s.position.x, s.position.y);
-  const along = Math.cos(course - RWY.heading) > 0 ? 1 : -1;
+export function centrelineRudder(s: AircraftState, course: number, law: AutoflightProfile['centreline'] = A.centreline, runway: AutoflightRunway = HOME_RUNWAY): number {
+  const c = runway.coords(s.position.x, s.position.y);
+  const along = Math.cos(course - runway.heading) > 0 ? 1 : -1;
   const desired = course - Math.atan2(c.across * along, law.lookAheadM);
   return clamp(law.headingGain * wrapPi(desired - s.heading) - law.yawRateGain * s.angularVelocity.z, -1, 1);
 }
@@ -145,6 +161,8 @@ export class Autoflight {
   dgOffset = 0;
   /** Flap lever of the take-off. */
   private readonly takeoffFlaps: number;
+  /** The runway taken off from and landed on (set before engaging a take-off or an approach). */
+  runway: AutoflightRunway = HOME_RUNWAY;
 
   /**
    * The scripted pilot of one type: its profile (speeds, laws, ground steering, the controls set as each phase
@@ -195,7 +213,7 @@ export class Autoflight {
         break;
       case 'approach':
         this.phase = 'approach';
-        ap.settings = { ...ap.settings, lateral: 'heading', heading: RWY.heading, vertical: 'verticalSpeed', verticalSpeed: s.verticalSpeed, autothrottle: true, airspeed: plan.kias * KT };
+        ap.settings = { ...ap.settings, lateral: 'heading', heading: this.runway.heading, vertical: 'verticalSpeed', verticalSpeed: s.verticalSpeed, autothrottle: true, airspeed: plan.kias * KT };
         this.phaseControls('approach', c);
         break;
     }
@@ -237,7 +255,7 @@ export class Autoflight {
   adjustAltitude(deltaM: number): number {
     if (Number.isNaN(this.targetAltitude)) return NaN;
     const ap = this.autopilot.settings;
-    ap.altitude = this.helicopter ? ap.altitude + deltaM : Math.max(AIRPORT.elevation + 150, ap.altitude + deltaM);
+    ap.altitude = this.helicopter ? ap.altitude + deltaM : Math.max(this.runway.elevation + 150, ap.altitude + deltaM);
     return ap.altitude;
   }
 
@@ -327,8 +345,8 @@ export class Autoflight {
    * angle), as a pilot flies the departure leg; the plain heading when it is not the runway's.
    */
   private climbOutHeading(s: AircraftState, heading: number): number {
-    if (Math.abs(Math.sin(heading - RWY.heading)) > 0.1) return heading;
-    return trackHeading(s, heading) + this.drift;
+    if (Math.abs(Math.sin(heading - this.runway.heading)) > 0.1) return heading;
+    return trackHeading(s, heading, 0, this.runway) + this.drift;
   }
 
   /** Run one control step (call before every physics step with its dt). */
@@ -366,7 +384,7 @@ export class Autoflight {
           // On the wheels: centreline on the rudder and nosewheel (a castering type: and the brakes); once the
           // ailerons bite, wings level (a pilot's aileron into the crosswind, and the roll the propeller swirl
           // puts in at lift-off).
-          c.rudder = centrelineRudder(s, plan.heading, p.centreline);
+          c.rudder = centrelineRudder(s, plan.heading, p.centreline, this.runway);
           this.differentialBrake(c, s, 0);
           c.aileron = kias > t.aileronAliveKias ? clamp(-2 * s.roll - 0.3 * s.angularVelocity.x, -1, 1) : 0;
           this.autopilot.reset();
@@ -405,10 +423,11 @@ export class Autoflight {
         break;
       case 'approach': {
         if (plan.kind !== 'approach') return;
-        const rc = runwayCoords(s.position.x, s.position.y);
-        const agl = s.altitudeMSL - AIRPORT.elevation - this.restHeight;
-        ap.settings.heading = trackHeading(s, RWY.heading) + this.drift;
-        const toAim = -HALF_LENGTH + AIM_POINT - rc.along;
+        const rw = this.runway;
+        const rc = rw.coords(s.position.x, s.position.y);
+        const agl = s.altitudeMSL - rw.elevation - this.restHeight;
+        ap.settings.heading = trackHeading(s, rw.heading, 0, rw) + this.drift;
+        const toAim = -rw.halfLength + AIM_POINT - rc.along;
         const pathHeight = Math.max(toAim, 0) * Math.tan(GLIDE_PATH);
         ap.settings.vertical = 'verticalSpeed';
         ap.settings.verticalSpeed = -s.groundSpeed * Math.tan(GLIDE_PATH) + 0.1 * (pathHeight - agl);
@@ -420,7 +439,7 @@ export class Autoflight {
       }
       case 'flare': {
         const f = p.flare;
-        const agl = s.altitudeMSL - AIRPORT.elevation - this.restHeight;
+        const agl = s.altitudeMSL - this.runway.elevation - this.restHeight;
         setAllThrottles(c, 0);
         if (p.rollout.reverse) setAllReverse(c, 0);
         if (Number.isNaN(this.flareStartPitch)) {
@@ -428,7 +447,7 @@ export class Autoflight {
           this.flareHeight = Math.max(f.minHeightM, -f.timeS * s.verticalSpeed, agl);
         }
         const touchdownPitch = Math.min(this.flareStartPitch + f.pitchRiseDeg * DEG, f.maxPitchDeg * DEG);
-        ap.settings.heading = trackHeading(s, RWY.heading) + this.drift;
+        ap.settings.heading = trackHeading(s, this.runway.heading, 0, this.runway) + this.drift;
         ap.settings.vertical = 'pitch';
         ap.settings.pitch = this.flareStartPitch + (touchdownPitch - this.flareStartPitch) * clamp(1 - agl / this.flareHeight, 0, 1);
         if (s.wheels[1].onGround || s.wheels[2].onGround) {
@@ -446,7 +465,7 @@ export class Autoflight {
         c.elevator = clamp((s.ias / KT - r.noseHoldKias[0]) / (r.noseHoldKias[1] - r.noseHoldKias[0]), 0, r.noseHoldMax);
         c.aileron = 0;
         c.flaps = 0;
-        c.rudder = centrelineRudder(s, RWY.heading, p.centreline);
+        c.rudder = centrelineRudder(s, this.runway.heading, p.centreline, this.runway);
         c.brakeLeft = c.brakeRight = s.groundSpeed > 1 ? r.brake : 1;
         this.differentialBrake(c, s, c.brakeLeft);
         if (s.groundSpeed < 0.3) {

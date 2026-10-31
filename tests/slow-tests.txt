@@ -59,3 +59,4 @@ tests/training/instructorPilot.demos.test.ts
 tests/training/instructorPilot.test.ts
 tests/training/starts.test.ts
 tests/training/taxiCalls.test.ts
+tests/atc/trafficFlown.test.ts

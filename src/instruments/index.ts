@@ -18,7 +18,7 @@ export {
 } from './dynamics/engineSystems';
 export { ils07, gpsToAirport, type IlsSignal, type GpsData } from './dynamics/navigation';
 export { lagStep, SecondOrder } from './dynamics/filters';
-export { DEFAULT_TUNING, type RadioTuning } from './render/avionics';
+export { DEFAULT_TUNING, type RadioTuning } from './dynamics/radios';
 export type { Rect } from './render/component';
 export {
   PANEL_HOTSPOTS,

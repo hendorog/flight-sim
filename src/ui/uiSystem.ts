@@ -612,6 +612,11 @@ export class UISystem implements Subsystem, MenuHost {
     return !!this.menu?.isOpen;
   }
 
+  /** The menu, a Flight School screen or the crash dialog is up: it has the keys. */
+  get modalOpen(): boolean {
+    return this.menuOpen || !!this.schoolUi?.screen || this.crash.isOpen;
+  }
+
   openMenu(tab?: MenuTab): void {
     // During a lesson the menu opens on the School tab (section 5.9).
     if (!tab && this.schoolUi?.lessonActive) tab = 'school';

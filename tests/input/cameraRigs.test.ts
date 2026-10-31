@@ -80,6 +80,59 @@ describe('tower observer', () => {
     expect(out.position.z).toBeCloseTo(-TOWER_STAND_OFF, 1);
     expect(Math.hypot(out.position.x, out.position.z)).toBeCloseTo(TOWER_STAND_OFF, 6);
   });
+
+  const lookDir = (out: CameraPose): THREE.Vector3 => new THREE.Vector3(0, 0, -1).applyQuaternion(out.quaternion);
+
+  it('follows another aircraft when told, looks round freely on a drag, and comes back to the player on recentre', () => {
+    const rig = new TowerRig({ x: 0, y: 0, z: -20 });
+    const out = makePose();
+    const me = aircraftAt(500, 5, 0);
+    const other = { id: 'G-ABCD', label: 'G-ABCD, a Piper', position: new THREE.Vector3(0, 0, -300), fitSize: 13 };
+    rig.setTargets(() => [other]);
+    rig.activate(null, me);
+    rig.followTarget('G-ABCD');
+    for (let i = 0; i < 300; i++) rig.update(0, 1 / 60, null, me, out);
+    expect(lookDir(out).dot(other.position.clone().sub(out.position).normalize())).toBeGreaterThan(0.9999);
+    expect(rig.watchesAircraft).toBe(false);
+    // A drag to the left turns the view left (from the north toward the west: -x) and holds it there.
+    rig.look(-200, 0);
+    for (let i = 0; i < 60; i++) rig.update(0, 1 / 60, null, me, out);
+    expect(lookDir(out).x).toBeLessThan(-0.05);
+    const held = lookDir(out);
+    other.position.set(100, 0, -300);
+    rig.update(0, 1 / 60, null, me, out);
+    expect(lookDir(out).dot(held)).toBeGreaterThan(0.9999);
+    // Recentre: on the player's aircraft again.
+    rig.recentre();
+    for (let i = 0; i < 300; i++) rig.update(0, 1 / 60, null, me, out);
+    expect(lookDir(out).dot(me.position.clone().sub(out.position).normalize())).toBeGreaterThan(0.9999);
+    expect(rig.watchesAircraft).toBe(true);
+  });
+
+  it('zooms toward the pointer, the direction under it staying under it; over the aircraft it zooms on that', () => {
+    const rig = new TowerRig({ x: 0, y: 0, z: -20 });
+    const out = makePose();
+    const me = aircraftAt(500, 5, 0);
+    rig.activate(null, me);
+    rig.update(0, 1 / 60, null, me, out);
+    const under = (nx: number, ny: number, aspect: number): THREE.Vector3 => {
+      const t = Math.tan((out.fov * Math.PI) / 360);
+      return new THREE.Vector3(nx * t * aspect, ny * t, -1).normalize().applyQuaternion(out.quaternion);
+    };
+    const before = under(0.6, -0.4, 16 / 9);
+    const fov0 = out.fov;
+    rig.zoomAt(4, 0.6, -0.4, 16 / 9);
+    rig.update(0, 1 / 60, null, me, out);
+    expect(out.fov).toBeLessThan(fov0 * 0.6);
+    expect(under(0.6, -0.4, 16 / 9).dot(before)).toBeGreaterThan(0.99999);
+    rig.recentre();
+    for (let i = 0; i < 120; i++) rig.update(0, 1 / 60, null, me, out);
+    const fov = out.fov;
+    rig.zoomAt(3, 0.02, 0.01, 16 / 9);
+    for (let i = 0; i < 120; i++) rig.update(0, 1 / 60, null, me, out);
+    expect(rig.watchesAircraft).toBe(true);
+    expect(out.fov).toBeLessThan(fov * 0.8);
+  });
 });
 
 describe('camera mode switches', () => {
@@ -464,19 +517,40 @@ describe('instrument focus (Q)', () => {
     expect(inner(rig).fov).toBeCloseTo(seen.fov, 4);
   });
 
+  it('centres the view on Q Q pressed quickly', () => {
+    const { cameras, frame } = bootCameras();
+    cameras.setAircraft({ focus: FOCUS });
+    let i = 0;
+    for (; i < 30; i++) frame(i);
+    cameras.lookBy(-300, 120);
+    cameras.zoom(4);
+    for (; i < 120; i++) frame(i);
+    const rig = (cameras as unknown as { cockpit: Inner & { focused: boolean } }).cockpit;
+    expect(Math.abs(rig.yaw)).toBeGreaterThan(0.3);
+    cameras.toggleFocus();
+    frame(i++);
+    frame(i++);
+    cameras.toggleFocus();
+    for (; i < 300; i++) frame(i);
+    expect(rig.focused).toBe(false);
+    expect(rig.yaw).toBeCloseTo(0, 4);
+    expect(rig.pitch).toBeCloseTo(C172S_CAMERA.defaultPitchDeg * DEG, 4);
+    expect(rig.fov).toBeCloseTo(60, 2);
+  });
+
   it('drops the rest of a wheel gesture under way at Q (touchpad kinetic scrolling), not a later one', () => {
     const { cameras, ctx, frame } = bootCameras();
     cameras.setAircraft({ focus: FOCUS });
     const wheel = (deltaY: number): void => (cameras as unknown as { onWheel(e: unknown): void }).onWheel({ deltaY, clientX: 900, clientY: 400, preventDefault() {} });
     let i = 0;
     for (; i < 60; i++) frame(i);
-    // A zoom-out fling: a wheel event every frame, Q, and Q again, while it is still coming.
+    // A zoom-out fling: a wheel event every frame, Q, and Q again (not so quickly as to centre the view), while it is still coming.
     for (; i < 66; i++) { wheel(4); frame(i); }
     cameras.toggleFocus();
-    for (; i < 76; i++) { wheel(4); frame(i); }
+    for (; i < 96; i++) { wheel(4); frame(i); }
     cameras.toggleFocus();
-    for (; i < 90; i++) { wheel(4); frame(i); }
-    for (; i < 240; i++) frame(i);
+    for (; i < 110; i++) { wheel(4); frame(i); }
+    for (; i < 260; i++) frame(i);
     const rig = (cameras as unknown as { cockpit: Inner & { focused: boolean } }).cockpit;
     const back = { fov: rig.fov, yaw: rig.yaw };
     expect(rig.targetFov).toBeCloseTo(back.fov, 4);
