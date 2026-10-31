@@ -782,7 +782,7 @@ export const WEATHER_PAY: Readonly<Record<CareerWeatherId, { mult: number; weigh
  * headwind component along the route (A to B), or refTas - windKt x loopWindFactor (a scenic loop), at least
  * minGsFraction x refTas.
  */
-export const DEADLINE_RULES = { marginMin: 5, roundToMin: 5, loopWindFactor: 0.5, minGsFraction: 0.5 } as const;
+export const DEADLINE_RULES = { marginMin: 15, roundToMin: 5, loopWindFactor: 0.5, minGsFraction: 0.5 } as const;
 
 /** Board layout: the first slots of every board are fixed classes (the cheapest class able to use the field where one cannot). */
 export const BOARD_RULES = {

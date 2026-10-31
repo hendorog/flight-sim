@@ -196,6 +196,21 @@ describe('resume decision and storage', () => {
     expect(decideBoot(snap(fly('runway', 1)), opts).kind).toBe('resume');
   });
 
+  it('resumes a parked snapshot that carries a Career block, and still restarts one without', () => {
+    const parked = snap(fly('apron', 1));
+    expect(decideBoot(parked, opts)).toMatchObject({ kind: 'scenario', scenario: 'apron' });
+    const job = { ...parked, career: { v: 1, jobId: '3-KELM-2', aircraftUid: 'a1', monitor: null } };
+    expect(decideBoot(job, opts)).toMatchObject({ kind: 'resume', snapshot: job });
+    // The usual refusals still come first: crashed, restarted, resume=0.
+    expect(decideBoot({ ...job, status: { ...job.status, crashed: true } }, opts).kind).toBe('normal');
+    expect(decideBoot({ ...job, resume: false }, opts).kind).toBe('scenario');
+    expect(decideBoot(job, { ...opts, param: false }).kind).toBe('normal');
+    // A null block (nothing to resume) is deleted on read, so the parked flight restarts as before.
+    const nulled = parseSnapshot(JSON.stringify({ ...parked, career: null }))!;
+    expect('career' in nulled).toBe(false);
+    expect(decideBoot(nulled, opts)).toMatchObject({ kind: 'scenario', scenario: 'apron' });
+  });
+
   it('ignores corrupt, truncated and old-schema snapshots silently', () => {
     const good = JSON.stringify(base());
     expect(parseSnapshot(good)).not.toBeNull();

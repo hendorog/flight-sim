@@ -26,6 +26,8 @@ export const CARB_ICING_KEY = 'fs.carbIcing';
 export const AIRCRAFT_SWITCH_DROPS = [
   'aircraft', 'scenario', 'lesson', 'phase', 'brief', 'resume',
   'ap', 'hover', 'demo', 'trace', 'config', 'halfp', 'stab', 'run', 'freeze', 'student',
+  // career=1 opens the Career hub; only a Career type switch asks for it again (open: 'career').
+  'career',
 ] as const;
 
 export interface AircraftChoice {
@@ -66,13 +68,18 @@ export function saveAircraftPreference(store: KeyValueStore | null, id: Aircraft
 }
 
 /**
- * The page a change of aircraft reloads into: the current URL without AIRCRAFT_SWITCH_DROPS, plus school=1 when
- * the Flight School is to open after the reload.
+ * The page a change of aircraft reloads into: the current URL without AIRCRAFT_SWITCH_DROPS (career= among them),
+ * plus school=1 when the Flight School is to open after the reload, or career=1 (and no school=) when the Career
+ * is (a type switch from its dispatch page, docs/career.md "Type switch"). Without `open`, school= is kept as given.
  */
-export function aircraftSwitchUrl(href: string, opts: { open?: 'school' } = {}): string {
+export function aircraftSwitchUrl(href: string, opts: { open?: 'school' | 'career' } = {}): string {
   const url = new URL(href);
   for (const k of AIRCRAFT_SWITCH_DROPS) url.searchParams.delete(k);
   if (opts.open === 'school') url.searchParams.set('school', '1');
+  if (opts.open === 'career') {
+    url.searchParams.delete('school');
+    url.searchParams.set('career', '1');
+  }
   return url.toString();
 }
 

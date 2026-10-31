@@ -24,6 +24,7 @@ import { terrainHeight } from '../world/terrain/heightfield';
 import type { StartSpec } from './starts';
 import { startField } from './startField';
 import type { Airfield } from '../world/airfields';
+import type { LoadingRequest } from '../physics/interfaces';
 
 export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 'cruise', 'downwind'];
 
@@ -107,6 +108,12 @@ export interface Scenario {
   start?: StartSpec;
   /** Engage `autoflight` on every reset to this scenario (the Cretaceous safari's hold), as ap=1 does for all. */
   engageAutoflight?: boolean;
+  /**
+   * (Career addition, docs/career.md "Placement") An exact payload for the mass model (src/career/loading.ts: the
+   * pilot and a job's items at their stations, kg and body-axis m). When present it replaces `payload`; absent on
+   * every free-flight and Flight School start, whose loadings stay the definition's named ones.
+   */
+  loading?: LoadingRequest;
 }
 
 /** True airspeed (m/s) for an indicated airspeed (kt) at an altitude MSL (m) in `env`'s atmosphere. */

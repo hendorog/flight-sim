@@ -711,7 +711,7 @@ export class Simulator {
    * Another aircraft (SimCommands.setAircraft; the UI has asked for confirmation): the flight is saved under
    * this type's key, the choice stored, and the page reloaded without the parameters that would undo it.
    */
-  setAircraft(id: AircraftId, opts: { open?: 'school' } = {}): void {
+  setAircraft(id: AircraftId, opts: { open?: 'school' | 'career' } = {}): void {
     this.persist();
     saveAircraftPreference(this.store, id);
     location.replace(aircraftSwitchUrl(location.href, opts));

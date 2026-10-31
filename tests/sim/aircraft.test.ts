@@ -94,6 +94,20 @@ describe('the aircraft of a session', () => {
     expect(aircraftSwitchUrl(href, { open: 'school' })).toBe('https://x.test/index.html?cam=chase&tod=9&school=1');
   });
 
+  it('a Career type switch reopens the Career and not the school; a school switch or a plain one drops career=', () => {
+    const href = 'https://x.test/index.html?aircraft=c152&career=1&school=0&cstore=session&unlock=1';
+    const career = new URL(aircraftSwitchUrl(href, { open: 'career' })).searchParams;
+    expect(career.get('career')).toBe('1');
+    expect(career.has('school')).toBe(false);
+    expect(career.get('cstore')).toBe('session');
+    expect(career.has('aircraft')).toBe(false);
+    const school = new URL(aircraftSwitchUrl(href, { open: 'school' })).searchParams;
+    expect(school.get('school')).toBe('1');
+    expect(school.has('career')).toBe(false);
+    // No open: career= goes, school= stays as given (as before).
+    expect(aircraftSwitchUrl(href)).toBe('https://x.test/index.html?school=0&cstore=session&unlock=1');
+  });
+
   it("a change of aircraft from a helicopter's hover test does not carry the autoflight into the next type", () => {
     // The menu's "Start helicopter hover test" link (Simulator ui.autopilot.helicopter.hoverUrl), then the Caravan chosen:
     // with ap=1 kept, the C208 booted with its autoflight flying the take-off and the throttle keys did nothing.
