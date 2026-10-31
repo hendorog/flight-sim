@@ -57,7 +57,8 @@ export class CaptionBar {
     this.root.addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') e.stopPropagation(); });
   }
 
-  show(c: Caption, safety: boolean, nowS: number): void {
+  /** A new line: into the history and, unless `display` is false (a radio line, shown in RadioCaptions), on the bar. */
+  show(c: Caption, safety: boolean, nowS: number, display = true): void {
     const old = this.log.findIndex(line => line.caption.id === c.id);
     if (old >= 0) this.log.splice(old, 1);
     this.log.push({ caption: c, safety });
@@ -68,6 +69,7 @@ export class CaptionBar {
       el('b', '', row, `${speakerTag(line.caption.actor) || 'FLIGHT'} · ${Math.floor(line.caption.atSim / 60)}:${String(Math.floor(line.caption.atSim % 60)).padStart(2, '0')} `);
       el('span', '', row, line.caption.text);
     }
+    if (!display) return;
     const instructor = c.actor === 'instructor' || c.actor === 'examiner';
     if (instructor) this.lastInstruction = `${speakerTag(c.actor)}: ${c.text}`;
     this.instruction.textContent = this.lastInstruction;
@@ -110,5 +112,58 @@ export class CaptionBar {
 
   get visibleText(): string | null {
     return this.shown ? this.text.textContent : null;
+  }
+}
+
+/** Radio lines kept on screen at once. */
+const RADIO_LINES = 4;
+/** Above the flight cues box at the bottom left, this far, CSS px. */
+const RADIO_GAP_PX = 8;
+
+/**
+ * The radio's captions (tower, ground, ATIS, the traffic and the pilot's own calls): stacked at the bottom left above
+ * the flight cues box, the latest at the bottom, each fading once read, so the panel stays clear.
+ */
+export class RadioCaptions {
+  readonly root: HTMLElement;
+  private lines: { box: HTMLElement; hideAt: number }[] = [];
+  private nextLayout = 0;
+
+  constructor(parent: HTMLElement) {
+    this.root = el('div', 'sc-radio-captions', parent);
+    this.root.setAttribute('role', 'log');
+  }
+
+  show(c: Caption, nowS: number): void {
+    const box = el('div', `sc-caption${c.actor === 'student' ? ' student-line' : ''}`, this.root);
+    const tag = el('em', c.actor, box, speakerTag(c.actor));
+    tag.classList.toggle('hidden', !tag.textContent);
+    el('span', '', box, c.text);
+    this.lines.push({ box, hideAt: nowS + captionHoldS(c.text) + FADE_AFTER_S });
+    while (this.lines.length > RADIO_LINES) this.lines.shift()!.box.remove();
+    this.nextLayout = 0;
+  }
+
+  clear(): void {
+    for (const l of this.lines) l.box.remove();
+    this.lines = [];
+  }
+
+  /** Fade the lines that have been read; keep the stack just above the flight cues box (it grows when opened). */
+  update(nowS: number): void {
+    for (const l of this.lines) if (nowS >= l.hideAt && !l.box.classList.contains('out')) l.box.classList.add('out');
+    const gone = this.lines.filter((l) => nowS >= l.hideAt + 1);
+    if (gone.length) {
+      for (const l of gone) l.box.remove();
+      this.lines = this.lines.filter((l) => !gone.includes(l));
+    }
+    if (nowS < this.nextLayout || !this.lines.length) return;
+    this.nextLayout = nowS + 0.25;
+    const cues = this.root.ownerDocument.querySelector('#fsui .flight-cues');
+    const r = cues?.getBoundingClientRect();
+    const host = this.root.offsetParent?.getBoundingClientRect();
+    const bottom = r && r.height > 0 && host ? Math.round(host.bottom - r.top + RADIO_GAP_PX) : 14;
+    const px = `${bottom}px`;
+    if (this.root.style.bottom !== px) this.root.style.bottom = px;
   }
 }

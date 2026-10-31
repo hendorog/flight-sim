@@ -26,7 +26,7 @@ import { el } from '../dom';
 import { Toasts } from '../overlays';
 import { renderBriefing } from './briefing';
 import { ControlCallout, type CalloutProjector } from './callout';
-import { CaptionBar } from './captions';
+import { CaptionBar, RadioCaptions } from './captions';
 import { checklistItemKeys } from './checklistKeys';
 import { renderDebrief } from './debrief';
 import { InstrumentHighlight } from './highlight';
@@ -72,6 +72,8 @@ export class SchoolUi implements TrainingUiPort {
   private readonly strip: LessonStrip;
   private readonly card: LessonCard;
   private readonly captions: CaptionBar;
+  /** The radio's lines, stacked at the bottom left. */
+  private readonly radio: RadioCaptions;
   private readonly follow: HTMLElement;
   private readonly callout: ControlCallout;
   private readonly taxi: TaxiHud;
@@ -105,6 +107,7 @@ export class SchoolUi implements TrainingUiPort {
     this.strip = new LessonStrip(this.flight);
     this.card = new LessonCard(this.flight);
     this.captions = new CaptionBar(this.flight);
+    this.radio = new RadioCaptions(this.flight);
     this.taxi = new TaxiHud(this.flight);
     this.callout = new ControlCallout(this.flight);
     this.follow = el('div', 'sc-follow hidden', this.flight, 'FOLLOW ME THROUGH');
@@ -224,8 +227,11 @@ export class SchoolUi implements TrainingUiPort {
    * TrainingSystem passes it from the SpeechRequest).
    */
   showCaption(c: Caption, opts: { safety?: boolean } = {}): void {
-    this.captions.show(c, !!opts.safety, performance.now() / 1000);
-    this.captions.root.classList.remove('hidden');
+    // The radio stacks at the bottom left (RadioCaptions); the bar keeps it in its history.
+    const radio = c.channel === 'radio' && !opts.safety;
+    this.captions.show(c, !!opts.safety, performance.now() / 1000, !radio);
+    if (radio) this.radio.show(c, performance.now() / 1000);
+    else this.captions.root.classList.remove('hidden');
   }
 
   setHighlight(ids: readonly InstrumentId[]): void {
@@ -337,6 +343,7 @@ export class SchoolUi implements TrainingUiPort {
     // caption above the panel, including its history button, rather than the 3D coaming's overlap.
     const fixedTop = this.view?.panelTop?.() ?? null;
     this.captions.update(now / 1000, this.current || fixedTop !== null ? null : glareshieldY(this.view));
+    this.radio.update(now / 1000);
     if (this.card.visible) {
       const top = Math.ceil(this.strip.root.getBoundingClientRect().bottom + 8);
       this.card.root.style.top = `${top}px`;
