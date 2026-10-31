@@ -292,6 +292,14 @@ export interface ActiveJob {
   playerWeather: WeatherSettings;
   /** Set when the runtime has ended the job (crash, outlanding) and settlement waits for the player's Debrief or Hub choice. */
   pendingReport?: JobFlightReport;
+  /**
+   * (contract addition, 1c) Money already committed on this job and settled with it (src/career/economy.ts), whole $:
+   * fuel bought at dispatch and at stops (surcharges included, = LoadSheet.fuelCost summed), defuel credit at
+   * dispatch (= LoadSheet.defuelCredit), and landing fees at stops. The CareerSystem adds to it at Accept and at a
+   * stop's refuel. Absent: the settlement prices the dispatch uplift or defuel as the difference between `fuelKg`
+   * and the fleet entry's fuel (which stays at its pre-job figure until settlement) at the origin.
+   */
+  charges?: { fuelUsd: number; defuelCreditUsd: number; stopFeesUsd: number };
 }
 
 // --------------------------------------------------------------------------------------------- load sheet
@@ -321,7 +329,7 @@ export interface LoadSheet {
   zeroFuelKg: number;
   fuelKg: number;
   takeoffKg: number;
-  /** Take-off mass less trip and taxi fuel. */
+  /** Take-off mass less the climb, trip and taxi fuel. */
   landingKg: number;
   mtowKg: number;
   mlwKg: number;

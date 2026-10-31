@@ -5,6 +5,7 @@ tests/aircraft/importOrder.test.ts
 tests/aircraft/pa34.test.ts
 tests/aircraft/pc12.test.ts
 tests/aircraft/variants.test.ts
+tests/career/perfCalibration.test.ts
 tests/conformance/c208.test.ts
 tests/conformance/pa34.test.ts
 tests/conformance/pc12.test.ts
