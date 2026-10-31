@@ -342,6 +342,9 @@ export class Simulator {
       const explicit = p.explicitScenario || !!p.school.lesson || !!demoId || (p.helicopterHover && !!def.rotorcraft) || p.career.open === false;
       careerPlan = careerBootPlan(cs.current, stored, id, { explicit, open: p.career.open === true, resume: p.resume, worldSeed: worldSeed() }, p.career.store);
       if (careerPlan.deleteBlock && stored) delete stored.career;
+    } else if (stored) {
+      // No Career in this era: a block from another era's snapshot is dropped (decideBoot refuses that snapshot anyway).
+      delete stored.career;
     }
     const resumeParam = careerPlan?.resumeParam ?? p.resume;
     // Resume the last flight (a reload), or start the URL's (or the remembered) scenario.

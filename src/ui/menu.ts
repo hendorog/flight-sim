@@ -3,8 +3,8 @@
 //
 // The Career (docs/career.md "Integration"; MenuHost.career, absent outside it): a Career button beside Open Flight
 // School, hidden where the school is. While a job is in progress, everything here that would end it (a scenario, an
-// airfield start, another aircraft, era or seed, the Flight School) first asks "Abandon the job?" as it does for a
-// lesson, and abandons it on yes. With no link nothing changes.
+// airfield start, an R22 demonstration, another aircraft, era or seed, the Flight School from either tab) first asks
+// "Abandon the job?" as it does for a lesson, and abandons it on yes. With no link nothing changes.
 
 import { SAFARI as SAFARI_START } from '../world/era/cretaceousAnchors';
 import { R22_DEMOS, DEMO_TITLES, type R22DemoId } from '../sim/rotorcraft/flights';
@@ -323,25 +323,36 @@ export class PauseMenu {
     const schoolRow = el('div', 'chips', p);
     const openSchool = el('button', '', schoolRow, 'Open Flight School');
     const openCareer = el('button', '', schoolRow, 'Career');
-    // A lesson would end a Career job: ask before the school opens.
+    // A lesson or an R22 demonstration would end a Career job: ask before either starts.
     const schoolConfirm = el('div', 'sc-confirm hidden', p);
-    el('span', '', schoolConfirm, 'Abandon the job and open the Flight School? The job ends with no pay.');
+    const schoolConfirmText = el('span', '', schoolConfirm);
     const keepJob = el('button', '', schoolConfirm, 'Keep the job');
     keepJob.addEventListener('click', () => schoolConfirm.classList.add('hidden'));
     const leaveJob = el('button', 'danger', schoolConfirm, 'Abandon');
+    let pendingLeave: (() => void) | null = null;
+    /** Run `go` at once, or (a Career job in progress) after "Abandon the job and `what`?" is answered yes. */
+    const askJob = (what: string, go: () => void): void => {
+      if (!this.host.career?.jobActive()) {
+        go();
+        return;
+      }
+      pendingLeave = go;
+      schoolConfirmText.textContent = `Abandon the job and ${what}? The job ends with no pay.`;
+      schoolConfirm.classList.remove('hidden');
+    };
     const toSchool = (): void => {
       this.host.close();
       this.host.school?.command({ kind: 'openHome' });
     };
     leaveJob.addEventListener('click', () => {
       schoolConfirm.classList.add('hidden');
+      const go = pendingLeave;
+      pendingLeave = null;
+      if (!go) return;
       this.host.career?.abandon();
-      toSchool();
+      go();
     });
-    openSchool.addEventListener('click', () => {
-      if (this.host.career?.jobActive()) schoolConfirm.classList.remove('hidden');
-      else toSchool();
-    });
+    openSchool.addEventListener('click', () => askJob('open the Flight School', toSchool));
     openCareer.addEventListener('click', () => {
       this.host.close();
       this.host.career?.open();
@@ -358,7 +369,7 @@ export class PauseMenu {
       for (const id of R22_DEMOS) {
         const b = el('button', '', demos, DEMO_TITLES[id]);
         b.dataset.demo = id;
-        b.addEventListener('click', () => { this.host.close(); this.host.r22Demos?.start(id); });
+        b.addEventListener('click', () => askJob(`watch the demonstration (${DEMO_TITLES[id]})`, () => { this.host.close(); this.host.r22Demos?.start(id); }));
       }
     }
     el('h3', '', p, 'Scenario');
@@ -798,16 +809,37 @@ export class PauseMenu {
   }
 
   // ------------------------------------------------------------------------------------------------
-  /** The Flight School tab: filled by the school itself each time it is shown (section 5.6). */
+  /**
+   * The Flight School tab: filled by the school itself each time it is shown (section 5.6). While a Career job is
+   * in progress (and no lesson) it holds only "Abandon the job?" instead: the school's own buttons open its home and
+   * briefings, from which a lesson starts and would end the job unasked.
+   */
   private buildSchool(card: HTMLElement): HTMLElement {
     const p = el('section', 'hidden', card);
     this.refreshers.push(() => {
       if (this.tab !== 'school') return;
       const link = this.host.school;
-      if (link) link.renderMenuPage(p, () => this.host.close());
+      if (link && !link.lessonActive && this.host.career?.jobActive()) this.schoolJobPage(p, link);
+      else if (link) link.renderMenuPage(p, () => this.host.close());
       else p.replaceChildren();
     });
     return p;
+  }
+
+  /** The School tab during a Career job: the job must be abandoned before the Flight School opens. */
+  private schoolJobPage(p: HTMLElement, link: SchoolMenuLink): void {
+    p.replaceChildren();
+    el('h2', '', p, 'Flight School');
+    el('p', 'sub', p, 'A Career job is in progress. The Flight School ends it: abandoned, with no pay.');
+    const row = el('div', 'chips', p);
+    const keep = el('button', 'primary', row, 'Keep the job');
+    keep.addEventListener('click', () => this.host.close());
+    const leave = el('button', 'danger', row, 'Abandon the job and open the Flight School');
+    leave.addEventListener('click', () => {
+      this.host.career?.abandon();
+      this.host.close();
+      link.command({ kind: 'openHome' });
+    });
   }
 
   // ------------------------------------------------------------------------------------------------

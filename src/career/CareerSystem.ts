@@ -249,12 +249,21 @@ export class CareerSystem implements Subsystem {
   /** A placed job is in progress (not yet ended): the menu confirms before anything that would end it. */
   jobActive(): boolean {
     const j = this.save?.active;
-    return !!j && j.placed && !j.pendingReport;
+    return !!j && j.placed && !j.pendingReport && !this.unwatched();
+  }
+
+  /**
+   * An explicit start (scenario=, lesson=, demo=, career=0) booted past the Career and no monitor watches its job:
+   * the flight is not the job's, so the crash dialog, Shift+R, the menu, the snapshots and the radio behave as in
+   * free flight until the Career is opened again (reconcileOrphan).
+   */
+  private unwatched(): boolean {
+    return !!this.plan?.explicit && !this.monitor && !this.placing;
   }
 
   /** A placed job is active (the shell keeps writing snapshots while it is, even with the resume preference off). */
   jobPlaced(): boolean {
-    return !!this.save?.active?.placed;
+    return !!this.save?.active?.placed && !this.unwatched();
   }
 
   /** Today's board at the selected aircraft's field (empty without a career, an aircraft or in another world). */
@@ -284,7 +293,7 @@ export class CareerSystem implements Subsystem {
    */
   radioIdentity(): { registration: string; icaoType: string; callsign: string | null } | null {
     const s = this.save;
-    if (!s || this.inLesson()) return null;
+    if (!s || this.inLesson() || this.unwatched()) return null;
     const uid = s.active?.aircraftUid ?? (s.inCareer ? s.selectedUid : null);
     const ac = s.fleet.find((a) => a.uid === uid);
     if (!ac || ac.type !== this.bootedType) return null;
@@ -298,7 +307,7 @@ export class CareerSystem implements Subsystem {
   /** The placed job's destination field (null: no job, one waiting for another type, a site, or a field this world lacks). */
   destination(): Airfield | null {
     const j = this.save?.active;
-    const d = j?.placed && !j.pendingReport ? j.offer.destination : undefined;
+    const d = j?.placed && !j.pendingReport && !this.unwatched() ? j.offer.destination : undefined;
     return d?.kind === 'field' ? fieldByCode(d.code, this.fields()) ?? null : null;
   }
 
@@ -484,6 +493,8 @@ export class CareerSystem implements Subsystem {
 
   /** A placed job nobody watches (an explicit start booted past it, or an import): reconciled when the Career opens. */
   private reconcileOrphan(): void {
+    // Opening the Career takes the session back from the explicit start: its jobs and radio identity count again.
+    if (this.plan?.explicit && !this.inLesson()) this.plan = { ...this.plan, explicit: false };
     const j = this.save?.active;
     // Never during a lesson: a re-placement would end it (the hub refuses to act then anyway).
     if (!j || !j.placed || j.pendingReport || this.monitor || this.placing || !this.worldOk() || this.inLesson()) return;
@@ -1138,7 +1149,7 @@ export class CareerSystem implements Subsystem {
   crashActions(reason: string): CrashAction[] | 'none' | null {
     void reason;
     const j = this.save?.active;
-    if (!j || !j.placed || this.inLesson()) return null;
+    if (!j || !j.placed || this.inLesson() || this.unwatched()) return null;
     return [
       { label: 'Debrief', primary: true, keys: ['Enter', 'NumpadEnter'], run: () => this.command({ kind: 'settlePending', then: 'debrief' }) },
       { label: 'Career hub', run: () => this.command({ kind: 'settlePending', then: 'hub' }) },

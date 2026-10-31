@@ -606,6 +606,13 @@ describe('CareerSystem: boot follow-ups', () => {
     // A placed job nobody watches (an explicit start booted past it): opening the hub mid-lesson leaves it be.
     const x = new Host('c152', placedJob('c152'));
     await x.system.afterBoot({ resumed: null, plan: careerBootPlan(x.save, null, 'c152', { ...URL0, explicit: true }, 'local') });
+    // Until the Career is opened again the flight is not the job's: no confirm, no Career crash dialog, no snapshots
+    // kept for it, the radio and GPS as in free flight.
+    expect(x.system.jobActive()).toBe(false);
+    expect(x.system.jobPlaced()).toBe(false);
+    expect(x.system.crashActions('impact')).toBeNull();
+    expect(x.system.radioIdentity()).toBeNull();
+    expect(x.system.destination()).toBeNull();
     x.lesson = true;
     x.system.open('hub');
     expect(x.startFroms).toEqual([]);
