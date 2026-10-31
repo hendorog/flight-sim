@@ -22,6 +22,12 @@
 // control widget forced visible while the instructor flies ("follow me through"), the menu's School tab,
 // and the first-flight hints suppressed once a training profile exists. `crashActions` lets the school
 // replace the crash dialog's buttons during a lesson.
+//
+// Career (docs/career.md "Integration"): its pages mount on the same layer (src/career/ui) and attachCareer() links
+// them in: a Career page open is modal exactly as a school screen is (no cues, HUD, checklist key, cockpit clicks;
+// modalOpen true, so the radio keys stand down), the HUD moves below the job strip while it shows, and the menu
+// gets the Career button and the "Abandon the job?" confirmations. ask() is a small yes/no card on the crash
+// dialog's scrim (the Career's "Abandon the job?" before Shift+R). With no link attached nothing here changes.
 
 import { HailDamageToasts, HailToasts } from './hudCues';
 import type { R22DemoId } from '../sim/rotorcraft/flights';
@@ -46,6 +52,8 @@ import { FieldGuide } from './fieldGuide';
 import { sightingToastText } from '../world/fauna/fieldGuideData';
 import { CrashDialog, FpsMeter, HintsCard, LoadingScreen, Toasts, type CrashAction } from './overlays';
 import type { SchoolUi } from './school/schoolUi';
+import type { CareerMenuLink, CareerModalLink } from '../career/types';
+import { CAREER_STRIP_CLEARANCE } from '../career/ui/strip';
 import { Annunciators, ControlsWidget, type WidgetAircraft, type YokeSource } from './status';
 import { UI_CSS } from './styles';
 import { ChecklistPanel } from './checklist';
@@ -181,6 +189,9 @@ export class UISystem implements Subsystem, MenuHost {
   /** Mount point of the Flight School UI (see the header). */
   readonly schoolLayer: HTMLDivElement;
   private schoolUi: SchoolUi | null = null;
+  /** The Career's modal link and menu link (attachCareer); null: no Career. */
+  private careerModal: CareerModalLink | null = null;
+  private careerMenu: CareerMenuLink | null = null;
   private yokeSource: (() => YokeSource) | null = null;
   /**
    * During a lesson the school can replace the crash dialog: an action set (the lesson crash panel), or
@@ -302,7 +313,7 @@ export class UISystem implements Subsystem, MenuHost {
 
   /** A double-click belongs to the panel/UI, or a pilot other than the user is flying. */
   blocksMouseFlight(clientX: number, clientY: number, gesture: 'toggle' | 'move'): boolean {
-    return !!(this.menu?.isOpen || this.crash.isOpen || this.schoolUi?.screen || this.fixedPanel?.contains(clientX, clientY) || this.clicks?.controlAt(clientX, clientY) ||
+    return !!(this.menu?.isOpen || this.crash.isOpen || this.schoolUi?.screen || this.careerScreen || this.fixedPanel?.contains(clientX, clientY) || this.clicks?.controlAt(clientX, clientY) ||
       gesture === 'toggle' && (this.demoFlying || this.schoolUi?.followMeThrough || this.schoolUi?.instructorFlying));
   }
 
@@ -332,14 +343,14 @@ export class UISystem implements Subsystem, MenuHost {
 
     const menuOpen = !!this.menu?.isOpen;
     const school = this.schoolUi;
-    // A school screen (home, briefing, debrief...) is modal like the menu: no flight cues over it.
-    const schoolModal = !!school?.screen;
+    // A school screen (home, briefing, debrief...) or a Career page is modal like the menu: no flight cues over it.
+    const schoolModal = !!school?.screen || this.careerScreen;
     if (school) school.update(dt);
     this.checklist.update(ctx, menuOpen || schoolModal || this.crash.isOpen);
     this.flightCues.update(ctx.state, menuOpen || schoolModal || this.crash.isOpen);
     const showHud = !this.demoFlying && this.hudOn && ctx.cameraMode !== 'cockpit' && !menuOpen && !schoolModal;
     this.hud.visible = showHud;
-    this.hud.topOffset = school?.stripVisible ? STRIP_CLEARANCE : 0;
+    this.hud.topOffset = school?.stripVisible ? STRIP_CLEARANCE : this.careerModal?.stripVisible?.() ? CAREER_STRIP_CLEARANCE : 0;
     if (showHud) this.hud.update(dt, ctx);
     // Cockpit (or HUD off): the HUD's annunciations still matter.
     const showAnnunc = !showHud && !menuOpen && !schoolModal;
@@ -434,6 +445,36 @@ export class UISystem implements Subsystem, MenuHost {
 
   get school(): SchoolMenuLink | null {
     return this.schoolUi;
+  }
+
+  /**
+   * Wire the Career's pages in (see the header): `modal` makes a Career page modal, `menu` gives the menu its
+   * Career button and job confirmations. Call once, after init(); nulls detach.
+   */
+  attachCareer(modal: CareerModalLink | null, menu: CareerMenuLink | null = null): void {
+    this.careerModal = modal;
+    this.careerMenu = menu;
+    this.menu?.refresh();
+  }
+
+  /** The Career's menu link (MenuHost.career), or null. */
+  get career(): CareerMenuLink | null {
+    return this.careerMenu;
+  }
+
+  /** A Career page is open (modal). */
+  private get careerScreen(): boolean {
+    return !!this.careerModal?.screenOpen();
+  }
+
+  /**
+   * A yes/no question on the crash dialog's card: `question` as its title and `detail` (a sentence, no full stop)
+   * under it, `actions` beside the primary `keepLabel` button, which (as Escape and Enter) closes it and does
+   * nothing. Keys go to the card while it is up.
+   */
+  ask(question: string, detail: string, actions: { label: string; run: () => void }[], keepLabel = 'Cancel'): void {
+    this.menu?.close();
+    this.crash.openWith(detail, [{ label: keepLabel, primary: true, keys: ['Enter', 'NumpadEnter'], run: () => {} }, ...actions], question);
   }
 
   private get automated(): boolean {
@@ -612,9 +653,9 @@ export class UISystem implements Subsystem, MenuHost {
     return !!this.menu?.isOpen;
   }
 
-  /** The menu, a Flight School screen or the crash dialog is up: it has the keys. */
+  /** The menu, a Flight School screen, a Career page or the crash dialog is up: it has the keys. */
   get modalOpen(): boolean {
-    return this.menuOpen || !!this.schoolUi?.screen || this.crash.isOpen;
+    return this.menuOpen || !!this.schoolUi?.screen || this.careerScreen || this.crash.isOpen;
   }
 
   openMenu(tab?: MenuTab): void {
@@ -701,12 +742,12 @@ export class UISystem implements Subsystem, MenuHost {
     const target = e.target;
     const typing = target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement);
     // Shift+F steps through the lists while the checklist is open (it feathers a propeller only while it is closed).
-    if (e.code === this.hotkeys.checklist && e.shiftKey && this.checklist.isOpen && !typing && !e.ctrlKey && !e.altKey && !e.metaKey && !this.menuOpen && !this.schoolUi?.screen && !this.crash.isOpen) {
+    if (e.code === this.hotkeys.checklist && e.shiftKey && this.checklist.isOpen && !typing && !e.ctrlKey && !e.altKey && !e.metaKey && !this.menuOpen && !this.schoolUi?.screen && !this.careerScreen && !this.crash.isOpen) {
       e.preventDefault(); e.stopImmediatePropagation();
       if (!e.repeat) this.checklist.step();
       return;
     }
-    if (e.code === this.hotkeys.checklist && !typing && !e.shiftKey && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey && !this.schoolUi?.screen && !this.crash.isOpen) {
+    if (e.code === this.hotkeys.checklist && !typing && !e.shiftKey && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey && !this.schoolUi?.screen && !this.careerScreen && !this.crash.isOpen) {
       e.preventDefault(); e.stopImmediatePropagation();
       if (this.menuOpen) { this.closeMenu(); this.showChecklist(); }
       else { this.hints.hide(); this.checklist.toggle(); }
@@ -733,8 +774,8 @@ export class UISystem implements Subsystem, MenuHost {
 
   private readonly onKey = (e: KeyboardEvent): void => {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || !this.context) return;
-    // School screens take their own keys (they capture them before this listener while open).
-    if (this.schoolUi?.screen) return;
+    // School screens and Career pages take their own keys (they capture them before this listener while open).
+    if (this.schoolUi?.screen || this.careerScreen) return;
     const h = this.hotkeys;
     if (e.code === h.menu) this.openMenu();
     else if (e.code === h.hud) this.toggleHud();

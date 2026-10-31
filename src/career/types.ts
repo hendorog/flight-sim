@@ -657,6 +657,11 @@ export interface CareerBootPlan {
   /** Pass `explicitScenario: true` to training.afterBoot (the Career takes the boot: no school home or welcome card). */
   trainingExplicit: boolean;
   action: CareerBootAction;
+  /**
+   * (contract addition, 3a) The URL made an explicit start (scenario=, lesson=, demo=, hover=, career=0): afterBoot
+   * leaves a placed job that did not resume alone until the next Career open. Absent: false.
+   */
+  explicit?: boolean;
 }
 
 // --------------------------------------------------------------------------------------------- UI contract
@@ -747,6 +752,8 @@ export interface CareerMenuLink {
 /** The Career's link to UISystem (attachCareer): a Career page open makes the UI modal (radio keys, checklist, HUD, cues off). */
 export interface CareerModalLink {
   screenOpen(): boolean;
+  /** (contract addition, 3b) The job strip shows on screen: UISystem moves the HUD's top-centre elements below it. */
+  stripVisible?(): boolean;
 }
 
 // --------------------------------------------------------------------------------------------- rule tables

@@ -7,11 +7,15 @@
 // Tab turns it to the NAV page: the nearby ILSs and VORs, the NAV flip-flop and which NAV receiver is tuned.
 // Readbacks (step 4): a clearance from the tower or ground puts its readback first in the Space menu; one that
 // must be read back and is not, within READBACK_S, brings a prompt. "Say again" has the last message repeated.
+// The Career (docs/career.md "Integration") may name the airframe: RadioDeps.identity, when it answers, gives the
+// registration and ICAO type the calls use (the authority stays the school's); absent or null, every phrase is as
+// before. RadioDeps.destination (the job's field) is kept for the destination phrasing of a later stage.
 
 import type { SimContext, Subsystem } from '../core/context';
 import { Priority, type ActorId } from '../training/types';
 import type { TrainingSystem } from '../training/TrainingSystem';
 import type { InstrumentReadings } from '../instruments/dynamics/instrumentSet';
+import type { Airfield } from '../world/airfields';
 import { HOME_GROUND, radioTuning, selectCdi, selectMic, setTransmitting, stationOn, stations, swapCom, swapNav, tuneCom, tuneNav, type ComRadio, type Station } from '../instruments/dynamics/radios';
 import { emptyNavSignal, navaids, receiveNav } from '../instruments/dynamics/navigation';
 import { RadioMenu, type RadioMenuItem } from '../ui/radioMenu';
@@ -62,6 +66,14 @@ export interface RadioDeps {
   blocked?: () => boolean;
   /** The home tower's sequencing answer to a call (TrafficSystem.towerReply); null: calls.ts replyTo answers. */
   towerReply?: (call: CallId, intent?: Intent) => TowerReply | null;
+  /**
+   * Who the aircraft is on the radio instead of the school's identity (the Career's airframe), consulted first:
+   * its registration and ICAO type replace the school's. `callsign` (a company callsign, "Fable 12") is carried for
+   * the Career's phrasing stage and not used yet. Absent or null: the school's identity, every phrase unchanged.
+   */
+  identity?: () => { registration: string; icaoType: string; callsign: string | null } | null;
+  /** The Career job's destination field (null: none); kept for the 'leaving' and 'inbound' phrasing stage. */
+  destination?: () => Airfield | null;
 }
 
 interface TuneItem extends RadioMenuItem {
@@ -162,8 +174,15 @@ export class RadioSystem implements Subsystem {
     return d <= radioRange(st.altitudeAGL) ? station : null;
   }
 
-  private situationNow(station: Station): RadioSituation {
+  /** The identity the calls use: the school's, with the Career's registration and type when it names the airframe. */
+  private identity(): { authority: ReturnType<TrainingSystem['radioIdentity']>['authority']; registration: string; icaoType: string } {
     const id = this.deps.training.radioIdentity();
+    const over = this.deps.identity?.() ?? null;
+    return over ? { authority: id.authority, registration: over.registration, icaoType: over.icaoType } : id;
+  }
+
+  private situationNow(station: Station): RadioSituation {
+    const id = this.identity();
     const st = this.ctx.state;
     const w = this.ctx.weather;
     return {

@@ -3,13 +3,12 @@
 // exactly as the CareerSystem wires it, and small scripted pilots to start the engine, fly a circuit and set a
 // helicopter down. No DOM, no curtain: placements happen at once, between frames.
 //
-// PLACEMENT. As src/career/placement.ts will (2a, written in parallel; this host builds its own): setStartField
-// (null at home) and buildScenario('apron' | 'runway' | 'final') for the type, the fuel as `ic.fuelFraction`, and
-// the job's loading (src/career/loading.ts loadingFor) as `loading` on the scenario. Until 2a's SimPhysics hook
-// reads `Scenario.loading`, resetTo ignores that field and flies the 'typical' loading; the monitor does not care
-// about the mass. Every placement emits the 'reset' SimEvent with lessonId 'career:<jobId>' (SimPhysics itself
-// emits none: the Simulator's startFrom does), which the monitor takes as its own (re)placement; foreignReset()
-// emits one without it.
+// PLACEMENT. The stand is src/career/placement.ts's own (placementScenario: setStartField, the 'apron' scenario,
+// the job's loading as Scenario.loading and the fuel fraction of the definition's tanks); 'runway' and 'final'
+// (which the Career never uses: a taxi or an approach the host does not fly) are buildScenario's at the field with
+// the same loading (placement.ts careerLoading) and fuel fraction. Every placement emits the 'reset' SimEvent with
+// lessonId 'career:<jobId>' (SimPhysics itself emits none: the Simulator's startFrom does), which the monitor takes
+// as its own (re)placement; foreignReset() emits one without it.
 //
 // FRAME LOOP (frame()): the pilot (if any) acts, the physics advances FRAME_DT of sim time in whole fixed steps
 // (touchdown and crash events step-exact from inside them), then the monitor updates with the same dt.
@@ -29,7 +28,7 @@
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import { activeFrame } from '../../src/atc/calls';
 import { CIRCUIT_HEIGHT, circuitPath, legPosition, legTrack, turnLead, type CircuitPath } from '../../src/atc/circuit';
-import { loadingFor } from '../../src/career/loading';
+import { careerLoading, placementScenario, usableFuelKgOf } from '../../src/career/placement';
 import { JobMonitor, monitorAircraftOf, type JobMonitorEvent, type JobSources } from '../../src/career/runtime/monitor';
 import { assignStations } from '../../src/career/stations';
 import { CAREER_RESET_PREFIX, type CareerAircraftId, type JobOffer, type OfferItem } from '../../src/career/types';
@@ -128,14 +127,15 @@ export class HeadlessJob {
 
   /** The Career's placement scenario at a field (see the header). */
   scenario(id: ScenarioId, f: Airfield, fuelFraction: number): Scenario {
+    const items = assignStations(this.opts.offer.payload as OfferItem[], this.opts.type);
+    const loading = careerLoading(this.opts.def, items.ok ? items.items : []);
+    if (id === 'apron') {
+      const fuelKg = fuelFraction * usableFuelKgOf(this.opts.def);
+      return placementScenario({ field: f.code, loading, fuelKg, jobId: this.opts.offer.id }, this.opts.def, this.physics.env, this.fields);
+    }
     setStartField(f.kind === 'home' ? null : f.code);
     const sc = buildScenario(id, this.physics.env, this.opts.def);
-    const items = assignStations(this.opts.offer.payload as OfferItem[], this.opts.type);
-    const loading = loadingFor(this.opts.type, items.ok ? items.items : []);
-    // `loading` is 2a's Scenario field (contract: docs/career.md "Placement"); spread in so this compiles before it lands.
-    const placed: Scenario & { loading?: unknown } = { ...sc, title: `${f.name} (${f.code}), job ${this.opts.offer.id}`, ic: { ...sc.ic, fuelFraction } };
-    placed.loading = loading;
-    return placed;
+    return { ...sc, title: `${f.name} (${f.code}), job ${this.opts.offer.id}`, loading, ic: { ...sc.ic, fuelFraction } };
   }
 
   /** Place the aircraft (cold at the stand, lined up, or on final) and tell the monitor (unless `silent`). */
@@ -184,8 +184,18 @@ export class HeadlessJob {
 
 // ------------------------------------------------------------------------------------------------ pilots
 
+/** What the pilots fly: a HeadlessJob, or the CareerSystem's own test host (tests/career/system.test.ts). */
+export interface PilotHost {
+  readonly physics: SimPhysics;
+  readonly state: AircraftState;
+  readonly controls: ControlInputs;
+  readonly opts: { readonly def: AircraftDefinition };
+  /** Frames for up to `seconds`, stopping early when `until` holds; returns the time run, s. */
+  run(seconds: number, until?: (host: PilotHost) => boolean): number;
+}
+
 /** Start a piston aeroplane's engine at the stand (see the header). Returns the sim seconds it took, or NaN if it never ran. */
-export function startPiston(job: HeadlessJob): number {
+export function startPiston(job: PilotHost): number {
   const c = job.controls;
   Object.assign(c, { masterBattery: true, mixture: 1, throttle: 0.1, magnetos: 3, fuelSelector: 'both', fuelPump: true });
   job.run(3);
@@ -224,7 +234,7 @@ export class CircuitPilot {
   private drift = 0;
   private stoppedS = 0;
 
-  constructor(readonly job: HeadlessJob, readonly f: Airfield) {
+  constructor(readonly job: PilotHost, readonly f: Airfield) {
     this.path = circuitPath(f, 0);
   }
 
