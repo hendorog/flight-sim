@@ -499,6 +499,7 @@ export function keyBindingsFor(profile: InputProfile): { keys: string; action: s
     { keys: 'Drag', action: 'Orbit the aircraft (orbit camera)', category: 'View' },
     { keys: 'Mouse wheel', action: 'Zoom / camera distance', category: 'View' },
     { keys: 'Middle click', action: 'Recentre view', category: 'View' },
+    { keys: 'Click an aircraft', action: 'Tower view: follow it (right-click with the mouse yoke on); drag looks round, middle click back to yours', category: 'View' },
   );
   const order = ['Flight controls', 'Brakes', 'Engine', 'Switches', 'Lights', 'Instruments', 'View', 'Simulation'];
   return rows.sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));

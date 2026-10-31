@@ -33,7 +33,8 @@ import type { AirframeVisualDef } from '../render/aircraft/airframe/types';
 import { TrafficExterior } from '../render/aircraft/trafficExterior';
 import { TrafficPilot } from './trafficPilot';
 import { quat } from '../core/math';
-import { applyPose } from '../core/frames';
+import { applyPose, nedToThree } from '../core/frames';
+import type { TowerTarget } from '../render/cameras/towerRig';
 import { HOME_GROUND } from '../instruments/dynamics/radios';
 import { generatedAirfields, HOME_AIRFIELD, type Airfield } from '../world/airfields';
 import { localHeading, localToNed, type NedXY, type ParkingSpot } from '../world/airport/layout';
@@ -124,6 +125,7 @@ const TYPES: readonly { id: AircraftId; icao: TrafficType }[] = [
   { id: 'pa38', icao: 'PA38' },
   { id: 'da20', icao: 'DA20' },
 ];
+const TYPE_NAMES: Record<TrafficType, string> = { C172: 'Cessna 172', C152: 'Cessna 152', PA38: 'Piper Tomahawk', DA20: 'Diamond DA20' };
 const TRIMS = [0x1d4f9c, 0xb3261e, 0x1f7a3a, 0x2b2b2b, 0xd08a12, 0x6a2c91, 0x0f7c86, 0x8a1c3c];
 
 /** What a home-field aircraft is doing. */
@@ -266,6 +268,24 @@ export class TrafficSystem implements Subsystem {
     return this.aircraft;
   }
 
+  private readonly targetCache = new Map<string, TowerTarget>();
+
+  /** The aircraft drawn now, for the tower view's binoculars to follow (three.js world frame). */
+  viewTargets(): readonly TowerTarget[] {
+    const out: TowerTarget[] = [];
+    for (const a of this.aircraft) {
+      const root = a.exterior?.root.visible ? a.exterior.root : a.mesh.root;
+      if (!root.visible) continue;
+      let t = this.targetCache.get(a.registration);
+      if (!t) this.targetCache.set(a.registration, (t = { id: a.registration, label: '', position: new THREE.Vector3(), fitSize: 13 }));
+      t.label = `${a.registration}, ${TYPE_NAMES[a.type]}`;
+      if (a.pilot) nedToThree(a.pilot.state.position, t.position);
+      else nedToThree({ x: a.state.north, y: a.state.east, z: -(a.field.elevation + a.state.height) }, t.position);
+      out.push(t);
+    }
+    return out;
+  }
+
   private clear(): void {
     for (const a of [...this.aircraft]) this.remove(a);
   }
@@ -332,6 +352,7 @@ export class TrafficSystem implements Subsystem {
     });
     a.mesh.root.removeFromParent();
     this.aircraft = this.aircraft.filter((x) => x !== a);
+    this.targetCache.delete(a.registration);
     if (a.ops) this.tower.forget(a.registration);
   }
 

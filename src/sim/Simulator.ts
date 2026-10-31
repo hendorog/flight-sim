@@ -612,6 +612,8 @@ export class Simulator {
     // The radio (docs/atc.md) speaks through the Flight School's scheduler and captions.
     const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority, env: () => physics.env, homeTraffic: () => !training.active, player: () => training.radioIdentity() }) : null);
     traffic?.init(ctx);
+    // The tower view's binoculars: a click on an aircraft follows it.
+    if (traffic) cameras.setTowerTargets(() => traffic.viewTargets(), (label) => ui.showToast(`Tower view: ${label}`));
     this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, comRadios: () => panel.comRadios, cdiSelect: () => panel.cdiSelect, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [], towerReply: (c, i) => traffic?.towerReply(c, i) ?? null }) : null;
     this.radio?.init(ctx);
     this.schoolCopilot = physics.copilot;

@@ -7,6 +7,9 @@
 // cab's catwalk on the side facing the aircraft, just past the railing: outside the glazing and the mullions,
 // clear of the roof overhang above and the catwalk below, with an unobstructed view of the whole sky and
 // airfield in the aircraft's direction. The spot follows the aircraft around the catwalk smoothly.
+//
+// The binoculars can be moved: a click on another aircraft (setTargets: the traffic) follows that one instead, a
+// drag looks round freely (the wheel then zooms the field of view), and recentre goes back to the player's aircraft.
 
 import * as THREE from 'three';
 import { clamp, type Vec3 } from '../../core/math';
@@ -34,14 +37,36 @@ const WALK_TAU = 1.5;
 const OVERHEAD = 5;
 
 const DEFAULT_FILL = 0.2;
+/** Free look: the field of view to start from, deg, and how far up or down, rad. */
+const FREE_FOV = 30;
+const PITCH_LIMIT = (85 * Math.PI) / 180;
+
+/** Another aircraft the binoculars can follow (three.js world frame). */
+export interface TowerTarget {
+  id: string;
+  /** For the toast: 'G-ABCD, a PA-38'. */
+  label: string;
+  position: THREE.Vector3;
+  /** Size used for zoom-to-fit, m. */
+  fitSize: number;
+}
 /** Narrowest view: roughly a pair of 15x binoculars. Widest: the naked eye. */
 const MIN_FOV = 2.5;
 const MAX_FOV = 50;
 
 export class TowerRig implements CameraRig {
   readonly groundClearance = 1.0;
-  readonly watchesAircraft = true;
   readonly lineOfSight = false;
+  /** The traffic the binoculars can follow. */
+  private targets: (() => readonly TowerTarget[]) | null = null;
+  /** The aircraft followed (null: the player's), or looking round freely. */
+  private following: string | null = null;
+  private free = false;
+  private yaw = 0;
+  private pitch = 0;
+  private freeFov = FREE_FOV;
+  private readonly dir = new THREE.Vector3();
+  private readonly euler = new THREE.Euler(0, 0, 0, 'YXZ');
   /** Cab centre at eye height. */
   private readonly centre = new THREE.Vector3();
   /** Observer's position (on the catwalk). */
@@ -77,17 +102,54 @@ export class TowerRig implements CameraRig {
     this.fitSize = a.fitSize;
   }
 
+  /** The traffic the binoculars can be turned on. */
+  setTargets(targets: () => readonly TowerTarget[]): void {
+    this.targets = targets;
+  }
+
+  /** Follow another aircraft (null: the player's). */
+  followTarget(id: string | null): void {
+    this.following = id;
+    this.free = false;
+    this.fill = DEFAULT_FILL;
+  }
+
+  /** Keeping the player's aircraft in view (CameraSystem turns the view with it when lifting clear of the ground). */
+  get watchesAircraft(): boolean {
+    return !this.free && this.following === null;
+  }
+
   activate(_ctx: unknown, a: AircraftPose): void {
     this.follow(a, Infinity);
     this.fov = this.fit(a);
   }
 
   update(dt: number, realDt: number, _ctx: unknown, a: AircraftPose, out: CameraPose): void {
-    this.follow(a, realDt);
+    if (this.free) {
+      out.position.copy(this.spot);
+      out.quaternion.setFromEuler(this.euler.set(this.pitch, this.yaw, 0));
+      this.fov += (this.freeFov - this.fov) * smoothing(realDt, 0.2);
+      out.fov = this.fov;
+      return;
+    }
+    let target = a.position;
+    let size = this.fitSize;
+    if (this.following !== null) {
+      const t = this.targets?.().find((x) => x.id === this.following);
+      if (t) {
+        target = t.position;
+        size = t.fitSize;
+      } else this.following = null;
+    }
+    this.follow({ position: target, quaternion: a.quaternion }, realDt);
     out.position.copy(this.spot);
-    lookAtQuat(out.position, a.position, WORLD_UP, out.quaternion);
-    this.fov += (this.fit(a) - this.fov) * smoothing(realDt, 0.4);
+    lookAtQuat(out.position, target, WORLD_UP, out.quaternion);
+    this.fov += (fitFov(size, this.spot.distanceTo(target), this.fill, MIN_FOV, MAX_FOV) - this.fov) * smoothing(realDt, 0.4);
     out.fov = this.fov;
+    // Where it looks, for a free look to start from.
+    this.dir.subVectors(target, this.spot).normalize();
+    this.yaw = Math.atan2(-this.dir.x, -this.dir.z);
+    this.pitch = Math.asin(clamp(this.dir.y, -1, 1));
   }
 
   /** Walk round the catwalk toward the aircraft's side (at once when dt is Infinity). */
@@ -119,15 +181,24 @@ export class TowerRig implements CameraRig {
     return fitFov(this.fitSize, this.spot.distanceTo(a.position), this.fill, MIN_FOV, MAX_FOV);
   }
 
-  look(): void {
-    // Fixed observer: the mouse does not steer it.
+  /** A drag looks round freely from where the binoculars point, as far per pixel as the field of view is wide. */
+  look(dx: number, dy: number): void {
+    if (!this.free) {
+      this.free = true;
+      this.freeFov = this.fov;
+    }
+    const k = (this.fov * Math.PI) / 180 / 700;
+    this.yaw -= dx * k;
+    this.pitch = clamp(this.pitch - dy * k, -PITCH_LIMIT, PITCH_LIMIT);
   }
 
   zoom(steps: number): void {
-    this.fill = clamp(this.fill * Math.pow(1.15, steps), 0.02, 0.8);
+    if (this.free) this.freeFov = clamp(this.freeFov / Math.pow(1.15, steps), MIN_FOV, MAX_FOV);
+    else this.fill = clamp(this.fill * Math.pow(1.15, steps), 0.02, 0.8);
   }
 
+  /** Back on the player's aircraft. */
   recentre(): void {
-    this.fill = DEFAULT_FILL;
+    this.followTarget(null);
   }
 }

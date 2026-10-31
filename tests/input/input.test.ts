@@ -192,8 +192,8 @@ describe('key bindings', () => {
   });
 
   it('the Cessna 172S help listing is unchanged by the keys it has nothing for', () => {
-    // 64, and the instrument focus (Q) since 2026-10-26, and hiding the yokes (Shift+H) since 2026-10-28.
-    expect(KEY_BINDINGS.length).toBe(66);
+    // 64, and the instrument focus (Q) since 2026-10-26, hiding the yokes (Shift+H) since 2026-10-28, and the tower view's click since 2026-10-31.
+    expect(KEY_BINDINGS.length).toBe(67);
     for (const key of ['F7', 'F10', '/', ';', '\\', 'Shift+F', '6', '7', '8', '9', '0']) expect(KEY_BINDINGS.some((b) => b.keys.split(' / ').includes(key)), key).toBe(false);
   });
 

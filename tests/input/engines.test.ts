@@ -679,8 +679,8 @@ describe('help listing of other types', () => {
   it('every action has a label and a key, and an action is listed exactly where its lever exists', () => {
     const actions = new Set<InputAction>(KEY_MAP.map((m) => m.action));
     const all = keyBindingsFor({ ...TWIN_INPUT, has: { mixture: true, propeller: true, feather: true, carbHeat: true, alternateAir: true, cowlFlaps: true, gear: true, rudderTrim: true, fuelPump: true } });
-    // One row per action plus the five mouse rows (including flight-control double-click).
-    expect(all.length).toBe([...actions].filter(a => profileHasAction(TWIN_INPUT, a) || a === 'carbHeat').length + 5);
+    // One row per action plus the six mouse rows (flight-control double-click and the tower view's click included).
+    expect(all.length).toBe([...actions].filter(a => profileHasAction(TWIN_INPUT, a) || a === 'carbHeat').length + 6);
     expect(all.every((b) => b.keys && b.action && b.category)).toBe(true);
   });
 });
