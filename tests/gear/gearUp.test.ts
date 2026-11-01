@@ -10,7 +10,7 @@ import type { GearOutput } from '../../src/physics/interfaces';
 import { C172_GEAR, RetractActuator, SQUAT_DELAY, type GearConfig } from '../../src/physics/gear';
 import { C172_STRUCTURE } from '../../src/physics/gear/structure';
 import { DT, GearRig, MASS, planeEnvironment } from './rig';
-import { PA34_RETRACT, RETRACT_GEAR, TWIN_RETRACT_GEAR } from './testbed';
+import { LEGACY_C172_GEAR, PA34_RETRACT, RETRACT_GEAR, TWIN_RETRACT_GEAR } from './testbed';
 
 const ELEVATION = 120;
 const KT = 1852 / 3600;
@@ -123,7 +123,12 @@ describe('a leg that is not down and locked', () => {
     expect(touch(RETRACT_GEAR, sunk(2), 0.02, { roll: 3 * DEG, extension: one(2) }).crash).toBe('Right main gear collapsed (not locked down)');
     // Half way up, the nose tyre is 0.45 m higher: the same position of the aircraft does not reach it.
     expect(touch(RETRACT_GEAR, sunk(0), 0.02, { extension: [0.5, 1, 1] }).crash).toBe('');
-    expect(touch(C172_GEAR, sunk(0), 0.02, { extension: [0.5, 1, 1] }).crash).toBe('Nose gear collapsed (not locked down)');
+    expect(touch(LEGACY_C172_GEAR, sunk(0), 0.02, { extension: [0.5, 1, 1] }).crash).toBe('Nose gear collapsed (not locked down)');
+    // With damage limits (the C172S's own gear) the unlocked leg folds as damage at landing energy.
+    const folded = touch(C172_GEAR, sunk(0), 0.02, { extension: [0.5, 1, 1] });
+    expect(folded.crash).toBe('');
+    expect(folded.damage!.legs[0].status).toBe('collapsed');
+    expect(folded.damage!.events.map((e) => [e.severity, e.text])).toEqual([['disabling', 'Nose gear collapsed (not locked down)']]);
     // A collapse at impact energy is a terrain impact, as an overloaded leg is.
     const fast = touch(RETRACT_GEAR, sunk(0), 0.02, { extension: one(0), velocity: FAST });
     expect(fast.crash).toBe('Terrain impact at 117 kt, 0 fpm descent (nose gear first)');
@@ -186,8 +191,14 @@ describe('gear-up landing', () => {
     }
     expect(touch(finned, fin.position, 0.02, up)).toMatchObject({ crash: 'Gear-up landing at 58 kt (ventral fin first)', crashKind: 'gearUp' });
     // A belly point is one that says so: the C172S list has none, its discs are undersides like any other.
-    expect(touch(C172_GEAR, BELLY, 0.02, { ...up, pitch: 12 * DEG })).toMatchObject({ crash: 'Belly struck the ground', crashKind: 'structure' });
-    expect(touch(C172_GEAR, PROP_TIP, 0.02, up).crashKind).toBe('gearUp');
+    expect(touch(LEGACY_C172_GEAR, BELLY, 0.02, { ...up, pitch: 12 * DEG })).toMatchObject({ crash: 'Belly struck the ground', crashKind: 'structure' });
+    expect(touch(LEGACY_C172_GEAR, PROP_TIP, 0.02, up).crashKind).toBe('gearUp');
+    // With damage limits a gear-up arrival at landing energy is damage: the belly, and the propeller dug in.
+    const gearUp = touch(C172_GEAR, PROP_TIP, 0.02, up);
+    expect(gearUp.crash).toBe('');
+    expect(gearUp.damage!.airframe.belly).toBe('disabling');
+    expect(gearUp.damage!.props[0]).toEqual({ struck: true, stopped: true });
+    expect(gearUp.damage!.events.map((e) => e.text)).toEqual(['Gear-up landing (propeller first)', 'Propeller strike: engine stopped']);
   });
 
   test('the energy test comes first, with the thresholds of the type', () => {
@@ -305,13 +316,13 @@ describe('with the retraction system', () => {
 });
 
 describe('crash kinds of the fixed gear', () => {
-  test('every crash of the Cessna 172S carries its kind, and its words are unchanged', () => {
-    expect(touch(C172_GEAR, WINGTIP, 0.02, { roll: -60 * DEG })).toMatchObject({ crash: 'Left wingtip struck the ground', crashKind: 'structure' });
-    expect(touch(C172_GEAR, PROP_TIP, 0.02, { pitch: -27 * DEG })).toMatchObject({ crash: 'Propeller strike', crashKind: 'propStrike' });
+  test('every crash of the Cessna 172S gear without damage limits carries its kind, and its words are unchanged', () => {
+    expect(touch(LEGACY_C172_GEAR, WINGTIP, 0.02, { roll: -60 * DEG })).toMatchObject({ crash: 'Left wingtip struck the ground', crashKind: 'structure' });
+    expect(touch(LEGACY_C172_GEAR, PROP_TIP, 0.02, { pitch: -27 * DEG })).toMatchObject({ crash: 'Propeller strike', crashKind: 'propStrike' });
     expect(touch(C172_GEAR, PROP_TIP, 0.02, { pitch: -27 * DEG, velocity: FAST })).toMatchObject({ crash: 'Terrain impact at 117 kt, 0 fpm descent, 27° nose down (propeller first)', crashKind: 'impact' });
     expect(touch(C172_GEAR, C172.gear.leftMain, 0.02, { surface: 'water' })).toMatchObject({ crash: 'Ditched: the landing gear touched water', crashKind: 'ditching' });
     // A flat arrival at 4 m/s folds the nose leg.
-    const hard = new GearRig();
+    const hard = new GearRig(planeEnvironment(), MASS, LEGACY_C172_GEAR);
     hard.placeOnGround(0, 0.05);
     hard.velocity = { x: 25, y: 0, z: 4 };
     hard.enableLandingAero();
@@ -327,6 +338,19 @@ describe('crash kinds of the fixed gear', () => {
     hard.run(0.5);
     expect(hard.output.crash).toBe('');
     expect(hard.output.crashKind).toBeUndefined();
+  });
+
+  test('with the C172S damage limits the same contacts at landing energy are damage, and impact and water are not', () => {
+    const tip = touch(C172_GEAR, WINGTIP, 0.02, { roll: -60 * DEG });
+    expect(tip.crash).toBe('');
+    expect(tip.damage!.events.map((e) => [e.item, e.severity, e.text])).toEqual([['wingtipLeft', 'damage', 'Left wingtip struck the ground']]);
+    const prop = touch(C172_GEAR, PROP_TIP, 0.02, { pitch: -27 * DEG });
+    expect(prop.crash).toBe('');
+    expect(prop.damage!.props[0]).toEqual({ struck: true, stopped: false });
+    expect(touch(C172_GEAR, PROP_TIP, 0.02, { pitch: -27 * DEG, velocity: FAST })).toMatchObject({ crash: 'Terrain impact at 117 kt, 0 fpm descent, 27° nose down (propeller first)', crashKind: 'impact' });
+    expect(touch(C172_GEAR, C172.gear.leftMain, 0.02, { surface: 'water' })).toMatchObject({ crash: 'Ditched: the landing gear touched water', crashKind: 'ditching' });
+    // The roof: still a crash.
+    expect(touch(C172_GEAR, C172_STRUCTURE[9].position, 0.02, { roll: Math.PI })).toMatchObject({ crash: 'Aircraft flipped over', crashKind: 'structure' });
   });
 });
 

@@ -167,24 +167,36 @@ describe('crash detection', () => {
     expect(rig.fm.state.crashReason).toMatch(/overspeed|overstressed/);
   }, 30000);
 
-  it('detects a hard landing, a wingtip strike and freezes the aircraft', () => {
+  it('a hard landing damages the aircraft and it slides on; a terrain impact freezes it; a wingtip strike is damage', () => {
     const rig = makeRig();
-    // 1000 fpm into the runway, flat.
+    // 1000 fpm into the runway, flat: the nose gear folds (landing damage, physics/damage.ts), the flight goes on.
     rig.fm.reset({ position: at(ELEVATION + 1.25 + 0.5), heading: 0, airspeed: 30, onGround: false, engineRunning: true }, rig.env);
     const q = quat.fromEuler(0, 0, 0);
-    rig.fm.setKinematics({ position: at(ELEVATION + 1.25 + 0.5), orientation: q, velocity: { x: 30, y: 0, z: 6 }, angularVelocity: { x: 0, y: 0, z: 0 } });
+    rig.fm.setKinematics({ position: at(ELEVATION + 1.25 + 0.5), orientation: q, velocity: { x: 30, y: 0, z: 5 }, angularVelocity: { x: 0, y: 0, z: 0 } });
     rig.run(2, () => rig.fm.state.crashed);
-    report('6 m/s touchdown', 6, rig.fm.state.crashReason, 'm/s');
+    const damage = rig.fm.state.damage!;
+    report('5 m/s touchdown', 5, damage.events.map((e) => e.text).join('; '), 'm/s');
+    expect(rig.fm.state.crashed).toBe(false);
+    expect(damage.legs[0].status).toBe('collapsed');
+    const sliding = { ...rig.fm.state.position };
+    rig.run(1);
+    expect(rig.fm.state.position.x).toBeGreaterThan(sliding.x + 1);
+    // 1600 fpm is a terrain impact: a crash, and the aircraft freezes.
+    rig.fm.setKinematics({ position: at(ELEVATION + 1.25 + 0.5), orientation: q, velocity: { x: 30, y: 0, z: 8 }, angularVelocity: { x: 0, y: 0, z: 0 } });
+    rig.run(2, () => rig.fm.state.crashed);
+    report('8 m/s touchdown', 8, rig.fm.state.crashReason, 'm/s');
     expect(rig.fm.state.crashed).toBe(true);
+    expect(rig.fm.state.crashReason).toMatch(/^Terrain impact/);
     const frozen = { ...rig.fm.state.position };
     rig.run(1);
     expect(rig.fm.state.position).toEqual(frozen);
-    // Banked 30 degrees onto the ground: a wingtip hits.
+    // Banked 30 degrees onto the ground: a wingtip strike, damage.
     const r = quat.fromEuler(30 * DEG, 5 * DEG, 0);
     rig.fm.setKinematics({ position: at(ELEVATION + 2.2), orientation: r, velocity: { x: 28, y: 0, z: 1 }, angularVelocity: { x: 0, y: 0, z: 0 } });
     rig.run(2, () => rig.fm.state.crashed);
-    report('landing with 30 deg of bank', 30, rig.fm.state.crashReason, 'deg');
-    expect(rig.fm.state.crashReason).toMatch(/wingtip/i);
+    report('landing with 30 deg of bank', 30, rig.fm.state.damage!.events.map((e) => e.text).join('; ') || rig.fm.state.crashReason, 'deg');
+    expect(rig.fm.state.crashed).toBe(false);
+    expect(rig.fm.state.damage!.airframe.wingtipRight).toBe('damage');
   });
 
   it('a new flight model constructed per loading reports its mass', () => {

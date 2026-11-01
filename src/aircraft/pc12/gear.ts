@@ -112,26 +112,26 @@ const H_TAIL_HALF = G.hTail.span / 2;
 /** Airframe points that must not touch the ground. */
 const STRUCTURE: readonly StructuralPoint[] = [
   // Wing tips (the winglets' roots) and the lower surface at mid-span.
-  { position: { x: -0.2, y: -HALF_SPAN, z: wingLowerZ(HALF_SPAN) }, message: 'Left wingtip struck the ground', tolerance: 0 },
-  { position: { x: -0.2, y: HALF_SPAN, z: wingLowerZ(HALF_SPAN) }, message: 'Right wingtip struck the ground', tolerance: 0 },
-  { position: { x: 0, y: -4.5, z: wingLowerZ(4.5) }, message: 'Left wing struck the ground', tolerance: 0 },
-  { position: { x: 0, y: 4.5, z: wingLowerZ(4.5) }, message: 'Right wing struck the ground', tolerance: 0 },
+  { position: { x: -0.2, y: -HALF_SPAN, z: wingLowerZ(HALF_SPAN) }, message: 'Left wingtip struck the ground', tolerance: 0, item: 'wingtipLeft' },
+  { position: { x: -0.2, y: HALF_SPAN, z: wingLowerZ(HALF_SPAN) }, message: 'Right wingtip struck the ground', tolerance: 0, item: 'wingtipRight' },
+  { position: { x: 0, y: -4.5, z: wingLowerZ(4.5) }, message: 'Left wing struck the ground', tolerance: 0, item: 'wingtipLeft' },
+  { position: { x: 0, y: 4.5, z: wingLowerZ(4.5) }, message: 'Right wing struck the ground', tolerance: 0, item: 'wingtipRight' },
   // The stowed wheels (the mains stay about 25 mm proud, 47E 7-4) and the belly: a gear-up landing slides on them.
-  { position: PC12_GEAR.stowed.leftMain, message: 'Left main wheel struck the ground', tolerance: 0, part: 'left main wheel', belly: true },
-  { position: PC12_GEAR.stowed.rightMain, message: 'Right main wheel struck the ground', tolerance: 0, part: 'right main wheel', belly: true },
+  { position: PC12_GEAR.stowed.leftMain, message: 'Left main wheel struck the ground', tolerance: 0, part: 'left main wheel', belly: true, item: 'belly' },
+  { position: PC12_GEAR.stowed.rightMain, message: 'Right main wheel struck the ground', tolerance: 0, part: 'right main wheel', belly: true, item: 'belly' },
   // The belly under the cabin and over the wing-root fairing (3V: 0.93 / 0.87 m up).
-  { position: { x: S(4.5), y: 0, z: H(0.93) }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true },
-  { position: { x: S(6.4), y: 0, z: H(0.87) }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true },
-  { position: { x: S(8.6), y: 0, z: H(0.98) }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true },
+  { position: { x: S(4.5), y: 0, z: H(0.93) }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true, item: 'belly' },
+  { position: { x: S(6.4), y: 0, z: H(0.87) }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true, item: 'belly' },
+  { position: { x: S(8.6), y: 0, z: H(0.98) }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true, item: 'belly' },
   // The chin inlet's lower lip under the spinner (3V: 0.54 m below the thrust line at station 1.4).
-  { position: { x: S(1.4), y: 0, z: PC12_THRUST_Z + 0.54 }, message: 'Nose struck the ground', tolerance: 0 },
+  { position: { x: S(1.4), y: 0, z: PC12_THRUST_Z + 0.54 }, message: 'Nose struck the ground', tolerance: 0, item: 'nose' },
   // The ventral strakes' aft ends and the ventral fin under the tailcone (3V, P2): they touch at about 13 deg of pitch.
   // A scrape at taxi or take-off-roll speed is survivable (as on the other types).
-  { position: { x: S(12.3), y: 0, z: H(1.4) }, message: 'Tail strike', tolerance: 2.5 },
-  { position: { x: S(13.4), y: 0, z: H(1.72) }, message: 'Tail strike', tolerance: 2.5 },
+  { position: { x: S(12.3), y: 0, z: H(1.4) }, message: 'Tail strike', tolerance: 2.5, item: 'tail' },
+  { position: { x: S(13.4), y: 0, z: H(1.72) }, message: 'Tail strike', tolerance: 2.5, item: 'tail' },
   // Tailplane tips: roll-over points.
-  { position: { x: G.hTail.quarterChord.x, y: -H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Left horizontal stabilizer struck the ground', tolerance: 0 },
-  { position: { x: G.hTail.quarterChord.x, y: H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Right horizontal stabilizer struck the ground', tolerance: 0 },
+  { position: { x: G.hTail.quarterChord.x, y: -H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Left horizontal stabilizer struck the ground', tolerance: 0, item: 'tail' },
+  { position: { x: G.hTail.quarterChord.x, y: H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Right horizontal stabilizer struck the ground', tolerance: 0, item: 'tail' },
   // Upper surfaces, for a nose-over or roll-over: the fin tip and the cabin roof.
   { position: { x: PC12_TAIL.finTip.x, y: 0, z: PC12_TAIL.finTip.z }, message: 'Aircraft flipped over', tolerance: 0 },
   { position: { x: S(5.5), y: 0, z: H(2.73) }, message: 'Aircraft flipped over', tolerance: 0 },
@@ -166,6 +166,20 @@ export function createPC12Gear(): GearConfig {
     structure: STRUCTURE,
     propellers: [{ hub: prop.hub, radius: prop.diameter / 2, message: 'Propeller strike' }],
     // Contact speeds of a 67 KIAS (34 m/s) landing stall: 1.6 and 1.4 times it (gearConfig.ts rule of thumb).
+    // Landing damage (physics/damage.ts). Axial leg loads from drops at MTOW, wings level, lift = weight
+    // (tests/gear/damage.test.ts), placed on the landing-damage research's section 7 sink-rate bands: the
+    // hard-landing note at V_lim 3.05 m/s (600 fpm); hard / yield / collapse mains-first at 3.05 / 3.7 / 5.0 m/s,
+    // nose-wheel contact at 1.83 / 2.29 / 3.35 m/s. An oleo, once bottomed, folds on a later contact at 40 % of
+    // the way from its yield to its ultimate load (an estimate).
+    damage: {
+      legs: [
+        { kind: 'oleo', hardLoad: 37.6e3, yieldLoad: 44.0e3, ultimateLoad: 81.6e3, bottomedUltimate: 59.0e3, collapsedCompression: 0.119, yield: { text: 'Nose gear drag link damaged', item: 'nose' } },
+        { kind: 'oleo', hardLoad: 118.2e3, yieldLoad: 190.7e3, ultimateLoad: 375.0e3, bottomedUltimate: 264.4e3, collapsedCompression: 0.17 },
+        { kind: 'oleo', hardLoad: 118.2e3, yieldLoad: 190.7e3, ultimateLoad: 375.0e3, bottomedUltimate: 264.4e3, collapsedCompression: 0.17 },
+      ],
+      // Free turbine: a strike that digs in stops the propeller and power turbine; the gas generator runs on.
+      propStopText: 'Propeller strike: propeller stopped (gas generator running)',
+    },
     impact: { sinkRate: 7, speed: 55, steepSpeed: 48, steepPath: 12 * DEG },
     retract: PC12_RETRACT,
   };

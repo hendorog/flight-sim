@@ -22,13 +22,24 @@
 // its stops by the ground collapses ("... gear collapsed (not locked down)"). With no leg down the aircraft
 // arrives on its propeller discs and `belly` points: at landing-like energy that is a "Gear-up landing", and
 // like every other crash it ends the flight at the first contact.
+//
+// LANDING DAMAGE (GearConfig.damage, opt-in; absent: everything above, unchanged). Each leg has a hard-landing
+// load (an inspection note), a yield load (a spring leg takes a permanent set that lowers its contact point and
+// toes the wheel out, so the aircraft pulls; an oleo bottoms and damages the structure behind it) and an
+// ultimate load (the leg collapses: it carries nothing and reports full compression so it is drawn folded). An
+// airframe point with an `item`, a propeller disc, a leg caught between its stops and a gear-up arrival then
+// DAMAGE the aircraft (physics/damage.ts) instead of ending the flight; the airframe points keep their penalty
+// contact and scrape friction, so the aircraft slides to a stop on them. Still a crash: a terrain impact (the
+// energy test comes first), a point without an item ("flipped over"), and water. Damage is judged on committed
+// calls only (GearInput.commit), on the state then, so RK4's provisional stages never write it.
 
 import { G0, type Quat, type Vec3 } from '../../core/math';
 import type { WheelState } from '../../core/types';
+import { DamageModel, LEG_ITEMS, type AirframeItem, type DamageSeverity, type DamageState, type LegDamage, type LegStatus } from '../damage';
 import type { CrashKind, GearInput, GearOutput } from '../interfaces';
 import { C172_GEAR } from './c172Gear';
-import type { GearConfig, ImpactThresholds, PropellerDisc, WheelConfig } from './gearConfig';
-import { SeriesSpring, type SeriesSpringPoint } from './springs';
+import type { GearConfig, GearDamageConfig, ImpactThresholds, LegDamageConfig, PropellerDisc, StructuralPoint, WheelConfig } from './gearConfig';
+import { OleoPneumaticSpring, SeriesSpring, type SeriesSpringPoint } from './springs';
 import { STRUCTURE_CONTACT } from './structure';
 import { SURFACES, surfaceUndulation } from './surfaces';
 import { WheelDynamics, type TyreForce, type WheelContact } from './tyre';
@@ -43,6 +54,10 @@ const MIN_AXIS_NORMAL = 0.3;
 const SCRAPE_SLIP = 0.3;
 
 const LABELS: Record<WheelName, string> = { nose: 'Nose', left: 'Left main', right: 'Right main' };
+/** Order of the leg statuses (a leg only moves up it). */
+const STATUS_RANK: Record<LegStatus, number> = { ok: 0, hard: 1, bent: 2, bottomed: 2, collapsed: 3 };
+/** Default airframe-contact severity by item (GearDamageConfig; StructuralPoint.damage overrides it). */
+const ITEM_SEVERITY: Record<AirframeItem, DamageSeverity> = { wingtipLeft: 'damage', wingtipRight: 'damage', tail: 'damage', nose: 'disabling', belly: 'disabling' };
 
 /**
  * Crash classification. A ground contact that ends the flight is reported as a terrain impact, not as the
@@ -87,6 +102,14 @@ interface WheelRuntime {
   /** Tyre force of the previous call on the unsteered in-plane axes, N (for the leg-axis load split). */
   fa: number;
   fb: number;
+  /** GearConfig.damage: this leg's limits, its record, and its stroke (oleo), m. */
+  dmg?: LegDamageConfig;
+  leg?: LegDamage;
+  stroke?: number;
+  /** A bottomed oleo has been airborne since: its reduced ultimate load applies. */
+  weakened?: boolean;
+  /** Extended contact point moved by the leg's permanent set, body axes, m. */
+  setPosition?: Vec3;
 }
 
 interface PendingTouchdown {
@@ -122,6 +145,17 @@ export class LandingGear {
   /** No leg is down and locked in the current call. */
   private gearUp = false;
   private touchdowns: PendingTouchdown[] = [];
+  /** GearConfig.damage: the damage record (null without), and what the present call may write. */
+  private readonly damage: DamageModel | null;
+  private readonly damageCfg: GearDamageConfig | undefined;
+  private commit = true;
+  /** Seconds each propeller disc has spent in the ground (committed calls). */
+  private readonly propTime: Float64Array;
+  /** An airframe point carried load in the present call (damage only: the aircraft is on the ground on it). */
+  private airframeContact = false;
+  private input: GearInput | null = null;
+  /** impactDescription() of the present call, once asked (null: not yet). */
+  private impactNow: string | null = null;
 
   // Scratch storage for the hot path.
   private readonly sp: SeriesSpringPoint = { force: 0, strut: 0, strutRatio: 0 };
@@ -146,6 +180,18 @@ export class LandingGear {
       fb: 0,
     }));
     this.discs = config.propellers ?? [];
+    this.damageCfg = config.damage;
+    this.damage = config.damage ? new DamageModel(this.discs.length) : null;
+    this.propTime = new Float64Array(this.discs.length);
+    if (this.damage) {
+      this.wheels.forEach((w, i) => {
+        w.dmg = config.damage!.legs[i];
+        w.leg = this.damage!.state.legs[i];
+        w.stroke = w.cfg.strut instanceof OleoPneumaticSpring ? w.cfg.strut.stroke : undefined;
+        w.weakened = false;
+        w.setPosition = { ...w.cfg.position };
+      });
+    }
     this.impact = config.impact ?? IMPACT;
     this.structureContact = config.contact ?? STRUCTURE_CONTACT;
     const pts = [...config.wheels.map((w) => w.position), ...config.wheels.flatMap((w) => (w.stowed ? [w.stowed] : [])), ...config.structure.map((s) => s.position)];
@@ -153,13 +199,18 @@ export class LandingGear {
     this.reset();
   }
 
-  /** Clear all internal state (wheel spin, tyre deflection, steering, events, crash latch). */
+  /** Clear all internal state (wheel spin, tyre deflection, steering, events, crash latch, damage). */
   reset(): void {
     for (const w of this.wheels) {
       w.dyn.reset();
       w.airborneTime = 0;
       w.failed = false;
       w.fa = w.fb = 0;
+    }
+    if (this.damage) {
+      this.damage.reset();
+      this.propTime.fill(0);
+      this.applyDamage();
     }
     this.lastTime = null;
     this.groundCheck.x = this.groundCheck.y = NaN;
@@ -168,9 +219,50 @@ export class LandingGear {
     this.touchdowns = [];
   }
 
+  /** GearConfig.damage: the live damage record (null without a damage block). */
+  get damageState(): DamageState | null {
+    return this.damage ? this.damage.state : null;
+  }
+
+  /**
+   * Put a captured damage record back (after reset(): a resumed or restored flight). Collapsed legs carry nothing,
+   * bent legs keep their set and toe, a bottomed oleo is weak on its next contact.
+   */
+  restoreDamage(s: DamageState): void {
+    if (!this.damage) return;
+    this.damage.restore(s);
+    for (let i = 0; i < this.discs.length; i++) this.propTime[i] = this.damage.state.props[i].stopped ? Infinity : 0;
+    this.applyDamage();
+  }
+
+  /** The damage record as plain data (null without a damage block). */
+  captureDamage(): DamageState | null {
+    return this.damage ? this.damage.capture() : null;
+  }
+
+  /** Leg latches and contact points from the damage record. */
+  private applyDamage(): void {
+    for (const w of this.wheels) {
+      const leg = w.leg!;
+      w.failed = leg.status === 'collapsed';
+      w.weakened = leg.status === 'bottomed';
+      const p = w.cfg.position;
+      const a = w.cfg.axis;
+      w.setPosition!.x = p.x + a.x * leg.set;
+      w.setPosition!.y = p.y + a.y * leg.set;
+      w.setPosition!.z = p.z + a.z * leg.set;
+    }
+  }
+
   compute(input: GearInput): GearOutput {
     const { body, env } = input;
     const t = body.time;
+    if (this.damage) {
+      this.commit = input.commit !== false;
+      this.input = input;
+      this.airframeContact = false;
+      this.impactNow = null;
+    }
     const dt = this.lastTime !== null && t > this.lastTime ? Math.min(t - this.lastTime, 4 * input.dt) : 0;
     this.lastTime = t;
     this.body = body;
@@ -207,6 +299,12 @@ export class LandingGear {
       touchdowns: this.touchdowns.map((e) => ({ wheel: e.wheel, sinkRate: e.sinkRate })),
     };
     if (this.crashKind !== undefined) out.crashKind = this.crashKind;
+    if (this.damage) {
+      out.damage = this.damage.state;
+      // A folded leg is drawn folded; an aircraft sliding on its belly or nose is on the ground.
+      for (let i = 0; i < 3; i++) if (this.wheels[i].leg!.status === 'collapsed') states[i].compression = this.wheels[i].dmg!.collapsedCompression;
+      if (this.airframeContact) out.onGround = true;
+    }
     return out;
   }
 
@@ -263,9 +361,18 @@ export class LandingGear {
       const und = this.und;
       surfaceUndulation(SURFACES[surfaceType], X.x, X.y, und);
       if (-X.z - env.groundElevation(X.x, X.y) - und.height < 0) {
-        w.failed = true;
-        if (surfaceType === 'water') this.latchCrash('Ditched: the landing gear touched water', 'ditching');
-        else this.latchCrash(`${w.cfg.label ?? LABELS[w.cfg.name]} gear collapsed (not locked down)`, 'gearCollapse');
+        const reason = `${w.cfg.label ?? LABELS[w.cfg.name]} gear collapsed (not locked down)`;
+        if (this.damage && surfaceType !== 'water') {
+          // Landing energy: the leg folds under the aircraft (damage); impact energy: a crash as before.
+          if (this.impactDescription()) {
+            w.failed = true;
+            this.latchCrash(reason, 'gearCollapse');
+          } else if (this.commit) this.collapseLeg(w, reason);
+        } else {
+          w.failed = true;
+          if (surfaceType === 'water') this.latchCrash('Ditched: the landing gear touched water', 'ditching');
+          else this.latchCrash(reason, 'gearCollapse');
+        }
       }
     }
     return this.airborneWheel(w, input, dt);
@@ -275,7 +382,7 @@ export class LandingGear {
     const { body, env, controls } = input;
     const q = body.orientation;
     const cfg = w.cfg;
-    const r0 = cfg.position;
+    const r0 = w.leg !== undefined && w.leg.set !== 0 ? w.setPosition! : cfg.position;
 
     // Extended contact point and the local ground plane under it.
     const X0 = rotate(q, r0, this.t0);
@@ -312,6 +419,18 @@ export class LandingGear {
     ax /= al;
     ay /= al;
     az /= al;
+    if (w.leg !== undefined && w.leg.toe !== 0) {
+      // A bent leg's wheel is toed out: a turned toward its own side (b points right).
+      const side = cfg.name === 'left' ? -1 : 1;
+      const c = Math.cos(w.leg.toe);
+      const sn = side * Math.sin(w.leg.toe);
+      const rx = ay * n.z - az * n.y;
+      const ry = az * n.x - ax * n.z;
+      const rz = ax * n.y - ay * n.x;
+      ax = c * ax + sn * rx;
+      ay = c * ay + sn * ry;
+      az = c * az + sn * rz;
+    }
     const bx = ay * n.z - az * n.y;
     const by = az * n.x - ax * n.z;
     const bz = ax * n.y - ay * n.x;
@@ -346,7 +465,10 @@ export class LandingGear {
     const cg = body.cgOffset;
     this.applyNedForce(q, F, r0.x + cfg.axis.x * xTot - cg.x, r0.y + cfg.axis.y * xTot - cg.y, r0.z + cfg.axis.z * xTot - cg.z);
 
-    if (axial > cfg.limitLoad) {
+    if (w.dmg !== undefined) {
+      if (w.airborneTime >= TOUCHDOWN_AIRBORNE_TIME && w.leg!.status === 'bottomed') w.weakened = true;
+      this.judgeLeg(w, axial, sp.strut);
+    } else if (axial > cfg.limitLoad) {
       w.failed = true;
       const quoted = axial <= QUOTED_LOAD_LIMIT * cfg.limitLoad ? ` (${(axial / 1000).toFixed(0)} kN)` : ' (overloaded)';
       this.latchCrash(`${cfg.label ?? LABELS[cfg.name]} gear collapsed${quoted}`, 'gearCollapse');
@@ -364,7 +486,7 @@ export class LandingGear {
     const q = body.orientation;
     const friction = this.structureContact.friction;
     for (const p of this.config.structure) {
-      this.scrape(input, p.position.x, p.position.y, p.position.z, p.message, p.tolerance, p.friction ?? friction, p.part, 'structure', p.belly === true);
+      this.scrape(input, p.position.x, p.position.y, p.position.z, p.message, p.tolerance, p.friction ?? friction, p.part, 'structure', p.belly === true, p);
     }
 
     // Lowest point of each propeller disc (a disc is normal to body x): hub + R * (the ground-ward
@@ -381,7 +503,7 @@ export class LandingGear {
       for (let i = 0; i < discs.length; i++) {
         const prop = discs[i];
         const s = prop.radius / dl;
-        this.scrape(input, prop.hub.x, prop.hub.y - ny * s, prop.hub.z - nz * s, prop.message, 0, friction, prop.part, 'propStrike', true);
+        this.scrape(input, prop.hub.x, prop.hub.y - ny * s, prop.hub.z - nz * s, prop.message, 0, friction, prop.part, 'propStrike', true, undefined, i);
       }
     }
   }
@@ -390,11 +512,13 @@ export class LandingGear {
    * Penalty contact of one airframe point (body coordinates relative to the reference point). `part` is the
    * point's own wording for a terrain-impact message, `kind` what its message is, and `underside` whether an
    * aircraft arriving with its gear up lands on it (see latchCrash). On water any contact ends the flight,
-   * whatever the point tolerates.
+   * whatever the point tolerates. With GearConfig.damage, `point` (an airframe point) or `disc` (a propeller's
+   * index) say what a contact at landing energy damages instead.
    */
   private scrape(
     input: GearInput, px: number, py: number, pz: number,
     message: string, tolerance: number, friction: number, part: string | undefined, kind: CrashKind, underside: boolean,
+    point?: StructuralPoint, disc = -1,
   ): void {
     const { body, env } = input;
     const X = this.t0;
@@ -421,9 +545,125 @@ export class LandingGear {
     F.z = normal * n.z - f * tz;
     const cg = body.cgOffset;
     this.applyNedForce(body.orientation, F, px - cg.x, py - cg.y, pz - cg.z);
+    if (this.damage && normal > 0) this.airframeContact = true;
     if (this.crashReason) return;
     const water = env.surface(X.x, X.y) === 'water';
+    if (this.damage && !water && (disc >= 0 || point?.item !== undefined) && !this.impactDescription()) {
+      if (this.commit) this.contactDamage(message, tolerance, part, -vn, depth, point, disc);
+      return;
+    }
     if (water || tolerance === 0 || -vn > tolerance) this.latchCrash(message, kind, part, underside, water);
+  }
+
+  /** Commit one leg's load to its damage record: hard, bent / bottomed, collapsed. */
+  private judgeLeg(w: WheelRuntime, axial: number, strut: number): void {
+    if (!this.commit) return;
+    const leg = w.leg!;
+    const c = w.dmg!;
+    if (axial > leg.peakLoad) leg.peakLoad = axial;
+    const label = w.cfg.label ?? LABELS[w.cfg.name];
+    const ultimate = w.weakened ? c.bottomedUltimate ?? c.ultimateLoad : c.ultimateLoad;
+    if (axial > ultimate) {
+      if (this.impactDescription()) {
+        // Impact energy: a crash, as without damage limits.
+        w.failed = true;
+        const quoted = axial <= QUOTED_LOAD_LIMIT * c.ultimateLoad ? ` (${(axial / 1000).toFixed(0)} kN)` : ' (overloaded)';
+        this.latchCrash(`${label} gear collapsed${quoted}`, 'gearCollapse');
+      } else this.collapseLeg(w, `${label} gear collapsed`);
+      return;
+    }
+    const time = this.body!.time;
+    const damage = this.damage!;
+    if (axial > c.hardLoad && leg.status === 'ok') {
+      leg.status = 'hard';
+      if (!damage.state.events.some((e) => e.item === 'hardLanding')) damage.note(time, 'hardLanding', 'inspection', 'Hard landing: inspection required');
+    }
+    const item = LEG_ITEMS[this.wheels.indexOf(w)];
+    if (c.kind === 'spring') {
+      if (axial <= c.yieldLoad) return;
+      const set = (c.maxSet ?? 0.04) * Math.min(1, (axial - c.yieldLoad) / (c.ultimateLoad - c.yieldLoad));
+      if (set > leg.set) {
+        leg.set = set;
+        if (w.cfg.name !== 'nose') leg.toe = (c.toePerSet ?? 0.9) * set;
+        const p = w.cfg.position;
+        const a = w.cfg.axis;
+        w.setPosition!.x = p.x + a.x * set;
+        w.setPosition!.y = p.y + a.y * set;
+        w.setPosition!.z = p.z + a.z * set;
+      }
+      if (STATUS_RANK[leg.status] < STATUS_RANK.bent) {
+        leg.status = 'bent';
+        this.yieldDamage(c, item, `${label} gear bent`);
+      }
+    } else if ((axial > c.yieldLoad || (w.stroke !== undefined && strut >= w.stroke - 1e-4)) && STATUS_RANK[leg.status] < STATUS_RANK.bottomed) {
+      leg.status = 'bottomed';
+      this.yieldDamage(c, item, `${label} gear bottomed: structural damage`);
+    }
+  }
+
+  /** The event of a leg's yield: on the airframe item it damages (LegDamageConfig.yield), else on the leg. */
+  private yieldDamage(c: LegDamageConfig, item: (typeof LEG_ITEMS)[number], text: string): void {
+    const time = this.body!.time;
+    if (c.yield?.item) this.damage!.airframe(time, c.yield.item, 'damage', c.yield.text);
+    else this.damage!.note(time, item, 'damage', c.yield?.text ?? text);
+  }
+
+  /** A leg folds at landing energy: it carries nothing from now on (damage, not a crash). */
+  private collapseLeg(w: WheelRuntime, text: string): void {
+    w.failed = true;
+    const leg = w.leg!;
+    if (leg.status === 'collapsed') return;
+    leg.status = 'collapsed';
+    this.damage!.note(this.body!.time, LEG_ITEMS[this.wheels.indexOf(w)], 'disabling', text);
+  }
+
+  /**
+   * A committed airframe or propeller contact at landing energy. A propeller: struck (a tip strike, the engine runs
+   * on) or, dug in (GearDamageConfig.propDig*), stopped. An airframe point: its item takes the point's severity, or an
+   * 'inspection' scrape within its tolerance; with no leg down a belly point or a disc makes it a gear-up landing.
+   */
+  private contactDamage(message: string, tolerance: number, part: string | undefined, sink: number, depth: number, point: StructuralPoint | undefined, disc: number): void {
+    const damage = this.damage!;
+    const time = this.body!.time;
+    const cfg = this.damageCfg!;
+    if (this.gearUp && (disc >= 0 || point?.belly === true)) {
+      damage.airframe(time, 'belly', 'disabling', `Gear-up landing (${part !== undefined ? `${part} first` : firstContact(message)})`);
+    }
+    if (disc >= 0) {
+      const prop = damage.state.props[disc];
+      this.propTime[disc] += this.input!.dt;
+      const power = this.input!.propPower?.[disc] ?? 0;
+      const collapsed = this.wheels.some((w) => w.leg!.status === 'collapsed');
+      const dig = this.gearUp || collapsed || power > (cfg.propDigPower ?? 0.4) || this.propTime[disc] > (cfg.propDigTime ?? 0.12) || depth > (cfg.propDigDepth ?? 0.04);
+      const item = `propeller${disc}` as const;
+      const which = this.discs.length > 1 ? (part !== undefined ? `${part[0].toUpperCase()}${part.slice(1)} strike` : message) : 'Propeller strike';
+      if (!prop.struck) {
+        prop.struck = true;
+        if (!dig) damage.note(time, item, 'damage', `${which}: engine and propeller inspection required`);
+      }
+      if (dig && !prop.stopped) {
+        prop.stopped = true;
+        const stop = cfg.propStopText ?? 'Propeller strike: engine stopped';
+        damage.note(time, item, 'disabling', this.discs.length > 1 ? stop.replace(/^Propeller strike/, which) : stop);
+      }
+      return;
+    }
+    const p = point!;
+    const item = p.item!;
+    if (p.damage) damage.airframe(time, item, p.damage.severity, p.damage.text);
+    else if (tolerance > 0 && sink <= tolerance) damage.airframe(time, item, 'inspection', `${message}: inspection required`);
+    else damage.airframe(time, item, ITEM_SEVERITY[item], message);
+  }
+
+  /** Terrain-impact description of the present arrival ('' for landing energy; see classifyImpact), once per call. */
+  private impactDescription(): string {
+    if (this.impactNow !== null) return this.impactNow;
+    const b = this.body;
+    if (!b) return '';
+    const v = rotateXYZ(b.orientation, b.velocityBody.x, b.velocityBody.y, b.velocityBody.z, { x: 0, y: 0, z: 0 });
+    const fwd = rotateXYZ(b.orientation, 1, 0, 0, { x: 0, y: 0, z: 0 });
+    this.impactNow = classifyImpact(v, Math.asin(Math.max(-1, Math.min(1, -fwd.z))), this.impact);
+    return this.impactNow;
   }
 
   /** Ground-relative velocity (NED) of an airframe point given in body coordinates relative to the reference point. */

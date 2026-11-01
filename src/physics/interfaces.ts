@@ -253,6 +253,14 @@ export interface GearInput {
   dt: number;
   /** Per-leg extension (nose, left, right), 0 .. 1. Absent = all down and locked. Held constant over a sub-step. */
   extension?: ArrayLike<number>;
+  /**
+   * Landing damage (GearConfig.damage) is judged only on calls with commit !== false: the flight model commits
+   * the first RK stage of each step (the state the step starts from) and none of its trim evaluations. Absent:
+   * every call commits (a once-per-step integrator).
+   */
+  commit?: boolean;
+  /** Shaft power of each propeller's engine as a fraction of its rating (for a propeller strike). Absent: 0. */
+  propPower?: ArrayLike<number>;
 }
 
 export interface GearOutput extends ForceMoment {
@@ -264,6 +272,8 @@ export interface GearOutput extends ForceMoment {
   crashKind?: CrashKind;
   /** Touchdown events detected this step. */
   touchdowns: { wheel: WheelState['name']; sinkRate: number }[];
+  /** With GearConfig.damage: the gear's live damage record (the same object every call; see physics/damage.ts). */
+  damage?: import('./damage').DamageState;
 }
 
 // ------------------------------------------------------------------------------------------------ flight model

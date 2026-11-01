@@ -487,6 +487,11 @@ export interface AircraftState {
   stallFraction: number;
   crashed: boolean;
   crashReason: string;
+  /**
+   * Landing damage of a type with GearConfig.damage (physics/damage.ts): the flight model's live record, not a
+   * copy. Absent on types without damage limits (they crash instead).
+   */
+  damage?: import('../physics/damage').DamageState;
 
   // --- Subsystems ---
   surfaces: SurfaceState;

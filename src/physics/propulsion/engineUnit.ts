@@ -110,6 +110,12 @@ export class EngineUnit {
   steady = false;
   /** The shaft speed is held (settle solves the blade angle for it instead of integrating). */
   shaftHeld = false;
+  /**
+   * The propeller shaft is locked at rest for good (seize(): a propeller strike that dug the blades in). Cleared by
+   * reset(). A piston engine is stopped with it (its crank is this shaft); a free turbine's propeller and power
+   * turbine stop while its gas generator, on its own shaft, runs on as the fuel control holds it.
+   */
+  seized = false;
   /** Torque of engine and starter on the propeller shaft in the last finish(), losses taken off, N*m. */
   shaftTorque = 0;
   /** Cowl flap position reached, 0 closed .. 1 open. */
@@ -270,6 +276,15 @@ export class EngineUnit {
     return this.governor ? this.governor.pitch : this.fixedPitch;
   }
 
+  /**
+   * Sudden stoppage (a propeller strike that dug in): the propeller shaft stops now and stays stopped until reset().
+   * A piston engine stops; a free turbine keeps its gas generator (Ng) running with the power turbine held.
+   */
+  seize(): void {
+    this.seized = true;
+    this.omega = 0;
+  }
+
   /** Blades on the feather stop (false for a propeller that cannot feather). */
   get feathered(): boolean {
     return this.governor !== undefined && this.governor.feathered;
@@ -281,6 +296,7 @@ export class EngineUnit {
    * starts alight at low idle (a piston engine's running follows from its speed).
    */
   reset(rpm: number, warm: boolean, oat: number, feathered = false, running = false): void {
+    this.seized = false;
     this.thermal.reset(warm, oat);
     this.engine.reset(101325, oat);
     if (running) this.turbine?.light();
@@ -498,7 +514,9 @@ export class EngineUnit {
     const resist = engine.lossTorque * gear;
     this.shaftTorque = (engine.indicatedTorque + starterTorque) * gear - resist;
     let omegaNext: number;
-    if (this.shaftHeld) {
+    if (this.seized) {
+      omegaNext = 0; // blades dug in: no torque turns it again
+    } else if (this.shaftHeld) {
       omegaNext = omega;
     } else if (omega <= 0 && drive < Math.max(this.breakawayTorque, resist)) {
       omegaNext = 0; // held by compression and static friction

@@ -1,6 +1,6 @@
 // Minimal 6-DOF rigid-body rig for exercising the landing gear without the rest of the flight model:
 // gravity + gear + an optional external body-axis force, integrated with semi-implicit Euler at 240 Hz.
-// The CG is at the reference point (cgOffset = 0), so `position` is both. The rig takes the gear
+// `position` is the CG; by default the CG is at the reference point (cgOffset = 0), so it is both. The rig takes the gear
 // configuration, mass and principal inertias of the aircraft on it; the defaults are the Cessna 172S.
 
 import { C172 } from '../../src/core/c172';
@@ -47,6 +47,10 @@ export class GearRig {
   loads: ((rig: GearRig) => { force: Vec3; moment: Vec3 }) | null = null;
   /** Extension of the three legs (retractable gear), handed to the gear at every step. Absent: all down and locked. */
   extension: ArrayLike<number> | undefined = undefined;
+  /** CG relative to the reference point, body axes, m (a real type's loading; default: at the reference point). */
+  cgOffset: Vec3 = v3.zero();
+  /** Shaft power of each propeller's engine as a fraction of rated, handed to the gear (landing damage). */
+  propPower: ArrayLike<number> | undefined = undefined;
   output!: GearOutput;
 
   constructor(
@@ -61,10 +65,10 @@ export class GearRig {
 
   /** Place the aircraft at rest in its static attitude, `extraHeight` above the resting height. */
   placeOnGround(heading = 0, extraHeight = 0, north = 0, east = 0): void {
-    const pose = this.gear.restingPose(this.mass, v3.zero());
+    const pose = this.gear.restingPose(this.mass, this.cgOffset);
     const ground = this.env.groundElevation(north, east);
-    this.position = { x: north, y: east, z: -(ground + pose.height + extraHeight) };
     this.orientation = quat.fromEuler(0, pose.pitch, heading);
+    this.position = v3.add({ x: north, y: east, z: -(ground + pose.height + extraHeight) }, quat.rotate(this.orientation, this.cgOffset));
     this.velocity = v3.zero();
     this.angularVelocity = v3.zero();
     this.gear.reset();
@@ -80,20 +84,23 @@ export class GearRig {
 
   step(dt = DT): GearOutput {
     const q = this.orientation;
+    const cg = this.cgOffset;
+    const zero = cg.x === 0 && cg.y === 0 && cg.z === 0;
     const out = this.gear.compute({
       body: {
         time: this.time,
-        position: this.position,
+        position: zero ? this.position : v3.sub(this.position, quat.rotate(q, cg)),
         orientation: q,
         velocityBody: quat.rotateInv(q, this.velocity),
         angularVelocity: this.angularVelocity,
-        cgOffset: v3.zero(),
+        cgOffset: zero ? v3.zero() : cg,
         mass: this.mass,
       },
       controls: this.controls,
       env: this.env,
       dt,
       extension: this.extension,
+      ...(this.propPower ? { propPower: this.propPower } : {}),
     });
     let F = out.force;
     let M = out.moment;

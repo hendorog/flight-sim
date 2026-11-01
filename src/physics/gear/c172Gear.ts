@@ -116,4 +116,16 @@ export const C172_GEAR: GearConfig = {
   ],
   structure: C172_STRUCTURE,
   propellers: [C172_PROPELLER],
+  // Landing damage (physics/damage.ts). Axial leg loads from drops at MTOW, wings level, lift = weight
+  // (tests/gear/damage.test.ts), placed on the landing-damage research's section 7 sink-rate bands: the
+  // hard-landing note at V_lim 2.62 m/s (517 fpm); hard / yield / collapse mains-first at 2.62 / 4.6 / 6.8 m/s,
+  // nose-wheel contact at 1.68 / 2.13 / 3.66 m/s. An oleo, once bottomed, folds on a later contact at 40 % of
+  // the way from its yield to its ultimate load (an estimate).
+  damage: {
+    legs: [
+      { kind: 'oleo', hardLoad: 11.6e3, yieldLoad: 17.7e3, ultimateLoad: 68.6e3, bottomedUltimate: 38.1e3, collapsedCompression: 0.15, yield: { text: 'Firewall buckled by the nose gear', item: 'nose' } },
+      { kind: 'spring', hardLoad: 12.1e3, yieldLoad: 19.3e3, ultimateLoad: 29.3e3, collapsedCompression: 0.25 },
+      { kind: 'spring', hardLoad: 12.1e3, yieldLoad: 19.3e3, ultimateLoad: 29.3e3, collapsedCompression: 0.25 },
+    ],
+  },
 };

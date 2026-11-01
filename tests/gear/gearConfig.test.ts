@@ -1,7 +1,8 @@
 // What LandingGear takes from its configuration instead of a Cessna 172S constant: the list of propeller
 // discs, the wording of the first part in a terrain-impact message, the impact thresholds and the penalty
 // contact of the airframe points. Every case is the C172S configuration with one member replaced, so the
-// C172S itself reaches none of the replaced paths.
+// C172S itself reaches none of the replaced paths. The base is that configuration without its damage limits
+// (LEGACY_C172_GEAR), so every contact still ends in the crash message these cases read.
 
 import { describe, expect, test } from 'vitest';
 import { C172 } from '../../src/core/c172';
@@ -9,6 +10,9 @@ import { DEG, G0, quat, v3, type Vec3 } from '../../src/core/math';
 import { C172_GEAR, LandingGear, classifyImpact, type GearConfig } from '../../src/physics/gear';
 import { C172_PROPELLER, C172_STRUCTURE, STRUCTURE_CONTACT } from '../../src/physics/gear/structure';
 import { GearRig, MASS, planeEnvironment } from './rig';
+import { LEGACY_C172_GEAR } from './testbed';
+
+const BASE = LEGACY_C172_GEAR;
 
 const ELEVATION = 120;
 const PROP_TIP: Vec3 = { x: C172.prop.hub.x, y: 0, z: C172.prop.diameter / 2 };
@@ -26,14 +30,14 @@ describe('propeller discs', () => {
   test('the Cessna 172S lists its one disc; an empty list strikes nothing', () => {
     expect(C172_GEAR.propellers).toEqual([C172_PROPELLER]);
     expect(new LandingGear().config).toBe(C172_GEAR);
-    expect(touch(C172_GEAR, 0, -27 * DEG, PROP_TIP, 0.02).crash).toBe('Propeller strike');
-    expect(touch({ ...C172_GEAR, propellers: [] }, 0, -27 * DEG, PROP_TIP, 0.02).crash).toBe('');
+    expect(touch(BASE, 0, -27 * DEG, PROP_TIP, 0.02).crash).toBe('Propeller strike');
+    expect(touch({ ...BASE, propellers: [] }, 0, -27 * DEG, PROP_TIP, 0.02).crash).toBe('');
   });
 
   test('every disc of a list is tested, each with its own message', () => {
     const left = { hub: { x: 1.2, y: -1.6, z: 0.6 }, radius: 0.95, message: 'Left propeller strike' };
     const right = { hub: { x: 1.2, y: 1.6, z: 0.6 }, radius: 0.95, message: 'Right propeller strike' };
-    const twin: GearConfig = { ...C172_GEAR, propellers: [left, right] };
+    const twin: GearConfig = { ...BASE, propellers: [left, right] };
     // The lowest point of a disc is found from the attitude: banked, the disc on the low side touches first.
     const drop = (roll: number) => {
       const rig = new GearRig(planeEnvironment(), MASS, twin);
@@ -68,15 +72,15 @@ describe('first part of a terrain impact', () => {
   const fast = { x: 60, y: 0, z: 0 };
 
   test('a point without a label is named from its message, as the Cessna 172S points are', () => {
-    expect(touch(C172_GEAR, 0, -27 * DEG, PROP_TIP, 0.02, fast).crash).toBe('Terrain impact at 117 kt, 0 fpm descent, 27° nose down (propeller first)');
+    expect(touch(BASE, 0, -27 * DEG, PROP_TIP, 0.02, fast).crash).toBe('Terrain impact at 117 kt, 0 fpm descent, 27° nose down (propeller first)');
     const tip = C172_STRUCTURE[0].position;
-    expect(touch(C172_GEAR, -60 * DEG, 0, tip, 0.02, fast).crash).toBe('Terrain impact at 117 kt, 0 fpm descent (left wingtip first)');
+    expect(touch(BASE, -60 * DEG, 0, tip, 0.02, fast).crash).toBe('Terrain impact at 117 kt, 0 fpm descent (left wingtip first)');
   });
 
   test('a labelled disc or airframe point is named by its label', () => {
     const disc = { ...C172_PROPELLER, message: 'Left propeller strike' };
-    const unlabelled: GearConfig = { ...C172_GEAR, propellers: [disc] };
-    const labelled: GearConfig = { ...C172_GEAR, propellers: [{ ...disc, part: 'left propeller' }] };
+    const unlabelled: GearConfig = { ...BASE, propellers: [disc] };
+    const labelled: GearConfig = { ...BASE, propellers: [{ ...disc, part: 'left propeller' }] };
     expect(touch(unlabelled, 0, -27 * DEG, PROP_TIP, 0.02, fast).crash).toMatch(/\(left propeller strike\)$/);
     expect(touch(labelled, 0, -27 * DEG, PROP_TIP, 0.02, fast).crash).toBe('Terrain impact at 117 kt, 0 fpm descent, 27° nose down (left propeller first)');
     // The label is wording for the impact message only: a landing-like contact keeps the point's message.
@@ -84,8 +88,8 @@ describe('first part of a terrain impact', () => {
 
     const structure = C172_STRUCTURE.map((p, i) => (i === 0 ? { ...p, part: 'left wing' } : p));
     const tip = C172_STRUCTURE[0].position;
-    expect(touch({ ...C172_GEAR, structure }, -60 * DEG, 0, tip, 0.02, fast).crash).toBe('Terrain impact at 117 kt, 0 fpm descent (left wing first)');
-    expect(touch({ ...C172_GEAR, structure }, -60 * DEG, 0, tip, 0.02).crash).toBe('Left wingtip struck the ground');
+    expect(touch({ ...BASE, structure }, -60 * DEG, 0, tip, 0.02, fast).crash).toBe('Terrain impact at 117 kt, 0 fpm descent (left wing first)');
+    expect(touch({ ...BASE, structure }, -60 * DEG, 0, tip, 0.02).crash).toBe('Left wingtip struck the ground');
   });
 });
 
@@ -103,8 +107,8 @@ describe('impact thresholds', () => {
 
   test('a configuration with its own thresholds classifies its crashes with them', () => {
     const arrival = { x: 30, y: 0, z: 0 };
-    expect(touch(C172_GEAR, 0, -27 * DEG, PROP_TIP, 0.02, arrival).crash).toBe('Propeller strike');
-    expect(touch({ ...C172_GEAR, impact: slow }, 0, -27 * DEG, PROP_TIP, 0.02, arrival).crash).toBe('Terrain impact at 58 kt, 0 fpm descent, 27° nose down (propeller first)');
+    expect(touch(BASE, 0, -27 * DEG, PROP_TIP, 0.02, arrival).crash).toBe('Propeller strike');
+    expect(touch({ ...BASE, impact: slow }, 0, -27 * DEG, PROP_TIP, 0.02, arrival).crash).toBe('Terrain impact at 58 kt, 0 fpm descent, 27° nose down (propeller first)');
   });
 });
 
@@ -116,22 +120,22 @@ describe('airframe contact', () => {
 
   test('stiffness, damping and friction come from the configuration; the default is the present contact', () => {
     const k = STRUCTURE_CONTACT;
-    const standard = load({ ...C172_GEAR, structure: [probe] });
+    const standard = load({ ...BASE, structure: [probe] });
     expect(standard.crash).toBe('');
     expect(standard.onGround).toBe(false);
     expect(-standard.force.z).toBeCloseTo(k.stiffness * 0.1 + k.damping * 1, 4);
     expect(standard.force.x / standard.force.z).toBeCloseTo(k.friction, 9);
 
-    const soft = load({ ...C172_GEAR, structure: [probe], contact: { stiffness: 1e5, damping: 5e3, friction: 0.2 } });
+    const soft = load({ ...BASE, structure: [probe], contact: { stiffness: 1e5, damping: 5e3, friction: 0.2 } });
     expect(-soft.force.z).toBeCloseTo(1e5 * 0.1 + 5e3 * 1, 4);
     expect(soft.force.x / soft.force.z).toBeCloseTo(0.2, 9);
   });
 
   test('a point may have its own friction', () => {
-    const skid = load({ ...C172_GEAR, structure: [{ ...probe, friction: 0.8 }] });
+    const skid = load({ ...BASE, structure: [{ ...probe, friction: 0.8 }] });
     expect(-skid.force.z).toBeCloseTo(STRUCTURE_CONTACT.stiffness * 0.1 + STRUCTURE_CONTACT.damping * 1, 4);
     expect(skid.force.x / skid.force.z).toBeCloseTo(0.8, 9);
-    const ice = load({ ...C172_GEAR, structure: [{ ...probe, friction: 0 }], contact: { ...STRUCTURE_CONTACT, friction: 0.3 } });
+    const ice = load({ ...BASE, structure: [{ ...probe, friction: 0 }], contact: { ...STRUCTURE_CONTACT, friction: 0.3 } });
     expect(ice.force.x).toBeCloseTo(0, 9);
   });
 });
@@ -143,7 +147,7 @@ describe('the rig', () => {
     expect(standard.mass).toBe(MASS);
     expect(standard.inertia).toEqual({ x: C172.mass.Ixx, y: C172.mass.Iyy, z: C172.mass.Izz });
 
-    const config: GearConfig = { ...C172_GEAR, propellers: [{ ...C172_PROPELLER, radius: 0.8 }] };
+    const config: GearConfig = { ...BASE, propellers: [{ ...C172_PROPELLER, radius: 0.8 }] };
     const inertia = { x: 2000, y: 2600, z: 4200 };
     const heavy = new GearRig(planeEnvironment(), 1300, config, inertia);
     expect(heavy.gear.config).toBe(config);

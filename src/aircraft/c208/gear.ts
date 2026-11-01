@@ -91,16 +91,16 @@ const H_TAIL_HALF = G.hTail.span / 2;
 
 /** Airframe points that must not touch the ground (3V). */
 const STRUCTURE: readonly StructuralPoint[] = [
-  { position: { x: -0.1, y: -HALF_SPAN, z: TIP_Z }, message: 'Left wingtip struck the ground', tolerance: 0 },
-  { position: { x: -0.1, y: HALF_SPAN, z: TIP_Z }, message: 'Right wingtip struck the ground', tolerance: 0 },
+  { position: { x: -0.1, y: -HALF_SPAN, z: TIP_Z }, message: 'Left wingtip struck the ground', tolerance: 0, item: 'wingtipLeft' },
+  { position: { x: -0.1, y: HALF_SPAN, z: TIP_Z }, message: 'Right wingtip struck the ground', tolerance: 0, item: 'wingtipRight' },
   // The tail tie-down under the tailcone: it touches at about 15 degrees of pitch.
-  { position: { x: -5.3, y: 0, z: T }, message: 'Tail strike', tolerance: 2.5 },
-  { position: { x: H_TAIL_TIP_X, y: -H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Left horizontal stabilizer struck the ground', tolerance: 0 },
-  { position: { x: H_TAIL_TIP_X, y: H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Right horizontal stabilizer struck the ground', tolerance: 0 },
+  { position: { x: -5.3, y: 0, z: T }, message: 'Tail strike', tolerance: 2.5, item: 'tail' },
+  { position: { x: H_TAIL_TIP_X, y: -H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Left horizontal stabilizer struck the ground', tolerance: 0, item: 'tail' },
+  { position: { x: H_TAIL_TIP_X, y: H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Right horizontal stabilizer struck the ground', tolerance: 0, item: 'tail' },
   // The flat cabin floor and the cowling's chin inlet.
-  { position: { x: -1.5, y: 0, z: T + 0.8 }, message: 'Belly struck the ground', tolerance: 0 },
-  { position: { x: 1.2, y: 0, z: T + 0.8 }, message: 'Belly struck the ground', tolerance: 0 },
-  { position: { x: 3.3, y: 0, z: T + 0.58 }, message: 'Nose struck the ground', tolerance: 0 },
+  { position: { x: -1.5, y: 0, z: T + 0.8 }, message: 'Belly struck the ground', tolerance: 0, item: 'belly' },
+  { position: { x: 1.2, y: 0, z: T + 0.8 }, message: 'Belly struck the ground', tolerance: 0, item: 'belly' },
+  { position: { x: 3.3, y: 0, z: T + 0.58 }, message: 'Nose struck the ground', tolerance: 0, item: 'nose' },
   // Upper surfaces, for a nose-over or roll-over.
   { position: { x: G.vTail.tip.x, y: 0, z: G.vTail.tip.z }, message: 'Aircraft flipped over', tolerance: 0 },
   { position: { x: 0.5, y: 0, z: T - 1.2 }, message: 'Aircraft flipped over', tolerance: 0 },
@@ -132,6 +132,20 @@ export function createC208Gear(): GearConfig {
     structure: STRUCTURE,
     propellers: [{ hub: prop.hub, radius: prop.diameter / 2, message: 'Propeller strike' }],
     // Contact speeds of a 60 KCAS (31 m/s) landing stall: 1.6 and 1.4 times it (gearConfig.ts rule of thumb).
+    // Landing damage (physics/damage.ts). Axial leg loads from drops at MTOW, wings level, lift = weight
+    // (tests/gear/damage.test.ts), placed on the landing-damage research's section 7 sink-rate bands: the
+    // hard-landing note at V_lim 3.05 m/s (600 fpm); hard / yield / collapse mains-first at 3.05 / 4.3 / 6.6 m/s,
+    // nose-wheel contact at 2.13 / 2.74 / 3.96 m/s. An oleo, once bottomed, folds on a later contact at 40 % of
+    // the way from its yield to its ultimate load (an estimate).
+    damage: {
+      legs: [
+        { kind: 'oleo', hardLoad: 62.8e3, yieldLoad: 97.8e3, ultimateLoad: 195.2e3, bottomedUltimate: 136.8e3, collapsedCompression: 0.15, yield: { text: 'Nose gear spring support damaged', item: 'nose' } },
+        { kind: 'spring', hardLoad: 54.8e3, yieldLoad: 77.0e3, ultimateLoad: 107.5e3, collapsedCompression: 0.3 },
+        { kind: 'spring', hardLoad: 54.8e3, yieldLoad: 77.0e3, ultimateLoad: 107.5e3, collapsedCompression: 0.3 },
+      ],
+      // Free turbine: a strike that digs in stops the propeller and power turbine; the gas generator runs on.
+      propStopText: 'Propeller strike: propeller stopped (gas generator running)',
+    },
     impact: { sinkRate: 7, speed: 50, steepSpeed: 43, steepPath: 12 * DEG },
   };
 }
