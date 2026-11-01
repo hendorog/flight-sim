@@ -107,7 +107,7 @@ describe('the Simulator wires the Career in the design order', () => {
   });
 
   it('flushes the career save before every reload and when the page goes', () => {
-    for (const head of ['setAircraft(id: AircraftId, opts', 'setEra(id: EraId): void', 'setSeed(seed: number): void', 'private onLeave(): void']) {
+    for (const head of ['private reloadIntoAircraft(id: AircraftId, opts', 'setEra(id: EraId): void', 'setSeed(seed: number): void', 'private onLeave(): void']) {
       expect(member(head), head).toContain('this.careerStore?.flush();');
     }
     expect(simulatorSource).toContain("window.addEventListener('pagehide', () => this.onLeave());");

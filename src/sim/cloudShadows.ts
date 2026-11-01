@@ -122,11 +122,24 @@ export class SceneMaterialPatches {
       cloudShadowParams: source.cloudShadowParams,
       cloudShadowLight: { value: new THREE.Vector4(0, 1, 0, 0) },
     };
-    if (aircraft && flood) {
-      const cabin = new Set<THREE.Material>();
-      aircraft.getObjectByName('cockpit')?.traverse((o) => materialsOf(o).forEach((m) => cabin.add(m)));
-      aircraft.traverse((o) => materialsOf(o).forEach((m) => cabin.has(m) || this.floodlitAircraft.add(m)));
-    }
+    if (aircraft && flood) this.collectAircraft(aircraft);
+  }
+
+  /** The exterior materials of the aircraft under `aircraft` (not its `cockpit` subtree), for the floodlight pools. */
+  private collectAircraft(aircraft: THREE.Object3D): void {
+    const cabin = new Set<THREE.Material>();
+    aircraft.getObjectByName('cockpit')?.traverse((o) => materialsOf(o).forEach((m) => cabin.add(m)));
+    aircraft.traverse((o) => materialsOf(o).forEach((m) => cabin.has(m) || this.floodlitAircraft.add(m)));
+  }
+
+  /**
+   * Another aircraft model under `aircraft` (the shell's aircraft hot swap): the old model's materials are forgotten,
+   * the new exterior is floodlit like the first, and everything under the root is patched now (not at the next scan).
+   */
+  setAircraft(aircraft: THREE.Object3D): void {
+    this.floodlitAircraft.clear();
+    if (this.flood) this.collectAircraft(aircraft);
+    this.scan(aircraft);
   }
 
   /**

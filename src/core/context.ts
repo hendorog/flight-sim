@@ -97,12 +97,19 @@ export interface SimCommands {
    */
   startFrom?(sc: unknown, opts: { lessonId: string; label: string }): Promise<void>;
   /**
-   * Choose another aircraft: stores the preference ('fs.aircraft') and RELOADS the page without the URL
-   * parameters that would undo the choice (aircraft, scenario, lesson, phase, brief, resume, career), plus
-   * `school=1` when `opts.open` is 'school', or `career=1` (and no `school`) when it is 'career' (the Career's
-   * type switch). The type is selected at boot only. Optional: older mocks do not implement it.
+   * Choose another aircraft. In free flight (aircraftHotSwap() true and no `opts.open`) the type is switched in place:
+   * the world stays loaded and the flight carries on in the new type from the same position, velocity and attitude
+   * (src/sim/Simulator.ts swapAircraft). Otherwise, and whenever the new type cannot be loaded, it stores the
+   * preference ('fs.aircraft') and RELOADS the page without the URL parameters that would undo the choice (aircraft,
+   * scenario, lesson, phase, brief, resume, career), plus `school=1` when `opts.open` is 'school', or `career=1` (and
+   * no `school`) when it is 'career' (the Career's type switch). Optional: older mocks do not implement it.
    */
   setAircraft?(id: AircraftId, opts?: { open?: 'school' | 'career' }): void;
+  /**
+   * setAircraft would switch the type in place now (keeping the flight) rather than reload: no lesson, Career job,
+   * R22 demonstration or curtain in the way. The menu then asks no "Leave this flight?". Optional (absent: false).
+   */
+  aircraftHotSwap?(): boolean;
   /** Carburettor-icing realism toggle: stores 'fs.carbIcing' ('0' = off; absent = on) and sets ctx.carbIcing. */
   setCarbIcing?(on: boolean): void;
   /**

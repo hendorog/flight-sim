@@ -748,8 +748,9 @@ export class PauseMenu {
 
   /**
    * The aircraft chooser at the top of the Flight page: the available types, the one flown first. Choosing
-   * another reloads the page into it (commands.setAircraft); airborne or moving it asks first, during a lesson
-   * it asks to abandon the lesson. Hidden while there is nothing else to choose.
+   * another switches to it (commands.setAircraft): in place, keeping the flight, when commands.aircraftHotSwap() says
+   * so (no question then); otherwise by a reload, which airborne or moving asks first. During a lesson it asks to
+   * abandon the lesson, during a Career job the job. Hidden while there is nothing else to choose.
    */
   private buildChooser(p: HTMLElement): void {
     const ctx = this.host.ctx;
@@ -794,7 +795,11 @@ export class PauseMenu {
       el('span', '', b, row.id === current ? `Flying now. ${row.blurb}` : row.blurb);
       if (row.id === current) continue;
       b.addEventListener('click', () => {
-        const ask = this.jobConfirmation(`Abandon the job and fly the ${row.shortName}?`) ?? choiceConfirmation(this.host.ctx.state, !!this.host.school?.lessonActive, flown, row);
+        const c = this.host.ctx;
+        const lesson = !!this.host.school?.lessonActive;
+        let ask = this.jobConfirmation(`Abandon the job and fly the ${row.shortName}?`) ?? choiceConfirmation(c.state, lesson, flown, row);
+        // Switched in place, the flight is not left: nothing to ask (a lesson or a job still asks; they reload).
+        if (ask?.kind === 'flight' && c.commands.aircraftHotSwap?.()) ask = null;
         if (!ask) {
           choose(row);
           return;

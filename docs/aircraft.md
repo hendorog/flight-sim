@@ -21,9 +21,10 @@ The types the simulator flies, how to choose one, and the keys and handling note
 The Diamond DA42 NG (`da42`) is defined but not yet offered in the chooser. The Bo 105 (`bo105`) and the Lockheed
 AH-56A Cheyenne (`ah56`) are registered with `available: false` until the owner approves them.
 
-Choose the type at the top of the menu's Flight page (Escape). The choice is remembered per browser and the page
-reloads into it; airborne or moving it asks first. Each type keeps its own resumed flight, so switching to another
-type and back continues where you left it. `index.html?aircraft=<id>` flies a type for that page only (it is not
+Choose the type at the top of the menu's Flight page (Escape). The choice is remembered per browser. In free flight
+the new type takes over the flight in place, at the same position, speed and attitude, without a reload
+([simulator.md](simulator.md), "Aircraft switch"); during a lesson or a Career job the page reloads into it instead
+(asking first). Each type keeps its own resumed flight, so a type reached by a reload continues where you left it. `index.html?aircraft=<id>` flies a type for that page only (it is not
 remembered). The Flight School teaches in the C172S; the other types are flown free.
 
 ## Helicopters

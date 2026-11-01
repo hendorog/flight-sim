@@ -278,6 +278,8 @@ export class AudioSystem implements Subsystem {
     this.tracker = new SoundTracker(profile);
     this.voice?.silence();
     this.voice = this.voiceFor(profile);
+    // The old type's tail-wheel lock is not this one's (no lock clunk on the first frame of the new type).
+    this.lastTailWheelLock = undefined;
     if (this.ctx) this.tracker.reset(this.ctx.state);
     const g = this.g;
     if (!g) return;

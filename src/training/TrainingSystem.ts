@@ -227,6 +227,14 @@ export class TrainingSystem implements Subsystem {
     this.copilot = new InstructorPilot(this.aircraftDef);
   }
 
+  /**
+   * The shell switched the type in flight (src/sim/Simulator.ts swapAircraft; never during a lesson): the
+   * instructor-pilot takes the new type's school data. Everything else reads the type through the shell's aircraftId.
+   */
+  aircraftChanged(): void {
+    this.copilot.setAircraft(this.aircraftDef);
+  }
+
   /** The type being flown ('c172s' when the shell does not say). */
   get aircraftId(): AircraftTypeId {
     return this.shell.aircraftId?.() ?? DEFAULT_AIRCRAFT;

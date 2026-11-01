@@ -101,6 +101,52 @@ over 10 s; resumed mid take-off roll it drifts about 2 m in 10 s, because the ty
 A Career job in progress writes its own block into the snapshot, so a reload resumes the job with the flight
 ([career.md](career.md), "Persistence, boot and reloads").
 
+## Aircraft switch
+
+Choosing another type in the menu's aircraft chooser (or `commands.setAircraft`, or `__sim.swapAircraft(id)`)
+switches it in place: the world stays loaded and the flight carries on in the new type
+(`Simulator.swapAircraft`). What a switch keeps: the position, velocity, attitude and body rates exactly (in the
+air; on the ground the new type stands on its own wheels or skids at the same north/east and heading, rolling at
+the same ground speed), the clock, the weather and time of day, the radios and their tuning, the altimeter
+setting, heading bug and OBS, the camera mode, the time scale, the keyboard assists and the mouse-yoke mode, the
+stations' memory of you and the traffic (no reset; the callsign on the radio becomes the new type's registration),
+and an engaged autopilot (re-engaged holding what it finds, in the air). What
+it does not: the new type is trimmed at the old airspeed and flight path, clamped into its own envelope (a toast
+lists what was clamped), with its typical payload, the old fuel fraction and the switch positions of the phase;
+gyros are spun up when the engines run; every held key is let go. The physics side is `SimPhysics.setAircraft`
+(`src/sim/aircraftSwap.ts`); the shell rebuilds the aircraft model (with its panel textures and livery bake), the
+instrument panel, the cameras' eye point, the post pipeline's radius and cabin box, the input and sound
+profiles, the UI (HUD, hints, control widget, checklist, fixed panel, cockpit clicks, menu and key list,
+autopilot link), the R22 demonstrations, the Flight School's instructor-pilot and the cloud-shadow and floodlight
+patches. Nothing kept from boot points at the old type: the Flight School, the radio and the Career read the panel
+and the type live. No `reset` event is sent (the radio, the traffic and the Career would take it for a new flight).
+
+The new type's definition and presentation are loaded lazily, as at boot, while the old type flies on (the menu
+holds the simulation while it is open). The rebuild then runs with the simulation held. A type not built yet in
+this session, or whose rebuild was measured above 200 ms, goes behind a short curtain with a shader warm-up; a
+quick one does not. Afterwards the choice is stored (`fs.aircraft`), the address becomes the one a reload would
+have used (no `aircraft=`, `scenario=`, `resume=`, `ap=`, ...) and the flight is saved under the new type, so F5
+resumes it there. A switch keeps the menu from asking "Leave this flight?" (`commands.aircraftHotSwap()`); it closes
+the menu, and a toast names the new type.
+
+The reload of old is still used, unchanged, when a switch in place could break something: a lesson in any phase,
+a placed Career job or one being placed, the Career's or the Flight School's own type switch (`open:`), an R22
+demonstration, a curtain already up, a crashed aircraft, another switch under way, or the new type's chunks failing
+to load. The menu asks first for a lesson or a job, as before. A type the physics cannot build leaves the old one
+flying, with a toast.
+
+`node scripts/swap-check.mjs` checks it in headless Chrome: a C172S in cruise switched to the R44, PA-34, C152,
+C208 and back, each switch paused so position, velocity, attitude and clock compare exactly (all unchanged), then
+3 s of flight against the velocity, the panel texture on the new model, the old model gone, the address and the
+stored snapshot, no errors, a cockpit and an exterior picture (`--reference` adds each type booted straight into
+cruise, for comparison); a switch made from the menu's chooser (no question, the menu closes, the flight goes
+on); a second, paused round trip with the GPU resource and window-listener counts (no growth),
+its way back forced through the quick path; F5 resuming in the type last flown; and a switch lined up on the runway
+(C172S to C152 on its own wheels at the same spot and heading). Measured on the dev server (the rebuild; the whole
+switch with its curtain): C172S and C152 0.28-0.33 s, 1.0-1.1 s (0.27 s by the quick path, no curtain); PA-34
+1.1 s, 2.1 s and C208 1.5 s, 2.4 s the first time (their propeller maps); R44 1.6-1.7 s, 2.2-3.0 s (its model
+is built on the main thread); a reload 7.7 s.
+
 ## Sound
 
 Sound starts on the first click, tap or key press (browsers allow audio only after a user gesture). It needs a

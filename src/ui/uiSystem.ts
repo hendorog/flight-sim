@@ -14,7 +14,8 @@
 // The type flown: what the UI says and shows of it comes from ctx.aircraft / ctx.presentation, read once in
 // init() (its UiProfile: switches, levers, read-outs, start-up card, hints; its reference speeds, resting
 // height and limits for the HUD; its panel for the cockpit clicks unless the `panel` option names one). A
-// context without them (test fakes) gets the Cessna 172S, as does everything built before init().
+// context without them (test fakes) gets the Cessna 172S, as does everything built before init(). An aircraft switch
+// in flight (the shell's hot swap) calls changeAircraft(), which rebuilds all of it from the new type.
 //
 // Flight School (section 5): `schoolLayer` is the mount point for SchoolUi (above the HUD and cockpit cues,
 // below toasts, the crash dialog, the menu and the loading screen). attachSchool() wires it in: per-frame
@@ -162,7 +163,7 @@ export class UISystem implements Subsystem, MenuHost {
   pausedBadgeEnabled = true;
   private context: SimContext | null = null;
   private readonly hotkeys: Required<UIHotkeys>;
-  private readonly bindings: KeyBinding[];
+  private bindings: KeyBinding[];
   private readonly unsubscribe: (() => void)[] = [];
   private hudOn = true;
   private weatherDirty = false;
@@ -515,6 +516,40 @@ export class UISystem implements Subsystem, MenuHost {
   /** Control-position widget on screen (automation). */
   get controlsWidgetVisible(): boolean {
     return this.controlsWidget.visible;
+  }
+
+  /**
+   * Another type is flown, the flight carrying on (the shell's aircraft hot swap, src/sim/Simulator.ts swapAircraft):
+   * ctx.aircraft and ctx.presentation already name it. Everything init() read from the old type is rebuilt from the
+   * new one: the HUD, hints and control widget, the checklist, the fixed panel and the cockpit clicks (on the new
+   * panel's face), and the menu (its title, aircraft chooser and Controls tab, with `bindings`). The menu is closed;
+   * the shell gives the new panel to setPanelSource() and a new autopilot link. Call after init().
+   */
+  changeAircraft(bindings: KeyBinding[]): void {
+    const ctx = this.ctx;
+    const { aircraft: def, presentation } = ctx;
+    this.bindings = bindings;
+    this.closeMenu();
+    this.setAircraft(def, presentation);
+    this.checklist.init(ctx);
+    this.checklist.reset();
+    this.flightCues.reset();
+    this.lastParkingBrake = null;
+    this.startupCheck = true;
+    const panelDef = this.panel ?? presentation.panel;
+    // The fixed panel and the clicks in their places under the captions (as init() puts them).
+    this.clicks?.dispose();
+    this.fixedPanel?.dispose();
+    const fixed = (this.fixedPanel = new FixedPanel(this.root, panelDef, ctx));
+    this.root.prepend(fixed.root);
+    const clicks = (this.clicks = new CockpitClicks(this.root, panelDef, this.hold));
+    clicks.fixed = fixed;
+    this.root.insertBefore(this.root.lastElementChild!, this.schoolLayer);
+    clicks.attach(ctx);
+    const old = this.menu;
+    const menu = (this.menu = new PauseMenu(this.root, this.bindings, this));
+    menu.setGamepads(this.gamepads);
+    old?.root.replaceWith(menu.root);
   }
 
   /**
