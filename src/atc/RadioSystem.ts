@@ -19,7 +19,7 @@ import type { TrainingSystem } from '../training/TrainingSystem';
 import type { InstrumentReadings } from '../instruments/dynamics/instrumentSet';
 import type { Airfield } from '../world/airfields';
 import { HOME_GROUND, radioTuning, selectCdi, selectMic, setTransmitting, stationOn, stations, swapCom, swapNav, tuneCom, tuneNav, type ComRadio, type Station } from '../instruments/dynamics/radios';
-import { emptyNavSignal, navaids, receiveNav } from '../instruments/dynamics/navigation';
+import { emptyNavSignal, gpsTarget, navaids, receiveNav } from '../instruments/dynamics/navigation';
 import { RadioMenu, type RadioMenuItem } from '../ui/radioMenu';
 import { HOME_AIRFIELD } from '../world/airfields';
 import { atisText, callsFor, mustReadBack, readbackFor, replyTo, stationName, vacateInstruction, vacateReadback, withDepartureNote, type Call, type CallId, type Intent, type RadioSituation } from './calls';
@@ -276,7 +276,14 @@ export class RadioSystem implements Subsystem {
       const i = near.findIndex((x) => Math.abs(x.s.frequency - h.frequency) < 0.004);
       if (i > 0) near.unshift(...near.splice(i, 1));
     }
-    for (const { s, d } of near.slice(0, 9)) {
+    // Nine keys: the farthest fields fall off the list (the home field alone has three stations), so the field
+    // flown to (the Career job's destination, else the GPS direct-to when it is not the home field) takes the
+    // last place when it would otherwise be missing.
+    const shown = near.slice(0, 9);
+    const dest = this.deps.destination?.() ?? (gpsTarget().kind === 'home' ? null : gpsTarget());
+    const destStation = dest ? near.find((x) => x.s.field.code === dest.code) : undefined;
+    if (destStation && !shown.includes(destStation)) shown[shown.length - 1] = destStation;
+    for (const { s, d } of shown) {
       const brg = Math.round(((Math.atan2(s.field.east - st.position.y, s.field.north - st.position.x) * 180) / Math.PI + 360) % 360) || 360;
       const where = d < 1500 ? 'here' : `${(d / NM).toFixed(d < 10 * NM ? 1 : 0)} NM ${String(brg).padStart(3, '0')}°`;
       const range = d > radioRange(st.altitudeAGL) ? ' · out of range' : '';

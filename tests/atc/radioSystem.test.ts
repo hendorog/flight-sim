@@ -4,6 +4,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fieldPoint, HOME_AIRFIELD as H } from '../../src/world/airfields';
 import { DEFAULT_TUNING, HOME_GROUND, radioTuning, resetRadios, tuneCom1, type ComRadio } from '../../src/instruments/dynamics/radios';
+import { airfields } from '../../src/world/airfields';
+import { setGpsTarget } from '../../src/instruments/dynamics/navigation';
 import '../../src/world/terrain/heightfield';
 
 vi.mock('../../src/ui/radioMenu', () => ({
@@ -251,6 +253,23 @@ describe('the radio window (R)', () => {
     expect(radioTuning().nav2[0]).toBe(113.9);
     key('KeyR'); // reopens on NAV2, the CDI's
     expect(menu.items.find((i) => i.key === 'C')!.label).toBe('CDI to NAV1');
+  });
+
+  it('keeps the GPS direct-to field on the list when it is too far away to be among the nine nearest', () => {
+    const { key, menu } = rig();
+    const far = [...airfields()].filter((f) => f.kind !== 'home').sort((a, b) => Math.hypot(b.north - H.north, b.east - H.east) - Math.hypot(a.north - H.north, a.east - H.east))[0];
+    const listed = () => menu.items.some((i) => !i.action && i.label.includes(far.frequency.toFixed(3)) && i.label.includes(far.name.split(' ')[0]));
+    key('KeyR');
+    expect(listed()).toBe(false);
+    key('KeyR');
+    setGpsTarget(far.code);
+    try {
+      key('KeyR');
+      expect(listed()).toBe(true);
+      expect(menu.items.filter((i) => !i.action)).toHaveLength(9);
+    } finally {
+      setGpsTarget(null);
+    }
   });
 
   it('leaves Shift+R (the restart) alone', () => {
