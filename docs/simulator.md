@@ -45,6 +45,11 @@ All are optional, for example `index.html?scenario=final&cam=chase&tod=20.5&ap=1
 | `freeze=1` | Pause once loading and `run=` are done |
 | `camPos=n,e,alt`, `camLook=n,e,alt`, `fov=` | Fixed camera in NED metres (altitude MSL) |
 | `resume=0`, `resume=1` | Resume on reload: `0` neither resumes nor saves the flight; `1` resumes even when `scenario=` is given or the menu toggle is off (see below) |
+| `career=1`, `career=0` | Career (present day only, [career.md](career.md)): `1` opens the Career hub at boot (what a Career type switch adds; the boot then removes it from the address, so a later reload does not open the hub again); `0` never opens it at boot and counts as an explicit start (no Career job is resumed or placed). Absent: the Career's boot plan |
+| `cstore=mem`, `cstore=session` | Where the Career save is kept: `mem` in memory only (tests; a type switch is refused), `session` in sessionStorage (browser checks across a type switch). Absent: `localStorage` (`fs.career.v1`). Neither writes a Career resume block |
+
+The Flight School's parameters (`school=`, `lesson=`, `tstore=`, `unlock=1` and others) are in
+[flight-school.md](flight-school.md); `unlock=1` also unlocks the Career for the session.
 
 `window.__ready` becomes true once the terrain around the camera is built and exposure has settled.
 `window.__sim` is the automation API: `step(s)`, `reset(id)`, `pause(bool)`, `setAutoflight(on)`,
@@ -52,7 +57,8 @@ All are optional, for example `index.html?scenario=final&cam=chase&tod=20.5&ap=1
 fields of [weather.md](weather.md); a `cloudBaseM` without `cloudTopM` keeps the layer depth), `summary()`,
 `errors`, `depthMode`, `warmUpMs`, and the live objects (`ctx`, `physics`, `flightModel`, `autoflight`,
 `autopilot`, `systems`, `post`, `cloudShadows`). `__sim.autoflight.targetAltitude` is the held altitude (m MSL,
-NaN when not holding).
+NaN when not holding). `__sim.training` drives the Flight School and `__sim.career` the Career
+([career.md](career.md), "Automation").
 
 ## Menu and time acceleration
 
@@ -92,6 +98,8 @@ weather, camera and quality take precedence over the URL's; the simulation rate 
 autopilot mode come back exactly (airspeed within 0.25 kt, as the pitot and aerodynamic lags restart), and the
 flight continues without a jump. Airborne, a resumed flight stays within millimetres of an uninterrupted one
 over 10 s; resumed mid take-off roll it drifts about 2 m in 10 s, because the tyre states restart from rest.
+A Career job in progress writes its own block into the snapshot, so a reload resumes the job with the flight
+([career.md](career.md), "Persistence, boot and reloads").
 
 ## Sound
 

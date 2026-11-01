@@ -292,7 +292,10 @@ export interface ActiveJob {
   lastKnown: { north: number; east: number; onGround: boolean };
   /** True once the aircraft has left the ground on this job. */
   everAirborne: boolean;
-  /** Phase 'stopped': the field code the job is held at. */
+  /**
+   * Phase 'stopped': the field code the job is held at. On a flown job in another phase standing at a field that
+   * could not be resumed (parked, or a reload's fallback): that field, where its next placement puts it back.
+   */
   stoppedAt?: string;
   /** The player's own weather before the job, restored on Free flight or at the job's end. */
   playerWeather: WeatherSettings;
@@ -685,7 +688,7 @@ export type CareerCommand =
   | { kind: 'dispatch'; offerId: string }
   /** fuelKg below what is aboard defuels (credit DEFUEL_RULES). */
   | { kind: 'accept'; offerId: string; uid: string; fuelKg: number }
-  /** Reload into the type of a job waiting for another type. */
+  /** Reload into the type of a job waiting for another type; one of the booted type left unplaced is placed now. */
   | { kind: 'switchTo' }
   | { kind: 'abandon' }
   /** At a stop: re-place at this field's stand with fuel added (a fuel truck where the grade is not sold), the deadline still running. */

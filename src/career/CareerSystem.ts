@@ -25,16 +25,25 @@
 //
 // ENDINGS. Completed: settled at once and the debrief opens. Crashed or outlanded: the report is kept as
 // `active.pendingReport` and settled when the player picks Debrief or Hub (the crash dialog's actions come from
-// crashActions(), chained before the school's by chainCrashActions in index.ts), or at the next boot. A reset from
-// outside the Career abandons it; Abandon (strip or menu), Give up and Rest settle it too. Every ending disposes the
+// crashActions(), chained before the school's by chainCrashActions in index.ts), by Shift+R or Free flight once the
+// dialog was dismissed, or at the next boot (not under an explicit start: the hub's Debrief then). A reset from
+// outside the Career abandons it; Abandon (strip or menu: at a field or a medevac's site), Give up and Rest settle
+// it too. Every ending disposes the
 // monitor, gives the player's weather back, sets the start field to where the aircraft now stands (null at home),
 // hides the strip, adds the idle lease the settlement's clock advance charged as its own debrief line (lead
 // decision 3: the lines then add up to cashAfter - cashBefore, so `net` includes it; the logbook keeps the job's
 // own net), saves and persists. The flight number is settleJob's (lead decision 4).
 //
 // STOPS. A stop's landing fee is charged when the job leaves the stop (Continue, Refuel, or a lift-off from there),
-// never at the stop itself: a Give up settles 'diverted' and the settlement charges that field's fee, so it is
-// paid once either way. A refuel adds the stop's fuel price (grass and fuel-truck surcharges) to `charges`.
+// never at the stop itself: a Give up settles 'diverted' and the settlement charges that field's fee, as does an
+// Abandon there (src/career/economy.ts), so it is paid once either way.
+//
+// FALLBACKS. A placed job no monitor carries on (no snapshot resumed, another type booted, or the Career opened over
+// an explicit start's flight) is lost only when the save last saw it in the air; held at a stop, never flown or
+// standing at a field it is placed again there (`stoppedAt` naming the field, its phase kept), or for an orphan
+// parked unplaced for the hub's "Fly it", so opening the Career never replaces the flight under way unasked.
+// A save the store cannot write (a newer version's, or one another tab has saved since) takes no command that
+// changes it. A refuel adds the stop's fuel price (grass and fuel-truck surcharges) to `charges`.
 //
 // SITES (wave 4, 4a). A medevac's pickup is a helicopter landing point on the way (a waypoint with landS, src/career/
 // sites.ts): the monitor counts it once the helicopter has stood within 60 m of it for 30 s, and the job then flies on
@@ -272,9 +281,11 @@ export class CareerSystem implements Subsystem {
   /**
    * An explicit start (scenario=, lesson=, demo=, career=0) booted past the Career and no monitor watches its job:
    * the flight is not the job's, so the crash dialog, Shift+R, the menu, the snapshots and the radio behave as in
-   * free flight until the Career is opened again (reconcileOrphan).
+   * free flight until the Career is opened again (reconcileOrphan). Likewise in another world seed than the
+   * career's: its job cannot be flown, settled or abandoned there.
    */
   private unwatched(): boolean {
+    if (this.save && !this.worldOk()) return true;
     return !!this.plan?.explicit && !this.monitor && !this.placing;
   }
 
@@ -345,7 +356,7 @@ export class CareerSystem implements Subsystem {
     const job = s?.active;
     const m: CareerUiModel = {
       save: s, fields: this.fields(), board: this.board(), worldSeed: this.seedNow(), bootedType: this.bootedType,
-      storeKind: this.store.kind, storage: this.store.status, authority: this.authority(), licence: this.licence(),
+      storeKind: this.store.kind, storage: this.store.checkOtherTabs(), authority: this.authority(), licence: this.licence(),
       inLesson: this.inLesson(),
     };
     const name = this.shell.suggestedPilotName?.();
@@ -395,7 +406,10 @@ export class CareerSystem implements Subsystem {
     if (this.monitor !== m || !this.save?.active) return;   // it ended in this frame
     if (wasStopped && m.phase !== 'stopped') this.leftStop(job.stoppedAt ?? null);
     const s = p.state;
-    const canAbandon = s.onGround && s.groundSpeed < STANDING_MS && m.phase !== 'airborne' && fieldAt(s.position.x, s.position.y, this.fields()) !== null;
+    const here = { north: s.position.x, east: s.position.y };
+    // Standing at a field, or at one of the job's helicopter landing points (a medevac's site).
+    const canAbandon = s.onGround && s.groundSpeed < STANDING_MS && m.phase !== 'airborne'
+      && (fieldAt(here.north, here.east, this.fields()) !== null || atLandingPoint(job.offer, here));
     this.ui?.setStrip(m.strip(), { canAbandon });
     this.syncS += dt;
     if (this.syncS >= CAREER_SYNC_S) {
@@ -466,10 +480,11 @@ export class CareerSystem implements Subsystem {
   // ------------------------------------------------------------------------------------------- boot
 
   /**
-   * After the boot resumed or started a flight (after training.afterBoot): settle a pending report, settle or park
-   * a placed job of another type (not under an explicit start), then act on the plan: resume the monitor from the
-   * snapshot's block (or fall back: a stopped or never-airborne job is placed again, an airborne one is lost),
-   * place an unplaced job, place the selected aircraft, or open the hub.
+   * After the boot resumed or started a flight (after training.afterBoot): settle a pending report and settle or
+   * park a placed job of another type (neither under an explicit start: a pending report then waits for the hub's
+   * Debrief), then act on the plan: resume the monitor from the snapshot's block (or fall back: a stopped, never-
+   * airborne or grounded-at-a-field job is placed again, an airborne one is lost), place an unplaced job, place the
+   * selected aircraft, or open the hub.
    */
   async afterBoot(o: CareerAfterBoot): Promise<void> {
     this.plan = o.plan;
@@ -484,8 +499,9 @@ export class CareerSystem implements Subsystem {
       return;
     }
     // A crash or outlanding the player never acknowledged: settled now, and its debrief shown once the boot's own
-    // placement (if any) is done.
-    const settledAtBoot = s.active?.pendingReport ? this.settle(s.active.pendingReport, null) : null;
+    // placement (if any) is done. Not under an explicit start (career=0, lesson=, scenario=, demo=): the debrief
+    // would hold the sim over it and the settlement would move its start field; the hub's Debrief settles it later.
+    const settledAtBoot = s.active?.pendingReport && !o.plan.explicit ? this.settle(s.active.pendingReport, null) : null;
     if (!o.plan.explicit) this.parkOtherType();
     switch (o.plan.action) {
       case 'resume':
@@ -508,17 +524,50 @@ export class CareerSystem implements Subsystem {
     this.refresh();
   }
 
-  /** A placed job of another type than the booted one: lost if it had flown (and is not held at a stop), else waiting. */
+  /** A placed job of another type than the booted one: parked (unplaced) to wait for its type unless lost in the air. */
   private parkOtherType(): void {
     const j = this.save?.active;
     if (!j || !j.placed || j.pendingReport || j.type === this.bootedType) return;
-    if (j.everAirborne && j.phase !== 'stopped') {
+    this.park(j);
+  }
+
+  /**
+   * A placed job nobody flies now: lost if the save last saw it in the air, else unplaced (held at a stop, never
+   * flown, or standing at a field: put back there by its next placement), to be placed by the boot, Switch to or
+   * the hub's "Fly it".
+   */
+  private park(j: ActiveJob): void {
+    if (this.lostInAir(j)) {
       this.settle(this.lostReport(j), null);
       return;
     }
     const next = clone(this.save!);
     next.active!.placed = false;
+    this.keepAtField(next.active!);
     this.commit(next);
+  }
+
+  /**
+   * The field a flown job not held at a stop stands in, by the save's last known position (after Continue or Refuel
+   * at a stop, or landed and not yet shut down): its code, else null (in the air, or off every field).
+   */
+  private standingAt(j: ActiveJob): string | null {
+    if (!j.everAirborne || j.phase === 'stopped' || !j.lastKnown.onGround) return null;
+    return fieldAt(j.lastKnown.north, j.lastKnown.east, this.fields())?.field.code ?? null;
+  }
+
+  /** A flown job that cannot be carried on: the save last saw it airborne (or off every field), not held at a stop. */
+  private lostInAir(j: ActiveJob): boolean {
+    return j.everAirborne && j.phase !== 'stopped' && this.standingAt(j) === null;
+  }
+
+  /**
+   * A flown job standing at a field keeps its phase and is placed there again (its `stoppedAt` names the field,
+   * which jobScenario places at; the stop's fee, if it left one, is not charged twice). Changes `j` in place.
+   */
+  private keepAtField(j: ActiveJob): void {
+    const at = this.standingAt(j);
+    if (at) j.stoppedAt = at;
   }
 
   private lostReport(j: ActiveJob): JobFlightReport {
@@ -539,11 +588,19 @@ export class CareerSystem implements Subsystem {
     await this.fallBack(j);
   }
 
-  /** A placed job no snapshot resumed: held at a stop or never flown, placed again; airborne, lost. */
+  /**
+   * A placed job no snapshot resumed: held at a stop, never flown, or standing at a field (after Continue or Refuel
+   * at a stop, or landed), placed again there; airborne, lost.
+   */
   private async fallBack(j: ActiveJob): Promise<void> {
-    if (j.everAirborne && j.phase !== 'stopped') {
+    if (this.lostInAir(j)) {
       this.settle(this.lostReport(j), 'debrief');
       return;
+    }
+    if (this.standingAt(j)) {
+      const next = clone(this.save!);
+      this.keepAtField(next.active!);
+      this.store.save(next);
     }
     await this.placeActive(true);
     if (this.save?.active?.phase === 'stopped') this.open('stop');
@@ -556,11 +613,9 @@ export class CareerSystem implements Subsystem {
     const j = this.save?.active;
     // Never during a lesson: a re-placement would end it (the hub refuses to act then anyway).
     if (!j || !j.placed || j.pendingReport || this.monitor || this.placing || !this.worldOk() || this.inLesson()) return;
-    if (j.type !== this.bootedType) {
-      this.parkOtherType();
-      return;
-    }
-    void this.fallBack(j);
+    // Opening the Career never replaces the flight under way unasked: the job is parked (lost if it was in the air)
+    // and the hub offers to fly it (switchTo).
+    this.park(j);
   }
 
   // ------------------------------------------------------------------------------------------- placement
@@ -800,11 +855,12 @@ export class CareerSystem implements Subsystem {
       }
       this.detachMonitor();
       r = m.abandon();
-    } else if (!j.placed) {
+    } else if (!j.placed && !j.everAirborne) {
       const stand = this.standOf(j.offer.origin);
       r = blankReport('abandoned', stand, 0, j.fuelKg, j.offer.origin, j.offer.waypoints?.length ?? 0);
     } else {
-      r = blankReport('abandoned', j.lastKnown, j.elapsedS, j.fuelKg, null, j.offer.waypoints?.length ?? 0);
+      // Parked or unwatched after flying: where the save last saw it, with the job time flown as its block time.
+      r = blankReport('abandoned', j.lastKnown, j.elapsedS, j.fuelKg, j.stoppedAt ?? this.standingAt(j), j.offer.waypoints?.length ?? 0, flownS(j));
     }
     return this.settle(this.abandonAt(j, r), page);
   }
@@ -845,6 +901,8 @@ export class CareerSystem implements Subsystem {
   private dispatchRefusal(): string | null {
     const s = this.save;
     if (!s) return 'Start a career first';
+    const store = this.storeRefusal();
+    if (store) return store;
     if (s.seed !== this.seedNow()) return `This career lives in world seed ${s.seed}: switch the world back first`;
     if (this.inLesson()) return 'Finish or end the lesson first';
     if (isBankrupt(s)) return 'The company is below its overdraft';
@@ -886,6 +944,14 @@ export class CareerSystem implements Subsystem {
     // The page's own fuel rule (widgets.ts defaultFuelKg): what is aboard, raised to Required, capped by the load.
     const fuel = defaultFuelKg(loadSheet(offer, ac, ac.fuelKg, s, fields), ac.fuelKg);
     return this.dispatch(offer, ac, fuel, true);
+  }
+
+  /** Why the store takes no change now (a newer version's save, or another tab saved since), or null. */
+  private storeRefusal(): string | null {
+    const st = this.store.checkOtherTabs();
+    if (st === 'readOnly') return 'This career was saved by a newer version: it is read-only here';
+    if (st === 'stale') return 'This career was changed in another tab: reload this page first';
+    return null;
   }
 
   private refuse(text: string): CareerAnswer {
@@ -946,6 +1012,8 @@ export class CareerSystem implements Subsystem {
 
   /** At a stop: re-place at the stand with `fuelKg` aboard (the stop's price), then carry on. */
   async refuel(fuelKg: number): Promise<CareerAnswer> {
+    const no = this.storeRefusal();
+    if (no) return this.refuse(no);
     const j = this.stopped();
     if (!j) return this.refuse('No job is stopped');
     const m = this.monitor!;
@@ -999,6 +1067,10 @@ export class CareerSystem implements Subsystem {
 
   private async dispatchCommand(cmd: CareerCommand): Promise<CareerAnswer> {
     const s = this.save;
+    // A save that cannot be written (a newer version's, or one another tab has saved since) takes no change: it
+    // would live in memory only, and a type switch's reload would lose it.
+    const no = WRITING_COMMANDS.has(cmd.kind) && !(cmd.kind === 'bankruptcy' && cmd.choice === 'restart') ? this.storeRefusal() : null;
+    if (no) return this.refuse(no);
     switch (cmd.kind) {
       case 'open':
         this.reconcileOrphan();
@@ -1036,7 +1108,16 @@ export class CareerSystem implements Subsystem {
         return this.reposition(cmd.to);
       case 'switchTo': {
         const j = s?.active;
-        if (!j || j.placed || j.type === this.bootedType) return this.refuse('No job waits for another type');
+        if (!j || j.placed) return this.refuse('No job waits for another type');
+        if (j.type === this.bootedType) {
+          // A job of this type parked by opening the Career over another flight: placed now ("Fly it").
+          if (this.inLesson()) return this.refuse('Finish or end the lesson first');
+          if (!this.worldOk()) return this.refuse(`This career lives in world seed ${s!.seed}: switch the world back first`);
+          this.ui?.close();
+          if (!(await this.placeActive(true))) return 'The job could not be placed';
+          if (this.save?.active?.phase === 'stopped') this.open('stop');
+          return 'placed';
+        }
         if (this.store.kind === 'mem' || !this.shell.setAircraft) return this.refuse('A type switch needs a reload, and this career is kept in memory only');
         this.commit(s!);
         this.store.flush();
@@ -1056,7 +1137,7 @@ export class CareerSystem implements Subsystem {
         if (!j || j.phase !== 'stopped') return this.refuse('No job is stopped');
         const m = this.monitor;
         this.detachMonitor();
-        const r = m ? { ...m.report('diverted', j.stoppedAt ?? null) } : blankReport('diverted', j.lastKnown, j.elapsedS, j.fuelKg, j.stoppedAt ?? null, j.offer.waypoints?.length ?? 0);
+        const r = m ? { ...m.report('diverted', j.stoppedAt ?? null) } : blankReport('diverted', j.lastKnown, j.elapsedS, j.fuelKg, j.stoppedAt ?? null, j.offer.waypoints?.length ?? 0, flownS(j));
         this.settle(r, 'debrief');
         return 'ok';
       }
@@ -1120,6 +1201,8 @@ export class CareerSystem implements Subsystem {
 
   /** Free flight: the pages close; with no job, Career mode ends (the start field becomes the aircraft's). */
   private freeFlight(): CareerAnswer {
+    // A crash or outlanding whose report was dismissed: settled first (no page), so Career mode can end.
+    if (this.save?.active?.pendingReport && !this.unwatched()) this.settle(this.save.active.pendingReport, null);
     const s = this.save;
     if (!s || s.active || isBankrupt(s)) return 'ok';
     const ac = selectedOf(s);
@@ -1187,7 +1270,7 @@ export class CareerSystem implements Subsystem {
     if (j?.phase === 'stopped') {
       const m = this.monitor;
       this.detachMonitor();
-      const r = m ? m.report('diverted', j.stoppedAt ?? null) : blankReport('diverted', j.lastKnown, j.elapsedS, j.fuelKg, j.stoppedAt ?? null, j.offer.waypoints?.length ?? 0);
+      const r = m ? m.report('diverted', j.stoppedAt ?? null) : blankReport('diverted', j.lastKnown, j.elapsedS, j.fuelKg, j.stoppedAt ?? null, j.offer.waypoints?.length ?? 0, flownS(j));
       settled = this.settle(r, null);
       s = this.save!;
     }
@@ -1219,6 +1302,9 @@ export class CareerSystem implements Subsystem {
    * abandons it and runs `proceed`. Returns false when no job is in progress (the caller resets as usual).
    */
   confirmReset(proceed: () => void): boolean {
+    // A crash or outlanding whose dialog was dismissed (Escape): settled now (no page), and the reset goes ahead.
+    const j = this.save?.active;
+    if (j?.pendingReport && j.placed && !this.unwatched() && !this.inLesson()) this.settle(j.pendingReport, null);
     if (!this.jobActive()) return false;
     const yes = (): void => {
       this.abandonJob(true, null);
@@ -1270,6 +1356,22 @@ export class CareerSystem implements Subsystem {
   refresh(): void {
     this.ui?.setModel(this.uiModel());
   }
+}
+
+/** The commands that change the save (refused while the store cannot write it: CareerSystem.storeRefusal). */
+const WRITING_COMMANDS: ReadonlySet<CareerCommand['kind']> = new Set<CareerCommand['kind']>([
+  'select', 'accept', 'reposition', 'switchTo', 'abandon', 'continueJob', 'refuel', 'giveUp', 'rest', 'defuel',
+  'buyRating', 'lease', 'buy', 'sell', 'returnLease', 'settings', 'bankruptcy', 'settlePending',
+]);
+
+/** The block time a job settled without a monitor is charged and logged with, s: its job time once it has flown. */
+function flownS(j: ActiveJob): number {
+  return j.everAirborne ? j.elapsedS : 0;
+}
+
+/** On the ground within the radius of one of the offer's helicopter landing points (a medevac's site). */
+function atLandingPoint(offer: JobOffer, p: { north: number; east: number }): boolean {
+  return (offer.waypoints ?? []).some((w) => w.landS !== undefined && Math.hypot(p.north - w.north, p.east - w.east) <= w.radiusM);
 }
 
 /** The selected fleet aircraft, or null. */

@@ -13,7 +13,8 @@
 // outlanding. A helicopter flying to a site (wave 4) completes that leg on the ground within 60 m of the spot for
 // 30 s, engine running or not (load or unload, idle allowed). Shut down at such a spot, or at a landing point on the
 // way (a medevac's site, Waypoint.landS: the `holds` given), is never an outlanding: the hold, not the shutdown,
-// decides there (wave 4, 4a).
+// decides there (wave 4, 4a). A shutdown just outside a hold's ring (within HOLD_NEAR_FACTOR x its radius: landed
+// upwind of the smoke) is not one either: the strip's spot distance shows how far there is still to go.
 //
 // Durations are sums of frame times compared with an allowance (as the school's detectors), so a 0.25 s frame and
 // twenty 0.0125 s frames reach the same decision at the same time. Pure state (exportState / restoreState).
@@ -58,6 +59,9 @@ export interface CompletionState {
 
 /** Duration test with an allowance for summed frame times (as src/training/engine/events.ts). */
 const reached = (t: number, s: number): boolean => t >= s - 1e-9;
+
+/** A shutdown within this many times a landing point's radius of it is not an outlanding (see the header). */
+export const HOLD_NEAR_FACTOR = 2;
 
 /** Stopped, engines off (the condition every shutdown decision needs). */
 export function shutDown(x: Pick<CompletionInput, 'onGround' | 'gsMs' | 'enginesStopped'>): boolean {
@@ -107,7 +111,7 @@ export class CompletionTracker {
     const destArea = destField ? fieldArea(destField, x.north, x.east) : null;
     const at = destField && destArea ? { field: destField, area: destArea } : fieldAt(x.north, x.east, this.fields);
     if (!at) {
-      if (this.holds.some((h) => Math.hypot(x.north - h.north, x.east - h.east) <= h.radiusM)) {
+      if (this.holds.some((h) => Math.hypot(x.north - h.north, x.east - h.east) <= HOLD_NEAR_FACTOR * h.radiusM)) {
         s.outS = 0;
         return null;
       }

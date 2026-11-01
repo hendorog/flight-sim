@@ -6,6 +6,9 @@
 // Every storage access is in try/catch. Writes are verified: copy the current value to `.prev` when it still
 // validates, write, read back. Any failure (quota, a throwing or missing storage) leaves the career in memory with
 // status 'memoryOnly' (the UI says "use Export") and never throws; a file of a newer schema is opened read-only.
+// Another tab on the same storage: the store remembers the stored text it last read or wrote, and a write that
+// finds something else there (another tab saved since) is refused with status 'stale' (the UI asks for a reload),
+// so a tab holding an older career never writes it over the newer one.
 // Where the save is kept is the URL's `cstore=` (careerKv): 'local' localStorage, 'mem' an in-memory map (the
 // school's memoryStore), 'session' sessionStorage (survives the same-tab reload of a type switch).
 //
@@ -21,8 +24,11 @@ import {
 } from './types';
 import { validateCareerSave } from './validate';
 
-/** 'memoryOnly' after a failed write or with no storage (banner "use Export"); 'readOnly' for a newer schema. */
-export type CareerStoreStatus = 'ok' | 'memoryOnly' | 'readOnly';
+/**
+ * 'memoryOnly' after a failed write or with no storage (banner "use Export"); 'readOnly' for a newer schema;
+ * 'stale' once another tab has written the save since this one read it (nothing more is written; reload).
+ */
+export type CareerStoreStatus = 'ok' | 'memoryOnly' | 'readOnly' | 'stale';
 
 /** The export file: a wrapper around the save (import also takes a bare save). */
 interface CareerExportFile {
@@ -90,6 +96,8 @@ export class CareerStore {
   private cur: CareerSave | null = null;
   private pending: CareerSave | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** The stored text this store last read or wrote (undefined: never read, nothing to compare). */
+  private baseline: string | null | undefined = undefined;
   /** Load fell back to `.prev` (the UI shows a toast once). */
   recoveredFromPrev = false;
   /** Reasons for entities dropped by the last load or import. */
@@ -177,6 +185,8 @@ export class CareerStore {
     this.recoveredFromPrev = false;
     this.lastDropped = [];
     const raw = this.get(CAREER_KEY);
+    this.baseline = raw;
+    if (this.st === 'stale') this.st = 'ok';
     let save = this.parse(raw, true);
     if (!save && raw !== null && this.st !== 'readOnly') {
       save = this.parse(this.get(CAREER_PREV_KEY), false);
@@ -206,7 +216,7 @@ export class CareerStore {
     this.cur = s;
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     this.pending = null;
-    if (this.st === 'readOnly') return false;
+    if (this.st === 'readOnly' || this.st === 'stale') return false;
     if (!this.kv) {
       this.st = 'memoryOnly';
       return false;
@@ -219,14 +229,30 @@ export class CareerStore {
       return false;
     }
     const old = this.get(CAREER_KEY);
+    if (this.baseline !== undefined && old !== this.baseline) {
+      // Another tab wrote the save since this one read it: never overwrite it with this older copy.
+      this.st = 'stale';
+      console.warn('[career] the career save was changed in another tab; this tab no longer writes it');
+      return false;
+    }
     // Only a value that still reads back as a Career save becomes the previous-good copy.
     if (old !== null && old !== json && validateCareerSave(safeParse(old))) this.set(CAREER_PREV_KEY, old);
     if (this.set(CAREER_KEY, json) && this.get(CAREER_KEY) === json) {
       this.st = 'ok';
+      this.baseline = json;
       return true;
     }
     this.st = 'memoryOnly';
     return false;
+  }
+
+  /**
+   * The status after checking whether another tab has written the save since this store last read or wrote it
+   * (then 'stale': nothing more is written until a reload). Cheap: one read and a string compare.
+   */
+  checkOtherTabs(): CareerStoreStatus {
+    if (this.st !== 'readOnly' && this.baseline !== undefined && this.get(CAREER_KEY) !== this.baseline) this.st = 'stale';
+    return this.st;
   }
 
   /** Debounced save (CAREER_SAVE_DEBOUNCE_MS) for settings and small changes; flush() on pagehide. */
@@ -254,6 +280,7 @@ export class CareerStore {
     this.cur = null;
     this.lastDropped = [];
     this.recoveredFromPrev = false;
+    this.baseline = this.get(CAREER_KEY);
     this.st = 'ok';   // a read-only (newer) save is gone too
   }
 
@@ -294,7 +321,11 @@ export class CareerStore {
   /** Import an export, replacing the current career, and save it at once. Throws (writing nothing) when unusable. */
   importJson(json: string): CareerSave {
     const s = this.previewImport(json);
-    if (this.st === 'readOnly') this.st = 'ok';   // the player chose to replace the newer save
+    if (this.st === 'readOnly' || this.st === 'stale') {
+      // The player chose to replace the newer save (or another tab's).
+      this.st = 'ok';
+      this.baseline = this.get(CAREER_KEY);
+    }
     this.save(s);
     return s;
   }

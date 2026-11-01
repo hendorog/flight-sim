@@ -327,6 +327,10 @@ describe('settleJob: scenic flights', () => {
     expect(amount(st, 'aircraftHours')).toBe(-72);
     expect(st.net).toBeLessThan(0);
     expect(st.aircraftAt).toBe('HOME');
+    // A route with a height limit (a survey) names it in the debrief.
+    const low = [500, 0].map((n) => ({ name: `P${n}`, north: n, east: 0, radiusM: 800, maxAglFt: 500 }));
+    const survey = settle(saveFor('c152', { ...scenic, kind: 'utility', waypoints: low }), wps(0)).settlement;
+    expect(survey.summary).toContain('below 500 ft above the ground');
   });
 });
 
@@ -386,12 +390,32 @@ describe('settleJob: failed outcomes', () => {
     expect(out.fleet[0].fuelKg).toBe(42);
   });
 
-  it('abandoned while held at a stop: on the ground, -2, no recovery, the aircraft left at the stop field', () => {
+  it('abandoned while held at a stop: no recovery, the aircraft left there, and never better than a Give up', () => {
     const s = save({ active: job({ phase: 'stopped', stoppedAt: 'GRAS' }) });
     const st = settle(s, report({ outcome: 'abandoned', atField: null, position: { north: NM20, east: 0 }, landing: null })).settlement;
-    expect(st.repDelta).toBe(-2);
+    const given = settle(s, report({ outcome: 'diverted', atField: 'GRAS', position: { north: NM20, east: 0 }, landing: null })).settlement;
     expect(amount(st, 'recovery')).toBe(0);
     expect(st.aircraftAt).toBe('GRAS');
+    // The stop's landing fee is charged as a Give up's is, and the reputation is no better.
+    expect(amount(st, 'landingFee')).toBeLessThan(0);
+    expect(amount(st, 'landingFee')).toBe(amount(given, 'landingFee'));
+    expect(st.repDelta).toBeLessThanOrEqual(given.repDelta);
+    expect(st.net).toBeLessThanOrEqual(given.net);
+    // Abandoned on the ground there after Continue (phase 'ground'): that stop's fee was paid on leaving, not again.
+    const after = settle(save({ active: job({ phase: 'ground', charges: { fuelUsd: 0, defuelCreditUsd: 0, stopFeesUsd: 7 } }) }),
+      report({ outcome: 'abandoned', atField: 'GRAS', position: { north: NM20, east: 0 }, landing: null })).settlement;
+    expect(amount(after, 'landingFee')).toBe(-7);
+    expect(after.repDelta).toBe(-4);
+  });
+
+  it('abandoned on the ground at a medevac site: no recovery, a ground abandonment, the nearest field, no fee', () => {
+    const site = { name: 'Site', north: NM20 / 2, east: 0, radiusM: 60, landS: 30 };
+    const s = save({ active: job({ phase: 'landed', offer: offer({ kind: 'medevac', waypoints: [site] }), lastKnown: { north: NM20 / 2 + 40, east: 0, onGround: true } }) });
+    const st = settle(s, report({ outcome: 'abandoned', atField: null, position: { north: NM20 / 2 + 40, east: 0 }, landing: null })).settlement;
+    expect(amount(st, 'recovery')).toBe(0);
+    expect(amount(st, 'landingFee')).toBe(0);
+    expect(st.repDelta).toBe(-2);
+    expect(st.repLines.map((l) => l.reason)).toEqual(['Abandoned']);
   });
 
   it('abandoned after take-off: settled as lost (recovery, nearest field) with -5', () => {

@@ -144,6 +144,8 @@ export class UISystem implements Subsystem, MenuHost {
   readonly fieldGuide = new FieldGuide();
   private readonly fps: FpsMeter;
   private readonly crash: CrashDialog;
+  /** The crash dialog's card was last opened by ask() (askOpen: while it is still up). */
+  private asking = false;
   private readonly pausedBadge: HTMLElement;
   private readonly apChip: HTMLElement;
   private readonly hints: HintsCard;
@@ -281,6 +283,7 @@ export class UISystem implements Subsystem, MenuHost {
         this.menu?.close();
         this.hints.hide();
         const custom = this.crashActions?.(e.reason) ?? null;
+        this.asking = false;
         if (custom === 'none') return;
         if (custom) this.crash.openWith(e.reason, custom);
         else this.crash.open(e.reason, `Restart ${SCENARIO_NAMES[this.lastScenario]}`);
@@ -470,11 +473,17 @@ export class UISystem implements Subsystem, MenuHost {
   /**
    * A yes/no question on the crash dialog's card: `question` as its title and `detail` (a sentence, no full stop)
    * under it, `actions` beside the primary `keepLabel` button, which (as Escape and Enter) closes it and does
-   * nothing. Keys go to the card while it is up.
+   * nothing. Keys go to the card while it is up, so the shell holds the simulation meanwhile (askOpen).
    */
   ask(question: string, detail: string, actions: { label: string; run: () => void }[], keepLabel = 'Cancel'): void {
     this.menu?.close();
     this.crash.openWith(detail, [{ label: keepLabel, primary: true, keys: ['Enter', 'NumpadEnter'], run: () => {} }, ...actions], question);
+    this.asking = true;
+  }
+
+  /** An ask() card is up (the Simulator holds the simulation: the keys and mouse flight go to the card). */
+  get askOpen(): boolean {
+    return this.asking && this.crash.isOpen;
   }
 
   private get automated(): boolean {

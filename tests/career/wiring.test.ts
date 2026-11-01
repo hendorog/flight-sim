@@ -94,8 +94,11 @@ describe('the Simulator wires the Career in the design order', () => {
   });
 
   it('holds, keeps snapshots, writes the block and asks before Shift+R only through the CareerSystem', () => {
-    expect(simulatorSource).toContain('const held = ctx.paused || this.holding || this.schoolHold || this.careerHold;');
+    expect(simulatorSource).toContain('const held = ctx.paused || this.holding || this.schoolHold || this.careerHold || s.ui.askOpen;');
     expect(simulatorSource).toContain('if (this.fastForwardLeft > 0 && !ctx.paused && !this.careerHold) {');
+    // career=1 is consumed once read; a school=1 left in the URL never opens the school over the Career's boot.
+    expect(simulatorSource).toContain("if (p.career.open === true) dropUrlParam('career');");
+    expect(simulatorSource).toContain('params: careerPlan?.trainingExplicit && p.school.open === true ? { ...p.school, open: null } : p.school,');
     expect(member('private get saving(): boolean')).toContain("this.params.resume === true || (this.params.resume === null && (this.resumeEnabled || !!this.career?.jobPlaced()))");
     const persist = member('persist(force = false): boolean');
     expect(persist).toContain('const job = this.career?.resumeBlock() ?? null;');

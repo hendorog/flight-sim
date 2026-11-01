@@ -10,7 +10,7 @@ import { el } from '../../ui/dom';
 import { loadSheet } from '../loadsheet';
 import { CAREER_PERF } from '../perf';
 import type { FleetAircraft, JobOffer, LoadSheet } from '../types';
-import { destText, openOffers } from './board';
+import { destText, openOffers, routeRule } from './board';
 import { cgM, fuelKgL, groupNum, kg, kindLabel, minutes, nm, signedUsd, stationLabel, typeName, usd, weatherLabel, wind } from './format';
 import type { CareerCtx, CareerPageView } from './models';
 import { badge, bareKey, button, defaultFuelKg, departuresClosed, kv, modal, section, spacer } from './widgets';
@@ -65,7 +65,8 @@ export function renderDispatch(parent: HTMLElement, ctx: CareerCtx): CareerPageV
     ?? usable.find((a) => a.uid === save.selectedUid) ?? usable[0] ?? null;
   let fuelKg = memo?.offerId === offer.id && ac && memo.uid === ac.uid ? memo.fuelKg : NaN;
 
-  const m = modal(parent, ctx, offer.title, `${kindLabel(offer.kind)} for ${offer.client} · ${destText(offer)} · ${nm(offer.distanceNm)} · ${minutes(offer.deadlineMin)} allowed · ${weatherLabel(offer.weather)}, ${wind(offer.windDirDeg, offer.windKt)}`, {
+  const rule = routeRule(offer);
+  const m = modal(parent, ctx, offer.title, `${kindLabel(offer.kind)} for ${offer.client} · ${destText(offer)} · ${nm(offer.distanceNm)} · ${minutes(offer.deadlineMin)} allowed · ${weatherLabel(offer.weather)}, ${wind(offer.windDirDeg, offer.windKt)}${rule ? ` · ${rule}` : ''}`, {
     cls: 'cr-dispatch', onClose: back,
   });
   badge(m.right, usd(offer.pay), 'ok');

@@ -308,9 +308,11 @@ describe('the career clock', () => {
     expect(r.save.clockMin).toBe(4 * 1440 + 450);
     expect(r.save.taken).toEqual([]);
     expect(r.save.cash).toBe(5000 - 120);
-    // Rest at 00:30: still the next day's 07:30.
+    // Rest at 00:30 (a late settlement's turnaround past midnight): 07:30 the same day, its board not skipped
+    // and no idle lease charged for it.
     const early = rest(save({ clockMin: 4 * 1440 + 30 }), FIELDS);
-    expect(early.ok && early.save.clockMin).toBe(5 * 1440 + 450);
+    expect(early.ok && early.save.clockMin).toBe(4 * 1440 + 450);
+    expect(early.ok && early.save.cash).toBe(5000);
   });
 
   it('settles a job still stopped as diverted when resting, the aircraft left at the stop', () => {

@@ -436,7 +436,7 @@ describe('the strip', () => {
     r.run(1);
     let m = r.monitor.strip()!;
     expect([m.waypointIndex, m.waypointsTotal, m.target]).toEqual([1, 3, 'Point B']);
-    expect(m.hint).toBe('Fly over Point B (2 of 3)');
+    expect(m.hint).toBe('Fly over Point B below 2,500 ft AGL (2 of 3)');
     // The ETA is the whole job's (B, then C, then the destination), at the present 90 kt, not just to B.
     const d = (a: { north: number; east: number }, b: { north: number; east: number }) => Math.hypot(a.north - b.north, a.east - b.east) / NM;
     const routeNm = d(wps[0], wps[1]) + d(wps[1], wps[2]) + d(wps[2], ORIGIN);

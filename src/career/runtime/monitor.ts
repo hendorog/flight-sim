@@ -191,12 +191,14 @@ export function fuelFlowKgH(s: Readonly<AircraftState>): number {
 
 /**
  * A report with no flight in it (a job ended where no monitor ran: 'lost' after a reload with no snapshot,
- * 'diverted' by Give up or Rest, 'abandoned' before placement). The CareerSystem fills what it knows.
+ * 'diverted' by Give up or Rest, 'abandoned' before placement). The CareerSystem fills what it knows: `elapsedS`
+ * the job time, s; `blockS` the block time to charge and log, s (a flown job's job time, as divertedReport in
+ * src/career/progression.ts; 0 when it never flew).
  */
-export function blankReport(outcome: JobOutcome, at: { north: number; east: number }, elapsedS: number, fuelKg: number, atField: string | null = null, waypointsTotal = 0): JobFlightReport {
+export function blankReport(outcome: JobOutcome, at: { north: number; east: number }, elapsedS: number, fuelKg: number, atField: string | null = null, waypointsTotal = 0, blockS = 0): JobFlightReport {
   return {
     outcome, atField, position: { north: at.north, east: at.east }, elapsedMin: Math.max(0, elapsedS) / 60,
-    blockS: 0, airborneS: 0, nightS: 0, landingsDay: 0, landingsNight: 0, takeoffs: 0, landing: null,
+    blockS: Math.max(0, blockS), airborneS: 0, nightS: 0, landingsDay: 0, landingsNight: 0, takeoffs: 0, landing: null,
     comfort: { score: 100, deductions: { vertical: 0, lateral: 0, bank: 0, pitch: 0, descent: 0, stall: 0, landing: 0 } },
     maxG: 1, minG: 1, overspeedS: 0, stallWarningS: 0, fuelAtEndKg: Math.max(0, fuelKg), onApron: false, onRunway: false,
     waypointsDone: 0, waypointsTotal,
@@ -426,8 +428,13 @@ export class JobMonitor {
     const wps = this.offer.waypoints ?? [];
     const nw = this.nextWaypoint < wps.length ? wps[this.nextWaypoint] : null;
     const next = nw
-      ? { name: nw.name, index: this.nextWaypoint, total: wps.length, ...(nw.landS !== undefined ? { land: { radiusM: nw.radiusM, holdS: nw.landS } } : {}) }
+      ? {
+        name: nw.name, index: this.nextWaypoint, total: wps.length,
+        ...(nw.landS !== undefined ? { land: { radiusM: nw.radiusM, holdS: nw.landS } } : {}),
+        ...(nw.maxAglFt !== undefined ? { maxAglFt: nw.maxAglFt } : {}),
+      }
       : null;
+    const pickedUp = !nw && wps.some((w) => w.landS !== undefined) && fieldAt(s.position.x, s.position.y, this.fields) === null;
     const destLabel = this.destField ? `${this.destField.code} ${this.destField.name}` : this.offer.destination.kind === 'site' ? this.offer.destination.name : '';
     const hint = jobHint({
       phase: this._phase,
@@ -438,6 +445,7 @@ export class JobMonitor {
       atDestination: s.onGround && this.atDestination(s),
       brakeHint: this._phase === 'landed' && this.completion.brakeHint({ helicopter: this.aircraft.helicopter, parkingBrake: src.controls.parkingBrake }),
       stoppedAt: this._stoppedAt ?? undefined,
+      pickedUp,
     });
     return jobStrip({
       offer: this.offer, fields: this.fields, perf: this.perf, helicopter: this.aircraft.helicopter,

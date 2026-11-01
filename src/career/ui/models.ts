@@ -29,8 +29,8 @@ export interface CareerUiModel {
   bootedType: AircraftId;
   /** Where the save is kept: 'mem' refuses a type switch (the dispatch page says so). */
   storeKind: CareerStoreKind;
-  /** The store's state: 'memoryOnly' and 'readOnly' show a banner on the hub. */
-  storage: 'ok' | 'memoryOnly' | 'readOnly';
+  /** The store's state: 'memoryOnly', 'readOnly' and 'stale' (another tab saved since) show a banner on the hub. */
+  storage: 'ok' | 'memoryOnly' | 'readOnly' | 'stale';
   /** The school's registration authority (marks and the market's new airframes). */
   authority: AuthorityId;
   /** How the player holds a licence (the school's ppl, `unlock=1`), or null: the locked page until "I already hold a licence". */

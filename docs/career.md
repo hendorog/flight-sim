@@ -10,6 +10,33 @@ Revision 2 (2026-10-31) takes in the integration and gameplay reviews: the boot 
 payload copy, modal pages, completion only after flying, the fuel plan, station limits, fit-based eligibility, the
 pay floor, game-scaled buying, precautionary stops, shorter progression, wind and a summer season.
 
+Revision 3 (2026-11-01, wave 5) adds "Where it stands", the measured cruise flows, the wave-4 jobs (medevac,
+survey, landmark scenics, sites, the smoke flare, the company callsign) and the review fixes to the boot table.
+
+## Where it stands (2026-11-01)
+
+- **Built:** waves 1 to 4 on `feat/career`, and the review's 21 fixes. The pure core (perf table, stations, costs,
+  fit, jobs, load sheet, loading, settlement, progression, store), the sim hooks and placement, the job runtime,
+  every page, the CareerSystem with its boot plan, the Simulator and menu wiring, the radio identity, landmarks,
+  helicopter sites, medevac and survey jobs, landmark scenic flights, the smoke flare and the company callsign with
+  destination phrasing on the radio. Default (non-Career) paths are bit-identical: the goldens at 1e-9, the
+  present-day guard and `tests/career/boards.golden.json` were never re-captured.
+- **Tested:** `npx vitest run tests/career tests/atc` (36 files, 605 tests), headless jobs with a real C172S
+  (including a stop and a refuel) and R44 (a hover, a set-down and a site leg), and the pages' layout at 800x600 to
+  1600x900 (`scripts/career-shots.mjs`). `scripts/fly-job.mjs` flies three browser scenarios (accept and settle, a
+  type-switch reload, a reload mid-job); it was not re-run after the review fixes.
+- **Still owed by wave 5:** the full suite with the slow files, the conformance suite opt-in, and the owner's flight
+  of three jobs (C152, C172S, R44). Open items are listed under Career in [known issues](known-issues.md).
+
+**How to try it.** Start the dev server (`npm run dev`) and open
+<http://localhost:5173/index.html?unlock=1&career=1>: `unlock=1` unlocks the Career without the skill test and
+`career=1` opens the hub at boot (the boot then takes it out of the address, so a later reload does not open the
+hub again). Without the parameters, press Escape and pick **Career** on the Flight tab (beside **Open Flight
+School**); without a licence, **I already hold a licence** unlocks it for good. Fill in the form, pick a job on the
+board, choose the fuel on the dispatch page and Accept: the aircraft stands cold at the field's stand with the job
+loaded. Start up, fly to the destination (the GPS is set to it, the COM to the origin and the destination), land,
+stop, set the parking brake and shut down; the debrief opens. `cstore=mem` keeps a throwaway career in memory.
+
 ## Decisions (lead, 2026-10-31)
 
 - **Where it lives:** code in `src/career/` (pure core), `src/career/runtime/` (the job runtime, node-safe),
@@ -50,10 +77,14 @@ the job in progress or the last debrief. A job waiting for another type shows **
 Career page holds the sim and makes the UI modal (as school screens do: the radio keys, the checklist key, the HUD
 and the flight cues stand down).
 
-**Free flight** closes the Career pages. With a job active the job carries on (the strip stays; the menu's
-Career button reopens the hub). With no job it leaves Career mode: the player's own weather comes back and the
-start field becomes the aircraft's field (`setStartField(code)`, `null` at home), so Shift+R, the crash dialog's
-Restart and a later reload start where the aircraft is.
+**Free flight** closes the Career pages. With a job active the job carries on (the strip stays; the menu's Career
+button reopens the hub). Opening the Career over a flight it did not start (a job left behind by an explicit start,
+such as `scenario=`) parks that job unplaced, and the hub shows a **Fly it** banner that places it; opening the Career
+never replaces the flight under way unasked. If another tab has saved the career since this one read it, the hub says
+"This career was changed in another tab: reload this page to carry on with it" and every command that would change the
+save is refused (so is every one on a save written by a newer version). With no job it leaves Career mode: the
+player's own weather comes back and the start field becomes the aircraft's field (`setStartField(code)`, `null` at
+home), so Shift+R, the crash dialog's Restart and a later reload start where the aircraft is.
 
 **Job board.** The offers at the selected aircraft's field for today: a list and a map (north-up, the nine fields
 as dots with codes, the route of the highlighted offer, scenic turning points). Each row: kind, title, client,
@@ -84,6 +115,20 @@ the projected reserve at arrival, the wind, a comfort meter on passenger jobs, a
 helicopters near the stand, and one line of what to do next. The radio, ATC, traffic, instruments and the rest of
 the sim behave as in free flight.
 
+**Helicopter and landmark jobs** (wave 4: one to three extra offers on a board, after the base ones). A **medevac**
+(helicopters only) lands at a site off the airfields (a village edge, a roadside, the town's edge, a lake shore or
+a river bank), stands there 30 s within 60 m of the spot while the patient is loaded, then flies to the hospital
+field (the home or sealed field nearest the site). An orange smoke flare burns at the site while it is the next
+point, drifting with the surface wind, so it can be found and the wind read from a few kilometres. The GPS is set to
+the hospital field, while the strip and the smoke show the site (the board's detail and the dispatch page say so).
+Once the site leg is done the strip reads "The patient is aboard: take off for <hospital>". The patient is weighed
+from take-off ("Patient (in the mass from take-off)" on the load sheet). A **survey** (utility, helicopters only)
+flies three or four points every 2.5 NM along the river or a road and back; a point counts only when passed below
+500 ft AGL ("below 500 ft AGL" on the strip, the rule on the board and the dispatch page; the route-missed debrief
+names the limit). A **landmark scenic** flies round two or three named landmarks (the town, villages, lakes, oxbow
+lakes, river bends, road bridges and summits), captured below 2,500 ft AGL; the strip names the landmark on its
+turning-point line.
+
 **Finishing.** Land at the destination, taxi clear of the runway, stop and shut the engine(s) down. With the
 parking brake set the job completes after 3 s; without it, after 12 s ("chocks in"; after 5 s the strip says "Set
 the parking brake (or wait) to finish"). Helicopters: land at the field or site and shut down (no brake). Parking on
@@ -101,10 +146,12 @@ job still stopped gives it up.
 
 **When it goes wrong.** Shutting down away from any field is an outlanding (recovery cost; the aircraft is moved to
 the nearest field). A crash fails the job with the insurance excess and the aircraft out of service for two days at
-the nearest field; the crash dialog offers Debrief and Career hub instead of Restart. Abandon is on the job strip
-while on the ground at a field; airborne, the only way out is to land somewhere. Anything that would end a job from
-outside the Career (Shift+R, a menu scenario, the aircraft chooser, the era or seed switch, a lesson) first asks
-"Abandon the job?", as the menu does for a lesson; yes abandons it, no cancels.
+the nearest field; the crash dialog offers Debrief and Career hub instead of Restart (dismissed, the report is settled
+by the next Shift+R or Free flight). Abandon is on the job strip while on the ground at a field or at a medevac's site
+(at a site: no recovery, no fee; at a stop: that field's landing fee, and at least the reputation Give up costs);
+airborne, the only way out is to land somewhere. The "Abandon the job?" card holds the sim while it is up. Anything
+that would end a job from outside the Career (Shift+R, a menu scenario, the aircraft chooser, the era or seed switch,
+a lesson) first asks "Abandon the job?", as the menu does for a lesson; yes abandons it, no cancels.
 
 **Bankruptcy.** Below the overdraft (-$5,000) the bankruptcy page offers "The bank sells your owned aircraft"
 (each at its sale value; leases are kept) or "Start a new career". If no owned aircraft would lift the cash above
@@ -148,24 +195,29 @@ below Vno at the planning height (tested). Money is game data. Passenger seats e
 
 | type | class | ICAO | pax | empty kg | MTOW | usable fuel kg | fuel | TAS kt | kg/h | demo xwind kt | min rwy m | grass | list $ | buy-in $ | owned $/h | lease $/h | lease rep |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| c152 | trainer | C152 | 1 | 515 | 757 | 66.7 | avgas | 100 | 17 | 12 | 450 | yes | 45,000 | 3,000 | 55 | 120 | 0 |
-| pa38 | trainer | PA38 | 1 | 530 | 757 | 81.6 | avgas | 100 | 18 | 15 | 450 | yes | 42,000 | 2,500 | 55 | 115 | 0 |
-| da20 | trainer | DV20 | 1 | 535 | 800 | 65.4 | avgas | 110 | 16 | 20 | 450 | yes | 95,000 | 3,500 | 60 | 135 | 5 |
-| c172s | tourer | C172 | 3 | 754 | 1157 | 144 | avgas | 120 | 27 | 15 | 500 | yes | 220,000 | 4,500 | 85 | 190 | 0 |
-| pa34 | twin | PA34 | 5 | 1293 | 1905 | 253 | avgas | 165 | 60 | 17 | 900 | no | 260,000 | 9,500 | 210 | 420 | 30 |
-| c208 | turbine | C208 | 9 | 2087 | 3629 | 1009 | jetA1 | 160 | 165 | 20 | 650 | yes | 2,000,000 | 28,500 | 520 | 1,150 | 50 |
-| pc12 | turbine | PC12 | 9 | 2800 | 4740 | 1218 | jetA1 | 230 | 280 | 25 | 800 | yes | 4,200,000 | 45,000 | 700 | 1,700 | 60 |
-| r22 | heli | R22 | 1 | 399 | 621 | 71.6 | avgas | 83 | 26 | - | 0 | yes | 330,000 | 6,500 | 160 | 300 | 0 |
-| s269 | heli | H269 | 1 | 501 | 794 | 88.5 | avgas | 73 | 30 | - | 0 | yes | 300,000 | 6,000 | 160 | 290 | 0 |
-| r44 | heli | R44 | 3 | 685 | 1134 | 126.6 | avgas | 104 | 42 | - | 0 | yes | 520,000 | 11,000 | 240 | 480 | 20 |
-| md500 | heliTurbine | H500 | 4 | 685 | 1361 | 191.4 | jetA1 | 125 | 95 | - | 0 | yes | 1,300,000 | 19,500 | 420 | 850 | 40 |
-| bo105 | heliTurbine | B105 | 4 | 1276 | 2500 | 456 | jetA1 | 104 | 185 | - | 0 | yes | 1,700,000 | 29,500 | 650 | 1,300 | 50 |
+| c152 | trainer | C152 | 1 | 515 | 757 | 66.7 | avgas | 100 | 19 | 12 | 450 | yes | 45,000 | 3,000 | 55 | 120 | 0 |
+| pa38 | trainer | PA38 | 1 | 530 | 757 | 81.6 | avgas | 100 | 20 | 15 | 450 | yes | 42,000 | 2,500 | 55 | 115 | 0 |
+| da20 | trainer | DV20 | 1 | 535 | 800 | 65.4 | avgas | 110 | 17.5 | 20 | 450 | yes | 95,000 | 3,500 | 60 | 135 | 5 |
+| c172s | tourer | C172 | 3 | 754 | 1157 | 144 | avgas | 120 | 37 | 15 | 500 | yes | 220,000 | 4,500 | 85 | 190 | 0 |
+| pa34 | twin | PA34 | 5 | 1293 | 1905 | 253 | avgas | 165 | 58 | 17 | 900 | no | 260,000 | 9,500 | 210 | 420 | 30 |
+| c208 | turbine | C208 | 9 | 2087 | 3629 | 1009 | jetA1 | 160 | 146 | 20 | 650 | yes | 2,000,000 | 28,500 | 520 | 1,150 | 50 |
+| pc12 | turbine | PC12 | 9 | 2800 | 4740 | 1218 | jetA1 | 230 | 270 | 25 | 800 | yes | 4,200,000 | 45,000 | 700 | 1,700 | 60 |
+| r22 | heli | R22 | 1 | 399 | 621 | 71.6 | avgas | 83 | 21 | - | 0 | yes | 330,000 | 6,500 | 160 | 300 | 0 |
+| s269 | heli | H269 | 1 | 501 | 794 | 88.5 | avgas | 73 | 27 | - | 0 | yes | 300,000 | 6,000 | 160 | 290 | 0 |
+| r44 | heli | R44 | 3 | 685 | 1134 | 126.6 | avgas | 104 | 38 | - | 0 | yes | 520,000 | 11,000 | 240 | 480 | 20 |
+| md500 | heliTurbine | H500 | 4 | 685 | 1361 | 191.4 | jetA1 | 125 | 81 | - | 0 | yes | 1,300,000 | 19,500 | 420 | 850 | 40 |
+| bo105 | heliTurbine | B105 | 4 | 1276 | 2500 | 456 | jetA1 | 104 | 143 | - | 0 | yes | 1,700,000 | 29,500 | 650 | 1,300 | 50 |
 
 The ICAO codes and MLW are the definitions' (perf.test); `deliveryFuelKg` is half the usable fuel (the
-definitions' loadings carry no fuel figure). The flows and the C208/PC-12 speeds are
-provisional until the calibration test pins them (low-level turboprop flow is far above the FL250 book figure; the
-C208 plans at 160 kt TAS, about 153 KIAS at 2,000 ft against Vmo 175; the PC-12 at 230 kt TAS, about 221 KIAS
-against Vmo 236).
+definitions' loadings carry no fuel figure). The flows were measured on 2026-10-31 by perfCalibration (each type on
+the 'cruise' scenario moved to 2,500 ft, no wind or turbulence, its `typical` loading and full tanks, the autoflight
+holding heading, altitude and the table's speed, 3 min measured after 60 s settling), in the type's `airborne`
+preset: full rich, since the sim's pilot does not lean below 3,000 ft, so the piston flows are above the book's
+leaned figures (the C172S burns 36.7 kg/h at 117 KTAS, not the POH's 27). Measured, kg/h: c152 18.9, pa38 20.3,
+da20 17.5, c172s 36.7, pa34 57.5, c208 146.1, pc12 269.5, r22 20.9, s269 26.8, r44 38.1, md500 80.8, bo105 143.0;
+the table rounds them. Every table TAS is within 3 % of the measured one and kept (low-level turboprop flow is far
+above the FL250 book figure; the C208 plans at 160 kt TAS, about 153 KIAS at 2,000 ft against Vmo 175; the PC-12 at
+230 kt TAS, about 221 KIAS against Vmo 236).
 
 **Buying is game-scaled.** Real prices against real hourly savings would take 700 to 3,000 h to pay back. The
 market shows the list price; buying costs the **buy-in** (a deposit on finance, about 45 h of the lease-minus-owned
@@ -220,10 +272,10 @@ later stage).
 No epoch exists in the sim and `physics.time` restarts at 0 on every start, so the Career keeps its own clock,
 `clockMin` (minutes since day 0 00:00; day = floor(clockMin / 1440)). A new career starts on day 1 at 08:00. A job
 advances the clock by its elapsed sim minutes plus 30 min turnaround. Departures only between 07:00 and 18:00; after
-18:00 the board says "Rest until tomorrow", which sets the clock to 07:30 the next day (also a hub button at any
-time; it settles a stopped job as diverted and charges idle leases). A job's flight takes place at the career
-clock's time of day on day of year `152 + (day mod 90)`: the season is held to June to August, so an 18:00
-departure still lands in daylight at the world's latitude (grass strips are unlit).
+18:00 the board says "Rest until tomorrow", which sets the clock to 07:30 the next day (also a hub button at any time:
+before 07:30 it goes to 07:30 the same day; it settles a stopped job as diverted and charges idle leases). A job's
+flight takes place at the career clock's time of day on day of year `152 + (day mod 90)`: the season is held to June
+to August, so an 18:00 departure still lands in daylight at the world's latitude (grass strips are unlit).
 
 **Job time** is `elapsedBaseS + (physics.time - t0)`, t0 the `physics.time` at the job's latest placement (0 after
 `startFrom`'s `resetTo`; `restore` brings `physics.time` back on a resumed reload). It does not move while held or
@@ -282,15 +334,19 @@ meaning of an id in `taken`.
   1.1, drizzle 1.15, gusty and rain 1.25). Floor: 1.3 x (`refType`'s estimated block hours x its lease rate + its trip,
   climb and taxi fuel cost), with `floorPremium` charter 1.15, freight 1.1, mail 1.1, scenic 1.2, positioning 1.0. So
   every offer pays its reference type's costs with a margin; short turbine and twin hops are no longer loss makers.
+  Wave 4: medevac 400 + 15/NM (`floorPremium` 1.4), utility 250 + 10/NM + 1.0/kg of survey kit (1.2); a landmark
+  scenic is paid as a scenic.
   Trip length dominates trainer pay (the $8/NM term); passenger count adds little ($30 each). That is intended: the
   bigger classes earn through the class multiplier and the floor.
-  Example: a trainer charter, 1 passenger, 20 NM, clear: 90 + 160 + 30 = $280 (floor: 1.3 x (0.78 h x $120 + $25) x
-  1.15 = $178).
-- **Deadline:** round up to 5 min of (taxiMin + 60 d / gs x slack + 5). `taxiMin` by class (pistons and helicopters
+  Example: a trainer charter, 1 passenger, 20 NM, clear: 90 + 160 + 30 = $280 (floor: 1.3 x (0.78 h x $120 + $28) x
+  1.15 = $182, the C152 at its measured 19 kg/h). `tests/career/costs.test.ts` pins the same example at the
+  pre-calibration 17 kg/h through its own `DOC_C152` (a $25 fuel term and a $178 floor); the pay is $280 either way.
+- **Deadline:** round up to 5 min of (taxiMin + 60 d / gs x slack + 15) (`DEADLINE_RULES.marginMin`: 15 min in
+  hand, raised from 5 in wave 2). `taxiMin` by class (pistons and helicopters
   25, turbines 30). gs = refTas (trainer 95, tourer 110, twin 150, turbine 155, heli 72, heliTurbine 100 kt) less the
   headwind component of the job's wind along the route (a loop: less half the wind speed), at least half refTas.
-  Slack by kind (charter 1.5, freight 1.8, mail 1.25, scenic 1.6, positioning 2.5). Example: the 20 NM trainer charter
-  in calm air allows 25 + 18.9 + 5 -> 50 min.
+  Slack by kind (charter 1.5, freight 1.8, mail 1.25, scenic 1.6, positioning 2.5; medevac 1.3, utility 1.8).
+  Example: the 20 NM trainer charter in calm air allows 25 + 18.9 + 15 -> 60 min.
 - **Weather and wind:** a preset id by weight (clear 0.30, fair 0.30, overcast 0.15, gusty 0.10, drizzle 0.08, rain
   0.07), then a wind direction (0-359) and speed from the preset's range (clear 0-6, fair 4-12, overcast 6-16, gusty
   12-20, drizzle 5-14, rain 8-18 kt), which override the preset's wind when the job is flown. Low IFR, fog, snow and
@@ -298,6 +354,45 @@ meaning of an id in `taken`.
 - **Reputation needed:** the class's (trainer 0, tourer 5, twin 25, turbine 40, heli 15, heliTurbine 35) plus the
   kind's (scenic 5, medevac 10), or the premium figure.
 - **Client and title:** from small word lists in jobs.ts ("Holthurst Joinery", "2 passengers to Holthurst").
+
+### Wave-4 offers: landmarks, sites, medevac and survey
+
+`W4_RULES` in jobs.ts: 1 to 3 offers a board, each slot drawing, in order, the kind (medevac 0.35, utility 0.25,
+landmark scenic 0.4, over the kinds with something within reach of the field), the class (rotorcraft for medevac and
+utility; any class but the twin for a scenic), the route, the weather as the base stream, the payload and the client.
+An offer no type of its class can carry is dropped. Empty outside the present day.
+
+- **Landmarks** (`src/career/landmarks.ts`, 4b): read from the world's own pure queries, never the siting code: the
+  town (valley.ts `findTownSite`), villages and road bridges (seed 0 only, as the road network), lakes (named as the
+  school's navigation route names them: Valley Lake, Foothill Lake, Alpine Tarn, Glacial Lake), oxbow lakes, the
+  river's horseshoe bends, and summits at least 150 m above the ground round them within 50 km of home. Every
+  landmark is at least 2 NM from every field (an area feature is nudged clear when it stays over itself, else left
+  out). Unnamed ones take the nearest field: "Village 3 NM north-east of Elmley". Ids are stable per feature.
+- **Landmark scenic:** 2 or 3 landmarks 3 to 15 NM from the field, drawn by kind (town 0.15, village 0.1, lake
+  0.25, oxbow 0.1, river bend 0.1, bridge 0.1, summit 0.2), at least 2 NM apart, no higher than the class's
+  `landmarkMaxFt` (trainer 5,000, tourer 7,000, turbine 10,000, heli 5,000, heliTurbine 8,000 ft), flown in order of
+  bearing round the field, a loop of at most 40 NM; captured as any turning point (1,500 m, below 2,500 ft AGL).
+- **Sites** (`src/career/sites.ts`): helicopter landing points by a village edge, a road (seed 0), the town's edge, a
+  lake shore or the river bank (every seed). Each anchor tries a fixed list of candidate points and takes the first
+  that is level (ground within 5 deg over the 10 m pad and a 25 m ring, `SITE_RULES`), dry (grass, 30 m from water),
+  clear (300 m beyond every field's completion box, 25 m from a road, 80 m from a village, beyond the town's
+  woodland margin, outside the approach corridors) and free of trees within 40 m by the vegetation query itself at
+  every quality's spacing. A site is resolved only when a board draws its anchor, then cached (the tree query costs
+  a few milliseconds a cell). Named in tenths of a NM: "Village edge 3.2 NM north-east of Fable", "Shore of Valley
+  Lake".
+- **Medevac:** up to 6 anchors drawn 3 to 20 NM from the field; the first with a site is the pickup, a landing
+  waypoint (60 m, 30 s on the ground); the destination is the home or sealed field nearest the site. Payload: a
+  paramedic, the patient and 8 to 20 kg of medical kit, all aboard (and weighed) from the start, since the flight
+  model takes a loading only at a placement. Reputation needed: the class's plus 10; completion +4.
+- **Utility (survey):** the river, or (seed 0) a road, by one draw; a start 3 to 15 NM from the field, then 3 or 4
+  points every 2.5 NM along the line (800 m capture, below 500 ft AGL), each 2 NM from every field, and back.
+  Payload: a surveyor and 10 to 30 kg of survey kit.
+- **Smoke flare** (`src/career/render/smokeMarker.ts`): added to the scene once (`CareerShell.addToScene`), shown
+  only while the job's next point is a landing site. A stream of puffs (`SMOKE_RULES`), each an analytic function of
+  its age and the wind now, so it is exact at any frame rate and after a fast-forward; it rises, drifts with the
+  surface wind and bends over in a stronger one. Drawn opaque with stochastic transparency (the post chain paints
+  sky wherever depth is clear), which the temporal anti-aliasing on medium quality and up averages into a
+  translucent plume.
 
 ## Dispatch and the load sheet (`src/career/loadsheet.ts`, costs in `src/career/costs.ts`)
 
@@ -421,8 +516,8 @@ Completed:
   -10 %, -2 reputation; below a third of the reserve (10 / 7 min): -25 %, -5.
 - Stopped on the runway: -5 %.
 - Costs on every outcome: fuel bought at dispatch and at stops, less defuel credit, the destination's (or stop's)
-  landing fee (home $20 + $8/t MTOW; sealed $12 + $5/t; grass $5), aircraft hours (block hours x owned or lease
-  rate).
+  landing fee (home $20 + $8/t MTOW; sealed $12 + $5/t; grass $5; a helicopter site nothing), aircraft hours (block
+  hours x owned or lease rate).
 
 Failed:
 - Diverted (given up at a stop, or still stopped at the day's end): no pay; fees and hours still due; the aircraft is
@@ -442,9 +537,11 @@ turning point missed -1, route missed -4; diverted -4; outlanded -8; crashed -20
 take-off -5; lost -5.
 
 Every money line is rounded to whole dollars. Worked example (pinned in tests/career/economy.test.ts): the $280 C152
-charter (50 min allowed) to a sealed field by a junior pilot, completed in 38 min with 0.6 block hours, landing score
-72, comfort 84, 12 kg of avgas bought at dispatch, 22 kg left at shutdown (78 min of flow): base 280; on time +28;
-early +14 (38 min is within 80 % of 50); landing 280 x 0.10 x 12/40 = +8; comfort 280 x 0.15 x 14/30 = +20; fuel 12 /
+charter to a sealed field by a junior pilot, completed in 38 min with 0.6 block hours, landing score 72, comfort 84,
+12 kg of avgas bought at dispatch, 22 kg left at shutdown (69 min of the measured 19 kg/h, well above the reserve).
+The test's offer allows 50 min, the deadline before the 15 min margin; jobs.ts now allows 60, and 38 min is within
+80 % of either, so every line is the same: base 280; on time +28;
+early +14 (38 min is within 80 % of 60); landing 280 x 0.10 x 12/40 = +8; comfort 280 x 0.15 x 14/30 = +20; fuel 12 /
 0.719 L x $2.60 = -43; landing fee 12 + 5 x 0.757 t = -16; lease 0.6 h x $120 = -72. Net $219, reputation +2.
 
 Cash may go negative to -$5,000 (fuel and fees are still paid); below 0 nothing can be bought or leased; below
@@ -479,10 +576,12 @@ The gates aim at a first new type in session 2-3 and a twin or helicopter by ses
 
 **Store** (`src/career/store.ts`): `CareerStore` modelled on `TrainingStore`: guarded KV (every access in
 try/catch), verified write (copy to `.prev`, write, read back), `kind: CareerStoreKind`, `status: 'ok' | 'memoryOnly'
-| 'readOnly'`, `load()` (parse, migrate with a backup, validate, fall back to `.prev`), `create(...)`, `save` (sync),
-`saveSoon` (500 ms), `flush`, `reset`, export and import JSON (`format: 'fs-career'`). `cstore=mem` uses the school's
-`memoryStore()`; `cstore=session` uses `sessionStorage` (guarded like `browserStore()`), for browser checks that
-switch type. Loading is cheap and synchronous, so the Simulator loads the store before `decideBoot`.
+| 'readOnly' | 'stale'` ('stale': the store remembers the text it last read or wrote, and a write that finds
+something else there, another tab's save, is refused; every command and hub refresh checks first), `load()` (parse,
+migrate with a backup, validate, fall back to `.prev`), `create(...)`, `save` (sync), `saveSoon` (500 ms), `flush`,
+`reset`, export and import JSON (`format: 'fs-career'`). `cstore=mem` uses the school's `memoryStore()`;
+`cstore=session` uses `sessionStorage` (guarded like `browserStore()`), for browser checks that switch type. Loading
+is cheap and synchronous, so the Simulator loads the store before `decideBoot`.
 
 **Saves that cannot wait.** Accept, abandon, give up, stop, settle and `settlePending` call `store.save()` at once
 and then the shell's `persist()` (the snapshot without a block or with the new one). `setAircraft`, `setSeed`,
@@ -510,10 +609,10 @@ Simulator applies the plan before `decideBoot`, then passes `param` (`resumePara
 |---|---|---|---|---|---|---|
 | none, or Career unavailable (era) | any | any | yes if present | null | no | none (default path) |
 | any, store kind not 'local' | any | any | yes | (per rows below) | (per rows) | (per rows) |
-| any | any | X | yes | null | no | none; a placed job not resumed is handled at the next Career open (never airborne: back to unplaced; airborne: lost) |
-| placed job, booted type | matches `active.offer.id` | no X | no | true (null if `resume=0`) | yes | resume; if nothing resumed: never airborne -> re-place, airborne -> lost |
+| any | any | X | yes | null | no | none; a placed job not resumed is handled at the next Career open (never airborne, held at a stop or standing at a field: back to unplaced, the hub's "Fly it" places it; in the air: lost); a pending crash or outlanding waits for the hub's Debrief |
+| placed job, booted type | matches `active.offer.id` | no X | no | true (null if `resume=0`) | yes | resume; if nothing resumed: never airborne, held at a stop or last seen standing at a field -> re-placed there, in the air -> lost |
 | placed job, booted type | missing or other id | no X | yes | false | yes | resume fallback at once (re-place or lost) |
-| placed job, other type | any | no X | yes | null | if `career=1` | hub if `career=1`; if airborne, settled lost at this boot; else shown waiting ("Switch to <type>") |
+| placed job, other type | any | no X | yes | null | if `career=1` | hub if `career=1`; if in the air, settled lost at this boot; else (standing at a field: kept there) shown waiting ("Switch to <type>") |
 | unplaced job, booted type | any | no X | yes | false (ignore this type's stale snapshot and its lesson) | yes | place (after `training.afterBoot`) |
 | unplaced job, other type | any | no X | yes | null | if `career=1` | hub if `career=1`, else none |
 | in Career, no job, selected type booted | any | no X | yes | null | yes | placeSelected (nothing if the boot resumed) |
@@ -524,7 +623,8 @@ snapshot; a reload within 1 s of a settlement does not resume the finished job; 
 do not resume the old job; an unplaced job for this type is not overrun by this type's stale lesson snapshot.
 
 **Type switch.** On Accept with another type the store holds `active` with `placed: false` and `loading: null` and is
-saved, then `commands.setAircraft(type, { open: 'career' })` reloads with `career=1`. `aircraftSwitchUrl`: `'career'`
+saved, then `commands.setAircraft(type, { open: 'career' })` reloads with `career=1` (a one-shot: the boot takes it
+out of the address once read, so a later F5 does not open the hub again). `aircraftSwitchUrl`: `'career'`
 joins `AIRCRAFT_SWITCH_DROPS`; `open: 'career'` adds `career=1` and deletes `school`; `open: 'school'` adds
 `school=1` and deletes `career`; no `open` is unchanged. After the reload, row "unplaced job, booted type" places it.
 With `cstore=mem` a type switch is refused (the memory store does not survive a reload; the dispatch page says so);
@@ -553,7 +653,7 @@ the default path is unchanged.
 | `src/ui/uiSystem.ts` | `attachCareer(link: CareerModalLink)`; `modalOpen` and the `schoolModal` term in `update` OR in `link.screenOpen()` | no link: identical |
 | `src/ui/menu.ts` | a **Career** button in the Flight tab's school chips row, via an optional `MenuHost.career?: CareerMenuLink`, hidden by the same gate; the scenario rows, aircraft chooser, era, seed and lesson starts use the lesson confirm when `career.jobActive()` ("Abandon the job?") and call `career.abandon()` on yes | absent link: no button, no confirm |
 | `src/atc/RadioSystem.ts` (3b) | optional `RadioDeps.identity?: () => { registration: string; icaoType: string; callsign: string \| null } \| null`, consulted first where `training.radioIdentity()` is read today (registration and type only); optional `RadioDeps.destination?: () => Airfield \| null`, stored for wave 4 | absent or null: every phrase unchanged (tests/atc pin wording) |
-| `src/atc/RadioSystem.ts`, `calls.ts`, `phrases.ts` (4c) | the callsign ("Fable 12") when `identity().callsign` is set; `RadioSituation.destination?` used by the 'leaving' and 'inbound' phrases | null: unchanged |
+| `src/atc/RadioSystem.ts`, `calls.ts`, `phrases.ts`, `TrafficSystem.ts` (4c) | `companyCallsign` ("Fable 12": EASA "Fable one two", FAA "Fable twelve", never abbreviated) when `identity().callsign` is set, also in the home tower's sequencing (`TrafficDeps.player().callsign`); `RadioSituation.destination?`: the taxi request ("VFR to Elmley"), departing and leaving calls ("for Elmley"), the take-off clearance (EASA "report leaving the circuit", FAA "<direction> departure approved", also on a held departure) and the inbound call at the destination ("inbound to Elmley for landing", FAA "inbound for landing at Elmley"); see [atc.md](atc.md) | null: unchanged |
 
 The CareerSystem takes its dependencies as closures (`CareerShell`, the TrafficDeps/RadioDeps idiom): physics,
 weather, ui layer, `startFrom`, `setAircraft`, `setSeed`, `setHold`, `persist`, `addToScene`, `frameSimDt`,
@@ -622,7 +722,7 @@ follow exactly), not `step`.
 
 | parameter | meaning |
 |---|---|
-| `career=1` | open the Career hub at boot (also what a Career type switch adds); `career=0` never auto-opens it and counts as an explicit start |
+| `career=1` | open the Career hub at boot (also what a Career type switch adds); a one-shot: the boot removes it from the address (`history.replaceState`), so a later reload does not open the hub again (`career=0` stays); `career=0` never auto-opens it and counts as an explicit start |
 | `cstore=mem` | keep the Career save in memory only (unit tests; a type switch is refused; no resume block is written) |
 | `cstore=session` | keep it in sessionStorage (e2e: survives the same-tab reload of a type switch, gone with the tab; no resume block) |
 | `unlock=1` | (existing school parameter) also unlocks the Career for this session |
@@ -795,12 +895,13 @@ asks the lead).
 ### Wave 5: documentation and review
 
 Owns `docs/career.md` (this file: "Where it stands"), `docs/simulator.md` (URL table), `docs/flight-school.md` (a
-pointer), `README.md` (Documentation row), `docs/known-issues.md`. Full suite including slow files, the conformance
+pointer), `README.md` (Documentation row), `docs/known-issues.md` (the Career's open items), `docs/atc.md` (the
+company callsign and destination phrasing). Full suite including slow files, the conformance
 suite opt-in, a code review of the whole branch, and the owner's flight of three jobs (C152, C172S, R44).
 
 ## Later
 
-Multi-leg mail runs; ATC flight-plan phrasing ("VFR to Holthurst"); per-tank fuel; a check ride per rating; more
+Multi-leg mail runs; per-tank fuel; a check ride per rating; more
 stands and the fleet visible on the ground; a painted H at the helicopter stands; passengers drawn in the cabin
 (exterior hashes would move: owner decision); an instrument rating with the IFR presets; sunset-based last
 departures if the season is ever unheld; AI pilots flying owned aircraft; the AH-56 display flight.

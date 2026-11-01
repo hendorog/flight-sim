@@ -5,6 +5,10 @@ free flight (design: [instructor-spec.md](instructor-spec.md)). "Open Flight Sch
 the school home: the syllabus, the logbook, the challenges and the settings (EASA or FAA standard, instructor
 voice, captions). A first visit opens a welcome card.
 
+**After the licence.** Passing the skill test (L21) unlocks the **Career** beside "Open Flight School" on the menu's
+Flight tab: a small air operator flying passengers, freight, mail, scenic, medevac and survey jobs between the
+airfields in the sim's types, with load sheets, money, reputation, ranks and a fleet. See [career.md](career.md).
+
 **What is in it.** 21 lessons in five stages: handling (L01 effects of controls to L07 stalling), circuits
 (L08 take-off to L14 first solo), advanced (L15 steep turns to L19 instrument appreciation), navigation (L20)
 and the skill test (L21), plus the N1 night rating and four challenges (spot landing, dead-stick, crosswind
@@ -103,7 +107,7 @@ envelope above still takes precedence. With "Instructor saves" off she says the 
 | `voice=0` | Captions only, no speech |
 | `standard=easa`, `standard=faa` | The grading standard for this session (the saved profile is not changed) |
 | `tstore=mem` | In-memory school store: nothing is read from or written to `localStorage` |
-| `unlock=1` | Every lesson available this session (practice credit only) |
+| `unlock=1` | Every lesson available this session (practice credit only); also unlocks the Career |
 | `student=auto` | Development (dev server only): the scripted AutoStudent flies the student's tasks |
 
 `window.__sim.training` is the automation API: `start(id, {phase, brief, standard})`, `state()` (phase, step,

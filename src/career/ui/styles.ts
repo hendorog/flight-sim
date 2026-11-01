@@ -377,4 +377,15 @@ export const CAREER_CSS = /* css */ `
   #fsui .cr-deb-grid > .cr-col:last-child { grid-column: span 2; }
   #fsui .cr-board-grid { grid-template-columns: minmax(0, 1fr) 280px; }
 }
+
+/* Narrow windows: the board's and reposition's map and detail go under the list; the logbook's and a debrief's
+   log-line cells close up (a log line's remarks wrap), and the wide tables scroll inside their own box rather
+   than spill past it. */
+@media (max-width: 900px) {
+  #fsui .cr-board-grid { grid-template-columns: minmax(0, 1fr); }
+  #fsui .cr-offers { overflow-x: auto; }
+  #fsui .cr-paper { max-width: 100%; overflow-x: auto; }
+  #fsui .cr-paper td, #fsui .cr-paper th { padding-left: 4px; padding-right: 4px; font-size: 11px; }
+  #fsui .cr-logline td:last-child { white-space: normal; }
+}
 `;

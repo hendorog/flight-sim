@@ -2,8 +2,9 @@
 // and pilot, rank, cash, the reputation bar, the career clock, the selected aircraft and where it stands, then
 // Job board, Reposition, Fleet, Pilot, Logbook, Rest until tomorrow and Free flight), and a small right card with
 // the job in progress or the last debrief. Banners above the figures say what needs doing first: a crash or
-// outlanding waiting for its debrief, a job waiting for another type ("Switch to <type>"), a job stopped at
-// another field, a lesson running, the store unable to save.
+// outlanding waiting for its debrief, a job waiting for another type ("Switch to <type>"), one of this type parked
+// when the Career was opened over another flight ("Fly it"), a job stopped at another field, a lesson running, the
+// store unable to save (or another tab having saved since).
 
 import { el } from '../../ui/dom';
 import { CAREER_PERF } from '../perf';
@@ -45,6 +46,7 @@ export function renderHub(parent: HTMLElement, ctx: CareerCtx): CareerPageView {
   };
   if (model.storage === 'memoryOnly') banner('This career can’t be saved in this browser: export it from the pilot page to keep it.');
   else if (model.storage === 'readOnly') banner('This career was saved by a newer version: it is read-only here.');
+  else if (model.storage === 'stale') banner('This career was changed in another tab: reload this page to carry on with it.', 'bad');
   if (lesson) banner('Finish or end the lesson first: the Career waits while the Flight School flies.', 'info');
   let primary: (() => void) | null = null;
   if (job?.pendingReport) {
@@ -56,6 +58,12 @@ export function renderHub(parent: HTMLElement, ctx: CareerCtx): CareerPageView {
     const b = banner(`${job.offer.title} waits for the ${typeName(job.type)}.`, 'info');
     const go = (): void => ctx.send({ kind: 'switchTo' });
     button(b, `Switch to ${typeName(job.type)}`, go);
+    primary = go;
+  } else if (job && !job.placed) {
+    // Of the booted type, parked when the Career was opened over another flight: placed again on request.
+    const b = banner(`${job.offer.title} waits at ${fieldName(ctx, job.stoppedAt ?? job.offer.origin)}.`, 'info');
+    const go = (): void => ctx.send({ kind: 'switchTo' });
+    button(b, 'Fly it', go);
     primary = go;
   } else if (job?.phase === 'stopped') {
     const b = banner(`${job.offer.title}: stopped at ${fieldName(ctx, job.stoppedAt ?? '')}.`, 'info');

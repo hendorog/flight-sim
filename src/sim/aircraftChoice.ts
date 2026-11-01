@@ -26,7 +26,8 @@ export const CARB_ICING_KEY = 'fs.carbIcing';
 export const AIRCRAFT_SWITCH_DROPS = [
   'aircraft', 'scenario', 'lesson', 'phase', 'brief', 'resume',
   'ap', 'hover', 'demo', 'trace', 'config', 'halfp', 'stab', 'run', 'freeze', 'student',
-  // career=1 opens the Career hub; only a Career type switch asks for it again (open: 'career').
+  // career=1 opens the Career hub; only a Career type switch asks for it again (open: 'career'). The boot also
+  // takes it out of the address once read (Simulator dropUrlParam), so it never outlives one load.
   'career',
 ] as const;
 

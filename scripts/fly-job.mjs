@@ -11,7 +11,8 @@
 //      close. The job strip is shot on the ground and in the air, then testArrive completes the job: the debrief says
 //      'completed' and the aircraft stands at the destination.
 //   2. Same profile, the C152 loaded: lease a C172S and accept a job with it; the page reloads into the C172S with
-//      career=1 and no school=, and the job is placed at its origin with the job's mass.
+//      career=1 (consumed by the boot: gone from the address afterwards) and no school=, and the job is placed at
+//      its origin with the job's mass.
 //   3. Real localStorage: accept a C172S job, start the engine, fast-forward 60 s (run=, from the page), reload: the
 //      job resumes (same job, job time >= 60 s, the engine still running); with the resume preference off, the same;
 //      Shift+R asks "Abandon the job?" and Keep keeps it; abandon(), reload within 1 s: no job resumes.
@@ -261,7 +262,8 @@ try {
       check('2: the C152 is loaded', (await p.evaluate(() => window.__sim.physics.definition.id)) === 'c152');
       await acceptAcrossReload(p, offer2, c172, true);
       const u = new URL(await p.evaluate(() => location.href));
-      check('2: the reload has career=1 and no school=', u.searchParams.get('career') === '1' && !u.searchParams.has('school'), u.search);
+      // career=1 asked the reload to open the Career; the boot takes it out of the address once read (a one-shot).
+      check('2: the reload has no school=, and its career=1 was consumed', !u.searchParams.has('career') && !u.searchParams.has('school'), u.search);
       const r2 = await checkPlacement(p, offer2, '2');
       check('2: the C172S is flown', r2.type === 'c172s', r2.type);
       const errs = await p.evaluate(() => window.__sim.errors);

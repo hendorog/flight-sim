@@ -26,7 +26,10 @@
 //   uplift or defuel at dispatch is priced from the job's fuel against the fleet entry's (pre-job) fuel at the origin.
 // - Abandoned after take-off settles as a lost aircraft would (recovery, the nearest field) with the abandoned-
 //   in-the-air reputation; on the ground (never airborne, held at a stop, or the report names the field it rests
-//   at) the aircraft stays where it is and the fuel bought stays in its tanks.
+//   at) the aircraft stays where it is and the fuel bought stays in its tanks. Flown to another field than the
+//   origin, that field's landing fee is charged and the reputation is no better than a diversion's (an Abandon at a
+//   stop never beats a Give up); on the ground at a helicopter landing point (a medevac's site) it is a ground
+//   abandonment: no recovery, the aircraft moved to the nearest field, no fee.
 // - High g: the passenger limit (3.0) applies to any job carrying people: pax aboard, or a kind whose comfort counts
 //   (a medevac's patient is payload, not a seat).
 // - The clock moves to max(now, accepted + elapsed + turnaround); a day boundary crossed ends that day
@@ -62,6 +65,13 @@ export function nearestFieldCode(fields: readonly Airfield[], p: { north: number
 /** The place kind of a field code (home, sealed, grass); 'sealed' for a code not in `fields`. */
 function kindOf(code: string, fields: readonly Airfield[]): PlaceKind {
   return fields.find((f) => f.code === code)?.kind ?? 'sealed';
+}
+
+/** The debrief's note on a route missed: with a height limit (a survey's 500 ft, a scenic's 2,500 ft AGL) it says so. */
+function routeMissedNote(maxAglFt: number | undefined): string {
+  return maxAglFt === undefined
+    ? 'None of the turning points was overflown: the client did not get the flight.'
+    : `None of the turning points was overflown below ${maxAglFt.toLocaleString('en-GB')} ft above the ground: the client did not get the flight.`;
 }
 
 /** The settled outcome: a completed scenic flight with no turning point overflown is 'routeMissed'. */
@@ -202,7 +212,7 @@ export function settleJob(save: CareerSave, job: ActiveJob, report: JobFlightRep
       // A medevac (4a: its pickup a landing point, Waypoint.landS) that never landed at the site.
       notes.safety = offer.waypoints?.some((w) => w.landS !== undefined)
         ? 'The helicopter never landed at the site: the patient was not picked up.'
-        : 'None of the turning points was overflown: the client did not get the flight.';
+        : routeMissedNote(offer.waypoints?.find((w) => w.maxAglFt !== undefined)?.maxAglFt);
       aircraftAt = report.atField ?? offer.origin;
       feePlace = report.atField ?? offer.origin;
       break;
@@ -229,16 +239,28 @@ export function settleJob(save: CareerSave, job: ActiveJob, report: JobFlightRep
       rep('Flight lost', R.lost);
       aircraftAt = nearest();
       break;
-    case 'abandoned':
-      if (job.everAirborne && job.phase !== 'stopped' && report.atField === null) {
+    case 'abandoned': {
+      // On the ground at one of the offer's helicopter landing points (a medevac's site): a ground abandonment.
+      const atSite = job.lastKnown.onGround && report.atField === null && (offer.waypoints ?? []).some(
+        (w) => w.landS !== undefined && Math.hypot(report.position.north - w.north, report.position.east - w.east) <= w.radiusM,
+      );
+      if (atSite) {
+        rep('Abandoned', R.abandonedGround);
+        aircraftAt = nearest();
+      } else if (job.everAirborne && job.phase !== 'stopped' && report.atField === null) {
         line('recovery', 'Recovery', -S.lostRecovery * mult);
         rep('Abandoned after take-off', R.abandonedAir);
         aircraftAt = nearest();
       } else {
-        rep('Abandoned', R.abandonedGround);
         aircraftAt = report.atField ?? job.stoppedAt ?? offer.origin;
+        // Flown to another field and abandoned there: its landing fee and no better than a Give up (a diversion).
+        const away = job.everAirborne && aircraftAt !== offer.origin;
+        rep('Abandoned', away ? Math.min(R.abandonedGround, R.diverted) : R.abandonedGround);
+        // Back on the ground after flying ('ground'), it left a stop there (Continue, Refuel): that fee is paid.
+        if (away && job.phase !== 'ground') feePlace = aircraftAt;
       }
       break;
+    }
   }
 
   // Costs on every outcome.

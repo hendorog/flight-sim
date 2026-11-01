@@ -182,6 +182,85 @@ After a resume the published N1 and TOT of a multi-engine type stay at the reset
 `engines[i].ng` / `itt`.
 Close with: republish them from the snapshot in the restore path.
 
+## Career
+
+Open items of the air-operator career ([career.md](career.md), on `feat/career` as of 2026-11-01).
+
+### R44 at sloped sites — **unvalidated**
+
+The wave-4 build saw the scripted pilot's R44 mast-bump while setting down at a sloped medevac site, possibly from a
+skid contact impulse rather than the pilot's inputs. Sites are held under 5 deg (`SITE_RULES`), but nothing has
+measured an R44 set-down at the steepest ones; no test pins the case.
+Evidence: [sites.ts](../src/career/sites.ts) `SITE_RULES`; the R44's own
+[known issues](../src/aircraft/r44/KNOWN_ISSUES.md).
+Close with: a headless R44 set-down at the steepest sites of seeds 0 and 7 recording the mast angle and skid loads,
+and a lower `maxSlopeDeg` or a pilot fix if it bumps.
+
+### Medevac GPS points at the hospital, not the site — **missing feature**
+
+The GPS direct-to is the destination field; the strip and the smoke flare show the site. The board's detail and the
+dispatch page say so, the strip does not. A GPS user waypoint would change the instrument code the moving map uses.
+Evidence: [board.ts](../src/career/ui/board.ts) `routeRule`.
+Close with: a user waypoint in the navigation module set to the site until it is done, then the hospital.
+
+### Medevac deadlines are generous — **estimate**
+
+A medevac's deadline is the base formula: 25 min of taxi, the route at slack 1.3 and 15 min in hand, so a 10 NM route
+(to the site and on to the hospital) in a piston helicopter allows 55 min for under 10 min of cruise. On time is easy.
+Evidence: [types.ts](../src/career/types.ts) `PAY_RULES.medevac`, `DEADLINE_RULES`.
+Close with: the owner's flights; a shorter taxi allowance and margin for medevac if they agree.
+
+### Smoke flare grainy on low quality — **defect (cosmetic)**
+
+The flare is drawn opaque with stochastic transparency, which the temporal anti-aliasing averages into a plume on
+medium quality and up. On low there is no temporal pass, so the plume shows as moving grain.
+Evidence: [smokeMarker.ts](../src/career/render/smokeMarker.ts) header.
+Close with: a blended fallback on low quality, drawn after the post chain's sky.
+
+### First board after a boot is slow — **defect (performance)**
+
+A helicopter site is resolved when a board first draws its anchor (the vegetation query costs a few milliseconds a
+cell), so the first board with wave-4 offers can take up to about 400 ms; later boards use the cache.
+Evidence: [sites.ts](../src/career/sites.ts) header.
+Close with: resolving the sites in idle time after the boot, or in a worker.
+
+### Load-sheet CG band is the type's preset loadings, not its envelope — **estimate**
+
+The dispatch page's CG band runs between the CGs of the type's own `forward` and `aft` loadings (`CareerPerf.cg`). For
+the PC-12 the empty airframe (0.15 m) is already forward of that band (0.10 m), so a light load with a pilot alone
+shows the amber "forward of the PC12's usual loadings" warning although it is an ordinary loading. It only warns.
+Evidence: [perf.ts](../src/career/perf.ts) `pc12.cg`; [loadsheet.ts](../src/career/loadsheet.ts) the `cg` warning.
+Close with: each type's POH CG envelope (forward and aft limits against mass) in the table.
+
+### Hub's last-job card covers the Checklist button — **defect (cosmetic)**
+
+At 1280x720 the hub's "Last job" card sits over the top-right "Checklist · F" button; only its edge shows.
+Close with: moving the card below the button, or hiding the button while the hub is open.
+
+### Slow board test — **test time**
+
+The 200-board check in `tests/career/system.test.ts` (every class-eligible type through the real load sheet at
+seeds 0 and 7) takes close to 5 s, near the default test time limit.
+Close with: fewer boards in the fast run and the full 200 in the slow list.
+
+### Review fixes left partial — **missing feature**
+
+- Survey and scenic points passed above the height limit are not tracked one by one; the route-missed debrief names
+  the limit but not which points were too high (a new report field).
+- A save written by a newer version is read-only, but a placed job in it is still placed at boot (never saved).
+- A tab holding a stale save says so on its next command or hub refresh; with no `storage` event listener its
+  in-memory state differs until the player reloads.
+- A lost job's report keeps block time 0 (the abandon, give-up and rest reports carry the flown time).
+
+### Not yet flown in the browser — **unvalidated**
+
+Covered by headless and unit tests only: `scripts/fly-job.mjs` after the review fixes (its `career=1` check now
+expects the parameter consumed), the stale-tab and read-only banners, the hub's "Fly it" for a parked job, Abandon
+at a medevac site, the held sim under the "Abandon the job?" card, a full medevac with the smoke flare and the
+spot cue, a survey below 500 ft AGL, and the company callsign in a live radio exchange. The owner's three-job
+flight (C152, C172S, R44) is still owed.
+Close with: those flights in the browser, and `node scripts/fly-job.mjs` re-run.
+
 ## Test evidence
 
 There are two gross/solo expected-failing autorotation landings per helicopter: [R22](../tests/rotorcraft/flights.test.ts),

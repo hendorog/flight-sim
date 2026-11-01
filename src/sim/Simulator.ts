@@ -626,7 +626,9 @@ export class Simulator {
     const training = !era().world.school ? null : new TrainingSystem({
       physics,
       weather: this.weather,
-      params: p.school,
+      // A school=1 left in the URL (a school type switch) never opens the school home over the Career's own boot
+      // (a job resumed or placed, the hub): a lesson started from it would end the job unasked.
+      params: careerPlan?.trainingExplicit && p.school.open === true ? { ...p.school, open: null } : p.school,
       ui,
       readings: () => panel.instruments.readings,
       pilotFlying: () => input.pilotFlying(),
@@ -761,6 +763,9 @@ export class Simulator {
     // The Career's follow-up (resume its monitor, re-place, place, or open the hub). Not awaited: a placement waits
     // for frames behind its curtain. The resume branch attaches the monitor synchronously, before any persist().
     if (this.career && careerPlan) void this.career.afterBoot({ resumed: resumed?.snapshot ?? null, plan: careerPlan }).catch((e) => this.fail('career', e));
+    // career=1 is a one-shot (the Career type switch's "open the hub after the reload"): taken out of the address
+    // once read, so a later F5 in this tab does not open the hub again (career=0, an explicit choice, stays).
+    if (p.career.open === true) dropUrlParam('career');
     this.fastForwardLeft = p.run;
     if (p.freeze && p.run === 0) this.setPaused(true);
     this.readyPhase = p.run > 0 ? 'fastForward' : 'streaming';
@@ -1383,7 +1388,8 @@ export class Simulator {
     this.checkPixelRatio();
 
     // Simulated time requested this frame (0 while paused or held behind a curtain).
-    const held = ctx.paused || this.holding || this.schoolHold || this.careerHold;
+    // An ask() card (the Career's "Abandon the job?") takes the keys and the mouse flight: held while it is up.
+    const held = ctx.paused || this.holding || this.schoolHold || this.careerHold || s.ui.askOpen;
     const dt = held ? 0 : wallDt * ctx.timeScale;
     let subsystemDt = dt;
     this.run('input', s.input, dt);
@@ -1762,4 +1768,16 @@ function downloadText(fileName: string, text: string): void {
   a.download = fileName;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Take one parameter out of the page's address without a reload (history.replaceState); never throws. */
+function dropUrlParam(name: string): void {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(name)) return;
+    url.searchParams.delete(name);
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch {
+    /* a sandboxed page without history: the parameter stays */
+  }
 }

@@ -79,6 +79,7 @@ browsers only play sound on a secure page.
 | [Aircraft](docs/aircraft.md) | The aircraft types, their differences from the C172S, and the helicopter demos and hover modes |
 | [Scenarios and URL parameters](docs/simulator.md) | Start conditions, `index.html?...` options, the automation API, time acceleration, resume and sound |
 | [Flight School](docs/flight-school.md) | Lessons, grading, the instructor's guidance and the school's keys and parameters |
+| [Career](docs/career.md) | The air-operator career after the licence: jobs, dispatch and the load sheet, pay and reputation, the fleet, how to try it |
 | [Development](docs/development.md) | Performance, code layout, how the physics works, tests and screenshot tools |
 | [Known issues](docs/known-issues.md) | Outstanding work by aircraft |
 

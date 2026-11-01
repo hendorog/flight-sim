@@ -23,6 +23,22 @@ export function destText(o: JobOffer): string {
   return `${o.origin} → ${o.destination.kind === 'field' ? o.destination.code : o.destination.name}`;
 }
 
+/**
+ * What the route asks beyond its points ("" when nothing): a height limit (a survey's 500 ft, a landmark's 2,500 ft
+ * AGL; a point passed above it does not count) and, with a landing site, that the GPS goes to the destination field
+ * while the strip and the smoke show the site.
+ */
+export function routeRule(o: JobOffer): string {
+  const parts: string[] = [];
+  const limit = o.waypoints?.find((w) => w.maxAglFt !== undefined)?.maxAglFt;
+  if (limit !== undefined) parts.push(`Points count below ${limit.toLocaleString('en-GB')} ft AGL`);
+  if (o.waypoints?.some((w) => w.landS !== undefined)) {
+    const to = o.destination.kind === 'field' ? o.destination.code : o.destination.name;
+    parts.push(`GPS set to ${to}: the strip and the smoke show the site`);
+  }
+  return parts.join(' · ');
+}
+
 /** The offers on today's board the player has not taken, in board order. */
 export function openOffers(ctx: CareerCtx): JobOffer[] {
   const taken = new Set(ctx.model.save?.taken ?? []);
@@ -101,10 +117,12 @@ export function renderBoard(parent: HTMLElement, ctx: CareerCtx): CareerPageView
     ctx.send({ kind: 'dispatch', offerId: id });
   }
 
-  function highlight(id: string): void {
+  /** Highlight an offer; `scroll` (the arrow keys) brings its row into view in the scrolling list. */
+  function highlight(id: string, scroll = false): void {
     sel = id;
     ctx.memo.set(SEL, id);
     for (const [k, tr] of rows) tr.classList.toggle('sel', k === id);
+    if (scroll) rows.get(id)?.scrollIntoView?.({ block: 'nearest' });
     const o = offers.find((x) => x.id === id) ?? null;
     map.innerHTML = boardMapSvg(model.fields, here, o);
     detail.replaceChildren();
@@ -129,13 +147,15 @@ export function renderBoard(parent: HTMLElement, ctx: CareerCtx): CareerPageView
       const pts = o.waypoints.map((w, i) => (w.landS !== undefined ? `Land at ${w.name} (${w.landS} s on the ground)` : `${i + 1}. ${w.name}`));
       el('div', 'cr-detail-wps', detail, pts.join(' · '));
     }
+    const rule = routeRule(o);
+    if (rule) el('div', 'cr-detail-wps', detail, rule);
   }
   highlight(sel);
 
   const move = (d: number): void => {
     if (offers.length === 0) return;
     const i = offers.findIndex((o) => o.id === sel);
-    highlight(offers[Math.max(0, Math.min(offers.length - 1, (i < 0 ? 0 : i) + d))].id);
+    highlight(offers[Math.max(0, Math.min(offers.length - 1, (i < 0 ? 0 : i) + d))].id, true);
   };
 
   return {

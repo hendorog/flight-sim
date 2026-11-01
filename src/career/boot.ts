@@ -18,7 +18,8 @@
 //                                                    with resumeParam false (the settlement moved the aircraft)
 //   placed job, booted type, block matches           keep; resumeParam true (null under resume=0); action resume
 //   placed job, booted type, no matching block       delete; resumeParam false; action resume (falls back at once:
-//                                                    never airborne -> re-placed, airborne -> lost)
+//                                                    never airborne or standing at a field -> re-placed there,
+//                                                    in the air -> lost)
 //   placed job, other type                           delete; the hub if career=1 (afterBoot settles an airborne
 //                                                    one as lost and shows a grounded one waiting)
 //   unplaced job, booted type                        delete; resumeParam false (this type's stale snapshot and its

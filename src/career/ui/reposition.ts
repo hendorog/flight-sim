@@ -113,10 +113,12 @@ export function renderReposition(parent: HTMLElement, ctx: CareerCtx): CareerPag
     ctx.send({ kind: 'reposition', to: code });
   }
 
-  function highlight(code: string): void {
+  /** Highlight a field; `scroll` (the arrow keys) brings its row into view in the scrolling list. */
+  function highlight(code: string, scroll = false): void {
     sel = code;
     ctx.memo.set(SEL, code);
     for (const [k, tr] of rows) tr.classList.toggle('sel', k === code);
+    if (scroll) rows.get(code)?.scrollIntoView?.({ block: 'nearest' });
     const entry = sheets.get(code);
     map.innerHTML = boardMapSvg(model.fields, ac?.field ?? null, entry?.offer ?? null);
     detail.replaceChildren();
@@ -143,7 +145,7 @@ export function renderReposition(parent: HTMLElement, ctx: CareerCtx): CareerPag
     const codes = [...sheets.keys()];
     if (codes.length === 0) return;
     const i = codes.indexOf(sel);
-    highlight(codes[Math.max(0, Math.min(codes.length - 1, (i < 0 ? 0 : i) + d))]);
+    highlight(codes[Math.max(0, Math.min(codes.length - 1, (i < 0 ? 0 : i) + d))], true);
   };
 
   return {

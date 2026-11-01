@@ -13,11 +13,12 @@
 // - enduranceMin: the fuel aboard at the planning cruise flow (as the load sheet); projectedReserveMin: what is
 //   left on arrival at the destination (through the remaining turning points) at the present burn (the planning
 //   flow when the engines are not yet burning in flight), in minutes of planning cruise flow.
-// - spotDistM for helicopters within SPOT_LINE_M of the landing spot (the destination's stand, or the site),
-//   since the stands have no painted H yet.
+// - spotDistM for helicopters within SPOT_LINE_M of the landing spot (the next landing point while one remains,
+//   e.g. a medevac's site; else the destination's stand, or the site), since neither has a painted H yet.
 // - comfort: the running score on jobs where comfort is paid (PAY_RULES comfortWeight > 0), else null.
 // - hint: one line of what to do next (jobHint); a helicopter landing point (4a, Waypoint.landS: a medevac's
-//   site) asks to land there and stay, not to fly over it.
+//   site) asks to land there and stay, not to fly over it, and once it is done off any field asks to take off for
+//   the destination; a turning point with a height limit (Waypoint.maxAglFt) names it.
 //
 // Pure.
 
@@ -64,15 +65,23 @@ export interface HintInput {
   destination: string;
   /**
    * Scenic: the next turning point's name, index (0-based) and the total; null when none remain or on other kinds.
-   * `land` (4a): it is a landing point: stay on the ground within radiusM (m) for holdS (s).
+   * `land` (4a): it is a landing point: stay on the ground within radiusM (m) for holdS (s). `maxAglFt`: it
+   * counts only below this height above the ground, ft.
    */
-  waypoint: { name: string; index: number; total: number; land?: { radiusM: number; holdS: number } } | null;
+  waypoint: { name: string; index: number; total: number; land?: { radiusM: number; holdS: number }; maxAglFt?: number } | null;
   /** On the ground inside the destination (or at its site). */
   atDestination: boolean;
   /** Shut down without the brake long enough for the brake hint (CompletionTracker.brakeHint). */
   brakeHint: boolean;
   /** Phase 'stopped': the field code held at. */
   stoppedAt?: string;
+  /** The job's landing points (a medevac's site) are all done and the aircraft stands at none of the fields. */
+  pickedUp?: boolean;
+}
+
+/** " below 500 ft AGL" for a turning point with a height limit, else "". */
+function below(w: { maxAglFt?: number }): string {
+  return w.maxAglFt === undefined ? '' : ` below ${w.maxAglFt.toLocaleString('en-GB')} ft AGL`;
 }
 
 /** One line of what to do next. */
@@ -87,13 +96,15 @@ export function jobHint(h: HintInput): string {
       return `Take off for ${h.destination}`;
     case 'airborne':
       if (h.waypoint?.land) return `Land at ${h.waypoint.name} (${h.waypoint.index + 1} of ${h.waypoint.total})`;
-      if (h.waypoint) return `Fly over ${h.waypoint.name} (${h.waypoint.index + 1} of ${h.waypoint.total})`;
+      if (h.waypoint) return `Fly over ${h.waypoint.name}${below(h.waypoint)} (${h.waypoint.index + 1} of ${h.waypoint.total})`;
       return `Fly to ${h.destination}`;
     case 'landed':
       if (h.brakeHint) return 'Set the parking brake (or wait) to finish';
       if (h.waypoint?.land) return `Stay on the ground within ${h.waypoint.land.radiusM} m of ${h.waypoint.name} for ${h.waypoint.land.holdS} s`;
       if (h.atDestination) return h.helicopter ? 'Shut down to finish' : 'Taxi clear of the runway, stop and shut down to finish';
       if (h.waypoint) return `Take off again for ${h.waypoint.name}`;
+      // Off-field after the pickup: a shutdown here neither stops nor ends the job.
+      if (h.pickedUp) return `The patient is aboard: take off for ${h.destination}`;
       return `Shut down here to stop, or take off again for ${h.destination}`;
     case 'stopped':
       return `Stopped at ${h.stoppedAt ?? 'this field'}: refuel, continue or give up`;
@@ -151,7 +162,7 @@ export function jobStrip(x: StripInput): JobStripModel {
   if (next) routeNm += Math.hypot(dest.north - p.north, dest.east - p.east) / NM;
   const routeMin = (routeNm / speed) * 60;
   const flow = x.airborne && x.fuelFlowKgH > 0 ? x.fuelFlowKgH : perf.fuelFlowKgH;
-  const spot = x.helicopter ? landingSpot(offer, x.fields) : null;
+  const spot = x.helicopter ? (next?.landS !== undefined ? next : landingSpot(offer, x.fields)) : null;
   const spotDist = spot ? Math.hypot(spot.north - x.north, spot.east - x.east) : Infinity;
   return {
     title: offer.title,

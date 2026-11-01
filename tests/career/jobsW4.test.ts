@@ -265,6 +265,8 @@ describe('a medevac flown to its site', () => {
     expect(r.monitor.waypoints.done).toBe(0);
     r.run(1.1);
     expect(r.monitor.waypoints).toEqual({ done: 1, next: 1, total: 1 });
+    // Picked up, off any field: the strip asks to take off for the hospital (a shutdown here decides nothing).
+    expect(r.hint()).toBe(`The patient is aboard: take off for ${dest.code} ${dest.name}`);
     // Shut down at the site for a minute: no outlanding.
     r.at({ north: site.north + 40, east: site.east }, 0, 0, false);
     r.run(60);
@@ -292,6 +294,27 @@ describe('a medevac flown to its site', () => {
     const out = settleJob({ ...save, fleet: [ac] }, job, end, fields);
     expect(out.settlement.outcome).toBe('completed');
     expect(out.settlement.aircraftAt).toBe(dest.code);
+  });
+
+  it('shows the distance to the site as the spot; a shutdown just outside the ring is not an outlanding', () => {
+    const fields = airfields();
+    const o = homeMedevac();
+    const site = o.waypoints![0];
+    const r = new Rig(o, fields);
+    r.at(fieldStand(fields.find((f) => f.code === o.origin)!), 0, 0, true);
+    r.run(2);
+    r.at(site, 30, 20, true);
+    r.run(5);
+    // Landed 70 m upwind of the smoke, outside the 60 m ring: the spot reads 70 m, and the hold does not count.
+    const near = { north: site.north + 70, east: site.east };
+    r.at(near, 0, 0, true);
+    r.run(15);
+    expect(r.monitor.strip()!.spotDistM).toBeCloseTo(70, 6);
+    expect(r.monitor.waypoints.done).toBe(0);
+    r.at(near, 0, 0, false);
+    r.run(30);
+    expect(r.monitor.ended).toBeNull();
+    expect(r.log).toEqual([]);
   });
 
   it('outlands when shut down away from the site and every field', () => {
@@ -327,6 +350,12 @@ describe('a medevac flown to its site', () => {
     expect(jobHint({ ...base, phase: 'ground', waypoint: wp })).toBe('Take off for Roadside 3.0 NM west of Elmley');
     expect(jobHint({ ...base, phase: 'airborne', waypoint: wp })).toBe('Land at Roadside 3.0 NM west of Elmley (1 of 1)');
     expect(jobHint({ ...base, phase: 'landed', waypoint: wp })).toBe('Stay on the ground within 60 m of Roadside 3.0 NM west of Elmley for 30 s');
+    expect(jobHint({ ...base, phase: 'landed', waypoint: null, pickedUp: true })).toBe('The patient is aboard: take off for KELM Elmley Aerodrome');
+    expect(jobHint({ ...base, phase: 'landed', waypoint: null })).toBe('Shut down here to stop, or take off again for KELM Elmley Aerodrome');
+    // A turning point with a height limit (a survey, a landmark) names it.
+    const low = { name: 'River point 1', index: 0, total: 3, maxAglFt: 500 };
+    expect(jobHint({ ...base, phase: 'airborne', waypoint: low })).toBe('Fly over River point 1 below 500 ft AGL (1 of 3)');
+    expect(jobHint({ ...base, phase: 'airborne', waypoint: { ...low, maxAglFt: 2500 } })).toBe('Fly over River point 1 below 2,500 ft AGL (1 of 3)');
   });
 });
 

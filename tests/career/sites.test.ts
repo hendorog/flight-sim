@@ -202,5 +202,5 @@ describe('a real R44 at a site', () => {
     expect(job.monitor.ended).toBeNull();
     expect(job.monitorEvents).toEqual([]);
     expect(job.monitor.phase).toBe('landed');
-  }, 180_000);
+  }, 600_000);   // about 160 s alone; the full suite under load has run past 180 s
 });

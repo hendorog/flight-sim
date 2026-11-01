@@ -652,7 +652,7 @@ export function wave4BoardFor(seed: number, day: number, origin: string, fields:
     if (kind === 'medevac') {
       payload = [
         { kind: 'passenger', label: 'Paramedic', kg: OCCUPANT_KG },
-        { kind: 'patient', label: 'Patient (boards at the site)', kg: OCCUPANT_KG },
+        { kind: 'patient', label: 'Patient (in the mass from take-off)', kg: OCCUPANT_KG },
         { kind: 'equipment', label: 'Medical kit', kg: rng.int(R.kitKg[0], R.kitKg[1]) },
       ];
     } else if (kind === 'utility') {

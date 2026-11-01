@@ -34,10 +34,10 @@ import { chainCrashActions, type CrashActionsHost } from '../../src/career/index
 import { boardFor } from '../../src/career/jobs';
 import { loadSheet } from '../../src/career/loadsheet';
 import { CAREER_PERF } from '../../src/career/perf';
-import { fuelOnBoardKg } from '../../src/career/runtime/monitor';
+import { blankReport, fuelOnBoardKg } from '../../src/career/runtime/monitor';
 import { CareerStore } from '../../src/career/store';
 import {
-  CAREER_AIRCRAFT_IDS, CLOCK_RULES, FIXED_WING_CLASS_ORDER, ROTORCRAFT_CLASS_ORDER, START_RULES,
+  CAREER_AIRCRAFT_IDS, CAREER_KEY, CAREER_SCHEMA, CLOCK_RULES, FIXED_WING_CLASS_ORDER, ROTORCRAFT_CLASS_ORDER, START_RULES,
   type CareerAircraftId, type CareerSave, type CareerStoreKind, type FleetAircraft, type JobOffer, type RatingId,
 } from '../../src/career/types';
 import { defaultFuelKg } from '../../src/career/ui/widgets';
@@ -400,6 +400,18 @@ describe('CareerSystem: decisions on the ground', () => {
     expect(st.groundedUntilDay).toBeDefined();
     expect(h.save.active).toBeNull();
   }, LONG);
+
+  it('a crash dialog dismissed (Escape) is settled by Shift+R, which then resets as usual', async () => {
+    const { h, offer, fuel, ac } = hostWithOffer('c152');
+    expect(await h.system.accept(offer.id, ac.uid, fuel)).toBe('placed');
+    h.events.emit('crash', { reason: 'Test crash' });
+    expect(h.save.active!.pendingReport?.outcome).toBe('crashed');
+    let resets = 0;
+    expect(h.system.confirmReset(() => resets++)).toBe(false);   // nothing left to ask about: the caller resets
+    expect(h.save.active).toBeNull();
+    expect(h.save.lastSettlement!.outcome).toBe('crashed');
+    expect(h.system.crashActions('again')).toBeNull();
+  }, LONG);
 });
 
 describe('CareerSystem: the shell’s links', () => {
@@ -455,6 +467,35 @@ describe('CareerSystem: refusals', () => {
     const h7 = new Host('c152', store);
     expect(h7.system.board()).toEqual([]);
     expect(await h7.system.accept(offer.id, 'a1', fuel)).toMatch(/world seed 7/);
+  }, LONG);
+
+  it('refuses every change to a newer version’s (read-only) save, and to one another tab has saved since', async () => {
+    const { offer, fuel } = hostWithOffer('c152');
+    const kv = memoryStore();
+    const base = newSave('c152', { clockMin: findOffer(newSave('c152'), newSave('c152').fleet[0], airfields(), (o) => o.id === offer.id).clockMin });
+    kv.setItem(CAREER_KEY, JSON.stringify({ ...base, schema: CAREER_SCHEMA + 1 }));
+    const ro = storeOf('local', kv);
+    ro.load();
+    expect(ro.status).toBe('readOnly');
+    const h = new Host('c152', ro);
+    expect(await h.system.accept(offer.id, 'a1', fuel)).toMatch(/newer version/);
+    expect(await h.system.run({ kind: 'rest' })).toMatch(/newer version/);
+    expect(await h.system.run({ kind: 'settings', settings: { companyCallsign: true } })).toMatch(/newer version/);
+    expect(h.save.active).toBeNull();
+    expect(h.save.clockMin).toBe(base.clockMin);
+
+    // Another tab saved since this one loaded: its next write is refused, the newer save stays, and so do commands.
+    const kv2 = memoryStore();
+    kv2.setItem(CAREER_KEY, JSON.stringify(base));
+    const mine = storeOf('local', kv2);
+    mine.load();
+    const theirs = storeOf('local', kv2);
+    theirs.save({ ...theirs.load()!, cash: base.cash + 800 });
+    const h2 = new Host('c152', mine);
+    expect(await h2.system.run({ kind: 'rest' })).toMatch(/another tab/);
+    expect(mine.save({ ...base, cash: 1 })).toBe(false);
+    expect(mine.status).toBe('stale');
+    expect(JSON.parse(kv2.getItem(CAREER_KEY)!).cash).toBe(base.cash + 800);
   }, LONG);
 });
 
@@ -619,13 +660,110 @@ describe('CareerSystem: boot follow-ups', () => {
     x.lesson = false;
     x.system.open('hub');
     await Promise.resolve();
+    // Opened after the lesson: the never-flown job goes back to unplaced, the flight under way left alone; the hub's
+    // "Fly it" (switchTo) places it.
+    expect(x.startFroms).toEqual([]);
+    expect(x.save.active!.placed).toBe(false);
+    expect(await x.system.run({ kind: 'switchTo' })).toBe('placed');
     expect(x.startFroms.length).toBe(1);
+    expect(x.save.active!.placed).toBe(true);
+  });
+
+  it('a flown job standing at a field (after Continue or Refuel at a stop, or landed) is put back there, not lost', async () => {
+    const S = airfields().filter((f) => f.kind === 'sealed')[0];
+    const stand = fieldStand(S);
+    const at = { north: stand.north, east: stand.east, onGround: true };
+    const charges = { fuelUsd: 0, defuelCreditUsd: 0, stopFeesUsd: 25 };
+    // No snapshot resumed (more than 12 h, or resume=0): re-placed at that field, its phase kept, nothing settled.
+    const h = new Host('c152', placedJob('c152', { phase: 'ground', everAirborne: true, lastKnown: at, fuelKg: 21, charges }));
+    await h.system.afterBoot({ resumed: null, plan: careerBootPlan(h.save, null, 'c152', URL0, 'local') });
+    expect(h.save.lastSettlement).toBeNull();
+    expect(h.save.active!.placed).toBe(true);
+    expect(h.system.jobMonitor!.phase).toBe('ground');
+    expect(h.startFroms.length).toBe(1);
+    expect(Math.hypot(h.state.position.x - stand.north, h.state.position.y - stand.east)).toBeLessThan(5);
+    expect(fuelOnBoardKg(h.state)).toBeCloseTo(21, 3);
+    // The stop's fee, paid on leaving it, is not charged again.
+    expect(h.save.active!.charges).toEqual(charges);
+
+    // Parked by a boot into another type: unplaced at that field, not lost; booted again, placed back there.
+    const other = new Host('c152', placedJob('c172s', { phase: 'landed', everAirborne: true, lastKnown: at }));
+    await other.system.afterBoot({ resumed: null, plan: careerBootPlan(other.save, null, 'c152', URL0, 'local') });
+    expect(other.save.lastSettlement).toBeNull();
+    expect(other.save.active).toMatchObject({ placed: false, phase: 'landed', stoppedAt: S.code });
+
+    // Under an explicit start, opened from the menu: parked there too, never settled as lost.
+    const x = new Host('c152', placedJob('c152', { phase: 'landed', everAirborne: true, lastKnown: at }));
+    await x.system.afterBoot({ resumed: null, plan: careerBootPlan(x.save, null, 'c152', { ...URL0, explicit: true }, 'local') });
+    x.system.open('hub');
+    expect(x.save.lastSettlement).toBeNull();
+    expect(x.save.active).toMatchObject({ placed: false, phase: 'landed', stoppedAt: S.code });
+    expect(x.startFroms).toEqual([]);
+  });
+
+  it('a job that had landed, put back cold, completes at its destination and stops at another field', async () => {
+    const offer = boardFor(0, 1, HOME_AIRFIELD.code, airfields())[0];
+    const dest = airfields().find((f) => offer.destination.kind === 'field' && f.code === offer.destination.code)!;
+    const other = airfields().find((f) => f.kind === 'sealed' && f.code !== dest.code && f.code !== offer.origin)!;
+    const landedAt = (f: Airfield) => placedJob('c152', { phase: 'landed', everAirborne: true, fuelKg: 30, lastKnown: { ...fieldStand(f), onGround: true } });
+    const h = new Host('c152', landedAt(dest));
+    await h.system.afterBoot({ resumed: null, plan: careerBootPlan(h.save, null, 'c152', URL0, 'local') });
+    expect(h.system.jobMonitor!.phase).toBe('landed');
+    h.controls.parkingBrake = true;
+    h.run(60, () => !h.save.active);
+    expect(h.save.active).toBeNull();
+    expect(h.save.lastSettlement!.outcome).toBe('completed');
+    expect(h.save.lastSettlement!.aircraftAt).toBe(dest.code);
+
+    const o = new Host('c152', landedAt(other));
+    await o.system.afterBoot({ resumed: null, plan: careerBootPlan(o.save, null, 'c152', URL0, 'local') });
+    o.controls.parkingBrake = true;
+    o.run(60, () => o.system.jobMonitor?.phase === 'stopped');
+    expect(o.system.jobMonitor!.phase).toBe('stopped');
+    expect(o.save.active).toMatchObject({ phase: 'stopped', stoppedAt: other.code });
+    expect(o.save.lastSettlement).toBeNull();
+  }, LONG);
+
+  it('under an explicit start a pending crash waits for the hub: nothing settled, the start field left alone', async () => {
+    const pending = blankReport('crashed', { north: 2000, east: 1000 }, 600, 30, null, 0);
+    setStartField(null);
+    const x = new Host('c152', placedJob('c152', { everAirborne: true, phase: 'airborne', pendingReport: pending }));
+    await x.system.afterBoot({ resumed: null, plan: careerBootPlan(x.save, null, 'c152', { ...URL0, explicit: true }, 'local') });
+    expect(x.save.lastSettlement).toBeNull();
+    expect(x.save.active!.pendingReport?.outcome).toBe('crashed');
+    expect(startField()).toBeNull();
+    // Without the explicit start it is settled at boot.
+    const h = new Host('c152', placedJob('c152', { everAirborne: true, phase: 'airborne', pendingReport: pending }));
+    await h.system.afterBoot({ resumed: null, plan: careerBootPlan(h.save, null, 'c152', URL0, 'local') });
+    expect(h.save.lastSettlement!.outcome).toBe('crashed');
+    setStartField(null);
+  });
+
+  it('a parked job that has flown, abandoned or given up, is charged and logged with its block time', async () => {
+    const S = airfields().filter((f) => f.kind === 'sealed')[0];
+    const parked = { placed: false, phase: 'stopped' as const, stoppedAt: S.code, everAirborne: true, elapsedS: 5400, lastKnown: { ...fieldStand(S), onGround: true } };
+    const a = new Host('c152', placedJob('c172s', parked));
+    expect(a.system.abandonJob(false)).not.toBeNull();
+    const st = a.save.lastSettlement!;
+    expect(st.report.blockS).toBe(5400);
+    expect(st.report.elapsedMin).toBe(90);
+    expect(st.aircraftAt).toBe(S.code);
+    expect(st.lines.find((l) => l.id === 'aircraftHours')!.amount).toBeLessThan(0);
+    expect(st.logEntry.blockS).toBe(5400);
+    const g = new Host('c152', placedJob('c172s', parked));
+    expect(await g.system.run({ kind: 'giveUp' })).toBe('ok');
+    expect(g.save.lastSettlement!.report.blockS).toBe(5400);
   });
 
   it('in another world nothing is settled, parked or placed', async () => {
     const h = new Host('c152', placedJob('c152', { everAirborne: true, phase: 'airborne' }, 7));
     const plan = careerBootPlan(h.save, null, 'c152', { ...URL0, worldSeed: 0, open: true }, 'local');
     await h.system.afterBoot({ resumed: null, plan });
+    // Its job is not this world's flight: no confirm, no Career crash dialog, no snapshots, no radio identity.
+    expect(h.system.jobActive()).toBe(false);
+    expect(h.system.jobPlaced()).toBe(false);
+    expect(h.system.crashActions('impact')).toBeNull();
+    expect(h.system.radioIdentity()).toBeNull();
     h.system.open('hub');
     expect(h.save.active!.placed).toBe(true);
     expect(h.save.lastSettlement).toBeNull();

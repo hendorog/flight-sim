@@ -156,7 +156,8 @@ export type RestResult =
 /**
  * Rest until tomorrow: a job still stopped at another field is settled as diverted (with `report` when the
  * runtime has one, else one built from the job), then the clock goes to 07:30 of the next day, ending today
- * (idle lease charges, taken offers cleared). Refused while a job is active and not stopped.
+ * (idle lease charges, taken offers cleared); before 07:30 (a late settlement's turnaround past midnight) it goes
+ * to 07:30 the same day, so that day's board is not skipped. Refused while a job is active and not stopped.
  */
 export function rest(save: CareerSave, fields: readonly Airfield[], report?: JobFlightReport): RestResult {
   let s = save;
@@ -167,7 +168,8 @@ export function rest(save: CareerSave, fields: readonly Airfield[], report?: Job
     const r: JobFlightReport = report ? { ...report, outcome: 'diverted' } : divertedReport(s);
     ({ save: s, settlement } = settleJob(s, job, r, fields));
   }
-  const next = (dayOf(s.clockMin) + 1) * DAY_MIN + CLOCK_RULES.restToMin;
+  const today = dayOf(s.clockMin);
+  const next = (minuteOfDay(s.clockMin) < CLOCK_RULES.restToMin ? today : today + 1) * DAY_MIN + CLOCK_RULES.restToMin;
   return { ok: true, save: advanceClock(s, next), settlement };
 }
 
