@@ -1,7 +1,10 @@
 // What can be said on the radio, and what the home tower says back (docs/atc.md, step 2). Pure functions of where
 // the aircraft is relative to the tuned station's field: its position in that field's runway frame, the runway in
 // use from the wind, and the authority's phraseology (phrases.ts). The push-to-talk menu (RadioSystem) lists
-// callsFor(); the tower's answer is replyTo().
+// callsFor(); the tower's answer is replyTo(). With a Career job's destination (RadioSituation.destination, docs/
+// career.md "Integration") the departure calls name it ("VFR to Elmley"), the tower's take-off clearance asks for the
+// leaving call (FAA: approves the departure toward it), and the inbound call at the destination says it is landing
+// there; without one every phrase is as before.
 
 import type { Airfield } from '../world/airfields';
 import { fieldCoords } from '../world/airfields';
@@ -50,6 +53,8 @@ export interface RadioSituation {
   landedAgoS: number;
   /** The home field's current ATIS letter ('A'..'Z'), quoted on first contact with its tower or ground. */
   atisLetter: string;
+  /** (contract addition, 4c) The Career job's destination field; absent or null: no destination phrasing. */
+  destination?: Airfield | null;
 }
 
 /** What a landing will be, as told to the tower or the traffic on downwind and final. */
@@ -165,6 +170,28 @@ export function vacateInstruction(s: RadioSituation, via?: string): Phrase | nul
     : join([s.callsign.short, join([both(`vacate ${side} at`), exit], ' '), join([both('when vacated'), ground], ' ')]);
 }
 
+/** The destination when it is another field than the station's (a departure toward it), else null. */
+function awayTo(s: RadioSituation): Airfield | null {
+  const d = s.destination;
+  return d && d.code !== s.station.field.code ? d : null;
+}
+
+/** The station's field is the destination (an arrival there). */
+const arriving = (s: RadioSituation): boolean => !!s.destination && s.destination.code === s.station.field.code;
+
+/**
+ * A take-off clearance from a tower, with what a departure toward the destination adds: EASA 'report leaving the
+ * circuit', FAA '<direction> departure approved' (the destination's direction from the field). Any other line, or no
+ * destination away from this field: the line unchanged.
+ */
+export function withDepartureNote(s: RadioSituation, line: Phrase): Phrase {
+  const d = awayTo(s);
+  const f = s.station.field;
+  if (!d || s.station.kind !== 'tower' || !/cleared for take-?off/.test(line.text)) return line;
+  const brg = Math.atan2(d.east - f.east, d.north - f.north) / DEG;
+  return join([line, both(s.authority === 'faa' ? `${compass(brg).replace('-', '')} departure approved` : 'report leaving the circuit')]);
+}
+
 /** The calls that fit the moment, the likeliest first. Empty when the station takes no calls (an ATIS). */
 export function callsFor(s: RadioSituation): Call[] {
   const st = s.station;
@@ -180,6 +207,8 @@ export function callsFor(s: RadioSituation): Call[] {
   const height = s.altitude - f.elevation;
   const side = f.circuit === 'left' ? 'left' : 'right';
   const hand = a === 'easa' ? `${side} hand` : side;
+  const away = awayTo(s);
+  const to = away ? stationName(away) : '';
   const info = s.atisLetter && !ctaf && f.kind === 'home' ? both(`information ${s.atisLetter}`, `information ${letterWord(s.atisLetter)}`) : null;
   const out: Call[] = [];
   const add = (id: CallId, label: string, body: Phrase[], intent?: Intent): void => {
@@ -198,7 +227,7 @@ export function callsFor(s: RadioSituation): Call[] {
 
   if (s.onGround && dist < CIRCUIT_RADIUS) {
     if (onRunway && s.groundSpeedKt < 15) {
-      if (ctaf) add('departing', `Departing ${rwy}`, [both(`departing ${rw.text}`, `departing ${rw.speak}`)]);
+      if (ctaf) add('departing', `Departing ${rwy}`, [both(`departing ${rw.text}${away ? ` for ${to}` : ''}`, `departing ${rw.speak}${away ? ` for ${to}` : ''}`)]);
       else if (towered) add('ready', `Ready ${rwy}`, a === 'faa' ? [both(`holding short ${rw.text}`, `holding short ${rw.speak}`), both('ready for departure')] : [both('ready for departure')]);
     }
     if (landed && !onRunway) {
@@ -212,7 +241,8 @@ export function callsFor(s: RadioSituation): Call[] {
     if (!onRunway) {
       if (ctaf) add('taxi', `Taxiing to ${rwy}`, [both(`taxiing to ${rw.text}`, `taxiing to ${rw.speak}`)]);
       else if (st.kind === 'ground' || towered) {
-        const body = a === 'faa' ? [both('at the ramp, ready to taxi, VFR')] : [both('at the apron, request taxi for VFR flight')];
+        const vfr = away ? ` to ${to}` : '';
+        const body = a === 'faa' ? [both(`at the ramp, ready to taxi, VFR${vfr}`)] : [both(`at the apron, request taxi for VFR flight${vfr}`)];
         if (info) body.push(info);
         add('taxi', 'Request taxi', body);
       }
@@ -247,14 +277,20 @@ export function callsFor(s: RadioSituation): Call[] {
     const closing = Math.cos(s.heading - Math.atan2(f.east - s.east, f.north - s.north)) > 0.3;
     if (closing) {
       const join1 = a === 'faa' ? `will enter ${side} downwind` : `joining ${hand} downwind`;
-      if (ctaf) add('inbound', `Inbound, ${stationName(f)}`, [where, alt, both(`inbound, ${join1} ${rw.text}`, `inbound, ${join1} ${rw.speak}`)]);
+      // At the job's destination the call says the aircraft is landing there.
+      const dest = arriving(s);
+      const name = stationName(f);
+      const inb = dest ? (a === 'faa' ? 'inbound for landing' : `inbound to ${name} for landing`) : 'inbound';
+      if (ctaf) add('inbound', dest ? `Inbound to ${name}` : `Inbound, ${name}`, [where, alt, both(`${inb}, ${join1} ${rw.text}`, `${inb}, ${join1} ${rw.speak}`)]);
       else if (towered) {
-        const body = [where, alt, a === 'faa' ? both('inbound for landing') : both('request joining instructions')];
+        const body = dest
+          ? [where, alt, a === 'faa' ? both(`inbound for landing at ${name}`) : both(`landing ${name}, request joining instructions`)]
+          : [where, alt, a === 'faa' ? both('inbound for landing') : both('request joining instructions')];
         if (info) body.push(info);
-        add('inbound', 'Inbound for landing', body);
+        add('inbound', dest ? `Inbound to ${name}` : 'Inbound for landing', body);
       }
     } else if (dist < CIRCUIT_RADIUS * 3) {
-      add('leaving', 'Leaving the circuit', [both(`leaving the circuit to the ${compass(brg)}`), alt]);
+      add('leaving', away ? `Leaving the circuit for ${to}` : 'Leaving the circuit', [both(`leaving the circuit to the ${compass(brg)}${away ? ` for ${to}` : ''}`), alt]);
     }
   }
   if (!ctaf) add('radioCheck', 'Radio check', [join([both('radio check on'), frequency(st.frequency, a)], ' ')]);
@@ -289,7 +325,7 @@ export function replyTo(s: RadioSituation, call: CallId, intent?: Intent): Phras
     }
     case 'ready':
       if (st.kind === 'ground') return say(join([both('contact Tower'), frequency(f.frequency, a)], ' '));
-      return a === 'faa' ? say(w, rw, both('cleared for takeoff')) : say(rw, both('cleared for take-off'), w);
+      return withDepartureNote(s, a === 'faa' ? say(w, rw, both('cleared for takeoff')) : say(rw, both('cleared for take-off'), w));
     case 'inbound':
       return a === 'faa'
         ? say(both(`enter ${side} downwind ${rw.text}`, `enter ${side} downwind ${rw.speak}`), both('report midfield downwind'), p)

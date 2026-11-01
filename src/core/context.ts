@@ -98,10 +98,11 @@ export interface SimCommands {
   startFrom?(sc: unknown, opts: { lessonId: string; label: string }): Promise<void>;
   /**
    * Choose another aircraft: stores the preference ('fs.aircraft') and RELOADS the page without the URL
-   * parameters that would undo the choice (aircraft, scenario, lesson, phase, brief, resume), plus `school=1`
-   * when `opts.open` is 'school'. The type is selected at boot only. Optional: older mocks do not implement it.
+   * parameters that would undo the choice (aircraft, scenario, lesson, phase, brief, resume, career), plus
+   * `school=1` when `opts.open` is 'school', or `career=1` (and no `school`) when it is 'career' (the Career's
+   * type switch). The type is selected at boot only. Optional: older mocks do not implement it.
    */
-  setAircraft?(id: AircraftId, opts?: { open?: 'school' }): void;
+  setAircraft?(id: AircraftId, opts?: { open?: 'school' | 'career' }): void;
   /** Carburettor-icing realism toggle: stores 'fs.carbIcing' ('0' = off; absent = on) and sets ctx.carbIcing. */
   setCarbIcing?(on: boolean): void;
   /**
@@ -159,6 +160,11 @@ export interface SimEvents {
   faunaSighted: { species: FaunaSpeciesId; distanceM: number };
   /** A lightning strike began (LightningOverlay). Position NED m, altitude m MSL, energy 0..1, kind cloud-to-ground or intracloud. */
   lightning: { id: number; kind: 'cg' | 'ic'; north: number; east: number; altM: number; energy: number; strokes: number };
+  /**
+   * Career job lifecycle (src/career, docs/career.md): a job's flight placed at its origin ('start') or settled,
+   * abandoned or lost ('end'). `jobId` is the offer id. Emitted by the CareerSystem only; absent outside the Career.
+   */
+  career: { kind: 'start' | 'end'; jobId: string };
 }
 
 export interface EventBus {

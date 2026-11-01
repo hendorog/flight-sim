@@ -61,10 +61,18 @@
 //   tstore=mem     in-memory training store (nothing written to localStorage)
 //   unlock=1       every lesson available this session (practice credit only)
 //   student=auto   dev: the AutoStudent flies the student's tasks (screenshots and smoke runs)
+//
+// Career (docs/career.md "URL parameters"; present day only):
+//   career=0|1     1: open the Career hub at boot (a Career type switch adds it); 0: never open it at boot, and
+//                  count as an explicit start (no Career job is resumed or placed). Absent: the Career's boot plan
+//   cstore=mem|session   where the Career save is kept: mem in memory only (tests; a type switch is refused),
+//                  session in sessionStorage (browser checks across a type switch). Absent: localStorage. Neither
+//                  mem nor session ever writes a resume block. (unlock=1 above also unlocks the Career.)
 
 import { normalizeSeed } from '../world/worldSeed';
 import type { CameraMode, QualityLevel, ScenarioId } from '../core/context';
 import { isAircraftId, type AircraftId, type WeatherSettings } from '../core/types';
+import type { CareerStoreKind } from '../career/types';
 import { SCENARIO_IDS } from './scenarios';
 import { ERA_IDS, type EraId } from '../world/era/types';
 import { ERA_SCENARIO_IDS } from './eraChoice';
@@ -135,6 +143,16 @@ export interface SimParams {
   weather: Partial<WeatherSettings>;
   /** Flight School parameters (section 5.10). */
   school: SchoolParams;
+  /** Career parameters (docs/career.md "URL parameters"). */
+  career: CareerParams;
+}
+
+/** The Career's URL parameters. Absent, they give the default path: no hub at boot, the save in localStorage. */
+export interface CareerParams {
+  /** career=1 (true), career=0 (false) or absent / anything else (null). */
+  open: boolean | null;
+  /** cstore=mem ('mem'), cstore=session ('session'); absent or anything else: 'local'. Choosing the store is src/career/store.ts careerKv. */
+  store: CareerStoreKind;
 }
 
 export interface SchoolParams {
@@ -301,6 +319,10 @@ export function parseParams(search: string): SimParams {
       memoryStore: q.get('tstore') === 'mem',
       unlock: q.get('unlock') === '1',
       autoStudent: q.get('student') === 'auto',
+    },
+    career: {
+      open: q.get('career') === '1' ? true : q.get('career') === '0' ? false : null,
+      store: q.get('cstore') === 'mem' ? 'mem' : q.get('cstore') === 'session' ? 'session' : 'local',
     },
   };
 }

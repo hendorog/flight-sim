@@ -25,6 +25,15 @@
 // subsystem receives the type's definition or presentation through its constructor. Another type is a reload
 // (commands.setAircraft). Each type keeps its own resume snapshot (resume.ts snapshotKey).
 //
+// THE CAREER (docs/career.md "Integration"; src/career/CareerSystem.ts) lives where the Flight School does (present day).
+// Its store is loaded before decideBoot and its boot plan (src/career/boot.ts) decides what happens to the snapshot's
+// Career block, the resume parameter and the school's welcome; the CareerSystem is built after the radio, runs after
+// it each frame (before the UI) on the frame's simulated time, holds the simulation while a Career page is open
+// (careerHold; run= waits too), adds its block to the resume snapshot, keeps snapshots coming while a job is placed
+// (even with the resume preference off), asks before Shift+R ends a job, answers the crash dialog during a job (before
+// the school) and gives the radio and the traffic the airframe's identity. With no career save, or in an era without
+// the school, every one of these is a no-op: the boot, the snapshots, the hold and the keys are as before.
+//
 // STALLS are hidden, never flown through: a scenario reset and a graphics-quality change fade to a curtain,
 // hold the simulation, do the synchronous work (trim, shader compiles, terrain rebuild), render a warm-up
 // frame for the interior and exterior views so every shader variant is linked, and fade back in.
@@ -110,6 +119,10 @@ import { RotorcraftDemoUi } from '../ui/rotorcraftDemo';
 import type { StepController } from '../training/types';
 import { TrainingSystem } from '../training/TrainingSystem';
 import { validateTrainingBlock } from '../training/career/validate';
+import {
+  careerAutomation, careerBootPlan, CareerStore, CareerSystem, careerKv, chainCrashActions, validateCareerBlock, type CareerBootPlan,
+} from '../career';
+import { gpsTarget } from '../instruments/dynamics/navigation';
 
 /**
  * Device-pixel-ratio cap per quality level. The 3D view renders at CSS-pixel resolution on every quality
@@ -214,6 +227,14 @@ export class Simulator {
   private holding = false;
   /** Simulation held while a Flight School screen (home, briefing, debrief...) is open. */
   private schoolHold = false;
+  /** Simulation held while a Career page (hub, board, dispatch...) is open; run= fast-forwarding waits too. */
+  private careerHold = false;
+  /** The Career (null outside the present day, or until boot has created it). */
+  private career: CareerSystem | null = null;
+  /** The career save, loaded before decideBoot (null outside the present day). */
+  private careerStore: CareerStore | null = null;
+  /** The frame's simulated time for the Career's job monitor: physics.lastAdvance, or the whole run= chunk, s. */
+  private frameSimDt = 0;
   /** The Flight School (null until boot has created it). */
   training: TrainingSystem | null = null;
   private radio: RadioSystem | null = null;
@@ -311,8 +332,23 @@ export class Simulator {
 
     await progress(0.06, 'Building the flight model');
     const events = createEventBus();
+    // The Career's store and boot plan first (src/career/boot.ts): a snapshot's Career block survives only when it
+    // belongs to the store's placed job of this type, and the plan may override resume= (null: the URL's own).
+    const stored = loadSnapshot(this.store, id);
+    let careerPlan: CareerBootPlan | null = null;
+    if (era().world.school) {
+      const cs = (this.careerStore = new CareerStore(careerKv(p.career.store), p.career.store));
+      cs.load();
+      const explicit = p.explicitScenario || !!p.school.lesson || !!demoId || (p.helicopterHover && !!def.rotorcraft) || p.career.open === false;
+      careerPlan = careerBootPlan(cs.current, stored, id, { explicit, open: p.career.open === true, resume: p.resume, worldSeed: worldSeed() }, p.career.store);
+      if (careerPlan.deleteBlock && stored) delete stored.career;
+    } else if (stored) {
+      // No Career in this era: a block from another era's snapshot is dropped (decideBoot refuses that snapshot anyway).
+      delete stored.career;
+    }
+    const resumeParam = careerPlan?.resumeParam ?? p.resume;
     // Resume the last flight (a reload), or start the URL's (or the remembered) scenario.
-    const decision = decideBoot(loadSnapshot(this.store, id), { param: demoId || (p.helicopterHover && def.rotorcraft) ? false : p.resume, explicitScenario: !!demoId || p.helicopterHover || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id, era: era().id, seed: worldSeed() });
+    const decision = decideBoot(stored, { param: demoId || (p.helicopterHover && def.rotorcraft) ? false : resumeParam, explicitScenario: !!demoId || p.helicopterHover || p.explicitScenario, enabled: this.resumeEnabled, now: Date.now(), aircraft: id, era: era().id, seed: worldSeed() });
     // An era's own start (the Cretaceous safari) when the URL names no scenario and nothing is resumed.
     const eraStart = !p.explicitScenario && !demoId && !(p.helicopterHover && def.rotorcraft) ? era().world.defaultScenario : undefined;
     const startId = decision.kind === 'scenario' ? decision.scenario : (eraStart ?? p.scenario);
@@ -334,7 +370,10 @@ export class Simulator {
     let resumed: Extract<BootDecision, { kind: 'resume' }> | null = null;
     if (decision.kind === 'resume') {
       try {
-        physics.restore(decision.snapshot);
+        // A Career job's payload is in the career store, never in the snapshot: staged before the restore's reset.
+        const jobLoading = decision.snapshot.career !== undefined ? this.careerStore?.current?.active?.loading ?? undefined : undefined;
+        if (jobLoading) physics.restore(decision.snapshot, jobLoading);
+        else physics.restore(decision.snapshot);
         resumed = decision;
       } catch (e) {
         console.warn('[sim] could not resume the last flight; starting the scenario', e);
@@ -439,8 +478,8 @@ export class Simulator {
     this.lastDpr = window.devicePixelRatio || 1;
     document.addEventListener('visibilitychange', this.onVisibility);
     // The last moment to save the flight before a reload or close.
-    window.addEventListener('pagehide', () => this.persist());
-    window.addEventListener('beforeunload', () => this.persist());
+    window.addEventListener('pagehide', () => this.onLeave());
+    window.addEventListener('beforeunload', () => this.onLeave());
     applyPose(aircraftRoot, ctx.state.position, ctx.state.orientation);
     aircraftRoot.updateMatrixWorld(true);
 
@@ -587,7 +626,9 @@ export class Simulator {
     const training = !era().world.school ? null : new TrainingSystem({
       physics,
       weather: this.weather,
-      params: p.school,
+      // A school=1 left in the URL (a school type switch) never opens the school home over the Career's own boot
+      // (a job resumed or placed, the hub): a lesson started from it would end the job unasked.
+      params: careerPlan?.trainingExplicit && p.school.open === true ? { ...p.school, open: null } : p.school,
       ui,
       readings: () => panel.instruments.readings,
       pilotFlying: () => input.pilotFlying(),
@@ -610,12 +651,47 @@ export class Simulator {
     training?.init(ctx);
     this.training = training;
     // The radio (docs/atc.md) speaks through the Flight School's scheduler and captions.
-    const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority, env: () => physics.env, homeTraffic: () => !training.active, player: () => training.radioIdentity() }) : null);
+    const traffic = (this.traffic = training ? new TrafficSystem({ authority: () => training.radioIdentity().authority, env: () => physics.env, homeTraffic: () => !training.active, player: () => this.career?.radioIdentity() ?? training.radioIdentity() }) : null);
     traffic?.init(ctx);
     // The tower view's binoculars: a click on an aircraft follows it.
     if (traffic) cameras.setTowerTargets(() => traffic.viewTargets(), (label) => ui.showToast(`Tower view: ${label}`));
-    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, comRadios: () => panel.comRadios, cdiSelect: () => panel.cdiSelect, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [], towerReply: (c, i) => traffic?.towerReply(c, i) ?? null }) : null;
+    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, comRadios: () => panel.comRadios, cdiSelect: () => panel.cdiSelect, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [], towerReply: (c, i) => traffic?.towerReply(c, i) ?? null,
+      identity: () => this.career?.radioIdentity() ?? null, destination: () => this.career?.destination() ?? null }) : null;
     this.radio?.init(ctx);
+    // The Career after the radio (docs/career.md "Integration"): present day only, on the school layer, its crash
+    // actions in front of the school's (chained after training.init, which set those).
+    if (training && this.careerStore) {
+      const career = new CareerSystem({
+        physics,
+        weather: this.weather,
+        store: this.careerStore,
+        aircraft: def,
+        layer: ui.schoolLayer,
+        startFrom: (sc, o) => this.startFrom(sc, o),
+        setAircraft: (next, o) => this.setAircraft(next, o),
+        setSeed: (seed) => this.setSeed(seed),
+        setHold: (on) => {
+          this.careerHold = on;
+          this.lastFrame = -1;
+        },
+        persist: () => void this.persist(),
+        frameSimDt: () => this.frameSimDt,
+        addToScene: (obj) => void scene.add(obj as THREE.Object3D),
+        readings: () => panel.instruments.readings,
+        toast: (t) => ui.showToast(t),
+        hasPpl: () => !!training.profile()?.endorsements.some((e) => e.id === 'ppl'),
+        unlock: p.school.unlock,
+        inLesson: () => training.inLesson,
+        authority: () => training.radioIdentity().authority,
+        suggestedPilotName: () => training.profile()?.profile.studentName || null,
+        confirm: (text, yes) => ui.ask(text, 'it ends as abandoned: no pay, and what is spent stays spent', [{ label: 'Abandon the job', run: yes }], 'Keep the job'),
+        download: (name, text) => downloadText(name, text),
+      });
+      career.init(ctx);
+      chainCrashActions(ui, career);
+      ui.attachCareer(career.modalLink, career.menuLink);
+      this.career = career;
+    }
     this.schoolCopilot = physics.copilot;
     if (id === 'r22') {
       this.demoUi = new RotorcraftDemoUi(ui.root, () => input.takeControl(), (section, item) => ui.showChecklist(section, item));
@@ -680,9 +756,16 @@ export class Simulator {
     await progress(1, 'Ready');
     ui.hideLoading();
     const lessonResumed = !!resumed && resumed.snapshot.training !== undefined && validateTrainingBlock(resumed.snapshot.training) !== null;
-    if (resumed && !lessonResumed) ui.showToast(`Resumed flight from ${formatAge(resumed.ageMs)} ago · Shift+R / menu: Restart scenario`, 7000);
+    const jobResumed = !!resumed && resumed.snapshot.career !== undefined && validateCareerBlock(resumed.snapshot.career) !== null;
+    if (resumed && !lessonResumed && !jobResumed) ui.showToast(`Resumed flight from ${formatAge(resumed.ageMs)} ago · Shift+R / menu: Restart scenario`, 7000);
     if (demoId) await this.startDemo(demoId, false);
-    else training?.afterBoot({ resumed: resumed?.snapshot ?? null, explicitScenario: p.explicitScenario });
+    else training?.afterBoot({ resumed: resumed?.snapshot ?? null, explicitScenario: p.explicitScenario || !!careerPlan?.trainingExplicit });
+    // The Career's follow-up (resume its monitor, re-place, place, or open the hub). Not awaited: a placement waits
+    // for frames behind its curtain. The resume branch attaches the monitor synchronously, before any persist().
+    if (this.career && careerPlan) void this.career.afterBoot({ resumed: resumed?.snapshot ?? null, plan: careerPlan }).catch((e) => this.fail('career', e));
+    // career=1 is a one-shot (the Career type switch's "open the hub after the reload"): taken out of the address
+    // once read, so a later F5 in this tab does not open the hub again (career=0, an explicit choice, stays).
+    if (p.career.open === true) dropUrlParam('career');
     this.fastForwardLeft = p.run;
     if (p.freeze && p.run === 0) this.setPaused(true);
     this.readyPhase = p.run > 0 ? 'fastForward' : 'streaming';
@@ -711,8 +794,9 @@ export class Simulator {
    * Another aircraft (SimCommands.setAircraft; the UI has asked for confirmation): the flight is saved under
    * this type's key, the choice stored, and the page reloaded without the parameters that would undo it.
    */
-  setAircraft(id: AircraftId, opts: { open?: 'school' } = {}): void {
+  setAircraft(id: AircraftId, opts: { open?: 'school' | 'career' } = {}): void {
     this.persist();
+    this.careerStore?.flush();
     saveAircraftPreference(this.store, id);
     location.replace(aircraftSwitchUrl(location.href, opts));
   }
@@ -724,6 +808,7 @@ export class Simulator {
    */
   setEra(id: EraId): void {
     this.persist();
+    this.careerStore?.flush();
     saveEraPreference(this.store, id);
     location.replace(eraSwitchUrl(location.href));
   }
@@ -735,6 +820,7 @@ export class Simulator {
    */
   setSeed(seed: number): void {
     this.persist();
+    this.careerStore?.flush();
     saveSeedPreference(this.store, seed);
     location.replace(seedSwitchUrl(location.href));
   }
@@ -887,9 +973,18 @@ export class Simulator {
     }
   }
 
-  /** Snapshots are written (resume=0 and the menu preference turn them off; resume=1 forces them on). */
+  /**
+   * Snapshots are written (resume=0 and the menu preference turn them off; resume=1 forces them on). A placed Career
+   * job keeps them coming with the preference off, so a reload never loses it (resume=0 still wins).
+   */
   private get saving(): boolean {
-    return this.params.resume === true || (this.params.resume === null && this.resumeEnabled);
+    return this.params.resume === true || (this.params.resume === null && (this.resumeEnabled || !!this.career?.jobPlaced()));
+  }
+
+  /** The page is going (pagehide, beforeunload): the flight and the career save, now. */
+  private onLeave(): void {
+    this.persist();
+    this.careerStore?.flush();
   }
 
   /**
@@ -906,6 +1001,9 @@ export class Simulator {
       // Schema 2: a lesson in flight rides along, so a reload resumes it at the start of the current step.
       const block = this.training?.resumeBlock() ?? null;
       if (block) snap.training = block;
+      // The Career's placed job (src/career/CareerSystem.ts resumeBlock: a 'local' store, this type, watched).
+      const job = this.career?.resumeBlock() ?? null;
+      if (job) snap.career = job;
       ok = saveSnapshot(this.store, snap, this.aircraftId);
     } catch (e) {
       console.warn('[sim] could not save the flight for resume', e);
@@ -1224,7 +1322,9 @@ export class Simulator {
     } else if (e.code === 'KeyA' && !e.shiftKey) {
       this.toggleAutoflight();
     } else if (e.code === 'KeyR' && e.shiftKey) {
-      this.resetBehindCurtain(this.physics.scenario.id);
+      // A Career job in progress: "Abandon the job?" first (the restart runs on yes).
+      const id = this.physics.scenario.id;
+      if (!this.career?.confirmReset(() => this.resetBehindCurtain(id))) this.resetBehindCurtain(id);
     } else if (e.code === 'KeyT') {
       const af = this.physics.autoflight;
       const target = af.adjustAltitude((e.shiftKey ? -100 : 100) * 0.3048);
@@ -1288,7 +1388,8 @@ export class Simulator {
     this.checkPixelRatio();
 
     // Simulated time requested this frame (0 while paused or held behind a curtain).
-    const held = ctx.paused || this.holding || this.schoolHold;
+    // An ask() card (the Career's "Abandon the job?") takes the keys and the mouse flight: held while it is up.
+    const held = ctx.paused || this.holding || this.schoolHold || this.careerHold || s.ui.askOpen;
     const dt = held ? 0 : wallDt * ctx.timeScale;
     let subsystemDt = dt;
     this.run('input', s.input, dt);
@@ -1300,7 +1401,7 @@ export class Simulator {
       s.ui.showToast('Autopilot disconnected');
     }
     const helicopterHolding = !!physics.autoflight.helicopter && physics.autoflight.engaged;
-    if (this.fastForwardLeft > 0 && !ctx.paused) {
+    if (this.fastForwardLeft > 0 && !ctx.paused && !this.careerHold) {
       // run=: as many fixed steps as fit in the budget, rendering in between so terrain keeps streaming.
       const t0 = performance.now();
       let simulated = 0;
@@ -1312,12 +1413,14 @@ export class Simulator {
         simulated += physics.lastAdvance;
       }
       subsystemDt = Math.min(simulated, 0.1);
+      this.frameSimDt = simulated;
       this.advanceClock(simulated);
       if (this.fastForwardLeft <= 0) this.fastForwardDone();
     } else {
       physics.advance(dt, ctx.timeScale, PHYSICS_BUDGET_MS);
       // What actually elapsed (less than dt when the budget cut time acceleration short).
       subsystemDt = physics.lastAdvance;
+      this.frameSimDt = subsystemDt;
       this.advanceClock(subsystemDt);
       this.trackTimeScale(held ? 0 : wallDt, subsystemDt, physics.budgetLimited);
     }
@@ -1351,10 +1454,12 @@ export class Simulator {
     if (this.training) this.run('training', this.training, subsystemDt);
     if (this.traffic) this.run('traffic', this.traffic, subsystemDt);
     if (this.radio) this.run('radio', this.radio, subsystemDt);
+    // The Career's job monitor (it reads frameSimDt: run= hands it the whole fast-forwarded time) and its strip.
+    if (this.career) this.run('career', this.career, subsystemDt);
     s.ui.demoFlying = !!this.demo && this.demo.outcome !== 'taken-over';
     this.run('aircraftWeather', this.aircraftWeather, subsystemDt);
     this.run('ui', s.ui, subsystemDt);
-    this.demoUi?.update(physics.state, ctx.controls, s.ui.menuOpen || !!this.schoolHold);
+    this.demoUi?.update(physics.state, ctx.controls, s.ui.menuOpen || !!this.schoolHold || this.careerHold);
     this.run('audio', s.audio, subsystemDt);
     try {
       this.cloudShadows.update(ctx.scene, ctx.weather);
@@ -1596,6 +1701,11 @@ export class Simulator {
         Object.assign(sim.weather, values);
         sim.ctx.events.emit('weatherChanged', {});
       },
+      /** The Career (docs/career.md "Automation"), or null outside the present day. */
+      career: sim.career ? careerAutomation(sim.career) : null,
+      /** The panel GPS's direct-to target and the radios' tuning (for the Career's browser checks). */
+      gps: () => gpsTarget(),
+      radios: () => radioTuning(),
       /** Resume on reload: what boot did, and save / read / clear the stored snapshot. */
       resume: {
         get decision() {
@@ -1647,5 +1757,27 @@ export class Simulator {
       },
     };
     (window as unknown as { __sim: typeof api }).__sim = api;
+  }
+}
+
+/** Offer a text file to save (the Career's export): a Blob behind a temporary link. */
+function downloadText(fileName: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Take one parameter out of the page's address without a reload (history.replaceState); never throws. */
+function dropUrlParam(name: string): void {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(name)) return;
+    url.searchParams.delete(name);
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch {
+    /* a sandboxed page without history: the parameter stays */
   }
 }

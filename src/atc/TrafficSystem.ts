@@ -46,7 +46,7 @@ import {
   CIRCUIT_HEIGHT, circuitPath, circuitRemaining, pathPoint, placeOnLeg, ROLL_HOLD, stepDirect, stepTaxi, stepTraffic, TAXI_SPEED, turnLead,
   type CircuitPath, type TrafficState,
 } from './circuit';
-import { callsign, maker, type Authority, type Callsign, type Phrase } from './phrases';
+import { callsign, companyCallsign, maker, type Authority, type Callsign, type Phrase } from './phrases';
 import {
   arrivalExit, freeSpots, lineUpRoute, nearApron, onRunway, runwayHeading, seededRandom, taxiInRoute,
   taxiOutRoute, vacateRoute,
@@ -208,8 +208,12 @@ export interface TrafficDeps {
   loadVisual?: (id: AircraftId) => Promise<AirframeVisualDef>;
   /** Traffic at the home field too (default none; the Simulator's: not during a lesson). */
   homeTraffic?: () => boolean;
-  /** The player's registration and type, for the tower's sequencing (absent: the tower sees only the traffic). */
-  player?: () => { registration: string; icaoType: string };
+  /**
+   * The player's registration and type, for the tower's sequencing (absent: the tower sees only the traffic), and a
+   * Career company callsign ("Fable 12") the tower calls it by instead of the registration (absent or null: the
+   * registration).
+   */
+  player?: () => { registration: string; icaoType: string; callsign?: string | null };
 }
 
 export class TrafficSystem implements Subsystem {
@@ -783,7 +787,7 @@ export class TrafficSystem implements Subsystem {
       const path = circuitPath(f, end);
       const index = path.legs.findIndex((l) => l.id === leg);
       list.push({
-        id: 'player', callsign: callsign(me.registration, me.icaoType, this.authority), type: maker(me.icaoType),
+        id: 'player', callsign: me.callsign ? companyCallsign(me.callsign, this.authority) : callsign(me.registration, me.icaoType, this.authority), type: maker(me.icaoType),
         height, onGround: st.onGround, onRunway: st.onGround && onRunway(n, e),
         leg: inCircuit ? leg : null, remaining: inCircuit ? circuitRemaining(path, index, n, e) : Infinity, along,
       });

@@ -7,17 +7,23 @@
 // Tab turns it to the NAV page: the nearby ILSs and VORs, the NAV flip-flop and which NAV receiver is tuned.
 // Readbacks (step 4): a clearance from the tower or ground puts its readback first in the Space menu; one that
 // must be read back and is not, within READBACK_S, brings a prompt. "Say again" has the last message repeated.
+// The Career (docs/career.md "Integration") may name the airframe: RadioDeps.identity, when it answers, gives the
+// registration and ICAO type the calls use (the authority stays the school's), or a company callsign ("Fable 12")
+// that replaces the registration in every call and answer; RadioDeps.destination (the job's field) has the
+// departure calls name it, the tower's take-off clearance ask for the leaving call and the inbound call at the
+// destination say it is landing there (calls.ts). Absent or null, every phrase is as before.
 
 import type { SimContext, Subsystem } from '../core/context';
 import { Priority, type ActorId } from '../training/types';
 import type { TrainingSystem } from '../training/TrainingSystem';
 import type { InstrumentReadings } from '../instruments/dynamics/instrumentSet';
+import type { Airfield } from '../world/airfields';
 import { HOME_GROUND, radioTuning, selectCdi, selectMic, setTransmitting, stationOn, stations, swapCom, swapNav, tuneCom, tuneNav, type ComRadio, type Station } from '../instruments/dynamics/radios';
 import { emptyNavSignal, navaids, receiveNav } from '../instruments/dynamics/navigation';
 import { RadioMenu, type RadioMenuItem } from '../ui/radioMenu';
 import { HOME_AIRFIELD } from '../world/airfields';
-import { atisText, callsFor, mustReadBack, readbackFor, replyTo, stationName, vacateInstruction, vacateReadback, type Call, type CallId, type Intent, type RadioSituation } from './calls';
-import { both, callsign, join, type Phrase } from './phrases';
+import { atisText, callsFor, mustReadBack, readbackFor, replyTo, stationName, vacateInstruction, vacateReadback, withDepartureNote, type Call, type CallId, type Intent, type RadioSituation } from './calls';
+import { both, callsign, companyCallsign, join, type Phrase } from './phrases';
 import type { Transmission } from './TrafficSystem';
 import type { TowerReply } from './tower';
 
@@ -62,6 +68,15 @@ export interface RadioDeps {
   blocked?: () => boolean;
   /** The home tower's sequencing answer to a call (TrafficSystem.towerReply); null: calls.ts replyTo answers. */
   towerReply?: (call: CallId, intent?: Intent) => TowerReply | null;
+  /**
+   * Who the aircraft is on the radio instead of the school's identity (the Career's airframe), consulted first:
+   * its registration and ICAO type replace the school's, and `callsign` (a company callsign, "Fable 12"), when set,
+   * is what the aircraft is called instead of the registration. Absent or null: the school's identity, every
+   * phrase unchanged.
+   */
+  identity?: () => { registration: string; icaoType: string; callsign: string | null } | null;
+  /** The Career job's destination field (null: none): the departure, 'leaving' and 'inbound' calls name it. */
+  destination?: () => Airfield | null;
 }
 
 interface TuneItem extends RadioMenuItem {
@@ -162,13 +177,26 @@ export class RadioSystem implements Subsystem {
     return d <= radioRange(st.altitudeAGL) ? station : null;
   }
 
-  private situationNow(station: Station): RadioSituation {
+  /**
+   * The identity the calls use: the school's, with the Career's registration, type and company callsign (null: the
+   * registration is the callsign) when it names the airframe.
+   */
+  private identity(): { authority: ReturnType<TrainingSystem['radioIdentity']>['authority']; registration: string; icaoType: string; company: string | null } {
     const id = this.deps.training.radioIdentity();
+    const over = this.deps.identity?.() ?? null;
+    return over
+      ? { authority: id.authority, registration: over.registration, icaoType: over.icaoType, company: over.callsign || null }
+      : { authority: id.authority, registration: id.registration, icaoType: id.icaoType, company: null };
+  }
+
+  private situationNow(station: Station): RadioSituation {
+    const id = this.identity();
     const st = this.ctx.state;
     const w = this.ctx.weather;
+    const destination = this.deps.destination?.() ?? null;
     return {
       authority: id.authority,
-      callsign: callsign(id.registration, id.icaoType, id.authority),
+      callsign: id.company ? companyCallsign(id.company, id.authority) : callsign(id.registration, id.icaoType, id.authority),
       station,
       contacted: this.contacted.has(stationKey(station)),
       north: st.position.x,
@@ -182,6 +210,7 @@ export class RadioSystem implements Subsystem {
       qnhHpa: w.qnhHpa,
       landedAgoS: this.landedAt === null ? Infinity : this.simClock - this.landedAt,
       atisLetter: atisLetter(w.timeOfDay),
+      ...(destination ? { destination } : {}),
     };
   }
 
@@ -407,7 +436,8 @@ export class RadioSystem implements Subsystem {
       return;
     }
     const tower = s.station.kind === 'tower' && s.station.field.kind === 'home' ? this.deps.towerReply?.(call.id, call.intent) : null;
-    const reply = tower?.line ?? replyTo(s, call.id, call.intent);
+    // The sequencing tower's take-off clearance gets the departure note replyTo gives its own.
+    const reply = tower?.line ? withDepartureNote(s, tower.line) : replyTo(s, call.id, call.intent);
     if (reply) {
       const actor: ActorId = s.station.kind === 'ground' ? 'ground' : 'tower';
       const readback = (tower ? tower.readback : readbackFor(s, call.id, call.intent)) ?? undefined;
@@ -487,10 +517,17 @@ export class RadioSystem implements Subsystem {
       if (Math.hypot(t.north - st.position.x, t.east - st.position.y) > radioRange(st.altitudeAGL, t.heightAgl)) continue;
       if (t.actor) {
         // The home tower or ground, to the traffic or to the player (who is then in contact).
-        if (t.toPlayer) this.toMe(t.actor, t.line, `${HOME_AIRFIELD.code}:${t.actor}`, t.readback);
+        if (t.toPlayer) this.toMe(t.actor, this.departureNote(t.actor, t.line), `${HOME_AIRFIELD.code}:${t.actor}`, t.readback);
         else this.speech.enqueue({ actor: t.actor, channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
       } else this.speech.enqueue({ actor: 'traffic', voice: t.speaker, channel: 'radio', caption: t.line.text, speak: t.line.speak, priority: Priority.Coach, interrupt: false, resumable: false, ttlMs: 8000 });
     }
+  }
+
+  /** A held departure cleared later by the home tower: the departure note, as for an immediate clearance. */
+  private departureNote(actor: ActorId, line: Phrase): Phrase {
+    if (actor !== 'tower' || !this.deps.destination?.()) return line;
+    const tower = stations().find((x) => x.field.kind === 'home' && x.kind === 'tower');
+    return tower ? withDepartureNote(this.situationNow(tower), line) : line;
   }
 
   /** Slowing on the home runway after a landing that was not a touch and go: the tower says where to turn off. */

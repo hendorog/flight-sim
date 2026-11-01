@@ -45,7 +45,7 @@ import {
   type WeatherSettings,
 } from '../core/types';
 import { createFlightModel, createFlightModelFor, type SimEnvironment } from '../physics';
-import type { AircraftFlightModel } from '../physics/interfaces';
+import type { AircraftFlightModel, LoadingRequest } from '../physics/interfaces';
 import type { StepController } from '../training/types';
 import { Autoflight } from './autoflight';
 import { StabilityAssist } from './rotorcraft/stabilityAssist';
@@ -274,8 +274,9 @@ export class SimPhysics {
   }
 
   /**
-   * Put the aircraft at any Scenario's start: one of the five free-flight scenarios (reset) or a Flight School
-   * start (starts.ts buildStart). Applies the scenario's payload (default 'typical'), fuel and switches, and
+   * Put the aircraft at any Scenario's start: one of the five free-flight scenarios (reset), a Flight School
+   * start (starts.ts buildStart) or a Career placement (src/career/placement.ts). Applies the scenario's exact
+   * `loading` when it has one (the Career's), else its payload (default 'typical'), then its fuel and switches, and
    * for an unusual-attitude start rotates the trimmed aircraft to the requested attitude with the airspeed
    * kept along the nose. The copilot, if any, is left to its owner (TrainingSystem). The clock restarts at 0;
    * `weather`'s explicit storm cells are re-anchored to it (weatherPresets.reanchorStorms) so they stay where they
@@ -285,7 +286,8 @@ export class SimPhysics {
   resetTo(sc: Scenario, weather?: WeatherSettings): Scenario {
     const tOld = this.time;
     this.scenario = sc;
-    this.applyLoading(sc.payload ?? 'typical');
+    if (sc.loading) this.fm.setLoading(sc.loading);
+    else this.applyLoading(sc.payload ?? 'typical');
     // A new flight: no hail damage (before the reset, whose trim uses the aerodynamics).
     this.hailDamage.reset();
     this.fm.setAirframeDamage(0);
@@ -409,12 +411,19 @@ export class SimPhysics {
    * model clock, the exact rigid-body state (setKinematics), the pilot's controls and the autoflight. The caller
    * restores the weather first (it is shared with the environment). The scenario becomes the snapshot's, so a
    * restart goes back to it. Throws for a snapshot of another type (the shell never hands one over).
+   *
+   * `loading` (Career addition, docs/career.md "Persistence, boot and reloads"): the payload of a resumed Career
+   * leg (the career store's `active.loading`; the snapshot carries none). It is staged with `fm.setLoading` before
+   * the reset below and kept on the restored scenario (`this.scenario.loading`, for a caller that re-runs
+   * resetTo(physics.scenario)); a plain reset(id) still applies the named loading. Without it the mass model keeps
+   * whatever loading it holds (at boot the definition's default), exactly as before.
    */
-  restore(snap: FlightSnapshot): Scenario {
+  restore(snap: FlightSnapshot, loading?: LoadingRequest): Scenario {
     const fm = this.fm;
     const def = this.definition;
     const aircraft = snap.aircraft ?? DEFAULT_AIRCRAFT_ID;
     if (aircraft !== def.id) throw new Error(`a snapshot of the ${aircraft} cannot be restored into the ${def.id}`);
+    if (loading) fm.setLoading(loading);
     const sys = snapshotSystems(snap);
     // A flight that started at a generated airfield restarts there.
     setStartField(snap.field ?? null);
@@ -425,7 +434,8 @@ export class SimPhysics {
     if (snap.nav2) setNav(2, snap.nav2);
     if (snap.mic) selectMic(snap.mic);
     if (snap.cdi) selectCdi(snap.cdi);
-    const sc = buildScenario(snap.scenario, this.env, def);
+    const built = buildScenario(snap.scenario, this.env, def);
+    const sc = loading ? { ...built, loading } : built;
     this.scenario = sc;
     const b = snap.body;
     const v = b.velocity;

@@ -152,6 +152,13 @@ export interface FlightSnapshot {
    * validated by the shell with validateTrainingBlock; an invalid block resumes the flight as free flight.
    */
   training?: unknown;
+  /**
+   * The Career's job in flight (src/career/types.ts CareerResumeBlock; docs/career.md "Persistence, boot and
+   * reloads"). Opaque here and validated by the Career (src/career/block.ts validateCareerBlock). Optional, like
+   * `era`, so the schema number does not change: written only while a Career job is placed in a 'local' store,
+   * absent otherwise (a present-day snapshot without a job is byte-identical to before).
+   */
+  career?: unknown;
   /** (schema 5) The hail damage (sim/weather/hailDamage.ts). Absent on read (schema 4 and older): none. */
   damage?: HailDamageSnapshot;
   /**
@@ -426,6 +433,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   out.systems ??= systemsOfLegacy(out);
   if (out.start !== undefined && !(isObj(out.start) && START_KINDS.includes(out.start.kind))) delete out.start;
   if (out.training === null) delete out.training;
+  if (out.career === null) delete out.career;
   // Schema 5: the hail damage. Absent (schema 4 and older) or malformed: none.
   if (out.damage !== undefined && !isDamage(out.damage)) delete out.damage;
   if (out.damage === undefined) out.damage = noDamage();
@@ -483,6 +491,9 @@ export function decideBoot(snap: FlightSnapshot | null, o: BootOptions): BootDec
   if (!snap.resume) return { kind: 'scenario', scenario: snap.scenario, reason: 'scenario restarted' };
   // A lesson in progress resumes wherever it is (a cold-and-dark start before the engine start counts).
   if (snap.training !== undefined) return { kind: 'resume', snapshot: snap, ageMs };
+  // So does a Career job (its aircraft stands cold at the origin until the player starts it); the shell has
+  // already deleted a block that does not match the career store (src/career/boot.ts careerBootPlan).
+  if (snap.career !== undefined) return { kind: 'resume', snapshot: snap, ageMs };
   if (isParked(snap)) return { kind: 'scenario', scenario: snap.scenario, reason: 'parked with the engine off' };
   return { kind: 'resume', snapshot: snap, ageMs };
 }

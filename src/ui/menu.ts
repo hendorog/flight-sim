@@ -1,5 +1,10 @@
 // Pause menu: flight (aircraft, resume, scenarios, sim rate), the Flight School tab, weather, time of day,
 // display (quality, camera, HUD) and the controls reference.
+//
+// The Career (docs/career.md "Integration"; MenuHost.career, absent outside it): a Career button beside Open Flight
+// School, hidden where the school is. While a job is in progress, everything here that would end it (a scenario, an
+// airfield start, an R22 demonstration, another aircraft, era or seed, the Flight School from either tab) first asks
+// "Abandon the job?" as it does for a lesson, and abandons it on yes. With no link nothing changes.
 
 import { SAFARI as SAFARI_START } from '../world/era/cretaceousAnchors';
 import { R22_DEMOS, DEMO_TITLES, type R22DemoId } from '../sim/rotorcraft/flights';
@@ -12,6 +17,7 @@ import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, NO_STORMS, PRECIP_RATE_MAX
 import { convectiveState, emptyConvectiveState, proceduralStorms } from '../physics/weather/stormField';
 import { WEATHER_PRESETS, applyWeatherPreset } from '../sim/weatherPresets';
 import type { SchoolCommand } from '../training/types';
+import type { CareerMenuLink } from '../career/types';
 import { AIRPORT, sunDirectionNED } from '../core/world';
 import { el, formatHours } from './dom';
 import { aircraftChoiceUrl, choiceConfirmation, chooserRows } from './chooser';
@@ -93,6 +99,8 @@ export interface MenuHost {
   readonly resumeOnReload?: ResumePreferenceLink | null;
   /** The Flight School, if the shell attached one (School tab, abandon-lesson confirmation). */
   readonly school?: SchoolMenuLink | null;
+  /** The Career, if the shell attached one (the Career button, abandon-job confirmations). */
+  readonly career?: CareerMenuLink | null;
   /** The types the aircraft chooser offers. Absent: AIRCRAFT_CATALOGUE (its available rows). */
   readonly aircraftChoices?: readonly AircraftSummary[] | null;
   /** Deep Time field guide store (absent in tests); its tab shows outside the present era only. */
@@ -314,11 +322,46 @@ export class PauseMenu {
     checklist.addEventListener('click', () => { this.host.close(); this.host.showChecklist?.(); });
     const schoolRow = el('div', 'chips', p);
     const openSchool = el('button', '', schoolRow, 'Open Flight School');
-    openSchool.addEventListener('click', () => {
+    const openCareer = el('button', '', schoolRow, 'Career');
+    // A lesson or an R22 demonstration would end a Career job: ask before either starts.
+    const schoolConfirm = el('div', 'sc-confirm hidden', p);
+    const schoolConfirmText = el('span', '', schoolConfirm);
+    const keepJob = el('button', '', schoolConfirm, 'Keep the job');
+    keepJob.addEventListener('click', () => schoolConfirm.classList.add('hidden'));
+    const leaveJob = el('button', 'danger', schoolConfirm, 'Abandon');
+    let pendingLeave: (() => void) | null = null;
+    /** Run `go` at once, or (a Career job in progress) after "Abandon the job and `what`?" is answered yes. */
+    const askJob = (what: string, go: () => void): void => {
+      if (!this.host.career?.jobActive()) {
+        go();
+        return;
+      }
+      pendingLeave = go;
+      schoolConfirmText.textContent = `Abandon the job and ${what}? The job ends with no pay.`;
+      schoolConfirm.classList.remove('hidden');
+    };
+    const toSchool = (): void => {
       this.host.close();
       this.host.school?.command({ kind: 'openHome' });
+    };
+    leaveJob.addEventListener('click', () => {
+      schoolConfirm.classList.add('hidden');
+      const go = pendingLeave;
+      pendingLeave = null;
+      if (!go) return;
+      this.host.career?.abandon();
+      go();
     });
-    this.refreshers.push(() => schoolRow.classList.toggle('hidden', !this.host.school || !this.gates().school));
+    openSchool.addEventListener('click', () => askJob('open the Flight School', toSchool));
+    openCareer.addEventListener('click', () => {
+      this.host.close();
+      this.host.career?.open();
+    });
+    this.refreshers.push(() => {
+      schoolRow.classList.toggle('hidden', !this.host.school || !this.gates().school);
+      openCareer.classList.toggle('hidden', !this.host.career?.available() || !this.gates().school);
+      schoolConfirm.classList.add('hidden');
+    });
     if (flownType(this.host.ctx).def?.id === 'r22') {
       el('h3', '', p, 'R22 demonstrations');
       el('p', 'sub', p, 'Watch the scripted pilot. Moving a control or pressing Enter gives you control. Pause, rate and view keys remain available.');
@@ -326,7 +369,7 @@ export class PauseMenu {
       for (const id of R22_DEMOS) {
         const b = el('button', '', demos, DEMO_TITLES[id]);
         b.dataset.demo = id;
-        b.addEventListener('click', () => { this.host.close(); this.host.r22Demos?.start(id); });
+        b.addEventListener('click', () => askJob(`watch the demonstration (${DEMO_TITLES[id]})`, () => { this.host.close(); this.host.r22Demos?.start(id); }));
       }
     }
     el('h3', '', p, 'Scenario');
@@ -334,6 +377,8 @@ export class PauseMenu {
     const confirm = el('div', 'sc-confirm hidden', p);
     const confirmText = el('span', '', confirm);
     let pending: (() => void) | null = null;
+    /** The pending start ends a Career job (not a lesson). */
+    let pendingJob = false;
     const keep = el('button', '', confirm, 'Keep flying the lesson');
     keep.addEventListener('click', () => confirm.classList.add('hidden'));
     const abandon = el('button', 'danger', confirm, 'Abandon');
@@ -345,20 +390,25 @@ export class PauseMenu {
       this.host.toast(`Scenario: ${name}`);
     };
     const start = (s: (typeof SCENARIOS)[number]): void => go(s.id, s.name);
-    /** Ask first during a lesson (a scenario ends it). */
+    /** Ask first during a lesson or a Career job (a scenario ends it). */
     const ask = (name: string, run: () => void): void => {
-      if (!this.host.school?.lessonActive) {
+      const lesson = !!this.host.school?.lessonActive;
+      const job = !lesson && !!this.host.career?.jobActive();
+      if (!lesson && !job) {
         run();
         return;
       }
       pending = run;
-      confirmText.textContent = `Abandon the lesson and start ${name}? The flight so far is logged.`;
+      pendingJob = job;
+      confirmText.textContent = job ? `Abandon the job and start ${name}? The job ends with no pay.` : `Abandon the lesson and start ${name}? The flight so far is logged.`;
+      keep.textContent = job ? 'Keep the job' : 'Keep flying the lesson';
       confirm.classList.remove('hidden');
     };
     abandon.addEventListener('click', () => {
       confirm.classList.add('hidden');
       if (!pending) return;
-      this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      if (pendingJob) this.host.career?.abandon();
+      else this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
       pending();
     });
     this.refreshers.push(() => confirm.classList.add('hidden'));
@@ -547,6 +597,15 @@ export class PauseMenu {
     return this.host.ctx.era ?? 'present';
   }
 
+  /**
+   * The Career's confirmation while a job is in progress and no lesson runs (a lesson has its own): `question`
+   * and the consequence. Null otherwise.
+   */
+  private jobConfirmation(question: string): { kind: 'job'; text: string } | null {
+    if (this.host.school?.lessonActive || !this.host.career?.jobActive()) return null;
+    return { kind: 'job', text: `${question} The job ends with no pay.` };
+  }
+
   /** What the era hides: the School tab and the tower camera (eraChooser.eraGates). */
   private gates(): EraGates {
     return eraGates(ERAS[this.eraId()]);
@@ -565,7 +624,7 @@ export class PauseMenu {
     const keep = el('button', '', confirm, 'Keep flying');
     keep.addEventListener('click', () => confirm.classList.add('hidden'));
     const go = el('button', 'danger', confirm, 'Go');
-    let pending: { row: EraRow; lesson: boolean } | null = null;
+    let pending: { row: EraRow; kind: 'flight' | 'lesson' | 'job' } | null = null;
     const choose = (row: EraRow): void => {
       if (ctx().commands.setEra) {
         ctx().commands.setEra?.(row.id);
@@ -583,7 +642,8 @@ export class PauseMenu {
     go.addEventListener('click', () => {
       confirm.classList.add('hidden');
       if (!pending) return;
-      if (pending.lesson) this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      if (pending.kind === 'lesson') this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      if (pending.kind === 'job') this.host.career?.abandon();
       choose(pending.row);
     });
     this.refreshers.push(() => confirm.classList.add('hidden'));
@@ -595,15 +655,15 @@ export class PauseMenu {
       b.title = row.blurb;
       if (row.current) continue;
       b.addEventListener('click', () => {
-        const ask = eraConfirmation(ctx().state, !!this.host.school?.lessonActive, current, row);
+        const ask = this.jobConfirmation(`Reloads the world. Abandon the job and go to ${row.label}?`) ?? eraConfirmation(ctx().state, !!this.host.school?.lessonActive, current, row);
         if (!ask) {
           choose(row);
           return;
         }
-        pending = { row, lesson: ask.kind === 'lesson' };
+        pending = { row, kind: ask.kind };
         confirmText.textContent = ask.text;
-        keep.textContent = 'Keep flying';
-        go.textContent = ask.kind === 'lesson' ? 'Abandon and go' : 'Go';
+        keep.textContent = ask.kind === 'job' ? 'Keep the job' : 'Keep flying';
+        go.textContent = ask.kind === 'flight' ? 'Go' : 'Abandon and go';
         confirm.classList.remove('hidden');
       });
     }
@@ -635,6 +695,7 @@ export class PauseMenu {
     keep.addEventListener('click', () => confirm.classList.add('hidden'));
     const leave = el('button', 'danger', confirm, 'Go');
     let pending: number | null = null;
+    let pendingJob = false;
     const choose = (seed: number): void => {
       if (ctx().commands.setSeed) {
         ctx().commands.setSeed?.(seed);
@@ -650,20 +711,23 @@ export class PauseMenu {
     };
     const ask = (seed: number): void => {
       if (seed === current) return;
-      const q = seedConfirmation(ctx().state, !!this.host.school?.lessonActive, current, seed);
+      const q = this.jobConfirmation(`Reloads the world. Abandon the job and go to world ${seed}?`) ?? seedConfirmation(ctx().state, !!this.host.school?.lessonActive, current, seed);
       if (!q) {
         choose(seed);
         return;
       }
       pending = seed;
+      pendingJob = q.kind === 'job';
       confirmText.textContent = q.text;
-      leave.textContent = q.kind === 'lesson' ? 'Abandon and go' : 'Go';
+      keep.textContent = q.kind === 'job' ? 'Keep the job' : 'Keep flying';
+      leave.textContent = q.kind === 'flight' ? 'Go' : 'Abandon and go';
       confirm.classList.remove('hidden');
     };
     leave.addEventListener('click', () => {
       confirm.classList.add('hidden');
       if (pending === null) return;
       if (this.host.school?.lessonActive) this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      else if (pendingJob) this.host.career?.abandon();
       choose(pending);
     });
     go.addEventListener('click', () => ask(normalizeSeed(input.value)));
@@ -698,7 +762,7 @@ export class PauseMenu {
     const keep = el('button', '', confirm, 'Keep flying');
     keep.addEventListener('click', () => confirm.classList.add('hidden'));
     const leave = el('button', 'danger', confirm, 'Leave');
-    let pending: { row: AircraftSummary; lesson: boolean } | null = null;
+    let pending: { row: AircraftSummary; kind: 'flight' | 'lesson' | 'job' } | null = null;
     const choose = (row: AircraftSummary): void => {
       const c = this.host.ctx;
       if (c.commands.setAircraft) {
@@ -717,7 +781,8 @@ export class PauseMenu {
     leave.addEventListener('click', () => {
       confirm.classList.add('hidden');
       if (!pending) return;
-      if (pending.lesson) this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      if (pending.kind === 'lesson') this.host.school?.command({ kind: 'runner', cmd: 'abandon' });
+      if (pending.kind === 'job') this.host.career?.abandon();
       choose(pending.row);
     });
     this.refreshers.push(() => confirm.classList.add('hidden'));
@@ -729,31 +794,52 @@ export class PauseMenu {
       el('span', '', b, row.id === current ? `Flying now. ${row.blurb}` : row.blurb);
       if (row.id === current) continue;
       b.addEventListener('click', () => {
-        const ask = choiceConfirmation(this.host.ctx.state, !!this.host.school?.lessonActive, flown, row);
+        const ask = this.jobConfirmation(`Abandon the job and fly the ${row.shortName}?`) ?? choiceConfirmation(this.host.ctx.state, !!this.host.school?.lessonActive, flown, row);
         if (!ask) {
           choose(row);
           return;
         }
-        pending = { row, lesson: ask.kind === 'lesson' };
+        pending = { row, kind: ask.kind };
         confirmText.textContent = ask.text;
-        keep.textContent = ask.kind === 'lesson' ? 'Keep flying the lesson' : 'Keep flying';
-        leave.textContent = ask.kind === 'lesson' ? 'Abandon' : 'Leave';
+        keep.textContent = ask.kind === 'lesson' ? 'Keep flying the lesson' : ask.kind === 'job' ? 'Keep the job' : 'Keep flying';
+        leave.textContent = ask.kind === 'flight' ? 'Leave' : 'Abandon';
         confirm.classList.remove('hidden');
       });
     }
   }
 
   // ------------------------------------------------------------------------------------------------
-  /** The Flight School tab: filled by the school itself each time it is shown (section 5.6). */
+  /**
+   * The Flight School tab: filled by the school itself each time it is shown (section 5.6). While a Career job is
+   * in progress (and no lesson) it holds only "Abandon the job?" instead: the school's own buttons open its home and
+   * briefings, from which a lesson starts and would end the job unasked.
+   */
   private buildSchool(card: HTMLElement): HTMLElement {
     const p = el('section', 'hidden', card);
     this.refreshers.push(() => {
       if (this.tab !== 'school') return;
       const link = this.host.school;
-      if (link) link.renderMenuPage(p, () => this.host.close());
+      if (link && !link.lessonActive && this.host.career?.jobActive()) this.schoolJobPage(p, link);
+      else if (link) link.renderMenuPage(p, () => this.host.close());
       else p.replaceChildren();
     });
     return p;
+  }
+
+  /** The School tab during a Career job: the job must be abandoned before the Flight School opens. */
+  private schoolJobPage(p: HTMLElement, link: SchoolMenuLink): void {
+    p.replaceChildren();
+    el('h2', '', p, 'Flight School');
+    el('p', 'sub', p, 'A Career job is in progress. The Flight School ends it: abandoned, with no pay.');
+    const row = el('div', 'chips', p);
+    const keep = el('button', 'primary', row, 'Keep the job');
+    keep.addEventListener('click', () => this.host.close());
+    const leave = el('button', 'danger', row, 'Abandon the job and open the Flight School');
+    leave.addEventListener('click', () => {
+      this.host.career?.abandon();
+      this.host.close();
+      link.command({ kind: 'openHome' });
+    });
   }
 
   // ------------------------------------------------------------------------------------------------

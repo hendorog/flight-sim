@@ -101,3 +101,16 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   are drawn with the type's own exterior (no cockpit, light glows only, the livery baked with the aircraft's own
   registration) within 3 km of the camera, the box stand-in beyond; the others stay kinematic. Changing over keeps
   the leg and position.
+- **Career identity and destination** (2026-11-01, [career.md](career.md) "Integration"). While the Career is
+  open, the radio calls the aircraft by its airframe's own registration and ICAO type (`RadioDeps.identity`, the
+  authority stays the school's), or, with the company callsign setting on, by the company callsign and flight number
+  (`companyCallsign` in `phrases.ts`): "Fable 12", spoken "Fable one two" under EASA and "Fable twelve" (group form)
+  under the FAA, and never abbreviated. The home tower's sequencing uses the same callsign (`TrafficDeps.player`).
+  With a job's destination (`RadioDeps.destination`) the calls name it: the taxi request ("request taxi for VFR
+  flight to Elmley"; FAA "ready to taxi, VFR to Elmley"), the departing call at an uncontrolled field ("departing 09
+  for Elmley") and the leaving call ("leaving the circuit to the north-east for Elmley"); the tower's take-off
+  clearance adds "report leaving the circuit" (FAA: "<direction> departure approved", the destination's direction
+  from the field), also when a held departure is cleared later; and the inbound call at the destination says the
+  aircraft is landing there ("inbound to Elmley for landing"; at a tower "landing Elmley, request joining
+  instructions", FAA "inbound for landing at Elmley"). With no identity or destination every phrase is as before
+  (`tests/atc` unchanged; `tests/atc/careerHooks.test.ts` pins the new wording).
