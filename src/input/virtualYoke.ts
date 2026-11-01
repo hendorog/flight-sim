@@ -54,17 +54,21 @@ export const KEY_AXIS_TUNING = C172S_INPUT.assists.axes;
  */
 export const GROUND_ELEVATOR_RATE = C172S_INPUT.assists.groundElevatorRate;
 
-/** The elevator key tuning on the mains (slower rates, same limits). */
-export function groundElevatorTuning(elevator: KeyAxisTuning, groundRate: number): KeyAxisTuning {
+/**
+ * The elevator key tuning on the mains (slower rates, same limits): `shape` (default the airborne elevator's rates)
+ * scaled by groundRate.
+ */
+export function groundElevatorTuning(elevator: KeyAxisTuning, groundRate: number, shape: Pick<KeyAxisTuning, 'baseRate' | 'maxRate' | 'accelTime'> = elevator): KeyAxisTuning {
   return {
     ...elevator,
-    baseRate: elevator.baseRate * groundRate,
-    maxRate: elevator.maxRate * groundRate,
+    baseRate: shape.baseRate * groundRate,
+    maxRate: shape.maxRate * groundRate,
+    accelTime: shape.accelTime,
   };
 }
 
 /** The Cessna 172S elevator key tuning on the mains. */
-export const GROUND_ELEVATOR_TUNING: KeyAxisTuning = groundElevatorTuning(KEY_AXIS_TUNING.elevator, GROUND_ELEVATOR_RATE);
+export const GROUND_ELEVATOR_TUNING: KeyAxisTuning = groundElevatorTuning(KEY_AXIS_TUNING.elevator, GROUND_ELEVATOR_RATE, C172S_INPUT.assists.groundElevatorShape);
 
 /** Deflection limit available from the keyboard at a given indicated airspeed. */
 export function keyAuthority(ias: number, t: KeyAxisTuning): number {

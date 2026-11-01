@@ -121,9 +121,16 @@ the same hold does about the same manoeuvre at every speed:
 
 | Key | Rate at key-down | Full rate after | Full rate | Travel moved by a 0.1 s / 0.5 s / 1 s hold | Measured with the C172 flight model |
 |---|---|---|---|---|---|
-| Elevator (↑ ↓) | 0.15 | 1.5 s | 0.6 | 0.009 / 0.050 / 0.13 at 70 KIAS | a 1 s hold reaches 1.24 g within that second at 70 KIAS (1.27 g at 93, 1.33 g at 113 KIAS); a 0.6 s hold arrests a 400 fpm approach sink in about 1.6 s at 1.2 g; a 2 s hold is a ~2 g pull |
-| Aileron (← →) | 0.2 | 1.2 s | 1.0 | 0.019 / 0.11 / 0.35 at 70 KIAS | the roll rate the key leaves: about 0.5 °/s after a tap, 4 °/s after 0.5 s, 11-13 °/s after 1 s, at 70, 93 and 113 KIAS alike |
+| Elevator (↑ ↓) | 0.22 | 1.1 s | 0.8 | 0.013 / 0.079 / 0.23 at 70 KIAS | a 1 s hold left on reaches 1.7-1.8 g at 70-113 KIAS (the g stops, 2.2 g and 0.35 g, limit a long hold); five 0.1 s taps 0.3 s apart change the attitude by under 12 deg |
+| Aileron (← →) | 0.3 | 0.9 s | 1.3 | 0.028 / 0.18 / 0.64 at 70 KIAS | the roll rate a 1 s hold leaves: 20-23 deg/s at 70, 93 and 113 KIAS (11-13 before 2026-11-01) |
 | Rudder (Z X) | 0.25 | 1.0 s | 1.2 | 0.025 / 0.16 / 0.57 below 58 KIAS | about 0.5 s of X gives the right pedal a full-power take-off roll needs |
+
+On an aeroplane, rapid repeated taps of the same yoke key build the rate as holding it does: a press within 0.18 s
+of that key's release carries on its rate where the last press left it, 0.1 s further on, so drumming a key climbs
+to the full rate; after a longer pause the next tap is the fine first-press step again. The airborne aileron and
+elevator rates were raised on 2026-11-01 (owner: the keys were too slow for the larger deflections of the slower
+types); the elevator on the mains keeps the earlier rates (0.15, 1.5 s, 0.6, times 0.6), so the take-off rotation
+is unchanged. Every aeroplane has the same key rates.
 
 Rates are fractions of the airspeed-dependent limit per second (travel is ±1). A key moves the control back toward
 centre 1.2-1.3 times faster than away from it. On the ground (either main wheel down) the elevator key runs at 60 %
