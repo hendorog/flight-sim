@@ -221,10 +221,10 @@ describe('virtual yoke (hold position)', () => {
   it('a tap is a fine adjustment, holding accelerates and reaches the limit at low speed', () => {
     const tap = hold(5, 1, 20); // ~80 ms
     expect(tap).toBeGreaterThan(0.01);
-    expect(tap).toBeLessThan(0.025);
+    expect(tap).toBeLessThan(0.04);
     const second = hold(60, 1, 20);
-    expect(second).toBeGreaterThan(0.3);
-    expect(second).toBeLessThan(0.45);
+    expect(second).toBeGreaterThan(0.55);
+    expect(second).toBeLessThan(0.85);
     expect(hold(180, 1, 20)).toBeCloseTo(1, 6);
   });
 
@@ -260,10 +260,10 @@ describe('virtual yoke (hold position)', () => {
     expect(keyAuthority(2 * e.fullAuthoritySpeed, e)).toBeCloseTo(0.25, 6);
     const push = hold(600, -1, 2 * e.fullAuthoritySpeed, e);
     expect(push).toBeCloseTo(-0.25 * e.negativeScale, 6);
-    // A 0.1 s tap at 70 KIAS moves the elevator less than 1% of travel (fine corrections on final).
+    // A 0.1 s tap at 70 KIAS moves the elevator less than 2% of travel (fine corrections on final).
     const tap = hold(6, 1, 36, e);
     expect(tap).toBeGreaterThan(0.003);
-    expect(tap).toBeLessThan(0.01);
+    expect(tap).toBeLessThan(0.02);
   });
 
   it('moves back toward centre a little faster than away from it', () => {

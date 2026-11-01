@@ -154,7 +154,7 @@ describe('input profile: key axis tuning and assists', () => {
     };
     const standard = moved(undefined);
     expect(standard).toBeGreaterThan(0.01);
-    expect(moved(withAssists({ groundElevatorRate: 0.3 })) / standard).toBeCloseTo(0.5, 9);
+    expect(moved(withAssists({ groundElevatorRate: C172S_INPUT.assists.groundElevatorRate / 2 })) / standard).toBeCloseTo(0.5, 9);
   });
 
   it('the soft g stops are those of the profile', () => {

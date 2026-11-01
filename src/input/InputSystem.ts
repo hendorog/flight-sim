@@ -258,6 +258,16 @@ const LEVER_ACTIONS: readonly InputAction[] = [
   'rudderRight',
 ];
 
+/**
+ * Rapid taps on an aeroplane's yoke keys build the rate as a held key does (owner, 2026-11-01: the keys were too slow
+ * for the large deflections of the slower types). A press within TAP_WINDOW s of the same key's release resumes that
+ * key's rate ramp where it left off, TAP_BOOST s further on, so a run of quick taps climbs to the full rate; a pause
+ * longer than the window starts the ramp from the fine base rate again. Not on a rotorcraft's cyclic.
+ */
+const TAP_WINDOW = 0.18;
+const TAP_BOOST = 0.1;
+const YOKE_ACTIONS: ReadonlySet<InputAction> = new Set<InputAction>(['pitchUp', 'pitchDown', 'rollLeft', 'rollRight']);
+
 /** The positions the Cessna 172S fuel selector key cycles through. */
 export const FUEL_SELECTOR_CYCLE: readonly FuelSelector[] = C172S_INPUT.fuelSelectorCycle;
 const PANEL_LIGHT_STEPS = [0, 0.3, 0.6, 1];
@@ -298,6 +308,9 @@ export class InputSystem implements Subsystem {
   private readonly clicked = new Map<InputAction, number | undefined>();
   /** Time each lever action has been held, s. */
   private readonly heldTime = new Map<InputAction, number>();
+  /** Yoke keys (YOKE_ACTIONS): time since each was released, s, while within TAP_WINDOW, and its ramp at release. */
+  private readonly releasedFor = new Map<InputAction, number>();
+  private readonly rampAtRelease = new Map<InputAction, number>();
 
   private springPitch = 0;
   private springRoll = 0;
@@ -447,7 +460,7 @@ export class InputSystem implements Subsystem {
     this.twin = this.profile.engines > 1;
     this.common = this.profile.commonControls ?? [];
     const assists = this.profile.assists;
-    this.groundElevator = groundElevatorTuning(assists.axes.elevator, assists.groundElevatorRate);
+    this.groundElevator = groundElevatorTuning(assists.axes.elevator, assists.groundElevatorRate, assists.groundElevatorShape);
     this.steering = new GroundSteeringAssist(assists.steering);
     this.rollTrim = new RollTrimAssist(assists.rollTrim);
     this.rotation = new RotationGuard(assists.rotation);
@@ -471,6 +484,8 @@ export class InputSystem implements Subsystem {
     this.held.clear();
     this.clicked.clear();
     this.heldTime.clear();
+    this.releasedFor.clear();
+    this.rampAtRelease.clear();
     this.pressedQueue.length = 0;
     this.pressedEngine.length = 0;
     this.springPitch = this.springRoll = 0;
@@ -709,7 +724,7 @@ export class InputSystem implements Subsystem {
     this.pressedQueue.length = 0;
     this.pressedEngine.length = 0;
 
-    for (const a of LEVER_ACTIONS) this.heldTime.set(a, this.held.has(a) ? (this.heldTime.get(a) ?? 0) + dt : 0);
+    this.updateHeldTimes(dt);
 
     this.updateFlightControls(dt, ctx);
     this.updateLevers(dt, ctx.controls, ctx.state);
@@ -766,6 +781,33 @@ export class InputSystem implements Subsystem {
    */
   pilotFlying(withinMs = 100): boolean {
     return performance.now() - this.lastPilotInput <= withinMs;
+  }
+
+  /** Advance each lever action's hold time; an aeroplane's yoke key pressed again quickly resumes its ramp (TAP_WINDOW). */
+  private updateHeldTimes(dt: number): void {
+    const taps = !this.profile.rotorcraft;
+    for (const a of LEVER_ACTIONS) {
+      const was = this.heldTime.get(a) ?? 0;
+      if (this.held.has(a)) {
+        let t = was;
+        const gap = this.releasedFor.get(a);
+        if (was === 0 && taps && gap !== undefined && gap <= TAP_WINDOW) t = (this.rampAtRelease.get(a) ?? 0) + TAP_BOOST;
+        this.releasedFor.delete(a);
+        this.heldTime.set(a, t + dt);
+        continue;
+      }
+      this.heldTime.set(a, 0);
+      if (!YOKE_ACTIONS.has(a)) continue;
+      if (was > 0) {
+        this.rampAtRelease.set(a, was);
+        this.releasedFor.set(a, 0);
+      } else {
+        const since = this.releasedFor.get(a);
+        if (since === undefined) continue;
+        if (since + dt > TAP_WINDOW) this.releasedFor.delete(a);
+        else this.releasedFor.set(a, since + dt);
+      }
+    }
   }
 
   private heldFor(a: InputAction): number {

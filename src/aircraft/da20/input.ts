@@ -33,13 +33,14 @@ export const DA20_INPUT: InputProfile = {
   },
   assists: {
     axes: {
-      aileron: { baseRate: 0.2, maxRate: 1.0, accelTime: 1.2, accelExponent: 2, reverseGain: 1.3, fullAuthoritySpeed: 33 * STALL_RATIO, authorityExponent: 1, minAuthority: 0.4, negativeScale: 1 },
-      elevator: { baseRate: 0.15, maxRate: 0.6, accelTime: 1.5, accelExponent: 2, reverseGain: 1.2, fullAuthoritySpeed: 28 * STALL_RATIO, authorityExponent: 2, minAuthority: 0.22, negativeScale: 0.55 },
+      aileron: { baseRate: 0.3, maxRate: 1.3, accelTime: 0.9, accelExponent: 2, reverseGain: 1.3, fullAuthoritySpeed: 33 * STALL_RATIO, authorityExponent: 1, minAuthority: 0.4, negativeScale: 1 },
+      elevator: { baseRate: 0.22, maxRate: 0.8, accelTime: 1.1, accelExponent: 2, reverseGain: 1.2, fullAuthoritySpeed: 28 * STALL_RATIO, authorityExponent: 2, minAuthority: 0.22, negativeScale: 0.55 },
       // The rudder is powerful (27 degrees, 38 % of the fin's chord: in a steady slip at 50 KIAS a third of its travel
       // holds 12 degrees of sideslip, the 172S's 5): the keys' authority falls off above 15 m/s.
       rudder: { baseRate: 0.25, maxRate: 1.2, accelTime: 1.0, accelExponent: 2, reverseGain: 1.3, fullAuthoritySpeed: 15, authorityExponent: 1, minAuthority: 0.4, negativeScale: 1 },
     },
     groundElevatorRate: 0.6,
+    groundElevatorShape: { baseRate: 0.15, maxRate: 0.6, accelTime: 1.5 },
     rotation: {
       // About 5 deg/s.
       rate: (5 * Math.PI) / 180,

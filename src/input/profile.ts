@@ -8,6 +8,12 @@ import type { InputAction } from './bindings';
 export interface KeyboardAssistTuning {
   axes: { aileron: KeyAxisTuning; elevator: KeyAxisTuning; rudder: KeyAxisTuning };
   groundElevatorRate: number;
+  /**
+   * The elevator key's rate shape that groundElevatorRate scales on the mains (absent: the airborne elevator's). The
+   * aeroplanes keep the earlier, slower shape here so the take-off rotation is unchanged by the faster airborne keys
+   * of 2026-11-01.
+   */
+  groundElevatorShape?: Pick<KeyAxisTuning, 'baseRate' | 'maxRate' | 'accelTime'>;
   rotation: { rate: number; rateLead: number; pitchLimitGround: number; pitchLimitAir: number; pitchLead: number; bleed: number };
   /**
    * Ground-steering assist: PID on heading to the rudder, or to differential brake below rudderEffectiveSpeed
