@@ -275,14 +275,14 @@ export class InputSystem implements Subsystem {
 
   private readonly view: ViewControl | undefined;
   private readonly keyTarget: Window | HTMLElement | undefined;
-  private readonly profile: InputProfile;
+  private profile!: InputProfile;
   /** The elevator key tuning of the type on the mains. */
-  private readonly groundElevator: KeyAxisTuning;
+  private groundElevator!: KeyAxisTuning;
   /** Actions the type has no lever or switch for: their keys do nothing. */
   private readonly absent = new Set<InputAction>();
-  private readonly twin: boolean;
+  private twin = false;
   /** Per-engine controls that are ONE control on this type (written for all engines whatever is selected). */
-  private readonly common: readonly EngineControlKey[];
+  private common: readonly EngineControlKey[] = [];
   /** Which engine(s) the engine keys act on. */
   private selection: 'all' | 0 | 1 = 'all';
   private ctx!: SimContext;
@@ -340,9 +340,9 @@ export class InputSystem implements Subsystem {
   private readonly written: Record<'aileron' | 'elevator' | 'rudder', number | null> = { aileron: null, elevator: null, rudder: null };
   /** Hardware pedals (or a twist stick) owned the rudder at the last update. */
   private rudderHardware = false;
-  private readonly steering: GroundSteeringAssist;
-  private readonly rollTrim: RollTrimAssist;
-  private readonly rotation: RotationGuard;
+  private steering!: GroundSteeringAssist;
+  private rollTrim!: RollTrimAssist;
+  private rotation!: RotationGuard;
   private kbBrakeLeft = 0;
   private kbBrakeRight = 0;
   /** How much of its brake the steering assist applies (castering types): off while the pilot steers with a toe brake. */
@@ -436,7 +436,13 @@ export class InputSystem implements Subsystem {
     this.view = opts.view;
     this.keyTarget = opts.keyTarget;
     this.shell = opts.shell ?? {};
-    this.profile = opts.profile ?? C172S_INPUT;
+    this.applyProfile(opts.profile ?? C172S_INPUT);
+  }
+
+  /** Everything derived from the type's profile: the absent actions, the engine keys and the keyboard assists' tuning. */
+  private applyProfile(profile: InputProfile): void {
+    this.profile = profile;
+    this.absent.clear();
     for (const a of INPUT_ACTIONS) if (!profileHasAction(this.profile, a)) this.absent.add(a);
     this.twin = this.profile.engines > 1;
     this.common = this.profile.commonControls ?? [];
@@ -448,6 +454,30 @@ export class InputSystem implements Subsystem {
     if (this.profile.stabilityAssist) this.assists.stabilityAssist = this.profile.stabilityAssist.default;
     // A type whose pusher-grip schedule says so starts with the propSchedule assist on (opt-in; absent: off as before).
     if (this.profile.propLever?.schedule?.default) this.assists.propSchedule = true;
+  }
+
+  /**
+   * Another type in flight (the shell's aircraft hot swap, src/sim/Simulator.ts swapAircraft): its profile replaces
+   * this one, after the physics has trimmed the new type (ctx.controls hold its trimmed controls). The pilot's own
+   * assists (ground steering, roll trim) and the mouse yoke mode stay; STAB ASSIST and the pusher-grip schedule take
+   * the new profile's defaults (absent: removed). Every held key and click is let go, and the keyboard controls start
+   * again from the trimmed controls, as after a reset. The `assists` object and the controllers keep their identity.
+   */
+  setProfile(profile: InputProfile): void {
+    delete this.assists.stabilityAssist;
+    delete this.assists.propSchedule;
+    this.applyProfile(profile);
+    this.keysDown.clear();
+    this.held.clear();
+    this.clicked.clear();
+    this.heldTime.clear();
+    this.pressedQueue.length = 0;
+    this.pressedEngine.length = 0;
+    this.springPitch = this.springRoll = 0;
+    this.kbRudderAtPress = 0;
+    this.yawKeyWas = 0;
+    this.kbLeft.aileron = this.kbLeft.elevator = 0;
+    if (this.ctx) this.onReset(this.ctx);
   }
 
   /** Which engine(s) the engine keys act on (0 = left). One engine: always 'all'. After every reset: 'all'. */

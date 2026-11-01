@@ -157,7 +157,7 @@ export class InstructorPilot implements StepController {
   /** Problems met while flying a script (an unresolvable ref fell back to the present value). For tests and logs. */
   readonly warnings: string[] = [];
 
-  private readonly aircraft: AircraftTypeDef;
+  private aircraft: AircraftTypeDef;
   private ctxFn: (() => EvalContext) | null;
   private modeV: CopilotMode = 'idle';
 
@@ -208,6 +208,15 @@ export class InstructorPilot implements StepController {
   constructor(aircraft: AircraftTypeDef, opts: InstructorPilotOptions = {}) {
     this.aircraft = aircraft;
     this.ctxFn = opts.evalCtx ?? null;
+  }
+
+  /**
+   * Another type is flown (the shell's aircraft hot swap, outside any lesson): its school data from now on. Whatever
+   * the copilot was doing stops.
+   */
+  setAircraft(aircraft: AircraftTypeDef): void {
+    this.stop();
+    this.aircraft = aircraft;
   }
 
   /** Authority instructor, or a demo/recovery running: the copilot writes the flight controls. */

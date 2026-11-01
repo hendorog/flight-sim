@@ -289,6 +289,11 @@ export class CareerSystem implements Subsystem {
     return !!this.plan?.explicit && !this.monitor && !this.placing;
   }
 
+  /** A job is being placed right now (behind its curtain): the shell switches no aircraft in flight meanwhile. */
+  get placingJob(): boolean {
+    return this.placing;
+  }
+
   /** A placed job is active (the shell keeps writing snapshots while it is, even with the resume preference off). */
   jobPlaced(): boolean {
     return !!this.save?.active?.placed && !this.unwatched();

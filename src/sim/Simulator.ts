@@ -21,9 +21,14 @@
 // has no Flight School (TrainingSystem not constructed) and may have a FaunaSystem (createFaunaSystem, null in the
 // present). A snapshot of another era is never resumed (resume.ts decideBoot).
 //
-// THE AIRCRAFT is chosen once, at boot (aircraftChoice.ts: URL, stored preference, else the Cessna 172S); every
-// subsystem receives the type's definition or presentation through its constructor. Another type is a reload
-// (commands.setAircraft). Each type keeps its own resume snapshot (resume.ts snapshotKey).
+// THE AIRCRAFT is chosen at boot (aircraftChoice.ts: URL, stored preference, else the Cessna 172S); every
+// subsystem receives the type's definition or presentation through its constructor. Another type (commands.setAircraft)
+// is switched in place in free flight (swapAircraft: the world stays loaded and the flight carries on in the new type,
+// SimPhysics.setAircraft keeping position, velocity, attitude and rates; the per-type systems are rebuilt or re-pointed,
+// and nothing built at boot keeps a reference to the old type: the closures read this.livePanel, this.aircraftId and
+// ctx.aircraft). During a lesson, a Career job or its placement, an R22 demonstration, behind a curtain, after a crash,
+// or when the new type's chunks do not load, it is a reload, as before. Each type keeps its own resume snapshot
+// (resume.ts snapshotKey).
 //
 // THE CAREER (docs/career.md "Integration"; src/career/CareerSystem.ts) lives where the Flight School does (present day).
 // Its store is loaded before decideBoot and its boot plan (src/career/boot.ts) decides what happens to the snapshot's
@@ -66,7 +71,7 @@ import { CameraSystem } from '../render/cameras';
 import { CloudsEffect } from '../render/clouds';
 import { PostPipeline } from '../render/post';
 import { SkySystem } from '../render/sky';
-import { SIM_RATES, UISystem, type KeyBinding } from '../ui';
+import { SIM_RATES, UISystem, type AutopilotLink, type KeyBinding } from '../ui';
 import { AirportSystem, TOWER } from '../world/airport';
 import { TerrainSystem, terrainHeight } from '../world/terrain';
 import { aircraftSwitchUrl, chooseAircraft, loadCarbIcing, saveAircraftPreference, saveCarbIcing } from './aircraftChoice';
@@ -113,6 +118,7 @@ import {
 } from './resume';
 import type { Scenario } from './scenarios';
 import { SimPhysics } from './SimPhysics';
+import { captureSwapState } from './aircraftSwap';
 import { R22Flight, isR22Demo, type R22DemoId } from './rotorcraft/flights';
 import { demoScenario, demoWeather, hoverScenario } from './rotorcraft/starts';
 import { RotorcraftDemoUi } from '../ui/rotorcraftDemo';
@@ -192,6 +198,36 @@ export interface SimSystems {
 
 const nextFrame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
+/**
+ * Rebuild time of a type switched in place (swapAircraft) above which the switch goes behind a curtain, ms. A type not
+ * yet built this session has no measurement and always does (its shaders compile on first use).
+ */
+const SWAP_CURTAIN_MS = 200;
+
+/** What an aircraft switch did (swapAircraft; __sim.swapAircraft). */
+export interface AircraftSwapResult {
+  /**
+   * 'hot': switched in place; 'reload': the page is reloading into the type (a guard, or its chunks failed to load);
+   * 'failed': the new type could not be built (the old one flies on); 'busy': another switch is under way; 'same': it
+   * is the type flown.
+   */
+  mode: 'hot' | 'reload' | 'failed' | 'busy' | 'same';
+  /** The type flown afterwards ('reload': the one being left). */
+  aircraft: AircraftId;
+  /** Wall time from the request to the flight going on (loading the chunks, the rebuild, any curtain), ms. */
+  ms: number;
+  /** Wall time of the synchronous rebuild (physics and every per-type system), ms. */
+  rebuildMs: number;
+  /** The switch went behind a curtain. */
+  curtain: boolean;
+  /** What the physics says about the switch (SimPhysics.setAircraft), e.g. a speed beyond the new type's limits. */
+  notes: string[];
+  /** Why it failed ('failed'), or why it reloads ('reload'). */
+  reason?: string;
+  /** Where the rebuild's time went, ms: the physics (build and trim), the model, the panel, the UI, the rest. */
+  phases?: Record<string, number>;
+}
+
 export class Simulator {
   readonly params: SimParams;
   readonly weather: WeatherSettings;
@@ -270,8 +306,19 @@ export class Simulator {
   savesWritten = 0;
   /** True once the aircraft's livery / cabin-occlusion bake is in place (part of __ready). */
   private liveryBaked: () => boolean = () => false;
-  /** The type flown: chosen at boot (aircraftChoice.ts), the same for the whole session. */
+  /** The type flown: chosen at boot (aircraftChoice.ts), then whatever swapAircraft switched to. */
   aircraftId: AircraftId = DEFAULT_AIRCRAFT_ID;
+  /**
+   * The instrument panel flown (also systems.panel once boot has finished): the closures boot hands to the Flight
+   * School, the radio and the Career read it here, so they follow an aircraft switch.
+   */
+  private livePanel!: InstrumentPanel;
+  /** An aircraft switch is under way (loading the type's chunks or rebuilding). */
+  private swapping = false;
+  /** Synchronous rebuild time of each type switched to or booted this session, ms (the curtain decision). */
+  private readonly swapRebuildMs = new Map<AircraftId, number>();
+  /** The last aircraft switch (for the automation API). */
+  lastSwap: AircraftSwapResult | null = null;
 
   constructor(search: string = location.search) {
     this.params = parseParams(search);
@@ -413,6 +460,7 @@ export class Simulator {
         this.applySize();
       },
       setAircraft: (next, opts) => this.setAircraft(next, opts),
+      aircraftHotSwap: () => this.hotSwapAllowed(),
       setEra: (next) => this.setEra(next),
       setSeed: (next) => this.setSeed(next),
       setCarbIcing: (on) => {
@@ -518,6 +566,7 @@ export class Simulator {
       anisotropy: renderer.capabilities.getMaxAnisotropy(),
       gyrosSpunUp: ctx.state.engines.some((e) => e.running),
     });
+    this.livePanel = panel;
     panel.reset(ctx.state);
     aircraft.setCompassReading(panel.instruments.readings.compass);
     aircraft.setPanelTexture(panel.texture);
@@ -576,34 +625,7 @@ export class Simulator {
       if (p.stabilityAssist !== null) input.assists.stabilityAssist = p.stabilityAssist;
       physics.stabilityAssistOn = () => input.assists.stabilityAssist === true;
     }
-    ui.autopilot = {
-      helicopter: def.rotorcraft ? {
-        hoverUrl: `?aircraft=${id}&hover=1&ap=1&resume=0`,
-        get: () => ({ heading: ctx.controls.headingBugDeg, altitude: physics.autoflight.targetAltitude/0.3048,
-          speed: physics.autoflight.autopilot.settings.airspeed/0.5144444444444445, adaptive: physics.autoflight.helicopter!.adaptive }),
-        set: (key, value) => {
-          const af = physics.autoflight;
-          if (key === 'adaptive') af.helicopter!.adaptive = !!value;
-          else if (Number.isFinite(value) && af.engaged) {
-            if (key === 'heading') ctx.controls.headingBugDeg = ((Number(value)%360)+360)%360;
-            if (key === 'altitude') af.autopilot.settings.altitude = Math.max(physics.state.altitudeMSL-physics.state.altitudeAGL+3, Number(value)*0.3048);
-            if (key === 'speed') af.autopilot.settings.airspeed = Math.min(80, Math.max(0, Number(value)))*0.5144444444444445;
-          }
-        },
-        status: () => physics.autoflight.helicopter!.reason || physics.autoflight.helicopter!.status,
-      } : undefined,
-      engaged: () => physics.autoflight.engaged,
-      // KAP 140 style annunciation while holding: 'HDG 070 ALT 4500'; the scripted phases otherwise.
-      mode: () => {
-        const af = physics.autoflight;
-        if (af.helicopter) return `${af.autopilot.settings.airspeed < 1.6 ? 'HOVER' : 'SPEED'} HDG ${Math.round(ctx.controls.headingBugDeg)} ALT ${Math.round(af.targetAltitude/0.3048)}${af.helicopter.adaptive ? ' · ADAPT' : ''}`;
-        if (af.phase !== 'hold' || af.plan?.kind !== 'hold' || !af.plan.followBug) return String(af.phase);
-        const bug = String(Math.round((((ctx.controls.headingBugDeg % 360) + 360) % 360)) || 360).padStart(3, '0');
-        const alt = af.targetAltitude;
-        return Number.isNaN(alt) ? `HDG ${bug}` : `HDG ${bug} ALT ${Math.round(alt / 0.3048 / 10) * 10}`;
-      },
-      toggle: () => this.toggleAutoflight(),
-    };
+    ui.autopilot = this.autopilotLink(def);
 
     ui.init(ctx);
     ui.setPanelSource(panel);
@@ -614,7 +636,7 @@ export class Simulator {
         this.resumeEnabled = on;
         saveResumePreference(this.store, on);
         if (on) this.persist();
-        else clearSnapshot(this.store, id);
+        else clearSnapshot(this.store, this.aircraftId);
       },
     };
     ui.hudEnabled = p.hud;
@@ -630,13 +652,13 @@ export class Simulator {
       // (a job resumed or placed, the hub): a lesson started from it would end the job unasked.
       params: careerPlan?.trainingExplicit && p.school.open === true ? { ...p.school, open: null } : p.school,
       ui,
-      readings: () => panel.instruments.readings,
+      readings: () => this.livePanel.instruments.readings,
       pilotFlying: () => input.pilotFlying(),
       inputFlags: () => {
         const src = input.getYokeIndicator().source;
         return { kbdAssists: input.assists.groundSteering || input.assists.rollTrim, inputDevice: src };
       },
-      aircraftId: () => id,
+      aircraftId: () => this.aircraftId,
       startFrom: (sc, o) => this.startFrom(sc, o),
       restoreFlight: (snap, o) => this.restoreFlightBehindCurtain(snap, o),
       captureFlight: () => this.captureFlight(true),
@@ -655,17 +677,21 @@ export class Simulator {
     traffic?.init(ctx);
     // The tower view's binoculars: a click on an aircraft follows it.
     if (traffic) cameras.setTowerTargets(() => traffic.viewTargets(), (label) => ui.showToast(`Tower view: ${label}`));
-    this.radio = training ? new RadioSystem({ training, readings: () => panel.instruments.readings, comRadios: () => panel.comRadios, cdiSelect: () => panel.cdiSelect, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [], towerReply: (c, i) => traffic?.towerReply(c, i) ?? null,
+    this.radio = training ? new RadioSystem({ training, readings: () => this.livePanel.instruments.readings, comRadios: () => this.livePanel.comRadios, cdiSelect: () => this.livePanel.cdiSelect, toast: (m) => ui.showToast(m), blocked: () => ui.modalOpen, layer: ui.schoolLayer, traffic: () => traffic?.drain() ?? [], towerReply: (c, i) => traffic?.towerReply(c, i) ?? null,
       identity: () => this.career?.radioIdentity() ?? null, destination: () => this.career?.destination() ?? null }) : null;
     this.radio?.init(ctx);
     // The Career after the radio (docs/career.md "Integration"): present day only, on the school layer, its crash
     // actions in front of the school's (chained after training.init, which set those).
     if (training && this.careerStore) {
+      // The type flown, read live: an aircraft switch in free flight changes it (never during a job or its placement).
+      const sim = this;
       const career = new CareerSystem({
         physics,
         weather: this.weather,
         store: this.careerStore,
-        aircraft: def,
+        get aircraft() {
+          return sim.ctx.aircraft;
+        },
         layer: ui.schoolLayer,
         startFrom: (sc, o) => this.startFrom(sc, o),
         setAircraft: (next, o) => this.setAircraft(next, o),
@@ -677,7 +703,7 @@ export class Simulator {
         persist: () => void this.persist(),
         frameSimDt: () => this.frameSimDt,
         addToScene: (obj) => void scene.add(obj as THREE.Object3D),
-        readings: () => panel.instruments.readings,
+        readings: () => this.livePanel.instruments.readings,
         toast: (t) => ui.showToast(t),
         hasPpl: () => !!training.profile()?.endorsements.some((e) => e.id === 'ppl'),
         unlock: p.school.unlock,
@@ -693,20 +719,7 @@ export class Simulator {
       this.career = career;
     }
     this.schoolCopilot = physics.copilot;
-    if (id === 'r22') {
-      this.demoUi = new RotorcraftDemoUi(ui.root, () => input.takeControl(), (section, item) => ui.showChecklist(section, item));
-      ui.r22Demos = { start: id => { void this.startDemo(id); } };
-      input.scriptedPilot = {
-        flying: () => !!this.demo && this.demo.outcome !== 'taken-over',
-        stop: () => {
-          if (!this.demo) return;
-          this.demo.stop();
-          this.fastForwardLeft = 0;
-          if (this.demoPaused) this.setPaused(false);
-          ui.showToast('You have control · hardware axes pick up when matched to the current controls', 6000);
-        },
-      };
-    }
+    this.wireR22Demo(ui, input);
     // Input <-> UI links: mode-change toasts (mouse yoke on / off) and the control-position widget for
     // every input source, including the mouse yoke. A controller's Start button keeps the input module's
     // default (a synthetic Escape press, which the UI handles exactly as the key: menu or crash dialog).
@@ -790,11 +803,275 @@ export class Simulator {
     }
   }
 
+
   /**
-   * Another aircraft (SimCommands.setAircraft; the UI has asked for confirmation): the flight is saved under
-   * this type's key, the choice stored, and the page reloaded without the parameters that would undo it.
+   * The UI's autopilot link for the type `def` (status chip, menu toggle, and on a helicopter the hover-hold page). It
+   * reads the physics and the controls live; rebuilt for every type (its helicopter page and hover address are the type's).
+   */
+  private autopilotLink(def: AircraftDefinition): AutopilotLink {
+    const physics = this.physics;
+    const ctx = this.ctx;
+      return {
+        helicopter: def.rotorcraft ? {
+          hoverUrl: `?aircraft=${def.id}&hover=1&ap=1&resume=0`,
+          get: () => ({ heading: ctx.controls.headingBugDeg, altitude: physics.autoflight.targetAltitude/0.3048,
+            speed: physics.autoflight.autopilot.settings.airspeed/0.5144444444444445, adaptive: physics.autoflight.helicopter!.adaptive }),
+          set: (key, value) => {
+            const af = physics.autoflight;
+            if (key === 'adaptive') af.helicopter!.adaptive = !!value;
+            else if (Number.isFinite(value) && af.engaged) {
+              if (key === 'heading') ctx.controls.headingBugDeg = ((Number(value)%360)+360)%360;
+              if (key === 'altitude') af.autopilot.settings.altitude = Math.max(physics.state.altitudeMSL-physics.state.altitudeAGL+3, Number(value)*0.3048);
+              if (key === 'speed') af.autopilot.settings.airspeed = Math.min(80, Math.max(0, Number(value)))*0.5144444444444445;
+            }
+          },
+          status: () => physics.autoflight.helicopter!.reason || physics.autoflight.helicopter!.status,
+        } : undefined,
+        engaged: () => physics.autoflight.engaged,
+        // KAP 140 style annunciation while holding: 'HDG 070 ALT 4500'; the scripted phases otherwise.
+        mode: () => {
+          const af = physics.autoflight;
+          if (af.helicopter) return `${af.autopilot.settings.airspeed < 1.6 ? 'HOVER' : 'SPEED'} HDG ${Math.round(ctx.controls.headingBugDeg)} ALT ${Math.round(af.targetAltitude/0.3048)}${af.helicopter.adaptive ? ' · ADAPT' : ''}`;
+          if (af.phase !== 'hold' || af.plan?.kind !== 'hold' || !af.plan.followBug) return String(af.phase);
+          const bug = String(Math.round((((ctx.controls.headingBugDeg % 360) + 360) % 360)) || 360).padStart(3, '0');
+          const alt = af.targetAltitude;
+          return Number.isNaN(alt) ? `HDG ${bug}` : `HDG ${bug} ALT ${Math.round(alt / 0.3048 / 10) * 10}`;
+        },
+        toggle: () => this.toggleAutoflight(),
+      };
+  }
+
+  /**
+   * The R22's demonstration flights (the menu's buttons, the demo strip, the scripted pilot the input hands over
+   * from): wired while the R22 is flown, taken away from any other type. The strip is built once and kept.
+   */
+  private wireR22Demo(ui: UISystem, input: InputSystem): void {
+    if (this.aircraftId !== 'r22') {
+      ui.r22Demos = undefined;
+      input.scriptedPilot = null;
+      return;
+    }
+    this.demoUi ??= new RotorcraftDemoUi(ui.root, () => input.takeControl(), (section, item) => ui.showChecklist(section, item));
+    ui.r22Demos = { start: id => { void this.startDemo(id); } };
+    input.scriptedPilot = {
+      flying: () => !!this.demo && this.demo.outcome !== 'taken-over',
+      stop: () => {
+        if (!this.demo) return;
+        this.demo.stop();
+        this.fastForwardLeft = 0;
+        if (this.demoPaused) this.setPaused(false);
+        ui.showToast('You have control · hardware axes pick up when matched to the current controls', 6000);
+      },
+    };
+  }
+
+  /**
+   * Another aircraft (SimCommands.setAircraft; the UI has asked for confirmation where it must). In free flight it
+   * is switched in place (swapAircraft); with `opts.open` (the Flight School's or the Career's type switch), for the
+   * type already flown, or whenever hotSwapAllowed() says no, the page reloads into it (reloadIntoAircraft).
    */
   setAircraft(id: AircraftId, opts: { open?: 'school' | 'career' } = {}): void {
+    // A second choice while a switch is under way (a double click in the menu) is ignored.
+    if (this.swapping) return;
+    if (!opts.open && id !== this.aircraftId && this.hotSwapAllowed()) {
+      void this.swapAircraft(id);
+      return;
+    }
+    this.reloadIntoAircraft(id, opts);
+  }
+
+  /**
+   * An aircraft can be switched in place now: boot has finished and nothing that a switch would break is under way (a
+   * lesson in any phase, a placed Career job or one being placed, an R22 demonstration, a curtain, another switch, a
+   * crash, a lost WebGL context). A switch already under way does not count (setAircraft ignores a second one).
+   */
+  hotSwapAllowed(): boolean {
+    if (!this.systems || !this.physics || this.contextLost || this.curtainBusy) return false;
+    if (this.demo || this.training?.inLesson) return false;
+    if (this.career && (this.career.jobPlaced() || this.career.placingJob)) return false;
+    return !this.physics.state.crashed;
+  }
+
+  /**
+   * Switch to the type `id` in place, keeping the world and the flight (docs/simulator.md "Aircraft switch"): its
+   * definition and presentation are loaded lazily as boot does; then, with the simulation held, the physics takes the
+   * new type at the exact state (SimPhysics.setAircraft) and every per-type system is rebuilt (rebuildForAircraft).
+   * A type whose rebuild is slow (not yet built this session, or measured above SWAP_CURTAIN_MS) goes behind a short
+   * curtain with a shader warm-up. Falls back to the reload when the guards say no or the chunks fail to load; a type
+   * the physics cannot build leaves the old one flying (a toast says why). Afterwards the choice is stored, the address
+   * becomes the one the reload would have loaded (aircraftSwitchUrl: no aircraft=, scenario=, resume=, ap=, ...) and
+   * the flight is saved under the new type, so F5 resumes it there.
+   */
+  async swapAircraft(id: AircraftId): Promise<AircraftSwapResult> {
+    const t0 = performance.now();
+    const done = (r: Omit<AircraftSwapResult, 'ms'>): AircraftSwapResult => (this.lastSwap = { ...r, ms: performance.now() - t0 });
+    const base = { aircraft: this.aircraftId, rebuildMs: 0, curtain: false, notes: [] as string[] };
+    if (id === this.aircraftId) return done({ ...base, mode: 'same' });
+    if (this.swapping) return done({ ...base, mode: 'busy' });
+    if (!this.hotSwapAllowed()) {
+      this.reloadIntoAircraft(id);
+      return done({ ...base, mode: 'reload', reason: 'not in free flight' });
+    }
+    this.swapping = true;
+    let loaded: { def: AircraftDefinition; presentation: AircraftPresentation };
+    try {
+      const [def, presentation] = await Promise.all([loadAircraft(id), loadPresentation(id)]);
+      loaded = { def, presentation };
+    } catch (e) {
+      console.warn(`[sim] could not load the ${id} for a switch in flight; reloading into it`, e);
+      this.swapping = false;
+      this.reloadIntoAircraft(id);
+      return done({ ...base, mode: 'reload', reason: 'chunks failed to load' });
+    }
+    // Something may have started while the chunks loaded (a lesson, a job, a curtain): then the reload after all.
+    if (!this.hotSwapAllowed()) {
+      this.swapping = false;
+      this.reloadIntoAircraft(id);
+      return done({ ...base, mode: 'reload', reason: 'not in free flight' });
+    }
+    // The flight so far under the type being left, as the reload saves it.
+    this.persist();
+    const { def, presentation } = loaded;
+    const measured = this.swapRebuildMs.get(id);
+    const curtain = measured === undefined || measured > SWAP_CURTAIN_MS;
+    let notes: string[] = [];
+    let error: unknown = null;
+    let rebuildMs = 0;
+    const phases: Record<string, number> = {};
+    const work = (): void => {
+      const w0 = performance.now();
+      try {
+        notes = this.rebuildForAircraft(def, presentation, phases);
+      } catch (e) {
+        error = e;
+      }
+      rebuildMs = performance.now() - w0;
+    };
+    try {
+      if (curtain) await this.behindCurtain(`Switching to the ${def.shortName}`, work, true);
+      else {
+        // Fast: one held frame, no curtain.
+        this.holding = true;
+        try {
+          work();
+        } finally {
+          this.holding = false;
+          this.lastFrame = -1;
+        }
+      }
+    } finally {
+      this.swapping = false;
+    }
+    if (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      if (this.aircraftId === id) {
+        // The physics took the new type but a system failed to follow: a defect, reported as a subsystem error.
+        this.fail('aircraftSwap', error);
+        this.systems.ui.showToast(`The switch to the ${def.shortName} did not complete (${why}); reload the page`, 12000);
+      } else {
+        console.warn(`[sim] could not switch to the ${id}; the ${this.aircraftId} flies on`, error);
+        this.systems.ui.showToast(`Could not switch to the ${def.shortName}: ${why}`, 8000);
+      }
+      return done({ ...base, mode: 'failed', rebuildMs, curtain, reason: why });
+    }
+    this.swapRebuildMs.set(id, rebuildMs);
+    saveAircraftPreference(this.store, id);
+    // The address the reload would have gone to (no aircraft=, scenario=, resume=, ...): F5 resumes this flight in the
+    // new type, and no old type's parameter (a hover test's ap=1) comes back with it.
+    replaceUrl(aircraftSwitchUrl(location.href));
+    this.persist();
+    this.systems.ui.showToast([`Now flying the ${def.name}`, ...notes].join(' · '), 7000);
+    return done({ aircraft: id, mode: 'hot', rebuildMs, curtain, notes, phases });
+  }
+
+  /**
+   * The synchronous part of an aircraft switch (swapAircraft; the simulation is held): the physics first (it throws,
+   * leaving the old type intact, when the new one cannot be built), then every system built at boot from the type:
+   * the aircraft model (disposed and rebuilt, with the panel textures and the livery bake), the instrument panel, the
+   * cameras' eye point, the post pipeline's radius and cabin box, the input and sound profiles, the UI (HUD, hints,
+   * control widget, checklist, fixed panel, cockpit clicks, menu, key list, autopilot link), the R22 demonstrations,
+   * the Flight School's copilot, the cloud-shadow and floodlight patches. No 'reset' event: the radio, the traffic and
+   * the Career would take it for a new flight. Returns the physics' notes.
+   */
+  private rebuildForAircraft(def: AircraftDefinition, presentation: AircraftPresentation, phases: Record<string, number> = {}): string[] {
+    const { physics, ctx, systems: s } = this;
+    let t = performance.now();
+    const lap = (name: string): void => {
+      const now = performance.now();
+      phases[name] = Math.round(now - t);
+      t = now;
+    };
+    prebuildPropellers(def.powerplant);
+    lap('propellers');
+    const notes = physics.setAircraft(def, captureSwapState(physics));
+    lap('physics');
+    this.aircraftId = def.id;
+    ctx.aircraft = def;
+    ctx.presentation = presentation;
+    // The model: the fixed panel's hidden layers are given back to the old one before it goes (the frame loop hides
+    // the new one again), then a new one at the same pose.
+    this.airframeVisibility.setHidden(ctx.aircraftRoot, false);
+    s.aircraft.dispose();
+    applyPose(ctx.aircraftRoot, ctx.state.position, ctx.state.orientation);
+    ctx.aircraftRoot.updateMatrixWorld(true);
+    const aircraft = new AircraftVisual({ airframe: presentation.visual, panelDef: presentation.panel });
+    aircraft.init(ctx);
+    lap('model');
+    s.panel.dispose();
+    const panel = new InstrumentPanel({
+      def: presentation.panel,
+      systems: presentation.instrumentSystems,
+      pxRect: presentation.visual.cockpit.panel.pxRect,
+      anisotropy: ctx.renderer.capabilities.getMaxAnisotropy(),
+      gyrosSpunUp: ctx.state.engines.some((e) => e.running),
+    });
+    panel.reset(ctx.state);
+    aircraft.setCompassReading(panel.instruments.readings.compass);
+    aircraft.setPanelTexture(panel.texture);
+    aircraft.setPanelEmissiveTexture(panel.emissiveTexture);
+    let liveryBaked = false;
+    void aircraft.textureBake.finally(() => (liveryBaked = true));
+    this.liveryBaked = () => liveryBaked;
+    s.aircraft = aircraft;
+    s.panel = panel;
+    this.livePanel = panel;
+    lap('panel');
+    s.cameras.setAircraft({
+      pilotEye: { x: presentation.visual.cockpit.pilotEye[0], y: presentation.visual.cockpit.pilotEye[1], z: presentation.visual.cockpit.pilotEye[2] },
+      radius: def.geometry.bounds.radius,
+      fitSize: def.geometry.bounds.fitSize,
+      defaultPitchDeg: presentation.visual.cockpit.defaultPitchDeg,
+      defaultFovDeg: presentation.visual.cockpit.defaultFovDeg,
+      focus: presentation.visual.cockpit.focus,
+    });
+    this.post.setAircraftRadius(def.geometry.bounds.radius);
+    this.post.setCabinBox(presentation.visual.cockpit.box);
+    // Input and sound: the same instances (the closures handed out at boot stay good), the new type's profiles.
+    s.input.setProfile(def.input);
+    if (physics.stabilityAssist) physics.stabilityAssistOn = () => s.input.assists.stabilityAssist === true;
+    s.audio.setProfile(presentation.audio);
+    // The UI reads the R22 demonstrations and the autopilot link when it rebuilds its menu.
+    this.wireR22Demo(s.ui, s.input);
+    s.ui.autopilot = this.autopilotLink(def);
+    s.ui.changeAircraft([...keyBindingsFor(def.input), ...SHELL_BINDINGS, ...TRAINING_KEYS]);
+    s.ui.setPanelSource(panel);
+    lap('input, sound and UI');
+    this.training?.aircraftChanged();
+    this.cloudShadows.setAircraft(ctx.aircraftRoot);
+    this.cloudShadows.scan(ctx.scene);
+    aircraft.update(0, ctx);
+    this.post.resetTemporalHistory();
+    this.post.snapExposure();
+    this.lastFrame = -1;
+    lap('rest');
+    return notes;
+  }
+
+  /**
+   * Another aircraft by a reload (setAircraft's fallback; the UI has asked for confirmation): the flight is saved
+   * under this type's key, the choice stored, and the page reloaded without the parameters that would undo it.
+   */
+  private reloadIntoAircraft(id: AircraftId, opts: { open?: 'school' | 'career' } = {}): void {
     this.persist();
     this.careerStore?.flush();
     saveAircraftPreference(this.store, id);
@@ -1701,6 +1978,15 @@ export class Simulator {
         Object.assign(sim.weather, values);
         sim.ctx.events.emit('weatherChanged', {});
       },
+      /**
+       * Switch the aircraft as the menu does (commands.setAircraft), resolving when the flight goes on: 'hot' in place,
+       * or 'reload' (the page is going). See AircraftSwapResult.
+       */
+      swapAircraft: (id: AircraftId) => sim.swapAircraft(id),
+      /** The last aircraft switch, or null. */
+      get lastSwap() {
+        return sim.lastSwap;
+      },
       /** The Career (docs/career.md "Automation"), or null outside the present day. */
       career: sim.career ? careerAutomation(sim.career) : null,
       /** The panel GPS's direct-to target and the radios' tuning (for the Career's browser checks). */
@@ -1768,6 +2054,15 @@ function downloadText(fileName: string, text: string): void {
   a.download = fileName;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Put `href` in the address bar without a reload (history.replaceState); never throws. */
+function replaceUrl(href: string): void {
+  try {
+    if (href !== window.location.href) window.history.replaceState(window.history.state, '', href);
+  } catch {
+    /* a sandboxed page without history: the address stays */
+  }
 }
 
 /** Take one parameter out of the page's address without a reload (history.replaceState); never throws. */

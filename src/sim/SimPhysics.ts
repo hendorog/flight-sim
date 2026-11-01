@@ -23,8 +23,10 @@
 //     time that actually elapsed in the rendered state, which is what the subsystems should receive.
 //
 // THE AIRCRAFT
-//   One type for the life of the instance (SimPhysicsOptions.aircraft, default the Cessna 172S): its flight
-//   model, its scenarios and its scripted pilot. Everything goes through the AircraftFlightModel interface.
+//   The type given at construction (SimPhysicsOptions.aircraft, default the Cessna 172S): its flight model, its
+//   scenarios and its scripted pilot. Everything goes through the AircraftFlightModel interface. setAircraft swaps
+//   the type in place (sim/aircraftSwap.ts): a new flight model, autoflight and STAB ASSIST under the same instance,
+//   controls, render state, environment and clock, trimmed through resetTo and then given the old rigid-body state.
 
 import { setStartField } from './startField';
 import { resetRadios, selectCdi, selectMic, setCom, setNav } from '../instruments/dynamics/radios';
@@ -53,6 +55,7 @@ import { SNAPSHOT_SCHEMA, snapshotSystems, type FlightSnapshot } from './resume'
 import { buildScenario, type Scenario } from './scenarios';
 import type { StartSpec } from './starts';
 import { createWorldEnvironment } from './worldEnvironment';
+import { captureSwapState, swapScenario, SWAP_STILL_SPEED, type SwapState } from './aircraftSwap';
 import { sunDirectionNED } from '../core/world';
 import { reanchorStorms } from './weatherPresets';
 import { StormField } from '../physics/weather/stormField';
@@ -131,6 +134,32 @@ function copyInto<T extends object>(dst: T, src: T): T {
 }
 
 /**
+ * Make dst's keys and array lengths those of src (recursively): what copyInto leaves behind when the shape of the
+ * state changes (a type swap: `rotorcraft` on a helicopter's state, the second engine of a twin).
+ */
+function pruneTo(dst: object, src: object): void {
+  const d = dst as Record<string, unknown>;
+  const s = src as Record<string, unknown>;
+  if (Array.isArray(dst) && Array.isArray(src) && dst.length > src.length) dst.length = src.length;
+  for (const key of Object.keys(d)) {
+    if (!(key in s)) delete d[key];
+    else if (d[key] !== null && typeof d[key] === 'object' && s[key] !== null && typeof s[key] === 'object') pruneTo(d[key] as object, s[key] as object);
+  }
+}
+
+/** The scripted pilot of a type, as every SimPhysics builds it (the constructor and setAircraft). */
+function buildAutoflight(def: AircraftDefinition): Autoflight {
+  const autoflight = new Autoflight(def.sim.autoflight, def.reference, def.geometry.restHeight, { gains: def.autopilot, flaps: def.controls.flaps, rotorcraft: def.rotorcraft });
+  // The helicopter hold slows to a hover when engaged at low speed on a type that asks for it (the Bo 105).
+  if (autoflight.helicopter && def.sim.heliHoldSlowToHover) autoflight.helicopter.slowToHover = { ...def.sim.heliHoldSlowToHover };
+  // ... and holds the speed over the ground it was engaged at on a type that asks for it (the Bo 105).
+  if (autoflight.helicopter && def.sim.heliHoldGroundSpeed) autoflight.helicopter.groundSpeedTarget = true;
+  // ... and flies the type's own laws where it has them (the AH-56A: SimProfile.heliHold).
+  if (autoflight.helicopter && def.sim.heliHold) autoflight.helicopter.tuning = def.sim.heliHold;
+  return autoflight;
+}
+
+/**
  * Panel-light dimmer a flight starts with at night (sun more than 6 degrees below the horizon), when the
  * scenario's own setting is brighter (agent choice: the day setting, 0.6, floods the panel at ~3 lx; at night a
  * pilot turns the flood and the backlighting down to just readable to keep the eye dark-adapted for the view out).
@@ -139,15 +168,18 @@ export const NIGHT_PANEL_LIGHT = 0.2;
 const NIGHT_SUN_SIN = Math.sin((-6 * Math.PI) / 180);
 
 export class SimPhysics {
-  readonly fm: AircraftFlightModel;
-  /** The type flown (fm.definition). */
-  readonly definition: AircraftDefinition;
+  /** The flight model of the type flown (replaced by setAircraft; read it afresh, do not keep it). */
+  fm: AircraftFlightModel;
+  /** The type flown (fm.definition; replaced by setAircraft). */
+  definition: AircraftDefinition;
   readonly env: SimEnvironment;
   readonly controls: ControlInputs;
-  readonly autoflight: Autoflight;
+  /** The type's scripted pilot (replaced by setAircraft). */
+  autoflight: Autoflight;
   /** State for rendering: fm.state with interpolated position and attitude. Same object for the whole run. */
   readonly renderState: AircraftState;
-  readonly stepSize: number;
+  /** Full-rate step of the type flown, s (replaced by setAircraft). */
+  stepSize: number;
   scenario!: Scenario;
   /** Engage the autoflight on every reset (ap=1). */
   autoflightOnReset = false;
@@ -179,7 +211,7 @@ export class SimPhysics {
    * The STAB ASSIST sim aid (src/sim/rotorcraft/stabilityAssist.ts) of a type whose input profile has one (the Bo 105),
    * else null: no other type runs any of it. It acts in the physics step, after the autoflight and the copilot.
    */
-  readonly stabilityAssist: StabilityAssist | null;
+  stabilityAssist: StabilityAssist | null;
   /** Whether the STAB ASSIST is switched on. The Simulator links it to the input module's Shift+A toggle; headless runs
    *  get the type's default. */
   stabilityAssistOn: () => boolean;
@@ -206,6 +238,9 @@ export class SimPhysics {
   /** Control-gyro configuration and the half-P hook, added to every InitialConditions this passes to fm.reset. */
   private readonly rotorcraftConfig: 'amcs' | 'ics' | undefined;
   private readonly forceHalfPHop: boolean;
+  /** The type's own STAB ASSIST default the constructor (or setAircraft) installed as stabilityAssistOn; a swap
+   *  replaces stabilityAssistOn only while it is still this one (the Simulator links its own, type-independent). */
+  private defaultAssistOn: () => boolean;
   constructor(opts: SimPhysicsOptions) {
     this.rotorcraftConfig = opts.rotorcraftConfig;
     this.forceHalfPHop = opts.forceHalfPHop === true;
@@ -216,19 +251,13 @@ export class SimPhysics {
     this.dryEnv = Object.assign(Object.create(this.env) as Environment, { moisture: undefined });
     this.fm = opts.aircraft ? createFlightModelFor(opts.aircraft) : createFlightModel();
     const def = (this.definition = this.fm.definition);
-    this.autoflight = new Autoflight(def.sim.autoflight, def.reference, def.geometry.restHeight, { gains: def.autopilot, flaps: def.controls.flaps, rotorcraft: def.rotorcraft });
-    // The helicopter hold slows to a hover when engaged at low speed on a type that asks for it (the Bo 105).
-    if (this.autoflight.helicopter && def.sim.heliHoldSlowToHover) this.autoflight.helicopter.slowToHover = { ...def.sim.heliHoldSlowToHover };
-    // ... and holds the speed over the ground it was engaged at on a type that asks for it (the Bo 105).
-    if (this.autoflight.helicopter && def.sim.heliHoldGroundSpeed) this.autoflight.helicopter.groundSpeedTarget = true;
-    // ... and flies the type's own laws where it has them (the AH-56A: SimProfile.heliHold).
-    if (this.autoflight.helicopter && def.sim.heliHold) this.autoflight.helicopter.tuning = def.sim.heliHold;
+    this.autoflight = buildAutoflight(def);
     this.stepSize = 1 / this.fm.physicsRate;
     this.h = this.stepSize;
     this.renderState = copyInto({} as AircraftState, this.fm.state);
     const assist = def.input.stabilityAssist;
     this.stabilityAssist = assist ? new StabilityAssist(assist) : null;
-    this.stabilityAssistOn = () => assist?.default === true;
+    this.stabilityAssistOn = this.defaultAssistOn = () => assist?.default === true;
   }
 
   get state(): AircraftState {
@@ -529,6 +558,132 @@ export class SimPhysics {
     this.alpha = 1;
     this.publishRenderState();
     return sc;
+  }
+
+  /**
+   * Swap the type flown in place (the aircraft hot swap, sim/aircraftSwap.ts), keeping the flight. The new type's
+   * flight model, autoflight and STAB ASSIST are built first; then resetTo(swapScenario(state, def, env)) trims it
+   * at the old airspeed (clamped into its envelope) and flight path with its 'typical' payload, the old fuel
+   * fraction and the switch preset of the phase; then the old rigid-body state is put back exactly (setKinematics,
+   * as restore() does): in the air position, attitude, velocity and body rates; on the ground the new type stands on
+   * its own wheels or skids at the old north/east and heading, given the old ground velocity and yaw rate (and, from
+   * one aeroplane to another, the old throttle and brakes). The clock continues from the old one (no storm
+   * re-anchoring; the hail damage starts afresh with the new airframe). The same objects stay: `controls` (its
+   * content becomes the new type's, keys the type lacks deleted, the altimeter setting, heading bug, OBS and panel
+   * dimmer kept), `renderState` (stale keys and array entries removed), `env`, `events`, the weather, `hailDamage`;
+   * the COM/NAV radios live in their own module and are untouched. The autoflight is re-engaged in the air (holding
+   * what it finds) when it was engaged before.
+   *
+   * `state`: the flight to keep, default this one's now (captureSwapState). Returns the notes for the pilot (what was
+   * clamped). Throws when the new type cannot be built or trimmed, leaving the old aircraft flying as it was.
+   */
+  setAircraft(def: AircraftDefinition, state: SwapState = captureSwapState(this)): string[] {
+    // Everything of the new type is built before anything of the old one is touched.
+    const fm = createFlightModelFor(def);
+    const autoflight = buildAutoflight(def);
+    const assist = def.input.stabilityAssist;
+    const stabilityAssist = assist ? new StabilityAssist(assist) : null;
+    const { scenario: sc, notes } = swapScenario(state, def, this.env);
+    const position = { ...state.position };
+    if (!sc.ic.onGround) {
+      // Never below the new type's own gear at rest (a helicopter hovering low would put an aeroplane's wheels in the ground).
+      const lowest = -(this.env.groundElevation(position.x, position.y) + def.geometry.restHeight);
+      if (position.z > lowest) {
+        position.z = sc.ic.position.z = lowest;
+        notes.push(`raised to the ${def.shortName}'s wheel height`);
+      }
+    }
+    const old = {
+      fm: this.fm, definition: this.definition, autoflight: this.autoflight, stabilityAssist: this.stabilityAssist,
+      stepSize: this.stepSize, h: this.h, scenario: this.scenario, assistOn: this.stabilityAssistOn,
+      defaultAssistOn: this.defaultAssistOn, steps: this.steps, controls: cloneControls(this.controls),
+      damage: this.hailDamage.capture(),
+    };
+    this.fm = fm;
+    this.definition = def;
+    this.autoflight = autoflight;
+    this.stabilityAssist = stabilityAssist;
+    this.stepSize = 1 / fm.physicsRate;
+    this.h = this.stepSize;
+    const assistOn = (): boolean => assist?.default === true;
+    if (this.stabilityAssistOn === this.defaultAssistOn) this.stabilityAssistOn = assistOn;
+    this.defaultAssistOn = assistOn;
+    try {
+      try {
+        this.resetTo(sc);
+      } catch {
+        // As restore(): a trim that does not solve is made level at the type's fallback speed.
+        this.resetTo({ ...sc, ic: { ...sc.ic, flightPathAngle: 0, airspeed: def.sim.scenario.restoreFallbackTas } });
+      }
+    } catch (err) {
+      // Back to the old aircraft, which nothing above has stepped or reset.
+      this.fm = old.fm;
+      this.definition = old.definition;
+      this.autoflight = old.autoflight;
+      this.stabilityAssist = old.stabilityAssist;
+      this.stepSize = old.stepSize;
+      this.h = old.h;
+      this.scenario = old.scenario;
+      this.stabilityAssistOn = old.assistOn;
+      this.defaultAssistOn = old.defaultAssistOn;
+      this.steps = old.steps;
+      pruneTo(this.controls, old.controls);
+      copyControls(this.controls, old.controls);
+      this.hailDamage.restore(old.damage);
+      this.finishSwap();
+      throw err;
+    }
+    const c = this.controls;
+    // The controls are the new type's: keys it does not have (a helicopter's collective and clutch, a primer) go.
+    const keys = new Set([...Object.keys(fm.trimControls), ...Object.keys(defaultControls(def)), ...Object.keys(sc.controls ?? {})]);
+    for (const k of Object.keys(c)) if (!keys.has(k)) delete (c as unknown as Record<string, unknown>)[k];
+    // ... but the knobs are the pilot's.
+    c.kollsmanHpa = state.knobs.kollsmanHpa;
+    c.headingBugDeg = state.knobs.headingBugDeg;
+    c.obsDeg = state.knobs.obsDeg;
+    c.lights.panel = state.knobs.panelLight;
+    // The old clock (the wind field is a function of it; its advection restarts as restore() restarts it).
+    fm.setClock(state.time);
+    (this.env as Partial<SimEnvironment>).windField?.reset();
+    const st = fm.state;
+    const moving = state.groundSpeed > SWAP_STILL_SPEED;
+    if (!sc.ic.onGround) {
+      fm.setKinematics({ position, orientation: state.orientation, velocity: state.velocity, angularVelocity: state.angularVelocity });
+    } else if (moving) {
+      const v = state.velocity;
+      fm.setKinematics({ position: { ...st.position }, orientation: { ...st.orientation }, velocity: { x: v.x, y: v.y, z: 0 },
+        angularVelocity: { x: 0, y: 0, z: state.angularVelocity.z } });
+    }
+    st.time = state.time;
+    if (sc.ic.onGround && !def.rotorcraft) {
+      if (!state.rotorcraft) {
+        // Aeroplane to aeroplane: the pilot's hand stays on the throttle and the toes on the brakes.
+        if (state.engineRunning) c.throttle = state.throttle;
+        c.brakeLeft = state.brakeLeft;
+        c.brakeRight = state.brakeRight;
+        c.parkingBrake = state.parkingBrake && !moving;
+      } else c.parkingBrake = !moving;
+    }
+    this.steps = old.steps;
+    this.autoflight.disengage();
+    if (state.autoflightEngaged && !sc.ic.onGround) this.setAutoflight(true);
+    this.stabilityAssist?.newFlight();
+    this.finishSwap();
+    return notes;
+  }
+
+  /** The bookkeeping after setAircraft put a flight model in place (the new one, or the old one back). */
+  private finishSwap(): void {
+    this.syncDamageClock();
+    this.accumulator = 0;
+    this.lastAdvance = 0;
+    this.budgetLimited = false;
+    this.wasCrashed = this.fm.state.crashed;
+    this.gearEvents.sync(this.fm.state.gear);
+    this.snapshot();
+    this.alpha = 1;
+    this.publishRenderState();
+    pruneTo(this.renderState, this.fm.state);
   }
 
   /** Engage (true) or disengage the autoflight; engaging mid-flight holds the current heading/altitude/speed. */
