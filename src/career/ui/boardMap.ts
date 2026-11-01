@@ -1,6 +1,7 @@
 // The job board's map (docs/career.md "Job board"): north up, the nine fields as dots with their codes, the field
 // the aircraft stands at ringed, the highlighted offer's route (a line with an arrow to the destination, or a
-// scenic loop through its numbered turning points), the job's wind and a scale bar in NM. Drawn as an inline SVG
+// scenic loop through its numbered turning points; a medevac's route out to its site, an "H" in a red ring, and on to
+// the hospital field), the job's wind and a scale bar in NM. Drawn as an inline SVG
 // string, so it scales crisply with the card and renders in node tests; the projection is exported pure
 // (mapBounds, project) so the tests can prove it is north-up and that every point lands inside the frame.
 
@@ -91,13 +92,16 @@ export function boardMapSvg(fields: readonly Airfield[], here: string | null, of
   const origin = offer ? fields.find((f) => f.code === offer.origin) : undefined;
   if (offer && origin) {
     if (wps.length > 0) {
-      const pts = [origin, ...wps, origin].map((p) => at(p.north, p.east));
+      const destCode = offer.destination.kind === 'field' ? offer.destination.code : null;
+      const end = fields.find((f) => f.code === destCode) ?? origin;
+      const pts = [origin, ...wps, end].map((p) => at(p.north, p.east));
       parts.push(`<polyline class="cr-map-route" points="${pts.map(([x, y]) => `${f1(x)},${f1(y)}`).join(' ')}"/>`);
       wps.forEach((w, i) => {
         const [x, y] = at(w.north, w.east);
         const r = Math.max(5, w.radiusM / s);
         parts.push(`<circle class="cr-map-wpring" cx="${f1(x)}" cy="${f1(y)}" r="${f1(r)}"/>`);
-        parts.push(`<circle class="cr-map-wp" cx="${f1(x)}" cy="${f1(y)}" r="8"/><text class="cr-map-wpnum" x="${f1(x)}" y="${f1(y + 3.5)}">${i + 1}</text>`);
+        const land = w.landS !== undefined ? ' land' : '';
+        parts.push(`<circle class="cr-map-wp${land}" cx="${f1(x)}" cy="${f1(y)}" r="8"/><text class="cr-map-wpnum${land}" x="${f1(x)}" y="${f1(y + 3.5)}">${land ? 'H' : i + 1}</text>`);
       });
     } else if (offer.destination.kind === 'field') {
       const destCode = offer.destination.code;

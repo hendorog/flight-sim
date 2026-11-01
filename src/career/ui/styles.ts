@@ -164,6 +164,8 @@ export const CAREER_CSS = /* css */ `
 #fsui .cr-map-wp { fill: #0b1118; stroke: #7be3b0; stroke-width: 1.6; }
 #fsui .cr-map-wpring { fill: rgba(123,227,176,.08); stroke: rgba(123,227,176,.35); stroke-dasharray: 3 3; }
 #fsui .cr-map-wpnum { fill: #7be3b0; font: 750 10px Inter, system-ui, sans-serif; text-anchor: middle; }
+#fsui .cr-map-wp.land { stroke: #ff6b5b; }
+#fsui .cr-map-wpnum.land { fill: #ff6b5b; }
 #fsui .cr-map-north path { fill: var(--fg-dim); }
 #fsui .cr-map-north text { fill: var(--fg-dim); font: 700 10px Inter, system-ui, sans-serif; text-anchor: middle; }
 #fsui .cr-map-scale path { fill: none; stroke: var(--fg-dim); stroke-width: 1.5; }

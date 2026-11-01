@@ -5,6 +5,10 @@
 // the passengers' comfort and, for helicopters near the stand, the distance to the landing spot. Abandon shows only
 // when the CareerSystem says it may be used (on the ground at a field).
 //
+// On a landmark scenic (wave 4, src/career/landmarks.ts) each turning point is named after its landmark, so the
+// waypoint line reads "2 of 3 · Valley Lake · 4.1 NM · 120°" or "1 of 2 · River bend 4 NM south-west of Elmley ·
+// ..."; the name arrives as the model's target (runtime/strip.ts takes the turning point's name) and is shown whole.
+//
 // The text of every chip is a pure function exported for the tests. The DOM is touched only when a text changes
 // (the model arrives every frame).
 
@@ -27,7 +31,11 @@ export const TIME_AMBER_MIN = 5;
 /** A chip's colour: in hand, getting tight, past the limit, or neutral. */
 export type ChipTone = 'green' | 'amber' | 'red' | '';
 
-/** The target line: "KHOL Holthurst · 12.4 NM · 087°", or "2 of 3 · Point B, 7 NM north-east · 4.1 NM · 120°". */
+/**
+ * The target line: "KHOL Holthurst · 12.4 NM · 087°"; on a scenic flight the turning point's place in the route and
+ * its name, a landmark's ("2 of 3 · Valley Lake · 4.1 NM · 120°") or a plain point's ("2 of 3 · Point B, 7 NM
+ * north-east · 4.1 NM · 120°").
+ */
 export function stripTargetText(m: JobStripModel): string {
   const wp = m.waypointIndex !== null && m.waypointsTotal ? `${m.waypointIndex + 1} of ${m.waypointsTotal} · ` : '';
   return `${wp}${m.target} · ${nm(m.distanceNm)} · ${bearing(m.bearingDeg)}`;

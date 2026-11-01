@@ -28,6 +28,11 @@
 // detectors; any other reset ends the job 'abandoned'). The same handlers are public (onTouchdown, onCrash,
 // onReset) for a host that delivers them itself. Every ending and stop is also passed to `onEvent`.
 //
+// LANDING POINTS (4a). A waypoint with `landS` (a medevac's off-field site) is not overflown: it counts once the job
+// has flown and the aircraft has stood on the ground within its radius for landS seconds, engines running or not
+// (landHoldS; carried in the state). Overflight skips it, and a shutdown there is never an outlanding (the completion
+// tracker is given these points as its holds).
+//
 // STATE. exportState() is plain JSON (the resume block's `monitor`); restoreState() takes it back, or returns
 // false for anything malformed (the caller then keeps a fresh monitor built with the store's elapsedS). The
 // detectors restart on a restore, as they do on any placement: resume on the ground or in cruise, not mid-flare.
@@ -150,6 +155,13 @@ export interface JobMonitorState {
   nextWaypoint: number;
   waypointsDone: number;
   lastKnown: { north: number; east: number; onGround: boolean };
+  /** (4a) On the ground at the next waypoint when it is a landing point, s (absent in an older state: 0). */
+  landHoldS?: number;
+}
+
+/** The offer's helicopter landing points (waypoints with landS), as the completion tracker's holds. */
+export function landingHolds(offer: JobOffer): { north: number; east: number; radiusM: number }[] {
+  return (offer.waypoints ?? []).filter((w) => w.landS !== undefined).map((w) => ({ north: w.north, east: w.east, radiusM: w.radiusM }));
 }
 
 const PHASES: readonly JobPhase[] = ['dispatched', 'ground', 'airborne', 'landed', 'stopped', 'done'];
@@ -227,6 +239,8 @@ export class JobMonitor {
   private landing: LandingSummary | null = null;
   private nextWaypoint = 0;
   private waypointsDone = 0;
+  /** On the ground at the next waypoint (a landing point), s. */
+  private landHoldS = 0;
   private lastKnown = { north: 0, east: 0, onGround: true };
   private _ended: JobFlightReport | null = null;
   /** The state of the call in progress (touchdown handler or frame), for the bus handlers. */
@@ -249,7 +263,7 @@ export class JobMonitor {
     this._everAirborne = o.everAirborne ?? false;
     this._stoppedAt = this._phase === 'stopped' ? o.stoppedAt ?? null : null;
     this.comfort = new ComfortMeter(this.perf.pressurised);
-    this.completion = new CompletionTracker(o.offer.destination, o.fields);
+    this.completion = new CompletionTracker(o.offer.destination, o.fields, landingHolds(o.offer));
     this.buildDetectors();
   }
 
@@ -396,6 +410,7 @@ export class JobMonitor {
         if (warn && s.altitudeAGL / FT > 50) this.stallWarningS += h;
         this.waypointCheck(s);
       }
+      this.landCheck(s, h);
       event = this.phaseStep(s, src.controls, h);
     }
     this.bus.clear();
@@ -409,7 +424,10 @@ export class JobMonitor {
     if (!src) return null;
     const s = src.state;
     const wps = this.offer.waypoints ?? [];
-    const next = this.nextWaypoint < wps.length ? { name: wps[this.nextWaypoint].name, index: this.nextWaypoint, total: wps.length } : null;
+    const nw = this.nextWaypoint < wps.length ? wps[this.nextWaypoint] : null;
+    const next = nw
+      ? { name: nw.name, index: this.nextWaypoint, total: wps.length, ...(nw.landS !== undefined ? { land: { radiusM: nw.radiusM, holdS: nw.landS } } : {}) }
+      : null;
     const destLabel = this.destField ? `${this.destField.code} ${this.destField.name}` : this.offer.destination.kind === 'site' ? this.offer.destination.name : '';
     const hint = jobHint({
       phase: this._phase,
@@ -491,6 +509,7 @@ export class JobMonitor {
       nextWaypoint: this.nextWaypoint,
       waypointsDone: this.waypointsDone,
       lastKnown: { ...this.lastKnown },
+      landHoldS: this.landHoldS,
     };
   }
 
@@ -507,6 +526,7 @@ export class JobMonitor {
     if (!(o.stoppedAt === null || typeof o.stoppedAt === 'string')) return false;
     if (![o.elapsedBaseS, o.simT, o.airS, o.groundS, o.overspeedS, o.stallWarningS, o.nextWaypoint, o.waypointsDone].every(nonNeg)) return false;
     if (!fin(o.maxG) || !fin(o.minG)) return false;
+    if (o.landHoldS !== undefined && !nonNeg(o.landHoldS)) return false;
     const timer = validTimer(o.timer);
     if (!timer) return false;
     const lk = o.lastKnown as { north?: unknown; east?: unknown; onGround?: unknown } | null;
@@ -514,7 +534,7 @@ export class JobMonitor {
     const landing = o.landing === null ? null : validLanding(o.landing);
     if (landing === undefined) return false;
     const comfort = new ComfortMeter(this.perf.pressurised);
-    const completion = new CompletionTracker(this.offer.destination, this.fields);
+    const completion = new CompletionTracker(this.offer.destination, this.fields, landingHolds(this.offer));
     if (!comfort.restoreState(o.comfort) || !completion.restoreState(o.completion)) return false;
 
     this._phase = o.phase as JobPhase;
@@ -534,6 +554,7 @@ export class JobMonitor {
     this.landing = landing;
     this.nextWaypoint = o.nextWaypoint as number;
     this.waypointsDone = o.waypointsDone as number;
+    this.landHoldS = (o.landHoldS as number | undefined) ?? 0;
     this.lastKnown = { north: lk.north, east: lk.east, onGround: lk.onGround };
     this.buildDetectors();
     return true;
@@ -670,12 +691,31 @@ export class JobMonitor {
     const agl = s.altitudeAGL / FT;
     for (let j = this.nextWaypoint; j < wps.length; j++) {
       const w = wps[j];
+      if (w.landS !== undefined) continue;
       if (Math.hypot(s.position.x - w.north, s.position.y - w.east) > w.radiusM) continue;
       if (w.maxAglFt !== undefined && agl > w.maxAglFt) continue;
       this.waypointsDone++;
       this.nextWaypoint = j + 1;
       return;
     }
+  }
+
+  /** A landing point next: on the ground within its radius after flying for landS seconds counts it. */
+  private landCheck(s: Readonly<AircraftState>, h: number): void {
+    const w = this.offer.waypoints?.[this.nextWaypoint];
+    if (!w || w.landS === undefined) {
+      this.landHoldS = 0;
+      return;
+    }
+    if (!this._everAirborne || !s.onGround || Math.hypot(s.position.x - w.north, s.position.y - w.east) > w.radiusM) {
+      this.landHoldS = 0;
+      return;
+    }
+    this.landHoldS += h;
+    if (!reached(this.landHoldS, w.landS)) return;
+    this.landHoldS = 0;
+    this.waypointsDone++;
+    this.nextWaypoint++;
   }
 
   private end(outcome: JobOutcome, atField: string | null, crashReason?: string, area?: ReturnType<typeof fieldArea>): JobFlightReport {

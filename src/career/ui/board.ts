@@ -15,8 +15,10 @@ import { badge, bareKey, button, departuresClosed, modal, offerStatus, selectedA
 /** Memo key of the highlighted offer id. */
 const SEL = 'board.sel';
 
-/** The destination's code (or a site's name) of an offer. */
+/** The destination's code (or a site's name) of an offer; a medevac goes by its site ("KELM → site → KFBL"). */
 export function destText(o: JobOffer): string {
+  const destCode = o.destination.kind === 'field' ? o.destination.code : null;
+  if (o.waypoints?.some((w) => w.landS !== undefined)) return `${o.origin} → site → ${destCode ?? o.destination.kind}`;
   if (o.waypoints && o.waypoints.length > 0) return `${o.origin} loop · ${o.waypoints.length} points`;
   return `${o.origin} → ${o.destination.kind === 'field' ? o.destination.code : o.destination.name}`;
 }
@@ -118,11 +120,15 @@ export function renderBoard(parent: HTMLElement, ctx: CareerCtx): CareerPageView
       el('b', 'num', d, v);
     };
     const dest = o.destination.kind === 'field' ? model.fields.find((f) => f.code === (o.destination as { code: string }).code) : null;
-    fact('To', o.waypoints?.length ? 'Back here' : dest ? `${dest.name}` : destText(o));
+    const loop = !!o.waypoints?.length && o.destination.kind === 'field' && o.destination.code === o.origin;
+    fact('To', loop ? 'Back here' : dest ? `${dest.name}` : destText(o));
     fact('Pay', usd(o.pay));
     fact('Least class', classShort(o.minClass));
     fact('Suits', typeName(o.refType));
-    if (o.waypoints?.length) el('div', 'cr-detail-wps', detail, o.waypoints.map((w, i) => `${i + 1}. ${w.name}`).join(' · '));
+    if (o.waypoints?.length) {
+      const pts = o.waypoints.map((w, i) => (w.landS !== undefined ? `Land at ${w.name} (${w.landS} s on the ground)` : `${i + 1}. ${w.name}`));
+      el('div', 'cr-detail-wps', detail, pts.join(' · '));
+    }
   }
   highlight(sel);
 

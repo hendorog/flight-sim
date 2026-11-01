@@ -199,7 +199,10 @@ export function settleJob(save: CareerSave, job: ActiveJob, report: JobFlightRep
     }
     case 'routeMissed':
       rep('No turning point overflown', R.routeMissed);
-      notes.safety = 'None of the turning points was overflown: the client did not get the flight.';
+      // A medevac (4a: its pickup a landing point, Waypoint.landS) that never landed at the site.
+      notes.safety = offer.waypoints?.some((w) => w.landS !== undefined)
+        ? 'The helicopter never landed at the site: the patient was not picked up.'
+        : 'None of the turning points was overflown: the client did not get the flight.';
       aircraftAt = report.atField ?? offer.origin;
       feePlace = report.atField ?? offer.origin;
       break;

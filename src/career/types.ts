@@ -201,6 +201,12 @@ export interface Waypoint {
   radiusM: number;
   /** Most height above ground to count (a scenic flight shows the passengers the landmark), ft. Absent: any. */
   maxAglFt?: number;
+  /**
+   * (contract addition, 4a) A helicopter landing point (a medevac's off-field site), s: it counts once the aircraft
+   * has stood on the ground within radiusM for this long after flying (engines running or not: loading), never by
+   * overflight. Absent: an overflown turning point.
+   */
+  landS?: number;
 }
 
 /**

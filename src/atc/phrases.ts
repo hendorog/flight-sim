@@ -1,5 +1,6 @@
 // Radio phraseology (docs/atc.md): how numbers, callsigns, runways, winds and pressures are written in captions and
 // spoken by the synthesiser, by the authority the lessons fly under (FAA or EASA). Pure: strings in, strings out.
+// A Career company callsign ("Fable 12", docs/career.md "Integration") is formed here too (companyCallsign).
 
 export type Authority = 'faa' | 'easa';
 
@@ -143,4 +144,36 @@ export function callsign(registration: string, icaoType: string, a: Authority): 
     full: { text: written, speak: spell(reg) },
     short: { text: `${reg[0]}-${reg.slice(-2)}`, speak: spell(shortReg) },
   };
+}
+
+const TEENS = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+/** Two digits in group form ('12' -> 'twelve', '40' -> 'forty', '05' -> 'zero five'). */
+function pairWords(p: string): string {
+  if (p.length === 1) return DIGITS[+p];
+  if (p[0] === '0') return spell(p);
+  const n = +p;
+  if (n < 20) return TEENS[n - 10];
+  return p[1] === '0' ? TENS[+p[0]] : `${TENS[+p[0]]}-${p[1] === '9' ? 'nine' : DIGITS[+p[1]]}`;
+}
+
+/** A flight number in the FAA's group form: '12' twelve, '123' one twenty-three, '1234' twelve thirty-four. */
+function groupForm(n: string): string {
+  if (n.length <= 2) return pairWords(n);
+  if (n.length === 3) return `${spell(n[0])} ${pairWords(n.slice(1))}`;
+  if (n.length === 4) return `${pairWords(n.slice(0, 2))} ${pairWords(n.slice(2))}`;
+  return spell(n);
+}
+
+/**
+ * A company callsign ('Fable 12': the telephony word and the flight number). EASA speaks the number digit by digit
+ * ('Fable one two'), the FAA in group form ('Fable twelve'). A company callsign is never abbreviated, under either
+ * authority: the short form is the full one. Without a trailing number the words are said as they stand.
+ */
+export function companyCallsign(cs: string, a: Authority): Callsign {
+  const words = cs.trim().replace(/\s+/g, ' ');
+  const m = /^(.*?)\s*(\d+)$/.exec(words);
+  const p = m ? { text: words, speak: `${m[1]} ${a === 'faa' ? groupForm(m[2]) : spell(m[2])}`.trim() } : both(words);
+  return { full: p, short: p };
 }

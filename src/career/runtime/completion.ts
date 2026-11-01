@@ -11,7 +11,9 @@
 // frame, or on its apron: src/career/geo.ts fieldArea) completes the job; inside another field stops it there (a
 // precautionary stop, held until Continue or Give up); at no field for 10 s (engines off, stopped) is an
 // outlanding. A helicopter flying to a site (wave 4) completes that leg on the ground within 60 m of the spot for
-// 30 s, engine running or not (load or unload, idle allowed).
+// 30 s, engine running or not (load or unload, idle allowed). Shut down at such a spot, or at a landing point on the
+// way (a medevac's site, Waypoint.landS: the `holds` given), is never an outlanding: the hold, not the shutdown,
+// decides there (wave 4, 4a).
 //
 // Durations are sums of frame times compared with an allowance (as the school's detectors), so a 0.25 s frame and
 // twenty 0.0125 s frames reach the same decision at the same time. Pure state (exportState / restoreState).
@@ -66,7 +68,15 @@ export function shutDown(x: Pick<CompletionInput, 'onGround' | 'gsMs' | 'engines
 export class CompletionTracker {
   private s: CompletionState = { stillS: 0, brakeS: 0, outS: 0, siteS: 0 };
 
-  constructor(private readonly destination: JobPlace, private readonly fields: readonly Airfield[]) {}
+  /**
+   * `destination`: the job's end; `fields`: the world's airfields; `holds`: helicopter landing points on the way
+   * (NED m, radius m) where a shutdown is not an outlanding (4a: the offer's waypoints with landS).
+   */
+  constructor(
+    private readonly destination: JobPlace,
+    private readonly fields: readonly Airfield[],
+    private readonly holds: readonly { north: number; east: number; radiusM: number }[] = [],
+  ) {}
 
   /** One frame of `dt` sim seconds; a decision on the frame it is reached, else null. */
   update(x: CompletionInput, dt: number): CompletionDecision | null {
@@ -82,7 +92,10 @@ export class CompletionTracker {
       if (x.onGround && Math.hypot(x.north - dest.north, x.east - dest.east) <= R.siteRadiusM) {
         s.siteS += dt;
         if (reached(s.siteS, R.siteHoldS)) return { kind: 'completed', field: null, area: 'site' };
-      } else s.siteS = 0;
+        s.stillS = s.brakeS = s.outS = 0;
+        return null;
+      }
+      s.siteS = 0;
     }
     if (!shutDown(x)) {
       s.stillS = s.brakeS = s.outS = 0;
@@ -94,6 +107,10 @@ export class CompletionTracker {
     const destArea = destField ? fieldArea(destField, x.north, x.east) : null;
     const at = destField && destArea ? { field: destField, area: destArea } : fieldAt(x.north, x.east, this.fields);
     if (!at) {
+      if (this.holds.some((h) => Math.hypot(x.north - h.north, x.east - h.east) <= h.radiusM)) {
+        s.outS = 0;
+        return null;
+      }
       s.outS += dt;
       return reached(s.outS, R.outlandS) ? { kind: 'outlanded' } : null;
     }

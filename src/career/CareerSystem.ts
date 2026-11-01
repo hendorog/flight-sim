@@ -36,8 +36,14 @@
 // never at the stop itself: a Give up settles 'diverted' and the settlement charges that field's fee, so it is
 // paid once either way. A refuel adds the stop's fuel price (grass and fuel-truck surcharges) to `charges`.
 //
-// Node-safe apart from the pages (CareerUi, built only with a layer); imports no aircraft module: the booted type's
-// definition is the shell's.
+// SITES (wave 4, 4a). A medevac's pickup is a helicopter landing point on the way (a waypoint with landS, src/career/
+// sites.ts): the monitor counts it once the helicopter has stood within 60 m of it for 30 s, and the job then flies on
+// to the hospital field. While that site is the job's next point a coloured smoke flare burns there
+// (render/smokeMarker.ts, added once through shell.addToScene, drifting with the job's surface wind and lit by the
+// frame's ctx.sky); at every other moment, and with no job, it is hidden.
+//
+// Node-safe apart from the pages (CareerUi, built only with a layer) and the smoke marker (three.js objects, never
+// drawn headless: no addToScene, no marker); imports no aircraft module: the booted type's definition is the shell's.
 
 import type { AircraftDefinition } from '../aircraft/types';
 import type { EventBus, SimContext, Subsystem } from '../core/context';
@@ -53,6 +59,7 @@ import { applyWeatherPreset, reanchorStorms, restoreWeather, weatherPresetById, 
 import type { AuthorityId } from '../training/types';
 import type { CrashAction } from '../ui/overlays';
 import { airfields, HOME_AIRFIELD, type Airfield } from '../world/airfields';
+import { terrainHeight } from '../world/terrain/heightfield';
 import { worldSeed } from '../world/worldSeed';
 import { validateCareerBlock } from './block';
 import { normaliseCallsign } from './create';
@@ -68,6 +75,7 @@ import {
   seasonDayOfYear, sellAircraft, type ProgressionResult,
 } from './progression';
 import { blankReport, fuelOnBoardKg, JobMonitor, monitorAircraftOf, type JobMonitorEvent } from './runtime/monitor';
+import { SmokeMarker } from './render/smokeMarker';
 import { careerExportFileName, type CareerStore } from './store';
 import {
   OCCUPANT_KG, type ActiveJob, type CareerAircraftId, type CareerBootPlan, type CareerCommand, type CareerMenuLink,
@@ -167,6 +175,10 @@ export class CareerSystem implements Subsystem {
   private playerWeatherTime: number | null = null;
   private boardCache: { key: string; offers: JobOffer[] } | null = null;
   private plan: CareerBootPlan | null = null;
+  /** The site's smoke flare (made on the first site job when the shell can add to the scene). */
+  private smoke: SmokeMarker | null = null;
+  /** Where the smoke is placed ("north,east"), so a new site re-places it. */
+  private smokeAt: string | null = null;
 
   /** The Escape menu's link (MenuHost.career). */
   readonly menuLink: CareerMenuLink = {
@@ -206,6 +218,11 @@ export class CareerSystem implements Subsystem {
   /** The live job monitor (null when no job is being watched). */
   get jobMonitor(): JobMonitor | null {
     return this.monitor;
+  }
+
+  /** The site's smoke marker (null until a site job has needed one with a scene to add it to). */
+  get smokeMarker(): SmokeMarker | null {
+    return this.smoke;
   }
 
   /** The boot plan afterBoot was given (null before). */
@@ -355,8 +372,16 @@ export class CareerSystem implements Subsystem {
     this.refresh();
   }
 
-  /** One frame: the monitor on the frame's simulated time, the strip, the save every CAREER_SYNC_S. */
-  update(): void {
+  /** One frame: the monitor on the frame's simulated time, the strip, the site's smoke, the save every CAREER_SYNC_S. */
+  update(_dt?: number, ctx?: SimContext): void {
+    try {
+      this.stepJob();
+    } finally {
+      this.updateSmoke(ctx);
+    }
+  }
+
+  private stepJob(): void {
     const m = this.monitor;
     const job = this.save?.active;
     if (!m || !job || this.placing) {
@@ -383,6 +408,39 @@ export class CareerSystem implements Subsystem {
     this.detachMonitor();
     this.ui?.dispose();
     this.ui = null;
+    this.smoke?.dispose();
+    this.smoke = null;
+  }
+
+  /** The landing site the watched job flies to next (a waypoint with landS), or null. */
+  private nextSite(): { north: number; east: number } | null {
+    const m = this.monitor;
+    const j = this.save?.active;
+    if (!m || !j || this.placing || m.phase === 'done' || m.ended) return null;
+    const w = m.offer.waypoints?.[m.waypoints.next];
+    return w && w.landS !== undefined ? w : null;
+  }
+
+  /** The smoke flare: burning at the next landing site while a job flies to it, else hidden (see the header). */
+  private updateSmoke(ctx?: SimContext): void {
+    const site = this.nextSite();
+    if (!site) {
+      if (this.smoke) this.smoke.visible = false;
+      return;
+    }
+    if (!this.smoke) {
+      if (!this.shell.addToScene) return;
+      this.smoke = new SmokeMarker();
+      this.shell.addToScene(this.smoke.object);
+    }
+    const at = `${site.north},${site.east}`;
+    if (this.smokeAt !== at || !this.smoke.visible) {
+      this.smoke.place(site.north, site.east, terrainHeight(site.north, site.east));
+      this.smokeAt = at;
+    }
+    this.smoke.visible = true;
+    const w = this.shell.weather;
+    this.smoke.update(Math.max(0, this.shell.frameSimDt() || 0), w.windDirectionDeg, w.windSpeedKt, ctx?.sky ?? null);
   }
 
   /** The job's state from the monitor into the save (`now`: saved at once, else debounced). */

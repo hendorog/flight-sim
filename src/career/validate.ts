@@ -83,7 +83,7 @@ const CONTRACT_FIELDS_COVERED: readonly true[] = [
     | 'payload' | 'payloadKg' | 'distanceNm' | 'pay' | 'deadlineMin' | 'minClass' | 'refType' | 'repRequired' | 'premium'
     | 'weather' | 'windDirDeg' | 'windKt'>,
   true satisfies Covers<PayloadItem, 'kind' | 'label' | 'kg' | 'station'>,
-  true satisfies Covers<Waypoint, 'name' | 'north' | 'east' | 'radiusM' | 'maxAglFt'>,
+  true satisfies Covers<Waypoint, 'name' | 'north' | 'east' | 'radiusM' | 'maxAglFt' | 'landS'>,
   true satisfies Covers<JobFlightReport, (typeof REPORT_NUMBERS)[number] | 'outcome' | 'atField' | 'position' | 'landing'
     | 'comfort' | 'onApron' | 'onRunway' | 'crashReason' | 'test'>,
   true satisfies Covers<LandingSummary, 'score' | 'sinkFpm' | 'bounces' | 'firstWheel' | 'helicopter' | 'onTarget' | 'distAimFt'
@@ -225,6 +225,10 @@ function waypoint(v: unknown): Waypoint | null {
   if (v.maxAglFt !== undefined) {
     if (!isNum(v.maxAglFt)) return null;
     out.maxAglFt = v.maxAglFt;
+  }
+  if (v.landS !== undefined) {
+    if (!isNonNeg(v.landS)) return null;
+    out.landS = v.landS;
   }
   return out;
 }

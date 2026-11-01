@@ -36,14 +36,46 @@
 // Rounding: the route length to 0.1 NM, every mass to a whole kg, the pay to $5 (costs.ts offerPay) and the deadline
 // up to 5 min, so a board is stable in JSON and the tests can recompute pay and deadline from the offer alone.
 // repRequired is the class's plus the kind's, or for a premium offer the larger of that and its tier's figure.
+//
+// WAVE 4 (wave4BoardFor, 4a). A second careerRng keyed `${seed}|${day}|${origin}|w4` (BOARD_RULES.wave4Salt) draws
+// W4_RULES.count offers appended after the base ones with ids `${day}-${origin}-w${n}` (n counting the offers made),
+// so the base stream and the meaning of its ids never change. Per slot, in this order:
+//   1. kind by W4_RULES.kindWeight over the kinds this field can offer (no draw spent on a kind that has nothing
+//      within reach): 'medevac', 'utility', or a landmark 'scenic';
+//   2. the class: rotorcraft (heli, heliTurbine) by CLASS_RULES weight for medevac and utility; for a scenic flight
+//      any class but the twin that can use the field, by CLASS_RULES weight;
+//   3. the route:
+//      medevac  up to W4_RULES.siteDraws anchors drawn among those W4_RULES.medevacNm from the field (sites.ts
+//               siteAnchors), the first with a site (siteOf) is the pickup: a landing waypoint (siteWaypoint, 60 m,
+//               30 s on the ground); the destination is the home or sealed field nearest the site (the hospital).
+//               None of the draws has a site: no offer from this slot;
+//      utility  a survey line: the river, or (seed 0) a road, by one draw; a station on it W4_RULES.patrolNm from the
+//               field; W4_RULES.patrolPoints points every patrolStepNm along it, low-level waypoints (patrolRadiusM,
+//               patrolMaxAglFt), each at least scenicFieldClearM from every field, back to the field; up to
+//               patrolAttempts tries;
+//      scenic   2 or 3 landmarks (4b's landmarks.ts) W4_RULES.landmarkNm from the field and no higher than the class's
+//               W4_RULES.landmarkMaxFt, each drawn by kind (LANDMARK_KIND_WEIGHT over the kinds left) then among that
+//               kind, at least landmarkApartNm apart; flown in order of bearing round the field; a loop over
+//               landmarkLoopMaxNm is drawn again (up to landmarkAttempts);
+//   4. weather and wind as the base stream (step 6);
+//   5. payload: medevac a paramedic, the patient and the medical kit; utility a surveyor and the survey kit; scenic
+//      passengers and bags as the base scenic;
+//   6. client (a word list). Then, with no draws, the reference type (a scenic flight trims passengers as the base
+//      stream does; a medevac or survey no type of the class can carry is dropped), pay and deadline (PAY_RULES
+//      medevac / utility / scenic), reputation (class plus kind).
+// The patient is aboard (and weighed) from the start: the flight model takes a loading only at a placement.
 
-import { NM } from '../core/math';
+import { FT, NM } from '../core/math';
 import type { Airfield } from '../world/airfields';
+import { hydrology } from '../world/terrain/heightfield';
+import { regionalRoads } from '../world/terrain/roads';
 import { groundSpeedKt, offerPay, payFloor, payFormula } from './costs';
 import { fitOffer, offerGroundSpeedKt, routeWindOf } from './fit';
 import { compassName, distanceM, distanceNm, placeName, requireField } from './geo';
 import { CAREER_PERF } from './perf';
+import { landmarks, landmarkWaypoint, type Landmark, type LandmarkKind } from './landmarks';
 import { boardRng, type CareerRng } from './rng';
+import { siteAnchors, siteOf, siteWaypoint, type HeliSite } from './sites';
 import { CAREER_STATIONS } from './stations';
 import {
   BOARD_RULES, CAREER_AIRCRAFT_IDS, CLASS_RULES, CLOCK_RULES, DEADLINE_RULES, OCCUPANT_KG, PAY_RULES, PREMIUM_RULES,
@@ -119,9 +151,9 @@ export function offerDeadlineMin(offer: JobOffer, fields: readonly Airfield[]): 
   return Math.ceil(raw / step - 1e-9) * step;
 }
 
-/** Freight and mail kg of an offer (passengers and their bags excluded): the perKg term of the pay. */
+/** Freight, mail and (wave 4's survey and medical) equipment kg of an offer (people and bags excluded): the perKg term of the pay. */
 export function offerCargoKg(offer: Pick<JobOffer, 'payload'>): number {
-  return offer.payload.reduce((s, it) => s + (it.kind === 'freight' || it.kind === 'mail' ? it.kg : 0), 0);
+  return offer.payload.reduce((s, it) => s + (it.kind === 'freight' || it.kind === 'mail' || it.kind === 'equipment' ? it.kg : 0), 0);
 }
 
 /**
@@ -400,5 +432,280 @@ export function baseBoardFor(seed: number, day: number, origin: string, fields: 
  * does not depend on the player; the board shows what the player cannot take locked.
  */
 export function boardFor(seed: number, day: number, origin: string, fields: readonly Airfield[]): JobOffer[] {
-  return baseBoardFor(seed, day, origin, fields);
+  return [...baseBoardFor(seed, day, origin, fields), ...wave4BoardFor(seed, day, origin, fields)];
+}
+
+// --------------------------------------------------------------------------------------------- wave 4
+
+/** The wave-4 stream's rules (see the header). Distances NM unless named m; heights ft. */
+export const W4_RULES = {
+  /** Offers per board: count[0] + floor(r x (count[1] - count[0] + 1)). */
+  count: [1, 3],
+  kindWeight: { medevac: 0.35, utility: 0.25, scenic: 0.4 },
+  medevacNm: [3, 20], siteDraws: 6,
+  /** Medical kit, kg. */
+  kitKg: [8, 20],
+  patrolNm: [3, 15], patrolPoints: [3, 4], patrolStepNm: 2.5, patrolRadiusM: 800, patrolMaxAglFt: 500, patrolAttempts: 8,
+  /** Survey kit (cameras, laptop), kg. */
+  surveyKitKg: [10, 30],
+  landmarkNm: [3, 15], landmarkApartNm: 2, landmarkLoopMaxNm: 40, landmarkAttempts: 8,
+  /** Highest landmark (its ground or water, a summit's top) a class is sent over, ft: the scenic capture is 2,500 ft AGL. */
+  landmarkMaxFt: { trainer: 5000, tourer: 7000, twin: 0, turbine: 10000, heli: 5000, heliTurbine: 8000 },
+} as const;
+
+/** Landmark kinds by weight (4b's warning: villages and summits are most of the list, so draw by kind). */
+export const LANDMARK_KIND_WEIGHT: Readonly<Record<LandmarkKind, number>> = {
+  town: 0.15, village: 0.1, lake: 0.25, oxbow: 0.1, riverBend: 0.1, bridge: 0.1, summit: 0.2,
+};
+
+/** The wave-4 kinds, in draw order. */
+export const W4_KINDS = ['medevac', 'utility', 'scenic'] as const satisfies readonly JobKind[];
+type W4Kind = (typeof W4_KINDS)[number];
+
+const ROTOR_CLASSES = ['heli', 'heliTurbine'] as const satisfies readonly AircraftClass[];
+const MEDEVAC_CLIENTS = ['Air Ambulance', 'Ambulance Service', 'Mountain Rescue'];
+const UTILITY_CLIENTS = { river: ['River Authority', 'Water Board', 'Flood Survey'], road: ['Highways Department', 'County Surveyors', 'Survey Partners'] } as const;
+
+const nmOf = (a: { north: number; east: number }, b: { north: number; east: number }): number => distanceNm(a, b);
+
+/** The length of a loop origin -> points -> origin, NM. */
+function loopNm(origin: Airfield, pts: readonly { north: number; east: number }[]): number {
+  let d = 0;
+  let p: { north: number; east: number } = origin;
+  for (const q of pts) {
+    d += nmOf(p, q);
+    p = q;
+  }
+  return d + nmOf(p, origin);
+}
+
+/** A route of a wave-4 slot: its waypoints, the destination and the length, with what the title and client need. */
+interface W4Route {
+  waypoints: Waypoint[];
+  dest: Airfield;
+  lengthNm: number;
+  site?: HeliSite;
+  line?: 'river' | 'road';
+  marks?: Landmark[];
+}
+
+/** Medevac: the pickup site (the first anchor drawn with a site) and the hospital field. */
+function medevacRoute(rng: CareerRng, origin: Airfield, fields: readonly Airfield[]): W4Route | null {
+  const near = siteAnchors().filter((a) => {
+    const d = nmOf(origin, a);
+    return d >= W4_RULES.medevacNm[0] && d <= W4_RULES.medevacNm[1];
+  });
+  if (near.length === 0) return null;
+  for (let k = 0; k < W4_RULES.siteDraws; k++) {
+    const site = siteOf(rng.pick(near), fields);
+    if (!site) continue;
+    const hospitals = fields.filter((f) => f.kind !== 'grass');
+    const dest = [...(hospitals.length > 0 ? hospitals : fields)].sort((a, b) => nmOf(a, site) - nmOf(b, site))[0];
+    const wp = siteWaypoint(site);
+    return { waypoints: [wp], dest, lengthNm: Math.round((nmOf(origin, site) + nmOf(site, dest)) * 10) / 10, site };
+  }
+  return null;
+}
+
+/** The survey lines within reach: the river, and the roads (seed 0). */
+function surveyLines(): { kind: 'river' | 'road'; lines: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number> }> }[] {
+  const out: { kind: 'river' | 'road'; lines: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number> }> }[] = [];
+  if (hydrology.river.north.length > 1) out.push({ kind: 'river', lines: [hydrology.river] });
+  const roads = regionalRoads();
+  if (roads.length > 0) out.push({ kind: 'road', lines: roads });
+  return out;
+}
+
+/** Points along a polyline from index i every `stepM` (forwards, or backwards when `dir` is -1), `n` of them, or null when it ends first. */
+function walk(line: { north: ArrayLike<number>; east: ArrayLike<number> }, i: number, dir: 1 | -1, stepM: number, n: number): { north: number; east: number }[] | null {
+  const pts = [{ north: line.north[i], east: line.east[i] }];
+  let run = 0;
+  for (let j = i + dir; j >= 0 && j < line.north.length && pts.length < n; j += dir) {
+    run += Math.hypot(line.north[j] - line.north[j - dir], line.east[j] - line.east[j - dir]);
+    if (run >= stepM) {
+      pts.push({ north: line.north[j], east: line.east[j] });
+      run = 0;
+    }
+  }
+  return pts.length === n ? pts : null;
+}
+
+/** Utility: a low-level survey along the river or a road, back to the field. */
+function utilityRoute(rng: CareerRng, origin: Airfield, fields: readonly Airfield[]): W4Route | null {
+  const lines = surveyLines();
+  if (lines.length === 0) return null;
+  const pick = rng.pick(lines);
+  const n = rng.int(W4_RULES.patrolPoints[0], W4_RULES.patrolPoints[1]);
+  const clear = (p: { north: number; east: number }) => fields.every((f) => distanceM(f, p) >= BOARD_RULES.scenicFieldClearM);
+  // Stations within reach of the field, clear of every field (line index, point index).
+  const starts: { l: number; i: number }[] = [];
+  pick.lines.forEach((line, l) => {
+    for (let i = 0; i < line.north.length; i += 8) {
+      const p = { north: line.north[i], east: line.east[i] };
+      const d = nmOf(origin, p);
+      if (d >= W4_RULES.patrolNm[0] && d <= W4_RULES.patrolNm[1] && clear(p)) starts.push({ l, i });
+    }
+  });
+  if (starts.length === 0) return null;
+  for (let k = 0; k < W4_RULES.patrolAttempts; k++) {
+    const st = rng.pick(starts);
+    const dir: 1 | -1 = rng.chance(0.5) ? 1 : -1;
+    const pts = walk(pick.lines[st.l], st.i, dir, W4_RULES.patrolStepNm * NM, n);
+    if (!pts || !pts.every(clear)) continue;
+    const word = pick.kind === 'river' ? 'River' : 'Road';
+    const waypoints = pts.map((p, j): Waypoint => {
+      const near = nearestFieldOf(p, fields);
+      return {
+        name: `${word} point ${j + 1}, ${Math.round(nmOf(near, p))} NM ${compassName(bearingOf(near, p))} of ${placeName(near)}`,
+        north: p.north, east: p.east, radiusM: W4_RULES.patrolRadiusM, maxAglFt: W4_RULES.patrolMaxAglFt,
+      };
+    });
+    return { waypoints, dest: origin, lengthNm: Math.round(loopNm(origin, pts) * 10) / 10, line: pick.kind };
+  }
+  return null;
+}
+
+/** The field nearest a point (fields is never empty here). */
+function nearestFieldOf(p: { north: number; east: number }, fields: readonly Airfield[]): Airfield {
+  return [...fields].sort((a, b) => distanceM(a, p) - distanceM(b, p))[0];
+}
+
+/** True bearing from a to b, deg [0, 360). */
+function bearingOf(a: { north: number; east: number }, b: { north: number; east: number }): number {
+  return (((Math.atan2(b.east - a.east, b.north - a.north) * 180) / Math.PI) % 360 + 360) % 360;
+}
+
+/** The landmarks a class may be sent over from the field (W4_RULES.landmarkNm, landmarkMaxFt). */
+function landmarksFor(cls: AircraftClass, origin: Airfield, fields: readonly Airfield[]): Landmark[] {
+  const maxM = W4_RULES.landmarkMaxFt[cls] * FT;
+  return landmarks(fields).filter((l) => {
+    const d = nmOf(origin, l);
+    return d >= W4_RULES.landmarkNm[0] && d <= W4_RULES.landmarkNm[1] && l.elevationM <= maxM;
+  });
+}
+
+/** Scenic: 2 or 3 landmarks by kind, flown in order of bearing round the field. */
+function landmarkRoute(rng: CareerRng, cls: AircraftClass, origin: Airfield, fields: readonly Airfield[]): W4Route | null {
+  const pool = landmarksFor(cls, origin, fields);
+  if (pool.length < 2) return null;
+  const n = rng.int(SCENIC_SHAPE.pointsMin, SCENIC_SHAPE.pointsMax);
+  const kinds = Object.keys(LANDMARK_KIND_WEIGHT) as LandmarkKind[];
+  for (let k = 0; k < W4_RULES.landmarkAttempts; k++) {
+    const chosen: Landmark[] = [];
+    for (let j = 0; j < n; j++) {
+      const left = pool.filter((l) => chosen.every((c) => c !== l && nmOf(c, l) >= W4_RULES.landmarkApartNm));
+      if (left.length === 0) break;
+      const kind = rng.weighted(kinds, (x) => (left.some((l) => l.kind === x) ? LANDMARK_KIND_WEIGHT[x] : 0));
+      chosen.push(rng.pick(left.filter((l) => l.kind === kind)));
+    }
+    if (chosen.length < 2) return null;
+    chosen.sort((a, b) => bearingOf(origin, a) - bearingOf(origin, b));
+    const len = loopNm(origin, chosen);
+    if (len > W4_RULES.landmarkLoopMaxNm) continue;
+    return { waypoints: chosen.map(landmarkWaypoint), dest: origin, lengthNm: Math.round(len * 10) / 10, marks: chosen };
+  }
+  return null;
+}
+
+/** The kinds a field can offer on the wave-4 stream (no draw spent on one with nothing within reach). */
+function w4KindsAt(origin: Airfield, fields: readonly Airfield[]): W4Kind[] {
+  const out: W4Kind[] = [];
+  if (siteAnchors().some((a) => nmOf(origin, a) >= W4_RULES.medevacNm[0] && nmOf(origin, a) <= W4_RULES.medevacNm[1])) out.push('medevac');
+  if (surveyLines().length > 0) out.push('utility');
+  if (landmarks(fields).some((l) => nmOf(origin, l) >= W4_RULES.landmarkNm[0] && nmOf(origin, l) <= W4_RULES.landmarkNm[1])) out.push('scenic');
+  return out;
+}
+
+/** The classes of a wave-4 kind that can use the field (a scenic flight: not a twin). */
+function w4Classes(kind: W4Kind, origin: Airfield): AircraftClass[] {
+  const list: readonly AircraftClass[] = kind === 'scenic' ? CLASS_DRAW_ORDER.filter((c) => c !== 'twin') : ROTOR_CLASSES;
+  return list.filter((c) => classUsesBoth(c, origin, origin));
+}
+
+/**
+ * The wave-4 offers of a board (see the header): medevac, utility and landmark scenic flights on the `|w4` stream,
+ * `${day}-${origin}-w${n}`. Empty outside the present day (no landmarks, sites or survey lines) or where nothing is
+ * within reach. Pure apart from the world's cached queries (landmarks.ts, sites.ts).
+ */
+export function wave4BoardFor(seed: number, day: number, origin: string, fields: readonly Airfield[]): JobOffer[] {
+  const o = requireField(origin, fields);
+  const rng = boardRng(seed, day, origin, BOARD_RULES.wave4Salt);
+  const R = W4_RULES;
+  const count = R.count[0] + Math.floor(rng.next() * (R.count[1] - R.count[0] + 1));
+  const offers: JobOffer[] = [];
+  const kinds = w4KindsAt(o, fields);
+  for (let slot = 0; slot < count && kinds.length > 0; slot++) {
+    // 1. kind, 2. class
+    const kind = rng.weighted(kinds, (k) => R.kindWeight[k]);
+    const classes = w4Classes(kind, o);
+    if (classes.length === 0) continue;
+    const cls = rng.weighted(classes, (c) => CLASS_RULES[c].weight);
+    // 3. route
+    const route = kind === 'medevac' ? medevacRoute(rng, o, fields) : kind === 'utility' ? utilityRoute(rng, o, fields) : landmarkRoute(rng, cls, o, fields);
+    if (!route) continue;
+    // 4. weather and wind
+    const weather = rng.weighted(WEATHER_IDS, (w) => WEATHER_PAY[w].weight);
+    const windDirDeg = rng.int(0, 359);
+    const windKt = rng.int(WEATHER_PAY[weather].windKt[0], WEATHER_PAY[weather].windKt[1]);
+    // 5. payload
+    let payload: OfferItem[];
+    if (kind === 'medevac') {
+      payload = [
+        { kind: 'passenger', label: 'Paramedic', kg: OCCUPANT_KG },
+        { kind: 'patient', label: 'Patient (boards at the site)', kg: OCCUPANT_KG },
+        { kind: 'equipment', label: 'Medical kit', kg: rng.int(R.kitKg[0], R.kitKg[1]) },
+      ];
+    } else if (kind === 'utility') {
+      payload = [
+        { kind: 'passenger', label: 'Surveyor', kg: OCCUPANT_KG },
+        { kind: 'equipment', label: 'Survey kit', kg: rng.int(R.surveyKitKg[0], R.surveyKitKg[1]) },
+      ];
+    } else {
+      const range = PAYLOAD_RULES.scenic[cls]!;
+      const pax = rng.int(range[0], range[1]);
+      const bagRange = cls === 'trainer' ? BAG_KG.trainer : BAG_KG.other;
+      const bags: number[] = [];
+      for (let i = 0; i < pax; i++) bags.push(rng.int(bagRange[0], bagRange[1]));
+      payload = itemsOf({ kind: 'people', bags }, 'scenic', cls);
+    }
+    // 6. client
+    const town = placeName(kind === 'medevac' ? route.dest : o);
+    const business = rng.pick(kind === 'medevac' ? MEDEVAC_CLIENTS : kind === 'utility' ? UTILITY_CLIENTS[route.line ?? 'river'] : SCENIC_CLIENTS);
+    const offer = w4Offer(`${day}-${origin}-w${offers.length}`, day, o, kind, cls, route, payload, { weather, windDirDeg, windKt }, `${town} ${business}`, fields);
+    if (offer) offers.push(offer);
+  }
+  return offers;
+}
+
+/** A wave-4 slot's finished offer (reference type, trimming scenic passengers; pay, deadline, reputation), or null when no type of the class takes it. */
+function w4Offer(
+  id: string, day: number, origin: Airfield, kind: W4Kind, cls: AircraftClass, route: W4Route, payload0: OfferItem[],
+  wx: { weather: CareerWeatherId; windDirDeg: number; windKt: number }, client: string, fields: readonly Airfield[],
+): JobOffer | null {
+  let payload = payload0;
+  for (;;) {
+    const pax = payload.filter((p) => p.kind === 'passenger' || p.kind === 'patient').length;
+    const passengers = payload.filter((p) => p.kind === 'passenger').length;
+    const title =
+      kind === 'medevac' ? `Medevac: patient at ${route.site!.name} to ${placeName(route.dest)}`
+        : kind === 'utility' ? `${route.line === 'road' ? 'Road' : 'River'} survey, ${route.waypoints.length} points, low level`
+          : `Landmark flight over ${route.marks![0].name} and ${route.marks!.length - 1} more, ${plural(passengers, 'passenger')}`;
+    const offer: JobOffer = {
+      id, kind, day, origin: origin.code, destination: { kind: 'field', code: route.dest.code }, waypoints: route.waypoints,
+      client, title, pax, payload, payloadKg: payload.reduce((t, p) => t + p.kg, 0), distanceNm: route.lengthNm,
+      pay: 0, deadlineMin: 0, minClass: cls, refType: classTypes(cls)[0], repRequired: CLASS_RULES[cls].rep + PAY_RULES[kind].rep,
+      premium: false, weather: wx.weather, windDirDeg: wx.windDirDeg, windKt: wx.windKt,
+    };
+    const ref = referenceType(offer, fields);
+    if (ref) {
+      offer.refType = ref;
+      offer.pay = offerPayUsd(offer, fields, 1);
+      offer.deadlineMin = offerDeadlineMin(offer, fields);
+      return offer;
+    }
+    // Only a scenic flight sheds a passenger (and their bag); a medevac or a survey is what it is.
+    if (kind !== 'scenic' || passengers <= 1) return null;
+    const last = `Passenger ${passengers}`;
+    payload = payload.filter((p) => p.label !== last && p.label !== `Bag, passenger ${passengers}`);
+  }
 }
