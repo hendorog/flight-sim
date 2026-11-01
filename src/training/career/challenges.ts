@@ -30,8 +30,8 @@ const zoneScore = (d: number): number => {
   const outside = d < ZONE_FT[0] ? ZONE_FT[0] - d : d > ZONE_FT[1] ? d - ZONE_FT[1] : 0;
   return fall(outside, 0, 200);
 };
-/** A landing that cannot score at all: a crash, nose first or off the runway. */
-const voidLanding = (l: LandingData): boolean => l.crashed || l.firstWheel === 'nose' || !l.onRunway;
+/** A landing that cannot score at all: a crash, damage, nose first or off the runway. */
+const voidLanding = (l: LandingData): boolean => l.crashed || !!l.damage || l.firstWheel === 'nose' || !l.onRunway;
 
 export function scoreChallenge(kind: ChallengeScoring, i: ChallengeInputs): number {
   const l = i.landing;

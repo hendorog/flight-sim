@@ -34,14 +34,20 @@
 //   (a medevac's patient is payload, not a seat).
 // - The clock moves to max(now, accepted + elapsed + turnaround); a day boundary crossed ends that day
 //   (src/career/progression.ts advanceClock), so cashAfter includes any idle lease charge it paid.
+// - Landing damage (report.damage, physics/damage.ts; DAMAGE_RULES): on every outcome but a crash (the insurance
+//   excess covers that), each damaged item is repaired once at its worst severity ('repair' lines, $ x class mult,
+//   capped in sum at the insurance excess: the claim pays the rest), grounds the aircraft for the longest item's days,
+//   and costs the reputation of the worst severity. An inspection note (the hard landing past the type's V_lim) is the
+//   heavy-landing inspection line, charged once with the 900 fpm sink rule.
 
 import type { Airfield } from '../world/airfields';
 import { defuelCredit, enduranceMin, fuelCost, hoursCost, insuranceExcess, landingFee, reserveMin, upliftAndDefuel, type PlaceKind } from './costs';
 import { CAREER_PERF, isRotorcraftClass } from './perf';
 import { advanceClock, careerBlockHours, dayOf, rankFor } from './progression';
+import { severityRank, type DamageItem, type DamageSeverity } from '../physics/damage';
 import {
-  CLASS_RULES, CLOCK_RULES, PAY_RULES, REP_RULES, SCORING_RULES, type ActiveJob, type CareerLogEntry, type CareerSave,
-  type JobFlightReport, type MoneyLine, type MoneyLineId, type RepLine, type SettledOutcome, type Settlement,
+  CLASS_RULES, CLOCK_RULES, DAMAGE_RULES, PAY_RULES, REP_RULES, SCORING_RULES, type ActiveJob, type AircraftClass, type CareerLogEntry, type CareerSave,
+  type JobDamage, type JobFlightReport, type MoneyLine, type MoneyLineId, type RepLine, type SettledOutcome, type Settlement,
 } from './types';
 
 /** Reputation bounds. */
@@ -116,6 +122,8 @@ export function settleJob(save: CareerSave, job: ActiveJob, report: JobFlightRep
   let groundedFor = 0;
   /** Summary parts: the safety point and the strength. */
   const notes: { safety: string | null; strength: string | null } = { safety: null, strength: null };
+  /** The heavy-landing inspection line has been charged (once, by the sink rule or the damage's inspection note). */
+  let inspected = false;
 
   switch (outcome) {
     case 'completed': {
@@ -151,6 +159,7 @@ export function settleJob(save: CareerSave, job: ActiveJob, report: JobFlightRep
         const heavyFpm = heli ? S.heavySinkHeliFpm : S.heavySinkFpm;
         if (l.sinkFpm > heavyFpm) {
           line('heavyLanding', 'Heavy landing inspection', -S.heavyInspection * mult);
+          inspected = true;
           notes.safety = `That landing was heavy, ${Math.round(l.sinkFpm)} feet a minute: the aircraft needed an inspection.`;
         }
         if (l.sinkFpm > hardFpm) {
@@ -263,6 +272,21 @@ export function settleJob(save: CareerSave, job: ActiveJob, report: JobFlightRep
     }
   }
 
+  // Landing damage (not after a crash: the insurance excess covers the airframe).
+  if (outcome !== 'crashed' && report.damage?.length) {
+    const d = damageRepairs(report.damage, perf.cls);
+    if (d.inspection && !inspected) line('heavyLanding', 'Hard landing inspection', -S.heavyInspection * mult);
+    for (const r of d.repairs) line('repair', r.label, -r.usd);
+    const excess = insuranceExcess(perf);
+    if (d.totalUsd > excess) line('repair', 'Insurance claim (repairs above the excess)', d.totalUsd - excess);
+    for (const r of d.inspections) line('repair', r.label, -r.usd);
+    groundedFor = Math.max(groundedFor, d.groundedDays);
+    if (d.worst === 'disabling') rep('Aircraft disabled', R.disabled);
+    else if (d.worst === 'damage') rep('Aircraft damaged', R.damaged);
+    if (d.repairs.length > 0) notes.safety = `${d.repairs[0].what}: the aircraft is in the hangar for repairs.`;
+    else if (d.inspection) notes.safety ??= 'That landing was hard: the aircraft needed an inspection.';
+  }
+
   // Costs on every outcome.
   const ch = job.charges ?? dispatchCharges(job, ac?.fuelKg ?? job.fuelKg, fields);
   line('fuel', 'Fuel', -ch.fuelUsd);
@@ -322,6 +346,91 @@ export function settleJob(save: CareerSave, job: ActiveJob, report: JobFlightRep
   };
   s.lastSettlement = settlement;
   return { save: s, settlement };
+}
+
+/** One repair of damageRepairs: the item's line ("Repair: nose gear collapsed"), $ (class mult applied), days out. */
+export interface DamageRepair {
+  item: DamageItem;
+  severity: DamageSeverity;
+  /** What happened, as the pilot was told (the item's worst event). */
+  what: string;
+  label: string;
+  usd: number;
+  days: number;
+}
+
+/** The settlement line of an item's repair. */
+function repairLabel(item: DamageItem, e: JobDamage): string {
+  switch (item) {
+    case 'noseGear': return 'Nose gear repair';
+    case 'leftMain': return 'Left main gear repair';
+    case 'rightMain': return 'Right main gear repair';
+    case 'nose': return 'Firewall and nose repair';
+    case 'tail': return 'Tail repair';
+    case 'belly': return 'Belly repair';
+    case 'wingtipLeft': return 'Left wingtip repair';
+    case 'wingtipRight': return 'Right wingtip repair';
+    default:
+      // "Propeller strike" / "Left propeller strike": a new propeller, and the engine opened up.
+      return `${e.text.split(':')[0]}: propeller and engine ${e.severity === 'disabling' ? 'teardown' : 'shock-load inspection'}`;
+  }
+}
+
+/** The DAMAGE_RULES entry of an item. */
+function repairRule(item: DamageItem): { damage: { usd: number; days: number }; disabling: { usd: number; days: number } } | null {
+  if (item === 'noseGear') return DAMAGE_RULES.noseLeg;
+  if (item === 'leftMain' || item === 'rightMain') return DAMAGE_RULES.mainLeg;
+  if (item === 'nose') return DAMAGE_RULES.nose;
+  if (item === 'tail') return DAMAGE_RULES.tail;
+  if (item === 'belly') return DAMAGE_RULES.belly;
+  if (item === 'wingtipLeft' || item === 'wingtipRight') return DAMAGE_RULES.wingtip;
+  if (item.startsWith('propeller')) return DAMAGE_RULES.propeller;
+  return null;
+}
+
+/**
+ * Price a job's landing damage (DAMAGE_RULES): each item once at its worst severity, in $ at the trainer class x the
+ * class payMult. `repairs` are the damaged items (in the order first damaged), `inspections` the airframe scrapes
+ * within tolerance, `inspection` whether the hard-landing note is there (the heavy-landing inspection line),
+ * `totalUsd` the sum of the repairs (before the insurance cap), `groundedDays` the longest repair's, `worst` the worst
+ * severity of all. Pure.
+ */
+export function damageRepairs(damage: readonly JobDamage[], cls: AircraftClass): {
+  repairs: DamageRepair[]; inspections: DamageRepair[]; inspection: boolean; totalUsd: number; groundedDays: number; worst: DamageSeverity | null;
+} {
+  const mult = CLASS_RULES[cls].payMult;
+  const worstOf = new Map<DamageItem, JobDamage>();
+  let worst: DamageSeverity | null = null;
+  for (const e of damage) {
+    const w = worstOf.get(e.item);
+    if (!w || severityRank(e.severity) >= severityRank(w.severity)) worstOf.set(e.item, e);
+    if (severityRank(e.severity) > severityRank(worst)) worst = e.severity;
+  }
+  const repairs: DamageRepair[] = [];
+  const inspections: DamageRepair[] = [];
+  let inspection = false;
+  for (const [item, e] of worstOf) {
+    const what = e.text;
+    const lower = `${what[0].toLowerCase()}${what.slice(1)}`;
+    if (item === 'hardLanding') {
+      inspection = true;
+      continue;
+    }
+    const rule = repairRule(item);
+    if (!rule) continue;
+    if (e.severity === 'inspection') {
+      inspections.push({ item, severity: e.severity, what, label: `Inspection: ${lower}`, usd: Math.round(DAMAGE_RULES.scrapeInspection * mult), days: 0 });
+      continue;
+    }
+    const r = rule[e.severity];
+    repairs.push({ item, severity: e.severity, what, label: repairLabel(item, e), usd: Math.round(r.usd * mult), days: r.days });
+  }
+  return {
+    repairs, inspections, inspection,
+    totalUsd: repairs.reduce((s, r) => s + r.usd, 0),
+    groundedDays: repairs.reduce((d, r) => Math.max(d, r.days), 0),
+    worst,
+  };
 }
 
 /**

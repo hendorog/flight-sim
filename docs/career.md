@@ -519,6 +519,18 @@ Completed:
   landing fee (home $20 + $8/t MTOW; sealed $12 + $5/t; grass $5; a helicopter site nothing), aircraft hours (block
   hours x owned or lease rate).
 
+Landing damage (`report.damage`, the SimEvents `damage` the monitor kept; `DAMAGE_RULES` in types.ts,
+`damageRepairs` in economy.ts), on every outcome but a crash: the job is not ended by damage (the player shuts
+down and it settles as it ends). An inspection note (the hard landing past the type's V_lim) is the heavy-landing
+inspection line, charged once with the 900 fpm rule. Each damaged item is repaired once at its worst severity, $ at
+the trainer class x the flown type's class mult: a main leg bent or bottomed $2,500 (collapsed $7,000), the nose leg
+$2,000 ($5,000), firewall and nose $6,000, a propeller strike $9,000 (propeller and engine shock-load inspection; dug
+in and stopped $12,000 with the teardown), a wingtip $1,500, the tail $3,000, the belly $8,000; an airframe scrape
+within its tolerance is an inspection, $300. The repairs are capped in sum at the insurance excess (a line "Insurance
+claim" gives back the rest), so damage never costs more than a crash would. The aircraft is out of service for the
+longest repair's days (1 for a bent leg, wingtip or tail, 2 for the rest, as long as after a crash); reputation -5
+for damage, -10 when the aircraft was disabled.
+
 Failed:
 - Diverted (given up at a stop, or still stopped at the day's end): no pay; fees and hours still due; the aircraft is
   at the stop field.

@@ -39,6 +39,7 @@ import { buildStart } from '../sim/starts';
 import { reanchorStorms, restoreWeather, withoutExtras } from '../sim/weatherPresets';
 import type { UISystem } from '../ui';
 import type { CrashAction } from '../ui/overlays';
+import type { DamageSeverity } from '../physics/damage';
 import type { SchoolAircraft, SchoolCareer, SchoolImportPreview, SchoolVoice } from '../ui/school/models';
 import { SchoolUi } from '../ui/school/schoolUi';
 import { DEFAULT_AIRCRAFT, getAircraftType, hasAircraftType, SCHOOL_AIRCRAFT, schoolSupports } from './aircraft/registry';
@@ -284,6 +285,7 @@ export class TrainingSystem implements Subsystem {
         r.onTouchdown(e.wheel, sinkFpm, touchdownData(shell.physics.fm.state, e.wheel, sinkFpm));
       }),
       ev.on('crash', (e) => this.onCrash(e.reason)),
+      ev.on('damage', (e) => this.onDamage(e.severity, e.text)),
       ev.on('paused', (e) => (e.paused ? this.speech.pause() : this.speech.resume())),
     );
     this.refreshCareer();
@@ -996,6 +998,11 @@ export class TrainingSystem implements Subsystem {
     if (!s || s.runner.phase !== 'running') return null;
     if (s.lesson.kind !== 'dual') return 'none';
     void reason;
+    return this.lessonCrashPanel();
+  }
+
+  /** The lesson crash panel's actions (a dual lesson's crash, or its disabling landing damage). */
+  private lessonCrashPanel(): CrashAction[] {
     return [
       { label: 'Debrief', primary: true, keys: ['Enter', 'NumpadEnter'], run: () => this.resolveCrash('debrief') },
       { label: 'Try again from checkpoint', keys: ['KeyR'], run: () => this.resolveCrash('retry') },
@@ -1012,6 +1019,28 @@ export class TrainingSystem implements Subsystem {
       return;
     }
     s.runner.onCrash(reason);
+  }
+
+  /**
+   * Landing damage (SimEvents 'damage', physics/damage.ts). Disabling damage (a collapsed leg, a stopped engine)
+   * ends the lesson as a crash does, without the crash dialog: a dual lesson opens its own crash panel (the runner
+   * waits for the choice), solo, check and test lessons end and debrief. Lesser damage and an inspection note go to
+   * the landing being flown (its "Landing without damage" row fails).
+   */
+  private onDamage(severity: DamageSeverity, text: string): void {
+    const s = this.session;
+    if (!s || s.runner.phase !== 'running' || this.crashPending) return;
+    if (severity !== 'disabling') {
+      s.runner.onDamage(text);
+      return;
+    }
+    if (s.lesson.kind === 'dual') {
+      this.crashPending = text;
+      this.copilot.stop();
+      this.shell.ui.showLessonCard(text, this.lessonCrashPanel());
+      return;
+    }
+    s.runner.onCrash(text);
   }
 
   private resolveCrash(choice: 'debrief' | 'retry' | 'restart'): void {

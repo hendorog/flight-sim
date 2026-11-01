@@ -23,7 +23,9 @@
 // while held or paused, so it equals physics.time since the placement and never runs while the sim does not.
 //
 // EVENTS. connect(events, stepState) subscribes to the SimEvents: 'touchdown' (step-exact, the flight model's
-// own state), 'crash' (ends the job 'crashed'; the CareerSystem keeps it as active.pendingReport), 'reset' (one
+// own state), 'crash' (ends the job 'crashed'; the CareerSystem keeps it as active.pendingReport), 'damage' (landing
+// damage, physics/damage.ts: kept for the report's `damage` and priced at settlement; it never ends the job, the
+// player shuts down and the job settles as it ends), 'reset' (one
 // whose lessonId starts with CAREER_RESET_PREFIX is the Career's own (re)placement and only restarts the
 // detectors; any other reset ends the job 'abandoned'). The same handlers are public (onTouchdown, onCrash,
 // onReset) for a host that delivers them itself. Every ending and stop is also passed to `onEvent`.
@@ -55,7 +57,7 @@ import type { Airfield } from '../../world/airfields';
 import { fieldArea, fieldAt, fieldByCode } from '../geo';
 import { careerPerf } from '../perf';
 import {
-  CAREER_RESET_PREFIX, COMPLETION_RULES, type CareerAircraftId, type CareerPerf, type JobFlightReport, type JobOffer, type JobOutcome, type JobPhase,
+  CAREER_RESET_PREFIX, COMPLETION_RULES, type CareerAircraftId, type JobDamage, type CareerPerf, type JobFlightReport, type JobOffer, type JobOutcome, type JobPhase,
   type JobStripModel, type LandingSummary,
 } from '../types';
 import { ComfortMeter, comfortSample } from './comfort';
@@ -63,6 +65,7 @@ import { CompletionTracker } from './completion';
 import { createFieldGeoProvider, fieldTouchdownData, mainsMidpoint, type FieldGeoProvider } from './fieldGeo';
 import { scoreAeroplaneLanding, scoreHeliLanding, type HeliContact } from './landingScore';
 import { jobHint, jobStrip, landingSpot } from './strip';
+import { jobDamage } from '../validate';
 
 /** Constants of the monitor's own rules (the rest are COMPLETION_RULES, COMFORT_RULES, LANDING_SCORE_RULES). */
 export const MONITOR_RULES = {
@@ -157,6 +160,8 @@ export interface JobMonitorState {
   lastKnown: { north: number; east: number; onGround: boolean };
   /** (4a) On the ground at the next waypoint when it is a landing point, s (absent in an older state: 0). */
   landHoldS?: number;
+  /** Landing damage so far (absent in an older state, or none). */
+  damage?: JobDamage[];
 }
 
 /** The offer's helicopter landing points (waypoints with landS), as the completion tracker's holds. */
@@ -239,6 +244,8 @@ export class JobMonitor {
   private overspeedS = 0;
   private stallWarningS = 0;
   private landing: LandingSummary | null = null;
+  /** Landing damage of the job's flight (onDamage). */
+  private damage: JobDamage[] = [];
   private nextWaypoint = 0;
   private waypointsDone = 0;
   /** On the ground at the next waypoint (a landing point), s. */
@@ -321,6 +328,7 @@ export class JobMonitor {
     this.unsubscribe.push(
       events.on('touchdown', (e) => this.onTouchdown(stepState(), e.wheel, e.sinkRate / FPM)),
       events.on('crash', (e) => this.onCrash(e.reason, stepState())),
+      events.on('damage', (e) => this.onDamage(e)),
       events.on('reset', (e) => this.onReset(e.lessonId)),
     );
   }
@@ -346,6 +354,12 @@ export class JobMonitor {
     if (this._ended) return null;
     if (s) this.keep(s);
     return this.end('crashed', null, reason);
+  }
+
+  /** Landing damage (SimEvents 'damage'): kept for the report; the job goes on. */
+  onDamage(e: JobDamage): void {
+    if (this._ended) return;
+    this.damage.push({ item: e.item, severity: e.severity, text: e.text });
   }
 
   /** A sim reset: the Career's own (re)placement (lessonId 'career:...') restarts the detectors; any other abandons the job. */
@@ -490,6 +504,7 @@ export class JobMonitor {
       waypointsTotal: this.offer.waypoints?.length ?? 0,
     };
     if (crashReason !== undefined) r.crashReason = crashReason;
+    if (this.damage.length > 0) r.damage = this.damage.map((e) => ({ ...e }));
     return r;
   }
 
@@ -518,6 +533,7 @@ export class JobMonitor {
       waypointsDone: this.waypointsDone,
       lastKnown: { ...this.lastKnown },
       landHoldS: this.landHoldS,
+      ...(this.damage.length > 0 ? { damage: this.damage.map((e) => ({ ...e })) } : {}),
     };
   }
 
@@ -535,6 +551,8 @@ export class JobMonitor {
     if (![o.elapsedBaseS, o.simT, o.airS, o.groundS, o.overspeedS, o.stallWarningS, o.nextWaypoint, o.waypointsDone].every(nonNeg)) return false;
     if (!fin(o.maxG) || !fin(o.minG)) return false;
     if (o.landHoldS !== undefined && !nonNeg(o.landHoldS)) return false;
+    const damage = o.damage === undefined ? [] : jobDamage(o.damage);
+    if (!damage) return false;
     const timer = validTimer(o.timer);
     if (!timer) return false;
     const lk = o.lastKnown as { north?: unknown; east?: unknown; onGround?: unknown } | null;
@@ -563,6 +581,7 @@ export class JobMonitor {
     this.nextWaypoint = o.nextWaypoint as number;
     this.waypointsDone = o.waypointsDone as number;
     this.landHoldS = (o.landHoldS as number | undefined) ?? 0;
+    this.damage = damage;
     this.lastKnown = { north: lk.north, east: lk.east, onGround: lk.onGround };
     this.buildDetectors();
     return true;

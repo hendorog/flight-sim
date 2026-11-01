@@ -301,6 +301,11 @@ export interface TouchdownData {
 export interface LandingData extends TouchdownData {
   kiasAt50Ft: number; gpDevFtAt300: number; bounces: number; maxBounceFt: number; floatS: number;
   rolloutMaxAcrossM: number; fullStop: boolean; crashed: boolean;
+  /**
+   * Landing damage (physics/damage.ts) taken during this landing, first item's text ("Hard landing: inspection
+   * required", "Left main gear bent"); absent: none. Fails the "Landing without damage" row.
+   */
+  damage?: string;
 }
 
 // =============================================================================================================

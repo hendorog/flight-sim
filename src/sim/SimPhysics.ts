@@ -424,7 +424,7 @@ export class SimPhysics {
       quality: view.quality,
       renderScale: view.renderScale,
       autoflight: this.autoflight.exportState(),
-      damage: this.hailDamage.capture(),
+      damage: this.captureDamage(),
       status: { onGround: s.onGround, crashed: s.crashed, groundSpeed: s.groundSpeed, altitudeMSL: s.altitudeMSL, heading: s.heading, ias: s.ias },
     };
     // `start` (spec 6.1): the lesson start the last reset came from, when it came from one.
@@ -432,6 +432,14 @@ export class SimPhysics {
     // The STAB ASSIST's datums (a type with one), so a restore goes on with the same series term.
     if (this.stabilityAssist) snap.assist = this.stabilityAssist.exportState();
     return snap;
+  }
+
+  /** The snapshot's damage block: the hail damage, and the landing damage of a type with damage limits (`landing`). */
+  private captureDamage(): FlightSnapshot['damage'] {
+    const d: NonNullable<FlightSnapshot['damage']> = this.hailDamage.capture();
+    const landing = this.fm.captureDamage();
+    if (landing && landing.events.length > 0) d.landing = landing;
+    return d;
   }
 
   /**
@@ -528,6 +536,8 @@ export class SimPhysics {
     (this.env as Partial<SimEnvironment>).windField?.reset();
     // The exact rigid-body state (aerodynamic lags and tyre states restart from rest).
     fm.setKinematics({ position: b.position, orientation: b.orientation, velocity: b.velocity, angularVelocity: b.angularVelocity });
+    // The landing damage as saved (folded legs, seized engines), AFTER setKinematics, which clears it.
+    if (snap.damage?.landing) fm.restoreDamage(snap.damage.landing);
     // Until the first step republishes them, report the restored powerplant (the panel's gyros, the audio).
     const st = fm.state;
     for (let i = 0; i < sys.engines.length && i < st.engines.length; i++) {
@@ -791,6 +801,14 @@ export class SimPhysics {
       if (s.crashed && !this.wasCrashed) ev.emit('crash', { reason: s.crashReason });
       this.gearEvents.update(s.gear, this.emitGear);
     }
+    // Landing damage (physics/damage.ts): one 'damage' event per new item; disabling damage (a collapsed leg, a
+    // stopped engine, a belly slide) takes the autoflight off, as a crash ends its control (autoflight.ts ignores a
+    // crashed aircraft; it is disengaged here instead, the autoflight left as it is).
+    const damage = this.fm.damageEvents;
+    for (const e of damage) {
+      if (e.severity === 'disabling' && this.autoflight.engaged) this.autoflight.disengage();
+      ev?.emit('damage', { item: e.item, severity: e.severity, text: e.text });
+    }
     this.wasCrashed = s.crashed;
   }
 
@@ -827,6 +845,9 @@ export class SimPhysics {
   /** Copy the flight model's state into renderState, interpolating the pose by the accumulator fraction. */
   private publishRenderState(): void {
     const r = copyInto(this.renderState, this.fm.state);
+    // copyInto never shortens an array: the landing-damage events a reset or restore cleared go here.
+    const damage = this.fm.state.damage;
+    if (damage && r.damage) r.damage.events.length = damage.events.length;
     const a = this.alpha;
     if (a < 1) {
       const p = this.prevPos;

@@ -289,6 +289,9 @@ export class UISystem implements Subsystem, MenuHost {
         if (custom) this.crash.openWith(e.reason, custom);
         else this.crash.open(e.reason, `Restart ${SCENARIO_NAMES[this.lastScenario]}`);
       }),
+      // Landing damage (physics/damage.ts) is not a crash: no dialog, a toast per new item (the flight cues keep the
+      // DAMAGE list, the HUD the DAMAGED chip, both from the state).
+      ev.on('damage', (e) => this.showToast(e.text, e.severity === 'inspection' ? 5000 : 7000)),
       ev.on('reset', (e) => {
         this.lastScenario = e.scenario;
         this.checklist.reset();
@@ -480,6 +483,22 @@ export class UISystem implements Subsystem, MenuHost {
     this.menu?.close();
     this.crash.openWith(detail, [{ label: keepLabel, primary: true, keys: ['Enter', 'NumpadEnter'], run: () => {} }, ...actions], question);
     this.asking = true;
+  }
+
+  /**
+   * A lesson's own card on the crash dialog's scrim (disabling landing damage in a dual lesson: the lesson crash
+   * panel's actions), with `reason` under the "Aircraft damaged" title. Never the generic crash dialog.
+   */
+  showLessonCard(reason: string, actions: CrashAction[]): void {
+    this.menu?.close();
+    this.hints.hide();
+    this.asking = false;
+    this.crash.openWith(reason, actions);
+  }
+
+  /** The crash dialog's card is up (the generic dialog, a lesson's card or an ask()). */
+  get crashCardOpen(): boolean {
+    return this.crash.isOpen;
   }
 
   /** An ask() card is up (the Simulator holds the simulation: the keys and mouse flight go to the card). */

@@ -99,6 +99,12 @@ interface WheelRuntime {
   airborneTime: number;
   /** Set when the leg was overloaded: it no longer supports the aircraft until reset(). */
   failed: boolean;
+  /**
+   * GearConfig.damage: how far the ground is above the extended contact point along the leg axis in the last call,
+   * m (0 clear of it); a collapsed leg reports at least this compression, so its wheel is drawn folded above the
+   * ground the aircraft rests on.
+   */
+  depth?: number;
   /** Tyre force of the previous call on the unsteered in-plane axes, N (for the leg-axis load split). */
   fa: number;
   fb: number;
@@ -302,7 +308,12 @@ export class LandingGear {
     if (this.damage) {
       out.damage = this.damage.state;
       // A folded leg is drawn folded; an aircraft sliding on its belly or nose is on the ground.
-      for (let i = 0; i < 3; i++) if (this.wheels[i].leg!.status === 'collapsed') states[i].compression = this.wheels[i].dmg!.collapsedCompression;
+      for (let i = 0; i < 3; i++) {
+        const w = this.wheels[i];
+        if (w.leg!.status !== 'collapsed') continue;
+        // Folded at least to its drawn stop, and never through the ground under it (the aircraft on its nose or belly).
+        states[i].compression = high || (ext !== undefined && ext[i] < 1) ? w.dmg!.collapsedCompression : Math.max(w.dmg!.collapsedCompression, w.depth ?? 0);
+      }
       if (this.airframeContact) out.onGround = true;
     }
     return out;
@@ -398,6 +409,7 @@ export class LandingGear {
     const height = (-X0.z - env.groundElevation(X0.x, X0.y) - und.height) * up;
     const A = rotate(q, cfg.axis, this.t1);
     const nA = n.x * A.x + n.y * A.y + n.z * A.z;
+    if (w.dmg) w.depth = height < 0 && nA >= MIN_AXIS_NORMAL ? -height / nA : 0;
     if (height >= 0 || nA < MIN_AXIS_NORMAL || w.failed) return this.airborneWheel(w, input, dt);
 
     // Total compression along the leg axis and its rate.

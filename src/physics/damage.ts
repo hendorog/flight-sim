@@ -148,3 +148,51 @@ export class DamageModel {
     return this.state.events.length === 0;
   }
 }
+
+/**
+ * The aircraft cannot go on (a collapsed leg, a stopped engine, a belly slide): what blocks the aircraft hot swap,
+ * as a crash does. False without a damage record (a type without damage limits).
+ */
+export function disabled(d: DamageState | null | undefined): boolean {
+  return !!d && worstSeverity(d) === 'disabling';
+}
+
+/** The aircraft carries damage beyond an inspection note (the DAMAGED chip). */
+export function damaged(d: DamageState | null | undefined): boolean {
+  return !!d && severityRank(worstSeverity(d)) >= RANK.damage;
+}
+
+/**
+ * What the pilot is told now, one line per item (the latest event of each, in the order the items were first
+ * damaged): the flight cues' DAMAGE list.
+ */
+export function damageLines(d: DamageState | null | undefined): string[] {
+  if (!d) return [];
+  const byItem = new Map<DamageItem, string>();
+  for (const e of d.events) byItem.set(e.item, e.text);
+  return [...byItem.values()];
+}
+
+const LEG_STATUSES: readonly LegStatus[] = ['ok', 'hard', 'bent', 'bottomed', 'collapsed'];
+const AIRFRAME_ITEMS: readonly AirframeItem[] = ['wingtipLeft', 'wingtipRight', 'tail', 'nose', 'belly'];
+const isSeverity = (v: unknown): v is DamageSeverity => v === 'inspection' || v === 'damage' || v === 'disabling';
+const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** An event item: the landing, a leg, a propeller by index, or an airframe item. */
+export function isDamageItem(v: unknown): v is DamageItem {
+  return typeof v === 'string' && (v === 'hardLanding' || (LEG_ITEMS as readonly string[]).includes(v) ||
+    (AIRFRAME_ITEMS as readonly string[]).includes(v) || /^propeller\d+$/.test(v));
+}
+
+/** A well-formed DamageState as plain data (a stored snapshot's `damage.landing`). */
+export function isDamageState(v: unknown): v is DamageState {
+  if (!isRecord(v) || !Array.isArray(v.legs) || v.legs.length !== 3 || !Array.isArray(v.props) || !isRecord(v.airframe) || !Array.isArray(v.events)) return false;
+  for (const l of v.legs as unknown[]) {
+    if (!isRecord(l) || !LEG_STATUSES.includes(l.status as LegStatus) || !isFiniteNum(l.set) || !isFiniteNum(l.toe) || !isFiniteNum(l.peakLoad)) return false;
+  }
+  if (!(v.props as unknown[]).every((p) => isRecord(p) && typeof p.struck === 'boolean' && typeof p.stopped === 'boolean')) return false;
+  const a = v.airframe;
+  if (!AIRFRAME_ITEMS.every((k) => a[k] === null || isSeverity(a[k]))) return false;
+  return (v.events as unknown[]).every((e) => isRecord(e) && isFiniteNum(e.time) && isDamageItem(e.item) && isSeverity(e.severity) && typeof e.text === 'string');
+}

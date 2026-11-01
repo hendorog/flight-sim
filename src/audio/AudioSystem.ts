@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { C172S_AUDIO } from '../aircraft/c172s/audio';
 import type { SimContext, SimEvents, Subsystem } from '../core/context';
+import type { DamageItem, DamageSeverity } from '../physics/damage';
 import { nedToThree } from '../core/frames';
 import { airAbsorptionCutoff, chirpAmplitude, distanceGain, gearThumpAmplitude, propagationDelay, SoundTracker } from './mapping';
 import { DEFAULT_VOLUME, LIMITER, mixFor, type BiquadSpec, type StemRoute } from './mix';
@@ -190,6 +191,11 @@ export class AudioSystem implements Subsystem {
     this.unsubscribe.push(
       ctx.events.on('touchdown', (e) => this.g?.synth.port.postMessage({ type: 'chirp', amp: chirpAmplitude(e.sinkRate) })),
       ctx.events.on('crash', () => this.g?.synth.port.postMessage({ type: 'crash', amp: 1 })),
+      // Landing damage: the crash sound, lower, on a collapse, a propeller strike or other disabling damage.
+      ctx.events.on('damage', (e) => {
+        const amp = damageCrunchAmplitude(e.item, e.severity);
+        if (amp > 0) this.g?.synth.port.postMessage({ type: 'crash', amp });
+      }),
       // Retractable gear: a leg unlocking, locking down or reaching its well.
       ctx.events.on('gear', (e) => this.g?.synth.port.postMessage({ type: 'thump', amp: gearThumpAmplitude(e.kind) })),
       ctx.events.on('caws', (e) => this.caws(e.level)),
@@ -644,4 +650,15 @@ export class AudioSystem implements Subsystem {
     const pan = d > 0.5 ? (this.toSource.dot(this.right) / d) * 0.8 : 0;
     g.pan.pan.setTargetAtTime(pan, now, 0.05);
   }
+}
+
+/**
+ * Level of the crunch on a landing-damage event (the crash sound, which is 1): 0.45 for disabling damage (a leg
+ * folding, a propeller digging in, a belly slide), 0.3 for a propeller tip strike, none for anything else (an
+ * inspection note, a bent leg, a scrape).
+ */
+export function damageCrunchAmplitude(item: DamageItem, severity: DamageSeverity): number {
+  if (severity === 'disabling') return 0.45;
+  if (severity === 'damage' && item.startsWith('propeller')) return 0.3;
+  return 0;
 }

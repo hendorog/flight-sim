@@ -36,6 +36,7 @@ export function gradeLanding(d: LandingData, opts: LandingGradeOptions): Criteri
   const rows: CriterionResult[] = [];
 
   if (d.crashed) rows.push(passFailResult(head('crash', 'Landing without damage', 'binary', true), false, 'The landing ended in a crash'));
+  else if (d.damage) rows.push(passFailResult(head('crash', 'Landing without damage', 'binary', true), false, `The landing damaged the aircraft: ${d.damage[0].toLowerCase()}${d.damage.slice(1)}`));
 
   const sink = Math.max(0, d.sinkFpm);
   rows.push(sampleResult(head('sink', 'Sink rate at touchdown', 'atEvent'), sink, 0, sink, lesson.sinkFpm, test.sinkFpm, st,

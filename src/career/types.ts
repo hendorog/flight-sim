@@ -19,6 +19,7 @@
 
 import type { AircraftId, WeatherSettings } from '../core/types';
 import type { LoadingRequest } from '../physics/interfaces';
+import type { DamageItem, DamageSeverity } from '../physics/damage';
 
 // --------------------------------------------------------------------------------------------- storage
 
@@ -424,6 +425,13 @@ export interface ComfortSummary {
 }
 
 /** What the job runtime hands to the settlement (src/career/economy.ts settleJob). */
+/** One landing-damage event of a job's flight (JobFlightReport.damage). */
+export interface JobDamage {
+  item: DamageItem;
+  severity: DamageSeverity;
+  text: string;
+}
+
 export interface JobFlightReport {
   outcome: JobOutcome;
   /** Where the aircraft came to rest (the field code it is now at), null if nowhere (crash or outlanding: nearest field is chosen by the settlement). */
@@ -457,6 +465,12 @@ export interface JobFlightReport {
   waypointsDone: number;
   waypointsTotal: number;
   crashReason?: string;
+  /**
+   * Landing damage the job's flight took (SimEvents 'damage', physics/damage.ts), in order: an inspection note, a
+   * bent / bottomed / collapsed leg, a propeller strike, an airframe item. Absent: none. Priced by item and severity
+   * at settlement (economy.ts damageRepairs).
+   */
+  damage?: JobDamage[];
   /** Ended through the test arrival hook (__sim.career.testArrive): logged with a "(test)" remark. */
   test?: boolean;
 }
@@ -883,6 +897,31 @@ export const SCORING_RULES = {
   recovery: 1500, lostRecovery: 300,
 } as const;
 
+/**
+ * Landing damage at settlement (economy.ts damageRepairs; physics/damage.ts): each damaged item is priced once, at
+ * the worst severity it took, in $ at the trainer class x the flown type's class payMult, and grounds the aircraft
+ * for its days (the longest item counts). The sum of the repairs is capped at the insurance excess (insuranceExcess):
+ * above it the operator claims, as for a crash. An 'inspection' note (the hard landing past V_lim, a scrape within
+ * its tolerance) costs the heavy-landing inspection line (SCORING_RULES.heavyInspection) once, or `scrapeInspection`
+ * for an airframe item. Estimates for a small operator's shop rates, owner-tunable.
+ */
+export const DAMAGE_RULES = {
+  /** A main leg bent (spring) or bottomed (oleo: drag link, attachment): straighten or replace the leg. */
+  mainLeg: { damage: { usd: 2500, days: 1 }, disabling: { usd: 7000, days: 2 } },
+  /** The nose leg bottomed / collapsed (its yield may be the firewall instead, `nose`). */
+  noseLeg: { damage: { usd: 2000, days: 1 }, disabling: { usd: 5000, days: 2 } },
+  /** Nose / firewall: buckled by the nose leg, or the aircraft slid on it. */
+  nose: { damage: { usd: 6000, days: 2 }, disabling: { usd: 6000, days: 2 } },
+  /** A propeller strike: the propeller and the engine's shock-load inspection (a tip strike) or teardown (it stopped). */
+  propeller: { damage: { usd: 9000, days: 2 }, disabling: { usd: 12000, days: 2 } },
+  wingtip: { damage: { usd: 1500, days: 1 }, disabling: { usd: 1500, days: 1 } },
+  tail: { damage: { usd: 3000, days: 1 }, disabling: { usd: 3000, days: 1 } },
+  /** The belly (a gear-up slide: skins, antennas, drains). */
+  belly: { damage: { usd: 8000, days: 2 }, disabling: { usd: 8000, days: 2 } },
+  /** An airframe scrape within its tolerance: inspection only. */
+  scrapeInspection: 300,
+} as const;
+
 /** Reputation changes (clamped to 0..100 after summing). */
 export const REP_RULES = {
   completed: 2, completedPositioning: 1, completedMedevac: 4,
@@ -892,6 +931,8 @@ export const REP_RULES = {
   overspeed: -3, highG: -3, lowReserve: -2, criticalReserve: -5, runwayStop: -1,
   waypointMissed: -1, routeMissed: -4,
   diverted: -4, outlanded: -8, crashed: -20, abandonedGround: -2, abandonedAir: -5, lost: -5,
+  /** Landing damage (DAMAGE_RULES): the worst severity counts, once. */
+  damaged: -5, disabled: -10,
 } as const;
 
 /** Comfort deductions, points per second unless stated (src/career/runtime/comfort.ts). */

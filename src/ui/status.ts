@@ -19,6 +19,7 @@ import { engineControl, type AircraftState, type ControlInputs } from '../core/t
 import { keysForAction, type InputAction } from '../input/bindings';
 import { trimLabel } from './cues';
 import { el, setText } from './dom';
+import { damaged, disabled } from '../physics/damage';
 import { engineSelectionLabel } from './hudCues';
 
 export type CueLevel = 'warn' | 'alert';
@@ -35,15 +36,36 @@ export function parkingBrakeCue(c: ControlInputs, s: AircraftState): { text: str
 
 export const CRASHED_CUE = 'CRASHED · Shift+R to restart';
 
+/**
+ * The DAMAGED chip (landing damage, physics/damage.ts): red while the aircraft is disabled (a collapsed leg, a stopped
+ * engine), amber for damage it can still move with; none for an inspection note alone, or once it has crashed.
+ */
+export function damageCue(s: AircraftState): { text: string; level: CueLevel } | null {
+  const d = s.damage;
+  if (s.crashed || !damaged(d)) return null;
+  return disabled(d) ? { text: 'DAMAGED · Shift+R to restart', level: 'alert' } : { text: 'DAMAGED', level: 'warn' };
+}
+
+/** Show / restyle the DAMAGED chip. */
+export function applyDamageCue(chip: HTMLElement, cue: { text: string; level: CueLevel } | null): void {
+  chip.classList.toggle('hidden', !cue);
+  if (!cue) return;
+  setText(chip, cue.text);
+  chip.classList.toggle('alert', cue.level === 'alert');
+  chip.classList.toggle('warn', cue.level === 'warn');
+}
+
 export class Annunciators {
   readonly root: HTMLDivElement;
   private readonly park: HTMLElement;
   private readonly crash: HTMLElement;
+  private readonly damage: HTMLElement;
 
   constructor(parent: HTMLElement) {
     this.root = el('div', 'annunc status-annunc', parent);
     this.park = el('div', 'chip warn hidden', this.root, 'PARKING BRAKE');
     this.crash = el('div', 'chip alert hidden', this.root, CRASHED_CUE);
+    this.damage = el('div', 'chip warn hidden', this.root, 'DAMAGED');
   }
 
   set visible(v: boolean) {
@@ -53,6 +75,7 @@ export class Annunciators {
   update(ctx: SimContext, crashDialogOpen: boolean): void {
     applyParkingCue(this.park, parkingBrakeCue(ctx.controls, ctx.state));
     this.crash.classList.toggle('hidden', !ctx.state.crashed || crashDialogOpen);
+    applyDamageCue(this.damage, damageCue(ctx.state));
   }
 }
 

@@ -800,6 +800,16 @@ export class LessonRunner {
     if (td) this.landing.onTouchdown(td, this.simT);
   }
 
+  /**
+   * Landing damage short of disabling (SimEvents 'damage': an inspection note, a bent leg, a tip strike): the landing
+   * being flown carries it (its "Landing without damage" row fails). Disabling damage ends the lesson through
+   * onCrash (TrainingSystem.onDamage).
+   */
+  onDamage(text: string): void {
+    if (this._phase !== 'running') return;
+    this.landing.onDamage(text);
+  }
+
   /** (module 5 addition) The SimEvents crash: the lesson ends 'crashed' (debrief offers "Try again"). */
   onCrash(reason: string): void {
     if (this._phase !== 'running') return;
@@ -2853,9 +2863,9 @@ function whereMatches(where: Record<string, [number, number] | string | boolean>
   return true;
 }
 
-/** A safe landing for the L13 gate: not crashed, on the runway, mains first, sink <= 600 fpm (L14's standard). */
+/** A safe landing for the L13 gate: not crashed or damaged, on the runway, mains first, sink <= 600 fpm (L14's standard). */
 export function safeLanding(d: LandingData): boolean {
-  return !d.crashed && d.onRunway && d.firstWheel !== 'nose' && d.sinkFpm <= 600;
+  return !d.crashed && !d.damage && d.onRunway && d.firstWheel !== 'nose' && d.sinkFpm <= 600;
 }
 
 /** A tolerance chip: `ALT +40`, `IAS −3`, `HDG 2°`, `BANK 44°` (bank shows the value, other angles the error). */

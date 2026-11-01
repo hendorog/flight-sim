@@ -296,6 +296,8 @@ export class LandingDetector {
   private bounces = 0;
   private maxBounceFt = 0;
   private maxAcross = 0;
+  /** Landing damage of the landing being flown (onDamage), first item's text. */
+  private damage: string | null = null;
 
   constructor(private readonly bus: TrainingBus) {}
 
@@ -308,6 +310,15 @@ export class LandingDetector {
     }
     if (this.firstWheel === null) this.firstWheel = td.firstWheel;
     if (this.td === null && td.firstWheel !== 'nose') this.mainsContact(td, simT);
+  }
+
+  /**
+   * Landing damage (SimEvents 'damage', from inside the physics step): kept for the landing being flown, the first
+   * item only; none outside a landing (damage on the ground before or after one is not this landing's).
+   */
+  onDamage(text: string): void {
+    if (this.phase === 'idle' || this.damage !== null) return;
+    this.damage = text;
   }
 
   /** Once per frame; returns the summary when a landing just ended (also emitted on the bus). */
@@ -396,6 +407,7 @@ export class LandingDetector {
     this.bounces = 0;
     this.maxBounceFt = 0;
     this.maxAcross = 0;
+    this.damage = null;
   }
 
   private mainsContact(td: TouchdownData, simT: number): void {
@@ -422,6 +434,7 @@ export class LandingDetector {
       fullStop,
       crashed,
     };
+    if (this.damage !== null) data.damage = this.damage;
     this.phase = 'idle';
     this.gp300 = null;
     this.clearLanding();

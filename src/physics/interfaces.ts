@@ -327,6 +327,12 @@ export interface AircraftFlightModel extends FlightModel {
    * rotor blades (Rotorcraft.setDamage; no effect on other types).
    */
   setAirframeDamage(leadingEdge: number, rotor?: number): void;
+  /** Landing-damage events recorded during the last step() (GearConfig.damage; state.damage has them all). */
+  readonly damageEvents: readonly import('./damage').DamageEvent[];
+  /** The landing-damage record as plain data, for a snapshot; null on a type without damage limits. */
+  captureDamage(): import('./damage').DamageState | null;
+  /** Put a captured landing-damage record back. Call it AFTER setKinematics(), which clears the damage. */
+  restoreDamage(s: import('./damage').DamageState): void;
   captureSystems(): SystemsSnapshot;
   /** `dynamicPressure`: for setting the surfaces immediately, Pa (today: 0.5 rho |v|^2 of the saved velocity). */
   restoreSystems(s: SystemsSnapshot, controls: ControlInputs, dynamicPressure: number): void;

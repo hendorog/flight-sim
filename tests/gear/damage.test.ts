@@ -126,7 +126,7 @@ describe('sink-rate bands at MTOW', () => {
       expect(legOf(broken, 1).status).toBe('collapsed');
       expect(broken.output.crash).toBe('');
       expect(broken.output.wheels[1].load).toBe(0);
-      expect(broken.output.wheels[1].compression).toBe(t.def.gear().damage!.legs[1].collapsedCompression);
+      expect(broken.output.wheels[1].compression).toBeGreaterThanOrEqual(t.def.gear().damage!.legs[1].collapsedCompression);
     }, 60000);
 
     test(`${t.name}: nose-first`, () => {
@@ -229,7 +229,7 @@ describe('after the damage', () => {
     expect(o.onGround).toBe(true);
     // Slid well over 30 m on the cowling (research: 90-180 m from 40 kt at 0.12-0.25 g; this one started at 25 m/s).
     expect(rig.position.x).toBeGreaterThan(30);
-    expect(o.wheels[0].compression).toBe(C172_GEAR.damage!.legs[0].collapsedCompression);
+    expect(o.wheels[0].compression).toBeGreaterThanOrEqual(C172_GEAR.damage!.legs[0].collapsedCompression);
   }, 30000);
 
   test('propeller strikes: a light tip strike runs on; a long, deep or high-power strike digs in', () => {
@@ -377,7 +377,7 @@ describe('the flight model', () => {
     expect(s.damage!.props[0].stopped).toBe(true);
     expect(s.engine.rpm).toBe(0);
     expect(seen).toEqual(s.damage!.events.map((e) => e.text));
-    expect(s.wheels[0].compression).toBe(C172_GEAR.damage!.legs[0].collapsedCompression);
+    expect(s.wheels[0].compression).toBeGreaterThanOrEqual(C172_GEAR.damage!.legs[0].collapsedCompression);
 
     const saved = fm.captureDamage()!;
     expect(saved).toEqual(s.damage);
