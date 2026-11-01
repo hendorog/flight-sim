@@ -26,8 +26,8 @@
 // is switched in place in free flight (swapAircraft: the world stays loaded and the flight carries on in the new type,
 // SimPhysics.setAircraft keeping position, velocity, attitude and rates; the per-type systems are rebuilt or re-pointed,
 // and nothing built at boot keeps a reference to the old type: the closures read this.livePanel, this.aircraftId and
-// ctx.aircraft). During a lesson, a Career job or its placement, an R22 demonstration, behind a curtain, after a crash,
-// or when the new type's chunks do not load, it is a reload, as before. Each type keeps its own resume snapshot
+// ctx.aircraft). During a lesson, a Career job or its placement, an R22 demonstration, behind a curtain, after a crash
+// or disabling landing damage, or when the new type's chunks do not load, it is a reload, as before. Each type keeps its own resume snapshot
 // (resume.ts snapshotKey).
 //
 // THE CAREER (docs/career.md "Integration"; src/career/CareerSystem.ts) lives where the Flight School does (present day).
@@ -44,6 +44,7 @@
 // frame for the interior and exterior views so every shader variant is linked, and fade back in.
 
 import { setWorldSeed, worldSeed } from '../world/worldSeed';
+import { disabled } from '../physics/damage';
 import * as THREE from 'three';
 import {
   createEventBus,
@@ -883,13 +884,14 @@ export class Simulator {
   /**
    * An aircraft can be switched in place now: boot has finished and nothing that a switch would break is under way (a
    * lesson in any phase, a placed Career job or one being placed, an R22 demonstration, a curtain, another switch, a
-   * crash, a lost WebGL context). A switch already under way does not count (setAircraft ignores a second one).
+   * crash or disabling landing damage (a collapsed leg, a stopped engine: physics/damage.ts disabled), a lost WebGL
+   * context). A switch already under way does not count (setAircraft ignores a second one).
    */
   hotSwapAllowed(): boolean {
     if (!this.systems || !this.physics || this.contextLost || this.curtainBusy) return false;
     if (this.demo || this.training?.inLesson) return false;
     if (this.career && (this.career.jobPlaced() || this.career.placingJob)) return false;
-    return !this.physics.state.crashed;
+    return !this.physics.state.crashed && !disabled(this.physics.state.damage);
   }
 
   /**

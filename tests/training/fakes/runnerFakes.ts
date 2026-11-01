@@ -478,6 +478,7 @@ export class NullDetector {
   update(): null { return null; }
   armRollout(h: number): void { this.armed.push(h); }
   onTouchdown(): void {}
+  onDamage(): void {}
   reset(): void { this.resets++; }
 }
 

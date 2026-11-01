@@ -7,6 +7,7 @@ import { defaultControls } from '../../src/core/types';
 import { LandingGear, classifyImpact } from '../../src/physics/gear';
 import { rigidBodyDerivative, rk4Step } from '../../src/physics/rigidBody';
 import { DT, GearRig, MASS, planeEnvironment } from './rig';
+import { LEGACY_C172_GEAR } from './testbed';
 
 const W = MASS * G0;
 const report = (label: string, values: Record<string, number | string>) =>
@@ -236,9 +237,10 @@ describe('dynamic', () => {
   });
 });
 
-describe('landings and crashes', () => {
+// Without damage limits (LEGACY_C172_GEAR: the crash latch a type without GearConfig.damage keeps, the AH-56A's).
+describe('landings and crashes without damage limits', () => {
   const land = (sink: number, pitch: number, aero: boolean, roll = 0) => {
-    const rig = new GearRig();
+    const rig = new GearRig(planeEnvironment(), MASS, LEGACY_C172_GEAR);
     rig.placeOnGround(0, 0.05);
     rig.orientation = quat.fromEuler(roll, pitch, 0);
     rig.velocity = { x: 25, y: 0, z: sink };
@@ -270,7 +272,7 @@ describe('landings and crashes', () => {
   test('structural strikes', () => {
     /** Aircraft at rest in an attitude, lowered until `point` (body) is `clearance` above the ground, then released. */
     const dropOnto = (roll: number, pitch: number, point: { x: number; y: number; z: number }, clearance: number) => {
-      const rig = new GearRig();
+      const rig = new GearRig(planeEnvironment(), MASS, LEGACY_C172_GEAR);
       rig.orientation = quat.fromEuler(roll, pitch, 0);
       const below = quat.rotate(rig.orientation, point).z;
       rig.position = { x: 0, y: 0, z: -(120 + below + clearance) };
@@ -280,14 +282,14 @@ describe('landings and crashes', () => {
     const wingtip = dropOnto(-35 * DEG, 0, { x: -0.1, y: -C172.wing.span / 2, z: -0.79 }, 0.05);
     const prop = dropOnto(0, -27 * DEG, { x: C172.prop.hub.x, y: 0, z: C172.prop.diameter / 2 }, 0.03);
 
-    const hardTail = new GearRig();
+    const hardTail = new GearRig(planeEnvironment(), MASS, LEGACY_C172_GEAR);
     hardTail.placeOnGround(0, 0.8);
     hardTail.orientation = quat.fromEuler(0, 16 * DEG, 0);
     hardTail.velocity = { x: 25, y: 0, z: 2.5 };
     hardTail.run(2);
 
     // Gentle over-rotation: a pitch-rate servo lifts the nose at ~0.2 rad/s until the tail touches.
-    const gentle = new GearRig();
+    const gentle = new GearRig(planeEnvironment(), MASS, LEGACY_C172_GEAR);
     gentle.placeOnGround(0);
     let tailSpeed = 0;
     gentle.loads = (r) => ({ force: v3.zero(), moment: { x: 0, y: 50000 * (0.25 - r.angularVelocity.y), z: 0 } });
@@ -296,13 +298,13 @@ describe('landings and crashes', () => {
     });
 
     // A nose-gear collapse (flat arrival at 4 m/s) drops the nose onto the propeller and cowling.
-    const collapse = new GearRig();
+    const collapse = new GearRig(planeEnvironment(), MASS, LEGACY_C172_GEAR);
     collapse.placeOnGround(0, 0.05);
     collapse.velocity = { x: 25, y: 0, z: 4 };
     collapse.enableLandingAero();
     collapse.run(2);
 
-    const water = new GearRig(planeEnvironment('water'));
+    const water = new GearRig(planeEnvironment('water'), MASS, LEGACY_C172_GEAR);
     water.placeOnGround(0, 0.1);
     water.run(1);
 
@@ -331,6 +333,73 @@ describe('landings and crashes', () => {
     collapse.loads = null;
     collapse.run(0.5);
     expect(collapse.output.crash).toBe('');
+  });
+});
+
+// The C172S's own gear: hard landings, collapses and strikes at landing energy are damage, not crashes (the
+// per-type bands at MTOW are tests/gear/damage.test.ts).
+describe('landings with the C172S damage limits', () => {
+  const land = (sink: number, pitch: number, roll = 0) => {
+    const rig = new GearRig();
+    rig.placeOnGround(0, 0.05);
+    rig.orientation = quat.fromEuler(roll, pitch, 0);
+    rig.velocity = { x: 25, y: 0, z: sink };
+    rig.enableLandingAero();
+    rig.run(2);
+    const d = rig.output.damage!;
+    return { crash: rig.output.crash, nose: d.legs[0].status, main: d.legs[1].status, events: d.events.map((e) => e.text), rig };
+  };
+
+  test('landing sink-rate tolerance', () => {
+    const results: Record<string, string> = {};
+    for (const sink of [1, 2, 3, 4.5, 6, 6.5]) {
+      const r = land(sink, 6 * DEG);
+      results[`mainFirst${sink}`] = `${r.nose}/${r.main} ${r.crash || 'no crash'}`;
+    }
+    for (const sink of [2, 2.5, 3.5, 4.5]) {
+      const r = land(sink, 0);
+      results[`flat${sink}`] = `${r.nose}/${r.main} ${r.crash || 'no crash'}`;
+    }
+    report('landings (nose/main status)', results);
+    // Firm landings: nothing. A flat 2 m/s arrival is hard on the nose leg (an inspection).
+    expect(land(2, 6 * DEG).events).toEqual([]);
+    expect(land(1.5, 0).events).toEqual([]);
+    expect(land(2, 0).events).toEqual(['Hard landing: inspection required']);
+    // Mains-first at 4.5 m/s: the mains are hard but not bent.
+    expect(land(4.5, 6 * DEG).main).toBe('hard');
+    // 6 m/s: the mains bent, not collapsed; no crash.
+    const six = land(6, 6 * DEG);
+    expect(six.main).toBe('bent');
+    expect(six.crash).toBe('');
+    // Flat at 4.5 m/s: the nose folds, damage and not a crash.
+    const flat = land(4.5, 0);
+    expect(flat.nose).toBe('collapsed');
+    expect(flat.crash).toBe('');
+    expect(flat.events).toContain('Nose gear collapsed');
+    // 8 m/s is a terrain impact: still a crash.
+    expect(land(8, 6 * DEG).crash).toMatch(/^Terrain impact at \d+ kt, 1\d{3} fpm descent/);
+  });
+
+  test('structural strikes at landing energy are damage', () => {
+    const wingtip = new GearRig();
+    wingtip.orientation = quat.fromEuler(-35 * DEG, 0, 0);
+    wingtip.position = { x: 0, y: 0, z: -(120 + quat.rotate(wingtip.orientation, { x: -0.1, y: -C172.wing.span / 2, z: -0.79 }).z + 0.05) };
+    wingtip.run(1.5);
+    expect(wingtip.output.crash).toBe('');
+    expect(wingtip.output.damage!.airframe.wingtipLeft).toBe('damage');
+
+    const hardTail = new GearRig();
+    hardTail.placeOnGround(0, 0.8);
+    hardTail.orientation = quat.fromEuler(0, 16 * DEG, 0);
+    hardTail.velocity = { x: 25, y: 0, z: 2.5 };
+    hardTail.run(2);
+    expect(hardTail.output.crash).toBe('');
+    expect(hardTail.output.damage!.airframe.tail).toBe('damage');
+    expect(hardTail.output.damage!.events.map((e) => e.text)).toContain('Tail strike');
+    report('strikes with damage limits', {
+      wingtip: wingtip.output.damage!.events.map((e) => e.text).join('; '),
+      hardTail: hardTail.output.damage!.events.map((e) => e.text).join('; '),
+    });
   });
 });
 

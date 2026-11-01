@@ -16,7 +16,7 @@ import { FT, FPM, KT, RAD, wrapTwoPi } from '../core/math';
 import { lagStep } from '../instruments/dynamics/filters';
 import { el, hiDpiCanvas, setText } from './dom';
 import { carbHeatOn, flapLimitCas, gearCue, hailCue, gearLimitCas, OverspeedTimer, speedBands, speedLines, type SpeedBand, type SpeedLine } from './hudCues';
-import { applyParkingCue, CRASHED_CUE, parkingBrakeCue } from './status';
+import { applyDamageCue, applyParkingCue, CRASHED_CUE, damageCue, parkingBrakeCue } from './status';
 
 /** What the HUD needs to know about the type flown. */
 export interface HudAircraft {
@@ -67,7 +67,7 @@ export class Hud {
   private readonly vs: HTMLElement;
   private readonly g: HTMLElement;
   private readonly annunc: HTMLElement;
-  private readonly chips: Record<'stall' | 'park' | 'brake' | 'crash' | 'gear' | 'carb' | 'flapSpeed' | 'gearSpeed' | 'hail', HTMLElement>;
+  private readonly chips: Record<'stall' | 'park' | 'brake' | 'crash' | 'damage' | 'gear' | 'carb' | 'flapSpeed' | 'gearSpeed' | 'hail', HTMLElement>;
   private readonly controls: HTMLElement;
   private levers: { def: HudLever; fill: HTMLElement; value: HTMLElement }[] = [];
   private readouts: { def: HudReadout; value: HTMLElement }[] = [];
@@ -105,6 +105,7 @@ export class Hud {
       park: el('div', 'chip warn hidden', this.annunc, 'PARKING BRAKE'),
       brake: el('div', 'chip warn hidden', this.annunc, 'BRAKES'),
       crash: el('div', 'chip alert hidden', this.annunc, CRASHED_CUE),
+      damage: el('div', 'chip warn hidden', this.annunc, 'DAMAGED'),
       gear: el('div', 'chip hidden', this.annunc),
       carb: el('div', 'chip info hidden', this.annunc, 'CARB HEAT'),
       flapSpeed: el('div', 'chip warn hidden', this.annunc, 'FLAP SPEED'),
@@ -206,6 +207,7 @@ export class Hud {
     applyParkingCue(this.chips.park, parkingBrakeCue(c, s));
     this.chips.brake.classList.toggle('hidden', c.parkingBrake || Math.max(c.brakeLeft, c.brakeRight) < 0.05);
     this.chips.crash.classList.toggle('hidden', !s.crashed);
+    applyDamageCue(this.chips.damage, damageCue(s));
     const gear = gearCue(s.gear);
     this.chips.gear.classList.toggle('hidden', !gear);
     if (gear) {

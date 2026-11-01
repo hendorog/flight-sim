@@ -26,6 +26,24 @@ older worker handoffs; an estimate is not by itself proof of a handling defect.
 
 ## Cross-aircraft issues
 
+### Landing damage: stage-A calibration gaps — **estimate**
+
+The leg loads of the landing-damage model (`src/physics/damage.ts`, each type's `gear.ts` `damage` block) were set by
+drops at MTOW (tests/gear/damage.test.ts), and three gaps remain:
+- **PA-34 and PC-12 oleo loads absurdly high.** Their oleo springs stiffen too much near the end of the stroke, so the
+  axial loads in a hard landing run far above what a real oleo carries; the hard / yield / ultimate loads were set
+  against those numbers, so the bands come out right in sink rate but the loads themselves are not physical. Close
+  with: a flatter oleo force curve (efficiency about 0.8 over the stroke), then the damage loads re-set by the drops.
+- **C172S and C152 collapse band squeezed under the impact limit.** Their main legs collapse at about 6.8 m/s, and a
+  sink above about 7 m/s classifies as a terrain impact (a crash), so a collapse without a crash happens in a narrow
+  band only. Close with: an owner decision on the impact limit for the light singles, or a lower ultimate load.
+- **Propeller contact time is cumulative.** The time a propeller has spent touching the ground (`propDigTime`, 0.12 s)
+  adds up over the whole flight, so several light tip strikes on separate bounces can add up to a dig-in that stops
+  the engine. Close with: a contact time that restarts once the disc has been clear for a moment.
+Also: the solo-lesson debrief after disabling damage says "That flight ended in a crash"; career repair costs and
+grounding days (`DAMAGE_RULES`) are estimates for the owner to tune; lesser damage is dropped by an aircraft hot swap
+and by a Career refuel at a stop (both start a new flight model; the Career keeps billing what was recorded).
+
 ### Fixed-panel lighting — **missing feature**
 
 The flat panel does not reproduce 3D cockpit lighting or dimmer shading, although dimmer state is shared.

@@ -147,6 +147,32 @@ switch with its curtain): C172S and C152 0.28-0.33 s, 1.0-1.1 s (0.27 s by the q
 1.1 s, 2.1 s and C208 1.5 s, 2.4 s the first time (their propeller maps); R44 1.6-1.7 s, 2.2-3.0 s (its model
 is built on the main thread); a reload 7.7 s.
 
+## Landing damage
+
+A hard landing in an aeroplane damages it instead of ending the flight (`src/physics/damage.ts`, the gear's
+`GearConfig.damage` block; C152, C172S, PA-38, DA20, PA-34, C208 and PC-12; the helicopters and the AH-56 are
+unchanged). Past the type's limit descent velocity it is an inspection note ("Hard landing: inspection required");
+harder, a spring main leg bends (it then pulls to one side) or an oleo bottoms (structural damage); past the leg's
+ultimate load it collapses and the aircraft settles on that side or its nose. A propeller that touches is struck (a
+tip strike at low power runs on) or digs in and stops its engine (a PT6's propeller and power turbine stop, the gas
+generator runs on); wingtip, tail, nose and belly contacts at landing energy are damage, and the aircraft slides to
+a stop. Terrain impact (more than about 7 m/s, or fast and steep), flipping over, ditching and structural failure
+are still crashes, with the crash dialog.
+
+Each new item is a SimEvents `damage` event `{ item, severity, text }` (severity `inspection`, `damage` or
+`disabling`) from `SimPhysics`, which also disengages the autopilot on disabling damage. There is no dialog: a toast
+per item, a DAMAGE list in the flight-cues box (one line per item, the latest), and a DAMAGED chip on the HUD and the
+cockpit annunciators (amber for damage, red with the restart key once disabled; none for an inspection note
+alone). A collapsed leg is drawn folded (its wheel reports at least its fold, and never sits below the ground the
+aircraft rests on); a stopped propeller stands still. Disabling damage plays the crash sound at a lower level, as
+does a propeller tip strike. Restart (menu or Shift+R) clears it, like any new flight. The resume snapshot carries
+it (`damage.landing`, beside the hail damage; no schema change, an older snapshot loads undamaged): a resumed flight
+comes back with its folded legs, bent legs and seized engines, and its items listed, but no new toasts. The hot swap
+is refused while the aircraft is disabled, as after a crash (the switch reloads instead); lesser damage does not
+cross a switch (the new type is undamaged, as with hail). In a lesson, damage fails the landing's "Landing without
+damage" row and disabling damage ends the lesson as a crash does (a dual lesson on its own crash panel); in the
+Career it is priced at settlement ([career.md](career.md), "Settlement").
+
 ## Sound
 
 Sound starts on the first click, tap or key press (browsers allow audio only after a user gesture). It needs a

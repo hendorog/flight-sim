@@ -334,7 +334,8 @@ class OleoLeg implements WheelAssembly {
     this.noseSlider.position.set(-travel, 0, 0);
     if (this.steers) this.noseSteer.setAngle(n.steerAngle);
     this.noseSpin.rotation.x = -n.rotation;
-    if (this.linkUpper) this.poseLinks(travel);
+    // A collapsed leg (landing damage) reports more travel than the stroke: the links stay folded flat, never inverted.
+    if (this.linkUpper) this.poseLinks(Math.min(travel, this.crownAt - this.cylinderLen - 0.015));
   }
 
   /** Upper link pivots under the collar, lower link on the fork crown (which rises with the piston). */

@@ -49,6 +49,7 @@ import { isEraId } from '../world/era/registry';
 import { sanitizeExtras } from '../core/weatherFields';
 import type { EraId } from '../world/era/types';
 import { MAX_CRACKS, type HailDamageSnapshot } from './weather/hailDamage';
+import { isDamageState, type DamageState } from '../physics/damage';
 import type { StabilityAssistSnapshot } from './rotorcraft/stabilityAssist';
 
 /**
@@ -159,8 +160,12 @@ export interface FlightSnapshot {
    * absent otherwise (a present-day snapshot without a job is byte-identical to before).
    */
   career?: unknown;
-  /** (schema 5) The hail damage (sim/weather/hailDamage.ts). Absent on read (schema 4 and older): none. */
-  damage?: HailDamageSnapshot;
+  /**
+   * (schema 5) The hail damage (sim/weather/hailDamage.ts). Absent on read (schema 4 and older): none. `landing`: the
+   * landing damage (physics/damage.ts) of a type with damage limits, present once it has any; optional, so the
+   * schema number did not change (absent or malformed: an undamaged aircraft).
+   */
+  damage?: HailDamageSnapshot & { landing?: DamageState };
   /**
    * The STAB ASSIST's datums, filters and follow-up totals (src/sim/rotorcraft/stabilityAssist.ts exportState), on a
    * type with one (the Bo 105). Optional, like `era`: absent (an older snapshot, another type) or malformed, the assist
@@ -437,6 +442,7 @@ export function validateSnapshot(v: unknown): FlightSnapshot | null {
   // Schema 5: the hail damage. Absent (schema 4 and older) or malformed: none.
   if (out.damage !== undefined && !isDamage(out.damage)) delete out.damage;
   if (out.damage === undefined) out.damage = noDamage();
+  else if (out.damage.landing !== undefined && !isDamageState(out.damage.landing)) delete out.damage.landing;
   // The STAB ASSIST's state: numbers and flags only, else dropped (the assist then captures afresh).
   if (out.assist !== undefined && !(isObj(out.assist) && Object.values(out.assist).every((x) => isNum(x) || typeof x === 'boolean'))) delete out.assist;
   return out;

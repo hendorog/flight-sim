@@ -112,26 +112,26 @@ const NACELLE_X = G.propellers[1].hub.x - 1.2;
 const STRUCTURE: readonly StructuralPoint[] = [
   // The squared tips with their caps, and the lower surface at mid-span: a low wing meets the ground inboard of
   // the tip.
-  { position: { x: -0.4, y: -HALF_SPAN, z: wingLowerZ(HALF_SPAN) }, message: 'Left wingtip struck the ground', tolerance: 0 },
-  { position: { x: -0.4, y: HALF_SPAN, z: wingLowerZ(HALF_SPAN) }, message: 'Right wingtip struck the ground', tolerance: 0 },
-  { position: { x: -0.2, y: -3.3, z: wingLowerZ(3.3) }, message: 'Left wing struck the ground', tolerance: 0 },
-  { position: { x: -0.2, y: 3.3, z: wingLowerZ(3.3) }, message: 'Right wing struck the ground', tolerance: 0 },
+  { position: { x: -0.4, y: -HALF_SPAN, z: wingLowerZ(HALF_SPAN) }, message: 'Left wingtip struck the ground', tolerance: 0, item: 'wingtipLeft' },
+  { position: { x: -0.4, y: HALF_SPAN, z: wingLowerZ(HALF_SPAN) }, message: 'Right wingtip struck the ground', tolerance: 0, item: 'wingtipRight' },
+  { position: { x: -0.2, y: -3.3, z: wingLowerZ(3.3) }, message: 'Left wing struck the ground', tolerance: 0, item: 'wingtipLeft' },
+  { position: { x: -0.2, y: 3.3, z: wingLowerZ(3.3) }, message: 'Right wing struck the ground', tolerance: 0, item: 'wingtipRight' },
   // Nacelle undersides (behind the cowl flaps) and the stowed main tyres, which stay partly exposed in the wing
   // root (s.12): a gear-up landing slides on them (contract 3.3).
-  { position: { x: NACELLE_X, y: G.propellers[0].hub.y, z: 0.36 }, message: 'Left nacelle struck the ground', tolerance: 0, part: 'left nacelle', belly: true },
-  { position: { x: NACELLE_X, y: G.propellers[1].hub.y, z: 0.36 }, message: 'Right nacelle struck the ground', tolerance: 0, part: 'right nacelle', belly: true },
-  { position: { x: G.gear.leftMain.x, y: -STOWED_MAIN_Y, z: STOWED_MAIN_Z }, message: 'Left main wheel struck the ground', tolerance: 0, part: 'left main wheel', belly: true },
-  { position: { x: G.gear.rightMain.x, y: STOWED_MAIN_Y, z: STOWED_MAIN_Z }, message: 'Right main wheel struck the ground', tolerance: 0, part: 'right main wheel', belly: true },
+  { position: { x: NACELLE_X, y: G.propellers[0].hub.y, z: 0.36 }, message: 'Left nacelle struck the ground', tolerance: 0, part: 'left nacelle', belly: true, item: 'belly' },
+  { position: { x: NACELLE_X, y: G.propellers[1].hub.y, z: 0.36 }, message: 'Right nacelle struck the ground', tolerance: 0, part: 'right nacelle', belly: true, item: 'belly' },
+  { position: { x: G.gear.leftMain.x, y: -STOWED_MAIN_Y, z: STOWED_MAIN_Z }, message: 'Left main wheel struck the ground', tolerance: 0, part: 'left main wheel', belly: true, item: 'belly' },
+  { position: { x: G.gear.rightMain.x, y: STOWED_MAIN_Y, z: STOWED_MAIN_Z }, message: 'Right main wheel struck the ground', tolerance: 0, part: 'right main wheel', belly: true, item: 'belly' },
   // The flat belly under the cabin and the nose's underside.
-  { position: { x: -0.6, y: 0, z: 0.415 }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true },
-  { position: { x: 0.6, y: 0, z: 0.415 }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true },
-  { position: { x: 2.3, y: 0, z: 0.38 }, message: 'Nose struck the ground', tolerance: 0 },
+  { position: { x: -0.6, y: 0, z: 0.415 }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true, item: 'belly' },
+  { position: { x: 0.6, y: 0, z: 0.415 }, message: 'Belly struck the ground', tolerance: 0, part: 'belly', belly: true, item: 'belly' },
+  { position: { x: 2.3, y: 0, z: 0.38 }, message: 'Nose struck the ground', tolerance: 0, item: 'nose' },
   // The tail cone's underside at the tie-down, FS 285 (s.12): it touches at about 12 degrees of pitch. A scrape at
   // taxi or take-off-roll speed is survivable (as on the Cessnas).
-  { position: { x: pa34StationX(285), y: 0, z: 0.14 }, message: 'Tail strike', tolerance: 2.5 },
+  { position: { x: pa34StationX(285), y: 0, z: 0.14 }, message: 'Tail strike', tolerance: 2.5, item: 'tail' },
   // Stabilator tips: roll-over points.
-  { position: { x: G.hTail.quarterChord.x, y: -H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Left horizontal stabilizer struck the ground', tolerance: 0 },
-  { position: { x: G.hTail.quarterChord.x, y: H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Right horizontal stabilizer struck the ground', tolerance: 0 },
+  { position: { x: G.hTail.quarterChord.x, y: -H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Left horizontal stabilizer struck the ground', tolerance: 0, item: 'tail' },
+  { position: { x: G.hTail.quarterChord.x, y: H_TAIL_HALF, z: G.hTail.quarterChord.z }, message: 'Right horizontal stabilizer struck the ground', tolerance: 0, item: 'tail' },
   // Upper surfaces, for a nose-over or roll-over: the fin tip and the cabin roof (1.93 m above the ground).
   { position: { x: G.vTail.tip.x, y: 0, z: G.vTail.tip.z }, message: 'Aircraft flipped over', tolerance: 0 },
   { position: { x: 0.5, y: 0, z: G.restHeight - 1.93 }, message: 'Aircraft flipped over', tolerance: 0 },
@@ -168,6 +168,18 @@ export function createPA34Gear(): GearConfig {
       part: i === 0 ? 'left propeller' : 'right propeller',
     })),
     // Contact speeds of a 60 KCAS (31 m/s) landing stall: 1.6 and 1.4 times it (gearConfig.ts rule of thumb).
+    // Landing damage (physics/damage.ts). Axial leg loads from drops at MTOW, wings level, lift = weight
+    // (tests/gear/damage.test.ts), placed on the landing-damage research's section 7 sink-rate bands: the
+    // hard-landing note at V_lim 2.85 m/s (561 fpm); hard / yield / collapse mains-first at 2.85 / 3.4 / 4.6 m/s,
+    // nose-wheel contact at 1.68 / 2.13 / 3.05 m/s. An oleo, once bottomed, folds on a later contact at 40 % of
+    // the way from its yield to its ultimate load (an estimate).
+    damage: {
+      legs: [
+        { kind: 'oleo', hardLoad: 19.9e3, yieldLoad: 32.7e3, ultimateLoad: 69.3e3, bottomedUltimate: 47.3e3, collapsedCompression: 0.14, yield: { text: 'Nose gear drag link damaged', item: 'nose' } },
+        { kind: 'oleo', hardLoad: 48.7e3, yieldLoad: 71.5e3, ultimateLoad: 138.2e3, bottomedUltimate: 98.2e3, collapsedCompression: 0.2 },
+        { kind: 'oleo', hardLoad: 48.7e3, yieldLoad: 71.5e3, ultimateLoad: 138.2e3, bottomedUltimate: 98.2e3, collapsedCompression: 0.2 },
+      ],
+    },
     impact: { sinkRate: 7, speed: 49, steepSpeed: 43, steepPath: 12 * DEG },
     retract: PA34_RETRACT,
   };

@@ -5,6 +5,7 @@
 
 import type { Vec3 } from '../../core/math';
 import type { WheelState } from '../../core/types';
+import type { AirframeItem, DamageSeverity } from '../damage';
 import type { StrutSpring, TyreSpring } from './springs';
 import type { SteeringParams, TyreParams } from './tyre';
 
@@ -20,6 +21,16 @@ export interface StructuralPoint {
   friction?: number;
   /** Lower-surface point that takes the weight in a gear-up arrival (belly, nacelle underside). */
   belly?: boolean;
+  /**
+   * With GearConfig.damage: the airframe item a contact at landing energy damages (no crash). Absent: the contact
+   * stays a crash ("Aircraft flipped over"). Ignored without GearConfig.damage.
+   */
+  item?: AirframeItem;
+  /**
+   * With `item`: what the contact does and says. Absent: by item (wingtip and tail 'damage', nose and belly
+   * 'disabling'); a contact within `tolerance` is an 'inspection' scrape.
+   */
+  damage?: { severity: DamageSeverity; text: string };
 }
 
 export interface PropellerDisc { hub: Vec3; radius: number; message: string; part?: string }
@@ -70,13 +81,64 @@ export interface WheelConfig {
   /** Strut + tyre damping force (N, + resists compression) from the strut and total compression rates, m/s. */
   damping(strutRate: number, totalRate: number): number;
   tyre: TyreParams; steering: SteeringParams | null;
-  /** Which toe brake acts on this wheel; brake torque at full pedal, N m; axial leg force beyond which the gear fails, N. */
+  /**
+   * Which toe brake acts on this wheel; brake torque at full pedal, N m; axial leg force beyond which the gear fails
+   * and the flight ends, N (ignored with GearConfig.damage, whose legs carry their own limits).
+   */
   brake: 'left' | 'right' | null; maxBrakeTorque: number; limitLoad: number;
   /** Contact point with the leg stowed (for partial-extension contact tests and the render). Retractable legs only. */
   stowed?: Vec3;
   /** The leg's name in crash messages ("<label> gear collapsed"). Absent: Nose / Left main / Right main by the slot (a
    *  tail wheel in the "nose" slot, AH-56A, says "Tail"). */
   label?: string;
+}
+
+/**
+ * Damage limits of one leg (GearDamageConfig). Loads are AXIAL leg loads, N, set by drops of the type at MTOW
+ * (tests/gear/damage.test.ts), not scaled with weight: a lighter aircraft loads its legs less by itself.
+ */
+export interface LegDamageConfig {
+  /** 'spring': steel tube or leaf, takes a permanent set; 'oleo': air/oil strut, bottoms. */
+  kind: 'spring' | 'oleo';
+  /** First "hard landing: inspection required" note: the load of a drop at the type's limit descent velocity. */
+  hardLoad: number;
+  /**
+   * Spring: permanent set begins ('bent'). Oleo: the stroke is used up and the load goes into the structure
+   * ('bottomed': trunnion, drag link, firewall or engine mount damage); a strut at the end of its stroke counts too.
+   */
+  yieldLoad: number;
+  /** The leg fractures or folds ('collapsed'): it carries nothing more. */
+  ultimateLoad: number;
+  /** Oleo: once bottomed, the leg folds above this on any LATER contact. Absent: ultimateLoad. */
+  bottomedUltimate?: number;
+  /** Spring: permanent set reached at the ultimate load (linear from the yield load), m. Absent: 0.04. */
+  maxSet?: number;
+  /** Spring: toe-out per metre of set, rad/m (the bent leg makes the aircraft pull). Absent: 0.9 (0.5 deg/cm). */
+  toePerSet?: number;
+  /** WheelState.compression a collapsed leg reports, so the gear renderer draws it folded, m. */
+  collapsedCompression: number;
+  /** Text and airframe item of the yield damage (nose leg: the firewall). Absent: "<Leg> gear bent / bottomed". */
+  yield?: { text: string; item?: AirframeItem };
+}
+
+/**
+ * Landing damage instead of a crash (physics/damage.ts). Absent on a GearConfig: every overload and airframe
+ * contact is a crash, as before (AH-56A and the rotorcraft).
+ */
+export interface GearDamageConfig {
+  /** Nose (or tail wheel), left main, right main. */
+  legs: readonly [LegDamageConfig, LegDamageConfig, LegDamageConfig];
+  /**
+   * A propeller strike digs in (the engine stops) when the disc stays in the ground longer than this (summed over
+   * the strikes), s, when it goes deeper than `propDigDepth`, m, when the shaft power is above `propDigPower`
+   * (fraction of rated), with a collapsed leg or with the gear up. Otherwise it is a tip strike and the engine runs
+   * on. Absent: 0.12 s, 0.04 m, 0.4.
+   */
+  propDigTime?: number;
+  propDigDepth?: number;
+  propDigPower?: number;
+  /** Event text of a propeller strike that stops the propeller. Absent: "Propeller strike: engine stopped". */
+  propStopText?: string;
 }
 
 export interface GearConfig {
@@ -91,4 +153,6 @@ export interface GearConfig {
   contact?: { stiffness: number; damping: number; friction: number };
   /** Absent = fixed gear. */
   retract?: RetractConfig;
+  /** Landing damage limits. Absent: every gear overload or airframe contact is a crash (see GearDamageConfig). */
+  damage?: GearDamageConfig;
 }

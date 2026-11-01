@@ -12,10 +12,11 @@
 
 import type { StormCell, WeatherSettings } from '../core/types';
 import type { LoadingRequest } from '../physics/interfaces';
+import { isDamageItem } from '../physics/damage';
 import {
   CAREER_AIRCRAFT_IDS, CAREER_SCHEMA,
   type ActiveJob, type AircraftClass, type CareerAircraftId, type CareerLogEntry, type CareerSave, type CareerSettings,
-  type CareerWeatherId, type ComfortFactor, type ComfortSummary, type FleetAircraft, type JobFlightReport,
+  type CareerWeatherId, type ComfortFactor, type ComfortSummary, type FleetAircraft, type JobDamage, type JobFlightReport,
   type JobKind, type JobOffer, type JobOutcome, type JobPhase, type JobPlace, type LandingSummary, type LicenceSource,
   type MoneyLine, type MoneyLineId, type OfferItem, type PayloadItem, type PayloadKind, type RankId, type RatingId,
   type RepLine, type SettledOutcome, type Settlement, type Station, type Tenure, type Waypoint,
@@ -85,7 +86,7 @@ const CONTRACT_FIELDS_COVERED: readonly true[] = [
   true satisfies Covers<PayloadItem, 'kind' | 'label' | 'kg' | 'station'>,
   true satisfies Covers<Waypoint, 'name' | 'north' | 'east' | 'radiusM' | 'maxAglFt' | 'landS'>,
   true satisfies Covers<JobFlightReport, (typeof REPORT_NUMBERS)[number] | 'outcome' | 'atField' | 'position' | 'landing'
-    | 'comfort' | 'onApron' | 'onRunway' | 'crashReason' | 'test'>,
+    | 'comfort' | 'onApron' | 'onRunway' | 'crashReason' | 'damage' | 'test'>,
   true satisfies Covers<LandingSummary, 'score' | 'sinkFpm' | 'bounces' | 'firstWheel' | 'helicopter' | 'onTarget' | 'distAimFt'
     | 'centrelineM' | 'spotDistM'>,
   true satisfies Covers<Settlement, 'offerId' | 'outcome' | 'lines' | 'net' | 'repLines' | 'repDelta' | 'cashAfter' | 'repAfter'
@@ -316,6 +317,22 @@ export function validateReport(v: unknown): JobFlightReport | null {
   if (v.test !== undefined) {
     if (!isBool(v.test)) return null;
     out.test = v.test;
+  }
+  if (v.damage !== undefined) {
+    const damage = jobDamage(v.damage);
+    if (!damage) return null;
+    out.damage = damage;
+  }
+  return out;
+}
+
+/** JobFlightReport.damage rebuilt (null: malformed). */
+export function jobDamage(v: unknown): JobDamage[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: JobDamage[] = [];
+  for (const e of v as unknown[]) {
+    if (!isObj(e) || !isDamageItem(e.item) || !(e.severity === 'inspection' || e.severity === 'damage' || e.severity === 'disabling') || !isStr(e.text)) return null;
+    out.push({ item: e.item, severity: e.severity, text: e.text });
   }
   return out;
 }

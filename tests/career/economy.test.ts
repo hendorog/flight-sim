@@ -469,3 +469,71 @@ describe('settleJob: clamps, clock and summary', () => {
     expect(nearestFieldCode([], { north: 0, east: 0 }, 'X')).toBe('X');
   });
 });
+
+describe('settleJob: landing damage', () => {
+  const hard = { item: 'hardLanding', severity: 'inspection', text: 'Hard landing: inspection required' } as const;
+  const bent = { item: 'leftMain', severity: 'damage', text: 'Left main gear bent' } as const;
+  const noseCollapsed = { item: 'noseGear', severity: 'disabling', text: 'Nose gear collapsed' } as const;
+  const firewall = { item: 'nose', severity: 'damage', text: 'Firewall buckled by the nose gear' } as const;
+  const tipStrike = { item: 'propeller0', severity: 'damage', text: 'Propeller strike: engine and propeller inspection required' } as const;
+  const propStopped = { item: 'propeller0', severity: 'disabling', text: 'Propeller strike: engine stopped' } as const;
+
+  it('an inspection note is the heavy-landing inspection line, once (with the 900 fpm rule too), no grounding', () => {
+    const base = settle(save(), report()).settlement;
+    const st = settle(save(), report({ damage: [hard] })).settlement;
+    expect(amount(st, 'heavyLanding')).toBe(-500);
+    expect(amount(st, 'repair')).toBe(0);
+    expect(st.net).toBe(base.net - 500);
+    expect(st.groundedUntilDay).toBeUndefined();
+    const heavy = settle(save(), report({ damage: [hard], landing: { score: 30, sinkFpm: 950, bounces: 0, firstWheel: 'left', helicopter: false, onTarget: true } })).settlement;
+    expect(heavy.lines.filter((l) => l.id === 'heavyLanding')).toHaveLength(1);
+  });
+
+  it('each item is repaired once at its worst severity, x the class mult, grounding for the longest repair', () => {
+    // The C172S (tourer, x1.3); a C152 excess ($2,250) would cap these.
+    const s = saveFor('c172s');
+    const base = settle(s, report()).settlement;
+    const st = settle(s, report({ damage: [hard, firewall, noseCollapsed, tipStrike, propStopped] })).settlement;
+    const repairs = st.lines.filter((l) => l.id === 'repair');
+    expect(repairs.map((l) => l.label)).toEqual([
+      'Firewall and nose repair', 'Nose gear repair', 'Propeller strike: propeller and engine teardown', 'Insurance claim (repairs above the excess)',
+    ]);
+    const sum = Math.round(6000 * 1.3) + Math.round(5000 * 1.3) + Math.round(12000 * 1.3);
+    const excess = insuranceExcess(CAREER_PERF.c172s);
+    expect(sum).toBeGreaterThan(excess);
+    expect(amount(st, 'repair')).toBe(-excess);
+    expect(amount(st, 'heavyLanding')).toBe(-Math.round(500 * 1.3));
+    expect(st.repLines).toContainEqual({ reason: 'Aircraft disabled', delta: -10 });
+    expect(st.repDelta).toBe(base.repDelta - 10);
+    expect(st.groundedUntilDay).toBeDefined();
+    expect(st.summary).toContain('Firewall buckled by the nose gear: the aircraft is in the hangar for repairs.');
+  });
+
+  it('a bent leg on a trainer: its repair, the claim above the C152\'s excess, -5 reputation, a day out of service', () => {
+    const st = settle(save(), report({ damage: [hard, bent] })).settlement;
+    const excess = insuranceExcess(CAREER_PERF.c152);
+    expect(excess).toBe(2250);
+    expect(st.lines.filter((l) => l.id === 'repair')).toEqual([
+      { id: 'repair', label: 'Left main gear repair', amount: -2500 },
+      { id: 'repair', label: 'Insurance claim (repairs above the excess)', amount: 2500 - excess },
+    ]);
+    expect(st.repLines).toContainEqual({ reason: 'Aircraft damaged', delta: -5 });
+    const { save: out } = settle(save(), report({ damage: [hard, bent] }));
+    expect(out.fleet[0].groundedUntilDay).toBe(st.groundedUntilDay);
+    expect(st.groundedUntilDay! - Math.floor(out.clockMin / 1440)).toBe(1);
+  });
+
+  it('a crash keeps the insurance excess path: its damage is not priced again', () => {
+    const plain = settle(save(), report({ outcome: 'crashed', atField: null })).settlement;
+    const withDamage = settle(save(), report({ outcome: 'crashed', atField: null, damage: [hard, noseCollapsed] })).settlement;
+    expect(withDamage.lines).toEqual(plain.lines);
+    expect(withDamage.repDelta).toBe(plain.repDelta);
+  });
+
+  it('damage is priced on other outcomes too (an outlanding that bent a leg)', () => {
+    const plain = settle(save(), report({ outcome: 'outlanded', atField: null })).settlement;
+    const st = settle(save(), report({ outcome: 'outlanded', atField: null, damage: [bent] })).settlement;
+    expect(amount(st, 'repair')).toBeLessThan(0);
+    expect(st.net).toBeLessThan(plain.net);
+  });
+});

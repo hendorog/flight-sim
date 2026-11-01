@@ -1,6 +1,7 @@
 // Visual equivalents of the warning sounds. Read physics flags, never AudioContext or mute state.
 import type { AircraftState } from '../core/types';
 import { el, setText } from './dom';
+import { damageLines, disabled } from '../physics/damage';
 
 export function audibleWarnings(s: AircraftState): string[] {
   const out: string[] = [];
@@ -15,6 +16,9 @@ export function audibleWarnings(s: AircraftState): string[] {
 export class FlightCues {
   readonly root: HTMLElement;
   private readonly warnings: HTMLElement;
+  /** The landing damage (physics/damage.ts), one line per item, while the flight has any. */
+  private readonly damage: HTMLElement;
+  private damageText = '';
   private readonly latest: HTMLElement;
   private readonly history: HTMLElement;
   private active: string[] = [];
@@ -26,6 +30,7 @@ export class FlightCues {
     this.root.setAttribute('aria-label', 'Flight captions');
     this.warnings = el('div', 'flight-warnings', this.root, 'No active warnings');
     this.warnings.setAttribute('role', 'alert');
+    this.damage = el('div', 'flight-damage hidden', this.root);
     this.latest = el('div', 'flight-cue-latest', this.root);
     this.latest.setAttribute('role', 'status');
     const details = el('details', '', this.root);
@@ -48,6 +53,20 @@ export class FlightCues {
     this.active = active;
     setText(this.warnings, active.join('\n') || 'No active warnings');
     this.warnings.classList.toggle('warning', active.length > 0);
+    // The DAMAGE list comes from the state (a restored flight brings its damage back without new events).
+    const lines = damageLines(s.damage);
+    const text = lines.length ? `DAMAGE\n${lines.join('\n')}` : '';
+    if (text !== this.damageText) {
+      this.damageText = text;
+      setText(this.damage, text);
+      this.damage.classList.toggle('hidden', !text);
+      this.damage.classList.toggle('disabling', disabled(s.damage));
+    }
+  }
+
+  /** The DAMAGE list as shown (empty: none). */
+  get damageList(): string[] {
+    return this.damageText ? this.damageText.split('\n').slice(1) : [];
   }
   reset(): void { this.active = []; this.log = []; this.last = ''; this.latest.textContent = ''; this.history.replaceChildren(); }
   private record(text: string): void {
@@ -61,6 +80,8 @@ export const FLIGHT_CUES_CSS = /* css */ `
 #fsui .flight-cues { position:absolute;left:14px;bottom:14px;width:min(350px,calc(100vw - 28px));background:rgba(10,17,24,.92);border:1px solid #435969;border-radius:7px;padding:7px 10px;font:12px/1.4 system-ui;color:#c7d4de;pointer-events:auto; }
 #fsui .flight-warnings { white-space:pre-line;font-weight:650; }
 #fsui .flight-warnings.warning { color:#ffd1a3; }
+#fsui .flight-damage { white-space:pre-line;font-weight:650;color:#ffd1a3;margin-top:3px;padding-top:3px;border-top:1px solid #ffffff1a; }
+#fsui .flight-damage.disabling { color:#ff9c8f; }
 #fsui .flight-cue-latest { color:#eef3f8; }
 #fsui .flight-cues summary { cursor:pointer;font-size:11px;color:#9edcff;margin-top:3px; }
 #fsui .flight-cue-log { max-height:160px;overflow:auto;overscroll-behavior:contain; }

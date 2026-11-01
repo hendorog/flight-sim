@@ -2,9 +2,11 @@
 // are known. Stage C builds its whole-aircraft test-beds (CASTER_TESTBED, RETRACT_TESTBED and the twins) on
 // these. None of them is a real type's definition: where a figure is an estimate the comment says so.
 //
+//   LEGACY_C172_GEAR     the C172S gear without its damage limits: every overload or airframe contact is a crash
+//                        (the path a type without GearConfig.damage keeps, the AH-56A)
 //   CASTER_GEAR          the C172S gear with a free-castering nosewheel (DA20 swivel)
 //   DA20_LIKE            mass, inertias and a gear of DA20-C1 proportions with that nosewheel
-//   RETRACT_GEAR         the C172S gear made retractable (PA-34 system): stowed positions, belly points
+//   RETRACT_GEAR         the legacy C172S gear made retractable (PA-34 system): stowed positions, belly points
 //   TWIN_RETRACT_GEAR    the same with two propeller discs at y = +/-1.9 m, nacelle undersides and the impact
 //                        thresholds of a 60 kt stall speed
 //   PA34_RETRACT, DA42_RETRACT    the two retraction systems as data
@@ -13,6 +15,9 @@ import { DEG, type Vec3 } from '../../src/core/math';
 import { C172_GEAR, type GearConfig, type RetractConfig, type WheelConfig } from '../../src/physics/gear';
 import { LinearStrutSpring } from '../../src/physics/gear/springs';
 import type { SteeringParams, TyreParams } from '../../src/physics/gear/tyre';
+
+/** The C172S gear without GearConfig.damage: the crash latch of a type that has no damage limits. */
+export const LEGACY_C172_GEAR: GearConfig = (({ damage: _damage, ...rest }: GearConfig) => rest)(C172_GEAR);
 
 // --------------------------------------------------------------------------------------------- castering
 
@@ -152,8 +157,11 @@ const C172_STOWED: readonly [Vec3, Vec3, Vec3] = [
   { x: -0.44, y: 0.35, z: 0.55 },
 ];
 
-/** `base` with a retraction system: every leg gets a stowed position, the belly points take a gear-up arrival. */
-export function retractGear(base: GearConfig = C172_GEAR, retract: RetractConfig = PA34_RETRACT, stowed: readonly [Vec3, Vec3, Vec3] = C172_STOWED): GearConfig {
+/**
+ * `base` with a retraction system: every leg gets a stowed position, the belly points take a gear-up arrival. The
+ * default base has no damage limits, so a gear-up arrival or a leg caught unlocked is the crash these test-beds pin.
+ */
+export function retractGear(base: GearConfig = LEGACY_C172_GEAR, retract: RetractConfig = PA34_RETRACT, stowed: readonly [Vec3, Vec3, Vec3] = C172_STOWED): GearConfig {
   const [nose, left, right] = base.wheels;
   return {
     ...base,

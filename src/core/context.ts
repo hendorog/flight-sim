@@ -140,6 +140,12 @@ export interface SimEvents {
   touchdown: { wheel: 'nose' | 'left' | 'right'; sinkRate: number };
   crash: { reason: string };
   /**
+   * Landing damage (physics/damage.ts): one per new item the flight model recorded in a step (a hard landing, a
+   * bent or collapsed leg, a propeller strike, an airframe scrape). Never for the items a restore brought back.
+   * Emitted by SimPhysics; damage is not a crash (no dialog); 'disabling' damage disengages the autoflight.
+   */
+  damage: { item: import('../physics/damage').DamageItem; severity: import('../physics/damage').DamageSeverity; text: string };
+  /**
    * A new start. `scenario` is the base scenario id (a lesson start maps onto one, see
    * src/sim/starts.ts baseScenario); `lessonId` is set when the start belongs to a Flight School lesson.
    */

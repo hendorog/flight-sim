@@ -253,6 +253,14 @@ export interface GearInput {
   dt: number;
   /** Per-leg extension (nose, left, right), 0 .. 1. Absent = all down and locked. Held constant over a sub-step. */
   extension?: ArrayLike<number>;
+  /**
+   * Landing damage (GearConfig.damage) is judged only on calls with commit !== false: the flight model commits
+   * the first RK stage of each step (the state the step starts from) and none of its trim evaluations. Absent:
+   * every call commits (a once-per-step integrator).
+   */
+  commit?: boolean;
+  /** Shaft power of each propeller's engine as a fraction of its rating (for a propeller strike). Absent: 0. */
+  propPower?: ArrayLike<number>;
 }
 
 export interface GearOutput extends ForceMoment {
@@ -264,6 +272,8 @@ export interface GearOutput extends ForceMoment {
   crashKind?: CrashKind;
   /** Touchdown events detected this step. */
   touchdowns: { wheel: WheelState['name']; sinkRate: number }[];
+  /** With GearConfig.damage: the gear's live damage record (the same object every call; see physics/damage.ts). */
+  damage?: import('./damage').DamageState;
 }
 
 // ------------------------------------------------------------------------------------------------ flight model
@@ -317,6 +327,12 @@ export interface AircraftFlightModel extends FlightModel {
    * rotor blades (Rotorcraft.setDamage; no effect on other types).
    */
   setAirframeDamage(leadingEdge: number, rotor?: number): void;
+  /** Landing-damage events recorded during the last step() (GearConfig.damage; state.damage has them all). */
+  readonly damageEvents: readonly import('./damage').DamageEvent[];
+  /** The landing-damage record as plain data, for a snapshot; null on a type without damage limits. */
+  captureDamage(): import('./damage').DamageState | null;
+  /** Put a captured landing-damage record back. Call it AFTER setKinematics(), which clears the damage. */
+  restoreDamage(s: import('./damage').DamageState): void;
   captureSystems(): SystemsSnapshot;
   /** `dynamicPressure`: for setting the surfaces immediately, Pa (today: 0.5 rho |v|^2 of the saved velocity). */
   restoreSystems(s: SystemsSnapshot, controls: ControlInputs, dynamicPressure: number): void;

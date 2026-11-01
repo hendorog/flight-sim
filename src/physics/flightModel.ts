@@ -54,6 +54,7 @@ import {
   type WheelState,
 } from '../core/types';
 import { createAirData, slipBall, type AirData } from './airData';
+import type { DamageEvent, DamageState } from './damage';
 import { AeroModel } from './aero';
 import { casFromTas, pressureAltitude } from './atmosphere';
 import { configuredVne } from './rotorcraft/limits';
@@ -232,6 +233,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   lastTrim: TrimResult | null = null;
   /** Touchdowns detected during the last step() call (one entry per wheel contact). */
   readonly touchdowns: TouchdownEvent[] = [];
+  /** Landing-damage events recorded during the last step() call (GearConfig.damage; state.damage has them all). */
+  readonly damageEvents: DamageEvent[] = [];
   /** Calibrated airspeed, m/s (AircraftState.ias is what the airspeed indicator shows, with position error). */
   cas = 0;
   /** Last aerodynamic output (stage 0 of the last sub-step), for diagnostics. */
@@ -269,6 +272,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
   private time = 0;
   private accumulator = 0;
   private crashReason = '';
+  /** Landing damage (GearConfig.damage): the engines' shaft power as a fraction of rated, and events already published. */
+  private readonly propPower: Float64Array | null;
+  private damagePublished = 0;
 
   // From the definition.
   /** Body points (reference-point axes) where the wind is sampled: half span and the tailplane. */
@@ -384,6 +390,9 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     if (this.aero.propellerInflows.length !== n) throw new Error(`BladeElementFlightModel: ${def.id} has ${n} engines and ${this.aero.propellerInflows.length} aero propeller stations`);
     this.propulsion = n === 1 ? new PropulsionSystem(undefined, def.powerplant) : new Powerplant(def.powerplant);
     this.gear = new LandingGear(gearConfig);
+    // Landing damage on wheels only: a skid helicopter carries a compatibility gear() it never computes.
+    const damage = this.skids ? null : this.gear.damageState;
+    if (damage) this.state.damage = damage;
     this.retract = gearConfig.retract ? new RetractActuator(gearConfig.retract) : null;
     this.controlSystem = new ControlSystem(def.controls);
     this.castering = def.controls.steering.kind === 'castering';
@@ -437,6 +446,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     // The environment arrives with reset() / step(); nothing reads gearIn before then.
     this.gearIn = { body: this.body, controls: this.controlsIn, env: null as unknown as Environment, dt: 0 };
     if (this.retract) this.gearIn.extension = this.retract.state.extension;
+    this.propPower = damage ? new Float64Array(n) : null;
+    if (this.propPower) this.gearIn.propPower = this.propPower;
     this.propIn = { body: this.body, atmosphere: this.atmosphere, airVelocityBody: v3.zero(), controls: this.controlsIn, dt: 0 };
     this.hubAir = n > 1 ? this.hubs.map((_, i) => (i === 0 ? this.propIn.airVelocityBody : v3.zero())) : null;
     if (this.hubAir) this.propIn.airVelocityAt = this.hubAir;
@@ -514,6 +525,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.crashReason = '';
     this.touchdowns.length = 0;
     this.gear.reset();
+    this.damageEvents.length = 0;
+    this.damagePublished = 0;
     this.skids?.reset();
     this.aero.reset();
     this.stickPusher?.reset();
@@ -998,6 +1011,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     this.gear.reset();
     this.skids?.reset();
     this.crashReason = '';
+    // A new flight: the landing damage goes with the crash (restoreDamage() puts a saved record back afterwards).
+    if (this.propPower) this.clearDamage();
     this.setRigidBody(k.position, quat.normalize(k.orientation), k.velocity, k.angularVelocity);
     const env = this.env;
     if (env) {
@@ -1006,6 +1021,42 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.sampleWind(env);
       this.evaluateInitial(env);
     }
+  }
+
+  /**
+   * The landing-damage record as plain data (GearConfig.damage), for a snapshot; null on a type without damage
+   * limits.
+   */
+  captureDamage(): DamageState | null {
+    return this.propPower ? this.gear.captureDamage() : null;
+  }
+
+  /**
+   * Put a captured landing-damage record back: collapsed legs fold, bent legs keep their set and toe, stopped
+   * propellers are seized. Call it AFTER setKinematics() (which clears the damage of the flight before). Its events
+   * are not reported again in damageEvents.
+   */
+  restoreDamage(s: DamageState): void {
+    if (!this.propPower) return;
+    this.gear.restoreDamage(s);
+    this.damagePublished = s.events.length;
+    this.damageEvents.length = 0;
+    this.seizeStopped();
+  }
+
+  /** No damage: the record cleared and every seized engine free (it is still at rest). */
+  private clearDamage(): void {
+    this.damagePublished = 0;
+    this.damageEvents.length = 0;
+    for (const unit of this.propulsion.units) unit.seized = false;
+  }
+
+  /** Seize the engine of every propeller the damage record says has stopped. */
+  private seizeStopped(): void {
+    const d = this.gear.damageState;
+    if (!d) return;
+    const units = this.propulsion.units;
+    for (let i = 0; i < d.props.length && i < units.length; i++) if (d.props[i].stopped && !units[i].seized) units[i].seize();
   }
 
   /**
@@ -1116,6 +1167,7 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
 
   step(dt: number, controls: ControlInputs, env: Environment): void {
     this.touchdowns.length = 0;
+    this.damageEvents.length = 0;
     if (!(dt > 0)) return;
     this.env = env;
     this.gearIn.env = env;
@@ -1139,6 +1191,11 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     while (this.accumulator >= h && !this.crashReason) {
       this.accumulator -= h;
       this.substep(h, controls, env);
+    }
+    const damage = this.propPower ? this.gear.damageState : null;
+    if (damage) {
+      for (let i = this.damagePublished; i < damage.events.length; i++) this.damageEvents.push(damage.events[i]);
+      this.damagePublished = damage.events.length;
     }
     this.publish(env);
   }
@@ -1211,6 +1268,11 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
       this.propIn.controls = engineControls;
     }
     this.prop = this.propulsion.step(this.propIn);
+    const propPower = this.propPower;
+    if (propPower) {
+      const units = this.propulsion.units;
+      for (let i = 0; i < propPower.length; i++) propPower[i] = Math.max(0, this.prop.engines[i].power) / units[i].install.engine.ratedPower;
+    }
     this.rotorcraft?.drive(h, controls, this.propulsion.units[0], this.atmosphere, controls.rotorClutchCommand, this.prop.electrical.busVoltage,
       this.state.onGround, this.extraEngines);
     const scales = this.dragScales;
@@ -1244,6 +1306,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     x[8] *= n;
     x[9] *= n;
     this.time += h;
+    // A propeller strike that dug in (judged at this step's first stage) stops its engine.
+    if (this.propPower) this.seizeStopped();
     this.checkStructure(h);
   }
 
@@ -1324,6 +1388,8 @@ export class BladeElementFlightModel implements AircraftFlightModel, TrimPlant {
     // Skid contact history, like rotor inflow, advances only at stage zero. Advancing it at
     // intermediate RK poses consumed touchdown events before the stage that publishes them.
     this.gearIn.dt = this.skids ? ai.dt : h > 0 ? h : 1 / this.physicsRate;
+    // Landing damage is judged on the state each step starts from, never on a trim evaluation.
+    if (this.propPower) this.gearIn.commit = stage === 0 && h > 0;
     const g = this.skids ? this.skids.compute(this.gearIn, this.rotorcraft!.state) : this.gear.compute(this.gearIn);
     if (stage === 0) {
       this.lastAero = a;

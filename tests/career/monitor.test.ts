@@ -486,3 +486,29 @@ describe('reports without a monitor', () => {
     expect(validateReport(JSON.parse(JSON.stringify(ab)))).toEqual(ab);
   });
 });
+
+describe('landing damage', () => {
+  it('keeps the damage events for the report (the job goes on), and carries them through its state', () => {
+    const o = offer(DEST);
+    const a = new Rig(o);
+    a.ground(fieldStand(ORIGIN), { engine: true, brake: false }, 10);
+    a.events.emit('damage', { item: 'hardLanding', severity: 'inspection', text: 'Hard landing: inspection required' });
+    a.events.emit('damage', { item: 'leftMain', severity: 'damage', text: 'Left main gear bent' });
+    expect(a.monitor.ended).toBeNull();
+    expect(a.monitor.report('completed').damage).toEqual([
+      { item: 'hardLanding', severity: 'inspection', text: 'Hard landing: inspection required' },
+      { item: 'leftMain', severity: 'damage', text: 'Left main gear bent' },
+    ]);
+    const saved = JSON.parse(JSON.stringify(a.monitor.exportState()));
+    const b = new Rig(o);
+    expect(b.monitor.restoreState(saved)).toBe(true);
+    expect(b.monitor.report('completed').damage).toEqual(a.monitor.report('completed').damage);
+    // An older state (no damage) restores undamaged; a malformed list is refused.
+    const old = { ...saved };
+    delete old.damage;
+    const c = new Rig(o);
+    expect(c.monitor.restoreState(old)).toBe(true);
+    expect(c.monitor.report('completed').damage).toBeUndefined();
+    expect(new Rig(o).monitor.restoreState({ ...saved, damage: [{ item: 'wing', severity: 'damage', text: 'x' }] })).toBe(false);
+  });
+});
