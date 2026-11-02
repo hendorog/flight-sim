@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest';
 import { DEG } from '../../src/core/math';
 import { C172_GEAR, SURFACES } from '../../src/physics/gear';
-import { WheelDynamics, type WheelContact } from '../../src/physics/gear/tyre';
+import { BREAKAWAY, HYSTERESIS, WheelDynamics, type WheelContact } from '../../src/physics/gear/tyre';
 
 const MAIN = C172_GEAR.wheels[1].tyre;
 const LOAD = 3775;
@@ -92,11 +92,48 @@ describe('tyre', () => {
     console.log(`[tyre] sliding mu: runway ${mu(runway).toFixed(2)}, grass ${mu(grass).toFixed(2)}, snow ${mu(snow).toFixed(2)}`);
     expect(mu(grass)).toBeLessThan(0.6 * mu(runway));
     expect(mu(snow)).toBeLessThan(mu(grass));
-    // Rolling resistance on grass decelerates a free-rolling wheel harder than on the runway.
+    // The surface's own rolling drag: nothing on pavement, sinkage on grass (a rigid wheel, no tyre deflection).
     const rollR = steady(contact(10, 0)).fa;
     const rollG = steady(contact(10, 0, { surface: SURFACES.grass })).fa;
-    console.log(`[tyre] rolling resistance: runway ${(-rollR / LOAD).toFixed(3)}, grass ${(-rollG / LOAD).toFixed(3)}`);
-    expect(-rollR / LOAD).toBeCloseTo(SURFACES.runway.rollingResistance, 2);
-    expect(-rollG / LOAD).toBeCloseTo(SURFACES.grass.rollingResistance, 2);
+    console.log(`[tyre] surface rolling drag: runway ${(-rollR / LOAD).toFixed(3)}, grass ${(-rollG / LOAD).toFixed(3)}`);
+    expect(SURFACES.runway.rollingDrag).toBe(0);
+    expect(-rollR / LOAD).toBeLessThan(0.002); // the bearing only
+    expect(-rollG / LOAD).toBeCloseTo(SURFACES.grass.rollingDrag, 2);
+  });
+
+  test('tyre hysteresis: Crr = HYSTERESIS sqrt(deflection / diameter), adding to the surface', () => {
+    const D = 2 * MAIN.radius;
+    const crr = (deflection: number, surface = SURFACES.runway) => -steady(contact(10, 0, { tyreDeflection: deflection, surface })).fa / LOAD;
+    const soft = crr(0.03);
+    const hard = crr(0.0075);
+    console.log(`[tyre] rolling resistance at 30 mm deflection ${soft.toFixed(4)}, at 7.5 mm ${hard.toFixed(4)}, on grass ${crr(0.03, SURFACES.grass).toFixed(4)}`);
+    const bearing = 0.5 / MAIN.radius / LOAD;
+    expect(soft - bearing).toBeCloseTo(HYSTERESIS * Math.sqrt(0.03 / D), 4);
+    // A quarter of the deflection (four times the pressure, roughly): half the resistance.
+    expect((hard - bearing) / (soft - bearing)).toBeCloseTo(0.5, 3);
+    expect(soft).toBeGreaterThan(0.03);
+    expect(soft).toBeLessThan(0.045);
+    expect(crr(0.03, SURFACES.grass) - soft).toBeCloseTo(SURFACES.grass.rollingDrag, 3);
+  });
+
+  test('breakaway: a stopped wheel holds against more force than keeps a rolling one turning', () => {
+    const deflection = 0.03;
+    const r = Math.sqrt(deflection / (2 * MAIN.radius));
+    const rolling = HYSTERESIS * r + 0.5 / MAIN.radius / LOAD;
+    // Push the stopped wheel's axle with a slowly growing force (a stiff spring to a slowly moving point) and find
+    // the force at which it starts to turn.
+    const wheel = new WheelDynamics(MAIN, null);
+    const c = contact(0, 0, { tyreDeflection: deflection });
+    let breakForce = NaN;
+    for (let t = 0; t < 20 && isNaN(breakForce); t += DT) {
+      // Creep the contact forward slowly: the tread winds up while the wheel is held.
+      c.va = 0.002;
+      wheel.advance(c, DT);
+      const f = -wheel.force(c, { fa: 0, fb: 0, skid: 0 }).fa;
+      if (wheel.spin > 0) breakForce = f;
+    }
+    console.log(`[tyre] breakaway ${(breakForce / LOAD).toFixed(4)} of the load against ${rolling.toFixed(4)} rolling`);
+    expect(breakForce / LOAD).toBeCloseTo(rolling + BREAKAWAY * r, 2);
+    expect(breakForce / LOAD).toBeGreaterThan(1.4 * rolling);
   });
 });

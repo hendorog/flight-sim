@@ -117,7 +117,8 @@ export const C172S_KEYBOARD_BANDS: KeyboardFlightBands = {
   rotation: {
     target: 8,
     holdRate: 9,
-    holdLiftoff: [2, 5],
+    // 6 s, was 5: the tyre-hysteresis rolling resistance (src/physics/gear/tyre.ts) slows the roll; 5.4 s (was 5.0).
+    holdLiftoff: [2, 6],
     holdPitch: [5, 11],
     throughLiftoff: [0.8, 3],
     throughPitch: 8,

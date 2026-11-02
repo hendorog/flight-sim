@@ -170,7 +170,7 @@ export class LandingGear {
   private readonly sp: SeriesSpringPoint = { force: 0, strut: 0, strutRatio: 0 };
   private readonly tf: TyreForce = { fa: 0, fb: 0, skid: 0 };
   private readonly und = { height: 0, dNorth: 0, dEast: 0 };
-  private readonly contact: WheelContact = { va: 0, vb: 0, load: 0, surface: SURFACES.runway, brakeTorque: 0, steerCommand: 0, locked: false };
+  private readonly contact: WheelContact = { va: 0, vb: 0, load: 0, surface: SURFACES.runway, brakeTorque: 0, steerCommand: 0, locked: false, tyreDeflection: 0 };
   private readonly t0: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly t1: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly t2: Vec3 = { x: 0, y: 0, z: 0 };
@@ -468,6 +468,7 @@ export class LandingGear {
     c.brakeTorque = this.brakeTorque(cfg, input);
     c.steerCommand = controls.rudder * (cfg.steering?.maxCommand ?? 0);
     c.locked = cfg.steering?.lock !== undefined && controls.tailWheelLock === true;
+    c.tyreDeflection = Math.max(0, xTot - sp.strut);
     if (dt > 0) w.dyn.advance(c, dt);
     const tf = w.dyn.force(c, this.tf);
     w.fa = tf.fa;

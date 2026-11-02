@@ -60,7 +60,8 @@ describe('scenarios in the real world environment', () => {
       case 'runway':
         // Take-off roll, rotation and the start of the climb, still over the runway heading.
         expect(s.onGround).toBe(false);
-        expect(s.altitudeMSL - ground).toBeGreaterThan(20);
+        // 15 m, was 20: the tyre-hysteresis rolling resistance (tyre.ts) lengthens the roll; 19 m at 30 s.
+        expect(s.altitudeMSL - ground).toBeGreaterThan(15);
         expect(Math.abs(runwayCoords(s.position.x, s.position.y).across)).toBeLessThan(15);
         break;
       case 'final': {
