@@ -121,11 +121,12 @@ export const C208_GEOMETRY: AircraftGeometry = {
 
   // --- Landing gear: tyre contact points with struts fully extended ---
   // Static contact points (3V) 1.68 m below the thrust line at both: the Caravan stands about level. Fully extended they hang lower by
-  // the static deflection of gear.ts's springs at maximum weight (nose about 0.06 m, mains about 0.06 m).
+  // the static deflection of gear.ts's springs at maximum weight (nose about 0.065 m, mains about 0.09 m vertically
+  // with the pressure-based tyre springs: 0.0065 and 0.028 more than with the earlier stiff tyres).
   gear: {
-    nose: { x: 3.08, y: 0, z: T + 1.74 },
-    leftMain: { x: -0.47, y: -1.778, z: T + 1.745 },
-    rightMain: { x: -0.47, y: 1.778, z: T + 1.745 },
+    nose: { x: 3.08, y: 0, z: T + 1.7465 },
+    leftMain: { x: -0.47, y: -1.778, z: T + 1.773 },
+    rightMain: { x: -0.47, y: 1.778, z: T + 1.773 },
     /** 22 x 8.00-8 (POH). */
     noseWheelRadius: 0.28,
     /** 6.50-10 (POH). */

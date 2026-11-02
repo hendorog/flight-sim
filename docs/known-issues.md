@@ -66,28 +66,39 @@ Rolling resistance is now tyre hysteresis from the tyre's deflection, a surface 
 - **C172S short-field roll band widened to 15 %** (ground.test.ts, conformance target): 330 m against the POH's 293
   (+12.5 %; it was +6 % at the old 0.02). The other light types moved toward their handbook rolls. Close with: the
   C172S take-off calibration (thrust or lift-off), then the band back to 10 %.
-- **DA20 runs away at idle on pavement once rolling.** Its 1020 rpm idle (AFM) gives about 480 N of static thrust,
-  0.061 of its weight: its full-throttle static thrust (2.05 kN at 2150 rpm) scaled by rpm squared, because the
-  propeller model's static Ct is the same at every rpm (0.146; the highest of the light types against 0.128-0.14,
-  and the lowest figure of merit, 0.67 against 0.79-0.83, although its Sensenich W69EK7-63 is the coarsest of
-  their propellers, P/D 0.91 against 0.78-0.84). From rest it just stays put (it breaks away at about 1110 rpm),
-  but from a taxi speed it accelerates to about 25 kt. No tyre value short of about 0.05 holds it. Close with: the
-  static thrust at idle rpm, where a real fixed-pitch blade runs at half the Reynolds number of full power and a
-  coarse blade is more stalled (lower Ct), not at the AFM idle.
-- **Turboprop idle-taxi bands assume the old 0.02.** C208 on the gate at LOW IDLE (925 N, 0.026 of its weight),
-  halfway into beta and at HIGH IDLE, and the PC-12 on the gate at ground idle and in half beta, no longer break away
-  from rest at maximum weight (C208 and PC-12 rolling 0.024-0.025, breakaway another 0.017); with the breakaway off
-  the PC-12 on the gate settles at 13 kt (band 15-30) and the C208 at HIGH IDLE at 21 kt (band 15-35), LOW IDLE
-  0.05 kt (band 4-12); tests/propulsion/conformancePlumbing.test.ts (C208 beta test-bed, high idle on the gate)
-  fails the same way. Their tyre springs are also about three times stiffer than their inflation pressures give
-  (Raymer's contact-area estimate), which understates their deflection. Close with: owner decision on the bands, or
-  on their idle thrust.
+- **DA20 runs away at idle on pavement once rolling.** Its 1020 rpm idle (AFM) gives about 477 N of static thrust,
+  0.061 of its weight. Its static Ct (0.146) is the same at every rpm and the highest of the light types (0.128-0.14),
+  with the lowest figure of merit (0.67 against 0.79-0.83), although its Sensenich W69EK7-63 is the coarsest of their
+  propellers (P/D 0.91 against 0.78-0.84); its section's full-static calibration leans on a maximum-lift loss with
+  Mach number above 0.3 (da20/powerplant.ts clMaxMachLoss 1.0), which is silent at idle (M 0.2 at 0.75 R). From rest
+  it stays put (it breaks away at about 1110 rpm), but from a taxi speed it accelerates to about 25 kt: coasting to a
+  stop would take an idle static thrust below about 0.038 of its weight (300 N). Tried and withdrawn: blade-section
+  losses at low Reynolds number (clmax with Re^0.15, profile drag with Re^-0.2 below Re 1e6, the order of NACA TR
+  586) took only 4 % off the DA20's idle (477 -> 460 N; Re about 6e5 at its idle against 4e5 for the Cessnas', which
+  lost 9-12 %), left full-power static thrust within 0.1 %, but stopped the C152, C172S and PA-38 propellers
+  windmilling at best glide (0 rpm against the POH's windmilling glide) and moved every flight golden. Close with:
+  owner decision on the DA20 propeller's static thrust (its section calibration), not the AFM idle.
+- **Turboprop tyres: a lower hysteresis factor (owner decision).** The C208's and PC-12's tyre springs now follow
+  their inflation pressures (three times softer than before), and with the light types' `HYSTERESIS` their rolling
+  resistance would be 0.038-0.040 (0.065 at rest): none of the idle-taxi cases moves at maximum weight even after
+  the pilot breaks the aircraft away, the PC-12 landing roll falls to 357 m (band 359-419), and the PC-12 at ground
+  idle on the gate, which its handbook taxis in beta because it is too fast, stands still. They use
+  `TURBOPROP_HYSTERESIS` 0.08 instead (about 0.022, Torenbeek's 0.02 for transport tyres near rated deflection).
+  At maximum weight the idle levers alone still do not start them (measure.ts idleTaxi breaks them away with power:
+  "a fair amount of breakaway power", AOPA 2009). The C208 pressures (60 psi mains, 40 psi nose) are ESTIMATES
+  without its POH section 8. The softer tyres take more of a hard landing's energy, so the C208's and PC-12's
+  landing-damage loads were re-set by the drops to keep their sink-rate bands.
 - **Keyboard rotation in the gusty crosswind (C172S) fails its tail-strike margin.** tests/input/rotation.test.ts:
   the closed-loop key pilot now reaches 12.5-14 deg nose-up with a main wheel still down (limit 12; the tie-down ring
   touches at about 13), against 9.8-11.6 before. The preset has no margin: on the old model a flat 0.022 instead of
   0.02 already puts one seed at 12.9; a flat 0.035 gives 12.7-13.7 and `HYSTERESIS` 0.12 fails three seeds of four.
-  The calm-air key-pilot rotation hardly moves (8.3 -> 8.4 deg on the mains). Not re-based. Close with: owner check
-  of a keyboard rotation in gusts, then the key pilot or the band.
+  The calm-air key-pilot rotation hardly moves (8.3 -> 8.4 deg on the mains). Mechanism (seed 0 traced): the mains'
+  larger drag, below the centre of gravity, needs more back elevator to lift the nosewheel (0.17-0.19 against
+  0.136-0.141); as the wheels unload (their drag goes as load^1.5) the wound-in elevator becomes excess and the nose
+  comes up at 13-15 deg/s against 10-12, faster than the hold-position yoke can be eased forward on the keys; gust
+  lulls (43-47 KIAS) force a second rotation with more wound in. Rotating at Vr plus half the gust factor (the usual
+  gusty-day technique) halves the failures (2 seeds of 4) but does not clear them. Not re-based. Close with: owner
+  check of a keyboard rotation in gusts, then the key pilot or the band.
 - **C152 main tyre spring.** 125 kN/m, as the PA-38's at 30 psi, although the C152's mains run at 21 psi (about
   87 kN/m by Raymer's estimate): its rolling resistance is a little low for its soft tyres.
 

@@ -9,13 +9,17 @@
 // Design point: 4740 kg with the CG at about station 5.97 (the maxGross loading, systems.ts), which puts about 7 % of
 // the weight on the nose (the trailing links carry the main wheels aft as they compress): about 3.3 kN on the nose and
 // 21.6 kN on each main. The springs below then compress the
-// nose 0.011 m (oleo 0, tyre 0.011) and the mains 0.10 m vertically (geometry.ts PC12_GEAR_STATIC_SAG): the
-// reference point stands 1.54 m above the ground, the aircraft about level.
+// nose 0.013 m (oleo 0, tyre 0.013) and the mains 0.13 m vertically (oleo 0.08, tyre 0.05; geometry.ts
+// PC12_GEAR_STATIC_SAG): the reference point stands 1.54 m above the ground, the aircraft about level.
+//
+// Tyre springs from the inflation pressure and size: Raymer ("Aircraft Design", 6th ed., 11.3) has the contact area
+// A = 2.3 sqrt(w D) (D/2 - R_rolling) carrying load = p A, so the radial stiffness is about 2.3 p sqrt(w D) (the
+// C172S's 6.00-6 at 38 psi gives 157 kN/m against its 150), at the 60 psi of the TCDS / 47E-PROXY section 8.
 
 import { DEG } from '../../core/math';
 import type { GearConfig, RetractConfig, StructuralPoint, WheelConfig } from '../../physics/gear/gearConfig';
 import { OleoPneumaticSpring } from '../../physics/gear/springs';
-import type { SteeringParams, TyreParams } from '../../physics/gear/tyre';
+import { TURBOPROP_BREAKAWAY, TURBOPROP_HYSTERESIS, type SteeringParams, type TyreParams } from '../../physics/gear/tyre';
 import { PC12_GEAR, PC12_GEOMETRY, PC12_MAIN_LEG_TILT, PC12_REST_HEIGHT, PC12_TAIL, PC12_THRUST_Z } from './geometry';
 
 const G = PC12_GEOMETRY;
@@ -30,7 +34,7 @@ const tyre = (radius: number, inertia: number): TyreParams => ({
   corneringStiffness: 8,
   relaxationLong: 0.25,
   relaxationLat: 0.45,
-  lowSpeedDamping: 1.5,
+  lowSpeedDamping: 1.5, hysteresis: TURBOPROP_HYSTERESIS, breakaway: TURBOPROP_BREAKAWAY,
 });
 
 /**
@@ -87,8 +91,9 @@ function main(name: 'left' | 'right'): WheelConfig {
     // About 0.08 m of oleo at the static load (21.6 kN), the gas column stiffening it toward the 0.17 m stroke
     // (ESTIMATE).
     strut: new OleoPneumaticSpring(10500, 0.18, 1.2, 0.17),
-    // About 20 mm of tyre at the static load.
-    tyreSpring: { stiffness: 1.08e6, hardening: 0.08 },
+    // 8.50-10 (w 0.216 m, D 0.64 m) at 60 psi: 2.3 p sqrt(w D) = 354 kN/m (was 1.08 MN/m); about 0.05 m at the static
+    // load, a quarter of the 0.19 m section height; stiffening toward the rim.
+    tyreSpring: { stiffness: 354e3, hardening: 0.095 },
     damping: oleoDamping(20000, 4000, 40000),
     tyre: tyre(G.gear.mainWheelRadius, 1.2),
     steering: null,
@@ -150,7 +155,8 @@ export function createPC12Gear(): GearConfig {
         // meets a hard stop; with the tyre the propeller (0.30 m of clearance, 1.5 x the nose's travel at the disc)
         // keeps about 0.12 m on a braked nose.
         strut: new OleoPneumaticSpring(3500, 0.12, 1.2, 0.119),
-        tyreSpring: { stiffness: 300e3, hardening: 0.05 },
+        // 17.5x6.25-6 (w 0.159 m, D 0.444 m) at 60 psi: 2.3 p sqrt(w D) = 253 kN/m (was 300).
+        tyreSpring: { stiffness: 253e3, hardening: 0.05 },
         damping: oleoDamping(35000, 5000, 15000),
         tyre: tyre(G.gear.noseWheelRadius, 0.5),
         steering: NOSE_STEERING,
@@ -170,12 +176,13 @@ export function createPC12Gear(): GearConfig {
     // (tests/gear/damage.test.ts), placed on the landing-damage research's section 7 sink-rate bands: the
     // hard-landing note at V_lim 3.05 m/s (600 fpm); hard / yield / collapse mains-first at 3.05 / 3.7 / 5.0 m/s,
     // nose-wheel contact at 1.83 / 2.29 / 3.35 m/s. An oleo, once bottomed, folds on a later contact at 40 % of
-    // the way from its yield to its ultimate load (an estimate).
+    // the way from its yield to its ultimate load (an estimate). The main loads re-set 2026-11-03 for the pressure-based
+    // tyre springs (softer tyres take more of the energy: the same loads were reached 0.1-0.3 m/s later).
     damage: {
       legs: [
         { kind: 'oleo', hardLoad: 37.6e3, yieldLoad: 44.0e3, ultimateLoad: 81.6e3, bottomedUltimate: 59.0e3, collapsedCompression: 0.119, yield: { text: 'Nose gear drag link damaged', item: 'nose' } },
-        { kind: 'oleo', hardLoad: 118.2e3, yieldLoad: 190.7e3, ultimateLoad: 375.0e3, bottomedUltimate: 264.4e3, collapsedCompression: 0.17 },
-        { kind: 'oleo', hardLoad: 118.2e3, yieldLoad: 190.7e3, ultimateLoad: 375.0e3, bottomedUltimate: 264.4e3, collapsedCompression: 0.17 },
+        { kind: 'oleo', hardLoad: 110.9e3, yieldLoad: 177.0e3, ultimateLoad: 341.3e3, bottomedUltimate: 242.7e3, collapsedCompression: 0.17 },
+        { kind: 'oleo', hardLoad: 110.9e3, yieldLoad: 177.0e3, ultimateLoad: 341.3e3, bottomedUltimate: 242.7e3, collapsedCompression: 0.17 },
       ],
       // Free turbine: a strike that digs in stops the propeller and power turbine; the gas generator runs on.
       propStopText: 'Propeller strike: propeller stopped (gas generator running)',

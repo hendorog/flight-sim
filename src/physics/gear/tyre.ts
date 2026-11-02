@@ -157,6 +157,15 @@ export const HYSTERESIS = 0.145;
  * rpm to start rolling on pavement (owner, a pilot: "a bit of effort to move").
  */
 export const BREAKAWAY = 0.1;
+/**
+ * Hysteresis and breakaway factors of a high-ply, high-pressure turboprop tyre (C208, PC-12; TyreParams.hysteresis /
+ * .breakaway). Torenbeek's 0.02 on concrete (table 5-6) is for transport-category tyres near their rated deflection
+ * (about 32 % of the section height, delta / D ~ 0.08), where HYSTERESIS would give 0.04: the stiffer carcass loses
+ * less per unit of deflection than a 4-6 ply light-aircraft tyre. 0.08 gives about 0.022 at the C208's and PC-12's
+ * static deflection; the breakaway is scaled with it. ESTIMATE (owner decision).
+ */
+export const TURBOPROP_HYSTERESIS = 0.08;
+export const TURBOPROP_BREAKAWAY = (BREAKAWAY * TURBOPROP_HYSTERESIS) / HYSTERESIS;
 /** Wheel surface speed over which the breakaway resistance fades out, m/s. */
 export const BREAKAWAY_FADE = 0.6;
 /** Time constant for the tread to spring back once the tyre leaves the ground, s. */
