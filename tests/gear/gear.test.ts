@@ -367,10 +367,11 @@ describe('landings with the C172S damage limits', () => {
     expect(land(2, 0).events).toEqual(['Hard landing: inspection required']);
     // Mains-first at 4.5 m/s: the mains are hard but not bent.
     expect(land(4.5, 6 * DEG).main).toBe('hard');
-    // 6 m/s: the mains bent, not collapsed; no crash.
-    const six = land(6, 6 * DEG);
-    expect(six.main).toBe('bent');
-    expect(six.crash).toBe('');
+    // The mains are strong (owner): still only hard at 6 m/s at this weight; 6.5 m/s bends them, not collapsed; no crash.
+    expect(land(6, 6 * DEG).main).toBe('hard');
+    const bent = land(6.5, 6 * DEG);
+    expect(bent.main).toBe('bent');
+    expect(bent.crash).toBe('');
     // Flat at 4.5 m/s: the nose folds, damage and not a crash.
     const flat = land(4.5, 0);
     expect(flat.nose).toBe('collapsed');

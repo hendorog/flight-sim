@@ -60,14 +60,28 @@ const NOSE_VALVE_KNEE = 0.6;
 const NOSE_ORIFICE_COMPRESSION = 2000;
 const NOSE_ORIFICE_REBOUND = 5000;
 
+/**
+ * Leaf travel, along the leg axis from full extension, until the top of the tyre meets the lower wing skin, m.
+ * ESTIMATE from this geometry (+/-0.04 m): the extended contact point is at z 1.13 (REST_HEIGHT + 0.08), so the top
+ * of the 0.445 m tyre is at z 0.685; the wing's lower skin above the wheel (y 1.52, 54 % chord: STA 90 under the
+ * 44 in chord from STA 66.25) is at about z 0.39 (the chord plane at the root's WL 21 raised 0.08 m by the 5
+ * degree dihedral, 0.01 m lower there for the incidence, the GA(W)-1 lower surface about 0.06 chord below it):
+ * 0.295 m of vertical gap, the "leafSpring" leg root of visual.ts (z 0.40) on the same skin. Along the 20 degree
+ * axis the tyre rises 0.94 m per metre and moves outboard 0.34 m, under skin that dihedral lifts 0.03 m per metre
+ * of travel: 0.295 / 0.97 = 0.30 m (0.24 m beyond the static deflection).
+ */
+const MAIN_STOP = 0.3;
+
 function main(name: 'left' | 'right'): WheelConfig {
   const side = name === 'left' ? -1 : 1;
   return {
     name,
     position: name === 'left' ? G.gear.leftMain : G.gear.rightMain,
     axis: { x: 0, y: side * Math.sin(MAIN_TILT), z: -Math.cos(MAIN_TILT) },
-    // About 48 kN/m per leg along that axis: 0.06 m of static deflection at gross (ESTIMATE).
-    strut: new LinearStrutSpring(48e3),
+    // About 48 kN/m per leg along that axis: 0.06 m of static deflection at gross (ESTIMATE). The leaf flexes up
+    // until the tyre meets the lower wing skin (MAIN_STOP); then the top of the tyre squashes against the skin,
+    // about as stiff as the tyre's own radial spring.
+    strut: new LinearStrutSpring(48e3, MAIN_STOP, 125e3),
     // About 2 cm of tyre deflection at the static load.
     tyreSpring: { stiffness: 125e3, hardening: 0.07 },
     damping: (_strutRate, totalRate) => MAIN_DAMPING * totalRate,
@@ -146,14 +160,17 @@ export function createPA38Gear(): GearConfig {
     // Contact speeds of a 52 KCAS (27 m/s) landing stall: 1.6 and 1.4 times it (gearConfig.ts rule of thumb).
     // Landing damage (physics/damage.ts). Axial leg loads from drops at MTOW, wings level, lift = weight
     // (tests/gear/damage.test.ts), placed on the landing-damage research's section 7 sink-rate bands: the
-    // hard-landing note at V_lim 2.57 m/s (505 fpm); hard / yield / collapse mains-first at 2.57 / 3.0 / 5.0 m/s,
+    // hard-landing note at V_lim 2.57 m/s (505 fpm); hard / wing-skin stop / yield / collapse mains-first at 2.57 / 5.3 / 6.0 / 8.0 m/s (collapse: an 8 m/s drop's load, 8.7 once the set is in),
     // nose-wheel contact at 1.45 / 1.83 / 2.9 m/s. An oleo, once bottomed, folds on a later contact at 40 % of
-    // the way from its yield to its ultimate load (an estimate).
+    // the way from its yield to its ultimate load (an estimate). The leaf mains are the owner's (a light-aircraft
+    // pilot's) call: a hard arrival flexes them up until the tyre strikes the lower wing skin (MAIN_STOP; a skin
+    // dent and the attach bolts to check, SB 1200, not a collapse), they bend only well beyond that and would
+    // break only beyond an 8 m/s drop's load, past the 7 m/s terrain impact.
     damage: {
       legs: [
         { kind: 'oleo', hardLoad: 9.8e3, yieldLoad: 11.7e3, ultimateLoad: 32.6e3, bottomedUltimate: 20.1e3, collapsedCompression: 0.11, yield: { text: 'Nose gear oleo damaged: engine mount inspection', item: 'nose' } },
-        { kind: 'spring', hardLoad: 7.4e3, yieldLoad: 8.5e3, ultimateLoad: 14.0e3, collapsedCompression: 0.25, yield: { text: 'Left main gear attach bolts bent' } },
-        { kind: 'spring', hardLoad: 7.4e3, yieldLoad: 8.5e3, ultimateLoad: 14.0e3, collapsedCompression: 0.25, yield: { text: 'Right main gear attach bolts bent' } },
+        { kind: 'spring', hardLoad: 7.4e3, yieldLoad: 19.2e3, ultimateLoad: 30.3e3, collapsedCompression: 0.25, stop: { text: 'Left wheel struck the lower wing skin: skin dent, gear attach bolts to inspect (SB 1200)' }, yield: { text: 'Left main gear leg bent: attach bolts to replace (SB 1200)' } },
+        { kind: 'spring', hardLoad: 7.4e3, yieldLoad: 19.2e3, ultimateLoad: 30.3e3, collapsedCompression: 0.25, stop: { text: 'Right wheel struck the lower wing skin: skin dent, gear attach bolts to inspect (SB 1200)' }, yield: { text: 'Right main gear leg bent: attach bolts to replace (SB 1200)' } },
       ],
     },
     impact: { sinkRate: 7, speed: 43, steepSpeed: 37, steepPath: 12 * DEG },

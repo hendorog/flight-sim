@@ -152,12 +152,17 @@ is built on the main thread); a reload 7.7 s.
 A hard landing in an aeroplane damages it instead of ending the flight (`src/physics/damage.ts`, the gear's
 `GearConfig.damage` block; C152, C172S, PA-38, DA20, PA-34, C208 and PC-12; the helicopters and the AH-56 are
 unchanged). Past the type's limit descent velocity it is an inspection note ("Hard landing: inspection required");
-harder, a spring main leg bends (it then pulls to one side) or an oleo bottoms (structural damage); past the leg's
-ultimate load it collapses and the aircraft settles on that side or its nose. A propeller that touches is struck (a
+harder, the nose leg bottoms and folds first. The spring and leaf main legs (C152, C172S, PA-38, DA20, C208) are
+strong: they take a permanent set only at about 6 m/s mains-first at MTOW, yielding the way they flex (the wheel
+moves up and outboard: that side sits lower on a wider track, with no toe change, so the aircraft hardly pulls), and
+would break only beyond the 7 m/s terrain impact. The PA-38's leaf flexes up until the tyre strikes the lower wing
+skin (about 5.3 m/s mains-first: a skin dent and the attach bolts to inspect, SB 1200), well short of bending. An oleo
+main (PA-34, PC-12) bottoms (structural damage); past a leg's ultimate load it collapses and the aircraft settles on
+that side or its nose. A propeller that touches is struck (a
 tip strike at low power runs on) or digs in and stops its engine (a PT6's propeller and power turbine stop, the gas
 generator runs on); wingtip, tail, nose and belly contacts at landing energy are damage, and the aircraft slides to
-a stop. Terrain impact (more than about 7 m/s, or fast and steep), flipping over, ditching and structural failure
-are still crashes, with the crash dialog.
+a stop. Terrain impact (more than about 7 m/s, or fast and steep; a wheel on the ground with the aircraft still sinking
+faster than 7 m/s is one), flipping over, ditching and structural failure are still crashes, with the crash dialog.
 
 Each new item is a SimEvents `damage` event `{ item, severity, text }` (severity `inspection`, `damage` or
 `disabling`) from `SimPhysics`, which also disengages the autopilot on disabling damage. There is no dialog: a toast

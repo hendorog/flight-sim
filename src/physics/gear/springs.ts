@@ -45,12 +45,25 @@ export class OleoPneumaticSpring implements StrutSpring {
   }
 }
 
-/** Linear spring: a spring-steel (Wittman) cantilever leg behaves elastically right up to yield. */
+/**
+ * Linear spring: a spring-steel (Wittman) cantilever leg behaves elastically right up to yield. With a `stroke`
+ * the leg flexes that far and then bears on the airframe (the PA-38's tyre against the lower wing skin): beyond it
+ * only `stopStiffness` gives (the top of the tyre squashed against the skin); Infinity: a hard stop, as at the end
+ * of an oleo's stroke.
+ */
 export class LinearStrutSpring implements StrutSpring {
-  constructor(readonly stiffness: number) {}
+  constructor(
+    readonly stiffness: number,
+    /** Travel to a stop, m. Absent: none. */
+    readonly stroke?: number,
+    /** Stiffness beyond the stop, N/m. */
+    readonly stopStiffness = Infinity,
+  ) {}
 
   compressionAt(force: number): number {
-    return force / this.stiffness;
+    const s = force / this.stiffness;
+    if (this.stroke === undefined || s <= this.stroke) return s;
+    return this.stroke + (force - this.stiffness * this.stroke) / this.stopStiffness;
   }
 }
 

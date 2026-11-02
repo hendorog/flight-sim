@@ -26,9 +26,12 @@ export type DamageItem = 'hardLanding' | 'noseGear' | 'leftMain' | 'rightMain' |
 
 export interface LegDamage {
   status: LegStatus;
-  /** Permanent set of a bent spring leg: how far its extended contact point has moved along the leg axis, m. */
+  /**
+   * Permanent set of a bent spring leg: how far its extended contact point has moved along the leg axis (up and
+   * outboard, the way the leg flexes), m.
+   */
   set: number;
-  /** Toe-out of the bent leg's wheel, rad (+ = the wheel points outboard). */
+  /** Toe-out of the bent leg's wheel, rad (+ = the wheel points outboard; 0 unless LegDamageConfig.toePerSet). */
   toe: number;
   /** Highest axial leg load seen, N. */
   peakLoad: number;

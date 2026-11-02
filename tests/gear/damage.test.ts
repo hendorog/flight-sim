@@ -3,8 +3,11 @@
 // pitch only by C172S-like rate damping scaled with its pitch inertia; mains-first 5 degrees above the resting
 // attitude, nose-first 1.5 degrees below it (the nose wheel then meets the ground at the sink rate). Each band
 // test checks a drop a little below and a little above the type's research figure, and logs the sink rate
-// at which the leg actually crossed each level (bisection). Then: a bent leg pulls, propeller strikes, the
-// gear-up slide, the collapsed nose that slides to a stop, and what is still a crash.
+// at which the leg actually crossed each level (bisection). The spring mains (owner: stronger than the research's
+// bands) bend at about 6 m/s and would collapse only beyond an 8 m/s drop's load, above the 7 m/s terrain impact,
+// so their collapse is checked with the impact classification lifted. Then: the PA-38's tyre against the lower wing
+// skin, a bent leg (lower and wider, no pull), propeller strikes, the gear-up slide, the collapsed nose that slides
+// to a stop, and what is still a crash.
 
 import { describe, expect, test } from 'vitest';
 import { DEG, G0, KT, quat, v3 } from '../../src/core/math';
@@ -32,7 +35,11 @@ interface Type {
   def: AircraftDefinition;
   /** Touchdown speed of the drops, m/s (about 1.15 Vso). */
   speed: number;
-  /** Research section 7 sink rates, m/s: hard (V_lim), yield (bent / bottomed), collapse; mains-first at the CG. */
+  /**
+   * Sink rates, m/s: hard (V_lim), yield (bent / bottomed), collapse; mains-first at the CG. Research section 7 for
+   * the oleo mains; the owner's stronger spring mains (yield 6 m/s; the ultimate load is an 8 m/s drop's without the
+   * set, which the set's lower stance puts at 8.4-8.7 m/s, beyond the 7 m/s terrain impact).
+   */
   mains: [number, number, number];
   /** The same for the nose leg, at the nose wheel's contact speed. */
   nose: [number, number, number];
@@ -41,12 +48,12 @@ interface Type {
 }
 
 const TYPES: Type[] = [
-  { name: 'C172S', def: C172S_DEFINITION, speed: 25, mains: [2.62, 4.6, 6.8], nose: [1.68, 2.13, 3.66], mainYield: 'bent' },
-  { name: 'C152', def: C152_DEFINITION, speed: 22, mains: [2.41, 4.3, 6.85], nose: [1.68, 2.13, 3.5], mainYield: 'bent' },
-  { name: 'PA-38', def: PA38_DEFINITION, speed: 26, mains: [2.57, 3.0, 5.0], nose: [1.45, 1.83, 2.9], mainYield: 'bent' },
-  { name: 'DA20', def: DA20_DEFINITION, speed: 24, mains: [2.6, 3.05, 5.0], nose: [1.45, 1.83, 2.9], mainYield: 'bent' },
+  { name: 'C172S', def: C172S_DEFINITION, speed: 25, mains: [2.62, 6.0, 8.4], nose: [1.68, 2.13, 3.66], mainYield: 'bent' },
+  { name: 'C152', def: C152_DEFINITION, speed: 22, mains: [2.41, 6.0, 8.45], nose: [1.68, 2.13, 3.5], mainYield: 'bent' },
+  { name: 'PA-38', def: PA38_DEFINITION, speed: 26, mains: [2.57, 6.0, 8.7], nose: [1.45, 1.83, 2.9], mainYield: 'bent' },
+  { name: 'DA20', def: DA20_DEFINITION, speed: 24, mains: [2.6, 6.0, 8.5], nose: [1.45, 1.83, 2.9], mainYield: 'bent' },
   { name: 'PA-34', def: PA34_DEFINITION, speed: 31, mains: [2.85, 3.4, 4.6], nose: [1.68, 2.13, 3.05], mainYield: 'bottomed' },
-  { name: 'C208', def: C208_DEFINITION, speed: 31, mains: [3.05, 4.3, 6.6], nose: [2.13, 2.74, 3.96], mainYield: 'bent' },
+  { name: 'C208', def: C208_DEFINITION, speed: 31, mains: [3.05, 6.0, 8.5], nose: [2.13, 2.74, 3.96], mainYield: 'bent' },
   { name: 'PC-12', def: PC12_DEFINITION, speed: 35, mains: [3.05, 3.7, 5.0], nose: [1.83, 2.29, 3.35], mainYield: 'bottomed' },
 ];
 
@@ -78,9 +85,15 @@ function liftEqualsWeight(rig: GearRig): void {
   rig.loads = (r) => ({ force: { x: 0, y: 0, z: -W }, moment: { x: -1500 * r.angularVelocity.x, y: -Mq * r.angularVelocity.y, z: -Mq * r.angularVelocity.z } });
 }
 
+/** The type's gear with the terrain-impact sink rate lifted out of reach (a leg's collapse above 7 m/s). */
+function noImpact(def: AircraftDefinition): GearConfig {
+  const g = def.gear();
+  return { ...g, impact: { sinkRate: 99, speed: 99, steepSpeed: 99, steepPath: 1 } };
+}
+
 /** A drop of `t` at `sink` m/s: 'mains' first (5 degrees above the resting attitude) or 'nose' first (1.5 below). */
-function drop(t: Type, sink: number, attitude: 'mains' | 'nose', seconds = 1.5, roll = 0): GearRig {
-  const rig = typeRig(t.def);
+function drop(t: Type, sink: number, attitude: 'mains' | 'nose', seconds = 1.5, roll = 0, config?: GearConfig): GearRig {
+  const rig = typeRig(t.def, config);
   const pose = rig.gear.restingPose(rig.mass, rig.cgOffset);
   rig.placeOnGround(0, 0.06);
   rig.orientation = quat.fromEuler(roll, pose.pitch + (attitude === 'mains' ? 5 : -1.5) * DEG, 0);
@@ -94,8 +107,8 @@ const RANK: Record<LegStatus, number> = { ok: 0, hard: 1, bent: 2, bottomed: 2, 
 const legOf = (rig: GearRig, i: number) => rig.output.damage!.legs[i];
 
 /** Lowest sink rate (to 0.02 m/s) in [lo, hi] at which leg `i` reaches `status` in a drop. */
-function threshold(t: Type, attitude: 'mains' | 'nose', i: number, status: LegStatus, lo = 0.5, hi = 6.95): number {
-  const reached = (s: number) => RANK[legOf(drop(t, s, attitude), i).status] >= RANK[status];
+function threshold(t: Type, attitude: 'mains' | 'nose', i: number, status: LegStatus, lo = 0.5, hi = 6.95, config?: GearConfig): number {
+  const reached = (s: number) => RANK[legOf(drop(t, s, attitude, 1.5, 0, config), i).status] >= RANK[status];
   if (!reached(hi)) return NaN;
   while (hi - lo > 0.02) {
     const mid = 0.5 * (lo + hi);
@@ -111,8 +124,11 @@ describe('sink-rate bands at MTOW', () => {
       const [hard, yieldAt, collapse] = t.mains;
       const below = (s: number) => drop(t, s - 0.15, 'mains');
       const above = (s: number) => drop(t, s + 0.15, 'mains');
+      // Beyond the 7 m/s terrain impact a collapse is found with the impact classification lifted.
+      const beyond = collapse > 7 ? noImpact(t.def) : undefined;
       report(`${t.name} mains-first`, {
-        hard: threshold(t, 'mains', 1, 'hard'), yield: threshold(t, 'mains', 1, t.mainYield), collapse: threshold(t, 'mains', 1, 'collapsed'),
+        hard: threshold(t, 'mains', 1, 'hard'), yield: threshold(t, 'mains', 1, t.mainYield),
+        collapse: threshold(t, 'mains', 1, 'collapsed', 0.5, beyond ? 9.5 : 6.95, beyond),
         noseHard: threshold(t, 'mains', 0, 'hard'), noseYield: threshold(t, 'mains', 0, 'bottomed'), noseCollapse: threshold(t, 'mains', 0, 'collapsed'),
       });
       expect(legOf(below(hard), 1).status).toBe('ok');
@@ -120,6 +136,18 @@ describe('sink-rate bands at MTOW', () => {
       expect(above(hard).output.damage!.events.map((e) => e.text)).toContain('Hard landing: inspection required');
       expect(RANK[legOf(below(yieldAt), 1).status]).toBeLessThan(2);
       expect(legOf(above(yieldAt), 1).status).toBe(t.mainYield);
+      if (beyond) {
+        // The hardest arrival short of a terrain impact bends the mains but does not break them.
+        const hardest = drop(t, 6.95, 'mains');
+        expect(legOf(hardest, 1).status).toBe(t.mainYield);
+        expect(hardest.output.crash).toBe('');
+        expect(legOf(drop(t, collapse - 0.15, 'mains', 1.5, 0, beyond), 1).status).toBe(t.mainYield);
+        expect(legOf(drop(t, collapse + 0.15, 'mains', 1.5, 0, beyond), 1).status).toBe('collapsed');
+        // At that energy it is a terrain impact, the crash it always was.
+        const impact = drop(t, 7.2, 'mains');
+        expect(impact.output.crashKind).toBe('impact');
+        return;
+      }
       expect(legOf(below(collapse), 1).status).toBe(t.mainYield);
       // Collapse: damage, not a crash (the energy test still says landing below 7 m/s).
       const broken = drop(t, Math.min(collapse + 0.15, 6.95), 'mains');
@@ -127,7 +155,7 @@ describe('sink-rate bands at MTOW', () => {
       expect(broken.output.crash).toBe('');
       expect(broken.output.wheels[1].load).toBe(0);
       expect(broken.output.wheels[1].compression).toBeGreaterThanOrEqual(t.def.gear().damage!.legs[1].collapsedCompression);
-    }, 60000);
+    }, 120000);
 
     test(`${t.name}: nose-first`, () => {
       const [hard, yieldAt, collapse] = t.nose;
@@ -145,11 +173,42 @@ describe('sink-rate bands at MTOW', () => {
   test('the nose gear fails before the mains in a mains-first arrival (light singles)', () => {
     for (const t of TYPES.slice(0, 4)) {
       const nose = threshold(t, 'mains', 0, 'collapsed');
-      const main = threshold(t, 'mains', 1, 'collapsed');
+      const main = threshold(t, 'mains', 1, 'collapsed', 0.5, 9.5, noImpact(t.def));
       report(`${t.name} mains-first collapse order`, { nose, main });
+      // The nose folds below the terrain impact; the mains outlast every arrival short of it.
+      expect(nose).toBeLessThan(7);
       expect(nose).toBeLessThan(main);
+      expect(legOf(drop(t, 6.95, 'mains'), 1).status).not.toBe('collapsed');
     }
-  }, 120000);
+  }, 180000);
+
+  test('PA-38: a hard arrival flexes the leaf mains up until the tyres strike the lower wing skin, short of bending them', () => {
+    const t = TYPES[2];
+    const stopAt = 5.2;
+    const skin = /^(Left|Right) wheel struck the lower wing skin/;
+    const struck = (rig: GearRig) => rig.output.damage!.events.filter((e) => skin.test(e.text));
+    const reaches = (s: number) => struck(drop(t, s, 'mains')).length > 0;
+    let lo = 3;
+    let hi = 6.95;
+    while (hi - lo > 0.02) {
+      const mid = 0.5 * (lo + hi);
+      if (reaches(mid)) hi = mid;
+      else lo = mid;
+    }
+    const below = drop(t, stopAt - 0.15, 'mains');
+    const above = drop(t, stopAt + 0.15, 'mains');
+    const ev = struck(above);
+    report('PA-38 wing-skin stop', { sink: hi, peakLoad: above.output.damage!.legs[1].peakLoad, events: above.output.damage!.events.map((e) => e.text).join('; ') });
+    expect(struck(below)).toEqual([]);
+    expect(ev.map((e) => [e.item, e.severity])).toEqual([['leftMain', 'damage'], ['rightMain', 'damage']]);
+    // Struck, not bent or broken, and not a crash.
+    expect(above.output.damage!.legs[1].status).toBe('hard');
+    expect(above.output.damage!.legs[2].status).toBe('hard');
+    expect(above.output.damage!.legs[1].set).toBe(0);
+    expect(above.output.crash).toBe('');
+    // One event per wheel however long it bears on the skin.
+    expect(struck(drop(t, 6.5, 'mains')).length).toBe(2);
+  }, 60000);
 
   test('a light aircraft loads its legs less: no damage scaling with weight', () => {
     const t = TYPES[0];
@@ -170,16 +229,19 @@ describe('sink-rate bands at MTOW', () => {
 describe('after the damage', () => {
   const C172 = TYPES[0];
 
-  test('a drop with the left wing low bends the left main only, and the bent leg makes the aircraft pull', () => {
-    const bent = drop(C172, 4.9, 'mains', 1.5, -4 * DEG);
+  test('a drop with the left wing low bends the left main only; the bent leg sits lower on a wider track and hardly pulls', () => {
+    const bent = drop(C172, 6, 'mains', 1.5, -6 * DEG);
     const d = bent.output.damage!;
-    report('left-wing-low 4.9 m/s', { left: d.legs[1].status, set: d.legs[1].set, toeDeg: d.legs[1].toe / DEG, right: d.legs[2].status });
+    report('left-wing-low 6 m/s', { left: d.legs[1].status, set: d.legs[1].set, toeDeg: d.legs[1].toe / DEG, right: d.legs[2].status });
     expect(d.legs[1].status).toBe('bent');
-    expect(d.legs[1].set).toBeGreaterThan(0);
-    expect(d.legs[1].toe).toBeGreaterThan(0);
+    expect(d.legs[1].set).toBeGreaterThan(0.01);
+    expect(d.legs[1].toe).toBe(0);
     expect(RANK[d.legs[2].status]).toBeLessThan(2);
+    // The left leg's damage alone (this drop also folded the nose).
+    const left = emptyDamage(1);
+    left.legs[1] = { ...d.legs[1] };
 
-    // Rolling at 15 m/s, hands and feet off, thrust holding the speed: heading change over 6 s.
+    // Rolling at 15 m/s, hands and feet off, thrust holding the speed: heading change over 6 s, and the attitude.
     const rollOut = (damage: DamageState | null) => {
       const rig = typeRig(C172.def);
       if (damage) rig.gear.restoreDamage(damage);
@@ -192,16 +254,22 @@ describe('after the damage', () => {
         return { force: v3.zero(), moment: v3.zero() };
       };
       rig.run(6);
-      const h = rig.euler().heading;
-      return { heading: (h > Math.PI ? h - 2 * Math.PI : h) / DEG, east: rig.position.y };
+      const e = rig.euler();
+      const h = e.heading;
+      return { heading: (h > Math.PI ? h - 2 * Math.PI : h) / DEG, east: rig.position.y, roll: e.roll / DEG, track: rig.output.wheels[1].onGround };
     };
     const straight = rollOut(null);
-    const pulled = rollOut(d);
-    report('roll-out, 6 s at 15 m/s', { straightHeadingDeg: straight.heading, bentHeadingDeg: pulled.heading, bentEast: pulled.east });
+    const lower = rollOut(left);
+    report('roll-out, 6 s at 15 m/s', { straightHeadingDeg: straight.heading, bentHeadingDeg: lower.heading, bentEast: lower.east, straightRollDeg: straight.roll, bentRollDeg: lower.roll });
     expect(Math.abs(straight.heading)).toBeLessThan(0.5);
-    // The toed-out left wheel steers the tail left (the mains are behind the CG): the nose swings right.
-    expect(pulled.heading).toBeGreaterThan(2);
-    expect(pulled.east).toBeGreaterThan(0.5);
+    // The leg yielded the way it flexes, up and outboard: the left wing sits lower...
+    expect(lower.roll - straight.roll).toBeLessThan(-0.2);
+    // ...on a wider track (its extended contact point moved outboard along the leg axis)...
+    const axis = C172_GEAR.wheels[1].axis;
+    expect(axis.y * d.legs[1].set).toBeLessThan(0);
+    // ...and the aircraft hardly pulls (no toe change).
+    expect(Math.abs(lower.heading)).toBeLessThan(1);
+    expect(Math.abs(lower.east)).toBeLessThan(0.5);
   }, 30000);
 
   test('a collapsed nose: the aircraft slides to a stop on its nose, propeller struck and the engine stopped, no crash', () => {

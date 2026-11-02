@@ -154,14 +154,16 @@ export function createDA20Gear(): GearConfig {
     // Contact speeds of a 45 KCAS (23 m/s) landing stall: 1.6 and 1.4 times it (gearConfig.ts rule of thumb).
     // Landing damage (physics/damage.ts). Axial leg loads from drops at MTOW, wings level, lift = weight
     // (tests/gear/damage.test.ts), placed on the landing-damage research's section 7 sink-rate bands: the
-    // hard-landing note at V_lim 2.60 m/s (511 fpm); hard / yield / collapse mains-first at 2.6 / 3.05 / 5.0 m/s,
+    // hard-landing note at V_lim 2.60 m/s (511 fpm); hard / yield / collapse mains-first at 2.6 / 6.0 / 8.0 m/s (collapse: an 8 m/s drop's load, 8.4-8.7 once the set is in),
     // nose-wheel contact at 1.45 / 1.83 / 2.9 m/s. An oleo, once bottomed, folds on a later contact at 40 % of
-    // the way from its yield to its ultimate load (an estimate).
+    // the way from its yield to its ultimate load (an estimate). The spring mains are the owner's (a light-aircraft pilot's) call,
+    // stronger than the research's: they take a permanent set at about 6 m/s and would break only beyond an 8 m/s
+    // drop's load, past the 7 m/s terrain impact, so in a landing they bend but do not collapse.
     damage: {
       legs: [
         { kind: 'oleo', hardLoad: 9.7e3, yieldLoad: 11.9e3, ultimateLoad: 18.4e3, bottomedUltimate: 14.5e3, collapsedCompression: 0.1, yield: { text: 'Nose gear fork cracked', item: 'nose' } },
-        { kind: 'spring', hardLoad: 9.3e3, yieldLoad: 10.6e3, ultimateLoad: 17.4e3, collapsedCompression: 0.2, yield: { text: 'Left main gear bent: brace inspection' } },
-        { kind: 'spring', hardLoad: 9.3e3, yieldLoad: 10.6e3, ultimateLoad: 17.4e3, collapsedCompression: 0.2, yield: { text: 'Right main gear bent: brace inspection' } },
+        { kind: 'spring', hardLoad: 9.3e3, yieldLoad: 22.6e3, ultimateLoad: 30.4e3, collapsedCompression: 0.2, yield: { text: 'Left main gear bent: brace inspection' } },
+        { kind: 'spring', hardLoad: 9.3e3, yieldLoad: 22.6e3, ultimateLoad: 30.4e3, collapsedCompression: 0.2, yield: { text: 'Right main gear bent: brace inspection' } },
       ],
     },
     impact: { sinkRate: 7, speed: 37, steepSpeed: 32.5, steepPath: 12 * DEG },
