@@ -153,14 +153,16 @@ export function createC152Gear(): GearConfig {
     // Contact speeds of a 43 KCAS (22 m/s) landing stall: 1.6 and 1.4 times it (gearConfig.ts rule of thumb).
     // Landing damage (physics/damage.ts). Axial leg loads from drops at MTOW, wings level, lift = weight
     // (tests/gear/damage.test.ts), placed on the landing-damage research's section 7 sink-rate bands: the
-    // hard-landing note at V_lim 2.41 m/s (475 fpm); hard / yield / collapse mains-first at 2.41 / 4.3 / 6.85 m/s,
+    // hard-landing note at V_lim 2.41 m/s (475 fpm); hard / yield / collapse mains-first at 2.41 / 6.0 / 8.0 m/s (collapse: an 8 m/s drop's load, 8.4-8.7 once the set is in),
     // nose-wheel contact at 1.68 / 2.13 / 3.5 m/s. An oleo, once bottomed, folds on a later contact at 40 % of
-    // the way from its yield to its ultimate load (an estimate).
+    // the way from its yield to its ultimate load (an estimate). The spring mains are the owner's (a light-aircraft pilot's) call,
+    // stronger than the research's: they take a permanent set at about 6 m/s and would break only beyond an 8 m/s
+    // drop's load, past the 7 m/s terrain impact, so in a landing they bend but do not collapse.
     damage: {
       legs: [
         { kind: 'oleo', hardLoad: 10.9e3, yieldLoad: 13.5e3, ultimateLoad: 43.6e3, bottomedUltimate: 25.5e3, collapsedCompression: 0.1, yield: { text: 'Engine mount bent by the nose gear', item: 'nose' } },
-        { kind: 'spring', hardLoad: 7.3e3, yieldLoad: 12.0e3, ultimateLoad: 20.8e3, collapsedCompression: 0.25 },
-        { kind: 'spring', hardLoad: 7.3e3, yieldLoad: 12.0e3, ultimateLoad: 20.8e3, collapsedCompression: 0.25 },
+        { kind: 'spring', hardLoad: 7.3e3, yieldLoad: 19.1e3, ultimateLoad: 24.9e3, collapsedCompression: 0.25 },
+        { kind: 'spring', hardLoad: 7.3e3, yieldLoad: 19.1e3, ultimateLoad: 24.9e3, collapsedCompression: 0.25 },
       ],
     },
     impact: { sinkRate: 7, speed: 35, steepSpeed: 31, steepPath: 12 * DEG },

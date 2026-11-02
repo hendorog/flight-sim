@@ -24,14 +24,17 @@
 // like every other crash it ends the flight at the first contact.
 //
 // LANDING DAMAGE (GearConfig.damage, opt-in; absent: everything above, unchanged). Each leg has a hard-landing
-// load (an inspection note), a yield load (a spring leg takes a permanent set that lowers its contact point and
-// toes the wheel out, so the aircraft pulls; an oleo bottoms and damages the structure behind it) and an
-// ultimate load (the leg collapses: it carries nothing and reports full compression so it is drawn folded). An
-// airframe point with an `item`, a propeller disc, a leg caught between its stops and a gear-up arrival then
-// DAMAGE the aircraft (physics/damage.ts) instead of ending the flight; the airframe points keep their penalty
-// contact and scrape friction, so the aircraft slides to a stop on them. Still a crash: a terrain impact (the
-// energy test comes first), a point without an item ("flipped over"), and water. Damage is judged on committed
-// calls only (GearInput.commit), on the state then, so RK4's provisional stages never write it.
+// load (an inspection note), a yield load (a spring leg takes a permanent set the way it flexes: its contact point
+// moves up and outboard along the leg axis, so that side sits lower on a wider track; an oleo bottoms and damages
+// the structure behind it) and an ultimate load (the leg collapses: it carries nothing and reports full
+// compression so it is drawn folded). A spring leg with a travel stop (LinearStrutSpring.stroke, PA-38: the tyre
+// against the lower wing skin) that reaches it records the strike (LegDamageConfig.stop). An airframe point with an
+// `item`, a propeller disc, a leg caught between its stops and a gear-up arrival then DAMAGE the aircraft
+// (physics/damage.ts) instead of ending the flight; the airframe points keep their penalty contact and scrape
+// friction, so the aircraft slides to a stop on them. Still a crash: a terrain impact (the energy test comes first;
+// a wheel on the ground with the CG sinking faster than the impact sink rate is one), a point without an item
+// ("flipped over"), and water. Damage is judged on committed calls only (GearInput.commit), on the state then, so
+// RK4's provisional stages never write it.
 
 import { G0, type Quat, type Vec3 } from '../../core/math';
 import type { WheelState } from '../../core/types';
@@ -39,7 +42,7 @@ import { DamageModel, LEG_ITEMS, type AirframeItem, type DamageSeverity, type Da
 import type { CrashKind, GearInput, GearOutput } from '../interfaces';
 import { C172_GEAR } from './c172Gear';
 import type { GearConfig, GearDamageConfig, ImpactThresholds, LegDamageConfig, PropellerDisc, StructuralPoint, WheelConfig } from './gearConfig';
-import { OleoPneumaticSpring, SeriesSpring, type SeriesSpringPoint } from './springs';
+import { LinearStrutSpring, OleoPneumaticSpring, SeriesSpring, type SeriesSpringPoint } from './springs';
 import { STRUCTURE_CONTACT } from './structure';
 import { SURFACES, surfaceUndulation } from './surfaces';
 import { WheelDynamics, type TyreForce, type WheelContact } from './tyre';
@@ -108,7 +111,7 @@ interface WheelRuntime {
   /** Tyre force of the previous call on the unsteered in-plane axes, N (for the leg-axis load split). */
   fa: number;
   fb: number;
-  /** GearConfig.damage: this leg's limits, its record, and its stroke (oleo), m. */
+  /** GearConfig.damage: this leg's limits, its record, and its stroke (oleo, or a spring leg's travel to a stop), m. */
   dmg?: LegDamageConfig;
   leg?: LegDamage;
   stroke?: number;
@@ -172,6 +175,7 @@ export class LandingGear {
   private readonly t1: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly t2: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly t3: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly tSink: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly force: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly moment: Vec3 = { x: 0, y: 0, z: 0 };
 
@@ -193,7 +197,7 @@ export class LandingGear {
       this.wheels.forEach((w, i) => {
         w.dmg = config.damage!.legs[i];
         w.leg = this.damage!.state.legs[i];
-        w.stroke = w.cfg.strut instanceof OleoPneumaticSpring ? w.cfg.strut.stroke : undefined;
+        w.stroke = w.cfg.strut instanceof OleoPneumaticSpring || w.cfg.strut instanceof LinearStrutSpring ? w.cfg.strut.stroke : undefined;
         w.weakened = false;
         w.setPosition = { ...w.cfg.position };
       });
@@ -486,6 +490,11 @@ export class LandingGear {
       this.latchCrash(`${cfg.label ?? LABELS[cfg.name]} gear collapsed${quoted}`, 'gearCollapse');
     }
     if (surfaceType === 'water') this.latchCrash('Ditched: the landing gear touched water', 'ditching');
+    else if (this.damage && this.commit && this.cgSink() > this.impact.sinkRate) {
+      // GearConfig.damage: the legs outlast any landing, so a wheel on the ground with the CG still sinking faster
+      // than a terrain impact's sink rate ends the flight as one, whatever the legs then do.
+      this.latchCrash(`${cfg.label ?? LABELS[cfg.name]} gear collapsed`, 'gearCollapse');
+    }
     if (w.airborneTime >= TOUCHDOWN_AIRBORNE_TIME) {
       this.touchdowns.push({ wheel: cfg.name, sinkRate: Math.max(0, -heightRate), time: body.time });
     }
@@ -592,11 +601,16 @@ export class LandingGear {
     }
     const item = LEG_ITEMS[this.wheels.indexOf(w)];
     if (c.kind === 'spring') {
+      if (c.stop !== undefined && w.stroke !== undefined && strut >= w.stroke - 1e-4) {
+        // The leg flexed to its stop against the airframe: one event per leg (also after a restore).
+        const text = c.stop.text;
+        if (!damage.state.events.some((e) => e.item === item && e.text === text)) damage.note(time, item, 'damage', text);
+      }
       if (axial <= c.yieldLoad) return;
       const set = (c.maxSet ?? 0.04) * Math.min(1, (axial - c.yieldLoad) / (c.ultimateLoad - c.yieldLoad));
       if (set > leg.set) {
         leg.set = set;
-        if (w.cfg.name !== 'nose') leg.toe = (c.toePerSet ?? 0.9) * set;
+        if (w.cfg.name !== 'nose') leg.toe = (c.toePerSet ?? 0) * set;
         const p = w.cfg.position;
         const a = w.cfg.axis;
         w.setPosition!.x = p.x + a.x * set;
@@ -665,6 +679,12 @@ export class LandingGear {
     if (p.damage) damage.airframe(time, item, p.damage.severity, p.damage.text);
     else if (tolerance > 0 && sink <= tolerance) damage.airframe(time, item, 'inspection', `${message}: inspection required`);
     else damage.airframe(time, item, ITEM_SEVERITY[item], message);
+  }
+
+  /** Sink rate of the CG over the ground (NED down), m/s. */
+  private cgSink(): number {
+    const b = this.body!;
+    return rotateXYZ(b.orientation, b.velocityBody.x, b.velocityBody.y, b.velocityBody.z, this.tSink).z;
   }
 
   /** Terrain-impact description of the present arrival ('' for landing energy; see classifyImpact), once per call. */

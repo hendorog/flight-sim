@@ -113,8 +113,17 @@ export interface LegDamageConfig {
   bottomedUltimate?: number;
   /** Spring: permanent set reached at the ultimate load (linear from the yield load), m. Absent: 0.04. */
   maxSet?: number;
-  /** Spring: toe-out per metre of set, rad/m (the bent leg makes the aircraft pull). Absent: 0.9 (0.5 deg/cm). */
+  /**
+   * Spring: toe-out per metre of set, rad/m. Absent: 0. A spring leg yields the way it flexes (the set moves the
+   * contact point up and outboard along the leg axis: that side sits lower on a wider track) and keeps its toe, so
+   * the aircraft hardly pulls; a type with an incidental toe change can give one here.
+   */
   toePerSet?: number;
+  /**
+   * Spring leg with a travel stop (its strut's LinearStrutSpring.stroke): reaching it is a 'damage' event on the leg
+   * with this text (PA-38: the tyre strikes the lower wing skin). The leg's status does not change.
+   */
+  stop?: { text: string };
   /** WheelState.compression a collapsed leg reports, so the gear renderer draws it folded, m. */
   collapsedCompression: number;
   /** Text and airframe item of the yield damage (nose leg: the firewall). Absent: "<Leg> gear bent / bottomed". */

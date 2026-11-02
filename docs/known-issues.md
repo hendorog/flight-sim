@@ -29,14 +29,25 @@ older worker handoffs; an estimate is not by itself proof of a handling defect.
 ### Landing damage: stage-A calibration gaps — **estimate**
 
 The leg loads of the landing-damage model (`src/physics/damage.ts`, each type's `gear.ts` `damage` block) were set by
-drops at MTOW (tests/gear/damage.test.ts), and three gaps remain:
+drops at MTOW (tests/gear/damage.test.ts), and these gaps remain:
 - **PA-34 and PC-12 oleo loads absurdly high.** Their oleo springs stiffen too much near the end of the stroke, so the
   axial loads in a hard landing run far above what a real oleo carries; the hard / yield / ultimate loads were set
   against those numbers, so the bands come out right in sink rate but the loads themselves are not physical. Close
   with: a flatter oleo force curve (efficiency about 0.8 over the stroke), then the damage loads re-set by the drops.
-- **C172S and C152 collapse band squeezed under the impact limit.** Their main legs collapse at about 6.8 m/s, and a
-  sink above about 7 m/s classifies as a terrain impact (a crash), so a collapse without a crash happens in a narrow
-  band only. Close with: an owner decision on the impact limit for the light singles, or a lower ultimate load.
+- **Spring mains: owner's strength, not the research's.** On the owner's judgement the spring and leaf mains (C152,
+  C172S, PA-38, DA20, C208) yield at about 6 m/s mains-first and their ultimate load is an 8 m/s drop's, beyond the
+  7 m/s terrain impact (any wheel on the ground with the CG sinking faster than that is the impact crash), so a main
+  collapse is not reachable in a level landing; a one-wheel arrival can still load one leg past it. The research's
+  bands (§7: Cessna bent 4.3-4.6 m/s, collapse 6.6-6.9; PA-38 / DA20 bent 3.0, collapse 5.0) are no longer used for
+  these legs. The permanent set is small (about 1-3 cm between 6 and 7 m/s; `maxSet` 0.04 m at the ultimate load).
+- **PA-38 wing-skin stop: estimated clearance.** The leaf travel to the tyre's strike on the lower wing skin
+  (`MAIN_STOP` 0.30 m in pa38/gear.ts) is an estimate from the geometry (+/-0.04 m), reached at about 5.3 m/s
+  mains-first at MTOW (the owner expected 4.5-5). Beyond it the top of the tyre squashes against the skin at the
+  tyre's own stiffness (125 kN/m). Close with: a measured tyre-to-skin clearance; 0.28 m would put the strike at
+  about 4.9 m/s.
+- **Spring main legs deflect far.** The linear leg springs carry no stop of their own (the PA-38's wing skin
+  excepted): a C172S main flexes about 0.33 m along its axis at 6 m/s and 0.43 m at 7 m/s. Close with: a measured
+  leg load-deflection curve, then the damage loads re-set by the drops.
 - **Propeller contact time is cumulative.** The time a propeller has spent touching the ground (`propDigTime`, 0.12 s)
   adds up over the whole flight, so several light tip strikes on separate bounces can add up to a dig-in that stops
   the engine. Close with: a contact time that restarts once the disc has been clear for a moment.
