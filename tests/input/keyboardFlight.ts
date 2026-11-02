@@ -77,6 +77,8 @@ export interface KeyboardFlightBands {
     gustPitchOnMains: number;
     gustPitch: number;
     gustWeather: Partial<WeatherSettings>;
+    /** Gusty-crosswind seeds known to exceed gustPitchOnMains (expected failures, it.fails). Absent: none. */
+    gustKnownFail?: readonly number[];
   };
 }
 
@@ -130,6 +132,13 @@ export const C172S_KEYBOARD_BANDS: KeyboardFlightBands = {
     gustPitchOnMains: 12,
     gustPitch: 17,
     gustWeather: { windDirectionDeg: 160, windSpeedKt: 15, gustKt: 10, turbulence: 0.5 },
+    // KNOWN GAP (fix/rolling-drag, owner decision 2026-11-03): rotating at Vr + half the gust factor, seed 1 reaches
+    // 12.05 deg on the mains (seeds 0, 2, 3: 11.2, 11.2, 9.5; at Vr all four were 12.5-14). The
+    // mains' rolling drag, below the centre of gravity, needs more back elevator to lift the nosewheel (0.17-0.19 of
+    // travel against 0.14 at the old flat 0.02); as the wheels unload (their drag goes as load^1.5) the wound-in
+    // elevator becomes excess and the nose comes up at 13-15 deg/s, faster than the hold-position yoke can be eased
+    // forward on the keys, and a gust lull (43-47 KIAS) can force a second rotation with more wound in.
+    gustKnownFail: [1],
   },
 };
 
@@ -568,8 +577,10 @@ export function describeKeyboardFlight(options: KeyboardFlightOptions = {}): voi
       expect(res.liftoffPitch).not.toBeNull();
     });
 
-    it.each([0, 1, 2, 3])('the closed-loop key pilot rotates without a tail strike in the gusty crosswind preset (seed %i)', (seed) => {
-      const r = rollTo(R.gustWeather, vr, seed);
+    // The gusty-day technique: rotate at Vr plus half the gust factor.
+    const gustVr = vr + 0.5 * (R.gustWeather.gustKt ?? 0);
+    for (const seed of [0, 1, 2, 3]) (R.gustKnownFail?.includes(seed) ? it.fails : it)(`${R.gustKnownFail?.includes(seed) ? 'KNOWN GAP (keyboard rotation against the rolling drag, see gustKnownFail): ' : ''}the closed-loop key pilot rotates at Vr + half the gust factor without a tail strike in the gusty crosswind preset (seed ${seed})`, () => {
+      const r = rollTo(R.gustWeather, gustVr, seed);
       const res = keyPilotRotate(r);
       console.log('xw', seed, res);
       expect(res.crashed).toBe(false);

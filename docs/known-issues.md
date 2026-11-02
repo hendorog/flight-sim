@@ -76,8 +76,15 @@ Rolling resistance is now tyre hysteresis from the tyre's deflection, a surface 
   losses at low Reynolds number (clmax with Re^0.15, profile drag with Re^-0.2 below Re 1e6, the order of NACA TR
   586) took only 4 % off the DA20's idle (477 -> 460 N; Re about 6e5 at its idle against 4e5 for the Cessnas', which
   lost 9-12 %), left full-power static thrust within 0.1 %, but stopped the C152, C172S and PA-38 propellers
-  windmilling at best glide (0 rpm against the POH's windmilling glide) and moved every flight golden. Close with:
-  owner decision on the DA20 propeller's static thrust (its section calibration), not the AFM idle.
+  windmilling at best glide (0 rpm against the POH's windmilling glide) and moved every flight golden. Not done:
+  a DA20-only propeller recalibration (owner request, 2026-11-03). With Ct flat in rpm the idle thrust is the
+  full-power static thrust times (1011 / static rpm)^2, so 300 N at idle needs a full-power static thrust under
+  1550 N at the AFM band's top static rpm (2300; 1170 N at 2000), a static figure of merit near 0.3 at the 75-80 kW it
+  absorbs there, against the 2.4 kN the gear comment cites (AFM 4.4.7) and the other types' 0.79-0.83. Bringing the
+  figure of merit in line (0.8) instead raises the idle thrust to about 600 N. Lighter blades (chord 1.2 -> 0.7 x the
+  172's) did reach 276 N at idle with the take-off roll still in its band (419 m), but at 2640 static rpm and with the
+  cruise calibration (2800 rpm at 129 KTAS) gone. Close with: owner decision; a Reynolds-number model that leaves
+  windmilling alone, or the DA20's documented fast idle taxi accepted.
 - **Turboprop tyres: a lower hysteresis factor (owner decision).** The C208's and PC-12's tyre springs now follow
   their inflation pressures (three times softer than before), and with the light types' `HYSTERESIS` their rolling
   resistance would be 0.038-0.040 (0.065 at rest): none of the idle-taxi cases moves at maximum weight even after
@@ -96,9 +103,10 @@ Rolling resistance is now tyre hysteresis from the tyre's deflection, a surface 
   larger drag, below the centre of gravity, needs more back elevator to lift the nosewheel (0.17-0.19 against
   0.136-0.141); as the wheels unload (their drag goes as load^1.5) the wound-in elevator becomes excess and the nose
   comes up at 13-15 deg/s against 10-12, faster than the hold-position yoke can be eased forward on the keys; gust
-  lulls (43-47 KIAS) force a second rotation with more wound in. Rotating at Vr plus half the gust factor (the usual
-  gusty-day technique) halves the failures (2 seeds of 4) but does not clear them. Not re-based. Close with: owner
-  check of a keyboard rotation in gusts, then the key pilot or the band.
+  lulls (43-47 KIAS) force a second rotation with more wound in. The key pilot now rotates at Vr plus half the gust
+  factor (the usual gusty-day technique, owner decision): seeds 0, 2 and 3 pass (11.2, 11.2, 9.5 deg), seed 1 reaches
+  12.05 and is an expected failure (keyboardFlight.ts gustKnownFail). The 12 deg limit stands. Close with: owner check
+  of a keyboard rotation in gusts.
 - **C152 main tyre spring.** 125 kN/m, as the PA-38's at 30 psi, although the C152's mains run at 21 psi (about
   87 kN/m by Raymer's estimate): its rolling resistance is a little low for its soft tyres.
 
