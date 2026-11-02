@@ -94,6 +94,8 @@ export class CameraSystem implements Subsystem, ViewControl {
   private readonly unsubscribe: (() => void)[] = [];
   /** Current line-of-sight lift of an external camera, m (decays smoothly). */
   private sightLift = 0;
+  /** The lift the last sight-line sample asked for, held until the next sample (the samples are every third frame). */
+  private sightHeld = 0;
   private sightFrame = 0;
   private readonly dirBefore = new THREE.Vector3();
   private readonly dirAfter = new THREE.Vector3();
@@ -333,7 +335,7 @@ export class CameraSystem implements Subsystem, ViewControl {
       this.pendingCut = false;
       this.checkPath = false;
       this.blend = 1;
-      this.sightLift = 0;
+      this.sightLift = this.sightHeld = 0;
       this.rigs[ctx.cameraMode].activate(ctx, this.aircraft, this.current);
       this.cut();
     }
@@ -402,9 +404,11 @@ export class CameraSystem implements Subsystem, ViewControl {
     const a = this.aircraft.position;
     // three: x = east, y = up, z = -north.
     const groundLift = env.groundElevation(-p.z, p.x) + rig.groundClearance - p.y;
-    let sight = 0;
-    // The sight line is sampled every third frame (terrain queries are not free); the lift is held between.
+    // The sight line is sampled every third frame (terrain queries are not free); the sampled lift is held
+    // between samples, so a steady obstruction gives a steady camera (letting it decay between samples made a
+    // parked aircraft's low camera bounce every third frame).
     if (rig.lineOfSight && ++this.sightFrame % 3 === 0) {
+      let sight = 0;
       const d = p.distanceTo(a);
       // Sample the terrain along the sight line (skip the part next to the aircraft, which may be on the ground).
       const n = d > 400 ? 8 : 5;
@@ -417,9 +421,10 @@ export class CameraSystem implements Subsystem, ViewControl {
         const clear = env.groundElevation(-z, x) + SIGHT_CLEARANCE * f;
         if (y < clear) sight = Math.max(sight, a.y + (clear - a.y) / f - p.y);
       }
+      this.sightHeld = sight;
     }
-    this.sightLift = Math.max(sight, this.sightLift * Math.exp(-Math.max(dt, 0) / 1.5));
-    if (!rig.lineOfSight) this.sightLift = 0;
+    this.sightLift = Math.max(this.sightHeld, this.sightLift * Math.exp(-Math.max(dt, 0) / 1.5));
+    if (!rig.lineOfSight) this.sightLift = this.sightHeld = 0;
     const lift = Math.max(groundLift, this.sightLift);
     if (lift <= 0) return;
     if (rig.watchesAircraft) {
