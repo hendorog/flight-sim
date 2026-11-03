@@ -156,6 +156,9 @@ export const C208_TAKEOFF_LIMITS = {
  * 10.9 kt (band 8-12). Now the gate at LOW IDLE is a slow taxi that a loaded Caravan needs "a fair amount of breakaway
  * power" to start (AOPA Pilot, Turbine Pilot: Cessna Caravan, March 2009), and the gate at HIGH IDLE (the landing
  * setting) still a brisk taxi that the POH's "beta after touchdown" controls. Owner decision: the LOW IDLE bands.
+ * Since fix/rolling-drag the tyres hold a standing aircraft until about 0.035 of its weight (tyre.ts breakaway) and the
+ * idle levers alone do not start it at maximum gross: measure.ts idleTaxi breaks it away with a little power on the
+ * gate and the speeds are those it then settles to on the idle levers.
  */
 export const C208_BETA_TAXI = [
   {
@@ -163,7 +166,7 @@ export const C208_BETA_TAXI = [
     reverse: 0,
     condition: 0.1,
     speedKt: range(4, 12, 'on the gate at LOW IDLE a slow taxi; breaks away slowly when loaded (AOPA 2009; ESTIMATE, owner decision)'),
-    thrustN: range(700, 1200, 'a little more than the rolling resistance (0.02 x 35 kN, about 700 N): it creeps off (ESTIMATE)'),
+    thrustN: range(700, 1200, 'a little more than the rolling resistance once rolling (about 0.021 x 35 kN, 750 N) and less than the breakaway at rest (about 0.035, 1.25 kN): a loaded Caravan needs a touch of power to start (src/physics/gear/tyre.ts TURBOPROP_HYSTERESIS; ESTIMATE)'),
     np: range(600, 1000, 'below HIGH IDLE (850-1200): LOW IDLE 52 % Ng on the low-pitch stop (ESTIMATE)'),
     settled: range(1, 1, 'measure.ts idleTaxi steady'),
   },

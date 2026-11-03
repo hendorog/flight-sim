@@ -75,6 +75,7 @@ describe(`conformance ${ID}: items outside the generic blocks`, () => {
       item(ID, `idle taxi, ${k.label}: static thrust on the parking brake`, () => r().staticThrustN, k.thrustN, 'N', FLOWN_MS);
       item(ID, `idle taxi, ${k.label}: Np on the parking brake`, () => r().staticNp, k.np, 'rpm', FLOWN_MS);
       item(ID, `idle taxi, ${k.label}: the speed settled (1 = yes)`, () => Number(r().steady), k.settled, '', FLOWN_MS);
+      item(ID, `idle taxi, ${k.label}: started from rest on the idle levers alone (1 = yes; 0: the pilot broke it away)`, () => Number(r().brokeAway), { min: 0, max: 1, source: 'information (measure.ts idleTaxi)' }, '', FLOWN_MS);
     }
   });
 

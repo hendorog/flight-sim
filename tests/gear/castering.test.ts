@@ -222,7 +222,9 @@ describe.each([C172_CASTER, DA20])('castering nosewheel on the rig: $name', (air
     rig.run(1);
     const start = rig.config.wheels[2].position;
     rig.controls.brakeRight = 1;
-    rig.external = { force: { x: 600, y: 0, z: 0 }, point: aircraft.hub };
+    // 1100 N, was 600: the free main and the nosewheel must break away (tyre.ts BREAKAWAY) and roll against the
+    // tyre hysteresis, about 0.06 of their load at rest.
+    rig.external = { force: { x: 1100, y: 0, z: 0 }, point: aircraft.hub };
     rig.run(5);
     const heading = rig.euler().heading;
     // Where the braked wheel's contact point is now (level ground, small attitude changes).
@@ -243,6 +245,10 @@ describe.each([C172_CASTER, DA20])('castering nosewheel on the rig: $name', (air
         const rig = rigOf(aircraft, { ...DA20_CASTER, friction });
         rig.placeOnGround(0);
         rig.velocity = { x: speed, y: 0, z: 0 };
+        // A little idle thrust (0.015 of the weight at the hub, on the centreline): with the tyre-hysteresis rolling
+        // resistance (tyre.ts, ~0.035) a free roll from 5 m/s would stop within the 14 s and leave the nosewheel's
+        // track direction undefined; with it the roll decelerates as it did at the old flat 0.02.
+        rig.external = { force: { x: 0.015 * aircraft.mass * G0, y: 0, z: 0 }, point: aircraft.hub };
         rig.run(0.5);
         rig.controls.brakeRight = 1;
         rig.run(0.3);
@@ -296,7 +302,8 @@ describe.each([C172_CASTER, DA20])('castering nosewheel on the rig: $name', (air
     // Free-rolling mains do not resist yaw about the middle of their axle, and a free nosewheel resists nothing:
     // only the centre of gravity, b ahead of the axle, has to be turned with the aircraft (v = b r, side force
     // m (b r' + u r) on the mains at arm b). This is why a castering type must be stopped from turning. The
-    // rolling resistance of the outer, more heavily loaded wheel adds a few per cent.
+    // rolling resistance of the outer, more heavily loaded wheel adds to it: 15-25 % with the tyre hysteresis, which
+    // grows faster than the load (tyre.ts; it was a few per cent at a flat 0.02).
     const rig = rigOf(aircraft, FRICTIONLESS);
     rig.placeOnGround(0);
     rig.velocity = { x: 3, y: 0, z: 0 };
@@ -315,7 +322,7 @@ describe.each([C172_CASTER, DA20])('castering nosewheel on the rig: $name', (air
     report(`${aircraft.name} turn decay`, { yawRate0: r0, speed: u, predicted, measured });
     expect(r0).toBeGreaterThan(0.1);
     expect(measured / predicted).toBeGreaterThan(1);
-    expect(measured / predicted).toBeLessThan(1.15);
+    expect(measured / predicted).toBeLessThan(1.3);
   });
 
   test('the yaw oscillation behind a swerve at speed is that of an aircraft held by its mains alone', () => {
@@ -381,7 +388,9 @@ describe.each([C172_CASTER, DA20])('castering nosewheel on the rig: $name', (air
     const real = swerve(casterGear(aircraft.gear, FRICTIONLESS));
     report(`${aircraft.name} yaw mode at ${speed} m/s`, real);
     expect(real.crash).toBe('');
-    expect(Math.abs(real.measuredPeriod - real.period) / real.period).toBeLessThan(0.1);
+    // 15 %, was 10 %: the hysteresis rolling resistance of the more heavily loaded outer main (tyre.ts) adds yaw
+    // stiffness the two-wheel model leaves out (DA20 proportions: 12 % short).
+    expect(Math.abs(real.measuredPeriod - real.period) / real.period).toBeLessThan(0.15);
     expect(real.measuredZeta / real.zeta).toBeGreaterThan(0.65);
     expect(real.measuredZeta / real.zeta).toBeLessThan(1);
   });
@@ -511,7 +520,7 @@ describe('integration', () => {
 
     // Pivot about the locked right wheel from rest, as on the rig.
     controls.brakeRight = 1;
-    const pivot = fly(6, 0, 600, () => undefined);
+    const pivot = fly(6, 0, 1100, () => undefined); // 1100 N as on the rig (the breakaway, tyre.ts)
     const nose = CASTER_GEAR.wheels[0].position;
     const main = CASTER_GEAR.wheels[2].position;
     const kinematic = Math.atan((nose.x - main.x) / main.y);

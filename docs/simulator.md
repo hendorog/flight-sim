@@ -178,6 +178,42 @@ cross a switch (the new type is undamaged, as with hail). In a lesson, damage fa
 damage" row and disabling damage ends the lesson as a crash does (a dual lesson on its own crash panel); in the
 Career it is priced at settlement ([career.md](career.md), "Settlement").
 
+## Ground rolling resistance
+
+A wheel's rolling resistance (`src/physics/gear/tyre.ts`, `surfaces.ts`) has three parts, each a Coulomb torque on the
+wheel like the brakes, so a stopped wheel is simply held and a parked aircraft stays still:
+
+- **Tyre hysteresis**, from the tyre's own deflection: `Crr = HYSTERESIS * sqrt(deflection / diameter)`,
+  `HYSTERESIS` 0.145 (the pressure centre about 7 % of the contact half-length ahead of the axle; Wong, "Theory of
+  Ground Vehicles"; Clark, "Mechanics of Pneumatic Tires"). The deflection is the gear's tyre spring under the
+  present load, so a soft, lightly inflated tyre or a heavy load gives more, a hard tyre or a wing carrying weight
+  less. Light types on dry pavement come to about 0.03-0.035 (Raymer, "Aircraft Design", table 17.1: 0.03-0.05,
+  brakes off). The C208's and PC-12's high-ply tyres use `TURBOPROP_HYSTERESIS` 0.08 (and a breakaway scaled with
+  it): about 0.022 at their static deflection, Torenbeek's 0.02 for transport tyres near rated deflection (table
+  5-6). Their tyre springs follow from inflation pressure and size, 2.3 p sqrt(w D) (Raymer 11.3): C208 6.50-10 at
+  60 psi 304 kN/m and 22x8.00-8 at 40 psi 214 kN/m (pressures ESTIMATES); PC-12 8.50-10 and 17.5x6.25-6 at 60 psi
+  (TCDS) 354 and 253 kN/m.
+- **The surface** (`SurfaceProperties.rollingDrag`): nothing on pavement; dirt 0.015, gravel 0.01, compacted snow
+  0.04, mown grass 0.045 (totals about 0.05, 0.045, 0.075 and 0.075-0.08; Raymer: firm dirt 0.04, hard turf 0.05,
+  soft turf 0.07, wet grass 0.08; Torenbeek table 5-6: short grass 0.05, long grass 0.10).
+- **Breakaway**: a tyre that has stood takes a set and the bearings and seals stick, so starting to roll takes more
+  than keeping rolling: an extra `BREAKAWAY * sqrt(deflection / diameter)` (`BREAKAWAY` 0.1, about 0.02-0.025 on a
+  light type) at rest, gone by 0.6 m/s of wheel speed. ESTIMATE, set to the owner's "a bit of effort to move".
+
+Measured (calm, level, maximum weight; `HYSTERESIS` 0.145 / `BREAKAWAY` 0.1):
+
+| | C152 | C172S | PA-38 | DA20 |
+|---|---|---|---|---|
+| Engine-off deceleration, pavement / grass, g | 0.033 / 0.076 | 0.036 / 0.080 | 0.032 / 0.074 | 0.037 / 0.081 |
+| Idle from rest, pavement and grass | stays | stays | stays | stays (pavement: just; 1110 rpm breaks away) |
+| Throttle to break away from rest, pavement / grass, rpm | 1080 / 1400 | 1190 / 1590 | 1000 / 1320 | 1110 / 1430 |
+| Static thrust at idle, N (fraction of weight) | 175 (0.024) | 273 (0.024) | 192 (0.026) | 477 (0.061) |
+| Coasting at idle from 12 kt on pavement | stops in 52 s | 48 s | 68 s | accelerates to about 25 kt |
+
+The DA20's idle (1020 rpm, AFM) gives about 480 N of static thrust, 0.061 of its weight, against about 0.036 rolling
+once moving: once rolling at idle on pavement it runs up to about 25 kt (the real aircraft is known for needing the
+brakes on the taxi; see docs/known-issues.md). On grass it stays put at idle, calm or into a 10 kt wind.
+
 ## Sound
 
 Sound starts on the first click, tap or key press (browsers allow audio only after a user gesture). It needs a

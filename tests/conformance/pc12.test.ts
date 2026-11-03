@@ -249,6 +249,7 @@ describe(`conformance ${ID}: items of plan 5.7 outside the generic blocks`, () =
       const r = once(() => idleTaxi(makeRig({ def, loading: 'maxGross' }), { reverse: k.reverse, condition: PC12_GROUND_IDLE, seconds: 300 }));
       item(ID, `idle taxi, ${k.label}: steady unbraked ground speed`, () => r().speedKt, k.speedKt, 'kt', FLOWN_MS);
       item(ID, `  settled`, () => (r().steady ? 1 : 0), { min: 1, max: 1, source: 'measure.ts idleTaxi: under 0.05 kt over 5 s' }, '', FLOWN_MS);
+      item(ID, `  started from rest on the idle levers alone (1 = yes; 0: the pilot broke it away)`, () => Number(r().brokeAway), { min: 0, max: 1, source: 'information (measure.ts idleTaxi)' }, '', FLOWN_MS);
     }
   });
 

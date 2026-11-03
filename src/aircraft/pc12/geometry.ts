@@ -179,7 +179,7 @@ const WINGLET = { height: PC12_WING.winglet.height, cant: PC12_WING.winglet.cant
  * the link's 42 deg made the spin-up and brake forces load and unload the spring in a loop (the mains chattered between
  * 0 and 39 kN on the roll-out). The legs are vertical (PC12_MAIN_LEG_TILT 0): KNOWN_ISSUES "Trailing-link mains".
  */
-export const PC12_GEAR_STATIC_SAG = { nose: 0.011, main: 0.1 } as const;
+export const PC12_GEAR_STATIC_SAG = { nose: 0.013, main: 0.131 } as const;
 export const PC12_MAIN_LEG_TILT = 0;
 const MAIN_FORWARD = PC12_GEAR_STATIC_SAG.main * Math.tan(PC12_MAIN_LEG_TILT);
 

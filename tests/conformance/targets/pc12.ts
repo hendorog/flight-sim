@@ -217,7 +217,9 @@ export const PC12_PUSHER_FLAPS = [
 /** Steady unbraked idle taxi at ground idle, over 300 s (plan 5.7 (a), (c)). */
 export const PC12_TAXI = [
   { label: 'on the gate, ground idle', reverse: 0, speedKt: range(15, 30, 'ESTIMATE (plan 5.7 (a)): the reason the POH taxis in beta') },
-  { label: 'half beta', reverse: GROUND_FINE / 2, speedKt: range(8, 12, '47E-PROXY 4.7 ("use the beta range to control taxi speed") / AGENT (plan 5.7 (c))') },
+  // 3-8 kt, was 8-12 (fix/rolling-drag): the pressure-based tyre springs and the tyre rolling resistance (about 0.022 once
+  // rolling, more at rest; tyre.ts) slow the half-beta taxi to 5 kt after the pilot breaks the aircraft away.
+  { label: 'half beta', reverse: GROUND_FINE / 2, speedKt: range(3, 8, '47E-PROXY 4.7 ("use the beta range to control taxi speed") / AGENT (plan 5.7 (c)); re-based for the tyre rolling resistance (owner decision)') },
 ] as const;
 /** Take-off roll with the rudder trim at zero (plan 5.7, AGENT). */
 export const PC12_TAKEOFF_HEADING = {

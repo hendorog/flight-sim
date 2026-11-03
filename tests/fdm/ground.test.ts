@@ -60,7 +60,11 @@ describe('on the ground', () => {
     report('take-off ground roll, flaps 10 short field', r.roll, POH.takeoffGroundRollM, 'm');
     report('  lift-off speed', r.liftoffKias, 51, 'KIAS');
     expect(r.crashed).toBe(false);
-    expect(Math.abs(r.roll / POH.takeoffGroundRollM - 1)).toBeLessThan(0.1);
+    // 15 %, was 10 % (OWNER DECISION, fix/rolling-drag): the tyre-hysteresis rolling resistance (0.02 -> ~0.035 on
+    // pavement, tyre.ts) lengthens the roll from 312 m (+6 %) to 330 m (+12.5 %). The other light types moved toward
+    // their handbook rolls (C152 -9.4 -> -8.0 %, PA-38 -3.2 -> -1.2 %, DA20 -9.8 -> -6.2 %): the C172S was already the
+    // long one at a rolling resistance that was too low, so the rest of the gap is its take-off calibration.
+    expect(Math.abs(r.roll / POH.takeoffGroundRollM - 1)).toBeLessThan(0.15);
   }, 60000);
 
   it('a 15 kt direct crosswind take-off is controllable with rudder and into-wind aileron', () => {

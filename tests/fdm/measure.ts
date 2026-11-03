@@ -1008,6 +1008,12 @@ export interface IdleTaxiOptions {
   brakes?: number;
   /** Longest roll before the speed counts as steady, s (default 150). */
   seconds?: number;
+  /**
+   * Power lever (throttle, on the gate) the pilot uses to break away when the levers alone leave the aircraft
+   * standing 5 s after the brakes come off; held until BREAKAWAY_KT, then back to the case's levers (default 0.3;
+   * 0: no help, the speed from rest).
+   */
+  breakawayThrottle?: number;
 }
 
 export interface IdleTaxiResult {
@@ -1022,13 +1028,19 @@ export interface IdleTaxiResult {
   np: number;
   /** The speed changed less than 0.05 kt over the last 5 s (false: still accelerating when the time ran out). */
   steady: boolean;
+  /** The aircraft started rolling from rest on the case's levers alone (false: the pilot broke it away with power). */
+  brokeAway: boolean;
 }
+
+/** Ground speed to which the pilot of idleTaxi breaks a standing aircraft away with power, kt. */
+const BREAKAWAY_KT = 3;
 
 /**
  * Idle taxi of a turboprop on a level runway (plan 3.2, the lever positions of a type with beta): power lever at
  * idle with ControlInputs.reverse = `reverse`, condition lever at `condition`. First 10 s on the parking brake (the
  * static thrust, Np, Ng, ITT), then the brakes off and the centreline held by the type's steering law until the
- * speed is steady (or `seconds` pass): the steady speed and Np. The rig sits on the field (runwayRig or makeRig).
+ * speed is steady (or `seconds` pass): the steady speed and Np. If the levers alone leave it standing for 5 s the
+ * pilot breaks it away with a little power first (IdleTaxiOptions.breakawayThrottle; IdleTaxiResult.brokeAway). The rig sits on the field (runwayRig or makeRig).
  */
 export function idleTaxi(rig: AnyRig, o: IdleTaxiOptions): IdleTaxiResult {
   resetTo(rig, { onGround: true, heading: RUNWAY_HEADING });
@@ -1048,6 +1060,31 @@ export function idleTaxi(rig: AnyRig, o: IdleTaxiOptions): IdleTaxiResult {
   const staticNp = e.propRpm, staticNg = e.ng ?? NaN, staticIttC = e.itt ?? NaN;
   c.parkingBrake = false;
   const brakes = o.brakes ?? 0;
+  // Brakes off: does it start on the idle levers alone? A tyre that has stood needs more than it takes to keep it
+  // rolling (src/physics/gear/tyre.ts BREAKAWAY): if not, the pilot breaks it away with a little power on the gate.
+  let s0 = alongTrack(s);
+  rig.run(5, () => {
+    c.brakeLeft = c.brakeRight = brakes;
+    steer(s, c, centrelineHeading(s));
+  });
+  const brokeAway = alongTrack(s) - s0 > 0.5;
+  const help = o.breakawayThrottle ?? 0.3;
+  if (!brokeAway && help > 0) {
+    setReverse(c, 0);
+    c.throttle = help;
+    s0 = alongTrack(s);
+    let prev = s0;
+    rig.run(60, () => {
+      c.brakeLeft = c.brakeRight = brakes;
+      steer(s, c, centrelineHeading(s));
+      const along = alongTrack(s);
+      const v = (along - prev) / FRAME;
+      prev = along;
+      return v > BREAKAWAY_KT * KT;
+    });
+    c.throttle = 0;
+    setReverse(c, o.reverse);
+  }
   const history: number[] = [];
   const window = Math.round(5 / FRAME);
   let last = alongTrack(s), speed = 0, steady = false;
@@ -1064,7 +1101,7 @@ export function idleTaxi(rig: AnyRig, o: IdleTaxiOptions): IdleTaxiResult {
       return true;
     }
   });
-  return { staticThrustN, staticNp, staticNg, staticIttC, speedKt: kt(speed), np: s.engines[0].propRpm, steady };
+  return { staticThrustN, staticNp, staticNg, staticIttC, speedKt: kt(speed), np: s.engines[0].propRpm, steady, brokeAway };
 }
 
 // ------------------------------------------------------------------------------------------------ cost

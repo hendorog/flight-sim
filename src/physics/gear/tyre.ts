@@ -20,6 +20,24 @@
 // a parked aircraft stay perfectly still), otherwise they oppose the spin at full strength. The low-speed
 // damping term is treated implicitly because the wheel's own inertia is tiny.
 //
+// ROLLING RESISTANCE. Three parts, each a torque R * coefficient * N in the Coulomb term above:
+//  - Tyre hysteresis. The rubber and cords lose part of the work of deflecting into the contact patch, so the
+//    ground pressure is higher in the front half of the patch than in the rear and the resultant acts ahead of
+//    the axle by e = k a, a the half-length of the patch (Wong, "Theory of Ground Vehicles", 4th ed., 1.2; Clark,
+//    "Mechanics of Pneumatic Tires", ch. 12). The patch is the chord of the deflected circle, a = sqrt(D delta),
+//    so  Crr = e / R = 2 k sqrt(delta / D) = hysteresis * sqrt(delta / D)  with D = 2R and delta the tyre's own
+//    radial deflection (WheelContact.tyreDeflection, from the gear's tyre spring under the present load). A soft,
+//    lightly inflated light-aircraft tyre (delta / D ~ 0.06) comes to about 0.035; a 60 psi turboprop tyre to 0.025.
+//    Raymer ("Aircraft Design", 6th ed., table 17.1) gives 0.03-0.05 for dry concrete or asphalt with the brakes
+//    off; Torenbeek ("Synthesis of Subsonic Airplane Design", table 5-6) 0.02 for airliner tyres on concrete.
+//  - The surface (SurfaceProperties.rollingDrag): sinkage and bulldozing on soft ground, zero on pavement.
+//  - Breakaway (static) resistance: a tyre that has stood takes a set (flat spot), the bearing grease and seals
+//    stick, and the nosewheel steering and the tyre itself must start to roll out the contact patch, so it takes
+//    more force to start rolling than to keep rolling. An extra TyreParams.breakaway * sqrt(delta / D) * N at
+//    rest (a soft tyre's set is deeper), fading out over BREAKAWAY_FADE of wheel surface speed. Because it lives
+//    in the same Coulomb term as the brakes, a stopped wheel is simply held until the tread force exceeds it (the
+//    parked aircraft stays perfectly still).
+//
 // NOSEWHEEL STEERING (C172). The rudder pedals drive the nosewheel through a spring bungee: stiff up to a
 // breakout torque, then soft, so differential braking can swing the wheel to its caster stops. The steer
 // angle has no inertia; it is governed by the shimmy damper:  c delta' = M_link + M_align, M_align = -Fy * trail.
@@ -57,6 +75,10 @@ export interface TyreParams {
   relaxationLat: number;
   /** Low-speed viscous damping of the tread deflection per unit load, s/m. Faded out above LOW_SPEED_FADE. */
   lowSpeedDamping: number;
+  /** Hysteresis rolling-resistance factor: Crr = hysteresis * sqrt(deflection / diameter). Default HYSTERESIS. */
+  hysteresis?: number;
+  /** Breakaway factor: extra resistance at rest = breakaway * sqrt(deflection / diameter), fading out over BREAKAWAY_FADE. Default BREAKAWAY. */
+  breakaway?: number;
 }
 
 export interface SteeringParams {
@@ -103,6 +125,8 @@ export interface WheelContact {
   steerCommand: number;
   /** The lock pin is selected (SteeringParams.lock; ControlInputs.tailWheelLock). Read only by a lockable wheel. */
   locked?: boolean;
+  /** Radial deflection of the tyre itself (not the strut), m: sets the hysteresis rolling resistance. Absent: 0 (none). */
+  tyreDeflection?: number;
 }
 
 /** Tyre force in the ground plane, resolved on the unsteered wheel axes (a forward, b right), N. */
@@ -119,6 +143,31 @@ const LOW_SPEED_FADE = 2.5;
 const SLIDE_SPEED = 5;
 /** Wheel-bearing friction torque, N m. */
 const BEARING_TORQUE = 0.5;
+/**
+ * Hysteresis factor 2k of the rolling resistance, Crr = HYSTERESIS sqrt(delta / D). k ~ 0.07: the pressure
+ * centre about 7 % of the half-length ahead of the axle. ESTIMATE, calibrated so that the light types' soft tyres
+ * (delta / D 0.04-0.08) give 0.03-0.04 on dry pavement, inside Raymer's 0.03-0.05 (table 17.1); the turboprops'
+ * 60 psi tyres come to about 0.025.
+ */
+export const HYSTERESIS = 0.145;
+/**
+ * Breakaway resistance at rest, per unit load, as a factor on sqrt(delta / D) like the hysteresis: the set a tyre
+ * takes standing and the patch it must roll out grow with its deflection, so a soft tyre breaks away harder than a
+ * hard one. ESTIMATE: about 0.025 extra on a C172S main (sqrt(delta / D) ~ 0.25), so that it needs about 1100-1200
+ * rpm to start rolling on pavement (owner, a pilot: "a bit of effort to move").
+ */
+export const BREAKAWAY = 0.1;
+/**
+ * Hysteresis and breakaway factors of a high-ply, high-pressure turboprop tyre (C208, PC-12; TyreParams.hysteresis /
+ * .breakaway). Torenbeek's 0.02 on concrete (table 5-6) is for transport-category tyres near their rated deflection
+ * (about 32 % of the section height, delta / D ~ 0.08), where HYSTERESIS would give 0.04: the stiffer carcass loses
+ * less per unit of deflection than a 4-6 ply light-aircraft tyre. 0.08 gives about 0.022 at the C208's and PC-12's
+ * static deflection; the breakaway is scaled with it. ESTIMATE (owner decision).
+ */
+export const TURBOPROP_HYSTERESIS = 0.08;
+export const TURBOPROP_BREAKAWAY = (BREAKAWAY * TURBOPROP_HYSTERESIS) / HYSTERESIS;
+/** Wheel surface speed over which the breakaway resistance fades out, m/s. */
+export const BREAKAWAY_FADE = 0.6;
 /** Time constant for the tread to spring back once the tyre leaves the ground, s. */
 const UNLOADED_RELAX = 0.02;
 /** Maximum internal substeps per advance. */
@@ -160,13 +209,24 @@ export class WheelDynamics {
     if (st) rate = Math.max(rate, st.mode === 'castering' ? (p.corneringStiffness * N * st.trail) / st.damper : st.linkStiffness / st.damper);
     const n = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil((dt * rate) / 0.5)));
     const h = dt / n;
-    const resist = c.brakeTorque + BEARING_TORQUE + (N > 0 ? c.surface.rollingResistance * N * R : 0);
+    const resist = c.brakeTorque + BEARING_TORQUE + (N > 0 ? this.rollingResistance(c) * N * R : 0);
+    const breakaway = N > 0 ? (p.breakaway ?? BREAKAWAY) * this.deflectionRatio(c) * N * R : 0;
     for (let k = 0; k < n; k++) {
-      if (N > 0) this.substepLoaded(c, h, resist);
+      if (N > 0) this.substepLoaded(c, h, resist + breakaway * (1 - smoothstep(0, BREAKAWAY_FADE, Math.abs(this.spin * R))));
       else this.substepAirborne(h, resist);
       this.rotation = (this.rotation + this.spin * h) % (2 * Math.PI);
       if (this.rotation < 0) this.rotation += 2 * Math.PI;
     }
+  }
+
+  /** Rolling-resistance coefficient once rolling (tyre hysteresis + surface), resisting force / normal load. */
+  rollingResistance(c: WheelContact): number {
+    return (this.tyre.hysteresis ?? HYSTERESIS) * this.deflectionRatio(c) + c.surface.rollingDrag;
+  }
+
+  /** sqrt(tyre deflection / diameter), the patch half-length over the diameter. */
+  private deflectionRatio(c: WheelContact): number {
+    return Math.sqrt(Math.max(0, c.tyreDeflection ?? 0) / (2 * this.tyre.radius));
   }
 
   /** Tyre force at the current state and contact kinematics. */

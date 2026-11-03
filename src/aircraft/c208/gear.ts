@@ -3,14 +3,20 @@
 // configuration holds spring objects and damping closures.
 //
 // Design point: 8000 lb with the CG near 30 % MAC (x about -0.08), which puts about 11 % of the weight on the
-// nose wheel: about 3.9 kN on the nose and 15.9 kN on each main. The springs below then compress about 0.06 m at
-// the nose (oleo 0.045 + tyre 0.014) and 0.065 m at the mains (leg 0.05 + tyre 0.017): geometry.ts gives the fully
+// nose wheel: about 3.9 kN on the nose and 15.9 kN on each main. The springs below then compress about 0.065 m at
+// the nose (oleo 0.045 + tyre 0.02) and 0.095 m at the mains (leg 0.05 + tyre 0.045): geometry.ts gives the fully
 // extended points from that, and the aircraft stands about level, the thrust line 1.68 m above the ground.
+//
+// Tyre springs from the inflation pressure and size: Raymer ("Aircraft Design", 6th ed., 11.3) has the contact area
+// A = 2.3 sqrt(w D) (D/2 - R_rolling) carrying load = p A, so the radial stiffness is about 2.3 p sqrt(w D) (the
+// C172S's 6.00-6 at 38 psi gives 157 kN/m against its 150). Pressures: ESTIMATES, no POH section 8 in hand: the
+// 6.50-10 8-ply mains near their rated pressure for the 3400 lb each carries at 8000 lb (60 psi), the 22x8.00-8 nose
+// at 40 psi.
 
 import { DEG } from '../../core/math';
 import type { GearConfig, StructuralPoint, WheelConfig } from '../../physics/gear/gearConfig';
 import { LinearStrutSpring, OleoPneumaticSpring } from '../../physics/gear/springs';
-import type { SteeringParams, TyreParams } from '../../physics/gear/tyre';
+import { TURBOPROP_BREAKAWAY, TURBOPROP_HYSTERESIS, type SteeringParams, type TyreParams } from '../../physics/gear/tyre';
 import { C208_GEOMETRY, C208_THRUST_Z } from './geometry';
 
 const G = C208_GEOMETRY;
@@ -26,7 +32,7 @@ const MAIN_TYRE: TyreParams = {
   corneringStiffness: 8,
   relaxationLong: 0.25,
   relaxationLat: 0.45,
-  lowSpeedDamping: 1.5,
+  lowSpeedDamping: 1.5, hysteresis: TURBOPROP_HYSTERESIS, breakaway: TURBOPROP_BREAKAWAY,
 };
 
 /** 22 x 8.00-8 (POH). */
@@ -37,7 +43,7 @@ const NOSE_TYRE: TyreParams = {
   corneringStiffness: 8,
   relaxationLong: 0.2,
   relaxationLat: 0.4,
-  lowSpeedDamping: 1.5,
+  lowSpeedDamping: 1.5, hysteresis: TURBOPROP_HYSTERESIS, breakaway: TURBOPROP_BREAKAWAY,
 };
 
 /**
@@ -71,7 +77,9 @@ function main(name: 'left' | 'right'): WheelConfig {
     axis: { x: 0, y: side * Math.sin(MAIN_TILT), z: -Math.cos(MAIN_TILT) },
     // About 320 kN/m per leg at the wheel (ESTIMATE: 0.05 m at the static load).
     strut: new LinearStrutSpring(320e3),
-    tyreSpring: { stiffness: 900e3, hardening: 0.07 },
+    // 6.50-10 (w 0.165 m, D 0.62 m) at 60 psi: 2.3 p sqrt(w D) = 304 kN/m (was 900); about 0.045 m at the static load,
+    // a quarter of the 0.18 m section height; stiffening toward the rim.
+    tyreSpring: { stiffness: 304e3, hardening: 0.09 },
     damping: (_strutRate, totalRate) => MAIN_DAMPING * totalRate,
     tyre: MAIN_TYRE,
     steering: null,
@@ -116,7 +124,8 @@ export function createC208Gear(): GearConfig {
         axis: { x: 0, y: 0, z: -1 },
         // About 0.15 m of stroke, 1.5 kN on the piston fully extended; the static nose load sits 4.5 cm in.
         strut: new OleoPneumaticSpring(1500, 0.078, 1.2, 0.15),
-        tyreSpring: { stiffness: 300e3, hardening: 0.05 },
+        // 22x8.00-8 (w 0.203 m, D 0.56 m) at 40 psi: 2.3 p sqrt(w D) = 214 kN/m (was 300).
+        tyreSpring: { stiffness: 214e3, hardening: 0.06 },
         damping: (strutRate, totalRate) =>
           NOSE_DAMPING_LINEAR * NOSE_VALVE_KNEE * Math.tanh(totalRate / NOSE_VALVE_KNEE) +
           (strutRate > 0 ? NOSE_ORIFICE_COMPRESSION : NOSE_ORIFICE_REBOUND) * strutRate * Math.abs(strutRate),
@@ -139,11 +148,13 @@ export function createC208Gear(): GearConfig {
     // the way from its yield to its ultimate load (an estimate). The spring mains are the owner's (a light-aircraft pilot's) call,
     // stronger than the research's: they take a permanent set at about 6 m/s and would break only beyond an 8 m/s
     // drop's load, past the 7 m/s terrain impact, so in a landing they bend but do not collapse.
+    // All loads re-set 2026-11-03 for the pressure-based tyre springs (softer tyres take more of the energy: the old
+    // loads were reached 0.15-0.3 m/s later).
     damage: {
       legs: [
-        { kind: 'oleo', hardLoad: 62.8e3, yieldLoad: 97.8e3, ultimateLoad: 195.2e3, bottomedUltimate: 136.8e3, collapsedCompression: 0.15, yield: { text: 'Nose gear spring support damaged', item: 'nose' } },
-        { kind: 'spring', hardLoad: 54.8e3, yieldLoad: 105.0e3, ultimateLoad: 141.8e3, collapsedCompression: 0.3 },
-        { kind: 'spring', hardLoad: 54.8e3, yieldLoad: 105.0e3, ultimateLoad: 141.8e3, collapsedCompression: 0.3 },
+        { kind: 'oleo', hardLoad: 51.5e3, yieldLoad: 81.3e3, ultimateLoad: 169.8e3, bottomedUltimate: 116.7e3, collapsedCompression: 0.15, yield: { text: 'Nose gear spring support damaged', item: 'nose' } },
+        { kind: 'spring', hardLoad: 52.1e3, yieldLoad: 100.7e3, ultimateLoad: 138.4e3, collapsedCompression: 0.3 },
+        { kind: 'spring', hardLoad: 52.1e3, yieldLoad: 100.7e3, ultimateLoad: 138.4e3, collapsedCompression: 0.3 },
       ],
       // Free turbine: a strike that digs in stops the propeller and power turbine; the gas generator runs on.
       propStopText: 'Propeller strike: propeller stopped (gas generator running)',

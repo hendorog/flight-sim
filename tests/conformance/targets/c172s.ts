@@ -44,7 +44,7 @@ export const C172S_TARGETS: ConformanceTargets = {
     powerFractionReached: band(0.75, 0.005, 'performance.test.ts toBeCloseTo(0.75, 2)'),
   },
   staticRun: { rpm: range(POH.staticRpm[0], POH.staticRpm[1], 'POH; performance.test.ts'), groundSpeed: below(0.05, 'parking brake holds; performance.test.ts') },
-  takeoff: { flapDeg: 10, rotateKias: 48, pitchDeg: 8, staticRunUp: true, groundRollM: pct(POH.takeoffGroundRollM, 10, 'POH short field; ground.test.ts') },
+  takeoff: { flapDeg: 10, rotateKias: 48, pitchDeg: 8, staticRunUp: true, groundRollM: pct(POH.takeoffGroundRollM, 15, 'POH short field; ground.test.ts (15 %: the tyre-hysteresis rolling resistance, owner decision)') },
   landing: { flapDeg: 30, approachKt: 61, touchdownPitchDeg: 7, groundRollM: pct(POH.landingGroundRollM, 10, 'POH; ground.test.ts') },
   glide: {
     range: { fromKt: 60, toKt: 82 },
