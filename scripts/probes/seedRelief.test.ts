@@ -1,6 +1,6 @@
 // Relief map of a world seed (probe): hypsometric tint with hill shading of the full terrain (sampleTerrain: rivers,
 // lakes, sea, airfields), one PNG per seed. Prints the layout search's report.
-//   RELIEF_SEEDS=0,7,42 RELIEF_HALF=80000 RELIEF_STEP=250 RELIEF_DIR=/tmp npx vitest run --config scripts/probes/vitest.config.ts seedRelief
+//   RELIEF_SEEDS=0,7,42 [RELIEF_N=0 RELIEF_E=0] RELIEF_HALF=80000 RELIEF_STEP=250 RELIEF_DIR=/tmp npx vitest run --config scripts/probes/vitest.config.ts seedRelief
 import { it } from 'vitest';
 import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { layoutReport } from '../../src/world/terrain/seededLayout';
@@ -27,6 +27,8 @@ function tint(h: number): number[] {
 
 it('seed relief', () => {
   const half = Number(env.RELIEF_HALF ?? 80000);
+  const cn = Number(env.RELIEF_N ?? 0);
+  const ce = Number(env.RELIEF_E ?? 0);
   const step = Number(env.RELIEF_STEP ?? 250);
   const dir = env.RELIEF_DIR ?? '.';
   const seeds = (env.RELIEF_SEEDS ?? '0,7,42').split(',');
@@ -39,9 +41,9 @@ it('seed relief', () => {
     const water = new Uint8Array(n * n);
     const s = makeSample();
     for (let y = 0; y < n; y++) {
-      const north = half - (y + 0.5) * step;
+      const north = cn + half - (y + 0.5) * step;
       for (let x = 0; x < n; x++) {
-        const east = -half + (x + 0.5) * step;
+        const east = ce - half + (x + 0.5) * step;
         sampleTerrain(north, east, s);
         ground[y * n + x] = s.ground;
         water[y * n + x] = Math.max(s.standing, s.river) > s.ground ? (s.river > s.ground ? 2 : 1) : s.airportBlend < 0.5 ? 3 : 0;
@@ -63,8 +65,8 @@ it('seed relief', () => {
       }
     }
     for (const f of airfields()) {
-      const x = Math.floor((f.east + half) / step);
-      const y = Math.floor((half - f.north) / step);
+      const x = Math.floor((f.east - ce + half) / step);
+      const y = Math.floor((cn + half - f.north) / step);
       for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
         const xx = x + dx, yy = y + dy;
         if (xx >= 0 && yy >= 0 && xx < n && yy < n) rgb.set([255, 0, 255], (yy * n + xx) * 3);

@@ -16,8 +16,10 @@ import { AIRPORT } from '../../core/world';
 const MIN_LAKE_DEPTH = 3;
 /** Oxbow water stands this far above the river level of its valley section, m (as hydrology.ts). */
 const OXBOW_LEVEL = 0.6;
-/** Amplitude of the courses' wander off the lattice, m. */
+/** Amplitude of the courses' wander off the lattice, m: a broad one (6 km) and a shorter one (2.5 km) that bends the
+ * straight runs drainage takes down even slopes. */
 const WANDER = 900;
+const WANDER_SHORT = 350;
 /** Valley-axis sample spacing, m. */
 const AXIS_SPACING = 120;
 /** Index cells, m. */
@@ -124,8 +126,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // A river that reaches the sea keeps its mouth on its outlet cell (the wander fades over the last two cells).
     const last = L.cells.length - 1;
     const fade = (i: number): number => (L.joins >= 0 ? 1 : Math.min(1, (last - i) / 2));
-    const wn = (c: number, i: number): number => cellNorth(d, c) + fade(i) * (WANDER * fbm(cellNorth(d, c) / 6000 + 3.7, cellEast(d, c) / 6000 - 1.9, 3) + jitter(c, 0));
-    const we = (c: number, i: number): number => cellEast(d, c) + fade(i) * (WANDER * fbm(cellNorth(d, c) / 6000 - 8.1, cellEast(d, c) / 6000 + 5.3, 3) + jitter(c, 1));
+    const wn = (c: number, i: number): number => {
+      const pn = cellNorth(d, c);
+      const pe = cellEast(d, c);
+      return pn + fade(i) * (WANDER * fbm(pn / 6000 + 3.7, pe / 6000 - 1.9, 3) + jitter(c, 0));
+    };
+    const we = (c: number, i: number): number => {
+      const pn = cellNorth(d, c);
+      const pe = cellEast(d, c);
+      return pe + fade(i) * (WANDER * fbm(pn / 6000 - 8.1, pe / 6000 + 5.3, 3) + jitter(c, 1));
+    };
     let n = L.cells.map(wn);
     let e = L.cells.map(we);
     clearOfRunway(n, e);
@@ -162,6 +172,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const L = lines[li];
     const c = courses[li];
     const pts = catmullRom(c.n, c.e, AXIS_SPACING);
+    // The shorter wander, on the dense axis (on the 1 km lattice points the smoothing would erase it): a warp of the
+    // plane, so a confluence shared by two lines moves alike for both; none at a mouth on the sea.
+    const last = pts.n.length - 1;
+    for (let i = 0; i <= last; i++) {
+      const w = L.joins >= 0 ? 1 : Math.min(1, ((last - i) * AXIS_SPACING) / 1500);
+      const pn = pts.n[i];
+      const pe = pts.e[i];
+      pts.n[i] = pn + w * WANDER_SHORT * gnoise(pn / 2500 - 6.2, pe / 2500 + 0.9);
+      pts.e[i] = pe + w * WANDER_SHORT * gnoise(pn / 2500 + 4.4, pe / 2500 - 7.3);
+    }
     // The spline can swing inside the clearance between two points that keep outside it.
     clearOfRunway(pts.n, pts.e);
     const count = pts.n.length;
@@ -231,16 +251,22 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const tail = L.joins >= 0 ? smooth(0, 2500, s[count - 1] - s[i]) : 1;
       // No wide loops by the home runway.
       const nearField = smooth(3000, 6000, runwayDistance(north[i], east[i]));
-      const m = lowland * big * tail * nearField * clampUnit(0.8 + 0.4 * gnoise(s[i] / 5200 + li * 7.31, 2.7 + li));
+      const mFree = lowland * big * tail * clampUnit(0.8 + 0.4 * gnoise(s[i] / 5200 + li * 7.31, 2.7 + li));
+      const m = mFree * nearField;
       meander[i] = m;
       // Meander wavelength about 18 channel widths (the long end of Leopold & Wolman's range: broad loops, as seed 0's
       // river has), varied along the river.
       wavelength[i] = Math.max(160, 36 * hw) * (0.85 + 0.3 * gnoise(s[i] / 3000 + li * 3.3, 9.1));
       // Half-width of the belt the channel swings across (sineGenerated keeps the channel inside it).
       belt[i] = wavelength[i] * (0.06 + 0.42 * m);
-      floodplain[i] = belt[i] + hw + CHANNEL_BANK + 4 * hw * Math.min(1, belt[i] / 200);
+      // The floodplain keeps the width the free meanders would need, so it does not pinch where they are held in.
+      const freeBelt = wavelength[i] * (0.06 + 0.42 * mFree);
+      floodplain[i] = freeBelt + hw + CHANNEL_BANK + 4 * hw * Math.min(1, freeBelt / 200);
       influence[i] = 500 + 1900 * smooth(30, 2000, area[i]);
     }
+    // The floodplain's width changes only gradually along the river: inside a bend the nearest axis point jumps from
+    // one stretch to another, and two different widths there would leave a step in the valley wall.
+    smoothAlong(floodplain, Math.ceil(1500 / AXIS_SPACING), 3);
     axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence });
   }
 
@@ -294,7 +320,27 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   }
 
   // --- Indexes: every cell lists the segments (line, index) that can reach a point in it.
-  const valleyIndex = new SegmentIndex(axes, (li, i) => Math.max(axes[li].floodplain[i], axes[li].floodplain[i + 1]) + Math.max(axes[li].influence[i], axes[li].influence[i + 1]), VALLEY_CELL);
+  // Each axis segment is listed out to the largest reach of the segments near it along the river: the query takes a
+  // line's nearest listed segment, so a nearer one left unlisted (a smaller reach) would put a seam at a cell edge.
+  const valleyReach = axes.map((a) => {
+    const m = a.north.length;
+    const own = new Float64Array(m);
+    for (let i = 0; i < m; i++) own[i] = a.floodplain[i] + a.influence[i];
+    const out = new Float64Array(m);
+    const W = Math.ceil(4000 / AXIS_SPACING);
+    // Sliding-window maximum (monotone deque) over +-W samples.
+    const dq: number[] = [];
+    for (let i = 0, j = 0; i < m; i++) {
+      for (; j < m && j <= i + W; j++) {
+        while (dq.length && own[dq[dq.length - 1]] <= own[j]) dq.pop();
+        dq.push(j);
+      }
+      while (dq[0] < i - W) dq.shift();
+      out[i] = own[dq[0]];
+    }
+    return out;
+  });
+  const valleyIndex = new SegmentIndex(axes, (li, i) => Math.max(valleyReach[li][i], valleyReach[li][i + 1]), VALLEY_CELL);
   // One channel index serves both the carving (within the bank) and queryRiver (out to CHANNEL_REACH).
   const channelIndex = new SegmentIndex(rivers, () => CHANNEL_REACH, CHANNEL_CELL);
   const wideIndex = channelIndex;
@@ -449,6 +495,23 @@ function clearOfRunway(n: number[], e: number[]): void {
 }
 
 const clampUnit = (x: number): number => Math.min(1, Math.max(0, x));
+
+/** Box-filter arr in place over +-half samples, `passes` times (ends shortened, never padded). */
+function smoothAlong(arr: Float64Array, half: number, passes: number): void {
+  const m = arr.length;
+  const tmp = new Float64Array(m);
+  for (let p = 0; p < passes; p++) {
+    let sum = 0;
+    let lo = 0;
+    let hi = -1;
+    for (let i = 0; i < m; i++) {
+      while (hi < Math.min(m - 1, i + half)) sum += arr[++hi];
+      while (lo < i - half) sum -= arr[lo++];
+      tmp[i] = sum / (hi - lo + 1);
+    }
+    arr.set(tmp);
+  }
+}
 
 /** Bessel J0 (series; |x| < 2.5): the ratio of valley length to channel length of a sine-generated curve. */
 const besselJ0 = (x: number): number => {
