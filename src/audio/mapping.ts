@@ -2,6 +2,7 @@
 // every curve is unit-tested (tests/audio).
 
 import { C172S_AUDIO } from '../aircraft/c172s/audio';
+import { stallBuffet } from '../core/buffet';
 import { clamp, DEG, KT, smoothstep } from '../core/math';
 import { engineControl, type AircraftState, type ControlInputs, type Environment, type PrecipType, type SurfaceType, type WeatherSettings } from '../core/types';
 import { precipOf, type Precip } from '../core/weatherFields';
@@ -383,7 +384,7 @@ export function fillSynthParams(s: AircraftState, c: ControlInputs, x: SoundCont
   out[P.windFreq] = w.freq;
   out[P.slip] = w.slip;
   out[P.flapNoise] = w.flap;
-  out[P.buffet] = buffet(s.stallFraction);
+  out[P.buffet] = buffet(stallBuffet(s.stallFraction, s.ias));
   out[P.horn] = powered || !profile.stallWarner.needsBus ? stallHorn(warningHornOn(s), s.alpha, s.ias, profile.stallWarner) : 0;
   out[P.flapMotor] = powered && profile.flapMotor ? x.flapMotor : 0;
   let onGround = 0;
