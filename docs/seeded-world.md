@@ -119,7 +119,7 @@ chose the full drainage generator. What any seed but 0 now gets:
 | Terrain | the same coastal profile, hills, mountains, gullies and small relief as seed 0, laid out by those fields; a level plain at field elevation round the home field, longer along the runway | `heightfield.ts` `seededNaturalHeight` |
 | Drainage | 1 km lattice over +-160 km, priority flood from the sea and the edge, flow accumulation; channels from 45 km² of catchment; lines traced from each mouth, the biggest branch continuing | `drainage.ts` |
 | Lakes | filled hollows 8 m deep or more and 2-80 km², as warped ellipses fitted to the hollow (bigger hollows are drained: their river cuts a gorge through the rim) | `drainage.ts`, `riverNetwork.ts` `networkLakes` |
-| Rivers | courses wandered off the lattice and smoothed; width from catchment; sine-generated meanders (Kinoshita skew, wavelength ~18 widths) on big lowland rivers, a wiggle on streams; some of the widest loops cut off as oxbows; levels falling from the source, level through lakes, meeting the parent at the confluence; kept 2.5 km clear of the home runway | `riverNetwork.ts` |
+| Rivers | courses wandered off the lattice and smoothed; width from catchment; meanders from Ferguson's disturbed periodic model (a damped oscillator at ~18 widths driven by random disturbances: loops of every size and lean) on big lowland rivers, a wander on streams; some of the widest loops cut off as oxbows; levels falling from the source, level through lakes, meeting the parent at the confluence; kept 2.5 km clear of the home runway | `riverNetwork.ts` |
 | Carving and water | every valley, channel and oxbow near a point carved as seed 0's one river is; the river ribbon drawn for the whole network in 10 km chunks, broken where a river crosses a lake | `heightfield.ts` `carveNetwork`, `water.ts` |
 | Cretaceous | the same network as the present day (the era's own river course is seed 0's) | `heightfield.ts` |
 
@@ -138,7 +138,7 @@ Still open:
 - **The drainage domain is bounded** (+-160 km): beyond it the terrain goes on but has no rivers, and catchments
   near its edge are short of their outer parts. The streamed provinces (step 3 above) remove the edge.
 - **Meanders differ from seed 0's**, which were grown by the migration model and baked; seeded rivers use the
-  sine-generated curve so nothing has to run for seconds at load.
+  disturbed periodic model so nothing has to run for seconds at load.
 - **The Flight School's route** (`training/content/syllabus/route.ts`) names seed 0's lakes and town at fixed
   places, which a seeded world does not have. Owner to decide: lessons always in seed 0, or a route per seed.
 - Roads and villages remain seed 0 only (owner's choice); the town is still sited by `findTownSite`.

@@ -171,7 +171,9 @@ function riverBends(): { north: number; east: number; s: number; sinuosity: numb
   const network = hydrology.rivers;
   const found: { north: number; east: number; s: number; sinuosity: number }[] = [];
   const lines = network ?? [hydrology.river];
-  lines.forEach((r, li) => riverLineBends(r, li * 1e7, found));
+  // A seeded world's rivers come in every size: each is judged over an arc in proportion to its loops (about 80
+  // channel half-widths; a meander is ~36), seed 0's one river over RIVER_BEND.arcM.
+  lines.forEach((r, li) => riverLineBends(r, li * 1e7, found, network ? Math.min(3000, Math.max(600, 80 * medianOf(r.halfWidth))) : RIVER_BEND.arcM));
   const kept: typeof found = [];
   for (const b of [...found].sort((a, c) => c.sinuosity - a.sinuosity || a.s - c.s)) {
     if (network && Math.hypot(b.north, b.east) > SUMMIT.reachM) continue;
@@ -180,11 +182,16 @@ function riverBends(): { north: number; east: number; s: number; sinuosity: numb
   return kept.sort((a, c) => a.s - c.s);
 }
 
-/** The horseshoe loops of one river line (its arc lengths offset by sOffset), appended to found. */
-function riverLineBends(r: { north: Float64Array; east: Float64Array; s: Float64Array }, sOffset: number, found: { north: number; east: number; s: number; sinuosity: number }[]): void {
+const medianOf = (a: Float64Array): number => {
+  const b = Float64Array.from(a).sort();
+  return b[b.length >> 1];
+};
+
+/** The horseshoe loops of one river line (its arc lengths offset by sOffset, judged over arcM), appended to found. */
+function riverLineBends(r: { north: Float64Array; east: Float64Array; s: Float64Array }, sOffset: number, found: { north: number; east: number; s: number; sinuosity: number }[], arcM: number): void {
   const n = r.north.length;
   if (n < 3) return;
-  const half = RIVER_BEND.arcM / 2;
+  const half = arcM / 2;
   let lo = 0;
   let hi = 0;
   let run: { north: number; east: number; s: number; sinuosity: number } | null = null;

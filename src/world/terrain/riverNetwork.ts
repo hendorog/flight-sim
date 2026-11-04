@@ -14,6 +14,8 @@ import { AIRPORT } from '../../core/world';
 
 /** A lake's water stands at least this far over the natural ground at its middle, m. */
 const MIN_LAKE_DEPTH = 3;
+/** A loop is cut off when its neck has closed to this fraction of the meander length (or a few channel widths). */
+const NECK_FACTOR = 0.22;
 /** Oxbow water stands this far above the river level of its valley section, m (as hydrology.ts). */
 const OXBOW_LEVEL = 0.6;
 /** Amplitude of the courses' wander off the lattice, m: a broad one (6 km) and a shorter one (2.5 km) that bends the
@@ -257,10 +259,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       // Meander wavelength about 18 channel widths (the long end of Leopold & Wolman's range: broad loops, as seed 0's
       // river has), varied along the river.
       wavelength[i] = Math.max(160, 36 * hw) * (0.85 + 0.3 * gnoise(s[i] / 3000 + li * 3.3, 9.1));
-      // Half-width of the belt the channel swings across (sineGenerated keeps the channel inside it).
-      belt[i] = wavelength[i] * (0.06 + 0.42 * m);
+      // Half-width of the belt the channel swings across (meanderChannel keeps the channel inside it).
+      belt[i] = wavelength[i] * (0.06 + 0.55 * m);
       // The floodplain keeps the width the free meanders would need, so it does not pinch where they are held in.
-      const freeBelt = wavelength[i] * (0.06 + 0.42 * mFree);
+      const freeBelt = wavelength[i] * (0.06 + 0.55 * mFree);
       floodplain[i] = freeBelt + hw + CHANNEL_BANK + 4 * hw * Math.min(1, freeBelt / 200);
       influence[i] = 500 + 1900 * smooth(30, 2000, area[i]);
     }
@@ -270,13 +272,13 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence });
   }
 
-  // --- Channels: sine-generated curves about the axis, some loops cut off as oxbows; a tributary's end on its parent's channel.
+  // --- Channels: meandering curves about the axis (Ferguson's disturbed periodic model), some loops cut off as oxbows; a tributary's end on its parent's channel.
   const rivers: Array<RiverLine & { valleyS: Float64Array }> = [];
   const oxbows: Array<{ north: Float64Array; east: Float64Array; level: number; halfWidth: number; depth: number }> = [];
   for (let li = 0; li < lines.length; li++) {
     const a = axes[li];
     const total = a.s[a.s.length - 1];
-    const ch = sineGenerated(a, (hash2i(li, 0x3ea) & 0xffff) / 65536 * Math.PI * 2);
+    const ch = meanderChannel(a, (hash2i(li, 0x3ea) & 0xffff) / 65536 * Math.PI * 2);
     for (const o of cutOffLoops(ch, a, li)) {
       oxbows.push({
         north: o.north,
@@ -520,12 +522,12 @@ const besselJ0 = (x: number): number => {
 };
 
 /**
- * The channel about a valley axis as a sine-generated curve (Langbein & Leopold): its direction swings about the
- * axis's as omega sin(phi), with the Kinoshita third harmonic for the skewed, flattened loops of real meanders. Big
- * lowland rivers (meander near 1) swing up to ~115 degrees and form horseshoe loops; streams wiggle at 0.5 rad. Marched in
- * the axis frame (along, offset), steered back if it drifts outside the belt.
+ * The channel about a valley axis (Ferguson 1976, the disturbed periodic model): its direction relative to the axis
+ * follows a damped oscillator at the meander length driven by random disturbances, so the loops vary in size,
+ * length and lean from one to the next. Big lowland rivers (meander near 1) swing widely enough for horseshoe loops;
+ * streams wander a little. Marched in the axis frame (along, offset), steered back if it drifts outside the belt.
  */
-function sineGenerated(a: Axis, phase0: number): { north: number[]; east: number[]; valleyS: number[]; off: number[] } {
+function meanderChannel(a: Axis, phase0: number): { north: number[]; east: number[]; valleyS: number[]; off: number[] } {
   const total = a.s[a.s.length - 1];
   const n: number[] = [];
   const e: number[] = [];
@@ -533,14 +535,21 @@ function sineGenerated(a: Axis, phase0: number): { north: number[]; east: number
   const os: number[] = [];
   let along = 0;
   let off = 0;
-  let phi = phase0;
+  // Ferguson's disturbed periodic model: the channel's direction (relative to the valley) is a damped oscillator at
+  // the meander length, driven by random disturbances - an AR(2) process step by step. Its loops come in all sizes,
+  // lean either way and now and then double up, as real ones do; the damping wanders along the river, so some
+  // reaches swing regularly and others are confused.
+  let th1 = 0;
+  let th2 = 0;
+  const seed = Math.floor(phase0 * 1e6) | 0;
+  let step = 0;
   const put = (sv: number, y: number): void => {
     const i = segmentAt(a.s, sv);
     const t = Math.min(1, Math.max(0, (sv - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
     const tn = a.north[i + 1] - a.north[i];
     const te = a.east[i + 1] - a.east[i];
     const tl = Math.hypot(tn, te) || 1;
-    // Offset to the left of the flow (as the old offset meanders), which side does not matter.
+    // Offset to the left of the flow, which side does not matter.
     n.push(a.north[i] + tn * t - (te / tl) * y);
     e.push(a.east[i] + te * t + (tn / tl) * y);
     vs.push(sv);
@@ -555,22 +564,35 @@ function sineGenerated(a: Axis, phase0: number): { north: number[]; east: number
     const m = a.meander[i];
     const lambda = a.wavelength[i];
     const belt = a.belt[i];
-    // Loop to loop: the swing and the loop length vary, so no two bends are alike.
-    const omega = Math.min(2, (0.5 + 1.5 * m) * (0.85 + 0.3 * gnoise(along / (1.7 * lambda) + phase0 * 13.1, 4.4)));
-    let theta = omega * Math.sin(phi) + omega * omega * omega * (Math.sin(3 * phi) / 32 - Math.cos(3 * phi) / 192);
+    const ds = Math.min(40, Math.max(15, lambda / 10));
+    // How far it swings (the spread of the direction, as a sine of amplitude omega would have) and how orderly.
+    const omega = Math.min(2, 0.5 + 1.5 * m);
+    const damping = 0.22 + 0.3 * clampUnit(0.5 + 0.9 * gnoise(along / (4 * lambda) + phase0 * 13.1, 4.4));
+    // The oscillator's period is the meander length measured along the channel: the valley's, times the sinuosity.
+    const k = (2 * Math.PI * Math.max(0.25, besselJ0(omega))) / lambda;
+    const z = k * ds;
+    const r = Math.exp(-damping * z);
+    const a1 = 2 * r * Math.cos(z * Math.sqrt(1 - damping * damping));
+    const a2 = -r * r;
+    // Noise scaled so the process's stationary spread is omega / sqrt(2).
+    const sigma = (omega / Math.SQRT2) * Math.sqrt(Math.max(1e-9, ((1 + a2) * ((1 - a2) * (1 - a2) - a1 * a1)) / (1 - a2)));
+    let q = 0;
+    for (let j = 0; j < 4; j++) q += (hash2i(seed + j * 7919, step) & 0xffff) / 65536;
+    step++;
+    const eps = (q - 2) * Math.sqrt(3);
+    const th = a1 * th1 + a2 * th2 + sigma * eps;
+    th2 = th1;
+    th1 = Math.max(-2.3, Math.min(2.3, th));
     // Keep within the belt: steer back in proportion to the drift, firmly once past the belt's edge.
     const drift = off / Math.max(1, belt);
-    theta -= 0.35 * drift + 2 * Math.max(0, Math.abs(drift) - 1) * Math.sign(drift);
+    let theta = th1 - 0.22 * drift - 2 * Math.max(0, Math.abs(drift) - 1) * Math.sign(drift);
     // Outside the belt it heads back across the valley but always downstream (a steer that turned it upstream could
     // circle without ever reaching the end of the river).
-    const lim = Math.abs(drift) > 1 ? 1.2 : 2.15;
+    const lim = Math.abs(drift) > 1 ? 1.2 : 2;
     theta = Math.max(-lim, Math.min(lim, theta));
-    const ds = Math.min(40, Math.max(15, lambda / 10));
     along += Math.cos(theta) * ds;
     off += Math.sin(theta) * ds;
-    // The channel's own wavelength is longer than the valley's by the sinuosity 1/J0(omega).
-    phi += ((2 * Math.PI * ds * Math.max(0.25, besselJ0(omega))) / lambda) * (1 + 0.45 * gnoise(along / (0.9 * lambda) - phase0 * 7.7, 1.3));
-    // The end of the line: back onto the axis over the last few samples.
+    // The end of the line: back onto the axis.
     if (along >= total) {
       put(total, 0);
       break;
@@ -597,60 +619,106 @@ interface CutLoop {
 }
 
 /**
- * Neck cutoffs: on the strongly meandering stretches some of the widest loops are abandoned - the channel runs
- * straight across the loop's neck and the loop is left as an oxbow lake beside it, trimmed clear of the new channel.
- * Edits the channel in place; returns the oxbows.
+ * Neck cutoffs: where a strongly meandering channel has swung a loop round until its neck is narrow (two points with
+ * a full loop of channel between them lie within NECK_FACTOR meander lengths), some loops are abandoned - the channel
+ * takes the short way across the neck and the loop is left beside it as an oxbow lake, trimmed clear of the new
+ * channel (about a third of the narrow necks; the rest stay as horseshoe loops). Edits the channel in place (it gets
+ * shorter); returns the oxbows.
  */
 function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; off: number[] }, a: Axis, li: number): CutLoop[] {
   const out: CutLoop[] = [];
   const { north, east, valleyS, off } = ch;
-  let k0 = 0;
+  const N = north.length;
+  const cuts: Array<[number, number]> = [];
   let lastCut = -Infinity;
-  let loop = 0;
-  for (let k = 1; k < off.length; k++) {
-    if (Math.sign(off[k]) === Math.sign(off[k - 1]) || off[k - 1] === 0) continue;
-    // A loop between two crossings of the axis: [k0, k].
-    const k1 = k;
-    const from = k0;
-    k0 = k;
-    loop++;
-    if (k1 - from < 6) continue;
-    const i = segmentAt(a.s, valleyS[from]);
-    if (a.meander[i] < 0.55) continue;
-    let apex = 0;
-    for (let j = from; j <= k1; j++) apex = Math.max(apex, Math.abs(off[j]));
-    if (apex < 0.6 * a.belt[i]) continue;
-    // Roughly one loop in five goes, none within 2.5 km of the last cutoff along the valley.
-    if ((hash2i(li * 7919 + loop, 0x0b0) & 0xff) > 52 || valleyS[from] - lastCut < 2500) continue;
+  let k = 0;
+  while (k < N - 2) {
+    const i = segmentAt(a.s, Math.max(0, valleyS[k]));
+    const lambda = a.wavelength[i];
     const hw = a.halfWidth[i];
-    // The loop's crescent, clear of the chord the channel now takes.
-    const cn = north[from];
-    const ce = east[from];
-    const dn = north[k1] - cn;
-    const de = east[k1] - ce;
+    // The nearest point a loop or more further on (a loop's channel is about 1-3 meander lengths; a tight curl less).
+    const touchAt = 2 * hw + 2 * CHANNEL_BANK;
+    let arc = 0;
+    let best = -1;
+    let bestD = Infinity;
+    let touch = -1;
+    for (let j = k + 1; j < N && arc < 3.5 * lambda; j++) {
+      arc += Math.hypot(north[j] - north[j - 1], east[j] - east[j - 1]);
+      if (arc < 2 * touchAt) continue;
+      const d = Math.hypot(north[j] - north[k], east[j] - east[k]);
+      // A loop swung round onto itself (always cut: a river cannot cross its own channel); the furthest such point.
+      if (d < touchAt) touch = j;
+      if (arc < Math.max(8 * hw + 4 * CHANNEL_BANK, 0.4 * lambda)) continue;
+      if (arc >= 1.1 * lambda && d < bestD) {
+        bestD = d;
+        best = j;
+      }
+    }
+    if (touch >= 0) {
+      best = touch;
+    } else {
+      // Of the merely narrow necks on strongly meandering stretches, about a third, spaced along the river.
+      const narrow = best >= 0 && bestD <= Math.max(NECK_FACTOR * lambda, 3 * hw + 30);
+      if (!narrow || a.meander[i] < 0.45 || valleyS[k] - lastCut < 2000 || (hash2i(li * 7919 + k, 0x0b0) & 0xff) > 90) {
+        k++;
+        continue;
+      }
+    }
+    // The loop's crescent, clear of the short channel across the neck.
+    const cn = north[k];
+    const ce = east[k];
+    const dn = north[best] - cn;
+    const de = east[best] - ce;
     const l2 = dn * dn + de * de || 1;
     const clear = 2 * hw + CHANNEL_BANK + 15;
     const on: number[] = [];
     const oe: number[] = [];
-    for (let j = from; j <= k1; j++) {
+    for (let j = k; j <= best; j++) {
       const u = Math.min(1, Math.max(0, ((north[j] - cn) * dn + (east[j] - ce) * de) / l2));
       if (Math.hypot(north[j] - cn - dn * u, east[j] - ce - de * u) > clear) {
         on.push(north[j]);
         oe.push(east[j]);
       }
     }
-    if (on.length < 5) continue;
-    out.push({ north: Float64Array.from(on), east: Float64Array.from(oe), valleyS: valleyS[(from + k1) >> 1], halfWidth: hw, age: (hash2i(li, loop) & 0xffff) / 65536 });
-    // The channel across the neck: straight from crossing to crossing.
-    for (let j = from + 1; j < k1; j++) {
-      const t = (j - from) / (k1 - from);
-      north[j] = cn + dn * t;
-      east[j] = ce + de * t;
-      valleyS[j] = valleyS[from] + (valleyS[k1] - valleyS[from]) * t;
-      off[j] = 0;
-    }
-    lastCut = valleyS[k1];
+    // A loop too small to leave a lake behind is still cut when it touches itself.
+    if (on.length >= 5) out.push({ north: Float64Array.from(on), east: Float64Array.from(oe), valleyS: valleyS[(k + best) >> 1], halfWidth: hw, age: (hash2i(li, k) & 0xffff) / 65536 });
+    if (on.length >= 5 || touch >= 0) {
+      cuts.push([k, best]);
+      lastCut = valleyS[best];
+      k = best;
+    } else k++;
   }
+  if (cuts.length === 0) return out;
+  // Rebuild the channel: each cut loop replaced by the neck, sampled every 20 m.
+  const n2: number[] = [];
+  const e2: number[] = [];
+  const v2: number[] = [];
+  const o2: number[] = [];
+  let c = 0;
+  for (let j = 0; j < N; j++) {
+    n2.push(north[j]);
+    e2.push(east[j]);
+    v2.push(valleyS[j]);
+    o2.push(off[j]);
+    if (c < cuts.length && j === cuts[c][0]) {
+      const to = cuts[c][1];
+      const len = Math.hypot(north[to] - north[j], east[to] - east[j]);
+      const steps = Math.max(1, Math.ceil(len / 20));
+      for (let q = 1; q < steps; q++) {
+        const t = q / steps;
+        n2.push(north[j] + (north[to] - north[j]) * t);
+        e2.push(east[j] + (east[to] - east[j]) * t);
+        v2.push(valleyS[j] + (valleyS[to] - valleyS[j]) * t);
+        o2.push(off[j] + (off[to] - off[j]) * t);
+      }
+      j = to - 1;
+      c++;
+    }
+  }
+  ch.north = n2;
+  ch.east = e2;
+  ch.valleyS = v2;
+  ch.off = o2;
   return out;
 }
 

@@ -1,6 +1,6 @@
 // A seeded world's own layout and water (seededLayout.ts, drainage.ts, riverNetwork.ts), across several seeds: the
 // home field on dry lowland with its runway level, a coast and a range within reach, generated fields around it; the
-// river network finite, every channel's water falling downstream, every tributary ending on another river (or at
+// river network finite, every channel's water falling downstream, no channel crossing itself, every tributary ending on another river (or at
 // the sea), no channel near the runway; lakes holding water inside their hollows; the same seed giving the same world after another one.
 
 import { afterAll, describe, expect, it } from 'vitest';
@@ -73,6 +73,36 @@ describe.each(SEEDS)('seed %i', (seed) => {
       joined++;
     });
     expect(bad.slice(0, 10)).toEqual([]);
+    // No channel crosses itself (a loop that swings round onto itself is cut off).
+    let crossings = 0;
+    for (const r of rivers!) {
+      const n = r.north.length;
+      const grid = new Map<number, number[]>();
+      const key = (pn: number, pe: number): number => (Math.floor(pn / 100) + 32768) * 65536 + (Math.floor(pe / 100) + 32768);
+      for (let i = 0; i < n - 1; i++) {
+        const k = key(r.north[i], r.east[i]);
+        const l = grid.get(k);
+        if (l) l.push(i);
+        else grid.set(k, [i]);
+      }
+      for (let i = 0; i < n - 1; i++) {
+        for (let a = -1; a <= 1; a++) {
+          for (let b = -1; b <= 1; b++) {
+            for (const j of grid.get(key(r.north[i] + a * 100, r.east[i] + b * 100)) ?? []) {
+              if (j <= i + 2) continue;
+              const ax = r.east[i], ay = r.north[i], bx = r.east[i + 1], by = r.north[i + 1];
+              const cx = r.east[j], cy = r.north[j], dx = r.east[j + 1], dy = r.north[j + 1];
+              const d1 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+              const d2 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
+              const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
+              const d4 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
+              if (d1 * d2 < 0 && d3 * d4 < 0) crossings++;
+            }
+          }
+        }
+      }
+    }
+    expect(crossings).toBe(0);
     expect(joined).toBeGreaterThan(10);
   }, 60_000);
 
