@@ -33,6 +33,9 @@ export interface TrafficModel {
 
 /** Cluster size of the far model, m: an aircraft drawn with it is under ~30 px across. */
 const FAR_CELL = 0.09;
+/** Widest texture of the near model's livery and surface detail, and of its glazing and lining masks, px. */
+const NEAR_TEXTURE = 1024;
+const NEAR_MASK = 512;
 /** The glazing seen from outside at a distance: dark, a little blue. */
 const GLASS = new THREE.Color(0.035, 0.045, 0.06);
 
@@ -88,7 +91,20 @@ async function build(def: AirframeVisualDef): Promise<TrafficModel> {
   const farMaterial = new THREE.MeshStandardMaterial({ name: 'trafficFar', vertexColors: true, roughness: 0.45, metalness: 0, side: THREE.DoubleSide });
   const far: ModelPart[] = [{ geometry: farGeometry, material: farMaterial }];
 
-  // The exterior's materials and textures live on in the near model; its own geometry goes.
+  // The exterior's materials live on in the near model, with smaller copies of its baked textures (a parked
+  // aircraft is seen from tens of metres at the closest); its own geometry goes.
+  const smaller = new Map<THREE.Texture, THREE.Texture>();
+  for (const t of ext.ownTextures) {
+    smaller.set(t, downsample(t as THREE.DataTexture, t === ext.ownTextures[0] || t === ext.ownTextures[1] ? NEAR_TEXTURE : NEAR_MASK));
+  }
+  for (const material of byMaterial.keys()) {
+    const m = material as THREE.MeshStandardMaterial;
+    for (const slot of ['map', 'bumpMap', 'roughnessMap', 'alphaMap'] as const) {
+      const t = m[slot];
+      if (t && smaller.has(t)) m[slot] = smaller.get(t)!;
+    }
+  }
+  for (const t of smaller.keys()) t.dispose();
   ext.releaseGeometry();
 
   const lamps: TrafficModel['lamps'] = {};
@@ -260,4 +276,36 @@ export function cluster(parts: readonly { pos: ArrayLike<number>; nrm: ArrayLike
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;
+}
+
+/** A copy of a baked RGBA texture, box-filtered down by powers of two to at most `maxWidth` wide. */
+function downsample(t: THREE.DataTexture, maxWidth: number): THREE.Texture {
+  const img = t.image as { data: Uint8Array; width: number; height: number };
+  let f = 1;
+  while (img.width / f > maxWidth && img.height / f >= 2) f *= 2;
+  const w = img.width / f;
+  const h = img.height / f;
+  const out = new Uint8Array(w * h * 4);
+  const n = f * f;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      for (let c = 0; c < 4; c++) {
+        let sum = 0;
+        for (let j = 0; j < f; j++) for (let i = 0; i < f; i++) sum += img.data[((y * f + j) * img.width + x * f + i) * 4 + c];
+        out[(y * w + x) * 4 + c] = Math.round(sum / n);
+      }
+    }
+  }
+  const d = new THREE.DataTexture(out, w, h, THREE.RGBAFormat, THREE.UnsignedByteType);
+  d.colorSpace = t.colorSpace;
+  d.wrapS = t.wrapS;
+  d.wrapT = t.wrapT;
+  d.magFilter = t.magFilter;
+  d.minFilter = THREE.LinearMipmapLinearFilter;
+  d.generateMipmaps = true;
+  d.anisotropy = t.anisotropy;
+  d.repeat.copy(t.repeat);
+  d.offset.copy(t.offset);
+  d.needsUpdate = true;
+  return d;
 }

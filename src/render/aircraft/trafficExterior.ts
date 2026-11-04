@@ -184,6 +184,12 @@ export class TrafficExterior {
     this.materials.setSun(sky.sunDir, sky.sunColor);
   }
 
+  /** The fuselage textures this exterior owns (the baked livery, glazing and lining masks). */
+  get ownTextures(): THREE.Texture[] {
+    const t = this.textures;
+    return [t.colour, t.detail, t.glass, t.lining];
+  }
+
   /** Free the geometry this exterior owns (its fuselage's is the type's, shared); the materials stay. */
   releaseGeometry(): void {
     this.root.traverse((o) => {
