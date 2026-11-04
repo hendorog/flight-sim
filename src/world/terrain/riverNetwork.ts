@@ -12,6 +12,8 @@ import { lakeAt, lakeRadius, PolylineIndex, CHANNEL_BANK, type PolylineNear, typ
 import { cellEast, cellNorth, DRAIN_CELL, type Drainage } from './drainage';
 import { AIRPORT } from '../../core/world';
 
+/** A lake's water stands at least this far over the natural ground at its middle, m. */
+const MIN_LAKE_DEPTH = 3;
 /** Oxbow water stands this far above the river level of its valley section, m (as hydrology.ts). */
 const OXBOW_LEVEL = 0.6;
 /** Amplitude of the courses' wander off the lattice, m. */
@@ -54,12 +56,15 @@ interface Axis {
 
 /** The lakes of a seeded world: ellipses fitted to the drainage's lake hollows, levels from the natural terrain. */
 export function networkLakes(natural: (north: number, east: number) => number, d: Drainage): Lake[] {
-  return d.lakes.map((l) => {
+  const out: Lake[] = [];
+  for (const l of d.lakes) {
     let mn = 0;
     let me = 0;
+    let deep = l.cells[0];
     for (const c of l.cells) {
       mn += cellNorth(d, c);
       me += cellEast(d, c);
+      if (d.filled[c] - d.height[c] > d.filled[deep] - d.height[deep]) deep = c;
     }
     mn /= l.cells.length;
     me /= l.cells.length;
@@ -85,12 +90,24 @@ export function networkLakes(natural: (north: number, east: number) => number, d
     const l2 = Math.max(1, tr / 2 - disc);
     // Major axis direction from north toward east.
     const rotation = 0.5 * Math.atan2(2 * sne, snn - see);
-    // A uniform ellipse has variance a²/4 along each axis; shrink a little so the shore keeps inside the hollow.
-    const radiusA = Math.max(350, 1.7 * Math.sqrt(l1));
-    const radiusB = Math.max(250, 1.7 * Math.sqrt(l2));
     const depth = Math.min(40, Math.max(8, l.depth * 0.6));
-    return lakeAt(natural, { radiusA, radiusB, rotation, depth }, { north: mn, east: me });
-  });
+    // The shoreline must stay inside the hollow: its level comes from the lowest ground round the shore, so a shore
+    // reaching over the rim onto falling ground would leave the water in a pit. Try the hollow's centre and its
+    // deepest cell, shrinking the ellipse until the water stands at least MIN_LAKE_DEPTH over the natural ground at
+    // the middle; a hollow where no size does has no lake.
+    let lake: Lake | null = null;
+    for (const [cn, ce] of [[mn, me], [cellNorth(d, deep), cellEast(d, deep)]]) {
+      for (let f = 1; f >= 0.3 && !lake; f *= 0.8) {
+        const radiusA = Math.max(300, 1.7 * Math.sqrt(l1) * f);
+        const radiusB = Math.max(220, 1.7 * Math.sqrt(l2) * f);
+        const cand = lakeAt(natural, { radiusA, radiusB, rotation, depth }, { north: cn, east: ce });
+        if (cand.level >= natural(cn, ce) + MIN_LAKE_DEPTH) lake = cand;
+      }
+      if (lake) break;
+    }
+    if (lake) out.push(lake);
+  }
+  return out;
 }
 
 /** Build a seeded world's hydrology from its drainage and lakes. */
@@ -255,8 +272,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const j = nearestOnChannel(p, north[steps], east[steps]);
       const dn = p.north[j] - north[steps];
       const de = p.east[j] - east[steps];
+      // Over a stretch three times the gap (the parent's loop may swing a few hundred metres from its axis), so no kink.
+      const span = Math.min(total, Math.max(600, 3 * Math.hypot(dn, de)));
       for (let k = 0; k <= steps; k++) {
-        const w = smooth(total - 600, total, valleyS[k]);
+        const w = smooth(total - span, total, valleyS[k]);
         north[k] += dn * w;
         east[k] += de * w;
       }
@@ -465,19 +484,24 @@ function sineGenerated(a: Axis, phase0: number): { north: number[]; east: number
     os.push(y);
   };
   put(0, 0);
-  for (let guard = 0; along < total && guard < 400000; guard++) {
+  // A bound on the march: the channel is at most a few times longer than its valley.
+  const maxSteps = Math.ceil((total / 15) * 12) + 200;
+  for (let guard = 0; along < total && guard < maxSteps; guard++) {
     const sv = Math.min(total, Math.max(0, along));
     const i = segmentAt(a.s, sv);
     const m = a.meander[i];
     const lambda = a.wavelength[i];
     const belt = a.belt[i];
     // Loop to loop: the swing and the loop length vary, so no two bends are alike.
-    const omega = (0.5 + 1.5 * m) * (0.85 + 0.3 * gnoise(along / (1.7 * lambda) + phase0 * 13.1, 4.4));
+    const omega = Math.min(2, (0.5 + 1.5 * m) * (0.85 + 0.3 * gnoise(along / (1.7 * lambda) + phase0 * 13.1, 4.4)));
     let theta = omega * Math.sin(phi) + omega * omega * omega * (Math.sin(3 * phi) / 32 - Math.cos(3 * phi) / 192);
     // Keep within the belt: steer back in proportion to the drift, firmly once past the belt's edge.
     const drift = off / Math.max(1, belt);
     theta -= 0.35 * drift + 2 * Math.max(0, Math.abs(drift) - 1) * Math.sign(drift);
-    theta = Math.max(-2.15, Math.min(2.15, theta));
+    // Outside the belt it heads back across the valley but always downstream (a steer that turned it upstream could
+    // circle without ever reaching the end of the river).
+    const lim = Math.abs(drift) > 1 ? 1.2 : 2.15;
+    theta = Math.max(-lim, Math.min(lim, theta));
     const ds = Math.min(40, Math.max(15, lambda / 10));
     along += Math.cos(theta) * ds;
     off += Math.sin(theta) * ds;
@@ -490,7 +514,13 @@ function sineGenerated(a: Axis, phase0: number): { north: number[]; east: number
     }
     put(Math.max(0, along), off);
   }
-  if (vs[vs.length - 1] < total) put(total, 0);
+  // Not expected: had it stalled, close the gap along the axis rather than with one straight jump.
+  if (vs[vs.length - 1] < total) {
+    const from = Math.max(0, vs[vs.length - 1]);
+    const y0 = os[os.length - 1];
+    const k = Math.max(1, Math.ceil((total - from) / 40));
+    for (let j = 1; j <= k; j++) put(from + ((total - from) * j) / k, y0 * (1 - j / k));
+  }
   return { north: n, east: e, valleyS: vs, off: os };
 }
 

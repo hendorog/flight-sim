@@ -507,10 +507,15 @@ function medevacRoute(rng: CareerRng, origin: Airfield, fields: readonly Airfiel
   return null;
 }
 
-/** The survey lines within reach: the river, and the roads (seed 0). */
+/** A seeded world's rivers worth a survey flight: at least this half-width at the mouth, m. */
+const SURVEY_RIVER_HALF_WIDTH = 8;
+
+/** The survey lines within reach: the river (a seeded world's larger rivers), and the roads (seed 0). */
 function surveyLines(): { kind: 'river' | 'road'; lines: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number> }> }[] {
   const out: { kind: 'river' | 'road'; lines: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number> }> }[] = [];
-  if (hydrology.river.north.length > 1) out.push({ kind: 'river', lines: [hydrology.river] });
+  // A seeded world: its larger rivers (seed 0: its one river).
+  const rivers = hydrology.rivers ? hydrology.rivers.filter((r) => r.north.length > 1 && r.halfWidth[r.halfWidth.length - 1] >= SURVEY_RIVER_HALF_WIDTH) : hydrology.river.north.length > 1 ? [hydrology.river] : [];
+  if (rivers.length > 0) out.push({ kind: 'river', lines: rivers });
   const roads = regionalRoads();
   if (roads.length > 0) out.push({ kind: 'road', lines: roads });
   return out;

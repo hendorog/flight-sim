@@ -23,6 +23,29 @@ import { computeBiome, makeBiome, treeLine } from '../terrain/biome';
 import { hash2i } from '../terrain/noise';
 import { hashU32 } from '../../physics/weather/random';
 import { RIVER_HERD_SITE, ALAMOSAURUS_STAND, TRICERATOPS_GROUP, safariAt, safariStartNed } from '../era/cretaceousAnchors';
+
+type RiverArrays = { north: Float64Array; east: Float64Array; halfWidth: Float64Array };
+/** The rivers habitats are placed along, with their bounding boxes (rebuilt when the water changes). */
+let riverCache: { key: unknown; lines: { r: RiverArrays; minN: number; maxN: number; minE: number; maxE: number }[] } | null = null;
+/** A seeded world's rivers at least this half-width at the mouth carry waders; seed 0 has one river. */
+const HABITAT_RIVER_HALF_WIDTH = 8;
+function riverLines(): { r: RiverArrays; minN: number; maxN: number; minE: number; maxE: number }[] {
+  const key = hydrology.rivers ?? hydrology.river;
+  if (riverCache?.key === key) return riverCache.lines;
+  const src: RiverArrays[] = hydrology.rivers ? hydrology.rivers.filter((r) => r.halfWidth[r.halfWidth.length - 1] >= HABITAT_RIVER_HALF_WIDTH) : [hydrology.river];
+  const lines = src.map((r) => {
+    let minN = Infinity, maxN = -Infinity, minE = Infinity, maxE = -Infinity;
+    for (let i = 0; i < r.north.length; i++) {
+      minN = Math.min(minN, r.north[i]);
+      maxN = Math.max(maxN, r.north[i]);
+      minE = Math.min(minE, r.east[i]);
+      maxE = Math.max(maxE, r.east[i]);
+    }
+    return { r, minN, maxN, minE, maxE };
+  });
+  riverCache = { key, lines };
+  return lines;
+}
 import type { FaunaRoster, FaunaRosterEntry, HabitatKind } from './types';
 
 /** Habitat cell size, m. */
@@ -168,32 +191,41 @@ function candidate(ci: number, cj: number, k: number, out: { n: number; e: numbe
   const r2 = cellRandom(ci, cj, 12 + 3 * k);
   const kind = k % 3;
   if (kind !== 2) {
-    // River: the centreline points inside this cell (the densified line is ~1.4k points; scanned once per probe).
-    const rv = hydrology.river;
+    // River: the centreline points inside this cell, over every river that crosses it (a seeded world's larger
+    // rivers; seed 0's one river), scanned once per probe.
+    const lines = riverLines();
     let count = 0;
-    for (let i = 0; i < rv.north.length; i++) {
-      const pn = rv.north[i] - n0;
-      const pe = rv.east[i] - e0;
-      if (pn >= 0 && pn < HABITAT_CELL && pe >= 0 && pe < HABITAT_CELL) count++;
-    }
-    if (count > 0) {
-      let pick = Math.floor(r0 * count);
+    for (const L of lines) {
+      if (n0 + HABITAT_CELL < L.minN || n0 > L.maxN || e0 + HABITAT_CELL < L.minE || e0 > L.maxE) continue;
+      const rv = L.r;
       for (let i = 0; i < rv.north.length; i++) {
         const pn = rv.north[i] - n0;
         const pe = rv.east[i] - e0;
-        if (!(pn >= 0 && pn < HABITAT_CELL && pe >= 0 && pe < HABITAT_CELL)) continue;
-        if (pick-- > 0) continue;
-        // Across the flow (from the neighbouring points), on a random bank, 70-520 m out.
-        const a = Math.max(0, i - 1);
-        const b = Math.min(rv.north.length - 1, i + 1);
-        const tn = rv.north[b] - rv.north[a];
-        const te = rv.east[b] - rv.east[a];
-        const tl = Math.hypot(tn, te) || 1;
-        const side = r1 < 0.5 ? -1 : 1;
-        const off = rv.halfWidth[i] + 70 + 450 * r2;
-        out.n = rv.north[i] + (side * -te * off) / tl;
-        out.e = rv.east[i] + (side * tn * off) / tl;
-        return;
+        if (pn >= 0 && pn < HABITAT_CELL && pe >= 0 && pe < HABITAT_CELL) count++;
+      }
+    }
+    if (count > 0) {
+      let pick = Math.floor(r0 * count);
+      for (const L of lines) {
+        if (n0 + HABITAT_CELL < L.minN || n0 > L.maxN || e0 + HABITAT_CELL < L.minE || e0 > L.maxE) continue;
+        const rv = L.r;
+        for (let i = 0; i < rv.north.length; i++) {
+          const pn = rv.north[i] - n0;
+          const pe = rv.east[i] - e0;
+          if (!(pn >= 0 && pn < HABITAT_CELL && pe >= 0 && pe < HABITAT_CELL)) continue;
+          if (pick-- > 0) continue;
+          // Across the flow (from the neighbouring points), on a random bank, 70-520 m out.
+          const a = Math.max(0, i - 1);
+          const b = Math.min(rv.north.length - 1, i + 1);
+          const tn = rv.north[b] - rv.north[a];
+          const te = rv.east[b] - rv.east[a];
+          const tl = Math.hypot(tn, te) || 1;
+          const side = r1 < 0.5 ? -1 : 1;
+          const off = rv.halfWidth[i] + 70 + 450 * r2;
+          out.n = rv.north[i] + (side * -te * off) / tl;
+          out.e = rv.east[i] + (side * tn * off) / tl;
+          return;
+        }
       }
     }
     // Lake shores in this cell: a point just outside the shoreline ellipse.

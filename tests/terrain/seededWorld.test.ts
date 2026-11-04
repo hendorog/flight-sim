@@ -1,12 +1,12 @@
 // A seeded world's own layout and water (seededLayout.ts, drainage.ts, riverNetwork.ts), across several seeds: the
 // home field on dry lowland with its runway level, a coast and a range within reach, generated fields around it; the
 // river network finite, every channel's water falling downstream, every tributary ending on another river (or at
-// the sea), no channel near the runway; lakes holding water; the same seed giving the same world after another one.
+// the sea), no channel near the runway; lakes holding water inside their hollows; the same seed giving the same world after another one.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { AIRPORT } from '../../src/core/world';
 import { airfields } from '../../src/world/airfields';
-import { hydrology, makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
+import { hydrology, makeSample, naturalHeight, sampleTerrain } from '../../src/world/terrain/heightfield';
 import type { ChannelNear } from '../../src/world/terrain/hydrology';
 import { layoutReport } from '../../src/world/terrain/seededLayout';
 import { setWorldSeed } from '../../src/world/worldSeed';
@@ -88,6 +88,8 @@ describe.each(SEEDS)('seed %i', (seed) => {
     const s = makeSample();
     for (const l of hydrology.lakes) {
       expect(l.level).toBeGreaterThan(0);
+      // Its shore inside the hollow: the water stands over the natural ground at its middle (not in a carved pit).
+      expect(l.level, `lake at ${l.north.toFixed(0)}, ${l.east.toFixed(0)}`).toBeGreaterThanOrEqual(naturalHeight(l.north, l.east) + 3);
       sampleTerrain(l.north, l.east, s);
       expect(s.standing, `lake at ${l.north.toFixed(0)}, ${l.east.toFixed(0)}`).toBeGreaterThanOrEqual(l.level - 1e-9);
     }

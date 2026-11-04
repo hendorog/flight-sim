@@ -489,9 +489,9 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     h += (carved - h) * (1 - smooth(f + v.influence * 0.75, f + v.influence, d));
   }
 
-  // Oxbow lakes, as carveRiver cuts them.
+  // Oxbow lakes, as carveRiver cuts them (not under a lake's water).
   presentHydro.queryOxbow(north, east, oxbowHit);
-  if (oxbowHit.dist < oxbowHit.halfWidth + 30) {
+  if (oxbowHit.dist < oxbowHit.halfWidth + 30 && lakeCover >= 1) {
     const d = oxbowHit.dist;
     const w = oxbowHit.halfWidth;
     const bank = BANK_HEIGHT - 0.6;

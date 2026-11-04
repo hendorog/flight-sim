@@ -115,7 +115,7 @@ describe.each([0, 7])('the rules at seed %i', (seed) => {
     }
     // Highest first, and every one named with its height in feet.
     for (let i = 1; i < summits.length; i++) expect(summits[i].elevationM).toBeLessThanOrEqual(summits[i - 1].elevationM);
-    for (const s of summits) expect(s.name).toMatch(/^Summit \d{1,2},?\d{3} ft, \d+(\.\d)? NM [a-z-]+ of [A-Z][a-z]+$/u);
+    for (const s of summits) expect(s.name).toMatch(/^Summit (\d{1,2},?)?\d{3} ft, \d+(\.\d)? NM [a-z-]+ of [A-Z][a-z]+$/u);
   });
 });
 

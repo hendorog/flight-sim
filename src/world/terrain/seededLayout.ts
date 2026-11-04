@@ -9,6 +9,7 @@
 
 import { fbm, gnoise, mulberry32 } from './noise';
 import { onWorldSeed, seeded, worldSeed } from '../worldSeed';
+import { AIRPORT } from '../../core/world';
 
 /** The macro fields at one point (macroAt). */
 export interface Macro {
@@ -119,7 +120,8 @@ function chooseLayout(): void {
 }
 
 /**
- * Score the current candidate. Hard needs: the field on dry lowland well inland, no mountains or foothills over it.
+ * Score the current candidate. Hard needs: the field on dry lowland well inland, no mountains or foothills over it or
+ * under its approaches.
  * Wants: a coast 15-70 km away, a high range 15-80 km away, land on most of the ring the generated airfields use.
  */
 function scoreLayout(k: number): { ok: boolean; score: number; report: LayoutReport } {
@@ -130,6 +132,15 @@ function scoreLayout(k: number): { ok: boolean; score: number; report: LayoutRep
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
     macroAt(4000 * Math.cos(a), 4000 * Math.sin(a), M);
+    worstUp = Math.max(worstUp, M.uplift);
+    worstFoot = Math.max(worstFoot, M.foothill);
+  }
+  // Both approaches to the home runway, out to the 12 km its approach protection reaches: no foothills under them
+  // (the protection would cut a flat wedge into them).
+  const hc = Math.cos(AIRPORT.runway.heading);
+  const hs = Math.sin(AIRPORT.runway.heading);
+  for (const along of [-12000, -9000, -6000, 6000, 9000, 12000]) {
+    macroAt(along * hc, along * hs, M);
     worstUp = Math.max(worstUp, M.uplift);
     worstFoot = Math.max(worstFoot, M.foothill);
   }
