@@ -191,8 +191,8 @@ interface Aircraft {
   pilot: TrafficPilot | null;
   physics: boolean;
   exterior: TrafficExterior | null;
-  /** Where it was drawn last (three.js world) and from what; a changeover's fading difference. */
-  drawn: { pos: THREE.Vector3; quat: THREE.Quaternion; from: 'flown' | 'kinematic' | null };
+  /** Where it was drawn last (three.js world), how far it moved that frame, and from what; a changeover's fading difference. */
+  drawn: { pos: THREE.Vector3; step: THREE.Vector3; quat: THREE.Quaternion; from: 'flown' | 'kinematic' | null };
   blend: { pos: THREE.Vector3; quat: THREE.Quaternion; age: number } | null;
   /** Calls made on this lap, so each is made once. */
   said: Set<CallId>;
@@ -417,7 +417,7 @@ export class TrafficSystem implements Subsystem {
     this.group.add(mesh.root);
     const a: Aircraft = {
       field, typeId: type.id, type: type.icao, registration, voice: (hash(registration) >>> 11) % 16, path, state, mesh, pilot: null, physics: false, exterior: null,
-      drawn: { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), from: null }, blend: null,
+      drawn: { pos: new THREE.Vector3(), step: new THREE.Vector3(), quat: new THREE.Quaternion(), from: null }, blend: null,
       said: new Set(), nextEnd: null, ops, contacted: new Set(),
     };
     this.aircraft.push(a);
@@ -1169,8 +1169,9 @@ export class TrafficSystem implements Subsystem {
     const from = flown ? 'flown' : 'kinematic';
     const d = a.drawn;
     if (d.from && d.from !== from) {
-      // A changeover: the difference to where it was drawn fades out (a jump only if it is far off).
-      const off = d.pos.clone().sub(pos);
+      // A changeover: the difference to where it would have been drawn now (moving on as it was) fades out (a
+      // jump only if it is far off).
+      const off = d.pos.clone().add(d.step).sub(pos);
       const turn = d.quat.clone().multiply(this.scratchQuat.copy(rot).invert());
       a.blend = off.length() < BLEND_MAX && Math.abs(turn.w) > Math.cos(0.5) ? { pos: off, quat: turn, age: 0 } : null;
     }
@@ -1183,6 +1184,7 @@ export class TrafficSystem implements Subsystem {
         rot.premultiply(this.scratchQuat.identity().slerp(a.blend.quat, k));
       }
     }
+    if (d.from) d.step.subVectors(pos, d.pos);
     d.pos.copy(pos);
     d.quat.copy(rot);
     d.from = from;
