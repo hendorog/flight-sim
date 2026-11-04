@@ -284,6 +284,9 @@ setLayoutGround((n, e) => seededNaturalHeight(n, e));
  * and valley. The home field takes the ground as it finds it (homeSiting.ts chose a site that takes a runway); only
  * its pad and approaches are levelled, in sampleTerrain.
  */
+/** A seeded world's natural terrain without its gullies and small-scale relief (the drainage routes over it). */
+export const naturalHeightCoarse = (north: number, east: number): number => seededNaturalHeight(north, east, false);
+
 function seededNaturalHeight(north: number, east: number, detail = true): number {
   macroAt(north, east, macro);
   const inland = macro.inland;
