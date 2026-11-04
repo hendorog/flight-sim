@@ -79,6 +79,46 @@ export interface Hydrology {
   queryValley(north: number, east: number, out: ValleyHit): ValleyHit;
   /** Nearest oxbow lake. */
   queryOxbow(north: number, east: number, out: OxbowHit): OxbowHit;
+  /** A seeded world's river network (riverNetwork.ts): every line, the main river first. Absent at seed 0. */
+  rivers?: ReadonlyArray<RiverLine>;
+  /** A seeded world's network queries for carving (every line near a point). Absent at seed 0. */
+  network?: NetworkQuery;
+}
+
+/** One river of a network: its channel centreline (source first) as in Hydrology.river. */
+export interface RiverLine {
+  north: Float64Array;
+  east: Float64Array;
+  level: Float64Array;
+  halfWidth: Float64Array;
+  s: Float64Array;
+}
+
+/** A line's valley near a point (NetworkQuery.valleys). */
+export interface ValleyNear {
+  dist: number;
+  level: number;
+  floodplain: number;
+  /** How far beyond the floodplain the valley walls are carved, m. */
+  influence: number;
+}
+
+/** A line's channel near a point (NetworkQuery.channels). */
+export interface ChannelNear {
+  line: number;
+  dist: number;
+  side: number;
+  level: number;
+  halfWidth: number;
+  s: number;
+  beyondSource: number;
+}
+
+export interface NetworkQuery {
+  /** The valleys of every line near the point (each line's nearest axis point); returns how many were written. */
+  valleys(north: number, east: number, out: ValleyNear[]): number;
+  /** The channels of every line within carving reach of the point; returns how many were written. */
+  channels(north: number, east: number, out: ChannelNear[]): number;
 }
 
 /** Valley walls rise over this distance beyond the floodplain (everything closer to the axis is shaped by the valley). */
@@ -183,30 +223,32 @@ function densify(points: ReadonlyArray<{ north: number; east: number }>): { n: n
 
 /** The lakes, with their levels found from the natural terrain around each basin. */
 export function buildLakes(natural: (north: number, east: number) => number): Lake[] {
-  return LAKE_DEFS.map((d) => {
-    const p = toNED(d.along, d.across);
-    const lake: Lake = { ...d, north: p.north, east: p.east, level: 0, bound: Math.max(d.radiusA, d.radiusB) * LAKE_ZONE * 1.35 };
-    // Level: just below the lowest point of the terrain around the shoreline ellipse, so the basin holds water.
-    let minRim = Infinity;
-    const c = Math.cos(d.rotation);
-    const s = Math.sin(d.rotation);
-    for (let k = 0; k < 160; k++) {
-      const a = (k / 160) * Math.PI * 2;
-      // Offset of the unwarped ellipse point at radius 1 in this direction.
-      const ca = Math.cos(a) * d.radiusA;
-      const sa = Math.sin(a) * d.radiusB;
-      const dirN = ca * c - sa * s;
-      const dirE = ca * s + sa * c;
-      for (const rr of [1.0, 1.1, LAKE_ZONE]) {
-        // Scale the offset until the warped radius equals rr (fixed-point iteration converges in a few steps).
-        let t = rr;
-        for (let it = 0; it < 4; it++) t *= rr / lakeRadius(lake, p.north + dirN * t, p.east + dirE * t);
-        minRim = Math.min(minRim, natural(p.north + dirN * t, p.east + dirE * t));
-      }
+  return LAKE_DEFS.map((d) => lakeAt(natural, d, toNED(d.along, d.across)));
+}
+
+/** A lake shape placed anywhere (a seeded world's lakes, riverNetwork.ts), its level found as buildLakes finds it. */
+export function lakeAt(natural: (north: number, east: number) => number, d: Omit<Lake, 'level' | 'north' | 'east' | 'bound'>, p: { north: number; east: number }): Lake {
+  const lake: Lake = { ...d, north: p.north, east: p.east, level: 0, bound: Math.max(d.radiusA, d.radiusB) * LAKE_ZONE * 1.35 };
+  // Level: just below the lowest point of the terrain around the shoreline ellipse, so the basin holds water.
+  let minRim = Infinity;
+  const c = Math.cos(d.rotation);
+  const s = Math.sin(d.rotation);
+  for (let k = 0; k < 160; k++) {
+    const a = (k / 160) * Math.PI * 2;
+    // Offset of the unwarped ellipse point at radius 1 in this direction.
+    const ca = Math.cos(a) * d.radiusA;
+    const sa = Math.sin(a) * d.radiusB;
+    const dirN = ca * c - sa * s;
+    const dirE = ca * s + sa * c;
+    for (const rr of [1.0, 1.1, LAKE_ZONE]) {
+      // Scale the offset until the warped radius equals rr (fixed-point iteration converges in a few steps).
+      let t = rr;
+      for (let it = 0; it < 4; it++) t *= rr / lakeRadius(lake, p.north + dirN * t, p.east + dirE * t);
+      minRim = Math.min(minRim, natural(p.north + dirN * t, p.east + dirE * t));
     }
-    lake.level = Math.max(0.5, minRim - 1.5);
-    return lake;
-  });
+  }
+  lake.level = Math.max(0.5, minRim - 1.5);
+  return lake;
 }
 
 /**

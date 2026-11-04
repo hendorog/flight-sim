@@ -11,11 +11,14 @@
 //
 // Every function here is unbounded: any (north, east) gives a valid answer.
 
-import { onWorldSeed } from '../worldSeed';
+import { onWorldSeed, worldSeed } from '../worldSeed';
+import { macroAt, type Macro } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT } from '../../core/world';
-import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type Hydrology, type OxbowHit, type RiverHit, type ValleyHit } from './hydrology';
+import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
+import { buildDrainage } from './drainage';
+import { buildNetworkHydrology, networkLakes } from './riverNetwork';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
 import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
@@ -187,8 +190,15 @@ function coastProfile(inland: number): number {
   return -80 * (1 - Math.exp(-off / 5000)) - 320 * smooth(8000, 40000, off);
 }
 
+/** True in a seeded world (any seed but 0): naturalHeight takes the seeded layout (seededLayout.ts). */
+let SEEDED = worldSeed() !== 0;
+onWorldSeed(() => {
+  SEEDED = worldSeed() !== 0;
+});
+
 /** Regional terrain before rivers, lakes and the airport, m MSL. Exported for tests (tests/era/volcano.test.ts). */
 export function naturalHeight(north: number, east: number): number {
+  if (SEEDED) return seededNaturalHeight(north, east);
   const dn = north - RW.center.north;
   const de = east - RW.center.east;
   const along = dn * RW_COS + de * RW_SIN;
@@ -256,22 +266,94 @@ export function naturalHeight(north: number, east: number): number {
   return h;
 }
 
+const macro: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
+
+/**
+ * naturalHeight in a seeded world: the same coastal profile, hills, mountains, gullies and small-scale relief as
+ * today's world, but laid out by the seed's macro fields (seededLayout.ts) instead of the hand-shaped coast, range
+ * and valley. A low plain at the airfield's elevation surrounds the home field so it never sits on a slope.
+ */
+function seededNaturalHeight(north: number, east: number): number {
+  macroAt(north, east, macro);
+  const inland = macro.inland;
+  const base = coastProfile(inland);
+
+  const hillAmp = (90 + 260 * smooth(-1000, 7000, inland) + 480 * macro.foothill) * macro.hilly;
+  hillShape(east, north, rolling);
+  const bias = 0.55 * smooth(-2000, 5000, inland);
+  let relief = hillAmp * (rolling.v + bias);
+  let gE = hillAmp * rolling.dx;
+  let gN = hillAmp * rolling.dy;
+  const uplift = macro.uplift;
+  let amplitude = hillAmp;
+  if (uplift > 0) {
+    mountainShape(east, north, massif);
+    const a = uplift * 3100;
+    relief += a * massif.v;
+    gE += a * massif.dx;
+    gN += a * massif.dy;
+    amplitude += a;
+  }
+  relief += amplitude * 0.13 * erode(east, north, gE, gN);
+  let h = base + relief;
+
+  const V = era().terrain.volcano;
+  if (V) {
+    const vn = north - V.north;
+    const ve = east - V.east;
+    const b = volcanoBound(V);
+    if (vn * vn + ve * ve < b * b) h = volcanoMerge(h, volcanoHeight(north, east, V));
+  }
+
+  // The home plain: level ground at the field's elevation, merging into the country around within ~9 km.
+  // Longer along the runway, so its approaches lie over the plain.
+  const dn = north - RW.center.north;
+  const de = east - RW.center.east;
+  const pa = (dn * RW_COS + de * RW_SIN) / 1.8;
+  const pc = -dn * RW_SIN + de * RW_COS;
+  const r0 = Math.sqrt(pa * pa + pc * pc);
+  const plain = 1 - smooth(3000, 4000 + 5000 * (0.8 + 0.4 * fbm(east / 9000 + 4.4, north / 9000 - 1.3, 2)), r0);
+  if (plain > 0) {
+    const floor = ELEV + 7 * fbm(east / 1400, north / 1400, 3);
+    h += (floor - h) * plain;
+  }
+
+  const rough = 1.2 + 0.004 * clamp(h, 0, 3000);
+  h += rough * (2.2 * gnoise(east / 180 + 0.3, north / 180 + 0.7) + 0.8 * gnoise(east / 60 - 4.1, north / 60 + 2.2));
+  const rugged = clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN))) * (1 - plain);
+  if (rugged > 0) {
+    const ridge = 1 - Math.abs(gnoise(east / 23 + 7.7, north / 23 - 3.1));
+    h += rugged * (2.4 * ridge * ridge + 0.7 * gnoise(east / 9 - 1.3, north / 9 + 5.9));
+  }
+  return h;
+}
+
 // Both rivers are built at load, against the present-day natural terrain (the era is chosen after): the meandering
 // one, and the Late Cretaceous era's (its scenery is placed along the river's earlier course).
 // Rebuilt when the world seed changes (worldSeed.ts), against that world's natural terrain.
-let lakes = buildLakes(naturalHeight);
-let presentHydro: Hydrology = buildHydrology(naturalHeight, lakes);
-let legacyHydro: Hydrology = buildLegacyHydrology(naturalHeight, lakes);
+// A seeded world (any seed but 0) has no hand-placed water: its rivers and lakes come from its drainage
+// (drainage.ts, riverNetwork.ts), the same network in every era.
+let lakes: Lake[] = [];
+let presentHydro: Hydrology;
+let legacyHydro: Hydrology;
 // The generated airfields (airfields.ts, present day only), sited against the same natural terrain and water.
-let fields: readonly Airfield[] = siteAirfields(naturalHeight, presentHydro, lakes);
-setGeneratedAirfields(fields);
-onWorldSeed(() => {
-  lakes = buildLakes(naturalHeight);
-  presentHydro = buildHydrology(naturalHeight, lakes);
-  legacyHydro = buildLegacyHydrology(naturalHeight, lakes);
+let fields: readonly Airfield[] = [];
+function buildWater(): void {
+  if (SEEDED) {
+    const drainage = buildDrainage(naturalHeight);
+    lakes = networkLakes(naturalHeight, drainage);
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, lakes);
+    legacyHydro = presentHydro;
+  } else {
+    lakes = buildLakes(naturalHeight);
+    presentHydro = buildHydrology(naturalHeight, lakes);
+    legacyHydro = buildLegacyHydrology(naturalHeight, lakes);
+  }
   fields = siteAirfields(naturalHeight, presentHydro, lakes);
   setGeneratedAirfields(fields);
-});
+}
+buildWater();
+onWorldSeed(buildWater);
 /** The water of the current era. */
 const current = (): Hydrology => (isPresent() ? presentHydro : legacyHydro);
 /** Rivers and lakes of the current era (read at call time, like era()). */
@@ -280,6 +362,8 @@ export const hydrology: Readonly<Hydrology> = {
   get river() { return current().river; },
   get valley() { return current().valley; },
   get oxbows() { return current().oxbows; },
+  get rivers() { return current().rivers; },
+  get network() { return current().network; },
   queryRiver: (north, east, out) => current().queryRiver(north, east, out),
   queryValley: (north, east, out) => current().queryValley(north, east, out),
   queryOxbow: (north, east, out) => current().queryOxbow(north, east, out),
@@ -382,6 +466,45 @@ function carveRiver(north: number, east: number, h: number, out: TerrainSample):
     }
     h = carved;
     if (d < w && h < riverHit.level) out.river = riverHit.level;
+  }
+  return h;
+}
+
+const valleyNear: ValleyNear[] = [];
+const channelNear: ChannelNear[] = [];
+
+/** A seeded world's river network (riverNetwork.ts): every valley and channel near the point cut into h, as carveRiver cuts its one river. */
+function carveNetwork(north: number, east: number, h: number, out: TerrainSample): number {
+  const net = presentHydro.network as NonNullable<Hydrology['network']>;
+  const nv = net.valleys(north, east, valleyNear);
+  for (let j = 0; j < nv; j++) {
+    const v = valleyNear[j];
+    const d = v.dist;
+    const f = v.floodplain;
+    const carved = smin(h, v.level + valleyProfile(d, f), 4);
+    h += (carved - h) * (1 - smooth(f + v.influence * 0.75, f + v.influence, d));
+  }
+
+  presentHydro.queryRiver(north, east, riverHit);
+  out.riverDist = riverHit.dist;
+  if (riverHit.side !== 0) {
+    out.riverSigned = riverHit.dist * riverHit.side;
+    out.riverHalfWidth = riverHit.halfWidth * (1 - smooth(0, 60, riverHit.beyondSource));
+    out.riverArc = riverHit.s;
+  }
+  const nc = net.channels(north, east, channelNear);
+  for (let j = 0; j < nc; j++) {
+    const c = channelNear[j];
+    const d = c.dist;
+    const w = c.halfWidth * (1 - smooth(0, 60, c.beyondSource));
+    if (w <= 0.5) continue;
+    let carved = smin(h, c.level + channelProfile(d, w), 3);
+    if (d > w && d < w + 40 && c.level > 0.5) {
+      const levee = c.level + 0.3 + 0.03 * (d - w);
+      carved += (Math.max(carved, levee) - carved) * (1 - smooth(w + 25, w + 40, d));
+    }
+    h = carved;
+    if (d < w && h < c.level) out.river = Math.max(out.river, c.level);
   }
   return h;
 }
@@ -494,7 +617,7 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
     }
   }
 
-  h = isPresent() ? carveRiver(north, east, h, out) : carveLegacyRiver(north, east, h, out);
+  h = presentHydro.network ? carveNetwork(north, east, h, out) : isPresent() ? carveRiver(north, east, h, out) : carveLegacyRiver(north, east, h, out);
 
   // Approach corridors: keep terrain under a gradient well below the 3 degree glide path from both ends.
   const beyond = Math.abs(along) - HALF_LEN;

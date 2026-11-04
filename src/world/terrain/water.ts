@@ -292,15 +292,32 @@ export function createWaterGeometry(w: WaterData): THREE.BufferGeometry {
  * dry bank) at every centreline sample, at the local water level. It stops at the coast.
  */
 export function createRiverGeometry(): THREE.BufferGeometry {
-  const r = hydrology.river;
+  const b = riverBuffers();
+  // A seeded world draws its main river with the rest of its network (createRiverNetworkGeometries).
+  if (!hydrology.rivers) ribbonRows(hydrology.river, 0, hydrology.river.north.length, b);
+  return riverGeometryOf(b);
+}
+
+/** The ribbon's vertex data under construction. */
+interface RiverBuffers {
+  pos: number[];
+  depth: number[];
+  info: number[];
+  tan: number[];
+  idx: number[];
+}
+const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [] });
+const RIBBON_ACROSS = [-1.2, -0.55, 0, 0.55, 1.2];
+
+/** Append the ribbon of samples [from, to) of a river line (it stops at the coast); returns the index after the last row. */
+function ribbonRows(r: { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array }, from: number, to: number, b: RiverBuffers): number {
   const count = r.north.length;
-  const across = [-1.2, -0.55, 0, 0.55, 1.2];
-  const pos: number[] = [];
-  const depth: number[] = [];
-  const info: number[] = [];
-  const tan: number[] = [];
+  const across = RIBBON_ACROSS;
+  const { pos, depth, info, tan, idx } = b;
+  const first = pos.length / 3;
   let rows = 0;
-  for (let i = 0; i < count; i++) {
+  let i = from;
+  for (; i < to; i++) {
     if (r.level[i] < 0.3) break;
     const i0 = Math.max(0, i - 1);
     const i1 = Math.min(count - 1, i + 1);
@@ -324,22 +341,52 @@ export function createRiverGeometry(): THREE.BufferGeometry {
     }
     rows++;
   }
-  const idx: number[] = [];
   for (let j = 0; j < rows - 1; j++) {
     for (let k = 0; k < across.length - 1; k++) {
-      const a = j * across.length + k;
-      const b = a + across.length;
+      const a = first + j * across.length + k;
+      const c = a + across.length;
       // Counter-clockwise seen from above: rows advance downstream and the across offset points to the
-      // left bank (the flow direction turned 90 degrees anticlockwise), so (b - a) x (a+1 - a) is up.
-      idx.push(a, b, a + 1, a + 1, b, b + 1);
+      // left bank (the flow direction turned 90 degrees anticlockwise), so (c - a) x (a+1 - a) is up.
+      idx.push(a, c, a + 1, a + 1, c, c + 1);
     }
   }
+  return i;
+}
+
+function riverGeometryOf(b: RiverBuffers): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('aDepth', new THREE.Float32BufferAttribute(depth, 1));
-  g.setAttribute('aRiverInfo', new THREE.Float32BufferAttribute(info, 3));
-  g.setAttribute('aRiverT', new THREE.Float32BufferAttribute(tan, 2));
-  g.setIndex(idx);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+  g.setAttribute('aDepth', new THREE.Float32BufferAttribute(b.depth, 1));
+  g.setAttribute('aRiverInfo', new THREE.Float32BufferAttribute(b.info, 3));
+  g.setAttribute('aRiverT', new THREE.Float32BufferAttribute(b.tan, 2));
+  g.setIndex(b.idx);
   g.computeBoundingSphere();
   return g;
+}
+
+/** Ribbon pieces are grouped into square chunks this size, m, so the renderer can cull them. */
+const RIVER_CHUNK = 10000;
+/** Rows per ribbon piece (pieces overlap by one row so they join). */
+const RIVER_PIECE = 240;
+
+/**
+ * A seeded world's river network (hydrology.rivers) as ribbon chunks: each line cut into pieces, each piece put in
+ * the chunk of its first sample. Empty when the world has no network (seed 0: createRiverGeometry).
+ */
+export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
+  const rivers = hydrology.rivers;
+  if (!rivers) return [];
+  const chunks = new Map<string, RiverBuffers>();
+  for (const r of rivers) {
+    const count = r.north.length;
+    for (let from = 0; from < count - 1; from += RIVER_PIECE) {
+      if (r.level[from] < 0.3) break;
+      const key = `${Math.floor(r.north[from] / RIVER_CHUNK)},${Math.floor(r.east[from] / RIVER_CHUNK)}`;
+      let b = chunks.get(key);
+      if (!b) chunks.set(key, (b = riverBuffers()));
+      const stop = ribbonRows(r, from, Math.min(count, from + RIVER_PIECE + 1), b);
+      if (stop < Math.min(count, from + RIVER_PIECE + 1)) break;
+    }
+  }
+  return [...chunks.values()].filter((b) => b.idx.length > 0).map(riverGeometryOf);
 }

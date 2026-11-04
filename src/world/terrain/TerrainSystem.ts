@@ -22,7 +22,7 @@ import { updateEraUniforms } from './eraUniforms';
 import { VegetationSystem } from './vegetation/VegetationSystem';
 import { setTownSite, townSite } from './townMask';
 import { era, isPresent } from '../era/eraState';
-import { createRiverGeometry, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
+import { createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
 import { WorkerPool } from './workerPool';
 
 interface QualityPreset {
@@ -77,6 +77,7 @@ export class TerrainSystem implements Subsystem {
   private waterMaterial!: THREE.MeshStandardMaterial;
   private riverMaterial!: THREE.MeshStandardMaterial;
   private river!: THREE.Mesh;
+  private readonly riverNetwork: THREE.Mesh[] = [];
   private indices!: THREE.BufferAttribute;
   private vegetation: VegetationSystem | null = null;
   private grass: AirfieldGrass | null = null;
@@ -159,6 +160,13 @@ export class TerrainSystem implements Subsystem {
     this.river = new THREE.Mesh(createRiverGeometry(), this.riverMaterial);
     this.river.name = 'river';
     this.waterGroup.add(this.river);
+    // A seeded world's other rivers (riverNetwork.ts), in chunks the renderer can cull.
+    for (const g of createRiverNetworkGeometries()) {
+      const m = new THREE.Mesh(g, this.riverMaterial);
+      m.name = 'river-network';
+      this.riverNetwork.push(m);
+      this.waterGroup.add(m);
+    }
     ctx.scene.add(this.root);
     this.precompileWater(ctx);
 
@@ -224,6 +232,8 @@ export class TerrainSystem implements Subsystem {
     this.waterMaterial.dispose();
     this.riverMaterial.dispose();
     this.river.geometry.dispose();
+    for (const m of this.riverNetwork) m.geometry.dispose();
+    this.riverNetwork.length = 0;
     this.root.removeFromParent();
   }
 
