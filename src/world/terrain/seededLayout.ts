@@ -3,13 +3,16 @@
 // heightfield.ts (coast to the south, range to the north, valley along the runway) and never calls this module.
 //
 // The layout is a few very broad noise fields, turned and shifted by the seed. The home airfield stays at the origin,
-// so the shift is chosen by a short search: the first candidate layout that puts the field on dry lowland, with a
-// coast and high mountains within reach of a light aircraft, wins. Pure (no three.js); every thread runs the same
-// search at load and gets the same answer.
+// so the shift is chosen by a search: the first candidate whose macro fields suit (the field on land, land around it
+// for the generated airfields, a coast or a range within reach) and whose ground takes a runway (homeSiting.ts) wins,
+// and the home field moves there with its own name, heading and elevation (core/world.ts setHomeAirport). Anything
+// goes - a coastal plain, a plateau, a basin among mountains, a hillside - as long as the field could be built and
+// flown. Pure (no three.js); every thread runs the same search at load and gets the same answer.
 
 import { fbm, gnoise, mulberry32 } from './noise';
 import { onWorldSeed, seeded, worldSeed } from '../worldSeed';
-import { AIRPORT } from '../../core/world';
+import { SEED0_HOME, setHomeAirport } from '../../core/world';
+import { siteHome, type HomeSite } from './homeSiting';
 
 /** The macro fields at one point (macroAt). */
 export interface Macro {
@@ -80,26 +83,41 @@ export interface LayoutReport {
   /** Candidate index chosen, and how many were tried. */
   candidate: number;
   tried: number;
-  /** Inland distance at the field, m; nearest coast and nearest high range found on the rings, m (Infinity if none). */
+  /** Inland distance at the field, m; nearest coast and nearest high range found on the rings, km (Infinity if none). */
   inlandAtField: number;
   coastKm: number;
   rangeKm: number;
+  /** The home field's site (homeSiting.ts), null if no candidate took a runway (then seed 0's field stands). */
+  site: HomeSite | null;
 }
 
-let report: LayoutReport = { candidate: -1, tried: 0, inlandAtField: 0, coastKm: Infinity, rangeKm: Infinity };
+let report: LayoutReport = { candidate: -1, tried: 0, inlandAtField: 0, coastKm: Infinity, rangeKm: Infinity, site: null };
 /** The layout search's result for the current seed. */
 export const layoutReport = (): LayoutReport => report;
 
-const CANDIDATES = 160;
+const CANDIDATES = 400;
 const M: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
 
-/** Choose the layout for the current seed: the first candidate that suits the home field, else the best scored. */
+/**
+ * The natural ground of the current layout, for the home field's site (homeSiting.ts). heightfield.ts registers it
+ * at load (it imports this module, so this one cannot import it).
+ */
+let natural: ((north: number, east: number) => number) | null = null;
+export function setLayoutGround(f: (north: number, east: number) => number): void {
+  natural = f;
+}
+
+/**
+ * Choose the layout for the current seed: the first candidate whose macro fields suit (homeScreen) and whose ground
+ * at the origin takes a runway (homeSiting.ts), then move the home field there (core/world.ts setHomeAirport).
+ */
 function chooseLayout(): void {
+  // Seed 0 keeps Fable Regional (and back to it after another seed); the home field moves before anything that
+  // derives from it rebuilds (core/world.ts onHomeAirport runs inside setHomeAirport, before heightfield's water).
+  setHomeAirport(SEED0_HOME);
   if (worldSeed() === 0) return;
   const rnd = mulberry32(seeded(0x1a7b0));
-  let best = -Infinity;
-  let bestL: Layout = { ...L };
-  let bestR: LayoutReport = report;
+  let fallback: { L: Layout; report: LayoutReport } | null = null;
   for (let k = 0; k < CANDIDATES; k++) {
     const a = rnd() * Math.PI * 2;
     L.cos = Math.cos(a);
@@ -107,43 +125,33 @@ function chooseLayout(): void {
     L.offX = (rnd() - 0.5) * 4e6;
     L.offY = (rnd() - 0.5) * 4e6;
     L.sea = -0.12 + 0.16 * rnd();
-    const r = scoreLayout(k);
-    if (r.score > best) {
-      best = r.score;
-      bestL = { ...L };
-      bestR = r.report;
-    }
-    if (r.ok) break;
+    const r = homeScreen(k);
+    if (!r) continue;
+    fallback ??= { L: { ...L }, report: r };
+    const site = natural ? siteHome(natural) : null;
+    if (!site) continue;
+    report = { ...r, site };
+    setHomeAirport({ ...homeName(), elevation: site.elevation, heading: site.heading, ids: site.ids, approachLength: SEEDED_APPROACH });
+    return;
   }
-  Object.assign(L, bestL);
-  report = bestR;
+  // No candidate took a runway (not seen): the first that suited, with seed 0's field on its plain.
+  if (fallback) {
+    Object.assign(L, fallback.L);
+    report = fallback.report;
+  }
 }
 
+/** Protected approach length of a seeded world's home field, m (its approach is checked clear out to 10 km). */
+const SEEDED_APPROACH = 8000;
+
 /**
- * Score the current candidate. Hard needs: the field on dry lowland well inland, no mountains or foothills over it or
- * under its approaches.
- * Wants: a coast 15-70 km away, a high range 15-80 km away, land on most of the ring the generated airfields use.
+ * The macro fields' screen of the current candidate: the field on land, most of the ring the generated airfields use
+ * on land too, and a coast or a high range within reach. Anything else - coast or inland, plain or mountains - goes.
  */
-function scoreLayout(k: number): { ok: boolean; score: number; report: LayoutReport } {
+function homeScreen(k: number): LayoutReport | null {
   macroAt(0, 0, M);
   const inland0 = M.inland;
-  let worstUp = M.uplift;
-  let worstFoot = M.foothill;
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    macroAt(4000 * Math.cos(a), 4000 * Math.sin(a), M);
-    worstUp = Math.max(worstUp, M.uplift);
-    worstFoot = Math.max(worstFoot, M.foothill);
-  }
-  // Both approaches to the home runway, out to the 12 km its approach protection reaches: no foothills under them
-  // (the protection would cut a flat wedge into them).
-  const hc = Math.cos(AIRPORT.runway.heading);
-  const hs = Math.sin(AIRPORT.runway.heading);
-  for (const along of [-12000, -9000, -6000, 6000, 9000, 12000]) {
-    macroAt(along * hc, along * hs, M);
-    worstUp = Math.max(worstUp, M.uplift);
-    worstFoot = Math.max(worstFoot, M.foothill);
-  }
+  if (inland0 < 1500) return null;
   let coast = Infinity;
   let range = Infinity;
   let landRing = 0;
@@ -161,13 +169,22 @@ function scoreLayout(k: number): { ok: boolean; score: number; report: LayoutRep
       }
     }
   }
-  const landFrac = landRing / Math.max(1, ringPts);
-  const okField = inland0 > 9000 && worstUp < 0.02 && worstFoot < 0.35;
-  const okCoast = coast >= 15 && coast <= 70;
-  const okRange = range >= 15 && range <= 80;
-  const ok = okField && okCoast && okRange && landFrac > 0.6;
-  const score = (okField ? 4 : 0) + (okCoast ? 2 : 0) + (okRange ? 2 : 0) + landFrac - worstFoot;
-  return { ok, score, report: { candidate: k, tried: k + 1, inlandAtField: inland0, coastKm: coast, rangeKm: range } };
+  if (landRing / Math.max(1, ringPts) < 0.55) return null;
+  if (coast > 80 && range > 80) return null;
+  return { candidate: k, tried: k + 1, inlandAtField: inland0, coastKm: coast, rangeKm: range, site: null };
+}
+
+const NAME_A = ['Ash', 'Bel', 'Carr', 'Dray', 'Eske', 'Fen', 'Gar', 'Hal', 'Ing', 'Kil', 'Loch', 'Mor', 'Nant', 'Orm', 'Pen', 'Quarr', 'Ros', 'Shel', 'Tarn', 'Ux', 'Vale', 'Wynd', 'Yar', 'Zenn'];
+const NAME_B = ['brook', 'bury', 'caster', 'don', 'field', 'gate', 'haven', 'holme', 'ley', 'mouth', 'port', 'ridge', 'thorpe', 'water'];
+const NAME_KIND = ['Regional', 'Airport', 'Municipal', 'County'];
+
+/** The home field's name and ICAO code for the current seed ('Kilhaven Regional', 'KKLH'). */
+function homeName(): { name: string; icao: string } {
+  const r = mulberry32(seeded(0x40e1));
+  const place = NAME_A[Math.floor(r() * NAME_A.length)] + NAME_B[Math.floor(r() * NAME_B.length)];
+  const kind = NAME_KIND[Math.floor(r() * NAME_KIND.length)];
+  const letters = (place[0] + place.slice(1).replace(/[aeiou]/g, '')).toUpperCase().replace(/^K/, '');
+  return { name: `${place} ${kind}`, icao: ('K' + letters + 'XXX').slice(0, 4) };
 }
 
 chooseLayout();

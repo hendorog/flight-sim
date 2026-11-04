@@ -170,6 +170,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     return null;
   };
+  // First each line's own course and water level (the running minimum of the ground), then the confluences, then
+  // the rest of each valley from its final level.
+  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array }> = [];
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const c = courses[li];
@@ -223,6 +226,24 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       }
       level[i] = Math.max(0, run);
     }
+    pre.push({ north, east, s, area, level });
+  }
+  // --- Confluences. A tributary that arrives lower than the river it joins has cut down through a rim (it drains a
+  // closed basin the routing filled: a big hollow is not a lake, drainage.ts): the river it joins cuts down with it
+  // below the confluence - a gorge - rather than the tributary being held up at the rim, hundreds of metres over its
+  // own valley floor. Tributaries first (they come after the lines they join), so a cut carries on down the network.
+  for (let li = lines.length - 1; li >= 0; li--) {
+    const L = lines[li];
+    if (L.joins < 0) continue;
+    const c = pre[li];
+    const p = pre[L.joins];
+    const mouth = c.level[c.level.length - 1];
+    for (let i = nearestIndex(p, c.north[c.north.length - 1], c.east[c.east.length - 1]); i < p.level.length; i++) p.level[i] = Math.min(p.level[i], mouth);
+  }
+  for (let li = 0; li < lines.length; li++) {
+    const L = lines[li];
+    const { north, east, s, area, level } = pre[li];
+    const count = north.length;
     if (L.joins >= 0) {
       const p = axes[L.joins];
       const at = p.s[nearestIndex(p, north[count - 1], east[count - 1])];
@@ -289,10 +310,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         depth: 0.8 + 2.2 * o.age,
       });
     }
-    const north = Float64Array.from(ch.north);
-    const east = Float64Array.from(ch.east);
-    const valleyS = Float64Array.from(ch.valleyS);
-    const steps = north.length - 1;
+    const north = ch.north;
+    const east = ch.east;
+    const valleyS = ch.valleyS;
+    let steps = north.length - 1;
     const L = lines[li];
     if (L.joins >= 0) {
       // Pull the last stretch onto the parent's channel at the confluence.
@@ -308,6 +329,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         east[k] += de * w;
       }
     }
+    // Nothing may cross itself: a curl the pull onto the parent (or a loop the cutoffs missed) folds in is cut out.
+    untangle(north, east, valleyS);
+    steps = north.length - 1;
     const count = steps + 1;
     const s = new Float64Array(count);
     const level = new Float64Array(count);
@@ -318,7 +342,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       level[k] = k === 0 ? lv : Math.min(level[k - 1], lv);
       halfWidth[k] = sampleAt(a.s, a.halfWidth, valleyS[k]);
     }
-    rivers.push({ north, east, level, halfWidth, s, valleyS });
+    rivers.push({ north: Float64Array.from(north), east: Float64Array.from(east), level, halfWidth, s, valleyS: Float64Array.from(valleyS) });
   }
 
   // --- Indexes: every cell lists the segments (line, index) that can reach a point in it.
@@ -465,12 +489,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
 /** Courses keep this far from the home runway's centreline segment, m (the meander belt then still clears it). */
 const RUNWAY_CLEAR = 2500;
 const RW_HALF = AIRPORT.runway.length / 2;
-const RW_C = Math.cos(AIRPORT.runway.heading);
-const RW_S = Math.sin(AIRPORT.runway.heading);
 
 /** Distance from the home runway's centreline segment, m. */
 function runwayDistance(pn: number, pe: number): number {
   const c = AIRPORT.runway.center;
+  const RW_C = Math.cos(AIRPORT.runway.heading);
+  const RW_S = Math.sin(AIRPORT.runway.heading);
   const dn = pn - c.north;
   const de = pe - c.east;
   const along = Math.max(-RW_HALF, Math.min(RW_HALF, dn * RW_C + de * RW_S));
@@ -480,6 +504,8 @@ function runwayDistance(pn: number, pe: number): number {
 /** Push course points lying near the home runway out to RUNWAY_CLEAR from it (in place). */
 function clearOfRunway(n: number[], e: number[]): void {
   const c = AIRPORT.runway.center;
+  const RW_C = Math.cos(AIRPORT.runway.heading);
+  const RW_S = Math.sin(AIRPORT.runway.heading);
   for (let i = 0; i < n.length; i++) {
     const dn = n[i] - c.north;
     const de = e[i] - c.east;
@@ -607,6 +633,58 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
     for (let j = 1; j <= k; j++) put(from + ((total - from) * j) / k, y0 * (1 - j / k));
   }
   return { north: n, east: e, valleyS: vs, off: os };
+}
+
+/**
+ * Cut every loop where the polyline crosses itself (in place): the points between the two crossing segments go, and
+ * the crossing point joins them. Segments are found through a 200 m grid, so a long channel costs little.
+ */
+function untangle(n: number[], e: number[], vs: number[]): void {
+  const CELL = 200;
+  for (let pass = 0; pass < 8; pass++) {
+    const grid = new Map<number, number[]>();
+    const key = (a: number, b: number): number => (Math.floor(a / CELL) + 32768) * 65536 + (Math.floor(b / CELL) + 32768);
+    for (let i = 0; i < n.length - 1; i++) {
+      const k = key((n[i] + n[i + 1]) / 2, (e[i] + e[i + 1]) / 2);
+      const l = grid.get(k);
+      if (l) l.push(i);
+      else grid.set(k, [i]);
+    }
+    let cut = false;
+    for (let i = 0; i < n.length - 1 && !cut; i++) {
+      const mn = (n[i] + n[i + 1]) / 2, me = (e[i] + e[i + 1]) / 2;
+      let hit = -1;
+      let t = 0;
+      for (let a = -1; a <= 1; a++) {
+        for (let b = -1; b <= 1; b++) {
+          for (const j of grid.get(key(mn + a * CELL, me + b * CELL)) ?? []) {
+            if (j <= i + 1 || j <= hit) continue;
+            // Segment i (p -> q) against segment j (r -> s): p + t (q - p) = r + u (s - r).
+            const px = e[i], py = n[i], qx = e[i + 1] - px, qy = n[i + 1] - py;
+            const rx = e[j], ry = n[j], sx = e[j + 1] - rx, sy = n[j + 1] - ry;
+            const den = qx * sy - qy * sx;
+            if (Math.abs(den) < 1e-12) continue;
+            const tt = ((rx - px) * sy - (ry - py) * sx) / den;
+            const uu = ((rx - px) * qy - (ry - py) * qx) / den;
+            if (tt > 0 && tt < 1 && uu > 0 && uu < 1) {
+              hit = j;
+              t = tt;
+            }
+          }
+        }
+      }
+      if (hit < 0) continue;
+      // Keep 0..i, the crossing point, then hit+1.. (the outermost crossing of segment i, so the whole curl goes).
+      const xn = n[i] + t * (n[i + 1] - n[i]);
+      const xe = e[i] + t * (e[i + 1] - e[i]);
+      const xs = vs[i] + t * (vs[i + 1] - vs[i]);
+      n.splice(i + 1, hit - i, xn);
+      e.splice(i + 1, hit - i, xe);
+      vs.splice(i + 1, hit - i, Math.min(xs, vs[i + 1 + (hit - i)] ?? xs));
+      cut = true;
+    }
+    if (!cut) return;
+  }
 }
 
 /** An oxbow cut off by cutOffLoops: the abandoned loop's centreline, where it lies along the valley, and its age. */

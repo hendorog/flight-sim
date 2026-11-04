@@ -115,15 +115,16 @@ chose the full drainage generator. What any seed but 0 now gets:
 
 | Part | How | Where |
 |---|---|---|
-| Land and sea, mountain ranges, plains and hill country | broad seeded noise fields (continent 170 km, ridge-line ranges 75 km, country 38 km), turned and shifted per seed; the first of up to 160 candidate layouts that puts the field on dry lowland with a coast and a high range 15-80 km away wins | `seededLayout.ts` |
-| Terrain | the same coastal profile, hills, mountains, gullies and small relief as seed 0, laid out by those fields; a level plain at field elevation round the home field, longer along the runway | `heightfield.ts` `seededNaturalHeight` |
+| Land and sea, mountain ranges, plains and hill country | broad seeded noise fields (continent 170 km, ridge-line ranges 75 km, country 38 km), turned and shifted per seed; the first of up to 400 candidate layouts whose macro fields suit (field on land, land round it, a coast or a range within 80 km) and whose ground takes a runway wins | `seededLayout.ts` |
+| The home field | its own name, ICAO code, runway heading and designators, and elevation per seed (Fable Regional stays seed 0's); sited wherever the ground takes a runway: under 70 m of relief beneath the pad, on land, below 1800 m, approaches at both ends under the 4 % trim line out to 10 km, nothing in the circuit above pattern altitude; of the 18 headings that pass, the one with the least earthwork. Everything derived from it (parking, line-up, hold points, PAPIs, painted numbers, signs, ATC, the starts, the pattern altitude) follows | `homeSiting.ts`, `core/world.ts` `setHomeAirport` |
+| Terrain | the same coastal profile, hills, mountains, gullies and small relief as seed 0, laid out by those fields; the home field's pad and approaches levelled as seed 0's are | `heightfield.ts` `seededNaturalHeight` |
 | Drainage | 1 km lattice over +-160 km, priority flood from the sea and the edge, flow accumulation; channels from 45 km² of catchment; lines traced from each mouth, the biggest branch continuing | `drainage.ts` |
 | Lakes | filled hollows 8 m deep or more and 2-80 km², as warped ellipses fitted to the hollow (bigger hollows are drained: their river cuts a gorge through the rim) | `drainage.ts`, `riverNetwork.ts` `networkLakes` |
-| Rivers | courses wandered off the lattice and smoothed; width from catchment; meanders from Ferguson's disturbed periodic model (a damped oscillator at ~18 widths driven by random disturbances: loops of every size and lean) on big lowland rivers, a wander on streams; some of the widest loops cut off as oxbows; levels falling from the source, level through lakes, meeting the parent at the confluence; kept 2.5 km clear of the home runway | `riverNetwork.ts` |
+| Rivers | courses wandered off the lattice and smoothed; width from catchment; meanders from Ferguson's disturbed periodic model (a damped oscillator at ~18 widths driven by random disturbances: loops of every size and lean) on big lowland rivers, a wander on streams; some of the widest loops cut off as oxbows; levels falling from the source, level through lakes, meeting the parent at the confluence (a tributary that drains a closed basin arrives lower than the river it joins: that river is cut down below the confluence, a gorge, instead of the tributary being held at the rim); no channel crossing itself; kept 2.5 km clear of the home runway | `riverNetwork.ts` |
 | Carving and water | every valley, channel and oxbow near a point carved as seed 0's one river is; the river ribbon drawn for the whole network in 10 km chunks, broken where a river crosses a lake | `heightfield.ts` `carveNetwork`, `water.ts` |
 | Cretaceous | the same network as the present day (the era's own river course is seed 0's) | `heightfield.ts` |
 
-Seed 0 is untouched (present guard passes). `tests/terrain/seededWorld.test.ts` sweeps five seeds.
+Seed 0 is untouched (present guard passes; the home field, its layout and markings are seed 0's). `tests/terrain/seededWorld.test.ts` sweeps five seeds.
 
 Cost: about 0.6-1.0 s per thread at load (drainage ~0.3 s, the river network the rest), in the main thread and
 every terrain worker in parallel; a terrain sample costs the same as at seed 0. Page ready with the CPU throttled
@@ -144,4 +145,9 @@ Still open:
   lesson started in a seeded world reloads into it. Lessons generated per seed come later, once the world is
   refined; the route (`training/content/syllabus/route.ts`) names seed 0's lakes and town at fixed places.
 - Roads and villages remain seed 0 only (owner's choice); the town is still sited by `findTownSite`.
+- **The home field** (owner, 2026-11-05: "radical variety is fine"): name, code, runway heading and elevation vary;
+  its position (the origin), runway length and width, apron and buildings, and the latitude do not.
+- **Mountain streams over gullies**: a stream's level comes from the ground along its valley axis, so where its
+  meanders swing over a narrow side gully the water can stand up to ~65 m above the gully floor for a few hundred
+  metres. Found 2026-11-05; not yet addressed (present before the home field moved).
 - The career's seed-7 golden boards change with the world (re-baked; seed 0's boards are unchanged).

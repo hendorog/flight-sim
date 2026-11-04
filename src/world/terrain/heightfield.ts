@@ -12,10 +12,10 @@
 // Every function here is unbounded: any (north, east) gives a valid answer.
 
 import { onWorldSeed, worldSeed } from '../worldSeed';
-import { macroAt, type Macro } from './seededLayout';
+import { macroAt, setLayoutGround, type Macro } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
-import { AIRPORT } from '../../core/world';
+import { AIRPORT, onHomeAirport } from '../../core/world';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage } from './drainage';
 import { buildNetworkHydrology, networkLakes } from './riverNetwork';
@@ -25,21 +25,28 @@ import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
 import { setGeneratedAirfields, type Airfield } from '../airfields';
 import { siteAirfields } from './airfieldSiting';
 
-const ELEV = AIRPORT.elevation;
+// The home field (core/world.ts AIRPORT): its elevation and runway heading change with the world seed.
+let ELEV = AIRPORT.elevation;
 const RW = AIRPORT.runway;
 const HALF_LEN = RW.length / 2;
 const HALF_WID = RW.width / 2;
-const RW_COS = Math.cos(RW.heading);
-const RW_SIN = Math.sin(RW.heading);
+let RW_COS = Math.cos(RW.heading);
+let RW_SIN = Math.sin(RW.heading);
 const FLAT = AIRPORT.flatMargin;
 const BLEND = AIRPORT.blendDistance;
+/** Length of the protected approach corridors beyond each runway end, m. */
+let APPROACH_LENGTH = AIRPORT.approachLength;
+onHomeAirport(() => {
+  ELEV = AIRPORT.elevation;
+  RW_COS = Math.cos(RW.heading);
+  RW_SIN = Math.sin(RW.heading);
+  APPROACH_LENGTH = AIRPORT.approachLength;
+});
 
 /** Sea surface elevation, m MSL. */
 export const SEA_LEVEL = 0;
 /** Approach corridors keep terrain below this gradient from each runway end (3 deg glide path = 0.0524). */
 export const APPROACH_GRADIENT = 0.04;
-/** Length of the protected approach corridors beyond each runway end, m. */
-const APPROACH_LENGTH = 12000;
 
 const smooth = (e0: number, e1: number, x: number): number => {
   const t = clamp((x - e0) / (e1 - e0), 0, 1);
@@ -267,11 +274,15 @@ export function naturalHeight(north: number, east: number): number {
 }
 
 const macro: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
+// The home field's site search (seededLayout.ts, homeSiting.ts) looks at the ground as it will be, eroded ridges and
+// all (in the mountains the erosion adds hundreds of metres the approach trimming would otherwise cut into walls).
+setLayoutGround((n, e) => seededNaturalHeight(n, e));
 
 /**
  * naturalHeight in a seeded world: the same coastal profile, hills, mountains, gullies and small-scale relief as
  * today's world, but laid out by the seed's macro fields (seededLayout.ts) instead of the hand-shaped coast, range
- * and valley. A low plain at the airfield's elevation surrounds the home field so it never sits on a slope.
+ * and valley. The home field takes the ground as it finds it (homeSiting.ts chose a site that takes a runway); only
+ * its pad and approaches are levelled, in sampleTerrain.
  */
 function seededNaturalHeight(north: number, east: number, detail = true): number {
   macroAt(north, east, macro);
@@ -305,23 +316,10 @@ function seededNaturalHeight(north: number, east: number, detail = true): number
     if (vn * vn + ve * ve < b * b) h = volcanoMerge(h, volcanoHeight(north, east, V));
   }
 
-  // The home plain: level ground at the field's elevation, merging into the country around within ~9 km.
-  // Longer along the runway, so its approaches lie over the plain.
-  const dn = north - RW.center.north;
-  const de = east - RW.center.east;
-  const pa = (dn * RW_COS + de * RW_SIN) / 1.8;
-  const pc = -dn * RW_SIN + de * RW_COS;
-  const r0 = Math.sqrt(pa * pa + pc * pc);
-  const plain = 1 - smooth(3000, 4000 + 5000 * (0.8 + 0.4 * fbm(east / 9000 + 4.4, north / 9000 - 1.3, 2)), r0);
-  if (plain > 0) {
-    const floor = ELEV + 7 * fbm(east / 1400, north / 1400, 3);
-    h += (floor - h) * plain;
-  }
-
   if (!detail) return h;
   const rough = 1.2 + 0.004 * clamp(h, 0, 3000);
   h += rough * (2.2 * gnoise(east / 180 + 0.3, north / 180 + 0.7) + 0.8 * gnoise(east / 60 - 4.1, north / 60 + 2.2));
-  const rugged = clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN))) * (1 - plain);
+  const rugged = clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN)));
   if (rugged > 0) {
     const ridge = 1 - Math.abs(gnoise(east / 23 + 7.7, north / 23 - 3.1));
     h += rugged * (2.4 * ridge * ridge + 0.7 * gnoise(east / 9 - 1.3, north / 9 + 5.9));
@@ -485,8 +483,13 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const v = valleyNear[j];
     const d = v.dist;
     const f = v.floodplain;
-    const carved = smin(h, v.level + valleyProfile(d, f), 4);
-    h += (carved - h) * (1 - smooth(f + v.influence * 0.75, f + v.influence, d));
+    // Where the ground stands far above the valley's walls at the edge of its reach (a river through mountains), the
+    // walls climb to it across the reach - a gorge - instead of the blend below raising a sheer wall at the edge.
+    const I = v.influence;
+    const excess = Math.max(0, h - v.level - valleyProfile(f + I, f));
+    const t = clamp((d - f) / I, 0, 1);
+    const carved = smin(h, v.level + valleyProfile(d, f) + excess * t * t, 4);
+    h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
   }
 
   // Oxbow lakes, as carveRiver cuts them (not under a lake's water).
@@ -516,7 +519,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const w = c.halfWidth * (1 - smooth(0, 60, c.beyondSource));
     if (w <= 0.5) continue;
     let carved = smin(h, c.level + channelProfile(d, w), 3);
-    if (d > w && d < w + 40 && c.level > 0.5) {
+    // A natural levee is a few metres at most: never a bank raised far over the plain (a wall).
+    if (d > w && d < w + 40 && c.level > 0.5 && c.level - carved < 4) {
       const levee = c.level + 0.3 + 0.03 * (d - w);
       carved += (Math.max(carved, levee) - carved) * (1 - smooth(w + 25, w + 40, d));
     }

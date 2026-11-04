@@ -29,11 +29,14 @@
 //     matches, instead of reading 'none' halfway round the turn.
 
 import { NM } from '../../core/math';
-import { AIRPORT, runwayCoords } from '../../core/world';
+import { AIRPORT, onHomeAirport, runwayCoords } from '../../core/world';
 import type { CircuitLeg } from '../types';
 import { angleDiff, wrap180 } from './angles';
 
-const RWY_HDG = (AIRPORT.runway.heading * 180) / Math.PI; // 070
+let RWY_HDG = (AIRPORT.runway.heading * 180) / Math.PI; // 070 at seed 0
+onHomeAirport(() => {
+  RWY_HDG = (AIRPORT.runway.heading * 180) / Math.PI;
+});
 const HALF_LENGTH = AIRPORT.runway.length / 2;
 const HALF_WIDTH = AIRPORT.runway.width / 2;
 

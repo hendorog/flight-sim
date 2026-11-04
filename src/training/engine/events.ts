@@ -29,7 +29,7 @@
 import { C172 } from '../../core/c172';
 import { FT, KT, quat, RAD } from '../../core/math';
 import type { AircraftState } from '../../core/types';
-import { AIRPORT, runwayCoords } from '../../core/world';
+import { AIRPORT, onHomeAirport, runwayCoords } from '../../core/world';
 import { AIM_POINT } from '../../sim/scenarios';
 import { isOnRunway } from '../../world/airport/layout';
 import { angleDiff, wrap180 } from '../geo/angles';
@@ -37,7 +37,10 @@ import type { LandingData, SignalFrame, TouchdownData } from '../types';
 import type { TrainingBus } from './bus';
 
 const HALF_LENGTH = AIRPORT.runway.length / 2;
-const RWY_HDG_DEG = AIRPORT.runway.heading * RAD;
+let RWY_HDG_DEG = AIRPORT.runway.heading * RAD;
+onHomeAirport(() => {
+  RWY_HDG_DEG = AIRPORT.runway.heading * RAD;
+});
 /** aglFt of the reference point with the aircraft resting on its wheels (core/c172.ts: 1.25 m). */
 export const REST_AGL_FT = 1.25 / FT;
 

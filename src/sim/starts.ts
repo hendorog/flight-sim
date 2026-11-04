@@ -150,7 +150,7 @@ function groundSpot(spot: GroundSpot): NamedPosition {
     case 'holdA2':
       return find(HOLD_SHORT.find((h) => h.name === 'A2'));
     case 'lineup07':
-      return find(LINE_UP.find((l) => l.runway === '07'));
+      return find(LINE_UP.find((l) => l.end === 0));
   }
 }
 

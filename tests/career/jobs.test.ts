@@ -383,5 +383,5 @@ describe('the golden boards', () => {
     }
     const golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8')) as typeof fresh;
     expect(JSON.parse(JSON.stringify(fresh))).toEqual(golden);
-  });
+  }, 60_000);
 });

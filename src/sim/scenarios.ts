@@ -10,7 +10,7 @@
 import { FT, KT, NM, DEG, clamp, wrapTwoPi } from '../core/math';
 import type { ScenarioId } from '../core/context';
 import type { ControlPatch, Environment, InitialConditions } from '../core/types';
-import { AIRPORT, runwayDirection, runwayThreshold } from '../core/world';
+import { AIRPORT, onHomeAirport, runwayDirection, runwayThreshold } from '../core/world';
 import { C172S_GEOMETRY } from '../aircraft/c172s/geometry';
 import { C172S_SIM } from '../aircraft/c172s/sim';
 import { C172S_CONTROLS } from '../aircraft/c172s/systems';
@@ -29,7 +29,10 @@ import type { LoadingRequest } from '../physics/interfaces';
 export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 'cruise', 'downwind'];
 
 /** Pattern altitude, m MSL (1000 ft above the field). */
-export const PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
+export let PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
+onHomeAirport(() => {
+  PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
+});
 /** Downwind leg offset from the runway centreline, m (left-hand traffic for 07: north-west of the runway). */
 export const DOWNWIND_OFFSET = 900;
 /**
@@ -219,7 +222,7 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
   if (field && (id === 'runway' || id === 'apron' || id === 'final')) return fieldScenario(id, field, env, def);
   switch (id) {
     case 'runway': {
-      const p = LINE_UP.find((l) => l.runway === '07')!;
+      const p = LINE_UP.find((l) => l.end === 0)!;
       return {
         id,
         title: isPresent() ? 'Runway 07, ready for take-off' : 'The Flats, heading 070, ready for take-off',

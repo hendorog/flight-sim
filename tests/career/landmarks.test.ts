@@ -14,6 +14,7 @@ import { BOARD_RULES, type JobStripModel } from '../../src/career/types';
 import { stripTargetText } from '../../src/career/ui/strip';
 import { WAYPOINTS } from '../../src/training/content/syllabus/route';
 import { airfields } from '../../src/world/airfields';
+import { placeName } from '../../src/career/geo';
 import { findTownSite } from '../../src/world/airport/valley';
 import { setEra } from '../../src/world/era/eraState';
 import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
@@ -89,7 +90,9 @@ describe.each([0, 7])('the rules at seed %i', (seed) => {
     const before = townSite();
     const town = atSeed(seed).find((l) => l.kind === 'town')!;
     const site = findTownSite(terrainHeight)!;
-    expect(town.name).toBe('Fable town');
+    // Named after the home field's place (a seeded world's own: 'Penhaven town' at seed 7).
+    expect(town.name).toBe(`${placeName(airfields()[0])} town`);
+    if (seed !== 0) expect(town.name).not.toBe('Fable town');
     expect(Math.hypot(town.north - site.north, town.east - site.east)).toBeLessThanOrEqual(AREA_NUDGE.town * site.radius);
     expect(townSite()).toBe(before);
   });

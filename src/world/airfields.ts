@@ -5,7 +5,7 @@
 // heightfield.ts sites the generated fields against the natural terrain at load and again when the seed changes,
 // and hands them here (setGeneratedAirfields); nothing else writes the list.
 
-import { AIRPORT } from '../core/world';
+import { AIRPORT, onHomeAirport } from '../core/world';
 import { isPresent } from './era/eraState';
 
 export type AirfieldKind = 'home' | 'grass' | 'sealed';
@@ -53,11 +53,22 @@ export const HOME_AIRFIELD: Airfield = {
   width: AIRPORT.runway.width,
   flatMargin: AIRPORT.flatMargin,
   blend: AIRPORT.blendDistance,
-  approachLength: 12000,
+  approachLength: AIRPORT.approachLength,
   circuit: 'left',
   frequency: 118.3,
   apronAlong: 0,
 };
+
+// Another world's home field (core/world.ts setHomeAirport): the same object, its values brought up to date.
+onHomeAirport(() => {
+  const h = HOME_AIRFIELD;
+  h.code = AIRPORT.icao;
+  h.name = AIRPORT.name;
+  h.elevation = AIRPORT.elevation;
+  h.heading = AIRPORT.runway.heading;
+  h.ids = AIRPORT.runway.ids;
+  h.approachLength = AIRPORT.approachLength;
+});
 
 let generated: readonly Airfield[] = [];
 

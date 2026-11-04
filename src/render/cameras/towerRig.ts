@@ -14,17 +14,23 @@
 import * as THREE from 'three';
 import { clamp, type Vec3 } from '../../core/math';
 import { nedToThree } from '../../core/frames';
-import { AIRPORT } from '../../core/world';
+import { AIRPORT, onHomeAirport, SEED0_HOME } from '../../core/world';
 import { C172S_CAMERA, type CameraAircraft } from './aircraft';
 import { fitFov, lookAtQuat, smoothing, WORLD_UP, type AircraftPose, type CameraPose } from './pose';
 import type { CameraRig } from './rig';
 
 /** Fallback tower cab when no position is given: just north-west of the apron, 25 m above the field. */
-export const DEFAULT_TOWER_NED: Vec3 = {
-  x: AIRPORT.apron.north + 60,
-  y: AIRPORT.apron.east - 70,
-  z: -(AIRPORT.elevation + 25),
-};
+export const DEFAULT_TOWER_NED: Vec3 = { x: 0, y: 0, z: 0 };
+/** The fallback cab beside the apron, turned with the runway (seed 0: 60 m north and 70 m west of the apron centre). */
+function placeDefaultTower(): void {
+  const t = AIRPORT.runway.heading - SEED0_HOME.heading;
+  const c = Math.cos(t), s = Math.sin(t);
+  DEFAULT_TOWER_NED.x = AIRPORT.apron.north + (t === 0 ? 60 : 60 * c + 70 * s);
+  DEFAULT_TOWER_NED.y = AIRPORT.apron.east + (t === 0 ? -70 : 60 * s - 70 * c);
+  DEFAULT_TOWER_NED.z = -(AIRPORT.elevation + 25);
+}
+placeDefaultTower();
+onHomeAirport(placeDefaultTower);
 
 /**
  * Distance of the observer from the cab centre, m: past the catwalk railing (radius ~4.35 m in

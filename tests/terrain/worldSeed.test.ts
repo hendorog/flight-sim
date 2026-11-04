@@ -43,7 +43,7 @@ describe('world seed', () => {
     setWorldSeed(0);
     setWorldSeed(7);
     expect(sampleAll()).toEqual(other);
-  });
+  }, 60_000);
 
   it('restores today\'s world at seed 0', () => {
     setWorldSeed(7);

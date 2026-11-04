@@ -116,7 +116,7 @@ export function fieldAt(north: number, east: number, fields: readonly Airfield[]
 
 /** A short place name for titles: a field's name without "Aerodrome", "Airstrip" or "Regional" ("Holthurst"). */
 export function placeName(f: Airfield): string {
-  return f.name.replace(/\s+(Aerodrome|Airstrip|Regional|Airfield|Airport)$/u, '');
+  return f.name.replace(/\s+(Aerodrome|Airstrip|Regional|Airfield|Airport|Municipal|County)$/u, '');
 }
 
 /** The eight-point compass name of a true bearing, deg ("north-east"). */

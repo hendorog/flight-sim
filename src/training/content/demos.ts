@@ -19,7 +19,7 @@
 // content/lines.ts may override.
 
 import { DEG, FT } from '../../core/math';
-import { AIRPORT } from '../../core/world';
+import { AIRPORT, onHomeAirport } from '../../core/world';
 import { PATTERN_ALTITUDE } from '../../sim/scenarios';
 import { all, any, eq, ge, gt, held, le, lt, near, sig, speechIdle, v, vs } from '../engine/dsl';
 import type { DemoAp, DemoScript, DemoSegment, InlineCue, LineTable, Pred } from '../types';
@@ -27,7 +27,10 @@ import type { DemoAp, DemoScript, DemoSegment, InlineCue, LineTable, Pred } from
 /** Variables every script may refer to: captured from the telemetry frame when the script starts. */
 export const DEMO_START_VARS = ['demo.altFt', 'demo.hdgDeg', 'demo.kias', 'demo.aglFt', 'demo.throttle', 'demo.flapsDeg'] as const;
 
-const RWY_HDG = AIRPORT.runway.heading;
+let RWY_HDG = AIRPORT.runway.heading;
+onHomeAirport(() => {
+  RWY_HDG = AIRPORT.runway.heading;
+});
 /** Runway 07 headings, DG degrees (no magnetic variation in this world). */
 const HDG_RWY = 70;
 const HDG_CROSSWIND = 340;

@@ -15,7 +15,7 @@
 
 import { DEG, FT, KT, clamp, wrapPi } from '../core/math';
 import { clearEngineControl, applyControls, type AircraftState, type ControlInputs } from '../core/types';
-import { AIRPORT, runwayCoords } from '../core/world';
+import { AIRPORT, onHomeAirport, runwayCoords } from '../core/world';
 import { C172S_GEOMETRY } from '../aircraft/c172s/geometry';
 import { C172S_REFERENCE } from '../aircraft/c172s/reference';
 import { C172S_SIM } from '../aircraft/c172s/sim';
@@ -47,6 +47,10 @@ export interface AutoflightRunway {
 }
 
 export const HOME_RUNWAY: AutoflightRunway = { heading: RWY.heading, halfLength: HALF_LENGTH, elevation: AIRPORT.elevation, coords: runwayCoords };
+onHomeAirport(() => {
+  HOME_RUNWAY.heading = RWY.heading;
+  HOME_RUNWAY.elevation = AIRPORT.elevation;
+});
 /** Time constant of the drift-angle filter, s. */
 const DRIFT_TAU = 3;
 

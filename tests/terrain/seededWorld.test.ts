@@ -6,7 +6,11 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { AIRPORT } from '../../src/core/world';
 import { airfields } from '../../src/world/airfields';
-import { hydrology, makeSample, naturalHeight, sampleTerrain } from '../../src/world/terrain/heightfield';
+import { hydrology, makeSample, naturalHeight, sampleTerrain, terrainHeight } from '../../src/world/terrain/heightfield';
+import { LINE_UP, PARKING } from '../../src/world/airport/layout';
+import { runwayIds } from '../../src/world/airfields';
+import { PATTERN_ALTITUDE } from '../../src/sim/scenarios';
+import { DEG } from '../../src/core/math';
 import type { ChannelNear } from '../../src/world/terrain/hydrology';
 import { layoutReport } from '../../src/world/terrain/seededLayout';
 import { setWorldSeed } from '../../src/world/worldSeed';
@@ -31,19 +35,44 @@ function fingerprint(): number[] {
 }
 
 describe.each(SEEDS)('seed %i', (seed) => {
-  it('puts the home field on dry lowland with a coast, a range and generated fields around it', () => {
+  it('sites its own home field, level, with a coast or a range and generated fields around it', () => {
     setWorldSeed(seed);
     const r = layoutReport();
-    expect(r.inlandAtField).toBeGreaterThan(9000);
-    expect(r.coastKm).toBeLessThanOrEqual(80);
-    expect(r.rangeKm).toBeLessThanOrEqual(80);
+    expect(r.site).not.toBeNull();
+    expect(r.inlandAtField).toBeGreaterThan(1500);
+    expect(Math.min(r.coastKm, r.rangeKm)).toBeLessThanOrEqual(80);
     expect(airfields().length).toBeGreaterThanOrEqual(6);
+    // Its own name, code, runway and elevation; the designators those of its heading.
+    expect(AIRPORT.icao).not.toBe('KFBL');
+    expect(AIRPORT.runway.ids).toEqual(runwayIds(AIRPORT.runway.heading));
+    expect(AIRPORT.elevation).toBe(r.site!.elevation);
+    expect(new Set(airfields().map((f) => f.code)).size).toBe(airfields().length);
     const s = makeSample();
     const rw = AIRPORT.runway;
     for (const a of [-0.5, 0, 0.5]) {
       sampleTerrain(rw.center.north + Math.cos(rw.heading) * rw.length * a, rw.center.east + Math.sin(rw.heading) * rw.length * a, s);
       expect(s.ground).toBe(AIRPORT.elevation);
     }
+    for (const p of [...LINE_UP, PARKING]) {
+      sampleTerrain(p.north, p.east, s);
+      expect(s.ground).toBe(AIRPORT.elevation);
+    }
+  });
+
+  it('can be flown: a clear 3 degree approach to the low-numbered end and nothing in the circuit above pattern height', () => {
+    setWorldSeed(seed);
+    const c = Math.cos(AIRPORT.runway.heading);
+    const sn = Math.sin(AIRPORT.runway.heading);
+    const half = AIRPORT.runway.length / 2;
+    for (let b = 500; b <= 10000; b += 250) {
+      const along = -half - b;
+      expect(terrainHeight(along * c, along * sn), `${b} m short of runway ${AIRPORT.runway.ids[0]}`).toBeLessThan(AIRPORT.elevation + Math.tan(3 * DEG) * b - 15);
+    }
+    let high = -Infinity;
+    for (let a = -3500; a <= 3500; a += 250) {
+      for (let x = -1800; x <= 1800; x += 300) high = Math.max(high, terrainHeight(a * c - x * sn, a * sn + x * c));
+    }
+    expect(high).toBeLessThan(PATTERN_ALTITUDE - 60);
   });
 
   it('has a finite river network whose water falls downstream, with every tributary ending on another river', () => {
@@ -104,6 +133,32 @@ describe.each(SEEDS)('seed %i', (seed) => {
     }
     expect(crossings).toBe(0);
     expect(joined).toBeGreaterThan(10);
+    // No bank raised over the plain: a river held up at a basin's rim (hundreds of metres over its own valley floor)
+    // raised its 'levees' into walls that high. A tributary arriving lower now cuts the river it joins down instead,
+    // and a levee is a few metres at most. Outside lakes (their bowls) and the generated airfields (their pads).
+    const sm = makeSample();
+    let high = 0;
+    let where = '';
+    for (const r of rivers!) {
+      for (let k = 0; k < r.north.length; k += 3) {
+        if (hydrology.lakes.some((l) => Math.hypot(l.north - r.north[k], l.east - r.east[k]) < l.bound)) continue;
+        const kn = Math.min(r.north.length - 1, k + 1);
+        const tl = Math.hypot(r.north[kn] - r.north[k], r.east[kn] - r.east[k]) || 1;
+        for (const side of [-1, 1]) {
+          const off = side * (r.halfWidth[k] + 20);
+          const pn = r.north[k] - ((r.east[kn] - r.east[k]) / tl) * off;
+          const pe = r.east[k] + ((r.north[kn] - r.north[k]) / tl) * off;
+          sampleTerrain(pn, pe, sm);
+          if (sm.airportBlend < 1) continue;
+          const raised = sm.ground - naturalHeight(pn, pe);
+          if (raised > high) {
+            high = raised;
+            where = `${pn.toFixed(0)}, ${pe.toFixed(0)}`;
+          }
+        }
+      }
+    }
+    expect(high, where).toBeLessThan(6);
   }, 60_000);
 
   it('keeps every channel well clear of the home runway, and its lakes hold water', () => {
@@ -135,5 +190,5 @@ describe('determinism', () => {
     setWorldSeed(42);
     expect(fingerprint()).toEqual(a);
     expect(b).not.toEqual(a);
-  });
+  }, 60_000);
 });

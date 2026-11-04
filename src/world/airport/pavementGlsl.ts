@@ -26,6 +26,7 @@ import {
   TAXIWAYS,
   type LocalRect,
 } from './layout';
+import { AIRPORT } from '../../core/world';
 
 /** Albedo of the white runway marking paint (fresh-to-maintained traffic paint with glass beads: 0.7-0.85). */
 export const RUNWAY_PAINT_ALBEDO = 0.8;
@@ -131,14 +132,40 @@ float digitDist(int n, vec2 q) {
     d = min(d, segDist(q, ${v2(e2[0], e2[1])}, vec2(-XA, -YA)));
     return min(d, segDist(q, vec2(-XA, -YA), vec2(XA, -YA)));
   }
-  // 5
   const float YM = ${f(ym)};
-  float d = segDist(q, vec2(XA, YA), vec2(-XA, YA));
-  d = min(d, segDist(q, vec2(-XA, YA), vec2(-XA, YM)));
-  d = min(d, segDist(q, vec2(-XA, YM), vec2(0.0, YM)));
-  d = min(d, arcDist(q, vec2(0.0, YM - XA), XA, 0.0, 1.5708));
-  d = min(d, segDist(q, vec2(XA, YM - XA), vec2(XA, -YA + XA)));
-  return min(d, arcDist(q, vec2(0.0, -YA + XA), XA, -2.75, 0.0));
+  if (n == 5) {
+    float d = segDist(q, vec2(XA, YA), vec2(-XA, YA));
+    d = min(d, segDist(q, vec2(-XA, YA), vec2(-XA, YM)));
+    d = min(d, segDist(q, vec2(-XA, YM), vec2(0.0, YM)));
+    d = min(d, arcDist(q, vec2(0.0, YM - XA), XA, 0.0, 1.5708));
+    d = min(d, segDist(q, vec2(XA, YM - XA), vec2(XA, -YA + XA)));
+    return min(d, arcDist(q, vec2(0.0, -YA + XA), XA, -2.75, 0.0));
+  }
+  // The other designator digits in the same strokes (a seeded world's runway may be any heading, worldSeed.ts).
+  if (n == 1) return min(segDist(q, vec2(0.0, -YA), vec2(0.0, YA)), segDist(q, vec2(0.0, YA), vec2(-0.6 * XA, YA - 0.7 * XA)));
+  if (n == 3) {
+    float d = segDist(q, vec2(-XA, YA), vec2(XA, YA));
+    d = min(d, segDist(q, vec2(XA, YA), vec2(0.0, YM)));
+    d = min(d, arcDist(q, vec2(0.0, YM - XA), XA, 0.0, 1.5708));
+    d = min(d, segDist(q, vec2(XA, YM - XA), vec2(XA, -YA + XA)));
+    return min(d, arcDist(q, vec2(0.0, -YA + XA), XA, -2.75, 0.0));
+  }
+  if (n == 4) {
+    const float YB = -0.3 * YA;
+    float d = segDist(q, vec2(0.45 * XA, -YA), vec2(0.45 * XA, YA));
+    d = min(d, segDist(q, vec2(0.45 * XA, YA), vec2(-XA, YB)));
+    return min(d, segDist(q, vec2(-XA, YB), vec2(XA, YB)));
+  }
+  if (n == 8) {
+    const float R2 = 0.85 * XA;
+    float d = abs(segDist(q, vec2(0.0, -YA + XA), vec2(0.0, YM - XA)) - XA);
+    return min(d, abs(segDist(q, vec2(0.0, YM + R2), vec2(0.0, YA - R2)) - R2));
+  }
+  // 6, and 9 (a 6 turned half round)
+  vec2 r = n == 9 ? -q : q;
+  float d = abs(segDist(r, vec2(0.0, -YA + XA), vec2(0.0, YM - XA)) - XA);
+  d = min(d, segDist(r, vec2(-XA, YM - XA), vec2(-XA, YA - XA)));
+  return min(d, arcDist(r, vec2(0.0, YA - XA), XA, 0.4, 3.1416));
 }
 `;
 }
@@ -178,6 +205,7 @@ export function runwayGlsl(): string {
   const t = m.threshold;
   const tx0 = t.outerEdge - (t.count - 1) * t.stripeWidth; // 4 stripes per side, as a pulse train from tx0
   const d = m.designation;
+  const ids = AIRPORT.runway.ids;
   const digitCx = d.gap / 2 + d.digitWidth / 2;
   const tdz = m.touchdownZone;
   const tdzGroups = tdz.groups
@@ -214,10 +242,10 @@ float runwayPaint(vec2 p, vec2 w) {
                      * band(ax, ${f(m.aimingPoint.innerX)}, ${f(m.aimingPoint.innerX + m.aimingPoint.width)}, w.y));
     // Touchdown zone bars.
     ${tdzGroups}
-    // Designation: "07" at the west end, "25" at the east end, read from the approach.
+    // Designation, read from the approach: the low-numbered end ("07" at seed 0) at -u, the other at +u.
     if (s > ${f(d.start - 1)} && s < ${f(d.start + d.height + 1)} && ax < ${f(digitCx + d.digitWidth)}) {
       bool left = x < 0.0;
-      int digit = endSign < 0.0 ? (left ? 0 : 7) : (left ? 2 : 5);
+      int digit = endSign < 0.0 ? (left ? ${ids[0][0]} : ${ids[0][1]}) : (left ? ${ids[1][0]} : ${ids[1][1]});
       vec2 q = vec2(x - (left ? ${f(-digitCx)} : ${f(digitCx)}), s - ${f(d.start + d.height / 2)});
       float sd = digitDist(digit, q) - ${f(d.stroke / 2)};
       paint = max(paint, clamp(0.5 - sd / (0.5 * (w.x + w.y)), 0.0, 1.0));
