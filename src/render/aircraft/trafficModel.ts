@@ -24,11 +24,17 @@ export interface TrafficModel {
   readonly id: string;
   readonly near: readonly ModelPart[];
   readonly far: readonly ModelPart[];
+  /**
+   * A shadow caster for the near and far models: the surfaces clustered coarser still (SHADOW_CELL) and pulled
+   * SHADOW_INSET inside, position only. Drawn with shadowCaster(): its back faces go into the shadow map, so the
+   * coarse shape does not darken the lit side of the detailed skin. A few thousand triangles per cascade.
+   */
+  readonly shadow: THREE.BufferGeometry;
   /** Lamp positions, model space (absent: the type has none). */
   readonly lamps: Partial<Record<LampVisualDef['id'], THREE.Vector3>>;
   /** Height of the reference point above the ground standing on its wheels, m. */
   readonly restHeight: number;
-  readonly triangles: { near: number; far: number };
+  readonly triangles: { near: number; far: number; shadow: number };
 }
 
 /** Cluster size of the far model, m: an aircraft drawn with it is under ~30 px across. */
@@ -36,6 +42,9 @@ const FAR_CELL = 0.09;
 /** Widest texture of the near model's livery and surface detail, and of its glazing and lining masks, px. */
 const NEAR_TEXTURE = 1024;
 const NEAR_MASK = 512;
+/** The shadow caster's cluster size, and how far inside the surface it lies, m. */
+const SHADOW_CELL = 0.2;
+const SHADOW_INSET = 0.015;
 /** The glazing seen from outside at a distance: dark, a little blue. */
 const GLASS = new THREE.Color(0.035, 0.045, 0.06);
 
@@ -110,7 +119,17 @@ async function build(def: AirframeVisualDef): Promise<TrafficModel> {
   const lamps: TrafficModel['lamps'] = {};
   for (const l of def.lamps) lamps[l.id] = frd(l.pos[0], l.pos[1], l.pos[2]);
   const tris = (parts: readonly ModelPart[]) => parts.reduce((n, p) => n + (p.geometry.index ? p.geometry.index.count : p.geometry.getAttribute('position').count) / 3, 0);
-  return { id: def.id, near, far, lamps, restHeight: def.shadow.restHeight ?? 1.25, triangles: { near: tris(near), far: tris(far) } };
+  const coarse = cluster(farParts, SHADOW_CELL);
+  const shadow = new THREE.BufferGeometry();
+  const fp = coarse.getAttribute('position');
+  const fn = coarse.getAttribute('normal');
+  const inset = new Float32Array(fp.count * 3);
+  for (let i = 0; i < fp.count; i++) for (let k = 0; k < 3; k++) inset[i * 3 + k] = fp.getComponent(i, k) - fn.getComponent(i, k) * SHADOW_INSET;
+  shadow.setAttribute('position', new THREE.BufferAttribute(inset, 3));
+  shadow.setIndex(coarse.index!.clone());
+  shadow.computeBoundingSphere();
+  coarse.dispose();
+  return { id: def.id, near, far, shadow, lamps, restHeight: def.shadow.restHeight ?? 1.25, triangles: { near: tris(near), far: tris(far), shadow: shadow.index!.count / 3 } };
 }
 
 /** Visible, as are all its parents up to the root. */
@@ -308,4 +327,25 @@ function downsample(t: THREE.DataTexture, maxWidth: number): THREE.Texture {
   d.offset.copy(t.offset);
   d.needsUpdate = true;
   return d;
+}
+
+const casterMaterial = new THREE.MeshBasicMaterial({ name: 'trafficShadowCaster', colorWrite: false, depthWrite: false });
+
+/**
+ * Make an instanced mesh of a model's shadow geometry a shadow caster only: it draws nothing in the main pass (its
+ * draw range is emptied before each main-pass draw and restored for the shadow pass, as the player's shadow
+ * proxies, shadowProxy.ts). Instanced meshes only: the material is shared, and a plain mesh using it as well would
+ * re-key its program on every draw.
+ */
+export function shadowCaster(mesh: THREE.InstancedMesh): THREE.InstancedMesh {
+  mesh.material = casterMaterial;
+  mesh.castShadow = true;
+  mesh.receiveShadow = false;
+  mesh.onBeforeRender = function (this: THREE.Mesh) {
+    this.geometry.setDrawRange(0, 0);
+  };
+  mesh.onBeforeShadow = function (this: THREE.Mesh) {
+    this.geometry.setDrawRange(0, Infinity);
+  };
+  return mesh;
 }

@@ -49,6 +49,7 @@ export function buildTrafficMesh(type: TrafficType): TrafficMesh {
       for (const part of model.far) {
         const m = new THREE.Mesh(part.geometry, part.material);
         m.name = 'trafficFar';
+        m.castShadow = true;
         root.add(m);
       }
       const L = model.lamps;

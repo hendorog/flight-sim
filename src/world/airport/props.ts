@@ -1,12 +1,12 @@
 // Parked general-aviation aircraft and apron vehicles. The aircraft are the AI traffic's own types (Cessna 172S and
 // 152, Piper Tomahawk, Diamond DA20), each its real exterior as a static model (render/aircraft/trafficModel.ts):
-// instanced per material up close and as the type's far model beyond PARKED_DETAIL, chosen per aircraft from the
+// instanced per material up close and as the type's far model beyond PARKED_DETAIL.range, chosen per aircraft from the
 // camera's distance (ParkedAircraft.update). Built asynchronously; the vehicles at once.
 
 import * as THREE from 'three';
 import type { AircraftId } from '../../core/types';
 import { loadAirframeVisual } from '../../aircraft/visualLoader';
-import { trafficModel, type ModelPart } from '../../render/aircraft/trafficModel';
+import { shadowCaster, trafficModel, type ModelPart } from '../../render/aircraft/trafficModel';
 import { boxGeo, cylGeo, GeometryBatch, placement } from './geom';
 import { BUILDINGS, FUEL_ISLAND, nedToLocal, PARKING, PARKING_SPOTS, type ParkingSpot } from './layout';
 import { rng } from './noise';
@@ -68,7 +68,7 @@ export function parkedPlacements(): ParkedPlacement[] {
 }
 
 /** Parked aircraft are drawn in full detail within this distance of the camera (scaled by its zoom), m. */
-const PARKED_DETAIL = 220;
+export const PARKED_DETAIL = { range: 50 };
 const TAN_30 = Math.tan(Math.PI / 6);
 
 /** One type's parked aircraft: an instanced mesh per material of its near model, and one of its far model. */
@@ -77,8 +77,11 @@ interface ParkedType {
   centres: THREE.Vector3[];
   near: THREE.InstancedMesh[];
   far: THREE.InstancedMesh;
-  /** Which are drawn in full detail now ('1' per such aircraft), so the instances are only rewritten on a change. */
+  caster: THREE.InstancedMesh;
+  /** Per aircraft '1' full detail, '0' far model, '-' out of view: the instances are only rewritten on a change. */
   split: string;
+  /** Bounding radius of one aircraft, m. */
+  radius: number;
 }
 
 /** The parked aircraft (in the apron's local frame; their models are built asynchronously). */
@@ -86,6 +89,9 @@ export class ParkedAircraft {
   readonly group = new THREE.Group();
   private readonly types: ParkedType[] = [];
   private readonly local = new THREE.Vector3();
+  private readonly frustum = new THREE.Frustum();
+  private readonly viewProj = new THREE.Matrix4();
+  private readonly sphere = new THREE.Sphere();
   private disposed = false;
 
   constructor(placements: readonly ParkedPlacement[] = parkedPlacements()) {
@@ -104,7 +110,7 @@ export class ParkedAircraft {
       const instanced = (part: ModelPart, material: THREE.Material, name: string) => {
         const im = new THREE.InstancedMesh(part.geometry, material, list.length);
         im.name = name;
-        im.castShadow = im.receiveShadow = true;
+        im.receiveShadow = true;
         im.count = 0;
         this.group.add(im);
         return im;
@@ -112,19 +118,37 @@ export class ParkedAircraft {
       // The far model's material is the traffic's (plain meshes): instanced draws get their own copy.
       const far = instanced(model.far[0], model.far[0].material.clone(), `parked-${type}-far`);
       const near = model.near.map((p) => instanced(p, p.material, `parked-${type}-${p.material.name || 'part'}`));
-      this.types.push({ matrices, centres, near, far, split: '' });
+      // Their shadows, near or far, from the far model's shape (a full-detail aircraft in every shadow cascade
+      // would cost more than the rest of the apron).
+      const caster = shadowCaster(new THREE.InstancedMesh(model.shadow, undefined, list.length));
+      caster.name = `parked-${type}-shadow`;
+      matrices.forEach((m, i) => caster.setMatrixAt(i, m));
+      caster.computeBoundingSphere();
+      this.group.add(caster);
+      model.far[0].geometry.computeBoundingSphere();
+      const radius = model.far[0].geometry.boundingSphere!.radius + model.far[0].geometry.boundingSphere!.center.length();
+      this.types.push({ matrices, centres, near, far, caster, split: '', radius });
     } catch (e) {
       console.warn(`[airport] no parked ${type}:`, e);
     }
   }
 
-  /** Each aircraft in full detail or as its far model for the camera's distance. */
+  /**
+   * Each aircraft in full detail or as its far model for the camera's distance, or not at all out of its view
+   * (an instanced mesh is culled whole: zoomed in on one, the rest of the apron would be drawn in full detail).
+   */
   update(camera: THREE.PerspectiveCamera): void {
     this.group.updateWorldMatrix(true, false);
+    camera.updateMatrixWorld();
+    this.frustum.setFromProjectionMatrix(this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const cam = this.group.worldToLocal(camera.getWorldPosition(this.local));
     const zoom = Math.tan((camera.fov * Math.PI) / 360) / camera.zoom / TAN_30;
     for (const t of this.types) {
-      const split = t.centres.map((c) => (c.distanceTo(cam) * zoom < PARKED_DETAIL ? '1' : '0')).join('');
+      let split = '';
+      for (const c of t.centres) {
+        this.sphere.set(c, t.radius).applyMatrix4(this.group.matrixWorld);
+        split += !this.frustum.intersectsSphere(this.sphere) ? '-' : c.distanceTo(cam) * zoom < PARKED_DETAIL.range ? '1' : '0';
+      }
       if (split === t.split) continue;
       t.split = split;
       let n = 0;
@@ -133,7 +157,7 @@ export class ParkedAircraft {
         if (split[i] === '1') {
           for (const im of t.near) im.setMatrixAt(n, t.matrices[i]);
           n++;
-        } else t.far.setMatrixAt(f++, t.matrices[i]);
+        } else if (split[i] === '0') t.far.setMatrixAt(f++, t.matrices[i]);
       }
       for (const im of [...t.near, t.far]) {
         im.count = im === t.far ? f : n;
@@ -147,7 +171,7 @@ export class ParkedAircraft {
   dispose(): void {
     this.disposed = true;
     for (const t of this.types) {
-      for (const im of [...t.near, t.far]) im.dispose();
+      for (const im of [...t.near, t.far, t.caster]) im.dispose();
       (t.far.material as THREE.Material).dispose();
     }
     this.group.removeFromParent();

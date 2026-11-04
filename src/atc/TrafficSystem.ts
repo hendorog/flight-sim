@@ -97,13 +97,14 @@ const TOWER_PERIOD = 0.5;
 /** Drawn within this distance of the camera, m. */
 const DRAW_RANGE = 20000;
 /**
- * A flown or posed aircraft is drawn with its own exterior (~110k triangles) within this distance of the camera
- * (at a 60 degree field of view: scaled with the zoom), its far model beyond, m. Built from a little farther out,
- * kept to EXTERIOR_KEEP.
+ * A flown or posed aircraft is drawn with its own exterior (~110k triangles, ~57 draw calls) within this distance
+ * of the camera (at a 60 degree field of view: scaled with the zoom), its far model (one draw, ~15k triangles)
+ * beyond, m: there a light aircraft is under ~15 px across, where the two look alike. Built from a little farther
+ * out, kept to EXTERIOR_KEEP.
  */
-const EXTERIOR_RANGE = 3000;
-const EXTERIOR_BUILD = 3600;
-const EXTERIOR_KEEP = 4500;
+const EXTERIOR_RANGE = 800;
+const EXTERIOR_BUILD = 1000;
+const EXTERIOR_KEEP = 1400;
 /** Exteriors kept for reuse per type when their aircraft no longer needs one. */
 const EXTERIOR_POOL = 1;
 /** A changeover's difference in the drawn pose fades with this time constant, s; beyond BLEND_MAX m it jumps. */
