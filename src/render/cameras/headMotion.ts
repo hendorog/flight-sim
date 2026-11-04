@@ -6,6 +6,7 @@
 // On top of that come small vibrations: turbulence, stall buffet and ground roll. Everything is in body
 // axes (FRD, metres / radians) with no three.js dependency.
 
+import { stallBuffet } from '../../core/buffet';
 import { clamp, G0, type Vec3 } from '../../core/math';
 import type { AircraftState, SurfaceType } from '../../core/types';
 import { C172S_CAMERA } from './aircraft';
@@ -147,7 +148,8 @@ export class HeadMotion {
     const t = this.t;
     const q = clamp(s.ias / 50, 0, 1.5);
     const turb = turbulence * q * (s.onGround ? 0.3 : 1);
-    const buffet = s.stallFraction;
+    // No buffet without airflow (core/buffet.ts): a parked aircraft's wing is "stalled" in a breeze from the side.
+    const buffet = stallBuffet(s.stallFraction, s.ias);
     const ground = s.onGround ? clamp(s.groundSpeed / 20, 0, 1.2) * SURFACE_ROUGHNESS[surface] : 0;
     const p = this.pos;
     const o = this.out.offset;
