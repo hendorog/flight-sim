@@ -296,6 +296,20 @@ export const naturalHeightCoarse = (north: number, east: number): number => seed
 /** A seeded world's natural terrain before the erosion pass (erosion.ts): what the home field's site search sees. */
 export const naturalHeightRaw = (north: number, east: number, detail = true): number => seededNaturalHeight(north, east, detail, false);
 
+/**
+ * The ground `h` with the erosion pass's interpolated cut applied, C1 in both. The interpolation can overshoot a
+ * little above 0 beside a deep cut: held under 5 m. Land stays land: a cut is cushioned (a smooth maximum) a metre or
+ * two above the sea, blended in over its first 5 m, so the lowest reaches of a river cut down to sea level between
+ * the lattice cells do not drown.
+ */
+function applyCut(h: number, cut: number): number {
+  if (cut === 0) return h;
+  if (cut > 0) return h + (5 * cut) / (5 + cut);
+  const lowered = h + cut;
+  const cushioned = -smin(-lowered, -smin(h, 2, 2), 3);
+  return lowered + smooth(0, -5, cut) * (cushioned - lowered);
+}
+
 function seededNaturalHeight(north: number, east: number, detail = true, eroded = true): number {
   macroAt(north, east, macro);
   const inland = macro.inland;
@@ -320,12 +334,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
   if (detail) relief += amplitude * 0.13 * erode(east, north, gE, gN);
   let h = base + relief;
   // The rivers' valleys, cut by the erosion pass on the drainage lattice (erosion.ts), C1-smooth between its cells.
-  // Land stays land: the cut is cushioned (a smooth maximum) a metre or two above the sea, so the lowest reaches of
-  // a river cut down to sea level between the lattice cells do not drown.
-  if (eroded && erosionDelta) {
-    const cut = bicubic(erosionDelta, EROSION_N, -DOMAIN_HALF, DRAIN_CELL, north, east);
-    if (cut < 0) h = -smin(-(h + cut), -smin(h, 2, 2), 3);
-  }
+  if (eroded && erosionDelta) h = applyCut(h, bicubic(erosionDelta, EROSION_N, -DOMAIN_HALF, DRAIN_CELL, north, east));
 
   const V = era().terrain.volcano;
   if (V) {
@@ -366,10 +375,7 @@ function buildWater(): void {
     erosionDelta = erosion.delta;
     // The lattice as naturalHeightCoarse gives it at the cells (the cushion above the sea included).
     const lat = erosion.lattice;
-    for (let c = 0; c < lat.length; c++) {
-      const cut = erosion.delta[c];
-      if (cut < 0) lat[c] = -smin(-lat[c], -smin(lat[c] - cut, 2, 2), 3);
-    }
+    for (let c = 0; c < lat.length; c++) lat[c] = applyCut(lat[c] - erosion.delta[c], erosion.delta[c]);
     const drainage = buildDrainage(naturalHeightCoarse, lat);
     lakes = networkLakes(naturalHeight, drainage);
     presentHydro = buildNetworkHydrology(naturalHeight, drainage, lakes);
