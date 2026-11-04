@@ -2,7 +2,7 @@
 // lakes, sea, airfields), one PNG per seed. Prints the layout search's report.
 //   RELIEF_SEEDS=0,7,42 [RELIEF_N=0 RELIEF_E=0] RELIEF_HALF=80000 RELIEF_STEP=250 RELIEF_DIR=/tmp npx vitest run --config scripts/probes/vitest.config.ts seedRelief
 import { it } from 'vitest';
-import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
+import { makeSample, naturalHeight, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { layoutReport } from '../../src/world/terrain/seededLayout';
 import { setWorldSeed } from '../../src/world/worldSeed';
 import { airfields } from '../../src/world/airfields';
@@ -45,6 +45,11 @@ it('seed relief', () => {
       for (let x = 0; x < n; x++) {
         const east = ce - half + (x + 0.5) * step;
         sampleTerrain(north, east, s);
+        // RELIEF_NATURAL=1: the natural terrain alone (no rivers, lakes or airfields carved), for the erosion pass.
+        if (env.RELIEF_NATURAL) {
+          ground[y * n + x] = naturalHeight(north, east);
+          continue;
+        }
         ground[y * n + x] = s.ground;
         water[y * n + x] = Math.max(s.standing, s.river) > s.ground ? (s.river > s.ground ? 2 : 1) : s.airportBlend < 0.5 ? 3 : 0;
       }

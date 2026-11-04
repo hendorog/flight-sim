@@ -25,8 +25,8 @@ const LAKE_MAX_CELLS = 80;
 /** Most lakes kept (the largest by volume). */
 const LAKE_MAX = 40;
 /** Height of the mound over the home field during routing, m, and its radius, m. */
-const HOME_MOUND = 80;
-const HOME_RADIUS = 3500;
+export const HOME_MOUND = 80;
+export const HOME_RADIUS = 3500;
 
 /** A river line on the lattice: cells from source to mouth, and what it flows into. */
 export interface DrainLine {
@@ -68,8 +68,11 @@ export function cellEast(d: Drainage, c: number): number {
   return d.origin + (c % d.n) * DRAIN_CELL;
 }
 
-/** Work out the drainage of the natural terrain `natural` (m MSL at north, east). */
-export function buildDrainage(natural: (north: number, east: number) => number): Drainage {
+/**
+ * Work out the drainage of the natural terrain `natural` (m MSL at north, east). `lattice`, when given, is that
+ * terrain already sampled at the lattice's cells (erosion.ts), and saves sampling it again.
+ */
+export function buildDrainage(natural: (north: number, east: number) => number, lattice?: Float32Array): Drainage {
   const n = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
   const origin = -DOMAIN_HALF;
   const N = n * n;
@@ -79,7 +82,7 @@ export function buildDrainage(natural: (north: number, east: number) => number):
     const north = origin + i * DRAIN_CELL;
     for (let j = 0; j < n; j++) {
       const east = origin + j * DRAIN_CELL;
-      let h = natural(north, east);
+      let h = lattice ? lattice[i * n + j] : natural(north, east);
       const r = Math.hypot(north - rc.north, east - rc.east);
       if (r < HOME_RADIUS) h += HOME_MOUND * (1 - r / HOME_RADIUS);
       height[i * n + j] = h;

@@ -1,7 +1,7 @@
 // Probe: how often a river's water stands above the ground under it (outside lakes and the sea).
 //   STREAM_SEEDS=1,42 npx vitest run --config scripts/probes/vitest.config.ts streamGround
 import { it } from 'vitest';
-import { hydrology, naturalHeight, makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
+import { hydrology, naturalHeight, naturalHeightCoarse, naturalHeightRaw, makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
 it('stream ground', () => {
   for (const seed of (process.env.STREAM_SEEDS ?? '1,42,777777').split(',').map(Number)) {
@@ -26,7 +26,7 @@ it('stream ground', () => {
         if (g - s.ground > 60) carvedDeep++;
       }
     }
-    console.log(`seed ${seed}: ${hydrology.rivers!.length} rivers, ${km.toFixed(0)} km; ${n} points: water >2 m over ground ${(100 * over2 / n).toFixed(2)} %, >10 m ${(100 * over10 / n).toFixed(2)} %, worst ${worst.toFixed(0)} m; cut >60 m deep ${(100 * carvedDeep / n).toFixed(2)} %; build ${ms.toFixed(0)} ms`);
+    console.log(`seed ${seed}: ${hydrology.rivers!.length} rivers, ${hydrology.lakes.length} lakes, ${km.toFixed(0)} km; ${n} points: water >2 m over ground ${(100 * over2 / n).toFixed(2)} %, >10 m ${(100 * over10 / n).toFixed(2)} %, worst ${worst.toFixed(0)} m; cut >60 m deep ${(100 * carvedDeep / n).toFixed(2)} %; build ${ms.toFixed(0)} ms`);
   }
   setWorldSeed(0);
 });
@@ -36,7 +36,8 @@ it('deep profile', () => {
   let best = -1, bestDeep = 0;
   rs.forEach((r, li) => {
     let deep = 0;
-    for (let k = 0; k < r.north.length; k += 10) if (naturalHeight(r.north[k], r.east[k]) - r.level[k] > 60) deep++;
+    const skip = Number(process.env.SKIP_EDGE ?? 0);
+    for (let k = 0; k < r.north.length; k += 10) if (naturalHeight(r.north[k], r.east[k]) - r.level[k] > 60 && Math.max(Math.abs(r.north[k]), Math.abs(r.east[k])) < 160000 - skip) deep++;
     if (deep > bestDeep && r.north.length < 2000) { bestDeep = deep; best = li; }
   });
   const r = rs[best];
@@ -46,7 +47,7 @@ it('deep profile', () => {
     const g = naturalHeight(r.north[k], r.east[k]);
     // lowest natural ground within 600 m across
     let lo = Infinity; for (let a = 0; a < 16; a++) for (const d of [150, 300, 600]) lo = Math.min(lo, naturalHeight(r.north[k] + d * Math.cos(a * Math.PI / 8), r.east[k] + d * Math.sin(a * Math.PI / 8)));
-    console.log(`  s ${(r.s[k] / 1000).toFixed(1)} km: level ${r.level[k].toFixed(0)} natural ${g.toFixed(0)} lowest within 600 m ${lo.toFixed(0)} hw ${r.halfWidth[k].toFixed(0)}`);
+    console.log(`  s ${(r.s[k] / 1000).toFixed(1)} km at ${(r.north[k] / 1000).toFixed(1)},${(r.east[k] / 1000).toFixed(1)}: level ${r.level[k].toFixed(0)} coarse ${naturalHeightCoarse(r.north[k], r.east[k]).toFixed(0)} raw coarse ${naturalHeightRaw(r.north[k], r.east[k], false).toFixed(0)} natural ${g.toFixed(0)} lowest within 600 m ${lo.toFixed(0)} hw ${r.halfWidth[k].toFixed(0)}`);
   }
   setWorldSeed(0);
 });

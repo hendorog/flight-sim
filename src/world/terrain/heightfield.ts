@@ -17,7 +17,8 @@ import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
-import { buildDrainage } from './drainage';
+import { DOMAIN_HALF, DRAIN_CELL, buildDrainage } from './drainage';
+import { bicubic, buildErosion } from './erosion';
 import { buildNetworkHydrology, networkLakes } from './riverNetwork';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
@@ -276,7 +277,13 @@ export function naturalHeight(north: number, east: number): number {
 const macro: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
 // The home field's site search (seededLayout.ts, homeSiting.ts) looks at the ground as it will be, eroded ridges and
 // all (in the mountains the erosion adds hundreds of metres the approach trimming would otherwise cut into walls).
-setLayoutGround((n, e) => seededNaturalHeight(n, e));
+// It sees the ground before the erosion pass (erosion.ts), which is worked out for the layout it chooses and faded
+// out around the field, so the site stays valid (the pass only lowers the ground).
+setLayoutGround((n, e) => seededNaturalHeight(n, e, true, false));
+
+/** The erosion pass's height change on the drainage lattice (erosion.ts), null in seed 0's world. */
+let erosionDelta: Float32Array | null = null;
+const EROSION_N = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
 
 /**
  * naturalHeight in a seeded world: the same coastal profile, hills, mountains, gullies and small-scale relief as
@@ -286,8 +293,10 @@ setLayoutGround((n, e) => seededNaturalHeight(n, e));
  */
 /** A seeded world's natural terrain without its gullies and small-scale relief (the drainage routes over it). */
 export const naturalHeightCoarse = (north: number, east: number): number => seededNaturalHeight(north, east, false);
+/** A seeded world's natural terrain before the erosion pass (erosion.ts): what the home field's site search sees. */
+export const naturalHeightRaw = (north: number, east: number, detail = true): number => seededNaturalHeight(north, east, detail, false);
 
-function seededNaturalHeight(north: number, east: number, detail = true): number {
+function seededNaturalHeight(north: number, east: number, detail = true, eroded = true): number {
   macroAt(north, east, macro);
   const inland = macro.inland;
   const base = coastProfile(inland);
@@ -310,6 +319,13 @@ function seededNaturalHeight(north: number, east: number, detail = true): number
   }
   if (detail) relief += amplitude * 0.13 * erode(east, north, gE, gN);
   let h = base + relief;
+  // The rivers' valleys, cut by the erosion pass on the drainage lattice (erosion.ts), C1-smooth between its cells.
+  // Land stays land: the cut is cushioned (a smooth maximum) a metre or two above the sea, so the lowest reaches of
+  // a river cut down to sea level between the lattice cells do not drown.
+  if (eroded && erosionDelta) {
+    const cut = bicubic(erosionDelta, EROSION_N, -DOMAIN_HALF, DRAIN_CELL, north, east);
+    if (cut < 0) h = -smin(-(h + cut), -smin(h, 2, 2), 3);
+  }
 
   const V = era().terrain.volcano;
   if (V) {
@@ -342,12 +358,24 @@ let legacyHydro: Hydrology;
 let fields: readonly Airfield[] = [];
 function buildWater(): void {
   if (SEEDED) {
-    // Routed over the terrain without its gullies and small-scale relief (finer than the 1 km lattice, and the costly part).
-    const drainage = buildDrainage((n, e) => seededNaturalHeight(n, e, false));
+    // The erosion pass first (erosion.ts): the rivers cut the macro terrain's valleys and drain most of its closed
+    // hollows. Then the drainage, routed over the eroded terrain without its gullies and small-scale relief (finer
+    // than the 1 km lattice, and the costly part).
+    erosionDelta = null;
+    const erosion = buildErosion((n, e) => seededNaturalHeight(n, e, false, false), AIRPORT.runway.center);
+    erosionDelta = erosion.delta;
+    // The lattice as naturalHeightCoarse gives it at the cells (the cushion above the sea included).
+    const lat = erosion.lattice;
+    for (let c = 0; c < lat.length; c++) {
+      const cut = erosion.delta[c];
+      if (cut < 0) lat[c] = -smin(-lat[c], -smin(lat[c] - cut, 2, 2), 3);
+    }
+    const drainage = buildDrainage(naturalHeightCoarse, lat);
     lakes = networkLakes(naturalHeight, drainage);
     presentHydro = buildNetworkHydrology(naturalHeight, drainage, lakes);
     legacyHydro = presentHydro;
   } else {
+    erosionDelta = null;
     lakes = buildLakes(naturalHeight);
     presentHydro = buildHydrology(naturalHeight, lakes);
     legacyHydro = buildLegacyHydrology(naturalHeight, lakes);
