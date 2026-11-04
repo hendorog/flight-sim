@@ -472,6 +472,8 @@ function carveRiver(north: number, east: number, h: number, out: TerrainSample):
   return h;
 }
 
+/** Smallest warped lake radius at the point sampleTerrain is working on (< 1 under a lake's water). */
+let lakeCover = Infinity;
 const valleyNear: ValleyNear[] = [];
 const channelNear: ChannelNear[] = [];
 
@@ -505,7 +507,9 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     out.riverHalfWidth = riverHit.halfWidth * (1 - smooth(0, 60, riverHit.beyondSource));
     out.riverArc = riverHit.s;
   }
-  const nc = net.channels(north, east, channelNear);
+  // Under a lake its water covers the river: no channel cut across the lake bed (it would show as a dark line).
+  const open = smooth(0.8, 1.0, lakeCover);
+  const nc = open > 0 ? net.channels(north, east, channelNear) : 0;
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
     const d = c.dist;
@@ -516,8 +520,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       const levee = c.level + 0.3 + 0.03 * (d - w);
       carved += (Math.max(carved, levee) - carved) * (1 - smooth(w + 25, w + 40, d));
     }
-    h = carved;
-    if (d < w && h < c.level) out.river = Math.max(out.river, c.level);
+    h += (carved - h) * open;
+    if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
   }
   return h;
 }
@@ -616,12 +620,14 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
   let h = naturalHeight(north, east);
 
   // Lakes: bed = natural terrain lowered toward (level - depth) inside the warped ellipse.
+  lakeCover = Infinity;
   for (let i = 0; i < lakes.length; i++) {
     const lake = lakes[i];
     const ln = north - lake.north;
     const le = east - lake.east;
     if (ln * ln + le * le > lake.bound * lake.bound) continue;
     const r = lakeRadius(lake, north, east);
+    if (r < lakeCover) lakeCover = r;
     if (r < LAKE_ZONE) {
       // Wide, gentle bowl: the shore slopes in rather than being cut into the hillside.
       const bowl = 1 - smoother(0.3, 1.1, r);
