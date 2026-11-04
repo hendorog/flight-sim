@@ -125,8 +125,13 @@ chose the full drainage generator. What any seed but 0 now gets:
 
 Seed 0 is untouched (present guard passes). `tests/terrain/seededWorld.test.ts` sweeps five seeds.
 
-Cost: about 0.6-1.6 s per thread at load (drainage ~0.3 s, the river network the rest), in the main thread and
-every terrain worker in parallel. A terrain sample costs the same as at seed 0.
+Cost: about 0.6-1.0 s per thread at load (drainage ~0.3 s, the river network the rest), in the main thread and
+every terrain worker in parallel; a terrain sample costs the same as at seed 0. Page ready with the CPU throttled
+4x (a slow laptop): seed 0 about 20 s, seed 42 about 24-26 s. The follow-up is to build the water once in a worker
+and cache it per seed (IndexedDB), so the main thread and the other workers only load it.
+
+Lakes: 36-39 per seed, each centred on its hollow and shrunk until its water stands at least 3 m over the natural
+ground at its middle (a bigger ellipse reached over the rim and left the water in a pit).
 
 Still open:
 
