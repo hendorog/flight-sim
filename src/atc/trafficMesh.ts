@@ -1,85 +1,78 @@
-// The circuit traffic's distant stand-in (docs/atc.md, step 3): a light aircraft from a dozen boxes, high-winged for a
-// Cessna and low-winged for the Piper and the Diamond, with a propeller disc and its navigation lights, beacon and
-// strobes. Drawn for aircraft not on the flight model (far from the player); the near ones are the type's own
-// exterior (render/aircraft/trafficExterior.ts). Model space as the player's aircraft (render/aircraft/AircraftVisual.ts): nose -Z,
-// right wing +X, up +Y, metres; the origin is where the main wheels touch the ground.
+// A circuit aircraft drawn small (docs/atc.md, step 3): its type's far model (render/aircraft/trafficModel.ts: the
+// real exterior reduced to a few thousand vertex-coloured triangles, shared by every aircraft of the type) with
+// its navigation lights, beacon and strobes as points at the type's own lamp positions. Drawn when the aircraft
+// is a few pixels across, and whenever its own exterior (render/aircraft/trafficExterior.ts) is not drawn; empty
+// until the model has been built. Model space as the player's aircraft (render/aircraft/AircraftVisual.ts):
+// nose -Z, right wing +X, up +Y, metres, origin at the reference point.
 
 import * as THREE from 'three';
+import type { TrafficModel } from '../render/aircraft/trafficModel';
 
 export type TrafficType = 'C152' | 'C172' | 'PA38' | 'DA20';
 
 export interface TrafficMesh {
   root: THREE.Group;
-  /** Show the anti-collision lights for this sim time, s (the beacon and the wingtip strobes flash). */
-  flash(t: number): void;
+  /** The model is in (it is built asynchronously). */
+  readonly ready: boolean;
+  /** Put the type's model in. */
+  attach(model: TrafficModel): void;
+  /** Show the anti-collision lights for this sim time, s (the beacon and the wingtip strobes flash), when `on`. */
+  flash(t: number, on: boolean): void;
+  /** Free what is this aircraft's own (the model's geometry and material are shared). */
+  dispose(): void;
 }
 
-const SIZES: Record<TrafficType, { span: number; length: number; highWing: boolean }> = {
-  C152: { span: 10.1, length: 7.3, highWing: true },
-  C172: { span: 11.0, length: 8.3, highWing: true },
-  PA38: { span: 10.4, length: 7.0, highWing: false },
-  DA20: { span: 10.9, length: 7.2, highWing: false },
-};
-
-function box(mat: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  return m;
-}
-
-function lights(points: [number, number, number][], color: number, size: number): THREE.Points {
+function lights(points: THREE.Vector3[], color: number, size: number): THREE.Points {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(points.flat(), 3));
+  g.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap((p) => [p.x, p.y, p.z]), 3));
   const p = new THREE.Points(g, new THREE.PointsMaterial({ color, size, sizeAttenuation: false, toneMapped: false, depthWrite: false }));
   p.frustumCulled = false;
   return p;
 }
 
-/** Build one aircraft: white with a coloured fin and cheat line. */
-export function buildTrafficMesh(type: TrafficType, trim: number): TrafficMesh {
-  const { span, length, highWing } = SIZES[type];
-  const white = new THREE.MeshStandardMaterial({ color: 0xf1f1ee, roughness: 0.45, metalness: 0.05 });
-  const colour = new THREE.MeshStandardMaterial({ color: trim, roughness: 0.5, metalness: 0.05 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.7 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x24303a, roughness: 0.15, metalness: 0.3 });
+/** An aircraft's far model and lights (empty until attach). */
+export function buildTrafficMesh(type: TrafficType): TrafficMesh {
   const root = new THREE.Group();
   root.name = `traffic-${type}`;
-  const nose = -length * 0.36;
-  const tail = length * 0.6;
-  const body = 1.35;
-  // Cabin and engine, then the tail cone to the fin.
-  root.add(box(white, 1.1, 1.25, length * 0.5, 0, body, nose + length * 0.25));
-  root.add(box(glass, 1.12, 0.5, 1.2, 0, body + 0.38, nose + 1.7));
-  root.add(box(colour, 1.13, 0.12, length * 0.5, 0, body - 0.15, nose + length * 0.25));
-  root.add(box(white, 0.55, 0.65, length * 0.5, 0, body + 0.15, nose + length * 0.75));
-  const wingY = highWing ? body + 0.7 : body - 0.6;
-  root.add(box(white, span, 0.14, 1.5, 0, wingY, nose + 2.0));
-  // Tailplane and fin.
-  root.add(box(white, 3.4, 0.08, 0.9, 0, body + 0.25, tail - 0.4));
-  root.add(box(colour, 0.08, 1.4, 1.1, 0, body + 0.95, tail - 0.5));
-  // Gear: the mains under the wing's leading edge region, the nose wheel ahead.
-  root.add(box(dark, 0.18, 0.55, 0.55, -1.2, 0.28, nose + 2.4));
-  root.add(box(dark, 0.18, 0.55, 0.55, 1.2, 0.28, nose + 2.4));
-  root.add(box(dark, 0.16, 0.45, 0.45, 0, 0.23, nose + 0.5));
-  // The propeller disc.
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(0.95, 20), new THREE.MeshBasicMaterial({ color: 0x404040, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
-  disc.position.set(0, body, nose - 0.05);
-  root.add(disc);
-  // Navigation lights: red left tip, green right tip, white tail; strobes on the tips, beacon on the fin.
-  const tip = span / 2;
-  root.add(lights([[-tip, wingY, nose + 2.0]], 0xff2a1a, 3));
-  root.add(lights([[tip, wingY, nose + 2.0]], 0x20ff50, 3));
-  root.add(lights([[0, body + 0.4, tail]], 0xffffff, 2.5));
-  const strobes = lights([[-tip, wingY, nose + 2.1], [tip, wingY, nose + 2.1]], 0xffffff, 5);
-  const beacon = lights([[0, body + 1.7, tail - 0.4]], 0xff3020, 4);
-  root.add(strobes, beacon);
+  let strobes: THREE.Points | null = null;
+  let beacon: THREE.Points | null = null;
+  let steady: THREE.Points[] = [];
+  let ready = false;
   return {
     root,
-    flash(t: number): void {
+    get ready() {
+      return ready;
+    },
+    attach(model: TrafficModel): void {
+      if (ready) return;
+      ready = true;
+      for (const part of model.far) {
+        const m = new THREE.Mesh(part.geometry, part.material);
+        m.name = 'trafficFar';
+        root.add(m);
+      }
+      const L = model.lamps;
+      const at = (...ids: (keyof TrafficModel['lamps'])[]) => ids.map((id) => L[id]).filter((p): p is THREE.Vector3 => !!p);
+      steady = [lights(at('navL'), 0xff2a1a, 3), lights(at('navR'), 0x20ff50, 3), lights(at('navTail'), 0xffffff, 2.5)];
+      strobes = lights(at('strobeL', 'strobeR'), 0xffffff, 5);
+      beacon = lights(at('beacon'), 0xff3020, 4);
+      root.add(...steady, strobes, beacon);
+    },
+    flash(t: number, on: boolean): void {
+      if (!strobes || !beacon) return;
+      for (const s of steady) s.visible = on;
       const s = t % 1.2;
-      strobes.visible = s < 0.06 || (s > 0.16 && s < 0.22);
-      beacon.visible = (t + 0.5) % 1.0 < 0.12;
+      strobes.visible = on && (s < 0.06 || (s > 0.16 && s < 0.22));
+      beacon.visible = on && (t + 0.5) % 1.0 < 0.12;
+    },
+    dispose(): void {
+      root.traverse((o) => {
+        if (o instanceof THREE.Points) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+      root.removeFromParent();
     },
   };
 }

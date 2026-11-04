@@ -8,7 +8,7 @@
 // abeam the threshold, the final setting on base. Node-safe (no three.js).
 
 import type { AircraftDefinition } from '../aircraft/types';
-import { DEG, FT, KT, quat, wrapPi } from '../core/math';
+import { DEG, FT, KT, quat, wrapPi, type Quat, type Vec3 } from '../core/math';
 import { copyControls, defaultControls, type AircraftState, type ControlInputs, type Environment } from '../core/types';
 import { createFlightModelFor, type BladeElementFlightModel } from '../physics';
 import { Autoflight, type AutoflightRunway } from '../sim/autoflight';
@@ -29,6 +29,8 @@ const CIRCUIT_DESCENT = 500 * FT / 60;
 const DRIFT_TAU = 3;
 /** The autopilot's bank limit in the circuit: its turns overshoot the limit by a few degrees, so a little under 25. */
 const CIRCUIT_BANK = 22 * DEG;
+/** At most this much flight time is carried to the next frame (a stalled tab must not replay seconds at once), s. */
+const MAX_CARRY = 0.5;
 
 /** The runway in use as the scripted pilot's frame (the landing direction). */
 export function runwayFrame(path: CircuitPath): AutoflightRunway {
@@ -59,6 +61,15 @@ export class TrafficPilot {
   private groundPitch = 0;
   /** Flap levers: the base and final settings, and the take-off's. */
   private readonly flaps: { first: number; base: number; final: number };
+  /**
+   * Fixed-step timing, as the player's (sim/SimPhysics.ts): frame time accumulates and whole steps are run; the
+   * remainder is carried (acc) and the pose before the last step kept, so the aircraft can be drawn between its
+   * steps at the instant the player's aircraft is drawn (drawPose).
+   */
+  private acc = 0;
+  private lastH = 1 / AIR_RATE;
+  private readonly prevPos: Vec3 = { x: 0, y: 0, z: 0 };
+  private prevQuat: Quat = quat.identity();
 
   constructor(readonly def: AircraftDefinition, path: CircuitPath) {
     this.fm = createFlightModelFor(def);
@@ -111,7 +122,43 @@ export class TrafficPilot {
     Object.assign(this.controls.lights, { nav: true, beacon: true, strobe: true, landing: true, taxi: false });
     this.drift = 0;
     this.touchTime = NaN;
+    this.settle();
     this.engageLeg(k.onGround);
+  }
+
+  /** No step in hand: drawn where the flight model is. */
+  private settle(): void {
+    const s = this.fm.state;
+    this.acc = 0;
+    Object.assign(this.prevPos, s.position);
+    this.prevQuat = quat.clone(s.orientation);
+  }
+
+  /**
+   * Where to draw it: between its last two steps by the time carried, i.e. one step behind the traffic clock
+   * (which runs on the player's rendered time), so it moves on screen as evenly as the frames come.
+   */
+  drawPose(position: Vec3, orientation: Quat): void {
+    const s = this.fm.state;
+    const t = Math.min(1, this.acc / this.lastH);
+    const p = this.prevPos;
+    const c = s.position;
+    position.x = p.x + (c.x - p.x) * t;
+    position.y = p.y + (c.y - p.y) * t;
+    position.z = p.z + (c.z - p.z) * t;
+    // Normalised lerp (the steps are milliseconds apart), on the shorter arc.
+    const a = this.prevQuat;
+    const b = s.orientation;
+    const sign = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z < 0 ? -1 : 1;
+    const w = a.w + (sign * b.w - a.w) * t;
+    const x = a.x + (sign * b.x - a.x) * t;
+    const y = a.y + (sign * b.y - a.y) * t;
+    const z = a.z + (sign * b.z - a.z) * t;
+    const n = Math.hypot(w, x, y, z) || 1;
+    orientation.w = w / n;
+    orientation.x = x / n;
+    orientation.y = y / n;
+    orientation.z = z / n;
   }
 
   /** Back to the kinematic stand-in: its state from the flight model's. */
@@ -140,21 +187,34 @@ export class TrafficPilot {
   }
 
   /**
-   * Stand it where the kinematic traffic has it on the ground (taxiing, holding, parked), for its exterior: no
-   * physics; the propeller turns at idle when the engine runs.
+   * Put it where the kinematic traffic has it, for its exterior: no physics. On the ground (taxiing, holding,
+   * parked) it stands on its wheels with the propeller at idle when the engine runs; in the air it has the
+   * kinematic attitude, the gear hanging free and the propeller at cruise rpm.
    */
   pose(k: TrafficState, elevation: number, dt: number, engine: boolean): void {
     const s = this.fm.state;
     s.position.x = k.north;
     s.position.y = k.east;
-    s.position.z = -(elevation + this.def.geometry.restHeight);
-    s.orientation = quat.fromEuler(0, this.groundPitch, k.heading);
+    s.position.z = -(elevation + k.height + this.def.geometry.restHeight);
+    s.altitudeMSL = -s.position.z;
+    const ground = k.onGround;
+    s.orientation = quat.fromEuler(ground ? 0 : k.bank, k.pitch + (ground ? this.groundPitch : 0), k.heading);
     s.heading = k.heading;
-    s.onGround = true;
+    s.pitch = k.pitch + (ground ? this.groundPitch : 0);
+    s.roll = ground ? 0 : k.bank;
+    if (!ground && s.onGround) for (const w of s.wheels) w.compression = 0;
+    s.onGround = ground;
+    const rpm = engine ? (ground ? 900 : 2300) : 0;
     for (const p of s.propellers) {
-      p.rpm = engine ? 900 : 0;
+      p.rpm = rpm;
       p.rotation = (p.rotation + (p.rpm / 60) * 2 * Math.PI * dt) % (2 * Math.PI);
     }
+    this.settle();
+  }
+
+  /** The pitch attitude it stands at on its wheels (zero until it has been started on the ground). */
+  get restPitch(): number {
+    return this.groundPitch;
   }
 
   /** The height base is flown at and final turned onto, m (higher on an extended downwind). */
@@ -205,11 +265,18 @@ export class TrafficPilot {
   step(dt: number, env: Environment): number | null {
     let changed: number | null = null;
     const s = this.fm.state;
-    const rate = s.onGround || s.altitudeAGL < AIR_RATE_AGL ? GROUND_RATE : AIR_RATE;
-    if (this.fm.physicsRate !== rate) this.fm.setPhysicsRate(rate);
-    const h = 1 / rate;
-    for (let left = dt; left > h * 0.5; left -= h) {
-      const c = this.control(Math.min(h, left));
+    this.acc = Math.min(this.acc + dt, MAX_CARRY);
+    for (;;) {
+      const rate = s.onGround || s.altitudeAGL < AIR_RATE_AGL ? GROUND_RATE : AIR_RATE;
+      if (this.fm.physicsRate !== rate) this.fm.setPhysicsRate(rate);
+      const h = 1 / rate;
+      // A hair of tolerance: a frame of whole steps (1/30 s at 120 Hz) must not leave its last step behind.
+      if (this.acc < h - 1e-9) break;
+      this.acc = Math.max(0, this.acc - h);
+      Object.assign(this.prevPos, s.position);
+      this.prevQuat = quat.clone(s.orientation);
+      this.lastH = h;
+      const c = this.control(h);
       if (c !== null) changed = c;
       this.autoflight.autopilot.settings.maxBank = CIRCUIT_BANK;
       this.autoflight.update(h, s, this.controls);

@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import type { AircraftState, ControlInputs, WeatherSettings } from '../../core/types';
 import type { SkyState } from '../../core/context';
 import type { AirframeVisualDef } from './airframe/types';
-import { buildFuselage, buildNacelles, createFuselageShapes, type NacelleParts } from './fuselage';
+import { buildFuselage, buildNacelles, createFuselageShapes, type FuselageParts, type FuselageShapes, type NacelleParts } from './fuselage';
 import { LandingGear } from './gear';
 import { AircraftLights } from './lights';
 import type { ExteriorBakeRequest } from './liveryWorker';
@@ -21,6 +21,46 @@ import { buildOccupants, type Occupants } from './occupants';
 import { Propeller } from './propeller';
 import { buildTail, type TailParts } from './tail';
 import { buildWings, setFlap, type WingParts } from './wings';
+
+/**
+ * The fuselage of a type, lofted once and shared by all its traffic exteriors (the loft is most of an exterior's
+ * build time): the shapes, and the meshes as first built with the materials they were built with.
+ */
+const FUSELAGES = new Map<string, { shapes: FuselageShapes; fus: FuselageParts; mat: AircraftMaterials }>();
+/** Geometry owned by FUSELAGES, never disposed with an exterior. */
+const SHARED_GEOMETRY = new WeakSet<THREE.BufferGeometry>();
+
+/** The type's fuselage for a new exterior: the shared geometry, with this exterior's own materials. */
+function fuselageFor(def: AirframeVisualDef, mat: AircraftMaterials): { shapes: FuselageShapes; fus: FuselageParts } {
+  const cached = FUSELAGES.get(def.id);
+  if (!cached) {
+    const shapes = createFuselageShapes(def);
+    const fus = buildFuselage(shapes, mat, def);
+    for (const o of [fus.skin, fus.glass, fus.lining, fus.fittings]) {
+      o.traverse((m) => {
+        if ((m as THREE.Mesh).isMesh) SHARED_GEOMETRY.add((m as THREE.Mesh).geometry);
+      });
+    }
+    FUSELAGES.set(def.id, { shapes, fus, mat });
+    return { shapes, fus: cloneParts(fus, mat, mat) };
+  }
+  return { shapes: cached.shapes, fus: cloneParts(cached.fus, cached.mat, mat) };
+}
+
+/** Copies of the fuselage meshes (sharing the geometry) with each material swapped for `to`'s of the same role. */
+function cloneParts(fus: FuselageParts, from: AircraftMaterials, to: AircraftMaterials): FuselageParts {
+  const role = new Map<THREE.Material, THREE.Material>();
+  for (const [k, v] of Object.entries(from)) if (v instanceof THREE.Material) role.set(v, (to as unknown as Record<string, THREE.Material>)[k]);
+  const copy = <T extends THREE.Object3D>(o: T): T => {
+    const c = o.clone(true);
+    c.traverse((m) => {
+      const mesh = m as THREE.Mesh;
+      if (mesh.isMesh && !Array.isArray(mesh.material)) mesh.material = role.get(mesh.material) ?? mesh.material;
+    });
+    return c;
+  };
+  return { skin: copy(fus.skin), glass: copy(fus.glass), lining: copy(fus.lining), fittings: copy(fus.fittings) };
+}
 
 export class TrafficExterior {
   readonly root = new THREE.Group();
@@ -32,14 +72,22 @@ export class TrafficExterior {
   private readonly nacelles: NacelleParts | null = null;
   private readonly lights: AircraftLights;
   private readonly occupants: Occupants | null;
+  private readonly textures: ReturnType<typeof placeholderFuselageTextures>;
   private disposed = false;
+  /** Bumped by every bake asked for: a late answer for an earlier registration is dropped. */
+  private bakeId = 0;
+  /** The registration painted on (or being baked). */
+  registration: string;
+  /** Settles once the livery asked for last is on (or could not be baked). */
+  baked: Promise<void> = Promise.resolve();
 
-  constructor(private readonly def: AirframeVisualDef, registration: string) {
+  /** @param opts.crew false: no one aboard (a parked aircraft's model, trafficModel.ts) */
+  constructor(private readonly def: AirframeVisualDef, registration: string, opts: { crew?: boolean } = {}) {
+    this.registration = registration;
     this.root.name = `traffic-${def.id}`;
-    const shapes = createFuselageShapes(def);
-    const textures = placeholderFuselageTextures(def.livery.palette.base);
-    const mat = (this.materials = new AircraftMaterials(textures, def));
-    const fus = buildFuselage(shapes, mat, def);
+    const textures = (this.textures = placeholderFuselageTextures(def.livery.palette.base));
+    const mat = (this.materials = new AircraftMaterials(textures, def, true));
+    const { shapes, fus } = fuselageFor(def, mat);
     // The lining closes the cabin behind the glass (there is no interior to see).
     this.root.add(fus.skin, fus.glass, fus.fittings, fus.lining);
     this.wings = buildWings(mat, this.root, def.wing, shapes.outer);
@@ -60,23 +108,39 @@ export class TrafficExterior {
     for (const l of sources) l.removeFromParent();
     this.root.add(this.lights.group);
     // The crew, seen through the windows (or a canopy).
-    this.occupants = buildOccupants(def.cockpit);
+    this.occupants = opts.crew === false ? null : buildOccupants(def.cockpit);
     if (this.occupants) this.root.add(this.occupants.group);
     this.root.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = true;
     });
-    this.bake(registration, textures);
+    this.bake(registration);
+  }
+
+  /** Repaint with another registration (an exterior handed on to another aircraft of the type). */
+  setRegistration(registration: string): void {
+    if (registration === this.registration) return;
+    this.registration = registration;
+    this.bake(registration);
   }
 
   /** The livery with this registration, off the main thread (on it if no worker can be started). */
-  private bake(registration: string, textures: ReturnType<typeof placeholderFuselageTextures>): void {
+  private bake(registration: string): void {
+    const id = ++this.bakeId;
+    let done!: () => void;
+    this.baked = new Promise<void>((res) => (done = res));
     const apply = (d: FuselageTextureData): void => {
-      if (!this.disposed) applyFuselageTextureData(textures, d);
+      if (!this.disposed && id === this.bakeId) applyFuselageTextureData(this.textures, d);
+      done();
     };
     const inline = (): void => {
-      const def = { ...this.def, livery: { ...this.def.livery, registration } };
-      const shapes = createFuselageShapes(def);
-      apply(bakeFuselageData(shapes.outer, shapes.glass, shapes.lining, def));
+      try {
+        const def = { ...this.def, livery: { ...this.def.livery, registration } };
+        const shapes = createFuselageShapes(def);
+        apply(bakeFuselageData(shapes.outer, shapes.glass, shapes.lining, def));
+      } catch (e) {
+        console.warn(`[traffic] no ${this.def.id} livery:`, e);
+        done();
+      }
     };
     if (typeof Worker === 'undefined') return inline();
     try {
@@ -120,12 +184,20 @@ export class TrafficExterior {
     this.materials.setSun(sky.sunDir, sky.sunColor);
   }
 
+  /** Free the geometry this exterior owns (its fuselage's is the type's, shared); the materials stay. */
+  releaseGeometry(): void {
+    this.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && !SHARED_GEOMETRY.has(m.geometry)) m.geometry.dispose();
+    });
+  }
+
   dispose(): void {
     this.disposed = true;
     this.root.removeFromParent();
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.isMesh) m.geometry.dispose();
+      if (m.isMesh && !SHARED_GEOMETRY.has(m.geometry)) m.geometry.dispose();
     });
     for (const p of this.propellers) p.dispose();
     this.lights.dispose();
