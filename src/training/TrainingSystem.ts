@@ -22,6 +22,8 @@
 // are not opened automatically in an automated browser (navigator.webdriver) unless school=1, as the
 // first-flight hints card already behaves, so scripted free-flight runs keep working.
 
+import { worldSeed } from '../world/worldSeed';
+import { lessonSeedZeroUrl } from '../sim/seedChoice';
 import * as THREE from 'three';
 import type { CameraMode, SimContext, Subsystem } from '../core/context';
 import { FPM } from '../core/math';
@@ -434,6 +436,12 @@ export class TrainingSystem implements Subsystem {
       return;
     }
     if (this.refuseType()) return;
+    // The route is laid out in today's world (seed 0): from a seeded world, reload into it for the lesson.
+    if (worldSeed() !== 0 && typeof location !== 'undefined') {
+      this.school.toast('Flight School lessons fly in the standard world (seed 0): loading it');
+      location.assign(lessonSeedZeroUrl(location.href, lesson.id, opts));
+      return;
+    }
     this.endSession();
     const save = this.ensureSave();
     const authority = opts.standard ?? this.shell.params.standard ?? save.settings.authority;
