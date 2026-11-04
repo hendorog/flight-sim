@@ -90,7 +90,7 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   player is on its runway when it is below 400 ft on final it goes around and says so. Otherwise there is no
   separation or collision with the player yet.
 - **The real flight model and exteriors near the player** (`trafficPilot.ts`, `render/aircraft/trafficExterior.ts`).
-  The types are the sim's own C172S, C152, PA-38 and DA20. The nearest two aircraft within 15 km of the player
+  The types are the sim's own C172S, C152, PA-38 and DA20. The nearest three aircraft within 15 km of the player
   (dropped beyond 17 km; none above 4x time acceleration) fly on their type's flight model, flown by the player's
   scripted pilot (`sim/autoflight.ts`, now given the runway as a frame, home 07 by default and bit-identical):
   its take-off, approach, flare and roll-out, with crosswind, downwind and base on its heading and altitude hold
@@ -99,8 +99,22 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   turn not below 450 ft; turns at up to 22 degrees of bank; a touch and go is two seconds on the wheels, then the
   take-off flap and full power. 240 Hz on and near the ground, 120 Hz in the air: about 2 % of a core each. They
   are drawn with the type's own exterior (no cockpit, light glows only, the livery baked with the aircraft's own
-  registration) within 3 km of the camera, the box stand-in beyond; the others stay kinematic. Changing over keeps
-  the leg and position.
+  registration); the others stay kinematic. Changing over keeps the leg and position.
+- **Drawing and smooth motion** (2026-11-05, `TrafficSystem.pose`, `trafficMesh.ts`, `render/aircraft/trafficModel.ts`).
+  Every AI aircraft is its real type at every range; the box stand-ins are gone. Within 800 m of the camera (scaled
+  by its zoom, so the tower's binoculars bring it in from farther) an aircraft has its own exterior: flown, or posed
+  on its flight model's state from the kinematic circuit (the nearest four not flown, in the air as well as on the
+  ground, also under time acceleration). Beyond, the type's far model: its exterior merged and reduced by vertex
+  clustering (9 cm) to ~15k vertex-coloured triangles, the colours sampled from the baked livery, with the nav
+  lights, beacon and strobes at the type's lamp positions; built once per type while the sim loads. Exteriors share
+  their type's fuselage loft and generated textures (a repeat build takes 7-27 ms), are kept for reuse (one per
+  type) and at most one is built per frame. A flown aircraft runs whole physics steps with the remainder carried and
+  is drawn between its last two steps, so it moves as evenly as the frames come
+  (`scripts/probes/traffic-smoothness.mjs`: frame-to-frame speed scatter 3.9 % before, 0 now); a changeover between
+  the flight model and the kinematic circuit fades its difference out over 0.4 s from where it would have been drawn.
+  The home apron's parked aircraft are the same four types (`world/airport/props.ts` ParkedAircraft, the spots and
+  draws of `staticParkedSpots` unchanged): the merged full-detail model within 50 m (zoom-scaled), the far model
+  beyond, culled per aircraft against the view, shadowed by one coarse caster per type.
 - **Career identity and destination** (2026-11-01, [career.md](career.md) "Integration"). While the Career is
   open, the radio calls the aircraft by its airframe's own registration and ICAO type (`RadioDeps.identity`, the
   authority stays the school's), or, with the company callsign setting on, by the company callsign and flight number
