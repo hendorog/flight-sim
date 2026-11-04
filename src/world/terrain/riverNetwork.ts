@@ -8,15 +8,18 @@
 // filled hollows of the drainage, as warped ellipses fitted to the hollow.
 
 import { fbm, hash2i, gnoise } from './noise';
-import { lakeAt, lakeRadius, CHANNEL_BANK, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
+import { lakeAt, lakeRadius, PolylineIndex, CHANNEL_BANK, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, type Drainage } from './drainage';
+import { AIRPORT } from '../../core/world';
 
+/** Oxbow water stands this far above the river level of its valley section, m (as hydrology.ts). */
+const OXBOW_LEVEL = 0.6;
 /** Amplitude of the courses' wander off the lattice, m. */
 const WANDER = 900;
 /** Valley-axis sample spacing, m. */
 const AXIS_SPACING = 120;
 /** Index cells, m. */
-const CHANNEL_CELL = 200;
+const CHANNEL_CELL = 500;
 const VALLEY_CELL = 1000;
 /** Channels are searched this far beyond their half-width (bank and levee), m. */
 const CHANNEL_MARGIN = CHANNEL_BANK + 45;
@@ -101,10 +104,14 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const L = lines[li];
     // A smooth wander (a warp of the plane, so a cell shared by two lines moves the same way) breaks up the straight
     // runs the lattice routes across plains, then a little per-cell jitter.
-    const wn = (c: number): number => cellNorth(d, c) + WANDER * fbm(cellNorth(d, c) / 6000 + 3.7, cellEast(d, c) / 6000 - 1.9, 3) + jitter(c, 0);
-    const we = (c: number): number => cellEast(d, c) + WANDER * fbm(cellNorth(d, c) / 6000 - 8.1, cellEast(d, c) / 6000 + 5.3, 3) + jitter(c, 1);
+    // A river that reaches the sea keeps its mouth on its outlet cell (the wander fades over the last two cells).
+    const last = L.cells.length - 1;
+    const fade = (i: number): number => (L.joins >= 0 ? 1 : Math.min(1, (last - i) / 2));
+    const wn = (c: number, i: number): number => cellNorth(d, c) + fade(i) * (WANDER * fbm(cellNorth(d, c) / 6000 + 3.7, cellEast(d, c) / 6000 - 1.9, 3) + jitter(c, 0));
+    const we = (c: number, i: number): number => cellEast(d, c) + fade(i) * (WANDER * fbm(cellNorth(d, c) / 6000 - 8.1, cellEast(d, c) / 6000 + 5.3, 3) + jitter(c, 1));
     let n = L.cells.map(wn);
     let e = L.cells.map(we);
+    clearOfRunway(n, e);
     for (let pass = 0; pass < 3; pass++) {
       const n2 = n.slice();
       const e2 = e.slice();
@@ -115,6 +122,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       n = n2;
       e = e2;
     }
+    clearOfRunway(n, e);
     if (L.joins >= 0) {
       n[n.length - 1] = courses[L.joins].n[L.joinAt];
       e[e.length - 1] = courses[L.joins].e[L.joinAt];
@@ -137,6 +145,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const L = lines[li];
     const c = courses[li];
     const pts = catmullRom(c.n, c.e, AXIS_SPACING);
+    // The spline can swing inside the clearance between two points that keep outside it.
+    clearOfRunway(pts.n, pts.e);
     const count = pts.n.length;
     const north = Float64Array.from(pts.n);
     const east = Float64Array.from(pts.e);
@@ -149,6 +159,19 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       area[i] = L.area[k] + (L.area[k + 1] - L.area[k]) * (u - k);
     }
     // Water level: the running minimum of the natural terrain downstream, level across lakes, meeting the parent.
+    // The ground is sampled at every other point (the lowest of the centre and 80 m either side across the valley);
+    // the points between take the lower of their neighbours.
+    const ground = new Float64Array(count);
+    for (let i = 0; i < count; i++) {
+      if (i % 2 === 1 && i < count - 1) continue;
+      const i0 = Math.max(0, i - 1);
+      const i1 = Math.min(count - 1, i + 1);
+      const tl = Math.hypot(north[i1] - north[i0], east[i1] - east[i0]) || 1;
+      const qn = (-(east[i1] - east[i0]) / tl) * 80;
+      const qe = ((north[i1] - north[i0]) / tl) * 80;
+      ground[i] = Math.min(natural(north[i], east[i]), natural(north[i] + qn, east[i] + qe), natural(north[i] - qn, east[i] - qe));
+    }
+    for (let i = 1; i < count - 1; i += 2) ground[i] = Math.min(ground[i - 1], ground[i + 1]);
     const level = new Float64Array(count);
     let run = Infinity;
     for (let i = 0; i < count; i++) {
@@ -156,9 +179,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       if (lake) {
         run = lake.level;
       } else {
-        let h = natural(north[i], east[i]);
-        for (const [dn, de] of [[80, 0], [-80, 0], [0, 80], [0, -80]]) h = Math.min(h, natural(north[i] + dn, east[i] + de));
-        const cand = h - 2.5;
+        const cand = ground[i] - 2.5;
         run = i === 0 ? cand : Math.min(run - 0.00025 * (s[i] - s[i - 1]), cand);
       }
       level[i] = Math.max(0, run);
@@ -191,7 +212,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const lowland = 1 - smooth(MEANDER_GRADIENT * 0.5, MEANDER_GRADIENT, grad);
       const big = smooth(MEANDER_AREA * 0.6, MEANDER_AREA * 1.6, area[i]);
       const tail = L.joins >= 0 ? smooth(0, 2500, s[count - 1] - s[i]) : 1;
-      const m = lowland * big * tail * clampUnit(0.8 + 0.4 * gnoise(s[i] / 5200 + li * 7.31, 2.7 + li));
+      // No wide loops by the home runway.
+      const nearField = smooth(3000, 6000, runwayDistance(north[i], east[i]));
+      const m = lowland * big * tail * nearField * clampUnit(0.8 + 0.4 * gnoise(s[i] / 5200 + li * 7.31, 2.7 + li));
       meander[i] = m;
       // Meander wavelength about 18 channel widths (the long end of Leopold & Wolman's range: broad loops, as seed 0's
       // river has), varied along the river.
@@ -204,15 +227,26 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence });
   }
 
-  // --- Channels: sine-generated curves about the axis; a tributary's end on its parent's channel.
+  // --- Channels: sine-generated curves about the axis, some loops cut off as oxbows; a tributary's end on its parent's channel.
   const rivers: Array<RiverLine & { valleyS: Float64Array }> = [];
+  const oxbows: Array<{ north: Float64Array; east: Float64Array; level: number; halfWidth: number; depth: number }> = [];
   for (let li = 0; li < lines.length; li++) {
     const a = axes[li];
     const total = a.s[a.s.length - 1];
     const ch = sineGenerated(a, (hash2i(li, 0x3ea) & 0xffff) / 65536 * Math.PI * 2);
-    const north = ch.north;
-    const east = ch.east;
-    const valleyS = ch.valleyS;
+    for (const o of cutOffLoops(ch, a, li)) {
+      oxbows.push({
+        north: o.north,
+        east: o.east,
+        level: sampleAt(a.s, a.level, o.valleyS) + OXBOW_LEVEL,
+        halfWidth: o.halfWidth * 0.85,
+        // Cut off long ago (age near 0): more silted up, as hydrology.ts's oxbows.
+        depth: 0.8 + 2.2 * o.age,
+      });
+    }
+    const north = Float64Array.from(ch.north);
+    const east = Float64Array.from(ch.east);
+    const valleyS = Float64Array.from(ch.valleyS);
     const steps = north.length - 1;
     const L = lines[li];
     if (L.joins >= 0) {
@@ -242,8 +276,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
 
   // --- Indexes: every cell lists the segments (line, index) that can reach a point in it.
   const valleyIndex = new SegmentIndex(axes, (li, i) => Math.max(axes[li].floodplain[i], axes[li].floodplain[i + 1]) + Math.max(axes[li].influence[i], axes[li].influence[i + 1]), VALLEY_CELL);
-  const channelIndex = new SegmentIndex(rivers, (li, i) => Math.max(rivers[li].halfWidth[i], rivers[li].halfWidth[i + 1]) + CHANNEL_MARGIN, CHANNEL_CELL);
-  const wideIndex = new SegmentIndex(rivers, () => CHANNEL_REACH, 500);
+  // One channel index serves both the carving (within the bank) and queryRiver (out to CHANNEL_REACH).
+  const channelIndex = new SegmentIndex(rivers, () => CHANNEL_REACH, CHANNEL_CELL);
+  const wideIndex = channelIndex;
+  const oxbowIndex = new PolylineIndex(oxbows, 200, 100);
+  const oxNear: PolylineNear = { line: 0, seg: 0, t: 0, u: 0, dist: Infinity, side: 0 };
 
   const valleyHits: ValleyNear[] = [];
   const channelHits: ChannelNear[] = [];
@@ -329,7 +366,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     return out;
   };
-  const queryOxbow = (_n: number, _e: number, out: OxbowHit): OxbowHit => ((out.dist = Infinity), out);
+  const queryOxbow = (pn: number, pe: number, out: OxbowHit): OxbowHit => {
+    out.dist = Infinity;
+    if (!oxbowIndex.nearest(pn, pe, oxNear)) return out;
+    const o = oxbows[oxNear.line];
+    out.dist = oxNear.dist;
+    out.level = o.level;
+    out.halfWidth = o.halfWidth;
+    out.depth = o.depth;
+    return out;
+  };
   void channelHits;
 
   const main = rivers[0] ?? { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), halfWidth: new Float64Array(0), s: new Float64Array(0) };
@@ -340,13 +386,47 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     valley: mainAxis
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
-    oxbows: [],
-    rivers: rivers.map((r) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s })),
+    oxbows,
+    rivers: rivers.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: lines[li].joins })),
     network,
     queryRiver,
     queryValley,
     queryOxbow,
   };
+}
+
+/** Courses keep this far from the home runway's centreline segment, m (the meander belt then still clears it). */
+const RUNWAY_CLEAR = 2500;
+const RW_HALF = AIRPORT.runway.length / 2;
+const RW_C = Math.cos(AIRPORT.runway.heading);
+const RW_S = Math.sin(AIRPORT.runway.heading);
+
+/** Distance from the home runway's centreline segment, m. */
+function runwayDistance(pn: number, pe: number): number {
+  const c = AIRPORT.runway.center;
+  const dn = pn - c.north;
+  const de = pe - c.east;
+  const along = Math.max(-RW_HALF, Math.min(RW_HALF, dn * RW_C + de * RW_S));
+  return Math.hypot(dn - along * RW_C, de - along * RW_S);
+}
+
+/** Push course points lying near the home runway out to RUNWAY_CLEAR from it (in place). */
+function clearOfRunway(n: number[], e: number[]): void {
+  const c = AIRPORT.runway.center;
+  for (let i = 0; i < n.length; i++) {
+    const dn = n[i] - c.north;
+    const de = e[i] - c.east;
+    const along = Math.max(-RW_HALF, Math.min(RW_HALF, dn * RW_C + de * RW_S));
+    const qn = dn - along * RW_C;
+    const qe = de - along * RW_S;
+    const d = Math.hypot(qn, qe);
+    if (d >= RUNWAY_CLEAR) continue;
+    // Straight out from the runway (across it, or off its end); a point on the centreline goes to the right.
+    const un = d > 1 ? qn / d : -RW_S;
+    const ue = d > 1 ? qe / d : RW_C;
+    n[i] = c.north + along * RW_C + un * RUNWAY_CLEAR;
+    e[i] = c.east + along * RW_S + ue * RUNWAY_CLEAR;
+  }
 }
 
 const clampUnit = (x: number): number => Math.min(1, Math.max(0, x));
@@ -360,14 +440,15 @@ const besselJ0 = (x: number): number => {
 /**
  * The channel about a valley axis as a sine-generated curve (Langbein & Leopold): its direction swings about the
  * axis's as omega sin(phi), with the Kinoshita third harmonic for the skewed, flattened loops of real meanders. Big
- * lowland rivers (meander near 1) swing up to ~100 degrees and form full loops; streams wiggle at 0.5 rad. Marched in
+ * lowland rivers (meander near 1) swing up to ~115 degrees and form horseshoe loops; streams wiggle at 0.5 rad. Marched in
  * the axis frame (along, offset), steered back if it drifts outside the belt.
  */
-function sineGenerated(a: Axis, phase0: number): { north: Float64Array; east: Float64Array; valleyS: Float64Array } {
+function sineGenerated(a: Axis, phase0: number): { north: number[]; east: number[]; valleyS: number[]; off: number[] } {
   const total = a.s[a.s.length - 1];
   const n: number[] = [];
   const e: number[] = [];
   const vs: number[] = [];
+  const os: number[] = [];
   let along = 0;
   let off = 0;
   let phi = phase0;
@@ -381,6 +462,7 @@ function sineGenerated(a: Axis, phase0: number): { north: Float64Array; east: Fl
     n.push(a.north[i] + tn * t - (te / tl) * y);
     e.push(a.east[i] + te * t + (tn / tl) * y);
     vs.push(sv);
+    os.push(y);
   };
   put(0, 0);
   for (let guard = 0; along < total && guard < 400000; guard++) {
@@ -390,12 +472,12 @@ function sineGenerated(a: Axis, phase0: number): { north: Float64Array; east: Fl
     const lambda = a.wavelength[i];
     const belt = a.belt[i];
     // Loop to loop: the swing and the loop length vary, so no two bends are alike.
-    const omega = (0.5 + 1.25 * m) * (0.85 + 0.3 * gnoise(along / (1.7 * lambda) + phase0 * 13.1, 4.4));
+    const omega = (0.5 + 1.5 * m) * (0.85 + 0.3 * gnoise(along / (1.7 * lambda) + phase0 * 13.1, 4.4));
     let theta = omega * Math.sin(phi) + omega * omega * omega * (Math.sin(3 * phi) / 32 - Math.cos(3 * phi) / 192);
     // Keep within the belt: steer back in proportion to the drift, firmly once past the belt's edge.
     const drift = off / Math.max(1, belt);
     theta -= 0.35 * drift + 2 * Math.max(0, Math.abs(drift) - 1) * Math.sign(drift);
-    theta = Math.max(-1.9, Math.min(1.9, theta));
+    theta = Math.max(-2.15, Math.min(2.15, theta));
     const ds = Math.min(40, Math.max(15, lambda / 10));
     along += Math.cos(theta) * ds;
     off += Math.sin(theta) * ds;
@@ -409,7 +491,74 @@ function sineGenerated(a: Axis, phase0: number): { north: Float64Array; east: Fl
     put(Math.max(0, along), off);
   }
   if (vs[vs.length - 1] < total) put(total, 0);
-  return { north: Float64Array.from(n), east: Float64Array.from(e), valleyS: Float64Array.from(vs) };
+  return { north: n, east: e, valleyS: vs, off: os };
+}
+
+/** An oxbow cut off by cutOffLoops: the abandoned loop's centreline, where it lies along the valley, and its age. */
+interface CutLoop {
+  north: Float64Array;
+  east: Float64Array;
+  valleyS: number;
+  halfWidth: number;
+  age: number;
+}
+
+/**
+ * Neck cutoffs: on the strongly meandering stretches some of the widest loops are abandoned - the channel runs
+ * straight across the loop's neck and the loop is left as an oxbow lake beside it, trimmed clear of the new channel.
+ * Edits the channel in place; returns the oxbows.
+ */
+function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; off: number[] }, a: Axis, li: number): CutLoop[] {
+  const out: CutLoop[] = [];
+  const { north, east, valleyS, off } = ch;
+  let k0 = 0;
+  let lastCut = -Infinity;
+  let loop = 0;
+  for (let k = 1; k < off.length; k++) {
+    if (Math.sign(off[k]) === Math.sign(off[k - 1]) || off[k - 1] === 0) continue;
+    // A loop between two crossings of the axis: [k0, k].
+    const k1 = k;
+    const from = k0;
+    k0 = k;
+    loop++;
+    if (k1 - from < 6) continue;
+    const i = segmentAt(a.s, valleyS[from]);
+    if (a.meander[i] < 0.55) continue;
+    let apex = 0;
+    for (let j = from; j <= k1; j++) apex = Math.max(apex, Math.abs(off[j]));
+    if (apex < 0.6 * a.belt[i]) continue;
+    // Roughly one loop in five goes, none within 2.5 km of the last cutoff along the valley.
+    if ((hash2i(li * 7919 + loop, 0x0b0) & 0xff) > 52 || valleyS[from] - lastCut < 2500) continue;
+    const hw = a.halfWidth[i];
+    // The loop's crescent, clear of the chord the channel now takes.
+    const cn = north[from];
+    const ce = east[from];
+    const dn = north[k1] - cn;
+    const de = east[k1] - ce;
+    const l2 = dn * dn + de * de || 1;
+    const clear = 2 * hw + CHANNEL_BANK + 15;
+    const on: number[] = [];
+    const oe: number[] = [];
+    for (let j = from; j <= k1; j++) {
+      const u = Math.min(1, Math.max(0, ((north[j] - cn) * dn + (east[j] - ce) * de) / l2));
+      if (Math.hypot(north[j] - cn - dn * u, east[j] - ce - de * u) > clear) {
+        on.push(north[j]);
+        oe.push(east[j]);
+      }
+    }
+    if (on.length < 5) continue;
+    out.push({ north: Float64Array.from(on), east: Float64Array.from(oe), valleyS: valleyS[(from + k1) >> 1], halfWidth: hw, age: (hash2i(li, loop) & 0xffff) / 65536 });
+    // The channel across the neck: straight from crossing to crossing.
+    for (let j = from + 1; j < k1; j++) {
+      const t = (j - from) / (k1 - from);
+      north[j] = cn + dn * t;
+      east[j] = ce + de * t;
+      valleyS[j] = valleyS[from] + (valleyS[k1] - valleyS[from]) * t;
+      off[j] = 0;
+    }
+    lastCut = valleyS[k1];
+  }
+  return out;
 }
 
 /** Catmull-Rom through the points at about `spacing`; `t` is each sample's fractional index into the points. */

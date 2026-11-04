@@ -43,7 +43,7 @@ import { TOWN_WOOD_FADE, TOWN_WOOD_MARGIN } from '../world/terrain/townMask';
 import { buildTreeCell, TREE_STRIDE, WALL_STRIDE, type TreeCellData } from '../world/terrain/vegetation/placement';
 import { worldSeed } from '../world/worldSeed';
 import { bearingDeg, compassName, nearestField, placeName, type NedPoint } from './geo';
-import { LAKE_NAMES } from './landmarks';
+import { lakeName } from './landmarks';
 import { COMPLETION_RULES, type Waypoint } from './types';
 
 /** What a site is beside. */
@@ -357,11 +357,13 @@ export function siteAnchors(): readonly SiteAnchor[] {
     const edge = Math.max(lake.radiusA, lake.radiusB);
     out.push({
       id: `lake-${i}`, kind: 'lake', north: lake.north, east: lake.east, prefix: 'Lake shore',
-      fixedName: LAKE_NAMES[i] ? `Shore of ${LAKE_NAMES[i]}` : undefined, candidates: () => rings(lake, edge),
+      fixedName: lakeName(i) ? `Shore of ${lakeName(i)}` : undefined, candidates: () => rings(lake, edge),
     });
   });
   const river = hydrology.river;
   stations(river, SITE_RULES.riverStepM).forEach((i, n) => {
+    // A seeded world's main river runs far beyond the fields: keep its banks within the landmarks' summit reach.
+    if (hydrology.rivers && Math.hypot(river.north[i], river.east[i]) > SEEDED_RIVER_REACH_M) return;
     out.push({
       id: `river-${n}`, kind: 'river', north: river.north[i], east: river.east[i], prefix: 'Riverbank',
       candidates: () => squareTo(river, i, RIVER_OFFSETS_M, river.halfWidth[i]),
@@ -373,6 +375,9 @@ export function siteAnchors(): readonly SiteAnchor[] {
 }
 
 // --------------------------------------------------------------------------------------------- sites
+
+/** How far from the home field a seeded world's riverbank sites go, m (landmarks.ts SUMMIT.reachM). */
+const SEEDED_RIVER_REACH_M = 50000;
 
 /** "3.2 NM north-east of Elmley" from the nearest field. */
 function relativeTo(p: NedPoint, fields: readonly Airfield[]): string {

@@ -92,6 +92,8 @@ export interface RiverLine {
   level: Float64Array;
   halfWidth: Float64Array;
   s: Float64Array;
+  /** The river this one flows into (index into Hydrology.rivers), or -1 for one that reaches the sea or the edge. */
+  joins?: number;
 }
 
 /** A line's valley near a point (NetworkQuery.valleys). */

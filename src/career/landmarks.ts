@@ -36,6 +36,7 @@ import { hydrology, terrainHeight } from '../world/terrain/heightfield';
 import { lakeRadius, type Lake } from '../world/terrain/hydrology';
 import { riverCrossings, villageSites } from '../world/terrain/roads';
 import { worldSeed } from '../world/worldSeed';
+import { hash2i } from '../world/terrain/noise';
 import { bearingDeg, compassName, nearestField, placeName, type NedPoint } from './geo';
 import { BOARD_RULES, type Waypoint } from './types';
 
@@ -60,6 +61,40 @@ export interface Landmark {
 
 /** Lake names by hydrology.lakes index (hydrology.ts LAKE_DEFS order; tests pin each to its position). */
 export const LAKE_NAMES: readonly string[] = ['Valley Lake', 'Foothill Lake', 'Alpine Tarn', 'Glacial Lake'];
+
+const LAKE_STEM_A = ['Ash', 'Bram', 'Cal', 'Dun', 'Elm', 'Fair', 'Glen', 'Hart', 'Ivy', 'Kel', 'Lang', 'Mar', 'Nor', 'Oak', 'Pem', 'Red', 'Sand', 'Thorn', 'Wes', 'Brook', 'Holt', 'Kings', 'Lyn', 'Stan', 'Ross', 'Tarn', 'Whin', 'Gor'];
+const LAKE_STEM_B = ['by', 'ford', 'ton', 'wick', 'ley', 'stead', 'well', 'combe', 'ham', 'dale', 'hurst', 'side', 'more', 'den'];
+const LAKE_FORM = ['Lake {}', '{} Water', '{} Mere', 'Lake {}', '{} Reservoir', '{} Pool'];
+
+/**
+ * The name of hydrology.lakes[i]: LAKE_NAMES at seed 0 (the Flight School's route uses them); in a seeded world a
+ * name made from the seed and the lake's index, different for every lake of that world.
+ */
+export function lakeName(i: number): string | undefined {
+  if (worldSeed() === 0) return LAKE_NAMES[i];
+  const names = seededLakeNames();
+  return names[i];
+}
+
+let lakeNameCache: { key: string; names: string[] } | null = null;
+function seededLakeNames(): string[] {
+  const key = `${worldSeed()}|${hydrology.lakes.length}`;
+  if (lakeNameCache?.key === key) return lakeNameCache.names;
+  const used = new Set<string>();
+  const names = hydrology.lakes.map((_, i) => {
+    for (let k = 0; ; k++) {
+      const h = hash2i(worldSeed() * 131 + i, 0x1a4e + k);
+      const stem = LAKE_STEM_A[h % LAKE_STEM_A.length] + LAKE_STEM_B[(h >>> 8) % LAKE_STEM_B.length];
+      const name = LAKE_FORM[(h >>> 16) % LAKE_FORM.length].replace('{}', stem);
+      if (!used.has(name)) {
+        used.add(name);
+        return name;
+      }
+    }
+  });
+  lakeNameCache = { key, names };
+  return names;
+}
 
 /**
  * Horseshoe loops of the river: the channel runs arcM (centred on the apex) round a neck no wider than
@@ -132,11 +167,24 @@ interface Draft extends Omit<Landmark, 'name'> {
 
 /** The river's horseshoe loops: the middle of each loop (the mean of its arc's points) and its arc position. */
 function riverBends(): { north: number; east: number; s: number; sinuosity: number }[] {
-  const r = hydrology.river;
-  const n = r.north.length;
-  if (n < 3) return [];
-  const half = RIVER_BEND.arcM / 2;
+  // A seeded world: every river of its network within the summits' reach of the field (the loops of each, in turn).
+  const network = hydrology.rivers;
   const found: { north: number; east: number; s: number; sinuosity: number }[] = [];
+  const lines = network ?? [hydrology.river];
+  lines.forEach((r, li) => riverLineBends(r, li * 1e7, found));
+  const kept: typeof found = [];
+  for (const b of [...found].sort((a, c) => c.sinuosity - a.sinuosity || a.s - c.s)) {
+    if (network && Math.hypot(b.north, b.east) > SUMMIT.reachM) continue;
+    if (kept.every((k) => Math.hypot(k.north - b.north, k.east - b.east) >= RIVER_BEND.spacingM)) kept.push(b);
+  }
+  return kept.sort((a, c) => a.s - c.s);
+}
+
+/** The horseshoe loops of one river line (its arc lengths offset by sOffset), appended to found. */
+function riverLineBends(r: { north: Float64Array; east: Float64Array; s: Float64Array }, sOffset: number, found: { north: number; east: number; s: number; sinuosity: number }[]): void {
+  const n = r.north.length;
+  if (n < 3) return;
+  const half = RIVER_BEND.arcM / 2;
   let lo = 0;
   let hi = 0;
   let run: { north: number; east: number; s: number; sinuosity: number } | null = null;
@@ -156,7 +204,7 @@ function riverBends(): { north: number; east: number; s: number; sinuosity: numb
           se += r.east[j];
         }
         const k = hi - lo + 1;
-        run = { north: sn / k, east: se / k, s: r.s[i], sinuosity };
+        run = { north: sn / k, east: se / k, s: sOffset + r.s[i], sinuosity };
       }
     } else if (run) {
       found.push(run);
@@ -164,12 +212,6 @@ function riverBends(): { north: number; east: number; s: number; sinuosity: numb
     }
   }
   if (run) found.push(run);
-  // The most pronounced first; a loop within spacingM of one already kept is the same bend seen again.
-  const kept: typeof found = [];
-  for (const b of [...found].sort((a, c) => c.sinuosity - a.sinuosity || a.s - c.s)) {
-    if (kept.every((k) => Math.hypot(k.north - b.north, k.east - b.east) >= RIVER_BEND.spacingM)) kept.push(b);
-  }
-  return kept.sort((a, c) => a.s - c.s);
 }
 
 /** Summit tops: grid maxima with their prominence, climbed to the top; highest first. */
@@ -251,7 +293,7 @@ function drafts(fields: readonly Airfield[]): Draft[] {
     const p = clearPoint(lake, fields, AREA_NUDGE.lake * size, (q) => lakeRadius(lake, q.north, q.east) < AREA_NUDGE.lakeWater);
     if (p) {
       out.push({
-        id: `lake-${i}`, kind: 'lake', prefix: 'Lake', fixedName: LAKE_NAMES[i],
+        id: `lake-${i}`, kind: 'lake', prefix: 'Lake', fixedName: lakeName(i),
         ...p, elevationM: lake.level, radiusM: Math.max(lake.radiusA, lake.radiusB),
       });
     }

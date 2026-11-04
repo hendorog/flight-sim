@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { PALETTES } from './eraPalette';
 import { HASH_GLSL } from './glsl';
 import { hydrology } from './heightfield';
+import { lakeRadius } from './hydrology';
 import { GALLERY_FLOOR, RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
 import type { WaterData } from './tileBuilder';
 import { era, isPresent } from '../era/eraState';
@@ -377,15 +378,39 @@ export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
   const rivers = hydrology.rivers;
   if (!rivers) return [];
   const chunks = new Map<string, RiverBuffers>();
+  const lakes = hydrology.lakes;
+  // Where a river runs through a lake the lake's water covers it: no ribbon there (it would lie in the lake's plane).
+  const inLake = (n: number, e: number): boolean => {
+    for (const l of lakes) {
+      if ((n - l.north) ** 2 + (e - l.east) ** 2 > l.bound * l.bound) continue;
+      if (lakeRadius(l, n, e) < 0.97) return true;
+    }
+    return false;
+  };
   for (const r of rivers) {
     const count = r.north.length;
-    for (let from = 0; from < count - 1; from += RIVER_PIECE) {
-      if (r.level[from] < 0.3) break;
-      const key = `${Math.floor(r.north[from] / RIVER_CHUNK)},${Math.floor(r.east[from] / RIVER_CHUNK)}`;
-      let b = chunks.get(key);
-      if (!b) chunks.set(key, (b = riverBuffers()));
-      const stop = ribbonRows(r, from, Math.min(count, from + RIVER_PIECE + 1), b);
-      if (stop < Math.min(count, from + RIVER_PIECE + 1)) break;
+    let k = 0;
+    while (k < count - 1) {
+      // The next run of samples outside every lake: [from, to).
+      while (k < count && inLake(r.north[k], r.east[k])) k++;
+      if (k >= count - 1) break;
+      const from = k;
+      while (k < count && !inLake(r.north[k], r.east[k])) k++;
+      const to = Math.min(count, k + 1);
+      let piece = from;
+      let coast = false;
+      for (; piece < to - 1 && !coast; piece += RIVER_PIECE) {
+        if (r.level[piece] < 0.3) {
+          coast = true;
+          break;
+        }
+        const key = `${Math.floor(r.north[piece] / RIVER_CHUNK)},${Math.floor(r.east[piece] / RIVER_CHUNK)}`;
+        let b = chunks.get(key);
+        if (!b) chunks.set(key, (b = riverBuffers()));
+        const end = Math.min(to, piece + RIVER_PIECE + 1);
+        if (ribbonRows(r, piece, end, b) < end) coast = true;
+      }
+      if (coast) break;
     }
   }
   return [...chunks.values()].filter((b) => b.idx.length > 0).map(riverGeometryOf);

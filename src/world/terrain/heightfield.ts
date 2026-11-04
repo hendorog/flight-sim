@@ -273,7 +273,7 @@ const macro: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
  * today's world, but laid out by the seed's macro fields (seededLayout.ts) instead of the hand-shaped coast, range
  * and valley. A low plain at the airfield's elevation surrounds the home field so it never sits on a slope.
  */
-function seededNaturalHeight(north: number, east: number): number {
+function seededNaturalHeight(north: number, east: number, detail = true): number {
   macroAt(north, east, macro);
   const inland = macro.inland;
   const base = coastProfile(inland);
@@ -294,7 +294,7 @@ function seededNaturalHeight(north: number, east: number): number {
     gN += a * massif.dy;
     amplitude += a;
   }
-  relief += amplitude * 0.13 * erode(east, north, gE, gN);
+  if (detail) relief += amplitude * 0.13 * erode(east, north, gE, gN);
   let h = base + relief;
 
   const V = era().terrain.volcano;
@@ -318,6 +318,7 @@ function seededNaturalHeight(north: number, east: number): number {
     h += (floor - h) * plain;
   }
 
+  if (!detail) return h;
   const rough = 1.2 + 0.004 * clamp(h, 0, 3000);
   h += rough * (2.2 * gnoise(east / 180 + 0.3, north / 180 + 0.7) + 0.8 * gnoise(east / 60 - 4.1, north / 60 + 2.2));
   const rugged = clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN))) * (1 - plain);
@@ -340,7 +341,8 @@ let legacyHydro: Hydrology;
 let fields: readonly Airfield[] = [];
 function buildWater(): void {
   if (SEEDED) {
-    const drainage = buildDrainage(naturalHeight);
+    // Routed over the terrain without its gullies and small-scale relief (finer than the 1 km lattice, and the costly part).
+    const drainage = buildDrainage((n, e) => seededNaturalHeight(n, e, false));
     lakes = networkLakes(naturalHeight, drainage);
     presentHydro = buildNetworkHydrology(naturalHeight, drainage, lakes);
     legacyHydro = presentHydro;
@@ -483,6 +485,17 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const f = v.floodplain;
     const carved = smin(h, v.level + valleyProfile(d, f), 4);
     h += (carved - h) * (1 - smooth(f + v.influence * 0.75, f + v.influence, d));
+  }
+
+  // Oxbow lakes, as carveRiver cuts them.
+  presentHydro.queryOxbow(north, east, oxbowHit);
+  if (oxbowHit.dist < oxbowHit.halfWidth + 30) {
+    const d = oxbowHit.dist;
+    const w = oxbowHit.halfWidth;
+    const bank = BANK_HEIGHT - 0.6;
+    const target = d < w ? oxbowHit.level - oxbowHit.depth * (1 - (d / w) * (d / w)) : oxbowHit.level + bank * smooth(0, 20, d - w) + 0.05 * Math.max(0, d - w - 20) ** 2;
+    h = smin(h, target, 1.5);
+    if (d < w && h < oxbowHit.level) out.standing = Math.max(out.standing, oxbowHit.level);
   }
 
   presentHydro.queryRiver(north, east, riverHit);

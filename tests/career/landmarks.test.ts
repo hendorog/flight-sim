@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  AREA_NUDGE, LAKE_NAMES, landmarks, landmarkWaypoint, nearestLandmark, RIVER_BEND, SUMMIT, type Landmark,
+  AREA_NUDGE, LAKE_NAMES, lakeName, landmarks, landmarkWaypoint, nearestLandmark, RIVER_BEND, SUMMIT, type Landmark,
 } from '../../src/career/landmarks';
 import { BOARD_RULES, type JobStripModel } from '../../src/career/types';
 import { stripTargetText } from '../../src/career/ui/strip';
@@ -68,15 +68,21 @@ describe.each([0, 7])('the rules at seed %i', (seed) => {
     expect(new Set(list.map((l) => l.name)).size).toBe(list.length);
   });
 
-  it('names the lakes as the Flight School route does, on their water', () => {
+  it('names the lakes (at seed 0 as the Flight School route does), on their water', () => {
     const lakes = atSeed(seed).filter((l) => l.kind === 'lake');
-    expect(lakes.map((l) => l.name)).toEqual(LAKE_NAMES);
-    const byName = new Map(lakes.map((l) => [l.name, l]));
-    for (const [name, wp] of [['Valley Lake', WAYPOINTS.valleyLake], ['Foothill Lake', WAYPOINTS.foothillLake], ['Glacial Lake', WAYPOINTS.glacialLake]] as const) {
-      const l = byName.get(name)!;
-      expect(Math.hypot(l.north - wp.north, l.east - wp.east), name).toBeLessThan(5);
+    if (seed === 0) {
+      expect(lakes.map((l) => l.name)).toEqual(LAKE_NAMES);
+      const byName = new Map(lakes.map((l) => [l.name, l]));
+      for (const [name, wp] of [['Valley Lake', WAYPOINTS.valleyLake], ['Foothill Lake', WAYPOINTS.foothillLake], ['Glacial Lake', WAYPOINTS.glacialLake]] as const) {
+        const l = byName.get(name)!;
+        expect(Math.hypot(l.north - wp.north, l.east - wp.east), name).toBeLessThan(5);
+      }
+    } else {
+      // A seeded world's own lakes (riverNetwork.ts), each with its own generated name.
+      expect(lakes.length).toBeGreaterThan(4);
+      for (const l of lakes) expect(l.name).toBe(lakeName(Number(l.id.slice('lake-'.length))));
     }
-    lakes.forEach((l, i) => expect(lakeRadius(hydrology.lakes[i], l.north, l.east)).toBeLessThan(AREA_NUDGE.lakeWater));
+    for (const l of lakes) expect(lakeRadius(hydrology.lakes[Number(l.id.slice('lake-'.length))], l.north, l.east)).toBeLessThan(AREA_NUDGE.lakeWater);
   });
 
   it('puts the town over its built-up core, and leaves the town mask alone', () => {
