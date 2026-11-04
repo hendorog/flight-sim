@@ -266,6 +266,21 @@ After a resume the published N1 and TOT of a multi-engine type stay at the reset
 `engines[i].ng` / `itt`.
 Close with: republish them from the snapshot in the restore path.
 
+### Parked aircraft carry no registration — **missing feature (cosmetic)**
+
+The home apron's parked aircraft (`world/airport/props.ts` ParkedAircraft) share one livery per type, baked without a
+registration: a per-aircraft bake would hold its own textures (~86 MB at the C172S's size). The AI traffic's own
+exteriors carry theirs.
+Close with: a registration-only decal per parked aircraft (a small texture over the shared livery), or per-aircraft
+bakes at the downsampled 1024 px size (~5 MB each).
+
+### First AI exterior can stall on its shader compile — **defect (performance), pre-existing**
+
+The first traffic exterior drawn compiles its materials' programs on that frame (a few hundred ms on a slow GPU) unless
+a parked aircraft's full-detail model, which uses the same programs, was drawn first (the player started within 50 m
+of one).
+Close with: `renderer.compileAsync` on a new exterior before it is shown (the far model meanwhile).
+
 ## Career
 
 Open items of the air-operator career ([career.md](career.md), on `feat/career` as of 2026-11-01).
