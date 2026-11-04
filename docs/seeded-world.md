@@ -137,9 +137,11 @@ Still open:
 
 - **The drainage domain is bounded** (+-160 km): beyond it the terrain goes on but has no rivers, and catchments
   near its edge are short of their outer parts. The streamed provinces (step 3 above) remove the edge.
-- **Meanders differ from seed 0's**, which were grown by the migration model and baked; seeded rivers use the
-  disturbed periodic model so nothing has to run for seconds at load.
-- **The Flight School's route** (`training/content/syllabus/route.ts`) names seed 0's lakes and town at fixed
-  places, which a seeded world does not have. Owner to decide: lessons always in seed 0, or a route per seed.
+- **Meanders differ from seed 0's**, which were grown by the migration model and baked; seeded rivers use Ferguson's
+  disturbed periodic model (irregular loops, owner asked for more variety than the sine-generated curve gave) with
+  neck cutoffs, so nothing has to run for seconds at load.
+- **The Flight School** flies in seed 0 for now (owner, 2026-11-04): a `lesson=` start always builds seed 0, and a
+  lesson started in a seeded world reloads into it. Lessons generated per seed come later, once the world is
+  refined; the route (`training/content/syllabus/route.ts`) names seed 0's lakes and town at fixed places.
 - Roads and villages remain seed 0 only (owner's choice); the town is still sited by `findTownSite`.
 - The career's seed-7 golden boards change with the world (re-baked; seed 0's boards are unchanged).
