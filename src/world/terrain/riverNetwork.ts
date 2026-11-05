@@ -9,8 +9,9 @@
 // across its lattice cells); ellipses fitted to them place what goes by a lake.
 
 import { fbm, hash2i, gnoise } from './noise';
-import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
+import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
+import { applyFalls, channelHalfWidth, FALL_MIN, FallIndex, flowOf, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { AIRPORT } from '../../core/world';
 
 /** A loop is cut off when its neck has closed to this fraction of the meander length (or a few channel widths). */
@@ -38,6 +39,10 @@ const VALLEY_CELL = 1000;
 const CHANNEL_MARGIN = CHANNEL_BANK + 45;
 /** Beyond the channel index's reach, queryRiver estimates the distance from the valley axis. */
 const CHANNEL_REACH = 450;
+/** A stream's channel is listed, and reported by queryRiver and queryFlow, this far from it, m (a river's: CHANNEL_REACH). */
+const STREAM_REACH = 150;
+/** A river's head (not in a lake) widens from the stream feeding it to its own width over this much valley, m. */
+const HEAD_TAPER = 1500;
 /** Catchment (km²) above which a river meanders on low ground, and the valley gradient below which it does. */
 const MEANDER_AREA = 250;
 const MEANDER_GRADIENT = 0.004;
@@ -160,7 +165,7 @@ export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
 }
 
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyCut?: Float32Array): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyCut?: Float32Array, smoothGround: (north: number, east: number) => number = natural): Hydrology {
   const lines = d.lines;
   // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley the erosion
   // pass cut (erosion.ts, `valleyCut` per cell, <= 0) is the river's own, and its floor lies along the lattice path; a
@@ -215,7 +220,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // the rest of each valley from its final level.
   // The ponds a line has run through at their level (main stems first): no later line drains them.
   const held = new Uint8Array(d.lakes.length);
-  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array; pinned: Uint8Array; ground: Float64Array; fall: Float64Array }> = [];
+  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array; pinned: Uint8Array; ground: Float64Array; fall: Float64Array; poolOf: Int32Array }> = [];
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const c = courses[li];
@@ -272,9 +277,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // The lake at each point (-Infinity: none), and the next one downstream: its level and where the river reaches it.
     const lakeAt = new Float64Array(count);
     const pondAt = new Int32Array(count);
+    // The pool (LakeMask.pools) at each point: the pools a river runs through need no outlet stream (streams.ts).
+    const poolOf = new Int32Array(count);
     for (let i = 0; i < count; i++) {
       lakeAt[i] = mask.at(north[i], east[i]);
       pondAt[i] = mask.pond;
+      poolOf[i] = mask.poolHit;
     }
     const next = new Float64Array(count).fill(-Infinity);
     const nextAt = new Float64Array(count);
@@ -324,7 +332,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // does not count): the gradient cap below lets the water fall as steeply as the ground does.
     const fall = Float64Array.from(ground);
     smoothAlong(fall, Math.ceil(500 / AXIS_SPACING), 2);
-    pre.push({ north, east, s, area, level, wet, pinned, ground, fall });
+    pre.push({ north, east, s, area, level, wet, pinned, ground, fall, poolOf });
   }
   // --- Confluences. A tributary that arrives lower than the river it joins has cut down through a rim (it drains a
   // closed basin the routing filled: a big hollow is not a lake, drainage.ts): the river it joins cuts down with it
@@ -552,12 +560,155 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     rivers.push({ north: Float64Array.from(north), east: Float64Array.from(east), level, halfWidth, s, valleyS: Float64Array.from(valleyS) });
   }
 
+  const tPhase: number[] = [performance.now()];
+  // --- The channels' flow (streams.ts): each river's head narrows to the stream that feeds it, the steep reaches
+  // become falls with pools, then the streams are traced down to the rivers and treated alike.
+  const nR = rivers.length;
+  const kinds: number[] = [];
+  const channelArea: Float64Array[] = [];
+  const lipsOf: number[][] = [];
+  const falls: Fall[] = [];
+  /** A finished line's water level at arc length sv. */
+  const levelOn = (c: { s: Float64Array; level: Float64Array }, sv: number): number => sampleAt(c.s, c.level, sv);
+  const recordFalls = (li: number, c: { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array }, lips: ReadonlyArray<{ index: number; drop: number }>): void => {
+    const own: number[] = [];
+    for (const l of lips) {
+      const i = l.index;
+      const j = Math.min(c.north.length - 1, i + 1);
+      const dn = c.north[j] - c.north[Math.max(0, j - 1)];
+      const de = c.east[j] - c.east[Math.max(0, j - 1)];
+      const len = Math.hypot(dn, de) || 1;
+      falls.push({ line: li, index: i, north: c.north[i], east: c.east[i], top: c.level[i], bottom: c.level[i] - l.drop, width: 2 * c.halfWidth[i], dirN: dn / len, dirE: de / len });
+      own.push(i);
+    }
+    lipsOf[li] = own;
+  };
+  for (let li = 0; li < nR; li++) {
+    const r = rivers[li];
+    const a = axes[li];
+    const P = pre[li];
+    const count = r.s.length;
+    const area = new Float64Array(count);
+    const keep = new Uint8Array(count);
+    // (The channel's valley arc length runs nearly monotonically: a pointer walks the axis with it.)
+    const last = a.s.length - 1;
+    let seg = 0;
+    for (let k = 0; k < count; k++) {
+      const sv = r.valleyS[k];
+      while (seg > 0 && sv < a.s[seg]) seg--;
+      while (seg < last - 1 && sv > a.s[seg + 1]) seg++;
+      const t = last > 0 ? Math.min(1, Math.max(0, (sv - a.s[seg]) / Math.max(1e-9, a.s[seg + 1] - a.s[seg]))) : 0;
+      area[k] = last > 0 ? a.area[seg] + (a.area[seg + 1] - a.area[seg]) * t : a.area[0];
+      keep[k] = P.wet[seg] | P.wet[Math.min(seg + 1, last)];
+    }
+    // A river's head (not in a lake) starts as wide as the biggest stream feeding its first lattice cell, widening
+    // to its own width over HEAD_TAPER: no channel 15 m wide out of nothing.
+    if (!P.wet[0]) {
+      const c0 = lines[li].cells[0];
+      let feed = 0;
+      for (let k = 0; k < 8; k++) {
+        const ci = Math.floor(c0 / d.n) + [-1, -1, -1, 0, 0, 1, 1, 1][k];
+        const cj = (c0 % d.n) + [-1, 0, 1, -1, 1, -1, 0, 1][k];
+        if (ci < 0 || cj < 0 || ci >= d.n || cj >= d.n) continue;
+        const q = ci * d.n + cj;
+        if (d.receiver[q] === c0) feed = Math.max(feed, d.area[q]);
+      }
+      for (let k = 0; k < count && r.valleyS[k] < HEAD_TAPER; k++) {
+        const A = feed + (area[k] - feed) * smooth(0, HEAD_TAPER, r.valleyS[k]);
+        r.halfWidth[k] = Math.min(r.halfWidth[k], channelHalfWidth(A));
+      }
+    }
+    // A tributary ends at its parent's water (the parent may have fallen below it there: a fall at the confluence).
+    const L = lines[li];
+    if (L.joins >= 0) {
+      const p = rivers[L.joins];
+      r.level[count - 1] = Math.min(r.level[count - 1], p.level[nearestOnChannel(p, r.north[count - 1], r.east[count - 1])]);
+    }
+    const f = applyFalls({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, valleyS: r.valleyS, area }, keep);
+    const c = { north: f.line.north, east: f.line.east, level: f.line.level, halfWidth: f.line.halfWidth, s: f.line.s, valleyS: f.line.valleyS };
+    rivers[li] = c;
+    channelArea[li] = f.line.area;
+    kinds[li] = 0;
+    recordFalls(li, c, f.lips);
+  }
+  // The pools a river runs through.
+  const riverPools = new Uint8Array(mask.pools.length);
+  for (const P of pre) for (let i = 0; i < P.wet.length; i++) if (P.wet[i] && P.poolOf[i] >= 0) riverPools[P.poolOf[i]] = 1;
+  // The ground the streams run down: the terrain's, with the rivers' valleys cut in (as carveNetwork cuts them); they
+  // are routed over it without its small-scale relief.
+  const carvedGround = (h: number, pn: number, pe: number): number => {
+    valleyIndex.perLine(pn, pe, (lj, k, t, dd) => {
+      const v = axes[lj];
+      const f = v.floodplain[k] + (v.floodplain[k + 1] - v.floodplain[k]) * t;
+      const I = v.influence[k] + (v.influence[k + 1] - v.influence[k]) * t;
+      if (dd >= f + I) return false;
+      const lv = v.level[k] + (v.level[k + 1] - v.level[k]) * t;
+      const excess = Math.max(0, h - lv - valleyWall(f + I, f));
+      const u = Math.min(1, Math.max(0, (dd - f) / I));
+      const carved = sminN(h, lv + valleyWall(dd, f) + excess * u * u, 4);
+      h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, dd));
+      return false;
+    });
+    return h;
+  };
+  tPhase.push(performance.now());
+  const traced = traceStreams({ d, mask, route: (pn, pe) => carvedGround(smoothGround(pn, pe), pn, pe), rivers, riverPools });
+  const streamLines: Array<{ north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array }> = [];
+  const streamJoins: number[] = [];
+  const streamEnds: Array<StreamLine['end']> = [];
+  const lineOf = (li: number): { s: Float64Array; level: Float64Array } => (li < nR ? rivers[li] : streamLines[li - nR]);
+  for (let j = 0; j < traced.streams.length; j++) {
+    const st = traced.streams[j];
+    const li = nR + j;
+    // Its end at the water of the line it joins (final: that line came first).
+    if (st.joins >= 0) st.level[st.level.length - 1] = Math.min(st.level[st.level.length - 1], levelOn(lineOf(st.joins), st.joinS));
+    for (let i = 1; i < st.level.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
+    const keep = new Uint8Array(st.level.length);
+    // (An outlet's first samples keep its lake's level: its first fall comes at the last of them.)
+    for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
+    const f = applyFalls({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area }, keep);
+    const c = { north: f.line.north, east: f.line.east, level: f.line.level, halfWidth: f.line.halfWidth, s: f.line.s };
+    streamLines.push(c);
+    streamJoins.push(st.joins);
+    streamEnds.push(st.end);
+    channelArea[li] = f.line.area;
+    kinds[li] = 1;
+    recordFalls(li, c, f.lips);
+  }
+  // A line arriving FALL_MIN or more above the water it joins falls into it at the confluence.
+  const allLines = [...rivers, ...streamLines];
+  const joinsOf = (li: number): number => (li < nR ? lines[li].joins : streamJoins[li - nR]);
+  for (let li = 0; li < allLines.length; li++) {
+    const p = joinsOf(li);
+    if (p < 0) continue;
+    const c = allLines[li];
+    const m = c.level.length;
+    if (m < 2) continue;
+    const drop = c.level[m - 2] - c.level[m - 1];
+    const run = c.s[m - 1] - c.s[m - 2];
+    if (drop >= FALL_MIN && drop / Math.max(1, run) > 0.1) {
+      const i = m - 2;
+      const dn = c.north[m - 1] - c.north[i];
+      const de = c.east[m - 1] - c.east[i];
+      const len = Math.hypot(dn, de) || 1;
+      falls.push({ line: li, index: i, north: c.north[i], east: c.east[i], top: c.level[i], bottom: c.level[m - 1], width: 2 * c.halfWidth[i], dirN: dn / len, dirE: de / len });
+      lipsOf[li].push(i);
+    }
+  }
+  tPhase.push(performance.now());
+  const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
+  tPhase.push(performance.now());
+  const fallIndex = new FallIndex(falls);
+  const streamReport: StreamReport = traced.report;
+
   // --- Indexes: every cell lists the segments (line, index) that can reach a point in it (the valley index above:
   // each axis segment is listed out to the largest reach of the segments near it along the river, as the query takes
   // a line's nearest listed segment, so a nearer one left unlisted (a smaller reach) would put a seam at a cell edge).
   // One channel index serves both the carving (within the bank) and queryRiver (out to CHANNEL_REACH).
-  const channelIndex = new SegmentIndex(rivers, () => CHANNEL_REACH, CHANNEL_CELL);
+  const channelIndex = new SegmentIndex(allLines, (li) => (li < nR ? CHANNEL_REACH : STREAM_REACH), CHANNEL_CELL);
   const wideIndex = channelIndex;
+  tPhase.push(performance.now());
+  traced.report.phases = tPhase.slice(1).map((t, i) => t - tPhase[i]);
   const oxbowIndex = new PolylineIndex(oxbows, 200, 100);
   const oxNear: PolylineNear = { line: 0, seg: 0, t: 0, u: 0, dist: Infinity, side: 0 };
 
@@ -577,9 +728,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     },
     channels(pn, pe, out) {
       return channelIndex.perLine(pn, pe, (li, i, t, dist, side, u, k) => {
-        const r = rivers[li];
-        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0 });
+        const r = allLines[li];
+        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0 });
         o.line = li;
+        o.kind = kinds[li];
         o.dist = dist;
         o.side = side;
         o.level = r.level[i] + (r.level[i + 1] - r.level[i]) * t;
@@ -598,10 +750,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     let best = -1;
     let bestD = Infinity;
     wideIndex.perLine(pn, pe, (li, i, t, dist, side, u) => {
-      if (dist < bestD) {
+      // A stream counts within its own reach only (its segments are listed no further out).
+      if (dist < bestD && (li < nR || dist <= STREAM_REACH)) {
         bestD = dist;
         best = li;
-        const r = rivers[li];
+        const r = allLines[li];
         out.dist = dist;
         out.side = side;
         out.level = r.level[i] + (r.level[i + 1] - r.level[i]) * t;
@@ -627,6 +780,39 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         out.halfWidth = a.halfWidth[i];
         out.s = 0;
       }
+      return false;
+    });
+    return out;
+  };
+  /** The nearest channel's flow at a point (within its reach: CHANNEL_REACH for a river, STREAM_REACH for a stream). */
+  const queryFlow = (pn: number, pe: number, out: FlowHit): FlowHit => {
+    out.dist = Infinity;
+    out.line = -1;
+    let bestD = Infinity;
+    channelIndex.perLine(pn, pe, (li, i, t, dist, side) => {
+      if (dist >= bestD || dist > (li < nR ? CHANNEL_REACH : STREAM_REACH)) return false;
+      bestD = dist;
+      const c = allLines[li];
+      const f = flows[li];
+      // The nearer sample's kind of flow and gradient; the rest interpolated.
+      const j = t < 0.5 ? i : i + 1;
+      out.dist = dist;
+      out.side = side;
+      out.line = li;
+      out.kind = kinds[li];
+      out.index = j;
+      out.s = c.s[i] + (c.s[i + 1] - c.s[i]) * t;
+      out.level = c.level[i] + (c.level[i + 1] - c.level[i]) * t;
+      out.halfWidth = c.halfWidth[i] + (c.halfWidth[i + 1] - c.halfWidth[i]) * t;
+      out.gradient = f.gradient[j];
+      out.steepness = f.steepness[i] + (f.steepness[i + 1] - f.steepness[i]) * t;
+      out.speed = f.speed[i] + (f.speed[i + 1] - f.speed[i]) * t;
+      out.regime = f.regime[j];
+      const dn = c.north[i + 1] - c.north[i];
+      const de = c.east[i + 1] - c.east[i];
+      const len = Math.hypot(dn, de) || 1;
+      out.dirN = dn / len;
+      out.dirE = de / len;
       return false;
     });
     return out;
@@ -668,7 +854,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: rivers.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: lines[li].joins })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), area: channelArea[li], ...flows[li] })),
+    falls,
+    queryFlow,
+    fallsNear: (pn, pe, radius, out) => fallIndex.near(pn, pe, radius, out),
+    streamReport,
     network,
     queryRiver,
     queryValley,
@@ -877,25 +1067,43 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
 function untangle(n: number[], e: number[], vs: number[]): void {
   const CELL = 200;
   for (let pass = 0; pass < 8; pass++) {
-    const grid = new Map<number, number[]>();
-    const key = (a: number, b: number): number => (Math.floor(a / CELL) + 32768) * 65536 + (Math.floor(b / CELL) + 32768);
-    for (let i = 0; i < n.length - 1; i++) {
-      const k = key((n[i] + n[i + 1]) / 2, (e[i] + e[i + 1]) / 2);
-      const l = grid.get(k);
-      if (l) l.push(i);
-      else grid.set(k, [i]);
+    // Segments by the cell of their midpoint: a dense grid over the line's extent (a head per cell, a chain through
+    // the segments). The crossing kept is the furthest one along (whatever order the candidates come in).
+    const m = n.length - 1;
+    if (m < 2) return;
+    const cn = new Int32Array(m);
+    const ce = new Int32Array(m);
+    let n0 = Infinity;
+    let e0 = Infinity;
+    let n1 = -Infinity;
+    let e1 = -Infinity;
+    for (let i = 0; i < m; i++) {
+      cn[i] = Math.floor((n[i] + n[i + 1]) / 2 / CELL);
+      ce[i] = Math.floor((e[i] + e[i + 1]) / 2 / CELL);
+      n0 = Math.min(n0, cn[i]);
+      n1 = Math.max(n1, cn[i]);
+      e0 = Math.min(e0, ce[i]);
+      e1 = Math.max(e1, ce[i]);
+    }
+    const rows = n1 - n0 + 3;
+    const cols = e1 - e0 + 3;
+    const head = new Int32Array(rows * cols).fill(-1);
+    const next = new Int32Array(m);
+    for (let i = m - 1; i >= 0; i--) {
+      const c = (cn[i] - n0 + 1) * cols + ce[i] - e0 + 1;
+      next[i] = head[c];
+      head[c] = i;
     }
     let cut = false;
-    for (let i = 0; i < n.length - 1 && !cut; i++) {
-      const mn = (n[i] + n[i + 1]) / 2, me = (e[i] + e[i + 1]) / 2;
+    for (let i = 0; i < m && !cut; i++) {
       let hit = -1;
       let t = 0;
+      const px = e[i], py = n[i], qx = e[i + 1] - px, qy = n[i + 1] - py;
       for (let a = -1; a <= 1; a++) {
         for (let b = -1; b <= 1; b++) {
-          for (const j of grid.get(key(mn + a * CELL, me + b * CELL)) ?? []) {
+          for (let j = head[(cn[i] - n0 + 1 + a) * cols + ce[i] - e0 + 1 + b]; j >= 0; j = next[j]) {
             if (j <= i + 1 || j <= hit) continue;
             // Segment i (p -> q) against segment j (r -> s): p + t (q - p) = r + u (s - r).
-            const px = e[i], py = n[i], qx = e[i + 1] - px, qy = n[i + 1] - py;
             const rx = e[j], ry = n[j], sx = e[j + 1] - rx, sy = n[j + 1] - ry;
             const den = qx * sy - qy * sx;
             if (Math.abs(den) < 1e-12) continue;
@@ -1132,7 +1340,14 @@ const nearestOnChannel = nearestIndex;
  * covers some of the cell. perLine visits, for every line listed at a point, its nearest segment.
  */
 class SegmentIndex {
-  private readonly cells = new Map<number, Int32Array>();
+  /** The cells over the lines' extent, dense (CSR): cell (cn, ce) lists entries start[c] .. start[c + 1] of `entries`
+   * (line, segment pairs), c = (cn - cn0) * cols + ce - ce0. */
+  private readonly cn0: number;
+  private readonly ce0: number;
+  private readonly rows: number;
+  private readonly cols: number;
+  private readonly start: Int32Array;
+  private readonly entries: Int32Array;
   private readonly bestD: Float64Array;
   private readonly bestSeg: Int32Array;
   private readonly bestT: Float64Array;
@@ -1141,24 +1356,61 @@ class SegmentIndex {
   private readonly touched: Int32Array;
   private tick = 0;
   constructor(private readonly lines: ReadonlyArray<{ north: Float64Array; east: Float64Array }>, reach: (line: number, seg: number) => number, private readonly cell: number) {
-    const lists = new Map<number, number[]>();
+    // Each segment's cell box (its bounding box grown by its reach), then a count per cell, then the entries in the
+    // lines' and segments' order (perLine's ties go to the first listed, as they always have).
+    let total = 0;
+    for (const l of lines) total += Math.max(0, l.north.length - 1);
+    const box = new Int32Array(total * 4);
+    let cn0 = Infinity;
+    let ce0 = Infinity;
+    let cn1 = -Infinity;
+    let ce1 = -Infinity;
+    let q = 0;
     lines.forEach((l, li) => {
-      for (let i = 0; i < l.north.length - 1; i++) {
+      for (let i = 0; i < l.north.length - 1; i++, q += 4) {
         const r = reach(li, i);
-        const n0 = Math.floor((Math.min(l.north[i], l.north[i + 1]) - r) / cell);
-        const n1 = Math.floor((Math.max(l.north[i], l.north[i + 1]) + r) / cell);
-        const e0 = Math.floor((Math.min(l.east[i], l.east[i + 1]) - r) / cell);
-        const e1 = Math.floor((Math.max(l.east[i], l.east[i + 1]) + r) / cell);
-        for (let cx = n0; cx <= n1; cx++)
-          for (let cy = e0; cy <= e1; cy++) {
-            const k = (cx + 32768) * 65536 + (cy + 32768);
-            let list = lists.get(k);
-            if (!list) lists.set(k, (list = []));
-            list.push(li, i);
-          }
+        box[q] = Math.floor((Math.min(l.north[i], l.north[i + 1]) - r) / cell);
+        box[q + 1] = Math.floor((Math.max(l.north[i], l.north[i + 1]) + r) / cell);
+        box[q + 2] = Math.floor((Math.min(l.east[i], l.east[i + 1]) - r) / cell);
+        box[q + 3] = Math.floor((Math.max(l.east[i], l.east[i + 1]) + r) / cell);
+        cn0 = Math.min(cn0, box[q]);
+        cn1 = Math.max(cn1, box[q + 1]);
+        ce0 = Math.min(ce0, box[q + 2]);
+        ce1 = Math.max(ce1, box[q + 3]);
       }
     });
-    for (const [k, list] of lists) this.cells.set(k, Int32Array.from(list));
+    if (!(cn0 <= cn1)) cn0 = cn1 = ce0 = ce1 = 0;
+    this.cn0 = cn0;
+    this.ce0 = ce0;
+    this.rows = cn1 - cn0 + 1;
+    this.cols = ce1 - ce0 + 1;
+    const cells = this.rows * this.cols;
+    const start = new Int32Array(cells + 1);
+    for (let b = 0; b < total * 4; b += 4) {
+      for (let cx = box[b]; cx <= box[b + 1]; cx++) {
+        const row = (cx - cn0) * this.cols - ce0;
+        for (let cy = box[b + 2]; cy <= box[b + 3]; cy++) start[row + cy + 1] += 2;
+      }
+    }
+    for (let c = 0; c < cells; c++) start[c + 1] += start[c];
+    const entries = new Int32Array(start[cells]);
+    const fill = start.slice(0, cells);
+    q = 0;
+    lines.forEach((l, li) => {
+      for (let i = 0; i < l.north.length - 1; i++, q += 4) {
+        for (let cx = box[q]; cx <= box[q + 1]; cx++) {
+          const row = (cx - cn0) * this.cols - ce0;
+          for (let cy = box[q + 2]; cy <= box[q + 3]; cy++) {
+            const at = fill[row + cy];
+            entries[at] = li;
+            entries[at + 1] = i;
+            fill[row + cy] = at + 2;
+          }
+        }
+      }
+    });
+    this.start = start;
+    this.entries = entries;
     const L = lines.length;
     this.bestD = new Float64Array(L);
     this.bestSeg = new Int32Array(L);
@@ -1173,11 +1425,17 @@ class SegmentIndex {
    * distance and the side (+1 right of the flow); f returns whether to count it (k is the running count). Returns the count.
    */
   perLine(pn: number, pe: number, f: (line: number, seg: number, t: number, dist: number, side: number, u: number, k: number) => boolean): number {
-    const list = this.cells.get((Math.floor(pn / this.cell) + 32768) * 65536 + (Math.floor(pe / this.cell) + 32768));
-    if (!list) return 0;
+    const cx = Math.floor(pn / this.cell) - this.cn0;
+    const cy = Math.floor(pe / this.cell) - this.ce0;
+    if (cx < 0 || cy < 0 || cx >= this.rows || cy >= this.cols) return 0;
+    const c = cx * this.cols + cy;
+    const k0 = this.start[c];
+    const k1 = this.start[c + 1];
+    if (k0 === k1) return 0;
+    const list = this.entries;
     const tick = ++this.tick;
     let nt = 0;
-    for (let k = 0; k < list.length; k += 2) {
+    for (let k = k0; k < k1; k += 2) {
       const li = list[k];
       const i = list[k + 1];
       const l = this.lines[li];

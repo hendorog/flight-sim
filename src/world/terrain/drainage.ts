@@ -734,7 +734,7 @@ function bspline(k: number, t: number): number {
 }
 
 /** Binary min-heap of cell indices keyed by level; ties by insertion order are not needed for determinism (keys + ids). */
-class MinHeap {
+export class MinHeap {
   private ids: Int32Array;
   private keys: Float64Array;
   size = 0;
@@ -811,7 +811,7 @@ function cornerField(R: PondRaster, p: number, id: number, top: number): number 
 
 /** Spacing of the raster the lakes are flooded on, m (a quarter of a lattice cell), and the raster's size a side. */
 export const LAKE_RASTER = 250;
-const RASTER_N = Math.round((2 * DOMAIN_HALF) / LAKE_RASTER) + 1;
+export const RASTER_N = Math.round((2 * DOMAIN_HALF) / LAKE_RASTER) + 1;
 const RASTER_PER_CELL = DRAIN_CELL / LAKE_RASTER;
 /**
  * A lake's water is drawn over the raster points connected to its pit whose ground lies below its level plus this
@@ -844,6 +844,12 @@ export interface LakePool {
   centreEast: number;
   /** Taken away by drainPond: no water drawn. */
   drained?: boolean;
+  /**
+   * Where the flood that drew it stopped (global raster index ri * RASTER_N + rj, -1: none): the lowest raster point
+   * round its domain, over which its water would spill (its outlet sill; on the sea, another pond's water, the home
+   * field's clearance or the edge of what the pond may cover). streams.ts starts its outlet stream there.
+   */
+  spill: number;
 }
 /** A lake's middle has at least this much water over it, m. */
 const LAKE_CENTRE_DEPTH = 3;
@@ -962,17 +968,20 @@ export class LakeMask {
         heap.push(seed, groundAt(seed));
         let running = -Infinity;
         let spill = Infinity;
+        let spillAt = -1;
         while (heap.size > 0) {
           const key = heap.topKey();
           const p = heap.pop();
           if (!inside(p) || key <= 0) {
             spill = Math.max(running, key);
+            spillAt = p;
             break;
           }
           running = Math.max(running, key);
           // Above the pond's settled level and the margin: the water stands at that level.
           if (running >= l.level + LAKE_MARGIN) {
             spill = running;
+            spillAt = p;
             break;
           }
           popped.push(p);
@@ -1048,7 +1057,8 @@ export class LakeMask {
           }
         }
         const id = this.pools.length;
-        this.pools.push({ lake: k, level, bottom, wet, north: sn, east: se, snn: snn / wet, see: see / wet, sne: sne / wet, centreNorth: cn, centreEast: ce });
+        const spillPoint = spillAt < 0 ? -1 : (gi + Math.floor(spillAt / cols)) * RASTER_N + gj + (spillAt % cols);
+        this.pools.push({ lake: k, level, bottom, wet, north: sn, east: se, snn: snn / wet, see: see / wet, sne: sne / wet, centreNorth: cn, centreEast: ce, spill: spillPoint });
         ownPools.push(id);
         for (const p of dom) {
           R.pool[p] = id;
@@ -1188,6 +1198,8 @@ export class LakeMask {
   }
   /** The pond (Drainage.lakes index) of the lake `at` last found (-1: none). */
   pond = -1;
+  /** The pool (index into pools) of the lake `at` last found (-1: none). */
+  poolHit = -1;
   /**
    * Take a pond's water away (all its pools), before anything samples the terrain: a pond the river network finds
    * standing well above the river that runs into it (its water level was set on the lattice, but the raster flood of a
@@ -1253,6 +1265,47 @@ export class LakeMask {
     return Math.min(1, best);
   }
   /**
+   * The pool whose domain holds the raster point (ri, rj) (global raster indices), -1 for none: the pool drawn there
+   * (its water covers the point where the ground there lies below its level; the domain's edge stands up to
+   * LAKE_MARGIN over it). For streams.ts, which routes on the same raster.
+   */
+  poolAt(ri: number, rj: number): number {
+    const { d } = this;
+    if (ri < 0 || rj < 0 || ri >= RASTER_N || rj >= RASTER_N) return -1;
+    const s = Math.min(d.n - 2, Math.floor(ri / RASTER_PER_CELL)) * d.n + Math.min(d.n - 2, Math.floor(rj / RASTER_PER_CELL));
+    for (let t = this.sqStart[s]; t < this.sqStart[s + 1]; t++) {
+      const R = this.rasters[this.sqPond[t]];
+      const li = ri - R.gi;
+      const lj = rj - R.gj;
+      if (li < 0 || lj < 0 || li >= R.rows || lj >= R.cols) continue;
+      const id = R.pool[li * R.cols + lj];
+      if (id >= 0) return id;
+    }
+    return -1;
+  }
+  /** The raster points (global indices ri * RASTER_N + rj) of a pool's domain. */
+  poolPoints(id: number): number[] {
+    const R = this.rasters[this.pools[id].lake];
+    const out: number[] = [];
+    for (let p = 0; p < R.pool.length; p++) if (R.pool[p] === id) out.push((R.gi + Math.floor(p / R.cols)) * RASTER_N + R.gj + (p % R.cols));
+    return out;
+  }
+  /** The ground the pond rasters sampled at the raster point (ri, rj) (NaN where none did). */
+  rasterGround(ri: number, rj: number): number {
+    const { d } = this;
+    if (ri < 0 || rj < 0 || ri >= RASTER_N || rj >= RASTER_N) return NaN;
+    const s = Math.min(d.n - 2, Math.floor(ri / RASTER_PER_CELL)) * d.n + Math.min(d.n - 2, Math.floor(rj / RASTER_PER_CELL));
+    for (let t = this.sqStart[s]; t < this.sqStart[s + 1]; t++) {
+      const R = this.rasters[this.sqPond[t]];
+      const li = ri - R.gi;
+      const lj = rj - R.gj;
+      if (li < 0 || lj < 0 || li >= R.rows || lj >= R.cols) continue;
+      const g = R.ground[li * R.cols + lj];
+      if (g === g) return g;
+    }
+    return NaN;
+  }
+  /**
    * The level of the lake standing over (north, east), m, or -Infinity: inside a lake's domain, or (given the ground
    * there) on ground below the level of the one pool on the corners of its raster square (the ground between the
    * raster points can dip under the level where the interpolated field puts the domain's edge: a dip the water
@@ -1261,6 +1314,7 @@ export class LakeMask {
   at(north: number, east: number, ground?: number): number {
     this.field = 0;
     this.pond = -1;
+    this.poolHit = -1;
     const { d } = this;
     const x = (east - d.origin) / LAKE_RASTER;
     const y = (north - d.origin) / LAKE_RASTER;
@@ -1276,6 +1330,7 @@ export class LakeMask {
     let bestLevel = -Infinity;
     let bestField = 0;
     let bestPond = -1;
+    let bestPool = -1;
     for (let t = s0; t < s1; t++) {
       const R = this.rasters[this.sqPond[t]];
       const li = ri - R.gi;
@@ -1309,11 +1364,13 @@ export class LakeMask {
         bestLevel = this.pools[id].level;
         bestField = f;
         bestPond = this.pools[id].lake;
+        bestPool = id;
       }
     }
     if (bestLevel === -Infinity) return -Infinity;
     this.field = bestField;
     this.pond = bestPond;
+    this.poolHit = bestPool;
     return bestLevel;
   }
 }

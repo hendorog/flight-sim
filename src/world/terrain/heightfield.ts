@@ -152,7 +152,8 @@ const GULLY_BRANCH = 1.3;
  * Hydraulic-erosion look: layered slope-aligned gullies, deepest on steep ground and absent on flats.
  * Returns a signed height offset in units of the relief (negative in gullies, positive on the spurs).
  */
-function erode(east: number, north: number, slopeE: number, slopeN: number): number {
+function erode(east: number, north: number, slopeE: number, slopeN: number, octaves = GULLY_OCTAVES): number {
+  gullyFine = 0;
   const slope = Math.sqrt(slopeE * slopeE + slopeN * slopeN);
   if (slope < 1e-3) return 0;
   const strength = slope / (slope + 0.15);
@@ -164,7 +165,9 @@ function erode(east: number, north: number, slopeE: number, slopeN: number): num
   let amp = 0.5;
   let bx = 0;
   let by = 0;
-  for (let o = 0; o < GULLY_OCTAVES; o++) {
+  let coarseSum = 0;
+  for (let o = 0; o < octaves; o++) {
+    if (o === STREAM_GULLY_OCTAVES) coarseSum = sum;
     const dx = ux + bx * GULLY_BRANCH;
     const dy = uy + by * GULLY_BRANCH;
     const k = GULLY_FREQ / Math.sqrt(dx * dx + dy * dy + 1e-9);
@@ -183,8 +186,13 @@ function erode(east: number, north: number, slopeE: number, slopeN: number): num
     by = 0.6 * bx + 0.8 * by;
     bx = cx;
   }
+  if (octaves > STREAM_GULLY_OCTAVES) gullyFine = (sum - coarseSum) * strength;
   return sum * strength;
 }
+/** The gully octaves the streams route over (streams.ts: the finer ones are rills on the slopes, finer than its raster). */
+const STREAM_GULLY_OCTAVES = 3;
+/** What erode's octaves beyond STREAM_GULLY_OCTAVES added to its last result. */
+let gullyFine = 0;
 
 /** Valley floor elevation along the runway axis (along = m toward ENE), m. */
 function valleyFloor(along: number): number {
@@ -320,7 +328,17 @@ function applyCut(h: number, cut: number): number {
   return lowered + smooth(0, -5, cut) * (cushioned - lowered);
 }
 
-function seededNaturalHeight(north: number, east: number, detail = true, eroded = true, volcano = true): number {
+/** A seeded world's natural terrain without its small-scale relief (the ledges and knobs under 200 m, and the finest
+ * gullies): streams.ts routes its streams down it (they follow the gullies and valleys, not the knobs and rills). */
+export const naturalHeightSmooth = (north: number, east: number): number => seededNaturalHeight(north, east, true, true, true, false);
+
+/** The small-scale relief seededNaturalHeight last added (its ledges and knobs), m: carveNetwork takes it away along a
+ * stream (streams.ts routes and levels them on the ground without it). */
+let lastSmall = 0;
+
+function seededNaturalHeight(north: number, east: number, detail = true, eroded = true, volcano = true, small = true): number {
+  lastSmall = 0;
+  let fineGully = 0;
   macroAt(north, east, macro);
   calm = 1;
   const inland = macro.inland;
@@ -363,7 +381,10 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     }
     calm = 1 - lakeW;
     const keep = gullyKeep * calm;
-    if (keep > 0) relief += amplitude * 0.13 * erode(east, north, gE, gN) * keep;
+    if (keep > 0) {
+      relief += amplitude * 0.13 * erode(east, north, gE, gN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES) * keep;
+      fineGully = amplitude * 0.13 * gullyFine * keep;
+    }
   }
   let h = base + relief;
   // The rivers' valleys, cut by the erosion pass (erosion.ts), C1-smooth: the gullies stay on the eroded surface.
@@ -378,7 +399,11 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     if (vn * vn + ve * ve < b * b) h = volcanoMerge(h, volcanoHeight(north, east, V));
   }
 
-  if (!detail || calm <= 0) return h;
+  if (!detail || calm <= 0 || !small) {
+    lastSmall = fineGully;
+    return h;
+  }
+  const h0 = h;
   const rough = calm * (1.2 + 0.004 * clamp(h, 0, 3000));
   h += rough * (2.2 * gnoise(east / 180 + 0.3, north / 180 + 0.7) + 0.8 * gnoise(east / 60 - 4.1, north / 60 + 2.2));
   const rugged = calm * clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN)));
@@ -386,6 +411,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     const ridge = 1 - Math.abs(gnoise(east / 23 + 7.7, north / 23 - 3.1));
     h += rugged * (2.4 * ridge * ridge + 0.7 * gnoise(east / 9 - 1.3, north / 9 + 5.9));
   }
+  lastSmall = h - h0 + fineGully;
   return h;
 }
 
@@ -399,6 +425,8 @@ let presentHydro: Hydrology;
 let legacyHydro: Hydrology;
 // The generated airfields (airfields.ts, present day only), sited against the same natural terrain and water.
 let fields: readonly Airfield[] = [];
+/** How long the last seeded world's airfield siting took, ms (probes). */
+export let siteMs = 0;
 function buildWater(): void {
   if (SEEDED) {
     // The erosion pass first (erosion.ts): the rivers cut the macro terrain's valleys and drain most of its closed
@@ -432,9 +460,11 @@ function buildWater(): void {
     lakeSmooth = mask;
     lakeSeed = worldSeed();
     lakes = [];
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.delta);
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.delta, naturalHeightSmooth);
     legacyHydro = presentHydro;
+    const tf = performance.now();
     fields = siteAirfields(naturalHeight, presentHydro, presentHydro.lakes);
+    siteMs = performance.now() - tf;
     setGeneratedAirfields(fields);
     return;
   } else {
@@ -459,6 +489,10 @@ export const hydrology: Readonly<Hydrology> = {
   get rivers() { return current().rivers; },
   get network() { return current().network; },
   get lakeMask() { return current().lakeMask; },
+  get falls() { return current().falls; },
+  get streamReport() { return current().streamReport; },
+  get queryFlow() { return current().queryFlow; },
+  get fallsNear() { return current().fallsNear; },
   queryRiver: (north, east, out) => current().queryRiver(north, east, out),
   queryValley: (north, east, out) => current().queryValley(north, east, out),
   queryOxbow: (north, east, out) => current().queryOxbow(north, east, out),
@@ -494,6 +528,10 @@ const riverHit: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side:
 const valleyHit: ValleyHit = { dist: Infinity, level: 0, floodplain: 0 };
 const oxbowHit: OxbowHit = { dist: Infinity, level: 0, halfWidth: 0, depth: 0 };
 
+/** A stream's banks are smooth (no small-scale relief) this far beyond them, fading back in by the second, m. */
+const STREAM_SMOOTH = [15, 50];
+/** Most the ground along a stream is built up over the natural ground (its smooth course, its banks), m. */
+const STREAM_FILL = 5;
 /** Height of the floodplain at the river's banks above its water level, m. */
 const BANK_HEIGHT = 1.3;
 
@@ -516,6 +554,22 @@ function channelProfile(d: number, halfWidth: number): number {
   const b = d - halfWidth;
   if (b < CHANNEL_BANK) return BANK_HEIGHT * smooth(0, CHANNEL_BANK, b);
   return BANK_HEIGHT + 0.05 * (b - CHANNEL_BANK) * (b - CHANNEL_BANK);
+}
+
+/**
+ * Cross-section of a stream's notch (streams.ts): height above its water level at distance d. Its bed a little under
+ * the water, a narrow bank rising half a metre over a few metres, then steep rock walls (a notch where the stream cuts
+ * through a sill or runs under the ground beside it).
+ */
+function streamProfile(d: number, halfWidth: number): number {
+  if (d < halfWidth) {
+    const t = d / halfWidth;
+    return -(0.5 + 0.2 * halfWidth) * (1 - t * t);
+  }
+  const b = d - halfWidth;
+  const bank = 2 + 1.5 * halfWidth;
+  if (b < bank) return 0.5 * smooth(0, bank, b);
+  return 0.5 + 0.12 * (b - bank) * (b - bank);
 }
 
 /** The meandering river: its valley, oxbow lakes and channel cut into the terrain height h; fills out's river fields. */
@@ -576,6 +630,17 @@ const channelNear: ChannelNear[] = [];
 /** A seeded world's river network (riverNetwork.ts): every valley and channel near the point cut into h, as carveRiver cuts its one river. */
 function carveNetwork(north: number, east: number, h: number, out: TerrainSample): number {
   const net = presentHydro.network as NonNullable<Hydrology['network']>;
+  // Along a stream (streams.ts) the ground is its smooth course, without the small-scale relief's knobs and ledges:
+  // the stream's water follows that ground down (it took them away), fading back in by STREAM_SMOOTH beyond its bank.
+  const nc0 = net.channels(north, east, channelNear);
+  let calmS = 0;
+  for (let j = 0; j < nc0; j++) {
+    const c = channelNear[j];
+    if (c.kind === 1) calmS = Math.max(calmS, 1 - smooth(c.halfWidth + STREAM_SMOOTH[0], c.halfWidth + STREAM_SMOOTH[1], c.dist));
+  }
+  // (Never more than STREAM_FILL over the natural ground: a dip deeper than that beside a stream stays a dip.)
+  const hNatural = h;
+  if (calmS > 0) h = Math.min(h - lastSmall * calmS, hNatural + STREAM_FILL);
   const nv = net.valleys(north, east, valleyNear);
   // Beside a lake a valley keeps its ground over the lake's water (drainage.ts LakeMask.holds: the domain and a raster
   // point round it), or the water would stand against nothing at the domain's edge.
@@ -619,10 +684,25 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   // A seeded world's lake (LakeMask): no channel where its water covers the ground, but one across dry ground inside
   // its edge (the river joining two arms), and none faded in toward the edge.
   if (maskLevel > -Infinity) open = Math.min(open, Math.max(smooth(maskLevel - 0.5, maskLevel + 1.5, h), 1 - smooth(0, 10, maskField)));
-  const nc = open > 0 ? net.channels(north, east, channelNear) : 0;
+  const nc = open > 0 ? nc0 : 0;
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
     const d = c.dist;
+    if (c.kind === 1) {
+      // A stream (streams.ts): a narrow notch, no floodplain banks or levee.
+      const w = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
+      if (w <= 0.3) continue;
+      h += (smin(h, c.level + streamProfile(d, w), 0.5 + 0.3 * w) - h) * open;
+      // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip
+      // between the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's
+      // water, nor at a mouth on the sea).
+      if (d > w && out.river === -Infinity && c.level > 0.5) {
+        const need = Math.min(c.level + 0.3 + 0.03 * (d - w), hNatural + STREAM_FILL) - h;
+        if (need > 0) h += need * (1 - smooth(w + STREAM_SMOOTH[0] + 15, w + STREAM_SMOOTH[1], d)) * open;
+      }
+      if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
+      continue;
+    }
     const w = c.halfWidth * (1 - smooth(0, 60, c.beyondSource));
     if (w <= 0.5) continue;
     let carved = smin(h, c.level + channelProfile(d, w), 3);

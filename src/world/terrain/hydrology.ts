@@ -6,6 +6,7 @@ import { AIRPORT } from '../../core/world';
 import { fbm, gnoise } from './noise';
 import { decodePolyline, growMeanders, projectPolyline, type MeanderAxis, type MeanderReach, type MeanderResult, type Oxbow } from './meander';
 import { RIVER_PLANFORM } from './riverPlanform';
+import type { Fall, StreamReport } from './streams';
 
 /** A lake: a noise-warped ellipse whose bed is carved into the natural terrain. */
 export interface Lake {
@@ -83,6 +84,14 @@ export interface Hydrology {
   rivers?: ReadonlyArray<RiverLine>;
   /** A seeded world's network queries for carving (every line near a point). Absent at seed 0. */
   network?: NetworkQuery;
+  /** A seeded world's waterfalls (streams.ts applyFalls): every drop of FALL_MIN or more, lip first. Absent at seed 0. */
+  falls?: ReadonlyArray<Fall>;
+  /** A seeded world's nearest channel (river or stream) and its flow at a point. Absent at seed 0. */
+  queryFlow?(north: number, east: number, out: FlowHit): FlowHit;
+  /** The falls within `radius` m of a point, nearest first (indices into `falls`); returns how many. Absent at seed 0. */
+  fallsNear?(north: number, east: number, radius: number, out: number[]): number;
+  /** How a seeded world's streams were traced (streams.ts), for probes. Absent at seed 0. */
+  streamReport?: StreamReport;
   /**
    * A seeded world's lakes as they stand (drainage.ts LakeMask): `at` gives the level of the lake whose water covers
    * the ground below it at a point (-Infinity outside every lake), and leaves `field` (how far inside its edge the point
@@ -109,6 +118,48 @@ export interface RiverLine {
   s: Float64Array;
   /** The river this one flows into (index into Hydrology.rivers), or -1 for one that reaches the sea or the edge. */
   joins?: number;
+  /**
+   * A seeded world's channels (riverNetwork.ts, streams.ts) also carry: `kind`, 0 a river (the drainage's lines,
+   * meandering in their valleys), 1 a stream (traced down the terrain: a lake's outlet, a headwater; a narrow notch, no
+   * valley); and per sample the catchment `area` (km²), the water's `gradient` over 200 m (m/m), `steepness` 0-1 (a
+   * quarter per kind of flow), `regime` (REGIME: 0 placid < 0.5 %, 1 riffle < 2 %, 2 rapids < 8 %, 3 step-pool and
+   * boulder cascade, 4 the lip of a fall) and `speed` (m/s).
+   */
+  kind?: number;
+  /**
+   * What a stream ends in: 'channel' (another line, `joins`), 'lake' (a lake's water: its last reach at the lake's
+   * level), 'sea', 'edge' (the domain's), 'sink' (water lying higher than its own - a river held up on its valley
+   * floor, a lake flooded on smoother ground - so it ends some 200 m short of it, sinking into the ground), 'stuck'.
+   */
+  end?: 'channel' | 'lake' | 'sea' | 'edge' | 'sink' | 'stuck';
+  area?: Float64Array;
+  gradient?: Float32Array;
+  steepness?: Float32Array;
+  regime?: Uint8Array;
+  speed?: Float32Array;
+}
+
+/** The nearest channel and its flow at a point (Hydrology.queryFlow), written into a caller-owned object. */
+export interface FlowHit {
+  /** Distance from its centreline, m (Infinity when none is within reach), and the bank (+1 right of the flow). */
+  dist: number;
+  side: number;
+  /** The line (index into Hydrology.rivers, -1: none), its kind (RiverLine.kind) and the nearest sample. */
+  line: number;
+  kind: number;
+  index: number;
+  /** Arc length, water level, half-width there, m. */
+  s: number;
+  level: number;
+  halfWidth: number;
+  /** RiverLine's flow at the nearest sample (gradient, regime) or interpolated (steepness, speed). */
+  gradient: number;
+  steepness: number;
+  regime: number;
+  speed: number;
+  /** Flow direction (unit north, east). */
+  dirN: number;
+  dirE: number;
 }
 
 /** A line's valley near a point (NetworkQuery.valleys). */
@@ -123,6 +174,8 @@ export interface ValleyNear {
 /** A line's channel near a point (NetworkQuery.channels). */
 export interface ChannelNear {
   line: number;
+  /** RiverLine.kind: 0 a river, 1 a stream (carved as a narrow notch). */
+  kind: number;
   dist: number;
   side: number;
   level: number;

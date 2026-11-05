@@ -82,6 +82,7 @@ describe.each(SEEDS)('seed %i', (seed) => {
     const net = hydrology.network!;
     const hits: ChannelNear[] = [];
     let joined = 0;
+    let sunk = 0;
     const bad: string[] = [];
     rivers!.forEach((r, li) => {
       const n = r.north.length;
@@ -95,6 +96,20 @@ describe.each(SEEDS)('seed %i', (seed) => {
       const pn = r.north[n - 1];
       const pe = r.east[n - 1];
       if (r.level[n - 1] < 0.5 || Math.max(Math.abs(pn), Math.abs(pe)) > 155000) return;
+      // A stream (streams.ts) may also end in a lake (in its water), or short of water lying above its own (it sinks
+      // into the ground there, never cutting under that water).
+      if (r.kind === 1 && r.end === 'lake') {
+        if (!(hydrology.lakeMask!.at(pn, pe, terrainHeight(pn, pe)) > -Infinity)) bad.push(`stream ${li} ends at ${pn.toFixed(0)}, ${pe.toFixed(0)} in no lake`);
+        return;
+      }
+      if (r.kind === 1 && (r.end === 'sink' || r.end === 'stuck')) {
+        sunk++;
+        const m = net.channels(pn, pe, hits);
+        // Not beside water lying higher (its notch would cut under it; a stream that came down to it and joined it there
+        // sinks with it).
+        for (let j = 0; j < m; j++) if (hits[j].line !== li && rivers![hits[j].line].joins !== li && hits[j].dist < hits[j].halfWidth + 30 && hits[j].level > r.level[n - 1] + 6) bad.push(`stream ${li} (${r.end}) sinks beside higher water of ${hits[j].line} at ${pn.toFixed(0)}, ${pe.toFixed(0)}: ${r.level[n - 1].toFixed(1)} vs ${hits[j].level.toFixed(1)} ${hits[j].dist.toFixed(0)} m`);
+        return;
+      }
       const k = net.channels(pn, pe, hits);
       let onOther = false;
       for (let j = 0; j < k; j++) if (hits[j].line !== li && hits[j].dist < 60) onOther = true;
@@ -102,6 +117,8 @@ describe.each(SEEDS)('seed %i', (seed) => {
       joined++;
     });
     expect(bad.slice(0, 10)).toEqual([]);
+    // Most streams reach a river, a lake or the sea.
+    expect(sunk).toBeLessThan(0.4 * rivers!.filter((r) => r.kind === 1).length);
     // No channel crosses itself (a loop that swings round onto itself is cut off).
     let crossings = 0;
     for (const r of rivers!) {
