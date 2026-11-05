@@ -16,11 +16,12 @@ import type { FlowHit } from './hydrology';
 export const ROCK_STEEP_LO = 0.5;
 export const ROCK_STEEP_HI = 0.78;
 /**
- * The rock reaches this far beyond the water's edge: a base plus the half-width, capped, m. It takes in a stream's
- * notch (heightfield.ts carveNetwork: its bank and the foot of its walls) and a river's banks.
+ * The rock reaches this far beyond the water's edge: a base plus a multiple of the half-width, capped, m. It takes in
+ * a stream's notch (heightfield.ts streamProfile: its bank, 2 + 1.5 half-widths, and the foot of its walls) and a
+ * river's banks.
  */
-export const ROCK_REACH_BASE = 4;
-export const ROCK_REACH_PER_WIDTH = 1.0;
+export const ROCK_REACH_BASE = 5;
+export const ROCK_REACH_PER_WIDTH = 1.6;
 export const ROCK_REACH_MAX = 28;
 /** Share of the trees left out where the bank is fully bare rock (placement.ts); fewer as the rock gives way to soil. */
 export const ROCK_TREE_THIN = 0.85;

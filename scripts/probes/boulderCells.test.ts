@@ -38,7 +38,7 @@ it('boulder cells', () => {
     const de = r.east[Math.min(x.b, m + 4)] - r.east[Math.max(x.a, m - 4)];
     const hdg = ((Math.atan2(de, dn) * 180) / Math.PI + 360) % 360;
     console.log(
-      `${tag} line ${x.li} (${r.kind ? 'stream' : 'river'}, end ${r.end ?? '-'}) ${x.len.toFixed(0)} m: start ${r.north[x.a].toFixed(0)},${r.east[x.a].toFixed(0)} mid ${r.north[m].toFixed(0)},${r.east[m].toFixed(0)} end ${r.north[x.b].toFixed(0)},${r.east[x.b].toFixed(0)}; heading ${hdg.toFixed(0)}; hw ${r.halfWidth[m].toFixed(1)} m; level ${r.level[x.a].toFixed(0)} -> ${r.level[x.b].toFixed(0)} m; ground ${terrainHeight(r.north[m], r.east[m]).toFixed(0)} m`,
+      `${tag} line ${x.li} (${r.kind ? "stream" : "river"}, end ${r.end ?? "-"}) ${x.len.toFixed(0)} m from s ${r.s[x.a].toFixed(0)}: start ${r.north[x.a].toFixed(0)},${r.east[x.a].toFixed(0)} mid ${r.north[m].toFixed(0)},${r.east[m].toFixed(0)} end ${r.north[x.b].toFixed(0)},${r.east[x.b].toFixed(0)}; heading ${hdg.toFixed(0)}; hw ${r.halfWidth[m].toFixed(1)} m; level ${r.level[x.a].toFixed(0)} -> ${r.level[x.b].toFixed(0)} m; ground ${terrainHeight(r.north[m], r.east[m]).toFixed(0)} m`,
     );
   };
   const steep = runs(1, (g) => g >= 3);
@@ -140,7 +140,8 @@ it('views', () => {
     const at = (ss: number): { n: number; e: number; level: number; dn: number; de: number } => {
       let i = 0;
       while (i < r.s.length - 2 && r.s[i + 1] < ss) i++;
-      const t = Math.min(1, Math.max(0, (ss - r.s[i]) / (r.s[i + 1] - r.s[i] || 1)));
+      // (Before the head: on along the first segment's line, e.g. back over a lake its outlet leaves.)
+      const t = Math.min(1, Math.max(ss < 0 ? -1e9 : 0, (ss - r.s[i]) / (r.s[i + 1] - r.s[i] || 1)));
       const dn = r.north[i + 1] - r.north[i];
       const de = r.east[i + 1] - r.east[i];
       const l = Math.hypot(dn, de) || 1;
@@ -154,5 +155,26 @@ it('views', () => {
     const l = at(s + ahead);
     console.log(`view ${v}: camPos=${cn.toFixed(0)},${ce.toFixed(0)},${(g + above).toFixed(0)}&camLook=${l.n.toFixed(0)},${l.e.toFixed(0)},${l.level.toFixed(0)}  (regime at s: ${r.regime?.[r.s.findIndex((x) => x >= s)]}, hw ${r.halfWidth[r.s.findIndex((x) => x >= s)].toFixed(1)})`);
   }
+  setWorldSeed(0);
+});
+
+/** Lake outlets that turn steep soonest: step-pool length within their first 800 m, the lake's level and the head. */
+it('steep outlets', () => {
+  setWorldSeed(Number(process.env.BOULDER_SEED ?? 42));
+  const lm = hydrology.lakeMask!;
+  const rows: Array<[number, string]> = [];
+  hydrology.rivers!.forEach((r, li) => {
+    if (r.kind !== 1 || lm.at(r.north[0], r.east[0]) === -Infinity) return;
+    let steep = 0;
+    let first = -1;
+    for (let i = 1; i < r.north.length && r.s[i] < 800; i++)
+      if ((r.regime?.[i] ?? 0) >= 3) {
+        steep += r.s[i] - r.s[i - 1];
+        if (first < 0) first = r.s[i];
+      }
+    rows.push([steep, `outlet line ${li}: head ${r.north[0].toFixed(0)},${r.east[0].toFixed(0)} level ${r.level[0].toFixed(0)}; step-pool ${steep.toFixed(0)} m of the first 800 m, from s ${first.toFixed(0)}; end ${r.end}`]);
+  });
+  rows.sort((a, b) => b[0] - a[0]);
+  for (const [, t] of rows.slice(0, 10)) console.log(t);
   setWorldSeed(0);
 });

@@ -911,7 +911,7 @@ if (vRiver.y > 0.5 && vFlow > 0.3) {
   if (rEdgeR < reach * 1.5) {
     // A ragged edge: the rock gives way to soil in tongues, and to the water's spray darkening it near the edge.
     tRock = bedRock(vFlow) * (1.0 - smoothstep(reach * 0.6, reach, rEdgeR + reach * (0.22 * sD.g + 0.12 * sC.b)));
-    tRockWet = 1.0 - smoothstep(-0.5, 0.35 * reach + 0.6, rEdgeR);
+    tRockWet = 1.0 - smoothstep(-0.5, 0.45 * reach + 0.8, rEdgeR + 0.15 * reach * sD.r);
   }
 }
 `)}if (vRiver.y > 1.0) {
@@ -1309,13 +1309,13 @@ if (tRock > 0.001) {
   vec4 nJ = texture(tNoise, rot2(tXZ, 0.6) * (1.0 / 9.0));
   vec4 nK = texture(tNoise, rot2(tXZ, 2.3) * (1.0 / 3.1));
   float joint = smoothstep(0.62, 0.8, abs(nJ.r - nK.g) * 2.2 + 0.25 * nK.b);
-  vec3 rk = mix(${P.rockA}, ${P.rockB}, smoothstep(0.25, 0.75, nD.g + 0.35 * (nJ.b - 0.5))) * r.albedo * (0.6 + 0.35 * nK.r);
+  vec3 rk = mix(${P.rockA}, ${P.rockB}, smoothstep(0.25, 0.75, nD.g + 0.35 * (nJ.b - 0.5))) * r.albedo * (0.42 + 0.4 * nK.r) * (0.75 + 0.5 * smoothstep(0.3, 0.7, nJ.g));
   // Lichen-pale tops of the dry rock, moss in its joints.
-  rk = mix(rk, rk * vec3(1.18, 1.15, 1.05), smoothstep(0.6, 0.85, nJ.a) * (1.0 - tRockWet) * 0.6);
+  rk = mix(rk, rk * vec3(1.12, 1.1, 1.02), smoothstep(0.65, 0.85, nJ.a) * (1.0 - tRockWet) * 0.5);
   rk = mix(rk, vec3(0.018, 0.03, 0.012), joint * (1.0 - tRockWet) * 0.75);
   rk *= 1.0 - 0.45 * joint * tRockWet;
   // Wet by the water and under it: dark.
-  rk *= mix(1.0, 0.42, tRockWet);
+  rk *= mix(1.0, 0.38, tRockWet);
   rk = mix(rk, ${P.riverBed} * 0.9, tRiverBed * 0.5);
   float rw = tRock * clamp(0.55 + 1.2 * r.height + 0.3 * sD.b, 0.0, 1.0);
   rw = max(rw, tRock * tRockWet);

@@ -137,6 +137,8 @@ const flowScratch: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index
  * along fast water, so no triangle carries it further.
  */
 const FLOW_REACH = 60;
+/** No flow (bare rock) where standing water lies less than this below the ground, m: in a lake and on its shore. */
+const STILL_WATER = 1;
 
 /**
  * Fill the river attribute: signed distance and half-width per lattice vertex. Where the river is out of
@@ -248,12 +250,16 @@ export function buildTile(req: TileRequest): TileData {
   let flow: Uint8Array | null = null;
   const queryFlow = hydrology.queryFlow;
   if (queryFlow) {
+    const lakes = hydrology.lakeMask;
     flow = new Uint8Array(count);
     const reach = FLOW_REACH + 2 * sp;
     for (let j = 0; j < n; j++)
       for (let i = 0; i < n; i++) {
         const v = j * n + i;
-        if (!riverKnown[v] || Math.abs(riverSigned[v]) > riverWidth[v] + reach) continue;
+        // (None in a lake or the sea, nor on the banks a stream's carving leaves standing just out of a lake's water: a
+        // lake's floor and shore are silt, whatever its outlet does beyond.)
+        if (!riverKnown[v] || Math.abs(riverSigned[v]) > riverWidth[v] + reach || standing[v] > H(i, j) - STILL_WATER) continue;
+        if (lakes && lakes.at(n0 + j * sp, e0 + i * sp) > -Infinity) continue;
         queryFlow(n0 + j * sp, e0 + i * sp, flowScratch);
         if (flowScratch.line >= 0) flow[v] = Math.round(Math.min(1, Math.max(0, flowScratch.steepness)) * 255);
       }

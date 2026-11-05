@@ -37,11 +37,13 @@ export const BOULDER_SHAPES = 3;
 /** Channels steeper than this (streams.ts steepness: 0.5 is the start of rapids) carry boulders. */
 export const BOULDER_STEEP = 0.5;
 /** Share of the channel and its bare banks the stones cover at full steepness, and at the start of rapids. */
-const COVER_STEEP = 0.16;
+const COVER_STEEP = 0.22;
 const COVER_RAPIDS = 0.025;
 /** Most stones placed per channel segment, and per fall. */
 const SEGMENT_MAX = 160;
 const FALL_MAX_STONES = 40;
+/** The biggest stone a stone in the water is grown to, to break the surface, m. */
+const MAX_RADIUS = 3.5;
 
 const rnd = (h: number, salt: number): number => hash2i(h, salt) / 4294967296;
 const smooth = (a: number, b: number, x: number): number => {
@@ -117,14 +119,17 @@ function place(north: number, east: number, r: number, level: number, h: number,
   north = Math.fround(north);
   east = Math.fround(east);
   sampleTerrain(north, east, sample);
-  if (sample.standing > sample.ground + 0.05 || sample.airportBlend < 1) return;
+  // Never in a lake or the sea, nor on its shore (within a metre of its water).
+  if (sample.standing > sample.ground - 1 || sample.airportBlend < 1) return;
+  // (Nor on the banks a stream's carving leaves standing in a lake.)
+  if ((hydrology.lakeMask?.at(north, east) ?? -Infinity) > -Infinity) return;
   const g = sample.ground;
   const squash = 0.6 + 0.4 * rnd(h, 5);
   // In the water a stone has to break the surface: bigger where it is deeper, or none where it would be lost.
   const depth = level - g;
   if (depth > 0) {
     const need = depth / (squash * 0.8) + 0.1;
-    if (need > r * 2.2) return;
+    if (need > Math.min(r * 2.2, MAX_RADIUS)) return;
     r = Math.max(r, need);
   }
   const shape = Math.floor(rnd(h, 6) * BOULDER_SHAPES) % BOULDER_SHAPES;
@@ -157,10 +162,10 @@ function segmentStones(r: RiverLine, li: number, i: number, out: number[]): void
     const h = hash2i(hs, k + 101);
     const t = rnd(h, 1);
     // Across: most stones in the bed, the rest strewn over the banks, thinning up them.
-    const inBed = rnd(h, 2) < 0.5;
+    const inBed = rnd(h, 2) < 0.35;
     const side = rnd(h, 3) < 0.5 ? -1 : 1;
     const u = rnd(h, 4);
-    const across = side * (inBed ? hw * Math.sqrt(u) : hw + reach * u * u);
+    const across = side * (inBed ? hw * Math.sqrt(u) : hw + 0.8 * reach * u ** 1.6);
     const north = r.north[i] + dn * t - ue * across;
     const east = r.east[i] + de * t + un * across;
     const level = r.level[i] + (r.level[i + 1] - r.level[i]) * t;

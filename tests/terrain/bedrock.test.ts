@@ -86,7 +86,7 @@ describe('seed 42', () => {
         expect(radius).toBeLessThan(8);
         sampleTerrain(north, east, s);
         expect(Math.abs(s.ground - base)).toBeLessThan(0.01);
-        expect(s.standing).toBeLessThanOrEqual(s.ground + 0.05);
+        expect(s.standing).toBeLessThanOrEqual(s.ground - 1);
         // By a steep channel (within its bare banks, plus slack for the nearest line being another) or a fall.
         hydrology.queryFlow!(north, east, hit);
         const byChannel = hit.line >= 0 && hit.dist < hit.halfWidth + rockReach(hit.halfWidth) + 30;
