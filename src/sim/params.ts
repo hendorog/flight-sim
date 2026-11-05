@@ -45,6 +45,7 @@
 //   fov=60         camera vertical field of view for the fixed camera, degrees
 //   moon=4         Moon size, a multiple of its real size, 1..5 (default: the menu's setting, else 4; it grows
 //                  further toward the horizon; not stored, see src/sim/skyPrefs.ts)
+//   snowShift=-600 debug: move the snow line by this many metres (frozen-lake checks; not stored)
 //   resume=0|1     resume on reload (see resume.ts). Absent: the last flight is resumed unless scenario= is given
 //                  or the menu's "Resume where I left off on reload" is off; resume=1 resumes even then;
 //                  resume=0 neither resumes nor saves
@@ -101,6 +102,8 @@ export interface SimParams {
   era: EraId | undefined;
   /** seed=<n>: the world seed (worldSeed.ts; normalized, 0 when not a number); absent: undefined (seedChoice.ts). */
   seed?: number;
+  /** snowShift=<m>: debug shift of the snow line (heightfield.ts setSnowShift); absent: undefined (no shift). */
+  snowShift?: number;
   /** field=<code>: the runway, apron and final scenarios start at that generated airfield (startField.ts). */
   field: string | null;
   scenario: ScenarioId;
@@ -281,6 +284,7 @@ export function parseParams(search: string): SimParams {
     aircraft: isAircraftId(aircraft) ? aircraft : null,
     era: (ERA_IDS as readonly string[]).includes(q.get('era') ?? '') ? (q.get('era') as EraId) : undefined,
     seed: q.has('seed') ? normalizeSeed(q.get('seed')) : undefined,
+    snowShift: num('snowShift') ?? undefined,
     field: q.get('field')?.toUpperCase() ?? null,
     scenario: oneOf('scenario', URL_SCENARIO_IDS, 'runway'),
     explicitScenario: URL_SCENARIO_IDS.includes(q.get('scenario') as ScenarioId),

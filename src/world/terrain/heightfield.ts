@@ -782,15 +782,23 @@ export function terrainNormal(north: number, east: number): Vec3 {
 /** Snow line elevation at a point, m; varies with position so the snow edge is irregular. */
 export function snowLine(north: number, east: number): number {
   if (isPresent()) {
-    return 2500 + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
+    return 2500 + snowShift + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
   }
   return snowLineBase() + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
 }
 
 /** Level of the snow line before its noise, m: 2500 plus the era's offset (the shader's threshold, its GLSL twin). */
 export function snowLineBase(): number {
-  return 2500 + era().terrain.snowLineOffset;
+  return 2500 + era().terrain.snowLineOffset + snowShift;
 }
+
+/** Debug shift of the snow line, m (URL snowShift=; 0, the default, leaves every value as it was). */
+let snowShift = 0;
+/** Set the debug snow-line shift (before the terrain and its materials are built; the workers get it in their setup). */
+export function setSnowShift(m: number): void {
+  snowShift = Number.isFinite(m) ? m : 0;
+}
+export const snowShiftM = (): number => snowShift;
 
 /**
  * Surface material for tyre friction and crash logic. Never 'runway'/'taxiway' (the airport layers those).
