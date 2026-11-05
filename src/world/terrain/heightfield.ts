@@ -807,7 +807,11 @@ export const snowShiftM = (): number => snowShift;
  */
 export function terrainSurface(north: number, east: number): SurfaceType {
   const s = sampleTerrain(north, east, scratch);
-  if (s.ground < Math.max(s.standing, s.river)) return 'water';
+  if (s.ground < Math.max(s.standing, s.river)) {
+    // Water above the snow line is frozen under snow (water.ts 'ice': the shader's snow test, whose midpoint
+    // in a hollow lies some 20 m below the line), and takes a landing like snow.
+    return Math.max(s.standing, s.river) > snowLine(north, east) - 20 ? 'snow' : 'water';
+  }
   if (s.airportBlend === 0) return isPresent() ? 'grass' : era().world.flatSurface;
   const h = s.ground;
   const standing = s.standing;

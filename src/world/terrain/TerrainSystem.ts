@@ -416,7 +416,7 @@ export class TerrainSystem implements Subsystem {
 
     let water: THREE.Mesh | null = null;
     if (d.water) {
-      const wg = createWaterGeometry(d.water);
+      const wg = createWaterGeometry(d.water, d.shape);
       for (const a of Object.values(wg.attributes)) gpuOnly(a as THREE.BufferAttribute);
       if (wg.index) gpuOnly(wg.index);
       // Bounds from the water surface itself: over a lake bed the surface lies above all the ground.

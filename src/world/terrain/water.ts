@@ -12,11 +12,13 @@
 import * as THREE from 'three';
 import { PALETTES } from './eraPalette';
 import { HASH_GLSL } from './glsl';
-import { hydrology } from './heightfield';
+import { hydrology, snowLineBase, snowShiftM } from './heightfield';
 import { lakeRadius } from './hydrology';
 import { GALLERY_FLOOR, RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
 import type { WaterData } from './tileBuilder';
 import { era, isPresent } from '../era/eraState';
+import { LAYER, LAYER_ROUGHNESS } from './textures';
+import { worldSeed } from '../worldSeed';
 
 export interface WaterUniforms {
   uTime: { value: number };
@@ -233,6 +235,106 @@ vec3 wColor = totalDiffuse * (1.0 - wTrans) * (1.0 - fresnel) + wSpec;
 gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);
 `;
 
+// ------------------------------------------------------------------------------------------------ ice
+// Above the snow line a lake (or river) is frozen and snowed over: flat, matte snow, no chop, no sky reflection
+// and no glint, opaque. The test is the terrain shader's own snow test (terrainMaterial.ts fragmentSplat:
+// snowLine, snowW and the snow layer's cover weight) evaluated per pixel at the water surface, with the same
+// noise samples, so the ice ends where the snow on the shore ends: the shore pixel and the water's edge pixel
+// stand at the same height and position and read the same noise. On flat water the aspect term is 0 and the
+// slope factor 1. The hollow term (150 m x concavity) comes from the terrain's own curvature at the water's
+// lattice vertices (the tile's shape bytes, the very values the terrain mesh interpolates there) at the shore
+// only: the bed's curvature means nothing to ice, so from 0.5 m of depth to 3 m the lake takes ICE_LAKE_CONCAVE
+// instead (else the bed's bumps print through as floes). A river ribbon has no lattice vertices, so it takes
+// ICE_RIVER_CONCAVE. Both are the means measured on the 32 m cover lattice at the shores of the 25 highest lakes
+// and along the river banks of seeds 1, 42 and 131 (scripts/probes/shoreConcave): lake shores median 0, mean
+// 0.17-0.19, p90 0.57-0.61; river banks median 0, mean 0.10-0.12 (so a constant at the shore itself would be
+// up to ~90 m of snow line off along a tenth of it, which is why the shore uses the vertex values).
+// Only worlds with water within ICE_REACH of the snow line's base get this code at all (waterFreezes()): the
+// shader's noise and hollow terms lower the line by at most ~620 m, so lower water can never freeze. Seed 0's
+// water stands 1200 m below it, so its water and river shaders are unchanged, byte for byte.
+
+/** Water further than this below snowLineBase() can never pass the shader's snow test, m. */
+const ICE_REACH = 700;
+/** Concavity (terrainMaterial.ts 'concave', 0..1) taken for a river ribbon (the mean along river banks). */
+const ICE_RIVER_CONCAVE = 0.1;
+/** Concavity taken away from a lake's shore (the mean along lake shores). */
+const ICE_LAKE_CONCAVE = 0.2;
+
+let freezeKey = '';
+let freezeVal = false;
+/** Whether any of this world's lakes or rivers stands high enough that the shader's snow test can freeze it. */
+export function waterFreezes(): boolean {
+  const lim = snowLineBase() - ICE_REACH;
+  const key = `${worldSeed()}|${era().id}|${snowShiftM()}`;
+  if (key === freezeKey) return freezeVal;
+  let any = hydrology.lakes.some((l) => l.level > lim);
+  for (const r of hydrology.rivers ?? [hydrology.river]) {
+    if (any) break;
+    for (let i = 0; i < r.level.length; i++) if (r.level[i] > lim) { any = true; break; }
+  }
+  freezeKey = key;
+  freezeVal = any;
+  return any;
+}
+
+const ICE_VERTEX_HEAD = (river: boolean): string => `${river ? '' : 'attribute float aIceShape;\n'}varying float vIceConcave;
+`;
+// terrainMaterial.ts: vCurvature = aShape.x * 2 - 1, concave = clamp(vCurvature * 1.5, 0, 1).
+const ICE_VERTEX = (river: boolean): string =>
+  river ? `vIceConcave = ${ICE_RIVER_CONCAVE.toFixed(2)};\n` : 'vIceConcave = clamp((aIceShape * 2.0 - 1.0) * 1.5, 0.0, 1.0);\n';
+const ICE_FRAGMENT_HEAD = /* glsl */ `
+varying float vIceConcave;
+vec2 iceRot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
+`;
+const iceFragment = (): string => /* glsl */ `
+// Frozen above the snow line (see water.ts 'ice'): the terrain's snow line and snow weight at this point.
+float wIce;
+{
+  vec2 iXZ = vWaterPos.xz;
+  float iA = (texture(tNoise, iXZ * (1.0 / 5200.0)).b - 0.5) * 2.5;
+  float iB = (texture(tNoise, iceRot2(iXZ, 0.9) * (1.0 / 1300.0)).r - 0.5) * 2.5;
+  vec4 iC = (texture(tNoise, iceRot2(iXZ, 2.1) * (1.0 / 260.0)) - 0.5) * 2.5;
+  float iLine = ${snowLineBase().toFixed(1)} + 180.0 * iA + 60.0 * iB;
+#ifdef RIVER
+  float iOpen = 0.0;
+#else
+  // Away from the shore (0.5 to 3 m of depth) the lake's own rules: the mean shore hollowness, and a crisp ice
+  // edge with a ragged outline (a sheet of ice ends at an edge; it does not fade into the water like snow
+  // thinning out on a slope).
+  float iOpen = smoothstep(0.5, 3.0, depth);
+#endif
+  float iConcave = mix(vIceConcave, ${ICE_LAKE_CONCAVE.toFixed(2)}, iOpen);
+  float iSnowW = smoothstep(iLine - 60.0, iLine + 140.0, vWaterPos.y + 90.0 * iC.r + 150.0 * iConcave);
+  // The snow layer's cover weight over neutral ground (acc.height 0.5).
+  wIce = clamp(iSnowW * 1.6 - 0.3, 0.0, 1.0);
+  if (iOpen > 0.0 && wIce > 0.0 && wIce < 1.0) {
+    float iEdge = wIce - 0.5 + 0.3 * (texture(tNoise, iceRot2(iXZ, 4.0) * (1.0 / 47.0)).g - 0.5);
+    wIce = mix(wIce, smoothstep(-0.04, 0.04, iEdge), iOpen);
+  }
+  if (wIce > 0.0) {
+    // The terrain's snow colour (firn, a little grey); its detail texture averages to 1. A faint tone of wind
+    // drifts on the level snow (as the detail texture's mid scale varies the snow on the shore).
+    float iDrift = texture(tNoise, iceRot2(iXZ, 1.3) * (1.0 / 31.0)).b - 0.5;
+    diffuseColor.rgb = mix(diffuseColor.rgb, ${PALETTES[era().palette].snow} * (0.92 + 0.08 * iC.g) * (1.0 + 0.12 * iDrift), wIce);
+    wNormal = normalize(mix(wNormal, vec3(0.0, 1.0, 0.0), wIce));
+    wRough = mix(wRough, ${LAYER_ROUGHNESS[LAYER.snow].toFixed(2)}, wIce);
+    wTrans *= 1.0 - wIce;
+  }
+}
+`;
+/** The ice code spliced into a water shader (only in a world where waterFreezes()). */
+function withIce(shader: { vertexShader: string; fragmentShader: string }, river: boolean): void {
+  shader.vertexShader = shader.vertexShader
+    .replace('attribute float aDepth;\n', `attribute float aDepth;\n${ICE_VERTEX_HEAD(river)}`)
+    .replace('vDepth = aDepth;\n', `vDepth = aDepth;\n${ICE_VERTEX(river)}`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('varying float vDepth;\n', `varying float vDepth;\n${ICE_FRAGMENT_HEAD}`)
+    .replace('wTrans *= 1.0 - foam;\n', `wTrans *= 1.0 - foam;\n${iceFragment()}`)
+    // No sky reflection and no glint off the snow; opaque.
+    .replace('vec3 wSpec = wDirect + wSky * fresnel;\n', 'vec3 wSpec = (wDirect + wSky * fresnel) * (1.0 - wIce);\n')
+    .replace('gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n', 'wColor = mix(wColor, totalDiffuse, wIce);\ngl_FragColor = vec4(wColor * wEdge, mix(1.0 - wSeen, 1.0, wIce) * wEdge);\n');
+}
+
 /** three's physical lighting functions with the direct specular swapped for BRDF_Water. */
 const GGX_CALL = 'vec3 specularBRDF = BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, material );';
 const WATER_LIGHTS_PARS = (() => {
@@ -261,6 +363,7 @@ export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniform
   Object.assign(uniforms, { tNoise: { value: noise } });
   // Built now, in the era this thread was set in (never at module load).
   const main = fragmentMain();
+  const ice = waterFreezes();
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -273,17 +376,29 @@ export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniform
       .replace('#include <lights_physical_pars_fragment>', WATER_LIGHTS_PARS)
       .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(wNormal, 0.0)).xyz);')
       .replace('#include <opaque_fragment>', FRAGMENT_OUTPUT);
+    if (ice) withIce(shader, river);
   };
-  const key = `${river ? 'river-v4' : 'water-v4'}${isPresent() ? '' : `-${era().id}`}`;
+  // The ice code bakes the snow line's base into the text: it is part of the key.
+  const key = `${river ? 'river-v4' : 'water-v4'}${isPresent() ? '' : `-${era().id}`}${ice ? `-ice${snowLineBase()}` : ''}`;
   mat.customProgramCacheKey = () => key;
   return mat;
 }
 
-/** Geometry for one node's standing water. */
-export function createWaterGeometry(w: WaterData): THREE.BufferGeometry {
+/**
+ * Geometry for one node's standing water. In a world whose water can freeze (waterFreezes()), `shape` (the
+ * node's TileData.shape) gives each water vertex the terrain's curvature there for the ice test.
+ */
+export function createWaterGeometry(w: WaterData, shape?: Uint8Array): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(w.positions, 3));
   g.setAttribute('aDepth', new THREE.BufferAttribute(w.depth, 1));
+  if (shape && waterFreezes()) {
+    // The water lattice is the node's lattice (its first vertices); shape holds 4 bytes per vertex, curvature first.
+    const count = w.depth.length;
+    const curv = new Uint8Array(count);
+    for (let v = 0; v < count; v++) curv[v] = shape[v * 4];
+    g.setAttribute('aIceShape', new THREE.BufferAttribute(curv, 1, true));
+  }
   g.setIndex(new THREE.BufferAttribute(w.index, 1));
   return g;
 }
