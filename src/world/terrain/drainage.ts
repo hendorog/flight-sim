@@ -831,7 +831,7 @@ const POOLS_PER_LAKE = 6;
 export interface LakePool {
   lake: number;
   level: number;
-  /** Lowest ground under it, m; and its wet raster points' count, centroid (m) and second moments (m²). */
+  /** Lowest ground under it, m; and its wet raster points' count, centroid (m) and second moments about it (m²). */
   bottom: number;
   wet: number;
   north: number;
@@ -839,7 +839,12 @@ export interface LakePool {
   snn: number;
   see: number;
   sne: number;
+  /** Its middle: the raster point nearest the centroid with at least LAKE_CENTRE_DEPTH of water over it, m. */
+  centreNorth: number;
+  centreEast: number;
 }
+/** A lake's middle has at least this much water over it, m. */
+const LAKE_CENTRE_DEPTH = 3;
 
 /** One pond's raster: a box of raster points round its cells and their ring, with each point's ground and pool. */
 interface PondRaster {
@@ -1022,6 +1027,9 @@ export class LakeMask {
         let snn = 0;
         let see = 0;
         let sne = 0;
+        let cn = sn;
+        let ce = se;
+        let cd = Infinity;
         for (const p of dom) {
           if (R.ground[p] >= level) continue;
           const dn = origin + (gi + Math.floor(p / cols)) * LAKE_RASTER - sn;
@@ -1029,9 +1037,14 @@ export class LakeMask {
           snn += dn * dn;
           see += de * de;
           sne += dn * de;
+          if (R.ground[p] <= level - LAKE_CENTRE_DEPTH && dn * dn + de * de < cd) {
+            cd = dn * dn + de * de;
+            cn = sn + dn;
+            ce = se + de;
+          }
         }
         const id = this.pools.length;
-        this.pools.push({ lake: k, level, bottom, wet, north: sn, east: se, snn: snn / wet, see: see / wet, sne: sne / wet });
+        this.pools.push({ lake: k, level, bottom, wet, north: sn, east: se, snn: snn / wet, see: see / wet, sne: sne / wet, centreNorth: cn, centreEast: ce });
         ownPools.push(id);
         for (const p of dom) {
           R.pool[p] = id;

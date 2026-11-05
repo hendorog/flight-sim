@@ -66,9 +66,10 @@ interface Axis {
 /**
  * The lakes of a seeded world, as Lake records for what places things by a lake (landmarks, sites, habitat, airfield
  * siting): an ellipse fitted to the water of each pond's main pool (drainage.ts LakeMask, its wet raster points), centred
- * on that water's centroid and sized by its spread about the same point (a uniform ellipse of semi-axis a has a spread of
- * a / 2 along it), at its level. The water itself is the LakeMask; these ellipses are not carved into the terrain. A
- * pond the flood left no water in has none.
+ * on its middle (the water nearest its centroid, a few metres deep: a crescent's centroid may lie on its shore) and
+ * sized by the water's spread about that same point (a uniform ellipse of semi-axis a has a spread of a / 2 along it),
+ * at its level. The water itself is the LakeMask; these ellipses are not carved into the terrain. A pond the flood left
+ * no water in has none.
  */
 export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
   const out: Lake[] = [];
@@ -76,10 +77,13 @@ export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
     const id = mask.main[k];
     if (id < 0) continue;
     const p = mask.pools[id];
-    // Each wet raster point stands for a square LAKE_RASTER a side: add its own spread so a one-row lake has width.
-    const snn = p.snn + (LAKE_RASTER * LAKE_RASTER) / 12;
-    const see = p.see + (LAKE_RASTER * LAKE_RASTER) / 12;
-    const sne = p.sne;
+    // The spread about the middle; each wet raster point stands for a square LAKE_RASTER a side: add its own spread so
+    // a one-row lake has width.
+    const dn = p.north - p.centreNorth;
+    const de = p.east - p.centreEast;
+    const snn = p.snn + dn * dn + (LAKE_RASTER * LAKE_RASTER) / 12;
+    const see = p.see + de * de + (LAKE_RASTER * LAKE_RASTER) / 12;
+    const sne = p.sne + dn * de;
     const tr = snn + see;
     const det = snn * see - sne * sne;
     const disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
@@ -88,8 +92,8 @@ export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
     const radiusA = Math.max(150, 2 * Math.sqrt(l1));
     const radiusB = Math.max(120, 2 * Math.sqrt(l2));
     out.push({
-      north: p.north,
-      east: p.east,
+      north: p.centreNorth,
+      east: p.centreEast,
       radiusA,
       radiusB,
       rotation: 0.5 * Math.atan2(2 * sne, snn - see),

@@ -90,7 +90,14 @@ export interface Hydrology {
    * seed 0 (its lakes are the ellipses of `lakes`). `holds` how firmly a valley carved by a lake keeps its ground over
    * the water (holdLevel), for the valley carving.
    */
-  lakeMask?: { at(north: number, east: number, ground?: number): number; readonly field: number; holds(north: number, east: number): number; readonly holdLevel: number };
+  lakeMask?: {
+    at(north: number, east: number, ground?: number): number;
+    readonly field: number;
+    holds(north: number, east: number): number;
+    readonly holdLevel: number;
+    /** Every body of water it draws (each pond's pools), with its level. */
+    readonly pools: ReadonlyArray<{ readonly level: number }>;
+  };
 }
 
 /** One river of a network: its channel centreline (source first) as in Hydrology.river. */
