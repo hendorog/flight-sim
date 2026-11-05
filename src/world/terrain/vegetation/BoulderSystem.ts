@@ -81,13 +81,13 @@ function rockGeometry(k: number): THREE.BufferGeometry {
   g = mergeVertices(g);
   const p = g.getAttribute('position') as THREE.BufferAttribute;
   const v = new THREE.Vector3();
-  // Two or three cleavage planes per shape.
+  // Four to six cleavage planes per shape, cut close: a block with faces and edges, not an egg.
   const planes: Array<[THREE.Vector3, number]> = [];
-  for (let c = 0; c < 2 + (k % 2); c++) {
+  for (let c = 0; c < 4 + (k % 3); c++) {
     const h = hash2i(k * 31 + c, 77);
     const a = ((h & 0xffff) / 65536) * Math.PI * 2;
     const b = (((h >>> 16) & 0xffff) / 65536) * 1.2 - 0.4;
-    planes.push([new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b)), 0.62 + 0.15 * ((hash2i(k, c + 9) & 0xff) / 255)]);
+    planes.push([new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b)), 0.55 + 0.2 * ((hash2i(k, c + 9) & 0xff) / 255)]);
   }
   const colors = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i++) {

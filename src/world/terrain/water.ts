@@ -406,9 +406,9 @@ export function waterFlows(): boolean {
 
 const FLOW_VERTEX_HEAD = (falls: boolean): string =>
   falls
-    ? `// Falls: kind (0 the curtain, 1 the pool's foam, 2 spray) and its two numbers (FALL_ATTRIBUTES).
-attribute vec3 aFall;
-varying vec3 vFall;
+    ? `// Falls: kind (0 the curtain, 1 the pool's foam, 2 spray) and its three numbers (createFallGeometries).
+attribute vec4 aFall;
+varying vec4 vFall;
 `
     : `// Running water: steepness 0-1, speed m/s, fall weight 0-1, the bed's grain (channelStones.ts unit).
 attribute vec4 aFlow;
@@ -422,6 +422,10 @@ if (aFall.x > 1.5) {
   vec2 sTo = cameraPosition.xz - sC.xz;
   vec2 sR = normalize(vec2(-sTo.y, sTo.x) + vec2(1e-4, 0.0));
   transformed += vec3(sR.x, 0.0, sR.y) * (aFall.y * aRiverInfo.z) + vec3(0.0, aFall.z * aRiverInfo.z * 0.75, 0.0);
+  // Drawn a little toward the camera, so the card stands clear of the gorge's walls and floor behind it (the depth test
+  // would cut its soft edge into a straight line there). (The falls' meshes are in world coordinates.)
+  vec3 sTo3 = cameraPosition - sC;
+  transformed += sTo3 * min(0.7 * aRiverInfo.z / max(length(sTo3), 1.0), 0.5);
 }
 `;
 
@@ -564,26 +568,37 @@ float fMist = 0.0;
   float fW = max(vRiverInfo.z, 0.5);
   vec3 fWhiteC = vec3(0.82, 0.84, 0.84);
   if (vFall.x < 0.5) {
-    // The curtain: vRiverInfo.x across (m), vFall.y metres fallen from the lip, vFall.z the water's speed at the lip.
-    // A parcel there went over the lip tY ago: its strands are sampled at that moment, so they fall and stretch out
-    // as the water speeds up, and never shear.
+    // The curtain: vRiverInfo.x across (m), vFall.y metres fallen from the lip, vFall.z the water's speed at the lip,
+    // vFall.w the fall's height. A parcel there went over the lip tY ago: its strands are sampled at that moment, so
+    // they fall and stretch out as the water speeds up, and never shear.
     float fY = max(vFall.y, 0.0);
     float fV0 = max(vFall.z, 0.5);
+    float fDrop = max(vFall.w, 1.0);
+    float fU = clamp(fY / fDrop, 0.0, 1.0);
     float fTau = uTime - (sqrt(fV0 * fV0 + 19.62 * fY) - fV0) / 9.81;
     vec4 fA = texture(tNoise, vec2(vRiverInfo.x / 5.0 + vRiverInfo.y, fTau * 0.55));
     vec4 fB = texture(tNoise, vec2(vRiverInfo.x / 1.6 + vRiverInfo.y * 1.7, fTau * 1.7));
-    // Strands: the water gathers in columns (fixed across the lip).
-    float fStrand = texture(tNoise, vec2(vRiverInfo.x / 7.0, vRiverInfo.y * 0.37)).g;
+    // Strands: the water gathers in columns (fixed across the lip, a little wandering as it falls), thicker and whiter
+    // where it gathers, a thin glassy veil between; on a tall fall the veil tears into separate threads and the
+    // threads into spray as they fall.
+    float fStrand = texture(tNoise, vec2(vRiverInfo.x / 6.0 + 0.04 * fY / max(1.0, vRiverInfo.z), vRiverInfo.y * 0.37)).g
+                  + 0.5 * (texture(tNoise, vec2(vRiverInfo.x / 2.2, vRiverInfo.y * 0.61 + 0.3)).b - 0.5);
     // Glassy over the lip, breaking up white within a couple of metres.
     float fBreak = smoothstep(0.0, 2.0, fY);
-    float fN = 0.6 * fA.r + 0.4 * fB.g + 0.5 * (fStrand - 0.5);
-    float fWhite = smoothstep(0.52 - 0.22 * fBreak, 0.62 - 0.18 * fBreak, fN) * mix(0.55, 1.0, fBreak);
+    float fN = 0.55 * fA.r + 0.35 * fB.g + 0.7 * (fStrand - 0.5);
+    float fWhite = smoothstep(0.5 - 0.22 * fBreak, 0.6 - 0.18 * fBreak, fN) * mix(0.55, 1.0, fBreak);
+    float fTall = smoothstep(12.0, 50.0, fDrop);
+    // Gaps between the threads: none at the lip, opening down the fall (more on a tall one).
+    float fGap = smoothstep(0.42 + 0.12 * fU, 0.3 + 0.1 * fU, fStrand + 0.18 * (fA.g - 0.5)) * smoothstep(0.05, 0.5, fU) * mix(0.55, 1.0, fTall);
+    // Lower down a tall fall is more spray than water: fainter, softer.
+    float fVeil = fTall * smoothstep(0.55, 1.0, fU);
     fWhite = mix(fWhite, 0.8, smoothstep(0.6, 3.0, footprint));
-    diffuseColor.rgb = mix(vec3(0.16, 0.2, 0.18), fWhiteC, fWhite);
+    diffuseColor.rgb = mix(vec3(0.13, 0.17, 0.15), fWhiteC, fWhite);
     wTrans = mix(0.75 - 0.4 * fBreak, 0.05, fWhite);
+    wTrans = mix(wTrans, 1.0, max(fGap * (1.0 - 0.5 * smoothstep(0.6, 3.0, footprint)), 0.55 * fVeil * (1.0 - fB.r)));
     wNormal = normalize(fFace + vec3(0.0, 0.7, 0.0));
     wRough = mix(0.25, 0.8, fWhite);
-    wSpecCut = mix(0.3, 1.0, fWhite);
+    wSpecCut = mix(0.3, 1.0, max(fWhite, fGap));
   } else if (vFall.x < 1.5) {
     // Foam on the plunge pool, drifting off downstream: vRiverInfo.x across, vRiverInfo.y along from the foot (m);
     // vDepth runs 1 at the centre to 0 at the rim.
@@ -594,21 +609,28 @@ float fMist = 0.0;
     vec2 fQ = vec2(vRiverInfo.x, vRiverInfo.y) / 6.0;
     float fN = mix(texture(tNoise, fQ - vec2(0.0, fPh0 * 0.8) + fract(floor(uTime * 0.4) * vec2(0.37, 0.61))).r,
                    texture(tNoise, fQ - vec2(0.0, fPh1 * 0.8) + fract(floor(uTime * 0.4 + 0.5) * vec2(0.53, 0.29)) + 0.5).r, fBl);
-    float fWhite = smoothstep(0.62, 0.48, fN - 0.45 * fR + 0.35) * smoothstep(0.0, 0.35, fR);
-    fWhite = mix(fWhite, 0.85 * smoothstep(0.0, 0.6, fR), smoothstep(0.6, 3.0, footprint));
+    // (A ragged rim: the foam's edge torn by the same drifting noise, near and far.)
+    float fRim = smoothstep(0.0, 0.35, fR + 0.5 * (fN - 0.5));
+    float fWhite = smoothstep(0.62, 0.48, fN - 0.45 * fR + 0.35) * fRim;
+    fWhite = mix(fWhite, 0.85 * smoothstep(0.0, 0.6, fR + 0.6 * (fN - 0.5)), smoothstep(0.6, 3.0, footprint));
     diffuseColor.rgb = fWhiteC;
     wTrans = 1.0 - fWhite;
     wNormal = vec3(0.0, 1.0, 0.0);
     wRough = 0.8;
   } else {
-    // Spray: a soft puff, rising and drifting; fainter close to (flying through it shows no card) and denser over a
-    // taller fall (vRiverInfo.x its drop).
+    // Spray: soft billows of mist, rising and drifting, densest low over the pool and tearing into wisps at their
+    // edges; fainter close to (flying through it shows no card) and denser over a taller fall (vRiverInfo.x its drop).
+    // vFall.w: 0 the dense cloud at the foot, 1 the thin veil drifting higher off a tall fall.
     vec2 fC = vFall.yz;
-    float fR2 = dot(fC, fC);
-    float fN = texture(tNoise, fC * 0.35 + vec2(vRiverInfo.y, -uTime * 0.05)).r + 0.5 * texture(tNoise, fC * 0.8 + vec2(vRiverInfo.y * 1.3, -uTime * 0.11)).g;
-    float fD = (1.0 - smoothstep(0.1, 1.0, fR2)) * smoothstep(0.45, 1.0, fN) * mix(0.12, 0.3, smoothstep(3.0, 12.0, vRiverInfo.x));
-    fD *= smoothstep(6.0, 40.0, wDist) * (1.0 - smoothstep(0.75, 1.0, fC.y));
-    diffuseColor.rgb = vec3(0.9);
+    vec2 fE = vec2(fC.x, fC.y * 1.25 + 0.15);
+    float fR2 = dot(fE, fE);
+    float fN = texture(tNoise, fC * 0.7 + vec2(vRiverInfo.y, -uTime * 0.05)).r + 0.5 * texture(tNoise, fC * 1.9 + vec2(vRiverInfo.y * 1.3, -uTime * 0.11)).g;
+    float fBody = (1.0 - 1.7 * fR2) + 1.1 * (fN - 0.75) - 0.25 * max(fC.y, 0.0);
+    // (Never reaching the card's edge.)
+    float fCard = 1.0 - smoothstep(0.7, 0.98, length(fC));
+    float fD = smoothstep(0.0, 0.9, fBody) * fCard * mix(0.08, 0.2, smoothstep(3.0, 12.0, vRiverInfo.x)) * (1.0 - 0.6 * vFall.w);
+    fD *= smoothstep(6.0, 40.0, wDist);
+    diffuseColor.rgb = vec3(0.92);
     wTrans = 1.0 - fD;
     wNormal = normalize(fToCam + vec3(0.0, 1.0, 0.0));
     wRough = 1.0;
@@ -623,7 +645,7 @@ function withFlow(shader: { vertexShader: string; fragmentShader: string }, fall
     .replace('attribute float aDepth;\n', `attribute float aDepth;\n${FLOW_VERTEX_HEAD(falls)}`)
     .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec4(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0, 1.0);\n`}`);
   shader.fragmentShader = shader.fragmentShader
-    .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec3 vFall;\n' : 'varying vec4 vFlow;\n'}`)
+    .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec4 vFall;\n' : 'varying vec4 vFlow;\n'}`)
     // (After the hashes: the stone lattice uses hash2u.)
     .replace('// Wave height field, m:', `${falls ? '' : `${channelStonesGlsl()}${BEDROCK_GLSL}`}// Wave height field, m:`)
     // Before the shore foam's last line (the ice goes after it).
@@ -694,7 +716,7 @@ export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniform
     if (ice) withIce(shader, river);
   };
   // The ice code bakes the snow line's base into the text: it is part of the key.
-  const key = `${river ? 'river-v4' : 'water-v4'}${isPresent() ? '' : `-${era().id}`}${ice ? `-ice${snowLineBase()}` : ''}${flow ? (falls ? '-falls1' : '-flow2') : ''}`;
+  const key = `${river ? 'river-v4' : 'water-v4'}${isPresent() ? '' : `-${era().id}`}${ice ? `-ice${snowLineBase()}` : ''}${flow ? (falls ? '-falls2' : '-flow2') : ''}`;
   mat.customProgramCacheKey = () => key;
   return mat;
 }
@@ -889,9 +911,12 @@ export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
   return [...chunks.values()].filter((b) => b.idx.length > 0).map(riverGeometryOf);
 }
 
-/** Rows down a fall's curtain, and the foam patch's lattice (FOAM_N x FOAM_N). */
+/** Rows down a fall's curtain (one per CURTAIN_ROW_M of drop, within CURTAIN_ROWS..CURTAIN_ROWS_MAX), its columns, and
+ * the foam patch's lattice (FOAM_N x FOAM_N). */
 const CURTAIN_ROWS = 7;
-const CURTAIN_ACROSS = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1];
+const CURTAIN_ROWS_MAX = 32;
+const CURTAIN_ROW_M = 4;
+const CURTAIN_ACROSS = Array.from({ length: 13 }, (_, c) => c / 6 - 1);
 const FOAM_N = 5;
 /** Falls are grouped in square chunks this size, m: few vertices each, so coarser than the ribbons' (fewer draw calls). */
 const FALL_CHUNK = 40000;
@@ -961,25 +986,34 @@ export function createFallGeometries(): { sheets: THREE.BufferGeometry[]; spray:
       const nA = CURTAIN_ACROSS.length;
       const h01 = (k: number): number => (hash2i(fi * 13 + k, 7177) & 0xffff) / 65535;
       const bow = (h01(0) - 0.35) * 0.6 * hw0;
-      const lipOff = CURTAIN_ACROSS.map((a, c) => bow * (1 - a * a) + (h01(c + 1) - 0.5) * Math.min(0.4 * hw0, 0.25 * run + 1));
-      for (let k = 0; k < CURTAIN_ROWS; k++) {
-        const u = k / (CURTAIN_ROWS - 1);
-        const hw = (hw0 + (hw1 - hw0) * u) * (1 - 0.12 * u);
+      // (Each column of the lip its own: the rock of a natural lip is broken, some of it standing out of the water.)
+      const lipOff = CURTAIN_ACROSS.map((a, c) => bow * (1 - a * a) + (h01(c + 1) - 0.5) * Math.min(0.6 * hw0, 0.4 * run + 2 + 0.25 * hw0));
+      // A tall fall's water gathers into a narrower ribbon over the lip and fans out as it falls (a thin fall down a
+      // rock face, not a sheet as wide as the stream); a low one stays about as wide as its channel.
+      const tall = Math.min(1, Math.max(0, (drop - 12) / 38));
+      const hwTop = Math.max(Math.min(hw0, 0.6), hw0 * (1 - 0.55 * tall));
+      const rows = Math.min(CURTAIN_ROWS_MAX, Math.max(CURTAIN_ROWS, Math.round(drop / CURTAIN_ROW_M) + 3));
+      for (let k = 0; k < rows; k++) {
+        const u = k / (rows - 1);
+        const hw = hwTop * (1 - 0.12 * u * (1 - tall)) * (1 + tall * 0.8 * u * u) + (hw1 - hw0) * u * (1 - tall);
+        // The wandering columns: each sways a little as it falls (fixed per fall).
         for (let c = 0; c < nA; c++) {
           const a = CURTAIN_ACROSS[c];
+          const sway = tall * (h01(c + 60) - 0.5) * 0.3 * hwTop * u;
           const out = run * Math.sqrt(u) + lipOff[c] * (1 - 0.5 * u);
           const y = top - drop * u - 0.3 * Math.min(drop, hw0) * a * a * a * a * (1 - u) + 0.03;
-          const n = r.north[i] + un * out + ln * a * hw;
-          const e = r.east[i] + ue * out + le * a * hw;
+          const n = r.north[i] + un * out + ln * (a * hw + sway);
+          const e = r.east[i] + ue * out + le * (a * hw + sway);
           b.pos.push(e, y, -n);
           b.depth.push(Math.abs(a) > 0.99 ? -0.05 : 1);
           b.info.push(-a * hw, seed, hw);
           b.tan.push(ue, -un);
-          b.fall.push(0, drop * u, v0);
+          b.fall.push(0, drop * u, v0, drop);
         }
       }
-      const dryCol = (c: number): boolean => hw0 > 3 && c > 0 && c < nA - 2 && Math.abs(c - (nA - 2) / 2) > 0.6 && h01(c + 40) < Math.min(0.4, 0.04 * hw0);
-      for (let k = 0; k < CURTAIN_ROWS - 1; k++) {
+      // Over a wide low fall the water parts round the rock of the lip into separate chutes (columns left dry).
+      const dryCol = (c: number): boolean => hw0 > 3 && tall < 0.5 && c > 0 && c < nA - 2 && Math.abs(c - (nA - 2) / 2) > 0.6 && h01(c + 40) < Math.min(0.45, 0.05 * hw0);
+      for (let k = 0; k < rows - 1; k++) {
         for (let c = 0; c < nA - 1; c++) {
           if (dryCol(c)) continue;
           const a = first + k * nA + c;
@@ -1011,7 +1045,7 @@ export function createFallGeometries(): { sheets: THREE.BufferGeometry[]; spray:
           b.depth.push(1 - Math.min(1, x * x + z * z));
           b.info.push(-z * acrossR, dAlong, hw1);
           b.tan.push(ue, -un);
-          b.fall.push(1, drop, v0);
+          b.fall.push(1, drop, v0, 0);
         }
       }
       for (let p = 0; p < FOAM_N - 1; p++) {
@@ -1022,30 +1056,39 @@ export function createFallGeometries(): { sheets: THREE.BufferGeometry[]; spray:
         }
       }
     }
-    // Spray: one upright card turned to the camera in the shader, centred over the pool.
+    // Spray: upright cards turned to the camera in the shader - a cloud low over the pool (never a ball as big as the
+    // fall: its size grows slowly with the drop), and off a tall fall a thinner veil drifting higher, downstream.
     {
       const sb = chunk(sprayChunks, r.north[i], r.east[i]);
-      const size = 0.5 * drop + 0.4 * hw1 + 2;
-      const cn = r.north[i + 1] + un * 0.2 * drop;
-      const ce = r.east[i + 1] + ue * 0.2 * drop;
-      const cy = bottom + 0.75 * size * 0.8;
-      const first = sb.pos.length / 3;
-      for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-        sb.pos.push(ce, cy, -cn);
-        sb.depth.push(1);
-        sb.info.push(drop, seed, size);
-        sb.tan.push(ue, -un);
-        sb.fall.push(2, cx, cz);
+      const cards: Array<[number, number, number, number]> = [];
+      const size0 = Math.min(0.5 * drop + 0.4 * hw1 + 2, 4 + 0.14 * drop + 0.7 * hw1);
+      cards.push([size0, 0.15 * drop + 1, 0.55 * size0, 0]);
+      if (drop > 20) {
+        const size1 = 0.6 * size0 + 0.06 * drop;
+        cards.push([size1, 0.25 * drop + 2 + 0.3 * size0, size0 * 0.8 + 0.12 * drop, 1]);
       }
-      sb.idx.push(first, first + 1, first + 2, first + 2, first + 1, first + 3);
+      for (const [size, ahead, rise, kind] of cards) {
+        const cn = r.north[i + 1] + un * ahead;
+        const ce = r.east[i + 1] + ue * ahead;
+        const cy = bottom + rise;
+        const first = sb.pos.length / 3;
+        for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          sb.pos.push(ce, cy, -cn);
+          sb.depth.push(1);
+          sb.info.push(drop, seed + 7.3 * kind, size);
+          sb.tan.push(ue, -un);
+          sb.fall.push(2, cx, cz, kind);
+        }
+        sb.idx.push(first, first + 1, first + 2, first + 2, first + 1, first + 3);
+      }
     }
   });
   const build = (b: FallBuffers): THREE.BufferGeometry => {
     const g = riverGeometryOf(b);
-    g.setAttribute('aFall', new THREE.Float32BufferAttribute(b.fall, 3));
+    g.setAttribute('aFall', new THREE.Float32BufferAttribute(b.fall, 4));
     // The spray cards stand up to their size over their centre: widen the bounds so they are not culled early.
     g.computeBoundingSphere();
-    if (g.boundingSphere) g.boundingSphere.radius += 30;
+    if (g.boundingSphere) g.boundingSphere.radius += 60;
     return g;
   };
   return {

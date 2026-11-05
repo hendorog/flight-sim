@@ -39,7 +39,7 @@ export interface BoulderCellData {
 }
 
 /** Shared rock shapes (BoulderSystem builds them). */
-export const BOULDER_SHAPES = 3;
+export const BOULDER_SHAPES = 5;
 /** Channels steeper than this (streams.ts steepness: 0.5 is the start of rapids) carry boulders. */
 export const BOULDER_STEEP = 0.5;
 /** Share of the bare banks the stones cover at full steepness, and at the start of rapids. */
