@@ -327,8 +327,8 @@ Close with: filter each line over its own footprint across the line,
 `length(vec2(dFdx(d), dFdy(d)))` of its distance d (segDist / arcDist / leadOnDist), rather than the averaged
 axes. Optionally, past a pixel's worth of footprint, keep the width and fade the line out instead of spreading it
 (a long-thin-line correction).
-Check: cockpit shots along taxiway A at 100, 300 and 600 m, before and after. The runway's white markings already
-use per-axis w.x / w.y (aligned with the runway) and look sharp, which supports this diagnosis.
+Check: cockpit shots along taxiway A at 100, 300 and 600 m, before and after. The runway's side stripes and centreline already
+use per-axis w.x / w.y (aligned with the runway); if they stay sharper in the same shots, that supports the diagnosis.
 
 ## Career
 
