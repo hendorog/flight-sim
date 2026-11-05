@@ -202,13 +202,23 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
   let lakes: DrainLake[] = [];
   // A pond's settled level and middle, kept from round to round while it stays the same pond.
   const settleCache = new Map<string, { level: number; centre: number }>();
+  // The set of ponds onPonds last heard.
+  let heard = '';
   for (let round = 0; round < 12; round++) {
     flood.run(routed);
     const c = classifyPonds(n, origin, height, routed, flood, rc);
     let cut = c.cut;
     // (The last round settles whatever is left: a river through a pond still to be cut runs at its running minimum.)
     if (!cut.length || round === 11) {
-      onPonds?.(c.lakes.map((x) => x.lake.cells));
+      // The detailed ground round the ponds changes with them (the shore smoothing): levels settled against the last
+      // set of ponds' ground are stale once the set changes.
+      const ponds = c.lakes.map((x) => x.lake.cells);
+      const sig = pondSignature(ponds);
+      if (sig !== heard) {
+        onPonds?.(ponds);
+        settleCache.clear();
+        heard = sig;
+      }
       const settled = settlePonds(n, origin, routed, c, fine, settleCache);
       lakes = settled.lakes;
       cut = settled.cut;
@@ -222,6 +232,10 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
       if (path) for (const q of path) if (routed[q] > level) (routed[q] = level), (cutWhy[q] = level > routed[r.pit] ? 2 : 3);
     }
   }
+  // The shore smoothing round the lakes that stand only (not round the ponds that were cut out or dropped: a smoothed
+  // bowl with no water in it).
+  const final = lakes.map((l) => l.cells);
+  if (pondSignature(final) !== heard) onPonds?.(final);
   const filled = flood.filled;
   const receiver = flood.receiver;
   const area = flood.area;
@@ -289,6 +303,16 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
   return { n, origin, height, routed, cutWhy, filled, receiver, area, lines, lakes };
 }
 
+
+/** A key for a set of ponds (FNV-1a over their cells). */
+function pondSignature(ponds: number[][]): string {
+  let h = 0x811c9dc5;
+  for (const cells of ponds) {
+    h = Math.imul(h ^ cells.length, 0x01000193);
+    for (const c of cells) h = Math.imul(h ^ c, 0x01000193);
+  }
+  return `${ponds.length}:${h >>> 0}`;
+}
 
 const DI = [-1, -1, -1, 0, 0, 1, 1, 1];
 const DJ = [-1, 0, 1, -1, 1, -1, 0, 1];
@@ -711,12 +735,25 @@ function bspline(k: number, t: number): number {
 
 /** Binary min-heap of cell indices keyed by level; ties by insertion order are not needed for determinism (keys + ids). */
 class MinHeap {
-  private readonly ids: Int32Array;
-  private readonly keys: Float64Array;
+  private ids: Int32Array;
+  private keys: Float64Array;
   size = 0;
   constructor(cap: number) {
     this.ids = new Int32Array(cap);
     this.keys = new Float64Array(cap);
+  }
+  get capacity(): number {
+    return this.ids.length;
+  }
+  /** Room for `cap` entries (empties the heap). */
+  grow(cap: number): void {
+    this.ids = new Int32Array(cap);
+    this.keys = new Float64Array(cap);
+    this.size = 0;
+  }
+  /** The key of the entry pop() returns next. */
+  topKey(): number {
+    return this.keys[0];
   }
   private less(a: number, b: number): boolean {
     const ka = this.keys[a];
@@ -764,134 +801,468 @@ class MinHeap {
   }
 }
 
+/** LakeMask's field at a raster corner for pool `id` whose domain's edge stands at `top`: how far the corner's ground lies
+ * below it (outside the pool, never above 0). */
+function cornerField(R: PondRaster, p: number, id: number, top: number): number {
+  const g = R.ground[p];
+  if (g !== g) return -LAKE_MARGIN;
+  return R.pool[p] === id ? top - g : Math.min(0, top - g);
+}
+
+/** Spacing of the raster the lakes are flooded on, m (a quarter of a lattice cell), and the raster's size a side. */
+export const LAKE_RASTER = 250;
+const RASTER_N = Math.round((2 * DOMAIN_HALF) / LAKE_RASTER) + 1;
+const RASTER_PER_CELL = DRAIN_CELL / LAKE_RASTER;
 /**
- * Where a seeded world's lakes stand: a lake's water covers the ground below its level within the lattice cells of
- * its pond, out to its rim. A smooth field over the lattice, positive inside: a pond cell counts its depth plus
- * LAKE_SHORE_MARGIN, a rim cell (routed terrain at or over the level) a little below zero, so the edge lies just short
- * of the rim cells where the ground stands over the water; a cell lower than the level outside the pond (the outflow,
- * beyond the spill or the breach) strongly negative, so no sheet of water hangs over the ground falling away there.
+ * A lake's water is drawn over the raster points connected to its pit whose ground lies below its level plus this
+ * margin, m: every raster point beside that domain stands this much over the water, so the domain's edge (along the
+ * raster lines) lies over dry ground (the ground the flood sees is smooth at the raster's scale: see LakeMask).
+ */
+const LAKE_MARGIN = 3;
+/** The small-scale relief is smoothed out over a lake's domain and this many raster points round it (then fades out
+ * over the cubic B-spline's reach, two more). */
+const SMOOTH_RING = 2;
+/** Raster points round a pond's region in its box: the flood's step out of it, the smoothed ring and the B-spline. */
+const BOX_PAD = 1 + SMOOTH_RING + 2;
+/** Most pools one pond's cells may hold (sub-basins the lattice saw as one pond, each at its own level). */
+const POOLS_PER_LAKE = 6;
+
+/** One body of standing water on the raster: its level, its pond (index into Drainage.lakes) and its wet points. */
+export interface LakePool {
+  lake: number;
+  level: number;
+  /** Lowest ground under it, m; and its wet raster points' count, centroid (m) and second moments (m²). */
+  bottom: number;
+  wet: number;
+  north: number;
+  east: number;
+  snn: number;
+  see: number;
+  sne: number;
+}
+
+/** One pond's raster: a box of raster points round its cells and their ring, with each point's ground and pool. */
+interface PondRaster {
+  /** Raster index of the box's first point and its size, points. */
+  gi: number;
+  gj: number;
+  rows: number;
+  cols: number;
+  /** Ground per point (NaN: not sampled), the pool holding it (-1: none) and whether its relief is smoothed out. */
+  ground: Float32Array;
+  pool: Int16Array;
+  soft: Uint8Array;
+  /** The pool whose shore a point holds (a pool's points and the ring round them; -1: none). */
+  shore: Int16Array;
+}
+
+/**
+ * Where a seeded world's lakes stand. Each pond the drainage keeps is flooded on a 250 m raster of the ground without
+ * its small-scale relief (`ground`: the hills, mountains and erosion cut, smooth at the raster's scale) from its lowest
+ * point (Barnes-style priority flood): the flood rises until it would spill out of the pond's cells and the ring round
+ * them (or reach another lake, the sea or the home field's clearance), and the water stands LAKE_MARGIN below that
+ * spill, never above the pond's settled level. The water covers the raster points connected to the pit whose ground
+ * lies below level + LAKE_MARGIN, and between them the ground below the level: the shoreline is wherever the ground
+ * crosses the level (the terrain hides the flat water above it), and the domain's edge runs over ground at least
+ * LAKE_MARGIN above the water. Over the domain and a ring round it the terrain leaves out its small-scale relief
+ * (`smooth`, heightfield.ts): a lake's bed and shore are sediment and wave-cut, and a bump or dip finer than the raster
+ * would otherwise put dry ground under the water or leave it standing against nothing at the domain's edge. A
+ * sub-basin of the pond its main pool does not reach (behind a rim above the level) is flooded the same way as a pool
+ * of its own, at its own level.
  */
 export class LakeMask {
-  private readonly id: Int16Array;
-  private readonly levels: Float64Array;
-  private readonly spills: Float32Array;
-  /** The field at the last point `at` found in a lake (0 elsewhere): how far inside its edge the point lies. */
+  /** The field at the last point `at` found in a lake (0 elsewhere): how far (m) the ground interpolated between the
+   * raster points lies below the domain's edge (level + LAKE_MARGIN) there. */
   field = 0;
-  constructor(private readonly d: Drainage) {
-    this.id = new Int16Array(d.n * d.n).fill(-1);
-    d.lakes.forEach((l, k) => {
-      for (const c of l.cells) this.id[c] = k;
-    });
-    this.levels = Float64Array.from(d.lakes, (l) => l.level);
-    this.spills = Float32Array.from(d.lakes, (l) => l.spill);
-    // The cells guard() holds: each lake's cells and the ring round them (its shore and rim), the higher lake's where
-    // two meet; and the squares whose B-spline support (the 4 x 4 cells round them) holds one.
+  readonly pools: LakePool[] = [];
+  /** Each pond's main pool (its largest), -1 where the flood left no water deep enough for a lake. */
+  readonly main: Int32Array;
+  private readonly rasters: PondRaster[] = [];
+  /** Per lattice square: the ponds whose water reaches it (CSR). */
+  private readonly sqStart: Int32Array;
+  private readonly sqPond: Int16Array;
+  constructor(private readonly d: Drainage, ground: (north: number, east: number) => number) {
     const n = d.n;
-    this.gid = new Int16Array(n * n).fill(-1);
+    const rc = AIRPORT.runway.center;
+    const pondOf = new Int16Array(n * n).fill(-1);
     d.lakes.forEach((l, k) => {
+      for (const c of l.cells) pondOf[c] = k;
+    });
+    // Raster points already holding a pool (any pond's), for the floods of the ponds after it.
+    const claimed = new Map<number, number>();
+    const origin = d.origin;
+    this.main = new Int32Array(d.lakes.length).fill(-1);
+    const heap = new MinHeap(1);
+    d.lakes.forEach((l, k) => {
+      let i0 = n;
+      let i1 = 0;
+      let j0 = n;
+      let j1 = 0;
       for (const c of l.cells) {
         const i = Math.floor(c / n);
         const j = c % n;
+        i0 = Math.min(i0, i);
+        i1 = Math.max(i1, i);
+        j0 = Math.min(j0, j);
+        j1 = Math.max(j1, j);
+      }
+      // The box: the pond's cells and the ring round them (each lattice node owns the raster points nearest it), and
+      // BOX_PAD more raster points.
+      const gi = Math.max(0, (i0 - 1) * RASTER_PER_CELL - RASTER_PER_CELL / 2 - BOX_PAD);
+      const gj = Math.max(0, (j0 - 1) * RASTER_PER_CELL - RASTER_PER_CELL / 2 - BOX_PAD);
+      const rows = Math.min(RASTER_N - 1, (i1 + 1) * RASTER_PER_CELL + RASTER_PER_CELL / 2 + BOX_PAD) - gi + 1;
+      const cols = Math.min(RASTER_N - 1, (j1 + 1) * RASTER_PER_CELL + RASTER_PER_CELL / 2 + BOX_PAD) - gj + 1;
+      const R: PondRaster = { gi, gj, rows, cols, ground: new Float32Array(rows * cols).fill(NaN), pool: new Int16Array(rows * cols).fill(-1), soft: new Uint8Array(rows * cols), shore: new Int16Array(rows * cols).fill(-1) };
+      this.rasters.push(R);
+      const size = rows * cols;
+      if (heap.capacity < size) heap.grow(size);
+      const seen = new Uint8Array(size);
+      const groundAt = (p: number): number => {
+        let g = R.ground[p];
+        if (Number.isNaN(g)) {
+          g = ground(origin + (gi + Math.floor(p / cols)) * LAKE_RASTER, origin + (gj + (p % cols)) * LAKE_RASTER);
+          R.ground[p] = g;
+        }
+        return g;
+      };
+      // Whether the water may stand at a raster point: in the pond's cells or the ring round them (not another
+      // pond's), clear of the home field and the sea and not in another pond's pool.
+      const inside = (p: number): boolean => {
+        const ri = gi + Math.floor(p / cols);
+        const rj = gj + (p % cols);
+        const ci = Math.round(ri / RASTER_PER_CELL);
+        const cj = Math.round(rj / RASTER_PER_CELL);
+        if (ci < 1 || cj < 1 || ci >= n - 1 || cj >= n - 1) return false;
+        const c = ci * n + cj;
+        if (pondOf[c] !== k) {
+          if (pondOf[c] >= 0) return false;
+          let ring = false;
+          for (let a = 0; a < 8 && !ring; a++) ring = pondOf[c + DI[a] * n + DJ[a]] === k;
+          if (!ring) return false;
+        }
+        if (Math.hypot(origin + ri * LAKE_RASTER - rc.north, origin + rj * LAKE_RASTER - rc.east) < LAKE_HOME_CLEAR) return false;
+        const other = claimed.get(ri * RASTER_N + rj);
+        return other === undefined;
+      };
+      const tried = new Uint8Array(size);
+      const ownPools: number[] = [];
+      // A pool from one seed point: the flood's popped points (in order) and the spill level.
+      const flood = (seed: number): void => {
+        seen.fill(0);
+        heap.size = 0;
+        const popped: number[] = [];
+        seen[seed] = 1;
+        heap.push(seed, groundAt(seed));
+        let running = -Infinity;
+        let spill = Infinity;
+        while (heap.size > 0) {
+          const key = heap.topKey();
+          const p = heap.pop();
+          if (!inside(p) || key <= 0) {
+            spill = Math.max(running, key);
+            break;
+          }
+          running = Math.max(running, key);
+          // Above the pond's settled level and the margin: the water stands at that level.
+          if (running >= l.level + LAKE_MARGIN) {
+            spill = running;
+            break;
+          }
+          popped.push(p);
+          const pi = Math.floor(p / cols);
+          const pj = p % cols;
+          for (let a = 0; a < 8; a++) {
+            const qi = pi + DI[a];
+            const qj = pj + DJ[a];
+            if (qi < 0 || qj < 0 || qi >= rows || qj >= cols) continue;
+            const q = qi * cols + qj;
+            if (seen[q]) continue;
+            seen[q] = 1;
+            heap.push(q, groundAt(q));
+          }
+        }
+        for (const p of popped) tried[p] = 1;
+        if (spill === Infinity) spill = running;
+        const level = Math.min(l.level, spill - LAKE_MARGIN);
+        // The domain: the popped points connected to the seed below level + margin.
+        const top = level + LAKE_MARGIN;
+        const inPop = new Set(popped);
+        if (!inPop.has(seed) || !(R.ground[seed] < top)) return;
+        const dom: number[] = [seed];
+        const mark = new Set<number>([seed]);
+        for (let h = 0; h < dom.length; h++) {
+          const p = dom[h];
+          const pi = Math.floor(p / cols);
+          const pj = p % cols;
+          for (let a = 0; a < 8; a++) {
+            const qi = pi + DI[a];
+            const qj = pj + DJ[a];
+            if (qi < 0 || qj < 0 || qi >= rows || qj >= cols) continue;
+            const q = qi * cols + qj;
+            if (mark.has(q) || !inPop.has(q) || !(R.ground[q] < top)) continue;
+            mark.add(q);
+            dom.push(q);
+          }
+        }
+        let bottom = Infinity;
+        let wet = 0;
+        let sn = 0;
+        let se = 0;
+        for (const p of dom) {
+          const g = R.ground[p];
+          bottom = Math.min(bottom, g);
+          if (g >= level) continue;
+          wet++;
+          sn += origin + (gi + Math.floor(p / cols)) * LAKE_RASTER;
+          se += origin + (gj + (p % cols)) * LAKE_RASTER;
+        }
+        // Too shallow (or too small) for a lake: no water.
+        if (level - bottom < LAKE_MIDDLE_DEPTH || wet < 2) return;
+        sn /= wet;
+        se /= wet;
+        let snn = 0;
+        let see = 0;
+        let sne = 0;
+        for (const p of dom) {
+          if (R.ground[p] >= level) continue;
+          const dn = origin + (gi + Math.floor(p / cols)) * LAKE_RASTER - sn;
+          const de = origin + (gj + (p % cols)) * LAKE_RASTER - se;
+          snn += dn * dn;
+          see += de * de;
+          sne += dn * de;
+        }
+        const id = this.pools.length;
+        this.pools.push({ lake: k, level, bottom, wet, north: sn, east: se, snn: snn / wet, see: see / wet, sne: sne / wet });
+        ownPools.push(id);
+        for (const p of dom) {
+          R.pool[p] = id;
+          claimed.set((gi + Math.floor(p / cols)) * RASTER_N + gj + (p % cols), id);
+        }
+      };
+      // The main pool from the pond's middle, then any sub-basin its water did not reach: the pond's deepest cells
+      // first, each from its lowest raster point.
+      const cells = l.cells.slice().sort((a, b) => d.routed[a] - d.routed[b] || a - b);
+      const nodePoint = (c: number): number => (Math.floor(c / n) * RASTER_PER_CELL - gi) * cols + (c % n) * RASTER_PER_CELL - gj;
+      const lowest = (c: number): number => {
+        // The lowest raster point the cell owns (its node and the points round it within half a cell).
+        const p0 = nodePoint(c);
+        let best = p0;
+        const h = RASTER_PER_CELL / 2;
+        for (let a = -h + 1; a < h; a++) {
+          for (let b = -h + 1; b < h; b++) {
+            const q = p0 + a * cols + b;
+            if (groundAt(q) < groundAt(best)) best = q;
+          }
+        }
+        return best;
+      };
+      const centre = l.centre >= 0 ? l.centre : cells[0];
+      flood(lowest(centre));
+      for (const c of cells) {
+        if (ownPools.length >= POOLS_PER_LAKE) break;
+        const p = nodePoint(c);
+        if (tried[p] || R.pool[p] >= 0) continue;
+        if (!(groundAt(p) < l.level - LAKE_MIDDLE_DEPTH)) continue;
+        const q = lowest(c);
+        if (tried[q] || R.pool[q] >= 0) continue;
+        flood(q);
+      }
+      let best = -1;
+      for (const id of ownPools) if (best < 0 || this.pools[id].wet > this.pools[best].wet) best = id;
+      this.main[k] = best;
+      // The smoothed ground: the pools and SMOOTH_RING raster points round them; the shore: the pools and the ring of
+      // points round them (the higher pool's where two meet).
+      for (let p = 0; p < size; p++) {
+        const id = R.pool[p];
+        if (id < 0) continue;
+        const pi = Math.floor(p / cols);
+        const pj = p % cols;
         for (let a = -1; a <= 1; a++) {
           for (let b = -1; b <= 1; b++) {
-            if (i + a < 0 || j + b < 0 || i + a >= n || j + b >= n) continue;
-            const q = (i + a) * n + j + b;
-            const g = this.gid[q];
-            if (g < 0 || this.levels[g] < l.level) this.gid[q] = k;
+            const q = (pi + a) * cols + pj + b;
+            const o = R.shore[q];
+            if (o < 0 || this.pools[o].level < this.pools[id].level) R.shore[q] = id;
+          }
+        }
+        for (let a = -SMOOTH_RING; a <= SMOOTH_RING; a++) {
+          for (let b = -SMOOTH_RING; b <= SMOOTH_RING; b++) {
+            const qi = pi + a;
+            const qj = pj + b;
+            if (qi >= 0 && qj >= 0 && qi < rows && qj < cols) R.soft[qi * cols + qj] = 1;
           }
         }
       }
     });
-    this.sq = new Uint8Array(n * n);
-    for (let c = 0; c < n * n; c++) {
-      if (this.gid[c] < 0) continue;
-      const i = Math.floor(c / n);
-      const j = c % n;
-      for (let a = -2; a <= 1; a++) for (let b = -2; b <= 1; b++) if (i + a >= 0 && j + b >= 0 && i + a < n && j + b < n) this.sq[(i + a) * n + j + b] = 1;
-    }
+    // Which ponds' rasters reach each lattice square (a raster square within the B-spline's reach of a smoothed
+    // point: every square with a corner in a pool among them).
+    const N = n * n;
+    const lists: number[][] = [];
+    const sqOf = new Int32Array(N).fill(-1);
+    this.rasters.forEach((R, k) => {
+      for (let p = 0; p < R.soft.length; p++) {
+        if (!R.soft[p]) continue;
+        const ri = R.gi + Math.floor(p / R.cols);
+        const rj = R.gj + (p % R.cols);
+        for (let a = -2; a <= 1; a++) {
+          for (let b = -2; b <= 1; b++) {
+            const si = Math.floor((ri + a) / RASTER_PER_CELL);
+            const sj = Math.floor((rj + b) / RASTER_PER_CELL);
+            if (si < 0 || sj < 0 || si >= n - 1 || sj >= n - 1) continue;
+            const s = si * n + sj;
+            if (sqOf[s] < 0) {
+              sqOf[s] = lists.length;
+              lists.push([]);
+            }
+            const list = lists[sqOf[s]];
+            if (!list.includes(k)) list.push(k);
+          }
+        }
+      }
+    });
+    this.sqStart = new Int32Array(N + 1);
+    for (let s = 0; s < N; s++) this.sqStart[s + 1] = this.sqStart[s] + (sqOf[s] >= 0 ? lists[sqOf[s]].length : 0);
+    this.sqPond = new Int16Array(this.sqStart[N]);
+    for (let s = 0; s < N; s++) if (sqOf[s] >= 0) this.sqPond.set(lists[sqOf[s]], this.sqStart[s]);
   }
-  private readonly sq: Uint8Array;
-  private readonly gid: Int16Array;
-  /** The level of the lake guard() last found (-Infinity: none). */
-  guardLevel = -Infinity;
   /**
-   * How firmly the ground round a lake is kept over its water at (north, east), [0, 1]: 1 over the lake and its shore,
-   * falling to 0 a cell or so beyond (a cubic B-spline of the lake's cells and the ring round them: C2 smooth). A valley carved past a lake
-   * (a gorge running by it) keeps its walls over the lake's level there, or the lake would stand against nothing at
-   * the edge of its mask. Leaves the lake's level in guardLevel.
+   * How far the small-scale relief is smoothed out at (north, east), [0, 1]: 1 over each lake's domain and SMOOTH_RING
+   * raster points round it, falling to 0 over two more (a cubic B-spline over the raster: C2, no crease on its lines).
    */
-  guard(north: number, east: number): number {
-    const { d, gid } = this;
-    const n = d.n;
-    this.guardLevel = -Infinity;
-    const x = (east - d.origin) / DRAIN_CELL;
-    const y = (north - d.origin) / DRAIN_CELL;
-    const j = Math.floor(x);
-    const i = Math.floor(y);
-    if (i < 1 || j < 1 || i >= n - 2 || j >= n - 2 || !this.sq[i * n + j]) return 0;
-    const tx = x - j;
-    const ty = y - i;
-    // The weight of each lake among the 16 cells (rarely more than one).
-    let k0 = -1;
-    let v0 = 0;
-    let k1 = -1;
-    let v1 = 0;
-    for (let a = 0; a < 4; a++) {
-      const wy = bspline(a, ty);
-      for (let b = 0; b < 4; b++) {
-        const k = gid[(i - 1 + a) * n + j - 1 + b];
-        if (k < 0) continue;
-        const w = wy * bspline(b, tx);
-        if (k === k0 || k0 < 0) (k0 = k), (v0 += w);
-        else if (k === k1 || k1 < 0) (k1 = k), (v1 += w);
+  smooth(north: number, east: number): number {
+    const { d } = this;
+    const x = (east - d.origin) / LAKE_RASTER;
+    const y = (north - d.origin) / LAKE_RASTER;
+    const rj = Math.floor(x);
+    const ri = Math.floor(y);
+    if (ri < 1 || rj < 1 || ri >= RASTER_N - 2 || rj >= RASTER_N - 2) return 0;
+    const s = Math.floor(ri / RASTER_PER_CELL) * d.n + Math.floor(rj / RASTER_PER_CELL);
+    const s0 = this.sqStart[s];
+    const s1 = this.sqStart[s + 1];
+    if (s0 === s1) return 0;
+    const tx = x - rj;
+    const ty = y - ri;
+    let best = 0;
+    for (let t = s0; t < s1; t++) {
+      const R = this.rasters[this.sqPond[t]];
+      const li = ri - R.gi;
+      const lj = rj - R.gj;
+      if (li < 1 || lj < 1 || li >= R.rows - 2 || lj >= R.cols - 2) continue;
+      let v = 0;
+      for (let a = 0; a < 4; a++) {
+        const row = (li - 1 + a) * R.cols + lj - 1;
+        v += bspline(a, ty) * (bspline(0, tx) * R.soft[row] + bspline(1, tx) * R.soft[row + 1] + bspline(2, tx) * R.soft[row + 2] + bspline(3, tx) * R.soft[row + 3]);
+      }
+      if (v > best) best = v;
+    }
+    return Math.min(1, best);
+  }
+  /** The level of the lake whose shore holds() last found (-Infinity: none). */
+  holdLevel = -Infinity;
+  /**
+   * How firmly a valley carved past a lake keeps its ground over the lake's water at (north, east), [0, 1]: 1 over a
+   * lake's domain and the ring of raster points round it, falling to 0 within two more (a cubic B-spline over the
+   * raster). Leaves the lake's level in holdLevel. Without it a valley's floor or wall could fall below the water
+   * just past the domain's edge, and the water would stand against nothing there; it reaches a raster point beyond
+   * the domain, so it holds a shore, not a plateau.
+   */
+  holds(north: number, east: number): number {
+    this.holdLevel = -Infinity;
+    const { d } = this;
+    const x = (east - d.origin) / LAKE_RASTER;
+    const y = (north - d.origin) / LAKE_RASTER;
+    const rj = Math.floor(x);
+    const ri = Math.floor(y);
+    if (ri < 1 || rj < 1 || ri >= RASTER_N - 2 || rj >= RASTER_N - 2) return 0;
+    const s = Math.floor(ri / RASTER_PER_CELL) * d.n + Math.floor(rj / RASTER_PER_CELL);
+    const s0 = this.sqStart[s];
+    const s1 = this.sqStart[s + 1];
+    if (s0 === s1) return 0;
+    const tx = x - rj;
+    const ty = y - ri;
+    let best = 0;
+    for (let t = s0; t < s1; t++) {
+      const R = this.rasters[this.sqPond[t]];
+      const li = ri - R.gi;
+      const lj = rj - R.gj;
+      if (li < 1 || lj < 1 || li >= R.rows - 2 || lj >= R.cols - 2) continue;
+      let v = 0;
+      let level = -Infinity;
+      for (let a = 0; a < 4; a++) {
+        const row = (li - 1 + a) * R.cols + lj - 1;
+        const wy = bspline(a, ty);
+        for (let b = 0; b < 4; b++) {
+          const id = R.shore[row + b];
+          if (id < 0) continue;
+          v += wy * bspline(b, tx);
+          level = Math.max(level, this.pools[id].level);
+        }
+      }
+      if (v > best) {
+        best = v;
+        this.holdLevel = level;
       }
     }
-    if (v1 > v0) (k0 = k1), (v0 = v1);
-    if (k0 < 0 || v0 <= 0.02) return 0;
-    this.guardLevel = this.levels[k0];
-    return smoothstep(0.02, 0.45, v0);
+    return Math.min(1, best);
   }
-  /** The level of the lake standing over (north, east), m, or -Infinity. */
-  at(north: number, east: number): number {
-    const { d, id } = this;
+  /**
+   * The level of the lake standing over (north, east), m, or -Infinity: inside a lake's domain, or (given the ground
+   * there) on ground below the level of the one pool on the corners of its raster square (the ground between the
+   * raster points can dip under the level where the interpolated field puts the domain's edge: a dip the water
+   * reaches, not one it stands against).
+   */
+  at(north: number, east: number, ground?: number): number {
     this.field = 0;
-    const x = (east - d.origin) / DRAIN_CELL;
-    const y = (north - d.origin) / DRAIN_CELL;
-    const j = Math.floor(x);
-    const i = Math.floor(y);
-    if (i < 0 || j < 0 || i >= d.n - 1 || j >= d.n - 1) return -Infinity;
-    const c00 = i * d.n + j;
-    const c01 = c00 + 1;
-    const c10 = c00 + d.n;
-    const c11 = c10 + 1;
-    const k00 = id[c00];
-    const k01 = id[c01];
-    const k10 = id[c10];
-    const k11 = id[c11];
-    if (k00 < 0 && k01 < 0 && k10 < 0 && k11 < 0) return -Infinity;
-    const fx = x - j;
-    const fy = y - i;
-    const w00 = (1 - fx) * (1 - fy);
-    const w01 = fx * (1 - fy);
-    const w10 = (1 - fx) * fy;
-    const w11 = fx * fy;
-    // The lake of the nearest member corner.
-    let k = -1;
-    let wk = -1;
-    if (k00 >= 0 && w00 > wk) (k = k00), (wk = w00);
-    if (k01 >= 0 && w01 > wk) (k = k01), (wk = w01);
-    if (k10 >= 0 && w10 > wk) (k = k10), (wk = w10);
-    if (k11 >= 0 && w11 > wk) (k = k11), (wk = w11);
-    const L = this.spills[k];
-    const f = w00 * this.corner(c00, k00, k, L) + w01 * this.corner(c01, k01, k, L) + w10 * this.corner(c10, k10, k, L) + w11 * this.corner(c11, k11, k, L);
-    if (f <= 0) return -Infinity;
-    this.field = f;
-    return this.levels[k];
-  }
-  private corner(c: number, kc: number, k: number, L: number): number {
-    const r = this.d.routed[c];
-    if (kc === k) return L - r + LAKE_SHORE_MARGIN;
-    return r >= L - 0.01 ? -2 : -60;
+    const { d } = this;
+    const x = (east - d.origin) / LAKE_RASTER;
+    const y = (north - d.origin) / LAKE_RASTER;
+    const rj = Math.floor(x);
+    const ri = Math.floor(y);
+    if (ri < 0 || rj < 0 || ri >= RASTER_N - 1 || rj >= RASTER_N - 1) return -Infinity;
+    const s = Math.floor(ri / RASTER_PER_CELL) * d.n + Math.floor(rj / RASTER_PER_CELL);
+    const s0 = this.sqStart[s];
+    const s1 = this.sqStart[s + 1];
+    if (s0 === s1) return -Infinity;
+    const fx = x - rj;
+    const fy = y - ri;
+    let bestLevel = -Infinity;
+    let bestField = 0;
+    for (let t = s0; t < s1; t++) {
+      const R = this.rasters[this.sqPond[t]];
+      const li = ri - R.gi;
+      const lj = rj - R.gj;
+      if (li < 0 || lj < 0 || li >= R.rows - 1 || lj >= R.cols - 1) continue;
+      const p00 = li * R.cols + lj;
+      const p01 = p00 + 1;
+      const p10 = p00 + R.cols;
+      const p11 = p10 + 1;
+      // The pool of the corners (the highest, where two meet).
+      const q00 = R.pool[p00];
+      const q01 = R.pool[p01];
+      const q10 = R.pool[p10];
+      const q11 = R.pool[p11];
+      if (q00 < 0 && q01 < 0 && q10 < 0 && q11 < 0) continue;
+      let id = -1;
+      let one = true;
+      for (let c = 0; c < 4; c++) {
+        const q = c === 0 ? q00 : c === 1 ? q01 : c === 2 ? q10 : q11;
+        if (q < 0) continue;
+        if (id >= 0 && q !== id) one = false;
+        if (id < 0 || this.pools[q].level > this.pools[id].level) id = q;
+      }
+      const top = this.pools[id].level + LAKE_MARGIN;
+      let f = (1 - fx) * (1 - fy) * cornerField(R, p00, id, top) + fx * (1 - fy) * cornerField(R, p01, id, top) + (1 - fx) * fy * cornerField(R, p10, id, top) + fx * fy * cornerField(R, p11, id, top);
+      if (f <= 0) {
+        if (ground === undefined || !one || ground >= this.pools[id].level) continue;
+        f = 0.01;
+      }
+      if (this.pools[id].level > bestLevel) {
+        bestLevel = this.pools[id].level;
+        bestField = f;
+      }
+    }
+    if (bestLevel === -Infinity) return -Infinity;
+    this.field = bestField;
+    return bestLevel;
   }
 }
 /** Further lateral samples along a lake's edge in settlePonds, as fractions of the first (0.3 cell). */

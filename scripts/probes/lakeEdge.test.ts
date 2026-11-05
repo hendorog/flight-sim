@@ -1,5 +1,5 @@
 // Probe: a seeded world's lake edges (LakeMask). Where the water stops at the edge of a lake's mask while the ground
-// just beyond lies below its level, the water ends in a vertical wall. Scans every lake's surroundings at 50 m.
+// just beyond lies below its level (and no river's water covers it there), the water ends in a vertical wall. Scans every lake's surroundings at 50 m.
 import { it } from 'vitest';
 import { hydrology, makeSample, naturalHeight, naturalHeightCoarse, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
@@ -9,6 +9,9 @@ it('lake edge', () => {
     const mask = hydrology.lakeMask!;
     const s = makeSample();
     const STEP = 50;
+    const vh = { dist: 0, level: 0, floodplain: 0 };
+    let vLow = 0, vHigh = 0;
+    const vDrop: number[] = [];
     let nearRiver = 0, natLow = 0, shore = 0, wall2 = 0, wall10 = 0, worst = 0, where = '';
     for (const l of hydrology.lakes) {
       const R = Math.max(l.radiusA, l.radiusB) * 2.2 + 1500;
@@ -20,9 +23,11 @@ it('lake edge', () => {
       const rd = new Float32Array(m * m);
       for (let i = 0; i < m; i++) for (let j = 0; j < m; j++) {
         const pn = n0 + i * STEP, pe = e0 + j * STEP;
-        const L = mask.at(pn, pe);
         sampleTerrain(pn, pe, s);
-        ground[i * m + j] = s.ground;
+        // What is drawn: the standing water sampleTerrain gives (LakeMask.at with the ground there).
+        const L = s.standing;
+        // The surface beside the lake: its ground, or a river's water over it (water meeting water is no wall).
+        ground[i * m + j] = Math.max(s.ground, s.river);
         nat[i * m + j] = naturalHeight(pn, pe);
         rd[i * m + j] = s.riverDist;
         wet[i * m + j] = L === l.level ? (s.ground < L ? 1 : 0) : -1; // -1: outside this lake's mask
@@ -34,14 +39,19 @@ it('lake edge', () => {
           if (wet[q] !== -1) continue;
           shore++;
           const h = l.level - ground[q];
-          if (h > 2 && process.env.EDGE_SHOW && wall2 % 400 === 0) console.log(`  wall ${h.toFixed(0)} m at ${(n0 + (i + a) * STEP).toFixed(0)},${(e0 + (j + b) * STEP).toFixed(0)}: level ${l.level.toFixed(0)} natural ${nat[q].toFixed(0)} coarse ${naturalHeightCoarse(n0 + (i + a) * STEP, e0 + (j + b) * STEP).toFixed(0)} river ${rd[q].toFixed(0)} other lake ${mask.at(n0 + (i + a) * STEP, e0 + (j + b) * STEP).toFixed(0)}`);
-          if (h > 2) { wall2++; if (rd[q] < 600) nearRiver++; if (l.level - nat[q] > 2) natLow++; }
+          if (h > 2 && process.env.EDGE_SHOW && wall2 % Number(process.env.EDGE_SHOW) === 0) console.log(`  wall ${h.toFixed(0)} m at ${(n0 + (i + a) * STEP).toFixed(0)},${(e0 + (j + b) * STEP).toFixed(0)}: level ${l.level.toFixed(0)} natural ${nat[q].toFixed(0)} coarse ${naturalHeightCoarse(n0 + (i + a) * STEP, e0 + (j + b) * STEP).toFixed(0)} river ${rd[q].toFixed(0)} other lake ${mask.at(n0 + (i + a) * STEP, e0 + (j + b) * STEP).toFixed(0)}`);
+          if (h > 2) {
+            wall2++; if (rd[q] < 600) nearRiver++; if (l.level - nat[q] > 2) natLow++;
+            // The valley carved there: its river's level against the lake's (below: the river leaves the lake or passes it).
+            hydrology.queryValley(n0 + (i + a) * STEP, e0 + (j + b) * STEP, vh);
+            if (vh.dist < 3000) { if (vh.level < l.level - 1) vLow++; else vHigh++; vDrop.push(l.level - vh.level); }
+          }
           if (h > 10) wall10++;
           if (h > worst) { worst = h; where = `${(n0 + (i + a) * STEP).toFixed(0)},${(e0 + (j + b) * STEP).toFixed(0)} (lake level ${l.level.toFixed(0)}, inside ${(n0 + i * STEP).toFixed(0)},${(e0 + j * STEP).toFixed(0)} ground ${ground[i * m + j].toFixed(0)}, outside ground ${ground[q].toFixed(0)} natural ${nat[q].toFixed(0)})`; }
         }
       }
     }
-    console.log(`seed ${seed}: ${hydrology.lakes.length} lakes; mask-edge water points ${shore}: wall >2 m ${wall2} (${(100 * wall2 / Math.max(1, shore)).toFixed(1)} %), >10 m ${wall10}; of the >2 m: within 600 m of a river ${nearRiver}, natural ground already under the level ${natLow}; worst ${worst.toFixed(1)} m at ${where}`);
+    console.log(`seed ${seed}: ${hydrology.lakes.length} lakes; mask-edge water points ${shore}: wall >2 m ${wall2} (${(100 * wall2 / Math.max(1, shore)).toFixed(1)} %), >10 m ${wall10}; of the >2 m: within 600 m of a river ${nearRiver}, natural ground already under the level ${natLow}, valley carved there with its river below the lake ${vLow} (median ${vDrop.sort((x, y) => x - y)[vDrop.length >> 1]?.toFixed(0)} m below) / at or above it ${vHigh}; worst ${worst.toFixed(1)} m at ${where}`);
   }
   setWorldSeed(0);
 });

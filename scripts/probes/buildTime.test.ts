@@ -13,8 +13,8 @@ it('build time', () => {
     const d = buildDrainage(naturalHeightCoarse, naturalHeight);
     const td = performance.now() - t;
     t = performance.now();
-    const lakes = networkLakes(d);
-    const mask = new LakeMask(d);
+    const mask = new LakeMask(d, naturalHeight);
+    const lakes = networkLakes(d, mask);
     const tl = performance.now() - t;
     t = performance.now();
     buildNetworkHydrology(naturalHeight, d, lakes, mask);

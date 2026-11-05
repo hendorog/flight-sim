@@ -10,7 +10,7 @@
 
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
-import { cellEast, cellNorth, DRAIN_CELL, type Drainage, type LakeMask } from './drainage';
+import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
 import { AIRPORT } from '../../core/world';
 
 /** A loop is cut off when its neck has closed to this fraction of the meander length (or a few channel widths). */
@@ -25,6 +25,8 @@ const WANDER_SHORT = 350;
  * and the jitter (all of them shallower than PIN_CUT[0]). */
 const PINNED_WANDER = 0.15;
 const PIN_CUT = [20, 80];
+/** Past a lake's outlet the river keeps the lake's level over this stretch, m (while its banks stand over it). */
+const OUTLET_RUN = 800;
 /** Valley-axis sample spacing, m. */
 const AXIS_SPACING = 120;
 /** Index cells, m. */
@@ -63,51 +65,36 @@ interface Axis {
 
 /**
  * The lakes of a seeded world, as Lake records for what places things by a lake (landmarks, sites, habitat, airfield
- * siting): an ellipse fitted to the pond's lattice cells about its middle, at its level. The water itself is the
- * drainage's LakeMask (it covers the ground below the level across the pond, whatever its shape); these ellipses are
- * not carved into the terrain.
+ * siting): an ellipse fitted to the water of each pond's main pool (drainage.ts LakeMask, its wet raster points), centred
+ * on that water's centroid and sized by its spread about the same point (a uniform ellipse of semi-axis a has a spread of
+ * a / 2 along it), at its level. The water itself is the LakeMask; these ellipses are not carved into the terrain. A
+ * pond the flood left no water in has none.
  */
-export function networkLakes(d: Drainage): Lake[] {
+export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
   const out: Lake[] = [];
-  for (const l of d.lakes) {
-    let mn = 0;
-    let me = 0;
-    for (const c of l.cells) {
-      mn += cellNorth(d, c);
-      me += cellEast(d, c);
-    }
-    mn /= l.cells.length;
-    me /= l.cells.length;
-    let snn = 0;
-    let see = 0;
-    let sne = 0;
-    for (const c of l.cells) {
-      const dn = cellNorth(d, c) - mn;
-      const de = cellEast(d, c) - me;
-      snn += dn * dn;
-      see += de * de;
-      sne += dn * de;
-    }
-    const k = l.cells.length;
-    // Each cell is a 1 km square: add its own spread so single-row hollows still have width.
-    snn = snn / k + (DRAIN_CELL * DRAIN_CELL) / 12;
-    see = see / k + (DRAIN_CELL * DRAIN_CELL) / 12;
-    sne /= k;
+  for (let k = 0; k < d.lakes.length; k++) {
+    const id = mask.main[k];
+    if (id < 0) continue;
+    const p = mask.pools[id];
+    // Each wet raster point stands for a square LAKE_RASTER a side: add its own spread so a one-row lake has width.
+    const snn = p.snn + (LAKE_RASTER * LAKE_RASTER) / 12;
+    const see = p.see + (LAKE_RASTER * LAKE_RASTER) / 12;
+    const sne = p.sne;
     const tr = snn + see;
     const det = snn * see - sne * sne;
     const disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
     const l1 = tr / 2 + disc;
     const l2 = Math.max(1, tr / 2 - disc);
-    const radiusA = Math.max(300, 1.7 * Math.sqrt(l1));
-    const radiusB = Math.max(220, 1.7 * Math.sqrt(l2));
+    const radiusA = Math.max(150, 2 * Math.sqrt(l1));
+    const radiusB = Math.max(120, 2 * Math.sqrt(l2));
     out.push({
-      north: cellNorth(d, l.centre),
-      east: cellEast(d, l.centre),
+      north: p.north,
+      east: p.east,
       radiusA,
       radiusB,
       rotation: 0.5 * Math.atan2(2 * sne, snn - see),
-      depth: Math.min(40, Math.max(8, l.depth * 0.6)),
-      level: l.level,
+      depth: Math.min(40, Math.max(4, (p.level - p.bottom) * 0.6)),
+      level: p.level,
       bound: Math.max(radiusA, radiusB) * LAKE_ZONE * 1.35,
     });
   }
@@ -211,19 +198,43 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const tl = Math.hypot(north[i1] - north[i0], east[i1] - east[i0]) || 1;
       const qn = (-(east[i1] - east[i0]) / tl) * 80;
       const qe = ((north[i1] - north[i0]) / tl) * 80;
-      ground[i] = Math.min(natural(north[i], east[i]), natural(north[i] + qn, east[i] + qe), natural(north[i] - qn, east[i] - qe));
+      // A sample in a lake counts as a bank over its water (by a lake's outlet the side samples fall in the lake: the
+      // river leaving it runs on at its level, not dropped below it).
+      const at = (pn: number, pe: number): number => Math.max(natural(pn, pe), mask.at(pn, pe) + 2.5);
+      ground[i] = Math.min(at(north[i], east[i]), at(north[i] + qn, east[i] + qe), at(north[i] - qn, east[i] - qe));
     }
     for (let i = 1; i < count - 1; i += 2) ground[i] = Math.min(ground[i - 1], ground[i + 1]);
     const level = new Float64Array(count);
     const wet = new Uint8Array(count);
     let run = Infinity;
+    // The lake at each point (-Infinity: none), and the next one downstream: its level and where the river reaches it.
+    const lakeAt = new Float64Array(count);
+    for (let i = 0; i < count; i++) lakeAt[i] = mask.at(north[i], east[i]);
+    const next = new Float64Array(count).fill(-Infinity);
+    const nextAt = new Float64Array(count);
+    for (let i = count - 2; i >= 0; i--) {
+      if (lakeAt[i + 1] > -Infinity) (next[i] = lakeAt[i + 1]), (nextAt[i] = s[i + 1]);
+      else (next[i] = next[i + 1]), (nextAt[i] = nextAt[i + 1]);
+    }
+    // The last lake the river ran through: its level and where the river left it.
+    let left = -Infinity;
+    let leftAt = 0;
     for (let i = 0; i < count; i++) {
-      const lake = mask.at(north[i], east[i]);
+      const lake = lakeAt[i];
       if (lake > -Infinity) {
         run = lake;
         wet[i] = 1;
+        left = lake;
+        leftAt = s[i];
       } else {
-        const cand = ground[i] - 2.5;
+        // Past a lake's outlet the river runs on at its level while the banks stand over it (a few decimetres), only
+        // dropping its usual depth under them over the next OUTLET_RUN m: no step down from the lake to the river.
+        // Likewise into a lake: a river reaching one comes in at its level, not under it.
+        const out = left > -Infinity ? 1 - smooth(OUTLET_RUN * 0.5, OUTLET_RUN, s[i] - leftAt) : 0;
+        const inn = next[i] > -Infinity ? 1 - smooth(OUTLET_RUN * 0.5, OUTLET_RUN, nextAt[i] - s[i]) : 0;
+        let cand = ground[i] - 2.5;
+        if (out > 0) cand = Math.max(cand, Math.min(left, ground[i] - 0.3) * out + (ground[i] - 2.5) * (1 - out));
+        if (inn > 0) cand = Math.max(cand, Math.min(next[i], ground[i] - 0.3) * inn + (ground[i] - 2.5) * (1 - inn));
         run = i === 0 ? cand : Math.min(run - 0.00025 * (s[i] - s[i - 1]), cand);
       }
       level[i] = Math.max(0, run);

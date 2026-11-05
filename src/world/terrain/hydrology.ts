@@ -86,9 +86,11 @@ export interface Hydrology {
   /**
    * A seeded world's lakes as they stand (drainage.ts LakeMask): `at` gives the level of the lake whose water covers
    * the ground below it at a point (-Infinity outside every lake), and leaves `field` (how far inside its edge the point
-   * lies, > 0); `guard` how firmly the ground about a lake is kept over its water (guardLevel), for the valley carving. Absent at seed 0 (its lakes are the ellipses of `lakes`).
+   * lies, > 0); given the ground at the point, also where the ground dips below the level beside the edge. Absent at
+   * seed 0 (its lakes are the ellipses of `lakes`). `holds` how firmly a valley carved by a lake keeps its ground over
+   * the water (holdLevel), for the valley carving.
    */
-  lakeMask?: { at(north: number, east: number): number; readonly field: number; guard(north: number, east: number): number; readonly guardLevel: number };
+  lakeMask?: { at(north: number, east: number, ground?: number): number; readonly field: number; holds(north: number, east: number): number; readonly holdLevel: number };
 }
 
 /** One river of a network: its channel centreline (source first) as in Hydrology.river. */
