@@ -351,10 +351,18 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     // floor of a valley the erosion cut (erosion.ts). Not in the ground before the load-time corrections (`eroded`
     // false): the home site search sees no stale smoothing.
     const shore = eroded && shoreSeed === worldSeed() && shoreSmooth ? shoreSmooth.at(north, east) : 0;
-    // Over a lake's bed and shore (drainage.ts LakeMask) none of the small-scale relief either: the lake is flooded on
-    // the ground without it.
-    calm = eroded && lakeSeed === worldSeed() && lakeSmooth ? 1 - lakeSmooth.smooth(north, east) : 1;
-    const keep = (1 - shore) * calm * (cut ? erosionGullies(cut, erosionAt) : 1);
+    // Over a lake's bed and shore (drainage.ts LakeMask) none of the small-scale relief either, where it could reach
+    // down to the water (the lake is flooded on the ground without it): only on ground standing within the relief's
+    // reach of the lake's level, so a slope rising from the water keeps its rock and hummocks.
+    const gullyKeep = (1 - shore) * (cut ? erosionGullies(cut, erosionAt) : 1);
+    let lakeW = eroded && lakeSeed === worldSeed() && lakeSmooth ? lakeSmooth.smooth(north, east) : 0;
+    if (lakeW > 0) {
+      const hc = cut ? applyCut(coarse, erosionCutAt(erosionAt, coarse)) : coarse;
+      const reach = 0.13 * amplitude * gullyKeep + 2.2 * (1.2 + 0.004 * clamp(hc, 0, 3000)) + 3.2 + 1;
+      lakeW *= 1 - smooth(reach, 1.5 * reach, hc - (lakeSmooth as LakeMask).smoothLevel);
+    }
+    calm = 1 - lakeW;
+    const keep = gullyKeep * calm;
     if (keep > 0) relief += amplitude * 0.13 * erode(east, north, gE, gN) * keep;
   }
   let h = base + relief;

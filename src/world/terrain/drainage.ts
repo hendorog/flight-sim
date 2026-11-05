@@ -859,6 +859,8 @@ interface PondRaster {
   soft: Uint8Array;
   /** The pool whose shore a point holds (a pool's points and the ring round them; -1: none). */
   shore: Int16Array;
+  /** The pool whose smoothing reaches a point (where soft is set; the higher pool's where two meet). */
+  softPool: Int16Array;
 }
 
 /**
@@ -917,7 +919,7 @@ export class LakeMask {
       const gj = Math.max(0, (j0 - 1) * RASTER_PER_CELL - RASTER_PER_CELL / 2 - BOX_PAD);
       const rows = Math.min(RASTER_N - 1, (i1 + 1) * RASTER_PER_CELL + RASTER_PER_CELL / 2 + BOX_PAD) - gi + 1;
       const cols = Math.min(RASTER_N - 1, (j1 + 1) * RASTER_PER_CELL + RASTER_PER_CELL / 2 + BOX_PAD) - gj + 1;
-      const R: PondRaster = { gi, gj, rows, cols, ground: new Float32Array(rows * cols).fill(NaN), pool: new Int16Array(rows * cols).fill(-1), soft: new Uint8Array(rows * cols), shore: new Int16Array(rows * cols).fill(-1) };
+      const R: PondRaster = { gi, gj, rows, cols, ground: new Float32Array(rows * cols).fill(NaN), pool: new Int16Array(rows * cols).fill(-1), soft: new Uint8Array(rows * cols), shore: new Int16Array(rows * cols).fill(-1), softPool: new Int16Array(rows * cols).fill(-1) };
       this.rasters.push(R);
       const size = rows * cols;
       if (heap.capacity < size) heap.grow(size);
@@ -1100,7 +1102,11 @@ export class LakeMask {
           for (let b = -SMOOTH_RING; b <= SMOOTH_RING; b++) {
             const qi = pi + a;
             const qj = pj + b;
-            if (qi >= 0 && qj >= 0 && qi < rows && qj < cols) R.soft[qi * cols + qj] = 1;
+            if (qi < 0 || qj < 0 || qi >= rows || qj >= cols) continue;
+            const q = qi * cols + qj;
+            R.soft[q] = 1;
+            const o = R.softPool[q];
+            if (o < 0 || this.pools[o].level < this.pools[id].level) R.softPool[q] = id;
           }
         }
       }
@@ -1139,8 +1145,10 @@ export class LakeMask {
   /**
    * How far the small-scale relief is smoothed out at (north, east), [0, 1]: 1 over each lake's domain and SMOOTH_RING
    * raster points round it, falling to 0 over two more (a cubic B-spline over the raster: C2, no crease on its lines).
+   * Leaves the lake's level in smoothLevel (the terrain keeps its relief where it stands well over the water).
    */
   smooth(north: number, east: number): number {
+    this.smoothLevel = -Infinity;
     const { d } = this;
     const x = (east - d.origin) / LAKE_RASTER;
     const y = (north - d.origin) / LAKE_RASTER;
@@ -1160,14 +1168,24 @@ export class LakeMask {
       const lj = rj - R.gj;
       if (li < 1 || lj < 1 || li >= R.rows - 2 || lj >= R.cols - 2) continue;
       let v = 0;
+      let level = -Infinity;
       for (let a = 0; a < 4; a++) {
         const row = (li - 1 + a) * R.cols + lj - 1;
         v += bspline(a, ty) * (bspline(0, tx) * R.soft[row] + bspline(1, tx) * R.soft[row + 1] + bspline(2, tx) * R.soft[row + 2] + bspline(3, tx) * R.soft[row + 3]);
+        for (let b = 0; b < 4; b++) {
+          const id = R.softPool[row + b];
+          if (id >= 0) level = Math.max(level, this.pools[id].level);
+        }
       }
-      if (v > best) best = v;
+      if (v > best) {
+        best = v;
+        this.smoothLevel = level;
+      }
     }
     return Math.min(1, best);
   }
+  /** The level of the lake whose smoothing smooth() last found (-Infinity: none). */
+  smoothLevel = -Infinity;
   /** The level of the lake whose shore holds() last found (-Infinity: none). */
   holdLevel = -Infinity;
   /**
