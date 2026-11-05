@@ -3,8 +3,10 @@
 //
 //   1. Sample the natural terrain on a 1 km lattice over the drainage domain (DOMAIN_HALF around the field), with a
 //      low mound over the home field so no river is routed across it.
-//   2. Priority flood (Barnes et al. 2014) from the sea and the domain's edge: every cell gets the level water would
-//      fill it to and a receiver, the neighbour its water flows to. Filled hollows deep and wide enough become lakes.
+//   2. Priority flood (Barnes et al. 2014) from the sea and the domain's edge, and breaching or filling of every closed
+//      hollow it finds (Lindsay 2016): a river big enough cuts through the rim (a gorge, up to an allowance that grows
+//      with its catchment), the rest of the hollow ponds behind the cut (a lake, LakeMask). The flood over the cut
+//      terrain gives every cell the level water stands at and a receiver, the neighbour its water flows to.
 //   3. Flow accumulation in reverse flood order: each cell's catchment area.
 //   4. The river network: every cell whose catchment passes RIVER_AREA is a channel. Lines are traced upstream from
 //      each mouth, the largest branch continuing the line at each confluence and the others starting tributaries,
@@ -17,32 +19,33 @@ export const DOMAIN_HALF = 160000;
 export const DRAIN_CELL = 1000;
 /** Catchment area at which a channel begins, km² (cells). */
 export const RIVER_AREA = 45;
-/** A pond becomes a lake when it is at least this deep, m; a pond without a river also needs this many cells, and at
- * most LAKE_MAX_CELLS (a big dry hollow is a basin, not a lake: nothing feeds it). */
-const LAKE_DEPTH = Number((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.LD ?? 15);
+/** A pond becomes a lake when it is at least this deep, m (a shallower one on a river is cut out: the river entrenches
+ * that much); a pond without a river also needs this many cells, and at most LAKE_MAX_CELLS (a big dry hollow is a
+ * basin, not a lake: nothing feeds it). */
+const LAKE_DEPTH = 15;
 const LAKE_CELLS = 2;
 const LAKE_MAX_CELLS = 80;
-/** Most lakes kept: every one a river runs through first (by volume), then the dry hollows' (by volume). */
-const LAKE_MAX = Number((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.LM ?? 800);
+/** Most lakes kept: every one a river runs through first (by volume), then the dry hollows' (by volume). A world keeps
+ * some 400-500 (the noise terrain is full of closed hollows; a lake costs nothing per terrain sample: LakeMask). */
+const LAKE_MAX = 800;
 /** Lakes keep this far from the home runway, m. */
 const LAKE_HOME_CLEAR = 6000;
 /**
  * Breach allowance from stream power (E = K A^m S, m ~ 0.5): the deepest cut a river draining A km² keeps through a
  * rim is BREACH_DEPTH * sqrt(A), m, and the longest is BREACH_LENGTH + BREACH_LENGTH_AREA * sqrt(A) lattice cells
- * (counting only the cells cut below the ground). A stream of 45 km² cuts some 27 m over 5 km; a river of 2500 km²
- * keeps a gorge 200 m deep and 15 km long.
+ * (counting only the cells cut more than BREACH_SHALLOW). A stream of 45 km² cuts some 20 m over 4 km; a river of
+ * 2500 km² keeps a gorge 150 m deep and 13 km long. Smaller values give more lakes and fewer gorges.
  */
-const BREACH_DEPTH = Number((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BD ?? 3);
+const BREACH_DEPTH = 3;
 const BREACH_LENGTH = 3;
-const BREACH_LENGTH_AREA = Number((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BL ?? 0.2);
-const DEBUG = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.DRAIN_DEBUG === '1';
+const BREACH_LENGTH_AREA = 0.2;
 /** A lake's water stands at least this far over the detailed ground at its middle, m. */
 const LAKE_MIDDLE_DEPTH = 4;
 /** Largest pond a river may stand in, lattice cells (km²). */
-const POND_MAX_CELLS = Number((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.PM ?? 120);
+const POND_MAX_CELLS = 120;
 /** A cut no deeper than this, m, does not count toward a breach's length (a river entrenches that much anywhere: a
  * lowland hollow's rim may need a long, shallow cut to reach lower ground). */
-const BREACH_SHALLOW = Number((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.BS ?? 10);
+const BREACH_SHALLOW = 10;
 /** Breach-and-fill passes (each settles the hollows the last one's cuts and ponds left). */
 const BREACH_PASSES = 6;
 /** A hollow is filled at least this deep, m, before it counts as one. */
@@ -131,7 +134,6 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
   // its course through the rising rim) or ponded (a lake at the level the cut cannot get below), or both: the cut
   // reaches as deep as the river's allowance and the water stands behind it. `routed` is the terrain the water runs
   // over: the natural lattice with the breach cuts lowered into it.
-  const t0 = performance.now();
   const routed = Float32Array.from(height);
   const flood = new Flood(n);
   const search = new BreachSearch(n);
@@ -181,12 +183,10 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
         lw += step;
         path = search.run(routed, flood.filled, r.pit, lw, allowDepth, allowLength);
       }
-      if (DEBUG && r.area >= RIVER_AREA && pass === 0) console.log(`FAIL area ${r.area.toFixed(0)} depth ${depth.toFixed(0)} cells ${r.cells.length} allow ${allowDepth.toFixed(0)} len ${maxLen} lw-pit ${(lw - routed[r.pit]).toFixed(0)}`);
       if (!path) {
         settled[r.pit] = r.level;
         continue;
       }
-      if (DEBUG && r.area >= RIVER_AREA && pass === 0) console.log(`pass ${pass} area ${r.area.toFixed(0)} depth ${depth.toFixed(0)} allow ${allowDepth.toFixed(0)} lw-pit ${(lw - routed[r.pit]).toFixed(0)} path ${path.length}`);
       for (const q of path) if (routed[q] > lw) (routed[q] = lw), (cutWhy[q] = maxCut === Infinity ? 2 : 1);
       settled[r.pit] = lw;
       changed++;
@@ -194,7 +194,6 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
     if (!changed) break;
   }
 
-  const tPasses = performance.now();
   // --- Ponds that cannot be lakes (too shallow, too big, by the home field, beyond LAKE_MAX, or with too little
   // water over the detailed ground at the middle) but carry a river are cut out to their bottom, so no river is held
   // up at the level of water that is not drawn. The ponds that can be lakes are handed to `onPonds` first (the
@@ -202,26 +201,18 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
   let lakes: DrainLake[] = [];
   // A pond's settled level and middle, kept from round to round while it stays the same pond.
   const settleCache = new Map<string, { level: number; centre: number }>();
-  let tf = 0, tc = 0, ts = 0, tk = 0, tx = 0;
   for (let round = 0; round < 12; round++) {
-    tx = performance.now();
     flood.run(routed);
-    tf += performance.now() - tx;
-    tx = performance.now();
     const c = classifyPonds(n, origin, height, routed, flood, rc);
-    tc += performance.now() - tx;
     let cut = c.cut;
-    if (!cut.length) {
-      tx = performance.now();
+    // (The last round settles whatever is left: a river through a pond still to be cut runs at its running minimum.)
+    if (!cut.length || round === 11) {
       onPonds?.(c.lakes.map((x) => x.lake.cells));
       const settled = settlePonds(n, origin, routed, c, fine, settleCache);
-      ts += performance.now() - tx;
       lakes = settled.lakes;
       cut = settled.cut;
-      if (DEBUG) console.log(`round ${round}: ${lakes.length} lakes, ${cut.length} rejected; drops ${lakes.map((l) => (l.spill - l.level).toFixed(0)).join(' ')}`);
       if (!cut.length || round === 11) break;
     }
-    tx = performance.now();
     for (const r of cut) {
       // A basin too big for a lake keeps a pond of POND_MAX_CELLS (its other hollows come up in the next round); the
       // rest are cut to their bottom.
@@ -229,9 +220,7 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
       const path = search.run(routed, flood.filled, r.pit, level, Infinity, n * n);
       if (path) for (const q of path) if (routed[q] > level) (routed[q] = level), (cutWhy[q] = level > routed[r.pit] ? 2 : 3);
     }
-    tk += performance.now() - tx;
   }
-  if (DEBUG) console.log(`drain: passes ${(tPasses - t0).toFixed(0)} ms, ponds+cuts ${(performance.now() - tPasses).toFixed(0)} ms (flood ${tf.toFixed(0)}, classify ${tc.toFixed(0)}, settle ${ts.toFixed(0)}, cut ${tk.toFixed(0)})`);
   const filled = flood.filled;
   const receiver = flood.receiver;
   const area = flood.area;
@@ -551,7 +540,6 @@ function classifyPonds(n: number, origin: number, height: Float32Array, routed: 
       if (ok) river.push({ lake, hollow: r, volume });
       else {
         cut.push(r);
-        if (DEBUG && r.cells.length > 3) console.log(`  cut pond ${r.cells.length} cells ${depth.toFixed(0)} m: ${near ? 'near ' : ''}${sea ? 'sea ' : ''}${depth < LAKE_DEPTH ? 'shallow ' : ''}${r.cells.length > POND_MAX_CELLS ? 'big' : ''} at ${origin + Math.floor(r.pit / n) * DRAIN_CELL},${origin + (r.pit % n) * DRAIN_CELL}`);
       }
     } else if (ok && r.cells.length >= LAKE_CELLS && r.cells.length <= LAKE_MAX_CELLS) dry.push({ lake, hollow: r, volume });
   });
@@ -587,7 +575,6 @@ function settlePonds(n: number, origin: number, routed: Float32Array, c: { lakes
     }
     const id = c.member[r.cells[0]];
     let edge = Infinity;
-    let dbgAt = '';
     // LakeMask's field for this lake.
     const corner = (q: number): number => (c.member[q] === id ? l.spill - routed[q] + LAKE_SHORE_MARGIN : routed[q] >= l.spill - 0.01 ? -2 : -60);
     const field = (pn: number, pe: number): number => {
@@ -630,13 +617,11 @@ function settlePonds(n: number, origin: number, routed: Float32Array, c: { lakes
           const g = fine(a, b);
           if (g < edge) {
             edge = g;
-            if (DEBUG) dbgAt = `${a.toFixed(0)},${b.toFixed(0)} dn ${dn} t ${t.toFixed(2)} member-routed ${routed[q].toFixed(0)} nb-routed ${routed[nb].toFixed(0)} k ${k}`;
           }
         }
       }
     }
     l.level = Math.min(l.spill, edge - 1);
-    if (DEBUG && l.spill - l.level > 100) console.log(`  drop ${(l.spill - l.level).toFixed(0)} spill ${l.spill.toFixed(0)} cells ${r.cells.length} at ${dbgAt}`);
     const deepest = r.cells.slice().sort((a, b) => routed[a] - routed[b] || a - b).slice(0, 6);
     let best = Infinity;
     for (const q of deepest) {
@@ -651,7 +636,6 @@ function settlePonds(n: number, origin: number, routed: Float32Array, c: { lakes
     if (ok) lakes.push(l);
     else if (l.river) {
       cut.push(r);
-      if (DEBUG && r.cells.length > 3) console.log(`  reject pond ${r.cells.length} cells: spill ${l.spill.toFixed(0)} level ${l.level.toFixed(0)} middle ${best.toFixed(0)}`);
     }
   }
   return { lakes, cut };

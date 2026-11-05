@@ -4,8 +4,9 @@
 // Each drainage line becomes a river: its 1 km lattice course jittered and smoothed into a valley axis, its width from
 // the catchment area, the big lowland rivers swung into meanders about the axis (a skewed sine whose wavelength
 // follows the width, so no growth simulation has to run at load), and its water level falling from the source,
-// meeting the river it joins at the confluence and lying level through any lake on its course. Lakes are the deep
-// filled hollows of the drainage, as warped ellipses fitted to the hollow.
+// meeting the river it joins at the confluence and lying level through any lake on its course. Lakes are the ponds
+// the drainage leaves behind its breach cuts (drainage.ts LakeMask: the water covers the ground below the pond's level
+// across its lattice cells); ellipses fitted to them place what goes by a lake.
 
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
