@@ -18,7 +18,7 @@ import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth } from './drainage';
-import { bicubic, buildErosion } from './erosion';
+import { buildErosion, erosionCutAt, erosionGullies, sampleErosion, type ErosionField, type ErosionSample } from './erosion';
 import { buildNetworkHydrology, networkLakes } from './riverNetwork';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
@@ -286,8 +286,9 @@ let shoreSeed = 0;
 // out around the field, so the site stays valid (the pass only lowers the ground).
 setLayoutGround((n, e) => seededNaturalHeight(n, e, true, false));
 
-/** The erosion pass's height change on the drainage lattice (erosion.ts), null in seed 0's world. */
-let erosionDelta: Float32Array | null = null;
+/** The erosion pass (erosion.ts), null in seed 0's world. */
+let erosion: ErosionField | null = null;
+const erosionAt: ErosionSample = { d: 0, w: 0, t: 0, keep: 1, north: 0, east: 0 };
 const EROSION_N = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
 
 /**
@@ -302,20 +303,19 @@ export const naturalHeightCoarse = (north: number, east: number): number => seed
 export const naturalHeightRaw = (north: number, east: number, detail = true): number => seededNaturalHeight(north, east, detail, false);
 
 /**
- * The ground `h` with the erosion pass's interpolated cut applied, C1 in both. The interpolation can overshoot a
- * little above 0 beside a deep cut: held under 5 m. Land stays land: a cut is cushioned (a smooth maximum) a metre or
- * two above the sea, blended in over its first 5 m, so the lowest reaches of a river cut down to sea level between
- * the lattice cells do not drown.
+ * The ground `h` with the erosion pass's interpolated cut applied, C1 in both. The cut never raises the ground: its
+ * fine grid holds no point above 0 (erosion.ts), and what the interpolation overshoots between them (centimetres) is
+ * dropped. Land stays land: a cut is cushioned (a smooth maximum) a metre or two above the sea, blended in over its
+ * first 5 m, so the lowest reaches of a river cut down to sea level do not drown.
  */
 function applyCut(h: number, cut: number): number {
-  if (cut === 0) return h;
-  if (cut > 0) return h + (5 * cut) / (5 + cut);
+  if (cut >= 0) return h;
   const lowered = h + cut;
   const cushioned = -smin(-lowered, -smin(h, 2, 2), 3);
   return lowered + smooth(0, -5, cut) * (cushioned - lowered);
 }
 
-function seededNaturalHeight(north: number, east: number, detail = true, eroded = true): number {
+function seededNaturalHeight(north: number, east: number, detail = true, eroded = true, volcano = true): number {
   macroAt(north, east, macro);
   const inland = macro.inland;
   const base = coastProfile(inland);
@@ -336,17 +336,24 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     gN += a * massif.dy;
     amplitude += a;
   }
+  // The ground without the gullies, which the erosion's eroded surface replaces where its cut is deep.
+  const coarse = base + relief;
+  const cut = eroded ? erosion : null;
+  if (cut) sampleErosion(cut, north, east, erosionAt);
   if (detail) {
-    // Round a lake (drainage.ts ShoreSmooth) the gullies give way to the smooth basin the lake sits in. Not in the
-    // ground before the load-time corrections (`eroded` false): the home site search sees no stale smoothing.
+    // Round a lake (drainage.ts ShoreSmooth) the gullies give way to the smooth basin the lake sits in, and on the
+    // floor of a valley the erosion cut (erosion.ts). Not in the ground before the load-time corrections (`eroded`
+    // false): the home site search sees no stale smoothing.
     const shore = eroded && shoreSeed === worldSeed() && shoreSmooth ? shoreSmooth.at(north, east) : 0;
-    if (shore < 1) relief += amplitude * 0.13 * erode(east, north, gE, gN) * (1 - shore);
+    const keep = (1 - shore) * (cut ? erosionGullies(cut, erosionAt) : 1);
+    if (keep > 0) relief += amplitude * 0.13 * erode(east, north, gE, gN) * keep;
   }
   let h = base + relief;
-  // The rivers' valleys, cut by the erosion pass on the drainage lattice (erosion.ts), C1-smooth between its cells.
-  if (eroded && erosionDelta) h = applyCut(h, bicubic(erosionDelta, EROSION_N, -DOMAIN_HALF, DRAIN_CELL, north, east));
+  // The rivers' valleys, cut by the erosion pass (erosion.ts), C1-smooth: the gullies stay on the eroded surface.
+  if (cut) h = applyCut(h, erosionCutAt(erosionAt, coarse));
 
-  const V = era().terrain.volcano;
+  // The era's volcano over the eroded ground (the erosion pass works on the ground without it, `volcano` false).
+  const V = volcano ? era().terrain.volcano : undefined;
   if (V) {
     const vn = north - V.north;
     const ve = east - V.east;
@@ -380,14 +387,23 @@ function buildWater(): void {
     // The erosion pass first (erosion.ts): the rivers cut the macro terrain's valleys and drain most of its closed
     // hollows. Then the drainage, routed over the eroded terrain without its gullies and small-scale relief (finer
     // than the 1 km lattice, and the costly part): the hollows the erosion left are breached or ponded (Lindsay 2016).
-    erosionDelta = null;
+    erosion = null;
     shoreSmooth = null;
     const home = AIRPORT.runway.center;
-    const erosion = buildErosion((n, e) => seededNaturalHeight(n, e, false, false), home);
-    erosionDelta = erosion.delta;
-    // The lattice as naturalHeightCoarse gives it at the cells (the cushion above the sea included).
-    const lat = erosion.lattice;
-    for (let c = 0; c < lat.length; c++) lat[c] = applyCut(lat[c] - erosion.delta[c], erosion.delta[c]);
+    // Worked out on the ground without the era's volcano, as the cut is applied (the cone merges over it after).
+    const eroded = buildErosion((n, e) => seededNaturalHeight(n, e, false, false, false), home);
+    erosion = eroded;
+    // The eroded cells the drainage routes over (erosion.ts), with the cushion above the sea and the era's volcano.
+    const lat = eroded.lattice;
+    const V = era().terrain.volcano;
+    for (let c = 0; c < lat.length; c++) {
+      lat[c] = applyCut(lat[c] - eroded.delta[c], eroded.delta[c]);
+      if (!V) continue;
+      const north = -DOMAIN_HALF + Math.floor(c / EROSION_N) * DRAIN_CELL;
+      const east = -DOMAIN_HALF + (c % EROSION_N) * DRAIN_CELL;
+      const b = volcanoBound(V);
+      if ((north - V.north) ** 2 + (east - V.east) ** 2 < b * b) lat[c] = volcanoMerge(lat[c], volcanoHeight(north, east, V));
+    }
     const drainage = buildDrainage(naturalHeightCoarse, naturalHeight, (ponds) => {
       shoreSmooth = new ShoreSmooth(EROSION_N, -DOMAIN_HALF, ponds, home);
       shoreSeed = worldSeed();
@@ -396,13 +412,13 @@ function buildWater(): void {
     // carved; the fitted ellipses only place things by them.
     const nominal = networkLakes(drainage);
     lakes = [];
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, nominal, new LakeMask(drainage), erosion.delta);
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, nominal, new LakeMask(drainage), eroded.delta);
     legacyHydro = presentHydro;
     fields = siteAirfields(naturalHeight, presentHydro, nominal);
     setGeneratedAirfields(fields);
     return;
   } else {
-    erosionDelta = null;
+    erosion = null;
     lakes = buildLakes(naturalHeight);
     presentHydro = buildHydrology(naturalHeight, lakes);
     legacyHydro = buildLegacyHydrology(naturalHeight, lakes);

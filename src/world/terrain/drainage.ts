@@ -29,7 +29,7 @@ const LAKE_MAX_CELLS = 80;
  * some 400-500 (the noise terrain is full of closed hollows; a lake costs nothing per terrain sample: LakeMask). */
 const LAKE_MAX = 800;
 /** Lakes keep this far from the home runway, m. */
-const LAKE_HOME_CLEAR = 6000;
+export const LAKE_HOME_CLEAR = 6000;
 /**
  * Breach allowance from stream power (E = K A^m S, m ~ 0.5): the deepest cut a river draining A km² keeps through a
  * rim is BREACH_DEPTH * sqrt(A), m, and the longest is BREACH_LENGTH + BREACH_LENGTH_AREA * sqrt(A) lattice cells
