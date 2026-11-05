@@ -17,7 +17,8 @@ it('build time', () => {
     const lakes = networkLakes(d, mask);
     const tl = performance.now() - t;
     t = performance.now();
-    buildNetworkHydrology(naturalHeight, d, lakes, mask);
+    void lakes;
+    buildNetworkHydrology(naturalHeight, d, mask);
     const tn = performance.now() - t;
     console.log(`seed ${seed}: world ${world.toFixed(0)} ms; drainage ${td.toFixed(0)}, lakes ${tl.toFixed(0)}, network ${tn.toFixed(0)} ms`);
   }

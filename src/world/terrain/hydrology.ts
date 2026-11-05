@@ -96,7 +96,7 @@ export interface Hydrology {
     holds(north: number, east: number): number;
     readonly holdLevel: number;
     /** Every body of water it draws (each pond's pools), with its level. */
-    readonly pools: ReadonlyArray<{ readonly level: number }>;
+    readonly pools: ReadonlyArray<{ readonly level: number; readonly drained?: boolean }>;
   };
 }
 

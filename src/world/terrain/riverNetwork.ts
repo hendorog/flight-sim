@@ -27,6 +27,8 @@ const PINNED_WANDER = 0.15;
 const PIN_CUT = [20, 80];
 /** Past a lake's outlet the river keeps the lake's level over this stretch, m (while its banks stand over it). */
 const OUTLET_RUN = 800;
+/** A pond whose water stands this far above the river running into it is drained (see the levels below), m. */
+const DRAIN_MARGIN = 8;
 /** Valley-axis sample spacing, m. */
 const AXIS_SPACING = 120;
 /** Index cells, m. */
@@ -47,6 +49,33 @@ const smooth = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
   return t * t * (3 - 2 * t);
 };
+
+/** Polynomial smooth minimum (as heightfield.ts's smin). */
+const sminN = (a: number, b: number, k: number): number => {
+  const h = Math.min(1, Math.max(0, 0.5 + (0.5 * (b - a)) / k));
+  return b + (a - b) * h - k * h * (1 - h);
+};
+/** heightfield.ts valleyProfile: a valley's floor and walls over its water at distance d from its axis, m. */
+function valleyWall(d: number, floodplain: number): number {
+  if (d < floodplain) return 1.3 + 1.2 * smooth(0.5 * floodplain, floodplain, d);
+  const b = d - floodplain;
+  return 1.3 + 1.2 + 0.012 * b + 0.00011 * b * b;
+}
+
+/**
+ * No cliffs: a small stream may fall steeply, a big river at most 0.8 % more than the ground under it falls (the
+ * drop is spread upstream). Where the ground itself falls steeply the water falls with it: a cap on the gradient
+ * alone would hold a big mountain river to 0.8 % from its mouth upward, hundreds of metres under its valley floor.
+ * A lake holds its level: the drop below its outlet stays there (rapids, a fall), not spread up through the lake.
+ */
+function capFall(p: { s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array; fall: Float64Array }): void {
+  const { s, area, level, wet, fall } = p;
+  for (let i = level.length - 2; i >= 0; i--) {
+    if (wet[i]) continue;
+    const cap = 0.008 + 0.6 * (1 - smooth(100, 1500, area[i]));
+    level[i] = Math.min(level[i], level[i + 1] + cap * (s[i + 1] - s[i]) + Math.max(0, fall[i] - fall[i + 1]));
+  }
+}
 
 interface Axis {
   north: Float64Array;
@@ -106,7 +135,7 @@ export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
 }
 
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, lakes: Lake[], mask: LakeMask, valleyCut?: Float32Array): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyCut?: Float32Array): Hydrology {
   const lines = d.lines;
   // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley the erosion
   // pass cut (erosion.ts, `valleyCut` per cell, <= 0) is the river's own, and its floor lies along the lattice path; a
@@ -159,7 +188,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const axes: Axis[] = [];
   // First each line's own course and water level (the running minimum of the ground), then the confluences, then
   // the rest of each valley from its final level.
-  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array }> = [];
+  // The ponds a line has run through at their level (main stems first): no later line drains them.
+  const held = new Uint8Array(d.lakes.length);
+  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array; ground: Float64Array; fall: Float64Array }> = [];
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const c = courses[li];
@@ -213,19 +244,37 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     let run = Infinity;
     // The lake at each point (-Infinity: none), and the next one downstream: its level and where the river reaches it.
     const lakeAt = new Float64Array(count);
-    for (let i = 0; i < count; i++) lakeAt[i] = mask.at(north[i], east[i]);
+    const pondAt = new Int32Array(count);
+    for (let i = 0; i < count; i++) {
+      lakeAt[i] = mask.at(north[i], east[i]);
+      pondAt[i] = mask.pond;
+    }
     const next = new Float64Array(count).fill(-Infinity);
     const nextAt = new Float64Array(count);
-    for (let i = count - 2; i >= 0; i--) {
-      if (lakeAt[i + 1] > -Infinity) (next[i] = lakeAt[i + 1]), (nextAt[i] = s[i + 1]);
-      else (next[i] = next[i + 1]), (nextAt[i] = nextAt[i + 1]);
-    }
+    const findNext = (): void => {
+      next.fill(-Infinity);
+      for (let i = count - 2; i >= 0; i--) {
+        if (lakeAt[i + 1] > -Infinity) (next[i] = lakeAt[i + 1]), (nextAt[i] = s[i + 1]);
+        else (next[i] = next[i + 1]), (nextAt[i] = nextAt[i + 1]);
+      }
+    };
+    findNext();
     // The last lake the river ran through: its level and where the river left it.
     let left = -Infinity;
     let leftAt = 0;
     for (let i = 0; i < count; i++) {
+      // A lake the river reaches well below its level (a pond whose level the lattice set, under which the raster
+      // flood of a pond upstream let the river down) is drained: the river runs on through its dry basin. Not one an
+      // earlier line (a main stem, before its tributaries) has already run through at its level.
+      if (lakeAt[i] > run + DRAIN_MARGIN && pondAt[i] >= 0 && !held[pondAt[i]]) {
+        const k = pondAt[i];
+        mask.drainPond(k);
+        for (let j = i; j < count; j++) if (pondAt[j] === k) lakeAt[j] = -Infinity;
+        findNext();
+      }
       const lake = lakeAt[i];
       if (lake > -Infinity) {
+        held[pondAt[i]] = 1;
         run = lake;
         wet[i] = 1;
         left = lake;
@@ -243,7 +292,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       }
       level[i] = Math.max(0, run);
     }
-    pre.push({ north, east, s, area, level, wet });
+    // The ground's own fall along the course (smoothed over about a kilometre, so a gully or a bump between samples
+    // does not count): the gradient cap below lets the water fall as steeply as the ground does.
+    const fall = Float64Array.from(ground);
+    smoothAlong(fall, Math.ceil(500 / AXIS_SPACING), 2);
+    pre.push({ north, east, s, area, level, wet, ground, fall });
   }
   // --- Confluences. A tributary that arrives lower than the river it joins has cut down through a rim (it drains a
   // closed basin the routing filled: a big hollow is not a lake, drainage.ts): the river it joins cuts down with it
@@ -269,13 +322,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       for (let i = 0; i < count; i++) level[i] = Math.max(level[i], lj);
       level[count - 1] = lj;
     }
-    // No cliffs: a small stream may fall steeply, a big river at most MAX_GRADIENT (the drop is spread upstream).
-    // A lake holds its level: the drop below its outlet stays there (rapids, a fall), not spread up through the lake.
-    for (let i = count - 2; i >= 0; i--) {
-      if (wet[i]) continue;
-      const cap = 0.008 + 0.6 * (1 - smooth(100, 1500, area[i]));
-      level[i] = Math.min(level[i], level[i + 1] + cap * (s[i + 1] - s[i]));
-    }
+    capFall(pre[li]);
     const halfWidth = new Float64Array(count);
     const belt = new Float64Array(count);
     const meander = new Float64Array(count);
@@ -311,9 +358,113 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // The floodplain's width changes only gradually along the river: inside a bend the nearest axis point jumps from
     // one stretch to another, and two different widths there would leave a step in the valley wall.
     smoothAlong(floodplain, Math.ceil(1500 / AXIS_SPACING), 3);
-    confineBelt(natural, north, east, level, belt, wavelength);
     axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence });
   }
+
+  // --- Water under the other valleys' carving. Each line's level came from the natural ground along it, but the
+  // terrain cuts every valley near a point into it (heightfield.ts carveNetwork): where a tributary comes down the
+  // side of its parent's valley (wide, its walls a parabola about the parent's axis), the parent's carve takes the
+  // ground tens of metres below the tributary's water, and the stream would hang over its bed. The level is taken down
+  // to the carved ground (carveNetwork's valley cut of every other line at the axis point, on the natural ground
+  // sampled for the level), parents first (their own level moves their carve), then kept falling downstream, put back
+  // on the parent at the confluence and given the gradient cap again.
+  const valleyReach = axes.map((a) => {
+    const m = a.north.length;
+    const own = new Float64Array(m);
+    for (let i = 0; i < m; i++) own[i] = a.floodplain[i] + a.influence[i];
+    const out = new Float64Array(m);
+    const W = Math.ceil(4000 / AXIS_SPACING);
+    // Sliding-window maximum (monotone deque) over +-W samples.
+    const dq: number[] = [];
+    for (let i = 0, j = 0; i < m; i++) {
+      for (; j < m && j <= i + W; j++) {
+        while (dq.length && own[dq[dq.length - 1]] <= own[j]) dq.pop();
+        dq.push(j);
+      }
+      while (dq[0] < i - W) dq.shift();
+      out[i] = own[dq[0]];
+    }
+    return out;
+  });
+  const valleyIndex = new SegmentIndex(axes, (li, i) => Math.max(valleyReach[li][i], valleyReach[li][i + 1]), VALLEY_CELL);
+  for (let li = 0; li < lines.length; li++) {
+    const L = lines[li];
+    const P = pre[li];
+    const { north, east, s, level, wet, ground } = P;
+    const count = north.length;
+    let moved = false;
+    for (let i = 0; i < count; i += 2) {
+      if (wet[i]) continue;
+      let h = ground[i];
+      valleyIndex.perLine(north[i], east[i], (lj, k, t, d) => {
+        if (lj === li) return false;
+        const a = axes[lj];
+        const f = a.floodplain[k] + (a.floodplain[k + 1] - a.floodplain[k]) * t;
+        const I = a.influence[k] + (a.influence[k + 1] - a.influence[k]) * t;
+        if (d >= f + I) return false;
+        const lv = a.level[k] + (a.level[k + 1] - a.level[k]) * t;
+        const excess = Math.max(0, h - lv - valleyWall(f + I, f));
+        const u = Math.min(1, Math.max(0, (d - f) / I));
+        const carved = sminN(h, lv + valleyWall(d, f) + excess * u * u, 4);
+        h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
+        return false;
+      });
+      const lim = h - 2.5;
+      for (const j of i + 1 < count - 1 ? [i, i + 1] : [i]) {
+        if (!wet[j] && lim < level[j]) {
+          level[j] = Math.max(0, lim);
+          moved = true;
+        }
+      }
+      if (i + 2 >= count && i !== count - 1) i = count - 3;
+    }
+    if (!moved && L.joins < 0) continue;
+    // Falling downstream, through lakes at their level.
+    for (let i = 1; i < count; i++) if (!wet[i]) level[i] = Math.max(0, Math.min(level[i], level[i - 1]));
+    if (L.joins >= 0) {
+      const p = axes[L.joins];
+      const at = p.s[nearestIndex(p, north[count - 1], east[count - 1])];
+      const lj = sampleAt(p.s, p.level, at);
+      for (let i = 0; i < count; i++) level[i] = Math.max(level[i], lj);
+      level[count - 1] = lj;
+    }
+    if (moved || L.joins >= 0) capFall(P);
+    void s;
+  }
+  for (let li = 0; li < lines.length; li++) {
+    const a = axes[li];
+    confineBelt(natural, a.north, a.east, a.level, a.belt, a.wavelength);
+  }
+  /**
+   * The highest water a channel point at (pn, pe) may hold given the valleys' carve there (carveNetwork's valley cut
+   * of every line, on the natural ground): 1.3 m under the carved ground, as a valley's water lies under its floor.
+   * The natural ground is sampled only where a valley's floor or wall at the point could lie under `level` + 1.3.
+   */
+  const carvedUnder = (pn: number, pe: number, level: number): number => {
+    let low = Infinity;
+    valleyIndex.perLine(pn, pe, (lj, k, t, d) => {
+      const v = axes[lj];
+      const f = v.floodplain[k] + (v.floodplain[k + 1] - v.floodplain[k]) * t;
+      const I = v.influence[k] + (v.influence[k + 1] - v.influence[k]) * t;
+      if (d < f + I) low = Math.min(low, v.level[k] + (v.level[k + 1] - v.level[k]) * t + valleyWall(d, f));
+      return false;
+    });
+    if (low - 1.3 >= level) return Infinity;
+    let h = natural(pn, pe);
+    valleyIndex.perLine(pn, pe, (lj, k, t, d) => {
+      const v = axes[lj];
+      const f = v.floodplain[k] + (v.floodplain[k + 1] - v.floodplain[k]) * t;
+      const I = v.influence[k] + (v.influence[k + 1] - v.influence[k]) * t;
+      if (d >= f + I) return false;
+      const lv = v.level[k] + (v.level[k + 1] - v.level[k]) * t;
+      const excess = Math.max(0, h - lv - valleyWall(f + I, f));
+      const u = Math.min(1, Math.max(0, (d - f) / I));
+      const carved = sminN(h, lv + valleyWall(d, f) + excess * u * u, 4);
+      h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
+      return false;
+    });
+    return h - 1.3;
+  };
 
   // --- Channels: meandering curves about the axis (Ferguson's disturbed periodic model), some loops cut off as oxbows; a tributary's end on its parent's channel.
   const rivers: Array<RiverLine & { valleyS: Float64Array }> = [];
@@ -358,37 +509,22 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const s = new Float64Array(count);
     const level = new Float64Array(count);
     const halfWidth = new Float64Array(count);
+    const wetAxis = pre[li].wet;
     for (let k = 0; k < count; k++) {
       if (k > 0) s[k] = s[k - 1] + Math.hypot(north[k] - north[k - 1], east[k] - east[k - 1]);
-      const lv = sampleAt(a.s, a.level, valleyS[k]);
+      let lv = sampleAt(a.s, a.level, valleyS[k]);
+      // The channel swings off its axis (a meander, a bend that brings it near a lower stretch of its own valley or
+      // another's wall): its water no higher than the valleys carve the ground there (every other point).
+      if ((k & 1) === 0 && k < count - 1 && !wetAxis[segmentAt(a.s, valleyS[k])]) lv = Math.min(lv, carvedUnder(north[k], east[k], lv));
       level[k] = k === 0 ? lv : Math.min(level[k - 1], lv);
       halfWidth[k] = sampleAt(a.s, a.halfWidth, valleyS[k]);
     }
     rivers.push({ north: Float64Array.from(north), east: Float64Array.from(east), level, halfWidth, s, valleyS: Float64Array.from(valleyS) });
   }
 
-  // --- Indexes: every cell lists the segments (line, index) that can reach a point in it.
-  // Each axis segment is listed out to the largest reach of the segments near it along the river: the query takes a
-  // line's nearest listed segment, so a nearer one left unlisted (a smaller reach) would put a seam at a cell edge.
-  const valleyReach = axes.map((a) => {
-    const m = a.north.length;
-    const own = new Float64Array(m);
-    for (let i = 0; i < m; i++) own[i] = a.floodplain[i] + a.influence[i];
-    const out = new Float64Array(m);
-    const W = Math.ceil(4000 / AXIS_SPACING);
-    // Sliding-window maximum (monotone deque) over +-W samples.
-    const dq: number[] = [];
-    for (let i = 0, j = 0; i < m; i++) {
-      for (; j < m && j <= i + W; j++) {
-        while (dq.length && own[dq[dq.length - 1]] <= own[j]) dq.pop();
-        dq.push(j);
-      }
-      while (dq[0] < i - W) dq.shift();
-      out[i] = own[dq[0]];
-    }
-    return out;
-  });
-  const valleyIndex = new SegmentIndex(axes, (li, i) => Math.max(valleyReach[li][i], valleyReach[li][i + 1]), VALLEY_CELL);
+  // --- Indexes: every cell lists the segments (line, index) that can reach a point in it (the valley index above:
+  // each axis segment is listed out to the largest reach of the segments near it along the river, as the query takes
+  // a line's nearest listed segment, so a nearer one left unlisted (a smaller reach) would put a seam at a cell edge).
   // One channel index serves both the carving (within the bank) and queryRiver (out to CHANNEL_REACH).
   const channelIndex = new SegmentIndex(rivers, () => CHANNEL_REACH, CHANNEL_CELL);
   const wideIndex = channelIndex;
@@ -494,7 +630,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const main = rivers[0] ?? { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), halfWidth: new Float64Array(0), s: new Float64Array(0) };
   const mainAxis = axes[0];
   return {
-    lakes,
+    // The lakes as they stand after any pond the levels drained (networkLakes leaves out a pond with no water).
+    lakes: networkLakes(d, mask),
     lakeMask: mask,
     river: { north: main.north, east: main.east, level: main.level, halfWidth: main.halfWidth, s: main.s },
     valley: mainAxis
@@ -755,6 +892,9 @@ function untangle(n: number[], e: number[], vs: number[]): void {
   }
 }
 
+/** cutOffLoops' grid of channel points, m. */
+const LOOP_CELL = 200;
+
 /** An oxbow cut off by cutOffLoops: the abandoned loop's centreline, where it lies along the valley, and its age. */
 interface CutLoop {
   north: Float64Array;
@@ -777,6 +917,18 @@ function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; o
   const N = north.length;
   const cuts: Array<[number, number]> = [];
   let lastCut = -Infinity;
+  // Arc length along the channel, and its points on a grid: each point looks only at the points near it (a loop's
+  // neck or a curl), not along the whole loop.
+  const cum = new Float64Array(N);
+  for (let j = 1; j < N; j++) cum[j] = cum[j - 1] + Math.hypot(north[j] - north[j - 1], east[j] - east[j - 1]);
+  const grid = new Map<number, number[]>();
+  const key = (cn: number, ce: number): number => (cn + 32768) * 65536 + (ce + 32768);
+  for (let j = 0; j < N; j++) {
+    const g = key(Math.floor(north[j] / LOOP_CELL), Math.floor(east[j] / LOOP_CELL));
+    const l = grid.get(g);
+    if (l) l.push(j);
+    else grid.set(g, [j]);
+  }
   let k = 0;
   while (k < N - 2) {
     const i = segmentAt(a.s, Math.max(0, valleyS[k]));
@@ -784,31 +936,44 @@ function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; o
     const hw = a.halfWidth[i];
     // The nearest point a loop or more further on (a loop's channel is about 1-3 meander lengths; a tight curl less).
     const touchAt = 2 * hw + 2 * CHANNEL_BANK;
-    let arc = 0;
+    // Of the merely narrow necks on strongly meandering stretches, about a third, spaced along the river.
+    const neck = Math.max(NECK_FACTOR * lambda, 3 * hw + 30);
+    const mayCut = a.meander[i] >= 0.45 && valleyS[k] - lastCut >= 2000 && (hash2i(li * 7919 + k, 0x0b0) & 0xff) <= 90;
+    const reach = mayCut ? Math.max(touchAt, neck) : touchAt;
+    const minArc = Math.max(8 * hw + 4 * CHANNEL_BANK, 0.4 * lambda, 1.1 * lambda);
     let best = -1;
     let bestD = Infinity;
     let touch = -1;
-    for (let j = k + 1; j < N && arc < 3.5 * lambda; j++) {
-      arc += Math.hypot(north[j] - north[j - 1], east[j] - east[j - 1]);
-      if (arc < 2 * touchAt) continue;
-      const d = Math.hypot(north[j] - north[k], east[j] - east[k]);
-      // A loop swung round onto itself (always cut: a river cannot cross its own channel); the furthest such point.
-      if (d < touchAt) touch = j;
-      if (arc < Math.max(8 * hw + 4 * CHANNEL_BANK, 0.4 * lambda)) continue;
-      if (arc >= 1.1 * lambda && d < bestD) {
-        bestD = d;
-        best = j;
+    const pn = north[k];
+    const pe = east[k];
+    const c0 = Math.floor((pn - reach) / LOOP_CELL);
+    const c1 = Math.floor((pn + reach) / LOOP_CELL);
+    const e0 = Math.floor((pe - reach) / LOOP_CELL);
+    const e1 = Math.floor((pe + reach) / LOOP_CELL);
+    for (let cn = c0; cn <= c1; cn++) {
+      for (let ce = e0; ce <= e1; ce++) {
+        const l = grid.get(key(cn, ce));
+        if (!l) continue;
+        for (const j of l) {
+          // The points a loop or more on and within 3.5 meander lengths of channel.
+          if (j <= k || cum[j - 1] - cum[k] >= 3.5 * lambda) continue;
+          const arc = cum[j] - cum[k];
+          if (arc < 2 * touchAt) continue;
+          const d = Math.hypot(north[j] - pn, east[j] - pe);
+          // A loop swung round onto itself (always cut: a river cannot cross its own channel); the furthest such point.
+          if (d < touchAt && j > touch) touch = j;
+          if (arc >= minArc && (d < bestD || (d === bestD && j < best))) {
+            bestD = d;
+            best = j;
+          }
+        }
       }
     }
     if (touch >= 0) {
       best = touch;
-    } else {
-      // Of the merely narrow necks on strongly meandering stretches, about a third, spaced along the river.
-      const narrow = best >= 0 && bestD <= Math.max(NECK_FACTOR * lambda, 3 * hw + 30);
-      if (!narrow || a.meander[i] < 0.45 || valleyS[k] - lastCut < 2000 || (hash2i(li * 7919 + k, 0x0b0) & 0xff) > 90) {
-        k++;
-        continue;
-      }
+    } else if (!(mayCut && best >= 0 && bestD <= neck)) {
+      k++;
+      continue;
     }
     // The loop's crescent, clear of the short channel across the neck.
     const cn = north[k];

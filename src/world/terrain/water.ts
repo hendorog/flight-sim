@@ -268,7 +268,7 @@ export function waterFreezes(): boolean {
   const key = `${worldSeed()}|${era().id}|${snowShiftM()}`;
   if (key === freezeKey) return freezeVal;
   // A seeded world's every pool (LakeMask: a pond's sub-basins too, not only the lakes listed), else the lakes.
-  let any = (hydrology.lakeMask?.pools ?? hydrology.lakes).some((l) => l.level > lim);
+  let any = (hydrology.lakeMask?.pools ?? hydrology.lakes).some((l) => l.level > lim && !('drained' in l && l.drained));
   for (const r of hydrology.rivers ?? [hydrology.river]) {
     if (any) break;
     for (let i = 0; i < r.level.length; i++) if (r.level[i] > lim) { any = true; break; }

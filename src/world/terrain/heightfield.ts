@@ -19,7 +19,7 @@ import { AIRPORT, onHomeAirport } from '../../core/world';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth } from './drainage';
 import { buildErosion, erosionCutAt, erosionGullies, sampleErosion, type ErosionField, type ErosionSample } from './erosion';
-import { buildNetworkHydrology, networkLakes } from './riverNetwork';
+import { buildNetworkHydrology } from './riverNetwork';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
 import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
@@ -431,11 +431,10 @@ function buildWater(): void {
     const mask = new LakeMask(drainage, naturalHeightCoarse);
     lakeSmooth = mask;
     lakeSeed = worldSeed();
-    const nominal = networkLakes(drainage, mask);
     lakes = [];
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, nominal, mask, eroded.delta);
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.delta);
     legacyHydro = presentHydro;
-    fields = siteAirfields(naturalHeight, presentHydro, nominal);
+    fields = siteAirfields(naturalHeight, presentHydro, presentHydro.lakes);
     setGeneratedAirfields(fields);
     return;
   } else {

@@ -842,6 +842,8 @@ export interface LakePool {
   /** Its middle: the raster point nearest the centroid with at least LAKE_CENTRE_DEPTH of water over it, m. */
   centreNorth: number;
   centreEast: number;
+  /** Taken away by drainPond: no water drawn. */
+  drained?: boolean;
 }
 /** A lake's middle has at least this much water over it, m. */
 const LAKE_CENTRE_DEPTH = 3;
@@ -1184,6 +1186,22 @@ export class LakeMask {
     }
     return Math.min(1, best);
   }
+  /** The pond (Drainage.lakes index) of the lake `at` last found (-1: none). */
+  pond = -1;
+  /**
+   * Take a pond's water away (all its pools), before anything samples the terrain: a pond the river network finds
+   * standing well above the river that runs into it (its water level was set on the lattice, but the raster flood of a
+   * pond upstream spilled lower and the river arrives below it) is not a lake but a dry basin the river runs through.
+   */
+  drainPond(k: number): void {
+    const R = this.rasters[k];
+    R.pool.fill(-1);
+    R.shore.fill(-1);
+    R.soft.fill(0);
+    R.softPool.fill(-1);
+    for (const p of this.pools) if (p.lake === k) p.drained = true;
+    this.main[k] = -1;
+  }
   /** The level of the lake whose smoothing smooth() last found (-Infinity: none). */
   smoothLevel = -Infinity;
   /** The level of the lake whose shore holds() last found (-Infinity: none). */
@@ -1242,6 +1260,7 @@ export class LakeMask {
    */
   at(north: number, east: number, ground?: number): number {
     this.field = 0;
+    this.pond = -1;
     const { d } = this;
     const x = (east - d.origin) / LAKE_RASTER;
     const y = (north - d.origin) / LAKE_RASTER;
@@ -1256,6 +1275,7 @@ export class LakeMask {
     const fy = y - ri;
     let bestLevel = -Infinity;
     let bestField = 0;
+    let bestPond = -1;
     for (let t = s0; t < s1; t++) {
       const R = this.rasters[this.sqPond[t]];
       const li = ri - R.gi;
@@ -1288,10 +1308,12 @@ export class LakeMask {
       if (this.pools[id].level > bestLevel) {
         bestLevel = this.pools[id].level;
         bestField = f;
+        bestPond = this.pools[id].lake;
       }
     }
     if (bestLevel === -Infinity) return -Infinity;
     this.field = bestField;
+    this.pond = bestPond;
     return bestLevel;
   }
 }
