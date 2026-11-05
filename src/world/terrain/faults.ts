@@ -90,7 +90,10 @@ export interface FaultCrossing {
 /** Grid of the faults' segments, for finding where a channel crosses one. */
 export class FaultIndex {
   private readonly cells = new Map<number, number[]>();
+  /** Each fault's bounding box: north min, max, east min, max. */
+  private readonly boxes: Array<[number, number, number, number]>;
   constructor(readonly faults: ReadonlyArray<Fault>, private readonly cell = 2000) {
+    this.boxes = faults.map((f) => [Math.min(...f.north), Math.max(...f.north), Math.min(...f.east), Math.max(...f.east)]);
     faults.forEach((f, fi) => {
       for (let i = 0; i < f.north.length - 1; i++) {
         const n0 = Math.floor(Math.min(f.north[i], f.north[i + 1]) / cell);
@@ -113,6 +116,15 @@ export class FaultIndex {
   crossings(north: Float64Array, east: Float64Array): FaultCrossing[] {
     const out: FaultCrossing[] = [];
     if (this.cells.size === 0) return out;
+    // (Most lines come nowhere near a fault: their bounding box against the faults' first.)
+    let n0 = Infinity, n1 = -Infinity, e0 = Infinity, e1 = -Infinity;
+    for (let i = 0; i < north.length; i++) {
+      if (north[i] < n0) n0 = north[i];
+      if (north[i] > n1) n1 = north[i];
+      if (east[i] < e0) e0 = east[i];
+      if (east[i] > e1) e1 = east[i];
+    }
+    if (!this.boxes.some((b) => b[0] <= n1 && b[1] >= n0 && b[2] <= e1 && b[3] >= e0)) return out;
     const seen = new Set<number>();
     const cell = this.cell;
     for (let i = 0; i < north.length - 1; i++) {

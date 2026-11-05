@@ -311,10 +311,24 @@ export function shapeLines(lines: ShapeInput[], faults: FaultIndex | null, confl
 export function bedGrain(c: { s: Float64Array; north: Float64Array; east: Float64Array }, area: Float64Array, gradient: Float32Array, fromLake: boolean, feet: ReadonlyArray<{ index: number; height: number }>): Float32Array {
   const n = c.s.length;
   const g = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
+  // (The distance carried changes slowly along a line: worked out every GRAIN_EVERY samples, interpolated between.)
+  const at = (i: number): number => {
     const hack = 1.4 * Math.pow(Math.max(0.5, area[i]), 0.6);
     const km = fromLake ? Math.min(hack, 1 + c.s[i] / 1000) : hack;
-    const carried = GRAIN_FLOOR + GRAIN_HEAD * Math.exp(-km / GRAIN_DECAY);
+    return GRAIN_FLOOR + GRAIN_HEAD * Math.exp(-km / GRAIN_DECAY);
+  };
+  let i0 = 0;
+  let c0 = at(0);
+  let i1 = Math.min(n - 1, GRAIN_EVERY);
+  let c1 = at(i1);
+  for (let i = 0; i < n; i++) {
+    if (i > i1) {
+      i0 = i1;
+      c0 = c1;
+      i1 = Math.min(n - 1, i1 + GRAIN_EVERY);
+      c1 = at(i1);
+    }
+    const carried = i1 > i0 ? c0 + ((c1 - c0) * (i - i0)) / (i1 - i0) : c0;
     const S = gradient[i];
     let d = carried * (GRAIN_CALM + (1 - GRAIN_CALM) * smoothStep01(0.003, 0.05, S));
     // A steep pitch is choked with blocks too big to move whatever the distance: 1.5 to 4 m.
@@ -335,6 +349,7 @@ const GRAIN_HEAD = 2.5;
 const GRAIN_FLOOR = 0.04;
 const GRAIN_DECAY = 12;
 const GRAIN_CALM = 0.25;
+const GRAIN_EVERY = 8;
 const smoothStep01 = (a: number, b: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);

@@ -768,8 +768,15 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       {
         const old = allLines[li];
         const a = inputs[li].a;
+        // (Both lines' arc lengths run up together: a pointer walks the old one.)
+        let j = 0;
+        const os = old.s;
+        const last = os.length - 1;
         for (let i = 0; i < a.s.length; i++) {
-          const lowered = sampleAt(old.s, old.level, a.s[i]) - a.level[i];
+          const sv = a.s[i];
+          while (j < last - 1 && os[j + 1] < sv) j++;
+          const t = last > 0 ? Math.min(1, Math.max(0, (sv - os[j]) / Math.max(1e-9, os[j + 1] - os[j]))) : 0;
+          const lowered = (last > 0 ? old.level[j] + (old.level[j + 1] - old.level[j]) * t : old.level[0]) - a.level[i];
           if (lowered <= 0.5) continue;
           a.cut[i] += lowered;
           a.breach[i] = Math.max(a.breach[i], breachOfCut(a.cut[i]));

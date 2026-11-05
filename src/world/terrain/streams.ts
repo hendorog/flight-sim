@@ -74,7 +74,7 @@ const OUTLET_SILL = 80;
  * under the sill.
  */
 const TARN_DEPTH = 250;
-const TARN_POINTS = 400;
+const TARN_POINTS = 160;
 const TARN_BELOW = 0.3;
 /** A tarn draining into other water just beyond its rim stands this far over that water, m; one with a channel through
  * its shore lower than its water by TARN_BREACHED drains to that channel. */
@@ -1077,9 +1077,10 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         const cj = Math.floor((L.east[i] - ORIGIN) / LAKE_RASTER);
         if (ci < 0 || cj < 0 || ci >= R - 1 || cj >= R - 1) continue;
         const k0 = ci * R + cj;
+        if (tarnNear[k0] === 0 && tarnNear[k0 + 1] === 0 && tarnNear[k0 + R] === 0 && tarnNear[k0 + R + 1] === 0) continue;
         if (tarnGrid[sampleAt(L.north[i], L.east[i])] > 0) continue;
-        for (const k of [k0, k0 + 1, k0 + R, k0 + R + 1]) {
-          const t = tarnNear[k] - 1;
+        for (let c = 0; c < 4; c++) {
+          const t = tarnNear[k0 + (c & 1) + (c >> 1) * R] - 1;
           if (t >= 0 && L.level[i] < tarns[t].level - TARN_BREACHED) lowest[t] = Math.min(lowest[t], L.level[i]);
         }
       }
@@ -1130,7 +1131,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
             if (tarnGrid[q] - 1 === t) continue;
             // (Another tarn's water beside it is its rim at that level; a channel's course is its overflow.)
             const o = tarnGrid[q] - 1;
-            const g = o >= 0 ? tarns[o].level : occ[q] !== 0 ? Infinity : (ground0.get(q) ?? G(q));
+            // (Only ground already sampled: the tarn's flood sampled every point round what it filled.)
+            const g = o >= 0 ? tarns[o].level : occ[q] !== 0 ? Infinity : (ground0.get(q) ?? cache.get(q) ?? Infinity);
             rim = Math.min(rim, g);
           }
         }
@@ -1267,8 +1269,10 @@ export interface Fall {
   flight: number;
 }
 
-/** A steep stretch is cut into pieces falling at most this much each, m, their water kept under the ground. */
+/** A steep stretch (falling more than PIECE_GRADIENT) is cut into pieces falling at most PIECE_STEP each, m, their
+ * water kept under the ground. */
 const PIECE_STEP = 4;
+const PIECE_GRADIENT = 0.2;
 /** The water stands this far under the ground at each piece's point, m. */
 const PIECE_DEPTH = 1;
 /** Most pieces one segment is cut into. */
@@ -1276,7 +1280,7 @@ const PIECES_MAX = 64;
 
 /**
  * A steep channel is a continuous cascade: its water follows the ground down. Between two samples falling more than
- * PIECE_STEP the ground can bulge over the straight line between them (a convex pitch), so such a segment is cut into
+ * PIECE_STEP (and PIECE_GRADIENT) the ground can bulge over the straight line between them (a convex pitch), so such a segment is cut into
  * pieces, the water at each kept PIECE_DEPTH under `ground` (never under the segment's lower end), and the level kept
  * falling. Skips the segments between samples flagged in `keep` (a lake). Returns the arrays with the pieces inserted
  * (every per-sample array of `a` that has the level's length).
@@ -1290,7 +1294,8 @@ export function refineSteep(a: Record<string, Float64Array> & { level: Float64Ar
     pieces[i] = 1;
     if (keep?.[i] && keep[i + 1]) continue;
     const D = a.level[i] - a.level[i + 1];
-    if (D > PIECE_STEP) {
+    const ds = a.s[i + 1] - a.s[i];
+    if (D > PIECE_STEP && D > PIECE_GRADIENT * ds) {
       pieces[i] = Math.min(PIECES_MAX, Math.ceil(D / PIECE_STEP));
       total += pieces[i] - 1;
     }
@@ -1476,7 +1481,8 @@ export class TarnMask {
     const w11 = tx * ty;
     this.w = 0;
     this.id = -1;
-    for (const c of [c00, c01, c10, c11]) {
+    for (let q = 0; q < 4; q++) {
+      const c = q === 0 ? c00 : q === 1 ? c01 : q === 2 ? c10 : c11;
       if (c < 0 || c === this.id) continue;
       const w = (c00 === c ? w00 : 0) + (c01 === c ? w01 : 0) + (c10 === c ? w10 : 0) + (c11 === c ? w11 : 0);
       if (w > this.w) {
