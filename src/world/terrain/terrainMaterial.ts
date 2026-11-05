@@ -33,7 +33,7 @@ import { riverStrip, TREE_LINE_ASPECT, treeLineBase } from './biome';
 import { GALLERY_FAR } from './riparian';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
 import { hydrology, snowLineBase } from './heightfield';
-import { BEDROCK_GLSL, GALLERY_ROCK_THIN } from './bedrock';
+import { BEDROCK_GLSL, GALLERY_ROCK_THIN, ROCK_EDGE_GLSL } from './bedrock';
 import { era, isPresent } from '../era/eraState';
 import { ASH_REACH, VOLCANO_GLSL, VOLCANO_LAVA_GLSL, VOLCANO_LAVA_HEAD_GLSL, VOLCANO_PALETTE } from './volcano';
 import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS } from './eraUniforms';
@@ -453,7 +453,7 @@ varying float vCoverUp;
 // Signed distance from the river centreline and the channel half-width there, m (tileBuilder.ts).
 varying vec2 vRiver;
 ${flowText(`// The nearest channel's steepness, 0..1 (tileBuilder.ts flow; bedrock.ts).\nvarying float vFlow;\n${BEDROCK_GLSL}`)}${presentText('varying float vPlantation;\n')}${hashGlsl()}
-${ROT_GLSL}
+${ROT_GLSL}${flowText(ROCK_EDGE_GLSL)}
 ${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}${presentText(FIELD_EDGE_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
@@ -909,8 +909,9 @@ if (vRiver.y > 0.5 && vFlow > 0.3) {
   float rEdgeR = abs(vRiver.x) - vRiver.y;
   float reach = rockReach(vRiver.y);
   if (rEdgeR < reach * 1.5) {
-    // A ragged edge: the rock gives way to soil in tongues, and to the water's spray darkening it near the edge.
-    tRock = bedRock(vFlow) * (1.0 - smoothstep(reach * 0.6, reach, rEdgeR + reach * (0.22 * sD.g + 0.12 * sC.b)));
+    // A ragged edge (bedrock.ts rockAtPoint, which the tree placement reads too): the rock gives way to soil in tongues
+    // and bays; the water's spray darkens it near the edge.
+    tRock = bedRock(vFlow) * rockEdgeCover(rockReachAt(vRiver.y, vec2(tXZ.x, -tXZ.y)), rEdgeR);
     tRockWet = 1.0 - smoothstep(-0.5, 0.45 * reach + 0.8, rEdgeR + 0.15 * reach * sD.r);
   }
 }
@@ -1312,7 +1313,9 @@ if (tRock > 0.001) {
   vec3 rk = mix(${P.rockA}, ${P.rockB}, smoothstep(0.25, 0.75, nD.g + 0.35 * (nJ.b - 0.5))) * r.albedo * (0.42 + 0.4 * nK.r) * (0.75 + 0.5 * smoothstep(0.3, 0.7, nJ.g));
   // Lichen-pale tops of the dry rock, moss in its joints.
   rk = mix(rk, rk * vec3(1.12, 1.1, 1.02), smoothstep(0.65, 0.85, nJ.a) * (1.0 - tRockWet) * 0.5);
-  rk = mix(rk, vec3(0.018, 0.03, 0.012), joint * (1.0 - tRockWet) * 0.75);
+  rk = mix(rk, vec3(0.018, 0.03, 0.012), joint * (1.0 - tRockWet) * 0.5);
+  // Dry rock weathered grey-brown, not pale as a slab.
+  rk *= mix(0.78, 1.0, tRockWet);
   rk *= 1.0 - 0.45 * joint * tRockWet;
   // Wet by the water and under it: dark.
   rk *= mix(1.0, 0.38, tRockWet);

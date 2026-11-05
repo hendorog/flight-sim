@@ -533,7 +533,8 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   diffuseColor.rgb *= 1.0 - 0.5 * fRockP;
   wTrans *= 1.0 - 0.3 * fRockP * (1.0 - fClear);
   // Bare rock banks (bedrock.ts): their trees thinned out (vegetation/placement.ts), so fewer in the mirror.
-  wTreeKeep = 1.0 - ${GALLERY_ROCK_THIN.toFixed(2)} * bedRock(fSt);
+  // (The gallery thinned, and the woods set back behind the rock: lower in the mirror, so half as much again.)
+  wTreeKeep = (1.0 - ${GALLERY_ROCK_THIN.toFixed(2)} * bedRock(fSt)) * (1.0 - 0.5 * bedRock(fSt));
   // Thick foam brightest, thin foam and spume over dark water greyer.
   float fThick = smoothstep(fThr, fThr + 0.15, fN);
   diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.3, 0.33, 0.33), vec3(0.66, 0.69, 0.69), fThick), fWhite);
@@ -546,7 +547,7 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   wNormal = normalize(wNormal + vec3(-fSl.x, 0.0, -fSl.y));
   wRough = mix(mix(mix(wRough, 0.3, fRun), 0.12, fGlass * (1.0 - fWhite)), 0.75, fWhite);
   // (Fast broken water between the stones mirrors less of the sky.)
-  wSpecCut = max(0.85 * fWhite, 0.3 * fRockP);
+  wSpecCut = max(0.85 * fWhite, 0.45 * fRockP);
 }
 `;
 };

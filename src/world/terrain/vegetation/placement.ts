@@ -9,7 +9,7 @@
 import { computeBiome, CoverShapeField, makeBiome, makeCoverShape } from '../biome';
 import { GALLERY_FAR, GALLERY_FLOOR, GALLERY_NEAR, GALLERY_SCRUB, RIPARIAN_FAR, RIPARIAN_NEAR, riparianPresence } from '../riparian';
 import { hydrology, makeSample, sampleTerrain } from '../heightfield';
-import { bedRock, GALLERY_ROCK_THIN, ROCK_TREE_THIN, rockOfHit } from '../bedrock';
+import { bedRock, GALLERY_ROCK_THIN, ROCK_TREE_THIN, rockAtPoint } from '../bedrock';
 import type { FlowHit } from '../hydrology';
 import { COLUMN_M, columnEdge, districtHasBelts, edgeRandom, isShelterbelt, makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
@@ -97,13 +97,21 @@ const flowHit: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index: 0,
  * the rock is bare, and the gallery of bankside trees (`gallery`: willows and poplars of a lowland river) thins out
  * along the whole reach. Never at seed 0 (no flow data). `s` is the candidate's sample.
  */
+/** A tree stands this far clear of the bare rock's edge (its trunk and the foot of its crown), m. */
+const TRUNK_CLEAR = 1.5;
+/** Beyond that, trees within this of the rock thin out as it would, m. */
+const ROCK_THIN_BAND = 6;
 function onBareRock(north: number, east: number, s: { riverDist: number; riverHalfWidth: number }, h0: number, gallery: boolean): boolean {
   const q = hydrology.queryFlow;
   if (!q || !(s.riverHalfWidth > 0) || s.riverDist - s.riverHalfWidth > GALLERY_FAR + 4) return false;
   const hit = q(north, east, flowHit);
-  if (hit.line < 0) return false;
+  if (hit.line < 0 || !(hit.dist < Infinity)) return false;
+  // None on the rock (its ragged edge as the ground shader draws it), trunk and a little crown clear of it.
+  const edge = hit.dist - hit.halfWidth;
+  if (rockAtPoint(hit.steepness, hit.halfWidth, edge - TRUNK_CLEAR, east, north) > 0.02) return true;
+  // Thinned beside it: the soil is thin by the rock.
   const u = rnd(h0, 41);
-  if (u < ROCK_TREE_THIN * rockOfHit(hit)) return true;
+  if (u < ROCK_TREE_THIN * rockAtPoint(hit.steepness, hit.halfWidth, edge - ROCK_THIN_BAND, east, north)) return true;
   return gallery && u < GALLERY_ROCK_THIN * bedRock(hit.steepness);
 }
 
