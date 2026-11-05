@@ -43,8 +43,9 @@ it('repair shots', () => {
   shot('s42-outlet455-1500ft', 42, 85825, -9698, 457, 85054, -6173);
   shot('s42-lake529-1500ft', 42, -43145, 48892, 475, -39948, 49954);
   from('s42-cascade126-100agl', 42, 70520, 123110, 250, 350, 100);
-  from('s42-fill-1500ft', 42, 21380, -12130, 200, 2200, 457);
-  from('s42-fill-150agl', 42, 21380, -12130, 200, 700, 150);
+  // The deepest hollow the streams filled to its sill (repairFill).
+  from('s42-fill-1500ft', 42, -88630, 23130, 200, 2200, 457);
+  from('s42-fill-150agl', 42, -88630, 23130, 200, 700, 150);
   // A stream joining a river, and a river-river confluence (largest receiver width steps).
   const rs = hydrology.rivers!;
   let best = { li: -1, step: 0 };
