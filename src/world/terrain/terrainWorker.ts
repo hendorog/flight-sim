@@ -2,6 +2,7 @@
 // their typed-array buffers transferred (no copies).
 
 import { setWorldSeed } from '../worldSeed';
+import { setSnowShift } from './heightfield';
 import { buildTile, type TileData, type TileRequest } from './tileBuilder';
 import { setTownSite, type TownSite } from './townMask';
 import { setEra } from '../era/eraState';
@@ -24,12 +25,13 @@ function transferables(r: WorkerResult): Transferable[] {
  * Shared settings sent to every worker before any job (see WorkerPool.broadcast): the valley town site and the
  * era (src/world/era; tile building and tree placement read eraState.era() in the worker).
  */
-export type WorkerSetup = { kind: 'setup'; town: TownSite | null; era: EraId; seed: number };
+export type WorkerSetup = { kind: 'setup'; town: TownSite | null; era: EraId; seed: number; snowShift?: number };
 
 self.onmessage = (e: MessageEvent<{ id: number; job: WorkerJob } | WorkerSetup>) => {
   if ('kind' in e.data) {
     // The era first: everything after it (the town mask included) may depend on it.
     setEra(e.data.era);
+    setSnowShift(e.data.snowShift ?? 0);
     // The world seed before the town mask (rebuilds the noise tables and the rivers when it changes).
     setWorldSeed(e.data.seed);
     setTownSite(e.data.town);

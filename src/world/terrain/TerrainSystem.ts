@@ -11,7 +11,7 @@ import { worldSeed } from '../worldSeed';
 import * as THREE from 'three';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { findTownSite } from '../airport/valley';
-import { terrainHeight } from './heightfield';
+import { snowShiftM, terrainHeight } from './heightfield';
 import { morphWindow, nodeKey, nodeSize, NodeRefPool, selectNodes, type LodSettings, type LodView, type NodeRef } from './quadtree';
 import { CANOPY_HEIGHT, createTerrainDepthMaterial, createTerrainMaterial, MAX_LEVELS, updateVillageUniforms, setTerrainDebug, setTerrainDetail, type TerrainUniforms } from './terrainMaterial';
 import { createTerrainTextures, type TerrainTextures } from './textures';
@@ -150,7 +150,7 @@ export class TerrainSystem implements Subsystem {
     // findTownSite picks for this terrain); the workers need it before their first job.
     // (Not in an era without the town, whatever the option says.)
     if (this.options.town !== false && era().terrain.town) setTownSite(findTownSite(terrainHeight));
-    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id, seed: worldSeed() });
+    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id, seed: worldSeed(), snowShift: snowShiftM() });
     this.uploader = new GeometryUploader(ctx.renderer);
     this.textures = createTerrainTextures(ctx.renderer);
     this.material = createTerrainMaterial(this.textures, this.uniforms);
@@ -416,7 +416,7 @@ export class TerrainSystem implements Subsystem {
 
     let water: THREE.Mesh | null = null;
     if (d.water) {
-      const wg = createWaterGeometry(d.water);
+      const wg = createWaterGeometry(d.water, d.shape);
       for (const a of Object.values(wg.attributes)) gpuOnly(a as THREE.BufferAttribute);
       if (wg.index) gpuOnly(wg.index);
       // Bounds from the water surface itself: over a lake bed the surface lies above all the ground.
