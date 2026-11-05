@@ -2,7 +2,7 @@
 // the tallest falls, long step-pool cascades and placid lowland reaches, with a cockpit-like camera for each.
 //   FALL_SEEDS=42 npx vitest run --config scripts/probes/vitest.config.ts fallSites --silent=false --disable-console-intercept
 import { it } from 'vitest';
-import { hydrology, sampleTerrain, terrainHeight } from '../../src/world/terrain/heightfield';
+import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
 
 const q = (a: number[], f: number): number => (a.length ? a[Math.min(a.length - 1, Math.floor(f * a.length))] : NaN);
@@ -83,6 +83,5 @@ it('fall sites', () => {
         break;
       }
     }
-    void sampleTerrain;
   }
 });

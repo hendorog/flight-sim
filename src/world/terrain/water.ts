@@ -819,6 +819,8 @@ export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
 const CURTAIN_ROWS = 7;
 const CURTAIN_ACROSS = [-1, -0.5, 0, 0.5, 1];
 const FOAM_N = 5;
+/** Falls are grouped in square chunks this size, m: few vertices each, so coarser than the ribbons' (fewer draw calls). */
+const FALL_CHUNK = 40000;
 
 /** A falls chunk's vertex data: the river ribbon's attributes plus aFall (kind, and two numbers for that kind). */
 interface FallBuffers extends RiverBuffers {
@@ -835,7 +837,7 @@ function alongLine(r: RibbonLine, v: Float64Array, sv: number, hint: number): nu
 }
 
 /**
- * A seeded world's falls (hydrology.falls) as meshes for the falls material, in the river ribbon's chunks: `sheets`
+ * A seeded world's falls (hydrology.falls) as meshes for the falls material, in FALL_CHUNK squares: `sheets`
  * holds each fall's curtain (from the lip, where the ribbon stops, curving out and down to its foot, where the ribbon
  * goes on) and the foam on its plunge pool; `spray` the puff of spray over the pool (drawn after, without depth writes).
  * Empty unless the world's water flows (waterFlows()).
@@ -847,7 +849,7 @@ export function createFallGeometries(): { sheets: THREE.BufferGeometry[]; spray:
   const sheetChunks = new Map<string, FallBuffers>();
   const sprayChunks = new Map<string, FallBuffers>();
   const chunk = (m: Map<string, FallBuffers>, n: number, e: number): FallBuffers => {
-    const key = `${Math.floor(n / RIVER_CHUNK)},${Math.floor(e / RIVER_CHUNK)}`;
+    const key = `${Math.floor(n / FALL_CHUNK)},${Math.floor(e / FALL_CHUNK)}`;
     let b = m.get(key);
     if (!b) m.set(key, (b = { ...riverBuffers(), fall: [] }));
     return b;
