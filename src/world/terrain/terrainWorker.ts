@@ -8,16 +8,19 @@ import { setTownSite, type TownSite } from './townMask';
 import { setEra } from '../era/eraState';
 import type { EraId } from '../era/types';
 import { buildTreeCell, type TreeCellData, type TreeCellRequest } from './vegetation/placement';
+import { buildBoulderCell, type BoulderCellData, type BoulderCellRequest } from './vegetation/boulders';
 
-export type WorkerJob = { kind: 'tile'; req: TileRequest } | { kind: 'trees'; req: TreeCellRequest };
-export type WorkerResult = TileData | TreeCellData;
+export type WorkerJob = { kind: 'tile'; req: TileRequest } | { kind: 'trees'; req: TreeCellRequest } | { kind: 'boulders'; req: BoulderCellRequest };
+export type WorkerResult = TileData | TreeCellData | BoulderCellData;
 
 function transferables(r: WorkerResult): Transferable[] {
   if ('positions' in r) {
     const t: Transferable[] = [r.positions.buffer, r.normals.buffer, r.morph.buffer, r.biome.buffer, r.shape.buffer, r.river.buffer];
+    if (r.flow) t.push(r.flow.buffer);
     if (r.water) t.push(r.water.positions.buffer, r.water.depth.buffer, r.water.index.buffer);
     return t;
   }
+  if ('boulders' in r) return [r.boulders.buffer];
   return [r.instances.buffer, r.order.buffer, r.bucketStart.buffer, r.walls.buffer];
 }
 
@@ -38,6 +41,6 @@ self.onmessage = (e: MessageEvent<{ id: number; job: WorkerJob } | WorkerSetup>)
     return;
   }
   const { id, job } = e.data;
-  const result = job.kind === 'tile' ? buildTile(job.req) : buildTreeCell(job.req);
+  const result = job.kind === 'tile' ? buildTile(job.req) : job.kind === 'boulders' ? buildBoulderCell(job.req) : buildTreeCell(job.req);
   (self as unknown as Worker).postMessage({ id, result }, transferables(result));
 };

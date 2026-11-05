@@ -32,7 +32,8 @@ import { worldSeed } from '../worldSeed';
 import { riverStrip, TREE_LINE_ASPECT, treeLineBase } from './biome';
 import { GALLERY_FAR } from './riparian';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
-import { snowLineBase } from './heightfield';
+import { hydrology, snowLineBase } from './heightfield';
+import { BEDROCK_GLSL, GALLERY_ROCK_THIN } from './bedrock';
 import { era, isPresent } from '../era/eraState';
 import { ASH_REACH, VOLCANO_GLSL, VOLCANO_LAVA_GLSL, VOLCANO_LAVA_HEAD_GLSL, VOLCANO_PALETTE } from './volcano';
 import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS } from './eraUniforms';
@@ -114,6 +115,14 @@ const glslVec = (c: readonly number[]): string => `vec3(${c.map((x) => x.toFixed
 const eraText = (t: string): string => (isPresent() ? '' : t);
 /** Shader text for the present day only (forestry plantations: no other era has them). */
 const presentText = (t: string): string => (isPresent() ? t : '');
+/**
+ * Shader text for a world whose channels carry their flow (a seeded world: Hydrology.queryFlow, the tiles' aFlow):
+ * bare rock along fast water (bedrock.ts). '' at seed 0, whose shader text stays as it was.
+ */
+const flowText = (t: string): string => (hydrology.queryFlow ? t : '');
+/** The flow attribute and its varying (the colour material's vertex stage only: the depth pass has no use for it). */
+const FLOW_VERTEX_HEAD = 'attribute float aFlow;\nvarying float vFlow;\n';
+const FLOW_VERTEX = 'vFlow = aFlow;\n';
 
 /**
  * Increment 2 (WP0a): an era shader SLOT. Its text comes from the owning package's module (volcano.ts lava,
@@ -443,7 +452,7 @@ varying float vLiftK;
 varying float vCoverUp;
 // Signed distance from the river centreline and the channel half-width there, m (tileBuilder.ts).
 varying vec2 vRiver;
-${presentText('varying float vPlantation;\n')}${hashGlsl()}
+${flowText(`// The nearest channel's steepness, 0..1 (tileBuilder.ts flow; bedrock.ts).\nvarying float vFlow;\n${BEDROCK_GLSL}`)}${presentText('varying float vPlantation;\n')}${hashGlsl()}
 ${ROT_GLSL}
 ${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}${presentText(FIELD_EDGE_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
@@ -892,7 +901,20 @@ ${presentText(`// Generated airfields: no crops or woods on their flat ground (t
 // channel, so the banks are placed right even on coarse tiles.
 float tRiverBank = 0.0;
 float tRiverBed = 0.0;
-if (vRiver.y > 1.0) {
+${flowText(`// Fast water (rapids, cascades, step-pools) scours its bed and banks down to bare rock (bedrock.ts): no silt,
+// gravel, reeds or bank grass there, and the bank's trees thin out (placement.ts reads the same steepness).
+float tRock = 0.0;
+float tRockWet = 0.0;
+if (vRiver.y > 0.5 && vFlow > 0.3) {
+  float rEdgeR = abs(vRiver.x) - vRiver.y;
+  float reach = rockReach(vRiver.y);
+  if (rEdgeR < reach * 1.5) {
+    // A ragged edge: the rock gives way to soil in tongues, and to the water's spray darkening it near the edge.
+    tRock = bedRock(vFlow) * (1.0 - smoothstep(reach * 0.6, reach, rEdgeR + reach * (0.22 * sD.g + 0.12 * sC.b)));
+    tRockWet = 1.0 - smoothstep(-0.5, 0.45 * reach + 0.8, rEdgeR + 0.15 * reach * sD.r);
+  }
+}
+`)}if (vRiver.y > 1.0) {
   float rEdge = abs(vRiver.x) - vRiver.y;
   if (rEdge < ${(riverStrip() + 24).toFixed(1)}) {
     float rFw = max(fwidth(vRiver.x), 0.05);
@@ -905,7 +927,7 @@ if (vRiver.y > 1.0) {
 ${presentText(`    // The wooded bank (riparian.ts GALLERY_FAR; placement.ts plants it): as its trees thin out with distance the
     // canopy shell stands in for them, so the river keeps its dark green margins from the air.
     float gallery = (1.0 - smoothstep(${(GALLERY_FAR - 6).toFixed(1)}, ${(GALLERY_FAR + 4).toFixed(1)}, rEdge + 5.0 * sC.g)) * smoothstep(0.0, 2.0, rEdge);
-    forestW += (1.0 - forestW) * 0.85 * gallery * (1.0 - tKeepOpen);
+    forestW += (1.0 - forestW) * 0.85 * gallery * (1.0 - tKeepOpen)${flowText(` * (1.0 - tRock) * (1.0 - ${GALLERY_ROCK_THIN.toFixed(2)} * bedRock(vFlow))`)};
     farmW *= 1.0 - gallery;
 `)}    // Rough bankside vegetation: tussocky, olive and dark, with pale reed beds at the water's edge.
     float reeds = (1.0 - smoothstep(bankW + 1.0, bankW + 6.0, rEdge + 2.0 * sD.g)) * smoothstep(0.45, 0.6, nC.r);
@@ -916,7 +938,7 @@ ${presentText(`    // Under and between the bank trees the ground is overgrown: 
 `)}    meadow = mix(meadow, rough, strip);
   }
 }
-${presentText(`// Plantation estates (plantation.ts): the compartment here. A fresh clear-fell is bare brown ground strewn with
+${flowText('forestW *= 1.0 - tRock;\n')}${presentText(`// Plantation estates (plantation.ts): the compartment here. A fresh clear-fell is bare brown ground strewn with
 // slash, greening as the new planting takes; the canopy takes a conifer tone by stand age (below).
 vec4 tComp = vec4(${ROTATION_YEARS.toFixed(1)}, 0.0, 999999.0, 0.0);
 if (vPlantation > 0.01) {
@@ -1278,7 +1300,33 @@ ${E(VOLCANO_ROCK)}  // Height-aware edge, broken up by noise at two scales so ou
   acc.cavity = mix(acc.cavity, r.cavity, w);
   acc.height = mix(acc.height, r.height, w);
 }
-${E(VOLCANO_CRATER)}if (snowW > 0.001) {
+${flowText(`// Bare rock along fast water: dark, wet and smooth by the water (the bed itself under it), drier and paler up the
+// bank, with moss in its joints; water-worn bumps (boulder tops, ledges) in its relief.
+if (tRock > 0.001) {
+  Mat r = layerTop(${LAYER.rock}, tXZ, tDist);
+  // Fine structure the far-fading layer cannot carry: blocks and slabs a few metres across with dark joints between
+  // them (two rotated noise scales), the joints damp and mossy away from the water.
+  vec4 nJ = texture(tNoise, rot2(tXZ, 0.6) * (1.0 / 9.0));
+  vec4 nK = texture(tNoise, rot2(tXZ, 2.3) * (1.0 / 3.1));
+  float joint = smoothstep(0.62, 0.8, abs(nJ.r - nK.g) * 2.2 + 0.25 * nK.b);
+  vec3 rk = mix(${P.rockA}, ${P.rockB}, smoothstep(0.25, 0.75, nD.g + 0.35 * (nJ.b - 0.5))) * r.albedo * (0.42 + 0.4 * nK.r) * (0.75 + 0.5 * smoothstep(0.3, 0.7, nJ.g));
+  // Lichen-pale tops of the dry rock, moss in its joints.
+  rk = mix(rk, rk * vec3(1.12, 1.1, 1.02), smoothstep(0.65, 0.85, nJ.a) * (1.0 - tRockWet) * 0.5);
+  rk = mix(rk, vec3(0.018, 0.03, 0.012), joint * (1.0 - tRockWet) * 0.75);
+  rk *= 1.0 - 0.45 * joint * tRockWet;
+  // Wet by the water and under it: dark.
+  rk *= mix(1.0, 0.38, tRockWet);
+  rk = mix(rk, ${P.riverBed} * 0.9, tRiverBed * 0.5);
+  float rw = tRock * clamp(0.55 + 1.2 * r.height + 0.3 * sD.b, 0.0, 1.0);
+  rw = max(rw, tRock * tRockWet);
+  acc.albedo = mix(acc.albedo, rk, rw);
+  acc.slope = mix(acc.slope, r.slope * 1.3 + (nK.zw - 0.5) * 1.1 + (nJ.xy - 0.5) * 0.8, rw);
+  acc.rough = mix(acc.rough, mix(r.rough, 0.3, tRockWet), rw);
+  acc.cavity = mix(acc.cavity, r.cavity * (1.0 - 0.4 * joint), rw);
+  acc.height = mix(acc.height, r.height, rw);
+  tFoliageW *= 1.0 - rw;
+}
+`)}${E(VOLCANO_CRATER)}if (snowW > 0.001) {
   Mat s = layerTop(${LAYER.snow}, tXZ, tDist);
   // Snow fills hollows first: height-aware blend against whatever lies beneath.
   float w = clamp((snowW * 1.6 - 0.3) + (0.5 - acc.height) * 0.6, 0.0, 1.0);
@@ -1426,6 +1474,9 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   // Built now, in the era this thread was set in (never at module load).
   const head = fragmentHead();
   const splat = fragmentSplat();
+  // A seeded world's flow attribute (bare rock along fast water); nothing at seed 0.
+  const flowHead = flowText(FLOW_VERTEX_HEAD);
+  const flowVertex = flowText(FLOW_VERTEX);
   // The lava's emission (increment 2 slot; empty in the present day and in the stub).
   const lava = eraSlot('lava', VOLCANO_LAVA_GLSL, 'VOLCANO');
   Object.assign(uniforms, {
@@ -1452,9 +1503,9 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${vertexHead()}`)
+      .replace('#include <common>', `#include <common>\n${vertexHead()}${flowHead}`)
       .replace('#include <beginnormal_vertex>', VERTEX_NORMAL)
-      .replace('#include <begin_vertex>', vertexBegin());
+      .replace('#include <begin_vertex>', `${vertexBegin()}${flowVertex}`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${head}`)
       .replace('#include <map_fragment>', splat)

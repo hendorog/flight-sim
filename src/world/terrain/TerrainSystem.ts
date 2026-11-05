@@ -11,7 +11,7 @@ import { worldSeed } from '../worldSeed';
 import * as THREE from 'three';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { findTownSite } from '../airport/valley';
-import { snowShiftM, terrainHeight } from './heightfield';
+import { hydrology, snowShiftM, terrainHeight } from './heightfield';
 import { morphWindow, nodeKey, nodeSize, NodeRefPool, selectNodes, type LodSettings, type LodView, type NodeRef } from './quadtree';
 import { CANOPY_HEIGHT, createTerrainDepthMaterial, createTerrainMaterial, MAX_LEVELS, updateVillageUniforms, setTerrainDebug, setTerrainDetail, type TerrainUniforms } from './terrainMaterial';
 import { createTerrainTextures, type TerrainTextures } from './textures';
@@ -20,6 +20,7 @@ import { AirfieldGrass } from './vegetation/grass';
 import { createEraLayers, type EraLayer } from './eraLayers';
 import { updateEraUniforms } from './eraUniforms';
 import { VegetationSystem } from './vegetation/VegetationSystem';
+import { BoulderSystem, bouldersEnabled } from './vegetation/BoulderSystem';
 import { setTownSite, townSite } from './townMask';
 import { era, isPresent } from '../era/eraState';
 import { createFallGeometries, createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
@@ -83,6 +84,8 @@ export class TerrainSystem implements Subsystem {
   private readonly fallMaterials: THREE.Material[] = [];
   private indices!: THREE.BufferAttribute;
   private vegetation: VegetationSystem | null = null;
+  /** Boulder fields along fast water (a seeded world's only: it needs the channels' flow). */
+  private boulders: BoulderSystem | null = null;
   private grass: AirfieldGrass | null = null;
   /** The era's extra layers (eraLayers.ts; none in the present day). */
   private eraLayers: EraLayer[] = [];
@@ -204,6 +207,12 @@ export class TerrainSystem implements Subsystem {
         this.grass.setQuality(ctx.quality);
         this.root.add(this.grass.mesh);
       }
+      // Boulder fields along fast water: a world whose channels carry their flow (never seed 0).
+      if (hydrology.queryFlow && bouldersEnabled()) {
+        this.boulders = new BoulderSystem(this.pool);
+        this.boulders.init(ctx.quality);
+        this.root.add(this.boulders.root);
+      }
       // Increment 2: the era's layers (WP6's near understorey), never in the present day.
       if (era().flora !== 'present') {
         this.eraLayers = createEraLayers({ renderer: ctx.renderer, quality: ctx.quality, terrainUniforms: this.uniforms, noise: this.textures.noise, heightAt: terrainHeight });
@@ -230,6 +239,7 @@ export class TerrainSystem implements Subsystem {
     this.waterUniforms.uSkyColor.value.copy(ctx.sky.skyColor);
     this.waterUniforms.uHazeColor.value.copy(ctx.sky.hazeColor);
     this.vegetation?.update(dt, ctx);
+    this.boulders?.update(ctx.camera);
     this.grass?.update(dt, ctx.camera);
     if (!isPresent()) {
       updateEraUniforms(dt, ctx.sky);
@@ -241,6 +251,7 @@ export class TerrainSystem implements Subsystem {
     for (const u of this.unsubscribe) u();
     this.clearNodes();
     this.vegetation?.dispose();
+    this.boulders?.dispose();
     this.grass?.dispose();
     for (const l of this.eraLayers) l.dispose();
     this.pool.dispose();
@@ -264,6 +275,11 @@ export class TerrainSystem implements Subsystem {
    * Tiles selected / resident / being built, tree instances as meshes / impostors, and the LOD distance of
    * the nearest tile the current view needs but does not have yet (Infinity when nothing is missing).
    */
+  /** The boulder fields' counts and last rebuild time (null without them). */
+  get boulderStats(): BoulderSystem['stats'] | null {
+    return this.boulders?.stats ?? null;
+  }
+
   get stats(): { drawn: number; resident: number; inflight: number; trees: number; impostors: number; nearestMissing: number } {
     const v = this.vegetation?.stats;
     let nearestMissing = Infinity;
@@ -321,6 +337,7 @@ export class TerrainSystem implements Subsystem {
     this.indices = new THREE.BufferAttribute(buildTileIndices(s.grid), 1);
     this.generation++;
     this.vegetation?.setQuality(q);
+    this.boulders?.setQuality(q);
   }
 
   private clearNodes(): void {
@@ -421,6 +438,8 @@ export class TerrainSystem implements Subsystem {
     g.setAttribute('aBiome', gpuOnly(new THREE.BufferAttribute(d.biome, 4, true)));
     g.setAttribute('aShape', gpuOnly(new THREE.BufferAttribute(d.shape, 4, true)));
     g.setAttribute('aRiver', gpuOnly(new THREE.BufferAttribute(d.river, 2, false)));
+    // A seeded world's channel steepness (bare rock along fast water; seed 0 has none).
+    if (d.flow) g.setAttribute('aFlow', gpuOnly(new THREE.BufferAttribute(d.flow, 1, true)));
     // Bounds include the geomorph range (coarse targets never leave the node's height span by much).
     const pad = 4 + this.uniforms.uSkirt.value[d.level];
     g.boundingBox = new THREE.Box3(new THREE.Vector3(0, d.minHeight - pad, -size), new THREE.Vector3(size, d.maxHeight + 4 + CANOPY_HEIGHT, 0));

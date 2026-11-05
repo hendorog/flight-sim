@@ -8,7 +8,9 @@
 
 import { computeBiome, CoverShapeField, makeBiome, makeCoverShape } from '../biome';
 import { GALLERY_FAR, GALLERY_FLOOR, GALLERY_NEAR, GALLERY_SCRUB, RIPARIAN_FAR, RIPARIAN_NEAR, riparianPresence } from '../riparian';
-import { makeSample, sampleTerrain } from '../heightfield';
+import { hydrology, makeSample, sampleTerrain } from '../heightfield';
+import { bedRock, GALLERY_ROCK_THIN, ROCK_TREE_THIN, rockOfHit } from '../bedrock';
+import type { FlowHit } from '../hydrology';
 import { COLUMN_M, columnEdge, districtHasBelts, edgeRandom, isShelterbelt, makeParcel, parcelAt } from '../fields';
 import { fbm, hash2i } from '../noise';
 import { inTownClearZone } from '../townMask';
@@ -87,6 +89,23 @@ const shape = makeCoverShape();
 const shapeField = new CoverShapeField();
 
 const rnd = (h: number, salt: number): number => hash2i(h, salt) / 4294967296;
+
+const flowHit: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index: 0, s: 0, level: 0, halfWidth: 0, gradient: 0, steepness: 0, regime: 0, speed: 0, dirN: 0, dirE: 0 };
+/**
+ * Whether a tree candidate (hash h0) is left out because fast water has scoured the ground beside it to bare rock (a
+ * seeded world's rapids, cascades and step-pools, bedrock.ts): the bank's trees thin out there, most of them gone where
+ * the rock is bare, and the gallery of bankside trees (`gallery`: willows and poplars of a lowland river) thins out
+ * along the whole reach. Never at seed 0 (no flow data). `s` is the candidate's sample.
+ */
+function onBareRock(north: number, east: number, s: { riverDist: number; riverHalfWidth: number }, h0: number, gallery: boolean): boolean {
+  const q = hydrology.queryFlow;
+  if (!q || !(s.riverHalfWidth > 0) || s.riverDist - s.riverHalfWidth > GALLERY_FAR + 4) return false;
+  const hit = q(north, east, flowHit);
+  if (hit.line < 0) return false;
+  const u = rnd(h0, 41);
+  if (u < ROCK_TREE_THIN * rockOfHit(hit)) return true;
+  return gallery && u < GALLERY_ROCK_THIN * bedRock(hit.steepness);
+}
 
 export function buildTreeCell(req: TreeCellRequest): TreeCellData {
   if (era().flora !== 'present') return buildTreeCellEra(req);
@@ -205,6 +224,7 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
       if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
       // Never in the river channel (nor on the first metres of its bank), whatever the coarse lattice says.
       if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + (scrub ? 1.2 : 2.5)) continue;
+      if (onBareRock(north, east, sample, h0, riparian)) continue;
       let species: number;
       let height: number;
       if (scrub) {
@@ -584,6 +604,7 @@ function buildTreeCellEra(req: TreeCellRequest): TreeCellData {
       sampleTerrain(north, east, sample);
       if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
       if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + 2.5) continue;
+      if (onBareRock(north, east, sample, h0, kind === 'riparian')) continue;
       let species: number;
       let height: number;
       if (kind === 'riparian') {
