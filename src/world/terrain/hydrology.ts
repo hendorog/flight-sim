@@ -106,12 +106,31 @@ export interface Hydrology {
     readonly field: number;
     holds(north: number, east: number): number;
     readonly holdLevel: number;
-    /** Every body of water it draws (each pond's pools), with its level. */
+    /** Every body of water it draws (each pond's pools, and the tarns the streams filled), with its level. */
     readonly pools: ReadonlyArray<{ readonly level: number; readonly drained?: boolean }>;
+    /** Whether the last `at` found a tarn (streams.ts TarnMask) rather than a pond's water. */
+    readonly tarnHit?: boolean;
   };
 }
 
-/** One river of a network: its channel centreline (source first) as in Hydrology.river. */
+/**
+ * One river of a network: its channel centreline (source first) as in Hydrology.river.
+ *
+ * The contract a seeded world's channels give the water, rock and boulder drawing (water.ts, bedrock.ts,
+ * vegetation/boulders.ts), per sample of every line (all arrays the length of `s`):
+ *  - `level` the water surface, never rising downstream; on a steep reach it follows the ground down as a continuous
+ *    cascade (no level steps); it drops at once only at a fall (`regime` 4 at the lip sample, the foot the next one).
+ *  - `gradient` over 200 m and `regime` (0 placid < 0.5 %, 1 riffle < 2 %, 2 rapids < 8 %, 3 step-pool / boulder
+ *    cascade, 4 a fall's lip), `steepness` 0-1 and `speed` m/s (streams.ts flowOf).
+ *  - `grain` the bed's stones, m (falls.ts bedGrain): 2-5 m blocks by the heads, on steep pitches and below falls,
+ *    grading down the network to 0.1-0.3 m cobbles on riffles and gravel and sand on calm reaches.
+ *  - `breach` (streams only) the half-width of the broad floor worn through a rim or sill, 0 elsewhere, and `cut`
+ *    how far the water runs under the ground there (heightfield.ts carves it: a wide saddle, walls at 24 degrees).
+ * Hydrology.falls lists the falls (streams.ts Fall): `cause` 'fault' (a fault line it crosses, faults.ts), 'hanging'
+ * (the lip of a hanging valley) or 'outlet' (a lake spilling over a wall); lip (`north`, `east`, `top`) and foot
+ * (`footNorth`, `footEast`, `bottom`), `height`, `width` (of the water going over), flow direction, and `flight` (the
+ * falls of one fault's flight share it, -1 alone). A fall's lip is sample `index` of its line and its foot `index + 1`.
+ */
 export interface RiverLine {
   north: Float64Array;
   east: Float64Array;
@@ -135,10 +154,17 @@ export interface RiverLine {
    */
   end?: 'channel' | 'lake' | 'sea' | 'edge' | 'sink' | 'stuck';
   area?: Float64Array;
+  /** A stream's broad breach at each sample: the half-width of the floor worn through a rim or sill where its water runs
+   * well under the ground (0: none), and how far under the ground it runs there (its cut), m. */
+  breach?: Float64Array;
+  cut?: Float64Array;
   gradient?: Float32Array;
   steepness?: Float32Array;
   regime?: Uint8Array;
   speed?: Float32Array;
+  /** The typical size of the stones on the bed at each sample, m (falls.ts bedGrain): 2-5 m boulders by the heads, on
+   * the steep pitches and below falls, cobbles of 0.1-0.3 m on riffles, gravel and sand on the calm lowland reaches. */
+  grain?: Float32Array;
 }
 
 /** The nearest channel and its flow at a point (Hydrology.queryFlow), written into a caller-owned object. */
@@ -178,6 +204,8 @@ export interface ChannelNear {
   line: number;
   /** RiverLine.kind: 0 a river, 1 a stream (carved as a narrow notch). */
   kind: number;
+  /** A stream's broad breach here (RiverLine.breach), m: 0 none. */
+  breach: number;
   dist: number;
   side: number;
   level: number;
@@ -191,8 +219,13 @@ export interface NetworkQuery {
   valleys(north: number, east: number, out: ValleyNear[]): number;
   /** The channels of every line within carving reach of the point; returns how many were written. */
   channels(north: number, east: number, out: ChannelNear[]): number;
-  /** The ground h at the point with the hollows the streams filled to their sills laid over it (streams.ts FillMask). */
+  /** The natural ground h at the point (the last natural height taken) round the tarns the streams filled: their
+   * shores laid over it, and no small-scale relief there (streams.ts TarnMask). */
   fill?(north: number, east: number, h: number): number;
+  /** The ground h with the tarns' shores laid over it again (after the carving). */
+  rim?(north: number, east: number, h: number): number;
+  /** The level of the tarn whose shore or water a point lies in (-Infinity: none). */
+  tarnRim?(north: number, east: number): number;
 }
 
 /** Valley walls rise over this distance beyond the floodplain (everything closer to the axis is shaped by the valley). */

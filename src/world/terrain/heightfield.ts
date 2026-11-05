@@ -16,6 +16,7 @@ import { macroAt, setLayoutGround, type Macro } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
+import { BREACH_WALL } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth } from './drainage';
 import { buildErosion, erosionCutAt, erosionGullies, sampleErosion, type ErosionField, type ErosionSample } from './erosion';
@@ -460,7 +461,7 @@ function buildWater(): void {
     lakeSmooth = mask;
     lakeSeed = worldSeed();
     lakes = [];
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.delta, naturalHeightSmooth);
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.delta, naturalHeightSmooth, () => lastSmall);
     legacyHydro = presentHydro;
     const tf = performance.now();
     fields = siteAirfields(naturalHeight, presentHydro, presentHydro.lakes);
@@ -558,19 +559,33 @@ function channelProfile(d: number, halfWidth: number): number {
 }
 
 /**
- * Cross-section of a stream's notch (streams.ts): height above its water level at distance d. Its bed a little under
- * the water, a narrow bank rising half a metre over a few metres, then steep rock walls (a notch where the stream cuts
- * through a sill or runs under the ground beside it).
+ * A stream's banks as the water has worn them (a seeded world's network, carveNetwork): its bed a little under the
+ * water, then a bank whose width wanders along the stream and differs from side to side, and rock walls beyond rising at a
+ * slope that varies (about 30 to 50 degrees, steepening a little with height, never sheer), with ledges and
+ * buttresses across them. `s` is the arc length along the stream, `side` the bank (+1 right), `line` the stream.
  */
-function streamProfile(d: number, halfWidth: number): number {
+function streamBanks(d: number, halfWidth: number, s: number, side: number, line: number): number {
   if (d < halfWidth) {
     const t = d / halfWidth;
     return -(0.5 + 0.2 * halfWidth) * (1 - t * t);
   }
   const b = d - halfWidth;
-  const bank = 2 + 1.5 * halfWidth;
+  const n1 = gnoise(s / 90 + side * 5.3 + line * 0.71, line * 1.37 + side * 0.5);
+  const bank = (2 + 1.5 * halfWidth) * (1 + 0.6 * n1);
   if (b < bank) return 0.5 * smooth(0, bank, b);
-  return 0.5 + 0.12 * (b - bank) * (b - bank);
+  const w = b - bank;
+  const slope = 0.75 - 0.35 * n1;
+  const ledge = gnoise(s / 37 - side * 2.9 + line * 0.11, w / 9 + line * 0.53);
+  return 0.5 + slope * w + 0.02 * w * w + Math.min(4, 1 + 0.08 * w) * ledge * smooth(0, 8, w);
+}
+
+/** A stream's broad breach (streams.ts BREACH_*): its floor BREACH_FLOOR over the water, rising BREACH_RISE across to
+ * its edge at `breach` m, walls at BREACH_WALL beyond. */
+const BREACH_FLOOR = 0.6;
+const BREACH_RISE = 1.2;
+function breachProfile(d: number, breach: number): number {
+  if (d < breach) return BREACH_FLOOR + BREACH_RISE * (d / breach) * (d / breach);
+  return BREACH_FLOOR + BREACH_RISE + BREACH_WALL * (d - breach);
 }
 
 /** The meandering river: its valley, oxbow lakes and channel cut into the terrain height h; fills out's river fields. */
@@ -632,7 +647,9 @@ const channelNear: ChannelNear[] = [];
 function carveNetwork(north: number, east: number, h: number, out: TerrainSample): number {
   const net = presentHydro.network as NonNullable<Hydrology['network']>;
   // The hollows the streams filled to their sills (streams.ts): a flat over each (not in a lake's domain: its water).
-  if (net.fill && maskLevel === -Infinity) h = net.fill(north, east, h);
+  // Round a tarn the ground the streams were routed over and its shore (streams.ts TarnMask): not in a pond's water.
+  if (net.fill && (maskLevel === -Infinity || presentHydro.lakeMask?.tarnHit)) h = net.fill(north, east, h);
+  const hShore = h;
   // Along a stream (streams.ts) the ground is its smooth course, without the small-scale relief's knobs and ledges:
   // the stream's water follows that ground down (it took them away), fading back in by STREAM_SMOOTH beyond its bank.
   const nc0 = net.channels(north, east, channelNear);
@@ -691,14 +708,31 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   // its edge (the river joining two arms), and none faded in toward the edge.
   if (maskLevel > -Infinity) open = Math.min(open, Math.max(smooth(maskLevel - 0.5, maskLevel + 1.5, h), 1 - smooth(0, 10, maskField)));
   const nc = open > 0 ? nc0 : 0;
+  /** The tarn whose shore the point lies on, if any (streams.ts TarnMask). */
+  const tarnRim = net.tarnRim ? net.tarnRim(north, east) : -Infinity;
+  /** The highest water of a channel whose bed or bank the point lies on (-Infinity: none). */
+  let inChannel = -Infinity;
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
     const d = c.dist;
     if (c.kind === 1) {
       // A stream (streams.ts): a narrow notch, no floodplain banks or levee.
+      // Its broad breach first (a rim or sill worn down), then its own bed and banks. Neither takes the ground under
+      // another channel's water within that channel's banks (a stream running down beside a river held up on its valley
+      // floor would leave the river's water standing over a hollow).
+      let keep = -Infinity;
+      for (let q = 0; q < nc; q++) {
+        const o = channelNear[q];
+        if (o.line !== c.line && o.dist < o.halfWidth + CHANNEL_BANK + 20) keep = Math.max(keep, o.level + BANK_HEIGHT);
+      }
+      // Nor beside a lake standing higher (its domain and a raster point round it, LakeMask.holds), nor a tarn's shore.
+      if (c.breach > 0 && mask && mask.holds(north, east) > 0) keep = Math.max(keep, mask.holdLevel + 0.5);
+      if (tarnRim > c.level + 3) keep = Math.max(keep, tarnRim + 0.4);
+      if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, c.level + breachProfile(d, c.breach), 3)) - h) * open;
       const w = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
       if (w <= 0.3) continue;
-      h += (smin(h, c.level + streamProfile(d, w), 0.5 + 0.3 * w) - h) * open;
+      const banks = smin(h, c.level + streamBanks(d, w, c.s, c.side, c.line), 0.5 + 0.3 * w);
+      h += ((d > w ? Math.max(Math.min(h, keep), banks) : banks) - h) * open;
       // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip
       // between the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's
       // water, nor at a mouth on the sea).
@@ -707,6 +741,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
         if (need > 0) h += need * (1 - smooth(w + STREAM_SMOOTH[0] + 15, w + STREAM_SMOOTH[1], d)) * open;
       }
       if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
+      if (d < w + 6) inChannel = Math.max(inChannel, c.level);
       continue;
     }
     const w = c.halfWidth * (1 - smooth(0, 60, c.beyondSource));
@@ -720,7 +755,12 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     }
     h += (carved - h) * open;
     if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
+    if (d < w + 6) inChannel = Math.max(inChannel, c.level);
   }
+  // A tarn's shore again over what the valleys and channels carved (they must not let its water stand against lower
+  // ground), but not across the bed of a channel at its level (its inflows and its overflow).
+  // (Never over the shore as it was laid before the carving.)
+  if (net.rim && tarnRim > -Infinity && h < hShore && !(inChannel >= tarnRim - 3) && (maskLevel === -Infinity || mask?.tarnHit)) h = Math.min(hShore, net.rim(north, east, h));
   return h;
 }
 

@@ -11,8 +11,8 @@
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
-import { channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
-import { shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
+import { BREACH_WALL, channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport, type TarnMask } from './streams';
+import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { macroAt, type Macro } from './seededLayout';
 import { AIRPORT } from '../../core/world';
@@ -175,7 +175,11 @@ export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
 }
 
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyCut?: Float32Array, smoothGround: (north: number, east: number) => number = natural): Hydrology {
+/**
+ * `small`: the small-scale relief and finest gullies the last natural height (at the point a caller then gives to
+ * network.fill) added over `smoothGround` (heightfield.ts lastSmall).
+ */
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyCut?: Float32Array, smoothGround: (north: number, east: number) => number = natural, small: () => number = () => 0): Hydrology {
   const lines = d.lines;
   // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley the erosion
   // pass cut (erosion.ts, `valleyCut` per cell, <= 0) is the river's own, and its floor lies along the lattice path; a
@@ -571,6 +575,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   }
 
   const tPhase: number[] = [performance.now()];
+  /** Whether each river's head lies in a lake (its bed's stones are its own, bedGrain). */
+  const P0wet = pre.map((P) => P.wet[0] === 1);
   const faults = buildFaults();
   const faultIndex = new FaultIndex(faults);
   let shapeReport: ShapeReport | undefined;
@@ -656,9 +662,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   tPhase.push(performance.now());
   const route = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
   const traced = traceStreams({ d, mask, route, rivers, riverPools });
-  const fillMask = traced.fill;
-  const filled = (pn: number, pe: number): number => fillMask.apply(pn, pe, route(pn, pe));
-  const streamLines: Array<{ north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array }> = [];
+  const tarnMask = traced.tarns;
+  const filled = (pn: number, pe: number): number => tarnMask.rim(pn, pe, route(pn, pe));
+  const streamLines: Array<{ north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; breach: Float64Array; cut: Float64Array }> = [];
   const streamJoins: number[] = [];
   const streamEnds: Array<StreamLine['end']> = [];
   const lineOf = (li: number): { s: Float64Array; level: Float64Array } => (li < nR ? rivers[li] : streamLines[li - nR]);
@@ -672,8 +678,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
     // A steep stream is a cascade whose water follows the ground down between its samples.
-    const f = refineSteep({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area }, keep, filled);
-    const c = { north: f.north, east: f.east, level: f.level, halfWidth: f.halfWidth, s: f.s };
+    const f = refineSteep({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area, breach: st.breach, cut: st.cut }, keep, filled);
+    const c = { north: f.north, east: f.east, level: f.level, halfWidth: f.halfWidth, s: f.s, breach: f.breach, cut: f.cut };
     streamLines.push(c);
     streamJoins.push(st.joins);
     streamEnds.push(st.end);
@@ -765,6 +771,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   }
   tPhase.push(performance.now());
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
+  // The stones on each bed (falls.ts bedGrain).
+  const feetOf: Array<Array<{ index: number; height: number }>> = allLines.map(() => []);
+  for (const f of falls) feetOf[f.line].push({ index: f.index, height: f.height });
+  const grains = allLines.map((c, li) => bedGrain(c, channelArea[li], flows[li].gradient, li >= nR ? traced.streams[li - nR].pool >= 0 : P0wet[li], feetOf[li]));
   tPhase.push(performance.now());
   const fallIndex = new FallIndex(falls);
   const streamReport: StreamReport = traced.report;
@@ -774,7 +784,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // each axis segment is listed out to the largest reach of the segments near it along the river, as the query takes
   // a line's nearest listed segment, so a nearer one left unlisted (a smaller reach) would put a seam at a cell edge).
   // One channel index serves both the carving (within the bank) and queryRiver (out to CHANNEL_REACH).
-  const channelIndex = new SegmentIndex(allLines, (li) => (li < nR ? CHANNEL_REACH : STREAM_REACH), CHANNEL_CELL);
+  // A stream's broad breaches (streams.ts) reach out to their walls' top: its segments there are listed that far.
+  const breachReach = allLines.map((c, li) => {
+    if (li < nR) return null;
+    const b = (c as { breach: Float64Array }).breach;
+    const k = (c as { cut: Float64Array }).cut;
+    const r = new Float64Array(b.length);
+    for (let i = 0; i < b.length; i++) r[i] = b[i] > 0 ? b[i] + k[i] / BREACH_WALL + 30 : 0;
+    return r;
+  });
+  const channelIndex = new SegmentIndex(allLines, (li, i) => (li < nR ? CHANNEL_REACH : Math.max(STREAM_REACH, (breachReach[li] as Float64Array)[i], (breachReach[li] as Float64Array)[i + 1])), CHANNEL_CELL);
   const wideIndex = channelIndex;
   tPhase.push(performance.now());
   traced.report.phases = tPhase.slice(1).map((t, i) => t - tPhase[i]);
@@ -784,7 +803,18 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const valleyHits: ValleyNear[] = [];
   const channelHits: ChannelNear[] = [];
   const network: NetworkQuery = {
-    ...(fillMask.size > 0 ? { fill: (pn: number, pe: number, h: number): number => fillMask.apply(pn, pe, h) } : {}),
+    ...(tarnMask.size > 0
+      ? {
+          // Round a tarn the ground the streams were routed over (no small-scale relief or finest gullies: one the
+          // routing never saw would drain it through its rim), and its shore.
+          fill: (pn: number, pe: number, h: number): number => {
+            const tc = tarnMask.calm(pn, pe);
+            return tarnMask.rim(pn, pe, tc > 0 ? h - small() * tc : h);
+          },
+          rim: (pn: number, pe: number, h: number): number => tarnMask.rim(pn, pe, h),
+          tarnRim: (pn: number, pe: number): number => tarnMask.rimLevel(pn, pe),
+        }
+      : {}),
     valleys(pn, pe, out) {
       return valleyIndex.perLine(pn, pe, (li, i, t, dist, _side, _u, k) => {
         const a = axes[li];
@@ -799,7 +829,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     channels(pn, pe, out) {
       return channelIndex.perLine(pn, pe, (li, i, t, dist, side, u, k) => {
         const r = allLines[li];
-        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0 });
+        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0, breach: 0 });
         o.line = li;
         o.kind = kinds[li];
         o.dist = dist;
@@ -808,6 +838,13 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         o.halfWidth = r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t;
         o.s = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
         o.beyondSource = i === 0 && u < 0 ? -u * Math.hypot(r.north[1] - r.north[0], r.east[1] - r.east[0]) : 0;
+        const br = breachReach[li];
+        if (br && (br[i] > 0 || br[i + 1] > 0)) {
+          const b = (r as { breach: Float64Array }).breach;
+          o.breach = b[i] + (b[i + 1] - b[i]) * t;
+          return dist < Math.max(o.halfWidth + CHANNEL_MARGIN, br[i] + (br[i + 1] - br[i]) * t);
+        }
+        o.breach = 0;
         return dist < o.halfWidth + CHANNEL_MARGIN;
       });
     },
@@ -918,13 +955,13 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   return {
     // The lakes as they stand after any pond the levels drained (networkLakes leaves out a pond with no water).
     lakes: networkLakes(d, mask),
-    lakeMask: mask,
+    lakeMask: tarnMask.size > 0 ? withTarns(mask, tarnMask) : mask,
     river: { north: main.north, east: main.east, level: main.level, halfWidth: main.halfWidth, s: main.s },
     valley: mainAxis
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), area: channelArea[li], ...flows[li] })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR], breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut } : {}), area: channelArea[li], ...flows[li], grain: grains[li] })),
     falls,
     faults,
     queryFlow,
@@ -935,6 +972,38 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     queryValley,
     queryOxbow,
   };
+}
+
+/**
+ * The lake mask as the rest of the world reads it (Hydrology.lakeMask): the drainage's lakes and the tarns the streams
+ * filled (streams.ts TarnMask). `tarnHit` tells which the last `at` found.
+ */
+function withTarns(mask: LakeMask, tarns: TarnMask): NonNullable<Hydrology['lakeMask']> {
+  const pools = [...mask.pools, ...tarns.tarns.map((t) => ({ level: t.level }))];
+  const out: { field: number; holdLevel: number; tarnHit: boolean; pools: typeof pools; at(north: number, east: number, ground?: number): number; holds(north: number, east: number): number } = {
+    field: 0,
+    holdLevel: -Infinity,
+    tarnHit: false,
+    pools,
+    at(north: number, east: number, ground?: number): number {
+      const l = mask.at(north, east, ground);
+      const t = tarns.at(north, east);
+      if (t > l) {
+        this.field = tarns.field;
+        this.tarnHit = true;
+        return t;
+      }
+      this.field = mask.field;
+      this.tarnHit = false;
+      return l;
+    },
+    holds(north: number, east: number): number {
+      const h = mask.holds(north, east);
+      this.holdLevel = mask.holdLevel;
+      return h;
+    },
+  };
+  return out;
 }
 
 /** Courses keep this far from the home runway's centreline segment, m (the meander belt then still clears it). */

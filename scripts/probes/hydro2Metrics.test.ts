@@ -140,3 +140,34 @@ it('shape report', () => {
   }
   setWorldSeed(0);
 });
+it('outlet sinks and tarns', () => {
+  for (const seed of (process.env.H2_SEEDS ?? '1,42,777777').split(',').map(Number)) {
+    setWorldSeed(seed);
+    const h: any = hydrology;
+    const rep = h.streamReport;
+    const td: number[] = rep.tarnDepth ?? [];
+    const tarns: any[] = (h.lakeMask?.pools ?? []).slice((h.lakeMask?.pools?.length ?? 0) - (rep.tarns ?? 0));
+    const hi = tarns.filter((t) => t.level > 700).length;
+    const wet = tarns.filter((t: any) => true).length; void wet;
+    console.log(`H2 seed ${seed} OUTLETSINK ${JSON.stringify(rep.outletSinkWhy)}; tarns ${rep.tarns} drained ${rep.tarnsDrained} (over 700 m ${hi}), depth p10/p50/p90/max ${q(td, 0.1).toFixed(0)}/${q(td, 0.5).toFixed(0)}/${q(td, 0.9).toFixed(0)}/${Math.max(0, ...td).toFixed(0)} m; breach samples ${rep.breachSamples}; outlets ${rep.outlets} to lake ${rep.outletToLake} to sea ${rep.outletToSea} none ${rep.outletNone} high ${rep.outletHigh}`);
+  }
+  setWorldSeed(0);
+});
+it('grain', () => {
+  for (const seed of (process.env.H2_SEEDS ?? '1,42,777777').split(',').map(Number)) {
+    setWorldSeed(seed);
+    const by: number[][] = [[], [], [], [], []];
+    const head: number[] = [], low: number[] = [];
+    for (const r of (hydrology as any).rivers) {
+      if (!r.grain) continue;
+      for (let i = 0; i < r.s.length; i += 2) {
+        by[r.regime[i]].push(r.grain[i]);
+        if (r.s[i] < 500 && r.kind === 1) head.push(r.grain[i]);
+        if (r.area[i] > 1000) low.push(r.grain[i]);
+      }
+    }
+    const f = (a: number[]) => `${q(a, 0.1).toFixed(2)}/${q(a, 0.5).toFixed(2)}/${q(a, 0.9).toFixed(2)}`;
+    console.log(`H2 seed ${seed} GRAIN p10/p50/p90 m by regime: placid ${f(by[0])} riffle ${f(by[1])} rapids ${f(by[2])} steppool ${f(by[3])} lip ${f(by[4])}; stream heads (first 500 m) ${f(head)}; rivers over 1000 km2 ${f(low)}`);
+  }
+  setWorldSeed(0);
+});

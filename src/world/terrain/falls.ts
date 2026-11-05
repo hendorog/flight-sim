@@ -18,6 +18,7 @@
 import type { Fall, FallCause } from './streams';
 import { FALL_RUN } from './streams';
 import type { FaultIndex } from './faults';
+import { hash2i } from './noise';
 
 /** A channel line's per-sample arrays (the level, positions and arc length, and any others of the same length). */
 export type LineArrays = Record<string, Float64Array> & { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array };
@@ -298,3 +299,43 @@ export function shapeLines(lines: ShapeInput[], faults: FaultIndex | null, confl
   }
   return { falls, lips, report };
 }
+
+/**
+ * The grain of the stones on a channel's bed at each sample, m (a typical stone's size): boulders of 2-5 m by the
+ * heads and on the steep pitches, where the water cannot move them on (they came down the slopes), worn smaller as
+ * they travel (Sternberg's law: the size falls off with the distance carried, here GRAIN_DECAY km per e-fold, the
+ * distance from the catchment by Hack's law, 1.4 A^0.6 km for A km², or from the lake above an outlet, which keeps its
+ * own stones), and sorted by the flow: a calm reach keeps its gravel and sand, a riffle its cobbles (0.1-0.3 m), rapids
+ * their boulders. Big stones lie at the foot of every fall.
+ */
+export function bedGrain(c: { s: Float64Array; north: Float64Array; east: Float64Array }, area: Float64Array, gradient: Float32Array, fromLake: boolean, feet: ReadonlyArray<{ index: number; height: number }>): Float32Array {
+  const n = c.s.length;
+  const g = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const hack = 1.4 * Math.pow(Math.max(0.5, area[i]), 0.6);
+    const km = fromLake ? Math.min(hack, 1 + c.s[i] / 1000) : hack;
+    const carried = GRAIN_FLOOR + GRAIN_HEAD * Math.exp(-km / GRAIN_DECAY);
+    const S = gradient[i];
+    let d = carried * (GRAIN_CALM + (1 - GRAIN_CALM) * smoothStep01(0.003, 0.05, S));
+    // A steep pitch is choked with blocks too big to move whatever the distance: 1.5 to 4 m.
+    const steep = smoothStep01(0.02, 0.15, S);
+    if (steep > 0) {
+      const u = (hash2i(Math.round(c.north[i] / 25), Math.round(c.east[i] / 25)) & 0xffff) / 65535;
+      d = Math.max(d, (1.5 + 2.5 * u) * steep);
+    }
+    g[i] = Math.min(5, Math.max(0.002, d));
+  }
+  // Below a fall (its foot and the next samples): the blocks it has broken off, bigger under a taller fall.
+  for (const f of feet) for (let j = f.index + 1; j < Math.min(n, f.index + 4); j++) g[j] = Math.max(g[j], 1.5 + 2.5 * smoothStep01(5, 60, f.height));
+  return g;
+}
+/** bedGrain's stones: by the heads GRAIN_HEAD + GRAIN_FLOOR m, falling off over GRAIN_DECAY km to GRAIN_FLOOR; a calm
+ * reach keeps GRAIN_CALM of that. */
+const GRAIN_HEAD = 2.5;
+const GRAIN_FLOOR = 0.04;
+const GRAIN_DECAY = 12;
+const GRAIN_CALM = 0.25;
+const smoothStep01 = (a: number, b: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};

@@ -25,9 +25,11 @@ const FAULT_STEP = 1000;
 /** Throw at a fault's middle, m (it tapers to nothing at its ends). */
 const FAULT_THROW = [10, 45] as const;
 /** A fault is centred where the alpine uplift (seededLayout.ts) is at least this: in a range. */
-const FAULT_UPLIFT = 0.35;
+const FAULT_UPLIFT = 0.2;
+/** Fault centres lie at least this far apart, m (the faults of a system are spread across its ranges). */
+const FAULT_APART = 20000;
 /** Faults of a world strike within this of its regional trend, rad (a fault system's breaks run roughly together). */
-const FAULT_SPREAD = 0.6;
+const FAULT_SPREAD = 0.35;
 
 /** The faults of the current world (deterministic in its seed). */
 export function buildFaults(): Fault[] {
@@ -36,6 +38,7 @@ export function buildFaults(): Fault[] {
   const trend = r() * Math.PI;
   const m: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
   const out: Fault[] = [];
+  const centres: Array<[number, number]> = [];
   for (let tries = 0; out.length < count && tries < 4000; tries++) {
     const cn = (r() * 2 - 1) * DOMAIN_HALF * 0.85;
     const ce = (r() * 2 - 1) * DOMAIN_HALF * 0.85;
@@ -44,6 +47,8 @@ export function buildFaults(): Fault[] {
     const c = r();
     macroAt(cn, ce, m);
     if (m.uplift < FAULT_UPLIFT || m.inland < 0) continue;
+    if (centres.some(([n, e]) => Math.hypot(n - cn, e - ce) < FAULT_APART)) continue;
+    centres.push([cn, ce]);
     const length = FAULT_LENGTH[0] + (FAULT_LENGTH[1] - FAULT_LENGTH[0]) * a;
     const strike = trend + (b * 2 - 1) * FAULT_SPREAD;
     const tmax = FAULT_THROW[0] + (FAULT_THROW[1] - FAULT_THROW[0]) * c;
