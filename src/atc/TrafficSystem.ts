@@ -51,7 +51,7 @@ import {
   type CallId, type Intent, type RadioSituation, type RunwayEnd,
 } from './calls';
 import {
-  CIRCUIT_HEIGHT, circuitPath, circuitRemaining, pathPoint, placeOnLeg, ROLL_HOLD, stepDirect, stepTaxi, stepTraffic, TAXI_SPEED, turnLead,
+  CIRCUIT_HEIGHT, circuitPath, circuitRemaining, pathPoint, placeOnLeg, ROLL_HOLD, stepDirect, stepTaxi, stepTraffic, TAXI_SPEED, turnLead, turnOnSpot,
   type CircuitPath, type TrafficState,
 } from './circuit';
 import { callsign, companyCallsign, maker, type Authority, type Callsign, type Phrase } from './phrases';
@@ -601,8 +601,9 @@ export class TrafficSystem implements Subsystem {
           if (this.apronBusy(a)) go = false;
           else o.apron = true;
         }
-        o.wp = stepTaxi(s, o.route, o.wp, dt, go ? TAXI_SPEED : 0);
-        if (o.wp >= o.route.length) this.park(a, o.spot!, PARK_FOR * (1 + this.random()));
+        if (o.wp < o.route.length) o.wp = stepTaxi(s, o.route, o.wp, dt, go ? TAXI_SPEED : 0);
+        // In nose first: swung round on the spot to face out, then parked.
+        else if (turnOnSpot(s, localHeading(0, o.spot!.facing), localPoint(o.spot!), dt)) this.park(a, o.spot!, PARK_FOR * (1 + this.random()));
         return;
       }
       case 'inbound':

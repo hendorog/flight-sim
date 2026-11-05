@@ -115,6 +115,11 @@ ATC runs only where the Flight School does (the present day); the Cretaceous has
   The home apron's parked aircraft are the same four types (`world/airport/props.ts` ParkedAircraft, the spots and
   draws of `staticParkedSpots` unchanged): the merged full-detail model within 50 m (zoom-scaled), the far model
   beyond, culled per aircraft against the view, shadowed by one coarse caster per type.
+  A posed aircraft on the ground stands on the pavement the flight models feel (raised 5 cm on taxiways, 9 cm on the
+  runway), on its struts compressed as the flight model has them at rest. Taxiing, it steers on the arc to a point
+  6 m (or 1.5 s) along the route, the yaw rate following through a 0.35 s nosewheel lag, so corners are smooth
+  curves; an arrival comes onto its spot nose first and swings round there to face out (`circuit.ts` stepTaxi,
+  turnOnSpot).
 - **Career identity and destination** (2026-11-01, [career.md](career.md) "Integration"). While the Career is
   open, the radio calls the aircraft by its airframe's own registration and ICAO type (`RadioDeps.identity`, the
   authority stays the school's), or, with the company callsign setting on, by the company callsign and flight number
