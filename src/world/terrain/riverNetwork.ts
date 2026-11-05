@@ -87,13 +87,14 @@ const STAIR_RUN = 1500;
  * tread is tilted down to the foot of its drop instead: never higher than it was, so still under the ground. Not over
  * a lake or the reaches held at its level by its outlet and inlet (dry anchors only), nor long level reaches.
  */
-function destair(p: { s: Float64Array; level: Float64Array; wet: Uint8Array }): void {
-  const { s, level, wet } = p;
+function destair(p: { s: Float64Array; level: Float64Array; wet: Uint8Array; pinned: Uint8Array }): void {
+  const { s, level } = p;
+  const fixed = (i: number): number => p.wet[i] | p.pinned[i];
   const n = level.length;
   let a = 0;
   for (let i = 1; i < n; i++) {
-    if (!(wet[i] || i === n - 1 || level[i] < level[i - 1] - STAIR_DROP)) continue;
-    if (!wet[a] && !wet[i] && i - a > 1 && s[i] - s[a] <= STAIR_RUN) {
+    if (!(fixed(i) || i === n - 1 || level[i] < level[i - 1] - STAIR_DROP)) continue;
+    if (!fixed(a) && !fixed(i) && i - a > 1 && s[i] - s[a] <= STAIR_RUN) {
       const k = (level[i] - level[a]) / (s[i] - s[a]);
       for (let j = a + 1; j < i; j++) level[j] = Math.min(level[j], level[a] + k * (s[j] - s[a]));
     }
@@ -214,7 +215,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // the rest of each valley from its final level.
   // The ponds a line has run through at their level (main stems first): no later line drains them.
   const held = new Uint8Array(d.lakes.length);
-  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array; ground: Float64Array; fall: Float64Array }> = [];
+  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array; pinned: Uint8Array; ground: Float64Array; fall: Float64Array }> = [];
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const c = courses[li];
@@ -265,6 +266,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     for (let i = 1; i < count - 1; i += 2) ground[i] = Math.min(ground[i - 1], ground[i + 1]);
     const level = new Float64Array(count);
     const wet = new Uint8Array(count);
+    // The reaches held at a lake's level past its outlet or before its inlet.
+    const pinned = new Uint8Array(count);
     let run = Infinity;
     // The lake at each point (-Infinity: none), and the next one downstream: its level and where the river reaches it.
     const lakeAt = new Float64Array(count);
@@ -309,6 +312,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         // Likewise into a lake: a river reaching one comes in at its level, not under it.
         const out = left > -Infinity ? 1 - smooth(OUTLET_RUN * 0.5, OUTLET_RUN, s[i] - leftAt) : 0;
         const inn = next[i] > -Infinity ? 1 - smooth(OUTLET_RUN * 0.5, OUTLET_RUN, nextAt[i] - s[i]) : 0;
+        if (out > 0 || inn > 0) pinned[i] = 1;
         let cand = ground[i] - 2.5;
         if (out > 0) cand = Math.max(cand, Math.min(left, ground[i] - 0.3) * out + (ground[i] - 2.5) * (1 - out));
         if (inn > 0) cand = Math.max(cand, Math.min(next[i], ground[i] - 0.3) * inn + (ground[i] - 2.5) * (1 - inn));
@@ -320,7 +324,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // does not count): the gradient cap below lets the water fall as steeply as the ground does.
     const fall = Float64Array.from(ground);
     smoothAlong(fall, Math.ceil(500 / AXIS_SPACING), 2);
-    pre.push({ north, east, s, area, level, wet, ground, fall });
+    pre.push({ north, east, s, area, level, wet, pinned, ground, fall });
   }
   // --- Confluences. A tributary that arrives lower than the river it joins has cut down through a rim (it drains a
   // closed basin the routing filled: a big hollow is not a lake, drainage.ts): the river it joins cuts down with it
@@ -414,11 +418,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const P = pre[li];
-    const { north, east, s, level, wet, ground } = P;
+    const { north, east, s, level, wet, pinned, ground } = P;
     const count = north.length;
     let moved = false;
     for (let i = 0; i < count; i += 2) {
-      if (wet[i]) continue;
+      if (wet[i] || pinned[i]) continue;
       let h = ground[i];
       valleyIndex.perLine(north[i], east[i], (lj, k, t, d) => {
         if (lj === li) return false;
@@ -435,7 +439,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       });
       const lim = h - 2.5;
       for (const j of i + 1 < count - 1 ? [i, i + 1] : [i]) {
-        if (!wet[j] && lim < level[j]) {
+        if (!wet[j] && !pinned[j] && lim < level[j]) {
           level[j] = Math.max(0, lim);
           moved = true;
         }
@@ -535,12 +539,13 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const level = new Float64Array(count);
     const halfWidth = new Float64Array(count);
     const wetAxis = pre[li].wet;
+    const pinAxis = pre[li].pinned;
     for (let k = 0; k < count; k++) {
       if (k > 0) s[k] = s[k - 1] + Math.hypot(north[k] - north[k - 1], east[k] - east[k - 1]);
       let lv = sampleAt(a.s, a.level, valleyS[k]);
       // The channel swings off its axis (a meander, a bend that brings it near a lower stretch of its own valley or
       // another's wall): its water no higher than the valleys carve the ground there (every other point).
-      if ((k & 1) === 0 && k < count - 1 && !wetAxis[segmentAt(a.s, valleyS[k])]) lv = Math.min(lv, carvedUnder(north[k], east[k], lv));
+      if ((k & 1) === 0 && k < count - 1 && !wetAxis[segmentAt(a.s, valleyS[k])] && !pinAxis[segmentAt(a.s, valleyS[k])]) lv = Math.min(lv, carvedUnder(north[k], east[k], lv));
       level[k] = k === 0 ? lv : Math.min(level[k - 1], lv);
       halfWidth[k] = sampleAt(a.s, a.halfWidth, valleyS[k]);
     }
