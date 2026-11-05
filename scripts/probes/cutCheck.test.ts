@@ -1,10 +1,10 @@
 // Probe: the erosion pass's cut as the terrain gets it (erosion.ts, heightfield.ts): beading along diagonal valleys,
 // closed hollows on a 250 m grid, overshoot above the uneroded ground, the cut near the lattice edge and by home.
-//   CUT_SEEDS=42,777777,4242 [CUT_PARTS=beads,thalweg,pits,wide,over] [T_LINE=seed:n0,e0,n1,e1;...]
+//   CUT_SEEDS=42,777777,4242 [CUT_PARTS=beads,thalweg,home,pits,wide,over] [T_LINE=seed:n0,e0,n1,e1;...]
 //   [T_RIVER=seed:north,east,km;...] [CUT_MAP=50: map of the hollows deeper than that, with 'wide']
 //   npx vitest run --config scripts/probes/vitest.config.ts cutCheck --silent=false --disable-console-intercept
 import { it } from 'vitest';
-import { hydrology, naturalHeightCoarse, naturalHeightRaw } from '../../src/world/terrain/heightfield';
+import { hydrology, naturalHeight, naturalHeightCoarse, naturalHeightRaw } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
 import { AIRPORT } from '../../src/core/world';
 
@@ -211,6 +211,28 @@ it('cut check', () => {
     }
   }
   const seeds = (env.CUT_SEEDS ?? '42,777777,4242').split(',').map(Number);
+  if (parts.includes('home')) {
+    // By the home field: how far the ground stands over the rivers within 6 km of it (a trench), outside lakes.
+    for (const seed of seeds) {
+      setWorldSeed(seed);
+      const hn = AIRPORT.runway.center.north;
+      const he = AIRPORT.runway.center.east;
+      let worst = 0;
+      let at = '';
+      let pts = 0;
+      for (const r of hydrology.rivers!) {
+        for (let k = 0; k < r.north.length; k += 4) {
+          const n = r.north[k];
+          const e = r.east[k];
+          if (Math.hypot(n - hn, e - he) > 6000 || (hydrology.lakeMask && hydrology.lakeMask.at(n, e) > -Infinity)) continue;
+          pts++;
+          const over = naturalHeight(n, e) - r.level[k];
+          if (over > worst) [worst, at] = [over, `${((n - hn) / 1000).toFixed(1)},${((e - he) / 1000).toFixed(1)} km from it`];
+        }
+      }
+      console.log(`seed ${seed}: within 6 km of the home field ${pts} river points, the ground stands at most ${worst.toFixed(0)} m over the water (${at})`);
+    }
+  }
   if (parts.includes('pits')) {
     const half = 60000;
     const step = 250;
