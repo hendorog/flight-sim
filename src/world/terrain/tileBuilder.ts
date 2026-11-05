@@ -15,6 +15,7 @@
 import { computeBiome, CoverShapeField, makeBiome, makeCoverShape, SHAPE_LATTICE } from './biome';
 import { hydrology, makeSample, sampleTerrain, type TerrainSample } from './heightfield';
 import type { FlowHit, RiverHit } from './hydrology';
+import { ROCK_STEEP_LO } from './bedrock';
 
 export interface TileRequest {
   level: number;
@@ -65,7 +66,8 @@ export interface TileData {
   river: Int16Array;
   /**
    * A seeded world's flow per vertex (unorm8): the nearest channel's steepness (Hydrology.queryFlow, 0..1), which the
-   * ground shader turns into bare rock along fast water (bedrock.ts). Filled near channels only (0 elsewhere). Null
+   * ground shader turns into bare rock along fast water (bedrock.ts). Filled near channels only, and only where it is
+   * near or above where the rock starts (0 elsewhere, and in and by lakes). Null
    * where the world has no flow data (seed 0), so its tiles and their vertex format stay as they were.
    */
   flow: Uint8Array | null;
@@ -137,6 +139,10 @@ const flowScratch: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index
  * along fast water, so no triangle carries it further.
  */
 const FLOW_REACH = 60;
+/** Below this vertex spacing (m) the flow is queried once per 2 x 2 vertices. */
+const FLOW_FINE = 6;
+/** Steepness kept below bedrock.ts ROCK_STEEP_LO (where the rock starts), so it fades in across a triangle. */
+const FLOW_MARGIN = 0.15;
 /** No flow (bare rock) where standing water lies less than this below the ground, m: in a lake and on its shore. */
 const STILL_WATER = 1;
 
@@ -246,22 +252,36 @@ export function buildTile(req: TileRequest): TileData {
   const form = new Uint8Array(count * 4);
   const riv = new Int16Array(count * 2);
   fillRiver(n, riverSigned, riverWidth, riverKnown, riv);
-  // A seeded world's flow (its steepness) near every channel; queried only where the bare rock can show.
+  // A seeded world's flow (its steepness) near every channel; queried only where the bare rock can show, and on fine
+  // tiles once per 2 x 2 vertices (the steepness changes over a 200 m window along the channel, so a vertex takes that
+  // of its even neighbour, at most one spacing away).
   let flow: Uint8Array | null = null;
   const queryFlow = hydrology.queryFlow;
   if (queryFlow) {
     const lakes = hydrology.lakeMask;
     flow = new Uint8Array(count);
     const reach = FLOW_REACH + 2 * sp;
+    const half = sp < FLOW_FINE ? 1 : 0;
+    const steepAt = new Float32Array(n * n).fill(-1);
+    const steep = (i: number, j: number): number => {
+      const v = j * n + i;
+      if (steepAt[v] < 0) {
+        queryFlow(n0 + j * sp, e0 + i * sp, flowScratch);
+        steepAt[v] = flowScratch.line >= 0 ? Math.min(1, Math.max(0, flowScratch.steepness)) : 0;
+      }
+      return steepAt[v];
+    };
     for (let j = 0; j < n; j++)
       for (let i = 0; i < n; i++) {
         const v = j * n + i;
         // (None in a lake or the sea, nor on the banks a stream's carving leaves standing just out of a lake's water: a
         // lake's floor and shore are silt, whatever its outlet does beyond.)
         if (!riverKnown[v] || Math.abs(riverSigned[v]) > riverWidth[v] + reach || standing[v] > H(i, j) - STILL_WATER) continue;
+        const st = half ? steep(i - (i & 1), j - (j & 1)) : steep(i, j);
+        // Gentler flow than this shows nothing (bedrock.ts bedRock is 0 below ROCK_STEEP_LO): left at 0.
+        if (st < ROCK_STEEP_LO - FLOW_MARGIN) continue;
         if (lakes && lakes.at(n0 + j * sp, e0 + i * sp) > -Infinity) continue;
-        queryFlow(n0 + j * sp, e0 + i * sp, flowScratch);
-        if (flowScratch.line >= 0) flow[v] = Math.round(Math.min(1, Math.max(0, flowScratch.steepness)) * 255);
+        flow[v] = Math.round(st * 255);
       }
   }
   // Parent-lattice normals at even vertices (x, z components; y is recovered in the shader).
