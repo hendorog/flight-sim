@@ -396,7 +396,7 @@ function buildWater(): void {
     // carved; the fitted ellipses only place things by them.
     const nominal = networkLakes(drainage);
     lakes = [];
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, nominal, new LakeMask(drainage));
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, nominal, new LakeMask(drainage), erosion.delta);
     legacyHydro = presentHydro;
     fields = siteAirfields(naturalHeight, presentHydro, nominal);
     setGeneratedAirfields(fields);

@@ -21,6 +21,10 @@ const OXBOW_LEVEL = 0.6;
  * straight runs drainage takes down even slopes. */
 const WANDER = 900;
 const WANDER_SHORT = 350;
+/** In a valley the erosion pass cut deeper than PIN_CUT[1], m, a course wanders this fraction of WANDER, WANDER_SHORT
+ * and the jitter (all of them shallower than PIN_CUT[0]). */
+const PINNED_WANDER = 0.15;
+const PIN_CUT = [20, 80];
 /** Valley-axis sample spacing, m. */
 const AXIS_SPACING = 120;
 /** Index cells, m. */
@@ -111,8 +115,13 @@ export function networkLakes(d: Drainage): Lake[] {
 }
 
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, lakes: Lake[], mask: LakeMask): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, lakes: Lake[], mask: LakeMask, valleyCut?: Float32Array): Hydrology {
   const lines = d.lines;
+  // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley the erosion
+  // pass cut (erosion.ts, `valleyCut` per cell, <= 0) is the river's own, and its floor lies along the lattice path; a
+  // course wandering a kilometre off it would ride up the valley side (its level held far under the ground there,
+  // its meanders swinging back down onto a floor below its water).
+  const free = (c: number): number => (valleyCut ? 1 - (1 - PINNED_WANDER) * smooth(PIN_CUT[0], PIN_CUT[1], -valleyCut[c]) : 1);
   // --- Lattice courses: jittered (the same jitter for a cell shared by two lines) and smoothed; a tributary's last
   // point is put back on its parent's smoothed course.
   const jitter = (c: number, k: number): number => ((hash2i(c, 0x51ed + k) & 0xffff) / 65536 - 0.5) * DRAIN_CELL * 0.55;
@@ -127,12 +136,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const wn = (c: number, i: number): number => {
       const pn = cellNorth(d, c);
       const pe = cellEast(d, c);
-      return pn + fade(i) * (WANDER * fbm(pn / 6000 + 3.7, pe / 6000 - 1.9, 3) + jitter(c, 0));
+      return pn + fade(i) * free(c) * (WANDER * fbm(pn / 6000 + 3.7, pe / 6000 - 1.9, 3) + jitter(c, 0));
     };
     const we = (c: number, i: number): number => {
       const pn = cellNorth(d, c);
       const pe = cellEast(d, c);
-      return pe + fade(i) * (WANDER * fbm(pn / 6000 - 8.1, pe / 6000 + 5.3, 3) + jitter(c, 1));
+      return pe + fade(i) * free(c) * (WANDER * fbm(pn / 6000 - 8.1, pe / 6000 + 5.3, 3) + jitter(c, 1));
     };
     let n = L.cells.map(wn);
     let e = L.cells.map(we);
@@ -167,8 +176,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // The shorter wander, on the dense axis (on the 1 km lattice points the smoothing would erase it): a warp of the
     // plane, so a confluence shared by two lines moves alike for both; none at a mouth on the sea.
     const last = pts.n.length - 1;
+    const cells = L.cells;
     for (let i = 0; i <= last; i++) {
-      const w = L.joins >= 0 ? 1 : Math.min(1, ((last - i) * AXIS_SPACING) / 1500);
+      const u = pts.t[i];
+      const k = Math.max(0, Math.min(cells.length - 2, Math.floor(u)));
+      const f = cells.length < 2 ? free(cells[0]) : free(cells[k]) + (free(cells[k + 1]) - free(cells[k])) * (u - k);
+      const w = f * (L.joins >= 0 ? 1 : Math.min(1, ((last - i) * AXIS_SPACING) / 1500));
       const pn = pts.n[i];
       const pe = pts.e[i];
       pts.n[i] = pn + w * WANDER_SHORT * gnoise(pn / 2500 - 6.2, pe / 2500 + 0.9);
@@ -283,6 +296,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // The floodplain's width changes only gradually along the river: inside a bend the nearest axis point jumps from
     // one stretch to another, and two different widths there would leave a step in the valley wall.
     smoothAlong(floodplain, Math.ceil(1500 / AXIS_SPACING), 3);
+    confineBelt(natural, north, east, level, belt, wavelength);
     axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence });
   }
 
@@ -519,6 +533,51 @@ function clearOfRunway(n: number[], e: number[]): void {
 const clampUnit = (x: number): number => Math.min(1, Math.max(0, x));
 
 /** Box-filter arr in place over +-half samples, `passes` times (ends shortened, never padded). */
+/**
+ * Meanders stay on ground over the water: where the ground a loop could reach (half the belt and the whole belt out to
+ * either side of the axis) lies under the river's level - a lower valley beside it, the floor of a valley the erosion
+ * pass cut (erosion.ts) that the axis runs above - the belt narrows to the reach still over the water, so the loops
+ * keep to the valley floor and do not swing out over lower ground with the water standing above it. Checked every
+ * CONFINE_EVERY axis points where the belt is wide; the narrowed belt is spread along the river (the lowest of the
+ * neighbouring checks), so it changes gradually.
+ */
+function confineBelt(natural: (north: number, east: number) => number, north: Float64Array, east: Float64Array, level: Float64Array, belt: Float64Array, wavelength: Float64Array): void {
+  const count = north.length;
+  const limit: number[] = [];
+  for (let i = 0; i < count; i += CONFINE_EVERY) {
+    const b = belt[i];
+    if (b < CONFINE_MIN) {
+      limit.push(Infinity);
+      continue;
+    }
+    const i0 = Math.max(0, i - 1);
+    const i1 = Math.min(count - 1, i + 1);
+    const tl = Math.hypot(north[i1] - north[i0], east[i1] - east[i0]) || 1;
+    const un = -(east[i1] - east[i0]) / tl;
+    const ue = (north[i1] - north[i0]) / tl;
+    const floor = level[i] + 1;
+    // The widest of the tested reaches with ground over the water on both sides.
+    let ok = Infinity;
+    for (const f of [0.5, 1]) {
+      const r = b * f;
+      if (natural(north[i] + un * r, east[i] + ue * r) < floor || natural(north[i] - un * r, east[i] - ue * r) < floor) {
+        ok = f === 0.5 ? Math.max(CONFINE_MIN * 0.5, wavelength[i] * 0.06) : b * 0.5;
+        break;
+      }
+    }
+    limit.push(ok);
+  }
+  // Each point takes the lowest limit of the checks either side of it.
+  for (let i = 0; i < count; i++) {
+    const k = Math.floor(i / CONFINE_EVERY);
+    const lim = Math.min(limit[k], limit[Math.min(limit.length - 1, k + 1)], limit[Math.max(0, k - 1)]);
+    if (lim < belt[i]) belt[i] = lim;
+  }
+}
+/** confineBelt's checks: every this many axis points, where the belt is at least CONFINE_MIN, m. */
+const CONFINE_EVERY = 4;
+const CONFINE_MIN = 150;
+
 function smoothAlong(arr: Float64Array, half: number, passes: number): void {
   const m = arr.length;
   const tmp = new Float64Array(m);
