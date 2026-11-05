@@ -14,7 +14,7 @@
 
 import { computeBiome, CoverShapeField, makeBiome, makeCoverShape, SHAPE_LATTICE } from './biome';
 import { hydrology, makeSample, sampleTerrain, type TerrainSample } from './heightfield';
-import type { RiverHit } from './hydrology';
+import type { FlowHit, RiverHit } from './hydrology';
 
 export interface TileRequest {
   level: number;
@@ -63,6 +63,12 @@ export interface TileData {
    * far coarser than the river.
    */
   river: Int16Array;
+  /**
+   * A seeded world's flow per vertex (unorm8): the nearest channel's steepness (Hydrology.queryFlow, 0..1), which the
+   * ground shader turns into bare rock along fast water (bedrock.ts). Filled near channels only (0 elsewhere). Null
+   * where the world has no flow data (seed 0), so its tiles and their vertex format stay as they were.
+   */
+  flow: Uint8Array | null;
   minHeight: number;
   maxHeight: number;
   water: WaterData | null;
@@ -124,6 +130,13 @@ export const RIVER_UNITS = 8;
 export const RIVER_FAR = 4000;
 
 const riverScratch: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side: 0, beyondSource: 0 };
+const flowScratch: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index: 0, s: 0, level: 0, halfWidth: 0, gradient: 0, steepness: 0, regime: 0, speed: 0, dirN: 0, dirE: 0 };
+/**
+ * The flow attribute is filled out to this far beyond a channel's half-width (plus two vertex spacings), m: past the
+ * bare rock's reach (bedrock.ts ROCK_REACH_MAX) and the bank's gallery of trees (riparian.ts GALLERY_FAR), which thins
+ * along fast water, so no triangle carries it further.
+ */
+const FLOW_REACH = 60;
 
 /**
  * Fill the river attribute: signed distance and half-width per lattice vertex. Where the river is out of
@@ -231,6 +244,20 @@ export function buildTile(req: TileRequest): TileData {
   const form = new Uint8Array(count * 4);
   const riv = new Int16Array(count * 2);
   fillRiver(n, riverSigned, riverWidth, riverKnown, riv);
+  // A seeded world's flow (its steepness) near every channel; queried only where the bare rock can show.
+  let flow: Uint8Array | null = null;
+  const queryFlow = hydrology.queryFlow;
+  if (queryFlow) {
+    flow = new Uint8Array(count);
+    const reach = FLOW_REACH + 2 * sp;
+    for (let j = 0; j < n; j++)
+      for (let i = 0; i < n; i++) {
+        const v = j * n + i;
+        if (!riverKnown[v] || Math.abs(riverSigned[v]) > riverWidth[v] + reach) continue;
+        queryFlow(n0 + j * sp, e0 + i * sp, flowScratch);
+        if (flowScratch.line >= 0) flow[v] = Math.round(Math.min(1, Math.max(0, flowScratch.steepness)) * 255);
+      }
+  }
   // Parent-lattice normals at even vertices (x, z components; y is recovered in the shader).
   const cnx = new Float64Array(n * n);
   const cnz = new Float64Array(n * n);
@@ -339,6 +366,7 @@ export function buildTile(req: TileRequest): TileData {
       form.copyWithin(dst * 4, src * 4, src * 4 + 4);
       form[dst * 4 + 2] += SKIRT_FLAG;
       riv.copyWithin(dst * 2, src * 2, src * 2 + 2);
+      if (flow) flow[dst] = flow[src];
     }
   }
 
@@ -352,6 +380,7 @@ export function buildTile(req: TileRequest): TileData {
     biome: bio,
     shape: form,
     river: riv,
+    flow,
     minHeight: minH,
     maxHeight: maxH,
     water: buildWater(grid, sp, positions, standing),
