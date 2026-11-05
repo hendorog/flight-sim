@@ -12,12 +12,12 @@ import { hash2i } from './noise';
 import { seedSaltX, seedSaltY } from '../worldSeed';
 
 /** Cell size along the channel and across it, m. */
-export const STONE_ALONG = 5;
-export const STONE_ACROSS = 4;
+export const STONE_ALONG = 4.5;
+export const STONE_ACROSS = 3.5;
 /** Steepness (streams.ts steepnessOf: 0.5 the start of rapids, 0.75 step-pool) over which stones fill in, and their most. */
 export const STONE_STEEP_LO = 0.5;
-export const STONE_STEEP_HI = 0.88;
-export const STONE_FILL = 0.85;
+export const STONE_STEEP_HI = 0.82;
+export const STONE_FILL = 0.95;
 /** Stones stand only this far out across the channel (a share of its half-width): in the water. */
 export const STONE_IN = 0.88;
 /** Share of the stones lying just under the surface (a boil and a wake, no rock showing). */
