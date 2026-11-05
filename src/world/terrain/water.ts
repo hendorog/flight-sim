@@ -259,6 +259,16 @@ const ICE_REACH = 700;
 const ICE_RIVER_CONCAVE = 0.1;
 /** Concavity taken away from a lake's shore (the mean along lake shores). */
 const ICE_LAKE_CONCAVE = 0.2;
+/**
+ * The ice sheet over the whole water: the hollow a lake lies in (a basin's floor: the hollowest tenth of the shores,
+ * p90 0.57-0.61) and a river's banks (their mean). With 150 m per unit its midpoint lies 50 m under the snow line for
+ * a lake (25 m over it for a river): heightfield.ts terrainSurface's thresholds. Shallow water freezes first: up to
+ * ICE_SHALLOW m more lift at the shore, gone by 8 m of depth, so a lake near the line has a rim of ice round open
+ * water in its middle rather than floes in the middle of open water.
+ */
+const ICE_SHEET_LAKE = 0.6;
+const ICE_SHALLOW = 30;
+const ICE_SHEET_RIVER = ICE_RIVER_CONCAVE;
 
 let freezeKey = '';
 let freezeVal = false;
@@ -308,10 +318,19 @@ float wIce;
   float iSnowW = smoothstep(iLine - 60.0, iLine + 140.0, vWaterPos.y + 90.0 * iC.r + 150.0 * iConcave);
   // The snow layer's cover weight over neutral ground (acc.height 0.5).
   wIce = clamp(iSnowW * 1.6 - 0.3, 0.0, 1.0);
+  float iRag = 0.3 * (texture(tNoise, iceRot2(iXZ, 4.0) * (1.0 / 47.0)).g - 0.5);
   if (iOpen > 0.0 && wIce > 0.0 && wIce < 1.0) {
-    float iEdge = wIce - 0.5 + 0.3 * (texture(tNoise, iceRot2(iXZ, 4.0) * (1.0 / 47.0)).g - 0.5);
-    wIce = mix(wIce, smoothstep(-0.04, 0.04, iEdge), iOpen);
+    wIce = mix(wIce, smoothstep(-0.04, 0.04, wIce - 0.5 + iRag), iOpen);
   }
+  // Above the snow line the water is a sheet of ice, shore to shore: the same test on the water's level against
+  // the broad snow line alone (no 260 m patches: they would leave holes of open water in the middle of a frozen
+  // lake) with the hollow of the basin it lies in; a crisp, ragged edge only where the line crosses the water.
+#ifdef RIVER
+  float iSheet = smoothstep(iLine - 60.0, iLine + 140.0, vWaterPos.y + ${(150 * ICE_SHEET_RIVER).toFixed(1)});
+#else
+  float iSheet = smoothstep(iLine - 60.0, iLine + 140.0, vWaterPos.y + ${(150 * ICE_SHEET_LAKE).toFixed(1)} + ${ICE_SHALLOW.toFixed(1)} * (1.0 - smoothstep(0.5, 8.0, depth)));
+#endif
+  wIce = max(wIce, smoothstep(-0.04, 0.04, clamp(iSheet * 1.6 - 0.3, 0.0, 1.0) - 0.5 + iRag));
   if (wIce > 0.0) {
     // The terrain's snow colour (firn, a little grey); its detail texture averages to 1. A faint tone of wind
     // drifts on the level snow (as the detail texture's mid scale varies the snow on the shore).
