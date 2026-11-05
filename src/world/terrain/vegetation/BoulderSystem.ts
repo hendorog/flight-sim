@@ -31,7 +31,8 @@ const PRESETS: Record<QualityLevel, BoulderPreset> = {
 };
 
 const CELL = 256;
-const NEAR_REBUILD = 25;
+/** Rebuild the lists after the viewer has moved this far, m (a rebuild is 0.5-1.5 ms here, about 3 ms at a 4x slower CPU). */
+const NEAR_REBUILD = 40;
 /** Most cell jobs in flight at once (tiles and trees go first). */
 const MAX_INFLIGHT = 2;
 
