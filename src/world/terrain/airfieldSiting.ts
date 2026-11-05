@@ -44,6 +44,13 @@ export function siteAirfields(natural: (north: number, east: number) => number, 
   const valley = { dist: 0, level: 0, floodplain: 0 };
   const dry = (n: number, e: number, clear: number): boolean => {
     for (const l of lakes) if (Math.hypot(n - l.north, e - l.east) < l.bound + clear) return false;
+    // A seeded world's lakes cover their whole pond (hydro.lakeMask), not only the ellipse: none within the clearance.
+    if (hydro.lakeMask) {
+      for (let k = 0; k <= 8; k++) {
+        const r = k === 0 ? 0 : clear + 300;
+        if (hydro.lakeMask.at(n + r * Math.cos((k * Math.PI) / 4), e + r * Math.sin((k * Math.PI) / 4)) > -Infinity) return false;
+      }
+    }
     hydro.queryValley(n, e, valley);
     if (valley.dist < valley.floodplain + clear) return false;
     hydro.queryRiver(n, e, river);

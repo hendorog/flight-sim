@@ -380,7 +380,9 @@ export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
   const chunks = new Map<string, RiverBuffers>();
   const lakes = hydrology.lakes;
   // Where a river runs through a lake the lake's water covers it: no ribbon there (it would lie in the lake's plane).
+  const mask = hydrology.lakeMask;
   const inLake = (n: number, e: number): boolean => {
+    if (mask) return mask.at(n, e) > -Infinity;
     for (const l of lakes) {
       if ((n - l.north) ** 2 + (e - l.east) ** 2 > l.bound * l.bound) continue;
       if (lakeRadius(l, n, e) < 0.97) return true;

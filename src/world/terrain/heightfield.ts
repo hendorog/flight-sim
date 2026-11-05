@@ -17,7 +17,7 @@ import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
-import { DOMAIN_HALF, DRAIN_CELL, buildDrainage } from './drainage';
+import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth } from './drainage';
 import { bicubic, buildErosion } from './erosion';
 import { buildNetworkHydrology, networkLakes } from './riverNetwork';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
@@ -275,9 +275,14 @@ export function naturalHeight(north: number, east: number): number {
 }
 
 const macro: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
+/** A seeded world's gullies smoothed round its lakes (drainage.ts), built with its water for that seed only (the
+ * home field's site search, before the water, sees none). */
+let shoreSmooth: ShoreSmooth | null = null;
+let shoreSeed = 0;
 // The home field's site search (seededLayout.ts, homeSiting.ts) looks at the ground as it will be, eroded ridges and
 // all (in the mountains the erosion adds hundreds of metres the approach trimming would otherwise cut into walls).
-// It sees the ground before the erosion pass (erosion.ts), which is worked out for the layout it chooses and faded
+// It sees the ground before the load-time corrections (the erosion pass, erosion.ts, and the shore smoothing round
+// the lakes, drainage.ts), which are worked out for the layout it chooses and faded
 // out around the field, so the site stays valid (the pass only lowers the ground).
 setLayoutGround((n, e) => seededNaturalHeight(n, e, true, false));
 
@@ -331,7 +336,12 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     gN += a * massif.dy;
     amplitude += a;
   }
-  if (detail) relief += amplitude * 0.13 * erode(east, north, gE, gN);
+  if (detail) {
+    // Round a lake (drainage.ts ShoreSmooth) the gullies give way to the smooth basin the lake sits in. Not in the
+    // ground before the load-time corrections (`eroded` false): the home site search sees no stale smoothing.
+    const shore = eroded && shoreSeed === worldSeed() && shoreSmooth ? shoreSmooth.at(north, east) : 0;
+    if (shore < 1) relief += amplitude * 0.13 * erode(east, north, gE, gN) * (1 - shore);
+  }
   let h = base + relief;
   // The rivers' valleys, cut by the erosion pass on the drainage lattice (erosion.ts), C1-smooth between its cells.
   if (eroded && erosionDelta) h = applyCut(h, bicubic(erosionDelta, EROSION_N, -DOMAIN_HALF, DRAIN_CELL, north, east));
@@ -369,17 +379,28 @@ function buildWater(): void {
   if (SEEDED) {
     // The erosion pass first (erosion.ts): the rivers cut the macro terrain's valleys and drain most of its closed
     // hollows. Then the drainage, routed over the eroded terrain without its gullies and small-scale relief (finer
-    // than the 1 km lattice, and the costly part).
+    // than the 1 km lattice, and the costly part): the hollows the erosion left are breached or ponded (Lindsay 2016).
     erosionDelta = null;
-    const erosion = buildErosion((n, e) => seededNaturalHeight(n, e, false, false), AIRPORT.runway.center);
+    shoreSmooth = null;
+    const home = AIRPORT.runway.center;
+    const erosion = buildErosion((n, e) => seededNaturalHeight(n, e, false, false), home);
     erosionDelta = erosion.delta;
     // The lattice as naturalHeightCoarse gives it at the cells (the cushion above the sea included).
     const lat = erosion.lattice;
     for (let c = 0; c < lat.length; c++) lat[c] = applyCut(lat[c] - erosion.delta[c], erosion.delta[c]);
-    const drainage = buildDrainage(naturalHeightCoarse, lat);
-    lakes = networkLakes(naturalHeight, drainage);
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, lakes);
+    const drainage = buildDrainage(naturalHeightCoarse, naturalHeight, (ponds) => {
+      shoreSmooth = new ShoreSmooth(EROSION_N, -DOMAIN_HALF, ponds, home);
+      shoreSeed = worldSeed();
+    }, lat);
+    // Its lakes are the drainage's ponds (LakeMask): the water covers the natural ground below their level, nothing
+    // carved; the fitted ellipses only place things by them.
+    const nominal = networkLakes(drainage);
+    lakes = [];
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, nominal, new LakeMask(drainage));
     legacyHydro = presentHydro;
+    fields = siteAirfields(naturalHeight, presentHydro, nominal);
+    setGeneratedAirfields(fields);
+    return;
   } else {
     erosionDelta = null;
     lakes = buildLakes(naturalHeight);
@@ -401,6 +422,7 @@ export const hydrology: Readonly<Hydrology> = {
   get oxbows() { return current().oxbows; },
   get rivers() { return current().rivers; },
   get network() { return current().network; },
+  get lakeMask() { return current().lakeMask; },
   queryRiver: (north, east, out) => current().queryRiver(north, east, out),
   queryValley: (north, east, out) => current().queryValley(north, east, out),
   queryOxbow: (north, east, out) => current().queryOxbow(north, east, out),
@@ -509,6 +531,9 @@ function carveRiver(north: number, east: number, h: number, out: TerrainSample):
 
 /** Smallest warped lake radius at the point sampleTerrain is working on (< 1 under a lake's water). */
 let lakeCover = Infinity;
+/** The seeded world's lake over the sample point (LakeMask): its level (-Infinity: none) and edge field. */
+let maskLevel = -Infinity;
+let maskField = 0;
 const valleyNear: ValleyNear[] = [];
 const channelNear: ChannelNear[] = [];
 
@@ -516,6 +541,9 @@ const channelNear: ChannelNear[] = [];
 function carveNetwork(north: number, east: number, h: number, out: TerrainSample): number {
   const net = presentHydro.network as NonNullable<Hydrology['network']>;
   const nv = net.valleys(north, east, valleyNear);
+  const mask = presentHydro.lakeMask;
+  const guard = nv > 0 && mask ? mask.guard(north, east) : 0;
+  const guardLevel = guard > 0 && mask ? mask.guardLevel : -Infinity;
   for (let j = 0; j < nv; j++) {
     const v = valleyNear[j];
     const d = v.dist;
@@ -525,13 +553,16 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const I = v.influence;
     const excess = Math.max(0, h - v.level - valleyProfile(f + I, f));
     const t = clamp((d - f) / I, 0, 1);
-    const carved = smin(h, v.level + valleyProfile(d, f) + excess * t * t, 4);
+    let carved = smin(h, v.level + valleyProfile(d, f) + excess * t * t, 4);
+    // A valley passing a lake does not cut into the lake's rim below its water (the lake would stand against nothing
+    // at the edge of its mask): over the lake and a cell or so round it, the walls stay over the lake's level.
+    if (guard > 0) carved += guard * Math.max(0, Math.min(h, guardLevel + 0.5) - carved);
     h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
   }
 
   // Oxbow lakes, as carveRiver cuts them (not under a lake's water).
   presentHydro.queryOxbow(north, east, oxbowHit);
-  if (oxbowHit.dist < oxbowHit.halfWidth + 30 && lakeCover >= 1) {
+  if (oxbowHit.dist < oxbowHit.halfWidth + 30 && lakeCover >= 1 && h > maskLevel + 2) {
     const d = oxbowHit.dist;
     const w = oxbowHit.halfWidth;
     const bank = BANK_HEIGHT - 0.6;
@@ -548,7 +579,10 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     out.riverArc = riverHit.s;
   }
   // Under a lake its water covers the river: no channel cut across the lake bed (it would show as a dark line).
-  const open = smooth(0.8, 1.0, lakeCover);
+  let open = smooth(0.8, 1.0, lakeCover);
+  // A seeded world's lake (LakeMask): no channel where its water covers the ground, but one across dry ground inside
+  // its edge (the river joining two arms), and none faded in toward the edge.
+  if (maskLevel > -Infinity) open = Math.min(open, Math.max(smooth(maskLevel - 0.5, maskLevel + 1.5, h), 1 - smooth(0, 10, maskField)));
   const nc = open > 0 ? net.channels(north, east, channelNear) : 0;
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
@@ -675,6 +709,14 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
       h += (lake.level - lake.depth - h) * bowl;
       out.standing = Math.max(out.standing, lake.level);
     }
+  }
+
+  maskLevel = -Infinity;
+  const mask = presentHydro.lakeMask;
+  if (mask) {
+    maskLevel = mask.at(north, east);
+    maskField = mask.field;
+    if (maskLevel > -Infinity) out.standing = Math.max(out.standing, maskLevel);
   }
 
   h = presentHydro.network ? carveNetwork(north, east, h, out) : isPresent() ? carveRiver(north, east, h, out) : carveLegacyRiver(north, east, h, out);

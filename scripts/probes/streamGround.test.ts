@@ -14,7 +14,7 @@ it('stream ground', () => {
       km += r.s[r.s.length - 1] / 1000;
       for (let k = 0; k < r.north.length; k += 3) {
         const pn = r.north[k], pe = r.east[k];
-        if (hydrology.lakes.some((l) => Math.hypot(l.north - pn, l.east - pe) < l.bound)) continue;
+        if (hydrology.lakeMask ? hydrology.lakeMask.at(pn, pe) > -Infinity : hydrology.lakes.some((l) => Math.hypot(l.north - pn, l.east - pe) < l.bound)) continue;
         const g = naturalHeight(pn, pe);
         if (g < 0.5) continue;
         n++;
@@ -26,7 +26,7 @@ it('stream ground', () => {
         if (g - s.ground > 60) carvedDeep++;
       }
     }
-    console.log(`seed ${seed}: ${hydrology.rivers!.length} rivers, ${hydrology.lakes.length} lakes, ${km.toFixed(0)} km; ${n} points: water >2 m over ground ${(100 * over2 / n).toFixed(2)} %, >10 m ${(100 * over10 / n).toFixed(2)} %, worst ${worst.toFixed(0)} m; cut >60 m deep ${(100 * carvedDeep / n).toFixed(2)} %; build ${ms.toFixed(0)} ms`);
+    console.log(`seed ${seed}: ${hydrology.lakes.length} lakes, ${hydrology.rivers!.length} rivers, ${km.toFixed(0)} km; ${n} points: water >2 m over ground ${(100 * over2 / n).toFixed(2)} %, >10 m ${(100 * over10 / n).toFixed(2)} %, worst ${worst.toFixed(0)} m; cut >60 m deep ${(100 * carvedDeep / n).toFixed(2)} %; build ${ms.toFixed(0)} ms`);
   }
   setWorldSeed(0);
 });
