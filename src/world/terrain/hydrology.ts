@@ -84,8 +84,10 @@ export interface Hydrology {
   rivers?: ReadonlyArray<RiverLine>;
   /** A seeded world's network queries for carving (every line near a point). Absent at seed 0. */
   network?: NetworkQuery;
-  /** A seeded world's waterfalls (streams.ts applyFalls): every drop of FALL_MIN or more, lip first. Absent at seed 0. */
+  /** A seeded world's waterfalls (falls.ts), each with its cause (streams.ts Fall). Absent at seed 0. */
   falls?: ReadonlyArray<Fall>;
+  /** A seeded world's fault lines (faults.ts): where its channels fall. Absent at seed 0. */
+  faults?: ReadonlyArray<import('./faults').Fault>;
   /** A seeded world's nearest channel (river or stream) and its flow at a point. Absent at seed 0. */
   queryFlow?(north: number, east: number, out: FlowHit): FlowHit;
   /** The falls within `radius` m of a point, nearest first (indices into `falls`); returns how many. Absent at seed 0. */

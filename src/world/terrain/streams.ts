@@ -19,8 +19,8 @@
 // A stream is a cheap class: no meanders, no floodplain or valley, just a narrow notch (heightfield.ts carveNetwork).
 // Its water follows the ground down (the running minimum of the ground along its course, a little under it, looked at
 // again between the raster points), its width grows with the catchment (summed at each confluence: a step up), and
-// where the ground falls too steeply for a cascade its descent is a flight of small falls with pools between
-// (applyFalls, also on the rivers' channels).
+// down a steep slope it is a continuous cascade, its water following the ground (refineSteep). It falls only where the
+// ground breaks (falls.ts: a fault, a hanging valley's lip, a lake perched on a wall).
 
 import { DOMAIN_HALF, DRAIN_CELL, LAKE_RASTER, MinHeap, RASTER_N, RIVER_AREA, type Drainage, type LakeMask } from './drainage';
 import { hash2i } from './noise';
@@ -182,6 +182,8 @@ export interface StreamReport {
   outletSamples: number;
   /** Time to the end of the river marking, the outlets, the headwaters, ms. */
   tracePhases: number[];
+  /** The falls' shaping (falls.ts shapeLines). */
+  shape?: import('./falls').ShapeReport;
   /** riverNetwork.ts's own phases (river falls, tracing and the streams' falls, flow, index), ms. */
   phases?: number[];
 }
@@ -1008,176 +1010,86 @@ function untangleCourse(n: number[], e: number[], lv: number[]): void {
 export const REGIME = { placid: 0, riffle: 1, rapids: 2, steppool: 3, fall: 4 } as const;
 /** Smoothed gradient at the upper bound of placid, riffle and rapids flow (beyond: step-pool and boulder cascades). */
 export const REGIME_GRADIENT = [0.005, 0.02, 0.08] as const;
-/** A reach falling more steeply than this (per sample) is a flight of falls; the treads between fall this steeply. */
-const FALL_GRADIENT = 0.22;
-const TREAD = 0.08;
-/** Highest single fall, m (a bigger drop is a chain of them, each with its pool), and the lowest counted as one. */
-export const FALL_MAX = 12;
-export const FALL_MIN = 3;
-/** The least height a fall in a flight is given (each its own, between this and FALL_MAX), m. */
-const FALL_LOW = 5;
-/** A fall's face spans this much ground along the channel, m. */
-const FALL_RUN = 3;
+/** A fall's face spans this much ground along the channel, m (its lip and foot are that far apart). */
+export const FALL_RUN = 3;
 /** Gradient window, m (either side half of it). */
 const GRADIENT_WINDOW = 200;
 
-/** A waterfall: where a channel's water drops FALL_MIN or more at once. */
+/** Where a waterfall comes from (falls.ts): a fault the channel crosses, the lip of a hanging valley, a lake's outlet. */
+export type FallCause = 'fault' | 'hanging' | 'outlet';
+
+/**
+ * A waterfall: where a channel's water drops at once, its lip at sample `index` of its line and its foot at the next
+ * sample (index + 1), FALL_RUN or a little more downstream (falls.ts cutFall).
+ */
 export interface Fall {
-  /** The line (index into Hydrology.rivers) and the sample at its lip. */
+  /** The line (index into Hydrology.rivers) and the sample at its lip (the foot is the next sample). */
   line: number;
   index: number;
+  /** The lip, m. */
   north: number;
   east: number;
-  /** Water level at the lip and at the foot (the pool), m. */
+  /** The foot (where the water lands), m. */
+  footNorth: number;
+  footEast: number;
+  /** Water level at the lip and at the foot (the pool), m; height = top - bottom. */
   top: number;
   bottom: number;
+  height: number;
   /** Width of the water going over, m. */
   width: number;
   /** Flow direction (unit, north and east). */
   dirN: number;
   dirE: number;
+  cause: FallCause;
+  /** Several falls of one flight (a fault's throw over ~15 m) share a flight number (-1: a fall on its own). */
+  flight: number;
 }
 
-/** A steep stretch is first cut into pieces falling at most this much each, m: a drop bigger than a fall between two
- * samples becomes a flight of falls (each FALL_LOW to FALL_MAX), never one tall drop or a ribbon down a cliff. */
-const FALL_STEP = 5;
-/** The water stands this far under the ground at each piece's point (when the ground is given), m. */
+/** A steep stretch is cut into pieces falling at most this much each, m, their water kept under the ground. */
+const PIECE_STEP = 4;
+/** The water stands this far under the ground at each piece's point, m. */
 const PIECE_DEPTH = 1;
 /** Most pieces one segment is cut into. */
 const PIECES_MAX = 64;
-/** A plunge pool lies flat below each fall's face for this long, m (from the channel's half-width). */
-const poolRun = (halfWidth: number): number => Math.min(30, Math.max(6, 4 * halfWidth));
 
 /**
- * Turn the steep reaches of a channel's water level into falls with pools: where the level falls more steeply than
- * FALL_GRADIENT, a fall of FALL_LOW to FALL_MAX at a lip at the original level, a plunge pool (flat, poolRun), then a
- * tread falling at TREAD until it meets the original level again (the next lip). A stretch falling more than FALL_STEP
- * between two samples is cut into pieces first (their water kept under `ground` when given), so every steep drop is a
- * flight of falls. Never above the level it was (the water stays under the ground). Skips the samples flagged in `keep`
- * (a lake). Returns the arrays with the pieces and a foot and a pool's end inserted after each lip, and the lip indices
- * (into the returned arrays) with their drops.
+ * A steep channel is a continuous cascade: its water follows the ground down. Between two samples falling more than
+ * PIECE_STEP the ground can bulge over the straight line between them (a convex pitch), so such a segment is cut into
+ * pieces, the water at each kept PIECE_DEPTH under `ground` (never under the segment's lower end), and the level kept
+ * falling. Skips the segments between samples flagged in `keep` (a lake). Returns the arrays with the pieces inserted
+ * (every per-sample array of `a` that has the level's length).
  */
-export function applyFalls(a: Record<string, Float64Array> & { level: Float64Array; s: Float64Array; north: Float64Array; east: Float64Array }, keep?: Uint8Array, ground?: (north: number, east: number) => number, cut = true): { line: Record<string, Float64Array>; lips: Array<{ index: number; drop: number }> } {
+export function refineSteep(a: Record<string, Float64Array> & { level: Float64Array; s: Float64Array; north: Float64Array; east: Float64Array }, keep: Uint8Array | undefined, ground: (north: number, east: number) => number): Record<string, Float64Array> {
   const n0 = a.level.length;
   const keys = Object.keys(a).filter((k) => a[k].length === n0);
-  // --- The steep segments cut into pieces.
   const pieces = new Int32Array(n0);
   let total = n0;
   for (let i = 0; i < n0 - 1; i++) {
-    const D = a.level[i] - a.level[i + 1];
-    const ds = a.s[i + 1] - a.s[i];
     pieces[i] = 1;
     if (keep?.[i] && keep[i + 1]) continue;
-    if (cut && ds > 0 && D > FALL_STEP && D / ds > FALL_GRADIENT) {
-      pieces[i] = Math.min(PIECES_MAX, Math.ceil(D / FALL_STEP));
+    const D = a.level[i] - a.level[i + 1];
+    if (D > PIECE_STEP) {
+      pieces[i] = Math.min(PIECES_MAX, Math.ceil(D / PIECE_STEP));
       total += pieces[i] - 1;
     }
   }
-  let src: Record<string, Float64Array> = a;
-  let kp = keep;
-  if (total > n0) {
-    const out: Record<string, Float64Array> = {};
-    for (const k of keys) out[k] = new Float64Array(total);
-    const kk = keep ? new Uint8Array(total) : undefined;
-    const lEnd = a.level[n0 - 1];
-    let o = 0;
-    for (let i = 0; i < n0; i++) {
-      const p = i < n0 - 1 ? pieces[i] : 1;
-      for (let q = 0; q < p; q++) {
-        const t = q / p;
-        for (const k of keys) out[k][o] = q === 0 ? a[k][i] : a[k][i] + (a[k][i + 1] - a[k][i]) * t;
-        if (kk && keep) kk[o] = q === 0 ? keep[i] : keep[i] & keep[i + 1];
-        if (q > 0 && ground) out.level[o] = Math.max(lEnd, Math.min(out.level[o], ground(out.north[o], out.east[o]) - PIECE_DEPTH));
-        if (o > 0) out.level[o] = Math.min(out.level[o], out.level[o - 1]);
-        o++;
-      }
-    }
-    src = out;
-    kp = kk;
-  }
-  const s = src.s;
-  const L = src.level;
-  const hw = src.halfWidth;
-  const n = L.length;
-  const W = Float64Array.from(L);
-  const lipsAt: Array<{ at: number; next: number; foot: number; pool: number }> = [];
-  /** The water below lip i (foot level `foot`, pool `pool` long) at arc length sv, before the next lip. */
-  const below = (i: number, foot: number, pool: number, lv: number, sv: number): number => Math.min(lv, foot - TREAD * Math.max(0, sv - s[i] - FALL_RUN - pool));
-  let i = 0;
-  while (i < n - 1) {
-    const ds = s[i + 1] - s[i];
-    if (kp?.[i] || ds <= 0 || (L[i] - L[i + 1]) / ds <= FALL_GRADIENT) {
-      i++;
-      continue;
-    }
-    // Lip at i: the first sample where a tread from a fall of `high` (FALL_LOW to FALL_MAX, each fall its own) and
-    // its pool meets the level again.
-    const high = FALL_LOW + (FALL_MAX - FALL_LOW) * ((hash2i(Math.round(src.north[i]), Math.round(src.east[i])) & 0xffff) / 65535);
-    const pool = poolRun(hw ? hw[i] : 2);
-    let j = -1;
-    let k = i + 1;
-    for (; k < n && !kp?.[k]; k++) {
-      if (L[i] - L[k] >= high + TREAD * Math.max(0, s[k] - s[i] - FALL_RUN - pool)) {
-        j = k;
-        break;
-      }
-      // The steep reach ended (the level falls gently on): a last, smaller fall meets it here.
-      if (k > i + 1 && (L[k - 1] - L[k]) / Math.max(1e-6, s[k] - s[k - 1]) <= TREAD) break;
-    }
-    let drop = high;
-    if (j < 0) {
-      j = Math.min(n - 1, k - 1);
-      if (j <= i) j = i + 1;
-      drop = Math.min(high, L[i] - L[j] - TREAD * Math.max(0, s[j] - s[i] - FALL_RUN - pool));
-      if (drop < FALL_MIN) {
-        i++;
-        continue;
-      }
-    }
-    const foot = L[i] - drop;
-    for (let q = i + 1; q <= j; q++) W[q] = below(i, foot, pool, L[q], s[q]);
-    lipsAt.push({ at: i, next: j, foot, pool });
-    i = j;
-  }
-  if (!lipsAt.length) return { line: { ...src, level: W }, lips: [] };
-  // --- A foot sample FALL_RUN past each lip and one at its pool's end, where the samples lie further apart.
-  const ins: Array<{ q: number; sv: number; lv: number }> = [];
-  for (const l of lipsAt) {
-    for (const off of [FALL_RUN, FALL_RUN + l.pool]) {
-      const sv = s[l.at] + off;
-      if (sv > s[l.next] - 1) break;
-      let q = l.at;
-      while (q < n - 1 && s[q + 1] <= sv) q++;
-      if (q >= n - 1 || sv - s[q] < 1 || s[q + 1] - sv < 1) continue;
-      const lv = L[q] + (L[q + 1] - L[q]) * ((sv - s[q]) / (s[q + 1] - s[q]));
-      ins.push({ q, sv, lv: below(l.at, l.foot, l.pool, lv, sv) });
-    }
-  }
-  ins.sort((x, y) => x.sv - y.sv);
-  const m = n + ins.length;
+  if (total === n0) return a;
   const out: Record<string, Float64Array> = {};
-  const outKeys = Object.keys(src).filter((k) => src[k].length === n);
-  for (const key of outKeys) out[key] = new Float64Array(m);
-  const map = new Int32Array(n);
+  for (const k of keys) out[k] = new Float64Array(total);
   let o = 0;
-  let t = 0;
-  for (let q = 0; q < n; q++) {
-    map[q] = o;
-    for (const key of outKeys) out[key][o] = key === 'level' ? W[q] : src[key][q];
-    o++;
-    for (; t < ins.length && ins[t].q === q; t++) {
-      const f = (ins[t].sv - s[q]) / (s[q + 1] - s[q]);
-      for (const key of outKeys) {
-        const v = src[key];
-        out[key][o] = v[q] + (v[q + 1] - v[q]) * f;
-      }
-      out.level[o] = Math.min(ins[t].lv, out.level[o - 1]);
+  for (let i = 0; i < n0; i++) {
+    const p = i < n0 - 1 ? pieces[i] : 1;
+    const lEnd = i < n0 - 1 ? a.level[i + 1] : a.level[i];
+    for (let q = 0; q < p; q++) {
+      const t = q / p;
+      for (const k of keys) out[k][o] = q === 0 ? a[k][i] : a[k][i] + (a[k][i + 1] - a[k][i]) * t;
+      if (q > 0) out.level[o] = Math.max(lEnd, Math.min(out.level[o], ground(out.north[o], out.east[o]) - PIECE_DEPTH));
+      if (o > 0) out.level[o] = Math.min(out.level[o], out.level[o - 1]);
       o++;
     }
   }
-  for (let q = 1; q < m; q++) out.level[q] = Math.min(out.level[q], out.level[q - 1]);
-  // Each lip's drop as it stands: its water over the sample after it (its foot).
-  return { line: out, lips: lipsAt.map((l) => ({ index: map[l.at], drop: out.level[map[l.at]] - out.level[map[l.at] + 1] })) };
+  return out;
 }
 
 /** Per-sample flow of a channel: gradient over GRADIENT_WINDOW, steepness 0-1, kind of flow, speed. */

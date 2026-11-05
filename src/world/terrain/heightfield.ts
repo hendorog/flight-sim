@@ -490,6 +490,7 @@ export const hydrology: Readonly<Hydrology> = {
   get network() { return current().network; },
   get lakeMask() { return current().lakeMask; },
   get falls() { return current().falls; },
+  get faults() { return current().faults; },
   get streamReport() { return current().streamReport; },
   get queryFlow() { return current().queryFlow; },
   get fallsNear() { return current().fallsNear; },

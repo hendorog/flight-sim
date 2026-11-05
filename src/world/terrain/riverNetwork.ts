@@ -11,7 +11,10 @@
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
-import { applyFalls, channelHalfWidth, FALL_MIN, FallIndex, flowOf, HEAD_START_AREA, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
+import { channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
+import { shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
+import { buildFaults, FaultIndex } from './faults';
+import { macroAt, type Macro } from './seededLayout';
 import { AIRPORT } from '../../core/world';
 
 /** A loop is cut off when its neck has closed to this fraction of the meander length (or a few channel widths). */
@@ -46,6 +49,10 @@ const HEAD_TAPER = 1500;
 /** Below a confluence the receiver's catchment steps up at once by what its lattice catchment gains within this, m
  * (the lattice counts the tributary's water a cell further on: brought forward to the confluence, not counted twice). */
 const JOIN_PULL = 1000;
+/** A line's last reach falls at most this steeply into the water it joins (m/m): a cascade, no fall at the confluence. */
+const CONFLUENCE_GRADIENT = 0.3;
+/** A hanging valley's lip lies where the alpine uplift (seededLayout.ts) is over this: high in the ranges. */
+const HANG_UPLIFT = 0.25;
 /** Catchment (km²) above which a river meanders on low ground, and the valley gradient below which it does. */
 const MEANDER_AREA = 250;
 const MEANDER_GRADIENT = 0.004;
@@ -564,6 +571,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   }
 
   const tPhase: number[] = [performance.now()];
+  const faults = buildFaults();
+  const faultIndex = new FaultIndex(faults);
+  let shapeReport: ShapeReport | undefined;
   // --- The channels' flow (streams.ts): each river's head narrows to the stream that feeds it, the steep reaches
   // become falls with pools, then the streams are traced down to the rivers and treated alike.
   const nR = rivers.length;
@@ -575,19 +585,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const headDry = new Uint8Array(nR);
   /** A finished line's water level at arc length sv. */
   const levelOn = (c: { s: Float64Array; level: Float64Array }, sv: number): number => sampleAt(c.s, c.level, sv);
-  const recordFalls = (li: number, c: { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array }, lips: ReadonlyArray<{ index: number; drop: number }>): void => {
-    const own: number[] = [];
-    for (const l of lips) {
-      const i = l.index;
-      const j = Math.min(c.north.length - 1, i + 1);
-      const dn = c.north[j] - c.north[Math.max(0, j - 1)];
-      const de = c.east[j] - c.east[Math.max(0, j - 1)];
-      const len = Math.hypot(dn, de) || 1;
-      falls.push({ line: li, index: i, north: c.north[i], east: c.east[i], top: c.level[i], bottom: c.level[i] - l.drop, width: 2 * c.halfWidth[i], dirN: dn / len, dirE: de / len });
-      own.push(i);
-    }
-    lipsOf[li] = own;
-  };
   for (let li = 0; li < nR; li++) {
     const r = rivers[li];
     const a = axes[li];
@@ -630,13 +627,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const p = rivers[L.joins];
       r.level[count - 1] = Math.min(r.level[count - 1], p.level[nearestOnChannel(p, r.north[count - 1], r.east[count - 1])]);
     }
-    // (A river's samples lie close enough that it is not cut into pieces: cutting them only steps its banks more.)
-    const f = applyFalls({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, valleyS: r.valleyS, area }, keep, undefined, false);
-    const c = { north: f.line.north, east: f.line.east, level: f.line.level, halfWidth: f.line.halfWidth, s: f.line.s, valleyS: f.line.valleyS };
+    const c = { north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, valleyS: r.valleyS };
     rivers[li] = c;
-    channelArea[li] = f.line.area;
+    channelArea[li] = area;
     kinds[li] = 0;
-    recordFalls(li, c, f.lips);
+    lipsOf[li] = [];
   }
   // The pools a river runs through.
   const riverPools = new Uint8Array(mask.pools.length);
@@ -674,37 +669,26 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     if (st.joins >= 0) st.level[st.level.length - 1] = Math.min(st.level[st.level.length - 1], levelOn(lineOf(st.joins), st.joinS));
     for (let i = 1; i < st.level.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
     const keep = new Uint8Array(st.level.length);
-    // (An outlet's first samples keep its lake's level: its first fall comes at the last of them.)
+    // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
-    const f = applyFalls({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area }, keep, filled);
-    const c = { north: f.line.north, east: f.line.east, level: f.line.level, halfWidth: f.line.halfWidth, s: f.line.s };
+    // A steep stream is a cascade whose water follows the ground down between its samples.
+    const f = refineSteep({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area }, keep, filled);
+    const c = { north: f.north, east: f.east, level: f.level, halfWidth: f.halfWidth, s: f.s };
     streamLines.push(c);
     streamJoins.push(st.joins);
     streamEnds.push(st.end);
-    channelArea[li] = f.line.area;
+    channelArea[li] = f.area;
     kinds[li] = 1;
-    recordFalls(li, c, f.lips);
+    lipsOf[li] = [];
   }
-  // A line arriving FALL_MIN or more above the water it joins falls into it at the confluence.
   const allLines = [...rivers, ...streamLines];
   const joinsOf = (li: number): number => (li < nR ? lines[li].joins : streamJoins[li - nR]);
-  for (let li = 0; li < allLines.length; li++) {
-    const p = joinsOf(li);
-    if (p < 0) continue;
+  const joinSOf = (li: number): number => {
+    if (li >= nR) return traced.streams[li - nR].joinS;
     const c = allLines[li];
-    const m = c.level.length;
-    if (m < 2) continue;
-    const drop = c.level[m - 2] - c.level[m - 1];
-    const run = c.s[m - 1] - c.s[m - 2];
-    if (drop >= FALL_MIN && drop / Math.max(1, run) > 0.1 && !lipsOf[li].includes(m - 2)) {
-      const i = m - 2;
-      const dn = c.north[m - 1] - c.north[i];
-      const de = c.east[m - 1] - c.east[i];
-      const len = Math.hypot(dn, de) || 1;
-      falls.push({ line: li, index: i, north: c.north[i], east: c.east[i], top: c.level[i], bottom: c.level[m - 1], width: 2 * c.halfWidth[i], dirN: dn / len, dirE: de / len });
-      lipsOf[li].push(i);
-    }
-  }
+    const p = allLines[joinsOf(li)];
+    return p.s[nearestOnChannel(p, c.north[c.north.length - 1], c.east[c.east.length - 1])];
+  };
   // --- Catchment and width down the network: never less downstream, stepping up at each confluence (the receiver
   // carries its own catchment above it plus what its lattice catchment gains within JOIN_PULL, and never less than the
   // tributary's own), tributaries before their receivers.
@@ -720,12 +704,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       }
       depth[li] = k;
     }
-    const joinSOf = (li: number): number => {
-      if (li >= nR) return traced.streams[li - nR].joinS;
-      const c = allLines[li];
-      const p = allLines[joinsOf(li)];
-      return p.s[nearestOnChannel(p, c.north[c.north.length - 1], c.east[c.east.length - 1])];
-    };
     const into: Array<Array<{ s: number; li: number }>> = allLines.map(() => []);
     for (let li = 0; li < nL; li++) if (joinsOf(li) >= 0 && joinsOf(li) < nR) into[joinsOf(li)].push({ s: joinSOf(li), li });
     const order = Array.from({ length: nR }, (_, i) => i).sort((a, b) => depth[b] - depth[a] || a - b);
@@ -760,11 +738,37 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       }
     }
   }
+  // --- Falls (falls.ts), receivers first: each line's mouth on the water it joins and its last reach a cascade down to
+  // it, a hanging valley's lip, an outlet's cliff, the faults it crosses.
+  {
+    const macro: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
+    const wet = (pn: number, pe: number): boolean => mask.at(pn, pe) > -Infinity;
+    const alpine = (pn: number, pe: number): boolean => macroAt(pn, pe, macro).uplift > HANG_UPLIFT;
+    const inputs: ShapeInput[] = allLines.map((c, li) => ({
+      a: { ...(c as unknown as Record<string, Float64Array>), area: channelArea[li] } as unknown as LineArrays,
+      kind: kinds[li],
+      joins: joinsOf(li),
+      joinS: joinsOf(li) >= 0 ? joinSOf(li) : 0,
+      wet,
+      outlet: li >= nR && traced.streams[li - nR].pool >= 0,
+      alpine,
+    }));
+    const shaped = shapeLines(inputs, faultIndex, CONFLUENCE_GRADIENT);
+    for (let li = 0; li < allLines.length; li++) {
+      const { area, ...rest } = inputs[li].a;
+      Object.assign(allLines[li], rest);
+      channelArea[li] = area;
+      lipsOf[li] = shaped.lips[li];
+    }
+    falls.push(...shaped.falls);
+    shapeReport = shaped.report;
+  }
   tPhase.push(performance.now());
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
   tPhase.push(performance.now());
   const fallIndex = new FallIndex(falls);
   const streamReport: StreamReport = traced.report;
+  streamReport.shape = shapeReport;
 
   // --- Indexes: every cell lists the segments (line, index) that can reach a point in it (the valley index above:
   // each axis segment is listed out to the largest reach of the segments near it along the river, as the query takes
@@ -922,6 +926,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     oxbows,
     rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), area: channelArea[li], ...flows[li] })),
     falls,
+    faults,
     queryFlow,
     fallsNear: (pn, pe, radius, out) => fallIndex.near(pn, pe, radius, out),
     streamReport,
