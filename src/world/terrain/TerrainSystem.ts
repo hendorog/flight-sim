@@ -271,15 +271,15 @@ export class TerrainSystem implements Subsystem {
     this.root.removeFromParent();
   }
 
-  /**
-   * Tiles selected / resident / being built, tree instances as meshes / impostors, and the LOD distance of
-   * the nearest tile the current view needs but does not have yet (Infinity when nothing is missing).
-   */
   /** The boulder fields' counts and last rebuild time (null without them). */
   get boulderStats(): BoulderSystem['stats'] | null {
     return this.boulders?.stats ?? null;
   }
 
+  /**
+   * Tiles selected / resident / being built, tree instances as meshes / impostors, and the LOD distance of
+   * the nearest tile the current view needs but does not have yet (Infinity when nothing is missing).
+   */
   get stats(): { drawn: number; resident: number; inflight: number; trees: number; impostors: number; nearestMissing: number } {
     const v = this.vegetation?.stats;
     let nearestMissing = Infinity;
