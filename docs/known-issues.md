@@ -315,6 +315,21 @@ In an external view the camera creeps down by itself until it sits at the ground
 Close with: log `elevation` / `targetElevation` and the pointer dy over a minute with hands off, in both rigs, then
 fix the source (a dead-band on the drag, or ignore motion while the pointer is not dragging).
 
+### Yellow taxiway lines broaden and blur with distance — **defect (owner report 2026-11-05)**
+
+The further away a yellow line is, the wider and fuzzier it looks. The likely cause is in `world/airport/pavementGlsl.ts`.
+Taxiway centrelines, lead-on lines and the tie-down tees are box-filtered over `fw = 0.5 * (w.x + w.y)`, the
+average of the pixel footprint along the layout's u and v axes. Seen at a grazing angle, a pixel spans many metres
+along the view and only centimetres across it, so that average is much wider than the footprint across the line.
+The 15 cm line is spread over it, which is why it looks broad and blurred. Lines straight ahead are hit hardest,
+and the curves join at an angle that suits neither axis.
+Close with: filter each line over its own footprint across the line,
+`length(vec2(dFdx(d), dFdy(d)))` of its distance d (segDist / arcDist / leadOnDist), rather than the averaged
+axes. Optionally, past a pixel's worth of footprint, keep the width and fade the line out instead of spreading it
+(a long-thin-line correction).
+Check: cockpit shots along taxiway A at 100, 300 and 600 m, before and after. The runway's white markings already
+use per-axis w.x / w.y (aligned with the runway) and look sharp, which supports this diagnosis.
+
 ## Career
 
 Open items of the air-operator career ([career.md](career.md), on `feat/career` as of 2026-11-01).
