@@ -18,10 +18,17 @@
 //
 // PHYSICS LOD. The nearest MAX_FLOWN airborne aircraft within FLOWN_RANGE of the player fly on their type's own
 // flight model (trafficPilot.ts: the player's physics and scripted pilot), the rest follow the kinematic circuit
-// (circuit.ts), changing over in place. Aircraft on the ground move kinematically; the nearest MAX_POSED of them
-// within EXTERIOR_RANGE of the camera are posed on a flight model's state (no physics) for their exterior. Exteriors
-// (render/aircraft/trafficExterior.ts) within EXTERIOR_RANGE, a box stand-in beyond. Under time acceleration beyond
-// the player's own coarse threshold every aircraft is kinematic.
+// (circuit.ts), changing over in place. Aircraft on the ground move kinematically. Of the rest, the nearest
+// MAX_POSED within EXTERIOR_RANGE of the camera (on the ground or in the air) are posed on a flight model's state
+// (no physics) for their exterior. Under time acceleration beyond the player's own coarse threshold none is flown.
+//
+// DRAWING. Every aircraft is its own type: its exterior (render/aircraft/trafficExterior.ts, as the player's
+// aircraft is built) when flown or posed and within EXTERIOR_RANGE (the distance scaled by the camera's zoom, so
+// the tower's binoculars bring the exterior in from farther), else its far model (atc/trafficMesh.ts, the same
+// shape reduced, render/aircraft/trafficModel.ts). One pose drives both: a flown aircraft is drawn between its
+// last two physics steps (TrafficPilot.drawPose), so it moves as evenly as the frames come; a changeover between
+// the flight model and the kinematic circuit fades the difference out over BLEND_TAU instead of jumping.
+// Exteriors are kept for reuse (EXTERIOR_POOL) and at most one is built per frame.
 
 import * as THREE from 'three';
 import type { AircraftDefinition } from '../aircraft/types';
@@ -31,9 +38,10 @@ import type { AircraftId, Environment } from '../core/types';
 import type { SimContext, Subsystem } from '../core/context';
 import type { AirframeVisualDef } from '../render/aircraft/airframe/types';
 import { TrafficExterior } from '../render/aircraft/trafficExterior';
+import { trafficModel, type TrafficModel } from '../render/aircraft/trafficModel';
 import { TrafficPilot } from './trafficPilot';
 import { quat } from '../core/math';
-import { applyPose, nedToThree } from '../core/frames';
+import { nedToThree, quatToThree } from '../core/frames';
 import type { TowerTarget } from '../render/cameras/towerRig';
 import { HOME_GROUND } from '../instruments/dynamics/radios';
 import { generatedAirfields, HOME_AIRFIELD, type Airfield } from '../world/airfields';
@@ -88,13 +96,26 @@ const LONG_FINAL = 10000;
 const TOWER_PERIOD = 0.5;
 /** Drawn within this distance of the camera, m. */
 const DRAW_RANGE = 20000;
-/** A flown or posed aircraft is drawn with its own exterior (~110k triangles) within this distance of the camera, the stand-in beyond, m. */
-const EXTERIOR_RANGE = 3000;
+/**
+ * A flown or posed aircraft is drawn with its own exterior (~110k triangles, ~57 draw calls) within this distance
+ * of the camera (at a 60 degree field of view: scaled with the zoom), its far model (one draw, ~15k triangles)
+ * beyond, m: there a light aircraft is under ~15 px across, where the two look alike. Built from a little farther
+ * out, kept to EXTERIOR_KEEP.
+ */
+const EXTERIOR_RANGE = 800;
+const EXTERIOR_BUILD = 1000;
+const EXTERIOR_KEEP = 1400;
+/** Exteriors kept for reuse per type when their aircraft no longer needs one. */
+const EXTERIOR_POOL = 1;
+/** A changeover's difference in the drawn pose fades with this time constant, s; beyond BLEND_MAX m it jumps. */
+const BLEND_TAU = 0.4;
+const BLEND_MAX = 60;
+const TAN_30 = Math.tan(Math.PI / 6);
 /** At most this many aircraft on the flight model at once, those within FLOWN_RANGE of the player (m; they leave it beyond FLOWN_EXIT). */
 export const MAX_FLOWN = 3;
 const FLOWN_RANGE = 15000;
 const FLOWN_EXIT = 17000;
-/** At most this many aircraft on the ground posed for their exteriors. */
+/** At most this many aircraft not flown posed for their exteriors. */
 const MAX_POSED = 4;
 /** Above this time acceleration every aircraft is kinematic (the player's own coarse-physics threshold). */
 const FLOWN_MAX_TIME_SCALE = 4;
@@ -126,7 +147,6 @@ const TYPES: readonly { id: AircraftId; icao: TrafficType }[] = [
   { id: 'da20', icao: 'DA20' },
 ];
 const TYPE_NAMES: Record<TrafficType, string> = { C172: 'Cessna 172', C152: 'Cessna 152', PA38: 'Piper Tomahawk', DA20: 'Diamond DA20' };
-const TRIMS = [0x1d4f9c, 0xb3261e, 0x1f7a3a, 0x2b2b2b, 0xd08a12, 0x6a2c91, 0x0f7c86, 0x8a1c3c];
 
 /** What a home-field aircraft is doing. */
 export type HomePhase = 'parked' | 'taxiOut' | 'holding' | 'lineUp' | 'lined' | 'air' | 'outbound' | 'inbound' | 'vacate' | 'clear' | 'taxiIn';
@@ -165,11 +185,15 @@ interface Aircraft {
   voice: number;
   path: CircuitPath;
   state: TrafficState;
+  /** Its far model, drawn small. */
   mesh: TrafficMesh;
-  /** A flight model: flown (physics) near the player, or posed on the ground for its exterior; else null (kinematic). */
+  /** A flight model: flown (physics) near the player, or posed for its exterior; else null (kinematic). */
   pilot: TrafficPilot | null;
   physics: boolean;
   exterior: TrafficExterior | null;
+  /** Where it was drawn last (three.js world), how far it moved that frame, and from what; a changeover's fading difference. */
+  drawn: { pos: THREE.Vector3; step: THREE.Vector3; quat: THREE.Quaternion; from: 'flown' | 'kinematic' | null };
+  blend: { pos: THREE.Vector3; quat: THREE.Quaternion; age: number } | null;
   /** Calls made on this lap, so each is made once. */
   said: Set<CallId>;
   /** The wind now favours the other end: the aircraft changes over after its next take-off. */
@@ -236,7 +260,17 @@ export class TrafficSystem implements Subsystem {
   readonly tower = new HomeTower();
   private unsubscribe: (() => void) | null = null;
   private readonly camPos = new THREE.Vector3();
-  private readonly definitions = new Map<AircraftId, AircraftDefinition | 'loading'>();
+  private readonly drawPos = { x: 0, y: 0, z: 0 };
+  private readonly drawQuat = quat.identity();
+  private readonly tPos = new THREE.Vector3();
+  private readonly tQuat = new THREE.Quaternion();
+  private readonly scratchQuat = new THREE.Quaternion();
+  private readonly models = new Map<AircraftId, TrafficModel | 'loading'>();
+  /** The pitch attitude each type stands at on its wheels (from its flight model, once one has stood). */
+  private readonly restPitch = new Map<AircraftId, number>();
+  private readonly pool = new Map<AircraftId, TrafficExterior[]>();
+  /** Exteriors built this frame (at most one). */
+  private built = 0;  private readonly definitions = new Map<AircraftId, AircraftDefinition | 'loading'>();
   private readonly visuals = new Map<AircraftId, AirframeVisualDef | 'loading'>();
 
   constructor(private readonly deps: TrafficDeps) {
@@ -247,6 +281,7 @@ export class TrafficSystem implements Subsystem {
     this.ctx = ctx;
     ctx.scene.add(this.group);
     this.sync();
+    void this.loadModels();
     this.unsubscribe = ctx.events?.on('reset', () => {
       this.tower.reset();
       this.later = [];
@@ -257,7 +292,44 @@ export class TrafficSystem implements Subsystem {
   dispose(): void {
     this.unsubscribe?.();
     this.clear();
+    for (const list of this.pool.values()) for (const e of list) e.dispose();
+    this.pool.clear();
     this.group.removeFromParent();
+  }
+
+  /** The types' far models, one after another (the first build of a type is a main-thread stall). */
+  private async loadModels(): Promise<void> {
+    if (this.deps.exteriors === false) return;
+    for (const t of TYPES) {
+      if (this.models.has(t.id)) continue;
+      this.models.set(t.id, 'loading');
+      try {
+        const visual = await this.visual(t.id);
+        if (!visual) continue;
+        const model = await trafficModel(visual);
+        this.models.set(t.id, model);
+        for (const a of this.aircraft) if (a.typeId === t.id) a.mesh.attach(model);
+      } catch (e) {
+        console.warn(`[traffic] no ${t.id} model:`, e);
+      }
+      // A frame or two between types.
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  /** The type's airframe visual (loaded once). */
+  private async visual(id: AircraftId): Promise<AirframeVisualDef | null> {
+    const v = this.visuals.get(id);
+    if (v && v !== 'loading') return v;
+    this.visuals.set(id, 'loading');
+    try {
+      const loaded = await (this.deps.loadVisual ?? ((x: AircraftId) => loadAirframeVisual(x)))(id);
+      this.visuals.set(id, loaded);
+      return loaded;
+    } catch (e) {
+      console.warn(`[traffic] no ${id} exterior:`, e);
+      return null;
+    }
   }
 
   /** The calls made since the last drain. */
@@ -278,13 +350,11 @@ export class TrafficSystem implements Subsystem {
   viewTargets(): readonly TowerTarget[] {
     const out: TowerTarget[] = [];
     for (const a of this.aircraft) {
-      const root = a.exterior?.root.visible ? a.exterior.root : a.mesh.root;
-      if (!root.visible) continue;
+      if (!a.drawn.from || !(a.exterior?.root.visible || a.mesh.root.visible)) continue;
       let t = this.targetCache.get(a.registration);
       if (!t) this.targetCache.set(a.registration, (t = { id: a.registration, label: '', position: new THREE.Vector3(), fitSize: 13 }));
       t.label = `${a.registration}, ${TYPE_NAMES[a.type]}`;
-      if (a.pilot) nedToThree(a.pilot.state.position, t.position);
-      else nedToThree({ x: a.state.north, y: a.state.east, z: -(a.field.elevation + a.state.height) }, t.position);
+      t.position.copy(a.drawn.pos);
       out.push(t);
     }
     return out;
@@ -308,7 +378,11 @@ export class TrafficSystem implements Subsystem {
     this.authority = authority;
     if (sameFields) {
       // Only the registrations change; the aircraft fly on.
-      for (const a of this.aircraft) if (!a.ops) a.registration = trafficRegistration(a.field.code, authority);
+      for (const a of this.aircraft) {
+        if (a.ops) continue;
+        a.registration = trafficRegistration(a.field.code, authority);
+        a.exterior?.setRegistration(a.registration);
+      }
     } else {
       this.clear();
       this.home = false;
@@ -332,14 +406,18 @@ export class TrafficSystem implements Subsystem {
     const path = circuitPath(field, runwayInUse(field, w.windDirectionDeg, w.windSpeedKt));
     const leg = 1 + (h >>> 4) % 4;
     const state = placeOnLeg(path, leg, ((h >>> 8) % 100) / 100 * 0.8 + 0.1);
-    this.push(field, type, trafficRegistration(field.code, this.authority), path, state, i, null);
+    this.push(field, type, trafficRegistration(field.code, this.authority), path, state, null);
   }
 
-  private push(field: Airfield, type: (typeof TYPES)[number], registration: string, path: CircuitPath, state: TrafficState, trim: number, ops: HomeOps | null): Aircraft {
-    const mesh = buildTrafficMesh(type.icao, TRIMS[trim % TRIMS.length]);
+  private push(field: Airfield, type: (typeof TYPES)[number], registration: string, path: CircuitPath, state: TrafficState, ops: HomeOps | null): Aircraft {
+    const mesh = buildTrafficMesh(type.icao);
+    const model = this.models.get(type.id);
+    if (model && model !== 'loading') mesh.attach(model);
+    mesh.root.visible = false;
     this.group.add(mesh.root);
     const a: Aircraft = {
       field, typeId: type.id, type: type.icao, registration, voice: (hash(registration) >>> 11) % 16, path, state, mesh, pilot: null, physics: false, exterior: null,
+      drawn: { pos: new THREE.Vector3(), step: new THREE.Vector3(), quat: new THREE.Quaternion(), from: null }, blend: null,
       said: new Set(), nextEnd: null, ops, contacted: new Set(),
     };
     this.aircraft.push(a);
@@ -348,13 +426,7 @@ export class TrafficSystem implements Subsystem {
 
   private remove(a: Aircraft): void {
     this.ground(a);
-    a.mesh.root.traverse((o) => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.Points) {
-        o.geometry.dispose();
-        (o.material as THREE.Material).dispose();
-      }
-    });
-    a.mesh.root.removeFromParent();
+    a.mesh.dispose();
     this.aircraft = this.aircraft.filter((x) => x !== a);
     this.targetCache.delete(a.registration);
     if (a.ops) this.tower.forget(a.registration);
@@ -377,7 +449,7 @@ export class TrafficSystem implements Subsystem {
       target: null, cleared: false, apron: false, calls: new Set(),
     };
     const path = circuitPath(HOME_AIRFIELD, end);
-    return this.push(HOME_AIRFIELD, type, trafficRegistration(`${HOME_AIRFIELD.code}${n}`, this.authority), path, placeOnLeg(path, 2, 0), n + 3, ops);
+    return this.push(HOME_AIRFIELD, type, trafficRegistration(`${HOME_AIRFIELD.code}${n}`, this.authority), path, placeOnLeg(path, 2, 0), ops);
   }
 
   /** The home traffic to begin with: one in the circuit, one about to depart, one inbound; then arrivals now and then. */
@@ -726,6 +798,7 @@ export class TrafficSystem implements Subsystem {
   update(dt: number): void {
     this.sync();
     this.clock += dt;
+    this.built = 0;
     const cam = this.ctx.camera.getWorldPosition(this.camPos);
     this.spawnTick();
     this.chooseFlown(cam);
@@ -734,10 +807,7 @@ export class TrafficSystem implements Subsystem {
       if (a.ops) {
         this.stepHome(a, dt, env);
         if (!this.aircraft.includes(a)) continue;
-        if (a.pilot && !a.physics) {
-          a.pilot.pose(a.state, a.field.elevation, dt, a.ops.phase !== 'parked');
-          this.homeLights(a);
-        }
+        if (a.pilot && !a.physics) this.homeLights(a);
       } else {
         let changed: number | null;
         if (a.pilot && a.physics && env) {
@@ -755,7 +825,9 @@ export class TrafficSystem implements Subsystem {
         Object.assign(a.state, placeOnLeg(a.path, 2, 0.1));
         if (a.ops) a.ops.phase = 'air';
       }
-      this.pose(a, cam);
+      // Posed: the flight model's state stands where the kinematic aircraft is (its gear, propeller and lights).
+      if (a.pilot && !a.physics) a.pilot.pose(a.state, a.field.elevation, dt, a.ops?.phase !== 'parked');
+      this.pose(a, cam, dt);
     }
     if ((this.towerClock -= dt) <= 0) {
       this.towerClock = TOWER_PERIOD;
@@ -873,8 +945,8 @@ export class TrafficSystem implements Subsystem {
 
   /**
    * Which aircraft have a flight model: the nearest MAX_FLOWN airborne within range of the player fly on it
-   * (physics), while the time acceleration allows; the nearest MAX_POSED on the ground within exterior range of the
-   * camera stand on one (posed). The others are kinematic, handed back where they are.
+   * (physics), while the time acceleration allows; of the rest, the nearest MAX_POSED within exterior range of the
+   * camera are posed on one for their exteriors. The others are kinematic, handed back where they are.
    */
   private chooseFlown(cam: THREE.Vector3): void {
     const env = this.deps.env;
@@ -889,9 +961,9 @@ export class TrafficSystem implements Subsystem {
       .sort((x, y) => x.d - y.d);
     const physics = new Set(flown.slice(0, MAX_FLOWN).map((r) => r.a));
     const posed = this.aircraft
-      .filter((a) => env !== undefined && this.deps.exteriors !== false && !airborne(a))
+      .filter((a) => env !== undefined && this.deps.exteriors !== false && !physics.has(a))
       .map((a) => ({ a, d: this.cameraDistance(a, cam) }))
-      .filter(({ a, d }) => d < EXTERIOR_RANGE + (a.pilot ? 300 : 0))
+      .filter(({ a, d }) => d < (a.pilot ? EXTERIOR_KEEP : EXTERIOR_BUILD))
       .sort((x, y) => x.d - y.d);
     const pose = new Set(posed.slice(0, MAX_POSED).map((r) => r.a));
     for (const a of this.aircraft) {
@@ -899,16 +971,26 @@ export class TrafficSystem implements Subsystem {
         if (!a.pilot) this.fly(a);
         else if (!a.physics) this.resume(a);
       } else if (pose.has(a)) {
-        if (a.pilot && a.physics) this.ground(a);
+        // Off the flight model, its exterior kept: posed where it is from here.
+        if (a.pilot && a.physics) {
+          a.pilot.handBack(a.state);
+          a.physics = false;
+        }
         if (!a.pilot) this.fly(a, true);
       } else if (a.pilot) this.ground(a);
     }
   }
 
-  /** Distance from the camera to where it is drawn, m. */
+  /** Distance from the camera to where it is drawn, scaled by the zoom to a 60 degree field of view, m. */
   private cameraDistance(a: Aircraft, cam: THREE.Vector3): number {
-    const root = a.exterior?.root.visible ? a.exterior.root : a.mesh.root;
-    return root.position.distanceTo(cam);
+    const p = a.drawn.from ? a.drawn.pos : nedToThree({ x: a.state.north, y: a.state.east, z: -(a.field.elevation + a.state.height) }, this.tPos);
+    return p.distanceTo(cam) * this.zoom();
+  }
+
+  /** Apparent distance per metre at the camera's field of view (1 at 60 degrees, less zoomed in). */
+  private zoom(): number {
+    const cam = this.ctx.camera;
+    return Math.tan((cam.fov * Math.PI) / 360) / cam.zoom / TAN_30;
   }
 
   /** A posed aircraft onto the flight model where it stands (taking off). */
@@ -943,26 +1025,50 @@ export class TrafficSystem implements Subsystem {
     if (!env) return;
     a.pilot = new TrafficPilot(def, a.path);
     a.pilot.start(env, a.path, a.state);
+    if (a.state.onGround && !this.restPitch.has(a.typeId)) this.restPitch.set(a.typeId, a.pilot.restPitch);
     a.physics = !posed;
     if (!posed) this.directed(a);
     if (this.deps.exteriors === false) return;
-    const visual = this.visuals.get(a.typeId);
-    if (visual === undefined) {
-      this.visuals.set(a.typeId, 'loading');
-      (this.deps.loadVisual ?? ((id: AircraftId) => loadAirframeVisual(id)))(a.typeId).then(
-        (v) => this.visuals.set(a.typeId, v),
-        (e: unknown) => console.warn(`[traffic] no ${a.typeId} exterior:`, e),
-      );
-    }
+    if (!this.visuals.has(a.typeId)) void this.visual(a.typeId);
   }
 
-  /** Back to the kinematic aircraft where it is; the exterior goes. */
+  /** Back to the kinematic aircraft where it is; the exterior goes (kept for another aircraft of the type). */
   private ground(a: Aircraft): void {
     if (a.pilot && a.physics) a.pilot.handBack(a.state);
     a.pilot = null;
     a.physics = false;
-    a.exterior?.dispose();
+    this.releaseExterior(a);
+  }
+
+  /** An exterior for this aircraft: one kept for reuse, or a new one (at most one built per frame). */
+  private acquireExterior(a: Aircraft): TrafficExterior | null {
+    const kept = this.pool.get(a.typeId)?.pop();
+    if (kept) {
+      kept.setRegistration(a.registration);
+    } else {
+      const visual = this.visuals.get(a.typeId);
+      if (!visual || visual === 'loading' || this.built > 0) return null;
+      this.built++;
+      a.exterior = new TrafficExterior(visual, a.registration);
+      this.group.add(a.exterior.root);
+      return a.exterior;
+    }
+    a.exterior = kept;
+    this.group.add(kept.root);
+    return kept;
+  }
+
+  private releaseExterior(a: Aircraft): void {
+    const e = a.exterior;
+    if (!e) return;
     a.exterior = null;
+    e.root.removeFromParent();
+    e.root.visible = false;
+    const list = this.pool.get(a.typeId) ?? [];
+    if (list.length < EXTERIOR_POOL) {
+      list.push(e);
+      this.pool.set(a.typeId, list);
+    } else e.dispose();
   }
 
   /** The player is on this field's runway (lined up, landing or taxiing across it). */
@@ -1042,30 +1148,75 @@ export class TrafficSystem implements Subsystem {
     };
   }
 
-  private pose(a: Aircraft, cam: THREE.Vector3): void {
+  /**
+   * Draw it: the pose (between the flight model's last two steps when flown, else the kinematic state; a
+   * changeover's difference fading out), on its exterior when it has one and is near enough on screen, else on
+   * its far model.
+   */
+  private pose(a: Aircraft, cam: THREE.Vector3, dt: number): void {
     const s = a.state;
-    const root = a.mesh.root;
-    if (a.pilot && this.deps.exteriors !== false) {
-      const visual = this.visuals.get(a.typeId);
-      if (!a.exterior && visual && visual !== 'loading') {
-        a.exterior = new TrafficExterior(visual, a.registration);
-        this.group.add(a.exterior.root);
-      }
-      if (a.exterior) {
-        const st = a.pilot.state;
-        applyPose(a.exterior.root, st.position, st.orientation);
-        a.exterior.root.visible = a.exterior.root.position.distanceTo(cam) < EXTERIOR_RANGE;
-        if (a.exterior.root.visible) {
-          a.exterior.update(this.clock, st, a.pilot.controls, this.ctx.camera, this.ctx.renderer, this.ctx.sky, this.ctx.weather);
-          root.visible = false;
-          return;
-        }
+    const flown = !!(a.pilot && a.physics);
+    if (flown) a.pilot!.drawPose(this.drawPos, this.drawQuat);
+    else {
+      const rest = a.pilot?.def.geometry.restHeight ?? this.restHeight(a);
+      this.drawPos.x = s.north;
+      this.drawPos.y = s.east;
+      this.drawPos.z = -(a.field.elevation + s.height + rest);
+      Object.assign(this.drawQuat, quat.fromEuler(s.onGround ? 0 : s.bank, s.pitch + (s.onGround ? this.restPitch.get(a.typeId) ?? 0 : 0), s.heading));
+    }
+    const pos = nedToThree(this.drawPos, this.tPos);
+    const rot = quatToThree(this.drawQuat, this.tQuat);
+    const from = flown ? 'flown' : 'kinematic';
+    const d = a.drawn;
+    if (d.from && d.from !== from) {
+      // A changeover: the difference to where it would have been drawn now (moving on as it was) fades out (a
+      // jump only if it is far off).
+      const off = d.pos.clone().add(d.step).sub(pos);
+      const turn = d.quat.clone().multiply(this.scratchQuat.copy(rot).invert());
+      a.blend = off.length() < BLEND_MAX && Math.abs(turn.w) > Math.cos(0.5) ? { pos: off, quat: turn, age: 0 } : null;
+    }
+    if (a.blend) {
+      const k = Math.exp(-a.blend.age / BLEND_TAU);
+      a.blend.age += dt;
+      if (k < 0.01) a.blend = null;
+      else {
+        pos.addScaledVector(a.blend.pos, k);
+        rot.premultiply(this.scratchQuat.identity().slerp(a.blend.quat, k));
       }
     }
-    const pos = { x: s.north, y: s.east, z: -(a.field.elevation + s.height) };
-    applyPose(root, pos, quat.fromEuler(s.bank, s.pitch, s.heading));
-    root.visible = root.position.distanceTo(cam) < DRAW_RANGE;
-    a.mesh.flash(this.clock + a.voice * 0.37);
+    if (d.from) d.step.subVectors(pos, d.pos);
+    d.pos.copy(pos);
+    d.quat.copy(rot);
+    d.from = from;
+
+    const range = pos.distanceTo(cam) * this.zoom();
+    if (a.pilot && this.deps.exteriors !== false) {
+      if (!a.exterior && range < EXTERIOR_BUILD) this.acquireExterior(a);
+      else if (a.exterior && range > EXTERIOR_KEEP) this.releaseExterior(a);
+    }
+    const ext = a.exterior;
+    if (ext && a.pilot && range < EXTERIOR_RANGE) {
+      ext.root.position.copy(pos);
+      ext.root.quaternion.copy(rot);
+      ext.root.visible = true;
+      ext.update(this.clock, a.pilot.state, a.pilot.controls, this.ctx.camera, this.ctx.renderer, this.ctx.sky, this.ctx.weather);
+      a.mesh.root.visible = false;
+      return;
+    }
+    if (ext) ext.root.visible = false;
+    const root = a.mesh.root;
+    root.position.copy(pos);
+    root.quaternion.copy(rot);
+    root.visible = a.mesh.ready && pos.distanceTo(cam) < DRAW_RANGE;
+    a.mesh.flash(this.clock + a.voice * 0.37, a.ops?.phase !== 'parked');
+  }
+
+  /** Height of its reference point above its wheels, m: the flight model's, else the far model's. */
+  private restHeight(a: Aircraft): number {
+    const def = this.definitions.get(a.typeId);
+    if (def && def !== 'loading') return def.geometry.restHeight;
+    const m = this.models.get(a.typeId);
+    return m && m !== 'loading' ? m.restHeight : 1.2;
   }
 }
 

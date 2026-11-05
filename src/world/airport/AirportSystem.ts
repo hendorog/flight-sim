@@ -23,7 +23,7 @@ import { createLandside } from './landside';
 import { airportLights, createLightPoints, dayBrightnessStep, PAPI_HOUSING, type AirportLights, type LightSpec, type LightsUniforms } from './lights';
 import { createMaterials, updateMaterials, type MaterialKey, type MaterialSet } from './materials';
 import { createPavement, createRoadMaterial, TAXIWAY_HEIGHT, type PavementTextures } from './pavement';
-import { createProps } from './props';
+import { createProps, ParkedAircraft } from './props';
 import { createSharedUniforms, FLOOD_COLOR, FLOOD_INTENSITY, floodIlluminance, STREET_COLOR, STREET_ILLUMINANCE, type SharedUniforms } from './shared';
 import { createSigns } from './signs';
 import { makeAsphaltTexture, makeBuildingTextures, makeConcreteTexture, makeCrackTexture, makeNoiseTexture } from './textures';
@@ -65,6 +65,7 @@ export class AirportSystem implements Subsystem {
   /** Every light the system draws (airfield, windsocks, valley); empty in bare mode. */
   readonly lights: readonly LightSpec[] = [];
   private readonly disposables: { dispose(): void }[] = [];
+  private parked: ParkedAircraft | null = null;
   private materials!: MaterialSet;
   private signMaterial!: THREE.MeshStandardMaterial;
   private lightUniforms!: LightsUniforms;
@@ -115,6 +116,9 @@ export class AirportSystem implements Subsystem {
     this.disposables.push(landside);
     this.local.add(...landside.meshes);
     this.local.add(...createProps(this.materials).meshes);
+    // The parked aircraft are the traffic's types (their models shared with it: disposed by ParkedAircraft only).
+    this.parked = new ParkedAircraft();
+    this.local.add(this.parked.group);
     const signs = createSigns(aniso);
     this.signMaterial = signs.material;
     this.disposables.push(signs.material.map!);
@@ -178,6 +182,7 @@ export class AirportSystem implements Subsystem {
     this.lightUniforms.uViewportH.value = this.drawSize.y;
     this.lightUniforms.uMinPx.value = 2.5 * (this.drawSize.y / 1080) + 0.5;
     this.windsocks.update(dt, ctx, night);
+    this.parked?.update(ctx.camera);
   }
 
   /**
@@ -207,6 +212,8 @@ export class AirportSystem implements Subsystem {
   }
 
   dispose(): void {
+    this.parked?.dispose();
+    this.parked = null;
     this.root.removeFromParent();
     this.root.traverse((o) => {
       if (o instanceof THREE.Mesh || o instanceof THREE.Points) {
