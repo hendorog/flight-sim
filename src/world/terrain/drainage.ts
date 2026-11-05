@@ -934,15 +934,13 @@ export class LakeMask {
         const cj = Math.round(rj / RASTER_PER_CELL);
         if (ci < 1 || cj < 1 || ci >= n - 1 || cj >= n - 1) return false;
         const c = ci * n + cj;
-        if (pondOf[c] !== k) {
-          if (pondOf[c] >= 0) return false;
-          let ring = false;
-          for (let a = 0; a < 8 && !ring; a++) ring = pondOf[c + DI[a] * n + DJ[a]] === k;
-          if (!ring) return false;
-        }
         if (Math.hypot(origin + ri * LAKE_RASTER - rc.north, origin + rj * LAKE_RASTER - rc.east) < LAKE_HOME_CLEAR) return false;
-        const other = claimed.get(ri * RASTER_N + rj);
-        return other === undefined;
+        if (pondOf[c] === k) return R.pool[p] < 0;
+        if (pondOf[c] >= 0) return false;
+        let ring = false;
+        for (let a = 0; a < 8 && !ring; a++) ring = pondOf[c + DI[a] * n + DJ[a]] === k;
+        // (A ring cell may be another pond's ring too: its pools may have claimed the point.)
+        return ring && R.pool[p] < 0 && !claimed.has(ri * RASTER_N + rj);
       };
       const tried = new Uint8Array(size);
       const ownPools: number[] = [];
@@ -986,10 +984,11 @@ export class LakeMask {
         const level = Math.min(l.level, spill - LAKE_MARGIN);
         // The domain: the popped points connected to the seed below level + margin.
         const top = level + LAKE_MARGIN;
-        const inPop = new Set(popped);
-        if (!inPop.has(seed) || !(R.ground[seed] < top)) return;
+        // (seen: 2 popped, 3 in the domain.)
+        for (const p of popped) seen[p] = 2;
+        if (seen[seed] !== 2 || !(R.ground[seed] < top)) return;
         const dom: number[] = [seed];
-        const mark = new Set<number>([seed]);
+        seen[seed] = 3;
         for (let h = 0; h < dom.length; h++) {
           const p = dom[h];
           const pi = Math.floor(p / cols);
@@ -999,8 +998,8 @@ export class LakeMask {
             const qj = pj + DJ[a];
             if (qi < 0 || qj < 0 || qi >= rows || qj >= cols) continue;
             const q = qi * cols + qj;
-            if (mark.has(q) || !inPop.has(q) || !(R.ground[q] < top)) continue;
-            mark.add(q);
+            if (seen[q] !== 2 || !(R.ground[q] < top)) continue;
+            seen[q] = 3;
             dom.push(q);
           }
         }
