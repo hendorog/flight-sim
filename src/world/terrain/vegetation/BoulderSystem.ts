@@ -33,6 +33,11 @@ const PRESETS: Record<QualityLevel, BoulderPreset> = {
 const CELL = 256;
 /** Rebuild the lists after the viewer has moved this far, m (a rebuild is 0.5-1.5 ms here, about 3 ms at a 4x slower CPU). */
 const NEAR_REBUILD = 40;
+/**
+ * A stone is drawn out to this many times its (shown) radius, m: about two pixels across at 1600 pixels over a 60
+ * degree view, so cobbles only near and the big blocks to the full range.
+ */
+const SIZE_RANGE = 900;
 /** Most cell jobs in flight at once (tiles and trees go first). */
 const MAX_INFLIGHT = 2;
 
@@ -320,7 +325,8 @@ float rockNoise(vec3 x) {
         const dn = a[o + 2] - north;
         const dy = a[o + 1] - cam.y;
         const d = Math.sqrt(de * de + dn * dn + dy * dy);
-        if (d > range) continue;
+        // (A small stone only near: drawn while it spans more than a pixel or two.)
+        if (d > range || d > a[o + 9] * SIZE_RANGE) continue;
         this.src[n] = a;
         this.off[n] = o;
         this.dist[n] = d;
@@ -347,10 +353,12 @@ float rockNoise(vec3 x) {
       const a = this.src[w];
       const o = this.off[w];
       const d = this.dist[w];
-      const fade = d <= fade0 ? 1 : Math.max(0, 1 - (d - fade0) / (reach - fade0));
+      // Shrinking away over the last fifth of its own range (the budget's, or its size's).
+      const own = Math.min(reach, a[o + 9] * SIZE_RANGE);
+      const fade = d <= own * 0.8 ? 1 : Math.max(0, 1 - (d - own * 0.8) / (own * 0.2));
       if (fade <= 0.02) continue;
       const r = a[o + 3] * fade;
-      const squash = a[o + 4];
+      const hy = a[o + 4] * fade;
       const yaw = a[o + 5];
       const shapeTone = a[o + 6];
       const shape = Math.min(BOULDER_SHAPES - 1, Math.floor(shapeTone));
@@ -360,12 +368,14 @@ float rockNoise(vec3 x) {
       if (tier) shadowed++;
       const t = this.tiers[tier][shape];
       const k = counts[tier][shape]++;
-      // Sunk into the ground by a quarter of its height, a small tilt.
-      const hy = r * squash;
-      this.pos.set(a[o], a[o + 1] - 0.25 * hy, -a[o + 2]);
-      this.e.set((tone - 0.5) * 0.3, yaw, (squash - 0.7) * 0.4);
+      // Its centre over the ground (sunk into it, or a rock in the water reaching up from the bed), a small tilt (none
+      // for a tall block standing in the water: it would lean out of its collar of foam).
+      const squash = hy / Math.max(1e-3, r);
+      this.pos.set(a[o], a[o + 1] + a[o + 8] * fade, -a[o + 2]);
+      const tilt = squash > 1.05 ? 0.15 : 1;
+      this.e.set((tone - 0.5) * 0.3 * tilt, yaw, (Math.min(1, squash) - 0.7) * 0.4 * tilt);
       this.q.setFromEuler(this.e);
-      this.scl.set(r * (0.85 + 0.3 * tone), hy, r * (1.15 - 0.3 * tone));
+      this.scl.set(r * (0.85 + 0.3 * tone * tilt), hy, r * (1.15 - 0.3 * tone * tilt));
       this.m.compose(this.pos, this.q, this.scl);
       t.mesh.setMatrixAt(k, this.m);
       // Tone between the palette's rock colours; darker where it is wet (in and by the water).
