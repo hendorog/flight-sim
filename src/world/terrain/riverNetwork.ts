@@ -77,6 +77,30 @@ function capFall(p: { s: Float64Array; area: Float64Array; level: Float64Array; 
   }
 }
 
+/** destair: a drop at least this big ends a stair's tread, m; treads longer than STAIR_RUN are left level, m. */
+const STAIR_DROP = 0.5;
+const STAIR_RUN = 1500;
+/**
+ * No staircase: where the running minimum of the ground holds the water level over a short rise (a spur, a bump the
+ * course crosses on a valley side) and then drops it, the valley carved about the level would be a flight of level
+ * treads across the valley floor (ribs, 15-35 m steps every couple of hundred metres down a steep stream). Each short
+ * tread is tilted down to the foot of its drop instead: never higher than it was, so still under the ground. Not over
+ * a lake or the reaches held at its level by its outlet and inlet (dry anchors only), nor long level reaches.
+ */
+function destair(p: { s: Float64Array; level: Float64Array; wet: Uint8Array }): void {
+  const { s, level, wet } = p;
+  const n = level.length;
+  let a = 0;
+  for (let i = 1; i < n; i++) {
+    if (!(wet[i] || i === n - 1 || level[i] < level[i - 1] - STAIR_DROP)) continue;
+    if (!wet[a] && !wet[i] && i - a > 1 && s[i] - s[a] <= STAIR_RUN) {
+      const k = (level[i] - level[a]) / (s[i] - s[a]);
+      for (let j = a + 1; j < i; j++) level[j] = Math.min(level[j], level[a] + k * (s[j] - s[a]));
+    }
+    a = i;
+  }
+}
+
 interface Axis {
   north: Float64Array;
   east: Float64Array;
@@ -432,6 +456,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     void s;
   }
   for (let li = 0; li < lines.length; li++) {
+    destair(pre[li]);
     const a = axes[li];
     confineBelt(natural, a.north, a.east, a.level, a.belt, a.wavelength);
   }
