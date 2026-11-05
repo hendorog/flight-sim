@@ -22,7 +22,7 @@ import { updateEraUniforms } from './eraUniforms';
 import { VegetationSystem } from './vegetation/VegetationSystem';
 import { setTownSite, townSite } from './townMask';
 import { era, isPresent } from '../era/eraState';
-import { createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
+import { createFallGeometries, createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
 import { WorkerPool } from './workerPool';
 
 interface QualityPreset {
@@ -78,6 +78,9 @@ export class TerrainSystem implements Subsystem {
   private riverMaterial!: THREE.MeshStandardMaterial;
   private river!: THREE.Mesh;
   private readonly riverNetwork: THREE.Mesh[] = [];
+  /** A seeded world's falls (curtains and pool foam, then spray) and their materials (water.ts createFallGeometries). */
+  private readonly falls: THREE.Mesh[] = [];
+  private readonly fallMaterials: THREE.Material[] = [];
   private indices!: THREE.BufferAttribute;
   private vegetation: VegetationSystem | null = null;
   private grass: AirfieldGrass | null = null;
@@ -167,6 +170,22 @@ export class TerrainSystem implements Subsystem {
       this.riverNetwork.push(m);
       this.waterGroup.add(m);
     }
+    // Its falls, drawn after the rivers they pour into; the spray last, over them.
+    const fallGeo = createFallGeometries();
+    if (fallGeo.sheets.length) {
+      const sheetMat = createWaterMaterial(this.textures.noise, this.waterUniforms, true, 'sheet');
+      const sprayMat = createWaterMaterial(this.textures.noise, this.waterUniforms, true, 'mist');
+      this.fallMaterials.push(sheetMat, sprayMat);
+      for (const [list, mat, order, name] of [[fallGeo.sheets, sheetMat, 1, 'falls'], [fallGeo.spray, sprayMat, 2, 'falls-spray']] as const) {
+        for (const g of list) {
+          const m = new THREE.Mesh(g, mat);
+          m.name = name;
+          m.renderOrder = order;
+          this.falls.push(m);
+          this.waterGroup.add(m);
+        }
+      }
+    }
     ctx.scene.add(this.root);
     this.precompileWater(ctx);
 
@@ -234,6 +253,10 @@ export class TerrainSystem implements Subsystem {
     this.river.geometry.dispose();
     for (const m of this.riverNetwork) m.geometry.dispose();
     this.riverNetwork.length = 0;
+    for (const m of this.falls) m.geometry.dispose();
+    this.falls.length = 0;
+    for (const m of this.fallMaterials) m.dispose();
+    this.fallMaterials.length = 0;
     this.root.removeFromParent();
   }
 

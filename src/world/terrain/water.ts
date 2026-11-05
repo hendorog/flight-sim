@@ -8,12 +8,15 @@
 //     and the body's own scattered light; shoreline foam in the last half metre;
 //   - reflection of scene.environment through the standard PBR path (Fresnel included), at full strength
 //     whatever the water's transparency, or of an analytic sky gradient when there is no environment map.
+// A seeded world's channels also run (see 'flow' below): whitewater by steepness on the ribbons, and the falls'
+// curtains, pool foam and spray as their own meshes; seed 0's text has none of it.
 
 import * as THREE from 'three';
 import { PALETTES } from './eraPalette';
 import { HASH_GLSL } from './glsl';
 import { hydrology, snowLineBase, snowShiftM } from './heightfield';
 import { lakeRadius } from './hydrology';
+import { REGIME } from './streams';
 import { GALLERY_FLOOR, RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
 import type { WaterData } from './tileBuilder';
 import { era, isPresent } from '../era/eraState';
@@ -355,6 +358,218 @@ function withIce(shader: { vertexShader: string; fragmentShader: string }, river
     .replace('gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n', 'wColor = mix(wColor, totalDiffuse, wIce);\ngl_FragColor = vec4(wColor * wEdge, mix(1.0 - wSeen, 1.0, wIce) * wEdge);\n');
 }
 
+// ----------------------------------------------------------------------------------------------- flow
+// Running water (a seeded world's network: hydrology.rivers carries each sample's steepness and speed, streams.ts).
+// The ribbon carries aFlow = (steepness 0-1, speed m/s, fall weight 0-1) per row. A placid reach (steepness under
+// FLOW_FROM) runs none of this code and looks as it did. Above it: the surface's ripples and foam ride downstream at
+// the water's speed (sampled along the channel's own arc length, in two cross-faded phases so a reach whose speed
+// changes never shears the pattern), broken white water spreads with the steepness (streaks on a riffle, standing
+// waves and broken water on rapids, most of a step-pool cascade white), the surface roughens, and between the white
+// the water is aerated: lighter and less transparent on a river, shallow and clear over a small stream's stony bed.
+// Far away, where a pixel spans the foam pattern, the white takes its mean cover instead (no shimmer, still white).
+// Falls (hydrology.falls) are their own meshes on a variant of this material (FALLS): a curtain from the lip to the
+// pool, curving out over the lip, its strands falling at the speed a parcel of water has reached there; foam on the
+// plunge pool, and a puff of spray over it. The ice (withIce) is spliced after this code, so frozen water stays ice.
+
+/** Steepness (RiverLine.steepness) below which a reach is drawn as placid water, unchanged. */
+const FLOW_FROM = 0.2;
+/** Top of the speed range the ribbon's aFlow bytes hold, m/s (streams.ts flowOf clamps to 6). */
+const FLOW_SPEED_MAX = 6;
+
+let flowOff = false;
+/** Turn the running-water look off (or back on) for materials and ribbons built after this (a dev comparison). */
+export function setWaterFlow(on: boolean): void {
+  flowOff = !on;
+  flowKey = '';
+}
+let flowKey = '';
+let flowVal = false;
+/** Whether this world's water has running water to draw: a seeded network with reaches steeper than placid, or falls. */
+export function waterFlows(): boolean {
+  const rivers = hydrology.rivers;
+  if (flowOff || !rivers) return false;
+  const key = `${worldSeed()}|${era().id}|${snowShiftM()}`;
+  if (key === flowKey) return flowVal;
+  let any = (hydrology.falls?.length ?? 0) > 0;
+  for (const r of rivers) {
+    if (any) break;
+    const st = r.steepness;
+    if (st) for (let i = 0; i < st.length; i++) if (st[i] > FLOW_FROM) { any = true; break; }
+  }
+  flowKey = key;
+  flowVal = any;
+  return any;
+}
+
+const FLOW_VERTEX_HEAD = (falls: boolean): string =>
+  falls
+    ? `// Falls: kind (0 the curtain, 1 the pool's foam, 2 spray) and its two numbers (FALL_ATTRIBUTES).
+attribute vec3 aFall;
+varying vec3 vFall;
+`
+    : `// Running water: steepness 0-1, speed m/s, fall weight 0-1.
+attribute vec3 aFlow;
+varying vec3 vFlow;
+`;
+// Spray is a billboard about its centre (the vertex position), upright, turned to face the camera; aFall.yz is the
+// corner (-1..1) and aRiverInfo.z its size.
+const FALLS_BILLBOARD = /* glsl */ `
+if (aFall.x > 1.5) {
+  vec3 sC = (modelMatrix * vec4(position, 1.0)).xyz;
+  vec2 sTo = cameraPosition.xz - sC.xz;
+  vec2 sR = normalize(vec2(-sTo.y, sTo.x) + vec2(1e-4, 0.0));
+  transformed += vec3(sR.x, 0.0, sR.y) * (aFall.y * aRiverInfo.z) + vec3(0.0, aFall.z * aRiverInfo.z * 0.75, 0.0);
+}
+`;
+
+/** The whitewater on a ribbon: reads vFlow, vRiverInfo, vRiverT; adjusts the body, transmittance, roughness and waves. */
+const flowFragment = (): string => {
+  const P = PALETTES[era().palette];
+  return /* glsl */ `
+// Running water (water.ts 'flow').
+float wSpecCut = 0.0;
+if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
+  float fSt = vFlow.x;
+  float fW = max(vRiverInfo.z, 0.5);
+  float fV = clamp(vFlow.y, 0.3, 6.0);
+  float fRun = smoothstep(${FLOW_FROM.toFixed(2)}, 1.0, fSt);
+  // Share of the surface running white: a few streaks on a riffle, a tenth on gentle rapids, a third on steep ones,
+  // over half of a step-pool cascade; a fall's lip and foot all of it.
+  // Patchy along a reach (a fixed field 350 m across: the bed's boulders and bars come and go).
+  float fPatch = 0.55 + 0.9 * texture(tNoise, vWaterPos.xz * (1.0 / 350.0) + 0.43).g;
+  float fCover = max(min(0.55 * pow(fRun, 1.7) * fPatch, 0.85), vFlow.z);
+  // The pattern rides downstream at the water's speed: two phases 2 s long, each restarting (at a new offset) while
+  // the other carries it, so a change of speed along the reach never shears it.
+  float fPh0 = fract(uTime * 0.5);
+  float fPh1 = fract(uTime * 0.5 + 0.5);
+  float fB = abs(2.0 * fPh0 - 1.0);
+  // Across and along the channel, m, skewed so the tiles' repeats across a wide river do not line up.
+  vec2 fQ = vec2(vRiverInfo.x + 0.37 * vRiverInfo.y, vRiverInfo.y);
+  vec2 fO0 = fract(floor(uTime * 0.5) * vec2(0.37, 0.61));
+  vec2 fO1 = fract(floor(uTime * 0.5 + 0.5) * vec2(0.53, 0.29)) + 0.5;
+  // Foam patches drawn out along the flow (a tile 23 m across, 61 m along) and finer streaks (a tile 7 m by 19 m).
+  vec2 fS = vec2(1.0 / 23.0, 1.0 / 61.0);
+  vec4 fA = mix(texture(tNoise, (fQ - vec2(0.0, fV * fPh0 * 2.0)) * fS + fO0), texture(tNoise, (fQ - vec2(0.0, fV * fPh1 * 2.0)) * fS + fO1), fB);
+  vec4 fC = mix(texture(tNoise, (fQ - vec2(0.0, fV * fPh0 * 2.0)) * fS * 3.2 + fO0.yx), texture(tNoise, (fQ - vec2(0.0, fV * fPh1 * 2.0)) * fS * 3.2 + fO1.yx), fB);
+  // (Cross-fading two fields halves their variance midway: scale it back.)
+  float fNorm = inversesqrt(fB * fB + (1.0 - fB) * (1.0 - fB));
+  float fN = ((fA.r - 0.5) * 0.65 + (fC.g - 0.5) * 0.45) * fNorm;
+  // Standing waves on rapids: crests fixed in place across the current, their spacing the wavelength whose speed is
+  // the water's (2 pi v^2 / g), bent by a fixed noise; white flickering on them as the foam passes.
+  float fLam = clamp(0.64 * fV * fV, 1.5, 9.0);
+  float fBend = texture(tNoise, fQ * vec2(1.0 / 17.0, 1.0 / 53.0) + 0.21).b;
+  float fCrest = pow(0.5 + 0.5 * cos(6.2832 * vRiverInfo.y / fLam + fBend * 9.0), 6.0) * smoothstep(0.35, 0.6, fBend);
+  float fRapids = smoothstep(0.42, 0.6, fSt) * (1.0 - 0.6 * smoothstep(0.8, 1.0, fSt));
+  float fMid = 1.0 - smoothstep(0.3, 1.0, abs(vRiverInfo.x) / fW);
+  // (fN is near normal with a deviation of about 0.1: this threshold leaves about fCover of it above.)
+  float fThr = 0.34 * (0.5 - fCover);
+  float fWhite = smoothstep(fThr - 0.04, fThr + 0.04, fN + 0.12 * fCrest * fRapids * fMid);
+  // (None at all where the reach turns placid, so the edge of this code never shows; all of it at a full fall weight.)
+  fWhite *= max(smoothstep(0.0, 0.2, fRun), vFlow.z);
+  fWhite = max(fWhite, step(0.999, fCover));
+  // Far away: the mean cover (the pattern is finer than a pixel).
+  fWhite = mix(fWhite, min(1.0, fCover + 0.15 * fRapids), smoothstep(0.8, 5.0, footprint));
+  // Between the white: a small stream over its stony bed is shallow and clear; a bigger river aerated, paler, cloudier.
+  float fClear = (1.0 - smoothstep(2.0, 9.0, fW)) * smoothstep(0.3, 0.65, fSt);
+  vec3 fTrans = exp(-2.0 * depth * mix(1.0, 0.3, fClear) * mix(atten, ${P.seaAtten}, fClear));
+  wTrans = dot(fTrans, vec3(0.25, 0.5, 0.25)) * (1.0 - 0.45 * fRun * (1.0 - fClear));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.09, 0.075), 0.5 * fRun * (1.0 - fClear));
+  // Thick foam brightest, thin foam and spume over dark water greyer.
+  float fThick = smoothstep(fThr, fThr + 0.15, fN);
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.3, 0.33, 0.33), vec3(0.66, 0.69, 0.69), fThick), fWhite);
+  wTrans *= 1.0 - 0.9 * fWhite;
+  // Choppy, tumbling water: ripples riding the flow (steeper with the steepness, resolved only near), a rougher
+  // surface, and no mirror where it is white.
+  vec2 fT = normalize(vRiverT);
+  vec2 fRgt = vec2(-fT.y, fT.x);
+  vec2 fSl = ((fA.g - 0.5) * fT + (fC.b - 0.5) * fRgt) * (1.6 * fRun * fNorm) / (1.0 + footprint);
+  wNormal = normalize(wNormal + vec3(-fSl.x, 0.0, -fSl.y));
+  wRough = mix(mix(wRough, 0.3, fRun), 0.75, fWhite);
+  wSpecCut = 0.85 * fWhite;
+}
+`;
+};
+
+/** The falls' own shading (FALLS): the curtain, the pool's foam, the spray. */
+const fallsFragment = (): string => /* glsl */ `
+// Falls (water.ts 'flow').
+float wSpecCut = 1.0;
+float fMist = 0.0;
+{
+  vec3 fToCam = normalize(cameraPosition - vWaterPos);
+  vec3 fFace = normalize(cross(dFdx(vWaterPos), dFdy(vWaterPos)));
+  fFace *= dot(fFace, fToCam) < 0.0 ? -1.0 : 1.0;
+  float fW = max(vRiverInfo.z, 0.5);
+  vec3 fWhiteC = vec3(0.82, 0.84, 0.84);
+  if (vFall.x < 0.5) {
+    // The curtain: vRiverInfo.x across (m), vFall.y metres fallen from the lip, vFall.z the water's speed at the lip.
+    // A parcel there went over the lip tY ago: its strands are sampled at that moment, so they fall and stretch out
+    // as the water speeds up, and never shear.
+    float fY = max(vFall.y, 0.0);
+    float fV0 = max(vFall.z, 0.5);
+    float fTau = uTime - (sqrt(fV0 * fV0 + 19.62 * fY) - fV0) / 9.81;
+    vec4 fA = texture(tNoise, vec2(vRiverInfo.x / 5.0 + vRiverInfo.y, fTau * 0.55));
+    vec4 fB = texture(tNoise, vec2(vRiverInfo.x / 1.6 + vRiverInfo.y * 1.7, fTau * 1.7));
+    // Strands: the water gathers in columns (fixed across the lip).
+    float fStrand = texture(tNoise, vec2(vRiverInfo.x / 7.0, vRiverInfo.y * 0.37)).g;
+    // Glassy over the lip, breaking up white within a couple of metres.
+    float fBreak = smoothstep(0.0, 2.0, fY);
+    float fN = 0.6 * fA.r + 0.4 * fB.g + 0.5 * (fStrand - 0.5);
+    float fWhite = smoothstep(0.52 - 0.22 * fBreak, 0.62 - 0.18 * fBreak, fN) * mix(0.55, 1.0, fBreak);
+    fWhite = mix(fWhite, 0.8, smoothstep(0.6, 3.0, footprint));
+    diffuseColor.rgb = mix(vec3(0.16, 0.2, 0.18), fWhiteC, fWhite);
+    wTrans = mix(0.75 - 0.4 * fBreak, 0.05, fWhite);
+    wNormal = normalize(fFace + vec3(0.0, 0.7, 0.0));
+    wRough = mix(0.25, 0.8, fWhite);
+    wSpecCut = mix(0.3, 1.0, fWhite);
+  } else if (vFall.x < 1.5) {
+    // Foam on the plunge pool, drifting off downstream: vRiverInfo.x across, vRiverInfo.y along from the foot (m);
+    // vDepth runs 1 at the centre to 0 at the rim.
+    float fR = clamp(vDepth, 0.0, 1.0);
+    float fPh0 = fract(uTime * 0.4);
+    float fPh1 = fract(uTime * 0.4 + 0.5);
+    float fBl = abs(2.0 * fPh0 - 1.0);
+    vec2 fQ = vec2(vRiverInfo.x, vRiverInfo.y) / 6.0;
+    float fN = mix(texture(tNoise, fQ - vec2(0.0, fPh0 * 0.8) + fract(floor(uTime * 0.4) * vec2(0.37, 0.61))).r,
+                   texture(tNoise, fQ - vec2(0.0, fPh1 * 0.8) + fract(floor(uTime * 0.4 + 0.5) * vec2(0.53, 0.29)) + 0.5).r, fBl);
+    float fWhite = smoothstep(0.62, 0.48, fN - 0.45 * fR + 0.35) * smoothstep(0.0, 0.35, fR);
+    fWhite = mix(fWhite, 0.85 * smoothstep(0.0, 0.6, fR), smoothstep(0.6, 3.0, footprint));
+    diffuseColor.rgb = fWhiteC;
+    wTrans = 1.0 - fWhite;
+    wNormal = vec3(0.0, 1.0, 0.0);
+    wRough = 0.8;
+  } else {
+    // Spray: a soft puff, rising and drifting; fainter close to (flying through it shows no card) and denser over a
+    // taller fall (vRiverInfo.x its drop).
+    vec2 fC = vFall.yz;
+    float fR2 = dot(fC, fC);
+    float fN = texture(tNoise, fC * 0.35 + vec2(vRiverInfo.y, -uTime * 0.05)).r + 0.5 * texture(tNoise, fC * 0.8 + vec2(vRiverInfo.y * 1.3, -uTime * 0.11)).g;
+    float fD = (1.0 - smoothstep(0.1, 1.0, fR2)) * smoothstep(0.45, 1.0, fN) * mix(0.12, 0.3, smoothstep(3.0, 12.0, vRiverInfo.x));
+    fD *= smoothstep(6.0, 40.0, wDist) * (1.0 - smoothstep(0.75, 1.0, fC.y));
+    diffuseColor.rgb = vec3(0.9);
+    wTrans = 1.0 - fD;
+    wNormal = normalize(fToCam + vec3(0.0, 1.0, 0.0));
+    wRough = 1.0;
+    fMist = 1.0;
+  }
+}
+`;
+
+/** Splice the running water into a river (or falls) material's shader; `ice`: the ice code follows. */
+function withFlow(shader: { vertexShader: string; fragmentShader: string }, falls: boolean, ice: boolean): void {
+  shader.vertexShader = shader.vertexShader
+    .replace('attribute float aDepth;\n', `attribute float aDepth;\n${FLOW_VERTEX_HEAD(falls)}`)
+    .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec3(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0);\n`}`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec3 vFall;\n' : 'varying vec3 vFlow;\n'}`)
+    // Before the shore foam's last line (the ice goes after it).
+    .replace('wTrans *= 1.0 - foam;\n', `${falls ? fallsFragment() : flowFragment()}wTrans *= 1.0 - foam;\n`)
+    // White water is no mirror.
+    .replace('vec3 wDirect = reflectedLight.directSpecular;\n', 'vec3 wDirect = reflectedLight.directSpecular * (1.0 - wSpecCut);\nfresnel *= 1.0 - wSpecCut;\n');
+  // Frozen spray is no snowdrift: it goes with the ice.
+  if (falls && ice) shader.fragmentShader = shader.fragmentShader.replace('float wEdge = smoothstep(-0.05, 0.25, vDepth);\n', 'float wEdge = smoothstep(-0.05, 0.25, vDepth) * (1.0 - fMist * wIce);\n');
+}
+
 /** three's physical lighting functions with the direct specular swapped for BRDF_Water. */
 const GGX_CALL = 'vec3 specularBRDF = BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, material );';
 const WATER_LIGHTS_PARS = (() => {
@@ -366,8 +581,12 @@ const WATER_LIGHTS_PARS = (() => {
   return src.replace(GGX_CALL, 'vec3 specularBRDF = BRDF_Water( directLight.direction, geometryViewDir, geometryNormal, material.roughness );');
 })();
 
-export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniforms, river: boolean): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.06, metalness: 0, transparent: true, depthWrite: true });
+/**
+ * The water material: standing water (`river` false), the river ribbons, or (`falls`, a river variant) the falls'
+ * sheets, plunge-pool foam and spray (createFallGeometries). `mist` is the falls variant drawn without depth writes.
+ */
+export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniforms, river: boolean, falls: 'sheet' | 'mist' | null = null): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.06, metalness: 0, transparent: true, depthWrite: falls !== 'mist' });
   // Premultiplied blending: the shader writes reflection + body light, and alpha = 1 - transmittance.
   mat.blending = THREE.CustomBlending;
   mat.blendEquation = THREE.AddEquation;
@@ -375,15 +594,23 @@ export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniform
   mat.blendDst = THREE.OneMinusSrcAlphaFactor;
   mat.blendSrcAlpha = THREE.OneFactor;
   mat.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
-  mat.name = river ? 'river' : 'water';
+  mat.name = falls ? `falls-${falls}` : river ? 'river' : 'water';
   // Single-sided: water is only ever seen from above, and a transparent double-sided material makes three
   // draw it in two passes, flipping its side (and re-resolving its program) twice every frame. The river
   // ribbon's triangles (createRiverGeometry) face up.
-  if (river) mat.defines = { RIVER: '' };
+  if (river) mat.defines = falls ? { RIVER: '', FALLS: '' } : { RIVER: '' };
+  if (falls) {
+    // A curtain of water is seen from either side; one pass (its normal is turned to the camera in the shader).
+    mat.side = THREE.DoubleSide;
+    mat.forceSinglePass = true;
+  }
   Object.assign(uniforms, { tNoise: { value: noise } });
   // Built now, in the era this thread was set in (never at module load).
   const main = fragmentMain();
   const ice = waterFreezes();
+  // Running water (whitewater, falls) only on a seeded world's network that has any (waterFlows()): seed 0's water
+  // and river text is unchanged.
+  const flow = river && waterFlows();
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -396,10 +623,12 @@ export function createWaterMaterial(noise: THREE.Texture, uniforms: WaterUniform
       .replace('#include <lights_physical_pars_fragment>', WATER_LIGHTS_PARS)
       .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(wNormal, 0.0)).xyz);')
       .replace('#include <opaque_fragment>', FRAGMENT_OUTPUT);
+    // Before the ice: its splices keep the anchors the flow code needs, and its mix toward snow then overrides it.
+    if (flow) withFlow(shader, falls !== null, ice);
     if (ice) withIce(shader, river);
   };
   // The ice code bakes the snow line's base into the text: it is part of the key.
-  const key = `${river ? 'river-v4' : 'water-v4'}${isPresent() ? '' : `-${era().id}`}${ice ? `-ice${snowLineBase()}` : ''}`;
+  const key = `${river ? 'river-v4' : 'water-v4'}${isPresent() ? '' : `-${era().id}`}${ice ? `-ice${snowLineBase()}` : ''}${flow ? (falls ? '-falls1' : '-flow1') : ''}`;
   mat.customProgramCacheKey = () => key;
   return mat;
 }
@@ -441,15 +670,31 @@ interface RiverBuffers {
   info: number[];
   tan: number[];
   idx: number[];
+  /** Running water (aFlow, three per vertex): only on a world where waterFlows(). */
+  flow: number[];
 }
-const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [] });
+const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [], flow: [] });
+
+/** A line as the ribbon reads it (a seeded network's lines also carry their kind and flow). */
+type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array };
+
+/** Whether sample i of a line is a fall's lip whose face (to sample i + 1) is steep enough to draw as a curtain. */
+function curtainAt(r: RibbonLine, i: number): boolean {
+  if (r.regime?.[i] !== REGIME.fall || i + 1 >= r.level.length) return false;
+  const drop = r.level[i] - r.level[i + 1];
+  const run = Math.hypot(r.north[i + 1] - r.north[i], r.east[i + 1] - r.east[i]);
+  return drop >= 1 && run < 1.5 * drop;
+}
 const RIBBON_ACROSS = [-1.2, -0.55, 0, 0.55, 1.2];
 
 /** Append the ribbon of samples [from, to) of a river line (it stops at the coast); returns the index after the last row. */
-function ribbonRows(r: { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array }, from: number, to: number, b: RiverBuffers): number {
+function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, flow = false): number {
   const count = r.north.length;
   const across = RIBBON_ACROSS;
   const { pos, depth, info, tan, idx } = b;
+  // Running water: the flow per row, and no ribbon down a fall's face (createFallGeometries draws its curtain).
+  const flowing = flow && !!r.steepness && !!r.speed && !!r.regime;
+  const curtain: boolean[] = [];
   const first = pos.length / 3;
   let rows = 0;
   let i = from;
@@ -464,7 +709,15 @@ function ribbonRows(r: { north: Float64Array; east: Float64Array; level: Float64
     const pe = -tn / tl;
     const pn = te / tl;
     const w = r.halfWidth[i];
-    const centreDepth = 2.2 + w * 0.05;
+    // A stream (kind 1) is shallow: its bed can show through.
+    const centreDepth = flowing && r.kind === 1 ? Math.min(2.2 + w * 0.05, 0.3 + 0.3 * w) : 2.2 + w * 0.05;
+    let fall = 0;
+    if (flowing) {
+      const lip = r.regime![i] === REGIME.fall;
+      // Whiter over a lip and below a fall's foot (the row after its lip; its pool's foam is createFallGeometries').
+      fall = lip ? 0.3 : i > 0 && r.regime![i - 1] === REGIME.fall ? 0.6 : 0;
+      curtain.push(curtainAt(r, i));
+    }
     for (const a of across) {
       const off = a * w;
       const e = r.east[i] + pe * off;
@@ -474,10 +727,12 @@ function ribbonRows(r: { north: Float64Array; east: Float64Array; level: Float64
       // The across offset points to the left bank; RiverHit.side and the shader count toward the right.
       info.push(-off, r.s[i], w);
       tan.push(te / tl, -tn / tl);
+      if (flowing) b.flow.push(r.steepness![i], r.speed![i], fall);
     }
     rows++;
   }
   for (let j = 0; j < rows - 1; j++) {
+    if (curtain[j]) continue;
     for (let k = 0; k < across.length - 1; k++) {
       const a = first + j * across.length + k;
       const c = a + across.length;
@@ -495,6 +750,12 @@ function riverGeometryOf(b: RiverBuffers): THREE.BufferGeometry {
   g.setAttribute('aDepth', new THREE.Float32BufferAttribute(b.depth, 1));
   g.setAttribute('aRiverInfo', new THREE.Float32BufferAttribute(b.info, 3));
   g.setAttribute('aRiverT', new THREE.Float32BufferAttribute(b.tan, 2));
+  if (b.flow.length) {
+    // Bytes (normalised): steepness, speed over FLOW_SPEED_MAX, fall weight.
+    const f = new Uint8Array(b.flow.length);
+    for (let k = 0; k < f.length; k++) f[k] = Math.round(255 * Math.min(1, Math.max(0, k % 3 === 1 ? b.flow[k] / FLOW_SPEED_MAX : b.flow[k])));
+    g.setAttribute('aFlow', new THREE.BufferAttribute(f, 3, true));
+  }
   g.setIndex(b.idx);
   g.computeBoundingSphere();
   return g;
@@ -512,6 +773,7 @@ const RIVER_PIECE = 240;
 export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
   const rivers = hydrology.rivers;
   if (!rivers) return [];
+  const flow = waterFlows();
   const chunks = new Map<string, RiverBuffers>();
   const lakes = hydrology.lakes;
   // Where a river runs through a lake the lake's water covers it: no ribbon there (it would lie in the lake's plane).
@@ -545,10 +807,167 @@ export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
         let b = chunks.get(key);
         if (!b) chunks.set(key, (b = riverBuffers()));
         const end = Math.min(to, piece + RIVER_PIECE + 1);
-        if (ribbonRows(r, piece, end, b) < end) coast = true;
+        if (ribbonRows(r, piece, end, b, flow) < end) coast = true;
       }
       if (coast) break;
     }
   }
   return [...chunks.values()].filter((b) => b.idx.length > 0).map(riverGeometryOf);
+}
+
+/** Rows down a fall's curtain, and the foam patch's lattice (FOAM_N x FOAM_N). */
+const CURTAIN_ROWS = 7;
+const CURTAIN_ACROSS = [-1, -0.5, 0, 0.5, 1];
+const FOAM_N = 5;
+/** Falls are grouped in square chunks this size, m: few vertices each, so coarser than the ribbons' (fewer draw calls). */
+const FALL_CHUNK = 40000;
+
+/** A falls chunk's vertex data: the river ribbon's attributes plus aFall (kind, and two numbers for that kind). */
+interface FallBuffers extends RiverBuffers {
+  fall: number[];
+}
+
+/** A line's value of `v` at arc length sv (clamped to its ends). */
+function alongLine(r: RibbonLine, v: Float64Array, sv: number, hint: number): number {
+  let i = Math.max(0, Math.min(r.s.length - 2, hint));
+  while (i > 0 && r.s[i] > sv) i--;
+  while (i < r.s.length - 2 && r.s[i + 1] < sv) i++;
+  const t = Math.min(1, Math.max(0, (sv - r.s[i]) / Math.max(1e-6, r.s[i + 1] - r.s[i])));
+  return v[i] + (v[i + 1] - v[i]) * t;
+}
+
+/**
+ * A seeded world's falls (hydrology.falls) as meshes for the falls material, in FALL_CHUNK squares: `sheets`
+ * holds each fall's curtain (from the lip, where the ribbon stops, curving out and down to its foot, where the ribbon
+ * goes on) and the foam on its plunge pool; `spray` the puff of spray over the pool (drawn after, without depth writes).
+ * Empty unless the world's water flows (waterFlows()).
+ */
+export function createFallGeometries(): { sheets: THREE.BufferGeometry[]; spray: THREE.BufferGeometry[] } {
+  const rivers = hydrology.rivers;
+  const falls = hydrology.falls;
+  if (!rivers || !falls?.length || !waterFlows()) return { sheets: [], spray: [] };
+  const sheetChunks = new Map<string, FallBuffers>();
+  const sprayChunks = new Map<string, FallBuffers>();
+  const chunk = (m: Map<string, FallBuffers>, n: number, e: number): FallBuffers => {
+    const key = `${Math.floor(n / FALL_CHUNK)},${Math.floor(e / FALL_CHUNK)}`;
+    let b = m.get(key);
+    if (!b) m.set(key, (b = { ...riverBuffers(), fall: [] }));
+    return b;
+  };
+  const mask = hydrology.lakeMask;
+  falls.forEach((f, fi) => {
+    const r = rivers[f.line] as RibbonLine;
+    const i = f.index;
+    if (i + 1 >= r.level.length || r.level[i] < 0.3) return;
+    // Under a lake's water there is no fall to see.
+    if (mask && mask.at(r.north[i + 1], r.east[i + 1]) > -Infinity) return;
+    const top = r.level[i];
+    const bottom = r.level[i + 1];
+    const drop = top - bottom;
+    if (drop < 1) return;
+    const dn = r.north[i + 1] - r.north[i];
+    const de = r.east[i + 1] - r.east[i];
+    const run = Math.hypot(dn, de) || 1;
+    // Flow direction (north, east) and the unit toward the left bank (the ribbon's across direction).
+    const un = dn / run;
+    const ue = de / run;
+    const ln = ue;
+    const le = -un;
+    const v0 = r.speed?.[i] ?? 1;
+    const seed = ((fi * 0.6180339887) % 1) * 40;
+    const hw0 = r.halfWidth[i];
+    const hw1 = r.halfWidth[i + 1];
+    const b = chunk(sheetChunks, r.north[i], r.east[i]);
+    if (curtainAt(r, i)) {
+      // The curtain: a parabola from the lip (leaving it level) to the foot, y = drop u, out = run sqrt(u); it stands
+      // in front of the straight face the terrain is cut to. Narrowing a little as it falls; soft at the sides.
+      const first = b.pos.length / 3;
+      for (let k = 0; k < CURTAIN_ROWS; k++) {
+        const u = k / (CURTAIN_ROWS - 1);
+        const out = run * Math.sqrt(u);
+        const y = top - drop * u + 0.03;
+        const hw = (hw0 + (hw1 - hw0) * u) * (1 - 0.12 * u);
+        for (const a of CURTAIN_ACROSS) {
+          const n = r.north[i] + un * out + ln * a * hw;
+          const e = r.east[i] + ue * out + le * a * hw;
+          b.pos.push(e, y, -n);
+          b.depth.push(Math.abs(a) > 0.99 ? -0.05 : 1);
+          b.info.push(-a * hw, seed, hw);
+          b.tan.push(ue, -un);
+          b.fall.push(0, drop * u, v0);
+        }
+      }
+      const nA = CURTAIN_ACROSS.length;
+      for (let k = 0; k < CURTAIN_ROWS - 1; k++) {
+        for (let c = 0; c < nA - 1; c++) {
+          const a = first + k * nA + c;
+          const d = a + nA;
+          b.idx.push(a, d, a + 1, a + 1, d, d + 1);
+        }
+      }
+    }
+    // Foam on the plunge pool: an ellipse from just under the curtain to some way downstream, on the water's level.
+    const along = 0.5 * drop + 0.8 * hw1 + 1.5;
+    const acrossR = 1.25 * hw1 + 1;
+    const back = Math.min(run, 1 + 0.2 * drop);
+    const sFoot = r.s[i + 1];
+    {
+      const first = b.pos.length / 3;
+      for (let p = 0; p < FOAM_N; p++) {
+        // -1 at the upstream end (under the curtain), +1 downstream.
+        const x = (2 * p) / (FOAM_N - 1) - 1;
+        const dAlong = x < 0 ? x * back : x * along;
+        const sv = sFoot + dAlong;
+        const cn = alongLine(r, r.north, sv, i + 1);
+        const ce = alongLine(r, r.east, sv, i + 1);
+        const lv = (dAlong < 0 ? bottom : alongLine(r, r.level, sv, i + 1)) + 0.05;
+        for (let q = 0; q < FOAM_N; q++) {
+          const z = (2 * q) / (FOAM_N - 1) - 1;
+          const n = cn + ln * z * acrossR;
+          const e = ce + le * z * acrossR;
+          b.pos.push(e, lv, -n);
+          b.depth.push(1 - Math.min(1, x * x + z * z));
+          b.info.push(-z * acrossR, dAlong, hw1);
+          b.tan.push(ue, -un);
+          b.fall.push(1, drop, v0);
+        }
+      }
+      for (let p = 0; p < FOAM_N - 1; p++) {
+        for (let q = 0; q < FOAM_N - 1; q++) {
+          const a = first + p * FOAM_N + q;
+          const d = a + FOAM_N;
+          b.idx.push(a, d, a + 1, a + 1, d, d + 1);
+        }
+      }
+    }
+    // Spray: one upright card turned to the camera in the shader, centred over the pool.
+    {
+      const sb = chunk(sprayChunks, r.north[i], r.east[i]);
+      const size = 0.5 * drop + 0.4 * hw1 + 2;
+      const cn = r.north[i + 1] + un * 0.2 * drop;
+      const ce = r.east[i + 1] + ue * 0.2 * drop;
+      const cy = bottom + 0.75 * size * 0.8;
+      const first = sb.pos.length / 3;
+      for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        sb.pos.push(ce, cy, -cn);
+        sb.depth.push(1);
+        sb.info.push(drop, seed, size);
+        sb.tan.push(ue, -un);
+        sb.fall.push(2, cx, cz);
+      }
+      sb.idx.push(first, first + 1, first + 2, first + 2, first + 1, first + 3);
+    }
+  });
+  const build = (b: FallBuffers): THREE.BufferGeometry => {
+    const g = riverGeometryOf(b);
+    g.setAttribute('aFall', new THREE.Float32BufferAttribute(b.fall, 3));
+    // The spray cards stand up to their size over their centre: widen the bounds so they are not culled early.
+    g.computeBoundingSphere();
+    if (g.boundingSphere) g.boundingSphere.radius += 30;
+    return g;
+  };
+  return {
+    sheets: [...sheetChunks.values()].filter((b) => b.idx.length > 0).map(build),
+    spray: [...sprayChunks.values()].filter((b) => b.idx.length > 0).map(build),
+  };
 }

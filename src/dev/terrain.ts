@@ -1,5 +1,7 @@
 // Terrain, water and vegetation harness page.
 //   dev/terrain.html?cam=north,east,alt&look=north,east,alt&tod=9.5&quality=high&veg=1&haze=1&stats=1
+//   snowshift=M: snow line moved by M m (negative lowers it: frozen water).
+//   flow=0: no running water (whitewater, falls) on a seeded world's rivers.
 //   camagl=H / lookagl=H: treat the cam / look altitudes as heights above the terrain instead of MSL.
 //   era=cretaceous: the world era (read by harness.ts before this page builds anything): its palette, land cover
 //   and the Flats where the airfield was. A strip close-up (150 m over LINE_UP 07): cam=-301,-827,270&look=300,830,120.
@@ -13,6 +15,8 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import type { SimContext } from '../core/context';
 import { DEPTH_GLSL } from '../core/shaderLib';
 import { TerrainSystem, terrainHeight } from '../world/terrain';
+import { setSnowShift } from '../world/terrain/heightfield';
+import { setWaterFlow } from '../world/terrain/water';
 import { runHarness } from './harness';
 
 const params = new URLSearchParams(location.search);
@@ -20,6 +24,10 @@ const quality = (params.get('quality') ?? 'high') as SimContext['quality'];
 const haze = params.get('haze') !== '0';
 const showStats = params.get('stats') === '1';
 
+// flow=0: the rivers without running water (whitewater, falls), for a before/after comparison.
+if (params.get('flow') === '0') setWaterFlow(false);
+// snowshift=M: move the snow line by M metres (negative: lower), e.g. to see frozen falls.
+if (params.has('snowshift')) setSnowShift(Number(params.get('snowshift')));
 const terrain = new TerrainSystem({ vegetation: params.get('veg') !== '0' });
 let sun: THREE.DirectionalLight;
 let post: { target: THREE.WebGLRenderTarget; scene: THREE.Scene; camera: THREE.Camera; material: THREE.ShaderMaterial } | null = null;
