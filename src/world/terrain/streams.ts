@@ -63,7 +63,7 @@ const CLIMB_HEIGHT = 25;
  * it ends in the hollow instead (a sink). A lake's outlet goes on over up to FORCE_HEIGHT_OUTLET (its lake drains that
  * way on the lattice): it cuts a gorge through the rim. */
 const FORCE_HEIGHT = 40;
-const FORCE_HEIGHT_OUTLET = 70;
+const FORCE_HEIGHT_OUTLET = 40;
 /** Highest an outlet's way out may rise over its lake's water, m: the deepest its overflow has worn the rim down (a
  * broad breach, BREACH_*). A lake whose every way out rises higher has no outlet. */
 const OUTLET_SILL = 80;
@@ -82,17 +82,37 @@ const TARN_OVER = 1;
 const TARN_BREACHED = 3;
 /**
  * Where a stream's water runs more than BREACH_MIN under the ground it crosses (it has worn its way through a rim, a
- * sill, a lake's outlet) the ground was worn away broadly, not cut as a trench: a floor BREACH_BASE + BREACH_PER_M per
- * metre of the cut wide either side (at most BREACH_MAX), walls rising at BREACH_WALL beyond (heightfield.ts carves it).
+ * sill, a lake's outlet, or cut a gorge below a fall) the ground was worn away broadly, not cut as a trench: a floor
+ * BREACH_BASE + BREACH_PER_M per metre of the cut wide either side, walls beyond (breachWall; heightfield.ts carves it).
  * A lake's outlet wears its rim down over a width that grows with the lake (breachOfLake), and the scar narrows over
  * BREACH_SCAR m beyond the rim.
  */
 const BREACH_MIN = 3;
 const BREACH_BASE = 12;
 const BREACH_PER_M = 1.2;
-const BREACH_MAX = 260;
-export const BREACH_WALL = 0.45;
+/** (The floor widens with the cut up to BREACH_CUT_WIDE m of it: a deeper cut is a gorge, its walls rising higher.) */
+const BREACH_CUT_WIDE = 30;
 const BREACH_SCAR = 700;
+/** A breach's walls rise at BREACH_WALL for their first BREACH_LOW m, then at BREACH_STEEP (rock): 24 then 45 degrees. */
+const BREACH_WALL = 0.45;
+const BREACH_LOW = 20;
+const BREACH_STEEP = 1;
+/** Height of a breach's wall at `x` m beyond its floor, m. */
+export function breachWall(x: number): number {
+  const xl = BREACH_LOW / BREACH_WALL;
+  return x < xl ? BREACH_WALL * x : BREACH_LOW + BREACH_STEEP * (x - xl);
+}
+/** How far from its line a breach of floor half-width `bw` cut `cut` m under the ground reaches (its walls' top, with a
+ * margin: heightfield.ts fades the carving out over the last part), m. */
+export function breachReachOf(bw: number, cut: number): number {
+  const c = Math.max(cut, 10) * 1.5 + 10;
+  const xl = BREACH_LOW / BREACH_WALL;
+  return bw + (c < BREACH_LOW ? c / BREACH_WALL : xl + (c - BREACH_LOW) / BREACH_STEEP) + 30;
+}
+/** The floor half-width of a breach cut `cut` m under the ground, m (0 under BREACH_MIN). */
+export function breachOfCut(cut: number): number {
+  return cut > BREACH_MIN ? BREACH_BASE + BREACH_PER_M * Math.min(cut, BREACH_CUT_WIDE) : 0;
+}
 /** Half-width of a lake's breach (its outlet's rim worn down), m, for a lake of `km2`: about 50 m for a tarn, 150 for a
  * lake of 2 km², 250 for one of 8 km², at most 300. */
 const breachOfLake = (km2: number): number => Math.min(300, Math.max(50, 30 + 85 * Math.sqrt(Math.max(0, km2))));
@@ -191,8 +211,9 @@ export interface StreamReport {
   /** Streams that end in a hollow (a sink with no water beside it). */
   hollows: number;
   floods: number;
-  /** Tarns lowered to a channel cutting through their shore. */
+  /** Tarns lowered to a channel cutting through their shore, and those left holding water. */
   tarnsDrained: number;
+  tarnsWet: number;
   /** Why outlet streams ended short (sink or stuck), counted. */
   outletSinkWhy: Record<string, number>;
   /** Hollows that hold water (tarns, TarnMask), and their depth over their floor, m; stream samples in a broad breach. */
@@ -227,7 +248,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   const n = d.n;
   const R = RASTER_N;
   const nR = rivers.length;
-  const report: StreamReport = { pools: 0, riverPools: 0, outlets: 0, outletToLake: 0, outletToSea: 0, outletNone: 0, heads: 0, traced: 0, ends: {}, outletEnds: {}, km: 0, steps: 0, outletSteps: 0, levelSamples: 0, notch: [], notchOutlet: [], pits: 0, sinks: 0, sinkGap: [], sinkGapLake: [], sinkGapLast: [], hollows: 0, floods: 0, outletSinkWhy: {}, tarns: 0, tarnsDrained: 0, tarnDepth: [], breachSamples: 0, forced: 0, samples: 0, ms: 0, tracePhases: [], outletSamples: 0, outletSill: [], outletHigh: 0 };
+  const report: StreamReport = { pools: 0, riverPools: 0, outlets: 0, outletToLake: 0, outletToSea: 0, outletNone: 0, heads: 0, traced: 0, ends: {}, outletEnds: {}, km: 0, steps: 0, outletSteps: 0, levelSamples: 0, notch: [], notchOutlet: [], pits: 0, sinks: 0, sinkGap: [], sinkGapLake: [], sinkGapLast: [], hollows: 0, floods: 0, outletSinkWhy: {}, tarns: 0, tarnsDrained: 0, tarnsWet: 0, tarnDepth: [], breachSamples: 0, forced: 0, samples: 0, ms: 0, tracePhases: [], outletSamples: 0, outletSill: [], outletHigh: 0 };
 
   // --- The ground on the raster, sampled as the traces need it: without the small-scale relief (the terrain takes it
   // away along a stream, heightfield.ts carveNetwork), for the routing and the water level alike.
@@ -842,7 +863,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     for (let i = 0; i < count; i++) {
       cut[i] = Math.max(0, og[i] - STREAM_DEPTH - level[i]);
-      if (cut[i] > BREACH_MIN) breach[i] = Math.min(BREACH_MAX, BREACH_BASE + BREACH_PER_M * cut[i]);
+      breach[i] = breachOfCut(cut[i]);
     }
     if (pool >= 0) {
       // A lake's outlet: its rim worn down over a width that grows with the lake, from the lake across the rim to where
@@ -1065,33 +1086,64 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     };
     for (const L of rivers) scan(L);
     for (const L of streams) scan(L);
-    for (let t = 0; t < tarns.length; t++) {
-      if (lowest[t] === Infinity) continue;
-      const water = lowest[t] + TARN_OVER;
+    /** Lower tarn t's water to `water`: its points over that dry, its overflow stream's water through it lowered. */
+    const drain = (t: number, water: number): void => {
+      if (!(water < tarns[t].level)) return;
       report.tarnsDrained++;
       tarns[t].level = water;
       let left = 0;
       for (const k of tarnPts[t]) {
+        if (tarnGrid[k] - 1 !== t) continue;
         if ((ground0.get(k) ?? G(k)) >= water) tarnGrid[k] = 0;
         else left++;
       }
       tarns[t].points = left;
       const line = tarns[t].line - nR;
-      if (line < 0) continue;
+      if (line < 0) return;
       const st = streams[line];
       for (let i = 0; i < st.level.length; i++) {
         const k = sampleAt(st.north[i], st.east[i]);
         const before = st.level[i];
-        if (tarnNear[k] - 1 === t) st.level[i] = Math.min(st.level[i], water - STREAM_DEPTH);
+        if (k >= 0 && k < R * R && tarnNear[k] - 1 === t) st.level[i] = Math.min(st.level[i], water - STREAM_DEPTH);
         if (i > 0) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
         if (st.level[i] < before) {
           st.cut[i] += before - st.level[i];
-          if (st.cut[i] > BREACH_MIN) st.breach[i] = Math.max(st.breach[i], Math.min(BREACH_MAX, BREACH_BASE + BREACH_PER_M * st.cut[i]));
+          st.breach[i] = Math.max(st.breach[i], breachOfCut(st.cut[i]));
         }
       }
+    };
+    for (let t = 0; t < tarns.length; t++) if (lowest[t] < Infinity) drain(t, lowest[t] + TARN_OVER);
+    // A tarn's rim as its ground lies (a tarn filled beside it raised the routing ground over its points, and it may
+    // have drained since): where it is lower than the water, the tarn drains to it. Repeated, as one draining can
+    // lower another's rim.
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      for (let t = 0; t < tarns.length; t++) {
+        if (tarns[t].points === 0) continue;
+        let rim = Infinity;
+        for (const k of tarnPts[t]) {
+          if (tarnGrid[k] - 1 !== t) continue;
+          const ki = Math.floor(k / R);
+          const kj = k % R;
+          for (let a = 0; a < 8; a++) {
+            const q = (ki + DI[a]) * R + kj + DJ[a];
+            if (tarnGrid[q] - 1 === t) continue;
+            // (Another tarn's water beside it is its rim at that level; a channel's course is its overflow.)
+            const o = tarnGrid[q] - 1;
+            const g = o >= 0 ? tarns[o].level : occ[q] !== 0 ? Infinity : (ground0.get(q) ?? G(q));
+            rim = Math.min(rim, g);
+          }
+        }
+        if (rim < tarns[t].level - 1) {
+          drain(t, rim - TARN_BELOW);
+          changed = true;
+        }
+      }
+      if (!changed) break;
     }
   }
 
+  report.tarnsWet = tarns.filter((t) => t.points > 0).length;
   // --- Catchment summed down the network: each stream's own (its source and what it gathers), plus every stream
   // that joins it from its confluence on (latest first: a stream only ever joins one traced before it).
   for (let j = streams.length - 1; j >= 0; j--) {
@@ -1363,7 +1415,7 @@ const RIM_TOP = 0.4;
 const RIM_W = 0.45;
 const RIM_SLOPE = 8;
 const RIM_DEEP = 3;
-const RIM_MAX = 40;
+const RIM_MAX = 120;
 
 /**
  * The tarns streams.ts filled: each a set of points of the 250 m lake raster with the level of its water. A point lies
@@ -1415,15 +1467,24 @@ export class TarnMask {
     const c10 = g[k + RASTER_N] - 1;
     const c11 = g[k + RASTER_N + 1] - 1;
     if (c00 < 0 && c01 < 0 && c10 < 0 && c11 < 0) return false;
-    let id = c00;
-    if (c01 >= 0 && (id < 0 || this.tarns[c01].level > this.tarns[id].level)) id = c01;
-    if (c10 >= 0 && (id < 0 || this.tarns[c10].level > this.tarns[id].level)) id = c10;
-    if (c11 >= 0 && (id < 0 || this.tarns[c11].level > this.tarns[id].level)) id = c11;
+    // The tarn with the most weight among the corners (two tarns can share a cell).
     const tx = smooth(0, 1, x - j);
     const ty = smooth(0, 1, y - i);
-    this.w = (c00 === id ? (1 - tx) * (1 - ty) : 0) + (c01 === id ? tx * (1 - ty) : 0) + (c10 === id ? (1 - tx) * ty : 0) + (c11 === id ? tx * ty : 0);
-    this.id = id;
-    return true;
+    const w00 = (1 - tx) * (1 - ty);
+    const w01 = tx * (1 - ty);
+    const w10 = (1 - tx) * ty;
+    const w11 = tx * ty;
+    this.w = 0;
+    this.id = -1;
+    for (const c of [c00, c01, c10, c11]) {
+      if (c < 0 || c === this.id) continue;
+      const w = (c00 === c ? w00 : 0) + (c01 === c ? w01 : 0) + (c10 === c ? w10 : 0) + (c11 === c ? w11 : 0);
+      if (w > this.w) {
+        this.w = w;
+        this.id = c;
+      }
+    }
+    return this.id >= 0;
   }
   /** The level of the tarn whose shore or water the point lies in (any corner of its cell), -Infinity: none. */
   rimLevel(north: number, east: number): number {

@@ -16,7 +16,7 @@ import { macroAt, setLayoutGround, type Macro } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
-import { BREACH_WALL } from './streams';
+import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth } from './drainage';
 import { buildErosion, erosionCutAt, erosionGullies, sampleErosion, type ErosionField, type ErosionSample } from './erosion';
@@ -585,7 +585,7 @@ const BREACH_FLOOR = 0.6;
 const BREACH_RISE = 1.2;
 function breachProfile(d: number, breach: number): number {
   if (d < breach) return BREACH_FLOOR + BREACH_RISE * (d / breach) * (d / breach);
-  return BREACH_FLOOR + BREACH_RISE + BREACH_WALL * (d - breach);
+  return BREACH_FLOOR + BREACH_RISE + breachWall(d - breach);
 }
 
 /** The meandering river: its valley, oxbow lakes and channel cut into the terrain height h; fills out's river fields. */
@@ -728,7 +728,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       // Nor beside a lake standing higher (its domain and a raster point round it, LakeMask.holds), nor a tarn's shore.
       if (c.breach > 0 && mask && mask.holds(north, east) > 0) keep = Math.max(keep, mask.holdLevel + 0.5);
       if (tarnRim > c.level + 3) keep = Math.max(keep, tarnRim + 0.4);
-      if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, c.level + breachProfile(d, c.breach), 3)) - h) * open;
+      // (Faded out over the last fifth of its reach, where its walls should long since have met the ground.)
+      if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, c.level + breachProfile(d, c.breach), 3)) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
       const w = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
       if (w <= 0.3) continue;
       const banks = smin(h, c.level + streamBanks(d, w, c.s, c.side, c.line), 0.5 + 0.3 * w);
@@ -746,6 +747,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     }
     const w = c.halfWidth * (1 - smooth(0, 60, c.beyondSource));
     if (w <= 0.5) continue;
+    // A gorge below a fall (falls.ts): worn broadly, as a stream's breach.
+    if (c.breach > 0) h += (smin(h, c.level + breachProfile(d, c.breach), 3) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
     let carved = smin(h, c.level + channelProfile(d, w), 3);
     // A natural levee is a few metres at most: never a bank raised far over the plain (a wall).
     // (Judged on the ground before a stream's banks raised it: a levee on top of a stream's bank would be a wall.)

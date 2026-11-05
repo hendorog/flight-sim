@@ -149,7 +149,7 @@ it('outlet sinks and tarns', () => {
     const tarns: any[] = (h.lakeMask?.pools ?? []).slice((h.lakeMask?.pools?.length ?? 0) - (rep.tarns ?? 0));
     const hi = tarns.filter((t) => t.level > 700).length;
     const wet = tarns.filter((t: any) => true).length; void wet;
-    console.log(`H2 seed ${seed} OUTLETSINK ${JSON.stringify(rep.outletSinkWhy)}; tarns ${rep.tarns} drained ${rep.tarnsDrained} (over 700 m ${hi}), depth p10/p50/p90/max ${q(td, 0.1).toFixed(0)}/${q(td, 0.5).toFixed(0)}/${q(td, 0.9).toFixed(0)}/${Math.max(0, ...td).toFixed(0)} m; breach samples ${rep.breachSamples}; outlets ${rep.outlets} to lake ${rep.outletToLake} to sea ${rep.outletToSea} none ${rep.outletNone} high ${rep.outletHigh}`);
+    console.log(`H2 seed ${seed} OUTLETSINK ${JSON.stringify(rep.outletSinkWhy)}; tarns ${rep.tarns} drained ${rep.tarnsDrained} holding water ${rep.tarnsWet} (over 700 m ${hi}), depth p10/p50/p90/max ${q(td, 0.1).toFixed(0)}/${q(td, 0.5).toFixed(0)}/${q(td, 0.9).toFixed(0)}/${Math.max(0, ...td).toFixed(0)} m; breach samples ${rep.breachSamples}; outlets ${rep.outlets} to lake ${rep.outletToLake} to sea ${rep.outletToSea} none ${rep.outletNone} high ${rep.outletHigh}`);
   }
   setWorldSeed(0);
 });

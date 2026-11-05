@@ -204,8 +204,9 @@ export interface ChannelNear {
   line: number;
   /** RiverLine.kind: 0 a river, 1 a stream (carved as a narrow notch). */
   kind: number;
-  /** A stream's broad breach here (RiverLine.breach), m: 0 none. */
+  /** A stream's broad breach here (RiverLine.breach), m: 0 none; and how far from the line it is carved, m. */
   breach: number;
+  reach: number;
   dist: number;
   side: number;
   level: number;

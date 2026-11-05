@@ -11,7 +11,7 @@
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
-import { BREACH_WALL, channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport, type TarnMask } from './streams';
+import { breachOfCut, breachReachOf, channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport, type TarnMask } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { macroAt, type Macro } from './seededLayout';
@@ -751,7 +751,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const wet = (pn: number, pe: number): boolean => mask.at(pn, pe) > -Infinity;
     const alpine = (pn: number, pe: number): boolean => macroAt(pn, pe, macro).uplift > HANG_UPLIFT;
     const inputs: ShapeInput[] = allLines.map((c, li) => ({
-      a: { ...(c as unknown as Record<string, Float64Array>), area: channelArea[li] } as unknown as LineArrays,
+      // (A river's breach and cut, as a stream's: none until a fall's gorge lowers it. Its level a copy: the old one
+      // measures how far the shaping lowered it.)
+      a: { ...(li < nR ? { breach: new Float64Array(c.s.length), cut: new Float64Array(c.s.length) } : {}), ...(c as unknown as Record<string, Float64Array>), level: Float64Array.from(c.level), area: channelArea[li] } as unknown as LineArrays,
       kind: kinds[li],
       joins: joinsOf(li),
       joinS: joinsOf(li) >= 0 ? joinSOf(li) : 0,
@@ -761,6 +763,18 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }));
     const shaped = shapeLines(inputs, faultIndex, CONFLUENCE_GRADIENT);
     for (let li = 0; li < allLines.length; li++) {
+      // A stream lowered (a gorge below a fall, its last reach a cascade down to its mouth) runs that much deeper
+      // under the ground: its breach (streams.ts) follows.
+      {
+        const old = allLines[li];
+        const a = inputs[li].a;
+        for (let i = 0; i < a.s.length; i++) {
+          const lowered = sampleAt(old.s, old.level, a.s[i]) - a.level[i];
+          if (lowered <= 0.5) continue;
+          a.cut[i] += lowered;
+          a.breach[i] = Math.max(a.breach[i], breachOfCut(a.cut[i]));
+        }
+      }
       const { area, ...rest } = inputs[li].a;
       Object.assign(allLines[li], rest);
       channelArea[li] = area;
@@ -785,15 +799,21 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // a line's nearest listed segment, so a nearer one left unlisted (a smaller reach) would put a seam at a cell edge).
   // One channel index serves both the carving (within the bank) and queryRiver (out to CHANNEL_REACH).
   // A stream's broad breaches (streams.ts) reach out to their walls' top: its segments there are listed that far.
-  const breachReach = allLines.map((c, li) => {
-    if (li < nR) return null;
+  const breachReach = allLines.map((c) => {
     const b = (c as { breach: Float64Array }).breach;
     const k = (c as { cut: Float64Array }).cut;
     const r = new Float64Array(b.length);
-    for (let i = 0; i < b.length; i++) r[i] = b[i] > 0 ? b[i] + k[i] / BREACH_WALL + 30 : 0;
-    return r;
+    let any = false;
+    for (let i = 0; i < b.length; i++) {
+      r[i] = b[i] > 0 ? breachReachOf(b[i], k[i]) : 0;
+      if (b[i] > 0) any = true;
+    }
+    return any ? r : null;
   });
-  const channelIndex = new SegmentIndex(allLines, (li, i) => (li < nR ? CHANNEL_REACH : Math.max(STREAM_REACH, (breachReach[li] as Float64Array)[i], (breachReach[li] as Float64Array)[i + 1])), CHANNEL_CELL);
+  const channelIndex = new SegmentIndex(allLines, (li, i) => {
+    const br = breachReach[li];
+    return Math.max(li < nR ? CHANNEL_REACH : STREAM_REACH, br ? Math.max(br[i], br[i + 1]) : 0);
+  }, CHANNEL_CELL);
   const wideIndex = channelIndex;
   tPhase.push(performance.now());
   traced.report.phases = tPhase.slice(1).map((t, i) => t - tPhase[i]);
@@ -829,7 +849,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     channels(pn, pe, out) {
       return channelIndex.perLine(pn, pe, (li, i, t, dist, side, u, k) => {
         const r = allLines[li];
-        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0, breach: 0 });
+        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0, breach: 0, reach: 0 });
         o.line = li;
         o.kind = kinds[li];
         o.dist = dist;
@@ -842,7 +862,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         if (br && (br[i] > 0 || br[i + 1] > 0)) {
           const b = (r as { breach: Float64Array }).breach;
           o.breach = b[i] + (b[i + 1] - b[i]) * t;
-          return dist < Math.max(o.halfWidth + CHANNEL_MARGIN, br[i] + (br[i + 1] - br[i]) * t);
+          o.reach = Math.max(br[i], br[i + 1]);
+          return dist < Math.max(o.halfWidth + CHANNEL_MARGIN, o.reach);
         }
         o.breach = 0;
         return dist < o.halfWidth + CHANNEL_MARGIN;
@@ -961,7 +982,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR], breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut } : {}), area: channelArea[li], ...flows[li], grain: grains[li] })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li] })),
     falls,
     faults,
     queryFlow,
