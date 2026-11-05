@@ -281,6 +281,40 @@ a parked aircraft's full-detail model, which uses the same programs, was drawn f
 of one).
 Close with: `renderer.compileAsync` on a new exterior before it is shown (the far model meanwhile).
 
+### AI traffic taxis round corners in a series of jinks — **defect (owner report 2026-11-05)**
+
+Seen from the cockpit: an AI aircraft takes a taxiway corner as a polygon ("octagon style"): short straights joined
+by abrupt heading changes. A real one steers through a smooth arc on the nosewheel and rudder. The cause is two
+coarse steps:
+- The route (`atc/taxi.ts` `roundCorners`) is a Bezier sampled at only ARC_POINTS = 8 chords per corner, about
+  3.5 m each on the 18 m radius.
+- `atc/circuit.ts` `stepTaxi` pure-pursues a look-ahead of max(5 m, 1.5 x speed), about two chords.
+So the heading command jumps at each vertex, and the 25 deg/s TAXI_TURN_RATE slews it there in steps. The same code
+is on main.
+Close with: steer on curvature, not on vertex headings. Either follow the arc analytically (a heading rate of
+speed / radius through the turn), or use a longer look-ahead on a finer path plus a nosewheel lag (a yaw rate that
+builds over ~0.5 s instead of stepping). Check from a cockpit following an AI aircraft round the apron corners.
+
+### AI PA-38 sits on its wheel hubs — **defect (owner report 2026-11-05), cause not yet found**
+
+Following an AI PA-38 on the ground, its wheel hubs were at the ground, as if the tyres were flat. Candidates:
+- The flown exterior pose (`a.pilot.state`, physics) with the gear sunk.
+- The kinematic pose, which stands the model at `field.elevation + restHeight` (PA-38 1.05 m) and not on the terrain
+  under it. The taxiways can lie above the field elevation.
+- The traffic model's wheel or tyre placement.
+Close with: shots of the AI PA-38 beside the player's on the same taxiway, the wheel-contact height of each pose, and
+the ground under each wheel against the ground the pose assumes.
+
+### External camera slowly drifts down to the ground — **defect (owner report 2026-11-05), cause not yet found**
+
+In an external view the camera creeps down by itself until it sits at the ground. Candidates:
+- The mouse/trackpad drag adds to `elevation` (chaseRig) or `targetElevation` (orbitRig) without a dead-band or
+  decay, so a captured pointer's small residual dy accumulates. This is the likeliest on a laptop.
+- The chase frame's pitch lag (PITCH_FOLLOW, PITCH_TAU) settles nose-down.
+- The ground-clearance clamp (1.0 m) pushes the camera along the ground instead of up.
+Close with: log `elevation` / `targetElevation` and the pointer dy over a minute with hands off, in both rigs, then
+fix the source (a dead-band on the drag, or ignore motion while the pointer is not dragging).
+
 ## Career
 
 Open items of the air-operator career ([career.md](career.md), on `feat/career` as of 2026-11-01).
