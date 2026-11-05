@@ -85,6 +85,21 @@ export function stoneAt(k: number, j: number, steep: number, grain: number, half
 }
 
 /**
+ * Steps across a step-pool reach: some lattice rows are a line of stones the water pours over (a pitch break), drawn
+ * by the shader as a glassy tongue over the lip and a white band of broken water below it. This share of the rows at
+ * full steepness (none below STEP_STEEP_LO), at row k's own position along (stepAt).
+ */
+export const STEP_SHARE = 0.3;
+export const STEP_STEEP_LO = 0.68;
+export const STEP_STEEP_HI = 0.95;
+/** Row k's step along the channel (arc length, m), or -1 where row k has none at this steepness. */
+export function stepAt(k: number, steep: number): number {
+  const h = cellHash(k, -63, 0);
+  if (f16(h) >= STEP_SHARE * smooth(STEP_STEEP_LO, STEP_STEEP_HI, steep)) return -1;
+  return (k + 0.2 + 0.6 * g16(h)) * STONE_ALONG;
+}
+
+/**
  * GLSL of the lattice (needs HASH_GLSL's hash2u): chStone(k, j, steep, grain, hw) -> vec4(s, x, r, submerged ? 1 : 0)
  * with r < 0 where the cell holds none. The world seed's hash salt is baked in (hash2i adds it in JS).
  */
@@ -106,6 +121,11 @@ vec4 chStone(int k, int j, float steep, float grain, float hw) {
   if (abs(x) > ${STONE_IN.toFixed(2)} * hw) return vec4(0.0, 0.0, -1.0, 0.0);
   float r = clamp(0.5 * grain * (0.45 + 1.25 * pow(chG(h1), 1.7)), ${STONE_R_MIN.toFixed(2)}, ${STONE_R_MAX.toFixed(2)});
   return vec4(s, x, r, chF(h2) < ${STONE_SUBMERGED.toFixed(2)} ? 1.0 : 0.0);
+}
+float chStep(int k, float steep) {
+  uint h = chHash(k, -63, 0);
+  if (chF(h) >= ${STEP_SHARE.toFixed(2)} * smoothstep(${STEP_STEEP_LO.toFixed(2)}, ${STEP_STEEP_HI.toFixed(2)}, steep)) return -1.0;
+  return (float(k) + 0.2 + 0.6 * chG(h)) * CH_ALONG;
 }
 `;
 }

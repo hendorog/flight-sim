@@ -138,8 +138,9 @@ function place(north: number, east: number, r: number, level: number, h: number,
   if (!onOpenGround(north, east)) return;
   const g = sample.ground;
   const squash = 0.6 + 0.4 * rnd(h, 5);
-  // In the water a stone has to break the surface: bigger where it is deeper, or none where it would be lost.
-  const depth = level - g;
+  // In the water a stone has to break the surface: bigger where it is deeper, or none where it would be lost. (The
+  // water there may be another channel's, higher: by a junction.)
+  const depth = Math.max(level, sample.river) - g;
   if (depth > 0) {
     const need = depth / (squash * 0.8) + 0.1;
     if (need > Math.min(r * 2.2, MAX_RADIUS)) return;
@@ -245,7 +246,8 @@ function bedStones(r: RiverLine, i: number, out: number[]): void {
       if (!onOpenGround(north, east)) continue;
       const g = sample.ground;
       const depth = bary.level - g;
-      if (depth > STAND_DEPTH_MAX) continue;
+      // (Not where another channel's water stands higher, by a junction: it would drown the rock.)
+      if (depth > STAND_DEPTH_MAX || sample.river > bary.level + 0.2) continue;
       const h = hash2i(k * 31 + 7, j + 4099);
       const shape = Math.floor(stone.u7 * BOULDER_SHAPES) % BOULDER_SHAPES;
       const rw = stone.r;

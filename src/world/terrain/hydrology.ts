@@ -130,6 +130,16 @@ export interface Hydrology {
  * (the lip of a hanging valley) or 'outlet' (a lake spilling over a wall); lip (`north`, `east`, `top`) and foot
  * (`footNorth`, `footEast`, `bottom`), `height`, `width` (of the water going over), flow direction, and `flight` (the
  * falls of one fault's flight share it, -1 alone). A fall's lip is sample `index` of its line and its foot `index + 1`.
+ *
+ * What the drawing builds on it (seeded worlds only):
+ *  - The bed's stones are one lattice per line in its own coordinates (channelStones.ts: cells STONE_ALONG m along `s`
+ *    by STONE_ACROSS m across, x + toward the right bank), at most one stone per cell from an integer hash of the cell,
+ *    how many from `steepness` (none below rapids), how big from `grain`; some rows are steps (pitch breaks) on
+ *    step-pool reaches. vegetation/boulders.ts stands a rock on each (its radius at the waterline the lattice's), and
+ *    the ribbon's shader (water.ts flowFragment) breaks the water white round the very same stones. Both read the
+ *    values the ribbon carries per row: aFlow = (steepness, speed / 6, fall weight, grainToUnit(grain)) as bytes.
+ *  - bedrock.ts: the bare rock beside fast water reaches rockReach(halfWidth) times a ragged factor of the world
+ *    position (rockAtPoint; ROCK_EDGE_GLSL in the ground shader); no tree is planted on it (vegetation/placement.ts).
  */
 export interface RiverLine {
   north: Float64Array;

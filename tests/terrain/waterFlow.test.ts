@@ -1,4 +1,4 @@
-// Running water (water.ts 'flow'): a seeded world's river ribbons carry each row's steepness, speed and fall weight,
+// Running water (water.ts 'flow'): a seeded world's river ribbons carry each row's steepness, speed, fall weight and grain,
 // its falls get curtains, pool foam and spray, and the whitewater code goes into the river (and falls) shaders only
 // on such a world; seed 0's water and river shaders are unchanged (presentGuard pins them). Where the water can also
 // freeze, the ice code follows the flow code so a frozen reach stays ice.
@@ -46,18 +46,22 @@ describe('running water', () => {
     setWorldSeed(42);
     expect(waterFlows()).toBe(true);
     const river = patch(true);
-    expect(river.key).toContain('-flow1');
-    expect(river.shader.vertexShader).toContain('attribute vec3 aFlow;');
-    expect(river.shader.vertexShader).toContain('vFlow = aFlow * vec3(1.0, 6.0, 1.0);');
-    expect(river.shader.fragmentShader).toContain('varying vec3 vFlow;');
+    expect(river.key).toContain('-flow2');
+    expect(river.shader.vertexShader).toContain('attribute vec4 aFlow;');
+    expect(river.shader.vertexShader).toContain('vFlow = aFlow * vec4(1.0, 6.0, 1.0, 1.0);');
+    expect(river.shader.fragmentShader).toContain('varying vec4 vFlow;');
+    // The bed's stone lattice (channelStones.ts) after the hashes it uses, and the bank trees thinned in the mirror.
+    const fsr = river.shader.fragmentShader;
+    expect(fsr.indexOf('vec4 chStone(')).toBeGreaterThan(fsr.indexOf('uint hash2u('));
+    expect(fsr).toContain('tree *= wTreeKeep;\n  float bank = max(herb, tree);');
     expect(river.shader.fragmentShader).toContain('// Running water (water.ts');
     expect(river.shader.fragmentShader).toContain('vec3 wDirect = reflectedLight.directSpecular * (1.0 - wSpecCut);');
     const lake = patch(false);
     expect(lake.shader.fragmentShader).not.toContain('wSpecCut');
     for (const kind of ['sheet', 'mist'] as const) {
       const f = patch(true, kind);
-      expect(f.key).toContain('-falls1');
-      expect(f.shader.vertexShader).toContain('attribute vec3 aFall;');
+      expect(f.key).toContain('-falls2');
+      expect(f.shader.vertexShader).toContain('attribute vec4 aFall;');
       expect(f.shader.vertexShader).toContain('if (aFall.x > 1.5) {');
       expect(f.shader.fragmentShader).toContain('// Falls (water.ts');
       expect(f.shader.fragmentShader).not.toContain('vFlow');
@@ -79,7 +83,7 @@ describe('running water', () => {
       expect(fs).toContain('mix(1.0 - wSeen, 1.0, wIce)');
       expect(fs).toContain('fresnel *= 1.0 - wSpecCut;');
       if (falls) expect(fs).toContain('* (1.0 - fMist * wIce);');
-      expect(key).toMatch(/-ice\d+-(flow1|falls1)$/);
+      expect(key).toMatch(/-ice\d+-(flow2|falls2)$/);
     }
   });
 
@@ -106,9 +110,10 @@ describe('running water', () => {
       const k = g.getAttribute('aFall') as THREE.BufferAttribute;
       for (let v = 0; v < k.count; v++) if (k.getX(v) === 0) curtainVerts++;
     }
-    // Most falls are steep 3 m faces: nearly all get a curtain (7 rows x 5) and every one not under a lake its spray.
+    // Most falls are steep 3 m faces: nearly all get a curtain (at least 7 rows x 13) and every one not under a lake its
+    // spray (a tall one two cards).
     expect(cards).toBeGreaterThan(falls.length * 0.9);
-    expect(curtainVerts / 35).toBeGreaterThan(falls.length * 0.9);
+    expect(curtainVerts / 91).toBeGreaterThan(falls.length * 0.9);
     // Lip rows are marked as falls in the line data the ribbon reads.
     const f0 = falls[0];
     expect(hydrology.rivers![f0.line].regime![f0.index]).toBe(REGIME.fall);

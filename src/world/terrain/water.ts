@@ -484,6 +484,8 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   // breaking white below it; downstream of both a wake of foam streaks riding the current, widening and fading.
   float fRock = 0.0;
   float fGlass = 0.0;
+  float fSf = 0.5;
+  float fStreakAll = 0.5;
   if (fRockP > 0.0 && fNearR > 0.0) {
     float fGrain = ${GRAIN_TOP.toFixed(1)} * vFlow.w * vFlow.w;
     float fSa = vRiverInfo.y;
@@ -492,8 +494,9 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
     int fJ0 = int(floor(fXa / CH_ACROSS + 0.5));
     // Foam streaks of the wakes: a finer field than the one above (tiles 2.7 m across, 9 m along), riding the current.
     vec2 fQf = vec2(fXa, fSa) * vec2(1.0 / 2.7, 1.0 / 9.0);
-    float fSf = mix(texture(tNoise, fQf - vec2(0.0, fV * fPh0 * 2.0 / 9.0) + fO0.yx).r, texture(tNoise, fQf - vec2(0.0, fV * fPh1 * 2.0 / 9.0) + fO1.yx).r, fB);
-    float fStreak = smoothstep(0.42, 0.58, 0.5 + (fSf - 0.5) * fNorm + 0.5 * fN);
+    fSf = mix(texture(tNoise, fQf - vec2(0.0, fV * fPh0 * 2.0 / 9.0) + fO0.yx).r, texture(tNoise, fQf - vec2(0.0, fV * fPh1 * 2.0 / 9.0) + fO1.yx).r, fB);
+    fStreakAll = 0.5 + (fSf - 0.5) * fNorm + 0.5 * fN;
+    float fStreak = smoothstep(0.42, 0.58, fStreakAll);
     for (int dk = -3; dk <= 1; dk++) {
       for (int dj = -1; dj <= 1; dj++) {
         vec4 st = chStone(fK0 + dk, fJ0 + dj, fSt, fGrain, fW);
@@ -520,6 +523,20 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
         float churn = 1.0 - smoothstep(1.2, 2.6, a + 0.6 * lat);
         fRock = max(fRock, max(foam, wake * mix(fStreak, 1.0, churn * 0.8)));
       }
+    }
+  }
+  // Steps (channelStones.ts chStep): a line of stones across a step-pool reach that the water pours over - a dark
+  // glassy tongue just above it, a band of broken white water just below, torn along its length.
+  if (fRockP > 0.0 && fNearR > 0.0) {
+    int fK1 = int(floor(vRiverInfo.y / CH_ALONG));
+    for (int dk = -1; dk <= 0; dk++) {
+      float sStep = chStep(fK1 + dk, fSt);
+      if (sStep < 0.0) continue;
+      float a = vRiverInfo.y - sStep + 0.6 * (fSf - 0.5) + 0.8 * sin(vRiverInfo.x * 0.9 + sStep);
+      float band = smoothstep(-0.2, 0.3, a) * (1.0 - smoothstep(1.2, 3.2, a + 1.2 * (fSf - 0.5)));
+      float torn = smoothstep(0.3, 0.55, fStreakAll);
+      fRock = max(fRock, band * mix(0.55, 1.0, torn) * smoothstep(0.95, 0.75, abs(vRiverInfo.x) / fW));
+      fGlass = max(fGlass, (1.0 - smoothstep(-1.6, -0.2, a)) * smoothstep(-2.6, -1.6, a) * 0.7);
     }
   }
   // Far: the stones' mean cover (about six of a stone's square radii of foam per cell).
