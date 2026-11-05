@@ -117,8 +117,8 @@ describe.each(SEEDS)('seed %i', (seed) => {
       joined++;
     });
     expect(bad.slice(0, 10)).toEqual([]);
-    // Most streams reach a river, a lake or the sea.
-    expect(sunk).toBeLessThan(0.4 * rivers!.filter((r) => r.kind === 1).length);
+    // Most streams reach a river, a lake or the sea (14-22 % end in a hollow on the seeds probed).
+    expect(sunk).toBeLessThan(0.25 * rivers!.filter((r) => r.kind === 1).length);
     // No channel crosses itself (a loop that swings round onto itself is cut off).
     let crossings = 0;
     for (const r of rivers!) {
@@ -167,7 +167,9 @@ describe.each(SEEDS)('seed %i', (seed) => {
           const pe = r.east[k] + ((r.north[kn] - r.north[k]) / tl) * off;
           sampleTerrain(pn, pe, sm);
           if (sm.airportBlend < 1) continue;
-          const raised = sm.ground - naturalHeight(pn, pe);
+          // (Over the plain as it lies: a hollow a stream filled to its sill is a flat, streams.ts FillMask.)
+          const nat = naturalHeight(pn, pe);
+          const raised = sm.ground - (hydrology.network?.fill ? hydrology.network.fill(pn, pe, nat) : nat);
           if (raised > high) {
             high = raised;
             where = `${pn.toFixed(0)}, ${pe.toFixed(0)}`;

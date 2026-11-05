@@ -9,9 +9,12 @@
 // into it: heightfield.ts naturalHeightSmooth, carveNetwork): it seeks the lowest point, step by step, until it reaches
 // a river or a stream already traced (a confluence), a lake or the sea. Where the descent finds no lower neighbour (a
 // hollow finer than the lattice) it climbs out over the lowest one and cuts a notch through the sill (its water never
-// rises); where the climb would go on too high the lattice's own routing shows the way. A lake's outlet leaves by the
-// lowest way out of its basin (a priority flood from its water). Water lying higher than the stream's own (a river
-// held up on its valley floor, a lake flooded on smoother ground) is not entered: the stream ends short of it.
+// rises); where that sill is too high the hollow is filled to it instead (a flat of silt the stream crosses, FillMask,
+// as a tarn fills) and where it is too deep or big for that the lattice's own routing shows the way. A lake's outlet
+// leaves by the lowest way out of its basin (a priority flood from its water), through a gorge where its rim stands over
+// the water, but not through a high or long rise (OUTLET_SILL: that lake has no outlet). Water lying higher than the
+// stream's own (a river held up on its valley floor, a lake flooded on smoother ground) is not entered: the stream goes
+// on down beside it.
 //
 // A stream is a cheap class: no meanders, no floodplain or valley, just a narrow notch (heightfield.ts carveNetwork).
 // Its water follows the ground down (the running minimum of the ground along its course, a little under it, looked at
@@ -24,17 +27,19 @@ import { hash2i } from './noise';
 import { AIRPORT } from '../../core/world';
 
 /** Catchment, km², from which a headwater stream is drawn (the lattice cells reaching it whose donors do not). */
-export const STREAM_AREA = 30;
+export const STREAM_AREA = 35;
 /** Water stands this far under the ground at each raster point of a stream's course, m. */
 const STREAM_DEPTH = 1.0;
 /** Catchment a stream gathers along its course from the slopes either side, km² per km. */
 const LATERAL_GAIN = 2;
 /** A headwater stream starts as if draining this much, km² (about 1.2 m half-width), and gathers its head cell's
  * catchment over HEAD_RAMP, m. */
-const HEAD_START_AREA = 6;
+export const HEAD_START_AREA = 6;
 const HEAD_RAMP = 2000;
 /** The ground under every this many stream samples is checked for a dip between the raster points. */
-const LEVEL_EVERY = 2;
+const LEVEL_EVERY = 3;
+/** ... and those between them too where the level falls this much from one to the next, m. */
+const STEEP_RECHECK = 3;
 /** Stream sample spacing, m. */
 const STREAM_SPACING = 50;
 /** A stream joins a line (or a lake) where that water lies at most JOIN_TOL m over its own (its last reach then backs
@@ -46,6 +51,9 @@ const JOIN_TOL = 6;
  * (the terrain builds the banks up to STREAM_FILL, heightfield.ts). */
 const BACKUP_FILL = 4;
 const SINK_CLEAR = 200;
+/** A stream ending in a hollow narrows over this much of its end, m, to this fraction of its width. */
+const SINK_TAPER = 400;
+const SINK_END = 0.25;
 /** An outlet keeps its lake's level this far past the lake's domain, m. */
 const OUTLET_KEEP = 60;
 /** A stream climbs out of a pit over its lowest neighbour at most this high over the lowest ground on its course so
@@ -55,7 +63,21 @@ const CLIMB_HEIGHT = 25;
  * it ends in the hollow instead (a sink). A lake's outlet goes on over up to FORCE_HEIGHT_OUTLET (its lake drains that
  * way on the lattice): it cuts a gorge through the rim. */
 const FORCE_HEIGHT = 40;
-const FORCE_HEIGHT_OUTLET = 120;
+const FORCE_HEIGHT_OUTLET = 40;
+/** Highest an outlet's way out may rise over its lake's water, m: the deepest gorge it cuts through the rim. Over
+ * OUTLET_SILL_LOW only through a narrow rim: its ground that high at most GORGE_POINTS raster points along the way. */
+const OUTLET_SILL = 80;
+const OUTLET_SILL_LOW = 30;
+const GORGE_POINTS = 6;
+/** A hollow a stream can neither climb out of (CLIMB_HEIGHT) nor cut its way out of along the lattice's routing
+ * (FORCE_HEIGHT) is filled to its sill instead - a flat of silt and meadow the stream crosses, as a filled tarn - when
+ * its sill stands at most FILL_DEPTH over its floor and it holds at most FILL_POINTS raster points; its flat lies
+ * FILL_BELOW under the sill. */
+const FILL_DEPTH = 60;
+const FILL_POINTS = 160;
+const FILL_BELOW = 0.5;
+/** The flat fills ground finer than the raster (a gully) at most this far under its hollow's floor, m. */
+const FILL_UNDER = 10;
 /** Raster points an outlet's search for the lowest way out of its lake may visit. */
 const OUTLET_FLOOD = 3000;
 /** Most raster steps one stream may take. */
@@ -147,9 +169,15 @@ export interface StreamReport {
   /** Streams that end in a hollow (a sink with no water beside it). */
   hollows: number;
   floods: number;
+  /** Hollows filled to their sill (FILL_DEPTH). */
+  fills: number;
   forced: number;
   samples: number;
   ms: number;
+  /** How high each outlet's way out rises over its lake's water (the sill its notch cuts through), m. */
+  outletSill: number[];
+  /** Lakes whose every way out rises more than OUTLET_SILL over their water (no outlet). */
+  outletHigh: number;
   /** Ground samples taken by the outlets. */
   outletSamples: number;
   /** Time to the end of the river marking, the outlets, the headwaters, ms. */
@@ -162,14 +190,14 @@ export interface StreamReport {
  * Trace the streams of a seeded world. `ground` is the terrain they run on (detailed, with the rivers' valleys);
  * `rivers` the river network's channels (their levels final); `riverPools` flags the lake pools a river runs through.
  */
-export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: number, east: number) => number; rivers: ReadonlyArray<ChannelArrays>; riverPools: Uint8Array; minArea?: number }): { streams: StreamLine[]; report: StreamReport } {
+export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: number, east: number) => number; rivers: ReadonlyArray<ChannelArrays>; riverPools: Uint8Array; minArea?: number }): { streams: StreamLine[]; report: StreamReport; fill: FillMask } {
   const t0 = performance.now();
   const { d, mask, rivers } = p;
   const minArea = p.minArea ?? STREAM_AREA;
   const n = d.n;
   const R = RASTER_N;
   const nR = rivers.length;
-  const report: StreamReport = { pools: 0, riverPools: 0, outlets: 0, outletToLake: 0, outletToSea: 0, outletNone: 0, heads: 0, traced: 0, ends: {}, outletEnds: {}, km: 0, steps: 0, outletSteps: 0, levelSamples: 0, notch: [], notchOutlet: [], pits: 0, sinks: 0, sinkGap: [], sinkGapLake: [], sinkGapLast: [], hollows: 0, floods: 0, forced: 0, samples: 0, ms: 0, tracePhases: [], outletSamples: 0 };
+  const report: StreamReport = { pools: 0, riverPools: 0, outlets: 0, outletToLake: 0, outletToSea: 0, outletNone: 0, heads: 0, traced: 0, ends: {}, outletEnds: {}, km: 0, steps: 0, outletSteps: 0, levelSamples: 0, notch: [], notchOutlet: [], pits: 0, sinks: 0, sinkGap: [], sinkGapLake: [], sinkGapLast: [], hollows: 0, floods: 0, fills: 0, forced: 0, samples: 0, ms: 0, tracePhases: [], outletSamples: 0, outletSill: [], outletHigh: 0 };
 
   // --- The ground on the raster, sampled as the traces need it: without the small-scale relief (the terrain takes it
   // away along a stream, heightfield.ts carveNetwork), for the routing and the water level alike.
@@ -184,6 +212,16 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     return g;
   };
 
+
+  // --- The hollows filled so far (raster point -> the level of its flat), and the ground they lay over the routing
+  // ground between the raster points (FillMask).
+  const fills = new Map<number, number>();
+  /** The floor of the hollow each filled point lies in (its lowest routing ground before it was filled), m. */
+  const fillFloor = new Map<number, number>();
+  /** The routing ground at the filled points before they were filled. */
+  const ground0 = new Map<number, number>();
+  const fillMask = new FillMask(fills, fillFloor);
+  const fillHeap = new MinHeap(1024);
 
   // --- The home runway's surroundings, where no stream may run (its pad and approaches are levelled over the ground).
   const rw = AIRPORT.runway;
@@ -232,6 +270,71 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   const visitAt = new Map<number, number>();
   let stamp = 0;
 
+  /**
+   * The hollow round raster point `pit`, flooded from it (lowest first) until the flood steps down beyond its sill:
+   * the hollow's points, its sill's level, and the way from the pit over the sill to the first point beyond it (`route`,
+   * pit excluded). Null when it is too deep or too big (FILL_DEPTH, FILL_POINTS), reaches the edge, the home runway's
+   * surroundings, a lake or a channel. Where the way out runs back up the course (`st`'s points), `keep` is how many of
+   * the course's points come before it leaves the course.
+   */
+  const fillHollow = (pit: number, st: number, own: number, path: number[]): { route: number[]; level: number; floor: number; pts: number[]; keep: number } | null => {
+    if (fillHeap.capacity < FILL_POINTS * 9) fillHeap.grow(FILL_POINTS * 9);
+    fillHeap.size = 0;
+    const parent = new Map<number, number>();
+    parent.set(pit, -1);
+    fillHeap.push(pit, G(pit));
+    // (Measured from the ground before any flat was laid: flats do not stack up.)
+    let floor = ground0.get(pit) ?? G(pit);
+    let lvl = -Infinity;
+    const pts: number[] = [];
+    /** The way from the pit to k, the course cut back to where it leaves the course (null: it never leaves it). */
+    const out = (k: number): { route: number[]; level: number; floor: number; pts: number[]; keep: number } | null => {
+      const route: number[] = [];
+      for (let q = k; q >= 0; q = parent.get(q) as number) route.push(q);
+      route.reverse();
+      // Its way out may run back up the course a little and leave it further up (the descent missed a lower way
+      // there): the course is cut back to where the way out leaves it (the flat covers the rest).
+      let last = 0;
+      const onCourse = (q: number): boolean => {
+        const vi = visitAt.get(q);
+        return visit.get(q) === st && vi !== undefined && vi < path.length && path[vi] === q;
+      };
+      for (let i = 1; i < route.length; i++) if (onCourse(route[i])) last = i;
+      if (last === route.length - 1) return null;
+      return { route: route.slice(last + 1), level: lvl, floor, pts, keep: (visitAt.get(route[last]) as number) + 1 };
+    };
+    while (fillHeap.size > 0) {
+      const k = fillHeap.pop();
+      const g = G(k);
+      // Water beside the hollow: where it lies no higher than the flood the flat spills into it; higher, it bounds it.
+      const o = occ[k];
+      const pool = o === 0 ? mask.poolAt(Math.floor(k / R), k % R) : -1;
+      if (o !== 0 || pool >= 0) {
+        const wl = o !== 0 ? lineAt(occLine(o)).level[occIdx(o)] : mask.pools[pool].level;
+        if (wl <= Math.max(lvl, g)) return out(k);
+        continue;
+      }
+      // (The course's own points lower than the flood lie in the same hollow: the stream came down into it.)
+      if (g < lvl && visit.get(k) !== st) return out(k);
+      lvl = Math.max(lvl, g);
+      floor = Math.min(floor, ground0.get(k) ?? g);
+      if (lvl - floor > FILL_DEPTH || pts.length >= FILL_POINTS) return null;
+      pts.push(k);
+      const ki = Math.floor(k / R);
+      const kj = k % R;
+      if (ki <= 0 || kj <= 0 || ki >= R - 1 || kj >= R - 1) return null;
+      for (let a = 0; a < 8; a++) {
+        const q = (ki + DI[a]) * R + kj + DJ[a];
+        if (parent.has(q) || byHome(q)) continue;
+        const qp = mask.poolAt(Math.floor(q / R), q % R);
+        if (qp >= 0 && (qp === own || mask.pools[qp].drained)) continue;
+        parent.set(q, k);
+        fillHeap.push(q, G(q));
+      }
+    }
+    return null;
+  };
+
   /** What a course reached; `ok` when the trace found it can flow into it (canReach). */
   type End = { kind: StreamLine['end']; line: number; idx: number; pool: number; ok?: boolean };
   /**
@@ -275,6 +378,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
      * little over that dip, the water backs up over it rather than the stream ending short.
      */
     const canReach = (mouth: number): boolean => {
+      // (Never water standing over its source: its whole course would back up over the lake it leaves.)
+      if (mouth > level) return false;
       if (mouth <= runMin - STREAM_DEPTH + JOIN_TOL) return true;
       for (let i = path.length - 1; i >= 0 && lowAt[i] - STREAM_DEPTH < mouth; i--) {
         if (i === 0 || G(path[i]) - STREAM_DEPTH < mouth - BACKUP_FILL) return false;
@@ -307,11 +412,52 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     /** Whether k lies in or beside another lake whose water stands higher than the stream's (it would cut a notch
      * beside that water). */
     const byHigherLake = (k: number): boolean => besideLake(k, own, runMin - STREAM_DEPTH + JOIN_TOL + BACKUP_FILL);
-    const blocked = (k: number): boolean => visit.get(k) === st || (own >= 0 && mask.poolAt(Math.floor(k / R), k % R) === own) || byHome(k) || crosses(cur, k) || byHigherLake(k);
+    /** Whether k lies in water standing higher than the stream's that it cannot back up to (a line held up on its
+     * valley floor, a lake perched over the gully): the stream goes round it, on down beside it, rather than ending. */
+    const higherWater = (k: number): boolean => {
+      const o = occ[k];
+      if (o !== 0) return joinAt(o) < 0;
+      const pool = mask.poolAt(Math.floor(k / R), k % R);
+      return pool >= 0 && pool !== own && !mask.pools[pool].drained && !canReach(mask.pools[pool].level);
+    };
+    const blocked = (k: number): boolean => visit.get(k) === st || (own >= 0 && mask.poolAt(Math.floor(k / R), k % R) === own) || byHome(k) || crosses(cur, k) || byHigherLake(k) || higherWater(k);
     // The direction of the last step (index into RING), -1 before the first; climbs over sills since the last descent.
     let dir = -1;
     let forcing = 0;
     let forceTarget = -1;
+    /**
+     * Fill the hollow round raster point `pit` to its sill (fillHollow): the flat lies over it (later streams route
+     * over it too), and the course crosses it to the sill and goes on from the first point beyond. False when it
+     * cannot be filled.
+     */
+    const fillAt = (pit: number): boolean => {
+      const hollow = fillHollow(pit, st, own, path);
+      if (!hollow) return false;
+      report.fills++;
+      const flat = hollow.level - FILL_BELOW;
+      for (const k of hollow.pts) {
+        if (!ground0.has(k)) ground0.set(k, G(k));
+        fills.set(k, Math.max(fills.get(k) ?? -Infinity, flat));
+        fillFloor.set(k, Math.min(fillFloor.get(k) ?? Infinity, hollow.floor));
+        cache.set(k, Math.max(G(k), flat));
+      }
+      path.length = hollow.keep;
+      for (const k of hollow.route) {
+        visit.set(k, st);
+        visitAt.set(k, path.length);
+        path.push(k);
+      }
+      runMin = Infinity;
+      lowAt.length = 0;
+      for (const k of path) {
+        if (!(own >= 0 && mask.poolAt(Math.floor(k / R), k % R) === own)) runMin = Math.min(runMin, G(k));
+        lowAt.push(Math.min(runMin, level));
+      }
+      runMin = Math.min(runMin, level);
+      cur = path[path.length - 1];
+      dir = -1;
+      return true;
+    };
     for (let step = 0; step < MAX_STEPS; step++) {
       if (step > 0) {
         const e = reached(cur);
@@ -332,7 +478,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         for (let r = 0; r < 8; r++) {
           const a = RING[r];
           const q = (ri + DI[a]) * R + rj + DJ[a];
-          if (visit.get(q) === st || byHome(q) || crosses(cur, q) || byHigherLake(q)) continue;
+          if (visit.get(q) === st || byHome(q) || crosses(cur, q) || byHigherLake(q) || higherWater(q)) continue;
           const dd = (ri + DI[a] - ti) ** 2 + (rj + DJ[a] - tj) ** 2;
           if (dd < nd) {
             nd = dd;
@@ -341,7 +487,11 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
           }
         }
         if (next === forceTarget) forcing = 0;
-        if (next >= 0 && G(next) - runMin > (own < 0 ? FORCE_HEIGHT : FORCE_HEIGHT_OUTLET)) return { path, end: { kind: 'sink', line: -1, idx: 0, pool: -1 } };
+        if (next >= 0 && G(next) - runMin > (own < 0 ? FORCE_HEIGHT : FORCE_HEIGHT_OUTLET)) {
+          forcing = 0;
+          if (fillAt(cur)) continue;
+          return { path, end: { kind: 'sink', line: -1, idx: 0, pool: -1 } };
+        }
       } else {
         const g0 = G(cur);
         // Steepest descent, the three directions ahead first (the ground behind and beside was seen from the last
@@ -397,10 +547,12 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
               }
               c = r;
             }
-            if (forceTarget < 0) return { path, end: { kind: 'stuck', line: -1, idx: 0, pool: -1 } };
-            // (Not over a rim much higher than the hollow: its notch would be a slot canyon. The water stays in the
-            // hollow: the stream ends there.)
-            if (G(forceTarget) - runMin > (own < 0 ? FORCE_HEIGHT : FORCE_HEIGHT_OUTLET)) return { path, end: { kind: 'sink', line: -1, idx: 0, pool: -1 } };
+            // (Not over a rim much higher than the hollow: its notch would be a slot canyon. The hollow is filled to its
+            // sill instead, or where it is too deep or big the water stays in it: the stream ends there.)
+            if (forceTarget < 0 || G(forceTarget) - runMin > (own < 0 ? FORCE_HEIGHT : FORCE_HEIGHT_OUTLET)) {
+              if (fillAt(cur)) continue;
+              return { path, end: { kind: forceTarget < 0 ? 'stuck' : 'sink', line: -1, idx: 0, pool: -1 } };
+            }
             forcing = 2 * PER_CELL;
             step--;
             report.steps--;
@@ -412,7 +564,13 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       visit.set(next, st);
       visitAt.set(next, path.length);
       path.push(next);
-      runMin = Math.min(runMin, G(next));
+      // (Not the ground in the water it reaches - a lake's bed, a river's valley floor: whether it can flow into that
+      // water was decided on the stream's own level, before the step.)
+      const into = occ[next] !== 0 || (() => {
+        const pl = mask.poolAt(Math.floor(next / R), next % R);
+        return pl >= 0 && pl !== own && !mask.pools[pl].drained;
+      })();
+      if (!into) runMin = Math.min(runMin, G(next));
       lowAt.push(runMin);
       cur = next;
       dir = nextDir;
@@ -549,22 +707,33 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // The ground between the raster points: a gully finer than the raster can lie between two of them (the course
     // steps over it). Every LEVEL_EVERY-th sample the ground is looked at again and the water kept under it (not in a
     // lake: the one it leaves or the one it ends in), then the level kept falling.
+    const groundAt = (n: number, e: number): number => fillMask.apply(n, e, p.route(n, e));
     for (let i = 1; i < count - 1; i += LEVEL_EVERY) {
-      const g = p.route(north[i], east[i]);
+      const g = groundAt(north[i], east[i]);
       report.levelSamples++;
       if (g - STREAM_DEPTH >= level[i]) continue;
       if (mask.at(north[i], east[i]) > -Infinity) continue;
       level[i] = g - STREAM_DEPTH;
     }
+    // And the samples between where the level falls steeply there (a cliff can lie between two looked at).
+    for (let i = 2; i < count - 1; i++) {
+      if ((i - 1) % LEVEL_EVERY === 0) continue;
+      const lo = i - ((i - 1) % LEVEL_EVERY);
+      if (level[lo] - level[Math.min(count - 1, lo + LEVEL_EVERY)] < STEEP_RECHECK) continue;
+      const g = groundAt(north[i], east[i]);
+      report.levelSamples++;
+      if (g - STREAM_DEPTH >= level[i] || mask.at(north[i], east[i]) > -Infinity) continue;
+      level[i] = g - STREAM_DEPTH;
+    }
     for (let i = 1; i < count; i++) level[i] = Math.min(level[i], level[i - 1]);
     // Where it came down lower than the water it joins (JOIN_TOL at most), its last reach lies at that water's level:
     // backed up and silted to it (the terrain builds its banks up to hold it, heightfield.ts carveNetwork).
-    for (let i = count - 1; i >= 0 && level[i] < mouth; i--) level[i] = mouth;
+    for (let i = count - 1; i >= 0 && level[i] < mouth; i--) level[i] = Math.min(mouth, level[0]);
     // An outlet leaves its lake at the lake's level and keeps it OUTLET_KEEP past the lake's domain (its rim), so it
     // drops away (falls) clear of the lake's water, not in a notch cut down beside it.
     let held = 0;
     if (pool >= 0) {
-      const lake = mask.pools[pool].level;
+      const lake = first ? first.level : mask.pools[pool].level;
       let out = -1;
       for (let i = 0; i < count; i++) {
         if (out < 0 && !(mask.at(north[i], east[i]) > -Infinity)) out = i;
@@ -639,6 +808,12 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     for (let pops = 0; outletHeap.size > 0 && pops < OUTLET_FLOOD + pts.length; pops++) {
       const k = outletHeap.pop();
       const kk = key.get(k) as number;
+      // (The flood is minimax: past OUTLET_SILL over the water every way out is higher. The lake has no outlet a
+      // stream could cut: a notch deeper than that would be a slot canyon, kilometres long through the hills.)
+      if (kk > pool.level + OUTLET_SILL) {
+        report.outletHigh++;
+        return null;
+      }
       if (!own.has(k)) {
         const o = occ[k];
         let end: End | null = null;
@@ -655,6 +830,17 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
           // From the last point in the lake.
           let f = 0;
           for (let i = 0; i < back.length; i++) if (own.has(back[i])) f = i;
+          report.outletSill.push(kk - pool.level);
+          // A sill over OUTLET_SILL_LOW is cut as a gorge only where it is a narrow rim (its high ground at most
+          // GORGE_POINTS raster points long): a long rise is not a rim but hills, and no stream cuts its way through.
+          if (kk > pool.level + OUTLET_SILL_LOW) {
+            let high = 0;
+            for (let i = f; i < back.length; i++) if (ground(back[i]) > pool.level + OUTLET_SILL_LOW) high++;
+            if (high > GORGE_POINTS) {
+              report.outletHigh++;
+              return null;
+            }
+          }
           return { path: back.slice(f), end };
         }
       }
@@ -702,6 +888,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     const k0 = out.path[0];
     const first = { north: ORIGIN + Math.floor(k0 / R) * LAKE_RASTER, east: ORIGIN + (k0 % R) * LAKE_RASTER, level: pool.level };
+    // (At the edge of its domain the water drawn there may be a lower pool's, beside it: the outlet leaves at that.)
+    const drawn = mask.at(first.north, first.east, G(k0));
+    if (drawn > -Infinity) first.level = Math.min(first.level, drawn);
     const main = mask.main[pool.lake] === id;
     // The pond's catchment drains through its main pool; a sub-basin's is a share of it.
     const a0 = main ? pondArea(pool.lake) : Math.min(pondArea(pool.lake), minArea);
@@ -744,9 +933,25 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       for (let i = 0; i < P.s.length; i++) if (P.s[i] >= st.joinS - 1e-6) P.area[i] += add;
     }
   }
-  for (const st of streams) for (let i = 0; i < st.area.length; i++) st.halfWidth[i] = channelHalfWidth(st.area[i]);
+  /** The furthest down each stream another joins it, m. */
+  const lastJoin = new Float64Array(streams.length).fill(-Infinity);
+  for (const st of streams) if (st.joins >= nR) lastJoin[st.joins - nR] = Math.max(lastJoin[st.joins - nR], st.joinS);
+  for (let j = 0; j < streams.length; j++) {
+    const st = streams[j];
+    for (let i = 0; i < st.area.length; i++) st.halfWidth[i] = channelHalfWidth(st.area[i]);
+    // A stream that ends in a hollow (it sinks into the ground there) dwindles over its last SINK_TAPER rather than
+    // stopping at its full width.
+    if (st.end !== 'sink' && st.end !== 'stuck') continue;
+    // (Below the last stream joining it: never narrower than what joins it.)
+    const sEnd = st.s[st.s.length - 1];
+    const s0 = Math.max(sEnd - SINK_TAPER, lastJoin[j] + 50);
+    if (s0 >= sEnd - 50) continue;
+    // (Never narrower than its head: a line ends at least as wide as it starts.)
+    const hw0 = st.halfWidth[0];
+    for (let i = 0; i < st.s.length; i++) st.halfWidth[i] = Math.max(hw0, st.halfWidth[i] * (1 - (1 - SINK_END) * smooth(s0, sEnd, st.s[i])));
+  }
   report.ms = performance.now() - t0;
-  return { streams, report };
+  return { streams, report, fill: fillMask };
 }
 
 /**
@@ -833,32 +1038,86 @@ export interface Fall {
   dirE: number;
 }
 
+/** A steep stretch is first cut into pieces falling at most this much each, m: a drop bigger than a fall between two
+ * samples becomes a flight of falls (each FALL_LOW to FALL_MAX), never one tall drop or a ribbon down a cliff. */
+const FALL_STEP = 5;
+/** The water stands this far under the ground at each piece's point (when the ground is given), m. */
+const PIECE_DEPTH = 1;
+/** Most pieces one segment is cut into. */
+const PIECES_MAX = 64;
+/** A plunge pool lies flat below each fall's face for this long, m (from the channel's half-width). */
+const poolRun = (halfWidth: number): number => Math.min(30, Math.max(6, 4 * halfWidth));
+
 /**
  * Turn the steep reaches of a channel's water level into falls with pools: where the level falls more steeply than
- * FALL_GRADIENT, a fall of up to FALL_MAX at a lip at the original level, then a tread falling at TREAD until it meets
- * the original level again (the next lip). Never above the level it was (the water stays under the ground). Skips
- * the samples flagged in `keep` (a lake). Returns the arrays with a foot sample inserted after each lip, and the lip
- * indices (into the returned arrays) with their drops.
+ * FALL_GRADIENT, a fall of FALL_LOW to FALL_MAX at a lip at the original level, a plunge pool (flat, poolRun), then a
+ * tread falling at TREAD until it meets the original level again (the next lip). A stretch falling more than FALL_STEP
+ * between two samples is cut into pieces first (their water kept under `ground` when given), so every steep drop is a
+ * flight of falls. Never above the level it was (the water stays under the ground). Skips the samples flagged in `keep`
+ * (a lake). Returns the arrays with the pieces and a foot and a pool's end inserted after each lip, and the lip indices
+ * (into the returned arrays) with their drops.
  */
-export function applyFalls(a: Record<string, Float64Array> & { level: Float64Array; s: Float64Array; north: Float64Array; east: Float64Array }, keep?: Uint8Array): { line: Record<string, Float64Array>; lips: Array<{ index: number; drop: number }> } {
-  const { s, level: L } = a;
+export function applyFalls(a: Record<string, Float64Array> & { level: Float64Array; s: Float64Array; north: Float64Array; east: Float64Array }, keep?: Uint8Array, ground?: (north: number, east: number) => number, cut = true): { line: Record<string, Float64Array>; lips: Array<{ index: number; drop: number }> } {
+  const n0 = a.level.length;
+  const keys = Object.keys(a).filter((k) => a[k].length === n0);
+  // --- The steep segments cut into pieces.
+  const pieces = new Int32Array(n0);
+  let total = n0;
+  for (let i = 0; i < n0 - 1; i++) {
+    const D = a.level[i] - a.level[i + 1];
+    const ds = a.s[i + 1] - a.s[i];
+    pieces[i] = 1;
+    if (keep?.[i] && keep[i + 1]) continue;
+    if (cut && ds > 0 && D > FALL_STEP && D / ds > FALL_GRADIENT) {
+      pieces[i] = Math.min(PIECES_MAX, Math.ceil(D / FALL_STEP));
+      total += pieces[i] - 1;
+    }
+  }
+  let src: Record<string, Float64Array> = a;
+  let kp = keep;
+  if (total > n0) {
+    const out: Record<string, Float64Array> = {};
+    for (const k of keys) out[k] = new Float64Array(total);
+    const kk = keep ? new Uint8Array(total) : undefined;
+    const lEnd = a.level[n0 - 1];
+    let o = 0;
+    for (let i = 0; i < n0; i++) {
+      const p = i < n0 - 1 ? pieces[i] : 1;
+      for (let q = 0; q < p; q++) {
+        const t = q / p;
+        for (const k of keys) out[k][o] = q === 0 ? a[k][i] : a[k][i] + (a[k][i + 1] - a[k][i]) * t;
+        if (kk && keep) kk[o] = q === 0 ? keep[i] : keep[i] & keep[i + 1];
+        if (q > 0 && ground) out.level[o] = Math.max(lEnd, Math.min(out.level[o], ground(out.north[o], out.east[o]) - PIECE_DEPTH));
+        if (o > 0) out.level[o] = Math.min(out.level[o], out.level[o - 1]);
+        o++;
+      }
+    }
+    src = out;
+    kp = kk;
+  }
+  const s = src.s;
+  const L = src.level;
+  const hw = src.halfWidth;
   const n = L.length;
   const W = Float64Array.from(L);
-  const lipsAt: Array<{ at: number; drop: number }> = [];
+  const lipsAt: Array<{ at: number; next: number; foot: number; pool: number }> = [];
+  /** The water below lip i (foot level `foot`, pool `pool` long) at arc length sv, before the next lip. */
+  const below = (i: number, foot: number, pool: number, lv: number, sv: number): number => Math.min(lv, foot - TREAD * Math.max(0, sv - s[i] - FALL_RUN - pool));
   let i = 0;
   while (i < n - 1) {
     const ds = s[i + 1] - s[i];
-    if (keep?.[i] || ds <= 0 || (L[i] - L[i + 1]) / ds <= FALL_GRADIENT) {
+    if (kp?.[i] || ds <= 0 || (L[i] - L[i + 1]) / ds <= FALL_GRADIENT) {
       i++;
       continue;
     }
-    // Lip at i: the first sample where a tread from a fall of `high` (FALL_LOW to FALL_MAX, each fall its own)
-    // meets the level again.
-    const high = FALL_LOW + (FALL_MAX - FALL_LOW) * ((hash2i(Math.round(a.north[i]), Math.round(a.east[i])) & 0xffff) / 65535);
+    // Lip at i: the first sample where a tread from a fall of `high` (FALL_LOW to FALL_MAX, each fall its own) and
+    // its pool meets the level again.
+    const high = FALL_LOW + (FALL_MAX - FALL_LOW) * ((hash2i(Math.round(src.north[i]), Math.round(src.east[i])) & 0xffff) / 65535);
+    const pool = poolRun(hw ? hw[i] : 2);
     let j = -1;
     let k = i + 1;
-    for (; k < n && !keep?.[k]; k++) {
-      if (L[i] - L[k] >= high + TREAD * (s[k] - s[i])) {
+    for (; k < n && !kp?.[k]; k++) {
+      if (L[i] - L[k] >= high + TREAD * Math.max(0, s[k] - s[i] - FALL_RUN - pool)) {
         j = k;
         break;
       }
@@ -869,43 +1128,56 @@ export function applyFalls(a: Record<string, Float64Array> & { level: Float64Arr
     if (j < 0) {
       j = Math.min(n - 1, k - 1);
       if (j <= i) j = i + 1;
-      drop = L[i] - L[j] - TREAD * (s[j] - s[i]);
+      drop = Math.min(high, L[i] - L[j] - TREAD * Math.max(0, s[j] - s[i] - FALL_RUN - pool));
       if (drop < FALL_MIN) {
         i++;
         continue;
       }
     }
     const foot = L[i] - drop;
-    for (let q = i + 1; q <= j; q++) W[q] = Math.min(L[q], foot - TREAD * Math.max(0, s[q] - s[i] - FALL_RUN));
-    lipsAt.push({ at: i, drop });
+    for (let q = i + 1; q <= j; q++) W[q] = below(i, foot, pool, L[q], s[q]);
+    lipsAt.push({ at: i, next: j, foot, pool });
     i = j;
   }
-  if (!lipsAt.length) return { line: { ...a, level: W }, lips: [] };
-  // Insert a foot sample FALL_RUN past each lip (where the next sample is further than that).
-  const ins = new Set<number>();
-  for (const l of lipsAt) if (l.at + 1 < n && s[l.at + 1] - s[l.at] > FALL_RUN * 1.5) ins.add(l.at);
-  const m = n + ins.size;
+  if (!lipsAt.length) return { line: { ...src, level: W }, lips: [] };
+  // --- A foot sample FALL_RUN past each lip and one at its pool's end, where the samples lie further apart.
+  const ins: Array<{ q: number; sv: number; lv: number }> = [];
+  for (const l of lipsAt) {
+    for (const off of [FALL_RUN, FALL_RUN + l.pool]) {
+      const sv = s[l.at] + off;
+      if (sv > s[l.next] - 1) break;
+      let q = l.at;
+      while (q < n - 1 && s[q + 1] <= sv) q++;
+      if (q >= n - 1 || sv - s[q] < 1 || s[q + 1] - sv < 1) continue;
+      const lv = L[q] + (L[q + 1] - L[q]) * ((sv - s[q]) / (s[q + 1] - s[q]));
+      ins.push({ q, sv, lv: below(l.at, l.foot, l.pool, lv, sv) });
+    }
+  }
+  ins.sort((x, y) => x.sv - y.sv);
+  const m = n + ins.length;
   const out: Record<string, Float64Array> = {};
-  const keys = Object.keys(a).filter((k) => a[k].length === n);
-  for (const key of keys) out[key] = new Float64Array(m);
+  const outKeys = Object.keys(src).filter((k) => src[k].length === n);
+  for (const key of outKeys) out[key] = new Float64Array(m);
   const map = new Int32Array(n);
   let o = 0;
+  let t = 0;
   for (let q = 0; q < n; q++) {
     map[q] = o;
-    for (const key of keys) out[key][o] = key === 'level' ? W[q] : a[key][q];
+    for (const key of outKeys) out[key][o] = key === 'level' ? W[q] : src[key][q];
     o++;
-    if (ins.has(q)) {
-      const t = FALL_RUN / (s[q + 1] - s[q]);
-      for (const key of keys) {
-        const v = a[key];
-        out[key][o] = v[q] + (v[q + 1] - v[q]) * t;
+    for (; t < ins.length && ins[t].q === q; t++) {
+      const f = (ins[t].sv - s[q]) / (s[q + 1] - s[q]);
+      for (const key of outKeys) {
+        const v = src[key];
+        out[key][o] = v[q] + (v[q + 1] - v[q]) * f;
       }
-      const lip = lipsAt.find((l) => l.at === q) as { drop: number };
-      out.level[o] = Math.min(L[q] - lip.drop, L[q] + (L[q + 1] - L[q]) * t, W[q]);
+      out.level[o] = Math.min(ins[t].lv, out.level[o - 1]);
       o++;
     }
   }
-  return { line: out, lips: lipsAt.map((l) => ({ index: map[l.at], drop: l.drop })) };
+  for (let q = 1; q < m; q++) out.level[q] = Math.min(out.level[q], out.level[q - 1]);
+  // Each lip's drop as it stands: its water over the sample after it (its foot).
+  return { line: out, lips: lipsAt.map((l) => ({ index: map[l.at], drop: out.level[map[l.at]] - out.level[map[l.at] + 1] })) };
 }
 
 /** Per-sample flow of a channel: gradient over GRADIENT_WINDOW, steepness 0-1, kind of flow, speed. */
@@ -990,3 +1262,47 @@ export class FallIndex {
 
 /** Smooth step, for the river heads' taper (riverNetwork.ts). */
 export const smoothStep = smooth;
+
+/**
+ * The hollows streams.ts filled to their sills: each a set of points of the 250 m lake raster with the level of its
+ * flat. Laid over the ground (apply): raised to the flat where it lies under it, blended between the raster points
+ * (smoothstep-weighted bilinear, doubled and capped, so the flat's edge has no crease and no moat).
+ */
+export class FillMask {
+  constructor(private readonly levels: ReadonlyMap<number, number>, private readonly floors: ReadonlyMap<number, number>) {}
+  get size(): number {
+    return this.levels.size;
+  }
+  apply(north: number, east: number, h: number): number {
+    if (this.levels.size === 0) return h;
+    const x = (east - ORIGIN) / LAKE_RASTER;
+    const y = (north - ORIGIN) / LAKE_RASTER;
+    const j = Math.floor(x);
+    const i = Math.floor(y);
+    if (i < 0 || j < 0 || i >= RASTER_N - 1 || j >= RASTER_N - 1) return h;
+    const k = i * RASTER_N + j;
+    const l00 = this.levels.get(k);
+    const l01 = this.levels.get(k + 1);
+    const l10 = this.levels.get(k + RASTER_N);
+    const l11 = this.levels.get(k + RASTER_N + 1);
+    if (l00 === undefined && l01 === undefined && l10 === undefined && l11 === undefined) return h;
+    const tx = smooth(0, 1, x - j);
+    const ty = smooth(0, 1, y - i);
+    let add = 0;
+    let w = 0;
+    // (A gully finer than the raster, cut deeper than the hollow's floor, is filled no deeper than FILL_UNDER under it:
+    // the flat does not bury it as a dam.)
+    const corner = (q: number, l: number | undefined, c: number): void => {
+      if (l === undefined) return;
+      add += c * Math.min(Math.max(0, l - h), l - (this.floors.get(q) ?? l) + FILL_UNDER);
+      w += c;
+    };
+    corner(k, l00, (1 - tx) * (1 - ty));
+    corner(k + 1, l01, tx * (1 - ty));
+    corner(k + RASTER_N, l10, (1 - tx) * ty);
+    corner(k + RASTER_N + 1, l11, tx * ty);
+    // Full over the half of each cell toward a filled corner (the ground toward an unfilled one rises over the flat
+    // anyway): no moat left round the flat's edge between the raster points.
+    return w > 0 ? h + (add / w) * Math.min(1, 2 * w) : h;
+  }
+}

@@ -189,6 +189,8 @@ export interface NetworkQuery {
   valleys(north: number, east: number, out: ValleyNear[]): number;
   /** The channels of every line within carving reach of the point; returns how many were written. */
   channels(north: number, east: number, out: ChannelNear[]): number;
+  /** The ground h at the point with the hollows the streams filled to their sills laid over it (streams.ts FillMask). */
+  fill?(north: number, east: number, h: number): number;
 }
 
 /** Valley walls rise over this distance beyond the floodplain (everything closer to the axis is shaped by the valley). */

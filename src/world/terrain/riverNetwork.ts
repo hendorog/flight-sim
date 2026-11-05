@@ -11,7 +11,7 @@
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
-import { applyFalls, channelHalfWidth, FALL_MIN, FallIndex, flowOf, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
+import { applyFalls, channelHalfWidth, FALL_MIN, FallIndex, flowOf, HEAD_START_AREA, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { AIRPORT } from '../../core/world';
 
 /** A loop is cut off when its neck has closed to this fraction of the meander length (or a few channel widths). */
@@ -43,6 +43,9 @@ const CHANNEL_REACH = 450;
 const STREAM_REACH = 150;
 /** A river's head (not in a lake) widens from the stream feeding it to its own width over this much valley, m. */
 const HEAD_TAPER = 1500;
+/** Below a confluence the receiver's catchment steps up at once by what its lattice catchment gains within this, m
+ * (the lattice counts the tributary's water a cell further on: brought forward to the confluence, not counted twice). */
+const JOIN_PULL = 1000;
 /** Catchment (km²) above which a river meanders on low ground, and the valley gradient below which it does. */
 const MEANDER_AREA = 250;
 const MEANDER_GRADIENT = 0.004;
@@ -568,6 +571,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const channelArea: Float64Array[] = [];
   const lipsOf: number[][] = [];
   const falls: Fall[] = [];
+  /** Rivers whose head is not in a lake. */
+  const headDry = new Uint8Array(nR);
   /** A finished line's water level at arc length sv. */
   const levelOn = (c: { s: Float64Array; level: Float64Array }, sv: number): number => sampleAt(c.s, c.level, sv);
   const recordFalls = (li: number, c: { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array }, lips: ReadonlyArray<{ index: number; drop: number }>): void => {
@@ -603,6 +608,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     // A river's head (not in a lake) starts as wide as the biggest stream feeding its first lattice cell, widening
     // to its own width over HEAD_TAPER: no channel 15 m wide out of nothing.
+    headDry[li] = P.wet[0] ? 0 : 1;
     if (!P.wet[0]) {
       const c0 = lines[li].cells[0];
       let feed = 0;
@@ -624,7 +630,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const p = rivers[L.joins];
       r.level[count - 1] = Math.min(r.level[count - 1], p.level[nearestOnChannel(p, r.north[count - 1], r.east[count - 1])]);
     }
-    const f = applyFalls({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, valleyS: r.valleyS, area }, keep);
+    // (A river's samples lie close enough that it is not cut into pieces: cutting them only steps its banks more.)
+    const f = applyFalls({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, valleyS: r.valleyS, area }, keep, undefined, false);
     const c = { north: f.line.north, east: f.line.east, level: f.line.level, halfWidth: f.line.halfWidth, s: f.line.s, valleyS: f.line.valleyS };
     rivers[li] = c;
     channelArea[li] = f.line.area;
@@ -652,7 +659,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     return h;
   };
   tPhase.push(performance.now());
-  const traced = traceStreams({ d, mask, route: (pn, pe) => carvedGround(smoothGround(pn, pe), pn, pe), rivers, riverPools });
+  const route = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
+  const traced = traceStreams({ d, mask, route, rivers, riverPools });
+  const fillMask = traced.fill;
+  const filled = (pn: number, pe: number): number => fillMask.apply(pn, pe, route(pn, pe));
   const streamLines: Array<{ north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array }> = [];
   const streamJoins: number[] = [];
   const streamEnds: Array<StreamLine['end']> = [];
@@ -666,7 +676,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const keep = new Uint8Array(st.level.length);
     // (An outlet's first samples keep its lake's level: its first fall comes at the last of them.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
-    const f = applyFalls({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area }, keep);
+    const f = applyFalls({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area }, keep, filled);
     const c = { north: f.line.north, east: f.line.east, level: f.line.level, halfWidth: f.line.halfWidth, s: f.line.s };
     streamLines.push(c);
     streamJoins.push(st.joins);
@@ -686,13 +696,68 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     if (m < 2) continue;
     const drop = c.level[m - 2] - c.level[m - 1];
     const run = c.s[m - 1] - c.s[m - 2];
-    if (drop >= FALL_MIN && drop / Math.max(1, run) > 0.1) {
+    if (drop >= FALL_MIN && drop / Math.max(1, run) > 0.1 && !lipsOf[li].includes(m - 2)) {
       const i = m - 2;
       const dn = c.north[m - 1] - c.north[i];
       const de = c.east[m - 1] - c.east[i];
       const len = Math.hypot(dn, de) || 1;
       falls.push({ line: li, index: i, north: c.north[i], east: c.east[i], top: c.level[i], bottom: c.level[m - 1], width: 2 * c.halfWidth[i], dirN: dn / len, dirE: de / len });
       lipsOf[li].push(i);
+    }
+  }
+  // --- Catchment and width down the network: never less downstream, stepping up at each confluence (the receiver
+  // carries its own catchment above it plus what its lattice catchment gains within JOIN_PULL, and never less than the
+  // tributary's own), tributaries before their receivers.
+  {
+    const nL = allLines.length;
+    const depth = new Int32Array(nL);
+    for (let li = 0; li < nL; li++) {
+      let c = li;
+      let k = 0;
+      while (joinsOf(c) >= 0 && k < nL) {
+        c = joinsOf(c);
+        k++;
+      }
+      depth[li] = k;
+    }
+    const joinSOf = (li: number): number => {
+      if (li >= nR) return traced.streams[li - nR].joinS;
+      const c = allLines[li];
+      const p = allLines[joinsOf(li)];
+      return p.s[nearestOnChannel(p, c.north[c.north.length - 1], c.east[c.east.length - 1])];
+    };
+    const into: Array<Array<{ s: number; li: number }>> = allLines.map(() => []);
+    for (let li = 0; li < nL; li++) if (joinsOf(li) >= 0 && joinsOf(li) < nR) into[joinsOf(li)].push({ s: joinSOf(li), li });
+    const order = Array.from({ length: nR }, (_, i) => i).sort((a, b) => depth[b] - depth[a] || a - b);
+    for (const li of order) {
+      const A = channelArea[li];
+      const c = allLines[li];
+      const orig = Float64Array.from(A);
+      for (let i = 1; i < A.length; i++) A[i] = Math.max(A[i], A[i - 1]);
+      into[li].sort((x, y) => x.s - y.s || x.li - y.li);
+      for (const t of into[li]) {
+        const At = channelArea[t.li][channelArea[t.li].length - 1];
+        let i0 = 0;
+        while (i0 < A.length - 1 && c.s[i0] < t.s) i0++;
+        const up = A[Math.max(0, i0 - 1)];
+        const ahead = sampleAt(c.s, A, t.s + JOIN_PULL);
+        const target = Math.max(At, Math.min(up + At, ahead));
+        for (let i = i0; i < A.length; i++) A[i] = Math.max(A[i], target);
+      }
+      // Its width follows (where the catchment grew), never narrowing downstream; a dry head tapers from the stream
+      // feeding it (or a trickle) to its width over HEAD_TAPER.
+      const hw = c.halfWidth;
+      for (let i = 0; i < hw.length; i++) if (A[i] > orig[i] + 0.01) hw[i] = Math.max(hw[i], channelHalfWidth(A[i]));
+      for (let i = 1; i < hw.length; i++) hw[i] = Math.max(hw[i], hw[i - 1]);
+      // (Its head in no lake now: a pond drained after the river was laid out leaves a dry basin at its head too.)
+      if (headDry[li] || !(mask.at(c.north[0], c.east[0]) > -Infinity)) {
+        // (A tributary joining within the taper brings its own width from where it joins.)
+        for (let k = 0; k < hw.length && c.s[k] < HEAD_TAPER; k++) {
+          let feed = HEAD_START_AREA + (A[k] - HEAD_START_AREA) * smooth(0, HEAD_TAPER, c.s[k]);
+          for (const t of into[li]) if (t.s <= c.s[k]) feed = Math.max(feed, channelArea[t.li][channelArea[t.li].length - 1]);
+          hw[k] = Math.min(hw[k], channelHalfWidth(feed));
+        }
+      }
     }
   }
   tPhase.push(performance.now());
@@ -715,6 +780,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const valleyHits: ValleyNear[] = [];
   const channelHits: ChannelNear[] = [];
   const network: NetworkQuery = {
+    ...(fillMask.size > 0 ? { fill: (pn: number, pe: number, h: number): number => fillMask.apply(pn, pe, h) } : {}),
     valleys(pn, pe, out) {
       return valleyIndex.perLine(pn, pe, (li, i, t, dist, _side, _u, k) => {
         const a = axes[li];

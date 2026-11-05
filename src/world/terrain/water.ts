@@ -17,6 +17,7 @@ import { HASH_GLSL } from './glsl';
 import { hydrology, snowLineBase, snowShiftM } from './heightfield';
 import { lakeRadius } from './hydrology';
 import { REGIME } from './streams';
+import { hash2i } from './noise';
 import { GALLERY_FLOOR, RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
 import type { WaterData } from './tileBuilder';
 import { era, isPresent } from '../era/eraState';
@@ -695,6 +696,10 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
   // Running water: the flow per row, and no ribbon down a fall's face (createFallGeometries draws its curtain).
   const flowing = flow && !!r.steepness && !!r.speed && !!r.regime;
   const curtain: boolean[] = [];
+  // A stream's rows in a lake's water (an outlet leaving it, a stream running into it): the lake's own surface is drawn
+  // there, so no ribbon (its shallower, paler water would show as a streak across the lake).
+  const mask = flowing && r.kind === 1 ? hydrology.lakeMask : undefined;
+  const inLake: boolean[] = [];
   const first = pos.length / 3;
   let rows = 0;
   let i = from;
@@ -717,6 +722,10 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       // Whiter over a lip and below a fall's foot (the row after its lip; its pool's foam is createFallGeometries').
       fall = lip ? 0.3 : i > 0 && r.regime![i - 1] === REGIME.fall ? 0.6 : 0;
       curtain.push(curtainAt(r, i));
+      if (mask) {
+        const lake = mask.at(r.north[i], r.east[i]);
+        inLake.push(lake > -Infinity && r.level[i] <= lake + 0.3);
+      }
     }
     for (const a of across) {
       const off = a * w;
@@ -732,7 +741,7 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
     rows++;
   }
   for (let j = 0; j < rows - 1; j++) {
-    if (curtain[j]) continue;
+    if (curtain[j] || (inLake[j] && inLake[j + 1])) continue;
     for (let k = 0; k < across.length - 1; k++) {
       const a = first + j * across.length + k;
       const c = a + across.length;
@@ -817,7 +826,7 @@ export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
 
 /** Rows down a fall's curtain, and the foam patch's lattice (FOAM_N x FOAM_N). */
 const CURTAIN_ROWS = 7;
-const CURTAIN_ACROSS = [-1, -0.5, 0, 0.5, 1];
+const CURTAIN_ACROSS = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1];
 const FOAM_N = 5;
 /** Falls are grouped in square chunks this size, m: few vertices each, so coarser than the ribbons' (fewer draw calls). */
 const FALL_CHUNK = 40000;
@@ -881,13 +890,20 @@ export function createFallGeometries(): { sheets: THREE.BufferGeometry[]; spray:
     if (curtainAt(r, i)) {
       // The curtain: a parabola from the lip (leaving it level) to the foot, y = drop u, out = run sqrt(u); it stands
       // in front of the straight face the terrain is cut to. Narrowing a little as it falls; soft at the sides.
+      // A natural lip is no weir's: it bows and wanders along the flow (each fall its own), the water spills lower at
+      // its rounded ends, and over a wider fall it parts round the rock into strands (columns left dry).
       const first = b.pos.length / 3;
+      const nA = CURTAIN_ACROSS.length;
+      const h01 = (k: number): number => (hash2i(fi * 13 + k, 7177) & 0xffff) / 65535;
+      const bow = (h01(0) - 0.35) * 0.6 * hw0;
+      const lipOff = CURTAIN_ACROSS.map((a, c) => bow * (1 - a * a) + (h01(c + 1) - 0.5) * Math.min(0.4 * hw0, 0.25 * run + 1));
       for (let k = 0; k < CURTAIN_ROWS; k++) {
         const u = k / (CURTAIN_ROWS - 1);
-        const out = run * Math.sqrt(u);
-        const y = top - drop * u + 0.03;
         const hw = (hw0 + (hw1 - hw0) * u) * (1 - 0.12 * u);
-        for (const a of CURTAIN_ACROSS) {
+        for (let c = 0; c < nA; c++) {
+          const a = CURTAIN_ACROSS[c];
+          const out = run * Math.sqrt(u) + lipOff[c] * (1 - 0.5 * u);
+          const y = top - drop * u - 0.3 * Math.min(drop, hw0) * a * a * a * a * (1 - u) + 0.03;
           const n = r.north[i] + un * out + ln * a * hw;
           const e = r.east[i] + ue * out + le * a * hw;
           b.pos.push(e, y, -n);
@@ -897,9 +913,10 @@ export function createFallGeometries(): { sheets: THREE.BufferGeometry[]; spray:
           b.fall.push(0, drop * u, v0);
         }
       }
-      const nA = CURTAIN_ACROSS.length;
+      const dryCol = (c: number): boolean => hw0 > 3 && c > 0 && c < nA - 2 && Math.abs(c - (nA - 2) / 2) > 0.6 && h01(c + 40) < Math.min(0.4, 0.04 * hw0);
       for (let k = 0; k < CURTAIN_ROWS - 1; k++) {
         for (let c = 0; c < nA - 1; c++) {
+          if (dryCol(c)) continue;
           const a = first + k * nA + c;
           const d = a + nA;
           b.idx.push(a, d, a + 1, a + 1, d, d + 1);

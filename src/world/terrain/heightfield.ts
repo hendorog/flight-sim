@@ -630,6 +630,8 @@ const channelNear: ChannelNear[] = [];
 /** A seeded world's river network (riverNetwork.ts): every valley and channel near the point cut into h, as carveRiver cuts its one river. */
 function carveNetwork(north: number, east: number, h: number, out: TerrainSample): number {
   const net = presentHydro.network as NonNullable<Hydrology['network']>;
+  // The hollows the streams filled to their sills (streams.ts): a flat over each (not in a lake's domain: its water).
+  if (net.fill && maskLevel === -Infinity) h = net.fill(north, east, h);
   // Along a stream (streams.ts) the ground is its smooth course, without the small-scale relief's knobs and ledges:
   // the stream's water follows that ground down (it took them away), fading back in by STREAM_SMOOTH beyond its bank.
   const nc0 = net.channels(north, east, channelNear);
@@ -639,8 +641,11 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     if (c.kind === 1) calmS = Math.max(calmS, 1 - smooth(c.halfWidth + STREAM_SMOOTH[0], c.halfWidth + STREAM_SMOOTH[1], c.dist));
   }
   // (Never more than STREAM_FILL over the natural ground: a dip deeper than that beside a stream stays a dip.)
+  // Not in a lake's domain: its bed and shore keep their ground (a stream's smoothing or banks there would raise a
+  // causeway through the water at an outlet).
   const hNatural = h;
-  if (calmS > 0) h = Math.min(h - lastSmall * calmS, hNatural + STREAM_FILL);
+  const dryS = maskLevel === -Infinity;
+  if (calmS > 0 && dryS) h = Math.min(h - lastSmall * calmS, hNatural + STREAM_FILL);
   const nv = net.valleys(north, east, valleyNear);
   // Beside a lake a valley keeps its ground over the lake's water (drainage.ts LakeMask.holds: the domain and a raster
   // point round it), or the water would stand against nothing at the domain's edge.
@@ -696,7 +701,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip
       // between the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's
       // water, nor at a mouth on the sea).
-      if (d > w && out.river === -Infinity && c.level > 0.5) {
+      if (d > w && out.river === -Infinity && c.level > 0.5 && dryS) {
         const need = Math.min(c.level + 0.3 + 0.03 * (d - w), hNatural + STREAM_FILL) - h;
         if (need > 0) h += need * (1 - smooth(w + STREAM_SMOOTH[0] + 15, w + STREAM_SMOOTH[1], d)) * open;
       }
@@ -707,7 +712,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     if (w <= 0.5) continue;
     let carved = smin(h, c.level + channelProfile(d, w), 3);
     // A natural levee is a few metres at most: never a bank raised far over the plain (a wall).
-    if (d > w && d < w + 40 && c.level > 0.5 && c.level - carved < 4) {
+    // (Judged on the ground before a stream's banks raised it: a levee on top of a stream's bank would be a wall.)
+    if (d > w && d < w + 40 && c.level > 0.5 && c.level - Math.min(carved, hNatural) < 4) {
       const levee = c.level + 0.3 + 0.03 * (d - w);
       carved += (Math.max(carved, levee) - carved) * (1 - smooth(w + 25, w + 40, d));
     }
