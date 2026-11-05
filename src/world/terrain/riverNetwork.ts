@@ -8,12 +8,10 @@
 // filled hollows of the drainage, as warped ellipses fitted to the hollow.
 
 import { fbm, hash2i, gnoise } from './noise';
-import { lakeAt, lakeRadius, PolylineIndex, CHANNEL_BANK, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
-import { cellEast, cellNorth, DRAIN_CELL, type Drainage } from './drainage';
+import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
+import { cellEast, cellNorth, DRAIN_CELL, type Drainage, type LakeMask } from './drainage';
 import { AIRPORT } from '../../core/world';
 
-/** A lake's water stands at least this far over the natural ground at its middle, m. */
-const MIN_LAKE_DEPTH = 3;
 /** A loop is cut off when its neck has closed to this fraction of the meander length (or a few channel widths). */
 const NECK_FACTOR = 0.22;
 /** Oxbow water stands this far above the river level of its valley section, m (as hydrology.ts). */
@@ -58,17 +56,20 @@ interface Axis {
   influence: Float64Array;
 }
 
-/** The lakes of a seeded world: ellipses fitted to the drainage's lake hollows, levels from the natural terrain. */
-export function networkLakes(natural: (north: number, east: number) => number, d: Drainage): Lake[] {
+/**
+ * The lakes of a seeded world, as Lake records for what places things by a lake (landmarks, sites, habitat, airfield
+ * siting): an ellipse fitted to the pond's lattice cells about its middle, at its level. The water itself is the
+ * drainage's LakeMask (it covers the ground below the level across the pond, whatever its shape); these ellipses are
+ * not carved into the terrain.
+ */
+export function networkLakes(d: Drainage): Lake[] {
   const out: Lake[] = [];
   for (const l of d.lakes) {
     let mn = 0;
     let me = 0;
-    let deep = l.cells[0];
     for (const c of l.cells) {
       mn += cellNorth(d, c);
       me += cellEast(d, c);
-      if (d.filled[c] - d.height[c] > d.filled[deep] - d.height[deep]) deep = c;
     }
     mn /= l.cells.length;
     me /= l.cells.length;
@@ -92,30 +93,24 @@ export function networkLakes(natural: (north: number, east: number) => number, d
     const disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
     const l1 = tr / 2 + disc;
     const l2 = Math.max(1, tr / 2 - disc);
-    // Major axis direction from north toward east.
-    const rotation = 0.5 * Math.atan2(2 * sne, snn - see);
-    const depth = Math.min(40, Math.max(8, l.depth * 0.6));
-    // The shoreline must stay inside the hollow: its level comes from the lowest ground round the shore, so a shore
-    // reaching over the rim onto falling ground would leave the water in a pit. Try the hollow's centre and its
-    // deepest cell, shrinking the ellipse until the water stands at least MIN_LAKE_DEPTH over the natural ground at
-    // the middle; a hollow where no size does has no lake.
-    let lake: Lake | null = null;
-    for (const [cn, ce] of [[mn, me], [cellNorth(d, deep), cellEast(d, deep)]]) {
-      for (let f = 1; f >= 0.3 && !lake; f *= 0.8) {
-        const radiusA = Math.max(300, 1.7 * Math.sqrt(l1) * f);
-        const radiusB = Math.max(220, 1.7 * Math.sqrt(l2) * f);
-        const cand = lakeAt(natural, { radiusA, radiusB, rotation, depth }, { north: cn, east: ce });
-        if (cand.level >= natural(cn, ce) + MIN_LAKE_DEPTH) lake = cand;
-      }
-      if (lake) break;
-    }
-    if (lake) out.push(lake);
+    const radiusA = Math.max(300, 1.7 * Math.sqrt(l1));
+    const radiusB = Math.max(220, 1.7 * Math.sqrt(l2));
+    out.push({
+      north: cellNorth(d, l.centre),
+      east: cellEast(d, l.centre),
+      radiusA,
+      radiusB,
+      rotation: 0.5 * Math.atan2(2 * sne, snn - see),
+      depth: Math.min(40, Math.max(8, l.depth * 0.6)),
+      level: l.level,
+      bound: Math.max(radiusA, radiusB) * LAKE_ZONE * 1.35,
+    });
   }
   return out;
 }
 
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, lakes: Lake[]): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, lakes: Lake[], mask: LakeMask): Hydrology {
   const lines = d.lines;
   // --- Lattice courses: jittered (the same jitter for a cell shared by two lines) and smoothed; a tributary's last
   // point is put back on its parent's smoothed course.
@@ -161,18 +156,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
 
   // --- Valley axes: densified courses with catchment, level, width, meander belt, floodplain.
   const axes: Axis[] = [];
-  const lakeAtPoint = (pn: number, pe: number): Lake | null => {
-    for (const lake of lakes) {
-      const dn = pn - lake.north;
-      const de = pe - lake.east;
-      if (dn * dn + de * de > lake.bound * lake.bound) continue;
-      if (lakeRadius(lake, pn, pe) < 1) return lake;
-    }
-    return null;
-  };
   // First each line's own course and water level (the running minimum of the ground), then the confluences, then
   // the rest of each valley from its final level.
-  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array }> = [];
+  const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array }> = [];
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const c = courses[li];
@@ -215,18 +201,20 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     for (let i = 1; i < count - 1; i += 2) ground[i] = Math.min(ground[i - 1], ground[i + 1]);
     const level = new Float64Array(count);
+    const wet = new Uint8Array(count);
     let run = Infinity;
     for (let i = 0; i < count; i++) {
-      const lake = lakeAtPoint(north[i], east[i]);
-      if (lake) {
-        run = lake.level;
+      const lake = mask.at(north[i], east[i]);
+      if (lake > -Infinity) {
+        run = lake;
+        wet[i] = 1;
       } else {
         const cand = ground[i] - 2.5;
         run = i === 0 ? cand : Math.min(run - 0.00025 * (s[i] - s[i - 1]), cand);
       }
       level[i] = Math.max(0, run);
     }
-    pre.push({ north, east, s, area, level });
+    pre.push({ north, east, s, area, level, wet });
   }
   // --- Confluences. A tributary that arrives lower than the river it joins has cut down through a rim (it drains a
   // closed basin the routing filled: a big hollow is not a lake, drainage.ts): the river it joins cuts down with it
@@ -238,11 +226,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const c = pre[li];
     const p = pre[L.joins];
     const mouth = c.level[c.level.length - 1];
-    for (let i = nearestIndex(p, c.north[c.north.length - 1], c.east[c.east.length - 1]); i < p.level.length; i++) p.level[i] = Math.min(p.level[i], mouth);
+    // A lake below the confluence holds its own level: the cut ends at its shore.
+    for (let i = nearestIndex(p, c.north[c.north.length - 1], c.east[c.east.length - 1]); i < p.level.length && !p.wet[i]; i++) p.level[i] = Math.min(p.level[i], mouth);
   }
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
-    const { north, east, s, area, level } = pre[li];
+    const { north, east, s, area, level, wet } = pre[li];
     const count = north.length;
     if (L.joins >= 0) {
       const p = axes[L.joins];
@@ -252,7 +241,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       level[count - 1] = lj;
     }
     // No cliffs: a small stream may fall steeply, a big river at most MAX_GRADIENT (the drop is spread upstream).
+    // A lake holds its level: the drop below its outlet stays there (rapids, a fall), not spread up through the lake.
     for (let i = count - 2; i >= 0; i--) {
+      if (wet[i]) continue;
       const cap = 0.008 + 0.6 * (1 - smooth(100, 1500, area[i]));
       level[i] = Math.min(level[i], level[i + 1] + cap * (s[i + 1] - s[i]));
     }
@@ -274,7 +265,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const tail = L.joins >= 0 ? smooth(0, 2500, s[count - 1] - s[i]) : 1;
       // No wide loops by the home runway.
       const nearField = smooth(3000, 6000, runwayDistance(north[i], east[i]));
-      const mFree = lowland * big * tail * clampUnit(0.8 + 0.4 * gnoise(s[i] / 5200 + li * 7.31, 2.7 + li));
+      // None across a lake (its water hides the course; the loops would only cost time).
+      const mFree = (1 - wet[i]) * lowland * big * tail * clampUnit(0.8 + 0.4 * gnoise(s[i] / 5200 + li * 7.31, 2.7 + li));
       const m = mFree * nearField;
       meander[i] = m;
       // Meander wavelength about 18 channel widths (the long end of Leopold & Wolman's range: broad loops, as seed 0's
@@ -473,6 +465,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const mainAxis = axes[0];
   return {
     lakes,
+    lakeMask: mask,
     river: { north: main.north, east: main.east, level: main.level, halfWidth: main.halfWidth, s: main.s },
     valley: mainAxis
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
