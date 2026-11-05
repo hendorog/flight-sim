@@ -610,6 +610,7 @@ function settlePonds(n: number, origin: number, routed: Float32Array, c: { lakes
         const ee = qe + t * DJ[k] * DRAIN_CELL;
         // The lateral samples only where they lie on the edge (the edge may bend away from them, into the lake).
         const pts: Array<[number, number, boolean]> = [[en, ee, true], [en + 0.12 * DI[k] * DRAIN_CELL, ee + 0.12 * DJ[k] * DRAIN_CELL, true], [en + pn, ee + pe, false], [en - pn, ee - pe, false]];
+        for (const f of EDGE_LATERAL) pts.push([en + f * pn, ee + f * pe, false], [en - f * pn, ee - f * pe, false]);
         for (const [a, b, always] of pts) {
           if (!always) {
             const f = field(a, b);
@@ -893,5 +894,7 @@ export class LakeMask {
     return r >= L - 0.01 ? -2 : -60;
   }
 }
+/** Further lateral samples along a lake's edge in settlePonds, as fractions of the first (0.3 cell). */
+const EDGE_LATERAL = [0.5, 1.5];
 /** See LakeMask, m. */
 const LAKE_SHORE_MARGIN = 20;
