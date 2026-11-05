@@ -498,8 +498,6 @@ let lakeCover = Infinity;
 /** The seeded world's lake over the sample point (LakeMask): its level (-Infinity: none) and edge field. */
 let maskLevel = -Infinity;
 let maskField = 0;
-/** The level of the lake whose edge the sample point lies on or just outside (-Infinity: none). */
-let maskNear = -Infinity;
 const valleyNear: ValleyNear[] = [];
 const channelNear: ChannelNear[] = [];
 
@@ -507,6 +505,9 @@ const channelNear: ChannelNear[] = [];
 function carveNetwork(north: number, east: number, h: number, out: TerrainSample): number {
   const net = presentHydro.network as NonNullable<Hydrology['network']>;
   const nv = net.valleys(north, east, valleyNear);
+  const mask = presentHydro.lakeMask;
+  const guard = nv > 0 && mask ? mask.guard(north, east) : 0;
+  const guardLevel = guard > 0 && mask ? mask.guardLevel : -Infinity;
   for (let j = 0; j < nv; j++) {
     const v = valleyNear[j];
     const d = v.dist;
@@ -518,8 +519,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const t = clamp((d - f) / I, 0, 1);
     let carved = smin(h, v.level + valleyProfile(d, f) + excess * t * t, 4);
     // A valley passing a lake does not cut into the lake's rim below its water (the lake would stand against nothing
-    // at the edge of its mask): from just outside the edge inward, the walls stay over the lake's level.
-    if (maskNear > -Infinity && maskField > -2) carved += smooth(-2, -1, maskField) * Math.max(0, Math.min(h, maskNear + 0.5) - carved);
+    // at the edge of its mask): over the lake and a cell or so round it, the walls stay over the lake's level.
+    if (guard > 0) carved += guard * Math.max(0, Math.min(h, guardLevel + 0.5) - carved);
     h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
   }
 
@@ -675,11 +676,9 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
   }
 
   maskLevel = -Infinity;
-  maskNear = -Infinity;
   const mask = presentHydro.lakeMask;
   if (mask) {
     maskLevel = mask.at(north, east);
-    maskNear = mask.near;
     maskField = mask.field;
     if (maskLevel > -Infinity) out.standing = Math.max(out.standing, maskLevel);
   }

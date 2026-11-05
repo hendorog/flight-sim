@@ -37,7 +37,7 @@ it('lake edge', () => {
           if (h > 2 && process.env.EDGE_SHOW && wall2 % 400 === 0) console.log(`  wall ${h.toFixed(0)} m at ${(n0 + (i + a) * STEP).toFixed(0)},${(e0 + (j + b) * STEP).toFixed(0)}: level ${l.level.toFixed(0)} natural ${nat[q].toFixed(0)} coarse ${naturalHeightCoarse(n0 + (i + a) * STEP, e0 + (j + b) * STEP).toFixed(0)} river ${rd[q].toFixed(0)} other lake ${mask.at(n0 + (i + a) * STEP, e0 + (j + b) * STEP).toFixed(0)}`);
           if (h > 2) { wall2++; if (rd[q] < 600) nearRiver++; if (l.level - nat[q] > 2) natLow++; }
           if (h > 10) wall10++;
-          if (h > worst) { worst = h; where = `${(n0 + (i + a) * STEP).toFixed(0)},${(e0 + (j + b) * STEP).toFixed(0)}`; }
+          if (h > worst) { worst = h; where = `${(n0 + (i + a) * STEP).toFixed(0)},${(e0 + (j + b) * STEP).toFixed(0)} (lake level ${l.level.toFixed(0)}, inside ${(n0 + i * STEP).toFixed(0)},${(e0 + j * STEP).toFixed(0)} ground ${ground[i * m + j].toFixed(0)}, outside ground ${ground[q].toFixed(0)} natural ${nat[q].toFixed(0)})`; }
         }
       }
     }

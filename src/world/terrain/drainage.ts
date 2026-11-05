@@ -773,10 +773,8 @@ export class LakeMask {
   private readonly id: Int16Array;
   private readonly levels: Float64Array;
   private readonly spills: Float32Array;
-  /** The field at the last point `at` looked at (0 away from every lake; negative just outside one), and the level of
-   * the lake it was measured against (-Infinity away from every lake). */
+  /** The field at the last point `at` found in a lake (0 elsewhere): how far inside its edge the point lies. */
   field = 0;
-  near = -Infinity;
   constructor(private readonly d: Drainage) {
     this.id = new Int16Array(d.n * d.n).fill(-1);
     d.lakes.forEach((l, k) => {
@@ -784,12 +782,77 @@ export class LakeMask {
     });
     this.levels = Float64Array.from(d.lakes, (l) => l.level);
     this.spills = Float32Array.from(d.lakes, (l) => l.spill);
+    // The cells guard() holds: each lake's cells and the ring round them (its shore and rim), the higher lake's where
+    // two meet; and the squares whose B-spline support (the 4 x 4 cells round them) holds one.
+    const n = d.n;
+    this.gid = new Int16Array(n * n).fill(-1);
+    d.lakes.forEach((l, k) => {
+      for (const c of l.cells) {
+        const i = Math.floor(c / n);
+        const j = c % n;
+        for (let a = -1; a <= 1; a++) {
+          for (let b = -1; b <= 1; b++) {
+            if (i + a < 0 || j + b < 0 || i + a >= n || j + b >= n) continue;
+            const q = (i + a) * n + j + b;
+            const g = this.gid[q];
+            if (g < 0 || this.levels[g] < l.level) this.gid[q] = k;
+          }
+        }
+      }
+    });
+    this.sq = new Uint8Array(n * n);
+    for (let c = 0; c < n * n; c++) {
+      if (this.gid[c] < 0) continue;
+      const i = Math.floor(c / n);
+      const j = c % n;
+      for (let a = -2; a <= 1; a++) for (let b = -2; b <= 1; b++) if (i + a >= 0 && j + b >= 0 && i + a < n && j + b < n) this.sq[(i + a) * n + j + b] = 1;
+    }
+  }
+  private readonly sq: Uint8Array;
+  private readonly gid: Int16Array;
+  /** The level of the lake guard() last found (-Infinity: none). */
+  guardLevel = -Infinity;
+  /**
+   * How firmly the ground round a lake is kept over its water at (north, east), [0, 1]: 1 over the lake and its shore,
+   * falling to 0 a cell or so beyond (a cubic B-spline of the lake's cells and the ring round them: C2 smooth). A valley carved past a lake
+   * (a gorge running by it) keeps its walls over the lake's level there, or the lake would stand against nothing at
+   * the edge of its mask. Leaves the lake's level in guardLevel.
+   */
+  guard(north: number, east: number): number {
+    const { d, gid } = this;
+    const n = d.n;
+    this.guardLevel = -Infinity;
+    const x = (east - d.origin) / DRAIN_CELL;
+    const y = (north - d.origin) / DRAIN_CELL;
+    const j = Math.floor(x);
+    const i = Math.floor(y);
+    if (i < 1 || j < 1 || i >= n - 2 || j >= n - 2 || !this.sq[i * n + j]) return 0;
+    const tx = x - j;
+    const ty = y - i;
+    // The weight of each lake among the 16 cells (rarely more than one).
+    let k0 = -1;
+    let v0 = 0;
+    let k1 = -1;
+    let v1 = 0;
+    for (let a = 0; a < 4; a++) {
+      const wy = bspline(a, ty);
+      for (let b = 0; b < 4; b++) {
+        const k = gid[(i - 1 + a) * n + j - 1 + b];
+        if (k < 0) continue;
+        const w = wy * bspline(b, tx);
+        if (k === k0 || k0 < 0) (k0 = k), (v0 += w);
+        else if (k === k1 || k1 < 0) (k1 = k), (v1 += w);
+      }
+    }
+    if (v1 > v0) (k0 = k1), (v0 = v1);
+    if (k0 < 0 || v0 <= 0.02) return 0;
+    this.guardLevel = this.levels[k0];
+    return smoothstep(0.02, 0.45, v0);
   }
   /** The level of the lake standing over (north, east), m, or -Infinity. */
   at(north: number, east: number): number {
     const { d, id } = this;
     this.field = 0;
-    this.near = -Infinity;
     const x = (east - d.origin) / DRAIN_CELL;
     const y = (north - d.origin) / DRAIN_CELL;
     const j = Math.floor(x);
@@ -819,9 +882,8 @@ export class LakeMask {
     if (k11 >= 0 && w11 > wk) (k = k11), (wk = w11);
     const L = this.spills[k];
     const f = w00 * this.corner(c00, k00, k, L) + w01 * this.corner(c01, k01, k, L) + w10 * this.corner(c10, k10, k, L) + w11 * this.corner(c11, k11, k, L);
-    this.field = f;
-    this.near = this.levels[k];
     if (f <= 0) return -Infinity;
+    this.field = f;
     return this.levels[k];
   }
   private corner(c: number, kc: number, k: number, L: number): number {
