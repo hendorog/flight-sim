@@ -708,6 +708,21 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   // its edge (the river joining two arms), and none faded in toward the edge.
   if (maskLevel > -Infinity) open = Math.min(open, Math.max(smooth(maskLevel - 0.5, maskLevel + 1.5, h), 1 - smooth(0, 10, maskField)));
   const nc = open > 0 ? nc0 : 0;
+  // The highest water whose banks the point lies within (and the line it is), and the highest of the other lines'
+  // (a stream's carving keeps the ground over another channel's water there).
+  let keep1 = -Infinity;
+  let keep2 = -Infinity;
+  let keepLine = -1;
+  for (let q = 0; q < nc; q++) {
+    const o = channelNear[q];
+    if (!(o.dist < o.halfWidth + CHANNEL_BANK + 20)) continue;
+    const v = o.level + BANK_HEIGHT;
+    if (v > keep1) {
+      keep2 = keep1;
+      keep1 = v;
+      keepLine = o.line;
+    } else if (v > keep2) keep2 = v;
+  }
   /** The tarn whose shore the point lies on, if any (streams.ts TarnMask). */
   const tarnRim = net.tarnRim ? net.tarnRim(north, east) : -Infinity;
   /** The highest water of a channel whose bed or bank the point lies on (-Infinity: none). */
@@ -720,11 +735,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       // Its broad breach first (a rim or sill worn down), then its own bed and banks. Neither takes the ground under
       // another channel's water within that channel's banks (a stream running down beside a river held up on its valley
       // floor would leave the river's water standing over a hollow).
-      let keep = -Infinity;
-      for (let q = 0; q < nc; q++) {
-        const o = channelNear[q];
-        if (o.line !== c.line && o.dist < o.halfWidth + CHANNEL_BANK + 20) keep = Math.max(keep, o.level + BANK_HEIGHT);
-      }
+      let keep = keepLine === c.line ? keep2 : keep1;
       // Nor beside a lake standing higher (its domain and a raster point round it, LakeMask.holds), nor a tarn's shore.
       if (c.breach > 0 && mask && mask.holds(north, east) > 0) keep = Math.max(keep, mask.holdLevel + 0.5);
       if (tarnRim > c.level + 3) keep = Math.max(keep, tarnRim + 0.4);
@@ -732,8 +743,12 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, c.level + breachProfile(d, c.breach), 3)) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
       const w = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
       if (w <= 0.3) continue;
-      const banks = smin(h, c.level + streamBanks(d, w, c.s, c.side, c.line), 0.5 + 0.3 * w);
-      h += ((d > w ? Math.max(Math.min(h, keep), banks) : banks) - h) * open;
+      // (Not worked out where its banks stand well over the ground: their least height there is under the ground's.)
+      const kb = 0.5 + 0.3 * w;
+      if (d < w || c.level + 0.4 * (d - w - 3.2 * (2 + 1.5 * w)) - 4 < h + kb) {
+        const banks = smin(h, c.level + streamBanks(d, w, c.s, c.side, c.line), kb);
+        h += ((d > w ? Math.max(Math.min(h, keep), banks) : banks) - h) * open;
+      }
       // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip
       // between the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's
       // water, nor at a mouth on the sea).
