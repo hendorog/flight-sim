@@ -39,7 +39,7 @@ import type { SimContext, Subsystem } from '../core/context';
 import type { AirframeVisualDef } from '../render/aircraft/airframe/types';
 import { TrafficExterior } from '../render/aircraft/trafficExterior';
 import { trafficModel, type TrafficModel } from '../render/aircraft/trafficModel';
-import { TrafficPilot } from './trafficPilot';
+import { TrafficPilot, wheelHeight } from './trafficPilot';
 import { quat } from '../core/math';
 import { nedToThree, quatToThree } from '../core/frames';
 import type { TowerTarget } from '../render/cameras/towerRig';
@@ -51,7 +51,7 @@ import {
   type CallId, type Intent, type RadioSituation, type RunwayEnd,
 } from './calls';
 import {
-  CIRCUIT_HEIGHT, circuitPath, circuitRemaining, pathPoint, placeOnLeg, ROLL_HOLD, stepDirect, stepTaxi, stepTraffic, TAXI_SPEED, turnLead,
+  CIRCUIT_HEIGHT, circuitPath, circuitRemaining, pathPoint, placeOnLeg, ROLL_HOLD, stepDirect, stepTaxi, stepTraffic, TAXI_SPEED, turnLead, turnOnSpot,
   type CircuitPath, type TrafficState,
 } from './circuit';
 import { callsign, companyCallsign, maker, type Authority, type Callsign, type Phrase } from './phrases';
@@ -601,8 +601,9 @@ export class TrafficSystem implements Subsystem {
           if (this.apronBusy(a)) go = false;
           else o.apron = true;
         }
-        o.wp = stepTaxi(s, o.route, o.wp, dt, go ? TAXI_SPEED : 0);
-        if (o.wp >= o.route.length) this.park(a, o.spot!, PARK_FOR * (1 + this.random()));
+        if (o.wp < o.route.length) o.wp = stepTaxi(s, o.route, o.wp, dt, go ? TAXI_SPEED : 0);
+        // In nose first: swung round on the spot to face out, then parked.
+        else if (turnOnSpot(s, localHeading(0, o.spot!.facing), localPoint(o.spot!), dt)) this.park(a, o.spot!, PARK_FOR * (1 + this.random()));
         return;
       }
       case 'inbound':
@@ -826,7 +827,7 @@ export class TrafficSystem implements Subsystem {
         if (a.ops) a.ops.phase = 'air';
       }
       // Posed: the flight model's state stands where the kinematic aircraft is (its gear, propeller and lights).
-      if (a.pilot && !a.physics) a.pilot.pose(a.state, a.field.elevation, dt, a.ops?.phase !== 'parked');
+      if (a.pilot && !a.physics) a.pilot.pose(a.state, a.field.elevation, this.groundUnder(a), dt, a.ops?.phase !== 'parked');
       this.pose(a, cam, dt);
     }
     if ((this.towerClock -= dt) <= 0) {
@@ -1025,7 +1026,7 @@ export class TrafficSystem implements Subsystem {
     if (!env) return;
     a.pilot = new TrafficPilot(def, a.path);
     a.pilot.start(env, a.path, a.state);
-    if (a.state.onGround && !this.restPitch.has(a.typeId)) this.restPitch.set(a.typeId, a.pilot.restPitch);
+    if (!this.restPitch.has(a.typeId)) this.restPitch.set(a.typeId, a.pilot.restPitch);
     a.physics = !posed;
     if (!posed) this.directed(a);
     if (this.deps.exteriors === false) return;
@@ -1157,11 +1158,14 @@ export class TrafficSystem implements Subsystem {
     const s = a.state;
     const flown = !!(a.pilot && a.physics);
     if (flown) a.pilot!.drawPose(this.drawPos, this.drawQuat);
-    else {
-      const rest = a.pilot?.def.geometry.restHeight ?? this.restHeight(a);
+    else if (a.pilot) {
+      // Posed (update): where the flight model's state has been put.
+      Object.assign(this.drawPos, a.pilot.state.position);
+      Object.assign(this.drawQuat, a.pilot.state.orientation);
+    } else {
       this.drawPos.x = s.north;
       this.drawPos.y = s.east;
-      this.drawPos.z = -(a.field.elevation + s.height + rest);
+      this.drawPos.z = -(wheelHeight(a.field.elevation, this.groundUnder(a), s.height) + this.restHeight(a));
       Object.assign(this.drawQuat, quat.fromEuler(s.onGround ? 0 : s.bank, s.pitch + (s.onGround ? this.restPitch.get(a.typeId) ?? 0 : 0), s.heading));
     }
     const pos = nedToThree(this.drawPos, this.tPos);
@@ -1209,6 +1213,12 @@ export class TrafficSystem implements Subsystem {
     root.quaternion.copy(rot);
     root.visible = a.mesh.ready && pos.distanceTo(cam) < DRAW_RANGE;
     a.mesh.flash(this.clock + a.voice * 0.37, a.ops?.phase !== 'parked');
+  }
+
+  /** The ground under it, m MSL, as the flight models feel it (the pavement raised a little); the field without a world. */
+  private groundUnder(a: Aircraft): number {
+    const env = this.deps.env?.();
+    return env ? env.groundElevation(a.state.north, a.state.east) : a.field.elevation;
   }
 
   /** Height of its reference point above its wheels, m: the flight model's, else the far model's. */

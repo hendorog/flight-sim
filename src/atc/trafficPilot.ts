@@ -9,8 +9,8 @@
 
 import type { AircraftDefinition } from '../aircraft/types';
 import { DEG, FT, KT, quat, wrapPi, type Quat, type Vec3 } from '../core/math';
-import { copyControls, defaultControls, type AircraftState, type ControlInputs, type Environment } from '../core/types';
-import { createFlightModelFor, type BladeElementFlightModel } from '../physics';
+import { copyControls, defaultControls, defaultWeather, type AircraftState, type ControlInputs, type Environment } from '../core/types';
+import { createEnvironment, createFlightModelFor, type BladeElementFlightModel } from '../physics';
 import { Autoflight, type AutoflightRunway } from '../sim/autoflight';
 import { flapLever } from '../sim/scenarios';
 import { activeFrame } from './calls';
@@ -31,6 +31,45 @@ const DRIFT_TAU = 3;
 const CIRCUIT_BANK = 22 * DEG;
 /** At most this much flight time is carried to the next frame (a stalled tab must not replay seconds at once), s. */
 const MAX_CARRY = 0.5;
+
+/**
+ * Over this height the posed aircraft no longer follows the ground under it (the pavement's lift above the field),
+ * m: it fades out on the climb and in on the descent, so the touchdown has no step.
+ */
+const LIFT_FADE = 5;
+
+/** How a type stands at rest on level ground: each wheel's compression, its pitch and the reference point's height. */
+interface Rest {
+  compression: number[];
+  pitch: number;
+  height: number;
+}
+const RESTS = new WeakMap<AircraftDefinition, Rest>();
+let level: Environment | null = null;
+
+/** The flight model settled at rest on level ground, calm, once per type. */
+function restOf(def: AircraftDefinition, fm: BladeElementFlightModel): Rest {
+  let r = RESTS.get(def);
+  if (r) return r;
+  level ??= createEnvironment({
+    weather: { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0 },
+    terrain: { height: () => 0, normal: () => ({ x: 0, y: 0, z: -1 }), surface: () => 'runway' },
+  });
+  fm.reset({ position: { x: 0, y: 0, z: -def.geometry.restHeight }, heading: 0, airspeed: 0, onGround: true, engineRunning: false, flaps: 0, flightPathAngle: 0 }, level);
+  const s = fm.state;
+  r = { compression: s.wheels.map((w) => w.compression), pitch: s.pitch, height: s.altitudeMSL };
+  RESTS.set(def, r);
+  return r;
+}
+
+/**
+ * The height MSL of a kinematic aircraft's wheels: its height above the field, plus near the ground the ground's own
+ * height above the field there (the pavement is raised a few centimetres, runway 9 and taxiways 5, and the wheels
+ * of the flight model stand on it: sim/worldEnvironment.ts).
+ */
+export function wheelHeight(elevation: number, ground: number, height: number): number {
+  return elevation + height + (ground - elevation) * Math.max(0, 1 - height / LIFT_FADE);
+}
 
 /** The runway in use as the scripted pilot's frame (the landing direction). */
 export function runwayFrame(path: CircuitPath): AutoflightRunway {
@@ -57,8 +96,8 @@ export class TrafficPilot {
   fullStop = false;
   /** Flying straight to a point (joining, leaving) instead of round the circuit. */
   private direct: { north: number; east: number } | null = null;
-  /** The pitch attitude standing on its wheels (for posing it on the ground). */
-  private groundPitch = 0;
+  /** How it stands at rest on level ground (for posing it on the ground). */
+  private readonly rest: Rest;
   /** Flap levers: the base and final settings, and the take-off's. */
   private readonly flaps: { first: number; base: number; final: number };
   /**
@@ -76,6 +115,7 @@ export class TrafficPilot {
     this.controls = defaultControls(def);
     this.autoflight = new Autoflight(def.sim.autoflight, def.reference, def.geometry.restHeight, { gains: def.autopilot, flaps: def.controls.flaps });
     this.path = path;
+    this.rest = restOf(def, this.fm);
     const sc = def.sim.scenario;
     const fl = def.controls.flaps;
     const first = fl.detents.find((d) => d > 0);
@@ -117,7 +157,6 @@ export class TrafficPilot {
     this.controls.parkingBrake = false;
     this.direct = null;
     this.fullStop = k.fullStop ?? false;
-    if (k.onGround) this.groundPitch = this.fm.state.pitch;
     // Nav lights, beacon, strobes and the landing light on, as in the circuit.
     Object.assign(this.controls.lights, { nav: true, beacon: true, strobe: true, landing: true, taxi: false });
     this.drift = 0;
@@ -188,23 +227,28 @@ export class TrafficPilot {
 
   /**
    * Put it where the kinematic traffic has it, for its exterior: no physics. On the ground (taxiing, holding,
-   * parked) it stands on its wheels with the propeller at idle when the engine runs; in the air it has the
-   * kinematic attitude, the gear hanging free and the propeller at cruise rpm.
+   * parked) it stands on its wheels as at rest, the struts compressed, on the ground under it (`ground`, MSL:
+   * the pavement), with the propeller at idle when the engine runs; in the air it has the kinematic attitude,
+   * the gear hanging free and the propeller at cruise rpm.
    */
-  pose(k: TrafficState, elevation: number, dt: number, engine: boolean): void {
+  pose(k: TrafficState, elevation: number, ground: number, dt: number, engine: boolean): void {
     const s = this.fm.state;
+    const r = this.rest;
+    const onGround = k.onGround;
     s.position.x = k.north;
     s.position.y = k.east;
-    s.position.z = -(elevation + k.height + this.def.geometry.restHeight);
+    s.position.z = -(wheelHeight(elevation, ground, k.height) + (onGround ? r.height : this.def.geometry.restHeight));
     s.altitudeMSL = -s.position.z;
-    const ground = k.onGround;
-    s.orientation = quat.fromEuler(ground ? 0 : k.bank, k.pitch + (ground ? this.groundPitch : 0), k.heading);
+    s.orientation = quat.fromEuler(onGround ? 0 : k.bank, k.pitch + (onGround ? r.pitch : 0), k.heading);
     s.heading = k.heading;
-    s.pitch = k.pitch + (ground ? this.groundPitch : 0);
-    s.roll = ground ? 0 : k.bank;
-    if (!ground && s.onGround) for (const w of s.wheels) w.compression = 0;
-    s.onGround = ground;
-    const rpm = engine ? (ground ? 900 : 2300) : 0;
+    s.pitch = k.pitch + (onGround ? r.pitch : 0);
+    s.roll = onGround ? 0 : k.bank;
+    s.wheels.forEach((w, i) => {
+      w.compression = onGround ? r.compression[i] : 0;
+      w.onGround = onGround;
+    });
+    s.onGround = onGround;
+    const rpm = engine ? (onGround ? 900 : 2300) : 0;
     for (const p of s.propellers) {
       p.rpm = rpm;
       p.rotation = (p.rotation + (p.rpm / 60) * 2 * Math.PI * dt) % (2 * Math.PI);
@@ -212,9 +256,9 @@ export class TrafficPilot {
     this.settle();
   }
 
-  /** The pitch attitude it stands at on its wheels (zero until it has been started on the ground). */
+  /** The pitch attitude it stands at on its wheels. */
   get restPitch(): number {
-    return this.groundPitch;
+    return this.rest.pitch;
   }
 
   /** The height base is flown at and final turned onto, m (higher on an extended downwind). */

@@ -281,29 +281,27 @@ a parked aircraft's full-detail model, which uses the same programs, was drawn f
 of one).
 Close with: `renderer.compileAsync` on a new exterior before it is shown (the far model meanwhile).
 
-### AI traffic taxis round corners in a series of jinks — **defect (owner report 2026-11-05)**
+### AI traffic taxis round corners in a series of jinks — **resolved 2026-11-05, owner to check in the sim**
 
-Seen from the cockpit: an AI aircraft takes a taxiway corner as a polygon ("octagon style"): short straights joined
-by abrupt heading changes. A real one steers through a smooth arc on the nosewheel and rudder. The cause is two
-coarse steps:
-- The route (`atc/taxi.ts` `roundCorners`) is a Bezier sampled at only ARC_POINTS = 8 chords per corner, about
-  3.5 m each on the 18 m radius.
-- `atc/circuit.ts` `stepTaxi` pure-pursues a look-ahead of max(5 m, 1.5 x speed), about two chords.
-So the heading command jumps at each vertex, and the 25 deg/s TAXI_TURN_RATE slews it there in steps. The same code
-is on main.
-Close with: steer on curvature, not on vertex headings. Either follow the arc analytically (a heading rate of
-speed / radius through the turn), or use a longer look-ahead on a finer path plus a nosewheel lag (a yaw rate that
-builds over ~0.5 s instead of stepping). Check from a cockpit following an AI aircraft round the apron corners.
+Owner report: an AI aircraft took a taxiway corner as a polygon, short straights joined by abrupt heading changes.
+`stepTaxi` slewed the heading at 25 deg/s toward each point of the rounded route, so it stepped at every point:
+1500-3000 deg/s/s of yaw acceleration, 33-112 steps per route. It now steers on the arc to a point 6 m (or 1.5 s)
+along the route from abeam it, and the yaw rate follows that arc's rate through a 0.35 s nosewheel lag: 16-28
+deg/s/s, no steps, within 1.7 m of the route. An arrival used to be turned from nose-in to nose-out at once on its
+spot; it now swings round there in about 10 s (`turnOnSpot`). `tests/atc/taxiSteer.test.ts`.
+Check: from a cockpit following an AI aircraft round the apron corners and onto its spot.
 
-### AI PA-38 sits on its wheel hubs — **defect (owner report 2026-11-05), cause not yet found**
+### AI aircraft sat on their wheel hubs — **resolved 2026-11-05, owner to check in the sim**
 
-Following an AI PA-38 on the ground, its wheel hubs were at the ground, as if the tyres were flat. Candidates:
-- The flown exterior pose (`a.pilot.state`, physics) with the gear sunk.
-- The kinematic pose, which stands the model at `field.elevation + restHeight` (PA-38 1.05 m) and not on the terrain
-  under it. The taxiways can lie above the field elevation.
-- The traffic model's wheel or tyre placement.
-Close with: shots of the AI PA-38 beside the player's on the same taxiway, the wheel-contact height of each pose, and
-the ground under each wheel against the ground the pose assumes.
+Owner report: an AI PA-38 on the ground had its hubs at the ground. Every type did, when posed rather than flown
+(all of them on the ground). Two causes:
+- The kinematic pose stood it at the field elevation, but the drawn pavement is raised (taxiways 5 cm, runway 9 cm),
+  and the flight models stand on it.
+- After being posed in the air, its gear stayed hanging free on the ground (about 5 cm more).
+It now stands on the ground the flight models feel, with each type's strut compressions and pitch taken from the
+flight model settled at rest. `tests/atc/trafficPose.test.ts`; `scripts/probes/traffic-wheels.mjs` pictures each AI
+aircraft on the ground at wheel height, with how high it stands (a parked DA20: 1.020 m before, 1.072 m after,
+rest 1.07 m).
 
 ### External camera slowly drifts down to the ground — **defect (owner report 2026-11-05), cause not yet found**
 
