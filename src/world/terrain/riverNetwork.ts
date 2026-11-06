@@ -14,6 +14,7 @@ import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeM
 import { breachOfCut, breachReachOf, channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
+import { pitchPool, type PitchReport } from './pitchPool';
 import { macroAt, type Macro } from './seededLayout';
 import { AIRPORT } from '../../core/world';
 
@@ -582,6 +583,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const kinds: number[] = [];
   const channelArea: Float64Array[] = [];
   const lipsOf: number[][] = [];
+  /** A stream's unit coordinate and where its pitches and pools are drawn (pitchPool.ts), per sample. */
+  const pitchOf: Array<{ sigma: Float64Array; on: Float64Array } | undefined> = [];
   const falls: Fall[] = [];
   /** Rivers whose head is not in a lake. */
   const headDry = new Uint8Array(nR);
@@ -796,6 +799,39 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     falls.push(...shaped.falls);
     shapeReport = shaped.report;
   }
+  // --- Pitches and pools along the streams' steep reaches (pitchPool.ts), receivers first: a tributary's mouth is put
+  // on its receiver's reshaped water (its last reach a cascade down to it, as shapeLines puts it), then its own cut.
+  const pitchReport: PitchReport = { units: 0, spacingW: [], spacingM: [], drop: [], gradient: [], deepen: [], inserted: 0 };
+  {
+    const fallsOn: number[][] = allLines.map(() => []);
+    falls.forEach((f, fi) => fallsOn[f.line].push(fi));
+    const wet = (pn: number, pe: number): boolean => mask.at(pn, pe) > -Infinity;
+    for (let li = nR; li < allLines.length; li++) {
+      const c = allLines[li] as unknown as LineArrays;
+      const j = joinsOf(li);
+      if (j >= nR) {
+        const mouth = levelOn(allLines[j], joinSOf(li));
+        const m = c.level.length;
+        if (mouth < c.level[m - 1]) {
+          c.level[m - 1] = mouth;
+          for (let i = m - 2; i >= 0; i--) {
+            const cap = mouth + CONFLUENCE_GRADIENT * (c.s[m - 1] - c.s[i]);
+            if (c.level[i] <= cap) break;
+            c.level[i] = cap;
+          }
+        }
+      }
+      const fs: number[] = [];
+      for (const fi of fallsOn[li]) fs.push(c.s[falls[fi].index], c.s[Math.min(c.s.length - 1, falls[fi].index + 1)]);
+      const r = pitchPool({ ...c, area: channelArea[li] } as LineArrays, li, fs, wet, pitchReport);
+      const { area, sigma, on, ...rest } = r.a;
+      Object.assign(c, rest);
+      channelArea[li] = area;
+      pitchOf[li] = { sigma, on };
+      for (const fi of fallsOn[li]) falls[fi].index = r.map[falls[fi].index];
+      lipsOf[li] = lipsOf[li].map((k) => r.map[k]);
+    }
+  }
   tPhase.push(performance.now());
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
   // The stones on each bed (falls.ts bedGrain).
@@ -806,6 +842,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const fallIndex = new FallIndex(falls);
   const streamReport: StreamReport = traced.report;
   streamReport.shape = shapeReport;
+  streamReport.pitch = pitchReport;
 
   // --- Indexes: every cell lists the segments (line, index) that can reach a point in it (the valley index above:
   // each axis segment is listed out to the largest reach of the segments near it along the river, as the query takes
@@ -983,7 +1020,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li] })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: Float32Array.from(pitchOf[li]!.sigma), pitchOn: Float32Array.from(pitchOf[li]!.on) } : {}) })),
     falls,
     faults,
     queryFlow,

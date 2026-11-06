@@ -211,6 +211,8 @@ export interface StreamReport {
   tracePhases: number[];
   /** The falls' shaping (falls.ts shapeLines). */
   shape?: import('./falls').ShapeReport;
+  /** The pitches and pools cut along the streams' steep reaches (pitchPool.ts). */
+  pitch?: import('./pitchPool').PitchReport;
   /** riverNetwork.ts's own phases (river falls, tracing and the streams' falls, flow, index), ms. */
   phases?: number[];
 }

@@ -117,7 +117,9 @@ export interface Hydrology {
  * The contract a seeded world's channels give the water, rock and boulder drawing (water.ts, bedrock.ts,
  * vegetation/boulders.ts), per sample of every line (all arrays the length of `s`):
  *  - `level` the water surface, never rising downstream; on a steep reach it follows the ground down as a continuous
- *    cascade (no level steps); it drops at once only at a fall (`regime` 4 at the lip sample, the foot the next one).
+ *    cascade; it drops at once only at a fall (`regime` 4 at the lip sample, the foot the next one). A stream's steep
+ *    reaches (2 % and over) are cut into pitches and pools (pitchPool.ts: `sigma`, `pitchOn`): each pitch a short steep
+ *    drop between two samples (its lip and foot), the pool below it held nearly level to the next lip.
  *  - `gradient` over 200 m and `regime` (0 placid < 0.5 %, 1 riffle < 2 %, 2 rapids < 8 %, 3 step-pool / boulder
  *    cascade, 4 a fall's lip), `steepness` 0-1 and `speed` m/s (streams.ts flowOf).
  *  - `grain` the bed's stones, m (falls.ts bedGrain): 2-5 m blocks by the heads, on steep pitches and below falls,
@@ -130,12 +132,15 @@ export interface Hydrology {
  * falls of one fault's flight share it, -1 alone). A fall's lip is sample `index` of its line and its foot `index + 1`.
  *
  * What the drawing builds on it (seeded worlds only):
- *  - The bed's stones are one lattice per line in its own coordinates (channelStones.ts: cells STONE_ALONG m along `s`
- *    by STONE_ACROSS m across, x + toward the right bank), at most one stone per cell from an integer hash of the cell,
- *    how many from `steepness` (none below rapids), how big from `grain`; some rows are steps (pitch breaks) on
- *    step-pool reaches. vegetation/boulders.ts stands a rock on each (its radius at the waterline the lattice's), and
- *    the ribbon's shader (water.ts flowFragment) breaks the water white round the very same stones. Both read the
- *    values the ribbon carries per row: aFlow = (steepness, speed / 6, fall weight, grainToUnit(grain)) as bytes.
+ *  - The bed's stones are two lattices per line in its own coordinates (channelStones.ts: fine cells STONE_ALONG m
+ *    along `s` by STONE_ACROSS m across, coarse BIG_ALONG by BIG_ACROSS for the very large blocks; x + toward the right
+ *    bank), at most one stone per cell from an integer hash of the cell, how many from `steepness` (none below rapids),
+ *    in clumps along the line and, on a stream's units, crowded onto its pitches (the pools mostly clear), how big from
+ *    `grain` (a long-tailed size law shared with the bank stones); on a river's step-pool reaches some rows are steps.
+ *    vegetation/boulders.ts stands a rock on each (its radius at the waterline the lattice's), and the ribbon's shader
+ *    (water.ts flowFragment) breaks the water white round the very same stones, white on the pitches, dark and smooth
+ *    over the pools. Both read the values the ribbon carries per row: aFlow = (steepness, speed / 6, fall weight,
+ *    grainToUnit(grain)) as bytes, aPitch = (sigma, pitchOn) as floats.
  *  - bedrock.ts: the bare rock beside fast water reaches rockReach(halfWidth) times a ragged factor of the world
  *    position (rockAtPoint; ROCK_EDGE_GLSL in the ground shader); no tree is planted on it (vegetation/placement.ts).
  */
@@ -173,6 +178,13 @@ export interface RiverLine {
   /** The typical size of the stones on the bed at each sample, m (falls.ts bedGrain): 2-5 m boulders by the heads, on
    * the steep pitches and below falls, cobbles of 0.1-0.3 m on riffles, gravel and sand on the calm lowland reaches. */
   grain?: Float32Array;
+  /**
+   * A stream's pitches and pools (pitchPool.ts): its unit coordinate `sigma` at each sample (unit k's lip at
+   * pitchPool.ts lipOf(k), its foot pitchLen(k) on, the next unit's lip at lipOf(k + 1)), and `pitchOn` 1 where its water
+   * is cut into units (a lip and a foot are samples of the line there), 0 elsewhere. Absent on rivers.
+   */
+  sigma?: Float32Array;
+  pitchOn?: Float32Array;
 }
 
 /** The nearest channel and its flow at a point (Hydrology.queryFlow), written into a caller-owned object. */
