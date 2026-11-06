@@ -106,10 +106,8 @@ export interface Hydrology {
     readonly field: number;
     holds(north: number, east: number): number;
     readonly holdLevel: number;
-    /** Every body of water it draws (each pond's pools, and the tarns the streams filled), with its level. */
+    /** Every body of water it draws (each pond's pools, the high country's tarns among them), with its level. */
     readonly pools: ReadonlyArray<{ readonly level: number; readonly drained?: boolean }>;
-    /** Whether the last `at` found a tarn (streams.ts TarnMask) rather than a pond's water. */
-    readonly tarnHit?: boolean;
   };
 }
 
@@ -230,13 +228,6 @@ export interface NetworkQuery {
   valleys(north: number, east: number, out: ValleyNear[]): number;
   /** The channels of every line within carving reach of the point; returns how many were written. */
   channels(north: number, east: number, out: ChannelNear[]): number;
-  /** The natural ground h at the point (the last natural height taken) round the tarns the streams filled: their
-   * shores laid over it, and no small-scale relief there (streams.ts TarnMask). */
-  fill?(north: number, east: number, h: number): number;
-  /** The ground h with the tarns' shores laid over it again (after the carving). */
-  rim?(north: number, east: number, h: number): number;
-  /** The level of the tarn whose shore or water a point lies in (-Infinity: none). */
-  tarnRim?(north: number, east: number): number;
 }
 
 /** Valley walls rise over this distance beyond the floodplain (everything closer to the axis is shaped by the valley). */

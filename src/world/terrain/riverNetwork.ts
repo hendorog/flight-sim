@@ -11,7 +11,7 @@
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
-import { breachOfCut, breachReachOf, channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport, type TarnMask } from './streams';
+import { breachOfCut, breachReachOf, channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { macroAt, type Macro } from './seededLayout';
@@ -175,11 +175,7 @@ export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
 }
 
 /** Build a seeded world's hydrology from its drainage and lakes. */
-/**
- * `small`: the small-scale relief and finest gullies the last natural height (at the point a caller then gives to
- * network.fill) added over `smoothGround` (heightfield.ts lastSmall).
- */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyCut?: Float32Array, smoothGround: (north: number, east: number) => number = natural, small: () => number = () => 0): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyCut?: Float32Array, smoothGround: (north: number, east: number) => number = natural): Hydrology {
   const lines = d.lines;
   // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley the erosion
   // pass cut (erosion.ts, `valleyCut` per cell, <= 0) is the river's own, and its floor lies along the lattice path; a
@@ -662,8 +658,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   tPhase.push(performance.now());
   const route = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
   const traced = traceStreams({ d, mask, route, rivers, riverPools });
-  const tarnMask = traced.tarns;
-  const filled = (pn: number, pe: number): number => tarnMask.rim(pn, pe, route(pn, pe));
   const streamLines: Array<{ north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; breach: Float64Array; cut: Float64Array }> = [];
   const streamJoins: number[] = [];
   const streamEnds: Array<StreamLine['end']> = [];
@@ -678,7 +672,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
     // A steep stream is a cascade whose water follows the ground down between its samples.
-    const f = refineSteep({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area, breach: st.breach, cut: st.cut }, keep, filled);
+    const f = refineSteep({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area, breach: st.breach, cut: st.cut }, keep, route);
     const c = { north: f.north, east: f.east, level: f.level, halfWidth: f.halfWidth, s: f.s, breach: f.breach, cut: f.cut };
     streamLines.push(c);
     streamJoins.push(st.joins);
@@ -830,18 +824,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const valleyHits: ValleyNear[] = [];
   const channelHits: ChannelNear[] = [];
   const network: NetworkQuery = {
-    ...(tarnMask.size > 0
-      ? {
-          // Round a tarn the ground the streams were routed over (no small-scale relief or finest gullies: one the
-          // routing never saw would drain it through its rim), and its shore.
-          fill: (pn: number, pe: number, h: number): number => {
-            const tc = tarnMask.calm(pn, pe);
-            return tarnMask.rim(pn, pe, tc > 0 ? h - small() * tc : h);
-          },
-          rim: (pn: number, pe: number, h: number): number => tarnMask.rim(pn, pe, h),
-          tarnRim: (pn: number, pe: number): number => tarnMask.rimLevel(pn, pe),
-        }
-      : {}),
     valleys(pn, pe, out) {
       return valleyIndex.perLine(pn, pe, (li, i, t, dist, _side, _u, k) => {
         const a = axes[li];
@@ -983,7 +965,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   return {
     // The lakes as they stand after any pond the levels drained (networkLakes leaves out a pond with no water).
     lakes: networkLakes(d, mask),
-    lakeMask: tarnMask.size > 0 ? withTarns(mask, tarnMask) : mask,
+    lakeMask: mask,
     river: { north: main.north, east: main.east, level: main.level, halfWidth: main.halfWidth, s: main.s },
     valley: mainAxis
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
@@ -1002,37 +984,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   };
 }
 
-/**
- * The lake mask as the rest of the world reads it (Hydrology.lakeMask): the drainage's lakes and the tarns the streams
- * filled (streams.ts TarnMask). `tarnHit` tells which the last `at` found.
- */
-function withTarns(mask: LakeMask, tarns: TarnMask): NonNullable<Hydrology['lakeMask']> {
-  const pools = [...mask.pools, ...tarns.tarns.map((t) => ({ level: t.level }))];
-  const out: { field: number; holdLevel: number; tarnHit: boolean; pools: typeof pools; at(north: number, east: number, ground?: number): number; holds(north: number, east: number): number } = {
-    field: 0,
-    holdLevel: -Infinity,
-    tarnHit: false,
-    pools,
-    at(north: number, east: number, ground?: number): number {
-      const l = mask.at(north, east, ground);
-      const t = tarns.at(north, east);
-      if (t > l) {
-        this.field = tarns.field;
-        this.tarnHit = true;
-        return t;
-      }
-      this.field = mask.field;
-      this.tarnHit = false;
-      return l;
-    },
-    holds(north: number, east: number): number {
-      const h = mask.holds(north, east);
-      this.holdLevel = mask.holdLevel;
-      return h;
-    },
-  };
-  return out;
-}
 
 /** Courses keep this far from the home runway's centreline segment, m (the meander belt then still clears it). */
 const RUNWAY_CLEAR = 2500;

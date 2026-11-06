@@ -399,7 +399,11 @@ export function siteOf(a: SiteAnchor, fields: readonly Airfield[]): HeliSite | n
   const key = `${era().id}|${worldSeed()}|${fields.map((f) => `${f.code}:${f.north}:${f.east}`).join(',')}`;
   let resolved = resolvedByWorld.get(key);
   if (!resolved) {
-    if (resolvedByWorld.size >= RESOLVED_WORLDS) resolvedByWorld.clear();
+    if (resolvedByWorld.size >= RESOLVED_WORLDS) {
+      resolvedByWorld.clear();
+      baseNames.clear();
+      runs.clear();
+    }
     resolved = new Map();
     resolvedByWorld.set(key, resolved);
   }
@@ -408,14 +412,40 @@ export function siteOf(a: SiteAnchor, fields: readonly Airfield[]): HeliSite | n
   let site: HeliSite | null = null;
   for (const p of a.candidates()) {
     if (siteRefusal(p, fields) !== null) continue;
+    let name = a.fixedName ?? `${a.prefix} ${relativeTo(p, fields)}`;
+    // In a seeded world two riverbank sites a station apart can read the same (the river swinging round a field at
+    // that distance): the later one is named further downstream.
+    if (a.kind === 'river' && worldSeed() !== 0) {
+      baseNames.set(`${key}|${a.id}`, name);
+      const run = riverRun(a, name, fields, key);
+      runs.set(`${key}|${a.id}`, run);
+      if (run === 1) name += ', downstream';
+      else if (run > 1) name += `, ${run} reaches downstream`;
+    }
     site = Object.freeze({
-      id: a.id, kind: a.kind, name: a.fixedName ?? `${a.prefix} ${relativeTo(p, fields)}`,
+      id: a.id, kind: a.kind, name,
       north: p.north, east: p.east, elevationM: terrainHeight(p.north, p.east),
     });
     break;
   }
   resolved.set(a.id, site);
   return site;
+}
+
+/** A seeded world's riverbank sites' names before the run suffix, and how many sites up the river read the same. */
+const baseNames = new Map<string, string>();
+const runs = new Map<string, number>();
+/** How many river stations above anchor `a` (back to the last with a site) have a site whose name reads `name`. */
+function riverRun(a: SiteAnchor, name: string, fields: readonly Airfield[], key: string): number {
+  const n = Number(a.id.slice('river-'.length));
+  const anchors = siteAnchors();
+  for (let m = n - 1; m >= 0; m--) {
+    const prev = anchors.find((x) => x.id === `river-${m}`);
+    if (!prev) return 0;
+    if (!siteOf(prev, fields)) continue;
+    return baseNames.get(`${key}|${prev.id}`) === name ? (runs.get(`${key}|${prev.id}`) ?? 0) + 1 : 0;
+  }
+  return 0;
 }
 
 /**

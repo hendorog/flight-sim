@@ -25,6 +25,14 @@ export const RIVER_AREA = 45;
 const LAKE_DEPTH = 15;
 const LAKE_CELLS = 2;
 const LAKE_MAX_CELLS = 80;
+/**
+ * The tarns: in the high country (its spill at least TARN_SPILL, m) a closed hollow of a single lattice cell, as deep
+ * as a lake, holds water too - a small mountain lake in its own basin, flooded to its natural spill level with its
+ * natural shore (LakeMask, like any lake). Some 40-50 hollows per world qualify (seeds 1, 42, 777777), some of them too
+ * shallow over the detailed ground at the middle to stand (settlePonds). The hollows the round-2 streams filled (150-285
+ * a world, shores raised) are gone: a stream meeting a smaller hollow ends in it.
+ */
+const TARN_SPILL = 1200;
 /** Most lakes kept: every one a river runs through first (by volume), then the dry hollows' (by volume). A world keeps
  * some 400-500 (the noise terrain is full of closed hollows; a lake costs nothing per terrain sample: LakeMask). */
 const LAKE_MAX = 800;
@@ -79,6 +87,8 @@ export interface DrainLake {
   river: boolean;
   /** Its middle: the cell (of the few deepest) where the full-detail ground lies lowest under its water. */
   centre: number;
+  /** A tarn (TARN_SPILL): a one-cell hollow in the high country; the gullies round it are not smoothed (ShoreSmooth). */
+  tarn?: boolean;
 }
 
 export interface Drainage {
@@ -212,7 +222,9 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
     if (!cut.length || round === 11) {
       // The detailed ground round the ponds changes with them (the shore smoothing): levels settled against the last
       // set of ponds' ground are stale once the set changes.
-      const ponds = c.lakes.map((x) => x.lake.cells);
+      // (Not round a tarn: its basin is a small one in rugged country, and the edge it is settled against is the
+      // detailed ground's as it lies.)
+      const ponds = c.lakes.filter((x) => !x.lake.tarn).map((x) => x.lake.cells);
       const sig = pondSignature(ponds);
       if (sig !== heard) {
         onPonds?.(ponds);
@@ -234,7 +246,7 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
   }
   // The shore smoothing round the lakes that stand only (not round the ponds that were cut out or dropped: a smoothed
   // bowl with no water in it).
-  const final = lakes.map((l) => l.cells);
+  const final = lakes.filter((l) => !l.tarn).map((l) => l.cells);
   if (pondSignature(final) !== heard) onPonds?.(final);
   const filled = flood.filled;
   const receiver = flood.receiver;
@@ -567,6 +579,10 @@ function classifyPonds(n: number, origin: number, height: Float32Array, routed: 
         cut.push(r);
       }
     } else if (ok && r.cells.length >= LAKE_CELLS && r.cells.length <= LAKE_MAX_CELLS) dry.push({ lake, hollow: r, volume });
+    else if (ok && r.cells.length === 1 && r.level >= TARN_SPILL) {
+      lake.tarn = true;
+      dry.push({ lake, hollow: r, volume });
+    }
   });
   river.sort((a, b) => b.volume - a.volume);
   dry.sort((a, b) => b.volume - a.volume);
@@ -890,6 +906,8 @@ export class LakeMask {
    * raster points lies below the domain's edge (level + LAKE_MARGIN) there. */
   field = 0;
   readonly pools: LakePool[] = [];
+  /** The ponds left dry because their water would stand against lower ground beside it (probes). */
+  readonly leaky: number[] = [];
   /** Each pond's main pool (its largest), -1 where the flood left no water deep enough for a lake. */
   readonly main: Int32Array;
   private readonly rasters: PondRaster[] = [];
@@ -897,6 +915,13 @@ export class LakeMask {
   private readonly sqStart: Int32Array;
   private readonly sqPond: Int16Array;
   constructor(private readonly d: Drainage, ground: (north: number, east: number) => number) {
+    /** A raster's ground at (row, col), sampled where the flood did not. */
+    const groundOf = (R: PondRaster, i: number, j: number): number => {
+      const p = i * R.cols + j;
+      let g = R.ground[p];
+      if (g !== g) R.ground[p] = g = ground(d.origin + (R.gi + i) * LAKE_RASTER, d.origin + (R.gj + j) * LAKE_RASTER);
+      return g;
+    };
     const n = d.n;
     const rc = AIRPORT.runway.center;
     const pondOf = new Int16Array(n * n).fill(-1);
@@ -1153,6 +1178,30 @@ export class LakeMask {
     for (let s = 0; s < N; s++) this.sqStart[s + 1] = this.sqStart[s] + (sqOf[s] >= 0 ? lists[sqOf[s]].length : 0);
     this.sqPond = new Int16Array(this.sqStart[N]);
     for (let s = 0; s < N; s++) if (sqOf[s] >= 0) this.sqPond.set(lists[sqOf[s]], this.sqStart[s]);
+    // A lake holds water only in a closed basin: where the ground at a raster point beside its water lies under its
+    // level (its basin opens onto a slope falling away between the raster points, past the cells it may flood, or onto
+    // a lower lake's water), the water would stand against nothing there (a wall), and it is left dry. Mostly tarns
+    // (small basins in steep country); a few lakes a world.
+    d.lakes.forEach((l, k) => {
+      if (this.main[k] < 0) return;
+      const R = this.rasters[k];
+      for (let p = 0; p < R.pool.length; p++) {
+        const id = R.pool[p];
+        if (id < 0) continue;
+        const pi = Math.floor(p / R.cols);
+        const pj = p % R.cols;
+        for (let a = 0; a < 8; a++) {
+          const qi = pi + DI[a];
+          const qj = pj + DJ[a];
+          const leak = qi < 0 || qj < 0 || qi >= R.rows || qj >= R.cols || (R.pool[qi * R.cols + qj] !== id && !(groundOf(R, qi, qj) >= this.pools[id].level));
+          if (leak) {
+            this.drainPond(k);
+            this.leaky.push(k);
+            return;
+          }
+        }
+      }
+    });
   }
   /**
    * How far the small-scale relief is smoothed out at (north, east), [0, 1]: 1 over each lake's domain and SMOOTH_RING

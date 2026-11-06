@@ -63,6 +63,11 @@ it('gully floors', () => {
     cand.sort((a, b) => b.relief - a.relief);
     const wins: typeof cand = [];
     for (const c of cand) { if (wins.length >= nWin) break; if (wins.every((w) => Math.hypot(w.n - c.n, w.e - c.e) > 20000)) wins.push(c); }
+    // GF_WINS='42@-44992,-9504 ...': these windows instead.
+    if (env.GF_WINS) {
+      wins.length = 0;
+      for (const w of env.GF_WINS.split(/\s+/)) { const [sd, at] = w.split('@'); if (Number(sd) !== seed) continue; const [wn, we] = at.split(',').map(Number); wins.push({ n: wn, e: we, relief: 0 }); }
+    }
     for (const [wi, w] of wins.entries()) {
       const cn = Math.round(w.n / step) * step, ce = Math.round(w.e / step) * step;
       const gb = raster(cn, ce, half, step, naturalHeightCoarse);

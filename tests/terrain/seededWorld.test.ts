@@ -167,9 +167,7 @@ describe.each(SEEDS)('seed %i', (seed) => {
           const pe = r.east[k] + ((r.north[kn] - r.north[k]) / tl) * off;
           sampleTerrain(pn, pe, sm);
           if (sm.airportBlend < 1) continue;
-          // (Over the plain as it lies: a hollow a stream filled to its sill is a flat, streams.ts FillMask.)
-          const nat = naturalHeight(pn, pe);
-          const raised = sm.ground - (hydrology.network?.fill ? hydrology.network.fill(pn, pe, nat) : nat);
+          const raised = sm.ground - naturalHeight(pn, pe);
           if (raised > high) {
             high = raised;
             where = `${pn.toFixed(0)}, ${pe.toFixed(0)}`;

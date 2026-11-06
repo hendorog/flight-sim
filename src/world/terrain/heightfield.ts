@@ -178,9 +178,10 @@ const GULLY_BRANCH = 1.3;
 /**
  * Hydraulic-erosion look: layered slope-aligned gullies, deepest on steep ground and absent on flats.
  * Returns a signed height offset in units of the relief (negative in gullies, positive on the spurs).
- * `cap` (a seeded world's, seededNaturalHeight) bounds the strength from above, softly; seed 0 passes none.
+ * `cap` (a seeded world's, seededNaturalHeight) bounds the strength from above, softly; seed 0 passes none. With
+ * `scale` (the relief in m per unit of the result) the octaves stop where they would add under GULLY_LEAST m.
  */
-function erode(east: number, north: number, slopeE: number, slopeN: number, octaves = GULLY_OCTAVES, cap = Infinity): number {
+function erode(east: number, north: number, slopeE: number, slopeN: number, octaves = GULLY_OCTAVES, cap = Infinity, scale = Infinity): number {
   gullyFine = 0;
   gullySum = 0;
   const slope = Math.sqrt(slopeE * slopeE + slopeN * slopeN);
@@ -196,8 +197,13 @@ function erode(east: number, north: number, slopeE: number, slopeN: number, octa
   let bx = 0;
   let by = 0;
   let coarseSum = 0;
+  let coarseSet = false;
   for (let o = 0; o < octaves; o++) {
-    if (o === STREAM_GULLY_OCTAVES) coarseSum = sum;
+    if (o === STREAM_GULLY_OCTAVES) {
+      coarseSum = sum;
+      coarseSet = true;
+    }
+    if (amp * strength * scale < GULLY_LEAST) break;
     const dx = ux + bx * GULLY_BRANCH;
     const dy = uy + by * GULLY_BRANCH;
     const k = GULLY_FREQ / Math.sqrt(dx * dx + dy * dy + 1e-9);
@@ -216,7 +222,7 @@ function erode(east: number, north: number, slopeE: number, slopeN: number, octa
     by = 0.6 * bx + 0.8 * by;
     bx = cx;
   }
-  if (octaves > STREAM_GULLY_OCTAVES) gullyFine = (sum - coarseSum) * strength;
+  if (octaves > STREAM_GULLY_OCTAVES) gullyFine = coarseSet ? (sum - coarseSum) * strength : 0;
   gullySum = sum;
   return sum * strength;
 }
@@ -244,6 +250,8 @@ const GULLY_FALL = 372;
  * less than GULLY_BEND / (2 GULLY_FALL) (0.067 per 100 m) along it - so a gully does not shallow out into a hollow
  * at the foot of a slope, where the ground flattens. */
 const GULLY_BEND = 0.5;
+/** A gully octave adding less than this much relief is not worked out, m (on gentle ground, seeded worlds). */
+const GULLY_LEAST = 0.05;
 /** The small-scale relief by the slope too: its knobs (`rough`, m) at most SMALL_FALL and its ledges (`rugged`) at most
  * RUGGED_FALL times the eroded ground's slope (they would bead a gentle gully floor with hollows), and fading into the
  * gully troughs (erode's sum from FLOOR_FADE[1] down to FLOOR_FADE[0]), where the water runs. */
@@ -487,7 +495,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     fall = Math.sqrt(bE * bE + bN * bN);
     gullyW = keep;
     if (keep > 0) {
-      const g = erode(east, north, bE, bN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES, softMin(GULLY_FALL * fall, (GULLY_FALL * fall * fall) / GULLY_BEND) / (0.13 * amplitude + 1e-9));
+      const g = erode(east, north, bE, bN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES, softMin(GULLY_FALL * fall, (GULLY_FALL * fall * fall) / GULLY_BEND) / (0.13 * amplitude + 1e-9), amplitude * 0.13 * keep);
       relief += amplitude * 0.13 * g * keep;
       fineGully = amplitude * 0.13 * gullyFine * keep;
     }
@@ -513,9 +521,9 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
   // (Held to the slope and faded into the gully troughs: see SMALL_FALL.)
   const floor = 1 - gullyW * (1 - smooth(FLOOR_FADE[0], FLOOR_FADE[1], gullySum));
   const rough = softMin(calm * floor * (1.2 + 0.004 * clamp(h, 0, 3000)), SMALL_FALL * fall);
-  h += rough * (2.2 * gnoise(east / 180 + 0.3, north / 180 + 0.7) + 0.8 * gnoise(east / 60 - 4.1, north / 60 + 2.2));
+  if (rough > 0.02) h += rough * (2.2 * gnoise(east / 180 + 0.3, north / 180 + 0.7) + 0.8 * gnoise(east / 60 - 4.1, north / 60 + 2.2));
   const rugged = softMin(calm * floor * clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN))), RUGGED_FALL * fall);
-  if (rugged > 0) {
+  if (rugged > 0.02) {
     const ridge = 1 - Math.abs(gnoise(east / 23 + 7.7, north / 23 - 3.1));
     h += rugged * (2.4 * ridge * ridge + 0.7 * gnoise(east / 9 - 1.3, north / 9 + 5.9));
   }
@@ -568,7 +576,7 @@ function buildWater(): void {
     lakeSmooth = mask;
     lakeSeed = worldSeed();
     lakes = [];
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.delta, naturalHeightSmooth, () => lastSmall);
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.delta, naturalHeightSmooth);
     legacyHydro = presentHydro;
     const tf = performance.now();
     fields = siteAirfields(naturalHeight, presentHydro, presentHydro.lakes);
@@ -753,10 +761,6 @@ const channelNear: ChannelNear[] = [];
 /** A seeded world's river network (riverNetwork.ts): every valley and channel near the point cut into h, as carveRiver cuts its one river. */
 function carveNetwork(north: number, east: number, h: number, out: TerrainSample): number {
   const net = presentHydro.network as NonNullable<Hydrology['network']>;
-  // The hollows the streams filled to their sills (streams.ts): a flat over each (not in a lake's domain: its water).
-  // Round a tarn the ground the streams were routed over and its shore (streams.ts TarnMask): not in a pond's water.
-  if (net.fill && (maskLevel === -Infinity || presentHydro.lakeMask?.tarnHit)) h = net.fill(north, east, h);
-  const hShore = h;
   // Along a stream (streams.ts) the ground is its smooth course, without the small-scale relief's knobs and ledges:
   // the stream's water follows that ground down (it took them away), fading back in by STREAM_SMOOTH beyond its bank.
   const nc0 = net.channels(north, east, channelNear);
@@ -830,10 +834,6 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       keepLine = o.line;
     } else if (v > keep2) keep2 = v;
   }
-  /** The tarn whose shore the point lies on, if any (streams.ts TarnMask). */
-  const tarnRim = net.tarnRim ? net.tarnRim(north, east) : -Infinity;
-  /** The highest water of a channel whose bed or bank the point lies on (-Infinity: none). */
-  let inChannel = -Infinity;
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
     const d = c.dist;
@@ -843,9 +843,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       // another channel's water within that channel's banks (a stream running down beside a river held up on its valley
       // floor would leave the river's water standing over a hollow).
       let keep = keepLine === c.line ? keep2 : keep1;
-      // Nor beside a lake standing higher (its domain and a raster point round it, LakeMask.holds), nor a tarn's shore.
+      // Nor beside a lake standing higher (its domain and a raster point round it, LakeMask.holds).
       if (c.breach > 0 && mask && mask.holds(north, east) > 0) keep = Math.max(keep, mask.holdLevel + 0.5);
-      if (tarnRim > c.level + 3) keep = Math.max(keep, tarnRim + 0.4);
       // (Faded out over the last fifth of its reach, where its walls should long since have met the ground.)
       if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, c.level + breachProfile(d, c.breach), 3)) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
       const w = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
@@ -864,7 +863,6 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
         if (need > 0) h += need * (1 - smooth(w + STREAM_SMOOTH[0] + 15, w + STREAM_SMOOTH[1], d)) * open;
       }
       if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
-      if (d < w + 6) inChannel = Math.max(inChannel, c.level);
       continue;
     }
     const w = c.halfWidth * (1 - smooth(0, 60, c.beyondSource));
@@ -880,12 +878,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     }
     h += (carved - h) * open;
     if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
-    if (d < w + 6) inChannel = Math.max(inChannel, c.level);
   }
-  // A tarn's shore again over what the valleys and channels carved (they must not let its water stand against lower
-  // ground), but not across the bed of a channel at its level (its inflows and its overflow).
-  // (Never over the shore as it was laid before the carving.)
-  if (net.rim && tarnRim > -Infinity && h < hShore && !(inChannel >= tarnRim - 3) && (maskLevel === -Infinity || mask?.tarnHit)) h = Math.min(hShore, net.rim(north, east, h));
   return h;
 }
 
