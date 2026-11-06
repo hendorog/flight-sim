@@ -36,7 +36,7 @@ it('rill map', () => {
     const ce = Math.round(we / RILL_CELL);
     // Trace over the follow window (+ margin) so heads in the map window can be followed down.
     const F = Math.round(follow / RILL_CELL) + 80;
-    const stats: RillStats = { cells: 0, channelCells: 0, km: 0, wetKm: 0, toNetwork: 0, toSink: 0, msGround: 0, msTrace: 0, msLines: 0, msRaster: 0 };
+    const stats: RillStats = { cells: 0, sampled: 0, channelCells: 0, km: 0, wetKm: 0, toNetwork: 0, toSink: 0, msGround: 0, msTrace: 0, msLines: 0, msRaster: 0 };
     const H = Math.round(half / RILL_CELL);
     const x0 = F - H, x1 = F + H + 1;
     const g = traceRillGraph(ce - F, cn - F, 2 * F + 1, 2 * F + 1, 100, 100, 2 * F - 99, 2 * F - 99, stats);

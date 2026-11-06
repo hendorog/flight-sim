@@ -118,8 +118,8 @@ if (tRillDamp > 0.001) {
   if (tRillBed > 0.001) {
     Mat g = layerTop(${gravelLayer}, tXZ, tDist);
     // Stony where the ground is steep (and more so down the bigger ones), else dark wet soil under rushes.
-    float stones = clamp(steep * 0.9 + 0.25 * tRillSize + 0.5 * (nD.b - 0.5), 0.0, 1.0);
-    vec3 soil = mix(${P.bankRoughA} * 0.75, ${P.mud} * 0.85, smoothstep(0.35, 0.7, nC.r + 0.3 * nD.a));
+    float stones = clamp(steep * (0.85 + 0.3 * tRillSize + 0.6 * (nD.b - 0.5)), 0.0, 1.0);
+    vec3 soil = mix(${P.bankRoughA} * 0.7, ${P.mud} * 0.8, 0.3 * smoothstep(0.35, 0.7, nC.r + 0.3 * nD.a));
     vec3 bed = mix(soil, ${P.scree} * 0.6 * g.albedo, stones);
     // Wet toward the middle.
     bed *= mix(1.0, 0.7, max(tRillWet, 0.4 * smoothstep(0.3, 0.8, tRillBed)));

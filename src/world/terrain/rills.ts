@@ -25,9 +25,11 @@
 // vector to the nearest line point, the distance to it, and the line's size there: interpolating the vector is exact
 // across a straight line, so the shader draws lines far narrower than a texel without stair-steps (RillSystem.ts).
 
-import { hydrology, makeSample, sampleTerrain, type TerrainSample } from './heightfield';
+import { hydrology, makeSample, sampleTerrain, snowShiftM, type TerrainSample } from './heightfield';
 import type { FlowHit } from './hydrology';
 import { gnoise } from './noise';
+import { worldSeed } from '../worldSeed';
+import { era } from '../era/eraState';
 
 /** Patch edge length, m; raster cell and texel size, m. */
 export const RILL_PATCH = 2048;
@@ -99,8 +101,9 @@ export interface RillPatchRequest {
 }
 
 export interface RillStats {
-  /** Raster cells sampled, channel cells in the core, rill length in the core (km), its wet part (km). */
+  /** Raster cells in the window, of them sampled (not in the block cache), channel cells in the core, rill length in the core (km), its wet part (km). */
   cells: number;
+  sampled: number;
   channelCells: number;
   km: number;
   wetKm: number;
@@ -181,6 +184,31 @@ export interface RillGraph {
 
 const scratch: TerrainSample = makeSample();
 
+/** Raster cells per cached block side, and blocks kept (about 9 KB each: four windows' worth). */
+const BLOCK = 32;
+const CACHE_BLOCKS = 480;
+interface RasterBlock {
+  ground: Float64Array;
+  route: Float64Array;
+  net: Uint8Array;
+}
+let cacheState: { key: string; blocks: Map<string, RasterBlock> } | null = null;
+/** The block cache of this thread, emptied when the world (seed, era, water) changes. */
+function rasterCache(): { blocks: Map<string, RasterBlock> } {
+  const key = `${worldSeed()}|${era().id}|${snowShiftM()}|${RILL_TUNE.noise}`;
+  const rivers = hydrology.rivers;
+  if (!cacheState || cacheState.key !== key || cacheRivers !== rivers) {
+    cacheState = { key, blocks: new Map() };
+    cacheRivers = rivers;
+  }
+  return cacheState;
+}
+let cacheRivers: unknown = null;
+/** Empty the block cache (probes timing a cold build). */
+export function clearRillCache(): void {
+  cacheState = null;
+}
+
 /** Trace the raster of cells gx in [gx0, gx0 + nx), gy in [gy0, gy0 + ny); `ex0`..`ey1` (window cells) is where the
  * segments are wanted (rillSegments' range): the values they use are worked out around it (USE_M, PERSIST_M, OWN_M
  * less SEG_M). */
@@ -191,17 +219,43 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
   const route = new Float64Array(N);
   const net = new Uint8Array(N);
   const s = scratch;
-  for (let y = 0; y < ny; y++) {
-    const north = (gy0 + y) * RILL_CELL;
-    for (let x = 0; x < nx; x++) {
-      const east = (gx0 + x) * RILL_CELL;
-      sampleTerrain(north, east, s);
-      const i = y * nx + x;
-      ground[i] = s.ground;
-      route[i] = s.ground + RILL_TUNE.noise * (gnoise(east / ROUTE_WAVE + 31.7, north / ROUTE_WAVE - 12.3) + 0.5 * gnoise((3 * east) / ROUTE_WAVE - 7.1, (3 * north) / ROUTE_WAVE + 4.9));
-      if (s.standing > s.ground || s.river > s.ground || s.riverDist <= s.riverHalfWidth + NET_MARGIN) net[i] = 1;
+  // The raster by blocks (kept for the next patches: neighbouring windows overlap by most of their area).
+  const cache = rasterCache();
+  for (let by = Math.floor(gy0 / BLOCK); by * BLOCK < gy0 + ny; by++)
+    for (let bx = Math.floor(gx0 / BLOCK); bx * BLOCK < gx0 + nx; bx++) {
+      const key = `${bx},${by}`;
+      let b = cache.blocks.get(key);
+      if (b) cache.blocks.delete(key);
+      else {
+        b = { ground: new Float64Array(BLOCK * BLOCK), route: new Float64Array(BLOCK * BLOCK), net: new Uint8Array(BLOCK * BLOCK) };
+        for (let y = 0; y < BLOCK; y++) {
+          const north = (by * BLOCK + y) * RILL_CELL;
+          for (let x = 0; x < BLOCK; x++) {
+            const east = (bx * BLOCK + x) * RILL_CELL;
+            sampleTerrain(north, east, s);
+            const i = y * BLOCK + x;
+            b.ground[i] = s.ground;
+            b.route[i] = s.ground + RILL_TUNE.noise * (gnoise(east / ROUTE_WAVE + 31.7, north / ROUTE_WAVE - 12.3) + 0.5 * gnoise((3 * east) / ROUTE_WAVE - 7.1, (3 * north) / ROUTE_WAVE + 4.9));
+            if (s.standing > s.ground || s.river > s.ground || s.riverDist <= s.riverHalfWidth + NET_MARGIN) b.net[i] = 1;
+          }
+        }
+        if (stats) stats.sampled += BLOCK * BLOCK;
+      }
+      // Most recently used last.
+      cache.blocks.set(key, b);
+      const y0 = Math.max(gy0, by * BLOCK), y1 = Math.min(gy0 + ny, (by + 1) * BLOCK);
+      const x0 = Math.max(gx0, bx * BLOCK), x1 = Math.min(gx0 + nx, (bx + 1) * BLOCK);
+      for (let y = y0; y < y1; y++) {
+        const src = (y - by * BLOCK) * BLOCK - bx * BLOCK;
+        const dst = (y - gy0) * nx - gx0;
+        for (let x = x0; x < x1; x++) {
+          ground[dst + x] = b.ground[src + x];
+          route[dst + x] = b.route[src + x];
+          net[dst + x] = b.net[src + x];
+        }
+      }
     }
-  }
+  while (cache.blocks.size > CACHE_BLOCKS) cache.blocks.delete(cache.blocks.keys().next().value as string);
   const t1 = performance.now();
   // Steepest descent over the routing ground; pits spill over a bounded flood.
   const to = new Int32Array(N);
@@ -624,7 +678,7 @@ export const rillTexelCentre = (k: number): number => (k - 0.5) * RILL_TEXEL;
 /** Build one patch (in a terrain worker). `lo` and `hi` widen the window (cells, west and south, east and north) for the
  * tests: the texels must not change. */
 export function buildRillPatch(req: RillPatchRequest, lo = 0, hi = 0): RillPatchData {
-  const stats: RillStats = { cells: 0, channelCells: 0, km: 0, wetKm: 0, toNetwork: 0, toSink: 0, msGround: 0, msTrace: 0, msLines: 0, msRaster: 0 };
+  const stats: RillStats = { cells: 0, sampled: 0, channelCells: 0, km: 0, wetKm: 0, toNetwork: 0, toSink: 0, msGround: 0, msTrace: 0, msLines: 0, msRaster: 0 };
   if (!hydrology.queryFlow) return { kind: 'rills', pi: req.pi, pj: req.pj, texels: null, stats };
   const w = rillWindow(req.pi, req.pj);
   const h = HALO + lo;

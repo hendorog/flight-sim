@@ -11,6 +11,9 @@ import { RILL_SLOTS, RILL_SLOTS_SIDE, RILL_UNIFORMS } from './rillShader';
 
 /** Most patch jobs in flight at once (tiles and trees go first). */
 const MAX_INFLIGHT = 2;
+/** The worker the patches are built on while it has room (the last: the one tiles go to least; it keeps the raster
+ * blocks the patches share, rills.ts). */
+const RILL_WORKER = -1;
 /** Patch results kept after they leave the held set (flying back over them costs nothing), patches. */
 const KEEP = 24;
 
@@ -30,8 +33,9 @@ export class RillSystem {
   private generation = 0;
   private lastPi = NaN;
   private lastPj = NaN;
-  /** Diagnostics: patches built, worker time per patch (ms: ground, total), last upload (ms). */
-  readonly stats = { patches: 0, workerMs: 0, groundMs: 0, uploadMs: 0, uploads: 0, km: 0 };
+  /** Diagnostics: patches built, mean worker time per patch (ms: total, sampling the ground) and share of the window
+   * sampled (the rest came from the worker's block cache), last upload's main-thread time (ms), uploads, km traced. */
+  readonly stats = { patches: 0, workerMs: 0, groundMs: 0, sampledShare: 0, uploadMs: 0, uploads: 0, km: 0 };
 
   constructor(private readonly pool: WorkerPool) {
     const data = new Uint8Array(RILL_TEX * RILL_TEX * 4 * RILL_SLOTS);
@@ -120,7 +124,7 @@ export class RillSystem {
     this.inflight.add(k);
     const gen = this.generation;
     this.pool
-      .run({ kind: 'rills', req: { pi, pj } })
+      .run({ kind: 'rills', req: { pi, pj } }, RILL_WORKER)
       .then((r) => {
         if (gen !== this.generation) return;
         this.inflight.delete(k);
@@ -140,6 +144,7 @@ export class RillSystem {
     const total = s.msGround + s.msTrace + s.msLines + s.msRaster;
     this.stats.workerMs += (total - this.stats.workerMs) / n;
     this.stats.groundMs += (s.msGround - this.stats.groundMs) / n;
+    this.stats.sampledShare += (s.sampled / Math.max(1, s.cells) - this.stats.sampledShare) / n;
     this.stats.km += s.km;
   }
 
