@@ -80,6 +80,9 @@ float rillCover(float d, float hw, float fp) {
 export const RILL_SAMPLE_GLSL = /* glsl */ `
 // Rills: the bed (damp, stony on steep ground) in a small notch, its water, a damp margin; faded out with distance.
 float tRillFp = max(length(fwidth(tXZ)), 0.02);
+// (The derivatives for a fine noise read inside the branch below.)
+vec2 tRillDx = dFdx(tXZ) * ${f(1 / 9)};
+vec2 tRillDy = dFdy(tXZ) * ${f(1 / 9)};
 float tRillBed = 0.0;
 float tRillDamp = 0.0;
 float tRillWet = 0.0;
@@ -91,11 +94,16 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
   float fade = 1.0 - smoothstep(${f(RILL_FADE_NEAR)}, ${f(RILL_FADE_FAR)}, tDist);
   if (rl.y > 0.001) {
     tRillSize = rl.y;
-    // A ragged edge (the bed's gravel and the grass at its margin), not a ruled one.
-    float bh = rillBedHalf(rl.y) * (0.8 + 0.35 * nD.g);
-    tRillBed = rillCover(rl.x, bh, tRillFp) * fade;
-    tRillDamp = rillCover(rl.x, bh * 2.4 + 2.0, tRillFp) * fade;
-    tRillWet = rillCover(rl.x, rillWaterHalf(rl.y) * (0.85 + 0.3 * nC.b), tRillFp) * fade;
+    // Ragged edges and a width that comes and goes along the line (a fine noise, 9 m), not ruled bands; the margin
+    // thins out into the cover around it rather than ending at an edge.
+    vec4 nr = textureGrad(tNoise, rot2(tXZ, 1.3) * ${f(1 / 9)}, tRillDx, tRillDy);
+    float wob = nr.r - 0.5;
+    float bh = rillBedHalf(rl.y) * (0.7 + 0.45 * nD.g + 0.35 * nr.g);
+    float dr = rl.x + wob * 0.8 * bh;
+    tRillBed = rillCover(dr, bh, tRillFp) * fade;
+    float mh = (bh * 2.2 + 1.5) * (0.75 + 0.5 * nr.b);
+    tRillDamp = rillCover(rl.x + wob * 2.0, mh, tRillFp + 0.3 * mh) * fade;
+    tRillWet = rillCover(dr, rillWaterHalf(rl.y) * (0.8 + 0.4 * nr.a), tRillFp) * fade;
     // The banks of its notch lean in toward the line (lit on one side, shaded on the other), out to twice the bed;
     // faded as the notch narrows under a pixel.
     float bank = smoothstep(0.15 * bh, 0.6 * bh, rl.x) * (1.0 - smoothstep(1.2 * bh, 2.2 * bh, rl.x));
@@ -125,7 +133,7 @@ if (tRillDamp > 0.001) {
   acc.rough = mix(acc.rough, 1.0, dw);
   // (Herbage: the low sheen of foliage, as the canopy's, not bare ground's grey one.)
   tFoliageW = max(tFoliageW, 0.8 * dw);
-  acc.slope += tRillBank * 1.6 * open;
+  acc.slope += tRillBank * 1.1 * open;
   if (tRillBed > 0.001) {
     Mat g = layerTop(${gravelLayer}, tXZ, tDist);
     // Stony where the ground is steep (and more so down the bigger ones), else dark wet soil under rushes.
