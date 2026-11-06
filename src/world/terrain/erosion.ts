@@ -374,10 +374,14 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'surface' | 'lowered' | 
   g.tN = g.tE = 0;
   if (out.w > 0) {
     if (inside) {
-      cubicGrad(f.surface, CUT_N, (north + DOMAIN_HALF) / CUT_CELL, (east + DOMAIN_HALF) / CUT_CELL, false);
-      out.t = cubic.v;
+      // (The value Catmull-Rom, as sampleErosion's; the gradient the B-spline's: Catmull-Rom's gradient is only C0, and
+      // the gullies turned and held by it (heightfield.ts) creased the ground along every lattice line, 250 m apart.)
+      const fy2 = (north + DOMAIN_HALF) / CUT_CELL;
+      const fx2 = (east + DOMAIN_HALF) / CUT_CELL;
+      cubicGrad(f.surface, CUT_N, fy2, fx2, true);
       g.tN = cubic.gy / CUT_CELL;
       g.tE = cubic.gx / CUT_CELL;
+      out.t = catmullRom(f.surface, CUT_N, fy2, fx2);
     } else out.t = bicubic(f.surface, CUT_N, -DOMAIN_HALF, CUT_CELL, north, east);
   } else out.t = 0;
   const hn = north - f.home.north;
