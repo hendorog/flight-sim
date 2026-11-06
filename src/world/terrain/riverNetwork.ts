@@ -11,7 +11,7 @@
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
-import { breachOfCut, breachReachOf, channelHalfWidth, FallIndex, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
+import { breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { pitchPool, type PitchReport } from './pitchPool';
@@ -588,6 +588,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const falls: Fall[] = [];
   /** Rivers whose head is not in a lake. */
   const headDry = new Uint8Array(nR);
+  /** How much of each river's head was trimmed off above its first junction, m (probes). */
+  const trimmed = new Float64Array(nR);
   /** A finished line's water level at arc length sv. */
   const levelOn = (c: { s: Float64Array; level: Float64Array }, sv: number): number => sampleAt(c.s, c.level, sv);
   for (let li = 0; li < nR; li++) {
@@ -673,6 +675,35 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   tPhase.push(performance.now());
   const route = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
   const traced = traceStreams({ d, mask, route, rivers, riverPools });
+  // A river whose head is in no lake begins where its water does: where the first stream (a feeder, streams.ts
+  // feedHeads) or lattice tributary joins it, when that is within FEED_JOIN of the head - no trickle runs on above it.
+  {
+    const tribAt = new Float64Array(nR).fill(Infinity);
+    for (let lj = 0; lj < nR; lj++) {
+      const pj = lines[lj].joins;
+      if (pj < 0 || pj >= nR) continue;
+      const c = rivers[lj];
+      const p = rivers[pj];
+      tribAt[pj] = Math.min(tribAt[pj], p.s[nearestOnChannel(p, c.north[c.north.length - 1], c.east[c.east.length - 1])]);
+    }
+    for (let li = 0; li < nR; li++) {
+      const r = rivers[li];
+      const s0 = Math.min(traced.headAt[li], tribAt[li]);
+      if (!(s0 > 0 && s0 <= FEED_JOIN) || mask.at(r.north[0], r.east[0]) > -Infinity) continue;
+      let i0 = 0;
+      while (i0 < r.s.length - 1 && r.s[i0] < s0 - 1e-6) i0++;
+      if (i0 === 0 || i0 > r.s.length - 3) continue;
+      const cut = r.s[i0];
+      const s = r.s.slice(i0);
+      for (let i = 0; i < s.length; i++) s[i] -= cut;
+      rivers[li] = { north: r.north.slice(i0), east: r.east.slice(i0), level: r.level.slice(i0), halfWidth: r.halfWidth.slice(i0), s, valleyS: r.valleyS.slice(i0) };
+      channelArea[li] = channelArea[li].slice(i0);
+      for (const st of traced.streams) if (st.joins === li) st.joinS = Math.max(0, st.joinS - cut);
+      trimmed[li] = cut;
+    }
+    const tr = [...trimmed].filter((x) => x > 0).sort((a, b) => a - b);
+    traced.report.feed = { ...(traced.report.feed ?? {}), trims: tr.length, trimKm: Math.round(tr.reduce((a, b) => a + b, 0)) / 1000, trimP50: Math.round(tr[tr.length >> 1] ?? 0), trimMax: Math.round(tr[tr.length - 1] ?? 0) };
+  }
   const streamLines: Array<{ north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; breach: Float64Array; cut: Float64Array }> = [];
   const streamJoins: number[] = [];
   const streamEnds: Array<StreamLine['end']> = [];
@@ -747,7 +778,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         // (A tributary joining within the taper brings its own width from where it joins.)
         for (let k = 0; k < hw.length && c.s[k] < HEAD_TAPER; k++) {
           let feed = HEAD_START_AREA + (A[k] - HEAD_START_AREA) * smooth(0, HEAD_TAPER, c.s[k]);
-          for (const t of into[li]) if (t.s <= c.s[k]) feed = Math.max(feed, channelArea[t.li][channelArea[t.li].length - 1]);
+          // (All that has joined it by there: the width steps up at each confluence.)
+          let joined = 0;
+          for (const t of into[li]) if (t.s <= c.s[k]) joined += channelArea[t.li][channelArea[t.li].length - 1];
+          feed = Math.max(feed, Math.min(A[k], joined));
           hw[k] = Math.min(hw[k], channelHalfWidth(feed));
         }
       }
