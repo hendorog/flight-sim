@@ -118,11 +118,11 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
  */
 export function rillSplatGlsl(P: { riverBed: string; scree: string; bankRoughA: string; mud: string }, gravelLayer: number, roads: boolean): string {
   return /* glsl */ `
-if (tRillDamp > 0.001) {
-  // Not under the canopy, nor in the fields (ploughed and drained: their ditches are not drawn), nor over a road and its
-  // verges (a culvert takes the water under it).
-  float open = (1.0 - tFoliageW) * (1.0 - farmWeight)${roads ? ` * smoothstep(tRoad.y + 1.0, tRoad.y + 4.0, tRoad.x)` : ''};
-  tRillOpen = open;
+// Not under the canopy, nor in the fields (ploughed and drained: their ditches are not drawn), nor over a road and its
+// verges (a culvert takes the water under it).
+if (tRillDamp > 0.001) tRillOpen = (1.0 - tFoliageW) * (1.0 - farmWeight)${roads ? ` * smoothstep(tRoad.y + 1.0, tRoad.y + 4.0, tRoad.x)` : ''};
+if (tRillOpen > 0.001) {
+  float open = tRillOpen;
   float steep = smoothstep(0.92, 0.7, tUp);
   // Damp margin: lush cover (rushes, moss, tall herbs), a deeper green rather than darker (dark ground only shows the
   // sky's grey sheen from the air), in clumps along the line; rough.
@@ -135,19 +135,29 @@ if (tRillDamp > 0.001) {
   tFoliageW = max(tFoliageW, 0.8 * dw);
   acc.slope += tRillBank * 1.1 * open;
   if (tRillBed > 0.001) {
-    Mat g = layerTop(${gravelLayer}, tXZ, tDist);
     // Stony where the ground is steep (and more so down the bigger ones), else dark wet soil under rushes.
     float stones = clamp(steep * (0.85 + 0.3 * tRillSize + 0.6 * (nD.b - 0.5)), 0.0, 1.0);
     vec3 soil = mix(${P.bankRoughA} * 0.85, ${P.mud}, 0.35 * smoothstep(0.35, 0.7, nC.r + 0.3 * nD.a));
-    vec3 bed = mix(soil, ${P.scree} * 0.6 * g.albedo, stones);
+    vec3 bed = soil;
+    float bedRough = 0.95;
+    float bedCavity = 1.0;
+    vec2 bedSlope = vec2(0.0);
+    // (The gravel layer's reads only where there are stones to show.)
+    if (stones > 0.02) {
+      Mat g = layerTop(${gravelLayer}, tXZ, tDist);
+      bed = mix(soil, ${P.scree} * 0.6 * g.albedo, stones);
+      bedRough = mix(0.95, g.rough, stones);
+      bedCavity = mix(1.0, g.cavity, stones);
+      bedSlope = g.slope * stones;
+    }
     // Wet toward the middle.
     bed *= mix(1.0, 0.7, max(tRillWet, 0.4 * smoothstep(0.3, 0.8, tRillBed)));
     float w = tRillBed * open;
     acc.albedo = mix(acc.albedo, bed, w);
     tFoliageW = max(tFoliageW, 0.6 * w * (1.0 - stones));
-    acc.slope = mix(acc.slope, acc.slope + g.slope * stones, w);
-    acc.rough = mix(acc.rough, mix(0.95, g.rough, stones), w);
-    acc.cavity = mix(acc.cavity, mix(1.0, g.cavity, stones), w);
+    acc.slope += bedSlope * w;
+    acc.rough = mix(acc.rough, bedRough, w);
+    acc.cavity = mix(acc.cavity, bedCavity, w);
     if (tRillWet > 0.001) {
       float ww = tRillWet * open;
       acc.albedo = mix(acc.albedo, ${P.riverBed} * 0.5, ww);
