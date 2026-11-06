@@ -362,7 +362,7 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
       // Maturity (macrocarpa and pine): 15 % young, 25 % grown out untrimmed, 60 % clipped.
       const age = species === SPECIES.poplar ? 1 : edgeRandom(k, dseed, 2);
       const young = age < 0.15;
-      const clipped = age >= 0.4;
+      const clipped = species !== SPECIES.poplar && age >= 0.4;
       const h1 = edgeRandom(k, dseed, 1);
       const tall =
         species === SPECIES.poplar ? 17 + 9 * h1
