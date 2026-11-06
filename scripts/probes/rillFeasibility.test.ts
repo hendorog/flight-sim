@@ -179,6 +179,16 @@ it('rill feasibility', () => {
       if (wins.length >= nWin) break;
       if (wins.every((w) => Math.hypot(w.n - c.n, w.e - c.e) > 20000)) wins.push(c);
     }
+    // RILL_WINS='42@-44992,-9504 ...': these windows instead (the same ground before and after a change).
+    if (env.RILL_WINS) {
+      wins.length = 0;
+      for (const w of env.RILL_WINS.split(/\s+/)) {
+        const [sd, at] = w.split('@');
+        if (Number(sd) !== seed) continue;
+        const [wn, we] = at.split(',').map(Number);
+        wins.push({ n: wn, e: we, relief: 0 });
+      }
+    }
     for (const [wi, w] of wins.entries()) {
       const cn = Math.round(w.n / 10) * 10, ce = Math.round(w.e / 10) * 10;
       const t0 = performance.now();
