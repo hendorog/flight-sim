@@ -1263,6 +1263,67 @@ export class LakeMask {
     for (const p of this.pools) if (p.lake === k) p.drained = true;
     this.main[k] = -1;
   }
+  /**
+   * Lower a pond's water to `level` (each of its pools standing higher): a river runs through its basin at that level
+   * (riverNetwork.ts), so the water cannot stand over it. The raster points whose ground now lies at or over the
+   * domain's edge (level + LAKE_MARGIN) leave the domain; a pool left too shallow or too small for a lake is dry.
+   */
+  lowerPond(k: number, level: number): void {
+    const R = this.rasters[k];
+    const top = level + LAKE_MARGIN;
+    this.pools.forEach((pool, id) => {
+      if (pool.lake !== k || pool.drained || pool.level <= level) return;
+      pool.level = level;
+      let bottom = Infinity;
+      let wet = 0;
+      let sn = 0;
+      let se = 0;
+      for (let p = 0; p < R.pool.length; p++) {
+        if (R.pool[p] !== id) continue;
+        const g = R.ground[p];
+        if (!(g < top)) {
+          R.pool[p] = -1;
+          continue;
+        }
+        bottom = Math.min(bottom, g);
+        if (g >= level) continue;
+        wet++;
+        sn += this.d.origin + (R.gi + Math.floor(p / R.cols)) * LAKE_RASTER;
+        se += this.d.origin + (R.gj + (p % R.cols)) * LAKE_RASTER;
+      }
+      if (level - bottom < LAKE_MIDDLE_DEPTH || wet < 2) {
+        for (let p = 0; p < R.pool.length; p++) if (R.pool[p] === id) R.pool[p] = -1;
+        pool.drained = true;
+        return;
+      }
+      sn /= wet;
+      se /= wet;
+      let snn = 0;
+      let see = 0;
+      let sne = 0;
+      let cd = Infinity;
+      for (let p = 0; p < R.pool.length; p++) {
+        if (R.pool[p] !== id || R.ground[p] >= level) continue;
+        const dn = this.d.origin + (R.gi + Math.floor(p / R.cols)) * LAKE_RASTER - sn;
+        const de = this.d.origin + (R.gj + (p % R.cols)) * LAKE_RASTER - se;
+        snn += dn * dn;
+        see += de * de;
+        sne += dn * de;
+        if (R.ground[p] <= level - LAKE_CENTRE_DEPTH && dn * dn + de * de < cd) {
+          cd = dn * dn + de * de;
+          pool.centreNorth = sn + dn;
+          pool.centreEast = se + de;
+        }
+      }
+      Object.assign(pool, { bottom, wet, north: sn, east: se, snn: snn / wet, see: see / wet, sne: sne / wet });
+    });
+    let best = -1;
+    this.pools.forEach((pool, id) => {
+      if (pool.lake === k && !pool.drained && (best < 0 || pool.wet > this.pools[best].wet)) best = id;
+    });
+    this.main[k] = best;
+    if (best < 0) this.drainPond(k);
+  }
   /** The level of the lake whose smoothing smooth() last found (-Infinity: none). */
   smoothLevel = -Infinity;
   /** The level of the lake whose shore holds() last found (-Infinity: none). */

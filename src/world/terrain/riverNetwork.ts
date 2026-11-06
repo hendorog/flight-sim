@@ -636,14 +636,17 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     lipsOf[li] = [];
   }
   // A lake a river's final course runs through well below its level (the course wanders off the samples the levels
-  // were set on, or a later pass took the river down to a confluence or a valley it cuts) is drained too: its water
-  // would stand against the channel, a wall tens of metres high (seed 1: 104 m).
+  // were set on, or a later pass took the river down to a confluence or a valley it cuts) stands at the river's level
+  // instead (its basin holds water up to there, and the river runs through it): at its own its water would stand
+  // against the channel, a wall tens of metres high (seed 1: 104 m).
+  const lowerTo = new Map<number, number>();
   for (const r of rivers) {
     for (let i = 0; i < r.north.length; i++) {
       const lv = mask.at(r.north[i], r.east[i]);
-      if (lv > r.level[i] + DRAIN_MARGIN && mask.pond >= 0) mask.drainPond(mask.pond);
+      if (lv > r.level[i] + DRAIN_MARGIN && mask.pond >= 0) lowerTo.set(mask.pond, Math.min(lowerTo.get(mask.pond) ?? Infinity, r.level[i]));
     }
   }
+  for (const [k, lv] of [...lowerTo.entries()].sort((a, b) => a[0] - b[0])) mask.lowerPond(k, lv);
   // The pools a river runs through.
   const riverPools = new Uint8Array(mask.pools.length);
   for (const P of pre) for (let i = 0; i < P.wet.length; i++) if (P.wet[i] && P.poolOf[i] >= 0) riverPools[P.poolOf[i]] = 1;
