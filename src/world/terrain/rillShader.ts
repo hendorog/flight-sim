@@ -108,10 +108,12 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
  * Applied to the ground after the rock (before the snow, which covers rills): the damp margin darkens and greens the
  * cover, the bed is wet soil and stones (more stones on steeper ground), the water dark. Not under the canopy shell.
  */
-export function rillSplatGlsl(P: { riverBed: string; scree: string; bankRoughA: string; mud: string }, gravelLayer: number): string {
+export function rillSplatGlsl(P: { riverBed: string; scree: string; bankRoughA: string; mud: string }, gravelLayer: number, roads: boolean): string {
   return /* glsl */ `
 if (tRillDamp > 0.001) {
-  float open = 1.0 - tFoliageW;
+  // Not under the canopy, nor in the fields (ploughed and drained: their ditches are not drawn), nor over a road and its
+  // verges (a culvert takes the water under it).
+  float open = (1.0 - tFoliageW) * (1.0 - farmWeight)${roads ? ` * smoothstep(tRoad.y + 1.0, tRoad.y + 4.0, tRoad.x)` : ''};
   tRillOpen = open;
   float steep = smoothstep(0.92, 0.7, tUp);
   // Damp margin: lush cover (rushes, moss, tall herbs), a deeper green rather than darker (dark ground only shows the

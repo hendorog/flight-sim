@@ -23,7 +23,7 @@ it('rill cams', () => {
     setWorldSeed(seed);
     const [wn, we] = at.split(',').map(Number);
     const cn = Math.round(wn / RILL_CELL), ce = Math.round(we / RILL_CELL);
-    const H = 125, F = H + 100;
+    const H = Number(env.RCAM_HALF ?? 125), F = H + 100;
     const g = traceRillGraph(ce - F, cn - F, 2 * F + 1, 2 * F + 1, 90, 90, 2 * F - 89, 2 * F - 89);
     const segs = rillSegments(g, F - H, F - H, F + H + 1, F + H + 1);
     // Rill length on open ground (no forest to hide it) counts.
@@ -36,10 +36,25 @@ it('rill cams', () => {
       return bio.forest < 0.3;
     });
     let best = { n: wn, e: we, score: -1 };
-    for (let dn = -1500; dn <= 1500; dn += 250) for (let de = -1500; de <= 1500; de += 250) {
+    const reach = (H - 30) * RILL_CELL;
+    const openAt = (n: number, e: number): boolean => {
+      const gn = (gnd(n + 8, e) - gnd(n - 8, e)) / 16, ge = (gnd(n, e + 8) - gnd(n, e - 8)) / 16;
+      sampleTerrain(n, e, s);
+      if (Math.max(s.standing, s.river) > s.ground) return false;
+      computeBiome(n, e, s, 1 / Math.sqrt(1 + gn * gn + ge * ge), bio);
+      return bio.forest < 0.15;
+    };
+    for (let dn = -reach; dn <= reach; dn += 250) for (let de = -reach; de <= reach; de += 250) {
       const n = cn * RILL_CELL + dn, e = ce * RILL_CELL + de;
       const slope = Math.hypot(gnd(n + 50, e) - gnd(n - 50, e), gnd(n, e + 50) - gnd(n, e - 50)) / 100;
       if (slope < 0.2) continue;
+      // Open country all round (RCAM_OPEN of a 1.2 km square): no forest to hide the rills.
+      let openN = 0, all = 0;
+      for (let a = -600; a <= 600; a += 150) for (let b = -600; b <= 600; b += 150) {
+        all++;
+        if (openAt(n + a, e + b)) openN++;
+      }
+      if (openN / all < Number(env.RCAM_OPEN ?? 0)) continue;
       let score = 0;
       for (const sg of open) if ((sg.n0 - n) ** 2 + (sg.e0 - e) ** 2 < 400 * 400) score += Math.hypot(sg.e1 - sg.e0, sg.n1 - sg.n0) * (sg.s0 > 0.3 ? 2 : 1);
       if (score > best.score) best = { n, e, score };
@@ -64,7 +79,7 @@ it('rill cams', () => {
         if (face > cam.face) cam = { n, e, alt, face };
       }
       if (cam.face === -Infinity) continue;
-      const name = `s${seed}${String.fromCharCode(97 + wins.filter((x) => x.startsWith(sd + '@')).indexOf(w))}-${ft}`;
+      const name = `${env.RCAM_PREFIX ?? ""}s${seed}${String.fromCharCode(97 + wins.filter((x) => x.startsWith(sd + '@')).indexOf(w))}-${ft}`;
       out.push(`${name} seed=${seed}&camPos=${Math.round(cam.n)},${Math.round(cam.e)},${Math.round(cam.alt)}&camLook=${best.n},${best.e},${Math.round(tH)}`);
     }
   }

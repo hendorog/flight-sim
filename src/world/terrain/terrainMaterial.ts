@@ -1330,7 +1330,7 @@ if (tRock > 0.001) {
   acc.height = mix(acc.height, r.height, rw);
   tFoliageW *= 1.0 - rw;
 }
-`)}${rillText(rillSplatGlsl(P, LAYER.gravel))}${E(VOLCANO_CRATER)}if (snowW > 0.001) {
+`)}${rillText(rillSplatGlsl(P, LAYER.gravel, isPresent()))}${E(VOLCANO_CRATER)}if (snowW > 0.001) {
   Mat s = layerTop(${LAYER.snow}, tXZ, tDist);
   // Snow fills hollows first: height-aware blend against whatever lies beneath.
   float w = clamp((snowW * 1.6 - 0.3) + (0.5 - acc.height) * 0.6, 0.0, 1.0);

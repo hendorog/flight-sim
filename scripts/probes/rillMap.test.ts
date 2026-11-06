@@ -25,6 +25,7 @@ it('rill map', () => {
   fs.mkdirSync(dir, { recursive: true });
   if (env.RMAP_CONVERGE) RILL_TUNE.converge = Number(env.RMAP_CONVERGE);
   if (env.RMAP_NOISE) RILL_TUNE.noise = Number(env.RMAP_NOISE);
+  if (env.RMAP_AREA) RILL_TUNE.area = Number(env.RMAP_AREA);
   const rows: string[] = [];
   const s = makeSample();
   for (const w of wins) {

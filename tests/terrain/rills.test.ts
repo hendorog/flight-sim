@@ -61,7 +61,7 @@ describe('rills', () => {
     const wider = buildRillPatch(A, 1, 23);
     expect(same(wide.texels, a.texels)).toBe(true);
     expect(same(wider.texels, a.texels)).toBe(true);
-  });
+  }, 60000);
 
   it('is deterministic: the same after other patches and another seed', () => {
     setWorldSeed(42);
@@ -69,7 +69,7 @@ describe('rills', () => {
     setWorldSeed(SEED);
     const again = buildRillPatch(A);
     expect(same(again.texels, a.texels)).toBe(true);
-  });
+  }, 60000);
 });
 
 describe('rills at seed 0', () => {

@@ -40,7 +40,7 @@ export const RILL_TEX = RILL_PATCH / RILL_TEXEL + 2;
 /** Texels hold the vector to the nearest line point out to this distance, m. */
 export const RILL_RANGE = 16;
 /** Catchment a rill starts from, km²; the most a rill's size counts (wider ones are drawn as this), km². */
-export const RILL_AREA = 0.05;
+export const RILL_AREA = 0.03;
 export const RILL_AREA_CAP = 2;
 /** Catchment from which a rill carries water to be seen (thinner ones are just the damp, stony bed), km². */
 export const RILL_WET_AREA = 0.25;
@@ -79,7 +79,7 @@ const HALO = Math.max(OWN_M + AREA_R + SPILL_R + 1, SEG_M + SPILL_R + TAPER * SP
  * as one raster column: flow converging from a hollow, not a line down an even slope. */
 const CONVERGE = 2.5;
 /** Probe overrides (scripts/probes/rillMap.test.ts): never set in the sim. */
-export const RILL_TUNE = { converge: CONVERGE, noise: 0.6 };
+export const RILL_TUNE = { converge: CONVERGE, noise: 0.6, area: 0 };
 /** The water is routed over the ground plus this much noise, m (at ROUTE_WAVE m and a third of that): on near-level
  * ground it makes the lines wander and gather as small unevenness does, where the raster's own steepest descent runs
  * them dead straight and parallel. Steeper ground hardly notices it. */
@@ -236,7 +236,8 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
             const i = y * BLOCK + x;
             b.ground[i] = s.ground;
             b.route[i] = s.ground + RILL_TUNE.noise * (gnoise(east / ROUTE_WAVE + 31.7, north / ROUTE_WAVE - 12.3) + 0.5 * gnoise((3 * east) / ROUTE_WAVE - 7.1, (3 * north) / ROUTE_WAVE + 4.9));
-            if (s.standing > s.ground || s.river > s.ground || s.riverDist <= s.riverHalfWidth + NET_MARGIN) b.net[i] = 1;
+            // (An airfield's flattened ground ends a line too: drained, not drawn.)
+            if (s.standing > s.ground || s.river > s.ground || s.riverDist <= s.riverHalfWidth + NET_MARGIN || s.airportBlend < 1) b.net[i] = 1;
           }
         }
         if (stats) stats.sampled += BLOCK * BLOCK;
@@ -335,7 +336,7 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
   const donors = new Int32Array(dStart[N]);
   const fill = dStart.slice(0, N);
   for (let i = 0; i < N; i++) if (to[i] >= 0) donors[fill[to[i]]++] = i;
-  const minCells = Math.ceil((RILL_AREA * 1e6) / (RILL_CELL * RILL_CELL));
+  const minCells = Math.ceil(((RILL_TUNE.area || RILL_AREA) * 1e6) / (RILL_CELL * RILL_CELL));
   // The catchment within AREA_R of each candidate (and its longest flow path there): a walk up the donor tree that
   // stays in the box. A cell starts a line where that is big enough and converging.
   const areaR = new Int32Array(N);
@@ -444,7 +445,7 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
     let ee = east;
     let nn = north;
     sampleTerrain(north, east, s);
-    if (!(s.standing > s.ground) && hydrology.queryFlow) {
+    if (!(s.standing > s.ground) && s.riverDist <= s.riverHalfWidth + NET_MARGIN && hydrology.queryFlow) {
       hydrology.queryFlow(north, east, hit);
       if (hit.line >= 0 && Number.isFinite(hit.dist)) {
         // Right of the flow is (dirN, -dirE) in (east, north); the point lies `side * dist` that way from the line.
