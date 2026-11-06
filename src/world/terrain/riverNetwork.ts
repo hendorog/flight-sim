@@ -635,6 +635,15 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     kinds[li] = 0;
     lipsOf[li] = [];
   }
+  // A lake a river's final course runs through well below its level (the course wanders off the samples the levels
+  // were set on, or a later pass took the river down to a confluence or a valley it cuts) is drained too: its water
+  // would stand against the channel, a wall tens of metres high (seed 1: 104 m).
+  for (const r of rivers) {
+    for (let i = 0; i < r.north.length; i++) {
+      const lv = mask.at(r.north[i], r.east[i]);
+      if (lv > r.level[i] + DRAIN_MARGIN && mask.pond >= 0) mask.drainPond(mask.pond);
+    }
+  }
   // The pools a river runs through.
   const riverPools = new Uint8Array(mask.pools.length);
   for (const P of pre) for (let i = 0; i < P.wet.length; i++) if (P.wet[i] && P.poolOf[i] >= 0) riverPools[P.poolOf[i]] = 1;
