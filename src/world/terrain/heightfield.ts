@@ -19,7 +19,7 @@ import { AIRPORT, onHomeAirport } from '../../core/world';
 import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth } from './drainage';
-import { buildErosion, erosionCutAt, erosionGullies, sampleErosion, type ErosionField, type ErosionSample } from './erosion';
+import { buildErosion, erosionCutAt, erosionCutGrad, erosionGullies, sampleErosion, sampleErosionGrad, type ErosionField, type ErosionGrad, type ErosionSample } from './erosion';
 import { buildNetworkHydrology } from './riverNetwork';
 import { fbm, gnoise, gullies, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
@@ -152,12 +152,15 @@ const GULLY_BRANCH = 1.3;
 /**
  * Hydraulic-erosion look: layered slope-aligned gullies, deepest on steep ground and absent on flats.
  * Returns a signed height offset in units of the relief (negative in gullies, positive on the spurs).
+ * `cap` (a seeded world's, seededNaturalHeight) bounds the strength from above, softly; seed 0 passes none.
  */
-function erode(east: number, north: number, slopeE: number, slopeN: number, octaves = GULLY_OCTAVES): number {
+function erode(east: number, north: number, slopeE: number, slopeN: number, octaves = GULLY_OCTAVES, cap = Infinity): number {
   gullyFine = 0;
+  gullySum = 0;
   const slope = Math.sqrt(slopeE * slopeE + slopeN * slopeN);
   if (slope < 1e-3) return 0;
-  const strength = slope / (slope + 0.15);
+  let strength = slope / (slope + 0.15);
+  if (cap < Infinity) strength = softMin(strength, cap);
   let ux = slopeE / slope;
   let uy = slopeN / slope;
   let x = east / GULLY_CELL;
@@ -188,8 +191,34 @@ function erode(east: number, north: number, slopeE: number, slopeN: number, octa
     bx = cx;
   }
   if (octaves > STREAM_GULLY_OCTAVES) gullyFine = (sum - coarseSum) * strength;
+  gullySum = sum;
   return sum * strength;
 }
+/** erode's last sum of octaves before its strength (about [-1, 1]: low in the troughs, high on the spurs). */
+let gullySum = 0;
+/** A smooth lower bound of two non-negative numbers: their minimum, rounded off (to 0.84 of it where they are equal). */
+function softMin(a: number, b: number): number {
+  if (b <= 0 || a <= 0) return 0;
+  const a4 = a * a * a * a;
+  const b4 = b * b * b * b;
+  return (a * b) / Math.sqrt(Math.sqrt(a4 + b4));
+}
+
+// A seeded world's gully floors keep falling (the water that cut them has a way out). Down a gully the ground is the
+// eroded macro ground B (the coarse terrain with the erosion's cut) plus the gully relief K g, and g (erode's octave
+// sum) varies along a trough by at most about 1.45 per cell (gullies(), p99 of its derivative along the stripes, 200k
+// samples) as its kernels' weights shift; over the octaves (amplitudes 1/2, 1/4, ... on cells of 1500, 750, ... m) that
+// is a rise of at most K 1.45 x 2.5 / 1500 per metre. Holding K under GULLY_FALL |grad B| keeps it under 0.9 of B's
+// own fall along the gully, so its floor keeps falling where the octaves do not all rise together; the gullies follow
+// B's fall line (with the erosion's valleys, not the uncut ground's), so their troughs run down it.
+/** Deepest gully relief per unit of the eroded ground's slope, m: 0.9 x 1500 / (1.45 x 2.5). */
+const GULLY_FALL = 372;
+/** The small-scale relief by the slope too: its knobs (`rough`, m) at most SMALL_FALL and its ledges (`rugged`) at most
+ * RUGGED_FALL times the eroded ground's slope (they would bead a gentle gully floor with hollows), and fading into the
+ * gully troughs (erode's sum from FLOOR_FADE[1] down to FLOOR_FADE[0]), where the water runs. */
+const SMALL_FALL = 12;
+const RUGGED_FALL = 3;
+const FLOOR_FADE = [-0.2, 0.4];
 /** The gully octaves the streams route over (streams.ts: the finer ones are rills on the slopes, finer than its raster). */
 const STREAM_GULLY_OCTAVES = 3;
 /** What erode's octaves beyond STREAM_GULLY_OCTAVES added to its last result. */
@@ -303,6 +332,8 @@ setLayoutGround((n, e) => seededNaturalHeight(n, e, true, false));
 /** The erosion pass (erosion.ts), null in seed 0's world. */
 let erosion: ErosionField | null = null;
 const erosionAt: ErosionSample = { d: 0, w: 0, t: 0, keep: 1, north: 0, east: 0 };
+const erosionGrad: ErosionGrad = { dN: 0, dE: 0, tN: 0, tE: 0 };
+const cutGrad: Deriv = { dx: 0, dy: 0 };
 const EROSION_N = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
 
 /**
@@ -364,7 +395,15 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
   // The ground without the gullies, which the erosion's eroded surface replaces where its cut is deep.
   const coarse = base + relief;
   const cut = eroded ? erosion : null;
-  if (cut) sampleErosion(cut, north, east, erosionAt);
+  if (cut) {
+    if (detail) sampleErosionGrad(cut, north, east, erosionAt, erosionGrad);
+    else sampleErosion(cut, north, east, erosionAt);
+  }
+  /** The slope of the eroded macro ground, m/m (the gullies and small-scale relief are held to it), and how much of
+   * the gullies the point keeps (the small-scale relief fades into their troughs as far). */
+  let fall = 0;
+  let gullyW = 0;
+  gullySum = 0;
   if (detail) {
     // Round a lake (drainage.ts ShoreSmooth) the gullies give way to the smooth basin the lake sits in, and on the
     // floor of a valley the erosion cut (erosion.ts). Not in the ground before the load-time corrections (`eroded`
@@ -382,8 +421,19 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     }
     calm = 1 - lakeW;
     const keep = gullyKeep * calm;
+    // The eroded ground's gradient: the coarse terrain's with the cut's (erosion.ts).
+    let bE = gE;
+    let bN = gN;
+    if (cut) {
+      erosionCutGrad(erosionAt, erosionGrad, coarse, gE, gN, cutGrad);
+      bE += cutGrad.dx;
+      bN += cutGrad.dy;
+    }
+    fall = Math.sqrt(bE * bE + bN * bN);
+    gullyW = keep;
     if (keep > 0) {
-      relief += amplitude * 0.13 * erode(east, north, gE, gN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES) * keep;
+      const g = erode(east, north, bE, bN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES, (GULLY_FALL * fall) / (0.13 * amplitude + 1e-9));
+      relief += amplitude * 0.13 * g * keep;
       fineGully = amplitude * 0.13 * gullyFine * keep;
     }
   }
@@ -405,9 +455,11 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     return h;
   }
   const h0 = h;
-  const rough = calm * (1.2 + 0.004 * clamp(h, 0, 3000));
+  // (Held to the slope and faded into the gully troughs: see SMALL_FALL.)
+  const floor = 1 - gullyW * (1 - smooth(FLOOR_FADE[0], FLOOR_FADE[1], gullySum));
+  const rough = softMin(calm * floor * (1.2 + 0.004 * clamp(h, 0, 3000)), SMALL_FALL * fall);
   h += rough * (2.2 * gnoise(east / 180 + 0.3, north / 180 + 0.7) + 0.8 * gnoise(east / 60 - 4.1, north / 60 + 2.2));
-  const rugged = calm * clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN)));
+  const rugged = softMin(calm * floor * clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN))), RUGGED_FALL * fall);
   if (rugged > 0) {
     const ridge = 1 - Math.abs(gnoise(east / 23 + 7.7, north / 23 - 3.1));
     h += rugged * (2.4 * ridge * ridge + 0.7 * gnoise(east / 9 - 1.3, north / 9 + 5.9));

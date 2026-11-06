@@ -342,6 +342,151 @@ export function sampleErosion(f: Pick<ErosionField, 'surface' | 'lowered' | 'hom
   out.keep = r2 < PAD_KEEP[1] * PAD_KEEP[1] ? smoothstep(PAD_KEEP[0], PAD_KEEP[1], Math.sqrt(r2)) : 1;
 }
 
+/** The gradient of the erosion at a point (sampleErosionGrad): of the lattice's cut and of the eroded surface, per m. */
+export interface ErosionGrad {
+  dN: number;
+  dE: number;
+  tN: number;
+  tE: number;
+}
+const cubic = { v: 0, gy: 0, gx: 0 };
+
+/**
+ * sampleErosion with the gradients of its interpolated fields (`g`, per m), for the slope of the eroded ground
+ * (erosionCutGrad). Off the lattice (where the fields fade out) the gradients are taken as 0.
+ */
+export function sampleErosionGrad(f: Pick<ErosionField, 'surface' | 'lowered' | 'home'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
+  out.north = north;
+  out.east = east;
+  const fy = (north + DOMAIN_HALF) / DRAIN_CELL;
+  const fx = (east + DOMAIN_HALF) / DRAIN_CELL;
+  const inside = fy >= 1 && fx >= 1 && fy < LATTICE_N - 2 && fx < LATTICE_N - 2;
+  if (inside) {
+    cubicGrad(f.lowered, LATTICE_N, fy, fx, true);
+    out.d = cubic.v;
+    g.dN = cubic.gy / DRAIN_CELL;
+    g.dE = cubic.gx / DRAIN_CELL;
+  } else {
+    out.d = bicubic(f.lowered, LATTICE_N, -DOMAIN_HALF, DRAIN_CELL, north, east, true);
+    g.dN = g.dE = 0;
+  }
+  out.w = erosionWeight(out.d, north, east);
+  g.tN = g.tE = 0;
+  if (out.w > 0) {
+    if (inside) {
+      cubicGrad(f.surface, CUT_N, (north + DOMAIN_HALF) / CUT_CELL, (east + DOMAIN_HALF) / CUT_CELL, false);
+      out.t = cubic.v;
+      g.tN = cubic.gy / CUT_CELL;
+      g.tE = cubic.gx / CUT_CELL;
+    } else out.t = bicubic(f.surface, CUT_N, -DOMAIN_HALF, CUT_CELL, north, east);
+  } else out.t = 0;
+  const hn = north - f.home.north;
+  const he = east - f.home.east;
+  const r2 = hn * hn + he * he;
+  out.keep = r2 < PAD_KEEP[1] * PAD_KEEP[1] ? smoothstep(PAD_KEEP[0], PAD_KEEP[1], Math.sqrt(r2)) : 1;
+}
+
+/**
+ * The gradient (per m, into `out`: dx east, dy north) of the cut at the point sampleErosionGrad sampled, where the
+ * ground without its gullies stands at `coarse` with gradient (cE, cN). The home pad's fade and the lattice's edge
+ * fade are taken as constant (their gradients are left out).
+ */
+export function erosionCutGrad(s: ErosionSample, g: ErosionGrad, coarse: number, cE: number, cN: number, out: { dx: number; dy: number }): void {
+  let gE = g.dE;
+  let gN = g.dN;
+  if (s.w > 0) {
+    const cut = s.w * (s.t - coarse) + (1 - s.w) * s.d;
+    if (cut >= 0) {
+      out.dx = out.dy = 0;
+      return;
+    }
+    // w = smoothstep(REPLACE, -d) times the edge fade: dw/dd from the first.
+    const depth = -s.d;
+    const u = (depth - REPLACE[0]) / (REPLACE[1] - REPLACE[0]);
+    const edge = u > 0 && u < 1 ? s.w / (u * u * (3 - 2 * u)) : 0;
+    const dwdd = u > 0 && u < 1 ? (-6 * u * (1 - u) * edge) / (REPLACE[1] - REPLACE[0]) : 0;
+    const k = s.t - coarse - s.d;
+    gE = dwdd * g.dE * k + s.w * (g.tE - cE) + (1 - s.w) * g.dE;
+    gN = dwdd * g.dN * k + s.w * (g.tN - cN) + (1 - s.w) * g.dN;
+  }
+  out.dx = gE * s.keep;
+  out.dy = gN * s.keep;
+}
+
+/** Value and gradient (cell units, into `cubic`) of the bicubic interpolation of `v` at (fy, fx) cells, inside the
+ * lattice: the uniform B-spline (`approx`) or Catmull-Rom. */
+function cubicGrad(v: Float32Array, n: number, fy: number, fx: number, approx: boolean): void {
+  const i = Math.min(n - 2, Math.floor(fy));
+  const j = Math.min(n - 2, Math.floor(fx));
+  const ty = fy - i;
+  const tx = fx - j;
+  let ax: number, bx: number, cx: number, dx: number, ay: number, by: number, cy: number, dy: number;
+  let ax1: number, bx1: number, cx1: number, dx1: number, ay1: number, by1: number, cy1: number, dy1: number;
+  if (approx) {
+    const ux = 1 - tx;
+    ax = (ux * ux * ux) / 6;
+    bx = (3 * tx * tx * tx - 6 * tx * tx + 4) / 6;
+    dx = (tx * tx * tx) / 6;
+    cx = 1 - ax - bx - dx;
+    ax1 = -0.5 * ux * ux;
+    bx1 = 0.5 * (3 * tx * tx - 4 * tx);
+    dx1 = 0.5 * tx * tx;
+    cx1 = -ax1 - bx1 - dx1;
+    const uy = 1 - ty;
+    ay = (uy * uy * uy) / 6;
+    by = (3 * ty * ty * ty - 6 * ty * ty + 4) / 6;
+    dy = (ty * ty * ty) / 6;
+    cy = 1 - ay - by - dy;
+    ay1 = -0.5 * uy * uy;
+    by1 = 0.5 * (3 * ty * ty - 4 * ty);
+    dy1 = 0.5 * ty * ty;
+    cy1 = -ay1 - by1 - dy1;
+  } else {
+    const tx2 = tx * tx;
+    const tx3 = tx2 * tx;
+    ax = 0.5 * (-tx3 + 2 * tx2 - tx);
+    bx = 0.5 * (3 * tx3 - 5 * tx2 + 2);
+    cx = 0.5 * (-3 * tx3 + 4 * tx2 + tx);
+    dx = 0.5 * (tx3 - tx2);
+    ax1 = 0.5 * (-3 * tx2 + 4 * tx - 1);
+    bx1 = 0.5 * (9 * tx2 - 10 * tx);
+    cx1 = 0.5 * (-9 * tx2 + 8 * tx + 1);
+    dx1 = 0.5 * (3 * tx2 - 2 * tx);
+    const ty2 = ty * ty;
+    const ty3 = ty2 * ty;
+    ay = 0.5 * (-ty3 + 2 * ty2 - ty);
+    by = 0.5 * (3 * ty3 - 5 * ty2 + 2);
+    cy = 0.5 * (-3 * ty3 + 4 * ty2 + ty);
+    dy = 0.5 * (ty3 - ty2);
+    ay1 = 0.5 * (-3 * ty2 + 4 * ty - 1);
+    by1 = 0.5 * (9 * ty2 - 10 * ty);
+    cy1 = 0.5 * (-9 * ty2 + 8 * ty + 1);
+    dy1 = 0.5 * (3 * ty2 - 2 * ty);
+  }
+  const j0 = Math.max(0, j - 1);
+  const j2 = Math.min(n - 1, j + 1);
+  const j3 = Math.min(n - 1, j + 2);
+  const b0 = Math.max(0, i - 1) * n;
+  const b1 = i * n;
+  const b2 = Math.min(n - 1, i + 1) * n;
+  const b3 = Math.min(n - 1, i + 2) * n;
+  const v00 = v[b0 + j0], v01 = v[b0 + j], v02 = v[b0 + j2], v03 = v[b0 + j3];
+  const v10 = v[b1 + j0], v11 = v[b1 + j], v12 = v[b1 + j2], v13 = v[b1 + j3];
+  const v20 = v[b2 + j0], v21 = v[b2 + j], v22 = v[b2 + j2], v23 = v[b2 + j3];
+  const v30 = v[b3 + j0], v31 = v[b3 + j], v32 = v[b3 + j2], v33 = v[b3 + j3];
+  const r0 = ax * v00 + bx * v01 + cx * v02 + dx * v03;
+  const r1 = ax * v10 + bx * v11 + cx * v12 + dx * v13;
+  const r2 = ax * v20 + bx * v21 + cx * v22 + dx * v23;
+  const r3 = ax * v30 + bx * v31 + cx * v32 + dx * v33;
+  const q0 = ax1 * v00 + bx1 * v01 + cx1 * v02 + dx1 * v03;
+  const q1 = ax1 * v10 + bx1 * v11 + cx1 * v12 + dx1 * v13;
+  const q2 = ax1 * v20 + bx1 * v21 + cx1 * v22 + dx1 * v23;
+  const q3 = ax1 * v30 + bx1 * v31 + cx1 * v32 + dx1 * v33;
+  cubic.v = ay * r0 + by * r1 + cy * r2 + dy * r3;
+  cubic.gy = ay1 * r0 + by1 * r1 + cy1 * r2 + dy1 * r3;
+  cubic.gx = ay * q0 + by * q1 + cy * q2 + dy * q3;
+}
+
 /** The cut at the sampled point (sampleErosion) where the ground without its gullies stands at `coarse`. */
 export function erosionCutAt(s: ErosionSample, coarse: number): number {
   const cut = s.w > 0 ? Math.min(0, s.w * (s.t - coarse) + (1 - s.w) * s.d) : s.d;
