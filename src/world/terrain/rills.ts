@@ -42,8 +42,8 @@ export const RILL_RANGE = 16;
 /** Catchment a rill starts from, km²; the most a rill's size counts (wider ones are drawn as this), km². */
 export const RILL_AREA = 0.03;
 export const RILL_AREA_CAP = 2;
-/** Catchment from which a rill carries water to be seen (thinner ones are just the damp, stony bed), km². */
-export const RILL_WET_AREA = 0.25;
+/** Catchment from which a rill carries water to be seen (thinner ones are just the damp bed in its notch), km². */
+export const RILL_WET_AREA = 0.12;
 
 /** Cells per patch side. */
 const CORE = RILL_PATCH / RILL_CELL;
@@ -90,6 +90,10 @@ const SNAP = 10;
 const SNAP_STEP = 2;
 /** A cell is in the network when within this of a traced channel's water, m (or under a lake's or the sea's). */
 const NET_MARGIN = 4;
+/** Strands within this many cells of a bigger line are drawn as it, followed at most MERGE_STEPS lines over
+ * (rillSegments). */
+const MERGE_R = 1;
+const MERGE_STEPS = 3;
 
 const DN = [-1, -1, 0, 1, 1, 1, 0, -1];
 const DE = [0, 1, 1, 1, 0, -1, -1, -1];
@@ -144,15 +148,18 @@ export function rillSize(area: number): number {
 export function rillArea(size: number): number {
   return RILL_AREA * Math.pow(RILL_AREA_CAP / RILL_AREA, size);
 }
-/** Half-width of the damp bed (m) of a rill of a size code (the shader's twin: RILL_GLSL). Grows in from nothing over
- * the first tenth. */
+/** Half-width of a rill's channel (m) for a size code (the shader's twin: rillShader.ts). Hydraulic geometry: a channel's
+ * width goes about as the root of its catchment; a little faster here, so that over the sizes a hillside's rills
+ * reach (code 0 to about 0.6: 0.03 to 0.4 km² near them) it widens fivefold, 0.35 m to 1.7 m, and the trunk below a
+ * join is plainly wider than either branch. Grows in from nothing at the head. */
 export function rillBedHalf(size: number): number {
-  return Math.min(1, size * 10) * (0.7 + 1.8 * size);
+  const t = Math.min(1, Math.max(0, size / 0.08));
+  return 0.35 * Math.exp(2.6 * size) * t * t * (3 - 2 * t);
 }
-/** Half-width of the water (m), 0 below RILL_WET_AREA. */
+/** Half-width of the water (m), 0 below RILL_WET_AREA: about half the channel, coming in over a short way. */
 export function rillWaterHalf(size: number): number {
   const s0 = rillSize(RILL_WET_AREA);
-  return size <= s0 ? 0 : Math.min(1, (size - s0) * 8) * (0.2 + 0.8 * (size - s0) / (1 - s0));
+  return size <= s0 ? 0 : rillBedHalf(size) * 0.55 * Math.min(1, (size - s0) / 0.12);
 }
 
 /** The traced raster of a window: everything the lines need, valid (window-independent) inside its margin. */
@@ -465,9 +472,10 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
   return { gx0, gy0, nx, ny, ground, net, to, cells, areaR, persist, main, toSink, endE, endN };
 }
 
-/** A cell's size code: its near catchment, fading below the last cell that starts its line and toward a sink. */
-function sizeOf(g: RillGraph, i: number): number {
-  let s = rillSize((g.areaR[i] * RILL_CELL * RILL_CELL) / 1e6);
+/** A cell's size code: its near catchment (plus `extra` cells), fading below the last cell that starts its line and
+ * toward a sink. */
+function sizeOf(g: RillGraph, i: number, extra = 0): number {
+  let s = rillSize(((g.areaR[i] + extra) * RILL_CELL * RILL_CELL) / 1e6);
   if (g.persist[i] < FADE) s *= g.persist[i] / FADE;
   if (g.toSink[i] <= TAPER) s *= (0.25 + g.toSink[i]) / (TAPER + 0.25);
   return s;
@@ -489,6 +497,68 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
   const up = (i: number): number => (main[i] >= 0 && near(i, main[i]) ? main[i] : -1);
   /** The next cell down the line (a channel cell or the network cell it ends at), -1 none. */
   const down = (i: number): number => (to[i] >= 0 && near(i, to[i]) ? to[i] : -1);
+  // Strands: steepest descent on a raster runs two lines down neighbouring cells side by side for hundreds of metres,
+  // where the water would have run into one channel. A channel cell beside a bigger line (within MERGE_R cells, not
+  // its receiver nor flowing into it) is that line: it is not drawn, a line running into it joins the bigger line
+  // there (the confluence), and the bigger line is drawn with the strand's water added (so the trunk below the join
+  // is wider than either branch). Bigger: the larger near catchment, ties by cell. Followed to the biggest within
+  // MERGE_STEPS (all of it local: the window margins count on it).
+  const ar = g.areaR;
+  const hid = new Map<number, number>();
+  /** Whether b lies on the line down from a within a few steps (the line itself, not a strand beside it). */
+  const onLine = (a: number, b: number): boolean => {
+    let c = a;
+    for (let k = 0; k <= 2 * MERGE_R + 1; k++) {
+      const t = to[c];
+      if (t < 0 || !near(c, t)) return false;
+      if (t === b) return true;
+      c = t;
+    }
+    return false;
+  };
+  const hider = (i: number): number => {
+    const m = hid.get(i);
+    if (m !== undefined) return m;
+    let best = -1;
+    const x = i % nx;
+    const y = (i / nx) | 0;
+    if (chan[i] && !g.net[i]) {
+      for (let dy = -MERGE_R; dy <= MERGE_R; dy++)
+        for (let dx = -MERGE_R; dx <= MERGE_R; dx++) {
+          if ((dx === 0 && dy === 0) || x + dx < 0 || x + dx >= nx || y + dy < 0 || y + dy >= g.ny) continue;
+          const k = i + dy * nx + dx;
+          if (!chan[k] || g.net[k] || onLine(i, k) || onLine(k, i)) continue;
+          if (ar[k] < ar[i] || (ar[k] === ar[i] && k > i)) continue;
+          if (best < 0 || ar[k] > ar[best] || (ar[k] === ar[best] && k < best)) best = k;
+        }
+    }
+    hid.set(i, best);
+    return best;
+  };
+  /** The line a hidden cell is drawn as (itself when not hidden). */
+  const root = (i: number): number => {
+    let r = i;
+    for (let k = 0; k < MERGE_STEPS; k++) {
+      const h = hider(r);
+      if (h < 0) break;
+      r = h;
+    }
+    return r;
+  };
+  /** The strands' water a drawn cell carries besides its own: the biggest strand hidden beside it. */
+  const extra = (k: number): number => {
+    let e = 0;
+    const x = k % nx;
+    const y = (k / nx) | 0;
+    for (let dy = -MERGE_R; dy <= MERGE_R; dy++)
+      for (let dx = -MERGE_R; dx <= MERGE_R; dx++) {
+        if ((dx === 0 && dy === 0) || x + dx < 0 || x + dx >= nx || y + dy < 0 || y + dy >= g.ny) continue;
+        const h = k + dy * nx + dx;
+        if (chan[h] && hider(h) === k && ar[h] > e) e = ar[h];
+      }
+    return e;
+  };
+  const sizeAt = (i: number): number => sizeOf(g, i, extra(i));
   const atE = (i: number): number => g.endE.get(i) ?? E(i);
   const atN = (i: number): number => g.endN.get(i) ?? Nn(i);
   // Smoothed positions along the flow (weights 1 2 3 2 1 over two cells up the main line and two down).
@@ -604,13 +674,18 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
   for (let y = y0; y < y1; y++)
     for (let x = x0; x < x1; x++) {
       const i = y * nx + x;
-      if (!chan[i]) continue;
-      const j = to[i];
+      if (!chan[i] || hider(i) >= 0) continue;
+      let j = to[i];
       final(i);
-      const s0 = sizeOf(g, i);
+      const s0 = sizeAt(i);
+      // (Into a strand beside a bigger line: on into that line.)
+      if (j >= 0 && chan[j] && near(i, j) && hider(j) >= 0) {
+        const r = root(j);
+        if (r !== i && hider(r) < 0) j = r;
+      }
       if (j >= 0 && chan[j]) {
         final(j);
-        out.push({ e0: fE.get(i)!, n0: fN.get(i)!, e1: fE.get(j)!, n1: fN.get(j)!, s0, s1: sizeOf(g, j) });
+        out.push({ e0: fE.get(i)!, n0: fN.get(i)!, e1: fE.get(j)!, n1: fN.get(j)!, s0, s1: sizeAt(j) });
       } else if (j >= 0) {
         // Into the network: on to the channel's centreline (or the lake's cell).
         out.push({ e0: fE.get(i)!, n0: fN.get(i)!, e1: atE(j), n1: atN(j), s0, s1: s0 });
