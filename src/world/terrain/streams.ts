@@ -949,6 +949,8 @@ const WANDER_SWING = 4.7;
 const WANDER_MIN = 200;
 const WANDER_END = 150;
 const WANDER_CLIMB = 1.5;
+/** Moves under this, m, are not checked for a climb (on a side at 1:2 they rise at most WANDER_CLIMB). */
+const WANDER_CHECK = 3;
 function wander(n: number[], e: number[], ground: (north: number, east: number) => number, wet: (north: number, east: number) => boolean, id: number, area0: number, outlet: boolean, report: StreamReport): Float64Array {
   const m = n.length;
   const seen = new Float64Array(m).fill(NaN);
@@ -983,7 +985,8 @@ function wander(n: number[], e: number[], ground: (north: number, east: number) 
   const look: number[] = [];
   for (let i = 1; i < m - 1; i += LEVEL_EVERY) look.push(i);
   for (const i of look) {
-    if (Math.abs(off[i]) < 0.5) continue;
+    // (A small move cannot climb far up a gully's side: not looked at here; the level looks at it as moved.)
+    if (Math.abs(off[i]) < WANDER_CHECK) continue;
     const g0 = ground(n[i], e[i]);
     const g1 = ground(n[i] + un[i] * off[i], e[i] + ue[i] * off[i]);
     report.levelSamples += 2;

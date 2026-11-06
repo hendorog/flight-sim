@@ -128,6 +128,8 @@ export interface PitchReport {
   /** How far the pools' heads lie under the old level, m. */
   deepen: number[];
   inserted: number;
+  /** Time taken over all streams, ms. */
+  ms: number;
 }
 
 /**
@@ -156,11 +158,16 @@ export function pitchPool(a: LineArrays, line: number, falls: ReadonlyArray<numb
   }
   // --- Where units may be: steep enough, dry, clear of the falls and the ends.
   const ok = new Uint8Array(n);
+  // (A stream lies in a lake's water only at its ends - an outlet's head, its mouth in a lake: looked at from each end
+  // until the first dry sample.)
+  const wetAt = new Uint8Array(n);
+  for (let i = 0; i < n && wet(a.north[i], a.east[i]); i++) wetAt[i] = 1;
+  for (let i = n - 1; i >= 0 && !wetAt[i] && wet(a.north[i], a.east[i]); i--) wetAt[i] = 1;
   for (let i = 0; i < n; i++) {
     if (g[i] < PITCH_G_LO || s[i] < HEAD_CLEAR || s[i] > end - MOUTH_CLEAR || L[i] < 0.5) continue;
     let near = false;
     for (const f of falls) if (Math.abs(f - s[i]) < FALL_CLEAR) near = true;
-    if (near || wet(a.north[i], a.east[i])) continue;
+    if (near || wetAt[i]) continue;
     ok[i] = 1;
   }
   // --- The unit coordinate.
@@ -222,29 +229,30 @@ export function pitchPool(a: LineArrays, line: number, falls: ReadonlyArray<numb
   for (const u of units) want.push(u.lip, u.foot, u.next);
   // (A lip is often the last unit's next: the same arc length, inserted once.)
   want.sort((x, y) => x - y);
-  const ns: number[] = [];
-  const src: number[] = [];
-  const frac: number[] = [];
+  const cap = n + want.length;
+  const ns = new Float64Array(cap);
+  const src = new Int32Array(cap);
+  const frac = new Float64Array(cap);
   const map = new Int32Array(n);
+  let m = 0;
   {
     let w = 0;
     for (let i = 0; i < n; i++) {
       // Inserted points before sample i (in segment i - 1, not within SNAP of either end).
       while (w < want.length && want[w] < s[i] - SNAP) {
         const v = want[w++];
-        if (i === 0 || v <= s[i - 1] + SNAP || (ns.length && v - ns[ns.length - 1] < SNAP)) continue;
-        ns.push(v);
-        src.push(i - 1);
-        frac.push((v - s[i - 1]) / (s[i] - s[i - 1]));
+        if (i === 0 || v <= s[i - 1] + SNAP || (m > 0 && v - ns[m - 1] < SNAP)) continue;
+        ns[m] = v;
+        src[m] = i - 1;
+        frac[m++] = (v - s[i - 1]) / (s[i] - s[i - 1]);
       }
       while (w < want.length && want[w] <= s[i] + SNAP) w++;
-      map[i] = ns.length;
-      ns.push(s[i]);
-      src.push(i);
-      frac.push(0);
+      map[i] = m;
+      ns[m] = s[i];
+      src[m] = i;
+      frac[m++] = 0;
     }
   }
-  const m = ns.length;
   const out: Record<string, Float64Array> = {};
   for (const k of Object.keys(a)) {
     const v = a[k];

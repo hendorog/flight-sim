@@ -27,7 +27,7 @@ it('pitch stats', () => {
       const pick = (a: number[]) => idx.map((i: number) => a[i]);
       return `n ${idx.length} spacing W ${qs(pick(p.spacingW))} m ${qs(pick(p.spacingM), 0)} drop ${qs(pick(p.drop), 2)} deepen ${qs(pick(p.deepen), 2)}`;
     };
-    console.log(`PS seed ${seed}: units ${p.units} inserted ${p.inserted}; build ${ms.toFixed(0)} ms`);
+    console.log(`PS seed ${seed}: units ${p.units} inserted ${p.inserted}; pitchPool ${p.ms?.toFixed(1)} ms; build ${ms.toFixed(0)} ms; net phases ${(r.phases ?? []).map((v: number) => v.toFixed(0)).join('/')}`);
     console.log(`PS seed ${seed} gentle 0.02-0.08: ${cls(0.0, 0.08)}`);
     console.log(`PS seed ${seed} steep >=0.08: ${cls(0.08, 9)}`);
     const rs: any[] = (hydrology as any).rivers;

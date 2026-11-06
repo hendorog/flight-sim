@@ -801,8 +801,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   }
   // --- Pitches and pools along the streams' steep reaches (pitchPool.ts), receivers first: a tributary's mouth is put
   // on its receiver's reshaped water (its last reach a cascade down to it, as shapeLines puts it), then its own cut.
-  const pitchReport: PitchReport = { units: 0, spacingW: [], spacingM: [], drop: [], gradient: [], deepen: [], inserted: 0 };
+  const pitchReport: PitchReport = { units: 0, spacingW: [], spacingM: [], drop: [], gradient: [], deepen: [], inserted: 0, ms: 0 };
   {
+    const tp = performance.now();
     const fallsOn: number[][] = allLines.map(() => []);
     falls.forEach((f, fi) => fallsOn[f.line].push(fi));
     const wet = (pn: number, pe: number): boolean => mask.at(pn, pe) > -Infinity;
@@ -831,6 +832,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       for (const fi of fallsOn[li]) falls[fi].index = r.map[falls[fi].index];
       lipsOf[li] = lipsOf[li].map((k) => r.map[k]);
     }
+    pitchReport.ms = performance.now() - tp;
   }
   tPhase.push(performance.now());
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
