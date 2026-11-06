@@ -228,12 +228,18 @@ function erode(east: number, north: number, slopeE: number, slopeN: number, octa
 }
 /** erode's last sum of octaves before its strength (about [-1, 1]: low in the troughs, high on the spurs). */
 let gullySum = 0;
-/** A smooth lower bound of two non-negative numbers: their minimum, rounded off (to 0.84 of it where they are equal). */
+/** A smooth lower bound of two non-negative numbers: their minimum, rounded off (to 0.92 of it where they are equal). */
 function softMin(a: number, b: number): number {
   if (b <= 0 || a <= 0) return 0;
-  const a4 = a * a * a * a;
-  const b4 = b * b * b * b;
-  return (a * b) / Math.sqrt(Math.sqrt(a4 + b4));
+  // (a b / (a^8 + b^8)^(1/8), scaled by the larger to keep the powers in range: 0.92 of the minimum where they meet.)
+  const m = Math.max(a, b);
+  const x = a / m;
+  const y = b / m;
+  const x2 = x * x;
+  const y2 = y * y;
+  const x4 = x2 * x2;
+  const y4 = y2 * y2;
+  return (a * b) / (m * Math.sqrt(Math.sqrt(Math.sqrt(x4 * x4 + y4 * y4))));
 }
 
 // A seeded world's gully floors keep falling (the water that cut them has a way out). Down a gully the ground is the
@@ -243,8 +249,10 @@ function softMin(a: number, b: number): number {
 // is a rise of at most K 1.45 x 2.5 / 1500 per metre. Holding K under GULLY_FALL |grad B| keeps it under 0.9 of B's
 // own fall along the gully, so its floor keeps falling where the octaves do not all rise together; the gullies follow
 // B's fall line (with the erosion's valleys, not the uncut ground's), so their troughs run down it.
-/** Deepest gully relief per unit of the eroded ground's slope, m: 0.9 x 1500 / (1.45 x 2.5). */
-const GULLY_FALL = 372;
+/** Deepest gully relief per unit of the eroded ground's slope, m. The bound above gives 372 (0.9 x 1500 / (1.45 x
+ * 2.5)); 420 still keeps the rill heads ending in a gully hollow under 10 % on the probed windows (rillFates: 2-9 %,
+ * 0-7 % at 372) and gives the hillsides back some of their relief. */
+const GULLY_FALL = 420;
 /** ... and on gentler ground (B's slope s under GULLY_BEND) at most GULLY_FALL s^2 / GULLY_BEND: a trough's depth then
  * changes along it by 2 GULLY_FALL s ds / GULLY_BEND, which stays under B's own fall s wherever B's slope changes by
  * less than GULLY_BEND / (2 GULLY_FALL) (0.067 per 100 m) along it - so a gully does not shallow out into a hollow
@@ -253,11 +261,13 @@ const GULLY_BEND = 0.5;
 /** A gully octave adding less than this much relief is not worked out, m (on gentle ground, seeded worlds). */
 const GULLY_LEAST = 0.05;
 /** The small-scale relief by the slope too: its knobs (`rough`, m) at most SMALL_FALL and its ledges (`rugged`) at most
- * RUGGED_FALL times the eroded ground's slope (they would bead a gentle gully floor with hollows), and fading into the
- * gully troughs (erode's sum from FLOOR_FADE[1] down to FLOOR_FADE[0]), where the water runs. */
-const SMALL_FALL = 12;
-const RUGGED_FALL = 3;
+ * RUGGED_FALL times the eroded ground's slope (they would bead a gentle gully floor with hollows), and on ground
+ * gentler than 2 FLOOR_SLOPE fading into the gully troughs (erode's sum from FLOOR_FADE[1] down to FLOOR_FADE[0]),
+ * where the water runs (a steeper floor falls faster than they rise). */
+const SMALL_FALL = 18;
+const RUGGED_FALL = 4.5;
 const FLOOR_FADE = [-0.2, 0.4];
+const FLOOR_SLOPE = 0.3;
 /** The gully octaves the streams route over (streams.ts: the finer ones are rills on the slopes, finer than its raster). */
 const STREAM_GULLY_OCTAVES = 3;
 /** What erode's octaves beyond STREAM_GULLY_OCTAVES added to its last result. */
@@ -519,7 +529,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
   }
   const h0 = h;
   // (Held to the slope and faded into the gully troughs: see SMALL_FALL.)
-  const floor = 1 - gullyW * (1 - smooth(FLOOR_FADE[0], FLOOR_FADE[1], gullySum));
+  const floor = 1 - gullyW * (1 - smooth(FLOOR_FADE[0], FLOOR_FADE[1], gullySum)) * (1 - smooth(FLOOR_SLOPE, 2 * FLOOR_SLOPE, fall));
   const rough = softMin(calm * floor * (1.2 + 0.004 * clamp(h, 0, 3000)), SMALL_FALL * fall);
   if (rough > 0.02) h += rough * (2.2 * gnoise(east / 180 + 0.3, north / 180 + 0.7) + 0.8 * gnoise(east / 60 - 4.1, north / 60 + 2.2));
   const rugged = softMin(calm * floor * clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN))), RUGGED_FALL * fall);
