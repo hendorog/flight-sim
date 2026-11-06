@@ -12,7 +12,7 @@
 // Every function here is unbounded: any (north, east) gives a valid answer.
 
 import { onWorldSeed, worldSeed } from '../worldSeed';
-import { macroAt, macroGradAt, setLayoutGround, type Macro, type MacroGrad } from './seededLayout';
+import { macroCacheBegin, macroCachedAt, macroCachedGradAt, macroCacheEnd, macroCacheRecord, setLayoutGround, type Macro, type MacroGrad } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
@@ -21,7 +21,7 @@ import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, b
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth } from './drainage';
 import { buildErosion, erosionCutAt, erosionCutGrad, erosionGullies, sampleErosion, sampleErosionGrad, type ErosionField, type ErosionGrad, type ErosionSample } from './erosion';
 import { buildNetworkHydrology } from './riverNetwork';
-import { fbm, gnoise, gullies, type Deriv } from './noise';
+import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
 import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
 import { setGeneratedAirfields, type Airfield } from '../airfields';
@@ -179,9 +179,10 @@ const GULLY_BRANCH = 1.3;
  * Hydraulic-erosion look: layered slope-aligned gullies, deepest on steep ground and absent on flats.
  * Returns a signed height offset in units of the relief (negative in gullies, positive on the spurs).
  * `cap` (a seeded world's, seededNaturalHeight) bounds the strength from above, softly; seed 0 passes none. With
- * `scale` (the relief in m per unit of the result) the octaves stop where they would add under GULLY_LEAST m.
+ * `scale` (the relief in m per unit of the result) the octaves past the first stop where they would add under GULLY_LEAST
+ * m; `fast` (a seeded world's) takes gulliesFast.
  */
-function erode(east: number, north: number, slopeE: number, slopeN: number, octaves = GULLY_OCTAVES, cap = Infinity, scale = Infinity): number {
+function erode(east: number, north: number, slopeE: number, slopeN: number, octaves = GULLY_OCTAVES, cap = Infinity, scale = Infinity, fast = false): number {
   gullyFine = 0;
   gullySum = 0;
   const slope = Math.sqrt(slopeE * slopeE + slopeN * slopeN);
@@ -207,7 +208,7 @@ function erode(east: number, north: number, slopeE: number, slopeN: number, octa
     const dx = ux + bx * GULLY_BRANCH;
     const dy = uy + by * GULLY_BRANCH;
     const k = GULLY_FREQ / Math.sqrt(dx * dx + dy * dy + 1e-9);
-    const va = gullies(x, y, dx * k, dy * k, D);
+    const va = fast ? gulliesFast(x, y, dx * k, dy * k, D) : gullies(x, y, dx * k, dy * k, D);
     if (o === 0) {
       gully0 = va;
       gully0Im = Math.sqrt(D.dx * D.dx + D.dy * D.dy) / GULLY_FREQ;
@@ -459,8 +460,8 @@ let lastSmall = 0;
 function seededNaturalHeight(north: number, east: number, detail = true, eroded = true, volcano = true, small = true): number {
   lastSmall = 0;
   let fineGully = 0;
-  if (detail) macroGradAt(north, east, macro, macroGrad);
-  else macroAt(north, east, macro);
+  if (detail) macroCachedGradAt(north, east, macro, macroGrad);
+  else macroCachedAt(north, east, macro);
   calm = 1;
   const inland = macro.inland;
   const base = coastProfile(inland);
@@ -544,7 +545,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
       const kCap = K * softMin(str, softMin(GULLY_FALL * fall, (GULLY_FALL * fall * fall) / GULLY_BEND) / (0.13 * amplitude + 1e-9));
       const kFull = Math.max((K * sr) / (sr + 0.15), kCap);
       // (Its finer octaves stop where they would add under GULLY_LEAST m in a trough.)
-      erode(east, north, bE, bN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES, Infinity, kCap / (str + 1e-9));
+      erode(east, north, bE, bN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES, Infinity, kCap / (str + 1e-9), true);
       const A0 = Math.sqrt(gully0 * gully0 + gully0Im * gully0Im);
       const gate = smooth(SPUR_COHERENT[0], SPUR_COHERENT[1], A0) * smooth(SPUR_FALL[0], SPUR_FALL[1], fall);
       // How far the point stands up the first octave's spur (0 in the trough half of its stripes), and the spur's rise.
@@ -617,7 +618,14 @@ function buildWater(): void {
     lakeSmooth = null;
     const home = AIRPORT.runway.center;
     // Worked out on the ground without the era's volcano, as the cut is applied (the cone merges over it after).
-    const eroded = buildErosion((n, e) => seededNaturalHeight(n, e, false, false, false), home);
+    // (Its lattice's nodes record the slow macro fields as they are sampled: the terrain takes them from there after.)
+    macroCacheBegin(EROSION_N, -DOMAIN_HALF, DRAIN_CELL);
+    const eroded = buildErosion((n, e) => {
+      const h = seededNaturalHeight(n, e, false, false, false);
+      macroCacheRecord(n, e);
+      return h;
+    }, home);
+    macroCacheEnd();
     erosion = eroded;
     // The eroded cells the drainage routes over (erosion.ts), with the cushion above the sea and the era's volcano.
     const lat = eroded.lattice;

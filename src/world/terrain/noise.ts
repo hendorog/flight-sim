@@ -149,6 +149,59 @@ export function gullies(x: number, y: number, dirX: number, dirY: number, d: Der
   return va * inv;
 }
 
+/** sin(2 pi t) for t in [-0.5, 0.5] (folded onto a quarter turn, then a Taylor series: within 4e-6). */
+function sinTurn(t: number): number {
+  const f = t > 0.25 ? 0.5 - t : t < -0.25 ? -0.5 - t : t;
+  const x = f * TWO_PI;
+  const x2 = x * x;
+  return x * (1 + x2 * (-1 / 6 + x2 * (1 / 120 + x2 * (-1 / 5040 + x2 * (1 / 362880 - x2 / 39916800)))));
+}
+
+/**
+ * gullies (the same kernels, weights and stripes) for a seeded world's terrain, faster: the stripes' sine and cosine
+ * from a series instead of Math.sin and Math.cos (to a few millionths), and the cells that cannot reach the point
+ * (their jittered point is always beyond the kernel's radius) skipped before they are hashed. Seed 0 keeps gullies.
+ */
+export function gulliesFast(x: number, y: number, dirX: number, dirY: number, d: Deriv): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  let va = 0;
+  let vx = 0;
+  let vy = 0;
+  let wt = 1e-6;
+  for (let i = -2; i <= 1; i++) {
+    // (A point's offset along x lies in [fx + i - 0.5, fx + i]: nearest 0 at the end closer to it.)
+    const ex = fx + i > 0 ? fx + i - 0.5 : fx + i < 0 ? -(fx + i) : 0;
+    const ex2 = ex > 0 ? ex * ex : 0;
+    if (ex2 >= 2.25) continue;
+    for (let j = -2; j <= 1; j++) {
+      const ey = fy + j > 0 ? fy + j - 0.5 : fy + j < 0 ? -(fy + j) : 0;
+      if (ex2 + (ey > 0 ? ey * ey : 0) >= 2.25) continue;
+      const h = hash2i(ix - i, iy - j);
+      const px = fx + i - (h & 0xffff) * (0.5 / 65536);
+      const py = fy + j - (h >>> 16) * (0.5 / 65536);
+      const q = 1 - (px * px + py * py) * (1 / 2.25);
+      if (q <= 0) continue;
+      const w = q * q * q;
+      const turns = px * dirY - py * dirX;
+      const t = turns - Math.round(turns);
+      const s = sinTurn(t);
+      const tc = t + 0.25;
+      const c = sinTurn(tc > 0.5 ? tc - 1 : tc);
+      va += c * w;
+      vx -= s * dirY * w;
+      vy += s * dirX * w;
+      wt += w;
+    }
+  }
+  const inv = 1 / wt;
+  d.dx = vx * inv;
+  d.dy = vy * inv;
+  return va * inv;
+}
+
 // Octave rotation (about 36.87 degrees, the 3-4-5 triangle) times the lacunarity; breaks grid alignment.
 const ROT_C = 0.8;
 const ROT_S = 0.6;

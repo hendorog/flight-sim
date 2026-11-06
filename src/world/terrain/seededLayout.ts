@@ -56,22 +56,32 @@ export function macroAt(north: number, east: number, out: Macro): Macro {
   const wx = x + 22000 * fbm(x / 60000 + 3.1, y / 60000 - 7.4, 2);
   const wy = y + 22000 * fbm(x / 60000 - 5.6, y / 60000 + 1.3, 2);
   const cont = fbm(wx / CONTINENT, wy / CONTINENT, 4);
-  out.inland = (cont - L.sea) * INLAND_SCALE + 1800 * fbm(east / 9000 - 2.3, north / 9000 + 4.2, 2) + 3500 * fbm(east / 28000 + 11.3, north / 28000 - 4.2, 3);
+  slow[0] = (cont - L.sea) * INLAND_SCALE + 3500 * fbm(east / 28000 + 11.3, north / 28000 - 4.2, 3);
 
   // Mountain ranges: the crest lines of a ridged noise (long, branching belts), strongest where two octaves agree.
   const rx = x + 14000 * fbm(x / 30000 + 8.8, y / 30000 + 2.2, 2);
   const ry = y + 14000 * fbm(x / 30000 - 1.7, y / 30000 - 6.6, 2);
-  const r1 = 1 - Math.abs(gnoise(rx / RANGES + 0.37, ry / RANGES - 0.81));
-  const r2 = 1 - Math.abs(gnoise(rx / (RANGES * 0.45) - 4.1, ry / (RANGES * 0.45) + 2.9));
-  const ridge = 0.72 * r1 + 0.28 * r2;
-  const land = smooth(2000, 22000, out.inland);
-  out.uplift = smooth(0.74, 0.93, ridge) * land * (0.85 + 0.3 * fbm(east / 55000 - 3.3, north / 55000 + 1.9, 2));
-  out.foothill = smooth(0.55, 0.8, ridge) * smooth(-1000, 15000, out.inland);
-
+  slow[1] = gnoise(rx / RANGES + 0.37, ry / RANGES - 0.81);
+  slow[2] = gnoise(rx / (RANGES * 0.45) - 4.1, ry / (RANGES * 0.45) + 2.9);
+  slow[3] = fbm(east / 55000 - 3.3, north / 55000 + 1.9, 2);
   // Plains and hill country.
-  out.hilly = 0.35 + 0.65 * smooth(-0.25, 0.25, fbm(x / COUNTRY - 2.6, y / COUNTRY + 5.2, 2));
+  slow[4] = fbm(x / COUNTRY - 2.6, y / COUNTRY + 5.2, 2);
+  return fromSlow(north, east, slow[0], slow[1], slow[2], slow[3], slow[4], out);
+}
+
+/** The macro fields from their slow parts (macroAt's `slow`) and the coast's 9 km wobble at the point. */
+function fromSlow(north: number, east: number, inlandSlow: number, n1: number, n2: number, u3: number, hf: number, out: Macro): Macro {
+  out.inland = inlandSlow + 1800 * fbm(east / 9000 - 2.3, north / 9000 + 4.2, 2);
+  const ridge = 0.72 * (1 - Math.abs(n1)) + 0.28 * (1 - Math.abs(n2));
+  const land = smooth(2000, 22000, out.inland);
+  out.uplift = smooth(0.74, 0.93, ridge) * land * (0.85 + 0.3 * u3);
+  out.foothill = smooth(0.55, 0.8, ridge) * smooth(-1000, 15000, out.inland);
+  out.hilly = 0.35 + 0.65 * smooth(-0.25, 0.25, hf);
   return out;
 }
+/** The slow parts of the last macroAt: the coast's broad part (all but its 9 km wobble), the two range noises (before
+ * their crests are folded), the ranges' strength noise and the hill-country noise. */
+const slow = new Float64Array(5);
 
 /** The gradients of the macro fields at one point (macroGradAt), per m: d/d east (e) and d/d north (n). */
 export interface MacroGrad {
@@ -127,15 +137,12 @@ export function macroGradAt(north: number, east: number, out: Macro, g: MacroGra
   const cwy = GD.dy / CONTINENT;
   const contX = cwx * wxx + cwy * wyx;
   const contY = cwx * wxy + cwy * wyy;
-  const i1 = fbmGrad(east / 9000 - 2.3, north / 9000 + 4.2, 2, GD);
-  const i1e = GD.dx / 9000;
-  const i1n = GD.dy / 9000;
   const i2 = fbmGrad(east / 28000 + 11.3, north / 28000 - 4.2, 3, GD);
   const i2e = GD.dx / 28000;
   const i2n = GD.dy / 28000;
-  out.inland = (cont - L.sea) * INLAND_SCALE + 1800 * i1 + 3500 * i2;
-  g.inlandE = INLAND_SCALE * (contX * c + contY * s) + 1800 * i1e + 3500 * i2e;
-  g.inlandN = INLAND_SCALE * (contX * -s + contY * c) + 1800 * i1n + 3500 * i2n;
+  slow[0] = (cont - L.sea) * INLAND_SCALE + 3500 * i2;
+  slowG[0] = INLAND_SCALE * (contX * c + contY * s) + 3500 * i2e;
+  slowG[1] = INLAND_SCALE * (contX * -s + contY * c) + 3500 * i2n;
 
   const q1 = fbmGrad(x / 30000 + 8.8, y / 30000 + 2.2, 2, GD);
   const q1x = GD.dx / 30000;
@@ -149,33 +156,54 @@ export function macroGradAt(north: number, east: number, out: Macro, g: MacroGra
   const rxy = 14000 * q1y;
   const ryx = 14000 * q2x;
   const ryy = 1 + 14000 * q2y;
-  const n1 = gnoise(rx / RANGES + 0.37, ry / RANGES - 0.81, GD);
+  // (Each range noise's gradient turned from the warped frame to east and north.)
+  for (let k = 0; k < 2; k++) {
+    const sc = k === 0 ? RANGES : RANGES * 0.45;
+    const nv = k === 0 ? gnoise(rx / sc + 0.37, ry / sc - 0.81, GD) : gnoise(rx / sc - 4.1, ry / sc + 2.9, GD);
+    const nrx = GD.dx / sc;
+    const nry = GD.dy / sc;
+    const nx = nrx * rxx + nry * ryx;
+    const ny = nrx * rxy + nry * ryy;
+    slow[1 + k] = nv;
+    slowG[2 + 2 * k] = nx * c + ny * s;
+    slowG[3 + 2 * k] = nx * -s + ny * c;
+  }
+  slow[3] = fbmGrad(east / 55000 - 3.3, north / 55000 + 1.9, 2, GD);
+  slowG[6] = GD.dx / 55000;
+  slowG[7] = GD.dy / 55000;
+  const hf = fbmGrad(x / COUNTRY - 2.6, y / COUNTRY + 5.2, 2, GD);
+  const hfx = GD.dx / COUNTRY;
+  const hfy = GD.dy / COUNTRY;
+  slow[4] = hf;
+  slowG[8] = hfx * c + hfy * s;
+  slowG[9] = hfx * -s + hfy * c;
+  return fromSlowGrad(north, east, out, g);
+}
+/** The slow parts' gradients of the last macroGradAt (or of the cache's interpolation), per m: east then north of each. */
+const slowG = new Float64Array(10);
+
+/** fromSlow with the gradients, from `slow` and `slowG`. */
+function fromSlowGrad(north: number, east: number, out: Macro, g: MacroGrad): Macro {
+  const i1 = fbmGrad(east / 9000 - 2.3, north / 9000 + 4.2, 2, GD);
+  out.inland = slow[0] + 1800 * i1;
+  g.inlandE = slowG[0] + (1800 * GD.dx) / 9000;
+  g.inlandN = slowG[1] + (1800 * GD.dy) / 9000;
+  const n1 = slow[1];
+  const n2 = slow[2];
   // (The derivative of 1 - |n| with its sign rounded off over |n| < 0.02: no jump in the gradient on a crest line.)
   const s1 = -n1 / Math.sqrt(n1 * n1 + 0.0004);
-  const r1rx = (s1 * GD.dx) / RANGES;
-  const r1ry = (s1 * GD.dy) / RANGES;
-  const n2 = gnoise(rx / (RANGES * 0.45) - 4.1, ry / (RANGES * 0.45) + 2.9, GD);
   const s2 = -n2 / Math.sqrt(n2 * n2 + 0.0004);
-  const r2rx = (s2 * GD.dx) / (RANGES * 0.45);
-  const r2ry = (s2 * GD.dy) / (RANGES * 0.45);
-  const r1 = 1 - Math.abs(n1);
-  const r2 = 1 - Math.abs(n2);
-  const ridge = 0.72 * r1 + 0.28 * r2;
-  const ridgeRx = 0.72 * r1rx + 0.28 * r2rx;
-  const ridgeRy = 0.72 * r1ry + 0.28 * r2ry;
-  const ridgeX = ridgeRx * rxx + ridgeRy * ryx;
-  const ridgeY = ridgeRx * rxy + ridgeRy * ryy;
-  const ridgeE = ridgeX * c + ridgeY * s;
-  const ridgeN = ridgeX * -s + ridgeY * c;
+  const ridge = 0.72 * (1 - Math.abs(n1)) + 0.28 * (1 - Math.abs(n2));
+  const ridgeE = 0.72 * s1 * slowG[2] + 0.28 * s2 * slowG[4];
+  const ridgeN = 0.72 * s1 * slowG[3] + 0.28 * s2 * slowG[5];
   const land = smoothD(2000, 22000, out.inland);
   const landD = SD;
   const sU = smoothD(0.74, 0.93, ridge);
   const sUD = SD;
-  const u3 = fbmGrad(east / 55000 - 3.3, north / 55000 + 1.9, 2, GD);
-  const u3f = 0.85 + 0.3 * u3;
+  const u3f = 0.85 + 0.3 * slow[3];
   out.uplift = sU * land * u3f;
-  g.upliftE = sUD * ridgeE * land * u3f + sU * landD * g.inlandE * u3f + sU * land * ((0.3 * GD.dx) / 55000);
-  g.upliftN = sUD * ridgeN * land * u3f + sU * landD * g.inlandN * u3f + sU * land * ((0.3 * GD.dy) / 55000);
+  g.upliftE = sUD * ridgeE * land * u3f + sU * landD * g.inlandE * u3f + sU * land * 0.3 * slowG[6];
+  g.upliftN = sUD * ridgeN * land * u3f + sU * landD * g.inlandN * u3f + sU * land * 0.3 * slowG[7];
   const sF = smoothD(0.55, 0.8, ridge);
   const sFD = SD;
   const sI = smoothD(-1000, 15000, out.inland);
@@ -183,15 +211,150 @@ export function macroGradAt(north: number, east: number, out: Macro, g: MacroGra
   out.foothill = sF * sI;
   g.foothillE = sFD * ridgeE * sI + sF * sID * g.inlandE;
   g.foothillN = sFD * ridgeN * sI + sF * sID * g.inlandN;
-
-  const hf = fbmGrad(x / COUNTRY - 2.6, y / COUNTRY + 5.2, 2, GD);
-  const hfx = GD.dx / COUNTRY;
-  const hfy = GD.dy / COUNTRY;
-  const sH = smoothD(-0.25, 0.25, hf);
+  const sH = smoothD(-0.25, 0.25, slow[4]);
   out.hilly = 0.35 + 0.65 * sH;
-  g.hillyE = 0.65 * SD * (hfx * c + hfy * s);
-  g.hillyN = 0.65 * SD * (hfx * -s + hfy * c);
+  g.hillyE = 0.65 * SD * slowG[8];
+  g.hillyN = 0.65 * SD * slowG[9];
   return out;
+}
+
+// --- A seeded world's slow macro fields on its drainage lattice ---------------------------------------------------
+// The macro fields are noise kilometres broad (all but the coast's 9 km wobble at least 7 km a wave), and macroAt is a
+// good share of a terrain sample's cost. heightfield.ts records their slow parts (`slow`) at the lattice's nodes as the
+// erosion pass samples them, and from then on the terrain takes them from the lattice (Catmull-Rom: the same values at
+// the nodes, metres off between them; macroCached*), the 9 km wobble and the folds and steps worked out per point.
+/** Slow parts per node, their nodes per side, the first node's position and the spacing, m. */
+let cacheV: Float32Array | null = null;
+let cacheN = 0;
+let cacheOrigin = 0;
+let cacheCell = 1;
+let cacheOn = false;
+/** Start recording the slow parts on an n x n lattice from (origin, origin), `cell` m apart (the cache is off meanwhile). */
+export function macroCacheBegin(n: number, origin: number, cell: number): void {
+  cacheOn = false;
+  if (!cacheV || cacheV.length !== n * n * 5) cacheV = new Float32Array(n * n * 5);
+  cacheN = n;
+  cacheOrigin = origin;
+  cacheCell = cell;
+}
+/** Record the last macroAt's slow parts at its node (north, east). */
+export function macroCacheRecord(north: number, east: number): void {
+  const i = Math.round((north - cacheOrigin) / cacheCell);
+  const j = Math.round((east - cacheOrigin) / cacheCell);
+  if (!cacheV || i < 0 || j < 0 || i >= cacheN || j >= cacheN) return;
+  cacheV.set(slow, (i * cacheN + j) * 5);
+}
+/** Every node recorded: the terrain takes the slow parts from the lattice (macroCached*) from now on. */
+export function macroCacheEnd(): void {
+  cacheOn = true;
+}
+/** Back to working everything out per point (a new seed, before its lattice is recorded). */
+export function macroCacheOff(): void {
+  cacheOn = false;
+}
+/** The cache fades into macroAt's own values over this many nodes inside its edge. */
+const CACHE_EDGE = [2, 4];
+
+/** Interpolate the slow parts (and with `grad` their gradients) at the point into slow/slowG; the weight of the cache
+ * there (1 inside, fading to 0 at its edge: 0 means not used). */
+function fromCache(north: number, east: number, grad: boolean): number {
+  if (!cacheOn || !cacheV) return 0;
+  const fy = (north - cacheOrigin) / cacheCell;
+  const fx = (east - cacheOrigin) / cacheCell;
+  const edge = Math.min(fy, fx, cacheN - 1 - fy, cacheN - 1 - fx);
+  if (!(edge > CACHE_EDGE[0])) return 0;
+  const i = Math.floor(fy);
+  const j = Math.floor(fx);
+  const ty = fy - i;
+  const tx = fx - j;
+  const tx2 = tx * tx;
+  const tx3 = tx2 * tx;
+  const ty2 = ty * ty;
+  const ty3 = ty2 * ty;
+  const ax = 0.5 * (-tx3 + 2 * tx2 - tx);
+  const bx = 0.5 * (3 * tx3 - 5 * tx2 + 2);
+  const cx = 0.5 * (-3 * tx3 + 4 * tx2 + tx);
+  const dx = 0.5 * (tx3 - tx2);
+  const ay = 0.5 * (-ty3 + 2 * ty2 - ty);
+  const by = 0.5 * (3 * ty3 - 5 * ty2 + 2);
+  const cy = 0.5 * (-3 * ty3 + 4 * ty2 + ty);
+  const dy = 0.5 * (ty3 - ty2);
+  const V = cacheV;
+  const n5 = cacheN * 5;
+  const b0 = ((i - 1) * cacheN + j - 1) * 5;
+  if (!grad) {
+    for (let f = 0; f < 5; f++) {
+      let o = b0 + f;
+      const r0 = ax * V[o] + bx * V[o + 5] + cx * V[o + 10] + dx * V[o + 15];
+      o += n5;
+      const r1 = ax * V[o] + bx * V[o + 5] + cx * V[o + 10] + dx * V[o + 15];
+      o += n5;
+      const r2 = ax * V[o] + bx * V[o + 5] + cx * V[o + 10] + dx * V[o + 15];
+      o += n5;
+      const r3 = ax * V[o] + bx * V[o + 5] + cx * V[o + 10] + dx * V[o + 15];
+      slow[f] = ay * r0 + by * r1 + cy * r2 + dy * r3;
+    }
+  } else {
+    const ax1 = 0.5 * (-3 * tx2 + 4 * tx - 1);
+    const bx1 = 0.5 * (9 * tx2 - 10 * tx);
+    const cx1 = 0.5 * (-9 * tx2 + 8 * tx + 1);
+    const dx1 = 0.5 * (3 * tx2 - 2 * tx);
+    const ay1 = 0.5 * (-3 * ty2 + 4 * ty - 1);
+    const by1 = 0.5 * (9 * ty2 - 10 * ty);
+    const cy1 = 0.5 * (-9 * ty2 + 8 * ty + 1);
+    const dy1 = 0.5 * (3 * ty2 - 2 * ty);
+    const inv = 1 / cacheCell;
+    for (let f = 0; f < 5; f++) {
+      let o = b0 + f;
+      let a0 = V[o], a1 = V[o + 5], a2 = V[o + 10], a3 = V[o + 15];
+      const r0 = ax * a0 + bx * a1 + cx * a2 + dx * a3;
+      const q0 = ax1 * a0 + bx1 * a1 + cx1 * a2 + dx1 * a3;
+      o += n5;
+      a0 = V[o]; a1 = V[o + 5]; a2 = V[o + 10]; a3 = V[o + 15];
+      const r1 = ax * a0 + bx * a1 + cx * a2 + dx * a3;
+      const q1 = ax1 * a0 + bx1 * a1 + cx1 * a2 + dx1 * a3;
+      o += n5;
+      a0 = V[o]; a1 = V[o + 5]; a2 = V[o + 10]; a3 = V[o + 15];
+      const r2 = ax * a0 + bx * a1 + cx * a2 + dx * a3;
+      const q2 = ax1 * a0 + bx1 * a1 + cx1 * a2 + dx1 * a3;
+      o += n5;
+      a0 = V[o]; a1 = V[o + 5]; a2 = V[o + 10]; a3 = V[o + 15];
+      const r3 = ax * a0 + bx * a1 + cx * a2 + dx * a3;
+      const q3 = ax1 * a0 + bx1 * a1 + cx1 * a2 + dx1 * a3;
+      slow[f] = ay * r0 + by * r1 + cy * r2 + dy * r3;
+      slowG[2 * f] = (ay * q0 + by * q1 + cy * q2 + dy * q3) * inv;
+      slowG[2 * f + 1] = (ay1 * r0 + by1 * r1 + cy1 * r2 + dy1 * r3) * inv;
+    }
+  }
+  return edge >= CACHE_EDGE[1] ? 1 : (edge - CACHE_EDGE[0]) / (CACHE_EDGE[1] - CACHE_EDGE[0]);
+}
+const slowC = new Float64Array(5);
+const slowGC = new Float64Array(10);
+
+/** macroAt, the slow parts from the drainage lattice once it is recorded (macroCacheEnd). */
+export function macroCachedAt(north: number, east: number, out: Macro): Macro {
+  const w = fromCache(north, east, false);
+  if (w <= 0) return macroAt(north, east, out);
+  if (w < 1) {
+    slowC.set(slow);
+    macroAt(north, east, out);
+    for (let f = 0; f < 5; f++) slow[f] += (slowC[f] - slow[f]) * w;
+  }
+  return fromSlow(north, east, slow[0], slow[1], slow[2], slow[3], slow[4], out);
+}
+
+/** macroGradAt, the slow parts from the drainage lattice once it is recorded (macroCacheEnd). */
+export function macroCachedGradAt(north: number, east: number, out: Macro, g: MacroGrad): Macro {
+  const w = fromCache(north, east, true);
+  if (w <= 0) return macroGradAt(north, east, out, g);
+  if (w < 1) {
+    slowC.set(slow);
+    slowGC.set(slowG);
+    macroGradAt(north, east, out, g);
+    for (let f = 0; f < 5; f++) slow[f] += (slowC[f] - slow[f]) * w;
+    for (let f = 0; f < 10; f++) slowG[f] += (slowGC[f] - slowG[f]) * w;
+  }
+  return fromSlowGrad(north, east, out, g);
 }
 
 function smooth(e0: number, e1: number, v: number): number {
@@ -236,6 +399,8 @@ function chooseLayout(): void {
   // Seed 0 keeps Fable Regional (and back to it after another seed); the home field moves before anything that
   // derives from it rebuilds (core/world.ts onHomeAirport runs inside setHomeAirport, before heightfield's water).
   setHomeAirport(SEED0_HOME);
+  // (The last world's slow macro fields are not this one's.)
+  macroCacheOff();
   if (worldSeed() === 0) return;
   const rnd = mulberry32(seeded(0x1a7b0));
   let fallback: { L: Layout; report: LayoutReport } | null = null;
