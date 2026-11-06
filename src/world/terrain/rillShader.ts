@@ -89,25 +89,33 @@ float tRillWet = 0.0;
 float tRillSize = 0.0;
 float tRillOpen = 0.0;
 vec2 tRillBank = vec2(0.0);
+// (A rill on steep ground, from about 22 to 32 degrees: a torrent bed, rock-walled and broken; see below. The
+// smallest, and those on gentler ground, stay lines of damp herbage.)
+float tRillSteep = 0.0;
 if (tDist < ${f(RILL_FADE_FAR)}) {
   vec4 rl = rillNear(tXZ);
   float fade = 1.0 - smoothstep(${f(RILL_FADE_NEAR)}, ${f(RILL_FADE_FAR)}, tDist);
   if (rl.y > 0.001) {
     tRillSize = rl.y;
+    tRillSteep = smoothstep(0.925, 0.845, tUp) * smoothstep(0.15, 0.35, rl.y);
     // Ragged edges and a width that comes and goes along the line (a fine noise, 9 m), not ruled bands; the margin
     // thins out into the cover around it rather than ending at an edge.
     vec4 nr = textureGrad(tNoise, rot2(tXZ, 1.3) * ${f(1 / 9)}, tRillDx, tRillDy);
     float wob = nr.r - 0.5;
-    float bh = rillBedHalf(rl.y) * (0.7 + 0.45 * nD.g + 0.35 * nr.g);
-    float dr = rl.x + wob * 0.8 * bh;
-    tRillBed = rillCover(dr, bh, tRillFp) * fade;
+    // On steep ground a torrent bed: its width comes and goes over tens of metres (a slot between rock, a wider scoured
+    // stretch), and turf or rock bridges it here and there, so it is no even band (an even pale band across a steep
+    // slope read as a track).
+    float nr2 = textureGrad(tNoise, rot2(tXZ, 0.4) * ${f(1 / 31)}, tRillDx * ${f(9 / 31)}, tRillDy * ${f(9 / 31)}).g;
+    float bh = rillBedHalf(rl.y) * (0.7 + 0.45 * nD.g + 0.35 * nr.g) * mix(1.0, 0.4 + 1.2 * nr2, tRillSteep);
+    float dr = rl.x + wob * mix(0.8, 1.2, tRillSteep) * bh;
+    tRillBed = rillCover(dr, bh, tRillFp) * fade * mix(1.0, smoothstep(0.33, 0.5, nr2 + 0.3 * (nr.b - 0.5)), 0.9 * tRillSteep);
     float mh = (bh * 2.2 + 1.5) * (0.75 + 0.5 * nr.b);
     tRillDamp = rillCover(rl.x + wob * 2.0, mh, tRillFp + 0.3 * mh) * fade;
     tRillWet = rillCover(dr, rillWaterHalf(rl.y) * (0.8 + 0.4 * nr.a), tRillFp) * fade;
     // The banks of its notch lean in toward the line (lit on one side, shaded on the other), out to twice the bed;
     // faded as the notch narrows under a pixel.
     float bank = smoothstep(0.15 * bh, 0.6 * bh, rl.x) * (1.0 - smoothstep(1.2 * bh, 2.2 * bh, rl.x));
-    tRillBank = rl.zw / max(rl.x, 1e-3) * bank * fade * clamp(bh / tRillFp - 0.5, 0.0, 1.0) * (0.8 + 0.8 * rl.y);
+    tRillBank = rl.zw / max(rl.x, 1e-3) * bank * fade * clamp(bh / tRillFp - 0.5, 0.0, 1.0) * (0.8 + 0.8 * rl.y) * (1.0 + 0.8 * tRillSteep);
   }
 }
 `;
@@ -128,7 +136,8 @@ if (tRillOpen > 0.001) {
   // sky's grey sheen from the air), in clumps along the line; rough.
   float clump = 0.65 + 0.35 * smoothstep(0.3, 0.7, nD.r + 0.4 * (nC.a - 0.5));
   vec3 lush = mix(${P.bankRoughA} * vec3(0.7, 0.85, 0.5), acc.albedo * vec3(0.5, 0.7, 0.35), 0.2);
-  float dw = tRillDamp * open * clump;
+  // (Thin on steep ground: a torrent bed runs between rock and scree, its herbage in patches.)
+  float dw = tRillDamp * open * clump * (1.0 - 0.85 * tRillSteep);
   acc.albedo = mix(acc.albedo, lush, dw * 0.95);
   acc.rough = mix(acc.rough, 1.0, dw);
   // (Herbage: the low sheen of foliage, as the canopy's, not bare ground's grey one.)
@@ -145,13 +154,16 @@ if (tRillOpen > 0.001) {
     // (The gravel layer's reads only where there are stones to show.)
     if (stones > 0.02) {
       Mat g = layerTop(${gravelLayer}, tXZ, tDist);
-      bed = mix(soil, ${P.scree} * 0.6 * g.albedo, stones);
+      // (Wet dark rock and boulders on steep ground, in the shadow of its notch: darker and greyer than scree.)
+      // (Mottled: boulders lighter, the gaps between them dark.)
+      bed = mix(soil, ${P.scree} * mix(0.6, 0.3 + 0.3 * smoothstep(0.35, 0.75, nD.a + 0.4 * (nC.b - 0.5)), tRillSteep) * g.albedo, stones);
       bedRough = mix(0.95, g.rough, stones);
-      bedCavity = mix(1.0, g.cavity, stones);
+      bedCavity = mix(1.0, g.cavity * mix(1.0, 0.65, tRillSteep), stones);
       bedSlope = g.slope * stones;
     }
     // Wet toward the middle.
     bed *= mix(1.0, 0.7, max(tRillWet, 0.4 * smoothstep(0.3, 0.8, tRillBed)));
+    bed *= mix(1.0, 0.75, tRillSteep * smoothstep(0.3, 0.9, tRillBed));
     float w = tRillBed * open;
     acc.albedo = mix(acc.albedo, bed, w);
     tFoliageW = max(tFoliageW, 0.6 * w * (1.0 - stones));
