@@ -197,6 +197,9 @@ export interface StreamReport {
   floods: number;
   /** Why outlet streams ended short (sink or stuck), counted. */
   outletSinkWhy: Record<string, number>;
+  /** Stream samples moved by the wander, and those whose wander was cut back (it climbed the gully's side). */
+  wanderSamples: number;
+  wanderCut: number;
   /** Stream samples in a broad breach. */
   breachSamples: number;
   samples: number;
@@ -228,7 +231,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   const n = d.n;
   const R = RASTER_N;
   const nR = rivers.length;
-  const report: StreamReport = { pools: 0, riverPools: 0, outlets: 0, outletToLake: 0, outletToSea: 0, outletNone: 0, heads: 0, traced: 0, ends: {}, outletEnds: {}, km: 0, steps: 0, outletSteps: 0, levelSamples: 0, notch: [], notchOutlet: [], pits: 0, sinks: 0, sinkGap: [], sinkGapLake: [], sinkGapLast: [], hollows: 0, floods: 0, outletSinkWhy: {}, breachSamples: 0, samples: 0, ms: 0, tracePhases: [], outletSamples: 0, outletSill: [], outletHigh: 0 };
+  const report: StreamReport = { pools: 0, riverPools: 0, outlets: 0, outletToLake: 0, outletToSea: 0, outletNone: 0, heads: 0, traced: 0, ends: {}, outletEnds: {}, km: 0, steps: 0, outletSteps: 0, levelSamples: 0, notch: [], notchOutlet: [], pits: 0, sinks: 0, sinkGap: [], sinkGapLake: [], sinkGapLast: [], hollows: 0, floods: 0, outletSinkWhy: {}, breachSamples: 0, wanderSamples: 0, wanderCut: 0, samples: 0, ms: 0, tracePhases: [], outletSamples: 0, outletSill: [], outletHigh: 0 };
 
   // --- The ground on the raster, sampled as the traces need it: without the small-scale relief (the terrain takes it
   // away along a stream, heightfield.ts carveNetwork), for the routing and the water level alike.
@@ -579,7 +582,12 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     oe.push(se[se.length - 1]);
     ol.push(lv[lv.length - 1]);
     og.push(gp[gp.length - 1]);
+    // A natural wander about the raster's course (wander): the ground under every LEVEL_EVERY-th sample (from the
+    // first) is looked at on the way, and kept for the level below.
+    const seenG = wander(on, oe, p.route, (n, e) => mask.at(n, e) > -Infinity, nR + streams.length, area0, pool >= 0, report);
+    const before = on.length;
     untangleCourse(on, oe, ol, og);
+    if (on.length !== before) seenG.fill(NaN);
     const count = on.length;
     const north = Float64Array.from(on);
     const east = Float64Array.from(oe);
@@ -595,8 +603,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     const seen = new Uint8Array(count);
     seen[0] = seen[count - 1] = 1;
     for (let i = 1; i < count - 1; i += LEVEL_EVERY) {
-      const g = groundAt(north[i], east[i]);
-      report.levelSamples++;
+      const g = seenG[i] === seenG[i] ? seenG[i] : groundAt(north[i], east[i]);
+      if (seenG[i] !== seenG[i]) report.levelSamples++;
       og[i] = g;
       seen[i] = 1;
       if (g - STREAM_DEPTH >= level[i]) continue;
@@ -918,6 +926,85 @@ function untangleCourse(n: number[], e: number[], lv: number[], gr: number[]): v
     }
     if (!cut) return;
   }
+}
+
+/**
+ * A stream's wander: the course traced on the 250 m raster runs in straight reaches between its points; a stream
+ * wanders about such a line within its gully floor. Each sample is moved across the course by a sum of two long waves
+ * (WANDER_WAVE and WANDER_WAVE2 channel widths, at least WANDER_MIN m; each stream its own phases, their swing waxing
+ * and waning over WANDER_SWING waves), WANDER_AMP widths
+ * (WANDER_LO to WANDER_HI m) at most, fading in and out over WANDER_END at the ends and nil in a lake. Where the moved
+ * course climbs the gully's side - the ground under a looked-at sample (every LEVEL_EVERY-th) stands more than
+ * WANDER_CLIMB m over the ground at its place on the line - the wander is cut back there (to the share that keeps the
+ * climb within it, eased over the samples about it), and looked at again. Edits the course in place; returns the
+ * ground under each looked-at sample as moved (NaN elsewhere), for the level.
+ */
+const WANDER_AMP = 1.0;
+const WANDER_LO = 5;
+const WANDER_HI = 20;
+const WANDER_WAVE = 14;
+const WANDER_WAVE2 = 2.3;
+/** ... its swing waxing and waning over this many of the first wave's lengths. */
+const WANDER_SWING = 4.7;
+const WANDER_MIN = 200;
+const WANDER_END = 150;
+const WANDER_CLIMB = 1.5;
+function wander(n: number[], e: number[], ground: (north: number, east: number) => number, wet: (north: number, east: number) => boolean, id: number, area0: number, outlet: boolean, report: StreamReport): Float64Array {
+  const m = n.length;
+  const seen = new Float64Array(m).fill(NaN);
+  if (m < 4) return seen;
+  const s = new Float64Array(m);
+  for (let i = 1; i < m; i++) s[i] = s[i - 1] + Math.hypot(n[i] - n[i - 1], e[i] - e[i - 1]);
+  const total = s[m - 1];
+  const h = hash2i(id, 0x3a7d);
+  const ph1 = ((h & 0xffff) / 65536) * 2 * Math.PI;
+  const ph2 = ((h >>> 16) / 65536) * 2 * Math.PI;
+  const off = new Float64Array(m);
+  const un = new Float64Array(m);
+  const ue = new Float64Array(m);
+  for (let i = 1; i < m - 1; i++) {
+    // (The width it will have there: its catchment as build() will reckon it, roughly.)
+    const w = 2 * channelHalfWidth((outlet ? area0 : HEAD_START_AREA + (area0 - HEAD_START_AREA) * smooth(0, HEAD_RAMP, s[i])) + (LATERAL_GAIN * s[i]) / 1000);
+    const lam = Math.max(WANDER_MIN, WANDER_WAVE * w);
+    const amp = Math.min(WANDER_HI, Math.max(WANDER_LO, WANDER_AMP * w));
+    const fade = smooth(0, WANDER_END, s[i]) * smooth(0, WANDER_END, total - s[i]);
+    if (fade <= 0 || wet(n[i], e[i])) continue;
+    // (Its swing waxing and waning along the stream, so the bends are not a regular wave.)
+    const swing = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin((2 * Math.PI * s[i]) / (WANDER_SWING * lam) + ph1 * 1.7 + ph2));
+    off[i] = amp * fade * swing * (0.65 * Math.sin((2 * Math.PI * s[i]) / lam + ph1) + 0.35 * Math.sin((2 * Math.PI * s[i]) / (WANDER_WAVE2 * lam) + ph2));
+    const tn = n[i + 1] - n[i - 1];
+    const te = e[i + 1] - e[i - 1];
+    const tl = Math.hypot(tn, te) || 1;
+    un[i] = -te / tl;
+    ue[i] = tn / tl;
+  }
+  // The looked-at samples: the ground under each as moved and at its place on the line; cut back where it climbs.
+  const keep = new Float64Array(m).fill(1);
+  const look: number[] = [];
+  for (let i = 1; i < m - 1; i += LEVEL_EVERY) look.push(i);
+  for (const i of look) {
+    if (Math.abs(off[i]) < 0.5) continue;
+    const g0 = ground(n[i], e[i]);
+    const g1 = ground(n[i] + un[i] * off[i], e[i] + ue[i] * off[i]);
+    report.levelSamples += 2;
+    if (g1 - g0 > WANDER_CLIMB) keep[i] = Math.max(0, WANDER_CLIMB / (g1 - g0));
+    else seen[i] = g1;
+  }
+  // (Eased over the samples about a cut: the least keep within LEVEL_EVERY, smoothed.)
+  const k2 = Float64Array.from(keep);
+  for (let i = 0; i < m; i++) for (let j = Math.max(0, i - LEVEL_EVERY); j <= Math.min(m - 1, i + LEVEL_EVERY); j++) k2[i] = Math.min(k2[i], keep[j] + (1 - keep[j]) * (Math.abs(j - i) / (LEVEL_EVERY + 1)));
+  let cut = 0;
+  for (let i = 1; i < m - 1; i++) {
+    if (k2[i] < 1) {
+      cut++;
+      seen[i] = NaN;
+    }
+    n[i] += un[i] * off[i] * k2[i];
+    e[i] += ue[i] * off[i] * k2[i];
+  }
+  report.wanderCut += cut;
+  report.wanderSamples += m - 2;
+  return seen;
 }
 
 /** Kinds of flow (FlowArrays.regime). */

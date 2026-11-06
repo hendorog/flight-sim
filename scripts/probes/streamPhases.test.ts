@@ -8,7 +8,7 @@ it('stream phases', () => {
   for (const seed of (process.env.SS_SEEDS ?? '1,42,777777').split(',').map(Number)) {
     setWorldSeed(seed);
     const r: any = (hydrology as any).streamReport;
-    console.log(`SP seed ${seed}: trace ${r.ms.toFixed(0)} ms, phases ${r.tracePhases.map((v: number) => v.toFixed(0)).join('/')}; net phases ${(r.phases ?? []).map((v: number) => v.toFixed(0)).join('/')}; samples ${r.samples} levelSamples ${r.levelSamples}`);
+    console.log(`SP seed ${seed}: trace ${r.ms.toFixed(0)} ms, phases ${r.tracePhases.map((v: number) => v.toFixed(0)).join('/')}; net phases ${(r.phases ?? []).map((v: number) => v.toFixed(0)).join('/')}; samples ${r.samples} levelSamples ${r.levelSamples} wander ${r.wanderSamples} cut ${r.wanderCut}`);
     setWorldSeed(0);
   }
 });
