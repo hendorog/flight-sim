@@ -505,7 +505,7 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   // The stones' share of the bed (channelStones.ts): clumped on a river, crowded onto a stream's pitches. Where the bed
   // is strewn with them the white comes from them (below): the water between keeps only a little broken water of its
   // own, near; far away, where a stone's foam is finer than a pixel, its mean.
-  float fRockP = chPresence(fSt) * ${(1 / STONE_FILL).toFixed(3)} * mix(0.6, 0.75 * (0.07 + 0.85 * fPwRaw), fOn);
+  float fRockP = chPresence(fSt) * ${(1 / STONE_FILL).toFixed(3)} * mix(0.6, min(1.0, 0.78 * (0.16 + 1.6 * fPwRaw)), fOn);
   float fNearR = 1.0 - smoothstep(0.7, 1.6, footprint);
   float fReach = min(0.55 * pow(fRun, 1.7) * fPatch, 0.85);
   float fPitchC = mix(0.03 * fPatch, mix(0.3, 0.62, smoothstep(0.5, 0.85, fSt)) * (0.25 + 0.75 * smoothstep(0.3, 0.9, fPh.w)) * (0.75 + 0.35 * fPatch), fPwRaw);

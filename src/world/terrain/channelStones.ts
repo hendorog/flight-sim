@@ -132,7 +132,7 @@ export function stoneAt(k: number, j: number, steep: number, grain: number, half
   const on = pitch ? pitch.on : 0;
   const pw = on > 0 ? pitchAt(pitch, s) : 0;
   // Clumped; on a stream's units crowded onto the pitches, few in the pools.
-  const mod = (1 - on) * (0.25 + 1.1 * c * Math.sqrt(c)) + on * (0.07 + 0.85 * pw) * (0.5 + 0.5 * c);
+  const mod = (1 - on) * (0.25 + 1.1 * c * Math.sqrt(c)) + on * (0.16 + 1.6 * pw) * (0.55 + 0.45 * c);
   if (f16(h0) >= Math.min(0.97, base * mod)) return false;
   const h1 = cellHash(k, j, 1);
   const h2 = cellHash(k, j, 2);
@@ -162,7 +162,7 @@ export function bigStoneAt(k: number, j: number, steep: number, grain: number, h
   const s = (k + 0.5 + 0.8 * (g16(h0) - 0.5)) * BIG_ALONG;
   const on = pitch ? pitch.on : 0;
   const pw = on > 0 ? pitchAt(pitch, s) : 0;
-  if (f16(h0) >= BIG_SHARE * base * ((1 - on) * 0.5 + on * (0.12 + 1.2 * pw))) return false;
+  if (f16(h0) >= BIG_SHARE * base * ((1 - on) * 0.5 + on * (0.15 + 2.0 * pw))) return false;
   const h1 = bigHash(k, j, 1);
   out.s = s;
   out.x = (j + 0.8 * (f16(h1) - 0.5)) * BIG_ACROSS;
@@ -228,7 +228,7 @@ vec4 chStone(int k, int j, float steep, float grain, float hw, float on, float s
   float s = (float(k) + 0.5 + 0.8 * (chG(h0) - 0.5)) * CH_ALONG;
   float c = chClump(k);
   float pw = chPitchAt(on, sig0 + (s - s0) * dSig);
-  float pmod = (1.0 - on) * (0.25 + 1.1 * c * sqrt(c)) + on * (0.07 + 0.85 * pw) * (0.5 + 0.5 * c);
+  float pmod = (1.0 - on) * (0.25 + 1.1 * c * sqrt(c)) + on * (0.16 + 1.6 * pw) * (0.55 + 0.45 * c);
   if (chF(h0) >= min(0.97, base * pmod)) return vec4(0.0, 0.0, -1.0, 0.0);
   uint h1 = chHash(k, j, 1);
   uint h2 = chHash(k, j, 2);
@@ -244,7 +244,7 @@ vec4 chBig(int k, int j, float steep, float grain, float hw, float on, float sig
   uint h0 = chBigHash(k, j, 0);
   float s = (float(k) + 0.5 + 0.8 * (chG(h0) - 0.5)) * CH_BIG_ALONG;
   float pw = chPitchAt(on, sig0 + (s - s0) * dSig);
-  if (chF(h0) >= ${BIG_SHARE.toFixed(2)} * base * ((1.0 - on) * 0.5 + on * (0.12 + 1.2 * pw))) return vec4(0.0, 0.0, -1.0, 0.0);
+  if (chF(h0) >= ${BIG_SHARE.toFixed(2)} * base * ((1.0 - on) * 0.5 + on * (0.15 + 2.0 * pw))) return vec4(0.0, 0.0, -1.0, 0.0);
   uint h1 = chBigHash(k, j, 1);
   float x = (float(j) + 0.8 * (chF(h1) - 0.5)) * CH_BIG_ACROSS;
   if (abs(x) > ${STONE_IN.toFixed(2)} * hw) return vec4(0.0, 0.0, -1.0, 0.0);
