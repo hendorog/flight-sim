@@ -150,11 +150,12 @@ export function macroGradAt(north: number, east: number, out: Macro, g: MacroGra
   const ryx = 14000 * q2x;
   const ryy = 1 + 14000 * q2y;
   const n1 = gnoise(rx / RANGES + 0.37, ry / RANGES - 0.81, GD);
-  const s1 = n1 < 0 ? 1 : -1;
+  // (The derivative of 1 - |n| with its sign rounded off over |n| < 0.02: no jump in the gradient on a crest line.)
+  const s1 = -n1 / Math.sqrt(n1 * n1 + 0.0004);
   const r1rx = (s1 * GD.dx) / RANGES;
   const r1ry = (s1 * GD.dy) / RANGES;
   const n2 = gnoise(rx / (RANGES * 0.45) - 4.1, ry / (RANGES * 0.45) + 2.9, GD);
-  const s2 = n2 < 0 ? 1 : -1;
+  const s2 = -n2 / Math.sqrt(n2 * n2 + 0.0004);
   const r2rx = (s2 * GD.dx) / (RANGES * 0.45);
   const r2ry = (s2 * GD.dy) / (RANGES * 0.45);
   const r1 = 1 - Math.abs(n1);

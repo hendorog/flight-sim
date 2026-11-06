@@ -394,11 +394,18 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'surface' | 'lowered' | 
 export function erosionCutGrad(s: ErosionSample, g: ErosionGrad, coarse: number, cE: number, cN: number, out: { dx: number; dy: number }): void {
   let gE = g.dE;
   let gN = g.dN;
+  // (Where the eroded surface's cut comes up to nothing, erosionCutAt clamps it at 0: a kink in the ground. Its
+  // gradient fades out over the last CUT_FADE m instead of stepping, so what is oriented by it does not jump there.)
+  let fade = 1;
   if (s.w > 0) {
     const cut = s.w * (s.t - coarse) + (1 - s.w) * s.d;
     if (cut >= 0) {
       out.dx = out.dy = 0;
       return;
+    }
+    if (cut > -CUT_FADE) {
+      const u = -cut / CUT_FADE;
+      fade = u * u * (3 - 2 * u);
     }
     // w = smoothstep(REPLACE, -d) times the edge fade: dw/dd from the first.
     const depth = -s.d;
@@ -409,9 +416,11 @@ export function erosionCutGrad(s: ErosionSample, g: ErosionGrad, coarse: number,
     gE = dwdd * g.dE * k + s.w * (g.tE - cE) + (1 - s.w) * g.dE;
     gN = dwdd * g.dN * k + s.w * (g.tN - cN) + (1 - s.w) * g.dN;
   }
-  out.dx = gE * s.keep;
-  out.dy = gN * s.keep;
+  out.dx = gE * s.keep * fade;
+  out.dy = gN * s.keep * fade;
 }
+/** See erosionCutGrad, m. */
+const CUT_FADE = 5;
 
 /** Value and gradient (cell units, into `cubic`) of the bicubic interpolation of `v` at (fy, fx) cells, inside the
  * lattice: the uniform B-spline (`approx`) or Catmull-Rom. */
