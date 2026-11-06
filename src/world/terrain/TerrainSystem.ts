@@ -21,6 +21,8 @@ import { createEraLayers, type EraLayer } from './eraLayers';
 import { updateEraUniforms } from './eraUniforms';
 import { VegetationSystem } from './vegetation/VegetationSystem';
 import { BoulderSystem, bouldersEnabled } from './vegetation/BoulderSystem';
+import { RillSystem } from './RillSystem';
+import { rillsOn } from './rillShader';
 import { setTownSite, townSite } from './townMask';
 import { era, isPresent } from '../era/eraState';
 import { createFallGeometries, createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
@@ -86,6 +88,8 @@ export class TerrainSystem implements Subsystem {
   private vegetation: VegetationSystem | null = null;
   /** Boulder fields along fast water (a seeded world's only: it needs the channels' flow). */
   private boulders: BoulderSystem | null = null;
+  /** A seeded world's hillside rills (rills.ts), streamed into the ground shader's texture. */
+  private rills: RillSystem | null = null;
   private grass: AirfieldGrass | null = null;
   /** The era's extra layers (eraLayers.ts; none in the present day). */
   private eraLayers: EraLayer[] = [];
@@ -159,6 +163,7 @@ export class TerrainSystem implements Subsystem {
     this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id, seed: worldSeed(), snowShift: snowShiftM() });
     this.uploader = new GeometryUploader(ctx.renderer);
     this.textures = createTerrainTextures(ctx.renderer);
+    if (rillsOn()) this.rills = new RillSystem(this.pool);
     this.material = createTerrainMaterial(this.textures, this.uniforms);
     this.depthMaterial = createTerrainDepthMaterial(this.uniforms);
     this.waterMaterial = createWaterMaterial(this.textures.noise, this.waterUniforms, false);
@@ -240,6 +245,7 @@ export class TerrainSystem implements Subsystem {
     this.waterUniforms.uHazeColor.value.copy(ctx.sky.hazeColor);
     this.vegetation?.update(dt, ctx);
     this.boulders?.update(ctx.camera);
+    this.rills?.update(ctx.camera);
     this.grass?.update(dt, ctx.camera);
     if (!isPresent()) {
       updateEraUniforms(dt, ctx.sky);
@@ -252,6 +258,7 @@ export class TerrainSystem implements Subsystem {
     this.clearNodes();
     this.vegetation?.dispose();
     this.boulders?.dispose();
+    this.rills?.dispose();
     this.grass?.dispose();
     for (const l of this.eraLayers) l.dispose();
     this.pool.dispose();
@@ -274,6 +281,11 @@ export class TerrainSystem implements Subsystem {
   /** The boulder fields' counts and last rebuild time (null without them). */
   get boulderStats(): BoulderSystem['stats'] | null {
     return this.boulders?.stats ?? null;
+  }
+
+  /** The rills' patch count, mean worker time per patch and last upload time (null without them). */
+  get rillStats(): RillSystem['stats'] | null {
+    return this.rills?.stats ?? null;
   }
 
   /**
