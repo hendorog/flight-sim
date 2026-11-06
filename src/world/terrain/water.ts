@@ -536,7 +536,10 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   float fReach = min(0.55 * pow(fRun, 1.7) * fPatch, 0.85);
   float fPitchS = mix(0.3, 0.62, smoothstep(0.5, 0.85, fSt)) * fUnitI * (0.75 + 0.35 * fPatch);
   float fPitchC = mix(0.03 * fPatch, fPitchS, fPwAll);
-  float fCoverFar = max(mix(fReach, mix(0.03 * fPatch, fPitchS, fPwFar), fOn) * (1.0 - 0.8 * fRockP * fNearR), vFlow.z);
+  // (Far away each unit keeps at least half of the full strength: a run of steep pitches still reads white from
+  // 1500 ft, only unevenly so.)
+  float fPitchF = fPitchS * mix(0.5, 1.0, fUnitI) / max(fUnitI, 1e-3);
+  float fCoverFar = max(mix(fReach, mix(0.03 * fPatch, min(fPitchF, 0.62 * 1.1), fPwFar), fOn) * (1.0 - 0.8 * fRockP * fNearR), vFlow.z);
   float fCover = max(mix(fReach, fPitchC, fOn) * (1.0 - 0.8 * fRockP * fNearR), vFlow.z);
   // The pattern rides downstream at the water's speed: two phases 2 s long, each restarting (at a new offset) while
   // the other carries it, so a change of speed along the reach never shears it.
@@ -641,7 +644,7 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   fWhite = max(fWhite * (1.0 - fGlass), fRock);
   // Far away: the mean cover (the pattern is finer than a pixel; a stream's pitches and pools are not).
   // (A stream's pitch far away: torn white over dark water and grey rock, patchy from one to the next.)
-  fWhite = mix(fWhite, max(min(1.0, fCoverFar * (1.0 - fOn * (0.55 - 0.25 * fPatch)) + 0.15 * fRapids) * (1.0 - 0.6 * fRockP), fRockMean), smoothstep(0.8, 5.0, footprint));
+  fWhite = mix(fWhite, max(min(1.0, fCoverFar * (1.0 - fOn * (0.25 - 0.2 * fPatch)) + 0.15 * fRapids) * (1.0 - 0.6 * fRockP), fRockMean), smoothstep(0.8, 5.0, footprint));
   // Between the white: a small stream over its stony bed is shallow and clear; a bigger river aerated, paler, cloudier;
   // a stream's pool deeper, darker and still.
   float fClear = (1.0 - smoothstep(2.0, 9.0, fW)) * smoothstep(0.3, 0.65, fSt) * (1.0 - 0.3 * fPool);
