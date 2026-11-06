@@ -32,6 +32,11 @@ export class WorkerPool {
     return free;
   }
 
+  /** Workers in the pool. */
+  get size(): number {
+    return this.workers.length;
+  }
+
   get busy(): boolean {
     return this.pending.size > 0;
   }

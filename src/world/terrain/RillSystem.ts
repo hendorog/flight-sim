@@ -94,7 +94,9 @@ export class RillSystem {
       }
     }
     if (upload >= 0) this.show(upload);
-    if (want && this.inflight.size < MAX_INFLIGHT && this.pool.freeSlots >= 2) this.request(want.pi, want.pj);
+    // (One at a time on a small pool, a laptop's: the tiles keep the rest.)
+    const most = this.pool.size <= 3 ? 1 : MAX_INFLIGHT;
+    if (want && this.inflight.size < most && this.pool.freeSlots >= 2) this.request(want.pi, want.pj);
   }
 
   private show(s: number): void {
