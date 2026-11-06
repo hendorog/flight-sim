@@ -9,7 +9,7 @@
 // goes - a coastal plain, a plateau, a basin among mountains, a hillside - as long as the field could be built and
 // flown. Pure (no three.js); every thread runs the same search at load and gets the same answer.
 
-import { fbm, gnoise, mulberry32 } from './noise';
+import { fbm, fbmGrad, gnoise, mulberry32, type Deriv } from './noise';
 import { onWorldSeed, seeded, worldSeed } from '../worldSeed';
 import { SEED0_HOME, setHomeAirport } from '../../core/world';
 import { siteHome, type HomeSite } from './homeSiting';
@@ -70,6 +70,126 @@ export function macroAt(north: number, east: number, out: Macro): Macro {
 
   // Plains and hill country.
   out.hilly = 0.35 + 0.65 * smooth(-0.25, 0.25, fbm(x / COUNTRY - 2.6, y / COUNTRY + 5.2, 2));
+  return out;
+}
+
+/** The gradients of the macro fields at one point (macroGradAt), per m: d/d east (e) and d/d north (n). */
+export interface MacroGrad {
+  inlandE: number;
+  inlandN: number;
+  upliftE: number;
+  upliftN: number;
+  foothillE: number;
+  foothillN: number;
+  hillyE: number;
+  hillyN: number;
+}
+
+const GD: Deriv = { dx: 0, dy: 0 };
+/** smooth() and its derivative (into SD). */
+function smoothD(e0: number, e1: number, v: number): number {
+  const t = (v - e0) / (e1 - e0);
+  if (t <= 0 || t >= 1) {
+    SD = 0;
+    return t <= 0 ? 0 : 1;
+  }
+  SD = (6 * t * (1 - t)) / (e1 - e0);
+  return t * t * (3 - 2 * t);
+}
+let SD = 0;
+
+/**
+ * macroAt with the gradients of its fields (`g`): the same values, bit for bit, and their derivatives worked through
+ * the layout frame, the warps and the smooth steps (the terrain's slope includes the ranges' and the coast's rise, not
+ * only the shapes laid on them: heightfield.ts orients its gullies by it).
+ */
+export function macroGradAt(north: number, east: number, out: Macro, g: MacroGrad): Macro {
+  const c = L.cos;
+  const s = L.sin;
+  const x = c * east - s * north + L.offX;
+  const y = s * east + c * north + L.offY;
+  // d(x, y)/d(east, north): x_e = c, x_n = -s, y_e = s, y_n = c.
+  const f1 = fbmGrad(x / 60000 + 3.1, y / 60000 - 7.4, 2, GD);
+  const f1x = GD.dx / 60000;
+  const f1y = GD.dy / 60000;
+  const f2 = fbmGrad(x / 60000 - 5.6, y / 60000 + 1.3, 2, GD);
+  const f2x = GD.dx / 60000;
+  const f2y = GD.dy / 60000;
+  const wx = x + 22000 * f1;
+  const wy = y + 22000 * f2;
+  // d(wx, wy)/d(x, y)
+  const wxx = 1 + 22000 * f1x;
+  const wxy = 22000 * f1y;
+  const wyx = 22000 * f2x;
+  const wyy = 1 + 22000 * f2y;
+  const cont = fbmGrad(wx / CONTINENT, wy / CONTINENT, 4, GD);
+  const cwx = GD.dx / CONTINENT;
+  const cwy = GD.dy / CONTINENT;
+  const contX = cwx * wxx + cwy * wyx;
+  const contY = cwx * wxy + cwy * wyy;
+  const i1 = fbmGrad(east / 9000 - 2.3, north / 9000 + 4.2, 2, GD);
+  const i1e = GD.dx / 9000;
+  const i1n = GD.dy / 9000;
+  const i2 = fbmGrad(east / 28000 + 11.3, north / 28000 - 4.2, 3, GD);
+  const i2e = GD.dx / 28000;
+  const i2n = GD.dy / 28000;
+  out.inland = (cont - L.sea) * INLAND_SCALE + 1800 * i1 + 3500 * i2;
+  g.inlandE = INLAND_SCALE * (contX * c + contY * s) + 1800 * i1e + 3500 * i2e;
+  g.inlandN = INLAND_SCALE * (contX * -s + contY * c) + 1800 * i1n + 3500 * i2n;
+
+  const q1 = fbmGrad(x / 30000 + 8.8, y / 30000 + 2.2, 2, GD);
+  const q1x = GD.dx / 30000;
+  const q1y = GD.dy / 30000;
+  const q2 = fbmGrad(x / 30000 - 1.7, y / 30000 - 6.6, 2, GD);
+  const q2x = GD.dx / 30000;
+  const q2y = GD.dy / 30000;
+  const rx = x + 14000 * q1;
+  const ry = y + 14000 * q2;
+  const rxx = 1 + 14000 * q1x;
+  const rxy = 14000 * q1y;
+  const ryx = 14000 * q2x;
+  const ryy = 1 + 14000 * q2y;
+  const n1 = gnoise(rx / RANGES + 0.37, ry / RANGES - 0.81, GD);
+  const s1 = n1 < 0 ? 1 : -1;
+  const r1rx = (s1 * GD.dx) / RANGES;
+  const r1ry = (s1 * GD.dy) / RANGES;
+  const n2 = gnoise(rx / (RANGES * 0.45) - 4.1, ry / (RANGES * 0.45) + 2.9, GD);
+  const s2 = n2 < 0 ? 1 : -1;
+  const r2rx = (s2 * GD.dx) / (RANGES * 0.45);
+  const r2ry = (s2 * GD.dy) / (RANGES * 0.45);
+  const r1 = 1 - Math.abs(n1);
+  const r2 = 1 - Math.abs(n2);
+  const ridge = 0.72 * r1 + 0.28 * r2;
+  const ridgeRx = 0.72 * r1rx + 0.28 * r2rx;
+  const ridgeRy = 0.72 * r1ry + 0.28 * r2ry;
+  const ridgeX = ridgeRx * rxx + ridgeRy * ryx;
+  const ridgeY = ridgeRx * rxy + ridgeRy * ryy;
+  const ridgeE = ridgeX * c + ridgeY * s;
+  const ridgeN = ridgeX * -s + ridgeY * c;
+  const land = smoothD(2000, 22000, out.inland);
+  const landD = SD;
+  const sU = smoothD(0.74, 0.93, ridge);
+  const sUD = SD;
+  const u3 = fbmGrad(east / 55000 - 3.3, north / 55000 + 1.9, 2, GD);
+  const u3f = 0.85 + 0.3 * u3;
+  out.uplift = sU * land * u3f;
+  g.upliftE = sUD * ridgeE * land * u3f + sU * landD * g.inlandE * u3f + sU * land * ((0.3 * GD.dx) / 55000);
+  g.upliftN = sUD * ridgeN * land * u3f + sU * landD * g.inlandN * u3f + sU * land * ((0.3 * GD.dy) / 55000);
+  const sF = smoothD(0.55, 0.8, ridge);
+  const sFD = SD;
+  const sI = smoothD(-1000, 15000, out.inland);
+  const sID = SD;
+  out.foothill = sF * sI;
+  g.foothillE = sFD * ridgeE * sI + sF * sID * g.inlandE;
+  g.foothillN = sFD * ridgeN * sI + sF * sID * g.inlandN;
+
+  const hf = fbmGrad(x / COUNTRY - 2.6, y / COUNTRY + 5.2, 2, GD);
+  const hfx = GD.dx / COUNTRY;
+  const hfy = GD.dy / COUNTRY;
+  const sH = smoothD(-0.25, 0.25, hf);
+  out.hilly = 0.35 + 0.65 * sH;
+  g.hillyE = 0.65 * SD * (hfx * c + hfy * s);
+  g.hillyN = 0.65 * SD * (hfx * -s + hfy * c);
   return out;
 }
 

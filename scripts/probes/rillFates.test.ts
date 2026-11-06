@@ -9,13 +9,38 @@ import { hydrology, naturalHeightCoarse, naturalHeightRaw, naturalHeightSmooth }
 import type { FlowHit } from '../../src/world/terrain/hydrology';
 import { setWorldSeed } from '../../src/world/worldSeed';
 import { png } from './png';
-import { accumulate, descend, hollow, raster, spillDepth } from './rillGrid';
+import { accumulate, descend, DE, DN, hollow, raster, spillDepth } from './rillGrid';
 
 const fs = (await import(/* @vite-ignore */ 'node:fs' as string)) as { writeFileSync(p: string, d: Uint8Array | string): void; mkdirSync(p: string, o: object): void };
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 
 const hit: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index: 0, s: 0, level: 0, halfWidth: 0, gradient: 0, steepness: 0, regime: 0, speed: 0, dirN: 0, dirE: 0 };
 const pct = (a: number[], p: number): number => (a.length ? [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(p * a.length))] : NaN);
+
+
+/** Priority-flood fill depth of each cell of a raster's ground (its edge open), m. */
+function fillDepth(g: Float64Array, n: number): Float64Array {
+  const f = new Float64Array(n * n).fill(Infinity);
+  const heap: number[] = [];
+  const up = (k: number): void => { while (k > 0) { const p = (k - 1) >> 1; if (f[heap[p]] <= f[heap[k]]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = (): number => { const top = heap[0]; const last = heap.pop()!; if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && f[heap[l]] < f[heap[m]]) m = l; if (r < heap.length && f[heap[r]] < f[heap[m]]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+  for (let i = 0; i < n * n; i++) { const x = i % n, y = (i / n) | 0; if (x === 0 || y === 0 || x === n - 1 || y === n - 1) { f[i] = g[i]; heap.push(i); up(heap.length - 1); } }
+  while (heap.length) {
+    const c = pop();
+    const cx = c % n, cy = (c / n) | 0;
+    for (let k = 0; k < 8; k++) {
+      const xx = cx + DE[k], yy = cy + DN[k];
+      if (xx < 0 || yy < 0 || xx >= n || yy >= n) continue;
+      const j = yy * n + xx;
+      if (f[j] !== Infinity) continue;
+      f[j] = Math.max(g[j], f[c]);
+      heap.push(j);
+      up(heap.length - 1);
+    }
+  }
+  for (let i = 0; i < n * n; i++) f[i] -= g[i];
+  return f;
+}
 
 it('rill fates', () => {
   const seeds = (env.RILL_SEEDS ?? '42,1,777777').split(',').map(Number);
@@ -53,6 +78,16 @@ it('rill fates', () => {
       if (wins.length >= nWin) break;
       if (wins.every((w) => Math.hypot(w.n - c.n, w.e - c.e) > 20000)) wins.push(c);
     }
+    // RILL_WINS='42@-44992,-9504 42@-23664,71632 ...': these windows instead (the same ground before and after a change).
+    if (env.RILL_WINS) {
+      wins.length = 0;
+      for (const w of env.RILL_WINS.split(/\s+/)) {
+        const [sd, at] = w.split('@');
+        if (Number(sd) !== seed) continue;
+        const [wn, we] = at.split(',').map(Number);
+        wins.push({ n: wn, e: we, relief: 0 });
+      }
+    }
     for (const [wi, w] of wins.entries()) {
       const cn = Math.round(w.n / step) * step, ce = Math.round(w.e / step) * step;
       const t0 = performance.now();
@@ -71,6 +106,10 @@ it('rill fates', () => {
       const gs = raster(cn, ce, half, step * 2, naturalHeightSmooth);
       const pitS = descend(gs, radius, depth);
       const n = g.n;
+      // The eroded macro ground (no gullies nor small relief): a sink in one of its own closed basins (filled > 0.25 m
+      // there, RILL_MACRO) is the macro ground's hollow, not the detail's.
+      const macroBasin = fillDepth(raster(cn, ce, half, step, naturalHeightCoarse).ground, n);
+      let sinkMacro = 0;
       const big = new Uint8Array(n * n);
       for (let i = 0; i < n * n; i++) if (g.area[i] >= amin && g.to[i] >= 0) big[g.to[i]] = 1;
       // Heads in the inner half of the window (their catchment inside it).
@@ -105,6 +144,7 @@ it('rill fates', () => {
         }
         fates[f]++;
         if (f === 2) {
+          if (macroBasin[j] > Number(env.RILL_MACRO ?? 0.25)) sinkMacro++;
           const sp = spillDepth(g, j, 60, 80);
           sinkRise.push(sp.rise);
           const north = g.north0 - ((j / n) | 0) * step, east = g.east0 + (j % n) * step;
@@ -139,7 +179,7 @@ it('rill fates', () => {
       }
       const line = `seed ${seed} win ${wi} centre ${cn},${ce} (${n}² cells of ${step} m; raster ${tR.toFixed(0)} ms = ${((tR * 1000) / (n * n)).toFixed(2)} µs/sample, descend+accumulate ${tD.toFixed(0)} ms)\n` +
         `  pits ${pit.pits} (${((100 * pit.pits) / (n * n)).toFixed(2)} % of cells): spilled ${pit.spilled}, sinks ${pit.sinks}; smooth ground (${step * 2} m): pits ${pitS.pits}, sinks ${pitS.sinks}\n` +
-        `  heads (>= ${amin} km², inner half) ${heads}, in a hollow ${hollowHeads}; fates: handoff ${fates[1]}, sink ${fates[2]}, amax ${fates[3]}, edge ${fates[4]}\n` +
+        `  heads (>= ${amin} km², inner half) ${heads}, in a hollow ${hollowHeads}; fates: handoff ${fates[1]}, sink ${fates[2]} (${((100 * fates[2]) / heads).toFixed(0)} %; in a basin of the eroded macro ground ${sinkMacro}, detail hollows ${((100 * (fates[2] - sinkMacro)) / heads).toFixed(0)} %), amax ${fates[3]}, edge ${fates[4]}\n` +
         `  area at handoff km²: p10 ${pct(endArea[1], 0.1).toFixed(2)} p50 ${pct(endArea[1], 0.5).toFixed(2)} p90 ${pct(endArea[1], 0.9).toFixed(2)} max ${pct(endArea[1], 1).toFixed(1)}; length p50 ${pct(endLen, 0.5).toFixed(0)} p90 ${pct(endLen, 0.9).toFixed(0)} m\n` +
         `  area at sink km²: p50 ${pct(endArea[2], 0.5).toFixed(2)} p90 ${pct(endArea[2], 0.9).toFixed(2)}; spill rise m: p25 ${pct(sinkRise, 0.25).toFixed(1)} p50 ${pct(sinkRise, 0.5).toFixed(1)} p75 ${pct(sinkRise, 0.75).toFixed(1)} p90 ${pct(sinkRise, 0.9).toFixed(1)}; to water/line m: p25 ${pct(sinkNear, 0.25).toFixed(0)} p50 ${pct(sinkNear, 0.5).toFixed(0)} p75 ${pct(sinkNear, 0.75).toFixed(0)}\n` +
         bins.map((b, k) => `  catchment reach beyond its 1024 m block, A < ${b} km²: p50 ${pct(reach[k], 0.5).toFixed(0)} p90 ${pct(reach[k], 0.9).toFixed(0)} p99 ${pct(reach[k], 0.99).toFixed(0)} max ${pct(reach[k], 1).toFixed(0)} m (${reach[k].length})`).join('\n');

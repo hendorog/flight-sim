@@ -168,3 +168,40 @@ export function fbm(x: number, y: number, octaves: number, lacunarity = 2, gain 
   }
   return sum / norm;
 }
+
+/**
+ * fbm with its gradient (per unit of the input, into `d`): the same value as fbm, bit for bit (the same octaves summed
+ * in the same order), for a gradient of the fields built on it (seededLayout.ts macroGradAt).
+ */
+export function fbmGrad(x: number, y: number, octaves: number, d: Deriv, lacunarity = 2, gain = 0.5): number {
+  let sum = 0;
+  let amp = 1;
+  let norm = 0;
+  let gx = 0;
+  let gy = 0;
+  // The octave's coordinates' Jacobian against the input's (rotated and scaled each octave).
+  let jxx = 1;
+  let jxy = 0;
+  let jyx = 0;
+  let jyy = 1;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * gnoise(x, y, FD);
+    gx += amp * (FD.dx * jxx + FD.dy * jyx);
+    gy += amp * (FD.dx * jxy + FD.dy * jyy);
+    norm += amp;
+    amp *= gain;
+    const nx = (ROT_C * x - ROT_S * y) * lacunarity + 17.3;
+    y = (ROT_S * x + ROT_C * y) * lacunarity - 9.1;
+    x = nx;
+    const axx = (ROT_C * jxx - ROT_S * jyx) * lacunarity;
+    const axy = (ROT_C * jxy - ROT_S * jyy) * lacunarity;
+    jyx = (ROT_S * jxx + ROT_C * jyx) * lacunarity;
+    jyy = (ROT_S * jxy + ROT_C * jyy) * lacunarity;
+    jxx = axx;
+    jxy = axy;
+  }
+  d.dx = gx / norm;
+  d.dy = gy / norm;
+  return sum / norm;
+}
+const FD: Deriv = { dx: 0, dy: 0 };

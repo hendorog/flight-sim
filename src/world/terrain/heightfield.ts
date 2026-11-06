@@ -12,7 +12,7 @@
 // Every function here is unbounded: any (north, east) gives a valid answer.
 
 import { onWorldSeed, worldSeed } from '../worldSeed';
-import { macroAt, setLayoutGround, type Macro } from './seededLayout';
+import { macroAt, macroGradAt, setLayoutGround, type Macro, type MacroGrad } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
@@ -54,6 +54,11 @@ const smooth = (e0: number, e1: number, x: number): number => {
   const t = clamp((x - e0) / (e1 - e0), 0, 1);
   return t * t * (3 - 2 * t);
 };
+/** The derivative of smooth(e0, e1, x) in x. */
+const smoothD = (e0: number, e1: number, x: number): number => {
+  const t = (x - e0) / (e1 - e0);
+  return t <= 0 || t >= 1 ? 0 : (6 * t * (1 - t)) / (e1 - e0);
+};
 /** Quintic smoothstep: C2 continuous, so blended surfaces have no visible crease in their shading. */
 const smoother = (e0: number, e1: number, x: number): number => {
   const t = clamp((x - e0) / (e1 - e0), 0, 1);
@@ -82,7 +87,7 @@ const rolling: Shape = { v: 0, dx: 0, dy: 0 };
  * broad valley floors. Relief of ~1500 m per half wavelength gives the 25-35 degree slopes of real alpine
  * terrain. Analytic gradient in 1/m so the gully filter can follow the slope.
  */
-function mountainShape(east: number, north: number, out: Shape): void {
+function mountainShape(east: number, north: number, out: Shape, exact = false): void {
   let x = east / 9000 + 3.7;
   let y = north / 9000 - 1.2;
   let freq = 1 / 9000;
@@ -90,8 +95,19 @@ function mountainShape(east: number, north: number, out: Shape): void {
   let v = 0;
   let gx = 0;
   let gy = 0;
+  // (With `exact`, a seeded world's: each octave's gradient turned back from its rotated frame, rc, rs.)
+  let rc = 1;
+  let rs = 0;
   for (let o = 0; o < 5; o++) {
     const n = gnoise(x, y, D);
+    if (exact) {
+      const dx = D.dx * rc + D.dy * rs;
+      D.dy = -D.dx * rs + D.dy * rc;
+      D.dx = dx;
+      const c = 0.8 * rc - 0.6 * rs;
+      rs = 0.6 * rc + 0.8 * rs;
+      rc = c;
+    }
     if (o < 2) {
       // Ridge 1 - |n| with the kink rounded over |n| < 0.08, so crests are sharp but not creased.
       const s = Math.sqrt(n * n + 0.0064);
@@ -118,7 +134,7 @@ function mountainShape(east: number, north: number, out: Shape): void {
 }
 
 /** Rolling hills, about [-1, 1]: four octaves of fBm from a 7 km wavelength, with gradient in 1/m. */
-function hillShape(east: number, north: number, out: Shape): void {
+function hillShape(east: number, north: number, out: Shape, exact = false): void {
   let x = east / 7000 - 2.1;
   let y = north / 7000 + 6.4;
   let freq = 1 / 7000;
@@ -126,8 +142,18 @@ function hillShape(east: number, north: number, out: Shape): void {
   let v = 0;
   let gx = 0;
   let gy = 0;
+  let rc = 1;
+  let rs = 0;
   for (let o = 0; o < 4; o++) {
     v += amp * gnoise(x, y, D);
+    if (exact) {
+      const dx = D.dx * rc + D.dy * rs;
+      D.dy = -D.dx * rs + D.dy * rc;
+      D.dx = dx;
+      const c = 0.8 * rc - 0.6 * rs;
+      rs = 0.6 * rc + 0.8 * rs;
+      rc = c;
+    }
     gx += amp * D.dx * freq;
     gy += amp * D.dy * freq;
     amp *= 0.45;
@@ -213,6 +239,11 @@ function softMin(a: number, b: number): number {
 // B's fall line (with the erosion's valleys, not the uncut ground's), so their troughs run down it.
 /** Deepest gully relief per unit of the eroded ground's slope, m: 0.9 x 1500 / (1.45 x 2.5). */
 const GULLY_FALL = 372;
+/** ... and on gentler ground (B's slope s under GULLY_BEND) at most GULLY_FALL s^2 / GULLY_BEND: a trough's depth then
+ * changes along it by 2 GULLY_FALL s ds / GULLY_BEND, which stays under B's own fall s wherever B's slope changes by
+ * less than GULLY_BEND / (2 GULLY_FALL) (0.067 per 100 m) along it - so a gully does not shallow out into a hollow
+ * at the foot of a slope, where the ground flattens. */
+const GULLY_BEND = 0.5;
 /** The small-scale relief by the slope too: its knobs (`rough`, m) at most SMALL_FALL and its ledges (`rugged`) at most
  * RUGGED_FALL times the eroded ground's slope (they would bead a gentle gully floor with hollows), and fading into the
  * gully troughs (erode's sum from FLOOR_FADE[1] down to FLOOR_FADE[0]), where the water runs. */
@@ -227,6 +258,13 @@ let gullyFine = 0;
 /** Valley floor elevation along the runway axis (along = m toward ENE), m. */
 function valleyFloor(along: number): number {
   return along <= 0 ? ELEV + 0.0048 * along : ELEV + 0.0055 * along + 1.2e-7 * along * along;
+}
+
+/** The derivative of coastProfile, m per m inland. */
+function coastProfileD(inland: number): number {
+  if (inland >= 0) return (150 / 7000) * Math.exp(-inland / 7000);
+  const off = -inland;
+  return (80 / 5000) * Math.exp(-off / 5000) + 320 * smoothD(8000, 40000, off);
 }
 
 /** Coastal profile against warped distance inland from the coastline, m. */
@@ -313,6 +351,7 @@ export function naturalHeight(north: number, east: number): number {
 }
 
 const macro: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
+const macroGrad: MacroGrad = { inlandE: 0, inlandN: 0, upliftE: 0, upliftN: 0, foothillE: 0, foothillN: 0, hillyE: 0, hillyN: 0 };
 /** How much of its small-scale relief the point seededNaturalHeight is working on keeps (0 over a lake's domain). */
 let calm = 1;
 /** A seeded world's gullies smoothed round its lakes (drainage.ts), built with its water for that seed only (the
@@ -371,13 +410,14 @@ let lastSmall = 0;
 function seededNaturalHeight(north: number, east: number, detail = true, eroded = true, volcano = true, small = true): number {
   lastSmall = 0;
   let fineGully = 0;
-  macroAt(north, east, macro);
+  if (detail) macroGradAt(north, east, macro, macroGrad);
+  else macroAt(north, east, macro);
   calm = 1;
   const inland = macro.inland;
   const base = coastProfile(inland);
 
   const hillAmp = (90 + 260 * smooth(-1000, 7000, inland) + 480 * macro.foothill) * macro.hilly;
-  hillShape(east, north, rolling);
+  hillShape(east, north, rolling, true);
   const bias = 0.55 * smooth(-2000, 5000, inland);
   let relief = hillAmp * (rolling.v + bias);
   let gE = hillAmp * rolling.dx;
@@ -385,7 +425,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
   const uplift = macro.uplift;
   let amplitude = hillAmp;
   if (uplift > 0) {
-    mountainShape(east, north, massif);
+    mountainShape(east, north, massif, true);
     const a = uplift * 3100;
     relief += a * massif.v;
     gE += a * massif.dx;
@@ -394,6 +434,21 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
   }
   // The ground without the gullies, which the erosion's eroded surface replaces where its cut is deep.
   const coarse = base + relief;
+  // Its full gradient (with the macro fields' rise: the coast's, the ranges' and the hill country's), for the gullies.
+  let cE = gE;
+  let cN = gN;
+  if (detail) {
+    const mg = macroGrad;
+    const baseD = coastProfileD(inland);
+    const s1 = smoothD(-1000, 7000, inland);
+    const hillAmpE = (260 * s1 * mg.inlandE + 480 * mg.foothillE) * macro.hilly + (90 + 260 * smooth(-1000, 7000, inland) + 480 * macro.foothill) * mg.hillyE;
+    const hillAmpN = (260 * s1 * mg.inlandN + 480 * mg.foothillN) * macro.hilly + (90 + 260 * smooth(-1000, 7000, inland) + 480 * macro.foothill) * mg.hillyN;
+    const biasD = 0.55 * smoothD(-2000, 5000, inland);
+    const rb = rolling.v + bias;
+    const mv = uplift > 0 ? 3100 * massif.v : 0;
+    cE += baseD * mg.inlandE + hillAmpE * rb + hillAmp * biasD * mg.inlandE + mv * mg.upliftE;
+    cN += baseD * mg.inlandN + hillAmpN * rb + hillAmp * biasD * mg.inlandN + mv * mg.upliftN;
+  }
   const cut = eroded ? erosion : null;
   if (cut) {
     if (detail) sampleErosionGrad(cut, north, east, erosionAt, erosionGrad);
@@ -422,17 +477,17 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     calm = 1 - lakeW;
     const keep = gullyKeep * calm;
     // The eroded ground's gradient: the coarse terrain's with the cut's (erosion.ts).
-    let bE = gE;
-    let bN = gN;
+    let bE = cE;
+    let bN = cN;
     if (cut) {
-      erosionCutGrad(erosionAt, erosionGrad, coarse, gE, gN, cutGrad);
+      erosionCutGrad(erosionAt, erosionGrad, coarse, cE, cN, cutGrad);
       bE += cutGrad.dx;
       bN += cutGrad.dy;
     }
     fall = Math.sqrt(bE * bE + bN * bN);
     gullyW = keep;
     if (keep > 0) {
-      const g = erode(east, north, bE, bN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES, (GULLY_FALL * fall) / (0.13 * amplitude + 1e-9));
+      const g = erode(east, north, bE, bN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES, softMin(GULLY_FALL * fall, (GULLY_FALL * fall * fall) / GULLY_BEND) / (0.13 * amplitude + 1e-9));
       relief += amplitude * 0.13 * g * keep;
       fineGully = amplitude * 0.13 * gullyFine * keep;
     }
