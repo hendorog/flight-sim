@@ -47,6 +47,7 @@ import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures
 import { OPEN_RANK } from './vegetation/placement';
 import { generatedAirfields, type Airfield } from '../airfields';
 import { AIRFIELD_COUNT } from './airfieldSiting';
+import { RILL_FINISH_GLSL, RILL_HEAD_GLSL, RILL_SAMPLE_GLSL, RILL_UNIFORMS, rillSplatGlsl, rillsEnabled, rillsOn, rillText } from './rillShader';
 
 export const MAX_LEVELS = 16;
 /**
@@ -453,7 +454,7 @@ varying float vCoverUp;
 // Signed distance from the river centreline and the channel half-width there, m (tileBuilder.ts).
 varying vec2 vRiver;
 ${flowText(`// The nearest channel's steepness, 0..1 (tileBuilder.ts flow; bedrock.ts).\nvarying float vFlow;\n${BEDROCK_GLSL}`)}${presentText('varying float vPlantation;\n')}${hashGlsl()}
-${ROT_GLSL}${flowText(ROCK_EDGE_GLSL)}
+${ROT_GLSL}${flowText(ROCK_EDGE_GLSL)}${rillText(RILL_HEAD_GLSL)}
 ${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}${presentText(FIELD_EDGE_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
@@ -697,7 +698,7 @@ vec4 sA = (nA - 0.5) * 2.5;
 vec4 sB = (nB - 0.5) * 2.5;
 vec4 sC = (nC - 0.5) * 2.5;
 vec4 sD = (nD - 0.5) * 2.5;
-
+${rillText(RILL_SAMPLE_GLSL)}
 #if NUM_DIR_LIGHTS > 0
 vec3 tSunW = normalize((vec4(directionalLights[0].direction, 0.0) * viewMatrix).xyz);
 #else
@@ -1329,7 +1330,7 @@ if (tRock > 0.001) {
   acc.height = mix(acc.height, r.height, rw);
   tFoliageW *= 1.0 - rw;
 }
-`)}${E(VOLCANO_CRATER)}if (snowW > 0.001) {
+`)}${rillText(rillSplatGlsl(P, LAYER.gravel, isPresent()))}${E(VOLCANO_CRATER)}if (snowW > 0.001) {
   Mat s = layerTop(${LAYER.snow}, tXZ, tDist);
   // Snow fills hollows first: height-aware blend against whatever lies beneath.
   float w = clamp((snowW * 1.6 - 0.3) + (0.5 - acc.height) * 0.6, 0.0, 1.0);
@@ -1362,7 +1363,7 @@ diffuseColor.rgb = vec3(tBio.x, tBio.y, snowW) * 0.3;
 diffuseColor.rgb = canopyLayer(tXZ, nC.b).albedo;
 #endif
 float tRough = clamp(acc.rough, 0.3, 1.0);
-vec3 tNormalW = normalize(tN + vec3(acc.slope.x, 0.0, acc.slope.y) * 0.35);
+${rillText(RILL_FINISH_GLSL)}vec3 tNormalW = normalize(tN + vec3(acc.slope.x, 0.0, acc.slope.y) * 0.35);
 #if TERRAIN_DEBUG == 4
 // Unlit albedo (x4), written as emissive in the output patch below.
 #endif
@@ -1503,6 +1504,8 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   if (!isPresent() && V) Object.assign(uniforms, { uVolcano: { value: new THREE.Vector4(V.east, V.north, V.baseRadius, V.craterRadius) } });
   // Increment 2: the era's per-frame uniforms (eraUniforms.ts), shared by reference.
   if (!isPresent()) Object.assign(uniforms, ERA_UNIFORMS);
+  // A seeded world's hillside rills (rillShader.ts; RillSystem.ts fills them), shared by reference.
+  if (rillsOn()) Object.assign(uniforms, RILL_UNIFORMS);
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -1525,7 +1528,7 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
       // Debug view 4: unlit albedo, scaled to be visible under the scene's exposure.
       .replace('#include <opaque_fragment>', `#if TERRAIN_DEBUG == 4\noutgoingLight = diffuseColor.rgb * 4000.0;\n#endif\n${lava}#include <opaque_fragment>`);
   };
-  const suffix = `${eraKeySuffix()}${worldSeed() === 0 ? '' : `-s${worldSeed()}`}`;
+  const suffix = `${eraKeySuffix()}${worldSeed() === 0 ? '' : `-s${worldSeed()}`}${hydrology.queryFlow && !rillsEnabled() ? '-norill' : ''}`;
   mat.customProgramCacheKey = () => `terrain-v5-${mat.defines?.TERRAIN_DETAIL}-${mat.defines?.TERRAIN_DEBUG}${suffix}`;
   return mat;
 }

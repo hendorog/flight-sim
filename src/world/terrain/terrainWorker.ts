@@ -9,9 +9,10 @@ import { setEra } from '../era/eraState';
 import type { EraId } from '../era/types';
 import { buildTreeCell, type TreeCellData, type TreeCellRequest } from './vegetation/placement';
 import { buildBoulderCell, type BoulderCellData, type BoulderCellRequest } from './vegetation/boulders';
+import { buildRillPatch, type RillPatchData, type RillPatchRequest } from './rills';
 
-export type WorkerJob = { kind: 'tile'; req: TileRequest } | { kind: 'trees'; req: TreeCellRequest } | { kind: 'boulders'; req: BoulderCellRequest };
-export type WorkerResult = TileData | TreeCellData | BoulderCellData;
+export type WorkerJob = { kind: 'tile'; req: TileRequest } | { kind: 'trees'; req: TreeCellRequest } | { kind: 'boulders'; req: BoulderCellRequest } | { kind: 'rills'; req: RillPatchRequest };
+export type WorkerResult = TileData | TreeCellData | BoulderCellData | RillPatchData;
 
 function transferables(r: WorkerResult): Transferable[] {
   if ('positions' in r) {
@@ -21,6 +22,7 @@ function transferables(r: WorkerResult): Transferable[] {
     return t;
   }
   if ('boulders' in r) return [r.boulders.buffer];
+  if ('texels' in r) return r.texels ? [r.texels.buffer] : [];
   return [r.instances.buffer, r.order.buffer, r.bucketStart.buffer, r.walls.buffer];
 }
 
@@ -41,6 +43,6 @@ self.onmessage = (e: MessageEvent<{ id: number; job: WorkerJob } | WorkerSetup>)
     return;
   }
   const { id, job } = e.data;
-  const result = job.kind === 'tile' ? buildTile(job.req) : job.kind === 'boulders' ? buildBoulderCell(job.req) : buildTreeCell(job.req);
+  const result = job.kind === 'tile' ? buildTile(job.req) : job.kind === 'boulders' ? buildBoulderCell(job.req) : job.kind === 'rills' ? buildRillPatch(job.req) : buildTreeCell(job.req);
   (self as unknown as Worker).postMessage({ id, result }, transferables(result));
 };
