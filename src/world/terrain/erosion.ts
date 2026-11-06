@@ -394,19 +394,16 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'surface' | 'lowered' | 
 export function erosionCutGrad(s: ErosionSample, g: ErosionGrad, coarse: number, cE: number, cN: number, out: { dx: number; dy: number }): void {
   let gE = g.dE;
   let gN = g.dN;
-  // (Where the eroded surface's cut comes up to nothing, erosionCutAt clamps it at 0: a kink in the ground. Its
-  // gradient fades out over the last CUT_FADE m instead of stepping, so what is oriented by it does not jump there.)
+  // (Where the eroded surface's cut comes up to nothing, erosionCutAt rounds it off to 0 over CUT_ROUND m: the
+  // derivative of that rounding.)
   let fade = 1;
   if (s.w > 0) {
     const cut = s.w * (s.t - coarse) + (1 - s.w) * s.d;
-    if (cut >= 0) {
+    if (cut >= CUT_ROUND) {
       out.dx = out.dy = 0;
       return;
     }
-    if (cut > -CUT_FADE) {
-      const u = -cut / CUT_FADE;
-      fade = u * u * (3 - 2 * u);
-    }
+    if (cut > -CUT_ROUND) fade = (CUT_ROUND - cut) / (2 * CUT_ROUND);
     // w = smoothstep(REPLACE, -d) times the edge fade: dw/dd from the first.
     const depth = -s.d;
     const u = (depth - REPLACE[0]) / (REPLACE[1] - REPLACE[0]);
@@ -419,8 +416,19 @@ export function erosionCutGrad(s: ErosionSample, g: ErosionGrad, coarse: number,
   out.dx = gE * s.keep * fade;
   out.dy = gN * s.keep * fade;
 }
-/** See erosionCutGrad, m. */
-const CUT_FADE = 5;
+/**
+ * Where the eroded surface's cut comes up to nothing (the surface stands over the natural ground) it is 0, rounded off
+ * over this much either side (C1: a kink there would crease the ground and turn the gullies oriented by it), m. The
+ * rounding lowers the ground by at most a quarter of it.
+ */
+const CUT_ROUND = 5;
+/** min(0, x) rounded off over |x| < CUT_ROUND (never above it). */
+function roundMin0(x: number): number {
+  if (x <= -CUT_ROUND) return x;
+  if (x >= CUT_ROUND) return 0;
+  const u = CUT_ROUND - x;
+  return -(u * u) / (4 * CUT_ROUND);
+}
 
 /** Value and gradient (cell units, into `cubic`) of the bicubic interpolation of `v` at (fy, fx) cells, inside the
  * lattice: the uniform B-spline (`approx`) or Catmull-Rom. */
@@ -498,7 +506,7 @@ function cubicGrad(v: Float32Array, n: number, fy: number, fx: number, approx: b
 
 /** The cut at the sampled point (sampleErosion) where the ground without its gullies stands at `coarse`. */
 export function erosionCutAt(s: ErosionSample, coarse: number): number {
-  const cut = s.w > 0 ? Math.min(0, s.w * (s.t - coarse) + (1 - s.w) * s.d) : s.d;
+  const cut = s.w > 0 ? roundMin0(s.w * (s.t - coarse) + (1 - s.w) * s.d) : s.d;
   return cut * s.keep;
 }
 
