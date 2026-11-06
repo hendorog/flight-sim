@@ -242,7 +242,7 @@ let gully0 = 0;
 let gully0Im = 0;
 /** What the last seeded detail sample's gullies were (probes: the octave sum, the first octave's place across its
  * stripes, the eroded ground's slope and the trough and spur depths, m). */
-export const gullyProbe = { g: 0, c0: 0, A0: 0, fall: 0, kCap: 0, kFull: 0 };
+export const gullyProbe = { g: 0, c0: 0, A0: 0, fall: 0, kCap: 0, kFull: 0, sr: 0, up: 0, gate: 0 };
 /** A smooth lower bound of two non-negative numbers: their minimum, rounded off (to 0.92 of it where they are equal). */
 function softMin(a: number, b: number): number {
   if (b <= 0 || a <= 0) return 0;
@@ -286,12 +286,21 @@ const GULLY_LEAST = 0.05;
 const SPUR_ROUND = 0.2;
 /** The finer octaves give way to the smooth spur over this share of the envelope. */
 const SPUR_SMOOTH = 0.3;
-/** The spurs stand up only where the first octave is clearly striped (envelope from the first to the second): where it
- * is not, its spur half is no spur but a shallow fold the finer octaves' water crosses. */
-const SPUR_COHERENT = [0.4, 0.8];
+/** The spurs stand up as far as the first octave is striped (its envelope from the first to the second): where it is not,
+ * its spur half is no spur but a shallow fold the finer octaves' water crosses. (A gentle ramp: the envelope itself jumps
+ * where the stripes turn quickly, see SPUR_MAX, and a steep one stood spurs up and down in a few metres.) */
+const SPUR_COHERENT = [0, 0.9];
 /** ... and where the eroded ground falls (slope from the first to the second): on a flat (a saddle, a valley floor, a
  * summit plateau) the troughs cannot fall and spurs would wall them in. */
 const SPUR_FALL = [0.02, 0.08];
+/** The spur's rise over the trough depth at most SPUR_MAX m plus SPUR_MAX_K times the trough depth. The first octave's
+ * stripes turn with the eroded ground's fall line, and on gentle ground (crests, the finer macro octaves' bends) that
+ * line turns a degree or more per metre; the stripes, 1.7 km apart and pinned to kernels up to 2 km away, then sweep
+ * across the point, and a rise of a few hundred metres stood up as a fluted wall (seed 42 -43172,-6564). Bounded so, a
+ * sweep makes a bank of tens of metres at most; on steep ground (deep troughs) the spurs keep more. (Turning the first
+ * octave by a smoother fall line instead was tried: more walls and more hollows on the gully floors.) */
+const SPUR_MAX = 30;
+const SPUR_MAX_K = 0.5;
 /** The small-scale relief by the slope too: its knobs (`rough`, m) at most SMALL_FALL and its ledges (`rugged`) at most
  * RUGGED_FALL times the eroded ground's slope (they would bead a gentle gully floor with hollows), and on ground
  * gentler than 2 FLOOR_SLOPE fading into the gully troughs (erode's sum from FLOOR_FADE[1] down to FLOOR_FADE[0]),
@@ -548,20 +557,24 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
       erode(east, north, bE, bN, small ? GULLY_OCTAVES : STREAM_GULLY_OCTAVES, Infinity, kCap / (str + 1e-9), true);
       const A0 = Math.sqrt(gully0 * gully0 + gully0Im * gully0Im);
       const gate = smooth(SPUR_COHERENT[0], SPUR_COHERENT[1], A0) * smooth(SPUR_FALL[0], SPUR_FALL[1], fall);
+      const kSpur = Math.min(kFull - kCap, SPUR_MAX + SPUR_MAX_K * kCap);
       // How far the point stands up the first octave's spur (0 in the trough half of its stripes), and the spur's rise.
       const w = SPUR_ROUND * A0 + 1e-6;
       const up = gully0 <= 0 ? 0 : gully0 < w ? (gully0 * gully0) / (2 * w) : gully0 - w / 2;
       const spur = gully0 <= 0 ? 0 : smooth(0, SPUR_SMOOTH * A0 + 1e-6, gully0) * gate;
       // The finer octaves at the troughs' depth, and on a spur only as far as its rise is the troughs' (steep ground).
-      const fineK = kCap * (1 - (spur * (kFull - kCap)) / (kFull + 1e-9));
+      const fineK = kCap * (1 - (spur * kSpur) / (kCap + kSpur + 1e-9));
       const g0 = 0.5 * gully0;
-      relief += kCap * g0 + fineK * (gullySum - g0) + (kFull - kCap) * up * gate;
+      relief += kCap * g0 + fineK * (gullySum - g0) + kSpur * up * gate;
       fineGully = fineK * (gullySum - gullyCoarse);
       gullyProbe.g = gullySum;
       gullyProbe.c0 = gully0 / (A0 + 1e-9);
       gullyProbe.A0 = A0;
       gullyProbe.kCap = kCap;
       gullyProbe.kFull = kFull;
+      gullyProbe.sr = sr;
+      gullyProbe.up = up;
+      gullyProbe.gate = gate;
     }
   }
   let h = base + relief;
