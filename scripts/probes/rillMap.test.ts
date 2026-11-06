@@ -22,6 +22,8 @@ it('rill map', () => {
   const dir = env.RMAP_DIR ?? 'out/b/maps';
   const tag = env.RMAP_TAG ?? 'b';
   const draw = env.RMAP_DRAW !== '0';
+  // (Widths drawn this many times over, in red: to see the network's hierarchy on a coarse map.)
+  const wScale = Number(env.RMAP_WSCALE ?? 1);
   fs.mkdirSync(dir, { recursive: true });
   if (env.RMAP_CONVERGE) RILL_TUNE.converge = Number(env.RMAP_CONVERGE);
   if (env.RMAP_NOISE) RILL_TUNE.noise = Number(env.RMAP_NOISE);
@@ -112,7 +114,7 @@ it('rill map', () => {
       for (let y = Math.floor(fy - rr - 1); y <= Math.ceil(fy + rr + 1); y++) for (let x = Math.floor(fx - rr - 1); x <= Math.ceil(fx + rr + 1); x++) {
         if (x < 0 || y < 0 || x >= n || y >= n) continue;
         const d = Math.hypot(x + 0.5 - fx, y + 0.5 - fy);
-        const cov = Math.min(1, Math.max(0, rr + 0.5 - d)) * a;
+        const cov = Math.min(1, Math.max(0, rr + 0.5 - d)) * a * Math.min(1, (2 * r) / px);
         if (cov <= 0) continue;
         const o = (y * n + x) * 3;
         for (let k = 0; k < 3; k++) img[o + k] = img[o + k] * (1 - cov) + c[k] * cov;
@@ -125,7 +127,7 @@ it('rill map', () => {
         const t = k / steps;
         const sz = sg.s0 + (sg.s1 - sg.s0) * t;
         const e = sg.e0 + (sg.e1 - sg.e0) * t, nn = sg.n0 + (sg.n1 - sg.n0) * t;
-        if (pass === 0) plot(e, nn, rillBedHalf(sz), [70, 55, 35], 0.75);
+        if (pass === 0) plot(e, nn, rillBedHalf(sz) * wScale, wScale > 1 ? [200, 30, 20] : [70, 55, 35], wScale > 1 ? 1 : 0.75);
         else if (rillWaterHalf(sz) > 0) plot(e, nn, Math.max(rillWaterHalf(sz), px * 0.3), [20, 70, 230], 1);
       }
     }

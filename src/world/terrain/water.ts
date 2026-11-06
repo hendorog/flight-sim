@@ -541,32 +541,46 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   float fPitchF = fPitchS * mix(0.5, 1.0, fUnitI) / max(fUnitI, 1e-3);
   float fCoverFar = max(mix(fReach, mix(0.03 * fPatch, min(fPitchF, 0.62 * 1.1), fPwFar), fOn) * (1.0 - 0.8 * fRockP * fNearR), vFlow.z);
   float fCover = max(mix(fReach, fPitchC, fOn) * (1.0 - 0.8 * fRockP * fNearR), vFlow.z);
-  // The pattern rides downstream at the water's speed: two phases 2 s long, each restarting (at a new offset) while
-  // the other carries it, so a change of speed along the reach never shears it.
-  float fPh0 = fract(uTime * 0.5);
-  float fPh1 = fract(uTime * 0.5 + 0.5);
-  float fB = abs(2.0 * fPh0 - 1.0);
+  // Where the water runs white is fixed in the bed: the rocks, steps and bars that break it do not move, so every field
+  // that places the white (and the streaks and wakes off the rocks) is a static pattern in the channel's coordinates.
   // Across and along the channel, m, skewed so the tiles' repeats across a wide river do not line up.
   vec2 fQ = vec2(vRiverInfo.x + 0.37 * vRiverInfo.y, vRiverInfo.y);
-  vec2 fO0 = fract(floor(uTime * 0.5) * vec2(0.37, 0.61));
-  vec2 fO1 = fract(floor(uTime * 0.5 + 0.5) * vec2(0.53, 0.29)) + 0.5;
   // Foam patches drawn out along the flow (a tile 23 m across, 61 m along) and finer streaks (a tile 7 m by 19 m).
   vec2 fS = vec2(1.0 / 23.0, 1.0 / 61.0);
-  vec4 fA = mix(texture(tNoise, (fQ - vec2(0.0, fV * fPh0 * 2.0)) * fS + fO0), texture(tNoise, (fQ - vec2(0.0, fV * fPh1 * 2.0)) * fS + fO1), fB);
-  vec4 fC = mix(texture(tNoise, (fQ - vec2(0.0, fV * fPh0 * 2.0)) * fS * 3.2 + fO0.yx), texture(tNoise, (fQ - vec2(0.0, fV * fPh1 * 2.0)) * fS * 3.2 + fO1.yx), fB);
-  // (Cross-fading two fields halves their variance midway: scale it back.)
-  float fNorm = inversesqrt(fB * fB + (1.0 - fB) * (1.0 - fB));
-  float fN = ((fA.r - 0.5) * 0.65 + (fC.g - 0.5) * 0.45) * fNorm;
+  vec4 fA = texture(tNoise, fQ * fS + vec2(0.29, 0.53));
+  vec4 fC = texture(tNoise, fQ * fS * 3.2 + vec2(0.61, 0.37));
+  float fN = (fA.r - 0.5) * 0.65 + (fC.g - 0.5) * 0.45;
   // A stream's pitch is a few metres long: its white water pours down it in streaks (a tile 0.9 m across, 7 m along).
   if (fOn > 0.0) {
     vec2 fQp = vec2(vRiverInfo.x, vRiverInfo.y) * vec2(1.0 / 0.9, 1.0 / 7.0);
-    float fPf = mix(texture(tNoise, fQp - vec2(0.0, fV * fPh0 * 2.0 / 7.0) + fO0).g, texture(tNoise, fQp - vec2(0.0, fV * fPh1 * 2.0 / 7.0) + fO1).g, fB);
+    float fPf = texture(tNoise, fQp + vec2(0.37, 0.61)).g;
     // (Broken up by clots of foam 2.5 m by 4.5 m, so the streaks are not combed even.)
     vec2 fQc = vec2(vRiverInfo.x, vRiverInfo.y) * vec2(1.0 / 2.5, 1.0 / 4.5);
-    float fPc = mix(texture(tNoise, fQc - vec2(0.0, fV * fPh0 * 2.0 / 4.5) + fO1).a, texture(tNoise, fQc - vec2(0.0, fV * fPh1 * 2.0 / 4.5) + fO0).a, fB);
+    float fPc = texture(tNoise, fQc + vec2(0.53, 0.79)).a;
     fPf = 0.5 + 0.6 * (fPf - 0.5) + 0.65 * (fPc - 0.5);
-    fN = mix(fN, 0.6 * (fPf - 0.5) * fNorm + 0.5 * fN, fOn);
+    fN = mix(fN, 0.6 * (fPf - 0.5) + 0.5 * fN, fOn);
   }
+  // Only near does the white move: a fine field (a tile 0.8 m across, 2.5 m along) rides the current at the water's
+  // speed, tearing and flecking the white's edges, flickering on the crests and rippling the fast water between, gone
+  // by a footprint of a quarter metre (a few hundred metres off from low level) so that from higher nothing slides.
+  // Two phases 2 s long, each restarting (at a new offset) while the other carries it, so a change of speed along the
+  // reach never shears it.
+  float fNearM = 1.0 - smoothstep(0.06, 0.25, footprint);
+  vec2 fQm = vec2(vRiverInfo.x / 0.8, vRiverInfo.y / 2.5);
+  vec2 fQmX = dFdx(fQm);
+  vec2 fQmY = dFdy(fQm);
+  vec4 fM = vec4(0.5);
+  if (fNearM > 0.0) {
+    float fPh0 = fract(uTime * 0.5);
+    float fPh1 = fract(uTime * 0.5 + 0.5);
+    float fB = abs(2.0 * fPh0 - 1.0);
+    vec2 fO0 = fract(floor(uTime * 0.5) * vec2(0.37, 0.61));
+    vec2 fO1 = fract(floor(uTime * 0.5 + 0.5) * vec2(0.53, 0.29)) + 0.5;
+    fM = mix(textureGrad(tNoise, fQm - vec2(0.0, fV * fPh0 * 0.8) + fO0, fQmX, fQmY), textureGrad(tNoise, fQm - vec2(0.0, fV * fPh1 * 0.8) + fO1, fQmX, fQmY), fB);
+    // (Cross-fading two fields halves their variance midway: scale it back.)
+    fM = 0.5 + (fM - 0.5) * inversesqrt(fB * fB + (1.0 - fB) * (1.0 - fB));
+  }
+  fN += fNearM * 0.35 * (fM.r - 0.5);
   // Standing waves on rapids: crests fixed in place across the current, their spacing the wavelength whose speed is
   // the water's (2 pi v^2 / g), bent by a fixed noise; white flickering on them as the foam passes. (None in a pool.)
   float fLam = clamp(0.64 * fV * fV, 1.5, 9.0);
@@ -576,7 +590,7 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   float fMid = 1.0 - smoothstep(0.3, 1.0, abs(vRiverInfo.x) / fW);
   // (fN is near normal with a deviation of about 0.1: this threshold leaves about fCover of it above.)
   float fThr = 0.34 * (0.5 - fCover);
-  float fWhite = smoothstep(fThr - 0.04, fThr + 0.04, fN + 0.12 * fCrest * fRapids * fMid);
+  float fWhite = smoothstep(fThr - 0.04, fThr + 0.04, fN + 0.12 * fCrest * fRapids * fMid * mix(1.0, 0.3 + 1.4 * fM.g, fNearM));
   // (None at all where the reach turns placid, so the edge of this code never shows; all of it at a full fall weight.)
   fWhite *= max(smoothstep(0.0, 0.2, fRun), max(vFlow.z, fPw));
   fWhite = max(fWhite, step(0.999, fCover));
@@ -596,14 +610,14 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
     int fK0 = int(floor(fSa / CH_ALONG));
     int fJ0 = int(floor(fXa / CH_ACROSS + 0.5));
     // Foam streaks of the wakes: a finer field than the one above (tiles 2.7 m across, 9 m along; on a stream's units
-    // 1.2 m across: thin streaks off its rocks), riding the current.
+    // 1.2 m across: thin streaks off its rocks), fixed behind them.
     vec2 fQf = vec2(fXa / mix(2.7, 1.2, fOn), fSa / 9.0);
-    fSf = mix(texture(tNoise, fQf - vec2(0.0, fV * fPh0 * 2.0 / 9.0) + fO0.yx).r, texture(tNoise, fQf - vec2(0.0, fV * fPh1 * 2.0 / 9.0) + fO1.yx).r, fB);
-    fStreakAll = 0.5 + (fSf - 0.5) * fNorm + 0.5 * fN;
+    fSf = texture(tNoise, fQf + vec2(0.71, 0.13)).r;
+    fStreakAll = 0.5 + (fSf - 0.5) + 0.5 * fN;
     float fStreak = smoothstep(0.42, 0.58, fStreakAll);
-    // (And a finer field still, the rocks' own scale: 0.45 m across, 1.6 m along.)
+    // (And a finer field still, the rocks' own scale: 0.45 m across, 1.6 m along; near, torn by the moving field.)
     vec2 fQr = vec2(fXa / 0.45, fSa / 1.6);
-    float fTear = mix(texture(tNoise, fQr - vec2(0.0, fV * fPh0 * 2.0 / 1.6) + fO1).b, texture(tNoise, fQr - vec2(0.0, fV * fPh1 * 2.0 / 1.6) + fO0).b, fB);
+    float fTear = mix(texture(tNoise, fQr + vec2(0.17, 0.89)).b, fM.a, fNearM);
     for (int dk = -3; dk <= 1; dk++) {
       for (int dj = -1; dj <= 1; dj++) {
         vec4 st = chStone(fK0 + dk, fJ0 + dj, fSt, fGrain, fW, fOn, vPitch.x, fSa, fDSig);
@@ -670,7 +684,8 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   // surface, and no mirror where it is white; a pool's surface smooth, mirroring the banks and the sky.
   vec2 fT = normalize(vRiverT);
   vec2 fRgt = vec2(-fT.y, fT.x);
-  vec2 fSl = ((fA.g - 0.5) * fT + (fC.b - 0.5) * fRgt) * (1.6 * fRun * fNorm * (1.0 - 0.75 * fPool)) / (1.0 + footprint);
+  vec2 fRip = mix(vec2(fA.g, fC.b), fM.ba, fNearM) - 0.5;
+  vec2 fSl = (fRip.x * fT + fRip.y * fRgt) * (1.6 * fRun * (1.0 - 0.75 * fPool)) / (1.0 + footprint);
   wNormal = normalize(wNormal + vec3(-fSl.x, 0.0, -fSl.y));
   wRough = mix(mix(mix(mix(wRough, 0.3, fRun), 0.1, fPool), 0.12, fGlass * (1.0 - fWhite)), 0.75, fWhite);
   // (Fast broken water between the stones mirrors less of the sky.)

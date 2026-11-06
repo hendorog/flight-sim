@@ -65,9 +65,10 @@ vec4 rillNear(vec2 xz) {
   float d = max(length(v), t.z * ${f(RILL_RANGE)} - ${f(RILL_TEXEL * 0.73)});
   return vec4(d, t.w, v.x, -v.y);
 }
-// Half-widths of the damp bed and of the water, m, for a size code (rills.ts rillBedHalf, rillWaterHalf).
-float rillBedHalf(float s) { return min(1.0, s * 10.0) * (0.7 + 1.8 * s); }
-float rillWaterHalf(float s) { return s <= ${f(WET0)} ? 0.0 : min(1.0, (s - ${f(WET0)}) * 8.0) * (0.2 + 0.8 * (s - ${f(WET0)}) / ${f(1 - WET0)}); }
+// Half-widths of the channel and of the water, m, for a size code (rills.ts rillBedHalf, rillWaterHalf): growing
+// a little faster than the root of the catchment, fivefold from a thread at the head to a hillside's trunk (s 0.6).
+float rillBedHalf(float s) { return 0.35 * exp(2.6 * s) * smoothstep(0.0, 0.08, s); }
+float rillWaterHalf(float s) { return s <= ${f(WET0)} ? 0.0 : rillBedHalf(s) * 0.55 * min(1.0, (s - ${f(WET0)}) / 0.12); }
 // Cover of a stripe of half-width hw at distance d, seen through a pixel fp across: a stripe thinner than the pixel
 // is spread over it at its mean cover.
 float rillCover(float d, float hw, float fp) {
@@ -98,24 +99,32 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
   if (rl.y > 0.001) {
     tRillSize = rl.y;
     tRillSteep = smoothstep(0.925, 0.845, tUp) * smoothstep(0.15, 0.35, rl.y);
-    // Ragged edges and a width that comes and goes along the line (a fine noise, 9 m), not ruled bands; the margin
-    // thins out into the cover around it rather than ending at an edge.
+    // The pixel's footprint across the line (a line running toward the viewer is many pixels wide where one running
+    // across the view is foreshortened into one); right on the line, where the vector to it vanishes, the whole one.
+    float vl = length(rl.zw);
+    vec2 an = rl.zw / max(vl, 1e-3);
+    float fpA = vl > 0.05 ? max(9.0 * (abs(dot(tRillDx, an)) + abs(dot(tRillDy, an))), 0.02) : tRillFp;
+    // Ragged edges and a width that comes and goes a little along the line (a fine noise, 9 m): far less than between
+    // a thread and the trunk it feeds, so the hierarchy reads.
     vec4 nr = textureGrad(tNoise, rot2(tXZ, 1.3) * ${f(1 / 9)}, tRillDx, tRillDy);
     float wob = nr.r - 0.5;
     // On steep ground a torrent bed: its width comes and goes over tens of metres (a slot between rock, a wider scoured
     // stretch), and turf or rock bridges it here and there, so it is no even band (an even pale band across a steep
     // slope read as a track).
     float nr2 = textureGrad(tNoise, rot2(tXZ, 0.4) * ${f(1 / 31)}, tRillDx * ${f(9 / 31)}, tRillDy * ${f(9 / 31)}).g;
-    float bh = rillBedHalf(rl.y) * (0.7 + 0.45 * nD.g + 0.35 * nr.g) * mix(1.0, 0.4 + 1.2 * nr2, tRillSteep);
-    float dr = rl.x + wob * mix(0.8, 1.2, tRillSteep) * bh;
-    tRillBed = rillCover(dr, bh, tRillFp) * fade * mix(1.0, smoothstep(0.33, 0.5, nr2 + 0.3 * (nr.b - 0.5)), 0.9 * tRillSteep);
-    float mh = (bh * 2.2 + 1.5) * (0.75 + 0.5 * nr.b);
-    tRillDamp = rillCover(rl.x + wob * 2.0, mh, tRillFp + 0.3 * mh) * fade;
-    tRillWet = rillCover(dr, rillWaterHalf(rl.y) * (0.8 + 0.4 * nr.a), tRillFp) * fade;
-    // The banks of its notch lean in toward the line (lit on one side, shaded on the other), out to twice the bed;
-    // faded as the notch narrows under a pixel.
-    float bank = smoothstep(0.15 * bh, 0.6 * bh, rl.x) * (1.0 - smoothstep(1.2 * bh, 2.2 * bh, rl.x));
-    tRillBank = rl.zw / max(rl.x, 1e-3) * bank * fade * clamp(bh / tRillFp - 0.5, 0.0, 1.0) * (0.8 + 0.8 * rl.y) * (1.0 + 0.8 * tRillSteep);
+    float bh = rillBedHalf(rl.y) * (0.8 + 0.25 * nD.g + 0.2 * nr.g) * mix(1.0, 1.6 * (0.4 + 1.2 * nr2), tRillSteep);
+    float dr = rl.x + wob * mix(0.6, 1.2, tRillSteep) * bh;
+    tRillBed = rillCover(dr, bh, fpA) * fade * mix(1.0, smoothstep(0.33, 0.5, nr2 + 0.3 * (nr.b - 0.5)), 0.9 * tRillSteep);
+    // A strip of wetter, greener herbage along the line, from nothing along a thread to a few channels wide along the
+    // bigger reaches, stronger down the line; it thins out into the cover around it rather than ending at an edge.
+    float mh = (bh * (2.2 + 2.0 * rl.y) + 0.8) * (0.75 + 0.5 * nr.b);
+    tRillDamp = rillCover(rl.x + wob * 1.5 * bh, mh, fpA + 0.3 * mh) * fade * smoothstep(0.0, 0.04, rl.y) * mix(0.6, 1.0, smoothstep(0.0, 0.5, rl.y));
+    tRillWet = rillCover(dr, rillWaterHalf(rl.y) * (0.8 + 0.4 * nr.a), fpA) * fade;
+    // The channel is cut into the slope: its banks lean in toward the line (one lit, one shaded), out to a notch wider
+    // and deeper down the line; faded as the notch narrows under a pixel.
+    float nh = bh * 2.5 + 3.0 * rl.y;
+    float bank = smoothstep(0.3 * bh, 0.9 * bh, rl.x) * (1.0 - smoothstep(0.6 * nh, nh, rl.x));
+    tRillBank = an * bank * fade * clamp(nh / fpA - 0.5, 0.0, 1.0) * (0.8 + 1.6 * rl.y) * (1.0 + 0.6 * tRillSteep);
   }
 }
 `;
@@ -128,7 +137,7 @@ export function rillSplatGlsl(P: { riverBed: string; scree: string; bankRoughA: 
   return /* glsl */ `
 // Not under the canopy, nor in the fields (ploughed and drained: their ditches are not drawn), nor over a road and its
 // verges (a culvert takes the water under it).
-if (tRillDamp > 0.001) tRillOpen = (1.0 - tFoliageW) * (1.0 - farmWeight)${roads ? ` * smoothstep(tRoad.y + 1.0, tRoad.y + 4.0, tRoad.x)` : ''};
+if (max(max(tRillDamp, tRillBed), abs(tRillBank.x) + abs(tRillBank.y)) > 0.001) tRillOpen = (1.0 - tFoliageW) * (1.0 - farmWeight)${roads ? ` * smoothstep(tRoad.y + 1.0, tRoad.y + 4.0, tRoad.x)` : ''};
 if (tRillOpen > 0.001) {
   float open = tRillOpen;
   float steep = smoothstep(0.92, 0.7, tUp);
@@ -137,7 +146,7 @@ if (tRillOpen > 0.001) {
   float clump = 0.65 + 0.35 * smoothstep(0.3, 0.7, nD.r + 0.4 * (nC.a - 0.5));
   vec3 lush = mix(${P.bankRoughA} * vec3(0.7, 0.85, 0.5), acc.albedo * vec3(0.5, 0.7, 0.35), 0.2);
   // (Thin on steep ground: a torrent bed runs between rock and scree, its herbage in patches.)
-  float dw = tRillDamp * open * clump * (1.0 - 0.85 * tRillSteep);
+  float dw = tRillDamp * open * clump * (1.0 - 0.6 * tRillSteep) * mix(0.8, 1.0, tRillSize);
   acc.albedo = mix(acc.albedo, lush, dw * 0.95);
   acc.rough = mix(acc.rough, 1.0, dw);
   // (Herbage: the low sheen of foliage, as the canopy's, not bare ground's grey one.)
@@ -161,8 +170,8 @@ if (tRillOpen > 0.001) {
       bedCavity = mix(1.0, g.cavity * mix(1.0, 0.65, tRillSteep), stones);
       bedSlope = g.slope * stones;
     }
-    // Wet toward the middle.
-    bed *= mix(1.0, 0.7, max(tRillWet, 0.4 * smoothstep(0.3, 0.8, tRillBed)));
+    // In the shade of its notch, and wet toward the middle: a dark line cut into the cover.
+    bed *= 0.62 * mix(1.0, 0.7, max(tRillWet, 0.4 * smoothstep(0.3, 0.8, tRillBed)));
     bed *= mix(1.0, 0.75, tRillSteep * smoothstep(0.3, 0.9, tRillBed));
     float w = tRillBed * open;
     acc.albedo = mix(acc.albedo, bed, w);
