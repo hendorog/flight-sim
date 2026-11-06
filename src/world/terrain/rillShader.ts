@@ -66,7 +66,7 @@ vec4 rillNear(vec2 xz) {
   return vec4(d, t.w, v.x, -v.y);
 }
 // Half-widths of the damp bed and of the water, m, for a size code (rills.ts rillBedHalf, rillWaterHalf).
-float rillBedHalf(float s) { return min(1.0, s * 10.0) * (0.9 + 2.6 * s); }
+float rillBedHalf(float s) { return min(1.0, s * 10.0) * (0.7 + 1.8 * s); }
 float rillWaterHalf(float s) { return s <= ${f(WET0)} ? 0.0 : min(1.0, (s - ${f(WET0)}) * 8.0) * (0.2 + 0.8 * (s - ${f(WET0)}) / ${f(1 - WET0)}); }
 // Cover of a stripe of half-width hw at distance d, seen through a pixel fp across: a stripe thinner than the pixel
 // is spread over it at its mean cover.
@@ -84,6 +84,7 @@ float tRillBed = 0.0;
 float tRillDamp = 0.0;
 float tRillWet = 0.0;
 float tRillSize = 0.0;
+float tRillOpen = 0.0;
 vec2 tRillBank = vec2(0.0);
 if (tDist < ${f(RILL_FADE_FAR)}) {
   vec4 rl = rillNear(tXZ);
@@ -93,7 +94,7 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
     // A ragged edge (the bed's gravel and the grass at its margin), not a ruled one.
     float bh = rillBedHalf(rl.y) * (0.8 + 0.35 * nD.g);
     tRillBed = rillCover(rl.x, bh, tRillFp) * fade;
-    tRillDamp = rillCover(rl.x, bh * 2.5 + 2.0, tRillFp) * fade;
+    tRillDamp = rillCover(rl.x, bh * 2.4 + 2.0, tRillFp) * fade;
     tRillWet = rillCover(rl.x, rillWaterHalf(rl.y) * (0.85 + 0.3 * nC.b), tRillFp) * fade;
     // The banks of its notch lean in toward the line (lit on one side, shaded on the other), out to twice the bed;
     // faded as the notch narrows under a pixel.
@@ -111,28 +112,38 @@ export function rillSplatGlsl(P: { riverBed: string; scree: string; bankRoughA: 
   return /* glsl */ `
 if (tRillDamp > 0.001) {
   float open = 1.0 - tFoliageW;
+  tRillOpen = open;
   float steep = smoothstep(0.92, 0.7, tUp);
-  // Damp margin: lusher, darker cover (rushes, moss) along the line.
-  acc.albedo = mix(acc.albedo, acc.albedo * vec3(0.5, 0.64, 0.42), tRillDamp * open);
+  // Damp margin: lush cover (rushes, moss, tall herbs), a deeper green rather than darker (dark ground only shows the
+  // sky's grey sheen from the air), in clumps along the line; rough.
+  float clump = 0.65 + 0.35 * smoothstep(0.3, 0.7, nD.r + 0.4 * (nC.a - 0.5));
+  vec3 lush = mix(${P.bankRoughA} * vec3(0.7, 0.85, 0.5), acc.albedo * vec3(0.5, 0.7, 0.35), 0.2);
+  float dw = tRillDamp * open * clump;
+  acc.albedo = mix(acc.albedo, lush, dw * 0.95);
+  acc.rough = mix(acc.rough, 1.0, dw);
+  // (Herbage: the low sheen of foliage, as the canopy's, not bare ground's grey one.)
+  tFoliageW = max(tFoliageW, 0.8 * dw);
   acc.slope += tRillBank * 1.6 * open;
   if (tRillBed > 0.001) {
     Mat g = layerTop(${gravelLayer}, tXZ, tDist);
     // Stony where the ground is steep (and more so down the bigger ones), else dark wet soil under rushes.
     float stones = clamp(steep * (0.85 + 0.3 * tRillSize + 0.6 * (nD.b - 0.5)), 0.0, 1.0);
-    vec3 soil = mix(${P.bankRoughA} * 0.7, ${P.mud} * 0.8, 0.3 * smoothstep(0.35, 0.7, nC.r + 0.3 * nD.a));
+    vec3 soil = mix(${P.bankRoughA} * 0.85, ${P.mud}, 0.35 * smoothstep(0.35, 0.7, nC.r + 0.3 * nD.a));
     vec3 bed = mix(soil, ${P.scree} * 0.6 * g.albedo, stones);
     // Wet toward the middle.
     bed *= mix(1.0, 0.7, max(tRillWet, 0.4 * smoothstep(0.3, 0.8, tRillBed)));
     float w = tRillBed * open;
     acc.albedo = mix(acc.albedo, bed, w);
+    tFoliageW = max(tFoliageW, 0.6 * w * (1.0 - stones));
     acc.slope = mix(acc.slope, acc.slope + g.slope * stones, w);
-    acc.rough = mix(acc.rough, mix(0.8, g.rough, stones), w);
+    acc.rough = mix(acc.rough, mix(0.95, g.rough, stones), w);
     acc.cavity = mix(acc.cavity, mix(1.0, g.cavity, stones), w);
     if (tRillWet > 0.001) {
       float ww = tRillWet * open;
       acc.albedo = mix(acc.albedo, ${P.riverBed} * 0.5, ww);
       acc.slope *= 1.0 - ww;
       acc.cavity = mix(acc.cavity, 1.0, ww);
+      tFoliageW *= 1.0 - ww;
     }
   }
 }
@@ -141,6 +152,8 @@ if (tRillDamp > 0.001) {
 
 /** After the roughness and before the normal: the water is smooth and level (it mirrors the sky). */
 export const RILL_FINISH_GLSL = /* glsl */ `
-float tRillGloss = tRillWet * (1.0 - tFoliageW);
+// (Only where the water fills most of the pixel: a thread thinner than the pixel darkens it, it does not turn the whole
+// pixel into a mirror.)
+float tRillGloss = smoothstep(0.35, 0.9, tRillWet) * tRillOpen;
 tRough = mix(tRough, 0.08, tRillGloss);
 `;

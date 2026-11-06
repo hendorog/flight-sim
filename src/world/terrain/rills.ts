@@ -147,7 +147,7 @@ export function rillArea(size: number): number {
 /** Half-width of the damp bed (m) of a rill of a size code (the shader's twin: RILL_GLSL). Grows in from nothing over
  * the first tenth. */
 export function rillBedHalf(size: number): number {
-  return Math.min(1, size * 10) * (0.9 + 2.6 * size);
+  return Math.min(1, size * 10) * (0.7 + 1.8 * size);
 }
 /** Half-width of the water (m), 0 below RILL_WET_AREA. */
 export function rillWaterHalf(size: number): number {
