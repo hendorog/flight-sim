@@ -410,9 +410,12 @@ const FLOW_VERTEX_HEAD = (falls: boolean): string =>
 attribute vec4 aFall;
 varying vec4 vFall;
 `
-    : `// Running water: steepness 0-1, speed m/s, fall weight 0-1, the bed's grain (channelStones.ts unit).
+    : `// Running water: steepness 0-1, speed m/s, fall weight 0-1, the bed's grain (channelStones.ts unit); a stream's unit
+// coordinate and where its pitches and pools are drawn (pitchPool.ts).
 attribute vec4 aFlow;
 varying vec4 vFlow;
+attribute vec2 aPitch;
+varying vec2 vPitch;
 `;
 // Spray is a billboard about its centre (the vertex position), upright, turned to face the camera; aFall.yz is the
 // corner (-1..1) and aRiverInfo.z its size.
@@ -429,27 +432,84 @@ if (aFall.x > 1.5) {
 }
 `;
 
-/** The whitewater on a ribbon: reads vFlow, vRiverInfo, vRiverT; adjusts the body, transmittance, roughness and waves. */
+/** Global GLSL for the flow (after the stone lattices): the foam a stone makes on the water about it. */
+const FLOW_STONE_FOAM = /* glsl */ `
+// The foam about one stone st = (s, x, r, submerged) at the fragment (along fSa, across fXa; fSf the fine streak noise,
+// fStreak its threshold, fSt the steepness): a collar and a pillow round a rock standing out of the water, a glassy hump
+// and a boil below one just under it (fGlass), and a wake of foam streaks downstream of both.
+float chFoam(vec4 st, float fSa, float fXa, float fSf, float fStreak, float fSt, inout float fGlass) {
+  vec2 d = vec2(fSa - st.x, fXa - st.y) / st.z;
+  float rho = length(d);
+  float ph = fract(st.x * 0.37 + st.y * 0.71) * 6.2832;
+  float rag = 0.18 * sin(3.0 * atan(d.y, d.x) + ph) + 0.22 * (fSf - 0.5);
+  float up = 1.0 - smoothstep(-1.4, -0.2, d.x);
+  float foam;
+  if (st.w < 0.5) {
+    foam = smoothstep(0.84, 0.98, rho) * (1.0 - smoothstep(1.1 + 0.45 * up, 1.35 + 0.8 * up, rho + rag));
+  } else {
+    foam = (1.0 - smoothstep(0.35, 1.2, length(vec2(d.x - 1.1, d.y * 0.7)) + rag)) * (0.6 + 0.4 * fStreak);
+    fGlass = max(fGlass, 1.0 - smoothstep(0.6, 1.05, rho));
+  }
+  float a = d.x;
+  float wid = 0.8 + 0.3 * max(a, 0.0);
+  float lat = abs(d.y) / wid;
+  float wake = smoothstep(0.4, 1.0, a) * exp(-a / (2.5 + 3.0 * fSt)) * (1.0 - smoothstep(0.55, 1.0, lat + 0.5 * rag)) * (1.0 - smoothstep(6.0, 11.0, a * st.z));
+  float churn = 1.0 - smoothstep(1.2, 2.6, a + 0.6 * lat);
+  return max(foam, wake * mix(fStreak, 1.0, churn * 0.8));
+}
+`;
+
+/** The whitewater on a ribbon: reads vFlow, vPitch, vRiverInfo, vRiverT; adjusts the body, transmittance, roughness and waves. */
 const flowFragment = (): string => {
   const P = PALETTES[era().palette];
   return /* glsl */ `
 // Running water (water.ts 'flow').
 float wSpecCut = 0.0;
 float wTreeKeep = 1.0;
+// A stream's unit coordinate's rate along the channel (pitchPool.ts: it varies only along, so the screen derivatives'
+// ratio is exact on a ribbon triangle), for the stones' pitches. (Out here: derivatives want uniform control flow.)
+float fDsx = dFdx(vRiverInfo.y);
+float fDsy = dFdy(vRiverInfo.y);
+float fDSig = clamp((dFdx(vPitch.x) * fDsx + dFdy(vPitch.x) * fDsy) / max(fDsx * fDsx + fDsy * fDsy, 1e-6), 0.0, 0.25);
+// (How much of it a pixel spans: the pitches' edges blur no finer than that far away.)
+float fAA = min(fwidth(vPitch.x), 0.1);
 if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   float fSt = vFlow.x;
   float fW = max(vRiverInfo.z, 0.5);
   float fV = clamp(vFlow.y, 0.3, 6.0);
   float fRun = smoothstep(${FLOW_FROM.toFixed(2)}, 1.0, fSt);
+  // A stream cut into pitches and pools (pitchPool.ts; vPitch.y where it is): the white water gathers on each pitch and
+  // the plunge below it (fPw), the pool below runs dark and smooth (fPool), and the water slides glassy into the next lip
+  // (fTongue). Elsewhere (fOn 0: rivers) the white comes and goes with the reach.
+  float fOn = clamp(vPitch.y, 0.0, 1.0);
+  // The lip's line is no ruled line across: bowed and skewed (each unit its own way) and ragged, by about the width.
+  vec4 fPh = pitchPhase(vPitch.x);
+  float fXr = vRiverInfo.x / fW;
+  float fSf0 = texture(tNoise, vec2(vRiverInfo.x, vRiverInfo.y) * vec2(1.0 / 5.0, 1.0 / 11.0) + 0.17).g;
+  float fBow = fract(fPh.w * 37.13) * 6.2832;
+  float fLipBend = fW * (0.35 * sin(1.6 * fXr + fBow) + 0.5 * (fract(fPh.w * 71.7) - 0.5) * fXr + 0.25 * (texture(tNoise, vec2(vRiverInfo.x, vRiverInfo.y) * (1.0 / 13.0) + 0.61).r - 0.5));
+  fPh = pitchPhase(vPitch.x + fLipBend * fDSig);
+  float fPwRaw = fOn > 0.0 ? smoothstep(-0.04 - fAA, 0.02 + fAA, fPh.x) * (1.0 - smoothstep(fPh.y + 0.02 - fAA, fPh.y + 0.13 + fAA, fPh.x)) : 0.0;
+  // (The white in the current's line, which wanders from unit to unit; a big step's across most of the channel, a
+  // riffle's down its middle; by the banks the rocks break it.)
+  float fLine = abs(fXr - 0.5 * (fract(fPh.w * 53.9) - 0.5) * (1.0 - fPh.w));
+  fPwRaw *= 1.0 - 0.85 * smoothstep(0.2 + 0.5 * fPh.w, 0.45 + 0.55 * fPh.w, fLine + 0.15 * (fSf0 - 0.5));
+  float fPw = fPwRaw * fOn;
+  float fPool = fOn * (1.0 - fPwRaw);
+  float fTongue = fOn * smoothstep(fPh.z - 0.12, fPh.z - 0.02, fPh.x);
   // Share of the surface running white: a few streaks on a riffle, a tenth on gentle rapids, a third on steep ones,
-  // over half of a step-pool cascade; a fall's lip and foot all of it.
+  // over half of a step-pool cascade; a fall's lip and foot all of it. On a stream's units: most of a steep pitch
+  // (less of a riffle's), a few drifting streaks over its pool.
   // Patchy along a reach (a fixed field 350 m across: the bed's boulders and bars come and go).
   float fPatch = 0.55 + 0.9 * texture(tNoise, vWaterPos.xz * (1.0 / 350.0) + 0.43).g;
-  // Where the bed is strewn with stones (channelStones.ts) the white comes from them (below): the water between keeps
-  // only a little broken water of its own, near; far away, where a stone's foam is finer than a pixel, its mean.
-  float fRockP = chPresence(fSt) * ${(1 / STONE_FILL).toFixed(3)};
+  // The stones' share of the bed (channelStones.ts): clumped on a river, crowded onto a stream's pitches. Where the bed
+  // is strewn with them the white comes from them (below): the water between keeps only a little broken water of its
+  // own, near; far away, where a stone's foam is finer than a pixel, its mean.
+  float fRockP = chPresence(fSt) * ${(1 / STONE_FILL).toFixed(3)} * mix(0.6, 0.75 * (0.07 + 0.85 * fPwRaw), fOn);
   float fNearR = 1.0 - smoothstep(0.7, 1.6, footprint);
-  float fCover = max(min(0.55 * pow(fRun, 1.7) * fPatch, 0.85) * (1.0 - 0.8 * fRockP * fNearR), vFlow.z);
+  float fReach = min(0.55 * pow(fRun, 1.7) * fPatch, 0.85);
+  float fPitchC = mix(0.03 * fPatch, mix(0.3, 0.62, smoothstep(0.5, 0.85, fSt)) * (0.25 + 0.75 * smoothstep(0.3, 0.9, fPh.w)) * (0.75 + 0.35 * fPatch), fPwRaw);
+  float fCover = max(mix(fReach, fPitchC, fOn) * (1.0 - 0.8 * fRockP * fNearR), vFlow.z);
   // The pattern rides downstream at the water's speed: two phases 2 s long, each restarting (at a new offset) while
   // the other carries it, so a change of speed along the reach never shears it.
   float fPh0 = fract(uTime * 0.5);
@@ -466,27 +526,35 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   // (Cross-fading two fields halves their variance midway: scale it back.)
   float fNorm = inversesqrt(fB * fB + (1.0 - fB) * (1.0 - fB));
   float fN = ((fA.r - 0.5) * 0.65 + (fC.g - 0.5) * 0.45) * fNorm;
+  // A stream's pitch is a few metres long: its white water tears at a finer scale (a tile 2.2 m across, 5.5 m along).
+  if (fOn > 0.0) {
+    vec2 fQp = vec2(vRiverInfo.x, vRiverInfo.y) * vec2(1.0 / 2.2, 1.0 / 5.5);
+    float fPf = mix(texture(tNoise, fQp - vec2(0.0, fV * fPh0 * 2.0 / 5.5) + fO0).g, texture(tNoise, fQp - vec2(0.0, fV * fPh1 * 2.0 / 5.5) + fO1).g, fB);
+    fN = mix(fN, 0.6 * (fPf - 0.5) * fNorm + 0.5 * fN, fOn);
+  }
   // Standing waves on rapids: crests fixed in place across the current, their spacing the wavelength whose speed is
-  // the water's (2 pi v^2 / g), bent by a fixed noise; white flickering on them as the foam passes.
+  // the water's (2 pi v^2 / g), bent by a fixed noise; white flickering on them as the foam passes. (None in a pool.)
   float fLam = clamp(0.64 * fV * fV, 1.5, 9.0);
   float fBend = texture(tNoise, fQ * vec2(1.0 / 17.0, 1.0 / 53.0) + 0.21).b;
   float fCrest = pow(0.5 + 0.5 * cos(6.2832 * vRiverInfo.y / fLam + fBend * 9.0), 6.0) * smoothstep(0.35, 0.6, fBend);
-  float fRapids = smoothstep(0.42, 0.6, fSt) * (1.0 - 0.6 * smoothstep(0.8, 1.0, fSt));
+  float fRapids = smoothstep(0.42, 0.6, fSt) * (1.0 - 0.6 * smoothstep(0.8, 1.0, fSt)) * (1.0 - fPool);
   float fMid = 1.0 - smoothstep(0.3, 1.0, abs(vRiverInfo.x) / fW);
   // (fN is near normal with a deviation of about 0.1: this threshold leaves about fCover of it above.)
   float fThr = 0.34 * (0.5 - fCover);
   float fWhite = smoothstep(fThr - 0.04, fThr + 0.04, fN + 0.12 * fCrest * fRapids * fMid);
   // (None at all where the reach turns placid, so the edge of this code never shows; all of it at a full fall weight.)
-  fWhite *= max(smoothstep(0.0, 0.2, fRun), vFlow.z);
+  fWhite *= max(smoothstep(0.0, 0.2, fRun), max(vFlow.z, fPw));
   fWhite = max(fWhite, step(0.999, fCover));
-  // The stones (channelStones.ts; vegetation/boulders.ts draws their rocks): a collar of foam round each rock standing
-  // out of the water and a pillow on its upstream face; over a stone just under the surface a glassy hump and a boil
-  // breaking white below it; downstream of both a wake of foam streaks riding the current, widening and fading.
+  // (A pitch's fine tearing is lost in a pixel sooner: its mean cover from a footprint of a metre, torn white over
+  // dark water, so greyer than its thickest foam.)
+  fWhite = mix(fWhite, 0.8 * fCover, fOn * smoothstep(0.2, 1.0, footprint));
+  // The stones (channelStones.ts; vegetation/boulders.ts draws their rocks): chFoam about each, the fine lattice's
+  // and the very large blocks'.
   float fRock = 0.0;
   float fGlass = 0.0;
   float fSf = 0.5;
   float fStreakAll = 0.5;
-  if (fRockP > 0.0 && fNearR > 0.0) {
+  if (chPresence(fSt) > 0.0 && fNearR > 0.0) {
     float fGrain = ${GRAIN_TOP.toFixed(1)} * vFlow.w * vFlow.w;
     float fSa = vRiverInfo.y;
     float fXa = vRiverInfo.x;
@@ -499,35 +567,23 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
     float fStreak = smoothstep(0.42, 0.58, fStreakAll);
     for (int dk = -3; dk <= 1; dk++) {
       for (int dj = -1; dj <= 1; dj++) {
-        vec4 st = chStone(fK0 + dk, fJ0 + dj, fSt, fGrain, fW);
-        if (st.z <= 0.0) continue;
-        // (Along, across) from its centre, in radii; its own phase for the ragged edges.
-        vec2 d = vec2(fSa - st.x, fXa - st.y) / st.z;
-        float rho = length(d);
-        float ph = fract(st.x * 0.37 + st.y * 0.71) * 6.2832;
-        float rag = 0.18 * sin(3.0 * atan(d.y, d.x) + ph) + 0.22 * (fSf - 0.5);
-        float up = 1.0 - smoothstep(-1.4, -0.2, d.x);
-        float foam;
-        if (st.w < 0.5) {
-          // The collar, and the pillow heaped against its upstream face.
-          foam = smoothstep(0.84, 0.98, rho) * (1.0 - smoothstep(1.1 + 0.45 * up, 1.35 + 0.8 * up, rho + rag));
-        } else {
-          foam = (1.0 - smoothstep(0.35, 1.2, length(vec2(d.x - 1.1, d.y * 0.7)) + rag)) * (0.6 + 0.4 * fStreak);
-          fGlass = max(fGlass, 1.0 - smoothstep(0.6, 1.05, rho));
-        }
-        // The wake: churning white just behind it, then streaks fanning out downstream and fading.
-        float a = d.x;
-        float wid = 0.8 + 0.3 * max(a, 0.0);
-        float lat = abs(d.y) / wid;
-        float wake = smoothstep(0.4, 1.0, a) * exp(-a / (2.5 + 3.0 * fSt)) * (1.0 - smoothstep(0.55, 1.0, lat + 0.5 * rag)) * (1.0 - smoothstep(10.0, 16.0, a * st.z));
-        float churn = 1.0 - smoothstep(1.2, 2.6, a + 0.6 * lat);
-        fRock = max(fRock, max(foam, wake * mix(fStreak, 1.0, churn * 0.8)));
+        vec4 st = chStone(fK0 + dk, fJ0 + dj, fSt, fGrain, fW, fOn, vPitch.x, fSa, fDSig);
+        if (st.z > 0.0) fRock = max(fRock, chFoam(st, fSa, fXa, fSf, fStreak, fSt, fGlass));
+      }
+    }
+    int fBk0 = int(floor(fSa / CH_BIG_ALONG));
+    int fBj0 = int(floor(fXa / CH_BIG_ACROSS + 0.5));
+    for (int dk = -2; dk <= 0; dk++) {
+      for (int dj = -1; dj <= 1; dj++) {
+        vec4 st = chBig(fBk0 + dk, fBj0 + dj, fSt, fGrain, fW, fOn, vPitch.x, fSa, fDSig);
+        if (st.z > 0.0) fRock = max(fRock, chFoam(st, fSa, fXa, fSf, fStreak, fSt, fGlass));
       }
     }
   }
-  // Steps (channelStones.ts chStep): a line of stones across a step-pool reach that the water pours over - a dark
-  // glassy tongue just above it, a band of broken white water just below, torn along its length.
-  if (fRockP > 0.0 && fNearR > 0.0) {
+  // Steps on a river's step-pool reach (channelStones.ts chStep): a line of stones across it that the water pours over -
+  // a dark glassy tongue just above it, a band of broken white water just below, torn along its length. (A stream's
+  // units are its steps.)
+  if (fRockP > 0.0 && fNearR > 0.0 && fOn < 1.0) {
     int fK1 = int(floor(vRiverInfo.y / CH_ALONG));
     for (int dk = -1; dk <= 0; dk++) {
       float sStep = chStep(fK1 + dk, fSt);
@@ -535,40 +591,50 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
       float a = vRiverInfo.y - sStep + 0.6 * (fSf - 0.5) + 0.8 * sin(vRiverInfo.x * 0.9 + sStep);
       float band = smoothstep(-0.2, 0.3, a) * (1.0 - smoothstep(1.2, 3.2, a + 1.2 * (fSf - 0.5)));
       float torn = smoothstep(0.3, 0.55, fStreakAll);
-      fRock = max(fRock, band * mix(0.55, 1.0, torn) * smoothstep(0.95, 0.75, abs(vRiverInfo.x) / fW));
-      fGlass = max(fGlass, (1.0 - smoothstep(-1.6, -0.2, a)) * smoothstep(-2.6, -1.6, a) * 0.7);
+      fRock = max(fRock, (1.0 - fOn) * band * mix(0.55, 1.0, torn) * smoothstep(0.95, 0.75, abs(vRiverInfo.x) / fW));
+      fGlass = max(fGlass, (1.0 - fOn) * (1.0 - smoothstep(-1.6, -0.2, a)) * smoothstep(-2.6, -1.6, a) * 0.7);
     }
   }
+  // A stream's pitch: the lip's line torn white across the channel just below it, the tongue above it glassy.
+  fGlass = max(fGlass, 0.8 * fTongue);
   // Far: the stones' mean cover (about six of a stone's square radii of foam per cell).
-  float fRockMean = fRockP * min(0.55, 6.0 * pow(0.45 * ${GRAIN_TOP.toFixed(1)} * vFlow.w * vFlow.w, 2.0) / ${(STONE_ALONG * STONE_ACROSS).toFixed(1)}) + 0.12 * fRockP;
+  // (On a stream's units the rocks crowd the pitches, the rock itself grey between their foam: a little less white.)
+  float fRockMean = (fRockP * min(0.55, 6.0 * pow(0.45 * ${GRAIN_TOP.toFixed(1)} * vFlow.w * vFlow.w, 2.0) / ${(STONE_ALONG * STONE_ACROSS).toFixed(1)}) + 0.12 * fRockP) * (1.0 - 0.45 * fOn);
   fRock = mix(fRockMean, fRock, fNearR);
   fWhite = max(fWhite * (1.0 - fGlass), fRock);
-  // Far away: the mean cover (the pattern is finer than a pixel).
-  fWhite = mix(fWhite, max(min(1.0, fCover + 0.15 * fRapids) * (1.0 - 0.6 * fRockP), fRockMean), smoothstep(0.8, 5.0, footprint));
-  // Between the white: a small stream over its stony bed is shallow and clear; a bigger river aerated, paler, cloudier.
-  float fClear = (1.0 - smoothstep(2.0, 9.0, fW)) * smoothstep(0.3, 0.65, fSt);
+  // Far away: the mean cover (the pattern is finer than a pixel; a stream's pitches and pools are not).
+  // (A stream's pitch far away: torn white over dark water and grey rock, patchy from one to the next.)
+  fWhite = mix(fWhite, max(min(1.0, fCover * (1.0 - fOn * (0.55 - 0.25 * fPatch)) + 0.15 * fRapids) * (1.0 - 0.6 * fRockP), fRockMean), smoothstep(0.8, 5.0, footprint));
+  // Between the white: a small stream over its stony bed is shallow and clear; a bigger river aerated, paler, cloudier;
+  // a stream's pool deeper, darker and still.
+  float fClear = (1.0 - smoothstep(2.0, 9.0, fW)) * smoothstep(0.3, 0.65, fSt) * (1.0 - 0.3 * fPool);
   vec3 fTrans = exp(-2.0 * depth * mix(1.0, 0.3, fClear) * mix(atten, ${P.seaAtten}, fClear));
-  wTrans = dot(fTrans, vec3(0.25, 0.5, 0.25)) * (1.0 - 0.45 * fRun * (1.0 - fClear));
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.09, 0.075), 0.5 * fRun * (1.0 - fClear));
-  // Between the stones the water runs fast, dark and smooth.
-  diffuseColor.rgb *= 1.0 - 0.5 * fRockP;
+  wTrans = dot(fTrans, vec3(0.25, 0.5, 0.25)) * (1.0 - 0.45 * fRun * (1.0 - fClear) * (1.0 - 0.7 * fPool));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.09, 0.075), 0.5 * fRun * (1.0 - fClear) * (1.0 - fPool));
+  // Between the stones the water runs fast, dark and smooth; a pool is dark with its depth.
+  diffuseColor.rgb *= (1.0 - 0.5 * fRockP) * (1.0 - 0.12 * fPool);
   wTrans *= 1.0 - 0.3 * fRockP * (1.0 - fClear);
   // Bare rock banks (bedrock.ts): their trees thinned out (vegetation/placement.ts), so fewer in the mirror.
   // (The gallery thinned, and the woods set back behind the rock: lower in the mirror, so half as much again.)
   wTreeKeep = (1.0 - ${GALLERY_ROCK_THIN.toFixed(2)} * bedRock(fSt)) * (1.0 - 0.5 * bedRock(fSt));
+  // Beyond the boulders' drawn range (BoulderSystem: a few hundred metres) the rocks crowding a pitch show as grey.
+  float fRockTone = min(0.5, 1.6 * fRockMean) * smoothstep(350.0, 650.0, wDist);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.34, 0.33, 0.31), fRockTone);
+  fWhite *= 1.0 - 0.6 * fRockTone;
+  wTrans *= 1.0 - fRockTone;
   // Thick foam brightest, thin foam and spume over dark water greyer.
   float fThick = smoothstep(fThr, fThr + 0.15, fN);
   diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.3, 0.33, 0.33), vec3(0.66, 0.69, 0.69), fThick), fWhite);
   wTrans *= 1.0 - 0.9 * fWhite;
   // Choppy, tumbling water: ripples riding the flow (steeper with the steepness, resolved only near), a rougher
-  // surface, and no mirror where it is white.
+  // surface, and no mirror where it is white; a pool's surface smooth, mirroring the banks and the sky.
   vec2 fT = normalize(vRiverT);
   vec2 fRgt = vec2(-fT.y, fT.x);
-  vec2 fSl = ((fA.g - 0.5) * fT + (fC.b - 0.5) * fRgt) * (1.6 * fRun * fNorm) / (1.0 + footprint);
+  vec2 fSl = ((fA.g - 0.5) * fT + (fC.b - 0.5) * fRgt) * (1.6 * fRun * fNorm * (1.0 - 0.75 * fPool)) / (1.0 + footprint);
   wNormal = normalize(wNormal + vec3(-fSl.x, 0.0, -fSl.y));
-  wRough = mix(mix(mix(wRough, 0.3, fRun), 0.12, fGlass * (1.0 - fWhite)), 0.75, fWhite);
+  wRough = mix(mix(mix(mix(wRough, 0.3, fRun), 0.1, fPool), 0.12, fGlass * (1.0 - fWhite)), 0.75, fWhite);
   // (Fast broken water between the stones mirrors less of the sky.)
-  wSpecCut = max(0.85 * fWhite, 0.45 * fRockP);
+  wSpecCut = max(0.85 * fWhite, 0.45 * fRockP * (1.0 - fPool));
 }
 `;
 };
@@ -660,11 +726,11 @@ float fMist = 0.0;
 function withFlow(shader: { vertexShader: string; fragmentShader: string }, falls: boolean, ice: boolean): void {
   shader.vertexShader = shader.vertexShader
     .replace('attribute float aDepth;\n', `attribute float aDepth;\n${FLOW_VERTEX_HEAD(falls)}`)
-    .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec4(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0, 1.0);\n`}`);
+    .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec4(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0, 1.0);\nvPitch = aPitch;\n`}`);
   shader.fragmentShader = shader.fragmentShader
-    .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec4 vFall;\n' : 'varying vec4 vFlow;\n'}`)
+    .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec4 vFall;\n' : 'varying vec4 vFlow;\nvarying vec2 vPitch;\n'}`)
     // (After the hashes: the stone lattice uses hash2u.)
-    .replace('// Wave height field, m:', `${falls ? '' : `${channelStonesGlsl()}${BEDROCK_GLSL}`}// Wave height field, m:`)
+    .replace('// Wave height field, m:', `${falls ? '' : `${channelStonesGlsl()}${FLOW_STONE_FOAM}${BEDROCK_GLSL}`}// Wave height field, m:`)
     // Before the shore foam's last line (the ice goes after it).
     .replace('wTrans *= 1.0 - foam;\n', `${falls ? fallsFragment() : flowFragment()}wTrans *= 1.0 - foam;\n`)
     // White water is no mirror.
@@ -775,13 +841,15 @@ interface RiverBuffers {
   info: number[];
   tan: number[];
   idx: number[];
-  /** Running water (aFlow, three per vertex): only on a world where waterFlows(). */
+  /** Running water (aFlow, four per vertex): only on a world where waterFlows(). */
   flow: number[];
+  /** A stream's pitches and pools (aPitch: its unit coordinate and pitchOn, two per vertex), with the flow. */
+  pitch: number[];
 }
-const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [], flow: [] });
+const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [], flow: [], pitch: [] });
 
 /** A line as the ribbon reads it (a seeded network's lines also carry their kind and flow). */
-type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array };
+type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
 
 /** Whether sample i of a line is a fall's lip whose face (to sample i + 1) is steep enough to draw as a curtain. */
 function curtainAt(r: RibbonLine, i: number): boolean {
@@ -840,7 +908,10 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       // The across offset points to the left bank; RiverHit.side and the shader count toward the right.
       info.push(-off, r.s[i], w);
       tan.push(te / tl, -tn / tl);
-      if (flowing) b.flow.push(r.steepness![i], r.speed![i], fall, grainToUnit((r as { grain?: Float32Array }).grain?.[i] ?? 0));
+      if (flowing) {
+        b.flow.push(r.steepness![i], r.speed![i], fall, grainToUnit((r as { grain?: Float32Array }).grain?.[i] ?? 0));
+        b.pitch.push(r.sigma?.[i] ?? 0, r.pitchOn?.[i] ?? 0);
+      }
     }
     rows++;
   }
@@ -868,6 +939,8 @@ function riverGeometryOf(b: RiverBuffers): THREE.BufferGeometry {
     const f = new Uint8Array(b.flow.length);
     for (let k = 0; k < f.length; k++) f[k] = Math.round(255 * Math.min(1, Math.max(0, k % 4 === 1 ? b.flow[k] / FLOW_SPEED_MAX : b.flow[k])));
     g.setAttribute('aFlow', new THREE.BufferAttribute(f, 4, true));
+    // A stream's unit coordinate (floats: it runs to thousands) and where its pitches are drawn (pitchPool.ts).
+    g.setAttribute('aPitch', new THREE.Float32BufferAttribute(b.pitch, 2));
   }
   g.setIndex(b.idx);
   g.computeBoundingSphere();

@@ -11,7 +11,8 @@
 import { hydrology, makeSample, sampleTerrain } from '../heightfield';
 import { hash2i } from '../noise';
 import { rockReach } from '../bedrock';
-import { grainToUnit, STONE_ALONG, STONE_ACROSS, STONE_IN, stoneAt, unitToGrain, type ChannelStone } from '../channelStones';
+import { BIG_ACROSS, BIG_ALONG, bigStoneAt, clumpAt, grainToUnit, pitchWeight, sizeLaw, STONE_ALONG, STONE_ACROSS, STONE_IN, stoneAt, unitToGrain, type ChannelStone, type StonePitch } from '../channelStones';
+import { pitchPhase, type PitchPhase } from '../pitchPool';
 import type { RiverLine } from '../hydrology';
 
 export interface BoulderCellRequest {
@@ -211,12 +212,15 @@ function ribbonPoint(r: RiverLine, i: number, s: number, x: number): boolean {
 }
 
 const stone: ChannelStone = { s: 0, x: 0, r: 0, submerged: false, stand: 0, u7: 0, u8: 0 };
+/** A segment's pitches as the ribbon carries them (float32 per row), for stoneAt (its unit coordinate linear in s). */
+const segPitch = { on: 0, s0: 0, s1: 1, g0: 0, g1: 0 };
+const stonePitch: StonePitch = { on: 0, sigmaAt: (s) => segPitch.g0 + ((segPitch.g1 - segPitch.g0) * (s - segPitch.s0)) / (segPitch.s1 - segPitch.s0) };
 
 /**
- * The rocks of the channel's stone lattice (channelStones.ts) between samples i and i + 1 of a line: each stands on the
- * bed and shows the lattice's radius at the waterline (the water's shader draws its collar there), its top standing
- * out by the lattice's amount. A rock in deep water is a block reaching down to the bed, mostly under the surface.
- * The lattice's submerged stones show no rock (their boil is the shader's).
+ * The rocks of the channel's stone lattices (channelStones.ts: the fine one's and the very large blocks') between samples
+ * i and i + 1 of a line: each stands on the bed and shows the lattice's radius at the waterline (the water's shader draws
+ * its collar there), its top standing out by the lattice's amount. A rock in deep water is a block reaching down to the
+ * bed, mostly under the surface. The lattice's submerged stones show no rock (their boil is the shader's).
  */
 function bedStones(r: RiverLine, i: number, out: number[]): void {
   if (!r.grain || r.level[i] < 0.3) return;
@@ -227,54 +231,74 @@ function bedStones(r: RiverLine, i: number, out: number[]): void {
   const st1 = rowSteep(r, i + 1);
   const g0 = rowGrain(r, i);
   const g1 = rowGrain(r, i + 1);
+  const on0 = r.pitchOn?.[i] ?? 0;
+  const on1 = r.pitchOn?.[i + 1] ?? 0;
+  segPitch.s0 = s0;
+  segPitch.s1 = s1;
+  segPitch.g0 = r.sigma?.[i] ?? 0;
+  segPitch.g1 = r.sigma?.[i + 1] ?? 0;
   const wMax = Math.max(r.halfWidth[i], r.halfWidth[i + 1]);
-  const jMax = Math.ceil((STONE_IN * wMax) / STONE_ACROSS + 0.5);
-  for (let k = Math.floor(s0 / STONE_ALONG) - 1; k <= Math.floor(s1 / STONE_ALONG); k++) {
-    for (let j = -jMax; j <= jMax; j++) {
-      // The values the ribbon interpolates at the stone (its lattice cell's own centre first: close enough to decide).
-      const tc = Math.min(1, Math.max(0, ((k + 0.5) * STONE_ALONG - s0) / (s1 - s0)));
-      if (!stoneAt(k, j, st0 + (st1 - st0) * tc, g0 + (g1 - g0) * tc, r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * tc, stone)) continue;
-      if (stone.s < s0 || stone.s >= s1) continue;
-      // Again at its centre (the lattice moved it within its cell).
-      const t = (stone.s - s0) / (s1 - s0);
-      if (!stoneAt(k, j, st0 + (st1 - st0) * t, g0 + (g1 - g0) * t, r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t, stone)) continue;
-      if (stone.submerged) continue;
-      if (!ribbonPoint(r, i, stone.s, stone.x)) continue;
-      const north = Math.fround(bary.n);
-      const east = Math.fround(bary.e);
-      sampleTerrain(north, east, sample);
-      if (!onOpenGround(north, east)) continue;
-      const g = sample.ground;
-      const depth = bary.level - g;
-      // (Not where another channel's water stands higher, by a junction: it would drown the rock.)
-      if (depth > STAND_DEPTH_MAX || sample.river > bary.level + 0.2) continue;
-      const h = hash2i(k * 31 + 7, j + 4099);
-      const shape = Math.floor(stone.u7 * BOULDER_SHAPES) % BOULDER_SHAPES;
-      const rw = stone.r;
-      let rr: number;
-      let hy: number;
-      let dy: number;
-      if (depth < 0.05) {
-        // On the bed's dry edge: an ordinary stone, a quarter sunk.
-        hy = rw * (0.6 + 0.4 * stone.u8);
-        rr = rw;
-        dy = -0.25 * hy;
-      } else {
-        // Its top `stand` over the water; reaching from the bed (a quarter of its height sunk) up to there, as wide at
-        // the waterline as the lattice says.
-        const top = bary.level + stone.stand;
-        hy = Math.max(rw * 0.6, (top - g) / 1.5);
-        const z = hy - stone.stand;
-        rr = Math.min(2.6 * rw, rw / Math.sqrt(Math.max(0.05, 1 - (z / hy) * (z / hy))));
-        dy = top - hy - g;
+  /** The values the ribbon interpolates at arc length sv (the segment's own share t). */
+  const at = (sv: number): [number, number, number] => {
+    const t = Math.min(1, Math.max(0, (sv - s0) / (s1 - s0)));
+    stonePitch.on = on0 + (on1 - on0) * t;
+    return [st0 + (st1 - st0) * t, g0 + (g1 - g0) * t, r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t];
+  };
+  for (const big of [false, true]) {
+    const along = big ? BIG_ALONG : STONE_ALONG;
+    const across = big ? BIG_ACROSS : STONE_ACROSS;
+    const find = big ? bigStoneAt : stoneAt;
+    const jMax = Math.ceil((STONE_IN * wMax) / across + 0.5);
+    for (let k = Math.floor(s0 / along) - 1; k <= Math.floor(s1 / along); k++) {
+      for (let j = -jMax; j <= jMax; j++) {
+        // (Its lattice cell's own centre first: close enough to decide; then again at its centre.)
+        let [st, g, hw] = at((k + 0.5) * along);
+        if (!find(k, j, st, g, hw, stone, stonePitch)) continue;
+        if (stone.s < s0 || stone.s >= s1) continue;
+        [st, g, hw] = at(stone.s);
+        if (!find(k, j, st, g, hw, stone, stonePitch)) continue;
+        if (stone.submerged) continue;
+        if (!ribbonPoint(r, i, stone.s, stone.x)) continue;
+        const north = Math.fround(bary.n);
+        const east = Math.fround(bary.e);
+        sampleTerrain(north, east, sample);
+        if (!onOpenGround(north, east)) continue;
+        const ground = sample.ground;
+        const depth = bary.level - ground;
+        // (Not where another channel's water stands higher, by a junction: it would drown the rock.)
+        if (depth > STAND_DEPTH_MAX || sample.river > bary.level + 0.2) continue;
+        const h = hash2i(k * 31 + (big ? 17 : 7), j + 4099);
+        const shape = Math.floor(stone.u7 * BOULDER_SHAPES) % BOULDER_SHAPES;
+        const rw = stone.r;
+        let rr: number;
+        let hy: number;
+        let dy: number;
+        if (depth < 0.05) {
+          // On the bed's dry edge: an ordinary stone, a quarter sunk.
+          hy = rw * (0.6 + 0.4 * stone.u8);
+          rr = rw;
+          dy = -0.25 * hy;
+        } else {
+          // Its top `stand` over the water; reaching from the bed (a quarter of its height sunk) up to there, as wide at
+          // the waterline as the lattice says.
+          const top = bary.level + stone.stand;
+          hy = Math.max(rw * 0.6, (top - ground) / 1.5);
+          const z = hy - stone.stand;
+          rr = Math.min(2.6 * rw, 7.5, rw / Math.sqrt(Math.max(0.05, 1 - (z / hy) * (z / hy))));
+          dy = top - hy - ground;
+        }
+        // (Wet by the water, its top splashed rather than soaked.)
+        out.push(east, ground, north, rr, hy, rnd(h, 7) * Math.PI * 2, shape + 0.99 * stone.u8, 0.55, dy, rw);
       }
-      // (Wet by the water, its top splashed rather than soaked.)
-      out.push(east, g, north, rr, hy, rnd(h, 7) * Math.PI * 2, shape + 0.99 * stone.u8, 0.55, dy, rw);
     }
   }
 }
 
-/** Stones over a steep segment's bare banks (i, i + 1) of line li: a few, some large, sized from the bed's grain. */
+const bankPhase: PitchPhase = { k: 0, u: 0, pitch: 0, span: 1, size: 1 };
+/**
+ * Stones over a steep segment's bare banks (i, i + 1) of line li: a few, some large, sized from the bed's grain by the
+ * bed's size law (channelStones.ts sizeLaw), in the bed's clumps, and on a stream's units heaped by its pitches.
+ */
 function bankStones(r: RiverLine, li: number, i: number, out: number[]): void {
   const st = r.steepness as Float32Array;
   const dn = r.north[i + 1] - r.north[i];
@@ -287,17 +311,25 @@ function bankStones(r: RiverLine, li: number, i: number, out: number[]): void {
   const reach = rockReach(hw);
   const cover = BANK_COVER_RAPIDS + (BANK_COVER_STEEP - BANK_COVER_RAPIDS) * smooth(0.5, 0.9, steep);
   const grain = Math.max(0.3, 0.5 * ((r.grain?.[i] ?? 0.6) + (r.grain?.[i + 1] ?? 0.6)));
-  const rMean = 0.45 * grain;
+  const rMean = 0.5 * grain * 0.8;
   const expected = (cover * len * 2 * 0.8 * reach) / (Math.PI * rMean * rMean * 1.6);
   const hs = hash2i(li * 7919 + 13, i);
-  // Clumped: some segments carry a field of stones, others few (the stones lie where the flow dropped them).
-  const clump = 0.25 + 1.5 * rnd(hs, 2) ** 1.5;
-  const count = Math.min(SEGMENT_MAX, Math.floor(expected * clump + rnd(hs, 1)));
+  const on = 0.5 * ((r.pitchOn?.[i] ?? 0) + (r.pitchOn?.[i + 1] ?? 0));
+  const sg0 = r.sigma?.[i] ?? 0;
+  const sg1 = r.sigma?.[i + 1] ?? 0;
+  // (Up to twice the expected count drawn; each kept by the clumps and pitches about it, a half on average.)
+  const count = Math.min(SEGMENT_MAX, Math.floor(2 * expected + rnd(hs, 1)));
   const un = dn / len;
   const ue = de / len;
   for (let k = 0; k < count; k++) {
     const h = hash2i(hs, k + 101);
     const t = rnd(h, 1);
+    const sv = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
+    const c = clumpAt(Math.floor(sv / STONE_ALONG));
+    const ph = on > 0 ? pitchPhase(sg0 + (sg1 - sg0) * t, bankPhase) : null;
+    const pw = ph ? pitchWeight(ph) * (0.45 + 0.55 * ph.size) : 0;
+    const keep = (1 - on) * (0.15 + 0.85 * c * Math.sqrt(c)) + on * (0.08 + 0.9 * pw) * (0.6 + 0.6 * c);
+    if (rnd(h, 2) >= keep) continue;
     // Across: strewn over the banks, thinning up them.
     const side = rnd(h, 3) < 0.5 ? -1 : 1;
     const u = rnd(h, 4);
@@ -305,8 +337,8 @@ function bankStones(r: RiverLine, li: number, i: number, out: number[]): void {
     const north = r.north[i] + dn * t - ue * across;
     const east = r.east[i] + de * t + un * across;
     const level = r.level[i] + (r.level[i + 1] - r.level[i]) * t;
-    // Sizes: many middling, a few big (a long tail over the bed's grain).
-    const size = Math.min(MAX_RADIUS, rMean * (0.4 + 2.2 * rnd(h, 9) ** 3));
+    // Sizes: the bed's law (many middling, a long tail of big ones), bigger by the pitches.
+    const size = Math.min(MAX_RADIUS, 0.5 * grain * sizeLaw(rnd(h, 9)) * (1 + on * (0.45 * pw - 0.2)));
     const wet = 1 - Math.min(1, (Math.abs(across) - hw) / Math.max(1, reach));
     place(north, east, size, level, h, wet, out);
   }
