@@ -21,7 +21,7 @@ Branch `exp/foundation2` (from stage 1's `cbaeee4`), worktree `~/github/fs-exp/f
   lattice p99 2100-2250 m, highest summits 2900-3500 m. Seeded snow line 100 m under seed 0's: snow on the highest
   summits and ridges, not whole massifs (`s42-mtn`, `s777777-mtn`, `s42-snow`).
 - **Lowland lakes are back:** 70 / 74 / 59 lakes on seeds 1 / 42 / 777777 (stage 1: 0; before: 110 / 95 / 121 lowland of
-  263 / 258 / 231). All in hill country and plains, ~40 % on a river with inflow and outflow. Mountain lakes and tarns
+  263 / 258 / 231). All in hill country and plains, ~45 % on a river with inflow and outflow. Mountain lakes and tarns
   stay lost (owner's call).
 - **Big rivers are gentler:** 2 km gradient of rivers >= 500 km² at 200-400 m 0.12-0.58 % (stage 1 0.12-0.67, before
   0.19-0.72); at 400-700 m 0.12-1.12 % (stage 1 0.08-1.00, before 0.01-3.94). The level-band medians stay 0.7-3 %
@@ -40,8 +40,8 @@ Branch `exp/foundation2` (from stage 1's `cbaeee4`), worktree `~/github/fs-exp/f
    deposition (stage 6): fans make the long parallel plain rivers. Recommend moving it.
 3. **Concavity m = 0.6 on the 1 km lattice** (was 0.45), U/K 400 m/km (was 450). This is what makes the trunks gentle
    while the ridges keep their height. With m 0.45 the wide orogen needs U/K 300 to bring peaks down, and then trunks
-   at 400-700 m run 0.7-2 % and exit/mouth drops to 0.23 / 0.30 / 0.28. The 20 m Flint θ came out 0.51 (target 0.4-0.5;
-   stage 1 0.47), so the channels' concavity stays about in range. Alternative: keep 0.45 and accept steeper trunks.
+   at 400-700 m run 0.7-2 % and exit/mouth drops to 0.23 / 0.30 / 0.28. Against it: the 20 m Flint θ came out 0.51,
+   just over the 0.4-0.5 target (stage 1 0.47, before 0.39). Alternative: keep 0.45 and accept steeper trunks.
 4. **Type mix: 74 % wide, 26 % narrow** (`seededLayout.ts OROGEN_WIDE`, salt 0x0a06e). Wide everywhere, or more narrow?
 5. **Lakes: fewer in total, more per lowland km².** The orogen turned about half the old hill country into mountains,
    where lakes still go. Per 1000 km² of remaining lowland: 3.1 / 2.6 / 2.6 lakes (before 2.3 / 1.9 / 2.2 per 1000 km²
@@ -275,10 +275,10 @@ Trials: `s42-mtn-f2a.png` (snow line unchanged), `s42-mtn-f2b.png` / `s777777-mt
 - **Rivers held at sea level far inland** (a stage-1 class): probe `riverZero` counts lines whose water level is under
   1 m while the natural ground under them stands > 30 m: before 5 / 5 / 3 lines (3 / 10 / 7 km), stage 1 9 / 21 / 13
   (22 / 88 / 34 km), stage 2 10 / 23 / 11 (29 / 96 / 42 km). The river is carved into a canyon down to sea level. On
-  seed 42's main river the level falls ~4.5 m/km along a 150-250 m plateau from 60 km out (`lineLevel`). Likeliest cause:
-  the confluence rule in riverNetwork.ts (a tributary arriving low "cuts the river it joins down with it below the
-  confluence"), a coastal pocket's tributary at ~0 m dragging the trunk down; also possible, the B-spline not
-  reproducing a one-cell-wide graded valley near the coast. Not traced to the end; the probes are the handle.
+  seed 42's main river the level falls ~4.5 m/km along a 150-250 m plateau from 60 km out (`lineLevel`); no other line
+  near that spot is held at 0 m (`linesNear`). Not traced: candidates are riverNetwork.ts's confluence cut (a tributary
+  arriving low "cuts the river it joins down with it below the confluence"), capFall's spread of a drop upstream, and the
+  B-spline not reproducing a one-cell-wide graded valley near the coast. The probes are the handle.
 - Exit / mouth >= 0.4 and Re (decisions 1, 2): stage 3 (front blocks, erodibility along strike) and stage 6.
 - The orogen's mountains between the old belts carry hill-country fine relief and gully amplitude (`amplitude =
   hillAmp + 3100 uplift`, from the noise): smooth massifs. Stage 4 (PLAN §3.3: amplitude from T's own relief).
