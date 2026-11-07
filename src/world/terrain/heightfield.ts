@@ -19,7 +19,7 @@ import { AIRPORT, onHomeAirport } from '../../core/world';
 import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
-import { buildErosion, erosionGullies, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
+import { buildErosion, CUT_CELL as CUT_CELL_M, erosionGullies, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology } from './riverNetwork';
 import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
@@ -752,7 +752,11 @@ function buildWater(): void {
     lakeSmooth = mask;
     lakeSeed = worldSeed();
     lakes = [];
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.valley, naturalHeightSmooth);
+    // Each river's own floor is marked into the model (erosion.ts markCourse) once its axis is laid out, before its
+    // levels are read off the ground: not by a lake (its basin and shore were flooded on the ground without the mark).
+    const R = CUT_CELL_M;
+    const byLake = (n: number, e: number): number => (mask.smooth(n, e) > 0 || mask.smooth(n + R, e) > 0 || mask.smooth(n - R, e) > 0 || mask.smooth(n, e + R) > 0 || mask.smooth(n, e - R) > 0 ? 0 : 1);
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.valley, naturalHeightSmooth, (axes) => markCourse(eroded, axes, byLake));
     legacyHydro = presentHydro;
     // The home field was sited on the noise ground and held during the model (erosion.ts HOME_KEEP): checked once more
     // on the finished ground (the model may have raised the approach or the circuit).

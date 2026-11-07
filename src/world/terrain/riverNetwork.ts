@@ -10,7 +10,7 @@
 
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
-import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type LakeMask } from './drainage';
+import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
@@ -118,6 +118,40 @@ function destair(p: { s: Float64Array; level: Float64Array; wet: Uint8Array; pin
   }
 }
 
+/** The fine grid the model's floors are marked on, m (erosion.ts CUT_CELL). */
+const FLOOR_GRID = 250;
+/**
+ * How far either side of a line's valley axis its own floor reaches (erosion.ts markCourse), m, per axis point: as far
+ * as the channel can swing (the widest meander belt its catchment could take, where the lattice falls gently enough
+ * for it to meander, at double MEANDER_GRADIENT for margin: the levels that decide it come later) or the floodplain
+ * would reach, with the 80 m the levels are sampled either side, and a fine-grid cell more so the interpolated mark
+ * is whole there. `t` is each point's place along the line's cells (catmullRom).
+ */
+function floorHalf(d: Drainage, L: DrainLine, area: Float64Array, t: ArrayLike<number>): Float64Array {
+  const cells = L.cells;
+  const m = cells.length;
+  // The lattice's fall along the line, m/m, over two cells either side.
+  const grad = new Float64Array(m);
+  for (let k = 0; k < m; k++) {
+    const a = Math.max(0, k - 2);
+    const b = Math.min(m - 1, k + 2);
+    let run = 0;
+    for (let j = a; j < b; j++) run += Math.hypot(cellNorth(d, cells[j + 1]) - cellNorth(d, cells[j]), cellEast(d, cells[j + 1]) - cellEast(d, cells[j]));
+    grad[k] = run > 0 ? Math.max(0, d.height[cells[a]] - Math.max(0, d.height[cells[b]])) / run : 0;
+  }
+  const out = new Float64Array(area.length);
+  for (let i = 0; i < area.length; i++) {
+    const k = Math.max(0, Math.min(m - 1, Math.round(t[i])));
+    const hw = halfWidthFor(area[i]);
+    const low = 1 - smooth(MEANDER_GRADIENT, 2 * MEANDER_GRADIENT, grad[k]);
+    const mFree = smooth(MEANDER_AREA * 0.6, MEANDER_AREA * 1.6, area[i]) * low;
+    const belt = Math.max(160, 36 * hw) * 1.15 * (0.06 + 0.55 * mFree);
+    const floodplain = belt + hw + CHANNEL_BANK + 4 * hw * Math.min(1, belt / 200);
+    out[i] = Math.max(floodplain, belt + hw + 80) + FLOOR_GRID;
+  }
+  return out;
+}
+
 interface Axis {
   north: Float64Array;
   east: Float64Array;
@@ -175,8 +209,25 @@ export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
   return out;
 }
 
+/** A line's arrays as a stage of the levels leaves them (levelProbe): the ground sampled for the level on the axis. */
+export interface LevelStage {
+  north: ArrayLike<number>;
+  east: ArrayLike<number>;
+  s: ArrayLike<number>;
+  level: Float64Array;
+  ground?: Float64Array;
+  wet?: Uint8Array;
+  lake?: Float64Array;
+}
+/**
+ * Probes only (scripts/probes/rz*.test.ts): hears each line's level after each stage that sets it, live arrays (copy
+ * what is kept). On the valley axis: A the running minimum of the ground, B the confluence cuts, C0 the parent's level
+ * at the mouth (or the sea's), C the gradient cap, D the other valleys' carve, E destair; on the channel: chan the
+ * meandering channel, shape the falls (falls.ts shapeLines), pitch the pitches and pools.
+ */
+export const levelProbe: { on?: (stage: string, li: number, line: LevelStage) => void } = {};
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array }>) => void): Hydrology {
   const lines = d.lines;
   // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley of the macro
   // ground (erosion.ts, `valleyDepth` per cell, >= 0) is the river's own, and its floor lies along the lattice path; a
@@ -232,6 +283,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // The ponds a line has run through at their level (main stems first): no later line drains them.
   const held = new Uint8Array(d.lakes.length);
   const pre: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; wet: Uint8Array; pinned: Uint8Array; ground: Float64Array; fall: Float64Array; poolOf: Int32Array }> = [];
+  const laid: Array<{ north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; t: ArrayLike<number> }> = [];
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const c = courses[li];
@@ -263,6 +315,19 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const k = Math.min(L.area.length - 2, Math.floor(u));
       area[i] = L.area[k] + (L.area[k + 1] - L.area[k]) * (u - k);
     }
+    laid.push({ north, east, s, area, t: pts.t });
+  }
+  // The ground each river runs on is its own: the relief finer than the lattice gives way across its floor (erosion.ts
+  // markCourse), as it does on the model's channel floors. Those lie along the lattice courses; the axes laid out above
+  // wander up to a kilometre or so off them and the channel swings across its belt about the axis, and there the
+  // noise's own relief (tens of metres on a plain the model lowered by a couple of hundred) stood on a valley floor
+  // graded to a few tens of metres: its troughs reached the sea's level inland (held there by the cushion), the running
+  // minimum below took the river down to them, and it was carved to the sea's level through every rise downstream.
+  markFloor?.(laid.map((a, li) => ({ north: a.north, east: a.east, half: floorHalf(d, lines[li], a.area, a.t) })));
+  for (let li = 0; li < lines.length; li++) {
+    const L = lines[li];
+    const { north, east, s, area } = laid[li];
+    const count = north.length;
     // Water level: the running minimum of the natural terrain downstream, level across lakes, meeting the parent.
     // The ground is sampled at every other point (the lowest of the centre and 80 m either side across the valley);
     // the points between take the lower of their neighbours.
@@ -344,6 +409,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const fall = Float64Array.from(ground);
     smoothAlong(fall, Math.ceil(500 / AXIS_SPACING), 2);
     pre.push({ north, east, s, area, level, wet, pinned, ground, fall, poolOf });
+    levelProbe.on?.('A', li, { north, east, s, level, ground, wet, lake: lakeAt });
   }
   // --- Confluences. A tributary that arrives lower than the river it joins has cut down through a rim (it drains a
   // closed basin the routing filled: a big hollow is not a lake, drainage.ts): the river it joins cuts down with it
@@ -358,6 +424,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // A lake below the confluence holds its own level: the cut ends at its shore.
     for (let i = nearestIndex(p, c.north[c.north.length - 1], c.east[c.east.length - 1]); i < p.level.length && !p.wet[i]; i++) p.level[i] = Math.min(p.level[i], mouth);
   }
+  if (levelProbe.on) for (let li = 0; li < lines.length; li++) levelProbe.on('B', li, pre[li]);
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const { north, east, s, area, level, wet } = pre[li];
@@ -373,7 +440,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       // shore lies a little seaward of the outlet cell).
       level[count - 1] = 0;
     }
+    levelProbe.on?.('C0', li, pre[li]);
     capFall(pre[li]);
+    levelProbe.on?.('C', li, pre[li]);
     const halfWidth = new Float64Array(count);
     const belt = new Float64Array(count);
     const meander = new Float64Array(count);
@@ -480,10 +549,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       level[count - 1] = lj;
     }
     if (moved || L.joins >= 0) capFall(P);
+    levelProbe.on?.('D', li, P);
     void s;
   }
   for (let li = 0; li < lines.length; li++) {
     destair(pre[li]);
+    levelProbe.on?.('E', li, pre[li]);
     const a = axes[li];
     confineBelt(natural, a.north, a.east, a.level, a.belt, a.wavelength);
   }
@@ -573,6 +644,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       halfWidth[k] = sampleAt(a.s, a.halfWidth, valleyS[k]);
     }
     rivers.push({ north: Float64Array.from(north), east: Float64Array.from(east), level, halfWidth, s, valleyS: Float64Array.from(valleyS) });
+    levelProbe.on?.('chan', li, rivers[li]);
   }
 
   const tPhase: number[] = [performance.now()];
@@ -836,6 +908,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     falls.push(...shaped.falls);
     shapeReport = shaped.report;
+    if (levelProbe.on) for (let li = 0; li < nR; li++) levelProbe.on('shape', li, allLines[li]);
   }
   // --- Pitches and pools along the streams' steep reaches (pitchPool.ts), receivers first: a tributary's mouth is put
   // on its receiver's reshaped water (its last reach a cascade down to it, as shapeLines puts it), then its own cut.
@@ -871,6 +944,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       lipsOf[li] = lipsOf[li].map((k) => r.map[k]);
     }
     pitchReport.ms = performance.now() - tp;
+    if (levelProbe.on) for (let li = 0; li < nR; li++) levelProbe.on('pitch', li, allLines[li]);
   }
   tPhase.push(performance.now());
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));

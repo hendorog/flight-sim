@@ -142,6 +142,14 @@ export interface ErosionField {
    * course): the finer relief and the gullies give way there (erosionGullies), so the floor keeps falling.
    */
   floor: Uint8Array;
+  /**
+   * How far each point of the fine grid lies on a drawn river's own floor, 0-255 (markCourse: riverNetwork.ts marks its
+   * valley axes once they are laid out, the floodplain and the swing of the channel either side): the relief finer than
+   * the lattice gives way there, as on a channel's floor (`floor`), but not the gullies. All 0 until marked.
+   */
+  course: Uint8Array;
+  /** Per lattice cell: whether any of `course` reaches the samples interpolated in it (a skip for the rest). */
+  courseAny: Uint8Array;
   /** The home field, where the change is held at none over its pad (PAD_KEEP). */
   home: { north: number; east: number };
   /** The macro cells T (the noise lattice plus the change): what the drainage routes over. */
@@ -604,7 +612,7 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) carveAny[i * n + j] = 1;
     }
   }
-  return { delta: change, base, carve, carveAny, floor: floorMask, home: { north: home.north, east: home.east }, lattice: eroded, valley: valleyDepth(eroded, n, fixed) };
+  return { delta: change, base, carve, carveAny, floor: floorMask, course: new Uint8Array(N * N), courseAny: new Uint8Array(n * n), home: { north: home.north, east: home.east }, lattice: eroded, valley: valleyDepth(eroded, n, fixed) };
 }
 
 /** How far each cell lies below the mean of the macro cells within VALLEY_R of it (land only), m (>= 0). */
@@ -676,7 +684,7 @@ function residualFade(x: number): number {
 }
 
 /** The model at (north, east), into `out`. */
-export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'home' | 'valley'>, north: number, east: number, out: ErosionSample): void {
+export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley'>, north: number, east: number, out: ErosionSample): void {
   out.north = north;
   out.east = east;
   out.d = bicubic(f.delta, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true);
@@ -686,7 +694,8 @@ export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' |
   out.c = inside && f.carveAny[cellAt(north, east)] ? catmullRom(f.carve, CUT_N, fy, fx) : 0;
   out.f = inside ? Math.min(1, Math.max(0, catmullRomU8(f.floor, CUT_N, fy, fx) / 255)) : 0;
   const g = residualFade(bicubic(f.valley, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true));
-  out.w = 1 - (1 - out.f) * (1 - g);
+  const k = inside && f.courseAny[cellAt(north, east)] ? Math.min(1, Math.max(0, catmullRomU8(f.course, CUT_N, fy, fx) / 255)) : 0;
+  out.w = 1 - (1 - out.f) * (1 - g) * (1 - k);
   out.r = out.w > 0 ? bicubic(f.base, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true) : 0;
   out.keep = padKeep(f.home, north, east);
   out.o = outside(north, east);
@@ -729,7 +738,7 @@ const cubic = { v: 0, gy: 0, gx: 0 };
  * (macroOffsetGrad). Values as sampleErosion's; gradients the B-spline's (Catmull-Rom's gradient is only C0, and the
  * gullies turned and held by it crease the ground along every grid line). Off the grids the gradients are taken as 0.
  */
-export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'home' | 'valley'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
+export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
   out.north = north;
   out.east = east;
   const ly = (north - DOMAIN_LO) / DRAIN_CELL;
@@ -763,7 +772,7 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carv
       }
     }
   }
-  // The fade of the finer relief: the floor's and the valley's (gv, with its gradient).
+  // The fade of the finer relief: the floor's, the valley's (gv, with its gradient) and a drawn river's (k).
   let gv = 0;
   let gvN = 0;
   let gvE = 0;
@@ -771,9 +780,23 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carv
   gv = residualFade(cubic.v);
   gvN = fadeD * cubic.gy;
   gvE = fadeD * cubic.gx;
-  out.w = 1 - (1 - out.f) * (1 - gv);
-  g.wN = (1 - gv) * g.fN + (1 - out.f) * gvN;
-  g.wE = (1 - gv) * g.fE + (1 - out.f) * gvE;
+  let k = 0;
+  let kN = 0;
+  let kE = 0;
+  if (inside && f.courseAny[cellAt(north, east)]) {
+    const kl = catmullRomU8(f.course, CUT_N, fy, fx) / 255;
+    if (kl > 0) {
+      k = Math.min(1, kl);
+      if (kl < 1) {
+        cubicGradU8(f.course, CUT_N, fy, fx);
+        kN = cubic.gy / (255 * CUT_CELL);
+        kE = cubic.gx / (255 * CUT_CELL);
+      }
+    }
+  }
+  out.w = 1 - (1 - out.f) * (1 - gv) * (1 - k);
+  g.wN = ((1 - gv) * g.fN + (1 - out.f) * gvN) * (1 - k) + (1 - out.f) * (1 - gv) * kN;
+  g.wE = ((1 - gv) * g.fE + (1 - out.f) * gvE) * (1 - k) + (1 - out.f) * (1 - gv) * kE;
   out.r = 0;
   g.rN = g.rE = 0;
   if (out.w > 0) {
@@ -1176,6 +1199,81 @@ function markFloor(floor: Uint8Array, N: number, n0: number, e0: number, n1: num
       const v = Math.round(255 * s * s * strength);
       const q = y * N + x;
       if (v > floor[q]) floor[q] = v;
+    }
+  }
+}
+
+/** Beyond a drawn river's own floor (markCourse) the relief finer than the lattice comes back over this, m. */
+const COURSE_TAPER = 500;
+/** markCourse marks a valley axis in chords of about this, m. */
+const COURSE_CHORD = 480;
+
+/**
+ * Mark the drawn rivers' own floors (ErosionField.course) along their valley axes (`north`, `east`, m), `half` m either side
+ * of each point (the floodplain and the channel's swing), coming off over COURSE_TAPER beyond; `keep` (0-1) scales the
+ * mark at a fine-grid point (riverNetwork.ts: none by a lake, whose basin and shore were flooded on the ground as it
+ * was). Faded toward the fine grid's edge as the floor is.
+ */
+export function markCourse(f: ErosionField, axes: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number>; half: ArrayLike<number> }>, keep: (north: number, east: number) => number): void {
+  const N = CUT_N;
+  const origin = -DOMAIN_HALF;
+  const course = f.course;
+  const n = LATTICE_N;
+  /** The keep factor per fine point, 0-255 (255 + 1: not yet asked). */
+  const kept = new Uint16Array(N * N).fill(256);
+  for (const { north, east, half } of axes) {
+    // (In chords of about COURSE_CHORD: a smooth axis strays a few tens of metres at most from them, inside the
+    // marks' margin, and each fine point is then visited a few times rather than dozens.)
+    const m = north.length;
+    let step = 1;
+    if (m > 2) step = Math.max(1, Math.round(COURSE_CHORD / Math.max(1, Math.hypot(north[1] - north[0], east[1] - east[0]))));
+    for (let k0 = 0; k0 + 1 < m; k0 += step) {
+      const k1 = Math.min(m - 1, k0 + step);
+      const n0 = north[k0];
+      const e0 = east[k0];
+      const n1 = north[k1];
+      const e1 = east[k1];
+      let h0 = half[k0];
+      let h1 = half[k1];
+      for (let k = k0 + 1; k < k1; k++) (h0 = Math.max(h0, half[k])), (h1 = Math.max(h1, half[k]));
+      const reach = Math.max(h0, h1) + COURSE_TAPER;
+      const yLo = Math.max(0, Math.ceil((Math.min(n0, n1) - reach - origin) / CUT_CELL));
+      const yHi = Math.min(N - 1, Math.floor((Math.max(n0, n1) + reach - origin) / CUT_CELL));
+      const xLo = Math.max(0, Math.ceil((Math.min(e0, e1) - reach - origin) / CUT_CELL));
+      const xHi = Math.min(N - 1, Math.floor((Math.max(e0, e1) + reach - origin) / CUT_CELL));
+      const dn = n1 - n0;
+      const de = e1 - e0;
+      const L2 = dn * dn + de * de || 1;
+      for (let y = yLo; y <= yHi; y++) {
+        const qn = origin + y * CUT_CELL - n0;
+        for (let x = xLo; x <= xHi; x++) {
+          const q = y * N + x;
+          if (course[q] === 255) continue;
+          const qe = origin + x * CUT_CELL - e0;
+          const u = Math.min(1, Math.max(0, (qn * dn + qe * de) / L2));
+          const pn = qn - u * dn;
+          const pe = qe - u * de;
+          const h = h0 + (h1 - h0) * u;
+          const dist = Math.sqrt(pn * pn + pe * pe);
+          if (dist >= h + COURSE_TAPER) continue;
+          const s = 1 - smoothstep(h, h + COURSE_TAPER, dist);
+          if (kept[q] === 256) {
+            const edge = smoothstep(EDGE_KEEP[0], EDGE_KEEP[1], CUT_CELL * Math.min(x, y, N - 1 - x, N - 1 - y));
+            kept[q] = Math.round(255 * edge * Math.min(1, Math.max(0, keep(origin + y * CUT_CELL, origin + x * CUT_CELL))));
+          }
+          const v = Math.round(s * kept[q]);
+          if (v <= course[q]) continue;
+          if (course[q] === 0) {
+            // The lattice cells whose interpolation (4 x 4 fine points about each of the cell's own) touches the mark.
+            const i0 = Math.max(0, Math.floor((y - 2) / FINE));
+            const i1 = Math.min(n - 1, Math.floor((y + 1) / FINE));
+            const j0 = Math.max(0, Math.floor((x - 2) / FINE));
+            const j1 = Math.min(n - 1, Math.floor((x + 1) / FINE));
+            for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) f.courseAny[i * n + j] = 1;
+          }
+          course[q] = v;
+        }
+      }
     }
   }
 }
