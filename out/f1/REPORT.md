@@ -153,6 +153,15 @@ the worker: on a laptop 4x slower the worker would take ~3.5 s, so a first visit
 visits cost nothing. Each terrain worker still samples the noise lattice itself (the macro cache needs it); sharing
 saves only the iteration.
 
+## Terrain sample cost (paired, 2 rounds; `out/f1/cost.log`)
+- `naturalHeight` over a world-wide grid (heightCost, seed 42): 1.94-2.03 -> 2.07-2.10 µs (+0.05-0.15); coarse
+  0.47-0.48 -> 0.55-0.56 µs.
+- `sampleTerrain` in four 8 km mountain windows (costMountain, min of 5): 2.66-2.77 -> 2.68-2.79, 1.51-1.59 -> 2.35-2.46,
+  2.10-2.14 -> 2.61-2.63, 2.35-2.38 -> 2.79-2.83 µs. Three windows are over the old +0.3 µs line (+0.45 to +0.85).
+  Part of it is the extra reads (valley B-spline on every sample, the noise lattice's wherever the finer relief fades,
+  carve and floor), part is that the ground there changed (the windows were picked on the old world; the +0.85 one had
+  lake and flat floor before). Not tuned here.
+
 ## Pictures
 `out/f1/shots/<view>-{before,after}.png` (camera URLs in `out/f1/views.txt`, `views2.txt`; port 5197 via shot.mjs):
 - `s42-home`: the same farmland and field; a distant lake on the right gone. Held as intended.
