@@ -2,7 +2,7 @@
 // their typed-array buffers transferred (no copies).
 
 import { setWorldSeed } from '../worldSeed';
-import { provideSeededModel, setSnowShift, type SeededModel } from './heightfield';
+import { modelMs, provideSeededModel, setSnowShift, type SeededModel } from './heightfield';
 import { buildTile, type TileData, type TileRequest } from './tileBuilder';
 import { setTownSite, type TownSite } from './townMask';
 import { setEra } from '../era/eraState';
@@ -43,6 +43,7 @@ self.onmessage = (e: MessageEvent<{ id: number; job: WorkerJob } | WorkerSetup>)
     provideSeededModel(e.data.model ?? null);
     // The world seed before the town mask (rebuilds the noise tables and the rivers when it changes).
     setWorldSeed(e.data.seed);
+    if (e.data.seed !== 0 && modelMs > 0) console.warn(`[terrain] a terrain worker worked the macro model out itself (${Math.round(modelMs)} ms): none was handed over`);
     setTownSite(e.data.town);
     return;
   }
