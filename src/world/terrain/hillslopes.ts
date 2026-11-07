@@ -15,9 +15,9 @@
 //   2. Build the ground H downstream first: a node is its receiver's height plus the steepest drop it may stand over
 //      it, s(A) L, with s(A) = tan Sc on a hillslope (A < A_c) and min(tan Sc, ks A^-theta) on a channel (A >= A_c);
 //      so the channels' floors rise from their trunk at a stream-power gradient and every hillslope rises from its
-//      channel at the threshold. Up to the envelope E = G_f + lift; over it a slope rises on at `soft` of its gradient,
-//          H = min(H_r + s L, max(E, H_r) + soft s L),
-//      so a ridge is a crest where two slopes meet, and a summit the envelope holds is a low peak, not a flat cap.
+//      channel at the threshold. Up to the envelope E = G_f + lift (lift only on mountain ground: not on a plain); over
+//      it a slope rises on at `soft` of its gradient, at most `crown` over it, so a ridge is a crest where two slopes
+//      meet, and a summit the envelope holds is a low peak, not a flat cap.
 //   3. Route again over H (the channels now lower than the ground beside them gather its water: captures) and rebuild
 //      from the envelope, a few times.
 //   4. Where a channel steps diagonally, the two nodes beside the step come down to its middle (the interpolated
@@ -61,9 +61,18 @@ export interface SlopeParams {
   soft: number;
   /** How far the ridges may rise over the ground as it stood, m (the envelope is G_f plus this, by the weight). */
   lift: number;
+  /** ... and the most a slope rises on over the envelope, m. */
+  crown: number;
+  /** The share of both kept about a drawn river's valley (heightfield.ts RIVER_NO_LIFT). */
+  riverLift: number;
 }
 
-export const SLOPES: SlopeParams = { sc: 0.73, ac: 1.5, ks: 0.2, theta: 0.45, onset: 0.3, full: 0.4, iterations: 6, courseHold: 0.98, gully: 0, fine: 1, lift: 100, soft: 0.4 };
+/** The envelope is raised (SlopeParams.lift, crown) where the ground's relief within RELIEF_R nodes is from the first to
+ * the second of RELIEF_LIFT, m: on mountain ground, not on a plain or a broad basin floor in the mask. */
+const RELIEF_R = 8;
+const RELIEF_LIFT = [150, 400];
+
+export const SLOPES: SlopeParams = { sc: 0.73, ac: 1.5, ks: 0.2, theta: 0.45, onset: 0.3, full: 0.4, iterations: 6, courseHold: 0.98, gully: 0, fine: 1, lift: 100, soft: 0.4, crown: 150, riverLift: 1 };
 
 /** Probes: change the pass's settings before a world is built (null: the defaults). */
 let override: Partial<SlopeParams> | null = null;
@@ -72,7 +81,7 @@ export function setSlopeParams(p: Partial<SlopeParams> | null): void {
 }
 export const slopeParams = (): SlopeParams => ({ ...SLOPES, ...(override ?? {}) });
 /** The settings as part of the model's cache key (heightfield.ts). */
-export const slopeKey = (p: SlopeParams): string => [p.sc, p.ac, p.ks, p.theta, p.onset, p.full, p.iterations, p.courseHold, p.gully, p.fine, p.lift, p.soft].join('_');
+export const slopeKey = (p: SlopeParams): string => [p.sc, p.ac, p.ks, p.theta, p.onset, p.full, p.iterations, p.courseHold, p.gully, p.fine, p.lift, p.soft, p.crown, p.riverLift].join('_');
 
 /** What the pass hands the terrain (erosion.ts ErosionField.slopes), on the fine grid (n x n from (-DOMAIN_HALF,
  * -DOMAIN_HALF), `cell` apart). */
@@ -215,7 +224,7 @@ export const slopeStats = { active: 0, sampled: 0, changed: [] as number[], corn
  * [0, 1] (the mountain mask with the home field's fade; 0 outside, where nothing is sampled). `hold(q)`: true where a
  * node is held at its ground (a drawn river's floor). `core`: riverCore's marks, kept with the result. `ground(north, east)`: the ground G as it stands, m.
  */
-export function thresholdSlopes(n: number, cell: number, weight: Float32Array, hold: (q: number) => boolean, ground: (north: number, east: number) => number, core: Uint8Array, p: SlopeParams = slopeParams()): SlopeField {
+export function thresholdSlopes(n: number, cell: number, weight: Float32Array, hold: (q: number) => boolean, ground: (north: number, east: number) => number, core: Uint8Array, p: SlopeParams = slopeParams(), nearRiver: Uint8Array | null = null): SlopeField {
   const origin = -DOMAIN_HALF;
   const N = n * n;
   const t0 = performance.now();
@@ -380,6 +389,47 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
       active--;
     }
   }
+  // How far the envelope may be raised at each node: by the weight, where the ground's relief within RELIEF_R nodes
+  // (highest less lowest) is RELIEF_LIFT[0] to [1] m: in the mountains, valley floors and all, but not on a plain or a
+  // broad basin floor inside the mask.
+  const L = new Float32Array(N);
+  {
+    const R = RELIEF_R;
+    const lo = new Float32Array(N);
+    const hi = new Float32Array(N);
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        let a = Infinity;
+        let b = -Infinity;
+        for (let d = -R; d <= R; d++) {
+          const xx = x + d;
+          if (xx < 0 || xx >= n) continue;
+          const q = y * n + xx;
+          if (state[q] === 0) continue;
+          if (Gf[q] < a) a = Gf[q];
+          if (Gf[q] > b) b = Gf[q];
+        }
+        lo[y * n + x] = a;
+        hi[y * n + x] = b;
+      }
+    }
+    for (let x = 0; x < n; x++) {
+      for (let y = 0; y < n; y++) {
+        if (state[y * n + x] !== 2) continue;
+        let a = Infinity;
+        let b = -Infinity;
+        for (let d = -R; d <= R; d++) {
+          const yy = y + d;
+          if (yy < 0 || yy >= n) continue;
+          const q = yy * n + x;
+          if (lo[q] < a) a = lo[q];
+          if (hi[q] > b) b = hi[q];
+        }
+        const q = y * n + x;
+        L[q] = W[q] * smoothstep(RELIEF_LIFT[0], RELIEF_LIFT[1], b - a) * (nearRiver ? 1 - (1 - p.riverLift) * (nearRiver[q] / 255) : 1);
+      }
+    }
+  }
   const list = new Int32Array(active);
   {
     let k = 0;
@@ -468,10 +518,15 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
       const dist = (r - c === 1 || c - r === 1 || r - c === n || c - r === n ? 1 : Math.SQRT2) * cell;
       const hr = H[r];
       const rise = slopeOf(c) * dist;
-      // Over the envelope a slope rises on at `soft` of its gradient (a summit stands as a low peak, not a flat cap);
-      // both fade out with the weight, to the envelope as it stood.
-      const e = Gf[c] + p.lift * W[c];
-      const v = Math.min(hr + rise, Math.max(e, hr) + p.soft * W[c] * W[c] * rise);
+      // Up to the envelope at the full rise; over it at `soft` of it (a summit stands as a low peak, not a flat cap), up
+      // to `crown` over it. Where the ground stood high over its surroundings only (L[c]): a plain stays a plain.
+      const e = Gf[c] + p.lift * L[c];
+      let v = hr + rise;
+      if (v > e) {
+        const top = e + p.crown * L[c];
+        v = Math.min(top, Math.max(e, hr) + p.soft * L[c] * (v - Math.max(e, hr)));
+        if (hr > top) v = hr;
+      }
       // (Never down to its receiver: the envelope may stand under a receiver the routing moved to.)
       H[c] = Math.max(v, hr + EPS * dist);
     }

@@ -17,10 +17,10 @@ it('slope at', () => {
   const y0 = Math.round((pn + DOMAIN_HALF) / CUT_CELL);
   const x0 = Math.round((pe + DOMAIN_HALF) / CUT_CELL);
   const R = 3;
-  console.log(`nodes about ${y0},${x0} (north up): H / chan`);
+  console.log(`nodes about ${y0},${x0} (north up): H / chan / core / w`);
   for (let y = y0 + R; y >= y0 - R; y--) {
     let row = '';
-    for (let x = x0 - R; x <= x0 + R; x++) row += `${sl.h[y * CUT_N + x].toFixed(0).padStart(6)}/${String(sl.chan[y * CUT_N + x]).padStart(3)}`;
+    for (let x = x0 - R; x <= x0 + R; x++) row += `${sl.h[y * CUT_N + x].toFixed(0).padStart(6)}/${String(sl.chan[y * CUT_N + x]).padStart(3)}/${String(sl.core[y * CUT_N + x]).padStart(3)}/${String(sl.w[y * CUT_N + x]).padStart(3)}`;
     console.log(`${(-DOMAIN_HALF + y * CUT_CELL).toString().padStart(8)} ${row}`);
   }
   console.log('coarse ground at 50 m (north up), relative to the min');

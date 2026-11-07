@@ -20,7 +20,7 @@ import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
 import { attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
-import { buildNetworkHydrology } from './riverNetwork';
+import { buildNetworkHydrology, valleyInfluence } from './riverNetwork';
 import { riverCore, slopeKey, slopeParams, thresholdSlopes, type SlopeField } from './hillslopes';
 import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
@@ -850,13 +850,17 @@ function slopePinned(north: number, east: number): number {
   sampleErosion(erosion, north, east, pinAt);
   return Math.min(1, pinAt.mg * pinAt.ch * 2);
 }
+/** The threshold hillslopes come in from the fine grid's edge between these distances, m: the model's change carries on
+ * past the lattice's edge and fades out (erosion.ts OUTSIDE_FADE), the slopes not (the terrain reads none of the grid
+ * within its outer rows), so they are gone well inside it. */
+const SLOPE_EDGE = [10000, 16000];
 /** riverNetwork.ts floorHalf's margin for the fine grid (FLOOR_GRID), taken off its half-widths for the rivers' cores. */
 const FLOOR_GRID_MARGIN = 250;
 /** The gullies' share of their relief in the threshold hillslopes' mountains (hillslopes.ts SlopeParams.gully), for the
  * current world. */
 let slopeGully = 1;
 let slopeFine = 1;
-function mountainSlopes(inputs: ModelInputs, sp: ReturnType<typeof slopeParams>, axes: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number>; half: ArrayLike<number> }>): SlopeField {
+function mountainSlopes(inputs: ModelInputs, sp: ReturnType<typeof slopeParams>, axes: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number>; half: ArrayLike<number>; area: ArrayLike<number> }>): SlopeField {
   const ur = upsample(inputs.ur, inputs.n);
   const hard = upsample(inputs.hard, inputs.n);
   const cap = upsample(inputs.cap, inputs.n);
@@ -864,13 +868,23 @@ function mountainSlopes(inputs: ModelInputs, sp: ReturnType<typeof slopeParams>,
   for (let q = 0; q < w.length; q++) {
     const t = Math.min(1, Math.max(0, (ur[q] - sp.onset) / (sp.full - sp.onset)));
     if (t <= 0) continue;
-    w[q] = t * t * (3 - 2 * t) * Math.min(1, Math.max(0, hard[q])) * (1 - Math.min(1, Math.max(0, cap[q])));
+    // (None toward the fine grid's edge, where the terrain stops reading it: SLOPE_EDGE.)
+    const y = Math.floor(q / CUT_N);
+    const x = q - y * CUT_N;
+    const edge = CUT_CELL_M * Math.min(x, y, CUT_N - 1 - x, CUT_N - 1 - y);
+    const te = Math.min(1, Math.max(0, (edge - SLOPE_EDGE[0]) / (SLOPE_EDGE[1] - SLOPE_EDGE[0])));
+    w[q] = t * t * (3 - 2 * t) * te * te * (3 - 2 * te) * Math.min(1, Math.max(0, hard[q])) * (1 - Math.min(1, Math.max(0, cap[q])));
   }
   const course = Math.round(255 * sp.courseHold);
   // The rivers' own floors: the axis and its floodplain or the 80 m either side its level is read from (the marks'
   // half less their fine-grid margin, riverNetwork.ts floorHalf).
-  const core = riverCore(CUT_N, CUT_CELL_M, axes.map((a) => ({ north: a.north, east: a.east, half: Array.from(a.half, (h) => Math.max(0, h - FLOOR_GRID_MARGIN)) })));
-  return thresholdSlopes(CUT_N, CUT_CELL_M, w, (q) => core[q] >= course, (n, e) => seededNaturalHeight(n, e, false, true, false), core, sp);
+  const half = axes.map((a) => ({ north: a.north, east: a.east, half: Array.from(a.half, (h) => Math.max(0, h - FLOOR_GRID_MARGIN)) }));
+  const core = riverCore(CUT_N, CUT_CELL_M, half);
+  // (The ground in a river's valley, as far as its carve reaches beyond its floor, riverNetwork.ts valleyInfluence, is
+  // raised by SlopeParams.riverLift of the rest: the carve, carveNetwork, blends its valley's walls into the ground
+  // there, and over ground raised high it leaves a step at its reach.)
+  const near = sp.riverLift < 1 ? riverCore(CUT_N, CUT_CELL_M, half.map((a, i) => ({ ...a, half: a.half.map((h, k) => h + valleyInfluence(axes[i].area[k])) }))) : null;
+  return thresholdSlopes(CUT_N, CUT_CELL_M, w, (q) => core[q] >= course, (n, e) => seededNaturalHeight(n, e, false, true, false), core, sp, near);
 }
 /** Rivers and lakes of the current era (read at call time, like era()). */
 export const hydrology: Readonly<Hydrology> = {

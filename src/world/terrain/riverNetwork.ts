@@ -226,8 +226,11 @@ export interface LevelStage {
  * meandering channel, shape the falls (falls.ts shapeLines), pitch the pitches and pools.
  */
 export const levelProbe: { on?: (stage: string, li: number, line: LevelStage) => void } = {};
+/** How far beyond its floodplain a river's valley is carved into the ground about it (carveNetwork), m, for a catchment
+ * of `area` km². */
+export const valleyInfluence = (area: number): number => 500 + 1900 * smooth(30, 2000, area);
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array }>) => void, pinned?: (north: number, east: number) => number): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number): Hydrology {
   const lines = d.lines;
   // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley of the macro
   // ground (erosion.ts, `valleyDepth` per cell, >= 0) is the river's own, and its floor lies along the lattice path; a
@@ -323,7 +326,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // noise's own relief (tens of metres on a plain the model lowered by a couple of hundred) stood on a valley floor
   // graded to a few tens of metres: its troughs reached the sea's level inland (held there by the cushion), the running
   // minimum below took the river down to them, and it was carved to the sea's level through every rise downstream.
-  markFloor?.(laid.map((a, li) => ({ north: a.north, east: a.east, half: floorHalf(d, lines[li], a.area, a.t) })));
+  markFloor?.(laid.map((a, li) => ({ north: a.north, east: a.east, half: floorHalf(d, lines[li], a.area, a.t), area: a.area })));
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const { north, east, s, area } = laid[li];
@@ -473,7 +476,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       // The floodplain keeps the width the free meanders would need, so it does not pinch where they are held in.
       const freeBelt = wavelength[i] * (0.06 + 0.55 * mFree);
       floodplain[i] = freeBelt + hw + CHANNEL_BANK + 4 * hw * Math.min(1, freeBelt / 200);
-      influence[i] = 500 + 1900 * smooth(30, 2000, area[i]);
+      influence[i] = valleyInfluence(area[i]);
     }
     // The floodplain's width changes only gradually along the river: inside a bend the nearest axis point jumps from
     // one stretch to another, and two different widths there would leave a step in the valley wall.
